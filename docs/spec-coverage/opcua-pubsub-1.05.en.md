@@ -100,7 +100,7 @@ DataTypes via Part 3 §8 (StructureDefinition/EnumDefinition).
 `crates/opcua-pubsub/src/uadp/discovery.rs`.
 
 **Tests:** `crates/opcua-pubsub/src/uadp/discovery.rs::tests::metadata_with_custom_datatypes_round_trips`,
-`field_metadata_with_properties_round_trips`.
+`crates/opcua-pubsub/src/uadp/discovery.rs::tests::field_metadata_with_properties_round_trip`.
 
 **Status:** done
 
@@ -146,7 +146,7 @@ p. 42 (PDF) — Variant (self-describing), DataValue, or RawData (no type tags,
 needs DataSetMetaData).
 
 **Repo:** `crates/opcua-pubsub/src/uadp/dataset_message.rs` (`FieldEncoding`,
-`DataSetData`), RawData encode in `writer.rs` (`encode_raw_fields`), typed
+`DataSetData`), RawData encode in `crates/opcua-pubsub/src/writer.rs` (`encode_raw_fields`), typed
 RawData decode in `crates/opcua-pubsub/src/dynamic.rs` (`decode_raw_dataset` —
 struct/union/optional/enum/simple/array, recursive).
 
@@ -401,7 +401,7 @@ alignment padding; String/ByteString/array with Int32 length prefix;
 NodeId/ExpandedNodeId/Guid/QualifiedName/LocalizedText/Variant/DataValue/
 ExtensionObject.
 
-**Repo:** `crates/opcua-pubsub/src/binary/` (`io.rs`, `builtin.rs`, `mod.rs`).
+**Repo:** `crates/opcua-pubsub/src/binary/` (`crates/opcua-pubsub/src/binary/io.rs`, `crates/opcua-pubsub/src/binary/builtin.rs`, `crates/opcua-pubsub/src/binary/mod.rs`).
 
 **Tests:** `crates/opcua-pubsub/src/binary/io.rs::tests::primitive_roundtrip_is_little_endian`,
 `crates/opcua-pubsub/src/binary/builtin.rs::tests::variant_1d_array`,

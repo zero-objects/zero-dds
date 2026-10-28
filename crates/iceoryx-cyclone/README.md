@@ -52,5 +52,5 @@ cargo build -p zerodds-iceoryx-cyclone --features posh   # Linux + iceoryx POSH
 
 `run.sh` builds the crate + a Cyclone publisher/subscriber, starts `iox-roudi`,
 and asserts both `READER OK` (ZeroDDS reads Cyclone) and `CYCLONE OK` (Cyclone
-reads ZeroDDS). Verified on the codepit bench host (Cyclone 0.11 / iceoryx POSH
+reads ZeroDDS). Verified on the Linux test host (Cyclone 0.11 / iceoryx POSH
 2.0.6).

@@ -1,0 +1,22 @@
+[package]
+name = "zerodds-idl-cst"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Lossless concrete syntax tree for OMG IDL 4.2: tokens with attached trivia, a green/red tree that reproduces its input byte for byte."
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/zerodds-idl-cst"
+readme = "README.md"
+keywords = ["dds", "idl", "parser", "cst"]
+categories = ["parser-implementations", "compilers"]
+
+[dependencies]
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true

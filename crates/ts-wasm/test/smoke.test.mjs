@@ -3,7 +3,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { CdrEncoder, CdrDecoder, version } from "../pkg-node/dds_ts_wasm.js";
+import { CdrEncoder, CdrDecoder, version } from "../pkg-node/zerodds_ts_wasm.js";
 
 test("wasm version string", () => {
   const v = version();

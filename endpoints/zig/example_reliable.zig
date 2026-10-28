@@ -12,21 +12,22 @@
 const std = @import("std");
 const rel = @import("src/reliable.zig");
 
-pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const alloc = gpa.allocator();
-    const stdout = std.io.getStdOut().writer();
+pub fn main(zd_init: std.process.Init) !void {
+    const alloc = zd_init.arena.allocator();
+    var stdout_buf: [4096]u8 = undefined;
+    var stdout_file = std.Io.File.stdout().writer(zd_init.io, &stdout_buf);
+    const stdout = &stdout_file.interface;
+    defer stdout.flush() catch {};
 
     const N: u32 = 12;
     var snd = rel.Sender.init(alloc);
     defer snd.deinit();
     var rcv = rel.Receiver.init(alloc);
     defer rcv.deinit();
-    var out = std.ArrayList([]u8).init(alloc);
+    var out = std.ArrayList([]u8).empty;
     defer {
         for (out.items) |p| alloc.free(p);
-        out.deinit();
+        out.deinit(alloc);
     }
 
     // Aggregator submits N typed samples (payload = the sample index, u32 LE).
@@ -49,7 +50,7 @@ pub fn main() !void {
         }
         try rcv.recvData(seqs[j], snd.getInFlight(seqs[j]).?);
     }
-    try rcv.drainInto(&out);
+    try rcv.drainInto(alloc, &out);
 
     // Recovery: ACKNACK → prune + retransmit until the window drains.
     var round: usize = 0;
@@ -62,7 +63,7 @@ pub fn main() !void {
         while (m < rk) : (m += 1) {
             if (snd.getInFlight(rs[m])) |data| try rcv.recvData(rs[m], data);
         }
-        try rcv.drainInto(&out);
+        try rcv.drainInto(alloc, &out);
     }
 
     try stdout.print(

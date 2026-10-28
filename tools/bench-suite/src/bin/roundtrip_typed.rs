@@ -1,31 +1,58 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! roundtrip-typed — Apples-to-apples Roundtrip-Latency-Bench durch
-//! die volle ZeroDDS DCPS-Pipeline mit typed XCDR2-Encode/Decode.
+//! roundtrip-typed — apples-to-apples roundtrip latency bench through
+//! the full ZeroDDS DCPS pipeline with typed XCDR2 encode/decode.
 //!
-//! Pendant zu `cyclone_app.cpp` / `rti_app.cpp` / `fastdds_app.cpp` —
-//! gleicher Pattern (ping/pong, 1-in-flight, reliable + KeepLast(64)),
-//! gleiche Payload-Sizes (32/64/256/1024/4096), gleicher Sample-Count
-//! (5000), gleicher Transport (UDP-Loopback).
+//! Counterpart to `cyclone_app.cpp` / `rti_app.cpp` / `fastdds_app.cpp` —
+//! same pattern (ping/pong, 1-in-flight, reliable + KeepLast(64)),
+//! same payload sizes (32/64/256/1024/4096), same sample count
+//! (5000), same transport (UDP loopback).
 //!
-//! Im Gegensatz zu `roundtrip-1us` (das `zerodds_writer_write()` mit
-//! pre-encoded raw bytes aufruft und damit die CDR-Schicht
-//! ueberspringt) durchlaeuft dieser Bench den vollen typed-Pfad:
+//! Where `roundtrip-1us` hands `zerodds_writer_write()` bytes that were
+//! encoded beforehand and so measures the pipeline with the codec taken
+//! out, this one runs the whole typed path:
 //!
-//!   App-Code (Rust)                  -- typed `Roundtrip`-struct
+//!   application (Rust)               -- the typed `Roundtrip` struct
 //!   ↓
-//!   `DdsType::encode`/`decode`       -- XCDR2-LE @final encoding
+//!   `DdsType::encode`/`decode`       -- XCDR2-LE, `@final`
 //!   ↓
-//!   `DataWriter<Roundtrip>::write`   -- HistoryCache, QoS
+//!   `DataWriter<Roundtrip>::write`   -- history cache, QoS
 //!   ↓
-//!   RTPS 2.5                         -- Wire-Protokoll
+//!   RTPS 2.5                         -- the wire protocol
 //!   ↓
-//!   UDP-Loopback                     -- Transport
+//!   UDP loopback                     -- the transport
 //!
-//! # Verwendung
+//! # The body is XCDR2 and it is written at XCDR2's alignment
 //!
-//! ```ignore
+//! Both halves of this file used to disagree, and because both halves
+//! are in this file the disagreement round-tripped and the numbers
+//! stood. Two faults, in the same six lines:
+//!
+//! * the body was built by `BufferWriter::new` and read by
+//!   `BufferReader::new`, whose `MAXALIGN` is **eight** — XCDR1's.
+//!   XCDR2 caps alignment at **four** (XTypes 1.3 §7.4.1.1.1, and
+//!   `Encoding::max_alignment` in `crates/ast-layout`, which was read
+//!   off Cyclone's and RTI Connext 7.7's own serialisers). `t_send_ns`
+//!   is eight octets behind a four-octet `sequence_id`, so it sat at
+//!   offset 8 where XCDR2 puts it at 4, and everything after it moved
+//!   with it.
+//! * `encode` prepended a four-octet encapsulation header of its own.
+//!   `DdsType::encode` returns the **body**; `DataWriter::write` writes
+//!   the header, from the representation the writer's SEDP offer
+//!   locked. The header this file wrote therefore went out *inside* the
+//!   body, and `decode` skipped four octets to put it back.
+//!
+//! Either fault alone makes every octet after `sequence_id` land
+//! somewhere a peer does not look for it, and the bench is a comparison
+//! against Cyclone, RTI and Fast DDS — where a foreign peer *is* the
+//! other end. `crates/dcps/examples/classic_shapes.rs` is the calling
+//! convention this now follows, and it is the one that has been run
+//! against RTI's and OpenDDS' shape demos.
+//!
+//! # Usage
+//!
+//! ```text
 //! taskset -c 4 chrt -f 80 \
 //!   roundtrip-typed --role pong --runtime-secs 30
 //! taskset -c 5 chrt -f 80 \
@@ -46,78 +73,31 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use zerodds_cdr::{BufferReader, BufferWriter, CdrDecode, CdrEncode, Endianness};
 use zerodds_dcps::qos::{HistoryKind, ReliabilityKind};
 use zerodds_dcps::{
-    DataReaderQos, DataWriterQos, DdsType, DecodeError, DomainParticipantFactory,
-    DomainParticipantQos, EncodeError, Extensibility, PublisherQos, SubscriberQos, TopicQos,
+    DataReaderQos, DataWriterQos, DomainParticipantFactory, DomainParticipantQos, PublisherQos,
+    SubscriberQos, TopicQos,
 };
 
 // -----------------------------------------------------------------------------
-// Typed user struct — entspricht roundtrip.idl (RoundtripBench::Roundtrip).
+// The topic type, generated from the IDL the vendor apps are generated from
 // -----------------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
-struct Roundtrip {
-    sequence_id: u32,
-    t_send_ns: u64,
-    payload: Vec<u8>,
+// `tests/perf/dds-roundtrip-bench/roundtrip.idl` is the file Cyclone's
+// `idlc`, RTI's `rtiddsgen` and `fastddsgen` compile for the other three
+// apps of this bench. `build.rs` compiles the crate's copy of it, held
+// byte-equal to it, for this one, so the number this file reports is a
+// comparison of four codecs generated from one declaration rather than of
+// three generated ones against a fourth written beside them.
+//
+// `non_snake_case`: the generated module keeps the IDL's name,
+// `RoundtripBench`.
+#[allow(non_snake_case)]
+mod generated {
+    include!(concat!(env!("OUT_DIR"), "/roundtrip.rs"));
 }
 
-/// CDR-Encapsulation-Header fuer PLAIN_CDR2-LE (XTypes 1.3 §7.6.3.2.1).
-const ENCAP_HEADER_PLAIN_CDR2_LE: [u8; 4] = [0x00, 0x07, 0x00, 0x00];
-
-impl DdsType for Roundtrip {
-    const TYPE_NAME: &'static str = "RoundtripBench::Roundtrip";
-    const EXTENSIBILITY: Extensibility = Extensibility::Final;
-    const HAS_KEY: bool = false;
-
-    fn encode(&self, out: &mut Vec<u8>) -> Result<(), EncodeError> {
-        out.extend_from_slice(&ENCAP_HEADER_PLAIN_CDR2_LE);
-        let mut w = BufferWriter::new(Endianness::Little);
-        // @final: tight body, kein DHEADER (XTypes §7.4.5).
-        self.sequence_id
-            .encode(&mut w)
-            .map_err(|_| EncodeError::Invalid {
-                what: "sequence_id encode",
-            })?;
-        self.t_send_ns
-            .encode(&mut w)
-            .map_err(|_| EncodeError::Invalid {
-                what: "t_send_ns encode",
-            })?;
-        self.payload
-            .encode(&mut w)
-            .map_err(|_| EncodeError::Invalid {
-                what: "payload encode",
-            })?;
-        out.extend_from_slice(w.as_bytes());
-        Ok(())
-    }
-
-    fn decode(bytes: &[u8]) -> Result<Self, DecodeError> {
-        if bytes.len() < 4 {
-            return Err(DecodeError::Invalid {
-                what: "encap header missing",
-            });
-        }
-        let mut r = BufferReader::new(&bytes[4..], Endianness::Little);
-        let sequence_id = u32::decode(&mut r).map_err(|_| DecodeError::Invalid {
-            what: "sequence_id decode",
-        })?;
-        let t_send_ns = u64::decode(&mut r).map_err(|_| DecodeError::Invalid {
-            what: "t_send_ns decode",
-        })?;
-        let payload = Vec::<u8>::decode(&mut r).map_err(|_| DecodeError::Invalid {
-            what: "payload decode",
-        })?;
-        Ok(Roundtrip {
-            sequence_id,
-            t_send_ns,
-            payload,
-        })
-    }
-}
+use generated::RoundtripBench::Roundtrip;
 
 // -----------------------------------------------------------------------------
 // CLI
@@ -193,7 +173,7 @@ fn parse_args() -> Result<Args, String> {
 }
 
 // -----------------------------------------------------------------------------
-// QoS — reliable + KeepLast(64) wie Cyclone+RTI+FastDDS Custom-Apps.
+// QoS — reliable + KeepLast(64) like the Cyclone+RTI+FastDDS custom apps.
 // -----------------------------------------------------------------------------
 
 fn writer_qos() -> DataWriterQos {
@@ -245,7 +225,7 @@ fn run_pong(args: &Args) -> Result<(), String> {
         .create_datareader::<Roundtrip>(&topic_req, reader_qos())
         .map_err(|e| format!("create_datareader: {e:?}"))?;
 
-    // Auf Match warten (max 10s).
+    // Wait for match (max 10s).
     let _ = writer.wait_for_matched_subscription(1, Duration::from_secs(10));
     let _ = reader.wait_for_matched_publication(1, Duration::from_secs(10));
     println!("pong[zerodds]: matched, polling");
@@ -295,7 +275,7 @@ fn run_ping(args: &Args) -> Result<(), String> {
             .map_err(|e| format!("create_datareader: {e:?}"))?,
     );
 
-    // Auf Match warten (max 10s).
+    // Wait for match (max 10s).
     let _ = writer.wait_for_matched_subscription(1, Duration::from_secs(10));
     let _ = reader.wait_for_matched_publication(1, Duration::from_secs(10));
     eprintln!("ping[zerodds]: matched");
@@ -308,7 +288,7 @@ fn run_ping(args: &Args) -> Result<(), String> {
         warmup: args.warmup,
     });
 
-    // Drainer-Thread: simuliert on_data_available — pollt in tight loop.
+    // Drainer thread: simulates on_data_available — polls in tight loop.
     let stats_d = stats.clone();
     let reader_d = reader.clone();
     let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -320,10 +300,10 @@ fn run_ping(args: &Args) -> Result<(), String> {
                     let now = now_ns();
                     let rtt = now.saturating_sub(s.t_send_ns).max(1);
                     let r = stats_d.received.fetch_add(1, Ordering::Relaxed);
-                    if r >= stats_d.warmup {
-                        if let Ok(mut g) = stats_d.rtts.lock() {
-                            g.push(rtt);
-                        }
+                    if r >= stats_d.warmup
+                        && let Ok(mut g) = stats_d.rtts.lock()
+                    {
+                        g.push(rtt);
                     }
                 }
             } else {
@@ -346,7 +326,7 @@ fn run_ping(args: &Args) -> Result<(), String> {
         sample.t_send_ns = now_ns();
         let _ = writer.write(&sample);
 
-        // 1-in-flight: spin auf received > seq, max 50ms.
+        // 1-in-flight: spin on received > seq, max 50ms.
         let deadline = Instant::now() + Duration::from_millis(50);
         while stats.received.load(Ordering::Relaxed) <= seq {
             if Instant::now() >= deadline {
@@ -411,5 +391,148 @@ fn main() -> std::process::ExitCode {
             eprintln!("error: {e}");
             std::process::ExitCode::from(1)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Roundtrip;
+
+    /// XCDR2's `MAXALIGN`. XTypes 1.3 §7.4.1.1.1.
+    ///
+    /// `Writer::new` and `Reader::new` are eight, which is XCDR1's. The
+    /// generated codec declares PLAIN_CDR2, so the version it declares
+    /// is named here and the tests below hold it to that.
+    const XCDR2_MAX_ALIGN: usize = 4;
+    use zerodds_dcps::DdsType;
+    use zerodds_wire::{Endianness, Reader, Writer};
+
+    fn sample() -> Roundtrip {
+        Roundtrip {
+            sequence_id: 0x1111_1111,
+            t_send_ns: 0x2222_2222_2222_2222,
+            payload: vec![0xAB; 4],
+        }
+    }
+
+    /// The body is what `DataWriter::write` expects: no encapsulation
+    /// header, and `t_send_ns` where XCDR2 puts it.
+    ///
+    /// Twenty octets, not twenty-four. The four that are not there are
+    /// the pad an eight-octet alignment would put between
+    /// `sequence_id` and `t_send_ns`, and the four an encapsulation
+    /// header written here would add in front. The same twenty octets
+    /// the hand-written codec this file used to carry produced — the
+    /// generated one replaced it without moving a single one.
+    #[test]
+    fn body_is_xcdr2_and_carries_no_encapsulation_header() {
+        let mut out = Vec::new();
+        DdsType::encode(&sample(), &mut out).expect("encode");
+        assert_eq!(
+            out,
+            [
+                0x11, 0x11, 0x11, 0x11, // sequence_id  @0
+                0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, // t_send_ns @4
+                0x04, 0x00, 0x00, 0x00, // sequence length @12
+                0xAB, 0xAB, 0xAB, 0xAB, // payload @16
+            ],
+            "the body is not the twenty octets XCDR2 asks for"
+        );
+    }
+
+    /// The big-endian body is big-endian.
+    ///
+    /// The hand-written codec did not override `encode_be`, and the
+    /// trait default delegates to `encode` — so a writer that stamped
+    /// `CDR2_BE` on the encapsulation header shipped the little-endian
+    /// octets above behind it. Only the sequence length shows it in
+    /// this sample: `04 00 00 00` little-endian against `00 00 00 04`
+    /// big-endian, the three other members being byte-symmetric
+    /// values. That is why the assertion is on the whole body and not
+    /// on "the two differ".
+    #[test]
+    fn the_big_endian_body_is_the_members_in_the_other_order() {
+        let mut out = Vec::new();
+        DdsType::encode_be(&sample(), &mut out).expect("encode_be");
+        assert_eq!(
+            out,
+            [
+                0x11, 0x11, 0x11, 0x11, // sequence_id  @0
+                0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, // t_send_ns @4
+                0x00, 0x00, 0x00, 0x04, // sequence length @12
+                0xAB, 0xAB, 0xAB, 0xAB, // payload @16
+            ],
+            "encode_be handed out a little-endian body"
+        );
+        let back = <Roundtrip as DdsType>::decode_be(&out).expect("decode_be");
+        assert_eq!(back.t_send_ns, 0x2222_2222_2222_2222);
+        assert_eq!(back.payload.len(), 4);
+    }
+
+    /// A topic type name with a type behind it.
+    ///
+    /// The hand-written codec left `type_object()` at the trait's
+    /// `None` and `TYPE_IDENTIFIER` at `TypeIdentifier::None`: SEDP
+    /// announced `RoundtripBench::Roundtrip` and carried no
+    /// `PID_TYPE_INFORMATION`, so a peer that asked the TypeLookup
+    /// service what that name is got nothing (XTypes 1.3 §7.6.3.2).
+    /// The vendor apps this bench compares against all announce one.
+    #[test]
+    fn the_type_announces_itself() {
+        assert_eq!(
+            <Roundtrip as DdsType>::TYPE_NAME,
+            "RoundtripBench::Roundtrip"
+        );
+        assert!(
+            <Roundtrip as DdsType>::type_object().is_some(),
+            "the topic type announces a name with no type behind it"
+        );
+        assert_ne!(
+            <Roundtrip as DdsType>::type_identifier(),
+            zerodds_types::TypeIdentifier::None,
+            "SEDP would carry no PID_TYPE_INFORMATION"
+        );
+    }
+
+    /// A round trip through this file cannot catch the alignment: both
+    /// ends are this file. So the reader is built at the other
+    /// alignment on purpose, and what it reads back is asserted —
+    /// because it does not fail, it returns a different number.
+    #[test]
+    fn the_other_alignment_reads_a_different_value_and_does_not_fail() {
+        let mut out = Vec::new();
+        DdsType::encode(&sample(), &mut out).expect("encode");
+
+        let mut good = Reader::with_max_align(&out, Endianness::Little, XCDR2_MAX_ALIGN);
+        assert_eq!(good.read_u32().expect("sequence_id"), 0x1111_1111);
+        assert_eq!(good.read_u64().expect("t_send_ns"), 0x2222_2222_2222_2222);
+
+        let mut xcdr1 = Reader::with_max_align(&out, Endianness::Little, 8);
+        assert_eq!(xcdr1.read_u32().expect("sequence_id"), 0x1111_1111);
+        let wrong = xcdr1.read_u64().expect("no error — that is the point");
+        assert_ne!(
+            wrong, 0x2222_2222_2222_2222,
+            "an eight-octet alignment must not happen to land on the same value"
+        );
+    }
+
+    /// `Writer::new` is XCDR1's `MAXALIGN`, which is what this file
+    /// used while declaring PLAIN_CDR2. Pinned so the two spellings
+    /// cannot converge again unnoticed.
+    #[test]
+    fn writer_new_is_eight_and_this_bench_is_four() {
+        assert_eq!(Writer::new(Endianness::Little).max_align(), 8);
+        assert_eq!(XCDR2_MAX_ALIGN, 4);
+    }
+
+    #[test]
+    fn round_trip() {
+        let mut out = Vec::new();
+        let s = sample();
+        DdsType::encode(&s, &mut out).expect("encode");
+        let back = <Roundtrip as DdsType>::decode(&out).expect("decode");
+        assert_eq!(back.sequence_id, s.sequence_id);
+        assert_eq!(back.t_send_ns, s.t_send_ns);
+        assert_eq!(back.payload, s.payload);
     }
 }

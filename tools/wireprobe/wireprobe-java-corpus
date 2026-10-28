@@ -1,0 +1,54 @@
+#!/bin/bash
+# wireprobe-java-corpus — the Java column over the whole corpus, against
+# the octets the Rust column recorded.
+#
+#   tools/wireprobe/wireprobe-java-corpus
+#   MATCH=373 DIFFER=0 REFUSED=1 NOREF=2
+#
+# Generates, compiles and runs one probe per case and compares the bytes
+# with `tests/interop-results/<case>/zerodds-rust/plain-cdr2.le.bin`.
+# `DIFFER` is the number that matters: a case the Java runtime writes
+# differently from the Rust one is a case where one of the two has
+# misread DDS-XTypes 1.3, and neither calls the other.
+#
+# `REFUSED` is a case that did not generate, compile or run, and each is
+# named with its reason. One is standing: JLS 8.1 forbids a nested class
+# sharing the simple name of an enclosing one, which
+# `docs/language-limits.md` carries. `NOREF` is a case the Rust column
+# has no recorded octets for either.
+#
+# The root type comes from the corpus's own `type` file. Reading it off
+# the IDL instead picked the last declaration, which is the wrong root
+# for `recursive-mutual` and `resolve-forward-declared`.
+set -uo pipefail
+cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+ok=0; bad=0; refused=0; noref=0
+L="${JAVA_CORPUS_LOG:-${TMPDIR:-/tmp}/zd-java-corpus.txt}"
+# One sweep at a time per log. Two of them interleaving produced 489
+# rows for 376 cases and numbers that meant nothing, which is worse
+# than a refusal to start.
+lock="$L.lock"
+if ! mkdir "$lock" 2>/dev/null; then
+    echo "$(basename "$0"): a sweep is already running; its log is $L" >&2
+    exit 2
+fi
+trap 'rmdir "$lock" 2>/dev/null' EXIT
+: > "$L"
+for d in tests/interop-corpus/*/; do
+  c=$(basename "$d")
+  r="tests/interop-results/$c/zerodds-rust/plain-cdr2.le.bin"
+  [ -f "$d/type.idl" ] && [ -f "$d/values.json" ] || continue
+  [ -f "$r" ] || { noref=$((noref+1)); continue; }
+  # The corpus names its root in `type`; guessing it from the IDL
+  # picked the last declaration and got two cases wrong.
+  t=$(cat "$d/type")
+  [ -n "$t" ] || { noref=$((noref+1)); continue; }
+  got=$(./tools/wireprobe/wireprobe-zerodds-java --idl "$d/type.idl" --type "$t" --values "$d/values.json" --encoding plain-cdr2 --endian le 2>&1 | tail -1)
+  want=$(od -An -tx1 -v "$r" | tr -d ' \n')
+  if [ "$got" = "$want" ]; then ok=$((ok+1)); echo "MATCH $c" >> "$L"
+  elif ! echo "$got" | grep -qE '^[0-9a-f]+$'; then refused=$((refused+1)); echo "REFUSED $c :: $got" >> "$L"
+  else bad=$((bad+1)); echo "DIFFER $c" >> "$L"; echo "  java $got" >> "$L"; echo "  rust $want" >> "$L"; fi
+done
+echo "MATCH=$ok DIFFER=$bad REFUSED=$refused NOREF=$noref"
+echo "per case: $L" >&2
+[ "$bad" -eq 0 ]

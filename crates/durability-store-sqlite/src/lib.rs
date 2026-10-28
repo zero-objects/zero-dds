@@ -9,9 +9,15 @@
 //! ACID via `PRAGMA journal_mode=WAL; synchronous=NORMAL` (crash-safe without
 //! an fsync per insert). One row per sample; the `(topic, instance, sequence)`
 //! primary key makes re-sends idempotent. Retention follows the topic
-//! [`Contract`] (set via [`DurabilityStore::set_contract`]); contracts live in
-//! memory and are re-registered by the daemon on startup, while the samples
-//! themselves survive a full process/system restart in the database file.
+//! [`Contract`]. A plain [`DurabilityStore::set_contract`] lives only in
+//! memory for the process' lifetime; [`DurabilityStore::set_topic_meta`]
+//! additionally persists it — together with the topic's type name and
+//! keyedness — in the `topic_meta` table, so a restarted daemon can resume
+//! serving the topic (module docs of `zerodds-durability-service`,
+//! "Startup-sync") without re-registering it first. `topic_meta` is created
+//! `IF NOT EXISTS` alongside `samples`/`unregistered`, so an existing
+//! database from before this table existed opens unchanged (empty
+//! `topic_meta`, same samples).
 //!
 //! For analytics, open the same `.db` with any SQL tool — the schema is
 //! stable and documented here (ADR 0009: adapters expose their own native
@@ -27,7 +33,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use rusqlite::{Connection, OptionalExtension, params};
 use zerodds_durability_store::{
     Contract, Cursor, DurabilitySample, DurabilityStore, Page, Result, Selector, StoreError,
-    StoreStats,
+    StoreStats, TopicMeta,
 };
 use zerodds_qos::policies::history::HistoryKind;
 
@@ -52,6 +58,18 @@ CREATE TABLE IF NOT EXISTS unregistered (
     instance  BLOB    NOT NULL,
     at_nanos  INTEGER NOT NULL,
     PRIMARY KEY (topic, instance)
+);
+CREATE TABLE IF NOT EXISTS topic_meta (
+    topic                    TEXT    PRIMARY KEY,
+    type_name                TEXT    NOT NULL,
+    keyed                    INTEGER NOT NULL,
+    history_kind             INTEGER NOT NULL,
+    history_depth            INTEGER NOT NULL,
+    max_samples              INTEGER NOT NULL,
+    max_instances            INTEGER NOT NULL,
+    max_samples_per_instance INTEGER NOT NULL,
+    cleanup_delay_secs       INTEGER NOT NULL,
+    cleanup_delay_nanos      INTEGER NOT NULL
 );
 ";
 
@@ -130,7 +148,19 @@ impl SqliteStore {
             .map_err(|_| StoreError::Poisoned("sqlite conn"))
     }
 
-    fn contract_for(&self, topic: &str) -> Result<Contract> {
+    /// The persisted `topic_meta` row's contract wins over a plain
+    /// `set_contract` for the same topic (it is the more recent, more
+    /// complete registration — see [`DurabilityStore::set_contract`]'s doc).
+    ///
+    /// Takes an already-locked `conn` (never locks `self.conn` itself) so a
+    /// caller that already holds the connection guard (e.g.
+    /// [`cleanup`](DurabilityStore::cleanup), iterating rows of another
+    /// statement on the same connection) can call it without re-entering
+    /// `self.conn`'s mutex, which is not reentrant.
+    fn contract_for_conn(&self, conn: &Connection, topic: &str) -> Result<Contract> {
+        if let Some(meta) = Self::topic_meta_row_conn(conn, topic)? {
+            return Ok(meta.contract);
+        }
         Ok(self
             .contracts
             .lock()
@@ -144,6 +174,62 @@ impl SqliteStore {
         conn.query_row(sql, p, |r| r.get::<_, i64>(0))
             .map_err(|e| backend("count", e))
     }
+
+    /// Reads `topic`'s `topic_meta` row off an already-locked `conn`, if
+    /// any. A row with an unknown `history_kind` discriminator
+    /// (corrupt/foreign data) is a loud `Err`, never a silent `None`.
+    fn topic_meta_row_conn(conn: &Connection, topic: &str) -> Result<Option<TopicMeta>> {
+        conn.query_row(
+            "SELECT type_name, keyed, history_kind, history_depth, max_samples, max_instances, \
+             max_samples_per_instance, cleanup_delay_secs, cleanup_delay_nanos \
+             FROM topic_meta WHERE topic = ?1",
+            params![topic],
+            |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, i64>(1)?,
+                    r.get::<_, i64>(2)?,
+                    r.get::<_, i64>(3)?,
+                    r.get::<_, i64>(4)?,
+                    r.get::<_, i64>(5)?,
+                    r.get::<_, i64>(6)?,
+                    r.get::<_, i64>(7)?,
+                    r.get::<_, i64>(8)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(|e| backend("topic_meta select", e))?
+        .map(|(type_name, keyed, hk, hd, ms, mi, mspi, secs, nanos)| {
+            let contract = Contract::from_row(
+                hk as u32,
+                hd as i32,
+                ms as i32,
+                mi as i32,
+                mspi as i32,
+                secs as u64,
+                nanos as u32,
+            )
+            .ok_or_else(|| {
+                StoreError::Backend(format!(
+                    "sqlite store: topic_meta row for {topic:?} has an unknown history_kind {hk}"
+                ))
+            })?;
+            Ok(TopicMeta {
+                type_name,
+                keyed: keyed != 0,
+                contract,
+            })
+        })
+        .transpose()
+    }
+
+    /// [`Self::topic_meta_row_conn`] for a caller that does not already hold
+    /// the connection guard.
+    fn topic_meta_row(&self, topic: &str) -> Result<Option<TopicMeta>> {
+        let conn = self.lock_conn()?;
+        Self::topic_meta_row_conn(&conn, topic)
+    }
 }
 
 impl DurabilityStore for SqliteStore {
@@ -155,9 +241,44 @@ impl DurabilityStore for SqliteStore {
         Ok(())
     }
 
-    fn store(&self, sample: DurabilitySample) -> Result<()> {
-        let contract = self.contract_for(&sample.topic)?;
+    fn set_topic_meta(&self, topic: &str, meta: TopicMeta) -> Result<()> {
         let conn = self.lock_conn()?;
+        let (hk, hd, ms, mi, mspi, secs, nanos) = meta.contract.to_row();
+        conn.execute(
+            "INSERT INTO topic_meta(topic, type_name, keyed, history_kind, history_depth, \
+             max_samples, max_instances, max_samples_per_instance, cleanup_delay_secs, \
+             cleanup_delay_nanos) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10) \
+             ON CONFLICT(topic) DO UPDATE SET \
+             type_name=excluded.type_name, keyed=excluded.keyed, \
+             history_kind=excluded.history_kind, history_depth=excluded.history_depth, \
+             max_samples=excluded.max_samples, max_instances=excluded.max_instances, \
+             max_samples_per_instance=excluded.max_samples_per_instance, \
+             cleanup_delay_secs=excluded.cleanup_delay_secs, \
+             cleanup_delay_nanos=excluded.cleanup_delay_nanos",
+            params![
+                topic,
+                meta.type_name,
+                i64::from(meta.keyed),
+                i64::from(hk),
+                i64::from(hd),
+                i64::from(ms),
+                i64::from(mi),
+                i64::from(mspi),
+                secs as i64,
+                i64::from(nanos),
+            ],
+        )
+        .map_err(|e| backend("topic_meta upsert", e))?;
+        Ok(())
+    }
+
+    fn topic_meta(&self, topic: &str) -> Result<Option<TopicMeta>> {
+        self.topic_meta_row(topic)
+    }
+
+    fn store(&self, sample: DurabilitySample) -> Result<()> {
+        let conn = self.lock_conn()?;
+        let contract = self.contract_for_conn(&conn, &sample.topic)?;
         let inst = &sample.instance_key[..];
 
         // A re-send of an already-stored (topic, instance, sequence) is an
@@ -357,7 +478,7 @@ impl DurabilityStore for SqliteStore {
             .map_err(|e| backend("cleanup scan", e))?
             .filter_map(|row| row.ok())
             .filter_map(|(topic, inst, at)| {
-                let delay = self.contract_for(&topic).ok()?.cleanup_delay;
+                let delay = self.contract_for_conn(&conn, &topic).ok()?.cleanup_delay;
                 let deadline = time_of(at).checked_add(delay)?;
                 if now >= deadline {
                     Some((topic, inst))

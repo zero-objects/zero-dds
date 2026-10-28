@@ -1,0 +1,15 @@
+// structure nested two levels, unannotated
+struct Leaf {
+    long value;
+    short tag;
+};
+
+struct Middle {
+    Leaf node;
+    double weight;
+};
+
+struct Sample {
+    Middle body;
+    octet tail;
+};

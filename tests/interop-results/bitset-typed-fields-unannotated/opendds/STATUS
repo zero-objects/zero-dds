@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of bitset-typed-fields-unannotated that opendds produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	Error - tao_idl: Illegal syntax following module '{' opener
+plain-cdr1	be	refused	Error - tao_idl: Illegal syntax following module '{' opener
+pl-cdr1	le	refused	Error - tao_idl: Illegal syntax following module '{' opener
+pl-cdr1	be	refused	Error - tao_idl: Illegal syntax following module '{' opener
+plain-cdr2	le	refused	Error - tao_idl: Illegal syntax following module '{' opener
+plain-cdr2	be	refused	Error - tao_idl: Illegal syntax following module '{' opener
+delimited-cdr	le	refused	Error - tao_idl: Illegal syntax following module '{' opener
+delimited-cdr	be	refused	Error - tao_idl: Illegal syntax following module '{' opener
+pl-cdr2	le	refused	Error - tao_idl: Illegal syntax following module '{' opener
+pl-cdr2	be	refused	Error - tao_idl: Illegal syntax following module '{' opener

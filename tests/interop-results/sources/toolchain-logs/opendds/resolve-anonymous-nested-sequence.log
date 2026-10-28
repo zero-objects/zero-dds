@@ -1,0 +1,1 @@
+genTypeSupportImpl.cpp:1579:20: error: no matching function for call to 'serialized_size(const OpenDDS::DCPS::Encoding&, size_t&, const TAO::unbounded_value_sequence<zd_c2::m::S::_tao_seq_CORBA_Long_>

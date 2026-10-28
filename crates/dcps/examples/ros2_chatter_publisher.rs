@@ -2,7 +2,7 @@
 //! (= rmw_cyclonedds = real ROS 2). Topic `rt/chatter`, type
 //! `std_msgs::msg::dds_::String_`. Opposite direction to the subscriber.
 //!
-//! # Usage (codepit)
+//! # Usage (Linux test host)
 //! ```text
 //! # Cyclone listener: crates/ros2-rmw/interop/cyclone_ros_listener
 //! ZERODDS_DATA_REPR_OFFER=XCDR1,XCDR2 \
@@ -26,6 +26,8 @@ struct RosString {
 
 impl DdsType for RosString {
     const TYPE_NAME: &'static str = "std_msgs::msg::dds_::String_";
+    /// @final with no member that XCDR1 and XCDR2 frame differently: one stream.
+    const XCDR1_MATCHES_XCDR2: bool = true;
 
     fn encode(&self, out: &mut Vec<u8>) -> Result<(), EncodeError> {
         let n = (self.data.len() + 1) as u32;

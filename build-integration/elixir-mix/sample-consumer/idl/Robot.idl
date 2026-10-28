@@ -1,7 +1,9 @@
-@appendable
-struct Pose {
-    string<32> robot_id;
-    double x;
-    double y;
-    double theta;
+module Robot {
+    @appendable
+    struct Pose {
+        @key string<32> robot_id;
+        double x;
+        double y;
+        double theta;
+    };
 };

@@ -1,32 +1,32 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! TLS-Bracket fuer den AMQP-Endpoint.
+//! TLS bracket for the AMQP endpoint.
 //!
-//! Spec dds-amqp-1.0 §10.1 — TLS 1.2 mindestens, 1.3 RECOMMENDED;
-//! Cert-Validation; AMQP-Negotiation **nach** TLS-Handshake.
+//! Spec dds-amqp-1.0 §10.1 — TLS 1.2 minimum, 1.3 RECOMMENDED;
+//! Cert validation; AMQP negotiation **after** TLS handshake.
 //!
-//! Implementiert ueber `rustls` (Cargo-Feature `tls`). Nach dem
-//! TLS-Handshake wird der resultierende `rustls::StreamOwned`
-//! direkt an [`crate::handler::handle_connection`] uebergeben —
-//! dieser akzeptiert jeden `Read + Write`-Stream.
+//! Implemented via `rustls` (cargo feature `tls`). After the
+//! TLS handshake the resulting `rustls::StreamOwned`
+//! is passed directly to [`crate::handler::handle_connection`] —
+//! which accepts any `Read + Write` stream.
 //!
 //! # Server-Side
 //!
-//! [`accept_server`] uebernimmt einen connecteten `TcpStream`,
-//! fuehrt den TLS-Handshake gegen die konfigurierte
-//! [`ServerTlsConfig`] und liefert einen `StreamOwned`, den
-//! der Caller an `handle_connection` reichen kann.
+//! [`accept_server`] takes a connected `TcpStream`,
+//! performs the TLS handshake against the configured
+//! [`ServerTlsConfig`] and returns a `StreamOwned` that
+//! the caller can pass to `handle_connection`.
 //!
 //! # Client-Side (Bridge-Profile)
 //!
-//! [`connect_client`] symmetrisch fuer den Outbound-Bridge-Pfad.
+//! [`connect_client`] symmetrically for the outbound bridge path.
 //!
 //! # Cert-Validation
 //!
-//! Der Server akzeptiert optional Client-Certs (mTLS) ueber
-//! `require_client_cert = true`. Der Client validiert das
-//! Server-Cert gegen die konfigurierten Root-CAs. Beides per
+//! The server optionally accepts client certs (mTLS) via
+//! `require_client_cert = true`. The client validates the
+//! server cert against the configured root CAs. Both via
 //! `rustls`-Default-Crypto-Provider (ring).
 
 use std::io::{self, BufReader};
@@ -39,41 +39,41 @@ use rustls::{
     ClientConfig, ClientConnection, RootCertStore, ServerConfig, ServerConnection, StreamOwned,
 };
 
-/// Spec §10.1 — Server-Side TLS-Konfiguration.
+/// Spec §10.1 — server-side TLS configuration.
 #[derive(Debug, Clone)]
 pub struct ServerTlsConfig {
-    /// PEM-Bytes des Server-Certs (kann eine Chain enthalten).
+    /// PEM bytes of the server cert (may contain a chain).
     pub cert_pem: Vec<u8>,
-    /// PEM-Bytes des Server-Private-Keys (PKCS#8 oder PKCS#1).
+    /// PEM bytes of the server private key (PKCS#8 or PKCS#1).
     pub key_pem: Vec<u8>,
-    /// Optionale CA-Bundle PEM-Bytes; wenn gesetzt + `require_client_cert`,
-    /// wird mTLS aktiviert.
+    /// Optional CA bundle PEM bytes; if set + `require_client_cert`,
+    /// mTLS is enabled.
     pub client_ca_pem: Option<Vec<u8>>,
-    /// Spec §10.1 — verlange Client-Cert (mTLS).
+    /// Spec §10.1 — require client cert (mTLS).
     pub require_client_cert: bool,
 }
 
-/// Spec §10.1 — Client-Side TLS-Konfiguration (Bridge-Profile).
+/// Spec §10.1 — client-side TLS configuration (bridge profile).
 #[derive(Debug, Clone)]
 pub struct ClientTlsConfig {
-    /// Trusted-Root-CA-Bundle (PEM-Bytes).
+    /// Trusted root CA bundle (PEM bytes).
     pub trust_anchors_pem: Vec<u8>,
-    /// Optional: Client-Cert + Key fuer mTLS.
+    /// Optional: client cert + key for mTLS.
     pub client_auth: Option<(Vec<u8>, Vec<u8>)>,
 }
 
-/// TLS-Setup-Fehler.
+/// TLS-Setup error.
 #[derive(Debug)]
 pub enum TlsError {
-    /// rustls-Fehler.
+    /// rustls error.
     Rustls(rustls::Error),
-    /// PEM-Parsing-Fehler.
+    /// PEM-Parsing error.
     PemParse(String),
-    /// IO/Handshake-Fehler.
+    /// IO/Handshake error.
     Io(io::Error),
-    /// Hostname-Konvertierung fehlgeschlagen.
+    /// Hostname conversion failed.
     InvalidHostname(String),
-    /// Konfiguration unvollstaendig.
+    /// Configuration incomplete.
     BadConfig(&'static str),
 }
 
@@ -102,20 +102,20 @@ impl From<io::Error> for TlsError {
     }
 }
 
-/// Server-Seitiger TLS-Stream.
+/// Server-side TLS stream.
 pub type ServerTlsStream = StreamOwned<ServerConnection, TcpStream>;
-/// Client-Seitiger TLS-Stream.
+/// Client-side TLS stream.
 pub type ClientTlsStream = StreamOwned<ClientConnection, TcpStream>;
 
-/// Spec §10.1 — `rustls::ServerConfig` aus Spec-konformer Konfig
+/// Spec §10.1 — `rustls::ServerConfig` from spec-compliant config
 /// bauen.
 ///
-/// Aktiviert nur TLS 1.2 + 1.3 (Spec-Mindeststandards). Default-
-/// Crypto-Provider von rustls (ring).
+/// Enables only TLS 1.2 + 1.3 (spec minimum standards). Default
+/// crypto provider of rustls (ring).
 ///
 /// # Errors
-/// `TlsError::PemParse` bei kaputtem PEM, `TlsError::Rustls`
-/// bei Cipher-Suite-Konflikt.
+/// `TlsError::PemParse` on broken PEM, `TlsError::Rustls`
+/// on cipher suite conflict.
 pub fn build_server_config(cfg: &ServerTlsConfig) -> Result<Arc<ServerConfig>, TlsError> {
     let _ = rustls::crypto::ring::default_provider().install_default();
     let certs = parse_certificates(&cfg.cert_pem)?;
@@ -150,10 +150,10 @@ pub fn build_server_config(cfg: &ServerTlsConfig) -> Result<Arc<ServerConfig>, T
     Ok(Arc::new(server_config))
 }
 
-/// Spec §10.1 — `rustls::ClientConfig` bauen.
+/// Spec §10.1 — build `rustls::ClientConfig`.
 ///
 /// # Errors
-/// `TlsError::PemParse` bei kaputtem PEM.
+/// `TlsError::PemParse` on broken PEM.
 pub fn build_client_config(cfg: &ClientTlsConfig) -> Result<Arc<ClientConfig>, TlsError> {
     let _ = rustls::crypto::ring::default_provider().install_default();
     let mut roots = RootCertStore::empty();
@@ -179,23 +179,22 @@ pub fn build_client_config(cfg: &ClientTlsConfig) -> Result<Arc<ClientConfig>, T
     Ok(Arc::new(client_config))
 }
 
-/// Spec §10.1 — Server-Side TLS-Handshake auf einem akzeptierten
+/// Spec §10.1 — server-side TLS handshake on an accepted
 /// `TcpStream`.
 ///
-/// Liefert einen `StreamOwned`, der `Read + Write` ist und nach
-/// dem Handshake direkt an `handle_connection` uebergeben werden
-/// kann.
+/// Returns a `StreamOwned` that is `Read + Write` and can be
+/// passed to `handle_connection` directly after the handshake.
 ///
 /// # Errors
-/// `TlsError::Rustls` bei Handshake-Fehler.
+/// `TlsError::Rustls` on handshake error.
 pub fn accept_server(
     config: Arc<ServerConfig>,
     tcp: TcpStream,
 ) -> Result<ServerTlsStream, TlsError> {
     let conn = ServerConnection::new(config)?;
     let mut stream = StreamOwned::new(conn, tcp);
-    // rustls handshakes lazy beim ersten read/write — wir
-    // erzwingen den Handshake hier.
+    // rustls handshakes lazily on the first read/write — we
+    // force the handshake here.
     while stream.conn.is_handshaking() {
         match stream.conn.complete_io(&mut stream.sock) {
             Ok(_) => break,
@@ -206,10 +205,10 @@ pub fn accept_server(
     Ok(stream)
 }
 
-/// Spec §10.1 — Client-Side TLS-Handshake.
+/// Spec §10.1 — client-side TLS handshake.
 ///
-/// `hostname` ist der Server-Hostname fuer die SNI/Cert-
-/// Validation (z.B. `"broker.example"`).
+/// `hostname` is the server hostname for the SNI/cert
+/// Validation (e.g. `"broker.example"`).
 ///
 /// # Errors
 /// `TlsError::Rustls` / `InvalidHostname`.
@@ -260,7 +259,7 @@ mod tests {
     use std::thread;
     use std::time::Duration;
 
-    /// Erzeugt ein Self-Signed-Cert + Key fuer Tests.
+    /// Produces a self-signed cert + key for tests.
     fn self_signed() -> (Vec<u8>, Vec<u8>) {
         let cert = rcgen::generate_simple_self_signed(vec!["localhost".to_string()])
             .expect("rcgen self-signed");
@@ -309,8 +308,8 @@ mod tests {
     #[test]
     fn build_client_config_from_root_ca() {
         let (cert_pem, _key_pem) = self_signed();
-        // Wir benutzen das self-signed-Cert als root-CA fuer den
-        // Client-Trust-Store (ueblicher Test-Pattern).
+        // We use the self-signed cert as the root CA for the
+        // Client trust store (common test pattern).
         let cfg = ClientTlsConfig {
             trust_anchors_pem: cert_pem,
             client_auth: None,
@@ -329,7 +328,7 @@ mod tests {
         assert!(matches!(err, TlsError::BadConfig(_)));
     }
 
-    /// E2E: Server + Client fuehren echten TLS-Handshake gegen
+    /// E2E: server + client perform a real TLS handshake against
     /// self-signed Cert.
     #[test]
     fn tls_handshake_round_trip_with_self_signed_cert() {
@@ -352,7 +351,7 @@ mod tests {
             };
             let server_config = build_server_config(&cfg)?;
             let mut tls = accept_server(server_config, sock)?;
-            // Server liest 5 Bytes + schreibt "pong".
+            // The server reads 5 bytes + writes "pong".
             let mut buf = [0u8; 5];
             tls.read_exact(&mut buf)?;
             tls.write_all(b"pong")?;
@@ -365,7 +364,7 @@ mod tests {
         let tcp = TcpStream::connect(format!("127.0.0.1:{port}")).unwrap();
         tcp.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
         tcp.set_write_timeout(Some(Duration::from_secs(5))).unwrap();
-        // Client trustet das self-signed Server-Cert.
+        // Client trusts the self-signed server cert.
         let client_cfg = ClientTlsConfig {
             trust_anchors_pem: cert_pem,
             client_auth: None,

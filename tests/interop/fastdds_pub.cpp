@@ -1,8 +1,8 @@
 // tests/interop/fastdds_pub.cpp
 //
-// Minimaler Fast-DDS-Participant fuer den Multi-Vendor-Interop-Test.
-// Erstellt einen Domain-Participant in Domain 0 und laesst ihn 30s
-// SPDP-Beacons senden. Der ZeroDDS-spdp_demo soll diesen Participant
+// Minimal Fast-DDS participant for the multi-vendor interop test.
+// Creates a domain participant in domain 0 and lets it send
+// SPDP beacons for 30s. The ZeroDDS spdp_demo should discover this participant
 // via SPDP entdecken.
 //
 // Build:

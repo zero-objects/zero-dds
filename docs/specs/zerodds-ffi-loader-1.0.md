@@ -1,46 +1,46 @@
-# `zerodds-ffi-loader` v1.0 — ABI-Stabilität & Per-Sprach-Loader-Patterns
+# `zerodds-ffi-loader` v1.0 — ABI stability & per-language loader patterns
 
-ZeroDDS Vendor-Spec. Spezifiziert die ABI-Surface der dynamischen
-Library `libzerodds.{so,dylib,dll}` sowie konkrete Loader-Patterns
-für Python, Java, C#, C++, TypeScript/JS und Flutter.
+ZeroDDS vendor spec. Specifies the ABI surface of the dynamic
+library `libzerodds.{so,dylib,dll}` as well as concrete loader patterns
+for Python, Java, C#, C++, TypeScript/JS and Flutter.
 
 ## Motivation
 
-ZeroDDS ist eine Rust-Implementation, die als nativer DDS-Vendor
-mehrere Programmiersprachen bedienen muss. Statt N-mal die volle
-DCPS-Logik nachzuimplementieren, exponiert ZeroDDS eine stabile
-C-ABI-Library (`libzerodds.{so,dylib,dll}`) und definiert pro Sprache
-ein **dünnes Loader-Pattern**, das gegen diese ABI bindet.
+ZeroDDS is a Rust implementation that, as a native DDS vendor,
+has to serve several programming languages. Instead of re-implementing the full
+DCPS logic N times, ZeroDDS exposes a stable
+C ABI library (`libzerodds.{so,dylib,dll}`) and defines per language
+a **thin loader pattern** that binds against this ABI.
 
-Diese Spec schreibt vor:
-1. Die ABI-Stabilitäts-Garantien (semver auf C-Header-Ebene).
-2. Welche Funktionen exposed sind.
-3. Pro Sprache einen kanonischen Loader-Snippet (Python, Java
-   (Pure-Java; Java-PSM braucht kein Native-Loader), C#-`DllImport`,
-   C++-Header-Include, Node-N-API + WASM, Dart-FFI).
-4. Wie Cross-Lang-Live-Tests die ABI verifizieren.
+This spec prescribes:
+1. The ABI stability guarantees (semver at C header level).
+2. Which functions are exposed.
+3. Per language a canonical loader snippet (Python, Java
+   (pure Java; the Java PSM needs no native loader), C# `DllImport`,
+   C++ header include, Node N-API + WASM, Dart FFI).
+4. How cross-language live tests verify the ABI.
 
-Komplementär zu den Per-Sprach-Crates `crates/zerodds-c-api/`,
+Complementary to the per-language crates `crates/zerodds-c-api/`,
 `crates/py/`, `crates/cpp/`, `crates/cs/`, `crates/java/`,
 `crates/java-omgdds/`, `crates/java-omgdds/java/`, `crates/ts-node/`,
 `crates/ts-wasm/`.
 
-## §1 Conformance-Levels
+## §1 Conformance levels
 
-| Level | Anforderung |
+| Level | Requirement |
 |-------|-------------|
-| **L1 — ABI** | Library exposed C-ABI gemäß `crates/zerodds-c-api/include/zerodds.h`; semver-stable auf Header-Ebene. |
-| **L2 — Loader** | Per-Sprach-Loader-Pattern dokumentiert + lauffähig (siehe §3). |
-| **L3 — Pub/Sub** | Per-Sprach-Live-Wire-Test gegen Rust-Peer auf demselben Domain (siehe §4 + §5). |
+| **L1 — ABI** | The library exposes the C ABI according to `crates/zerodds-c-api/include/zerodds.h`; semver-stable at header level. |
+| **L2 — Loader** | Per-language loader pattern documented + runnable (see §3). |
+| **L3 — Pub/Sub** | Per-language live wire test against a Rust peer on the same domain (see §4 + §5). |
 
-L1 ist Pflicht für jede Sprach-Anbindung. L2+L3 sind Pflicht für jede
-publishable Per-Sprach-Crate.
+L1 is mandatory for every language binding. L2+L3 are mandatory for every
+publishable per-language crate.
 
-## §2 ABI-Surface
+## §2 ABI surface
 
-### §2.1 Versionierung
+### §2.1 Versioning
 
-C-Header trägt SemVer:
+The C header carries SemVer:
 ```c
 #define ZERODDS_VERSION_MAJOR 1
 #define ZERODDS_VERSION_MINOR 0
@@ -48,20 +48,20 @@ C-Header trägt SemVer:
 #define ZERODDS_ABI_REVISION  1
 ```
 
-Major-Bump = breaking ABI. Minor = additive (neue Symbole nur
-ergänzt). Patch = Bugfixes ohne Symbol-Änderung. `ZERODDS_ABI_REVISION`
-ändert sich nur bei Breaking, ist runtime-checkbar via
+Major bump = breaking ABI. Minor = additive (new symbols only
+added). Patch = bug fixes without symbol change. `ZERODDS_ABI_REVISION`
+changes only on breaking changes, and can be checked at runtime via
 `zerodds_abi_revision()`.
 
-### §2.2 Symbol-Namensschema
+### §2.2 Symbol naming scheme
 
-- Alle exportierten Symbole `extern "C"` mit Prefix `zerodds_`.
-- Snake-Case.
-- Keine C++-Mangling, keine Rust-Mangling (`#[no_mangle]`).
-- Visibility: nur deklarierte Symbole exposed (`-fvisibility=hidden`
-  + cargo-config `rustflags = ["-C", "link-args=-Wl,--version-script=zerodds.ver"]`).
+- All exported symbols `extern "C"` with prefix `zerodds_`.
+- Snake case.
+- No C++ mangling, no Rust mangling (`#[no_mangle]`).
+- Visibility: only declared symbols exposed (`-fvisibility=hidden`
+  + cargo config `rustflags = ["-C", "link-args=-Wl,--version-script=zerodds.ver"]`).
 
-### §2.3 Header-Auszug (`zerodds.h`)
+### §2.3 Header excerpt (`zerodds.h`)
 
 ```c
 #ifndef ZERODDS_H
@@ -172,24 +172,24 @@ const char*      zerodds_strerror(zerodds_result_t code);
 #endif
 ```
 
-Der vollständige Header lebt in
+The complete header lives in
 `crates/zerodds-c-api/include/zerodds.h`.
 
-### §2.4 Lifetime-Regeln
+### §2.4 Lifetime rules
 
-- `zerodds_runtime` muss länger leben als alle daraus abgeleiteten Topics/Writer/Reader.
-- `zerodds_topic` muss länger leben als alle daraus abgeleiteten Writer/Reader.
-- `zerodds_qos` darf nach dem Übergeben an `*_create` freigegeben werden — ZeroDDS kopiert intern.
-- `zerodds_bytes_t.data` aus `zerodds_reader_take` ist nur gültig bis zum nächsten `_take`-Call (Caller muss kopieren wenn länger).
-- Alle `*_destroy`-Funktionen sind idempotent + null-safe.
+- `zerodds_runtime` must live longer than all topics/writers/readers derived from it.
+- `zerodds_topic` must live longer than all writers/readers derived from it.
+- `zerodds_qos` may be freed after being passed to `*_create` — ZeroDDS copies internally.
+- `zerodds_bytes_t.data` from `zerodds_reader_take` is only valid until the next `_take` call (the caller must copy if it needs it longer).
+- All `*_destroy` functions are idempotent + null-safe.
 
-### §2.5 Thread-Safety
+### §2.5 Thread safety
 
-Alle ABI-Funktionen sind thread-safe (interne Lock-Strategie). `Send`+
-`Sync` der Rust-Implementations ist garantiert. Callbacks (Listener-
-API in §2.6) laufen auf dedizierten Listener-Threads.
+All ABI functions are thread-safe (internal lock strategy). `Send`+
+`Sync` of the Rust implementations is guaranteed. Callbacks (listener
+API in §2.6) run on dedicated listener threads.
 
-### §2.6 Callback-API (additive)
+### §2.6 Callback API (additive)
 
 ```c
 typedef void (*zerodds_data_available_cb)(zerodds_reader *r, void *user_data);
@@ -200,7 +200,7 @@ zerodds_result_t zerodds_reader_set_listener(
     void *user_data);
 ```
 
-## §3 Per-Sprach-Loader-Patterns
+## §3 Per-language loader patterns
 
 ### §3.1 Python (ctypes)
 
@@ -250,7 +250,7 @@ class Runtime:
 
 class Writer:
     def __init__(self, rt: Runtime, topic, qos):
-        # ... analog ...
+        # ... analogous ...
         pass
     def write(self, cdr: bytes) -> None:
         buf = (ctypes.c_uint8 * len(cdr)).from_buffer_copy(cdr)
@@ -339,8 +339,8 @@ namespace ZeroDDS
 }
 ```
 
-`zerodds.dll`/`libzerodds.dylib`/`libzerodds.so` per `runtimes/<rid>/native/`-
-Konvention im NuGet-Package.
+`zerodds.dll`/`libzerodds.dylib`/`libzerodds.so` via the `runtimes/<rid>/native/`
+convention in the NuGet package.
 
 ### §3.4 C++
 
@@ -372,7 +372,7 @@ private:
 } // namespace zerodds
 ```
 
-Linker-Flag: `-lzerodds`. Header-Pfad in `crates/cpp/include/`.
+Linker flag: `-lzerodds`. Header path in `crates/cpp/include/`.
 
 ### §3.5 TypeScript/JavaScript (Node N-API + WASM)
 
@@ -394,7 +394,7 @@ export class Runtime {
 }
 ```
 
-**Browser** (WASM via `crates/ts-wasm/` mit `wasm-bindgen`):
+**Browser** (WASM via `crates/ts-wasm/` with `wasm-bindgen`):
 ```typescript
 // crates/ts-wasm/pkg/zerodds.d.ts (auto-generated)
 import init, { Runtime, Writer, Reader } from "@zerodds/wasm";
@@ -403,8 +403,8 @@ await init();   // load wasm
 const rt = new Runtime(0);
 ```
 
-WASM-Build kopiert kein UDP-Socket — nutzt `crates/websocket-bridge/`-
-Daemon als Bridge (siehe `zerodds-ws-bridge-1.0`).
+The WASM build copies no UDP socket — it uses the `crates/websocket-bridge/`
+daemon as a bridge (see `zerodds-ws-bridge-1.0`).
 
 ### §3.6 Flutter (dart:ffi)
 
@@ -444,15 +444,15 @@ class Runtime {
 }
 ```
 
-## §4 Per-Sprach-Convention für Pub/Sub-Sample (Live-DDS-Loop)
+## §4 Per-language convention for the pub/sub sample (live DDS loop)
 
-Pro Sprache ist ein Konvergenz-Pattern definiert:
+A convergence pattern is defined per language:
 
-### §4.1 Sample-Lifecycle
+### §4.1 Sample lifecycle
 
 ```
 1. Open Runtime (domain_id)
-2. Create QoS-Builder (oder default)
+2. Create QoS-Builder (or default)
 3. Create Topic(name, type_name, qos)
 4. Create Writer(topic, qos)
 5. Loop:
@@ -461,107 +461,108 @@ Pro Sprache ist ein Konvergenz-Pattern definiert:
 6. Close Writer, Topic, Runtime
 ```
 
-Subscribe-Side analog mit `Reader.take()` oder Listener-Callback.
+Subscribe side analogous with `Reader.take()` or a listener callback.
 
-### §4.2 CDR-Encoding pro Sprache
+### §4.2 CDR encoding per language
 
-Cross-Reference zu den Per-Sprach-Bindings:
-| Sprache | CDR-Codec |
+Cross-reference to the per-language bindings:
+| Language | CDR codec |
 |---------|-----------|
-| Python | `crates/py/zerodds/cdr.py` (pure Python ctypes-friendly) |
-| Java | `crates/java/com/zerodds/cdr/` (per `crates/java-omgdds/`) |
-| C# | `ZeroDDS.Cdr` Namespace |
-| C++ | `<zerodds/cdr.hpp>` (per `crates/xcdr2-cpp/`) |
-| TS/Node | `@zerodds/cdr` (npm) |
-| WASM | gleicher Code wie Node |
-| Flutter | `crates/xcdr2-ts/` Generator-Output kompiliert auf Dart |
+| Python | `runtime/python` (`zerodds_wire`) + code from `zerodds-idlc generate --lang python` |
+| Java | `runtime/java` (`org.zerodds.wire`) + code from `--lang java` |
+| C# | `runtime/csharp` (`ZeroDds.Wire`) + code from `--lang c#` |
+| C++ | `runtime/cpp` (`<zerodds/wire.hpp>`) + code from `zerodds-idlc generate --lang c++` |
+| C | `runtime/c` (`zerodds_wire.h`) + code from `zerodds-idlc generate --lang c`; in addition `<stem>_typesupport.h` with one `zerodds_typesupport_t` per topic type for the typed dispatch from `crates/zerodds-c-api/include/zerodds_xcdr2.h`, without a codec of its own — its encoders and decoders call `zerodds_wire.h` |
+| TS/Node | `runtime/typescript` (`@zerodds/wire`) + code from `--lang typescript` |
+| WASM | the wasm-bindgen codec in `crates/ts-wasm/src/lib.rs`, itself via `zerodds-wire` (`crates/wire`) — no codec of its own (the former `crates/ts-wasm/src/cdr/` duplicated it and has been removed) |
+| Flutter | `crates/xcdr2-ts/` generator output compiled to Dart |
 
-Wire-Format ist gemäß `zerodds-xcdr2-bindings-conformance-1.0`.
+The wire format is according to `zerodds-xcdr2-bindings-conformance-1.0`.
 
-## §5 Cross-Lang-Live-Test
+## §5 Cross-language live test
 
-`tests/cross_lang_live/` enthält ein Test-Skript pro Sprache:
+`tests/cross_lang_live/` contains one test script per language:
 
 ```
 tests/cross_lang_live/
-├── conftest.py                # spawnt Rust-Pub als Subprocess
-├── test_python_sub.py         # Python-Reader gegen Rust-Pub
-├── test_java_sub.sh           # Java-Loader gegen Rust-Pub
-├── test_csharp_sub.sh         # C#-Loader gegen Rust-Pub
-├── test_cpp_sub.sh            # C++-Loader gegen Rust-Pub
-├── test_node_sub.sh           # Node-N-API gegen Rust-Pub
-├── test_wasm_sub.sh           # WASM-Build via Headless-Chrome + WS-Bridge
-├── test_flutter_sub.sh        # Flutter-Test-App
-└── shared_topic.idl           # gemeinsame IDL für alle Tests
+├── conftest.py                # spawns the Rust pub as a subprocess
+├── test_python_sub.py         # Python reader against the Rust pub
+├── test_java_sub.sh           # Java loader against the Rust pub
+├── test_csharp_sub.sh         # C# loader against the Rust pub
+├── test_cpp_sub.sh            # C++ loader against the Rust pub
+├── test_node_sub.sh           # Node N-API against the Rust pub
+├── test_wasm_sub.sh           # WASM build via headless Chrome + WS bridge
+├── test_flutter_sub.sh        # Flutter test app
+└── shared_topic.idl           # shared IDL for all tests
 ```
 
-Pro Test:
-1. Spawn Rust-Pub (`cargo run -p zerodds-c-api --example test_pub`).
-2. Spawn Lang-X-Sub.
-3. Verify N empfangene Samples mit byte-genauer CDR-Übereinstimmung.
-4. Cleanup beide.
+Per test:
+1. Spawn the Rust pub (`cargo run -p zerodds-c-api --example test_pub`).
+2. Spawn the language X sub.
+3. Verify N received samples with byte-exact CDR agreement.
+4. Clean up both.
 
-CI: GitLab-Pipeline-Job `cross-lang-matrix` läuft auf jedem Push.
+CI: GitLab pipeline job `cross-lang-matrix` runs on every push.
 
 ## §6 Packaging
 
-Per `zerodds-deployment-1.0` Spec:
-- **Library**: `libzerodds.{so,dylib,dll}` shipped als Cargo-Cdylib-Build.
-- **Header**: `zerodds.h` in System-Pfaden:
+According to the `zerodds-deployment-1.0` spec:
+- **Library**: `libzerodds.{so,dylib,dll}` shipped as a Cargo cdylib build.
+- **Header**: `zerodds.h` in system paths:
   - Linux: `/usr/include/zerodds.h` + `/usr/lib/libzerodds.so` (+ pkg-config: `/usr/lib/pkgconfig/zerodds.pc`)
   - Mac: `/usr/local/include/zerodds.h` + `/usr/local/lib/libzerodds.dylib`
   - Win: `%PROGRAMFILES%\ZeroDDS\include\zerodds.h` + `%PROGRAMFILES%\ZeroDDS\bin\zerodds.dll` + `lib\zerodds.lib`
-- **Per-Sprach-Packages**:
-  - Python: PyPI `zerodds` Wheel mit eingepackter Library (`_lib/`)
-  - Java: Maven Central `eu.ifyna:zerodds-java-omgdds:1.0.0` (Pure-Java JAR, kein Native-Resource)
-  - C#: NuGet `ZeroDDS` mit `runtimes/<rid>/native/` Layout
-  - Node: npm `@zerodds/sdk` (mit pre-built N-API-Bindings via `prebuildify`)
+- **Per-language packages**:
+  - Python: PyPI `zerodds` wheel with the library packed in (`_lib/`)
+  - Java: Maven Central `eu.ifyna:zerodds-java-omgdds:1.0.0` (pure Java JAR, no native resource)
+  - C#: NuGet `ZeroDDS` with `runtimes/<rid>/native/` layout
+  - Node: npm `@zerodds/sdk` (with pre-built N-API bindings via `prebuildify`)
   - WASM: npm `@zerodds/wasm`
-  - Flutter: `pub.dev` `zerodds`-Package mit native-bin-pre-builds
+  - Flutter: `pub.dev` `zerodds` package with native binary pre-builds
 
-## §7 Versioning + ABI-Compat-Promise
+## §7 Versioning + ABI compat promise
 
-- Patch-Version (`1.0.x`): keine ABI-Änderungen, nur Bugfixes.
-- Minor-Version (`1.x.0`): nur additive Symbole, alte funktionieren weiter.
-- Major-Version (`x.0.0`): Breaking-ABI; `ZERODDS_ABI_REVISION` bumped.
+- Patch version (`1.0.x`): no ABI changes, only bug fixes.
+- Minor version (`1.x.0`): only additive symbols, old ones keep working.
+- Major version (`x.0.0`): breaking ABI; `ZERODDS_ABI_REVISION` bumped.
 
-Loader sollten `zerodds_abi_revision()` zur Runtime gegen erwartete
-Revision prüfen und bei Mismatch fail-fast.
+Loaders should check `zerodds_abi_revision()` at runtime against the expected
+revision and fail fast on a mismatch.
 
 ## §8 Testing
 
-### §8.1 Unit-Tests
+### §8.1 Unit tests
 
-Pro Symbol-Familie ≥ 5 Tests in `crates/zerodds-c-api/tests/`:
+Per symbol family ≥ 5 tests in `crates/zerodds-c-api/tests/`:
 - runtime_create/destroy
 - qos_builder
 - topic_lifecycle
 - writer_write
 - reader_take
-- error-Paths
+- error paths
 - thread-safety
 
-### §8.2 ABI-Compat-Test
+### §8.2 ABI compat test
 
-`crates/zerodds-c-api/tests/abi_compat.rs`: vergleicht aktuelle
-Symbol-Liste gegen `abi.snapshot.json` und failt bei unbeabsichtigten
-Änderungen (Symbol entfernt / Signatur geändert).
+`crates/zerodds-c-api/tests/abi_compat.rs`: compares the current
+symbol list against `abi.snapshot.json` and fails on unintended
+changes (symbol removed / signature changed).
 
-### §8.3 Per-Sprach-Loader-Tests
+### §8.3 Per-language loader tests
 
-Pro Sprach-Crate (`crates/py/`, `crates/cpp/`, `crates/cs/`, etc.):
-≥ 5 Loader-Tests + Cross-Lang-Live-Test in `tests/cross_lang_live/`.
+Per language crate (`crates/py/`, `crates/cpp/`, `crates/cs/`, etc.):
+≥ 5 loader tests + cross-language live test in `tests/cross_lang_live/`.
 
-## §9 Cross-References
+## §9 Cross-references
 
 - Library: `crates/zerodds-c-api/`
-- Per-Sprach-Bindings: `crates/{py,cpp,cs,java,java-omgdds,ts-node,ts-wasm}/`
-- Pure-Java-Implementation: `crates/java-omgdds/java/`
-- Wire-Format: `zerodds-xcdr2-bindings-conformance-1.0`.
+- Per-language bindings: `crates/{py,cpp,cs,java,java-omgdds,ts-node,ts-wasm}/`
+- Pure Java implementation: `crates/java-omgdds/java/`
+- Wire format: `zerodds-xcdr2-bindings-conformance-1.0`.
 - Packaging: `zerodds-deployment-1.0`.
-- DCPS-Spec: `zerodds-listener-callbacks-1.1` für Listener-Threads.
+- DCPS spec: `zerodds-listener-callbacks-1.1` for listener threads.
 
 ## §10 Versioning
 
-`1.0` initial. Patch für Bugfixes ohne ABI-Change, Minor für additive
-Symbole + neue Per-Sprach-Loader, Major für Breaking-ABI.
+`1.0` initial. Patch for bug fixes without ABI change, minor for additive
+symbols + new per-language loaders, major for breaking ABI.

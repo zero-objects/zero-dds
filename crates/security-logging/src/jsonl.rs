@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! JSON-Lines-File-Backend (Audit-tauglich).
+//! JSON Lines file backend (audit-capable).
+//!
+//! zerodds-lint: allow no_dyn_in_safe
+//! (The listener of `set_listener` (DDS-Security 1.2 §9.6.2.2.4) is a `dyn LoggerListener`.)
 
 use alloc::string::String;
 use std::fs::{File, OpenOptions};
@@ -9,7 +12,11 @@ use std::io::{BufWriter, Write};
 use std::path::Path;
 use std::sync::Mutex;
 
-use zerodds_security::logging::{LogLevel, LoggingPlugin};
+use alloc::sync::Arc;
+use zerodds_security::error::SecurityError;
+use zerodds_security::logging::{LogLevel, LogOptions, LoggerListener, LoggingPlugin};
+
+use crate::control::LogControl;
 
 /// Writes security events as JSON lines to a file.
 ///
@@ -22,7 +29,7 @@ use zerodds_security::logging::{LogLevel, LoggingPlugin};
 /// file. This plugin itself performs **no** log rotation —
 /// that is the job of `logrotate(8)` or systemd-journald.
 pub struct JsonLinesLoggingPlugin {
-    min_level: LogLevel,
+    control: LogControl,
     writer: Mutex<BufWriter<File>>,
 }
 
@@ -35,7 +42,7 @@ impl JsonLinesLoggingPlugin {
     pub fn open<P: AsRef<Path>>(path: P, min_level: LogLevel) -> std::io::Result<Self> {
         let file = OpenOptions::new().create(true).append(true).open(path)?;
         Ok(Self {
-            min_level,
+            control: LogControl::enabled_at(min_level, false),
             writer: Mutex::new(BufWriter::new(file)),
         })
     }
@@ -51,6 +58,7 @@ fn level_name(l: LogLevel) -> &'static str {
         LogLevel::Notice => "NOTICE",
         LogLevel::Informational => "INFORMATIONAL",
         LogLevel::Debug => "DEBUG",
+        _ => "TRACE",
     }
 }
 
@@ -84,8 +92,16 @@ fn hex16(bytes: [u8; 16]) -> String {
 }
 
 impl LoggingPlugin for JsonLinesLoggingPlugin {
+    // The sink writes its JSON file only; it has no DataWriter to
+    // distribute.
+    sink_control_operations!();
+
     fn log(&self, level: LogLevel, participant: [u8; 16], category: &str, message: &str) {
-        if level > self.min_level {
+        if self
+            .control
+            .admit(level, participant, category, message)
+            .is_none()
+        {
             return;
         }
         let line = alloc::format!(

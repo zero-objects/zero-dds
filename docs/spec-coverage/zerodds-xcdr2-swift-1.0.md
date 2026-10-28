@@ -1,267 +1,262 @@
 # `zerodds-xcdr2-swift` 1.0 — Spec-Coverage
 
-**Quelle:** `docs/specs/zerodds-xcdr2-swift-1.0.md` — ZeroDDS Swift XCDR2 TypeSupport-Codegen-Spec.
+**Quelle:** `internal/standards/cache/omg/dds-xtypes-1.3.pdf` (§7.2, §7.4) und `internal/standards/cache/omg/idl-4.2.pdf` (§7) — was die Swift-Spalte beantwortet.
 
-Implementation:
+Der Mechanismus, den diese Spalte mit den zwanzig anderen teilt — die beiden Walks, die Rahmung, Table 9, der KeyHash und der Treiber —, steht in `zerodds-xcdr2-bindings-conformance-1.0.md`. Dieses Dokument führt nur, was die Swift-Spalte selbst entscheidet, und ihre eigenen Nachweise.
 
-- `crates/idl-swift/` — IDL → Swift Codegen (`marshalXCDR`, self-contained Writer).
-- `endpoints/swift/` — pure-Swift XCDR2 Wire-Core (Writer/Reader) + sync/async SDK.
+## §7.5.1 Die Teile der Spalte
 
-## §1 Motivation
+### §7.5.1 Der konkrete Syntaxbaum und seine Textform
 
-### §1 Kein OMG-IDL-to-Swift-Wire-Mapping
+**Spec:** §7.5.1 — Plain Language Binding — die Abbildung auf die Zielsprache ist PSM-eigen. Die Deklarationen dieser Spalte werden als Baum gebaut und erst danach als Text geschrieben; kein Emitter setzt Quelltext zusammen.
 
-**Spec:** §1 — ZeroDDS definiert das Swift-XCDR2-Wire-Mapping.
+**Repo:** `crates/lang-cst/src/swift/`, `crates/lang-render/src/swift.rs`
 
-**Repo:** Motivations-Text der Vendor-Spec.
-
-**Tests:** —
-
-**Status:** n/a (informative)
-
-## §2 Marshal-Pattern
-
-### §2 struct + `marshalXCDR(_ endian) -> [UInt8]`
-
-**Spec:** §2 — pro IDL-`@final struct` ein Swift-`struct` + `marshalXCDR`-Methode.
-
-**Repo:** `crates/idl-swift/src/emitter.rs::emit_struct`.
-
-**Tests:** `crates/idl-swift/tests/golden.rs::final_struct_emits_struct_and_marshal`
+**Tests:** `crates/lang-render/src/swift.rs::tests` (14 Tests), darunter `a_struct_writes_its_properties_and_its_public_initialiser`, `an_empty_initialiser_stays_on_one_line`, `a_parameter_with_a_second_name_writes_both`, `a_class_is_written_final`, `an_option_set_writes_its_conformance_and_its_flags`;
+querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_output_with_exactly_one_newline`, `crates/lang-render/tests/rendering.rs::no_rendered_line_carries_trailing_whitespace`.
 
 **Status:** done
 
-## §3 Required API-Surface
+### §7.5.1 Der Regelkatalog
 
-### §3 Writer/Reader-Primitiven + generierte marshalXCDR
+**Spec:** §7.5.1 — Plain Language Binding — die Abbildung auf die Zielsprache ist PSM-eigen. Was aus welchem Modellknoten wird, steht als Regelmenge und nicht als Sonderfall im Walk.
 
-**Spec:** §3 — Writer (putU8..putSeqU8, bytes), Reader (getU8/getU16/getU32/getU64/getF32/getString/getSeqU8), generierte `marshalXCDR`.
+**Repo:** `crates/lang-rules/src/rule/swift.rs`
 
-**Repo:** `endpoints/swift/Sources/Zerodds/Zerodds.swift` (Writer, Reader inkl. getU8/getU16/getU64/getF32/getString/getSeqU8 — byte-exakter Inverse, f32 via `Float(bitPattern:)`, u64 via `UInt64`); `crates/idl-swift/src/emitter.rs` (marshalXCDR).
-
-**Tests:** `endpoints/swift/Tests/ZeroddsTests` (byte identity + sync + async), `endpoints/swift/Sources/ZeroddsExampleSync|Async` (voller Feld-Decode), `crates/idl-swift/tests/golden.rs`.
-
-**Status:** done
-
-### §3.a Generiertes `unmarshalXCDR` (decode-codegen)
-
-**Spec:** §3/§11 — bidirektionales Binding: generiertes `unmarshalXCDR` als exaktes Inverses von `marshalXCDR`.
-
-**Repo:** `map_get` (Invers von `map_type`) + `Reader`-Wire-Core im Prelude + statische `unmarshalFrom`/`unmarshalXCDR` je struct+union (`crates/idl-swift/src/emitter.rs`).
-
-**Tests:** `crates/idl-swift/tests/golden.rs` — 8 `decode_roundtrip_*` (final/nested/array/union/map/mutable/wide/longdouble), `marshal(unmarshal(golden)) == golden` LE+BE (lokal swiftc).
+**Tests:** `crates/lang-rules/tests/apply.rs::every_language_catalogue_fires_on_the_same_model`,
+`crates/lang-rules/tests/apply.rs::every_catalogue_serialises_and_reads_back_the_same`
 
 **Status:** done
 
-**Decision-Record:** Decode-codegen deckt jeden Feldtyp ab (prim/string/seq/enum/typedef/nested/array/union/map/@mutable/wchar/wstring/long double). Union-Decode zero-füllt den Holder und liest nur den selektierten Member; @final=inline, @appendable=DHEADER-skip, @mutable=DHEADER + je Member EMHEADER+NEXTINT skip.
+### §7.5.1 Der Materialisierer
 
-## §4 Codegen-Pflicht (`idl-swift`)
+**Spec:** §7.5.1 — Plain Language Binding — die Abbildung auf die Zielsprache ist PSM-eigen. Der Materialisierer trägt die Eigenheiten der Sprache: Namens- und Schlüsselwortbehandlung, Kollisionen und das, was die Sprache gar nicht ausdrücken kann.
 
-### §4 struct + marshalXCDR + eingebetteter Writer
+**Repo:** `crates/lang-rules/src/adapter/swift.rs`
 
-**Spec:** §4 — pro struct: Swift-struct, `marshalXCDR`, self-contained Writer.
-
-**Repo:** `crates/idl-swift/src/emitter.rs`; `tools/idlc` `Backend::Swift`, `--swift`.
-
-**Tests:** `crates/idl-swift/tests/golden.rs`.
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_every_wired_language`
 
 **Status:** done
 
-## §5 Wire-Type-Mapping
+### §7.5.1 Das Codec-Backend
 
-### §5 IDL → Swift → XCDR2 (Alignment cap 4)
+**Spec:** §7.5.1 — Plain Language Binding — die Abbildung auf die Zielsprache ist PSM-eigen. Das Backend liefert die Schreibweise, in der die geteilte Kodierungsentscheidung in dieser Sprache steht — Empfänger, Methodenname, Argumentform.
 
-**Spec:** §5 — bool/octet/char/short..long long/float/double/string/sequence<octet> mit exaktem Wire-Layout; f32 via `.bitPattern`.
+**Repo:** `crates/lang-rules/src/emit/swift.rs`
 
-**Repo:** `crates/idl-swift/src/emitter.rs::map_type/map_primitive`; `endpoints/swift/Sources/Zerodds/Zerodds.swift` (put*/getLE align cap 4).
-
-**Tests:** `crates/idl-swift/tests/golden.rs::byte_identity_vs_rust_goldens` (@final LE+BE).
-
-**Status:** done
-
-### §5.a enum
-
-**Spec:** §5 — IDL `enum` (32-bit signed integer auf der Wire, XTypes 1.3 §7.4.5.1).
-
-**Repo:** `crates/idl-swift/src/emitter.rs::emit_enum` + `map_type` (Scoped→enum→`putU32(UInt32(bitPattern: ....rawValue))`).
-
-**Tests:** `crates/idl-swift/tests/golden.rs::enum_emits_int32_enum_and_member_marshals` + `enum_member_is_byte_identical_i32` (`swiftc (lokal macOS; nicht codepit-CI)`, LE `02000000efbeadde`).
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_a_full_codec_in_every_wired_language`,
+`crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`
 
 **Status:** done
 
-### §5.b nested struct member + sequence<struct>
+### §7.5.1 Der Table-9-Defaulter
 
-**Spec:** §5 — nested struct-Member + `sequence<struct>` (Collection-DHEADER, XTypes 1.3 §7.4.3.5.3).
+**Spec:** §7.5.1 — Plain Language Binding — die Abbildung auf die Zielsprache ist PSM-eigen. Ein Leser ohne Tab.9-Antwort hat an fünf Stellen keinen definierten Wert; diese Datei ist die Antwort dieser Spalte.
 
-**Repo:** `crates/idl-swift/src/emitter.rs`: `marshalInto(_ w: inout Writer)` je struct + `map_type` Scoped-struct + `map_sequence` struct-Element (`do`-Block: Collection-DHEADER + count + per-element marshalInto).
+**Repo:** `crates/lang-rules/src/default_swift.rs`
 
-**Tests:** `crates/idl-swift/tests/golden.rs::nested_struct_emits_marshal_into` + `nested_is_byte_identical_vs_rust_golden` (`swiftc` lokal macOS; codepit-CI ohne swiftc, byte-identisch gegen `golden_nested_le/be.bin`).
-
-**Status:** done
-
-### §5.c typedef
-
-**Spec:** §5 — `typedef` (wire-transparenter Alias; ein Member seines Alias-Typs marshallt byte-identisch zum Grundtyp).
-
-**Repo:** `crates/idl-swift/src/emitter.rs::collect_typedefs`/`resolve_typedef` — Alias-Kette (inkl. `sequence`-Elemente) wird vor `map_type` zum Grundtyp aufgelöst.
-
-**Tests:** `crates/idl-swift/tests/golden.rs::typedef_resolves_to_underlying_type` + `typedef_is_byte_identical_vs_rust_golden` (byte-identisch gegen `golden_typedef_le/be.bin`).
+**Tests:** `crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`
 
 **Status:** done
 
-### §5.d array
+### §7.5.1 Die Wire-Laufzeit
 
-**Spec:** §5 — feste Arrays (XCDR2 §7.4.3.5.3: Elemente inline, row-major, multi-dim; kein Längen-Präfix bei primitiven Elementen).
+**Spec:** §7.5.1 — Plain Language Binding — die Abbildung auf die Zielsprache ist PSM-eigen. Die Laufzeit liest §7.4 eigenständig aus dem Klauseltext und ruft keine andere Spalte; dort liegt die Unabhängigkeit dieser Spalte.
 
-**Repo:** `crates/idl-swift/src/emitter.rs`: `Declarator::Array`-Zweig — `array_size` wertet den Bound aus, `build_array_put` verschachtelt den Element-Put in row-major-Loops; Feldtyp wird das sprachnative Array.
+**Repo:** `runtime/swift`, Endpoint-SDK `endpoints/swift`
 
-**Tests:** `crates/idl-swift/tests/golden.rs::array_*` (byte-identisch gegen `golden_array_le/be.bin`: `long xs[3]` + `short m[2][2]` + `octet bs[4]`).
-
-**Status:** done
-
-### §5.e union
-
-**Spec:** §5 — `union switch(...)` (XCDR2 §7.4.3.5.4: Diskriminator inline, dann das selektierte Member; kein DHEADER bei @final).
-
-**Repo:** `crates/idl-swift/src/emitter.rs::emit_union` — Holder mit Diskriminator + einem Feld je Case-Member; `marshalInto` putet den Diskriminator, dann dispatcht ein `switch`/`case`/`match` auf das selektierte Member. Integer-Family-Diskriminator + Integer-Labels.
-
-**Tests:** `crates/idl-swift/tests/golden.rs::union_*` (byte-identisch gegen `golden_union_le/be.bin`: disc=2 selektiert `unsigned short b` — prüft Nicht-First-Case-Dispatch).
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_runtime`,
+`crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_an_endpoint_sdk`
 
 **Status:** done
 
-### §5.f map
+## §7.2.2 Was diese Spalte selbst entscheidet
 
-**Spec:** §5 — `map<K, V>` (XCDR2 §7.4.3.5: Einträge aufsteigend nach Key sortiert, `u32 count` + Key/Value-Paare; kein DHEADER bei primitivem Key/Value-Paar, sonst DHEADER-gerahmt).
+### §7.2.2.2 Jedes IDL-Primitiv erreicht einen Swift-Typ, keiner mit implementierungsabhängiger Breite
 
-**Repo:** `crates/idl-swift/src/emitter.rs` — Map-Member im nativen assoziativen Idiom + Key-Sortierung vor dem Marshalling; primitiv-Paar-Regel für den Collection-DHEADER.
+**Spec:** §7.2.2.2 — Primitive Types — BOOLEAN, BYTE, INT8..UINT64, FLOAT32, FLOAT64, FLOAT128, CHAR8, CHAR16; jede Breite ist festgelegt.
 
-**Tests:** `crates/idl-swift/tests/golden.rs::map_*` (byte-identisch gegen `golden_map_le/be.bin`: `map<long, unsigned long>` {1,2}).
+**Repo:** `crates/lang-rules/src/adapter/swift.rs`
 
-**Status:** done
-
-### §5.g wchar / wstring
-
-**Spec:** §5 — `wchar` (wchar32, UTF-32 code point) + `wstring` (u32 Oktett-Länge + UTF-16 code units, no BOM).
-
-**Repo:** `crates/idl-swift/src/emitter.rs` — `putWString`/`put_wstring` (manuelles UTF-16 mit Surrogatpaaren) + `wchar`→`putU32`. Wire-Core im Prelude.
-
-**Tests:** `crates/idl-swift/tests/golden.rs::wide_is_byte_identical_vs_rust_golden` (byte-identisch gegen `golden_wide_le/be.bin`: c=U+03A9, s="wπ").
+**Tests:** `crates/lang-rules/tests/swift_end_to_end.rs::every_idl_primitive_reaches_a_swift_type`,
+`crates/lang-rules/tests/swift_end_to_end.rs::no_generated_type_has_an_implementation_defined_width`
 
 **Status:** done
 
-### §5.h long double
+### §7.2.2.2 `long double` wird ein String und nie ein `Float80` oder `Double`
 
-**Spec:** §5 — `long double` (IEEE binary128, 16 Byte).
+**Spec:** §7.2.2.2 — FLOAT128 ist ein IEEE-754-binary128-Wert von 16 Oktetten.
 
-**Repo:** `crates/idl-swift/src/emitter.rs` — `putLongDouble`/`put_long_double`: binary128 durch exaktes Widening des `float64`-Werts (Sign + 15-Bit-Exponent + 112-Bit-Mantisse), endian-korrekt.
+**Repo:** `crates/lang-rules/src/adapter/swift.rs`
 
-**Tests:** `crates/idl-swift/tests/golden.rs::longdouble_is_byte_identical_vs_rust_golden` (byte-identisch gegen `golden_longdouble_le/be.bin`: d=1.1).
-
-**Status:** done
-
-**Anmerkung (ehrlich):** Eingabepräzision = `float64` (bzw. natives Float der Sprache), exakt auf binary128 geweitet — deckt alle float64-darstellbaren Werte. Die Rust-Referenz (`idl-rust` + `zerodds-cdr`) bleibt für natives `f128` blockiert (kein stabiles Rust-f128, ~2027); die Golden werden aus den float64-Bits hartkodiert, ohne f128.
-
-
-## §6 Extensibility
-
-### §6 @final (compact) + @appendable (DHEADER)
-
-**Spec:** §6 — @final ohne DHEADER, @appendable mit uint32-Body-Length + Body.
-
-**Repo:** `crates/idl-swift/src/emitter.rs::emit_struct` (Final/Appendable).
-
-**Tests:** `crates/idl-swift/tests/golden.rs::final_struct_emits_struct_and_marshal` + `appendable_struct_frames_a_dheader`.
+**Tests:** `crates/lang-rules/tests/swift_end_to_end.rs::a_long_double_is_a_string_and_never_a_float80_or_a_double`
 
 **Status:** done
 
-### §6.a @mutable (EMHEADER)
+### §7.5.1 Ein Struct trägt einen ausgeschriebenen öffentlichen Memberwise-Initialisierer, auch ohne Member
 
-**Spec:** §6 — @mutable-EMHEADER-Framing.
+**Spec:** §7.5.1 — Plain Language Binding — die Abbildung auf die Zielsprache ist PSM-eigen.
 
-**Repo:** `crates/idl-swift/src/emitter.rs` — @mutable-`marshalInto`: DHEADER-gerahmte Member-Liste, je Member EMHEADER (LC4 = `0x40000000 | member-id`) + NEXTINT (Body-Länge) + Body (in Sub-Writer serialisiert). Member-ids aus `@id(n)` oder sequenziell.
+**Repo:** `crates/lang-rules/src/adapter/swift.rs`
 
-**Tests:** `crates/idl-swift/tests/golden.rs::mutable_*` (byte-identisch gegen `golden_mutable_le/be.bin`).
-
-**Status:** done
-## §7 Key-Extraction
-
-### §7 Non-keyed 16-Zero-Byte-Key
-
-**Spec:** §7 — non-keyed → 16 Nullbytes; keyed → MD5 (XCDR2-BE), Runtime.
-
-**Repo:** `endpoints/swift/Sources/Zerodds/Zerodds.swift` (Writer im `.big`-Mode liefert die BE-Serialisierung).
-
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/swift_end_to_end.rs::a_struct_carries_a_written_public_memberwise_initialiser`,
+`crates/lang-rules/tests/swift_end_to_end.rs::a_struct_with_no_members_still_gets_an_initialiser`
 
 **Status:** done
 
-### §7.a Per-struct generierte `keyHash` aus `@key`
+### §7.2.2.4.9 Ein `@external`-Member wird in eine Klasse geboxt, weil ein Struct nicht rekursieren kann
 
-**Spec:** §7 / XTypes §7.6.8 — Codegen einer `keyHash`-Methode aus `@key`-Membern.
+**Spec:** §7.2.2.4.9 — `@external` — das Member wird über eine Referenz gehalten; Selbstbezug ist erlaubt.
 
-**Repo:** `crates/idl-swift/src/emitter.rs` — Structs mit `@key`-Membern erhalten eine `keyHash`/`Key_Hash`-Methode: die `@key`-Member PLAIN_CDR2-BE serialisiert (member-id-Reihenfolge), ≤16-Byte-Key-Holder auf 16 Byte zero-gepaddet, größere (oder dynamisch dimensionierte) via MD5(bytes)[0..16]. Die statische max-Key-Size-Analyse ist im geteilten `zerodds_idl::keyhash`.
+**Repo:** `crates/lang-rules/src/adapter/swift.rs`
 
-**Tests:** `crates/idl-swift/tests/golden.rs::keyhash_is_byte_identical_vs_rust_golden` (byte-identisch gegen `golden_keyhash.bin` via `zerodds_cdr::compute_key_hash`).
-
-**Status:** done
-
-**Anmerkung:** Beide Zweige implementiert (XTypes §7.6.8.4 step 5): statische max-Key-Size-Analyse (`zerodds_idl::keyhash`) entscheidet ≤16 Byte → zero-pad, sonst MD5(bytes)[0..16]. Byte-verifiziert gegen `golden_keyhash_md5.bin` (5×@key long = 20 Byte).
-
-
-## §8 Wire-Core
-
-### §8 `endpoints/swift` als Referenz-Writer/Reader
-
-**Spec:** §8 — Referenz-Wire-Core, byte-identisch zu `zerodds-cdr`.
-
-**Repo:** `endpoints/swift/Sources/Zerodds/Zerodds.swift`.
-
-**Tests:** `endpoints/swift/Tests/ZeroddsTests`, CI-Job `endpoints-swift`.
+**Tests:** `crates/lang-rules/tests/swift_end_to_end.rs::an_external_member_is_boxed_in_a_class_because_a_struct_cannot_recurse`,
+`crates/lang-rules/tests/swift_end_to_end.rs::the_external_box_is_absent_when_nothing_reaches_it`,
+`crates/lang-rules/tests/swift_codec.rs::an_external_member_reads_through_the_box_and_writes_its_value`
 
 **Status:** done
 
-## §9 Conformance
+### §7.2.2.4.3 Eine `map` wird ein Array von Einträgen und nie ein `Dictionary`
 
-### §9 Golden-Byte-Identität @final LE+BE
+**Spec:** §7.2.2.4.3 — Map — Key/Value-Paare; §7.4.3.5.3 Regeln 11-16 legen Reihenfolge und Rahmung fest.
 
-**Spec:** §9 — Encoding == golden_le.bin / golden_be.bin byte-für-byte.
+**Repo:** `crates/lang-rules/src/adapter/swift.rs`
 
-**Repo:** `crates/idl-swift`, `endpoints/swift`.
-
-**Tests:** `crates/idl-swift/tests/golden.rs::byte_identity_vs_rust_goldens` (lokal macOS; CI `idl-swift` = Gen-Smoke); `endpoints/swift` `swift test` gegen committete `testdata/golden_*.bin` (CI `endpoints-swift`, swift:6.0-Image).
-
-**Status:** done
-
-## §10 Examples
-
-### §10 sync + async Deep-Examples + Quickstart
-
-**Spec:** §10 — lauffähige sync/async-Beispiele.
-
-**Repo:** `endpoints/swift/Sources/ZeroddsExampleSync/main.swift`, `endpoints/swift/Sources/ZeroddsExampleAsync/main.swift`, `endpoints/swift/QUICKSTART.md`.
-
-**Tests:** CI-Job `endpoints-swift` führt beide aus (`swift run ZeroddsExampleSync` + `ZeroddsExampleAsync`).
+**Tests:** `crates/lang-rules/tests/swift_end_to_end.rs::a_map_becomes_an_array_of_entries_and_never_a_dictionary`,
+`crates/lang-rules/tests/swift_end_to_end.rs::a_large_array_is_still_an_array_and_never_a_tuple`
 
 **Status:** done
 
-## §11 Errata + Open-Questions
+### §7.2.2.4.1.2 Eine Bitmask wird ein `OptionSet`
 
-### §11 Ehrliche Nicht-Ziele
+**Spec:** §7.2.2.4.1.2 — Bitmask — Schranke 1..64, benannte Bits.
 
-**Spec:** §11 — vormalige Nicht-Ziele sind gebaut: decode-codegen, keyHash-codegen, @mutable, wchar/wstring/map/array/nested/union/long double. Voll-IDL4 byte-verifiziert.
+**Repo:** `crates/lang-rules/src/adapter/swift.rs`
 
-**Repo:** siehe §3.a/§5.a/§6.a/§7.a (je `done` mit Decision-Record).
+**Tests:** `crates/lang-rules/tests/swift_end_to_end.rs::a_bitmask_becomes_an_option_set`,
+`crates/lang-rules/tests/swift_end_to_end.rs::a_bitset_becomes_a_struct_of_holder_typed_properties`
 
-**Tests:** —
+**Status:** done
 
-**Status:** n/a (informative)
+### IDL 4.2 §7.2.3 Ein Swift-Keyword nimmt Backquotes; `self` bekommt einen zweiten Parameternamen für den Rumpf
+
+**Spec:** IDL 4.2 §7.2.3 — Identifier sind ASCII und beim Vergleich case-insensitiv; eine Kollision muss gemeldet werden.
+
+**Repo:** `crates/lang-rules/src/adapter/swift.rs`
+
+**Tests:** `crates/lang-rules/tests/swift_end_to_end.rs::a_member_named_after_a_swift_keyword_takes_back_quotes_and_keeps_its_name`,
+`crates/lang-rules/tests/swift_end_to_end.rs::a_member_named_self_gets_a_second_parameter_name_for_the_body`,
+`crates/lang-rules/tests/swift_end_to_end.rs::the_escape_cannot_make_two_idl_names_collide`
+
+**Status:** done
+
+### IDL 4.2 §7.5.2 `module` flacht auf den Namen ab und behält die IDL-Schreibweise jedes Segments
+
+**Spec:** IDL 4.2 §7.5.2 — `module` ist ein Naming-Scope; ein Identifier ist je Scope einmalig.
+
+**Repo:** `crates/lang-rules/src/adapter/swift.rs`
+
+**Tests:** `crates/lang-rules/tests/swift_end_to_end.rs::a_module_flattens_onto_the_name_and_keeps_the_idl_spelling_of_each_segment`,
+`crates/lang-rules/tests/swift_end_to_end.rs::two_modules_that_flatten_onto_one_name_are_refused_by_name`
+
+**Status:** done
+
+### §7.4.3 Der Lesepfad öffnet mit Tab.9; ein Union-Zweig ist eine Stelle bar und ein Wert ausgepackt
+
+**Spec:** §7.4.3 — XCDR Version 2 — Plain CDR2, Delimited CDR2 und PL_CDR2.
+
+**Repo:** `crates/lang-rules/src/emit/swift.rs`
+
+**Tests:** `crates/lang-rules/tests/swift_codec.rs::the_read_direction_opens_with_table_9_and_returns_the_sample`,
+`crates/lang-rules/tests/swift_codec.rs::a_union_branch_is_a_place_bare_and_a_value_unwrapped`,
+`crates/lang-rules/tests/swift_codec.rs::the_shapes_the_corpus_has_reach_the_end_of_both_walks`
+
+**Status:** done
+
+## §7.3.1 Woran die Spalte gehalten wird
+
+### §7.3.1 Jeder Korpusfall rendert oder benennt die Schicht, die ihn abgelehnt hat
+
+**Spec:** §7.3.1 — Jeder Korpusfall rendert oder benennt die Schicht, die ihn abgelehnt hat. Ein Fall, der zu rendern aufhört, würde sonst erst von der nächsten Messung gefunden — ein Build-Verzeichnis vom Konstrukt entfernt, das ihn verursacht hat.
+
+**Repo:** `crates/lang-rules/src/emit/swift.rs`, `crates/lang-rules/src/adapter/swift.rs`
+
+**Tests:** `crates/lang-rules/tests/swift_end_to_end.rs::every_corpus_case_renders_or_names_its_failure`
+
+**Status:** done
+
+### §7.3.1 Die erzeugte Quelle übersetzt unter dem Übersetzer der Sprache
+
+**Spec:** §7.3.1 — Die erzeugte Quelle übersetzt unter dem Übersetzer der Sprache. Ein Snapshot sagt, dass der Emitter den Text erzeugt hat, den er letztes Mal erzeugt hat; er sagt nicht, dass der Text die Sprache ist. Fehlt der Übersetzer, sagt der Test das auf Standardfehler.
+
+**Repo:** `crates/lang-rules/src/emit/swift.rs`, `crates/lang-rules/src/adapter/swift.rs`
+
+**Tests:** `crates/lang-rules/tests/swift_end_to_end.rs::the_generated_swift_compiles`
+
+**Status:** done
+
+### §7.3.1 Zwei Läufe über eine Quelle erzeugen denselben Text
+
+**Spec:** §7.3.1 — Zwei Läufe über eine Quelle erzeugen denselben Text. Ohne diese Eigenschaft ist jeder Diff eines erzeugten Baums unlesbar.
+
+**Repo:** `crates/lang-rules/src/emit/swift.rs`, `crates/lang-rules/src/adapter/swift.rs`
+
+**Tests:** `crates/lang-rules/tests/swift_end_to_end.rs::two_runs_over_one_source_produce_the_same_text`
+
+**Status:** done
+
+### §7.2.2.4 Jedes Konstrukt, das die Vollständigkeitstabelle für diese Spalte behauptet, erzeugt auch Ausgabe
+
+**Spec:** §7.2.2.4 — Jedes Konstrukt, das die Vollständigkeitstabelle für diese Spalte behauptet, erzeugt auch Ausgabe. Die Tabelle in `crates/lang-rules/src/coverage.rs` ist die Behauptung; dieser Test ist ihre Prüfung.
+
+**Repo:** `crates/lang-rules/src/emit/swift.rs`, `crates/lang-rules/src/adapter/swift.rs`
+
+**Tests:** `crates/lang-rules/tests/swift_end_to_end.rs::every_construct_the_table_claims_for_swift_produces_output`
+
+**Status:** done
+
+### §7.2.2.4.8 `@verbatim` landet an den Stellen, die die Klausel für diese Sprache nennt
+
+**Spec:** §7.2.2.4.8 — `@verbatim` landet an den Stellen, die die Klausel für diese Sprache nennt.
+
+**Repo:** `crates/lang-rules/src/adapter/swift.rs`, `crates/lang-rules/src/verbatim.rs`
+
+**Tests:** `crates/lang-rules/tests/verbatim_every_column.rs::every_column_places_the_six_slots_in_its_declarations`,
+`crates/lang-rules/tests/verbatim_every_column.rs::every_column_ends_its_source_file_with_the_end_file_text`,
+`crates/lang-rules/tests/verbatim_every_column.rs::a_directive_reaches_its_own_column_and_no_other`
+
+**Status:** done
+
+## §7.3.1 Treiber und Messung
+
+### §7.3.1 `idlc generate --lang swift`
+
+**Spec:** §7.3.1 — die IDL-Type-Representation ist die Eingabe der Erzeugung; die Ausgabe ist die Quelle dieser Spalte.
+
+**Repo:** `tools/idlc/src/generate.rs`, `tools/idlc/src/main.rs`
+
+**Tests:** `tools/idlc/src/generate.rs::tests::every_language_round_trips_through_its_own_name`,
+`tools/idlc/src/generate.rs::tests::language_names_lists_every_language_once`
+
+**Status:** done
+
+### §7.4 Der Messaufbau dieser Spalte
+
+**Spec:** §7.4 — die Oktette einer Spalte werden gegen aufgezeichnete Oktette verglichen und nicht in ihren eigenen Tests behauptet.
+
+**Repo:** `tools/wireprobe/wireprobe-zerodds-swift-gen/`, `tools/wireprobe/wireprobe-zerodds-swift`
+
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_cell_generator`,
+`crates/lang-rules/tests/every_language_has_its_parts.rs::every_cell_generator_guards_against_a_missing_toolchain`
+
+**Status:** done
 
 ---
 
 ## Audit-Status
 
-20 done / 0 partial / 0 open / 2 n/a (informative) / 0 n/a (rejected).
+22 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
 
-Test-Lauf: `GOLDEN_DIR=<gold> cargo test -p zerodds-idl-swift` — 29 Tests grün, 0 failed (lokal (macOS), Toolchain `swiftc`).
+Test-Lauf: `cargo test -p zerodds-lang-rules` — 1024 Tests grün, 0 failed (20 ignoriert: die Vollkorpus-Compile-Läufe, die `--include-ignored` verlangen).
 
 Offene Punkte: keine. Decision-Records: keine.

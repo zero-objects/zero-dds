@@ -1,0 +1,12 @@
+// an `@appendable` member of a `@final` structure
+// XTypes 1.3 §7.4.3.5.3: the delimiter belongs to the aggregate, so the
+// outer writes none and the inner one does.
+@appendable struct Inner {
+    long a;
+    short b;
+};
+
+@final struct Sample {
+    Inner nested;
+    long tail;
+};

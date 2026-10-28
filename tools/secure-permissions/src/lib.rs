@@ -3,7 +3,7 @@
 
 //! CMS / PKCS#7 signing of DDS-Security governance & permissions XML.
 //!
-//! DDS-Security 1.2 §9.4.1.3 requires the `governance` and `permissions`
+//! DDS-Security 1.2 §10.4.1.1 requires the `governance` and `permissions`
 //! documents to be S/MIME (CMS `SignedData`) signed by the **Permissions CA**.
 //! ZeroDDS's builtin AccessControl plugin
 //! ([`zerodds_security_permissions::CmsPkcs7Verifier`]) verifies them; this
@@ -25,11 +25,14 @@ use cms::builder::{SignedDataBuilder, SignerInfoBuilder};
 use cms::cert::{CertificateChoices, IssuerAndSerialNumber};
 use cms::signed_data::{EncapsulatedContentInfo, SignerIdentifier};
 use const_oid::ObjectIdentifier;
-use der::asn1::Any;
-use der::{Encode, Tag};
-use p256::ecdsa::{DerSignature, SigningKey};
-use p256::pkcs8::DecodePrivateKey;
-use spki::AlgorithmIdentifierOwned;
+use der::asn1::{Any, BitString};
+use der::{Document, Encode, Tag};
+use ring::rand::SystemRandom;
+use ring::signature::{ECDSA_P256_SHA256_ASN1_SIGNING, EcdsaKeyPair, KeyPair as _};
+use spki::{
+    AlgorithmIdentifierOwned, DynSignatureAlgorithmIdentifier, EncodePublicKey,
+    SignatureBitStringEncoding, SubjectPublicKeyInfoOwned,
+};
 use x509_cert::Certificate;
 use x509_cert::der::DecodePem;
 
@@ -37,6 +40,106 @@ use x509_cert::der::DecodePem;
 const OID_ID_DATA: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.113549.1.7.1");
 /// `id-sha256` (NIST).
 const OID_SHA_256: ObjectIdentifier = ObjectIdentifier::new_unwrap("2.16.840.1.101.3.4.2.1");
+/// `ecdsa-with-SHA256` (RFC 5758 §3.2).
+const OID_ECDSA_WITH_SHA_256: ObjectIdentifier =
+    ObjectIdentifier::new_unwrap("1.2.840.10045.4.3.2");
+/// `id-ecPublicKey` (RFC 5480 §2.1.1).
+const OID_EC_PUBLIC_KEY: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.10045.2.1");
+/// `secp256r1` (RFC 5480 §2.1.1.1).
+const OID_SECP256R1: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.10045.3.1.7");
+
+/// The Permissions CA's P-256 key. `ring` signs (ECDSA P-256 with SHA-256,
+/// an ASN.1-DER signature value); the traits below are the ones the `cms`
+/// and `x509-cert` builders ask of a signer.
+pub struct CaKey {
+    pair: EcdsaKeyPair,
+    public: CaPublicKey,
+}
+
+impl CaKey {
+    /// The key from a PKCS#8 DER document (with the public key, as
+    /// `openssl pkcs8 -topk8` and `ring` write it).
+    pub fn from_pkcs8_der(der: &[u8]) -> Result<Self, SignError> {
+        let pair =
+            EcdsaKeyPair::from_pkcs8(&ECDSA_P256_SHA256_ASN1_SIGNING, der, &SystemRandom::new())
+                .map_err(|e| SignError::Key(format!("expected a P-256 PKCS#8 private key: {e}")))?;
+        let public = CaPublicKey(pair.public_key().as_ref().to_vec());
+        Ok(Self { pair, public })
+    }
+
+    /// The key from a PKCS#8 PEM document (`BEGIN PRIVATE KEY`).
+    pub fn from_pkcs8_pem(pem: &str) -> Result<Self, SignError> {
+        if pem.contains("BEGIN EC PRIVATE KEY") {
+            // openssl `ecparam -genkey` emits a SEC1 key; the signer needs PKCS#8.
+            return Err(SignError::Key(
+                "SEC1 EC key detected (`BEGIN EC PRIVATE KEY`); convert to PKCS#8 first: \
+                 `openssl pkcs8 -topk8 -nocrypt -in <key>.pem -out <key>_pkcs8.pem`"
+                    .to_string(),
+            ));
+        }
+        let (label, der) = der::pem::decode_vec(pem.as_bytes())
+            .map_err(|e| SignError::Key(format!("expected a PKCS#8 PEM private key: {e:?}")))?;
+        if label != "PRIVATE KEY" {
+            return Err(SignError::Key(format!(
+                "expected a PKCS#8 PEM private key, found `{label}`"
+            )));
+        }
+        Self::from_pkcs8_der(&der)
+    }
+}
+
+/// The public key of a [`CaKey`]: the uncompressed P-256 point.
+#[derive(Clone, Debug)]
+pub struct CaPublicKey(Vec<u8>);
+
+impl EncodePublicKey for CaPublicKey {
+    fn to_public_key_der(&self) -> spki::Result<Document> {
+        let info = SubjectPublicKeyInfoOwned {
+            algorithm: AlgorithmIdentifierOwned {
+                oid: OID_EC_PUBLIC_KEY,
+                parameters: Some(Any::encode_from(&OID_SECP256R1)?),
+            },
+            subject_public_key: BitString::from_bytes(&self.0)?,
+        };
+        Ok(Document::try_from(info.to_der()?)?)
+    }
+}
+
+impl signature::Keypair for CaKey {
+    type VerifyingKey = CaPublicKey;
+
+    fn verifying_key(&self) -> CaPublicKey {
+        self.public.clone()
+    }
+}
+
+impl DynSignatureAlgorithmIdentifier for CaKey {
+    fn signature_algorithm_identifier(&self) -> spki::Result<AlgorithmIdentifierOwned> {
+        Ok(AlgorithmIdentifierOwned {
+            oid: OID_ECDSA_WITH_SHA_256,
+            parameters: None,
+        })
+    }
+}
+
+/// An ASN.1-DER ECDSA signature value (RFC 5480 §2.2.3 `Ecdsa-Sig-Value`).
+#[derive(Clone, Debug)]
+pub struct DerSignature(Vec<u8>);
+
+impl SignatureBitStringEncoding for DerSignature {
+    fn to_bitstring(&self) -> der::Result<BitString> {
+        BitString::from_bytes(&self.0)
+    }
+}
+
+impl signature::Signer<DerSignature> for CaKey {
+    fn try_sign(&self, msg: &[u8]) -> Result<DerSignature, signature::Error> {
+        self.pair
+            .sign(&SystemRandom::new(), msg)
+            .map(|sig| DerSignature(sig.as_ref().to_vec()))
+            .map_err(|_| signature::Error::new())
+    }
+}
 
 /// Error from signing.
 #[derive(Debug)]
@@ -84,18 +187,7 @@ pub fn sign_xml_to_der(
 ) -> Result<Vec<u8>, SignError> {
     let cert =
         Certificate::from_pem(signer_cert_pem).map_err(|e| SignError::Cert(format!("{e:?}")))?;
-    let signing_key = SigningKey::from_pkcs8_pem(signer_key_pkcs8_pem).map_err(|e| {
-        if signer_key_pkcs8_pem.contains("BEGIN EC PRIVATE KEY") {
-            // openssl `ecparam -genkey` emits a SEC1 key; the signer needs PKCS#8.
-            SignError::Key(
-                "SEC1 EC key detected (`BEGIN EC PRIVATE KEY`); convert to PKCS#8 first: \
-                 `openssl pkcs8 -topk8 -nocrypt -in <key>.pem -out <key>_pkcs8.pem`"
-                    .to_string(),
-            )
-        } else {
-            SignError::Key(format!("expected a PKCS#8 PEM private key: {e:?}"))
-        }
-    })?;
+    let signing_key = CaKey::from_pkcs8_pem(signer_key_pkcs8_pem)?;
 
     // Opaque eContent: the XML embedded as an OCTET STRING.
     let econtent_any =
@@ -124,7 +216,7 @@ pub fn sign_xml_to_der(
         .map_err(|e| SignError::Cms(format!("add digest alg: {e:?}")))?
         .add_certificate(CertificateChoices::Certificate(cert))
         .map_err(|e| SignError::Cms(format!("add cert: {e:?}")))?
-        .add_signer_info::<SigningKey, DerSignature>(signer_info_builder)
+        .add_signer_info::<CaKey, DerSignature>(signer_info_builder)
         .map_err(|e| SignError::Cms(format!("add signer info: {e:?}")))?
         .build()
         .map_err(|e| SignError::Cms(format!("build: {e:?}")))?;
@@ -161,7 +253,6 @@ mod tests {
     use x509_cert::der::EncodePem;
     use x509_cert::name::Name;
     use x509_cert::serial_number::SerialNumber;
-    use x509_cert::spki::EncodePublicKey;
     use x509_cert::time::Validity;
     use zerodds_security_permissions::{CmsPkcs7Verifier, XmlSignatureVerifier};
 
@@ -169,8 +260,12 @@ mod tests {
 
     /// Generate a self-signed P-256 Permissions CA → (cert_pem, key_pkcs8_pem).
     fn gen_permissions_ca() -> Result<(String, String), Box<dyn std::error::Error>> {
+        use signature::Keypair as _;
         use std::str::FromStr;
-        let signing_key = SigningKey::random(&mut rand_core::OsRng);
+        let pkcs8 =
+            EcdsaKeyPair::generate_pkcs8(&ECDSA_P256_SHA256_ASN1_SIGNING, &SystemRandom::new())
+                .map_err(|e| format!("key: {e}"))?;
+        let signing_key = CaKey::from_pkcs8_der(pkcs8.as_ref())?;
         let verifying_key = signing_key.verifying_key();
         let spki_der = verifying_key
             .to_public_key_der()
@@ -196,9 +291,8 @@ mod tests {
             .map_err(|e| format!("cert pem: {e:?}"))?;
 
         let key_pem =
-            p256::pkcs8::EncodePrivateKey::to_pkcs8_pem(&signing_key, der::pem::LineEnding::LF)
-                .map_err(|e| format!("key pem: {e:?}"))?
-                .to_string();
+            der::pem::encode_string("PRIVATE KEY", der::pem::LineEnding::LF, pkcs8.as_ref())
+                .map_err(|e| format!("key pem: {e:?}"))?;
         Ok((cert_pem, key_pem))
     }
 

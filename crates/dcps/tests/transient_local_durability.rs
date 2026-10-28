@@ -5,6 +5,10 @@
 //!   before its match.
 //! * **TransientLocal**: a late-joiner reader receives all samples
 //!   still in the writer history cache (up to history depth).
+//! * Which of the two applies is the **reader**'s request: a VOLATILE
+//!   reader declines the history whatever the writer offers, and the pair
+//!   still matches (offered TRANSIENT_LOCAL satisfies a requested
+//!   VOLATILE, §2.2.3 table "QoS compatibility").
 //!
 //! These tests run only on Linux because of multicast loopback.
 
@@ -64,13 +68,13 @@ mod linux {
         )
     }
 
-    #[serial_test::serial(dcps)]
+    #[serial_test::file_serial(dcps)]
     #[test]
     fn transient_local_writer_delivers_history_to_late_joiner() {
         // Writer: TransientLocal. Writes 5 samples BEFORE the reader
         // joins. The reader joins late but must still receive all 5
         // samples.
-        let (pub_p, sub_p) = two_participants(unique_domain(8));
+        let (pub_p, sub_p) = two_participants(unique_domain());
 
         let pub_topic = pub_p
             .create_topic::<ShapeType>("Square", TopicQos::default())
@@ -140,11 +144,11 @@ mod linux {
         }
     }
 
-    #[serial_test::serial(dcps)]
+    #[serial_test::file_serial(dcps)]
     #[test]
     fn volatile_writer_does_not_deliver_history_to_late_joiner() {
         // Volatile contrast: the late-joiner sees NO pre-match samples.
-        let (pub_p, sub_p) = two_participants(unique_domain(8));
+        let (pub_p, sub_p) = two_participants(unique_domain());
 
         let pub_topic = pub_p
             .create_topic::<ShapeType>("Square", TopicQos::default())
@@ -198,13 +202,94 @@ mod linux {
         );
     }
 
-    #[serial_test::serial(dcps)]
+    /// The same clause with the durability on the **reader** instead: a
+    /// VOLATILE reader is served nothing the writer wrote before the match,
+    /// whatever the writer offers (DDS 1.4 §2.2.3.4). Offered
+    /// TRANSIENT_LOCAL satisfies a requested VOLATILE (§2.2.3, table "QoS
+    /// compatibility", DURABILITY "RxO: Yes"), so the pair still matches —
+    /// it is the history alone that is declined. Contrast:
+    /// `transient_local_writer_delivers_history_to_late_joiner`, whose
+    /// reader asks for TRANSIENT_LOCAL and does receive all 5.
+    #[serial_test::file_serial(dcps)]
+    #[test]
+    fn a_transient_local_writer_serves_a_volatile_late_joiner_nothing() {
+        let (pub_p, sub_p) = two_participants(unique_domain());
+
+        let pub_topic = pub_p
+            .create_topic::<ShapeType>("Square", TopicQos::default())
+            .expect("pub topic");
+        let publisher = pub_p.create_publisher(PublisherQos::default());
+        let writer = publisher
+            .create_datawriter::<ShapeType>(
+                &pub_topic,
+                DataWriterQos {
+                    durability: zerodds_qos::DurabilityQosPolicy {
+                        kind: DurabilityKind::TransientLocal,
+                    },
+                    ..Default::default()
+                },
+            )
+            .expect("writer");
+
+        // Write 5 samples before any reader exists.
+        for i in 0i32..5 {
+            writer
+                .write(&ShapeType::new(format!("OLD{i}"), i, i * 2, 30))
+                .expect("write");
+        }
+
+        let sub_topic = sub_p
+            .create_topic::<ShapeType>("Square", TopicQos::default())
+            .expect("sub topic");
+        let subscriber = sub_p.create_subscriber(SubscriberQos::default());
+        // Default QoS durability = Volatile. RELIABLE (the writer's offer)
+        // satisfies a requested BEST_EFFORT, so the pair matches.
+        let reader = subscriber
+            .create_datareader::<ShapeType>(&sub_topic, DataReaderQos::default())
+            .expect("reader");
+
+        writer
+            .wait_for_matched_subscription(1, super::common::match_timeout())
+            .expect("writer sees reader");
+        reader
+            .wait_for_matched_publication(1, super::common::match_timeout())
+            .expect("reader sees writer");
+
+        // A sample written after the match must arrive: the reader is live,
+        // only the history is declined.
+        writer
+            .write(&ShapeType::new("NEW", 99, 99, 30))
+            .expect("write post-match");
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        let mut received = Vec::new();
+        while received.is_empty() && std::time::Instant::now() < deadline {
+            let _ = reader.wait_for_data(Duration::from_millis(200));
+            received.extend(reader.take().expect("take"));
+        }
+        // And a pre-match sample that arrives late would show up here.
+        std::thread::sleep(Duration::from_millis(500));
+        received.extend(reader.take().expect("take"));
+
+        assert!(
+            received.iter().any(|s| s.color == "NEW"),
+            "the post-match sample must arrive, got {received:?}"
+        );
+        for s in &received {
+            assert!(
+                !s.color.starts_with("OLD"),
+                "a VOLATILE reader must not be served pre-match history, but got {s:?}"
+            );
+        }
+    }
+
+    #[serial_test::file_serial(dcps)]
     #[test]
     fn transient_local_reader_rejects_volatile_writer() {
         // QoS compat: the reader requires TransientLocal, the writer
         // offers only Volatile → no match, wait_for_matched_publication
         // must time out.
-        let (pub_p, sub_p) = two_participants(unique_domain(8));
+        let (pub_p, sub_p) = two_participants(unique_domain());
 
         let pub_topic = pub_p
             .create_topic::<ShapeType>("Square", TopicQos::default())

@@ -1,0 +1,5 @@
+// `map` keyed by `boolean`, unannotated
+struct Sample {
+    map<boolean, long> entries;
+    long tail;
+};

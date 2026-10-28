@@ -43,10 +43,13 @@ const MAX_GAP: Duration = Duration::from_millis(150);
 
 fn writer_cfg(topic: &str) -> UserWriterConfig {
     UserWriterConfig {
+        property: Default::default(),
+        data_tags: Default::default(),
         topic_name: topic.into(),
         type_name: "RawBytes".into(),
         reliable: false, // best-effort, like /clock
         durability: DurabilityKind::Volatile,
+        durability_service: zerodds_qos::DurabilityServiceQosPolicy::default(),
         deadline: DeadlineQosPolicy::default(),
         latency_budget: Default::default(),
         destination_order: Default::default(),
@@ -54,6 +57,7 @@ fn writer_cfg(topic: &str) -> UserWriterConfig {
         liveliness: LivelinessQosPolicy::default(),
         ownership: OwnershipKind::Shared,
         ownership_strength: 0,
+        transport_priority: 0,
         presentation: Default::default(),
         partition: vec![],
         user_data: vec![],
@@ -61,6 +65,9 @@ fn writer_cfg(topic: &str) -> UserWriterConfig {
         group_data: vec![],
         type_identifier: zerodds_types::TypeIdentifier::None,
         data_representation_offer: None,
+        group_entity_id: None,
+        data_max_size_serialized: None,
+        entity_name: None,
     }
 }
 
@@ -69,20 +76,7 @@ fn reader_cfg(topic: &str) -> UserReaderConfig {
         topic_name: topic.into(),
         type_name: "RawBytes".into(),
         reliable: false,
-        durability: DurabilityKind::Volatile,
-        deadline: DeadlineQosPolicy::default(),
-        latency_budget: Default::default(),
-        destination_order: Default::default(),
-        liveliness: LivelinessQosPolicy::default(),
-        ownership: OwnershipKind::Shared,
-        presentation: Default::default(),
-        partition: vec![],
-        user_data: vec![],
-        group_data: vec![],
-        topic_data: vec![],
-        type_identifier: zerodds_types::TypeIdentifier::None,
-        type_consistency: zerodds_types::qos::TypeConsistencyEnforcement::default(),
-        data_representation_offer: None,
+        ..Default::default()
     }
 }
 
@@ -93,7 +87,7 @@ fn best_effort_clock_stream_has_no_gap_jitter() {
     let host = [0x4Bu8; 4];
     let mk_prefix = |tag: u8| {
         let mut p = [tag; 12];
-        p[..4].copy_from_slice(&host);
+        p[2..6].copy_from_slice(&host);
         GuidPrefix::from_bytes(p)
     };
     let rt_pub = DcpsRuntime::start(domain, mk_prefix(0xC1), RuntimeConfig::default()).unwrap();

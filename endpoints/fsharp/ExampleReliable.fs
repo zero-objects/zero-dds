@@ -27,11 +27,16 @@ open ZeroDDSReliable
 
 let private N = 12
 
+/// The DataWriter this example writes to (ObjectId = raw 0x001 +
+/// OBJK_DATAWRITER, DDS-XRCE 1.0 Sec 7.2.1). It rides in every frame's
+/// BaseObjectRequest.
+let private WriterId = 0x0015us
+
 // Reading { uint32 id; float value; string label } -- the same shape as the
 // Rust/C# example's `Reading`, marshalled with the pure-F# XCDR2 writer
 // (ZeroDDS.Writer), byte-identical to the Rust core.
 let private sample (i: int) =
-    let w = Writer(LE)
+    let w = Writer(LE, XCDR2)
     w.PutU32(uint32 i)
     w.PutF32(float32 i)
     w.PutString(sprintf "s%d" i)
@@ -41,7 +46,7 @@ let private sample (i: int) =
 let private sendToPeer (port: int) =
     let sock = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp)
     sock.Connect(IPEndPoint(IPAddress.Loopback, port))
-    let writer = AsyncReliableWriter.Start(sock, 64)
+    let writer = AsyncReliableWriter.Start(sock, WriterId, 64)
     for i in 0 .. N - 1 do
         let item = sample i
         while not (writer.Handle.Enqueue(item)) do
@@ -77,7 +82,7 @@ let private bench () =
 
     let dsock = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp)
     dsock.Connect(IPEndPoint(IPAddress.Loopback, sinkPort))
-    let writer = AsyncReliableWriter.Start(dsock, 1 <<< 20)
+    let writer = AsyncReliableWriter.Start(dsock, WriterId, 1 <<< 20)
     let s = sample 1
     let sw = Stopwatch.StartNew()
     for _ in 0 .. iters - 1 do
@@ -91,7 +96,7 @@ let private bench () =
     isock.Connect(IPEndPoint(IPAddress.Loopback, sinkPort))
     let sw2 = Stopwatch.StartNew()
     for i in 0 .. iters - 1 do
-        isock.Send(Wire.writeFrame (uint16 i) s) |> ignore
+        isock.Send(Wire.writeFrame (uint16 i) WriterId s) |> ignore
     let inlineNs = sw2.ElapsedTicks * 100L / int64 iters
 
     printfn "LATENCY enqueue(decoupled)=%dns inline(send)=%dns" enqueueNs inlineNs
@@ -133,7 +138,7 @@ let private standaloneDemo () =
                         else
                             state.RecvData(seq, body) |> ignore
                             for (_, payload) in state.DrainInOrder() do
-                                delivered.Add(Reader(payload, LE).GetU32())
+                                delivered.Add(Reader(payload, LE, XCDR2).GetU32())
                             rx.SendTo(Wire.ackNackFrame (state.PendingAckNack()) 1us, from) |> ignore
                     | None ->
                         match Wire.tryParseHeartbeat frame with
@@ -151,7 +156,7 @@ let private standaloneDemo () =
 
     let sock = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp)
     sock.Connect(IPEndPoint(IPAddress.Loopback, rxPort))
-    let writer = AsyncReliableWriter.Start(sock, 64)
+    let writer = AsyncReliableWriter.Start(sock, WriterId, 64)
     for i in 0 .. N - 1 do
         let item = sample i
         while not (writer.Handle.Enqueue(item)) do

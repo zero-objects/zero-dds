@@ -1,0 +1,15 @@
+// structure nested two levels
+@final struct Leaf {
+    long value;
+    short tag;
+};
+
+@final struct Middle {
+    Leaf node;
+    double weight;
+};
+
+@final struct Sample {
+    Middle body;
+    octet tail;
+};

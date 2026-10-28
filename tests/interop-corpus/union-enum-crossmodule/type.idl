@@ -1,0 +1,2 @@
+module k { enum Kind { A, B }; };
+module m { @appendable union U switch(::k::Kind) { case ::k::A: long a; default: double b; }; };

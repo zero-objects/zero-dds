@@ -10,7 +10,7 @@
 # no Cyclone/DDS library — and decodes both the dds_psmx_metadata_t header and the
 # raw self-contained sample payload, byte-exact.
 #
-# Prereqs (present on the codepit bench host): iceoryx POSH v2.0.6 + iox-roudi +
+# Prereqs (present on the Linux test host): iceoryx POSH v2.0.6 + iox-roudi +
 # libiceoryx_binding_c headers; Cyclone DDS 0.11 with libpsmx_iox + idlc. This is
 # a Linux proof (iceoryx POSH / RouDi is Linux). Run it where that stack lives.
 set -euo pipefail

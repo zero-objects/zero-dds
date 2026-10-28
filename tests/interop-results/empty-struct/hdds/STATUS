@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of empty-struct that hdds produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	the probe printed no xcdr1/le row
+plain-cdr1	be	one-order-only	
+pl-cdr1	le	refused	the probe printed no xcdr1/le row
+pl-cdr1	be	one-order-only	
+plain-cdr2	le	refused	the probe printed no xcdr2/le row
+plain-cdr2	be	one-order-only	
+delimited-cdr	le	refused	the probe printed no xcdr2/le row
+delimited-cdr	be	one-order-only	
+pl-cdr2	le	refused	the probe printed no xcdr2/le row
+pl-cdr2	be	one-order-only	

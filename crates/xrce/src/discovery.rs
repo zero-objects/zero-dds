@@ -10,7 +10,7 @@
 //!
 //! This file encapsulates the multicast bind plus send/recv helpers.
 //! Tests run on UDP loopback (no real IGMP setup
-//! needed — that is the DCPS builtin topic, see `reference_pve_multicast_setup`).
+//! needed — that is the DCPS builtin topic).
 
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, UdpSocket};
 
@@ -21,6 +21,28 @@ use crate::submessages::Message;
 pub const XRCE_DISCOVERY_GROUP: Ipv4Addr = Ipv4Addr::new(239, 255, 0, 2);
 /// Default port of the discovery group.
 pub const XRCE_DISCOVERY_PORT: u16 = 7400;
+
+/// Binds a UDP socket on `0.0.0.0:port` that other sockets may bind too
+/// (`SO_REUSEADDR`, and `SO_REUSEPORT` on Unix).
+///
+/// `XRCE_DISCOVERY_PORT` 7400 is also the SPDP multicast port of DDS domain 0
+/// (DDSI-RTPS 2.5 §9.6.1.4.1: 7400 + 250 · domain). An exclusive bind there
+/// kept every DDS participant of domain 0 on the host from starting — the
+/// agent's own participants for its clients and any other vendor's
+/// (measured: Cyclone DDS "failed to bind to ANY:7400: address in use").
+///
+/// # Errors
+/// `std::io::Error` if the socket cannot be created or bound.
+pub fn bind_shared_udp(port: u16) -> std::io::Result<UdpSocket> {
+    use socket2::{Domain, Protocol, SockAddr, Socket, Type};
+    let socket = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))?;
+    socket.set_reuse_address(true)?;
+    #[cfg(unix)]
+    socket.set_reuse_port(true)?;
+    let addr: SockAddr = SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, port).into();
+    socket.bind(&addr)?;
+    Ok(socket.into())
+}
 
 /// Multicast discovery binding. Holds a socket bound to
 /// `0.0.0.0:7400` and joined to the discovery group.
@@ -44,7 +66,7 @@ impl MulticastDiscovery {
     /// # Errors
     /// `std::io::Error` on bind errors.
     pub fn start(port: u16) -> std::io::Result<Self> {
-        let socket = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, port))?;
+        let socket = bind_shared_udp(port)?;
         // Best-effort multicast join. If the join fails (because the
         // test environment has no multicast), we tolerate that —
         // the socket remains usable for loopback.
@@ -116,6 +138,19 @@ mod tests {
 
     use super::*;
     use crate::header::{ClientKey, MessageHeader, SessionId, StreamId};
+
+    /// Two sockets share one port, as the XRCE discovery socket and a DDS
+    /// domain-0 SPDP socket share 7400. An ephemeral port stands in for 7400
+    /// so the test meets no DDS participant of the host.
+    #[test]
+    fn the_discovery_port_is_bound_shared() {
+        let first = bind_shared_udp(0).unwrap();
+        let port = first.local_addr().unwrap().port();
+        let second = bind_shared_udp(port).unwrap();
+        assert_eq!(second.local_addr().unwrap().port(), port);
+        let discovery = MulticastDiscovery::start(port).unwrap();
+        assert_eq!(discovery.socket.local_addr().unwrap().port(), port);
+    }
     use crate::serial_number::SerialNumber16;
     use crate::submessages::{GetInfoPayload, Submessage};
 
@@ -173,8 +208,8 @@ mod tests {
     /// Spec §11.2.4 + §8.4.4 — agent discovery multicast path.
     /// A client sends GET_INFO to the `XRCE_DISCOVERY_GROUP` and
     /// verifies that `send_multicast` does not crash. Real
-    /// multicast reception requires OS config (see
-    /// `reference_pve_multicast_setup`); here we only check the
+    /// multicast reception requires OS and network configuration (an
+    /// IGMP querier between the hosts); here we only check the
     /// wire send path integrity.
     #[test]
     fn multicast_send_via_xrce_discovery_group_does_not_error() {
@@ -203,13 +238,13 @@ mod tests {
         assert_eq!(d.group_addr.port(), XRCE_DISCOVERY_PORT);
     }
 
-    /// Spec §11.3.4 — TCP agent discovery uses the same port scheme
-    /// as UDP (`agent_default_port` from `transport_udp.rs`).
+    /// This crate's TCP agent discovery uses the same port scheme as UDP
+    /// (`agent_default_port` from `transport_udp.rs`); the specification
+    /// gives no port scheme.
     #[test]
     fn tcp_discovery_uses_same_port_scheme_as_udp() {
-        // §11.3.4 says: "TCP Agent Discovery uses the same port
-        // scheme as UDP". We verify that via
-        // agent_default_port (from transport_udp).
+        // The port of the TCP discovery is the one of the UDP scheme of this
+        // crate, `agent_default_port` (from transport_udp).
         use crate::transport_udp::agent_default_port;
         for domain in 0u16..=10 {
             let p = agent_default_port(domain);

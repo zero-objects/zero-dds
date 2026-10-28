@@ -1,0 +1,1 @@
+@final struct One { octet a; };

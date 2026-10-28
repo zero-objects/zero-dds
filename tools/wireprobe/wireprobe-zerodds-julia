@@ -1,0 +1,149 @@
+#!/bin/bash
+# wireprobe-zerodds-julia — one IDL type and one JSON value, through the
+# ZeroDDS Julia binding built by the shared codec walk.
+#
+# The same command line as `wireprobe-zerodds`, so a case runs through
+# both by substituting the program name. See
+# `docs/specs/zerodds-interop-suite-1.0.md` §3a.
+#
+#   wireprobe-zerodds-julia --idl robot.idl --type common::Robot \
+#                           --values robot.json --encoding xcdr2 \
+#                           --endian le --out robot.zerodds-jl.xcdr2.le.bin
+#
+#   wireprobe-zerodds-julia --idl robot.idl --type common::Robot \
+#                           --in robot.cyclone.xcdr2.le.bin \
+#                           --encoding xcdr2 --endian le \
+#                           --values-out robot.read.json
+#
+# ## What is shared with the Rust probe and what is not
+#
+# Shared: the frontend, the common AST and the layout plan. Which members
+# are written, in what order, with which header and which length code is
+# `zerodds-ast-layout`'s answer, and a second answer would be a second
+# place for the wire format to live.
+#
+# Not shared: the serialiser. This probe drives
+# `wireprobe-zerodds-julia-gen`, which is
+# `crates/lang-rules/src/emit/julia.rs` over the walk the C, C++, C#,
+# Java, TypeScript and Python columns already share, and the generated
+# program calls `runtime/julia/zerodds_wire.jl` — a further
+# implementation of DDS-XTypes 1.3 §7.4. Nothing here reaches the Rust
+# runtime through FFI: a probe that did would be byte-identical by
+# construction and would prove nothing about whether the two read the
+# specification the same way.
+#
+# ## The exit codes
+#
+# `docs/specs/zerodds-verdicts-1.0.md`, and structural rather than read
+# out of a message:
+#
+#   0  it carried the case
+#   1  the sample is outside the type, or the stream refused
+#   2  the command line
+#   3  no-form (the materialiser's answer), or a discarded sample on the
+#      read path — the same doubling the Rust probe's code 3 carries
+#   6  harness-gap — a tool of ours has not written it: the generator
+#      did not build, the walk stopped, or `julia` is not installed
+#   7  generator-defect — the generator accepted the case and the Julia
+#      it produced is not a program
+set -euo pipefail
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+root="$(cd "$here/../.." && pwd)"
+runtime="${ZERODDS_JULIA_RUNTIME:-$root/runtime/julia/zerodds_wire.jl}"
+JULIA="${JULIA:-julia}"
+
+# `which julia`: the interpreter is the one external dependency this
+# column has, and a missing one is a gap in the harness (6), not in the
+# case.
+if ! command -v "$JULIA" > /dev/null 2>&1; then
+    echo "wireprobe-zerodds-julia: no \`julia\` on the path — install Julia or set JULIA=" >&2
+    exit 9
+fi
+
+gen="${WIREPROBE_JULIA_GEN:-}"
+if [ -z "$gen" ]; then
+    gen="${CARGO_TARGET_DIR:-$root/target}/debug/wireprobe-zerodds-julia-gen"
+    # Built when it is missing *or stale*: a generator older than the
+    # sources it came from measures the previous build.
+    . "$here/generator.sh"
+    probe_generator zerodds-wireprobe-julia-gen "$gen" "$root" || exit 6
+fi
+
+out=""
+values_out=""
+argv=()
+idl=""
+reading=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --out) out="$2"; shift 2 ;;
+        --values-out) values_out="$2"; argv+=("$1" "$2"); shift 2 ;;
+        --in) reading=1; argv+=("$1" "$2"); shift 2 ;;
+        --idl|--type|--values|--encoding|--endian|--emit|--dialect)
+            if [ "$1" = --idl ]; then idl="$2"; fi
+            argv+=("$1" "$2"); shift 2 ;;
+        --help|-h) sed -n '2,50p' "${BASH_SOURCE[0]}"; exit 0 ;;
+        *) echo "wireprobe-zerodds-julia: \`$1\` is not an option" >&2; exit 2 ;;
+    esac
+done
+
+. "$here/diagnostics.sh"
+
+work="$(mktemp -d)"
+trap 'probe_keep_generated "$work" "zerodds-julia" "$idl" probe.jl; rm -rf "$work"' EXIT
+
+# The generator's own code passes straight through: 3 is "Julia has no
+# form for it" and 6 is "a tool of ours stopped".
+code=0
+"$gen" "${argv[@]}" --out-dir "$work" || code=$?
+[ "$code" = 0 ] || exit "$code"
+
+# The syntax is checked before the program is run, because the two
+# failures are different verdicts and running conflates them: Julia is
+# not compiled ahead of time, so a generator that emitted something that
+# is not a program (7) would otherwise arrive as "the probe did not run"
+# (6). `Meta.parseall` does not throw on a syntax error — it returns a
+# tree carrying `:error` and `:incomplete` nodes, which is what is
+# looked for.
+if ! "$JULIA" --startup-file=no -e '
+    zd_tree = Meta.parseall(read(ARGS[1], String))
+    zd_bad(x) = x isa Expr && (x.head === :error || x.head === :incomplete || any(zd_bad, x.args))
+    zd_bad(zd_tree) && exit(1)
+' "$work/probe.jl" > "$work/syntax.log" 2>&1; then
+    echo "wireprobe-zerodds-julia: the generated Julia is not a program" >&2
+    head -10 "$work/syntax.log" >&2 || true
+    probe_diagnostics_after "zerodds-julia" "$work" "$idl" 7
+    exit 7
+fi
+probe_diagnostics_after "zerodds-julia" "$work" "$idl" 0
+
+export ZERODDS_JULIA_RUNTIME="$runtime"
+
+code=0
+"$JULIA" --startup-file=no "$work/probe.jl" > "$work/bytes.bin" 2> "$work/run.log" || code=$?
+if [ "$code" != 0 ]; then
+    head -5 "$work/run.log" >&2 || true
+    # 1 and 3 are the probe's own verdicts (refused sample, discarded
+    # sample) and pass through; everything else is a tool that stopped.
+    [ "$code" = 1 ] && exit 1
+    [ "$code" = 3 ] && exit 3
+    echo "wireprobe-zerodds-julia: the probe did not run" >&2
+    exit 6
+fi
+
+# The read direction writes its JSON where `--values-out` said and puts
+# nothing on stdout, so there are no octets to hand back.
+if [ "$reading" = 1 ]; then
+    [ -n "$values_out" ] || {
+        echo "wireprobe-zerodds-julia: --in without --values-out" >&2
+        exit 2
+    }
+    exit 0
+fi
+
+if [ -n "$out" ]; then
+    cp "$work/bytes.bin" "$out"
+else
+    od -An -tx1 -v "$work/bytes.bin" | tr -d ' \n'; echo
+fi

@@ -1,15 +1,15 @@
 /* C smoke test for zerodds.h.
  *
  * Build:
- *   cargo build -p dds-c-api --release
- *   gcc -O2 -I crates/dds-c-api/include \
+ *   cargo build -p zerodds-c-api --release
+ *   gcc -O2 -I crates/zerodds-c-api/include \
  *       -L target/release \
  *       -o /tmp/zerodds_c_smoke \
- *       crates/dds-c-api/examples/c_smoke.c \
+ *       crates/zerodds-c-api/examples/c_smoke.c \
  *       -lzerodds -lpthread -ldl -lm
  *   ./tmp/zerodds_c_smoke
  *
- * Erwartung (Linux): "OK: <N> samples received".
+ * Expectation (Linux): "OK: <N> samples received".
  * Expectation (macOS): may be 0 (multicast loopback unreliable).
  */
 
@@ -43,7 +43,7 @@ int main(void) {
         usleep(10 * 1000); /* 10ms */
     }
 
-    /* Bis zu 2s einsammeln. */
+    /* Collect for up to 2s. */
     int received = 0;
     for (int i = 0; i < 100; ++i) {
         uint8_t *buf = NULL;

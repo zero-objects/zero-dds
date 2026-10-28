@@ -1,0 +1,10 @@
+// `@mutable` inside `@appendable`, unannotated
+struct Inner {
+    long a;
+    short b;
+};
+
+struct Sample {
+    Inner nested;
+    long tail;
+};

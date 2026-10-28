@@ -4,13 +4,20 @@
 //!
 //! Crate `zerodds-spatial-dds`. Safety classification: **STANDARD**.
 //!
-//! The SpatialDDS types are **not hand-written** — they are the real
-//! [OpenArCloud SpatialDDS](https://github.com/OpenArCloud/SpatialDDS-spec) IDL
-//! (v1.6 `types.idl` + `core.idl` + `discovery.idl` + `anchors.idl` + the
-//! `sensing` modules, vendored under `idl/`) run through ZeroDDS' own IDL→Rust
-//! codegen at build time, so they carry ZeroDDS' XCDR encode/decode. This proves
-//! ZeroDDS ingests the published spec IDL verbatim — every published SpatialDDS
-//! 1.6 module is generated, none is stubbed.
+//! The SpatialDDS types are **generated at build time**, not hand-written.
+//! The input is the vendored `idl/spatial_core.idl`, derived from
+//! [OpenArCloud SpatialDDS](https://github.com/OpenArCloud/SpatialDDS-spec) 1.6,
+//! with modules combined and identifier corrections recorded in its header.
+//! It is **not verbatim upstream IDL**: renamed members affect Complete
+//! TypeObjects and can affect name-derived mutable member IDs. Compatibility
+//! with an unmodified upstream-generated peer must not be assumed from the
+//! profile name alone.
+//!
+//! The build script generates inherent encode/decode methods using
+//! `zerodds-wire`. It selects little-endian XCDR2 framing per aggregate's
+//! extensibility annotation: plain for final, delimited for appendable and
+//! parameter-list for mutable. This is local type and codec generation, not
+//! an independent cross-vendor interoperability certification.
 //!
 //! Modules carried:
 //! * `spatial::common` — `FrameRef`, `MetaKV`, `AssetRef`, `TileKey`, the
@@ -40,18 +47,16 @@
 //!
 //! ## Carriers
 //!
-//! These are ordinary ZeroDDS types (they `impl CdrEncode`/`CdrDecode`), so
-//! they ride ZeroDDS' existing type-agnostic bridges — MQTT (`zerodds-mqtt-
-//! bridge`), WebSocket (`zerodds-websocket-bridge`) and MCAP recording
-//! (`zerodds-recorder`) — with no SpatialDDS-specific code: the profile is a
-//! type layer, and the carriers are generic. The one carrier that needs
-//! SpatialDDS-aware work is the **ROS-2 semantic mapping**
-//! (sensor_msgs/vision_msgs/tf2/geometry_msgs/geographic_msgs ↔ SpatialDDS),
-//! delivered as the `zerodds-spatial-ros2` crate.
+//! This crate supplies a type layer, not a running transport. Its generated
+//! inherent codecs do not establish automatic integration with every bridge
+//! or recorder. Those paths need their own adapter and end-to-end evidence.
+//! Semantic conversion between selected ROS 2 messages and SpatialDDS types
+//! is provided by the separate `zerodds-spatial-ros2` crate.
 
 #![forbid(unsafe_code)]
 // The generated SpatialDDS types keep IDL-native identifiers (SCREAMING_CASE
-// enum labels) and cdr_only pulls a wide `use`; silence those for the codegen.
+// enum labels) and the build script adds shared codec imports; silence those
+// warnings for the codegen.
 #![allow(
     missing_docs,
     clippy::all,

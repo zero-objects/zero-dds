@@ -1,0 +1,8 @@
+# Built and written by run.sh, and by cargo for this standalone proof crate.
+/pubk
+/subk
+/capk
+/svar.c
+/svar.h
+/*.log
+/Cargo.lock

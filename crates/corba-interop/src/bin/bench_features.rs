@@ -38,16 +38,27 @@ impl Bench for BenchImpl {
     fn add64(&self, a: i64, b: i64) -> Result<i64, CorbaException> {
         Ok(a.wrapping_add(b))
     }
-    fn next_char(&self, c: u8) -> Result<u8, CorbaException> {
-        Ok(c.wrapping_add(1))
+    fn next_char(&self, c: char) -> Result<char, CorbaException> {
+        // §9.3.1.5 makes an IDL `char` one octet; the Rust holder
+        // is a `char`, so the successor is computed on the code point
+        // and wraps inside the octet the wire carries.
+        Ok(char::from(
+            u8::try_from(u32::from(c)).unwrap_or(0).wrapping_add(1),
+        ))
     }
     fn concat(&self, a: String, b: String) -> Result<String, CorbaException> {
         Ok(format!("{a}{b}"))
     }
-    fn wecho(&self, w: zerodds_cdr::WString) -> Result<zerodds_cdr::WString, CorbaException> {
+    fn wecho(
+        &self,
+        w: zerodds_corba_rt::WString,
+    ) -> Result<zerodds_corba_rt::WString, CorbaException> {
         Ok(w)
     }
-    fn aecho(&self, a: zerodds_cdr::CorbaAny) -> Result<zerodds_cdr::CorbaAny, CorbaException> {
+    fn aecho(
+        &self,
+        a: zerodds_corba_rt::CorbaAny,
+    ) -> Result<zerodds_corba_rt::CorbaAny, CorbaException> {
         Ok(a)
     }
     fn reverse(&self, xs: Vec<i32>) -> Result<Vec<i32>, CorbaException> {
@@ -119,21 +130,21 @@ fn main() {
     let b = BenchStub::new(self_ref.clone(), conn);
 
     // Pre-built arguments (outside the measurement loop).
-    let w = zerodds_cdr::WString::from("wíde-€-Ω");
-    let any_struct = zerodds_cdr::CorbaAny(zerodds_cdr::AnyValue::Struct {
+    let w = zerodds_corba_rt::WString::from("wíde-€-Ω");
+    let any_struct = zerodds_corba_rt::CorbaAny(zerodds_corba_rt::AnyValue::Struct {
         repo_id: "IDL:AnyPair:1.0".into(),
         name: "AnyPair".into(),
         members: vec![
-            ("k".into(), zerodds_cdr::AnyValue::Long(7)),
-            ("v".into(), zerodds_cdr::AnyValue::Str("seven".into())),
+            ("k".into(), zerodds_corba_rt::AnyValue::Long(7)),
+            ("v".into(), zerodds_corba_rt::AnyValue::Str("seven".into())),
         ],
     });
-    let any_seq = zerodds_cdr::CorbaAny(zerodds_cdr::AnyValue::Seq {
-        element: zerodds_cdr::TypeCode::Long,
+    let any_seq = zerodds_corba_rt::CorbaAny(zerodds_corba_rt::AnyValue::Seq {
+        element: zerodds_corba_rt::TypeCode::Long,
         items: vec![
-            zerodds_cdr::AnyValue::Long(10),
-            zerodds_cdr::AnyValue::Long(20),
-            zerodds_cdr::AnyValue::Long(30),
+            zerodds_corba_rt::AnyValue::Long(10),
+            zerodds_corba_rt::AnyValue::Long(20),
+            zerodds_corba_rt::AnyValue::Long(30),
         ],
     });
 
@@ -148,7 +159,7 @@ fn main() {
         b.add64(1_000_000_000_000, 1).unwrap();
     });
     bench("next_char (char, 1 byte)", n, || {
-        b.next_char(b'A').unwrap();
+        b.next_char('A').unwrap();
     });
     bench("concat (string)", n, || {
         b.concat("foo".into(), "bar".into()).unwrap();

@@ -1,815 +1,818 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! DynamicData (XTypes 1.3 §7.5.6).
+//! `DynamicData` — a value of a type known only at run time. §7.5.2.
 //!
-//! `DynamicData` is a data instance of a `DynamicType`. The API
-//! is spec-frozen (method names + signatures). Relative to the spec,
-//! two simplifications are made:
+//! It is the **second implementation** of
+//! [`zerodds_wire_codec::Source`] and [`zerodds_wire_codec::Sink`], and
+//! that is the whole of what it is. `serde_json::Value` is the first, in
+//! `zerodds_wire_codec::json`; between them there is one walk over the
+//! layout plan, in each direction, and no second answer to a framing
+//! question.
 //!
-//! 1. All 12 typed getters/setters go through a `DynamicValue`
-//!    discriminator enum, by which the `set_<T>_value`/`get_<T>_value`
-//!    methods do their type check. Type mismatch → `BadParameter`.
-//! 2. Loans are modeled via a reference-counted `DataLoan`
-//!    (Spec §7.5.6.1 — the full loan API follows with C4.7).
+//! ## What that buys and what it costs
+//!
+//! `encode`, `decode`, `canonicalise` and `default::of_type` are already
+//! generic over both traits, so a `DynamicData` reaches the wire through
+//! the same code a JSON value does — the same DHEADER decisions, the same
+//! EMHEADER decisions, the same length codes, the same dialect answers.
+//! The measurement is in `tests/dynamic_corpus.rs`: over all 347 cases of
+//! `tests/interop-corpus/` in all four `{XCDR1, XCDR2} × {LE, BE}`
+//! combinations, a `DynamicData` decoded from the bytes a
+//! `serde_json::Value` produced re-encodes to those same bytes, octet for
+//! octet.
+//!
+//! What it costs is that this type carries no rule of its own. A bound is
+//! not checked here, a range is not checked here, an enumerator's name is
+//! not looked up here — all of that is `zerodds_wire_codec::contract`,
+//! which is asked once for every representation. A rule implemented twice
+//! is a rule two representations can disagree about.
+//!
+//! ## What it refuses
+//!
+//! Nothing silently. `DynamicData` can hold every value the two traits
+//! construct — an `i128` holds every IDL integer exactly, a
+//! [`Float128`] holds a `long double` exactly, a `String` holds a
+//! `fixed<P,S>`'s decimal exactly — so there is no value the sink has to
+//! turn away. The refusals are all on the read side: asking a text for an
+//! integer, asking an aggregate for a character, asking an integer that
+//! no `f64` holds exactly for a float. Each is a
+//! [`ProbeError::Mismatch`] naming the path.
+//!
+//! It is a **superset** of what JSON can hold, which is the one place the
+//! two representations differ on purpose: JSON has no NaN and no
+//! infinity, and refuses them ([`zerodds_wire_codec::json`]'s fourth
+//! rule); this holds them. [`Source::render`] writes them as bare tokens
+//! that no value file admits, so a comparison shows them rather than
+//! letting one compare equal to a number.
+//!
+//! ## The canonical text
+//!
+//! [`Source::render`] writes the form `tests/interop-corpus/`'s value
+//! files are written in: keys sorted, no whitespace, a 64-bit integer and
+//! a `long double` and a `fixed<P,S>` as strings, a character as a
+//! one-character string, an enumerator as its name, a bitmask as an array
+//! of bit names, a bitset as an object of numbers, a map entry as a
+//! two-element array. That is a decision about **this** representation
+//! and is stated here for the reason `json.rs` states JSON's: what "one
+//! form" means depends on what the values are written in.
+//!
+//! One spelling is not JSON's and is named rather than left to be found:
+//! a floating-point number is written with Rust's shortest round-trip
+//! decimal, where `serde_json` writes `ryu`'s. The two agree on the value
+//! and not always on the text — `1.0` against `1`. Nothing compares the
+//! two texts: the corpus proof compares **octets**, which is the thing
+//! two implementations have to agree on.
 
-use alloc::boxed::Box;
-use alloc::collections::BTreeMap;
-use alloc::string::String;
+use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
-use super::descriptor::{MemberId, TypeKind};
-use super::error::DynamicError;
-use super::type_::DynamicType;
+use zerodds_ast::PrimitiveKind;
+use zerodds_float128::Float128;
+use zerodds_wire_codec::{Aggregate, ProbeError, Sink, Source};
 
-// ----------------------------------------------------------------------
-// DynamicValue — internal storage enum
-// ----------------------------------------------------------------------
-
-/// Sum type for all values storable in DynamicData. Spec §7.5.6
-/// speaks of 12 primitive types + composite + sequence — this enum
-/// encapsulates the storage.
-#[derive(Debug, Clone)]
-pub enum DynamicValue {
-    /// `bool`.
-    Bool(bool),
-    /// 8-bit unsigned (`octet`).
-    Byte(u8),
-    /// `int8`.
-    Int8(i8),
-    /// `uint8`.
-    UInt8(u8),
-    /// `int16`.
-    Int16(i16),
-    /// `uint16`.
-    UInt16(u16),
-    /// `int32`.
-    Int32(i32),
-    /// `uint32`.
-    UInt32(u32),
-    /// `int64`.
-    Int64(i64),
-    /// `uint64`.
-    UInt64(u64),
-    /// `float`.
-    Float32(f32),
-    /// `double`.
-    Float64(f64),
-    /// `char`.
-    Char8(u8),
-    /// `wchar`.
-    Char16(u16),
-    /// `string`.
-    String(String),
-    /// `wstring` (UTF-16 as Vec<u16>).
-    WString(Vec<u16>),
-    /// Composite or sequence — embedded `DynamicData`.
-    Complex(Box<DynamicData>),
-    /// Sequence of DynamicData (spec: the element type is known from the
-    /// containerizing TypeDescriptor).
-    Sequence(Vec<DynamicData>),
-    /// `map<K,V>` — ordered key→value entries. Each key/value is a `DynamicData`
-    /// (a scalar wrapped under member id 0, or a composite aggregate), matching
-    /// how sequence elements are stored. Entry order mirrors the wire order.
-    Map(Vec<(DynamicData, DynamicData)>),
-    /// Discard / not set (the default value is returned).
-    None,
-}
-
-impl PartialEq for DynamicValue {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Bool(a), Self::Bool(b)) => a == b,
-            (Self::Byte(a), Self::Byte(b)) => a == b,
-            (Self::Int8(a), Self::Int8(b)) => a == b,
-            (Self::UInt8(a), Self::UInt8(b)) => a == b,
-            (Self::Int16(a), Self::Int16(b)) => a == b,
-            (Self::UInt16(a), Self::UInt16(b)) => a == b,
-            (Self::Int32(a), Self::Int32(b)) => a == b,
-            (Self::UInt32(a), Self::UInt32(b)) => a == b,
-            (Self::Int64(a), Self::Int64(b)) => a == b,
-            (Self::UInt64(a), Self::UInt64(b)) => a == b,
-            (Self::Float32(a), Self::Float32(b)) => a.to_bits() == b.to_bits(),
-            (Self::Float64(a), Self::Float64(b)) => a.to_bits() == b.to_bits(),
-            (Self::Char8(a), Self::Char8(b)) => a == b,
-            (Self::Char16(a), Self::Char16(b)) => a == b,
-            (Self::String(a), Self::String(b)) => a == b,
-            (Self::WString(a), Self::WString(b)) => a == b,
-            (Self::Complex(a), Self::Complex(b)) => a.equals(b),
-            (Self::Sequence(a), Self::Sequence(b)) => {
-                a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| x.equals(y))
-            }
-            (Self::Map(a), Self::Map(b)) => {
-                a.len() == b.len()
-                    && a.iter()
-                        .zip(b.iter())
-                        .all(|((ka, va), (kb, vb))| ka.equals(kb) && va.equals(vb))
-            }
-            (Self::None, Self::None) => true,
-            _ => false,
-        }
-    }
-}
-
-impl DynamicValue {
-    fn kind_str(&self) -> &'static str {
-        match self {
-            Self::Bool(_) => "bool",
-            Self::Byte(_) => "byte",
-            Self::Int8(_) => "int8",
-            Self::UInt8(_) => "uint8",
-            Self::Int16(_) => "int16",
-            Self::UInt16(_) => "uint16",
-            Self::Int32(_) => "int32",
-            Self::UInt32(_) => "uint32",
-            Self::Int64(_) => "int64",
-            Self::UInt64(_) => "uint64",
-            Self::Float32(_) => "float32",
-            Self::Float64(_) => "float64",
-            Self::Char8(_) => "char8",
-            Self::Char16(_) => "char16",
-            Self::String(_) => "string",
-            Self::WString(_) => "wstring",
-            Self::Complex(_) => "complex",
-            Self::Sequence(_) => "sequence",
-            Self::Map(_) => "map",
-            Self::None => "none",
-        }
-    }
-}
-
-// ----------------------------------------------------------------------
-// DataLoan — simple RAII wrapper
-// ----------------------------------------------------------------------
-
-/// Returns a loaned `DynamicData` view onto a member.
-/// Lifecycle: `loan_value` → `return_loaned_value` (Spec §7.5.6.1).
+/// A value of a type known only at run time.
 ///
-/// Minimal in phase 4 — the full loan refcount comes with C4.7.
-#[derive(Debug)]
-pub struct DataLoan {
-    member_id: MemberId,
-    /// Index into the internal loans array — invalidated on `return`.
-    handle: u32,
-}
-
-impl DataLoan {
-    /// Member id for which the loan was created.
-    #[must_use]
-    pub fn member_id(&self) -> MemberId {
-        self.member_id
-    }
-}
-
-// ----------------------------------------------------------------------
-// DynamicData
-// ----------------------------------------------------------------------
-
-/// XTypes 1.3 §7.5.6 DynamicData.
-///
-/// Data instance of a `DynamicType`. The type must be passed at
-/// construction (`DynamicDataFactory::create_data`); afterwards
-/// members can be read/written via `set_<T>_value(member_id, value)` /
-/// `get_<T>_value`.
-#[derive(Debug, Clone)]
-pub struct DynamicData {
-    type_: DynamicType,
-    values: BTreeMap<MemberId, DynamicValue>,
-    /// Active loans — for lifecycle validation.
-    active_loans: Vec<u32>,
-    /// Monotonically growing loan counter.
-    next_loan_handle: u32,
+/// One variant per [`Sink`] constructor, so that what came out of the
+/// read direction is what goes back into the write direction. The
+/// variants that carry a [`PrimitiveKind`] carry the one the sink was
+/// told; nothing here infers a width from a magnitude.
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+pub enum DynamicData {
+    /// `true` or `false`.
+    Boolean(bool),
+    /// An integer.
+    ///
+    /// `kind` is `None` where the sink was not told a width. That happens
+    /// in exactly one place and it is the trait's shape, not an omission
+    /// here: [`Sink::bitfields`] hands over `(name, value)` pairs with no
+    /// width, because a bitset's holder type is the *type's* business and
+    /// §7.4.1.1.3.1 packs the fields into one holder rather than giving
+    /// each its own.
+    Integer {
+        /// The width the sink was told, where it was told one.
+        kind: Option<PrimitiveKind>,
+        /// The value, exactly. An `i128` holds every IDL integer.
+        value: i128,
+    },
+    /// A floating-point value.
+    ///
+    /// `kind` is `None` for [`Sink::number`] — "a number no type governs",
+    /// which is a `@default` float literal before the member's own width
+    /// narrows it.
+    Float {
+        /// The width the sink was told, where it was told one.
+        kind: Option<PrimitiveKind>,
+        /// The value.
+        value: f64,
+    },
+    /// A `long double`, exactly. §7.2.2.2.1.2.
+    LongDouble(Float128),
+    /// One character.
+    ///
+    /// Held as a `String` of exactly one `char`, which is the invariant
+    /// [`Sink::character`] establishes and the only way to build one. The
+    /// text form is what [`Source::as_text`] has to return, and a `char`
+    /// cannot be borrowed as a `&str`.
+    Character {
+        /// `Char` or `WChar`, as the sink was told.
+        kind: PrimitiveKind,
+        /// The character, as a one-character string.
+        value: String,
+    },
+    /// A `string` or a `wstring`, and the loose form of a `@default`
+    /// literal that has not met its type yet.
+    Text(String),
+    /// A `fixed<P, S>`, in the canonical decimal
+    /// `zerodds_wire_codec::canonical` gives it.
+    Fixed(String),
+    /// The enumerator this value names.
+    ///
+    /// A name and never the number behind it, for the reason
+    /// [`Sink::enumerator`] states: the number depends on `@value` and on
+    /// the dialect, and two peers that number their enumerators
+    /// differently still mean the same enumerator.
+    Enumerator(String),
+    /// A bitmask, as the bits it sets in declaration order.
+    ///
+    /// The elements are [`Self::Text`], because that is what
+    /// `zerodds_wire_codec::contract::bit_names` reads them back as. The
+    /// container is what carries the fact that they are bit names.
+    Bits(Vec<DynamicData>),
+    /// A bitset, as its named bitfields in declaration order.
+    ///
+    /// Anonymous bitfields are padding and are not among them.
+    Bitfields(Vec<(String, DynamicData)>),
+    /// A sequence, an array, a map, or one entry of a map.
+    ///
+    /// A map entry is a two-element collection, `[key, value]`, and not a
+    /// variant of its own — the same shape `serde_json::Value` gives it.
+    /// A separate variant would compare unequal to the collection
+    /// `zerodds_wire_codec::canonical` rebuilds a map's entries as, and
+    /// two forms of one value is what the canonical form exists to
+    /// prevent.
+    Collection(Vec<DynamicData>),
+    /// A structure, a valuetype or a union.
+    ///
+    /// In insertion order, which is the order the reader met the members
+    /// in — for a `@mutable` type that is the order the *writer* chose,
+    /// and it is preserved rather than sorted so that a caller can see
+    /// it. [`Source::render`] sorts, which is where an order that must
+    /// not reach a comparison stops.
+    Aggregate(Vec<(String, DynamicData)>),
 }
 
 impl DynamicData {
-    pub(super) fn new(type_: DynamicType) -> Self {
-        Self {
-            type_,
-            values: BTreeMap::new(),
-            active_loans: Vec::new(),
-            next_loan_handle: 1,
+    /// A boolean.
+    #[must_use]
+    pub const fn boolean(value: bool) -> Self {
+        Self::Boolean(value)
+    }
+
+    /// An integer of a known width.
+    #[must_use]
+    pub const fn integer(kind: PrimitiveKind, value: i128) -> Self {
+        Self::Integer {
+            kind: Some(kind),
+            value,
         }
     }
 
-    /// Spec §7.5.6.2.1 `type()`.
+    /// A floating-point value of a known width.
     #[must_use]
-    pub fn dynamic_type(&self) -> &DynamicType {
-        &self.type_
-    }
-
-    /// Spec §7.5.6.2.6 `equals(other)` — Deep.
-    #[must_use]
-    pub fn equals(&self, other: &Self) -> bool {
-        self.type_.equals(&other.type_) && self.values == other.values
-    }
-
-    /// Spec §7.5.6.2.4 `get_item_count()`.
-    #[must_use]
-    pub fn item_count(&self) -> u32 {
-        u32::try_from(self.values.len()).unwrap_or(u32::MAX)
-    }
-
-    /// Checks whether `member_id` is defined in the type.
-    fn validate_member(&self, member_id: MemberId) -> Result<(), DynamicError> {
-        if self.type_.member_by_id(member_id).is_none() {
-            return Err(DynamicError::bad_parameter(alloc::format!(
-                "no member with id {member_id} in type {}",
-                self.type_.name()
-            )));
+    pub const fn float(kind: PrimitiveKind, value: f64) -> Self {
+        Self::Float {
+            kind: Some(kind),
+            value,
         }
-        Ok(())
     }
 
-    /// General setter — type-safe via `DynamicValue` with
-    /// Spec §7.5.4.1.2 TryConstruct apply semantics (C4.7): if the
-    /// member type defines a `bound` and the value violates the bound
-    /// (too long a string, too long a sequence, mismatched
-    /// array length), the `try_construct` strategy decides:
-    /// `Discard` leaves the member unset, `UseDefault` sets the
-    /// `default_value`, `Trim` truncates to the bound.
-    fn set(&mut self, member_id: MemberId, value: DynamicValue) -> Result<(), DynamicError> {
-        self.validate_member(member_id)?;
-        let member = self.type_.member_by_id(member_id).cloned();
-        if let Some(ref m) = member {
-            check_value_kind_matches_type(&value, m.dynamic_type().kind())?;
+    /// One character of a known width.
+    #[must_use]
+    pub fn character(kind: PrimitiveKind, value: char) -> Self {
+        Self::Character {
+            kind,
+            value: value.to_string(),
         }
-        // TryConstruct apply (Spec §7.5.4.1.2). Members without bounds:
-        // `apply_try_construct` returns `Accept(value)` unchanged.
-        if let Some(m) = member {
-            match crate::dynamic::try_construct::apply_try_construct(&m, value) {
-                crate::dynamic::TryConstructOutcome::Accept(v)
-                | crate::dynamic::TryConstructOutcome::UseDefault(v)
-                | crate::dynamic::TryConstructOutcome::Trim(v) => {
-                    self.values.insert(member_id, v);
-                }
-                crate::dynamic::TryConstructOutcome::Discard => {
-                    // Member stays unset (Spec §7.5.4.1.2 Discard).
-                    self.values.remove(&member_id);
-                }
+    }
+
+    /// A string.
+    #[must_use]
+    pub const fn text(value: String) -> Self {
+        Self::Text(value)
+    }
+
+    /// The character this value carries, where it carries exactly one.
+    ///
+    /// `None` for anything else — including a [`Self::Text`] of one
+    /// character, which is a string that happens to be short and not a
+    /// character. Which of the two a value is, is the sink's answer and
+    /// is not re-derived from the length.
+    #[must_use]
+    pub fn as_char(&self) -> Option<char> {
+        match self {
+            Self::Character { value, .. } => value.chars().next(),
+            _ => None,
+        }
+    }
+
+    /// The width this value was built at, where it was built at one.
+    #[must_use]
+    pub const fn primitive_kind(&self) -> Option<PrimitiveKind> {
+        match self {
+            Self::Integer { kind, .. } | Self::Float { kind, .. } => *kind,
+            Self::Character { kind, .. } => Some(*kind),
+            Self::LongDouble(_) => Some(PrimitiveKind::Float128),
+            Self::Boolean(_) => Some(PrimitiveKind::Boolean),
+            _ => None,
+        }
+    }
+
+    /// The named members of an aggregate or a bitset, in the order they
+    /// went in.
+    #[must_use]
+    pub fn members(&self) -> Option<&[(String, Self)]> {
+        match self {
+            Self::Aggregate(entries) | Self::Bitfields(entries) => Some(entries),
+            _ => None,
+        }
+    }
+
+    /// The elements of a collection or a bitmask.
+    #[must_use]
+    pub fn items(&self) -> Option<&[Self]> {
+        match self {
+            Self::Collection(items) | Self::Bits(items) => Some(items),
+            _ => None,
+        }
+    }
+
+    /// The value of one named member.
+    #[must_use]
+    pub fn member(&self, name: &str) -> Option<&Self> {
+        self.members()?
+            .iter()
+            .find(|(known, _)| known == name)
+            .map(|(_, value)| value)
+    }
+}
+
+impl Source for DynamicData {
+    fn kind(&self) -> &'static str {
+        match self {
+            Self::Boolean(_) => "a boolean",
+            Self::Integer { .. } => "an integer",
+            Self::Float { .. } => "a number",
+            Self::LongDouble(_) => "a long double",
+            Self::Character { .. } => "a character",
+            Self::Text(_) => "a string",
+            Self::Fixed(_) => "a fixed-point decimal",
+            Self::Enumerator(_) => "an enumerator",
+            Self::Bits(_) => "a bitmask",
+            Self::Bitfields(_) => "a bitset",
+            Self::Collection(_) => "a collection",
+            Self::Aggregate(_) => "an aggregate",
+        }
+    }
+
+    /// Always `false`.
+    ///
+    /// This representation has no explicit nothing: an absent
+    /// `@optional` member is a member that is not in the aggregate at
+    /// all, which is what `contract::member_value` reads. A representation
+    /// with no such thing answers `false` and the rule costs it nothing —
+    /// see [`Source::is_null`].
+    fn is_null(&self) -> bool {
+        false
+    }
+
+    fn is_object(&self) -> bool {
+        matches!(self, Self::Aggregate(_) | Self::Bitfields(_))
+    }
+
+    fn as_bool(&self) -> Option<bool> {
+        match self {
+            Self::Boolean(value) => Some(*value),
+            _ => None,
+        }
+    }
+
+    fn as_text(&self) -> Option<&str> {
+        match self {
+            Self::Text(text)
+            | Self::Fixed(text)
+            | Self::Enumerator(text)
+            | Self::Character { value: text, .. } => Some(text),
+            _ => None,
+        }
+    }
+
+    fn as_float(&self) -> Option<f64> {
+        match self {
+            Self::Float { value, .. } => Some(*value),
+            // An integer where a float is wanted: only where the value
+            // survives the conversion. A `long long` past 2^53 that
+            // silently became the nearest double would put a number
+            // nobody wrote on the wire; `None` here becomes a
+            // `ProbeError::Mismatch` naming the path, in
+            // `contract::float`.
+            Self::Integer { value, .. } => {
+                #[allow(clippy::cast_precision_loss)]
+                let widened = *value as f64;
+                (widened as i128 == *value).then_some(widened)
             }
-        } else {
-            self.values.insert(member_id, value);
+            _ => None,
         }
-        Ok(())
     }
 
-    /// Lese-Helper.
-    fn get(&self, member_id: MemberId) -> Result<&DynamicValue, DynamicError> {
-        self.values.get(&member_id).ok_or_else(|| {
-            DynamicError::PreconditionNotMet(alloc::format!(
-                "member {member_id} not set in {}",
-                self.type_.name()
-            ))
+    fn as_items(&self) -> Option<&[Self]> {
+        self.items()
+    }
+
+    fn field(&self, name: &str) -> Option<&Self> {
+        self.member(name)
+    }
+
+    fn entries(&self) -> Vec<(&str, &Self)> {
+        self.members().map_or_else(Vec::new, |entries| {
+            entries
+                .iter()
+                .map(|(name, value)| (name.as_str(), value))
+                .collect()
         })
     }
 
-    /// Generic read of a member's raw [`DynamicValue`], or `None` if unset.
-    ///
-    /// The reflective codec ([`crate::dynamic::codec`]) uses this to walk a
-    /// fully-populated value without the per-kind typed getters.
-    #[must_use]
-    pub fn get_value(&self, member_id: MemberId) -> Option<&DynamicValue> {
-        self.values.get(&member_id)
-    }
-
-    /// Insert a raw [`DynamicValue`] for `member_id` WITHOUT TryConstruct
-    /// bound-application — a faithful set for the reflective decoder, which
-    /// reconstructs exactly what was on the wire. Unknown ids are accepted
-    /// (the decoder only ever passes ids from the type's own members).
-    pub fn set_value_raw(&mut self, member_id: MemberId, value: DynamicValue) {
-        self.values.insert(member_id, value);
-    }
-
-    /// The member ids that currently carry a value, in member (index) order of
-    /// the type. Used by the reflective encoder to emit members deterministically.
-    #[must_use]
-    pub fn set_member_ids(&self) -> alloc::vec::Vec<MemberId> {
-        let mut ids: alloc::vec::Vec<MemberId> = self.values.keys().copied().collect();
-        // Order by the type's declared member index so encode order is stable.
-        ids.sort_by_key(|id| self.type_.member_by_id(*id).map_or(u32::MAX, |m| m.index()));
-        ids
-    }
-}
-
-// ----------------------------------------------------------------------
-// 12 Primitive Getters/Setters (Spec §7.5.6.3)
-// ----------------------------------------------------------------------
-
-macro_rules! primitive_accessor {
-    ($get_name:ident, $set_name:ident, $rust_ty:ty, $variant:ident) => {
-        impl DynamicData {
-            #[doc = concat!("Spec §7.5.6.3 `get_", stringify!($variant), "_value`.")]
-            ///
-            /// # Errors
-            /// `BadParameter` on an unknown id, `Inconsistent` on a
-            /// type mismatch.
-            pub fn $get_name(&self, member_id: MemberId) -> Result<$rust_ty, DynamicError> {
-                let v = self.get(member_id)?;
-                if let DynamicValue::$variant(x) = v {
-                    Ok(x.clone())
+    fn as_integer(&self, path: &str) -> Result<i128, ProbeError> {
+        match self {
+            Self::Integer { value, .. } => Ok(*value),
+            // The loose form of a `@default` integer literal, which
+            // `zerodds_wire_codec::default::literal_value` writes as text
+            // so that a 64-bit member keeps its low bits.
+            // `canonicalise` then reads it back here, at the member's own
+            // type.
+            Self::Text(text) => text.parse::<i128>().map_err(|_| ProbeError::Mismatch {
+                path: path.to_string(),
+                expected: String::from("an integer in a string"),
+                found: alloc::format!("`{text}`"),
+            }),
+            // A number where an integer is wanted: only where it is
+            // exactly integral. `3.5` asked for as an `octet` is a value
+            // file that says something the type cannot hold, and
+            // truncating it would put `3` on the wire.
+            Self::Float { value, .. } => {
+                #[allow(clippy::cast_possible_truncation)]
+                let truncated = *value as i128;
+                #[allow(clippy::cast_precision_loss)]
+                let exact = value.is_finite() && (truncated as f64) == *value;
+                if exact {
+                    Ok(truncated)
                 } else {
-                    Err(DynamicError::bad_parameter(alloc::format!(
-                        "type mismatch: expected {} got {}",
-                        stringify!($variant),
-                        v.kind_str()
-                    )))
+                    Err(ProbeError::Mismatch {
+                        path: path.to_string(),
+                        expected: String::from("an integer"),
+                        found: alloc::format!("the number {value}"),
+                    })
                 }
             }
+            other => Err(ProbeError::Mismatch {
+                path: path.to_string(),
+                expected: String::from("an integer"),
+                found: Source::kind(other).to_string(),
+            }),
+        }
+    }
 
-            #[doc = concat!("Spec §7.5.6.3 `set_", stringify!($variant), "_value`.")]
-            ///
-            /// # Errors
-            /// Type mismatch / unknown id.
-            pub fn $set_name(
-                &mut self,
-                member_id: MemberId,
-                value: $rust_ty,
-            ) -> Result<(), DynamicError> {
-                self.set(member_id, DynamicValue::$variant(value))
+    fn as_float128(&self, path: &str) -> Result<Float128, ProbeError> {
+        match self {
+            Self::LongDouble(value) => Ok(*value),
+            // A double widens into a binary128 exactly, so a `@default`
+            // float literal on a `long double` member is accepted — the
+            // same rule `json.rs` states for a JSON number.
+            Self::Float { value, .. } => Ok(Float128::from_f64(*value)),
+            // And the decimal spelling, which is what a value file uses
+            // and what `Sink::float128` writes back out.
+            Self::Text(text) | Self::Fixed(text) => match float128_from_hex_bits(text) {
+                Some(Ok(value)) => Ok(value),
+                Some(Err(expected)) => Err(ProbeError::Mismatch {
+                    path: path.to_string(),
+                    expected: String::from(expected),
+                    found: alloc::format!("`{text}`"),
+                }),
+                None => text
+                    .parse::<Float128>()
+                    .map_err(|error| ProbeError::Mismatch {
+                        path: path.to_string(),
+                        expected: String::from(
+                            "a decimal a long double can hold, or 0x and 32 hex digits",
+                        ),
+                        found: alloc::format!("`{text}` — {error}"),
+                    }),
+            },
+            other => Err(ProbeError::Mismatch {
+                path: path.to_string(),
+                expected: String::from("a long double, as a decimal string or a number"),
+                found: Source::kind(other).to_string(),
+            }),
+        }
+    }
+
+    fn render(&self) -> String {
+        let mut out = String::new();
+        write_text(self, &mut out);
+        out
+    }
+}
+
+/// The canonical text of one value. See the module note.
+///
+/// zerodds-lint: recursion-depth 64 (collection and aggregate nesting
+/// of the value). [`DynamicData`] is an owned tree — no variant holds a
+/// shared or back reference — so the walk cannot cycle, and every
+/// producer of a value caps its nesting: the decoder at
+/// [`zerodds_wire_codec::MAX_VALUE_DEPTH`], the type walk at this
+/// module's sibling `type_::MAX_DEPTH`, both 64.
+fn write_text(value: &DynamicData, out: &mut String) {
+    use core::fmt::Write as _;
+    match value {
+        DynamicData::Boolean(true) => out.push_str("true"),
+        DynamicData::Boolean(false) => out.push_str("false"),
+        // The two 64-bit widths are decimal strings and every narrower
+        // one is a number — the rule the corpus is written to, decided on
+        // the **width** and not on the magnitude, so that a form does not
+        // change shape at 2^53. A bitfield, which was told no width, is a
+        // number: a bitset's fields are at most 64 bits and its holder is
+        // the type's, not the field's.
+        DynamicData::Integer { kind, value } => {
+            if matches!(kind, Some(PrimitiveKind::Int64 | PrimitiveKind::UInt64)) {
+                let _ = write!(out, "\"{value}\"");
+            } else {
+                let _ = write!(out, "{value}");
             }
         }
+        DynamicData::Float { value, .. } => write_number(*value, out),
+        // The exact expansion and not the shortest one, as
+        // `Sink::float128` writes it: every binary value has finitely
+        // many decimal digits, and four columns that each implement a
+        // shortest-form search will disagree about which of two equally
+        // short spellings to emit long before they disagree about the
+        // value.
+        DynamicData::LongDouble(value) => write_quoted(&value.to_exact_decimal(), out),
+        DynamicData::Character { value, .. }
+        | DynamicData::Text(value)
+        | DynamicData::Fixed(value)
+        | DynamicData::Enumerator(value) => write_quoted(value, out),
+        DynamicData::Bits(items) | DynamicData::Collection(items) => {
+            out.push('[');
+            for (index, item) in items.iter().enumerate() {
+                if index > 0 {
+                    out.push(',');
+                }
+                write_text(item, out);
+            }
+            out.push(']');
+        }
+        DynamicData::Bitfields(entries) | DynamicData::Aggregate(entries) => {
+            // Sorted, and not in insertion order: a `@mutable` writer
+            // chooses the order it writes its members in, and a canonical
+            // form that kept it would report the writer's choice as a
+            // difference in the value.
+            let mut keys: Vec<&String> = entries.iter().map(|(name, _)| name).collect();
+            keys.sort_unstable();
+            out.push('{');
+            for (index, key) in keys.into_iter().enumerate() {
+                if index > 0 {
+                    out.push(',');
+                }
+                write_quoted(key, out);
+                out.push(':');
+                match entries.iter().find(|(name, _)| name == key) {
+                    Some((_, entry)) => write_text(entry, out),
+                    // Unreachable through the key list this was built
+                    // from. Named rather than skipped: a renderer that
+                    // printed nothing here would emit a text that parses
+                    // as something else, and the reader downstream would
+                    // report only that.
+                    None => out.push_str("\"<missing>\""),
+                }
+            }
+            out.push('}');
+        }
+    }
+}
+
+/// A floating-point value, in the one spelling this representation
+/// writes.
+///
+/// NaN and the two infinities are bare tokens no value file admits. They
+/// are written rather than refused because [`Source::render`] has no way
+/// to refuse — and written as tokens rather than as `null` or `0`, which
+/// would compare equal to a value somebody meant.
+fn write_number(value: f64, out: &mut String) {
+    use core::fmt::Write as _;
+    if value.is_nan() {
+        out.push_str("nan");
+    } else if value.is_infinite() {
+        out.push_str(if value.is_sign_negative() {
+            "-infinity"
+        } else {
+            "infinity"
+        });
+    } else {
+        let _ = write!(out, "{value}");
+    }
+}
+
+/// One string, escaped as a value file escapes it.
+fn write_quoted(text: &str, out: &mut String) {
+    use core::fmt::Write as _;
+    out.push('"');
+    for ch in text.chars() {
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            control if (control as u32) < 0x20 => {
+                let _ = write!(out, "\\u{:04x}", control as u32);
+            }
+            other => out.push(other),
+        }
+    }
+    out.push('"');
+}
+
+impl Sink for DynamicData {
+    fn boolean(value: bool) -> Self {
+        Self::Boolean(value)
+    }
+
+    fn integer(kind: PrimitiveKind, value: i128, path: &str) -> Result<Self, ProbeError> {
+        // Infallible: an `i128` holds every IDL integer, at every width,
+        // exactly. `path` is in the signature because a representation
+        // that *cannot* hold one has to say where — see `json.rs`, whose
+        // JSON number stops carrying a 64-bit integer past 2^53.
+        let _ = path;
+        Ok(Self::Integer {
+            kind: Some(kind),
+            value,
+        })
+    }
+
+    fn float(kind: PrimitiveKind, value: f64, path: &str) -> Result<Self, ProbeError> {
+        // Infallible, and NaN and infinity among them: this
+        // representation has a spelling for both. That is the one place
+        // it is a superset of JSON, which has neither — see the module
+        // note.
+        let _ = path;
+        Ok(Self::Float {
+            kind: Some(kind),
+            value,
+        })
+    }
+
+    fn float128(value: Float128) -> Self {
+        Self::LongDouble(value)
+    }
+
+    // Built out of the variant and not through the inherent
+    // constructor of the same name. Inherent resolution is what keeps
+    // the two apart, and `Self::character(..)` here would turn silent
+    // precedence into silent recursion the day the inherent one is
+    // renamed — the trap `json.rs` names on `is_null`.
+    fn character(kind: PrimitiveKind, value: char) -> Self {
+        Self::Character {
+            kind,
+            value: value.to_string(),
+        }
+    }
+
+    fn text(value: String) -> Self {
+        Self::Text(value)
+    }
+
+    fn fixed(decimal: String) -> Self {
+        Self::Fixed(decimal)
+    }
+
+    fn enumerator(name: String) -> Self {
+        Self::Enumerator(name)
+    }
+
+    fn bit_names(names: Vec<String>) -> Self {
+        Self::Bits(names.into_iter().map(Self::Text).collect())
+    }
+
+    fn bitfields(fields: Vec<(String, i128)>, path: &str) -> Result<Self, ProbeError> {
+        // Infallible for the reason `integer` is. The width is not among
+        // the arguments, so the values carry none — see
+        // `DynamicData::Integer`.
+        let _ = path;
+        Ok(Self::Bitfields(
+            fields
+                .into_iter()
+                .map(|(name, value)| (name, Self::Integer { kind: None, value }))
+                .collect(),
+        ))
+    }
+
+    fn collection(items: Vec<Self>) -> Self {
+        Self::Collection(items)
+    }
+
+    fn map_entry(key: Self, value: Self) -> Self {
+        Self::Collection(alloc::vec![key, value])
+    }
+
+    fn aggregate(members: Aggregate<Self>) -> Self {
+        Self::Aggregate(members.into_entries())
+    }
+
+    fn number(value: f64, path: &str) -> Result<Self, ProbeError> {
+        let _ = path;
+        Ok(Self::Float { kind: None, value })
+    }
+}
+
+/// A `long double` written as its raw binary128 bits: `0x` and exactly
+/// 32 hexadecimal digits, least significant octet first.
+///
+/// The dds-xtypes test suite spells every `float128` this way — its
+/// `struct_float128_x1.json` carries `0x0000000000000000000000000000fe3f`,
+/// which is 0.5, and `struct_primitives.json` carries
+/// `0x9A999999999999999999999999890240`, which is 12.3. A decimal parse
+/// cannot read either: it stops at the `x` in byte 1. Both are the
+/// octets a little-endian host would write, so they are read back the
+/// same way.
+///
+/// Returns `None` when the text is not this form at all, so the caller
+/// can fall through to the decimal spelling. A text that *is* this form
+/// but malformed — wrong digit count, a non-hex digit — is an error at
+/// the caller, never a silently substituted value.
+fn float128_from_hex_bits(text: &str) -> Option<Result<Float128, &'static str>> {
+    let digits = text
+        .strip_prefix("0x")
+        .or_else(|| text.strip_prefix("0X"))?;
+    if digits.len() != 32 {
+        return Some(Err(
+            "exactly 32 hexadecimal digits, one per binary128 nibble",
+        ));
+    }
+    // Decoded rather than validated-then-parsed: a second pass would need a
+    // fallback for the digit the first pass already accepted, and a fallback
+    // on an unreachable branch is exactly the shape that hides a real one
+    // later. `nibble` answers `None`, so there is no value to substitute.
+    let nibble = |b: u8| match b {
+        b'0'..=b'9' => Some(b - b'0'),
+        b'a'..=b'f' => Some(b - b'a' + 10),
+        b'A'..=b'F' => Some(b - b'A' + 10),
+        _ => None,
     };
-}
-
-primitive_accessor!(get_boolean_value, set_boolean_value, bool, Bool);
-primitive_accessor!(get_byte_value, set_byte_value, u8, Byte);
-primitive_accessor!(get_int8_value, set_int8_value, i8, Int8);
-primitive_accessor!(get_uint8_value, set_uint8_value, u8, UInt8);
-primitive_accessor!(get_int16_value, set_int16_value, i16, Int16);
-primitive_accessor!(get_uint16_value, set_uint16_value, u16, UInt16);
-primitive_accessor!(get_int32_value, set_int32_value, i32, Int32);
-primitive_accessor!(get_uint32_value, set_uint32_value, u32, UInt32);
-primitive_accessor!(get_int64_value, set_int64_value, i64, Int64);
-primitive_accessor!(get_uint64_value, set_uint64_value, u64, UInt64);
-primitive_accessor!(get_float32_value, set_float32_value, f32, Float32);
-primitive_accessor!(get_float64_value, set_float64_value, f64, Float64);
-primitive_accessor!(get_char8_value, set_char8_value, u8, Char8);
-primitive_accessor!(get_char16_value, set_char16_value, u16, Char16);
-
-// String + WString separat — Clone-Semantik vs. Move.
-impl DynamicData {
-    /// Spec §7.5.6.3 `get_string_value`.
-    ///
-    /// # Errors
-    /// Type-Mismatch.
-    pub fn get_string_value(&self, member_id: MemberId) -> Result<String, DynamicError> {
-        let v = self.get(member_id)?;
-        if let DynamicValue::String(s) = v {
-            Ok(s.clone())
-        } else {
-            Err(DynamicError::bad_parameter(alloc::format!(
-                "type mismatch: expected string got {}",
-                v.kind_str()
-            )))
+    let mut octets = [0u8; 16];
+    for (slot, pair) in octets.iter_mut().zip(digits.as_bytes().chunks_exact(2)) {
+        match (nibble(pair[0]), nibble(pair[1])) {
+            (Some(high), Some(low)) => *slot = (high << 4) | low,
+            _ => return Some(Err("a hexadecimal digit")),
         }
     }
-
-    /// Spec §7.5.6.3 `set_string_value`.
-    ///
-    /// # Errors
-    /// Type mismatch / unknown id.
-    pub fn set_string_value(
-        &mut self,
-        member_id: MemberId,
-        value: impl Into<String>,
-    ) -> Result<(), DynamicError> {
-        self.set(member_id, DynamicValue::String(value.into()))
-    }
-
-    /// Spec §7.5.6.3 `get_wstring_value`.
-    ///
-    /// # Errors
-    /// Type-Mismatch.
-    pub fn get_wstring_value(&self, member_id: MemberId) -> Result<Vec<u16>, DynamicError> {
-        let v = self.get(member_id)?;
-        if let DynamicValue::WString(s) = v {
-            Ok(s.clone())
-        } else {
-            Err(DynamicError::bad_parameter(alloc::format!(
-                "type mismatch: expected wstring got {}",
-                v.kind_str()
-            )))
-        }
-    }
-
-    /// Spec §7.5.6.3 `set_wstring_value`.
-    ///
-    /// # Errors
-    /// Type mismatch / unknown id.
-    pub fn set_wstring_value(
-        &mut self,
-        member_id: MemberId,
-        value: Vec<u16>,
-    ) -> Result<(), DynamicError> {
-        self.set(member_id, DynamicValue::WString(value))
-    }
-}
-
-// ----------------------------------------------------------------------
-// Composite + Sequence (Spec §7.5.6.5)
-// ----------------------------------------------------------------------
-
-impl DynamicData {
-    /// Spec §7.5.6.5.1 `get_complex_value(member_id)`.
-    ///
-    /// Returns a read view onto the composite member.
-    ///
-    /// # Errors
-    /// Type mismatch or member not set.
-    pub fn get_complex_value(&self, member_id: MemberId) -> Result<&DynamicData, DynamicError> {
-        let v = self.get(member_id)?;
-        if let DynamicValue::Complex(d) = v {
-            Ok(d)
-        } else {
-            Err(DynamicError::bad_parameter(alloc::format!(
-                "type mismatch: expected complex got {}",
-                v.kind_str()
-            )))
-        }
-    }
-
-    /// Spec §7.5.6.5.2 `set_complex_value(member_id, data)`.
-    ///
-    /// # Errors
-    /// Type mismatch or member does not exist.
-    pub fn set_complex_value(
-        &mut self,
-        member_id: MemberId,
-        value: DynamicData,
-    ) -> Result<(), DynamicError> {
-        self.set(member_id, DynamicValue::Complex(Box::new(value)))
-    }
-
-    /// Returns the number of elements of a sequence member.
-    ///
-    /// # Errors
-    /// Type mismatch or member not set.
-    pub fn get_sequence_length(&self, member_id: MemberId) -> Result<u32, DynamicError> {
-        let v = self.get(member_id)?;
-        if let DynamicValue::Sequence(seq) = v {
-            Ok(u32::try_from(seq.len()).unwrap_or(u32::MAX))
-        } else {
-            Err(DynamicError::bad_parameter(alloc::format!(
-                "type mismatch: expected sequence got {}",
-                v.kind_str()
-            )))
-        }
-    }
-
-    /// Sets a sequence completely.
-    ///
-    /// # Errors
-    /// Type mismatch.
-    pub fn set_sequence_value(
-        &mut self,
-        member_id: MemberId,
-        value: Vec<DynamicData>,
-    ) -> Result<(), DynamicError> {
-        self.set(member_id, DynamicValue::Sequence(value))
-    }
-
-    /// Sets a `map<K,V>` member completely, as ordered key→value entries.
-    ///
-    /// # Errors
-    /// Type mismatch.
-    pub fn set_map_value(
-        &mut self,
-        member_id: MemberId,
-        entries: Vec<(DynamicData, DynamicData)>,
-    ) -> Result<(), DynamicError> {
-        self.set(member_id, DynamicValue::Map(entries))
-    }
-
-    /// Returns an element of a sequence member.
-    ///
-    /// # Errors
-    /// Index out of bounds / type mismatch.
-    pub fn get_sequence_element(
-        &self,
-        member_id: MemberId,
-        index: u32,
-    ) -> Result<&DynamicData, DynamicError> {
-        let v = self.get(member_id)?;
-        if let DynamicValue::Sequence(seq) = v {
-            seq.get(index as usize).ok_or_else(|| {
-                DynamicError::bad_parameter(alloc::format!(
-                    "sequence index {index} out of range (len={})",
-                    seq.len()
-                ))
-            })
-        } else {
-            Err(DynamicError::bad_parameter(alloc::format!(
-                "type mismatch: expected sequence got {}",
-                v.kind_str()
-            )))
-        }
-    }
-}
-
-// ----------------------------------------------------------------------
-// Loans (Spec §7.5.6.1) — minimal, full lifecycle in C4.7
-// ----------------------------------------------------------------------
-
-impl DynamicData {
-    /// Spec §7.5.6.1 `loan_value(member_id)`.
-    ///
-    /// Creates a `DataLoan` handle. Until `return_loaned_value` is
-    /// called, another loan operation on the same
-    /// member is not allowed.
-    ///
-    /// # Errors
-    /// Member not found, or member already on loan.
-    pub fn loan_value(&mut self, member_id: MemberId) -> Result<DataLoan, DynamicError> {
-        self.validate_member(member_id)?;
-        if self.active_loans.contains(&member_id) {
-            return Err(DynamicError::loan(alloc::format!(
-                "member {member_id} is already on loan"
-            )));
-        }
-        self.active_loans.push(member_id);
-        let handle = self.next_loan_handle;
-        self.next_loan_handle = self.next_loan_handle.saturating_add(1);
-        Ok(DataLoan { member_id, handle })
-    }
-
-    /// Spec §7.5.6.1 `return_loaned_value(loan)`.
-    ///
-    /// # Errors
-    /// `LoanError` if the loan is unknown or already returned.
-    pub fn return_loaned_value(&mut self, loan: DataLoan) -> Result<(), DynamicError> {
-        let pos = self
-            .active_loans
-            .iter()
-            .position(|m| *m == loan.member_id)
-            .ok_or_else(|| {
-                DynamicError::loan(alloc::format!(
-                    "no active loan for member {}",
-                    loan.member_id
-                ))
-            })?;
-        self.active_loans.swap_remove(pos);
-        // The handle value is not used further — only kept as a sanity
-        // indicator that `return_loaned_value` receives a productive loan.
-        let _ = loan.handle;
-        Ok(())
-    }
-}
-
-/// Validates: does the value discriminator match the member type kind?
-fn check_value_kind_matches_type(value: &DynamicValue, kind: TypeKind) -> Result<(), DynamicError> {
-    let ok = match (value, kind) {
-        (DynamicValue::Bool(_), TypeKind::Boolean) => true,
-        (DynamicValue::Byte(_), TypeKind::Byte) => true,
-        (DynamicValue::Int8(_), TypeKind::Int8) => true,
-        (DynamicValue::UInt8(_), TypeKind::UInt8) => true,
-        (DynamicValue::Int16(_), TypeKind::Int16) => true,
-        (DynamicValue::UInt16(_), TypeKind::UInt16) => true,
-        (DynamicValue::Int32(_), TypeKind::Int32 | TypeKind::Enumeration) => true,
-        (DynamicValue::UInt32(_), TypeKind::UInt32) => true,
-        (DynamicValue::Int64(_), TypeKind::Int64) => true,
-        (DynamicValue::UInt64(_), TypeKind::UInt64) => true,
-        (DynamicValue::Float32(_), TypeKind::Float32) => true,
-        (DynamicValue::Float64(_), TypeKind::Float64) => true,
-        (DynamicValue::Char8(_), TypeKind::Char8) => true,
-        (DynamicValue::Char16(_), TypeKind::Char16) => true,
-        (DynamicValue::String(_), TypeKind::String8) => true,
-        (DynamicValue::WString(_), TypeKind::String16) => true,
-        (DynamicValue::Complex(_), k) if k.is_aggregable() => true,
-        (DynamicValue::Sequence(_), TypeKind::Sequence | TypeKind::Array) => true,
-        (DynamicValue::Map(_), TypeKind::Map) => true,
-        (DynamicValue::None, _) => true,
-        _ => false,
-    };
-    if !ok {
-        return Err(DynamicError::bad_parameter(alloc::format!(
-            "value kind {} cannot be assigned to member kind {kind:?}",
-            value.kind_str()
-        )));
-    }
-    Ok(())
+    Some(Ok(Float128::from_le_bytes(octets)))
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
+    #![allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
     use super::*;
-    use crate::dynamic::DynamicTypeBuilderFactory;
-    use crate::dynamic::descriptor::{MemberDescriptor, TypeDescriptor};
+    use alloc::vec;
 
-    fn struct_with_int32_member() -> DynamicType {
-        let mut b = DynamicTypeBuilderFactory::create_struct("::S");
-        b.add_struct_member("x", 1, TypeDescriptor::primitive(TypeKind::Int32, "int32"))
-            .unwrap();
-        b.build().unwrap()
+    /// The width decides the spelling, not the magnitude.
+    ///
+    /// The rule `tests/interop-corpus/README.md` states, and the reason
+    /// it is the width: a form that changed shape at 2^53 would compare
+    /// unequal across the boundary, so a `long long` holding 3 is `"3"`
+    /// and a `long` holding 3 is `3`.
+    #[test]
+    fn a_sixty_four_bit_width_renders_as_a_string_at_every_magnitude() {
+        let wide = DynamicData::integer(PrimitiveKind::Int64, 3);
+        let narrow = DynamicData::integer(PrimitiveKind::Int32, 3);
+        assert_eq!(Source::render(&wide), "\"3\"");
+        assert_eq!(Source::render(&narrow), "3");
+        // And the value is the same on the way back either way.
+        assert_eq!(wide.as_integer("p"), Ok(3));
+        assert_eq!(narrow.as_integer("p"), Ok(3));
     }
 
+    /// An integer no `f64` carries exactly is refused rather than
+    /// widened.
     #[test]
-    fn set_get_int32_roundtrips() {
-        let t = struct_with_int32_member();
-        let mut d = DynamicData::new(t);
-        d.set_int32_value(1, 42).unwrap();
-        assert_eq!(d.get_int32_value(1).unwrap(), 42);
+    fn an_integer_a_double_cannot_hold_is_not_a_float() {
+        let exact = DynamicData::integer(PrimitiveKind::Int64, 1 << 53);
+        assert_eq!(exact.as_float(), Some(9_007_199_254_740_992.0));
+        let inexact = DynamicData::integer(PrimitiveKind::Int64, (1 << 53) + 1);
+        assert_eq!(inexact.as_float(), None);
     }
 
+    /// A number that is not integral is refused where an integer is
+    /// wanted, rather than truncated.
     #[test]
-    fn set_int32_into_int64_member_rejected() {
-        let mut b = DynamicTypeBuilderFactory::create_struct("::S");
-        b.add_struct_member("x", 1, TypeDescriptor::primitive(TypeKind::Int64, "int64"))
-            .unwrap();
-        let t = b.build().unwrap();
-        let mut d = DynamicData::new(t);
-        let err = d.set_int32_value(1, 5).unwrap_err();
-        assert!(matches!(err, DynamicError::BadParameter(_)));
+    fn a_fractional_number_is_not_an_integer() {
+        let whole = DynamicData::float(PrimitiveKind::Float64, 3.0);
+        assert_eq!(whole.as_integer("p"), Ok(3));
+        let fractional = DynamicData::float(PrimitiveKind::Float64, 3.5);
+        assert!(matches!(
+            fractional.as_integer("p"),
+            Err(ProbeError::Mismatch { ref path, .. }) if path == "p"
+        ));
     }
 
+    /// The loose form of a `@default` integer literal, which
+    /// `zerodds_wire_codec::default` writes as text.
     #[test]
-    fn unknown_member_id_rejected() {
-        let t = struct_with_int32_member();
-        let mut d = DynamicData::new(t);
-        let err = d.set_int32_value(999, 0).unwrap_err();
-        assert!(matches!(err, DynamicError::BadParameter(_)));
+    fn an_integer_in_a_string_is_an_integer() {
+        assert_eq!(
+            DynamicData::text("9007199254740993".to_string()).as_integer("p"),
+            Ok(9_007_199_254_740_993)
+        );
+        assert!(
+            DynamicData::text("zerodds".to_string())
+                .as_integer("p")
+                .is_err()
+        );
     }
 
+    /// A character is one character and keeps the width it was built at.
     #[test]
-    fn loan_double_rejected() {
-        let t = struct_with_int32_member();
-        let mut d = DynamicData::new(t);
-        let _l = d.loan_value(1).unwrap();
-        let err = d.loan_value(1).unwrap_err();
-        assert!(matches!(err, DynamicError::LoanError(_)));
+    fn a_character_keeps_its_width_and_reads_back_as_text() {
+        let narrow = DynamicData::character(PrimitiveKind::Char, 'a');
+        assert_eq!(narrow.as_char(), Some('a'));
+        assert_eq!(narrow.as_text(), Some("a"));
+        assert_eq!(narrow.primitive_kind(), Some(PrimitiveKind::Char));
+        // A one-character string is a string and not a character: which
+        // of the two a value is, is the sink's answer.
+        assert_eq!(DynamicData::text("a".to_string()).as_char(), None);
     }
 
+    /// This representation has no explicit nothing.
     #[test]
-    fn loan_return_then_loan_again_works() {
-        let t = struct_with_int32_member();
-        let mut d = DynamicData::new(t);
-        let l = d.loan_value(1).unwrap();
-        d.return_loaned_value(l).unwrap();
-        let _l2 = d.loan_value(1).unwrap();
-    }
-
-    #[test]
-    fn return_unknown_loan_rejected() {
-        let t = struct_with_int32_member();
-        let mut d = DynamicData::new(t);
-        let fake = DataLoan {
-            member_id: 1,
-            handle: 99,
-        };
-        let err = d.return_loaned_value(fake).unwrap_err();
-        assert!(matches!(err, DynamicError::LoanError(_)));
-    }
-
-    #[test]
-    fn item_count_grows_with_sets() {
-        let mut b = DynamicTypeBuilderFactory::create_struct("::S");
-        b.add_struct_member("a", 1, TypeDescriptor::primitive(TypeKind::Int32, "int32"))
-            .unwrap();
-        b.add_struct_member("b", 2, TypeDescriptor::primitive(TypeKind::Int64, "int64"))
-            .unwrap();
-        let t = b.build().unwrap();
-        let mut d = DynamicData::new(t);
-        assert_eq!(d.item_count(), 0);
-        d.set_int32_value(1, 10).unwrap();
-        assert_eq!(d.item_count(), 1);
-        d.set_int64_value(2, 20).unwrap();
-        assert_eq!(d.item_count(), 2);
-    }
-
-    #[test]
-    fn equals_distinguishes_value_diffs() {
-        let t = struct_with_int32_member();
-        let mut a = DynamicData::new(t.clone());
-        let mut b = DynamicData::new(t);
-        a.set_int32_value(1, 5).unwrap();
-        b.set_int32_value(1, 6).unwrap();
-        assert!(!a.equals(&b));
-        b.set_int32_value(1, 5).unwrap();
-        assert!(a.equals(&b));
-    }
-
-    #[test]
-    fn complex_value_set_get() {
-        // outer struct with a nested struct member.
-        let mut inner = DynamicTypeBuilderFactory::create_struct("::Inner");
-        inner
-            .add_struct_member("v", 1, TypeDescriptor::primitive(TypeKind::Int32, "int32"))
-            .unwrap();
-        let inner_t = inner.build().unwrap();
-
-        let mut outer = DynamicTypeBuilderFactory::create_struct("::Outer");
-        outer
-            .add_member(MemberDescriptor::new(
-                "nested",
-                10,
-                TypeDescriptor::structure("::Inner"),
-            ))
-            .unwrap();
-        let outer_t = outer.build().unwrap();
-
-        let mut inner_data = DynamicData::new(inner_t);
-        inner_data.set_int32_value(1, 99).unwrap();
-
-        let mut outer_data = DynamicData::new(outer_t);
-        outer_data.set_complex_value(10, inner_data).unwrap();
-
-        let got = outer_data.get_complex_value(10).unwrap();
-        assert_eq!(got.get_int32_value(1).unwrap(), 99);
-    }
-
-    #[test]
-    fn sequence_length_and_element_access() {
-        let mut b = DynamicTypeBuilderFactory::create_struct("::S");
-        b.add_struct_member(
-            "items",
-            1,
-            TypeDescriptor::sequence(
-                "items",
-                TypeDescriptor::primitive(TypeKind::Int32, "int32"),
-                100,
-            ),
-        )
-        .unwrap();
-        let t = b.build().unwrap();
-
-        let elem_t = DynamicTypeBuilderFactory::get_primitive_type(TypeKind::Int32).unwrap();
-        let mut e0 = DynamicData::new(elem_t.clone());
-        e0.values.insert(0, DynamicValue::Int32(7));
-        let mut e1 = DynamicData::new(elem_t);
-        e1.values.insert(0, DynamicValue::Int32(8));
-        let mut d = DynamicData::new(t);
-        d.set_sequence_value(1, alloc::vec![e0, e1]).unwrap();
-        assert_eq!(d.get_sequence_length(1).unwrap(), 2);
-        let _ = d.get_sequence_element(1, 0).unwrap();
-        assert!(d.get_sequence_element(1, 9).is_err());
-    }
-
-    #[test]
-    fn all_twelve_primitive_setters_work() {
-        // This list is mandatory per Spec §7.5.6.3.
-        let cases: alloc::vec::Vec<(&str, MemberId, TypeKind)> = alloc::vec![
-            ("b", 1, TypeKind::Boolean),
-            ("by", 2, TypeKind::Byte),
-            ("i8", 3, TypeKind::Int8),
-            ("u8", 4, TypeKind::UInt8),
-            ("i16", 5, TypeKind::Int16),
-            ("u16", 6, TypeKind::UInt16),
-            ("i32", 7, TypeKind::Int32),
-            ("u32", 8, TypeKind::UInt32),
-            ("i64", 9, TypeKind::Int64),
-            ("u64", 10, TypeKind::UInt64),
-            ("f32", 11, TypeKind::Float32),
-            ("f64", 12, TypeKind::Float64),
-            ("c8", 13, TypeKind::Char8),
-            ("c16", 14, TypeKind::Char16),
-        ];
-        let mut b = DynamicTypeBuilderFactory::create_struct("::S");
-        for (n, id, k) in &cases {
-            b.add_struct_member(
-                *n,
-                *id,
-                TypeDescriptor::primitive(*k, super::super::type_::primitive_name(*k)),
-            )
-            .unwrap();
+    fn nothing_is_ever_null() {
+        for value in [
+            DynamicData::Boolean(false),
+            DynamicData::text(String::new()),
+            DynamicData::Collection(Vec::new()),
+            DynamicData::Aggregate(Vec::new()),
+        ] {
+            assert!(!value.is_null());
         }
-        // Plus string and WString.
-        b.add_struct_member("s", 100, TypeDescriptor::string8(64))
-            .unwrap();
-        b.add_struct_member("w", 101, TypeDescriptor::string16(64))
-            .unwrap();
-        let t = b.build().unwrap();
-        let mut d = DynamicData::new(t);
-        d.set_boolean_value(1, true).unwrap();
-        d.set_byte_value(2, 0xFF).unwrap();
-        d.set_int8_value(3, -1).unwrap();
-        d.set_uint8_value(4, 255).unwrap();
-        d.set_int16_value(5, -2).unwrap();
-        d.set_uint16_value(6, 2).unwrap();
-        d.set_int32_value(7, -3).unwrap();
-        d.set_uint32_value(8, 3).unwrap();
-        d.set_int64_value(9, -4).unwrap();
-        d.set_uint64_value(10, 4).unwrap();
-        d.set_float32_value(11, 1.5).unwrap();
-        d.set_float64_value(12, 2.5).unwrap();
-        d.set_char8_value(13, b'A').unwrap();
-        d.set_char16_value(14, 0x42).unwrap();
-        d.set_string_value(100, "abc").unwrap();
-        d.set_wstring_value(101, alloc::vec![0x41, 0x42]).unwrap();
+    }
 
-        assert!(d.get_boolean_value(1).unwrap());
-        assert_eq!(d.get_byte_value(2).unwrap(), 0xFF);
-        assert_eq!(d.get_int8_value(3).unwrap(), -1);
-        assert_eq!(d.get_uint8_value(4).unwrap(), 255);
-        assert_eq!(d.get_int16_value(5).unwrap(), -2);
-        assert_eq!(d.get_uint16_value(6).unwrap(), 2);
-        assert_eq!(d.get_int32_value(7).unwrap(), -3);
-        assert_eq!(d.get_uint32_value(8).unwrap(), 3);
-        assert_eq!(d.get_int64_value(9).unwrap(), -4);
-        assert_eq!(d.get_uint64_value(10).unwrap(), 4);
-        assert!((d.get_float32_value(11).unwrap() - 1.5).abs() < 1e-6);
-        assert!((d.get_float64_value(12).unwrap() - 2.5).abs() < 1e-9);
-        assert_eq!(d.get_char8_value(13).unwrap(), b'A');
-        assert_eq!(d.get_char16_value(14).unwrap(), 0x42);
-        assert_eq!(d.get_string_value(100).unwrap(), "abc");
-        assert_eq!(d.get_wstring_value(101).unwrap(), alloc::vec![0x41, 0x42]);
+    /// NaN and the two infinities have a spelling here and none in a
+    /// value file, and the spelling is one no value file admits.
+    #[test]
+    fn a_non_finite_number_is_written_as_a_token_and_not_as_a_number() {
+        assert_eq!(
+            Source::render(&DynamicData::float(PrimitiveKind::Float64, f64::NAN)),
+            "nan"
+        );
+        assert_eq!(
+            Source::render(&DynamicData::float(PrimitiveKind::Float64, f64::INFINITY)),
+            "infinity"
+        );
+        assert_eq!(
+            Source::render(&DynamicData::float(
+                PrimitiveKind::Float64,
+                f64::NEG_INFINITY
+            )),
+            "-infinity"
+        );
+    }
+
+    /// A `@mutable` writer's member order does not reach the canonical
+    /// text.
+    #[test]
+    fn an_aggregate_renders_with_its_keys_sorted() {
+        let one = DynamicData::Aggregate(vec![
+            ("b".to_string(), DynamicData::Boolean(true)),
+            ("a".to_string(), DynamicData::Boolean(false)),
+        ]);
+        let other = DynamicData::Aggregate(vec![
+            ("a".to_string(), DynamicData::Boolean(false)),
+            ("b".to_string(), DynamicData::Boolean(true)),
+        ]);
+        assert_eq!(Source::render(&one), "{\"a\":false,\"b\":true}");
+        assert_eq!(Source::render(&one), Source::render(&other));
+        // The order the reader met them in is still there to be read.
+        assert_eq!(one.members().map(|m| m[0].0.as_str()), Some("b"));
+    }
+
+    /// A map entry is a two-element collection and reads back as one.
+    #[test]
+    fn a_map_entry_is_a_pair() {
+        let entry = <DynamicData as Sink>::map_entry(
+            DynamicData::integer(PrimitiveKind::Int32, 1),
+            DynamicData::text("one".to_string()),
+        );
+        let items = entry.as_items().expect("a pair is a collection");
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].as_integer("p"), Ok(1));
+        assert_eq!(items[1].as_text(), Some("one"));
     }
 }

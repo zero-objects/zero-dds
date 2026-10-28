@@ -52,7 +52,9 @@ idl_dir="$(mktemp -d "${TMPDIR:-/tmp}/zerodds-idlc-generate-idl.XXXXXX")"
 cp -R "$src/idl/." "$idl_dir/"
 trap 'rm -rf "$build" "$idl_dir"' EXIT
 
-mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1"; }
+# GNU stat first: `stat -f` is a file-system query there and prints before it
+# fails, so the BSD form tried first leaves that text in the result.
+mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
 
 fail() { echo "FAIL: $*"; exit 1; }
 

@@ -5,7 +5,7 @@
 //!
 //! Spec: `zerodds-ros2-bridge-1.0.md` §5.2 (= REP-2008).
 //!
-//! ROS-2 `.msg`-Files definieren Strukturen wie:
+//! ROS-2 `.msg` files define structures like:
 //!
 //! ```text
 //! # Comment
@@ -16,7 +16,7 @@
 //! geometry_msgs/Point center
 //! ```
 //!
-//! Mapping-Regeln (REP-2008 Tab 1):
+//! Mapping rules (REP-2008 Tab 1):
 //!
 //! | ROS-Typ      | IDL-Typ     |
 //! |-------------|-------------|
@@ -32,8 +32,8 @@
 //! | float32     | float       |
 //! | float64     | double      |
 //! | string      | string      |
-//! | T[]         | sequence<T> |
-//! | T[N]        | T[N]        |
+//! | T[]         | `sequence<T>` |
+//! | `T[N]`      | `T[N]`      |
 //!
 //! This implementation parses `.msg` source, builds a
 //! `MsgStruct` AST and can render it as IDL source.

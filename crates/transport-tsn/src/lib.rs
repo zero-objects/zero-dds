@@ -9,7 +9,7 @@
 //!
 //! We implement the **configuration model PIM** (Spec §7.2)
 //! and the **DDSI-RTPS Ethernet PSM** (Spec Annex A) as a pure-Rust
-//! no_std+alloc library:
+//! library:
 //!
 //! * `IEEE802VlanTag` (Spec Tab 7.21) — TPID + PCP + DEI + VID per
 //!   IEEE 802.1Q.

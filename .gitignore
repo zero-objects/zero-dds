@@ -4,9 +4,9 @@
 **/*.rs.bk
 Cargo.lock.bak
 
-# Lockfile: fuer Libraries nicht gecheckt,
-# fuer Binaries (tools/*) in separatem Workflow-Schritt behandelt.
-# Entscheidung: Workspace mit Bindings und Tools -> Cargo.lock committen.
+# Lockfile: not checked in for libraries,
+# handled in a separate workflow step for binaries (tools/*).
+# Decision: a workspace with bindings and tools -> commit Cargo.lock.
 # Cargo.lock
 
 # IDE
@@ -27,17 +27,14 @@ Cargo.lock.bak
 !**/tests/fixtures/**/*.pem
 !**/tests/fixtures/**/*.key
 
-# github/ ist ein kuratierter Mirror (eigenes Sub-Repo mit eigenem .git),
-# der per Hand vom root-Stand befuellt wird. Vom root-Repo aus NICHT
-# tracken — sonst doppelte Versionierung.
+# github/ is a curated mirror (its own sub-repository with its own .git),
+# filled by hand from the root state. Do NOT track it from the root
+# repository — otherwise it is versioned twice.
 /github/
 
-# LLVM coverage instrumentation output (neben den bereits erfassten *.profraw/profdata)
+# LLVM coverage instrumentation output (besides the *.profraw/profdata already covered)
 /target/llvm-cov-target
 /target/nextest
-
-# Claude Code working artifacts
-.claude/
 
 # Coverage
 *.profraw
@@ -52,16 +49,16 @@ Cargo.lock.bak
 # Benchmarks
 /target/criterion
 
-# Python artifacts (fuer dds-py Wheel-Builds)
+# Python artifacts (for dds-py wheel builds)
 __pycache__/
 *.pyc
 *.egg-info/
 .pytest_cache/
 
 # C# / .NET artifacts
-# (bin/obj nur in den tatsaechlichen .NET-Projekt-Verzeichnissen, nicht
-# global — sonst werden Rust-Binary-Module unter crates/*/src/bin/ auch
-# ignoriert. Pragmatischer Scope: das dds-cs-Crate und ggf. Tauri-Dashboard.)
+# (bin/obj only in the actual .NET project directories, not
+# globally — otherwise Rust binary modules under crates/*/src/bin/ are
+# ignored too. Pragmatic scope: the dds-cs crate and the Tauri dashboard.)
 crates/cs/**/bin/
 crates/cs/**/obj/
 tools/dashboard/**/bin/
@@ -78,12 +75,12 @@ node_modules/
 /tools/dashboard/src-tauri/target
 /tools/dashboard/dist
 
-# Dokumentations-Builds
+# Documentation builds
 /documentation/_build
 /documentation/.venv
 
-# LaTeX-Spec-Builds (Build-Output unter dds-*-1.0/main.pdf nicht
-# committen; releases/ wird hingegen explizit getrackt fuer Phase F).
+# LaTeX spec builds (do not commit the build output under
+# dds-*-1.0/main.pdf; releases/ on the other hand is tracked for phase F).
 /documentation/specs/dds-amqp-1.0/main.pdf
 /documentation/specs/dds-ts-1.0/main.pdf
 /documentation/specs/**/main.aux
@@ -93,16 +90,17 @@ node_modules/
 /documentation/specs/**/main.synctex.gz
 /documentation/specs/**/build/
 
-# Standards-Cache — per internal/standards/fetch.sh lokal erzeugt,
-# aus IP-/Copyright-Gruenden nicht im Repo tracken (siehe internal/standards/README.md)
+# Standards cache — produced locally by internal/standards/fetch.sh,
+# not tracked in the repository for IP/copyright reasons (see internal/standards/README.md)
 /internal/standards/cache/*
 !/internal/standards/cache/.gitkeep
 interop-artifacts/
 
-# cargo-mutants output (regeneriert pro Run, sehr gross)
+# cargo-mutants output (regenerated per run, very large)
 /mutants-out
+mutants.out/
 
-# Lokales Test-Konzept-Doc (Input-Only, nicht versioniert)
+# Local test concept document (input only, not versioned)
 tests.docx
 
 # Maturin/PyO3 compiled Python module (built by 'maturin develop')
@@ -125,3 +123,59 @@ endpoints/**/bin/
 endpoints/**/obj/
 endpoints/**/*.class
 endpoints/**/_build/
+
+# The TypeScript runtime's build output. `run-tests.sh` makes both, and
+# `typescript_reader_generates.rs` writes the third: a generated reader
+# per shape, type-checked in place and kept only until the next run.
+runtime/typescript/dist/
+runtime/typescript/dist-tests/
+runtime/typescript/dist-generated/
+
+# The Ada runtime's build output. `gprbuild -P runtime/ada/zd_wire.gpr`
+# writes objects, ALI files, the binder's generated unit and the
+# self-test binary into the project's own object directory.
+runtime/ada/obj/
+
+# Build artefacts inside matrix cells: the kept src/ trees carry the
+# GENERATED SOURCES as the record; compiled binaries beside them are
+# reproducible ballast (2294 copies of ZeroDds.Wire.dll before this).
+# The measurement tree moved to the `zerodds-matrix` repository on
+# 2026-08-26 and is cloned into `matrix/` here; see
+# docs/matrix-repo-split.md for why. The rules below stay for the
+# history and for anyone with an older checkout.
+/matrix/
+matrix/**/*.dll
+matrix/**/*.pdb
+matrix/**/src/**/*.js
+matrix/**/src/**/*.js.map
+matrix/**/src/**/obj/
+matrix/**/src/**/bin/
+
+# The interop gate's vendor clients are built in place. `tests/interop/ci/rti/`
+# additionally holds what `rtiddsgen` emits — RTI's own generated sources,
+# which are licensed to this installation and must not travel with the tree.
+tests/interop/ci/fastdds/build/
+tests/interop/ci/rti/build/
+
+# Zig's build cache. It landed in `53ab8c5ba69` through a `git add`
+# on the whole directory — 43 files, linker output among them. A build
+# cache in the repository also breaks a checkout on any host that has
+# its own, which is how it was found.
+.zig-cache/
+
+# `zig build`'s install prefix. `endpoints/**/bin/` above already catches
+# `zig-out/bin/`, which is where the example lands today — but that is the
+# install layout and not a rule about it: a build step that installs a
+# header, a library or a linker map puts it in `zig-out/lib`, `zig-out/include`
+# or next to the binary, and none of those are covered.
+zig-out/
+
+# Local runtime artifacts, not part of the tree.
+erl_crash.dump
+runtime/csharp/bin/
+runtime/csharp/obj/
+
+# coverage-as-by-product (ci/zd-test.sh): instrumented target dir + per-job evidence
+/target-cov
+**/target-cov/
+/ci-evidence

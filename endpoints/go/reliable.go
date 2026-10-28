@@ -11,11 +11,18 @@
 //
 //	[0]=session [1]=stream [2..4]=seq LE [4]=submessage id [5]=flags
 //	[6..8]=body-len LE [8..]=body
-//	WRITE_DATA id=0x07 flags=0x03 body=sample; header seq = the RFC-1982
+//	WRITE_DATA id=0x07 flags=0x01 (E-flag LE + FORMAT_DATA) body =
+//	BaseObjectRequest (§7.7.8) + sample; header seq = the RFC-1982
 //	sample sequence number.
 //	HEARTBEAT  id=0x0B flags=0x01 body(5)= first i16 LE, last i16 LE, stream
+//	ACKNACK    id=0x0A flags=0x01 body(9)= DHEADER u32 LE (=5), first_unacked
+//	i16 LE, nack[0], nack[1], stream   (UnannotatedAppendable, default)
 //	ACKNACK    id=0x0A flags=0x01 body(5)= first_unacked i16 LE, nack[0],
-//	nack[1], stream
+//	nack[1], stream                    (UnannotatedFinal)
+//	(ACKNACK_Payload has no @extensibility, so it is APPENDABLE per DDS-XTypes
+//	1.3 section 7.3.1.2.1.8 and carries a DHEADER in XCDR2. UnannotatedFinal
+//	writes the FINAL form of the reference implementation (eProsima); the
+//	parser accepts both forms in either setting.)
 //
 // The message-header `stream` byte for HEARTBEAT/ACKNACK is parameterized:
 // the true spec encoding (and the byte-goldens) uses `StreamNone` (0x00,
@@ -65,18 +72,25 @@ func SeqGt(a, b uint16) bool { return SeqLt(b, a) }
 // --- frame codec ---
 
 // ReliableWriteFrame builds a reliable WRITE_DATA frame. The 2-byte header
-// sequence carries the RFC-1982 sample sequence number. Byte-identical to
-// `XrceWriteFrame(0x80, ReliableStreamID, seq, sample)`.
-func ReliableWriteFrame(seq uint16, sample []byte) []byte {
-	return XrceWriteFrame(XrceSessionNoKey, ReliableStreamID, seq, sample)
+// sequence carries the RFC-1982 sample sequence number, and objectID names the
+// target DataWriter in the BaseObjectRequest (§7.7.8). Byte-identical to
+// `XrceWriteFrame(0x80, ReliableStreamID, seq, objectID, sample)`.
+func ReliableWriteFrame(seq, objectID uint16, sample []byte) []byte {
+	return XrceWriteFrame(XrceSessionNoKey, ReliableStreamID, seq, objectID, sample)
 }
 
-// ReliableReadFrame parses a reliable WRITE_DATA frame into (seq, sample).
+// ReliableReadFrame parses a reliable WRITE_DATA frame into (seq, sample). The
+// sample starts after the BaseObjectRequest; a body too short to hold one is
+// refused rather than handed back truncated.
 func ReliableReadFrame(frame []byte) (seq uint16, sample []byte, ok bool) {
-	if len(frame) < 8 || frame[4] != xrceSMWriteData {
+	if len(frame) < 8+XrceBaseSize || frame[4] != xrceSMWriteData {
 		return 0, nil, false
 	}
-	return uint16(frame[2]) | uint16(frame[3])<<8, frame[8:], true
+	smLen := int(frame[6]) | int(frame[7])<<8
+	if smLen < XrceBaseSize || 8+smLen > len(frame) {
+		return 0, nil, false
+	}
+	return uint16(frame[2]) | uint16(frame[3])<<8, frame[8+XrceBaseSize : 8+smLen], true
 }
 
 // HeartbeatBody is the 5-byte HEARTBEAT body (first/last unacked seq, stream).
@@ -85,8 +99,26 @@ type HeartbeatBody struct {
 	StreamID    byte
 }
 
-// AckNackBody is the 5-byte ACKNACK body (first-unacked seq, 16-bit nack
-// bitmap, stream).
+// UnannotatedTypes selects how the types of DDS-XRCE 1.0 Annex A without an
+// @extensibility annotation are written (DDS-XTypes 1.3 section 7.3.1.2.1.8).
+// This SDK writes one such type: ACKNACK_Payload. HEARTBEAT_Payload is
+// @extensibility(FINAL) in Annex A and is not affected. Readers accept both
+// forms in either setting.
+type UnannotatedTypes int
+
+const (
+	// UnannotatedAppendable writes the APPENDABLE form with a DHEADER
+	// (what the specification says; default).
+	UnannotatedAppendable UnannotatedTypes = iota
+	// UnannotatedFinal writes the FINAL form without a DHEADER (the form of
+	// the reference implementation, eProsima Micro-XRCE-DDS).
+	UnannotatedFinal
+)
+
+// AckNackBody is the ACKNACK payload (first-unacked seq, 16-bit nack
+// bitmap, stream). On the wire it is 5 octets, behind a 4-octet DHEADER
+// with UnannotatedAppendable (default, DDS-XTypes 1.3 section 7.3.1.2.1.8),
+// without one with UnannotatedFinal.
 type AckNackBody struct {
 	FirstUnacked   uint16
 	NackLo, NackHi byte
@@ -107,18 +139,31 @@ func HeartbeatFrame(session, streamHdr byte, msgSeq uint16, hb HeartbeatBody) []
 	}
 }
 
-// AckNackFrame builds an ACKNACK frame. `streamHdr` is the message-header
-// stream byte (StreamNone for the byte-golden layout, ReliableStreamID on the
-// live wire path). Byte-identical to `golden_acknack_le.bin` for
+// AckNackFrame builds an ACKNACK frame in the APPENDABLE form (17 octets).
+// It is AckNackFrameWith(..., UnannotatedAppendable). `streamHdr` is the
+// message-header stream byte (StreamNone for the byte-golden layout,
+// ReliableStreamID on the live wire path). Byte-identical to
+// `golden_acknack_le.bin` for
 // (session=0x80, streamHdr=StreamNone, msgSeq=1, {firstUnacked:1, nack:0, stream:0x80}).
 func AckNackFrame(session, streamHdr byte, msgSeq uint16, ack AckNackBody) []byte {
-	return []byte{
-		session, streamHdr, byte(msgSeq), byte(msgSeq >> 8),
-		xrceSMAckNack, xrceFlagELE, 5, 0,
-		byte(ack.FirstUnacked), byte(ack.FirstUnacked >> 8),
+	return AckNackFrameWith(session, streamHdr, msgSeq, ack, UnannotatedAppendable)
+}
+
+// AckNackFrameWith builds an ACKNACK frame in the form `mode` names:
+// UnannotatedAppendable is 17 octets (body length 9, DHEADER = 5),
+// UnannotatedFinal is 13 octets (body length 5, no DHEADER).
+func AckNackFrameWith(session, streamHdr byte, msgSeq uint16, ack AckNackBody, mode UnannotatedTypes) []byte {
+	head := []byte{session, streamHdr, byte(msgSeq), byte(msgSeq >> 8), xrceSMAckNack, xrceFlagELE}
+	if mode == UnannotatedFinal {
+		head = append(head, 5, 0)
+	} else {
+		head = append(head, 9, 0, 5, 0, 0, 0) // length 9, DHEADER: body size 5
+	}
+	return append(head,
+		byte(ack.FirstUnacked), byte(ack.FirstUnacked>>8),
 		ack.NackLo, ack.NackHi,
 		ack.StreamID,
-	}
+	)
 }
 
 // ParseHeartbeat parses a HEARTBEAT frame; ok is false if too short or not a
@@ -135,16 +180,24 @@ func ParseHeartbeat(frame []byte) (HeartbeatBody, bool) {
 }
 
 // ParseAckNack parses an ACKNACK frame; ok is false if too short or not an
-// ACKNACK submessage.
+// ACKNACK submessage. Accepts body length 9 (DHEADER + 5 octets) and the
+// legacy FINAL form with body length 5.
 func ParseAckNack(frame []byte) (AckNackBody, bool) {
 	if len(frame) < 13 || frame[4] != xrceSMAckNack {
 		return AckNackBody{}, false
 	}
+	off := 8
+	if int(frame[6])|int(frame[7])<<8 >= 9 {
+		if len(frame) < 17 {
+			return AckNackBody{}, false
+		}
+		off = 12 // skip the 4-octet DHEADER
+	}
 	return AckNackBody{
-		FirstUnacked: uint16(frame[8]) | uint16(frame[9])<<8,
-		NackLo:       frame[10],
-		NackHi:       frame[11],
-		StreamID:     frame[12],
+		FirstUnacked: uint16(frame[off]) | uint16(frame[off+1])<<8,
+		NackLo:       frame[off+2],
+		NackHi:       frame[off+3],
+		StreamID:     frame[off+4],
 	}, true
 }
 
@@ -302,11 +355,28 @@ type ReliableSample struct {
 type ReliableReceiver struct {
 	expected uint16
 	received map[uint16][]byte
+	unann    UnannotatedTypes
 }
 
-// NewReliableReceiver returns a fresh receiver (expects sequence 0).
+// NewReliableReceiver returns a fresh receiver (expects sequence 0) that
+// writes ACKNACK frames in the UnannotatedAppendable form.
 func NewReliableReceiver() *ReliableReceiver {
-	return &ReliableReceiver{received: make(map[uint16][]byte)}
+	return NewReliableReceiverWith(UnannotatedAppendable)
+}
+
+// NewReliableReceiverWith returns a fresh receiver whose AckNackFrame method
+// writes the form `mode` names.
+func NewReliableReceiverWith(mode UnannotatedTypes) *ReliableReceiver {
+	return &ReliableReceiver{received: make(map[uint16][]byte), unann: mode}
+}
+
+// UnannotatedTypes is the setting this receiver writes ACKNACK frames with.
+func (r *ReliableReceiver) UnannotatedTypes() UnannotatedTypes { return r.unann }
+
+// AckNackFrame builds the ACKNACK frame for PendingAcknack(hintLastSeen) in
+// the receiver's UnannotatedTypes form.
+func (r *ReliableReceiver) AckNackFrame(session, streamHdr byte, msgSeq uint16, hintLastSeen *uint16) []byte {
+	return AckNackFrameWith(session, streamHdr, msgSeq, r.PendingAcknack(hintLastSeen), r.unann)
 }
 
 // Expected is the next sequence number the receiver expects to deliver.
@@ -390,18 +460,21 @@ func (r *ReliableReceiver) Reset() {
 type ReliableAsyncWriter struct {
 	in   chan []byte
 	done chan struct{}
+	// objectID names the target DataWriter in every frame's BaseObjectRequest.
+	objectID uint16
 }
 
 // NewReliableAsyncWriter spawns the drain goroutine over t and returns a
 // writer ready for Enqueue. `capacity` sizes the producer→drain channel (0
 // uses a sensible default).
-func NewReliableAsyncWriter(t Transport, capacity int) *ReliableAsyncWriter {
+func NewReliableAsyncWriter(t Transport, capacity int, objectID uint16) *ReliableAsyncWriter {
 	if capacity <= 0 {
 		capacity = 1024
 	}
 	w := &ReliableAsyncWriter{
-		in:   make(chan []byte, capacity),
-		done: make(chan struct{}),
+		in:       make(chan []byte, capacity),
+		done:     make(chan struct{}),
+		objectID: objectID,
 	}
 	go w.drain(t)
 	return w
@@ -469,7 +542,7 @@ func (w *ReliableAsyncWriter) drain(t Transport) {
 			if status != SubmitOK {
 				break
 			}
-			_ = t.Deliver(ReliableWriteFrame(seq, pending[0]))
+			_ = t.Deliver(ReliableWriteFrame(seq, w.objectID, pending[0]))
 			pending = pending[1:]
 		}
 
@@ -496,7 +569,7 @@ func (w *ReliableAsyncWriter) drain(t Transport) {
 		// it missing, or it has not been acked yet).
 		for _, seq := range sender.InFlightSeqs() {
 			if payload, ok := sender.GetInFlight(seq); ok {
-				_ = t.Deliver(ReliableWriteFrame(seq, payload))
+				_ = t.Deliver(ReliableWriteFrame(seq, w.objectID, payload))
 			}
 		}
 

@@ -1,0 +1,19 @@
+#!/bin/bash
+# opensplice-roundtrip — runs the OpenSplice bench app (opensplice_app.cpp).
+#
+# An OpenSplice participant takes its domain from the configuration file
+# OSPL_URI names, not from the call that creates it. This wrapper writes one
+# for ZERODDS_BENCH_DOMAIN (default 200, as the other apps) next to the
+# binary, and runs the app in that directory, where OpenSplice writes its
+# ospl-info.log and ospl-error.log. `exec`: matrix_sweep.sh stops a pong by
+# its PID, which has to be the app's.
+set +u
+OSPL_HOME="${OSPL_HOME:-@OSPL_HOME@}"
+. "$OSPL_HOME/release.com" >/dev/null 2>&1
+domain="${ZERODDS_BENCH_DOMAIN:-200}"
+dir="@CMAKE_CURRENT_BINARY_DIR@/ospl-domain-$domain"
+mkdir -p "$dir"
+[ -f "$dir/ospl.xml" ] || \
+    sed "s#<Id>0</Id>#<Id>$domain</Id>#" "$OSPL_HOME/etc/config/ospl_sp_ddsi.xml" > "$dir/ospl.xml"
+export OSPL_URI="file://$dir/ospl.xml"
+cd "$dir" && exec "@CMAKE_CURRENT_BINARY_DIR@/opensplice-roundtrip-bin" "$@"

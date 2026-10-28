@@ -13,7 +13,7 @@ import java.util.Arrays;
 public class MutableTest {
 
     static byte[] encode(int endian) {
-        Zdw.Writer w = new Zdw.Writer(endian);
+        Zdw.Writer w = new Zdw.Writer(endian, Zdw.XCDR2);
         w.dheader(new Zdw.Body() {          // @mutable struct DHEADER
             public void write(Zdw.Writer b) {
                 b.emheader(10, false, new Zdw.Body() {
@@ -37,7 +37,7 @@ public class MutableTest {
         }
         System.out.println(tag + ": " + out.length
             + " bytes byte-identical to Rust golden (EMHEADER/@mutable)");
-        Zdw.Reader r = new Zdw.Reader(out, endian);
+        Zdw.Reader r = new Zdw.Reader(out, endian, Zdw.XCDR2);
         long dh = r.dheaderRead();
         // position tracking not exposed; decode the three members in wire order.
         long x = 0, k = 0; String s = null;

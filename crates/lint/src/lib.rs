@@ -16,7 +16,7 @@
 //! `docs/architecture/04_safety_by_architecture.md §3.4` **AST-based on stable
 //! Rust**, without a nightly toolchain or dylint.
 //!
-//! ## Public API (as of 1.0.0-rc.1)
+//! ## Public API
 //!
 //! Tooling crate — the public API is primarily for the embedded
 //! `zerodds-lint` binary. External consumers of the lint library are possible
@@ -35,7 +35,7 @@
 //!   [`runner::locate_workspace_root`] — orchestriert Scanner + Lints +
 //!   Reporter.
 //!
-//! ## Lint-Inventar (7 aktiv registrierte Lints)
+//! ## Lint inventory (7 actively registered lints)
 //!
 //! - [`lints::require_safety_comment::RequireSafetyComment`]
 //! - [`lints::no_dyn_in_safe::NoDynInSafe`]

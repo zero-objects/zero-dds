@@ -102,7 +102,7 @@ mod tests {
     fn re_exports_resolve() {
         // QoS-Re-Export.
         let _ = Duration::from_millis(500);
-        // Async-Re-Export ist erreichbar (Modulpfad).
+        // Async re-export is reachable (module path).
         let _: &str = stringify!(aio::AsyncDomainParticipantFactory);
     }
 }

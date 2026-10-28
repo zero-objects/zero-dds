@@ -1,18 +1,26 @@
-# `zerodds-ws-bridge` v1.0 — Open + Partial Items
+# zerodds-ws-bridge-1.0 — offene Punkte
 
-Aggregat aus `zerodds-ws-bridge-1.0.md`. Nicht von Hand pflegen — vor jedem
-Audit-Lauf löschen und aus dem Hauptfile neu generieren.
+Aggregat aus `zerodds-ws-bridge-1.0.md`, erzeugt von `website/_tools/gen_open_items.py`.
+Kein eigener Inhalt: jedes Item steht dort mit seinem Beleg.
 
-## Open
+---
 
-— keine. Alle vormals offenen Items im RC1-Cluster-A/B/C-Closeout
-2026-05-07 geschlossen.
+## §5.2 Type-Discovery Catalog-Frame + /schema/<slug>
 
-## Partial
+**Status:** `partial` — der Catalog-Frame ist geprüft; der IDL-Endpoint wird als §5.2a `open` geführt.
 
-— keine. Alle vormals partial-Items im RC1-Cluster-A/B/C-Closeout
-2026-05-07 nach `done` migriert.
+## §5.2a `/schema/<slug>`-IDL-Endpoint
 
-## Decision-Records (`n/a (rejected)`)
+**Status:** `open` — der Teil von §5.2 jenseits des Catalog-Frames. Im Baum gibt es keinen `/schema`-Pfad.
 
-— keine.
+## §8.1 Strukturiertes JSON-Logging
+
+**Status:** `open` — `crates/websocket-bridge/src/daemon/cli.rs::tests` prüft die Flag-Zerlegung, aber kein Test prüft die JSON-Log-Form oder die Wirkung von `--log-level`.
+
+## §8.3 OTLP-Spans
+
+**Status:** `partial` — die Endpoint-Auflösung ist geprüft, der Span-Emit nicht.
+
+## §8.3a Frame-Roundtrip-Span
+
+**Status:** `open` — der Emit-Teil von §8.3.

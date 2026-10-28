@@ -1,0 +1,28 @@
+[package]
+name = "zerodds-idl-parse"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Hand-written recursive-descent parser for OMG IDL 4.2, building a lossless CST with error recovery."
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/zerodds-idl-parse"
+readme = "README.md"
+keywords = ["dds", "idl", "parser"]
+categories = ["parser-implementations", "compilers"]
+
+[dependencies]
+zerodds-idl-cst = { path = "../idl-cst", version = "1.0.0-rc.7" }
+
+[dev-dependencies]
+criterion = { workspace = true }
+proptest.workspace = true
+
+[lints]
+workspace = true
+
+[[bench]]
+name = "parse_hotpaths"
+harness = false

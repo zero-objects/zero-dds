@@ -26,14 +26,13 @@
 //! - XML catalog resolution.
 
 extern crate alloc;
-use alloc::string::String;
 use alloc::vec::Vec;
 
 use crate::errors::XmlError;
 use crate::xtypes_def::TypeLibrary;
 use crate::xtypes_parser::parse_type_libraries;
 
-/// Spec namespace for DDS-XML (XTypes Annex A + DDS-XML 1.0 §7.1.5).
+/// Spec namespace for DDS-XML (XTypes Annex A + DDS-XML 1.0 §7.3.1).
 pub const DDS_XML_NAMESPACE: &str = "http://www.omg.org/spec/DDS-XML";
 
 /// Maximum `data:` body (DoS cap, 1 MiB).
@@ -48,8 +47,7 @@ pub enum ValidationMode {
     /// Strict validation: namespace mandatory + unknown elements
     /// rejected.
     Strict,
-    /// Lax: namespace optional, unknown elements ignored (matches
-    /// the Cyclone/FastDDS behavior).
+    /// Lax: namespace optional, unknown elements ignored.
     Lax,
 }
 
@@ -97,18 +95,19 @@ pub fn load_type_libraries_from_string(
     parse_type_libraries(xml)
 }
 
-/// Strict-mode check: the root element MUST carry an
-/// `xmlns="http://www.omg.org/spec/DDS-XML"` or a prefix-bound
-/// spec namespace.
+/// Strict-mode check: the root element MUST be in the
+/// `http://www.omg.org/spec/DDS-XML` namespace (§7.3.1). The namespace is
+/// read from the parsed tree, so the string appearing in a comment or an
+/// attribute value is not mistaken for the declaration.
 fn validate_namespace_strict(xml: &str) -> Result<(), XmlError> {
-    // Heuristic search string. A full XML parser pass is already
-    // known to the foundation layer — here a substring check suffices.
-    if !xml.contains(DDS_XML_NAMESPACE) {
-        return Err(XmlError::InvalidXml(alloc::format!(
-            "xsd_loader: strict mode requires xmlns=\"{DDS_XML_NAMESPACE}\""
-        )));
+    let doc = crate::parser::parse_xml_tree(xml)?;
+    if doc.root.namespace.as_deref() == Some(DDS_XML_NAMESPACE) {
+        return Ok(());
     }
-    Ok(())
+    Err(XmlError::InvalidXml(alloc::format!(
+        "xsd_loader: strict mode requires the root element to be in namespace \
+         \"{DDS_XML_NAMESPACE}\""
+    )))
 }
 
 #[cfg(feature = "std")]
@@ -157,8 +156,10 @@ fn fetch_data_uri(rest: &str) -> Result<Vec<u8>, XmlError> {
         decode_base64(payload)
     } else {
         // Plain text (URL-decoded would be RFC-conformant; we tolerate
-        // unencoded content for test convenience).
-        Ok(percent_decode(payload).into_bytes())
+        // unencoded content for test convenience). The decoded bytes are
+        // handed on unchanged; a byte sequence that is not UTF-8 is
+        // rejected by `load_type_libraries_from_uri`, not replaced.
+        Ok(percent_decode(payload))
     }
 }
 
@@ -196,8 +197,9 @@ fn decode_base64(s: &str) -> Result<Vec<u8>, XmlError> {
 }
 
 #[cfg(feature = "std")]
-fn percent_decode(s: &str) -> String {
-    // Minimal %-decoder for data: URIs.
+fn percent_decode(s: &str) -> Vec<u8> {
+    // Minimal %-decoder for data: URIs. The bytes are returned as they
+    // are; converting a non-UTF-8 body is the caller's decision.
     let bytes = s.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
     let mut i = 0;
@@ -214,7 +216,7 @@ fn percent_decode(s: &str) -> String {
         out.push(bytes[i]);
         i += 1;
     }
-    String::from_utf8_lossy(&out).into_owned()
+    out
 }
 
 #[cfg(feature = "std")]
@@ -231,12 +233,13 @@ fn hex(b: u8) -> Option<u8> {
 #[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
+    use alloc::string::String;
 
     const SAMPLE_XML: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <types xmlns="http://www.omg.org/spec/DDS-XML">
   <struct name="Position">
-    <member name="x" type="float"/>
-    <member name="y" type="float"/>
+    <member name="x" type="float32"/>
+    <member name="y" type="float32"/>
   </struct>
 </types>
 "#;
@@ -244,7 +247,7 @@ mod tests {
     const SAMPLE_XML_NO_NS: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <types>
   <struct name="Position">
-    <member name="x" type="float"/>
+    <member name="x" type="float32"/>
   </struct>
 </types>
 "#;
@@ -261,6 +264,24 @@ mod tests {
         let err =
             load_type_libraries_from_string(SAMPLE_XML_NO_NS, ValidationMode::Strict).unwrap_err();
         assert!(matches!(err, XmlError::InvalidXml(_)));
+    }
+
+    /// §7.3.1: the namespace must be declared on the root element. The
+    /// string in a comment or attribute value does not declare it.
+    #[test]
+    fn strict_mode_ignores_the_namespace_string_outside_a_declaration() {
+        let with_comment = r#"<!-- http://www.omg.org/spec/DDS-XML -->
+<types><struct name="Position"/></types>"#;
+        assert!(matches!(
+            load_type_libraries_from_string(with_comment, ValidationMode::Strict),
+            Err(XmlError::InvalidXml(_))
+        ));
+        let in_attribute =
+            r#"<types note="http://www.omg.org/spec/DDS-XML"><struct name="Position"/></types>"#;
+        assert!(matches!(
+            load_type_libraries_from_string(in_attribute, ValidationMode::Strict),
+            Err(XmlError::InvalidXml(_))
+        ));
     }
 
     #[test]
@@ -297,6 +318,16 @@ mod tests {
         let uri = format!("data:application/xml;base64,{b64}");
         let libs = load_type_libraries_from_uri(&uri, ValidationMode::Lax).unwrap();
         assert!(!libs.is_empty());
+    }
+
+    /// A `data:` body whose percent-decoded bytes are not UTF-8 is
+    /// rejected; it must not be replaced with U+FFFD (§7.1.1).
+    #[cfg(feature = "std")]
+    #[test]
+    fn data_uri_non_utf8_body_rejected() {
+        let uri = "data:application/xml,%FF%FE<types/>";
+        let err = load_type_libraries_from_uri(uri, ValidationMode::Lax).unwrap_err();
+        assert!(matches!(err, XmlError::InvalidXml(_)));
     }
 
     #[cfg(feature = "std")]

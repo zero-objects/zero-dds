@@ -20,7 +20,7 @@
 use std::time::{Duration, SystemTime};
 
 use zerodds_durability_store::{
-    Contract, DurabilitySample, DurabilityStore, Selector, TieredStore,
+    Contract, DurabilitySample, DurabilityStore, Selector, TieredStore, TopicMeta,
 };
 use zerodds_durability_store_postgres::PostgresStore;
 use zerodds_qos::policies::history::HistoryKind;
@@ -187,6 +187,41 @@ fn unregister_then_cleanup_purges() {
     let removed = store.cleanup(now).unwrap();
     assert_eq!(removed, 1);
     assert_eq!(store.stats(&topic).unwrap().instances, 1);
+}
+
+#[test]
+fn topic_meta_round_trips_and_governs_retention() {
+    let Some((store, topic)) = store_or_skip("topic-meta") else {
+        return;
+    };
+    assert_eq!(store.topic_meta(&topic).unwrap(), None);
+    let meta = TopicMeta {
+        type_name: "demo::Command".to_string(),
+        keyed: true,
+        contract: Contract {
+            history_kind: HistoryKind::KeepLast,
+            history_depth: 2,
+            ..keep_all()
+        },
+    };
+    store.set_topic_meta(&topic, meta.clone()).unwrap();
+    assert_eq!(store.topic_meta(&topic).unwrap(), Some(meta));
+    // The persisted contract must govern retention (also exercises
+    // `cleanup`'s and `store`'s path that reads it while already holding
+    // the client lock — the deadlock this fix closed).
+    for seq in 0..5 {
+        store.store(sample(&topic, 1, seq)).unwrap();
+    }
+    let seqs: Vec<u64> = store
+        .replay_for_topic(&topic)
+        .unwrap()
+        .iter()
+        .map(|s| s.sequence)
+        .collect();
+    assert_eq!(seqs, vec![3, 4]);
+    let now = SystemTime::UNIX_EPOCH + Duration::from_secs(100);
+    store.unregister(&topic, &[1u8; 16], now).unwrap();
+    assert_eq!(store.cleanup(now).unwrap(), 1);
 }
 
 #[test]

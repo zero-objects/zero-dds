@@ -30,7 +30,6 @@
     missing_docs
 )]
 
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 
 use zerodds_dcps::runtime::RuntimeConfig;
@@ -41,13 +40,6 @@ use zerodds_dcps::{
 
 #[path = "common/mod.rs"]
 mod common;
-
-// Unique domain IDs so tests don't cross-talk via SPDP multicast.
-static NEXT_DOMAIN: AtomicU32 = AtomicU32::new(150);
-
-fn fresh_domain() -> u32 {
-    NEXT_DOMAIN.fetch_add(1, Ordering::Relaxed)
-}
 
 fn fresh_runtime_config() -> RuntimeConfig {
     RuntimeConfig {
@@ -68,11 +60,11 @@ fn fresh_runtime_config() -> RuntimeConfig {
 /// `roundtrip-typed` bench.
 #[test]
 fn single_roundtrip_under_50ms() {
-    let domain = fresh_domain();
+    let domain = common::unique_domain();
     let factory = DomainParticipantFactory::instance();
     let p = factory
         .create_participant_with_config(
-            domain.try_into().expect("domain fits i32"),
+            domain,
             DomainParticipantQos::default(),
             fresh_runtime_config(),
         )
@@ -154,11 +146,11 @@ fn single_roundtrip_under_50ms() {
 /// stalls the reader and produces cache overflows.
 #[test]
 fn sustained_roundtrip_no_loss_p99_under_100ms() {
-    let domain = fresh_domain();
+    let domain = common::unique_domain();
     let factory = DomainParticipantFactory::instance();
     let p = factory
         .create_participant_with_config(
-            domain.try_into().expect("domain fits i32"),
+            domain,
             DomainParticipantQos::default(),
             fresh_runtime_config(),
         )

@@ -3,7 +3,7 @@
 CMS / PKCS#7 **signing** (and verification) of DDS-Security `governance` and
 `permissions` XML for the ZeroDDS builtin AccessControl plugin.
 
-DDS-Security 1.2 §9.4.1.3 requires both documents to be S/MIME (CMS `SignedData`)
+DDS-Security 1.2 §10.4.1.1 requires both documents to be S/MIME (CMS `SignedData`)
 signed by the **Permissions CA** — an unsigned `permissions.xml` is rejected by
 any conformant participant. ZeroDDS's runtime
 ([`zerodds-security-permissions`](../../crates/security-permissions)) *verifies*

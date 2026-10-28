@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of identifier-target-keyword-typename-unannotated that fastdds produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	46 | const zd_c2::static& data);
+plain-cdr1	be	refused	46 | const zd_c2::static& data);
+pl-cdr1	le	refused	46 | const zd_c2::static& data);
+pl-cdr1	be	refused	46 | const zd_c2::static& data);
+plain-cdr2	le	refused	46 | const zd_c2::static& data);
+plain-cdr2	be	refused	46 | const zd_c2::static& data);
+delimited-cdr	le	refused	46 | const zd_c2::static& data);
+delimited-cdr	be	refused	46 | const zd_c2::static& data);
+pl-cdr2	le	refused	46 | const zd_c2::static& data);
+pl-cdr2	be	refused	46 | const zd_c2::static& data);

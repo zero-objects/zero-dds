@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of union-member-sequence that cyclone produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	the batch was killed while serialising this case:
+plain-cdr1	be	refused	the batch was killed while serialising this case:
+pl-cdr1	le	refused	the batch was killed while serialising this case:
+pl-cdr1	be	refused	the batch was killed while serialising this case:
+plain-cdr2	le	refused	the batch was killed while serialising this case:
+plain-cdr2	be	refused	the batch was killed while serialising this case:
+delimited-cdr	le	refused	the batch was killed while serialising this case:
+delimited-cdr	be	refused	the batch was killed while serialising this case:
+pl-cdr2	le	refused	the batch was killed while serialising this case:
+pl-cdr2	be	refused	the batch was killed while serialising this case:

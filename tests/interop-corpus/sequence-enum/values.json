@@ -1,0 +1,17 @@
+{
+  "none": [],
+  "one": [
+    "RED"
+  ],
+  "many": [
+    "BLUE",
+    "RED",
+    "GREEN",
+    "BLUE"
+  ],
+  "bounded": [
+    "BLUE",
+    "RED"
+  ],
+  "tail": -1
+}

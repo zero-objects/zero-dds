@@ -9,7 +9,7 @@
 //! ```text
 //! struct SampleIdentity {
 //!     octet[16] writer_guid;
-//!     unsigned long long sequence_number;
+//!     SequenceNumber sequence_number; // long high; unsigned long low;
 //! };
 //! struct RequestHeader {
 //!     SampleIdentity request_id;
@@ -22,7 +22,6 @@
 //!     REMOTE_EX_OUT_OF_RESOURCES,
 //!     REMOTE_EX_UNKNOWN_OPERATION,
 //!     REMOTE_EX_UNKNOWN_EXCEPTION,
-//!     REMOTE_EX_UNKNOWN_INTERFACE,
 //! };
 //! struct ReplyHeader {
 //!     SampleIdentity related_request_id;
@@ -30,23 +29,22 @@
 //! };
 //! ```
 //!
-//! Encoding: **XCDR2** with `Final` extensibility. Spec §7.5.1.1.1 only
-//! prescribes the wire layout (no DHEADER, no EMHEADER); we choose
-//! Final because of its low overhead cost and because RPC headers are
-//! not intended for forward-compat extensions.
+//! Encoding: **XCDR2** with the schema's `Final` extensibility, without
+//! DHEADER or EMHEADER. SequenceNumber is two ordered 32-bit words,
+//! as in the installed Cyclone/OpenDDS RPC schemas, not a CDR uint64.
 //!
 //! Wire layout (Final XCDR2, little-endian example):
 //!
 //! ```text
 //! SampleIdentity:
 //!   octet[16] writer_guid    -- 16 byte, no padding
-//!   align(8)
-//!   uint64    sequence_number
+//!   int32     sequence_number.high
+//!   uint32    sequence_number.low
 //!
 //! RequestHeader:
 //!   SampleIdentity request_id   -- 24 byte
 //!   align(4)
-//!   uint32    instance_name_len -- inkl. NUL-Terminator
+//!   uint32    instance_name_len -- incl. NUL-terminator
 //!   bytes     instance_name + NUL
 //!
 //! ReplyHeader:
@@ -62,11 +60,13 @@ use alloc::vec::Vec;
 
 use crate::error::{RpcError, RpcResult};
 
-/// Maximale akzeptierte Wire-Payload pro Header (DoS-Cap).
+/// Maximum accepted wire payload per header (DoS cap).
 pub const MAX_HEADER_BYTES: usize = 64 * 1024;
 
-/// Maximale Stringlaenge in Headern.
-pub const MAX_STRING_LEN: u32 = 8 * 1024;
+/// Maximum length of an [`RequestHeader::instance_name`] in bytes,
+/// including the NUL terminator. Spec §7.5.1.1.1: `typedef string<255>
+/// InstanceName`.
+pub const MAX_STRING_LEN: u32 = 255;
 
 // ---------------------------------------------------------------------
 // SampleIdentity
@@ -75,9 +75,9 @@ pub const MAX_STRING_LEN: u32 = 8 * 1024;
 /// Spec §7.5.1.1.1 — Identifies a sample by writer GUID + sequence number.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
 pub struct SampleIdentity {
-    /// 16-byte GUID des absendenden Writers.
+    /// 16-byte GUID of the sending writer.
     pub writer_guid: [u8; 16],
-    /// Sequence-Number des Samples (`uint64`, RTPS-konvention 1-basiert).
+    /// Sequence number of the sample (`uint64`, RTPS convention 1-based).
     pub sequence_number: u64,
 }
 
@@ -91,11 +91,17 @@ impl SampleIdentity {
         }
     }
 
-    /// Reserved "unknown" value (Spec §7.5.1.1.1 — all 0).
-    pub const UNKNOWN: Self = Self {
+    /// Spec §7.8.2 — `RELATED_SAMPLE_IDENTITY_INVALID`:
+    /// `{ GUID_UNKNOWN, SEQUENCENUMBER_UNKNOWN }`, both defined in
+    /// \[RTPS\]. `GUID_UNKNOWN` is all-zero, `SEQUENCENUMBER_UNKNOWN` is
+    /// `{ high = -1, low = 0 }`, not sequence number 0.
+    pub const RELATED_SAMPLE_IDENTITY_INVALID: Self = Self {
         writer_guid: [0u8; 16],
-        sequence_number: 0,
+        sequence_number: 0xFFFF_FFFF_0000_0000,
     };
+
+    /// Alias of [`Self::RELATED_SAMPLE_IDENTITY_INVALID`].
+    pub const UNKNOWN: Self = Self::RELATED_SAMPLE_IDENTITY_INVALID;
 
     /// XCDR2-Little-Endian-Encoder.
     #[must_use]
@@ -138,7 +144,9 @@ impl SampleIdentity {
 // RemoteExceptionCode_t
 // ---------------------------------------------------------------------
 
-/// Spec §7.5.1.1.1 Tab.7.55 — Server-side error code in `ReplyHeader`.
+/// Spec §7.5.1.1.1 — Server-side error code in `ReplyHeader`.
+/// Six values, as the spec's `enum RemoteExceptionCode_t` lists them;
+/// there is no `REMOTE_EX_UNKNOWN_INTERFACE`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[repr(u32)]
 pub enum RemoteExceptionCode {
@@ -156,8 +164,6 @@ pub enum RemoteExceptionCode {
     /// The operation threw a user exception that the stub does not
     /// know.
     UnknownException = 5,
-    /// The service interface is unknown to the server.
-    UnknownInterface = 6,
 }
 
 impl RemoteExceptionCode {
@@ -173,7 +179,6 @@ impl RemoteExceptionCode {
             3 => Ok(Self::OutOfResources),
             4 => Ok(Self::UnknownOperation),
             5 => Ok(Self::UnknownException),
-            6 => Ok(Self::UnknownInterface),
             other => Err(RpcError::UnknownExceptionCode(other)),
         }
     }
@@ -186,10 +191,52 @@ impl RemoteExceptionCode {
 }
 
 // ---------------------------------------------------------------------
+// The three placeholder types of §7.5.1.1.1
+// ---------------------------------------------------------------------
+
+/// `dds::rpc::UnusedMember` — §7.5.1.1.1: `typedef octet UnusedMember`.
+///
+/// The type of the `dummy` member an `In` or an `Out` structure carries
+/// when the operation gives it nothing else (§7.5.1.1.4 rule 3c,
+/// §7.5.1.1.5 rule 3c). One octet and not an empty structure: XCDR
+/// gives an empty structure no octets at all, and a reader cannot tell
+/// a sample that arrived from one that did not.
+pub type UnusedMember = u8;
+
+/// `dds::rpc::UnknownOperation` — §7.5.1.1.1: `typedef octet
+/// UnknownOperation`.
+///
+/// The type of the `unknownOp` member on the `default` case of a `Call`
+/// or `Return` union. §7.5.1.1.6 rule 3 gives the reason: "Due to
+/// interface evolution a client that uses new interface may end up
+/// calling a service that implements a previous version of the
+/// interface. In that case, the discriminator value will not match any
+/// of the existing cases and hence will default to unknown, which
+/// should be recognized by the service implementation."
+pub type UnknownOperation = u8;
+
+/// `dds::rpc::UnknownException` — §7.5.1.1.1: `typedef octet
+/// UnknownException`.
+///
+/// The counterpart of [`UnknownOperation`] on the reply side. Distinct
+/// from [`RemoteExceptionCode::UnknownException`], which is the wire
+/// *code* `REMOTE_EX_UNKNOWN_EXCEPTION`; this is the octet a union case
+/// carries.
+pub type UnknownException = u8;
+
+/// The one octet a [`UnusedMember`], [`UnknownOperation`] or
+/// [`UnknownException`] member occupies on the wire.
+///
+/// Named rather than written as `1` at each site: the three are
+/// `typedef octet` and a codec that assumed a different width would
+/// desynchronise the rest of the sample.
+pub const PLACEHOLDER_OCTETS: usize = 1;
+
+// ---------------------------------------------------------------------
 // RequestHeader
 // ---------------------------------------------------------------------
 
-/// Spec §7.5.1.1.1 — Pro Sample im Request-Topic prepended.
+/// Spec §7.5.1.1.1 — Per sample in request topic prepended.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct RequestHeader {
     /// Unique ID of this request.
@@ -200,6 +247,9 @@ pub struct RequestHeader {
 
 impl RequestHeader {
     /// Constructor.
+    ///
+    /// The `instance_name` is not validated here; [`Self::to_cdr_le`] and
+    /// [`Self::to_cdr_be`] reject a name longer than `string<255>`.
     #[must_use]
     pub fn new(request_id: SampleIdentity, instance_name: impl Into<String>) -> Self {
         Self {
@@ -209,14 +259,20 @@ impl RequestHeader {
     }
 
     /// XCDR2-Little-Endian-Encoder.
-    #[must_use]
-    pub fn to_cdr_le(&self) -> Vec<u8> {
+    ///
+    /// # Errors
+    /// `RpcError::Codec` if `instance_name` exceeds `string<255>`
+    /// (Spec §7.5.1.1.1).
+    pub fn to_cdr_le(&self) -> RpcResult<Vec<u8>> {
         encode_request_header(self, true)
     }
 
     /// XCDR2-Big-Endian-Encoder.
-    #[must_use]
-    pub fn to_cdr_be(&self) -> Vec<u8> {
+    ///
+    /// # Errors
+    /// `RpcError::Codec` if `instance_name` exceeds `string<255>`
+    /// (Spec §7.5.1.1.1).
+    pub fn to_cdr_be(&self) -> RpcResult<Vec<u8>> {
         encode_request_header(self, false)
     }
 
@@ -255,7 +311,7 @@ impl RequestHeader {
 // ReplyHeader
 // ---------------------------------------------------------------------
 
-/// Spec §7.5.1.1.1 — Pro Sample im Reply-Topic prepended.
+/// Spec §7.5.1.1.1 — Per sample in reply topic prepended.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ReplyHeader {
     /// References the `request_id` of the corresponding request.
@@ -361,35 +417,31 @@ fn encode_u32(out: &mut Vec<u8>, v: u32, le: bool) {
     }
 }
 
-fn encode_u64_xcdr2(out: &mut Vec<u8>, v: u64, le: bool) {
-    // XCDR2: uint64 alignment-Cap = 4 byte.
-    align_to(out, 4);
-    if le {
-        out.extend_from_slice(&v.to_le_bytes());
-    } else {
-        out.extend_from_slice(&v.to_be_bytes());
-    }
-}
-
-fn encode_string(out: &mut Vec<u8>, s: &str, le: bool) {
+fn encode_string(out: &mut Vec<u8>, s: &str, le: bool) -> RpcResult<()> {
     let bytes = s.as_bytes();
+    if bytes.len() > MAX_STRING_LEN as usize {
+        return Err(RpcError::codec("string exceeds string<255>"));
+    }
     let len = (bytes.len() + 1) as u32;
     encode_u32(out, len, le);
     out.extend_from_slice(bytes);
     out.push(0);
+    Ok(())
 }
 
 fn encode_sample_identity(out: &mut Vec<u8>, id: &SampleIdentity, le: bool) {
-    // octet[16] hat alignment 1 — direkt einfuegen.
+    // octet[16] has alignment 1 — insert directly.
     out.extend_from_slice(&id.writer_guid);
-    encode_u64_xcdr2(out, id.sequence_number, le);
+    let (high, low) = zerodds_types::type_lookup::sequence_number_parts(id.sequence_number);
+    encode_u32(out, high, le);
+    encode_u32(out, low, le);
 }
 
-fn encode_request_header(h: &RequestHeader, le: bool) -> Vec<u8> {
+fn encode_request_header(h: &RequestHeader, le: bool) -> RpcResult<Vec<u8>> {
     let mut out = Vec::with_capacity(64);
     encode_sample_identity(&mut out, &h.request_id, le);
-    encode_string(&mut out, &h.instance_name, le);
-    out
+    encode_string(&mut out, &h.instance_name, le)?;
+    Ok(out)
 }
 
 fn encode_reply_header(h: &ReplyHeader, le: bool) -> Vec<u8> {
@@ -438,23 +490,11 @@ impl<'a> Cursor<'a> {
         })
     }
 
-    fn read_u64_xcdr2(&mut self, le: bool) -> RpcResult<u64> {
-        // XCDR2 Alignment-Cap = 4 byte.
-        self.align_to(4);
-        self.ensure(8)?;
-        let mut raw = [0u8; 8];
-        raw.copy_from_slice(&self.buf[self.pos..self.pos + 8]);
-        self.pos += 8;
-        Ok(if le {
-            u64::from_le_bytes(raw)
-        } else {
-            u64::from_be_bytes(raw)
-        })
-    }
-
     fn read_string(&mut self, le: bool) -> RpcResult<String> {
         let len = self.read_u32(le)?;
-        if len > MAX_STRING_LEN {
+        // The length includes the trailing NUL, so a `string<255>` has a
+        // wire length of at most 256.
+        if len > MAX_STRING_LEN + 1 {
             return Err(RpcError::codec("string exceeds cap"));
         }
         if len == 0 {
@@ -478,7 +518,10 @@ impl<'a> Cursor<'a> {
         let mut writer_guid = [0u8; 16];
         writer_guid.copy_from_slice(&self.buf[self.pos..self.pos + 16]);
         self.pos += 16;
-        let sequence_number = self.read_u64_xcdr2(le)?;
+        let sequence_number = zerodds_types::type_lookup::sequence_number_from_parts(
+            self.read_u32(le)?,
+            self.read_u32(le)?,
+        );
         Ok(SampleIdentity {
             writer_guid,
             sequence_number,
@@ -527,10 +570,14 @@ mod tests {
     }
 
     #[test]
-    fn sample_identity_unknown_constant_is_zero() {
-        let id = SampleIdentity::UNKNOWN;
+    fn sample_identity_invalid_constant_is_rtps_unknown() {
+        // Spec §7.8.2: { GUID_UNKNOWN, SEQUENCENUMBER_UNKNOWN }.
+        let id = SampleIdentity::RELATED_SAMPLE_IDENTITY_INVALID;
         assert_eq!(id.writer_guid, [0u8; 16]);
-        assert_eq!(id.sequence_number, 0);
+        let (high, low) = zerodds_types::type_lookup::sequence_number_parts(id.sequence_number);
+        assert_eq!(high, u32::MAX, "SEQUENCENUMBER_UNKNOWN.high is -1");
+        assert_eq!(low, 0, "SEQUENCENUMBER_UNKNOWN.low is 0");
+        assert_eq!(SampleIdentity::UNKNOWN, id);
     }
 
     #[test]
@@ -543,7 +590,7 @@ mod tests {
     #[test]
     fn request_header_roundtrip_le() {
         let h = RequestHeader::new(sample_id(), "calc-instance-1");
-        let bytes = h.to_cdr_le();
+        let bytes = h.to_cdr_le().unwrap();
         let back = RequestHeader::from_cdr_le(&bytes).unwrap();
         assert_eq!(h, back);
     }
@@ -551,7 +598,7 @@ mod tests {
     #[test]
     fn request_header_roundtrip_be() {
         let h = RequestHeader::new(sample_id(), "calc-instance-1");
-        let bytes = h.to_cdr_be();
+        let bytes = h.to_cdr_be().unwrap();
         let back = RequestHeader::from_cdr_be(&bytes).unwrap();
         assert_eq!(h, back);
     }
@@ -559,7 +606,7 @@ mod tests {
     #[test]
     fn request_header_empty_instance_name_roundtrip() {
         let h = RequestHeader::new(sample_id(), "");
-        let bytes = h.to_cdr_le();
+        let bytes = h.to_cdr_le().unwrap();
         let back = RequestHeader::from_cdr_le(&bytes).unwrap();
         assert_eq!(h, back);
         assert!(back.instance_name.is_empty());
@@ -602,7 +649,6 @@ mod tests {
             RemoteExceptionCode::OutOfResources,
             RemoteExceptionCode::UnknownOperation,
             RemoteExceptionCode::UnknownException,
-            RemoteExceptionCode::UnknownInterface,
         ] {
             let h = ReplyHeader::new(sample_id(), code);
             let le = h.to_cdr_le();
@@ -622,10 +668,20 @@ mod tests {
 
     #[test]
     fn remote_exception_code_as_u32_round_trips() {
-        for v in 0u32..=6 {
+        for v in 0u32..=5 {
             let code = RemoteExceptionCode::from_u32(v).unwrap();
             assert_eq!(code.as_u32(), v);
         }
+    }
+
+    #[test]
+    fn remote_exception_code_six_is_outside_the_spec_enum() {
+        // Spec §7.5.1.1.1 lists six values; there is no
+        // REMOTE_EX_UNKNOWN_INTERFACE.
+        assert_eq!(
+            RemoteExceptionCode::from_u32(6),
+            Err(RpcError::UnknownExceptionCode(6))
+        );
     }
 
     #[test]
@@ -653,20 +709,31 @@ mod tests {
         let id = SampleIdentity::new([0xAB; 16], 0x0102_0304_0506_0708);
         let bytes = id.to_cdr_le();
         assert_eq!(bytes.len(), 24);
-        // Letzten 8 byte = LE-Encoding des u64.
-        assert_eq!(&bytes[16..24], &0x0102_0304_0506_0708u64.to_le_bytes());
+        // Last 8 bytes = LE encoding of the u64.
+        assert_eq!(&bytes[16..24], &[4, 3, 2, 1, 8, 7, 6, 5]);
     }
 
     #[test]
     fn xcdr2_layout_string_includes_nul() {
         // class_id="A" (1 char + NUL = len=2) via RequestHeader.
         let h = RequestHeader::new(SampleIdentity::UNKNOWN, "A");
-        let bytes = h.to_cdr_le();
+        let bytes = h.to_cdr_le().unwrap();
         // Layout: 16 byte GUID + 8 byte uint64 + uint32 len=2 + 'A' + NUL
         // = 24 + 4 + 2 = 30 byte.
         assert_eq!(bytes.len(), 30);
         assert_eq!(&bytes[24..28], &2u32.to_le_bytes());
         assert_eq!(bytes[28], b'A');
         assert_eq!(bytes[29], 0);
+    }
+
+    #[test]
+    fn request_header_instance_name_over_255_is_rejected_on_encode() {
+        // Spec §7.5.1.1.1: InstanceName is string<255> — at most 255
+        // characters. The CDR length field that follows adds the NUL.
+        let ok = RequestHeader::new(SampleIdentity::UNKNOWN, "a".repeat(255));
+        assert!(ok.to_cdr_le().is_ok());
+        let too_long = RequestHeader::new(SampleIdentity::UNKNOWN, "a".repeat(256));
+        assert!(matches!(too_long.to_cdr_le(), Err(RpcError::Codec(_))));
+        assert!(matches!(too_long.to_cdr_be(), Err(RpcError::Codec(_))));
     }
 }

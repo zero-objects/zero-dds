@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! OPC-UA Built-in Types + Primitive-Type-Mapping zu DDS — Spec §8.2.
+//! OPC-UA Built-in Types + Primitive-Type-Mapping to DDS — Spec §8.2.
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -198,7 +198,7 @@ impl NodeClass {
     }
 }
 
-/// Spec §8.2.2 — `Guid` as a struct (data1 + data2 + data3 + data4[8])
+/// Spec §8.2.2 — `Guid` as a struct (data1 + data2 + data3 + data4\[8\])
 /// per the RFC 4122 layout.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Guid {
@@ -208,7 +208,7 @@ pub struct Guid {
     pub data2: u16,
     /// `data3`: uint16.
     pub data3: u16,
-    /// `data4`: octet[8].
+    /// `data4`: octet\[8\].
     pub data4: [u8; 8],
 }
 
@@ -247,7 +247,7 @@ pub type ByteString = Vec<u8>;
 pub struct QualifiedName {
     /// Namespace-Index.
     pub namespace_index: u16,
-    /// Name (max. 512 Zeichen per Spec).
+    /// Name (max. 512 characters per Spec).
     pub name: String,
 }
 
@@ -325,7 +325,7 @@ mod tests {
         // signed integer; therefore, they are both mapped to DDS Bytes."
         assert_eq!(BuiltinTypeKind::SByte.dds_xtypes_name(), "Byte");
         assert_eq!(BuiltinTypeKind::Byte.dds_xtypes_name(), "Byte");
-        // Aber im IDL-Equivalent unterschiedlich.
+        // But in the IDL-equivalent different.
         assert_eq!(BuiltinTypeKind::SByte.dds_idl_primitive(), Some("int8"));
         assert_eq!(BuiltinTypeKind::Byte.dds_idl_primitive(), Some("uint8"));
     }

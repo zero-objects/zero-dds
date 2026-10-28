@@ -1,227 +1,251 @@
-# `zerodds-xcdr2-cpp` 1.0 -- Spec Coverage
+# `zerodds-xcdr2-cpp` 1.0 — Spec Coverage
 
-**Source:** `docs/specs/zerodds-xcdr2-cpp-1.0.md` (213 lines) -- the ZeroDDS C++17 TypeSupport codegen spec.
+**Source:** `internal/standards/cache/omg/dds-xtypes-1.3.pdf` (§7.2, §7.4) and `internal/standards/cache/omg/idl-4.2.pdf` (§7) — what the C++ column answers.
 
-Implementation:
+The mechanism this column shares with the other twenty — the two walks, the framing, Table 9, the key hash and the driver — is in `zerodds-xcdr2-bindings-conformance-1.0.md`. This document carries only what the C++ column decides for itself, and its own evidence.
 
-- `crates/cpp/` — C++17 XCDR2 TypeSupport codegen.
+## §7.5.1 The parts of the column
 
-## §1 Motivation
+### §7.5.1 The concrete syntax tree and its text form
 
-### §1 OMG DDS-PSM-Cxx gap for TypeSupport
+**Spec:** §7.5.1 — Plain language binding — the mapping onto the target language is the PSM's own. This column's declarations are built as a tree and only then written as text; no emitter concatenates source.
 
-**Spec:** §1 -- "OMG DDS-PSM-Cxx 1.0 mandates TypeSupport registration in `Participant::create_topic`, but specifies no concrete `topic_type_support<T>` trait."
+**Repo:** `crates/lang-cst/src/cpp/`, `crates/lang-render/src/cpp.rs`
 
-**Repo:** the motivation text of the vendor spec.
-
-**Tests:** --
-
-**Status:** n/a (informative)
-
-## §2 TypeSupport pattern
-
-### §2 `topic_type_support<T>` forward in `dds::topic`
-
-**Spec:** §2 -- "template <typename T> struct topic_type_support; // forward (specialization per T)" in namespace `dds::topic`.
-
-**Repo:** `crates/cpp/include/dds/topic/TopicTraits.hpp` declares the forward template; specializations per IDL `struct` are emitted by the idl-cpp codegen (`crates/idl-cpp/src/emitter.rs::emit_topic_type_support_specs`).
-
-**Tests:** `crates/idl-cpp/tests/snapshot_codegen.rs` (10 tests) verifies the emitted form.
+**Tests:** `crates/lang-render/tests/rendering.rs`: `a_cpp_class_renders_its_access_sections_in_order`, `a_cpp_accessor_with_one_statement_stays_on_one_line`, `a_cpp_constructor_with_initialisers_puts_them_on_their_own_line`, `a_cpp_expression_brackets_only_where_the_tree_asked_for_it`, `a_cpp_namespace_body_is_not_indented`, `a_cpp_template_specialisation_renders_its_header_above_the_declaration`;
+across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_output_with_exactly_one_newline`, `crates/lang-render/tests/rendering.rs::no_rendered_line_carries_trailing_whitespace`.
 
 **Status:** done
 
-## §3 Required methods
+### §7.5.1 The rule catalogue
 
-### §3 type_name() / encode() / encode_be() / decode() / key_hash() / is_keyed() / extensibility()
+**Spec:** §7.5.1 — Plain language binding — the mapping onto the target language is the PSM's own. What becomes of which model node is a rule set and not a special case inside the walk.
 
-**Spec:** §3 -- C++ method signatures: `static const char* type_name()`, `static std::vector<uint8_t> encode(const T&)`, `static std::vector<uint8_t> encode_be(const T&)`, `static T decode(const uint8_t*, size_t)`, `static std::array<uint8_t,16> key_hash(const T&)`, `static constexpr bool is_keyed()`, `static constexpr ::dds::core::policy::DataRepresentationKind extensibility()`.
+**Repo:** `crates/lang-rules/src/rule/cpp.rs`
 
-**Repo:** `crates/idl-cpp/src/emitter.rs::emit_topic_type_support_for` (line 1429ff) emits exactly these 7 methods including the `constexpr` for is_keyed/extensibility.
-
-**Tests:** `crates/idl-cpp/tests/xcdr2_wire_vectors.rs` (15 V-tests), `crates/idl-cpp/tests/snapshot_codegen.rs`, `crates/idl-cpp/tests/spec_conformance.rs` (30 tests).
-
-**Status:** done
-
-## §4 Codegen requirement (idl-cpp)
-
-### §4 Specialization per IDL `struct` with FQN
-
-**Spec:** §4 -- "Per IDL `struct` (top-level or module-nested), idl-cpp MUST emit a `topic_type_support<FQN>` specialization. The FQN is `::Module::Sub::Struct`."
-
-**Repo:** `crates/idl-cpp/src/emitter.rs::emit_topic_type_support_specs` iterates over all structs of the TU; FQN emission via the `cpp_fqn` variable in `emit_topic_type_support_for`.
-
-**Tests:** `crates/idl-cpp/tests/fixtures.rs` (13 tests), `crates/idl-cpp/tests/snapshot_codegen.rs` (10 tests).
+**Tests:** `crates/lang-rules/tests/apply.rs::every_language_catalogue_fires_on_the_same_model`,
+`crates/lang-rules/tests/apply.rs::every_catalogue_serialises_and_reads_back_the_same`
 
 **Status:** done
 
-### §4 Plain members + @optional + @key codegen requirement
+### §7.5.1 The materialiser
 
-**Spec:** §4 -- "Required members (from the AST): all plain members (primitive, string, sequence, nested struct, enum, array). `@optional` / `@shared` via the EMHEADER M-flag (Mutable) or a present-flag byte (Final/Appendable). `@key` members in key-hash generation."
+**Spec:** §7.5.1 — Plain language binding — the mapping onto the target language is the PSM's own. The materialiser carries the language's own rules: names and keywords, collisions, and what the language cannot express at all.
 
-**Repo:** `crates/idl-cpp/src/emitter.rs` -- `emit_encode_fn`, `emit_decode_fn`, key-hash generation. `crates/idl-cpp/src/c_mode.rs::emit_key_hash_body`.
+**Repo:** `crates/lang-rules/src/adapter/cpp.rs`
 
-**Tests:** V-8 (key), V-9/V-10 (extensibility), V-11 (optional) in `xcdr2_wire_vectors.rs`.
-
-**Status:** done
-
-### §4 Type name without a leading `::`
-
-**Spec:** §4 -- "Type-name form: `Module::Sub::Struct` without a leading `::`."
-
-**Repo:** `crates/idl-cpp/src/emitter.rs::short_name` strips the leading `::`.
-
-**Tests:** V-7 `Outer::Inner::S` assert in the wire-vector test.
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_every_wired_language`
 
 **Status:** done
 
-## §5 Wire type mapping
+### §7.5.1 The codec backend
 
-### §5 IDL-to-C++17 types + wire layout
+**Spec:** §7.5.1 — Plain language binding — the mapping onto the target language is the PSM's own. The backend supplies the spelling the shared encoding decision takes in this language — receiver, method name, argument form.
 
-**Spec:** §5, table of 18 IDL types → C++ → XCDR2 LE.
+**Repo:** `crates/lang-rules/src/emit/cpp.rs`
 
-**Repo:** `crates/idl-cpp/src/type_map.rs` maps IDL primitives to C++ types. `crates/cpp/include/dds/topic/xcdr2.hpp` `write_le<T>/read_le<T>` templates.
-
-**Tests:** V-3 mixed primitives, V-4 string, V-5 Sequence<int32>, V-6 Sequence<string>, plus `compile_check.rs` (16 tests) and `edge_cases.rs` (15 tests).
-
-**Status:** done
-
-## §6 Extensibility
-
-### §6 Final / Appendable / Mutable mode encoder
-
-**Spec:** §6 -- "Codegen default: @appendable. The helper library provides a dedicated writer class per mode: `xcdr2::FinalWriter`, `xcdr2::AppendableWriter`, `xcdr2::MutableWriter`."
-
-**Repo:** `crates/cpp/include/dds/topic/xcdr2.hpp` holds FinalWriter/AppendableWriter/MutableWriter. `crates/idl-cpp/src/emitter.rs::struct_extensibility` -> emit_encode_fn dispatch.
-
-**Tests:** V-1..V-8 (Final), V-9 (Appendable), V-10/V-11 (Mutable) in `xcdr2_wire_vectors.rs`.
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_a_full_codec_in_every_wired_language`,
+`crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`
 
 **Status:** done
 
-## §7 Key extraction
+### §7.5.1 The Table 9 defaulter
 
-### §7 PlainCdr2BeKeyHolder + MD5
+**Spec:** §7.5.1 — Plain language binding — the mapping onto the target language is the PSM's own. A reader with no Table 9 answer has no defined value at five positions; this file is this column's answer.
 
-**Spec:** §7 -- "Per XTypes §7.6.8: `PlainCdr2BeKeyHolder` (big-endian Plain-CDR2 over only `@key` members), MD5 of it, 16 bytes. If is_keyed()==false: 16 null bytes."
+**Repo:** `crates/lang-rules/src/default_cpp.rs`
 
-**Repo:** `crates/cpp/include/dds/topic/xcdr2_md5.hpp` (RFC-1321 MD5). `crates/idl-cpp/src/emitter.rs` emits key_hash() with holder-write_be and md5().
-
-**Tests:** V-8 in `xcdr2_wire_vectors.rs` (key hash zero-padded for a holder ≤ 16 bytes; the MD5 path for >16 bytes via helper self-tests).
+**Tests:** `crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`
 
 **Status:** done
 
-## §8 Helper library
+### §7.5.1 The wire runtime
 
-### §8 TopicTraits.hpp + xcdr2.hpp + xcdr2_md5.hpp
+**Spec:** §7.5.1 — Plain language binding — the mapping onto the target language is the PSM's own. The runtime reads §7.4 from the clause text on its own and calls no other column; that is where this column's independence lives.
 
-**Spec:** §8, table header/content -- 3 entries: `TopicTraits.hpp` (forward + ByteSeq/string defaults), `xcdr2.hpp` (primitive helpers, padding, DHEADER, EMHEADER), `xcdr2_md5.hpp` (RFC 1321).
+**Repo:** `runtime/cpp`, endpoint SDK `endpoints/cpp`
 
-**Repo:** `crates/cpp/include/dds/topic/TopicTraits.hpp`, `crates/cpp/include/dds/topic/xcdr2.hpp`, `crates/cpp/include/dds/topic/xcdr2_md5.hpp`.
-
-**Tests:** `crates/idl-cpp/tests/clang_roundtrip.rs` (1 test, ignored on systems without clang); the generated code is linked against the header.
-
-**Status:** done
-
-### §8 Pure C++17 header-only
-
-**Spec:** §8 -- "Pure C++17, header-only. No linking against the Rust layer; cross-compile-safe."
-
-**Repo:** three .hpp files without a .cpp sibling. No Rust-FFI dependency.
-
-**Tests:** `compile_check.rs` (16 tests) compiles the generated output.
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_runtime`,
+`crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_an_endpoint_sdk`
 
 **Status:** done
 
-## §9 Conformance
+## §7.2.2 What this column decides for itself
 
-### §9 L1 wire (V-1..V-12 byte-exact)
+### §7.2.2.2 Every member takes the runtime type and never the compiler's
 
-**Spec:** §9 -- "L1 (wire): `crates/idl-cpp/tests/xcdr2_wire_vectors.rs` checks all V-1..V-12 byte-exact."
+**Spec:** §7.2.2.2 — Primitive types — BOOLEAN, BYTE, INT8..UINT64, FLOAT32, FLOAT64, FLOAT128, CHAR8, CHAR16; every width is fixed.
 
-**Repo:** `crates/idl-cpp/tests/xcdr2_wire_vectors.rs` (15 #[test] functions).
+**Repo:** `crates/lang-rules/src/adapter/cpp.rs`
 
-**Tests:** v1_empty_final_struct, v2_plain_primitives_final, v3_mixed_primitives_final, v4_string_final, v5_sequence_int_final, v6_sequence_string_final, v7_nested_modules_final, v8_keyed_struct_final, v9_appendable_struct, v10_mutable_struct + 5 more.
-
-**Status:** done
-
-### §9 L2 codegen snapshots
-
-**Spec:** §9 -- "L2 (codegen): `crates/idl-cpp/tests/snapshots/` contains a snapshot per vector."
-
-**Repo:** `crates/idl-cpp/tests/snapshots/` dir with snapshot files; driver `crates/idl-cpp/tests/snapshot_codegen.rs` (10 tests).
-
-**Tests:** `snapshot_codegen.rs` validates the generated outputs for all V-type IDL inputs.
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::tests::a_long_double_is_the_runtime_type_and_never_the_compiler_s`
 
 **Status:** done
 
-### §9 L3 cross-language runner
+### §7.2.2.4.4.4.7 An optional member is a pointer and not a second field
 
-**Spec:** §9 -- "L3 (cross-language): `crates/conformance/tests/cross_language_xcdr2.rs` calls `cpp_runner`."
 
-**Repo:** `crates/conformance/tests/cross_language_xcdr2.rs` holds the multi-language driver including the C++ binding call via subprocess against the idl-cpp wire-vector suite.
+**Spec:** §7.2.2.4.4.4.7 — A structure member may be optional; a union member never is.
 
-**Tests:** `crates/conformance/tests/cross_language_xcdr2.rs::l3_2_cpp_binding`.
+**Repo:** `crates/lang-rules/src/adapter/cpp.rs`
 
-**Status:** done
-
-### §9 L4 cross-vendor Cyclone
-
-**Spec:** §9 -- "L4 (cross-vendor): `crates/discovery/tests/cyclone_xcdr2_cpp.rs` round-trip vs. Cyclone."
-
-**Repo:** all 12 vectors were live-captured against Cyclone DDS 0.11 (forced XCDR2) on the Linux bench host and byte-compared; two surfaced gaps fixed (64-bit alignment §7.4.1.1.1, sequence DHEADER §7.4.3.5). The C++ encoder (`idl-cpp`) is byte-verified: `crates/idl-cpp/tests/xcdr2_wire_vectors.rs` compiles+runs the generated C++ and checks V-1..V-12 byte-exact (incl. V-3/V-8 4-byte alignment, V-6 `sequence<string>` DHEADER). V-10/V-11a conformant LC divergence.
-
-**Tests:** `crates/idl-cpp/tests/xcdr2_wire_vectors.rs` (16 tests, compile+run C++) + `crates/cdr/tests/xcdr2_cross_vendor_fixtures.rs` (15 tests).
-
-**Status:** done -- C++ encoder byte-exact against Cyclone DDS 0.11 (V-1..V-9/V-11b), mutable V-10/V-11a conformant LC divergence; generated code compile+run-verified.
-
-## §10 Examples
-
-### §10 topic_typed_smoke.cpp
-
-**Spec:** §10 -- "`crates/cpp/examples/topic_typed_smoke.cpp` is the reference smoke (a generated `topic_type_support<Point>` + a pub/sub loop)."
-
-**Repo:** `crates/cpp/examples/topic_typed_smoke.cpp` (smoke demo).
-
-**Tests:** `compile_check.rs` covers the compile path; a run test is sample-only.
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::tests::an_optional_member_is_a_plain_pointer_and_not_a_second_field`,
+`crates/lang-rules/tests/cpp_reader_generates.rs::an_optional_member_gets_a_reader`
 
 **Status:** done
 
-## §11 Errata + open questions
+### §7.2.2.4.3 A sequence becomes a `vector` and a `map` the class `zerodds::Map` over a `vector` of pairs
 
-### §11.1 wchar platform-dependent
 
-**Spec:** §11.1 -- "C++ wchar_t is platform-dependent (4 bytes on Linux, 2 bytes on Windows). The codegen MUST truncate via `static_cast<uint16_t>` and extend on decode."
+**Spec:** §7.2.2.4.3 — Sequence — one-dimensional, bound optional.
 
-**Repo:** `crates/idl-cpp/src/emitter.rs` emit_member_write uses an explicit u16 cast for wchar.
+**Repo:** `crates/lang-rules/src/adapter/cpp.rs`
 
-**Tests:** wchar smoke in `crates/idl-cpp/tests/edge_cases.rs`.
-
-**Status:** done
-
-### §11.2 long double
-
-**Spec:** §11.2 -- "XCDR2 specifies no long double wire. The codegen rejects long double members with an error."
-
-**Repo:** `crates/idl-cpp/src/type_map.rs` rejects long double via the validator.
-
-**Tests:** edge-case test in `edge_cases.rs`.
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::tests::a_sequence_is_a_vector_and_a_map_is_a_class_over_a_vector_of_pairs`
 
 **Status:** done
 
-### §11.3 std::variant for union
+### §7.2.2.4.3 An array nests with the outer dimension outermost
 
-**Spec:** §11.3 -- "idl-cpp emits an IDL `union` as `std::variant<...>`. The encoder writes the discriminator + selected case per XTypes §7.4.4.5."
+**Spec:** §7.2.2.4.3 — Array — multi-dimensional, fixed element count, row-major.
 
-**Repo:** `crates/idl-cpp/src/emitter.rs` union path.
+**Repo:** `crates/lang-rules/src/adapter/cpp.rs`
 
-**Tests:** union tests in `crates/idl-cpp/tests/spec_conformance.rs`.
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::tests::an_array_nests_with_the_outer_dimension_outermost`
+
+**Status:** done
+
+### §7.2.2.4.1.1 An enumeration takes an underlying type from its bit bound
+
+**Spec:** §7.2.2.4.1.1 — Enumeration — int32 literals, ordered, `bit_bound` 1..32.
+
+**Repo:** `crates/lang-rules/src/adapter/cpp.rs`
+
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::tests::an_enumeration_takes_an_underlying_type_from_its_bit_bound`,
+`crates/lang-rules/tests/cpp_reader_generates.rs::an_enumeration_whose_first_literal_is_not_zero`
+
+**Status:** done
+
+### §7.2.2.4.4.3 A union becomes a class with a discriminator and one field per case
+
+**Spec:** §7.2.2.4.4.3 — Union — the discriminator is always the first member and carries `must_understand=true`.
+
+**Repo:** `crates/lang-rules/src/adapter/cpp.rs`
+
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::tests::a_union_is_a_class_with_a_discriminator_and_one_field_per_case`,
+`crates/lang-rules/tests/cpp_reader_generates.rs::a_union_gets_a_reader`
+
+**Status:** done
+
+### IDL 4.2 §7.5.2 `module` becomes a namespace and not a prefix; references are written from the root
+
+**Spec:** IDL 4.2 §7.5.2 — `module` is a naming scope; an identifier is unique per scope.
+
+**Repo:** `crates/lang-rules/src/adapter/cpp.rs`
+
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::tests::a_module_is_a_namespace_and_not_a_prefix`,
+`crates/lang-rules/src/adapter/cpp.rs::tests::a_reference_across_modules_is_written_from_the_root`
+
+**Status:** done
+
+### IDL 4.2 §7.2.3 The tag keeps apart what the C++ spelling collapses
+
+**Spec:** IDL 4.2 §7.2.3 — Identifiers are ASCII and case-insensitive on comparison; a collision has to be reported.
+
+**Repo:** `crates/lang-rules/src/adapter/cpp.rs`
+
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::tests::the_tag_keeps_apart_what_the_cpp_spelling_collapses`,
+`crates/lang-rules/src/adapter/cpp.rs::tests::an_any_member_is_refused_by_name_at_any_depth`
+
+**Status:** done
+
+### §7.2.2.4.4.4.9 Every kind Table 9 answers for gets a defaulter
+
+**Spec:** §7.2.2.4.4.4.9 — A member the stream did not carry takes its Table 9 default.
+
+**Repo:** `crates/lang-rules/src/default_cpp.rs`
+
+**Tests:** `crates/lang-rules/tests/cpp_reader_generates.rs::every_kind_table_9_answers_for_gets_a_defaulter`
+
+**Status:** done
+
+### §7.4.3 Framing: an appendable and a mutable aggregate each get a reader
+
+**Spec:** §7.4.3 — XCDR version 2 — plain CDR2, delimited CDR2 and PL_CDR2.
+
+**Repo:** `crates/lang-rules/src/emit/cpp.rs`
+
+**Tests:** `crates/lang-rules/tests/cpp_reader_generates.rs::an_appendable_struct_gets_a_reader`,
+`crates/lang-rules/tests/cpp_reader_generates.rs::a_mutable_struct_gets_a_reader`,
+`crates/lang-rules/tests/cpp_reader_generates.rs::a_bounded_string_gets_a_reader`
+
+**Status:** done
+
+### IDL 4.2 §7.4.3 `interface` binds the DDS-RPC entities in C++
+
+**Spec:** IDL 4.2 §7.4.3 — `interface` — operations with `in`/`out`/`inout` parameters.
+
+**Repo:** `crates/lang-rules/src/adapter/interface.rs`
+
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_two_abstract_classes_of_rule_one`,
+`crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_synchronous_operations_of_rule_six`,
+`crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_asynchronous_operations_of_rule_seven`,
+`crates/lang-rules/tests/interface_bindings.rs::cpp_prefixes_a_reserved_word_with_cxx`
+
+**Status:** done
+
+## §7.3.1 How the column is held to it
+
+### §7.3.1 Every corpus case renders or names the layer that refused it
+
+**Spec:** §7.3.1 — Every corpus case renders or names the layer that refused it. A case that stopped rendering would otherwise be found by whichever probe ran next, a build directory away from the construct that caused it.
+
+**Repo:** `crates/lang-rules/src/emit/cpp.rs`, `crates/lang-rules/src/adapter/cpp.rs`
+
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::tests::every_corpus_case_renders_or_names_its_refusal`
+
+**Status:** done
+
+### §7.2.2.4.8 `@verbatim` lands at the placements the clause names for this language
+
+**Spec:** §7.2.2.4.8 — `@verbatim` lands at the placements the clause names for this language.
+
+**Repo:** `crates/lang-rules/src/emit/cpp.rs`, `crates/lang-rules/src/adapter/cpp.rs`
+
+**Tests:** `crates/lang-rules/tests/verbatim_end_to_end.rs::cpp_places_all_six_slots_in_spec_order`
+
+**Status:** done
+
+## §7.3.1 Driver and measurement
+
+### §7.3.1 `idlc generate --lang c++`
+
+**Spec:** §7.3.1 — the IDL type representation is the input of generation; the output is this column's source.
+
+**Repo:** `tools/idlc/src/generate.rs`, `tools/idlc/src/main.rs`
+
+**Tests:** `tools/idlc/src/generate.rs::tests::every_language_round_trips_through_its_own_name`,
+`tools/idlc/src/generate.rs::tests::language_names_lists_every_language_once`
+
+**Status:** done
+
+### §7.4 The measurement harness of this column
+
+**Spec:** §7.4 — a column's octets are compared against recorded octets rather than asserted in its own tests.
+
+**Repo:** `tools/wireprobe/wireprobe-zerodds-cpp-gen/`, `tools/wireprobe/wireprobe-zerodds-cpp`, `tools/wireprobe/wireprobe-cpp-corpus`
+
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_cell_generator`,
+`crates/lang-rules/tests/every_language_has_its_parts.rs::every_cell_generator_guards_against_a_missing_toolchain`
 
 **Status:** done
 
 ---
 
-## Audit status
+## Audit Status
 
-18 done / 0 partial / 0 open / 1 n/a (informative) / 0 n/a (rejected).
+21 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
 
-Test run: `cargo test -p zerodds-idl-cpp` -- 12 test binaries green, 0 failed (139 unit + 16+15+13+11+15+0+30+10+21+7+15 in integration tests); `cargo test -p zerodds-conformance --test cross_language_xcdr2 l3_2_cpp_binding` -- 1 test green; `cargo test -p zerodds-cdr --test xcdr2_cross_vendor_fixtures` -- 15 tests green.
+Test run: `cargo test -p zerodds-lang-rules` — 1024 tests green, 0 failed (20 ignored: the whole-corpus compile runs, which need `--include-ignored`).
+
+Open items: none. Decision records: none.

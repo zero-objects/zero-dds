@@ -1,0 +1,9 @@
+@final
+struct GapProbe {
+    string<64> s;
+    long b;
+    octet c;
+    double d;
+    octet e;
+    short f;
+};

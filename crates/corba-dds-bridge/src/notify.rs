@@ -18,6 +18,7 @@
 //!   DDS durability. Spec §4.4 table 7.
 
 use alloc::collections::BTreeMap;
+use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 

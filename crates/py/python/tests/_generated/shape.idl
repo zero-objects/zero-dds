@@ -1,0 +1,15 @@
+// SPDX-License-Identifier: Apache-2.0
+// The OMG shape.idl ShapeType, member for member: @appendable, five
+// members, the last a sequence<octet> whose length announces the filler
+// of the large-data tests. `crates/dcps/src/interop.rs` carries the same
+// IDL. Replaces the hand-written `@idl_struct(typename="ShapeType",
+// extensibility="appendable")` `PyShape` dataclass now that `zerodds.idl`
+// is removed.
+@appendable
+struct ShapeType {
+  string color;
+  long x;
+  long y;
+  long shapesize;
+  sequence<octet> additional_payload_size;
+};

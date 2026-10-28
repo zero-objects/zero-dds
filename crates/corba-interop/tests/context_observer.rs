@@ -4,7 +4,7 @@
 // Default-runnable coverage for `CorbaServer::on_request_contexts`: the server
 // observes the incoming ServiceContextList of every request before dispatch.
 // (The live OTS use — capturing a JacORB PropagationContext in SC id=0 — is in
-// `jacorb_live_ots_handshake`, codepit-gated.)
+// `jacorb_live_ots_handshake`, gated on the Linux test host.)
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 //! Default-runnable coverage for `CorbaServer::on_request_contexts`.
@@ -12,10 +12,10 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use zerodds_cdr::Endianness;
 use zerodds_corba_interop::runtime::{CorbaServer, IiopCorbaConnection, object_reference};
 use zerodds_corba_interop::{decode_string_body, encode_string_body};
 use zerodds_corba_rust::{CorbaConnection, SkeletonResult};
+use zerodds_wire::Endianness;
 
 #[test]
 fn server_observes_incoming_request_contexts() {

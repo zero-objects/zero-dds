@@ -1,0 +1,8 @@
+// KeyedPointA of ../KeyedPointA.idl for OpenSplice 6.9's idlpp, which
+// reads keys only through `#pragma keylist` and takes no annotations. A
+// struct of two `long`s has the same XCDR1 bytes as the `@final` original.
+struct KeyedPointA {
+  long id;
+  long value;
+};
+#pragma keylist KeyedPointA id

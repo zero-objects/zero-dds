@@ -5,7 +5,7 @@
 //! Wire-Format: Duration (8 byte).
 //! Default: `ZERO`. Reader-only (the writer does not know the filter).
 
-use zerodds_cdr::{BufferReader, BufferWriter, DecodeError, EncodeError};
+use zerodds_wire::{Reader, WireError, Writer};
 
 use crate::duration::Duration;
 
@@ -18,18 +18,15 @@ pub struct TimeBasedFilterQosPolicy {
 
 impl TimeBasedFilterQosPolicy {
     /// Wire-Encoding.
-    ///
-    /// # Errors
-    /// Buffer-Overflow.
-    pub fn encode_into(self, w: &mut BufferWriter) -> Result<(), EncodeError> {
-        self.minimum_separation.encode_into(w)
+    pub fn encode_into(self, w: &mut Writer) {
+        self.minimum_separation.encode_into(w);
     }
 
     /// Wire-Decoding.
     ///
     /// # Errors
     /// Buffer-Underflow.
-    pub fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
+    pub fn decode_from(r: &mut Reader<'_>) -> Result<Self, WireError> {
         Ok(Self {
             minimum_separation: Duration::decode_from(r)?,
         })
@@ -40,7 +37,7 @@ impl TimeBasedFilterQosPolicy {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use zerodds_cdr::Endianness;
+    use zerodds_wire::Endianness;
 
     #[test]
     fn default_is_zero() {
@@ -55,10 +52,10 @@ mod tests {
         let p = TimeBasedFilterQosPolicy {
             minimum_separation: Duration::from_millis(100),
         };
-        let mut w = BufferWriter::new(Endianness::Little);
-        p.encode_into(&mut w).unwrap();
-        let bytes = w.into_bytes();
-        let mut r = BufferReader::new(&bytes, Endianness::Little);
+        let mut w = Writer::new(Endianness::Little);
+        p.encode_into(&mut w);
+        let bytes = w.finish();
+        let mut r = Reader::new(&bytes, Endianness::Little);
         assert_eq!(TimeBasedFilterQosPolicy::decode_from(&mut r).unwrap(), p);
     }
 }

@@ -1,0 +1,5 @@
+// `map` keyed by `unsigned long long`, unannotated
+struct Sample {
+    map<unsigned long long, short> entries;
+    long tail;
+};

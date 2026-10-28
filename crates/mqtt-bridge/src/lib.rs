@@ -4,7 +4,7 @@
 //! Crate `zerodds-mqtt-bridge`. Safety classification: **STANDARD**.
 //!
 //! MQTT v5.0 (OASIS Standard 07 March 2019) wire codec + broker +
-//! DDS bridge — pure-Rust `no_std + alloc`, `forbid(unsafe_code)`.
+//! DDS bridge — pure-Rust, `forbid(unsafe_code)`.
 //! Implements the full MQTT 5.0 spec incl. all control-packet
 //! bodies (CONNECT / CONNACK / PUBLISH / PUBACK / PUBREC / PUBREL /
 //! PUBCOMP / SUBSCRIBE / SUBACK / UNSUBSCRIBE / UNSUBACK / PINGREQ /
@@ -22,7 +22,7 @@
 //! Layer 5 — bridges. Substrate for DDS↔MQTT endpoint mapping
 //! (IoT broker integration, cloud MQTT endpoints).
 //!
-//! ## Public API (Stand 1.0.0-rc.1)
+//! ## Public API
 //!
 //! - [`FixedHeader`] / [`ControlPacketType`] — §2.1.
 //! - [`encode_publish`] / [`decode_publish`] / [`CodecError`] —

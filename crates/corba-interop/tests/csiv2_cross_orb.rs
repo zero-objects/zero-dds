@@ -16,12 +16,12 @@
 //! Runs only with a live JacORB GssUpServer whose IOR is provided via `SECURE_IOR`
 //! (the Linux test host). Ignored by default.
 
-use zerodds_cdr::Endianness;
 use zerodds_corba_interop::runtime::{IiopCorbaConnection, object_reference_from_ior};
 use zerodds_corba_rust::CorbaConnection;
+use zerodds_wire::Endianness;
 
 #[test]
-#[ignore = "needs live JacORB GssUpServer via SECURE_IOR env (codepit)"]
+#[ignore = "needs live JacORB GssUpServer via SECURE_IOR env (Linux test host)"]
 fn zerodds_gssup_accepted_by_jacorb_tss() {
     let ior = std::env::var("SECURE_IOR").expect("SECURE_IOR env (JacORB GssUpServer-IOR)");
     let oref = object_reference_from_ior(ior.trim()).expect("parse IOR");

@@ -1,0 +1,2 @@
+typedef long L;
+@mutable struct MT { @id(1) sequence<long> plain; @id(2) sequence<L> aliased; };

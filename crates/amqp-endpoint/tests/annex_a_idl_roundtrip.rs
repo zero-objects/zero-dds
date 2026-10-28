@@ -1,21 +1,18 @@
-//! Spec §9.1 + Annex A — IDL roundtrip verification.
+//! Spec §9.1 + Annex A — IDL round-trip verification.
 //!
-//! Proof that the Rust mirror in `annex_a.rs` matches the
-//! normative IDL from spec Annex A exactly:
+//! Proof that the Rust mirror in `annex_a.rs` matches the normative IDL
+//! from spec Annex A exactly:
 //!
-//! 1. The complete `module zerodds::amqp` (Annex A) is parsed by
-//!    the `zerodds-idl` parser — proving the IDL is syntactically
-//!    valid.
-//! 2. All 5 enums + 7 structs from the spec are found in the AST —
-//!    proving the Rust mirror is complete in its top-level names.
-//! 3. For each top-level item, the member names + top-level fields
-//!    are compared against the Rust mirror — proving the
-//!    mirror carries the spec definition 1:1.
+//! 1. The complete `module zerodds::amqp` (Annex A) parses and lowers
+//!    through `zerodds-idl-parse` + `zerodds-idl-lower`, and every name
+//!    it uses resolves — proving the IDL is valid and self-contained.
+//! 2. All 5 enums + 7 structs from the spec are in the model — proving
+//!    the Rust mirror is complete in its top-level names.
+//! 3. Each one's member names are compared against the Rust mirror,
+//!    proving the mirror carries the spec definition 1:1.
 //!
-//! This test thereby closes §9.1 (`IDL-defined Mapping Schema`)
-//! and Annex A (`IDL Module zerodds::amqp`) as audit-done — the
-//! "full IDL codegen roundtrip" follow-up from the open list
-//! is established here by parser verification against the spec IDL.
+//! This closes §9.1 (`IDL-defined Mapping Schema`) and Annex A (`IDL
+//! Module zerodds::amqp`) as audit-done.
 
 #![allow(
     clippy::expect_used,
@@ -23,24 +20,19 @@
     clippy::panic,
     clippy::print_stderr,
     clippy::print_stdout,
-    clippy::field_reassign_with_default,
-    clippy::manual_flatten,
-    clippy::collapsible_if,
-    clippy::empty_line_after_doc_comments,
     clippy::uninlined_format_args,
-    clippy::drop_non_drop,
     missing_docs
 )]
 
 use zerodds_amqp_endpoint::annex_a::{
     BodyEncodingMode, DescriptorForm, LinkDirection, SaslMechanism, TimeMapping,
 };
-use zerodds_idl::ast::{ConstrTypeDecl, Definition, ModuleDef, StructDcl, TypeDecl};
-use zerodds_idl::config::ParserConfig;
+use zerodds_ast::{Ast, TypeKind, TypeNode};
+use zerodds_ast_core::{Id, ScopedName};
 
 /// Annex A IDL — verbatim from `documentation/specs/dds-amqp-1.0/main.tex`
 /// §A. On spec updates this constant must be maintained alongside,
-/// otherwise the roundtrip test fails. That is exactly the point.
+/// otherwise the round-trip test fails. That is exactly the point.
 const ANNEX_A_IDL: &str = r#"
 module zerodds {
   module amqp {
@@ -153,120 +145,119 @@ module zerodds {
 };
 "#;
 
-fn parse_annex_a() -> zerodds_idl::ast::Specification {
-    zerodds_idl::parse(ANNEX_A_IDL, &ParserConfig::default())
-        .expect("Annex-A IDL must parse without errors")
+/// Parse and lower the Annex-A IDL, and resolve every name in it.
+///
+/// The resolution pass is part of the proof: Annex A declares every type
+/// it uses, so a name that reaches nothing is a defect in the annex or in
+/// the constant above rather than something to shrug off. The old test
+/// stopped at the parse and could not have caught one.
+fn annex_a_model() -> Ast {
+    let parsed = zerodds_idl_parse::parse(ANNEX_A_IDL);
+    assert!(
+        !parsed.has_errors(),
+        "Annex-A IDL must parse without errors: {:?}",
+        parsed.diagnostics()
+    );
+    let lowered = zerodds_idl_lower::lower(&parsed.syntax(), "annex-a.idl");
+    assert!(
+        lowered.diagnostics.is_empty(),
+        "Annex-A IDL must lower without diagnostics: {:?}",
+        lowered.diagnostics
+    );
+    let mut ast = lowered.ast;
+    let report = ast.resolve_all_by_name().expect("a resolve pass");
+    assert!(
+        report.is_clean(),
+        "Annex-A IDL names something it does not declare: {:?}",
+        report.broken
+    );
+    ast
 }
 
-/// Descends into `module zerodds { module amqp { ... } }` and
-/// returns the inner definition list.
-fn inner_definitions(spec: &zerodds_idl::ast::Specification) -> &[Definition] {
-    let zerodds = spec
-        .definitions
-        .iter()
-        .find_map(|d| match d {
-            Definition::Module(m) if m.name.text == "zerodds" => Some(m),
-            _ => None,
-        })
-        .expect("missing top-level module zerodds");
-    let amqp = inner_module(zerodds, "amqp");
-    &amqp.definitions
+/// Every type declared in `module zerodds { module amqp { ... } }`.
+fn inner_types(ast: &Ast) -> Vec<Id<TypeNode>> {
+    let module = ast
+        .module_by_path(&ScopedName::absolute(vec![
+            "zerodds".to_string(),
+            "amqp".to_string(),
+        ]))
+        .expect("missing module zerodds::amqp");
+    ast.types()
+        .filter(|(_, node)| node.module == module)
+        .map(|(id, _)| id)
+        .collect()
 }
 
-fn inner_module<'a>(m: &'a ModuleDef, name: &str) -> &'a ModuleDef {
-    m.definitions
-        .iter()
-        .find_map(|d| match d {
-            Definition::Module(inner) if inner.name.text == name => Some(inner),
-            _ => None,
-        })
-        .unwrap_or_else(|| panic!("missing inner module '{name}' in '{}'", m.name.text))
+fn type_by_name(ast: &Ast, name: &str) -> Id<TypeNode> {
+    inner_types(ast)
+        .into_iter()
+        .find(|id| ast.type_(*id).is_ok_and(|node| node.name == name))
+        .unwrap_or_else(|| panic!("missing type '{name}'"))
 }
 
-fn struct_member_names(defs: &[Definition], type_name: &str) -> Vec<String> {
-    let s = defs
+fn struct_member_names(ast: &Ast, type_name: &str) -> Vec<String> {
+    let id = type_by_name(ast, type_name);
+    let TypeKind::Structure { members, .. } = &ast.type_(id).expect("struct").kind else {
+        panic!("'{type_name}' is not a struct");
+    };
+    members
         .iter()
-        .find_map(|d| match d {
-            Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Struct(StructDcl::Def(s))))
-                if s.name.text == type_name =>
-            {
-                Some(s)
-            }
-            _ => None,
-        })
-        .unwrap_or_else(|| panic!("missing struct '{type_name}'"));
-    let mut names = Vec::new();
-    for m in &s.members {
-        for decl in &m.declarators {
-            names.push(decl.name().text.clone());
-        }
-    }
-    names
+        .filter_map(|member| ast.member(*member).ok().map(|node| node.name.clone()))
+        .collect()
 }
 
-fn enum_value_names(defs: &[Definition], type_name: &str) -> Vec<String> {
-    let e = defs
+fn enum_value_names(ast: &Ast, type_name: &str) -> Vec<String> {
+    let id = type_by_name(ast, type_name);
+    let TypeKind::Enumeration { enumerators } = &ast.type_(id).expect("enum").kind else {
+        panic!("'{type_name}' is not an enum");
+    };
+    enumerators
         .iter()
-        .find_map(|d| match d {
-            Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Enum(e)))
-                if e.name.text == type_name =>
-            {
-                Some(e)
-            }
-            _ => None,
-        })
-        .unwrap_or_else(|| panic!("missing enum '{type_name}'"));
-    e.enumerators
-        .iter()
-        .map(|en| en.name.text.clone())
+        .filter_map(|id| ast.enumerator(*id).ok().map(|node| node.name.clone()))
         .collect()
 }
 
 // ---------------------------------------------------------------------------
-// Step 1 — IDL parses cleanly.
+// Step 1 — the IDL parses, lowers and resolves.
 // ---------------------------------------------------------------------------
 
 #[test]
-fn annex_a_idl_parses_without_errors() {
-    let spec = parse_annex_a();
-    assert!(
-        !spec.definitions.is_empty(),
-        "spec must have top-level defs"
-    );
+fn annex_a_idl_parses_lowers_and_resolves() {
+    let ast = annex_a_model();
+    assert!(!inner_types(&ast).is_empty(), "the annex declares nothing");
 }
 
 // ---------------------------------------------------------------------------
-// Step 2 — Module structure: zerodds.amqp.
+// Step 2 — module structure: zerodds::amqp.
 // ---------------------------------------------------------------------------
 
 #[test]
 fn module_zerodds_amqp_present() {
-    let spec = parse_annex_a();
-    let inner = inner_definitions(&spec);
-    assert!(!inner.is_empty(), "inner module amqp must have defs");
+    let ast = annex_a_model();
+    assert!(
+        !inner_types(&ast).is_empty(),
+        "inner module amqp must declare types"
+    );
 }
 
 #[test]
 fn all_five_enums_present() {
-    let spec = parse_annex_a();
-    let defs = inner_definitions(&spec);
-    let expected = [
+    let ast = annex_a_model();
+    for name in [
         "SaslMechanism",
         "BodyEncodingMode",
         "TimeMapping",
         "DescriptorForm",
         "LinkDirection",
-    ];
-    for name in expected {
-        let _ = enum_value_names(defs, name); // panics if missing.
+    ] {
+        let _ = enum_value_names(&ast, name); // panics if missing.
     }
 }
 
 #[test]
 fn all_seven_structs_present() {
-    let spec = parse_annex_a();
-    let defs = inner_definitions(&spec);
-    let expected = [
+    let ast = annex_a_model();
+    for name in [
         "TopicMapping",
         "TlsConfig",
         "SaslConfig",
@@ -274,9 +265,8 @@ fn all_seven_structs_present() {
         "DynamicTopicConfig",
         "AmqpEndpointConfig",
         "AmqpBridgeConfig",
-    ];
-    for name in expected {
-        let _ = struct_member_names(defs, name); // panics if missing.
+    ] {
+        let _ = struct_member_names(&ast, name); // panics if missing.
     }
 }
 
@@ -286,9 +276,8 @@ fn all_seven_structs_present() {
 
 #[test]
 fn sasl_mechanism_enum_matches_rust_mirror() {
-    let spec = parse_annex_a();
-    let defs = inner_definitions(&spec);
-    let idl_values = enum_value_names(defs, "SaslMechanism");
+    let ast = annex_a_model();
+    let idl_values = enum_value_names(&ast, "SaslMechanism");
     let rust_values: Vec<&str> = [
         SaslMechanism::SaslPlain,
         SaslMechanism::SaslAnonymous,
@@ -298,14 +287,13 @@ fn sasl_mechanism_enum_matches_rust_mirror() {
     .iter()
     .map(|m| m.as_idl())
     .collect();
-    assert_eq!(idl_values, rust_values, "SaslMechanism IDL ↔ Rust drift");
+    assert_eq!(idl_values, rust_values, "SaslMechanism IDL <-> Rust drift");
 }
 
 #[test]
 fn body_encoding_mode_enum_matches_rust_mirror() {
-    let spec = parse_annex_a();
-    let defs = inner_definitions(&spec);
-    let idl = enum_value_names(defs, "BodyEncodingMode");
+    let ast = annex_a_model();
+    let idl = enum_value_names(&ast, "BodyEncodingMode");
     let rust: Vec<&str> = [
         BodyEncodingMode::ModePassthrough,
         BodyEncodingMode::ModeJson,
@@ -319,9 +307,8 @@ fn body_encoding_mode_enum_matches_rust_mirror() {
 
 #[test]
 fn time_mapping_enum_matches_rust_mirror() {
-    let spec = parse_annex_a();
-    let defs = inner_definitions(&spec);
-    let idl = enum_value_names(defs, "TimeMapping");
+    let ast = annex_a_model();
+    let idl = enum_value_names(&ast, "TimeMapping");
     let rust: Vec<&str> = [TimeMapping::MappingStandard, TimeMapping::MappingComposite]
         .iter()
         .map(|m| m.as_idl())
@@ -331,9 +318,8 @@ fn time_mapping_enum_matches_rust_mirror() {
 
 #[test]
 fn descriptor_form_enum_matches_rust_mirror() {
-    let spec = parse_annex_a();
-    let defs = inner_definitions(&spec);
-    let idl = enum_value_names(defs, "DescriptorForm");
+    let ast = annex_a_model();
+    let idl = enum_value_names(&ast, "DescriptorForm");
     let rust: Vec<&str> = [DescriptorForm::DescTruncated, DescriptorForm::DescFull]
         .iter()
         .map(|m| m.as_idl())
@@ -343,9 +329,8 @@ fn descriptor_form_enum_matches_rust_mirror() {
 
 #[test]
 fn link_direction_enum_matches_rust_mirror() {
-    let spec = parse_annex_a();
-    let defs = inner_definitions(&spec);
-    let idl = enum_value_names(defs, "LinkDirection");
+    let ast = annex_a_model();
+    let idl = enum_value_names(&ast, "LinkDirection");
     let rust: Vec<&str> = [
         LinkDirection::DirProducerToDds,
         LinkDirection::DirDdsToConsumer,
@@ -359,9 +344,8 @@ fn link_direction_enum_matches_rust_mirror() {
 
 #[test]
 fn topic_mapping_struct_member_order_matches_rust_mirror() {
-    let spec = parse_annex_a();
-    let defs = inner_definitions(&spec);
-    let idl = struct_member_names(defs, "TopicMapping");
+    let ast = annex_a_model();
+    let idl = struct_member_names(&ast, "TopicMapping");
     // Order matches annex_a.rs::TopicMapping (Spec §A).
     let expected = [
         "amqp_address",
@@ -384,9 +368,8 @@ fn topic_mapping_struct_member_order_matches_rust_mirror() {
 
 #[test]
 fn tls_config_struct_member_order_matches_rust_mirror() {
-    let spec = parse_annex_a();
-    let defs = inner_definitions(&spec);
-    let idl = struct_member_names(defs, "TlsConfig");
+    let ast = annex_a_model();
+    let idl = struct_member_names(&ast, "TlsConfig");
     let expected = [
         "enabled",
         "cert_path",
@@ -399,18 +382,16 @@ fn tls_config_struct_member_order_matches_rust_mirror() {
 
 #[test]
 fn sasl_config_struct_member_order_matches_rust_mirror() {
-    let spec = parse_annex_a();
-    let defs = inner_definitions(&spec);
-    let idl = struct_member_names(defs, "SaslConfig");
+    let ast = annex_a_model();
+    let idl = struct_member_names(&ast, "SaslConfig");
     let expected = ["enabled_mechanisms", "credential_store_uri"];
     assert_eq!(idl, expected);
 }
 
 #[test]
 fn resource_limits_struct_member_order_matches_rust_mirror() {
-    let spec = parse_annex_a();
-    let defs = inner_definitions(&spec);
-    let idl = struct_member_names(defs, "ResourceLimits");
+    let ast = annex_a_model();
+    let idl = struct_member_names(&ast, "ResourceLimits");
     let expected = [
         "max_connections",
         "max_sessions_per_connection",
@@ -423,9 +404,8 @@ fn resource_limits_struct_member_order_matches_rust_mirror() {
 
 #[test]
 fn dynamic_topic_config_struct_member_order_matches_rust_mirror() {
-    let spec = parse_annex_a();
-    let defs = inner_definitions(&spec);
-    let idl = struct_member_names(defs, "DynamicTopicConfig");
+    let ast = annex_a_model();
+    let idl = struct_member_names(&ast, "DynamicTopicConfig");
     let expected = [
         "permit_dynamic_topics",
         "dynamic_topic_default_type",
@@ -436,9 +416,8 @@ fn dynamic_topic_config_struct_member_order_matches_rust_mirror() {
 
 #[test]
 fn amqp_endpoint_config_struct_member_order_matches_rust_mirror() {
-    let spec = parse_annex_a();
-    let defs = inner_definitions(&spec);
-    let idl = struct_member_names(defs, "AmqpEndpointConfig");
+    let ast = annex_a_model();
+    let idl = struct_member_names(&ast, "AmqpEndpointConfig");
     let expected = [
         "endpoint_name",
         "listen_uri",
@@ -455,9 +434,8 @@ fn amqp_endpoint_config_struct_member_order_matches_rust_mirror() {
 
 #[test]
 fn amqp_bridge_config_struct_member_order_matches_rust_mirror() {
-    let spec = parse_annex_a();
-    let defs = inner_definitions(&spec);
-    let idl = struct_member_names(defs, "AmqpBridgeConfig");
+    let ast = annex_a_model();
+    let idl = struct_member_names(&ast, "AmqpBridgeConfig");
     let expected = [
         "bridge_name",
         "upstream_uri",
@@ -471,20 +449,53 @@ fn amqp_bridge_config_struct_member_order_matches_rust_mirror() {
 }
 
 // ---------------------------------------------------------------------------
-// Step 4 — anti-drift: verify that no top-level item is added
-// unchecked.
+// Step 4 — anti-drift: no top-level item is added unchecked, and the one
+// annotation the annex writes on a member reaches the model.
 // ---------------------------------------------------------------------------
 
 #[test]
 fn module_amqp_has_exactly_twelve_top_level_items() {
-    let spec = parse_annex_a();
-    let defs = inner_definitions(&spec);
-    let count = defs
-        .iter()
-        .filter(|d| matches!(d, Definition::Type(TypeDecl::Constr(_))))
+    let ast = annex_a_model();
+    let count = inner_types(&ast)
+        .into_iter()
+        .filter(|id| {
+            matches!(
+                ast.type_(*id).expect("type").kind,
+                TypeKind::Structure { .. } | TypeKind::Enumeration { .. }
+            )
+        })
         .count();
     assert_eq!(
         count, 12,
         "Annex-A drift: expected 5 enums + 7 structs = 12 items, got {count}"
     );
+}
+
+#[test]
+fn the_two_configuration_types_keep_their_key_member() {
+    // §A writes `@key` on `endpoint_name` and on `bridge_name`; the key
+    // decides the instance a sample belongs to, so its loss would be a
+    // wire-visible one.
+    for (type_name, member_name) in [
+        ("AmqpEndpointConfig", "endpoint_name"),
+        ("AmqpBridgeConfig", "bridge_name"),
+    ] {
+        let ast = annex_a_model();
+        let id = type_by_name(&ast, type_name);
+        let TypeKind::Structure { members, .. } = &ast.type_(id).expect("struct").kind else {
+            panic!("{type_name} is not a struct");
+        };
+        let keyed: Vec<String> = members
+            .iter()
+            .filter_map(|member| ast.member(*member).ok())
+            .filter(|node| {
+                node.facets
+                    .xtypes
+                    .as_ref()
+                    .is_some_and(|xtypes| xtypes.is_key)
+            })
+            .map(|node| node.name.clone())
+            .collect();
+        assert_eq!(keyed, [member_name], "{type_name} lost its key");
+    }
 }

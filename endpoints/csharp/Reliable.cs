@@ -17,8 +17,15 @@
 // [session, stream, seq_lo, seq_hi, submsg, flags, len_lo, len_hi] then body.
 // WRITE_DATA id=0x07 flags=0x03 on stream 0x80 (header seq = the sample's
 // RFC-1982 seqnr). HEARTBEAT id=0x0B / ACKNACK id=0x0A, flags=0x01, on stream
-// 0x00 (control); body is 5 bytes, the target reliable stream id travels in the
-// body's last byte.
+// 0x00 (control); the HEARTBEAT body is 5 bytes, the target reliable stream id
+// travels in the body's last byte.
+//
+// ACKNACK_Payload has no @extensibility. With UnannotatedTypes.Appendable
+// (default; DDS-XTypes 1.3 7.3.1.2.1.8) the body is a 4-octet DHEADER (= 5)
+// followed by the 5 payload octets (first_unacked i16, nack_bitmap[2],
+// stream_id), body-len 9, frame 17 octets. With UnannotatedTypes.Final (the
+// eProsima form) there is no DHEADER: body-len 5, frame 13 octets. The parser
+// accepts both forms in either setting. HEARTBEAT_Payload is FINAL in both.
 
 using System;
 using System.Collections.Generic;
@@ -27,6 +34,12 @@ using System.Threading.Channels;
 
 namespace ZeroDDS.Endpoint
 {
+    /// Extensibility assumed for the DDS-XRCE 1.0 Annex A types without
+    /// `@extensibility` (here: ACKNACK_Payload). Appendable (default) writes the
+    /// DHEADER of DDS-XTypes 1.3 7.3.1.2.1.8; Final writes the eProsima form
+    /// without DHEADER. Readers accept both.
+    public enum UnannotatedTypes { Appendable, Final }
+
     /// Wire constants and the frame codec.
     public static class ReliableWire
     {
@@ -36,7 +49,12 @@ namespace ZeroDDS.Endpoint
         public const byte SmWriteData = 0x07;
         public const byte SmAckNack = 0x0A;
         public const byte SmHeartbeat = 0x0B;
-        public const byte WriteFlags = 0x03;
+        // E flag (little-endian body) + DataFormat FORMAT_DATA (0b000) in
+        // bits 1..3 -- DDS-XRCE 1.0 §8.3.5.8.
+        public const byte WriteFlags = 0x01;
+
+        /// Wire size of the BaseObjectRequest that precedes the sample (§7.7.8).
+        public const int BaseSize = 4;
         public const byte CtrlFlags = 0x01;
 
         /// Sender window cap -- matches the 16-bit ACKNACK bitmap.
@@ -59,42 +77,54 @@ namespace ZeroDDS.Endpoint
         public static bool SeqGt(ushort a, ushort b) => (short)(a - b) > 0;
 
         /// Builds a reliable WRITE_DATA frame; the header seq carries the sample's
-        /// RFC-1982 seqnr.
-        public static byte[] WriteFrame(ushort seq, byte[] sample)
+        /// RFC-1982 seqnr, and the submessage body is the BaseObjectRequest
+        /// (§7.7.8: request_id then object_id, each two octets most significant
+        /// first) followed by the sample. `objectId` names the target
+        /// DataWriter; the request_id is the sample's own sequence number.
+        public static byte[] WriteFrame(ushort seq, ushort objectId, byte[] sample)
         {
-            var o = new byte[8 + sample.Length];
+            ushort n = (ushort)(BaseSize + sample.Length);
+            var o = new byte[8 + n];
             o[0] = Session;
             o[1] = StreamReliable;
             o[2] = (byte)(seq & 0xFF);
             o[3] = (byte)(seq >> 8);
             o[4] = SmWriteData;
             o[5] = WriteFlags;
-            ushort n = (ushort)sample.Length;
             o[6] = (byte)(n & 0xFF);
             o[7] = (byte)(n >> 8);
-            Array.Copy(sample, 0, o, 8, sample.Length);
+            o[8] = (byte)(seq >> 8);
+            o[9] = (byte)(seq & 0xFF);
+            o[10] = (byte)(objectId >> 8);
+            o[11] = (byte)(objectId & 0xFF);
+            Array.Copy(sample, 0, o, 8 + BaseSize, sample.Length);
             return o;
         }
 
         /// Parses a reliable WRITE_DATA frame into (seq, sample).
         public static bool TryUnframeWrite(ReadOnlySpan<byte> frame, out ushort seq, out byte[] sample)
         {
-            if (frame.Length < 8 || frame[4] != SmWriteData)
+            seq = 0;
+            sample = Array.Empty<byte>();
+            if (frame.Length < 8 + BaseSize || frame[4] != SmWriteData)
             {
-                seq = 0;
-                sample = Array.Empty<byte>();
+                return false;
+            }
+            int smLen = frame[6] | (frame[7] << 8);
+            if (smLen < BaseSize || 8 + smLen > frame.Length)
+            {
                 return false;
             }
             seq = (ushort)(frame[2] | (frame[3] << 8));
-            sample = frame[8..].ToArray();
+            sample = frame[(8 + BaseSize)..(8 + smLen)].ToArray();
             return true;
         }
 
-        private static byte[] CtrlHeader(byte submsg, ushort msgSeq) => new byte[]
+        private static byte[] CtrlHeader(byte submsg, ushort msgSeq, byte bodyLen = 5) => new byte[]
         {
             Session, StreamNone,
             (byte)(msgSeq & 0xFF), (byte)(msgSeq >> 8),
-            submsg, CtrlFlags, 5, 0,
+            submsg, CtrlFlags, bodyLen, 0,
         };
 
         /// Builds a HEARTBEAT control frame. Byte-identical to golden_heartbeat_le.bin
@@ -126,12 +156,17 @@ namespace ZeroDDS.Endpoint
             return true;
         }
 
-        /// Builds an ACKNACK control frame. Byte-identical to golden_acknack_le.bin
-        /// when ack = (1, bitmap=0, 0x80) and msgSeq = 1.
-        public static byte[] AckNackFrame(AckNack ack, ushort msgSeq)
+        /// Builds an ACKNACK control frame. Appendable (default): DHEADER = 5,
+        /// body-len 9, 17 octets (DDS-XTypes 1.3 7.3.1.2.1.8). Final: no DHEADER,
+        /// body-len 5, 13 octets. Byte-identical to golden_acknack_le.bin when
+        /// ack = (1, bitmap=0, 0x80), msgSeq = 1 and mode = Final.
+        public static byte[] AckNackFrame(AckNack ack, ushort msgSeq,
+            UnannotatedTypes mode = UnannotatedTypes.Appendable)
         {
-            var f = new List<byte>(13);
-            f.AddRange(CtrlHeader(SmAckNack, msgSeq));
+            bool appendable = mode != UnannotatedTypes.Final;
+            var f = new List<byte>(appendable ? 17 : 13);
+            f.AddRange(CtrlHeader(SmAckNack, msgSeq, (byte)(appendable ? 9 : 5)));
+            if (appendable) f.AddRange(new byte[] { 5, 0, 0, 0 }); // DHEADER u32 LE = 5
             f.Add((byte)(ack.FirstUnacked & 0xFF));
             f.Add((byte)((ack.FirstUnacked >> 8) & 0xFF));
             f.Add(ack.NackLo);
@@ -140,7 +175,9 @@ namespace ZeroDDS.Endpoint
             return f.ToArray();
         }
 
-        /// Parses an ACKNACK frame (keys on the submessage id; header otherwise ignored).
+        /// Parses an ACKNACK frame (keys on the submessage id). Body-len 9: 4-octet
+        /// DHEADER, payload at offset 12. FINAL body-len 5: payload at offset 8.
+        /// Shorter frames are rejected.
         public static bool TryParseAckNack(ReadOnlySpan<byte> frame, out AckNack ack)
         {
             if (frame.Length < 13 || frame[4] != SmAckNack)
@@ -148,11 +185,21 @@ namespace ZeroDDS.Endpoint
                 ack = default;
                 return false;
             }
+            int off = 8;
+            if ((frame[6] | (frame[7] << 8)) >= 9)
+            {
+                if (frame.Length < 17)
+                {
+                    ack = default;
+                    return false;
+                }
+                off = 12;
+            }
             ack = new AckNack(
-                (short)(frame[8] | (frame[9] << 8)),
-                frame[10],
-                frame[11],
-                frame[12]);
+                (short)(frame[off] | (frame[off + 1] << 8)),
+                frame[off + 2],
+                frame[off + 3],
+                frame[off + 4]);
             return true;
         }
     }
@@ -294,6 +341,15 @@ namespace ZeroDDS.Endpoint
         private ushort _expected;
         private readonly SortedDictionary<ushort, byte[]> _received = new();
 
+        /// Extensibility of the unannotated Annex A types this receiver writes
+        /// (ACKNACK_Payload). Default Appendable.
+        public UnannotatedTypes UnannotatedTypes { get; }
+
+        public ReliableReceiver(UnannotatedTypes unannotatedTypes = UnannotatedTypes.Appendable)
+        {
+            UnannotatedTypes = unannotatedTypes;
+        }
+
         /// Next expected incoming seqnr.
         public ushort Expected => _expected;
 
@@ -338,6 +394,10 @@ namespace ZeroDDS.Endpoint
             }
             return new AckNack((short)_expected, (byte)(bitmap & 0xFF), (byte)(bitmap >> 8), ReliableWire.StreamReliable);
         }
+
+        /// `PendingAckNack` as a frame in this receiver's `UnannotatedTypes` form.
+        public byte[] PendingAckNackFrame(ushort? hint = null, ushort msgSeq = 1) =>
+            ReliableWire.AckNackFrame(PendingAckNack(hint), msgSeq, UnannotatedTypes);
 
         /// Clears all receiver state.
         public void Reset()
@@ -402,9 +462,13 @@ namespace ZeroDDS.Endpoint
         /// A handle the producer(s) hold; Enqueue never touches the kernel.
         public ReliableWriterHandle Handle { get; }
 
-        private AsyncReliableWriter(System.Net.Sockets.Socket sock, int capacity)
+        /// ObjectId of the target DataWriter (§7.7.8 BaseObjectRequest).
+        private readonly ushort _objectId;
+
+        private AsyncReliableWriter(System.Net.Sockets.Socket sock, int capacity, ushort objectId)
         {
             _sock = sock;
+            _objectId = objectId;
             _channel = Channel.CreateBounded<byte[]>(new BoundedChannelOptions(capacity)
             {
                 SingleWriter = true,
@@ -418,8 +482,9 @@ namespace ZeroDDS.Endpoint
 
         /// Spawns the drain thread. `sock` must already target the peer (connected
         /// UDP socket); the drain thread owns it exclusively from here on.
-        public static AsyncReliableWriter Start(System.Net.Sockets.Socket sock, int capacity = 1024) =>
-            new(sock, capacity);
+        public static AsyncReliableWriter Start(System.Net.Sockets.Socket sock, ushort objectId,
+                                               int capacity = 1024) =>
+            new(sock, capacity, objectId);
 
         private void DrainLoop()
         {
@@ -436,7 +501,7 @@ namespace ZeroDDS.Endpoint
                 {
                     if (sender.Submit(sample, out var seq) == SubmitStatus.Ok)
                     {
-                        TrySend(ReliableWire.WriteFrame(seq, sample));
+                        TrySend(ReliableWire.WriteFrame(seq, _objectId, sample));
                     }
                 }
 
@@ -461,7 +526,7 @@ namespace ZeroDDS.Endpoint
                             if (((bitmap >> i) & 1) != 1) continue;
                             ushort seq = (ushort)(baseSeq + i);
                             var p = sender.GetInFlight(seq);
-                            if (p != null) TrySend(ReliableWire.WriteFrame(seq, p));
+                            if (p != null) TrySend(ReliableWire.WriteFrame(seq, _objectId, p));
                         }
                     }
                 }

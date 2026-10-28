@@ -270,6 +270,55 @@ begin
       Put_Line ("SKIP golden: no golden_dir argument");
    end if;
 
+   --  11) legacy FINAL ACKNACK (5-octet body, no DHEADER) is still parsed
+   declare
+      L : Frame_Store;
+      First : Reliable.Seq_Type;
+      Bm : Unsigned_16;
+      Mine : constant Frame_Store := Acknack_Frame (7, 16#0102#);
+   begin
+      Check (Mine.Len = 17 and then Mine.Data (6) = 9 and then Mine.Data (8) = 5,
+             "acknack_new_form_17_octets");
+      Parse_Acknack (Mine, Ok, First, Bm);
+      Check (Ok and then First = 7 and then Bm = 16#0102#, "acknack_new_form_parsed");
+      L.Data (0 .. 3) := [16#80#, 0, 1, 0];
+      L.Data (4 .. 7) := [16#0A#, 1, 5, 0];
+      L.Data (8 .. 12) := [7, 0, 16#02#, 16#01#, 16#80#];
+      L.Len := 13;
+      Parse_Acknack (L, Ok, First, Bm);
+      Check (Ok and then First = 7 and then Bm = 16#0102#, "acknack_legacy_5_octet_parsed");
+      L.Data (6) := 4;
+      Parse_Acknack (L, Ok, First, Bm);
+      Check (not Ok, "acknack_short_body_rejected");
+   end;
+
+   --  12) unannotated types setting: Final = 13-octet FINAL golden, default
+   --      = 17-octet appendable form; the parser accepts both
+   declare
+      Final_Gold : constant Frame_Store :=
+        (Data => [16#80#, 16#00#, 16#01#, 16#00#, 16#0A#, 16#01#, 16#05#, 16#00#,
+                  16#01#, 16#00#, 16#00#, 16#00#, 16#80#, others => 0],
+         Len => 13);
+      Fin  : constant Frame_Store := Acknack_Frame (1, 0, Mode => Final);
+      Def  : constant Frame_Store := Acknack_Frame (1, 0);
+      R    : Receiver_State;
+      First : Reliable.Seq_Type;
+      Bm : Unsigned_16;
+   begin
+      Check (Frames_Equal (Fin, Final_Gold), "acknack_final_golden_13_octets");
+      Check (Def.Len = 17 and then Def.Data (6) = 9, "acknack_default_17_octets");
+      Check (Frames_Equal (Def, Acknack_Frame (1, 0, Mode => Appendable)),
+             "acknack_default_is_appendable");
+      Parse_Acknack (Fin, Ok, First, Bm);
+      Check (Ok and then First = 1 and then Bm = 0, "acknack_final_parsed");
+      Parse_Acknack (Def, Ok, First, Bm);
+      Check (Ok and then First = 1 and then Bm = 0, "acknack_appendable_parsed");
+      R.Mode := Final;
+      Check (Receiver_Acknack (R).Len = 13, "receiver_final_acknack_13_octets");
+      R.Mode := Appendable;
+      Check (Receiver_Acknack (R).Len = 17, "receiver_appendable_acknack_17_octets");
+   end;
+
    if Failures = 0 then
       Put_Line ("ALL OK");
    else

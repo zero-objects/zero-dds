@@ -17,10 +17,10 @@ abstract class ZeroddsIdlcExtension @Inject constructor(objects: ObjectFactory) 
     /** `.idl` inputs (equivalent to the CLI's positional `<file.idl>`, one task run per file). */
     val idlFiles: ConfigurableFileCollection = objects.fileCollection()
 
-    /** `--<backend>`, e.g. `"java"`, `"csharp"`, `"rust"`. Defaults to `"java"`. */
+    /** `--lang <backend>`, e.g. `"java"`, `"csharp"`, `"rust"`. Defaults to `"java"`. */
     val backend: Property<String> = objects.property(String::class.java).convention("java")
 
-    /** `-o <dir>`. Defaults to `build/generated/sources/zerodds-idlc/<backend>`. */
+    /** `--out <dir>`. Defaults to `build/generated/sources/zerodds-idlc/<backend>`. */
     val outputDir: DirectoryProperty = objects.directoryProperty()
 
     /** `-I <dir>` per entry, in order. */

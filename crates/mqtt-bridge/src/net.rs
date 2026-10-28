@@ -105,6 +105,22 @@ impl MqttClient {
         client_id: &str,
         version: ProtocolVersion,
     ) -> io::Result<Self> {
+        Self::connect_with_keep_alive(addr, client_id, version, 0)
+    }
+
+    /// Like [`MqttClient::connect`], but announces a non-zero Keep Alive in
+    /// the CONNECT (§3.1.2.10). A client that announces one has to send a
+    /// packet — a PINGREQ when it has nothing else to say — inside every
+    /// period, or the server drops the connection.
+    ///
+    /// # Errors
+    /// I/O error, or a CONNACK reason code >= 0x80.
+    pub fn connect_with_keep_alive<A: ToSocketAddrs>(
+        addr: A,
+        client_id: &str,
+        version: ProtocolVersion,
+        keep_alive_secs: u16,
+    ) -> io::Result<Self> {
         let stream = TcpStream::connect(addr)?;
         stream.set_read_timeout(Some(Duration::from_secs(10)))?;
         stream.set_write_timeout(Some(Duration::from_secs(10)))?;
@@ -119,7 +135,7 @@ impl MqttClient {
             protocol_name: version.protocol_name().into(),
             protocol_version: version.level(),
             connect_flags: connect_flags::CLEAN_START,
-            keep_alive: 0,
+            keep_alive: keep_alive_secs,
             properties: Vec::new(),
             client_id: client_id.into(),
             will_properties: Vec::new(),
@@ -236,6 +252,47 @@ impl MqttClient {
                 return Ok((p.topic, p.payload));
             }
             // Ignore PINGRESP / others and keep waiting.
+        }
+    }
+
+    /// Sends PINGREQ and waits for the PINGRESP, returning how long it took
+    /// (§3.12 + §3.13).
+    ///
+    /// Both packets are fixed header only: §3.12.1 "The PINGREQ Packet has
+    /// no variable header" and §3.12.2 "The PINGREQ Packet has no payload",
+    /// and §3.13 says the same of PINGRESP. The Remaining Length of each is
+    /// therefore 0, which this checks in both directions: the request is
+    /// framed with an empty body, and a PINGRESP that carries one is a
+    /// protocol error rather than something to skip over.
+    ///
+    /// Packets that arrive before the PINGRESP — a PUBLISH the server was
+    /// already delivering — are skipped, so a ping in the middle of a
+    /// subscription does not lose them from the socket's point of view.
+    ///
+    /// # Errors
+    /// I/O error, a read timeout, or a PINGRESP with a non-empty body.
+    pub fn ping(&mut self, timeout: Duration) -> io::Result<Duration> {
+        let started = std::time::Instant::now();
+        self.write_packet(byte0(ControlPacketType::PingReq, 0), &[])?;
+        self.stream.set_read_timeout(Some(timeout))?;
+        loop {
+            let (b0, body) = read_packet(&mut self.stream)?;
+            if (b0 >> 4) & 0x0F != ControlPacketType::PingResp.to_bits() {
+                continue;
+            }
+            if !body.is_empty() {
+                return Err(io::Error::other(std::format!(
+                    "PINGRESP carries {} body bytes, §3.13 allows none",
+                    body.len()
+                )));
+            }
+            if b0 & 0x0F != 0 {
+                return Err(io::Error::other(std::format!(
+                    "PINGRESP flags 0x{:x}, §2.1.3 reserves them as 0",
+                    b0 & 0x0F
+                )));
+            }
+            return Ok(started.elapsed());
         }
     }
 

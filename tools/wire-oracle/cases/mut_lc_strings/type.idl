@@ -1,0 +1,6 @@
+@mutable struct LenStr {
+    string se[2];
+    string<5> bs;
+    sequence<string> ss;
+    long tail;
+};

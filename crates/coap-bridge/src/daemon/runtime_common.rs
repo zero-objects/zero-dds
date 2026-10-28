@@ -24,15 +24,15 @@ pub const SERVICE_VERSION: &str = env!("CARGO_PKG_VERSION");
 /// Standard-Counter-Set.
 #[derive(Clone)]
 pub struct BridgeMetrics {
-    /// Eingehende CoAP-Datagramme.
+    /// Incoming CoAP datagrams.
     pub frames_in_total: Arc<Counter>,
-    /// Ausgehende CoAP-Datagramme.
+    /// Outgoing CoAP datagrams.
     pub frames_out_total: Arc<Counter>,
     /// Bytes in.
     pub bytes_in_total: Arc<Counter>,
     /// Bytes out.
     pub bytes_out_total: Arc<Counter>,
-    /// Aktive Observe-Subscriptions.
+    /// Active Observe subscriptions.
     pub connections_active: Arc<Gauge>,
     /// Lifetime accept-Counter (Observer-Setup-Counter).
     pub connections_total: Arc<Counter>,
@@ -42,10 +42,12 @@ pub struct BridgeMetrics {
     pub dds_samples_out_total: Arc<Counter>,
     /// Wire-Errors.
     pub errors_total: Arc<Counter>,
+    /// Rejected OSCORE replays (Spec §8.2, RFC 8613 §7.4).
+    pub oscore_replays_total: Arc<Counter>,
 }
 
 impl BridgeMetrics {
-    /// Registriert den Set.
+    /// Registers the set.
     pub fn register(registry: &Registry) -> Self {
         registry.set_help("zerodds_coap_frames_in_total", "CoAP datagrams received");
         registry.set_help("zerodds_coap_frames_out_total", "CoAP datagrams sent");
@@ -68,6 +70,10 @@ impl BridgeMetrics {
             "Samples emitted from DDS",
         );
         registry.set_help("zerodds_coap_errors_total", "Wire/codec errors");
+        registry.set_help(
+            "zerodds_coap_oscore_replays_total",
+            "Rejected OSCORE replays",
+        );
         Self {
             frames_in_total: registry.counter("zerodds_coap_frames_in_total", Labels::new()),
             frames_out_total: registry.counter("zerodds_coap_frames_out_total", Labels::new()),
@@ -80,6 +86,8 @@ impl BridgeMetrics {
             dds_samples_out_total: registry
                 .counter("zerodds_coap_dds_samples_out_total", Labels::new()),
             errors_total: registry.counter("zerodds_coap_errors_total", Labels::new()),
+            oscore_replays_total: registry
+                .counter("zerodds_coap_oscore_replays_total", Labels::new()),
         }
     }
 }
@@ -388,7 +396,7 @@ pub fn install_signal_watcher(
     _shutdown_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
     _reload_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) -> std::io::Result<std::thread::JoinHandle<()>> {
-    // Windows: signal_hook::iterator nur POSIX. Spawn dummy thread,
+    // Windows: signal_hook::iterator is POSIX-only. Spawn a dummy thread,
     // shutdown runs over the normal socket-close paths.
     Ok(std::thread::spawn(|| {}))
 }

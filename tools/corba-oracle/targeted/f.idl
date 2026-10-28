@@ -1,0 +1,5 @@
+typedef fixed<9,3> Money;
+typedef fixed<5,2> Price;
+typedef fixed<31,0> Big;
+enum Colour { RED, GREEN, BLUE };
+struct F { octet head; Money m; Price p; Big b; Colour c; boolean t; boolean off; octet tail; };

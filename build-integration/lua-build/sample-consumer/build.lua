@@ -39,7 +39,7 @@ end
 
 if needs_regen then
     print("zerodds-idlc: generating " .. out_file .. " from " .. idl)
-    local cmd = string.format('%s generate "%s" --lua -o "%s"', executable, idl, out_dir)
+    local cmd = string.format('%s generate --lang lua --out "%s" "%s"', executable, out_dir, idl)
     local ok = os.execute(cmd)
     if not ok then
         io.stderr:write("zerodds-idlc failed for " .. idl .. "\n")

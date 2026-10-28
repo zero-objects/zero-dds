@@ -1,0 +1,10 @@
+// `union` over `boolean`, unannotated
+union Choice switch (boolean) {
+    case TRUE: long whole;
+    case FALSE: double fraction;
+};
+
+struct Sample {
+    Choice picked;
+    long tail;
+};

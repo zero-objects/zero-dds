@@ -1,0 +1,7 @@
+// `sequence<fixed>`, unannotated
+typedef fixed<9,3> Money;
+
+struct Sample {
+    sequence<Money> amounts;
+    long tail;
+};

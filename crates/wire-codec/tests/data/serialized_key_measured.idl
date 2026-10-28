@@ -1,0 +1,12 @@
+module K {
+  @appendable struct A { long x; @key long id; long y; };
+  @final struct F { long x; @key long id; };
+  @mutable struct M { long x; @key long id; };
+  @appendable struct Inner { long a; @key long b; };
+  @appendable struct N { long x; @key Inner k; };
+  @final struct S { @key string name; long x; @key short id; };
+};
+module O {
+  @final struct R { @id(5) @key long a; long x; @id(2) @key long b; };
+  @appendable struct Q { @id(5) @key long a; long x; @id(2) @key long b; };
+};

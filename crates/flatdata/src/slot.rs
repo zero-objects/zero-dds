@@ -10,7 +10,7 @@
 //! | 0x04 | u32 | sample_size     |
 //! | 0x08 | u32 | reader_mask     |
 //! | 0x0c | u32 | _reserved       |
-//! | 0x10 | [u8]| FlatStruct-Daten |
+//! | 0x10 | [u8]| FlatStruct data  |
 //! +-----------------------------+
 //! ```
 //!

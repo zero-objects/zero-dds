@@ -48,6 +48,8 @@ struct Beep {
 
 impl DdsType for Beep {
     const TYPE_NAME: &'static str = "test::Beep";
+    /// @final with no member that XCDR1 and XCDR2 frame differently: one stream.
+    const XCDR1_MATCHES_XCDR2: bool = true;
     const HAS_KEY: bool = false;
     const KEY_HOLDER_MAX_SIZE: Option<usize> = Some(0);
 
@@ -130,10 +132,11 @@ fn fast_runtime_cfg() -> RuntimeConfig {
 fn transient_late_joiner_receives_backend_replay() {
     let factory = DomainParticipantFactory::instance();
     let cfg = fast_runtime_cfg();
+    let domain = common::unique_domain();
 
     // Publisher-Participant
     let pub_p = factory
-        .create_participant_with_config(7, DomainParticipantQos::default(), cfg.clone())
+        .create_participant_with_config(domain, DomainParticipantQos::default(), cfg.clone())
         .expect("create pub participant");
     let topic_p = pub_p
         .create_topic::<Beep>("LateJoinTopic", TopicQos::default())
@@ -159,7 +162,7 @@ fn transient_late_joiner_receives_backend_replay() {
 
     // Subscriber-Participant (Late-Joiner)
     let sub_p = factory
-        .create_participant_with_config(7, DomainParticipantQos::default(), cfg.clone())
+        .create_participant_with_config(domain, DomainParticipantQos::default(), cfg.clone())
         .expect("create sub participant");
     let topic_s = sub_p
         .create_topic::<Beep>("LateJoinTopic", TopicQos::default())
@@ -237,7 +240,7 @@ fn reliable_persistent_reader() -> DataReaderQos {
 ///
 /// Setup: a writer with `Persistent` durability publishes 3 samples before
 /// the reader starts. The backend is `OnDiskDurabilityBackend` (auto-built
-/// with the `ZERODDS_DURABILITY_DIR` env override). The reader then matches
+/// under the configured `durability_dir`). The reader then matches
 /// and must see all 3 samples via wire replay.
 ///
 /// A dedicated topic name prevents cross-test contamination in the backend.
@@ -253,20 +256,13 @@ fn persistent_late_joiner_receives_backend_replay() {
         std::process::id(),
         nanos
     ));
-    // SAFETY: setting the env-var is test-only, with no cross-thread race
-    // since cargo tests run per crate with -j1 in CI by default — and we
-    // use a unique path per run.
-    // SAFETY: This is the only test-thread touching this env-var (Linux-only test,
-    // tests in this file run serially per default).
-    unsafe {
-        std::env::set_var("ZERODDS_DURABILITY_DIR", &tmpdir);
-    }
-
     let factory = DomainParticipantFactory::instance();
-    let cfg = fast_runtime_cfg();
+    let mut cfg = fast_runtime_cfg();
+    cfg.durability_dir = Some(tmpdir.clone());
+    let domain = common::unique_domain();
 
     let pub_p = factory
-        .create_participant_with_config(8, DomainParticipantQos::default(), cfg.clone())
+        .create_participant_with_config(domain, DomainParticipantQos::default(), cfg.clone())
         .expect("create pub participant");
     let topic_p = pub_p
         .create_topic::<Beep>("PersistentLateJoinTopic", TopicQos::default())
@@ -288,7 +284,7 @@ fn persistent_late_joiner_receives_backend_replay() {
     std::thread::sleep(Duration::from_millis(200));
 
     let sub_p = factory
-        .create_participant_with_config(8, DomainParticipantQos::default(), cfg.clone())
+        .create_participant_with_config(domain, DomainParticipantQos::default(), cfg.clone())
         .expect("create sub participant");
     let topic_s = sub_p
         .create_topic::<Beep>("PersistentLateJoinTopic", TopicQos::default())
@@ -322,4 +318,35 @@ fn persistent_late_joiner_receives_backend_replay() {
         vec![1, 2, 3],
         "persistent late-joiner must see all 3 backend samples (via on-disk wire replay)"
     );
+}
+
+/// A PERSISTENT writer whose store cannot be created is refused at
+/// `create_datawriter`. It once ran without a store, and every sample it was
+/// asked to keep was lost without a word.
+#[test]
+fn a_persistent_writer_without_a_store_is_refused() {
+    let blocker =
+        std::env::temp_dir().join(format!("zerodds-durability-blocker-{}", std::process::id()));
+    std::fs::write(&blocker, b"a file where the store directory would go").unwrap();
+    let mut cfg = fast_runtime_cfg();
+    cfg.durability_dir = Some(blocker.join("store"));
+
+    let participant = DomainParticipantFactory::instance()
+        .create_participant_with_config(
+            common::unique_domain(),
+            DomainParticipantQos::default(),
+            cfg,
+        )
+        .expect("participant");
+    let topic = participant
+        .create_topic::<Beep>("PersistentWithoutStore", TopicQos::default())
+        .expect("topic");
+    let publisher = participant.create_publisher(PublisherQos::default());
+    let result = publisher.create_datawriter::<Beep>(&topic, reliable_persistent_writer());
+    let _ = std::fs::remove_file(&blocker);
+    match result {
+        Err(zerodds_dcps::DdsError::PreconditionNotMet { .. }) => {}
+        Err(other) => panic!("expected PreconditionNotMet, got {other:?}"),
+        Ok(_) => panic!("a PERSISTENT writer without a store must be refused"),
+    }
 }

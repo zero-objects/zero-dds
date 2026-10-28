@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of key-on-union-discriminator that cyclone produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	Using union type as part of the key is currently unsupported
+plain-cdr1	be	refused	Using union type as part of the key is currently unsupported
+pl-cdr1	le	refused	Using union type as part of the key is currently unsupported
+pl-cdr1	be	refused	Using union type as part of the key is currently unsupported
+plain-cdr2	le	refused	Using union type as part of the key is currently unsupported
+plain-cdr2	be	refused	Using union type as part of the key is currently unsupported
+delimited-cdr	le	refused	Using union type as part of the key is currently unsupported
+delimited-cdr	be	refused	Using union type as part of the key is currently unsupported
+pl-cdr2	le	refused	Using union type as part of the key is currently unsupported
+pl-cdr2	be	refused	Using union type as part of the key is currently unsupported

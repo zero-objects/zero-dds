@@ -7,11 +7,15 @@ import java.nio.charset.StandardCharsets;
 import org.omg.dds.domain.DomainParticipant;
 import org.omg.dds.pub.DataWriter;
 import org.omg.dds.pub.Publisher;
+import org.zerodds.pub.PublisherImpl;
 import org.omg.dds.sub.DataReader;
 import org.omg.dds.sub.Sample;
 import org.omg.dds.sub.Subscriber;
+import org.zerodds.sub.SubscriberImpl;
 import org.omg.dds.topic.Topic;
-import org.omg.dds.topic.TopicTypeSupport;
+import org.zerodds.cdr.EndianMode;
+import org.zerodds.cdr.ExtensibilityKind;
+import org.zerodds.cdr.TopicTypeSupport;
 
 /**
  * Interop demo driving the <em>OMG DDS</em> {@code DataWriter}/{@code DataReader}
@@ -43,6 +47,37 @@ public final class DdsChatterInterop {
             buf.get(out);
             return out;
         }
+
+        /** The XCDR2 framing of the built-in DDS::Bytes type (§7.8.2). */
+        @Override
+        public boolean isKeyed() {
+            return false;
+        }
+
+        @Override
+        public ExtensibilityKind getExtensibility() {
+            return org.zerodds.cdr.ByteArrayTypeSupport.INSTANCE.getExtensibility();
+        }
+
+        @Override
+        public byte[] encode(byte[] sample) {
+            return org.zerodds.cdr.ByteArrayTypeSupport.INSTANCE.encode(sample);
+        }
+
+        @Override
+        public byte[] encode(byte[] sample, EndianMode endian) {
+            return org.zerodds.cdr.ByteArrayTypeSupport.INSTANCE.encode(sample, endian);
+        }
+
+        @Override
+        public byte[] decode(byte[] bytes) {
+            return org.zerodds.cdr.ByteArrayTypeSupport.INSTANCE.decode(bytes);
+        }
+
+        @Override
+        public byte[] decode(byte[] bytes, int offset, int length) {
+            return org.zerodds.cdr.ByteArrayTypeSupport.INSTANCE.decode(bytes, offset, length);
+        }
     }
 
     public static void main(String[] args) throws Exception {
@@ -50,28 +85,35 @@ public final class DdsChatterInterop {
         String mode = args.length > 0 ? args[0] : "write";
         int domain = args.length > 1 ? Integer.parseInt(args[1]) : 0;
 
-        DomainParticipant participant = new DomainParticipant(domain);
-        RawBytesTypeSupport ts = new RawBytesTypeSupport();
+        DomainParticipant participant =
+                org.omg.dds.domain.DomainParticipantFactory
+                        .getInstance(org.zerodds.ServiceEnvironmentImpl
+                                .getDefaultEnvironment())
+                        .createParticipant(domain);
         Topic<byte[]> topic = participant.createTopic("Chatter", byte[].class);
+        RawBytesTypeSupport ts = new RawBytesTypeSupport();
 
         if (mode.equals("read")) {
             Subscriber sub = participant.createSubscriber();
-            DataReader<byte[]> reader = sub.createDataReader(topic, ts);
+            DataReader<byte[]> reader = ((SubscriberImpl) sub).createDataReader(topic, ts);
             reader.enable();
             System.out.println("dds-java-reader (wired RTPS) on domain " + domain
                     + " topic 'Chatter' type 'zerodds::RawBytes' — Ctrl-C to stop");
             while (true) {
-                for (Sample<byte[]> s : reader.take()) {
+                org.omg.dds.sub.Sample.Iterator<byte[]> walk = reader.take();
+                while (walk.hasNext()) {
+                    Sample<byte[]> s = walk.next();
                     if (s.getData() != null) {
                         System.out.println("  <- "
                                 + new String(s.getData(), StandardCharsets.UTF_8));
                     }
                 }
+                walk.close();
                 Thread.sleep(200);
             }
         } else {
             Publisher pub = participant.createPublisher();
-            DataWriter<byte[]> writer = pub.createDataWriter(topic, ts);
+            DataWriter<byte[]> writer = ((PublisherImpl) pub).createDataWriter(topic, ts);
             writer.enable();
             System.out.println("dds-java-writer (wired RTPS) on domain " + domain
                     + " topic 'Chatter' type 'zerodds::RawBytes'");

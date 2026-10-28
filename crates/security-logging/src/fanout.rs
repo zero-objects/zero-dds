@@ -9,15 +9,27 @@
 //! different backend types.)
 
 use alloc::boxed::Box;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use zerodds_security::logging::{LogLevel, LoggingPlugin};
+use zerodds_security::error::SecurityError;
+use zerodds_security::logging::{LogLevel, LogOptions, LoggerListener, LoggingPlugin};
+
+use crate::control::LogControl;
 
 /// Fan-out adapter — broadcasts an event to all registered
 /// backends. Useful for a setup with `stderr` + an audit JSON file
 /// in parallel.
+///
+/// The fan-out is enabled when it is built and forwards every event; each
+/// backend applies its own level. Its own Table 46 operations follow from
+/// that: `set_log_options` is refused (the options may not change once
+/// logging has commenced, DDS-Security 1.2 §9.6.2.1), `enable_logging` has
+/// nothing left to do, and a listener set with `set_listener` is notified of
+/// each event once, however many backends receive it.
 pub struct FanOutLoggingPlugin {
     sinks: Vec<Box<dyn LoggingPlugin>>,
+    control: LogControl,
 }
 
 impl Default for FanOutLoggingPlugin {
@@ -30,7 +42,10 @@ impl FanOutLoggingPlugin {
     /// Empty fan-out — events are silently discarded.
     #[must_use]
     pub fn new() -> Self {
-        Self { sinks: Vec::new() }
+        Self {
+            sinks: Vec::new(),
+            control: LogControl::enabled_at(LogLevel::Trace, false),
+        }
     }
 
     /// Add a backend. Builder style.
@@ -56,7 +71,16 @@ impl FanOutLoggingPlugin {
 }
 
 impl LoggingPlugin for FanOutLoggingPlugin {
+    sink_control_operations!();
+
     fn log(&self, level: LogLevel, participant: [u8; 16], category: &str, message: &str) {
+        if self
+            .control
+            .admit(level, participant, category, message)
+            .is_none()
+        {
+            return;
+        }
         for sink in &self.sinks {
             sink.log(level, participant, category, message);
         }

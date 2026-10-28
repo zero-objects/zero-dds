@@ -1,0 +1,7 @@
+// `map` keyed by `wstring`
+// IDL 4.2 §7.4.13 admits it as a key type; the width of the character is
+// where the implementations part.
+@final struct Sample {
+    map<wstring, long> entries;
+    long tail;
+};

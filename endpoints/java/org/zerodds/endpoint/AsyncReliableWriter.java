@@ -45,11 +45,14 @@ public final class AsyncReliableWriter implements AutoCloseable {
     private final AtomicBoolean producerDone = new AtomicBoolean(false);
     private final AtomicBoolean stopped = new AtomicBoolean(false);
     private final AtomicLong deliveredCount = new AtomicLong(0);
+    /** ObjectId of the target DataWriter (Sec 7.7.8 BaseObjectRequest). */
+    private final int objectId;
     private volatile boolean drained;
     private volatile Exception drainError;
 
-    public AsyncReliableWriter(InetAddress peerHost, int peerPort) throws IOException {
-        this(peerHost, peerPort, DRAIN_DEADLINE_MS);
+    public AsyncReliableWriter(InetAddress peerHost, int peerPort, int objectId)
+            throws IOException {
+        this(peerHost, peerPort, objectId, DRAIN_DEADLINE_MS);
     }
 
     /**
@@ -58,10 +61,12 @@ public final class AsyncReliableWriter implements AutoCloseable {
      *     gives up on an unacknowledged window. It bounds the drain phase only --
      *     it never terminates a live, still-producing writer.
      */
-    public AsyncReliableWriter(InetAddress peerHost, int peerPort, long drainDeadlineMs)
+    public AsyncReliableWriter(InetAddress peerHost, int peerPort, int objectId,
+                               long drainDeadlineMs)
             throws IOException {
         this.peerHost = peerHost;
         this.peerPort = peerPort;
+        this.objectId = objectId;
         this.drainDeadlineMs = drainDeadlineMs;
         this.socket = new DatagramSocket();
         this.socket.setSoTimeout(SOCKET_POLL_MS);
@@ -137,7 +142,7 @@ public final class AsyncReliableWriter implements AutoCloseable {
                         // sample could land here -- drop it rather than wedge the loop.
                         break;
                     }
-                    send(ReliableWire.writeFrame(r.seq, payload));
+                    send(ReliableWire.writeFrame(r.seq, objectId, payload));
                     deliveredCount.incrementAndGet();
                 }
 
@@ -200,7 +205,7 @@ public final class AsyncReliableWriter implements AutoCloseable {
             int seq = (base + i) & 0xFFFF;
             byte[] payload = sender.getInFlight(seq);
             if (payload != null) {
-                send(ReliableWire.writeFrame(seq, payload));
+                send(ReliableWire.writeFrame(seq, objectId, payload));
             }
         }
     }

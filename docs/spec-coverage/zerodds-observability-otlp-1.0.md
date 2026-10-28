@@ -100,9 +100,8 @@ Punkt für den caller-seitigen Snapshot-Bridge; bewusst kein Dep auf
 
 **Tests:** `crates/observability-otlp/src/lib.rs::tests::metrics_json_roundtrip_shape`.
 
-**Status:** done (Histogram-Export + caller-seitiger Snapshot-Bridge wie in der
-Spec spezifiziert; Counter/Gauge-Weglassung ist die dokumentierte Spec-Design-
-entscheidung, kein Gap)
+**Status:** done — Histogramm-Export und die aufrufseitige Snapshot-Brücke,
+wie die Spec sie festlegt. Counter und Gauge lässt die Spec selbst weg.
 
 ## §6 Sicherheit
 

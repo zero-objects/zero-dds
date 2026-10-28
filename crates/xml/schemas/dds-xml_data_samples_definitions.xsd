@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-    DDS-XML 1.0 §7.3.7.3 — Data Samples BB, mit targetNamespace.
+    DDS-XML 1.0 7.3.7 - Data Samples building block with targetNamespace.
+    <data> is the root 7.3.7.4.2 writes; <sample> is what this crate's
+    serialize_sample() emits and parse_sample() reads.
 -->
 <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
            xmlns="http://www.omg.org/spec/DDS-XML"
@@ -11,4 +13,5 @@
     <xs:include schemaLocation="dds-xml_data_samples_definitions_nonamespace.xsd"/>
 
     <xs:element name="data" type="dataSample"/>
+    <xs:element name="sample" type="dataSample"/>
 </xs:schema>

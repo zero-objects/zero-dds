@@ -4,7 +4,7 @@
 //!
 //! Wire format: i32 value (4 bytes). Only relevant for Ownership=Exclusive.
 
-use zerodds_cdr::{BufferReader, BufferWriter, DecodeError, EncodeError};
+use zerodds_wire::{Reader, WireError, Writer};
 
 /// OwnershipStrengthQosPolicy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -15,18 +15,15 @@ pub struct OwnershipStrengthQosPolicy {
 
 impl OwnershipStrengthQosPolicy {
     /// Wire-Encoding.
-    ///
-    /// # Errors
-    /// Buffer-Overflow.
-    pub fn encode_into(self, w: &mut BufferWriter) -> Result<(), EncodeError> {
-        w.write_u32(self.value as u32)
+    pub fn encode_into(self, w: &mut Writer) {
+        w.write_u32(self.value as u32);
     }
 
     /// Wire-Decoding.
     ///
     /// # Errors
     /// Buffer-Underflow.
-    pub fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
+    pub fn decode_from(r: &mut Reader<'_>) -> Result<Self, WireError> {
         Ok(Self {
             value: r.read_u32()? as i32,
         })
@@ -37,7 +34,7 @@ impl OwnershipStrengthQosPolicy {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use zerodds_cdr::Endianness;
+    use zerodds_wire::Endianness;
 
     #[test]
     fn default_is_zero() {
@@ -47,20 +44,20 @@ mod tests {
     #[test]
     fn roundtrip_negative() {
         let p = OwnershipStrengthQosPolicy { value: -7 };
-        let mut w = BufferWriter::new(Endianness::Little);
-        p.encode_into(&mut w).unwrap();
-        let bytes = w.into_bytes();
-        let mut r = BufferReader::new(&bytes, Endianness::Little);
+        let mut w = Writer::new(Endianness::Little);
+        p.encode_into(&mut w);
+        let bytes = w.finish();
+        let mut r = Reader::new(&bytes, Endianness::Little);
         assert_eq!(OwnershipStrengthQosPolicy::decode_from(&mut r).unwrap(), p);
     }
 
     #[test]
     fn roundtrip_large() {
         let p = OwnershipStrengthQosPolicy { value: i32::MAX };
-        let mut w = BufferWriter::new(Endianness::Little);
-        p.encode_into(&mut w).unwrap();
-        let bytes = w.into_bytes();
-        let mut r = BufferReader::new(&bytes, Endianness::Little);
+        let mut w = Writer::new(Endianness::Little);
+        p.encode_into(&mut w);
+        let bytes = w.finish();
+        let mut r = Reader::new(&bytes, Endianness::Little);
         assert_eq!(OwnershipStrengthQosPolicy::decode_from(&mut r).unwrap(), p);
     }
 }

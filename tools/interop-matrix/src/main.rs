@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! `interop-matrix` — CLI: JSON-Input → HTML-Output, optionaler
+//! `interop-matrix` — CLI: JSON input → HTML output, optional
 //! Regression-Exit-Code.
 
 #![warn(missing_docs)]
@@ -21,9 +21,9 @@ USAGE:
   interop-matrix INPUT.json [--out OUT.html] [--fail-on-red]
 
 OPTIONS:
-  --out PATH       HTML-Output-Pfad (default: stdout)
-  --fail-on-red    exit 1 wenn die Matrix rote Zellen enthaelt
-                   (fuer CI-Regressions-Gate)
+  --out PATH       HTML output path (default: stdout)
+  --fail-on-red    exit 1 if the matrix contains red cells
+                   (for the CI regression gate)
 "
     );
 }

@@ -1,0 +1,8 @@
+// `fixed<9,3>`
+typedef fixed<9,3> Money;
+
+@final struct Sample {
+    Money amount;
+    Money debt;
+    octet tail;
+};

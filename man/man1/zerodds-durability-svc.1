@@ -1,0 +1,147 @@
+.TH ZERODDS-DURABILITY-SVC 1 "" "ZeroDDS" "ZeroDDS Manual"
+.SH NAME
+zerodds-durability-svc \- ZeroDDS Durability-Service daemon
+.SH SYNOPSIS
+.B zerodds-durability-svc
+\fB\-\-domain\fR \fIN\fR
+[\fB\-\-store\fR \fIsqlite\fR|\fIfile\fR|\fIlakehouse\fR|\fIpostgres\fR]
+[\fB\-\-path\fR \fIPATH\fR]
+[\fB\-\-auto\fR]
+[\fB\-\-topic\fR \fINAME\fR]...
+[\fB\-\-config\fR \fIYAML\fR]
+[\fB\-\-set\fR \fIPATH\fR=\fIVALUE\fR]...
+.br
+.B zerodds-durability-svc
+[\fB\-\-config\fR \fIYAML\fR]
+[\fB\-\-set\fR \fIPATH\fR=\fIVALUE\fR]...
+\fB\-\-check\-config\fR
+.SH DESCRIPTION
+.B zerodds-durability-svc
+keeps the samples of TRANSIENT and PERSISTENT topics (DDS 1.4 \(sc2.2.3.4)
+for readers that join later, beyond the lifetime of the writers that
+wrote them. One daemon serves one DDS domain; it discovers the topics
+itself and replays their history to late joiners. PERSISTENT history
+survives a restart of the daemon when the store is durable.
+.PP
+A discovered writer's own retention policy \(em its
+.B DurabilityServiceQosPolicy
+(DDS 1.4 \(sc2.2.3.5) \(em governs how long its topic's history is kept,
+unless the configuration file pins a contract for that topic explicitly; see
+.BR zerodds-durability-svc.yaml (5),
+"WHICH CONTRACT WINS". A discovered topic's keyedness likewise comes from the
+writer (its RTPS entityKind, DDSI-RTPS 2.5 \(sc9.3.1.2), not an assumption.
+.SH OPTIONS
+Every option below is
+.B --set
+of its configuration key (see
+.BR zerodds-durability-svc.yaml (5)):
+.BR \-\-domain\ N
+is
+.BR "--set domain=N" ,
+.BR \-\-topic\ NAME
+is
+.BR "--set +durability.topics=NAME" ,
+and so on \(em so the flag and an equivalent line in the file are the same
+setting, and whichever applies last (files, then flags) wins. Per-topic
+.BR type / keyed / contract
+overrides have no flag: they are config-only (see
+.BR zerodds-durability-svc.yaml (5)).
+.TP
+.BR \-\-domain " " \fIN\fR
+The DDS domain id. Required (from this flag or the file).
+.TP
+.BR \-\-store " " \fIKIND\fR
+The cold store:
+.I sqlite
+(default) or
+.IR file ;
+.I lakehouse
+(DuckDB) and
+.I postgres
+only in a build with the features of the same name.
+.TP
+.BR \-\-path " " \fIPATH\fR
+Where the store lives:
+.IR sqlite / lakehouse ,
+a database file (omitted: in memory, lost on restart);
+.IR file ,
+a directory (required);
+.IR postgres ,
+a libpq connection string (required).
+.TP
+.B \-\-auto
+Serve every topic whose writers declare TRANSIENT or PERSISTENT
+durability.
+.TP
+.BR \-\-topic " " \fINAME\fR
+Serve this topic; repeatable. If the store already holds type/keyedness/
+contract for it from an earlier run, it resumes immediately \(em no writer
+or reader has to be discovered first. Otherwise its type and keyedness
+resolve from whichever writer of it is discovered first (regardless of
+durability kind, since the topic was named explicitly), unless the
+configuration file names an explicit
+.B type
+for it. At least one of
+.B \-\-auto
+and
+.B \-\-topic
+is required (from any source, once every layer is merged).
+.TP
+.BR \-\-config " " \fIYAML\fR
+The configuration file, with its drop-in directory
+.IR YAML .d/;
+default: the system configuration directory. Holds this daemon's own
+settings (above) alongside the shared DDS runtime's.
+.TP
+.BR \-\-set " \fIPATH\fR=\fIVALUE\fR"
+One setting above every file, repeatable;
+.B --set\ +PATH=VALUE
+appends to a list (e.g. another
+.BR durability.topics " entry)."
+.TP
+.B \-\-check\-config
+Validate and print the effective configuration \(em this daemon's own
+settings and the shared DDS runtime's \(em with the origin of every value,
+then exit (0 valid, 1 invalid value or unknown key, 2 unreadable file or
+syntax error).
+.TP
+.BR \-h ", " \-\-help
+Show usage.
+.TP
+.BR \-V ", " \-\-version
+Print version and exit.
+.SH FILES
+.TP
+.I /usr/lib/systemd/system/zerodds-durability-svc.service
+The unit; its environment
+.RB ( ZERODDS_DURABILITY_DOMAIN ,
+.BR ZERODDS_DURABILITY_STORE ,
+.BR ZERODDS_DURABILITY_PATH ,
+.BR ZERODDS_DURABILITY_EXTRA )
+fills the command line. Default: domain 0, sqlite in
+.IR /var/lib/zerodds/durability/dur.db ,
+.BR \-\-auto .
+.TP
+.I /var/lib/zerodds/durability
+The store directory of the unit, the only path it may write.
+.SH SIGNALS
+SIGTERM and SIGINT stop the daemon: the pumps are joined and it exits 0.
+.SH EXIT STATUS
+.TP
+.B 0
+Stopped by a signal, or
+.B \-\-check\-config
+found the configuration valid.
+.TP
+.B 1
+An invalid command line or configuration value, or the store could not be
+opened.
+.TP
+.B 2
+A configuration file could not be read or does not parse.
+.SH SEE ALSO
+.BR zerodds-durability-svc.yaml (5),
+.BR zerodds-router (1),
+.BR zerodds-admin (1)
+.SH AUTHOR
+ZeroDDS Contributors

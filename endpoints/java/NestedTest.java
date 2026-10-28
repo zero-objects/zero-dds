@@ -22,7 +22,7 @@ public class NestedTest {
     }
 
     static byte[] encode(int endian) {
-        Zdw.Writer w = new Zdw.Writer(endian);
+        Zdw.Writer w = new Zdw.Writer(endian, Zdw.XCDR2);
         w.dheader(new Zdw.Body() {           // outer @appendable
             public void write(Zdw.Writer b) {
                 b.u32(0xCAFEBABEL);
@@ -54,7 +54,7 @@ public class NestedTest {
         }
         System.out.println(tag + ": " + out.length
             + " bytes byte-identical to Rust golden (DHEADER/nested/seq)");
-        Zdw.Reader r = new Zdw.Reader(out, endian);
+        Zdw.Reader r = new Zdw.Reader(out, endian, Zdw.XCDR2);
         r.dheaderRead();
         long id = r.u32();
         long[] one = decodeInner(r);

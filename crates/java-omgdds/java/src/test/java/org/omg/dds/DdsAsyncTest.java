@@ -12,7 +12,9 @@ import org.omg.dds.sub.DataReader;
 import org.omg.dds.sub.Sample;
 import org.omg.dds.sub.Subscriber;
 import org.omg.dds.topic.Topic;
-import org.omg.dds.topic.TopicTypeSupport;
+import org.zerodds.cdr.EndianMode;
+import org.zerodds.cdr.ExtensibilityKind;
+import org.zerodds.cdr.TopicTypeSupport;
 import org.zerodds.DdsAsync;
 import org.zerodds.internal.InProcessBus;
 import org.zerodds.internal.Xcdr2Codec;
@@ -46,27 +48,63 @@ class DdsAsyncTest {
             double v = Xcdr2Codec.readDouble(buf);
             return new Reading(id, v);
         }
+
+        @Override
+        public boolean isKeyed() {
+            return false;
+        }
+
+        @Override
+        public ExtensibilityKind getExtensibility() {
+            return ExtensibilityKind.APPENDABLE;
+        }
+
+        @Override
+        public byte[] encode(Reading r) {
+            ByteBuffer buf = ByteBuffer.allocate(256);
+            serialize(r, buf);
+            byte[] out = new byte[buf.position()];
+            buf.flip();
+            buf.get(out);
+            return out;
+        }
+
+        @Override
+        public byte[] encode(Reading r, EndianMode endian) {
+            return encode(r);
+        }
+
+        @Override
+        public Reading decode(byte[] bytes) {
+            return decode(bytes, 0, bytes.length);
+        }
+
+        @Override
+        public Reading decode(byte[] bytes, int offset, int length) {
+            return deserialize(ByteBuffer.wrap(bytes, offset, length));
+        }
+
     };
 
     @BeforeEach
-    void setUp() {
+    void setUp() throws Exception {
         InProcessBus.instance().reset();
     }
 
     @AfterEach
-    void tearDown() {
+    void tearDown() throws Exception {
         InProcessBus.instance().reset();
     }
 
     @Test
     void writeAsyncThenTakeAsyncRoundTrip() throws Exception {
-        DomainParticipantFactory dpf = DomainParticipantFactory.getInstance();
+        DomainParticipantFactory dpf = Qos.factory();
         DomainParticipant participant = dpf.createParticipant(30);
         Topic<Reading> topic = participant.createTopic("AsyncReadings", Reading.class);
         try (Publisher pub = participant.createPublisher();
              Subscriber sub = participant.createSubscriber();
-             DataWriter<Reading> dw = pub.createDataWriter(topic, SUPPORT);
-             DataReader<Reading> dr = sub.createDataReader(topic, SUPPORT)) {
+             DataWriter<Reading> dw = Qos.writer(pub, topic, SUPPORT);
+             DataReader<Reading> dr = Qos.reader(sub, topic, SUPPORT, Qos.readerKeepAll())) {
 
             // in-process delivery is synchronous, so after the write completes
             // the sample is queued; takeAsync returns it on the first poll.
@@ -75,21 +113,21 @@ class DdsAsyncTest {
 
             List<Sample<Reading>> samples = DdsAsync.takeAsync(dr, Duration.ofSeconds(2)).get();
             assertEquals(2, samples.size());
-            assertEquals(1, samples.get(0).data().sensorId());
-            assertEquals(23.5, samples.get(0).data().value(), 0.0);
-            assertEquals(2, samples.get(1).data().sensorId());
+            assertEquals(1, samples.get(0).getData().sensorId());
+            assertEquals(23.5, samples.get(0).getData().value(), 0.0);
+            assertEquals(2, samples.get(1).getData().sensorId());
         }
     }
 
     @Test
     void waitForSamplesAsyncTrueWhenDataPresent() throws Exception {
-        DomainParticipantFactory dpf = DomainParticipantFactory.getInstance();
+        DomainParticipantFactory dpf = Qos.factory();
         DomainParticipant participant = dpf.createParticipant(31);
         Topic<Reading> topic = participant.createTopic("AsyncWait", Reading.class);
         try (Publisher pub = participant.createPublisher();
              Subscriber sub = participant.createSubscriber();
-             DataWriter<Reading> dw = pub.createDataWriter(topic, SUPPORT);
-             DataReader<Reading> dr = sub.createDataReader(topic, SUPPORT)) {
+             DataWriter<Reading> dw = Qos.writer(pub, topic, SUPPORT);
+             DataReader<Reading> dr = Qos.reader(sub, topic, SUPPORT)) {
 
             dw.write(new Reading(7, 99.9));
             assertTrue(DdsAsync.waitForSamplesAsync(dr, Duration.ofSeconds(2)).get());
@@ -98,11 +136,11 @@ class DdsAsyncTest {
 
     @Test
     void waitForSamplesAsyncFalseOnTimeout() throws Exception {
-        DomainParticipantFactory dpf = DomainParticipantFactory.getInstance();
+        DomainParticipantFactory dpf = Qos.factory();
         DomainParticipant participant = dpf.createParticipant(32);
         Topic<Reading> topic = participant.createTopic("AsyncEmpty", Reading.class);
         try (Subscriber sub = participant.createSubscriber();
-             DataReader<Reading> dr = sub.createDataReader(topic, SUPPORT)) {
+             DataReader<Reading> dr = Qos.reader(sub, topic, SUPPORT)) {
 
             assertFalse(DdsAsync.waitForSamplesAsync(dr, Duration.ofMillis(50)).get());
         }

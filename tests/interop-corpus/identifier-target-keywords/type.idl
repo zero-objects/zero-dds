@@ -1,0 +1,22 @@
+// identifiers legal in IDL and reserved in a generated target language
+module package {
+    enum class {
+        template,
+        virtual,
+        friend
+    };
+
+    @final struct type {
+        long new;
+        double delete;
+        short operator;
+    };
+
+    @final struct Sample {
+        type impl;
+        class lambda;
+        long static;
+        string def;
+        boolean async;
+    };
+};

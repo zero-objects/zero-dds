@@ -110,7 +110,7 @@ fn make_reader() -> ReliableReader {
     })
 }
 
-/// Dispatcht Submessages von Writer→Reader.
+/// Dispatches submessages from writer→reader.
 fn dispatch_w2r(datagram: &[u8], r: &mut ReliableReader, now: Duration) -> Vec<DeliveredSample> {
     let mut delivered = Vec::new();
     let parsed = decode_datagram(datagram).expect("decode w->r datagram");
@@ -118,7 +118,7 @@ fn dispatch_w2r(datagram: &[u8], r: &mut ReliableReader, now: Duration) -> Vec<D
     // Track the last-seen INFO_TS so a following DATA carries the source
     // timestamp into the delivered sample (DDSI-RTPS §8.3.4 ReceiverState).
     let mut cur_ts = None;
-    for sub in parsed.submessages {
+    for sub in parsed.contents() {
         match sub {
             ParsedSubmessage::InfoTimestamp(its) => {
                 cur_ts = if its.invalidate {
@@ -127,15 +127,16 @@ fn dispatch_w2r(datagram: &[u8], r: &mut ReliableReader, now: Duration) -> Vec<D
                     Some(its.timestamp)
                 };
             }
-            ParsedSubmessage::Data(d) => delivered.extend(r.handle_data(src, &d, cur_ts)),
+            ParsedSubmessage::Data(d) => delivered.extend(r.handle_data(src, d, cur_ts)),
             ParsedSubmessage::Heartbeat(h) => {
                 // Flags (F/L) are taken from the submessage header via
                 // carried along with decode_datagram — no more hardcoding.
-                r.handle_heartbeat(src, &h, now);
+                // What a HEARTBEAT releases is delivered like a DATA's.
+                delivered.extend(r.handle_heartbeat(src, h, now));
             }
-            ParsedSubmessage::Gap(g) => delivered.extend(r.handle_gap(src, &g)),
+            ParsedSubmessage::Gap(g) => delivered.extend(r.handle_gap(src, g)),
             ParsedSubmessage::DataFrag(df) => {
-                delivered.extend(r.handle_data_frag(src, &df, now, cur_ts))
+                delivered.extend(r.handle_data_frag(src, df, now, cur_ts))
             }
             ParsedSubmessage::AckNack(_)
             | ParsedSubmessage::HeartbeatFrag(_)
@@ -143,24 +144,27 @@ fn dispatch_w2r(datagram: &[u8], r: &mut ReliableReader, now: Duration) -> Vec<D
             | ParsedSubmessage::HeaderExtension(_)
             | ParsedSubmessage::InfoSource(_)
             | ParsedSubmessage::InfoReply(_)
+            | ParsedSubmessage::InfoDestination(_)
             | ParsedSubmessage::Unknown { .. } => {}
+            // ParsedSubmessage is #[non_exhaustive]: ignore future kinds.
+            _ => {}
         }
     }
     delivered
 }
 
-/// Dispatcht ACKNACKs von Reader→Writer.
+/// Dispatches ACKNACKs from reader→writer.
 fn dispatch_r2w(datagram: &[u8], w: &mut ReliableWriter) {
     let parsed = decode_datagram(datagram).expect("decode r->w datagram");
     let src = test_reader_guid();
-    for sub in parsed.submessages {
+    for sub in parsed.contents() {
         match sub {
             ParsedSubmessage::AckNack(ack) => {
                 let base = ack.reader_sn_state.bitmap_base;
                 let requested: Vec<_> = ack.reader_sn_state.iter_set().collect();
                 w.handle_acknack(src, base, requested);
             }
-            ParsedSubmessage::NackFrag(nf) => w.handle_nackfrag(src, &nf),
+            ParsedSubmessage::NackFrag(nf) => w.handle_nackfrag(src, nf),
             _ => {}
         }
     }
@@ -354,7 +358,7 @@ fn run_frag_e2e(
 
 #[test]
 fn e2e_frag_large_sample_zero_loss() {
-    // 10 kB Sample, fragment_size 1400 → ~8 Fragmente, ein einziges Sample
+    // 10 kB sample, fragment_size 1400 → ~8 fragments, a single sample
     let delivered = run_frag_e2e(1, 10_000, 1400, 0, 7);
     assert_eq!(delivered.len(), 1);
     assert_eq!(delivered[0].payload.as_ref(), &*pattern_for(1, 10_000));
@@ -402,4 +406,143 @@ fn e2e_frag_mixed_data_and_data_frag() {
     for (i, s) in delivered.iter().enumerate() {
         assert_eq!(s.payload.as_ref(), &*pattern_for(i + 1, 3));
     }
+}
+
+// ============================================================================
+// A consumer slower than the writer: the receive cache fills
+// ============================================================================
+
+/// Writer and reader over a channel that drops `drop_percent` of the
+/// datagrams each way, with a consumer that takes
+/// every `take_every` steps of 50 ms and has room for `room` samples, as
+/// the DataReader's `ReaderRoom` gives it to the RTPS reader: before each
+/// handler call the reader may release what the consumer has room for,
+/// the rest stays in its receive cache (`receive_cap` samples), and what
+/// does not fit there stays MISSING (DDS 1.4 §2.2.3.14, KEEP_ALL with
+/// finite RESOURCE_LIMITS). The writer keeps at most `writer_cap`
+/// changes, drops what the reader acknowledged, and writes on while it has
+/// room, as a KEEP_ALL writer whose `write` blocks. Once it has written
+/// `total` and every change is acknowledged, the writer leaves, as a
+/// process does after `wait_for_acknowledgments`: the reader departs its
+/// proxy ([`ReliableReader::depart_writer_proxy`]). Returns the sequence
+/// numbers taken and the step at which the last one was taken.
+fn run_slow_consumer(
+    drop_percent: u32,
+    total: usize,
+    writer_cap: usize,
+    receive_cap: usize,
+    room: usize,
+    take_every: usize,
+    max_steps: usize,
+) -> (Vec<SequenceNumber>, usize) {
+    let reader_proxy = ReaderProxy::new(
+        test_reader_guid(),
+        vec![Locator::udp_v4([127, 0, 0, 1], 7410)],
+        vec![],
+        true,
+    );
+    let mut w = ReliableWriter::new(ReliableWriterConfig {
+        guid: test_writer_guid(),
+        vendor_id: VendorId::ZERODDS,
+        reader_proxies: vec![reader_proxy],
+        max_samples: writer_cap,
+        history_kind: zerodds_rtps::history_cache::HistoryKind::KeepAll,
+        heartbeat_period: Duration::from_millis(100),
+        fragment_size: zerodds_rtps::reliable_writer::DEFAULT_FRAGMENT_SIZE,
+        mtu: zerodds_rtps::message_builder::DEFAULT_MTU,
+    });
+    let writer_proxy = WriterProxy::new(
+        test_writer_guid(),
+        vec![Locator::udp_v4([127, 0, 0, 1], 7420)],
+        vec![],
+        true,
+    );
+    let mut r = ReliableReader::new(ReliableReaderConfig {
+        guid: test_reader_guid(),
+        vendor_id: VendorId::ZERODDS,
+        writer_proxies: vec![writer_proxy],
+        max_samples_per_proxy: receive_cap,
+        heartbeat_response_delay: DEFAULT_HEARTBEAT_RESPONSE_DELAY,
+        assembler_caps: zerodds_rtps::fragment_assembler::AssemblerCaps::default(),
+    });
+    let mut w2r = LossyChannel::new(drop_percent, 7);
+    let mut r2w = LossyChannel::new(drop_percent, 8);
+    let mut written = 0usize;
+    let mut in_consumer: Vec<SequenceNumber> = Vec::new();
+    let mut taken: Vec<SequenceNumber> = Vec::new();
+    let mut last_take = 0;
+    let mut writer_here = true;
+    for step in 0..max_steps {
+        let now = Duration::from_millis(step as u64 * 50);
+        let _ = w.remove_acknowledged();
+        if writer_here && written == total && w.cache().is_empty() {
+            assert!(r.depart_writer_proxy(test_writer_guid()).is_some());
+            writer_here = false;
+        }
+        while written < total && w.cache().len() < writer_cap {
+            for dg in w.write(&(written as u32).to_le_bytes()).expect("write") {
+                w2r.send(dg.bytes);
+            }
+            written += 1;
+        }
+        while let Some(dg) = w2r.recv() {
+            r.set_release_budget(Some(room - in_consumer.len()));
+            let out = dispatch_w2r(&dg, &mut r, now);
+            in_consumer.extend(out.iter().map(|s| s.sequence_number));
+        }
+        while let Some(dg) = r2w.recv() {
+            dispatch_r2w(&dg, &mut w);
+        }
+        if step % take_every == 0 && !in_consumer.is_empty() {
+            taken.append(&mut in_consumer);
+            last_take = step;
+        }
+        // What the reader held back for want of room, now that there may
+        // be some (the runtime's `release_held_for_room`).
+        r.set_release_budget(Some(room - in_consumer.len()));
+        if r.holds_releasable() {
+            in_consumer.extend(r.release_held().iter().map(|s| s.sequence_number));
+        }
+        if writer_here {
+            for dg in w.tick(now).expect("writer tick") {
+                w2r.send(dg.bytes);
+            }
+        }
+        for dg in r.tick(now).expect("reader tick") {
+            r2w.send(dg);
+        }
+        if taken.len() == total {
+            break;
+        }
+    }
+    (taken, last_take)
+}
+
+/// A reader whose receive cache and consumer are both full gets every
+/// sample, in order, once the consumer takes: none is lost to the writer
+/// waiting for an ACKNACK the reader holds back, to a datagram lost on
+/// the way, or to the writer leaving while the reader still holds what it
+/// acknowledged.
+#[test]
+fn e2e_a_slow_consumer_gets_every_sample_in_order() {
+    for drop_percent in [0, 2] {
+        slow_consumer_gets_every_sample(drop_percent);
+    }
+}
+
+fn slow_consumer_gets_every_sample(drop_percent: u32) {
+    let total = 30_000;
+    let (taken, last_take) = run_slow_consumer(drop_percent, total, 3000, 3000, 3000, 20, 20_000);
+    assert_eq!(
+        taken.len(),
+        total,
+        "{drop_percent} % loss: taken {} of {total}; the last take at step {last_take}",
+        taken.len()
+    );
+    for (i, sn) in taken.iter().enumerate() {
+        assert_eq!(*sn, SequenceNumber(i as i64 + 1));
+    }
+    eprintln!(
+        "slow consumer, {drop_percent} % loss: {total} samples, last take at step {last_take}"
+    );
 }

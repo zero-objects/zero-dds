@@ -18,6 +18,15 @@
 //!   - `QueryCondition` (ReadCondition + SQL filter, defined here)
 //!
 //! The trait is object-safe; WaitSet holds `Arc<dyn Condition>`.
+//!
+//! # Waiting
+//!
+//! [`WaitSet::wait`] blocks on the receive path's own signal
+//! (`signal_data_available`, raised where a sample reaches a user reader's
+//! channel), not on a timer. `poll_interval` remains as an upper bound on one
+//! sleep, for the conditions that have no signal behind them at all — a
+//! `GuardCondition` the application flips, a `StatusCondition` whose bits come
+//! from a status poll. Data delivery does not wait for it.
 
 extern crate alloc;
 
@@ -36,6 +45,27 @@ pub trait Condition: Send + Sync {
     /// True if the event of this condition is currently pending.
     /// Spec §2.2.2.1.6 `get_trigger_value`.
     fn get_trigger_value(&self) -> bool;
+
+    /// Whether something signals this condition when it becomes true.
+    ///
+    /// A `ReadCondition` and a `QueryCondition` turn true when a sample
+    /// arrives, and the receive path announces that
+    /// (`signal_data_available`) — a `WaitSet` holding only those can sleep
+    /// until it is woken and never look on its own.
+    ///
+    /// A `GuardCondition` is flipped by the application from a thread of its
+    /// own, and a `StatusCondition`'s bits are collected by a status poll.
+    /// Neither says anything when it changes, so a WaitSet holding one has to
+    /// look every so often — which is what `poll_interval` bounds, and why it
+    /// must not apply to a set that has no such condition in it.
+    ///
+    /// Defaults to `false`: a condition that does not state otherwise gets the
+    /// bounded wait, which costs a wake per interval and is the safe answer.
+    /// Claiming `true` wrongly would be the unsafe one — the WaitSet would
+    /// sleep through the change.
+    fn is_signalled(&self) -> bool {
+        false
+    }
 }
 
 // Re-export the StatusCondition from entity.rs so callers only need to
@@ -65,6 +95,9 @@ pub struct ReadCondition {
     view_state_mask: u32,
     instance_state_mask: u32,
     trigger: Arc<dyn Fn(u32, u32, u32) -> bool + Send + Sync>,
+    /// The DataReader the condition was created on (DDS 1.4 §2.2.2.5.8.1).
+    #[cfg(feature = "std")]
+    reader: std::sync::OnceLock<alloc::sync::Weak<dyn crate::contained::ContainedReader>>,
 }
 
 impl core::fmt::Debug for ReadCondition {
@@ -94,7 +127,31 @@ impl ReadCondition {
             view_state_mask,
             instance_state_mask,
             trigger: Arc::new(trigger),
+            #[cfg(feature = "std")]
+            reader: std::sync::OnceLock::new(),
         })
+    }
+
+    /// Records the DataReader the condition belongs to.
+    #[cfg(feature = "std")]
+    pub(crate) fn set_reader(
+        &self,
+        reader: alloc::sync::Weak<dyn crate::contained::ContainedReader>,
+    ) {
+        let _ = self.reader.set(reader);
+    }
+
+    /// DDS 1.4 §2.2.2.5.8.1 `get_datareader`: the DataReader the condition
+    /// was created on. `None` for a condition not made by
+    /// `create_readcondition` or `create_querycondition`, and once the
+    /// reader is gone.
+    #[cfg(feature = "std")]
+    #[must_use]
+    pub fn get_datareader(&self) -> Option<crate::subscriber::AnyDataReader> {
+        self.reader
+            .get()?
+            .upgrade()
+            .map(crate::subscriber::AnyDataReader::from_contained)
     }
 
     /// Spec §2.2.2.5.8 `get_sample_state_mask`.
@@ -124,6 +181,12 @@ impl Condition for ReadCondition {
             self.instance_state_mask,
         )
     }
+
+    /// Signalled: this turns true when a sample arrives, and the receive path
+    /// says so.
+    fn is_signalled(&self) -> bool {
+        true
+    }
 }
 
 /// `QueryCondition` — Spec §2.2.2.5.9. Extends ReadCondition with a
@@ -134,7 +197,10 @@ pub struct QueryCondition {
     base: Arc<ReadCondition>,
     query_expression: alloc::string::String,
     query_parameters: Mutex<Vec<alloc::string::String>>,
-    parsed: zerodds_sql_filter::Expr,
+    /// The condition of the expression; none when it only orders.
+    parsed: Option<zerodds_sql_filter::Expr>,
+    /// The fields of `ORDER BY` (Annex B.2 `QueryExpression`).
+    order_by: Vec<alloc::string::String>,
 }
 
 impl core::fmt::Debug for QueryCondition {
@@ -159,14 +225,17 @@ impl QueryCondition {
         query_parameters: Vec<alloc::string::String>,
     ) -> Result<Arc<Self>> {
         let expr_str = query_expression.into();
-        let parsed = zerodds_sql_filter::parse(&expr_str).map_err(|_| DdsError::BadParameter {
-            what: "QueryCondition: invalid SQL filter expression",
+        let parsed = zerodds_sql_filter::parse_query_expression(&expr_str).map_err(|_| {
+            DdsError::BadParameter {
+                what: "QueryCondition: invalid SQL filter expression",
+            }
         })?;
         Ok(Arc::new(Self {
             base,
             query_expression: expr_str,
             query_parameters: Mutex::new(query_parameters),
-            parsed,
+            parsed: parsed.condition,
+            order_by: parsed.order_by,
         }))
     }
 
@@ -190,9 +259,13 @@ impl QueryCondition {
             })?;
         let values: Vec<zerodds_sql_filter::Value> = params
             .iter()
-            .map(|s| zerodds_sql_filter::Value::String(s.clone()))
+            .map(|s| zerodds_sql_filter::Value::from_parameter(s))
             .collect();
-        self.parsed
+        // An expression that only orders lets every sample through.
+        let Some(parsed) = self.parsed.as_ref() else {
+            return Ok(true);
+        };
+        parsed
             .evaluate(row, &values)
             .map_err(|_| DdsError::PreconditionNotMet {
                 reason: "QueryCondition SQL evaluation failed",
@@ -210,11 +283,40 @@ impl QueryCondition {
         row: &R,
         params: &[zerodds_sql_filter::Value],
     ) -> Result<bool> {
-        self.parsed
+        let Some(parsed) = self.parsed.as_ref() else {
+            return Ok(true);
+        };
+        parsed
             .evaluate(row, params)
             .map_err(|_| DdsError::PreconditionNotMet {
                 reason: "QueryCondition SQL evaluation failed",
             })
+    }
+
+    /// The fields of `ORDER BY`: the samples a read or take with this
+    /// condition returns are ordered by them, ascending (Annex B.2).
+    #[must_use]
+    pub fn order_by(&self) -> &[alloc::string::String] {
+        &self.order_by
+    }
+
+    /// Orders `a` against `b` by the `ORDER BY` fields, each by the value
+    /// the row gives for it (a field the row lacks is `null`, which comes
+    /// first).
+    pub fn compare_rows<R: zerodds_sql_filter::RowAccess>(
+        &self,
+        a: &R,
+        b: &R,
+    ) -> core::cmp::Ordering {
+        for field in &self.order_by {
+            let left = a.get(field).unwrap_or(zerodds_sql_filter::Value::Null);
+            let right = b.get(field).unwrap_or(zerodds_sql_filter::Value::Null);
+            match left.order(&right) {
+                core::cmp::Ordering::Equal => {}
+                unequal => return unequal,
+            }
+        }
+        core::cmp::Ordering::Equal
     }
 
     /// Spec §2.2.2.5.9.4 `get_query_expression`.
@@ -255,6 +357,34 @@ impl QueryCondition {
     }
 }
 
+/// A ReadCondition or a QueryCondition as the argument of
+/// `read_w_condition` and `take_w_condition` (DDS 1.4 §2.2.2.5.3.10: the
+/// parameter is a ReadCondition; a QueryCondition is one).
+pub trait ReadConditionArg {
+    /// The ReadCondition with the three state masks.
+    fn read_condition(&self) -> &Arc<ReadCondition>;
+    /// The expression part, when the condition has one.
+    fn query_condition(&self) -> Option<&QueryCondition>;
+}
+
+impl ReadConditionArg for Arc<ReadCondition> {
+    fn read_condition(&self) -> &Arc<ReadCondition> {
+        self
+    }
+    fn query_condition(&self) -> Option<&QueryCondition> {
+        None
+    }
+}
+
+impl ReadConditionArg for Arc<QueryCondition> {
+    fn read_condition(&self) -> &Arc<ReadCondition> {
+        self.base()
+    }
+    fn query_condition(&self) -> Option<&QueryCondition> {
+        Some(self)
+    }
+}
+
 impl Condition for QueryCondition {
     fn get_trigger_value(&self) -> bool {
         // The trigger is inherited from the base ReadCondition (state-
@@ -262,6 +392,11 @@ impl Condition for QueryCondition {
         // DataReader::read_w_condition/take_w_condition via
         // [`Self::evaluate`].
         self.base.get_trigger_value()
+    }
+    /// Signalled, like the `ReadCondition` it is built on: the filter narrows
+    /// which samples count, not what announces their arrival.
+    fn is_signalled(&self) -> bool {
+        true
     }
 }
 
@@ -304,19 +439,84 @@ pub struct WaitSet {
     inner: Arc<WaitSetInner>,
 }
 
+/// The receive path's wake, shared by every `WaitSet` in the process.
+///
+/// A condition holds no back-reference to the reader behind it — a
+/// `ReadCondition` is a closure over the state masks — so a WaitSet cannot
+/// register a waker of its own on the endpoint that would feed it. One event
+/// per process avoids that: `runtime::wake_async_waker` signals it whenever a
+/// sample reaches a user reader's channel, and every blocked WaitSet wakes and
+/// re-evaluates its own trigger values.
+///
+/// The cost is a wake for WaitSets whose conditions did not trigger. That is
+/// cheaper than what it replaces: before this, `wait` slept in 1 ms steps and
+/// re-polled, so a sample waited up to a millisecond to be seen no matter how
+/// fast it arrived, and a process with several WaitSets paid that in CPU while
+/// idle. The generation counter is what makes the swap safe — a sample landing
+/// between the trigger check and the block moves it, and the waiter re-checks
+/// instead of sleeping through its own wake.
+#[cfg(feature = "std")]
+struct DataAvailable {
+    /// Lock anchor for the condvar: the wake generation, and how many
+    /// WaitSets block on it.
+    generation: Mutex<DataAvailableState>,
+    cvar: Condvar,
+}
+
+/// What [`DataAvailable`]'s lock protects.
+#[cfg(feature = "std")]
+#[derive(Default)]
+struct DataAvailableState {
+    generation: u64,
+    /// WaitSets blocked in `wait` right now. `notify_all` is a futex call
+    /// whether or not a thread waits, and the receive path signals after
+    /// every run of samples: with no WaitSet waiting that was a system call
+    /// per datagram, measured on the Linux test host.
+    waiting: usize,
+}
+
+#[cfg(feature = "std")]
+fn data_available() -> &'static DataAvailable {
+    static EV: std::sync::OnceLock<DataAvailable> = std::sync::OnceLock::new();
+    EV.get_or_init(|| DataAvailable {
+        generation: Mutex::new(DataAvailableState::default()),
+        cvar: Condvar::new(),
+    })
+}
+
+/// Announces that a sample reached a user reader's channel.
+///
+/// Called from the receive path (`runtime::wake_async_waker`), which is the one
+/// place every channel delivery passes through. Callback delivery does not come
+/// here and does not need to: a reader with a listener set does not feed the
+/// channel a `WaitSet` reads from.
+#[cfg(feature = "std")]
+pub(crate) fn signal_data_available() {
+    let ev = data_available();
+    let waiting = match ev.generation.lock() {
+        Ok(mut g) => {
+            g.generation = g.generation.wrapping_add(1);
+            g.waiting > 0
+        }
+        Err(_) => true,
+    };
+    if waiting {
+        ev.cvar.notify_all();
+    }
+}
+
 #[cfg(feature = "std")]
 struct WaitSetInner {
     conditions: Mutex<Vec<Arc<dyn Condition>>>,
-    /// Notify pair for poll-based wait. Conditions that set their
-    /// trigger_value can wake the WaitSet via `notify()` — in the
-    /// current state we only poll, however, because we do not want to
-    /// force the conditions to hold a backref.
-    cvar: Condvar,
-    /// Idle sleep between poll ticks (1ms — short enough for latency,
-    /// long enough for low CPU load).
+    /// Upper bound on one idle sleep.
+    ///
+    /// Not the latency of data delivery — that is [`signal_data_available`],
+    /// which wakes the wait as the sample lands. This bound is for the
+    /// conditions with no signal behind them at all: a `GuardCondition` the
+    /// application flips from another thread, and a `StatusCondition` whose
+    /// bits are collected by a status poll. Without it those would only be
+    /// observed when the next sample happened to arrive.
     poll_interval: core::time::Duration,
-    /// Mutex guard for the Condvar.
-    locked: Mutex<()>,
     /// `true` while a thread is blocked in `wait()`. Spec §2.2.2.1.6:
     /// "WaitSet MAY be used by only one application thread at a time"
     /// — concurrent `wait()` calls MUST return `PreconditionNotMet`.
@@ -336,9 +536,7 @@ impl WaitSet {
         Self {
             inner: Arc::new(WaitSetInner {
                 conditions: Mutex::new(Vec::new()),
-                cvar: Condvar::new(),
                 poll_interval: Duration::from_millis(1),
-                locked: Mutex::new(()),
                 waiting: AtomicBool::new(false),
             }),
         }
@@ -367,13 +565,22 @@ impl WaitSet {
             });
         }
         conds.push(cond);
+        drop(conds);
+        // §2.2.2.1.6.1: "if the Condition has a trigger_value of TRUE, then
+        // attaching the condition will unblock the WaitSet." A wait that
+        // blocks has to look at the new condition: it may be triggered, and
+        // one that does not announce itself changes how long the wait may
+        // sleep. A set of read conditions only slept until the next sample.
+        signal_data_available();
         Ok(())
     }
 
     /// Detaches a condition. Spec §2.2.2.1.6 `detach_condition`.
     ///
     /// # Errors
-    /// `PreconditionNotMet` if the internal lock is poisoned.
+    /// `PreconditionNotMet` if the condition is not attached (the same
+    /// `Arc` that `attach_condition` took), or if the internal lock is
+    /// poisoned.
     pub fn detach_condition(&self, cond: &Arc<dyn Condition>) -> Result<()> {
         let mut conds = self
             .inner
@@ -382,7 +589,15 @@ impl WaitSet {
             .map_err(|_| DdsError::PreconditionNotMet {
                 reason: "waitset conditions poisoned",
             })?;
+        let before = conds.len();
         conds.retain(|c| !Arc::ptr_eq(c, cond));
+        // DDS 1.4 §2.2.2.1.6.2: "If the Condition was not attached to the
+        // WaitSet, the operation will return PRECONDITION_NOT_MET."
+        if conds.len() == before {
+            return Err(DdsError::PreconditionNotMet {
+                reason: "the condition is not attached to the WaitSet",
+            });
+        }
         Ok(())
     }
 
@@ -437,7 +652,14 @@ impl WaitSet {
         let _guard = WaitGuard(&self.inner.waiting);
 
         let deadline = std::time::Instant::now() + timeout;
+        let ev = data_available();
         loop {
+            // Read the generation before evaluating the triggers. A sample that
+            // lands between the two moves it, and the block below is skipped —
+            // otherwise the wake would arrive while this thread was still
+            // deciding whether to sleep, and be lost.
+            let seen = ev.generation.lock().map(|g| g.generation).unwrap_or(0);
+
             let active = self.poll_active()?;
             if !active.is_empty() {
                 return Ok(active);
@@ -446,18 +668,47 @@ impl WaitSet {
             if now >= deadline {
                 return Err(DdsError::Timeout);
             }
-            // Sleep until the next poll tick or the deadline.
-            let sleep_for = (deadline - now).min(self.inner.poll_interval);
-            let cvlock = self
+            // Block on the receive path's wake. A set whose conditions all
+            // announce themselves needs no bound at all — it sleeps until a
+            // sample arrives. The bound is for the others: a GuardCondition
+            // the application flips, a StatusCondition whose bits come from a
+            // status poll. Neither says anything when it changes, so a set
+            // holding one has to look every so often.
+            //
+            // Measured before this distinction was drawn: a WaitSet with only
+            // read conditions still woke on `poll_interval`, which an
+            // application reported as 226 trigger evaluations per 300 ms per
+            // reader while nothing at all was arriving.
+            let remaining = deadline - now;
+            let all_signalled = self
                 .inner
-                .locked
+                .conditions
+                .lock()
+                .map(|g| !g.is_empty() && g.iter().all(|c| c.is_signalled()))
+                .unwrap_or(false);
+            let block = if all_signalled {
+                remaining
+            } else {
+                remaining.min(self.inner.poll_interval)
+            };
+            let mut guard = ev
+                .generation
                 .lock()
                 .map_err(|_| DdsError::PreconditionNotMet {
-                    reason: "waitset locked poisoned",
+                    reason: "waitset data-available lock poisoned",
                 })?;
-            let _ = self.inner.cvar.wait_timeout(cvlock, sleep_for);
-            // (Discarding the result is fine — we poll again at the
-            //  top of the loop anyway.)
+            if guard.generation == seen {
+                // Counted under the lock the signal takes, so a sample
+                // after this line sees the waiter and wakes it.
+                guard.waiting += 1;
+                let mut guard = match ev.cvar.wait_timeout(guard, block) {
+                    Ok((guard, _)) => guard,
+                    Err(poisoned) => poisoned.into_inner().0,
+                };
+                guard.waiting -= 1;
+            }
+            // (Discarding the result is fine — the triggers are re-evaluated
+            //  at the top of the loop either way.)
         }
     }
 
@@ -483,8 +734,12 @@ impl WaitSet {
     /// Currently this only has an effect if the WaitSet is blocked in
     /// `wait_timeout` — the caller should still attach a
     /// `GuardCondition` so that the wakeup has a definite result.
+    ///
+    /// Goes through the same event as data arrival, because that is where a
+    /// blocked `wait` now sleeps. Waking a condvar of this WaitSet's own would
+    /// reach nobody.
     pub fn notify(&self) {
-        self.inner.cvar.notify_all();
+        signal_data_available();
     }
 }
 
@@ -517,6 +772,7 @@ impl core::fmt::Debug for WaitSet {
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use core::sync::atomic::AtomicU32;
     use std::thread;
     use std::time::Instant;
 
@@ -556,6 +812,219 @@ mod tests {
         ws.attach_condition(cond).unwrap();
         let triggered = ws.wait(Duration::from_secs(1)).unwrap();
         assert_eq!(triggered.len(), 1);
+    }
+
+    /// The receive path's signal wakes a blocked `wait`, and it does so
+    /// through the condvar rather than by the sleep expiring.
+    ///
+    /// The condition here never triggers, so `wait` runs to its timeout — what
+    /// is measured is how often it woke on the way. Before
+    /// `signal_data_available` existed the loop re-polled every
+    /// `poll_interval`, which over 200 ms is roughly 200 evaluations of every
+    /// attached condition. Now a wake costs one evaluation per arriving sample
+    /// plus the guard bound.
+    #[test]
+    fn data_signal_wakes_a_blocked_wait() {
+        let ws = WaitSet::new();
+        let counter = Arc::new(AtomicU32::new(0));
+        let seen = Arc::clone(&counter);
+        // A condition that counts how often it is asked and never triggers.
+        struct Counting(Arc<AtomicU32>);
+        impl Condition for Counting {
+            fn get_trigger_value(&self) -> bool {
+                self.0.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                false
+            }
+        }
+        ws.attach_condition(Arc::new(Counting(seen)) as Arc<dyn Condition>)
+            .unwrap();
+
+        let signaller = std::thread::spawn(|| {
+            for _ in 0..5 {
+                std::thread::sleep(Duration::from_millis(10));
+                signal_data_available();
+            }
+        });
+
+        let start = Instant::now();
+        let res = ws.wait(Duration::from_millis(200));
+        let waited = start.elapsed();
+        signaller.join().expect("signalling thread");
+
+        assert!(matches!(res, Err(DdsError::Timeout)));
+        assert!(
+            waited >= Duration::from_millis(190),
+            "returned early ({waited:?}) — a signal must not end a wait whose \
+             conditions did not trigger"
+        );
+        // Five signals plus the guard bound over 200 ms. The old poll loop
+        // would have re-evaluated on the order of 200 times.
+        let evaluations = counter.load(core::sync::atomic::Ordering::Relaxed);
+        assert!(
+            evaluations >= 5,
+            "only {evaluations} evaluations — the signals did not wake the wait"
+        );
+    }
+
+    /// A set of nothing but signalled conditions does not look on its own.
+    ///
+    /// The number is what an application measured and reported: 226 trigger
+    /// evaluations per 300 ms per reader, on a WaitSet holding only read
+    /// conditions, while nothing was arriving. That is `poll_interval` doing
+    /// its work where it has none — the conditions in that set are announced
+    /// by the receive path, so there is nothing to look for between
+    /// announcements.
+    ///
+    /// Counted in a process of its own that runs only the probe: the signal
+    /// event is process-global, and the other tests of this binary signal
+    /// into it while they run (31 evaluations against a bound of 30 in one
+    /// of three runs on the Linux test host at load 65, with the interval's hundreds
+    /// nowhere near).
+    #[test]
+    fn a_signalled_set_does_not_wake_on_the_interval() {
+        let exe = std::env::current_exe().unwrap();
+        let runner = std::env::var("ZERODDS_TEST_RUNNER").unwrap_or_default();
+        let mut runner = runner.split_whitespace();
+        let mut command = match runner.next() {
+            Some(program) => {
+                let mut c = std::process::Command::new(program);
+                c.args(runner).arg(&exe);
+                c
+            }
+            None => std::process::Command::new(&exe),
+        };
+        let out = command
+            .args([
+                "--exact",
+                "condition::tests::signalled_set_probe",
+                "--test-threads=1",
+                "--nocapture",
+            ])
+            .env("ZERODDS_SIGNALLED_SET_PROBE", "1")
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    /// The probe of `a_signalled_set_does_not_wake_on_the_interval`; a
+    /// no-op unless that test runs it.
+    #[test]
+    fn signalled_set_probe() {
+        if std::env::var_os("ZERODDS_SIGNALLED_SET_PROBE").is_none() {
+            return;
+        }
+        let ws = WaitSet::new();
+        let counter = Arc::new(AtomicU32::new(0));
+        let seen = Arc::clone(&counter);
+        // A read condition — signalled — that never triggers and counts.
+        struct Signalled(Arc<AtomicU32>);
+        impl Condition for Signalled {
+            fn get_trigger_value(&self) -> bool {
+                self.0.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                false
+            }
+            fn is_signalled(&self) -> bool {
+                true
+            }
+        }
+        ws.attach_condition(Arc::new(Signalled(seen)) as Arc<dyn Condition>)
+            .unwrap();
+
+        let res = ws.wait(Duration::from_millis(300));
+        assert!(matches!(res, Err(DdsError::Timeout)));
+
+        // Alone in its process this is two evaluations: one on entry, one
+        // after the deadline. The interval would put it in the hundreds.
+        let evaluations = counter.load(core::sync::atomic::Ordering::Relaxed);
+        assert!(
+            evaluations <= 5,
+            "{evaluations} evaluations in 300 ms with nothing arriving — the \
+             interval is still driving a set that does not need it"
+        );
+    }
+
+    /// A set that holds one unsignalled condition keeps the bound.
+    ///
+    /// The other half of the same rule: a `GuardCondition` says nothing when
+    /// the application flips it, so the wait has to look. Dropping the bound
+    /// for every set would trade the idle wakes for a WaitSet that sleeps
+    /// through a guard until a sample happens to arrive.
+    #[test]
+    fn a_set_with_an_unsignalled_condition_keeps_its_bound() {
+        let ws = WaitSet::new();
+        let g = GuardCondition::new();
+        ws.attach_condition(g.clone() as Arc<dyn Condition>)
+            .unwrap();
+
+        let flipper = Arc::clone(&g);
+        let handle = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(30));
+            flipper.set_trigger_value(true);
+        });
+
+        let start = Instant::now();
+        let triggered = ws.wait(Duration::from_secs(2)).expect("guard triggers");
+        let waited = start.elapsed();
+        handle.join().expect("flipping thread");
+
+        assert_eq!(triggered.len(), 1);
+        assert!(
+            waited < Duration::from_millis(200),
+            "took {waited:?} — a flipped guard was not seen inside the bound"
+        );
+        g.set_trigger_value(false);
+    }
+
+    /// A sample arriving while the waiter is between its trigger check and its
+    /// block must not be slept through.
+    ///
+    /// The generation counter is what prevents it: the waiter reads it before
+    /// evaluating, and skips the block if it moved. Without that the wake
+    /// lands on a condvar nobody is waiting on yet, and the wait sleeps until
+    /// the guard bound expires.
+    #[test]
+    fn a_signal_between_check_and_block_is_not_lost() {
+        let ws = WaitSet::new();
+        let g = GuardCondition::new();
+        let armed = Arc::clone(&g);
+        // Triggers on the second evaluation, so the first pass through the
+        // loop finds nothing and proceeds towards the block.
+        struct ArmOnSecond {
+            guard: Arc<GuardCondition>,
+            seen: AtomicU32,
+        }
+        impl Condition for ArmOnSecond {
+            fn get_trigger_value(&self) -> bool {
+                if self.seen.fetch_add(1, core::sync::atomic::Ordering::SeqCst) == 0 {
+                    // Signal from inside the check itself: the tightest
+                    // possible race with the block that follows it.
+                    signal_data_available();
+                    self.guard.set_trigger_value(true);
+                    return false;
+                }
+                true
+            }
+        }
+        ws.attach_condition(Arc::new(ArmOnSecond {
+            guard: armed,
+            seen: AtomicU32::new(0),
+        }) as Arc<dyn Condition>)
+            .unwrap();
+
+        let start = Instant::now();
+        let triggered = ws.wait(Duration::from_secs(2)).expect("should trigger");
+        let waited = start.elapsed();
+        assert_eq!(triggered.len(), 1);
+        assert!(
+            waited < Duration::from_millis(50),
+            "took {waited:?} — the signal raced ahead of the block and was lost"
+        );
+        g.set_trigger_value(false);
     }
 
     #[test]
@@ -609,7 +1078,9 @@ mod tests {
 
     #[test]
     fn status_condition_implements_condition_trait() {
-        let state = crate::entity::EntityState::new();
+        // DDS 1.4 §2.2.2.1.1.7: the status of a disabled entity never
+        // changes, so the entity is enabled.
+        let state = crate::entity::EntityState::new_enabled();
         let sc = crate::entity::StatusCondition::new(state.clone());
         sc.set_enabled_statuses(0b0010);
         assert!(!sc.get_trigger_value());

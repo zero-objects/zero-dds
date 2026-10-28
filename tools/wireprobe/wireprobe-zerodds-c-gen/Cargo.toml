@@ -1,0 +1,42 @@
+[package]
+name = "zerodds-wireprobe-c-gen"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Generates the C translation unit the ZeroDDS C wire probe compiles: the types, the codec, and the statements that fill one sample."
+repository.workspace = true
+homepage.workspace = true
+publish = false
+
+[lib]
+name = "zerodds_wireprobe_c_gen"
+path = "src/lib.rs"
+
+[[bin]]
+name = "wireprobe-zerodds-c-gen"
+path = "src/main.rs"
+
+[[bin]]
+name = "wireprobe-c-matrix"
+path = "src/bin/wireprobe-c-matrix.rs"
+
+[dependencies]
+zerodds-ast = { path = "../../../crates/ast", version = "1.0.0-rc.7" }
+zerodds-ast-core = { path = "../../../crates/ast-core", version = "1.0.0-rc.7" }
+zerodds-ast-layout = { path = "../../../crates/ast-layout", version = "1.0.0-rc.7" }
+zerodds-float128 = { path = "../../../crates/float128", version = "1.0.0-rc.7" }
+zerodds-lang-cst = { path = "../../../crates/lang-cst", version = "1.0.0-rc.7" }
+zerodds-lang-render = { path = "../../../crates/lang-render", version = "1.0.0-rc.7" }
+zerodds-lang-rules = { path = "../../../crates/lang-rules", version = "1.0.0-rc.7" }
+zerodds-wireprobe-gen = { path = "../wireprobe-zerodds-gen", version = "1.0.0-rc.7" }
+serde_json = "1"
+# The read direction is compared in the canonical form
+# `crates/wire-probe/src/canonical.rs` defines. A second copy of that
+# form here would be a second answer to what a value document means,
+# which is the one thing the four backends may not have.
+zerodds-wire-probe = { path = "../../../crates/wire-probe", version = "1.0.0-rc.7" }
+
+[lints]
+workspace = true

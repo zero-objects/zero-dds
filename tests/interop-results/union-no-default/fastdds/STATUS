@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of union-no-default that fastdds produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	error: 'UPubSubType' is not a member of 'zd_c1::m'
+plain-cdr1	be	refused	error: 'UPubSubType' is not a member of 'zd_c1::m'
+pl-cdr1	le	refused	error: 'UPubSubType' is not a member of 'zd_c1::m'
+pl-cdr1	be	refused	error: 'UPubSubType' is not a member of 'zd_c1::m'
+plain-cdr2	le	refused	error: 'UPubSubType' is not a member of 'zd_c1::m'
+plain-cdr2	be	refused	error: 'UPubSubType' is not a member of 'zd_c1::m'
+delimited-cdr	le	refused	error: 'UPubSubType' is not a member of 'zd_c1::m'
+delimited-cdr	be	refused	error: 'UPubSubType' is not a member of 'zd_c1::m'
+pl-cdr2	le	refused	error: 'UPubSubType' is not a member of 'zd_c1::m'
+pl-cdr2	be	refused	error: 'UPubSubType' is not a member of 'zd_c1::m'

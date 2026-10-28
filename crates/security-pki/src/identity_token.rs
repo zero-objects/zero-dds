@@ -3,14 +3,14 @@
 
 //! `IdentityToken` (PKI-DH) — DDS-Security 1.2 §10.3.2.1.
 //!
-//! Wire-Form (Spec Tab.36):
+//! Wire form (DDS-Security 1.2 §10.3.2.1 Table 51):
 //! ```text
 //!   class_id  = "DDS:Auth:PKI-DH:1.0"
-//!   properties:
-//!     dds.cert.sn   — subject name of the identity cert (RFC 4514 string)
-//!     dds.cert.algo — signature-algorithm OID name
+//!   properties (the presence of each is optional):
+//!     dds.cert.sn   — subject name of the identity cert
+//!     dds.cert.algo — CryptoAlgorithmName of the digital signature algorithm (Table 25)
 //!     dds.ca.sn     — subject name of the issuing CA
-//!     dds.ca.algo   — CA signature algorithm
+//!     dds.ca.algo   — CryptoAlgorithmName of the digital signature algorithm (Table 25)
 //! ```
 //!
 //! Delivered as a built-in-topic entry to the discovery DataReader
@@ -71,19 +71,30 @@ impl IdentityToken {
     #[must_use]
     pub fn encode(&self) -> Vec<u8> {
         use zerodds_security::token::DataHolder;
-        DataHolder::new(IDENTITY_TOKEN_CLASS_ID)
-            .with_property(KEY_CERT_SN, self.cert_sn.as_str())
-            .with_property(KEY_CERT_ALGO, self.cert_algo.as_str())
-            .with_property(KEY_CA_SN, self.ca_sn.as_str())
-            .with_property(KEY_CA_ALGO, self.ca_algo.as_str())
-            .to_cdr_le()
+        // "The presence of each of properties is optional" (Table 51): a
+        // property without a value is left out.
+        let mut token = DataHolder::new(IDENTITY_TOKEN_CLASS_ID);
+        for (name, value) in [
+            (KEY_CERT_SN, &self.cert_sn),
+            (KEY_CERT_ALGO, &self.cert_algo),
+            (KEY_CA_SN, &self.ca_sn),
+            (KEY_CA_ALGO, &self.ca_algo),
+        ] {
+            if !value.is_empty() {
+                token.set_property(name, value.as_str());
+            }
+        }
+        token.to_cdr_le()
     }
 
-    /// Decode Wire-Bytes (CDR-LE `DataHolder`, siehe [`encode`](Self::encode)).
+    /// Decodes wire bytes (CDR-LE `DataHolder`, see [`encode`](Self::encode)).
+    ///
+    /// A property the token does not carry is empty ("The presence of each of
+    /// properties is optional", Table 51); one the plugin does not know is
+    /// ignored.
     ///
     /// # Errors
-    /// `PkiError::InvalidPem` on format problems, missing
-    /// mandatory properties, or a class-ID mismatch.
+    /// `PkiError::InvalidPem` on format problems or a class-ID mismatch.
     pub fn decode(bytes: &[u8]) -> Result<Self, PkiError> {
         use zerodds_security::token::DataHolder;
         let dh = DataHolder::from_cdr_le(bytes)
@@ -94,16 +105,13 @@ impl IdentityToken {
                 dh.class_id
             )));
         }
-        let req = |k: &str| -> Result<String, PkiError> {
-            dh.property(k)
-                .map(ToString::to_string)
-                .ok_or_else(|| PkiError::InvalidPem(format!("missing {k}")))
-        };
+        let optional =
+            |k: &str| -> String { dh.property(k).map(ToString::to_string).unwrap_or_default() };
         Ok(Self {
-            cert_sn: req(KEY_CERT_SN)?,
-            cert_algo: req(KEY_CERT_ALGO)?,
-            ca_sn: req(KEY_CA_SN)?,
-            ca_algo: req(KEY_CA_ALGO)?,
+            cert_sn: optional(KEY_CERT_SN),
+            cert_algo: optional(KEY_CERT_ALGO),
+            ca_sn: optional(KEY_CA_SN),
+            ca_algo: optional(KEY_CA_ALGO),
         })
     }
 }
@@ -161,6 +169,20 @@ pub fn build_identity_token_from_pem(
     cert_pem: &[u8],
     ca_pem: &[u8],
 ) -> Result<IdentityToken, PkiError> {
+    build_identity_token_from_pem_named(cert_pem, ca_pem, false)
+}
+
+/// [`build_identity_token_from_pem`] with the choice of the algorithm names:
+/// the `CryptoAlgorithmName`s of DDS-Security 1.2 Table 25, or with
+/// `legacy_names` those of 1.1 (`EC-prime256v1`, `RSA-2048`).
+///
+/// # Errors
+/// `PkiError::InvalidPem` on parse errors.
+pub fn build_identity_token_from_pem_named(
+    cert_pem: &[u8],
+    ca_pem: &[u8],
+    legacy_names: bool,
+) -> Result<IdentityToken, PkiError> {
     use x509_cert::Certificate;
     use x509_cert::der::DecodePem;
 
@@ -172,7 +194,12 @@ pub fn build_identity_token_from_pem(
         .map_err(|e| PkiError::InvalidPem(format!("cert: {e}")))?;
     let ca = Certificate::from_pem(ca_str.as_bytes())
         .map_err(|e| PkiError::InvalidPem(format!("ca: {e}")))?;
-    Ok(identity_token_from_certs(&cert, &ca))
+    Ok(identity_token_from_certs(
+        &cert,
+        &ca,
+        legacy_names,
+        zerodds_security::SubjectNameForm::default(),
+    ))
 }
 
 /// Like [`build_identity_token_from_pem`], but from DER bytes — for the
@@ -186,6 +213,38 @@ pub fn build_identity_token_from_der(
     cert_der: &[u8],
     ca_der: &[u8],
 ) -> Result<IdentityToken, PkiError> {
+    build_identity_token_from_der_named(cert_der, ca_der, false)
+}
+
+/// [`build_identity_token_from_der`] with the choice of the algorithm names,
+/// see [`build_identity_token_from_pem_named`].
+///
+/// # Errors
+/// `PkiError::InvalidPem` on non-parseable certificates.
+pub fn build_identity_token_from_der_named(
+    cert_der: &[u8],
+    ca_der: &[u8],
+    legacy_names: bool,
+) -> Result<IdentityToken, PkiError> {
+    build_identity_token_from_der_with(
+        cert_der,
+        ca_der,
+        legacy_names,
+        zerodds_security::SubjectNameForm::default(),
+    )
+}
+
+/// [`build_identity_token_from_der_named`] with the form of the subject names
+/// (`dds.cert.sn`, `dds.ca.sn`), see [`zerodds_security::SubjectNameForm`].
+///
+/// # Errors
+/// `PkiError::InvalidPem` on non-parseable certificates.
+pub fn build_identity_token_from_der_with(
+    cert_der: &[u8],
+    ca_der: &[u8],
+    legacy_names: bool,
+    form: zerodds_security::SubjectNameForm,
+) -> Result<IdentityToken, PkiError> {
     use x509_cert::Certificate;
     use x509_cert::der::Decode;
 
@@ -193,18 +252,26 @@ pub fn build_identity_token_from_der(
         .map_err(|e| PkiError::InvalidPem(format!("cert der: {e}")))?;
     let ca =
         Certificate::from_der(ca_der).map_err(|e| PkiError::InvalidPem(format!("ca der: {e}")))?;
-    Ok(identity_token_from_certs(&cert, &ca))
+    Ok(identity_token_from_certs(&cert, &ca, legacy_names, form))
 }
 
 fn identity_token_from_certs(
     cert: &x509_cert::Certificate,
     ca: &x509_cert::Certificate,
+    legacy_names: bool,
+    form: zerodds_security::SubjectNameForm,
 ) -> IdentityToken {
+    let name = |certificate: &x509_cert::Certificate| {
+        certificate_algorithm_name(
+            &certificate.signature_algorithm.oid.to_string(),
+            legacy_names,
+        )
+    };
     IdentityToken {
-        cert_sn: subject_oneline(&cert.tbs_certificate.subject),
-        cert_algo: spec_cert_algo(&cert.signature_algorithm.oid.to_string()),
-        ca_sn: subject_oneline(&ca.tbs_certificate.subject),
-        ca_algo: spec_cert_algo(&ca.signature_algorithm.oid.to_string()),
+        cert_sn: format_subject_name(&cert.tbs_certificate.subject, form),
+        cert_algo: name(cert),
+        ca_sn: format_subject_name(&ca.tbs_certificate.subject, form),
+        ca_algo: name(ca),
     }
 }
 
@@ -230,17 +297,67 @@ fn oid_short_name(oid: &str) -> String {
     .to_string()
 }
 
+/// The string of an X.509 subject name in the form `form` names, for the
+/// properties `dds.cert.sn`, `dds.ca.sn` and `dds.perm_ca.sn`.
+///
+/// * [`SubjectNameForm::Rfc4514`](zerodds_security::SubjectNameForm::Rfc4514):
+///   RFC 4514 (DDS-Security 1.2 §9.4.1.2.3), `CN=y,O=x,C=DE`.
+/// * `X509NameOneline`: OpenSSL `X509_NAME_oneline(name, 0, 0)`, each
+///   attribute as `/SN=value` in certificate order, a byte outside
+///   0x20..=0x7E as `\xHH`.
+/// * `XnFlagOneline`: `subject_oneline`.
+#[must_use]
+pub fn format_subject_name(
+    name: &x509_cert::name::Name,
+    form: zerodds_security::SubjectNameForm,
+) -> String {
+    use zerodds_security::SubjectNameForm;
+    match form {
+        SubjectNameForm::Rfc4514 => name.to_string(),
+        SubjectNameForm::XnFlagOneline => subject_oneline(name),
+        SubjectNameForm::X509NameOneline => {
+            let mut out = String::new();
+            for rdn in name.0.iter() {
+                for atv in rdn.0.iter() {
+                    out.push('/');
+                    out.push_str(&oid_short_name(&atv.oid.to_string()));
+                    out.push('=');
+                    for byte in atv.value.value() {
+                        if (0x20..=0x7e).contains(byte) {
+                            out.push(char::from(*byte));
+                        } else {
+                            out.push_str(&format!("\\x{byte:02X}"));
+                        }
+                    }
+                }
+            }
+            out
+        }
+    }
+}
+
+/// Subject of a certificate DER, in the `XN_FLAG_ONELINE` spelling
+/// [`subject_oneline`] produces.
+///
+/// # Errors
+/// [`PkiError::CertInvalid`] if the DER does not parse as a certificate.
+pub(crate) fn subject_of_der(der: &[u8]) -> Result<String, crate::identity::PkiError> {
+    use x509_cert::der::Decode;
+    let cert = x509_cert::Certificate::from_der(der)
+        .map_err(|e| crate::identity::PkiError::CertInvalid(format!("subject: parse: {e}")))?;
+    Ok(subject_oneline(&cert.tbs_certificate.subject))
+}
+
 /// Formats an X.509 subject name in OpenSSL `XN_FLAG_ONELINE` style:
 /// DER order (NOT reversed), `Attr = value`, `, ` separator.
 ///
 /// OpenDDS' `Certificate::subject_name_to_str` uses exactly
 /// `XN_FLAG_ONELINE` by default and compares the received `dds.ca.sn` by
 /// string equality (`AuthenticationBuiltInImpl::validate_remote_identity`).
-/// RFC-4514 (`CN=...`, reversed, without spaces) would be rejected there as
-/// "dds.ca.sn doesn't match local" → no auth handshake.
-/// cyclone/FastDDS do not compare the property (lenient), so the
-/// ONELINE form is cross-vendor universal.
-fn subject_oneline(name: &x509_cert::name::Name) -> String {
+/// This is also the internal form in which ZeroDDS compares subject names
+/// (`subject_match`); the form of the tokens it sends is
+/// [`format_subject_name`] (RFC 4514 by default).
+pub(crate) fn subject_oneline(name: &x509_cert::name::Name) -> String {
     let mut parts: Vec<String> = Vec::new();
     for rdn in name.0.iter() {
         for atv in rdn.0.iter() {
@@ -254,12 +371,32 @@ fn subject_oneline(name: &x509_cert::name::Name) -> String {
     parts.join(", ")
 }
 
-/// Maps the cert signature-algorithm OID to the OMG-DDS-Security `dds.cert.algo`
-/// string (§9.3.2.1: `EC-prime256v1` | `RSA-2048`). FastDDS/Cyclone expect
-/// these spec names, NOT the raw OID (`1.2.840.10045.4.3.2`) — otherwise the
-/// foreign vendor rejects the IdentityToken. Unknown OIDs fall back to the
-/// raw OID (better than nothing).
-fn spec_cert_algo(oid: &str) -> String {
+/// The `CryptoAlgorithmName` of DDS-Security 1.2 §8.2 Table 25 for the
+/// signature algorithm of a certificate, which `dds.cert.algo` and
+/// `dds.ca.algo` carry (§10.3.2.1 Table 51). A signature algorithm without a
+/// name in Table 25 (for example ecdsa-with-SHA512) gives an empty string,
+/// and the property is left out: its presence is optional.
+fn crypto_algorithm_name(oid: &str) -> String {
+    match oid {
+        // ecdsa-with-SHA256
+        "1.2.840.10045.4.3.2" => "ECDSA+P256+SHA256",
+        // ecdsa-with-SHA384
+        "1.2.840.10045.4.3.3" => "ECDSA+P384+SHA384",
+        // sha256WithRSAEncryption
+        "1.2.840.113549.1.1.11" => "RSASSA-PKCS1-V1_5+2048+SHA256",
+        // id-RSASSA-PSS
+        "1.2.840.113549.1.1.10" => "RSASSA-PSS-MGF1SHA256+2048+SHA256",
+        _ => "",
+    }
+    .to_string()
+}
+
+/// The names of DDS-Security 1.1 (`EC-prime256v1`, `RSA-2048`) for the
+/// signature algorithm OID of a certificate: what OpenDDS compares with its
+/// own value. Not a spec 1.2 name, only written with the setting
+/// `org.zerodds.sec.auth.algorithm_names=legacy`. An OID without a name
+/// stays as the OID text.
+fn legacy_cert_algo(oid: &str) -> String {
     match oid {
         // ecdsa-with-SHA256 / -SHA384 / -SHA512 → P-256 family (bench: P-256).
         "1.2.840.10045.4.3.2" | "1.2.840.10045.4.3.3" | "1.2.840.10045.4.3.4" => {
@@ -271,6 +408,20 @@ fn spec_cert_algo(oid: &str) -> String {
         | "1.2.840.113549.1.1.13"
         | "1.2.840.113549.1.1.10" => "RSA-2048".to_string(),
         other => other.to_string(),
+    }
+}
+
+/// The name a token carries for the signature algorithm `oid` of a
+/// certificate: `dds.cert.algo` and `dds.ca.algo` of the IdentityToken
+/// (Table 51) and `dds.perm_ca.algo` of the PermissionsToken (Table 65). The
+/// name of Table 25, or with `legacy` the one of DDS-Security 1.1
+/// (`EC-prime256v1`, `RSA-2048`). An empty string where Table 25 has no name.
+#[must_use]
+pub fn certificate_algorithm_name(oid: &str, legacy: bool) -> String {
+    if legacy {
+        legacy_cert_algo(oid)
+    } else {
+        crypto_algorithm_name(oid)
     }
 }
 
@@ -329,20 +480,69 @@ mod tests {
         assert!(IdentityToken::decode(&bytes).is_err());
     }
 
+    /// Table 51: "The presence of each of properties is optional".
     #[test]
-    fn missing_required_property_rejected() {
-        // Encode without `dds.ca.algo`.
-        let mut bytes = Vec::new();
-        bytes.push(IDENTITY_TOKEN_CLASS_ID.len() as u8);
-        bytes.extend_from_slice(IDENTITY_TOKEN_CLASS_ID.as_bytes());
-        for (k, v) in [(KEY_CERT_SN, "x"), (KEY_CERT_ALGO, "x"), (KEY_CA_SN, "x")] {
-            bytes.push(k.len() as u8);
-            bytes.extend_from_slice(k.as_bytes());
-            bytes.extend_from_slice(&(v.len() as u16).to_be_bytes());
-            bytes.extend_from_slice(v.as_bytes());
+    fn a_token_without_the_optional_properties_decodes() {
+        use zerodds_security::token::DataHolder;
+        let bytes = DataHolder::new(IDENTITY_TOKEN_CLASS_ID)
+            .with_property(KEY_CERT_SN, "CN = x")
+            .to_cdr_le();
+        let token = IdentityToken::decode(&bytes).unwrap();
+        assert_eq!(token.cert_sn, "CN = x");
+        assert!(token.cert_algo.is_empty() && token.ca_sn.is_empty() && token.ca_algo.is_empty());
+        let bare = DataHolder::new(IDENTITY_TOKEN_CLASS_ID).to_cdr_le();
+        assert_eq!(
+            IdentityToken::decode(&bare).unwrap(),
+            IdentityToken::default()
+        );
+    }
+
+    /// A property without a value is not written.
+    #[test]
+    fn an_empty_property_is_left_out_of_the_token() {
+        use zerodds_security::token::DataHolder;
+        let token = IdentityToken::new(
+            "CN = a".into(),
+            String::new(),
+            "CN = ca".into(),
+            String::new(),
+        );
+        let holder = DataHolder::from_cdr_le(&token.encode()).unwrap();
+        let names: Vec<&str> = holder.properties.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(names, [KEY_CERT_SN, KEY_CA_SN]);
+    }
+
+    /// Table 51: `dds.cert.algo` and `dds.ca.algo` are names of Table 25.
+    #[test]
+    fn the_algorithms_are_the_names_of_table_25() {
+        let cases = [
+            ("1.2.840.10045.4.3.2", "ECDSA+P256+SHA256"),
+            ("1.2.840.10045.4.3.3", "ECDSA+P384+SHA384"),
+            ("1.2.840.113549.1.1.11", "RSASSA-PKCS1-V1_5+2048+SHA256"),
+            ("1.2.840.113549.1.1.10", "RSASSA-PSS-MGF1SHA256+2048+SHA256"),
+            // ecdsa-with-SHA512 has no name in Table 25.
+            ("1.2.840.10045.4.3.4", ""),
+        ];
+        for (oid, name) in cases {
+            assert_eq!(crypto_algorithm_name(oid), name, "{oid}");
         }
-        let err = IdentityToken::decode(&bytes).unwrap_err();
-        assert!(matches!(err, PkiError::InvalidPem(_)));
+    }
+
+    /// The names of 1.1 are the opt-in for OpenDDS.
+    #[test]
+    fn the_names_of_1_1_are_the_opt_in() {
+        let params = rcgen::CertificateParams::new(alloc::vec!["alice.example".to_string()])
+            .expect("rcgen params");
+        let key = rcgen::KeyPair::generate().unwrap();
+        let cert = params.self_signed(&key).unwrap();
+        let pem = cert.pem();
+        let spec = build_identity_token_from_pem(pem.as_bytes(), pem.as_bytes()).unwrap();
+        assert_eq!(spec.cert_algo, "ECDSA+P256+SHA256");
+        assert_eq!(spec.ca_algo, "ECDSA+P256+SHA256");
+        let legacy =
+            build_identity_token_from_pem_named(pem.as_bytes(), pem.as_bytes(), true).unwrap();
+        assert_eq!(legacy.cert_algo, "EC-prime256v1");
+        assert_eq!(legacy.ca_algo, "EC-prime256v1");
     }
 
     #[test]
@@ -395,5 +595,63 @@ mod tests {
         assert!(!token.cert_sn.is_empty());
         assert!(!token.cert_algo.is_empty());
         assert_eq!(token.cert_sn, token.ca_sn, "self-signed: subject == issuer");
+    }
+    /// The forms of `dds.cert.sn` and `dds.ca.sn`. The expected strings are
+    /// those of the sources: RFC 4514 (DDS-Security 1.2 §9.4.1.2.3),
+    /// `X509_NAME_oneline` (Fast DDS `FileProvider.cpp`, Cyclone DDS
+    /// `auth_utils.c`) and `XN_FLAG_ONELINE` (OpenDDS
+    /// `AuthenticationBuiltInImpl.cpp`) for the name `C=DE, O=x, CN=y` in
+    /// certificate order.
+    #[test]
+    fn the_subject_names_have_the_form_that_is_set() {
+        use zerodds_security::SubjectNameForm;
+        let mut params = rcgen::CertificateParams::new(alloc::vec!["y".to_string()]).unwrap();
+        params.distinguished_name = rcgen::DistinguishedName::new();
+        params
+            .distinguished_name
+            .push(rcgen::DnType::CountryName, "DE");
+        params
+            .distinguished_name
+            .push(rcgen::DnType::OrganizationName, "x");
+        params
+            .distinguished_name
+            .push(rcgen::DnType::CommonName, "y");
+        let key = rcgen::KeyPair::generate().unwrap();
+        let cert = params.self_signed(&key).unwrap();
+        let der = cert.der().to_vec();
+        let token = |form| build_identity_token_from_der_with(&der, &der, false, form).unwrap();
+        let default = build_identity_token_from_der(&der, &der).unwrap();
+        assert_eq!(default.cert_sn, "CN=y,O=x,C=DE", "the default is RFC 4514");
+        assert_eq!(default.ca_sn, "CN=y,O=x,C=DE");
+        for (form, expected) in [
+            (SubjectNameForm::Rfc4514, "CN=y,O=x,C=DE"),
+            (SubjectNameForm::X509NameOneline, "/C=DE/O=x/CN=y"),
+            (SubjectNameForm::XnFlagOneline, "C = DE, O = x, CN = y"),
+        ] {
+            let t = token(form);
+            assert_eq!(t.cert_sn, expected, "{form:?}");
+            assert_eq!(t.ca_sn, expected, "{form:?}");
+        }
+    }
+
+    /// `X509_NAME_oneline` writes a byte outside 0x20..=0x7E as `\xHH`.
+    #[test]
+    fn x509_name_oneline_escapes_what_openssl_escapes() {
+        use zerodds_security::SubjectNameForm;
+        let mut params = rcgen::CertificateParams::new(alloc::vec!["y".to_string()]).unwrap();
+        params.distinguished_name = rcgen::DistinguishedName::new();
+        params
+            .distinguished_name
+            .push(rcgen::DnType::CommonName, "caf\u{e9}");
+        let key = rcgen::KeyPair::generate().unwrap();
+        let cert = params.self_signed(&key).unwrap();
+        let token = build_identity_token_from_der_with(
+            cert.der(),
+            cert.der(),
+            false,
+            SubjectNameForm::X509NameOneline,
+        )
+        .unwrap();
+        assert_eq!(token.cert_sn, "/CN=caf\\xC3\\xA9");
     }
 }

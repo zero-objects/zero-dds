@@ -53,7 +53,7 @@ impl Validity {
 /// Security-relevant capabilities of a remote peer.
 ///
 /// Populated from SPDP properties (auth/crypto/access plugin class,
-/// `zerodds.sec.supported_suites`, `zerodds.sec.offered_protection`)
+/// `org.zerodds.sec.supported_suites`, `org.zerodds.sec.offered_protection`)
 /// as well as from SEDP permissions tokens. Legacy peers without
 /// security properties land here with `auth_plugin_class=None` —
 /// no drop, the [`crate::PolicyEngine`] decides per
@@ -89,7 +89,7 @@ pub struct PeerCapabilities {
     ///.
     pub cert_cn: Option<String>,
     /// Delegation chain. Propagated by the edge or sub-gateway
-    /// via the SPDP property `zerodds.sec.delegation_chain`.
+    /// via the SPDP property `org.zerodds.sec.delegation_chain`.
     /// Validation against a delegation profile happens in
     /// `peer_matches_class` (j-d). `None` = peer without a chain (= directly
     /// authenticated peer or legacy).
@@ -329,12 +329,12 @@ mod tests {
             ..Default::default()
         };
         base.merge_update(&PeerCapabilities {
-            supported_suites: alloc::vec![SuiteHint::Aes256Gcm, SuiteHint::HmacSha256],
+            supported_suites: alloc::vec![SuiteHint::Aes256Gcm, SuiteHint::Aes256Gmac],
             ..Default::default()
         });
         assert_eq!(
             base.supported_suites,
-            alloc::vec![SuiteHint::Aes256Gcm, SuiteHint::HmacSha256]
+            alloc::vec![SuiteHint::Aes256Gcm, SuiteHint::Aes256Gmac]
         );
     }
 

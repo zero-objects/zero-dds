@@ -1,0 +1,19 @@
+# primitive-mixed-unannotated
+
+**Construct** — every primitive in one aggregate, unannotated
+
+The `primitive-mixed` type with every extensibility annotation removed, and nothing else changed. The vendors do not agree on what that means: `vendor_bytes.md` §3 records Cyclone's idlc reading an unannotated aggregate as final and RTI Connext reading it as appendable, while XTypes 1.3 §7.3.1.2.1.8 says appendable. Under XCDR2 the difference is a four-byte DHEADER in front of every aggregate in the file, which for this shape means the sample changes length and every offset after the first aggregate moves. Diffed against `primitive-mixed` it isolates the default, because the two files differ in nothing else.
+
+## Probe status
+
+| run | `wireprobe-zerodds` |
+|---|---|
+| `--encoding xcdr2 --endian le` | 52 bytes — `3000000001abfef35a00e400c7cfefbe7929edffefbeaddebd08370b1affffffbec2addeefbeadde000070c0182d4454fb210940` |
+| `--encoding xcdr2 --endian be` | 52 bytes — `0000003001abfef35a0000e4cfc7beefffed2979deadbeefffffff1a0b3708bddeadbeefdeadc2bec0700000400921fb54442d18` |
+| `--encoding xcdr1 --endian le` | 56 bytes — `01abfef35a00e400c7cfefbe7929edffefbeadde00000000bd08370b1affffffbec2addeefbeadde000070c000000000182d4454fb210940` |
+| `--encoding xcdr1 --endian be` | 56 bytes — `01abfef35a0000e4cfc7beefffed2979deadbeef00000000ffffff1a0b3708bddeadbeefdeadc2bec070000000000000400921fb54442d18` |
+
+The bytes are what the Rust probe produces today, recorded so that this
+case is known to have been run and not merely written. They are not a
+reference: the reference is the foreign implementation's own output, which
+the suite compares against.

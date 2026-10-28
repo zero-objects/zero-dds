@@ -14,11 +14,11 @@ keywords = ["dds", "benchmark", "performance", "latency", "throughput"]
 categories = ["development-tools::profiling", "command-line-utilities"]
 publish = true
 
-# bench-suite ist als Library (`zerodds-bench-suite`) auf crates.io
-# verfuegbar, aber die zwei [[bin]]-targets `roundtrip-1us` und
-# `roundtrip-typed` sind interne ddsperf-style apples-to-apples interop
-# benches und gehoeren NICHT in die binary-release-archives (cargo-dist).
-# User-facing Latency/Throughput-Bench ist `tools/bench/` (zerodds-bench).
+# bench-suite is available as a library (`zerodds-bench-suite`) on crates.io
+# but the two [[bin]] targets `roundtrip-1us` and
+# `roundtrip-typed` are internal ddsperf-style apples-to-apples interop
+# benches and do NOT belong in the binary release archives (cargo-dist).
+# The user-facing latency/throughput bench is `tools/bench/` (zerodds-bench).
 [package.metadata.dist]
 dist = false
 
@@ -27,6 +27,14 @@ workspace = true
 
 [lib]
 path = "src/lib.rs"
+
+[build-dependencies]
+# `RoundtripBench::Roundtrip` is generated from `idl/roundtrip.idl`, which
+# the build holds equal to `tests/perf/dds-roundtrip-bench/roundtrip.idl`,
+# the file the Cyclone, RTI and Fast DDS apps of this bench compile — an
+# apples-to-apples number needs both apples out of one IDL. See build.rs.
+zerodds-build = { version = "1.0.0-rc.7", path = "../../crates/zerodds-build" }
+
 
 [dependencies]
 zerodds-rtps = { version = "1.0.0-rc.7", path = "../../crates/rtps" }
@@ -41,7 +49,7 @@ zerodds = { version = "1.0.0-rc.7", path = "../../crates/zerodds-c-api", package
 # Typed roundtrip: full XCDR2 encode/decode path, apples-to-apples
 # with Cyclone / RTI / FastDDS custom apps.
 zerodds-dcps = { version = "1.0.0-rc.7", path = "../../crates/dcps" }
-zerodds-cdr = { version = "1.0.0-rc.7", path = "../../crates/cdr" }
+zerodds-wire = { version = "1.0.0-rc.7", path = "../../crates/wire" }
 zerodds-types = { version = "1.0.0-rc.7", path = "../../crates/types" }
 
 # UDS transport is Unix-only (`#![cfg(unix)]` crate-level). The bench file
@@ -60,7 +68,8 @@ path = "src/bin/roundtrip_1us.rs"
 name = "roundtrip-typed"
 path = "src/bin/roundtrip_typed.rs"
 
-# Internal regression gate (CI): Transport × Payload Floor-Latenz + min-Gate.
+# Internal regression gate (CI): transport x payload floor latency, with a
+# minimum gate.
 [[bin]]
 name = "regression"
 path = "src/bin/regression.rs"
@@ -73,28 +82,28 @@ harness = false
 name = "rtps_fragmented"
 harness = false
 
-# Welle-4-Validierung — Headline-Bench (Bench-A1).
+# Wave 4 validation - the headline bench (Bench-A1).
 [[bench]]
 name = "dcps_roundtrip_shm_vs_udp"
 harness = false
 
-# C-FFI Opt-1 Validierung (Bench-A2).
+# C-FFI Opt-1 validation (Bench-A2).
 [[bench]]
 name = "cffi_take_vs_loan"
 harness = false
 
-# Opt-2/Int-1 Linux-Only Validierung (Bench-A3).
+# Opt-2/Int-1 Linux-only validation (Bench-A3).
 [[bench]]
 name = "recvmmsg_on_off"
 harness = false
 
-# Opt-3 Multi-Thread-Pool Skalierung (Bench-A4).
+# Opt-3 multi-thread pool scaling (Bench-A4).
 [[bench]]
 name = "recv_threads_sweep"
 harness = false
 
 [features]
 default = []
-# Bench-A1 + A3 + A4 brauchen DCPS-Features.
+# Bench-A1, A3 and A4 need DCPS features.
 same-host-shm = ["zerodds-dcps/same-host-shm"]
 recvmmsg-batch = ["zerodds-dcps/recvmmsg-batch", "zerodds-transport-udp/recvmmsg-batch"]

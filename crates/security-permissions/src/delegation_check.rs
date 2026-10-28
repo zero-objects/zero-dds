@@ -66,13 +66,13 @@ pub enum TrustPolicy {
 ///
 /// The `subject_guid` is the GUID of the trust anchor (typically the
 /// hull gateway or C4I root). `verify_public_key` is the DER-bytes
-/// format pubkey with which [`DelegationLink::verify`] is called.
+/// format pubkey with which [`DelegationLink::verify`](zerodds_security_pki::DelegationLink::verify) is called.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TrustAnchor {
     /// 16-byte GUID of the trust anchor.
     pub subject_guid: [u8; 16],
     /// Pubkey DER bytes (algorithm-specific format, see
-    /// [`DelegationLink::verify`]).
+    /// [`DelegationLink::verify`](zerodds_security_pki::DelegationLink::verify)).
     pub verify_public_key: Vec<u8>,
     /// Expected signature algorithm of this anchor.
     pub algorithm: SignatureAlgorithm,

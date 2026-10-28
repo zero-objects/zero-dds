@@ -22,11 +22,14 @@ pub mod writer;
 
 pub use cache::{
     CacheCaps, DiscoveredEndpointsCache, DiscoveredPublication, DiscoveredSubscription,
+    topics_correspond,
 };
 pub use reader::{
-    SEDP_READER_MAX_SAMPLES, SedpPublicationsReader, SedpReaderError, SedpSubscriptionsReader,
+    Announced, SEDP_READER_MAX_SAMPLES, SedpPublicationsReader, SedpReaderError,
+    SedpSubscriptionsReader, SedpTopicsReader,
 };
 pub use stack::{SedpEvents, SedpStack};
 pub use writer::{
     SEDP_DEFAULT_DEPTH, SEDP_HEARTBEAT_PERIOD, SedpPublicationsWriter, SedpSubscriptionsWriter,
+    SedpTopicsWriter,
 };

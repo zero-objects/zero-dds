@@ -12,7 +12,7 @@ use crate::qos_profiles::{Durability, History, QosProfile, Reliability};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
 pub enum RmwHistory {
-    /// `SYSTEM_DEFAULT` — RMW-Implementation entscheidet.
+    /// `SYSTEM_DEFAULT` — RMW implementation decides.
     SystemDefault = 0,
     /// `KEEP_LAST(depth)`.
     KeepLast = 1,

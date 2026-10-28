@@ -53,6 +53,7 @@ fn make_participant(prefix_byte: u8, port: u32) -> ParticipantBuiltinTopicData {
         metatraffic_unicast_locators: Vec::new(),
         metatraffic_multicast_locators: Vec::new(),
         domain_id: None,
+        domain_tag: Default::default(),
         builtin_endpoint_set: endpoint_flag::PARTICIPANT_ANNOUNCER
             | endpoint_flag::PARTICIPANT_DETECTOR,
         lease_duration: RtpsDuration::from_secs(100),
@@ -65,6 +66,11 @@ fn make_participant(prefix_byte: u8, port: u32) -> ParticipantBuiltinTopicData {
         sig_algo_info: None,
         kx_algo_info: None,
         sym_cipher_algo_info: None,
+        available_builtin_endpoints_ext: 0,
+        expects_inline_qos: false,
+        manual_liveliness_count: None,
+        builtin_endpoint_qos: None,
+        entity_name: None,
     }
 }
 

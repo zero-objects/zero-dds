@@ -1,0 +1,7 @@
+// one-dimensional array of `map`, unannotated
+typedef map<long, long> Table;
+
+struct Sample {
+    Table rows[2];
+    long tail;
+};

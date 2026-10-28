@@ -1,0 +1,11 @@
+// `enum` with a negative `@value`
+enum Signed {
+    @value(-1) MINUS,
+    @value(0) ZERO,
+    @value(2147483647) MAX
+};
+
+@final struct Sample {
+    Signed first;
+    Signed second;
+};

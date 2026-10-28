@@ -1,0 +1,2 @@
+// IDL 4.2 Annex A production 6, §7.4.1.4.3 — a constant of type `fixed`.
+const fixed K = 3.14d;

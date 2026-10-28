@@ -24,6 +24,7 @@ use crate::contract::Contract;
 use crate::error::{Result, StoreError};
 use crate::model::{DurabilitySample, Page, Selector, StoreStats};
 use crate::store::DurabilityStore;
+use crate::topic_meta::TopicMeta;
 
 /// Hot-cache ordering key: `(sequence, instance_key)` so eviction of the
 /// smallest entry removes the lowest sequence first (keeps the newest hot).
@@ -139,6 +140,14 @@ impl<C: DurabilityStore> TieredStore<C> {
 impl<C: DurabilityStore> DurabilityStore for TieredStore<C> {
     fn set_contract(&self, topic: &str, contract: Contract) -> Result<()> {
         self.cold.set_contract(topic, contract)
+    }
+
+    fn set_topic_meta(&self, topic: &str, meta: TopicMeta) -> Result<()> {
+        self.cold.set_topic_meta(topic, meta)
+    }
+
+    fn topic_meta(&self, topic: &str) -> Result<Option<TopicMeta>> {
+        self.cold.topic_meta(topic)
     }
 
     fn store(&self, sample: DurabilitySample) -> Result<()> {

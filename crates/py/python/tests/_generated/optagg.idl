@@ -1,0 +1,14 @@
+// SPDX-License-Identifier: Apache-2.0
+// Reconstructed source for optagg_gen.py. Extensibility left at the
+// specification default (appendable).
+module o {
+  struct Inner {
+    long v;
+  };
+  struct OptAgg {
+    @optional Inner nested;
+    @optional sequence<long> nums;
+    @optional map<string, long> table;
+    @optional string note;
+  };
+};

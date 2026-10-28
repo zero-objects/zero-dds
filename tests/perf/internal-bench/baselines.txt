@@ -1,11 +1,13 @@
 # Internal-Bench-Baselines (committed). Spalten: <transport/payload> <p50_us> <min_us> <p90_us>
-# Metrik: Cross-Process-DCPS-Roundtrip-RTT (Listener). Gegated wird p50.
-# HOST-SPEZIFISCH: auf dem CI-Runner per --update geseedet, nicht auf Dev-Maschinen.
+# Metric: cross-process DCPS roundtrip RTT (listener). p50 is gated.
+# HOST-SPECIFIC: seeded on the CI runner via --update, not on dev machines.
 # Regeneriert via: cargo run -p zerodds-bench-suite --bin regression --release -- --update
-# Gate (ohne --update): p50 > base_p50 * 1.20 ODER > 5000us => rot.
-UDPv4/64 65.38 15.01 145.41
-UDPv4/4096 65.50 8.46 144.51
-TCPv4/64 64.51 13.64 143.62
-TCPv4/4096 65.53 11.21 145.41
-SHM/64 64.67 11.23 144.38
-SHM/4096 65.92 15.61 146.30
+# Gate (without --update): p50 > base_p50 * 1.20 OR > 5000us => red.
+UDPv4/64 41.25 21.70 48.99
+UDPv4/4096 42.40 29.30 51.07
+TCPv4/64 86.59 56.38 108.54
+TCPv4/4096 99.07 53.79 118.72
+SHM/64 59.94 41.15 80.45
+SHM/4096 65.79 43.42 81.98
+SameHost/64 29.87 19.44 35.77
+SameHost/4096 33.38 21.86 40.70

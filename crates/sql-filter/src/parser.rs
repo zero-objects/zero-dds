@@ -12,7 +12,8 @@
 //! not_expr= [ NOT ] atom
 //! atom    = '(' expr ')' | cmp
 //! cmp     = operand cmp_op operand
-//! operand = literal | field | '%' DIGITS
+//! operand = literal | null | field | '%' DIGITS
+//! field   = NAME { '.' NAME } { '[' (DIGITS | STRING) ']' [ '.' field ] }
 //! ```
 
 use alloc::boxed::Box;
@@ -174,6 +175,7 @@ impl Parser {
             Token::IntLit(n) => Ok(Operand::Literal(Value::Int(n))),
             Token::FloatLit(f) => Ok(Operand::Literal(Value::Float(f))),
             Token::BoolLit(b) => Ok(Operand::Literal(Value::Bool(b))),
+            Token::Null => Ok(Operand::Literal(Value::Null)),
             Token::Ident(name) => Ok(Operand::Field(name)),
             Token::Param(i) => Ok(Operand::Param(i)),
             other => Err(ParseError(alloc::format!(

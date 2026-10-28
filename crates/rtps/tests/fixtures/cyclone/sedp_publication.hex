@@ -1,5 +1,5 @@
 # Cyclone DDS 0.10.2 SEDP publication announcement (1200 byte datagram)
-# Captured on llvm (Debian 6.1) 2026-04-19 via tcpdump on lo0,
+# Captured on a Debian Linux host (kernel 6.1) 2026-04-19 via tcpdump on lo0,
 # Cyclone-Domain 42, two ddsperf processes (pub + sub).
 #
 # Datagram structure:

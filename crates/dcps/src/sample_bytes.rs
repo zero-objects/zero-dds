@@ -28,6 +28,31 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::ops::Range;
 
+/// What the RTPS DATA submessage of a received sample says about where the
+/// sample came from, beyond its payload: the identity of the sample on the
+/// wire and the sample it relates to.
+///
+/// DDS-RPC 1.0 §7.8.2 identifies a request by the writer GUID and sequence
+/// number of its DATA and a reply by `PID_RELATED_SAMPLE_IDENTITY`; neither
+/// is a member of `SampleInfo`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SampleWire {
+    /// GUID of the writer that sent the sample.
+    pub writer_guid: [u8; 16],
+    /// The RTPS sequence number of the sample, `-1` where the delivery path
+    /// has none.
+    pub sequence_number: i64,
+    /// `PID_RELATED_SAMPLE_IDENTITY` (0x0083) of the DATA, or eProsima's
+    /// 0x800f from a writer of that vendor; `None` when the writer sent
+    /// neither.
+    pub related_sample_identity: Option<zerodds_rtps::inline_qos::SampleIdentityBytes>,
+    /// The group sequence number, writer set and group coherent set of a
+    /// sample from a writer of a GROUP-scope publisher (DDSI-RTPS 2.5
+    /// §8.7.5, §8.7.6); `None` from any other writer. DDS 1.4 §2.2.2.5.2.10
+    /// orders the readers `get_datareaders` returns by it.
+    pub group: Option<zerodds_rtps::writer_group::ChangeGroupInfo>,
+}
+
 /// Refcounted byte container for reader-path samples.
 ///
 /// Allows zero-copy slicing of the wire bytes by tracking a range over
@@ -38,6 +63,8 @@ pub struct SampleBytes {
     data: Arc<[u8]>,
     /// View range over `data`. Strip operations only shift the range.
     range: Range<usize>,
+    /// Where the sample came from, if the delivery path knows.
+    wire: Option<SampleWire>,
 }
 
 impl SampleBytes {
@@ -50,6 +77,7 @@ impl SampleBytes {
         Self {
             data: Arc::from(v.into_boxed_slice()),
             range: 0..len,
+            wire: None,
         }
     }
 
@@ -61,6 +89,7 @@ impl SampleBytes {
         Self {
             data,
             range: 0..len,
+            wire: None,
         }
     }
 
@@ -74,7 +103,11 @@ impl SampleBytes {
             range.end <= data.len() && range.start <= range.end,
             "SampleBytes range out of bounds"
         );
-        Self { data, range }
+        Self {
+            data,
+            range,
+            wire: None,
+        }
     }
 
     /// Creates a new `SampleBytes` with the given sub-range relative to
@@ -90,7 +123,21 @@ impl SampleBytes {
         Self {
             data: Arc::clone(&self.data),
             range: start..end,
+            wire: self.wire,
         }
+    }
+
+    /// The same bytes, carrying where they came from.
+    #[must_use]
+    pub fn with_wire(mut self, wire: SampleWire) -> Self {
+        self.wire = Some(wire);
+        self
+    }
+
+    /// Where the sample came from, if the delivery path recorded it.
+    #[must_use]
+    pub fn wire(&self) -> Option<&SampleWire> {
+        self.wire.as_ref()
     }
 
     /// Current view as `&[u8]`. No copy.

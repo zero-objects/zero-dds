@@ -18,7 +18,7 @@ java -classpath "$JACORB_HOME/lib/idl.jar" org.jacorb.idl.parser -d gen Point.id
 cp PointImpl.java Dumper.java gen/
 
 CP="$(ls "$JACORB_HOME"/lib/*.jar | tr '\n' ':')"
-javac -cp "$CP" -d build gen/*.java
+javac -encoding UTF-8 -cp "$CP" -d build gen/*.java
 
 # ZeroDDS reference bytes (from value_wire::tests::jacorb_capture_byte_identical).
 ZBYTES="7fffff020000000e49444c3a506f696e743a312e300000000000002afffffff9"

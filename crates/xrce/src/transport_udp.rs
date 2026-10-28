@@ -3,12 +3,12 @@
 
 //! XRCE UDP-Transport-Mapping (Spec §11.2).
 //!
-//! Default port scheme (task specification C6.2.A):
+//! Default port scheme (the specification names none; this is the choice of
+//! this crate, which the agent, the client and the discovery share):
 //! - Agent: `7400 + 4 * domain_id + 0`
 //! - Client: `7400 + 4 * domain_id + 1`
-//! - Multicast: none by default (XRCE is unicast between client+agent;
-//!   multicast discovery at `239.255.0.2:7400` per §11.2.4 is
-//!   out of scope for C6.2.A).
+//! - Multicast: none by default (XRCE is unicast between client and agent);
+//!   the discovery of §11.2.4 uses its own group address (`discovery`).
 //!
 //! UDP/IP payload = exactly one XRCE message (Spec §11.2.3, no
 //! envelopes).
@@ -107,6 +107,7 @@ pub fn recv_message(sock: &UdpSocket) -> Result<(SocketAddr, Message), XrceError
 mod tests {
     #![allow(clippy::expect_used, clippy::unwrap_used)]
     use super::*;
+    use crate::handshake::{ClientRepresentation, XRCE_VERSION};
     use crate::header::{ClientKey, MessageHeader, SessionId, StreamId};
     use crate::object_id::ObjectId;
     use crate::object_info::BaseObjectRequest;
@@ -172,7 +173,15 @@ mod tests {
     #[test]
     fn loopback_roundtrip_create_client() {
         let sm = CreateClientPayload {
-            representation: alloc::vec![b'X', b'R', b'C', b'E', 1, 0],
+            representation: ClientRepresentation {
+                timestamp: None,
+                version: XRCE_VERSION,
+                vendor_id: [0, 0],
+                client_key: ClientKey([0, 0, 0, 0]),
+                session_id: 0,
+                properties: None,
+                requested_mtu: None,
+            },
         }
         .into_submessage()
         .unwrap();
@@ -259,5 +268,79 @@ mod tests {
     fn loopback_roundtrip_timestamp_reply() {
         let sm = TimestampReplyPayload::default().into_submessage().unwrap();
         loopback_roundtrip_one(sm);
+    }
+
+    /// Spec §3.1.7 normative reference [UDP] RFC 768: XRCE runs over the
+    /// UDP datagram service. RFC 768 delivers *messages*, not a byte
+    /// stream — every `send_to` produces exactly one datagram, and the
+    /// receiver reads it back with its boundary intact. Three messages of
+    /// three different lengths are therefore recovered as three distinct
+    /// XRCE messages, never coalesced into one read.
+    #[test]
+    fn rfc768_udp_delivers_one_datagram_per_message_with_boundaries_intact() {
+        let (sender_sock, receiver_sock) = loopback_pair();
+        let agent_addr = receiver_sock.local_addr().unwrap();
+        let sender = XrceUdpSender {
+            socket: sender_sock,
+            agent_addr,
+        };
+
+        let payloads: [&[u8]; 3] = [&[1u8], &[1u8, 2, 3, 4, 5, 6, 7, 8], &[9u8, 9]];
+        let sent: alloc::vec::Vec<Message> = payloads
+            .iter()
+            .map(|p| {
+                let sm = WriteDataPayload {
+                    base: BaseObjectRequest {
+                        request_id: [0x00, 0x01],
+                        object_id: ObjectId::from_raw(0x0DA5),
+                    },
+                    serialized_data: p.to_vec(),
+                }
+                .into_submessage()
+                .unwrap();
+                message_with_one_submessage(sm)
+            })
+            .collect();
+        // The three encodings really do differ in length — otherwise the
+        // boundary claim would be vacuous.
+        let sizes: alloc::vec::Vec<usize> =
+            sent.iter().map(|m| m.encode().unwrap().len()).collect();
+        assert_eq!(sizes[0], sizes[2] - 1);
+        assert!(sizes[1] > sizes[2]);
+
+        for msg in &sent {
+            send_message(&sender, msg).expect("send");
+        }
+        for expected in &sent {
+            let (_peer, received) = recv_message(&receiver_sock).expect("recv");
+            assert_eq!(&received, expected, "datagram boundary preserved");
+        }
+    }
+
+    /// Spec §3.1.7 / §11.2.3: a datagram larger than the RFC 768 payload
+    /// limit cannot be sent, and the sender says so instead of truncating.
+    #[test]
+    fn rfc768_datagram_larger_than_udp_payload_limit_is_rejected() {
+        let (sender_sock, receiver_sock) = loopback_pair();
+        let agent_addr = receiver_sock.local_addr().unwrap();
+        let sender = XrceUdpSender {
+            socket: sender_sock,
+            agent_addr,
+        };
+        let sm = WriteDataPayload {
+            base: BaseObjectRequest {
+                request_id: [0x00, 0x01],
+                object_id: ObjectId::from_raw(0x0DA5),
+            },
+            serialized_data: alloc::vec![0xAA; MAX_DATAGRAM_SIZE],
+        }
+        .into_submessage()
+        .unwrap();
+        let msg = message_with_one_submessage(sm);
+        let res = send_message(&sender, &msg);
+        assert!(
+            matches!(res, Err(XrceError::PayloadTooLarge { .. })),
+            "oversized datagram must be refused, got {res:?}"
+        );
     }
 }

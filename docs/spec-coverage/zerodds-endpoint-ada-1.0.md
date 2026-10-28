@@ -27,7 +27,11 @@ C89-Wire-Core), byte-identisch zur `zerodds-cdr`-Referenz."
 `Put_*`/`Get_*`), `deep_reading.{ads,adb}` (Codec, `Frame`/`Deframe`, `Mailbox`
 protected object, `Reader_Task`).
 
-**Tests:** `endpoints/ada/test/test_byte_identity.adb` (Codegen-Byte-Identität).
+**Tests:** `endpoints/ada/test/test_byte_identity.adb::Test_Byte_Identity` — die
+Marken `"negative: a body past Max_Frame refused"`,
+`"negative: the largest body still frames"` und `"ALL OK"` gegen
+`golden_le.bin`/`golden_be.bin`; gefahren über
+`crates/endpoint-e2e/tests/ada.rs::ada_endpoint_sync`.
 
 **Status:** done
 
@@ -43,7 +47,10 @@ für den reliable Stream."
 **Repo:** `Deep_Reading.Frame` / `Deframe` (best-effort Stream `0x01`);
 `Reliable.Write_Frame` (reliable Stream `0x80`) in `endpoints/ada/src/reliable.adb`.
 
-**Tests:** `test_udp_loopback.adb`; das Ping-Pong- + reliable-E2E (§2/§3/§4).
+**Tests:** `endpoints/ada/test/test_udp_loopback.adb` — Marke
+`"UDP loopback round-trip ok"`;
+`endpoints/ada/test/test_byte_identity.adb::Test_Byte_Identity` für die
+Rahmen-Oktette; das Ping-Pong- und reliable-E2E aus §2/§3/§4.
 
 **Status:** done
 
@@ -59,7 +66,7 @@ Success)` — der Integrator besitzt den Poll-/Wait-Loop."
 **Repo:** `Deep_Reading.Mailbox` (protected FIFO-Transport, `Deliver`/`Receive`);
 Beispiel `example_sync.adb`.
 
-**Tests (codepit):** `ada_endpoint_sync` (`crates/endpoint-e2e/tests/ada.rs`,
+**Tests:** (Linux) `ada_endpoint_sync` (`crates/endpoint-e2e/tests/ada.rs`,
 Ada-App via gprbuild über den C89-Wire-Core gebaut) — gemeinsam mit
 `ada_endpoint_async` (§3) 2/2 passed.
 
@@ -78,7 +85,7 @@ drained den Transport, dekodiert jeden WRITE_DATA-Body, legt ihn per
 `Mailbox.Deliver` ab); Beispiel `example_async.adb` (Haupt-Task blockiert auf
 `Inbox.Receive`).
 
-**Tests (codepit):** `ada_endpoint_async` (`crates/endpoint-e2e/tests/ada.rs`,
+**Tests:** (Linux) `ada_endpoint_async` (`crates/endpoint-e2e/tests/ada.rs`,
 Ada-App via gprbuild über den C89-Wire-Core gebaut) — gemeinsam mit
 `ada_endpoint_sync` (§2) 2/2 passed.
 
@@ -95,7 +102,7 @@ Ada-App via gprbuild über den C89-Wire-Core gebaut) — gemeinsam mit
 
 **Repo:** `endpoints/ada/src/reliable.{ads,adb}`.
 
-**Tests (codepit):** `test_reliable_unit` — monotone seq, window-full, heartbeat
+**Tests:** (Linux) `test_reliable_unit` — monotone seq, window-full, heartbeat
 first/silence/empty, acknack-clear (+full-clear), reorder, duplicate-drop,
 buffer-full, pending-acknack-Bitmap, reset → ALL OK.
 
@@ -109,7 +116,7 @@ buffer-full, pending-acknack-Bitmap, reset → ALL OK.
 
 **Repo:** `Reliable.Heartbeat_Frame` / `Acknack_Frame` / `Parse_*`.
 
-**Tests (codepit):** `test_reliable_unit` assertet `Heartbeat_Frame(1,3)` ==
+**Tests:** (Linux) `test_reliable_unit` assertet `Heartbeat_Frame(1,3)` ==
 `golden_heartbeat_le.bin` und `Acknack_Frame(1,0)` == `golden_acknack_le.bin` →
 byte-identisch.
 
@@ -126,7 +133,7 @@ macht die gesamte I/O (Send, Heartbeat, ACKNACK-getriebenes Retransmit)."
 **Repo:** `Reliable.Send_Ring` (protected `Enqueue`/`Dequeue`/`Close`) +
 `example_reliable.adb` (Drain-Task via `GNAT.Sockets`).
 
-**Tests (codepit):**
+**Tests:** (Linux)
 - `ada_reliable_loss_recovery` — Peer dropt jedes 3. Datagramm; App retransmittet
   auf ACKNACK; alle 12 Samples lückenlos in-order geliefert.
 - `ada_reliable_baseline` — lossless; 12/12.
@@ -139,9 +146,9 @@ macht die gesamte I/O (Send, Heartbeat, ACKNACK-getriebenes Retransmit)."
 
 ## Audit-Status
 
-7 done / 0 partial / 0 open / 0 n/a (informativ) / 0 n/a (rejected).
+7 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
 
-Test-run (codepit, verifiziert): `cargo test -p zerodds-endpoint-e2e --test ada`
+Test-run (Linux, verifiziert): `cargo test -p zerodds-endpoint-e2e --test ada`
 2/2 (Ping-Pong); `--test ada_reliable` 3/3 (Unit+Golden, Loss-Recovery, Baseline);
 Latenz-Bench decoupled 87 ns / inline 7338 ns.
 

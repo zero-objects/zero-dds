@@ -1,0 +1,6 @@
+// `@must_understand`
+@mutable struct Sample {
+    @must_understand long critical;
+    long ordinary;
+    @must_understand @optional string note;
+};

@@ -1,0 +1,6 @@
+# What opendds's front end said about union-discriminator-boolean. Not why a slot carries no
+# bytes — that is STATUS beside this file — but what the front end printed
+# while it did take the case. tests/interop-results/WARNINGS.md says what
+# each of these means and which of them changes a verdict.
+# program	warning
+tao_idl	Warning - tao_idl: "gen.idl", line L: error in lookup of symbol: final

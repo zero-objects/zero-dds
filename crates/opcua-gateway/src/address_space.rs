@@ -17,7 +17,7 @@ use crate::types::{NodeClass, QualifiedName};
 pub struct DomainNode {
     /// `node_id` of the domain object node.
     pub node_id: NodeId,
-    /// `browse_name` (Spec: "Domain<id>").
+    /// `browse_name` (Spec: "`Domain<id>`").
     pub browse_name: QualifiedName,
     /// DDS domain id.
     pub domain_id: u32,

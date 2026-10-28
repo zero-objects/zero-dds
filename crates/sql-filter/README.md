@@ -53,9 +53,10 @@ let row = MapRow(HashMap::from([
 assert_eq!(expr.evaluate(&row, &[Value::String("RED".into())]), Ok(true));
 ```
 
-## Stabilitaet
+## Stability
 
-`1.0.0-rc.1`. Public-API + Filter-Expression-Grammar RC1-stabil.
+`1.0.0-rc.7`, a pre-release. The public API can still change before
+1.0.0; the crate's CHANGELOG lists every change.
 
 ## Tests
 

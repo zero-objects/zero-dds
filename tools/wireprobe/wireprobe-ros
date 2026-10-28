@@ -1,0 +1,448 @@
+#!/bin/bash
+# wireprobe-ros — one IDL type and one JSON value, through a ROS 2 type
+# support rather than through a DDS vendor's own generated code.
+#
+# The same command line as `wireprobe-zerodds`, so a case runs through
+# it by substituting the program name. See
+# `docs/specs/zerodds-interop-suite-1.0.md` and `docs/ros-column.md`.
+#
+#   wireprobe-ros --idl robot.idl --type common::Robot \
+#                 --values robot.json --encoding xcdr1 --endian le \
+#                 --out robot.ros.xcdr1.le.bin
+#
+# `wireprobe-ros-package` restricts the corpus IDL to what `rosidl`'s
+# grammar and type model take and writes the interface package;
+# `rosidl-generate.py` runs `rosidl_generator_c` and
+# `rosidl_typesupport_fastrtps_c` over it; `wireprobe-fill --vendor ros`
+# supplies the statements that put the JSON sample into the generated
+# structure; the template runs the type support's own `cdr_serialize`
+# through Fast CDR. Nothing here decides any wire question.
+#
+# The read direction is the same command line with `--in` instead of
+# `--values`, and runs the same type support's `cdr_deserialize`:
+#
+#   wireprobe-ros --idl robot.idl --type common::Robot \
+#                 --in robot.fastdds.xcdr1.le.bin --encoding xcdr1 \
+#                 --endian le --values-out robot.read.json
+set -euo pipefail
+
+# The ROS 2 installation. Anything with `share/rosidl_generator_c` and
+# `lib/libfastcdr.so` under it — an `/opt/ros/<distro>`, a RoboStack
+# environment, a colcon install tree.
+ROS_PREFIX="${ROS_PREFIX:-/root/micromamba/envs/ros2}"
+FILL="${WIREPROBE_FILL:-wireprobe-fill}"
+DUMP="${WIREPROBE_DUMP:-wireprobe-dump}"
+ROS_PACKAGE="${WIREPROBE_ROS_PACKAGE:-wireprobe-ros-package}"
+TOOLS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TEMPLATE="$TOOLS/ros-template.cpp"
+DECODE_TEMPLATE="$TOOLS/ros-decode-template.cpp"
+GENERATE="$TOOLS/rosidl-generate.py"
+PACKAGE=zdros
+# shellcheck source=probe-cache.sh
+. "$TOOLS/probe-cache.sh"
+# shellcheck source=diagnostics.sh
+. "$TOOLS/diagnostics.sh"
+
+idl=""; type_name=""; values=""; encoding="xcdr1"; endian="le"; emit="payload"
+out=""; input=""; values_out=""; typesupport="fastrtps"; matrix=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+        # Every row this type support can answer, out of the one
+        # build: `<version>\t<endian>\t<hex>`. XCDR1 is the only
+        # encoding version rosidl has, so the rows are the byte orders,
+        # and `cyclone` has one of those.
+        --matrix) matrix=1; shift ;;
+        --idl) idl="$2"; shift 2 ;;
+        --type) type_name="$2"; shift 2 ;;
+        --values) values="$2"; shift 2 ;;
+        --in) input="$2"; shift 2 ;;
+        --values-out) values_out="$2"; shift 2 ;;
+        --encoding) encoding="$2"; shift 2 ;;
+        --endian) endian="$2"; shift 2 ;;
+        --emit) emit="$2"; shift 2 ;;
+        --out) out="$2"; shift 2 ;;
+        # Which of the two ROS serialisers. Not part of the common
+        # command line — no other implementation has two — but this one
+        # does, and they are independently written.
+        --typesupport) typesupport="$2"; shift 2 ;;
+        # `--dialect` names which implementation's answers to give, and
+        # this probe can only give a ROS type support's. Accepting
+        # another and producing these bytes anyway would report a
+        # divergence the run never measured.
+        --dialect)
+            if [ "$2" != "ros" ]; then
+                echo "wireprobe-ros: --dialect $2 is not this probe's; it writes what a ROS type support writes" >&2
+                exit 3
+            fi
+            shift 2 ;;
+        # Accepted and ignored: these select between shapes this project
+        # can produce, and a ROS type support has exactly one of each.
+        # Ignoring them lets the same command line drive every probe.
+        --length-codes|--collection-delimiters|--map-length|--wstring-length) shift 2 ;;
+        --pl-cdr1-headers|--default-extensibility|--key-holder) shift 2 ;;
+        --help|-h) sed -n '2,27p' "${BASH_SOURCE[0]}"; exit 0 ;;
+        *) echo "wireprobe-ros: \`$1\` is not an option" >&2; exit 2 ;;
+    esac
+done
+[ -n "$idl" ] || { echo "wireprobe-ros: --idl is required" >&2; exit 2; }
+[ -n "$type_name" ] || { echo "wireprobe-ros: --type is required" >&2; exit 2; }
+if [ -n "$input" ] && [ -n "$values" ]; then
+    echo "wireprobe-ros: --in reads bytes and --values writes them; pick one" >&2; exit 2
+fi
+if [ -z "$input" ] && [ -z "$values" ]; then
+    echo "wireprobe-ros: --values is required, or --in to read bytes back" >&2; exit 2
+fi
+
+# `rosidl_typesupport_fastrtps_c` has exactly one encoding. Its generated
+# `_cdr_serialize` writes no DHEADER, no EMHEADER and no sentinel — the
+# source is byte-identical under `@final`, `@appendable` and `@mutable`,
+# measured — and Fast CDR 1.0.24 underneath it has no encoding version 2
+# at all. So a request for XCDR2 is refused rather than answered with
+# XCDR1 bytes, which would report an agreement or a divergence for a
+# format nobody ran.
+case "$encoding" in
+    xcdr1|plain-cdr1) ;;
+    xcdr2|plain-cdr2|delimited-cdr|pl-cdr2)
+        echo "wireprobe-ros: --encoding $encoding is not this probe's; rosidl_typesupport_fastrtps writes plain CDR, encoding version 1, only" >&2
+        exit 3 ;;
+    pl-cdr1)
+        echo "wireprobe-ros: --encoding pl-cdr1 is not this probe's; rosidl has no @mutable type to write a parameter list for" >&2
+        exit 3 ;;
+    *) echo "wireprobe-ros: \`$encoding\` is not an encoding" >&2; exit 2 ;;
+esac
+case "$typesupport" in
+    fastrtps|cyclone) ;;
+    *) echo "wireprobe-ros: \`$typesupport\` is not a ROS type support; fastrtps or cyclone" >&2; exit 2 ;;
+esac
+case "$endian" in
+    le|little) big=0; endian_word=le ;;
+    be|big)
+        big=1; endian_word=be
+        # `rmw_serialize` writes the host's byte order and takes no
+        # argument for it. On a little-endian host there is no way to
+        # ask this type support for big-endian bytes, so the request is
+        # refused rather than answered with the other order.
+        if [ "$typesupport" = cyclone ] && [ "$matrix" = 0 ]; then
+            echo "wireprobe-ros: --endian be is not this type support's; rmw_serialize writes the host's byte order and takes no argument for it" >&2
+            exit 3
+        fi ;;
+    *) echo "wireprobe-ros: \`$endian\` is not a byte order" >&2; exit 2 ;;
+esac
+case "$emit" in
+    payload) with_encapsulation=0 ;;
+    payload+encapsulation) with_encapsulation=1 ;;
+    keyhash)
+        # `rosidl` has no `@key`: not in the IDL grammar's effect, not in
+        # the generated structure, not among the type support's four
+        # callbacks. Answering with anything would be this harness
+        # answering for ROS.
+        echo "wireprobe-ros: --emit keyhash is not this probe's; rosidl has no @key to compute one from" >&2
+        exit 3 ;;
+    *) echo "wireprobe-ros: --emit $emit is not an emission" >&2; exit 2 ;;
+esac
+
+work="$(mktemp -d)"
+# Kept before the removal and on every exit path, including a
+# refusal: the generated source of a case a front end could not carry
+# is the one a reader most wants to see.
+trap 'probe_keep_generated "$work" "ros" "$idl"; rm -rf "$work"' EXIT
+
+# The restriction runs first, so a case ROS cannot express is refused
+# with the construct's name and never reaches a generator traceback.
+# Exit 3 is `wireprobe-ros-package`'s "no rosidl form", and it is this
+# probe's too.
+# `$?` is read before the `if`, not inside it: after `if ! cmd` bash has
+# already replaced the command's status with the negation's, so `$?` in
+# the branch is 0 and `exit "$status"` exits 0. Measured on 2026-08-10:
+# a missing `wireprobe-ros-package` made `wireprobe-ros` print nothing
+# and exit 0, and a corpus sweep recorded 648 empty payloads as bytes.
+# `|| status=$?` and not a bare call: `set -e` ends the script *at* a
+# failing command, so the `status=$?` under a bare call never runs and
+# neither does the `cat` below it. Measured: every one of the 236 cases
+# this refuses exited 3 with an empty stderr, and a collection recorded
+# them as refusals with no reason — which is the shape this file's own
+# comment two lines up was written to prevent, for the other reason.
+# A command in an `||` list is exempt from `set -e`.
+status=0
+"$ROS_PACKAGE" --idl "$idl" --type "$type_name" --out "$work/idl" \
+    > "$work/root" 2> "$work/pkg.log" || status=$?
+if [ "$status" -ne 0 ]; then
+    cat "$work/pkg.log" >&2
+    exit "$status"
+fi
+root="$(cat "$work/root")"
+
+# Fast CDR 1.0.24 — the version ROS 2 Humble pins — cannot write a
+# multi-byte collection or a wstring in a byte order that is not the
+# host's: it writes the array's address for the first and leaves the
+# second unswapped. `rmw_fastrtps` never asks it to, so no ROS
+# deployment meets either; a probe that asks does. `docs/ros-column.md`
+# has the isolation program.
+#
+# Only the first is refused. The unswapped units are the same wrong
+# octets for the same sample on every run — a measurement, and one
+# `--wstring-units host-unswapped` reproduces. The address is not a
+# function of the sample: it changes with the run's address-space
+# layout, so no setting can reproduce it and no record may hold it.
+# `wireprobe-ros-package` prints the kind as the first field for exactly
+# this decision.
+#
+# **Computed here and applied on both paths.** It used to sit behind
+# `$big`, which `--matrix` never sets — and `--matrix` is what every
+# sweep runs, so the refusal never once ran during a recording. Six rows
+# of `sources/ros-corpus.tsv` held an address each, and `--verify`,
+# which compares the tree against those rows and never against a fresh
+# sweep, passed on them for as long as they were committed.
+be_hazard_kind=""
+be_hazard_why=""
+if [ "$typesupport" = fastrtps ]; then
+    hazard="$("$ROS_PACKAGE" --idl "$idl" --type "$type_name" --print-be-hazard)"
+    be_hazard_kind="${hazard%%	*}"
+    be_hazard_why="${hazard#*	}"
+fi
+if [ "$be_hazard_kind" = "not-a-function-of-the-sample" ] && [ "$big" = 1 ]; then
+    echo "wireprobe-ros: --endian be is not this type support's for this type — $be_hazard_why" >&2
+    exit 3
+fi
+mapfile -t files < <("$ROS_PACKAGE" --idl "$idl" --type "$type_name" --print-files \
+                     | sed -e 's|^msg/||' -e 's|\.idl$||')
+
+message_args=()
+for name in "${files[@]}"; do message_args+=(--message "$name"); done
+
+# Everything that decides the compiled binary: the generated IDL of every
+# file in the package, the template it is substituted into, the fill or
+# dump statements, and the byte order and emission the template bakes in.
+#
+# The template is in the key because it is an input like any other. It
+# was left out at first and a run picked up a binary an older template
+# had produced — the same case, the same IDL, the same statements, and
+# a different output format. A key that misses an input hands back the
+# wrong binary and reports its bytes as this implementation's.
+package_idl=()
+for name in "${files[@]}"; do package_idl+=("$work/idl/$PACKAGE/msg/$name.idl"); done
+
+generate() {
+    "$ROS_PREFIX/bin/python" "$GENERATE" --package "$PACKAGE" \
+        --idl-dir "$work/idl" --out "$work/gen" --prefix "$ROS_PREFIX" \
+        "${message_args[@]}" > "$work/names.sh" 2> "$work/gen.log" \
+        || { echo "wireprobe-ros: the rosidl generators failed" >&2; \
+             tail -n 20 "$work/gen.log" >&2; exit 4; }
+    # shellcheck source=/dev/null
+    . "$work/names.sh"
+}
+
+# The env's own headers must come *after* the system's: a conda-style
+# prefix ships a sysroot whose `features.h` and `stdio.h` do not match
+# the host's libstdc++. `-idirafter` puts the prefix last so `<fastcdr/…>`
+# still resolves and `<cstdio>` does not pick up the wrong glibc.
+ros_includes() {
+    printf '%s' \
+        "-I$ROS_PREFIX/include/rosidl_runtime_c " \
+        "-I$ROS_PREFIX/include/rosidl_typesupport_interface " \
+        "-I$ROS_PREFIX/include/rosidl_typesupport_fastrtps_c " \
+        "-I$ROS_PREFIX/include/rosidl_typesupport_fastrtps_cpp " \
+        "-I$ROS_PREFIX/include/rosidl_typesupport_introspection_c " \
+        "-I$ROS_PREFIX/include/rmw " \
+        "-I$ROS_PREFIX/include/rcpputils " \
+        "-I$ROS_PREFIX/include/rcutils " \
+        "-idirafter $ROS_PREFIX/include"
+}
+
+# Two link lines, because the two type supports are two libraries. The
+# Fast RTPS one calls Fast CDR directly; the Cyclone one is reached
+# through `rmw_serialize` in `librmw_cyclonedds_cpp`, which walks the
+# introspection type support.
+ros_libs() {
+    if [ "$typesupport" = cyclone ]; then
+        printf '%s\n' -L"$ROS_PREFIX/lib" -lrmw_cyclonedds_cpp -lrmw \
+            -lrosidl_runtime_c -lrosidl_typesupport_introspection_c -lrcutils \
+            -Wl,-rpath,"$ROS_PREFIX/lib"
+    else
+        printf '%s\n' -L"$ROS_PREFIX/lib" -lfastcdr -lrosidl_runtime_c \
+            -lrosidl_typesupport_fastrtps_c -lrcutils \
+            -Wl,-rpath,"$ROS_PREFIX/lib"
+    fi
+}
+
+# `-w` was here and is not any more. It turned off every diagnostic
+# rosidl's generated sources produce, which made this the one probe that
+# could not have reported the `-Wmultichar` line the `wchar` fill defect
+# printed. What is asked for is the compiler's defaults, which is what
+# printed that line; `-Wall` over a generator's own headers is a
+# different measurement and nobody has asked for it.
+CFLAGS_ROS="${CFLAGS_ROS:--std=c11 -O1}"
+CXXFLAGS_ROS="${CXXFLAGS_ROS:--std=c++17 -O1}"
+
+# The generated sources, absolute. `rosidl-generate.py` prints them
+# relative to the output directory so that the list is a property of the
+# package and not of this run's temporary directory.
+#
+# `__functions.c` and the introspection `__type_support.c` are compiled
+# by `gcc` and not by `g++`: the introspection file assigns a `void *` to
+# a typed pointer, which is C and is an error in C++. Compiling the whole
+# set with one front end is what a first attempt did, and it failed on
+# exactly that line.
+ros_objects() {
+    local relative object index=0
+    for relative in $ROS_C_SOURCES $ros_c_extra; do
+        index=$((index + 1))
+        object="$work/zd_c_$index.o"
+        # shellcheck disable=SC2086
+        gcc $CFLAGS_ROS -c -o "$object" "$work/gen/$relative" \
+            -I"$work" -I"$work/gen" $(ros_includes) >> "$work/cc.log" 2>&1 || return 1
+        printf '%s ' "$object"
+    done
+    for relative in $ros_cxx_extra; do
+        index=$((index + 1))
+        object="$work/zd_x_$index.o"
+        # shellcheck disable=SC2086
+        g++ $CXXFLAGS_ROS -c -o "$object" "$work/gen/$relative" \
+            -I"$work" -I"$work/gen" $(ros_includes) >> "$work/cc.log" 2>&1 || return 1
+        printf '%s ' "$object"
+    done
+}
+
+# Which generated type support goes into the binary, and which template
+# drives it.
+select_typesupport() {
+    if [ "$typesupport" = cyclone ]; then
+        ros_c_extra="$ROS_INTROSPECTION_SOURCES"
+        ros_cxx_extra=""
+        encode_template="$TOOLS/ros-rmw-template.cpp"
+        decode_template="$TOOLS/ros-rmw-decode-template.cpp"
+    else
+        ros_c_extra=""
+        ros_cxx_extra="$ROS_FASTRTPS_SOURCES"
+        encode_template="$TEMPLATE"
+        decode_template="$DECODE_TEMPLATE"
+    fi
+}
+
+if [ -n "$input" ]; then
+    "$DUMP" --vendor ros --idl "$idl" --type "$type_name" --out "$work/dump.inc"
+    # The byte order is not in the key: the template takes it on its
+    # command line, so one build per case per type support answers both
+    # orders instead of two runs of the ROS code generator.
+    key="$(probe_cache_key ros decode "$typesupport" "$root" -- "${package_idl[@]}" "$work/dump.inc" "$TOOLS/ros-decode-template.cpp" "$TOOLS/ros-rmw-decode-template.cpp")"
+    cached="$(probe_cache_dir "$key")"
+    if [ -z "$cached" ] || [ ! -x "$cached/probe" ]; then
+        generate
+        select_typesupport
+        (
+            cd "$work"
+            printf '%s\n' "$ROS_MESSAGE_INCLUDES" > messages.h
+            sed -e "s/@PACKAGE@/$PACKAGE/g" -e "s/@MESSAGE@/$ROS_MESSAGE/g" \
+                -e "s/@SNAKE@/$ROS_SNAKE/g" -e "s/@CTYPE@/$ROS_CTYPE/g" \
+                -e 's|@MESSAGE_INCLUDES@|#include "messages.h"|' \
+                "$decode_template" > probe.cpp
+            objects="$(ros_objects)" \
+                || { echo "wireprobe-ros: a generated source did not compile" >&2; \
+                     grep -m10 "error:" cc.log >&2; exit 5; }
+            # shellcheck disable=SC2046,SC2086
+            g++ $CXXFLAGS_ROS -o probe probe.cpp $objects \
+                -I"$work" -I"$work/gen" -I"$TOOLS" $(ros_includes) $(ros_libs) >> cc.log 2>&1 \
+                || { echo "wireprobe-ros: the decode probe did not compile" >&2; \
+                     grep -m10 "error:" cc.log >&2; exit 5; }
+        )
+        probe_diagnostics_after "ros-$typesupport" "$work" "$idl" $?
+        if [ -n "$cached" ]; then
+            build="$(mktemp -d "$WIREPROBE_CACHE/build.XXXXXX")"
+            cp "$work/probe" "$build/probe"
+            probe_diagnostics_publish "$work" "$build"
+            probe_generated_publish "$work" "$build"
+            probe_cache_publish "$build" "$cached"
+        fi
+    else
+        # A cache hit does not compile, so the build said nothing
+        # this run. What it said when it was built is replayed,
+        # or a re-record would be silent for every case it did
+        # not rebuild.
+        probe_diagnostics_cached "ros-$typesupport" "$cached" "$idl"
+        probe_generated_cached "$cached" "$work"
+    fi
+    if [ -n "$cached" ] && [ -x "$cached/probe" ]; then binary="$cached/probe"; else binary="$work/probe"; fi
+    "$binary" "$endian_word" < "$input" > "$work/values.json"
+    if [ -n "$values_out" ]; then cp "$work/values.json" "$values_out"; else cat "$work/values.json"; fi
+    exit 0
+fi
+
+"$FILL" --vendor ros --idl "$idl" --type "$type_name" --values "$values" \
+        --out "$work/fill.inc"
+# Neither the byte order nor the emit form is in the key, for the reason
+# above: both are arguments to the binary now.
+key="$(probe_cache_key ros encode "$typesupport" "$root" -- "${package_idl[@]}" "$work/fill.inc" "$TOOLS/ros-template.cpp" "$TOOLS/ros-rmw-template.cpp")"
+cached="$(probe_cache_dir "$key")"
+if [ -z "$cached" ] || [ ! -x "$cached/probe" ]; then
+    generate
+    select_typesupport
+    (
+        cd "$work"
+        printf '%s\n' "$ROS_MESSAGE_INCLUDES" > messages.h
+        sed -e "s/@PACKAGE@/$PACKAGE/g" -e "s/@MESSAGE@/$ROS_MESSAGE/g" \
+            -e "s/@SNAKE@/$ROS_SNAKE/g" -e "s/@CTYPE@/$ROS_CTYPE/g" \
+            -e 's|@MESSAGE_INCLUDES@|#include "messages.h"|' \
+            "$encode_template" > probe.cpp
+        objects="$(ros_objects)" \
+            || { echo "wireprobe-ros: a generated source did not compile" >&2; \
+                 grep -m10 "error:" cc.log >&2; exit 5; }
+        # shellcheck disable=SC2046,SC2086
+        g++ $CXXFLAGS_ROS -o probe probe.cpp $objects \
+            -I"$work" -I"$work/gen" $(ros_includes) $(ros_libs) >> cc.log 2>&1 \
+            || { echo "wireprobe-ros: the probe did not compile" >&2; \
+                 grep -m10 "error:" cc.log >&2; exit 5; }
+    )
+    probe_diagnostics_after "ros-$typesupport" "$work" "$idl" $?
+    if [ -n "$cached" ]; then
+        build="$(mktemp -d "$WIREPROBE_CACHE/build.XXXXXX")"
+        cp "$work/probe" "$build/probe"
+        probe_diagnostics_publish "$work" "$build"
+        probe_generated_publish "$work" "$build"
+        probe_cache_publish "$build" "$cached"
+    fi
+else
+    # A cache hit does not compile, so the build said nothing
+    # this run. What it said when it was built is replayed,
+    # or a re-record would be silent for every case it did
+    # not rebuild.
+    probe_diagnostics_cached "ros-$typesupport" "$cached" "$idl"
+    probe_generated_cached "$cached" "$work"
+fi
+if [ -n "$cached" ] && [ -x "$cached/probe" ]; then binary="$cached/probe"; else binary="$work/probe"; fi
+emit_word=payload
+[ "$with_encapsulation" = 1 ] && emit_word=encapsulated
+if [ "$matrix" = 1 ]; then
+    # One build, run once per order. Two process launches are
+    # microseconds; the build was what cost seconds, and there is now
+    # one of it. `cyclone` answers one order and says so for the other,
+    # which is a row and not an absence.
+    for o in le be; do
+        if [ "$typesupport" = cyclone ] && [ "$o" = be ]; then
+            printf 'xcdr1\t%s\t!%s\n' "$o" \
+                "rmw_serialize writes the host's byte order and takes no argument for it"
+            continue
+        fi
+        # The same refusal the single-shot path makes, and it has to be
+        # here as well or the recording path never sees it.
+        if [ "$o" = be ] && [ "$be_hazard_kind" = "not-a-function-of-the-sample" ]; then
+            printf 'xcdr1\t%s\t!%s\n' "$o" \
+                "--endian be is not this type support's for this type — $be_hazard_why"
+            continue
+        fi
+        if hex=$("$binary" "$o" "$emit_word" 2>"$work/err" | od -An -tx1 -v | tr -d ' \n') \
+           && [ -n "$hex" ]; then
+            printf 'xcdr1\t%s\t%s\n' "$o" "$hex"
+        else
+            printf 'xcdr1\t%s\t!%s\n' "$o" \
+                "$(head -1 "$work/err" | tr '\t' ' ' | cut -c1-200)"
+        fi
+    done
+    exit 0
+fi
+"$binary" "$endian_word" "$emit_word" > "$work/bytes.bin"
+
+if [ -n "$out" ]; then
+    cp "$work/bytes.bin" "$out"
+else
+    od -An -tx1 -v "$work/bytes.bin" | tr -d ' \n'; echo
+fi

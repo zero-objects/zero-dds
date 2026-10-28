@@ -130,6 +130,24 @@ public sealed class DataWriter<T> : IDisposable
     private static IntPtr CreateHandle(IntPtr publisher, Topic<T> topic, IntPtr qos)
     {
         var typeObject = topic.Traits.TypeObject;
+        if (topic.Traits is IGeneratedDdsWireTraits generated && generated.HasGeneratedWireSupport)
+        {
+            if (typeObject is not { Length: > 0 })
+                throw new InvalidOperationException("Generated typed DDS support requires a nonempty CompleteTypeObject.");
+            // Validate before entering the ABI. An old native library lacking
+            // this entry point fails explicitly rather than using wrong framing.
+            int representation = generated.NativeRepresentation;
+            int extensibility = generated.NativeExtensibility;
+            unsafe
+            {
+                fixed (byte* p = typeObject)
+                {
+                    return Native.PubCreateDatawriterTypedWire(publisher, topic.Handle, qos,
+                        (IntPtr)p, (UIntPtr)typeObject.Length, generated.IsKeyed ? 1 : 0,
+                        extensibility, representation);
+                }
+            }
+        }
         if (typeObject is { Length: > 0 })
         {
             unsafe
@@ -151,11 +169,20 @@ public sealed class DataWriter<T> : IDisposable
     public void Write(T sample)
     {
         var bytes = _traits.Encode(sample);
+        var key = _traits is ZeroDDS.IGeneratedDdsWireTraits { HasGeneratedWireSupport: true, IsKeyed: true }
+            ? KeyHash(sample) ?? throw new InvalidOperationException("Generated DDS KeyHash is null.")
+            : null;
+        if (key is not null && key.Length != 16)
+            throw new InvalidOperationException("Generated DDS KeyHash must contain exactly 16 bytes.");
         unsafe
         {
             fixed (byte* p = bytes)
+            fixed (byte* k = key)
             {
-                int rc = Native.DwWrite(_handle, (IntPtr)p, (UIntPtr)bytes.Length, 0);
+                int rc = key is null
+                    ? Native.DwWrite(_handle, (IntPtr)p, (UIntPtr)bytes.Length, 0)
+                    : Native.DwWriteKeyed(_handle, (IntPtr)p, (UIntPtr)bytes.Length,
+                        (IntPtr)k, (UIntPtr)key.Length);
                 StatusCheck.Check(rc, "DataWriter::Write");
             }
         }

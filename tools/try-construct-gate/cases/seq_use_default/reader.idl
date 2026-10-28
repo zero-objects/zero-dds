@@ -1,0 +1,1 @@
+@appendable struct S { long a; @try_construct(USE_DEFAULT) sequence<long, 4> m; long b; };

@@ -20,7 +20,7 @@ fuzz_target!(|data: &[u8]| {
             let _ = DataSubmessage::read_body(body, le);
         }
         1 => {
-            let _ = DataFragSubmessage::read_body(body, le, false, false, false, false);
+            let _ = DataFragSubmessage::read_body(body, le, false, false, false);
         }
         2 => {
             let _ = HeartbeatSubmessage::read_body(body, le, false, false, false);

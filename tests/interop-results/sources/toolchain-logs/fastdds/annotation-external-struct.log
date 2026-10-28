@@ -1,0 +1,1 @@
+fill_4.inc:1:17: error: 'class eprosima::fastcdr::external<zd_c4::Inner>' has no member named 'a'

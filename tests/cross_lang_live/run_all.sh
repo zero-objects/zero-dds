@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
-# Top-Level Runner fuer cross_lang_live-Tests.
+# Top-level runner for cross_lang_live tests.
 # Spec: docs/specs/zerodds-ffi-loader-1.0.md §5 + §8.3.
 #
-# Startet pro Sprache ein eigenes Skript und aggregiert die Ergebnisse.
-# Portable bash 3.2+ (kein assoc array).
+# Starts a separate script per language and aggregates the results.
+# Portable bash 3.2+ (no assoc array).
 
 set -u
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

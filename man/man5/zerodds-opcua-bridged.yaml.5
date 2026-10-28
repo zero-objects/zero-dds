@@ -1,0 +1,271 @@
+.TH ZERODDS-OPCUA-BRIDGED.YAML 5 "" "ZeroDDS" "ZeroDDS Manual"
+.SH NAME
+zerodds-opcua-bridged.yaml \- configuration file for zerodds-opcua-bridged(1)
+.SH SYNOPSIS
+.I /etc/zerodds/opcua-bridged.yaml
+.SH DESCRIPTION
+YAML document describing the OMG DDS-OPCUA Gateway 1.0 daemon's
+.IR opc.tcp " server, client and Part-14 PubSub connections."
+The schema is the one of
+.IR zerodds-opcua-bridge-1.0 " \(sc3;"
+the parser that reads it is
+.IR crates/opcua-bridge/src/daemon/config.rs::from_config .
+.PP
+Top-level keys:
+.BR domain ", " log_level ", " opcua ", " acl ", " metrics .
+.PP
+An unknown key
+.I inside
+a known section (e.g. an unrecognized
+.BR opcua.server. \fIkey\fR )
+stops the start with the file and line named; an unrecognized top-level key
+is a WARN line on stderr and otherwise ignored \(em watch the WARN log.
+.SH KEYS
+.SS Top level
+.TP
+.B domain
+Integer DDS domain ID. Default
+.IR 0 .
+.TP
+.B log_level
+.IR trace " | " debug " | " info " | " warn " | " error .
+.SS opcua
+.TP
+.B idl
+List of
+.I .idl
+file paths, compiled at startup. Every
+.B dds_type
+named anywhere below must be declared in one of them.
+.TP
+.B gateway_config
+Path to an OMG DDS-OPCUA Gateway 1.0 \(sc10 XML file: one or more
+.IR <bridge> " elements, each with a " domain_id
+and any number of
+.IR <dds_to_ua_connection> " / " <ua_to_dds_connection> " entries "
+(\c
+.IR dds_topic ", " dds_type ", optional " browse_path " / " node_id \c
+). A
+.I node_id
+replaces the connection's sample root's identity (a collision with an
+existing node refuses the start); a
+.I browse_path
+adds an additional
+.I Organizes
+reference chain from the well-known
+.I Objects
+folder (ns0;i=85) to the same root \(em both additive to the default
+.I Topic:<name>
+reachability, never a replacement of it (\(sc5.2 of the spec file).
+.SS opcua.server
+.TP
+.B enabled
+Default
+.IR true .
+.TP
+.B bind
+.I opc.tcp
+bind address. Default
+.IR 0.0.0.0:4840 .
+.TP
+.B security_policies
+List of
+.IR none ", " basic256sha256 ", " aes128_sha256_rsaoaep ", " aes256_sha256_rsapss .
+Any entry other than
+.I none
+requires
+.B certificate_der
+and
+.BR private_key_pem ,
+and the build feature
+.BR crypto ;
+the start refuses otherwise.
+.TP
+.B certificate_der
+This server's own DER certificate, sent on the wire as-is.
+.TP
+.B private_key_pem
+This server's RSA private key, PKCS#8 PEM.
+.TP
+.B trusted_client_certificate_der
+The one trusted client's DER certificate.
+.TP
+.B trusted_client_public_key_pem
+The one trusted client's RSA public key,
+.I SubjectPublicKeyInfo
+PEM \(em a separate file from the certificate above; this daemon has no
+X.509 parser to split one certificate into both (\(sc7.1 of the spec file).
+.TP
+.B historical.topics
+List of Historical Access entries (Spec \(sc9.3.4.4). Each entry:
+.I dds_topic
+(must match a
+.I dds_to_ua_connection
+topic \(em a name matching none, or matching only a
+.IR ua_to_dds_connection ", is a load-time error)"
+and
+.I depth
+(the per-leaf retention bound, an integer of at least 1). Every leaf of the
+named topic is marked historizing (\c
+.IR Historizing " = " true ", the " HistoryRead " " AccessLevel
+bit set) and answers the
+.I HistoryRead
+service (Part 4 \(sc5.10.3).
+.SS opcua.client
+.TP
+.B enabled
+Default
+.IR false .
+.TP
+.B servers
+List of foreign OPC-UA servers to browse/subscribe as a client. Each entry:
+.RS
+.TP
+.B endpoint_url
+e.g.
+.IR opc.tcp://plc.local:4840 .
+.TP
+.B nodes
+List of
+.IR node_id " (canonical " ns=N;i=NNN " or " ns=N;s=NAME " form; " g= " / " b=
+are not supported),
+.IR dds_topic ", " dds_type " (default: " dds_topic ")," field_path
+(default: empty \(em the whole, scalar sample) and
+.I keyed
+(default false).
+.RE
+.SS opcua.pubsub
+.TP
+.B enabled
+Default
+.IR false .
+.TP
+.B connections
+List of Part-14 UADP connections. Each entry:
+.RS
+.TP
+.B name
+Free-form label.
+.TP
+.B local_addr
+UDP bind address. Default
+.IR 0.0.0.0:0 .
+.TP
+.B multicast_addr
+UADP multicast group + port, e.g.
+.IR 224.0.0.22:4840 .
+.TP
+.B publisher_id
+Numeric PublisherId. Default
+.IR 1 .
+.TP
+.B publishers
+DDS \(-> UADP entries:
+.IR dds_topic ", " dds_type ", " keyed ", " writer_group_id ", " dataset_writer_id ", " dataset_name " (default: " dds_topic ")," publish_interval_ms
+(default 1000).
+.TP
+.B subscribers
+UADP \(-> DDS entries:
+.IR dds_topic ", " dds_type ", " keyed ", " dataset_name " (default: " dds_topic ")," fields
+(required \(em the remote Publisher's own field order).
+.TP
+.B security
+Part 14 \(sc8 UADP message security (build feature
+.BR pubsub-security ).
+Omit entirely for cleartext UADP. Fields:
+.I policy
+(\c
+.IR aes128-ctr " | " aes256-ctr " | " aes256-gcm ),
+.IR security_group_id ", " token_id
+(default 1), and
+.IR signing_key ", " encrypting_key ", " key_nonce
+(hex-encoded;
+.I signing_key
+empty for
+.IR aes256-gcm ,
+whose integrity comes from the GCM tag). A single static current key,
+not a live
+.I GetSecurityKeys
+/SKS rotation exchange \(em rotate by reloading config with a new
+key/\c
+.IR token_id .
+A hex-decoded key whose length disagrees with its policy is refused at
+load time.
+.RE
+.SS acl
+.TP
+.B default_deny
+Default
+.IR false .
+With rules present, a topic no rule names for the operation asked is
+denied when
+.B default_deny
+is true, allowed when false.
+.TP
+.B rules
+List of
+.IR subject ", " allow_read " (list of DDS topic names)," allow_write .
+Two layers are enforced: topic exposure at start time (a topic no rule
+names is not materialized/registered at all, for any client, when any
+rule exists or
+.B default_deny
+is true) and, for a Write against this daemon's own server, the
+.B subject
+dimension per OPC-UA session (via
+.IR Server::set_write_hook ;
+\(sc6.2/\(sc7.2 of the spec file). A denied Write is
+.I Bad_UserAccessDenied
+before the AddressSpace is touched.
+.TP
+.B allow_anonymous
+Default
+.IR true .
+Whether the
+.I UserStore
+accepts the Anonymous
+.IR UserIdentityToken .
+.TP
+.B users
+List of UserName credentials this daemon's server accepts at
+ActivateSession:
+.IR username ", " password ", " policy_id
+(default
+.IR user ).
+A user's own
+.B username
+is the
+.I subject
+string
+.B rules
+match against \(em without a named user, every session is Anonymous and
+.B rules
+has nothing to differ on.
+.SS metrics
+.TP
+.B enabled
+Default
+.IR false .
+.TP
+.B listen
+Bind address for
+.IR GET " " /metrics .
+Default
+.I 127.0.0.1:9095
+when
+.B enabled
+and this is empty.
+.TP
+.B otlp_endpoint
+An OTel collector's OTLP/HTTP base URL, e.g.
+.IR http://127.0.0.1:4318 .
+Omit to export no spans. Exports one coarse-grained
+.I zerodds-opcua-bridged.opc_tcp.accept
+span per accepted
+.I opc.tcp
+connection, every 5 seconds and once more on shutdown.
+.SH EXAMPLES
+See
+.I packaging/linux/configs/opcua-bridged.yaml.example
+for a complete, commented file.
+.SH SEE ALSO
+.BR zerodds-opcua-bridged (1).

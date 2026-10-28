@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "PKI/X.509 backend for the DDS-Security 1.1 §8.3 AuthenticationPlugin: identity validation + handshake state machine + OCSP/CRL + delegation chain. rustls-webpki + ring."
+description = "PKI/X.509 backend for the DDS-Security 1.2 Authentication Plugin (§9.3) and DDS:Auth:PKI-DH (§10.3): identity validation + handshake state machine + OCSP/CRL + delegation chain. rustls-webpki + ring."
 homepage = "https://zerodds.org"
 documentation = "https://docs.rs/zerodds-security-pki"
 readme = "README.md"
@@ -22,7 +22,7 @@ path = "src/lib.rs"
 
 [features]
 safety = []  # empty marker for safe-profile lints (internal/safety-flag-drift.md)
-default = ["std", "ring-backend"]
+default = ["std", "ring-backend", "ocsp-https"]
 std = []
 # Crypto primitive backend (pick one) — see lib.rs. `ring-backend` (default) or
 # `aws-lc` (aws-lc-rs / AWS-LC, FIPS-140-3-validatable; implies std). The signing
@@ -31,21 +31,36 @@ std = []
 # The intra-stack deps are pulled `default-features = false` so the backend is
 # selected here (not forced to ring) — that lets the `aws-lc` build drop ring
 # entirely.
+# TLS client for an `https://` OCSP responder (DDS-Security 1.2 §10.3.3 Table 59,
+# RFC 6960 Appendix A.1). rustls with the `ring` provider of the workspace: a
+# build with `aws-lc` or `wolfcrypt` and this feature carries ring for it; one
+# without the feature answers an `https://` responder with an error.
+ocsp-https = ["dep:rustls"]
 ring-backend = [
     "dep:ring",
     "rustls-webpki/ring",
     "zerodds-security-keyexchange/ring-backend",
     "zerodds-security-keyexchange/std",
+    "zerodds-security-crypto/ring-backend",
+    "zerodds-security-crypto/std",
 ]
-aws-lc = ["dep:aws-lc-rs", "rustls-webpki/aws-lc-rs", "zerodds-security-keyexchange/aws-lc", "std"]
+aws-lc = ["dep:aws-lc-rs", "rustls-webpki/aws-lc-rs", "zerodds-security-keyexchange/aws-lc", "zerodds-security-crypto/aws-lc", "std"]
 # Third backend: wolfSSL/wolfCrypt. The signing keypair APIs route through the
 # wolfcrypt-ring-compat shim (it mirrors aws-lc-rs' API, bridged in `compat`).
 # rustls-webpki has no wolfCrypt provider upstream, so X.509 cert-chain *verify*
 # keeps the `ring` provider (the only foreign linkage in a wolfcrypt build).
-wolfcrypt = ["dep:wolfcrypt-compat", "rustls-webpki/ring", "zerodds-security-keyexchange/wolfcrypt", "std"]
+wolfcrypt = ["dep:wolfcrypt-compat", "rustls-webpki/ring", "zerodds-security-keyexchange/wolfcrypt", "zerodds-security-crypto/wolfcrypt", "std"]
 
 [dependencies]
 zerodds-security = { version = "1.0.0-rc.7", path = "../security" }
+# DDS-Security §8.6 security-event sinks. Used for one thing: the
+# X.509 v1 identity-certificate deviation (`x509v1_compat`) writes a
+# `Warning` event for every certificate it accepts, and falls back to
+# `StderrLoggingPlugin` when the deployment installed no logger — an
+# accepted deviation nobody is told about would be worse than a refusal.
+zerodds-security-logging = { version = "1.0.0-rc.7", path = "../security-logging" }
+# TLS client of the OCSP query over https:// (feature `ocsp-https`).
+rustls = { workspace = true, optional = true }
 # X.509 cert DER + trust-anchor types + PEM parser (integrated since 1.9,
 # RUSTSEC-2025-0134 — rustls-pemfile is unmaintained for this). Pure Rust,
 # no-std-capable. Apache-2.0 / ISC / MIT.
@@ -55,6 +70,9 @@ rustls-webpki = { workspace = true }
 # X25519/P-256 ephemeral DH for the handshake secret. Backend selected by our
 # features above (so a FIPS build pulls no ring through it).
 zerodds-security-keyexchange = { version = "1.0.0-rc.7", path = "../security-keyexchange", default-features = false }
+# RSASSA-PSS verification with the salt length read from the signature (§8.2
+# Table 25); the backend is selected by our features above.
+zerodds-security-crypto = { version = "1.0.0-rc.7", path = "../security-crypto", default-features = false }
 # Delegation-link sign/verify (ECDSA-P256/P384, RSA-PSS, Ed25519). Swappable:
 # `ring` (default) or `aws-lc-rs` (FIPS) via the backend features above.
 ring = { workspace = true, optional = true }
@@ -64,6 +82,25 @@ wolfcrypt-compat = { package = "wolfcrypt-ring-compat", version = "1", optional 
 # X.509 subject extraction for IdentityToken (spec §10.3.2.1 `dds.cert.sn`).
 # Pure Rust, MIT/Apache-2.0.
 x509-cert = { version = "0.2", default-features = false, features = ["pem", "std"] }
+# PKCS#8 wrapping of the private-key forms a PEM file can carry: PKCS#1
+# (`BEGIN RSA PRIVATE KEY`, every vendor key of the OMG dds-security
+# suite) and SEC1 (`BEGIN EC PRIVATE KEY`, what `openssl ecparam -genkey`
+# writes). The backends take PKCS#8 only. Pure Rust, MIT/Apache-2.0.
+pkcs8 = { version = "0.10", default-features = false, features = ["alloc", "encryption"] }
+# `dds.sec.auth.password` (DDS-Security 1.2 §10.3.1 Table 50): the
+# OpenSSL-encrypted PEM form — AES-CBC under a key the clause names or an
+# EVP_BytesToKey passphrase derives — and the PEM body's base64. The
+# PKCS#8 PBES2 form is `pkcs8`'s `encryption` above. Pure Rust,
+# MIT/Apache-2.0.
+aes = { workspace = true }
+cbc = { version = "0.1", default-features = false, features = ["alloc", "block-padding"] }
+md5 = { package = "md-5", version = "0.11", default-features = false }
+base64 = { workspace = true }
+sec1 = { version = "0.7", default-features = false, features = ["der", "alloc"] }
+# OCSP (RFC 6960): the `CertID` hashes of the issuer name and key. Pure Rust,
+# MIT/Apache-2.0.
+sha1 = { version = "0.10", default-features = false }
+sha2 = { workspace = true }
 
 [dev-dependencies]
 # Generate self-signed test certs. MIT/Apache-2.0.

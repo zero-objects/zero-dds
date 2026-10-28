@@ -49,6 +49,17 @@ pub struct SessionParts {
     pub writer_eid: EntityId,
     /// Whether the topic is keyed (governs lifecycle forwarding).
     pub keyed: bool,
+    /// Whether the input reader and the output writer are known to be the
+    /// SAME type (same `zerodds_types::TypeIdentifier`) — the caller's
+    /// synchronous check at session-build time, since the identity a
+    /// forwarded dispose's `key_holder` decoded against (the reader's
+    /// type) must be the identity `write_user_lifecycle` re-encodes it
+    /// with (the writer's type) or the bytes are just wrong for whatever
+    /// type the output writer actually is. `false` — the safe default —
+    /// whenever that is not established; only `true` unlocks passing a
+    /// forwarded `key_holder`/`source_timestamp` through instead of
+    /// dropping them (see `UserSample::Lifecycle` in `pump`).
+    pub same_type: bool,
     /// Optional content-filter / transform processor (v3).
     pub processor: Option<Box<dyn SampleProcessor>>,
     /// Metrics sink for this route.
@@ -60,6 +71,10 @@ pub struct SessionParts {
     /// Optional forward rate limit (samples/second) from
     /// `Route.max_samples_per_second`. `None` = unlimited (O1 throttle).
     pub max_samples_per_second: Option<u32>,
+    /// Relay mode (`Route.relay`): every sample and lifecycle marker goes out
+    /// unchanged on behalf of the writer that wrote it (DDS-Security 1.2
+    /// §7.1.1.4, DDSI-RTPS 2.5 §8.7.9).
+    pub relay: bool,
 }
 
 /// A running forward pump for one route.
@@ -73,7 +88,7 @@ impl ForwardingSession {
     /// Starts the pump thread.
     ///
     /// # Errors
-    /// [`RoutingError::Dds`] if the OS refuses to spawn the pump thread.
+    /// `RoutingError::Dds` if the OS refuses to spawn the pump thread.
     pub fn start(parts: SessionParts) -> crate::error::Result<Self> {
         let stop = Arc::new(AtomicBool::new(false));
         let pump_stop = Arc::clone(&stop);
@@ -171,6 +186,10 @@ fn pump(mut parts: SessionParts, stop: &AtomicBool) {
             Err(RecvTimeoutError::Timeout) => continue,
             Err(RecvTimeoutError::Disconnected) => break,
         };
+        if parts.relay {
+            relay(&parts, sample, &mut bucket);
+            continue;
+        }
         match sample {
             UserSample::Alive {
                 payload,
@@ -206,14 +225,39 @@ fn pump(mut parts: SessionParts, stop: &AtomicBool) {
                     write_alive(&parts, payload.as_slice(), fwd_ts);
                 }
             }
-            UserSample::Lifecycle { key_hash, kind } => {
+            UserSample::Lifecycle {
+                key_hash,
+                kind,
+                key_holder,
+                source_timestamp,
+                ..
+            } => {
                 // Lifecycle (dispose/unregister) only carries meaning for keyed
                 // topics; forward it so a downstream reader sees the instance
                 // state transition.
                 if parts.keyed {
+                    // The key_holder this reader decoded is bytes for the
+                    // INPUT type; re-encoding it as the output writer's
+                    // serializedKey is only correct when the two are the
+                    // same type (see `SessionParts::same_type`). A source
+                    // timestamp carries no such risk, but forwarding one
+                    // without a key_holder the peer can use is no better
+                    // than the hash-only marker it already sends, so both
+                    // travel together.
+                    let (key_holder, source_timestamp) = if parts.same_type {
+                        (key_holder.as_deref(), source_timestamp)
+                    } else {
+                        (None, None)
+                    };
                     if parts
                         .output_rt
-                        .write_user_lifecycle(parts.writer_eid, key_hash, status_bits(kind))
+                        .write_user_lifecycle(
+                            parts.writer_eid,
+                            key_hash,
+                            key_holder,
+                            status_bits(kind),
+                            source_timestamp,
+                        )
                         .is_ok()
                     {
                         parts.metrics.inc_lifecycle();
@@ -222,7 +266,101 @@ fn pump(mut parts: SessionParts, stop: &AtomicBool) {
                     }
                 }
             }
+            // The end-of-coherent-set marker (DDSI-RTPS 2.5 §8.7.6) belongs to
+            // the input writer's SN space; a forwarded copy would name a set
+            // that does not exist on the output writer. Coherent-set-preserving
+            // forwarding needs the route to re-open its own set, which this
+            // service does not do — the marker is dropped.
+            UserSample::CoherentSetEnd { .. } => {}
         }
+    }
+}
+
+/// One sample of a relay route: forwarded unchanged on behalf of its writer,
+/// the payload as it arrived (a `crypto_content` one still encrypted), with
+/// its source timestamp and key hash. A sample without the writer's
+/// sequence number cannot be forwarded on its behalf; it is counted as an
+/// error, not sent as the router's own.
+fn relay(parts: &SessionParts, sample: UserSample, bucket: &mut Option<TokenBucket>) {
+    use zerodds_rtps::wire_types::{Guid, SequenceNumber};
+    match sample {
+        UserSample::Alive {
+            payload,
+            key_hash,
+            writer_guid,
+            source_sequence_number,
+            source_timestamp,
+            representation,
+            crypto_content,
+            ..
+        } => {
+            if let Some(b) = bucket.as_mut() {
+                if !b.allow() {
+                    parts.metrics.inc_dropped_throttle();
+                    return;
+                }
+            }
+            if source_sequence_number < 0 {
+                parts.metrics.inc_errors();
+                return;
+            }
+            if !crypto_content {
+                // The body goes out in the representation it came in.
+                let off: i16 = if representation == 0 { 0 } else { 2 };
+                let _ = parts
+                    .output_rt
+                    .set_user_writer_data_rep_override(parts.writer_eid, Some(vec![off]));
+            }
+            let res = parts.output_rt.write_user_sample_relayed(
+                parts.writer_eid,
+                payload.as_slice(),
+                crypto_content,
+                key_hash,
+                source_timestamp,
+                Guid::from_bytes(writer_guid),
+                SequenceNumber(source_sequence_number),
+            );
+            if res.is_ok() {
+                parts.metrics.inc_forwarded();
+            } else {
+                parts.metrics.inc_errors();
+            }
+        }
+        UserSample::Lifecycle {
+            key_hash,
+            kind,
+            key_holder,
+            source_timestamp,
+            writer_guid,
+            source_sequence_number,
+            ..
+        } => {
+            if !parts.keyed {
+                return;
+            }
+            if source_sequence_number < 0 {
+                parts.metrics.inc_errors();
+                return;
+            }
+            // Input and output are the same topic and type (`Route::relay`),
+            // so the key holder is the output's too.
+            let res = parts.output_rt.write_user_lifecycle_on_behalf(
+                parts.writer_eid,
+                key_hash,
+                key_holder.as_deref(),
+                status_bits(kind),
+                source_timestamp,
+                Guid::from_bytes(writer_guid),
+                SequenceNumber(source_sequence_number),
+            );
+            if res.is_ok() {
+                parts.metrics.inc_lifecycle();
+            } else {
+                parts.metrics.inc_errors();
+            }
+        }
+        // As on a plain route: the set belongs to the input writer's numbers.
+        UserSample::CoherentSetEnd { .. } => {}
     }
 }
 

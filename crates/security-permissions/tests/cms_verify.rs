@@ -38,6 +38,7 @@ const INTERMEDIATE: &[u8] = include_bytes!("fixtures/intermediate_chain.smime.p7
 const EXPIRED: &[u8] = include_bytes!("fixtures/expired_signer.smime.p7s");
 const FUTURE: &[u8] = include_bytes!("fixtures/future_signer.smime.p7s");
 const RSA_PKCS1: &[u8] = include_bytes!("fixtures/rsa_pkcs1_signer.smime.p7s");
+const RSA_PSS_CA: &[u8] = include_bytes!("fixtures/rsa_pss_ca_cert.pem");
 
 #[test]
 fn happy_path_opaque_signed_passes() {
@@ -65,13 +66,13 @@ fn happy_path_then_open_signed_permissions_parses() {
     let verifier = CmsPkcs7Verifier::new(CA_PEM).expect("ca pem");
     let perms = open_signed_permissions(VALID_OPAQUE, &verifier).expect("open");
     assert_eq!(perms.grants.len(), 1);
-    assert_eq!(perms.grants[0].subject_name, "CN=alice");
-    assert!(
-        perms.grants[0]
-            .allow_publish_topics
-            .iter()
-            .any(|t| t == "Chatter")
-    );
+    assert_eq!(perms.grants[0].subject_text(), "CN=alice");
+    assert!(perms.grants[0].allows(
+        zerodds_security_permissions::Action::Publish,
+        0,
+        "Chatter",
+        &[]
+    ));
 }
 
 #[test]
@@ -206,6 +207,36 @@ fn future_signer_is_rejected() {
     );
 }
 
+/// DDS-Security 1.2 §8.2 Table 25: "The length of the salt is not
+/// specified. ... The validation of the signature shall detect the salt length
+/// from the signature." A permissions document signed with RSASSA-PSS and a
+/// salt of 0, 20, 32 or 64 octets verifies; a changed one does not.
+#[test]
+fn rsa_pss_signers_of_any_salt_length_are_accepted() {
+    let verifier = CmsPkcs7Verifier::new(RSA_PSS_CA).expect("ca pem");
+    for (salt, bytes) in [
+        (0, &include_bytes!("fixtures/rsa_pss_salt0.smime.p7s")[..]),
+        (20, &include_bytes!("fixtures/rsa_pss_salt20.smime.p7s")[..]),
+        (32, &include_bytes!("fixtures/rsa_pss_salt32.smime.p7s")[..]),
+        (64, &include_bytes!("fixtures/rsa_pss_salt64.smime.p7s")[..]),
+    ] {
+        let xml = verifier
+            .verify_and_extract(bytes)
+            .unwrap_or_else(|e| panic!("salt {salt}: {e}"));
+        assert!(
+            std::str::from_utf8(&xml).unwrap().contains("CN=alice"),
+            "salt {salt}"
+        );
+    }
+    // The signature of another signer's CA does not verify.
+    let wrong = CmsPkcs7Verifier::new(CA_PEM).expect("ca pem");
+    assert!(
+        wrong
+            .verify_and_extract(include_bytes!("fixtures/rsa_pss_salt20.smime.p7s"))
+            .is_err()
+    );
+}
+
 #[test]
 fn rsa_pkcs1_signer_is_accepted() {
     let verifier = CmsPkcs7Verifier::new(CA_PEM).expect("ca pem");
@@ -279,4 +310,26 @@ fn empty_input_is_rejected_cleanly() {
     let verifier = CmsPkcs7Verifier::new(CA_PEM).expect("ca pem");
     let err = verifier.verify_and_extract(b"").unwrap_err();
     assert!(matches!(err, PermissionsError::Malformed(_)));
+}
+
+/// DDS-Security 1.2 §7.3.11: the signature algorithm of a signed permissions
+/// document is read from its SignerInfo.
+#[test]
+fn the_signature_algorithm_of_a_signed_document_is_read() {
+    let verifier = CmsPkcs7Verifier::new(CA_PEM).expect("ca pem");
+    let ecdsa = verifier
+        .signature_algorithm_oid(VALID_OPAQUE)
+        .expect("opaque form");
+    assert!(ecdsa.starts_with("1.2.840.10045.4.3."), "{ecdsa}");
+    assert_eq!(
+        verifier.signature_algorithm_oid(VALID_MULTIPART).unwrap(),
+        ecdsa
+    );
+    assert_eq!(
+        verifier.signature_algorithm_oid(RSA_PKCS1).unwrap(),
+        // OpenSSL names rsaEncryption in the SignerInfo; the digest is
+        // SHA-256 (the only one the verifier takes).
+        "1.2.840.113549.1.1.1"
+    );
+    assert!(verifier.signature_algorithm_oid(b"no document").is_err());
 }

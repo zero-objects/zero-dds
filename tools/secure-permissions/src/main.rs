@@ -13,7 +13,7 @@
 //! embedded), and self-checks it against the verifier before writing — a file
 //! that lands on disk is guaranteed to load in a ZeroDDS participant.
 
-#![allow(clippy::print_stdout, clippy::print_stderr)] // CLI-Tool: stdout/stderr sind die Ausgabe.
+#![allow(clippy::print_stdout, clippy::print_stderr)] // CLI tool: stdout/stderr are the output.
 
 use std::process::ExitCode;
 
@@ -43,6 +43,10 @@ EXIT CODES:
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.iter().any(|a| a == "--version" || a == "-V") {
+        println!("zerodds-secure-permissions {}", env!("CARGO_PKG_VERSION"));
+        return ExitCode::SUCCESS;
+    }
     match run(&args) {
         Ok(()) => ExitCode::SUCCESS,
         Err(CliError::Usage(m)) => {

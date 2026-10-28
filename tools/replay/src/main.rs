@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! `zerodds-replay` — inspect/replay-CLI fuer `.zddsrec`-Files.
+//! `zerodds-replay` — inspect/replay CLI for `.zddsrec` files.
 //!
 //! Crate `zerodds-replay`. Safety classification: **COMFORT**.
 //!
 //! # Sub-Commands
 //!
-//! * `inspect FILE` — gibt Header + Frame-Counter aus.
-//! * `dump FILE` — listet alle Frames (Timestamp, Topic, Bytes-Length).
-//! * `replay FILE [--time-scale F] [--topic NAME]...` — schickt Frames
-//!   in Wallclock-Tempo (skalierbar), gefiltert nach Topic-Whitelist.
-//!   Standard: gibt sie auf stdout aus. Mit `--inject` werden sie an
-//!   `zerodds-c-api` fuer Live-Domain-Re-Injection weitergereicht.
+//! * `inspect FILE` — prints the header + frame counters.
+//! * `dump FILE` — lists all frames (timestamp, topic, byte length).
+//! * `replay FILE [--time-scale F] [--topic NAME]...` — sends frames
+//!   at wallclock pace (scalable), filtered by topic whitelist.
+//!   Default: prints them to stdout. With `--inject` they are handed to
+//!   `zerodds-c-api` for live-domain re-injection.
 
 #![warn(missing_docs)]
 #![allow(clippy::expect_used, clippy::print_stdout, clippy::print_stderr)]
@@ -29,7 +29,7 @@ use zerodds_recorder_decode::replay_source::{RecordedSample, from_ndjson, from_s
 
 fn print_help() {
     println!(
-        "zerodds-replay — inspect/replay-CLI fuer .zddsrec-Files
+        "zerodds-replay — inspect/replay CLI for .zddsrec files
 
 USAGE:
   zerodds-replay inspect FILE
@@ -43,12 +43,12 @@ USAGE:
 
 OPTIONS:
   --time-scale F      1.0 = wallclock; 60.0 = 1h Trace in 1min, etc.
-  --topic NAME        Filter — nur Frames dieses ROS-/DDS-Topic-Namens.
-                      Mehrfach erlaubt; leere Liste = alle Topics.
-  --inject            Re-Injection in eine Live-Domain.
-                      Cached pro Topic einen ZeroDDS-Writer und
-                      publisht den Sample-Strom byte-identisch.
-  --inject-domain N   DCPS-Domain-ID fuer Inject (default 0).
+  --topic NAME        Filter — only frames of this ROS/DDS topic name.
+                      Repeatable; an empty list = all topics.
+  --inject            Re-injection into a live domain.
+                      Caches one ZeroDDS writer per topic and
+                      publishes the sample stream byte-for-byte.
+  --inject-domain N   DCPS domain id for inject (default 0).
 "
     );
 }
@@ -128,9 +128,9 @@ fn cmd_dump(path: &PathBuf) -> Result<(), String> {
 struct ReplayOptions {
     time_scale: f64,
     topic_filter: HashSet<String>,
-    /// Wenn aktiv: nicht stdout-print, sondern publish via zerodds-Writer.
+    /// When active: no stdout print, but publish via a zerodds writer.
     inject_dcps: bool,
-    /// DCPS-Domain-ID fuer Re-Injection.
+    /// DCPS domain id for re-injection.
     inject_domain: u32,
 }
 
@@ -232,7 +232,7 @@ fn cmd_replay_zddsrec(path: &PathBuf, opts: &ReplayOptions) -> Result<(), String
     } else {
         1.0
     };
-    // ---- Inject-Mode: Pro Topic einen Writer cachen ----
+    // ---- Inject mode: cache one writer per topic ----
     let mut inject_state = if opts.inject_dcps {
         Some(InjectState::new(opts.inject_domain)?)
     } else {
@@ -285,8 +285,8 @@ fn cmd_replay_zddsrec(path: &PathBuf, opts: &ReplayOptions) -> Result<(), String
     Ok(())
 }
 
-/// Hilfs-State fuer den Inject-Mode: hält einen DCPS-Runtime-Handle
-/// + cache von Topic-Writern.
+/// Helper state for inject mode: holds a DCPS runtime handle
+/// + cache of topic writers.
 struct InjectState {
     runtime: *mut zerodds::ZeroDdsRuntime,
     writers: std::collections::HashMap<String, *mut zerodds::ZeroDdsWriter>,
@@ -294,12 +294,12 @@ struct InjectState {
 
 impl InjectState {
     fn new(domain: u32) -> Result<Self, String> {
-        // SAFETY: zerodds_runtime_create ist heap-allokiert + NULL-bei-Fehler.
+        // SAFETY: zerodds_runtime_create is heap-allocated + NULL on error.
         let rt = unsafe { zerodds::zerodds_runtime_create(domain) };
         if rt.is_null() {
             return Err("dcps runtime create failed".into());
         }
-        // SAFETY: rt aus zerodds_runtime_create.
+        // SAFETY: rt from zerodds_runtime_create.
         unsafe {
             let _ = zerodds::zerodds_runtime_wait_for_peers(rt, 1, 5_000);
         }
@@ -314,8 +314,8 @@ impl InjectState {
             None => {
                 let topic_c = std::ffi::CString::new(topic).map_err(|e| format!("topic: {e}"))?;
                 let type_c = std::ffi::CString::new(type_name).map_err(|e| format!("type: {e}"))?;
-                // SAFETY: zerodds_writer_create akzeptiert NULL-checked
-                // C-Strings + heap-runtime aus zerodds_runtime_create.
+                // SAFETY: zerodds_writer_create accepts NULL-checked
+                // C strings + heap runtime from zerodds_runtime_create.
                 let w = unsafe {
                     zerodds::zerodds_writer_create(
                         self.runtime,
@@ -327,7 +327,7 @@ impl InjectState {
                 if w.is_null() {
                     return Err(format!("writer_create failed for {topic}"));
                 }
-                // SAFETY: w aus zerodds_writer_create oben.
+                // SAFETY: w from zerodds_writer_create above.
                 unsafe {
                     let _ = zerodds::zerodds_writer_wait_for_matched(w, 1, 2_000);
                 }
@@ -335,8 +335,8 @@ impl InjectState {
                 w
             }
         };
-        // SAFETY: writer aus oben gecached oder gerade erzeugt;
-        // payload + len aus Caller (frame.payload).
+        // SAFETY: writer cached from above or just created;
+        // payload + len from caller (frame.payload).
         let rc = unsafe { zerodds::zerodds_writer_write(writer, payload.as_ptr(), payload.len()) };
         if rc != 0 {
             return Err(format!("writer_write rc={rc}"));
@@ -348,11 +348,11 @@ impl InjectState {
 impl Drop for InjectState {
     fn drop(&mut self) {
         for (_, w) in self.writers.drain() {
-            // SAFETY: w aus zerodds_writer_create.
+            // SAFETY: w from zerodds_writer_create.
             unsafe { zerodds::zerodds_writer_destroy(w) };
         }
         if !self.runtime.is_null() {
-            // SAFETY: runtime aus zerodds_runtime_create.
+            // SAFETY: runtime from zerodds_runtime_create.
             unsafe { zerodds::zerodds_runtime_destroy(self.runtime) };
         }
     }
@@ -412,7 +412,16 @@ fn parse_replay_opts(argv: &[String]) -> Result<(PathBuf, ReplayOptions), String
 
 fn main() -> ExitCode {
     let argv: Vec<String> = std::env::args().collect();
-    if argv.len() < 2 || matches!(argv[1].as_str(), "-h" | "--help" | "help") {
+    if argv.iter().skip(1).any(|a| a == "--version" || a == "-V") {
+        println!("zerodds-replay {}", env!("CARGO_PKG_VERSION"));
+        return ExitCode::SUCCESS;
+    }
+    if argv.len() < 2 {
+        // Nothing to do is a command-line error, as for the other tools.
+        print_help();
+        return ExitCode::from(2);
+    }
+    if matches!(argv[1].as_str(), "-h" | "--help" | "help") {
         print_help();
         return ExitCode::SUCCESS;
     }

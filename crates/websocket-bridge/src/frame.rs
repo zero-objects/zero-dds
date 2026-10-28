@@ -232,6 +232,40 @@ mod tests {
     }
 
     #[test]
+    fn data_frame_opcodes_have_msb_zero_per_spec_5_6() {
+        // Spec §5.6: "Data frames (e.g., non-control frames) are
+        // identified by opcodes where the most significant bit of the
+        // opcode is 0." Text is 0x1, Binary is 0x2.
+        for op in [Opcode::Continuation, Opcode::Text, Opcode::Binary] {
+            assert_eq!(op.to_bits() & 0x08, 0, "{op:?} is a data frame");
+            assert!(!op.is_control());
+        }
+        for op in [Opcode::Close, Opcode::Ping, Opcode::Pong] {
+            assert_ne!(op.to_bits() & 0x08, 0, "{op:?} is a control frame");
+        }
+    }
+
+    #[test]
+    fn text_and_binary_data_frames_carry_their_payload_unchanged() {
+        // Spec §5.6: a text frame's payload is UTF-8 text, a binary
+        // frame's payload is arbitrary binary data. Both travel as
+        // the frame payload with no transformation.
+        let text = Frame::text("Grüße");
+        assert_eq!(text.opcode, Opcode::Text);
+        assert_eq!(text.payload, "Grüße".as_bytes().to_vec());
+        assert!(crate::utf8::validate(&text.payload).is_ok());
+
+        let raw = alloc::vec![0x00, 0xFF, 0x80, 0xC0];
+        let binary = Frame::binary(raw.clone());
+        assert_eq!(binary.opcode, Opcode::Binary);
+        assert_eq!(binary.payload, raw);
+        assert!(
+            crate::utf8::validate(&binary.payload).is_err(),
+            "a binary frame carries bytes that are not UTF-8"
+        );
+    }
+
+    #[test]
     fn close_frame_includes_status_code_in_be_payload() {
         // Spec §7.4 — status code as 16-bit BE.
         let f = Frame::close(1000, "");

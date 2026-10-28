@@ -1,0 +1,8 @@
+// `map` keyed by an `enum`
+@bit_bound(16)
+enum Colour { RED, GREEN, BLUE };
+
+@final struct Sample {
+    map<Colour, long> entries;
+    long tail;
+};

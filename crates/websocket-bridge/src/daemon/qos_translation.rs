@@ -118,9 +118,9 @@ fn deadline_for(d: &zerodds_qos::DeadlineQosPolicy) -> DeadlineMode {
     if d.period == zerodds_qos::Duration::INFINITE || d.period == zerodds_qos::Duration::ZERO {
         return DeadlineMode::None;
     }
-    // ms = seconds*1000 + fraction*1000/2^32.
-    let frac_ms = ((d.period.fraction as u64) * 1000) >> 32;
-    let total_ms = (d.period.seconds.max(0) as u64) * 1000 + frac_ms;
+    // Rounded to the nearest millisecond: 300 ms is 299.999… ms in
+    // 2^-32 s and was cut to 299.
+    let total_ms = u64::try_from(d.period.to_millis()).unwrap_or(u64::MAX);
     if total_ms == 0 {
         DeadlineMode::None
     } else {

@@ -7,7 +7,7 @@
 
 //! Annex C C.1.10 — Concurrent Connections.
 //!
-//! Spec §C.1.10: der Endpoint SHALL mindestens
+//! Spec §C.1.10: the endpoint SHALL at least
 //! `max_connections` parallele Connections akzeptieren.
 
 mod common;
@@ -61,7 +61,7 @@ fn c1_10_server_accepts_multiple_concurrent_connections() {
     }
     assert_eq!(succeeded, N, "expected {N} connections, got {succeeded}");
 
-    // Server-Side hat alle N gezaehlt.
+    // Server side has counted all N.
     thread::sleep(Duration::from_millis(100));
     let total = metrics.snapshot("connections.total").unwrap_or(0);
     assert!(

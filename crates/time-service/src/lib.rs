@@ -3,7 +3,7 @@
 //! Crate `zerodds-time-service`. Safety classification: **STANDARD**.
 //!
 //! OMG Time Service 1.1 — Datatypes + Operations (Spec formal/2002-05-07).
-//! Pure-Rust no_std + alloc, `forbid(unsafe_code)`.
+//! Pure-Rust, `forbid(unsafe_code)`.
 //!
 //! ## Spec
 //!
@@ -25,7 +25,7 @@
 //! Consumers are end-user applications that need OMG-Time-Service-1.1
 //! conformance (e.g. the tutorial `dds-warehouse/02-time-sync`).
 //!
-//! ## Public API (as of 1.0.0-rc.1)
+//! ## Public API
 //!
 //! **TimeBase** ([`time_base`]):
 //! - [`TimeT`] — 64-bit 100ns tick counter (spec §1.3.2.1).
@@ -50,7 +50,10 @@
 //!
 //! **Service** ([`service`]):
 //! - [`TimeService`] — `universal_time` / `secure_universal_time` /
-//!   `new_universal_time` / `uto_from_utc` / `new_interval`.
+//!   `new_universal_time` / `uto_from_utc` / `new_interval` /
+//!   `with_source` (pluggable clock: the `no_std` embedding hook, and a
+//!   `std` override for a disciplined clock, `CLOCK_TAI` or a
+//!   deterministic test clock).
 //! - [`TimeUnavailable`] — exception type.
 //!
 //! ## Example

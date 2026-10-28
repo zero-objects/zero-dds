@@ -24,16 +24,16 @@ use zerodds_secure_permissions::sign_xml_opaque;
 use zerodds_security_runtime::{SecurityProfile, SecurityProfileConfig};
 
 const GOVERNANCE_XML: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
-<domain_access_rules><domain_rule><domains><id>0</id></domains>
+<dds><domain_access_rules><domain_rule><domains><id>0</id></domains><allow_unauthenticated_participants>false</allow_unauthenticated_participants><enable_join_access_control>false</enable_join_access_control>
 <topic_access_rules><topic_rule><topic_expression>*</topic_expression></topic_rule></topic_access_rules>
-</domain_rule></domain_access_rules>"#;
+</domain_rule></domain_access_rules></dds>"#;
 
 fn permissions_xml(common_name: &str) -> String {
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <dds><permissions><grant name="{common_name}">
-  <subject_name>CN={common_name}</subject_name>
-  <allow_rule><publish><topic>State</topic></publish></allow_rule>
+  <subject_name>CN={common_name}</subject_name><validity><not_before>1970-01-01T00:00:00</not_before><not_after>2100-01-01T00:00:00</not_after></validity>
+  <allow_rule><domains><id_range><min>0</min></id_range></domains><publish><topics><topic>State</topic></topics></publish></allow_rule>
   <default>DENY</default>
 </grant></permissions></dds>"#
     )
@@ -58,9 +58,16 @@ fn mint_ca(name: &str) -> (rcgen::Certificate, KeyPair) {
     (cert, key)
 }
 
-/// An EE identity leaf under `ca` with subject `CN=<name>`.
+/// An EE identity leaf under `ca` with subject `CN=<name>`. The grant of
+/// `permissions_xml(name)` names that subject (DDS-Security 1.2
+/// §10.4.1.5.3.1); `CertificateParams::new` alone leaves rcgen's default
+/// subject `CN=rcgen self signed cert` and sets only the SubjectAltName.
 fn mint_leaf(name: &str, ca: &rcgen::Certificate, ca_key: &KeyPair) -> (String, String) {
     let mut params = CertificateParams::new(vec![name.to_string()]).unwrap();
+    params.distinguished_name = rcgen::DistinguishedName::new();
+    params
+        .distinguished_name
+        .push(rcgen::DnType::CommonName, name);
     params.is_ca = IsCa::NoCa;
     let key = KeyPair::generate().unwrap();
     let cert = params.signed_by(&key, ca, ca_key).unwrap();
@@ -95,12 +102,25 @@ fn build_adapter(
 
     SecurityProfileConfig {
         domain_id: 0,
-        identity_ca_pem: w("identity_ca.pem", identity_ca_cert_pem.as_bytes()),
-        identity_cert_pem: w("identity.pem", leaf_cert_pem.as_bytes()),
-        identity_key_pem: w("identity_key.pem", leaf_key_pem.as_bytes()),
-        permissions_ca_pem: w("permissions_ca.pem", perm_ca_cert_pem.as_bytes()),
-        governance_p7s: w("governance.p7s", &gov_p7s),
-        permissions_p7s: w("permissions.p7s", &perms_p7s),
+        identity_ca_pem: w("identity_ca.pem", identity_ca_cert_pem.as_bytes()).into(),
+        identity_cert_pem: w("identity.pem", leaf_cert_pem.as_bytes()).into(),
+        identity_key_pem: w("identity_key.pem", leaf_key_pem.as_bytes()).into(),
+        permissions_ca_pem: w("permissions_ca.pem", perm_ca_cert_pem.as_bytes()).into(),
+        governance_p7s: w("governance.p7s", &gov_p7s).into(),
+        permissions_p7s: w("permissions.p7s", &perms_p7s).into(),
+        identity_key_password: None,
+        identity_key_password_reading: Default::default(),
+        symmetric_cipher_bits: 256,
+        max_blocks_per_session: None,
+        partition_matching: zerodds_security_permissions::PartitionMatching::Subset,
+        plaintext_loopback: false,
+        compatibility_checks: true,
+        kx_key_fallback: false,
+        identity_crl: None,
+        algo_name_nul: Default::default(),
+        algorithm_names: Default::default(),
+        subject_name_form: Default::default(),
+        origin_authentication_fallback: false,
     }
 }
 
@@ -185,7 +205,11 @@ fn from_files_rejects_permissions_signed_by_wrong_ca() {
     );
     // Overwrite the permissions-CA trust anchor with the REAL one — now the
     // rogue-signed docs must fail to verify.
-    std::fs::write(&cfg.permissions_ca_pem, perm_ca_pem.as_bytes()).unwrap();
+    std::fs::write(
+        cfg.permissions_ca_pem.path().expect("a file"),
+        perm_ca_pem.as_bytes(),
+    )
+    .unwrap();
 
     let res = SecurityProfile::from_files(&cfg, [0xC3u8; 16]);
     assert!(

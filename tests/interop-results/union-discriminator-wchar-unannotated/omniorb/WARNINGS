@@ -1,0 +1,6 @@
+# What omniorb's front end said about union-discriminator-wchar-unannotated. Not why a slot carries no
+# bytes — that is STATUS beside this file — but what the front end printed
+# while it did take the case. tests/interop-results/WARNINGS.md says what
+# each of these means and which of them changes a verdict.
+# program	warning
+omniidl	gen.idl:L: Warning: Confused by pre-processor line directives

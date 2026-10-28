@@ -6,29 +6,35 @@
 //! `AsyncReader` (Task + Channel) — over XRCE framing on a real UDP socket.
 //! Gated on `julia`.
 //!
-//! Name-clash handling: the generated code and `endpoints/julia/zerodds.jl`
-//! each define their own wire core (`Endian`, `Writer`, `LE`, ...). The SDK is
-//! already a `module ZeroDDS`; we wrap the generated code in `module Gen`, so
-//! the app refers to `Gen.Ping`/`Gen.marshal_xcdr`/`Gen.LE` and `ZeroDDS.*`.
+//! Name-clash handling: `runtime/julia/zerodds_wire.jl` and
+//! `endpoints/julia/zerodds.jl` each define their own wire core (`Writer`,
+//! `LE`, ...). The SDK is already a `module ZeroDDS`; the runtime is
+//! `module ZeroddsWire`, and the generated codec is wrapped in `module Gen`
+//! (which pulls the runtime in), so the app refers to `Gen.Ping` /
+//! `Gen.zd_enc_Ping` and `ZeroDDS.*` with nothing shadowed.
 
 #![allow(clippy::expect_used, clippy::panic, clippy::print_stderr)]
 
-use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
-use zerodds_endpoint_e2e::{IDL, Peer, bind_peer, ping_pong_with_timeout};
-use zerodds_idl::config::ParserConfig;
-use zerodds_idl_julia::{JuliaGenOptions, generate_julia_module};
+use zerodds_endpoint_e2e::codegen::{
+    Language, endpoints_dir, runtime_dir, scratch_dir, source, tool_available,
+};
+use zerodds_endpoint_e2e::{Peer, bind_peer, ping_pong_with_timeout};
 
 fn julia_available() -> bool {
-    Command::new("julia").arg("--version").output().is_ok()
+    tool_available("julia", "--version")
 }
 
-/// The generated Ping/Pong wire module (struct + marshal + decode).
+/// The generated Ping/Pong types + codec, wrapped in `module Gen` over the
+/// wire runtime it calls.
 fn gen_module() -> String {
-    let ast = zerodds_idl::parse(IDL, &ParserConfig::default()).expect("parse");
-    generate_julia_module(&ast, &JuliaGenOptions::default()).expect("gen")
+    format!(
+        "module Gen\ninclude(raw\"{}\")\nusing .ZeroddsWire\n\n{}\nend\n",
+        runtime_dir("julia").join("zerodds_wire.jl").display(),
+        source(Language::Julia)
+    )
 }
 
 // The app: generated types marshalled/decoded, transferred via the endpoint SDK
@@ -67,13 +73,23 @@ function main()
     receive = () -> isready(rxq) ? take!(rxq) : nothing
     tr = ZeroDDS.Transport(deliver, receive)
 
-    sample = Gen.marshal_xcdr(Gen.Ping(Int32(1), "hello from app"), Gen.LE)
+    zd_framing = Gen.ZeroddsWire.ZdPlCdr1Framing(
+        pid_flags = "sentinel-must-understand",
+        highest_short_id = 16128,
+        pad_declared_length = true,
+        pad_declared_optional_length = true,
+        member_must_understand = true,
+        pad_after_value = true,
+    )
+    w = Gen.ZeroddsWire.ZdWriter(Gen.ZeroddsWire.ZD_LITTLE, 4, zd_framing, false)
+    Gen.zd_enc_Ping(w, Gen.Ping(Int32(1), "hello from app"))
+    sample = Gen.ZeroddsWire.zd_writer_bytes(w)
 
     body = nothing
     if mode == "async"
         reader = ZeroDDS.start_reader(tr)
-        ZeroDDS.write!(ZeroDDS.Client(tr), sample)
-        deadline = time() + 10.0
+        ZeroDDS.write!(ZeroDDS.Client(tr, ZeroDDS.xrce_object_id(0x001, ZeroDDS.OBJK_DATAWRITER)), sample)
+        deadline = time() + 60.0
         while time() < deadline
             if isready(reader.ch)
                 body = take!(reader.ch)
@@ -84,9 +100,9 @@ function main()
         ZeroDDS.stop!(reader)
         body === nothing && error("async: no pong")
     else
-        client = ZeroDDS.Client(tr)
+        client = ZeroDDS.Client(tr, ZeroDDS.xrce_object_id(0x001, ZeroDDS.OBJK_DATAWRITER))
         ZeroDDS.write!(client, sample)
-        deadline = time() + 10.0
+        deadline = time() + 60.0
         while time() < deadline
             b = ZeroDDS.poll(client)
             if b !== nothing
@@ -98,7 +114,8 @@ function main()
         body === nothing && error("sync: no pong")
     end
 
-    pong = Gen.unmarshal_xcdr_Pong(body, Gen.LE)
+    r = Gen.ZeroddsWire.ZdReader(body, Gen.ZeroddsWire.ZD_LITTLE, 4, zd_framing)
+    pong = Gen.zd_dec_Pong(r, Gen.ZeroddsWire.ZD_TRY_CONSTRUCT_DISCARD)
     println("PONG seq=$(pong.seq) reply=$(pong.reply)")
 end
 
@@ -106,18 +123,9 @@ main()
 "#;
 
 fn build_julia(mode: &str, port: u16) -> Child {
-    let gen_src = gen_module();
-    let sdk = Path::new(&format!(
-        "{}/../../endpoints/julia/zerodds.jl",
-        env!("CARGO_MANIFEST_DIR")
-    ))
-    .canonicalize()
-    .expect("endpoints/julia path");
-    let dir = std::env::temp_dir().join(format!("pp_julia_{mode}_{}", std::process::id()));
-    std::fs::create_dir_all(&dir).expect("mkdir");
-    // Wrap the generated wire core in its own module to dodge the Endian/Writer
-    // clash with the SDK's ZeroDDS module.
-    std::fs::write(dir.join("gen.jl"), format!("module Gen\n{gen_src}\nend\n")).expect("write gen");
+    let sdk = endpoints_dir("julia").join("zerodds.jl");
+    let dir = scratch_dir(&format!("julia_{mode}"));
+    std::fs::write(dir.join("gen.jl"), gen_module()).expect("write gen");
     let main = format!(
         "include(\"gen.jl\")\ninclude(raw\"{}\")\n{JULIA_APP}",
         sdk.display()

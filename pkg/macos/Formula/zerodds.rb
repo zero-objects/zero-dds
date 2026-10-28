@@ -1,28 +1,28 @@
 # pkg/macos/Formula/zerodds.rb
 #
-# Homebrew-Formula fuer ZeroDDS. Wird von brew tap zerodds/zerodds
-# (oder homebrew-core nach Submission) konsumiert.
+# Homebrew formula for ZeroDDS. Consumed by brew tap zerodds/zerodds
+# (or by homebrew-core after submission).
 #
 # Test:
 #   brew install --build-from-source ./pkg/macos/Formula/zerodds.rb
 #
 # Maintainer-Workflow:
-#   1. Tag setzen: git tag v0.0.0
-#   2. Tarball + sha256 generieren (gitlab-Release oder github-Release).
-#   3. `url` + `sha256` in dieser Datei aktualisieren.
-#   4. Formula in homebrew-tap-Repository pushen.
+#   1. Set the tag: git tag v0.0.0
+#   2. Generate the tarball + sha256 (GitLab release or GitHub release).
+#   3. Update `url` + `sha256` in this file.
+#   4. Push the formula to the homebrew-tap repository.
 class Zerodds < Formula
   desc "Pure-Rust DDS implementation (OMG DDS 1.4 + RTPS 2.5)"
   homepage "https://zerodds.io"
-  url "https://gitlab.sandra-kessler.eu/fishermen21/zerodds/-/archive/v0.0.0/zerodds-v0.0.0.tar.gz"
+  url "https://github.com/zero-objects/zero-dds/archive/refs/tags/v0.0.0.tar.gz"
   sha256 "0000000000000000000000000000000000000000000000000000000000000000"
   license "Apache-2.0"
-  head "https://gitlab.sandra-kessler.eu/fishermen21/zerodds.git", branch: "main"
+  head "https://github.com/zero-objects/zero-dds.git", branch: "main"
 
   depends_on "rust" => :build
 
   def install
-    # CLI-Tools.
+    # CLI tools.
     system "cargo", "install", *std_cargo_args(path: "tools/admin"),     "--bin", "dds-admin"
     system "cargo", "install", *std_cargo_args(path: "tools/perf"),      "--bin", "dds-perf"
     system "cargo", "install", *std_cargo_args(path: "tools/idlc"),      "--bin", "dds-idlc"
@@ -31,14 +31,14 @@ class Zerodds < Formula
     system "cargo", "install", *std_cargo_args(path: "tools/bench-suite"),
                               "--bin", "roundtrip-1us"
 
-    # Shared-Library + Header (in lib/ und include/zerodds/).
+    # Shared library + header (in lib/ and include/zerodds/).
     system "cargo", "build", "--release", "-p", "dds-c-api"
     lib.install "target/release/libzerodds.dylib"
     (include/"zerodds").install "crates/dds-c-api/include/zerodds.h"
   end
 
   test do
-    # Sanity: jedes Tool darf wenigstens --version oder hw-info aufrufen.
+    # Sanity: every tool may at least call --version or hw-info.
     system "#{bin}/dds-perf", "hw-info"
     system "#{bin}/dds-admin", "--help"
   end

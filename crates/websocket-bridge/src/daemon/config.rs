@@ -1,28 +1,56 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Config file parser for `zerodds-ws-bridged`.
+//! Configuration of `zerodds-ws-bridged`.
 //!
-//! Spec: `zerodds-ws-bridge-1.0.md` §3.
+//! Spec: `zerodds-ws-bridge-1.0.md` §3. The file is read by the shared
+//! layered loader (`zerodds-config`): base file, `ws-bridged.d/` drop-ins,
+//! includes, `${VAR}` substitution, and the precedence defaults <
+//! environment < files < `--set`. The DDS runtime's own keys
+//! (`transport.*`, `discovery.*`, …) may sit in the same file.
 //!
-//! YAML subset (no external parser in the workspace):
-//!
-//! * Top-level mapping (key-value).
-//! * Nested mappings via indent (2 spaces).
-//! * Sequences via `- ` prefix with indent.
-//! * Scalars: strings (with/without quotes), integers, bool (`true`/`false`).
-//! * `#` comments up to EOL.
-//! * `${VAR}` and `${VAR:-default}` env substitution before the parse.
-//!
-//! Deliberately not a generic YAML parser — the spec subset is
-//! explicit; anything outside it is rejected with `ConfigError::Syntax`.
+//! [`DaemonConfig::from_config`] reads this daemon's keys out of the merged
+//! tree. A key inside a known section that the schema does not name, and a
+//! value of the wrong shape or type, is refused with its file and line.
 
-use std::collections::BTreeMap;
-use std::env;
-use std::fs;
 use std::path::Path;
 use std::string::{String, ToString};
 use std::vec::Vec;
+
+pub use zerodds_config::ConfigError;
+use zerodds_config::read::Section;
+
+/// The base name of the daemon's file in the system configuration
+/// directory: `ws-bridged.yaml`, `ws-bridged.d/`.
+pub const CONFIG_STEM: &str = "ws-bridged";
+
+/// Every key this daemon reads, as a dotted path; list-valued keys stop at
+/// the list (`topics`). The unknown-key check of the loader uses it.
+pub const KEYS: &[&str] = &[
+    "listen",
+    "domain",
+    "log_level",
+    "tls.enabled",
+    "tls.cert_file",
+    "tls.key_file",
+    "tls.client_ca_file",
+    "auth.mode",
+    "auth.bearer_token",
+    "auth.bearer_subject",
+    "auth.jwt.public_key",
+    "auth.jwt.issuer",
+    "auth.jwt.audience",
+    "auth.jwt.required_claim",
+    "metrics.enabled",
+    "metrics.listen",
+    "topics",
+];
+
+/// Whether `path` is one of [`KEYS`].
+#[must_use]
+pub fn is_key(path: &str) -> bool {
+    KEYS.contains(&path)
+}
 
 /// Parsed daemon config.
 #[derive(Debug, Clone, Default)]
@@ -44,24 +72,27 @@ pub struct DaemonConfig {
     pub tls_key_file: String,
     /// `tls.client_ca_file` — PEM CA bundle for mTLS client auth.
     pub tls_client_ca_file: String,
-    /// `auth.mode` — `none|bearer|jwt|mtls|sasl`. Spec §7.2.
+    /// `auth.mode` — `none|bearer|jwt|mtls`. Spec §7.2.
     pub auth_mode: String,
     /// `auth.bearer_token` — single-token form (map with one entry).
     pub auth_bearer_token: Option<String>,
-    /// `auth.bearer_token_subject` — who is behind the bearer.
+    /// `auth.bearer_subject` — who is behind the bearer.
     pub auth_bearer_subject: Option<String>,
-    /// Topic ACL: `topic → ("read,write" CSV of subjects)`. Spec §7.3.
+    /// `auth.jwt.*` — Spec §3, for `auth.mode: jwt`.
+    pub auth_jwt: zerodds_bridge_security::JwtSettings,
+    /// Topic ACL from `topics[].acl` — `topic → (read subjects,
+    /// write subjects)`. Spec §3/§7.3.
     pub topic_acl: std::collections::HashMap<String, (Vec<String>, Vec<String>)>,
     /// `metrics.enabled` — toggles the Prometheus endpoint (§8.2).
     pub metrics_enabled: bool,
     /// Bind address for the admin endpoint (`/metrics`, `/catalog`,
     /// `/healthz`). If empty but `metrics_enabled=true`: default
-    /// `127.0.0.1:9090`. Overridable via CLI/`metrics.address`.
+    /// `127.0.0.1:9091`. Overridable via CLI/`metrics.listen`.
     pub metrics_addr: String,
 }
 
 /// Single topic map entry.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct TopicConfig {
     /// `name:` — DDS topic name.
     pub name: String,
@@ -79,39 +110,6 @@ pub struct TopicConfig {
     pub history_depth: i32,
 }
 
-/// Config error.
-#[derive(Debug, Clone)]
-pub enum ConfigError {
-    /// File I/O error.
-    Io(String),
-    /// YAML syntax error.
-    Syntax(String),
-    /// A required field is missing.
-    MissingField(String),
-    /// Value type mismatch.
-    BadValue {
-        /// Field name.
-        field: String,
-        /// Raw value.
-        value: String,
-    },
-}
-
-impl core::fmt::Display for ConfigError {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Self::Io(m) => write!(f, "config io: {m}"),
-            Self::Syntax(m) => write!(f, "config syntax: {m}"),
-            Self::MissingField(m) => write!(f, "config missing field: {m}"),
-            Self::BadValue { field, value } => {
-                write!(f, "config bad value for {field}: {value}")
-            }
-        }
-    }
-}
-
-impl std::error::Error for ConfigError {}
-
 impl DaemonConfig {
     /// Default config (when neither a file nor a CLI override is set).
     #[must_use]
@@ -128,172 +126,189 @@ impl DaemonConfig {
             auth_mode: "none".to_string(),
             auth_bearer_token: None,
             auth_bearer_subject: None,
+            auth_jwt: zerodds_bridge_security::JwtSettings::default(),
             topic_acl: std::collections::HashMap::new(),
             metrics_enabled: false,
             metrics_addr: String::new(),
         }
     }
 
-    /// Loads + parses a config from a file.
+    /// Loads one file (and its sibling `<stem>.d/`), for tests and tools.
+    /// The daemon itself loads through `zerodds_dcps::cli::Configured`.
     ///
     /// # Errors
-    /// `Io` on a read error, `Syntax`/`MissingField`/`BadValue` on
-    /// malformed YAML.
+    /// Unreadable file, text outside the subset, or a refused value.
     pub fn load_from_file(path: &Path) -> Result<Self, ConfigError> {
-        let raw = fs::read_to_string(path).map_err(|e| ConfigError::Io(e.to_string()))?;
-        Self::load_from_str(&raw)
+        let config = zerodds_config::Loader::new()
+            .base(path)
+            .require_base()
+            .drop_in_dir(path.with_extension("d"))
+            .load()?;
+        Self::from_config(Some(&config))
     }
 
-    /// Parses a config from a YAML string. Public for tests.
+    /// Parses a config from a YAML string, for tests.
     ///
     /// # Errors
-    /// See [`ConfigError`].
+    /// Text outside the subset, or a refused value.
     pub fn load_from_str(raw: &str) -> Result<Self, ConfigError> {
-        let expanded = expand_env_vars(raw);
-        let nodes = parse_yaml_subset(&expanded)?;
+        let mut config = zerodds_config::Config::default();
+        config.push(
+            zerodds_config::parse_str(raw, "<string>")?,
+            "<string>".to_string(),
+        )?;
+        Self::from_config(Some(&config))
+    }
+
+    /// Reads this daemon's keys out of a merged tree, over
+    /// [`Self::default_for_dev`]. `None` = nothing was loaded.
+    ///
+    /// # Errors
+    /// [`ConfigError::Invalid`] naming the setting, its origin and what it
+    /// accepts.
+    pub fn from_config(config: Option<&zerodds_config::Config>) -> Result<Self, ConfigError> {
+        let root = Section::root(config.and_then(zerodds_config::Config::root))?;
         let mut out = Self::default_for_dev();
-        for (k, v) in nodes.iter() {
-            match k.as_str() {
-                "listen" => out.listen = v.as_scalar()?,
-                "domain" => {
-                    let s = v.as_scalar()?;
-                    out.domain = s.parse().map_err(|_| ConfigError::BadValue {
-                        field: "domain".to_string(),
-                        value: s,
-                    })?;
-                }
-                "log_level" => out.log_level = v.as_scalar()?,
-                "tls" => {
-                    if let YamlNode::Map(m) = v {
-                        if let Some(YamlNode::Scalar(s)) = m.get("enabled") {
-                            out.tls_enabled = parse_bool(s);
-                        }
-                        if let Some(YamlNode::Scalar(s)) = m.get("cert_file") {
-                            out.tls_cert_file = s.clone();
-                        }
-                        if let Some(YamlNode::Scalar(s)) = m.get("key_file") {
-                            out.tls_key_file = s.clone();
-                        }
-                        if let Some(YamlNode::Scalar(s)) = m.get("client_ca_file") {
-                            out.tls_client_ca_file = s.clone();
-                        }
-                    }
-                }
-                "auth" => {
-                    if let YamlNode::Map(m) = v {
-                        if let Some(YamlNode::Scalar(s)) = m.get("mode") {
-                            out.auth_mode = s.clone();
-                        }
-                        if let Some(YamlNode::Scalar(s)) = m.get("bearer_token") {
-                            out.auth_bearer_token = Some(s.clone());
-                        }
-                        if let Some(YamlNode::Scalar(s)) = m.get("bearer_subject") {
-                            out.auth_bearer_subject = Some(s.clone());
-                        }
-                    }
-                }
-                "acl" => {
-                    if let YamlNode::Map(m) = v {
-                        for (topic, entry) in m.iter() {
-                            if let YamlNode::Map(em) = entry {
-                                let read = em
-                                    .get("read")
-                                    .and_then(|n| match n {
-                                        YamlNode::Scalar(s) => Some(
-                                            s.split(',').map(|x| x.trim().to_string()).collect(),
-                                        ),
-                                        _ => None,
-                                    })
-                                    .unwrap_or_default();
-                                let write = em
-                                    .get("write")
-                                    .and_then(|n| match n {
-                                        YamlNode::Scalar(s) => Some(
-                                            s.split(',').map(|x| x.trim().to_string()).collect(),
-                                        ),
-                                        _ => None,
-                                    })
-                                    .unwrap_or_default();
-                                out.topic_acl.insert(topic.clone(), (read, write));
-                            }
-                        }
-                    }
-                }
-                "metrics" => {
-                    if let YamlNode::Map(m) = v {
-                        if let Some(YamlNode::Scalar(s)) = m.get("enabled") {
-                            out.metrics_enabled = parse_bool(s);
-                        }
-                        if let Some(YamlNode::Scalar(s)) = m.get("address") {
-                            out.metrics_addr = s.clone();
-                        }
-                    }
-                }
-                "topics" => {
-                    if let YamlNode::Seq(items) = v {
-                        for item in items.iter() {
-                            if let YamlNode::Map(m) = item {
-                                let mut t = TopicConfig::default();
-                                if let Some(YamlNode::Scalar(s)) = m.get("name") {
-                                    t.name = s.clone();
-                                }
-                                if let Some(YamlNode::Scalar(s)) = m.get("type") {
-                                    t.type_name = s.clone();
-                                }
-                                if let Some(YamlNode::Scalar(s)) = m.get("direction") {
-                                    t.direction = s.clone();
-                                } else {
-                                    t.direction = "bidir".to_string();
-                                }
-                                if let Some(YamlNode::Scalar(s)) = m.get("ws_path") {
-                                    t.ws_path = s.clone();
-                                }
-                                if let Some(YamlNode::Map(qm)) = m.get("qos") {
-                                    if let Some(YamlNode::Scalar(s)) = qm.get("reliability") {
-                                        t.reliability = s.clone();
-                                    }
-                                    if let Some(YamlNode::Scalar(s)) = qm.get("durability") {
-                                        t.durability = s.clone();
-                                    }
-                                    if let Some(YamlNode::Map(hm)) = qm.get("history") {
-                                        if let Some(YamlNode::Scalar(s)) = hm.get("depth") {
-                                            t.history_depth = s.parse().unwrap_or(10);
-                                        }
-                                    }
-                                }
-                                if t.name.is_empty() {
-                                    return Err(ConfigError::MissingField(
-                                        "topics[].name".to_string(),
-                                    ));
-                                }
-                                if t.type_name.is_empty() {
-                                    t.type_name = t.name.clone();
-                                }
-                                if t.ws_path.is_empty() {
-                                    t.ws_path = default_ws_path(&t.name);
-                                }
-                                out.topics.push(t);
-                            }
-                        }
-                    }
-                }
-                _ => {
-                    // Unknown top-level keys are NOT treated as an error
-                    // (forward compatibility), but made visible via a stderr WARN,
-                    // so that typos or doc drift (e.g. outdated `participant:` /
-                    // `websocket:` / `routes:` / `observability:` sections) do not
-                    // silently lead to default values.
-                    eprintln!(
-                        "[zerodds-ws-bridged config] WARN: unknown top-level key {:?} ignored \
-                         (typo or schema drift? expected one of: listen, domain, log_level, \
-                         tls, auth, acl, metrics, topics — see docs/specs/zerodds-ws-bridge-1.0.md §3)",
-                        k
-                    );
-                }
-            }
+        if let Some(v) = root.string("listen")? {
+            out.listen = v;
+        }
+        if let Some(v) = root.parse::<i32>("domain", "a DDS domain id")? {
+            out.domain = v;
+        }
+        if let Some(v) = root.choice("log_level", &["trace", "debug", "info", "warn", "error"])? {
+            out.log_level = v;
+        }
+
+        let tls = root.section("tls")?;
+        tls.only(&["enabled", "cert_file", "key_file", "client_ca_file"])?;
+        if let Some(v) = tls.boolean("enabled")? {
+            out.tls_enabled = v;
+        }
+        if let Some(v) = tls.string("cert_file")? {
+            out.tls_cert_file = v;
+        }
+        if let Some(v) = tls.string("key_file")? {
+            out.tls_key_file = v;
+        }
+        if let Some(v) = tls.string("client_ca_file")? {
+            out.tls_client_ca_file = v;
+        }
+
+        let auth = root.section("auth")?;
+        auth.only(&["mode", "bearer_token", "bearer_subject", "jwt"])?;
+        // Spec §7.2 names four modes; `sasl` was accepted too and then
+        // failed the start for want of a user list no key could supply.
+        if let Some(v) = auth.choice("mode", &["none", "bearer", "jwt", "mtls"])? {
+            out.auth_mode = v;
+        }
+        out.auth_bearer_token = auth.string("bearer_token")?;
+        out.auth_bearer_subject = auth.string("bearer_subject")?;
+        let jwt = auth.section("jwt")?;
+        jwt.only(&["public_key", "issuer", "audience", "required_claim"])?;
+        out.auth_jwt = zerodds_bridge_security::JwtSettings {
+            public_key: jwt.string("public_key")?.unwrap_or_default(),
+            issuer: jwt.string("issuer")?,
+            audience: jwt.string("audience")?,
+            required_claim: jwt.string("required_claim")?,
+        };
+
+        let metrics = root.section("metrics")?;
+        metrics.only(&["enabled", "listen"])?;
+        if let Some(v) = metrics.boolean("enabled")? {
+            out.metrics_enabled = v;
+        }
+        // `listen`, as §3 of every bridge spec spells it.
+        if let Some(v) = metrics.string("listen")? {
+            out.metrics_addr = v;
+        }
+
+        for (path, item) in root.items("topics")? {
+            let t = read_topic(&path, item, &mut out.topic_acl)?;
+            out.topics.push(t);
         }
         Ok(out)
     }
+}
+
+/// One `topics[]` entry. A bare name (`- Chat::Message`, or
+/// `--topic Chat::Message`) is the entry `{name: Chat::Message}`.
+fn read_topic(
+    path: &str,
+    item: &zerodds_config::Node,
+    acl: &mut std::collections::HashMap<String, (Vec<String>, Vec<String>)>,
+) -> Result<TopicConfig, ConfigError> {
+    let mut t = TopicConfig {
+        direction: "bidir".to_string(),
+        history_depth: 10,
+        ..TopicConfig::default()
+    };
+    if let zerodds_config::Node::Scalar(name, _) = item {
+        t.name = name.trim().to_string();
+    } else {
+        let entry = Section::of(Some(item), path)?;
+        entry.only(&["name", "type", "direction", "ws_path", "qos", "acl"])?;
+        t.name = entry.string("name")?.unwrap_or_default();
+        t.type_name = entry.string("type")?.unwrap_or_default();
+        if let Some(v) = entry.choice("direction", &["in", "out", "bidir"])? {
+            t.direction = v;
+        }
+        t.ws_path = entry.string("ws_path")?.unwrap_or_default();
+        let qos = entry.section("qos")?;
+        qos.only(&["reliability", "durability", "history"])?;
+        t.reliability = qos
+            .choice("reliability", &["reliable", "best_effort"])?
+            .unwrap_or_default();
+        t.durability = qos
+            .choice(
+                "durability",
+                &["volatile", "transient_local", "transient", "persistent"],
+            )?
+            .unwrap_or_default();
+        let history = qos.section("history")?;
+        history.only(&["depth"])?;
+        if let Some(depth) = history.parse::<i32>("depth", "an integer >= 1")? {
+            if depth < 1 {
+                return Err(ConfigError::Invalid {
+                    setting: history.path_of("depth"),
+                    origin: zerodds_config::read::first_origin(item),
+                    message: alloc_msg(depth),
+                });
+            }
+            t.history_depth = depth;
+        }
+        // Spec §3/§7.3: the ACL lives per topic entry,
+        // `acl: { read: [...], write: [...] }`, flattened into the flat
+        // `topic_acl` map the security layer consumes.
+        let entry_acl = entry.section("acl")?;
+        entry_acl.only(&["read", "write"])?;
+        if entry.node("acl").is_some() {
+            let read = entry_acl.strings("read")?.unwrap_or_default();
+            let write = entry_acl.strings("write")?.unwrap_or_default();
+            acl.insert(t.name.clone(), (read, write));
+        }
+    }
+    if t.name.is_empty() {
+        return Err(ConfigError::Invalid {
+            setting: alloc_path(path, "name"),
+            origin: zerodds_config::read::first_origin(item),
+            message: "a topic entry needs a name".to_string(),
+        });
+    }
+    if t.type_name.is_empty() {
+        t.type_name = t.name.clone();
+    }
+    if t.ws_path.is_empty() {
+        t.ws_path = default_ws_path(&t.name);
+    }
+    Ok(t)
+}
+
+fn alloc_path(path: &str, key: &str) -> String {
+    format!("{path}.{key}")
+}
+
+fn alloc_msg(depth: i32) -> String {
+    format!("got `{depth}`, expected an integer >= 1")
 }
 
 /// Slug algorithm per Spec §5.1: `Chat::Message` → `/topics/chat/message`.
@@ -318,297 +333,6 @@ pub fn default_ws_path(topic: &str) -> String {
         i += 1;
     }
     buf
-}
-
-fn parse_bool(s: &str) -> bool {
-    matches!(s.trim().to_ascii_lowercase().as_str(), "true" | "yes" | "1")
-}
-
-/// `${VAR}` and `${VAR:-default}` substitution.
-#[must_use]
-pub fn expand_env_vars(input: &str) -> String {
-    let mut out = String::with_capacity(input.len());
-    let chars: Vec<char> = input.chars().collect();
-    let mut i = 0;
-    while i < chars.len() {
-        if i + 1 < chars.len() && chars[i] == '$' && chars[i + 1] == '{' {
-            // Find closing `}`.
-            if let Some(end) = chars[i + 2..].iter().position(|&c| c == '}') {
-                let inner: String = chars[i + 2..i + 2 + end].iter().collect();
-                let (name, default) = match inner.split_once(":-") {
-                    Some((n, d)) => (n.to_string(), Some(d.to_string())),
-                    None => (inner.clone(), None),
-                };
-                let value = env::var(&name).ok().or(default).unwrap_or_default();
-                out.push_str(&value);
-                i += 2 + end + 1;
-                continue;
-            }
-        }
-        out.push(chars[i]);
-        i += 1;
-    }
-    out
-}
-
-/// YAML subset AST.
-#[derive(Debug, Clone)]
-enum YamlNode {
-    Scalar(String),
-    Seq(Vec<YamlNode>),
-    Map(BTreeMap<String, YamlNode>),
-}
-
-impl YamlNode {
-    fn as_scalar(&self) -> Result<String, ConfigError> {
-        match self {
-            Self::Scalar(s) => Ok(s.clone()),
-            _ => Err(ConfigError::Syntax("expected scalar".to_string())),
-        }
-    }
-}
-
-/// Mini YAML parser. Processes only the spec subset.
-fn parse_yaml_subset(raw: &str) -> Result<BTreeMap<String, YamlNode>, ConfigError> {
-    // Tokenize: `(indent, content)` per line.
-    let mut lines: Vec<(usize, String)> = Vec::new();
-    for line in raw.split('\n') {
-        // Strip `#` comments (outside of quotes).
-        let stripped = strip_comment(line);
-        if stripped.trim().is_empty() {
-            continue;
-        }
-        let indent = stripped.chars().take_while(|c| *c == ' ').count();
-        let content = stripped[indent..].to_string();
-        lines.push((indent, content));
-    }
-    let (out, _) = parse_block_map(&lines, 0, 0)?;
-    Ok(out)
-}
-
-fn strip_comment(line: &str) -> String {
-    let mut out = String::new();
-    let mut in_quote: Option<char> = None;
-    for c in line.chars() {
-        match in_quote {
-            Some(q) => {
-                out.push(c);
-                if c == q {
-                    in_quote = None;
-                }
-            }
-            None => {
-                if c == '#' {
-                    break;
-                }
-                if c == '"' || c == '\'' {
-                    in_quote = Some(c);
-                }
-                out.push(c);
-            }
-        }
-    }
-    // Trim trailing whitespace.
-    out.trim_end().to_string()
-}
-/// zerodds-lint: recursion-depth 64 (parse_block_map bounded by AST depth)
-fn parse_block_map(
-    lines: &[(usize, String)],
-    start: usize,
-    indent: usize,
-) -> Result<(BTreeMap<String, YamlNode>, usize), ConfigError> {
-    let mut map = BTreeMap::new();
-    let mut i = start;
-    while i < lines.len() {
-        let (line_indent, content) = &lines[i];
-        if *line_indent < indent {
-            break;
-        }
-        if *line_indent > indent {
-            return Err(ConfigError::Syntax(alloc_format(format_args!(
-                "unexpected indent at line containing {content}"
-            ))));
-        }
-        if content.starts_with("- ") || content.as_str() == "-" {
-            // We are inside a map but encountered a sequence-marker.
-            return Err(ConfigError::Syntax(
-                "unexpected sequence marker in map context".to_string(),
-            ));
-        }
-        let (key, value) = match content.split_once(':') {
-            Some((k, v)) => (k.trim().to_string(), v.trim().to_string()),
-            None => {
-                return Err(ConfigError::Syntax(alloc_format(format_args!(
-                    "no `:` in line: {content}"
-                ))));
-            }
-        };
-        if !value.is_empty() {
-            // Inline scalar.
-            map.insert(key, YamlNode::Scalar(unquote(&value)));
-            i += 1;
-        } else {
-            // Block child at the next-deeper indent.
-            i += 1;
-            // The next non-empty line determines the format.
-            if i >= lines.len() || lines[i].0 <= indent {
-                // Empty body — as an empty scalar.
-                map.insert(key, YamlNode::Scalar(String::new()));
-                continue;
-            }
-            let child_indent = lines[i].0;
-            let child_content = &lines[i].1;
-            if child_content.starts_with("- ") || child_content.as_str() == "-" {
-                let (seq, advanced) = parse_block_seq(lines, i, child_indent)?;
-                map.insert(key, YamlNode::Seq(seq));
-                i = advanced;
-            } else {
-                let (sub, advanced) = parse_block_map(lines, i, child_indent)?;
-                map.insert(key, YamlNode::Map(sub));
-                i = advanced;
-            }
-        }
-    }
-    Ok((map, i))
-}
-/// zerodds-lint: recursion-depth 64 (parse_block_seq bounded by AST depth)
-fn parse_block_seq(
-    lines: &[(usize, String)],
-    start: usize,
-    indent: usize,
-) -> Result<(Vec<YamlNode>, usize), ConfigError> {
-    let mut seq = Vec::new();
-    let mut i = start;
-    while i < lines.len() {
-        let (line_indent, content) = &lines[i];
-        if *line_indent < indent {
-            break;
-        }
-        if *line_indent > indent {
-            return Err(ConfigError::Syntax("seq misindented".to_string()));
-        }
-        if !content.starts_with('-') {
-            break;
-        }
-        // `- key: value` form vs `-` block child on the next line
-        let after_dash = if content == "-" {
-            String::new()
-        } else if content.starts_with("- ") {
-            content[2..].to_string()
-        } else {
-            return Err(ConfigError::Syntax("malformed seq item".to_string()));
-        };
-        if after_dash.is_empty() {
-            // Item body on the next line.
-            i += 1;
-            if i >= lines.len() || lines[i].0 <= indent {
-                seq.push(YamlNode::Scalar(String::new()));
-                continue;
-            }
-            let child_indent = lines[i].0;
-            let (sub, advanced) = parse_block_map(lines, i, child_indent)?;
-            seq.push(YamlNode::Map(sub));
-            i = advanced;
-        } else if let Some((k, v)) = after_dash.split_once(':') {
-            let k = k.trim().to_string();
-            let v = v.trim();
-            // Collect: first entry inline + following lines with `child_indent =
-            // indent + 2` as map members.
-            let mut sub = BTreeMap::new();
-            if v.is_empty() {
-                // Block child for the first key on the next line.
-                i += 1;
-                if i >= lines.len() {
-                    sub.insert(k, YamlNode::Scalar(String::new()));
-                } else if lines[i].0 > indent + 2 {
-                    let ci = lines[i].0;
-                    let child = &lines[i].1;
-                    if child.starts_with("- ") || child == "-" {
-                        let (s2, advanced) = parse_block_seq(lines, i, ci)?;
-                        sub.insert(k, YamlNode::Seq(s2));
-                        i = advanced;
-                    } else {
-                        let (m2, advanced) = parse_block_map(lines, i, ci)?;
-                        sub.insert(k, YamlNode::Map(m2));
-                        i = advanced;
-                    }
-                } else {
-                    sub.insert(k, YamlNode::Scalar(String::new()));
-                }
-            } else {
-                sub.insert(k, YamlNode::Scalar(unquote(v)));
-                i += 1;
-            }
-            // Collect further members of this map item: indent must be
-            // > the seq indent, exactly = indent + 2.
-            let item_member_indent = indent + 2;
-            while i < lines.len() {
-                let (li, lc) = &lines[i];
-                if *li < item_member_indent {
-                    break;
-                }
-                if *li == indent && (lc.starts_with("- ") || lc == "-") {
-                    break;
-                }
-                if *li != item_member_indent {
-                    break;
-                }
-                if lc.starts_with("- ") {
-                    break;
-                }
-                let (kk, vv) = lc
-                    .split_once(':')
-                    .ok_or_else(|| ConfigError::Syntax("seq map missing colon".to_string()))?;
-                let kk = kk.trim().to_string();
-                let vv = vv.trim();
-                if vv.is_empty() {
-                    i += 1;
-                    if i < lines.len() && lines[i].0 > item_member_indent {
-                        let ci = lines[i].0;
-                        let child = &lines[i].1;
-                        if child.starts_with("- ") || child == "-" {
-                            let (s2, advanced) = parse_block_seq(lines, i, ci)?;
-                            sub.insert(kk, YamlNode::Seq(s2));
-                            i = advanced;
-                        } else {
-                            let (m2, advanced) = parse_block_map(lines, i, ci)?;
-                            sub.insert(kk, YamlNode::Map(m2));
-                            i = advanced;
-                        }
-                    } else {
-                        sub.insert(kk, YamlNode::Scalar(String::new()));
-                    }
-                } else {
-                    sub.insert(kk, YamlNode::Scalar(unquote(vv)));
-                    i += 1;
-                }
-            }
-            seq.push(YamlNode::Map(sub));
-        } else {
-            // Inline scalar.
-            seq.push(YamlNode::Scalar(unquote(&after_dash)));
-            i += 1;
-        }
-    }
-    Ok((seq, i))
-}
-
-fn unquote(v: &str) -> String {
-    let v = v.trim();
-    if (v.starts_with('"') && v.ends_with('"') && v.len() >= 2)
-        || (v.starts_with('\'') && v.ends_with('\'') && v.len() >= 2)
-    {
-        v[1..v.len() - 1].to_string()
-    } else {
-        v.to_string()
-    }
-}
-
-fn alloc_format(args: core::fmt::Arguments<'_>) -> String {
-    use core::fmt::Write as _;
-    let mut s = String::new();
-    let _ = s.write_fmt(args);
-    s
 }
 
 #[cfg(test)]
@@ -653,14 +377,11 @@ listen: \"0.0.0.0:1234\"
     fn env_substitution_with_default() {
         // Test with a guaranteed-unset variable name
         // (UUID-style, so we do not rely on process state).
-        let s = expand_env_vars("token: ${ZERODDS_PROBABLY_UNSET_VAR_e2afb0b9_test:-fallback}");
-        assert!(s.contains("fallback"), "got: {s}");
-    }
-
-    #[test]
-    fn env_substitution_passthrough_when_no_placeholder() {
-        let s = expand_env_vars("plain: value");
-        assert_eq!(s, "plain: value");
+        let cfg = DaemonConfig::load_from_str(
+            "listen: ${ZERODDS_PROBABLY_UNSET_VAR_e2afb0b9_test:-10.0.0.1:1}\n",
+        )
+        .unwrap();
+        assert_eq!(cfg.listen, "10.0.0.1:1");
     }
 
     #[test]
@@ -731,6 +452,41 @@ listen: x
 domain: notanint
 ";
         let err = DaemonConfig::load_from_str(yaml).unwrap_err();
-        assert!(matches!(err, ConfigError::BadValue { .. }));
+        assert!(
+            matches!(&err, ConfigError::Invalid { setting, .. } if setting == "domain"),
+            "{err}"
+        );
+        assert!(err.to_string().contains("<string>:2"), "{err}");
+    }
+
+    #[test]
+    fn a_misspelled_key_inside_a_known_section_is_refused_with_its_line() {
+        for (yaml, setting) in [
+            ("tls:\n  cert_fiel: /x\n", "tls.cert_fiel"),
+            (
+                "topics:\n  - name: T\n    qos:\n      reliabilty: reliable\n",
+                "topics[0].qos.reliabilty",
+            ),
+            (
+                "topics:\n  - name: T\n    qos:\n      history:\n        depth: many\n",
+                "topics[0].qos.history.depth",
+            ),
+            ("tls:\n  enabled: yes\n", "tls.enabled"),
+            ("auth:\n  mode: bearr\n", "auth.mode"),
+        ] {
+            let err = DaemonConfig::load_from_str(yaml).unwrap_err();
+            assert!(
+                matches!(&err, ConfigError::Invalid { setting: s, .. } if s == setting),
+                "{yaml}: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_bare_topic_name_is_a_topic_entry() {
+        let cfg = DaemonConfig::load_from_str("topics:\n  - Chat::Message\n").unwrap();
+        assert_eq!(cfg.topics[0].name, "Chat::Message");
+        assert_eq!(cfg.topics[0].direction, "bidir");
+        assert_eq!(cfg.topics[0].ws_path, "/topics/chat/message");
     }
 }

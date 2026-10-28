@@ -35,7 +35,7 @@ fn no_args_exits_two() {
 
 #[test]
 fn missing_topic_exits_two() {
-    // subscribe ohne --topic muss exit 2 vor jeder DCPS-Init geben.
+    // subscribe without --topic must give exit 2 before any DCPS init.
     let out = Command::new(bin())
         .args(["subscribe", "-d", "5"])
         .output()
@@ -73,7 +73,7 @@ fn subscribe_short_duration_terminates() {
 
 #[test]
 fn subscribe_count_zero_terminates_immediately() {
-    // -n 0 → max_samples=0 → break sofort, kein Sample warten.
+    // -n 0 → max_samples=0 → break immediately, no waiting for a sample.
     let start = Instant::now();
     let out = Command::new(bin())
         .args(["-t", "Foo", "-n", "0", "--duration", "5s"])

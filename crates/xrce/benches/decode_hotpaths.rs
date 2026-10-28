@@ -8,7 +8,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, missing_docs)]
 
 use criterion::{Criterion, Throughput, black_box, criterion_group, criterion_main};
-use zerodds_xrce::transport_serial::{decode_frame, decode_frame_inner};
+use zerodds_xrce::transport_serial::{decode_frame, decode_frame_inner, encode_frame};
 use zerodds_xrce::{
     Message, MessageHeader, SerialNumber16, SessionId, StreamId, Submessage, SubmessageHeader,
     SubmessageId,
@@ -69,24 +69,18 @@ fn bench_submessage_header(c: &mut Criterion) {
 }
 
 fn bench_serial_frame_inner(c: &mut Criterion) {
-    // Synthetisches SLIP-encoded Frame: end + payload + end.
-    // Payload = ein minimal-Message-Frame.
-    let inner = build_single_msg();
-    let mut framed = vec![0xC0]; // SLIP END
-    framed.extend_from_slice(&inner);
-    framed.push(0xC0);
+    // An Annex C frame around a minimal message, the octets after the flag.
+    let framed = encode_frame(1, 0, &build_single_msg()).unwrap();
+    let inner = framed[1..].to_vec();
     c.bench_function("xrce_serial_decode_frame_inner", |b| {
         b.iter(|| {
-            let _ = decode_frame_inner(black_box(&framed));
+            let _ = decode_frame_inner(black_box(&inner));
         });
     });
 }
 
 fn bench_serial_decode_frame(c: &mut Criterion) {
-    let inner = build_single_msg();
-    let mut framed = vec![0xC0];
-    framed.extend_from_slice(&inner);
-    framed.push(0xC0);
+    let framed = encode_frame(1, 0, &build_single_msg()).unwrap();
     c.bench_function("xrce_serial_decode_frame", |b| {
         b.iter(|| {
             let _ = decode_frame(black_box(&framed));

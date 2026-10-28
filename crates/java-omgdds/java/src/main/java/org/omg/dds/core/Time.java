@@ -1,61 +1,163 @@
-// SPDX-License-Identifier: Apache-2.0
+/* Copyright 2010, Object Management Group, Inc.
+ * Copyright 2010, PrismTech, Inc.
+ * Copyright 2010, Real-Time Innovations, Inc.
+ * All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.omg.dds.core;
 
-import java.util.Objects;
+import java.io.Serializable;
+import java.util.concurrent.TimeUnit;
+
+import org.omg.dds.type.Extensibility;
+import org.omg.dds.type.Nested;
+
 
 /**
- * OMG DDS Java-PSM Time_t — Spec §7.2.5.
- *
- * <p>Time as `(seconds, nanoseconds)`. Semantically immutable.
+ * A moment in time expressed with nanosecond precision (though not
+ * necessarily nanosecond accuracy).
  */
-public final class Time {
-    public static final Time INFINITE = new Time(Integer.MAX_VALUE, 0x7FFFFFFFL);
-    public static final Time INVALID = new Time(-1, 0xFFFFFFFFL);
-    public static final Time ZERO = new Time(0, 0);
+@Extensibility(Extensibility.Kind.FINAL_EXTENSIBILITY)
+@Nested
+public abstract class Time
+implements Comparable<Time>, Serializable, DDSObject
+{
+    // -----------------------------------------------------------------------
+    // Private Constants
+    // -----------------------------------------------------------------------
 
-    private final long sec;
-    private final long nanosec;
+    private static final long serialVersionUID = -132361141453190372L;
 
-    private Time(long sec, long nanosec) {
-        this.sec = sec;
-        this.nanosec = nanosec;
+
+
+    // -----------------------------------------------------------------------
+    // Factory Methods
+    // -----------------------------------------------------------------------
+
+    /**
+     * Construct a specific instant in time.
+     * 
+     * Negative values are considered invalid and will result in the
+     * construction of a time <code>t</code> such that:
+     * 
+     * <code>t.isValid() == false</code>
+     * 
+     * @param env       Identifies the Service instance to which the new
+     *                  object will belong.
+     * 
+     * @see     #isValid()
+     */
+    public static ModifiableTime newTime(
+            long time,
+            TimeUnit units,
+            ServiceEnvironment env)
+    {
+        return env.getSPI().newTime(time, units);
     }
 
-    public static Time of(long sec, long nanosec) {
-        return new Time(sec, nanosec);
+
+    /**
+     * @param env       Identifies the Service instance to which the
+     *                  object will belong.
+     *                  
+     * @return      An unmodifiable {@link org.omg.dds.core.Time} that is not valid.
+     */
+    public static Time invalidTime(ServiceEnvironment env)
+    {
+        return env.getSPI().invalidTime();
     }
 
-    public static Time fromMillis(long millis) {
-        return new Time(millis / 1000, (millis % 1000) * 1_000_000L);
-    }
 
-    public long sec() {
-        return sec;
-    }
 
-    public long nanosec() {
-        return nanosec;
-    }
+    // -----------------------------------------------------------------------
+    // Instance Methods
+    // -----------------------------------------------------------------------
 
-    public long toMillis() {
-        return sec * 1000 + nanosec / 1_000_000;
-    }
+    // --- Data access: ------------------------------------------------------
 
-    @Override
-    public boolean equals(Object o) {
-        if (this == o) return true;
-        if (!(o instanceof Time)) return false;
-        Time other = (Time) o;
-        return sec == other.sec && nanosec == other.nanosec;
-    }
+    /**
+     * Truncate this time to a whole-number quantity of the given time
+     * unit. For example, if this time is equal to one second plus 100
+     * nanoseconds since the start of the epoch, calling this method with an
+     * argument of {@link TimeUnit#SECONDS} will result in the value
+     * <code>1</code>.
+     * 
+     * If this time is invalid, this method shall return
+     * a negative value, regardless of the units given.
+     * 
+     * If this time cannot be expressed in the given units without
+     * overflowing, this method shall return {@link Long#MAX_VALUE}. In such
+     * a case, the caller may wish to use this method in combination with
+     * {@link #getRemainder(TimeUnit, TimeUnit)} to obtain the full time
+     * without lack of precision.
+     * 
+     * @param   inThisUnit  The time unit in which the return result will
+     *                      be measured.
+     * 
+     * @see     #getRemainder(TimeUnit, TimeUnit)
+     * @see     Long#MAX_VALUE
+     * @see     TimeUnit
+     */
+    public abstract long getTime(TimeUnit inThisUnit);
 
-    @Override
-    public int hashCode() {
-        return Objects.hash(sec, nanosec);
-    }
+    /**
+     * If getting the magnitude of this time in the given
+     * <code>primaryUnit</code> would cause truncation with respect to the
+     * given <code>remainderUnit</code>, return the magnitude of the
+     * truncation in the latter (presumably finer-grained) unit. For example,
+     * if this time is equal to one second plus 100 nanoseconds since the
+     * start of the epoch, calling this method with arguments of
+     * {@link TimeUnit#SECONDS} and {@link TimeUnit#NANOSECONDS} respectively
+     * will result in the value <code>100</code>.
+     * 
+     * This method is equivalent to the following pseudo-code:
+     * 
+     * <code>(this - getTime(primaryUnit)).getTime(remainderUnit)</code>
+     * 
+     * If <code>remainderUnit</code> is represents a coarser granularity than
+     * <code>primaryUnit</code> (for example, the former is
+     * {@link TimeUnit#HOURS} but the latter is {@link TimeUnit#SECONDS}),
+     * this method shall return <code>0</code>.
+     * 
+     * If the resulting time cannot be expressed in the given units
+     * without overflowing, this method shall return {@link Long#MAX_VALUE}.
+     * 
+     * @param   primaryUnit
+     * @param   remainderUnit   The time unit in which the return result will
+     *                          be measured.
+     * 
+     * @see     #getTime(TimeUnit)
+     * @see     Long#MAX_VALUE
+     * @see     TimeUnit
+     */
+    public abstract long getRemainder(
+            TimeUnit primaryUnit, TimeUnit remainderUnit);
 
-    @Override
-    public String toString() {
-        return "Time(" + sec + "s, " + nanosec + "ns)";
-    }
+
+    // --- Query: ------------------------------------------------------------
+
+    /**
+     * @return  whether this time represents a meaningful instant in time.
+     */
+    public abstract boolean isValid();
+
+
+    // --- Modification: -----------------------------------------------------
+
+    /**
+     * @return  a modifiable copy of this object's state.
+     */
+    public abstract ModifiableTime modifiableCopy();
 }

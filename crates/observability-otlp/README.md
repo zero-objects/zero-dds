@@ -51,10 +51,11 @@ exp.add_histogram(Histogram::new("dds.write.latency"));
 let _ = exp.flush();
 ```
 
-## Stabilitaet
+## Stability
 
-`1.0.0-rc.1`. Wire format modeled on OTel spec v1.4 — a change
-driven by upstream OTel is a major bump.
+`1.0.0-rc.7`, a pre-release. The public API can still change before
+1.0.0; the crate's CHANGELOG lists every change.
+The wire format follows OTel spec v1.4.
 
 ## Tests
 

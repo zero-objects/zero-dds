@@ -1,5 +1,0 @@
-// Fixture: @optional → java.util.Optional<T>.
-struct Profile {
-    long id;
-    @optional string nickname;
-};

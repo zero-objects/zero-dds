@@ -98,7 +98,9 @@ Threadripper PRO 3955WX, `ring` backend), median of 100 Criterion samples, via
 
 `Encrypt` carries a ~0.55 µs per-sample floor (AEAD key setup + tag + framing)
 that dominates small samples, then settles to ~3.2–3.4 GiB/s of AEAD throughput
-for large ones; AES-256 costs ~5–8 % more than AES-128 (more rounds). So
+for large ones; AES-256, the default (DDS-Security 1.2 §10.5.1.1), costs ~5–8 % more
+than AES-128 (more rounds), which `dds.sec.crypto.symmetric_cipher_algorithm`
+selects. So
 per-topic `Encrypt` is cheap in absolute terms but not free per sample — a
 high-rate topic of tiny samples pays the fixed floor on every write, which is
 exactly why choosing protection **per topic** rather than per participant

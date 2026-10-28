@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 # ZeroDDS — IDL → Lua codegen backend
 
-`zerodds-idlc --lua` emits **native pure-Lua** from OMG IDL: a self-contained
+`zerodds-idlc generate --lang lua` emits **native pure-Lua** from OMG IDL: a self-contained
 source file with a `Writer` built on `string.pack` (byte-identical to the
 `endpoints/lua` core, **no FFI**) and, per IDL `struct`, a
 `marshal_<Name>(v, endian)` function whose wire output matches the Rust goldens
@@ -13,7 +13,7 @@ Crate: [`crates/idl-lua`](../crates/idl-lua) · registered in `tools/idlc`
 ## Usage
 
 ```sh
-zerodds-idlc types.idl --lua      # emits types.lua
+zerodds-idlc generate --lang lua types.idl   # emits types.lua
 ```
 
 ## Mapping

@@ -24,6 +24,28 @@ use crate::service_gen::ServiceCatalog;
 /// Reflection service path, the same value as in `grpcurl -plaintext localhost:N list`.
 pub const REFLECTION_PATH: &str = "/grpc.reflection.v1alpha.ServerReflection/ServerReflectionInfo";
 
+/// The `v1alpha` reflection service name.
+pub const REFLECTION_SERVICE_V1ALPHA: &str = "grpc.reflection.v1alpha.ServerReflection";
+
+/// The `v1` reflection service name.
+///
+/// grpc/grpc-proto promoted the service out of `v1alpha` and both names
+/// are served side by side by every current implementation. A client
+/// asks for `v1` first: grpcurl 1.9.3 opens
+/// `/grpc.reflection.v1.ServerReflection/ServerReflectionInfo` and only
+/// falls back to `v1alpha` on `UNIMPLEMENTED`. Answering `NOT_FOUND` —
+/// which is what an unknown service got here — stops the fallback and
+/// ends the `list` with "unknown service
+/// grpc.reflection.v1.ServerReflection".
+pub const REFLECTION_SERVICE_V1: &str = "grpc.reflection.v1.ServerReflection";
+
+/// Whether a `:path` service name addresses the reflection service, in
+/// either of its two names.
+#[must_use]
+pub fn is_reflection_service(service: &str) -> bool {
+    service == REFLECTION_SERVICE_V1 || service == REFLECTION_SERVICE_V1ALPHA
+}
+
 /// Status code (NOT_FOUND).
 pub const STATUS_NOT_FOUND: i32 = 5;
 

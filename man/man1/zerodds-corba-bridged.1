@@ -1,27 +1,145 @@
-.TH ZERODDS-CORBA-BRIDGED 1 "2026-05-06" "1.0.0-rc.1" "ZeroDDS Manual"
+.TH ZERODDS-CORBA-BRIDGED 1 "" "ZeroDDS" "ZeroDDS Manual"
 .SH NAME
 zerodds-corba-bridged \- DDS to CORBA GIOP/IIOP bridge daemon
 .SH SYNOPSIS
 .B zerodds-corba-bridged
-[\fB\-c\fR \fIFILE\fR]
-[\fB\-\-validate\-only\fR]
+[\fB\-\-config\fR \fIFILE\fR]
+[\fB\-\-set\fR \fIPATH=VALUE\fR]...
+[\fB\-\-check\-config\fR]
+[\fB\-\-iiop\-bind\fR \fIADDR\fR]
+[\fB\-\-domain\fR \fIID\fR]
+[\fB\-\-topic\fR \fIREPO_ID=TOPIC\fR]...
+[\fB\-\-dump\-iors\fR]
 [\fB\-V\fR | \fB\-h\fR]
 .SH DESCRIPTION
 .B zerodds-corba-bridged
-implements the CORBA-Coexistence layer: it terminates IIOP 1.0/1.1/1.2,
-multiplexes POA-rooted servants onto DDS topics, persists IORs and
-optionally enables CSIv2 mTLS for finance-grade deployments.
+maps CORBA operations onto DDS request/reply topic pairs and DDS samples
+onto oneway CORBA calls. It serves IIOP and, with a certificate, SSLIOP;
+it writes one IOR per mapping. GIOP 1.0 to 1.2 are accepted; a mapped
+operation needs GIOP 1.2.
+With
+.BR corba.csiv2.enabled ,
+every request's SAS
+.I EstablishContext
+is evaluated against a GSSUP password file (CORBA 3.4 Part 2 \(sc10/\(sc24);
+a rejected one gets
+.B NO_PERMISSION
+with a SAS
+.B ContextError
+attached, additively next to SSLIOP client certificates and the ACL.
+With
+.BR corba.ior.publish_to_naming ,
+every mapping's IOR is
+.B rebind
+into
+.B corba.ior.naming_service
+(a
+.IR corbaname: " or " corbaloc:
+URL) at start and
+.B unbind
+at a clean stop.
+.B corba.naming.serve
+(hosting a NameService in-process, sharing this daemon's own transport) is
+not built.
 Implements
-.IR zerodds-corba-bridge-1.0 (7).
+.IR docs/specs/zerodds-corba-bridge-1.0.md .
 .SH OPTIONS
-.BR \-c , \-\-log\-level , \-\-validate\-only , \-V , \-h .
+.TP
+.BR \-\-config =\fIFILE\fR
+Base file, plus \fIFILE\fR.d/. Without it:
+.I corba-bridged.yaml
+and
+.I corba-bridged.d/
+in the system directory. See
+.BR zerodds-corba-bridged.yaml (5).
+.TP
+.BR \-\-set =\fIPATH=VALUE\fR
+One value above all files; repeatable. Every option below except
+\fB\-\-dump\-iors\fR is short for \fB\-\-set\fR of its file key.
+.TP
+.BR \-\-check\-config
+Check the configuration, print every value with its origin, exit
+0 (valid) or 1 (invalid).
+.TP
+.BR \-\-iiop\-bind =\fIADDR\fR
+IIOP listen address. Default:
+.IR 0.0.0.0:6833 .
+.TP
+.BR \-\-ssliop\-bind =\fIADDR\fR
+SSLIOP listen address; enables SSLIOP. Default:
+.IR 0.0.0.0:6834 .
+.TP
+.BR \-\-domain =\fIID\fR
+DDS Domain ID.
+.TP
+.BR \-\-orb\-id =\fIID\fR
+ORB-Identity.
+.TP
+.BR \-\-tls\-cert =\fIFILE\fR
+SSLIOP server certificate (PEM); only together with \fB\-\-tls\-key\fR.
+.TP
+.BR \-\-tls\-key =\fIFILE\fR
+SSLIOP server key (PEM).
+.TP
+.BR \-\-topic =\fIREPO_ID=TOPIC\fR
+One more mapping, repeatable.
+.TP
+.BR \-\-dump\-iors
+Print one line per mapping,
+.IR "repo_id operation IOR:..." ,
+and exit.
+.TP
+.BR \-\-log\-level =\fILEVEL\fR
+One of
+.IR trace ", " debug ", " info ", " warn ", " error .
+.TP
+.BR \-\-metrics =\fIADDR\fR
+Prometheus listen addr.
+.PP
+Test hooks. Real options, documented because the program accepts them
+and an option nobody can find is one nobody maintains.
+.TP
+.BR \-\-idle\-timeout\-ms =\fIN\fR
+Stop after \fIN\fR milliseconds, as on SIGTERM.
+.TP
+.BR \-V ", " \-\-version
+Print version.
+.TP
+.BR \-h ", " \-\-help
+Show the option synopsis.
 .SH SIGNALS
-SIGTERM, SIGHUP.
+SIGTERM and SIGINT stop the daemon: requests arriving then get
+.BR TRANSIENT ,
+pending requests get their reply or their
+.B TIMEOUT
+for at most 30 s, then every connection gets CloseConnection.
+SIGHUP reads the configuration again: the ACL and the SSLIOP certificate
+apply from then on (the certificate to new connections); changed mappings,
+binds or domain need a restart and are logged. A configuration that does
+not load changes nothing.
+.SH ENVIRONMENT
+.TP
+.B OTEL_EXPORTER_OTLP_ENDPOINT
+Optional OTLP endpoint, such as http://localhost:4318.
+.TP
+.B ZERODDS_CORBA_ADVERTISE_HOST
+The host the IORs name when
+.B corba.iiop.bind
+is a wildcard address; the setting
+.BR corba.iiop.advertise_host ,
+above the files, below
+.BR \-\-set .
+Default
+.IR 127.0.0.1 .
+.SH EXIT STATUS
+0 normal stop, 1 configuration, 2 bind, 3 DDS, 4 TLS.
 .SH FILES
-.IR /etc/zerodds/corba-bridged.yaml ", " /var/lib/zerodds/corba-ior-cache.bin .
+.IR /etc/zerodds/corba-bridged.yaml ,
+the file named by
+.BR corba.ior.ior_file .
 .SH SEE ALSO
 .BR zerodds-corba-bridged.yaml (5).
 .SH STANDARDS
-CORBA 3.3, GIOP 1.2, CSIv2.
+CORBA 3.3, GIOP 1.2, SSLIOP.
 .SH AUTHORS
 ZeroDDS Contributors.

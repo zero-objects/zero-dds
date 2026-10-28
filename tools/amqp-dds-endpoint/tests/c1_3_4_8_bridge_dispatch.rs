@@ -8,17 +8,17 @@
 //! Annex C C.1.3 / C.1.4 / C.1.8 — Bridge-Dispatch via DdsHost.
 //!
 //! Spec §C.1.3 Sender-Link Producer-to-DDS:
-//! AMQP-Klient publishtet → DDS-DataWriter sieht den Sample.
-//! Test simuliert das ueber die Bridge-Helper (AMQP-Body landet
-//! im DdsHost), ohne die volle Daemon-Wire-Roundtrip zu fahren.
+//! AMQP client publishes → DDS DataWriter sees the sample.
+//! Test simulates this via the bridge helper (the AMQP body lands
+//! in the DdsHost) without running the full daemon wire roundtrip.
 //!
 //! Spec §C.1.4 Receiver-Link DDS-to-Consumer:
-//! analog rueckwaerts; DDS publishtet → AMQP-Receiver bekommt
-//! Transfer.
+//! analogous in reverse; DDS publishes → the AMQP receiver gets
+//! a transfer.
 //!
 //! Spec §C.1.8 Catalog-Address:
-//! AMQP-Klient attached Receiver auf `$catalog`, sieht eine
-//! Catalog-Entry pro Topic-Mapping.
+//! AMQP client attaches a receiver to `$catalog`, sees a
+//! one catalog entry per topic mapping.
 
 mod common;
 
@@ -50,19 +50,19 @@ fn host_with_topics(specs: &[(&str, &str, LinkDirection)]) -> InMemoryDdsHost {
 
 #[test]
 fn c1_3_amqp_producer_publishes_to_dds_via_bridge() {
-    // Spec §C.1.3 — Klient sendet AMQP-Sample, Bridge leitet
-    // an DDS-DataWriter weiter.
+    // Spec §C.1.3 — client sends an AMQP sample, the bridge forwards
+    // to a DDS DataWriter.
     let host = host_with_topics(&[("Sensor", "SensorTopic", LinkDirection::DirProducerToDds)]);
 
-    // 1. Klient attached Sender-Link an Address "Sensor".
+    // 1. Client attaches a sender link to address "Sensor".
     let outcome = dispatch_attach(&host, "Sensor");
     let topic_id = match outcome {
         AttachOutcome::AttachedTopic { topic_id } => topic_id,
         other => panic!("expected AttachedTopic, got {other:?}"),
     };
 
-    // DDS-Side abonniert (echter DataWriter wuerde von der DDS-
-    // Crate kommen; hier Mock, der das Sample festhaelt).
+    // DDS side subscribes (a real DataWriter would come from the DDS
+    // crate; here a mock that holds onto the sample).
     let received = Arc::new(std::sync::Mutex::new(Vec::<Vec<u8>>::new()));
     let received_cb = received.clone();
     host.subscribe_amqp_to_dds(
@@ -73,27 +73,27 @@ fn c1_3_amqp_producer_publishes_to_dds_via_bridge() {
     )
     .unwrap();
 
-    // 2. Klient sendet drei Transfer-Frames mit XCDR2-Body.
+    // 2. Client sends three transfer frames with XCDR2 body.
     let metrics = Arc::new(MetricsHub::new());
     for sample in [b"sample-1".as_slice(), b"sample-2", b"sample-3"] {
         dispatch_transfer(&host, topic_id, sample, &metrics).unwrap();
     }
 
-    // 3. DDS-Side hat alle drei Samples gesehen.
+    // 3. The DDS side has seen all three samples.
     let captured = received.lock().unwrap().clone();
     assert_eq!(captured.len(), 3);
     assert_eq!(captured[0], b"sample-1");
     assert_eq!(captured[1], b"sample-2");
     assert_eq!(captured[2], b"sample-3");
 
-    // 4. Metric `transfers.received` zeigt drei.
+    // 4. Metric `transfers.received` shows three.
     assert_eq!(metrics.snapshot("transfers.received"), Some(3));
 }
 
 #[test]
 fn c1_4_dds_publish_flows_to_amqp_consumer_callback() {
-    // Spec §C.1.4 — DDS-DataReader bekommt Sample (=DDS-Side
-    // publish), AMQP-Receiver-Link bekommt Transfer.
+    // Spec §C.1.4 — a DDS DataReader gets a sample (=DDS-side
+    // publish), the AMQP receiver link gets a transfer.
     let host = host_with_topics(&[("Pose", "PoseTopic", LinkDirection::DirDdsToConsumer)]);
 
     let outcome = dispatch_attach(&host, "Pose");
@@ -102,8 +102,8 @@ fn c1_4_dds_publish_flows_to_amqp_consumer_callback() {
         other => panic!("expected AttachedTopic, got {other:?}"),
     };
 
-    // AMQP-Receiver-Side abonniert; Callback simuliert
-    // Outbound-AMQP-Transfer-Producer.
+    // AMQP receiver side subscribes; the callback simulates
+    // the outbound AMQP transfer producer.
     let outbound_count = Arc::new(AtomicUsize::new(0));
     let outbound_cb = outbound_count.clone();
     let outbound_bytes = Arc::new(std::sync::Mutex::new(Vec::<u8>::new()));
@@ -118,34 +118,34 @@ fn c1_4_dds_publish_flows_to_amqp_consumer_callback() {
     )
     .unwrap();
 
-    // DDS-Side publishtet ein Sample (z.B. via discovery
-    // oder echtem DataWriter; hier direkt host.publish).
+    // DDS side publishes a sample (e.g. via discovery
+    // or a real DataWriter; here directly host.publish).
     host.publish_to_dds(topic_id, b"pose-update").unwrap();
 
-    // AMQP-Receiver-Side hat genau ein Outbound-Sample bekommen.
+    // AMQP receiver side received exactly one outbound sample.
     assert_eq!(outbound_count.load(Ordering::Relaxed), 1);
     assert_eq!(*outbound_bytes.lock().unwrap(), b"pose-update");
 }
 
 #[test]
 fn c1_8_catalog_receiver_gets_one_sample_per_topic() {
-    // Spec §C.1.8 — Receiver auf `$catalog` bekommt pro
-    // configured Topic-Mapping einen Sample.
+    // Spec §C.1.8 — receiver on `$catalog` gets one per
+    // configured topic mapping one sample.
     let host = host_with_topics(&[
         ("Sensor", "SensorTopic", LinkDirection::DirProducerToDds),
         ("Pose", "PoseTopic", LinkDirection::DirDdsToConsumer),
         ("Cmd", "CmdTopic", LinkDirection::DirBoth),
     ]);
 
-    // Klient attached Receiver-Link auf `$catalog`.
+    // Client attaches a receiver link on `$catalog`.
     let outcome = dispatch_attach(&host, addresses::CATALOG);
     assert_eq!(outcome, AttachOutcome::AttachedCatalog);
 
-    // Bridge produziert die Catalog-Sample-Stream.
+    // The bridge produces the catalog sample stream.
     let samples = produce_catalog_transfers(&host);
     assert_eq!(samples.len(), 3);
 
-    // Jedes Sample kann als AMQP-Wire-Body encoded werden.
+    // Each sample can be encoded as an AMQP wire body.
     for s in samples {
         let body = encode_catalog_sample(s).unwrap();
         assert!(
@@ -160,8 +160,8 @@ fn c1_8_catalog_receiver_gets_one_sample_per_topic() {
 
 #[test]
 fn c1_3_unknown_address_attaches_with_unknown_address_outcome() {
-    // Spec §C.1.3 + §7.5.1 — Attach an nicht-konfigurierte
-    // Address liefert UnknownAddress (Caller mappt auf
+    // Spec §C.1.3 + §7.5.1 — attach to an unconfigured
+    // address returns UnknownAddress (the caller maps it to
     // amqp:not-found).
     let host = host_with_topics(&[]);
     let outcome = dispatch_attach(&host, "NotInCatalog");
@@ -170,25 +170,25 @@ fn c1_3_unknown_address_attaches_with_unknown_address_outcome() {
 
 #[test]
 fn c2_2_bridge_outbound_publish_flows_to_dds() {
-    // Spec §C.2.2 — Bridge sendet Sender-Link nach Outbound-
-    // Broker-Side (AMQP). Der Broker leitet weiter, ein zweiter
-    // Bridge-Endpoint connectet als Receiver-Side und ruft
-    // dispatch_transfer mit den Bytes — die landen in DDS.
+    // Spec §C.2.2 — bridge sends a sender link after outbound
+    // Broker side (AMQP). The broker forwards, a second
+    // The bridge endpoint connects as the receiver side and calls
+    // dispatch_transfer with the bytes — they land in DDS.
     //
-    // Wir simulieren das End-to-End: zwei Bridges, die einen
-    // Topic teilen, samples flow von Bridge-A's DDS via AMQP
-    // zu Bridge-B's DDS.
+    // We simulate this end-to-end: two bridges that share the
+    // topic; samples flow from Bridge-A's DDS via AMQP
+    // to Bridge-B's DDS.
     let bridge_a = host_with_topics(&[("Cmd", "CmdTopic", LinkDirection::DirBoth)]);
     let bridge_b = host_with_topics(&[("Cmd", "CmdTopic", LinkDirection::DirBoth)]);
 
-    // Bridge-A subscriben zur DDS-Side (Outbound-Pfad).
+    // Bridge A subscribes to the DDS side (outbound path).
     let topic_a = bridge_a.lookup("Cmd").unwrap();
     let topic_b = bridge_b.lookup("Cmd").unwrap();
 
-    // Mock-Wire-Roundtrip: wenn Bridge-A's DDS-Side publishtet,
-    // wird der AMQP-Receiver-Outbound-Callback aufgerufen, der
-    // (via simulierten AMQP-Wire) als Inbound-Transfer bei
-    // Bridge-B ankommt.
+    // Mock wire roundtrip: when bridge A's DDS side publishes,
+    // the AMQP receiver outbound callback is invoked, which
+    // (via simulated AMQP wire) arrives as an inbound transfer at
+    // Bridge-B.
     let bridge_b_metrics = Arc::new(MetricsHub::new());
     let bridge_b_metrics_cb = bridge_b_metrics.clone();
     let bridge_b_for_cb = std::sync::Arc::new(bridge_b);
@@ -197,8 +197,8 @@ fn c2_2_bridge_outbound_publish_flows_to_dds() {
         .subscribe_amqp_to_dds(
             topic_a,
             Arc::new(move |bytes: &[u8]| {
-                // Simulated AMQP-Wire-Roundtrip: Bridge-A -> Broker -> Bridge-B
-                // -> dispatch_transfer auf Bridge-B's DdsHost.
+                // Simulated AMQP wire roundtrip: Bridge-A -> Broker -> Bridge-B
+                // -> dispatch_transfer on Bridge-B's DdsHost.
                 dispatch_transfer(
                     &*bridge_b_for_cb_clone,
                     topic_b,
@@ -210,8 +210,8 @@ fn c2_2_bridge_outbound_publish_flows_to_dds() {
         )
         .unwrap();
 
-    // Bridge-A's DDS-Side publishtet; Bridge-B's DDS-Side
-    // empfaengt es.
+    // Bridge-A's DDS side publishes; Bridge-B's DDS side
+    // receives it.
     let received_at_b = Arc::new(std::sync::Mutex::new(Vec::<Vec<u8>>::new()));
     let received_at_b_cb = received_at_b.clone();
     bridge_b_for_cb
@@ -234,7 +234,7 @@ fn c2_2_bridge_outbound_publish_flows_to_dds() {
 #[test]
 fn c2_3_bridge_inbound_from_broker_flows_to_dds() {
     // Spec §C.2.3 — Receiver-Link Broker-to-Bridge: Broker
-    // schickt AMQP-Transfer, Bridge ruft dispatch_transfer →
+    // sends an AMQP transfer, bridge calls dispatch_transfer →
     // DDS-DataWriter.
     let bridge = host_with_topics(&[(
         "Telemetry",

@@ -32,7 +32,7 @@ GSSUP token, SAS protocol, TLS mechanism OID. `no_std + alloc`,
 
 ## Layer position
 
-Layer 8 — CORBA stack (Tier A). Sits on `zerodds-cdr` (wire codec).
+Layer 8 — CORBA stack (Tier A). Sits on `zerodds-wire` (wire codec).
 Consumers are GIOP/IIOP servers (Layer 8, Tier B/C) with
 security-stack configuration.
 
@@ -56,8 +56,8 @@ assert!(opts.0 & AssociationOptions::INTEGRITY != 0);
 
 ## Stability
 
-`1.0.0-rc.1`. The public API, bitmasks, and SAS protocol wire format
-are RC1-stable; fixed by the OMG spec.
+`1.0.0-rc.7`, a pre-release. The public API can still change before
+1.0.0; the crate's CHANGELOG lists every change.
 
 ## Tests
 

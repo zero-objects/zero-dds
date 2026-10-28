@@ -6,7 +6,7 @@
 /// Spec §7.3 — `ReturnStatus`-Codes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ReturnStatus {
-    /// `OK` — context-dependent HTTP-Status (siehe `http_status_for`).
+    /// `OK` — context-dependent HTTP-Status (see `http_status_for`).
     Ok,
     /// `OBJECT_ALREADY_EXISTS` → `409 Conflict`.
     ObjectAlreadyExists,

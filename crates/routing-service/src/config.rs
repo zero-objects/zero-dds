@@ -20,6 +20,7 @@ use crate::error::{Result, RoutingError};
 
 /// A named collection of routes — the unit a router instance runs.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RouterConfig {
     /// Human-readable name (shown in logs/metrics).
     #[serde(default = "default_router_name")]
@@ -37,6 +38,7 @@ pub struct RouterConfig {
 /// Access-control list for a router: a set of allow rules. A route endpoint is
 /// permitted iff at least one rule matches its tenant, domain, and topic.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AccessControl {
     /// Allow rules; a route needs a match for both its input and output.
     pub allow: Vec<AclRule>,
@@ -44,6 +46,7 @@ pub struct AccessControl {
 
 /// One allow rule. `tenant`/`domain` are exact; `topics` are `*`/`?` globs.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AclRule {
     /// Tenant this rule applies to. `None` = applies to any tenant (and to
     /// routes with no tenant).
@@ -88,6 +91,7 @@ fn default_router_name() -> String {
 
 /// One input→output coupling.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Route {
     /// Route name — must be unique within a [`RouterConfig`]; used as the
     /// metric label and the loop-guard tag.
@@ -131,6 +135,19 @@ pub struct Route {
     /// no tenant (matched by rules with no tenant).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tenant: Option<String>,
+    /// Relay mode (DDS-Security 1.2 §7.1.1.4 with DDSI-RTPS 2.5 §8.7.9):
+    /// the route forwards every sample and every dispose or unregister
+    /// unchanged, on behalf of the writer that wrote it, on the same domain
+    /// and topic. Its input is a relay reader: under data protection it
+    /// receives the samples encrypted and forwards them without opening
+    /// them, which the router participant's grant has to allow with
+    /// `<relay>`, and its output writer needs `<publish>`. A reader that
+    /// receives a sample from its writer and from the route takes it once,
+    /// as that writer's. The source timestamp is always kept. Excludes a
+    /// filter, a transform, another domain, another topic and another
+    /// type. Default `false`.
+    #[serde(default)]
+    pub relay: bool,
 }
 
 fn default_true() -> bool {
@@ -139,6 +156,7 @@ fn default_true() -> bool {
 
 /// A reader (input) or writer (output) on a DDS domain.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Endpoint {
     /// DDS domain id.
     pub domain: i32,
@@ -160,6 +178,16 @@ pub struct Endpoint {
     /// QoS for this endpoint's reader/writer.
     #[serde(default)]
     pub qos: QosSpec,
+    /// `type_file`, output endpoint of a keyed route only: a serialized
+    /// COMPLETE TypeObject of the output type (the format
+    /// `zerodds-zenoh-bridged` and `zerodds-amqp-bridged` read). The output
+    /// writer reads instance keys with it: each forwarded sample carries its
+    /// KeyHash, and a forwarded dispose or unregister carries the
+    /// `serializedKey` Cyclone 11.0.1, Fast DDS 3.6.1 and OpenDDS 3.35 need
+    /// to act on it — without it the marker has `PID_KEY_HASH` alone. The
+    /// type is not announced; peers still match by type name. Empty = none.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub type_file: String,
 }
 
 fn default_type() -> String {
@@ -171,6 +199,7 @@ fn default_type() -> String {
 /// either role; role-irrelevant fields (e.g. `ownership_strength` on a reader)
 /// are simply ignored.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct QosSpec {
     /// `true` = RELIABLE, `false` = BEST_EFFORT.
     #[serde(default = "default_true")]
@@ -252,6 +281,7 @@ impl From<Ownership> for zerodds_qos::OwnershipKind {
 /// SQL content filter (DDS 1.4 §2.2.8.4 grammar). Evaluated per input sample
 /// after the sample is decoded to DynamicData via the route's type shape.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ContentFilter {
     /// The filter expression, e.g. `temperature > 50 AND zone = 'A'`.
     pub expression: String,
@@ -263,6 +293,7 @@ pub struct ContentFilter {
 /// Per-field transformation: rename and/or constant assignment. Field paths are
 /// flat member names of the (final/appendable) struct.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Transform {
     /// Output member name → input member name (copy with rename).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -278,6 +309,7 @@ pub struct Transform {
 
 /// A single rename mapping.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RenameRule {
     /// Output member.
     pub to: String,
@@ -287,6 +319,7 @@ pub struct RenameRule {
 
 /// A single constant assignment.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SetConstRule {
     /// Output member.
     pub field: String,
@@ -318,6 +351,43 @@ impl RouterConfig {
                     "route '{}': input/output keyedness disagree",
                     r.name
                 )));
+            }
+            if !r.input.type_file.is_empty() {
+                return Err(RoutingError::Config(format!(
+                    "route '{}': type_file is read on the output endpoint, the one whose \
+                     writer keys the forwarded instances",
+                    r.name
+                )));
+            }
+            if !r.output.type_file.is_empty() && !r.output.keyed {
+                return Err(RoutingError::Config(format!(
+                    "route '{}': type_file on a route that is not keyed has nothing to key",
+                    r.name
+                )));
+            }
+            if r.relay {
+                let input_type = r.input.type_name.as_str();
+                let output_type = r.output.type_name.as_str();
+                let why = if r.input.domain != r.output.domain {
+                    Some("another domain")
+                } else if r.input.topic != r.output.topic {
+                    Some("another topic")
+                } else if input_type != "*" && output_type != "*" && input_type != output_type {
+                    Some("another type")
+                } else if r.filter.is_some() {
+                    Some("a filter")
+                } else if r.transform.is_some() {
+                    Some("a transform")
+                } else {
+                    None
+                };
+                if let Some(why) = why {
+                    return Err(RoutingError::Config(format!(
+                        "route '{}': a relay route forwards unchanged on the writer's behalf \
+                         (DDS-Security 1.2 §7.1.1.4), it cannot have {why}",
+                        r.name
+                    )));
+                }
             }
             let same_endpoint = r.input.domain == r.output.domain
                 && r.input.topic == r.output.topic
@@ -351,9 +421,17 @@ impl RouterConfig {
     ///
     /// # Errors
     /// [`RoutingError::Config`] on malformed JSON or a failed [`Self::validate`].
+    ///
+    /// A key the model does not read is refused (it used to be dropped
+    /// without a word, and `validate` reported OK). Keys beginning with `_`
+    /// are comments (`"_comment": "…"`), JSON having no other form, and are
+    /// removed before the check.
     pub fn from_json(s: &str) -> Result<Self> {
-        let cfg: Self =
+        let mut value: serde_json::Value =
             serde_json::from_str(s).map_err(|e| RoutingError::Config(format!("json: {e}")))?;
+        strip_comments(&mut value);
+        let cfg: Self = serde_json::from_value(value)
+            .map_err(|e| RoutingError::Config(format!("json: {e}")))?;
         cfg.validate()?;
         Ok(cfg)
     }
@@ -383,9 +461,32 @@ impl RouterConfig {
     }
 }
 
+/// Removes every object key beginning with `_`, at any depth.
+fn strip_comments(v: &mut serde_json::Value) {
+    match v {
+        serde_json::Value::Object(map) => {
+            map.retain(|k, _| !k.starts_with('_'));
+            map.values_mut().for_each(strip_comments);
+        }
+        serde_json::Value::Array(items) => items.iter_mut().for_each(strip_comments),
+        _ => {}
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 mod tests {
+
+    /// An unknown key is refused; a `_`-key is a comment.
+    #[test]
+    fn json_refuses_unknown_keys_and_skips_comments() {
+        let good = r#"{"_comment": "x", "name": "r", "routes": [{"_note": "y", "name": "a",
+            "input": {"domain": 0, "topic": "T"}, "output": {"domain": 1, "topic": "T"}}]}"#;
+        assert!(RouterConfig::from_json(good).is_ok());
+        let bad = good.replace("\"_note\"", "\"loop_gard\"");
+        let err = RouterConfig::from_json(&bad).unwrap_err().to_string();
+        assert!(err.contains("loop_gard"), "{err}");
+    }
     use super::*;
 
     fn route(name: &str, in_dom: i32, out_dom: i32) -> Route {
@@ -398,6 +499,7 @@ mod tests {
                 keyed: false,
                 partition: vec![],
                 qos: QosSpec::default(),
+                type_file: String::new(),
             },
             output: Endpoint {
                 domain: out_dom,
@@ -406,6 +508,7 @@ mod tests {
                 keyed: false,
                 partition: vec![],
                 qos: QosSpec::default(),
+                type_file: String::new(),
             },
             filter: None,
             transform: None,
@@ -413,6 +516,7 @@ mod tests {
             preserve_source_timestamp: false,
             max_samples_per_second: None,
             tenant: None,
+            relay: false,
         }
     }
 
@@ -424,6 +528,43 @@ mod tests {
             access_control: None,
         };
         assert!(c.validate().is_ok());
+    }
+
+    /// A relay route forwards unchanged on the writer's behalf: the same
+    /// domain, topic and type, no filter and no transform.
+    #[test]
+    fn a_relay_route_stays_on_its_domain_topic_and_type() {
+        let check = |r: Route| {
+            RouterConfig {
+                name: "r".into(),
+                routes: vec![r],
+                access_control: None,
+            }
+            .validate()
+        };
+        let relay = |in_dom, out_dom| Route {
+            relay: true,
+            ..route("a", in_dom, out_dom)
+        };
+        assert!(check(relay(3, 3)).is_ok());
+        let refused = |r: Route, why: &str| {
+            let err = check(r).unwrap_err().to_string();
+            assert!(err.contains(why), "{err}");
+        };
+        refused(relay(3, 4), "another domain");
+        let mut r = relay(3, 3);
+        r.output.topic = "U".into();
+        refused(r, "another topic");
+        let mut r = relay(3, 3);
+        r.input.type_name = "A".into();
+        r.output.type_name = "B".into();
+        refused(r, "another type");
+        let mut r = relay(3, 3);
+        r.filter = Some(ContentFilter {
+            expression: "x > 1".into(),
+            parameters: vec![],
+        });
+        refused(r, "a filter");
     }
 
     #[test]

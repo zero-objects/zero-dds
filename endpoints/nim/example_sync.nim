@@ -14,19 +14,19 @@ type Reading = object
   label: string
 
 proc marshal(r: Reading, endian: Endian): seq[byte] =
-  var w = initWriter(endian)
+  var w = initWriter(endian, eXcdr2)
   w.putU32(r.id)
   w.putF32(r.value)
   w.putString(r.label)
   w.bytes()
 
 proc decodeReading(body: seq[byte]): Reading =
-  var rd = initReader(body, eLE)
+  var rd = initReader(body, eLE, eXcdr2)
   Reading(id: rd.getU32(), value: rd.getF32(), label: rd.getString())
 
 const total = 5
 let t = memTransport()
-let c = newClient(t)
+let c = newClient(t, xrceObjectId(0x001, ObjkDataWriter))
 
 # Publisher: frame + deliver 5 typed readings with varying values.
 for i in 0 ..< total:

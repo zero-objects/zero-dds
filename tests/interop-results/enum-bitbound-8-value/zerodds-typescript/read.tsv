@@ -1,0 +1,14 @@
+# What zerodds-typescript got back when it read the bytes of enum-bitbound-8-value, held against
+# tests/interop-corpus/enum-bitbound-8-value/values.json and never against another
+# column's reading of the same bytes.
+# encoding	endian	verdict	detail
+plain-cdr1	le	same	
+plain-cdr1	be	same	
+pl-cdr1	le	same	
+pl-cdr1	be	same	
+plain-cdr2	le	same	
+plain-cdr2	be	same	
+delimited-cdr	le	same	
+delimited-cdr	be	same	
+pl-cdr2	le	same	
+pl-cdr2	be	same	

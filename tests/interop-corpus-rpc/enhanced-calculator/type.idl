@@ -1,0 +1,14 @@
+module robot {
+  exception Overflow { long code; };
+  struct Pose { long x; long y; };
+  interface Calculator {
+    readonly attribute long total;
+    attribute string label;
+    @Mutable long add(in long a, in long b) raises (Overflow);
+    long divmod(in long a, in long b, out long remainder);
+    Pose locate(in string room);
+    void swap(inout long v);
+    void reset();
+    double scale(in double value);
+  };
+};

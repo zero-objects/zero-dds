@@ -16,9 +16,14 @@ publish = true
 workspace = true
 
 [dependencies]
-zerodds-cdr = { version = "1.0.0-rc.7", path = "../cdr", default-features = false, features = ["std"] }
-zerodds-types = { version = "1.0.0-rc.7", path = "../types", default-features = false, features = ["alloc"] }
+zerodds-wire = { version = "1.0.0-rc.7", path = "../wire" }
 
 [build-dependencies]
-zerodds-idl = { version = "1.0.0-rc.7", path = "../idl" }
-zerodds-idl-rust = { version = "1.0.0-rc.7", path = "../idl-rust" }
+zerodds-ast = { version = "1.0.0-rc.7", path = "../ast" }
+zerodds-ast-core = { version = "1.0.0-rc.7", path = "../ast-core" }
+zerodds-ast-layout = { version = "1.0.0-rc.7", path = "../ast-layout" }
+zerodds-idl-parse = { version = "1.0.0-rc.7", path = "../idl-parse" }
+zerodds-idl-lower = { version = "1.0.0-rc.7", path = "../idl-lower" }
+zerodds-lang-cst = { version = "1.0.0-rc.7", path = "../lang-cst" }
+zerodds-lang-render = { version = "1.0.0-rc.7", path = "../lang-render" }
+zerodds-lang-rules = { version = "1.0.0-rc.7", path = "../lang-rules" }

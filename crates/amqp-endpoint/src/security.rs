@@ -42,7 +42,7 @@ pub mod class_ids {
     pub const PKI_DH: &str = "DDS:Auth:PKI-DH:1.0";
 }
 
-/// Spec §10.3.2 — IdentityToken (subset). DDS-Security 1.2 §8.4.1
+/// Spec §10.3.2 — IdentityToken (subset). DDS-Security 1.2 §9.3.2.1
 /// specifies further fields (binary properties, etc.); for the
 /// AMQP mapping, subject_name, certificate, and class_id suffice.
 #[derive(Debug, Clone, PartialEq, Eq)]

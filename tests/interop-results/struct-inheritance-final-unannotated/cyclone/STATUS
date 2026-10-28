@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of struct-inheritance-final-unannotated that cyclone produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	the fill: error: 'zd_c26_Sample' has no member named 'base_a'
+plain-cdr1	be	refused	the fill: error: 'zd_c26_Sample' has no member named 'base_a'
+pl-cdr1	le	refused	the fill: error: 'zd_c26_Sample' has no member named 'base_a'
+pl-cdr1	be	refused	the fill: error: 'zd_c26_Sample' has no member named 'base_a'
+plain-cdr2	le	refused	the fill: error: 'zd_c26_Sample' has no member named 'base_a'
+plain-cdr2	be	refused	the fill: error: 'zd_c26_Sample' has no member named 'base_a'
+delimited-cdr	le	refused	the fill: error: 'zd_c26_Sample' has no member named 'base_a'
+delimited-cdr	be	refused	the fill: error: 'zd_c26_Sample' has no member named 'base_a'
+pl-cdr2	le	refused	the fill: error: 'zd_c26_Sample' has no member named 'base_a'
+pl-cdr2	be	refused	the fill: error: 'zd_c26_Sample' has no member named 'base_a'

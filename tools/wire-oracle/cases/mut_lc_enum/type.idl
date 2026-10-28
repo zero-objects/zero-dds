@@ -1,0 +1,7 @@
+enum Colour { RED, GREEN, BLUE };
+@bit_bound(16) bitmask Flags { @position(0) a, @position(3) b };
+@mutable struct LenEnum {
+    sequence<Colour> cs;
+    sequence<Flags> fs;
+    long tail;
+};

@@ -1,0 +1,2 @@
+// IDL 4.2 Annex A production 17, §7.2.6.5 — a fixed-point literal.
+const fixed K = 1.23d;

@@ -5,7 +5,7 @@
 # but the subscriber consumes via the asyncdispatch Future (await) and decodes
 # every field. Run: `nim c -r example_async.nim`
 
-import std/[options, asyncdispatch, strformat]
+import std/[asyncdispatch, strformat]
 import ./zerodds
 
 type Reading = object
@@ -14,20 +14,20 @@ type Reading = object
   label: string
 
 proc marshal(r: Reading, endian: Endian): seq[byte] =
-  var w = initWriter(endian)
+  var w = initWriter(endian, eXcdr2)
   w.putU32(r.id)
   w.putF32(r.value)
   w.putString(r.label)
   w.bytes()
 
 proc decodeReading(body: seq[byte]): Reading =
-  var rd = initReader(body, eLE)
+  var rd = initReader(body, eLE, eXcdr2)
   Reading(id: rd.getU32(), value: rd.getF32(), label: rd.getString())
 
 proc main() {.async.} =
   const total = 5
   let t = memTransport()
-  let w = newClient(t)
+  let w = newClient(t, xrceObjectId(0x001, ObjkDataWriter))
 
   # Publisher.
   for i in 0 ..< total:

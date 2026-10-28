@@ -4,12 +4,12 @@
 //! `zerodds-bench` library — CLI parsing + statistics primitives.
 //!
 //! Crate `zerodds-bench`. Safety classification: **COMFORT**.
-//! User-facing Bench-Tool; nutzt die DCPS-Pipeline ueber UserWriter/Reader.
+//! User-facing bench tool; uses the DCPS pipeline via UserWriter/Reader.
 //!
-//! Das eigentliche Bench-Backend (DcpsRuntime + Loopback-Topic) lebt
-//! in `main.rs`. Diese Crate exportiert die argument-Strukturen und
-//! die Quantil-Berechnung damit beide unit-test-bar sind ohne ein
-//! tatsächliches DCPS-Setup zu starten.
+//! The actual bench backend (DcpsRuntime + Loopback-Topic) lives
+//! in `main.rs`. This crate exports the argument structs and
+//! the quantile computation so both are unit-testable without
+//! starting an actual DCPS setup.
 
 #![allow(clippy::module_name_repetitions)]
 
@@ -19,30 +19,30 @@ use std::time::Duration;
 pub const DEFAULT_DOMAIN: u32 = 0;
 /// Default Bench-Topic.
 pub const DEFAULT_TOPIC: &str = "zerodds/bench/loopback";
-/// Default Payload-Größe in Bytes.
+/// Default payload size in bytes.
 pub const DEFAULT_PAYLOAD: usize = 64;
 /// Default Bench-Duration.
 pub const DEFAULT_DURATION_SECS: u64 = 5;
 
-/// Sub-command des Bench-CLIs.
+/// Sub-command of the bench CLI.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
     /// `latency` — RTT-style ping/echo Loopback-Latency.
     Latency(BenchArgs),
     /// `throughput` — Burst-Sender, msgs/s + MB/s.
     Throughput(BenchArgs),
-    /// `info` — druckt Backend-Capabilities und exit.
+    /// `info` — prints backend capabilities and exit.
     Info,
 }
 
-/// Gemeinsame Argumente für Latency- und Throughput-Bench.
+/// Shared arguments for latency and throughput bench.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BenchArgs {
     /// DDS-Domain.
     pub domain: u32,
     /// Topic-Name.
     pub topic: String,
-    /// Payload-Größe pro Sample.
+    /// Payload size per sample.
     pub payload: usize,
     /// Run-Duration.
     pub duration: Duration,
@@ -59,20 +59,20 @@ impl Default for BenchArgs {
     }
 }
 
-/// Parse-Fehler beim CLI-args.
+/// Parse error in the CLI args.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParseError {
-    /// Kein subcommand angegeben.
+    /// No subcommand specified.
     Missing,
-    /// Unbekanntes subcommand.
+    /// Unknown subcommand.
     Unknown(String),
-    /// Required-arg fehlt.
+    /// Required arg missing.
     MissingArg(&'static str),
-    /// Wert ist nicht parse-bar.
+    /// Value is not parseable.
     BadValue {
-        /// Welche flag.
+        /// Which flag.
         flag: &'static str,
-        /// Was eingegeben war.
+        /// What was entered.
         got: String,
     },
 }
@@ -90,10 +90,10 @@ impl std::fmt::Display for ParseError {
 
 impl std::error::Error for ParseError {}
 
-/// Parst `args` (typisch `env::args().skip(1)`) zu einem [`Command`].
+/// Parses `args` (typically `env::args().skip(1)`) into a [`Command`].
 ///
 /// # Errors
-/// Siehe [`ParseError`].
+/// See [`ParseError`].
 pub fn parse_args(args: &[String]) -> Result<Command, ParseError> {
     let sub = args.first().ok_or(ParseError::Missing)?;
     match sub.as_str() {
@@ -150,10 +150,10 @@ fn parse_bench(rest: &[String]) -> Result<BenchArgs, ParseError> {
     Ok(out)
 }
 
-/// Statistik-Snapshot für Latency-Bench.
+/// Statistics snapshot for the latency bench.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LatencyStats {
-    /// Anzahl gesammelte Samples.
+    /// Number of collected samples.
     pub samples: usize,
     /// Minimum (ns).
     pub min_ns: u64,
@@ -165,9 +165,9 @@ pub struct LatencyStats {
     pub max_ns: u64,
 }
 
-/// Berechnet [`LatencyStats`] aus einem Vector von Round-Trip-Times in ns.
+/// Computes [`LatencyStats`] from a vector of round-trip times in ns.
 ///
-/// Sortiert in-place. Liefert `None` falls leer.
+/// Sorts in place. Returns `None` if empty.
 #[must_use]
 pub fn compute_stats(rtts_ns: &mut [u64]) -> Option<LatencyStats> {
     if rtts_ns.is_empty() {

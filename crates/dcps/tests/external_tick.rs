@@ -64,10 +64,18 @@ fn internal_tick_thread_advances_on_its_own() {
     )
     .expect("start runtime with internal tick");
 
+    // The scheduler ticks at once on start and then parks until the next
+    // SPDP announce, at most `SCHEDULER_IDLE_FLOOR` (250 ms) without user
+    // endpoints. A fixed 120 ms window passed only when the start tick came
+    // after the first read (Linux test host: 1 of 2 runs failed); the thread has to
+    // advance the count, not within one tick period.
     let before = rt.tick_count();
-    std::thread::sleep(Duration::from_millis(120));
-    assert!(
-        rt.tick_count() > before,
-        "internal zdds-tick thread should advance the tick count on its own"
-    );
+    let deadline = std::time::Instant::now() + Duration::from_secs(2);
+    while rt.tick_count() == before {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "internal zdds-tick thread should advance the tick count on its own"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
 }

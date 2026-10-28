@@ -33,7 +33,7 @@ static void zdw_nap(long nsec)
 /* Retransmits every still-in-flight sample the ACKNACK marks missing (set bit). */
 static void zdw_retransmit(zdw_async_ring *r, int first_unacked, unsigned int nack)
 {
-    unsigned char frame[8 + ZDW_RING_SLOTCAP];
+    unsigned char frame[8 + ZDW_XRCE_BASE_SIZE + ZDW_RING_SLOTCAP];
     unsigned short i;
     for (i = 0; i < 16u; i++) {
         unsigned short seq;
@@ -46,7 +46,8 @@ static void zdw_retransmit(zdw_async_ring *r, int first_unacked, unsigned int na
         p = zdw_reliable_get_in_flight(&r->rel, seq, &plen);
         if (p != 0) {
             size_t flen = zdw_xrce_write_frame(frame, sizeof(frame), 0x80,
-                                               r->stream_id, seq, p, plen);
+                                               r->stream_id, seq,
+                                               r->object_id, p, plen);
             if (flen > 0 && r->deliver != 0) {
                 r->deliver(r->ctx, frame, flen);
             }
@@ -81,7 +82,7 @@ static int zdw_drain_acknacks(zdw_async_ring *r)
 static void *zdw_ring_drain(void *arg)
 {
     zdw_async_ring *r = (zdw_async_ring *)arg;
-    unsigned char frame[8 + ZDW_RING_SLOTCAP];
+    unsigned char frame[8 + ZDW_XRCE_BASE_SIZE + ZDW_RING_SLOTCAP];
     unsigned long stop_deadline = 0;
     int have_deadline = 0;
 
@@ -101,6 +102,7 @@ static void *zdw_ring_drain(void *arg)
             if (rc == ZDW_REL_OK) {
                 size_t flen = zdw_xrce_write_frame(frame, sizeof(frame), 0x80,
                                                    r->stream_id, seq,
+                                                   r->object_id,
                                                    r->slot[idx].buf, len);
                 if (flen > 0 && r->deliver != 0) {
                     r->deliver(r->ctx, frame, flen);
@@ -161,6 +163,7 @@ static void *zdw_ring_drain(void *arg)
 }
 
 int zdw_async_ring_start(zdw_async_ring *r, unsigned char stream_id,
+                         unsigned int object_id,
                          zdw_deliver_fn deliver, zdw_poll_fn poll, void *ctx)
 {
     atomic_store_explicit(&r->head, 0, memory_order_relaxed);
@@ -168,6 +171,7 @@ int zdw_async_ring_start(zdw_async_ring *r, unsigned char stream_id,
     atomic_store_explicit(&r->running, 1, memory_order_relaxed);
     r->sent = 0;
     r->stream_id = stream_id;
+    r->object_id = object_id;
     r->deliver = deliver;
     r->poll = poll;
     r->ctx = ctx;

@@ -33,11 +33,28 @@
 //! - [`resolve`] — TypeRegistry + alias resolution + DoS caps.
 //! - [`assignability`] — type-compatibility rules (§7.2.4).
 //! - [`type_matcher`] — writer↔reader matching with TCE policy
-//!   (§7.6.3.7 + §7.2.4).
+//!   (§7.6.3.4 + §7.2.4).
 //! - [`qos`] — TypeConsistencyEnforcement + DataRepresentation
 //!   (DDS 1.4 §2.2.3).
 //! - [`dynamic`] — DynamicType / DynamicData reflection API
-//!   (§7.5) incl. DynamicType ↔ TypeObject bridge (§7.6.3).
+//!   (§7.5) incl. TypeObject → DynamicType (§7.6.3). Behind the
+//!   `dynamic` feature, which is on by default; see below.
+//!
+//! ## `dynamic` needs `std`, and the rest of this crate does not
+//!
+//! [`dynamic`] is the reflective API, and a value of a type known only
+//! at run time only means anything if it can reach the wire. What takes
+//! it there is `zerodds-wire-codec`, which executes one layout plan
+//! against any value representation in both directions — and which is a
+//! `std` crate. So the feature that turns [`dynamic`] on takes `std`
+//! with it.
+//!
+//! Everything else here — `type_identifier`, `type_object`, `hash`,
+//! `resolve`, `assignability`, `type_matcher`, `qos`, `from_ast` — is
+//! `no_std` + `alloc` and stays that way:
+//! `--no-default-features --features alloc` builds the type system
+//! without the reflective half rather than a reflective half that cannot
+//! serialise. Said here rather than found at a link error.
 //!
 //! ## Wiring status
 //!
@@ -54,10 +71,8 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
-// `zerodds-types` mandatorily requires `alloc` — all modules use
-// `Vec`/`String`/`BTreeMap` for TypeObject containers. `zerodds-cdr` with
-// the `alloc` feature is a mandatory dep, so `extern crate alloc` is
-// always available.
+// `zerodds-types` mandatorily requires `alloc` — every module uses
+// `Vec`/`String`/`BTreeMap` for the TypeObject containers.
 extern crate alloc;
 
 #[cfg(feature = "std")]
@@ -65,8 +80,11 @@ extern crate std;
 
 pub mod assignability;
 pub mod builder;
+#[cfg(feature = "dynamic")]
 pub mod dynamic;
 pub mod error;
+pub mod framing;
+pub mod from_ast;
 pub mod hash;
 pub mod qos;
 pub mod resolve;
@@ -77,6 +95,8 @@ pub mod type_matcher;
 #[cfg(test)]
 mod type_matcher_vectors;
 pub mod type_object;
+pub mod type_object_v1;
+pub mod union_inheritance;
 
 pub use error::TypeCodecError;
 pub use hash::{

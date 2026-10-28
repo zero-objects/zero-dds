@@ -38,6 +38,7 @@
 //! * **Historical Access** (Spec §8.3.4 + §9.3.4) — requires a
 //!   historical-server backend.
 
+#![cfg_attr(not(feature = "std"), no_std)]
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 

@@ -230,8 +230,38 @@ namespace ZeroDDS.Tests
             Check(Eq(hbFrame, hbExpect), "heartbeat byte-golden (hardcoded)");
 
             var akFrame = ReliableWire.AckNackFrame(new AckNack(1, 0, 0, 0x80), 1);
-            byte[] akExpect = { 0x80, 0x00, 0x01, 0x00, 0x0a, 0x01, 0x05, 0x00, 0x01, 0x00, 0x00, 0x00, 0x80 };
+            byte[] akExpect =
+            {
+                0x80, 0x00, 0x01, 0x00, 0x0a, 0x01, 0x09, 0x00,
+                0x05, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x80,
+            };
+            Check(akFrame.Length == 17, "acknack frame is 17 octets");
             Check(Eq(akFrame, akExpect), "acknack byte-golden (hardcoded)");
+
+            // legacy FINAL form (body-len 5, no DHEADER) is still parsed
+            byte[] legacy = { 0x80, 0x00, 0x01, 0x00, 0x0a, 0x01, 0x05, 0x00, 0x07, 0x00, 0x03, 0x00, 0x80 };
+            Check(ReliableWire.TryParseAckNack(legacy, out var lg) && lg.FirstUnacked == 7
+                  && lg.NackLo == 3 && lg.NackHi == 0 && lg.StreamId == 0x80,
+                  "legacy 5-octet acknack parsed");
+            Check(ReliableWire.TryParseAckNack(akExpect, out var cur) && cur.FirstUnacked == 1
+                  && cur.StreamId == 0x80, "17-octet acknack parsed");
+            Check(!ReliableWire.TryParseAckNack(legacy.AsSpan(0, 12), out _), "short acknack rejected");
+
+            // unannotated types: Final form (eProsima), 13 octets
+            var akFinal = ReliableWire.AckNackFrame(new AckNack(1, 0, 0, 0x80), 1, UnannotatedTypes.Final);
+            byte[] akFinalExpect = { 0x80, 0x00, 0x01, 0x00, 0x0a, 0x01, 0x05, 0x00, 0x01, 0x00, 0x00, 0x00, 0x80 };
+            Check(akFinal.Length == 13, "Final acknack frame is 13 octets");
+            Check(Eq(akFinal, akFinalExpect), "Final acknack byte-golden (hardcoded)");
+            Check(Eq(ReliableWire.AckNackFrame(new AckNack(1, 0, 0, 0x80), 1, UnannotatedTypes.Appendable), akExpect),
+                  "Appendable acknack equals the default form");
+            Check(ReliableWire.TryParseAckNack(akFinalExpect, out var pf) && pf.FirstUnacked == 1
+                  && pf.StreamId == 0x80, "parser accepts the Final form");
+            Check(ReliableWire.TryParseAckNack(akExpect, out var pa) && pa.FirstUnacked == 1
+                  && pa.StreamId == 0x80, "parser accepts the Appendable form");
+            Check(new ReliableReceiver(UnannotatedTypes.Final).PendingAckNackFrame(0).Length == 13,
+                  "receiver with Final builds 13-octet acknack");
+            Check(new ReliableReceiver().PendingAckNackFrame(0).Length == 17,
+                  "receiver default builds 17-octet acknack");
 
             if (args.Length >= 2)
             {

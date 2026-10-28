@@ -48,6 +48,63 @@ assert_eq!(nc.kind, "Object");
 cargo test -p zerodds-corba-cosnaming
 ```
 
+## Interop measurements: foreign clients against `zerodds-naming-svc`
+
+`zerodds-naming-svc` (feature `daemon`) answers the CORBA 3.4 Part 2
+§13.6.10 `corbaloc::host:port/NameService` bootstrap URL like any other
+ORB's naming service — the check is whether a foreign vendor's own
+naming client can bind/list/resolve through it. As in the sibling
+crate's README, ZeroDDS-side commands here are this crate's own
+(`cargo build -p zerodds-corba-cosnaming --bin zerodds-naming-svc
+--features daemon`, exercised by `tests/naming_svc_e2e.rs`); the
+foreign-tool commands are sourced from each vendor's own docs (linked
+below), not run against a real install from this repo, and anything
+not confirmed this round says so.
+
+```bash
+zerodds-naming-svc --bind 0.0.0.0:2809
+```
+
+**omniORB — `nameclt`**
+
+```bash
+nameclt -ior corbaloc::<host>:2809/NameService list
+nameclt -ior corbaloc::<host>:2809/NameService bind Echo::call <stringified-IOR>
+nameclt -ior corbaloc::<host>:2809/NameService resolve Echo::call
+```
+
+`-ior` accepts a `corbaloc:`/`corbaname:` URL directly, not only a
+stringified object reference. Source: [omniORB `nameclt(1)`](https://manpages.debian.org/experimental/omniorb/nameclt.1.en.html).
+
+**TAO — `tao_nslist` / `tao_nsadd`**
+
+```bash
+tao_nslist -ORBInitRef NameService=corbaloc:iiop:<host>:2809/NameService
+```
+
+`-ORBInitRef NAME=URL` is the confirmed, spec-standard bootstrap flag
+(also used by `tao_cosnaming` itself and any TAO client). `tao_nsadd`'s
+own flags for adding one binding were not independently confirmed this
+round — run `tao_nsadd -?`/`--help` on your TAO install before relying
+on a specific flag shape. Source: [Wikibooks: ACE+TAO — Find a service on a naming server](https://en.wikibooks.org/wiki/ACE%2BTAO_Opensource_Programming_Notes/Find_a_service_on_a_naming_server).
+
+**JacORB (`/opt/jacorb`) — `lsns` / `nmg`**
+
+```bash
+/opt/jacorb/bin/lsns -DORBInitRef.NameService=corbaloc::<host>:2809/NameService
+/opt/jacorb/bin/nmg  -DORBInitRef.NameService=corbaloc::<host>:2809/NameService
+```
+
+`lsns` lists a naming context; `nmg` is JacORB's own naming-manager
+GUI. `ORBInitRef.NameService` (set as a `-D` system property, JacORB
+being Java-based) is confirmed from JacORB's own Naming-Service doc;
+`lsns`'s own flag syntax was not found in what this round could fetch
+— run `lsns --help`/`-h` first. Source: [JacORB `Nameservice.tex`](https://github.com/JacORB/JacORB/blob/master/doc/ProgrammingGuide/Naming/Nameservice.tex).
+
+All three exercise the same wire format: NamingContext
+bind/rebind/resolve/list over IIOP 1.2, the `corbaloc:`/`corbaname:`
+bootstrap forms every vendor's own docs above name directly.
+
 ## See also
 
 - [`zerodds-corba-ior`](../corba-ior/README.md) — object refs as

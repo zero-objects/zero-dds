@@ -1,0 +1,10 @@
+// `enum` at bit bound 12 — two octets on the wire, twelve bits of range
+// XTypes 1.3 §7.3.1.2.1.9 (1..32) and §7.4.3.4.2 (smallest holding integer).
+@bit_bound(12)
+enum Colour { RED, GREEN, BLUE };
+
+@final struct Sample {
+    Colour first;
+    Colour second;
+    octet tail;
+};

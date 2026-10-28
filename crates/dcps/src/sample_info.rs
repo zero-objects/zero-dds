@@ -35,6 +35,8 @@
 
 extern crate alloc;
 
+use alloc::collections::BTreeMap;
+
 use crate::instance_handle::{HANDLE_NIL, InstanceHandle};
 use crate::time::Time;
 
@@ -112,28 +114,31 @@ impl Default for InstanceStateKind {
 }
 
 /// Bitmask for sample-state filtering in `read`/`take` calls
-/// (DDS 1.4 §2.2.2.5.1.4 `SampleStateMask`).
+/// (DDS 1.4 §2.2.2.5.1.4 `SampleStateMask`), with the values of the IDL
+/// PSM (§2.3.3): `READ_SAMPLE_STATE = 0x0001 << 0`,
+/// `NOT_READ_SAMPLE_STATE = 0x0001 << 1`, `ANY_SAMPLE_STATE = 0xffff`.
 pub mod sample_state_mask {
-    /// `NOT_READ` only.
-    pub const NOT_READ: u32 = 1 << 0;
     /// `READ` only.
-    pub const READ: u32 = 1 << 1;
-    /// `READ | NOT_READ` — both.
-    pub const ANY: u32 = NOT_READ | READ;
+    pub const READ: u32 = 1 << 0;
+    /// `NOT_READ` only.
+    pub const NOT_READ: u32 = 1 << 1;
+    /// Every sample state.
+    pub const ANY: u32 = 0xffff;
 }
 
-/// Bitmask for view-state filtering (§2.2.2.5.1.4 `ViewStateMask`).
+/// Bitmask for view-state filtering (§2.2.2.5.1.4 `ViewStateMask`), with
+/// the values of the IDL PSM (§2.3.3).
 pub mod view_state_mask {
     /// `NEW`.
     pub const NEW: u32 = 1 << 0;
     /// `NOT_NEW`.
     pub const NOT_NEW: u32 = 1 << 1;
-    /// Both.
-    pub const ANY: u32 = NEW | NOT_NEW;
+    /// Every view state.
+    pub const ANY: u32 = 0xffff;
 }
 
 /// Bitmask for instance-state filtering (§2.2.2.5.1.4
-/// `InstanceStateMask`).
+/// `InstanceStateMask`), with the values of the IDL PSM (§2.3.3).
 pub mod instance_state_mask {
     /// `ALIVE`.
     pub const ALIVE: u32 = 1 << 0;
@@ -143,8 +148,8 @@ pub mod instance_state_mask {
     pub const NOT_ALIVE_NO_WRITERS: u32 = 1 << 2;
     /// `NOT_ALIVE_DISPOSED | NOT_ALIVE_NO_WRITERS`.
     pub const NOT_ALIVE: u32 = NOT_ALIVE_DISPOSED | NOT_ALIVE_NO_WRITERS;
-    /// All three.
-    pub const ANY: u32 = ALIVE | NOT_ALIVE;
+    /// Every instance state.
+    pub const ANY: u32 = 0xffff;
 }
 
 /// `SampleInfo` (DDS 1.4 §2.2.2.5.1) — per-sample metadata.
@@ -251,6 +256,70 @@ impl SampleInfo {
         (sample_mask & sample_bit) != 0
             && (view_mask & view_bit) != 0
             && (instance_mask & inst_bit) != 0
+    }
+}
+
+/// Computes `sample_rank`, `generation_rank` and `absolute_generation_rank`
+/// (DDS 1.4 §2.2.2.5.1.6-8) over one returned `read`/`take` collection, in
+/// write order, in place.
+///
+/// Every other `SampleInfo` field is baked per sample as it is admitted
+/// (view_state/instance_state/generation counts reflect the tracker's state
+/// at that instant); these three are different — they describe the
+/// *returned collection as a whole*, so they cannot be baked per sample and
+/// must be derived here, once, over the batch a caller is about to hand
+/// back:
+///
+/// * `sample_rank[i]` — number of samples of the *same* instance that
+///   follow sample `i` in `infos`.
+/// * `generation_rank[i]` — `(disposed_generation_count +
+///   no_writers_generation_count)` of the **last** sample of the same
+///   instance in `infos`, minus the same sum for sample `i`.
+/// * `absolute_generation_rank[i]` — like `generation_rank`, but against
+///   the instance's generation counts as of right now
+///   (`current_generation`) rather than the last sample actually in
+///   `infos` — a lifecycle event can land on the instance after its last
+///   sample here was captured but before this runs.
+///
+/// `current_generation` is normally a live lookup into the reader's
+/// `InstanceTracker` (`(disposed_generation_count, no_writers_generation_count)`
+/// for the given handle); a handle it does not recognize falls back to the
+/// sample's own totals, i.e. `absolute_generation_rank == generation_rank`
+/// for that sample.
+///
+/// This is pure `infos`-local math with no dependency on how the collection
+/// was assembled — both the typed `DataReader` and the C-FFI take/read
+/// paths can call it over their own final `Vec` instead of duplicating it.
+pub fn compute_ranks(
+    infos: &mut [SampleInfo],
+    mut current_generation: impl FnMut(InstanceHandle) -> (i32, i32),
+) {
+    if infos.is_empty() {
+        return;
+    }
+    // Single backward pass: `sample_rank` is the running per-instance count
+    // of samples already visited (i.e. that follow this one in write
+    // order); the FIRST occurrence found scanning backward for a given
+    // instance is its LAST occurrence in write order, so `last_total` ends
+    // up holding exactly the generation total of that last sample.
+    let mut trailing_count: BTreeMap<InstanceHandle, i32> = BTreeMap::new();
+    let mut last_total: BTreeMap<InstanceHandle, i32> = BTreeMap::new();
+    for info in infos.iter_mut().rev() {
+        let handle = info.instance_handle;
+        let count = trailing_count.entry(handle).or_insert(0);
+        info.sample_rank = *count;
+        *count += 1;
+        last_total
+            .entry(handle)
+            .or_insert(info.disposed_generation_count + info.no_writers_generation_count);
+    }
+    for info in infos.iter_mut() {
+        let handle = info.instance_handle;
+        let this_total = info.disposed_generation_count + info.no_writers_generation_count;
+        let last = last_total.get(&handle).copied().unwrap_or(this_total);
+        info.generation_rank = last - this_total;
+        let (cur_disposed, cur_no_writers) = current_generation(handle);
+        info.absolute_generation_rank = (cur_disposed + cur_no_writers) - this_total;
     }
 }
 
@@ -419,5 +488,112 @@ mod tests {
         assert_eq!(SampleStateKind::default(), SampleStateKind::NotRead);
         assert_eq!(ViewStateKind::default(), ViewStateKind::New);
         assert_eq!(InstanceStateKind::default(), InstanceStateKind::Alive);
+    }
+
+    // ---- §2.2.2.5.1.6-8 compute_ranks ----
+
+    #[test]
+    fn compute_ranks_single_instance_three_samples() {
+        // Three samples of ONE instance, no generation change: sample_rank
+        // counts down (2, 1, 0); generation_rank/absolute_generation_rank
+        // are all 0 (no dispose/no-writers ever happened).
+        let h = InstanceHandle::from_raw(1);
+        let mut infos = [
+            SampleInfo {
+                instance_handle: h,
+                ..SampleInfo::default()
+            },
+            SampleInfo {
+                instance_handle: h,
+                ..SampleInfo::default()
+            },
+            SampleInfo {
+                instance_handle: h,
+                ..SampleInfo::default()
+            },
+        ];
+        compute_ranks(&mut infos, |_| (0, 0));
+        assert_eq!(infos[0].sample_rank, 2);
+        assert_eq!(infos[1].sample_rank, 1);
+        assert_eq!(infos[2].sample_rank, 0);
+        for info in &infos {
+            assert_eq!(info.generation_rank, 0);
+            assert_eq!(info.absolute_generation_rank, 0);
+        }
+    }
+
+    #[test]
+    fn compute_ranks_two_instances_are_independent() {
+        // sample_rank is per-instance: interleaved samples of two distinct
+        // instances must not count each other.
+        let a = InstanceHandle::from_raw(1);
+        let b = InstanceHandle::from_raw(2);
+        let mut infos = [
+            SampleInfo {
+                instance_handle: a,
+                ..SampleInfo::default()
+            },
+            SampleInfo {
+                instance_handle: b,
+                ..SampleInfo::default()
+            },
+            SampleInfo {
+                instance_handle: a,
+                ..SampleInfo::default()
+            },
+        ];
+        compute_ranks(&mut infos, |_| (0, 0));
+        assert_eq!(infos[0].sample_rank, 1); // one more `a` follows.
+        assert_eq!(infos[1].sample_rank, 0); // no more `b` follows.
+        assert_eq!(infos[2].sample_rank, 0); // last `a`.
+    }
+
+    #[test]
+    fn compute_ranks_generation_rank_against_last_sample_in_batch() {
+        // Sample 0 was taken before a dispose+reactivate (generation total
+        // 0); sample 1 is the reactivated instance's first sample
+        // (generation total 1, since it is also the LAST sample of this
+        // instance in the batch). generation_rank measures each sample
+        // against that last one.
+        let h = InstanceHandle::from_raw(5);
+        let mut infos = [
+            SampleInfo {
+                instance_handle: h,
+                disposed_generation_count: 0,
+                ..SampleInfo::default()
+            },
+            SampleInfo {
+                instance_handle: h,
+                disposed_generation_count: 1,
+                ..SampleInfo::default()
+            },
+        ];
+        compute_ranks(&mut infos, |_| (1, 0));
+        assert_eq!(infos[0].generation_rank, 1); // 1 (last) - 0 (this).
+        assert_eq!(infos[1].generation_rank, 0); // 1 (last) - 1 (this).
+    }
+
+    #[test]
+    fn compute_ranks_absolute_generation_rank_uses_current_not_batch() {
+        // A single sample, generation total 0 at the time it was taken; the
+        // instance's CURRENT generation total (as of right now, via the
+        // callback) has since moved on to 2 — absolute_generation_rank
+        // reflects that gap even though generation_rank (batch-relative)
+        // is 0.
+        let h = InstanceHandle::from_raw(9);
+        let mut infos = [SampleInfo {
+            instance_handle: h,
+            ..SampleInfo::default()
+        }];
+        compute_ranks(&mut infos, |_| (2, 0));
+        assert_eq!(infos[0].generation_rank, 0);
+        assert_eq!(infos[0].absolute_generation_rank, 2);
+    }
+
+    #[test]
+    fn compute_ranks_empty_slice_is_a_no_op() {
+        let mut infos: [SampleInfo; 0] = [];
+        compute_ranks(&mut infos, |_| (0, 0));
+        assert!(infos.is_empty());
     }
 }

@@ -8,7 +8,7 @@ use core::fmt;
 
 use crate::option::CoapOption;
 
-/// `Type` field (RFC 7252 §3, S. 16).
+/// `Type` field (RFC 7252 §3, p. 16).
 ///
 /// 2-bit unsigned integer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

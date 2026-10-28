@@ -60,18 +60,6 @@ This document identifies strategic and technical risks of the project and docume
 - Contract engineering for target ports (Ferrous offers this as a service)
 - Dual-path strategy: safe profile primarily on mainstream targets (Linux x86_64/ARM64, QNX Neutrino), exotic targets only on customer demand
 
-### 1.5 Claude-Teams productivity disappointment
-
-**Risk:** The planned multiplier of 4–8× is not reached, because certain tasks (RTPS debugging, interop issues, performance tuning) are not accelerated by LLM augmentation.
-
-**Impact:** Roadmap slips, costs rise.
-
-**Mitigation:**
-- Clear buckets per task type with realistic multiplier expectations (see `06_roadmap.md`)
-- Continuous metric: which tasks ran how fast with vs. without AI augmentation?
-- No reliance on a 100× multiplier; the plan is calculated conservatively
-- Fallback buffer planned in Phases 4 and 5
-
 ## 2 License and patent risks
 
 ### 2.1 RTI patent exposure
@@ -199,16 +187,6 @@ Community-related questions (open-source release, contributor license agreement,
 - Documentation obligation: every non-trivial decision in the code as an ADR (Architecture Decision Record)
 - Code-review culture: every senior reviews code from all others regularly, avoids silos
 
-### 4.3 Claude-Teams dependency
-
-**Risk:** When the entire development model is based on Claude augmentation and Claude availability/pricing/capabilities change, platform lock-in arises.
-
-**Mitigation:**
-- Prompts and workflows versioned in git, reproducible
-- Artifacts (generated code) are portable to other LLM providers
-- No vendor lock-in on Anthropic-specific features beyond standard LLM capabilities
-- Continuity plan: what if Claude is gone tomorrow? The team must be able to continue without it, slower but functional.
-
 ## 5 Compliance and regulation risks
 
 ### 5.1 Safety-audit failure (expansion era, Track C)
@@ -251,7 +229,6 @@ Community-related questions (open-source release, contributor license agreement,
 | T-02 | XTypes interop issues | Medium | Medium | Bootstrap | stable |
 | T-03 | Performance gap | Medium | Medium | Proof | falling with Rust maturity |
 | T-04 | Ferrocene target gap | Low | Medium | Expansion | falling |
-| T-05 | Claude multiplier disappointment | Medium | Medium | Bootstrap | falling with experience |
 | L-01 | RTI patent exposure | Medium | High | Expansion | stable |
 | L-02 | Export control | Low | Medium | Expansion | rising with geopolitics |
 | L-03 | Wrong license choice | — | — | decided | Apache 2.0 chosen |
@@ -262,7 +239,6 @@ Community-related questions (open-source release, contributor license agreement,
 | S-05 | Governance-home decision | — | — | decided | internal core chosen |
 | O-01 | Senior-talent acquisition | Medium | High | all | stable |
 | O-02 | Bus factor (elevated at 2–4 FTE) | High | High | Bootstrap | falling in the proof era |
-| O-03 | Claude dependency | Medium | Medium | Bootstrap | stable |
 | O-04 | Scope creep from a small team | High | High | Bootstrap | controllable with discipline |
 | O-05 | The internal use case shifts | Medium | High | Bootstrap | project-specific |
 | C-01 | Safety-audit failure | Low | High | Expansion Track C | falling with architecture discipline |
@@ -282,7 +258,7 @@ The register is reviewed and updated monthly in the lead round.
 - **Project name:** ZeroDDS (trademark clearance in the expansion era, see §2.4)
 - **License:** Apache 2.0
 - **Governance:** internal core project, no foundation
-- **Team model:** 2–4 internal engineers + Claude-Teams augmentation
+- **Team model:** 2–4 internal engineers
 - **First customer:** ourselves (the internal target application as a validation anchor)
 - **Crypto default:** standard suite from DDS-Security 1.2 (AES-GCM, RSA/ECDSA) for interop day one
 - **Safety path:** safety-by-architecture from day 1, but Ferrocene integration and the formal audit deferred to the expansion era

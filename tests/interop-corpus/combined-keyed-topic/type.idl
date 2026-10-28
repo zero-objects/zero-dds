@@ -1,0 +1,19 @@
+// a keyed topic type
+module robotics {
+    @bit_bound(8)
+    enum Mode { IDLE, ACTIVE, FAULT };
+
+    @final struct Position {
+        double x;
+        double y;
+    };
+
+    @appendable struct Telemetry {
+        @key string<64> robot_id;
+        @key long channel;
+        Position spot;
+        Mode state;
+        sequence<double, 8> samples;
+        @optional string note;
+    };
+};

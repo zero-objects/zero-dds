@@ -19,14 +19,14 @@ const PING_SEQ = 1;
 const PING_MSG = 'hello from app';
 
 function marshalPing() {
-  const w = new z.Writer(z.LITTLE);
+  const w = new z.Writer(z.LITTLE, z.XCDR2);
   w.putU32(PING_SEQ);
   w.putString(PING_MSG);
   return w.bytes();
 }
 
 function decodePong(body) {
-  const rd = new z.Reader(body, z.LITTLE);
+  const rd = new z.Reader(body, z.LITTLE, z.XCDR2);
   const seq = rd.getU32();
   const reply = rd.getString();
   return { seq, reply };
@@ -36,7 +36,7 @@ async function main() {
   const mode = process.argv[2];
   const port = parseInt(process.argv[3], 10);
   const transport = new UdpTransport('127.0.0.1', port);
-  const client = new z.Client(transport);
+  const client = new z.Client(transport, z.xrceObjectId(0x001, z.OBJK_DATAWRITER));
 
   // Marshal + frame + send the Ping (Client.write does the XRCE WRITE_DATA framing).
   client.write(marshalPing());

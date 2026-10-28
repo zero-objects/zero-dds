@@ -1,0 +1,1 @@
+module m { @final struct Inner { long a; }; @mutable struct S { @optional Inner i; long b; }; };

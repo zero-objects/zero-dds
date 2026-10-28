@@ -1,45 +1,55 @@
-// SPDX-License-Identifier: Apache-2.0
+/* Copyright 2010, Object Management Group, Inc.
+ * Copyright 2010, PrismTech, Inc.
+ * Copyright 2010, Real-Time Innovations, Inc.
+ * All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.omg.dds.core.policy;
 
+
+
 /**
- * OMG DDS OwnershipStrengthQosPolicy — DDS-DCPS 1.4 §2.2.3.12.2.
- *
- * <p>Applies to a DataWriter only and is meaningful only when the
- * {@link Ownership} kind is {@code EXCLUSIVE}. The writer with the highest
- * strength owns each instance and is the sole source the reader accepts.
- * Default value is {@code 0}.
+ * [optional] Specifies the value of the "strength" used to arbitrate among
+ * multiple {@link org.omg.dds.pub.DataWriter} objects that attempt to modify the same
+ * instance of a data object (identified by {@link org.omg.dds.topic.Topic} + key). This policy
+ * only applies if the {@link org.omg.dds.core.policy.Ownership#getKind()} is
+ * {@link Ownership.Kind#EXCLUSIVE}. The default value of the
+ * ownership strength is zero.
+ * 
+ * <b>Concerns:</b> {@link org.omg.dds.pub.DataWriter}
+ * 
+ * <b>RxO:</b> N/A
+ * 
+ * <b>Changeable:</b> Yes
+ * 
+ * @see Ownership
  */
-public final class OwnershipStrength {
-    public static final OwnershipStrength DEFAULT = new OwnershipStrength(0);
+public interface OwnershipStrength extends QosPolicy.ForDataWriter
+{
+    /**
+     * @return the value
+     */
+    public int getValue();
 
-    private final int value;
 
-    public OwnershipStrength(int value) {
-        this.value = value;
-    }
+    // --- Modification: -----------------------------------------------------
 
-    public static OwnershipStrength of(int value) {
-        return new OwnershipStrength(value);
-    }
-
-    public int value() {
-        return value;
-    }
-
-    @Override
-    public boolean equals(Object o) {
-        if (this == o) return true;
-        if (!(o instanceof OwnershipStrength)) return false;
-        return value == ((OwnershipStrength) o).value;
-    }
-
-    @Override
-    public int hashCode() {
-        return Integer.hashCode(value);
-    }
-
-    @Override
-    public String toString() {
-        return "OwnershipStrength(" + value + ")";
-    }
+    /**
+     * Copy this policy and override the value of the property.
+     * 
+     * @return  a new policy
+     */
+    public OwnershipStrength withValue(int value);
 }

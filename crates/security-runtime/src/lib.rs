@@ -15,7 +15,7 @@
 //! `zerodds-rtps` + `zerodds-qos`. Fed by the DCPS runtime via
 //! `Box<dyn ...>` plugins (feature `security`).
 //!
-//! ## Public API (as of 1.0.0-rc.1)
+//! ## Public API
 //!
 //! - [`SecurityGate`] — high-level adapter between governance + crypto + RTPS wrap.
 //! - `engine::*` — `GovernancePolicyEngine` default impl + `PolicyEngine` trait.
@@ -49,13 +49,15 @@
 //! # const GOVERNANCE_XML: &str = "";
 //! ```
 
-#![cfg_attr(not(feature = "std"), no_std)]
+// Needs `std`: built on security-crypto, security-pki and security-permissions, which
+// need it.
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
 extern crate alloc;
 
 pub mod anti_squatter;
+pub mod builtin_attributes;
 pub mod builtin_topics;
 #[cfg(feature = "std")]
 pub mod bundle;
@@ -63,13 +65,22 @@ pub mod caps;
 pub mod caps_wire;
 pub mod data_tagging;
 pub mod endpoint;
+#[cfg(feature = "std")]
+pub mod endpoint_access;
 mod engine;
 mod gate;
+mod gate_crypto;
 pub mod gateway_bridge;
 pub mod peer_class;
+#[cfg(feature = "std")]
+pub mod pkcs11;
+pub mod plugin_attributes;
 pub mod policy;
 #[cfg(feature = "std")]
 pub mod profile;
+mod psk_gate;
+#[cfg(feature = "std")]
+pub mod qos_properties;
 mod shared;
 
 pub use anti_squatter::{BindingDecision, GuidPrefixBytes, IdentityBindingCache};
@@ -77,8 +88,10 @@ pub use anti_squatter::{BindingDecision, GuidPrefixBytes, IdentityBindingCache};
 pub use bundle::{SecurityBundle, SecurityBundleBuilder};
 pub use caps::{PeerCache, PeerCapabilities, Validity};
 pub use caps_wire::{advertise_security_caps, parse_peer_caps};
-pub use data_tagging::{BuiltinDataTaggingPlugin, TAG_PROPERTY_PREFIX};
+pub use data_tagging::{BuiltinDataTaggingPlugin, DATA_TAGGING_PLUGIN_CLASS_ID};
 pub use endpoint::{EndpointMatch, EndpointProtection, MatchRejectReason, match_endpoints};
+#[cfg(feature = "std")]
+pub use endpoint_access::arm_endpoint_access_control;
 pub use engine::GovernancePolicyEngine;
 pub use gate::{SecurityGate, SecurityGateError};
 pub use gateway_bridge::{
@@ -92,8 +105,53 @@ pub use policy::{
     ProtectionLevel, SuiteHint, classify_interface,
 };
 #[cfg(feature = "std")]
-pub use profile::{SecurityProfile, SecurityProfileConfig, SecurityProfileError, strip_file_url};
-pub use shared::{InboundVerdict, PeerKey, SharedSecurityGate};
+pub use profile::{
+    Material, SecurityProfile, SecurityProfileConfig, SecurityProfileError, builtin_crypto_plugin,
+    gate_with_crypto, governance_from_files, strip_file_url,
+};
+pub use zerodds_security::{AlgoNameNul, SubjectNameForm};
+/// The parsed governance document.
+pub use zerodds_security_permissions::Governance;
+/// How the partitions of a permissions allow rule match
+/// (`SecurityProfileConfig::partition_matching`).
+pub use zerodds_security_permissions::PartitionMatching;
+// `pkcs11:` URIs (RFC 7512) for the DDS-Security 1.2 §9.3.1 Table 44
+// identity material: the parser is always available; the token access
+// (reading a certificate, signing with a token key) needs the `pkcs11`
+// feature.
+#[cfg(all(feature = "std", feature = "pkcs11"))]
+pub use pkcs11::Pkcs11Signer;
+#[cfg(feature = "std")]
+pub use pkcs11::{
+    Pkcs11Error, Pkcs11ObjectType, Pkcs11Pin, Pkcs11Uri, Pkcs11UriError, read_certificate_der,
+};
+// DDS-Security 1.2 §7.3.21 / Tables 50, 63, 71 — the participant's `PropertyQosPolicy` is
+// how the plugins are selected and configured. `dcps` reads the list through
+// these on every participant it creates.
+#[cfg(feature = "std")]
+pub use qos_properties::{
+    PROP_GOVERNANCE, PROP_IDENTITY_CA, PROP_IDENTITY_CERT, PROP_IDENTITY_KEY,
+    PROP_IDENTITY_KEY_PASSWORD, PROP_KEY_ESTABLISHMENT, PROP_PERMISSIONS, PROP_PERMISSIONS_CA,
+    SecurityPropertyError, cert_policy_from_properties, kx_suite_from_properties,
+    profile_config_from_properties, requests_security, resolve_file_uri, resolve_material,
+    security_bundle_from_enclave_dir, security_bundle_from_enclave_dir_with_env,
+    security_bundle_from_properties, security_bundle_from_properties_with_env,
+    vendor_form_settings_from_env,
+};
+// The identity-certificate validation policy and the X.509 v1 deviation it
+// switches on. Re-exported here so that a caller configuring a
+// `SecurityProfile` does not have to reach past this crate for the one type
+// `from_files_with_cert_policy` takes.
+pub use shared::{
+    BUILTIN_VOLATILE_MESSAGE_READER, BUILTIN_VOLATILE_MESSAGE_WRITER, EndpointAccess,
+    InboundVerdict, PARTICIPANT_WIDE_TOPIC, PROP_BUILTIN_ENDPOINT_NAME, PeerKey, RemotePermissions,
+    RevokedPermissions, SharedSecurityGate, SignedDocuments,
+};
+pub use zerodds_security_pki::subject_attributes;
+pub use zerodds_security_pki::{
+    AlgorithmNames, CertAcceptance, CertPolicy, KxSuite, LOG_CATEGORY_X509V1_DEVIATION,
+    PROP_ACCEPT_X509V1_IDENTITY, SPEC_CLAUSE_IDENTITY_CERTIFICATE, property_enables_deviation,
+};
 
 // Re-exports from zerodds-security for downstream crates that only
 // depend on `zerodds-security-runtime` (above all `dcps` for the security

@@ -4,10 +4,10 @@
 //! Outbound Bridge-Client + Reconnect-Loop.
 //!
 //! Spec dds-amqp-1.0:
-//! * §2.2 Bridge Profile Cl. 2 — Outbound-Connection zu einem
-//!   konfigurierten upstream Broker.
+//! * §2.2 Bridge Profile Cl. 2 — outbound connection to a
+//!   configured upstream broker.
 //! * §2.2 Cl. 4 — SASL-Outbound (Initiator-Side).
-//! * §2.2 Cl. 5 — SHALL NOT initiate PLAIN ueber unverschluesselten
+//! * §2.2 Cl. 5 — SHALL NOT initiate PLAIN over an unencrypted
 //!   Transport.
 //! * §2.2 Cl. 7 — Exponential Backoff-Reconnect.
 //! * §10.8 Reconnect Behaviour — KEEP_LAST-Eviction-Counter via
@@ -34,40 +34,40 @@ use crate::handler::HandlerError;
 
 /// Spec §2.2 Cl. 7 — Default-Backoff-Pacing.
 pub const DEFAULT_BACKOFF_INITIAL_MS: u64 = 1_000;
-/// Spec §2.2 Cl. 7 — Backoff-Multiplikator.
+/// Spec §2.2 Cl. 7 — backoff multiplier.
 pub const DEFAULT_BACKOFF_MULT: u64 = 2;
-/// Spec §2.2 Cl. 7 — Backoff-Cap.
+/// Spec §2.2 Cl. 7 — backoff cap.
 pub const DEFAULT_BACKOFF_CAP_MS: u64 = 60_000;
 
-/// Spec §2.2 — Outbound-Bridge-Konfiguration.
+/// Spec §2.2 — outbound bridge configuration.
 #[derive(Debug, Clone)]
 pub struct ClientConfig {
-    /// Upstream-Adresse (z.B. `"broker.example:5672"`).
+    /// Upstream address (e.g. `"broker.example:5672"`).
     pub upstream_addr: String,
-    /// Container-Id, die wir im Open senden.
+    /// Container-Id that we send in the Open.
     pub container_id: String,
     /// Max-Frame-Size (DoS-Cap).
     pub max_frame_size: u32,
-    /// Ist TLS aktiv? (Beeinflusst PLAIN-Auswahl Spec §10.2.1.)
+    /// Is TLS active? (Affects PLAIN selection Spec §10.2.1.)
     pub tls_active: bool,
-    /// SASL-Credential fuer PLAIN (Username, Password). Falls
-    /// `None` und PLAIN trotzdem ausgewaehlt wird, faellt
-    /// `select_outbound` auf ANONYMOUS zurueck.
+    /// SASL credential for PLAIN (username, password). If
+    /// `None` and PLAIN is nevertheless selected, it falls
+    /// `select_outbound` back to ANONYMOUS.
     pub plain_credentials: Option<(String, String)>,
     /// Read-/Write-Timeout pro Connection.
     pub io_timeout: Option<Duration>,
 }
 
-/// Spec §2.2 Cl. 7 + §10.8 — Reconnect-Konfiguration.
+/// Spec §2.2 Cl. 7 + §10.8 — reconnect configuration.
 #[derive(Debug, Clone)]
 pub struct ReconnectConfig {
-    /// Initialer Backoff (Default 1s).
+    /// Initial backoff (default 1s).
     pub initial_ms: u64,
-    /// Multiplikator (Default 2).
+    /// Multiplier (default 2).
     pub multiplier: u64,
-    /// Backoff-Cap (Default 60s).
+    /// Backoff cap (default 60s).
     pub cap_ms: u64,
-    /// Maximale Reconnect-Versuche; `None` = unbegrenzt.
+    /// Maximum reconnect attempts; `None` = unlimited.
     pub max_attempts: Option<u32>,
 }
 
@@ -83,14 +83,14 @@ impl Default for ReconnectConfig {
 }
 
 impl ReconnectConfig {
-    /// Spec §2.2 Cl. 7 — naechster Backoff-Wert; sub-millisekunden-
-    /// genau aber gecapped.
+    /// Spec §2.2 Cl. 7 — next backoff value; sub-millisecond-
+    /// exact but capped.
     #[must_use]
     pub fn next_backoff_ms(&self, attempt: u32) -> u64 {
         if attempt == 0 {
             return self.initial_ms;
         }
-        // initial * mult^attempt, gecapped.
+        // initial * mult^attempt, capped.
         let mut v = self.initial_ms;
         for _ in 0..attempt {
             v = v.saturating_mul(self.multiplier);
@@ -102,37 +102,44 @@ impl ReconnectConfig {
     }
 }
 
-/// Outbound-Verbindungs-Resultat.
+/// Outbound connection result.
 #[derive(Debug, Clone)]
 pub struct OutboundSession {
-    /// Connection-State (sollte `Opened` sein nach erfolgreichem
+    /// Connection state (should be `Opened` after a successful
     /// Handshake).
     pub state: ConnectionState,
-    /// Container-Id, die der Broker im Open zurueckmeldete.
+    /// Container-Id that the broker reported back in the Open.
     pub remote_container_id: Option<String>,
-    /// SASL-Mechanismus, mit dem authentifiziert wurde.
+    /// SASL mechanism used to authenticate.
     pub sasl_mechanism: Option<SaslMechanism>,
 }
 
-/// Outbound-Fehler.
+/// Outbound error.
 #[derive(Debug)]
 pub enum ClientError {
-    /// TCP-/IO-Fehler.
+    /// TCP-/IO error.
     Io(io::Error),
-    /// Frame-IO-Fehler.
+    /// Frame-IO error.
     FrameIo(FrameIoError),
-    /// Handler-Fehler aus der State-Machine.
+    /// Handler error from the state machine.
     Handler(HandlerError),
-    /// Broker-seitiger Reject (SASL outcome != ok, oder Close
-    /// vor Open).
+    /// Broker-side reject (SASL outcome != ok, or close
+    /// before Open).
     BrokerReject(String),
-    /// Spec §2.2 Cl. 5 — PLAIN ueber unverschluesseltem Transport
-    /// abgelehnt.
+    /// Spec §2.2 Cl. 5 — PLAIN over an unencrypted transport
+    /// rejected.
     PlainRejectedNoTls,
-    /// Broker bot keinen akzeptablen SASL-Mechanismus an.
+    /// Broker offered no acceptable SASL mechanism.
     NoAcceptableSaslMechanism,
-    /// Reconnect-Loop hat `max_attempts` ueberschritten.
-    ReconnectExhausted(u32),
+    /// Reconnect loop exceeded `max_attempts`: how many attempts were
+    /// made, and why the last of them failed.
+    ReconnectExhausted {
+        /// The attempts made.
+        attempts: u32,
+        /// The last attempt's error; `None` only for a cap of zero, where
+        /// nothing was tried.
+        last: Option<Box<ClientError>>,
+    },
 }
 
 impl core::fmt::Display for ClientError {
@@ -147,9 +154,13 @@ impl core::fmt::Display for ClientError {
                 "SASL PLAIN refused over unencrypted transport (Spec §2.2 Cl. 5)"
             ),
             Self::NoAcceptableSaslMechanism => write!(f, "no acceptable SASL mechanism offered"),
-            Self::ReconnectExhausted(n) => {
-                write!(f, "reconnect attempts exhausted after {n} tries")
-            }
+            Self::ReconnectExhausted { attempts, last } => match last {
+                Some(last) => write!(
+                    f,
+                    "reconnect attempts exhausted after {attempts} tries; the last failed with: {last}"
+                ),
+                None => write!(f, "reconnect attempts exhausted after {attempts} tries"),
+            },
         }
     }
 }
@@ -172,14 +183,14 @@ impl From<HandlerError> for ClientError {
     }
 }
 
-/// Spec §2.2 Cl. 2 — einmaliger Outbound-Connect.
+/// Spec §2.2 Cl. 2 — one-time outbound connect.
 ///
-/// Liefert einen connecteten `TcpStream` + `OutboundSession` nach
-/// erfolgreichem AMQP-Open-Handshake. SASL-Phase ist symmetrisch
-/// zur Server-Seite, nur dass wir der Initiator sind.
+/// Returns a connected `TcpStream` + `OutboundSession` after
+/// a successful AMQP open handshake. The SASL phase is symmetric
+/// to the server side, except that we are the initiator.
 ///
 /// # Errors
-/// Siehe [`ClientError`].
+/// See [`ClientError`].
 pub fn connect_outbound(cfg: &ClientConfig) -> Result<(TcpStream, OutboundSession), ClientError> {
     let mut stream = tcp_connect(&cfg.upstream_addr)?;
     if let Some(t) = cfg.io_timeout {
@@ -191,8 +202,8 @@ pub fn connect_outbound(cfg: &ClientConfig) -> Result<(TcpStream, OutboundSessio
 }
 
 fn tcp_connect(addr: &str) -> io::Result<TcpStream> {
-    // Falls mehrere AddrInfos (DNS-Round-Robin), nehmen wir den
-    // ersten, der akzeptiert.
+    // If multiple AddrInfos (DNS round-robin), we take the
+    // first one that accepts.
     let addrs: Vec<_> = addr.to_socket_addrs()?.collect();
     let mut last_err: Option<io::Error> = None;
     for a in addrs {
@@ -210,15 +221,15 @@ fn drive_outbound_handshake<S: Read + Write>(
     stream: &mut S,
     cfg: &ClientConfig,
 ) -> Result<OutboundSession, ClientError> {
-    // Spec §2.2 — Senden SASL-Header zuerst (Initiator-Wahl); der
-    // Broker antwortet entweder mit SASL-Header oder verlangt
-    // direkt AMQP. Wir starten konservativ mit SASL.
+    // Spec §2.2 — send the SASL header first (initiator choice); the
+    // The broker answers either with a SASL header or requires
+    // AMQP directly. We start conservatively with SASL.
     write_protocol_header(stream, AmqpProtocol::Sasl)?;
     let server_proto = read_protocol_header(stream)?;
     let mechanism = if server_proto.protocol == AmqpProtocol::Sasl {
         Some(do_outbound_sasl(stream, cfg)?)
     } else {
-        // Server skipped SASL — wir senden direkt AMQP-Header.
+        // Server skipped SASL — we send the AMQP header directly.
         None
     };
 
@@ -231,12 +242,12 @@ fn drive_outbound_handshake<S: Read + Write>(
         )));
     }
 
-    // Open-Performative senden.
+    // Send Open performative.
     let open = performatives::open(&cfg.container_id)
         .map_err(|e| ClientError::Handler(HandlerError::PerformativeDecode(format!("{e}"))))?;
     write_frame(stream, FrameType::Amqp, 0, &open)?;
 
-    // Open-Reply lesen.
+    // Read Open reply.
     let frame = read_frame(stream, cfg.max_frame_size)?;
     let remote_container_id = extract_container_id(&frame.body);
 
@@ -251,38 +262,38 @@ fn do_outbound_sasl<S: Read + Write>(
     stream: &mut S,
     cfg: &ClientConfig,
 ) -> Result<SaslMechanism, ClientError> {
-    // Server schickt sasl-mechanisms-Frame.
+    // Server sends sasl-mechanisms frame.
     let mechs_frame = read_frame(stream, cfg.max_frame_size)?;
     if mechs_frame.header.frame_type != FrameType::Sasl {
         return Err(ClientError::FrameIo(FrameIoError::UnsupportedProtocolId(
             mechs_frame.header.frame_type.to_u8(),
         )));
     }
-    // Body decodieren: descriptor 0x40 + list[array<symbol>].
+    // Decode body: descriptor 0x40 + list[array<symbol>].
     let (_descriptor, body, _) =
         zerodds_amqp_bridge::performatives::decode_performative(&mechs_frame.body)
             .map_err(|e| ClientError::Handler(HandlerError::PerformativeDecode(format!("{e}"))))?;
     let offered = parse_offered_mechanisms(&body);
 
-    // Spec §2.2 Cl. 5 + §10.2.1 — PLAIN nur bei TLS-aktiv.
+    // Spec §2.2 Cl. 5 + §10.2.1 — PLAIN only when TLS active.
     let chosen = SaslState::select_outbound(&offered, cfg.tls_active)
         .ok_or(ClientError::NoAcceptableSaslMechanism)?;
 
-    // PLAIN-Schutzschicht: select_outbound filtert PLAIN bereits
-    // ohne TLS, aber wir doppeln mit explizitem Reject fuer den
-    // Fall einer Konfig-Inkonsistenz.
+    // PLAIN protection layer: select_outbound already filters PLAIN
+    // without TLS, but we double up with an explicit reject for the
+    // case of a config inconsistency.
     if chosen == SaslMechanism::Plain && !cfg.tls_active {
         return Err(ClientError::PlainRejectedNoTls);
     }
 
-    // sasl-init-Frame senden (descriptor 0x41).
+    // Send sasl-init frame (descriptor 0x41).
     let init_descriptor: u64 = 0x0000_0000_0000_0041;
     let init_body = build_sasl_init(chosen, cfg);
     let init_payload = performatives::encode_performative(init_descriptor, &init_body)
         .map_err(|e| ClientError::Handler(HandlerError::PerformativeDecode(format!("{e}"))))?;
     write_frame(stream, FrameType::Sasl, 0, &init_payload)?;
 
-    // sasl-outcome lesen (descriptor 0x44, code 0=ok).
+    // Read sasl-outcome (descriptor 0x44, code 0=ok).
     let outcome_frame = read_frame(stream, cfg.max_frame_size)?;
     let (descriptor, outcome_body, _) =
         zerodds_amqp_bridge::performatives::decode_performative(&outcome_frame.body)
@@ -313,7 +324,7 @@ fn parse_offered_mechanisms(body: &AmqpExtValue) -> Vec<SaslMechanism> {
                 }
             }
         } else if let Some(AmqpExtValue::Symbol(s)) = items.first() {
-            // Manche Broker schicken einzelnen symbol statt array.
+            // Some brokers send individual symbol instead of array.
             if let Some(m) = SaslMechanism::from_name(s) {
                 out.push(m);
             }
@@ -328,7 +339,7 @@ fn build_sasl_init(mech: SaslMechanism, cfg: &ClientConfig) -> AmqpExtValue {
     items.push(AmqpExtValue::Symbol(mech.name().to_string()));
     let response = match (mech, &cfg.plain_credentials) {
         (SaslMechanism::Plain, Some((user, pw))) => {
-            // RFC 4616: PLAIN-Form ist `\0username\0password`.
+            // RFC 4616: the PLAIN form is `\0username\0password`.
             let mut buf: Vec<u8> = Vec::new();
             buf.push(0);
             buf.extend(user.as_bytes());
@@ -342,17 +353,17 @@ fn build_sasl_init(mech: SaslMechanism, cfg: &ClientConfig) -> AmqpExtValue {
         (SaslMechanism::ScramSha256, Some((user, _pw))) => {
             // RFC 5802/7677 SCRAM-SHA-256 client-first-message:
             //   `n,,n=<saslprep(user)>,r=<client-nonce>`.
-            // Phase-A: initial-response mit leerem nonce — der Caller
-            // muss die folgenden SCRAM-Server-First/Client-Final/
-            // Server-Final-Steps separat ueber das sasl-Mechanism-
-            // Frame-Handling abwickeln (kein Single-Round-Trip).
-            // Phase-B implementiert den vollen Loop in build_sasl_step().
+            // Phase-A: initial-response with empty nonce — the caller
+            // must handle the following SCRAM server-first/client-final/
+            // server-final steps separately via the sasl mechanism
+            // frame handling (not a single round trip).
+            // Phase-B implements the full loop in build_sasl_step().
             let body = format!("n,,n={user},r=");
             AmqpExtValue::Binary(body.into_bytes())
         }
         (SaslMechanism::ScramSha256, None) => {
-            // Ohne credentials kein client-first-message — leerer
-            // Initial-Response, Server wird mit auth-failed antworten.
+            // Without credentials no client-first message — empty
+            // initial response, the server will answer with auth-failed.
             AmqpExtValue::Binary(Vec::new())
         }
     };
@@ -380,18 +391,19 @@ fn extract_container_id(performative_body: &[u8]) -> Option<String> {
     None
 }
 
-/// Spec §2.2 Cl. 7 — Reconnect-Loop mit exponential Backoff.
+/// Spec §2.2 Cl. 7 — reconnect loop with exponential backoff.
 ///
-/// Versucht `connect_outbound` so lange, bis er erfolgreich ist
-/// oder `max_attempts` erreicht ist. Wartezeit zwischen Versuchen
-/// folgt `next_backoff_ms`.
+/// Retries `connect_outbound` until it succeeds
+/// or `max_attempts` is reached. Wait time between attempts
+/// follows `next_backoff_ms`.
 ///
-/// `shutdown_signal` erlaubt kooperatives Abbrechen aus
-/// einem anderen Thread.
+/// `shutdown_signal` allows cooperative cancellation from
+/// another thread.
 ///
 /// # Errors
-/// `ReconnectExhausted` wenn das Cap erreicht ist; sonst der
-/// letzte connect-Fehler.
+/// `ReconnectExhausted` when the cap is reached, carrying the last
+/// attempt's error; the last connect error when shutdown is signalled
+/// after at least one attempt.
 pub fn connect_with_reconnect(
     cfg: &ClientConfig,
     reconnect: &ReconnectConfig,
@@ -402,18 +414,28 @@ pub fn connect_with_reconnect(
     let mut last_err: Option<ClientError> = None;
     loop {
         if shutdown_signal.load(Ordering::Relaxed) {
-            return Err(last_err.unwrap_or(ClientError::ReconnectExhausted(attempt)));
+            return Err(last_err.unwrap_or(ClientError::ReconnectExhausted {
+                attempts: attempt,
+                last: None,
+            }));
         }
         if let Some(max) = reconnect.max_attempts {
             if attempt >= max {
-                return Err(ClientError::ReconnectExhausted(attempt));
+                // `ReconnectExhausted`, because the cap being reached is
+                // its own outcome — and with the reason the last attempt
+                // failed, which the bare count dropped: a caller saw how
+                // often the connect was tried and never why.
+                return Err(ClientError::ReconnectExhausted {
+                    attempts: attempt,
+                    last: last_err.map(Box::new),
+                });
             }
         }
         match connect_outbound(cfg) {
             Ok(ok) => return Ok(ok),
             Err(e) => {
                 metrics.on_decode_error(); // generic error tally; spec
-                // hat keine eigene reconnect-failure metric.
+                // has no dedicated reconnect-failure metric.
                 last_err = Some(e);
                 let wait_ms = reconnect.next_backoff_ms(attempt);
                 attempt = attempt.saturating_add(1);
@@ -561,12 +583,12 @@ mod tests {
 
     // --- E2E ---
 
-    /// E2E: Wir setzen einen Mini-AMQP-Server in einem Thread auf,
-    /// connectierern als Client, verifizieren Open/Open-Roundtrip.
+    /// E2E: we set up a mini AMQP server in a thread,
+    /// connect as client, verify Open/Open roundtrip.
     #[test]
     fn outbound_connect_to_local_server() {
-        // Wir nutzen unseren eigenen handler::handle_connection
-        // als Server.
+        // We use our own handler::handle_connection
+        // as server.
         use crate::handler::{HandlerConfig, handle_connection};
 
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -603,7 +625,7 @@ mod tests {
         assert_eq!(session.state, ConnectionState::Opened);
         assert!(session.remote_container_id.is_some());
 
-        // Saubere Trennung: Client schickt Close.
+        // Clean separation: client sends Close.
         let close = performatives::close().unwrap();
         write_frame(&mut stream, FrameType::Amqp, 0, &close).unwrap();
         drop(stream);
@@ -612,18 +634,24 @@ mod tests {
 
     #[test]
     fn reconnect_exhausts_with_max_attempts() {
-        // Connect zu nicht existierender Adresse; max_attempts=2.
+        // Connect to a non-existent address; max_attempts=2.
         let cfg = cfg("127.0.0.1:1"); // port 1 fast garantiert reject
         let metrics = Arc::new(MetricsHub::new());
         let shutdown = Arc::new(AtomicBool::new(false));
         let r = ReconnectConfig {
-            initial_ms: 1, // sehr klein fuer Test-Geschwindigkeit
+            initial_ms: 1, // very small for test speed
             multiplier: 1,
             cap_ms: 1,
             max_attempts: Some(2),
         };
         let err = connect_with_reconnect(&cfg, &r, &shutdown, &metrics).unwrap_err();
-        assert!(matches!(err, ClientError::ReconnectExhausted(_)));
+        let ClientError::ReconnectExhausted { attempts, last } = &err else {
+            panic!("{err}");
+        };
+        assert_eq!(*attempts, 2);
+        // The reason survives: port 1 refuses the connection.
+        assert!(matches!(last.as_deref(), Some(ClientError::Io(_))), "{err}");
+        assert!(err.to_string().contains("the last failed with"), "{err}");
     }
 
     #[test]
@@ -631,21 +659,21 @@ mod tests {
         let cfg = cfg("127.0.0.1:1");
         let metrics = Arc::new(MetricsHub::new());
         let shutdown = Arc::new(AtomicBool::new(false));
-        // Setze shutdown nach ca. 50ms in einem anderen Thread.
+        // Set shutdown after ca. 50ms in another thread.
         let s = shutdown.clone();
         thread::spawn(move || {
             thread::sleep(Duration::from_millis(50));
             s.store(true, Ordering::Relaxed);
         });
         let r = ReconnectConfig {
-            initial_ms: 200, // groesser als shutdown-delay, sodass Loop schlaeft
+            initial_ms: 200, // larger than shutdown delay, so the loop sleeps
             multiplier: 1,
             cap_ms: 200,
-            max_attempts: None, // unbegrenzt; nur shutdown bricht ab
+            max_attempts: None, // unbounded; only shutdown aborts
         };
         let err = connect_with_reconnect(&cfg, &r, &shutdown, &metrics);
-        // Im Shutdown-Pfad bekommen wir entweder Reconnect-Exhausted
-        // oder den letzten Connect-Fehler (Io). Beide sind ok.
+        // In the shutdown path we get either Reconnect-Exhausted
+        // or the last connect error (Io). Both are ok.
         assert!(err.is_err());
     }
 }

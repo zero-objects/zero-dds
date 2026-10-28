@@ -83,7 +83,7 @@ impl Decoder {
     /// Decode a complete header block.
     ///
     /// # Errors
-    /// Siehe [`DecoderError`].
+    /// See [`DecoderError`].
     pub fn decode(&mut self, mut input: &[u8]) -> Result<Vec<HeaderField>, DecoderError> {
         let mut out = Vec::new();
         while !input.is_empty() {

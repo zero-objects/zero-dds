@@ -1,0 +1,9 @@
+robot.idl in this directory is the file idl/robot.idl of the machine-readable IDL of the OMG
+specification "Remote Procedure Call over DDS" (DDS-RPC), version 1.0, as published in
+omg-dds-rpc-idl.zip at https://www.omg.org/spec/DDS-RPC/20160215/ . It is kept byte for byte
+as published (the line ends are CRLF); omg-dds-rpc-idl.sha256 holds its SHA-256.
+crates/lang-rules/tests/rpc_idl_zip_agrees.rs reads it.
+
+Copyright (c) Object Management Group. The file is part of the specification and is
+reproduced here under the OMG's terms for specifications (https://www.omg.org/legal/). It is
+not covered by the license of ZeroDDS.

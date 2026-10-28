@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of annotation-must-understand that fastdds produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	the fill: error: no matching function for call to 'zd_c26::Sample::note(const char [6])'
+plain-cdr1	be	refused	the fill: error: no matching function for call to 'zd_c26::Sample::note(const char [6])'
+pl-cdr1	le	refused	the fill: error: no matching function for call to 'zd_c26::Sample::note(const char [6])'
+pl-cdr1	be	refused	the fill: error: no matching function for call to 'zd_c26::Sample::note(const char [6])'
+plain-cdr2	le	refused	the fill: error: no matching function for call to 'zd_c26::Sample::note(const char [6])'
+plain-cdr2	be	refused	the fill: error: no matching function for call to 'zd_c26::Sample::note(const char [6])'
+delimited-cdr	le	refused	the fill: error: no matching function for call to 'zd_c26::Sample::note(const char [6])'
+delimited-cdr	be	refused	the fill: error: no matching function for call to 'zd_c26::Sample::note(const char [6])'
+pl-cdr2	le	refused	the fill: error: no matching function for call to 'zd_c26::Sample::note(const char [6])'
+pl-cdr2	be	refused	the fill: error: no matching function for call to 'zd_c26::Sample::note(const char [6])'

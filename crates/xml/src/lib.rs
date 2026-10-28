@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! DDS-XML 1.0 Loader — well-formed Foundation (Cluster F).
+//! DDS-XML 1.0 Loader — well-formed foundation.
 //!
 //! Crate `zerodds-xml`. Implements the shared well-formedness and
 //! IDL-PSM mapping layer from DDS-XML 1.0 §7.1 and §7.2. Building-block-
 //! specific decoders (QoS library, types, domains, participants,
-//! applications, samples) build on this crate — see
-//! `docs/spec-coverage/zerodds-xml-1.0.open.md` Cluster G/H/I/J.
+//! applications, samples) build on this crate.
 //!
 //! # Spec sources
 //!
@@ -22,7 +21,7 @@
 //! * [`parse_xml_tree`] — generic well-formedness loader, returns
 //!   [`DdsXmlDocument`].
 //! * [`parse_dds_xml`] — high-level building-block loader, returns
-//!   [`DdsXml`] (Cluster G+H+I+J).
+//!   [`DdsXml`].
 //! * [`DdsXmlDocument`] / [`XmlElement`] — in-memory tree.
 //! * Data type helpers from [`types`] (boolean, long, ulong, Duration,
 //!   enum whitelist, string).
@@ -54,6 +53,7 @@ pub mod conformance;
 pub mod domain;
 pub mod errors;
 pub mod inheritance;
+pub mod options;
 pub mod parser;
 pub mod participant;
 pub mod qos;
@@ -67,32 +67,47 @@ pub mod typeobject_bridge;
 pub mod types;
 pub mod xsd_loader;
 pub mod xsd_schema;
+pub mod xsd_writer;
 pub mod xtypes_def;
+pub(crate) mod xtypes_expr;
 pub mod xtypes_parser;
 pub mod zerodds_xml;
 
-pub use application::{ApplicationEntry, ApplicationLibrary, parse_application_libraries};
+pub use application::{
+    ApplicationEntry, ApplicationLibrary, parse_application_libraries,
+    parse_application_libraries_with,
+};
 pub use conformance::{IDL_TO_XML_MAPPING, SUPPORTED_BUILDING_BLOCKS};
-pub use domain::{DomainEntry, DomainLibrary, RegisterType, TopicEntry, parse_domain_libraries};
+pub use domain::{
+    DomainEntry, DomainLibrary, RegisterType, TopicEntry, parse_domain_libraries,
+    parse_domain_libraries_with,
+};
 pub use errors::XmlError;
 pub use inheritance::{MAX_INHERITANCE_DEPTH, resolve_chain};
+pub use options::{Diagnostic, DiagnosticKind, Parsed, ReadOptions, UnknownElements, VendorForms};
 pub use parser::{
     DDS_XML_NS, DdsXmlDocument, MAX_LIST_ELEMENTS, MAX_TOTAL_ELEMENTS, XmlElement, parse_xml_tree,
 };
 pub use participant::{
-    DataReaderEntry, DataWriterEntry, DomainParticipantEntry, DomainParticipantLibrary,
-    PublisherEntry, SubscriberEntry, parse_domain_participant_libraries,
+    DataReaderEntry, DataWriterEntry, DomainParticipantEntry, DomainParticipantLibrary, FilterDef,
+    PublisherEntry, ReadConditionDef, SubscriberEntry, parse_domain_participant_libraries,
+    parse_domain_participant_libraries_with,
 };
-pub use qos::{EntityQos, QosLibrary, QosProfile, topic_filter_matches};
+pub use qos::{
+    EntityQos, FilteredEntityQos, InitialResourceLimits, QosLibrary, QosProfile, default_qos,
+    select_qos_for_topic, topic_filter_matches,
+};
 pub use qos_inheritance::{ResolvedQos, resolve_profile};
 pub use qos_parser::{
-    parse_bool_strict, parse_entity_qos_public, parse_qos_libraries, parse_qos_library,
-    parse_qos_library_element_public,
+    parse_bool_strict, parse_entity_qos_public, parse_qos_libraries, parse_qos_libraries_with,
+    parse_qos_library, parse_qos_library_element_public,
 };
 pub use registry::QosProfileRegistry;
 pub use resolver::{LibraryRef, parse_library_ref};
 pub use sample::{
-    PrimitiveValue, SampleValue, parse_sample, parse_sample_element, serialize_sample,
+    DataRepresentationForm, PrimitiveValue, SampleValue, implied_namespace,
+    parse_data_representation, parse_sample, parse_sample_element, serialize_data_representation,
+    serialize_sample,
 };
 pub use schemas::{
     ALL_SCHEMAS, APPLICATIONS_NAMESPACED_XSD, APPLICATIONS_NONAMESPACE_XSD, COMMON_XSD,
@@ -100,10 +115,12 @@ pub use schemas::{
     DDS_SYSTEM_NONAMESPACE_XSD, DOMAIN_PARTICIPANTS_NAMESPACED_XSD,
     DOMAIN_PARTICIPANTS_NONAMESPACE_XSD, DOMAINS_NAMESPACED_XSD, DOMAINS_NONAMESPACE_XSD,
     QOS_NAMESPACED_XSD, QOS_NONAMESPACE_XSD, TYPES_NAMESPACED_XSD, TYPES_NONAMESPACE_XSD,
-    embedded_block_names,
+    XTYPES_TYPES_NAMESPACE, XTYPES_TYPES_NONAMESPACE_XSD, XTYPES_TYPES_XSD, embedded_block_names,
 };
 pub use typeobject_bridge::{
-    BridgeError, bridge_library, xml_type_to_minimal_typeobject, xml_type_to_typeobject,
+    BridgeError, bridge_library, bridge_library_complete, bridge_library_complete_with_known,
+    xml_type_to_complete_type, xml_type_to_complete_typeobject, xml_type_to_minimal_typeobject,
+    xml_type_to_typeobject,
 };
 pub use types::{
     DURATION_INFINITE_NSEC, DURATION_INFINITE_SEC, DURATION_ZERO_NSEC, DURATION_ZERO_SEC, Duration,
@@ -111,15 +128,21 @@ pub use types::{
     parse_duration_nsec, parse_duration_sec, parse_enum, parse_long, parse_octet_sequence,
     parse_positive_long_unlimited, parse_string, parse_ulong,
 };
+pub use xsd_schema::parse_xsd_schema;
+pub use xsd_writer::type_library_to_xsd;
 pub use xtypes_def::{
-    BitField, BitValue, BitmaskType, BitsetType, EnumLiteral, EnumType, Extensibility, ModuleEntry,
-    PrimitiveType, StructMember, StructType, TypeDef, TypeLibrary, TypeRef, TypedefType, UnionCase,
-    UnionDiscriminator, UnionType,
+    Annotation, AnnotationMemberDecl, AnnotationTypeDef, AnnotationValue, AutoId, BitField,
+    BitValue, BitmaskType, BitsetType, ConstEntry, EnumLiteral, EnumType, Extensibility,
+    ModuleEntry, PrimitiveType, StructMember, StructType, TryConstruct, TypeDef, TypeLibrary,
+    TypeRef, TypedefType, UnionCase, UnionDiscriminator, UnionType, Verbatim,
 };
-pub use xtypes_parser::{parse_type_libraries, parse_types_element};
+pub use xtypes_parser::{
+    is_identifier_name, parse_type_libraries, parse_type_libraries_with, parse_types_element,
+};
 pub use zerodds_xml::{
-    DdsXml, ParticipantFactoryAdapter, ResolvedDataReader, ResolvedDataWriter, ResolvedParticipant,
-    ResolvedPublisher, ResolvedSubscriber, ResolvedTopic, apply_to_factory, parse_dds_xml,
+    CCM_LIBRARY, DdsXml, ParticipantFactoryAdapter, ResolvedDataReader, ResolvedDataWriter,
+    ResolvedParticipant, ResolvedPublisher, ResolvedSubscriber, ResolvedTopic, apply_to_factory,
+    parse_dds_xml, parse_dds_xml_with,
 };
 
 #[cfg(feature = "std")]
@@ -137,7 +160,7 @@ mod integration_tests {
     use alloc::string::{String, ToString};
 
     /// End-to-end: parse a QoS-Library-shaped XML, walk the tree,
-    /// extract values via the Cluster-F type helpers.
+    /// extract values via the type helpers.
     #[test]
     fn qos_profile_shape_roundtrip() {
         let xml = r#"<?xml version="1.0" encoding="UTF-8"?>

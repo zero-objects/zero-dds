@@ -1,20 +1,36 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-    DDS-XML 1.0 §7.3.7 — Building Block Data Samples (chameleon).
+    DDS-XML 1.0 - Building Block Data Samples (chameleon, no
+    targetNamespace). OMG DDS-XML 1.0 (formal/18-10-01) 7.3.7.
+
+    This file is ZeroDDS's own, not a copy of an OMG schema: 7.3.7.3.1
+    states that no generic XSD can describe the samples of all possible
+    data types, so the specification ships none for this building block
+    and points users at the chameleon pattern instead. What is fixed by
+    the specification is the container syntax - <item> for sequence and
+    array elements (7.3.7.3.2) and the value forms of 7.2.2 / 7.2.3 /
+    7.2.6 - and that is what this schema pins.
+
+    As 7.3.1 requires of a chameleon file, this one declares types only,
+    no root element; the roots <data> and <sample> are in the namespaced
+    file. The type is named either by type_ref (this crate) or by type
+    (shorter spelling); both are optional, because 7.3.7.4.1 and
+    7.3.7.4.3 name the type through the root tag itself.
 -->
 <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
-           elementFormDefault="unqualified"
+           elementFormDefault="qualified"
            attributeFormDefault="unqualified">
 
     <xs:include schemaLocation="dds-xml_common.xsd"/>
 
-    <!-- §7.3.7.1: Data-Sample-Format. <data> ist Top-Level. -->
+    <!-- Member values are typed by the data type, not by this schema:
+         processContents="lax" leaves them to the parser, which checks
+         them against the registered type (crates/xml/src/sample.rs). -->
     <xs:complexType name="dataSample">
         <xs:sequence>
-            <!-- Spec §7.2.4.1: <element> tag for sequence/array.
-                 §7.3.7.3.2: alternatively <item> tag allowed. -->
             <xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/>
         </xs:sequence>
-        <xs:attribute name="type" type="xs:string" use="optional"/>
+        <xs:attribute name="type" type="elementNameReference" use="optional"/>
+        <xs:attribute name="type_ref" type="elementNameReference" use="optional"/>
     </xs:complexType>
 </xs:schema>

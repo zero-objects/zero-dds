@@ -61,7 +61,15 @@ fn flink_path(tag: &str) -> String {
 
 #[test]
 fn shm_loan_writer_to_reader_zero_copy() {
-    let domain: u32 = 100 + (std::process::id() % 50);
+    // A fixed number, not `base + pid % N`: the domain is the UDP port
+    // (RTPS 9.6.1.4.1, `7400 + 250*domain`), and spreading it by PID walked
+    // it into the kernel's ephemeral port range
+    // (`net.ipv4.ip_local_port_range`, `32768 60999` on the bench host),
+    // where the SPDP multicast bind fails with `EADDRINUSE` and
+    // `zerodds_runtime_create` returns NULL. Every domain in this workspace
+    // is listed in `crates/dcps/tests/common/mod.rs::RESERVED_DOMAINS` so
+    // that the domain lease there never hands out the same one.
+    let domain: u32 = 27;
     let topic_name = CString::new("ShmLoanE2E").unwrap();
     let type_name = CString::new("RawBytes").unwrap();
     let path = flink_path("zc");
@@ -190,7 +198,15 @@ fn shm_loan_writer_to_reader_zero_copy() {
 fn delivery_mode_setter_validation() {
     // Portable (0) and RawSameHost (1) accepted; Iceoryx (2) not yet wired →
     // Unsupported; junk → BadParameter.
-    let domain: u32 = 130 + (std::process::id() % 20);
+    // A fixed number, not `base + pid % N`: the domain is the UDP port
+    // (RTPS 9.6.1.4.1, `7400 + 250*domain`), and spreading it by PID walked
+    // it into the kernel's ephemeral port range
+    // (`net.ipv4.ip_local_port_range`, `32768 60999` on the bench host),
+    // where the SPDP multicast bind fails with `EADDRINUSE` and
+    // `zerodds_runtime_create` returns NULL. Every domain in this workspace
+    // is listed in `crates/dcps/tests/common/mod.rs::RESERVED_DOMAINS` so
+    // that the domain lease there never hands out the same one.
+    let domain: u32 = 28;
     let topic_name = CString::new("DeliveryModeSet").unwrap();
     let type_name = CString::new("RawBytes").unwrap();
 
@@ -247,7 +263,15 @@ fn delivery_mode_setter_validation() {
 fn raw_same_host_mode_writer_to_reader() {
     // RawSameHost: the loan slot carries the in-memory form; commit does NOT
     // publish over RTPS (same-host only), the same-host reader takes it via SHM.
-    let domain: u32 = 150 + (std::process::id() % 10);
+    // A fixed number, not `base + pid % N`: the domain is the UDP port
+    // (RTPS 9.6.1.4.1, `7400 + 250*domain`), and spreading it by PID walked
+    // it into the kernel's ephemeral port range
+    // (`net.ipv4.ip_local_port_range`, `32768 60999` on the bench host),
+    // where the SPDP multicast bind fails with `EADDRINUSE` and
+    // `zerodds_runtime_create` returns NULL. Every domain in this workspace
+    // is listed in `crates/dcps/tests/common/mod.rs::RESERVED_DOMAINS` so
+    // that the domain lease there never hands out the same one.
+    let domain: u32 = 29;
     let topic_name = CString::new("RawModeE2E").unwrap();
     let type_name = CString::new("RawBytes").unwrap();
     let path = flink_path("raw");
@@ -314,7 +338,15 @@ fn raw_same_host_mode_writer_to_reader() {
 fn loan_without_shm_falls_back_to_heap() {
     // Without `zerodds_dw_enable_shm_loan`, the loan path stays on the heap box
     // — the transparent fallback. The same loan/commit calls still succeed.
-    let domain: u32 = 160 + (std::process::id() % 50);
+    // A fixed number, not `base + pid % N`: the domain is the UDP port
+    // (RTPS 9.6.1.4.1, `7400 + 250*domain`), and spreading it by PID walked
+    // it into the kernel's ephemeral port range
+    // (`net.ipv4.ip_local_port_range`, `32768 60999` on the bench host),
+    // where the SPDP multicast bind fails with `EADDRINUSE` and
+    // `zerodds_runtime_create` returns NULL. Every domain in this workspace
+    // is listed in `crates/dcps/tests/common/mod.rs::RESERVED_DOMAINS` so
+    // that the domain lease there never hands out the same one.
+    let domain: u32 = 33;
     let topic_name = CString::new("ShmLoanFallback").unwrap();
     let type_name = CString::new("RawBytes").unwrap();
 
@@ -359,7 +391,15 @@ fn loan_without_shm_falls_back_to_heap() {
 /// + `zerodds_reader_take_shm` read the slot zero-copy.
 #[test]
 fn shm_loan_runtime_path_writer_to_reader_zero_copy() {
-    let domain: u32 = 60 + (std::process::id() % 30);
+    // A fixed number, not `base + pid % N`: the domain is the UDP port
+    // (RTPS 9.6.1.4.1, `7400 + 250*domain`), and spreading it by PID walked
+    // it into the kernel's ephemeral port range
+    // (`net.ipv4.ip_local_port_range`, `32768 60999` on the bench host),
+    // where the SPDP multicast bind fails with `EADDRINUSE` and
+    // `zerodds_runtime_create` returns NULL. Every domain in this workspace
+    // is listed in `crates/dcps/tests/common/mod.rs::RESERVED_DOMAINS` so
+    // that the domain lease there never hands out the same one.
+    let domain: u32 = 34;
     let topic = CString::new("ShmLoanRtE2E").unwrap();
     let typ = CString::new("RawBytes").unwrap();
     let path = flink_path("rt");
@@ -436,7 +476,15 @@ fn shm_loan_runtime_path_writer_to_reader_zero_copy() {
 fn iceoryx_mode_writer_to_reader() {
     use zerodds::{zerodds_reader_enable_iceoryx, zerodds_writer_enable_iceoryx};
 
-    let domain: u32 = 90 + (std::process::id() % 10);
+    // A fixed number, not `base + pid % N`: the domain is the UDP port
+    // (RTPS 9.6.1.4.1, `7400 + 250*domain`), and spreading it by PID walked
+    // it into the kernel's ephemeral port range
+    // (`net.ipv4.ip_local_port_range`, `32768 60999` on the bench host),
+    // where the SPDP multicast bind fails with `EADDRINUSE` and
+    // `zerodds_runtime_create` returns NULL. Every domain in this workspace
+    // is listed in `crates/dcps/tests/common/mod.rs::RESERVED_DOMAINS` so
+    // that the domain lease there never hands out the same one.
+    let domain: u32 = 35;
     let topic = CString::new("IceoryxModeE2E").unwrap();
     let typ = CString::new("RawBytes").unwrap();
     // iceoryx2 service names are plain identifiers — keep it unique per run.

@@ -1,110 +1,161 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 //
-// dds/core/Exception.hpp — DDS-PSM-Cxx 1.0 §7.5.1 exception hierarchy.
+// dds/core/Exception.hpp — DDS-PSM-Cxx 1.0 §7.5.5 exception hierarchy.
 
 #ifndef ZERODDS_DDS_CORE_EXCEPTION_HPP
 #define ZERODDS_DDS_CORE_EXCEPTION_HPP
 
+
+#include "zerodds/psm/cxx.hpp"
 #include <stdexcept>
 #include <string>
 
 namespace dds {
 namespace core {
 
-/// Base exception (Spec §7.5.1).
-class Exception : public std::runtime_error {
+/// Base exception (Spec §7.5.5). All DDS exceptions derive from this.
+///
+/// The classes below inherit it virtually: a class that is also another
+/// library's exception of the same name (DDS-RPC 1.0 §7.11.1.3, whose local
+/// errors are these classes) has the one `Exception` subobject, and
+/// `catch (const dds::core::Exception&)` reaches it unambiguously.
+class Exception {
+protected:
+    Exception() {}
 public:
-    explicit Exception(const std::string& what) : std::runtime_error(what) {}
+    virtual ~Exception() ZERODDS_NOEXCEPT {}
+    virtual const char* what() const ZERODDS_NOEXCEPT = 0;
 };
 
-/// Operation against a deleted entity.
-class AlreadyClosedError : public Exception {
+/// Generic DDS error (Spec §7.5.5 Table 7.3: ERROR -> std::logic_error).
+class Error : public virtual Exception, public std::exception {
 public:
-    explicit AlreadyClosedError(const std::string& w) : Exception(w) {}
+    Error() ZERODDS_NOEXCEPT {}
+    explicit Error(const std::string& msg) : msg_(msg) {}
+    virtual ~Error() ZERODDS_NOEXCEPT {}
+    const char* what() const ZERODDS_NOEXCEPT ZERODDS_OVERRIDE { return msg_.c_str(); }
+private:
+    std::string msg_;
 };
 
-/// Generic Error.
-class Error : public Exception {
+/// Operation against a deleted entity (ALREADY_DELETED -> std::logic_error).
+class AlreadyClosedError : public virtual Exception, public std::logic_error {
 public:
-    explicit Error(const std::string& w) : Exception(w) {}
+    explicit AlreadyClosedError(const std::string& msg) : std::logic_error(msg) {}
+    AlreadyClosedError(const AlreadyClosedError& src) : std::logic_error(src.what()) {}
+    virtual ~AlreadyClosedError() ZERODDS_NOEXCEPT {}
+    const char* what() const ZERODDS_NOEXCEPT ZERODDS_OVERRIDE { return std::logic_error::what(); }
 };
 
-/// Argument check failed.
-class IllegalOperationError : public Exception {
+/// Argument check failed (ILLEGAL_OPERATION -> std::logic_error).
+class IllegalOperationError : public virtual Exception, public std::logic_error {
 public:
-    explicit IllegalOperationError(const std::string& w) : Exception(w) {}
+    explicit IllegalOperationError(const std::string& msg) : std::logic_error(msg) {}
+    IllegalOperationError(const IllegalOperationError& src) : std::logic_error(src.what()) {}
+    virtual ~IllegalOperationError() ZERODDS_NOEXCEPT {}
+    const char* what() const ZERODDS_NOEXCEPT ZERODDS_OVERRIDE { return std::logic_error::what(); }
 };
 
-/// Resource limit reached.
-class OutOfResourcesError : public Exception {
+/// Immutable QoS-policy modified (IMMUTABLE_POLICY -> std::logic_error).
+class ImmutablePolicyError : public virtual Exception, public std::logic_error {
 public:
-    explicit OutOfResourcesError(const std::string& w) : Exception(w) {}
+    explicit ImmutablePolicyError(const std::string& msg) : std::logic_error(msg) {}
+    ImmutablePolicyError(const ImmutablePolicyError& src) : std::logic_error(src.what()) {}
+    virtual ~ImmutablePolicyError() ZERODDS_NOEXCEPT {}
+    const char* what() const ZERODDS_NOEXCEPT ZERODDS_OVERRIDE { return std::logic_error::what(); }
 };
 
-/// Operation not supported in current configuration.
-class UnsupportedError : public Exception {
+/// Inconsistent QoS-policies (INCONSISTENT_POLICY -> std::logic_error).
+class InconsistentPolicyError : public virtual Exception, public std::logic_error {
 public:
-    explicit UnsupportedError(const std::string& w) : Exception(w) {}
+    explicit InconsistentPolicyError(const std::string& msg) : std::logic_error(msg) {}
+    InconsistentPolicyError(const InconsistentPolicyError& src) : std::logic_error(src.what()) {}
+    virtual ~InconsistentPolicyError() ZERODDS_NOEXCEPT {}
+    const char* what() const ZERODDS_NOEXCEPT ZERODDS_OVERRIDE { return std::logic_error::what(); }
 };
 
-/// Pre-condition violation.
-class PreconditionNotMetError : public Exception {
+/// Bad parameter (BAD_PARAMETER -> std::invalid_argument).
+class InvalidArgumentError : public virtual Exception, public std::invalid_argument {
 public:
-    explicit PreconditionNotMetError(const std::string& w) : Exception(w) {}
+    explicit InvalidArgumentError(const std::string& msg) : std::invalid_argument(msg) {}
+    InvalidArgumentError(const InvalidArgumentError& src) : std::invalid_argument(src.what()) {}
+    virtual ~InvalidArgumentError() ZERODDS_NOEXCEPT {}
+    const char* what() const ZERODDS_NOEXCEPT ZERODDS_OVERRIDE { return std::invalid_argument::what(); }
 };
 
-/// Bad parameter.
-class InvalidArgumentError : public Exception {
+/// Entity not enabled (NOT_ENABLED -> std::logic_error).
+class NotEnabledError : public virtual Exception, public std::logic_error {
 public:
-    explicit InvalidArgumentError(const std::string& w) : Exception(w) {}
+    explicit NotEnabledError(const std::string& msg) : std::logic_error(msg) {}
+    NotEnabledError(const NotEnabledError& src) : std::logic_error(src.what()) {}
+    virtual ~NotEnabledError() ZERODDS_NOEXCEPT {}
+    const char* what() const ZERODDS_NOEXCEPT ZERODDS_OVERRIDE { return std::logic_error::what(); }
 };
 
-/// Immutable QoS-policy modified.
-class ImmutablePolicyError : public Exception {
+/// Resource limit reached (OUT_OF_RESOURCES -> std::runtime_error).
+class OutOfResourcesError : public virtual Exception, public std::runtime_error {
 public:
-    explicit ImmutablePolicyError(const std::string& w) : Exception(w) {}
+    explicit OutOfResourcesError(const std::string& msg) : std::runtime_error(msg) {}
+    OutOfResourcesError(const OutOfResourcesError& src) : std::runtime_error(src.what()) {}
+    virtual ~OutOfResourcesError() ZERODDS_NOEXCEPT {}
+    const char* what() const ZERODDS_NOEXCEPT ZERODDS_OVERRIDE { return std::runtime_error::what(); }
 };
 
-/// Inconsistent QoS-policies.
-class InconsistentPolicyError : public Exception {
+/// Pre-condition violation (PRECONDITION_NOT_MET -> std::logic_error).
+class PreconditionNotMetError : public virtual Exception, public std::logic_error {
 public:
-    explicit InconsistentPolicyError(const std::string& w) : Exception(w) {}
+    explicit PreconditionNotMetError(const std::string& msg) : std::logic_error(msg) {}
+    PreconditionNotMetError(const PreconditionNotMetError& src) : std::logic_error(src.what()) {}
+    virtual ~PreconditionNotMetError() ZERODDS_NOEXCEPT {}
+    const char* what() const ZERODDS_NOEXCEPT ZERODDS_OVERRIDE { return std::logic_error::what(); }
 };
 
-/// Timeout reached.
-class TimeoutError : public Exception {
+/// Timeout reached (TIMEOUT -> std::runtime_error).
+class TimeoutError : public virtual Exception, public std::runtime_error {
 public:
-    explicit TimeoutError(const std::string& w) : Exception(w) {}
+    explicit TimeoutError(const std::string& msg) : std::runtime_error(msg) {}
+    TimeoutError(const TimeoutError& src) : std::runtime_error(src.what()) {}
+    virtual ~TimeoutError() ZERODDS_NOEXCEPT {}
+    const char* what() const ZERODDS_NOEXCEPT ZERODDS_OVERRIDE { return std::runtime_error::what(); }
 };
 
-/// Entity not enabled.
-class NotEnabledError : public Exception {
+/// Operation not supported in current configuration (UNSUPPORTED -> std::logic_error).
+class UnsupportedError : public virtual Exception, public std::logic_error {
 public:
-    explicit NotEnabledError(const std::string& w) : Exception(w) {}
+    explicit UnsupportedError(const std::string& msg) : std::logic_error(msg) {}
+    UnsupportedError(const UnsupportedError& src) : std::logic_error(src.what()) {}
+    virtual ~UnsupportedError() ZERODDS_NOEXCEPT {}
+    const char* what() const ZERODDS_NOEXCEPT ZERODDS_OVERRIDE { return std::logic_error::what(); }
 };
 
-/// Throws the right `dds::core::*` exception based on the C-FFI status code.
-inline void check_status(int code, const char* what) {
-    switch (code) {
-        case 0: return; // ZERODDS_OK
-        case -1: throw Error(what);
-        case -2: throw AlreadyClosedError(what);
-        case -3: throw InvalidArgumentError(what);
-        case -4: throw TimeoutError(what);
-        case -5: throw PreconditionNotMetError(what);
-        case -6: throw InvalidArgumentError(what);
-        case -7: return; // NO_DATA — not an exception
-        case -8: throw OutOfResourcesError(what);
-        case -9: throw NotEnabledError(what);
-        case -10: throw ImmutablePolicyError(what);
-        case -11: throw InconsistentPolicyError(what);
-        case -12: throw AlreadyClosedError(what);
-        case -13: throw UnsupportedError(what);
-        case -14: throw IllegalOperationError(what);
-        default: throw Error(what);
-    }
-}
+/// Invalid polymorphic downcast.
+class InvalidDowncastError : public virtual Exception, public std::runtime_error {
+public:
+    explicit InvalidDowncastError(const std::string& msg) : std::runtime_error(msg) {}
+    InvalidDowncastError(const InvalidDowncastError& src) : std::runtime_error(src.what()) {}
+    virtual ~InvalidDowncastError() ZERODDS_NOEXCEPT {}
+    const char* what() const ZERODDS_NOEXCEPT ZERODDS_OVERRIDE { return std::runtime_error::what(); }
+};
+
+/// Null reference error.
+class NullReferenceError : public virtual Exception, public std::runtime_error {
+public:
+    explicit NullReferenceError(const std::string& msg) : std::runtime_error(msg) {}
+    NullReferenceError(const NullReferenceError& src) : std::runtime_error(src.what()) {}
+    virtual ~NullReferenceError() ZERODDS_NOEXCEPT {}
+    const char* what() const ZERODDS_NOEXCEPT ZERODDS_OVERRIDE { return std::runtime_error::what(); }
+};
+
+/// Invalid data error.
+class InvalidDataError : public virtual Exception, public std::logic_error {
+public:
+    explicit InvalidDataError(const std::string& msg) : std::logic_error(msg) {}
+    InvalidDataError(const InvalidDataError& src) : std::logic_error(src.what()) {}
+    virtual ~InvalidDataError() ZERODDS_NOEXCEPT {}
+    const char* what() const ZERODDS_NOEXCEPT ZERODDS_OVERRIDE { return std::logic_error::what(); }
+};
+
 
 } // namespace core
 } // namespace dds

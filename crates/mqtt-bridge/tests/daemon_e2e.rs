@@ -366,3 +366,77 @@ fn dds_publish_pumps_to_mqtt_broker() {
     handle.shutdown();
     broker.shutdown();
 }
+
+/// §9.2 SIGHUP: a reload that closes the topic (default deny, no rule)
+/// stops the samples to the broker at once; a configuration that does not
+/// load changes nothing.
+#[test]
+fn a_reload_that_withdraws_the_read_right_stops_the_samples() {
+    let broker = MockBroker::start();
+    let cfg = make_test_config(&broker.bind_addr);
+    let next = std::sync::Arc::new(std::sync::Mutex::new(Ok::<DaemonConfig, String>(
+        cfg.clone(),
+    )));
+    let n = std::sync::Arc::clone(&next);
+    let mut handle = server::start_with_reload(
+        cfg.clone(),
+        zerodds_dcps::runtime::RuntimeConfig::default(),
+        Some(Box::new(move || n.lock().unwrap().clone())),
+    )
+    .expect("daemon start");
+    thread::sleep(Duration::from_millis(500));
+    let reader = *handle.user_readers.get("Trade").unwrap();
+    // Counted by payload: `trade` is bidirectional, so the broker may hand
+    // the bridge's own publishes back to it.
+    let arrived = |broker: &MockBroker, payload: &[u8]| {
+        broker
+            .state
+            .publishes
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(t, p)| t == "trade" && p.as_slice() == payload)
+            .count()
+    };
+    let send_and_wait = |payload: &[u8]| {
+        assert!(
+            handle
+                .runtime
+                .test_inject_user_alive(reader, payload.to_vec())
+        );
+        let t0 = Instant::now();
+        let deadline = t0 + Duration::from_secs(8);
+        while Instant::now() < deadline && arrived(&broker, payload) == 0 {
+            thread::sleep(Duration::from_millis(10));
+        }
+        let n = arrived(&broker, payload);
+        // The pump used to wait for the inbound thread's read timeout: 4.5 s
+        // per sample (measured); now 15 ms.
+        if n > 0 {
+            assert!(
+                t0.elapsed() < Duration::from_secs(2),
+                "took {:?}",
+                t0.elapsed()
+            );
+        }
+        n
+    };
+    assert_eq!(send_and_wait(b"one"), 1, "before the reload");
+    *next.lock().unwrap() = Err("a file that does not load".into());
+    handle.reload_flag.store(true, Ordering::SeqCst);
+    thread::sleep(Duration::from_millis(400));
+    assert_eq!(send_and_wait(b"two"), 1, "a failed reload keeps the ACL");
+    let mut closed = cfg;
+    closed.acl_default_deny = true;
+    closed.acl_default_deny_set = true;
+    *next.lock().unwrap() = Ok(closed);
+    handle.reload_flag.store(true, Ordering::SeqCst);
+    thread::sleep(Duration::from_millis(400));
+    assert_eq!(
+        send_and_wait(b"three"),
+        0,
+        "after the reload the topic is closed"
+    );
+    handle.shutdown();
+    broker.shutdown();
+}

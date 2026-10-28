@@ -14,7 +14,7 @@
 //!
 //! Layer 4 — Core Services (proc-macro for `zerodds-flatdata`).
 //!
-//! ## Public API (as of 1.0.0-rc.1)
+//! ## Public API
 //!
 //! - `#[derive(FlatStruct)]` — generates `unsafe impl FlatStruct for T`
 //!   with `TYPE_HASH = sha256(type_name + field_layout)[..16]`.
@@ -48,7 +48,7 @@ use quote::quote;
 use sha2::{Digest, Sha256};
 use syn::{Attribute, Data, DeriveInput, Fields, parse_macro_input};
 
-/// `#[derive(FlatStruct)]` — generiert `unsafe impl FlatStruct for T`.
+/// `#[derive(FlatStruct)]` — generates `unsafe impl FlatStruct for T`.
 #[proc_macro_derive(FlatStruct)]
 pub fn derive_flat_struct(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
@@ -80,7 +80,7 @@ fn expand(input: DeriveInput) -> Result<TokenStream, syn::Error> {
             &input,
             "FlatStruct requires #[repr(C)] or #[repr(transparent)] — \
              Default repr Rust has undefined field layout, hence \
-             waere `as_bytes()`/`from_bytes_unchecked()` UB",
+             would be `as_bytes()`/`from_bytes_unchecked()` UB",
         ));
     }
 
@@ -174,4 +174,97 @@ fn layout_signature(name: &syn::Ident, fields: &Fields) -> String {
 
 fn type_signature(ty: &syn::Type) -> String {
     quote! { #ty }.to_string().replace(' ', "")
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::expect_used,
+    clippy::unwrap_used,
+    clippy::unreachable,
+    clippy::panic
+)]
+mod tests {
+    use super::{expand, has_repr_c_or_transparent, layout_signature};
+    use syn::{DeriveInput, parse_str};
+
+    fn parse(src: &str) -> DeriveInput {
+        parse_str::<DeriveInput>(src).expect("parse")
+    }
+
+    fn reject_reason(src: &str) -> String {
+        match expand(parse(src)) {
+            Err(e) => e.to_string(),
+            Ok(_) => panic!("expansion must be refused: {src}"),
+        }
+    }
+
+    /// Spec §1.2 — the macro refuses an `enum`: `repr(C)` enum layout is
+    /// not the fixed byte layout `from_bytes_unchecked` relies on.
+    #[test]
+    fn derive_rejects_enum() {
+        let msg = reject_reason("#[repr(C)] enum E { A, B }");
+        assert!(msg.contains("enum"), "{msg}");
+    }
+
+    /// Spec §1.2 — the macro refuses a `union`.
+    #[test]
+    fn derive_rejects_union() {
+        let msg = reject_reason("#[repr(C)] union U { a: u32, b: f32 }");
+        assert!(msg.contains("union"), "{msg}");
+    }
+
+    /// Spec §1.2 — a struct without `#[repr(C)]` / `#[repr(transparent)]`
+    /// is refused: the default Rust repr has no guaranteed field order, so
+    /// the byte cast would be undefined behaviour.
+    #[test]
+    fn derive_rejects_struct_without_repr_c() {
+        let msg = reject_reason("struct S { a: u32, b: u32 }");
+        assert!(msg.contains("repr(C)"), "{msg}");
+    }
+
+    /// Spec §1.2 — `#[repr(transparent)]` and `#[repr(C)]` are the two
+    /// accepted forms; `#[repr(packed)]` alone is not.
+    #[test]
+    fn repr_attribute_gate_accepts_c_and_transparent_only() {
+        assert!(has_repr_c_or_transparent(
+            &parse("#[repr(C)] struct S;").attrs
+        ));
+        assert!(has_repr_c_or_transparent(
+            &parse("#[repr(transparent)] struct S(u32);").attrs
+        ));
+        assert!(has_repr_c_or_transparent(
+            &parse("#[repr(C, packed)] struct S { a: u8 }").attrs
+        ));
+        assert!(!has_repr_c_or_transparent(
+            &parse("#[repr(packed)] struct S { a: u8 }").attrs
+        ));
+        assert!(!has_repr_c_or_transparent(
+            &parse("struct S { a: u8 }").attrs
+        ));
+    }
+
+    /// Spec §1.2 — `TYPE_HASH` is taken over
+    /// `<TypeName>{<field-name>:<field-ty>,...}`, so a rename, a reorder,
+    /// a type change and an added field each produce a different string.
+    #[test]
+    fn layout_signature_covers_name_order_and_types() {
+        let sig = |src: &str| {
+            let input = parse(src);
+            match &input.data {
+                syn::Data::Struct(s) => layout_signature(&input.ident, &s.fields),
+                _ => unreachable!("struct expected"),
+            }
+        };
+        let base = sig("#[repr(C)] struct Pose { x: f64, y: f64 }");
+        assert_eq!(base, "Pose{x:f64,y:f64}");
+        assert_ne!(base, sig("#[repr(C)] struct Pose2 { x: f64, y: f64 }"));
+        assert_ne!(base, sig("#[repr(C)] struct Pose { y: f64, x: f64 }"));
+        assert_ne!(base, sig("#[repr(C)] struct Pose { x: f32, y: f64 }"));
+        assert_ne!(
+            base,
+            sig("#[repr(C)] struct Pose { x: f64, y: f64, z: f64 }")
+        );
+        assert_eq!(sig("#[repr(C)] struct Unit;"), "Unit{()}");
+        assert_eq!(sig("#[repr(transparent)] struct W(u32);"), "W{u32}");
+    }
 }

@@ -1,0 +1,10 @@
+// final structure with a base, unannotated
+struct Base {
+    long base_a;
+    short base_b;
+};
+
+struct Sample : Base {
+    double derived_a;
+    octet derived_b;
+};

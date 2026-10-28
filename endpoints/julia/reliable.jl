@@ -11,14 +11,21 @@
 #   [4]=submessage id [5]=flags [6..8]=body-len LE [8..]=body
 #   WRITE_DATA id=0x07 flags=0x03 body=sample; header seq = RFC-1982 sample seq
 #   HEARTBEAT  id=0x0B flags=0x01 body(5)= first i16 LE, last i16 LE, stream
-#   ACKNACK    id=0x0A flags=0x01 body(5)= first_unacked i16 LE, nack[0], nack[1], stream
+#   ACKNACK    id=0x0A flags=0x01 body(9)= DHEADER u32 LE (=5), first_unacked i16 LE,
+#              nack[0], nack[1], stream. ACKNACK_Payload has no @extensibility, so it is
+#              APPENDABLE (DDS-XTypes 1.3 section 7.3.1.2.1.8) and carries a DHEADER in
+#              XCDR2 (unannotated_types = UNANNOTATED_APPENDABLE, the default). With
+#              UNANNOTATED_FINAL the body is the 5 octets of the FINAL form of the
+#              reference implementation (eProsima), length field 5, 13-octet frame.
+#              parse_acknack accepts both forms in either setting.
 #
 # Wrapped in `module Reliable` to avoid clashing with `ZeroDDS`'s own names
 # (`write_frame`, `Client`, ...).
 
 module Reliable
 
-export SESSION_NOKEY, STREAM_NONE, RELIABLE_STREAM_ID, HEARTBEAT_PERIOD_MS,
+export UnannotatedTypes, UNANNOTATED_APPENDABLE, UNANNOTATED_FINAL,
+       SESSION_NOKEY, STREAM_NONE, RELIABLE_STREAM_ID, HEARTBEAT_PERIOD_MS,
        SENDER_WINDOW, RECEIVER_BUFFER, MAX_PAYLOAD,
        SubmitStatus, SR_OK, SR_TOO_LARGE, SR_WINDOW_FULL,
        Sender, Receiver,
@@ -40,7 +47,11 @@ const MAX_PAYLOAD = 65535
 const SM_WRITE_DATA = 0x07
 const SM_ACKNACK = 0x0A
 const SM_HEARTBEAT = 0x0B
-const FLAG_WRITE = 0x03
+# E flag (little-endian body) + DataFormat FORMAT_DATA (0b000) in bits 1..3 --
+# DDS-XRCE 1.0 8.3.5.8.
+const FLAG_WRITE = 0x01
+# Wire size of the BaseObjectRequest that precedes the sample (7.7.8).
+const BASE_SIZE = 4
 const FLAG_E_LE = 0x01
 
 # --- RFC-1982 16-bit serial-number comparison ---
@@ -56,13 +67,17 @@ seq_gt(a::UInt16, b::UInt16) = seq_lt(b, a)
 # --- frame codec ---
 
 "Reliable WRITE_DATA — identical bytes to `ZeroDDS.write_frame(0x80, 0x80, seq, sample)`."
-function reliable_write_frame(seq::UInt16, sample::Vector{UInt8})
-    n = length(sample)
+function reliable_write_frame(seq::UInt16, object_id::Integer, sample::Vector{UInt8})
+    n = BASE_SIZE + length(sample)
     hdr = UInt8[
         SESSION_NOKEY, RELIABLE_STREAM_ID,
         UInt8(seq & 0xff), UInt8((seq >> 8) & 0xff),
         SM_WRITE_DATA, FLAG_WRITE,
         UInt8(n & 0xff), UInt8((n >> 8) & 0xff),
+        # BaseObjectRequest (7.7.8): request_id = the sample's own seq,
+        # object_id = the target DataWriter.
+        UInt8((seq >> 8) & 0xff), UInt8(seq & 0xff),
+        UInt8((object_id >> 8) & 0xff), UInt8(object_id & 0xff),
     ]
     vcat(hdr, sample)
 end
@@ -80,16 +95,35 @@ function heartbeat_frame(session::UInt8, stream_hdr::UInt8, msg_seq::Integer,
     ]
 end
 
-"byte-identical to `golden_acknack_le.bin` for (0x80, 0x00, 1, {1,0,0,0x80})."
+"""
+How the types of DDS-XRCE 1.0 Annex A without `@extensibility` are written
+(DDS-XTypes 1.3 section 7.3.1.2.1.8). This module writes one such type,
+`ACKNACK_Payload`; `HEARTBEAT_Payload` is FINAL in Annex A and does not change.
+`UNANNOTATED_APPENDABLE` (default) writes the DHEADER, `UNANNOTATED_FINAL` is the
+form of the reference implementation (eProsima) without one.
+"""
+@enum UnannotatedTypes UNANNOTATED_APPENDABLE UNANNOTATED_FINAL
+
+"""
+ACKNACK frame. With `unannotated_types = UNANNOTATED_APPENDABLE` (default) 17 octets,
+byte-identical to `golden_acknack_le.bin` for (0x80, 0x00, 1, {1,0,0,0x80}); with
+`UNANNOTATED_FINAL` 13 octets (body length 5, no DHEADER).
+"""
 function acknack_frame(session::UInt8, stream_hdr::UInt8, msg_seq::Integer,
-                        first_unacked::UInt16, nack_lo::UInt8, nack_hi::UInt8, stream_id::UInt8)
-    UInt8[
+                        first_unacked::UInt16, nack_lo::UInt8, nack_hi::UInt8, stream_id::UInt8;
+                        unannotated_types::UnannotatedTypes = UNANNOTATED_APPENDABLE)
+    final = unannotated_types == UNANNOTATED_FINAL
+    out = UInt8[
         session, stream_hdr,
         UInt8(msg_seq & 0xff), UInt8((msg_seq >> 8) & 0xff),
-        SM_ACKNACK, FLAG_E_LE, 0x05, 0x00,
+        SM_ACKNACK, FLAG_E_LE, final ? 0x05 : 0x09, 0x00,
+    ]
+    final || append!(out, UInt8[0x05, 0x00, 0x00, 0x00])  # DHEADER: body size 5
+    append!(out, UInt8[
         UInt8(first_unacked & 0xff), UInt8((first_unacked >> 8) & 0xff),
         nack_lo, nack_hi, stream_id,
-    ]
+    ])
+    out
 end
 
 "Returns `(first, last, stream_id)` or `nothing`."
@@ -100,11 +134,17 @@ function parse_heartbeat(frame::Vector{UInt8})
     (first = first, last = last, stream_id = frame[13])
 end
 
-"Returns `(first_unacked, nack_lo, nack_hi, stream_id)` or `nothing`."
+"Returns `(first_unacked, nack_lo, nack_hi, stream_id)` or `nothing`. Accepts body
+length 9 (DHEADER + 5 octets) and the legacy FINAL form with body length 5."
 function parse_acknack(frame::Vector{UInt8})
     (length(frame) < 13 || frame[5] != SM_ACKNACK) && return nothing
-    first_unacked = UInt16(frame[9]) | (UInt16(frame[10]) << 8)
-    (first_unacked = first_unacked, nack_lo = frame[11], nack_hi = frame[12], stream_id = frame[13])
+    o = 8  # 0-based body offset
+    if (UInt16(frame[7]) | (UInt16(frame[8]) << 8)) >= 9
+        length(frame) < 17 && return nothing
+        o = 12  # skip the 4-octet DHEADER
+    end
+    first_unacked = UInt16(frame[o + 1]) | (UInt16(frame[o + 2]) << 8)
+    (first_unacked = first_unacked, nack_lo = frame[o + 3], nack_hi = frame[o + 4], stream_id = frame[o + 5])
 end
 
 # --- sender ---
@@ -189,8 +229,14 @@ end
 mutable struct Receiver
     expected::UInt16
     received::Dict{UInt16,Vector{UInt8}}
+    unannotated_types::UnannotatedTypes
 end
-Receiver() = Receiver(UInt16(0), Dict{UInt16,Vector{UInt8}}())
+Receiver(expected::UInt16, received::Dict{UInt16,Vector{UInt8}}) =
+    Receiver(expected, received, UNANNOTATED_APPENDABLE)
+"`Receiver(; unannotated_types = UNANNOTATED_APPENDABLE)`: the form of the ACKNACK
+frames `acknack_frame(r, hint)` writes."
+Receiver(; unannotated_types::UnannotatedTypes = UNANNOTATED_APPENDABLE) =
+    Receiver(UInt16(0), Dict{UInt16,Vector{UInt8}}(), unannotated_types)
 
 expected(r::Receiver) = r.expected
 out_of_order_count(r::Receiver) = length(r.received)
@@ -232,6 +278,16 @@ function pending_acknack(r::Receiver, hint_last_seen::Union{UInt16,Nothing})
     end
     (first_unacked = base, nack_lo = UInt8(bitmap & 0xff), nack_hi = UInt8((bitmap >> 8) & 0xff),
      stream_id = RELIABLE_STREAM_ID)
+end
+
+"The ACKNACK frame for `pending_acknack(r, hint_last_seen)`, in the form of
+`r.unannotated_types`."
+function acknack_frame(r::Receiver, hint_last_seen::Union{UInt16,Nothing} = nothing;
+                        session::UInt8 = SESSION_NOKEY, stream_hdr::UInt8 = STREAM_NONE,
+                        msg_seq::Integer = 1)
+    a = pending_acknack(r, hint_last_seen)
+    acknack_frame(session, stream_hdr, msg_seq, a.first_unacked, a.nack_lo, a.nack_hi, a.stream_id;
+                  unannotated_types = r.unannotated_types)
 end
 
 function reset!(s::Sender)

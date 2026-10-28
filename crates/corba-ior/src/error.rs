@@ -15,10 +15,11 @@ pub type IorResult<T> = Result<T, IorError>;
 pub enum IorError {
     /// CDR marshalling error.
     Cdr(CdrError),
-    /// `zerodds-cdr` decode error.
-    CdrDecode(zerodds_cdr::DecodeError),
-    /// `zerodds-cdr` encode error.
-    CdrEncode(zerodds_cdr::EncodeError),
+    /// What the wire runtime refused. One variant, because
+    /// `zerodds-wire` has one error type where `zerodds-cdr` had two;
+    /// two variants over one type is a `From` the compiler cannot
+    /// choose between.
+    Wire(zerodds_wire::WireError),
     /// Stringified IOR is missing the `IOR:` prefix.
     MissingIorPrefix,
     /// Stringified IOR has an odd hex count.
@@ -39,14 +40,8 @@ impl From<CdrError> for IorError {
     }
 }
 
-impl From<zerodds_cdr::DecodeError> for IorError {
-    fn from(e: zerodds_cdr::DecodeError) -> Self {
-        Self::CdrDecode(e)
-    }
-}
-
-impl From<zerodds_cdr::EncodeError> for IorError {
-    fn from(e: zerodds_cdr::EncodeError) -> Self {
-        Self::CdrEncode(e)
+impl From<zerodds_wire::WireError> for IorError {
+    fn from(error: zerodds_wire::WireError) -> Self {
+        Self::Wire(error)
     }
 }

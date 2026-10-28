@@ -1,0 +1,5 @@
+module m {
+  const long BASE = 4;
+  const long CAP = BASE * 2;
+  @appendable struct S { sequence<long, CAP> xs; };
+};

@@ -52,6 +52,34 @@ static void test_submit_payload_too_large() {
     std::uint16_t seq = 0;
     CHECK(s.submit(Bytes(MAX_PAYLOAD + 1, 0), seq) == SubmitErr::PayloadTooLarge);
 }
+
+// A body (BaseObjectRequest + sample) of exactly 0xFFFF frames; one octet more
+// is refused. MAX_PAYLOAD is that body's sample budget, not the raw field.
+static void test_write_frame_bound() {
+    const std::size_t max_sample = 0xFFFF - BASE_SIZE;
+    CHECK(MAX_PAYLOAD == max_sample);
+
+    Bytes sample(max_sample, 0);
+    Bytes frame = write_frame(7, object_id(0x001, OBJK_DATAWRITER), sample.data(), sample.size());
+    CHECK(frame.size() == 8 + 0xFFFF);
+    CHECK((frame[6] | (frame[7] << 8)) == 0xFFFF);
+
+    Bytes over(max_sample + 1, 0);
+    bool refused = false;
+    try {
+        write_frame(7, object_id(0x001, OBJK_DATAWRITER), over.data(), over.size());
+    } catch (const std::length_error&) {
+        refused = true;
+    }
+    CHECK(refused);
+
+    // The sender must refuse the same sample one step early, so the drain path
+    // never reaches the throwing builder.
+    Sender s;
+    std::uint16_t seq = 0;
+    CHECK(s.submit(over, seq) == SubmitErr::PayloadTooLarge);
+}
+
 static void test_submit_window_full() {
     Sender s;
     std::uint16_t seq = 0;
@@ -190,7 +218,7 @@ static void test_reset() {
 static void test_byte_golden(const char* hb_path, const char* ack_path) {
     Bytes gold_hb = read_file(hb_path);
     Bytes gold_ack = read_file(ack_path);
-    CHECK(gold_hb.size() == 13 && gold_ack.size() == 13);
+    CHECK(gold_hb.size() == 13 && gold_ack.size() == 17);
 
     // Reproduce the golden params (session 0x80, hdr stream NONE, hdr seq 1).
     Bytes my_ack = acknack_frame(0x80, STREAM_NONE, 1, 1, 0x00, 0x00, 0x80);
@@ -202,6 +230,42 @@ static void test_byte_golden(const char* hb_path, const char* ack_path) {
     CHECK(ph && ph->first_unacked == 1 && ph->last_unacked == 3 && ph->stream == 0x80);
     auto pa = parse_acknack(gold_ack.data(), gold_ack.size());
     CHECK(pa && pa->first_unacked == 1 && pa->bitmap == 0 && pa->stream == 0x80);
+
+    // Legacy FINAL form (body length 5, no DHEADER) is still parsed.
+    Bytes legacy(gold_ack.begin(), gold_ack.begin() + 8);
+    legacy[6] = 5;
+    legacy.insert(legacy.end(), gold_ack.begin() + 12, gold_ack.end());
+    CHECK(legacy.size() == 13);
+    auto pl = parse_acknack(legacy.data(), legacy.size());
+    CHECK(pl && pl->first_unacked == 1 && pl->bitmap == 0 && pl->stream == 0x80);
+    legacy[6] = 4;
+    CHECK(!parse_acknack(legacy.data(), legacy.size()));
+}
+
+// ---- unannotated types: FINAL = 13-octet golden, default = 17 octets ----
+static void test_unannotated_types() {
+    const Bytes final_golden{0x80, 0x00, 0x01, 0x00, 0x0a, 0x01, 0x05, 0x00,
+                             0x01, 0x00, 0x00, 0x00, 0x80};
+    Bytes f = acknack_frame(0x80, STREAM_NONE, 1, 1, 0x00, 0x00, 0x80,
+                            UnannotatedTypes::Final);
+    CHECK(f == final_golden);
+    auto pf = parse_acknack(f.data(), f.size());
+    CHECK(pf && pf->first_unacked == 1 && pf->bitmap == 0 && pf->stream == 0x80);
+
+    Bytes d = acknack_frame(0x80, STREAM_NONE, 1, 1, 0x00, 0x00, 0x80);
+    CHECK(d.size() == 17 && d[6] == 9 && d[8] == 5);
+    CHECK(d == acknack_frame(0x80, STREAM_NONE, 1, 1, 0x00, 0x00, 0x80,
+                             UnannotatedTypes::Appendable));
+    auto pd = parse_acknack(d.data(), d.size());
+    CHECK(pd && pd->first_unacked == 1 && pd->bitmap == 0 && pd->stream == 0x80);
+
+    // The receiver carries the mode.
+    Receiver rf(UnannotatedTypes::Final);
+    CHECK(rf.unannotated_types() == UnannotatedTypes::Final);
+    CHECK(rf.pending_acknack_frame(0x80, STREAM_NONE, 1).size() == 13);
+    Receiver rd;
+    CHECK(rd.unannotated_types() == UnannotatedTypes::Appendable);
+    CHECK(rd.pending_acknack_frame(0x80, STREAM_NONE, 1).size() == 17);
 }
 
 // ---- producer latency micro-bench (decoupled enqueue vs inline write+encode) ----
@@ -215,7 +279,8 @@ static void bench_latency() {
     // Decoupled: enqueue into a ring (drain hooks are no-ops here — we measure
     // only the producer's wait-free push).
     AsyncWriter w([](const std::vector<Bytes>&) {}, [](const Bytes&) {},
-                  [](std::uint8_t*, std::size_t) { return -1; }, 65536);
+                  [](std::uint8_t*, std::size_t) { return -1; },
+                  object_id(0x001, OBJK_DATAWRITER), 65536);
     for (int i = 0; i < K; ++i) {
         auto t0 = std::chrono::steady_clock::now();
         w.enqueue(payload, sizeof(payload));
@@ -242,7 +307,8 @@ static void bench_latency() {
     ::connect(tx, reinterpret_cast<sockaddr*>(&sa), sizeof(sa));
     for (int i = 0; i < K; ++i) {
         auto t0 = std::chrono::steady_clock::now();
-        Bytes f = write_frame(static_cast<std::uint16_t>(i), payload, sizeof(payload));
+        Bytes f = write_frame(static_cast<std::uint16_t>(i), object_id(0x001, OBJK_DATAWRITER),
+                              payload, sizeof(payload));
         ::send(tx, f.data(), f.size(), 0);
         auto t1 = std::chrono::steady_clock::now();
         inl.push_back(std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count());
@@ -258,6 +324,7 @@ static void bench_latency() {
 int main(int argc, char** argv) {
     test_submit_monotonic();
     test_submit_payload_too_large();
+    test_write_frame_bound();
     test_submit_window_full();
     test_heartbeat();
     test_wrap_heartbeat_and_recovery();
@@ -269,6 +336,7 @@ int main(int argc, char** argv) {
     test_recv_buffer_full();
     test_pending_acknack_bitmap();
     test_reset();
+    test_unannotated_types();
     if (argc >= 3) test_byte_golden(argv[1], argv[2]);
     else { std::fprintf(stderr, "no golden paths given\n"); ++g_fail; }
     bench_latency();

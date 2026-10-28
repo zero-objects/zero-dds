@@ -3,7 +3,8 @@
 # Spec: zerodds-deployment-1.0.md §2.3 (systemd-Unit) plus FHS layout §2.1.
 # Substituted by debhelper:
 #   @DAEMON@   = ws-bridged | mqtt-bridged | coap-bridged | amqp-bridged
-#                | grpc-bridged | corba-bridged | ros2-shim
+#                | grpc-bridged | corba-bridged | zenoh-bridged | router,
+#                empty for the packages without a service (core, cli, dev, ros2)
 #   @SERVICE@  = zerodds-@DAEMON@.service
 set -e
 
@@ -14,7 +15,7 @@ SYSGROUP="zerodds"
 
 case "$1" in
     configure)
-        # 1) Pflicht-System-User anlegen (idempotent).
+        # 1) Create the required system user (idempotent).
         if ! getent group "${SYSGROUP}" >/dev/null 2>&1; then
             addgroup --system "${SYSGROUP}"
         fi
@@ -25,12 +26,12 @@ case "$1" in
                     "${SYSUSER}"
         fi
 
-        # 2) Verzeichnisse anlegen + Owner setzen.
-        for d in /etc/zerodds /var/log/zerodds /var/lib/zerodds; do
+        # 2) Create the directories + set the owner.
+        for d in /etc/zerodds /var/log/zerodds /var/lib/zerodds /var/lib/zerodds/durability; do
             [ -d "${d}" ] || install -d -m 0750 -o "${SYSUSER}" -g "${SYSGROUP}" "${d}"
         done
 
-        # 3) Default-Config nicht ueberschreiben (dpkg-conffile-Modell).
+        # 3) Do not overwrite the default config (dpkg conffile model).
         #    @CONF@ = config basename (e.g. mqtt-bridged.yaml, or router.json
         #    for the JSON-configured routing service).
         CONF="/etc/zerodds/@CONF@"
@@ -39,15 +40,15 @@ case "$1" in
                     "/usr/share/zerodds/configs/@CONF@.example" "${CONF}"
         fi
 
-        # 4) systemd reload + enable (auf Trigger des Admins, nicht autostart bei Erst-Install).
+        # 4) systemd reload + enable (triggered by the admin, no autostart on first install).
         if [ -d /run/systemd/system ]; then
             systemctl --system daemon-reload >/dev/null 2>&1 || true
             if [ -z "$2" ]; then
-                # Erst-Install — preset; Admin entscheidet bewusst.
+                # First install — preset; the admin decides deliberately.
                 deb-systemd-helper unmask "${SERVICE}" >/dev/null 2>&1 || true
                 deb-systemd-helper preset "${SERVICE}" >/dev/null 2>&1 || true
             else
-                # Upgrade — Service neu starten falls vorher aktiv.
+                # Upgrade — restart the service if it was active before.
                 if systemctl is-active --quiet "${SERVICE}"; then
                     deb-systemd-invoke try-restart "${SERVICE}" >/dev/null 2>&1 || true
                 fi

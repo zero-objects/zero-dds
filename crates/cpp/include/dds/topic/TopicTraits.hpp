@@ -9,132 +9,122 @@
 //   * `static std::vector<uint8_t> encode(const T& v);`
 //   * `static T decode(const uint8_t* buf, size_t len);`
 //
-// IDL bindings (`crates/idl-cpp`) emit this specialization
+// IDL bindings (`crates/lang-rules`) emit this specialization
 // automatically for every `struct` definition. Applications without IDL
 // can provide it by hand or use the `dds::core::ByteSeq`
 // default specialization, which sends raw byte buffers over the
 // wire.
 //
-// Wire format of the idl-cpp-emitted specializations
+// Wire format of the generated specializations
 // -----------------------------------------------------
-// Since zerodds-xcdr2-cpp-1.0 idl-cpp emits full XCDR2 per
-// XTypes 1.3 §7.4: PLAIN_CDR2 LE with alignment, DHEADER for
-// Appendable, EMHEADER + LC for Mutable. The wire helpers live
-// in `dds/topic/xcdr2.hpp` and `dds/topic/xcdr2_md5.hpp`. The
-// `cdr_lite` namespace defined here is kept for existing users
-// (hand-written `topic_type_support<T>` specializations without
-// IDL), but is no longer used by the codegen.
+// the code generator emits full XCDR2 (or, under `--encoding xcdr1`, XCDR1) per
+// XTypes 1.3 §7.4: PLAIN_CDR{,2} with alignment, DHEADER for Appendable,
+// EMHEADER + LC for Mutable under XCDR2. The codec is `zerodds::wire::Writer`
+// / `Reader` (`runtime/cpp/include/zerodds/wire.hpp`) — the one C++ wire
+// codec; a `topic_type_support<T>::encode`/`decode` calls into it and
+// nothing else. The `zerodds::psm::cdr_lite` namespace is kept for existing
+// users (hand-written `topic_type_support<T>` specializations without IDL,
+// e.g. the two below), but is no longer used by the codegen.
 
 #ifndef ZERODDS_DDS_TOPIC_TOPICTRAITS_HPP
 #define ZERODDS_DDS_TOPIC_TOPICTRAITS_HPP
 
-#include <cstdint>
+
+#include "zerodds/psm/cxx.hpp"
+#include <stdint.h>
+
+#include <stdint.h>
 #include <cstring>
 #include <stdexcept>
 #include <string>
 #include <vector>
 
+#include "dds/core/types.hpp"
+#include "zerodds/psm/type_support.hpp"
+
 namespace dds {
-namespace core {
-
-/// Raw-bytes sample type for topics without IDL.
-using ByteSeq = std::vector<uint8_t>;
-
-} // namespace core
-
 namespace topic {
 
 /// Trait that is specialized per `T`.
 template <typename T>
 struct topic_type_support;
 
-// ---------------------------------------------------------------------------
-// cdr_lite — plain-wire helper for idl-cpp-emitted specializations.
-//
-// Format: little-endian, no padding, no DHEADER/EMHEADER.
-//   * Primitives: raw bytes in declared type-size (LE).
-//   * std::string: 4-byte LE length + UTF-8 bytes (no NUL terminator).
-//   * std::vector<T>: 4-byte LE count + elements (recursive).
-//
-// Read functions throw std::out_of_range on buffer underrun.
-// ---------------------------------------------------------------------------
-namespace cdr_lite {
 
-inline void append_bytes(std::vector<uint8_t>& out, const void* src, size_t n) {
-    const auto* p = static_cast<const uint8_t*>(src);
-    out.insert(out.end(), p, p + n);
-}
+namespace detail {
 
-inline void check_avail(size_t pos, size_t need, size_t len) {
-    if (pos + need > len) {
-        throw std::out_of_range("cdr_lite: buffer underrun");
+/// The unused-type tags of the detection traits below. A trait asks whether an expression on
+/// `TS` compiles by putting it into a `sizeof` in a function template's parameter (ISO C++03
+/// has no `decltype`/`void_t`: substitution failure in the expression removes the overload).
+typedef char detect_yes;
+struct detect_no {
+    char pad[2];
+};
+template <std::size_t N>
+struct detect_size {};
+
+/// Whether `TS` carries a generated wire contract — the CompleteTypeObject,
+/// the `@key` flag and the extensibility that `zerodds-idlc generate --lang
+/// c++` writes into every `topic_type_support<T>`. The hand-written
+/// `ByteSeq` and `std::string` specializations below carry none, and their
+/// endpoints stay untyped.
+template <typename TS>
+struct has_wire_contract {
+    template <typename U>
+    static detect_yes test(detect_size<sizeof((void)U::type_object(), (void)U::type_object_len(),
+                                              (void)U::is_keyed(), (void)U::extensibility(), 0)>*);
+    template <typename U>
+    static detect_no test(...);
+    static const bool value = sizeof(test<TS>(0)) == sizeof(detect_yes);
+};
+template <typename TS>
+const bool has_wire_contract<TS>::value;
+
+/// Whether `TS` finds the type of a topic by the topic's type name at run time
+/// (`Topic<DynamicData>`): `TS::contract_for(type_name)` names the TypeObject, the key and the
+/// extensibility, `TS::decode_for(type_name, ...)` decodes a sample.
+template <typename TS>
+struct has_dynamic_contract {
+    static const std::string& name_arg();
+    template <typename U>
+    static detect_yes test(detect_size<sizeof((void)U::contract_for(name_arg()), 0)>*);
+    template <typename U>
+    static detect_no test(...);
+    static const bool value = sizeof(test<TS>(0)) == sizeof(detect_yes);
+};
+template <typename TS>
+const bool has_dynamic_contract<TS>::value;
+
+/// Whether `TS::type_name()` exists.
+template <typename TS>
+struct has_type_name {
+    template <typename U>
+    static detect_yes test(detect_size<sizeof((void)U::type_name(), 0)>*);
+    template <typename U>
+    static detect_no test(...);
+    static const bool value = sizeof(test<TS>(0)) == sizeof(detect_yes);
+};
+template <typename TS>
+const bool has_type_name<TS>::value;
+
+/// `TS::extensibility()` in the C ABI's numbering: `0` FINAL, `1`
+/// APPENDABLE, `2` MUTABLE.
+template <typename TS>
+int wire_extensibility() {
+    typedef ::zerodds::psm::DataRepresentationKind Kind;
+    switch (TS::extensibility()) {
+    case Kind::APPENDABLE: return 1;
+    case Kind::MUTABLE: return 2;
+    case Kind::FINAL: break;
     }
+    return 0;
 }
 
-template <typename T>
-inline void write_le(std::vector<uint8_t>& out, T v) {
-    static_assert(std::is_trivially_copyable<T>::value, "write_le requires trivially-copyable T");
-    append_bytes(out, &v, sizeof(T));
-}
+} // namespace detail
 
-template <typename T>
-inline T read_le(const uint8_t* buf, size_t& pos, size_t len) {
-    static_assert(std::is_trivially_copyable<T>::value, "read_le requires trivially-copyable T");
-    check_avail(pos, sizeof(T), len);
-    T v;
-    std::memcpy(&v, buf + pos, sizeof(T));
-    pos += sizeof(T);
-    return v;
-}
-
-inline void write_bool(std::vector<uint8_t>& out, bool v) {
-    out.push_back(v ? uint8_t{1} : uint8_t{0});
-}
-
-inline bool read_bool(const uint8_t* buf, size_t& pos, size_t len) {
-    check_avail(pos, 1, len);
-    bool v = buf[pos] != 0;
-    pos += 1;
-    return v;
-}
-
-inline void write_string(std::vector<uint8_t>& out, const std::string& s) {
-    write_le<uint32_t>(out, static_cast<uint32_t>(s.size()));
-    append_bytes(out, s.data(), s.size());
-}
-
-inline std::string read_string(const uint8_t* buf, size_t& pos, size_t len) {
-    auto n = read_le<uint32_t>(buf, pos, len);
-    check_avail(pos, n, len);
-    std::string s(reinterpret_cast<const char*>(buf + pos), n);
-    pos += n;
-    return s;
-}
-
-template <typename Elem, typename WriteFn>
-inline void write_seq(std::vector<uint8_t>& out, const std::vector<Elem>& v, WriteFn write_elem) {
-    write_le<uint32_t>(out, static_cast<uint32_t>(v.size()));
-    for (const auto& e : v) {
-        write_elem(out, e);
-    }
-}
-
-template <typename Elem, typename ReadFn>
-inline std::vector<Elem> read_seq(const uint8_t* buf, size_t& pos, size_t len, ReadFn read_elem) {
-    auto n = read_le<uint32_t>(buf, pos, len);
-    std::vector<Elem> v;
-    v.reserve(n);
-    for (uint32_t i = 0; i < n; ++i) {
-        v.push_back(read_elem(buf, pos, len));
-    }
-    return v;
-}
-
-} // namespace cdr_lite
 
 /// Default specialization for `dds::core::ByteSeq` (raw bytes).
 template <>
-struct topic_type_support<::dds::core::ByteSeq> {
+struct topic_type_support< ::dds::core::ByteSeq> {
     /// Type name for the built-in bytes topic.
     static const char* type_name() { return "DDS::Bytes"; }
     /// Encode = identity.
@@ -160,7 +150,48 @@ struct topic_type_support<std::string> {
     }
 };
 
+/// DDS-PSM-Cxx 1.0 (dds/topic/TopicTraits.hpp): whether `T` is a topic type. The value is 0 until
+/// the type is registered with `REGISTER_TOPIC_TYPE`; the types of this header are registered.
+template <typename T>
+struct is_topic_type {
+    enum { value = 0 };
+};
+template <>
+struct is_topic_type< ::dds::core::ByteSeq> {
+    enum { value = 1 };
+};
+template <>
+struct is_topic_type<std::string> {
+    enum { value = 1 };
+};
+
+/// The name of the topic type: `topic_type_support<T>::type_name()` when `T` has a support, the
+/// string "Undefined" of the normative header otherwise. A specialization may replace it.
+namespace detail {
+template <typename T, bool HasName>
+struct topic_type_name_impl {
+    static std::string value() { return "Undefined"; }
+};
+template <typename T>
+struct topic_type_name_impl<T, true> {
+    static std::string value() { return topic_type_support<T>::type_name(); }
+};
+} // namespace detail
+
+template <typename T, typename Enable = void>
+struct topic_type_name
+    : detail::topic_type_name_impl<T, detail::has_type_name<topic_type_support<T> >::value> {};
 } // namespace topic
 } // namespace dds
+
+#define REGISTER_TOPIC_TYPE(TOPIC_TYPE)                  \
+    namespace dds {                                      \
+    namespace topic {                                    \
+    template <>                                          \
+    struct is_topic_type<TOPIC_TYPE> {                   \
+        enum { value = 1 };                              \
+    };                                                   \
+    }                                                    \
+    }
 
 #endif // ZERODDS_DDS_TOPIC_TOPICTRAITS_HPP

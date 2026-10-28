@@ -37,8 +37,8 @@ mod inner {
         group.measurement_time(Duration::from_secs(8));
         group.sample_size(50);
 
-        // Domain max ~232 wegen RTPS spdp_port = 7400 + 250*domain
-        // (u16-Cap, Spec §9.6.1.4.1). Disjunkt zu cffi_take_vs_loan.
+        // Domain max ~232 because RTPS spdp_port = 7400 + 250*domain
+        // (u16-Cap, Spec §9.6.1.4.1). Disjoint from cffi_take_vs_loan.
         let domain: u32 = 100 + (std::process::id() % 50);
         let topic = CString::new("BenchA1Roundtrip").unwrap();
         let typ = CString::new("RawBytes").unwrap();
@@ -61,7 +61,7 @@ mod inner {
             (rt_pub, rt_sub, writer, reader)
         };
         thread::sleep(Duration::from_millis(50));
-        // Drain alte Samples vor Mess-Start.
+        // Drain old samples before measurement start.
         unsafe {
             let mut buf: *const u8 = ptr::null();
             let mut len: usize = 0;
@@ -89,11 +89,11 @@ mod inner {
                         let mut buf: *const u8 = ptr::null();
                         let mut len: usize = 0;
                         let mut loan: *mut c_void = ptr::null_mut();
-                        // Wall-clock-Deadline: 2s reicht selbst fuer
-                        // worst-case-Scheduler-Hiccups. Spin-only mit
-                        // 200k Iterationen sind ~1ms — viel zu eng
-                        // fuer DCPS-Sample-Delivery (~10-100us
-                        // typisch, aber 10ms+ moeglich).
+                        // Wall-clock deadline: 2s suffices even for
+                        // worst-case scheduler hiccups. Spin-only with
+                        // 200k iterations are ~1ms — far too tight
+                        // for DCPS sample delivery (~10-100us
+                        // typical, but 10ms+ possible).
                         let deadline =
                             std::time::Instant::now() + std::time::Duration::from_secs(2);
                         loop {

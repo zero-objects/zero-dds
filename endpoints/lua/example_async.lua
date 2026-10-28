@@ -12,7 +12,7 @@ local z = require("zerodds")
 -- Reading { id: uint32, value: float, label: string }
 
 local function marshal(r, endian)
-  local w = z.Writer.new(endian)
+  local w = z.Writer.new(endian, z.XCDR2)
   w:putU32(r.id)
   w:putF32(r.value)
   w:putString(r.label)
@@ -20,13 +20,13 @@ local function marshal(r, endian)
 end
 
 local function decode(body)
-  local r = z.Reader.new(body, z.LE)
+  local r = z.Reader.new(body, z.LE, z.XCDR2)
   return { id = r:getU32(), value = r:getF32(), label = r:getString() }
 end
 
 local total = 5
 local t = z.memTransport()
-local c = z.Client.new(t)
+local c = z.Client.new(t, z.objectId(0x001, z.OBJK_DATAWRITER))
 for i = 0, total - 1 do
   c:write(marshal({ id = 0x2000 + i, value = 100.0 - i, label = string.format("sensor-%02d", i) }, z.LE))
 end

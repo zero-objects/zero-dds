@@ -4,7 +4,7 @@
 //!
 //! Wire format (DDSI-RTPS §9.6.3.2): u32 kind (4 bytes).
 
-use zerodds_cdr::{BufferReader, BufferWriter, DecodeError, EncodeError};
+use zerodds_wire::{Reader, WireError, Writer};
 
 /// Durability kind (DDS 1.4 §2.2.3.4).
 ///
@@ -61,24 +61,21 @@ pub struct DurabilityQosPolicy {
 
 impl DurabilityQosPolicy {
     /// Wire encoding: u32 kind.
-    ///
-    /// # Errors
-    /// Buffer overflow.
-    pub fn encode_into(self, w: &mut BufferWriter) -> Result<(), EncodeError> {
-        w.write_u32(self.kind as u32)
+    pub fn encode_into(self, w: &mut Writer) {
+        w.write_u32(self.kind as u32);
     }
 
     /// Wire decoding (strict). An unknown discriminator returns
-    /// `DecodeError::InvalidEnum` — QoS matching must not be based on
+    /// [`WireError::OutOfRange`] — QoS matching must not be based on
     /// silently downgraded values.
     ///
     /// # Errors
     /// Buffer underflow or unknown kind value.
-    pub fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
+    pub fn decode_from(r: &mut Reader<'_>) -> Result<Self, WireError> {
+        let at = r.position();
         let v = r.read_u32()?;
-        let kind = DurabilityKind::try_from_u32(v).ok_or(DecodeError::InvalidEnum {
-            kind: "DurabilityKind",
-            value: v,
+        let kind = DurabilityKind::try_from_u32(v).ok_or_else(|| {
+            WireError::refused(at, &alloc::format!("a DurabilityKind enumerator, not {v}"))
         })?;
         Ok(Self { kind })
     }
@@ -88,7 +85,7 @@ impl DurabilityQosPolicy {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use zerodds_cdr::Endianness;
+    use zerodds_wire::Endianness;
 
     #[test]
     fn default_is_volatile() {
@@ -133,11 +130,11 @@ mod tests {
             DurabilityKind::Persistent,
         ] {
             let p = DurabilityQosPolicy { kind };
-            let mut w = BufferWriter::new(Endianness::Little);
-            p.encode_into(&mut w).unwrap();
-            let bytes = w.into_bytes();
+            let mut w = Writer::new(Endianness::Little);
+            p.encode_into(&mut w);
+            let bytes = w.finish();
             assert_eq!(bytes.len(), 4);
-            let mut r = BufferReader::new(&bytes, Endianness::Little);
+            let mut r = Reader::new(&bytes, Endianness::Little);
             let back = DurabilityQosPolicy::decode_from(&mut r).unwrap();
             assert_eq!(back, p);
         }
@@ -149,15 +146,16 @@ mod tests {
         // Important: QoS matching must not be based on default-downgraded
         // values.
         let bytes = [99u8, 0, 0, 0];
-        let mut r = BufferReader::new(&bytes, Endianness::Little);
-        let res = DurabilityQosPolicy::decode_from(&mut r);
-        assert!(matches!(
-            res,
-            Err(DecodeError::InvalidEnum {
-                kind: "DurabilityKind",
-                ..
-            })
-        ));
+        let mut r = Reader::new(&bytes, Endianness::Little);
+        let err = DurabilityQosPolicy::decode_from(&mut r).unwrap_err();
+        assert!(
+            matches!(
+                &err,
+                zerodds_wire::WireError::OutOfRange { expected, .. }
+                    if expected.contains("DurabilityKind")
+            ),
+            "unexpected error: {err}"
+        );
     }
 
     #[test]

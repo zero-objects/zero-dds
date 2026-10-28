@@ -4,14 +4,16 @@ package org.zerodds.cdr;
 import java.nio.ByteBuffer;
 
 /**
- * Built-in {@link org.omg.dds.topic.TopicTypeSupport} for raw {@code byte[]}
- * topics — DDS-Java-PSM 1.0 §8 (the bytes/keyed-bytes built-in type).
+ * Built-in {@link org.zerodds.cdr.TopicTypeSupport} for raw {@code byte[]}
+ * topics — DDS-Java-PSM 1.0 §7.8.2 (the {@code DDS::Bytes} built-in type).
  *
- * <p>This is the zero-boilerplate path behind {@code createTopic("X",
- * byte[].class)}: the sample <em>is</em> its own wire form, so serialization is
- * an identity pass-through (no XCDR2 framing). It lets the front-page quickstart
- * write {@code "hello".getBytes()} and read it back as a {@code byte[]} without
- * any IDL or generated {@code TypeSupport}.
+ * <p>XTypes 1.3 Annex E defines {@code DDS::Bytes} as
+ * {@code @extensibility(APPENDABLE) struct Bytes { ByteSeq value; }}. On the
+ * wire that is a DELIMITED_CDR2 struct: a 4-byte DHEADER carrying the
+ * serialized size of the body (XTypes 1.3 §7.4.3.4.2, rule 30), followed by
+ * the {@code ByteSeq} member — a 4-byte length (rule 11) plus the octets.
+ * The sample <em>is</em> its own payload, so serialization wraps it in that
+ * framing rather than passing it through raw.
  */
 public final class ByteArrayTypeSupport implements TopicTypeSupport<byte[]> {
 
@@ -20,12 +22,15 @@ public final class ByteArrayTypeSupport implements TopicTypeSupport<byte[]> {
 
     private static final byte[] EMPTY = new byte[0];
 
+    /** Size of the DHEADER and the sequence length word, in bytes. */
+    private static final int FRAMING = 8;
+
     public ByteArrayTypeSupport() {}
 
     @Override
     public String getTypeName() {
-        // DDS built-in raw-bytes type name (RTI/Connext "DDS::Bytes" idiom).
-        return "DDS::Octets";
+        // XTypes 1.3 §7.6.5.3 — the built-in bytes type is "DDS::Bytes".
+        return "DDS::Bytes";
     }
 
     @Override
@@ -35,7 +40,8 @@ public final class ByteArrayTypeSupport implements TopicTypeSupport<byte[]> {
 
     @Override
     public ExtensibilityKind getExtensibility() {
-        return ExtensibilityKind.FINAL;
+        // Annex E: @extensibility(APPENDABLE) struct Bytes { ByteSeq value; }.
+        return ExtensibilityKind.APPENDABLE;
     }
 
     @Override
@@ -45,10 +51,14 @@ public final class ByteArrayTypeSupport implements TopicTypeSupport<byte[]> {
 
     @Override
     public byte[] encode(byte[] sample, EndianMode endian) {
-        if (sample == null) {
-            return EMPTY;
-        }
-        return sample.clone();
+        byte[] value = sample == null ? EMPTY : sample;
+        int len = value.length;
+        byte[] out = new byte[FRAMING + len];
+        boolean le = endian == EndianMode.LITTLE_ENDIAN;
+        putInt(out, 0, len + 4, le); // DHEADER = serialized body size (length word + octets)
+        putInt(out, 4, len, le);     // ByteSeq length (number of octets)
+        System.arraycopy(value, 0, out, FRAMING, len);
+        return out;
     }
 
     @Override
@@ -58,8 +68,21 @@ public final class ByteArrayTypeSupport implements TopicTypeSupport<byte[]> {
 
     @Override
     public byte[] decode(byte[] bytes, int offset, int length) {
-        byte[] out = new byte[length];
-        System.arraycopy(bytes, offset, out, 0, length);
+        if (bytes == null) {
+            throw new XcdrException("No data for DDS::Bytes");
+        }
+        if (offset < 0 || length < FRAMING || offset + length > bytes.length) {
+            throw new XcdrException("Truncated DDS::Bytes: " + length
+                    + " byte(s) where " + FRAMING + " framing bytes are the minimum");
+        }
+        int body = getInt(bytes, offset, true); // DHEADER = serialized body size
+        int len = getInt(bytes, offset + 4, true);
+        if (body != len + 4 || FRAMING + len > length) {
+            throw new XcdrException("Inconsistent DDS::Bytes framing: DHEADER says "
+                    + body + ", sequence holds " + len + " octet(s)");
+        }
+        byte[] out = new byte[len];
+        System.arraycopy(bytes, offset + FRAMING, out, 0, len);
         return out;
     }
 
@@ -69,20 +92,46 @@ public final class ByteArrayTypeSupport implements TopicTypeSupport<byte[]> {
     }
 
     // ------------------------------------------------------------------
-    // OMG marker bridge — identity pass-through (no XCDR2 framing).
+    // OMG marker bridge — DDS::Bytes framing (DELIMITED_CDR2 + ByteSeq).
     // ------------------------------------------------------------------
 
     @Override
     public void serialize(byte[] value, ByteBuffer buf) {
-        if (value != null) {
-            buf.put(value);
-        }
+        byte[] framed = encode(value, EndianMode.LITTLE_ENDIAN);
+        buf.put(framed);
     }
 
     @Override
     public byte[] deserialize(ByteBuffer buf) {
-        byte[] out = new byte[buf.remaining()];
-        buf.get(out);
-        return out;
+        byte[] all = new byte[buf.remaining()];
+        buf.get(all);
+        return decode(all, 0, all.length);
+    }
+
+    private static void putInt(byte[] out, int off, int v, boolean littleEndian) {
+        if (littleEndian) {
+            out[off] = (byte) v;
+            out[off + 1] = (byte) (v >>> 8);
+            out[off + 2] = (byte) (v >>> 16);
+            out[off + 3] = (byte) (v >>> 24);
+        } else {
+            out[off] = (byte) (v >>> 24);
+            out[off + 1] = (byte) (v >>> 16);
+            out[off + 2] = (byte) (v >>> 8);
+            out[off + 3] = (byte) v;
+        }
+    }
+
+    private static int getInt(byte[] bytes, int off, boolean littleEndian) {
+        if (littleEndian) {
+            return (bytes[off] & 0xFF)
+                    | ((bytes[off + 1] & 0xFF) << 8)
+                    | ((bytes[off + 2] & 0xFF) << 16)
+                    | ((bytes[off + 3] & 0xFF) << 24);
+        }
+        return ((bytes[off] & 0xFF) << 24)
+                | ((bytes[off + 1] & 0xFF) << 16)
+                | ((bytes[off + 2] & 0xFF) << 8)
+                | (bytes[off + 3] & 0xFF);
     }
 }

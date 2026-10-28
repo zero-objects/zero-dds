@@ -1,0 +1,7 @@
+{
+  "negative_zero_single": -0.0,
+  "negative_zero_double": -0.0,
+  "subnormal_single": 1e-45,
+  "subnormal_double": 5e-324,
+  "tail": -1
+}

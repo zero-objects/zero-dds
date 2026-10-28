@@ -1,0 +1,187 @@
+#!/bin/bash
+# wireprobe-zerodds-cpp — one IDL type and one JSON value, through the
+# ZeroDDS C++ binding.
+#
+# The same command line as `wireprobe-zerodds`, minus the flags this
+# column does not answer yet, so a case runs through both by
+# substituting the program name. See
+# `docs/specs/zerodds-interop-suite-1.0.md` §3a.
+#
+#   wireprobe-zerodds-cpp --idl robot.idl --type common::Robot \
+#                         --values robot.json --encoding xcdr2 --endian le \
+#                         --out robot.zerodds-cpp.xcdr2.le.bin
+#
+#   wireprobe-zerodds-cpp --idl robot.idl --type common::Robot \
+#                         --in robot.cyclone.xcdr2.le.bin --encoding xcdr2 \
+#                         --endian le --values-out robot.read.json
+#
+# `wireprobe-zerodds-cpp-gen` writes the C++ — the types, the codec and
+# either the statements that fill one sample or the ones that print it —
+# and this compiles it against `runtime/cpp` and runs it. The bytes and
+# the values come out of the C++ runtime; nothing in this script decides
+# a wire question, and nothing in the compiled program calls the Rust
+# one.
+#
+# The read direction takes its payload on the probe's standard input, so
+# one compiled program can be run against any byte string: `--in` is a
+# redirect here and not a path baked into the generated C++.
+# ## The exit codes
+#
+# `docs/specs/zerodds-verdicts-1.0.md`, and structural rather than read
+# out of a message:
+#
+#   0  it carried the case
+#   1  the command line — this script's own options, or the generator's,
+#      or a sample the compiled probe refused as outside its type
+#   3  no-form — C++ has no form for the construct, which is the
+#      materialiser's or the filler's answer, or the probe discarded the
+#      sample under 7.2.2.7
+#   6  harness-gap — a tool of ours has not written it: the walk
+#      stopped, a runtime of ours would not build, or the program did
+#      not run
+#   7  generator-defect — the generator accepted the case and the
+#      C++ it produced does not compile
+#
+# 8 (`mapping-divergence`) is not produced here. It is a verdict about a
+# *foreign* mapping rule making the octets differ — CORBA's `long
+# double` is the recorded case — and this column has no such rule: where
+# its reading of 7.4 differs from the Rust column's the answer is a byte
+# difference the ledger shows, not an exit code.
+#
+# The generator's own code passes straight through. Folding it into one
+# number here is what four of these wrappers used to do, with
+# `|| exit 3`, and it put "this language has no form for it" and "our
+# walk stopped" in one bucket — the distinction the whole ledger turns
+# on. Two of them also answered **5** for source that would not compile,
+# which is in no row of the table at all and lands as `refused` where
+# `generator-defect` belongs.
+set -euo pipefail
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+root="$(cd "$here/../.." && pwd)"
+runtime="${ZERODDS_CPP_RUNTIME:-$root/runtime/cpp}"
+CXX="${CXX:-c++}"
+# The strictest set that is portable, for the reason the C column
+# compiles with `-Werror`: a generated file that warns is one whose
+# warnings stop being read.
+CXXFLAGS="${CXXFLAGS:--std=c++20 -O1 -Wall -Wextra -Werror}"
+
+gen="${WIREPROBE_CPP_GEN:-}"
+if [ -z "$gen" ]; then
+    gen="${CARGO_TARGET_DIR:-$root/target}/debug/wireprobe-zerodds-cpp-gen"
+    # Built when it is missing *or stale*: a generator older
+    # than the sources it came from measures the previous
+    # build, and says nothing about it.
+    . "$here/generator.sh"
+    probe_generator zerodds-wireprobe-cpp-gen "$gen" "$root" || exit 6
+fi
+
+out=""
+input=""
+values_out=""
+argv=()
+idl=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --out) out="$2"; shift 2 ;;
+        --in) input="$2"; shift 2 ;;
+        --values-out) values_out="$2"; shift 2 ;;
+        # Every LayoutKey axis the stem parses, not the seven this
+        # wrapper used to name. The C and Python wrappers forwarded all
+        # sixteen and these four forwarded none, so a sweep over any axis
+        # answered `--length-codes is not an option` with exit 1 for four
+        # of the six columns and measured only the other two.
+        --idl|--type|--values|--encoding|--endian|--emit|--dialect|\
+        --length-codes|--collection-delimiters|--wstring-length|--map-length|\
+        --wchar-framing|--wchar-width|--map-delimiter|--wstring-units|--pid-flags|\
+        --enum-holder|--union-labels|\
+        --map-entries|--fixed-digits|--enumerator-value|--union-framing|--short-pid-range)
+            if [ "$1" = --idl ]; then idl="$2"; fi
+            argv+=("$1" "$2"); shift 2 ;;
+        --help|-h) sed -n '2,57p' "${BASH_SOURCE[0]}"; exit 0 ;;
+        *) echo "wireprobe-zerodds-cpp: \`$1\` is not an option" >&2; exit 1 ;;
+    esac
+done
+
+. "$here/diagnostics.sh"
+
+# One direction or the other, never both: a run that both wrote bytes
+# and read some in would report one of the two and the caller could not
+# tell which.
+if [ -n "$input" ]; then
+    for flag in "${argv[@]}"; do
+        if [ "$flag" = "--values" ]; then
+            echo "wireprobe-zerodds-cpp: --in reads bytes and --values writes them; pick one" >&2
+            exit 1
+        fi
+    done
+    argv+=(--read)
+fi
+
+work="$(mktemp -d)"
+trap 'probe_keep_generated "$work" "zerodds-cpp" "$idl" zd_types.hpp probe.cpp; rm -rf "$work"' EXIT
+
+code=0
+"$gen" "${argv[@]}" --out-dir "$work" || code=$?
+[ "$code" = 0 ] || exit "$code"
+
+# One translation unit for the probe and one per runtime source, all in
+# a single invocation: the runtime is four files and compiling them each
+# time costs less than the object cache would be worth, unlike Java's
+# sixteen.
+# shellcheck disable=SC2086
+# `-I"$here"` is how `dumpjson.h` and `dumpjson.hpp` are found: the JSON
+# dialect is shared with every other probe and lives beside this script.
+# shellcheck disable=SC2086
+if ! "$CXX" $CXXFLAGS -I"$runtime/include" -I"$work" -I"$here" -o "$work/probe" \
+        "$work/probe.cpp" "$runtime/src/writer.cpp" "$runtime/src/reader.cpp" \
+        "$runtime/src/md5.cpp" "$runtime/src/float128.cpp" \
+        > "$work/cxx.log" 2>&1; then
+    echo "wireprobe-zerodds-cpp: the probe did not compile" >&2
+    grep -m10 -E "error|warning" "$work/cxx.log" >&2 || true
+    exit 7
+fi
+
+if [ -n "$input" ]; then
+    # 3 is the probe's "the sample is discarded" and is passed through
+    # rather than folded into 6. DDS-XTypes 1.3 7.2.2.7: the receiver
+    # drops the object and carries on, which is a different thing from a
+    # reader that could not read, and a harness has to be able to tell
+    # them apart. The C and the Rust probe use the same code.
+    code=0
+    "$work/probe" < "$input" > "$work/values.json" 2> "$work/run.log" || code=$?
+    if [ "$code" != 0 ]; then
+        head -5 "$work/run.log" >&2 || true
+        [ "$code" = 3 ] && exit 3
+        exit 6
+    fi
+    if [ -n "$values_out" ]; then
+        cp "$work/values.json" "$values_out"
+    else
+        cat "$work/values.json"
+    fi
+    exit 0
+fi
+
+# 1 is the probe's "this sample is outside the type" and is passed
+# through rather than folded into 6. `primitive-char-above-latin1` is a
+# `char` holding U+0161 and 7.2.2.2.1.2.2 says a CHAR_8_TYPE "shall be
+# representable using 8 bits"; the Rust probe answers 1 for the same
+# sample, and a column that answered `harness-gap` for it would be
+# claiming a tool of ours is missing. Anything else the program does is
+# 6, because then it really is this harness that could not carry the
+# case.
+code=0
+"$work/probe" > "$work/bytes.bin" 2> "$work/run.log" || code=$?
+if [ "$code" != 0 ]; then
+    head -5 "$work/run.log" >&2 || true
+    [ "$code" = 1 ] && exit 1
+    echo "wireprobe-zerodds-cpp: the probe did not run" >&2
+    exit 6
+fi
+
+if [ -n "$out" ]; then
+    cp "$work/bytes.bin" "$out"
+else
+    od -An -tx1 -v "$work/bytes.bin" | tr -d ' \n'; echo
+fi

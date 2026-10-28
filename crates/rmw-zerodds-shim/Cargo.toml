@@ -34,8 +34,38 @@ zerodds-ros2-rmw = { version = "1.0.0-rc.7", path = "../ros2-rmw" }
 # `zerodds_runtime_create`, `zerodds_writer_*`, `zerodds_reader_*`) >40 times,
 # so the crate is referenced productively despite the `name` drift.
 zerodds-c-api = { version = "1.0.0-rc.7", path = "../zerodds-c-api" }
-# Service layer over zerodds-rpc topic naming (REP-2008).
-zerodds-rpc = { version = "1.0.0-rc.7", path = "../rpc" }
+# The layered configuration of the diagnostics CLI (--config, --set,
+# --check-config) and the runtime report of `--check-config`.
+zerodds-config = { version = "1.0.0-rc.7", path = "../config" }
+# Content filters of ROS subscriptions (rmw_subscription_set_content_filter).
+zerodds-sql-filter = { version = "1.0.0-rc.7", path = "../sql-filter" }
+# C2(2): `rt` on by default — ROS 2 real-time control loops are the
+# canonical `threads.recv_policy=fifo` deployment (Sprint D.5d lever C was
+# built for exactly this). Also enabled transitively through
+# `zerodds-c-api`'s own default `rt`; named explicitly here too so this
+# direct edge does not silently depend on that crate's default staying on.
+zerodds-dcps = { version = "1.0.0-rc.7", path = "../dcps", default-features = false, features = ["std", "rt"] }
+# Service endpoints: sample identities and vendor ids (`src/services.rs`).
+zerodds-rtps = { version = "1.0.0-rc.7", path = "../rtps", default-features = false, features = ["std"] }
+# `dynamic` (on by default; named explicitly so the ROS 2 Jazzy dynamic
+# typesupport in `src/dynamic.rs` does not silently depend on that
+# default staying on): DynamicType/DynamicData, the reflective half
+# `rosidl_dynamic_typesupport_zerodds` is built on.
+zerodds-types = { version = "1.0.0-rc.7", path = "../types", default-features = false, features = ["alloc", "dynamic"] }
+# The AST `src/dynamic.rs` walks directly to graft one builder's type
+# graph into another's (see that module's doc) — the same low-level API
+# `zerodds-types::dynamic::builder` itself is written against.
+zerodds-ast = { version = "1.0.0-rc.7", path = "../ast", default-features = false }
+zerodds-ast-core = { version = "1.0.0-rc.7", path = "../ast-core", default-features = false }
+zerodds-ast-layout = { version = "1.0.0-rc.7", path = "../ast-layout" }
+# The plan executor: `encode`/`decode`/`default_of_type` for
+# `DynamicData`, the same crate `zerodds-dcps`'s own `SerializedTypeSupport`
+# runs a `DynamicData` through.
+zerodds-wire-codec = { version = "1.0.0-rc.7", path = "../wire-codec", default-features = false }
+# `long double`/`float128`: DynamicData::LongDouble's own type, and the
+# x87-extended / true-binary128 host bridges `src/dynamic.rs` uses for
+# `dynamic_data_{get,set,insert}_float128_value`.
+zerodds-float128 = { version = "1.0.0-rc.7", path = "../float128", default-features = false }
 # REP-2009 type hash via SHA-256.
 sha2 = { workspace = true, features = ["std"] }
 # Diagnostics-CLI observability: catalog/metrics/OTLP for `catalog`/`metrics`/
@@ -43,6 +73,24 @@ sha2 = { workspace = true, features = ["std"] }
 zerodds-monitor = { version = "1.0.0-rc.7", path = "../monitor", default-features = false, features = ["std"] }
 zerodds-observability-otlp = { version = "1.0.0-rc.7", path = "../observability-otlp" }
 zerodds-qos = { version = "1.0.0-rc.7", path = "../qos", default-features = false, features = ["alloc"] }
+# C2(6) — the opt-in `ros2.spatial_bridge` content-translation mode
+# (`src/spatial_bridge.rs`): SpatialDDS <-> ROS 2 message conversion + naming.
+zerodds-spatial-dds = { version = "1.0.0-rc.7", path = "../spatial-dds" }
+zerodds-spatial-ros2 = { version = "1.0.0-rc.7", path = "../spatial-ros2" }
+zerodds-wire = { version = "1.0.0-rc.7", path = "../wire" }
+zerodds-foundation = { version = "1.0.0-rc.7", path = "../foundation" }
+
+[dev-dependencies]
+# One DDS domain per test process, host-wide — the spatial_bridge in-process
+# e2e test's own participant.
+zerodds-test-domains = { path = "../test-domains" }
+# `src/dynamic.rs`'s graft test measures the composed type's wire bytes
+# against the identical declaration written in IDL, resolved, and
+# encoded directly with zerodds-wire-codec — the independent reference a
+# type built only through this crate's own graft path cannot contradict
+# on its own.
+zerodds-idl-parse = { version = "1.0.0-rc.7", path = "../idl-parse" }
+zerodds-idl-lower = { version = "1.0.0-rc.7", path = "../idl-lower" }
 
 [features]
 default = ["flatdata-loan"]

@@ -15,7 +15,7 @@ pub mod enum_type;
 pub mod struct_type;
 pub mod union_type;
 
-use zerodds_cdr::{BufferReader, BufferWriter, EncodeError};
+use zerodds_wire::{Reader, WireError, Writer};
 
 use crate::error::TypeCodecError;
 use crate::type_object::kinds::{
@@ -24,7 +24,11 @@ use crate::type_object::kinds::{
 };
 
 pub use alias_type::{CompleteAliasBody, CompleteAliasHeader, CompleteAliasType};
-pub use annotation_type::{CompleteAnnotationParameter, CompleteAnnotationType};
+pub use annotation_type::{
+    AnnotationParameterOrder, CompleteAnnotationHeader, CompleteAnnotationParameter,
+    CompleteAnnotationType, annotation_parameter_order, ordered_by_name,
+    set_annotation_parameter_order,
+};
 pub use bitmask_type::{CompleteBitflag, CompleteBitmaskType};
 pub use bitset_type::{CompleteBitfield, CompleteBitsetType};
 pub use collection_types::{
@@ -60,6 +64,25 @@ pub enum CompleteTypeObject {
     Enumerated(CompleteEnumeratedType),
     /// `bitmask`.
     Bitmask(CompleteBitmaskType),
+    /// The `default:` arm of Annex B's `union CompleteTypeObject`:
+    /// `CompleteExtendedType extended_type`, under the comment
+    /// `// =========== Future extensibility ============`.
+    ///
+    /// `CompleteExtendedType` is
+    /// `@extensibility(MUTABLE) @nested struct { /* Empty. Available
+    /// for future extension */ }`, so under encoding version 2 the
+    /// arm is a `DHEADER` over a member list this revision has no
+    /// member of. The member list is held verbatim — the `DHEADER`
+    /// excluded, because that is a length the encoder writes and a
+    /// byte order this value does not carry — so an object of a
+    /// future TypeKind survives a decode and an encode unchanged
+    /// instead of being refused.
+    Extended {
+        /// The TypeKind the stream carried.
+        type_kind: u8,
+        /// The `CompleteExtendedType` member list, verbatim.
+        body: alloc::vec::Vec<u8>,
+    },
 }
 
 impl CompleteTypeObject {
@@ -77,15 +100,16 @@ impl CompleteTypeObject {
             Self::Map(_) => TK_MAP,
             Self::Enumerated(_) => TK_ENUM,
             Self::Bitmask(_) => TK_BITMASK,
+            Self::Extended { type_kind, .. } => *type_kind,
         }
     }
 
     /// Encode.
     ///
     /// # Errors
-    /// Buffer-Overflow.
-    pub fn encode_into(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
-        w.write_u8(self.discriminator())?;
+    /// A length that does not fit a `u32`.
+    pub fn encode_into(&self, w: &mut Writer) -> Result<(), WireError> {
+        w.write_u8(self.discriminator());
         match self {
             Self::Alias(a) => a.encode_into(w),
             Self::Annotation(a) => a.encode_into(w),
@@ -97,6 +121,10 @@ impl CompleteTypeObject {
             Self::Map(m) => m.encode_into(w),
             Self::Enumerated(e) => e.encode_into(w),
             Self::Bitmask(b) => b.encode_into(w),
+            // The member list goes back behind a `DHEADER` this
+            // encoder writes, so the value carries no byte order of
+            // its own.
+            Self::Extended { body, .. } => crate::framing::encode_extended_members(w, body),
         }
     }
 
@@ -104,7 +132,7 @@ impl CompleteTypeObject {
     ///
     /// # Errors
     /// `TypeCodecError::UnknownTypeKind` on an unknown discriminator.
-    pub fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, TypeCodecError> {
+    pub fn decode_from(r: &mut Reader<'_>) -> Result<Self, TypeCodecError> {
         let d = r.read_u8()?;
         Ok(match d {
             TK_ALIAS => Self::Alias(CompleteAliasType::decode_from(r)?),
@@ -117,7 +145,15 @@ impl CompleteTypeObject {
             TK_MAP => Self::Map(CompleteMapType::decode_from(r)?),
             TK_ENUM => Self::Enumerated(CompleteEnumeratedType::decode_from(r)?),
             TK_BITMASK => Self::Bitmask(CompleteBitmaskType::decode_from(r)?),
-            other => return Err(TypeCodecError::UnknownTypeKind { kind: other }),
+            // Annex B: `default: CompleteExtendedType extended_type;`.
+            // Refusing here refused every stream carrying a TypeKind a
+            // later revision defines, including one this reader could
+            // have skipped past — the arm is `@extensibility(MUTABLE)`
+            // and a `DHEADER` says how far.
+            other => Self::Extended {
+                type_kind: other,
+                body: crate::framing::decode_extended_members(r)?,
+            },
         })
     }
 }

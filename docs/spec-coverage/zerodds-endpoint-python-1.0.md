@@ -1,14 +1,12 @@
 # `zerodds-endpoint-python` 1.0 — Spec-Coverage
 
 **Quelle:** `docs/specs/zerodds-endpoint-python-1.0.md` — ZeroDDS Python
-Endpoint-SDK-Spec. Ergänzt die Codegen-Coverage `zerodds-xcdr2-python`
-(`docs/spec-coverage/zerodds-xcdr2-python-1.0.md`) — dort das Marshalling,
-hier der Transport.
+Endpoint-SDK-Spec. Das Marshalling kommt aus `crates/lang-rules`, Spalte `Language::Python`; hier steht der Transport.
 
 Implementation:
 
 - `endpoints/python/zerodds_endpoint.py` — XRCE-Framing
-  (`xrce_write_frame`/`xrce_read_frame`), Serial-HDLC-Framing
+  (`xrce_write_frame`/`xrce_read_frame`), serielles Framing nach Annex C
   (`serial_frame`/`serial_deframe`), sync `Client`, `MemTransport`.
 - `endpoints/python/zerodds_reliable.py` — reliable Sender/Receiver-
   State-Machine + HEARTBEAT/ACKNACK-Wire-Codec + `ReliableWriter`.
@@ -20,17 +18,18 @@ Implementation:
 
 **Spec:** §1 — 8-Byte-XRCE-Header (session, stream, seq LE, submsg id `0x07`
 WRITE_DATA/`0x09` DATA, flags, len LE) + Body, byte-identisch zu
-`crates/xrce` + `endpoints/c`; dazu Annex-C-Serial-HDLC (Byte-Stuffing +
-CRC-16-CCITT-FALSE).
+`crates/xrce` + `endpoints/c`; dazu serielles Framing nach Annex C.1
+(Adressen, Länge, Byte-Stuffing, FCS-16 nach RFC 1662).
 
 **Repo:** `endpoints/python/zerodds_endpoint.py` —
-`xrce_write_frame`/`xrce_read_frame`, `crc16_ccitt_false`,
+`xrce_write_frame`/`xrce_read_frame`, `fcs16`,
 `serial_frame`/`serial_deframe`, Konstanten `XRCE_SESSION_NOKEY` (`0x80`),
 `XRCE_STREAM_BEST_EFFORT` (`0x01`), `XRCE_STREAM_NONE` (`0x00`).
 
 **Tests:** `endpoints/python/test_endpoint.py` (`python3 test_endpoint.py
 <golden_dir>`) — WRITE_DATA-Framing, Serial-Framing, DATA-Receive,
-Serial-Deframe-Roundtrip, HEARTBEAT-Parse, ACKNACK-Framing, je gegen
+Serial-Deframe-Roundtrip, Abweisung eines falschen `frameCheck` und eines
+`0x7E` im Rahmen, HEARTBEAT-Parse, ACKNACK-Framing, je gegen
 `golden_xrce_le.bin`/`golden_serial_le.bin`/`golden_data_le.bin`/
 `golden_heartbeat_le.bin`/`golden_acknack_le.bin`, meldet `ALL OK`. Framing
 selbst wird zusätzlich über `python_endpoint_sync`/`python_endpoint_async`
@@ -81,20 +80,20 @@ Semantik) in der E2E-App `crates/endpoint-e2e/tests/python.rs::PY_APP::run_async
 **Spec:** §5.1/§5.2 — eine Python-App tauscht mit dem geteilten Rust-XRCE-Peer
 über einen echten UDP-Socket ein typisiertes Sample aus: einmal roher
 generierter Codec (`.encode()`/`.decode()`) ohne XRCE-Frame, einmal voller
-Stack (generierte `@idl_struct`-Dataclasses + Endpoint-SDK) sync und async.
+Stack (generierte Dataclasses + Endpoint-SDK) sync und async.
 
 **Repo:** `crates/endpoint-e2e/tests/python.rs` — `PY_APP` (`run_raw` roh
 über UDP ohne XRCE-Frame, nutzt nur `Ping.encode()`/`Pong.decode()`;
 `run_sync` über `ze.Client`; `run_async` über das asyncio-Muster aus §3),
 Modus per `sys.argv[1]`.
 
-**Tests (codepit):**
+**Tests:** (Linux)
 - `python_raw_udp` — generierter `Ping`/`Pong`-Codec direkt über einen rohen
   UDP-Socket, ohne XRCE-Framing.
 - `python_endpoint_sync` — voller Stack über `ze.Client`.
 - `python_endpoint_async` — voller Stack über das asyncio-Empfangsmuster.
 
-3/3 grün (codepit).
+3/3 grün (Linux).
 
 **Status:** done.
 
@@ -126,7 +125,7 @@ Syscalls, keine lock-freie Datenebene (Spec §4, Honest-Note).
 `endpoints/python/example_reliable.py` (In-Process-Demo mit lossy
 Receiver-Thread, UDP-Sender-Modus `run`, Latenz-Bench-Modus `bench`).
 
-**Tests (codepit):**
+**Tests:** (Linux)
 - `python_reliable_unit_and_golden`
   (`crates/endpoint-e2e/tests/python_reliable.rs`) läuft
   `endpoints/python/reliable_test.py` gegen von `zerodds-xrce` erzeugte
@@ -154,7 +153,7 @@ Receiver-Thread, UDP-Sender-Modus `run`, Latenz-Bench-Modus `bench`).
 - `python_reliable_no_loss` — lossless Baseline; 12/12.
 - `python_reliable_producer_latency` — Latenz-Bench (§6).
 
-4/4 grün (codepit), davon 3 in diesem Abschnitt (Latenz-Bench in §6).
+4/4 grün (Linux), davon 3 in diesem Abschnitt (Latenz-Bench in §6).
 
 **Status:** done.
 
@@ -170,7 +169,7 @@ Iterationen inline `sock.send(reliable_write_frame(...))` vs. 20000
 Iterationen `ReliableWriter.enqueue(sample)` gegen einen idle-drainenden
 Sink-Socket (kein Live-Peer nötig, nur lokale Dispatch-Kosten unter Messung).
 
-**Tests (codepit):** `python_reliable_producer_latency`
+**Tests:** (Linux) `python_reliable_producer_latency`
 (`crates/endpoint-e2e/tests/python_reliable.rs`) — Enqueue **704 ns** vs.
 inline `send` **4108 ns** (~5,8×).
 
@@ -187,9 +186,9 @@ Wait-Freedom.
 
 ## Audit-Status
 
-6 done / 0 partial / 0 open / 0 n/a (informativ) / 0 n/a (rejected).
+6 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
 
-Test-Lauf (codepit, verifiziert): `cargo test -p zerodds-endpoint-e2e --test
+Test-Lauf (Linux, verifiziert): `cargo test -p zerodds-endpoint-e2e --test
 python` 3/3 (Ping-Pong: `python_raw_udp`/`python_endpoint_sync`/
 `python_endpoint_async`); `--test python_reliable` 4/4
 (`python_reliable_loss_recovery`/`python_reliable_no_loss`/

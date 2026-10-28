@@ -4,9 +4,9 @@
 //!
 //! Wire-Format (DDSI-RTPS §9.6.3.2): 3 × i32 = 12 byte.
 
-use zerodds_cdr::{BufferReader, BufferWriter, DecodeError, EncodeError};
+use zerodds_wire::{Reader, WireError, Writer};
 
-/// `LENGTH_UNLIMITED` Konstant (DDS 1.4 §2.3.3.19.1 / IDL4 `-1`).
+/// `LENGTH_UNLIMITED` constant (DDS 1.4 §2.3.3.19.1 / IDL4 `-1`).
 pub const LENGTH_UNLIMITED: i32 = -1;
 
 /// ResourceLimitsQosPolicy.
@@ -47,20 +47,17 @@ impl ResourceLimitsQosPolicy {
     }
 
     /// Wire-Encoding.
-    ///
-    /// # Errors
-    /// Buffer-Overflow.
-    pub fn encode_into(self, w: &mut BufferWriter) -> Result<(), EncodeError> {
-        w.write_u32(self.max_samples as u32)?;
-        w.write_u32(self.max_instances as u32)?;
-        w.write_u32(self.max_samples_per_instance as u32)
+    pub fn encode_into(self, w: &mut Writer) {
+        w.write_u32(self.max_samples as u32);
+        w.write_u32(self.max_instances as u32);
+        w.write_u32(self.max_samples_per_instance as u32);
     }
 
     /// Wire-Decoding.
     ///
     /// # Errors
     /// Buffer-Underflow.
-    pub fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
+    pub fn decode_from(r: &mut Reader<'_>) -> Result<Self, WireError> {
         let max_samples = r.read_u32()? as i32;
         let max_instances = r.read_u32()? as i32;
         let max_samples_per_instance = r.read_u32()? as i32;
@@ -76,7 +73,7 @@ impl ResourceLimitsQosPolicy {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use zerodds_cdr::Endianness;
+    use zerodds_wire::Endianness;
 
     #[test]
     fn default_is_unlimited() {
@@ -119,21 +116,21 @@ mod tests {
             max_instances: 20,
             max_samples_per_instance: 5,
         };
-        let mut w = BufferWriter::new(Endianness::Little);
-        p.encode_into(&mut w).unwrap();
-        let bytes = w.into_bytes();
+        let mut w = Writer::new(Endianness::Little);
+        p.encode_into(&mut w);
+        let bytes = w.finish();
         assert_eq!(bytes.len(), 12);
-        let mut r = BufferReader::new(&bytes, Endianness::Little);
+        let mut r = Reader::new(&bytes, Endianness::Little);
         assert_eq!(ResourceLimitsQosPolicy::decode_from(&mut r).unwrap(), p);
     }
 
     #[test]
     fn encode_decode_negative_one() {
         let p = ResourceLimitsQosPolicy::default();
-        let mut w = BufferWriter::new(Endianness::Little);
-        p.encode_into(&mut w).unwrap();
-        let bytes = w.into_bytes();
-        let mut r = BufferReader::new(&bytes, Endianness::Little);
+        let mut w = Writer::new(Endianness::Little);
+        p.encode_into(&mut w);
+        let bytes = w.finish();
+        let mut r = Reader::new(&bytes, Endianness::Little);
         assert_eq!(ResourceLimitsQosPolicy::decode_from(&mut r).unwrap(), p);
     }
 }

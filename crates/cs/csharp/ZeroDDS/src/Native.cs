@@ -106,6 +106,10 @@ internal static class Native
     public static extern IntPtr PubCreateDatawriterTyped(IntPtr pub, IntPtr topic, IntPtr qos,
         IntPtr typeObject, UIntPtr len);
 
+    [DllImport(LibName, EntryPoint = "zerodds_pub_create_datawriter_typed_wire")]
+    public static extern IntPtr PubCreateDatawriterTypedWire(IntPtr pub, IntPtr topic, IntPtr qos,
+        IntPtr typeObject, UIntPtr len, int isKeyed, int extensibility, int representation);
+
     [DllImport(LibName, EntryPoint = "zerodds_pub_delete_datawriter")]
     public static extern int PubDeleteDatawriter(IntPtr pub, IntPtr dw);
 
@@ -124,6 +128,10 @@ internal static class Native
 
     [DllImport(LibName, EntryPoint = "zerodds_dw_write")]
     public static extern int DwWrite(IntPtr dw, IntPtr payload, UIntPtr len, ulong handle);
+
+    [DllImport(LibName, EntryPoint = "zerodds_dw_write_keyed")]
+    public static extern int DwWriteKeyed(IntPtr dw, IntPtr payload, UIntPtr len,
+        IntPtr keyHash, UIntPtr keyLen);
 
     [DllImport(LibName, EntryPoint = "zerodds_dw_dispose")]
     public static extern int DwDispose(IntPtr dw, IntPtr keyHash, ulong handle);
@@ -187,6 +195,10 @@ internal static class Native
     [DllImport(LibName, EntryPoint = "zerodds_sub_create_datareader_typed")]
     public static extern IntPtr SubCreateDatareaderTyped(IntPtr sub, IntPtr topic, IntPtr qos,
         IntPtr typeObject, UIntPtr len);
+
+    [DllImport(LibName, EntryPoint = "zerodds_sub_create_datareader_typed_wire")]
+    public static extern IntPtr SubCreateDatareaderTypedWire(IntPtr sub, IntPtr topic, IntPtr qos,
+        IntPtr typeObject, UIntPtr len, int isKeyed, int representation);
 
     [DllImport(LibName, EntryPoint = "zerodds_sub_delete_datareader")]
     public static extern int SubDeleteDatareader(IntPtr sub, IntPtr dr);
@@ -384,19 +396,17 @@ internal static class Native
         public IntPtr OnSampleLost;
     }
 
+    // The registry stores the POINTER, not a copy (vendor spec
+    // `zerodds-listener-callbacks-1.1` §4.3/§9), so the vtable has to live in
+    // memory the caller keeps alive. Only the raw-pointer form is bound:
+    // a `ref` overload would hand the registry the address of a marshalling
+    // temporary and leave it dangling the moment the call returned.
+    // IntPtr.Zero clears the slot.
     [DllImport(LibName, EntryPoint = "zerodds_dw_set_listener")]
-    public static extern int DwSetListener(IntPtr dw,
-        ref DataWriterListenerVTable listener, uint statusMask);
-
-    [DllImport(LibName, EntryPoint = "zerodds_dw_set_listener")]
-    public static extern int DwSetListenerNull(IntPtr dw, IntPtr listener, uint statusMask);
+    public static extern int DwSetListenerRaw(IntPtr dw, IntPtr listener, uint statusMask);
 
     [DllImport(LibName, EntryPoint = "zerodds_dr_set_listener")]
-    public static extern int DrSetListener(IntPtr dr,
-        ref DataReaderListenerVTable listener, uint statusMask);
-
-    [DllImport(LibName, EntryPoint = "zerodds_dr_set_listener")]
-    public static extern int DrSetListenerNull(IntPtr dr, IntPtr listener, uint statusMask);
+    public static extern int DrSetListenerRaw(IntPtr dr, IntPtr listener, uint statusMask);
 
     [DllImport(LibName, EntryPoint = "zerodds_poll_listeners")]
     public static extern UIntPtr PollListeners();

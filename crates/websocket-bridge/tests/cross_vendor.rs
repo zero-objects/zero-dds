@@ -7,12 +7,22 @@
 //!
 //! Verifies RFC-6455 conformance via a raw TCP client with a
 //! hand-written handshake (mocks a browser WS client). This test
-//! runs against the own ZeroDDS daemon in the same process — that is
-//! the "cross-vendor" variant, because our codec stack simulates the
-//! browser client side.
+//! runs against the own ZeroDDS daemon in the same process.
 //!
-//! For real browser validation an external tool like
-//! `websocat` or Node `ws` can be used — see the ignored tests.
+//! **It is not a cross-vendor measurement**, whatever the file is called.
+//! Both ends are this source tree, so an assumption the two sides share
+//! cannot be contradicted here — and one was: `build_server_response`
+//! echoed the client's `Sec-WebSocket-Extensions` offer back as an
+//! agreement, in a form RFC 7692 §7.1.2.2 forbids in a server reply, and
+//! this file never noticed because the client it writes offers no
+//! extensions. A foreign client found it on the first connection.
+//!
+//! The foreign measurement lives in `tests/websockets_py_interop_e2e.rs`
+//! (Python `websockets` against the library half) and, for the daemon, in
+//! `python_websockets_client_handshakes_and_pings_the_daemon` below. The
+//! `websocat` test is a second foreign client. It is `#[ignore]`: run with
+//! `--ignored` it fails where the binary is absent, which is every host here
+//! so far, rather than passing without having measured anything.
 //!
 //! Run via:
 //! ```bash
@@ -40,7 +50,7 @@
 
 use std::io::{Read, Write};
 use std::net::TcpStream;
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::time::Duration;
 
 use zerodds_websocket_bridge::daemon::config::{DaemonConfig, TopicConfig};
@@ -77,6 +87,12 @@ fn build_request(path: &str, host: &str, key: &str) -> String {
 
 fn websocat_available() -> bool {
     Command::new("websocat").arg("--help").output().is_ok()
+}
+
+/// Gate for the Python `websockets` test below. Same convention as
+/// `tests/websockets_py_interop_e2e.rs`.
+fn python_ws_enabled() -> bool {
+    std::env::var("WS_PYTHON").is_ok()
 }
 
 #[test]
@@ -119,19 +135,101 @@ fn rfc6455_handshake_against_zerodds_daemon_returns_101() {
 #[test]
 #[ignore = "requires websocat binary (cargo install websocat)"]
 fn websocat_can_connect_to_zerodds_daemon() {
-    if !websocat_available() {
-        eprintln!("websocat not available; skipping");
-        return;
-    }
+    // Run with `--ignored` means measure: a missing binary fails instead
+    // of reporting interop that never happened.
+    assert!(
+        websocat_available(),
+        "websocat is not installed (cargo install websocat)"
+    );
     let cfg = make_test_config("127.0.0.1:0");
     let mut handle = server::start(cfg).expect("daemon start");
     let port = handle.local_addr.rsplit(':').next().unwrap();
     let url = format!("ws://127.0.0.1:{port}/dds/Trade");
-    // websocat -1 (one-shot) reads from stdin one line, sends, exits.
-    let out = Command::new("websocat")
-        .args(["-1", "-n", &url])
-        .output()
+    // `-E`: exit on EOF of stdin (here at once), after the handshake and
+    // the Close handshake. It was `-1 -n`: `--no-close` kept websocat
+    // waiting for a message the daemon never sends, and the test hung
+    // (measured on the Linux test host, websocat 1.x) instead of measuring anything.
+    let mut child = Command::new("websocat")
+        .args(["-E", &url])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
         .expect("websocat");
-    let _ = out;
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    while child.try_wait().unwrap().is_none() {
+        if std::time::Instant::now() > deadline {
+            let _ = child.kill();
+            panic!("websocat did not finish within 10 s");
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let out = child.wait_with_output().expect("websocat output");
+    // This was `let _ = out;`: websocat's result was discarded, so a
+    // rejected handshake, a refused connection and a missing binary were
+    // all indistinguishable from success. The exit status is the whole
+    // point of running a foreign client.
+    assert!(
+        out.status.success(),
+        "websocat must complete the RFC 6455 handshake against the daemon; \
+         status={:?} stderr={}",
+        out.status.code(),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    handle.shutdown();
+}
+
+/// The daemon's accept loop against a foreign client that is actually
+/// installed.
+///
+/// `websocat_can_connect_to_zerodds_daemon` above returns early when the
+/// binary is absent and the runner then prints `ok` — on this host websocat
+/// is not installed, so that test has never put a foreign octet on the
+/// daemon's socket. Python's `websockets` 15.0.1 is installed, computes its
+/// own `Sec-WebSocket-Key`, validates the `Sec-WebSocket-Accept` against
+/// RFC 6455 §4.1, masks every frame it sends and drives the §5.5.2
+/// ping/pong and §5.5.1 close handshakes.
+///
+/// `tests/websockets_py_interop_e2e.rs` drives the same client against the
+/// library half; this one drives it against `daemon::server`, which is the
+/// path behind `zerodds-dcps` and therefore the part that could not be
+/// compiled — let alone run — before this crate became a workspace member.
+#[test]
+#[ignore = "needs python3 + the `websockets` module; set WS_PYTHON=1"]
+fn python_websockets_client_handshakes_and_pings_the_daemon() {
+    if !python_ws_enabled() {
+        eprintln!("[skip] WS_PYTHON not set");
+        return;
+    }
+    let cfg = make_test_config("127.0.0.1:0");
+    let mut handle = server::start(cfg).expect("daemon start");
+    let port = handle.local_addr.rsplit(':').next().expect("port");
+    let script = format!(
+        r#"
+from websockets.sync.client import connect
+with connect("ws://127.0.0.1:{port}/dds/Trade") as ws:
+    ws.ping(b"zerodds").wait(5)
+    print("pong-ok")
+"#
+    );
+    let out = Command::new("python3")
+        .arg("-c")
+        .arg(&script)
+        .output()
+        .expect("spawn python3");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "the `websockets` reference client must complete the RFC 6455 \
+         handshake against the daemon; status={:?} stderr={}",
+        out.status.code(),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        stdout.trim(),
+        "pong-ok",
+        "the daemon must answer a masked Ping with a Pong carrying the same \
+         application data (RFC 6455 §5.5.3); stdout={stdout}"
+    );
     handle.shutdown();
 }

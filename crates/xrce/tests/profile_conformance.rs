@@ -248,10 +248,10 @@ fn spec_7_1_object_model_kinds_complete() {
 fn spec_7_4_top_level_classes_have_kind_constants() {
     // §7.4: 5 top-level classes — Root (realized via object_store::ObjectStore;
     // no own OBJK), ProxyClient (OBJK_CLIENT),
-    // Application (OBJK_APPLICATION), AccessController (n/a — no
-    // separate XRCE wire repr; Spec §7.4 says: "AccessController
-    // exists in the model but is not exposed as a CRUD-able object"),
-    // DomainParticipant (OBJK_PARTICIPANT).
+    // Application (OBJK_APPLICATION), AccessController (§7.4: a class of the
+    // model with no ObjectKind of its own; the agent holds it as
+    // `daemon::access::AccessController`), DomainParticipant
+    // (OBJK_PARTICIPANT).
     assert_ne!(OBJK_PARTICIPANT, OBJK_INVALID);
     assert_ne!(OBJK_APPLICATION, OBJK_INVALID);
     assert_ne!(OBJK_CLIENT, OBJK_INVALID);

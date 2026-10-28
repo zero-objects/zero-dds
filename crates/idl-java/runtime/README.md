@@ -1,10 +1,15 @@
 # zerodds idl-java runtime
 
-Java sources shipped alongside generated code from `zerodds-idl-java`
-(Cluster C5.4-b). Drop these files into the consumer Java project's
-source tree (or package them into a small JAR) so generated classes
-that reference `org.zerodds.types.*` and `org.omg.dds.topic.TopicType`
-resolve at compile time.
+Java sources shipped alongside generated code from `zerodds-idl-java`.
+Drop these files into the consumer Java project's source tree (or package
+them into a small JAR) so generated classes that reference
+`org.zerodds.types.*` resolve at compile time.
+
+Nothing here lives in a package that begins with `org.omg`: DDS-Java-PSM
+1.0 §7.2.6 forbids an implementation from putting its own types into
+`org.omg.dds` or a package below it. The `org.omg.dds.*` API itself comes
+from the PSM; the marker interface that used to sit in
+`org.omg.dds.topic.TopicType` was one such extension and is gone.
 
 ## Annotation-Bridge
 
@@ -17,13 +22,6 @@ resolve at compile time.
 | `@external`                   | `@org.zerodds.types.External`        |
 | `@nested`                     | `@org.zerodds.types.Nested`          |
 | `@extensibility(FINAL|...)`   | `@org.zerodds.types.Extensibility`   |
-
-## DDS-Java-PSM stub
-
-`org.omg.dds.topic.TopicType<T>` — empty marker interface; every
-top-level struct without `@nested` annotation implements
-`TopicType<SelfType>`. The full DDS-Java-PSM Service-Environment SPI is
-deferred to C5.5-b.
 
 ## Bitset / Bitmask runtime
 

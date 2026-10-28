@@ -1,0 +1,3 @@
+module m {
+  @appendable struct S { sequence<sequence<long> > nested; };
+};

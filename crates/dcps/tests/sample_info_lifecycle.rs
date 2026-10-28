@@ -43,6 +43,8 @@ struct KeyedRecord {
 
 impl DdsType for KeyedRecord {
     const TYPE_NAME: &'static str = "test::KeyedRecord";
+    /// @final with no member that XCDR1 and XCDR2 frame differently: one stream.
+    const XCDR1_MATCHES_XCDR2: bool = true;
     const HAS_KEY: bool = true;
     const KEY_HOLDER_MAX_SIZE: Option<usize> = Some(4);
 
@@ -71,6 +73,25 @@ impl DdsType for KeyedRecord {
 
     fn encode_key_holder_be(&self, holder: &mut PlainCdr2BeKeyHolder) {
         holder.write_u32(self.id);
+    }
+
+    /// The inverse of the holder above. DDS 1.4 §2.2.2.5.1.13 declares the
+    /// key fields valid on a dispose/unregister sample; the holder is a
+    /// PLAIN_CDR2-BE `uint32` and nothing else, so it is read as those four
+    /// octets rather than through `Self::decode`, which reads the type's
+    /// own stream.
+    fn decode_key_holder_be(bytes: &[u8]) -> Result<Self, DecodeError> {
+        let head: [u8; 4] =
+            bytes
+                .get(..4)
+                .and_then(|b| b.try_into().ok())
+                .ok_or(DecodeError::Invalid {
+                    what: "truncated KeyedRecord key holder",
+                })?;
+        Ok(Self {
+            id: u32::from_be_bytes(head),
+            ..Self::default()
+        })
     }
 }
 
@@ -233,8 +254,21 @@ fn writer_dispose_handle_mismatch_errors() {
     let r2 = KeyedRecord { id: 20, value: 0 };
     let h1 = w.register_instance(&r1).expect("r1");
     let _h2 = w.register_instance(&r2).expect("r2");
-    // h1 belongs to r1 — dispose(r2, h1) must fail.
+    // h1 belongs to r1 — dispose(r2, h1) must fail: DDS 1.4 §2.2.2.4.2.7,
+    // a handle of another existing instance is PRECONDITION_NOT_MET.
     let err = w.dispose(&r2, h1).unwrap_err();
+    assert!(matches!(err, DdsError::PreconditionNotMet { .. }));
+    // A handle of no instance is BAD_PARAMETER.
+    let err = w
+        .dispose(&r2, zerodds_dcps::InstanceHandle::from_raw(0x7fff_0000))
+        .unwrap_err();
+    assert!(matches!(err, DdsError::BadParameter { .. }));
+    // unregister_instance, whose rule dispose shares (§2.2.2.4.2.13).
+    let err = w.unregister_instance(&r2, h1).unwrap_err();
+    assert!(matches!(err, DdsError::PreconditionNotMet { .. }));
+    let err = w
+        .unregister_instance(&r2, zerodds_dcps::InstanceHandle::from_raw(0x7fff_0000))
+        .unwrap_err();
     assert!(matches!(err, DdsError::BadParameter { .. }));
 }
 
@@ -409,6 +443,49 @@ fn reader_take_next_instance_consumes() {
     assert!(third.is_empty());
 }
 
+/// DDS 1.4 §2.2.2.5.3.16: the next instance is the one with the smallest
+/// handle above `previous_handle` among those that "have available
+/// samples". An instance whose samples were taken is passed over. The
+/// iteration stopped there with an empty result.
+#[test]
+fn next_instance_passes_over_an_instance_without_samples() {
+    let (w, r) = mk_pair();
+    for id in 1..=3 {
+        w.write(&KeyedRecord { id, value: id }).unwrap();
+    }
+    pump(&w, &r);
+    let all = r.read_with_info().expect("ingest");
+    let mut handles: Vec<_> = all.iter().map(|s| s.info.instance_handle).collect();
+    handles.sort_unstable();
+    handles.dedup();
+    assert_eq!(handles.len(), 3);
+    // "it is possible to call the 'read_next_instance' operation with a
+    // previous_handle that does not correspond to an instance currently
+    // managed by the DataReader": a value above every handle gives none.
+    // The values of the handles are the implementation's (they are
+    // consecutive here); the test took the one above the first as free.
+    let unmanaged = zerodds_dcps::InstanceHandle::from_raw(handles[2].as_raw() + 1);
+    assert!(!handles.contains(&unmanaged));
+    assert!(
+        r.read_next_instance(unmanaged)
+            .expect("read_next")
+            .is_empty()
+    );
+    let after = r.read_next_instance(handles[0]).expect("read_next");
+    assert_eq!(after.len(), 1);
+    assert_eq!(after[0].info.instance_handle, handles[1]);
+    assert_eq!(
+        r.take_instance(handles[1]).expect("take the middle").len(),
+        1
+    );
+    let next = r.take_next_instance(handles[0]).expect("take_next");
+    assert_eq!(next.len(), 1);
+    assert_eq!(
+        next[0].info.instance_handle, handles[2],
+        "the instance without samples was not passed over"
+    );
+}
+
 #[test]
 fn reader_get_key_value_returns_keyonly_sample() {
     let (w, r) = mk_pair();
@@ -515,4 +592,205 @@ fn write_w_timestamp_auto_registers_unknown_instance() {
             .last_sample_timestamp,
         Some(ts)
     );
+}
+
+/// `write` registers the instance it writes, as `write_w_timestamp` does:
+/// `lookup_instance` finds it and `unregister_instance`/`dispose` with
+/// `HANDLE_NIL` act on it. Before, both refused with "instance not
+/// registered" after a plain `write`.
+#[test]
+fn write_auto_registers_unknown_instance() {
+    let (w, _) = mk_pair();
+    let a = KeyedRecord { id: 7, value: 1 };
+    let b = KeyedRecord { id: 8, value: 1 };
+    w.write(&a).expect("write a");
+    w.write(&b).expect("write b");
+    assert!(!w.lookup_instance(&a).is_nil());
+    w.dispose(&a, HANDLE_NIL).expect("dispose after write");
+    w.unregister_instance(&b, HANDLE_NIL)
+        .expect("unregister after write");
+}
+
+/// DDS 1.4 §2.3.2: time values are "normalized", "the nanosec field must
+/// verify 0 <= nanosec < 1000000000". A timestamp with nanosec of 10^9 or
+/// more is BAD_PARAMETER at `write_w_timestamp`, `register_instance_w_timestamp`,
+/// `dispose_w_timestamp` and `unregister_instance_w_timestamp`; it was taken.
+#[test]
+fn a_timestamp_out_of_range_is_bad_parameter() {
+    let (w, _) = mk_pair();
+    let r = KeyedRecord { id: 7, value: 0 };
+    // The fields are public; `Time::new` would carry the second.
+    let bad = zerodds_dcps::time::Time {
+        sec: 10,
+        nanosec: 1_000_000_000,
+    };
+    let good = zerodds_dcps::time::Time::new(10, 999_999_999);
+    let is_bad = |e: DdsError| matches!(e, DdsError::BadParameter { .. });
+    assert!(is_bad(w.write_w_timestamp(&r, bad).unwrap_err()));
+    assert!(is_bad(
+        w.register_instance_w_timestamp(&r, bad).unwrap_err()
+    ));
+    let h = w.register_instance_w_timestamp(&r, good).expect("register");
+    assert!(is_bad(w.dispose_w_timestamp(&r, h, bad).unwrap_err()));
+    assert!(is_bad(
+        w.unregister_instance_w_timestamp(&r, h, bad).unwrap_err()
+    ));
+    w.write_w_timestamp(&r, good)
+        .expect("a normalized timestamp");
+}
+
+/// DDS 1.4 §2.2.2.4.2.9: an instance known by its hash alone has its key
+/// filled in where the hash spells the key out (DDSI-RTPS 2.5 §9.6.4.8
+/// Step 5.1: a key of at most sixteen octets, padded with zeros). Where it
+/// does not, the one error the clause names is BAD_PARAMETER, not
+/// UNSUPPORTED.
+#[test]
+fn get_key_value_of_an_instance_known_by_its_hash() {
+    let (w, _) = mk_pair();
+    // The KeyHash of id 7: the four PLAIN_CDR2-BE octets, zero-padded.
+    let mut spelled = [0u8; 16];
+    spelled[..4].copy_from_slice(&7u32.to_be_bytes());
+    let handle = w.instance_tracker().register(spelled, Vec::new(), None);
+    assert_eq!(w.get_key_value(handle).expect("spelled out").id, 7);
+
+    // A hash that spells no key (not what a KeyedRecord of that id hashes to).
+    let handle = w.instance_tracker().register([0xAA; 16], Vec::new(), None);
+    assert!(matches!(
+        w.get_key_value(handle),
+        Err(DdsError::BadParameter { .. })
+    ));
+}
+
+/// §2.2.2.5.1.6: `sample_rank` counts the samples of the same instance that
+/// follow in the returned collection, `generation_rank` the generations
+/// between the sample and the last one returned, `absolute_generation_rank`
+/// the generations between the sample and the instance's current state.
+#[test]
+fn rust_read_and_take_fill_the_ranks() {
+    // KEEP_ALL: the default KEEP_LAST(1) (§2.2.3.18) keeps one sample per
+    // instance, and the ranks need several.
+    let factory = DomainParticipantFactory::instance();
+    let p = factory.create_participant_offline(0, DomainParticipantQos::default());
+    let topic = p
+        .create_topic::<KeyedRecord>("KRRanks", TopicQos::default())
+        .expect("topic");
+    let w = p
+        .create_publisher(PublisherQos::default())
+        .create_datawriter::<KeyedRecord>(&topic, DataWriterQos::default())
+        .expect("writer");
+    let r = p
+        .create_subscriber(SubscriberQos::default())
+        .create_datareader::<KeyedRecord>(
+            &topic,
+            DataReaderQos {
+                history: zerodds_qos::HistoryQosPolicy {
+                    kind: zerodds_qos::HistoryKind::KeepAll,
+                    depth: 1,
+                },
+                ..DataReaderQos::default()
+            },
+        )
+        .expect("reader");
+    let a = KeyedRecord { id: 1, value: 1 };
+    let b = KeyedRecord { id: 2, value: 1 };
+    w.write(&a).unwrap();
+    w.write(&b).unwrap();
+    w.write(&KeyedRecord { id: 1, value: 2 }).unwrap();
+    pump(&w, &r);
+    // The reader knows the instance once it has ingested its samples.
+    let first = r.read_with_info().expect("first read");
+    let h = first
+        .iter()
+        .find(|s| s.info.valid_data && s.data.id == 1)
+        .expect("a sample of id 1")
+        .info
+        .instance_handle;
+    // The dispose reaches the reader as the runtime would deliver it.
+    let mut holder = PlainCdr2BeKeyHolder::new();
+    a.encode_key_holder_be(&mut holder);
+    r.__push_lifecycle(
+        zerodds_dcps::dds_type::compute_key_hash(holder.as_bytes(), 4),
+        holder.as_bytes().to_vec(),
+        InstanceStateKind::NotAliveDisposed,
+    )
+    .unwrap();
+    w.write(&KeyedRecord { id: 1, value: 3 }).unwrap();
+    w.write(&KeyedRecord { id: 1, value: 4 }).unwrap();
+    pump(&w, &r);
+    let samples = r.read_with_info().expect("read");
+    let of_a: Vec<_> = samples
+        .iter()
+        .filter(|s| s.info.instance_handle == h)
+        .collect();
+    let n = of_a.len() as i32;
+    assert!(n >= 4);
+    for (i, s) in of_a.iter().enumerate() {
+        assert_eq!(s.info.sample_rank, n - 1 - i as i32);
+    }
+    let valid: Vec<_> = of_a.iter().filter(|s| s.info.valid_data).collect();
+    assert_eq!(valid.len(), 4);
+    // Values 1 and 2 belong to the first generation, 3 and 4 to the second.
+    assert_eq!(valid[0].info.generation_rank, 1);
+    assert_eq!(valid[1].info.generation_rank, 1);
+    assert_eq!(valid[2].info.generation_rank, 0);
+    assert_eq!(valid[3].info.generation_rank, 0);
+    assert_eq!(valid[0].info.absolute_generation_rank, 1);
+    assert_eq!(valid[3].info.absolute_generation_rank, 0);
+    let other: Vec<_> = samples
+        .iter()
+        .filter(|s| s.info.instance_handle != h)
+        .collect();
+    assert_eq!(other.len(), 1);
+    assert_eq!(other[0].info.sample_rank, 0);
+    assert_eq!(other[0].info.generation_rank, 0);
+    // take_instance computes them the same way.
+    let taken = r.take_instance(h).expect("take_instance");
+    assert_eq!(
+        taken.first().unwrap().info.sample_rank,
+        taken.len() as i32 - 1
+    );
+    assert_eq!(taken.last().unwrap().info.sample_rank, 0);
+}
+
+/// §2.2.2.4.2.11: the `handle` of a write is HANDLE_NIL (the instance comes
+/// from the key) or the handle register_instance returned for the key of the
+/// sample. The handle of another existing instance is PRECONDITION_NOT_MET,
+/// one that names no instance BAD_PARAMETER; §2.2.2.4.2.12 holds
+/// write_w_timestamp to the same.
+#[test]
+fn write_with_a_handle_follows_the_handle_rules() {
+    let (w, r) = mk_pair();
+    let a = KeyedRecord { id: 1, value: 1 };
+    let b = KeyedRecord { id: 2, value: 1 };
+    let ha = w.register_instance(&a).unwrap();
+    let hb = w.register_instance(&b).unwrap();
+    assert_ne!(ha, hb);
+
+    // HANDLE_NIL and the handle of the key.
+    w.write_with_handle(&a, HANDLE_NIL).unwrap();
+    w.write_with_handle(&a, ha).unwrap();
+    w.write_w_timestamp_with_handle(&b, hb, zerodds_dcps::Time::new(5, 0))
+        .unwrap();
+    pump(&w, &r);
+    // The default KEEP_LAST(1) keeps the last sample of each instance.
+    assert_eq!(r.take_with_info().unwrap().len(), 2);
+
+    // The handle of another existing instance.
+    assert!(matches!(
+        w.write_with_handle(&a, hb),
+        Err(DdsError::PreconditionNotMet { .. })
+    ));
+    assert!(matches!(
+        w.write_w_timestamp_with_handle(&b, ha, zerodds_dcps::Time::new(5, 0)),
+        Err(DdsError::PreconditionNotMet { .. })
+    ));
+    // A handle that names no instance.
+    let nobody = zerodds_dcps::InstanceHandle::from_raw(0xDEAD_BEEF_u64);
+    assert!(matches!(
+        w.write_with_handle(&a, nobody),
+        Err(DdsError::BadParameter { .. })
+    ));
+    // Nothing of the refused writes went out.
+    pump(&w, &r);
+    assert!(r.take_with_info().unwrap().is_empty());
 }

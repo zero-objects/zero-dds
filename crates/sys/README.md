@@ -1,36 +1,17 @@
 # `zerodds-sys`
 
-Stable C-ABI, basis for non-Rust bindings
+Marker crate without symbols. The C ABI of ZeroDDS is
+[`zerodds-c-api`](../zerodds-c-api/README.md) (`libzerodds`, header
+`include/zerodds.h`, spec `docs/specs/zerodds-c-api-1.0.md`).
 
-Part of [**ZeroDDS**](../../README.md). Safety classification: **TBD**.
+Part of [**ZeroDDS**](../../README.md).
 
-## Status
-
-This README is auto-generated from `Cargo.toml` metadata. For
-hand-written documentation see the rustdoc on the crate's public
-items, or the relevant station in the
-[Documentation Trail](../../documentation/README.md).
-
-## Usage
-
-Add to your `Cargo.toml`:
-
-```toml
-[dependencies]
-zerodds-sys = { path = "../path/to/sys" }
-# or, when published:
-# zerodds-sys = "0.x"
-```
+The crate holds the constant `REFERENCE_C_API_CRATE` and nothing else; it is
+`no_std` and `#![forbid(unsafe_code)]`. `crates/safe-crates-only` lists it
+among the crates without unsafe code.
 
 ## Tests
 
 ```bash
 cargo test -p zerodds-sys
 ```
-
-## See also
-
-* [`docs/architecture/02_architecture.md`](../../docs/architecture/02_architecture.md) —
-  layered crate architecture.
-* [`documentation/02-architecture/components.md`](../../documentation/02-architecture/components.md) —
-  per-crate map (English).

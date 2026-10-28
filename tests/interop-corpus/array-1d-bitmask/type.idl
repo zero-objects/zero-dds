@@ -1,0 +1,11 @@
+// one-dimensional array of `bitmask`
+@bit_bound(8)
+bitmask Flags {
+    @position(0) LOW,
+    @position(7) HIGH
+};
+
+@final struct Sample {
+    Flags items[3];
+    long tail;
+};

@@ -39,7 +39,7 @@ func (l *loopback) Receive(buf []byte) (int, bool, error) {
 }
 
 func sample(id uint32, label string) []byte {
-	w := zerodds.NewWriter(zerodds.Little)
+	w := zerodds.NewWriter(zerodds.Little, zerodds.Xcdr2)
 	w.PutU32(id)
 	w.PutString(label)
 	return w.Buf
@@ -48,15 +48,15 @@ func sample(id uint32, label string) []byte {
 func main() {
 	// --- synchronous ---
 	tr := &loopback{}
-	c := zerodds.NewClient(tr)
+	c := zerodds.NewClient(tr, zerodds.XrceObjectID(0x001, uint16(zerodds.ObjkDataWriter)))
 	_ = c.Write(sample(0x42, "sync-hello"))
 	if body, ok, _ := c.Receive(time.Second); ok {
-		fmt.Printf("sync: received id=0x%X\n", zerodds.NewReader(body, zerodds.Little).GetU32())
+		fmt.Printf("sync: received id=0x%X\n", zerodds.NewReader(body, zerodds.Little, zerodds.Xcdr2).GetU32())
 	}
 
 	// --- asynchronous (goroutine + channel) ---
 	tr2 := &loopback{}
-	w := zerodds.NewAsyncWriter(tr2)
+	w := zerodds.NewAsyncWriter(tr2, zerodds.XrceObjectID(0x001, uint16(zerodds.ObjkDataWriter)))
 	for i := 0; i < 3; i++ {
 		_ = w.Write(sample(0x100+uint32(i), "async"))
 	}
@@ -65,7 +65,7 @@ func main() {
 	for i := 0; i < 3; i++ {
 		select {
 		case body := <-r.Samples:
-			fmt.Printf("async: received id=0x%X\n", zerodds.NewReader(body, zerodds.Little).GetU32())
+			fmt.Printf("async: received id=0x%X\n", zerodds.NewReader(body, zerodds.Little, zerodds.Xcdr2).GetU32())
 		case <-time.After(2 * time.Second):
 			fmt.Println("async: timeout")
 			return

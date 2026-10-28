@@ -1,0 +1,3 @@
+module m { enum Colour { RED, GREEN, BLUE }; };
+union Choice switch (m::Colour) { case m::RED: long whole; case m::GREEN: case m::BLUE: double fraction; };
+@final struct Sample { Choice picked; long tail; };

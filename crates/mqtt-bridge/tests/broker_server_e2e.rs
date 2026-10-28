@@ -151,3 +151,42 @@ fn cross_version_v311_publishes_v5_subscribes() {
     sub.disconnect();
     server.shutdown();
 }
+
+/// §3.12 + §3.13 — a PINGREQ is answered with a PINGRESP, and both carry a
+/// fixed header only.
+///
+/// The client announces a 1 s Keep Alive in its CONNECT and then says
+/// nothing but PINGREQ for four half-periods, in both protocol versions.
+/// Each round asserts that the reply is a PINGRESP with an empty body and
+/// zero flags (§3.13.1/§3.13.2 via `MqttClient::ping`) and that it comes
+/// back well inside the announced period, which is what makes a PINGREQ a
+/// usable keep-alive at all. The publish afterwards shows the connection
+/// is still usable.
+///
+/// What this does not measure is the server side of §3.1.2.10 — this
+/// in-process broker does not drop a silent client; the 1.5x expiry rule
+/// is held by `keep_alive::tests::small_keep_alive_expires_after_1_5x`.
+#[test]
+fn pingreq_is_answered_with_a_bodyless_pingresp_within_the_keep_alive() {
+    let server = start();
+    let addr = server.local_addr().to_string();
+
+    for version in [V311, V5] {
+        let mut c = MqttClient::connect_with_keep_alive(&addr, "ping-1", version, 1)
+            .expect("connect with keep alive");
+        for round in 0..4 {
+            let rtt = c.ping(TO).expect("PINGRESP");
+            assert!(
+                rtt < Duration::from_secs(1),
+                "round {round}: PINGRESP took {rtt:?}, longer than the Keep Alive period"
+            );
+            std::thread::sleep(Duration::from_millis(500));
+        }
+        // The connection is still usable after 2 s of PINGREQ traffic only.
+        c.publish("keepalive/probe", b"alive", 1, false)
+            .expect("publish after the pings");
+        c.disconnect();
+    }
+
+    server.shutdown();
+}

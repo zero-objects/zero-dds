@@ -1,0 +1,13 @@
+request_reply.h, function_call.h and sample.h in this directory are the machine-readable
+files of the C++ language binding of the OMG specification "Remote Procedure Call over
+DDS" (DDS-RPC), version 1.0, as published in omg-dds-rpc-cxx.zip at
+https://www.omg.org/spec/DDS-RPC/20160215/ . They are shipped byte for byte as published
+(the line ends are CRLF); omg-dds-rpc-cxx.sha256 holds the SHA-256 of each file.
+
+Copyright (c) Object Management Group. The files are the normative language binding of
+the specification and are reproduced here under the OMG's terms for specifications
+(https://www.omg.org/legal/). They are not covered by the license of ZeroDDS.
+
+The other files in this directory (vendor_dependent.h, request_reply.hpp,
+function_call.hpp and the two files in normative/) are ZeroDDS's and only forward to
+the files of dds/rpc/, which hold the vendor-dependent part the OMG files name.

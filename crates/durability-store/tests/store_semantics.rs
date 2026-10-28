@@ -9,7 +9,7 @@
 use std::time::{Duration, SystemTime};
 
 use zerodds_durability_store::{
-    Contract, DurabilitySample, DurabilityStore, InMemoryStore, Selector, TieredStore,
+    Contract, DurabilitySample, DurabilityStore, InMemoryStore, Selector, TieredStore, TopicMeta,
 };
 use zerodds_qos::policies::history::HistoryKind;
 use zerodds_qos::policies::resource_limits::LENGTH_UNLIMITED;
@@ -212,6 +212,68 @@ fn tiered_hot_budget_bounds_cache_but_not_contract() {
     assert_eq!(all.len(), 100);
     assert_eq!(all.first().unwrap().sequence, 0);
     assert_eq!(all.last().unwrap().sequence, 99);
+}
+
+#[test]
+fn topic_meta_round_trips_and_is_none_before_set() {
+    let store = InMemoryStore::default();
+    assert_eq!(store.topic_meta("T").unwrap(), None);
+    let meta = TopicMeta {
+        type_name: "demo::Command".to_string(),
+        keyed: true,
+        contract: contract(HistoryKind::KeepLast, 5),
+    };
+    store.set_topic_meta("T", meta.clone()).unwrap();
+    assert_eq!(store.topic_meta("T").unwrap(), Some(meta));
+    // A different topic stays unregistered.
+    assert_eq!(store.topic_meta("Other").unwrap(), None);
+}
+
+#[test]
+fn topic_meta_contract_governs_store_over_a_plain_set_contract() {
+    // set_topic_meta's contract must be what `store()`/`cleanup()` actually
+    // enforce — not a stale value from an earlier plain `set_contract`.
+    let store = InMemoryStore::default();
+    store
+        .set_contract("T", contract(HistoryKind::KeepLast, 100))
+        .unwrap();
+    store
+        .set_topic_meta(
+            "T",
+            TopicMeta {
+                type_name: "T".to_string(),
+                keyed: false,
+                contract: contract(HistoryKind::KeepLast, 2),
+            },
+        )
+        .unwrap();
+    for seq in 0..5 {
+        store.store(sample("T", 1, seq, 8)).unwrap();
+    }
+    let seqs: Vec<u64> = store
+        .replay_for_topic("T")
+        .unwrap()
+        .iter()
+        .map(|s| s.sequence)
+        .collect();
+    assert_eq!(
+        seqs,
+        vec![3, 4],
+        "topic_meta's depth=2 must govern, not depth=100"
+    );
+}
+
+#[test]
+fn tiered_topic_meta_delegates_to_cold() {
+    let cold = InMemoryStore::default();
+    let tiered = TieredStore::new(cold, 1024);
+    let meta = TopicMeta {
+        type_name: "T".to_string(),
+        keyed: false,
+        contract: Contract::keep_all(),
+    };
+    tiered.set_topic_meta("T", meta.clone()).unwrap();
+    assert_eq!(tiered.topic_meta("T").unwrap(), Some(meta));
 }
 
 #[test]

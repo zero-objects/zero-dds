@@ -32,8 +32,9 @@ use alloc::vec::Vec;
 
 use crate::type_identifier::TypeIdentifier;
 use crate::type_object::common::{
-    AppliedBuiltinMemberAnnotations, AppliedBuiltinTypeAnnotations, CommonStructMember,
-    CompleteMemberDetail, CompleteTypeDetail, NameHash, OptionalAppliedAnnotationSeq,
+    AnnotationParameterValue, AppliedBuiltinMemberAnnotations, AppliedBuiltinTypeAnnotations,
+    CommonStructMember, CompleteMemberDetail, CompleteTypeDetail, NameHash,
+    OptionalAppliedAnnotationSeq,
 };
 use crate::type_object::complete::{
     CompleteAliasBody, CompleteAliasHeader, CompleteAliasType, CompleteEnumeratedHeader,
@@ -41,7 +42,8 @@ use crate::type_object::complete::{
     CompleteStructType,
 };
 use crate::type_object::flags::{
-    AliasMemberFlag, AliasTypeFlag, EnumLiteralFlag, EnumTypeFlag, StructMemberFlag, StructTypeFlag,
+    AliasMemberFlag, AliasTypeFlag, EnumLiteralFlag, EnumTypeFlag, StructMemberFlag,
+    StructTypeFlag, minimal_member_flags, minimal_type_flags, minimal_union_member_flags,
 };
 use crate::type_object::minimal::CommonAliasBody;
 use crate::type_object::minimal::{
@@ -58,75 +60,57 @@ fn strip_leading_scope(name: &str) -> String {
     name.strip_prefix("::").unwrap_or(name).into()
 }
 
-/// Extensibility kind (§7.2.2.4). Simpler representation than the
-/// flag bits: exactly one of three values.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Extensibility {
-    /// `@final` — the type cannot be extended.
-    Final,
-    /// `@appendable` — new fields at the end (default).
-    Appendable,
-    /// `@mutable` — each field with an explicit @id; arbitrary evolution.
-    Mutable,
-}
-
-impl Default for Extensibility {
-    fn default() -> Self {
-        Self::Appendable
-    }
-}
-
-impl Extensibility {
-    const fn to_flag_bits(self) -> u16 {
-        match self {
-            Self::Final => StructTypeFlag::IS_FINAL,
-            Self::Appendable => StructTypeFlag::IS_APPENDABLE,
-            Self::Mutable => StructTypeFlag::IS_MUTABLE,
-        }
-    }
-}
-
-/// TryConstruct behaviour for a member (XTypes 1.3 §7.2.2.4.4.4.4 /
-/// `TryConstructKind`). Controls how a reader treats a member it cannot
-/// construct correctly (a string longer than its bound, a sequence over its
-/// max, an enum value outside `@bit_bound`, an unknown union discriminator).
+/// Extensibility kind (§7.2.2.4), re-exported from the model.
 ///
-/// Encoded in the two member-flag bits `TRY_CONSTRUCT1`/`TRY_CONSTRUCT2`
-/// (§7.3.1.2.1.1, `bits[0..2]`): DISCARD = `01`, USE_DEFAULT = `10`,
-/// TRIM = `11`. `00` is undefined and is read back as DISCARD.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TryConstruct {
-    /// `@try_construct(DISCARD)` — drop the sample (default, §7.2.2.4.4.4.4).
-    Discard,
-    /// `@try_construct(USE_DEFAULT)` — substitute the member default, keep the
-    /// sample.
-    UseDefault,
-    /// `@try_construct(TRIM)` — truncate strings/sequences to the bound, keep
-    /// the sample.
-    Trim,
-}
+/// Not declared again here. The frontend already decides what a
+/// declaration's extensibility is — `@final` written, `@appendable`
+/// defaulted, an `@autoid` aggregate inheriting one — and a second enum
+/// with the same three variants would be a second answer to a question
+/// that must have one. `zerodds_ast::Extensibility` is that answer and
+/// this is a name for it.
+pub use zerodds_ast::Extensibility;
 
-impl Default for TryConstruct {
-    fn default() -> Self {
-        Self::Discard
+/// The `StructTypeFlag` bit an extensibility takes on the wire.
+///
+/// The mapping and not the enum is what this crate owns: which of
+/// `IS_FINAL`, `IS_APPENDABLE` and `IS_MUTABLE` a `TypeObject` carries
+/// is a `TypeObject` question, and the model does not have a wire.
+const fn extensibility_flag_bits(extensibility: Extensibility) -> u16 {
+    match extensibility {
+        Extensibility::Final => StructTypeFlag::IS_FINAL,
+        Extensibility::Appendable => StructTypeFlag::IS_APPENDABLE,
+        Extensibility::Mutable => StructTypeFlag::IS_MUTABLE,
     }
 }
 
-impl TryConstruct {
-    /// The two-bit `TRY_CONSTRUCT1`/`TRY_CONSTRUCT2` pattern (§7.3.1.2.1.1):
-    /// DISCARD = `TRY_CONSTRUCT1` (`01`), USE_DEFAULT = `TRY_CONSTRUCT2` (`10`),
-    /// TRIM = both (`11`). Matches the vendors' TypeObject member_flags
-    /// (byte-verified: Cyclone / FastDDS set `TRY_CONSTRUCT1` for DISCARD).
-    const fn to_member_flag_bits(self) -> u16 {
-        match self {
-            Self::Discard => StructMemberFlag::TRY_CONSTRUCT1,
-            Self::UseDefault => StructMemberFlag::TRY_CONSTRUCT2,
-            Self::Trim => StructMemberFlag::TRY_CONSTRUCT1 | StructMemberFlag::TRY_CONSTRUCT2,
-        }
+/// What a declaration with no extensibility annotation is taken to be.
+///
+/// §7.3.1.2.1.8's value, which is `@appendable`, and the same one
+/// `zerodds_ast_layout::Dialect::Specification` takes. A vendor that
+/// reads the absent annotation as `@final` — Cyclone does, and says so
+/// in its own front end's output — reaches a different `TypeObject`, and
+/// that difference is what GitHub issues #41 and #42 report.
+pub const DEFAULT_EXTENSIBILITY: Extensibility = Extensibility::Appendable;
+
+/// TryConstruct behaviour for a member (XTypes 1.3 §7.2.2.7 and
+/// §7.3.1.2.1.12), re-exported from the model for the reason
+/// [`Extensibility`] is.
+pub use zerodds_ast::TryConstruct;
+
+/// The two-bit `TRY_CONSTRUCT1`/`TRY_CONSTRUCT2` pattern (§7.3.1.2.1.1):
+/// DISCARD = `TRY_CONSTRUCT1` (`01`), USE_DEFAULT = `TRY_CONSTRUCT2`
+/// (`10`), TRIM = both (`11`). Matches the vendors' TypeObject
+/// `member_flags` — byte-verified: Cyclone and Fast DDS set
+/// `TRY_CONSTRUCT1` for DISCARD.
+const fn try_construct_flag_bits(behaviour: TryConstruct) -> u16 {
+    match behaviour {
+        TryConstruct::Discard => StructMemberFlag::TRY_CONSTRUCT1,
+        TryConstruct::UseDefault => StructMemberFlag::TRY_CONSTRUCT2,
+        TryConstruct::Trim => StructMemberFlag::TRY_CONSTRUCT1 | StructMemberFlag::TRY_CONSTRUCT2,
     }
 }
 
-/// Einstiegspunkt.
+/// Where a caller starts.
 pub struct TypeObjectBuilder;
 
 impl TypeObjectBuilder {
@@ -136,7 +120,7 @@ impl TypeObjectBuilder {
     pub fn struct_type(name: impl Into<String>) -> StructBuilder {
         StructBuilder {
             name: name.into(),
-            extensibility: Extensibility::default(),
+            extensibility: DEFAULT_EXTENSIBILITY,
             nested: false,
             autoid_hash: false,
             base_type: TypeIdentifier::None,
@@ -150,6 +134,7 @@ impl TypeObjectBuilder {
         EnumBuilder {
             name: name.into(),
             bit_bound: 32,
+            extensibility: Extensibility::Appendable,
             ignore_literal_names: false,
             literals: Vec::new(),
         }
@@ -187,8 +172,8 @@ pub struct StructMemberSpec {
     flags: u16,
     try_construct: TryConstruct,
     unit: Option<String>,
-    min: Option<Vec<u8>>,
-    max: Option<Vec<u8>>,
+    min: Option<AnnotationParameterValue>,
+    max: Option<AnnotationParameterValue>,
     hash_id: Option<String>,
     default_value: Option<String>,
 }
@@ -199,10 +184,12 @@ pub struct StructMemberBuilder<'a> {
 }
 
 impl StructMemberBuilder<'_> {
-    /// Marks a member as `@key`.
+    /// Marks a member as `@key`. A key member always has its "must
+    /// understand" attribute set to true (DDS-XTypes 1.3 §7.2.2.4.4.4.8), as
+    /// the lowering of IDL writes it.
     #[must_use]
     pub fn key(self) -> Self {
-        self.spec.flags |= StructMemberFlag::IS_KEY;
+        self.spec.flags |= StructMemberFlag::IS_KEY | StructMemberFlag::IS_MUST_UNDERSTAND;
         self
     }
 
@@ -234,23 +221,23 @@ impl StructMemberBuilder<'_> {
         self
     }
 
-    /// `@unit("...")` — nur in Complete sichtbar.
+    /// `@unit("...")` — visible only in Complete.
     #[must_use]
     pub fn unit(self, unit: impl Into<String>) -> Self {
         self.spec.unit = Some(unit.into());
         self
     }
 
-    /// `@min(val)` — opaque bytes.
+    /// `@min(val)` — visible only in Complete.
     #[must_use]
-    pub fn min_bytes(self, min: Vec<u8>) -> Self {
+    pub fn min(self, min: AnnotationParameterValue) -> Self {
         self.spec.min = Some(min);
         self
     }
 
-    /// `@max(val)` — opaque bytes.
+    /// `@max(val)` — visible only in Complete.
     #[must_use]
-    pub fn max_bytes(self, max: Vec<u8>) -> Self {
+    pub fn max(self, max: AnnotationParameterValue) -> Self {
         self.spec.max = Some(max);
         self
     }
@@ -262,9 +249,9 @@ impl StructMemberBuilder<'_> {
         self
     }
 
-    /// `@default(val)` — XTypes 1.3 §7.2.4.4.4.4.9. The value as a string
-    /// (encoder-converted on wire encode). Carried in the complete
-    /// TypeObject via `AppliedBuiltinMemberAnnotations.default_value`.
+    /// `@default(val)`, as the text of its literal. Carried in the complete
+    /// TypeObject in memory via `AppliedBuiltinMemberAnnotations.default_value`;
+    /// not written on the wire, which DDS-XTypes 1.3 gives no slot for.
     #[must_use]
     pub fn set_member_default(self, value: impl Into<String>) -> Self {
         self.spec.default_value = Some(value.into());
@@ -329,7 +316,7 @@ impl StructBuilder {
             // (XTypes 1.3 §7.2.2.4.4.4.4 / §7.3.1.2.1.1 bits[0..2]=01), matching
             // the vendors' TypeObject member_flags.
             flags: 0,
-            try_construct: TryConstruct::default(),
+            try_construct: TryConstruct::ABSENT,
             unit: None,
             min: None,
             max: None,
@@ -342,7 +329,7 @@ impl StructBuilder {
     }
 
     fn struct_flags(&self) -> StructTypeFlag {
-        let mut bits = self.extensibility.to_flag_bits();
+        let mut bits = extensibility_flag_bits(self.extensibility);
         if self.nested {
             bits |= StructTypeFlag::IS_NESTED;
         }
@@ -357,14 +344,19 @@ impl StructBuilder {
     /// - `@hashid("hint")` — per-member hash ID from the hint (or, for a bare
     ///   `@hashid`, the member name), `NameHash::member_id_from_name`
     /// - struct-level `@autoid(HASH)` — hash ID from the member name
-    /// - otherwise sequential, 0-based
+    /// - otherwise the SEQUENTIAL fallback: the PREVIOUS member's resolved id + 1
     fn resolve_member_ids(&self) -> Vec<u32> {
         let mut ids = Vec::with_capacity(self.members.len());
-        // XTypes 1.3 §7.2.2.4.9: sequential `@autoid` assigns the FIRST member
-        // id 0, the next 1, … (NOT 1-based). This matches the vendors' TypeObject
-        // member ids AND ZeroDDS's own data-wire codegen (idl-rust struct_emit
-        // uses the 0-based positional index for @mutable EMHEADER ids) — the old
-        // 1-based start made the TypeObject inconsistent with the data wire.
+        // XTypes 1.3 §7.3.1.2.1.1 / IDL 4.2 §7.4.15.4.2: the SEQUENTIAL fallback
+        // is `previous member's RESOLVED id + 1` (the first member is 0). An
+        // explicit `@id(n)` / `@hashid` / `@autoid(HASH)` shifts the run — the
+        // next un-annotated member follows THAT id, e.g. `long a; @id(10) b;
+        // octet c;` → a=0, b=10, c=11. Counting only un-annotated members (the
+        // old behaviour) gave c=1, diverging from the data wire (idl-rust
+        // `serialized_wire_ids`, idl-cpp `resolved_member_ids`, idl-java) and
+        // from Cyclone/Fast-DDS. This is the SAME rule as
+        // `zerodds_idl::semantics::member_id::resolve_member_id_sequence`
+        // (that crate depends on this one, so the rule is inlined, not shared).
         let mut next_seq: u32 = 0;
         for spec in &self.members {
             let id = if let Some(explicit) = spec.explicit_id {
@@ -378,10 +370,10 @@ impl StructBuilder {
                 // `@autoid(HASH)` (XTypes §7.3.1.2.1.1): hash the member name.
                 NameHash::member_id_from_name(&spec.name)
             } else {
-                let v = next_seq;
-                next_seq += 1;
-                v
+                next_seq
             };
+            // The next SEQUENTIAL member follows THIS member's resolved id.
+            next_seq = id.wrapping_add(1);
             ids.push(id);
         }
         ids
@@ -392,7 +384,9 @@ impl StructBuilder {
             member_id: id,
             // Combine the accumulated non-TryConstruct bits with the two
             // TryConstruct bits (§7.3.1.2.1.1).
-            member_flags: StructMemberFlag(spec.flags | spec.try_construct.to_member_flag_bits()),
+            member_flags: StructMemberFlag(
+                spec.flags | try_construct_flag_bits(spec.try_construct),
+            ),
             member_type_id: spec.type_id.clone(),
         }
     }
@@ -419,13 +413,17 @@ impl StructBuilder {
             .members
             .iter()
             .zip(ids.iter())
-            .map(|(spec, id)| MinimalStructMember {
-                common: Self::member_common(spec, *id),
-                detail: NameHash::from_name(&spec.name),
+            .map(|(spec, id)| {
+                let mut common = Self::member_common(spec, *id);
+                common.member_flags = StructMemberFlag(minimal_member_flags(common.member_flags.0));
+                MinimalStructMember {
+                    common,
+                    detail: NameHash::from_name(&spec.name),
+                }
             })
             .collect();
         MinimalStructType {
-            struct_flags: self.struct_flags(),
+            struct_flags: StructTypeFlag(minimal_type_flags(self.struct_flags().0)),
             header: MinimalStructHeader {
                 base_type: self.base_type.clone(),
             },
@@ -469,6 +467,7 @@ impl StructBuilder {
 pub struct EnumBuilder {
     name: String,
     bit_bound: u16,
+    extensibility: Extensibility,
     ignore_literal_names: bool,
     literals: Vec<EnumLiteralSpec>,
 }
@@ -488,7 +487,7 @@ impl EnumBuilder {
     }
 
     /// Sets `EnumTypeFlag::IGNORE_LITERAL_NAMES` (`@ignore_literal_names`,
-    /// XTypes 1.3 §7.2.4.4.7). Applies to both the minimal and complete
+    /// XTypes 1.3 §7.3.1.2.1.11). Applies to both the minimal and complete
     /// TypeObject.
     #[must_use]
     pub fn ignore_literal_names(mut self, on: bool) -> Self {
@@ -496,14 +495,43 @@ impl EnumBuilder {
         self
     }
 
-    /// The enum-type flags for this builder (currently only the
-    /// `IGNORE_LITERAL_NAMES` bit).
+    /// Sets the extensibility (default `Appendable`, the IDL default).
+    /// `Mutable` is not defined for an enumeration; it is written as
+    /// given so a caller sees its own choice on the wire.
+    #[must_use]
+    pub fn extensibility(mut self, ext: Extensibility) -> Self {
+        self.extensibility = ext;
+        self
+    }
+
+    /// The enum-type flags: the extensibility position of `TypeFlag`
+    /// (as RTI, OpenDDS and Cyclone write it) plus the
+    /// `IGNORE_LITERAL_NAMES` bit.
     fn enum_flags(&self) -> EnumTypeFlag {
+        let mut bits = match self.extensibility {
+            Extensibility::Final => EnumTypeFlag::IS_FINAL,
+            Extensibility::Appendable => EnumTypeFlag::IS_APPENDABLE,
+            Extensibility::Mutable => StructTypeFlag::IS_MUTABLE,
+        };
         if self.ignore_literal_names {
-            EnumTypeFlag(EnumTypeFlag::IGNORE_LITERAL_NAMES)
-        } else {
-            EnumTypeFlag::default()
+            bits |= EnumTypeFlag::IGNORE_LITERAL_NAMES;
         }
+        EnumTypeFlag(bits)
+    }
+
+    /// The literal flags in declaration order: `IS_DEFAULT_LITERAL` on
+    /// the literal added with `default_literal`, else on the first
+    /// literal (§7.2.2.4.1.1).
+    fn literal_flags(&self) -> impl Iterator<Item = EnumLiteralFlag> + '_ {
+        let annotated = self.literals.iter().any(|l| l.is_default);
+        self.literals.iter().enumerate().map(move |(index, l)| {
+            let is_default = if annotated { l.is_default } else { index == 0 };
+            EnumLiteralFlag(if is_default {
+                EnumLiteralFlag::IS_DEFAULT_LITERAL
+            } else {
+                0
+            })
+        })
     }
 
     /// Adds a literal.
@@ -538,21 +566,23 @@ impl EnumBuilder {
                     bit_bound: self.bit_bound,
                 },
             },
-            literal_seq: self
-                .literals
-                .iter()
-                .map(|l| MinimalEnumeratedLiteral {
-                    common: CommonEnumeratedLiteral {
-                        value: l.value,
-                        flags: EnumLiteralFlag(if l.is_default {
-                            EnumLiteralFlag::IS_DEFAULT_LITERAL
-                        } else {
-                            0
-                        }),
-                    },
-                    detail: NameHash::from_name(&l.name),
-                })
-                .collect(),
+            literal_seq: {
+                let mut sequence: Vec<MinimalEnumeratedLiteral> = self
+                    .literals
+                    .iter()
+                    .zip(self.literal_flags())
+                    .map(|(l, flags)| MinimalEnumeratedLiteral {
+                        common: CommonEnumeratedLiteral {
+                            value: l.value,
+                            flags,
+                        },
+                        detail: NameHash::from_name(&l.name),
+                    })
+                    .collect();
+                // §7.3.4.5: in increasing values of their numeric value.
+                sequence.sort_by_key(|literal| literal.common.value);
+                sequence
+            },
         }
     }
 
@@ -571,25 +601,27 @@ impl EnumBuilder {
                     type_name: strip_leading_scope(&self.name),
                 },
             },
-            literal_seq: self
-                .literals
-                .iter()
-                .map(|l| CompleteEnumeratedLiteral {
-                    common: CommonEnumeratedLiteral {
-                        value: l.value,
-                        flags: EnumLiteralFlag(if l.is_default {
-                            EnumLiteralFlag::IS_DEFAULT_LITERAL
-                        } else {
-                            0
-                        }),
-                    },
-                    detail: CompleteMemberDetail {
-                        name: l.name.clone(),
-                        ann_builtin: AppliedBuiltinMemberAnnotations::default(),
-                        ann_custom: OptionalAppliedAnnotationSeq::default(),
-                    },
-                })
-                .collect(),
+            literal_seq: {
+                let mut sequence: Vec<CompleteEnumeratedLiteral> = self
+                    .literals
+                    .iter()
+                    .zip(self.literal_flags())
+                    .map(|(l, flags)| CompleteEnumeratedLiteral {
+                        common: CommonEnumeratedLiteral {
+                            value: l.value,
+                            flags,
+                        },
+                        detail: CompleteMemberDetail {
+                            name: l.name.clone(),
+                            ann_builtin: AppliedBuiltinMemberAnnotations::default(),
+                            ann_custom: OptionalAppliedAnnotationSeq::default(),
+                        },
+                    })
+                    .collect();
+                // §7.3.4.5: in increasing values of their numeric value.
+                sequence.sort_by_key(|literal| literal.common.value);
+                sequence
+            },
         }
     }
 }
@@ -699,11 +731,7 @@ impl UnionBuilder {
         use crate::type_object::flags::UnionTypeFlag;
         // UnionTypeFlag analogously uses the struct bits for
         // extensibility (§7.3.4.5) — reuse the bit positions.
-        UnionTypeFlag(match self.extensibility {
-            Extensibility::Final => StructTypeFlag::IS_FINAL,
-            Extensibility::Appendable => StructTypeFlag::IS_APPENDABLE,
-            Extensibility::Mutable => StructTypeFlag::IS_MUTABLE,
-        })
+        UnionTypeFlag(extensibility_flag_bits(self.extensibility))
     }
 
     fn resolve_case_ids(&self) -> Vec<u32> {
@@ -738,14 +766,14 @@ impl UnionBuilder {
             .map(|(c, id)| MinimalUnionMember {
                 common: CommonUnionMember {
                     member_id: *id,
-                    member_flags: UnionMemberFlag(
+                    member_flags: UnionMemberFlag(minimal_union_member_flags(
                         UnionMemberFlag::TRY_CONSTRUCT1
                             | if c.is_default {
                                 UnionMemberFlag::IS_DEFAULT
                             } else {
                                 0
                             },
-                    ),
+                    )),
                     type_id: c.type_id.clone(),
                     label_seq: c.labels.clone(),
                 },
@@ -753,10 +781,14 @@ impl UnionBuilder {
             })
             .collect();
         MinimalUnionType {
-            union_flags: self.union_flags(),
+            union_flags: crate::type_object::flags::UnionTypeFlag(minimal_type_flags(
+                self.union_flags().0,
+            )),
             discriminator: MinimalDiscriminatorMember {
                 common: CommonDiscriminatorMember {
-                    member_flags: UnionDiscriminatorFlag::discriminator_default(),
+                    member_flags: UnionDiscriminatorFlag(minimal_member_flags(
+                        UnionDiscriminatorFlag::discriminator_default().0,
+                    )),
                     type_id: self.discriminator_type.clone(),
                 },
             },
@@ -976,17 +1008,22 @@ impl BitmaskBuilder {
         MinimalBitmaskType {
             bitmask_flags: BitmaskTypeFlag::default(),
             bit_bound: self.bit_bound,
-            flag_seq: self
-                .flags
-                .iter()
-                .map(|(n, p)| MinimalBitflag {
-                    common: CommonBitflag {
-                        position: *p,
-                        flags: BitflagFlag::default(),
-                    },
-                    detail: NameHash::from_name(n),
-                })
-                .collect(),
+            flag_seq: {
+                let mut sequence: Vec<MinimalBitflag> = self
+                    .flags
+                    .iter()
+                    .map(|(n, p)| MinimalBitflag {
+                        common: CommonBitflag {
+                            position: *p,
+                            flags: BitflagFlag::default(),
+                        },
+                        detail: NameHash::from_name(n),
+                    })
+                    .collect();
+                // §7.3.4.5: in increasing values of their position.
+                sequence.sort_by_key(|flag| flag.common.position);
+                sequence
+            },
         }
     }
 
@@ -1007,25 +1044,30 @@ impl BitmaskBuilder {
                 ann_custom: OptionalAppliedAnnotationSeq::default(),
                 type_name: strip_leading_scope(&self.name),
             },
-            flag_seq: self
-                .flags
-                .iter()
-                .map(|(n, p)| CompleteBitflag {
-                    common: crate::type_object::minimal::CommonBitflag {
-                        position: *p,
-                        flags: BitflagFlag::default(),
-                    },
-                    detail: CompleteMemberDetail {
-                        name: n.clone(),
-                        ann_builtin: AppliedBuiltinMemberAnnotations::default(),
-                        ann_custom: OptionalAppliedAnnotationSeq::default(),
-                    },
-                })
-                .collect(),
+            flag_seq: {
+                let mut sequence: Vec<CompleteBitflag> = self
+                    .flags
+                    .iter()
+                    .map(|(n, p)| CompleteBitflag {
+                        common: crate::type_object::minimal::CommonBitflag {
+                            position: *p,
+                            flags: BitflagFlag::default(),
+                        },
+                        detail: CompleteMemberDetail {
+                            name: n.clone(),
+                            ann_builtin: AppliedBuiltinMemberAnnotations::default(),
+                            ann_custom: OptionalAppliedAnnotationSeq::default(),
+                        },
+                    })
+                    .collect();
+                // §7.3.4.5: in increasing values of their position.
+                sequence.sort_by_key(|flag| flag.common.position);
+                sequence
+            },
         }
     }
 
-    /// Getter — mostly used via [`build_complete`].
+    /// Getter — mostly used via `build_complete`.
     #[must_use]
     pub fn name(&self) -> &str {
         &self.name
@@ -1123,7 +1165,7 @@ impl BitsetBuilder {
         }
     }
 
-    /// Getter — mostly used via [`build_complete`].
+    /// Getter — mostly used via `build_complete`.
     #[must_use]
     pub fn name(&self) -> &str {
         &self.name
@@ -1141,7 +1183,7 @@ impl TypeObjectBuilder {
     pub fn union_type(name: impl Into<String>, discriminator_type: TypeIdentifier) -> UnionBuilder {
         UnionBuilder {
             name: name.into(),
-            extensibility: Extensibility::default(),
+            extensibility: DEFAULT_EXTENSIBILITY,
             discriminator_type,
             cases: Vec::new(),
         }
@@ -1330,9 +1372,9 @@ mod tests {
 
     #[test]
     fn member_with_explicit_default_used_when_field_missing() {
-        // §7.2.4.4.4.4.9 — `set_member_default` sets
+        // `set_member_default` sets
         // `AppliedBuiltinMemberAnnotations.default_value`. The test ensures
-        // that the value passes through the complete pipeline.
+        // that the value reaches the complete TypeObject the builder returns.
         let st = TypeObjectBuilder::struct_type("::S")
             .member("a", TypeIdentifier::Primitive(PrimitiveKind::Int32), |m| {
                 m.set_member_default("42")
@@ -1364,23 +1406,30 @@ mod tests {
     }
 
     #[test]
-    fn default_value_roundtrips_via_encode_decode() {
+    fn default_value_stays_off_the_wire() {
+        // DDS-XTypes 1.3 has no slot for `@default` in
+        // `AppliedBuiltinMemberAnnotations`; the four members it has
+        // round-trip, the default does not travel.
         use crate::type_object::common::AppliedBuiltinMemberAnnotations;
-        use alloc::vec;
-        use zerodds_cdr::{BufferReader, BufferWriter, Endianness};
         let ann = AppliedBuiltinMemberAnnotations {
             unit: Some("meters".into()),
-            min: Some(vec![0]),
-            max: Some(vec![100]),
+            min: Some(AnnotationParameterValue::Int32(0)),
+            max: Some(AnnotationParameterValue::Int32(100)),
             hash_id: None,
             default_value: Some("17".into()),
         };
-        let mut w = BufferWriter::new(Endianness::Little);
+        let mut w = crate::framing::xcdr2_writer();
         ann.encode_into(&mut w).unwrap();
-        let bytes = w.into_bytes();
-        let mut r = BufferReader::new(&bytes, Endianness::Little);
+        let bytes = w.finish();
+        let mut r = crate::framing::xcdr2_reader(&bytes);
         let decoded = AppliedBuiltinMemberAnnotations::decode_from(&mut r).unwrap();
-        assert_eq!(decoded, ann);
+        assert_eq!(
+            decoded,
+            AppliedBuiltinMemberAnnotations {
+                default_value: None,
+                ..ann
+            }
+        );
     }
 
     #[test]
@@ -1425,7 +1474,9 @@ mod tests {
                 |m| m,
             )
             .build_minimal();
-        assert!(st.struct_flags.has(StructTypeFlag::IS_AUTOID_HASH));
+        // TypeFlagMinimalMask (Annex B) leaves IS_AUTOID_HASH out of the
+        // minimal form; the complete one carries it.
+        assert!(!st.struct_flags.has(StructTypeFlag::IS_AUTOID_HASH));
         assert_ne!(
             st.member_seq[0].common.member_id,
             st.member_seq[1].common.member_id
@@ -1501,6 +1552,43 @@ mod tests {
         assert!(e.literal_seq[0].common.flags.0 & EnumLiteralFlag::IS_DEFAULT_LITERAL != 0);
     }
 
+    /// RTI Connext 7.7.0 (`--print-typeid`), OpenDDS
+    /// `typeobject_generator.cpp` and Cyclone `descriptor_type_meta.c`
+    /// agree on the two bits: the `TypeFlag` extensibility position in
+    /// `enum_flags`, and `IS_DEFAULT` (bit 6) on the first literal of an
+    /// unannotated enumeration. Fast DDS writes neither. The complete
+    /// hash of `::Test::E1` from the dds-xtypes suite as RTI prints it:
+    /// `2144825d4dd81e0d3bf8fbbaf2a9`.
+    #[test]
+    fn an_unannotated_enum_carries_the_bits_rti_recomputes() {
+        let e = TypeObjectBuilder::enum_type("::Test::E1")
+            .literal("VAL0", 0)
+            .literal("VAL1", 1)
+            .literal("VAL2", 2)
+            .build_complete();
+        assert_eq!(e.enum_flags, EnumTypeFlag(EnumTypeFlag::IS_APPENDABLE));
+        assert_eq!(e.literal_seq[0].common.flags.0, 1 << 6);
+        assert_eq!(e.literal_seq[1].common.flags.0, 0);
+        let hash = crate::compute_hash(&crate::TypeObject::Complete(
+            crate::type_object::complete::CompleteTypeObject::Enumerated(e),
+        ))
+        .unwrap();
+        assert_eq!(
+            hash.0.to_vec(),
+            [
+                0x21, 0x44, 0x82, 0x5d, 0x4d, 0xd8, 0x1e, 0x0d, 0x3b, 0xf8, 0xfb, 0xba, 0xf2, 0xa9
+            ]
+        );
+        let f = TypeObjectBuilder::enum_type("::Test::E3")
+            .extensibility(Extensibility::Final)
+            .literal("B0", 0)
+            .default_literal("B1", 1)
+            .build_minimal();
+        assert_eq!(f.enum_flags, EnumTypeFlag(EnumTypeFlag::IS_FINAL));
+        assert_eq!(f.literal_seq[0].common.flags.0, 0);
+        assert_eq!(f.literal_seq[1].common.flags.0, 1 << 6);
+    }
+
     #[test]
     fn alias_builder_minimal_and_complete() {
         let a_min =
@@ -1536,7 +1624,7 @@ mod tests {
         .build_minimal();
         assert_eq!(u.member_seq.len(), 2);
         assert_eq!(u.member_seq[0].common.label_seq, alloc::vec![1, 2]);
-        // Default-Case hat IS_DEFAULT-Bit.
+        // Default case has the IS_DEFAULT bit.
         assert!(
             u.member_seq[1].common.member_flags.0
                 & crate::type_object::flags::UnionMemberFlag::IS_DEFAULT

@@ -1,0 +1,177 @@
+# /usr/share/zerodds/configs/zerodds.yaml.example
+# The runtime configuration every ZeroDDS program reads: the DDS participant
+# of an application, of a CLI, of a bridge daemon and of rmw_zerodds_cpp.
+# Copy it to /etc/zerodds/zerodds.yaml; drop-ins go to /etc/zerodds/zerodds.d/
+# and are read in name order after it. Man page: zerodds.yaml(5).
+#
+# Every value below is the built-in default. Lower layers: the defaults, then
+# the ZERODDS_* variable named beside each key. Higher layer: --set path=value.
+# `<program> --check-config` prints every value with its origin and refuses
+# unknown keys and invalid values.
+
+runtime:
+  tick_period_ms: 5                  # ZERODDS_TICK_PERIOD_MS; > 0
+  scheduler_tick: true               # ZERODDS_SCHEDULER_TICK; false = fixed tick loop
+
+transport:
+  max_message_size: 14720            # ZERODDS_MAX_MESSAGE_SIZE; bytes, >= the MTU
+  shm_max_datagram: 65536            # ZERODDS_SHM_MAX_DATAGRAM; same-host SHM transport
+  user_multicast: true               # ZERODDS_USER_MULTICAST; false: do not join the SPDP group on the user-traffic
+                                     # multicast port (PB + DG * domainId + d2) and announce it
+  # same_host_shm: true              # ZERODDS_SAME_HOST_SHM; default on with the same-host-shm
+  #                                  # feature, off without it; false = same-host pairs over UDP
+  recv_batch: 32                     # ZERODDS_RECV_BATCH; 1 = one recv() per datagram
+  batch_at_zero_budget: false        # ZERODDS_BATCH_AT_ZERO_BUDGET
+  # interface: 192.0.2.10            # ZERODDS_INTERFACE; unset = route probe
+  # user_transport: UDPv4            # ZERODDS_USER_TRANSPORT; UDPv4 (unset) | UDPv6 | TCPv4 |
+                                     # TCPv6; SHM | UDS | TSN with their features
+  # user_transports: [SHM, UDPv4]    # ZERODDS_USER_TRANSPORTS; first preferred,
+                                     # replaces user_transport
+  tcp_locator_kinds: vendor        # ZERODDS_TCP_LOCATOR_KINDS; vendor | fast-dds (kinds 4 and 8)
+  udp:
+    connected_cache: true            # ZERODDS_UDP_CACHE_ENABLE
+    cache_max_entries: 16            # ZERODDS_UDP_CACHE_MAX; > 0
+    cache_sndbuf: 262144             # ZERODDS_UDP_CACHE_SNDBUF; 0 = kernel default
+    recv_buffer: 1048576             # ZERODDS_UDP_RCVBUF; 0 = kernel default
+    dont_route: false                # ZERODDS_UDP_DONTROUTE
+    max_message_size: 1472           # ZERODDS_UDP_MAX_MESSAGE_SIZE; 20..=65507
+  # interface_bindings:              # file only; a build with `security`
+  #   - name: lab
+  #     bind: 10.0.0.5
+  #     kind: subnet                 # loopback | localhost | wan | subnet | named:<class>
+  #     subnet: 10.0.0.0/24
+  #     default: true
+
+reader:
+  max_samples_per_proxy: 65536       # ZERODDS_MAX_SAMPLES_PER_PROXY; > 0
+  max_reassembly_sample_bytes: 16777216  # ZERODDS_MAX_SAMPLE_BYTES; > 0
+  time_based_filter_clock: sender    # ZERODDS_READER_TIME_BASED_FILTER_CLOCK; sender or receiver
+  heartbeat_response_delay_ms: 500   # ZERODDS_READER_HEARTBEAT_RESPONSE_DELAY_MS; >= 0, the spec value; 0 answers on the next tick
+  heartbeat_suppression_duration_ms: 0  # ZERODDS_READER_HEARTBEAT_SUPPRESSION_DURATION_MS; >= 0
+  honor_data_max_size_serialized: true # ZERODDS_READER_HONOR_DATA_MAX_SIZE_SERIALIZED; false: take payloads past the writer's announced maximum
+  dispose_with_unregister: true      # ZERODDS_READER_DISPOSE_WITH_UNREGISTER; false: a marker that disposes and unregisters only unregisters
+
+dcps:
+  presentation_instance_coherence: per_instance  # ZERODDS_PRESENTATION_INSTANCE_COHERENCE; per_instance | none
+
+writer:
+  nack_response_delay_ms: 200        # ZERODDS_NACK_RESPONSE_DELAY_MS; >= 0, the spec value; 0 answers on the next tick
+  heartbeat_period_ms: 100           # ZERODDS_WRITER_HEARTBEAT_PERIOD_MS; > 0
+  nack_suppression_duration_ms: 0    # ZERODDS_NACK_SUPPRESSION_DURATION_MS; >= 0
+  unacked_window_bytes: 524288       # ZERODDS_WRITER_UNACKED_WINDOW; >= 0, 0 = no window
+  unregister_on_delete: true         # ZERODDS_WRITER_UNREGISTER_ON_DELETE; false: no unregister/dispose on delete
+  linger_ms: 1000                    # ZERODDS_WRITER_LINGER_MS; >= 0, wait on delete for the readers' acknowledgments
+  keyless_lifecycle_on_wire: false   # ZERODDS_WRITER_KEYLESS_LIFECYCLE_ON_WIRE; true: send dispose/unregister of a
+                                     # NO_KEY writer (DDSI-RTPS 2.5 §8.2.10.1: no effect)
+  group_coherent_set_pid: true       # ZERODDS_WRITER_GROUP_COHERENT_SET_PID; false: no PID_GROUP_COHERENT_SET (DDSI-RTPS 2.5 §8.7.6)
+  group_info_on_wire: true           # ZERODDS_WRITER_GROUP_INFO_ON_WIRE; false: coherent sets as under TOPIC, no group
+                                     # information (DDSI-RTPS 2.5 §8.7.5, §8.7.6)
+
+discovery:
+  spdp_multicast_group: 239.255.0.1  # ZERODDS_SPDP_MC_GROUP
+  spdp_period_ms: 30000              # ZERODDS_SPDP_PERIOD_MS; > 0, the spec value
+  initial_announce_count: 10         # ZERODDS_INITIAL_ANNOUNCE_COUNT; 0 = off
+  initial_announce_period_ms: 200    # ZERODDS_INITIAL_ANNOUNCE_PERIOD_MS; > 0
+  participant_lease_duration_ms: 100000  # ZERODDS_PARTICIPANT_LEASE_MS; > 0
+  type_object_v1: false              # ZERODDS_TYPE_OBJECT_V1; true: announce TypeIdV1 and TypeObjectV1
+  wlp_period_ms: 0                   # ZERODDS_WLP_PERIOD_MS; 0 = a third of the lease
+  spdp_new_sequence_per_period: false  # ZERODDS_SPDP_NEW_SEQUENCE_PER_PERIOD; true: a new sequence
+                                     # number for every SPDP announcement (Cyclone, OpenDDS)
+  # peers: [192.0.2.20, "192.0.2.21:7410"]  # ZERODDS_PEERS; without a port the
+                                     # ports of the domain are expanded
+  # participant_name: my-robot       # ZERODDS_PARTICIPANT_NAME; default zerodds:<GUID prefix in hex>
+  max_peer_participants: 10          # ZERODDS_MAX_PEER_PARTICIPANTS; 1..=120
+  no_multicast: false                # ZERODDS_NO_MULTICAST
+  # multicast_allowlist: [239.255.0.1]  # ZERODDS_MULTICAST_ALLOWLIST
+  server: false                      # ZERODDS_DISCOVERY_SERVER; SPDP relay
+  # domain_tag: "plant-a"            # ZERODDS_DOMAIN_TAG; only peers with the
+                                     # same tag are discovered; default empty
+
+ports:                               # DDSI-RTPS 2.5 §9.6.2.3; integers in 0..=65535
+  port_base: 7400                    # ZERODDS_PORT_BASE (PB)
+  domain_gain: 250                   # ZERODDS_PORT_DOMAIN_GAIN (DG)
+  participant_gain: 2                # ZERODDS_PORT_PARTICIPANT_GAIN (PG)
+  d0: 0                              # ZERODDS_PORT_D0
+  d1: 10                             # ZERODDS_PORT_D1
+  d2: 1                              # ZERODDS_PORT_D2
+  d3: 11                             # ZERODDS_PORT_D3
+
+security:
+  secure_spdp: true                  # ZERODDS_SECURE_SPDP; acts on a secured participant only
+  # enclave_dir: /etc/zerodds/enclaves/robot  # ZERODDS_SECURITY_DIR
+  # Vendor forms of the security plugins; each default is the value of the
+  # specification, the others are for one named peer (zerodds.yaml(5)).
+  kx_key_fallback: spec              # ZERODDS_SEC_KX_KEY_FALLBACK; spec or accept
+  compatibility_check: spec          # ZERODDS_SEC_COMPATIBILITY_CHECK; spec or ignore
+  algo_name_nul: spec                # ZERODDS_SEC_ALGO_NAME_NUL; spec, omit, mirror or by_vendor
+  algorithm_names: "1.2"             # ZERODDS_SEC_ALGORITHM_NAMES; auto, 1.2 or 1.1
+  subject_name_form: rfc4514         # ZERODDS_SEC_SUBJECT_NAME_FORM; rfc4514, x509_name_oneline or xn_flag_oneline
+  origin_authentication_fallback: spec # ZERODDS_SEC_ORIGIN_AUTHENTICATION_FALLBACK; spec or accept
+
+# tsn:                               # read with transport.user_transport: TSN
+#   interface: eth1                  # ZERODDS_TSN_IFACE
+#   vlan: 0                          # ZERODDS_TSN_VLAN; 0..=4094
+#   pcp: 0                           # ZERODDS_TSN_PCP; 0..=7
+
+threads:
+  # recv_policy: fifo                # ZERODDS_RECV_THREAD_POLICY; other|fifo|rr|deadline
+  # tick_policy: fifo                # ZERODDS_TICK_THREAD_POLICY
+  # recv_priority: 80                # ZERODDS_RECV_THREAD_PRIORITY; SCHED_FIFO/RR 1..=99
+  # tick_priority: 70                # ZERODDS_TICK_THREAD_PRIORITY
+  # recv_deadline: "1000000,5000000,10000000"  # ZERODDS_RECV_THREAD_DEADLINE; ns, runtime<=deadline<=period
+  # tick_deadline: "1000000,5000000,10000000"  # ZERODDS_TICK_THREAD_DEADLINE
+  # recv_cpus: [2, 3]                # ZERODDS_RECV_THREAD_CPUS
+  # tick_cpus: [1]                   # ZERODDS_TICK_THREAD_CPUS
+  extra_recv: 0                      # ZERODDS_EXTRA_RECV_THREADS; 0..=64
+
+wire:
+  rtps_dialect: maximally-interoperable  # ZERODDS_RTPS_DIALECT; cyclone | fastdds |
+                                     # opendds | maximally-interoperable
+  codec_dialect: specification       # ZERODDS_CODEC_DIALECT; the dialect the types were
+                                     # generated in (zerodds-idlc generate --dialect)
+  encapsulation_ids: table-60        # ZERODDS_WIRE_ENCAPSULATION_IDS; table-60 | table-39
+  pl_cdr1_headers: dialect           # ZERODDS_WIRE_PL_CDR1_HEADERS; dialect | specification |
+                                     # short-rounded-length | always-extended | ...; process-wide
+  pl_cdr1_reading: strict            # ZERODDS_WIRE_PL_CDR1_READING; strict | tolerant; process-wide
+  type_lookup_encoding: xcdr2        # ZERODDS_WIRE_TYPE_LOOKUP_ENCODING; xcdr2 (CDR2_LE, XTypes 1.4
+                                     # Beta 1 7.6.3.3.3) | xcdr1 (CDR_LE); either is read
+  data_representation_offer: [XCDR1]  # ZERODDS_DATA_REPR_OFFER; first = encoding
+  data_representation_match: strict  # ZERODDS_DATA_REPR_MATCH; strict | tolerant
+  big_endian: false                  # ZERODDS_WIRE_BIG_ENDIAN
+  accept_empty_acknack_base_zero: false  # ZERODDS_WIRE_ACCEPT_EMPTY_ACKNACK_BASE_ZERO; true: accept the empty
+                                     # readerSNState 0/0 of OpenDDS and RTI (spec: invalid);
+                                     # one runtime turning it on turns it on for every
+                                     # runtime in the process
+  clock_skew_threshold_s: 0          # ZERODDS_WIRE_CLOCK_SKEW_THRESHOLD_S; seconds, 0 = off (DDSI-RTPS 2.5
+                                     # §8.3.7.4 gives no threshold)
+  omit_heartbeat_group_digests: false  # ZERODDS_WIRE_OMIT_HEARTBEAT_GROUP_DIGESTS; true: HEARTBEAT without
+                                     # writerSet/secureWriterSet (figure of DDSI-RTPS 2.5 §9.4.5.7)
+
+time:
+  source: system                     # ZERODDS_TIME_SOURCE; system | tai (Linux only,
+                                     # CLOCK_TAI). A programmatic source (a
+                                     # zerodds-time-service TimeService adapter, a
+                                     # deterministic test clock) has no file spelling —
+                                     # set RuntimeConfig::time_source directly.
+
+xtypes:
+  key_member_bounds: enforced        # ZERODDS_KEY_MEMBER_BOUNDS; enforced | ignored
+  strong_assignability: equivalence  # ZERODDS_STRONG_ASSIGNABILITY; equivalence | names_ignored
+  type_consistency_absent: disallow  # ZERODDS_TYPE_CONSISTENCY_ABSENT; disallow | allow
+  annotation_parameter_order: member-index  # ZERODDS_ANNOTATION_PARAMETER_ORDER; member-index | name
+
+# durability:
+#   dir: /var/lib/zerodds/durability  # ZERODDS_DURABILITY_DIR; default
+                                     # <temp dir>/zerodds-durability
+
+delivery:
+  mode: portable                     # ZERODDS_DELIVERY_MODE; portable |
+                                     # raw-same-host | iceoryx
+
+diagnostics:
+  observability: "off"               # ZERODDS_OBSERVABILITY; off | stderr | stderr-json
+  trace_send_errors: false           # ZERODDS_TRACE_SEND_ERR
+  phase_timing: false                # ZERODDS_PHASE_TIMING
+  phase_dump: false                  # ZERODDS_PHASE_DUMP
+
+# The ros2 section (rmw_zerodds_cpp): ros2.yaml.example, zerodds-ros2.yaml(5).

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Cyclone-DDS Python-basierter ShapesDemo-Subscriber.
+"""Cyclone DDS Python-based ShapesDemo subscriber.
 
-Gegenstueck zu `cyclone_shapes_pub.py`. Empfaengt ShapeType-Samples
-auf demselben Topic-/Type-Namen wie ZeroDDS und prueft damit den
-Cross-Vendor-Wire-Pfad.
+Counterpart of `cyclone_shapes_pub.py`. Receives ShapeType samples
+on the same topic/type name as ZeroDDS and thereby checks the
+cross-vendor wire path.
 
 CLI:
     python3 cyclone_shapes_sub.py [topic=Square] [domain=0]
@@ -49,8 +49,8 @@ def main() -> int:
         while True:
             samples = reader.take(N=100)
             for s in samples:
-                # `s.sample_info` ist cyclonedds-python-spezifisch;
-                # auf einigen Versionen ist es direkt auf der Instance.
+                # `s.sample_info` is cyclonedds-python-specific;
+                # on some versions it is directly on the instance.
                 data = s if not hasattr(s, "data") else s.data
                 print(
                     f"  <- color={data.color:>8} x={data.x:4} y={data.y:4} size={data.shapesize}",

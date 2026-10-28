@@ -140,7 +140,12 @@ mod tests {
     use super::*;
 
     fn ev(domain: &str, type_name: &str) -> StructuredEvent {
-        StructuredEvent::new(domain, type_name, "n", zerodds_cdr::CorbaAny::default())
+        StructuredEvent::new(
+            domain,
+            type_name,
+            "n",
+            zerodds_corba_rt::CorbaAny::default(),
+        )
     }
 
     #[test]

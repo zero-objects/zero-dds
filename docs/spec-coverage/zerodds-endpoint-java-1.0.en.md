@@ -2,16 +2,17 @@
 
 **Source:** `docs/specs/zerodds-endpoint-java-1.0.md` — the ZeroDDS Java
 endpoint SDK spec. Reliable-stream contract details in
-`docs/spec-coverage/reliable-endpoint-1.0.en.md`. Complements the codegen
-coverage `zerodds-xcdr2-java`
-(`docs/spec-coverage/zerodds-xcdr2-java-1.0.en.md`) — that doc covers
-marshalling, this one covers transport.
+`docs/spec-coverage/reliable-endpoint-1.0.en.md`. This document covers transport; marshalling is
+produced by the shared code generator (`crates/lang-rules`, the
+`Language::Java` column) rather than by a Java-specific generator. The former
+codegen coverage `zerodds-xcdr2-java` went with `crates/idl-java`
+(commit `d045e43ea86`).
 
 Implementation:
 
 - `endpoints/java/ZdwEndpoint.java` (default package) — XRCE framing
-  (`xrceWriteFrame`/`xrceReadBody`), serial HDLC framing
-  (`serialFrame`/`serialDeframe`/`crc16CcittFalse`).
+  (`xrceWriteFrame`/`xrceReadBody`), serial framing after Annex C
+  (`serialFrame`/`serialDeframe`/`fcs16`).
 - `endpoints/java/Zdw.java` (default package) — wire core (`Writer`/`Reader`,
   XCDR2).
 - `endpoints/java/org/zerodds/endpoint/ReliableWire.java` — reliable wire
@@ -30,36 +31,47 @@ Implementation:
 **Spec:** §1 — 8-byte XRCE header (session, stream, seq LE, submsg id `0x07`
 WRITE_DATA, flags, len LE) + body, byte-identical to `crates/xrce` +
 `endpoints/c`; DATA receive path (id `0x09`) through the same unwrap;
-serial HDLC framing (Annex C, RFC 1662, CRC-16-CCITT-FALSE).
+serial framing after Annex C.1 (addresses, length, FCS-16 of RFC 1662).
 
 **Repo:** `endpoints/java/ZdwEndpoint.java` — `xrceWriteFrame`/`xrceReadBody`,
 constants `SESSION_NOKEY` (`0x80`)/`STREAM_BEST_EFFORT` (`0x01`),
-`serialFrame`/`serialDeframe`/`crc16CcittFalse`, `heartbeatRead`,
+`serialFrame`/`serialDeframe`/`fcs16`, `heartbeatRead`,
 `acknackFrame`.
 
-**Tests:** `endpoints/java/EndpointTest.java` against real Rust goldens
-generated with `cargo run -p zerodds-endpoint-golden`. Run locally (this
-environment, macOS, OpenJDK 21 `javac`/`java`):
+**Tests:** `crates/endpoint-e2e/tests/java.rs::java_endpoint_golden` runs
+`endpoints/java/EndpointTest.java` against real Rust goldens generated with
+`zerodds-endpoint-golden`. This is the Java counterpart to
+`endpoints/c/Makefile`'s `make test GOLDEN_DIR=…`: the test generates the five
+golden files (`golden_xrce_le.bin`, `golden_serial_le.bin`,
+`golden_data_le.bin`, `golden_heartbeat_le.bin`, `golden_acknack_le.bin`),
+compiles `EndpointTest` together with `Zdw` and `ZdwEndpoint`, and asserts on
+`ALL OK` and the exit status. Unlike `ReliableSelfTest`, `EndpointTest` carries
+no hardcoded fallback goldens, so a failure to generate them fails the test
+rather than quietly skipping the comparison.
+
+Run on the Linux test host (`tools/endpoints-gate`, at `2fa0800f55a`):
 
 ```
-XRCE WRITE_DATA byte-identical (48 bytes)
+XRCE WRITE_DATA byte-identical (52 bytes)
 serial byte-identical
 DATA receive: body ok
 serial deframe+crc round-trip ok
+wrong frameCheck refused
+0x7E inside the frame refused
 HEARTBEAT parsed: first=1 last=3
 ACKNACK byte-identical
+appended submessage bounded out
+over-long length rejected
+truncated header rejected
+writer >0xFFFF refused
+writer maximal body framed
 ALL OK
 ```
 
-`EndpointTest.java` is not wired into `cargo test`/CI (no Java equivalent
-of `endpoints/c/Makefile`'s `make test GOLDEN_DIR=...`) — manual run, as
-above; the framing itself is also exercised live via
+The framing is also exercised live via
 `java_endpoint_sync`/`java_endpoint_async` (§4).
 
-**Status:** partial — byte-golden verified locally (above), but
-`EndpointTest.java` is not wired into `cargo test`/CI, only manually
-reproducible (open: a Java equivalent of `endpoints/c/Makefile`'s
-`make test GOLDEN_DIR=...`).
+**Status:** done
 
 ## §2 Sync send/recv
 
@@ -70,7 +82,7 @@ or an in-memory queue).
 
 **Repo:** `endpoints/java/ExampleSync.java` — in-memory `ArrayDeque` poll
 loop, full field decode (`Reading{id,value,label}`); `sync` mode in
-`crates/endpoint-e2e/tests/java.rs::MAIN_JAVA` — blocking
+`crates/endpoint-e2e/tests/java.rs::MAIN_JAVA_TAIL` — blocking
 `DatagramSocket.receive()` against the real Rust peer.
 
 **Tests:** `java_endpoint_sync` (§4).
@@ -87,7 +99,7 @@ loop, full field decode (`Reading{id,value,label}`); `sync` mode in
 
 **Repo:** `endpoints/java/ExampleAsync.java` — reader `Thread` +
 `LinkedBlockingQueue<byte[]>` inbox, full field decode; `async` mode in
-`crates/endpoint-e2e/tests/java.rs::MAIN_JAVA` — a reader `Thread` reads
+`crates/endpoint-e2e/tests/java.rs::MAIN_JAVA_TAIL` — a reader `Thread` reads
 from the real `DatagramSocket`, the consumer blocks on `take()`.
 
 **Tests:** `java_endpoint_async` (§4).
@@ -97,19 +109,23 @@ from the real `DatagramSocket`, the consumer blocks on `take()`.
 ## §4 Ping-pong E2E (live)
 
 **Spec:** §5.1 — a Java app exchanges a typed sample with the shared Rust
-XRCE peer over a real UDP socket: generated `idl-java` TypeSupport
-(`Ping`/`Pong`) + the endpoint SDK (`ZdwEndpoint`), sync and async.
+XRCE peer over a real UDP socket: the generated `Ping`/`Pong` codec + the
+endpoint SDK (`ZdwEndpoint`), sync and async.
 
-**Repo:** `crates/endpoint-e2e/tests/java.rs` — `MAIN_JAVA` (default-package
-`Main`, compiled against the real ZeroDDS Java runtime
-`crates/java-omgdds` + `crates/idl-java/runtime`, mode `sync`/`async` via
-CLI argument).
+**Repo:** `crates/endpoint-e2e/tests/java.rs` — `MAIN_JAVA_HEAD` (imports and
+class header) and `MAIN_JAVA_TAIL` (the run loop, mode `sync`/`async` via CLI
+argument) wrap the members of the generated `ZdCodec`; `split_generated` lifts
+them out of that class, because the generator emits them `private static` and
+nothing outside the class could otherwise call them. Compiled against
+`runtime/java` (`org.zerodds.wire.*`) — the former runtime
+`crates/java-omgdds` + `crates/idl-java/runtime` went with the IDL transplant.
 
-**Tests (this environment, OpenJDK 21, `cargo test -p zerodds-endpoint-e2e --test java`):**
+**Tests:** (this environment, OpenJDK 21, `cargo test -p zerodds-endpoint-e2e --test java`)
 - `java_endpoint_sync` — full stack via blocking `DatagramSocket.receive()`.
 - `java_endpoint_async` — full stack via reader `Thread`/`LinkedBlockingQueue`.
+- `java_endpoint_golden` — `EndpointTest.java` against the Rust goldens (§1).
 
-2/2 passed (verified locally).
+3 passed, 0 failed (verified locally).
 
 **Status:** done.
 
@@ -133,7 +149,7 @@ ACKNACK-driven retransmit) — the producer never enters the kernel.
 `zdw-reliable-drain`, `submit`/`offer`/`finish`/`delivered`); example app
 `endpoints/java/ExampleReliable.java` (a real UDP peer, no in-process stub).
 
-**Tests (this environment, `cargo test -p zerodds-endpoint-e2e --test java_reliable`):**
+**Tests:** (this environment, `cargo test -p zerodds-endpoint-e2e --test java_reliable`)
 - `java_reliable_unit_and_golden` — compiles and runs
   `endpoints/java/ReliableSelfTest.java`: 33 `check()` assertions across 17
   test scenarios (sender: monotonic seq, in-flight count,
@@ -170,15 +186,15 @@ read) vs. 20000 iterations of `BlockingQueue.offer` (a drain `Thread` keeps
 the queue empty, the way `AsyncReliableWriter`'s real drain thread would),
 no live peer needed.
 
-**Tests (this environment, `java_reliable_latency_bench`):**
+**Tests:** (this environment, `java_reliable_latency_bench`)
 
 ```
 producer latency: queue-enqueue median = 84 ns, inline-send median = 5917 ns (70x)
 ```
 
 Median over 20000 iterations per path, measured locally (macOS, not a
-codepit run) — the order of magnitude matches `endpoints/go`'s
-codepit-verified 20–25 ns / 4360 ns (~175–220×); the absolute value is
+Linux run) — the order of magnitude matches `endpoints/go`'s
+Linux-verified 20–25 ns / 4360 ns (~175–220×); the absolute value is
 machine-/load-dependent, the ratio (enqueue well below the syscall) is the
 evidence.
 
@@ -186,21 +202,17 @@ evidence.
 
 ---
 
-## Audit-Status
+## Audit status
 
-5 done / 1 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
+6 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
 
 Test run (this environment — macOS, OpenJDK 21, `javac`/`java` on PATH —
-**not** codepit-verified): `cargo test -p zerodds-endpoint-e2e --test java`
-2/2 (ping-pong: `java_endpoint_sync`/`java_endpoint_async`); `--test java_reliable`
-4/4 (`java_reliable_loss_recovery`, `java_reliable_no_loss_baseline`,
-`java_reliable_unit_and_golden` — 33 Java unit assertions across 17
-scenarios incl. byte-golden, `java_reliable_latency_bench` — queue-enqueue
-84 ns / inline `send` 5917 ns, ~70×); `endpoints/java/EndpointTest.java` run
-manually against `cargo run -p zerodds-endpoint-golden` goldens —
-WRITE_DATA/serial/DATA/HEARTBEAT/ACKNACK byte-identical, `ALL OK`.
+**not** Linux-verified): `cargo test -p zerodds-endpoint-e2e --test java`
+→ 3 passed, 0 failed (`java_endpoint_sync`, `java_endpoint_async`,
+`java_endpoint_golden`); `--test java_reliable` → 4 passed, 0 failed
+(`java_reliable_loss_recovery`, `java_reliable_no_loss_baseline`,
+`java_reliable_unit_and_golden` — 33 Java unit assertions across 17 scenarios
+including byte goldens, `java_reliable_latency_bench` — queue enqueue 83 ns
+against inline `send` 6542 ns, ~79x).
 
-Open items: `EndpointTest.java` (§1 byte-golden for framing/serial) is not
-wired into `cargo test`/CI, only manually reproducible (no Java equivalent
-of `endpoints/c/Makefile`'s `make test`); every figure in this document is
-verified locally (this environment), not on codepit.
+Open items: none. Decision records: none.

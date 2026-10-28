@@ -1,0 +1,5 @@
+# Build artefacts. `run-tests.sh` builds the self-test into `build/` and
+# MSBuild writes its intermediates into `tests/obj/`; both belong to the
+# machine that made them and neither is a record of anything.
+build/
+tests/obj/

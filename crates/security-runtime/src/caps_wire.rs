@@ -15,11 +15,11 @@
 //! | `dds.sec.auth.plugin_class`       | OMG standard, authentication plugin class          |
 //! | `dds.sec.access.plugin_class`     | OMG standard, access-control plugin class          |
 //! | `dds.sec.crypto.plugin_class`     | OMG standard, crypto plugin class                  |
-//! | `zerodds.sec.supported_suites`    | CSV: `AES_128_GCM,AES_256_GCM,HMAC_SHA256`         |
-//! | `zerodds.sec.offered_protection`  | `NONE` / `SIGN` / `ENCRYPT`                        |
-//! | `zerodds.sec.vendor_hint`         | free string, e.g. `"zerodds"`                      |
+//! | `org.zerodds.sec.supported_suites`    | CSV: `AES_128_GCM,AES_256_GCM,AES_256_GMAC`         |
+//! | `org.zerodds.sec.offered_protection`  | `NONE` / `SIGN` / `ENCRYPT`                        |
+//! | `org.zerodds.sec.vendor_hint`         | free string, e.g. `"zerodds"`                      |
 //!
-//! The `zerodds.sec.*` namespace is intentionally ZeroDDS-specific. Other
+//! The `org.zerodds.sec.*` namespace is intentionally ZeroDDS-specific. Other
 //! vendors (Cyclone, Fast-DDS) silently ignore unknown properties
 //! — this preserves SPDP interop (see architecture
 //! doc §8.1).
@@ -42,21 +42,21 @@ use crate::policy::{ProtectionLevel, SuiteHint};
 // ============================================================================
 
 /// OMG standard: authentication plugin class.
-pub const KEY_AUTH_PLUGIN: &str = "dds.sec.auth.plugin_class";
+pub const KEY_AUTH_PLUGIN: &str = "org.zerodds.sec.auth.plugin_class";
 /// OMG standard: access-control plugin class.
-pub const KEY_ACCESS_PLUGIN: &str = "dds.sec.access.plugin_class";
+pub const KEY_ACCESS_PLUGIN: &str = "org.zerodds.sec.access.plugin_class";
 /// OMG standard: crypto plugin class.
-pub const KEY_CRYPTO_PLUGIN: &str = "dds.sec.crypto.plugin_class";
+pub const KEY_CRYPTO_PLUGIN: &str = "org.zerodds.sec.crypto.plugin_class";
 /// ZeroDDS extension: CSV of accepted suites.
-pub const KEY_SUPPORTED_SUITES: &str = "zerodds.sec.supported_suites";
+pub const KEY_SUPPORTED_SUITES: &str = "org.zerodds.sec.supported_suites";
 /// ZeroDDS extension: offered protection level.
-pub const KEY_OFFERED_PROTECTION: &str = "zerodds.sec.offered_protection";
+pub const KEY_OFFERED_PROTECTION: &str = "org.zerodds.sec.offered_protection";
 /// ZeroDDS extension: vendor identification for quirks.
-pub const KEY_VENDOR_HINT: &str = "zerodds.sec.vendor_hint";
+pub const KEY_VENDOR_HINT: &str = "org.zerodds.sec.vendor_hint";
 /// ZeroDDS extension: delegation chain (base64-encoded wire bytes,
 /// RC1). Format: base64 over the `DelegationChain::encode()`
 /// output. Passes through SPDP via PID_PROPERTY_LIST.
-pub const KEY_DELEGATION_CHAIN: &str = "zerodds.sec.delegation_chain";
+pub const KEY_DELEGATION_CHAIN: &str = "org.zerodds.sec.delegation_chain";
 
 /// DoS cap for the wire blob (before base64 decode). Architecture §11.
 pub const MAX_DELEGATION_CHAIN_BYTES: usize = 8 * 1024;
@@ -69,7 +69,7 @@ fn suite_to_str(s: SuiteHint) -> &'static str {
     match s {
         SuiteHint::Aes128Gcm => "AES_128_GCM",
         SuiteHint::Aes256Gcm => "AES_256_GCM",
-        SuiteHint::HmacSha256 => "HMAC_SHA256",
+        SuiteHint::Aes256Gmac => "AES_256_GMAC",
     }
 }
 
@@ -77,7 +77,7 @@ fn suite_from_str(s: &str) -> Option<SuiteHint> {
     match s.trim() {
         "AES_128_GCM" => Some(SuiteHint::Aes128Gcm),
         "AES_256_GCM" => Some(SuiteHint::Aes256Gcm),
-        "HMAC_SHA256" => Some(SuiteHint::HmacSha256),
+        "AES_256_GMAC" => Some(SuiteHint::Aes256Gmac),
         _ => None,
     }
 }
@@ -348,10 +348,10 @@ mod tests {
         let suites = alloc::vec![
             SuiteHint::Aes128Gcm,
             SuiteHint::Aes256Gcm,
-            SuiteHint::HmacSha256,
+            SuiteHint::Aes256Gmac,
         ];
         let csv = suites_to_csv(&suites);
-        assert_eq!(csv, "AES_128_GCM,AES_256_GCM,HMAC_SHA256");
+        assert_eq!(csv, "AES_128_GCM,AES_256_GCM,AES_256_GMAC");
         assert_eq!(suites_from_csv(&csv), suites);
     }
 
@@ -363,10 +363,10 @@ mod tests {
 
     #[test]
     fn suite_csv_ignores_unknown_tokens() {
-        let parsed = suites_from_csv("AES_128_GCM,FUTURE_SUITE,HMAC_SHA256");
+        let parsed = suites_from_csv("AES_128_GCM,FUTURE_SUITE,AES_256_GMAC");
         assert_eq!(
             parsed,
-            alloc::vec![SuiteHint::Aes128Gcm, SuiteHint::HmacSha256]
+            alloc::vec![SuiteHint::Aes128Gcm, SuiteHint::Aes256Gmac]
         );
     }
 

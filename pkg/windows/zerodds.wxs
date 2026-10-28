@@ -1,25 +1,25 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  pkg/windows/zerodds.wxs — WiX 4 Source fuer den ZeroDDS-Windows-Installer (MSI).
+  pkg/windows/zerodds.wxs — WiX 4 source for the ZeroDDS Windows installer (MSI).
 
   Build:
     candle -arch x64 zerodds.wxs
     light  -ext WixUIExtension zerodds.wixobj -out zerodds.msi
 
-  oder via dotnet-wix:
+  or via dotnet-wix:
     dotnet wix build zerodds.wxs -arch x64 -out zerodds.msi
 
-  Zielverzeichnisse (Ueber Wahl der DefaultDir-Struktur):
+  Target directories (through the choice of the DefaultDir structure):
     %ProgramFiles%\ZeroDDS\
-        bin\           — CLI-Tools
+        bin\           — CLI tools
         lib\           — zerodds.dll, zerodds.lib
         include\       — zerodds.h
-    %ProgramFiles%\ZeroDDS\bin wird zur PATH-Erweiterung (User-Scope)
-    hinzugefuegt, damit `dds-admin --version` ohne weiteres aufrufbar ist.
+    %ProgramFiles%\ZeroDDS\bin is added to the PATH extension (user
+    scope), so that `dds-admin` can be called without a path.
 
-  Code-Signing erfolgt nach light/build via:
+  Code signing happens after light/build via:
     signtool sign /fd SHA256 /a zerodds.msi
-  Das Cert + signtool laeuft im CI ausserhalb dieses File.
+  The cert + signtool run in CI, outside this file.
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Package
@@ -34,7 +34,7 @@
     <SummaryInformation Description="ZeroDDS — Pure-Rust DDS Toolchain" />
 
     <MajorUpgrade
-        DowngradeErrorMessage="Eine neuere Version von ZeroDDS ist bereits installiert." />
+        DowngradeErrorMessage="A newer version of ZeroDDS is already installed." />
 
     <MediaTemplate EmbedCab="yes" />
 
@@ -45,7 +45,7 @@
     <Property Id="ARPNOREPAIR" Value="yes" Secure="yes" />
     <Property Id="ARPNOMODIFY" Value="yes" Secure="yes" />
 
-    <!-- Feature-Tree: Tools (default), Library, Headers (optional). -->
+    <!-- Feature tree: Tools (default), Library, Headers (optional). -->
     <Feature Id="Tools" Title="ZeroDDS Tools" Level="1">
       <ComponentGroupRef Id="ToolsGroup" />
     </Feature>
@@ -102,7 +102,7 @@
               Source="..\..\target\release\roundtrip-1us.exe"
               KeyPath="yes" />
       </Component>
-      <!-- PATH-Eintrag (HKCU) damit `dds-admin` direkt aufrufbar ist. -->
+      <!-- PATH entry (HKCU) so that `dds-admin` can be called directly. -->
       <Component Id="PathEntry" Guid="*">
         <RegistryKey Root="HKCU"
                      Key="Software\ZeroDDS\Install">

@@ -45,9 +45,9 @@ use crate::policy::{
 pub struct GovernancePolicyEngine {
     domain_id: u32,
     governance: Governance,
-    /// Default suite when protection = Encrypt. For v1.4 parity
-    /// this is `Aes128Gcm` — the same default as in
-    /// `AesGcmCryptoPlugin::new()`.
+    /// Default suite when protection = Encrypt: `Aes256Gcm` with
+    /// [`Self::with_defaults`], the same default as in
+    /// `AesGcmCryptoPlugin::new()` (DDS-Security 1.2 §10.5.1.1).
     default_suite: SuiteHint,
 }
 
@@ -63,7 +63,7 @@ impl GovernancePolicyEngine {
         }
     }
 
-    /// Constructor with the v1.4 default suite (`AES_128_GCM`).
+    /// Constructor with the default suite (`AES_256_GCM`).
     #[must_use]
     pub fn with_defaults(domain_id: u32, governance: Governance) -> Self {
         Self::new(
@@ -100,7 +100,7 @@ impl GovernancePolicyEngine {
         let level = ProtectionLevel::from_protection_kind(kind);
         let suite = match level {
             ProtectionLevel::None => None,
-            ProtectionLevel::Sign => Some(SuiteHint::HmacSha256),
+            ProtectionLevel::Sign => Some(SuiteHint::Aes256Gmac),
             ProtectionLevel::Encrypt => Some(self.default_suite),
         };
         PolicyDecision::with(level, suite)
@@ -241,13 +241,13 @@ mod tests {
     fn gov_xml(kind: &str) -> String {
         alloc::format!(
             r#"
-<domain_access_rules>
+<dds><domain_access_rules>
   <domain_rule>
-    <domains><id>0</id></domains>
+    <domains><id>0</id></domains><allow_unauthenticated_participants>false</allow_unauthenticated_participants><enable_join_access_control>false</enable_join_access_control>
     <rtps_protection_kind>{kind}</rtps_protection_kind>
     <topic_access_rules><topic_rule><topic_expression>*</topic_expression></topic_rule></topic_access_rules>
   </domain_rule>
-</domain_access_rules>
+</domain_access_rules></dds>
 "#
         )
     }
@@ -303,25 +303,25 @@ mod tests {
     }
 
     #[test]
-    fn outbound_decision_suite_is_aes128_for_encrypt() {
+    fn outbound_decision_suite_is_aes256_for_encrypt() {
         let gov = parse_governance_xml(&gov_xml("ENCRYPT")).unwrap();
         let engine = GovernancePolicyEngine::with_defaults(0, gov);
         let (peer, caps) = stub_peer();
         let iface = NetInterface::Wan;
         let parts: Vec<String> = vec![];
         let d = engine.outbound_decision(stub_out_ctx(&peer, &caps, &iface, &parts));
-        assert_eq!(d.suite, Some(SuiteHint::Aes128Gcm));
+        assert_eq!(d.suite, Some(SuiteHint::Aes256Gcm));
     }
 
     #[test]
-    fn outbound_decision_suite_is_hmac_for_sign() {
+    fn outbound_decision_suite_is_gmac_for_sign() {
         let gov = parse_governance_xml(&gov_xml("SIGN")).unwrap();
         let engine = GovernancePolicyEngine::with_defaults(0, gov);
         let (peer, caps) = stub_peer();
         let iface = NetInterface::Wan;
         let parts: Vec<String> = vec![];
         let d = engine.outbound_decision(stub_out_ctx(&peer, &caps, &iface, &parts));
-        assert_eq!(d.suite, Some(SuiteHint::HmacSha256));
+        assert_eq!(d.suite, Some(SuiteHint::Aes256Gmac));
         assert_eq!(d.protection, ProtectionLevel::Sign);
     }
 
@@ -461,7 +461,7 @@ mod tests {
 <dds xmlns:zerodds="https://zerodds.org/schema/security/heterogeneous">
   <domain_access_rules>
     <domain_rule>
-      <domains><id>0</id></domains>
+      <domains><id>0</id></domains><allow_unauthenticated_participants>false</allow_unauthenticated_participants><enable_join_access_control>false</enable_join_access_control>
       <rtps_protection_kind>SIGN</rtps_protection_kind>
       <zerodds:peer_classes>
         <zerodds:peer_class name="legacy" protection="NONE">
@@ -529,7 +529,7 @@ mod tests {
         let caps = PeerCapabilities {
             auth_plugin_class: Some("DDS:Auth:PKI-DH:1.2".into()),
             cert_cn: Some("writer.fast.example".into()),
-            supported_suites: vec![SuiteHint::HmacSha256],
+            supported_suites: vec![SuiteHint::Aes256Gmac],
             ..Default::default()
         };
         let iface = NetInterface::Named("eth0".into());

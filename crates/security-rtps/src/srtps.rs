@@ -33,8 +33,8 @@ pub const RTPS_HEADER_LEN: usize = 20;
 
 const FLAG_LE: u8 = 0x01;
 
-/// `PreSharedKeyFlag` im SRTPS_PREFIX-Submessage-Header — Spec
-/// DDS-Security 1.2 §10.9.1.
+/// `PreSharedKeyFlag` in the SRTPS_PREFIX-Submessage-Header — Spec
+/// DDS-Security 1.2 §7.4.7.8.3, Table 7.
 ///
 /// When set, the sender signals that the master keys are derived from
 /// a **pre-shared key** (DDS:Crypto:PSK:AES-GCM-
@@ -43,9 +43,11 @@ const FLAG_LE: u8 = 0x01;
 /// the wire the body layout (TransformIdentifier, body, MACs)
 /// stays identical, only the key origin differs.
 ///
-/// Bit position 0x02 (bit 1) — next to `FLAG_LE` (bit 0). Other
-/// submessage flags (bits 2..7) are reserved.
-pub const PRE_SHARED_KEY_FLAG: u8 = 0x02;
+/// Bit position 0x04 (bit 2): the wire representation of §7.4.7.8.1 is
+/// `|X|X|X|X|X|P|A|E|`, and Table 7 has `P = SubmessageHeader.flags & 0x04`.
+/// Bit 1 (0x02) is the AdditionalAuthenticatedDataFlag; the constant was
+/// 0x02 and marked a PSK message as one with AAD.
+pub const PRE_SHARED_KEY_FLAG: u8 = 0x04;
 
 fn push_header(out: &mut Vec<u8>, id: u8, length: u16) {
     out.push(id);
@@ -400,7 +402,7 @@ mod tests {
         let (p, local, remote) = make_plugin();
         let msg = fake_rtps_message(b"x");
         let mut wire = encode_secured_rtps_message(&p, local, &[remote], &msg).unwrap();
-        wire[RTPS_HEADER_LEN] = 0x15; // fake andere submessage
+        wire[RTPS_HEADER_LEN] = 0x15; // fake other submessage
         let err = decode_secured_rtps_message(&p, local, remote, &wire).unwrap_err();
         assert!(matches!(
             err,
@@ -423,6 +425,10 @@ mod tests {
         assert!(flags & FLAG_LE != 0);
         assert!(flags & PRE_SHARED_KEY_FLAG != 0);
         assert_eq!(srtps_psk_flag(&wire), Some(true));
+        // DDS-Security 1.2 §7.4.7.8.1 `|X|X|X|X|X|P|A|E|`: P is 0x04, and the
+        // AdditionalAuthenticatedDataFlag (0x02) stays unset.
+        assert_eq!(PRE_SHARED_KEY_FLAG, 0x04);
+        assert_eq!(flags & 0x02, 0);
     }
 
     #[test]

@@ -181,6 +181,61 @@ mod tests {
         }
     }
 
+    /// Spec §8.1.6.1.3: one application that both publishes and
+    /// subscribes. The publishing half writes through the `ObjectCache`
+    /// (register / register-again / mark_deleted), the subscribing half
+    /// sits on the same `SubscriptionRegistry`, and every one of the
+    /// three changes reaches both the home and the object listener of
+    /// that application.
+    #[test]
+    fn one_application_publishing_and_subscribing_sees_its_own_changes() {
+        use crate::object_cache::ObjectCache;
+
+        let created = alloc::sync::Arc::new(AtomicUsize::new(0));
+        let modified = alloc::sync::Arc::new(AtomicUsize::new(0));
+        let deleted = alloc::sync::Arc::new(AtomicUsize::new(0));
+        let per_object = alloc::sync::Arc::new(AtomicUsize::new(0));
+
+        let mut reg = SubscriptionRegistry::new();
+        reg.home_mut().register_home_listener(
+            "Trade".into(),
+            Box::new(CountingHome {
+                created: created.clone(),
+                modified: modified.clone(),
+                deleted: deleted.clone(),
+            }),
+        );
+        let id = ObjectId::new("Trade".into(), alloc::vec![7]);
+        reg.register_object_listener(
+            id.clone(),
+            Box::new(CountingObject {
+                n: per_object.clone(),
+            }),
+        );
+
+        // Publishing half.
+        let mut cache = ObjectCache::new();
+        let fresh = cache.register(id.clone(), alloc::vec![1, 2, 3]);
+        reg.notify(&fresh, ObjectChangeKind::Created);
+
+        let changed = cache.register(id.clone(), alloc::vec![4, 5, 6]);
+        assert_eq!(changed.version, fresh.version + 1);
+        reg.notify(&changed, ObjectChangeKind::Modified);
+
+        assert!(cache.mark_deleted(&id));
+        reg.notify(&changed, ObjectChangeKind::Deleted);
+
+        // Subscribing half of the same application.
+        assert_eq!(created.load(Ordering::Relaxed), 1);
+        assert_eq!(modified.load(Ordering::Relaxed), 1);
+        assert_eq!(deleted.load(Ordering::Relaxed), 1);
+        assert_eq!(
+            per_object.load(Ordering::Relaxed),
+            3,
+            "the object listener sees all three of its own changes"
+        );
+    }
+
     #[test]
     fn home_listener_registered_per_topic() {
         let mut h = HomeFactory::new();

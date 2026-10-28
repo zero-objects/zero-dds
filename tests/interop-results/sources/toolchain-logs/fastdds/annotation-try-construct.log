@@ -1,0 +1,2 @@
+fastddsgen failed and named no case
+fastddsgen failed: ERROR: context [/struct_type /content_for_struct_type /_sub25 /struct_member /try_construct] 3:9 no such property or can't access: com.eprosima.idl.parser.typecode.Member.annotationDiscard

@@ -13,13 +13,13 @@
 //!
 //! Three OTLP endpoints are served:
 //!
-//! * **`/v1/traces`** — spans from [`foundation::tracing::Span`].
-//! * **`/v1/metrics`** — histograms from [`foundation::tracing::Histogram`].
-//! * **`/v1/logs`** — events from [`foundation::observability::Event`].
+//! * **`/v1/traces`** — spans from `foundation::tracing::Span`.
+//! * **`/v1/metrics`** — histograms from `foundation::tracing::Histogram`.
+//! * **`/v1/logs`** — events from `foundation::observability::Event`.
 //!
 //! We use the **OTLP/HTTP/JSON** format per the OpenTelemetry spec
-//! v1.4 (https://github.com/open-telemetry/opentelemetry-proto/blob/v1.4.0/
-//! docs/specification.md#otlphttp). JSON is officially supported
+//! v1.4 (<https://github.com/open-telemetry/opentelemetry-proto/blob/v1.4.0/docs/specification.md#otlphttp>).
+//! JSON is officially supported
 //! and needs no Protobuf codegen pipeline — perfect for
 //! pure Rust without `prost`/`tonic`.
 //!
@@ -91,7 +91,7 @@ struct ExporterBuffers {
 /// Error during export.
 #[derive(Debug)]
 pub enum ExportError {
-    /// Connect/Write/Read fehlgeschlagen.
+    /// Connect/Write/Read failed.
     Io(std::io::Error),
     /// HTTP-Status != 2xx.
     HttpStatus {
@@ -524,7 +524,7 @@ mod tests {
     fn flush_drains_buffers_even_with_no_collector() {
         let cfg = OtlpConfig {
             host: "127.0.0.1".into(),
-            port: 1, // bewusst unreachable
+            port: 1, // deliberately unreachable
             timeout: Duration::from_millis(50),
             ..OtlpConfig::default()
         };

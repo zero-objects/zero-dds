@@ -28,11 +28,11 @@ fn counters() -> &'static DiscoveryCounters {
         let r = default_registry();
         r.set_help(
             metric_names::DDS_DISCOVERY_PARTICIPANTS_KNOWN,
-            "Bekannte Participants (zerodds-monitor-1.1 §2.4)",
+            "Known participants (zerodds-monitor-1.1 §2.4)",
         );
         r.set_help(
             metric_names::DDS_DISCOVERY_ENDPOINTS_KNOWN,
-            "Bekannte Endpoints (zerodds-monitor-1.1 §2.4)",
+            "Known endpoints (zerodds-monitor-1.1 §2.4)",
         );
         r.set_help(
             metric_names::DDS_DISCOVERY_SPDP_ANNOUNCEMENTS_SENT_TOTAL,

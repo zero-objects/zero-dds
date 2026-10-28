@@ -1,0 +1,5 @@
+// primitive `int8`, unannotated
+struct Sample {
+    int8 signed_byte_a;
+    int8 signed_byte_b;
+};

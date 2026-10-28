@@ -4,7 +4,7 @@
 //! `zerodds-snitch` library — argument parsing.
 //!
 //! Crate `zerodds-snitch`. Safety classification: **COMFORT**.
-//! User-facing Discovery-Probe; nur CLI-Frontend.
+//! User-facing discovery probe; CLI frontend only.
 
 #![allow(clippy::module_name_repetitions)]
 
@@ -15,14 +15,14 @@ pub const DEFAULT_DOMAIN: u32 = 0;
 /// Default Probe-Duration.
 pub const DEFAULT_DURATION_SECS: u64 = 5;
 
-/// Sub-command des Snitch-CLIs.
+/// Sub-command of the snitch CLI.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
-    /// `probe` — startet kurzen Discovery-Run und druckt Snapshot.
+    /// `probe` — starts a short discovery run and prints a snapshot.
     Probe(ProbeArgs),
 }
 
-/// Argumente für `probe`.
+/// Arguments for `probe`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProbeArgs {
     /// DDS Domain.
@@ -33,12 +33,12 @@ pub struct ProbeArgs {
     pub format: ProbeFormat,
 }
 
-/// Output-Format für `probe`.
+/// Output format for `probe`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProbeFormat {
-    /// Mensch-lesbarer Text-Tree.
+    /// Human-readable text tree.
     Text,
-    /// JSON-Lines (eine Zeile pro Participant).
+    /// JSON lines (one line per participant).
     Json,
 }
 
@@ -52,20 +52,20 @@ impl Default for ProbeArgs {
     }
 }
 
-/// Parse-Fehler.
+/// Parse error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParseError {
-    /// Kein subcommand.
+    /// No subcommand.
     Missing,
-    /// Unbekanntes subcommand.
+    /// Unknown subcommand.
     Unknown(String),
-    /// Required-arg fehlt.
+    /// Required arg missing.
     MissingArg(&'static str),
-    /// Wert nicht parse-bar.
+    /// Value not parseable.
     BadValue {
-        /// Welche flag.
+        /// Which flag.
         flag: &'static str,
-        /// Was eingegeben war.
+        /// What was entered.
         got: String,
     },
 }
@@ -83,11 +83,11 @@ impl std::fmt::Display for ParseError {
 
 impl std::error::Error for ParseError {}
 
-/// Parst `args` zu einem [`Command`]. `probe` ist implizit wenn das
-/// erste Token mit `-` anfängt.
+/// Parses `args` into a [`Command`]. `probe` is implicit when the
+/// first token starts with `-`.
 ///
 /// # Errors
-/// Siehe [`ParseError`].
+/// See [`ParseError`].
 pub fn parse_args(args: &[String]) -> Result<Command, ParseError> {
     let first = args.first().ok_or(ParseError::Missing)?;
     let (sub, rest) = if first.starts_with('-') {

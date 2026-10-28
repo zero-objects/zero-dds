@@ -51,6 +51,14 @@ pub enum HandshakeError {
     UnexpectedStatus(u16),
     /// `Sec-WebSocket-Accept` does not match the expected hash.
     AcceptMismatch,
+    /// The server selected no subprotocol, where the client requires one.
+    NoProtocolSelected,
+    /// The server selected a subprotocol the client did not offer
+    /// (RFC 6455 §4.1, client step 6).
+    ProtocolNotOffered(String),
+    /// The server agreed to an extension the client did not offer
+    /// (RFC 6455 §4.1, client step 5).
+    ExtensionNotOffered(String),
 }
 
 impl core::fmt::Display for HandshakeError {
@@ -63,6 +71,9 @@ impl core::fmt::Display for HandshakeError {
             Self::UnsupportedVersion(v) => write!(f, "unsupported version: {v}"),
             Self::UnexpectedStatus(s) => write!(f, "unexpected status: {s}"),
             Self::AcceptMismatch => f.write_str("Sec-WebSocket-Accept mismatch"),
+            Self::NoProtocolSelected => f.write_str("server selected no subprotocol"),
+            Self::ProtocolNotOffered(p) => write!(f, "server selected subprotocol {p} not offered"),
+            Self::ExtensionNotOffered(e) => write!(f, "server agreed to extension {e} not offered"),
         }
     }
 }
@@ -180,17 +191,60 @@ pub fn parse_client_request(input: &str) -> Result<ClientHandshake, HandshakeErr
 }
 
 /// Produces the server response bytes. RFC 6455 §4.2.2.
+///
+/// The response agrees to a subprotocol or an extension only if this crate
+/// can actually perform it, which today means neither.
+///
+/// It used to echo the client's offer back: `protocol` was
+/// `req.protocols.first()` and `extensions` was `req.extensions.clone()`.
+/// Both are what §4.2.2 forbids — item 8 allows only a subprotocol "the
+/// server has selected" from those it supports, item 9 only extensions the
+/// server has "agreed" to use — and echoing turns every offer into an
+/// agreement the frame layer never made:
+///
+/// * **No extension is implemented in a frame path.**
+///   `permessage_deflate` supplies §7.1 parameter parsing and the §7.2.2
+///   tail helpers, and neither [`codec::encode`](crate::codec::encode) nor
+///   [`codec::decode`](crate::codec::decode) consults them; `rsv1` is
+///   carried through untouched and the crate has no DEFLATE dependency at
+///   all. A `Sec-WebSocket-Extensions: permessage-deflate` in the response
+///   therefore promised compression that never arrived, and a client that
+///   believed it would fail on the first message.
+/// * **The echo was not even well-formed.** RFC 7692 §7.1.2.1 lets a client
+///   offer a bare `client_max_window_bits`; §7.1.2.2 requires a *value* in
+///   the server's reply. Echoing the offer verbatim reproduced the bare
+///   form, and Python's `websockets` rejects the handshake with
+///   `NegotiationError: Unsupported extension` — which is how this was
+///   found. `tests/websockets_py_interop_e2e.rs` holds that measurement;
+///   no client written from this source tree had contradicted it, because
+///   `tests/cross_vendor.rs` offers no extensions at all.
+/// * **No subprotocol is defined.** The bridge carries DDS samples over
+///   `ws_path`, not over a subprotocol token, so accepting whatever the
+///   client happened to list first claimed a protocol this server does not
+///   speak.
+///
+/// A caller that does support one selects it itself —
+/// [`negotiation::select_subprotocol`](crate::negotiation::select_subprotocol)
+/// against its own preference list, and
+/// [`permessage_deflate::parse_offer`](crate::permessage_deflate::parse_offer)
+/// plus [`render_accept`](crate::permessage_deflate::render_accept) for the
+/// §7.1.2.2 reply form — and writes the result into the returned
+/// [`ServerHandshake`] before rendering it.
 #[must_use]
 pub fn build_server_response(req: &ClientHandshake) -> ServerHandshake {
     ServerHandshake {
         status: 101,
         accept: compute_accept(&req.key),
-        protocol: req.protocols.first().cloned(),
-        extensions: req.extensions.clone(),
+        // §4.2.2 item 8 — a subprotocol this server does not support must
+        // not be named, and omitting the header is how "none" is said.
+        protocol: None,
+        // §4.2.2 item 9 — likewise for extensions, and none of them reaches
+        // the frame path.
+        extensions: Vec::new(),
     }
 }
 
-/// Render zu HTTP/1.1-101-Response-Bytes.
+/// Render to HTTP/1.1-101-Response-Bytes.
 #[must_use]
 pub fn render_server_response(resp: &ServerHandshake) -> String {
     let mut out = alloc::format!(
@@ -209,6 +263,106 @@ pub fn render_server_response(resp: &ServerHandshake) -> String {
     }
     out.push_str("\r\n");
     out
+}
+
+/// The `Sec-WebSocket-Key` of a client: base64 of a 16-byte nonce, which
+/// RFC 6455 §4.1 requires to be randomly selected for each connection. The
+/// caller supplies the nonce from a strong source.
+#[must_use]
+pub fn client_key(nonce: &[u8; 16]) -> String {
+    base64_encode(nonce)
+}
+
+/// The client's opening handshake request, RFC 6455 §4.1. `host` is the
+/// `Host` header value (with `:port` when it is not the scheme's default),
+/// `path` the resource name, `protocols` the subprotocols offered in order
+/// of preference. No extension is offered.
+#[must_use]
+pub fn render_client_request(host: &str, path: &str, key: &str, protocols: &[&str]) -> String {
+    let mut out = alloc::format!(
+        "GET {path} HTTP/1.1\r\nHost: {host}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: {WEBSOCKET_VERSION}\r\n"
+    );
+    if !protocols.is_empty() {
+        out.push_str(&alloc::format!(
+            "Sec-WebSocket-Protocol: {}\r\n",
+            protocols.join(", ")
+        ));
+    }
+    out.push_str("\r\n");
+    out
+}
+
+/// Validates the server's handshake response on the client side, RFC 6455
+/// §4.1 steps 1 to 6: status 101, `Upgrade: websocket`, `Connection:
+/// Upgrade`, `Sec-WebSocket-Accept` for `key`, no extension (the client
+/// offered none), and a subprotocol only out of `offered`. With `require`
+/// set, the server must have selected one. Returns the selected
+/// subprotocol. `response` is the header block up to and including the
+/// empty line.
+///
+/// # Errors
+/// See [`HandshakeError`].
+pub fn validate_server_response(
+    response: &str,
+    key: &str,
+    offered: &[&str],
+    require: bool,
+) -> Result<Option<String>, HandshakeError> {
+    let mut lines = response.split("\r\n");
+    let status_line = lines.next().ok_or(HandshakeError::MalformedRequest)?;
+    let mut parts = status_line.split_whitespace();
+    let version = parts.next().ok_or(HandshakeError::MalformedRequest)?;
+    if !version.starts_with("HTTP/1.") {
+        return Err(HandshakeError::MalformedRequest);
+    }
+    let status: u16 = parts
+        .next()
+        .and_then(|s| s.parse().ok())
+        .ok_or(HandshakeError::MalformedRequest)?;
+    if status != 101 {
+        return Err(HandshakeError::UnexpectedStatus(status));
+    }
+    let mut upgrade_ok = false;
+    let mut connection_ok = false;
+    let mut accept: Option<String> = None;
+    let mut protocol: Option<String> = None;
+    for line in lines {
+        if line.is_empty() {
+            break;
+        }
+        let (k, v) = line
+            .split_once(':')
+            .ok_or(HandshakeError::MalformedRequest)?;
+        let v = v.trim();
+        match k.trim().to_ascii_lowercase().as_str() {
+            "upgrade" => upgrade_ok = v.eq_ignore_ascii_case("websocket"),
+            "connection" => {
+                connection_ok = v
+                    .split(',')
+                    .any(|part| part.trim().eq_ignore_ascii_case("upgrade"));
+            }
+            "sec-websocket-accept" => accept = Some(v.to_string()),
+            "sec-websocket-protocol" => protocol = Some(v.to_string()),
+            "sec-websocket-extensions" if !v.is_empty() => {
+                return Err(HandshakeError::ExtensionNotOffered(v.to_string()));
+            }
+            _ => {}
+        }
+    }
+    if !upgrade_ok {
+        return Err(HandshakeError::NotWebSocketUpgrade);
+    }
+    if !connection_ok {
+        return Err(HandshakeError::NotUpgradeConnection);
+    }
+    if accept.as_deref() != Some(compute_accept(key).as_str()) {
+        return Err(HandshakeError::AcceptMismatch);
+    }
+    match protocol {
+        Some(p) if !offered.contains(&p.as_str()) => Err(HandshakeError::ProtocolNotOffered(p)),
+        None if require => Err(HandshakeError::NoProtocolSelected),
+        other => Ok(other),
+    }
 }
 
 // ============================================================================
@@ -320,6 +474,60 @@ mod tests {
         assert_eq!(compute_accept(key), expected);
     }
 
+    /// The client side of §4.1 against the §1.3 sample: the request carries
+    /// the key and the offered subprotocol, the sample response validates,
+    /// and each deviation step 1 to 6 names is refused.
+    #[test]
+    fn the_client_side_validates_the_server_response() {
+        let key = "dGhlIHNhbXBsZSBub25jZQ==";
+        let req = render_client_request("server.example.com", "/mqtt", key, &["mqtt"]);
+        let parsed = parse_client_request(&req).unwrap();
+        assert_eq!(parsed.path, "/mqtt");
+        assert_eq!(parsed.key, key);
+        assert_eq!(parsed.protocols, alloc::vec!["mqtt".to_string()]);
+
+        let ok = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\n\
+                  Connection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\
+                  Sec-WebSocket-Protocol: mqtt\r\n\r\n";
+        assert_eq!(
+            validate_server_response(ok, key, &["mqtt"], true),
+            Ok(Some("mqtt".to_string()))
+        );
+        let cases: [(&str, HandshakeError); 6] = [
+            (
+                "HTTP/1.1 400 Bad Request\r\n\r\n",
+                HandshakeError::UnexpectedStatus(400),
+            ),
+            (
+                "HTTP/1.1 101 x\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n",
+                HandshakeError::NotWebSocketUpgrade,
+            ),
+            (
+                "HTTP/1.1 101 x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: AAAA\r\nSec-WebSocket-Protocol: mqtt\r\n\r\n",
+                HandshakeError::AcceptMismatch,
+            ),
+            (
+                "HTTP/1.1 101 x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n",
+                HandshakeError::NoProtocolSelected,
+            ),
+            (
+                "HTTP/1.1 101 x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\nSec-WebSocket-Protocol: chat\r\n\r\n",
+                HandshakeError::ProtocolNotOffered("chat".to_string()),
+            ),
+            (
+                "HTTP/1.1 101 x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\nSec-WebSocket-Extensions: permessage-deflate\r\nSec-WebSocket-Protocol: mqtt\r\n\r\n",
+                HandshakeError::ExtensionNotOffered("permessage-deflate".to_string()),
+            ),
+        ];
+        for (resp, want) in cases {
+            assert_eq!(
+                validate_server_response(resp, key, &["mqtt"], true),
+                Err(want)
+            );
+        }
+        assert_eq!(client_key(&[0u8; 16]), "AAAAAAAAAAAAAAAAAAAAAA==");
+    }
+
     #[test]
     fn parses_minimal_client_handshake() {
         let req = "GET /chat HTTP/1.1\r\n\
@@ -400,6 +608,52 @@ mod tests {
         let resp = build_server_response(&req);
         assert_eq!(resp.status, 101);
         assert_eq!(resp.accept, "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=");
+    }
+
+    /// §4.2.2 item 9 — an extension the frame path cannot perform must not
+    /// be agreed to. The bare `client_max_window_bits` this offer carries is
+    /// legal in a client offer (RFC 7692 §7.1.2.1) and illegal in a server
+    /// reply (§7.1.2.2), so echoing it produced a response Python's
+    /// `websockets` rejects outright.
+    #[test]
+    fn server_agrees_to_no_extension_it_cannot_perform() {
+        let req = ClientHandshake {
+            key: "dGhlIHNhbXBsZSBub25jZQ==".into(),
+            extensions: alloc::vec!["permessage-deflate; client_max_window_bits".to_string()],
+            ..Default::default()
+        };
+        let resp = build_server_response(&req);
+        assert!(
+            resp.extensions.is_empty(),
+            "no extension reaches codec::encode/decode, so none may be agreed: {:?}",
+            resp.extensions
+        );
+        let rendered = render_server_response(&resp);
+        assert!(
+            !rendered.contains("Sec-WebSocket-Extensions"),
+            "an omitted agreement must omit the header: {rendered}"
+        );
+    }
+
+    /// §4.2.2 item 8 — the bridge defines no subprotocol, so it must select
+    /// none rather than accept whatever the client listed first.
+    #[test]
+    fn server_selects_no_subprotocol_it_does_not_support() {
+        let req = ClientHandshake {
+            key: "dGhlIHNhbXBsZSBub25jZQ==".into(),
+            protocols: alloc::vec!["chat".to_string(), "superchat".to_string()],
+            ..Default::default()
+        };
+        let resp = build_server_response(&req);
+        assert_eq!(
+            resp.protocol, None,
+            "an unsupported subprotocol must not be echoed back as selected"
+        );
+        let rendered = render_server_response(&resp);
+        assert!(
+            !rendered.contains("Sec-WebSocket-Protocol"),
+            "an omitted selection must omit the header: {rendered}"
+        );
     }
 
     #[test]

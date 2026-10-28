@@ -166,6 +166,48 @@ impl<W: std::io::Write + Send> RecordingSession<W> {
         }
     }
 
+    /// Adds a topic the session did not know at construction.
+    ///
+    /// A recorder cannot always name every topic up front: it learns a
+    /// topic's type from the writer that publishes it, and a writer that
+    /// starts later is a normal case, not an error. Before this existed
+    /// such a topic had two outcomes and both were bad — the recorder
+    /// either gave up on it, or announced a placeholder type that no
+    /// typed writer would ever match, and then recorded nothing for the
+    /// rest of the run without saying so.
+    ///
+    /// Answers the topic's index. Already-known topics answer their
+    /// existing index and write nothing, so calling this on discovery is
+    /// safe to repeat.
+    ///
+    /// # Errors
+    /// See [`SessionError`]. Writing the addition can fail like any
+    /// other write.
+    pub fn add_topic(&self, topic: &TopicKey) -> Result<u32, SessionError> {
+        let mut g = self.inner.lock().map_err(|_| SessionError::Poisoned)?;
+        if let Some((_, index)) = g.topic_index.iter().find(|(k, _)| k == topic) {
+            return Ok(*index);
+        }
+        if !g.header_written {
+            // Still cheap: the header has not gone out, so the topic can
+            // join the list it will be written from.
+            let index = u32::try_from(g.topic_index.len()).unwrap_or(u32::MAX);
+            g.pending_header.topics.push(TopicEntry {
+                name: topic.topic.clone(),
+                type_name: topic.type_name.clone(),
+            });
+            g.topic_index.push((topic.clone(), index));
+            return Ok(index);
+        }
+        let entry = TopicEntry {
+            name: topic.topic.clone(),
+            type_name: topic.type_name.clone(),
+        };
+        let index = g.writer.add_topic(&entry)?;
+        g.topic_index.push((topic.clone(), index));
+        Ok(index)
+    }
+
     /// Writes a sample. `now_unix_ns` must be the current
     /// wall-clock time in nanoseconds since the epoch.
     ///
@@ -209,8 +251,20 @@ impl<W: std::io::Write + Send> RecordingSession<W> {
         };
         g.writer.write_frame(&frame)?;
         self.samples_total.fetch_add(1, Ordering::Relaxed);
+        // `bytes_written` is the writer's running total, not the size of
+        // the frame just written, so it is stored and not added. Adding
+        // it made the counter the sum of every intermediate total, which
+        // grows with the square of the sample count: a 1.2 MB capture
+        // was reported as 28 GB, and one of 20 000 samples as 282 GB.
+        // The number appears in the closing line of every run and reads
+        // as a throughput figure.
+        //
+        // The store is safe against the concurrent readers of `stats`
+        // because `g` is held for the whole of this function: writes to
+        // this counter are serialised by the same lock that serialises
+        // the frames.
         self.bytes_total
-            .fetch_add(g.writer.bytes_written(), Ordering::Relaxed);
+            .store(g.writer.bytes_written(), Ordering::Relaxed);
         Ok(())
     }
 
@@ -237,7 +291,7 @@ pub struct SessionStats {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)] // tests may use unwrap.
+#[allow(clippy::unwrap_used, clippy::panic)] // tests may use unwrap and panic.
 mod tests {
     use super::*;
 
@@ -270,6 +324,132 @@ mod tests {
         )
         .unwrap();
         assert_eq!(s.stats().samples_total, 1);
+    }
+
+    /// `bytes_total` is the size of the capture, not a sum of sizes.
+    ///
+    /// It used to add the writer's running total once per sample, which
+    /// makes the counter grow with the square of the sample count: after
+    /// n samples it held the sum of every intermediate total. A capture
+    /// of 1.2 MB was reported as 28 GB. The number is printed at the end
+    /// of every run and reads as a throughput figure, so it invites a
+    /// wrong conclusion rather than merely being wrong.
+    #[test]
+    fn bytes_total_is_the_size_written_and_not_a_running_sum() {
+        let opts = SessionOptions::new(0)
+            .with_participant(p("talker", 1))
+            .with_topic(t("/x", "T"));
+        let sink: Vec<u8> = Vec::new();
+        let s: RecordingSession<Vec<u8>> = RecordingSession::new(sink, opts);
+
+        let mut previous = 0u64;
+        for index in 0..20u8 {
+            s.record_sample(
+                i64::from(index) + 1,
+                [1u8; 16],
+                &t("/x", "T"),
+                SampleKind::Alive,
+                vec![index; 64],
+            )
+            .unwrap();
+            let now = s.stats().bytes_total;
+            assert!(
+                now > previous,
+                "sample {index}: the count did not grow ({previous} -> {now})"
+            );
+            // Each sample carries 64 octets plus a frame header. A growth
+            // of more than a kilobyte per sample means the counter is
+            // summing totals again.
+            assert!(
+                now - previous < 1024,
+                "sample {index} added {} octets for a 64-octet payload — the \
+                 counter is summing running totals",
+                now - previous
+            );
+            previous = now;
+        }
+    }
+
+    /// A topic that appears mid-run is recorded, and reads back.
+    ///
+    /// This is the case a recorder meets whenever a writer starts after
+    /// it does: the topic is known by name from the command line, its
+    /// type only from the writer. The whole round trip is asserted —
+    /// added after the header went out, written to, and read back with
+    /// the right index and the right name — because each half alone
+    /// would pass while the file stayed unreadable.
+    #[test]
+    fn a_topic_added_after_the_header_records_and_reads_back() {
+        use crate::reader::RecordReader;
+
+        // A shared sink, so the bytes are readable while the session
+        // still owns its writer.
+        #[derive(Clone)]
+        struct SharedSink(std::sync::Arc<Mutex<Vec<u8>>>);
+        impl std::io::Write for SharedSink {
+            fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().unwrap().extend_from_slice(b);
+                Ok(b.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+
+        let sink = std::sync::Arc::new(Mutex::new(Vec::new()));
+        let opts = SessionOptions::new(0)
+            .with_participant(p("talker", 1))
+            .with_topic(t("/early", "Early"));
+        let s = RecordingSession::new(SharedSink(std::sync::Arc::clone(&sink)), opts);
+
+        // One sample first, so the header is out and the addition has to
+        // travel as a frame rather than joining the pending list.
+        s.record_sample(
+            1,
+            [1u8; 16],
+            &t("/early", "Early"),
+            SampleKind::Alive,
+            vec![7],
+        )
+        .unwrap();
+
+        let late = t("/late", "Late");
+        let index = s.add_topic(&late).unwrap();
+        assert_eq!(index, 1, "the addition continues the header's list");
+        assert_eq!(
+            s.add_topic(&late).unwrap(),
+            1,
+            "adding it twice answers the same index and writes nothing"
+        );
+
+        s.record_sample(2, [1u8; 16], &late, SampleKind::Alive, vec![8, 9])
+            .unwrap();
+        assert_eq!(s.stats().samples_dropped, 0, "the late topic is known now");
+        assert_eq!(s.stats().samples_total, 2);
+
+        let bytes = sink.lock().unwrap().clone();
+        let mut r = RecordReader::new(&bytes);
+        let header = r.parse_header().unwrap();
+        assert_eq!(header.topics.len(), 1, "the header holds only what it knew");
+
+        let Ok(Some(first)) = r.next_frame() else {
+            panic!("the first frame is missing")
+        };
+        assert_eq!(first.topic_idx, 0);
+        assert_eq!(first.payload, vec![7]);
+
+        let Ok(Some(second)) = r.next_frame() else {
+            panic!("the second frame is missing")
+        };
+        assert_eq!(second.topic_idx, 1);
+        assert_eq!(second.payload, vec![8, 9]);
+        assert_eq!(
+            r.added_topics().len(),
+            1,
+            "the reader picked the addition out of the frame stream"
+        );
+        assert_eq!(r.added_topics()[0].name, "/late");
+        assert_eq!(r.added_topics()[0].type_name, "Late");
     }
 
     #[test]

@@ -9,6 +9,7 @@
 
 use alloc::vec::Vec;
 
+use crate::close::CloseCode;
 use crate::frame::{Frame, Opcode};
 use crate::utf8::{StreamingValidator, Utf8Error};
 
@@ -139,6 +140,30 @@ pub enum ReceiveError {
     InvalidUtf8(Utf8Error),
     /// The reassembly buffer exceeds `max_message_size`.
     MessageTooLarge,
+}
+
+impl ReceiveError {
+    /// Spec §7.4.1 — the status code the connection is failed with.
+    ///
+    /// §8.1 and §8.2 demand that malformed UTF-8 in a text message
+    /// fails the connection; §7.4.1 assigns 1007 "Invalid frame
+    /// payload data" to exactly that case. A framing violation is a
+    /// protocol error (1002), an oversized message is 1009.
+    #[must_use]
+    pub const fn close_code(&self) -> CloseCode {
+        match self {
+            Self::UnexpectedContinuation | Self::InterleavedDataFrame => CloseCode::ProtocolError,
+            Self::InvalidUtf8(_) => CloseCode::InvalidPayloadData,
+            Self::MessageTooLarge => CloseCode::MessageTooBig,
+        }
+    }
+
+    /// The Close frame that fails the connection for this error
+    /// (Spec §7.1 + §7.4.1).
+    #[must_use]
+    pub fn close_frame(&self) -> Frame {
+        Frame::close(self.close_code().to_u16(), "")
+    }
 }
 
 impl core::fmt::Display for ReceiveError {
@@ -476,5 +501,112 @@ mod tests {
         }
         let msg = completed.expect("completed");
         assert_eq!(msg.payload, original);
+    }
+
+    #[test]
+    fn server_fails_connection_with_1007_on_malformed_utf8_from_client() {
+        // Spec §8.2: "When a server receives a Text-frame from the
+        // client that contains malformed UTF-8 data [...] the server
+        // MUST fail the WebSocket Connection." §7.4.1 gives 1007
+        // "Invalid frame payload data" as the status code.
+        //
+        // A client frame is masked (§5.3); the codec unmasks on
+        // decode, so the reassembler sees the raw — invalid — bytes.
+        let bad = alloc::vec![0x48, 0x69, 0xC3, 0x28]; // "Hi" + overlong pair
+        let masked = Frame {
+            fin: true,
+            rsv1: false,
+            rsv2: false,
+            rsv3: false,
+            opcode: Opcode::Text,
+            masking_key: Some([0x37, 0xfa, 0x21, 0x3d]),
+            payload: bad,
+        };
+        let wire = crate::codec::encode(&masked).expect("encode");
+        let received = crate::codec::decode(&wire).expect("decode").0;
+        assert_eq!(
+            crate::masking::validate_masking(&received, crate::masking::Role::Server),
+            Ok(()),
+            "a client frame is masked"
+        );
+        let mut r = Reassembler::new();
+        let err = r.feed(&received).expect_err("malformed UTF-8 fails");
+        assert!(matches!(err, ReceiveError::InvalidUtf8(_)));
+        assert_eq!(err.close_code(), CloseCode::InvalidPayloadData);
+        assert_eq!(err.close_code().to_u16(), 1007);
+        // The close frame put on the wire carries 1007 big-endian.
+        let close = err.close_frame();
+        assert_eq!(close.opcode, Opcode::Close);
+        assert_eq!(&close.payload[..2], &1007u16.to_be_bytes());
+    }
+
+    #[test]
+    fn client_fails_connection_with_1007_on_malformed_utf8_from_server() {
+        // Spec §8.1, the mirror image: a server frame is unmasked and
+        // the client fails the connection with the same status code.
+        let server_frame = Frame {
+            fin: true,
+            rsv1: false,
+            rsv2: false,
+            rsv3: false,
+            opcode: Opcode::Text,
+            masking_key: None,
+            payload: alloc::vec![0xED, 0xA0, 0x80], // U+D800 surrogate
+        };
+        assert_eq!(
+            crate::masking::validate_masking(&server_frame, crate::masking::Role::Client),
+            Ok(()),
+            "a server frame is not masked"
+        );
+        let mut r = Reassembler::new();
+        let err = r.feed(&server_frame).expect_err("surrogate is rejected");
+        assert!(matches!(err, ReceiveError::InvalidUtf8(_)));
+        assert_eq!(err.close_code().to_u16(), 1007);
+    }
+
+    #[test]
+    fn malformed_utf8_split_across_continuation_frames_still_yields_1007() {
+        // §8.1/§8.2 apply to a fragmented text message too — the
+        // streaming validator catches the invalid sequence at the
+        // fragment boundary.
+        let first = Frame {
+            fin: false,
+            rsv1: false,
+            rsv2: false,
+            rsv3: false,
+            opcode: Opcode::Text,
+            masking_key: None,
+            payload: alloc::vec![0xE2, 0x82], // start of U+20AC
+        };
+        let second = Frame {
+            fin: true,
+            rsv1: false,
+            rsv2: false,
+            rsv3: false,
+            opcode: Opcode::Continuation,
+            masking_key: None,
+            payload: alloc::vec![0x28], // invalid continuation byte
+        };
+        let mut r = Reassembler::new();
+        assert!(
+            r.feed(&first)
+                .expect("first fragment is still open")
+                .is_none()
+        );
+        let err = r.feed(&second).expect_err("the sequence is invalid");
+        assert_eq!(err.close_code().to_u16(), 1007);
+    }
+
+    #[test]
+    fn receive_error_close_codes_match_spec_7_4_1() {
+        assert_eq!(
+            ReceiveError::UnexpectedContinuation.close_code().to_u16(),
+            1002
+        );
+        assert_eq!(
+            ReceiveError::InterleavedDataFrame.close_code().to_u16(),
+            1002
+        );
+        assert_eq!(ReceiveError::MessageTooLarge.close_code().to_u16(), 1009);
     }
 }

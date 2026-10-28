@@ -3,8 +3,6 @@
 
 package body Reliable is
 
-   use type Interfaces.Unsigned_16;
-
    HDR : constant := 8;  -- XRCE 8-byte header
 
    ------------------------------------------------------------------
@@ -17,20 +15,28 @@ package body Reliable is
    ------------------------------------------------------------------
    --  Frames
    ------------------------------------------------------------------
-   function Write_Frame (Seq : Seq_Type; Body_FS : Frame_Store) return Frame_Store is
+   function Write_Frame
+     (Seq : Seq_Type; Object_Id : Interfaces.Unsigned_16;
+      Body_FS : Frame_Store) return Frame_Store is
       FS : Frame_Store;
-      N  : constant Natural := Body_FS.Len;
+      N  : constant Natural := Base_Size + Body_FS.Len;
    begin
       FS.Data (0) := 16#80#;              -- session: no-key
       FS.Data (1) := Reliable_Stream;      -- stream: reliable (>=128)
       FS.Data (2) := Byte (Seq and 16#FF#);
       FS.Data (3) := Byte (Shift_Right (Seq, 8) and 16#FF#);
       FS.Data (4) := 16#07#;               -- WRITE_DATA
-      FS.Data (5) := 16#03#;
+      FS.Data (5) := 16#01#;               -- E flag LE + DataFormat FORMAT_DATA
       FS.Data (6) := Byte (Unsigned_16 (N) and 16#FF#);
       FS.Data (7) := Byte (Shift_Right (Unsigned_16 (N), 8) and 16#FF#);
-      for I in 0 .. N - 1 loop
-         FS.Data (HDR + I) := Body_FS.Data (I);
+      --  BaseObjectRequest (7.7.8): RequestId then ObjectId, most significant
+      --  octet first.
+      FS.Data (8)  := Byte (Shift_Right (Seq, 8) and 16#FF#);
+      FS.Data (9)  := Byte (Seq and 16#FF#);
+      FS.Data (10) := Byte (Shift_Right (Object_Id, 8) and 16#FF#);
+      FS.Data (11) := Byte (Object_Id and 16#FF#);
+      for I in 0 .. Body_FS.Len - 1 loop
+         FS.Data (HDR + Base_Size + I) := Body_FS.Data (I);
       end loop;
       FS.Len := HDR + N;
       return FS;
@@ -40,12 +46,12 @@ package body Reliable is
    begin
       Seq := 0;
       Body_FS := (Data => [others => 0], Len => 0);
-      if F.Len >= HDR and then F.Data (4) = 16#07# then
+      if F.Len >= HDR + Base_Size and then F.Data (4) = 16#07# then
          Seq := Seq_Type (F.Data (2)) + Shift_Left (Seq_Type (F.Data (3)), 8);
-         for I in 0 .. F.Len - HDR - 1 loop
-            Body_FS.Data (I) := F.Data (HDR + I);
+         for I in 0 .. F.Len - HDR - Base_Size - 1 loop
+            Body_FS.Data (I) := F.Data (HDR + Base_Size + I);
          end loop;
-         Body_FS.Len := F.Len - HDR;
+         Body_FS.Len := F.Len - HDR - Base_Size;
       end if;
    end Read_Frame;
 
@@ -71,25 +77,66 @@ package body Reliable is
    end Control_Frame;
 
    function Acknack_Frame (First_Unacked : Seq_Type; Bitmap : Interfaces.Unsigned_16;
-                           Stream : Byte := Reliable_Stream; Msg_Seq : Seq_Type := 1)
+                           Stream : Byte := Reliable_Stream; Msg_Seq : Seq_Type := 1;
+                           Mode : Unannotated_Types := Appendable)
                            return Frame_Store is
+      FS : Frame_Store;
+      B  : Natural;   -- index of the first payload octet
    begin
-      return Control_Frame
-        (16#0A#,
-         Byte (First_Unacked and 16#FF#), Byte (Shift_Right (First_Unacked, 8) and 16#FF#),
-         Byte (Bitmap and 16#FF#), Byte (Shift_Right (Bitmap, 8) and 16#FF#),
-         Stream, Msg_Seq);
+      --  ACKNACK_Payload is APPENDABLE (DDS-XTypes 1.3 7.3.1.2.1.8): the
+      --  body is a 4-octet DHEADER (= 5) followed by the 5 payload octets.
+      --  Mode = Final omits the DHEADER (reference implementation form).
+      FS.Data (0) := 16#80#;               -- session: no-key
+      FS.Data (1) := 16#00#;               -- control stream (NONE); target in body
+      FS.Data (2) := Byte (Msg_Seq and 16#FF#);
+      FS.Data (3) := Byte (Shift_Right (Msg_Seq, 8) and 16#FF#);
+      FS.Data (4) := 16#0A#;
+      FS.Data (5) := 16#01#;               -- E-flag little-endian only
+      if Mode = Appendable then
+         FS.Data (6) := 9;                 -- body length: DHEADER + 5
+         FS.Data (7) := 0;
+         FS.Data (8) := 5;                 -- DHEADER (u32 LE) = 5
+         FS.Data (9) := 0;
+         FS.Data (10) := 0;
+         FS.Data (11) := 0;
+         B := 12;
+      else
+         FS.Data (6) := 5;                 -- body length: 5, no DHEADER
+         FS.Data (7) := 0;
+         B := 8;
+      end if;
+      FS.Data (B) := Byte (First_Unacked and 16#FF#);
+      FS.Data (B + 1) := Byte (Shift_Right (First_Unacked, 8) and 16#FF#);
+      FS.Data (B + 2) := Byte (Bitmap and 16#FF#);
+      FS.Data (B + 3) := Byte (Shift_Right (Bitmap, 8) and 16#FF#);
+      FS.Data (B + 4) := Stream;
+      FS.Len := B + 5;
+      return FS;
    end Acknack_Frame;
 
    procedure Parse_Acknack (F : Frame_Store; Ok : out Boolean;
                             First_Unacked : out Seq_Type; Bitmap : out Interfaces.Unsigned_16) is
+      --  Body length from the submessage header; 9 = DHEADER + payload,
+      --  5 = FINAL form (no DHEADER). Shorter is rejected.
+      Body_Len : Natural := 0;
+      Base     : Natural := 8;
    begin
-      Ok := F.Len >= 13 and then F.Data (4) = 16#0A#;
       First_Unacked := 0;
       Bitmap := 0;
+      Ok := False;
+      if F.Len >= 13 and then F.Data (4) = 16#0A#
+      then
+         Body_Len := Natural (F.Data (6)) + 256 * Natural (F.Data (7));
+         if Body_Len >= 9 and then F.Len >= 17 then
+            Base := 12;
+            Ok := True;
+         elsif Body_Len >= 5 then
+            Ok := True;
+         end if;
+      end if;
       if Ok then
-         First_Unacked := Seq_Type (F.Data (8)) + Shift_Left (Seq_Type (F.Data (9)), 8);
-         Bitmap := Unsigned_16 (F.Data (10)) + Shift_Left (Unsigned_16 (F.Data (11)), 8);
+         First_Unacked := Seq_Type (F.Data (Base)) + Shift_Left (Seq_Type (F.Data (Base + 1)), 8);
+         Bitmap := Unsigned_16 (F.Data (Base + 2)) + Shift_Left (Unsigned_16 (F.Data (Base + 3)), 8);
       end if;
    end Parse_Acknack;
 
@@ -296,6 +343,13 @@ package body Reliable is
       end loop;
       return Bitmap;
    end Pending_Acknack;
+
+   function Receiver_Acknack (R : Receiver_State;
+                              Stream : Byte := Reliable_Stream;
+                              Msg_Seq : Seq_Type := 1) return Frame_Store is
+   begin
+      return Acknack_Frame (R.Expected, Pending_Acknack (R), Stream, Msg_Seq, R.Mode);
+   end Receiver_Acknack;
 
    procedure Reset (R : in out Receiver_State) is
    begin

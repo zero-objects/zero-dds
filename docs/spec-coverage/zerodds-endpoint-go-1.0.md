@@ -1,9 +1,7 @@
 # `zerodds-endpoint-go` 1.0 — Spec-Coverage
 
 **Quelle:** `docs/specs/zerodds-endpoint-go-1.0.md` — ZeroDDS Go Endpoint-SDK-Spec.
-Ergänzt die Codegen-Coverage `zerodds-xcdr2-go`
-(`docs/spec-coverage/zerodds-xcdr2-go-1.0.md`) — dort das Marshalling, hier der
-Transport.
+Das Marshalling kommt aus `crates/lang-rules`, Spalte `Language::Go`; hier steht der Transport.
 
 Implementation:
 
@@ -72,13 +70,13 @@ XRCE-Frame, nutzt nur den generierten `MarshalXCDR`/`UnmarshalXCDRPong`),
 `GO_ENDPOINT_MAIN` (`udpTransport` über `zerodds.Transport` +
 `zeroddsendpoint`-Modul, Modus `sync`/`async` per CLI-Argument).
 
-**Tests (codepit):**
+**Tests:** (Linux)
 - `go_raw_udp` — generierter `Ping`/`Pong`-Codec direkt über einen rohen
   UDP-Socket, ohne XRCE-Framing.
 - `go_endpoint_sync` — voller Stack über `zerodds.Client`.
 - `go_endpoint_async` — voller Stack über `zerodds.AsyncReader`/`AsyncWriter`.
 
-3/3 grün (codepit).
+3/3 grün (Linux).
 
 **Status:** done.
 
@@ -102,7 +100,7 @@ der Producer geht nie in den Kernel.
 `endpoints/go/example_reliable` (lauffähige In-Process-Demo, kein Socket);
 `endpoints/go/reliable_app` (live UDP-Sender-App für das E2E).
 
-**Tests (codepit):**
+**Tests:** (Linux)
 - `go_reliable_unit_and_golden` (`crates/endpoint-e2e/tests/go_reliable.rs`)
   läuft `go test` mit `-run` auf `endpoints/go/reliable_test.go` — 21
   Testfunktionen: monotone seq (`TestSubmitAssignsMonotonicSeqnrs`),
@@ -130,7 +128,7 @@ der Producer geht nie in den Kernel.
 - `go_reliable_example` — `example_reliable` läuft und meldet
   `sequence 0..11 verified in order` + `RELIABLE OK`.
 
-5/5 grün (codepit), davon 4 in diesem Abschnitt (Latenz-Bench in §6).
+5/5 grün (Linux), davon 4 in diesem Abschnitt (Latenz-Bench in §6).
 
 **Status:** done.
 
@@ -146,7 +144,7 @@ nimmt, nicht das Warten auf ACKNACK.
 Peer nötig (beliebiger Loopback-Port, nur lokale Dispatch-Kosten unter
 Messung).
 
-**Tests (codepit):** `go_reliable_latency_bench`
+**Tests:** (Linux) `go_reliable_latency_bench`
 (`crates/endpoint-e2e/tests/go_reliable.rs`) — Ring-Enqueue **20–25 ns** vs.
 inline `sendto` **4360 ns** (~175–220×).
 
@@ -156,9 +154,9 @@ inline `sendto` **4360 ns** (~175–220×).
 
 ## Audit-Status
 
-6 done / 0 partial / 0 open / 0 n/a (informativ) / 0 n/a (rejected).
+6 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
 
-Test-Lauf (codepit, verifiziert): `cargo test -p zerodds-endpoint-e2e --test go`
+Test-Lauf (Linux, verifiziert): `cargo test -p zerodds-endpoint-e2e --test go`
 3/3 (Ping-Pong: `go_raw_udp`/`go_endpoint_sync`/`go_endpoint_async`);
 `--test go_reliable` 5/5 (`go_reliable_unit_and_golden` — 21 Go-Unit-Tests inkl.
 Byte-Golden, `go_reliable_loss_recovery`, `go_reliable_no_loss`,

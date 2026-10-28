@@ -4,23 +4,23 @@
 //! `zerodds-pcap` library — parsing primitives.
 //!
 //! Crate `zerodds-pcap`. Safety classification: **COMFORT**.
-//! Offline pcap-/RTPS-Decoder; pure parsing, kein Runtime-Pfad.
+//! Offline pcap/RTPS decoder; pure parsing, no runtime path.
 //!
-//! Wir implementieren einen leichten libpcap-File-Reader (LE und BE
-//! Magic-Words) und einen "best-effort" RTPS-Locator: jeder packet-
-//! payload wird nach dem `RTPS`-Magic durchsucht; ab dem Treffer
-//! versuchen wir [`zerodds_rtps::datagram::decode_datagram`].
+//! We implement a lightweight libpcap file reader (LE and BE
+//! magic words) and a "best-effort" RTPS locator: each packet
+//! payload is searched for the `RTPS` magic; from the hit onward
+//! we try [`zerodds_rtps::datagram::decode_datagram`].
 //!
-//! Damit funktioniert das Tool für **alle gängigen pcap-Captures**
-//! (Ethernet/IP/UDP/RTPS) ohne dass wir L2/L3/L4-Parsing
-//! implementieren müssen — die UDP-Payload startet immer mit `RTPS`.
+//! This makes the tool work for **all common pcap captures**
+//! (Ethernet/IP/UDP/RTPS) without us doing L2/L3/L4 parsing
+//! need to implement — the UDP payload always starts with `RTPS`.
 
 #![warn(missing_docs)]
 #![allow(clippy::module_name_repetitions)]
 
-/// Pcap libpcap-Format Magic, Little-Endian Variante.
+/// Pcap libpcap-format magic, little-endian variant.
 pub const PCAP_MAGIC_LE: u32 = 0xA1B2_C3D4;
-/// Pcap libpcap-Format Magic, Big-Endian Variante.
+/// Pcap libpcap-format magic, big-endian variant.
 pub const PCAP_MAGIC_BE: u32 = 0xD4C3_B2A1;
 /// Pcap libpcap-Format Magic, nanosecond-precision LE.
 pub const PCAP_MAGIC_NS_LE: u32 = 0xA1B2_3C4D;
@@ -30,13 +30,13 @@ pub const RTPS_MAGIC: &[u8; 4] = b"RTPS";
 /// Pcap-File-Header (24 Bytes).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PcapFileHeader {
-    /// Magic-Word (siehe [`PCAP_MAGIC_LE`]).
+    /// Magic word (see [`PCAP_MAGIC_LE`]).
     pub magic: u32,
     /// Major-Version. Standard: 2.
     pub version_major: u16,
     /// Minor-Version. Standard: 4.
     pub version_minor: u16,
-    /// Snapshot-Length (DoS-Cap pro packet).
+    /// Snapshot length (DoS cap per packet).
     pub snaplen: u32,
     /// Datalink-Layer-Type (1 = Ethernet, 113 = LinuxSLL, 0 = NULL).
     pub linktype: u32,
@@ -45,24 +45,24 @@ pub struct PcapFileHeader {
 /// Per-Record Pcap-Header (16 Bytes).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PcapRecordHeader {
-    /// Timestamp-Sekunden.
+    /// Timestamp seconds.
     pub ts_sec: u32,
-    /// Timestamp-Microsekunden (oder ns je nach Magic).
+    /// Timestamp microseconds (or ns depending on magic).
     pub ts_usec: u32,
     /// Captured-Length (≤ snaplen).
     pub incl_len: u32,
-    /// Original-Length im Wire.
+    /// Original length on wire.
     pub orig_len: u32,
 }
 
-/// Parse-Fehler.
+/// Parse error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PcapError {
-    /// Datei zu kurz für Header.
+    /// File too short for a header.
     TooShort,
-    /// Magic-Word nicht erkannt.
+    /// Magic word not recognised.
     BadMagic(u32),
-    /// `incl_len` größer als verbleibende Bytes.
+    /// `incl_len` larger than the remaining bytes.
     TruncatedRecord,
 }
 
@@ -78,10 +78,10 @@ impl std::fmt::Display for PcapError {
 
 impl std::error::Error for PcapError {}
 
-/// Liest den Pcap-File-Header. Liefert (`header`, `is_big_endian`).
+/// Reads the pcap file header. Returns (`header`, `is_big_endian`).
 ///
 /// # Errors
-/// [`PcapError::TooShort`] oder [`PcapError::BadMagic`].
+/// [`PcapError::TooShort`] or [`PcapError::BadMagic`].
 pub fn parse_file_header(bytes: &[u8]) -> Result<(PcapFileHeader, bool), PcapError> {
     if bytes.len() < 24 {
         return Err(PcapError::TooShort);
@@ -118,7 +118,7 @@ pub fn parse_file_header(bytes: &[u8]) -> Result<(PcapFileHeader, bool), PcapErr
     ))
 }
 
-/// Iterator über pcap-Records. Liefert pro Aufruf
+/// Iterator over pcap records. Returns per call
 /// `Some((header, payload_slice))`.
 pub struct PcapIter<'a> {
     bytes: &'a [u8],
@@ -127,8 +127,8 @@ pub struct PcapIter<'a> {
 }
 
 impl<'a> PcapIter<'a> {
-    /// Konstruiert den Iterator. Erwartet, dass [`parse_file_header`]
-    /// bereits erfolgreich war.
+    /// Constructs the iterator. Expects that [`parse_file_header`]
+    /// already succeeded.
     #[must_use]
     pub fn new(bytes: &'a [u8], big_endian: bool) -> Self {
         Self {
@@ -138,10 +138,10 @@ impl<'a> PcapIter<'a> {
         }
     }
 
-    /// Liefert nächsten Record oder `None`.
+    /// Returns the next record or `None`.
     ///
     /// # Errors
-    /// [`PcapError::TruncatedRecord`] wenn `incl_len` über die Datei hinausragt.
+    /// [`PcapError::TruncatedRecord`] when `incl_len` extends past the file.
     pub fn next_record(&mut self) -> Result<Option<(PcapRecordHeader, &'a [u8])>, PcapError> {
         if self.pos + 16 > self.bytes.len() {
             return Ok(None);
@@ -171,40 +171,40 @@ impl<'a> PcapIter<'a> {
     }
 }
 
-/// Sucht den ersten `RTPS`-Magic im `payload` und liefert den
-/// resultierenden Offset (oder `None`).
+/// Finds the first `RTPS` magic in the `payload` and returns the
+/// resulting offset (or `None`).
 ///
-/// Damit überspringen wir L2/L3/L4-Header (Ethernet/IP/UDP) ohne sie
-/// explizit zu parsen.
+/// This skips the L2/L3/L4 headers (Ethernet/IP/UDP) without
+/// to parse explicitly.
 #[must_use]
 pub fn find_rtps_offset(payload: &[u8]) -> Option<usize> {
     payload.windows(4).position(|w| w == RTPS_MAGIC)
 }
 
-/// Sub-command des Pcap-CLIs.
+/// Sub-command of the pcap CLI.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
-    /// `parse <FILE>` — drucke RTPS-Submessages pro Frame.
+    /// `parse <FILE>` — print RTPS submessages per frame.
     Parse(FileArgs),
-    /// `stats <FILE>` — drucke nur Aggregat-Counts pro Submessage-Typ.
+    /// `stats <FILE>` — print only aggregate counts per submessage type.
     Stats(FileArgs),
 }
 
-/// Argumente für `parse` und `stats`.
+/// Arguments for `parse` and `stats`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileArgs {
-    /// Pfad zum pcap-File.
+    /// Path to the pcap file.
     pub file: String,
 }
 
-/// Parse-Fehler beim CLI.
+/// Parse error in the CLI.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParseError {
-    /// Kein subcommand.
+    /// No subcommand.
     Missing,
-    /// Unbekanntes subcommand.
+    /// Unknown subcommand.
     Unknown(String),
-    /// FILE-arg fehlt.
+    /// FILE argument missing.
     MissingFile,
 }
 
@@ -220,10 +220,10 @@ impl std::fmt::Display for ParseError {
 
 impl std::error::Error for ParseError {}
 
-/// Parst `args` (typisch `env::args().skip(1)`) zu einem [`Command`].
+/// Parses `args` (typically `env::args().skip(1)`) into a [`Command`].
 ///
 /// # Errors
-/// Siehe [`ParseError`].
+/// See [`ParseError`].
 pub fn parse_args(args: &[String]) -> Result<Command, ParseError> {
     let sub = args.first().ok_or(ParseError::Missing)?;
     match sub.as_str() {

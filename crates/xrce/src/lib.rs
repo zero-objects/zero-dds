@@ -46,15 +46,23 @@
 //! - **`transport_tcp`** (§11.3): `XrceTcpClient`/`XrceTcpServer` with
 //!   2-byte length-prefix framing.
 //! - **`transport_serial`** (Annex C): HDLC-like frame codec with
-//!   byte stuffing + CRC-16-CCITT-FALSE; streaming reassembly via
+//!   addresses, length, byte stuffing + RFC 1662 FCS-16; streaming reassembly via
 //!   `SerialFramer`. Real serial IO is out of scope (no
 //!   `serialport` crate dep).
 //! - **`transport_tls`**: trait + skeleton for TLS-on-TCP (plug-in
 //!   later).
 //! - **`transport_dtls`**: `DtlsLayer` trait + `DummyDtls` pass-through;
 //!   a real DTLS lib (e.g. `webrtc-dtls`) comes deployment-specific.
-//! - `TransportLocatorTcp` + `TransportLocatorSerial` as additional
-//!   locator variants (discriminator 0x04/0x05).
+//!
+//! ## Types without an `@extensibility` annotation
+//!
+//! The types of Annex A that carry none (`Time_t`, `ResultStatus`, `Property`,
+//! `TransportLocator*`, `ACKNACK_Payload`, ...) are `APPENDABLE` by DDS-XTypes
+//! 1.3 §7.3.1.2.1.8 and have a DHEADER in XCDR2. That is the default
+//! (`encoding::UnannotatedTypes::Appendable`). The octets of the reference
+//! implementation (a `STATUS` payload of 6 octets, an `ACKNACK` of 5) have
+//! none; `encoding::set_unannotated_types(UnannotatedTypes::Final)` writes
+//! that form. Readers accept both. `tests/unannotated_types.rs` pins it.
 //!
 //! ## Deliberately not implemented
 //!
@@ -96,6 +104,8 @@ pub mod discovery;
 #[cfg(feature = "alloc")]
 pub mod fragment;
 #[cfg(feature = "alloc")]
+pub mod handshake;
+#[cfg(feature = "alloc")]
 pub mod object_id;
 #[cfg(feature = "alloc")]
 pub mod object_info;
@@ -107,6 +117,8 @@ pub mod object_repr;
 pub mod object_store;
 #[cfg(feature = "alloc")]
 pub mod reliable;
+#[cfg(feature = "alloc")]
+pub mod sample_info;
 #[cfg(feature = "alloc")]
 pub mod transport_locator;
 #[cfg(feature = "xml-config")]
@@ -128,7 +140,9 @@ pub use transport_udp::{
 };
 
 #[cfg(feature = "alloc")]
-pub use continuous_read::{DeliveryControl, PendingSample, ReadStream};
+pub use continuous_read::{
+    DeliveryControl, MAX_SAMPLES_UNLIMITED, MAX_SAMPLES_ZERO, PendingSample, ReadStream,
+};
 #[cfg(feature = "std")]
 pub use discovery::{MulticastDiscovery, XRCE_DISCOVERY_GROUP, XRCE_DISCOVERY_PORT};
 #[cfg(feature = "alloc")]
@@ -137,7 +151,9 @@ pub use fragment::{
     MAX_TOTAL_PAYLOAD,
 };
 #[cfg(feature = "alloc")]
-pub use object_id::{KIND_MASK_BIT, OBJECTID_AGENT, OBJECTID_CLIENT, OBJECTID_INVALID, ObjectId};
+pub use object_id::{
+    KIND_MASK_BIT, OBJECTID_AGENT, OBJECTID_CLIENT, OBJECTID_INVALID, OBJECTID_SESSION, ObjectId,
+};
 #[cfg(feature = "alloc")]
 pub use object_info::{
     ActivityInfoVariant, BaseObjectReply, BaseObjectRequest, ObjectInfo, RelatedObjectRequest,
@@ -145,8 +161,8 @@ pub use object_info::{
 };
 #[cfg(feature = "alloc")]
 pub use object_kind::{
-    OBJK_AGENT, OBJK_APPLICATION, OBJK_CLIENT, OBJK_DATAREADER, OBJK_DATAWRITER, OBJK_DOMAIN,
-    OBJK_INVALID, OBJK_PARTICIPANT, OBJK_PUBLISHER, OBJK_QOSPROFILE, OBJK_SUBSCRIBER, OBJK_TOPIC,
+    OBJK_AGENT, OBJK_APPLICATION, OBJK_CLIENT, OBJK_DATAREADER, OBJK_DATAWRITER, OBJK_INVALID,
+    OBJK_OTHER, OBJK_PARTICIPANT, OBJK_PUBLISHER, OBJK_QOSPROFILE, OBJK_SUBSCRIBER, OBJK_TOPIC,
     OBJK_TYPE, ObjectKind,
 };
 #[cfg(feature = "alloc")]
@@ -159,18 +175,21 @@ pub use reliable::{
     ReliableStreamState, SENDER_WINDOW_CAP,
 };
 #[cfg(feature = "alloc")]
+pub use sample_info::{SampleInfo, SampleInfoDelta, SampleInfoFlags};
+#[cfg(feature = "alloc")]
 pub use transport_dtls::{DtlsError, DtlsLayer, DummyDtls};
 #[cfg(feature = "alloc")]
 pub use transport_locator::{
-    TRANSPORT_LOCATOR_SERIAL_DEVICE_MAX, TRANSPORT_LOCATOR_STRING_MAX, TransportLocator,
-    TransportLocatorLarge, TransportLocatorMedium, TransportLocatorSerial, TransportLocatorSmall,
-    TransportLocatorTcp,
+    TRANSPORT_LOCATOR_SEQ_MAX, TRANSPORT_LOCATOR_STRING_MAX, TransportLocator,
+    TransportLocatorLarge, TransportLocatorMedium, TransportLocatorSmall, decode_locator_seq,
+    encode_locator_seq,
 };
 #[cfg(feature = "std")]
 pub use transport_serial::{
-    ESCAPE_BYTE, FLAG_BYTE, STUFF_XOR, SerialError, SerialFramer, crc16_ccitt_false,
-    decode_frame as serial_decode_frame, decode_frame_inner as serial_decode_frame_inner,
-    encode_message as serial_encode_message, encode_payload as serial_encode_payload,
+    ESCAPE_BYTE, FLAG_BYTE, FRAME_HEADER_LEN, FrameCheck, STUFF_XOR, SerialError, SerialFrame,
+    SerialFrameMessage, SerialFramer, crc16_arc, decode_frame as serial_decode_frame,
+    decode_frame_inner as serial_decode_frame_inner, encode_frame as serial_encode_frame,
+    encode_message as serial_encode_message, fcs16,
 };
 #[cfg(feature = "std")]
 pub use transport_tcp::{TCP_LENGTH_PREFIX_SIZE, XrceTcpClient, XrceTcpServer};

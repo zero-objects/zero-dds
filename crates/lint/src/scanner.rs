@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Workspace-Scanner.
+//! Workspace scanner.
 //!
 //! Enumerates all member crates of the workspace via `cargo_metadata`,
 //! reads the safety classification per crate and collects the source
@@ -33,7 +33,7 @@ pub struct CrateInfo {
 ///
 /// # Errors
 /// If `cargo metadata` fails or an I/O error occurs reading
-/// Quelldateien auftreten.
+/// Source files occur.
 pub fn scan_workspace(root: &Path) -> Result<Vec<CrateInfo>> {
     let metadata = MetadataCommand::new()
         .manifest_path(root.join("Cargo.toml"))

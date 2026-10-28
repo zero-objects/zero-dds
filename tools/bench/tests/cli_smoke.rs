@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Smoke-Tests für `zerodds-bench`.
+//! Smoke tests for `zerodds-bench`.
 //!
-//! Tests die DcpsRuntime starten haben einen 10s hard-cap — sonst
-//! hat der Test einen hang den wir nicht in CI verschleppen wollen.
+//! Tests that start a DcpsRuntime have a 10s hard cap — otherwise
+//! the test has a hang that we do not want to drag into CI.
 
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic, missing_docs)]
 
@@ -64,7 +64,7 @@ fn info_exits_zero() {
 
 #[test]
 fn latency_short_duration_terminates() {
-    // Latency-Bench mit --duration 1s muss in <10s self-terminieren.
+    // Latency bench with --duration 1s must self-terminate in <10s.
     let start = Instant::now();
     let out = Command::new(bin())
         .args(["latency", "--duration", "1s", "-p", "32"])

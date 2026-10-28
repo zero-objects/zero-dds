@@ -62,7 +62,7 @@ fn cyclone_data_empty_payload_decodes() {
     let parsed = decode_datagram(&bytes).expect("decode");
     assert_eq!(parsed.header.vendor_id, VendorId([0x01, 0x10]));
     assert_eq!(parsed.submessages.len(), 1);
-    match &parsed.submessages[0] {
+    match &parsed.submessages[0].submessage {
         ParsedSubmessage::Data(d) => {
             assert_eq!(d.writer_sn, SequenceNumber(1));
             assert!(d.serialized_payload.is_empty());
@@ -78,7 +78,7 @@ fn cyclone_data_cdr2_payload_decodes_and_carries_payload() {
     let bytes = parse_hex(FRAME_DATA_CDR2);
     let parsed = decode_datagram(&bytes).expect("decode");
     assert_eq!(parsed.submessages.len(), 1);
-    match &parsed.submessages[0] {
+    match &parsed.submessages[0].submessage {
         ParsedSubmessage::Data(d) => {
             assert_eq!(d.writer_sn, SequenceNumber(42));
             // Payload = 4-byte encapsulation header + 4-byte CDR2 body
@@ -97,7 +97,7 @@ fn cyclone_heartbeat_decodes() {
     let bytes = parse_hex(FRAME_HEARTBEAT);
     let parsed = decode_datagram(&bytes).expect("decode");
     assert_eq!(parsed.submessages.len(), 1);
-    match &parsed.submessages[0] {
+    match &parsed.submessages[0].submessage {
         ParsedSubmessage::Heartbeat(h) => {
             assert_eq!(h.first_sn, SequenceNumber(1));
             assert_eq!(h.last_sn, SequenceNumber(10));
@@ -164,6 +164,7 @@ fn zerodds_writer_produces_compatible_data_layout() {
         writer_id: EntityId::user_writer_with_key([0, 0, 1]),
         writer_sn: SequenceNumber(1),
         inline_qos: None,
+        data_flag: true,
         key_flag: false,
         non_standard_flag: false,
         serialized_payload: Vec::new().into(),
@@ -209,6 +210,7 @@ fn zerodds_writer_produces_compatible_data_with_payload() {
         writer_id: EntityId::user_writer_with_key([0, 0, 1]),
         writer_sn: SequenceNumber(42),
         inline_qos: None,
+        data_flag: true,
         key_flag: false,
         non_standard_flag: false,
         serialized_payload: payload.into(),
@@ -226,7 +228,7 @@ fn zerodds_writer_produces_compatible_data_with_payload() {
 fn cyclone_data_empty_roundtrip_bit_identical() {
     let cyclone_bytes = parse_hex(FRAME_DATA_EMPTY);
     let parsed = decode_datagram(&cyclone_bytes).unwrap();
-    let data = match &parsed.submessages[0] {
+    let data = match &parsed.submessages[0].submessage {
         ParsedSubmessage::Data(d) => d.clone(),
         other => panic!("expected DATA, got {other:?}"),
     };
@@ -238,7 +240,7 @@ fn cyclone_data_empty_roundtrip_bit_identical() {
 fn cyclone_data_cdr2_roundtrip_bit_identical() {
     let cyclone_bytes = parse_hex(FRAME_DATA_CDR2);
     let parsed = decode_datagram(&cyclone_bytes).unwrap();
-    let data = match &parsed.submessages[0] {
+    let data = match &parsed.submessages[0].submessage {
         ParsedSubmessage::Data(d) => d.clone(),
         other => panic!("expected DATA, got {other:?}"),
     };
@@ -272,13 +274,12 @@ fn cyclone_sedp_publication_datagram_decodes() {
     let bytes = parse_hex(FRAME_SEDP_PUBLICATION);
     let parsed = decode_datagram(&bytes).expect("decode");
     let data_count = parsed
-        .submessages
-        .iter()
+        .contents()
         .filter(|s| matches!(s, ParsedSubmessage::Data(_)))
         .count();
     assert_eq!(data_count, 4, "expected 4 DATA submessages");
 
-    for sub in &parsed.submessages {
+    for sub in parsed.contents() {
         if let ParsedSubmessage::Data(d) = sub {
             assert_eq!(
                 d.writer_id,
@@ -299,8 +300,7 @@ fn cyclone_sedp_publication_parameter_list_parses() {
     let bytes = parse_hex(FRAME_SEDP_PUBLICATION);
     let parsed = decode_datagram(&bytes).expect("decode");
     let first_data = parsed
-        .submessages
-        .iter()
+        .contents()
         .find_map(|s| {
             if let ParsedSubmessage::Data(d) = s {
                 Some(d)
@@ -327,14 +327,13 @@ fn cyclone_sedp_publication_parameter_list_parses() {
 
 #[test]
 fn cyclone_sedp_publication_all_four_topics_parse() {
-    // Alle 4 Publications im Datagramm sollen parsen.
+    // All 4 publications in the datagram should parse.
     use zerodds_rtps::publication_data::PublicationBuiltinTopicData;
 
     let bytes = parse_hex(FRAME_SEDP_PUBLICATION);
     let parsed = decode_datagram(&bytes).expect("decode");
     let topics: Vec<String> = parsed
-        .submessages
-        .iter()
+        .contents()
         .filter_map(|s| {
             if let ParsedSubmessage::Data(d) = s {
                 Some(d)

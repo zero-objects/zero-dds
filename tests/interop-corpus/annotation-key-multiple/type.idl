@@ -1,0 +1,7 @@
+// `@key` on several members
+@final struct Sample {
+    @key long region;
+    long payload;
+    @key string name;
+    @key short slot;
+};

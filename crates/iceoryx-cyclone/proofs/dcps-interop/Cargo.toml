@@ -15,6 +15,6 @@ path = "src/main.rs"
 
 [dependencies]
 zerodds-dcps = { path = "../../../dcps", features = ["cyclone-iox", "std"] }
-zerodds-cdr = { path = "../../../cdr" }
+zerodds-wire = { path = "../../../wire" }
 zerodds-sql-filter = { path = "../../../sql-filter" }
 zerodds-types = { path = "../../../types" }

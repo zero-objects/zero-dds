@@ -27,7 +27,7 @@ pub struct FileLintContext<'a> {
     pub file: &'a Path,
     /// Raw source text of the file.
     pub source: &'a str,
-    /// Geparster AST.
+    /// Parsed AST.
     pub ast: &'a syn::File,
     /// Classification of the containing crate, if present.
     pub crate_class: Option<SafetyClass>,
@@ -37,7 +37,7 @@ pub struct FileLintContext<'a> {
 
 /// Lint that runs per source file.
 pub trait FileLint {
-    /// Maschinenlesbarer Lint-Name (z.B. `dds_require_safety_comment`).
+    /// Machine-readable lint name (e.g. `dds_require_safety_comment`).
     fn name(&self) -> &'static str;
 
     /// Runs the lint and returns diagnostics.
@@ -46,7 +46,7 @@ pub trait FileLint {
 
 /// Lint that runs per crate.
 pub trait CrateLint {
-    /// Maschinenlesbarer Lint-Name.
+    /// Machine-readable lint name.
     fn name(&self) -> &'static str;
 
     /// Runs the lint and returns diagnostics.

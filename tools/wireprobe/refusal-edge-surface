@@ -1,0 +1,4523 @@
+#!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 ZeroDDS Contributors
+#
+# refusal-edge-surface — every row of `refusal-range-edges.tsv`, asked of
+# every binding that can be asked.
+#
+#   tools/wireprobe/refusal-edge-surface
+#   tools/wireprobe/refusal-edge-surface --langs go,lua,rt-c
+#   tools/wireprobe/refusal-edge-surface --edges over-u16,short-pid-past-0x3f00
+#   tools/wireprobe/refusal-edge-surface --list
+#
+# ## What this asks
+#
+# `tools/wireprobe/refusal-range-edges.tsv` is the case list for the
+# values no corpus sample can carry: seventeen edges, each with exactly
+# one right answer derived from the named clause — `refuse`, or the
+# exact octets where the value has an exact form in the width.
+# `endpoint-number-surface` asks four of its rows of fifteen bindings;
+# this asks all seventeen of thirty surfaces:
+#
+#   - the fifteen hand-written endpoint SDKs that lay their own octets
+#     from a writer somebody typed (`docs/interop-harnesses.md`): ada,
+#     ada-83, ada-native, d, elixir, fsharp, go, julia, kotlin, lua,
+#     nim, node, ocaml, swift, zig
+#   - the fourteen wire-runtime columns under `runtime/`: rt-ada, rt-c,
+#     rt-cpp, rt-csharp, rt-d, rt-elixir, rt-go, rt-java, rt-lua,
+#     rt-nim, rt-python, rt-swift, rt-typescript, rt-zig
+#   - the Rust wire core, `crates/wire` (rust-wire)
+#
+# `runtime/{ada,lua,nim,swift,zig}` are the five newest of those
+# columns. They are separate surfaces from the endpoint SDKs of the same
+# five names: `endpoints/nim` exports `putU16`, `runtime/nim` exports
+# `writeU16`, and the two are different code answering the same clause.
+#
+# `endpoints/java` and `endpoints/python` are not surfaces here and are
+# not skipped silently either: neither exports a writer at all — their
+# corpus columns are generated codecs — so there is no call to ask.
+# `endpoint-number-surface` lists both in its `--langs` default and has
+# no emitter for either, which is why its `java` and `python` rows have
+# always been `emit_java: command not found` rather than an answer.
+#
+# ## The shape of a probe
+#
+# One program per surface, taking the edge name as its one argument. It
+# makes a fresh little-endian XCDR2 writer, performs that row's
+# operation with that row's argument, and prints exactly one line:
+#
+#   <hex>                    the octets the writer holds
+#   wrote-frame len=<n>      a frame writer that produced a frame
+#   REFUSED <the binding's own words>
+#   BROKEN <why the probe could not run>
+#
+# Three rows have no spelling inside that program, because several
+# bindings put the wire width in the parameter type and a literal
+# outside it is a compile error rather than a statement: `over-u8`,
+# `over-u16` and `over-u32` are each compiled on their own, so that the
+# compiler's refusal is attributed to the row it belongs to and does not
+# take the other fourteen down with it.
+#
+# ## What is never silent
+#
+#   PASS          the answer is the ledger's answer.
+#   FAIL          the answer contradicts the ledger — octets where
+#                 `refuse` is required (the silent-drop class), a
+#                 refusal where the value has an exact form, or the
+#                 wrong octets. Reported at once, with the row, the
+#                 surface, what was answered and what the clause says.
+#                 Any FAIL sets exit code 8.
+#   n/a           the surface exports no operation that can reach the
+#                 row. Each such cell names why; nothing is skipped
+#                 without a word.
+#   skipped       the surface's toolchain is not on this host. Named,
+#                 and never counted as passed.
+#   broken-probe  the probe itself could not be built, started or run.
+#                 Two controls stand in front of every answer: a
+#                 surface control (`c:writer` — a fresh writer and one
+#                 octet) and, for each row, an operation control — the
+#                 same call with an in-range argument. If either fails
+#                 the cell is the probe's failure and NOT an answer. A
+#                 compile error of a stale probe must never be mistaken
+#                 for a binding's refusal.
+#   timeout       the probe was still running at the limit. Its own
+#                 class, never an answer, never a hang of the run.
+#   no-probe      a ledger row this driver has no case for. A new edge
+#                 must get a probe, not silence.
+#
+# broken-probe, timeout and no-probe each set exit code 2. 8 wins.
+#
+# ## Attribution of compile-time refusals
+#
+# Several bindings put the wire width in the parameter type (`PutU16`
+# takes a `uint16`), so `over-u16` has no spelling at all and the
+# compiler's error IS the binding's refusal. That attribution is only
+# made when the operation control — same harness, `PutU16(0x1234)` — is
+# green; otherwise the failure is `broken-probe`. For the rows whose
+# ledger answer is octets (the negatives, the value past 2^63, -0.0),
+# the argument is spelled the way a caller of that binding spells it —
+# the two's-complement bit pattern where the parameter is the wire
+# width, the IDL value where it is wider — because the conversion is
+# the caller's in every one of these SDKs (`--numbers bits` in
+# `wireprobe-endpoint-gen`), and a probe that handed an unspellable
+# literal would measure its own arithmetic. `endpoint-number-surface`
+# hands `put_u16(-12345)` to a `uint16` parameter and reads the
+# compiler's `cannot use -12345` as the binding's answer; it is not.
+set -uo pipefail
+
+cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)" || exit 2
+root="$PWD"
+tsv="$root/tools/wireprobe/refusal-range-edges.tsv"
+
+all_surfaces="ada,ada-83,ada-native,d,elixir,fsharp,go,julia,kotlin,lua,nim,node,ocaml,swift,zig,rt-ada,rt-c,rt-cpp,rt-csharp,rt-d,rt-elixir,rt-go,rt-java,rt-lua,rt-nim,rt-python,rt-swift,rt-typescript,rt-zig,rust-wire"
+langs="$all_surfaces"
+edges_filter=""
+build_secs="${ZERODDS_EDGE_BUILD_TIMEOUT:-180}"
+run_secs="${ZERODDS_EDGE_RUN_TIMEOUT:-25}"
+list_only=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --langs) langs="$2"; shift 2 ;;
+        --edges) edges_filter="$2"; shift 2 ;;
+        --timeout) run_secs="$2"; shift 2 ;;
+        --build-timeout) build_secs="$2"; shift 2 ;;
+        --list) list_only=1; shift ;;
+        --help|-h) sed -n '5,105p' "${BASH_SOURCE[0]}"; exit 0 ;;
+        *) echo "refusal-edge-surface: \`$1\` is not an option" >&2; exit 2 ;;
+    esac
+done
+
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+LIMOUT="$work/.limout"
+
+# --- the ledger -------------------------------------------------------
+
+[ -f "$tsv" ] || { echo "refusal-edge-surface: $tsv is missing" >&2; exit 2; }
+
+# The edge names this driver knows a probe for. A ledger row outside
+# this list is reported as `no-probe` for every surface and fails the
+# run with exit 2: a new edge must get a probe, not silence.
+known_edges="over-u8 over-u16 over-u32 negative-u16 negative-u32 past-2-63 \
+negative-zero-f32 negative-zero-f64 char-above-8-bit wchar-above-bmp \
+member-id-past-28-bit short-pid-past-0x3f00 fixed-digits-past-31 \
+fixed-scale-past-digits bitset-anchor-width lc-body-size-mismatch \
+frame-past-0xffff"
+
+ledger_edges=$(awk -F'\t' '/^[^#]/ && NF >= 4 { print $1 }' "$tsv")
+
+expected_of() { # $1 edge -> the ledger's answer column, verbatim
+    awk -F'\t' -v e="$1" '$1 == e { print $4; exit }' "$tsv"
+}
+
+operation_of() { # $1 edge -> the ledger's operation column
+    awk -F'\t' -v e="$1" '$1 == e { print $2; exit }' "$tsv"
+}
+
+is_known_edge() {
+    local e
+    for e in $known_edges; do [ "$e" = "$1" ] && return 0; done
+    return 1
+}
+
+in_filter() { # $1 value  $2 comma list ("" = everything)
+    [ -z "$2" ] && return 0
+    local v
+    for v in $(printf '%s' "$2" | tr ',' ' '); do
+        [ "$v" = "$1" ] && return 0
+    done
+    return 1
+}
+
+# The in-range call that has to work before the out-of-range one is an
+# answer. Same operation, an argument the width holds.
+control_of() { # $1 edge -> the control token
+    case "$1" in
+        over-u8|over-u16|over-u32)             echo "c:$1" ;;
+        negative-u16|negative-u32|past-2-63)   echo "c:int" ;;
+        negative-zero-f32|negative-zero-f64)   echo "c:float" ;;
+        char-above-8-bit)                      echo "c:char" ;;
+        wchar-above-bmp)                       echo "c:wchar" ;;
+        member-id-past-28-bit|lc-body-size-mismatch) echo "c:emheader" ;;
+        short-pid-past-0x3f00)                 echo "c:pid" ;;
+        fixed-digits-past-31|fixed-scale-past-digits) echo "c:fixed" ;;
+        bitset-anchor-width)                   echo "c:bitset" ;;
+        frame-past-0xffff)                     echo "c:frame" ;;
+    esac
+}
+
+# --- reachability -----------------------------------------------------
+#
+# A row a surface cannot reach is `n/a` WITH the reason, never silence.
+
+na_reason() { # $1 surface  $2 edge -> prints the reason, rc 0 = n/a
+    case "$1" in
+        rt-*|rust-wire)
+            case "$2" in
+                frame-past-0xffff)
+                    echo "the wire runtime exports no frame writer; DDS-XRCE framing lives in the endpoint SDKs"
+                    return 0 ;;
+            esac ;;
+    esac
+    case "$1" in
+        rust-wire)
+            case "$2" in
+                fixed-digits-past-31|fixed-scale-past-digits)
+                    echo "crates/wire exports no write_fixed; the BCD packing lives in crates/wire-codec"
+                    return 0 ;;
+                bitset-anchor-width)
+                    echo "crates/wire exports no write_bitset; the anchor writer lives in crates/wire-codec"
+                    return 0 ;;
+            esac ;;
+        ada)
+            case "$2" in
+                frame-past-0xffff)
+                    echo "endpoints/ada/src imports no zdw_xrce_write_frame; the C core's frame writer has no Ada binding"
+                    return 0 ;;
+            esac ;;
+    esac
+    return 1
+}
+
+# --- toolchains -------------------------------------------------------
+
+toolchain_of() { # $1 surface -> the commands the surface needs
+    case "$1" in
+        go|rt-go)         echo "go" ;;
+        lua|rt-lua)       echo "lua" ;;
+        julia)            echo "julia" ;;
+        ocaml)            echo "ocamlfind" ;;
+        elixir|rt-elixir) echo "elixir" ;;
+        zig|rt-zig)       echo "${ZIG:-zig}" ;;
+        nim|rt-nim)       echo "${NIM:-nim}" ;;
+        d|rt-d)           echo "${GDC:-gdc}" ;;
+        kotlin)           echo "${KOTLINC:-kotlinc} ${JAVA:-java}" ;;
+        node)             echo "${NODE:-node}" ;;
+        fsharp|rt-csharp) echo "${DOTNET:-dotnet}" ;;
+        swift|rt-swift)   echo "${SWIFTC:-swiftc}" ;;
+        rt-java)          echo "javac ${JAVA:-java}" ;;
+        rt-python)        echo "python3" ;;
+        ada|ada-83|ada-native|rt-ada) echo "gnatmake gcc" ;;
+        rt-c)             echo "${CC:-gcc}" ;;
+        rt-cpp)           echo "${CXX:-g++}" ;;
+        rt-typescript)    echo "${TSC:-tsc} ${NODE:-node}" ;;
+        rust-wire)        echo "cargo" ;;
+        *)                echo "" ;;
+    esac
+}
+
+missing_toolchain() { # $1 surface -> prints the first missing command
+    local c
+    for c in $(toolchain_of "$1"); do
+        command -v "$c" > /dev/null 2>&1 || { echo "$c"; return 0; }
+    done
+    return 1
+}
+
+# A toolchain that is present and cannot build anything is not the same
+# as a probe that is wrong, and it is not a pass either. The smoke build
+# is a hello-world of the toolchain's own: if that does not link, the
+# surface is `skipped` with the toolchain's words, not `broken-probe`.
+# Measured 2026-08-25: zig 0.14.1 on macOS 15 links nothing at all
+# (`undefined symbol: __availability_version_check`), and every zig cell
+# was reported as this file's defect until the smoke build separated
+# them.
+toolchain_unusable() { # $1 surface -> prints why, rc 0 = unusable
+    local dir="$work/.smoke-$1"
+    case "$1" in
+        zig|rt-zig)
+            [ -f "$dir/.no" ] && { cat "$dir/.no"; return 0; }
+            [ -f "$dir/.yes" ] && return 1
+            mkdir -p "$dir"
+            cat > "$dir/hello.zig" <<'SMOKE'
+const std = @import("std");
+pub fn main(zd_init: std.process.Init) !void {
+    var stdout_buf: [64]u8 = undefined;
+    var stdout_file = std.Io.File.stdout().writer(zd_init.io, &stdout_buf);
+    const stdout = &stdout_file.interface;
+    defer stdout.flush() catch {};
+    try stdout.print("hi\n", .{});
+}
+SMOKE
+            if (cd "$dir" && "${ZIG:-zig}" build-exe \
+                    --global-cache-dir "$(zig_cache)" -femit-bin=hello hello.zig) \
+                    > "$dir/log" 2>&1 && [ -s "$dir/hello" ]; then
+                : > "$dir/.yes"; return 1
+            fi
+            first_error_line "$dir/log" > "$dir/.no"
+            cat "$dir/.no"
+            return 0 ;;
+    esac
+    return 1
+}
+
+is_known_surface() {
+    local s
+    for s in $(printf '%s' "$all_surfaces" | tr ',' ' '); do
+        [ "$s" = "$1" ] && return 0
+    done
+    return 1
+}
+
+# --- shared probe plumbing --------------------------------------------
+
+first_error_line() { # $1 log file — the first line worth carrying out
+    # Warnings are dropped first. `ocamlfind` opens every run with
+    # `[WARNING] Cannot read directory ./stublibs`, and a first line
+    # matched on `cannot` reported that as the reason a build failed —
+    # a probe's real error hidden behind a toolchain's noise.
+    grep -viE '\[warning\]|^ *warning:|: warning' "$1" \
+        | grep -m1 -iE 'error|cannot|overflow|not enough|panic|exception|refused|raised|constraint|assert|traceback' \
+        | tr -d '\r' | cut -c1-160
+    true
+}
+
+last_line() { tr -d '\r' < "$1" | grep -v '^[[:space:]]*$' | tail -1; }
+
+# An answer that counts as a working control: octets, or a frame the
+# writer actually produced. `len=0` is not one — it is the error return
+# the ledger's `frame-past-0xffff` row calls the right answer, and a
+# control that produces it has not shown that the call works.
+control_answers() { # $1 answer
+    printf '%s' "$1" | grep -qE '^([0-9a-f]+|wrote-frame len=[1-9][0-9]*)$'
+}
+
+# Run a command under a wall-clock limit. Combined output lands in
+# $LIMOUT. Returns 124 on the limit, and only on the limit: the killer
+# leaves a mark so a probe that dies of a signal on its own is not
+# reported as a hang.
+lim() { # $1 seconds, rest: the command
+    local secs="$1"; shift
+    rm -f "$LIMOUT" "$LIMOUT.killed"
+    : > "$LIMOUT"
+    "$@" > "$LIMOUT" 2>&1 &
+    local pid=$!
+    (
+        i=0
+        while [ "$i" -lt "$((secs * 4))" ]; do
+            kill -0 "$pid" 2>/dev/null || exit 0
+            sleep 0.25
+            i=$((i + 1))
+        done
+        : > "$LIMOUT.killed"
+        kill -9 "$pid" 2>/dev/null
+    ) &
+    local killer=$!
+    wait "$pid"; local rc=$?
+    kill "$killer" 2>/dev/null
+    wait "$killer" 2>/dev/null
+    [ -f "$LIMOUT.killed" ] && return 124
+    return "$rc"
+}
+
+# Build once per surface. `$work/<surface>/.bad` holds why, if it went
+# wrong; every cell of that surface is then broken-probe.
+build_state() { # $1 surface -> 0 built, 1 not yet, 2 known broken
+    [ -f "$work/$1/.ok" ] && return 0
+    [ -f "$work/$1/.bad" ] && return 2
+    return 1
+}
+build_ok()  { mkdir -p "$work/$1"; : > "$work/$1/.ok"; }
+build_bad() { mkdir -p "$work/$1"; printf '%s\n' "$2" > "$work/$1/.bad"; }
+
+# Run a built native probe and turn its exit into one answer line.
+run_native() { # $1 surface  $2 executable  rest: arguments
+    local surface="$1" exe="$2"; shift 2
+    local rc=0
+    lim "$run_secs" "$exe" "$@" || rc=$?
+    if [ "$rc" = 124 ]; then echo "TIMEOUT"; return; fi
+    local out; out="$(last_line "$LIMOUT")"
+    if [ "$rc" != 0 ] && [ "${out#REFUSED}" = "$out" ]; then
+        local words; words="$(first_error_line "$LIMOUT")"
+        if [ -n "$words" ]; then echo "REFUSED $words"
+        else echo "BROKEN the probe exited $rc without a word"; fi
+        return
+    fi
+    if [ -z "$out" ]; then echo "BROKEN the probe printed nothing"; return; fi
+    printf '%s\n' "$out"
+}
+
+# =====================================================================
+# The fifteen endpoint SDKs.
+#
+# They export one surface — `putU8` .. `putU64`, `putF32`/`putF64`,
+# `putChar`, `putWchar`, `emHeaderBegin`/`emHeaderEnd`,
+# `pidBegin`/`pidEnd`, `putBitset`, `putFixed` and a frame writer — so
+# every runner below performs the same seventeen operations and differs
+# only in how its language spells them.
+#
+# Both constructor arguments are required in all fifteen: the encoding
+# decides MAXALIGN and none of them defaults it. `endpoint-number-surface`
+# leaves it out for go, node, zig, nim, d, kotlin, fsharp and swift, and
+# those eight probes have never compiled.
+# =====================================================================
+
+# --- go ---------------------------------------------------------------
+
+go_env() {
+    export GOFLAGS=-mod=mod GOTOOLCHAIN=local CGO_ENABLED=0
+    export GOCACHE="${ZERODDS_GO_CACHE:-${TMPDIR:-/tmp}/zd-endpoint-go-cache}"
+}
+
+go_module() { # $1 directory  $2 module path to replace
+    cat > "$1/go.mod" <<EOF
+module zdedgesurface
+
+go 1.19
+
+require zeroddsendpoint v0.0.0
+
+replace zeroddsendpoint => $2
+EOF
+}
+
+go_build() {
+    build_state go; case $? in 0) return 0 ;; 2) return 1 ;; esac
+    mkdir -p "$work/go"
+    go_module "$work/go" "$root/endpoints/go"
+    cat > "$work/go/main.go" <<'EOF'
+package main
+
+import (
+	"fmt"
+	"math"
+	"os"
+
+	zerodds "zeroddsendpoint"
+)
+
+func frame(sample []byte) {
+	f := zerodds.XrceWriteFrame(0x80, 0x01, 1, sample)
+	if len(f) == 0 {
+		fmt.Println("REFUSED the frame writer produced no frame")
+		return
+	}
+	fmt.Printf("wrote-frame len=%d\n", len(f))
+}
+
+func main() {
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Printf("REFUSED %v\n", r)
+		}
+	}()
+	w := zerodds.NewWriter(zerodds.Little, zerodds.Xcdr2)
+	switch os.Args[1] {
+	case "c:writer":
+		w.PutU8(0x41)
+	case "c:int":
+		w.PutU16(0x1234)
+	case "negative-u16":
+		w.PutU16(0xcfc7)
+	case "negative-u32":
+		w.PutU32(0xffed2979)
+	case "past-2-63":
+		w.PutU64(16045690984833335998)
+	case "c:float":
+		w.PutF32(1.0)
+	case "negative-zero-f32":
+		w.PutF32(float32(math.Copysign(0, -1)))
+	case "negative-zero-f64":
+		w.PutF64(math.Copysign(0, -1))
+	case "c:char":
+		w.PutChar(0x41)
+	case "char-above-8-bit":
+		w.PutChar(0x100)
+	case "c:wchar":
+		w.PutWchar(0x41)
+	case "wchar-above-bmp":
+		w.PutWchar(0x1D11E)
+	case "c:emheader":
+		s := w.EmHeaderBegin(1, false, zerodds.Lc4)
+		w.PutU32(0)
+		w.EmHeaderEnd(s, zerodds.Lc4)
+	case "member-id-past-28-bit":
+		s := w.EmHeaderBegin(0x10000000, false, zerodds.Lc4)
+		w.PutU32(0)
+		w.EmHeaderEnd(s, zerodds.Lc4)
+	case "lc-body-size-mismatch":
+		s := w.EmHeaderBegin(1, false, zerodds.Lc1)
+		w.PutU8(1)
+		w.PutU8(2)
+		w.PutU8(3)
+		w.EmHeaderEnd(s, zerodds.Lc1)
+	case "c:pid":
+		p := w.PidBegin(0x3F00, false)
+		w.PutU32(0)
+		w.PidEnd(p)
+	case "short-pid-past-0x3f00":
+		p := w.PidBegin(0x3F01, false)
+		w.PutU32(0)
+		w.PidEnd(p)
+	case "c:fixed":
+		w.PutFixed("1.00", 5, 2)
+	case "fixed-digits-past-31":
+		w.PutFixed("1.00", 32, 2)
+	case "fixed-scale-past-digits":
+		w.PutFixed("1.00", 5, 6)
+	case "c:bitset":
+		w.PutBitset(0x1234, 2)
+	case "bitset-anchor-width":
+		w.PutBitset(0x222111, 4)
+	case "c:frame":
+		frame([]byte{1, 2, 3, 4})
+		return
+	case "frame-past-0xffff":
+		frame(make([]byte, 65536))
+		return
+	default:
+		fmt.Printf("BROKEN the go probe has no case for %s\n", os.Args[1])
+		return
+	}
+	fmt.Printf("%x\n", w.Buf)
+}
+EOF
+    (go_env; cd "$work/go" && go build -o probe .) > "$work/go/build.log" 2>&1 || {
+        build_bad go "$(first_error_line "$work/go/build.log")"; return 1; }
+    build_ok go
+}
+
+go_over() { # $1 token
+    local put lit dir="$work/go-$1"
+    case "$1" in
+        over-u8|c:over-u8)   put=PutU8 ;;
+        over-u16|c:over-u16) put=PutU16 ;;
+        over-u32|c:over-u32) put=PutU32 ;;
+    esac
+    case "$1" in
+        over-u8)     lit=256 ;;        c:over-u8)   lit=0x12 ;;
+        over-u16)    lit=70000 ;;      c:over-u16)  lit=0x1234 ;;
+        over-u32)    lit=4294967296 ;; c:over-u32)  lit=0x12345678 ;;
+    esac
+    mkdir -p "$dir"
+    go_module "$dir" "$root/endpoints/go"
+    cat > "$dir/main.go" <<EOF
+package main
+
+import (
+	"fmt"
+
+	zerodds "zeroddsendpoint"
+)
+
+func main() {
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Printf("REFUSED %v\n", r)
+		}
+	}()
+	w := zerodds.NewWriter(zerodds.Little, zerodds.Xcdr2)
+	w.$put($lit)
+	fmt.Printf("%x\n", w.Buf)
+}
+EOF
+    local rc=0
+    (go_env; cd "$dir" && go build -o probe .) > "$dir/build.log" 2>&1 || rc=$?
+    if [ "$rc" != 0 ]; then
+        echo "REFUSED $(first_error_line "$dir/build.log")"
+        return
+    fi
+    run_native go "$dir/probe"
+}
+
+probe_go() {
+    case "$1" in over-u*|c:over-u*) go_over "$1"; return ;; esac
+    go_build || { echo "BROKEN $(cat "$work/go/.bad")"; return; }
+    run_native go "$work/go/probe" "$1"
+}
+
+# --- lua --------------------------------------------------------------
+
+probe_lua() {
+    mkdir -p "$work/lua"
+    cat > "$work/lua/probe.lua" <<'EOF'
+local zd = require('zerodds')
+local token = arg[1]
+local function frame(sample)
+  local f = zd.writeFrame(0x80, 0x01, 1, sample)
+  if f == nil or #f == 0 then
+    print('REFUSED the frame writer produced no frame')
+  else
+    print('wrote-frame len=' .. #f)
+  end
+end
+local w = zd.Writer.new(zd.LE, zd.XCDR2)
+local ok, err = pcall(function()
+  if token == 'c:writer' then w:putU8(0x41)
+  elseif token == 'c:int' then w:putU16(0x1234)
+  elseif token == 'negative-u16' then w:putU16(0xcfc7)
+  elseif token == 'negative-u32' then w:putU32(0xffed2979)
+  elseif token == 'past-2-63' then w:putU64(0xdeadbeefdeadc2be)
+  elseif token == 'c:float' then w:putF32(1.0)
+  elseif token == 'negative-zero-f32' then w:putF32(-0.0)
+  elseif token == 'negative-zero-f64' then w:putF64(-0.0)
+  elseif token == 'c:char' then w:putChar(0x41)
+  elseif token == 'char-above-8-bit' then w:putChar(0x100)
+  elseif token == 'c:wchar' then w:putWchar(0x41)
+  elseif token == 'wchar-above-bmp' then w:putWchar(0x1D11E)
+  elseif token == 'c:emheader' then
+    local s = w:emheaderBegin(1, false, 4); w:putU32(0); w:emheaderEnd(s, 4)
+  elseif token == 'member-id-past-28-bit' then
+    local s = w:emheaderBegin(0x10000000, false, 4); w:putU32(0); w:emheaderEnd(s, 4)
+  elseif token == 'lc-body-size-mismatch' then
+    local s = w:emheaderBegin(1, false, 1)
+    w:putU8(1); w:putU8(2); w:putU8(3)
+    w:emheaderEnd(s, 1)
+  elseif token == 'c:pid' then
+    local p = w:pidBegin(0x3F00, false); w:putU32(0); w:pidEnd(p)
+  elseif token == 'short-pid-past-0x3f00' then
+    local p = w:pidBegin(0x3F01, false); w:putU32(0); w:pidEnd(p)
+  elseif token == 'c:fixed' then w:putFixed('1.00', 5, 2)
+  elseif token == 'fixed-digits-past-31' then w:putFixed('1.00', 32, 2)
+  elseif token == 'fixed-scale-past-digits' then w:putFixed('1.00', 5, 6)
+  elseif token == 'c:bitset' then w:putBitset(0x1234, 2)
+  elseif token == 'bitset-anchor-width' then w:putBitset(0x222111, 4)
+  elseif token == 'over-u8' then w:putU8(256)
+  elseif token == 'c:over-u8' then w:putU8(0x12)
+  elseif token == 'over-u16' then w:putU16(70000)
+  elseif token == 'c:over-u16' then w:putU16(0x1234)
+  elseif token == 'over-u32' then w:putU32(4294967296)
+  elseif token == 'c:over-u32' then w:putU32(0x12345678)
+  elseif token == 'c:frame' then frame(string.rep('\1', 4)); return 'frame'
+  elseif token == 'frame-past-0xffff' then frame(string.rep('\0', 65536)); return 'frame'
+  else print('BROKEN the lua probe has no case for ' .. tostring(token)); return 'none'
+  end
+  return 'octets'
+end)
+if not ok then
+  print('REFUSED ' .. tostring(err))
+elseif err == 'octets' then
+  print((w:bytes():gsub('.', function(c) return string.format('%02x', c:byte()) end)))
+end
+EOF
+    LUA_PATH="$root/endpoints/lua/?.lua;;" run_native lua lua "$work/lua/probe.lua" "$1"
+}
+
+# --- julia ------------------------------------------------------------
+
+probe_julia() {
+    mkdir -p "$work/julia"
+    cat > "$work/julia/probe.jl" <<EOF
+include("$root/endpoints/julia/zerodds.jl")
+EOF
+    cat >> "$work/julia/probe.jl" <<'EOF'
+token = ARGS[1]
+function frame(sample)
+    f = ZeroDDS.write_frame(0x80, 0x01, 1, sample)
+    if f === nothing || length(f) == 0
+        println("REFUSED the frame writer produced no frame")
+    else
+        println("wrote-frame len=", length(f))
+    end
+end
+w = ZeroDDS.Writer(ZeroDDS.LE, ZeroDDS.XCDR2)
+try
+    if token == "c:writer"; ZeroDDS.put_u8!(w, 0x41)
+    elseif token == "c:int"; ZeroDDS.put_u16!(w, 0x1234)
+    elseif token == "negative-u16"; ZeroDDS.put_u16!(w, 0xcfc7)
+    elseif token == "negative-u32"; ZeroDDS.put_u32!(w, 0xffed2979)
+    elseif token == "past-2-63"; ZeroDDS.put_u64!(w, 0xdeadbeefdeadc2be)
+    elseif token == "c:float"; ZeroDDS.put_f32!(w, 1.0)
+    elseif token == "negative-zero-f32"; ZeroDDS.put_f32!(w, -0.0)
+    elseif token == "negative-zero-f64"; ZeroDDS.put_f64!(w, -0.0)
+    elseif token == "c:char"; ZeroDDS.put_char!(w, 0x41)
+    elseif token == "char-above-8-bit"; ZeroDDS.put_char!(w, 0x100)
+    elseif token == "c:wchar"; ZeroDDS.put_wchar!(w, 0x41)
+    elseif token == "wchar-above-bmp"; ZeroDDS.put_wchar!(w, 0x1D11E)
+    elseif token == "c:emheader"
+        s = ZeroDDS.emheader_begin!(w, 1, false, 4)
+        ZeroDDS.put_u32!(w, 0); ZeroDDS.emheader_end!(w, s, 4)
+    elseif token == "member-id-past-28-bit"
+        s = ZeroDDS.emheader_begin!(w, 0x10000000, false, 4)
+        ZeroDDS.put_u32!(w, 0); ZeroDDS.emheader_end!(w, s, 4)
+    elseif token == "lc-body-size-mismatch"
+        s = ZeroDDS.emheader_begin!(w, 1, false, 1)
+        ZeroDDS.put_u8!(w, 1); ZeroDDS.put_u8!(w, 2); ZeroDDS.put_u8!(w, 3)
+        ZeroDDS.emheader_end!(w, s, 1)
+    elseif token == "c:pid"
+        p = ZeroDDS.pid_begin!(w, 0x3F00, false)
+        ZeroDDS.put_u32!(w, 0); ZeroDDS.pid_end!(w, p)
+    elseif token == "short-pid-past-0x3f00"
+        p = ZeroDDS.pid_begin!(w, 0x3F01, false)
+        ZeroDDS.put_u32!(w, 0); ZeroDDS.pid_end!(w, p)
+    elseif token == "c:fixed"; ZeroDDS.put_fixed!(w, "1.00", 5, 2)
+    elseif token == "fixed-digits-past-31"; ZeroDDS.put_fixed!(w, "1.00", 32, 2)
+    elseif token == "fixed-scale-past-digits"; ZeroDDS.put_fixed!(w, "1.00", 5, 6)
+    elseif token == "c:bitset"; ZeroDDS.put_bitset!(w, UInt64(0x1234), 2)
+    elseif token == "bitset-anchor-width"; ZeroDDS.put_bitset!(w, UInt64(0x222111), 4)
+    elseif token == "over-u8"; ZeroDDS.put_u8!(w, 256)
+    elseif token == "c:over-u8"; ZeroDDS.put_u8!(w, 0x12)
+    elseif token == "over-u16"; ZeroDDS.put_u16!(w, 70000)
+    elseif token == "c:over-u16"; ZeroDDS.put_u16!(w, 0x1234)
+    elseif token == "over-u32"; ZeroDDS.put_u32!(w, 4294967296)
+    elseif token == "c:over-u32"; ZeroDDS.put_u32!(w, 0x12345678)
+    elseif token == "c:frame"; frame(UInt8[1, 2, 3, 4]); exit(0)
+    elseif token == "frame-past-0xffff"; frame(zeros(UInt8, 65536)); exit(0)
+    else
+        println("BROKEN the julia probe has no case for ", token); exit(0)
+    end
+    println(bytes2hex(ZeroDDS.bytes(w)))
+catch e
+    println("REFUSED ", e)
+end
+EOF
+    run_native julia julia --startup-file=no --history-file=no --color=no \
+        "$work/julia/probe.jl" "$1"
+}
+
+# --- node -------------------------------------------------------------
+
+probe_node() {
+    mkdir -p "$work/node"
+    cat > "$work/node/probe.js" <<EOF
+const zd = require('$root/endpoints/node/zerodds.js');
+EOF
+    cat >> "$work/node/probe.js" <<'EOF'
+const token = process.argv[2];
+function frame(sample) {
+  const f = zd.xrceWriteFrame(0x80, 0x01, 1, 0x0015, sample);
+  if (f === null || f === undefined || f.length === 0) {
+    console.log('REFUSED the frame writer produced no frame');
+  } else {
+    console.log('wrote-frame len=' + f.length);
+  }
+}
+const w = new zd.Writer(zd.LITTLE, zd.XCDR2);
+try {
+  switch (token) {
+    case 'c:writer': w.putU8(0x41); break;
+    case 'c:int': w.putU16(0x1234); break;
+    case 'negative-u16': w.putU16(0xcfc7); break;
+    case 'negative-u32': w.putU32(0xffed2979); break;
+    case 'past-2-63': w.putU64(0xdeadbeefdeadc2ben); break;
+    case 'c:float': w.putF32(1.0); break;
+    case 'negative-zero-f32': w.putF32(-0.0); break;
+    case 'negative-zero-f64': w.putF64(-0.0); break;
+    case 'c:char': w.putChar(0x41); break;
+    case 'char-above-8-bit': w.putChar(0x100); break;
+    case 'c:wchar': w.putWchar(0x41); break;
+    case 'wchar-above-bmp': w.putWchar(0x1D11E); break;
+    case 'c:emheader': {
+      const s = w.emheaderBegin(1, false, 4); w.putU32(0); w.emheaderEnd(s, 4); break;
+    }
+    case 'member-id-past-28-bit': {
+      const s = w.emheaderBegin(0x10000000, false, 4); w.putU32(0); w.emheaderEnd(s, 4); break;
+    }
+    case 'lc-body-size-mismatch': {
+      const s = w.emheaderBegin(1, false, 1);
+      w.putU8(1); w.putU8(2); w.putU8(3);
+      w.emheaderEnd(s, 1); break;
+    }
+    case 'c:pid': {
+      const p = w.pidBegin(0x3F00, false); w.putU32(0); w.pidEnd(p); break;
+    }
+    case 'short-pid-past-0x3f00': {
+      const p = w.pidBegin(0x3F01, false); w.putU32(0); w.pidEnd(p); break;
+    }
+    case 'c:fixed': w.putFixed('1.00', 5, 2); break;
+    case 'fixed-digits-past-31': w.putFixed('1.00', 32, 2); break;
+    case 'fixed-scale-past-digits': w.putFixed('1.00', 5, 6); break;
+    case 'c:bitset': w.putBitset(0x1234, 2); break;
+    case 'bitset-anchor-width': w.putBitset(0x222111, 4); break;
+    case 'over-u8': w.putU8(256); break;
+    case 'c:over-u8': w.putU8(0x12); break;
+    case 'over-u16': w.putU16(70000); break;
+    case 'c:over-u16': w.putU16(0x1234); break;
+    case 'over-u32': w.putU32(4294967296); break;
+    case 'c:over-u32': w.putU32(0x12345678); break;
+    case 'c:frame': frame(Buffer.alloc(4, 1)); process.exit(0);
+    case 'frame-past-0xffff': frame(Buffer.alloc(65536)); process.exit(0);
+    default:
+      console.log('BROKEN the node probe has no case for ' + token);
+      process.exit(0);
+  }
+  console.log(Buffer.from(w.bytes()).toString('hex'));
+} catch (e) {
+  console.log('REFUSED ' + e.message);
+}
+EOF
+    run_native node "${NODE:-node}" --throw-deprecation "$work/node/probe.js" "$1"
+}
+
+# --- elixir -----------------------------------------------------------
+
+probe_elixir() {
+    mkdir -p "$work/elixir"
+    cat > "$work/elixir/probe.exs" <<EOF
+Code.require_file("$root/endpoints/elixir/lib/zerodds.ex")
+EOF
+    cat >> "$work/elixir/probe.exs" <<'EOF'
+token = Enum.at(System.argv(), 0)
+frame = fn sample ->
+  case ZeroDDS.Endpoint.write_frame(0x80, 0x01, 1, sample) do
+    nil -> IO.puts("REFUSED the frame writer produced no frame")
+    {:error, reason} -> IO.puts("REFUSED #{inspect(reason)}")
+    f when is_binary(f) and byte_size(f) == 0 ->
+      IO.puts("REFUSED the frame writer produced no frame")
+    f when is_binary(f) -> IO.puts("wrote-frame len=#{byte_size(f)}")
+    other -> IO.puts("REFUSED #{inspect(other)}")
+  end
+end
+w = ZeroDDS.Wire.writer(:little, :xcdr2)
+try do
+  out =
+    case token do
+      "c:writer" -> ZeroDDS.Wire.put_u8(w, 0x41)
+      "c:int" -> ZeroDDS.Wire.put_u16(w, 0x1234)
+      "negative-u16" -> ZeroDDS.Wire.put_u16(w, 0xCFC7)
+      "negative-u32" -> ZeroDDS.Wire.put_u32(w, 0xFFED2979)
+      "past-2-63" -> ZeroDDS.Wire.put_u64(w, 0xDEADBEEFDEADC2BE)
+      "c:float" -> ZeroDDS.Wire.put_f32(w, 1.0)
+      "negative-zero-f32" -> ZeroDDS.Wire.put_f32(w, -0.0)
+      "negative-zero-f64" -> ZeroDDS.Wire.put_f64(w, -0.0)
+      "c:char" -> ZeroDDS.Wire.put_char(w, 0x41)
+      "char-above-8-bit" -> ZeroDDS.Wire.put_char(w, 0x100)
+      "c:wchar" -> ZeroDDS.Wire.put_wchar(w, 0x41)
+      "wchar-above-bmp" -> ZeroDDS.Wire.put_wchar(w, 0x1D11E)
+      "c:emheader" ->
+        {w2, s} = ZeroDDS.Wire.emheader_begin(w, 1, false, 4)
+        w2 |> ZeroDDS.Wire.put_u32(0) |> ZeroDDS.Wire.emheader_end(s, 4)
+      "member-id-past-28-bit" ->
+        {w2, s} = ZeroDDS.Wire.emheader_begin(w, 0x10000000, false, 4)
+        w2 |> ZeroDDS.Wire.put_u32(0) |> ZeroDDS.Wire.emheader_end(s, 4)
+      "lc-body-size-mismatch" ->
+        {w2, s} = ZeroDDS.Wire.emheader_begin(w, 1, false, 1)
+        w2
+        |> ZeroDDS.Wire.put_u8(1)
+        |> ZeroDDS.Wire.put_u8(2)
+        |> ZeroDDS.Wire.put_u8(3)
+        |> ZeroDDS.Wire.emheader_end(s, 1)
+      "c:pid" ->
+        {w2, p} = ZeroDDS.Wire.pid_begin(w, 0x3F00, false)
+        w2 |> ZeroDDS.Wire.put_u32(0) |> ZeroDDS.Wire.pid_end(p)
+      "short-pid-past-0x3f00" ->
+        {w2, p} = ZeroDDS.Wire.pid_begin(w, 0x3F01, false)
+        w2 |> ZeroDDS.Wire.put_u32(0) |> ZeroDDS.Wire.pid_end(p)
+      "c:fixed" -> ZeroDDS.Wire.put_fixed(w, "1.00", 5, 2)
+      "fixed-digits-past-31" -> ZeroDDS.Wire.put_fixed(w, "1.00", 32, 2)
+      "fixed-scale-past-digits" -> ZeroDDS.Wire.put_fixed(w, "1.00", 5, 6)
+      "c:bitset" -> ZeroDDS.Wire.put_bitset(w, 0x1234, 2)
+      "bitset-anchor-width" -> ZeroDDS.Wire.put_bitset(w, 0x222111, 4)
+      "over-u8" -> ZeroDDS.Wire.put_u8(w, 256)
+      "c:over-u8" -> ZeroDDS.Wire.put_u8(w, 0x12)
+      "over-u16" -> ZeroDDS.Wire.put_u16(w, 70000)
+      "c:over-u16" -> ZeroDDS.Wire.put_u16(w, 0x1234)
+      "over-u32" -> ZeroDDS.Wire.put_u32(w, 4_294_967_296)
+      "c:over-u32" -> ZeroDDS.Wire.put_u32(w, 0x12345678)
+      "c:frame" -> frame.(:binary.copy(<<1>>, 4)); :done
+      "frame-past-0xffff" -> frame.(:binary.copy(<<0>>, 65536)); :done
+      _ -> IO.puts("BROKEN the elixir probe has no case for #{token}"); :done
+    end
+
+  if out != :done do
+    IO.puts(Base.encode16(ZeroDDS.Wire.bytes(out), case: :lower))
+  end
+rescue
+  e -> IO.puts("REFUSED " <> Exception.message(e))
+catch
+  :error, e -> IO.puts("REFUSED " <> inspect(e))
+end
+EOF
+    run_native elixir elixir "$work/elixir/probe.exs" "$1"
+}
+
+# --- ocaml ------------------------------------------------------------
+
+ocaml_build() {
+    build_state ocaml; case $? in 0) return 0 ;; 2) return 1 ;; esac
+    mkdir -p "$work/ocaml"
+    cp "$root/endpoints/ocaml/zerodds.ml" "$work/ocaml/"
+    cat > "$work/ocaml/probe.ml" <<'EOF'
+open Zerodds
+
+let hex b =
+  Bytes.iter (fun c -> Printf.printf "%02x" (Char.code c)) b;
+  print_newline ()
+
+let frame sample =
+  match Endpoint.write_frame 0x80 0x01 1 sample with
+  | f when Bytes.length f = 0 -> print_endline "REFUSED the frame writer produced no frame"
+  | f -> Printf.printf "wrote-frame len=%d\n" (Bytes.length f)
+  | exception Invalid_argument reason -> print_endline ("REFUSED " ^ reason)
+
+let () =
+  let token = Sys.argv.(1) in
+  let w = Wire.writer Wire.LE Wire.XCDR2 in
+  try
+    (match token with
+     | "c:writer" -> Wire.put_u8 w 0x41
+     | "c:int" -> Wire.put_u16 w 0x1234
+     | "negative-u16" -> Wire.put_u16 w 0xcfc7
+     | "negative-u32" -> Wire.put_u32 w 0xffed2979
+     | "past-2-63" -> Wire.put_u64 w 0xdeadbeefdeadc2beL
+     | "c:float" -> Wire.put_f32 w 1.0
+     | "negative-zero-f32" -> Wire.put_f32 w (-0.0)
+     | "negative-zero-f64" -> Wire.put_f64 w (-0.0)
+     | "c:char" -> Wire.put_char w 0x41
+     | "char-above-8-bit" -> Wire.put_char w 0x100
+     | "c:wchar" -> Wire.put_wchar w 0x41
+     | "wchar-above-bmp" -> Wire.put_wchar w 0x1d11e
+     | "c:emheader" ->
+       let s = Wire.emheader_begin w 1 false 4 in
+       Wire.put_u32 w 0; Wire.emheader_end w s 4
+     | "member-id-past-28-bit" ->
+       let s = Wire.emheader_begin w 0x10000000 false 4 in
+       Wire.put_u32 w 0; Wire.emheader_end w s 4
+     | "lc-body-size-mismatch" ->
+       let s = Wire.emheader_begin w 1 false 1 in
+       Wire.put_u8 w 1; Wire.put_u8 w 2; Wire.put_u8 w 3;
+       Wire.emheader_end w s 1
+     | "c:pid" ->
+       let p = Wire.pid_begin w 0x3f00 false in
+       Wire.put_u32 w 0; Wire.pid_end w p
+     | "short-pid-past-0x3f00" ->
+       let p = Wire.pid_begin w 0x3f01 false in
+       Wire.put_u32 w 0; Wire.pid_end w p
+     | "c:fixed" -> Wire.put_fixed w "1.00" 5 2
+     | "fixed-digits-past-31" -> Wire.put_fixed w "1.00" 32 2
+     | "fixed-scale-past-digits" -> Wire.put_fixed w "1.00" 5 6
+     | "c:bitset" -> Wire.put_bitset w 0x1234L 2
+     | "bitset-anchor-width" -> Wire.put_bitset w 0x222111L 4
+     | "over-u8" -> Wire.put_u8 w 256
+     | "c:over-u8" -> Wire.put_u8 w 0x12
+     | "over-u16" -> Wire.put_u16 w 70000
+     | "c:over-u16" -> Wire.put_u16 w 0x1234
+     | "over-u32" -> Wire.put_u32 w 4294967296
+     | "c:over-u32" -> Wire.put_u32 w 0x12345678
+     | "c:frame" -> frame (Bytes.make 4 '\001'); exit 0
+     | "frame-past-0xffff" -> frame (Bytes.make 65536 '\000'); exit 0
+     | _ -> print_endline ("BROKEN the ocaml probe has no case for " ^ token); exit 0);
+    hex (Wire.bytes w)
+  with
+  | Invalid_argument reason -> print_endline ("REFUSED " ^ reason)
+  | Failure reason -> print_endline ("REFUSED " ^ reason)
+EOF
+    (cd "$work/ocaml" && ocamlfind ocamlopt -thread -package threads.posix \
+        -linkpkg zerodds.ml probe.ml -o probe) > "$work/ocaml/build.log" 2>&1 || {
+        build_bad ocaml "$(first_error_line "$work/ocaml/build.log")"; return 1; }
+    build_ok ocaml
+}
+
+probe_ocaml() {
+    ocaml_build || { echo "BROKEN $(cat "$work/ocaml/.bad")"; return; }
+    run_native ocaml "$work/ocaml/probe" "$1"
+}
+
+# --- zig --------------------------------------------------------------
+
+zig_sources() { # $1 directory — the whole module: zerodds.zig imports its siblings
+    cp "$root"/endpoints/zig/src/*.zig "$1/"
+}
+
+zig_cache() { echo "${ZIG_GLOBAL_CACHE_DIR:-${TMPDIR:-/tmp}/zd-zig-cache}"; }
+
+zig_build() {
+    build_state zig; case $? in 0) return 0 ;; 2) return 1 ;; esac
+    mkdir -p "$work/zig"
+    zig_sources "$work/zig"
+    cat > "$work/zig/probe.zig" <<'EOF'
+const std = @import("std");
+const zd = @import("zerodds.zig");
+
+fn hex(out: *std.Io.Writer, bytes: []const u8) !void {
+    for (bytes) |b| try out.print("{x:0>2}", .{b});
+    try out.print("\n", .{});
+}
+
+fn refused(out: *std.Io.Writer, e: anyerror) !void {
+    try out.print("REFUSED {s}\n", .{@errorName(e)});
+}
+
+fn frame(out: *std.Io.Writer, alloc: std.mem.Allocator, sample: []const u8) !void {
+    const buf = try alloc.alloc(u8, sample.len + 64);
+    const n = zd.xrceWriteFrame(buf, 0x80, 0x01, 1, sample) catch |e| {
+        try refused(out, e);
+        return;
+    };
+    if (n == 0) {
+        try out.print("REFUSED the frame writer produced no frame\n", .{});
+    } else {
+        try out.print("wrote-frame len={d}\n", .{n});
+    }
+}
+
+pub fn main(zd_init: std.process.Init) !void {
+    const alloc = zd_init.arena.allocator();
+    var stdout_buf: [4096]u8 = undefined;
+    var stdout_file = std.Io.File.stdout().writer(zd_init.io, &stdout_buf);
+    const out = &stdout_file.interface;
+    defer out.flush() catch {};
+    const args = try zd_init.minimal.args.toSlice(alloc);
+    const token = args[1];
+    var w = zd.Writer.init(alloc, .little, .xcdr2);
+    defer w.deinit();
+    const eq = std.mem.eql;
+    if (eq(u8, token, "c:writer")) {
+        w.putU8(0x41) catch |e| return refused(out, e);
+    } else if (eq(u8, token, "c:int")) {
+        w.putU16(0x1234) catch |e| return refused(out, e);
+    } else if (eq(u8, token, "negative-u16")) {
+        w.putU16(0xcfc7) catch |e| return refused(out, e);
+    } else if (eq(u8, token, "negative-u32")) {
+        w.putU32(0xffed2979) catch |e| return refused(out, e);
+    } else if (eq(u8, token, "past-2-63")) {
+        w.putU64(0xdeadbeefdeadc2be) catch |e| return refused(out, e);
+    } else if (eq(u8, token, "c:float")) {
+        w.putF32(1.0) catch |e| return refused(out, e);
+    } else if (eq(u8, token, "negative-zero-f32")) {
+        w.putF32(-0.0) catch |e| return refused(out, e);
+    } else if (eq(u8, token, "negative-zero-f64")) {
+        w.putF64(-0.0) catch |e| return refused(out, e);
+    } else if (eq(u8, token, "c:char")) {
+        w.putChar(0x41) catch |e| return refused(out, e);
+    } else if (eq(u8, token, "char-above-8-bit")) {
+        w.putChar(0x100) catch |e| return refused(out, e);
+    } else if (eq(u8, token, "c:wchar")) {
+        w.putWchar(0x41) catch |e| return refused(out, e);
+    } else if (eq(u8, token, "wchar-above-bmp")) {
+        w.putWchar(0x1D11E) catch |e| return refused(out, e);
+    } else if (eq(u8, token, "c:emheader")) {
+        const s = w.emHeaderBegin(1, false, .lc4) catch |e| return refused(out, e);
+        w.putU32(0) catch |e| return refused(out, e);
+        w.emHeaderEnd(s, .lc4) catch |e| return refused(out, e);
+    } else if (eq(u8, token, "member-id-past-28-bit")) {
+        const s = w.emHeaderBegin(0x10000000, false, .lc4) catch |e| return refused(out, e);
+        w.putU32(0) catch |e| return refused(out, e);
+        w.emHeaderEnd(s, .lc4) catch |e| return refused(out, e);
+    } else if (eq(u8, token, "lc-body-size-mismatch")) {
+        const s = w.emHeaderBegin(1, false, .lc1) catch |e| return refused(out, e);
+        w.putU8(1) catch |e| return refused(out, e);
+        w.putU8(2) catch |e| return refused(out, e);
+        w.putU8(3) catch |e| return refused(out, e);
+        w.emHeaderEnd(s, .lc1) catch |e| return refused(out, e);
+    } else if (eq(u8, token, "c:pid")) {
+        const p = w.pidBegin(0x3F00, false) catch |e| return refused(out, e);
+        w.putU32(0) catch |e| return refused(out, e);
+        w.pidEnd(p) catch |e| return refused(out, e);
+    } else if (eq(u8, token, "short-pid-past-0x3f00")) {
+        const p = w.pidBegin(0x3F01, false) catch |e| return refused(out, e);
+        w.putU32(0) catch |e| return refused(out, e);
+        w.pidEnd(p) catch |e| return refused(out, e);
+    } else if (eq(u8, token, "c:fixed")) {
+        w.putFixed("1.00", 5, 2) catch |e| return refused(out, e);
+    } else if (eq(u8, token, "fixed-digits-past-31")) {
+        w.putFixed("1.00", 32, 2) catch |e| return refused(out, e);
+    } else if (eq(u8, token, "fixed-scale-past-digits")) {
+        w.putFixed("1.00", 5, 6) catch |e| return refused(out, e);
+    } else if (eq(u8, token, "c:bitset")) {
+        w.putBitset(0x1234, 2) catch |e| return refused(out, e);
+    } else if (eq(u8, token, "bitset-anchor-width")) {
+        w.putBitset(0x222111, 4) catch |e| return refused(out, e);
+    } else if (eq(u8, token, "c:frame")) {
+        return frame(out, alloc, &[_]u8{ 1, 2, 3, 4 });
+    } else if (eq(u8, token, "frame-past-0xffff")) {
+        const big = try alloc.alloc(u8, 65536);
+        @memset(big, 0);
+        return frame(out, alloc, big);
+    } else {
+        try out.print("BROKEN the zig probe has no case for {s}\n", .{token});
+        return;
+    }
+    try hex(out, w.bytes());
+}
+EOF
+    (cd "$work/zig" && "${ZIG:-zig}" build-exe --global-cache-dir "$(zig_cache)" \
+        -femit-bin=probe probe.zig) > "$work/zig/build.log" 2>&1 || {
+        build_bad zig "$(first_error_line "$work/zig/build.log")"; return 1; }
+    build_ok zig
+}
+
+zig_over() {
+    local put lit dir="$work/zig-${1//:/_}"
+    case "$1" in
+        over-u8|c:over-u8)   put=putU8 ;;
+        over-u16|c:over-u16) put=putU16 ;;
+        over-u32|c:over-u32) put=putU32 ;;
+    esac
+    case "$1" in
+        over-u8)  lit=256 ;;         c:over-u8)  lit=0x12 ;;
+        over-u16) lit=70000 ;;       c:over-u16) lit=0x1234 ;;
+        over-u32) lit=4294967296 ;;  c:over-u32) lit=0x12345678 ;;
+    esac
+    mkdir -p "$dir"
+    zig_sources "$dir"
+    cat > "$dir/probe.zig" <<EOF
+const std = @import("std");
+const zd = @import("zerodds.zig");
+pub fn main(zd_init: std.process.Init) !void {
+    var w = zd.Writer.init(zd_init.arena.allocator(), .little, .xcdr2);
+    defer w.deinit();
+    var stdout_buf: [256]u8 = undefined;
+    var stdout_file = std.Io.File.stdout().writer(zd_init.io, &stdout_buf);
+    const out = &stdout_file.interface;
+    defer out.flush() catch {};
+    w.$put($lit) catch |e| {
+        try out.print("REFUSED {s}\n", .{@errorName(e)});
+        return;
+    };
+    for (w.bytes()) |b| try out.print("{x:0>2}", .{b});
+    try out.print("\n", .{});
+}
+EOF
+    local rc=0
+    (cd "$dir" && "${ZIG:-zig}" build-exe --global-cache-dir "$(zig_cache)" \
+        -femit-bin=probe probe.zig) > "$dir/build.log" 2>&1 || rc=$?
+    if [ "$rc" != 0 ]; then echo "REFUSED $(first_error_line "$dir/build.log")"; return; fi
+    run_native zig "$dir/probe"
+}
+
+probe_zig() {
+    case "$1" in over-u*|c:over-u*) zig_over "$1"; return ;; esac
+    zig_build || { echo "BROKEN $(cat "$work/zig/.bad")"; return; }
+    run_native zig "$work/zig/probe" "$1"
+}
+
+# --- nim --------------------------------------------------------------
+
+nim_build() {
+    build_state nim; case $? in 0) return 0 ;; 2) return 1 ;; esac
+    mkdir -p "$work/nim"
+    cat > "$work/nim/probe.nim" <<'EOF'
+import os, strutils
+import zerodds
+
+proc hex(w: Writer): string =
+  result = ""
+  for b in w.bytes(): result.add(toLowerAscii(toHex(int(b), 2)))
+
+proc frame(sample: seq[byte]) =
+  try:
+    let f = writeFrame(0x80'u8, 0x01'u8, 1, sample)
+    if f.len == 0:
+      echo "REFUSED the frame writer produced no frame"
+    else:
+      echo "wrote-frame len=", f.len
+  except CatchableError as e:
+    echo "REFUSED ", e.msg
+
+let token = paramStr(1)
+var w = initWriter(eLE, eXcdr2)
+try:
+  case token
+  of "c:writer": w.putU8(0x41'u8)
+  of "c:int": w.putU16(0x1234'u16)
+  of "negative-u16": w.putU16(0xcfc7'u16)
+  of "negative-u32": w.putU32(0xffed2979'u32)
+  of "past-2-63": w.putU64(0xdeadbeefdeadc2be'u64)
+  of "c:float": w.putF32(1.0'f32)
+  of "negative-zero-f32": w.putF32(-0.0'f32)
+  of "negative-zero-f64": w.putF64(-0.0'f64)
+  of "c:char": w.putChar(0x41'u32)
+  of "char-above-8-bit": w.putChar(0x100'u32)
+  of "c:wchar": w.putWchar(0x41'u32)
+  of "wchar-above-bmp": w.putWchar(0x1D11E'u32)
+  of "c:emheader":
+    let s = w.emHeaderBegin(1'u32, false, lc4)
+    w.putU32(0'u32); w.emHeaderEnd(s, lc4)
+  of "member-id-past-28-bit":
+    let s = w.emHeaderBegin(0x10000000'u32, false, lc4)
+    w.putU32(0'u32); w.emHeaderEnd(s, lc4)
+  of "lc-body-size-mismatch":
+    let s = w.emHeaderBegin(1'u32, false, lc1)
+    w.putU8(1'u8); w.putU8(2'u8); w.putU8(3'u8)
+    w.emHeaderEnd(s, lc1)
+  of "c:pid":
+    let p = w.pidBegin(0x3F00'u16, false)
+    w.putU32(0'u32); w.pidEnd(p)
+  of "short-pid-past-0x3f00":
+    let p = w.pidBegin(0x3F01'u16, false)
+    w.putU32(0'u32); w.pidEnd(p)
+  of "c:fixed": w.putFixed("1.00", 5, 2)
+  of "fixed-digits-past-31": w.putFixed("1.00", 32, 2)
+  of "fixed-scale-past-digits": w.putFixed("1.00", 5, 6)
+  of "c:bitset": w.putBitset(0x1234'u64, 2)
+  of "bitset-anchor-width": w.putBitset(0x222111'u64, 4)
+  of "c:frame":
+    frame(@[1'u8, 2'u8, 3'u8, 4'u8]); quit(0)
+  of "frame-past-0xffff":
+    frame(newSeq[byte](65536)); quit(0)
+  else:
+    echo "BROKEN the nim probe has no case for ", token; quit(0)
+  echo hex(w)
+except CatchableError as e:
+  echo "REFUSED ", e.msg
+EOF
+    (cd "$work/nim" && "${NIM:-nim}" c --hints:off --colors:off \
+        --nimcache:"$work/nim/cache" --path:"$root/endpoints/nim" \
+        -o:probe probe.nim) > "$work/nim/build.log" 2>&1 || {
+        build_bad nim "$(first_error_line "$work/nim/build.log")"; return 1; }
+    build_ok nim
+}
+
+nim_over() {
+    local put lit dir="$work/nim-${1//:/_}"
+    case "$1" in
+        over-u8|c:over-u8)   put=putU8 ;;
+        over-u16|c:over-u16) put=putU16 ;;
+        over-u32|c:over-u32) put=putU32 ;;
+    esac
+    case "$1" in
+        over-u8)  lit=256 ;;         c:over-u8)  lit=0x12 ;;
+        over-u16) lit=70000 ;;       c:over-u16) lit=0x1234 ;;
+        over-u32) lit=4294967296 ;;  c:over-u32) lit=0x12345678 ;;
+    esac
+    mkdir -p "$dir"
+    cat > "$dir/probe.nim" <<EOF
+import strutils
+import zerodds
+var w = initWriter(eLE, eXcdr2)
+try:
+  w.$put($lit)
+  var s = ""
+  for b in w.bytes(): s.add(toLowerAscii(toHex(int(b), 2)))
+  echo s
+except CatchableError as e:
+  echo "REFUSED ", e.msg
+EOF
+    local rc=0
+    (cd "$dir" && "${NIM:-nim}" c --hints:off --colors:off --nimcache:"$dir/cache" \
+        --path:"$root/endpoints/nim" -o:probe probe.nim) > "$dir/build.log" 2>&1 || rc=$?
+    if [ "$rc" != 0 ]; then echo "REFUSED $(first_error_line "$dir/build.log")"; return; fi
+    run_native nim "$dir/probe"
+}
+
+probe_nim() {
+    case "$1" in over-u*|c:over-u*) nim_over "$1"; return ;; esac
+    nim_build || { echo "BROKEN $(cat "$work/nim/.bad")"; return; }
+    run_native nim "$work/nim/probe" "$1"
+}
+
+# --- kotlin -----------------------------------------------------------
+
+# Where `kotlin-stdlib.jar` sits differs by packaging: next to the
+# compiler under `lib/` in the tarball, under `libexec/lib/` in
+# Homebrew's. Both are looked for, and `KOTLIN_STDLIB` overrides.
+kotlin_stdlib() {
+    if [ -n "${KOTLIN_STDLIB:-}" ]; then echo "$KOTLIN_STDLIB"; return; fi
+    local bin base candidate
+    bin="$(command -v "${KOTLINC:-kotlinc}")"
+    # `readlink -f` is GNU; the loop is the portable spelling.
+    while [ -L "$bin" ]; do bin="$(cd "$(dirname "$bin")" && pwd)/$(readlink "$bin")"; done
+    base="$(cd "$(dirname "$(dirname "$bin")")" && pwd)"
+    for candidate in "$base/lib" "$base/libexec/lib" "$base/../libexec/lib"; do
+        [ -f "$candidate/kotlin-stdlib.jar" ] && {
+            echo "$candidate/kotlin-stdlib.jar"; return; }
+    done
+    echo "$base/lib/kotlin-stdlib.jar"
+}
+
+kotlin_build() {
+    build_state kotlin; case $? in 0) return 0 ;; 2) return 1 ;; esac
+    mkdir -p "$work/kotlin"
+    cp "$root/endpoints/kotlin/src/Zerodds.kt" "$work/kotlin/"
+    cat > "$work/kotlin/Probe.kt" <<'EOF'
+import zerodds.Encoding
+import zerodds.Endian
+import zerodds.Writer
+import zerodds.xrceWriteFrame
+
+fun frame(sample: ByteArray) {
+    try {
+        val f = xrceWriteFrame(0x80, 0x01, 1, 0x0015, sample)
+        if (f.isEmpty()) println("REFUSED the frame writer produced no frame")
+        else println("wrote-frame len=" + f.size)
+    } catch (e: Exception) {
+        println("REFUSED " + e.message)
+    }
+}
+
+fun main(args: Array<String>) {
+    val token = args[0]
+    val w = Writer(Endian.LITTLE, Encoding.XCDR2)
+    try {
+        when (token) {
+            "c:writer" -> w.putU8(0x41)
+            "c:int" -> w.putU16(0x1234)
+            "negative-u16" -> w.putU16(0xcfc7)
+            "negative-u32" -> w.putU32(0xffed2979L)
+            "past-2-63" -> w.putU64(-0x2152411021523d42L)
+            "c:float" -> w.putF32(1.0f)
+            "negative-zero-f32" -> w.putF32(-0.0f)
+            "negative-zero-f64" -> w.putF64(-0.0)
+            "c:char" -> w.putChar(0x41)
+            "char-above-8-bit" -> w.putChar(0x100)
+            "c:wchar" -> w.putWchar(0x41)
+            "wchar-above-bmp" -> w.putWchar(0x1D11E)
+            "c:emheader" -> {
+                val s = w.emheaderBegin(1L, false, 4); w.putU32(0L); w.emheaderEnd(s, 4)
+            }
+            "member-id-past-28-bit" -> {
+                val s = w.emheaderBegin(0x10000000L, false, 4); w.putU32(0L); w.emheaderEnd(s, 4)
+            }
+            "lc-body-size-mismatch" -> {
+                val s = w.emheaderBegin(1L, false, 1)
+                w.putU8(1); w.putU8(2); w.putU8(3)
+                w.emheaderEnd(s, 1)
+            }
+            "c:pid" -> {
+                val p = w.pidBegin(0x3F00, false); w.putU32(0L); w.pidEnd(p)
+            }
+            "short-pid-past-0x3f00" -> {
+                val p = w.pidBegin(0x3F01, false); w.putU32(0L); w.pidEnd(p)
+            }
+            "c:fixed" -> w.putFixed("1.00", 5, 2)
+            "fixed-digits-past-31" -> w.putFixed("1.00", 32, 2)
+            "fixed-scale-past-digits" -> w.putFixed("1.00", 5, 6)
+            "c:bitset" -> w.putBitset(0x1234L, 2)
+            "bitset-anchor-width" -> w.putBitset(0x222111L, 4)
+            "c:frame" -> { frame(ByteArray(4) { 1 }); return }
+            "frame-past-0xffff" -> { frame(ByteArray(65536)); return }
+            else -> { println("BROKEN the kotlin probe has no case for " + token); return }
+        }
+        println(w.bytes().joinToString("") { "%02x".format(it) })
+    } catch (e: Exception) {
+        println("REFUSED " + e.message)
+    }
+}
+EOF
+    (cd "$work/kotlin" && "${KOTLINC:-kotlinc}" -nowarn -d classes Zerodds.kt Probe.kt) \
+        > "$work/kotlin/build.log" 2>&1 || {
+        build_bad kotlin "$(first_error_line "$work/kotlin/build.log")"; return 1; }
+    build_ok kotlin
+}
+
+kotlin_over() {
+    local put lit suffix="" dir="$work/kotlin-${1//:/_}"
+    case "$1" in
+        over-u8|c:over-u8)   put=putU8 ;;
+        over-u16|c:over-u16) put=putU16 ;;
+        over-u32|c:over-u32) put=putU32; suffix=L ;;
+    esac
+    case "$1" in
+        over-u8)  lit=256 ;;         c:over-u8)  lit=0x12 ;;
+        over-u16) lit=70000 ;;       c:over-u16) lit=0x1234 ;;
+        over-u32) lit=4294967296 ;;  c:over-u32) lit=0x12345678 ;;
+    esac
+    mkdir -p "$dir"
+    cp "$root/endpoints/kotlin/src/Zerodds.kt" "$dir/"
+    cat > "$dir/Probe.kt" <<EOF
+import zerodds.Encoding
+import zerodds.Endian
+import zerodds.Writer
+
+fun main() {
+    val w = Writer(Endian.LITTLE, Encoding.XCDR2)
+    try {
+        w.$put($lit$suffix)
+        println(w.bytes().joinToString("") { "%02x".format(it) })
+    } catch (e: Exception) {
+        println("REFUSED " + e.message)
+    }
+}
+EOF
+    local rc=0
+    (cd "$dir" && "${KOTLINC:-kotlinc}" -nowarn -d classes Zerodds.kt Probe.kt) \
+        > "$dir/build.log" 2>&1 || rc=$?
+    if [ "$rc" != 0 ]; then echo "REFUSED $(first_error_line "$dir/build.log")"; return; fi
+    run_native kotlin "${JAVA:-java}" -cp "$dir/classes:$(kotlin_stdlib)" ProbeKt
+}
+
+probe_kotlin() {
+    case "$1" in over-u*|c:over-u*) kotlin_over "$1"; return ;; esac
+    kotlin_build || { echo "BROKEN $(cat "$work/kotlin/.bad")"; return; }
+    run_native kotlin "${JAVA:-java}" -cp "$work/kotlin/classes:$(kotlin_stdlib)" ProbeKt "$1"
+}
+
+# --- fsharp -----------------------------------------------------------
+
+fsharp_probe_source() { # $1 file
+    cat > "$1" <<'EOF'
+#load "zerodds.fs"
+open ZeroDDS
+
+let frame (sample: byte[]) =
+    match writeFrame 0x80uy 0x01uy 1 sample with
+    | None -> printfn "REFUSED the frame writer produced no frame"
+    | Some f when f.Length = 0 -> printfn "REFUSED the frame writer produced no frame"
+    | Some f -> printfn "wrote-frame len=%d" f.Length
+
+let token =
+    let a = System.Environment.GetCommandLineArgs()
+    a.[a.Length - 1]
+
+let w = Writer(LE, XCDR2)
+
+try
+    let framed =
+        match token with
+        | "c:writer" -> w.PutU8(0x41); false
+        | "c:int" -> w.PutU16(0x1234); false
+        | "negative-u16" -> w.PutU16(0xcfc7); false
+        | "negative-u32" -> w.PutU32(0xffed2979u); false
+        | "past-2-63" -> w.PutU64(0xdeadbeefdeadc2beUL); false
+        | "c:float" -> w.PutF32(1.0f); false
+        | "negative-zero-f32" -> w.PutF32(-0.0f); false
+        | "negative-zero-f64" -> w.PutF64(-0.0); false
+        | "c:char" -> w.PutChar(0x41); false
+        | "char-above-8-bit" -> w.PutChar(0x100); false
+        | "c:wchar" -> w.PutWchar(0x41); false
+        | "wchar-above-bmp" -> w.PutWchar(0x1D11E); false
+        | "c:emheader" ->
+            let s = w.EmHeaderBegin(1u, false, 4)
+            w.PutU32(0u)
+            w.EmHeaderEnd(s, 4)
+            false
+        | "member-id-past-28-bit" ->
+            let s = w.EmHeaderBegin(0x10000000u, false, 4)
+            w.PutU32(0u)
+            w.EmHeaderEnd(s, 4)
+            false
+        | "lc-body-size-mismatch" ->
+            let s = w.EmHeaderBegin(1u, false, 1)
+            w.PutU8(1)
+            w.PutU8(2)
+            w.PutU8(3)
+            w.EmHeaderEnd(s, 1)
+            false
+        | "c:pid" ->
+            let p = w.PidBegin(0x3F00, false)
+            w.PutU32(0u)
+            w.PidEnd(p)
+            false
+        | "short-pid-past-0x3f00" ->
+            let p = w.PidBegin(0x3F01, false)
+            w.PutU32(0u)
+            w.PidEnd(p)
+            false
+        | "c:fixed" -> w.PutFixed("1.00", 5, 2); false
+        | "fixed-digits-past-31" -> w.PutFixed("1.00", 32, 2); false
+        | "fixed-scale-past-digits" -> w.PutFixed("1.00", 5, 6); false
+        | "c:bitset" -> w.PutBitset(0x1234UL, 2); false
+        | "bitset-anchor-width" -> w.PutBitset(0x222111UL, 4); false
+        | "c:frame" -> frame (Array.create 4 1uy); true
+        | "frame-past-0xffff" -> frame (Array.zeroCreate 65536); true
+        | other ->
+            printfn "BROKEN the fsharp probe has no case for %s" other
+            true
+    if not framed then
+        printfn "%s" (w.Bytes() |> Array.map (sprintf "%02x") |> String.concat "")
+with e -> printfn "REFUSED %s" e.Message
+EOF
+}
+
+fsharp_run() { # $1 directory  $2 token
+    (cd "$1" && DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1 \
+        "${DOTNET:-dotnet}" fsi --nologo probe.fsx "$2")
+}
+
+probe_fsharp() {
+    local dir="$work/fsharp"
+    case "$1" in
+        over-u*|c:over-u*)
+            local put lit suffix=""
+            case "$1" in
+                over-u8|c:over-u8)   put=PutU8 ;;
+                over-u16|c:over-u16) put=PutU16 ;;
+                over-u32|c:over-u32) put=PutU32; suffix=u ;;
+            esac
+            case "$1" in
+                over-u8)  lit=256 ;;         c:over-u8)  lit=0x12 ;;
+                over-u16) lit=70000 ;;       c:over-u16) lit=0x1234 ;;
+                over-u32) lit=4294967296 ;;  c:over-u32) lit=0x12345678 ;;
+            esac
+            dir="$work/fsharp-${1//:/_}"
+            mkdir -p "$dir"
+            cp "$root/endpoints/fsharp/zerodds.fs" "$dir/"
+            cat > "$dir/probe.fsx" <<EOF
+#load "zerodds.fs"
+open ZeroDDS
+let w = Writer(LE, XCDR2)
+try
+    w.$put($lit$suffix)
+    printfn "%s" (w.Bytes() |> Array.map (sprintf "%02x") |> String.concat "")
+with e -> printfn "REFUSED %s" e.Message
+EOF
+            local rc=0
+            lim "$build_secs" bash -c "cd '$dir' && DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1 '${DOTNET:-dotnet}' fsi --nologo probe.fsx" || rc=$?
+            if [ "$rc" = 124 ]; then echo TIMEOUT; return; fi
+            local out; out="$(last_line "$LIMOUT")"
+            if [ "$rc" != 0 ] && [ "${out#REFUSED}" = "$out" ]; then
+                echo "REFUSED $(first_error_line "$LIMOUT")"; return
+            fi
+            [ -z "$out" ] && { echo "BROKEN the probe printed nothing"; return; }
+            printf '%s\n' "$out"
+            return ;;
+    esac
+    if ! build_state fsharp; then
+        mkdir -p "$dir"
+        cp "$root/endpoints/fsharp/zerodds.fs" "$dir/"
+        fsharp_probe_source "$dir/probe.fsx"
+        build_ok fsharp
+    fi
+    local rc=0
+    lim "$build_secs" bash -c "cd '$dir' && DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1 '${DOTNET:-dotnet}' fsi --nologo probe.fsx '$1'" || rc=$?
+    if [ "$rc" = 124 ]; then echo TIMEOUT; return; fi
+    local out; out="$(last_line "$LIMOUT")"
+    if [ "$rc" != 0 ] && [ "${out#REFUSED}" = "$out" ]; then
+        echo "REFUSED $(first_error_line "$LIMOUT")"; return
+    fi
+    [ -z "$out" ] && { echo "BROKEN the probe printed nothing"; return; }
+    printf '%s\n' "$out"
+}
+
+# --- swift ------------------------------------------------------------
+
+swift_build() {
+    build_state swift; case $? in 0) return 0 ;; 2) return 1 ;; esac
+    mkdir -p "$work/swift"
+    cat > "$work/swift/main.swift" <<'EOF'
+import Foundation
+
+func hex(_ b: [UInt8]) { print(b.map { String(format: "%02x", $0) }.joined()) }
+
+func frame(_ sample: [UInt8]) {
+    guard let f = xrceWriteFrame(session: 0x80, stream: 0x01, seq: 1, objectId: 0x0015, sample: sample),
+          !f.isEmpty
+    else {
+        print("REFUSED the frame writer produced no frame")
+        return
+    }
+    print("wrote-frame len=\(f.count)")
+}
+
+let token = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : ""
+var w = Writer(.little, .xcdr2)
+do {
+    switch token {
+    case "c:writer": w.putU8(0x41)
+    case "c:int": w.putU16(0x1234)
+    case "negative-u16": w.putU16(0xcfc7)
+    case "negative-u32": w.putU32(0xffed_2979)
+    case "past-2-63": w.putU64(0xdead_beef_dead_c2be)
+    case "c:float": w.putF32(1.0)
+    case "negative-zero-f32": w.putF32(-0.0)
+    case "negative-zero-f64": w.putF64(-0.0)
+    case "c:char": try w.putChar(0x41)
+    case "char-above-8-bit": try w.putChar(0x100)
+    case "c:wchar": try w.putWchar(0x41)
+    case "wchar-above-bmp": try w.putWchar(0x1D11E)
+    case "c:emheader":
+        let s = try w.emheaderBegin(id: 1, mustUnderstand: false, lengthCode: .lc4)
+        w.putU32(0)
+        try w.emheaderEnd(s, lengthCode: .lc4)
+    case "member-id-past-28-bit":
+        let s = try w.emheaderBegin(id: 0x1000_0000, mustUnderstand: false, lengthCode: .lc4)
+        w.putU32(0)
+        try w.emheaderEnd(s, lengthCode: .lc4)
+    case "lc-body-size-mismatch":
+        let s = try w.emheaderBegin(id: 1, mustUnderstand: false, lengthCode: .lc1)
+        w.putU8(1); w.putU8(2); w.putU8(3)
+        try w.emheaderEnd(s, lengthCode: .lc1)
+    case "c:pid":
+        let p = try w.pidBegin(0x3F00, mustUnderstand: false)
+        w.putU32(0)
+        try w.pidEnd(p)
+    case "short-pid-past-0x3f00":
+        let p = try w.pidBegin(0x3F01, mustUnderstand: false)
+        w.putU32(0)
+        try w.pidEnd(p)
+    case "c:fixed": try w.putFixed("1.00", digits: 5, scale: 2)
+    case "fixed-digits-past-31": try w.putFixed("1.00", digits: 32, scale: 2)
+    case "fixed-scale-past-digits": try w.putFixed("1.00", digits: 5, scale: 6)
+    case "c:bitset": try w.putBitset(0x1234, anchor: 2)
+    case "bitset-anchor-width": try w.putBitset(0x22_2111, anchor: 4)
+    case "c:frame": frame([1, 2, 3, 4]); exit(0)
+    case "frame-past-0xffff": frame([UInt8](repeating: 0, count: 65536)); exit(0)
+    default:
+        print("BROKEN the swift probe has no case for \(token)")
+        exit(0)
+    }
+    hex(w.bytes())
+} catch {
+    print("REFUSED \(error)")
+}
+EOF
+    (cd "$work/swift" && "${SWIFTC:-swiftc}" -swift-version 5 \
+        "$root/endpoints/swift/Sources/Zerodds/Zerodds.swift" main.swift -o probe) \
+        > "$work/swift/build.log" 2>&1 || {
+        build_bad swift "$(first_error_line "$work/swift/build.log")"; return 1; }
+    build_ok swift
+}
+
+swift_over() {
+    local put lit dir="$work/swift-${1//:/_}"
+    case "$1" in
+        over-u8|c:over-u8)   put=putU8 ;;
+        over-u16|c:over-u16) put=putU16 ;;
+        over-u32|c:over-u32) put=putU32 ;;
+    esac
+    case "$1" in
+        over-u8)  lit=256 ;;         c:over-u8)  lit=0x12 ;;
+        over-u16) lit=70000 ;;       c:over-u16) lit=0x1234 ;;
+        over-u32) lit=4294967296 ;;  c:over-u32) lit=0x12345678 ;;
+    esac
+    mkdir -p "$dir"
+    cat > "$dir/main.swift" <<EOF
+import Foundation
+var w = Writer(.little, .xcdr2)
+w.$put($lit)
+print(w.bytes().map { String(format: "%02x", \$0) }.joined())
+EOF
+    local rc=0
+    (cd "$dir" && "${SWIFTC:-swiftc}" -swift-version 5 \
+        "$root/endpoints/swift/Sources/Zerodds/Zerodds.swift" main.swift -o probe) \
+        > "$dir/build.log" 2>&1 || rc=$?
+    if [ "$rc" != 0 ]; then echo "REFUSED $(first_error_line "$dir/build.log")"; return; fi
+    run_native swift "$dir/probe"
+}
+
+probe_swift() {
+    case "$1" in over-u*|c:over-u*) swift_over "$1"; return ;; esac
+    swift_build || { echo "BROKEN $(cat "$work/swift/.bad")"; return; }
+    run_native swift "$work/swift/probe" "$1"
+}
+
+# --- d ----------------------------------------------------------------
+
+d_build() {
+    build_state d; case $? in 0) return 0 ;; 2) return 1 ;; esac
+    mkdir -p "$work/d"
+    cat > "$work/d/probe.d" <<'EOF'
+import std.stdio;
+import std.conv : to;
+import zerodds;
+
+void hex(const(ubyte)[] b) {
+    foreach (x; b) writef("%02x", x);
+    writeln();
+}
+
+void frame(const(ubyte)[] sample) {
+    try {
+        auto f = writeFrame(0x80, 0x01, 1, sample);
+        if (f.length == 0) writeln("REFUSED the frame writer produced no frame");
+        else writeln("wrote-frame len=", f.length);
+    } catch (Exception e) {
+        writeln("REFUSED ", e.msg);
+    }
+}
+
+void main(string[] args) {
+    string token = args.length > 1 ? args[1] : "";
+    auto w = Writer(Endian.LE, Encoding.XCDR2);
+    try {
+        switch (token) {
+        case "c:writer": w.putU8(0x41); break;
+        case "c:int": w.putU16(0x1234); break;
+        case "negative-u16": w.putU16(0xcfc7); break;
+        case "negative-u32": w.putU32(0xffed2979); break;
+        case "past-2-63": w.putU64(0xdeadbeefdeadc2beUL); break;
+        case "c:float": w.putF32(1.0f); break;
+        case "negative-zero-f32": w.putF32(-0.0f); break;
+        case "negative-zero-f64": w.putF64(-0.0); break;
+        case "c:char": w.putChar(0x41); break;
+        case "char-above-8-bit": w.putChar(0x100); break;
+        case "c:wchar": w.putWchar(0x41); break;
+        case "wchar-above-bmp": w.putWchar(0x1D11E); break;
+        case "c:emheader":
+            auto s1 = w.emHeaderBegin(1, false, LengthCode.LC4);
+            w.putU32(0); w.emHeaderEnd(s1, LengthCode.LC4); break;
+        case "member-id-past-28-bit":
+            auto s2 = w.emHeaderBegin(0x10000000, false, LengthCode.LC4);
+            w.putU32(0); w.emHeaderEnd(s2, LengthCode.LC4); break;
+        case "lc-body-size-mismatch":
+            auto s3 = w.emHeaderBegin(1, false, LengthCode.LC1);
+            w.putU8(1); w.putU8(2); w.putU8(3);
+            w.emHeaderEnd(s3, LengthCode.LC1); break;
+        case "c:pid":
+            auto p1 = w.pidBegin(0x3F00, false);
+            w.putU32(0); w.pidEnd(p1); break;
+        case "short-pid-past-0x3f00":
+            auto p2 = w.pidBegin(0x3F01, false);
+            w.putU32(0); w.pidEnd(p2); break;
+        case "c:fixed": w.putFixed("1.00", 5, 2); break;
+        case "fixed-digits-past-31": w.putFixed("1.00", 32, 2); break;
+        case "fixed-scale-past-digits": w.putFixed("1.00", 5, 6); break;
+        case "c:bitset": w.putBitset(0x1234, 2); break;
+        case "bitset-anchor-width": w.putBitset(0x222111, 4); break;
+        case "c:frame":
+            frame([cast(ubyte) 1, 2, 3, 4]); return;
+        case "frame-past-0xffff":
+            frame(new ubyte[65536]); return;
+        default:
+            writeln("BROKEN the d probe has no case for ", token); return;
+        }
+        hex(w.bytes());
+    } catch (Exception e) {
+        writeln("REFUSED ", e.msg);
+    }
+}
+EOF
+    (cd "$work/d" && "${GDC:-gdc}" -I"$root/endpoints/d" -o probe probe.d \
+        "$root/endpoints/d/zerodds.d") > "$work/d/build.log" 2>&1 || {
+        build_bad d "$(first_error_line "$work/d/build.log")"; return 1; }
+    build_ok d
+}
+
+d_over() {
+    local put lit dir="$work/d-${1//:/_}"
+    case "$1" in
+        over-u8|c:over-u8)   put=putU8 ;;
+        over-u16|c:over-u16) put=putU16 ;;
+        over-u32|c:over-u32) put=putU32 ;;
+    esac
+    case "$1" in
+        over-u8)  lit=256 ;;         c:over-u8)  lit=0x12 ;;
+        over-u16) lit=70000 ;;       c:over-u16) lit=0x1234 ;;
+        over-u32) lit=4294967296 ;;  c:over-u32) lit=0x12345678 ;;
+    esac
+    mkdir -p "$dir"
+    cat > "$dir/probe.d" <<EOF
+import std.stdio;
+import zerodds;
+void main() {
+    auto w = Writer(Endian.LE, Encoding.XCDR2);
+    try {
+        w.$put($lit);
+        foreach (b; w.bytes()) writef("%02x", b);
+        writeln();
+    } catch (Exception e) {
+        writeln("REFUSED ", e.msg);
+    }
+}
+EOF
+    local rc=0
+    (cd "$dir" && "${GDC:-gdc}" -I"$root/endpoints/d" -o probe probe.d \
+        "$root/endpoints/d/zerodds.d") > "$dir/build.log" 2>&1 || rc=$?
+    if [ "$rc" != 0 ]; then echo "REFUSED $(first_error_line "$dir/build.log")"; return; fi
+    run_native d "$dir/probe"
+}
+
+probe_d() {
+    case "$1" in over-u*|c:over-u*) d_over "$1"; return ;; esac
+    d_build || { echo "BROKEN $(cat "$work/d/.bad")"; return; }
+    run_native d "$work/d/probe" "$1"
+}
+
+# --- ada (the thin binding over endpoints/c) --------------------------
+#
+# `Zdw` is the C core's own surface and `Zdw_Xcdr` the XCDR2 half above
+# it. Put_U8 .. Put_U64 report through an `int` status; the XCDR2
+# operations report through an `out` status of their own. Neither
+# raises, so `REFUSED` here is the binding's error return and not an
+# exception this probe caught.
+
+ada_build() {
+    build_state ada; case $? in 0) return 0 ;; 2) return 1 ;; esac
+    mkdir -p "$work/ada"
+    cat > "$work/ada/probe.adb" <<'EOF'
+with Ada.Command_Line;
+with Ada.Exceptions;
+with Ada.Text_IO;
+with Interfaces.C;
+with Zdw;
+with Zdw_Xcdr;
+procedure Probe is
+   use Zdw;
+   use type Interfaces.C.int;
+   use type Interfaces.C.size_t;
+   --  `-0.0` below needs the unary minus of the float types to be
+   --  visible; without these the probe does not compile and every cell
+   --  of this surface reads `broken-probe` instead of an answer.
+   use type Interfaces.C.C_float;
+   use type Interfaces.C.double;
+   type Octets is array (Natural range <>) of aliased Interfaces.C.unsigned_char;
+   pragma Convention (C, Octets);
+   Buf   : aliased Octets (0 .. 131071) := [others => 0];
+   W     : aliased Zdw.Zdw_Writer;
+   Digs  : constant String := "0123456789abcdef";
+   Token : constant String := Ada.Command_Line.Argument (1);
+   Start : Interfaces.C.size_t;
+   Head  : Zdw_Xcdr.Pid_Header;
+
+   procedure Check (Code : Interfaces.C.int) is
+   begin
+      if Code /= Zdw.ZDW_OK then
+         raise Zdw_Xcdr.Wire_Refused;
+      end if;
+   end Check;
+
+   procedure Emit is
+   begin
+      for I in 0 .. Natural (W.Len) - 1 loop
+         Ada.Text_IO.Put (Digs (Natural (Buf (I)) / 16 + 1));
+         Ada.Text_IO.Put (Digs (Natural (Buf (I)) mod 16 + 1));
+      end loop;
+      Ada.Text_IO.New_Line;
+   end Emit;
+begin
+   Writer_Init (W'Access, Buf'Address, Buf'Length, ZDW_LE);
+   if Token = "c:writer" then
+      Check (Put_U8 (W'Access, 16#41#));
+   elsif Token = "c:int" then
+      Check (Put_U16 (W'Access, 16#1234#));
+   elsif Token = "negative-u16" then
+      Check (Put_U16 (W'Access, 16#CFC7#));
+   elsif Token = "negative-u32" then
+      Check (Put_U32 (W'Access, 16#FFED2979#));
+   elsif Token = "past-2-63" then
+      Check (Put_U64 (W'Access, (Hi => 16#DEADBEEF#, Lo => 16#DEADC2BE#)));
+   elsif Token = "c:float" then
+      Check (Put_F32 (W'Access, 1.0));
+   elsif Token = "negative-zero-f32" then
+      Check (Put_F32 (W'Access, -0.0));
+   elsif Token = "negative-zero-f64" then
+      Check (Put_F64 (W'Access, -0.0));
+   elsif Token = "c:char" then
+      Zdw_Xcdr.Put_Char (W'Access, 16#41#);
+   elsif Token = "char-above-8-bit" then
+      Zdw_Xcdr.Put_Char (W'Access, 16#100#);
+   elsif Token = "c:wchar" then
+      Zdw_Xcdr.Put_Wchar (W'Access, 16#41#);
+   elsif Token = "wchar-above-bmp" then
+      Zdw_Xcdr.Put_Wchar (W'Access, 16#1D11E#);
+   elsif Token = "c:emheader" then
+      Zdw_Xcdr.EMHeader_Begin (W'Access, 1, False, Zdw_Xcdr.LC4, Start);
+      Check (Put_U32 (W'Access, 0));
+      Zdw_Xcdr.EMHeader_End (W'Access, Start, Zdw_Xcdr.LC4);
+   elsif Token = "member-id-past-28-bit" then
+      Zdw_Xcdr.EMHeader_Begin (W'Access, 16#10000000#, False, Zdw_Xcdr.LC4, Start);
+      Check (Put_U32 (W'Access, 0));
+      Zdw_Xcdr.EMHeader_End (W'Access, Start, Zdw_Xcdr.LC4);
+   elsif Token = "lc-body-size-mismatch" then
+      Zdw_Xcdr.EMHeader_Begin (W'Access, 1, False, Zdw_Xcdr.LC1, Start);
+      Check (Put_U8 (W'Access, 1));
+      Check (Put_U8 (W'Access, 2));
+      Check (Put_U8 (W'Access, 3));
+      Zdw_Xcdr.EMHeader_End (W'Access, Start, Zdw_Xcdr.LC1);
+   elsif Token = "c:pid" then
+      Zdw_Xcdr.Pid_Begin (W'Access, 16#3F00#, False, Head);
+      Check (Put_U32 (W'Access, 0));
+      Zdw_Xcdr.Pid_End (W'Access, Head);
+   elsif Token = "short-pid-past-0x3f00" then
+      Zdw_Xcdr.Pid_Begin (W'Access, 16#3F01#, False, Head);
+      Check (Put_U32 (W'Access, 0));
+      Zdw_Xcdr.Pid_End (W'Access, Head);
+   elsif Token = "c:fixed" then
+      Zdw_Xcdr.Put_Fixed (W'Access, "1.00", 5, 2);
+   elsif Token = "fixed-digits-past-31" then
+      Zdw_Xcdr.Put_Fixed (W'Access, "1.00", 32, 2);
+   elsif Token = "fixed-scale-past-digits" then
+      Zdw_Xcdr.Put_Fixed (W'Access, "1.00", 5, 6);
+   elsif Token = "c:bitset" then
+      Zdw_Xcdr.Put_Bitset (W'Access, (Hi => 0, Lo => 16#1234#), 2);
+   elsif Token = "bitset-anchor-width" then
+      Zdw_Xcdr.Put_Bitset (W'Access, (Hi => 0, Lo => 16#222111#), 4);
+   else
+      Ada.Text_IO.Put_Line ("BROKEN the ada probe has no case for " & Token);
+      return;
+   end if;
+   Emit;
+exception
+   when E : others =>
+      Ada.Text_IO.Put_Line ("REFUSED " & Ada.Exceptions.Exception_Name (E));
+end Probe;
+EOF
+    (cd "$work/ada" \
+        && gcc -std=c89 -pedantic -Wall -O1 -c -I"$root/endpoints/c/include" \
+              -o zerodds_wire.o "$root/endpoints/c/src/zerodds_wire.c" \
+        && gnatmake -q -gnat2022 -D "$work/ada" -aI"$root/endpoints/ada/src" \
+              -o probe probe.adb -largs "$work/ada/zerodds_wire.o") \
+        > "$work/ada/build.log" 2>&1 || {
+        build_bad ada "$(first_error_line "$work/ada/build.log")"; return 1; }
+    build_ok ada
+}
+
+ada_over() {
+    local put lit ctype dir="$work/ada-${1//:/_}"
+    case "$1" in
+        over-u8|c:over-u8)   put=Put_U8 ;;
+        over-u16|c:over-u16) put=Put_U16 ;;
+        over-u32|c:over-u32) put=Put_U32 ;;
+    esac
+    case "$1" in
+        over-u8)  lit=256 ;;         c:over-u8)  lit=16#12# ;;
+        over-u16) lit=70000 ;;       c:over-u16) lit=16#1234# ;;
+        over-u32) lit=4294967296 ;;  c:over-u32) lit=16#12345678# ;;
+    esac
+    mkdir -p "$dir"
+    cat > "$dir/probe.adb" <<EOF
+with Ada.Text_IO;
+with Interfaces.C;
+with Zdw;
+procedure Probe is
+   use Zdw;
+   --  The status comparison below is on an Interfaces.C.int, whose
+   --  operators a `with` alone does not make visible; without this the
+   --  control does not compile and the three width cells of this surface
+   --  read `broken-probe` instead of an answer.
+   use type Interfaces.C.int;
+   type Octets is array (Natural range <>) of aliased Interfaces.C.unsigned_char;
+   pragma Convention (C, Octets);
+   Buf  : aliased Octets (0 .. 255) := [others => 0];
+   W    : aliased Zdw.Zdw_Writer;
+   Digs : constant String := "0123456789abcdef";
+begin
+   Writer_Init (W'Access, Buf'Address, Buf'Length, ZDW_LE);
+   if $put (W'Access, $lit) /= Zdw.ZDW_OK then
+      Ada.Text_IO.Put_Line ("REFUSED the writer reported an error");
+      return;
+   end if;
+   for I in 0 .. Natural (W.Len) - 1 loop
+      Ada.Text_IO.Put (Digs (Natural (Buf (I)) / 16 + 1));
+      Ada.Text_IO.Put (Digs (Natural (Buf (I)) mod 16 + 1));
+   end loop;
+   Ada.Text_IO.New_Line;
+end Probe;
+EOF
+    local rc=0
+    (cd "$dir" \
+        && gcc -std=c89 -pedantic -Wall -O1 -c -I"$root/endpoints/c/include" \
+              -o zerodds_wire.o "$root/endpoints/c/src/zerodds_wire.c" \
+        && gnatmake -q -gnat2022 -D "$dir" -aI"$root/endpoints/ada/src" \
+              -o probe probe.adb -largs "$dir/zerodds_wire.o") \
+        > "$dir/build.log" 2>&1 || rc=$?
+    if [ "$rc" != 0 ]; then echo "REFUSED $(first_error_line "$dir/build.log")"; return; fi
+    run_native ada "$dir/probe"
+}
+
+probe_ada() {
+    case "$1" in over-u*|c:over-u*) ada_over "$1"; return ;; esac
+    ada_build || { echo "BROKEN $(cat "$work/ada/.bad")"; return; }
+    run_native ada "$work/ada/probe" "$1"
+}
+
+# --- ada-83 -----------------------------------------------------------
+#
+# Ada 83 has no child units, so no `Ada.Command_Line` and no
+# `Ada.Exceptions`: the token arrives on standard input through a two-line
+# wrapper, and a refusal is `when others` without a name. The binding's
+# own words for these edges are its exception names, which is what its
+# `.ads` carries; the probe reports the class it caught.
+
+ada83_build() {
+    build_state ada-83; case $? in 0) return 0 ;; 2) return 1 ;; esac
+    mkdir -p "$work/ada83"
+    cat > "$work/ada83/probe.adb" <<'EOF'
+with Text_IO;
+with Zerodds_Ada83_Wire; use Zerodds_Ada83_Wire;
+with Zerodds_Ada83_Endpoint;
+procedure Probe is
+   W     : Writer;
+   Digs  : constant String := "0123456789abcdef";
+   Token : String (1 .. 64);
+   Last  : Natural;
+   Start : Integer;
+   Head  : Pid_Header;
+
+   procedure Emit is
+   begin
+      if W.Overflow then
+         Text_IO.Put_Line ("REFUSED the writer overflowed");
+         return;
+      end if;
+      for I in 0 .. Length (W) - 1 loop
+         Text_IO.Put (Digs (Integer (W.Buf (I)) / 16 + 1));
+         Text_IO.Put (Digs (Integer (W.Buf (I)) mod 16 + 1));
+      end loop;
+      Text_IO.New_Line;
+   end Emit;
+
+   procedure Frame (N : Integer) is
+      Sample : constant Byte_Array (0 .. N - 1) := (others => 0);
+      F      : Writer;
+   begin
+      Init (F, Little);
+      Zerodds_Ada83_Endpoint.Xrce_Write_Frame (F, 16#80#, 16#01#, 1, Sample);
+      if F.Overflow or else Length (F) = 0 then
+         Text_IO.Put_Line ("REFUSED the frame writer produced no frame");
+      else
+         Text_IO.Put_Line ("wrote-frame len=" &
+            Integer'Image (Length (F)) (2 .. Integer'Image (Length (F))'Last));
+      end if;
+   exception
+      when others =>
+         Text_IO.Put_Line ("REFUSED a check rejected the sample");
+   end Frame;
+begin
+   Text_IO.Get_Line (Token, Last);
+   Init (W, Little);
+   declare
+      T : constant String := Token (1 .. Last);
+   begin
+      if T = "c:writer" then Put_U8 (W, 16#41#);
+      elsif T = "c:int" then Put_U16 (W, 16#1234#);
+      elsif T = "negative-u16" then Put_U16 (W, 16#CFC7#);
+      elsif T = "negative-u32" then Put_U32 (W, 16#FFED2979#);
+      elsif T = "past-2-63" then Put_U64 (W, 16#DEADBEEF#, 16#DEADC2BE#);
+      elsif T = "c:float" then Put_F32 (W, 1.0);
+      elsif T = "negative-zero-f32" then Put_F32 (W, -0.0);
+      elsif T = "negative-zero-f64" then Put_F64 (W, -0.0);
+      elsif T = "c:char" then Put_Char (W, 16#41#);
+      elsif T = "char-above-8-bit" then Put_Char (W, 16#100#);
+      elsif T = "c:wchar" then Put_Wchar (W, 16#41#);
+      elsif T = "wchar-above-bmp" then Put_Wchar (W, 16#1D11E#);
+      elsif T = "c:emheader" then
+         EMHeader_Begin (W, 1, False, LC4, Start);
+         Put_U32 (W, 0);
+         EMHeader_End (W, Start, LC4);
+      elsif T = "member-id-past-28-bit" then
+         EMHeader_Begin (W, 16#10000000#, False, LC4, Start);
+         Put_U32 (W, 0);
+         EMHeader_End (W, Start, LC4);
+      elsif T = "lc-body-size-mismatch" then
+         EMHeader_Begin (W, 1, False, LC1, Start);
+         Put_U8 (W, 1); Put_U8 (W, 2); Put_U8 (W, 3);
+         EMHeader_End (W, Start, LC1);
+      elsif T = "c:pid" then
+         Pid_Begin (W, 16#3F00#, False, Head);
+         Put_U32 (W, 0);
+         Pid_End (W, Head);
+      elsif T = "short-pid-past-0x3f00" then
+         Pid_Begin (W, 16#3F01#, False, Head);
+         Put_U32 (W, 0);
+         Pid_End (W, Head);
+      elsif T = "c:fixed" then Put_Fixed (W, "1.00", 5, 2);
+      elsif T = "fixed-digits-past-31" then Put_Fixed (W, "1.00", 32, 2);
+      elsif T = "fixed-scale-past-digits" then Put_Fixed (W, "1.00", 5, 6);
+      elsif T = "c:bitset" then Put_Bitset (W, 0, 16#1234#, 2);
+      elsif T = "bitset-anchor-width" then Put_Bitset (W, 0, 16#222111#, 4);
+      elsif T = "c:frame" then Frame (4); return;
+      elsif T = "frame-past-0xffff" then Frame (65536); return;
+      else
+         Text_IO.Put_Line ("BROKEN the ada-83 probe has no case for " & T);
+         return;
+      end if;
+      Emit;
+   end;
+exception
+   when others =>
+      Text_IO.Put_Line ("REFUSED a check rejected the argument");
+end Probe;
+EOF
+    cat > "$work/ada83/run.sh" <<EOF
+#!/bin/sh
+printf '%s\n' "\$1" | "$work/ada83/probe"
+EOF
+    chmod +x "$work/ada83/run.sh"
+    (cd "$work/ada83" && gnatmake -q -gnat83 -D "$work/ada83" \
+        -aI"$root/endpoints/ada-83/src" -o probe probe.adb) \
+        > "$work/ada83/build.log" 2>&1 || {
+        build_bad ada-83 "$(first_error_line "$work/ada83/build.log")"; return 1; }
+    build_ok ada-83
+}
+
+ada83_over() {
+    local put lit dir="$work/ada83-${1//:/_}"
+    case "$1" in
+        over-u8|c:over-u8)   put=Put_U8 ;;
+        over-u16|c:over-u16) put=Put_U16 ;;
+        over-u32|c:over-u32) put=Put_U32 ;;
+    esac
+    case "$1" in
+        over-u8)  lit=256 ;;         c:over-u8)  lit=16#12# ;;
+        over-u16) lit=70000 ;;       c:over-u16) lit=16#1234# ;;
+        over-u32) lit=4294967296 ;;  c:over-u32) lit=16#12345678# ;;
+    esac
+    mkdir -p "$dir"
+    cat > "$dir/probe.adb" <<EOF
+with Text_IO;
+with Zerodds_Ada83_Wire; use Zerodds_Ada83_Wire;
+procedure Probe is
+   W    : Writer;
+   Digs : constant String := "0123456789abcdef";
+begin
+   Init (W, Little);
+   $put (W, $lit);
+   if W.Overflow then
+      Text_IO.Put_Line ("REFUSED the writer overflowed");
+      return;
+   end if;
+   for I in 0 .. Length (W) - 1 loop
+      Text_IO.Put (Digs (Integer (W.Buf (I)) / 16 + 1));
+      Text_IO.Put (Digs (Integer (W.Buf (I)) mod 16 + 1));
+   end loop;
+   Text_IO.New_Line;
+exception
+   when others =>
+      Text_IO.Put_Line ("REFUSED a check rejected the argument");
+end Probe;
+EOF
+    local rc=0
+    (cd "$dir" && gnatmake -q -gnat83 -D "$dir" -aI"$root/endpoints/ada-83/src" \
+        -o probe probe.adb) > "$dir/build.log" 2>&1 || rc=$?
+    if [ "$rc" != 0 ]; then echo "REFUSED $(first_error_line "$dir/build.log")"; return; fi
+    run_native ada-83 "$dir/probe"
+}
+
+probe_ada_83() {
+    case "$1" in over-u*|c:over-u*) ada83_over "$1"; return ;; esac
+    ada83_build || { echo "BROKEN $(cat "$work/ada-83/.bad")"; return; }
+    run_native ada-83 "$work/ada83/run.sh" "$1"
+}
+
+# --- ada-native -------------------------------------------------------
+
+adanative_build() {
+    build_state ada-native; case $? in 0) return 0 ;; 2) return 1 ;; esac
+    mkdir -p "$work/adanative"
+    cat > "$work/adanative/probe.adb" <<'EOF'
+with Ada.Command_Line;
+with Ada.Exceptions;
+with Ada.Text_IO;
+with Interfaces;
+with Native_Framing;
+with Zerodds_Native_Wire; use Zerodds_Native_Wire;
+procedure Probe is
+   --  `-0.0` below needs the unary minus of the float types to be
+   --  visible; without these the probe does not compile and every cell
+   --  of this surface reads `broken-probe` instead of an answer.
+   use type Interfaces.IEEE_Float_32;
+   use type Interfaces.IEEE_Float_64;
+   W     : Writer;
+   Digs  : constant String := "0123456789abcdef";
+   Token : constant String := Ada.Command_Line.Argument (1);
+   Start : Natural;
+   Head  : Pid_Header;
+
+   procedure Emit is
+      Out_Bytes : constant Byte_Array := Bytes (W);
+   begin
+      for B of Out_Bytes loop
+         Ada.Text_IO.Put (Digs (Natural (B) / 16 + 1));
+         Ada.Text_IO.Put (Digs (Natural (B) mod 16 + 1));
+      end loop;
+      Ada.Text_IO.New_Line;
+   end Emit;
+
+   procedure Frame (N : Natural) is
+      Sample : constant Byte_Array (0 .. N - 1) := [others => 0];
+      F      : constant Byte_Array :=
+        Native_Framing.Xrce_Write_Frame (16#80#, 16#01#, 1, Sample);
+   begin
+      if F'Length = 0 then
+         Ada.Text_IO.Put_Line ("REFUSED the frame writer produced no frame");
+      else
+         Ada.Text_IO.Put_Line ("wrote-frame len=" &
+            Natural'Image (F'Length) (2 .. Natural'Image (F'Length)'Last));
+      end if;
+   exception
+      when E : others =>
+         Ada.Text_IO.Put_Line ("REFUSED " & Ada.Exceptions.Exception_Name (E));
+   end Frame;
+begin
+   Init (W, Little);
+   if Token = "c:writer" then Put_U8 (W, 16#41#);
+   elsif Token = "c:int" then Put_U16 (W, 16#1234#);
+   elsif Token = "negative-u16" then Put_U16 (W, 16#CFC7#);
+   elsif Token = "negative-u32" then Put_U32 (W, 16#FFED2979#);
+   elsif Token = "past-2-63" then Put_U64 (W, 16#DEADBEEFDEADC2BE#);
+   elsif Token = "c:float" then Put_F32 (W, 1.0);
+   elsif Token = "negative-zero-f32" then Put_F32 (W, -0.0);
+   elsif Token = "negative-zero-f64" then Put_F64 (W, -0.0);
+   elsif Token = "c:char" then Put_Char (W, 16#41#);
+   elsif Token = "char-above-8-bit" then Put_Char (W, 16#100#);
+   elsif Token = "c:wchar" then Put_Wchar (W, 16#41#);
+   elsif Token = "wchar-above-bmp" then Put_Wchar (W, 16#1D11E#);
+   elsif Token = "c:emheader" then
+      EMHeader_Begin (W, 1, False, LC4, Start);
+      Put_U32 (W, 0);
+      EMHeader_End (W, Start, LC4);
+   elsif Token = "member-id-past-28-bit" then
+      EMHeader_Begin (W, 16#10000000#, False, LC4, Start);
+      Put_U32 (W, 0);
+      EMHeader_End (W, Start, LC4);
+   elsif Token = "lc-body-size-mismatch" then
+      EMHeader_Begin (W, 1, False, LC1, Start);
+      Put_U8 (W, 1); Put_U8 (W, 2); Put_U8 (W, 3);
+      EMHeader_End (W, Start, LC1);
+   elsif Token = "c:pid" then
+      Pid_Begin (W, 16#3F00#, False, Head);
+      Put_U32 (W, 0);
+      Pid_End (W, Head);
+   elsif Token = "short-pid-past-0x3f00" then
+      Pid_Begin (W, 16#3F01#, False, Head);
+      Put_U32 (W, 0);
+      Pid_End (W, Head);
+   elsif Token = "c:fixed" then Put_Fixed (W, "1.00", 5, 2);
+   elsif Token = "fixed-digits-past-31" then Put_Fixed (W, "1.00", 32, 2);
+   elsif Token = "fixed-scale-past-digits" then Put_Fixed (W, "1.00", 5, 6);
+   elsif Token = "c:bitset" then Put_Bitset (W, 16#1234#, 2);
+   elsif Token = "bitset-anchor-width" then Put_Bitset (W, 16#222111#, 4);
+   elsif Token = "c:frame" then Frame (4); return;
+   elsif Token = "frame-past-0xffff" then Frame (65536); return;
+   else
+      Ada.Text_IO.Put_Line ("BROKEN the ada-native probe has no case for " & Token);
+      return;
+   end if;
+   Emit;
+exception
+   when E : others =>
+      Ada.Text_IO.Put_Line ("REFUSED " & Ada.Exceptions.Exception_Name (E));
+end Probe;
+EOF
+    (cd "$work/adanative" && gnatmake -q -gnat2022 -D "$work/adanative" \
+        -aI"$root/endpoints/ada-native/src" -o probe probe.adb) \
+        > "$work/adanative/build.log" 2>&1 || {
+        build_bad ada-native "$(first_error_line "$work/adanative/build.log")"; return 1; }
+    build_ok ada-native
+}
+
+adanative_over() {
+    local put lit dir="$work/adanative-${1//:/_}"
+    case "$1" in
+        over-u8|c:over-u8)   put=Put_U8 ;;
+        over-u16|c:over-u16) put=Put_U16 ;;
+        over-u32|c:over-u32) put=Put_U32 ;;
+    esac
+    case "$1" in
+        over-u8)  lit=256 ;;         c:over-u8)  lit=16#12# ;;
+        over-u16) lit=70000 ;;       c:over-u16) lit=16#1234# ;;
+        over-u32) lit=4294967296 ;;  c:over-u32) lit=16#12345678# ;;
+    esac
+    mkdir -p "$dir"
+    cat > "$dir/probe.adb" <<EOF
+with Ada.Exceptions;
+with Ada.Text_IO;
+with Zerodds_Native_Wire; use Zerodds_Native_Wire;
+procedure Probe is
+   W    : Writer;
+   Digs : constant String := "0123456789abcdef";
+begin
+   Init (W, Little);
+   $put (W, $lit);
+   declare
+      Out_Bytes : constant Byte_Array := Bytes (W);
+   begin
+      for B of Out_Bytes loop
+         Ada.Text_IO.Put (Digs (Natural (B) / 16 + 1));
+         Ada.Text_IO.Put (Digs (Natural (B) mod 16 + 1));
+      end loop;
+   end;
+   Ada.Text_IO.New_Line;
+exception
+   when E : others =>
+      Ada.Text_IO.Put_Line ("REFUSED " & Ada.Exceptions.Exception_Name (E));
+end Probe;
+EOF
+    local rc=0
+    (cd "$dir" && gnatmake -q -gnat2022 -D "$dir" \
+        -aI"$root/endpoints/ada-native/src" -o probe probe.adb) \
+        > "$dir/build.log" 2>&1 || rc=$?
+    if [ "$rc" != 0 ]; then echo "REFUSED $(first_error_line "$dir/build.log")"; return; fi
+    run_native ada-native "$dir/probe"
+}
+
+probe_ada_native() {
+    case "$1" in over-u*|c:over-u*) adanative_over "$1"; return ;; esac
+    adanative_build || { echo "BROKEN $(cat "$work/ada-native/.bad")"; return; }
+    run_native ada-native "$work/adanative/probe" "$1"
+}
+
+# =====================================================================
+# The eight wire-runtime columns.
+#
+# A different surface from the endpoint SDKs: `write_u8` .. `write_u64`,
+# `write_char`/`write_wchar`, `write_emheader`/`finish_emheader`,
+# `write_pid`/`finish_pid`, `write_bitset`, `write_fixed`. No frame
+# writer — DDS-XRCE framing is the endpoint SDKs' — which is the one
+# `n/a` every runtime column carries.
+# =====================================================================
+
+# --- rt-python --------------------------------------------------------
+
+probe_rt_python() {
+    mkdir -p "$work/rtpython"
+    cat > "$work/rtpython/probe.py" <<'EOF'
+import sys
+
+from zerodds_wire import Endianness, ParameterRole
+from zerodds_wire.writer import Writer
+
+token = sys.argv[1]
+w = Writer(Endianness.LITTLE, 4)
+try:
+    if token == "c:writer":
+        w.write_u8(0x41)
+    elif token == "c:int":
+        w.write_u16(0x1234)
+    elif token == "negative-u16":
+        w.write_u16(0xCFC7)
+    elif token == "negative-u32":
+        w.write_u32(0xFFED2979)
+    elif token == "past-2-63":
+        w.write_u64(0xDEADBEEFDEADC2BE)
+    elif token == "c:float":
+        w.write_f32(1.0)
+    elif token == "negative-zero-f32":
+        w.write_f32(-0.0)
+    elif token == "negative-zero-f64":
+        w.write_f64(-0.0)
+    elif token == "c:char":
+        w.write_char("A")
+    elif token == "char-above-8-bit":
+        w.write_char("Ā")
+    elif token == "c:wchar":
+        w.write_wchar("A")
+    elif token == "wchar-above-bmp":
+        w.write_wchar("\U0001D11E")
+    elif token == "c:emheader":
+        h = w.write_emheader(1, 4, False)
+        w.write_u32(0)
+        w.finish_emheader(h)
+    elif token == "member-id-past-28-bit":
+        h = w.write_emheader(0x10000000, 4, False)
+        w.write_u32(0)
+        w.finish_emheader(h)
+    elif token == "lc-body-size-mismatch":
+        h = w.write_emheader(1, 1, False)
+        w.write_u8(1)
+        w.write_u8(2)
+        w.write_u8(3)
+        w.finish_emheader(h)
+    elif token == "c:pid":
+        p = w.write_pid(0x3F00, ParameterRole.MEMBER, False)
+        w.write_u32(0)
+        w.finish_pid(p)
+    elif token == "short-pid-past-0x3f00":
+        p = w.write_pid(0x3F01, ParameterRole.MEMBER, False)
+        w.write_u32(0)
+        w.finish_pid(p)
+    elif token == "c:fixed":
+        w.write_fixed("1.00", 5, 2)
+    elif token == "fixed-digits-past-31":
+        w.write_fixed("1.00", 32, 2)
+    elif token == "fixed-scale-past-digits":
+        w.write_fixed("1.00", 5, 6)
+    elif token == "c:bitset":
+        w.write_bitset(0x1234, 2)
+    elif token == "bitset-anchor-width":
+        w.write_bitset(0x222111, 4)
+    elif token == "over-u8":
+        w.write_u8(256)
+    elif token == "c:over-u8":
+        w.write_u8(0x12)
+    elif token == "over-u16":
+        w.write_u16(70000)
+    elif token == "c:over-u16":
+        w.write_u16(0x1234)
+    elif token == "over-u32":
+        w.write_u32(4294967296)
+    elif token == "c:over-u32":
+        w.write_u32(0x12345678)
+    else:
+        print("BROKEN the rt-python probe has no case for " + token)
+        raise SystemExit(0)
+    print(w.as_bytes().hex())
+except Exception as e:  # noqa: BLE001 — the binding's refusal, in its words
+    print("REFUSED " + type(e).__name__ + ": " + str(e))
+EOF
+    PYTHONPATH="$root/runtime/python" run_native rt-python python3 \
+        "$work/rtpython/probe.py" "$1"
+}
+
+# --- rt-go ------------------------------------------------------------
+
+rt_go_build() {
+    build_state rt-go; case $? in 0) return 0 ;; 2) return 1 ;; esac
+    mkdir -p "$work/rtgo"
+    local mod; mod="$(awk '/^module /{print $2; exit}' "$root/runtime/go/go.mod")"
+    cat > "$work/rtgo/go.mod" <<EOF
+module zdedgesurfacert
+
+go 1.19
+
+require $mod v0.0.0
+
+replace $mod => $root/runtime/go
+EOF
+    cat > "$work/rtgo/main.go" <<EOF
+package main
+
+import (
+	"fmt"
+	"math"
+	"os"
+
+	wire "$mod"
+)
+EOF
+    cat >> "$work/rtgo/main.go" <<'EOF'
+
+func main() {
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Printf("REFUSED %v\n", r)
+		}
+	}()
+	w := wire.NewWriter(wire.LittleEndian, 4, wire.SpecificationFraming(), false)
+	switch os.Args[1] {
+	case "c:writer":
+		w.WriteU8(0x41)
+	case "c:int":
+		w.WriteU16(0x1234)
+	case "negative-u16":
+		w.WriteU16(0xcfc7)
+	case "negative-u32":
+		w.WriteU32(0xffed2979)
+	case "past-2-63":
+		w.WriteU64(0xdeadbeefdeadc2be)
+	case "c:float":
+		w.WriteF32(1.0)
+	case "negative-zero-f32":
+		w.WriteF32(float32(math.Copysign(0, -1)))
+	case "negative-zero-f64":
+		w.WriteF64(math.Copysign(0, -1))
+	case "c:char":
+		w.WriteChar(0x41)
+	case "c:wchar":
+		w.WriteWchar(0x41, 2, "fixed", "stream")
+	case "c:emheader":
+		h := w.WriteEmheader(1, 4, false)
+		w.WriteU32(0)
+		w.FinishEmheader(h)
+	case "member-id-past-28-bit":
+		h := w.WriteEmheader(0x10000000, 4, false)
+		w.WriteU32(0)
+		w.FinishEmheader(h)
+	case "lc-body-size-mismatch":
+		h := w.WriteEmheader(1, 1, false)
+		w.WriteU8(1)
+		w.WriteU8(2)
+		w.WriteU8(3)
+		w.FinishEmheader(h)
+	case "c:pid":
+		p := w.WritePid(0x3F00, wire.ParameterMember, false)
+		w.WriteU32(0)
+		w.FinishPid(p)
+	case "short-pid-past-0x3f00":
+		p := w.WritePid(0x3F01, wire.ParameterMember, false)
+		w.WriteU32(0)
+		w.FinishPid(p)
+	case "c:fixed":
+		w.WriteFixed("1.00", 5, 2, "declared")
+	case "fixed-digits-past-31":
+		w.WriteFixed("1.00", 32, 2, "declared")
+	case "fixed-scale-past-digits":
+		w.WriteFixed("1.00", 5, 6, "declared")
+	case "c:bitset":
+		w.WriteBitset(2, 0x1234)
+	case "bitset-anchor-width":
+		w.WriteBitset(4, 0x222111)
+	default:
+		fmt.Printf("BROKEN the rt-go probe has no case for %s\n", os.Args[1])
+		return
+	}
+	fmt.Printf("%x\n", w.Finish())
+}
+EOF
+    (go_env; cd "$work/rtgo" && go build -o probe .) > "$work/rtgo/build.log" 2>&1 || {
+        build_bad rt-go "$(first_error_line "$work/rtgo/build.log")"; return 1; }
+    build_ok rt-go
+}
+
+rt_go_typed() { # $1 token — the rows whose argument the parameter type decides
+    local dir="$work/rtgo-${1//:/_}" stmt
+    local mod; mod="$(awk '/^module /{print $2; exit}' "$root/runtime/go/go.mod")"
+    case "$1" in
+        over-u8)              stmt='w.WriteU8(256)' ;;
+        c:over-u8)            stmt='w.WriteU8(0x12)' ;;
+        over-u16)             stmt='w.WriteU16(70000)' ;;
+        c:over-u16)           stmt='w.WriteU16(0x1234)' ;;
+        over-u32)             stmt='w.WriteU32(4294967296)' ;;
+        c:over-u32)           stmt='w.WriteU32(0x12345678)' ;;
+        char-above-8-bit)     stmt='w.WriteChar(0x100)' ;;
+        wchar-above-bmp)      stmt='w.WriteWchar(0x1D11E, 2, "fixed", "stream")' ;;
+    esac
+    mkdir -p "$dir"
+    cat > "$dir/go.mod" <<EOF
+module zdedgetyped
+
+go 1.19
+
+require $mod v0.0.0
+
+replace $mod => $root/runtime/go
+EOF
+    cat > "$dir/main.go" <<EOF
+package main
+
+import (
+	"fmt"
+
+	wire "$mod"
+)
+
+func main() {
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Printf("REFUSED %v\n", r)
+		}
+	}()
+	w := wire.NewWriter(wire.LittleEndian, 4, wire.SpecificationFraming(), false)
+	$stmt
+	fmt.Printf("%x\n", w.Finish())
+}
+EOF
+    local rc=0
+    (go_env; cd "$dir" && go build -o probe .) > "$dir/build.log" 2>&1 || rc=$?
+    if [ "$rc" != 0 ]; then echo "REFUSED $(first_error_line "$dir/build.log")"; return; fi
+    run_native rt-go "$dir/probe"
+}
+
+probe_rt_go() {
+    case "$1" in
+        over-u*|c:over-u*|char-above-8-bit|wchar-above-bmp)
+            rt_go_typed "$1"; return ;;
+    esac
+    rt_go_build || { echo "BROKEN $(cat "$work/rt-go/.bad")"; return; }
+    run_native rt-go "$work/rtgo/probe" "$1"
+}
+
+# --- rt-typescript ----------------------------------------------------
+#
+# Compiled from `runtime/typescript/src`, not from its `dist/`: the
+# checked-in `dist/` has no `policy.js`, so `require`-ing it fails on
+# `index.js`'s own re-export before a probe reaches the writer.
+
+rt_ts_build() {
+    build_state rt-typescript; case $? in 0) return 0 ;; 2) return 1 ;; esac
+    mkdir -p "$work/rtts"
+    mkdir -p "$work/rtts/src"
+    cp "$root"/runtime/typescript/src/*.ts "$work/rtts/src/"
+    cat > "$work/rtts/src/probe.ts" <<'EOF'
+import { Endianness } from "./endianness.js";
+import { FixedDigitCount, ParameterRole } from "./policy.js";
+import { Writer } from "./writer.js";
+
+const token = process.argv[2];
+const w = new Writer(Endianness.Little, 4);
+const hex = (b: Uint8Array) =>
+  Array.from(b).map((x) => x.toString(16).padStart(2, "0")).join("");
+try {
+  switch (token) {
+    case "c:writer": w.writeU8(0x41); break;
+    case "c:int": w.writeU16(0x1234); break;
+    case "negative-u16": w.writeU16(0xcfc7); break;
+    case "negative-u32": w.writeU32(0xffed2979); break;
+    case "past-2-63": w.writeU64(0xdeadbeefdeadc2ben); break;
+    case "c:float": w.writeF32(1.0); break;
+    case "negative-zero-f32": w.writeF32(-0.0); break;
+    case "negative-zero-f64": w.writeF64(-0.0); break;
+    case "c:char": w.writeChar("A"); break;
+    case "char-above-8-bit": w.writeChar("Ā"); break;
+    case "c:wchar": w.writeWchar("A"); break;
+    case "wchar-above-bmp": w.writeWchar("\u{1D11E}"); break;
+    case "c:emheader": {
+      const h = w.writeEmheader(1, 4, false); w.writeU32(0); w.finishEmheader(h); break;
+    }
+    case "member-id-past-28-bit": {
+      const h = w.writeEmheader(0x10000000, 4, false); w.writeU32(0); w.finishEmheader(h); break;
+    }
+    case "lc-body-size-mismatch": {
+      const h = w.writeEmheader(1, 1, false);
+      w.writeU8(1); w.writeU8(2); w.writeU8(3);
+      w.finishEmheader(h); break;
+    }
+    case "c:pid": {
+      const p = w.writePid(0x3f00, ParameterRole.Member, false);
+      w.writeU32(0); w.finishPid(p); break;
+    }
+    case "short-pid-past-0x3f00": {
+      const p = w.writePid(0x3f01, ParameterRole.Member, false);
+      w.writeU32(0); w.finishPid(p); break;
+    }
+    case "c:fixed": w.writeFixed("1.00", 5, 2, FixedDigitCount.Declared); break;
+    case "fixed-digits-past-31": w.writeFixed("1.00", 32, 2, FixedDigitCount.Declared); break;
+    case "fixed-scale-past-digits": w.writeFixed("1.00", 5, 6, FixedDigitCount.Declared); break;
+    case "c:bitset": w.writeBitset(2, 0x1234n); break;
+    case "bitset-anchor-width": w.writeBitset(4, 0x222111n); break;
+    case "over-u8": w.writeU8(256); break;
+    case "c:over-u8": w.writeU8(0x12); break;
+    case "over-u16": w.writeU16(70000); break;
+    case "c:over-u16": w.writeU16(0x1234); break;
+    case "over-u32": w.writeU32(4294967296); break;
+    case "c:over-u32": w.writeU32(0x12345678); break;
+    default:
+      console.log("BROKEN the rt-typescript probe has no case for " + token);
+      process.exit(0);
+  }
+  console.log(hex(w.finish()));
+} catch (e) {
+  console.log("REFUSED " + (e instanceof Error ? e.message : String(e)));
+}
+EOF
+    cat > "$work/rtts/tsconfig.json" <<'EOF'
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "outDir": "out",
+    "rootDir": "src"
+  },
+  "include": ["src/*.ts"]
+}
+EOF
+    # `NodeNext` resolves the runtime's own `./x.js` specifiers, and node
+    # reads the module kind of the emitted `.js` from the nearest
+    # `package.json`. The runtime's `tsconfig.json` is copied rather than
+    # relaxed: a probe compiled under looser settings is not the module
+    # a consumer gets.
+    printf '{"type":"module"}\n' > "$work/rtts/package.json"
+    lim "$build_secs" bash -c "cd '$work/rtts' && '${TSC:-tsc}' -p tsconfig.json" \
+        > /dev/null 2>&1
+    cp "$LIMOUT" "$work/rtts/build.log" 2>/dev/null || true
+    if [ ! -f "$work/rtts/out/probe.js" ]; then
+        build_bad rt-typescript "$(first_error_line "$work/rtts/build.log")"; return 1
+    fi
+    printf '{"type":"module"}\n' > "$work/rtts/out/package.json"
+    build_ok rt-typescript
+}
+
+probe_rt_typescript() {
+    rt_ts_build || { echo "BROKEN $(cat "$work/rt-typescript/.bad")"; return; }
+    run_native rt-typescript "${NODE:-node}" "$work/rtts/out/probe.js" "$1"
+}
+
+# --- rt-java ----------------------------------------------------------
+
+rt_java_build() {
+    build_state rt-java; case $? in 0) return 0 ;; 2) return 1 ;; esac
+    mkdir -p "$work/rtjava"
+    cat > "$work/rtjava/Probe.java" <<'EOF'
+import org.zerodds.wire.Endianness;
+import org.zerodds.wire.FixedDigitCount;
+import org.zerodds.wire.ParameterRole;
+import org.zerodds.wire.WcharFraming;
+import org.zerodds.wire.WcharWidth;
+import org.zerodds.wire.Writer;
+import org.zerodds.wire.WstringUnitOrder;
+
+public final class Probe {
+    private Probe() { }
+
+    public static void main(String[] args) {
+        String token = args[0];
+        Writer w = new Writer(Endianness.LITTLE, 4, null, false);
+        try {
+            if (token.equals("c:writer")) {
+                w.writeU8(0x41);
+            } else if (token.equals("c:int")) {
+                w.writeU16(0x1234);
+            } else if (token.equals("negative-u16")) {
+                w.writeU16(0xcfc7);
+            } else if (token.equals("negative-u32")) {
+                w.writeU32(0xffed2979L);
+            } else if (token.equals("past-2-63")) {
+                w.writeU64(0xdeadbeefdeadc2beL);
+            } else if (token.equals("c:float")) {
+                w.writeF32(1.0);
+            } else if (token.equals("negative-zero-f32")) {
+                w.writeF32(-0.0f);
+            } else if (token.equals("negative-zero-f64")) {
+                w.writeF64(-0.0);
+            } else if (token.equals("c:char")) {
+                w.writeChar(0x41);
+            } else if (token.equals("char-above-8-bit")) {
+                w.writeChar(0x100);
+            } else if (token.equals("c:wchar")) {
+                w.writeWchar(0x41, WcharWidth.OCTETS_2, WcharFraming.FIXED, WstringUnitOrder.STREAM);
+            } else if (token.equals("wchar-above-bmp")) {
+                w.writeWchar(0x1D11E, WcharWidth.OCTETS_2, WcharFraming.FIXED, WstringUnitOrder.STREAM);
+            } else if (token.equals("c:emheader")) {
+                Writer.EmHeader h = w.writeEmheader(1, 4, false);
+                w.writeU32(0);
+                w.finishEmheader(h);
+            } else if (token.equals("member-id-past-28-bit")) {
+                Writer.EmHeader h = w.writeEmheader(0x10000000, 4, false);
+                w.writeU32(0);
+                w.finishEmheader(h);
+            } else if (token.equals("lc-body-size-mismatch")) {
+                Writer.EmHeader h = w.writeEmheader(1, 1, false);
+                w.writeU8(1);
+                w.writeU8(2);
+                w.writeU8(3);
+                w.finishEmheader(h);
+            } else if (token.equals("c:pid")) {
+                Writer.Pid p = w.writePid(0x3F00, ParameterRole.MEMBER, false);
+                w.writeU32(0);
+                w.finishPid(p);
+            } else if (token.equals("short-pid-past-0x3f00")) {
+                Writer.Pid p = w.writePid(0x3F01, ParameterRole.MEMBER, false);
+                w.writeU32(0);
+                w.finishPid(p);
+            } else if (token.equals("c:fixed")) {
+                w.writeFixed("1.00", 5, 2, FixedDigitCount.DECLARED);
+            } else if (token.equals("fixed-digits-past-31")) {
+                w.writeFixed("1.00", 32, 2, FixedDigitCount.DECLARED);
+            } else if (token.equals("fixed-scale-past-digits")) {
+                w.writeFixed("1.00", 5, 6, FixedDigitCount.DECLARED);
+            } else if (token.equals("c:bitset")) {
+                w.writeBitset(2, 0x1234L);
+            } else if (token.equals("bitset-anchor-width")) {
+                w.writeBitset(4, 0x222111L);
+            } else if (token.equals("over-u8")) {
+                w.writeU8(256);
+            } else if (token.equals("c:over-u8")) {
+                w.writeU8(0x12);
+            } else if (token.equals("over-u16")) {
+                w.writeU16(70000);
+            } else if (token.equals("c:over-u16")) {
+                w.writeU16(0x1234);
+            } else if (token.equals("over-u32")) {
+                w.writeU32(4294967296L);
+            } else if (token.equals("c:over-u32")) {
+                w.writeU32(0x12345678L);
+            } else {
+                System.out.println("BROKEN the rt-java probe has no case for " + token);
+                return;
+            }
+            StringBuilder sb = new StringBuilder();
+            for (byte b : w.finish()) {
+                sb.append(String.format("%02x", b));
+            }
+            System.out.println(sb.toString());
+        } catch (RuntimeException e) {
+            System.out.println("REFUSED " + e.getClass().getSimpleName() + ": " + e.getMessage());
+        }
+    }
+}
+EOF
+    (cd "$work/rtjava" && javac -nowarn -d classes \
+        "$root"/runtime/java/src/main/java/org/zerodds/wire/*.java Probe.java) \
+        > "$work/rtjava/build.log" 2>&1 || {
+        build_bad rt-java "$(first_error_line "$work/rtjava/build.log")"; return 1; }
+    build_ok rt-java
+}
+
+probe_rt_java() {
+    rt_java_build || { echo "BROKEN $(cat "$work/rt-java/.bad")"; return; }
+    run_native rt-java "${JAVA:-java}" -cp "$work/rtjava/classes" Probe "$1"
+}
+
+# --- rt-csharp --------------------------------------------------------
+
+# `runtime/csharp` targets net8.0. A host with only a newer runtime
+# installed builds that and then exits 150 at launch — a probe that
+# never ran, and one this file must not read as an answer. The target
+# framework is taken from the runtimes actually installed, so the probe
+# runs where the runtime is; the wire code is the same either way.
+dotnet_tfm() {
+    local major
+    major="$("${DOTNET:-dotnet}" --list-runtimes 2>/dev/null \
+        | awk '/^Microsoft.NETCore.App /{split($2, v, "."); if (v[1] + 0 > m) m = v[1] + 0} END {print m}')"
+    case "$major" in
+        ''|0) echo net8.0 ;;
+        *) [ "$major" -lt 8 ] && echo net8.0 || echo "net$major.0" ;;
+    esac
+}
+
+rt_csharp_build() {
+    build_state rt-csharp; case $? in 0) return 0 ;; 2) return 1 ;; esac
+    mkdir -p "$work/rtcsharp"
+    cat > "$work/rtcsharp/Probe.csproj" <<EOF
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>$(dotnet_tfm)</TargetFramework>
+    <Nullable>disable</Nullable>
+    <AssemblyName>Probe</AssemblyName>
+    <RootNamespace>Probe</RootNamespace>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Probe.cs" />
+    <Compile Include="$root/runtime/csharp/src/*.cs" />
+  </ItemGroup>
+</Project>
+EOF
+    cat > "$work/rtcsharp/Probe.cs" <<'EOF'
+using System;
+using ZeroDds.Wire;
+
+public static class Probe
+{
+    public static void Main(string[] args)
+    {
+        string token = args[0];
+        var w = new Writer(Endianness.Little, 4, null, false);
+        try
+        {
+            switch (token)
+            {
+                case "c:writer": w.WriteU8(0x41); break;
+                case "c:int": w.WriteU16(0x1234); break;
+                case "negative-u16": w.WriteU16(0xcfc7); break;
+                case "negative-u32": w.WriteU32(0xffed2979u); break;
+                case "past-2-63": w.WriteU64(0xdeadbeefdeadc2beUL); break;
+                case "c:float": w.WriteF32(1.0f); break;
+                case "negative-zero-f32": w.WriteF32(-0.0f); break;
+                case "negative-zero-f64": w.WriteF64(-0.0); break;
+                case "c:char": w.WriteChar('A'); break;
+                case "c:wchar":
+                    w.WriteWchar('A', WcharWidth.Octets2, WcharFraming.Fixed,
+                        WstringUnitOrder.Stream);
+                    break;
+                case "c:emheader": {
+                    var h = w.WriteEmheader(1, 4, false); w.WriteU32(0); w.FinishEmheader(h); break;
+                }
+                case "member-id-past-28-bit": {
+                    var h = w.WriteEmheader(0x10000000, 4, false);
+                    w.WriteU32(0); w.FinishEmheader(h); break;
+                }
+                case "lc-body-size-mismatch": {
+                    var h = w.WriteEmheader(1, 1, false);
+                    w.WriteU8(1); w.WriteU8(2); w.WriteU8(3);
+                    w.FinishEmheader(h); break;
+                }
+                case "c:pid": {
+                    var p = w.WritePid(0x3F00, ParameterRole.Member, false);
+                    w.WriteU32(0); w.FinishPid(p); break;
+                }
+                case "short-pid-past-0x3f00": {
+                    var p = w.WritePid(0x3F01, ParameterRole.Member, false);
+                    w.WriteU32(0); w.FinishPid(p); break;
+                }
+                case "c:fixed": w.WriteFixed("1.00", 5, 2, FixedDigitCount.Declared); break;
+                case "fixed-digits-past-31":
+                    w.WriteFixed("1.00", 32, 2, FixedDigitCount.Declared); break;
+                case "fixed-scale-past-digits":
+                    w.WriteFixed("1.00", 5, 6, FixedDigitCount.Declared); break;
+                case "c:bitset": w.WriteBitset(2, 0x1234UL); break;
+                case "bitset-anchor-width": w.WriteBitset(4, 0x222111UL); break;
+                default:
+                    Console.WriteLine("BROKEN the rt-csharp probe has no case for " + token);
+                    return;
+            }
+            Console.WriteLine(Convert.ToHexString(w.Finish()).ToLowerInvariant());
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine("REFUSED " + e.GetType().Name + ": " + e.Message);
+        }
+    }
+}
+EOF
+    lim "$build_secs" env DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1 \
+        "${DOTNET:-dotnet}" build "$work/rtcsharp/Probe.csproj" -c Release \
+        -o "$work/rtcsharp/bin" -v quiet --nologo > /dev/null 2>&1
+    cp "$LIMOUT" "$work/rtcsharp/build.log" 2>/dev/null || true
+    if [ ! -f "$work/rtcsharp/bin/Probe.dll" ]; then
+        build_bad rt-csharp "$(first_error_line "$work/rtcsharp/build.log")"; return 1
+    fi
+    build_ok rt-csharp
+}
+
+rt_csharp_typed() { # $1 token — the rows the parameter type decides
+    local dir="$work/rtcsharp-${1//:/_}" stmt
+    case "$1" in
+        over-u8)          stmt='w.WriteU8(256);' ;;
+        c:over-u8)        stmt='w.WriteU8(0x12);' ;;
+        over-u16)         stmt='w.WriteU16(70000);' ;;
+        c:over-u16)       stmt='w.WriteU16(0x1234);' ;;
+        over-u32)         stmt='w.WriteU32(4294967296);' ;;
+        c:over-u32)       stmt='w.WriteU32(0x12345678);' ;;
+        char-above-8-bit) stmt="w.WriteChar('\\u0100');" ;;
+        wchar-above-bmp)
+            stmt="w.WriteWchar('\\U0001D11E', WcharWidth.Octets2, WcharFraming.Fixed, WstringUnitOrder.Stream);" ;;
+    esac
+    mkdir -p "$dir"
+    cat > "$dir/Probe.csproj" <<EOF
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>$(dotnet_tfm)</TargetFramework>
+    <Nullable>disable</Nullable>
+    <AssemblyName>Probe</AssemblyName>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Probe.cs" />
+    <Compile Include="$root/runtime/csharp/src/*.cs" />
+  </ItemGroup>
+</Project>
+EOF
+    cat > "$dir/Probe.cs" <<EOF
+using System;
+using ZeroDds.Wire;
+
+public static class Probe
+{
+    public static void Main()
+    {
+        var w = new Writer(Endianness.Little, 4, null, false);
+        try
+        {
+            $stmt
+            Console.WriteLine(Convert.ToHexString(w.Finish()).ToLowerInvariant());
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine("REFUSED " + e.GetType().Name + ": " + e.Message);
+        }
+    }
+}
+EOF
+    lim "$build_secs" env DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1 \
+        "${DOTNET:-dotnet}" build "$dir/Probe.csproj" -c Release -o "$dir/bin" \
+        -v quiet --nologo > /dev/null 2>&1
+    cp "$LIMOUT" "$dir/build.log" 2>/dev/null || true
+    if [ ! -f "$dir/bin/Probe.dll" ]; then
+        echo "REFUSED $(first_error_line "$dir/build.log")"; return
+    fi
+    run_native rt-csharp "${DOTNET:-dotnet}" "$dir/bin/Probe.dll"
+}
+
+probe_rt_csharp() {
+    case "$1" in
+        over-u*|c:over-u*|char-above-8-bit|wchar-above-bmp)
+            rt_csharp_typed "$1"; return ;;
+    esac
+    rt_csharp_build || { echo "BROKEN $(cat "$work/rt-csharp/.bad")"; return; }
+    run_native rt-csharp "${DOTNET:-dotnet}" "$work/rtcsharp/bin/Probe.dll" "$1"
+}
+
+# --- rt-c -------------------------------------------------------------
+#
+# The C runtime has no exceptions: a refusal is `zdw_writer_status`
+# leaving `ZDW_OK`, which is the error return the ledger's `refuse`
+# admits as one of the three idioms.
+
+rt_c_build() {
+    build_state rt-c; case $? in 0) return 0 ;; 2) return 1 ;; esac
+    mkdir -p "$work/rtc"
+    cat > "$work/rtc/probe.c" <<'EOF'
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+#include "zerodds_wire.h"
+
+static unsigned char buffer[262144];
+
+static const char *status_name(zdw_status s)
+{
+    switch (s) {
+    case ZDW_OK: return "ZDW_OK";
+    case ZDW_SHORT_BUFFER: return "ZDW_SHORT_BUFFER";
+    case ZDW_RANGE: return "ZDW_RANGE";
+    case ZDW_BAD_ARGUMENT: return "ZDW_BAD_ARGUMENT";
+    case ZDW_NOT_UTF8: return "ZDW_NOT_UTF8";
+    case ZDW_BAD_DECIMAL: return "ZDW_BAD_DECIMAL";
+    default: return "a non-OK status";
+    }
+}
+
+int main(int argc, char **argv)
+{
+    zdw_writer w;
+    const char *token = argc > 1 ? argv[1] : "";
+    size_t i;
+    zdw_status s;
+
+    zdw_writer_init(&w, buffer, sizeof buffer, ZDW_LITTLE, 4);
+
+    if (strcmp(token, "c:writer") == 0) {
+        zdw_write_u8(&w, 0x41);
+    } else if (strcmp(token, "c:int") == 0) {
+        zdw_write_u16(&w, 0x1234);
+    } else if (strcmp(token, "negative-u16") == 0) {
+        zdw_write_u16(&w, 0xcfc7);
+    } else if (strcmp(token, "negative-u32") == 0) {
+        zdw_write_u32(&w, 0xffed2979u);
+    } else if (strcmp(token, "past-2-63") == 0) {
+        zdw_write_u64(&w, 0xdeadbeefdeadc2beull);
+    } else if (strcmp(token, "c:float") == 0) {
+        zdw_write_f32(&w, 1.0f);
+    } else if (strcmp(token, "negative-zero-f32") == 0) {
+        zdw_write_f32(&w, -0.0f);
+    } else if (strcmp(token, "negative-zero-f64") == 0) {
+        zdw_write_f64(&w, -0.0);
+    } else if (strcmp(token, "c:char") == 0) {
+        zdw_write_char(&w, 0x41);
+    } else if (strcmp(token, "char-above-8-bit") == 0) {
+        zdw_write_char(&w, 0x100);
+    } else if (strcmp(token, "c:wchar") == 0) {
+        zdw_write_wchar(&w, 0x41, ZDW_WCHAR_WIDTH_2, ZDW_WCHAR_FIXED, ZDW_WSTRING_UNITS_STREAM);
+    } else if (strcmp(token, "wchar-above-bmp") == 0) {
+        zdw_write_wchar(&w, 0x1D11E, ZDW_WCHAR_WIDTH_2, ZDW_WCHAR_FIXED, ZDW_WSTRING_UNITS_STREAM);
+    } else if (strcmp(token, "c:emheader") == 0) {
+        zdw_emheader h = zdw_write_emheader(&w, 1, 4, false);
+        zdw_write_u32(&w, 0);
+        zdw_finish_emheader(&w, h);
+    } else if (strcmp(token, "member-id-past-28-bit") == 0) {
+        zdw_emheader h = zdw_write_emheader(&w, 0x10000000u, 4, false);
+        zdw_write_u32(&w, 0);
+        zdw_finish_emheader(&w, h);
+    } else if (strcmp(token, "lc-body-size-mismatch") == 0) {
+        zdw_emheader h = zdw_write_emheader(&w, 1, 1, false);
+        zdw_write_u8(&w, 1);
+        zdw_write_u8(&w, 2);
+        zdw_write_u8(&w, 3);
+        zdw_finish_emheader(&w, h);
+    } else if (strcmp(token, "c:pid") == 0) {
+        zdw_pid p = zdw_write_pid(&w, 0x3F00, ZDW_PARAM_MEMBER, false);
+        zdw_write_u32(&w, 0);
+        zdw_finish_pid(&w, p);
+    } else if (strcmp(token, "short-pid-past-0x3f00") == 0) {
+        zdw_pid p = zdw_write_pid(&w, 0x3F01, ZDW_PARAM_MEMBER, false);
+        zdw_write_u32(&w, 0);
+        zdw_finish_pid(&w, p);
+    } else if (strcmp(token, "c:fixed") == 0) {
+        zdw_write_fixed(&w, "1.00", 5, 2, ZDW_FIXED_DECLARED);
+    } else if (strcmp(token, "fixed-digits-past-31") == 0) {
+        zdw_write_fixed(&w, "1.00", 32, 2, ZDW_FIXED_DECLARED);
+    } else if (strcmp(token, "fixed-scale-past-digits") == 0) {
+        zdw_write_fixed(&w, "1.00", 5, 6, ZDW_FIXED_DECLARED);
+    } else if (strcmp(token, "c:bitset") == 0) {
+        zdw_write_bitset(&w, 2, 0x1234u);
+    } else if (strcmp(token, "bitset-anchor-width") == 0) {
+        zdw_write_bitset(&w, 4, 0x222111u);
+    } else {
+        printf("BROKEN the rt-c probe has no case for %s\n", token);
+        return 0;
+    }
+
+    s = zdw_writer_status(&w);
+    if (s != ZDW_OK) {
+        printf("REFUSED %s\n", status_name(s));
+        return 0;
+    }
+    for (i = 0; i < zdw_writer_length(&w); i++) {
+        printf("%02x", buffer[i]);
+    }
+    printf("\n");
+    return 0;
+}
+EOF
+    (cd "$work/rtc" && "${CC:-gcc}" -std=c11 -O1 -I"$root/runtime/c/include" \
+        -o probe probe.c "$root"/runtime/c/src/*.c) > "$work/rtc/build.log" 2>&1 || {
+        build_bad rt-c "$(first_error_line "$work/rtc/build.log")"; return 1; }
+    build_ok rt-c
+}
+
+rt_c_typed() { # $1 token — the widths the parameter type decides
+    local dir="$work/rtc-${1//:/_}" stmt
+    case "$1" in
+        over-u8)    stmt='zdw_write_u8(&w, 256);' ;;
+        c:over-u8)  stmt='zdw_write_u8(&w, 0x12);' ;;
+        over-u16)   stmt='zdw_write_u16(&w, 70000);' ;;
+        c:over-u16) stmt='zdw_write_u16(&w, 0x1234);' ;;
+        over-u32)   stmt='zdw_write_u32(&w, 4294967296ull);' ;;
+        c:over-u32) stmt='zdw_write_u32(&w, 0x12345678u);' ;;
+    esac
+    mkdir -p "$dir"
+    cat > "$dir/probe.c" <<EOF
+#include <stdio.h>
+#include "zerodds_wire.h"
+
+static unsigned char buffer[4096];
+
+int main(void)
+{
+    zdw_writer w;
+    size_t i;
+    zdw_writer_init(&w, buffer, sizeof buffer, ZDW_LITTLE, 4);
+    $stmt
+    if (zdw_writer_status(&w) != ZDW_OK) {
+        printf("REFUSED the writer reported a non-OK status\n");
+        return 0;
+    }
+    for (i = 0; i < zdw_writer_length(&w); i++) printf("%02x", buffer[i]);
+    printf("\n");
+    return 0;
+}
+EOF
+    local rc=0
+    (cd "$dir" && "${CC:-gcc}" -std=c11 -O1 -Werror=overflow -Werror=constant-conversion \
+        -I"$root/runtime/c/include" -o probe probe.c "$root"/runtime/c/src/*.c) \
+        > "$dir/build.log" 2>&1 || rc=$?
+    if [ "$rc" != 0 ]; then echo "REFUSED $(first_error_line "$dir/build.log")"; return; fi
+    run_native rt-c "$dir/probe"
+}
+
+probe_rt_c() {
+    case "$1" in over-u*|c:over-u*) rt_c_typed "$1"; return ;; esac
+    rt_c_build || { echo "BROKEN $(cat "$work/rt-c/.bad")"; return; }
+    run_native rt-c "$work/rtc/probe" "$1"
+}
+
+# --- rt-cpp -----------------------------------------------------------
+
+rt_cpp_build() {
+    build_state rt-cpp; case $? in 0) return 0 ;; 2) return 1 ;; esac
+    mkdir -p "$work/rtcpp"
+    cat > "$work/rtcpp/probe.cpp" <<'EOF'
+#include <cstdio>
+#include <string>
+#include <vector>
+
+#include "zerodds/wire.hpp"
+
+using namespace zerodds::wire;
+
+int main(int argc, char **argv)
+{
+    std::string token = argc > 1 ? argv[1] : "";
+    Writer w(Endianness::Little, 4);
+    try {
+        if (token == "c:writer") {
+            w.write_u8(0x41);
+        } else if (token == "c:int") {
+            w.write_u16(0x1234);
+        } else if (token == "negative-u16") {
+            w.write_u16(0xcfc7);
+        } else if (token == "negative-u32") {
+            w.write_u32(0xffed2979u);
+        } else if (token == "past-2-63") {
+            w.write_u64(0xdeadbeefdeadc2beull);
+        } else if (token == "c:float") {
+            w.write_f32(1.0);
+        } else if (token == "negative-zero-f32") {
+            w.write_f32(-0.0);
+        } else if (token == "negative-zero-f64") {
+            w.write_f64(-0.0);
+        } else if (token == "c:char") {
+            w.write_char(U'\x41');
+        } else if (token == "char-above-8-bit") {
+            w.write_char(U'Ā');
+        } else if (token == "c:wchar") {
+            w.write_wchar(U'\x41');
+        } else if (token == "wchar-above-bmp") {
+            w.write_wchar(U'\U0001D11E');
+        } else if (token == "c:emheader") {
+            auto h = w.write_emheader(1, 4, false);
+            w.write_u32(0);
+            w.finish_emheader(h);
+        } else if (token == "member-id-past-28-bit") {
+            auto h = w.write_emheader(0x10000000u, 4, false);
+            w.write_u32(0);
+            w.finish_emheader(h);
+        } else if (token == "lc-body-size-mismatch") {
+            auto h = w.write_emheader(1, 1, false);
+            w.write_u8(1);
+            w.write_u8(2);
+            w.write_u8(3);
+            w.finish_emheader(h);
+        } else if (token == "c:pid") {
+            auto p = w.write_pid(0x3F00, ParameterRole::Member, false);
+            w.write_u32(0);
+            w.finish_pid(p);
+        } else if (token == "short-pid-past-0x3f00") {
+            auto p = w.write_pid(0x3F01, ParameterRole::Member, false);
+            w.write_u32(0);
+            w.finish_pid(p);
+        } else if (token == "c:fixed") {
+            w.write_fixed("1.00", 5, 2, FixedDigitCount::Declared);
+        } else if (token == "fixed-digits-past-31") {
+            w.write_fixed("1.00", 32, 2, FixedDigitCount::Declared);
+        } else if (token == "fixed-scale-past-digits") {
+            w.write_fixed("1.00", 5, 6, FixedDigitCount::Declared);
+        } else if (token == "c:bitset") {
+            w.write_bitset(2, 0x1234u);
+        } else if (token == "bitset-anchor-width") {
+            w.write_bitset(4, 0x222111u);
+        } else if (token == "over-u8") {
+            w.write_u8(256);
+        } else if (token == "c:over-u8") {
+            w.write_u8(0x12);
+        } else if (token == "over-u16") {
+            w.write_u16(70000);
+        } else if (token == "c:over-u16") {
+            w.write_u16(0x1234);
+        } else if (token == "over-u32") {
+            w.write_u32(4294967296ull);
+        } else if (token == "c:over-u32") {
+            w.write_u32(0x12345678u);
+        } else {
+            std::printf("BROKEN the rt-cpp probe has no case for %s\n", token.c_str());
+            return 0;
+        }
+        for (auto b : w.bytes()) {
+            std::printf("%02x", b);
+        }
+        std::printf("\n");
+    } catch (const std::exception &e) {
+        std::printf("REFUSED %s\n", e.what());
+    }
+    return 0;
+}
+EOF
+    (cd "$work/rtcpp" && "${CXX:-g++}" -std=c++17 -O1 -I"$root/runtime/cpp/include" \
+        -o probe probe.cpp "$root"/runtime/cpp/src/*.cpp) \
+        > "$work/rtcpp/build.log" 2>&1 || {
+        build_bad rt-cpp "$(first_error_line "$work/rtcpp/build.log")"; return 1; }
+    build_ok rt-cpp
+}
+
+probe_rt_cpp() {
+    rt_cpp_build || { echo "BROKEN $(cat "$work/rt-cpp/.bad")"; return; }
+    run_native rt-cpp "$work/rtcpp/probe" "$1"
+}
+
+# --- rt-d -------------------------------------------------------------
+
+rt_d_build() {
+    build_state rt-d; case $? in 0) return 0 ;; 2) return 1 ;; esac
+    mkdir -p "$work/rtd"
+    cat > "$work/rtd/probe.d" <<'EOF'
+import std.stdio;
+import zdwire;
+
+void main(string[] args) {
+    string token = args.length > 1 ? args[1] : "";
+    // `PlCdr1Framing.init` leaves `highestShortID` at zero, so the
+    // writer refuses every parameter id — including the control
+    // row's. The specification's bound is 0x3F00 inclusive
+    // (ZDW_PID_SHORT_MAX_ID in runtime/c), which is what the other
+    // surfaces build their framing with.
+    PlCdr1Framing zdFraming;
+    zdFraming.pidFlags = "bare";
+    zdFraming.highestShortID = 0x3F00;
+    auto w = new Writer(Endianness.little, 4, zdFraming, false);
+    try {
+        switch (token) {
+        case "c:writer": w.WriteU8(0x41); break;
+        case "c:int": w.WriteU16(0x1234); break;
+        case "negative-u16": w.WriteU16(0xcfc7); break;
+        case "negative-u32": w.WriteU32(0xffed2979); break;
+        case "past-2-63": w.WriteU64(0xdeadbeefdeadc2beUL); break;
+        case "c:float": w.WriteF32(1.0f); break;
+        case "negative-zero-f32": w.WriteF32(-0.0f); break;
+        case "negative-zero-f64": w.WriteF64(-0.0); break;
+        case "c:wchar": w.WriteWchar(0x41, 2, "fixed", "stream"); break;
+        case "c:emheader":
+            auto h1 = w.WriteEmheader(1, 4, false);
+            w.WriteU32(0); w.FinishEmheader(h1); break;
+        case "member-id-past-28-bit":
+            auto h2 = w.WriteEmheader(0x10000000, 4, false);
+            w.WriteU32(0); w.FinishEmheader(h2); break;
+        case "lc-body-size-mismatch":
+            auto h3 = w.WriteEmheader(1, 1, false);
+            w.WriteU8(1); w.WriteU8(2); w.WriteU8(3);
+            w.FinishEmheader(h3); break;
+        case "c:pid":
+            auto p1 = w.WritePid(0x3F00, ParameterRole.member, false);
+            w.WriteU32(0); w.FinishPid(p1); break;
+        case "short-pid-past-0x3f00":
+            auto p2 = w.WritePid(0x3F01, ParameterRole.member, false);
+            w.WriteU32(0); w.FinishPid(p2); break;
+        case "c:fixed": w.WriteFixed("1.00", 5, 2, "declared"); break;
+        case "fixed-digits-past-31": w.WriteFixed("1.00", 32, 2, "declared"); break;
+        case "fixed-scale-past-digits": w.WriteFixed("1.00", 5, 6, "declared"); break;
+        case "c:bitset": w.WriteBitset(2, 0x1234); break;
+        case "bitset-anchor-width": w.WriteBitset(4, 0x222111); break;
+        default:
+            writeln("BROKEN the rt-d probe has no case for ", token); return;
+        }
+        foreach (b; w.Finish()) writef("%02x", b);
+        writeln();
+    } catch (Exception e) {
+        writeln("REFUSED ", e.msg);
+    }
+}
+EOF
+    (cd "$work/rtd" && "${GDC:-gdc}" -I"$root/runtime/d" -o probe probe.d \
+        "$root/runtime/d/zdwire.d") > "$work/rtd/build.log" 2>&1 || {
+        build_bad rt-d "$(first_error_line "$work/rtd/build.log")"; return 1; }
+    build_ok rt-d
+}
+
+rt_d_typed() { # $1 token
+    local dir="$work/rtd-${1//:/_}" stmt
+    case "$1" in
+        over-u8)          stmt='w.WriteU8(256);' ;;
+        c:over-u8)        stmt='w.WriteU8(0x12);' ;;
+        over-u16)         stmt='w.WriteU16(70000);' ;;
+        c:over-u16)       stmt='w.WriteU16(0x1234);' ;;
+        over-u32)         stmt='w.WriteU32(4294967296);' ;;
+        c:over-u32)       stmt='w.WriteU32(0x12345678);' ;;
+        c:char)           stmt='w.WriteChar(0x41);' ;;
+        char-above-8-bit) stmt='w.WriteChar(0x100);' ;;
+        wchar-above-bmp)  stmt='w.WriteWchar(0x1D11E, 2, "fixed", "stream");' ;;
+    esac
+    mkdir -p "$dir"
+    cat > "$dir/probe.d" <<EOF
+import std.stdio;
+import zdwire;
+void main() {
+    // `PlCdr1Framing.init` leaves `highestShortID` at zero, so the
+    // writer refuses every parameter id — including the control
+    // row's. The specification's bound is 0x3F00 inclusive
+    // (ZDW_PID_SHORT_MAX_ID in runtime/c), which is what the other
+    // surfaces build their framing with.
+    PlCdr1Framing zdFraming;
+    zdFraming.pidFlags = "bare";
+    zdFraming.highestShortID = 0x3F00;
+    auto w = new Writer(Endianness.little, 4, zdFraming, false);
+    try {
+        $stmt
+        foreach (b; w.Finish()) writef("%02x", b);
+        writeln();
+    } catch (Exception e) {
+        writeln("REFUSED ", e.msg);
+    }
+}
+EOF
+    local rc=0
+    (cd "$dir" && "${GDC:-gdc}" -I"$root/runtime/d" -o probe probe.d \
+        "$root/runtime/d/zdwire.d") > "$dir/build.log" 2>&1 || rc=$?
+    if [ "$rc" != 0 ]; then echo "REFUSED $(first_error_line "$dir/build.log")"; return; fi
+    run_native rt-d "$dir/probe"
+}
+
+probe_rt_d() {
+    case "$1" in
+        over-u*|c:over-u*|c:char|char-above-8-bit|wchar-above-bmp)
+            rt_d_typed "$1"; return ;;
+    esac
+    rt_d_build || { echo "BROKEN $(cat "$work/rt-d/.bad")"; return; }
+    run_native rt-d "$work/rtd/probe" "$1"
+}
+
+# --- rust-wire --------------------------------------------------------
+#
+# A crate of its own under the run's working directory, with the
+# repository's own target directory so the dependency graph is not built
+# a second time.
+
+rust_build() {
+    build_state rust-wire; case $? in 0) return 0 ;; 2) return 1 ;; esac
+    mkdir -p "$work/rustwire/src"
+    cat > "$work/rustwire/Cargo.toml" <<EOF
+[package]
+name = "zd-refusal-edge-probe"
+version = "0.0.0"
+edition = "2021"
+
+[workspace]
+
+[dependencies]
+zerodds-wire = { path = "$root/crates/wire" }
+
+[[bin]]
+name = "probe"
+path = "src/main.rs"
+EOF
+    cat > "$work/rustwire/src/main.rs" <<'EOF'
+use std::panic;
+
+use zerodds_wire::writer::{ParameterRole, Writer};
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+fn body(token: &str) -> Option<String> {
+    let mut w = Writer::little_endian();
+    match token {
+        "c:writer" => w.write_u8(0x41),
+        "c:int" => w.write_u16(0x1234),
+        "negative-u16" => w.write_u16(0xcfc7),
+        "negative-u32" => w.write_u32(0xffed_2979),
+        "past-2-63" => w.write_u64(0xdead_beef_dead_c2be),
+        "c:float" => w.write_f32(1.0),
+        "negative-zero-f32" => w.write_f32(-0.0),
+        "negative-zero-f64" => w.write_f64(-0.0),
+        "c:char" => match w.write_char('A') {
+            Ok(()) => {}
+            Err(e) => return Some(format!("REFUSED {e}")),
+        },
+        "char-above-8-bit" => match w.write_char('\u{0100}') {
+            Ok(()) => {}
+            Err(e) => return Some(format!("REFUSED {e}")),
+        },
+        "c:wchar" => match w.write_wchar_member('A') {
+            Ok(()) => {}
+            Err(e) => return Some(format!("REFUSED {e}")),
+        },
+        "wchar-above-bmp" => match w.write_wchar_member('\u{1D11E}') {
+            Ok(()) => {}
+            Err(e) => return Some(format!("REFUSED {e}")),
+        },
+        "c:emheader" => {
+            let h = match w.write_emheader(1, 4, false) {
+                Ok(h) => h,
+                Err(e) => return Some(format!("REFUSED {e}")),
+            };
+            w.write_u32(0);
+            if let Err(e) = w.finish_emheader(h) {
+                return Some(format!("REFUSED {e}"));
+            }
+        }
+        "member-id-past-28-bit" => {
+            let h = match w.write_emheader(0x1000_0000, 4, false) {
+                Ok(h) => h,
+                Err(e) => return Some(format!("REFUSED {e}")),
+            };
+            w.write_u32(0);
+            if let Err(e) = w.finish_emheader(h) {
+                return Some(format!("REFUSED {e}"));
+            }
+        }
+        "lc-body-size-mismatch" => {
+            let h = match w.write_emheader(1, 1, false) {
+                Ok(h) => h,
+                Err(e) => return Some(format!("REFUSED {e}")),
+            };
+            w.write_u8(1);
+            w.write_u8(2);
+            w.write_u8(3);
+            if let Err(e) = w.finish_emheader(h) {
+                return Some(format!("REFUSED {e}"));
+            }
+        }
+        "c:pid" => {
+            let p = match w.write_pid(0x3F00, ParameterRole::Member, false) {
+                Ok(p) => p,
+                Err(e) => return Some(format!("REFUSED {e}")),
+            };
+            w.write_u32(0);
+            w.finish_pid(p);
+        }
+        "short-pid-past-0x3f00" => {
+            let p = match w.write_pid(0x3F01, ParameterRole::Member, false) {
+                Ok(p) => p,
+                Err(e) => return Some(format!("REFUSED {e}")),
+            };
+            w.write_u32(0);
+            w.finish_pid(p);
+        }
+        "over-u8" | "c:over-u8" | "over-u16" | "c:over-u16" | "over-u32" | "c:over-u32" => {
+            unreachable!("the width rows are compiled on their own")
+        }
+        other => return Some(format!("BROKEN the rust-wire probe has no case for {other}")),
+    }
+    Some(hex(w.as_bytes()))
+}
+
+fn main() {
+    let token = std::env::args().nth(1).unwrap_or_default();
+    panic::set_hook(Box::new(|info| {
+        println!("REFUSED {info}");
+    }));
+    match panic::catch_unwind(|| body(&token)) {
+        Ok(Some(line)) => println!("{line}"),
+        Ok(None) => println!("BROKEN the probe produced nothing"),
+        Err(_) => {}
+    }
+}
+EOF
+    # The build's own exit code decides, not the file's existence: the
+    # target directory is kept between runs, so a probe that no longer
+    # compiles leaves the previous run's binary in place and the cells
+    # would report yesterday's octets as today's. `rust_typed` below
+    # already tests the code; this one tested only the file.
+    local rc=0
+    lim "$build_secs" env CARGO_TARGET_DIR="$root/target/refusal-edge-probe" \
+        cargo build -q --manifest-path "$work/rustwire/Cargo.toml" > /dev/null 2>&1 || rc=$?
+    cp "$LIMOUT" "$work/rustwire/build.log" 2>/dev/null || true
+    if [ "$rc" != 0 ] || [ ! -x "$root/target/refusal-edge-probe/debug/probe" ]; then
+        build_bad rust-wire "$(first_error_line "$work/rustwire/build.log")"; return 1
+    fi
+    build_ok rust-wire
+}
+
+rust_typed() { # $1 token
+    local dir="$work/rustwire-${1//:/_}" stmt
+    case "$1" in
+        over-u8)    stmt='w.write_u8(256);' ;;
+        c:over-u8)  stmt='w.write_u8(0x12);' ;;
+        over-u16)   stmt='w.write_u16(70000);' ;;
+        c:over-u16) stmt='w.write_u16(0x1234);' ;;
+        over-u32)   stmt='w.write_u32(4294967296);' ;;
+        c:over-u32) stmt='w.write_u32(0x12345678);' ;;
+    esac
+    mkdir -p "$dir/src"
+    cat > "$dir/Cargo.toml" <<EOF
+[package]
+name = "zd-refusal-edge-typed"
+version = "0.0.0"
+edition = "2021"
+
+[workspace]
+
+[dependencies]
+zerodds-wire = { path = "$root/crates/wire" }
+
+[[bin]]
+name = "typed"
+path = "src/main.rs"
+EOF
+    cat > "$dir/src/main.rs" <<EOF
+use zerodds_wire::writer::Writer;
+
+fn main() {
+    let mut w = Writer::little_endian();
+    $stmt
+    println!("{}", w.as_bytes().iter().map(|b| format!("{b:02x}")).collect::<String>());
+}
+EOF
+    local rc=0
+    lim "$build_secs" env CARGO_TARGET_DIR="$root/target/refusal-edge-typed" \
+        cargo build -q --manifest-path "$dir/Cargo.toml" > /dev/null 2>&1 || rc=$?
+    cp "$LIMOUT" "$dir/build.log" 2>/dev/null || true
+    if [ "$rc" != 0 ] || [ ! -x "$root/target/refusal-edge-typed/debug/typed" ]; then
+        echo "REFUSED $(first_error_line "$dir/build.log")"; return
+    fi
+    run_native rust-wire "$root/target/refusal-edge-typed/debug/typed"
+}
+
+probe_rust_wire() {
+    case "$1" in over-u*|c:over-u*) rust_typed "$1"; return ;; esac
+    rust_build || { echo "BROKEN $(cat "$work/rust-wire/.bad")"; return; }
+    run_native rust-wire "$root/target/refusal-edge-probe/debug/probe" "$1"
+}
+
+# =====================================================================
+# The five newest wire-runtime columns: runtime/{lua,nim,swift,zig,ada}.
+#
+# Not the endpoint SDKs of the same names. The endpoint spells the call
+# `putU16` and takes the encoding as a constructor enum; the runtime
+# spells it `writeU16` and takes MAXALIGN and the PL_CDR1 framing as
+# arguments, because it is the layer a generated codec calls and the
+# layout plan is what decides those. Four here (nim, zig, swift, ada)
+# put the wire width in the parameter type, so `over-u8`, `over-u16` and
+# `over-u32` are compiled on their own; `char-above-8-bit` and
+# `wchar-above-bmp` are not, because all five export a checked
+# code-point conversion (`checkedChar`, `zdCheckedChar`, `Checked_Char`)
+# that takes a full 32-bit code point and is the operation the row
+# names.
+# =====================================================================
+
+# --- rt-lua -----------------------------------------------------------
+
+probe_rt_lua() {
+    mkdir -p "$work/rtlua"
+    cat > "$work/rtlua/probe.lua" <<'EOF'
+local zdw = require('zerodds_wire')
+local token = arg[1]
+local w = zdw.writer_new({ endianness = 'le', max_align = 4 })
+local ok, err = pcall(function()
+  if token == 'c:writer' then zdw.write_u8(w, 0x41)
+  elseif token == 'c:int' then zdw.write_u16(w, 0x1234)
+  elseif token == 'negative-u16' then zdw.write_u16(w, 0xcfc7)
+  elseif token == 'negative-u32' then zdw.write_u32(w, 0xffed2979)
+  elseif token == 'past-2-63' then zdw.write_u64(w, 0xdeadbeefdeadc2be)
+  elseif token == 'c:float' then zdw.write_f32(w, 1.0)
+  elseif token == 'negative-zero-f32' then zdw.write_f32(w, -0.0)
+  elseif token == 'negative-zero-f64' then zdw.write_f64(w, -0.0)
+  elseif token == 'c:char' then zdw.write_char(w, 0x41)
+  elseif token == 'char-above-8-bit' then zdw.write_char(w, 0x100)
+  elseif token == 'c:wchar' then zdw.write_wchar(w, 0x41, 2, 'fixed', 'stream')
+  elseif token == 'wchar-above-bmp' then zdw.write_wchar(w, 0x1D11E, 2, 'fixed', 'stream')
+  elseif token == 'c:emheader' then
+    local h = zdw.write_emheader(w, 1, 4, false)
+    zdw.write_u32(w, 0); zdw.finish_emheader(w, h)
+  elseif token == 'member-id-past-28-bit' then
+    local h = zdw.write_emheader(w, 0x10000000, 4, false)
+    zdw.write_u32(w, 0); zdw.finish_emheader(w, h)
+  elseif token == 'lc-body-size-mismatch' then
+    local h = zdw.write_emheader(w, 1, 1, false)
+    zdw.write_u8(w, 1); zdw.write_u8(w, 2); zdw.write_u8(w, 3)
+    zdw.finish_emheader(w, h)
+  elseif token == 'c:pid' then
+    local p = zdw.write_pid(w, 0x3F00, 'member', false)
+    zdw.write_u32(w, 0); zdw.finish_pid(w, p)
+  elseif token == 'short-pid-past-0x3f00' then
+    local p = zdw.write_pid(w, 0x3F01, 'member', false)
+    zdw.write_u32(w, 0); zdw.finish_pid(w, p)
+  elseif token == 'c:fixed' then zdw.write_fixed(w, '1.00', 5, 2, 'declared')
+  elseif token == 'fixed-digits-past-31' then zdw.write_fixed(w, '1.00', 32, 2, 'declared')
+  elseif token == 'fixed-scale-past-digits' then zdw.write_fixed(w, '1.00', 5, 6, 'declared')
+  elseif token == 'c:bitset' then zdw.write_bitset(w, 2, 0x1234)
+  elseif token == 'bitset-anchor-width' then zdw.write_bitset(w, 4, 0x222111)
+  elseif token == 'over-u8' then zdw.write_u8(w, 256)
+  elseif token == 'c:over-u8' then zdw.write_u8(w, 0x12)
+  elseif token == 'over-u16' then zdw.write_u16(w, 70000)
+  elseif token == 'c:over-u16' then zdw.write_u16(w, 0x1234)
+  elseif token == 'over-u32' then zdw.write_u32(w, 4294967296)
+  elseif token == 'c:over-u32' then zdw.write_u32(w, 0x12345678)
+  else
+    print('BROKEN the rt-lua probe has no case for ' .. tostring(token))
+    return 'none'
+  end
+  return 'octets'
+end)
+if not ok then
+  print('REFUSED ' .. tostring(err))
+elseif err == 'octets' then
+  print((zdw.finish(w):gsub('.', function(c) return string.format('%02x', c:byte()) end)))
+end
+EOF
+    LUA_PATH="$root/runtime/lua/?.lua;$root/runtime/lua/?/init.lua;;" \
+        run_native rt-lua lua "$work/rtlua/probe.lua" "$1"
+}
+
+# --- rt-elixir --------------------------------------------------------
+#
+# `runtime/elixir` is a mix project and its `Writer` is a persistent
+# struct: every operation answers the state it advanced, and the two
+# header openers answer a `{handle, writer}` pair. So the probe threads
+# rather than mutates, and a row's operation is one expression.
+#
+# The runtime's `.beam` files are compiled once into the work directory
+# and reused across the seventeen rows; `elixir -pa` puts them on the
+# code path. A refusal is a raised `ZeroddsWire.WireError`, which is why
+# the whole body sits in a `try`.
+
+probe_rt_elixir() {
+    mkdir -p "$work/rtelixir/ebin"
+    if [ ! -f "$work/rtelixir/ebin/.built" ]; then
+        if ! (cd "$root/runtime/elixir" && lim "$build_secs" elixirc \
+                -o "$work/rtelixir/ebin" lib/zerodds_wire.ex lib/zerodds_wire/*.ex) \
+                > "$work/rtelixir/build.log" 2>&1; then
+            echo "BROKEN $(first_error_line "$work/rtelixir/build.log")"
+            return
+        fi
+        : > "$work/rtelixir/ebin/.built"
+    fi
+    cat > "$work/rtelixir/probe.exs" <<'EOF'
+alias ZeroddsWire.Writer
+token = List.first(System.argv())
+w = Writer.new(:le, 4)
+
+result =
+  try do
+    case token do
+      "c:writer" -> {:octets, Writer.write_u8(w, 0x41)}
+      "c:int" -> {:octets, Writer.write_u16(w, 0x1234)}
+      "negative-u16" -> {:octets, Writer.write_u16(w, 0xCFC7)}
+      "negative-u32" -> {:octets, Writer.write_u32(w, 0xFFED2979)}
+      "past-2-63" -> {:octets, Writer.write_u64(w, 0xDEADBEEFDEADC2BE)}
+      "c:float" -> {:octets, Writer.write_f32(w, 1.0)}
+      "negative-zero-f32" -> {:octets, Writer.write_f32(w, -0.0)}
+      "negative-zero-f64" -> {:octets, Writer.write_f64(w, -0.0)}
+      "c:char" -> {:octets, Writer.write_char(w, "A")}
+      "char-above-8-bit" -> {:octets, Writer.write_char(w, "\u0100")}
+      "c:wchar" -> {:octets, Writer.write_wchar(w, "A", 2, :fixed, :stream)}
+      "wchar-above-bmp" -> {:octets, Writer.write_wchar(w, "\u{1D11E}", 2, :fixed, :stream)}
+      "c:emheader" ->
+        {h, w} = Writer.write_emheader(w, 1, 4, false)
+        {:octets, w |> Writer.write_u32(0) |> Writer.finish_emheader(h)}
+
+      "member-id-past-28-bit" ->
+        {h, w} = Writer.write_emheader(w, 0x10000000, 4, false)
+        {:octets, w |> Writer.write_u32(0) |> Writer.finish_emheader(h)}
+
+      "lc-body-size-mismatch" ->
+        {h, w} = Writer.write_emheader(w, 1, 1, false)
+        w = w |> Writer.write_u8(1) |> Writer.write_u8(2) |> Writer.write_u8(3)
+        {:octets, Writer.finish_emheader(w, h)}
+
+      "c:pid" ->
+        {p, w} = Writer.write_pid(w, 0x3F00, :member, false)
+        {:octets, w |> Writer.write_u32(0) |> Writer.finish_pid(p)}
+
+      "short-pid-past-0x3f00" ->
+        {p, w} = Writer.write_pid(w, 0x3F01, :member, false)
+        {:octets, w |> Writer.write_u32(0) |> Writer.finish_pid(p)}
+
+      "c:fixed" -> {:octets, Writer.write_fixed(w, "1.00", 5, 2, :declared)}
+      "fixed-digits-past-31" -> {:octets, Writer.write_fixed(w, "1.00", 32, 2, :declared)}
+      "fixed-scale-past-digits" -> {:octets, Writer.write_fixed(w, "1.00", 5, 6, :declared)}
+      "c:bitset" -> {:octets, Writer.write_bitset(w, 2, 0x1234)}
+      "bitset-anchor-width" -> {:octets, Writer.write_bitset(w, 4, 0x222111)}
+      "over-u8" -> {:octets, Writer.write_u8(w, 256)}
+      "c:over-u8" -> {:octets, Writer.write_u8(w, 0x12)}
+      "over-u16" -> {:octets, Writer.write_u16(w, 70000)}
+      "c:over-u16" -> {:octets, Writer.write_u16(w, 0x1234)}
+      "over-u32" -> {:octets, Writer.write_u32(w, 4_294_967_296)}
+      "c:over-u32" -> {:octets, Writer.write_u32(w, 0x12345678)}
+      other -> {:none, other}
+    end
+  rescue
+    error -> {:refused, Exception.message(error)}
+  end
+
+case result do
+  {:octets, w} -> IO.puts(Base.encode16(Writer.finish(w), case: :lower))
+  {:refused, why} -> IO.puts("REFUSED " <> why)
+  {:none, other} -> IO.puts("BROKEN the rt-elixir probe has no case for #{inspect(other)}")
+end
+EOF
+    run_native rt-elixir elixir -pa "$work/rtelixir/ebin" \
+        "$work/rtelixir/probe.exs" "$1"
+}
+
+# --- rt-nim -----------------------------------------------------------
+
+# The framing every probe below builds: the clause's, which is what a
+# reader with no stated framing expects. None of the five runtimes
+# defaults it — the layout plan is what decides — so each probe states
+# all six fields rather than leaving the driver's own habits in them.
+probe_rt_nim() {
+    case "$1" in over-u*|c:over-u*) rt_nim_typed "$1"; return ;; esac
+    rt_nim_build || { echo "BROKEN $(cat "$work/rt-nim/.bad")"; return; }
+    run_native rt-nim "$work/rtnim/probe" "$1"
+}
+
+rt_nim_build() {
+    build_state rt-nim; case $? in 0) return 0 ;; 2) return 1 ;; esac
+    mkdir -p "$work/rtnim"
+    cat > "$work/rtnim/probe.nim" <<'EOF'
+import os, strutils
+import zdwire
+
+let framing = PlCdr1Framing(
+  pidFlags: "sentinel-must-understand", highestShortId: 0x3F00,
+  padDeclaredLength: false, padDeclaredOptionalLength: false,
+  memberMustUnderstand: true, padAfterValue: true)
+
+let token = paramStr(1)
+var w = newWriter(EndianLittle, 4, framing, false)
+try:
+  case token
+  of "c:writer": w.writeU8(0x41'u8)
+  of "c:int": w.writeU16(0x1234'u16)
+  of "negative-u16": w.writeU16(0xcfc7'u16)
+  of "negative-u32": w.writeU32(0xffed2979'u32)
+  of "past-2-63": w.writeU64(0xdeadbeefdeadc2be'u64)
+  of "c:float": w.writeF32(1.0'f32)
+  of "negative-zero-f32": w.writeF32(-0.0'f32)
+  of "negative-zero-f64": w.writeF64(-0.0'f64)
+  of "c:char": w.writeChar(checkedChar(0x41'u32))
+  of "char-above-8-bit": w.writeChar(checkedChar(0x100'u32))
+  of "c:wchar": w.writeWchar(checkedWchar(0x41'u32), 2, "fixed", "stream")
+  of "wchar-above-bmp": w.writeWchar(checkedWchar(0x1D11E'u32), 2, "fixed", "stream")
+  of "c:emheader":
+    let h = w.writeEmheader(1, 4, false)
+    w.writeU32(0'u32); w.finishEmheader(h)
+  of "member-id-past-28-bit":
+    let h = w.writeEmheader(0x10000000, 4, false)
+    w.writeU32(0'u32); w.finishEmheader(h)
+  of "lc-body-size-mismatch":
+    let h = w.writeEmheader(1, 1, false)
+    w.writeU8(1'u8); w.writeU8(2'u8); w.writeU8(3'u8)
+    w.finishEmheader(h)
+  of "c:pid":
+    let p = w.writePid(0x3F00, ParameterMember, false)
+    w.writeU32(0'u32); w.finishPid(p)
+  of "short-pid-past-0x3f00":
+    let p = w.writePid(0x3F01, ParameterMember, false)
+    w.writeU32(0'u32); w.finishPid(p)
+  of "c:fixed": w.writeFixed("1.00", 5, 2, "declared")
+  of "fixed-digits-past-31": w.writeFixed("1.00", 32, 2, "declared")
+  of "fixed-scale-past-digits": w.writeFixed("1.00", 5, 6, "declared")
+  of "c:bitset": w.writeBitset(2, 0x1234'u64)
+  of "bitset-anchor-width": w.writeBitset(4, 0x222111'u64)
+  else:
+    echo "BROKEN the rt-nim probe has no case for ", token; quit(0)
+  var s = ""
+  for b in w.finish(): s.add(toLowerAscii(toHex(int(b), 2)))
+  echo s
+except CatchableError as e:
+  echo "REFUSED ", e.msg
+EOF
+    local rc=0
+    lim "$build_secs" bash -c "cd '$work/rtnim' && '${NIM:-nim}' c --hints:off \
+        --colors:off --nimcache:'$work/rtnim/cache' --path:'$root/runtime/nim' \
+        -o:probe probe.nim" > /dev/null 2>&1 || rc=$?
+    cp "$LIMOUT" "$work/rtnim/build.log" 2>/dev/null || true
+    if [ "$rc" = 124 ]; then
+        build_bad rt-nim "the build did not finish in ${build_secs}s"; return 1
+    fi
+    if [ ! -x "$work/rtnim/probe" ]; then
+        build_bad rt-nim "$(first_error_line "$work/rtnim/build.log")"; return 1
+    fi
+    build_ok rt-nim
+}
+
+rt_nim_typed() { # $1 token — the widths `writeU8`/`writeU16`/`writeU32` type
+    local put lit dir="$work/rtnim-${1//:/_}"
+    case "$1" in
+        over-u8|c:over-u8)   put=writeU8 ;;
+        over-u16|c:over-u16) put=writeU16 ;;
+        over-u32|c:over-u32) put=writeU32 ;;
+    esac
+    case "$1" in
+        over-u8)  lit=256 ;;         c:over-u8)  lit=0x12 ;;
+        over-u16) lit=70000 ;;       c:over-u16) lit=0x1234 ;;
+        over-u32) lit=4294967296 ;;  c:over-u32) lit=0x12345678 ;;
+    esac
+    mkdir -p "$dir"
+    cat > "$dir/probe.nim" <<EOF
+import strutils
+import zdwire
+let framing = PlCdr1Framing(
+  pidFlags: "sentinel-must-understand", highestShortId: 0x3F00,
+  padDeclaredLength: false, padDeclaredOptionalLength: false,
+  memberMustUnderstand: true, padAfterValue: true)
+var w = newWriter(EndianLittle, 4, framing, false)
+try:
+  w.$put($lit)
+  var s = ""
+  for b in w.finish(): s.add(toLowerAscii(toHex(int(b), 2)))
+  echo s
+except CatchableError as e:
+  echo "REFUSED ", e.msg
+EOF
+    local rc=0
+    lim "$build_secs" bash -c "cd '$dir' && '${NIM:-nim}' c --hints:off --colors:off \
+        --nimcache:'$dir/cache' --path:'$root/runtime/nim' -o:probe probe.nim" \
+        > /dev/null 2>&1 || rc=$?
+    cp "$LIMOUT" "$dir/build.log" 2>/dev/null || true
+    # A build that ran out of time is not a refusal. Only a compiler that
+    # finished and said no is the binding's answer.
+    if [ "$rc" = 124 ]; then echo "TIMEOUT"; return; fi
+    # The compiler's exit status decides, not the file: `zig build-exe`
+    # leaves an empty, executable `probe` behind when it refuses, which
+    # `-x` read as a built program and reported as a broken probe.
+    if [ "$rc" != 0 ] || [ ! -s "$dir/probe" ]; then echo "REFUSED $(first_error_line "$dir/build.log")"; return; fi
+    run_native rt-nim "$dir/probe"
+}
+
+# --- rt-zig -----------------------------------------------------------
+
+rt_zig_framing() {
+    cat <<'EOF'
+    const framing = zd.PlCdr1Framing{
+        .pid_flags = "sentinel-must-understand",
+        .highest_short_id = 0x3F00,
+        .pad_declared_length = false,
+        .pad_declared_optional_length = false,
+        .member_must_understand = true,
+        .pad_after_value = true,
+    };
+EOF
+}
+
+rt_zig_build() {
+    build_state rt-zig; case $? in 0) return 0 ;; 2) return 1 ;; esac
+    mkdir -p "$work/rtzig"
+    cp "$root/runtime/zig/zdwire.zig" "$work/rtzig/"
+    {
+        cat <<'EOF'
+const std = @import("std");
+const zd = @import("zdwire.zig");
+
+fn refused(out: *std.Io.Writer, e: anyerror) !void {
+    try out.print("REFUSED {s}\n", .{@errorName(e)});
+}
+
+pub fn main(zd_init: std.process.Init) !void {
+    const alloc = zd_init.arena.allocator();
+    const args = try zd_init.minimal.args.toSlice(alloc);
+    const token = args[1];
+    var stdout_buf: [4096]u8 = undefined;
+    var stdout_file = std.Io.File.stdout().writer(zd_init.io, &stdout_buf);
+    const out = &stdout_file.interface;
+    defer out.flush() catch {};
+EOF
+        rt_zig_framing
+        cat <<'EOF'
+    var w = zd.Writer.init(alloc, .little, 4, framing, false);
+    const eq = std.mem.eql;
+    if (eq(u8, token, "c:writer")) {
+        w.writeU8(0x41) catch |e| return refused(out, e);
+    } else if (eq(u8, token, "c:int")) {
+        w.writeU16(0x1234) catch |e| return refused(out, e);
+    } else if (eq(u8, token, "negative-u16")) {
+        w.writeU16(0xcfc7) catch |e| return refused(out, e);
+    } else if (eq(u8, token, "negative-u32")) {
+        w.writeU32(0xffed2979) catch |e| return refused(out, e);
+    } else if (eq(u8, token, "past-2-63")) {
+        w.writeU64(0xdeadbeefdeadc2be) catch |e| return refused(out, e);
+    } else if (eq(u8, token, "c:float")) {
+        w.writeF32(1.0) catch |e| return refused(out, e);
+    } else if (eq(u8, token, "negative-zero-f32")) {
+        w.writeF32(-0.0) catch |e| return refused(out, e);
+    } else if (eq(u8, token, "negative-zero-f64")) {
+        w.writeF64(-0.0) catch |e| return refused(out, e);
+    } else if (eq(u8, token, "c:char")) {
+        w.writeChar(zd.checkedChar(0x41) catch |e| return refused(out, e)) catch |e| return refused(out, e);
+    } else if (eq(u8, token, "char-above-8-bit")) {
+        w.writeChar(zd.checkedChar(0x100) catch |e| return refused(out, e)) catch |e| return refused(out, e);
+    } else if (eq(u8, token, "c:wchar")) {
+        const u = zd.checkedWchar(0x41) catch |e| return refused(out, e);
+        w.writeWchar(u, 2, "fixed", "stream") catch |e| return refused(out, e);
+    } else if (eq(u8, token, "wchar-above-bmp")) {
+        const u = zd.checkedWchar(0x1D11E) catch |e| return refused(out, e);
+        w.writeWchar(u, 2, "fixed", "stream") catch |e| return refused(out, e);
+    } else if (eq(u8, token, "c:emheader")) {
+        const h = w.writeEmheader(1, 4, false) catch |e| return refused(out, e);
+        w.writeU32(0) catch |e| return refused(out, e);
+        w.finishEmheader(h) catch |e| return refused(out, e);
+    } else if (eq(u8, token, "member-id-past-28-bit")) {
+        const h = w.writeEmheader(0x10000000, 4, false) catch |e| return refused(out, e);
+        w.writeU32(0) catch |e| return refused(out, e);
+        w.finishEmheader(h) catch |e| return refused(out, e);
+    } else if (eq(u8, token, "lc-body-size-mismatch")) {
+        const h = w.writeEmheader(1, 1, false) catch |e| return refused(out, e);
+        w.writeU8(1) catch |e| return refused(out, e);
+        w.writeU8(2) catch |e| return refused(out, e);
+        w.writeU8(3) catch |e| return refused(out, e);
+        w.finishEmheader(h) catch |e| return refused(out, e);
+    } else if (eq(u8, token, "c:pid")) {
+        const p = w.writePid(0x3F00, .member, false) catch |e| return refused(out, e);
+        w.writeU32(0) catch |e| return refused(out, e);
+        w.finishPid(p) catch |e| return refused(out, e);
+    } else if (eq(u8, token, "short-pid-past-0x3f00")) {
+        const p = w.writePid(0x3F01, .member, false) catch |e| return refused(out, e);
+        w.writeU32(0) catch |e| return refused(out, e);
+        w.finishPid(p) catch |e| return refused(out, e);
+    } else if (eq(u8, token, "c:fixed")) {
+        w.writeFixed("1.00", 5, 2, "declared") catch |e| return refused(out, e);
+    } else if (eq(u8, token, "fixed-digits-past-31")) {
+        w.writeFixed("1.00", 32, 2, "declared") catch |e| return refused(out, e);
+    } else if (eq(u8, token, "fixed-scale-past-digits")) {
+        w.writeFixed("1.00", 5, 6, "declared") catch |e| return refused(out, e);
+    } else if (eq(u8, token, "c:bitset")) {
+        w.writeBitset(2, 0x1234) catch |e| return refused(out, e);
+    } else if (eq(u8, token, "bitset-anchor-width")) {
+        w.writeBitset(4, 0x222111) catch |e| return refused(out, e);
+    } else {
+        try out.print("BROKEN the rt-zig probe has no case for {s}\n", .{token});
+        return;
+    }
+    for (w.finish()) |b| try out.print("{x:0>2}", .{b});
+    try out.print("\n", .{});
+}
+EOF
+    } > "$work/rtzig/probe.zig"
+    local rc=0
+    lim "$build_secs" bash -c "cd '$work/rtzig' && '${ZIG:-zig}' build-exe \
+        --global-cache-dir '$(zig_cache)' -femit-bin=probe probe.zig" \
+        > /dev/null 2>&1 || rc=$?
+    cp "$LIMOUT" "$work/rtzig/build.log" 2>/dev/null || true
+    if [ "$rc" = 124 ]; then
+        build_bad rt-zig "the build did not finish in ${build_secs}s"; return 1
+    fi
+    if [ ! -x "$work/rtzig/probe" ]; then
+        build_bad rt-zig "$(first_error_line "$work/rtzig/build.log")"; return 1
+    fi
+    build_ok rt-zig
+}
+
+rt_zig_typed() { # $1 token — the widths `writeU8`/`writeU16`/`writeU32` type
+    local put lit dir="$work/rtzig-${1//:/_}"
+    case "$1" in
+        over-u8|c:over-u8)   put=writeU8 ;;
+        over-u16|c:over-u16) put=writeU16 ;;
+        over-u32|c:over-u32) put=writeU32 ;;
+    esac
+    case "$1" in
+        over-u8)  lit=256 ;;         c:over-u8)  lit=0x12 ;;
+        over-u16) lit=70000 ;;       c:over-u16) lit=0x1234 ;;
+        over-u32) lit=4294967296 ;;  c:over-u32) lit=0x12345678 ;;
+    esac
+    mkdir -p "$dir"
+    cp "$root/runtime/zig/zdwire.zig" "$dir/"
+    {
+        cat <<'EOF'
+const std = @import("std");
+const zd = @import("zdwire.zig");
+pub fn main(zd_init: std.process.Init) !void {
+    var stdout_buf: [256]u8 = undefined;
+    var stdout_file = std.Io.File.stdout().writer(zd_init.io, &stdout_buf);
+    const out = &stdout_file.interface;
+    defer out.flush() catch {};
+EOF
+        rt_zig_framing
+        cat <<EOF
+    var w = zd.Writer.init(zd_init.arena.allocator(), .little, 4, framing, false);
+    w.$put($lit) catch |e| {
+        try out.print("REFUSED {s}\n", .{@errorName(e)});
+        return;
+    };
+    for (w.finish()) |b| try out.print("{x:0>2}", .{b});
+    try out.print("\n", .{});
+}
+EOF
+    } > "$dir/probe.zig"
+    local rc=0
+    lim "$build_secs" bash -c "cd '$dir' && '${ZIG:-zig}' build-exe \
+        --global-cache-dir '$(zig_cache)' -femit-bin=probe probe.zig" \
+        > /dev/null 2>&1 || rc=$?
+    cp "$LIMOUT" "$dir/build.log" 2>/dev/null || true
+    if [ "$rc" = 124 ]; then echo "TIMEOUT"; return; fi
+    # The compiler's exit status decides, not the file: `zig build-exe`
+    # leaves an empty, executable `probe` behind when it refuses, which
+    # `-x` read as a built program and reported as a broken probe.
+    if [ "$rc" != 0 ] || [ ! -s "$dir/probe" ]; then echo "REFUSED $(first_error_line "$dir/build.log")"; return; fi
+    run_native rt-zig "$dir/probe"
+}
+
+probe_rt_zig() {
+    case "$1" in over-u*|c:over-u*) rt_zig_typed "$1"; return ;; esac
+    rt_zig_build || { echo "BROKEN $(cat "$work/rt-zig/.bad")"; return; }
+    run_native rt-zig "$work/rtzig/probe" "$1"
+}
+
+# --- rt-swift ---------------------------------------------------------
+
+# The runtime throws a `ZdWireError` on a refusal rather than exiting on
+# its own, so `rt_swift_build`'s probe catches it itself and prints
+# `REFUSED zdwire: <error>` before exiting 1 — the runtime's own words
+# on the answer line, the same effect the removed `zdFailurePrefix` hook
+# used to have, instead of leaving `run_native` to guess a refusal out
+# of a non-zero exit.
+# One line, space separated: the list is spliced into a `bash -c`
+# command string, and a newline there would end the command instead of
+# adding a source file.
+rt_swift_sources() {
+    echo "$root"/runtime/swift/Sources/ZdWire/*.swift
+}
+
+rt_swift_build() {
+    build_state rt-swift; case $? in 0) return 0 ;; 2) return 1 ;; esac
+    mkdir -p "$work/rtswift"
+    cat > "$work/rtswift/main.swift" <<'EOF'
+import Foundation
+
+let framing = ZdPlCdr1Framing("sentinel-must-understand", 0x3F00, false, false, true, true)
+let token = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : ""
+let w = ZdWriter(.little, 4, framing, false)
+
+// The runtime throws a ZdWireError on a refusal now, rather than
+// exiting on its own; this probe owns the exit code, the same as
+// every other language's probe in this file does with its own catch.
+do {
+    switch token {
+    case "c:writer": w.writeU8(0x41)
+    case "c:int": w.writeU16(0x1234)
+    case "negative-u16": w.writeU16(0xcfc7)
+    case "negative-u32": w.writeU32(0xffed_2979)
+    case "past-2-63": w.writeU64(0xdead_beef_dead_c2be)
+    case "c:float": w.writeF32(1.0)
+    case "negative-zero-f32": w.writeF32(-0.0)
+    case "negative-zero-f64": w.writeF64(-0.0)
+    case "c:char": w.writeChar(try zdCheckedChar(0x41))
+    case "char-above-8-bit": w.writeChar(try zdCheckedChar(0x100))
+    case "c:wchar": try w.writeWchar(zdCheckedWchar(0x41), 2, "fixed", "stream")
+    case "wchar-above-bmp": try w.writeWchar(zdCheckedWchar(0x1D11E), 2, "fixed", "stream")
+    case "c:emheader":
+        let h = try w.writeEmheader(1, 4, false)
+        w.writeU32(0)
+        try w.finishEmheader(h)
+    case "member-id-past-28-bit":
+        let h = try w.writeEmheader(0x1000_0000, 4, false)
+        w.writeU32(0)
+        try w.finishEmheader(h)
+    case "lc-body-size-mismatch":
+        let h = try w.writeEmheader(1, 1, false)
+        w.writeU8(1); w.writeU8(2); w.writeU8(3)
+        try w.finishEmheader(h)
+    case "c:pid":
+        let p = try w.writePid(0x3F00, .member, false)
+        w.writeU32(0)
+        try w.finishPid(p)
+    case "short-pid-past-0x3f00":
+        let p = try w.writePid(0x3F01, .member, false)
+        w.writeU32(0)
+        try w.finishPid(p)
+    case "c:fixed": try w.writeFixed("1.00", 5, 2, "declared")
+    case "fixed-digits-past-31": try w.writeFixed("1.00", 32, 2, "declared")
+    case "fixed-scale-past-digits": try w.writeFixed("1.00", 5, 6, "declared")
+    case "c:bitset": try w.writeBitset(2, 0x1234)
+    case "bitset-anchor-width": try w.writeBitset(4, 0x22_2111)
+    default:
+        print("BROKEN the rt-swift probe has no case for \(token)")
+        exit(0)
+    }
+    print(w.finish().map { String(format: "%02x", $0) }.joined())
+} catch {
+    print("REFUSED zdwire: \(error)")
+    exit(1)
+}
+EOF
+    local rc=0
+    lim "$build_secs" bash -c "cd '$work/rtswift' && '${SWIFTC:-swiftc}' \
+        -swift-version 5 $(rt_swift_sources) main.swift -o probe" > /dev/null 2>&1 || rc=$?
+    cp "$LIMOUT" "$work/rtswift/build.log" 2>/dev/null || true
+    if [ "$rc" = 124 ]; then
+        build_bad rt-swift "the build did not finish in ${build_secs}s"; return 1
+    fi
+    if [ ! -x "$work/rtswift/probe" ]; then
+        build_bad rt-swift "$(first_error_line "$work/rtswift/build.log")"; return 1
+    fi
+    build_ok rt-swift
+}
+
+rt_swift_typed() { # $1 token — the widths `writeU8`/`writeU16`/`writeU32` type
+    local put lit dir="$work/rtswift-${1//:/_}"
+    case "$1" in
+        over-u8|c:over-u8)   put=writeU8 ;;
+        over-u16|c:over-u16) put=writeU16 ;;
+        over-u32|c:over-u32) put=writeU32 ;;
+    esac
+    case "$1" in
+        over-u8)  lit=256 ;;         c:over-u8)  lit=0x12 ;;
+        over-u16) lit=70000 ;;       c:over-u16) lit=0x1234 ;;
+        over-u32) lit=4294967296 ;;  c:over-u32) lit=0x12345678 ;;
+    esac
+    mkdir -p "$dir"
+    cat > "$dir/main.swift" <<EOF
+import Foundation
+let framing = ZdPlCdr1Framing("sentinel-must-understand", 0x3F00, false, false, true, true)
+let w = ZdWriter(.little, 4, framing, false)
+w.$put($lit)
+print(w.finish().map { String(format: "%02x", \$0) }.joined())
+EOF
+    local rc=0
+    lim "$build_secs" bash -c "cd '$dir' && '${SWIFTC:-swiftc}' -swift-version 5 \
+        $(rt_swift_sources) main.swift -o probe" > /dev/null 2>&1 || rc=$?
+    cp "$LIMOUT" "$dir/build.log" 2>/dev/null || true
+    if [ "$rc" = 124 ]; then echo "TIMEOUT"; return; fi
+    # The compiler's exit status decides, not the file: `zig build-exe`
+    # leaves an empty, executable `probe` behind when it refuses, which
+    # `-x` read as a built program and reported as a broken probe.
+    if [ "$rc" != 0 ] || [ ! -s "$dir/probe" ]; then echo "REFUSED $(first_error_line "$dir/build.log")"; return; fi
+    run_native rt-swift "$dir/probe"
+}
+
+probe_rt_swift() {
+    case "$1" in over-u*|c:over-u*) rt_swift_typed "$1"; return ;; esac
+    rt_swift_build || { echo "BROKEN $(cat "$work/rt-swift/.bad")"; return; }
+    run_native rt-swift "$work/rtswift/probe" "$1"
+}
+
+# --- rt-ada -----------------------------------------------------------
+
+rt_ada_build() {
+    build_state rt-ada; case $? in 0) return 0 ;; 2) return 1 ;; esac
+    mkdir -p "$work/rtada"
+    cat > "$work/rtada/probe.adb" <<'EOF'
+with Ada.Command_Line;
+with Ada.Exceptions;
+with Ada.Strings.Unbounded;
+with Ada.Text_IO;
+with Interfaces;
+with Zd_Wire;
+
+procedure Probe is
+   use Ada.Strings.Unbounded;
+   use type Interfaces.Unsigned_8;
+   --  `Bytes /= null` below: the predefined operators of a named access
+   --  type declared in another package are not directly visible from a
+   --  `with` alone, and without this the probe does not compile at all --
+   --  every rt-ada cell reads `broken-probe` instead of an answer.
+   use type Zd_Wire.Byte_Array_Access;
+   --  And the same for the two float types: `-0.0` needs the unary minus
+   --  of Interfaces.IEEE_Float_32 and _64 to be visible.
+   use type Interfaces.IEEE_Float_32;
+   use type Interfaces.IEEE_Float_64;
+
+   Digits_Hex : constant String := "0123456789abcdef";
+
+   Framing : constant Zd_Wire.Pl_Cdr1_Framing :=
+     (Pid_Flags                    => Zd_Wire.Flags_Sentinel_Must_Understand,
+      Highest_Short_Id             => 16#3F00#,
+      Pad_Declared_Length          => False,
+      Pad_Declared_Optional_Length => False,
+      Member_Must_Understand       => True,
+      Pad_After_Value              => True);
+
+   W     : Zd_Wire.Writer := Zd_Wire.New_Writer (Zd_Wire.Little, 4, Framing, False);
+   Token : constant String :=
+     (if Ada.Command_Line.Argument_Count > 0 then Ada.Command_Line.Argument (1) else "");
+
+   procedure Put_Hex is
+      Bytes : constant Zd_Wire.Byte_Array_Access := Zd_Wire.Finish (W);
+      Line  : Unbounded_String;
+   begin
+      if Bytes /= null then
+         for B of Bytes.all loop
+            Append (Line, Digits_Hex (Digits_Hex'First + Natural (B / 16)));
+            Append (Line, Digits_Hex (Digits_Hex'First + Natural (B mod 16)));
+         end loop;
+      end if;
+      Ada.Text_IO.Put_Line (To_String (Line));
+   end Put_Hex;
+begin
+   if Token = "c:writer" then
+      Zd_Wire.Write_U8 (W, 16#41#);
+   elsif Token = "c:int" then
+      Zd_Wire.Write_U16 (W, 16#1234#);
+   elsif Token = "negative-u16" then
+      Zd_Wire.Write_U16 (W, 16#CFC7#);
+   elsif Token = "negative-u32" then
+      Zd_Wire.Write_U32 (W, 16#FFED_2979#);
+   elsif Token = "past-2-63" then
+      Zd_Wire.Write_U64 (W, 16#DEAD_BEEF_DEAD_C2BE#);
+   elsif Token = "c:float" then
+      Zd_Wire.Write_F32 (W, 1.0);
+   elsif Token = "negative-zero-f32" then
+      Zd_Wire.Write_F32 (W, -0.0);
+   elsif Token = "negative-zero-f64" then
+      Zd_Wire.Write_F64 (W, -0.0);
+   elsif Token = "c:char" then
+      Zd_Wire.Write_Char (W, 16#41#);
+   elsif Token = "char-above-8-bit" then
+      Zd_Wire.Write_Char (W, 16#100#);
+   elsif Token = "c:wchar" then
+      Zd_Wire.Write_Wchar (W, 16#41#, 2, Zd_Wire.Wchar_Fixed, Zd_Wire.Unit_Stream);
+   elsif Token = "wchar-above-bmp" then
+      Zd_Wire.Write_Wchar (W, 16#1D11E#, 2, Zd_Wire.Wchar_Fixed, Zd_Wire.Unit_Stream);
+   elsif Token = "c:emheader" then
+      declare
+         H : constant Zd_Wire.Emheader := Zd_Wire.Write_Emheader (W, 1, 4, False);
+      begin
+         Zd_Wire.Write_U32 (W, 0);
+         Zd_Wire.Finish_Emheader (W, H);
+      end;
+   elsif Token = "member-id-past-28-bit" then
+      declare
+         H : constant Zd_Wire.Emheader :=
+           Zd_Wire.Write_Emheader (W, 16#1000_0000#, 4, False);
+      begin
+         Zd_Wire.Write_U32 (W, 0);
+         Zd_Wire.Finish_Emheader (W, H);
+      end;
+   elsif Token = "lc-body-size-mismatch" then
+      declare
+         H : constant Zd_Wire.Emheader := Zd_Wire.Write_Emheader (W, 1, 1, False);
+      begin
+         Zd_Wire.Write_U8 (W, 1);
+         Zd_Wire.Write_U8 (W, 2);
+         Zd_Wire.Write_U8 (W, 3);
+         Zd_Wire.Finish_Emheader (W, H);
+      end;
+   elsif Token = "c:pid" then
+      declare
+         P : constant Zd_Wire.Pid_Write :=
+           Zd_Wire.Write_Pid (W, 16#3F00#, Zd_Wire.Role_Member, False);
+      begin
+         Zd_Wire.Write_U32 (W, 0);
+         Zd_Wire.Finish_Pid (W, P);
+      end;
+   elsif Token = "short-pid-past-0x3f00" then
+      declare
+         P : constant Zd_Wire.Pid_Write :=
+           Zd_Wire.Write_Pid (W, 16#3F01#, Zd_Wire.Role_Member, False);
+      begin
+         Zd_Wire.Write_U32 (W, 0);
+         Zd_Wire.Finish_Pid (W, P);
+      end;
+   elsif Token = "c:fixed" then
+      Zd_Wire.Write_Fixed (W, To_Unbounded_String ("1.00"), 5, 2, Zd_Wire.Fixed_Declared);
+   elsif Token = "fixed-digits-past-31" then
+      Zd_Wire.Write_Fixed (W, To_Unbounded_String ("1.00"), 32, 2, Zd_Wire.Fixed_Declared);
+   elsif Token = "fixed-scale-past-digits" then
+      Zd_Wire.Write_Fixed (W, To_Unbounded_String ("1.00"), 5, 6, Zd_Wire.Fixed_Declared);
+   elsif Token = "c:bitset" then
+      Zd_Wire.Write_Bitset (W, 2, 16#1234#);
+   elsif Token = "bitset-anchor-width" then
+      Zd_Wire.Write_Bitset (W, 4, 16#22_2111#);
+   else
+      Ada.Text_IO.Put_Line ("BROKEN the rt-ada probe has no case for " & Token);
+      return;
+   end if;
+   Put_Hex;
+exception
+   when E : others =>
+      Ada.Text_IO.Put_Line
+        ("REFUSED " & Ada.Exceptions.Exception_Name (E) & ": "
+         & Ada.Exceptions.Exception_Message (E));
+end Probe;
+EOF
+    local rc=0
+    lim "$build_secs" bash -c "cd '$work/rtada' && gnatmake -q -gnat2012 \
+        -I'$root/runtime/ada/src' probe.adb" > /dev/null 2>&1 || rc=$?
+    cp "$LIMOUT" "$work/rtada/build.log" 2>/dev/null || true
+    if [ "$rc" = 124 ]; then
+        build_bad rt-ada "the build did not finish in ${build_secs}s"; return 1
+    fi
+    if [ ! -x "$work/rtada/probe" ]; then
+        build_bad rt-ada "$(first_error_line "$work/rtada/build.log")"; return 1
+    fi
+    build_ok rt-ada
+}
+
+rt_ada_typed() { # $1 token — the widths Unsigned_8/16/32 type
+    local put lit dir="$work/rtada-${1//:/_}"
+    case "$1" in
+        over-u8|c:over-u8)   put=Write_U8 ;;
+        over-u16|c:over-u16) put=Write_U16 ;;
+        over-u32|c:over-u32) put=Write_U32 ;;
+    esac
+    case "$1" in
+        over-u8)  lit=256 ;;         c:over-u8)  lit=16#12# ;;
+        over-u16) lit=70000 ;;       c:over-u16) lit=16#1234# ;;
+        over-u32) lit=4294967296 ;;  c:over-u32) lit=16#1234_5678# ;;
+    esac
+    mkdir -p "$dir"
+    cat > "$dir/probe.adb" <<EOF
+with Ada.Exceptions;
+with Ada.Strings.Unbounded;
+with Ada.Text_IO;
+with Interfaces;
+with Zd_Wire;
+
+procedure Probe is
+   use Ada.Strings.Unbounded;
+   use type Interfaces.Unsigned_8;
+   --  `Bytes /= null` below: the same visibility the whole-surface probe
+   --  needs, and without it these three cells read `broken-probe`.
+   use type Zd_Wire.Byte_Array_Access;
+   Digits_Hex : constant String := "0123456789abcdef";
+   Framing : constant Zd_Wire.Pl_Cdr1_Framing :=
+     (Pid_Flags                    => Zd_Wire.Flags_Sentinel_Must_Understand,
+      Highest_Short_Id             => 16#3F00#,
+      Pad_Declared_Length          => False,
+      Pad_Declared_Optional_Length => False,
+      Member_Must_Understand       => True,
+      Pad_After_Value              => True);
+   W : Zd_Wire.Writer := Zd_Wire.New_Writer (Zd_Wire.Little, 4, Framing, False);
+   Line : Unbounded_String;
+begin
+   Zd_Wire.$put (W, $lit);
+   declare
+      Bytes : constant Zd_Wire.Byte_Array_Access := Zd_Wire.Finish (W);
+   begin
+      if Bytes /= null then
+         for B of Bytes.all loop
+            Append (Line, Digits_Hex (Digits_Hex'First + Natural (B / 16)));
+            Append (Line, Digits_Hex (Digits_Hex'First + Natural (B mod 16)));
+         end loop;
+      end if;
+   end;
+   Ada.Text_IO.Put_Line (To_String (Line));
+exception
+   when E : others =>
+      Ada.Text_IO.Put_Line
+        ("REFUSED " & Ada.Exceptions.Exception_Name (E) & ": "
+         & Ada.Exceptions.Exception_Message (E));
+end Probe;
+EOF
+    local rc=0
+    lim "$build_secs" bash -c "cd '$dir' && gnatmake -q -gnat2012 \
+        -I'$root/runtime/ada/src' probe.adb" > /dev/null 2>&1 || rc=$?
+    cp "$LIMOUT" "$dir/build.log" 2>/dev/null || true
+    if [ "$rc" = 124 ]; then echo "TIMEOUT"; return; fi
+    # The compiler's exit status decides, not the file: `zig build-exe`
+    # leaves an empty, executable `probe` behind when it refuses, which
+    # `-x` read as a built program and reported as a broken probe.
+    if [ "$rc" != 0 ] || [ ! -s "$dir/probe" ]; then echo "REFUSED $(first_error_line "$dir/build.log")"; return; fi
+    run_native rt-ada "$dir/probe"
+}
+
+probe_rt_ada() {
+    case "$1" in over-u*|c:over-u*) rt_ada_typed "$1"; return ;; esac
+    rt_ada_build || { echo "BROKEN $(cat "$work/rt-ada/.bad")"; return; }
+    run_native rt-ada "$work/rtada/probe" "$1"
+}
+
+# =====================================================================
+# The sweep
+# =====================================================================
+
+ask() { # $1 surface  $2 token -> one answer line
+    local fn="probe_${1//-/_}"
+    if ! declare -f "$fn" > /dev/null; then
+        echo "BROKEN this driver has no probe for the surface $1"
+        return
+    fi
+    # `< /dev/null`: `go`, `julia`, `elixir` and `dotnet fsi` all read
+    # standard input, and without this the first of them swallows the
+    # rest of the token list.
+    "$fn" "$2" < /dev/null 2>/dev/null | tr -d '\r' | tail -1
+}
+
+is_refusal() { [ "${1#REFUSED}" != "$1" ]; }
+is_octets()  { printf '%s' "$1" | grep -qE '^[0-9a-f]+$'; }
+
+# The one row whose right answer is not a single string: §7.4.1.2.2
+# reserves 0x3F01..0x3FFF, and PID_EXTENDED *is* 0x3F01, so a binding
+# that promotes the parameter instead of refusing the short form has
+# answered the clause. `013f0800` is that header's first four octets:
+# the marker with the must-understand bit clear is `013f`, then the
+# declared 8.
+is_pid_extended() {
+    printf '%s' "$1" | grep -qE '^(01|41)3f0800'
+}
+
+classify() { # $1 edge  $2 expected  $3 answer -> PASS or FAIL <what is wrong>
+    local edge="$1" want="$2" got="$3"
+    case "$edge" in
+        short-pid-past-0x3f00)
+            if is_refusal "$got" || is_pid_extended "$got"; then echo PASS
+            else echo "FAIL the short form was written for a reserved id"; fi
+            return ;;
+    esac
+    case "$want" in
+        refuse*)
+            if is_refusal "$got"; then echo PASS
+            elif is_octets "$got" || [ "${got#wrote-frame}" != "$got" ]; then
+                echo "FAIL octets for a value the width cannot hold (the silent-drop class)"
+            else echo "FAIL neither a refusal nor octets"; fi
+            return ;;
+    esac
+    if [ "$got" = "$want" ]; then echo PASS
+    elif is_refusal "$got"; then echo "FAIL a refusal where the value has an exact form"
+    else echo "FAIL the wrong octets"; fi
+}
+
+surfaces=""
+for s in $(printf '%s' "$langs" | tr ',' ' '); do
+    is_known_surface "$s" || {
+        echo "refusal-edge-surface: \`$s\` is not one of $all_surfaces" >&2; exit 2; }
+    surfaces="$surfaces $s"
+done
+
+edges=""
+for e in $ledger_edges; do
+    in_filter "$e" "$edges_filter" && edges="$edges $e"
+done
+[ -n "$edges" ] || { echo "refusal-edge-surface: no ledger row matched --edges" >&2; exit 2; }
+
+if [ "$list_only" = 1 ]; then
+    printf '%-14s %-24s %s\n' surface edge state
+    for surface in $surfaces; do
+        miss="$(missing_toolchain "$surface")" && state="skipped (no $miss)" || state=""
+        for edge in $edges; do
+            if reason="$(na_reason "$surface" "$edge")"; then
+                printf '%-14s %-24s n/a — %s\n' "$surface" "$edge" "$reason"
+            elif ! is_known_edge "$edge"; then
+                printf '%-14s %-24s no-probe\n' "$surface" "$edge"
+            elif [ -n "$state" ]; then
+                printf '%-14s %-24s %s\n' "$surface" "$edge" "$state"
+            else
+                printf '%-14s %-24s asked\n' "$surface" "$edge"
+            fi
+        done
+    done
+    exit 0
+fi
+
+pass=0; fail=0; na=0; skip=0; broke=0; tmo=0; noprobe=0
+first_fail=""
+
+report() { # $1 surface  $2 edge  $3 verdict  $4 detail
+    printf '%-14s %-24s %-13s %s\n' "$1" "$2" "$3" "${4:0:96}"
+}
+
+printf '%-14s %-24s %-13s %s\n' surface edge verdict detail
+for surface in $surfaces; do
+    if miss="$(missing_toolchain "$surface")"; then
+        for edge in $edges; do
+            report "$surface" "$edge" skipped "no toolchain: $miss is not on this host"
+            skip=$((skip + 1))
+        done
+        continue
+    fi
+    if why="$(toolchain_unusable "$surface")"; then
+        for edge in $edges; do
+            report "$surface" "$edge" skipped "the toolchain builds nothing here: $why"
+            skip=$((skip + 1))
+        done
+        continue
+    fi
+
+    # The surface control. One fresh writer, one octet. If this is not
+    # octets, nothing this surface says afterwards is an answer.
+    surface_control="$(ask "$surface" "c:writer")"
+    surface_ok=1
+    control_answers "$surface_control" || surface_ok=0
+
+    for edge in $edges; do
+        if reason="$(na_reason "$surface" "$edge")"; then
+            report "$surface" "$edge" n-a "$reason"
+            na=$((na + 1))
+            continue
+        fi
+        if ! is_known_edge "$edge"; then
+            report "$surface" "$edge" no-probe "this driver has no probe for the row"
+            noprobe=$((noprobe + 1))
+            continue
+        fi
+        if [ "$surface_ok" = 0 ]; then
+            report "$surface" "$edge" broken-probe "c:writer did not answer: $surface_control"
+            broke=$((broke + 1))
+            continue
+        fi
+
+        control="$(ask "$surface" "$(control_of "$edge")")"
+        if [ "$control" = TIMEOUT ]; then
+            report "$surface" "$edge" timeout "the control did not finish in ${run_secs}s"
+            tmo=$((tmo + 1))
+            continue
+        fi
+        if ! control_answers "$control"; then
+            report "$surface" "$edge" broken-probe \
+                "$(control_of "$edge") did not answer: $control"
+            broke=$((broke + 1))
+            continue
+        fi
+
+        answer="$(ask "$surface" "$edge")"
+        case "$answer" in
+            TIMEOUT)
+                report "$surface" "$edge" timeout "the probe did not finish in ${run_secs}s"
+                tmo=$((tmo + 1)); continue ;;
+            BROKEN*)
+                report "$surface" "$edge" broken-probe "${answer#BROKEN }"
+                broke=$((broke + 1)); continue ;;
+        esac
+
+        want="$(expected_of "$edge")"
+        verdict="$(classify "$edge" "$want" "$answer")"
+        if [ "$verdict" = PASS ]; then
+            report "$surface" "$edge" PASS "$answer"
+            pass=$((pass + 1))
+        else
+            report "$surface" "$edge" FAIL "${verdict#FAIL }"
+            printf '    is:   %s\n' "${answer:0:150}"
+            printf '    soll: %s   (%s)\n' "$want" "$(operation_of "$edge")"
+            fail=$((fail + 1))
+            [ -z "$first_fail" ] && first_fail="$surface $edge: is \`${answer:0:60}\`, soll \`$want\`"
+        fi
+    done
+done
+
+echo
+echo "PASS=$pass FAIL=$fail n-a=$na skipped=$skip broken-probe=$broke timeout=$tmo no-probe=$noprobe"
+
+rc=0
+if [ "$fail" -gt 0 ]; then
+    echo >&2
+    echo "refusal-edge-surface: $fail of the cells contradict the ledger." >&2
+    echo "the first: $first_fail" >&2
+    rc=8
+elif [ $((broke + tmo + noprobe)) -gt 0 ]; then
+    echo >&2
+    echo "refusal-edge-surface: $((broke + tmo + noprobe)) cells were not answers —" >&2
+    echo "$broke broken probes, $tmo timeouts, $noprobe rows without a probe." >&2
+    echo "None of them is a pass; a probe that will not build is this file's" >&2
+    echo "defect and a row without a probe is a gap in it." >&2
+    rc=2
+fi
+exit "$rc"

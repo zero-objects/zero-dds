@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of annotation-scoped-name that fastdds produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	fastddsgen failed: ERROR: Cannot generate the files
+plain-cdr1	be	refused	fastddsgen failed: ERROR: Cannot generate the files
+pl-cdr1	le	refused	fastddsgen failed: ERROR: Cannot generate the files
+pl-cdr1	be	refused	fastddsgen failed: ERROR: Cannot generate the files
+plain-cdr2	le	refused	fastddsgen failed: ERROR: Cannot generate the files
+plain-cdr2	be	refused	fastddsgen failed: ERROR: Cannot generate the files
+delimited-cdr	le	refused	fastddsgen failed: ERROR: Cannot generate the files
+delimited-cdr	be	refused	fastddsgen failed: ERROR: Cannot generate the files
+pl-cdr2	le	refused	fastddsgen failed: ERROR: Cannot generate the files
+pl-cdr2	be	refused	fastddsgen failed: ERROR: Cannot generate the files

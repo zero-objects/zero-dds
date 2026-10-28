@@ -1,0 +1,295 @@
+#!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 ZeroDDS Contributors
+#
+# wireprobe-opendds — one IDL type and one JSON value, through OpenDDS's
+# own `Serializer`.
+#
+# The same command line as `wireprobe-zerodds`, so a case runs through
+# both by substituting the program name. See
+# `docs/specs/zerodds-interop-suite-1.0.md`.
+#
+#   wireprobe-opendds --idl robot.idl --type common::Robot \
+#                     --values robot.json --encoding xcdr2 --endian le \
+#                     --out robot.opendds.xcdr2.le.bin
+#
+# `tao_idl -Sa -St` and `opendds_idl` generate the type support,
+# `wireprobe-fill` supplies the statements that put the JSON sample into
+# it, and the template calls `Serializer`. Nothing here decides any wire
+# question.
+#
+# The read direction is the same command line with `--in` instead of
+# `--values`, and `--matrix` prints every combination from one build.
+#
+#   wireprobe-opendds --idl robot.idl --type common::Robot \
+#                     --in robot.rti.xcdr2.le.bin --encoding xcdr2 \
+#                     --endian le --values-out robot.read.json
+#
+# ## Why the fill is the CORBA C++ one
+#
+# OpenDDS is the fourth DDS implementation of this suite and the only
+# one with CORBA/TAO lineage: `opendds_idl --idl-version 4` plus
+# `tao_idl -Sa -St` produces the classic C++ mapping, where a member is
+# assigned rather than set through a generated setter. Fast DDS's fill
+# calls setters OpenDDS does not have, which is why
+# `tools/byte-gate/gate.sh` needs a hand-written `fill.odds.inc` per
+# case and can only be run over the cases somebody wrote one for. This
+# probe takes `wireprobe-fill --vendor omniorb` instead — the same CORBA
+# C++ statements the omniORB and TAO probes take — and so runs over the
+# whole corpus.
+#
+# ## `fixed` goes through the FACE mapping
+#
+# The classic mapping has no `fixed`: `tao_idl -Sa -St` prints "fixed
+# data types are not supported", exits 0, and the member is missing
+# from the generated struct. OpenDDS 3.34 carries the type in its FACE
+# mapping (`opendds_idl -Lface`, no `tao_idl`), as
+# `OpenDDS::FaceTypes::Fixed_T<P,S>`. An IDL that names `fixed<` is
+# built that way and linked with `libOpenDDS_FACE`; the fill and the
+# dump stay the omniORB ones, and `opendds-face-fixed.h` gives them the
+# `CORBA::Fixed` they name. Every other IDL keeps the classic mapping.
+#
+# ## One build per case, not four
+#
+# `OpenDDS::DCPS::Encoding` takes the encoding version and the
+# endianness as constructor arguments, so all four combinations come out
+# of one compile. The cache key names the type, the IDL and the fill and
+# nothing else, for that reason; a FACE build adds the header it
+# force-includes.
+set -euo pipefail
+
+FILL="${WIREPROBE_FILL:-wireprobe-fill}"
+DUMP="${WIREPROBE_DUMP:-wireprobe-dump}"
+OPENDDS_HOME="${OPENDDS_HOME:-/opt/opendds}"
+# `opendds_idl` reads its code templates out of `$DDS_ROOT/dds/idl`. An
+# installed tree puts them under `share/dds`, a build tree at the root.
+# Searched and not defaulted: the error it gives when the variable is
+# wrong is `Couldn't open .../IDLTemplate.txt` followed by an abort, and
+# a sweep would record that as OpenDDS refusing 335 types.
+if [ -z "${DDS_ROOT:-}" ]; then
+    for _r in "$OPENDDS_HOME/share/dds" "$OPENDDS_HOME"; do
+        [ -f "$_r/dds/idl/IDLTemplate.txt" ] && { DDS_ROOT="$_r"; break; }
+    done
+    DDS_ROOT="${DDS_ROOT:-$OPENDDS_HOME/share/dds}"
+    unset _r
+fi
+TAO_ROOT="${TAO_ROOT:-$OPENDDS_HOME}"
+TAO_IDL="${TAO_IDL:-$OPENDDS_HOME/bin/tao_idl}"
+OPENDDS_IDL="${OPENDDS_IDL:-$OPENDDS_HOME/bin/opendds_idl}"
+export DDS_ROOT TAO_ROOT
+TOOLS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TEMPLATE="$TOOLS/opendds-template.cpp"
+DECODE_TEMPLATE="$TOOLS/opendds-decode-template.cpp"
+# shellcheck source=probe-cache.sh
+. "$TOOLS/probe-cache.sh"
+# shellcheck source=bounded.sh
+. "$TOOLS/bounded.sh"
+# shellcheck source=diagnostics.sh
+. "$TOOLS/diagnostics.sh"
+
+idl=""; type_name=""; values=""; encoding="xcdr2"; endian="le"; emit="payload"
+out=""; input=""; values_out=""; matrix=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --matrix) matrix=1; shift ;;
+        --idl) idl="$2"; shift 2 ;;
+        --type) type_name="$2"; shift 2 ;;
+        --values) values="$2"; shift 2 ;;
+        --in) input="$2"; shift 2 ;;
+        --values-out) values_out="$2"; shift 2 ;;
+        --encoding) encoding="$2"; shift 2 ;;
+        --endian) endian="$2"; shift 2 ;;
+        --emit) emit="$2"; shift 2 ;;
+        --out) out="$2"; shift 2 ;;
+        # `--dialect` names which implementation's answers to give, and
+        # this probe can only give OpenDDS's.
+        --dialect)
+            if [ "$2" != "opendds" ]; then
+                echo "wireprobe-opendds: --dialect $2 is not this probe's; it writes what OpenDDS writes" >&2
+                exit 3
+            fi
+            shift 2 ;;
+        # Accepted and ignored: these select between shapes this project
+        # can produce, and OpenDDS has exactly one of each.
+        --length-codes|--collection-delimiters|--map-length|--wstring-length) shift 2 ;;
+        --pl-cdr1-headers|--default-extensibility|--key-holder) shift 2 ;;
+        --help|-h) sed -n '5,58p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        *) echo "wireprobe-opendds: \`$1\` is not an option" >&2; exit 2 ;;
+    esac
+done
+[ -n "$idl" ] || { echo "wireprobe-opendds: --idl is required" >&2; exit 2; }
+[ -n "$type_name" ] || { echo "wireprobe-opendds: --type is required" >&2; exit 2; }
+if [ -n "$input" ] && [ -n "$values" ]; then
+    echo "wireprobe-opendds: --in reads bytes and --values writes them; pick one" >&2; exit 2
+fi
+if [ -z "$input" ] && [ -z "$values" ]; then
+    echo "wireprobe-opendds: --values is required, or --in to read bytes back" >&2; exit 2
+fi
+
+case "$encoding" in
+    xcdr1|plain-cdr1|pl-cdr1) version_word=xcdr1; version_number=1 ;;
+    xcdr2|plain-cdr2|delimited-cdr|pl-cdr2) version_word=xcdr2; version_number=2 ;;
+    *) echo "wireprobe-opendds: \`$encoding\` is not an encoding" >&2; exit 2 ;;
+esac
+case "$endian" in
+    le|little) endian_word=le ;;
+    be|big) endian_word=be ;;
+    *) echo "wireprobe-opendds: \`$endian\` is not a byte order" >&2; exit 2 ;;
+esac
+case "$emit" in
+    payload) ;;
+    *) echo "wireprobe-opendds: --emit $emit is not implemented here yet" >&2; exit 3 ;;
+esac
+
+for tool in "$TAO_IDL" "$OPENDDS_IDL"; do
+    [ -x "$tool" ] || { echo "wireprobe-opendds: $tool is not there" >&2; exit 4; }
+done
+
+work="$(mktemp -d)"
+# Kept before the removal and on every exit path, including a
+# refusal: the generated source of a case a front end could not carry
+# is the one a reader most wants to see.
+trap 'probe_keep_generated "$work" "opendds" "$idl"; rm -rf "$work"' EXIT
+
+cp "$idl" "$work/gen.idl"
+# `fixed<` outside a `//` comment selects the FACE mapping; see above.
+# A FACE build also hashes the header it force-includes, so its key is
+# not a classic build's and an edit to the header rebuilds it.
+mapping=classic; face_inputs=()
+if sed -e 's://.*$::' "$idl" | grep -qE '(^|[^[:alnum:]_])fixed[[:space:]]*<'; then
+    mapping=face; face_inputs=("$TOOLS/opendds-face-fixed.h")
+fi
+cpp_name="$("$FILL" --vendor omniorb --idl "$idl" --type "$type_name" --print-c-name)"
+
+# `opendds_idl` and `tao_idl`, then the compiler. Both generators, and
+# in this order: `tao_idl -Sa -St` writes `genC.{h,cpp}` — the C++
+# mapping of the types — and `opendds_idl` writes
+# `genTypeSupportImpl.{h,cpp}`, which is where the `Serializer`
+# operators live. Either alone leaves the other's symbols undefined.
+generate() {
+    if [ "$mapping" = face ]; then
+        bounded_run_native opendds_idl "$OPENDDS_IDL" -I"$OPENDDS_HOME/include" -Lface --idl-version 4 gen.idl \
+            > idl.log 2>&1 || {
+            echo "wireprobe-opendds: opendds_idl -Lface failed" >&2
+            grep -m5 -i "error" idl.log >&2 || sed -n 1,5p idl.log >&2
+            exit 4; }
+        return 0
+    fi
+    bounded_run_native tao_idl "$TAO_IDL" -I"$OPENDDS_HOME/include" -I"$TAO_ROOT" -Sa -St --idl-version 4 gen.idl \
+        > tao.log 2>&1 || {
+        echo "wireprobe-opendds: tao_idl failed" >&2
+        grep -m5 -i "error" tao.log >&2 || sed -n 1,5p tao.log >&2
+        exit 4; }
+    bounded_run_native opendds_idl "$OPENDDS_IDL" -I"$OPENDDS_HOME/include" --idl-version 4 gen.idl > idl.log 2>&1 || {
+        echo "wireprobe-opendds: opendds_idl failed" >&2
+        grep -m5 -i "error" idl.log >&2 || sed -n 1,5p idl.log >&2
+        exit 4; }
+}
+
+compile() { # <source> <binary>
+    # The FACE mapping writes no `genC.cpp`: its types are header-only.
+    local sources="genC.cpp genTypeSupportImpl.cpp" face_flags="" face_lib=""
+    if [ "$mapping" = face ]; then
+        sources="genTypeSupportImpl.cpp"
+        face_flags="-include $TOOLS/opendds-face-fixed.h"
+        face_lib="-lOpenDDS_FACE"
+    fi
+    # shellcheck disable=SC2086 # the three lists are word lists
+    g++ -std=c++17 $face_flags -o "$2" "$1" $sources -I. -I"$TOOLS" \
+        -I"$OPENDDS_HOME/include" -L"$OPENDDS_HOME/lib" \
+        $face_lib -lOpenDDS_Dcps -lTAO_AnyTypeCode -lTAO_Valuetype -lTAO -lACE \
+        -Wl,-rpath,"$OPENDDS_HOME/lib" > cc.log 2>&1 || {
+        echo "wireprobe-opendds: the probe did not compile" >&2
+        grep -m10 "error:" cc.log >&2
+        exit 5; }
+}
+
+if [ -n "$input" ]; then
+    "$DUMP" --vendor omniorb --idl "$idl" --type "$type_name" --out "$work/dump.inc"
+    # One build per case here too: `Encoding` takes the version and the
+    # byte order as constructor arguments, so neither is in the key.
+    key="$(probe_cache_key opendds decode "$cpp_name" -- "$work/gen.idl" "$work/dump.inc" "$DECODE_TEMPLATE" "${face_inputs[@]}")"
+    cached="$(probe_cache_dir "$key")"
+    if [ -z "$cached" ] || [ ! -x "$cached/probe" ]; then
+        (
+            cd "$work"
+            generate
+            sed -e "s/@TYPE@/$cpp_name/g" "$DECODE_TEMPLATE" > probe.cpp
+            compile probe.cpp probe
+        )
+        probe_diagnostics_after opendds "$work" "$idl" $?
+        if [ -n "$cached" ]; then
+            build="$(mktemp -d "$WIREPROBE_CACHE/build.XXXXXX")"
+            cp "$work/probe" "$build/probe"
+            probe_diagnostics_publish "$work" "$build"
+            probe_generated_publish "$work" "$build"
+            probe_cache_publish "$build" "$cached"
+        fi
+    else
+        # A cache hit does not compile, so the build said nothing
+        # this run. What it said when it was built is replayed,
+        # or a re-record would be silent for every case it did
+        # not rebuild.
+        probe_diagnostics_cached opendds "$cached" "$idl"
+        probe_generated_cached "$cached" "$work"
+    fi
+    if [ -n "$cached" ] && [ -x "$cached/probe" ]; then binary="$cached/probe"; else binary="$work/probe"; fi
+    LD_LIBRARY_PATH="$OPENDDS_HOME/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+        "$binary" "$endian_word" "$version_number" < "$input" > "$work/values.json"
+    if [ -n "$values_out" ]; then cp "$work/values.json" "$values_out"; else cat "$work/values.json"; fi
+    exit 0
+fi
+
+"$FILL" --vendor omniorb --idl "$idl" --type "$type_name" --values "$values" \
+        --out "$work/fill.inc"
+key="$(probe_cache_key opendds encode "$cpp_name" -- "$work/gen.idl" "$work/fill.inc" "$TEMPLATE" "${face_inputs[@]}")"
+cached="$(probe_cache_dir "$key")"
+if [ -z "$cached" ] || [ ! -x "$cached/probe" ]; then
+    (
+        cd "$work"
+        generate
+        sed -e "s/@TYPE@/$cpp_name/g" "$TEMPLATE" > probe.cpp
+        compile probe.cpp probe
+    )
+    probe_diagnostics_after opendds "$work" "$idl" $?
+    if [ -n "$cached" ]; then
+        build="$(mktemp -d "$WIREPROBE_CACHE/build.XXXXXX")"
+        cp "$work/probe" "$build/probe"
+        probe_diagnostics_publish "$work" "$build"
+        probe_generated_publish "$work" "$build"
+        probe_cache_publish "$build" "$cached"
+    fi
+else
+    # A cache hit does not compile, so the build said nothing
+    # this run. What it said when it was built is replayed,
+    # or a re-record would be silent for every case it did
+    # not rebuild.
+    probe_diagnostics_cached opendds "$cached" "$idl"
+    probe_generated_cached "$cached" "$work"
+fi
+if [ -n "$cached" ] && [ -x "$cached/probe" ]; then binary="$cached/probe"; else binary="$work/probe"; fi
+
+# The binary prints all four rows; a single-shot run picks the one it
+# was asked for. A refusal in the chosen row is this probe's exit 1 —
+# the sentence OpenDDS's serialiser produced, not a guess about it.
+LD_LIBRARY_PATH="$OPENDDS_HOME/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+    "$binary" > "$work/rows.tsv"
+if [ "$matrix" = 1 ]; then
+    cat "$work/rows.tsv"
+    exit 0
+fi
+row="$(awk -F'\t' -v v="$version_word" -v o="$endian_word" '$1 == v && $2 == o {print $3}' \
+       "$work/rows.tsv")"
+if [ -z "$row" ]; then
+    echo "wireprobe-opendds: the probe printed no $version_word/$endian_word row" >&2
+    exit 1
+fi
+case "$row" in
+    '!'*) echo "wireprobe-opendds: ${row#!}" >&2; exit 1 ;;
+esac
+
+if [ -n "$out" ]; then
+    printf '%s' "$row" | perl -ne 'print pack("H*", $_)' > "$out"
+else
+    printf '%s\n' "$row"
+fi

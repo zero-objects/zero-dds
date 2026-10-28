@@ -10,8 +10,8 @@ description = "OMG CosEventService 1.4 — Push/Pull-Modell + EventChannelAdmin 
 homepage = "https://zerodds.org"
 documentation = "https://docs.rs/zerodds-corba-cos-event"
 readme = "README.md"
-keywords = ["dds", "corba", "cos-event", "pub-sub", "no-std"]
-categories = ["network-programming", "no-std"]
+keywords = ["dds", "corba", "cos-event", "pub-sub"]
+categories = ["network-programming"]
 publish = true
 
 [lints]

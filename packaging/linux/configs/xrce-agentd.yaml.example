@@ -1,0 +1,90 @@
+# /etc/zerodds/xrce-agentd.yaml.example
+# Configuration of zerodds-xrce-agentd.
+# Spec: DDS-XRCE 1.0 (the config schema is a ZeroDDS extension, not
+# normative on the wire).
+#
+# Read by crates/xrce-agent/src/daemon/config.rs (DaemonConfig::from_config)
+# over the shared layers: this file, xrce-agentd.d/, include:, the
+# environment beneath, --set above. An unknown key in a known section or a
+# value of the wrong type stops the start with file and line; --listen
+# and --log-level on the command line are `--set` of the matching key and
+# win over every file.
+#
+# The file holds only keys the daemon reads; crates/xrce-agent/tests/
+# covers config loadback.
+
+# A participant's DDS domain is the one its CREATE carries
+# (OBJK_PARTICIPANT_Representation.domain_id); there is no agent default.
+log_level: info
+
+# This agent's XrceVendorId, "major.minor" as two decimal octets. "0.0"
+# (default) means none; eProsima's own registered agent uses "1.15".
+vendor_id: "0.0"
+
+# Seconds of client inactivity (no message on any stream) before the
+# session and its objects are dropped.
+session_timeout_secs: 60
+
+# What a READ_DATA without delivery_control reads. `once` (default,
+# DDS-XRCE 1.0 §8.3.5.9.2): one read call, the samples already in the
+# DataReader cache. `next-sample`: the next sample there is, without a time
+# limit, as Micro-XRCE-DDS 3.0.1 does; not the specification.
+read_without_delivery_control: once
+
+limits:
+  max_clients: 1024
+  max_objects_per_client: 256
+  # Reliable-stream samples buffered per client waiting on ACKNACK.
+  max_pending_samples: 256
+
+# GET_INFO on the well-known multicast discovery group (§11.2.4). A Micro
+# Client without a hardcoded agent address finds this daemon here.
+discovery:
+  enabled: true
+  port: 7400   # XRCE_DISCOVERY_PORT
+
+# One entry per transport the daemon listens on; at least one is required.
+# kind: udp | tcp | serial. udp/tcp take `bind: host:port` (default of each
+# is 0.0.0.0:2018 — eProsima's own default agent port). serial takes
+# `device:` and `baud_rate:` (default 115200) and needs the `serial`
+# build feature plus a systemd unit override, since PrivateDevices in the
+# packaged unit blocks the device node otherwise. On the line (DDS-XRCE 1.0
+# Annex C) the agent has `address:` (default 0, the address Micro-XRCE-DDS
+# clients send to); the clients are told apart by the sourceAddress of their
+# frames. `frame_check:` is `rfc1662` (default, Annex C.1.1.6: FCS-16 over
+# addresses, length and payload) or `crc16-arc-payload` (CRC-16/ARC over the
+# payload alone, what Micro-XRCE-DDS 3.0.1 computes; not Annex C).
+listeners:
+  - kind: udp
+    bind: "0.0.0.0:2018"
+  # - kind: tcp
+  #   bind: "0.0.0.0:2018"
+  # - kind: serial
+  #   device: "/dev/ttyUSB0"
+  #   baud_rate: 115200
+  #   address: 0
+  #   frame_check: rfc1662
+
+# Precompiled COMPLETE TypeObjects (XCDR2, as zerodds-idlc/zerodds-wire-probe
+# produce), one per file, named by the DDS type name. A topic of that type
+# is created with it for every client (key hashes, dispose, TypeInformation);
+# a client's own OBJK_TYPE of the same name wins for that client. A file
+# that does not load or describes another type stops the start.
+type_files: []
+# type_files:
+#   - name: "ShapeType"
+#     file: "/etc/zerodds/types/shapetype.typeobject"
+
+# Fast DDS profile files (<profiles>, or <dds> around <profiles>, <types>,
+# <qos_library>), the form eProsima's MicroXRCEAgent reads with -r. A
+# REPRESENTATION_BY_REFERENCE CREATE names a profile_name there; <types>
+# define topic types for every client, like type_files.
+xml_profile_files: []
+# xml_profile_files:
+#   - "/etc/zerodds/xrce/profiles.xml"
+
+# DDS-XML <qos_library> documents; an attribute-form representation's
+# qos_profile="Library::Profile" names one of their profiles.
+qos_library_files: []
+# qos_library_files:
+#   - "/etc/zerodds/xrce/qos_libraries.xml"

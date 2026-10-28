@@ -59,7 +59,8 @@ int zdw_async_run(zdw_async_reader *r, int max)
 
 void zdw_async_writer_init(zdw_async_writer *w, const zdw_transport *t,
                            unsigned char *txbuf, size_t txcap,
-                           unsigned char session, unsigned char stream)
+                           unsigned char session, unsigned char stream,
+                           unsigned int object_id)
 {
     w->transport = t;
     w->txbuf     = txbuf;
@@ -67,12 +68,16 @@ void zdw_async_writer_init(zdw_async_writer *w, const zdw_transport *t,
     w->session   = session;
     w->stream    = stream;
     w->seq       = 1;
+    w->object_id = object_id;
 }
 
 int zdw_async_write(zdw_async_writer *w, const unsigned char *sample, size_t len)
 {
+    /* request_id = the message sequence number: unique per stream, which is
+     * exactly what DDS-XRCE 1.0 Sec 7.7.8 asks of a RequestId. */
     size_t frame_len = zdw_xrce_write_frame(w->txbuf, w->txcap, w->session,
-                                            w->stream, w->seq, sample, len);
+                                            w->stream, w->seq,
+                                            w->object_id, sample, len);
     if (frame_len == 0) {
         return ZDW_T_ERROR;
     }

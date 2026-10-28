@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 # ZeroDDS — IDL → Julia codegen backend
 
-`zerodds-idlc --julia` emits **native Julia** from OMG IDL: a self-contained
+`zerodds-idlc generate --lang julia` emits **native Julia** from OMG IDL: a self-contained
 source file with a `Writer` (byte-identical to the `endpoints/julia` core) and,
 per IDL `struct`, a Julia struct plus a `marshal_xcdr(v, endian)::Vector{UInt8}`
 function whose wire output matches the Rust goldens exactly.
@@ -12,7 +12,7 @@ Crate: [`crates/idl-julia`](../crates/idl-julia) · registered in `tools/idlc`
 ## Usage
 
 ```sh
-zerodds-idlc types.idl --julia    # emits types.jl
+zerodds-idlc generate --lang julia types.idl   # emits types.jl
 ```
 
 ## Mapping

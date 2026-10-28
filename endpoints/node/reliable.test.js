@@ -177,15 +177,47 @@ test('byte-golden: heartbeat + acknack (hardcoded)', () => {
   assert.ok(hb.equals(hbExpect), 'heartbeat byte-golden');
 
   const ak = r.acknackFrame({ firstUnacked: 1, nackLo: 0, nackHi: 0, stream: 0x80 });
-  const akExpect = Buffer.from([0x80, 0x00, 0x01, 0x00, 0x0a, 0x01, 0x05, 0x00, 0x01, 0x00, 0x00, 0x00, 0x80]);
+  const akExpect = Buffer.from([0x80, 0x00, 0x01, 0x00, 0x0a, 0x01, 0x09, 0x00, 0x05, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x80]);
   assert.ok(ak.equals(akExpect), 'acknack byte-golden');
 });
 
+test('parseAckNack accepts the FINAL 5-octet body', () => {
+  const legacy = Buffer.from([0x80, 0x00, 0x01, 0x00, 0x0a, 0x01, 0x05, 0x00, 0x05, 0x00, 0x0f, 0x00, 0x80]);
+  const a = r.parseAckNack(legacy);
+  assert.ok(a && a.firstUnacked === 5 && a.bitmap() === 0x0f && a.stream === 0x80, 'legacy form parsed');
+  const cur = r.acknackFrame({ firstUnacked: 5, nackLo: 0x0f, nackHi: 0, stream: 0x80 });
+  assert.strictEqual(cur.length, 17, 'ACKNACK frame is 17 octets');
+  assert.strictEqual(cur[6], 9, 'length field 9');
+  const b = r.parseAckNack(cur);
+  assert.ok(b && b.firstUnacked === 5 && b.bitmap() === 0x0f && b.stream === 0x80, 'DHEADER form parsed');
+});
+
+test('unannotatedTypes: final is the 13-octet golden, default the 17-octet form', () => {
+  const finalGolden = Buffer.from([0x80, 0x00, 0x01, 0x00, 0x0a, 0x01, 0x05, 0x00, 0x01, 0x00, 0x00, 0x00, 0x80]);
+  const body = { firstUnacked: 1, nackLo: 0, nackHi: 0, stream: 0x80 };
+  const fin = r.acknackFrame(body, 'final');
+  assert.ok(fin.equals(finalGolden), 'FINAL ACKNACK golden');
+  const app = r.acknackFrame(body);
+  assert.strictEqual(app.length, 17);
+  assert.ok(app.equals(r.acknackFrame(body, 'appendable')), 'default is appendable');
+  for (const f of [fin, app]) {
+    const a = r.parseAckNack(f);
+    assert.ok(a && a.firstUnacked === 1 && a.bitmap() === 0 && a.stream === 0x80, 'parsed');
+  }
+  assert.strictEqual(new r.ReliableReceiver(0x80, { unannotatedTypes: 'final' }).acknackFrame(null).length, 13);
+  assert.strictEqual(new r.ReliableReceiver().acknackFrame(null).length, 17);
+  assert.throws(() => r.acknackFrame(body, 'mutable'), RangeError);
+});
+
 test('write frame carries the RFC-1982 sample seq', () => {
-  const f = r.writeFrame(0x1234, Buffer.from([0xde, 0xad]));
+  const f = r.writeFrame(0x1234, 0x0015, Buffer.from([0xde, 0xad]));
   assert.strictEqual(f[1], 0x80, 'reliable stream id');
   assert.strictEqual(f[4], 0x07, 'WRITE_DATA id');
+  assert.strictEqual(f[5], 0x01, 'E-flag LE + FORMAT_DATA');
   assert.strictEqual(f[2] | (f[3] << 8), 0x1234, 'seq LE');
+  // BaseObjectRequest: request_id = the seq, object_id = the DataWriter.
+  assert.strictEqual((f[8] << 8) | f[9], 0x1234, 'request_id');
+  assert.strictEqual((f[10] << 8) | f[11], 0x0015, 'object_id');
   const p = r.parseWrite(f);
   assert.ok(p && p.seq === 0x1234 && p.sample.equals(Buffer.from([0xde, 0xad])));
 });
@@ -193,7 +225,7 @@ test('write frame carries the RFC-1982 sample seq', () => {
 test('async writer: overflow backpressure without loss', async () => {
   // Small deadline; no peer -> the window never drains, but submit must never
   // drop a sample. Bound the queue tiny via direct field to exercise waiters.
-  const w = new r.AsyncReliableWriter('127.0.0.1', 1); // unused port; never sends usefully
+  const w = new r.AsyncReliableWriter('127.0.0.1', 1, 0x0015); // unused port; never sends usefully
   // Don't start the drain loop: prove submit resolves once space exists by
   // manually draining the queue, i.e. no loss and no hang on a bounded queue.
   const sent = [];

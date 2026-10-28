@@ -1,0 +1,9 @@
+wireprobe-jacorb: the probe did not compile
+./_package/SamplePackageHelper.java:18: error: cannot find symbol
+./_package/typePackageHelper.java:18: error: cannot find symbol
+./Probe.java:47: error: cannot find symbol
+./Probe.java:48: error: cannot find symbol
+./Probe.java:48: error: cannot find symbol
+./Probe.java:49: error: cannot find symbol
+./Probe.java:49: error: cannot find symbol
+./Probe.java:62: error: cannot find symbol

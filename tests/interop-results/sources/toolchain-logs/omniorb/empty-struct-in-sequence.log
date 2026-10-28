@@ -1,0 +1,4 @@
+wireprobe-omniorb: omniidl failed
+gen.idl:3: Syntax error in member declaration
+omniidl: 1 error.
+wireprobe: omniidl ran under a 4194304K ceiling and a 300s clock

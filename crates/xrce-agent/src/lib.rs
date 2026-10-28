@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! XRCE Agent — DDS participant wrapper with a pull model (spec §7.3).
+//! XRCE Agent state machine: client registry, object slots and the pull
+//! queue of spec §7.3, without a DDS participant of its own.
 //!
 //! Crate `zerodds-xrce-agent`.
 //!
@@ -39,8 +40,16 @@ use alloc::string::String;
 
 use zerodds_xrce::header::{CLIENT_KEY_LEN, ClientKey};
 use zerodds_xrce::object_id::ObjectId;
+use zerodds_xrce::object_kind::ObjectKind;
 use zerodds_xrce::object_repr::ObjectVariant;
-use zerodds_xrce::object_store::{CreateOutcome, CreationMode, ObjectStore};
+use zerodds_xrce::object_store::{CreateOutcome, CreationMode, ObjectInstance, ObjectStore};
+
+/// `zerodds-xrce-agentd`: the session engine, DCPS bridge, transports and
+/// daemon wiring that turn this crate's state machine into a process XRCE
+/// clients connect to. Gated behind `daemon` so the plain state machine
+/// above stays embeddable (`alloc`-only, no DCPS stack).
+#[cfg(feature = "daemon")]
+pub mod daemon;
 
 /// BTreeMap-capable key from ClientKey (ClientKey itself has no
 /// `Ord` derive, because a hash container was envisaged in the original
@@ -157,6 +166,73 @@ impl XrceAgent {
         self.clients.len()
     }
 
+    /// Number of objects currently held in this client's object store
+    /// (participant, topics, publishers, subscribers, writers, readers,
+    /// types — spec §7.5). A daemon enforcing a `max_objects_per_client`
+    /// config limit checks this before calling [`Self::create_object`],
+    /// so the CREATE it refuses gets `STATUS_ERR_RESOURCES` back instead
+    /// of silently failing inside the store.
+    ///
+    /// # Errors
+    /// `UnknownClient` if `client_key` was never registered.
+    pub fn object_count(&self, client_key: ClientKey) -> Result<usize, AgentError> {
+        self.clients
+            .get(&ord_of(client_key))
+            .map(ObjectStore::len)
+            .ok_or(AgentError::UnknownClient)
+    }
+
+    /// Removes a client entirely: its object store and every pending
+    /// sample queued for it. Spec §8.4.9 (session DELETE) and the
+    /// session-timeout path both end here — without it a timed-out
+    /// session would leave its slot counted against `client_count()`
+    /// forever, so a fleet that only ever reconnects would eventually
+    /// be refused by a `max_clients` cap for sessions that are long gone.
+    ///
+    /// Returns `true` if the client was registered (and is now gone).
+    pub fn unregister_client(&mut self, client_key: ClientKey) -> bool {
+        let ord = ord_of(client_key);
+        let existed = self.clients.remove(&ord).is_some();
+        if existed {
+            self.samples.retain(|(k, _), _| *k != ord);
+            self.trace("UNREGISTER", ord, [0xFF, 0xFF]);
+        }
+        existed
+    }
+
+    /// Direct read access to one of a client's stored objects
+    /// (participant, topic, writer, reader, type, ...). The daemon's
+    /// `GET_INFO` handler uses this to answer with the object's stored
+    /// `ObjectVariant`; `None` if the client or the object is unknown.
+    #[must_use]
+    pub fn get_object(
+        &self,
+        client_key: ClientKey,
+        object_id: ObjectId,
+    ) -> Option<&ObjectInstance> {
+        self.clients.get(&ord_of(client_key))?.get(object_id)
+    }
+
+    /// The client's sole object of `kind`, or `None` if it has zero or
+    /// more than one. The daemon's CREATE dispatch uses this to resolve
+    /// an endpoint's/topic's implicit parent (a bare `CREATE(topic)`
+    /// carries no explicit `participant_id` on the wire — spec §9.3
+    /// Tab.15 nests it structurally instead): with exactly one
+    /// participant already created, that is unambiguously the parent; with
+    /// zero or several, the daemon reports `STATUS_ERR_UNKNOWN_REFERENCE`
+    /// rather than guessing which one.
+    #[must_use]
+    pub fn only_object_of_kind(&self, client_key: ClientKey, kind: ObjectKind) -> Option<ObjectId> {
+        let store = self.clients.get(&ord_of(client_key))?;
+        let mut iter = store.iter_by_kind(kind);
+        let first = iter.next()?.0;
+        if iter.next().is_some() {
+            None
+        } else {
+            Some(first)
+        }
+    }
+
     /// Spec §7.8.3 CREATE — registers an object in the client's slot.
     ///
     /// # Errors
@@ -204,7 +280,7 @@ impl XrceAgent {
     }
 
     /// DDS-side push: a new sample is added to a reader queue.
-    /// The client fetches it later via [`pull_sample`].
+    /// The client fetches it later via `pull_sample`.
     ///
     /// # Errors
     /// `UnknownClient`, `UnknownReader`, `QueueFull`.
@@ -495,9 +571,65 @@ mod tests {
         let elapsed = start.elapsed();
         assert!(
             elapsed.as_millis() < 100,
-            "1000 CREATE+DELETE-Ops dauerten {} ms (Spec-Floor 100ms)",
+            "1000 CREATE+DELETE-Ops took {} ms (Spec-Floor 100ms)",
             elapsed.as_millis()
         );
+    }
+
+    #[test]
+    fn object_count_tracks_creates_and_deletes() {
+        let mut a = XrceAgent::new();
+        let k = key(0x01);
+        a.register_client(k);
+        assert_eq!(a.object_count(k).expect("known client"), 0);
+        let reader = reader_id(0x010);
+        a.create_object(
+            k,
+            reader,
+            ObjectVariant::ByReference("R".into()),
+            CreationMode::default(),
+        )
+        .expect("create");
+        assert_eq!(a.object_count(k).expect("known client"), 1);
+        a.delete_object(k, reader).expect("delete");
+        assert_eq!(a.object_count(k).expect("known client"), 0);
+    }
+
+    #[test]
+    fn object_count_unknown_client_rejected() {
+        let a = XrceAgent::new();
+        assert_eq!(a.object_count(key(0x99)), Err(AgentError::UnknownClient));
+    }
+
+    #[test]
+    fn unregister_client_drops_objects_and_samples() {
+        let mut a = XrceAgent::new();
+        let k = key(0x01);
+        a.register_client(k);
+        let reader = reader_id(0x010);
+        a.create_object(
+            k,
+            reader,
+            ObjectVariant::ByReference("R".into()),
+            CreationMode::default(),
+        )
+        .expect("create");
+        a.submit_sample(k, reader, alloc::vec![1]).expect("submit");
+        assert_eq!(a.client_count(), 1);
+
+        assert!(a.unregister_client(k));
+        assert_eq!(a.client_count(), 0);
+        assert!(!a.has_client(k));
+        // A re-registered client under the same key starts from zero —
+        // no leftover sample from the deleted session leaks into it.
+        a.register_client(k);
+        assert_eq!(a.pending_samples(k, reader), 0);
+    }
+
+    #[test]
+    fn unregister_unknown_client_returns_false() {
+        let mut a = XrceAgent::new();
+        assert!(!a.unregister_client(key(0x99)));
     }
 
     #[test]
@@ -526,5 +658,53 @@ mod tests {
         // Client 2 does NOT see client 1's sample.
         assert_eq!(a.pending_samples(k2, reader), 0);
         assert_eq!(a.pending_samples(k1, reader), 1);
+    }
+
+    #[test]
+    fn get_object_returns_stored_variant() {
+        let mut a = XrceAgent::new();
+        let k = key(0x01);
+        a.register_client(k);
+        let topic = ObjectId::new(0x010, ObjectKind::Topic).unwrap();
+        a.create_object(
+            k,
+            topic,
+            ObjectVariant::ByReference("T".into()),
+            CreationMode::default(),
+        )
+        .expect("create");
+        let got = a.get_object(k, topic).expect("present");
+        assert_eq!(got.variant, ObjectVariant::ByReference("T".into()));
+        assert!(
+            a.get_object(k, ObjectId::new(0x020, ObjectKind::Topic).unwrap())
+                .is_none()
+        );
+        assert!(a.get_object(key(0x99), topic).is_none());
+    }
+
+    #[test]
+    fn only_object_of_kind_none_when_zero_or_many() {
+        let mut a = XrceAgent::new();
+        let k = key(0x01);
+        a.register_client(k);
+        assert!(a.only_object_of_kind(k, ObjectKind::Participant).is_none());
+        let p1 = ObjectId::new(0x010, ObjectKind::Participant).unwrap();
+        a.create_object(
+            k,
+            p1,
+            ObjectVariant::ByReference("P1".into()),
+            CreationMode::default(),
+        )
+        .expect("create p1");
+        assert_eq!(a.only_object_of_kind(k, ObjectKind::Participant), Some(p1));
+        let p2 = ObjectId::new(0x020, ObjectKind::Participant).unwrap();
+        a.create_object(
+            k,
+            p2,
+            ObjectVariant::ByReference("P2".into()),
+            CreationMode::default(),
+        )
+        .expect("create p2");
+        assert!(a.only_object_of_kind(k, ObjectKind::Participant).is_none());
     }
 }

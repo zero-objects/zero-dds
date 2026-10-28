@@ -35,25 +35,34 @@ c.close()
 "#,
         q = queue
     );
-    // declare first
-    Command::new("python3")
-        .arg("-c")
-        .arg(&py)
-        .arg("declare")
-        .output()
-        .expect("pika declare");
-    // (re)used below for get
+    run_pika(&py, "declare");
+    run_pika(&py, "get")
+}
+
+/// Run one `pika` script and return its stdout.
+///
+/// The exit status is checked. It was not, and a host without the `pika`
+/// module ran the reference client not at all: the script failed, the
+/// helper returned an empty string, and the assertion that followed
+/// reported the ZeroDDS client as broken. A cross-protocol test whose
+/// reference side can silently not run is not a cross-protocol test.
+fn run_pika(script: &str, mode: &str) -> String {
     let out = Command::new("python3")
         .arg("-c")
-        .arg(&py)
-        .arg("get")
+        .arg(script)
+        .arg(mode)
         .output()
-        .expect("pika get");
+        .expect("run python3");
+    assert!(
+        out.status.success(),
+        "the pika reference client failed ({mode}): {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     String::from_utf8_lossy(&out.stdout).trim().to_string()
 }
 
 #[test]
-#[ignore = "needs live RabbitMQ 4.0 on localhost:5672 (codepit); set AMQP_RABBITMQ=1"]
+#[ignore = "needs live RabbitMQ 4.0 on localhost:5672 (Linux test host); set AMQP_RABBITMQ=1"]
 fn zerodds_amqp10_publish_consumed_by_pika() {
     if std::env::var("AMQP_RABBITMQ").is_err() {
         eprintln!("AMQP_RABBITMQ not set — skipping live RabbitMQ 1.0 e2e");
@@ -96,15 +105,11 @@ c.close()
         q = queue,
         body = payload
     );
-    Command::new("python3")
-        .arg("-c")
-        .arg(&py)
-        .output()
-        .expect("pika publish");
+    let _ = run_pika(&py, "publish");
 }
 
 #[test]
-#[ignore = "needs live RabbitMQ 4.0 on localhost:5672 (codepit); set AMQP_RABBITMQ=1"]
+#[ignore = "needs live RabbitMQ 4.0 on localhost:5672 (Linux test host); set AMQP_RABBITMQ=1"]
 fn zerodds_amqp10_consumes_pika_published() {
     if std::env::var("AMQP_RABBITMQ").is_err() {
         eprintln!("AMQP_RABBITMQ not set — skipping live RabbitMQ 1.0 consume e2e");

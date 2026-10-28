@@ -1,0 +1,165 @@
+#!/bin/bash
+# wireprobe-zerodds-ocaml — one IDL type and one JSON value, through the
+# ZeroDDS OCaml binding built by the shared codec walk.
+#
+# The same command line as `wireprobe-zerodds`, so a case runs through
+# both by substituting the program name. See
+# `docs/specs/zerodds-interop-suite-1.0.md` §3a.
+#
+#   wireprobe-zerodds-ocaml --idl robot.idl --type common::Robot \
+#                           --values robot.json --encoding xcdr2 \
+#                           --endian le --out robot.zerodds-ocaml.xcdr2.le.bin
+#
+#   wireprobe-zerodds-ocaml --idl robot.idl --type common::Robot \
+#                           --in robot.cyclone.xcdr2.le.bin \
+#                           --encoding xcdr2 --endian le \
+#                           --values-out robot.read.json
+#
+# ## What is shared with the Rust probe and what is not
+#
+# Shared: the frontend, the common AST and the layout plan. Which
+# members are written, in what order, with which header and which length
+# code is `zerodds-ast-layout`'s answer, and a second answer would be a
+# second place for the wire format to live.
+#
+# Not shared: the serialiser. The generated program calls
+# `runtime/ocaml` (`zdwire.ml`), which implements DDS-XTypes 1.3 §7.4 a
+# further time in OCaml. Nothing here reaches the Rust runtime through
+# FFI: a probe that did would be byte-identical by construction and
+# would prove nothing about whether the two read the specification the
+# same way.
+#
+# ## The toolchain
+#
+# `ocamlc`, the bytecode compiler, with `ocamlopt` where the bytecode
+# one is not installed and `ZERODDS_OCAML_COMPILER` to name either. The
+# generated program and the runtime use nothing outside the OCaml
+# standard library, so neither dune nor findlib is needed to build the
+# probe — `runtime/ocaml` still carries a dune project for a consumer
+# that wants the library form.
+#
+# The bytecode compiler is the default because it is what a probe costs
+# least in: one case measured 0.55 s through `ocamlc` and 2.9 s through
+# `ocamlopt` on an M1, and a program that writes a few hundred octets
+# once has nothing to gain from native code. The octets are the same
+# either way — 60 corpus cases were compiled both ways and compared,
+# 60 identical.
+#
+# ## The exit codes
+#
+# `docs/specs/zerodds-verdicts-1.0.md`, and structural rather than read
+# out of a message:
+#
+#   0  it carried the case
+#   1  the sample is outside the type — `primitive-char-above-latin1` is
+#      a `char` holding U+0161 and §7.2.2.2.1.2.2 says a CHAR_8_TYPE
+#      "shall be representable using 8 bits". The refusal happens at run
+#      time, in `Zdwire.checked_char`, so it is the runtime's and not a
+#      gap.
+#   2  the command line
+#   3  no-form — OCaml has no form for the construct, which is
+#      `adapter/ocaml.rs`'s answer and nobody else's
+#   6  harness-gap — a tool of ours has not written it: the generator
+#      did not build, the walk stopped, or the toolchain is missing
+#   7  generator-defect — the generator accepted the case and the OCaml
+#      it produced does not compile
+set -euo pipefail
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+root="$(cd "$here/../.." && pwd)"
+runtime="${ZERODDS_OCAML_RUNTIME:-$root/runtime/ocaml}"
+
+OCAMLC="${ZERODDS_OCAML_COMPILER:-}"
+if [ -n "$OCAMLC" ]; then
+    command -v "$OCAMLC" >/dev/null 2>&1 || {
+        echo "wireprobe-zerodds-ocaml: ZERODDS_OCAML_COMPILER names \`$OCAMLC\`, which is not on the path" >&2
+        exit 9
+    }
+elif command -v ocamlc >/dev/null 2>&1; then
+    OCAMLC="ocamlc"
+elif command -v ocamlopt >/dev/null 2>&1; then
+    OCAMLC="ocamlopt"
+else
+    echo "wireprobe-zerodds-ocaml: neither \`ocamlc\` nor \`ocamlopt\` is on the path; the OCaml column is unmeasured here" >&2
+    exit 9
+fi
+
+gen="${WIREPROBE_OCAML_GEN:-}"
+if [ -z "$gen" ]; then
+    gen="${CARGO_TARGET_DIR:-$root/target}/debug/wireprobe-zerodds-ocaml-gen"
+    # Built when it is missing *or stale*: a generator older than the
+    # sources it came from measures the previous build.
+    . "$here/generator.sh"
+    probe_generator zerodds-wireprobe-ocaml-gen "$gen" "$root" || exit 6
+fi
+
+out=""
+values_out=""
+argv=()
+idl=""
+reading=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --out) out="$2"; shift 2 ;;
+        --values-out) values_out="$2"; argv+=("$1" "$2"); shift 2 ;;
+        --in) reading=1; argv+=("$1" "$2"); shift 2 ;;
+        --idl|--type|--values|--encoding|--endian|--emit|--dialect)
+            if [ "$1" = --idl ]; then idl="$2"; fi
+            argv+=("$1" "$2"); shift 2 ;;
+        --help|-h) sed -n '2,65p' "${BASH_SOURCE[0]}"; exit 0 ;;
+        *) echo "wireprobe-zerodds-ocaml: \`$1\` is not an option" >&2; exit 2 ;;
+    esac
+done
+
+. "$here/diagnostics.sh"
+
+work="$(mktemp -d)"
+trap 'probe_keep_generated "$work" "zerodds-ocaml" "$idl" main.ml; rm -rf "$work"' EXIT
+
+# The generator's own code passes straight through: 3 is "OCaml has no
+# form for it" and 6 is "a tool of ours stopped", and folding the two
+# into one here would lose the distinction the ledger turns on.
+code=0
+"$gen" "${argv[@]}" --out-dir "$work" || code=$?
+[ "$code" = 0 ] || exit "$code"
+
+cp "$runtime/zdwire.ml" "$work/zdwire.ml"
+
+# The compile is the syntax and type check in one: a generated file that
+# is not OCaml is the generator's defect, exit 7, which every compiled
+# column reports the same way. `-w -a` because generated code carries
+# shapes a human would not write — an unused `let rec`, a one-field
+# `with` update — and the errors are the gate.
+if ! (cd "$work" && "$OCAMLC" -w -a -o probe zdwire.ml main.ml) > "$work/build.log" 2>&1; then
+    echo "wireprobe-zerodds-ocaml: the generated OCaml does not compile" >&2
+    head -20 "$work/build.log" >&2 || true
+    probe_diagnostics_after "zerodds-ocaml" "$work" "$idl" 7
+    exit 7
+fi
+probe_diagnostics_after "zerodds-ocaml" "$work" "$idl" 0
+
+code=0
+"$work/probe" > "$work/bytes.bin" 2> "$work/run.log" || code=$?
+if [ "$code" != 0 ]; then
+    head -5 "$work/run.log" >&2 || true
+    [ "$code" = 1 ] && exit 1
+    [ "$code" = 3 ] && exit 3
+    echo "wireprobe-zerodds-ocaml: the probe did not run" >&2
+    exit 6
+fi
+
+# The read direction writes its JSON where `--values-out` said and puts
+# nothing on stdout, so there are no octets to hand back.
+if [ "$reading" = 1 ]; then
+    [ -n "$values_out" ] || {
+        echo "wireprobe-zerodds-ocaml: --in without --values-out" >&2
+        exit 2
+    }
+    exit 0
+fi
+
+if [ -n "$out" ]; then
+    cp "$work/bytes.bin" "$out"
+else
+    od -An -tx1 -v "$work/bytes.bin" | tr -d ' \n'; echo
+fi

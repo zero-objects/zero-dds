@@ -24,12 +24,27 @@ public final class DiscoveryData {
         public long builtinEndpointSet;
         public int leaseSeconds = 100;
         public long lastSeenMillis;
+        /**
+         * The participant's USER_DATA (DDS 1.4 §2.2.5
+         * ParticipantBuiltinTopicData, {@code PID_USER_DATA}); empty if the
+         * announcement has none.
+         */
+        public byte[] userData = new byte[0];
     }
 
     /** Build the SPDP participant payload (encapsulation + ParameterList). */
     public static byte[] buildParticipant(byte[] guidPrefix12, int domain,
                                           Locator metatrafficUnicast, Locator defaultUnicast,
                                           long builtinEndpointSet, int leaseSeconds) {
+        return buildParticipant(guidPrefix12, domain, metatrafficUnicast, defaultUnicast,
+                builtinEndpointSet, leaseSeconds, new byte[0]);
+    }
+
+    /** As above, with the USER_DATA of the participant. */
+    public static byte[] buildParticipant(byte[] guidPrefix12, int domain,
+                                          Locator metatrafficUnicast, Locator defaultUnicast,
+                                          long builtinEndpointSet, int leaseSeconds,
+                                          byte[] userData) {
         ParameterList pl = new ParameterList();
         pl.add(Rtps.PID_PROTOCOL_VERSION,
                 ParameterList.twoBytesPadded((byte) Rtps.VERSION_MAJOR, (byte) Rtps.VERSION_MINOR));
@@ -41,6 +56,9 @@ public final class DiscoveryData {
         pl.add(Rtps.PID_DOMAIN_ID, ParameterList.u32(domain));
         pl.add(Rtps.PID_BUILTIN_ENDPOINT_SET, ParameterList.u32(builtinEndpointSet));
         pl.add(Rtps.PID_PARTICIPANT_LEASE_DURATION, ParameterList.duration(leaseSeconds, 0));
+        QosParameters user = new QosParameters();
+        user.userData = userData;
+        user.writeTo(pl, QosParameters.Entity.PARTICIPANT);
         return withEncap(Rtps.ENCAP_PL_CDR_LE, pl);
     }
 
@@ -71,6 +89,12 @@ public final class DiscoveryData {
         if (lease != null && lease.length >= 4) {
             p.leaseSeconds = (int) Wire.u32le(lease, 0);
         }
+        try {
+            byte[] user = QosParameters.readFrom(pl, QosParameters.Entity.PARTICIPANT).userData;
+            p.userData = user == null ? new byte[0] : user;
+        } catch (IllegalArgumentException malformed) {
+            return null;
+        }
         return p.guidPrefix == null ? null : p;
     }
 
@@ -86,6 +110,16 @@ public final class DiscoveryData {
         public int durabilityKind = Rtps.DURABILITY_VOLATILE;
         public Locator unicastLocator; // where to send DATA to this endpoint
         public byte[] typeId; // ZeroDDS TypeIdentifier hash (may be null/empty)
+        public byte[] typeInformation; // Standard 0x75 bytes; retained, not a type-resolution result
+        // An absent DataRepresentation QoS has the DDS XCDR1 default.
+        public int[] dataRepresentations = new int[] {Rtps.DATA_REP_XCDR1};
+        /**
+         * The QoS policies of the announcement (DDS 1.4 §2.2.5, DDSI-RTPS 2.5
+         * Table 9.13); a policy with no parameter is {@code null} in it.
+         */
+        public QosParameters qos = new QosParameters();
+        /** The DDS-RPC 1.0 §7.6.2.1 discovery extensions of the endpoint. */
+        public RpcDiscovery rpc = RpcDiscovery.NONE;
     }
 
     /**
@@ -96,24 +130,85 @@ public final class DiscoveryData {
                                        byte[] endpointGuid16, String topic, String type,
                                        int reliabilityKind, int durabilityKind,
                                        int[] dataReps, Locator unicast, byte[] typeId) {
+        return buildEndpoint(writer, participantPrefix12, endpointGuid16, topic, type,
+                reliabilityKind, durabilityKind, dataReps, unicast, typeId, new byte[0]);
+    }
+
+    public static byte[] buildEndpoint(boolean writer, byte[] participantPrefix12,
+                                       byte[] endpointGuid16, String topic, String type,
+                                       int reliabilityKind, int durabilityKind,
+                                       int[] dataReps, Locator unicast, byte[] typeId, byte[] typeInformation) {
+        return buildEndpoint(writer, participantPrefix12, endpointGuid16, topic, type,
+                reliabilityKind, durabilityKind, dataReps, unicast, typeId, typeInformation, null);
+    }
+
+    /**
+     * Builds an SEDP endpoint payload that carries {@code qos}: every policy
+     * of the endpoint's built-in topic data (DDS 1.4 §2.2.5) on its
+     * ParameterId. With {@code qos == null} only the reliability and
+     * durability kinds are announced, as the overloads without it do.
+     */
+    public static byte[] buildEndpoint(boolean writer, byte[] participantPrefix12,
+                                       byte[] endpointGuid16, String topic, String type,
+                                       int reliabilityKind, int durabilityKind,
+                                       int[] dataReps, Locator unicast, byte[] typeId, byte[] typeInformation,
+                                       QosParameters qos) {
+        return buildEndpoint(writer, participantPrefix12, endpointGuid16, topic, type,
+                reliabilityKind, durabilityKind, dataReps, unicast, typeId, typeInformation, qos,
+                RpcDiscovery.NONE);
+    }
+
+    /**
+     * As the overload with {@code qos}, and with the DDS-RPC 1.0 §7.6.2.1.2 parameters
+     * {@code rpc} carries (nothing for {@link RpcDiscovery#NONE}).
+     */
+    public static byte[] buildEndpoint(boolean writer, byte[] participantPrefix12,
+                                       byte[] endpointGuid16, String topic, String type,
+                                       int reliabilityKind, int durabilityKind,
+                                       int[] dataReps, Locator unicast, byte[] typeId, byte[] typeInformation,
+                                       QosParameters qos, RpcDiscovery rpc) {
         ParameterList pl = new ParameterList();
         pl.add(Rtps.PID_PARTICIPANT_GUID,
                 new Guid(participantPrefix12, Guid.ENTITYID_PARTICIPANT).bytes());
         pl.add(Rtps.PID_ENDPOINT_GUID, endpointGuid16.clone());
         pl.add(Rtps.PID_TOPIC_NAME, ParameterList.cdrString(topic));
         pl.add(Rtps.PID_TYPE_NAME, ParameterList.cdrString(type));
-        pl.add(Rtps.PID_DURABILITY, ParameterList.u32(durabilityKind));
-        pl.add(Rtps.PID_RELIABILITY, ParameterList.kindDuration(reliabilityKind, 0, 0x19999999L));
-        if (writer) {
-            pl.add(Rtps.PID_OWNERSHIP_STRENGTH, ParameterList.u32(0));
+        if (qos == null) {
+            pl.add(Rtps.PID_DURABILITY, ParameterList.u32(durabilityKind));
+            pl.add(Rtps.PID_RELIABILITY, ParameterList.kindDuration(reliabilityKind, 0, 0x19999999L));
+            if (writer) {
+                pl.add(Rtps.PID_OWNERSHIP_STRENGTH, ParameterList.u32(0));
+            }
+        } else {
+            // The data representations are the endpoint's own (the codec it
+            // implements), whatever the QoS object holds.
+            QosParameters announced = qos.shallowCopy();
+            announced.dataRepresentation = dataReps;
+            if (typeInformation != null && typeInformation.length > 0) {
+                announced.typeInformation = typeInformation;
+            }
+            announced.writeTo(pl, writer ? QosParameters.Entity.PUBLICATION
+                    : QosParameters.Entity.SUBSCRIPTION);
         }
         if (typeId != null && typeId.length > 0) {
             pl.add(Rtps.PID_ZERODDS_TYPE_ID, typeId.clone());
         }
-        pl.add(Rtps.PID_DATA_REPRESENTATION, ParameterList.dataRepresentation(dataReps));
+        if (typeInformation == null) throw new IllegalArgumentException("Null TypeInformation");
+        if (typeInformation.length > 0) {
+            // ParameterList's length field is unsigned 16-bit, including its
+            // four-byte padding. Refuse overflow rather than truncate metadata.
+            if (typeInformation.length > 65532) throw new IllegalArgumentException("TypeInformation exceeds SEDP parameter length");
+            if (pl.find(Rtps.PID_TYPE_INFORMATION) == null) {
+                pl.add(Rtps.PID_TYPE_INFORMATION, typeInformation.clone());
+            }
+        }
+        if (pl.find(Rtps.PID_DATA_REPRESENTATION) == null) {
+            pl.add(Rtps.PID_DATA_REPRESENTATION, ParameterList.dataRepresentation(dataReps));
+        }
         // SEDP endpoints announce their locator via PID_UNICAST_LOCATOR (0x2f),
         // not the SPDP PID_DEFAULT_UNICAST_LOCATOR (0x31).
         pl.add(Rtps.PID_UNICAST_LOCATOR, locatorBytes(unicast));
+        rpc.writeTo(pl);
         return withEncap(Rtps.ENCAP_PL_CDR_LE, pl);
     }
 
@@ -124,6 +219,16 @@ public final class DiscoveryData {
         }
         Endpoint e = new Endpoint();
         e.writer = writer;
+        byte[] reps = pl.find(Rtps.PID_DATA_REPRESENTATION);
+        if (reps != null) {
+            if (reps.length < 4) return null;
+            long count = Wire.u32le(reps, 0);
+            if (count == 0 || count > (reps.length - 4) / 2 || (writer && count != 1)) return null;
+            e.dataRepresentations = new int[(int) count];
+            for (int i = 0; i < count; i++) {
+                e.dataRepresentations[i] = (reps[4 + 2 * i] & 255) | ((reps[5 + 2 * i] & 255) << 8);
+            }
+        }
         byte[] pg = pl.find(Rtps.PID_PARTICIPANT_GUID);
         if (pg != null && pg.length >= 12) {
             e.participantPrefix = Wire.slice(pg, 0, 12);
@@ -165,7 +270,19 @@ public final class DiscoveryData {
                 e.unicastLocator = Locator.readLe(loc, 0);
             }
         }
+        try {
+            e.qos = QosParameters.readFrom(pl, writer
+                    ? QosParameters.Entity.PUBLICATION : QosParameters.Entity.SUBSCRIPTION);
+        } catch (IllegalArgumentException malformed) {
+            return null;
+        }
+        RpcDiscovery rpc = RpcDiscovery.readFrom(pl);
+        if (rpc == null) {
+            return null; // a string beyond string<256> (DDS-RPC 1.0 §7.6.2.1.2)
+        }
+        e.rpc = rpc;
         e.typeId = pl.find(Rtps.PID_ZERODDS_TYPE_ID);
+        e.typeInformation = pl.find(Rtps.PID_TYPE_INFORMATION);
         if (e.topicName == null || e.typeName == null || e.endpointGuid == null) {
             return null;
         }
@@ -202,11 +319,11 @@ public final class DiscoveryData {
         return ParameterList.fromBytesLe(payload, 4, payload.length);
     }
 
-    /** Unused list helper kept for symmetry with the Rust find_all API. */
+    /** All matching parameters, used to ingest multiple endpoint locators. */
     static List<byte[]> findAll(ParameterList pl, int id) {
         List<byte[]> out = new ArrayList<>();
         for (ParameterList.Parameter p : pl.params()) {
-            if ((p.id & 0x3FFF) == (id & 0x3FFF)) {
+            if (ParameterList.sameId(p.id, id)) {
                 out.add(p.value);
             }
         }

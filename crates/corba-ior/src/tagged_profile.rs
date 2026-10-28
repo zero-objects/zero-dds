@@ -16,9 +16,9 @@
 
 use alloc::vec::Vec;
 
-use zerodds_cdr::{BufferReader, BufferWriter, Endianness};
 use zerodds_corba_iiop::IiopProfileBody;
 use zerodds_corba_iiop::profile_body::CdrError;
+use zerodds_wire::{Endianness, Reader, Writer};
 
 use crate::profile_tags::ProfileId;
 
@@ -61,11 +61,11 @@ impl TaggedProfile {
     ///
     /// # Errors
     /// Buffer write error.
-    pub fn encode(&self, w: &mut BufferWriter) -> Result<(), CdrError> {
-        w.write_u32(self.tag.as_u32())?;
+    pub fn encode(&self, w: &mut Writer) -> Result<(), CdrError> {
+        w.write_u32(self.tag.as_u32());
         let n = u32::try_from(self.profile_data.len()).map_err(|_| CdrError::Overflow)?;
-        w.write_u32(n)?;
-        w.write_bytes(&self.profile_data)?;
+        w.write_u32(n);
+        w.write_bytes(&self.profile_data);
         Ok(())
     }
 
@@ -73,7 +73,7 @@ impl TaggedProfile {
     ///
     /// # Errors
     /// Buffer read error.
-    pub fn decode(r: &mut BufferReader<'_>) -> Result<Self, CdrError> {
+    pub fn decode(r: &mut Reader<'_>) -> Result<Self, CdrError> {
         let tag = ProfileId::from_u32(r.read_u32()?);
         let n = r.read_u32()? as usize;
         let bytes = r.read_bytes(n)?;
@@ -99,10 +99,10 @@ mod tests {
             alloc::vec![0xab],
         );
         let p = TaggedProfile::iiop(&body, Endianness::Big).unwrap();
-        let mut w = BufferWriter::new(Endianness::Big);
+        let mut w = Writer::new(Endianness::Big);
         p.encode(&mut w).unwrap();
-        let bytes = w.into_bytes();
-        let mut r = BufferReader::new(&bytes, Endianness::Big);
+        let bytes = w.finish();
+        let mut r = Reader::new(&bytes, Endianness::Big);
         let decoded = TaggedProfile::decode(&mut r).unwrap();
         assert_eq!(decoded, p);
     }
@@ -135,10 +135,10 @@ mod tests {
             tag: ProfileId::Other(99),
             profile_data: alloc::vec::Vec::new(),
         };
-        let mut w = BufferWriter::new(Endianness::Big);
+        let mut w = Writer::new(Endianness::Big);
         p.encode(&mut w).unwrap();
-        let bytes = w.into_bytes();
-        let mut r = BufferReader::new(&bytes, Endianness::Big);
+        let bytes = w.finish();
+        let mut r = Reader::new(&bytes, Endianness::Big);
         let decoded = TaggedProfile::decode(&mut r).unwrap();
         assert_eq!(decoded, p);
     }

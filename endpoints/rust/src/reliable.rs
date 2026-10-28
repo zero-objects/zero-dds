@@ -17,8 +17,17 @@
 //! Wire (little-endian, byte-identical to `endpoints/c` + `crates/xrce`):
 //! 8-byte header `[session, stream, seq_lo, seq_hi, submsg, flags, len_lo, len_hi]`
 //! then body. WRITE_DATA `0x07`/`0x03` on stream `0x80` (header seq = sample seq).
-//! HEARTBEAT `0x0B` / ACKNACK `0x0A` `0x01` on stream `0x00` (control), body = 5
-//! bytes; the target reliable stream id travels in the body's last byte.
+//! HEARTBEAT `0x0B` / ACKNACK `0x0A` `0x01` on stream `0x00` (control). The
+//! HEARTBEAT body is 5 bytes (`HEARTBEAT_Payload` is FINAL in Annex A). The
+//! ACKNACK body is 9 bytes by default: `ACKNACK_Payload` has no
+//! `@extensibility` in Annex A, so it is APPENDABLE (DDS-XTypes 1.3
+//! §7.3.1.2.1.8) and a DHEADER (`5`) precedes its 5 bytes. With
+//! [`UnannotatedTypes::Final`] the body is 5 bytes (the form the eProsima
+//! client sends). The target reliable stream id travels in the body's last
+//! byte. Both forms are read in either setting.
+//!
+//! `ACKNACK_Payload` is the only type without `@extensibility` that this
+//! module writes.
 
 use std::collections::BTreeMap;
 use std::net::UdpSocket;
@@ -27,14 +36,19 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
+use crate::FrameError;
+
 /// Heartbeat period (spec recommends 100 ms; 500 ms conservative without Tx pacing).
 pub const HEARTBEAT_PERIOD: Duration = Duration::from_millis(500);
 /// In-flight sender window — matches the 16-bit ACKNACK bitmap.
 pub const SENDER_WINDOW: usize = 16;
 /// Out-of-order receiver buffer cap (DoS bound).
 pub const RECEIVER_BUFFER: usize = 64;
-/// Per-sample payload cap (u16 submessage length limit).
-pub const MAX_PAYLOAD: usize = 65_535;
+/// Wire size of the `BaseObjectRequest` preceding the sample (§7.7.8).
+pub const BASE_SIZE: usize = 4;
+/// Per-sample payload cap: the largest sample whose body (`BaseObjectRequest` +
+/// sample, §7.7.8) still fits the 16-bit `submessage_length`.
+pub const MAX_PAYLOAD: usize = 0xFFFF - BASE_SIZE;
 
 /// Reliable stream id (bit 7 set), carried in the WRITE_DATA header + control body.
 pub const RELIABLE_STREAM_ID: u8 = 0x80;
@@ -43,8 +57,24 @@ const XRCE_STREAM_NONE: u8 = 0x00;
 const SM_WRITE_DATA: u8 = 0x07;
 const SM_ACKNACK: u8 = 0x0A;
 const SM_HEARTBEAT: u8 = 0x0B;
-const WRITE_FLAGS: u8 = 0x03;
+/// Data-submessage flags: E flag (little-endian body) + `DataFormat`
+/// `FORMAT_DATA` (`0b000`) in bits 1..3 — DDS-XRCE 1.0 §8.3.5.8.
+const WRITE_FLAGS: u8 = 0x01;
 const CTRL_FLAGS: u8 = 0x01;
+
+/// Extensibility of the Annex A types that carry no `@extensibility`
+/// (DDS-XRCE 1.0 Annex A; the only one written in this module is
+/// `ACKNACK_Payload`). By DDS-XTypes 1.3 §7.3.1.2.1.8 they are APPENDABLE and
+/// carry a DHEADER; `Final` writes the form of the reference implementation
+/// (eProsima) without it. Readers accept both forms in either setting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum UnannotatedTypes {
+    /// APPENDABLE with DHEADER (DDS-XTypes 1.3 §7.3.1.2.1.8); default.
+    #[default]
+    Appendable,
+    /// FINAL, no DHEADER (reference implementation).
+    Final,
+}
 
 /// Errors the reliable sender can return.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -91,11 +121,20 @@ pub struct AckNack {
 }
 
 /// Builds a reliable WRITE_DATA frame; the header seq carries the sample seqnr.
-#[must_use]
-pub fn write_frame(seq: u16, sample: &[u8]) -> Vec<u8> {
+/// The submessage body is the `BaseObjectRequest` (§7.7.8 — `request_id` then
+/// `object_id`, each two octets most-significant-first) followed by the sample.
+/// `writer_id` names the target DataWriter; the `request_id` is the sample's
+/// own sequence number, unique per stream as §7.7.8 requires.
+///
+/// # Errors
+/// [`FrameError::BodyTooLarge`] when `BASE_SIZE + sample.len()` exceeds
+/// `0xFFFF`: refuse rather than truncate the length while copying the whole
+/// payload.
+pub fn write_frame(seq: u16, writer_id: u16, sample: &[u8]) -> Result<Vec<u8>, FrameError> {
+    let n = u16::try_from(BASE_SIZE + sample.len()).map_err(|_| FrameError::BodyTooLarge)?;
     let s = seq.to_le_bytes();
-    let n = (u16::try_from(sample.len()).unwrap_or(u16::MAX)).to_le_bytes();
-    let mut out = Vec::with_capacity(8 + sample.len());
+    let n = n.to_le_bytes();
+    let mut out = Vec::with_capacity(8 + BASE_SIZE + sample.len());
     out.extend_from_slice(&[
         XRCE_SESSION_NOKEY,
         RELIABLE_STREAM_ID,
@@ -106,17 +145,28 @@ pub fn write_frame(seq: u16, sample: &[u8]) -> Vec<u8> {
         n[0],
         n[1],
     ]);
+    out.extend_from_slice(&seq.to_be_bytes()); // request_id
+    out.extend_from_slice(&writer_id.to_be_bytes()); // object_id
     out.extend_from_slice(sample);
-    out
+    Ok(out)
 }
 
-/// Parses a reliable WRITE_DATA frame into `(seq, sample)`.
+/// Parses a reliable WRITE_DATA frame into `(seq, sample)`. The sample starts
+/// after the `BaseObjectRequest`; a body too short to hold one is refused
+/// rather than handed back truncated.
 #[must_use]
 pub fn unframe(frame: &[u8]) -> Option<(u16, &[u8])> {
-    if frame.len() < 8 || frame[4] != SM_WRITE_DATA {
+    if frame.len() < 8 + BASE_SIZE || frame[4] != SM_WRITE_DATA {
         return None;
     }
-    Some((u16::from_le_bytes([frame[2], frame[3]]), &frame[8..]))
+    let sm_len = usize::from(u16::from_le_bytes([frame[6], frame[7]]));
+    if sm_len < BASE_SIZE || 8 + sm_len > frame.len() {
+        return None;
+    }
+    Some((
+        u16::from_le_bytes([frame[2], frame[3]]),
+        &frame[8 + BASE_SIZE..8 + sm_len],
+    ))
 }
 
 /// Builds a HEARTBEAT control frame. `msg_seq` is the control-stream sequence
@@ -156,26 +206,45 @@ pub fn parse_heartbeat(frame: &[u8]) -> Option<Heartbeat> {
     })
 }
 
-/// Builds an ACKNACK control frame. Byte-identical to `golden_acknack_le.bin`.
+/// Builds an ACKNACK control frame in the APPENDABLE form
+/// ([`UnannotatedTypes::Appendable`], 17 octets). Byte-identical to
+/// `golden_acknack_le.bin`.
 #[must_use]
 pub fn acknack_frame(ack: AckNack, msg_seq: u16) -> Vec<u8> {
+    acknack_frame_with(ack, msg_seq, UnannotatedTypes::Appendable)
+}
+
+/// Builds an ACKNACK control frame in the form selected by `mode`:
+/// [`UnannotatedTypes::Appendable`] writes a 9-octet body (DHEADER `5`, 17-octet
+/// frame), [`UnannotatedTypes::Final`] the 5-octet body (13-octet frame).
+#[must_use]
+pub fn acknack_frame_with(ack: AckNack, msg_seq: u16, mode: UnannotatedTypes) -> Vec<u8> {
     let m = msg_seq.to_le_bytes();
     let f = ack.first_unacked.to_le_bytes();
-    vec![
+    let appendable = mode == UnannotatedTypes::Appendable;
+    let mut out = Vec::with_capacity(17);
+    out.extend_from_slice(&[
         XRCE_SESSION_NOKEY,
         XRCE_STREAM_NONE,
         m[0],
         m[1],
         SM_ACKNACK,
         CTRL_FLAGS,
-        5,
+        if appendable { 9 } else { 5 },
         0,
+    ]);
+    if appendable {
+        // DHEADER: the 5 octets of the members.
+        out.extend_from_slice(&[5, 0, 0, 0]);
+    }
+    out.extend_from_slice(&[
         f[0],
         f[1],
         ack.nack_bitmap[0],
         ack.nack_bitmap[1],
         ack.stream_id,
-    ]
+    ]);
+    out
 }
 
 /// Parses an ACKNACK frame (keys on the submessage id; header is ignored).
@@ -184,10 +253,19 @@ pub fn parse_acknack(frame: &[u8]) -> Option<AckNack> {
     if frame.len() < 13 || frame[4] != SM_ACKNACK {
         return None;
     }
+    // The body is 9 octets with the DHEADER (APPENDABLE), 5 without.
+    let at = if u16::from_le_bytes([frame[6], frame[7]]) >= 9 {
+        if frame.len() < 17 {
+            return None;
+        }
+        12
+    } else {
+        8
+    };
     Some(AckNack {
-        first_unacked: i16::from_le_bytes([frame[8], frame[9]]),
-        nack_bitmap: [frame[10], frame[11]],
-        stream_id: frame[12],
+        first_unacked: i16::from_le_bytes([frame[at], frame[at + 1]]),
+        nack_bitmap: [frame[at + 2], frame[at + 3]],
+        stream_id: frame[at + 4],
     })
 }
 
@@ -314,6 +392,7 @@ impl ReliableSender {
 pub struct ReliableReceiver {
     expected: u16,
     received: BTreeMap<u16, Vec<u8>>,
+    unannotated_types: UnannotatedTypes,
 }
 
 impl ReliableReceiver {
@@ -321,6 +400,29 @@ impl ReliableReceiver {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// New empty receiver whose ACKNACK frames ([`Self::acknack_frame`]) use the
+    /// given [`UnannotatedTypes`] form.
+    #[must_use]
+    pub fn with_unannotated_types(mode: UnannotatedTypes) -> Self {
+        Self {
+            unannotated_types: mode,
+            ..Self::default()
+        }
+    }
+
+    /// The [`UnannotatedTypes`] form this receiver writes.
+    #[must_use]
+    pub fn unannotated_types(&self) -> UnannotatedTypes {
+        self.unannotated_types
+    }
+
+    /// The pending ACKNACK as a control frame in this receiver's
+    /// [`UnannotatedTypes`] form.
+    #[must_use]
+    pub fn acknack_frame(&self, msg_seq: u16) -> Vec<u8> {
+        acknack_frame_with(self.pending_acknack(), msg_seq, self.unannotated_types)
     }
 
     /// Next expected seqnr.
@@ -493,14 +595,16 @@ impl AsyncReliableWriter {
     /// submits queued samples, sends WRITE_DATA, emits HEARTBEATs, and retransmits
     /// on ACKNACK until the ring is closed *and* the window has drained.
     #[must_use]
-    pub fn start(sock: UdpSocket, ring_capacity: usize) -> Self {
+    /// `writer_id` is the target DataWriter's XRCE `ObjectId`; it goes into
+    /// every frame's `BaseObjectRequest` (§7.7.8).
+    pub fn start(sock: UdpSocket, ring_capacity: usize, writer_id: u16) -> Self {
         let ring = Arc::new(SpscRing::new(ring_capacity));
         let running = Arc::new(AtomicBool::new(true));
         let handle = ReliableWriterHandle {
             ring: Arc::clone(&ring),
             running: Arc::clone(&running),
         };
-        let drain = thread::spawn(move || drain_loop(&sock, &ring, &running));
+        let drain = thread::spawn(move || drain_loop(&sock, &ring, &running, writer_id));
         Self {
             handle,
             drain: Some(drain),
@@ -530,7 +634,7 @@ impl Drop for AsyncReliableWriter {
 }
 
 /// The drain thread body: the ns-decoupled producer's I/O + reliability engine.
-fn drain_loop(sock: &UdpSocket, ring: &SpscRing, running: &AtomicBool) {
+fn drain_loop(sock: &UdpSocket, ring: &SpscRing, running: &AtomicBool, writer_id: u16) {
     sock.set_read_timeout(Some(Duration::from_millis(5))).ok();
     let mut sender = ReliableSender::new();
     let mut ctl_seq: u16 = 1;
@@ -543,7 +647,11 @@ fn drain_loop(sock: &UdpSocket, ring: &SpscRing, running: &AtomicBool) {
         while sender.in_flight_count() < SENDER_WINDOW {
             let Some(sample) = ring.pop() else { break };
             if let Ok(seq) = sender.submit(sample.clone()) {
-                let _ = sock.send(&write_frame(seq, &sample));
+                // `submit` bounds the sample to MAX_PAYLOAD, so the frame fits;
+                // never deliver a frame the builder refused.
+                if let Ok(frame) = write_frame(seq, writer_id, &sample) {
+                    let _ = sock.send(&frame);
+                }
             }
         }
         // 2) HEARTBEAT when due.
@@ -561,7 +669,9 @@ fn drain_loop(sock: &UdpSocket, ring: &SpscRing, running: &AtomicBool) {
                     if (bitmap >> i) & 1 == 1 {
                         let seq = base.wrapping_add(i);
                         if let Some(p) = sender.get_in_flight(seq) {
-                            let _ = sock.send(&write_frame(seq, p));
+                            if let Ok(frame) = write_frame(seq, writer_id, p) {
+                                let _ = sock.send(&frame);
+                            }
                         }
                     }
                 }
@@ -839,15 +949,76 @@ mod tests {
             },
             1,
         );
-        assert_eq!(f, [128, 0, 1, 0, 10, 1, 5, 0, 1, 0, 0, 0, 128]);
+        assert_eq!(f, [128, 0, 1, 0, 10, 1, 9, 0, 5, 0, 0, 0, 1, 0, 0, 0, 128]);
+        assert_eq!(
+            parse_acknack(&f),
+            Some(AckNack {
+                first_unacked: 1,
+                nack_bitmap: [0, 0],
+                stream_id: 0x80,
+            })
+        );
+    }
+
+    #[test]
+    fn acknack_frame_final_is_the_13_octet_form() {
+        let ack = AckNack {
+            first_unacked: 1,
+            nack_bitmap: [0, 0],
+            stream_id: 0x80,
+        };
+        let golden = [
+            0x80, 0x00, 0x01, 0x00, 0x0a, 0x01, 0x05, 0x00, 0x01, 0x00, 0x00, 0x00, 0x80,
+        ];
+        let f = acknack_frame_with(ack, 1, UnannotatedTypes::Final);
+        assert_eq!(f, golden);
+        assert_eq!(parse_acknack(&f), Some(ack));
+        // Default and explicit Appendable: the 17-octet form; the parser takes both.
+        let a = acknack_frame(ack, 1);
+        assert_eq!(a.len(), 17);
+        assert_eq!(a, acknack_frame_with(ack, 1, UnannotatedTypes::Appendable));
+        assert_eq!(parse_acknack(&a), Some(ack));
+        // The receiver carries the mode.
+        let mut r = ReliableReceiver::with_unannotated_types(UnannotatedTypes::Final);
+        r.recv_data(0, vec![1]).unwrap();
+        assert_eq!(r.acknack_frame(1).len(), 13);
+        assert_eq!(ReliableReceiver::new().acknack_frame(1).len(), 17);
+    }
+
+    #[test]
+    fn acknack_without_dheader_is_still_parsed() {
+        // The 5-octet body of the eProsima client.
+        let f = [128, 0, 1, 0, 10, 1, 5, 0, 1, 0, 0, 0, 128];
+        assert_eq!(
+            parse_acknack(&f),
+            Some(AckNack {
+                first_unacked: 1,
+                nack_bitmap: [0, 0],
+                stream_id: 0x80,
+            })
+        );
     }
 
     #[test]
     fn write_frame_round_trips() {
-        let f = write_frame(7, b"hi");
+        let f = write_frame(7, 0x0015, b"hi").expect("frame");
         let (seq, body) = unframe(&f).unwrap();
         assert_eq!(seq, 7);
         assert_eq!(body, b"hi");
+    }
+
+    #[test]
+    fn write_frame_refuses_body_above_16_bit_length() {
+        // The bound is the body's (BaseObjectRequest + sample): exactly 0xFFFF
+        // frames, one octet more is refused rather than saturating the field.
+        let frame = write_frame(1, 0x0015, &vec![0u8; MAX_PAYLOAD]).expect("frame");
+        assert_eq!(frame.len(), 8 + 0xFFFF);
+        assert_eq!(u16::from_le_bytes([frame[6], frame[7]]), 0xFFFF);
+
+        assert_eq!(
+            write_frame(1, 0x0015, &vec![0u8; MAX_PAYLOAD + 1]),
+            Err(FrameError::BodyTooLarge)
+        );
     }
 
     #[test]

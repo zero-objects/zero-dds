@@ -12,11 +12,19 @@ project Zerodds_Ada is
    for Object_Dir use "build";
    for Exec_Dir use "build";
    for Main use ("test_byte_identity.adb", "test_udp_loopback.adb",
-                 "example_sync.adb", "example_async.adb");
+                 "test_ada_surface.adb", "test_reliable_unit.adb",
+                 "test_xrce_client.adb",
+                 "example_sync.adb", "example_async.adb",
+                 "example_reliable.adb");
 
    --  The C endpoint/reflect units are not needed by Stage 1; only the
    --  wire-core primitives are bound.
-   for Excluded_Source_Files use ("zerodds_endpoint.c", "zerodds_reflect.c");
+   --  The async and reliable-async units are C11 and Stage 1 binds only
+   --  the C89 wire-core; compiled under -std=c89 they warn on every
+   --  _Atomic, which is the compiler naming a file that does not belong
+   --  in this closure.
+   for Excluded_Source_Files use ("zerodds_endpoint.c", "zerodds_reflect.c",
+                                  "zerodds_async.c", "zerodds_reliable_async.c");
 
    package Compiler is
       for Default_Switches ("Ada") use ("-g", "-O2", "-gnat2022", "-gnatwa");

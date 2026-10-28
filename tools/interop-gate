@@ -1,0 +1,645 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 ZeroDDS Contributors
+#
+# interop-gate — every interop test this project has, in one command,
+# with one verdict per test.
+#
+#   tools/interop-gate
+#   tools/interop-gate --tests vendor-bytes,ci-cyclone
+#   tools/interop-gate --require interop-corpus,interop-results,ci-cyclone
+#   tools/interop-gate --list
+#
+# ## Why this exists next to .gitlab-ci.yml
+#
+# The interop jobs live in sixteen places in `.gitlab-ci.yml` and are the
+# only thing that runs them. When the shared runner is down — and it has
+# been, for weeks at a time, because a second workload on the same host
+# takes the memory — nothing measures cross-vendor interop at all, and
+# the last pipeline's red is a statement about the runner rather than
+# about the code. This script is the path that does not go through
+# GitLab: the same commands, on the Linux test host, with a verdict
+# table at the end.
+#
+# ## The rule about absence
+#
+# It is `tools/interop-vendors.sh`'s and `tools/endpoints-gate`'s rule,
+# and it is the reason this file is not a `for` loop over sixteen
+# `bash -c`s. A test whose toolchain is not installed is SKIP, printed
+# with the exact thing that was missing, and counted in the summary as a
+# test this run did not verify. It is never a pass. It is a FAILURE when
+# the test is on `--require` / `ZERODDS_INTEROP_REQUIRE`, which is how a
+# run that promises to cover a vendor notices the vendor quietly leaving
+# the host.
+#
+# A run therefore ends non-zero on either of two things: a test that
+# failed, or a required test that could not be measured. Those are
+# reported separately, because they need different answers.
+set -uo pipefail
+
+if [ "${BASH_VERSINFO[0]}" -lt 4 ]; then
+    echo "interop-gate: bash ${BASH_VERSION} cannot run this; it uses" \
+         "associative arrays, which are bash 4's" >&2
+    exit 2
+fi
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$root" || exit 2
+
+# The vendor locations and the loud-absence helpers. Sourcing it also
+# exports DDS_ROOT/ACE_ROOT/TAO_ROOT, which OpenDDS's generators read.
+# shellcheck source=tools/interop-vendors.sh
+. "$root/tools/interop-vendors.sh"
+
+# ---------------------------------------------------------------------
+# The tests. `ALL_TESTS` is the order a full run takes: the ones that
+# need no network first, so a host with no multicast still produces the
+# offline half of the table before it starts skipping.
+# ---------------------------------------------------------------------
+ALL_TESTS="interop-corpus interop-results vendor-bytes vendor-roundtrip \
+results-record ci-cyclone ci-fastdds ci-rti ci-harness live-spdp live-roundtrip \
+live-rust live-discovery writer-restart-32 cross-language-e2e cross-lang-live \
+warehouse-e2e endpoint-e2e endpoints-gate"
+
+# The two that a scheduled pipeline runs and a commit pipeline does not:
+# `vendor-roundtrip` is 120 minutes with a cold cache and `results-record`
+# is 90. They are in ALL_TESTS because this script is the thing that runs
+# when nothing else does, but `--quick` drops them.
+SLOW_TESTS="vendor-roundtrip results-record"
+
+tests="$ALL_TESTS"
+require="${ZERODDS_INTEROP_REQUIRE:-}"
+list_only=0
+out="$root/target/interop-gate"
+
+usage() {
+    sed -n '5,40p' "${BASH_SOURCE[0]}"
+    printf '\ntests: %s\nslow:  %s\n' "$ALL_TESTS" "$SLOW_TESTS"
+}
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --tests)   tests="$(printf '%s' "$2" | tr ',' ' ')"; shift 2 ;;
+        --require) require="$(printf '%s' "$2" | tr ',' ' ')"; shift 2 ;;
+        --out)     out="$2"; shift 2 ;;
+        --quick)
+            for _slow in $SLOW_TESTS; do
+                tests="$(printf '%s\n' $tests | grep -vx "$_slow" | tr '\n' ' ')"
+            done
+            unset _slow; shift ;;
+        --list)    list_only=1; shift ;;
+        --help|-h) usage; exit 0 ;;
+        *) echo "interop-gate: \`$1\` is not an option" >&2; exit 2 ;;
+    esac
+done
+
+if [ "$list_only" = 1 ]; then
+    printf '%s\n' $ALL_TESTS
+    exit 0
+fi
+
+logs="$out/logs"
+mkdir -p "$logs" || exit 2
+
+declare -A VERDICT=() REASON=() SECONDS_OF=()
+
+say() { printf '%s\n' "$*"; }
+hr()  { printf -- '---------------------------------------------------------------\n'; }
+
+# have <command> — on PATH?
+have() { command -v "$1" >/dev/null 2>&1; }
+
+# missing <thing>... — the first of the named commands that is absent,
+# printed as the thing a reader has to install. Empty when all present.
+missing_cmds() {
+    local c gone=""
+    for c in "$@"; do have "$c" || gone="$gone $c"; done
+    printf '%s' "${gone# }"
+}
+
+# missing_vendors <vendor>... — the same for the nine foreign toolchains,
+# each named with the variable that points at it, so the line a reader
+# gets is the line they have to change.
+missing_vendors() {
+    local v gone=""
+    for v in "$@"; do
+        vendor_probe "$v" || gone="$gone $v($(vendor_where "$v"))"
+    done
+    printf '%s' "${gone# }"
+}
+
+# skip <test> <reason> — never a pass, always by name.
+skip() { VERDICT[$1]=SKIP; REASON[$1]="$2"; }
+
+# ---------------------------------------------------------------------
+# Domain isolation.
+#
+# A DDS domain is a UDP port: RTPS 2.5 §9.6.1.1 puts every socket of
+# domain `d` in [7400 + 250d, 7400 + 250d + 249]. So a test does not get
+# a domain to itself by asking for one — it gets whatever else on the
+# host is already there, and it counts that traffic as its own result.
+#
+# Measured: with a stray participant on domain 0, this suite's
+# `live-roundtrip` reported 0 samples in one direction and 118 in the
+# other, and neither number was about ZeroDDS or Cyclone; on domain 62 it
+# passes. A second, controlled measurement of the same pattern elsewhere
+# ran one case ten times: 2/10 on domain 0, 10/10 on an isolated domain.
+#
+# Every live test therefore declares the band it will use, and a band
+# that is not free is BLOCKED — not run, not skipped, and not passed. A
+# blocked test makes the run non-zero for the same reason a failing one
+# does: the suite did not measure what it promised. It is counted apart
+# from a failure because it needs a different answer — free the host, not
+# fix the code.
+# ---------------------------------------------------------------------
+
+# domain_band <test> -> "<first> <last>", empty when the test uses no
+# fixed domain of its own (the byte and codegen gates), or leases one
+# through `zerodds-test-domains` (the Rust live tests).
+domain_band() {
+    case "$1" in
+        # tests/interop/ci/run_vendor.sh: DOMAIN_BASE + one per cell.
+        ci-cyclone)         printf '121 125' ;;
+        ci-fastdds)         printf '141 145' ;;
+        ci-rti)             printf '220 224' ;;
+        ci-harness)         printf '141 145' ;;
+        # ddsperf and the spdp_demo example both take the default domain.
+        live-spdp)          printf '0 0' ;;
+        # tests/interop/xv_pub_sub_roundtrip.sh, $DOMAIN.
+        live-roundtrip)     printf '62 62' ;;
+        # tests/issue32/run_matrix.sh walks its cells from 150.
+        writer-restart-32)  printf '150 162' ;;
+        # examples/tutorials/dds-chat/e2e: 150 + one per ordered pair.
+        cross-language-e2e) printf '151 186' ;;
+        # examples/demos/dds-warehouse: one station per domain.
+        warehouse-e2e)      printf '73 82' ;;
+        *)                  printf '' ;;
+    esac
+}
+
+# busy_domains <first> <last> — the domains in the band that something on
+# this host already holds, each with the process holding it. Empty when
+# the band is free. `ss` is the only reader; a host without it cannot
+# answer the question and says so rather than assuming a free band.
+busy_domains() {
+    local first="$1" last="$2" d low high line port busy=""
+    if ! command -v ss >/dev/null 2>&1; then
+        printf 'ss(8) is not installed, so this host cannot say whether domains %s..%s are free' \
+            "$first" "$last"
+        return
+    fi
+    local listeners; listeners="$(ss -uln 2>/dev/null | awk 'NR>1 {print $5}')"
+    for d in $(seq "$first" "$last"); do
+        low=$((7400 + 250 * d)); high=$((low + 249))
+        while IFS= read -r line; do
+            port="${line##*:}"
+            case "$port" in ''|*[!0-9]*) continue ;; esac
+            if [ "$port" -ge "$low" ] && [ "$port" -le "$high" ]; then
+                busy="$busy $d(port $port$(ss -ulnp 2>/dev/null \
+                    | grep -m1 ":$port " | grep -o 'pid=[0-9]*' | head -1 \
+                    | sed 's/^/, /'))"
+                break
+            fi
+        done <<< "$listeners"
+    done
+    printf '%s' "${busy# }"
+}
+
+# ---------------------------------------------------------------------
+# One test = a `need_<name>` that returns the missing thing (empty when
+# the test can run) and a `run_<name>` that returns 0 for PASS.
+#
+# Every `run_` writes its own log to $logs/<name>.log and prints nothing
+# else, so the table at the end is the whole of this script's stdout.
+# ---------------------------------------------------------------------
+
+# ---- 1. the corpus the wire probes are generated from ----------------
+need_interop_corpus() { missing_cmds cargo; }
+run_interop_corpus() {
+    cargo test -p zerodds-wire-probe --target x86_64-unknown-linux-gnu \
+        --test interop_corpus
+}
+
+# ---- 2. the 3,350-row result tree, against what is committed ---------
+need_interop_results() { missing_cmds cargo; }
+run_interop_results() {
+    cargo run -q -p zerodds-interop-results --bin interop-results -- --verify \
+        && cargo test -p zerodds-interop-results --target x86_64-unknown-linux-gnu
+}
+
+# ---- 3. the vendor byte rows, regenerated ----------------------------
+# `--require-asked` is the flag that makes a run against an image with
+# none of the four fail instead of comparing nothing and going green.
+need_vendor_bytes() { missing_vendors cyclone rti fastdds opendds; }
+run_vendor_bytes() {
+    DOMAIN_BASE="${DOMAIN_BASE:-181}" bash tools/byte-gate/verify.sh \
+        --vendors cyclone,rti,fastdds,opendds --require-asked \
+        --regenerated-out "$out/vendor-bytes-regenerated.tsv"
+}
+
+# ---- 4. the cross-vendor read matrix ---------------------------------
+need_vendor_roundtrip() { missing_vendors cyclone fastdds; }
+run_vendor_roundtrip() {
+    cargo build -q -p zerodds-wire-probe --bins || return 1
+    DOMAIN_BASE="${DOMAIN_BASE:-201}" bash tools/pairwise-run/verify.sh \
+        --impls zerodds,cyclone,fastdds --require-asked \
+        --out-dir "$out/pairwise"
+}
+
+# ---- 5. the recorded vendor runs, re-recorded ------------------------
+need_results_record() { missing_vendors cyclone fastdds opendds; }
+run_results_record() {
+    bash tools/interop-results/verify-record.sh cyclone,fastdds,opendds
+}
+
+# ---- 6/7. the #28 gate: typed samples over live RTPS, both ways ------
+# The Python Cyclone client is a module and not a binary, so it is probed
+# by import and not by `command -v`.
+need_ci_cyclone() {
+    local gone; gone="$(missing_vendors cyclone)"
+    gone="$gone $(missing_cmds cargo python3)"
+    python3 -c 'import cyclonedds' >/dev/null 2>&1 \
+        || gone="$gone python3-module:cyclonedds"
+    printf '%s' "$(printf '%s' "$gone" | tr -s ' ' | sed 's/^ //;s/ $//')"
+}
+run_ci_cyclone() {
+    ( cd interop/cyclone-xtypes-27/reader && cargo build -q ) || return 1
+    bash tests/interop/ci/run_vendor.sh cyclone "$out/ci-cyclone"
+}
+
+need_ci_fastdds() {
+    local gone; gone="$(missing_vendors fastdds)"
+    gone="$gone $(missing_cmds cargo cmake g++)"
+    printf '%s' "$(printf '%s' "$gone" | tr -s ' ' | sed 's/^ //;s/ $//')"
+}
+run_ci_fastdds() {
+    ( cd interop/cyclone-xtypes-27/reader && cargo build -q ) || return 1
+    # `find_package(fastcdr)` looks in the system prefix, and the test
+    # host installs Fast DDS under $FASTDDS_HOME. Naming the prefix here
+    # keeps the harness's CMakeLists.txt free of a host's layout.
+    cmake -S tests/interop/ci/fastdds -B tests/interop/ci/fastdds/build \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_PREFIX_PATH="$FASTDDS_HOME" \
+        -DFASTDDSGEN="$FASTDDSGEN" >/dev/null || return 1
+    cmake --build tests/interop/ci/fastdds/build --parallel >/dev/null || return 1
+    FASTDDS_ROBOT="$root/tests/interop/ci/fastdds/build/fastdds_robot" \
+        bash tests/interop/ci/run_vendor.sh fastdds "$out/ci-fastdds"
+}
+
+# ---- 7b. the same two cells against RTI Connext ----------------------
+#
+# `.gitlab-ci.yml` has an `interop-cyclone` and an `interop-fastdds` job and
+# nothing for RTI, and `run_vendor.sh` used to know two vendors. RTI is on the
+# Linux test host and is the strictest of the four at discovery — it is the
+# only one of them that cross-checks the `typeobject_serialized_size` a peer
+# announces beside a COMPLETE `TypeIdentifier` against its own — so a gate
+# without it does not measure the case that fails first.
+#
+# The Connext runtime, unlike `rtiddsgen`, refuses to start without a licence
+# file, so both are probed: a host with only the generator builds the client
+# and then produces a cell that says nothing about the wire.
+need_ci_rti() {
+    local gone; gone="$(missing_vendors rti)"
+    gone="$gone $(missing_cmds cargo g++)"
+    [ -f "$NDDSHOME/rti_license.dat" ] \
+        || gone="$gone rti-license(NDDSHOME=$NDDSHOME/rti_license.dat)"
+    printf '%s' "$(printf '%s' "$gone" | tr -s ' ' | sed 's/^ //;s/ $//')"
+}
+run_ci_rti() {
+    ( cd interop/cyclone-xtypes-27/reader && cargo build -q ) || return 1
+    bash tests/interop/ci/run_vendor.sh rti "$out/ci-rti"
+}
+
+# ---- 8. the gate's own harness: the classifier and the cleanup -------
+need_ci_harness() {
+    local gone; gone="$(missing_cmds python3 cmake g++)"
+    python3 -c 'import pytest' >/dev/null 2>&1 || gone="$gone python3-module:pytest"
+    printf '%s' "$(printf '%s' "$gone" | tr -s ' ' | sed 's/^ //;s/ $//')"
+}
+run_ci_harness() {
+    # `find_package(fastcdr)` looks in the system prefix, and the test
+    # host installs Fast DDS under $FASTDDS_HOME. Naming the prefix here
+    # keeps the harness's CMakeLists.txt free of a host's layout.
+    cmake -S tests/interop/ci/fastdds -B tests/interop/ci/fastdds/build \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_PREFIX_PATH="$FASTDDS_HOME" \
+        -DFASTDDSGEN="$FASTDDSGEN" >/dev/null || return 1
+    cmake --build tests/interop/ci/fastdds/build --parallel >/dev/null || return 1
+    export FASTDDS_ROBOT="$root/tests/interop/ci/fastdds/build/fastdds_robot"
+    bash tests/interop/ci/tests/test_domain_arg.sh \
+        && bash tests/interop/ci/tests/test_cleanup.sh \
+        && python3 -m pytest -q tests/interop/ci/tests/test_interop_result.py
+}
+
+# ---- 9. SPDP: a foreign vendor is seen at all ------------------------
+need_live_spdp() {
+    local gone; gone="$(missing_cmds cargo g++)"
+    [ -x "$CYCLONE_HOME/bin/ddsperf" ] || gone="$gone ddsperf(CYCLONE_HOME=$CYCLONE_HOME)"
+    [ -d "$FASTDDS_HOME/include" ] || gone="$gone fastdds(FASTDDS_HOME=$FASTDDS_HOME)"
+    printf '%s' "$(printf '%s' "$gone" | tr -s ' ' | sed 's/^ //;s/ $//')"
+}
+run_live_spdp() {
+    local art="$out/live-spdp"; mkdir -p "$art"
+    g++ -std=c++17 tests/interop/fastdds_pub.cpp -o "$art/fastdds_pub" \
+        -I"$FASTDDS_HOME/include" -L"$FASTDDS_HOME/lib" \
+        -lfastdds -lfastcdr -lpthread -Wl,-rpath,"$FASTDDS_HOME/lib" || return 1
+    cargo build -q --example spdp_demo -p zerodds-discovery || return 1
+    LD_LIBRARY_PATH="$CYCLONE_HOME/lib:${LD_LIBRARY_PATH:-}" \
+        "$CYCLONE_HOME/bin/ddsperf" pub 1Hz size 16 &>"$art/cyclone.log" &
+    local cyc=$!
+    "$art/fastdds_pub" &>"$art/fastdds.log" & local fdd=$!
+    sleep 3
+    timeout 30s target/debug/examples/spdp_demo | tee "$art/demo.out" || true
+    kill "$cyc" "$fdd" 2>/dev/null; wait "$cyc" "$fdd" 2>/dev/null
+    local foreign
+    foreign=$(grep '✓ DISCOVERED' "$art/demo.out" \
+              | grep -cv 'vendor=VendorId(\[1, 240\])')
+    say "foreign vendors discovered: $foreign" >&2
+    [ "$foreign" -ge 1 ]
+}
+
+# ---- 10. sample delivery both ways through the Cyclone Python tools --
+need_live_roundtrip() {
+    local gone; gone="$(missing_cmds cargo python3)"
+    python3 -c 'import cyclonedds' >/dev/null 2>&1 \
+        || gone="$gone python3-module:cyclonedds"
+    printf '%s' "$(printf '%s' "$gone" | tr -s ' ' | sed 's/^ //;s/ $//')"
+}
+# The script's own exit codes: 0 pass, 1 real failure, 2 tool missing,
+# 77 non-Linux. 2 and 77 cannot happen here — `need_live_roundtrip`
+# already established the tools — so they are failures if they appear,
+# not the tolerated skip the CI job makes of them.
+run_live_roundtrip() { bash tests/interop/xv_pub_sub_roundtrip.sh; }
+
+# ---- 11. the Rust cross-vendor live tests ----------------------------
+# The tests return early with `INTEROP-SKIP` and pass unless INTEROP_REQUIRE
+# is set, and the Fast DDS ones need the `fastdds_shapes` client the CI job
+# builds; both are set up here as the `live-interop` job does.
+need_live_rust() {
+    local gone; gone="$(missing_vendors fastdds)"
+    gone="$gone $(missing_cmds cargo cmake g++ python3)"
+    [ -x "$CYCLONE_HOME/bin/ddsperf" ] || gone="$gone ddsperf(CYCLONE_HOME=$CYCLONE_HOME)"
+    [ -d "$FASTDDS_HOME/lib" ] || gone="$gone fastdds(FASTDDS_HOME=$FASTDDS_HOME)"
+    python3 -c 'import cyclonedds' >/dev/null 2>&1 \
+        || gone="$gone python3-module:cyclonedds"
+    printf '%s' "$(printf '%s' "$gone" | tr -s ' ' | sed 's/^ //;s/ $//')"
+}
+run_live_rust() {
+    local art="$out/live-rust"; mkdir -p "$art"
+    cmake -S tests/interop/ci/fastdds -B "$art/fastdds-build" \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_PREFIX_PATH="$FASTDDS_HOME" \
+        -DFASTDDSGEN="$FASTDDSGEN" -DBUILD_LIVE_SHAPES=ON >/dev/null || return 1
+    cmake --build "$art/fastdds-build" --target fastdds_shapes --parallel \
+        >/dev/null || return 1
+    FASTDDS_SHAPES="$art/fastdds-build/fastdds_shapes" \
+    DDSPERF="$CYCLONE_HOME/bin/ddsperf" \
+    LD_LIBRARY_PATH="$CYCLONE_HOME/lib:$FASTDDS_HOME/lib:${LD_LIBRARY_PATH:-}" \
+    INTEROP_REQUIRE=1 INTEROP_LOG_DIR="$art/vendor-children" \
+    cargo test -p zerodds-dcps --features live-interop \
+        --test fastdds_qos_matrix --test fastdds_live_sub \
+        --test fastdds_live_pub --test cyclone_live_wlp \
+        --test cyclone_live_shm_locator \
+        -- --ignored --test-threads=1
+}
+
+# ---- 11b. the discovery crate's live vendor test ---------------------
+# `crates/discovery` carries two `#[ignore]`d live vendor tests.
+# `cyclone_live_sedp` needs a local Cyclone `ddsperf` and runs in the CI
+# job `interop-cyclone` (`ci/full.yml`). `fastdds_live_spdp` runs here.
+# Two more were placeholders that measured no vendor; their local halves
+# are ordinary tests now (`type_lookup_requests.rs`,
+# `representation_and_type_information.rs`), and what they announced is
+# measured by `tests/interop/ci/run_vendor.sh`.
+need_live_discovery() {
+    local gone; gone="$(missing_cmds cargo)"
+    [ -d "$FASTDDS_HOME/lib" ] || gone="$gone fastdds(FASTDDS_HOME=$FASTDDS_HOME)"
+    printf '%s' "$(printf '%s' "$gone" | tr -s ' ' | sed 's/^ //;s/ $//')"
+}
+run_live_discovery() {
+    cargo test -p zerodds-discovery --test fastdds_live_spdp \
+        -- --ignored --test-threads=1
+}
+
+# ---- 12. issue #32: a reader survives a writer restart ---------------
+need_writer_restart_32() { missing_cmds cargo; }
+run_writer_restart_32() {
+    ( cd tests/issue32 && cargo build --release ) || return 1
+    bash tests/issue32/run_matrix.sh "$out/issue32" 40
+}
+
+# ---- 13. the NxN live matrix over the language ports -----------------
+# The dds-chat matrix drops a language whose toolchain is absent. That is
+# the silent skip this script exists to remove, so the toolchains are
+# named here and a missing one is a SKIP of the whole test rather than a
+# quietly smaller matrix.
+CHAT_LANGS="rust python ts-node csharp java cpp"
+need_cross_language_e2e() {
+    missing_cmds cargo python3 node dotnet javac g++ cmake
+}
+run_cross_language_e2e() {
+    cargo build -p zerodds-c-api || return 1
+    export REPO_ROOT="$root" ZERODDS_LIB="$root/target/debug/libzerodds.so"
+    ( cd examples/tutorials/dds-chat/e2e
+      # shellcheck disable=SC1091
+      source ./ports.sh
+      local langs=() built_fail=()
+      for l in $CHAT_LANGS; do
+          if port_build "$l"; then langs+=("$l"); else built_fail+=("$l"); fi
+      done
+      if [ "${#built_fail[@]}" -gt 0 ]; then
+          # A port whose toolchain IS present and still will not build is
+          # this project's failure, not an absent column.
+          printf 'port build failed with the toolchain present: %s\n' "${built_fail[*]}"
+          return 1
+      fi
+      local pass=0 fail=0 domain=150 failures=()
+      for pub in "${langs[@]}"; do
+        for sub in "${langs[@]}"; do
+          domain=$((domain + 1))
+          local o rc
+          o="$(./run-pair.sh "$pub" "$sub" "$domain")"; rc=$?
+          printf '%s\n' "$o" | head -1
+          if [ "$rc" = 0 ]; then pass=$((pass+1))
+          else fail=$((fail+1)); failures+=("$pub->$sub"); printf '%s\n' "$o" | tail -n +2
+          fi
+        done
+      done
+      printf '== cross-language: %s passed, %s failed ==\n' "$pass" "$fail"
+      [ "$fail" = 0 ] || { printf '  FAIL: %s\n' "${failures[@]}"; return 1; }
+    )
+}
+
+# ---- 13b. the six FFI language bindings over a live socket -----------
+# `tests/cross_lang_live/run_all.sh`, which no job in `.gitlab-ci.yml`
+# names either. Its own summary counts a language with no script as SKIP;
+# all six scripts are committed and executable, so a SKIP in its output
+# means a script lost its executable bit and is checked for here.
+need_cross_lang_live() {
+    missing_cmds cargo gcc g++ python3 javac dotnet node
+}
+run_cross_lang_live() {
+    export REPO_ROOT="$root" ZERODDS_LIB="$root/target/debug/libzerodds.so"
+    cargo build -p zerodds-c-api || return 1
+    local log="$logs/cross-lang-live.run.log"
+    bash tests/cross_lang_live/run_all.sh > "$log" 2>&1
+    local rc=$?
+    cat "$log"
+    # `SKIP: 0 / 6` or the run did not speak for all six.
+    grep -qE 'SKIP: 0 / 6' "$log" || {
+        say "a language dropped out of the six; the summary above says which"
+        return 1
+    }
+    return "$rc"
+}
+
+# ---- 14. ten stations, ten domains, one orchestrator -----------------
+need_warehouse_e2e() { missing_cmds cargo; }
+run_warehouse_e2e() { bash examples/demos/dds-warehouse/e2e/verify.sh; }
+
+# ---- 15. the twenty-one language endpoints over a live socket --------
+# The SKIP audit is the CI job's and is kept: a language whose toolchain
+# `need_endpoint_e2e` just found still printing SKIP means the app never
+# ran, which is a false green and a failure here.
+EP_TOOLS="cargo gcc g++ python3 go gnat gprbuild gdc elixir javac lua5.4 \
+ocamlfind zig nim julia node kotlinc swiftc dotnet"
+need_endpoint_e2e() { missing_cmds $EP_TOOLS; }
+run_endpoint_e2e() {
+    local log="$logs/endpoint-e2e.cargo.log"
+    cargo test -p zerodds-endpoint-e2e --target x86_64-unknown-linux-gnu \
+        --no-fail-fast -- --test-threads=1 --nocapture > "$log" 2>&1
+    local rc=$?
+    local bad; bad="$(grep '^SKIP ' "$log" || true)"
+    if [ -n "$bad" ]; then
+        say "UNEXPECTED SKIPs — the toolchain is on this host and the test still soft-skipped:"
+        printf '%s\n' "$bad"
+        return 1
+    fi
+    return "$rc"
+}
+
+# ---- 16. the committed test suite of every binding -------------------
+need_endpoints_gate() { missing_cmds $EP_TOOLS; }
+run_endpoints_gate() {
+    LUA=lua5.4 \
+    ZERODDS_ENDPOINTS_MUTATION_LANGS="ada,ada-83,ada-native,d,elixir,go,java,lua,node,ocaml,python" \
+    tools/endpoints-gate --require \
+        ada,ada-83,ada-native,c,cpp,d,elixir,go,java,lua,node,ocaml,python,rust,codegen,mutation
+}
+
+# ---------------------------------------------------------------------
+# The run. Preflight first: who else is on this host's RTPS ports.
+#
+# A DDS domain is a UDP port (RTPS 2.5 §9.6.1.1), so a stray participant
+# is not isolated from a test by anything the test can do. On the Linux
+# test host a stuck participant on domain 0 exchanged traffic with a run
+# of these tests and produced two sample counts that said nothing about
+# either vendor. The listeners are recorded here, before the first
+# measurement, so a reader of the log can see what else was on the wire
+# rather than having to guess afterwards.
+# ---------------------------------------------------------------------
+
+# A name on --require that is not in the run list would otherwise be a
+# promise nothing checks: the summary would find no SKIP for it and the
+# run would end green having never asked. That is the same silent hole
+# the flag exists to close, so it is refused here.
+for r in $require; do
+    printf '%s\n' $tests | grep -qx "$r" || {
+        echo "interop-gate: --require names \`$r\`, which is not in this run" >&2
+        exit 2
+    }
+done
+
+say "interop-gate: $(printf '%s\n' $tests | grep -c .) test(s), logs in $logs"
+if command -v ss >/dev/null 2>&1; then
+    foreign="$(ss -ulnp 2>/dev/null \
+        | awk '$5 ~ /:(7[4-9][0-9][0-9]|[0-9]{5})$/ {print}' \
+        | grep -E 'pid=' || true)"
+    if [ -n "$foreign" ]; then
+        say "RTPS-range UDP listeners on this host at the start of the run:"
+        printf '%s\n' "$foreign" | sed 's/^/  /'
+    else
+        say "no UDP listener in the RTPS port range at the start of the run"
+    fi
+else
+    say "ss(8) is not installed; this run cannot say what else held an RTPS port"
+fi
+hr
+
+for t in $tests; do
+    fn="${t//-/_}"
+    if ! declare -F "run_$fn" >/dev/null; then
+        echo "interop-gate: no such test: $t" >&2
+        exit 2
+    fi
+    gone="$("need_$fn")"
+    if [ -n "$gone" ]; then
+        skip "$t" "$gone"
+        say "SKIP  $t — not installed: $gone"
+        continue
+    fi
+    band="$(domain_band "$t")"
+    if [ -n "$band" ]; then
+        # shellcheck disable=SC2086
+        busy="$(busy_domains $band)"
+        if [ -n "$busy" ]; then
+            VERDICT[$t]=BLOCKED; REASON[$t]="$busy"
+            say "BLOCKED $t — domains $band are not free: $busy"
+            continue
+        fi
+    fi
+    start=$SECONDS
+    say "RUN   $t"
+    if "run_$fn" > "$logs/$t.log" 2>&1; then
+        VERDICT[$t]=PASS
+    else
+        VERDICT[$t]=FAIL
+        REASON[$t]="$(grep -m1 -E '^(error|FAIL|CHANGED|thread .* panicked|[a-z-]+: [0-9]+ )' \
+                      "$logs/$t.log" 2>/dev/null | cut -c1-160)"
+        [ -n "${REASON[$t]}" ] || REASON[$t]="see $logs/$t.log"
+    fi
+    SECONDS_OF[$t]=$((SECONDS - start))
+    say "${VERDICT[$t]}  $t (${SECONDS_OF[$t]}s)"
+done
+
+# ---------------------------------------------------------------------
+# The table, then the two counts that decide the exit status.
+# ---------------------------------------------------------------------
+hr
+pass=0; fail=0; skipped=0; blocked=0; required_missing=""
+for t in $tests; do
+    case "${VERDICT[$t]:-}" in
+        PASS) pass=$((pass+1)); printf 'PASS  %-22s %ss\n' "$t" "${SECONDS_OF[$t]}" ;;
+        FAIL) fail=$((fail+1)); printf 'FAIL  %-22s %ss  %s\n' "$t" "${SECONDS_OF[$t]}" "${REASON[$t]}" ;;
+        BLOCKED)
+            blocked=$((blocked+1))
+            printf 'BLOCKED %-20s      domain in use: %s\n' "$t" "${REASON[$t]}" ;;
+        SKIP)
+            skipped=$((skipped+1))
+            printf 'SKIP  %-22s      not installed: %s\n' "$t" "${REASON[$t]}"
+            for r in $require; do
+                [ "$r" = "$t" ] && required_missing="$required_missing $t"
+            done ;;
+    esac
+done
+hr
+printf '%s passed, %s failed, %s not verified (toolchain absent), %s blocked (domain in use)\n' \
+    "$pass" "$fail" "$skipped" "$blocked"
+
+status=0
+if [ "$fail" -gt 0 ]; then status=1; fi
+if [ "$blocked" -gt 0 ]; then
+    printf 'BLOCKED means the host was not quiet, not that the code is wrong: %s test(s)\n' \
+        "$blocked"
+    printf '  free the named domains and run those tests again.\n'
+    status=1
+fi
+if [ -n "$required_missing" ]; then
+    printf 'REQUIRED AND NOT MEASURED:%s — %s test(s) this run cannot speak for\n' \
+        "$required_missing" "$(printf '%s\n' $required_missing | grep -c .)"
+    status=1
+fi
+if [ "$skipped" -gt 0 ] && [ -z "$required_missing" ]; then
+    printf 'the %s skipped test(s) above are unverified, not passing\n' "$skipped"
+fi
+exit "$status"

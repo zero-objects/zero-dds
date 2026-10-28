@@ -41,11 +41,17 @@ A minimal example
 Dependency-free codec test
 -----------------------------
 
-The pure-Python modules ``zerodds.cdr`` and ``zerodds.idl`` run
-**without a maturin build**. This lets unit tests in CI validate the
-Python layer without having a Rust compiler ready.
+The pure-Python modules (``zerodds.loader``, ``zerodds.topic``,
+``zerodds.aio``) run **without a maturin build**. So does every generated
+module ``zerodds-idlc generate --lang python`` writes, over
+``runtime/python``'s ``zerodds_wire`` — the one Python CDR codec, needed
+on ``PYTHONPATH`` alongside ``crates/py/python`` for the generated-IDL
+tests. This lets unit tests in CI validate the Python layer without
+having a Rust compiler ready. Native-only tests in that directory can be
+skipped when the extension is absent. A successful pure-Python run is not
+a native DDS delivery proof.
 
 .. code-block:: bash
 
    cd crates/py
-   PYTHONPATH=python pytest python/tests/
+   PYTHONPATH="python:../../runtime/python" pytest python/tests/

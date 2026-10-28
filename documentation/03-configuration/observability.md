@@ -55,7 +55,7 @@ let cfg = RuntimeConfig {
 let rt = DcpsRuntime::start(0, prefix, cfg)?;
 ```
 
-> ▶ Runnable example: [`observability-stderr-sink`](https://github.com/zero-objects/zero-dds-snippets/tree/master/observability-stderr-sink)
+> ▶ Runnable example: [`observability-stderr-sink`](https://github.com/zero-objects/zero-dds-snippets/tree/main/observability-stderr-sink)
 > (starts a real `DcpsRuntime` with this exact config and registers a
 > writer + reader, so the JSON lines below actually print).
 
@@ -115,7 +115,7 @@ exporter.add_event(event); // zerodds_foundation::observability::Event
 exporter.flush()?; // POSTs the batch to /v1/traces, /v1/metrics, /v1/logs
 ```
 
-> ▶ Runnable example: [`rust-audit-otlp`](https://github.com/zero-objects/zero-dds-snippets/tree/master/rust-audit-otlp)
+> ▶ Runnable example: [`rust-audit-otlp`](https://github.com/zero-objects/zero-dds-snippets/tree/main/rust-audit-otlp)
 > (constructs this exact `OtlpConfig`/`OtlpExporter` and calls `flush()`).
 
 The collector then forwards to Jaeger / Tempo / Datadog / any OTel

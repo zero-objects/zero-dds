@@ -11,10 +11,10 @@
 //! zerodds-bench info
 //! ```
 //!
-//! Beide Bench-Modes nutzen das gleiche topic loopback in einem
-//! einzigen DcpsRuntime-Process — ein Writer und ein Reader auf dem
-//! gleichen Topic. Das verifiziert die volle DCPS-Pipeline (HistoryCache,
-//! XCDR2-Encap, RTPS-Wire, UDP-Transport) ohne Netz-Setup.
+//! Both bench modes use the same topic loopback in a
+//! single DcpsRuntime process — one writer and one reader on the
+//! same topic. This verifies the full DCPS pipeline (HistoryCache,
+//! XCDR2 encap, RTPS wire, UDP transport) without a network setup.
 
 #![allow(clippy::print_stdout, clippy::print_stderr)]
 
@@ -43,7 +43,19 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
-    let cmd = match parse_args(&args) {
+    let configured = match zerodds_dcps::cli::Configured::from_args(args) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("error: configuration: {e}");
+            return ExitCode::from(2);
+        }
+    };
+    if let Some(code) = configured.check_config() {
+        return code;
+    }
+    let config = &configured.runtime;
+
+    let cmd = match parse_args(&configured.args) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("error: {e}");
@@ -53,8 +65,8 @@ fn main() -> ExitCode {
     };
 
     match cmd {
-        Command::Latency(b) => run_latency(&b),
-        Command::Throughput(b) => run_throughput(&b),
+        Command::Latency(b) => run_latency(&b, config),
+        Command::Throughput(b) => run_throughput(&b, config),
         Command::Info => {
             print_info();
             ExitCode::SUCCESS
@@ -73,8 +85,8 @@ fn print_info() {
     println!("modes:      latency, throughput");
 }
 
-fn run_latency(b: &BenchArgs) -> ExitCode {
-    let runtime = match start_runtime(b.domain, MARKER_BENCH) {
+fn run_latency(b: &BenchArgs, config: &RuntimeConfig) -> ExitCode {
+    let runtime = match start_runtime(b.domain, MARKER_BENCH, config) {
         Ok(rt) => rt,
         Err(e) => return e,
     };
@@ -105,8 +117,8 @@ fn run_latency(b: &BenchArgs) -> ExitCode {
         b.duration.as_secs()
     );
 
-    // Settle-Window für SEDP-Match. Ohne kurzen Delay verlieren die
-    // ersten samples bevor der writer/reader-match etabliert ist.
+    // Settle window for the SEDP match. Without a short delay the
+    // first samples before the writer/reader match is established.
     std::thread::sleep(Duration::from_millis(200));
 
     let payload_bytes = b.payload.max(8);
@@ -122,8 +134,8 @@ fn run_latency(b: &BenchArgs) -> ExitCode {
             std::thread::sleep(Duration::from_millis(2));
             continue;
         }
-        // Empfange echo (in single-process loopback ist das das eigene
-        // sample, da pub und sub im gleichen Participant matched).
+        // Receive echo (in single-process loopback this is the own
+        // sample, since pub and sub match within the same participant).
         match rx.recv_timeout(Duration::from_millis(50)) {
             Ok(UserSample::Alive { payload: rcv, .. }) if rcv.len() >= 8 => {
                 let recv_ns = elapsed_ns_since_start();
@@ -135,7 +147,7 @@ fn run_latency(b: &BenchArgs) -> ExitCode {
             Ok(_) => {}
             Err(_) => {}
         }
-        // Pacing 1 ms — wir wollen Latency, nicht Throughput-Stress.
+        // Pacing 1 ms — we want latency, not throughput stress.
         std::thread::sleep(Duration::from_micros(900));
     }
 
@@ -152,12 +164,15 @@ fn run_latency(b: &BenchArgs) -> ExitCode {
         eprintln!("warn: no samples received — discovery match may have failed");
     }
 
+    // The worker threads hold the runtime: a drop alone neither stops it
+    // nor announces the departure nor closes the same-host channels.
+    runtime.shutdown();
     drop(runtime);
     ExitCode::SUCCESS
 }
 
-fn run_throughput(b: &BenchArgs) -> ExitCode {
-    let runtime = match start_runtime(b.domain, MARKER_BENCH) {
+fn run_throughput(b: &BenchArgs, config: &RuntimeConfig) -> ExitCode {
+    let runtime = match start_runtime(b.domain, MARKER_BENCH, config) {
         Ok(rt) => rt,
         Err(e) => return e,
     };
@@ -220,7 +235,7 @@ fn run_throughput(b: &BenchArgs) -> ExitCode {
         {
             sent += 1;
         }
-        // Tight loop — kein sleep für maximalen Throughput.
+        // Tight loop — no sleep for maximum throughput.
     }
     let elapsed = started.elapsed().as_secs_f64();
     stop.store(true, Ordering::Relaxed);
@@ -238,50 +253,34 @@ fn run_throughput(b: &BenchArgs) -> ExitCode {
         rcv as f64 / elapsed.max(1e-9)
     );
 
+    // The worker threads hold the runtime: a drop alone neither stops it
+    // nor announces the departure nor closes the same-host channels.
+    runtime.shutdown();
     drop(runtime);
     ExitCode::SUCCESS
 }
 
-fn start_runtime(domain: u32, marker: u8) -> Result<Arc<DcpsRuntime>, ExitCode> {
+fn start_runtime(
+    domain: u32,
+    marker: u8,
+    config: &RuntimeConfig,
+) -> Result<Arc<DcpsRuntime>, ExitCode> {
     let domain_id: i32 = domain.try_into().map_err(|_| {
         eprintln!("error: domain {domain} does not fit i32");
         ExitCode::from(2)
     })?;
     let prefix: GuidPrefix = stable_prefix(marker);
-    DcpsRuntime::start(domain_id, prefix, RuntimeConfig::default()).map_err(|e| {
+    DcpsRuntime::start(domain_id, prefix, config.clone()).map_err(|e| {
         eprintln!("error: DcpsRuntime::start failed: {e:?}");
         ExitCode::from(3)
     })
 }
 
 fn writer_cfg(topic: &str) -> UserWriterConfig {
-    UserWriterConfig {
-        topic_name: topic.to_string(),
-        type_name: TYPE_NAME.to_string(),
-        reliable: true,
-        durability: zerodds_qos_kind(),
-        deadline: zerodds_qos::DeadlineQosPolicy::default(),
-        latency_budget: Default::default(),
-        destination_order: Default::default(),
-        lifespan: zerodds_qos::LifespanQosPolicy::default(),
-        liveliness: zerodds_qos::LivelinessQosPolicy::default(),
-        ownership: zerodds_qos::OwnershipKind::Shared,
-        ownership_strength: 0,
-        presentation: Default::default(),
-        partition: Vec::new(),
-        user_data: Vec::new(),
-        topic_data: Vec::new(),
-        group_data: Vec::new(),
-        type_identifier: zerodds_types::TypeIdentifier::None,
-        data_representation_offer: None,
-    }
+    zerodds_cli_common::reliable_raw_writer_config(topic, TYPE_NAME)
 }
 
-fn zerodds_qos_kind() -> zerodds_qos::DurabilityKind {
-    zerodds_qos::DurabilityKind::Volatile
-}
-
-/// Monotonic-clock elapsed time seit static start in ns.
+/// Monotonic-clock elapsed time since static start in ns.
 fn elapsed_ns_since_start() -> u64 {
     use std::sync::OnceLock;
     static START: OnceLock<Instant> = OnceLock::new();
@@ -319,4 +318,5 @@ fn print_help() {
            2    CLI parse error\n  \
            3    DDS / I/O error\n"
     );
+    println!("\n{}", zerodds_dcps::cli::HELP);
 }

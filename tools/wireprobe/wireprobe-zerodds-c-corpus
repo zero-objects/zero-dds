@@ -1,0 +1,188 @@
+#!/bin/bash
+# wireprobe-zerodds-c-corpus — the whole interop corpus through the C
+# probe and the Rust one, and the difference between them.
+#
+# The engine-identity run of `docs/specs/zerodds-interop-suite-1.0.md`
+# §3a for the C column: the same IDL, the same JSON and the same layout
+# plan through two serialisers written twice.
+#
+#   wireprobe-zerodds-c-corpus                 every encoding, both orders
+#   wireprobe-zerodds-c-corpus xcdr2 le        one combination
+#   wireprobe-zerodds-c-corpus --keyhash       the KeyHash instead
+#   wireprobe-zerodds-c-corpus --roundtrip     the read direction
+#
+# `--roundtrip` is the other half of the column: the Rust probe writes
+# the bytes, the C probe reads them, and the values that come back are
+# compared against the case's own sample. Against the sample and not
+# against the Rust probe's reading of its own bytes — two decoders wrong
+# in the same way agree with each other, and only the second comparison
+# shows it. `docs/specs/zerodds-interop-suite-1.0.md` §4, P2.
+#
+# Every disagreement is printed in full, and the exit status is non-zero
+# if there is one. A run that only counted would let a divergence
+# through as long as something else went out.
+set -u
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+root="$(cd "$here/../.." && pwd)"
+corpus="${ZERODDS_CORPUS:-$root/tests/interop-corpus}"
+rust="${WIREPROBE_ZERODDS:-${CARGO_TARGET_DIR:-$root/target}/debug/wireprobe-zerodds}"
+compare="${WIREPROBE_COMPARE:-${CARGO_TARGET_DIR:-$root/target}/debug/wireprobe-compare}"
+c="$here/wireprobe-zerodds-c"
+jobs="${WIREPROBE_JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}"
+
+if [ ! -x "$rust" ]; then
+    cargo build -q --manifest-path "$root/Cargo.toml" \
+        -p zerodds-wire-probe --bin wireprobe-zerodds || exit 1
+fi
+
+keyhash=0
+roundtrip=0
+encodings=(plain-cdr1 pl-cdr1 plain-cdr2 delimited-cdr pl-cdr2)
+orders=(le be)
+case "${1:-}" in
+    --keyhash) keyhash=1 ;;
+    --roundtrip)
+        roundtrip=1
+        shift
+        if [ $# -gt 0 ]; then encodings=("$1"); orders=("${2:-le}"); fi ;;
+    --help|-h) sed -n '2,24p' "${BASH_SOURCE[0]}"; exit 0 ;;
+    "") ;;
+    *) encodings=("$1"); orders=("${2:-le}") ;;
+esac
+
+if [ "$roundtrip" = 1 ]; then
+    if [ ! -x "$compare" ]; then
+        cargo build -q --manifest-path "$root/Cargo.toml" \
+            -p zerodds-wire-probe --bin wireprobe-compare || exit 1
+    fi
+
+    # One case in one combination: the Rust probe writes and puts the
+    # sample into canonical form, the C probe reads, and the two values
+    # are compared. A case the writer refuses says nothing about the
+    # reader and is counted apart.
+    one() {
+        local name="$1" enc="$2" end="$3"
+        local dir="$corpus/$name"
+        local type_name; type_name="$(cat "$dir/type")"
+        local work; work="$(mktemp -d)"
+        if ! "$rust" --idl "$dir/type.idl" --type "$type_name" \
+                --values "$dir/values.json" --values-out "$work/expected.json" \
+                --encoding "$enc" --endian "$end" --out "$work/bytes.bin" \
+                > /dev/null 2>"$work/err"; then
+            printf 'UNWRITTEN %s/%s %s\n' "$enc" "$end" "$name"
+            rm -rf "$work"; return
+        fi
+        if ! "$c" --idl "$dir/type.idl" --type "$type_name" \
+                --in "$work/bytes.bin" --encoding "$enc" --endian "$end" \
+                --values-out "$work/got.json" > /dev/null 2>"$work/err"; then
+            printf 'UNREAD %s/%s %-38s %s\n' "$enc" "$end" "$name" \
+                "$(tr '\n' ' ' < "$work/err" | cut -c1-160)"
+            rm -rf "$work"; return
+        fi
+        local detail
+        detail="$("$compare" --idl "$dir/type.idl" --type "$type_name" \
+            --expected "$work/expected.json" --found "$work/got.json" --quiet 2>&1)"
+        case $? in
+            0) printf 'SAME %s/%s %s\n' "$enc" "$end" "$name" ;;
+            1) printf 'DIFFERENT %s/%s %-34s %s\n' "$enc" "$end" "$name" "$detail" ;;
+            *) printf 'UNCOMPARABLE %s/%s %-31s %s\n' "$enc" "$end" "$name" \
+                   "$(printf '%s' "$detail" | tr '\n' ' ' | cut -c1-160)" ;;
+        esac
+        rm -rf "$work"
+    }
+    export -f one
+    export corpus rust compare c
+
+    work_list="$(mktemp)"
+    for enc in "${encodings[@]}"; do
+    for end in "${orders[@]}"; do
+        for dir in "$corpus"/*/; do
+            [ -f "$dir/type" ] || continue
+            printf '%s %s %s\n' "$(basename "$dir")" "$enc" "$end" >> "$work_list"
+        done
+    done
+    done
+
+    report="$(mktemp)"
+    # shellcheck disable=SC2016
+    xargs -P "$jobs" -L1 bash -c 'one "$@"' _ < "$work_list" > "$report"
+    grep -v '^SAME ' "$report" | grep -v '^UNWRITTEN ' || true
+    printf '\nround trip: same=%d different=%d unread=%d uncomparable=%d unwritten=%d\n' \
+        "$(grep -c '^SAME ' "$report")" \
+        "$(grep -c '^DIFFERENT ' "$report")" \
+        "$(grep -c '^UNREAD ' "$report")" \
+        "$(grep -c '^UNCOMPARABLE ' "$report")" \
+        "$(grep -c '^UNWRITTEN ' "$report")"
+    bad="$(grep -c -E '^(DIFFERENT|UNREAD|UNCOMPARABLE) ' "$report")"
+    rm -f "$work_list" "$report"
+    exit $((bad > 0))
+fi
+
+failures=0
+
+if [ "$keyhash" = 1 ]; then
+    same=0; diff=0; refused=0
+    for dir in "$corpus"/*/; do
+        name=$(basename "$dir")
+        [ -f "$dir/type" ] || continue
+        type=$(cat "$dir/type")
+        r=$("$rust" --idl "$dir/type.idl" --type "$type" --values "$dir/values.json" \
+            --emit keyhash 2>&1); rok=$?
+        o=$("$c" --idl "$dir/type.idl" --type "$type" --values "$dir/values.json" \
+            --emit keyhash 2>&1); cok=$?
+        if [ $rok -ne 0 ] && [ $cok -ne 0 ]; then refused=$((refused+1)); continue; fi
+        if [ $rok -ne 0 ] || [ $cok -ne 0 ]; then
+            failures=$((failures+1))
+            printf 'ONE-REFUSED %-44s rust=%d c=%d\n' "$name" "$rok" "$cok"
+            continue
+        fi
+        if [ "$r" = "$o" ]; then same=$((same+1)); else
+            failures=$((failures+1))
+            printf 'KH-DIFF %-44s\n  rust %s\n  c    %s\n' "$name" "$r" "$o"
+        fi
+    done
+    printf 'keyhash: identical=%d differing=%d both-refused=%d\n' "$same" "$diff" "$refused"
+    exit $((failures > 0))
+fi
+
+total_same=0; total_refused=0
+for enc in "${encodings[@]}"; do
+for end in "${orders[@]}"; do
+    same=0; diff=0; refused=0
+    for dir in "$corpus"/*/; do
+        name=$(basename "$dir")
+        [ -f "$dir/type" ] || continue
+        type=$(cat "$dir/type")
+        r=$("$rust" --idl "$dir/type.idl" --type "$type" --values "$dir/values.json" \
+            --encoding "$enc" --endian "$end" 2>&1); rok=$?
+        o=$("$c" --idl "$dir/type.idl" --type "$type" --values "$dir/values.json" \
+            --encoding "$enc" --endian "$end" 2>&1); cok=$?
+        if [ $rok -ne 0 ] && [ $cok -ne 0 ]; then refused=$((refused+1)); continue; fi
+        # One probe producing bytes where the other refuses is a
+        # divergence too, and the louder one: it means the two disagree
+        # about what the corpus even says.
+        if [ $rok -ne 0 ]; then
+            diff=$((diff+1))
+            printf 'ONLY-C %s/%s %-40s rust: %s\n' "$enc" "$end" "$name" "$(echo "$r" | head -1)"
+            continue
+        fi
+        if [ $cok -ne 0 ]; then
+            diff=$((diff+1))
+            printf 'ONLY-RUST %s/%s %-37s c: %s\n' "$enc" "$end" "$name" "$(echo "$o" | head -2 | tr '\n' ' ')"
+            continue
+        fi
+        if [ "$r" = "$o" ]; then same=$((same+1)); else
+            diff=$((diff+1))
+            printf 'DIFF %s/%s %-42s\n  rust %s\n  c    %s\n' "$enc" "$end" "$name" "$r" "$o"
+        fi
+    done
+    printf '%-14s %-2s  identical=%d differing=%d both-refused=%d\n' \
+        "$enc" "$end" "$same" "$diff" "$refused"
+    total_same=$((total_same+same)); total_refused=$((total_refused+refused))
+    failures=$((failures+diff))
+done
+done
+
+printf '\nidentical=%d differing=%d both-refused=%d\n' "$total_same" "$failures" "$total_refused"
+exit $((failures > 0))

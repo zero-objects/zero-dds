@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of array-of-union that fastdds produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	error: boolean switch is malformed.
+plain-cdr1	be	refused	error: boolean switch is malformed.
+pl-cdr1	le	refused	error: boolean switch is malformed.
+pl-cdr1	be	refused	error: boolean switch is malformed.
+plain-cdr2	le	refused	error: boolean switch is malformed.
+plain-cdr2	be	refused	error: boolean switch is malformed.
+delimited-cdr	le	refused	error: boolean switch is malformed.
+delimited-cdr	be	refused	error: boolean switch is malformed.
+pl-cdr2	le	refused	error: boolean switch is malformed.
+pl-cdr2	be	refused	error: boolean switch is malformed.

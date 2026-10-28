@@ -1,0 +1,10 @@
+static int32_t r0[2] = { 1, 2 };
+static int32_t r1[1] = { 3 };
+static dds_sequence_long rows[2];
+rows[0]._length = 2; rows[0]._maximum = 2; rows[0]._buffer = r0; rows[0]._release = false;
+rows[1]._length = 1; rows[1]._maximum = 1; rows[1]._buffer = r1; rows[1]._release = false;
+sample.rows._length = 2;
+sample.rows._maximum = 2;
+sample.rows._buffer = rows;
+sample.rows._release = false;
+sample.tail = 0xAB;

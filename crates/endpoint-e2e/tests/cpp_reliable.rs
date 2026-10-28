@@ -86,6 +86,9 @@ int main(int argc, char** argv) {
 
     auto send_one = [&](const Bytes& f) { ::send(fd, f.data(), f.size(), 0); };
     auto send_batch = [&](const std::vector<Bytes>& fs) {
+#if defined(__linux__)
+        // One syscall for the whole batch, which is the point of the
+        // decoupled writer's drain thread.
         std::vector<mmsghdr> m(fs.size());
         std::vector<iovec> iov(fs.size());
         for (std::size_t i = 0; i < fs.size(); ++i) {
@@ -96,6 +99,16 @@ int main(int argc, char** argv) {
             m[i].msg_hdr.msg_iovlen = 1;
         }
         ::sendmmsg(fd, m.data(), static_cast<unsigned>(fs.size()), 0);
+#else
+        // `sendmmsg` is a Linux syscall; macOS and the BSDs have no
+        // equivalent. One `send` per frame delivers the same octets in the
+        // same order, so what this test asserts — gap-free reliable delivery
+        // under injected loss — is measured identically. What is NOT measured
+        // off Linux is the single-syscall batching itself.
+        for (std::size_t i = 0; i < fs.size(); ++i) {
+            ::send(fd, fs[i].data(), fs[i].size(), 0);
+        }
+#endif
     };
     auto poll_ack = [&](std::uint8_t* buf, std::size_t cap) -> int {
         ssize_t n = ::recv(fd, buf, cap, MSG_DONTWAIT);

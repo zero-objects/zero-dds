@@ -21,8 +21,9 @@ use zerodds_amqp_bridge::frame::{
     FrameHeader, FrameType, decode_frame_header, encode_frame_header,
 };
 use zerodds_amqp_bridge::{
-    attach_to, begin, close, data_payload_from_transfer, decode_performative, descriptor, detach,
-    disposition_accept, end, flow_link_credit, open, sasl_init, sasl_mechanisms_from_body,
+    attach_sender_unsettled, attach_to, begin, close, data_payload_from_transfer,
+    decode_performative, delivery_state, descriptor, detach, disposition_accept,
+    disposition_from_body, end, flow_link_credit, open, sasl_init, sasl_mechanisms_from_body,
     sasl_outcome_code, sasl_plain_response, transfer_message,
 };
 
@@ -156,12 +157,100 @@ impl AmqpClient {
         let xfer = transfer_message(handle, did, &tag, payload, true).map_err(map_codec)?;
         self.write_frame(FrameType::Amqp, 0, &xfer)?;
 
+        self.detach_link(handle)
+    }
+
+    /// Publishes `payload` to `address` and returns only once the broker has
+    /// settled the delivery as `accepted` (AMQP 1.0 Part 3 §3.4.2).
+    ///
+    /// [`Self::send_to`] transfers pre-settled, so AMQP gives its caller
+    /// nothing to wait on and the broker may not hold the message yet when
+    /// it returns. Here the link is attached with `snd-settle-mode` =
+    /// `unsettled` (Part 2 §2.8.2), the transfer goes out unsettled, and the
+    /// broker's disposition for that delivery-id decides: `accepted`
+    /// returns, any other outcome is an error that names it. A `received`
+    /// state (§3.4.1) is not an outcome and is waited past.
+    ///
+    /// # Errors
+    /// I/O, a protocol error, a `rejected`, `released` or `modified`
+    /// outcome (`ErrorKind::Other`, the outcome named), a disposition
+    /// settled without an outcome, or none within the stream's read
+    /// timeout.
+    pub fn send_to_accepted(&mut self, address: &str, payload: &[u8]) -> io::Result<()> {
+        let handle = self.handle;
+        self.handle += 1;
+        let link = format!("zd-snd-{handle}");
+        self.write_frame(
+            FrameType::Amqp,
+            0,
+            &attach_sender_unsettled(&link, handle, address).map_err(map_codec)?,
+        )?;
+        self.expect_amqp(descriptor::ATTACH)?;
+        self.wait_for(descriptor::FLOW)?;
+
+        let did = self.delivery_id;
+        self.delivery_id += 1;
+        let tag = did.to_be_bytes();
+        let xfer = transfer_message(handle, did, &tag, payload, false).map_err(map_codec)?;
+        self.write_frame(FrameType::Amqp, 0, &xfer)?;
+
+        let outcome = self.await_outcome(did);
+        // The link goes either way; an outcome error is the one reported.
+        let detached = self.detach_link(handle);
+        outcome?;
+        detached
+    }
+
+    /// Detaches `handle` and reads the peer's own detach for it (AMQP 1.0
+    /// §2.6.5), so the next attach on this session reads its own answer
+    /// and not this one. Without it a second link on one connection takes
+    /// the first link's detach for the reply to its attach.
+    fn detach_link(&mut self, handle: u32) -> io::Result<()> {
         self.write_frame(
             FrameType::Amqp,
             0,
             &detach(handle, true).map_err(map_codec)?,
         )?;
-        Ok(())
+        self.wait_for(descriptor::DETACH)
+    }
+
+    /// Reads frames until the broker's disposition settles `delivery_id`
+    /// with an outcome. Bounded by the stream's read timeout per frame and
+    /// by a frame count, so a peer that never answers ends the wait.
+    fn await_outcome(&mut self, delivery_id: u32) -> io::Result<()> {
+        for _ in 0..1024 {
+            let body = self.read_frame(FrameType::Amqp)?;
+            if body.is_empty() {
+                continue;
+            }
+            let (desc, fields, _) = decode_performative(&body).map_err(map_codec)?;
+            if desc != descriptor::DISPOSITION {
+                continue;
+            }
+            let disposition = disposition_from_body(&fields)
+                .ok_or_else(|| proto("a disposition without role and first"))?;
+            if !disposition.from_receiver || !disposition.covers(delivery_id) {
+                continue;
+            }
+            match disposition.state {
+                Some(delivery_state::ACCEPTED) => return Ok(()),
+                Some(delivery_state::RECEIVED) | None if !disposition.settled => {}
+                Some(delivery_state::REJECTED) => return Err(outcome_error("rejected")),
+                Some(delivery_state::RELEASED) => return Err(outcome_error("released")),
+                Some(delivery_state::MODIFIED) => return Err(outcome_error("modified")),
+                Some(other) => {
+                    return Err(proto_owned(format!(
+                        "delivery {delivery_id} settled with state {other:#x}, which is no outcome"
+                    )));
+                }
+                None => {
+                    return Err(proto_owned(format!(
+                        "delivery {delivery_id} settled without an outcome"
+                    )));
+                }
+            }
+        }
+        Err(proto("no disposition for the delivery"))
     }
 
     /// Consumes one message from `address` (RabbitMQ v2, e.g. `/queues/<name>`):
@@ -218,11 +307,7 @@ impl AmqpClient {
                 }
             }
         }
-        let _ = self.write_frame(
-            FrameType::Amqp,
-            0,
-            &detach(handle, true).map_err(map_codec)?,
-        );
+        self.detach_link(handle)?;
         Ok(payload)
     }
 
@@ -285,14 +370,25 @@ impl AmqpClient {
         Ok(body)
     }
 
-    /// Reads one AMQP frame and asserts its performative descriptor.
+    /// Reads one AMQP frame and asserts its performative descriptor. A
+    /// `detach` or `close` in its place is the peer refusing, and the
+    /// error it carries (AMQP 1.0 §2.8.14: condition and description) is
+    /// what the returned error says.
     fn expect_amqp(&mut self, want: u64) -> io::Result<()> {
         let body = self.read_frame(FrameType::Amqp)?;
-        let (desc, _, _) = decode_performative(&body).map_err(map_codec)?;
+        let (desc, fields, _) = decode_performative(&body).map_err(map_codec)?;
         if desc != want {
-            return Err(proto_owned(format!(
-                "expected performative {want:#x}, got {desc:#x}"
-            )));
+            let refusal = match desc {
+                descriptor::DETACH => peer_error(&fields, 2),
+                descriptor::CLOSE | descriptor::END => peer_error(&fields, 0),
+                _ => None,
+            };
+            return Err(proto_owned(match refusal {
+                Some(error) => format!(
+                    "expected performative {want:#x}, got {desc:#x}: the peer refused: {error}"
+                ),
+                None => format!("expected performative {want:#x}, got {desc:#x}"),
+            }));
         }
         Ok(())
     }
@@ -321,6 +417,35 @@ fn proto(msg: &'static str) -> io::Error {
 fn proto_owned(msg: String) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, msg)
 }
+/// The `error` field of a performative at `index` (AMQP 1.0 §2.8.14, a
+/// described list of condition, description and info), as
+/// `condition: description`; `None` when there is none.
+fn peer_error(fields: &zerodds_amqp_bridge::AmqpExtValue, index: usize) -> Option<String> {
+    use zerodds_amqp_bridge::AmqpExtValue;
+    let AmqpExtValue::List(fields) = fields else {
+        return None;
+    };
+    let AmqpExtValue::Described { value, .. } = fields.get(index)? else {
+        return None;
+    };
+    let AmqpExtValue::List(error) = value.as_ref() else {
+        return None;
+    };
+    let text = |value: Option<&AmqpExtValue>| match value {
+        Some(AmqpExtValue::Symbol(text) | AmqpExtValue::Str(text)) => Some(text.clone()),
+        _ => None,
+    };
+    let condition = text(error.first()).unwrap_or_else(|| String::from("(no condition)"));
+    Some(match text(error.get(1)) {
+        Some(description) => format!("{condition}: {description}"),
+        None => condition,
+    })
+}
+
+/// A delivery the broker settled with an outcome other than `accepted`.
+fn outcome_error(outcome: &str) -> io::Error {
+    io::Error::other(format!("the broker settled the delivery as {outcome}"))
+}
 fn map_codec(e: zerodds_amqp_bridge::TypeError) -> io::Error {
     proto_owned(format!("amqp codec: {e:?}"))
 }
@@ -330,6 +455,7 @@ fn map_codec(e: zerodds_amqp_bridge::TypeError) -> io::Error {
 mod tests {
     use super::*;
     use std::net::TcpListener;
+    use zerodds_amqp_bridge::AmqpExtValue;
 
     // -------------------------------------------------------------
     // Buffer-cap hardening — a peer-announced frame `size` above
@@ -366,6 +492,119 @@ mod tests {
         let res = client.read_frame(FrameType::Amqp);
         assert!(res.is_err(), "expected clean rejection, got {res:?}");
         handle.join().expect("writer thread");
+    }
+
+    /// The broker side of one `send_to_accepted`: answers the attach and
+    /// grants credit, reads the transfer, then sends `replies` — each a
+    /// `(delivery-id, state descriptor, settled)` disposition — and reads
+    /// the detach. Returns what the client sent: the attach's
+    /// `snd-settle-mode` and the transfer's `settled`.
+    fn broker(
+        addr: std::net::SocketAddr,
+        replies: Vec<(u32, u64, bool)>,
+    ) -> std::thread::JoinHandle<(AmqpExtValue, AmqpExtValue)> {
+        use zerodds_amqp_bridge::encode_performative;
+        std::thread::spawn(move || {
+            let mut stream = TcpStream::connect(addr).expect("connect");
+            let read = |stream: &mut TcpStream| {
+                let mut hdr = [0u8; 8];
+                stream.read_exact(&mut hdr).expect("header");
+                let h = decode_frame_header(&hdr).expect("frame header");
+                let mut body = vec![0u8; h.size as usize - 8];
+                stream.read_exact(&mut body).expect("body");
+                let (desc, fields, _) = decode_performative(&body).expect("performative");
+                let AmqpExtValue::List(fields) = fields else {
+                    panic!("a performative without a list body");
+                };
+                (desc, fields)
+            };
+            let write = |stream: &mut TcpStream, body: &[u8]| {
+                let h = FrameHeader::new_amqp(8 + body.len() as u32, 2, 0);
+                stream.write_all(&encode_frame_header(h)).expect("header");
+                stream.write_all(body).expect("body");
+            };
+            let (desc, attach) = read(&mut stream);
+            assert_eq!(desc, descriptor::ATTACH);
+            write(
+                &mut stream,
+                &attach_to("broker", 0, false, "/queues/q").expect("attach"),
+            );
+            write(&mut stream, &flow_link_credit(0, 0, 100).expect("flow"));
+            let (desc, transfer) = read(&mut stream);
+            assert_eq!(desc, descriptor::TRANSFER);
+            for (delivery_id, state, settled) in replies {
+                let body = AmqpExtValue::List(vec![
+                    AmqpExtValue::Boolean(true),
+                    AmqpExtValue::Uint(delivery_id),
+                    AmqpExtValue::Null,
+                    AmqpExtValue::Boolean(settled),
+                    AmqpExtValue::Described {
+                        descriptor: state,
+                        value: Box::new(AmqpExtValue::List(vec![])),
+                    },
+                ]);
+                write(
+                    &mut stream,
+                    &encode_performative(descriptor::DISPOSITION, &body).expect("disposition"),
+                );
+            }
+            let (desc, _) = read(&mut stream);
+            assert_eq!(desc, descriptor::DETACH);
+            // A broker answers a detach with its own (AMQP 1.0 §2.6.5).
+            write(&mut stream, &detach(0, true).expect("detach"));
+            (attach[3].clone(), transfer[4].clone())
+        })
+    }
+
+    fn client_against(
+        replies: Vec<(u32, u64, bool)>,
+    ) -> (
+        io::Result<()>,
+        std::thread::JoinHandle<(AmqpExtValue, AmqpExtValue)>,
+    ) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let peer = broker(listener.local_addr().expect("local_addr"), replies);
+        let (accepted, _) = listener.accept().expect("accept");
+        accepted
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .expect("timeout");
+        let mut client = AmqpClient {
+            stream: accepted,
+            handle: 0,
+            delivery_id: 0,
+        };
+        (client.send_to_accepted("/queues/q", b"payload"), peer)
+    }
+
+    /// AMQP 1.0 §2.8.2, §3.4: the link says `unsettled`, the transfer goes
+    /// out unsettled, and the call returns on the disposition that accepts
+    /// this delivery — not on one for another delivery, and not on the
+    /// non-terminal `received`.
+    #[test]
+    fn send_to_accepted_returns_on_the_accepting_disposition() {
+        let (result, peer) = client_against(vec![
+            (7, delivery_state::ACCEPTED, true),
+            (0, delivery_state::RECEIVED, false),
+            (0, delivery_state::ACCEPTED, true),
+        ]);
+        result.expect("accepted");
+        let (snd_settle_mode, settled) = peer.join().expect("broker");
+        assert_eq!(snd_settle_mode, AmqpExtValue::Ubyte(0), "snd-settle-mode");
+        assert_eq!(settled, AmqpExtValue::Boolean(false), "transfer settled");
+    }
+
+    #[test]
+    fn send_to_accepted_reports_an_outcome_other_than_accepted() {
+        for (state, name) in [
+            (delivery_state::REJECTED, "rejected"),
+            (delivery_state::RELEASED, "released"),
+            (delivery_state::MODIFIED, "modified"),
+        ] {
+            let (result, peer) = client_against(vec![(0, state, true)]);
+            let error = result.expect_err(name);
+            assert!(error.to_string().contains(name), "{error}");
+            let _ = peer.join().expect("broker");
+        }
     }
 
     #[test]

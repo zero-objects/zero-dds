@@ -39,20 +39,27 @@ package body Zerodds_Ada83_Reliable is
    ------------------------------------------------------------------
    --  Frames
    ------------------------------------------------------------------
-   function Write_Frame (Seq : Seq_Type; Body_FS : Frame_Store) return Frame_Store is
+   function Write_Frame
+     (Seq : Seq_Type; Object_Id : Integer; Body_FS : Frame_Store) return Frame_Store is
       FS : Frame_Store;
-      N  : constant Integer := Body_FS.Len;
+      N  : constant Integer := Base_Size + Body_FS.Len;
    begin
       FS.Data (0) := 16#80#;             -- session: no-key
       FS.Data (1) := Reliable_Stream;     -- stream: reliable (>=128)
       FS.Data (2) := Lo (Seq);
       FS.Data (3) := Hi (Seq);
       FS.Data (4) := 16#07#;              -- WRITE_DATA
-      FS.Data (5) := 16#03#;              -- flags: data-present + E little-endian
+      FS.Data (5) := 16#01#;              -- flags: E flag LE + FORMAT_DATA
       FS.Data (6) := Lo (N);
       FS.Data (7) := Hi (N);
-      for I in 0 .. N - 1 loop
-         FS.Data (8 + I) := Body_FS.Data (I);
+      --  BaseObjectRequest (7.7.8): RequestId then ObjectId, most significant
+      --  octet first.
+      FS.Data (8)  := Hi (Seq);
+      FS.Data (9)  := Lo (Seq);
+      FS.Data (10) := Hi (Object_Id);
+      FS.Data (11) := Lo (Object_Id);
+      for I in 0 .. Body_FS.Len - 1 loop
+         FS.Data (8 + Base_Size + I) := Body_FS.Data (I);
       end loop;
       FS.Len := 8 + N;
       return FS;
@@ -62,16 +69,16 @@ package body Zerodds_Ada83_Reliable is
    begin
       Seq := 0;
       Body_FS := (Data => (others => 0), Len => 0);
-      if F.Len >= 8 and then F.Data (4) = 16#07# then
+      if F.Len >= 8 + Base_Size and then F.Data (4) = 16#07# then
          Seq := Integer (F.Data (2)) + Integer (F.Data (3)) * 256;
-         for I in 0 .. F.Len - 8 - 1 loop
-            Body_FS.Data (I) := F.Data (8 + I);
+         for I in 0 .. F.Len - 8 - Base_Size - 1 loop
+            Body_FS.Data (I) := F.Data (8 + Base_Size + I);
          end loop;
-         Body_FS.Len := F.Len - 8;
+         Body_FS.Len := F.Len - 8 - Base_Size;
       end if;
    end Read_Frame;
 
-   --  Shared 13-byte control frame layout (only Sm/body/stream differ).
+   --  Shared 13-byte control frame layout (HEARTBEAT) (only Sm/body/stream differ).
    function Control_Frame (Sm : Byte; B0, B1, B2, B3, Stream : Byte; Msg_Seq : Seq_Type)
                            return Frame_Store is
       FS : Frame_Store;
@@ -94,23 +101,65 @@ package body Zerodds_Ada83_Reliable is
    end Control_Frame;
 
    function Acknack_Frame (First_Unacked : Seq_Type; Bitmap : Bitmap_Type;
-                           Stream : Byte := Reliable_Stream; Msg_Seq : Seq_Type := 1)
+                           Stream : Byte := Reliable_Stream; Msg_Seq : Seq_Type := 1;
+                           Mode : Unannotated_Types := Appendable)
                            return Frame_Store is
+      FS : Frame_Store;
+      B  : Integer;   -- index of the first payload octet
    begin
-      return Control_Frame
-        (16#0A#, Lo (First_Unacked), Hi (First_Unacked), Lo (Bitmap), Hi (Bitmap),
-         Stream, Msg_Seq);
+      --  ACKNACK_Payload is APPENDABLE (DDS-XTypes 1.3 7.3.1.2.1.8): the
+      --  body is a 4-octet DHEADER (= 5) followed by the 5 payload octets.
+      --  Mode = Final omits the DHEADER (reference implementation form).
+      FS.Data (0) := 16#80#;              -- session: no-key
+      FS.Data (1) := 16#00#;              -- control stream (NONE); target in body
+      FS.Data (2) := Lo (Msg_Seq);
+      FS.Data (3) := Hi (Msg_Seq);
+      FS.Data (4) := 16#0A#;
+      FS.Data (5) := 16#01#;              -- E little-endian only
+      if Mode = Appendable then
+         FS.Data (6) := 9;                -- body length: DHEADER + 5
+         FS.Data (7) := 0;
+         FS.Data (8) := 5;                -- DHEADER (u32 LE) = 5
+         FS.Data (9) := 0;
+         FS.Data (10) := 0;
+         FS.Data (11) := 0;
+         B := 12;
+      else
+         FS.Data (6) := 5;                -- body length: 5, no DHEADER
+         FS.Data (7) := 0;
+         B := 8;
+      end if;
+      FS.Data (B) := Lo (First_Unacked);
+      FS.Data (B + 1) := Hi (First_Unacked);
+      FS.Data (B + 2) := Lo (Bitmap);
+      FS.Data (B + 3) := Hi (Bitmap);
+      FS.Data (B + 4) := Stream;
+      FS.Len := B + 5;
+      return FS;
    end Acknack_Frame;
 
    procedure Parse_Acknack (F : Frame_Store; Ok : out Boolean;
                             First_Unacked : out Seq_Type; Bitmap : out Bitmap_Type) is
+      --  Body length from the submessage header; 9 = DHEADER + payload,
+      --  5 = FINAL form (no DHEADER). Shorter is rejected.
+      Body_Len : Integer;
+      Base     : Integer := 8;
    begin
-      Ok := F.Len >= 13 and then F.Data (4) = 16#0A#;
       First_Unacked := 0;
       Bitmap := 0;
+      Ok := False;
+      if F.Len >= 13 and then F.Data (4) = 16#0A# then
+         Body_Len := Integer (F.Data (6)) + Integer (F.Data (7)) * 256;
+         if Body_Len >= 9 and then F.Len >= 17 then
+            Base := 12;
+            Ok := True;
+         elsif Body_Len >= 5 then
+            Ok := True;
+         end if;
+      end if;
       if Ok then
-         First_Unacked := Integer (F.Data (8)) + Integer (F.Data (9)) * 256;
-         Bitmap := Integer (F.Data (10)) + Integer (F.Data (11)) * 256;
+         First_Unacked := Integer (F.Data (Base)) + Integer (F.Data (Base + 1)) * 256;
+         Bitmap := Integer (F.Data (Base + 2)) + Integer (F.Data (Base + 3)) * 256;
       end if;
    end Parse_Acknack;
 
@@ -172,7 +221,11 @@ package body Zerodds_Ada83_Reliable is
 
    procedure Pending_Heartbeat (S : in out Sender_State; Now_Ms : Long_Integer;
                                 Has : out Boolean; First, Last : out Seq_Type) is
-      Seen : Boolean := False;
+      --  Ada 83 forbids reading `out` parameters, so accumulate the window in
+      --  local variables and write First/Last only at the end.
+      Seen    : Boolean := False;
+      L_First : Seq_Type := 0;
+      L_Last  : Seq_Type := 0;
    begin
       Has := False;
       First := 0;
@@ -187,19 +240,21 @@ package body Zerodds_Ada83_Reliable is
       for I in S.Slots'Range loop
          if S.Slots (I).Used then
             if not Seen then
-               First := S.Slots (I).Seq;
-               Last := S.Slots (I).Seq;
+               L_First := S.Slots (I).Seq;
+               L_Last := S.Slots (I).Seq;
                Seen := True;
             else
-               if Seq_Lt (S.Slots (I).Seq, First) then
-                  First := S.Slots (I).Seq;
+               if Seq_Lt (S.Slots (I).Seq, L_First) then
+                  L_First := S.Slots (I).Seq;
                end if;
-               if Seq_Lt (Last, S.Slots (I).Seq) then
-                  Last := S.Slots (I).Seq;
+               if Seq_Lt (L_Last, S.Slots (I).Seq) then
+                  L_Last := S.Slots (I).Seq;
                end if;
             end if;
          end if;
       end loop;
+      First := L_First;
+      Last := L_Last;
       Has := True;
    end Pending_Heartbeat;
 
@@ -319,6 +374,13 @@ package body Zerodds_Ada83_Reliable is
       end loop;
       return Bitmap;
    end Pending_Acknack;
+
+   function Receiver_Acknack (R : Receiver_State;
+                              Stream : Byte := Reliable_Stream;
+                              Msg_Seq : Seq_Type := 1) return Frame_Store is
+   begin
+      return Acknack_Frame (R.Expected, Pending_Acknack (R), Stream, Msg_Seq, R.Mode);
+   end Receiver_Acknack;
 
    procedure Reset (R : in out Receiver_State) is
    begin

@@ -3,9 +3,9 @@
 
 //! Isolation-Smoke-Test Runner (WP 2.0b T4).
 //!
-//! Ein schmales CLI-Binary das als Sender oder Receiver auf
-//! waehlbarem Transport laeuft. Wird von den Isolation-Scripts
-//! (`testing/isolation/`) in L1-L4 orchestriert.
+//! A thin CLI binary that runs as sender or receiver on
+//! a selectable transport. Used by the isolation scripts
+//! (`testing/isolation/`) in L1-L4 orchestrated.
 //!
 //! # Usage
 //!
@@ -21,16 +21,16 @@
 //! ```
 //!
 //! # Return-Codes
-//! - `0`: Erfolg (alle erwarteten Frames durchgelaufen).
-//! - `1`: Config-/Parse-Fehler.
-//! - `2`: Transport-Bind-Fehler.
-//! - `3`: Send-/Recv-Fehler waehrend des Tests.
-//! - `4`: Payload-Mismatch (receiver hat unerwarteten Inhalt gelesen).
+//! - `0`: success (all expected frames passed through).
+//! - `1`: Config-/Parse error.
+//! - `2`: Transport-Bind error.
+//! - `3`: send/recv error during the test.
+//! - `4`: payload mismatch (receiver read unexpected content).
 
 #![allow(clippy::print_stdout, clippy::print_stderr)]
-// isolation-smoke nutzt POSIX-only Transports (UDS + POSIX-SHM). Das
-// gesamte File ist daher cfg(unix)-gated; auf Windows liefert das
-// Binary einen Hinweis-Exit.
+// isolation-smoke uses POSIX-only transports (UDS + POSIX-SHM). The
+// entire file is therefore cfg(unix)-gated; on Windows it yields
+// binary gives a hint exit.
 #![cfg_attr(not(unix), allow(unused_imports, dead_code, unused_variables))]
 
 #[cfg(not(unix))]
@@ -174,21 +174,21 @@ fn parse_args(args: &[String]) -> Result<Cfg, String> {
     Ok(cfg)
 }
 
-/// Parst einen 16-Byte-Locator-Hex-String.
+/// Parses a 16-byte locator hex string.
 ///
-/// Akzeptiert zwei Formate explizit, um Silent-Pad-Tippfehler zu
-/// vermeiden (phase2-0-smells #11):
-/// - **Genau 32 hex chars** — volle 16-Byte-ID (keine Transformation).
-/// - **Exakt mit `0x` prefix ODER einer Laenge die Vielfaches von 2
-///   und <= 32 ist** — die Eingabe wird nach links mit `0`-Bytes
-///   zu 16 Byte aufgefuellt; der User sieht das. Fuer `--local-id=1`
-///   etc. (kurze Test-IDs) bleibt der Workflow.
+/// Accepts two formats explicitly, to avoid Silent-Pad typos
+/// (phase2-0-smells #11):
+/// - **Exactly 32 hex chars** — full 16-byte ID (no transformation).
+/// - **Exactly with a `0x` prefix OR a length that is a multiple of 2
+///   and <= 32** — the input is left-padded with `0` bytes
+///   padded to 16 bytes; the user sees that. For `--local-id=1`
+///   etc. (short test IDs) the workflow remains.
 ///
-/// Abgelehnt werden: odd-length strings ("abc"), non-hex chars,
-/// leerer String, > 32 chars. Anders als vorher werden Tippfehler
-/// wie `--local-id=abz` nicht silent gepadded zu `00…00abz` +
-/// Fehler erst beim hex_nibble — der Fehler kommt jetzt aus
-/// "length/hex check" direkt.
+/// Rejected are: odd-length strings ("abc"), non-hex chars,
+/// empty string, > 32 chars. Unlike before, typos
+/// like `--local-id=abz` are not silently padded to `00…00abz` +
+/// error only at hex_nibble — the error now comes from
+/// "length/hex check" directly.
 #[cfg(unix)]
 fn parse_hex_id(s: &str) -> Result<[u8; 16], String> {
     if s.is_empty() {
@@ -203,8 +203,8 @@ fn parse_hex_id(s: &str) -> Result<[u8; 16], String> {
             s.len()
         ));
     }
-    // Alle Zeichen muessen hex sein — jetzt checken statt spaeter
-    // implizit ueber hex_nibble. Das macht den Fehler selbsterklaerend.
+    // All characters must be hex — check now instead of later
+    // implicitly via hex_nibble. That makes the error self-explanatory.
     for (i, b) in s.bytes().enumerate() {
         if hex_nibble(b).is_err() {
             return Err(format!(
@@ -216,18 +216,18 @@ fn parse_hex_id(s: &str) -> Result<[u8; 16], String> {
     let padded = format!("{s:0>32}");
     let mut out = [0u8; 16];
     for (i, chunk) in padded.as_bytes().chunks_exact(2).enumerate() {
-        // Unwrap sicher — wir haben alle chars vorher validiert.
+        // Unwrap is safe — we validated all chars beforehand.
         out[i] = (hex_nibble(chunk[0]).map_err(|e| e.to_string())? << 4)
             | hex_nibble(chunk[1]).map_err(|e| e.to_string())?;
     }
     Ok(out)
 }
 
-/// Symlink-Guard fuer `--base-dir` (phase2-0-security Sec-Med-4).
-/// Weigert sich, Symlinks als base-dir zu akzeptieren, damit das
-/// Binary nicht in fremde Pfade schreibt. Existiert der Pfad nicht,
-/// erlauben wir ihn (Socket/Segment wird unter unserer Kontrolle
-/// angelegt).
+/// Symlink guard for `--base-dir` (phase2-0-security Sec-Med-4).
+/// Refuses to accept symlinks as base-dir, so that the
+/// binary does not write into foreign paths. If the path does not exist,
+/// we allow it (socket/segment is created under our control
+/// created).
 #[cfg(unix)]
 fn validate_base_dir(v: &str) -> Result<PathBuf, String> {
     let p = PathBuf::from(v);

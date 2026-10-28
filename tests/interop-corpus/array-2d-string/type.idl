@@ -1,0 +1,5 @@
+// two-dimensional array of `string`
+@final struct Sample {
+    string words[2][2];
+    long tail;
+};

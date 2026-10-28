@@ -39,13 +39,26 @@ macOS and Windows.
 Layer 4 — core services. **No** ZeroDDS crate deps; `libc` is the
 only external dep, target-gated `cfg(target_os = "linux")`.
 
+## Who uses this
+
+`zerodds-dcps`, feature `rt` (C2(2)): the `threads.recv_policy`/
+`tick_policy`/`recv_priority`/`tick_priority`/`recv_deadline`/`tick_deadline`/
+`recv_cpus`/`tick_cpus` config keys are applied through this crate — one call
+to `SchedulerProfile::apply_to_current_thread` + `affinity::
+pin_current_thread_to_cpus` per worker thread, at that thread's own start.
+`zerodds-dcps` itself carries no `unsafe`; every syscall for the `threads.*`
+keys lives here. On by default for `rmw-zerodds-shim` (ROS 2) and
+`zerodds-c-api` (the native endpoint SDK); a build-time opt-in elsewhere. See
+`crates/dcps/src/runtime.rs`'s `apply_thread_tuning`/`resolve_thread_sched`
+and `crates/dcps/README.md`.
+
 ## Quickstart
 
 ```rust,no_run
 use zerodds_rt_linux::{SchedulerProfile, pin_current_thread_to_cpus};
 
 // Real-time FIFO with priority 80, CPU pinning to cores 2+3:
-let profile = SchedulerProfile::fifo(80).expect("priority valid");
+let profile = SchedulerProfile::RealtimeFifo { priority: 80 };
 profile.apply_to_current_thread().expect("CAP_SYS_NICE needed");
 pin_current_thread_to_cpus(&[2, 3]).expect("affinity set");
 ```
@@ -82,8 +95,8 @@ return `Unsupported`).
 
 ## Stability
 
-`1.0.0-rc.1`. Public API + errno mapping RC1-stable. The Linux kernel API
-(`sched_setattr`/`sched_setaffinity`) has been stable since kernel 3.14.
+`1.0.0-rc.7`, a pre-release. The public API can still change before
+1.0.0; the crate's CHANGELOG lists every change.
 
 ## Tests
 

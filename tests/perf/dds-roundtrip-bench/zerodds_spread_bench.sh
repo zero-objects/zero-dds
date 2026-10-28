@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
 #
-# Gezielter Spread-Bench: nur zerodds-self ueber wenige Payloads, viele
-# Runs pro Cell. Vergleicht verschiedene UDP-Cache-Konfigurationen
-# (via ZERODDS_UDP_CACHE_*-Env-Vars) ohne rebuild.
+# Targeted spread bench: only zerodds self over a few payloads, many
+# runs per cell. Compares different UDP cache configurations
+# (via ZERODDS_UDP_CACHE_* env vars) without a rebuild.
 #
-# Aufruf:
+# Usage:
 #   zerodds_spread_bench.sh <out_dir> [N=20] [PAYLOADS="0 1638 4096 6554 8192"]
 #
-# CSV-Output: cache_mode,payload_bytes,run_idx,p50_us,min_us,max_us
+# CSV output: cache_mode,payload_bytes,run_idx,p50_us,min_us,max_us
 #
-# Varianten:
-#   cache_on   = Default (Cache an, SNDBUF=256K, max=16)
-#   cache_off  = ZERODDS_UDP_CACHE_ENABLE=0 (klassisches send_to)
-#   cache_default_sndbuf = ZERODDS_UDP_CACHE_SNDBUF=0 (Kernel-Default)
+# Variants:
+#   cache_on   = default (cache on, SNDBUF=256K, max=16)
+#   cache_off  = ZERODDS_UDP_CACHE_ENABLE=0 (classic send_to)
+#   cache_default_sndbuf = ZERODDS_UDP_CACHE_SNDBUF=0 (kernel default)
 
 set -u
 
@@ -98,17 +98,17 @@ run_mode() {
 
 started=$(date +%s)
 
-# Variante 1: Cache aus
+# Variant 1: cache off
 ZERODDS_UDP_CACHE_ENABLE=0 \
 run_mode "cache_off" env ZERODDS_UDP_CACHE_ENABLE=0
 
-# Variante 2: Cache an + SNDBUF Default 256K (jetziger Default)
+# Variant 2: cache on + SNDBUF default 256K (current default)
 run_mode "cache_on_sndbuf_256k" env ZERODDS_UDP_CACHE_ENABLE=1 ZERODDS_UDP_CACHE_SNDBUF=262144
 
-# Variante 3: Cache an + SNDBUF Kernel-Default (wie pre-refit)
+# Variant 3: cache on + SNDBUF kernel default (as pre-refit)
 run_mode "cache_on_sndbuf_default" env ZERODDS_UDP_CACHE_ENABLE=1 ZERODDS_UDP_CACHE_SNDBUF=0
 
 elapsed=$(( $(date +%s) - started ))
 echo
-echo "Spread-Bench fertig in $((elapsed / 60)) min $((elapsed % 60)) s."
+echo "Spread bench done in $((elapsed / 60)) min $((elapsed % 60)) s."
 echo "CSV: $CSV"

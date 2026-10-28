@@ -296,27 +296,43 @@ mod tests {
         assert_eq!(server.common_iv, hex("4622d4dd6d944168eefb54987c"));
     }
 
-    // RFC 8613 Appendix C.2.1 — Test Vector 2, client. Here the client's Sender
-    // ID is 0x00 (non-empty) — a second independent vector through the same code.
-    // RFC 8613 Appendix C.2.1 — Test Vector 2, client, WITH an ID Context. This
-    // exercises the `id_context` field of the HKDF info (CBOR bstr instead of
-    // nil). The Recipient Key and Common IV below are the documented C.2.1 values
-    // — matching them proves the ID-Context derivation path byte-exact.
+    // RFC 8613 Appendix C.2.1 — Test Vector 2, client. No Master Salt (empty),
+    // Sender ID 0x00 (non-empty) — a second independent vector through the same
+    // code, exercising the empty-salt HKDF-Extract path.
     #[test]
-    fn rfc8613_c2_1_client_with_id_context() {
+    fn rfc8613_c2_1_client_without_master_salt() {
+        let ctx = SecurityContext::derive(
+            &hex("0102030405060708090a0b0c0d0e0f10"),
+            &[],        // Master Salt absent
+            &hex("00"), // Sender ID
+            &hex("01"), // Recipient ID
+            None,
+            AeadAlgorithm::AesCcm16_64_128,
+        );
+        assert_eq!(ctx.sender_key, hex("321b26943253c7ffb6003b0b64d74041"));
+        assert_eq!(ctx.recipient_key, hex("e57b5635815177cd679ab4bcec9d7dda"));
+        assert_eq!(ctx.common_iv, hex("be35ae297d2dace910c52e99f9"));
+    }
+
+    // RFC 8613 Appendix C.3.1 — Test Vector 3, client, WITH an ID Context. This
+    // exercises the `id_context` field of the HKDF info (CBOR bstr instead of
+    // nil). All three outputs are the documented C.3.1 values — matching them
+    // proves the ID-Context derivation path byte-exact. An earlier revision of
+    // this test mislabeled the vector as C.2.1 and derived with Sender ID 0x00;
+    // C.3.1's client Sender ID is the empty byte string.
+    #[test]
+    fn rfc8613_c3_1_client_with_id_context() {
         let ctx = SecurityContext::derive(
             &hex("0102030405060708090a0b0c0d0e0f10"),
             &hex("9e7ca92223786340"),
-            &hex("00"),                     // Sender ID
+            &[],                            // Sender ID (empty)
             &hex("01"),                     // Recipient ID
             Some(&hex("37cbf3210017a2d3")), // ID Context
             AeadAlgorithm::AesCcm16_64_128,
         );
+        assert_eq!(ctx.sender_key, hex("af2a1300a5e95788b356336eeecd2b92"));
         assert_eq!(ctx.recipient_key, hex("e39a0c7c77b43f03b4b39ab9a268699f"));
         assert_eq!(ctx.common_iv, hex("2ca58fb85ff1b81c0b7181b85e"));
-        // Sender Key for Sender ID 0x00 under this ID Context (same verified
-        // derivation; locked as a regression alongside the documented anchors).
-        assert_eq!(ctx.sender_key, hex("fcf9e255693e8d1f87dcbd42ab8cae30"));
     }
 
     // RFC 5869 Appendix A.1 — independent HKDF-SHA-256 test vector, isolating the

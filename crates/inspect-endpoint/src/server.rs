@@ -300,7 +300,7 @@ mod tests {
         let frame = Frame::dcps("topic-1".into(), 100, 42, vec![1, 2, 3]);
         hook.on_frame(&frame);
 
-        // Client liest den Frame
+        // Client reads the frame
         let mut len_buf = [0u8; 4];
         stream.read_exact(&mut len_buf).expect("read len");
         let n = u32::from_be_bytes(len_buf) as usize;

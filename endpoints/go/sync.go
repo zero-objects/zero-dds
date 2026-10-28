@@ -3,7 +3,10 @@
 
 package zerodds
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 // Client is the synchronous endpoint API — a blocking counterpart to the
 // goroutine/channel AsyncReader. Frame + deliver on Write; poll (or block with a
@@ -12,24 +15,40 @@ type Client struct {
 	Transport Transport
 	Session   byte
 	Stream    byte
-	seq       uint16
-	rxbuf     []byte
+	// ObjectID names the target DataWriter in every frame's BaseObjectRequest
+	// (DDS-XRCE 1.0 §7.7.8).
+	ObjectID uint16
+	seq      uint16
+	rxbuf    []byte
 }
 
-// NewClient returns a sync client over t (best-effort no-key session).
-func NewClient(t Transport) *Client {
+// NewClient returns a sync client over t (best-effort no-key session) writing
+// to the DataWriter objectID.
+func NewClient(t Transport, objectID uint16) *Client {
 	return &Client{
 		Transport: t,
 		Session:   XrceSessionNoKey,
 		Stream:    XrceStreamBestEffort,
+		ObjectID:  objectID,
 		seq:       1,
 		rxbuf:     make([]byte, 2048),
 	}
 }
 
 // Write frames and delivers one sample (synchronous), advancing the sequence.
+//
+// XrceWriteFrame answers nil for a sample the 16-bit submessage_length cannot
+// describe, and this used to hand that nil to Deliver and return its error: an
+// oversize sample went out as an empty datagram and Write returned nil. The
+// refusal was already representable and this is the caller that has to read it.
+// The sequence is not advanced, because nothing was written.
 func (c *Client) Write(sample []byte) error {
-	frame := XrceWriteFrame(c.Session, c.Stream, c.seq, sample)
+	frame := XrceWriteFrame(c.Session, c.Stream, c.seq, c.ObjectID, sample)
+	if frame == nil {
+		return fmt.Errorf(
+			"zerodds: %d octets: the 16-bit XRCE submessage_length describes at most %d",
+			len(sample), 0xFFFF)
+	}
 	c.seq++
 	return c.Transport.Deliver(frame)
 }

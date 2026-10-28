@@ -15,12 +15,13 @@
 
 extern crate alloc;
 use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::string::String;
 use alloc::vec::Vec;
 use core::time::Duration;
 
 use zerodds_rtps::publication_data::PublicationBuiltinTopicData;
 use zerodds_rtps::subscription_data::SubscriptionBuiltinTopicData;
-use zerodds_rtps::wire_types::{Guid, GuidPrefix};
+use zerodds_rtps::wire_types::{Guid, GuidPrefix, SequenceNumber};
 
 /// Default cap for publications per remote participant.
 pub const DEFAULT_MAX_PUBLICATIONS_PER_PARTICIPANT: usize = 256;
@@ -53,6 +54,10 @@ pub struct DiscoveredPublication {
     pub data: PublicationBuiltinTopicData,
     /// Time of the (most recent) discovery — uptime-based, for LRU.
     pub discovered_at: Duration,
+    /// The SEDP sequence number of the latest announcement an in-process
+    /// peer handed over directly; see
+    /// [`DiscoveredEndpointsCache::insert_publication_announced`].
+    pub in_process: Option<SequenceNumber>,
 }
 
 /// A discovered subscription with a timestamp.
@@ -62,6 +67,8 @@ pub struct DiscoveredSubscription {
     pub data: SubscriptionBuiltinTopicData,
     /// Time of the (most recent) discovery.
     pub discovered_at: Duration,
+    /// As [`DiscoveredPublication::in_process`].
+    pub in_process: Option<SequenceNumber>,
 }
 
 /// Secondary index per remote participant, sorted by `discovered_at`.
@@ -201,6 +208,7 @@ impl DiscoveredEndpointsCache {
             DiscoveredPublication {
                 data,
                 discovered_at: now,
+                in_process: None,
             },
         );
         true
@@ -239,9 +247,96 @@ impl DiscoveredEndpointsCache {
             DiscoveredSubscription {
                 data,
                 discovered_at: now,
+                in_process: None,
             },
         );
         true
+    }
+
+    /// A publication as the SEDP reader delivered it, with the sequence
+    /// number its SEDP writer gave the announcement.
+    ///
+    /// A peer in the same process hands each announcement over twice: at
+    /// once through [`Self::insert_publication_in_process`], and again over
+    /// the wire, where it can arrive after a newer one was handed over
+    /// directly. An announcement older than the one the direct path left
+    /// here — a lower sequence number — is not written over it: an
+    /// endpoint's changed QoS came back as the QoS it had before, and a
+    /// pair the new QoS had unmatched matched again. The same announcement
+    /// is taken, and its event with it: the direct path fills only the
+    /// cache, and a builtin-topic reader of the peer learns of the
+    /// endpoint from the event. The wire alone delivers in order, so
+    /// without a direct handover nothing is compared.
+    ///
+    /// `None` for an announcement left out as older; otherwise as
+    /// [`Self::insert_publication`].
+    pub fn insert_publication_announced(
+        &mut self,
+        data: PublicationBuiltinTopicData,
+        now: Duration,
+        sequence: SequenceNumber,
+    ) -> Option<bool> {
+        if self
+            .publications
+            .get(&data.key)
+            .and_then(|entry| entry.in_process)
+            .is_some_and(|handed| sequence < handed)
+        {
+            return None;
+        }
+        Some(self.insert_publication(data, now))
+    }
+
+    /// A publication an in-process peer handed over directly, with the
+    /// sequence number its SEDP writer gave the announcement (or, for a
+    /// snapshot of all of them, the last one it gave). The direct path
+    /// delivers in announcement order, so it always writes; see
+    /// [`Self::insert_publication_announced`].
+    pub fn insert_publication_in_process(
+        &mut self,
+        data: PublicationBuiltinTopicData,
+        now: Duration,
+        sequence: SequenceNumber,
+    ) -> bool {
+        let key = data.key;
+        let inserted = self.insert_publication(data, now);
+        if let Some(entry) = self.publications.get_mut(&key) {
+            entry.in_process = Some(entry.in_process.map_or(sequence, |s| s.max(sequence)));
+        }
+        inserted
+    }
+
+    /// The subscription counterpart of [`Self::insert_publication_announced`].
+    pub fn insert_subscription_announced(
+        &mut self,
+        data: SubscriptionBuiltinTopicData,
+        now: Duration,
+        sequence: SequenceNumber,
+    ) -> Option<bool> {
+        if self
+            .subscriptions
+            .get(&data.key)
+            .and_then(|entry| entry.in_process)
+            .is_some_and(|handed| sequence < handed)
+        {
+            return None;
+        }
+        Some(self.insert_subscription(data, now))
+    }
+
+    /// The subscription counterpart of [`Self::insert_publication_in_process`].
+    pub fn insert_subscription_in_process(
+        &mut self,
+        data: SubscriptionBuiltinTopicData,
+        now: Duration,
+        sequence: SequenceNumber,
+    ) -> bool {
+        let key = data.key;
+        let inserted = self.insert_subscription(data, now);
+        if let Some(entry) = self.subscriptions.get_mut(&key) {
+            entry.in_process = Some(entry.in_process.map_or(sequence, |s| s.max(sequence)));
+        }
+        inserted
     }
 
     /// Removes a publication by GUID (e.g. after an explicit withdrawal
@@ -295,28 +390,89 @@ impl DiscoveredEndpointsCache {
         (removed_pubs, removed_subs)
     }
 
-    /// Finds all publications matching a `(topic_name, type_name)` —
-    /// for reader-side matching (T4/T5).
+    /// Finds all publications on `topic` — the candidate set for
+    /// reader-side matching (T4/T5).
+    ///
+    /// The topic name is the whole filter, and the type name is
+    /// deliberately not part of it. XTypes 1.3 §7.6.3 names exactly this
+    /// as one of the three things the enhanced type system changes about
+    /// endpoint matching: "One of the criteria for DataWriter-DataReader
+    /// matching defined by DDS is that the type names of each must match
+    /// exactly. In complex dynamic systems, this restriction can prove
+    /// overly limiting. Based on the type compatibility rules defined by
+    /// this specification, matching endpoints shall be permitted to
+    /// declare types that are not identical but nevertheless have
+    /// well-defined relationships with one another."
+    ///
+    /// §7.6.3.4.2 then puts the decision in two steps, both of which the
+    /// caller runs — Step 1 assignability over the two `TypeObject`s,
+    /// Step 2 exact type-name equality when either side announced no
+    /// `TypeObject`. A type-name filter here would pre-empt both: Step 1
+    /// would only ever be asked about pairs that already passed Step 2,
+    /// so it could reject a name-identical pair and could never accept a
+    /// name-different one. Measured before this filter fell: of the OMG
+    /// `dds-xtypes` suite's 83 expected-compatible pairs the runtime
+    /// reached the 25 on the diagonal.
+    ///
+    /// Callers: `DcpsRuntime::match_local_reader_against_cache` →
+    /// `wire_reader_to_remote_writer`, which decides both steps.
     pub fn match_publications<'a>(
         &'a self,
         topic: &'a str,
-        type_name: &'a str,
     ) -> impl Iterator<Item = &'a DiscoveredPublication> + 'a {
         self.publications
             .values()
-            .filter(move |p| p.data.topic_name == topic && p.data.type_name == type_name)
+            .filter(move |p| p.data.topic_name == topic)
     }
 
-    /// Finds all subscriptions matching a `(topic_name, type_name)` —
-    /// for writer-side matching.
+    /// Finds all subscriptions on `topic` — the candidate set for
+    /// writer-side matching. Symmetric to [`Self::match_publications`];
+    /// the type name is not a filter here either, for the reason given
+    /// there.
     pub fn match_subscriptions<'a>(
         &'a self,
         topic: &'a str,
-        type_name: &'a str,
     ) -> impl Iterator<Item = &'a DiscoveredSubscription> + 'a {
         self.subscriptions
             .values()
-            .filter(move |s| s.data.topic_name == topic && s.data.type_name == type_name)
+            .filter(move |s| s.data.topic_name == topic)
+    }
+
+    /// [`Self::match_publications`] for a local endpoint that has topic
+    /// aliases, or whose peers may have: the publications on `topic`, those
+    /// that announced `topic` among their `topic_aliases`, and those whose
+    /// topic is among `own_aliases` (DDS-RPC 1.0 §7.4.3: "a topic-alias is
+    /// an alternative name for a topic"). With no aliases on either side it
+    /// is the same set as [`Self::match_publications`].
+    pub fn match_publications_aliased<'a>(
+        &'a self,
+        topic: &'a str,
+        own_aliases: &'a [String],
+    ) -> impl Iterator<Item = &'a DiscoveredPublication> + 'a {
+        self.publications.values().filter(move |p| {
+            topics_correspond(
+                topic,
+                own_aliases,
+                &p.data.topic_name,
+                p.data.topic_aliases.as_deref(),
+            )
+        })
+    }
+
+    /// The subscription half of [`Self::match_publications_aliased`].
+    pub fn match_subscriptions_aliased<'a>(
+        &'a self,
+        topic: &'a str,
+        own_aliases: &'a [String],
+    ) -> impl Iterator<Item = &'a DiscoveredSubscription> + 'a {
+        self.subscriptions.values().filter(move |s| {
+            topics_correspond(
+                topic,
+                own_aliases,
+                &s.data.topic_name,
+                s.data.topic_aliases.as_deref(),
+            )
+        })
     }
 
     /// Collects the GUIDs of all publications (for snapshot tests /
@@ -327,9 +483,24 @@ impl DiscoveredEndpointsCache {
     }
 
     /// True if any discovered publication OR subscription carries the given
-    /// `topic_name` but a *different* `type_name` — the DDS 1.4 §2.2.4.2.4
-    /// inconsistent-topic condition (same topic, incompatible type). Used by
-    /// the matching path to raise `on_inconsistent_topic`.
+    /// `topic_name` but a *different* `type_name`.
+    ///
+    /// **This is not the inconsistent-topic condition, and nothing raises
+    /// `on_inconsistent_topic` from it any more.** XTypes 1.3 §7.6.3.4.2
+    /// makes the condition the failure of Step 1 or Step 2 of the
+    /// type-consistency rules, not a differing type name: two endpoints
+    /// whose types are assignable are consistent whatever their type names
+    /// are, and this predicate calls every one of them a conflict. The
+    /// verdict is `DcpsRuntime::decide_type_consistency`, which needs both
+    /// `TypeIdentifier`s and the TypeLookup registry — neither of which
+    /// this cache has — and the counter is bumped there, per topic name.
+    ///
+    /// It was bumped here until the OMG `dds-xtypes` v2 suite measured
+    /// what that costs: the suite's two peers always share a topic and
+    /// always differ in type name, so connecting the counter to
+    /// `Topic::inconsistent_topic_status()` while the condition was still
+    /// the name turned every compatible pair in it into an inconsistent
+    /// topic.
     #[must_use]
     pub fn topic_name_conflicts(&self, topic: &str, type_name: &str) -> bool {
         self.publications
@@ -340,6 +511,23 @@ impl DiscoveredEndpointsCache {
                 .values()
                 .any(|s| s.data.topic_name == topic && s.data.type_name != type_name)
     }
+}
+
+/// Whether two endpoints are on the same topic, counting topic aliases
+/// (DDS-RPC 1.0 §7.4.3, §7.6.2.1): equal topic names, or the topic name of
+/// one among the announced `topic_aliases` of the other. An alias does not
+/// introduce a topic; it is another name of the same one. Endpoints that
+/// announce no aliases correspond exactly when their topic names are equal.
+#[must_use]
+pub fn topics_correspond(
+    own_topic: &str,
+    own_aliases: &[String],
+    peer_topic: &str,
+    peer_aliases: Option<&[String]>,
+) -> bool {
+    own_topic == peer_topic
+        || peer_aliases.is_some_and(|aliases| aliases.iter().any(|a| a == own_topic))
+        || own_aliases.iter().any(|a| a == peer_topic)
 }
 
 #[cfg(test)]
@@ -361,11 +549,13 @@ mod tests {
 
     fn pub_data(prefix: [u8; 12], key: [u8; 3], topic: &str) -> PublicationBuiltinTopicData {
         PublicationBuiltinTopicData {
+            vendor_id: Some(zerodds_rtps::wire_types::VendorId::ZERODDS),
             key: guid(prefix, key),
             participant_key: Guid::new(GuidPrefix::from_bytes(prefix), EntityId::PARTICIPANT),
             topic_name: topic.into(),
             type_name: "T".into(),
             durability: DurabilityKind::Volatile,
+            durability_service: zerodds_qos::DurabilityServiceQosPolicy::default(),
             reliability: ReliabilityQos {
                 kind: ReliabilityKind::Reliable,
                 max_blocking_time: DdsDuration::from_secs(1),
@@ -383,14 +573,22 @@ mod tests {
             topic_data: alloc::vec::Vec::new(),
             group_data: alloc::vec::Vec::new(),
             type_information: None,
+            type_id_v1: None,
+            type_object_v1: None,
             data_representation: alloc::vec::Vec::new(),
             security_info: None,
+            sym_cipher_algo_info: None,
+            data_tags: Default::default(),
+            properties: Default::default(),
             service_instance_name: None,
             related_entity_guid: None,
             topic_aliases: None,
             type_identifier: zerodds_types::TypeIdentifier::None,
             unicast_locators: alloc::vec::Vec::new(),
             multicast_locators: alloc::vec::Vec::new(),
+            group_guid: None,
+            data_max_size_serialized: None,
+            entity_name: None,
         }
     }
 
@@ -515,8 +713,16 @@ mod tests {
         );
     }
 
+    /// The candidate set is the topic, and a differing type name does
+    /// not shrink it.
+    ///
+    /// XTypes 1.3 §7.6.3.4.2 decides a pair in two steps and both belong
+    /// to the caller: assignability over the announced `TypeObject`s, and
+    /// exact type-name equality only where one of them is absent. A cache
+    /// that filtered on the name would answer Step 2 here and never let
+    /// Step 1 see the pair.
     #[test]
-    fn match_publications_filters_topic_and_type() {
+    fn match_publications_filters_the_topic_and_not_the_type_name() {
         let mut c = DiscoveredEndpointsCache::default();
         c.insert_publication(pub_data([1; 12], [1, 0, 0], "Chatter"), Duration::ZERO);
         let mut p = pub_data([1; 12], [2, 0, 0], "Chatter");
@@ -524,17 +730,31 @@ mod tests {
         c.insert_publication(p, Duration::ZERO);
         c.insert_publication(pub_data([1; 12], [3, 0, 0], "Weather"), Duration::ZERO);
 
-        let matches: Vec<_> = c.match_publications("Chatter", "T").collect();
-        assert_eq!(matches.len(), 1);
-        assert_eq!(matches[0].data.topic_name, "Chatter");
-        assert_eq!(matches[0].data.type_name, "T");
+        let mut matches: Vec<_> = c
+            .match_publications("Chatter")
+            .map(|p| p.data.type_name.clone())
+            .collect();
+        matches.sort();
+        assert_eq!(
+            matches,
+            ["OtherType", "T"],
+            "both publications on the topic are candidates, whatever they call their type"
+        );
+        assert_eq!(
+            c.match_publications("Weather").count(),
+            1,
+            "the topic name is still the filter"
+        );
+        assert_eq!(c.match_publications("Nothing").count(), 0);
     }
 
     #[test]
-    fn subscriptions_match_topic_type() {
+    fn subscriptions_match_the_topic_and_not_the_type_name() {
         use zerodds_rtps::subscription_data::SubscriptionBuiltinTopicData;
         let mut c = DiscoveredEndpointsCache::default();
         let sub = SubscriptionBuiltinTopicData {
+            content_filter_unreadable: false,
+            vendor_id: Some(zerodds_rtps::wire_types::VendorId::ZERODDS),
             key: Guid::new(
                 GuidPrefix::from_bytes([2; 12]),
                 EntityId::user_reader_with_key([0xA, 0xB, 0xC]),
@@ -547,6 +767,7 @@ mod tests {
             ownership: zerodds_qos::OwnershipKind::Shared,
             liveliness: zerodds_qos::LivelinessQosPolicy::default(),
             deadline: zerodds_qos::DeadlineQosPolicy::default(),
+            time_based_filter: zerodds_qos::TimeBasedFilterQosPolicy::default(),
             latency_budget: zerodds_qos::LatencyBudgetQosPolicy::default(),
             destination_order: zerodds_qos::DestinationOrderQosPolicy::default(),
             presentation: zerodds_qos::PresentationQosPolicy::default(),
@@ -554,21 +775,35 @@ mod tests {
             user_data: alloc::vec::Vec::new(),
             topic_data: alloc::vec::Vec::new(),
             group_data: alloc::vec::Vec::new(),
+            type_consistency: zerodds_types::qos::TypeConsistencyEnforcement::default(),
             type_information: None,
+            type_id_v1: None,
+            type_object_v1: None,
             data_representation: alloc::vec::Vec::new(),
             content_filter: None,
             security_info: None,
+            sym_cipher_algo_info: None,
+            data_tags: Default::default(),
+            properties: Default::default(),
             service_instance_name: None,
             related_entity_guid: None,
             topic_aliases: None,
             type_identifier: zerodds_types::TypeIdentifier::None,
             unicast_locators: alloc::vec::Vec::new(),
             multicast_locators: alloc::vec::Vec::new(),
+            expects_inline_qos: false,
+            group_guid: None,
+            type_consistency_announced: true,
+            entity_name: None,
         };
         c.insert_subscription(sub, Duration::ZERO);
         assert_eq!(c.subscriptions_len(), 1);
-        assert_eq!(c.match_subscriptions("Chatter", "T").count(), 1);
-        assert_eq!(c.match_subscriptions("Chatter", "Other").count(), 0);
+        assert_eq!(c.match_subscriptions("Chatter").count(), 1);
+        assert_eq!(
+            c.match_subscriptions("Weather").count(),
+            0,
+            "a different topic is a different candidate set"
+        );
     }
 
     #[test]
@@ -592,5 +827,76 @@ mod tests {
         c.insert_publication(pub_data([2; 12], [2, 0, 0], "B"), Duration::ZERO);
         let keys = c.publication_keys();
         assert_eq!(keys.len(), 2);
+    }
+
+    /// An announcement a peer in the same process handed over directly is
+    /// not written over by an older one arriving on the wire afterwards;
+    /// a newer one from the wire is taken. Measured as a race on the Linux test host:
+    /// a reader's changed DEADLINE came back as the old one over the wire,
+    /// and the writer matched it again and counted it twice.
+    #[test]
+    fn a_wire_announcement_older_than_the_direct_handover_is_left_out() {
+        let mut c = DiscoveredEndpointsCache::default();
+        let key = guid([1; 12], [1, 0, 0]);
+        let old = pub_data([1; 12], [1, 0, 0], "Old");
+        let new = pub_data([1; 12], [1, 0, 0], "New");
+
+        assert!(c.insert_publication_in_process(old.clone(), Duration::ZERO, SequenceNumber(1)));
+        c.insert_publication_in_process(new.clone(), Duration::ZERO, SequenceNumber(2));
+        // The wire brings both, late: the older one is left out, the one
+        // that was handed over is taken again, unchanged.
+        assert_eq!(
+            c.insert_publication_announced(old, Duration::ZERO, SequenceNumber(1)),
+            None
+        );
+        assert_eq!(c.publication(key).unwrap().data.topic_name, "New");
+        assert_eq!(
+            c.insert_publication_announced(new, Duration::ZERO, SequenceNumber(2)),
+            Some(false)
+        );
+        assert_eq!(c.publication(key).unwrap().data.topic_name, "New");
+
+        // A newer one on the wire is the newest.
+        let newest = pub_data([1; 12], [1, 0, 0], "Newest");
+        assert_eq!(
+            c.insert_publication_announced(newest, Duration::ZERO, SequenceNumber(3)),
+            Some(false)
+        );
+        assert_eq!(c.publication(key).unwrap().data.topic_name, "Newest");
+
+        // Without a direct handover the wire is taken as it comes.
+        let other = pub_data([2; 12], [1, 0, 0], "Wire");
+        assert_eq!(
+            c.insert_publication_announced(other, Duration::ZERO, SequenceNumber(7)),
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn topics_correspond_by_alias_in_either_direction_and_by_name() {
+        let none: &[String] = &[];
+        assert!(topics_correspond("A", none, "A", None));
+        assert!(!topics_correspond("A", none, "B", None));
+        let aliases = alloc::vec![String::from("Base_Service_Request")];
+        // The peer announced the local topic as its alias.
+        assert!(topics_correspond(
+            "Base_Service_Request",
+            none,
+            "Derived_Service_Request",
+            Some(&aliases)
+        ));
+        // The local endpoint announced the peer's topic as its alias.
+        assert!(topics_correspond(
+            "Derived_Service_Request",
+            &aliases,
+            "Base_Service_Request",
+            None
+        ));
+        assert!(!topics_correspond(
+            "Other",
+            &aliases,
+            "Derived_Service_Request",
+            Some(&aliases)
+        ));
     }
 }

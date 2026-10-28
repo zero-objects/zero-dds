@@ -1,0 +1,11 @@
+@final struct Cell { long a; long b; };
+@appendable struct ACell { long a; long b; };
+@mutable struct MCell { long a; long b; };
+enum Colour { RED, GREEN, BLUE };
+@mutable struct LenNest {
+    ACell app;
+    MCell mnest;
+    Colour ce[2];
+    Cell arr1[1];
+    long tail;
+};

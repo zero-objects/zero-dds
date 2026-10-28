@@ -18,10 +18,27 @@ from pathlib import Path
 DOCS_DIR = Path(__file__).parent.resolve()
 sys.path.insert(0, str(DOCS_DIR.parent / "python"))
 
+
+def _workspace_version() -> str:
+    """The version in the workspace manifest.
+
+    `crates/py/Cargo.toml` inherits it (`version.workspace = true`), and
+    maturin puts that same string on the wheel. Read rather than repeated,
+    so the documentation cannot name a release the package does not have.
+    """
+    import tomllib
+
+    manifest = DOCS_DIR.parents[2] / "Cargo.toml"
+    with manifest.open("rb") as handle:
+        return str(tomllib.load(handle)["workspace"]["package"]["version"])
+
 project = "ZeroDDS"
 author = "ZeroDDS Authors"
-copyright = "2026, ZeroDDS Authors"  # noqa: A001 — sphinx-convention
-release = "0.0.0"
+copyright = "ZeroDDS Authors"  # noqa: A001 — sphinx-convention
+
+# The one version there is: the crate's, which maturin puts on the package.
+# A literal here would be a second one, and the two would part.
+release = _workspace_version()
 
 extensions = [
     "sphinx.ext.autodoc",
@@ -54,5 +71,4 @@ suppress_warnings = ["autodoc.mocked_object"]
 html_theme = os.environ.get("ZERODDS_SPHINX_THEME", "alabaster")
 html_static_path: list[str] = []
 
-templates_path = ["_templates"]
 exclude_patterns: list[str] = ["_build"]

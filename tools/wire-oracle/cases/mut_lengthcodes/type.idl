@@ -1,0 +1,13 @@
+@final struct Cell { long a; long b; };
+@mutable struct LenCodes {
+    string s;
+    sequence<octet> o1;
+    sequence<short> s2;
+    sequence<long> l4;
+    sequence<double> d8;
+    sequence<Cell> sc;
+    Cell arr[2];
+    long ap[2];
+    Cell nested;
+    long tail;
+};

@@ -311,6 +311,31 @@ mod tests {
     }
 
     #[test]
+    fn pong_frame_round_trip() {
+        // Spec §5.5.3: "The Pong frame contains an opcode of 0xA."
+        let f = Frame::pong(alloc::vec![1, 2, 3]);
+        let bytes = encode(&f).expect("encode");
+        assert_eq!(bytes[0] & 0x0F, 0xA, "opcode 0xA on the wire");
+        let (parsed, _) = decode(&bytes).expect("decode");
+        assert_eq!(parsed.opcode, Opcode::Pong);
+        assert_eq!(parsed.payload, alloc::vec![1, 2, 3]);
+        assert!(parsed.fin, "a control frame is never fragmented");
+    }
+
+    #[test]
+    fn pong_carries_the_application_data_of_the_ping_it_answers() {
+        // Spec §5.5.3: "A Pong frame sent in response to a Ping frame
+        // must have identical 'Application data' as found in the
+        // message body of the Ping frame being replied to."
+        let ping_wire = encode(&Frame::ping(b"heartbeat-17".to_vec())).expect("encode");
+        let (ping, _) = decode(&ping_wire).expect("decode");
+        let pong_wire = encode(&Frame::pong(ping.payload.clone())).expect("encode");
+        let (pong, _) = decode(&pong_wire).expect("decode");
+        assert_eq!(pong.opcode, Opcode::Pong);
+        assert_eq!(pong.payload, ping.payload);
+    }
+
+    #[test]
     fn close_frame_carries_status_code() {
         let f = Frame::close(1000, "");
         let bytes = encode(&f).expect("encode");

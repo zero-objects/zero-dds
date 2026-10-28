@@ -36,6 +36,9 @@
 //!   `zerodds-observability-otlp` crate.
 //! - **RCU** ([`RcuCell`]): copy-on-write container for low-write/
 //!   high-read patterns without `unsafe`.
+//! - **XML nesting** ([`check_nesting`], [`NestingTooDeep`]): counts the
+//!   element nesting of an XML text without parsing it, so that a caller
+//!   refuses a text the recursive XML parser would overflow its stack on.
 //!
 //! ## Feature flags
 //!
@@ -47,7 +50,7 @@
 //!
 //! Without features (`default-features = false`): only `PoolBuffer`,
 //! `crc32c`, `crc64_xz`, `md5` (the no_std MD5 path is limited to 56
-//! bytes of input).
+//! bytes of input) and `check_nesting`.
 //!
 //! ## Example
 //!
@@ -90,6 +93,7 @@ pub mod observability;
 pub mod rcu;
 #[cfg(feature = "alloc")]
 pub mod tracing;
+pub mod xml_depth;
 
 pub use buffer::{PoolBuffer, PoolBufferError};
 pub use crc::{crc32c, crc64_xz, md5};
@@ -101,6 +105,7 @@ pub use observability::{StderrJsonSink, VecSink};
 pub use rcu::RcuCell;
 #[cfg(feature = "alloc")]
 pub use tracing::{Histogram, Span, SpanContext, SpanId, SpanKind, SpanStatus, TraceId};
+pub use xml_depth::{NestingTooDeep, XML_NESTING_LIMIT, check_nesting};
 
 #[cfg(test)]
 mod tests {

@@ -1,0 +1,16 @@
+// SPDX-License-Identifier: Apache-2.0
+// Reconstructed source for consts_gen.py. Ambiguity: the fixture is only
+// module constants (no struct), so nothing in it fixes the declared types
+// of MAX_ITEMS/RATE/ENABLED beyond the Python values they produced
+// (10 -> long, 2.5 -> double, True -> boolean); a narrower IDL type
+// (e.g. short, float) would emit the same Python constants. Also unknown
+// whether "conf" here is the same module as arrays.idl/optionals.idl's
+// "conf", or a same-named module in an unrelated original file; kept
+// separate here since each fixture is regenerated standalone.
+const long MAX_ITEMS = 10;
+const double RATE = 2.5;
+const boolean ENABLED = TRUE;
+
+module conf {
+  const long N = 4;
+};

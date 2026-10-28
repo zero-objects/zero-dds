@@ -3,12 +3,9 @@
   SPDX-License-Identifier: Apache-2.0
   Copyright 2026 ZeroDDS Contributors
 
-  Sample consumer for the exec-maven-plugin pattern documented in
-  documentation/04-idl/idlc-handbook.md §4.5. `mvn compile` runs
-  zerodds-idlc in the generate-sources phase, then registers its output
-  directory as a compile source root (build-helper-maven-plugin — the
-  handbook's own exec-maven-plugin snippet omits this step, so this pom
-  is deliberately more complete than the doc snippet).
+  Sample consumer for zerodds-idlc under exec-maven-plugin. `mvn compile`
+  runs zerodds-idlc in the generate-sources phase, then registers its
+  output directory as a compile source root (build-helper-maven-plugin).
 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -29,12 +26,9 @@
   </properties>
 
   <!--
-    Generated Java is not self-contained (unlike the Rust/Swift/D/Nim/
-    Julia/Lua/Ada backends): it needs the org.zerodds.cdr / org.omg.dds.topic
-    runtime shipped by crates/java-omgdds/java (groupId org.zerodds,
-    artifactId omgdds) — the same runtime the Gradle plugin's sample
-    consumer needs. `mvn install` that module into the local repo before
-    building this sample (see README.md).
+    The generated TypeSupport classes need org.zerodds.cdr.* from the omgdds
+    artifact of crates/java-omgdds/java. `mvn install` that module into the
+    local repository before building this sample (see README.md).
   -->
   <dependencies>
     <dependency>
@@ -59,10 +53,13 @@
               <executable>zerodds-idlc</executable>
               <arguments>
                 <argument>generate</argument>
-                <argument>${zerodds.idl.dir}</argument>
-                <argument>--java</argument>
-                <argument>-o</argument>
+                <argument>--lang</argument>
+                <argument>java</argument>
+                <argument>--java-mapping</argument>
+                <argument>omg</argument>
+                <argument>--out</argument>
                 <argument>${zerodds.idl.outputDir}</argument>
+                <argument>${zerodds.idl.dir}</argument>
               </arguments>
             </configuration>
           </execution>
@@ -88,14 +85,11 @@
               <sources>
                 <source>${zerodds.idl.outputDir}</source>
                 <!--
-                  ZeroDDS Java runtime the generated code references but the
-                  omgdds artifact does NOT ship: the org.zerodds.types.*
-                  annotations (Extensibility, Key, …) and the
-                  org.omg.dds.topic.TopicType<T> interface. Compile them from
-                  source (mirrors the C# sample's <Compile Include> of
-                  crates/idl-csharp/runtime/Omg.Types.cs).
+                  The wire runtime the generated codec calls (org.zerodds.wire.*,
+                  runtime/java). The omgdds dependency above supplies
+                  org.zerodds.cdr.* for the TypeSupport classes.
                 -->
-                <source>${project.basedir}/../../../crates/idl-java/runtime</source>
+                <source>${project.basedir}/../../../runtime/java/src/main/java</source>
               </sources>
             </configuration>
           </execution>

@@ -11,7 +11,10 @@
 //! with itself.
 //!
 //! Usage:
-//!   iceoryx2-oracle-consumer <service-name> <expected-hex> [timeout-ms]
+//!
+//! ```text
+//! iceoryx2-oracle-consumer <service-name> <expected-hex> [timeout-ms]
+//! ```
 //!
 //! Environment:
 //!   ORACLE_READY_FILE  if set, the path is created once the subscriber is live

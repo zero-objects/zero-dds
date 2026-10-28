@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! E2E test for the bridge daemon's **real DDS side** (bridge spec §4.2,
-//! feature `dds-runtime`). Proves the `FUTURE (L2)` stub is gone:
+//! E2E test for the bridge daemon's **real DDS side** (bridge spec §4.2).
+//! Proves the `FUTURE (L2)` stub is gone:
 //!
 //!   gRPC `Publish(Sample{payload})`  →  DDS DataWriter  →  (loopback)
 //!   →  DDS DataReader  →  gRPC `Subscribe` returns the same `Sample`.
@@ -10,11 +10,6 @@
 //! bridge: the daemon really moves opaque bytes through the DCPS runtime,
 //! not an echo. The Java client (`crates/java-omgdds/java`) speaks the
 //! identical gRPC wire against this daemon.
-//!
-//! The crate doc sits before `#![cfg]` so the (empty) crate still carries
-//! documentation when `dds-runtime` is off — otherwise `missing_docs` +
-//! `-D warnings` fails the build.
-#![cfg(feature = "dds-runtime")]
 #![allow(
     clippy::expect_used,
     clippy::unwrap_used,

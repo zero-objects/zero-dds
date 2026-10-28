@@ -1,0 +1,1 @@
+genTypeSupportImpl.cpp:817:45: error: request for member 'value' in 'value.zd_c2::Sample::b', which is of non-class type 'const CORBA::Long' {aka 'const int'}

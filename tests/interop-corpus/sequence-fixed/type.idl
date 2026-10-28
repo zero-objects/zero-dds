@@ -1,0 +1,7 @@
+// `sequence<fixed>`
+typedef fixed<9,3> Money;
+
+@final struct Sample {
+    sequence<Money> amounts;
+    long tail;
+};

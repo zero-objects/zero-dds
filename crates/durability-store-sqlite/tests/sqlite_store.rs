@@ -7,7 +7,7 @@
 
 use std::time::{Duration, SystemTime};
 
-use zerodds_durability_store::{Contract, DurabilitySample, DurabilityStore, Selector};
+use zerodds_durability_store::{Contract, DurabilitySample, DurabilityStore, Selector, TopicMeta};
 use zerodds_durability_store_sqlite::SqliteStore;
 use zerodds_qos::policies::history::HistoryKind;
 use zerodds_qos::policies::resource_limits::LENGTH_UNLIMITED;
@@ -202,6 +202,117 @@ fn corrupt_db_surfaces_gracefully() {
         "corrupt sqlite must surface as a graceful error, got {result:?}"
     );
     let _ = std::fs::remove_file(&path);
+}
+
+#[test]
+fn topic_meta_round_trips_across_reopen() {
+    let path = tmp_db("meta-roundtrip");
+    let meta = TopicMeta {
+        type_name: "demo::Command".to_string(),
+        keyed: true,
+        contract: Contract {
+            history_kind: HistoryKind::KeepLast,
+            history_depth: 5,
+            ..keep_all()
+        },
+    };
+    {
+        let store = SqliteStore::open(&path, keep_all()).unwrap();
+        assert_eq!(store.topic_meta("Commands").unwrap(), None);
+        store.set_topic_meta("Commands", meta.clone()).unwrap();
+    }
+    // Reopen from disk = a restart: the row survives (this is the fix for
+    // the durability-restart bug: `contracts` used to be in-memory-only).
+    let reopened = SqliteStore::open(&path, keep_all()).unwrap();
+    assert_eq!(reopened.topic_meta("Commands").unwrap(), Some(meta));
+    let _ = std::fs::remove_file(&path);
+    let _ = std::fs::remove_file(format!("{}-wal", path.display()));
+    let _ = std::fs::remove_file(format!("{}-shm", path.display()));
+}
+
+#[test]
+fn topic_meta_contract_governs_retention_over_set_contract() {
+    let store = SqliteStore::open_in_memory(keep_all()).unwrap();
+    store
+        .set_contract(
+            "T",
+            Contract {
+                history_kind: HistoryKind::KeepLast,
+                history_depth: 100,
+                ..keep_all()
+            },
+        )
+        .unwrap();
+    store
+        .set_topic_meta(
+            "T",
+            TopicMeta {
+                type_name: "T".to_string(),
+                keyed: false,
+                contract: Contract {
+                    history_kind: HistoryKind::KeepLast,
+                    history_depth: 2,
+                    ..keep_all()
+                },
+            },
+        )
+        .unwrap();
+    for seq in 0..5 {
+        store.store(sample("T", 1, seq)).unwrap();
+    }
+    let seqs: Vec<u64> = store
+        .replay_for_topic("T")
+        .unwrap()
+        .iter()
+        .map(|s| s.sequence)
+        .collect();
+    assert_eq!(seqs, vec![3, 4]);
+}
+
+/// A database written before the `topic_meta` table existed (only `samples`
+/// and `unregistered`) must still open — the schema change is additive
+/// (`CREATE TABLE IF NOT EXISTS`), never a silent-empty or refused open.
+#[test]
+fn old_schema_database_without_topic_meta_table_opens() {
+    let path = tmp_db("old-schema");
+    {
+        // Hand-build the pre-topic_meta schema directly (no `topic_meta`
+        // table at all), insert a sample the way the old code would have.
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE samples (
+                topic TEXT NOT NULL, instance BLOB NOT NULL, sequence INTEGER NOT NULL,
+                created_nanos INTEGER NOT NULL, payload BLOB NOT NULL,
+                representation INTEGER NOT NULL DEFAULT 1, big_endian INTEGER NOT NULL DEFAULT 0,
+                source_guid BLOB NOT NULL DEFAULT x'00000000000000000000000000000000',
+                source_sequence INTEGER NOT NULL DEFAULT -1,
+                PRIMARY KEY (topic, instance, sequence)
+            ) WITHOUT ROWID;
+             CREATE TABLE unregistered (
+                topic TEXT NOT NULL, instance BLOB NOT NULL, at_nanos INTEGER NOT NULL,
+                PRIMARY KEY (topic, instance)
+             );",
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO samples(topic, instance, sequence, created_nanos, payload) \
+             VALUES ('T', x'00000000000000000000000000000000', 0, 0, x'2a')",
+            [],
+        )
+        .unwrap();
+    }
+    // Opening through the current adapter must not fail, and the pre-existing
+    // sample must still be readable; `topic_meta` for it is `None`, not an
+    // error (never silently start empty, but a genuinely absent registration
+    // is not corruption either).
+    let store = SqliteStore::open(&path, keep_all()).unwrap();
+    assert_eq!(store.topic_meta("T").unwrap(), None);
+    let all = store.replay_for_topic("T").unwrap();
+    assert_eq!(all.len(), 1);
+    assert_eq!(all[0].payload, vec![0x2a]);
+    let _ = std::fs::remove_file(&path);
+    let _ = std::fs::remove_file(format!("{}-wal", path.display()));
+    let _ = std::fs::remove_file(format!("{}-shm", path.display()));
 }
 
 #[test]

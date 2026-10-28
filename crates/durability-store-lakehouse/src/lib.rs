@@ -11,11 +11,11 @@
 //! * **Warehouse / house** — durable, transactional in-process SQL. Samples
 //!   live in a typed DuckDB table; run arbitrary analytics SQL on the same
 //!   `.db` file (open it with the `duckdb` CLI or any DuckDB client).
-//! * **Lake** — [`export_parquet`](LakehouseStore::export_parquet) writes a
+//! * **Lake** — `export_parquet` writes a
 //!   topic's samples as a Parquet partition (schema-on-read), queryable by
 //!   DuckDB / Spark / Polars / Arrow out-of-band.
 //!
-//! Implements [`DurabilityStore`] for the DDS path (store/query/replay), with
+//! Implements `DurabilityStore` for the DDS path (store/query/replay), with
 //! the same contract semantics as the sqlite adapter. The DuckDB storage file
 //! survives a full process/system restart (the `PERSISTENT` guarantee).
 //!
@@ -40,7 +40,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use duckdb::{Connection, params};
 use zerodds_durability_store::{
     Contract, Cursor, DurabilitySample, DurabilityStore, Page, Result, Selector, StoreError,
-    StoreStats,
+    StoreStats, TopicMeta,
 };
 use zerodds_qos::policies::history::HistoryKind;
 
@@ -64,6 +64,19 @@ CREATE TABLE IF NOT EXISTS unregistered (
     instance  BLOB    NOT NULL,
     at_nanos  BIGINT  NOT NULL,
     PRIMARY KEY (topic, instance)
+);
+CREATE TABLE IF NOT EXISTS topic_meta (
+    topic                    VARCHAR NOT NULL,
+    type_name                VARCHAR NOT NULL,
+    keyed                    TINYINT NOT NULL,
+    history_kind             INTEGER NOT NULL,
+    history_depth            INTEGER NOT NULL,
+    max_samples              INTEGER NOT NULL,
+    max_instances            INTEGER NOT NULL,
+    max_samples_per_instance INTEGER NOT NULL,
+    cleanup_delay_secs       BIGINT  NOT NULL,
+    cleanup_delay_nanos      INTEGER NOT NULL,
+    PRIMARY KEY (topic)
 );
 ";
 
@@ -113,9 +126,14 @@ impl LakehouseStore {
         // O2 P5 migration: add the source-identity columns to a pre-P5 `samples`
         // table (new DBs already have them from SCHEMA). DuckDB's
         // `ADD COLUMN IF NOT EXISTS` is idempotent, so this is safe to re-run.
+        // DuckDB refuses a constraint in `ADD COLUMN` ("Adding columns with
+        // constraints not yet supported", measured with libduckdb 1.4): the
+        // DEFAULT fills the rows already there, and every insert names both
+        // columns, so NOT NULL holds without being declared on a migrated
+        // table.
         conn.execute_batch(
-            "ALTER TABLE samples ADD COLUMN IF NOT EXISTS source_guid BLOB NOT NULL DEFAULT ''::BLOB; \
-             ALTER TABLE samples ADD COLUMN IF NOT EXISTS source_sequence BIGINT NOT NULL DEFAULT -1;",
+            "ALTER TABLE samples ADD COLUMN IF NOT EXISTS source_guid BLOB DEFAULT ''::BLOB; \
+             ALTER TABLE samples ADD COLUMN IF NOT EXISTS source_sequence BIGINT DEFAULT -1;",
         )
         .map_err(|e| backend("migrate p5", e))?;
         Ok(Self {
@@ -131,7 +149,19 @@ impl LakehouseStore {
             .map_err(|_| StoreError::Poisoned("lakehouse conn"))
     }
 
-    fn contract_for(&self, topic: &str) -> Result<Contract> {
+    /// The persisted `topic_meta` row's contract wins over a plain
+    /// `set_contract` for the same topic (it is the more recent, more
+    /// complete registration — see [`DurabilityStore::set_contract`]'s doc).
+    ///
+    /// Takes an already-locked `conn` (never locks `self.conn` itself) so a
+    /// caller that already holds the connection guard (e.g.
+    /// [`cleanup`](DurabilityStore::cleanup), iterating rows of another
+    /// statement on the same connection) can call it without re-entering
+    /// `self.conn`'s mutex, which is not reentrant.
+    fn contract_for_conn(&self, conn: &Connection, topic: &str) -> Result<Contract> {
+        if let Some(meta) = Self::topic_meta_row_conn(conn, topic)? {
+            return Ok(meta.contract);
+        }
         Ok(self
             .contracts
             .lock()
@@ -144,6 +174,68 @@ impl LakehouseStore {
     fn count(conn: &Connection, sql: &str, p: &[&dyn duckdb::ToSql]) -> Result<i64> {
         conn.query_row(sql, p, |r| r.get::<_, i64>(0))
             .map_err(|e| backend("count", e))
+    }
+
+    /// Reads `topic`'s `topic_meta` row off an already-locked `conn`, if
+    /// any. A row with an unknown `history_kind` discriminator
+    /// (corrupt/foreign data) is a loud `Err`, never a silent `None`.
+    fn topic_meta_row_conn(conn: &Connection, topic: &str) -> Result<Option<TopicMeta>> {
+        let mut stmt = conn
+            .prepare(
+                "SELECT type_name, keyed, history_kind, history_depth, max_samples, \
+                 max_instances, max_samples_per_instance, cleanup_delay_secs, \
+                 cleanup_delay_nanos FROM topic_meta WHERE topic = ?",
+            )
+            .map_err(|e| backend("topic_meta prepare", e))?;
+        let mut rows = stmt
+            .query_map(params![topic], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, i64>(1)?,
+                    r.get::<_, i64>(2)?,
+                    r.get::<_, i64>(3)?,
+                    r.get::<_, i64>(4)?,
+                    r.get::<_, i64>(5)?,
+                    r.get::<_, i64>(6)?,
+                    r.get::<_, i64>(7)?,
+                    r.get::<_, i64>(8)?,
+                ))
+            })
+            .map_err(|e| backend("topic_meta query_map", e))?;
+        // The topic is the table's key: one row or none.
+        let row = rows
+            .next()
+            .transpose()
+            .map_err(|e| backend("topic_meta row", e))?;
+        row.map(|(type_name, keyed, hk, hd, ms, mi, mspi, secs, nanos)| {
+            let contract = Contract::from_row(
+                hk as u32,
+                hd as i32,
+                ms as i32,
+                mi as i32,
+                mspi as i32,
+                secs as u64,
+                nanos as u32,
+            )
+            .ok_or_else(|| {
+                StoreError::Backend(format!(
+                    "lakehouse store: topic_meta row for {topic:?} has an unknown history_kind {hk}"
+                ))
+            })?;
+            Ok(TopicMeta {
+                type_name,
+                keyed: keyed != 0,
+                contract,
+            })
+        })
+        .transpose()
+    }
+
+    /// [`Self::topic_meta_row_conn`] for a caller that does not already hold
+    /// the connection guard.
+    fn topic_meta_row(&self, topic: &str) -> Result<Option<TopicMeta>> {
+        let conn = self.lock_conn()?;
+        Self::topic_meta_row_conn(&conn, topic)
     }
 
     /// **Lake export**: writes `topic`'s samples to `out_path` as a Parquet
@@ -181,9 +273,37 @@ impl DurabilityStore for LakehouseStore {
         Ok(())
     }
 
-    fn store(&self, sample: DurabilitySample) -> Result<()> {
-        let contract = self.contract_for(&sample.topic)?;
+    fn set_topic_meta(&self, topic: &str, meta: TopicMeta) -> Result<()> {
         let conn = self.lock_conn()?;
+        let (hk, hd, ms, mi, mspi, secs, nanos) = meta.contract.to_row();
+        conn.execute(
+            "INSERT OR REPLACE INTO topic_meta(topic, type_name, keyed, history_kind, \
+             history_depth, max_samples, max_instances, max_samples_per_instance, \
+             cleanup_delay_secs, cleanup_delay_nanos) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            params![
+                topic,
+                meta.type_name,
+                i32::from(meta.keyed),
+                i32::try_from(hk).unwrap_or(i32::MAX),
+                hd,
+                ms,
+                mi,
+                mspi,
+                secs as i64,
+                i32::try_from(nanos).unwrap_or(i32::MAX),
+            ],
+        )
+        .map_err(|e| backend("topic_meta upsert", e))?;
+        Ok(())
+    }
+
+    fn topic_meta(&self, topic: &str) -> Result<Option<TopicMeta>> {
+        self.topic_meta_row(topic)
+    }
+
+    fn store(&self, sample: DurabilitySample) -> Result<()> {
+        let conn = self.lock_conn()?;
+        let contract = self.contract_for_conn(&conn, &sample.topic)?;
         let inst = &sample.instance_key[..];
 
         // A re-send of an already-stored (topic, instance, sequence) is an
@@ -383,7 +503,7 @@ impl DurabilityStore for LakehouseStore {
         let due: Vec<(String, Vec<u8>)> = all
             .into_iter()
             .filter_map(|(topic, inst, at)| {
-                let delay = self.contract_for(&topic).ok()?.cleanup_delay;
+                let delay = self.contract_for_conn(&conn, &topic).ok()?.cleanup_delay;
                 let deadline = time_of(at).checked_add(delay)?;
                 if now >= deadline {
                     Some((topic, inst))

@@ -24,14 +24,14 @@ use zerodds_dcps::qos::{
     DataReaderQos, DataWriterQos, DomainParticipantQos, PublisherQos, SubscriberQos, TopicQos,
 };
 use zerodds_qos::{
-    DeadlineQosPolicy, DestinationOrderKind, DestinationOrderQosPolicy, DurabilityKind,
-    DurabilityQosPolicy, DurabilityServiceQosPolicy, Duration, EntityFactoryQosPolicy,
-    GroupDataQosPolicy, HistoryKind, HistoryQosPolicy, LatencyBudgetQosPolicy, LifespanQosPolicy,
-    LivelinessKind, LivelinessQosPolicy, OwnershipKind, OwnershipQosPolicy,
-    OwnershipStrengthQosPolicy, PartitionQosPolicy, PresentationAccessScope, PresentationQosPolicy,
-    ReaderDataLifecycleQosPolicy, ReliabilityKind, ReliabilityQosPolicy, ResourceLimitsQosPolicy,
-    TimeBasedFilterQosPolicy, TopicDataQosPolicy, TransportPriorityQosPolicy, UserDataQosPolicy,
-    WriterDataLifecycleQosPolicy,
+    DataTagQosPolicy, DeadlineQosPolicy, DestinationOrderKind, DestinationOrderQosPolicy,
+    DurabilityKind, DurabilityQosPolicy, DurabilityServiceQosPolicy, Duration,
+    EntityFactoryQosPolicy, GroupDataQosPolicy, HistoryKind, HistoryQosPolicy,
+    LatencyBudgetQosPolicy, LifespanQosPolicy, LivelinessKind, LivelinessQosPolicy, OwnershipKind,
+    OwnershipQosPolicy, OwnershipStrengthQosPolicy, PartitionQosPolicy, PresentationAccessScope,
+    PresentationQosPolicy, PropertyQosPolicy, ReaderDataLifecycleQosPolicy, ReliabilityKind,
+    ReliabilityQosPolicy, ResourceLimitsQosPolicy, TimeBasedFilterQosPolicy, TopicDataQosPolicy,
+    TransportPriorityQosPolicy, UserDataQosPolicy, WriterDataLifecycleQosPolicy,
 };
 
 use crate::ZeroDdsStatus;
@@ -75,12 +75,10 @@ impl From<Duration> for ZeroDdsDuration {
         if d.is_infinite() {
             return Self::INFINITE;
         }
-        // fraction (2^-32 s) → nanoseconds
-        let nanosec = ((d.fraction as u64 * 1_000_000_000) >> 32) as u32;
-        Self {
-            sec: d.seconds,
-            nanosec,
-        }
+        // fraction (2^-32 s) → nanoseconds, rounded: a set_qos of whole
+        // nanoseconds reads back as set.
+        let (sec, nanosec) = d.to_sec_nanosec();
+        Self { sec, nanosec }
     }
 }
 
@@ -89,11 +87,7 @@ impl From<ZeroDdsDuration> for Duration {
         if d.sec == i32::MAX && d.nanosec == u32::MAX {
             return Duration::INFINITE;
         }
-        let fraction = ((d.nanosec as u64) << 32) / 1_000_000_000;
-        Duration {
-            seconds: d.sec,
-            fraction: fraction as u32,
-        }
+        Duration::from_sec_nanosec(d.sec, d.nanosec)
     }
 }
 
@@ -365,6 +359,129 @@ pub struct ZeroDdsUserDataQosPolicy {
 
 /// TopicDataQosPolicy.
 pub type ZeroDdsTopicDataQosPolicy = ZeroDdsUserDataQosPolicy;
+
+/// The longest list of representation identifiers a
+/// [`ZeroDdsDataRepresentationQosPolicy`] holds; `ids` has this length (the
+/// array length is written as a number, so that the generated header has it
+/// too).
+pub const ZERODDS_DATA_REPRESENTATION_MAX: usize = 8;
+
+/// DataRepresentationQosPolicy (DDS-XTypes 1.3 §7.6.3.1.1, Annex D): the list
+/// of representation identifiers (`XCDR` = 0, `XML` = 1, `XCDR2` = 2, negative
+/// values for vendors).
+///
+/// `is_set` = 0 leaves the policy at its default, which the runtime resolves
+/// to its own offer; an all-zero struct is that. `is_set` = 1 makes
+/// `ids[0..count]` the list, and `count` = 0 is the empty list, "equivalent to
+/// a list containing the single element XCDR" (§7.6.3.1.1). "When
+/// representations are specified in the TopicQos, the first element of the
+/// sequence applies to writers of the Topic, and the whole sequence applies
+/// to readers of the Topic."
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ZeroDdsDataRepresentationQosPolicy {
+    /// 0: left at the default; 1: `ids[0..count]` is the list.
+    pub is_set: u8,
+    /// Number of identifiers in `ids`, at most 8.
+    pub count: u8,
+    /// The identifiers.
+    pub ids: [i16; 8],
+}
+
+const _: () = assert!(
+    core::mem::size_of::<[i16; ZERODDS_DATA_REPRESENTATION_MAX]>() == 2 * 8,
+    "ZERODDS_DATA_REPRESENTATION_MAX is the length of `ids`"
+);
+
+impl ZeroDdsDataRepresentationQosPolicy {
+    /// The policy as the DCPS QoS holds it. A `count` past the capacity of
+    /// `ids` is read as the capacity.
+    fn to_qos(self) -> Option<Vec<i16>> {
+        if self.is_set == 0 {
+            return None;
+        }
+        let n = usize::from(self.count).min(ZERODDS_DATA_REPRESENTATION_MAX);
+        Some(self.ids[..n].to_vec())
+    }
+
+    /// The C form of the DCPS QoS value.
+    ///
+    /// # Errors
+    /// `OutOfResources` when the list is longer than `ids` holds: the list is
+    /// not cut.
+    fn from_qos(value: Option<&[i16]>) -> Result<Self, ZeroDdsStatus> {
+        let mut out = Self::default();
+        if let Some(list) = value {
+            if list.len() > ZERODDS_DATA_REPRESENTATION_MAX {
+                return Err(ZeroDdsStatus::OutOfResources);
+            }
+            out.is_set = 1;
+            out.count = list.len() as u8;
+            out.ids[..list.len()].copy_from_slice(list);
+        }
+        Ok(out)
+    }
+}
+
+/// TypeConsistencyEnforcementQosPolicy (DDS-XTypes 1.3 §7.6.3.4.1, Annex D).
+///
+/// `is_set` = 0 leaves the policy at its default (`ALLOW_TYPE_COERCION` with
+/// the defaults of the policy); an all-zero struct is that. `kind` is
+/// `DISALLOW_TYPE_COERCION` = 0 or `ALLOW_TYPE_COERCION` = 1; the five flags
+/// are 0 or 1.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ZeroDdsTypeConsistencyEnforcementQosPolicy {
+    /// 0: left at the default; 1: the fields below are the policy.
+    pub is_set: u8,
+    /// `TypeConsistencyKind`.
+    pub kind: u8,
+    /// `ignore_sequence_bounds`.
+    pub ignore_sequence_bounds: u8,
+    /// `ignore_string_bounds`.
+    pub ignore_string_bounds: u8,
+    /// `ignore_member_names`.
+    pub ignore_member_names: u8,
+    /// `prevent_type_widening`.
+    pub prevent_type_widening: u8,
+    /// `force_type_validation`.
+    pub force_type_validation: u8,
+}
+
+impl ZeroDdsTypeConsistencyEnforcementQosPolicy {
+    /// The policy as the DCPS QoS holds it.
+    ///
+    /// # Errors
+    /// `BadParameter` for a `kind` Annex D does not define.
+    fn to_qos(self) -> Result<zerodds_types::qos::TypeConsistencyEnforcement, ZeroDdsStatus> {
+        if self.is_set == 0 {
+            return Ok(zerodds_types::qos::TypeConsistencyEnforcement::default());
+        }
+        let kind = zerodds_types::qos::TypeConsistencyKind::from_u32(u32::from(self.kind))
+            .map_err(|_| ZeroDdsStatus::BadParameter)?;
+        Ok(zerodds_types::qos::TypeConsistencyEnforcement {
+            kind,
+            ignore_sequence_bounds: self.ignore_sequence_bounds != 0,
+            ignore_string_bounds: self.ignore_string_bounds != 0,
+            ignore_member_names: self.ignore_member_names != 0,
+            prevent_type_widening: self.prevent_type_widening != 0,
+            force_type_validation: self.force_type_validation != 0,
+        })
+    }
+
+    /// The C form of the DCPS QoS value, as a policy that is set.
+    fn from_qos(value: &zerodds_types::qos::TypeConsistencyEnforcement) -> Self {
+        Self {
+            is_set: 1,
+            kind: value.kind.to_u32() as u8,
+            ignore_sequence_bounds: u8::from(value.ignore_sequence_bounds),
+            ignore_string_bounds: u8::from(value.ignore_string_bounds),
+            ignore_member_names: u8::from(value.ignore_member_names),
+            prevent_type_widening: u8::from(value.prevent_type_widening),
+            force_type_validation: u8::from(value.force_type_validation),
+        }
+    }
+}
 /// GroupDataQosPolicy.
 pub type ZeroDdsGroupDataQosPolicy = ZeroDdsUserDataQosPolicy;
 
@@ -372,10 +489,73 @@ pub type ZeroDdsGroupDataQosPolicy = ZeroDdsUserDataQosPolicy;
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct ZeroDdsPartitionQosPolicy {
-    /// Array von C-String-Pointern (Caller-owned).
+    /// Array of C string pointers (caller-owned).
     pub names: *const *const c_char,
     /// Count.
     pub names_len: usize,
+}
+
+/// One string property of a [`ZeroDdsPropertyQosPolicy`] (DDS-Security 1.2
+/// §7.3.3 `Property_t`: name, value, `propagate`).
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct ZeroDdsPropertyEntry {
+    /// NUL-terminated name (caller-owned).
+    pub name: *const c_char,
+    /// NUL-terminated value (caller-owned).
+    pub value: *const c_char,
+    /// `propagate`: 1 announces the entry in the discovery data, 0 keeps it
+    /// local (§7.3.21).
+    pub propagate: u8,
+}
+
+/// One binary property of a [`ZeroDdsPropertyQosPolicy`] (§7.3.3
+/// `BinaryProperty_t`: name, value, `propagate`).
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct ZeroDdsBinaryPropertyEntry {
+    /// NUL-terminated name (caller-owned).
+    pub name: *const c_char,
+    /// Pointer to the value bytes (caller-owned).
+    pub value: *const u8,
+    /// Length of the value.
+    pub value_len: usize,
+    /// `propagate`, see [`ZeroDdsPropertyEntry::propagate`].
+    pub propagate: u8,
+}
+
+/// PropertyQosPolicy (DDS-Security 1.2 §7.3.21): `value` and `binary_value`.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct ZeroDdsPropertyQosPolicy {
+    /// Array of string properties (caller-owned).
+    pub entries: *const ZeroDdsPropertyEntry,
+    /// Count of `entries`.
+    pub entries_len: usize,
+    /// Array of binary properties (caller-owned).
+    pub binary_entries: *const ZeroDdsBinaryPropertyEntry,
+    /// Count of `binary_entries`.
+    pub binary_entries_len: usize,
+}
+
+/// One tag of a [`ZeroDdsDataTagQosPolicy`] (§7.3.21 `Tag`: name, value).
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct ZeroDdsTag {
+    /// NUL-terminated name (caller-owned).
+    pub name: *const c_char,
+    /// NUL-terminated value (caller-owned).
+    pub value: *const c_char,
+}
+
+/// DataTagQosPolicy (DDS-Security 1.2 §7.3.21): `TagSeq tags`.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct ZeroDdsDataTagQosPolicy {
+    /// Array of tags (caller-owned).
+    pub tags: *const ZeroDdsTag,
+    /// Count of `tags`.
+    pub tags_len: usize,
 }
 
 /// Stable backing store for the PARTITION names emitted on a `get_qos` /
@@ -391,13 +571,112 @@ pub struct PartitionOutCache {
     strings: Vec<std::ffi::CString>,
     /// `*const c_char` view over `strings`, the array `names` points at.
     ptrs: Vec<*const c_char>,
+    /// Owned strings behind the `property` and `data_tags` OUT fields.
+    property_strings: Vec<std::ffi::CString>,
+    /// Owned values of the binary properties.
+    property_values: Vec<Vec<u8>>,
+    /// The string entries `property.entries` points at.
+    property_entries: Vec<ZeroDdsPropertyEntry>,
+    /// The binary entries `property.binary_entries` points at.
+    property_binary_entries: Vec<ZeroDdsBinaryPropertyEntry>,
+    /// Owned strings behind the tags.
+    tag_strings: Vec<std::ffi::CString>,
+    /// The tags `data_tags.tags` points at.
+    tag_entries: Vec<ZeroDdsTag>,
 }
 
 // SAFETY: the raw pointers in `ptrs` only ever alias `strings` in the same
 // struct; the cache is always guarded by a Mutex on the owning entity.
 unsafe impl Send for PartitionOutCache {}
 
+/// A C string of `text`, cut at the first interior NUL.
+fn c_string_of(text: &str) -> std::ffi::CString {
+    let bytes = text.as_bytes();
+    let end = bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len());
+    std::ffi::CString::new(&bytes[..end]).unwrap_or_default()
+}
+
 impl PartitionOutCache {
+    /// Refreshes the cache from `policy` and points `out` at its entries
+    /// (valid until the next `get_qos` on the same entity).
+    fn marshal_property(&mut self, policy: &PropertyQosPolicy, out: &mut ZeroDdsPropertyQosPolicy) {
+        self.property_strings.clear();
+        self.property_values.clear();
+        self.property_entries.clear();
+        self.property_binary_entries.clear();
+        // Fill the owners first: the pointers are taken after the vectors stop
+        // growing (a CString keeps its heap buffer, a Vec<u8> too).
+        let strings: Vec<(std::ffi::CString, std::ffi::CString, u8)> = policy
+            .entries()
+            .map(|(n, v, p)| (c_string_of(n), c_string_of(v), u8::from(p)))
+            .collect();
+        let binary: Vec<(std::ffi::CString, Vec<u8>, u8)> = policy
+            .binary_entries()
+            .map(|(n, v, p)| (c_string_of(n), v.to_vec(), u8::from(p)))
+            .collect();
+        for (name, value, propagate) in strings {
+            self.property_entries.push(ZeroDdsPropertyEntry {
+                name: name.as_ptr(),
+                value: value.as_ptr(),
+                propagate,
+            });
+            self.property_strings.push(name);
+            self.property_strings.push(value);
+        }
+        for (name, value, propagate) in binary {
+            self.property_binary_entries
+                .push(ZeroDdsBinaryPropertyEntry {
+                    name: name.as_ptr(),
+                    value: value.as_ptr(),
+                    value_len: value.len(),
+                    propagate,
+                });
+            self.property_strings.push(name);
+            self.property_values.push(value);
+        }
+        *out = ZeroDdsPropertyQosPolicy {
+            entries: if self.property_entries.is_empty() {
+                ptr::null()
+            } else {
+                self.property_entries.as_ptr()
+            },
+            entries_len: self.property_entries.len(),
+            binary_entries: if self.property_binary_entries.is_empty() {
+                ptr::null()
+            } else {
+                self.property_binary_entries.as_ptr()
+            },
+            binary_entries_len: self.property_binary_entries.len(),
+        };
+    }
+
+    /// Refreshes the cache from `policy` and points `out` at its tags.
+    fn marshal_tags(&mut self, policy: &DataTagQosPolicy, out: &mut ZeroDdsDataTagQosPolicy) {
+        self.tag_strings.clear();
+        self.tag_entries.clear();
+        let tags: Vec<(std::ffi::CString, std::ffi::CString)> = policy
+            .tags
+            .iter()
+            .map(|t| (c_string_of(&t.name), c_string_of(&t.value)))
+            .collect();
+        for (name, value) in tags {
+            self.tag_entries.push(ZeroDdsTag {
+                name: name.as_ptr(),
+                value: value.as_ptr(),
+            });
+            self.tag_strings.push(name);
+            self.tag_strings.push(value);
+        }
+        *out = ZeroDdsDataTagQosPolicy {
+            tags: if self.tag_entries.is_empty() {
+                ptr::null()
+            } else {
+                self.tag_entries.as_ptr()
+            },
+            tags_len: self.tag_entries.len(),
+        };
+    }
+
     /// Refresh the cache from the current partition names and point
     /// `out_names`/`out_len` at the (now stable) internal pointer array.
     ///
@@ -508,6 +787,8 @@ pub struct ZeroDdsTopicQos {
     pub ownership: ZeroDdsOwnershipQosPolicy,
     /// TopicData.
     pub topic_data: ZeroDdsTopicDataQosPolicy,
+    /// DataRepresentation (DDS-XTypes 1.3 Annex D `TopicQos::representation`).
+    pub data_representation: ZeroDdsDataRepresentationQosPolicy,
 }
 
 /// PublisherQos.
@@ -569,6 +850,12 @@ pub struct ZeroDdsDataWriterQos {
     pub topic_data: ZeroDdsTopicDataQosPolicy,
     /// GroupData.
     pub group_data: ZeroDdsGroupDataQosPolicy,
+    /// DataRepresentation (DDS-XTypes 1.3 Annex D `DataWriterQos::representation`).
+    pub data_representation: ZeroDdsDataRepresentationQosPolicy,
+    /// Property (DDS-Security 1.2 §7.3.21); all-zero is no entries.
+    pub property: ZeroDdsPropertyQosPolicy,
+    /// DataTags (DDS-Security 1.2 §7.3.21); all-zero is no tags.
+    pub data_tags: ZeroDdsDataTagQosPolicy,
 }
 
 /// DataReaderQos.
@@ -607,6 +894,15 @@ pub struct ZeroDdsDataReaderQos {
     pub topic_data: ZeroDdsTopicDataQosPolicy,
     /// GroupData.
     pub group_data: ZeroDdsGroupDataQosPolicy,
+    /// DataRepresentation (DDS-XTypes 1.3 Annex D `DataReaderQos::representation`).
+    pub data_representation: ZeroDdsDataRepresentationQosPolicy,
+    /// TypeConsistencyEnforcement (DDS-XTypes 1.3 Annex D
+    /// `DataReaderQos::type_consistency`).
+    pub type_consistency: ZeroDdsTypeConsistencyEnforcementQosPolicy,
+    /// Property (DDS-Security 1.2 §7.3.21); all-zero is no entries.
+    pub property: ZeroDdsPropertyQosPolicy,
+    /// DataTags (DDS-Security 1.2 §7.3.21); all-zero is no tags.
+    pub data_tags: ZeroDdsDataTagQosPolicy,
 }
 
 // ---------------------------------------------------------------------------
@@ -933,6 +1229,106 @@ impl From<DurabilityServiceQosPolicy> for ZeroDdsDurabilityServiceQosPolicy {
 }
 
 // ---------------------------------------------------------------------------
+// SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+unsafe fn property_from_c(c: &ZeroDdsPropertyQosPolicy) -> PropertyQosPolicy {
+    let mut out = PropertyQosPolicy::new();
+    // SAFETY: caller contract: entries[0..entries_len] and
+    // binary_entries[0..binary_entries_len] valid, every pointer inside valid.
+    unsafe {
+        if !c.entries.is_null() {
+            for e in slice::from_raw_parts(c.entries, c.entries_len) {
+                if e.name.is_null() {
+                    continue;
+                }
+                let value = if e.value.is_null() {
+                    Some("")
+                } else {
+                    CStr::from_ptr(e.value).to_str().ok()
+                };
+                let (Ok(name), Some(value)) = (CStr::from_ptr(e.name).to_str(), value) else {
+                    continue;
+                };
+                out.set_propagated(name, value, e.propagate != 0);
+            }
+        }
+        if !c.binary_entries.is_null() {
+            for e in slice::from_raw_parts(c.binary_entries, c.binary_entries_len) {
+                if e.name.is_null() {
+                    continue;
+                }
+                let Ok(name) = CStr::from_ptr(e.name).to_str() else {
+                    continue;
+                };
+                out.set_binary(
+                    name,
+                    slice_or_empty(e.value, e.value_len).to_vec(),
+                    e.propagate != 0,
+                );
+            }
+        }
+    }
+    out
+}
+
+// SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+unsafe fn data_tags_from_c(c: &ZeroDdsDataTagQosPolicy) -> DataTagQosPolicy {
+    let mut out = DataTagQosPolicy::new();
+    if c.tags.is_null() {
+        return out;
+    }
+    // SAFETY: caller contract: tags[0..tags_len] valid, every pointer inside valid.
+    unsafe {
+        for t in slice::from_raw_parts(c.tags, c.tags_len) {
+            if t.name.is_null() {
+                continue;
+            }
+            let value = if t.value.is_null() {
+                Some("")
+            } else {
+                CStr::from_ptr(t.value).to_str().ok()
+            };
+            let (Ok(name), Some(value)) = (CStr::from_ptr(t.name).to_str(), value) else {
+                continue;
+            };
+            out = out.with(name, value);
+        }
+    }
+    out
+}
+
+/// Writes the `property` and `data_tags` OUT fields of a writer or reader QoS
+/// from `cache` (see [`PartitionOutCache`]); the entries stay valid until the
+/// next `get_qos` on the same entity.
+///
+/// # Safety
+/// `property`/`tags` valid for writes.
+unsafe fn marshal_property_and_tags_out(
+    cache: &std::sync::Mutex<PartitionOutCache>,
+    r_property: &PropertyQosPolicy,
+    r_tags: &DataTagQosPolicy,
+    property: *mut ZeroDdsPropertyQosPolicy,
+    tags: *mut ZeroDdsDataTagQosPolicy,
+) {
+    // SAFETY: caller pledge — out pointers valid for writes.
+    unsafe {
+        if let Ok(mut c) = cache.lock() {
+            c.marshal_property(r_property, &mut *property);
+            c.marshal_tags(r_tags, &mut *tags);
+        } else {
+            *property = ZeroDdsPropertyQosPolicy {
+                entries: ptr::null(),
+                entries_len: 0,
+                binary_entries: ptr::null(),
+                binary_entries_len: 0,
+            };
+            *tags = ZeroDdsDataTagQosPolicy {
+                tags: ptr::null(),
+                tags_len: 0,
+            };
+        }
+    }
+}
+
 // QoS-Set Konvertierungen
 // ---------------------------------------------------------------------------
 
@@ -977,13 +1373,14 @@ pub unsafe fn dw_qos_from_c(c: *const ZeroDdsDataWriterQos) -> DataWriterQos {
             group_data: GroupDataQosPolicy {
                 value: slice_or_empty(q.group_data.value, q.group_data.value_len).to_vec(),
             },
-            // The C-API does not (yet) model DataRepresentation → runtime default.
-            data_representation: None,
+            data_representation: q.data_representation.to_qos(),
+            property: property_from_c(&q.property),
+            data_tags: data_tags_from_c(&q.data_tags),
         }
     }
 }
 
-/// Konvertiert FFI-Pointer in `DataReaderQos`.
+/// Converts an FFI pointer into`DataReaderQos`.
 ///
 /// # Safety
 /// Wie `dw_qos_from_c`.
@@ -991,7 +1388,7 @@ pub unsafe fn dr_qos_from_c(c: *const ZeroDdsDataReaderQos) -> DataReaderQos {
     if c.is_null() {
         return DataReaderQos::default();
     }
-    // SAFETY: see fn # Safety doc — c NULL-checked above; Helper-Calls vererben Pledge.
+    // SAFETY: see fn # Safety doc — c NULL-checked above; helper calls inherit the pledge.
     unsafe {
         let q = &*c;
         DataReaderQos {
@@ -1019,13 +1416,37 @@ pub unsafe fn dr_qos_from_c(c: *const ZeroDdsDataReaderQos) -> DataReaderQos {
             group_data: GroupDataQosPolicy {
                 value: slice_or_empty(q.group_data.value, q.group_data.value_len).to_vec(),
             },
-            // The C-API does not (yet) model DataRepresentation → runtime default.
-            data_representation: None,
+            data_representation: q.data_representation.to_qos(),
+            property: property_from_c(&q.property),
+            data_tags: data_tags_from_c(&q.data_tags),
+            // A `kind` Annex D does not define is refused by
+            // `dr_qos_from_c_checked`, which every entry point that takes a
+            // QoS from the caller uses; here it reads as the default.
+            type_consistency: q.type_consistency.to_qos().unwrap_or_default(),
         }
     }
 }
 
-/// Konvertiert FFI-Pointer in `TopicQos`.
+/// As [`dr_qos_from_c`], refusing a QoS whose `type_consistency.kind` is not
+/// one of the two values of Annex D.
+///
+/// # Errors
+/// `BadParameter` for an undefined `TypeConsistencyKind`.
+///
+/// # Safety
+/// As [`dr_qos_from_c`].
+pub unsafe fn dr_qos_from_c_checked(
+    c: *const ZeroDdsDataReaderQos,
+) -> Result<DataReaderQos, ZeroDdsStatus> {
+    if !c.is_null() {
+        // SAFETY: `c` is non-NULL and valid per the caller's contract.
+        unsafe { (*c).type_consistency.to_qos() }?;
+    }
+    // SAFETY: the caller's contract.
+    Ok(unsafe { dr_qos_from_c(c) })
+}
+
+/// Converts an FFI pointer into`TopicQos`.
 ///
 /// # Safety
 /// Wie `dw_qos_from_c`.
@@ -1052,11 +1473,12 @@ pub unsafe fn topic_qos_from_c(c: *const ZeroDdsTopicQos) -> TopicQos {
             topic_data: TopicDataQosPolicy {
                 value: slice_or_empty(q.topic_data.value, q.topic_data.value_len).to_vec(),
             },
+            data_representation: q.data_representation.to_qos(),
         }
     }
 }
 
-/// Konvertiert FFI-Pointer in `PublisherQos`.
+/// Converts an FFI pointer into`PublisherQos`.
 ///
 /// # Safety
 /// Wie `dw_qos_from_c`.
@@ -1080,7 +1502,7 @@ pub unsafe fn pub_qos_from_c(c: *const ZeroDdsPublisherQos) -> PublisherQos {
     }
 }
 
-/// Konvertiert FFI-Pointer in `SubscriberQos`.
+/// Converts an FFI pointer into`SubscriberQos`.
 ///
 /// # Safety
 /// Wie `dw_qos_from_c`.
@@ -1104,7 +1526,7 @@ pub unsafe fn sub_qos_from_c(c: *const ZeroDdsSubscriberQos) -> SubscriberQos {
     }
 }
 
-/// Konvertiert FFI-Pointer in `DomainParticipantQos`.
+/// Converts an FFI pointer into`DomainParticipantQos`.
 ///
 /// # Safety
 /// Wie `dw_qos_from_c`.
@@ -1125,7 +1547,7 @@ pub unsafe fn dp_qos_from_c(c: *const ZeroDdsDomainParticipantQos) -> DomainPart
     }
 }
 
-/// Konvertiert FFI-Pointer in `DomainParticipantFactoryQos`.
+/// Converts an FFI pointer into`DomainParticipantFactoryQos`.
 ///
 /// # Safety
 /// Wie `dw_qos_from_c`.
@@ -1212,6 +1634,10 @@ pub unsafe fn topic_qos_to_c(r: &TopicQos, out: *mut ZeroDdsTopicQos) -> c_int {
         (*out).transport_priority = r.transport_priority.into();
         (*out).lifespan = r.lifespan.into();
         (*out).ownership = r.ownership.into();
+        match ZeroDdsDataRepresentationQosPolicy::from_qos(r.data_representation.as_deref()) {
+            Ok(policy) => (*out).data_representation = policy,
+            Err(status) => return status as c_int,
+        }
     }
     ZeroDdsStatus::Ok as c_int
 }
@@ -1270,12 +1696,23 @@ pub unsafe fn dw_qos_to_c(
         (*out).resource_limits = r.resource_limits.into();
         (*out).transport_priority = r.transport_priority.into();
         (*out).writer_data_lifecycle = r.writer_data_lifecycle.into();
+        match ZeroDdsDataRepresentationQosPolicy::from_qos(r.data_representation.as_deref()) {
+            Ok(policy) => (*out).data_representation = policy,
+            Err(status) => return status as c_int,
+        }
         // PARTITION round-trips out via the entity-owned cache (DDS 1.4 §2.2.3.10).
         marshal_partition_out(
             partition_cache,
             &r.partition.names,
             &mut (*out).partition.names,
             &mut (*out).partition.names_len,
+        );
+        marshal_property_and_tags_out(
+            partition_cache,
+            &r.property,
+            &r.data_tags,
+            &mut (*out).property,
+            &mut (*out).data_tags,
         );
     }
     ZeroDdsStatus::Ok as c_int
@@ -1326,12 +1763,25 @@ pub unsafe fn dr_qos_to_c(
         (*out).resource_limits = r.resource_limits.into();
         (*out).time_based_filter = r.time_based_filter.into();
         (*out).reader_data_lifecycle = r.reader_data_lifecycle.into();
+        match ZeroDdsDataRepresentationQosPolicy::from_qos(r.data_representation.as_deref()) {
+            Ok(policy) => (*out).data_representation = policy,
+            Err(status) => return status as c_int,
+        }
+        (*out).type_consistency =
+            ZeroDdsTypeConsistencyEnforcementQosPolicy::from_qos(&r.type_consistency);
         // PARTITION round-trips out via the entity-owned cache (DDS 1.4 §2.2.3.10).
         marshal_partition_out(
             partition_cache,
             &r.partition.names,
             &mut (*out).partition.names,
             &mut (*out).partition.names_len,
+        );
+        marshal_property_and_tags_out(
+            partition_cache,
+            &r.property,
+            &r.data_tags,
+            &mut (*out).property,
+            &mut (*out).data_tags,
         );
     }
     ZeroDdsStatus::Ok as c_int
@@ -1465,6 +1915,112 @@ mod tests {
         // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
         let q = unsafe { dw_qos_from_c(&c) };
         assert!(matches!(q.reliability.kind, ReliabilityKind::BestEffort));
+    }
+
+    /// DDS-Security 1.2 §7.3.21: `property` (with `propagate` per entry and
+    /// binary properties) and `data_tags` of a writer and a reader QoS cross
+    /// the C ABI in both directions.
+    #[test]
+    fn property_and_data_tags_cross_the_c_abi_both_ways() {
+        let name_a = c"dds.sec.crypto.symmetric_cipher_algorithm";
+        let value_a = c"AES256+GCM";
+        let name_b = c"local.note";
+        let value_b = c"x";
+        let name_bin = c"blob";
+        let blob = [1u8, 2, 3];
+        let entries = [
+            ZeroDdsPropertyEntry {
+                name: name_a.as_ptr(),
+                value: value_a.as_ptr(),
+                propagate: 1,
+            },
+            ZeroDdsPropertyEntry {
+                name: name_b.as_ptr(),
+                value: value_b.as_ptr(),
+                propagate: 0,
+            },
+        ];
+        let binary = [ZeroDdsBinaryPropertyEntry {
+            name: name_bin.as_ptr(),
+            value: blob.as_ptr(),
+            value_len: blob.len(),
+            propagate: 1,
+        }];
+        let tag_name = c"classification";
+        let tag_value = c"secret";
+        let tags = [ZeroDdsTag {
+            name: tag_name.as_ptr(),
+            value: tag_value.as_ptr(),
+        }];
+        let property = ZeroDdsPropertyQosPolicy {
+            entries: entries.as_ptr(),
+            entries_len: entries.len(),
+            binary_entries: binary.as_ptr(),
+            binary_entries_len: binary.len(),
+        };
+        let data_tags = ZeroDdsDataTagQosPolicy {
+            tags: tags.as_ptr(),
+            tags_len: tags.len(),
+        };
+        let expected_property = PropertyQosPolicy::new()
+            .with_propagated("dds.sec.crypto.symmetric_cipher_algorithm", "AES256+GCM")
+            .with("local.note", "x");
+        let mut expected_property = expected_property;
+        expected_property.set_binary("blob", vec![1, 2, 3], true);
+        let expected_tags = DataTagQosPolicy::new().with("classification", "secret");
+
+        // Writer: C to Rust.
+        // SAFETY: FFI-boundary; every pointer in the structs lives in this test.
+        let mut cw: ZeroDdsDataWriterQos = unsafe { core::mem::zeroed() };
+        cw.property = property;
+        cw.data_tags = data_tags;
+        // SAFETY: as above.
+        let w = unsafe { dw_qos_from_c(&cw) };
+        assert_eq!(w.property, expected_property);
+        assert_eq!(w.data_tags, expected_tags);
+        // Writer: Rust to C, through the cache of the entity.
+        let cache = std::sync::Mutex::new(PartitionOutCache::default());
+        // SAFETY: as above.
+        let mut out: ZeroDdsDataWriterQos = unsafe { core::mem::zeroed() };
+        // SAFETY: out is valid; no user data buffers are needed (all empty).
+        let status = unsafe { dw_qos_to_c(&w, &mut out, &cache) };
+        assert_eq!(status, ZeroDdsStatus::Ok as c_int);
+        // SAFETY: the cache owns what out points at, and lives on.
+        let back = unsafe { dw_qos_from_c(&out) };
+        assert_eq!(back.property, expected_property);
+        assert_eq!(back.data_tags, expected_tags);
+
+        // Reader.
+        // SAFETY: as above.
+        let mut cr: ZeroDdsDataReaderQos = unsafe { core::mem::zeroed() };
+        cr.property = property;
+        cr.data_tags = data_tags;
+        // SAFETY: as above.
+        let r = unsafe { dr_qos_from_c(&cr) };
+        assert_eq!(r.property, expected_property);
+        assert_eq!(r.data_tags, expected_tags);
+        let cache = std::sync::Mutex::new(PartitionOutCache::default());
+        // SAFETY: as above.
+        let mut out: ZeroDdsDataReaderQos = unsafe { core::mem::zeroed() };
+        // SAFETY: as above.
+        let status = unsafe { dr_qos_to_c(&r, &mut out, &cache) };
+        assert_eq!(status, ZeroDdsStatus::Ok as c_int);
+        // SAFETY: as above.
+        let back = unsafe { dr_qos_from_c(&out) };
+        assert_eq!(back.property, expected_property);
+        assert_eq!(back.data_tags, expected_tags);
+    }
+
+    /// An all-zero struct, as every caller before this member passed it,
+    /// has no property and no tags.
+    #[test]
+    fn an_all_zero_property_and_data_tags_are_empty() {
+        // SAFETY: all-zero is a valid value of the struct.
+        let c: ZeroDdsDataWriterQos = unsafe { core::mem::zeroed() };
+        // SAFETY: as above.
+        let w = unsafe { dw_qos_from_c(&c) };
+        assert!(w.property.is_empty());
+        assert!(w.data_tags.is_empty());
     }
 
     #[test]

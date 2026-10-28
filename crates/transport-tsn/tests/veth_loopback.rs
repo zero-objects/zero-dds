@@ -10,7 +10,7 @@
 //! out and one back — no discovery, no DDS stack.
 //!
 //! veth in the root NS instead of an isolated netns, because the latter is
-//! blocked in LXC (e.g. codepit) (`ip netns add` = EPERM). The veth pair
+//! blocked in LXC (e.g. The Linux test host) (`ip netns add` = EPERM). The veth pair
 //! proves the AF_PACKET path over a real L2 link nonetheless.
 //!
 //! Needs root (CAP_NET_RAW + CAP_NET_ADMIN), hence `#[ignore]`: skipped on

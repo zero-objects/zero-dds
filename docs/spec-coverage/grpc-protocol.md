@@ -35,7 +35,14 @@ Trailers-Only`.
 **Repo:** `crates/grpc-bridge/src/frame.rs::{encode_message,
 decode_message, encode_web_trailers}`.
 
-**Tests:** `frame::tests::*` (9 Tests inkl. back-to-back-Stream).
+**Tests:** `crates/grpc-bridge/src/frame.rs::tests::empty_message_encodes_to_5_byte_header`,
+`crates/grpc-bridge/src/frame.rs::tests::uncompressed_message_has_compressed_flag_zero`,
+`crates/grpc-bridge/src/frame.rs::tests::compressed_message_has_compressed_flag_one`,
+`crates/grpc-bridge/src/frame.rs::tests::message_length_uses_big_endian_4_bytes`,
+`crates/grpc-bridge/src/frame.rs::tests::round_trip_message`,
+`crates/grpc-bridge/src/frame.rs::tests::header_too_short_decode_fails`,
+`crates/grpc-bridge/src/frame.rs::tests::body_truncated_decode_fails`,
+`crates/grpc-bridge/src/frame.rs::tests::back_to_back_messages_can_be_decoded_sequentially`.
 
 **Status:** done
 
@@ -59,10 +66,10 @@ PATH, AUTHORITY, TE, CONTENT_TYPE, GRPC_ENCODING,
 GRPC_ACCEPT_ENCODING, USER_AGENT, GRPC_TIMEOUT, GRPC_MESSAGE_TYPE}`
 + `content_types::{GRPC, GRPC_PROTO, GRPC_WEB, GRPC_WEB_TEXT}`.
 
-**Tests:** `path::tests::*` (7 Tests),
-`timeout::tests::*` (10 Tests),
-`metadata::tests::{request_headers_constants_match_spec,
-content_types_match_spec_strings}`.
+**Tests:** `crates/grpc-bridge/src/metadata.rs::tests::request_headers_constants_match_spec`,
+`crates/grpc-bridge/src/metadata.rs::tests::content_types_match_spec_strings`,
+`crates/grpc-bridge/src/path.rs::tests::parses_standard_grpc_path`,
+`crates/grpc-bridge/src/timeout.rs::tests::well_known_unit_chars_match_spec`.
 
 **Status:** done — alle Required-Header-Names + Content-Type-Set
 als Konstanten ausgewiesen.
@@ -90,8 +97,15 @@ TimeoutValue MUST be at most 8 digits, Unit ∈ {H,M,S,m,u,n}.
 encode_timeout, decode_timeout}` mit Reject von über-8-Digit, non-
 digit, unbekannter-Unit, leerem Header.
 
-**Tests:** `timeout::tests::*` (10 Tests inkl. Round-Trip aller
-6 Units).
+**Tests:** `crates/grpc-bridge/src/timeout.rs::tests::timeout_unit_round_trip_for_all`
+(alle sechs Units), `crates/grpc-bridge/src/timeout.rs::tests::encodes_30_seconds`,
+`crates/grpc-bridge/src/timeout.rs::tests::encodes_500_milliseconds`,
+`crates/grpc-bridge/src/timeout.rs::tests::round_trip_decode_encode`,
+`crates/grpc-bridge/src/timeout.rs::tests::rejects_value_above_8_digits_on_encode`,
+`crates/grpc-bridge/src/timeout.rs::tests::decode_rejects_unknown_unit`,
+`crates/grpc-bridge/src/timeout.rs::tests::decode_rejects_non_digit_value`,
+`crates/grpc-bridge/src/timeout.rs::tests::decode_rejects_empty`,
+`crates/grpc-bridge/src/timeout.rs::tests::decode_rejects_only_unit_no_value`.
 
 **Status:** done
 
@@ -127,8 +141,9 @@ Response-Header-Konstanten in
 `crates/grpc-bridge/src/metadata.rs::response_headers::{STATUS,
 CONTENT_TYPE, GRPC_ENCODING, GRPC_STATUS, GRPC_MESSAGE}`.
 
-**Tests:** Cross-Ref `status::tests::*`,
-`metadata::tests::response_headers_constants_match_spec`.
+**Tests:** `crates/grpc-bridge/src/status.rs::tests::all_17_codes_round_trip_via_numeric`,
+`crates/grpc-bridge/src/status.rs::tests::well_known_codes_match_spec_values`,
+`crates/grpc-bridge/src/metadata.rs::tests::response_headers_constants_match_spec`.
 
 **Status:** done — Status-Code-Set + Required-Response-Header-Set
 als Konstanten ausgewiesen.
@@ -141,8 +156,11 @@ Werten 0..=16 (OK/CANCELLED/UNKNOWN/.../UNAUTHENTICATED).
 **Repo:** `crates/grpc-bridge/src/status.rs::Status` Enum mit
 `code/from_code/is_ok/name`-Methods. Alle 17 Werte modelliert.
 
-**Tests:** `status::tests::*` (5 Tests inkl. Round-Trip aller 17 +
-Reject von Code-17/255 + name() screaming-snake-case).
+**Tests:** `crates/grpc-bridge/src/status.rs::tests::all_17_codes_round_trip_via_numeric`,
+`crates/grpc-bridge/src/status.rs::tests::unknown_codes_yield_none` (Reject von Code 17/255),
+`crates/grpc-bridge/src/status.rs::tests::ok_is_only_status_with_is_ok_true`,
+`crates/grpc-bridge/src/status.rs::tests::well_known_codes_match_spec_values`,
+`crates/grpc-bridge/src/status.rs::tests::names_use_screaming_snake_case`.
 
 **Status:** done
 
@@ -189,7 +207,29 @@ error}.rs` (1191 SLOC) für RFC 7540 Frame-Layer + Connection-
 Management; `crates/hpack/src/{encoder,decoder,table,huffman,
 integer,string}.rs` (1704 SLOC) für RFC 7541 Header-Compression.
 
-**Tests:** Inline-Tests in beiden Crates.
+**Tests:** Frame-Layer — `crates/http2/src/frame.rs::tests::from_u8_round_trip`
+(alle Frame-Type-Codes), `crates/http2/src/frame.rs::tests::encode_decode_round_trip`,
+`crates/http2/src/frame.rs::tests::unknown_frame_type_rejected`,
+`crates/http2/src/frame.rs::tests::r_bit_stripped_from_stream_id`,
+`crates/http2/src/frame.rs::tests::frame_too_large_rejected`.
+SETTINGS — `crates/http2/src/settings.rs::tests::defaults_match_spec`,
+`crates/http2/src/settings.rs::tests::round_trip_encode_decode`,
+`crates/http2/src/settings.rs::tests::unknown_setting_id_ignored`.
+WINDOW_UPDATE — `crates/http2/src/flow.rs::tests::round_trip_window_update_codec`,
+`crates/http2/src/flow.rs::tests::window_update_zero_rejected`,
+`crates/http2/src/flow.rs::tests::window_update_overflow_rejected`.
+RST_STREAM und Stream-Zustände —
+`crates/http2/src/stream.rs::tests::idle_to_open_via_headers`,
+`crates/http2/src/stream.rs::tests::reset_from_any_state_closes`,
+`crates/http2/src/stream.rs::tests::open_recv_headers_stays_open_for_trailers`.
+Connection-Preface — `crates/http2/src/preface.rs::tests::correct_preface_passes`.
+HPACK — `crates/hpack/src/integer.rs::tests::rfc7541_c1_1_encoded_10_in_5bit_prefix`,
+`crates/hpack/src/integer.rs::tests::rfc7541_c1_2_encoded_1337_in_5bit_prefix`,
+`crates/hpack/src/integer.rs::tests::rfc7541_c1_3_encoded_42_in_8bit_prefix`,
+`crates/hpack/src/decoder.rs::tests::rfc7541_c2_1_literal_with_indexing`,
+`crates/hpack/src/decoder.rs::tests::round_trip_huffman_strings`,
+`crates/hpack/src/decoder.rs::tests::dynamic_table_size_update_applied`,
+`crates/hpack/src/decoder.rs::tests::invalid_index_zero_rejected`.
 
 **Status:** done — eigene no_std-tauglich-Implementation (Greenfield-
 Lücke in 2026 geschlossen).
@@ -219,8 +259,14 @@ mit Compressed-Flag-MSB=1 (`0x80`).
 decode_base64}` (RFC-4648 Standard-Variante mit Padding) +
 `content_types::GRPC_WEB_TEXT` als Marker.
 
-**Tests:** Cross-Ref `metadata::tests::{encode_base64_*,
-decode_base64_round_trip}`.
+**Tests:** `crates/grpc-bridge/src/metadata.rs::tests::encode_base64_empty`,
+`crates/grpc-bridge/src/metadata.rs::tests::encode_base64_one_byte_pads_two`,
+`crates/grpc-bridge/src/metadata.rs::tests::encode_base64_two_bytes_pads_one`,
+`crates/grpc-bridge/src/metadata.rs::tests::encode_base64_three_bytes_no_padding`,
+`crates/grpc-bridge/src/metadata.rs::tests::encode_base64_known_vector`,
+`crates/grpc-bridge/src/metadata.rs::tests::decode_base64_round_trip`,
+`crates/grpc-bridge/src/metadata.rs::tests::decode_base64_rejects_invalid_chars`,
+`crates/grpc-bridge/src/metadata.rs::tests::decode_base64_rejects_bad_padding_length`.
 
 **Status:** done — Base64-Subprotocol-Codec + Content-Type-Marker
 live.
@@ -229,7 +275,7 @@ live.
 
 ## Audit-Status
 
-12 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
+11 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
 
 Test-Lauf:
 

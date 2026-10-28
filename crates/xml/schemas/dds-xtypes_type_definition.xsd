@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Transcribed from Annex A of DDS-XTypes 1.3 (formal/20-02-04). Differences to
+     the printed text, all of them typing slips of the document: the page footers
+     and form feeds of the PDF are left out, a schemaLocation that the PDF breaks
+     across two lines is joined, and four xs:attribute elements printed as
+     <xs:attribute ... use="optional"> without the closing slash are closed. -->
+<!-- dds-xtypes_type_definition.xsd -->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+         xmlns="http://www.omg.org/dds"
+         targetNamespace="http://www.omg.org/dds"
+         elementFormDefault="qualified"
+         attributeFormDefault="unqualified">
+  <xs:include schemaLocation="https://www.omg.org/spec/DDS-XTypes/20190301/dds-xtypes_type_definition_nonamespace.xsd" />
+  <xs:element name="types" type="typeLibrary"/>
+</xs:schema>

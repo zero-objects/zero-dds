@@ -1,63 +1,81 @@
-# `zerodds-ws-bridge` v1.0 — DDS↔WebSocket-Bridge-Daemon
+# `zerodds-ws-bridge` v1.0 — DDS↔WebSocket bridge daemon
 
-ZeroDDS Vendor-Spec. Spezifiziert das Verhalten eines konfigurierbaren
-Daemons, der DDS-Topics mit WebSocket-Clients koppelt.
+ZeroDDS vendor spec. Specifies the behaviour of a configurable
+daemon that couples DDS topics with WebSocket clients.
 
 ## Motivation
 
-Browser-Apps und IoT-Geräte koennen nicht nativ am RTPS/UDP-Multicast-
-Discovery teilnehmen (kein UDP im Browser, MTU/Routing-Restrictions
-hinter NAT). Der `zerodds-ws-bridged`-Daemon ist die Brücke: er ist
-ein DDS-DomainParticipant *und* ein WS-Server gleichzeitig — alles was
-auf einem Topic published wird, geht raus auf alle subscribten WS-
-Clients und umgekehrt.
+Browser apps and IoT devices cannot take part natively in RTPS/UDP multicast
+discovery (no UDP in the browser, MTU/routing restrictions
+behind NAT). The `zerodds-ws-bridged` daemon is the bridge: it is
+a DDS DomainParticipant *and* a WS server at the same time — everything that
+is published on a topic goes out to all subscribed WS
+clients and vice versa.
 
-Komplementär zur Library `crates/websocket-bridge/` (RFC-6455-Codec +
-DDS-Bridge-Logik) — die Library ist Building-Block, dieser Daemon ist
-das ausführbare Produkt.
+Complementary to the library `crates/websocket-bridge/` (RFC 6455 codec +
+DDS bridge logic) — the library is the building block, this daemon is
+the executable product.
 
-## §1 Conformance-Levels
+## §1 Conformance levels
 
-| Level | Anforderung |
+| Level | Requirement |
 |-------|-------------|
-| **L1 — Wire** | Daemon spricht RFC 6455 (Base-Framing, Handshake, Close) + RFC 7692 (permessage-deflate optional). |
-| **L2 — DDS** | Daemon ist gültiger DDS-DomainParticipant (SPDP/SEDP, Discovery, Liveliness). |
-| **L3 — Bridging** | Bidirektional: WS→DDS-Publish + DDS→WS-Push für alle gemappten Topics. |
-| **L4 — Config** | Topic-Map per YAML/JSON-Config; Hot-Reload via SIGHUP optional. |
-| **L5 — Auth** | TLS (`wss://`) + Token-Auth (Bearer/JWT) + Per-Topic-ACL. |
-| **L6 — Multi-Tenant** | Mehrere DomainParticipants pro Daemon; pro WS-Connection eine Tenant-Bindung. |
+| **L1 — Wire** | The daemon speaks RFC 6455 (base framing, handshake, close) + RFC 7692 (permessage-deflate optional). |
+| **L2 — DDS** | The daemon is a valid DDS DomainParticipant (SPDP/SEDP, discovery, liveliness). |
+| **L3 — Bridging** | Bidirectional: WS→DDS publish + DDS→WS push for all mapped topics. |
+| **L4 — Config** | Topic map via YAML/JSON config; hot reload via SIGHUP optional. |
+| **L5 — Auth** | TLS (`wss://`) + token auth (Bearer/JWT) + per-topic ACL. |
+| **L6 — Multi-Tenant** | Several DomainParticipants per daemon; one tenant binding per WS connection. |
 
-L1-L4 sind Pflicht. L5-L6 sind optional (Pflicht für Production).
+L1-L4 are mandatory. L5-L6 are optional (mandatory for production).
 
-## §2 CLI-Surface
+## §2 CLI surface
 
 ```
 zerodds-ws-bridged [OPTIONS]
 
 Options:
-  --config <FILE>          Path zur Config-File (YAML/JSON/TOML)
-  --listen <ADDR>          Bind-Address (Default 0.0.0.0:8080)
-  --domain <ID>            DDS-Domain-ID (Default 0)
-  --topic <NAME[:KEY]>     Single-Topic-Override (mehrfach)
-  --tls-cert <FILE>        TLS-Cert (PEM); aktiviert wss://
-  --tls-key <FILE>         TLS-Key (PEM)
-  --auth-token <SECRET>    Bearer-Token-Auth (single-token-mode)
-  --log-level <LEVEL>      trace/debug/info/warn/error (Default info)
-  --metrics <ADDR>         Prometheus-Scrape-Endpoint (Default off)
-  --version                Versions-Info
-  --help                   Hilfe
+  --config <FILE>          base file (YAML subset of zerodds-config),
+                           plus FILE.d/; without it: ws-bridged.yaml and
+                           ws-bridged.d/ in the system directory
+  --set <PATH=VALUE>       one value above all files, repeatable
+  --check-config           check the configuration, print every value with
+                           its origin, exit (0 valid, 1 invalid)
+  --listen <ADDR>          bind address (default 0.0.0.0:8080)
+  --domain <ID>            DDS domain ID (default 0)
+  --topic <NAME[:KEY]>     single-topic override (repeatable)
+  --tls-cert <FILE>        TLS cert (PEM); activates wss://
+  --tls-key <FILE>         TLS key (PEM)
+  --auth-token <SECRET>    bearer token auth (single-token-mode)
+  --log-level <LEVEL>      trace/debug/info/warn/error (default info)
+  --metrics <ADDR>         Prometheus scrape endpoint (default off)
+  --version                version info
+  --help                   help
 
 Exit-Codes:
-  0   normaler Shutdown (SIGTERM/SIGINT)
-  1   Config-Fehler
-  2   Bind-Fehler (Port belegt)
-  3   DDS-Discovery-Fehler
-  4   TLS-Fehler
+  0   normal shutdown (SIGTERM/SIGINT)
+  1   config error
+  2   bind error (port in use)
+  3   DDS discovery error
+  4   TLS error
 ```
 
-## §3 Config-File-Format
+Precedence (lowest first): built-in defaults, environment, files,
+flags. `--listen`, `--domain`, `--topic`, `--tls-cert`, `--tls-key`,
+`--auth-token`, `--log-level` and `--metrics` are short forms for `--set`
+of their file key (`--listen X` = `--set listen=X`, `--topic N` appends
+`N` to `topics`). The same file may carry the runtime keys of the
+DDS runtime (`transport.*`, `discovery.*`, …), see
+`zerodds-deployment-1.0.md` §2.1.
 
-YAML-Schema (auch JSON/TOML akzeptiert):
+## §3 Config file format
+
+YAML subset of `zerodds-config` (block lists, flat inline lists of
+scalars, `include:`, drop-ins, `${VAR}`). An unknown key in
+a known section (`tls.cert_fiel`) and a value of the wrong type
+prevent the start, naming file and line; an unknown key at the
+top level produces a warning, and under `--check-config` an
+error.
 
 ```yaml
 # zerodds-ws-bridged.yaml
@@ -72,7 +90,7 @@ tls:
 
 auth:
   mode: "none"                 # none|bearer|jwt|mtls
-  bearer_token: "${TOKEN}"     # ENV-Substitution
+  bearer_token: "${TOKEN}"     # ENV substitution
   jwt:
     public_key: "/etc/zerodds/jwt-pub.pem"
     audience: "zerodds-bridge"
@@ -88,7 +106,7 @@ topics:
       history: { kind: "keep_last", depth: 10 }
     ws_path: "/topics/chat"    # Optional, default = /topics/<topic-slug>
     acl:
-      read: ["*"]              # Liste der erlaubten auth-subjects
+      read: ["*"]              # list of the permitted auth subjects
       write: ["alice","bob"]
 
   - name: "Sensor::Reading"
@@ -98,37 +116,37 @@ topics:
 
 metrics:
   enabled: true
-  listen: "127.0.0.1:9090"
+  listen: "127.0.0.1:9091"
   path: "/metrics"
 ```
 
-ENV-Substitution: `${VAR}` und `${VAR:-default}` werden vor Config-Parse aufgelöst.
+ENV substitution: `${VAR}` and `${VAR:-default}` are resolved before the config parse.
 
-## §4 WebSocket-Wire-Protocol
+## §4 WebSocket wire protocol
 
 ### §4.1 Handshake
 
-Standard RFC 6455 Upgrade-Handshake. Daemon antwortet mit
-`Sec-WebSocket-Protocol: zerodds-ws-bridge/1.0` falls Client diesen
-Subprotocol-Header sendet (optional).
+Standard RFC 6455 upgrade handshake. The daemon answers with
+`Sec-WebSocket-Protocol: zerodds-ws-bridge/1.0` if the client sends this
+subprotocol header (optional).
 
-Auth-Header (Bearer-Mode): `Authorization: Bearer <token>` → 401 bei
-fehlerhafter Auth, 403 bei missing-scope.
+Auth header (bearer mode): `Authorization: Bearer <token>` → 401 on
+failed auth, 403 on missing scope.
 
-### §4.2 Pfad-Routing
+### §4.2 Path routing
 
-Pro Topic-Config-Eintrag wird ein WS-Endpoint angelegt:
-- `/topics/<slug>` — Default-Pfad (slug = topic-name lowercased + `_`-replaced).
-- `ws_path` Override im Config.
-- `/topics/__catalog__` — meta-Endpoint, liefert JSON-Liste der verfügbaren Topics + Schemata.
-- `/healthz` — HTTP-200 wenn DCPS-Runtime läuft.
-- `/metrics` — Prometheus-Format wenn aktiviert.
+For each topic config entry a WS endpoint is created:
+- `/topics/<slug>` — default path (slug = topic name lowercased + `_`-replaced).
+- `ws_path` override in the config.
+- `/topics/__catalog__` — meta endpoint, returns a JSON list of the available topics + schemas.
+- `/healthz` — HTTP 200 if the DCPS runtime is running.
+- `/metrics` — Prometheus format if activated.
 
-### §4.3 Frame-Format
+### §4.3 Frame format
 
-Jeder WS-Frame transportiert ein Sample:
+Every WS frame transports one sample:
 
-**Binary-Frames** (default):
+**Binary frames** (default):
 ```
 +--------+--------+--------------------+--------------------+
 | Magic  | Flags  | Encap-Header (4)   | CDR-Payload (...)  |
@@ -137,55 +155,55 @@ Jeder WS-Frame transportiert ein Sample:
 ```
 - Magic `0x5A 0x44 0x42 0x31` = "ZDB1" (ZeroDDS Binary v1)
 - Flags: bit0 = `dispose`, bit1 = `coherent_set_member`, bit2-7 reserved
-- Encap-Header: `[0x00, 0x07, 0x00, 0x00]` (XCDR2-LE) per `zerodds-xcdr2-bindings-conformance-1.0` §3
-- CDR-Payload: gemäß Topic-Type, byte-genau wie über RTPS
+- Encap header: `[0x00, 0x07, 0x00, 0x00]` (XCDR2-LE) per `zerodds-xcdr2-bindings-conformance-1.0` §3
+- CDR payload: according to the topic type, byte-exact as over RTPS
 
-**Text-Frames** (optional, falls Client `Sec-WebSocket-Protocol: zerodds-ws-bridge/1.0+json` anfordert):
+**Text frames** (optional, if the client requests `Sec-WebSocket-Protocol: zerodds-ws-bridge/1.0+json`):
 ```json
 {
   "topic": "Chat::Message",
   "op": "publish",        // publish|dispose|register|unregister
   "key_hash": "a1d0c6e8...",
-  "data": { /* JSON-Repräsentation des Samples */ },
+  "data": { /* JSON representation of the sample */ },
   "timestamp_ns": 1730000000000000000
 }
 ```
 
-JSON-Mode reduziert Throughput um ~3-5x — nur für Debug/Browser-Dev.
+JSON mode reduces throughput by ~3-5x — only for debug/browser dev.
 
-### §4.4 Control-Messages
+### §4.4 Control messages
 
-Client → Daemon:
+Client → daemon:
 ```json
 { "op": "subscribe", "topics": ["Chat::Message", "Sensor::Reading"] }
 { "op": "unsubscribe", "topics": ["Chat::Message"] }
 { "op": "ping" }
 ```
 
-Daemon → Client:
+Daemon → client:
 ```json
 { "op": "subscribed", "topics": [...] }
 { "op": "error", "code": 403, "message": "scope dds.write required for Chat::Message" }
 { "op": "pong" }
 ```
 
-Standard RFC 6455 PING/PONG-Frames werden zusätzlich unterstützt.
+Standard RFC 6455 PING/PONG frames are supported in addition.
 
-## §5 Topic-Mapping
+## §5 Topic mapping
 
-### §5.1 Slug-Algorithmus
+### §5.1 Slug algorithm
 
-Topic-Name `Chat::Message` → URL-Slug:
+Topic name `Chat::Message` → URL slug:
 1. Lowercase: `chat::message`
 2. `::` → `/`: `chat/message`
-3. Andere non-`[a-z0-9/_-]` → `_`
+3. Other non-`[a-z0-9/_-]` → `_`
 4. Result: `/topics/chat/message`
 
-Override per `ws_path` im Config.
+Override via `ws_path` in the config.
 
-### §5.2 Type-Discovery
+### §5.2 Type discovery
 
-Beim Verbindungsaufbau sendet Daemon optional ein Catalog-Frame:
+On connection setup, the daemon optionally sends a catalog frame:
 ```json
 {
   "op": "catalog",
@@ -201,44 +219,44 @@ Beim Verbindungsaufbau sendet Daemon optional ein Catalog-Frame:
 }
 ```
 
-`/schema/<slug>` liefert die IDL-Definition (oder TypeObject-XML) für
-Codegen auf Client-Seite.
+`/schema/<slug>` returns the IDL definition (or TypeObject XML) for
+codegen on the client side.
 
-## §6 QoS-Translation
+## §6 QoS translation
 
-WebSocket ist Connection-orientiert (TCP) — die DDS-QoS-Policies
-mappen wie folgt:
+WebSocket is connection-oriented (TCP) — the DDS QoS policies
+map as follows:
 
-| DDS-QoS | WS-Verhalten |
+| DDS QoS | WS behaviour |
 |---------|--------------|
-| Reliability `RELIABLE` | TCP-Garantien reichen; Daemon dropped keine Frames bei langsamem Client (Backpressure via WS-Mask) |
-| Reliability `BEST_EFFORT` | Daemon dropped Frames falls Send-Queue voll (`max_send_queue_per_connection`-Config) |
-| Durability `VOLATILE` | nur Live-Samples |
-| Durability `TRANSIENT_LOCAL` | Daemon hält letzte N Samples + sendet Burst beim Connect (`max_burst_samples`-Config) |
-| History `KEEP_LAST(N)` | analog |
-| Deadline | beobachtet, sendet `{ "op": "deadline_missed", "topic": "..." }` |
-| Liveliness | Heartbeat per WS-PING / Topic-Liveliness mapped auf Connection-Liveness |
-| Partition | partition-Filter im Daemon vor WS-Write |
+| Reliability `RELIABLE` | TCP guarantees suffice; the daemon drops no frames for a slow client (backpressure via WS mask) |
+| Reliability `BEST_EFFORT` | the daemon drops frames if the send queue is full (`max_send_queue_per_connection` config) |
+| Durability `VOLATILE` | live samples only |
+| Durability `TRANSIENT_LOCAL` | the daemon keeps the last N samples + sends a burst on connect (`max_burst_samples` config) |
+| History `KEEP_LAST(N)` | analogous |
+| Deadline | observed, sends `{ "op": "deadline_missed", "topic": "..." }` |
+| Liveliness | heartbeat via WS PING / topic liveliness mapped to connection liveness |
+| Partition | partition filter in the daemon before the WS write |
 
 ## §7 Security
 
 ### §7.1 TLS
 
-`wss://`-Mode aktiviert über `tls.enabled: true`. Cert-Rotation via
-SIGHUP (Daemon liest cert/key neu, Connections halten ihre Session).
+`wss://` mode activated via `tls.enabled: true`. Cert rotation via
+SIGHUP (the daemon re-reads cert/key, connections keep their session).
 
-### §7.2 Auth-Modes
+### §7.2 Auth modes
 
-- `none`: keine Auth (Dev-Mode, bind nur 127.0.0.1 erlaubt)
-- `bearer`: HTTP-Header `Authorization: Bearer <token>` gegen
-  `bearer_token`-Config-Wert
-- `jwt`: JWT-Token-Validierung (RS256/ES256), Claims gegen `acl`-Pro-
-  Topic
-- `mtls`: Client-Zertifikat-Auth, Subject-DN als Identity
+- `none`: no auth (dev mode, only binding to 127.0.0.1 allowed)
+- `bearer`: HTTP header `Authorization: Bearer <token>` against the
+  `bearer_token` config value
+- `jwt`: JWT token validation (RS256/ES256), claims against the per-topic
+  `acl`
+- `mtls`: client certificate auth, subject DN as identity
 
 ### §7.3 ACL
 
-Per Topic im Config:
+Per topic in the config:
 ```yaml
 acl:
   read: ["alice", "bob", "*group:engineers*"]
@@ -246,21 +264,21 @@ acl:
 ```
 
 Rules:
-- `*` = alle
-- `<name>` = exakter Match
-- `*group:<n>*` = JWT-Claim `groups` enthält `<n>`
+- `*` = all
+- `<name>` = exact match
+- `*group:<n>*` = JWT claim `groups` contains `<n>`
 
-## §8 Operations + Observability
+## §8 Operations + observability
 
 ### §8.1 Logging
 
-Strukturiertes JSON-Log auf stdout (per `--log-level`). Felder:
+Structured JSON log on stdout (per `--log-level`). Fields:
 `timestamp`, `level`, `event`, `connection_id`, `topic`, `bytes`,
 `peer`, `latency_us`.
 
-### §8.2 Prometheus-Metrics
+### §8.2 Prometheus metrics
 
-Wenn `metrics.enabled: true`:
+If `metrics.enabled: true`:
 ```
 zerodds_ws_bridge_connections_total      counter
 zerodds_ws_bridge_connections_active     gauge
@@ -274,84 +292,84 @@ zerodds_ws_bridge_dds_samples_published  counter{topic}
 zerodds_ws_bridge_auth_failures_total    counter{reason}
 ```
 
-### §8.3 OTLP-Spans (optional)
+### §8.3 OTLP spans (optional)
 
-Wenn `OTEL_EXPORTER_OTLP_ENDPOINT`-ENV gesetzt: Daemon emittiert
-`zerodds-observability-otlp` Spans pro Connection-Lifecycle und pro
-Frame.
+If the `OTEL_EXPORTER_OTLP_ENDPOINT` env is set: the daemon emits
+`zerodds-observability-otlp` spans per connection lifecycle and per
+frame.
 
 ## §9 Lifecycle
 
 ### §9.1 Startup
 
-1. Config-Parse + Validation (fail-fast bei fehlerhafter YAML).
-2. TLS-Cert-Load wenn aktiviert.
-3. DCPS-DomainParticipant init auf `domain`.
-4. Pro Topic: Reader+Writer registrieren (gemäß `direction`).
-5. WS-Server-Bind + Listen.
-6. SIGHUP/SIGTERM/SIGINT-Handler.
+1. Config parse + validation (fail-fast on faulty YAML).
+2. TLS cert load if activated.
+3. DCPS DomainParticipant init on `domain`.
+4. Per topic: register reader+writer (according to `direction`: `in` = WebSocket clients → DDS, one DataWriter; `out` = DDS → WebSocket clients, one DataReader; `bidir` = both). The daemon answers a `publish` on a topic without a DataWriter and a `subscribe` on one without a DataReader with an error frame (`code` 404, `reason` `not-bridged-into-dds` or `not-bridged-out-of-dds`).
+5. WS server bind + listen.
+6. SIGHUP/SIGTERM/SIGINT handler.
 
 ### §9.2 Shutdown
 
-SIGTERM/SIGINT → graceful drain (max 30s, konfigurierbar):
+SIGTERM/SIGINT → graceful drain (max 30s, configurable):
 - Stop accepting new WS-Connections.
 - Drain pending DDS-samples (publish queue).
-- Send `{ "op": "shutdown" }` an alle WS-Connections.
-- Close WS-Connections mit Code 1001 (going away).
+- Send `{ "op": "shutdown" }` to all WS-Connections.
+- Close WS-Connections with code 1001 (going away).
 - Cleanup DDS-Entities.
 - Exit 0.
 
-SIGHUP → Config-Reload (TLS-Cert + ACL hot-update; topic-map-changes
-brauchen restart).
+SIGHUP → config reload (TLS cert + ACL hot update; topic map changes
+need a restart).
 
-## §10 Cross-Vendor
+## §10 Cross-vendor
 
-Daemon ist ein normaler RTPS-Peer — Cyclone/RTI/Fast-DDS-Subscriber
-empfangen die Samples die ein WS-Client published, und vice versa.
-Verifiziert in `crates/websocket-bridge/tests/cross_vendor.rs`.
+The daemon is a normal RTPS peer — Cyclone/RTI/Fast-DDS subscribers
+receive the samples that a WS client publishes, and vice versa.
+Verified in `crates/websocket-bridge/tests/cross_vendor.rs`.
 
 ## §11 Packaging
 
-Per `zerodds-deployment-1.0` Spec:
-- Binary: `zerodds-ws-bridged` (statisch gelinkt empfohlen)
-- Config-Default: `/etc/zerodds/ws-bridged.yaml` (Linux), `/usr/local/etc/zerodds/` (Mac), `%PROGRAMDATA%\ZeroDDS\` (Win)
-- Systemd-Unit: `zerodds-ws-bridged.service`
-- launchd-Plist: `org.zerodds.ws-bridged.plist`
-- Win-Service: `ZeroDDSWSBridge`
+According to the `zerodds-deployment-1.0` spec:
+- Binary: `zerodds-ws-bridged` (statically linked recommended)
+- Config default: `/etc/zerodds/ws-bridged.yaml` (Linux), `/usr/local/etc/zerodds/` (Mac), `%PROGRAMDATA%\ZeroDDS\` (Win)
+- Systemd unit: `zerodds-ws-bridged.service`
+- launchd plist: `org.zerodds.ws-bridged.plist`
+- Win service: `ZeroDDSWSBridge`
 - Docker: `zerodds/ws-bridged:1.0`
 
 Manual: `man 1 zerodds-ws-bridged` + `man 5 zerodds-ws-bridged.yaml`.
 
 ## §12 Testing
 
-### §12.1 Unit-Tests
+### §12.1 Unit tests
 
-Pro Modul (`config`, `topic_map`, `auth`, `frame_codec`,
-`dds_pump`) ≥ 5 Tests in `crates/websocket-bridge/src/bin/`.
+Per module (`config`, `topic_map`, `auth`, `frame_codec`,
+`dds_pump`) ≥ 5 tests in `crates/websocket-bridge/src/bin/`.
 
-### §12.2 Integration-Tests
+### §12.2 Integration tests
 
 `crates/websocket-bridge/tests/bridge_e2e.rs`:
-- Spawn `zerodds-ws-bridged` als Subprocess.
-- WS-Client connect, publish.
-- DDS-Subscriber im Test-Process empfängt.
-- Verify byte-genauer Roundtrip.
+- Spawn `zerodds-ws-bridged` as a subprocess.
+- WS client connects, publishes.
+- DDS subscriber in the test process receives.
+- Verify the byte-exact roundtrip.
 
-### §12.3 Multi-Vendor
+### §12.3 Multi-vendor
 
-`tests/cross_vendor.rs` (cargo-feature-gated): Cyclone-Subscriber im
-Docker-Compose, ZeroDDS-WS-Bridge published, Cyclone-Sub printet.
+`tests/cross_vendor.rs` (cargo-feature-gated): Cyclone subscriber in
+Docker Compose, the ZeroDDS WS bridge publishes, the Cyclone sub prints.
 
-## §13 Cross-References
+## §13 Cross-references
 
 - Library: `crates/websocket-bridge/`
-- Codec-Spec: `zerodds-ws-bridge`-spezifische Erweiterungen RFC-6455.
-- Wire-Format: `zerodds-xcdr2-bindings-conformance-1.0` §3.
+- Codec spec: `zerodds-ws-bridge`-specific extensions to RFC 6455.
+- Wire format: `zerodds-xcdr2-bindings-conformance-1.0` §3.
 - Deployment: `zerodds-deployment-1.0`.
-- Verwandte Daemons: `zerodds-mqtt-bridge-1.0`, `zerodds-coap-bridge-1.0`,
+- Related daemons: `zerodds-mqtt-bridge-1.0`, `zerodds-coap-bridge-1.0`,
   `zerodds-amqp-bridge-daemon-1.0`, `zerodds-grpc-bridge-1.0`.
 
 ## §14 Versioning
 
-`1.0` initial. Patch-Updates für Bugfixes, Minor für additive Config-
-Felder, Major für Wire-Protocol-Changes.
+`1.0` initial. Patch updates for bug fixes, minor for additive config
+fields, major for wire protocol changes.

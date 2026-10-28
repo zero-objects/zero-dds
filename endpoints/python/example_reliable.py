@@ -30,6 +30,11 @@ from zerodds_reliable import (
     reliable_write_frame,
 )
 
+# The DataWriter this example writes to (ObjectId = raw 0x001 +
+# OBJK_DATAWRITER, DDS-XRCE 1.0 Sec 7.2.1). It rides in every frame's
+# BaseObjectRequest.
+WRITER_ID = 0x0015
+
 
 def _open_socket(port=None):
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -43,7 +48,7 @@ def run_reliable(port, n):
     """E2E sender: enqueue n samples (u32 LE index) through the decoupled
     writer, close (drains the window), then exit."""
     sock = _open_socket(port)
-    writer = ReliableWriter(sock)
+    writer = ReliableWriter(sock, WRITER_ID)
     writer.start()
     for i in range(n):
         writer.enqueue(struct.pack("<I", i))
@@ -60,7 +65,7 @@ def run_bench(port):
     sock = _open_socket(port)
     t0 = time.perf_counter()
     for i in range(iters):
-        sock.send(reliable_write_frame(i & 0xFFFF, sample))
+        sock.send(reliable_write_frame(i & 0xFFFF, WRITER_ID, sample))
     inline_ns = (time.perf_counter() - t0) * 1e9 / iters
     sock.close()
 
@@ -85,7 +90,7 @@ def run_bench(port):
     sink_thread.start()
 
     dsock = _open_socket(sink_port)
-    writer = ReliableWriter(dsock, maxsize=1 << 20)
+    writer = ReliableWriter(dsock, WRITER_ID, maxsize=1 << 20)
     writer.start()
     t1 = time.perf_counter()
     for _ in range(iters):
@@ -145,7 +150,7 @@ def standalone_demo():
     rx_thread.start()
 
     sock = _open_socket(rx_port)
-    writer = ReliableWriter(sock)
+    writer = ReliableWriter(sock, WRITER_ID)
     writer.start()
     for i in range(n):
         writer.enqueue(struct.pack("<I", i))

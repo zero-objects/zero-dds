@@ -49,6 +49,15 @@ fn primitive_kinds() -> impl Strategy<Value = PrimitiveKind> {
     ]
 }
 
+/// The identifiers reflexivity is a property of.
+///
+/// `TypeIdentifier::None` is **not** among them. It is `TK_NONE`, which
+/// DDS-XTypes 1.3 Table 29 calls an invalid type identifier rather than
+/// a type: it is the absence of one, so "is it assignable to itself"
+/// has no type to ask about. `is_assignable` says so by name, and
+/// [`tk_none_is_not_a_type_identifier`] holds it to that — a variant
+/// dropped from a generator with nothing put in its place would be a
+/// case nobody measures.
 fn arb_type_identifier() -> impl Strategy<Value = TypeIdentifier> {
     prop_oneof![
         primitive_kinds().prop_map(TypeIdentifier::Primitive),
@@ -57,8 +66,22 @@ fn arb_type_identifier() -> impl Strategy<Value = TypeIdentifier> {
             bound: b.min(1_000_000),
         }),
         any::<u8>().prop_map(|b| TypeIdentifier::String16Small { bound: b }),
-        Just(TypeIdentifier::None),
     ]
+}
+
+/// `TK_NONE` is refused, and refused by name.
+#[test]
+fn tk_none_is_not_a_type_identifier() {
+    let t = TypeIdentifier::None;
+    let reg = TypeRegistry::new();
+    let result = is_assignable(&t, &t, &reg, &AssignabilityConfig::default());
+    match result {
+        Assignable::No(why) => assert!(
+            why.contains("TK_NONE") && why.contains("Table 29"),
+            "the refusal names neither the identifier nor the clause: {why}"
+        ),
+        other => panic!("TK_NONE is not a type identifier; got {other:?}"),
+    }
 }
 
 proptest! {

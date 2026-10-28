@@ -1,0 +1,11 @@
+# The (encoding, byte order) slots of empty-struct that rti produced no
+# bytes for, and why. The rest are the .bin files beside this one.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	the probe printed no xcdr1/le row
+plain-cdr1	be	refused	the probe printed no xcdr1/be row
+pl-cdr1	le	refused	the probe printed no xcdr1/le row
+pl-cdr1	be	refused	the probe printed no xcdr1/be row
+delimited-cdr	le	version-alias	plain-cdr2
+delimited-cdr	be	version-alias	plain-cdr2
+pl-cdr2	le	version-alias	plain-cdr2
+pl-cdr2	be	version-alias	plain-cdr2

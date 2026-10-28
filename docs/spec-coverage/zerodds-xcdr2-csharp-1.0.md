@@ -1,250 +1,239 @@
-# `zerodds-xcdr2-csharp` 1.0 -- Spec-Coverage
+# `zerodds-xcdr2-csharp` 1.0 — Spec-Coverage
 
-**Quelle:** `docs/specs/zerodds-xcdr2-csharp-1.0.md` (183 Zeilen) -- ZeroDDS C#/.NET TypeSupport-Codegen-Spec.
+**Quelle:** `internal/standards/cache/omg/dds-xtypes-1.3.pdf` (§7.2, §7.4) und `internal/standards/cache/omg/idl-4.2.pdf` (§7) — was die C#-Spalte beantwortet.
 
-Implementation:
+Der Mechanismus, den diese Spalte mit den zwanzig anderen teilt — die beiden Walks, die Rahmung, Table 9, der KeyHash und der Treiber —, steht in `zerodds-xcdr2-bindings-conformance-1.0.md`. Dieses Dokument führt nur, was die C#-Spalte selbst entscheidet, und ihre eigenen Nachweise.
 
-- `crates/cs/` — C#/.NET XCDR2-TypeSupport-Codegen.
+## §7.5.1 Die Teile der Spalte
 
-## §1 Motivation
+### §7.5.1 Der konkrete Syntaxbaum und seine Textform
 
-### §1 Keine OMG-DDS-CSharp-PSM-Spec
+**Spec:** §7.5.1 — Plain Language Binding — die Abbildung auf die Zielsprache ist PSM-eigen. Die Deklarationen dieser Spalte werden als Baum gebaut und erst danach als Text geschrieben; kein Emitter setzt Quelltext zusammen.
 
-**Spec:** §1 -- "Es existiert keine OMG-DDS-CSharp-PSM-Spec. RTI Connext .NET und Vortex OpenSplice C# haben jeweils proprietäre Patterns. ZeroDDS synthetisiert hier eine spec-conforme C#-Bindung."
+**Repo:** `crates/lang-cst/src/csharp/`, `crates/lang-render/src/csharp.rs`
 
-**Repo:** Motivations-Text der Vendor-Spec.
-
-**Tests:** --
-
-**Status:** n/a (informative)
-
-## §2 TypeSupport-Pattern
-
-### §2 `IDdsTopicType<T>` Generic-Interface
-
-**Spec:** §2 -- C#-Interface mit `TypeName`, `IsKeyed`, `Extensibility`, `Encode(T)`, `Encode(T, EndianMode)`, `Decode(ReadOnlySpan<byte>)`, `KeyHash(T)`. Plus enums `ExtensibilityKind { Final, Appendable, Mutable }` und `EndianMode { LittleEndian, BigEndian }`.
-
-**Repo:** `crates/cs/csharp/ZeroDDS.Cdr/IDdsTopicType.cs` (Interface), `ExtensibilityKind.cs`, `EndianMode.cs`.
-
-**Tests:** `crates/cs/csharp/ZeroDDS.Cdr.Tests/Xcdr2WireVectorsTests.cs` (28 tests inkl. V-Reihe).
+**Tests:** `crates/lang-render/src/csharp.rs::tests` (13 Tests), darunter `a_class_opens_its_brace_on_a_line_of_its_own`, `a_rooted_path_renders_with_global`, `an_array_renders_one_pair_of_brackets_per_level`, `a_nullable_value_type_renders_with_a_question_mark`, `a_namespace_nests_and_its_members_are_indented`;
+querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_output_with_exactly_one_newline`, `crates/lang-render/tests/rendering.rs::no_rendered_line_carries_trailing_whitespace`.
 
 **Status:** done
 
-## §3 Required API-Surface
+### §7.5.1 Der Regelkatalog
 
-### §3 `*TypeSupport` Singleton-Klasse mit Instance + 7 Members
+**Spec:** §7.5.1 — Plain Language Binding — die Abbildung auf die Zielsprache ist PSM-eigen. Was aus welchem Modellknoten wird, steht als Regelmenge und nicht als Sonderfall im Walk.
 
-**Spec:** §3 -- "MyTypeTypeSupport : IDdsTopicType<MyType> { Instance, TypeName, IsKeyed, Extensibility, Encode/Decode/KeyHash }."
+**Repo:** `crates/lang-rules/src/rule/csharp.rs`
 
-**Repo:** `crates/idl-csharp/src/typesupport.rs` emittiert `*TypeSupport`-Klassen mit `static readonly Instance`, allen 7 Members. Generierter Code nutzt `Xcdr2Writer/Reader`.
-
-**Tests:** `crates/idl-csharp/tests/snapshot_codegen.rs` (5 tests), `crates/idl-csharp/tests/snapshot_xcdr2_vectors.rs` (11 tests), `crates/idl-csharp/tests/spec_conformance.rs` (28 tests).
-
-**Status:** done
-
-## §4 Codegen-Pflicht (idl-csharp)
-
-### §4 Datenklasse + TypeSupport-Klasse + Topic-Hook
-
-**Spec:** §4 -- "Pro IDL-`struct` MUSS idl-csharp emittieren: 1) Datenklasse MyType (existiert), 2) NEU: MyTypeTypeSupport: IDdsTopicType<MyType>, 3) NEU: Topic<MyType>.Register(participant)."
-
-**Repo:** `crates/idl-csharp/src/typesupport.rs::emit_struct_typesupport`. Datenklassen via `crates/idl-csharp/src/emitter.rs`.
-
-**Tests:** `crates/idl-csharp/tests/c5_3b_features.rs` (37 tests), `crates/idl-csharp/tests/snapshot_codegen.rs`.
+**Tests:** `crates/lang-rules/tests/apply.rs::every_language_catalogue_fires_on_the_same_model`,
+`crates/lang-rules/tests/apply.rs::every_catalogue_serialises_and_reads_back_the_same`
 
 **Status:** done
 
-### §4 Namespace = IDL-Modul-Pfad
+### §7.5.1 Der Materialisierer
 
-**Spec:** §4 -- "Generierter Code MUSS in einem geschachtelten `namespace` liegen, der dem IDL-Modul-Pfad entspricht."
+**Spec:** §7.5.1 — Plain Language Binding — die Abbildung auf die Zielsprache ist PSM-eigen. Der Materialisierer trägt die Eigenheiten der Sprache: Namens- und Schlüsselwortbehandlung, Kollisionen und das, was die Sprache gar nicht ausdrücken kann.
 
-**Repo:** `crates/idl-csharp/src/emitter.rs` Module-Path-Mapping → `namespace`-Statement.
+**Repo:** `crates/lang-rules/src/adapter/csharp.rs`
 
-**Tests:** V-7 Nested Modules in wire-vector-Tests.
-
-**Status:** done
-
-### §4 Nested-Aggregate-Codec: `EncodeInto` / `DecodeFrom`
-
-**Spec:** §4 -- neben `Encode`/`Decode` emittiert jedes `*TypeSupport` die Stream-Helfer `EncodeInto(Xcdr2Writer w, T sample)` / `DecodeFrom(Xcdr2Reader r)`, sodass ein struct-/enum-wertiges Member eines äußeren Typs in denselben CDR-Stream delegiert (das XCDR2-Alignment relativ zum äußeren Stream bleibt erhalten).
-
-**Repo:** `crates/idl-csharp/src/typesupport.rs` — ein Typ-Resolver (`build_type_registry`/`TYPE_REG`, keyed by simple name) klassifiziert scoped Member-Refs als Struct/Enum/Union/Typedef; der Encode-Pfad ruft für ein Struct-Member `{dotted}TypeSupport.Instance.EncodeInto(w, …)` (Enum → `WriteInt32((int)…)`, Typedef → rekursiv), der Decode-Pfad `{dotted}TypeSupport.Instance.DecodeFrom(r)`. Davor wurden nested structs als leere Bytes encodiert bzw. als `default!` decodiert (stille Korruption).
-
-**Tests:** `crates/idl-csharp/tests/edge_cases.rs::nested_struct_uses_nested_codec_not_empty_bytes`, `nested_enum_uses_int32_cast`; `crates/idl-csharp/tests/compile_check.rs::compiles_nested_struct_codec` (Roslyn).
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_every_wired_language`
 
 **Status:** done
 
-### §4 Gating nicht-codierbarer Member (map/fixed/any/union)
+### §7.5.1 Das Codec-Backend
 
-**Spec:** §4 -- für Konstrukte ohne XCDR2-Wire-Codec (`map`, `fixed`, `any` sowie eine `union`-Referenz ohne eigenen Codec) wird die **Datenklasse** emittiert, aber **kein** `*TypeSupport` — analog zu idl-java `typespec_supported=false`. Es entsteht kein generierter Codec, der zur Laufzeit `XcdrException` wirft oder Daten korrumpiert.
+**Spec:** §7.5.1 — Plain Language Binding — die Abbildung auf die Zielsprache ist PSM-eigen. Das Backend liefert die Schreibweise, in der die geteilte Kodierungsentscheidung in dieser Sprache steht — Empfänger, Methodenname, Argumentform.
 
-**Repo:** `crates/idl-csharp/src/typesupport.rs::struct_xcdr2_codecable` / `typespec_xcdr2_codecable`; `crates/idl-csharp/src/emitter.rs` emittiert bei nicht-codierbarem Member statt der TypeSupport-Klasse einen erklärenden Kommentar.
+**Repo:** `crates/lang-rules/src/emit/csharp.rs`
 
-**Tests:** `crates/idl-csharp/tests/edge_cases.rs::map_fixed_any_member_gates_typesupport_no_runtime_throw`; `compile_check.rs::compiles_struct_with_{map,fixed,any}_member_gated`.
-
-**Status:** done
-
-## §5 Wire-Type-Mapping
-
-### §5 IDL-zu-C#-Typen + Wire-Layout
-
-**Spec:** §5, Tabelle 17 IDL-Typen → C# → XCDR2 LE.
-
-**Repo:** `crates/idl-csharp/src/type_map.rs` mappt IDL-Primitive auf C#. `crates/cs/csharp/ZeroDDS.Cdr/Xcdr2Writer.cs` + `Xcdr2Reader.cs`.
-
-**Tests:** V-3 Mixed Primitives, V-4 String, V-5/V-6 Sequences in `Xcdr2WireVectorsTests.cs`; `AlignmentTests.cs` (Padding); `crates/idl-csharp/tests/edge_cases.rs` (20 tests).
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_a_full_codec_in_every_wired_language`,
+`crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`
 
 **Status:** done
 
-## §6 Extensibility
+### §7.5.1 Der Table-9-Defaulter
 
-### §6 Final / Appendable / Mutable Helper
+**Spec:** §7.5.1 — Plain Language Binding — die Abbildung auf die Zielsprache ist PSM-eigen. Ein Leser ohne Tab.9-Antwort hat an fünf Stellen keinen definierten Wert; diese Datei ist die Antwort dieser Spalte.
 
-**Spec:** §6 -- "`Xcdr2Writer.BeginAppendable()` / `BeginMutable()` / `WriteEmHeader(id, lc)` sind Helper-Methoden. Code lebt in `ZeroDDS.Cdr`."
+**Repo:** `crates/lang-rules/src/default_csharp.rs`
 
-**Repo:** `crates/cs/csharp/ZeroDDS.Cdr/Xcdr2Writer.cs` hält `BeginAppendable`, `BeginMutable`, `WriteEmHeader`.
-
-**Tests:** V-9 (Appendable), V-10 (Mutable), V-11 (Optional Mutable) in `Xcdr2WireVectorsTests.cs`.
+**Tests:** `crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`
 
 **Status:** done
 
-## §7 Key-Extraction
+### §7.5.1 Die Wire-Laufzeit
 
-### §7 Md5 + BE-Holder
+**Spec:** §7.5.1 — Plain Language Binding — die Abbildung auf die Zielsprache ist PSM-eigen. Die Laufzeit liest §7.4 eigenständig aus dem Klauseltext und ruft keine andere Spalte; dort liegt die Unabhängigkeit dieser Spalte.
 
-**Spec:** §7 -- "`KeyHash(Sensor s) { var w = new Xcdr2Writer(BigEndian); w.WriteInt32(s.Id); return Md5.Hash(w.ToArray()); }`. Md5 ist RFC-1321-Implementation."
+**Repo:** `runtime/csharp`, Endpoint-SDK `endpoints/csharp`
 
-**Repo:** `crates/cs/csharp/ZeroDDS.Cdr/Md5.cs` (RFC-1321 pure-C#). `crates/idl-csharp/src/typesupport.rs` emittiert KeyHash-Method.
-
-**Tests:** `Md5Tests.cs` self-checks; V-8 in `Xcdr2WireVectorsTests.cs`.
-
-**Status:** done
-
-## §8 Helper-Library `ZeroDDS.Cdr`
-
-### §8 IDdsTopicType + Xcdr2Writer/Reader + Md5 + Enums
-
-**Spec:** §8, Tabelle 5 Klassen.
-
-**Repo:** `crates/cs/csharp/ZeroDDS.Cdr/`: `IDdsTopicType.cs`, `Xcdr2Writer.cs`, `Xcdr2Reader.cs`, `ExtensibilityKind.cs`, `EndianMode.cs`, `Md5.cs` -- alle präsent.
-
-**Tests:** `dotnet test` ZeroDDS.Cdr.Tests/ -- 28 Tests grün.
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_runtime`,
+`crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_an_endpoint_sdk`
 
 **Status:** done
 
-### §8 Pure C# 11 .NET 6+
+## §7.2.2 Was diese Spalte selbst entscheidet
 
-**Spec:** §8 -- "Pure C# 11 (.NET 6+). Keine native Dependencies."
+### §7.2.2.2 Jedes IDL-Primitiv erreicht den C#-Typ, der es hält
 
-**Repo:** `ZeroDDS.Cdr.csproj` targets net8.0; pure managed Code.
+**Spec:** §7.2.2.2 — Primitive Types — BOOLEAN, BYTE, INT8..UINT64, FLOAT32, FLOAT64, FLOAT128, CHAR8, CHAR16; jede Breite ist festgelegt.
 
-**Tests:** `dotnet test` runtime targets net8.0.
+**Repo:** `crates/lang-rules/src/adapter/csharp.rs`
 
-**Status:** done
-
-## §9 Conformance
-
-### §9 L1 Wire (V-1..V-12)
-
-**Spec:** §9 -- "L1 (Wire): `crates/cs/Tests/Xcdr2WireVectorsTests.cs` (mstest oder xunit) prüft V-1..V-12."
-
-**Repo:** `crates/cs/csharp/ZeroDDS.Cdr.Tests/Xcdr2WireVectorsTests.cs` mit V-1..V-12 (13 Test-Methoden in V-Reihe + 15 weitere wie EMHEADER-Helper).
-
-**Tests:** `dotnet test` -- 28 Tests grün.
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::every_idl_primitive_reaches_the_csharp_type_that_holds_it`
 
 **Status:** done
 
-### §9 L2 Codegen Snapshots
+### IDL 4.2 §7.4.13 `fixed` wird ein `string` und kein `decimal`
 
-**Spec:** §9 -- "L2 (Codegen): `crates/idl-csharp/tests/snapshots/` mit generierten *TypeSupport-Klassen."
+**Spec:** IDL 4.2 §7.4.13 — `fixed<P,S>` — eine Dezimalzahl mit deklarierter Stellenzahl und Skalierung.
 
-**Repo:** `crates/idl-csharp/tests/snapshots/` und Treiber `snapshot_codegen.rs` (5 tests) + `snapshot_xcdr2_vectors.rs` (11 tests).
+**Repo:** `crates/lang-rules/src/adapter/csharp.rs`
 
-**Tests:** dito.
-
-**Status:** done
-
-### §9 L3 Cross-Lang Runner
-
-**Spec:** §9 -- "L3 (Cross-Lang): `crates/conformance/tests/cross_language_xcdr2.rs` ruft `dotnet run` mit pre-built Runner."
-
-**Repo:** `crates/conformance/tests/cross_language_xcdr2.rs::l3_4_csharp_binding` ruft `dotnet test` der ZeroDDS.Cdr.Tests via Subprocess gegen identische V-1..V-12-Hex-Fixtures.
-
-**Tests:** `crates/conformance/tests/cross_language_xcdr2.rs::l3_4_csharp_binding`.
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::a_fixed_is_a_string_and_not_a_decimal`
 
 **Status:** done
 
-### §9 L4 Cross-Vendor (FFI über zerodds-c-api)
+### §7.2.2.4.3 Sequenz und Array sind beide C#-Arrays
 
-**Spec:** §9 -- "L4 (Cross-Vendor): C# encoded → Cyclone-Subscriber decodes (via FFI über zerodds-c-api)."
+**Spec:** §7.2.2.4.3 — Sequence — eindimensional, Schranke optional.
 
-**Repo:** Alle 12 Vektoren wurden live gegen Cyclone DDS 0.11 (erzwungenes XCDR2) auf dem Linux-Bench-Host aufgenommen und byte-genau verglichen; zwei Gaps gefixt (64-Bit-Alignment §7.4.1.1.1, Sequence-DHEADER §7.4.3.5 für nicht-primitive Elemente). Der C#-Encoder ist byte-verifiziert: `crates/cs/csharp/ZeroDDS.Cdr.Tests/Xcdr2WireVectorsTests.cs` (`dotnet test`, 13/13) prüft V-1..V-12 byte-genau inkl. V-6 `sequence<string>`-DHEADER (`Xcdr2Writer.BeginAppendable`/`Xcdr2Reader.BeginDHeader`). V-10/V-11a konforme LC-Divergenz.
+**Repo:** `crates/lang-rules/src/adapter/csharp.rs`
 
-**Tests:** `crates/cs/csharp/ZeroDDS.Cdr.Tests/Xcdr2WireVectorsTests.cs` (dotnet, 13/13) + `crates/cdr/tests/xcdr2_cross_vendor_fixtures.rs` (15 Tests).
-
-**Status:** done -- C#-Encoder byte-genau gegen Cyclone DDS 0.11 (V-1..V-9/V-11b, dotnet-ausgeführt), mutable V-10/V-11a konforme LC-Divergenz.
-
-## §10 Examples
-
-### §10 TopicTypedSmoke.cs
-
-**Spec:** §10 -- "`crates/cs/Examples/TopicTypedSmoke.cs` ist Referenz-Smoke (generierter PointTypeSupport + Pub/Sub-Loop)."
-
-**Repo:** `crates/cs/Examples/TopicTypedSmoke.cs` + `TopicTypedSmoke.csproj` (eigenständiger Examples-Tree). `dotnet run --project TopicTypedSmoke.csproj` -> Encode/Decode-Roundtrip OK.
-
-**Tests:** `dotnet run --project crates/cs/Examples/TopicTypedSmoke.csproj`; Compile-Pfad zusätzlich durch `crates/idl-csharp/tests/compile_check.rs` (7 tests).
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::a_sequence_and_an_array_are_both_csharp_arrays`
 
 **Status:** done
 
-### §10 sync + async Deep-Examples + Byte-Identität + Quickstart
+### §7.2.2.4.3 Eine `map` wird ein Array einer erzeugten Entry-Klasse; gleiche Form heißt eine Klasse
 
-**Spec:** §10 -- lauffähige sync/async Deep-Examples (Sensor-Telemetrie `Reading{Id,Value,Label}`).
+**Spec:** §7.2.2.4.3 — Map — Key/Value-Paare; §7.4.3.5.3 Regeln 11-16 legen Reihenfolge und Rahmung fest.
 
-**Repo:** `endpoints/csharp/Zerodds.cs` (pure-C#-Wire-Core), `ExampleSync.cs` (Poll-Loop), `ExampleAsync.cs` (`IAsyncEnumerable` + `await foreach`), `ByteIdentity.cs`, `endpoints/csharp/QUICKSTART.md`.
+**Repo:** `crates/lang-rules/src/adapter/csharp.rs`
 
-**Tests:** CI-Job `endpoints-csharp` (neu) → `dotnet run` ByteIdentity (Golden LE+BE) + ExampleSync + ExampleAsync; codepit-verifiziert (dotnet 8.0.423, 40 Byte byte-identisch LE+BE, sync+async 5/5).
-
-**Status:** done
-
-## §11 Errata + Open-Questions
-
-### §11.1 `Span<byte>` vs `byte[]`
-
-**Spec:** §11.1 -- "Decode nimmt `ReadOnlySpan<byte>` für Zero-Copy. Encode liefert `byte[]` (allocate-on-return). Optional `EncodeTo(T sample, IBufferWriter<byte> output)` für Streaming."
-
-**Repo:** `Xcdr2Reader` accept `ReadOnlySpan<byte>`. `Encode` liefert `byte[]`.
-
-**Tests:** Wire-Vector-Tests verwenden ReadOnlySpan im Decode-Pfad.
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::a_map_is_an_array_of_a_generated_entry_class`,
+`crates/lang-rules/src/adapter/csharp.rs::tests::two_maps_of_one_shape_are_one_entry_class`,
+`crates/lang-rules/src/adapter/csharp.rs::tests::two_maps_whose_csharp_spelling_coincides_are_still_two_entry_classes`
 
 **Status:** done
 
-### §11.2 Nullable Reference Types
+### §7.2.2.4.4.4.7 Ein optionaler Value-Type wird nullable, ein Reference-Type nicht
 
-**Spec:** §11.2 -- "IDdsTopicType<T> hat `where T : notnull`. `string?`-Members für `@optional string` werden als optional marked (M-Flag)."
+**Spec:** §7.2.2.4.4.4.7 — Ein Struct-Member darf optional sein; ein Union-Member nie.
 
-**Repo:** `IDdsTopicType<T> where T : notnull` in `IDdsTopicType.cs`.
+**Repo:** `crates/lang-rules/src/adapter/csharp.rs`
 
-**Tests:** `@optional string`-Test in `crates/idl-csharp/tests/edge_cases.rs`.
-
-**Status:** done
-
-### §11.3 init-Properties
-
-**Spec:** §11.3 -- "Generierte Klassen nutzen `{ get; init; }`-Pattern (immutable nach Constructor); Decode nutzt Object-Initializer-Syntax."
-
-**Repo:** `crates/idl-csharp/src/emitter.rs` emit `init`-properties.
-
-**Tests:** Snapshot-Codegen-Tests.
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::an_optional_value_type_is_nullable_and_a_reference_one_is_not`,
+`crates/lang-rules/src/adapter/csharp.rs::tests::an_optional_enum_is_nullable_because_an_enum_is_a_value_type`
 
 **Status:** done
 
-### §11.4 Source-Generators
+### §7.2.2.4.1.1 Eine Enumeration wird ein echtes `enum`, und ein Member davon hat diesen Typ
 
-**Spec:** §11.4 -- "idl-csharp emittiert `.cs`-Files; Roslyn-Source-Generator als zusätzliche Form."
+**Spec:** §7.2.2.4.1.1 — Enumeration — Int32-Literale, geordnet, `bit_bound` 1..32.
 
-**Repo:** `crates/cs/csharp/ZeroDDS.Cdr.SourceGenerators/` (Roslyn IIncrementalGenerator, netstandard2.0). Generator emittiert `*TypeSupport`-Klassen aus IDL-getaggten partial-classes.
+**Repo:** `crates/lang-rules/src/adapter/csharp.rs`
 
-**Tests:** `crates/cs/csharp/ZeroDDS.Cdr.SourceGenerators/tests/SourceGenSmoke.csproj` -- 6 dotnet-Tests grün.
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::an_enumeration_is_a_real_enum_and_a_member_of_it_is_that_type`,
+`crates/lang-rules/src/adapter/csharp.rs::tests::an_explicit_enumerator_value_is_written_out`
+
+**Status:** done
+
+### §7.2.2.4.1.2 Eine Bitmask wird ein `[Flags]`-Enum über dem Holder, den ihre Schranke verlangt
+
+**Spec:** §7.2.2.4.1.2 — Bitmask — Schranke 1..64, benannte Bits.
+
+**Repo:** `crates/lang-rules/src/adapter/csharp.rs`
+
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::a_bitmask_is_a_flags_enum_over_the_holder_its_bound_calls_for`,
+`crates/lang-rules/src/adapter/csharp.rs::tests::a_bitset_is_a_class_of_one_field_per_bitfield`
+
+**Status:** done
+
+### IDL 4.2 §7.5.2 `module` wird ein Namensraum; ein wiedereröffnetes Modul bleibt ein Block
+
+**Spec:** IDL 4.2 §7.5.2 — `module` ist ein Naming-Scope; ein Identifier ist je Scope einmalig.
+
+**Repo:** `crates/lang-rules/src/adapter/csharp.rs`
+
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::a_module_is_a_namespace_and_two_modules_do_not_collide`,
+`crates/lang-rules/src/adapter/csharp.rs::tests::a_module_reopened_beside_a_nested_one_is_one_namespace_block`
+
+**Status:** done
+
+### IDL 4.2 §7.2.3 Ein C#-Keyword wird mit `@` entschärft; der IDL-Name bleibt am Feld stehen
+
+**Spec:** IDL 4.2 §7.2.3 — Identifier sind ASCII und beim Vergleich case-insensitiv; eine Kollision muss gemeldet werden.
+
+**Repo:** `crates/lang-rules/src/adapter/csharp.rs`
+
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::an_identifier_that_is_a_csharp_keyword_is_escaped_with_an_at_sign`,
+`crates/lang-rules/src/adapter/csharp.rs::tests::every_field_carries_the_idl_name_it_was_folded_from`,
+`crates/lang-rules/src/adapter/csharp.rs::tests::two_members_that_differ_only_after_the_fold_stay_two_members`
+
+**Status:** done
+
+### IDL 4.2 §7.4.3 `interface` wird ein Interface von Signaturen mit den IDL-Übergabemodi
+
+**Spec:** IDL 4.2 §7.4.3 — `interface` — Operationen mit `in`/`out`/`inout`-Parametern.
+
+**Repo:** `crates/lang-rules/src/adapter/csharp.rs`
+
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::an_interface_is_an_interface_of_signatures_with_the_idl_passing_modes`,
+`crates/lang-rules/src/adapter/csharp.rs::tests::an_exception_is_a_data_class_and_not_a_system_exception`
+
+**Status:** done
+
+## §7.3.1 Woran die Spalte gehalten wird
+
+### §7.3.1 Jeder Korpusfall rendert oder benennt die Schicht, die ihn abgelehnt hat
+
+**Spec:** §7.3.1 — Jeder Korpusfall rendert oder benennt die Schicht, die ihn abgelehnt hat. Ein Fall, der zu rendern aufhört, würde sonst erst von der nächsten Messung gefunden — ein Build-Verzeichnis vom Konstrukt entfernt, das ihn verursacht hat.
+
+**Repo:** `crates/lang-rules/src/emit/csharp.rs`, `crates/lang-rules/src/adapter/csharp.rs`
+
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::every_corpus_case_renders_or_names_its_failure`
+
+**Status:** done
+
+### §7.4 Ein Konstrukt ohne Datenform in dieser Sprache wird benannt und nicht ausgelassen
+
+**Spec:** §7.4 — Ein Konstrukt ohne Datenform in dieser Sprache wird benannt und nicht ausgelassen. Ein stillschweigend ausgelassenes Konstrukt ist die schlimmste Fehlerklasse: der Empfänger sieht keinen Fehler, sondern falsche Daten.
+
+**Repo:** `crates/lang-rules/src/emit/csharp.rs`, `crates/lang-rules/src/adapter/csharp.rs`
+
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::a_construct_with_no_csharp_data_form_is_named_and_not_left_out`
+
+**Status:** done
+
+### §7.2.2.4.8 `@verbatim` landet an den Stellen, die die Klausel für diese Sprache nennt
+
+**Spec:** §7.2.2.4.8 — `@verbatim` landet an den Stellen, die die Klausel für diese Sprache nennt.
+
+**Repo:** `crates/lang-rules/src/emit/csharp.rs`, `crates/lang-rules/src/adapter/csharp.rs`
+
+**Tests:** `crates/lang-rules/tests/verbatim_end_to_end.rs::csharp_puts_begin_and_end_inside_the_type_body`
+
+**Status:** done
+
+## §7.3.1 Treiber und Messung
+
+### §7.3.1 `idlc generate --lang c#`
+
+**Spec:** §7.3.1 — die IDL-Type-Representation ist die Eingabe der Erzeugung; die Ausgabe ist die Quelle dieser Spalte.
+
+**Repo:** `tools/idlc/src/generate.rs`, `tools/idlc/src/main.rs`
+
+**Tests:** `tools/idlc/src/generate.rs::tests::every_language_round_trips_through_its_own_name`,
+`tools/idlc/src/generate.rs::tests::language_names_lists_every_language_once`
+
+**Status:** done
+
+### §7.4 Der Messaufbau dieser Spalte
+
+**Spec:** §7.4 — die Oktette einer Spalte werden gegen aufgezeichnete Oktette verglichen und nicht in ihren eigenen Tests behauptet.
+
+**Repo:** `tools/wireprobe/wireprobe-zerodds-csharp-gen/`, `tools/wireprobe/wireprobe-zerodds-csharp`, `tools/wireprobe/wireprobe-csharp-corpus`
+
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_cell_generator`,
+`crates/lang-rules/tests/every_language_has_its_parts.rs::every_cell_generator_guards_against_a_missing_toolchain`
 
 **Status:** done
 
@@ -252,6 +241,8 @@ Implementation:
 
 ## Audit-Status
 
-20 done / 0 partial / 0 open / 1 n/a (informative) / 0 n/a (rejected).
+21 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
 
-Test-Lauf: `cargo test -p zerodds-idl-csharp` -- 219 Tests grün (85 unit + 134 integration: c5_3b_features 37, edge_cases 24, fixtures 13, compile_check 12, snapshot_xcdr2_vectors 11, snapshot_codegen 5, spec_conformance 28, bounded_collections 3); `dotnet test` ZeroDDS.Cdr.Tests -- 28 Tests grün; `dotnet test` ZeroDDS.Cdr.SourceGenerators/tests/SourceGenSmoke.csproj -- 6 Tests grün; `cargo test -p zerodds-conformance --test cross_language_xcdr2 l3_4_csharp_binding` -- 1 Test grün; `cargo test -p zerodds-cdr --test xcdr2_cross_vendor_fixtures` -- 15 Tests grün; `dotnet run --project crates/cs/Examples/TopicTypedSmoke.csproj` -- OK.
+Test-Lauf: `cargo test -p zerodds-lang-rules` — 1024 Tests grün, 0 failed (20 ignoriert: die Vollkorpus-Compile-Läufe, die `--include-ignored` verlangen).
+
+Offene Punkte: keine. Decision-Records: keine.

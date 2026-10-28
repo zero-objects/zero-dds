@@ -14,7 +14,7 @@ use alloc::vec::Vec;
 use crate::emitter::{EmitError, XmlEmitter};
 use crate::parser::{Event, ParseError, XmlParser};
 
-/// Field-Kind (DDS-Builtin-Types Map zu DDS-XML §6.4 Tab.1).
+/// Field-Kind (DDS-Builtin-Types map to DDS-XML §6.4 Tab.1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FieldKind {
     /// `int8`/`int16`/`int32`/`int64` — as XML integers.
@@ -45,7 +45,7 @@ pub enum FieldValue {
 }
 
 impl FieldValue {
-    /// Field-Kind dieses Values.
+    /// Field kind of this value.
     #[must_use]
     pub fn kind(&self) -> FieldKind {
         match self {
@@ -74,7 +74,7 @@ pub enum CodecError {
         /// Read value.
         got: String,
     },
-    /// Kein Sample-Root-Element.
+    /// No sample root element.
     NoSampleRoot,
     /// Hex decoding error.
     InvalidHex,

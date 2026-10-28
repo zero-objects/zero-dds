@@ -14,7 +14,7 @@ Implementation:
 
 **Repo:** `crates/corba-cos-transactions/src/otid.rs::Otid` (`new`, `null`, `is_null`).
 
-**Tests:** `crates/corba-cos-transactions/src/otid.rs::tests::null_otid`.
+**Tests:** `crates/corba-cos-transactions/src/otid.rs::null_otid`.
 
 **Status:** done
 
@@ -24,7 +24,7 @@ Implementation:
 
 **Repo:** `crates/corba-cos-transactions/src/otid.rs::Otid::encode` / `decode`.
 
-**Tests:** `crates/corba-cos-transactions/src/otid.rs::tests::roundtrip_be_le`, `byte_exact_golden_be`.
+**Tests:** `crates/corba-cos-transactions/src/otid.rs::{roundtrip_be_le, byte_exact_golden_be}`.
 
 **Status:** done
 
@@ -36,7 +36,7 @@ Implementation:
 
 **Repo:** `crates/corba-cos-transactions/src/propagation.rs::PropagationContext`, `TRANSACTION_SERVICE_CONTEXT_ID`, `to_service_context_data` / `from_service_context_data`.
 
-**Tests:** `crates/corba-cos-transactions/src/propagation.rs::tests::service_context_id_is_zero`, `flat_context_service_context_roundtrip`.
+**Tests:** `crates/corba-cos-transactions/src/propagation.rs::{service_context_id_is_zero, flat_context_service_context_roundtrip}`.
 
 **Status:** done
 
@@ -46,7 +46,7 @@ Implementation:
 
 **Repo:** `crates/corba-cos-transactions/src/propagation.rs` (`write_object_ref` / `read_object_ref`, `TransIdentity`).
 
-**Tests:** `crates/corba-cos-transactions/src/propagation.rs::tests::propagation_context_byte_identical_to_jacorb`, `trans_identity_nil_refs_roundtrip`, `nested_context_with_parents`.
+**Tests:** `crates/corba-cos-transactions/src/propagation.rs::{propagation_context_byte_identical_to_jacorb, trans_identity_nil_refs_roundtrip, nested_context_with_parents}`.
 
 **Status:** done
 
@@ -56,7 +56,7 @@ Implementation:
 
 **Repo:** `crates/corba-cos-transactions/src/propagation.rs::PropagationContext::flat`.
 
-**Tests:** `tests/ots_distributed.rs::transaction_context_propagates_over_wire`.
+**Tests:** `crates/corba-cos-transactions/tests/ots_distributed.rs::transaction_context_propagates_over_wire`.
 
 **Status:** done
 
@@ -68,7 +68,7 @@ Implementation:
 
 **Repo:** `crates/corba-cos-transactions/src/two_phase.rs::Resource`, `Vote`, `HeuristicOutcome`.
 
-**Tests:** `crates/corba-cos-transactions/src/two_phase.rs::tests::all_commit_commits_everyone`.
+**Tests:** `crates/corba-cos-transactions/src/two_phase.rs::all_commit_commits_everyone`.
 
 **Status:** done
 
@@ -78,7 +78,7 @@ Implementation:
 
 **Repo:** `crates/corba-cos-transactions/src/two_phase.rs::coordinate_commit` + `coordinate_rollback`.
 
-**Tests:** `two_phase.rs::tests`: `one_rollback_vote_rolls_back_prepared`, `read_only_skips_phase_two`, `single_resource_uses_one_phase`, `single_resource_one_phase_rollback`, `empty_set_commits_trivially`, `heuristic_commit_failure_reports_mixed`.
+**Tests:** `crates/corba-cos-transactions/src/two_phase.rs::{one_rollback_vote_rolls_back_prepared, read_only_skips_phase_two, single_resource_uses_one_phase, single_resource_one_phase_rollback, empty_set_commits_trivially, heuristic_commit_failure_reports_mixed}`.
 
 **Status:** done
 
@@ -88,7 +88,7 @@ Implementation:
 
 **Repo:** `crates/corba-cos-transactions/src/transaction.rs::Current`, `Coordinator`, `Terminator`, `Control`, `Status`.
 
-**Tests:** `transaction.rs::tests`: `current_begin_commit_two_resources`, `rollback_only_forces_rollback_on_commit`, `explicit_rollback`, `commit_without_transaction_errors`, `double_begin_rejected`, `suspend_resume_keeps_resources`, `propagation_context_carries_otid`.
+**Tests:** `crates/corba-cos-transactions/src/transaction.rs::{current_begin_commit_two_resources, rollback_only_forces_rollback_on_commit, explicit_rollback, commit_without_transaction_errors, double_begin_rejected, suspend_resume_keeps_resources, propagation_context_carries_otid}`.
 
 **Status:** done
 
@@ -100,7 +100,7 @@ Implementation:
 
 **Repo:** `crates/corba-cos-transactions/src/two_phase.rs::HeuristicOutcome` + the `two_phase` path.
 
-**Tests:** `two_phase.rs::tests::heuristic_commit_failure_reports_mixed`.
+**Tests:** `crates/corba-cos-transactions/src/two_phase.rs::heuristic_commit_failure_reports_mixed`.
 
 **Status:** done
 
@@ -110,7 +110,7 @@ Implementation:
 
 **Repo:** `crates/corba-cos-transactions/src/recovery.rs`: `TransactionLog` trait + `InMemoryLog`; `coordinate_commit_durable` (force-write `Decided` before phase 2); `RecoveryCoordinator` (`recover`/`replay_completion` with presumed-abort) + `ResourceResolver`.
 
-**Tests:** `recovery.rs::tests` (8): `durable_commit_logs_decision_then_completion`, `recovery_completes_in_doubt_commit`/`_rollback`, `replay_completion_returns_logged_decision`, `replay_completion_presumed_abort_for_unknown`, `preparing_state_is_presumed_abort`, `single_resource_durable_one_phase`, `durable_rollback_decision_logged`.
+**Tests:** `crates/corba-cos-transactions/src/recovery.rs::{durable_commit_logs_decision_then_completion, durable_rollback_decision_logged, recovery_completes_in_doubt_commit, recovery_completes_in_doubt_rollback, replay_completion_returns_logged_decision, replay_completion_presumed_abort_for_unknown, preparing_state_is_presumed_abort, single_resource_durable_one_phase}`.
 
 **Status:** done
 
@@ -120,4 +120,4 @@ Implementation:
 
 10 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
 
-Test run: `cargo test -p zerodds-corba-cos-transactions` — 30 unit + 3 e2e green, 0 failed.
+Test run: `cargo test -p zerodds-corba-cos-transactions` — 30 unit + 3 `ots_distributed` + 3 `jacorb_live_capture` green, 0 failed.

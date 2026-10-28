@@ -1,48 +1,48 @@
 #!/usr/bin/env bash
 # tests/perf/soak_runner.sh
 #
-# 24h-Soak-Runner für ZeroDDS — pub+sub gleichzeitig auf demselben Host,
-# misst RSS/heap/sample-counter über die Laufzeit, fail bei
-# Memory-Leak (RSS-Wachstum > Threshold) oder Sample-Stillstand.
+# 24h soak runner for ZeroDDS — pub+sub at the same time on the same host,
+# measures RSS/heap/sample counter over the runtime, fails on a
+# memory leak (RSS growth > threshold) or a sample stall.
 #
-# Wird normalerweise vom GitLab-CI-Job `soak-pivot` per SSH aufgerufen,
-# kann aber auch lokal getestet werden.
+# Normally called by a CI soak job via SSH,
+# but can also be tested locally.
 #
-# Voraussetzungen auf dem Soak-Host:
+# Prerequisites on the soak host:
 #   - rustup + cargo via $PATH
 #   - python3 + ps (procps)
 #   - git
-#   - optional: heaptrack (apt install heaptrack) — wenn da, wird ein
-#     heap-snapshot vor und nach dem Soak gefahren
+#   - optional: heaptrack (apt install heaptrack) — if present, a
+#     heap snapshot is taken before and after the soak
 #
-# Tunable Env-Variablen:
+# Tunable env variables:
 #   GITREF        — git ref to checkout (default: main)
 #   COMMIT        — sha (default: $GITREF)
 #   REPO_URL      — git URL
-#   WORKDIR       — wo die checkout/build hingeht
-#   OUTDIR        — wohin das output / logs / csv
-#   RUNTIME_SECS  — Soak-Dauer (default: 86400 = 24h)
-#                   Für lokalen smoke-test: 300 = 5 min
-#   SAMPLE_INTERVAL_SECS — RSS-Capture-Intervall (default: 60)
-#   RSS_GROWTH_THRESHOLD_PCT — Fail-Threshold für RSS-Wachstum vom
-#                              Steady-State zum Ende (default: 25)
+#   WORKDIR       — where the checkout/build goes
+#   OUTDIR        — where the output / logs / csv go
+#   RUNTIME_SECS  — soak duration (default: 86400 = 24h)
+#                   For a local smoke test: 300 = 5 min
+#   SAMPLE_INTERVAL_SECS — RSS capture interval (default: 60)
+#   RSS_GROWTH_THRESHOLD_PCT — fail threshold for RSS growth from the
+#                              steady state to the end (default: 25)
 #
-# Steady-State-Definition: RSS-Median nach den ersten 10 Minuten der
-# Laufzeit (Startup-Phase ausgeschlossen). Falls die Soak-Dauer < 12 min
-# ist, wird Steady-State = max(RSS in erster Hälfte) — nur für smoke.
+# Steady-state definition: RSS median after the first 10 minutes of
+# runtime (startup phase excluded). If the soak duration is < 12 min,
+# steady state = max(RSS in the first half) — only for smoke.
 #
 # Exit:
-#   0 — Soak erfolgreich, RSS-Wachstum unter Threshold, Samples flossen
-#   1 — Memory-Leak detektiert (RSS-Wachstum > Threshold)
-#   2 — Sample-Stillstand detektiert (Subscriber zählte > 60 s lang
-#       keine neuen Samples)
-#   3 — Setup-Fehler
+#   0 — soak successful, RSS growth below threshold, samples flowed
+#   1 — memory leak detected (RSS growth > threshold)
+#   2 — sample stall detected (subscriber counted no new samples
+#       for > 60 s)
+#   3 — setup error
 
 set -euo pipefail
 
 GITREF="${GITREF:-main}"
 COMMIT="${COMMIT:-$GITREF}"
-REPO_URL="${REPO_URL:-https://gitlab.sandra-kessler.eu/fishermen21/zerodds.git}"
+REPO_URL="${REPO_URL:-https://github.com/zero-objects/zero-dds.git}"
 WORKDIR="${WORKDIR:-$HOME/zerodds-soak/$COMMIT}"
 OUTDIR="${OUTDIR:-$WORKDIR/soak-output}"
 RUNTIME_SECS="${RUNTIME_SECS:-86400}"
@@ -72,16 +72,16 @@ git fetch --depth 1 origin "$GITREF"
 git checkout -q "$COMMIT" 2>/dev/null || git checkout -q FETCH_HEAD
 
 # --- Build (release) ---
-# --- Multi-Endpoint-Mode (CI-4c Welle) ---
-# Mit `MULTI_ENDPOINTS=N` (N>=2) wird statt der Single-Pair shapes_demo
-# das `multi_endpoint_perf`-Binary genutzt: ein Prozess mit N Writers
-# auf N Topics + ein Prozess mit N Readers. Stress-Test fuer
-# Endpoint-Skalierung (Discovery, Cache-Management, SEDP).
+# --- Multi-endpoint mode (CI-4c wave) ---
+# With `MULTI_ENDPOINTS=N` (N>=2), the `multi_endpoint_perf` binary is used
+# instead of the single-pair shapes_demo: one process with N writers
+# on N topics + one process with N readers. Stress test for
+# endpoint scaling (discovery, cache management, SEDP).
 MULTI_ENDPOINTS="${MULTI_ENDPOINTS:-1}"
 
-# Cross-Vendor-Mode (CI-4c Welle): Pub-Seite via Cyclones `ddsperf`
-# statt ZeroDDS-shapes_demo. Sub-Seite bleibt ZeroDDS — testet
-# 24 h Wire-Interop-Stabilitaet unter Cyclone-Pub-Last.
+# Cross-vendor mode (CI-4c wave): pub side via Cyclone's `ddsperf`
+# instead of ZeroDDS shapes_demo. The sub side stays ZeroDDS — tests
+# 24 h wire interop stability under Cyclone pub load.
 CROSS_VENDOR="${CROSS_VENDOR:-0}"
 
 if [ "$MULTI_ENDPOINTS" -gt 1 ]; then
@@ -100,12 +100,12 @@ elif [ "$CROSS_VENDOR" = "1" ]; then
     echo "[soak] cargo build --release --example shapes_demo_subscriber (cross-vendor: Cyclone-Pub via ddsperf)"
     cargo build --release --example shapes_demo_subscriber -p dds-dcps \
         >"$OUTDIR/build.log" 2>&1
-    # Cyclone-ddsperf publish auf "Square"-Topic mit ShapeType-kompatibler
-    # Wire-Form. Andere DDS-Implementierungen lesen das via standard
-    # DDS-Interop. Domain default 0.
+    # Cyclone ddsperf publishes on the "Square" topic with a ShapeType-compatible
+    # wire form. Other DDS implementations read it via standard
+    # DDS interop. Domain default 0.
     PUB_BIN="$(command -v ddsperf)"
     SUB_BIN="$WORKDIR/target/release/examples/shapes_demo_subscriber"
-    # ddsperf pub mit 1Hz-Rate, 1 KB Samples
+    # ddsperf pub with 1Hz rate, 1 KB samples
     PUB_ARGS=("-1" "pub" "1Hz" "size" "1024")
     SUB_ARGS=("Square" "0")
 else
@@ -121,25 +121,25 @@ else
     SUB_ARGS=("Square" "0")
 fi
 
-# --- HEAPTRACK-Mode (CI-4b Welle) ---
-# Mit `HEAPTRACK=1` werden pub + sub durch heaptrack instrumentiert,
-# was ~20-30 % Overhead bringt. Output sind zwei `.heaptrack.zst`-
-# Dateien (heaptrack-3.0+) bzw `.heaptrack.gz` (aeltere Versionen) in
-# $OUTDIR, die mit `heaptrack_print <file>` oder der heaptrack-GUI
-# analysierbar sind.
+# --- HEAPTRACK mode (CI-4b wave) ---
+# With `HEAPTRACK=1`, pub + sub are instrumented by heaptrack,
+# which adds ~20-30 % overhead. The output is two `.heaptrack.zst`
+# files (heaptrack-3.0+) or `.heaptrack.gz` (older versions) in
+# $OUTDIR, which can be analyzed with `heaptrack_print <file>` or the
+# heaptrack GUI.
 HEAPTRACK_PREFIX_PUB=""
 HEAPTRACK_PREFIX_SUB=""
 if [ "${HEAPTRACK:-0}" = "1" ]; then
     if ! command -v heaptrack >/dev/null 2>&1; then
-        echo "[soak] HEAPTRACK=1 set but `heaptrack` not in PATH — install with: apt install heaptrack" >&2
+        echo "[soak] HEAPTRACK=1 set but 'heaptrack' not in PATH — install with: apt install heaptrack" >&2
         exit 3
     fi
-    echo "[soak] heaptrack-mode aktiv — pub+sub werden instrumentiert"
+    echo "[soak] heaptrack mode active — pub+sub are instrumented"
     HEAPTRACK_PREFIX_PUB="heaptrack -o $OUTDIR/heaptrack-pub"
     HEAPTRACK_PREFIX_SUB="heaptrack -o $OUTDIR/heaptrack-sub"
 fi
 
-# --- Sub starten zuerst (sonst joiner-late Verlust am Anfang) ---
+# --- Start sub first (otherwise late-joiner loss at the start) ---
 echo "[soak] starting subscriber: $SUB_BIN ${SUB_ARGS[*]}"
 $HEAPTRACK_PREFIX_SUB "$SUB_BIN" "${SUB_ARGS[@]}" >"$OUTDIR/sub.log" 2>&1 &
 SUB_PID=$!
@@ -169,7 +169,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-# --- RSS/Sample-Tracking-Loop ---
+# --- RSS/sample tracking loop ---
 RSS_CSV="$OUTDIR/rss-timeline.csv"
 echo "elapsed_s,pub_rss_kb,sub_rss_kb,sub_sample_count" >"$RSS_CSV"
 
@@ -184,14 +184,14 @@ while true; do
     if [ "$ELAPSED" -ge "$RUNTIME_SECS" ]; then
         break
     fi
-    # RSS via ps; ps gibt KB aus (auf Linux RSS = resident set size in KB)
+    # RSS via ps; ps prints KB (on Linux RSS = resident set size in KB)
     PUB_RSS=$(ps -o rss= -p "$PUB_PID" 2>/dev/null | tr -d ' ' || echo 0)
     SUB_RSS=$(ps -o rss= -p "$SUB_PID" 2>/dev/null | tr -d ' ' || echo 0)
     if [ -z "$PUB_RSS" ] || [ -z "$SUB_RSS" ] || [ "$PUB_RSS" = "0" ] || [ "$SUB_RSS" = "0" ]; then
         echo "[soak] FAIL: pub or sub process died (PUB_RSS=$PUB_RSS SUB_RSS=$SUB_RSS)" >&2
         exit 3
     fi
-    # Sample-Count aus sub.log: zaehle Zeilen mit "received" / "<-".
+    # Sample count from sub.log: count lines with "received" / "<-".
     SAMPLE_COUNT=$(grep -c -E "(received|<-)" "$OUTDIR/sub.log" 2>/dev/null || echo 0)
     echo "$ELAPSED,$PUB_RSS,$SUB_RSS,$SAMPLE_COUNT" >>"$RSS_CSV"
 
@@ -200,45 +200,45 @@ while true; do
         LAST_PROGRESS_EPOCH=$NOW
     fi
 
-    # Sample-Stillstand-Detektion: > 5x interval ohne neue Samples = Fail
+    # Sample stall detection: > 5x interval without new samples = fail
     SINCE_PROGRESS=$((NOW - LAST_PROGRESS_EPOCH))
     STILLSTAND_LIMIT=$((SAMPLE_INTERVAL_SECS * 5))
     if [ "$ELAPSED" -gt "$((SAMPLE_INTERVAL_SECS * 2))" ] && [ "$SINCE_PROGRESS" -gt "$STILLSTAND_LIMIT" ]; then
-        echo "[soak] FAIL: sample-stillstand — no new samples in ${SINCE_PROGRESS}s (limit $STILLSTAND_LIMIT)" >&2
+        echo "[soak] FAIL: sample stall — no new samples in ${SINCE_PROGRESS}s (limit $STILLSTAND_LIMIT)" >&2
         exit 2
     fi
 
     sleep "$SAMPLE_INTERVAL_SECS"
 done
 
-# --- Soak ist fertig — Cleanup vor Auswertung ---
+# --- Soak is done — cleanup before evaluation ---
 cleanup
 trap - EXIT INT TERM
 
-# --- Heaptrack-Analyse (CI-4b Welle, nur wenn HEAPTRACK=1) ---
+# --- Heaptrack analysis (CI-4b wave, only if HEAPTRACK=1) ---
 if [ "${HEAPTRACK:-0}" = "1" ]; then
     if command -v heaptrack_print >/dev/null 2>&1; then
         echo "[soak] heaptrack_print analysis"
-        # Heaptrack erzeugt eine .zst (heaptrack-3.0+) oder .gz (aelter)
-        # Datei. Suche beide Varianten.
+        # Heaptrack produces a .zst (heaptrack-3.0+) or .gz (older)
+        # file. Look for both variants.
         for prefix in pub sub; do
             for ext in zst gz; do
                 f="$OUTDIR/heaptrack-${prefix}.${ext}"
                 if [ -f "$f" ]; then
                     heaptrack_print --print-leaks --print-overall-allocators \
                         "$f" >"$OUTDIR/heaptrack-${prefix}.txt" 2>&1 || true
-                    # Top-Zeilen extrahieren fuer summary
+                    # Extract the top lines for the summary
                     head -200 "$OUTDIR/heaptrack-${prefix}.txt" \
                         >"$OUTDIR/heaptrack-${prefix}.summary.txt" 2>&1 || true
                 fi
             done
         done
     else
-        echo "[soak] heaptrack_print not found — raw .heaptrack-Files in $OUTDIR/"
+        echo "[soak] heaptrack_print not found — raw .heaptrack files in $OUTDIR/"
     fi
 fi
 
-# --- Auswertung ---
+# --- Evaluation ---
 python3 - <<PY
 import csv, json, statistics, pathlib, datetime, subprocess
 csv_path = pathlib.Path("$RSS_CSV")
@@ -252,14 +252,14 @@ pub_rss = [int(r["pub_rss_kb"]) for r in rows]
 sub_rss = [int(r["sub_rss_kb"]) for r in rows]
 samples = [int(r["sub_sample_count"]) for r in rows]
 
-# Leak-Detektion: Vergleiche median über fruehe Steady-State-Phase
-# gegen median über späte Steady-State-Phase. Naive Vergleiche mit
-# "letzter Sample vs. Median über ganze Steady-State" maskieren leaks,
-# weil ein langsam wachsender RSS den Median mitzieht.
+# Leak detection: compare the median over the early steady-state phase
+# against the median over the late steady-state phase. Naive comparisons of
+# "last sample vs. median over the whole steady state" mask leaks,
+# because a slowly growing RSS pulls the median along.
 #
-# Steady-state startet nach Startup (10min, oder runtime/2 für smoke).
-# Davon: erste Hälfte = early-window, letzte Hälfte = late-window.
-# Leak = late_median signifikant höher als early_median.
+# Steady state starts after startup (10min, or runtime/2 for smoke).
+# Of that: first half = early window, last half = late window.
+# Leak = late_median significantly higher than early_median.
 total = elapsed[-1] if elapsed else 0
 startup_cutoff = min(600, max(60, total // 4))
 steady_idx = next((i for i, e in enumerate(elapsed) if e >= startup_cutoff), 0)
@@ -314,15 +314,15 @@ if samples_total == 0:
 
 pathlib.Path("$OUTDIR/soak-summary.json").write_text(json.dumps(result, indent=2))
 
-md = f"""# Soak-Run-Zusammenfassung
+md = f"""# Soak run summary
 
 * runtime: {total} s ({total/3600:.2f} h)
 * samples received: {samples_total}
 * startup-cutoff: {startup_cutoff} s, steady-state samples: {len(steady_pub)}
 
-## RSS-Wachstum (early vs late steady-state median)
+## RSS growth (early vs late steady-state median)
 
-| Prozess | Early median | Late median | End | Wachstum |
+| Process | Early median | Late median | End | Growth |
 |---|--:|--:|--:|--:|
 | Publisher | {pub_early_median} kB | {pub_late_median} kB | {pub_end} kB | {pub_growth_pct:+.2f}% |
 | Subscriber | {sub_early_median} kB | {sub_late_median} kB | {sub_end} kB | {sub_growth_pct:+.2f}% |
@@ -330,7 +330,7 @@ md = f"""# Soak-Run-Zusammenfassung
 Threshold: {threshold}% — verdict **{result['verdict']}**.
 """
 if result["fail_reasons"]:
-    md += "\n## Fail-Gründe\n\n"
+    md += "\n## Fail reasons\n\n"
     for r in result["fail_reasons"]:
         md += f"- {r}\n"
 pathlib.Path("$OUTDIR/soak-summary.md").write_text(md)

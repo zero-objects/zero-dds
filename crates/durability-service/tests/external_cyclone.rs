@@ -9,7 +9,7 @@
 //! the Cyclone side from `tests/cyclone-harness/` (see its README). Env knobs:
 //! `ZD_DOMAIN` / `ZD_TOPIC` / `ZD_TYPE` (defaults match the harness).
 //!
-//! Verified live on codepit (CycloneDDS 0.11): a final `dur::Sample`
+//! Verified live on the Linux test host (CycloneDDS 0.11): a final `dur::Sample`
 //! `TRANSIENT_LOCAL` writer → `matched=1`, sample ingested. This surfaced the
 //! data-representation interop fix (the ingest reader must accept XCDR1 as well
 //! as XCDR2 — a foreign FINAL-type writer offers only XCDR1).

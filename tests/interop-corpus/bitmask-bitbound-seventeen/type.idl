@@ -1,0 +1,14 @@
+// `bitmask` at bit bound 17 — one bit past what two octets hold
+// XTypes 1.3 §7.3.1.2.1.9 and §7.4.3.4.2: the wire form is the smallest
+// unsigned integer that holds the bound, which for 17 bits is 32 bits.
+@bit_bound(17)
+bitmask Flags {
+    @position(0) LOWEST,
+    @position(16) HIGHEST
+};
+
+@final struct Sample {
+    Flags one;
+    Flags both;
+    octet tail;
+};

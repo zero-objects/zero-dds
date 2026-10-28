@@ -230,8 +230,28 @@ struct CallCollector {
 impl<'ast> Visit<'ast> for CallCollector {
     fn visit_expr_call(&mut self, node: &'ast ExprCall) {
         if let syn::Expr::Path(p) = node.func.as_ref() {
-            if let Some(last) = p.path.segments.last() {
-                self.calls.insert(last.ident.to_string());
+            // Only an unqualified call can be a call to *this* function.
+            // Taking the last segment of any path treats
+            // `other_crate::module::source(..)` inside `fn source` as a
+            // self-call, and `TriState::parse(..)` inside `fn parse` as
+            // one too — both were reported as unbounded recursion, and
+            // neither recurses at all. `self::name` is the one qualified
+            // form that does name this scope.
+            // `self::` names this module, `Self::` names this type — both
+            // can reach the enclosing function. A concrete type name
+            // cannot: `TriState::parse(..)` inside `fn parse` is a call
+            // to someone else's `parse`.
+            let is_self_scope = p
+                .path
+                .segments
+                .first()
+                .is_some_and(|s| s.ident == "self" || s.ident == "Self");
+            let names_this_scope =
+                p.path.segments.len() == 1 || (is_self_scope && p.path.segments.len() == 2);
+            if names_this_scope {
+                if let Some(last) = p.path.segments.last() {
+                    self.calls.insert(last.ident.to_string());
+                }
             }
         }
         visit::visit_expr_call(self, node);
@@ -296,7 +316,7 @@ mod tests {
         // a has a marker, b does not
         let d = run(src);
         assert_eq!(d.len(), 1);
-        assert!(d[0].message.contains("`b`") || d[0].message.contains("indirekt"));
+        assert!(d[0].message.contains("`b`") || d[0].message.contains("indirect"));
     }
 
     #[test]

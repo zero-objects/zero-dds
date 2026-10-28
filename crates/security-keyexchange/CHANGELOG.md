@@ -2,6 +2,17 @@
 
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- `KxSuite::DhModp2048_256`: `DHE+MODP-2048-256` (DDS-Security 1.2 §8.3
+  Table 26, Id 0x20), finite-field Diffie-Hellman over the RFC 5114 §2.3 group
+  with `crypto-bigint` (Montgomery form; `pow` takes the same time for every
+  256-bit exponent, the exponent is zeroed on drop); the peer's key is checked
+  as SP 800-56A §5.6.2.3.1 asks. The constants are compared with the text of
+  the RFC by a test (`tests/fixtures/rfc5114_2_3.txt`).
+
 ## [1.0.0-rc.1] — 2026-05-06
 
 Initial release materialization of the `zerodds-security-keyexchange` crate.

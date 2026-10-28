@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Data tagging plugin SPI (OMG DDS-Security 1.1 §8.7).
+//! Data tagging plugin SPI (OMG DDS-Security 1.2 §9.7).
 //!
 //! Optional plugin for application-level labels (classification
 //! markers, data sensitivity, etc.). Attached to every DataWriter/Reader

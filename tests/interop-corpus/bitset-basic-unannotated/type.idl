@@ -1,0 +1,10 @@
+// `bitset` with two fields, unannotated
+bitset Packed {
+    bitfield<3> low;
+    bitfield<5> high;
+};
+
+struct Sample {
+    Packed value;
+    octet tail;
+};

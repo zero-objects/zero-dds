@@ -1,188 +1,259 @@
 # `zerodds-xcdr2-kotlin` 1.0 — Spec Coverage
 
-**Source:** `docs/specs/zerodds-xcdr2-kotlin-1.0.md` — the ZeroDDS Kotlin XCDR2 TypeSupport codegen spec.
+**Source:** `internal/standards/cache/omg/dds-xtypes-1.3.pdf` (§7.2, §7.4) and `internal/standards/cache/omg/idl-4.2.pdf` (§7) — what the Kotlin column answers.
 
-Implementation:
+The mechanism this column shares with the other twenty — the two walks, the framing, Table 9, the key hash and the driver — is in `zerodds-xcdr2-bindings-conformance-1.0.md`. This document carries only what the Kotlin column decides for itself, and its own evidence.
 
-- `crates/idl-java/` — IDL → Kotlin codegen (`marshalXCDR`, self-contained writer).
-- `endpoints/kotlin/` — pure-Kotlin/JVM XCDR2 wire core (writer/reader) + sync/async SDK.
+## §7.5.1 The parts of the column
 
-## §1 Motivation
+### §7.5.1 The concrete syntax tree and its text form
 
-### §1 No OMG-IDL-to-D wire mapping
+**Spec:** §7.5.1 — Plain language binding — the mapping onto the target language is the PSM's own. This column's declarations are built as a tree and only then written as text; no emitter concatenates source.
 
-**Spec:** §1 — ZeroDDS defines the D XCDR2 wire mapping.
+**Repo:** `crates/lang-cst/src/kotlin/`, `crates/lang-render/src/kotlin.rs`
 
-**Repo:** the motivation text of the vendor spec.
-
-**Tests:** —
-
-**Status:** n/a (informative)
-
-## §2 Marshal pattern
-
-### §2 struct + `marshalXCDR(endian, allocator) ![]u8`
-
-**Spec:** §2 — per IDL `@final struct` a D `struct` + `marshalXCDR` method.
-
-**Repo:** `crates/idl-java/src/emitter.rs::emit_struct`.
-
-**Tests:** `crates/idl-java/tests/golden.rs::final_struct_emits_type_and_marshal`
+**Tests:** `crates/lang-render/src/kotlin.rs::tests` (7 tests), among them `a_data_class_indents_by_four_and_ends_every_property_but_the_last_in_a_comma`, `an_int_array_is_the_specialised_form_and_a_named_type_is_boxed`, `the_array_literal_factory_matches_the_array_type`, `a_constructor_call_writes_no_new`, `a_nul_is_written_as_a_unicode_escape_because_kotlin_has_no_backslash_zero`;
+across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_output_with_exactly_one_newline`, `crates/lang-render/tests/rendering.rs::no_rendered_line_carries_trailing_whitespace`.
 
 **Status:** done
 
-## §3 Required API surface
+### §7.5.1 The rule catalogue
 
-### §3 Writer/reader primitives + generated marshalXCDR
+**Spec:** §7.5.1 — Plain language binding — the mapping onto the target language is the PSM's own. What becomes of which model node is a rule set and not a special case inside the walk.
 
-**Spec:** §3 — writer (putU8..putSeqU8, bytes), reader (getU8/getU16/getU32/getU64/getF32/getString/getSeqU8), generated `marshalXCDR`.
+**Repo:** `crates/lang-rules/src/rule/kotlin.rs`
 
-**Repo:** `endpoints/kotlin/src/Zerodds.kt` (writer, reader incl. getU8/getU16/getU64/getF32/getString/getSeqU8 (a byte-exact inverse)); `crates/idl-java/src/emitter.rs` (marshalXCDR).
-
-**Tests:** `endpoints/kotlin/src/Zerodds.kt` Test.kt (byte identity + sync + async), `endpoints/kotlin/example_sync|async/Example.kt` (full field decode), `crates/idl-java/tests/golden.rs`.
-
-**Status:** done
-
-### §3.a Generated `unmarshalXCDR` (decode codegen)
-
-**Spec:** §3/§11 — decode runs via `Reader`; a generated `unmarshalXCDR` is missing.
-
-**Repo:** — (decode via `Reader`; see examples.)
-
-**Tests:** `endpoints/kotlin/example_sync|async/Example.kt`.
-
-**Status:** n/a (rejected)
-
-**Decision record:** encode codegen (`marshalXCDR`) + a full `Reader` for decode; generated decode is deliberately not part of this binding spec across all 17 idlc backends (the `Reader` covers every field type byte-identically), it belongs to the optional full TypeSupport codegen (roadmap).
-
-## §4 Codegen requirement (`idl-java`)
-
-### §4 struct + marshalXCDR + embedded writer
-
-**Spec:** §4 — per struct: D struct, `marshalXCDR`, self-contained writer.
-
-**Repo:** `crates/idl-java/src/emitter.rs`; `tools/idlc` `Backend::D`, `--java` (JVM interop).
-
-**Tests:** `crates/idl-java/tests/golden.rs`.
+**Tests:** `crates/lang-rules/tests/apply.rs::every_language_catalogue_fires_on_the_same_model`,
+`crates/lang-rules/tests/apply.rs::every_catalogue_serialises_and_reads_back_the_same`
 
 **Status:** done
 
-## §5 Wire type mapping
+### §7.5.1 The materialiser
 
-### §5 IDL → Kotlin → XCDR2 (alignment cap 4)
+**Spec:** §7.5.1 — Plain language binding — the mapping onto the target language is the PSM's own. The materialiser carries the language's own rules: names and keywords, collisions, and what the language cannot express at all.
 
-**Spec:** §5 — bool/octet/char/short..long long/float/double/string/sequence<octet> with exact wire layout; signed via Float.floatToRawIntBits.
+**Repo:** `crates/lang-rules/src/adapter/kotlin.rs`
 
-**Repo:** `crates/idl-java/src/emitter.rs::map_type/map_primitive/map_integer/map_sequence`; `endpoints/kotlin/src/Zerodds.kt` (Put*/getLE align cap 4).
-
-**Tests:** `crates/idl-java/tests/golden.rs::byte_identity_vs_rust_goldens` (@final LE+BE).
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_every_wired_language`
 
 **Status:** done
 
-### §5.a wchar / wstring / long double / map / array / nested / union
+### §7.5.1 The codec backend
 
-**Spec:** §5/§11 — further IDL constructs.
+**Spec:** §7.5.1 — Plain language binding — the mapping onto the target language is the PSM's own. The backend supplies the spelling the shared encoding decision takes in this language — receiver, method name, argument form.
 
-**Repo:** `crates/idl-java/src/` (union, `map<>`, array, nested-struct, `wchar`/`wstring`/`long double` emit arms).
+**Repo:** `crates/lang-rules/src/emit/kotlin.rs`
 
-**Tests:** —
-
-**Status:** done
-
-**Decision record:** The `idl-java` codegen emits these constructs (unions, `map<>`, arrays, nested-struct members, `wchar`, `wstring`, `long double`). Only `@mutable` unions remain deferred (see §6.a).
-
-## §6 Extensibility
-
-### §6 @final (compact) + @appendable (DHEADER)
-
-**Spec:** §6 — @final without DHEADER, @appendable with a uint32 body length + body.
-
-**Repo:** `crates/idl-java/src/emitter.rs::emit_struct` (final/appendable).
-
-**Tests:** `crates/idl-java/tests/golden.rs::final_struct_...` + `appendable_struct_frames_a_dheader`.
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_a_full_codec_in_every_wired_language`,
+`crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`
 
 **Status:** done
 
-### §6.a @mutable (EMHEADER)
+### §7.5.1 The Table 9 defaulter
 
-**Spec:** §6 — @mutable EMHEADER framing.
+**Spec:** §7.5.1 — Plain language binding — the mapping onto the target language is the PSM's own. A reader with no Table 9 answer has no defined value at five positions; this file is this column's answer.
 
-**Repo:** `crates/idl-java/src/` (`@mutable` PL_CDR2 EMHEADER / PL_CDR1 paths).
+**Repo:** `crates/lang-rules/src/default_kotlin.rs`
 
-**Tests:** —
-
-**Status:** done (structs); `@mutable` unions deferred
-
-**Decision record:** `@mutable` structs are emitted — PL_CDR2 EMHEADER framing under XCDR2, PL_CDR1 under XCDR1. Only `@mutable` unions are not yet emitted → `Unsupported`.
-
-## §7 Key extraction
-
-### §7 Non-keyed 16-zero-byte key
-
-**Spec:** §7 — non-keyed → 16 zero bytes; keyed → MD5 (XCDR2-BE), at runtime.
-
-**Repo:** `endpoints/kotlin/src/Zerodds.kt` (the writer in big mode produces the BE serialization).
-
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`
 
 **Status:** done
 
-### §7.a Per-struct generated `keyHash` from `@key`
+### §7.5.1 The wire runtime
 
-**Spec:** §7 — codegen of a `keyHash` method from `@key`.
+**Spec:** §7.5.1 — Plain language binding — the mapping onto the target language is the PSM's own. The runtime reads §7.4 from the clause text on its own and calls no other column; that is where this column's independence lives.
 
-**Repo:** —
+**Repo:** `runtime/kotlin`, endpoint SDK `endpoints/kotlin`
 
-**Tests:** —
-
-**Status:** n/a (rejected)
-
-**Decision record:** key-hash codegen belongs to the full DCPS TypeSupport, not the XCDR2 wire binding v1.0; the DCPS runtime computes key hashes. Deferred uniformly across all 17 backends.
-
-## §8 Wire core
-
-### §8 `endpoints/kotlin` as the reference writer/reader
-
-**Spec:** §8 — reference wire core, byte-identical to `zerodds-cdr`.
-
-**Repo:** `endpoints/kotlin/src/Zerodds.kt`.
-
-**Tests:** Test.kt, CI job `endpoints-kotlin`.
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_runtime`,
+`crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_an_endpoint_sdk`
 
 **Status:** done
 
-## §9 Conformance
+## §7.2.2 What this column decides for itself
 
-### §9 Golden byte identity @final LE+BE
+### §7.2.2.2 Every IDL primitive reaches a Kotlin type
 
-**Spec:** §9 — encoding == golden_le.bin / golden_be.bin byte for byte.
+**Spec:** §7.2.2.2 — Primitive types — BOOLEAN, BYTE, INT8..UINT64, FLOAT32, FLOAT64, FLOAT128, CHAR8, CHAR16; every width is fixed.
 
-**Repo:** `crates/idl-java`, `endpoints/kotlin`.
+**Repo:** `crates/lang-rules/src/adapter/kotlin.rs`
 
-**Tests:** `crates/idl-java/tests/golden.rs::byte_identity_vs_rust_goldens` (CI `idl-java`); `endpoints/kotlin` Test.kt (CI `endpoints-kotlin`).
-
-**Status:** done
-
-## §10 Examples
-
-### §10 sync + async deep examples + quickstart
-
-**Spec:** §10 — runnable sync/async examples.
-
-**Repo:** `endpoints/kotlin/example_sync/Example.kt`, `endpoints/kotlin/example_async/Example.kt`, `endpoints/kotlin/QUICKSTART.md`.
-
-**Tests:** CI job `endpoints-kotlin` runs both (kotlinc + java -jar sync/async).
+**Tests:** `crates/lang-rules/tests/kotlin_end_to_end.rs::every_idl_primitive_reaches_a_kotlin_type`,
+`crates/lang-rules/tests/kotlin_end_to_end.rs::a_struct_of_primitives_becomes_a_kotlin_data_class`
 
 **Status:** done
 
-## §11 Errata + open questions
+### §7.2.2.2 `long double` becomes a `Float128` because Kotlin has no binary128
 
-### §11 Honest non-goals
+**Spec:** §7.2.2.2 — FLOAT128 is an IEEE 754 binary128 value of sixteen octets.
 
-**Spec:** §11 — decode codegen, keyHash codegen, `@mutable` unions.
+**Repo:** `crates/lang-rules/src/adapter/kotlin.rs`
 
-**Repo:** see §3.a and §7.a (each `n/a (rejected)` with a decision record); §5.a and §6.a are now `done`.
+**Tests:** `crates/lang-rules/tests/kotlin_end_to_end.rs::a_long_double_is_a_float128_because_kotlin_has_no_binary128`,
+`crates/lang-rules/tests/kotlin_end_to_end.rs::a_fixed_holds_its_decimal_as_a_string`
 
-**Tests:** —
+**Status:** done
 
-**Status:** n/a (informative)
+### §7.2.2.4.4.4.7 An optional member becomes a nullable type and defaults to null
+
+**Spec:** §7.2.2.4.4.4.7 — A structure member may be optional; a union member never is.
+
+**Repo:** `crates/lang-rules/src/adapter/kotlin.rs`
+
+**Tests:** `crates/lang-rules/tests/kotlin_end_to_end.rs::an_optional_member_becomes_a_nullable_type_and_defaults_to_null`,
+`crates/lang-rules/tests/kotlin_end_to_end.rs::an_external_member_needs_no_indirection`
+
+**Status:** done
+
+### §7.2.2.4.3 A `map` becomes an array of a generated entry class
+
+**Spec:** §7.2.2.4.3 — Map — key/value pairs; §7.4.3.5.3 rules 11-16 fix the order and the framing.
+
+**Repo:** `crates/lang-rules/src/adapter/kotlin.rs`
+
+**Tests:** `crates/lang-rules/tests/kotlin_end_to_end.rs::a_map_becomes_an_array_of_a_generated_entry_class`,
+`crates/lang-rules/tests/kotlin_end_to_end.rs::a_sequence_of_an_aggregate_is_a_boxed_array`
+
+**Status:** done
+
+### §7.2.2.4.1.1 An enumeration becomes an object of constants, because an `enum class` holds no gapped value
+
+**Spec:** §7.2.2.4.1.1 — Enumeration — int32 literals, ordered, `bit_bound` 1..32.
+
+**Repo:** `crates/lang-rules/src/adapter/kotlin.rs`
+
+**Tests:** `crates/lang-rules/tests/kotlin_end_to_end.rs::an_enum_becomes_an_object_of_constants_with_every_value_written_out`,
+`crates/lang-rules/tests/kotlin_end_to_end.rs::an_enum_typed_member_is_a_plain_int`
+
+**Status:** done
+
+### §7.2.2.4.1.2 A bitmask gets no declaration of its own; each bit becomes a `const val`
+
+**Spec:** §7.2.2.4.1.2 — Bitmask — bound 1..64, named bits.
+
+**Repo:** `crates/lang-rules/src/adapter/kotlin.rs`
+
+**Tests:** `crates/lang-rules/tests/kotlin_end_to_end.rs::a_bitmask_becomes_no_declaration_of_its_own_and_one_const_val_per_bit`,
+`crates/lang-rules/tests/kotlin_end_to_end.rs::a_wide_bitmask_packs_its_bits_in_a_long`
+
+**Status:** done
+
+### IDL 4.2 §7.2.3 A hard keyword is escaped, a soft one keeps the IDL spelling
+
+**Spec:** IDL 4.2 §7.2.3 — Identifiers are ASCII and case-insensitive on comparison; a collision has to be reported.
+
+**Repo:** `crates/lang-rules/src/adapter/kotlin.rs`
+
+**Tests:** `crates/lang-rules/tests/kotlin_end_to_end.rs::a_member_named_after_a_hard_keyword_is_escaped_and_keeps_its_idl_name`,
+`crates/lang-rules/tests/kotlin_end_to_end.rs::a_member_named_after_a_soft_keyword_keeps_the_idl_spelling`,
+`crates/lang-rules/tests/kotlin_end_to_end.rs::two_members_that_would_reach_one_kotlin_name_are_refused_by_name`
+
+**Status:** done
+
+### IDL 4.2 §7.5.2 `module` flattens onto the name because a Kotlin file has one package
+
+**Spec:** IDL 4.2 §7.5.2 — `module` is a naming scope; an identifier is unique per scope.
+
+**Repo:** `crates/lang-rules/src/adapter/kotlin.rs`
+
+**Tests:** `crates/lang-rules/tests/kotlin_end_to_end.rs::a_module_flattens_onto_the_name_because_a_kotlin_file_has_one_package`
+
+**Status:** done
+
+### §7.4.3 Kotlin widens no number implicitly; every conversion is written out and `already` recognises the static shape
+
+**Spec:** §7.4.3 — XCDR version 2 — plain CDR2, delimited CDR2 and PL_CDR2.
+
+**Repo:** `crates/lang-rules/src/emit/kotlin.rs`
+
+**Tests:** `crates/lang-rules/tests/kotlin_end_to_end.rs::the_generated_kotlin_compiles`
+
+**Status:** done
+
+## §7.3.1 How the column is held to it
+
+### §7.3.1 Every corpus case renders or names the layer that refused it
+
+**Spec:** §7.3.1 — Every corpus case renders or names the layer that refused it. A case that stopped rendering would otherwise be found by whichever probe ran next, a build directory away from the construct that caused it.
+
+**Repo:** `crates/lang-rules/src/emit/kotlin.rs`, `crates/lang-rules/src/adapter/kotlin.rs`
+
+**Tests:** `crates/lang-rules/tests/kotlin_end_to_end.rs::every_corpus_case_renders_or_names_its_failure`
+
+**Status:** done
+
+### §7.3.1 The generated source compiles under the language's own compiler
+
+**Spec:** §7.3.1 — The generated source compiles under the language's own compiler. A snapshot says the emitter produced the text it produced last time; it does not say the text is the language. Where the compiler is absent the test says so on standard error.
+
+**Repo:** `crates/lang-rules/src/emit/kotlin.rs`, `crates/lang-rules/src/adapter/kotlin.rs`
+
+**Tests:** `crates/lang-rules/tests/kotlin_end_to_end.rs::the_generated_kotlin_compiles`
+
+**Status:** done
+
+### §7.3.1 Two runs over one source produce the same text
+
+**Spec:** §7.3.1 — Two runs over one source produce the same text. Without it every diff of a generated tree is unreadable.
+
+**Repo:** `crates/lang-rules/src/emit/kotlin.rs`, `crates/lang-rules/src/adapter/kotlin.rs`
+
+**Tests:** `crates/lang-rules/tests/kotlin_end_to_end.rs::two_runs_over_one_source_produce_the_same_text`
+
+**Status:** done
+
+### §7.2.2.4 Every construct the completeness table claims for this column also produces output
+
+**Spec:** §7.2.2.4 — Every construct the completeness table claims for this column also produces output. The table in `crates/lang-rules/src/coverage.rs` is the claim; this test is what checks it.
+
+**Repo:** `crates/lang-rules/src/emit/kotlin.rs`, `crates/lang-rules/src/adapter/kotlin.rs`
+
+**Tests:** `crates/lang-rules/tests/kotlin_end_to_end.rs::every_construct_the_catalogue_covers_produces_output`
+
+**Status:** done
+
+### §7.2.2.4.8 `@verbatim` lands at the placements the clause names for this language
+
+**Spec:** §7.2.2.4.8 — `@verbatim` lands at the placements the clause names for this language.
+
+**Repo:** `crates/lang-rules/src/adapter/kotlin.rs`, `crates/lang-rules/src/verbatim.rs`
+
+**Tests:** `crates/lang-rules/tests/verbatim_every_column.rs::every_column_places_the_six_slots_in_its_declarations`,
+`crates/lang-rules/tests/verbatim_every_column.rs::every_column_ends_its_source_file_with_the_end_file_text`,
+`crates/lang-rules/tests/verbatim_every_column.rs::a_directive_reaches_its_own_column_and_no_other`
+
+**Status:** done
+
+## §7.3.1 Driver and measurement
+
+### §7.3.1 `idlc generate --lang kotlin`
+
+**Spec:** §7.3.1 — the IDL type representation is the input of generation; the output is this column's source.
+
+**Repo:** `tools/idlc/src/generate.rs`, `tools/idlc/src/main.rs`
+
+**Tests:** `tools/idlc/src/generate.rs::tests::every_language_round_trips_through_its_own_name`,
+`tools/idlc/src/generate.rs::tests::language_names_lists_every_language_once`
+
+**Status:** done
+
+### §7.4 The measurement harness of this column
+
+**Spec:** §7.4 — a column's octets are compared against recorded octets rather than asserted in its own tests.
+
+**Repo:** `tools/wireprobe/wireprobe-zerodds-kotlin-gen/`, `tools/wireprobe/wireprobe-zerodds-kotlin`
+
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_cell_generator`,
+`crates/lang-rules/tests/every_language_has_its_parts.rs::every_cell_generator_guards_against_a_missing_toolchain`
+
+**Status:** done
+
+---
+
+## Audit Status
+
+22 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
+
+Test run: `cargo test -p zerodds-lang-rules` — 1024 tests green, 0 failed (20 ignored: the whole-corpus compile runs, which need `--include-ignored`).
+
+Open items: none. Decision records: none.

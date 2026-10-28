@@ -1,0 +1,7 @@
+// `enum` with no `@bit_bound`
+enum Colour { RED, GREEN, BLUE };
+
+@final struct Sample {
+    Colour first;
+    octet tail;
+};

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! `IdentityStatusToken` — DDS-Security 1.2 §9.3.2.5.1.2.
+//! `IdentityStatusToken` — DDS-Security 1.2 §10.3.2.2.
 //!
 //! Emitted by the authentication plugin to signal the current status
 //! of a remote identity (cert revocation,
@@ -102,7 +102,7 @@ impl IdentityStatusToken {
         }
     }
 
-    /// Encode zu Wire-Bytes.
+    /// Encode to wire bytes.
     #[must_use]
     pub fn encode(&self) -> Vec<u8> {
         let mut out = Vec::new();

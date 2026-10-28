@@ -22,7 +22,7 @@
 //! * §13 DynAny — [`DynAny::from_type_code`] / [`DynAny::to_cdr`]
 //!   walk a `corba_ir::TypeCode` over CDR `any` bytes.
 
-use alloc::string::String;
+use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
 // ---------------------------------------------------------------------------
@@ -200,11 +200,12 @@ impl Request {
     ///
     /// # Errors
     /// Wire error or server-side exception (`CorbaException`).
+    #[cfg(feature = "std")]
     pub fn invoke(
         &mut self,
         conn: &dyn zerodds_corba_rust::CorbaConnection,
         target: &zerodds_corba_rust::ObjectReference,
-        endianness: zerodds_cdr::Endianness,
+        endianness: zerodds_wire::Endianness,
     ) -> Result<(), zerodds_corba_rust::CorbaException> {
         // Concatenate input args (the caller pre-encoded them, same logic
         // as encode_giop_request).
@@ -321,7 +322,22 @@ pub trait DsiServant {
     /// Spec §12 — generic dispatch. Implementers decide based on
     /// `req.operation` + `req.arguments` what happens; reply via
     /// [`ServerRequest::set_result`] or [`ServerRequest::set_exception`].
+    /// Never called for the `CORBA::Object` operations (`_is_a`,
+    /// `_non_existent`, …): [`dispatch_dsi`] answers those from
+    /// [`Self::primary_interface`] and [`Self::all_interfaces`].
     fn dynamic_invoke(&self, req: &mut ServerRequest);
+
+    /// `PortableServer::DynamicImplementation::_primary_interface` — the
+    /// repository id of the most-derived interface this servant
+    /// implements. `_is_a` and `_repository_id` answer from it.
+    fn primary_interface(&self) -> String;
+
+    /// The repository ids of the interfaces `primary_interface` derives
+    /// from, transitively (`_all_interfaces` without the first entry).
+    /// None by default.
+    fn all_interfaces(&self) -> Vec<String> {
+        Vec::new()
+    }
 }
 
 /// Spec §12 — **DSI server bind**: adapts a [`DsiServant`] to the
@@ -329,19 +345,33 @@ pub trait DsiServant {
 /// signature (identical to the generated `dispatch_<iface>`). Directly
 /// registrable with a CorbaServer — the incoming GIOP request body is packed
 /// as a single in-arg into a [`ServerRequest`], `dynamic_invoke` is called, and
-/// `reply`/`exception` are mapped onto the [`SkeletonResult`].
+/// `reply`/`exception` are mapped onto the `SkeletonResult`.
 ///
 /// The `exception` value MUST be the complete UserException reply body
 /// (`string repository_id` + members, continuous CDR) — the dynamic
 /// servant encodes it itself.
+#[cfg(feature = "std")]
 #[must_use]
 pub fn dispatch_dsi(
     servant: &dyn DsiServant,
     operation: &str,
     body: &[u8],
-    endianness: zerodds_cdr::Endianness,
+    endianness: zerodds_wire::Endianness,
 ) -> zerodds_corba_rust::SkeletonResult {
     use zerodds_corba_rust::{CorbaException, SkeletonResult};
+    // CORBA 3.3 Part 2 §15.4.2: `_is_a`, `_non_existent`, `_interface`,
+    // `_repository_id`, `_component`, `_domain_managers` are operations
+    // of CORBA::Object, answered by the ORB for every servant — the
+    // generated skeletons and the POA do so first; a DSI servant's
+    // dynamic_invoke never sees them.
+    let primary = servant.primary_interface();
+    let bases = servant.all_interfaces();
+    let base_ids: Vec<&str> = bases.iter().map(String::as_str).collect();
+    if let Some(result) = zerodds_corba_rust::runtime::dispatch_object_operation(
+        operation, body, endianness, &primary, &base_ids,
+    ) {
+        return result;
+    }
     let mut args = NvList::new();
     args.add_value("body", body.to_vec(), ArgFlag::In);
     let mut req = ServerRequest::new(operation, args);
@@ -401,7 +431,7 @@ pub struct DynAny {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DynAnyError {
     /// CDR decode error while walking a primitive value.
-    Decode(zerodds_cdr::DecodeError),
+    Decode(zerodds_wire::WireError),
     /// `tk_kind` is not yet covered by the DynAny walker
     /// (e.g. custom-marshal valuetypes).
     UnsupportedKind(zerodds_corba_ir::TcKind),
@@ -419,8 +449,8 @@ impl core::fmt::Display for DynAnyError {
 #[cfg(feature = "std")]
 impl std::error::Error for DynAnyError {}
 
-impl From<zerodds_cdr::DecodeError> for DynAnyError {
-    fn from(e: zerodds_cdr::DecodeError) -> Self {
+impl From<zerodds_wire::WireError> for DynAnyError {
+    fn from(e: zerodds_wire::WireError) -> Self {
         Self::Decode(e)
     }
 }
@@ -479,7 +509,7 @@ impl DynAny {
         let repository_id = tc.id().unwrap_or("").to_string();
         // Sanity walk for primitive types (catch decoding errors early).
         if matches!(kind, DynAnyKind::Primitive) {
-            let mut r = zerodds_cdr::BufferReader::new(raw, zerodds_cdr::Endianness::Little);
+            let mut r = zerodds_wire::Reader::new(raw, zerodds_wire::Endianness::Little);
             walk_primitive(&mut r, tc.kind)?;
         }
         Ok(Self::new(kind, repository_id, raw.to_vec()))
@@ -535,7 +565,7 @@ fn map_kind(k: zerodds_corba_ir::TcKind) -> DynAnyKind {
 /// Walk function for primitive TypeCodes — verifies that the CDR
 /// buffer can hold at least the primitive layout.
 fn walk_primitive(
-    r: &mut zerodds_cdr::BufferReader<'_>,
+    r: &mut zerodds_wire::Reader<'_>,
     k: zerodds_corba_ir::TcKind,
 ) -> Result<(), DynAnyError> {
     use zerodds_corba_ir::TcKind as K;
@@ -647,7 +677,7 @@ mod tests {
         let req = r.encode_giop_request(7, &[0xab, 0xcd]).expect("encode ok");
         let frame = encode_message(
             Version::V1_2,
-            zerodds_cdr::Endianness::Little,
+            zerodds_wire::Endianness::Little,
             false,
             &Message::Request(req),
         )
@@ -702,6 +732,9 @@ mod tests {
                 let body = req.input_body();
                 req.set_result(body);
             }
+            fn primary_interface(&self) -> String {
+                "IDL:demo/Echo:1.0".into()
+            }
         }
         let mut nv = NvList::new();
         nv.add_value("a", alloc::vec![0xde, 0xad], ArgFlag::In);
@@ -710,6 +743,49 @@ mod tests {
         EchoDsi.dynamic_invoke(&mut sr);
         let reply = sr.reply.expect("reply set");
         assert_eq!(reply.value, alloc::vec![0xde, 0xad, 0xbe, 0xef]);
+    }
+
+    /// `_is_a` and `_non_existent` reach a DSI servant through
+    /// `dispatch_dsi` like any object: answered from its interfaces, never
+    /// passed to `dynamic_invoke` (which here would echo the request body
+    /// back as if it were the answer).
+    #[test]
+    fn dsi_dispatch_answers_the_object_operations() {
+        use zerodds_corba_rust::SkeletonResult;
+        struct EchoDsi;
+        impl DsiServant for EchoDsi {
+            fn dynamic_invoke(&self, req: &mut ServerRequest) {
+                let body = req.input_body();
+                req.set_result(body);
+            }
+            fn primary_interface(&self) -> String {
+                "IDL:demo/Echo:1.0".into()
+            }
+            fn all_interfaces(&self) -> Vec<String> {
+                alloc::vec!["IDL:demo/Base:1.0".into()]
+            }
+        }
+        let e = zerodds_wire::Endianness::Little;
+        let is_a = |id: &str| {
+            let mut w = zerodds_wire::Writer::new(e);
+            w.write_string(id);
+            match dispatch_dsi(&EchoDsi, "_is_a", &w.finish(), e) {
+                SkeletonResult::Reply(b) => b,
+                other => panic!("_is_a: {other:?}"),
+            }
+        };
+        assert_eq!(is_a("IDL:demo/Echo:1.0"), alloc::vec![1]);
+        assert_eq!(is_a("IDL:demo/Base:1.0"), alloc::vec![1]);
+        assert_eq!(is_a("IDL:omg.org/CORBA/Object:1.0"), alloc::vec![1]);
+        assert_eq!(is_a("IDL:demo/Other:1.0"), alloc::vec![0]);
+        assert!(matches!(
+            dispatch_dsi(&EchoDsi, "_non_existent", &[], e),
+            SkeletonResult::Reply(b) if b == alloc::vec![0]
+        ));
+        assert!(matches!(
+            dispatch_dsi(&EchoDsi, "ping", &[7, 8], e),
+            SkeletonResult::Reply(b) if b == alloc::vec![7, 8]
+        ));
     }
 
     // §13 DynAny

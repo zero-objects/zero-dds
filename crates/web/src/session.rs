@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! `SessionId` Authentifizierte Session — Spec §7.3.1.1.
+//! `SessionId` Authenticated session — Spec §7.3.1.1.
 
 use alloc::string::String;
 
 /// Spec §7.3.1.1 — Authenticated SessionToken (returned by Root::
 /// `create_application` as `authenticatedSessionRepresentation`).
 ///
-/// Spec sagt: "The purpose of the SessionId type is to remember an
+/// Spec says: "The purpose of the SessionId type is to remember an
 /// authenticated client across subsequent invocations of operations on
 /// the service."
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

@@ -79,7 +79,8 @@ The default topic of `ddsperf` is not `Chatter`. You need:
 
 **Why this already works today**: wire compliance has validated the
 complete wire compliance (`cyclone_sedp_replay.rs`,
-`cyclone_compliance.rs`, `cyclone_live_typelookup.rs`). All that is
+`cyclone_compliance.rs`, and the `(TypeLookup)` cells of
+`tests/interop/ci/run_vendor.sh cyclone`). All that is
 missing is a test client on the Cyclone side with a matching topic/type
 name.
 

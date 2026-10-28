@@ -102,9 +102,9 @@ impl GuidLabelPolicy {
 /// Lifecycle configuration (spec §6.2).
 #[derive(Clone, Copy, Debug)]
 pub struct MonitorConfig {
-    /// Trace-Context-Emit-Modus.
+    /// Trace-context emit mode.
     pub emit_trace_context: TraceContextEmission,
-    /// Receiver-Side: PID 0x0D00 entgegennehmen?
+    /// Receiver-side: accept PID 0x0D00?
     pub accept_trace_context: bool,
     /// Metric registry enabled?
     pub enable_metrics: bool,

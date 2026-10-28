@@ -1,0 +1,5 @@
+@appendable struct S {
+    long a;
+    @try_construct(USE_DEFAULT) string<5> m;
+    long b;
+};

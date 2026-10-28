@@ -72,6 +72,9 @@ Status; opaque handles for entity lifecycle."
 via `zerodds_dcps::get_current_time()` into a `zerodds_ZeroDdsTime` out buffer.
 
 **Tests:** `participant_ffi::tests::create_topic_then_find_then_delete`,
+`delete_topic_is_refused_while_a_datawriter_uses_it`,
+`delete_topic_is_refused_while_a_datareader_uses_it`,
+`delete_topic_is_refused_while_a_content_filtered_topic_uses_it`,
 `domain_id_roundtrip`, `get_current_time_returns_nonzero`,
 `delete_contained_entities_drops_all`;
 `extra_ffi::tests::dp_get_set_qos_roundtrip_default`;
@@ -91,7 +94,10 @@ via `zerodds_dcps::get_current_time()` into a `zerodds_ZeroDdsTime` out buffer.
 
 **Tests:** `publisher_ffi::tests::create_delete_datawriter_roundtrip`,
 `lookup_datawriter_finds_existing`, `pub_suspend_resume_clean`,
-`dw_get_topic_publisher_roundtrip`.
+`dw_get_topic_publisher_roundtrip`;
+`tests/presentation.rs::a_coherent_set_is_taken_whole_once_its_last_end_closes_it`,
+`a_writer_created_inside_an_open_set_joins_it`,
+`a_group_coherent_set_spans_the_writers_and_holds_them`.
 
 **Status:** done
 
@@ -106,9 +112,16 @@ via `zerodds_dcps::get_current_time()` into a `zerodds_ZeroDdsTime` out buffer.
 (`sub_copy_from_topic_qos`, QoS conversion).
 
 **Tests:** `subscriber_ffi::tests::create_delete_datareader`,
-`lookup_datareader_finds_existing`.
+`lookup_datareader_finds_existing`;
+`tests/presentation.rs::a_group_coherent_set_spans_the_writers_and_holds_them`
+(`begin`/`end_access`);
+`listener_ffi::tests::notify_datareaders_calls_on_data_available_once_per_change`,
+`subscriber_ffi::tests::get_datareaders_lists_the_readers_with_samples_in_the_states`,
+`sub_get_datareaders_reports_the_total`.
 
-**Status:** done
+**Status:** done — `get_datareaders` takes the three state masks and lists a
+reader once per sample under GROUP with `ordered_access` (DDS 1.4
+§2.2.2.5.2.10); the order is not tested.
 
 ### §2.5 Topic
 
@@ -151,7 +164,7 @@ same CDR body zero-copy from the segment. The loan state is keyed by
 (`zerodds_writer_*`) the ROS-2 RMW bridge uses.
 
 **Tests:** `extra_ffi::tests::dw_register_unregister_lookup_instance`,
-`dw_get_key_value_buffer_too_small`, `dw_loan_message_then_commit_or_discard`;
+`dw_get_key_value_reports_the_needed_length`, `dw_loan_message_then_commit_or_discard`;
 `shm_loan_e2e::shm_loan_writer_to_reader_zero_copy`,
 `shm_loan_runtime_path_writer_to_reader_zero_copy`,
 `loan_without_shm_falls_back_to_heap`.
@@ -175,10 +188,19 @@ immediately, TransientLocal via `crates/dcps/src/durability_service.rs`.
 
 **Tests:** `subscriber_ffi::tests::take_on_empty_returns_no_data`,
 `return_loan_clears_array`, `statuses_default_ok`,
-`cft_filter_active_passes_untyped_samples`;
-`extra_ffi::tests::dr_get_matched_publications_empty`.
+`cft_reader_without_type_or_schema_is_refused_for_a_field_filter`;
+`extra_ffi::tests::dr_get_matched_publications_empty`;
+`tests/presentation.rs::the_samples_of_an_instance_are_consecutive`,
+`topic_scope_with_ordered_access_keeps_the_write_order`,
+`group_scope_with_ordered_access_takes_one_sample_at_a_time`;
+`subscriber_ffi::tests::keep_last_keeps_the_newest_of_the_instance`,
+`a_best_effort_reader_over_its_instance_limit_evicts_the_oldest`,
+`a_reliable_reader_over_its_instance_limit_holds_the_sample_back`;
+`tests/reader_resource_limits.rs::a_reliable_c_reader_over_its_instance_limit_rejects_and_delivers_later`.
 
-**Status:** done
+**Status:** done — HISTORY `KEEP_LAST` and RESOURCE_LIMITS
+`max_samples`/`max_samples_per_instance` as in the typed reader (DDS 1.4
+§2.2.3.18, §2.2.3.19); only `max_instances` was applied.
 
 ---
 
@@ -281,9 +303,16 @@ with `buffers + lengths + infos + count + loan_token`.
 
 **Repo:** `crates/zerodds-c-api/src/condition_ffi.rs` (GuardCondition,
 StatusCondition, ReadCondition, QueryCondition, WaitSet + `waitset_wait`).
+A StatusCondition triggers on the StatusChangedFlags of its entity
+(`status_changes_of`): a writer's and a reader's from the runtime
+(`user_writer_status_changes`, `user_reader_status_changes`),
+DATA_AVAILABLE and DATA_ON_READERS from unread samples, INCONSISTENT_TOPIC
+from the topic's count; `entities::note_status_entity` tells what the
+untyped entity pointer is. It triggered whenever a mask was set.
 
 **Tests:** `condition_ffi::tests::guardcondition_lifecycle_and_trigger`,
-`statuscondition_lifecycle_and_mask`, `condition_header_at_offset_zero`.
+`statuscondition_lifecycle_and_mask`, `condition_header_at_offset_zero`,
+`a_status_condition_triggers_on_the_entitys_flags`.
 
 **Status:** done
 
@@ -296,7 +325,7 @@ state mask and (Query) filter expression + parameters.
 evaluates the state mask against the reader cache; QueryCondition additionally
 the filter expression via `zerodds-sql-filter`).
 
-**Tests:** `subscriber_ffi::tests::cft_filter_active_passes_untyped_samples`.
+**Tests:** `subscriber_ffi::tests::cft_reader_without_type_or_schema_is_refused_for_a_field_filter`.
 
 **Status:** done
 
@@ -310,13 +339,16 @@ the filter expression via `zerodds-sql-filter`).
 the discovery/matched getters fill them.
 
 **Repo:** `builtin_ffi.rs` (4 structs + `get_discovered_*`);
-`dw_get_matched_subscription_data` / `dr_get_matched_publication_data` via the
-BuiltinSubscriber cache (`subscription_reader().read()` /
-`publication_reader().read()`).
+`dw_get_matched_subscription_data` / `dr_get_matched_publication_data` via
+`DcpsRuntime::user_writer_matched_subscription_data` /
+`user_reader_matched_publication_data`: a discovered endpoint from the SEDP
+cache, an endpoint of the same participant from its own latest
+announcement; a handle with no match answers `ZERODDS_BAD_PARAMETER`.
 
 **Tests:** `builtin_ffi::tests::discovered_topics_empty_initially`,
 `discovered_publications_count_starts_zero`,
-`discovered_participant_data_unknown_handle_returns_error`.
+`discovered_participant_data_unknown_handle_returns_error`;
+`extra_ffi::tests::matched_data_of_a_same_participant_pair`.
 
 **Status:** done
 
@@ -328,7 +360,7 @@ BuiltinSubscriber cache (`subscription_reader().read()` /
 
 **Spec:** §8 — 15 status codes (`0`=OK, `-1`..`-14`).
 
-**Repo:** `lib.rs::ZeroDdsStatus` enum with all 15 codes.
+**Repo:** `crates/zerodds-c-api/src/lib.rs::ZeroDdsStatus` enum with all 15 codes.
 
 **Tests:** used across the whole suite, e.g.
 `factory_ffi::tests::delete_with_null_handles_returns_bad_handle`
@@ -461,10 +493,104 @@ zero-copy on both sides plus a blocking raw-readiness source.
 
 ---
 
+## §14 Calls for the PSM C++ layer
+
+### §14.1 QosProvider calls
+
+**Spec:** the C layer of DDS-PSM-Cxx 1.0 §7.5 (QosProvider): read a document, answer the QoS of every entity kind with inheritance and profile names.
+
+**Repo:** `crates/zerodds-c-api/src/qos_provider_ffi.rs`: `zerodds_qosprovider_create` (URIs `file:`, `data:`, `http:`, `https:` through rustls; other schemes `Unsupported`), `zerodds_qosprovider_participant_qos`/`publisher_qos`/`subscriber_qos`/`topic_qos`/`datawriter_qos`/`datareader_qos`, `zerodds_qosprovider_destroy`.
+
+**Tests:** `qos_provider::a_provider_answers_the_qos_of_every_entity_kind_with_inheritance`, `a_data_uri_and_an_http_uri_name_the_document_too`, `an_unknown_scheme_is_unsupported_and_a_missing_file_or_a_closed_https_port_is_bad_parameter`. Commits 9629b1b5a34, 3f6b97b33d8, c55027bbbe3.
+
+**Status:** done
+
+### §14.2 Type description from IDL and DDS-XML
+
+**Spec:** DDS-PSM-Cxx 1.0 §7.10 (TypeProvider/DynamicType) and DDS-XTypes 1.3: describe the types of a document with members, keys, enumerators, aliases and arrays.
+
+**Repo:** `crates/zerodds-c-api/src/types_ffi.rs`: `zerodds_types_load` (IDL and DDS-XML document, scoped names resolved) and `zerodds_types_describe_idl`.
+
+**Tests:** `types_load::idl_types_are_described_with_members_keys_enumerators_and_aliases`, `a_dds_xml_type_library_is_described_like_the_idl_it_stands_for`, `a_document_that_cannot_be_read_and_an_unknown_scheme_are_refused`. Commits 43f069409ca, 8398cb2ad39, c55027bbbe3, 8222719f6d1.
+
+**Status:** done
+
+### §14.3 Dynamic types from IDL text
+
+**Spec:** DDS-XTypes 1.3 §7.5 (DynamicType, DynamicData) through the C layer: type from IDL, identity as for a compiled type, encode and decode a value as JSON.
+
+**Repo:** `crates/zerodds-c-api/src/dyntype_ffi.rs`: `zerodds_dyntype_from_idl`, `_name`, `_extensibility`, `_is_keyed`, `_type_object`, `_dependency_count`, `_dependency`, `_default_json`, `_encode_json`, `_decode_json`, `_bytes_free`, `_destroy`.
+
+**Tests:** `dyntype::a_type_from_idl_has_the_identity_of_a_compiled_one_and_a_value_round_trips`, `idl_that_does_not_parse_or_a_name_it_does_not_declare_is_bad_parameter`. Commit 869802b57a6.
+
+**Status:** done
+
+### §14.4 QueryCondition: setters and reads with a condition
+
+**Spec:** DDS 1.4 §2.2.2.5.9 (QueryCondition) and §2.2.2.5.3.8 ff. (read/take with a condition): replace expression and parameters; `read`/`take` and the instance variants apply the expression.
+
+**Repo:** `crates/zerodds-c-api/src/condition_ffi.rs`: `zerodds_querycondition_set_expression`, `zerodds_querycondition_set_parameters`; `zerodds_dr_read_w_condition`, `zerodds_dr_take_w_condition`, `zerodds_dr_read_instance_w_condition`, `zerodds_dr_take_instance_w_condition`, `zerodds_dr_read_next_instance_w_condition`, `zerodds_dr_take_next_instance_w_condition`.
+
+**Tests:** `query_condition_update::a_query_condition_takes_a_new_expression_and_new_parameters`, `query_condition_read::read_and_take_with_a_query_condition_return_only_the_samples_the_expression_selects`, `a_query_condition_without_a_type_has_no_data_to_judge_when_empty_and_refuses_a_sample_it_cannot_read`. Commits eb8bfdd601e, 8733e3630a0, 8fe6e6329a4, c55027bbbe3.
+
+**Status:** done
+
+### §14.5 Listener getters of publisher, subscriber and topic
+
+**Spec:** DDS 1.4 §2.2.2.2.1.x (`get_listener` of the entities): return the table set last.
+
+**Repo:** `crates/zerodds-c-api/src/listener_ffi.rs`: `zerodds_pub_get_listener`, `zerodds_sub_get_listener`, `zerodds_topic_get_listener` (beside `zerodds_dp_get_listener`).
+
+**Tests:** `listener_ffi::tests::pub_sub_topic_set_get_listener_roundtrip`, `dp_set_get_listener_roundtrip`. Commits 34966e1b222, f5f6c58e4a1.
+
+**Status:** done
+
+### §14.6 enable, status changes, instance handle
+
+**Spec:** DDS 1.4 §2.2.2.1.1 (Entity): `enable`, `get_status_changes`, `get_instance_handle` and the factory's `autoenable_created_entities` for the C entities.
+
+**Repo:** `crates/zerodds-c-api/src/`: `zerodds_{dp,pub,sub,topic,dw,dr}_enable`, `_get_status_changes`, `_get_instance_handle`.
+
+**Tests:** `entity_enable::entities_of_a_participant_that_does_not_autoenable_are_created_disabled`, `a_writer_of_a_publisher_that_does_not_autoenable_is_not_announced_until_enabled`, `instance_handles_are_the_ones_contains_entity_and_the_matched_lists_use`, `status_changes_show_what_happened_and_clear_when_the_status_is_read`; `entity_enable_factory::a_participant_of_a_factory_that_does_not_autoenable_is_created_disabled`. Commits 613141ae219, 19859043431.
+
+**Status:** done
+
+### §14.7 Key hash of an instance
+
+**Spec:** DDS 1.4 §2.2.2.4.2.x (`lookup_instance`, `register_instance`) and DDSI-RTPS §9.6.3.8 (KeyHash): the key hash of a registered instance.
+
+**Repo:** `crates/zerodds-c-api/src/instance_ffi.rs`: `zerodds_dw_instance_key_hash` (unknown handle: `BadParameter`).
+
+**Tests:** `instance_key_hash::the_key_hash_of_a_registered_instance_comes_back_and_an_unknown_handle_is_refused`; `dw_write_derives_the_key::a_write_registers_the_instance_of_the_key_its_body_carries`. Commit bd6558f058f.
+
+**Status:** done
+
+### §14.8 Readers of the built-in subscriber
+
+**Spec:** DDS 1.4 §2.2.5 and §2.2.2.5.2.7 (`lookup_datareader`): the readers of the topics `DCPSParticipant`, `DCPSTopic`, `DCPSPublication`, `DCPSSubscription` with `read` and `take` of their samples and SampleInfo.
+
+**Repo:** `crates/zerodds-c-api/src/builtin_reader_ffi.rs`: `zerodds_builtin_subscriber_lookup_datareader`, `zerodds_builtin_reader_kind`, `zerodds_builtin_reader_read`, `zerodds_builtin_samples_free`, `zerodds_builtin_sample_free`, `zerodds_builtin_reader_destroy`.
+
+**Tests:** `builtin_reader::the_builtin_readers_hold_the_participant_topic_publication_and_subscription_discovery_found`.
+
+**Status:** done
+
+### §14.9 MultiTopic
+
+**Spec:** DDS 1.4 §2.2.2.3.4 (MultiTopic) and Annex B.2 (expression): create, delete, replace the parameters, a reader on the MultiTopic with `read` and `take`.
+
+**Repo:** `crates/zerodds-c-api/src/multitopic_ffi.rs`: `zerodds_topic_set_type_objects`, `zerodds_dp_create_multitopic`, `zerodds_dp_delete_multitopic`, `zerodds_multitopic_set_parameters`, `zerodds_sub_create_multitopic_reader`, `zerodds_multitopic_reader_read`, `zerodds_multitopic_reader_read_ex` (by instance, with state masks, `max_samples` and a query), `zerodds_multitopic_samples_free`, `zerodds_multitopic_reader_destroy`.
+
+**Tests:** `multitopic_c::a_multitopic_joins_two_topics_and_is_not_deleted_while_a_reader_exists`.
+
+**Status:** done
+
+---
+
 ## Audit status
 
-24 done / 0 partial / 0 open / 1 n/a (informative) / 0 n/a (rejected).
+33 done / 0 partial / 0 open / 1 n/a (informative) / 0 n/a (rejected).
 
-Test run: `cargo test -p zerodds-c-api` — 136 tests green, 0 failed.
+Test run: `cargo test -p zerodds-c-api` — 162 tests green, 0 failed (6 ignored), measured before the §14 items; their tests are only compiled on the Mac, the run on the test host is outstanding.
 
 Open items: none. Decision records: none.

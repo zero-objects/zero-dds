@@ -13,7 +13,13 @@
 #   [6..8]=body-len LE [8..]=body
 #   WRITE_DATA id=0x07 flags=0x03 body=sample; header seq = RFC-1982 sample seq
 #   HEARTBEAT  id=0x0B flags=0x01 body(5)= first i16 LE, last i16 LE, stream
-#   ACKNACK    id=0x0A flags=0x01 body(5)= first_unacked i16 LE, nack[0], nack[1], stream
+#   ACKNACK    id=0x0A flags=0x01 body(9)= DHEADER u32 LE (=5), first_unacked i16 LE,
+#              nack[0], nack[1], stream. ACKNACK_Payload has no @extensibility, so it is
+#              APPENDABLE (DDS-XTypes 1.3 7.3.1.2.1.8) and carries a DHEADER in XCDR2
+#              (setting `unannotated_types: :appendable`, the default). With
+#              `unannotated_types: :final` the body is the 5-octet FINAL form of the
+#              reference implementation (no DHEADER, length field 5).
+#              The parser accepts both forms.
 # Control frames (HEARTBEAT/ACKNACK) go out with header stream = StreamNone
 # (0x00) — the stream this control message is *about* is carried in the body's
 # trailing `stream` byte instead (matches `zerodds-endpoint-golden`'s goldens).
@@ -43,7 +49,11 @@ defmodule ZeroDDS.Reliable do
   @sm_write_data 0x07
   @sm_acknack 0x0A
   @sm_heartbeat 0x0B
-  @flag_write 0x03
+  # E flag (little-endian body) + DataFormat FORMAT_DATA (0b000) in bits 1..3 —
+  # DDS-XRCE 1.0 §8.3.5.8.
+  @flag_write 0x01
+  # Wire size of the BaseObjectRequest that precedes the sample (§7.7.8).
+  @base_size 4
   @flag_e_le 0x01
 
   def session_nokey, do: @session_nokey
@@ -66,11 +76,13 @@ defmodule ZeroDDS.Reliable do
   # --- frame codec ---
 
   @doc "Reliable WRITE_DATA — identical bytes to `ZeroDDS.Endpoint.write_frame(0x80, 0x80, seq, sample)`."
-  def write_frame(seq, sample) do
-    n = byte_size(sample)
+  def write_frame(seq, object_id, sample) do
+    n = @base_size + byte_size(sample)
 
+    # BaseObjectRequest (§7.7.8): request_id = the sample's own seq,
+    # object_id = the target DataWriter.
     <<@session_nokey::8, @reliable_stream_id::8, seq::little-16, @sm_write_data::8,
-      @flag_write::8, n::little-16>> <> sample
+      @flag_write::8, n::little-16, seq::big-16, object_id::big-16>> <> sample
   end
 
   @doc """
@@ -83,10 +95,28 @@ defmodule ZeroDDS.Reliable do
   end
 
   @doc """
-  Control-frame ACKNACK. Byte-identical to `golden_acknack_le.bin` for
-  `(session=0x80, stream_hdr=StreamNone, msg_seq=1, first_unacked=1, nack_bitmap=0, stream_id=0x80)`.
+  Control-frame ACKNACK. `unannotated_types` is `:appendable` (default; 17-octet frame,
+  DHEADER = 5, length field 9; DDS-XTypes 1.3 7.3.1.2.1.8, the form of
+  `golden_acknack_le.bin`) or `:final` (13-octet frame, no DHEADER, length field 5; the
+  form of the reference implementation). ACKNACK_Payload is the only
+  unannotated Annex A type this SDK writes.
   """
-  def acknack_frame(session, stream_hdr, msg_seq, first_unacked, nack_bitmap, stream_id) do
+  def acknack_frame(
+        session,
+        stream_hdr,
+        msg_seq,
+        first_unacked,
+        nack_bitmap,
+        stream_id,
+        unannotated_types \\ :appendable
+      )
+
+  def acknack_frame(session, stream_hdr, msg_seq, first_unacked, nack_bitmap, stream_id, :appendable) do
+    <<session::8, stream_hdr::8, msg_seq::little-16, @sm_acknack::8, @flag_e_le::8, 9::little-16,
+      5::little-32, first_unacked::little-16, nack_bitmap::little-16, stream_id::8>>
+  end
+
+  def acknack_frame(session, stream_hdr, msg_seq, first_unacked, nack_bitmap, stream_id, :final) do
     <<session::8, stream_hdr::8, msg_seq::little-16, @sm_acknack::8, @flag_e_le::8, 5::little-16,
       first_unacked::little-16, nack_bitmap::little-16, stream_id::8>>
   end
@@ -101,9 +131,20 @@ defmodule ZeroDDS.Reliable do
 
   def parse_heartbeat(_), do: :error
 
-  @doc "Parses an ACKNACK frame into `%{first_unacked:, nack_bitmap:, stream_id:}`, `:error` otherwise."
+  @doc """
+  Parses an ACKNACK frame into `%{first_unacked:, nack_bitmap:, stream_id:}`, `:error` otherwise.
+  Accepts body length 9 (4-octet DHEADER, then the 5-octet payload) and the legacy FINAL
+  form with body length 5.
+  """
   def parse_acknack(
-        <<_session::8, _stream::8, _seq::little-16, @sm_acknack::8, _flags::8, _len::little-16,
+        <<_session::8, _stream::8, _seq::little-16, @sm_acknack::8, _flags::8, 9::little-16,
+          _dheader::little-32, first_unacked::little-16, nack_bitmap::little-16, stream_id::8>>
+      ) do
+    {:ok, %{first_unacked: first_unacked, nack_bitmap: nack_bitmap, stream_id: stream_id}}
+  end
+
+  def parse_acknack(
+        <<_session::8, _stream::8, _seq::little-16, @sm_acknack::8, _flags::8, 5::little-16,
           first_unacked::little-16, nack_bitmap::little-16, stream_id::8>>
       ) do
     {:ok, %{first_unacked: first_unacked, nack_bitmap: nack_bitmap, stream_id: stream_id}}
@@ -233,9 +274,24 @@ defmodule ZeroDDS.Reliable do
 
     import Bitwise
 
-    defstruct expected: 0, received: %{}
+    defstruct expected: 0, received: %{}, unannotated_types: :appendable
 
-    def new, do: %__MODULE__{}
+    @doc """
+    New receiver. Option `:unannotated_types` (`:appendable` default | `:final`) selects
+    the encoding of the ACKNACK_Payload this receiver puts on the wire (DDS-XRCE 1.0
+    Annex A, DDS-XTypes 1.3 7.3.1.2.1.8); see `acknack_frame/5`.
+    """
+    def new(opts \\ []) do
+      mode = Keyword.get(opts, :unannotated_types, :appendable)
+
+      if mode not in [:appendable, :final] do
+        raise ArgumentError, "unannotated_types must be :appendable or :final"
+      end
+
+      %__MODULE__{unannotated_types: mode}
+    end
+
+    def unannotated_types(r), do: r.unannotated_types
 
     def expected(r), do: r.expected
     def out_of_order_count(r), do: map_size(r.received)
@@ -291,7 +347,25 @@ defmodule ZeroDDS.Reliable do
       }
     end
 
-    def reset(_r), do: new()
+    @doc """
+    Control-frame ACKNACK for the current window, encoded per the receiver's
+    `:unannotated_types`. `hint_last_seen` as in `pending_acknack/2`.
+    """
+    def acknack_frame(r, session, stream_hdr, msg_seq, hint_last_seen \\ nil) do
+      a = pending_acknack(r, hint_last_seen)
+
+      ZeroDDS.Reliable.acknack_frame(
+        session,
+        stream_hdr,
+        msg_seq,
+        a.first_unacked,
+        a.nack_bitmap,
+        a.stream_id,
+        r.unannotated_types
+      )
+    end
+
+    def reset(r), do: new(unannotated_types: r.unannotated_types)
   end
 end
 
@@ -319,11 +393,18 @@ defmodule ZeroDDS.Reliable.Drain do
 
   @heartbeat_tick_ms 50
 
-  defstruct socket: nil, sender: nil, msg_seq: 1, closed: false, waiters: [], pending: nil
+  # `object_id` names the target DataWriter in every frame's BaseObjectRequest.
+  defstruct socket: nil,
+            object_id: nil,
+            sender: nil,
+            msg_seq: 1,
+            closed: false,
+            waiters: [],
+            pending: nil
 
   # --- client API ---
 
-  def start_link(socket), do: GenServer.start_link(__MODULE__, socket)
+  def start_link(socket, object_id), do: GenServer.start_link(__MODULE__, {socket, object_id})
 
   @doc """
   Hands the drain process permission to activate the (already
@@ -341,8 +422,14 @@ defmodule ZeroDDS.Reliable.Drain do
   # --- server callbacks ---
 
   @impl true
-  def init(socket) do
-    {:ok, %__MODULE__{socket: socket, sender: Sender.new(), pending: :queue.new()}}
+  def init({socket, object_id}) do
+    {:ok,
+     %__MODULE__{
+       socket: socket,
+       object_id: object_id,
+       sender: Sender.new(),
+       pending: :queue.new()
+     }}
   end
 
   @impl true
@@ -398,7 +485,7 @@ defmodule ZeroDDS.Reliable.Drain do
       {{:value, payload}, rest} ->
         case Sender.submit(state.sender, payload) do
           {:ok, seq, sender} ->
-            _ = :gen_udp.send(state.socket, Reliable.write_frame(seq, payload))
+            _ = :gen_udp.send(state.socket, Reliable.write_frame(seq, state.object_id, payload))
             drain_pending(%{state | sender: sender, pending: rest})
 
           {:error, :window_full, sender} ->
@@ -444,7 +531,7 @@ defmodule ZeroDDS.Reliable.Drain do
 
   defp retransmit_all(state) do
     Enum.each(Sender.in_flight_pairs(state.sender), fn {seq, payload} ->
-      _ = :gen_udp.send(state.socket, Reliable.write_frame(seq, payload))
+      _ = :gen_udp.send(state.socket, Reliable.write_frame(seq, state.object_id, payload))
     end)
   end
 

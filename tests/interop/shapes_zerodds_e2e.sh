@@ -1,23 +1,23 @@
 #!/usr/bin/env bash
-# tests/interop/shapes_zerodds_e2e.sh — WP 2.1 Stufe 1
+# tests/interop/shapes_zerodds_e2e.sh — WP 2.1 stage 1
 #
-# Cross-Process ZeroDDS ↔ ZeroDDS Test ueber das ShapesDemo-Schema.
-# Stellt sicher, dass unser Encoder/Decoder fuer `ShapeType` in zwei
-# separaten Prozessen (nicht nur in-process Test) miteinander reden
-# koennen. Das ist die Voraussetzung fuer den naechsten Schritt:
-# ZeroDDS ↔ Cyclone-Python-ShapesDemo-Client.
+# Cross-process ZeroDDS ↔ ZeroDDS test over the ShapesDemo schema.
+# Ensures that our encoder/decoder for `ShapeType` can talk to each
+# other in two separate processes (not only an in-process test).
+# This is the precondition for the next step:
+# ZeroDDS ↔ Cyclone Python ShapesDemo client.
 #
-# Plattform: Linux (Multicast-Loopback funktioniert zwischen zwei
-# separaten Prozessen auf demselben Host). Auf macOS ggf. instabil.
+# Platform: Linux (multicast loopback works between two
+# separate processes on the same host). Possibly unstable on macOS.
 #
-# Verwendung:
+# Usage:
 #   ./tests/interop/shapes_zerodds_e2e.sh
 #
-# Parameter via env:
-#   RUNTIME_SECS   — Test-Dauer in Sekunden (default: 8)
-#   MIN_SAMPLES    — Mindest-Anzahl zugestellter Samples (default: 3)
+# Parameters via env:
+#   RUNTIME_SECS   — test duration in seconds (default: 8)
+#   MIN_SAMPLES    — minimum number of delivered samples (default: 3)
 #   TOPIC          — Square/Circle/Triangle (default: Square)
-#   COLOR          — Farbe des Publisher-Samples (default: BLUE)
+#   COLOR          — color of the publisher sample (default: BLUE)
 
 set -euo pipefail
 
@@ -54,7 +54,7 @@ echo "[shapes-e2e] starting subscriber (background, Topic=$TOPIC)"
 SUB_PID=$!
 trap 'kill "$SUB_PID" "$PUB_PID" 2>/dev/null || true' EXIT
 
-sleep 1 # Subscriber muss die Multicast-Gruppe gejoint haben
+sleep 1 # the subscriber must have joined the multicast group
 
 echo "[shapes-e2e] starting publisher (Topic=$TOPIC, Color=$COLOR, ${RUNTIME_SECS}s)"
 "$PUB_BIN" "$TOPIC" "$COLOR" 0 >"$PUB_LOG" 2>&1 &
@@ -66,7 +66,7 @@ kill "$PUB_PID" 2>/dev/null || true
 kill "$SUB_PID" 2>/dev/null || true
 wait 2>/dev/null || true
 
-# Subscriber-Log zaehlt Zeilen mit "  <- color=$COLOR"
+# Count lines with "  <- color=$COLOR" in the subscriber log
 COUNT=$(grep -c "<- color=${COLOR}" "$SUB_LOG" || true)
 echo "[shapes-e2e] subscriber received $COUNT samples with color=$COLOR (min: $MIN_SAMPLES)"
 echo "[shapes-e2e] subscriber log: $SUB_LOG"

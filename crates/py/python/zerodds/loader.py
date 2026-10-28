@@ -18,11 +18,17 @@ functions — we bind against what is in the header.
 Usage::
 
     from zerodds.loader import Runtime, Writer, Reader
+    # `descriptor` is one entry of a `ZD_TOPIC_DESCRIPTORS` dict, from
+    # `zerodds-idlc generate --lang python` (zerodds_wire.topic_descriptor.
+    # TopicDescriptor). It carries the type's identity directly.
 
     rt = Runtime(domain_id=42)
-    w = Writer(rt, topic="Chat::Message", type_name="Chat::Message", reliable=True)
+    w = Writer(rt, topic="Chat::Message", type_name=descriptor.type_name,
+               reliable=True, type_object=descriptor.type_object,
+               is_keyed=descriptor.keyed,
+               extensibility={0: "final", 1: "appendable", 2: "mutable"}[descriptor.extensibility])
     w.wait_for_matched(1, timeout_ms=5000)
-    w.write(cdr_bytes)
+    w.write(descriptor.encode(message))
 
     r = Reader(rt, topic="Chat::Message", type_name="Chat::Message", reliable=True)
     r.wait_for_matched(1, timeout_ms=5000)
@@ -67,9 +73,9 @@ def load_library() -> ctypes.CDLL:
     3. system linker (`/usr/local/lib`, `LD_LIBRARY_PATH`, ...)
 
     Additional search paths used when called from a development tree:
-    `crates/zerodds-c-api/target/debug/`,
-    `target/debug/`,
-    `target/release/` relative to repo-root candidates.
+    `target/debug/` and `target/release/` under any of the eight
+    directories above this file — the workspace target directory, wherever
+    the package sits inside the checkout.
     """
     name = _platform_libname()
 
@@ -135,8 +141,8 @@ def _bind(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.zerodds_writer_create.restype = p_w
 
     # F-TYPES-3 / #24: typed create carrying the generated dataclass's serialized
-    # COMPLETE TypeObject (zerodds.idl.type_object_of). The runtime registers it
-    # and derives + advertises the cross-binding TypeIdentifier before the writer
+    # COMPLETE TypeObject (a TopicDescriptor's `.type_object`). The runtime
+    # registers it and derives + advertises the cross-binding TypeIdentifier before the writer
     # is published (no None-window). (rt, topic, type, reliable, is_keyed,
     # type_object*, len).
     lib.zerodds_writer_create_typed.argtypes = [
@@ -156,6 +162,12 @@ def _bind(lib: ctypes.CDLL) -> ctypes.CDLL:
         ctypes.c_size_t,
     ]
     lib.zerodds_writer_write.restype = ctypes.c_int
+
+    # The encapsulation identifier the runtime stamps on the payload is
+    # chosen from this, and the C ABI's default is FINAL. (writer,
+    # extensibility) with `0` FINAL, `1` APPENDABLE, `2` MUTABLE.
+    lib.zerodds_writer_set_wire_extensibility.argtypes = [p_w, ctypes.c_int]
+    lib.zerodds_writer_set_wire_extensibility.restype = ctypes.c_int
 
     lib.zerodds_writer_wait_for_matched.argtypes = [
         p_w,
@@ -252,6 +264,13 @@ class ZeroDdsError(RuntimeError):
     """Raised when an FFI call returns a negative status or NULL pointer."""
 
 
+#: The C ABI's own numbering for `zerodds_writer_set_wire_extensibility`,
+#: with the same values a generated `TopicDescriptor.extensibility` carries
+#: as an int (0 final, 1 appendable, 2 mutable) — spelled out here because
+#: this constructor's own `extensibility` parameter takes the string form.
+_WIRE_EXTENSIBILITY = {"final": 0, "appendable": 1, "mutable": 2}
+
+
 class Runtime:
     """Owns a ZeroDDS runtime + implicit DomainParticipant on `domain_id`."""
 
@@ -307,12 +326,21 @@ class Writer:
         reliable: bool = True,
         type_object: Optional[bytes] = None,
         is_keyed: bool = False,
+        extensibility: str = "final",
     ) -> None:
         if type_name is None:
             type_name = topic
+        # Rejected before the writer exists rather than after: a create
+        # followed by a destroy would put an endpoint through discovery
+        # that is torn down again a moment later.
+        if extensibility not in _WIRE_EXTENSIBILITY:
+            raise ValueError(
+                f"Writer(extensibility=...) must be 'final', 'appendable' or "
+                f"'mutable', got {extensibility!r}",
+            )
         lib = runtime._lib
         # F-TYPES-3 / #24: when the caller passes the generated type's serialized
-        # COMPLETE TypeObject (`zerodds.idl.type_object_of(MyStruct)`), create via
+        # COMPLETE TypeObject (a TopicDescriptor's `.type_object`), create via
         # the typed path so the endpoint advertises the cross-binding
         # TypeIdentifier before it is published (no None-window against
         # discovery). Absent it, fall back to the byte-oriented create (None).
@@ -338,6 +366,33 @@ class Writer:
         if not ptr:
             raise ZeroDdsError(
                 f"zerodds_writer_create failed for topic={topic!r}"
+            )
+        # The encapsulation identifier has to name the encoding of the body,
+        # XTypes 1.3 §7.6.3.1.2 Table 59 / DDSI-RTPS 2.5 §10.5. Without this
+        # call the writer slot keeps the C ABI's default, FINAL, and stamps
+        # `PLAIN_CDR2_LE` (0x0007) on every sample — measured. An
+        # `@appendable` body opens with a DHEADER and a `@mutable` one with
+        # an EMHEADER per member (a generated codec frames both), so under that
+        # identifier a reader that believes the header reads the delimiter as
+        # the first member. Cyclone decodes it anyway (it uses its own type,
+        # not the header); OpenDDS refuses the sample in `to_encoding_i` —
+        # "expected APPENDABLE extensibility, but got ..." — and drops it
+        # with nothing on the topic.
+        #
+        # Outside both create arms on purpose: placed in the `type_object`
+        # arm alone it would leave every type without a TypeObject — every
+        # union, every type XTypes cannot lower — announcing FINAL.
+        rc = lib.zerodds_writer_set_wire_extensibility(
+            ptr, ctypes.c_int(_WIRE_EXTENSIBILITY[extensibility])
+        )
+        if rc != 0:
+            # Destroyed rather than kept: a writer that could not declare its
+            # own framing publishes samples no strict peer accepts, and doing
+            # that quietly is the failure this call exists to end.
+            lib.zerodds_writer_destroy(ptr)
+            raise ZeroDdsError(
+                f"zerodds_writer_set_wire_extensibility(topic={topic!r}, "
+                f"extensibility={extensibility!r}) rc={rc}"
             )
         self._lib = lib
         self._ptr = ctypes.c_void_p(ptr)

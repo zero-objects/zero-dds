@@ -97,7 +97,7 @@ static void test_window_overflow_no_loss() {
             [&](const std::vector<Bytes>& b) { for (auto& f : b) peer.on_frame(f); },
             [&](const Bytes& f) { peer.on_frame(f); },
             [&](std::uint8_t* buf, std::size_t cap) { return peer.poll(buf, cap); },
-            512);
+            object_id(0x001, OBJK_DATAWRITER), 512);
 
         for (int i = 0; i < n; ++i) {
             std::uint8_t s = static_cast<std::uint8_t>(i);
@@ -136,7 +136,7 @@ static void test_oversized_no_head_of_line_block() {
             [&](const std::vector<Bytes>& b) { for (auto& f : b) peer.on_frame(f); },
             [&](const Bytes& f) { peer.on_frame(f); },
             [&](std::uint8_t* buf, std::size_t cap) { return peer.poll(buf, cap); },
-            512);
+            object_id(0x001, OBJK_DATAWRITER), 512);
 
         std::vector<std::uint8_t> huge(MAX_PAYLOAD + 10, 0x7);
         CHECK(w.enqueue(huge.data(), huge.size()));  // ring accepts it; sender rejects
@@ -161,8 +161,8 @@ static void test_bounded_destructor_no_responder() {
     auto t0 = std::chrono::steady_clock::now();
     {
         AsyncWriter w([](const std::vector<Bytes>&) {}, [](const Bytes&) {},
-                      [](std::uint8_t*, std::size_t) { return -1; }, 512,
-                      std::chrono::milliseconds(300));
+                      [](std::uint8_t*, std::size_t) { return -1; },
+                      object_id(0x001, OBJK_DATAWRITER), 512, std::chrono::milliseconds(300));
         for (int i = 0; i < 8; ++i) {
             std::uint8_t s = static_cast<std::uint8_t>(i);
             w.enqueue(&s, 1);

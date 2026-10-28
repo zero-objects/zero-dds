@@ -1,0 +1,1 @@
+module m { @appendable union U switch(boolean) { case TRUE: long a; default: double b; }; @appendable struct S { sequence<U> us; }; };

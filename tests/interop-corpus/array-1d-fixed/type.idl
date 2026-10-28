@@ -1,0 +1,7 @@
+// one-dimensional array of `fixed`
+typedef fixed<5,2> Price;
+
+@final struct Sample {
+    Price items[3];
+    octet tail;
+};

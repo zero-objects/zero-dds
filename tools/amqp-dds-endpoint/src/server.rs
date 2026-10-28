@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Multi-Connection-Accept-Loop mit thread-per-connection.
+//! Multi-connection accept loop with thread-per-connection.
 //!
-//! Spec dds-amqp-1.0 §2.1 Cl. 2 — Server-Side, akzeptiert
-//! eingehende AMQP-1.0-Connections.
+//! Spec dds-amqp-1.0 §2.1 Cl. 2 — server side, accepts
+//! incoming AMQP-1.0 connections.
 
 use std::io;
 use std::net::{TcpListener, TcpStream, ToSocketAddrs};
@@ -17,48 +17,54 @@ use zerodds_amqp_endpoint::MetricsHub;
 
 use crate::handler::{HandlerConfig, handle_connection};
 
-// Re-export fuer einheitlichen Public-Surface.
+// Re-export for a uniform public surface.
 pub use crate::frame_io::AmqpProtocol;
 
-/// Server-Konfiguration fuer `run_server`.
+/// Server configuration for `run_server`.
 #[derive(Debug, Clone)]
 pub struct ServerConfig {
-    /// Listen-Address (z.B. `"0.0.0.0:5672"`).
+    /// Listen address (e.g. `"0.0.0.0:5672"`).
     pub listen_addr: String,
-    /// Container-Id, die der Server in Open-Frames meldet.
+    /// Container-Id that the server reports in Open frames.
     pub container_id: String,
-    /// Max Frame-Size (DoS-Cap).
+    /// Max frame size (DoS cap).
     pub max_frame_size: u32,
-    /// Ist TLS aktiv? (Beeinflusst SASL-PLAIN-Akzeptanz §10.2.1.)
-    pub tls_active: bool,
-    /// Read-Timeout pro Connection (None = unlimited; im Daemon
-    /// typisch 60s = idle-timeout).
+    /// Read timeout per connection (None = unlimited; in the daemon
+    /// typically 60s = idle timeout).
     pub read_timeout: Option<Duration>,
-    /// Per-Connection Write-Timeout.
+    /// Per-connection write timeout.
     pub write_timeout: Option<Duration>,
+    /// The SASL mechanisms and the credential store (DDS-AMQP 1.0 §10.2).
+    pub sasl: crate::auth::SaslPolicy,
+    /// TLS termination (§10.1); `None` = plaintext. `tls_active` is set from
+    /// it: a connection is TLS exactly when this wraps it.
+    #[cfg(feature = "tls")]
+    pub tls: Option<Arc<rustls::ServerConfig>>,
 }
 
 impl ServerConfig {
-    /// Default-Konfiguration fuer `0.0.0.0:5672`.
+    /// Default configuration for `0.0.0.0:5672`.
     #[must_use]
     pub fn default_listen() -> Self {
         Self {
             listen_addr: "0.0.0.0:5672".to_string(),
             container_id: "zerodds-amqp-endpoint".to_string(),
             max_frame_size: 1_048_576,
-            tls_active: false,
             read_timeout: Some(Duration::from_secs(60)),
             write_timeout: Some(Duration::from_secs(60)),
+            sasl: crate::auth::SaslPolicy::default(),
+            #[cfg(feature = "tls")]
+            tls: None,
         }
     }
 }
 
-/// Server-Fehler.
+/// Server error.
 #[derive(Debug)]
 pub enum ServerError {
-    /// Bind-Fehler.
+    /// Bind error.
     Bind(io::Error),
-    /// Allgemeiner IO-Fehler.
+    /// General IO error.
     Io(io::Error),
 }
 
@@ -75,21 +81,21 @@ impl std::error::Error for ServerError {}
 
 /// Spec §2.1 Cl. 2 — TCP-Listener-Loop.
 ///
-/// Akzeptiert blocking auf `listen_addr`, spawnt pro
-/// akzeptierter Connection einen Thread, der
-/// `handle_connection` durchlaeuft.
+/// Accepts blocking on `listen_addr`, spawns per
+/// accepted connection a thread that
+/// runs `handle_connection`.
 ///
-/// `shutdown_signal` ist ein Atomic-Flag, das von aussen auf
-/// `true` gesetzt werden kann — der Accept-Loop pollt es
-/// periodisch (per `set_nonblocking` + sleep) und beendet
-/// sauber.
+/// `shutdown_signal` is an atomic flag that is set externally to
+/// can be set to `true` — the accept loop polls it
+/// periodically (via `set_nonblocking` + sleep) and terminates
+/// cleanly.
 ///
-/// `metrics` ist der prozess-globale Counter-Hub, der pro
-/// Connection und pro Frame inkrementiert wird.
+/// `metrics` is the process-global counter hub that per
+/// connection and per frame.
 ///
 /// # Errors
-/// `Bind` wenn der Listener nicht binden kann; `Io` bei
-/// schweren Accept-Fehlern.
+/// `Bind` if the listener cannot bind; `Io` on
+/// severe accept errors.
 pub fn run_server(
     cfg: ServerConfig,
     metrics: Arc<MetricsHub>,
@@ -138,6 +144,10 @@ fn serve_one(
     cfg: &ServerConfig,
     metrics: &Arc<MetricsHub>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    // The listener is nonblocking for the shutdown poll; on macOS and the
+    // BSDs an accepted socket inherits that, and the first read of the
+    // blocking handler failed with WouldBlock (Linux does not inherit it).
+    stream.set_nonblocking(false)?;
     if let Some(t) = cfg.read_timeout {
         stream.set_read_timeout(Some(t))?;
     }
@@ -147,7 +157,22 @@ fn serve_one(
     let mut handler_cfg = HandlerConfig::for_tests(metrics.clone());
     handler_cfg.container_id = cfg.container_id.clone();
     handler_cfg.max_frame_size = cfg.max_frame_size;
-    handler_cfg.tls_active = cfg.tls_active;
+    handler_cfg.sasl = cfg.sasl.clone();
+    #[cfg(feature = "tls")]
+    if let Some(tls) = &cfg.tls {
+        let mut tls_stream =
+            crate::tls::accept_server(Arc::clone(tls), stream).map_err(|e| format!("TLS: {e}"))?;
+        handler_cfg.tls_active = true;
+        handler_cfg.client_cert = tls_stream
+            .conn
+            .peer_certificates()
+            .and_then(|c| c.first())
+            .map(|c| c.as_ref().to_vec());
+        handle_connection(&mut tls_stream, &handler_cfg)?;
+        return Ok(());
+    }
+    // Plaintext: PLAIN is not offered (§10.2.1).
+    handler_cfg.tls_active = false;
     handle_connection(&mut stream, &handler_cfg)?;
     Ok(())
 }
@@ -164,12 +189,12 @@ mod tests {
         let c = ServerConfig::default_listen();
         assert!(c.listen_addr.ends_with(":5672"));
         assert!(c.max_frame_size >= 65_536);
-        assert!(!c.tls_active);
+        assert!(c.sasl.allows_no_sasl());
         assert!(c.read_timeout.is_some());
     }
 
-    /// E2E: Server bindet auf 127.0.0.1:0 (zufaelliger Port),
-    /// Klient connectet, schickt AMQP-Header + Close.
+    /// E2E: server binds on 127.0.0.1:0 (random port),
+    /// client connects, sends AMQP header + Close.
     #[test]
     fn server_accepts_connection_and_handles_open_close() {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -182,13 +207,15 @@ mod tests {
             listen_addr: format!("127.0.0.1:{port}"),
             container_id: "test-server".into(),
             max_frame_size: 65_536,
-            tls_active: false,
             read_timeout: Some(Duration::from_secs(2)),
             write_timeout: Some(Duration::from_secs(2)),
+            sasl: crate::auth::SaslPolicy::default(),
+            #[cfg(feature = "tls")]
+            tls: None,
         };
 
-        // Listener wieder freigeben — der Test-Server bindet
-        // ihn neu in einem Thread.
+        // Release the listener again — the test server binds
+        // it anew in a thread.
         drop(listener);
 
         let server_metrics = metrics.clone();
@@ -197,11 +224,30 @@ mod tests {
             let _ = run_server(cfg, server_metrics, server_shutdown);
         });
 
-        // Bisschen warten bis der Server bindet.
-        thread::sleep(Duration::from_millis(100));
-
-        // Klient connectet.
-        let mut client = TcpStream::connect(format!("127.0.0.1:{port}")).unwrap();
+        // Wait for the server to bind, by trying to reach it.
+        //
+        // This used to be `sleep(100ms)` and a single connect, which
+        // assumes the thread above got scheduled, bound the port and
+        // reached its accept loop inside that window. On a loaded
+        // machine it does not, and the test fails for a reason that has
+        // nothing to do with the server. Retrying until a deadline
+        // waits for the event rather than for a duration — the test
+        // still fails if the server never comes up, which is what it is
+        // there to catch.
+        let addr = format!("127.0.0.1:{port}");
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        let mut client = loop {
+            match TcpStream::connect(&addr) {
+                Ok(stream) => break stream,
+                Err(error) => {
+                    assert!(
+                        std::time::Instant::now() < deadline,
+                        "the server never accepted a connection on {addr}: {error}"
+                    );
+                    thread::sleep(Duration::from_millis(10));
+                }
+            }
+        };
         client
             .set_read_timeout(Some(Duration::from_secs(2)))
             .unwrap();
@@ -209,10 +255,10 @@ mod tests {
             .set_write_timeout(Some(Duration::from_secs(2)))
             .unwrap();
 
-        // AMQP-Protocol-Header senden.
+        // Send AMQP protocol header.
         client.write_all(&AmqpProtocol::Amqp.as_bytes()).unwrap();
 
-        // Open-Performative + Close-Performative senden.
+        // Send Open + Close performatives.
         let open = zerodds_amqp_bridge::performatives::open("client").unwrap();
         let h = zerodds_amqp_bridge::frame::FrameHeader {
             size: 8 + open.len() as u32,
@@ -237,17 +283,17 @@ mod tests {
             .unwrap();
         client.write_all(&close).unwrap();
 
-        // Server schickt: AMQP-Header + Open-Reply + Close-Reply.
+        // Server sends: AMQP header + Open reply + Close reply.
         let mut buf = [0u8; 8];
         std::io::Read::read_exact(&mut client, &mut buf).unwrap();
         assert_eq!(&buf[0..4], b"AMQP");
 
-        // Wir lesen nicht alle Server-Frames detailliert; uns
-        // reicht: Server hat geantwortet + Stats sind hochgezaehlt.
-        // Klient schliesst.
+        // We do not read all server frames in detail; we
+        // is enough: server has responded + stats have counted up.
+        // Client closes.
         drop(client);
 
-        // Bisschen warten bis Server-Side fertig ist.
+        // Wait a little until the server side is ready.
         thread::sleep(Duration::from_millis(200));
 
         assert_eq!(metrics.snapshot("connections.total"), Some(1));

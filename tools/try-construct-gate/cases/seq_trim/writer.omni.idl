@@ -1,0 +1,1 @@
+struct S { long a; sequence<long, 32> m; long b; };

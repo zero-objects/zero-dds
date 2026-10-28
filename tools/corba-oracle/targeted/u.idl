@@ -1,0 +1,5 @@
+enum Kind { A, B, C };
+union U1 switch (long) { case 1: long one; case 2: case 3: double two; default: short other; };
+union U2 switch (long) { case 1: long one; };
+union U3 switch (Kind) { case A: long one; };
+struct S { octet head; U1 a; U1 b; U1 c; U2 d; U3 e; octet tail; };

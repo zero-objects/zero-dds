@@ -4,7 +4,7 @@
 //! Crate `zerodds-coap-bridge`. Safety classification: **STANDARD**.
 //!
 //! CoAP (RFC 7252) wire codec + reliability + discovery + bridge —
-//! pure Rust `no_std + alloc`, `forbid(unsafe_code)`. Beyond the bare
+//! pure Rust, `forbid(unsafe_code)`. Beyond the bare
 //! wire codec it also implements all the accompanying CoAP layers:
 //! reliability/congestion control (§4.2-§4.7), request/response
 //! matching (§5.3), block-wise transfer (RFC 7959), resource discovery
@@ -25,7 +25,7 @@
 //! (constrained devices, OPC-UA-PubSub mapping, ROS-2-on-constrained
 //! bridges).
 //!
-//! ## Public API (as of 1.0.0-rc.1)
+//! ## Public API
 //!
 //! - [`CoapMessage`] / [`CoapCode`] / [`MessageType`] — message model
 //!   (§3 + §12.1).

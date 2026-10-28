@@ -25,6 +25,14 @@ path = "src/main.rs"
 name = "zerodds_record"
 path = "src/lib.rs"
 
+[features]
+# Same-host participants exchange every unicast datagram over a shared-memory
+# channel instead of loopback UDP, as `zerodds-c-api` does by default. Without
+# it this tool's peers on the same host fall back to UDP for everything they
+# send it. `ZERODDS_SAME_HOST_SHM=0` turns it off at run time.
+default = ["same-host-shm"]
+same-host-shm = ["zerodds-dcps/same-host-shm"]
+
 [dependencies]
 zerodds-recorder = { version = "1.0.0-rc.7", path = "../../crates/recorder" }
 zerodds-dcps     = { version = "1.0.0-rc.7", path = "../../crates/dcps" }
@@ -32,9 +40,13 @@ zerodds-rtps     = { version = "1.0.0-rc.7", path = "../../crates/rtps" }
 zerodds-qos      = { version = "1.0.0-rc.7", path = "../../crates/qos" }
 zerodds-types    = { version = "1.0.0-rc.7", path = "../../crates/types", default-features = false, features = ["std"] }
 zerodds-recorder-decode = { version = "1.0.0-rc.7", path = "../../crates/recorder-decode" }
+zerodds-wire-codec = { version = "1.0.0-rc.7", path = "../../crates/wire-codec" }
+zerodds-ast-layout = { version = "1.0.0-rc.7", path = "../../crates/ast-layout" }
+zerodds-cli-common = { version = "1.0.0-rc.7", path = "../cli-common" }
 libc             = { workspace = true }
 
 [dev-dependencies]
+zerodds-test-domains = { path = "../../crates/test-domains" }
 tempfile = "3"
 zerodds-recorder = { version = "1.0.0-rc.7", path = "../../crates/recorder" }
 rusqlite = { workspace = true }

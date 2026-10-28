@@ -44,7 +44,15 @@ use zerodds::{
 #[cfg_attr(target_os = "macos", ignore)]
 #[test]
 fn ffi_pub_sub_roundtrip() {
-    let domain: u32 = 100 + (std::process::id() % 50);
+    // A fixed number, not `base + pid % N`: the domain is the UDP port
+    // (RTPS 9.6.1.4.1, `7400 + 250*domain`), and spreading it by PID walked
+    // it into the kernel's ephemeral port range
+    // (`net.ipv4.ip_local_port_range`, `32768 60999` on the bench host),
+    // where the SPDP multicast bind fails with `EADDRINUSE` and
+    // `zerodds_runtime_create` returns NULL. Every domain in this workspace
+    // is listed in `crates/dcps/tests/common/mod.rs::RESERVED_DOMAINS` so
+    // that the domain lease there never hands out the same one.
+    let domain: u32 = 36;
     let topic = CString::new("CFfiSmoke").unwrap();
     let typ = CString::new("RawBytes").unwrap();
 
@@ -117,7 +125,15 @@ fn ffi_pub_sub_roundtrip() {
 fn ffi_ros_defaults_runtime_roundtrip() {
     // Stay <= 232: domain 233+ overflows the SPDP port mapping (7400 + 250*D
     // exceeds u16). The PID jitter only isolates concurrent test processes.
-    let domain: u32 = 200 + (std::process::id() % 30);
+    // A fixed number, not `base + pid % N`: the domain is the UDP port
+    // (RTPS 9.6.1.4.1, `7400 + 250*domain`), and spreading it by PID walked
+    // it into the kernel's ephemeral port range
+    // (`net.ipv4.ip_local_port_range`, `32768 60999` on the bench host),
+    // where the SPDP multicast bind fails with `EADDRINUSE` and
+    // `zerodds_runtime_create` returns NULL. Every domain in this workspace
+    // is listed in `crates/dcps/tests/common/mod.rs::RESERVED_DOMAINS` so
+    // that the domain lease there never hands out the same one.
+    let domain: u32 = 37;
     let topic = CString::new("CFfiRosDefaults").unwrap();
     let typ = CString::new("RawBytes").unwrap();
 
@@ -178,7 +194,15 @@ fn ffi_ros_defaults_runtime_roundtrip() {
 #[cfg_attr(target_os = "macos", ignore)]
 #[test]
 fn ffi_time_based_filter_drops_rapid_samples() {
-    let domain: u32 = 30 + (std::process::id() % 50);
+    // A fixed number, not `base + pid % N`: the domain is the UDP port
+    // (RTPS 9.6.1.4.1, `7400 + 250*domain`), and spreading it by PID walked
+    // it into the kernel's ephemeral port range
+    // (`net.ipv4.ip_local_port_range`, `32768 60999` on the bench host),
+    // where the SPDP multicast bind fails with `EADDRINUSE` and
+    // `zerodds_runtime_create` returns NULL. Every domain in this workspace
+    // is listed in `crates/dcps/tests/common/mod.rs::RESERVED_DOMAINS` so
+    // that the domain lease there never hands out the same one.
+    let domain: u32 = 38;
     let topic = CString::new("CFfiTbf").unwrap();
     let typ = CString::new("RawBytes").unwrap();
 
@@ -249,7 +273,15 @@ fn ffi_time_based_filter_drops_rapid_samples() {
 #[cfg_attr(target_os = "macos", ignore)]
 #[test]
 fn ffi_pub_sub_roundtrip_via_take_into() {
-    let domain: u32 = 170 + (std::process::id() % 50);
+    // A fixed number, not `base + pid % N`: the domain is the UDP port
+    // (RTPS 9.6.1.4.1, `7400 + 250*domain`), and spreading it by PID walked
+    // it into the kernel's ephemeral port range
+    // (`net.ipv4.ip_local_port_range`, `32768 60999` on the bench host),
+    // where the SPDP multicast bind fails with `EADDRINUSE` and
+    // `zerodds_runtime_create` returns NULL. Every domain in this workspace
+    // is listed in `crates/dcps/tests/common/mod.rs::RESERVED_DOMAINS` so
+    // that the domain lease there never hands out the same one.
+    let domain: u32 = 39;
     let topic = CString::new("CFfiSmokeTakeInto").unwrap();
     let typ = CString::new("RawBytes").unwrap();
 
@@ -334,7 +366,15 @@ fn ffi_handles_null_safely() {
 #[cfg_attr(target_os = "macos", ignore)]
 #[test]
 fn ffi_pub_sub_roundtrip_via_loan() {
-    let domain: u32 = 150 + (std::process::id() % 50);
+    // A fixed number, not `base + pid % N`: the domain is the UDP port
+    // (RTPS 9.6.1.4.1, `7400 + 250*domain`), and spreading it by PID walked
+    // it into the kernel's ephemeral port range
+    // (`net.ipv4.ip_local_port_range`, `32768 60999` on the bench host),
+    // where the SPDP multicast bind fails with `EADDRINUSE` and
+    // `zerodds_runtime_create` returns NULL. Every domain in this workspace
+    // is listed in `crates/dcps/tests/common/mod.rs::RESERVED_DOMAINS` so
+    // that the domain lease there never hands out the same one.
+    let domain: u32 = 50;
     let topic = CString::new("CFfiSmokeLoan").unwrap();
     let typ = CString::new("RawBytes").unwrap();
 
@@ -450,4 +490,19 @@ fn ffi_runtime_create_domain_233_returns_null() {
     // SAFETY: `rt` comes from zerodds_runtime_create or is NULL —
     // destroy accepts both.
     unsafe { zerodds_runtime_destroy(rt) };
+}
+
+/// A plain constructor with `security.enclave_dir` set returns NULL: it
+/// would start the participant without the security the configuration
+/// asks for (the secured entry point is
+/// `zerodds_runtime_create_secure_from_env`).
+#[test]
+fn a_plain_runtime_with_an_enclave_configured_is_refused() {
+    let set = std::ffi::CString::new("security.enclave_dir=/nonexistent/enclave").unwrap();
+    let sets = [set.as_ptr()];
+    // SAFETY: NULL path = standard layout; one valid NUL-terminated set.
+    let rt = unsafe {
+        zerodds::zerodds_runtime_create_from_config(0, std::ptr::null(), sets.as_ptr(), 1)
+    };
+    assert!(rt.is_null(), "an enclave must not become a plain runtime");
 }

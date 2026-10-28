@@ -1,0 +1,11 @@
+// `bitset` with declared field types
+bitset Packed {
+    bitfield<3> low;
+    bitfield<1, boolean> flag;
+    bitfield<12, unsigned short> wide;
+};
+
+@final struct Sample {
+    Packed value;
+    octet tail;
+};

@@ -11,7 +11,7 @@
 //!   - QoS 0 → Best-Effort + Volatile
 //!   - QoS 1 → Reliable + Volatile
 //!   - QoS 2 → Reliable + TransientLocal
-//! * MQTT-User-Properties → DDS-User-Data (Caller-Layer serialisiert).
+//! * MQTT-User-Properties → DDS-User-Data (Caller-Layer serialized).
 
 use alloc::collections::BTreeMap;
 use alloc::string::{String, ToString};

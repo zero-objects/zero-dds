@@ -1,0 +1,10 @@
+// keywords used as identifiers, escaped with a leading underscore
+// IDL 4.2 §7.2.3.2: the underscore is not part of the identifier, so
+// `_long` names `long` — which is what a `@hashid` hashes, and which
+// is the member name the values file keys on.
+@mutable struct Sample {
+    @hashid long _long;
+    @hashid double _double;
+    @hashid short _switch;
+    long plain;
+};

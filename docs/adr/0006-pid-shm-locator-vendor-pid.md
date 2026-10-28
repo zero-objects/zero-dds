@@ -1,78 +1,78 @@
-# 0006 — PID_SHM_LOCATOR als Vendor-PID 0x8001
+# 0006 — PID_SHM_LOCATOR as vendor PID 0x8001
 
 - **Status:** accepted
-- **Datum:** 2026-05-04
-- **Autoren:** @sandra
-- **Kontext:** crates/rtps, crates/flatdata, docs/specs/zerodds-flatdata-1.0.md
+- **Date:** 2026-05-04
+- **Authors:** @sandra
+- **Context:** crates/rtps, crates/flatdata, docs/specs/zerodds-flatdata-1.0.md
 
-## Kontext
+## Context
 
-Same-Host-Zero-Copy braucht eine Discovery-Komponente, die einem
-Reader signalisiert: "es gibt ein SHM-Segment für dieses Topic, hier
-ist der Pfad". Optionen:
+Same-host zero-copy needs a discovery component that signals to a
+reader: "there is a SHM segment for this topic, here
+is the path". Options:
 
-1. Eigene SEDP-Submessage erfinden — bricht Cross-Vendor-Compat.
-2. Eigenen Builtin-Topic anlegen — Compat-Risk + DCPS-Layer-Eingriff.
-3. Vendor-PID im PublicationBuiltinTopicData — minimal-invasiv,
-   Cross-Vendor-stillschweigend ignoriert.
+1. Invent our own SEDP submessage — breaks cross-vendor compatibility.
+2. Create our own builtin topic — compatibility risk + intervention in the DCPS layer.
+3. Vendor PID in PublicationBuiltinTopicData — minimally invasive,
+   silently ignored by other vendors.
 
-Spec DDSI-RTPS 2.5 §9.6.2.3 erlaubt Vendor-spezifische PIDs im Range
-[0x8000, 0xFFFF) mit gesetztem `VENDOR_SPECIFIC_BIT`. Cyclone und
-Fast-DDS überspringen unbekannte Vendor-PIDs ohne Fehlermeldung.
+Spec DDSI-RTPS 2.5 §9.6.2.3 allows vendor-specific PIDs in the range
+[0x8000, 0xFFFF) with `VENDOR_SPECIFIC_BIT` set. Cyclone and
+Fast-DDS skip unknown vendor PIDs without an error message.
 
-## Entscheidung
+## Decision
 
-**Wir definieren `PID_SHM_LOCATOR = 0x8001` als ZeroDDS-Vendor-PID
-ohne MUST_UNDERSTAND-Bit.**
+**We define `PID_SHM_LOCATOR = 0x8001` as a ZeroDDS vendor PID
+without the MUST_UNDERSTAND bit.**
 
-- **Wert-Layout** (little-endian):
-  - `u32 hostname_hash` (FNV-1a über lokalen Hostname-String)
+- **Value layout** (little-endian):
+  - `u32 hostname_hash` (FNV-1a over the local hostname string)
   - `u32 uid` (POSIX `uid_t`)
   - `u32 slot_count`
-  - `u32 slot_size` (Slot-Total-Size, Header + Payload + Padding)
-  - `CDR-String segment_path` (`/zddspub_<entity_id>` typisch)
-- **MUST_UNDERSTAND**: nicht gesetzt — Cyclone/Fast-DDS-Reader
-  ignorieren still und matchen weiterhin via UDP-DATA.
-- **VENDOR_SPECIFIC_BIT**: gesetzt (PID 0x8001 mit bit 15 high).
-- **Same-Host-Match-Bedingung**: lokaler `hostname_hash` ==
-  `locator.hostname_hash` UND lokaler `uid` == `locator.uid`.
-  Container-Friendly (gleicher Kernel = gleicher hostname).
+  - `u32 slot_size` (total slot size, header + payload + padding)
+  - `CDR-String segment_path` (typically `/zddspub_<entity_id>`)
+- **MUST_UNDERSTAND**: not set — Cyclone/Fast-DDS readers
+  silently ignore it and keep matching via UDP DATA.
+- **VENDOR_SPECIFIC_BIT**: set (PID 0x8001 with bit 15 high).
+- **Same-host match condition**: local `hostname_hash` ==
+  `locator.hostname_hash` AND local `uid` == `locator.uid`.
+  Container-friendly (same kernel = same hostname).
 
-## Alternativen
+## Alternatives
 
-1. **Eigene SEDP-Submessage** — Wire-Bruch zu Cyclone/Fast-DDS.
-   Verworfen.
-2. **Builtin-Topic `ZeroDdsShmLocator`** — DCPS-Layer-Eingriff,
-   Cyclone-Reader sieht Topic aber kann nicht parsen. Verworfen.
-3. **Vendor-PID in PublicationBuiltinTopicData** (gewählt) —
-   minimal-invasiv, transparent für andere Vendoren.
+1. **Own SEDP submessage** — wire break with Cyclone/Fast-DDS.
+   Rejected.
+2. **Builtin topic `ZeroDdsShmLocator`** — intervention in the DCPS layer;
+   a Cyclone reader sees the topic but cannot parse it. Rejected.
+3. **Vendor PID in PublicationBuiltinTopicData** (chosen) —
+   minimally invasive, transparent for other vendors.
 
-## Konsequenzen
+## Consequences
 
-**Positiv**:
-- Cross-Vendor-Domains funktionieren weiterhin: ZeroDDS-Writer +
-  Cyclone-Reader bekommen UDP-DATA wie immer; ZeroDDS-Reader sieht
-  zusätzlich PID_SHM_LOCATOR und attached an SHM.
-- Discovery-Pfad ändert sich nicht — gleicher SEDP-Endpoint, nur
-  ein zusätzlicher PID im Wire.
-- hostname_hash + uid als Match-Tupel ist Container-Friendly.
+**Positive**:
+- Cross-vendor domains keep working: ZeroDDS writer +
+  Cyclone reader get UDP DATA as always; a ZeroDDS reader additionally
+  sees PID_SHM_LOCATOR and attaches to SHM.
+- The discovery path does not change — same SEDP endpoint, only
+  one additional PID on the wire.
+- hostname_hash + uid as the match tuple is container-friendly.
 
-**Negativ**:
-- 0x8001 ist nicht IANA-registriert — wenn ein anderer Vendor zufällig
-  dieselbe PID nutzt, gibt's Wire-Collision (still, kein Crash).
-  Mitigation: Kollision wird durch Layout-Validation erkannt
-  (Header-Length + Hostname-Hash sind effektiv 64-bit Sentinel).
-- Caller, der Cross-User-Container nutzt (uid 1000 ↔ uid 0), bekommt
-  keine SHM — das ist absichtlich (Sicherheit), aber Doku-Pflicht.
+**Negative**:
+- 0x8001 is not IANA-registered — if another vendor happens to use
+  the same PID, there is a wire collision (silent, no crash).
+  Mitigation: a collision is detected by layout validation
+  (header length + hostname hash are effectively a 64-bit sentinel).
+- A caller that uses cross-user containers (uid 1000 ↔ uid 0) gets
+  no SHM — this is intentional (security), but must be documented.
 
-**Folge-Aufgaben**:
-- F2b: PosixSlotAllocator publiziert PID_SHM_LOCATOR im SEDP-Sample.
-- F-Dual: DataWriter mit Feature `flatdata-integration` setzt PID
-  automatisch.
-- Doku: `internal/integration/flatdata-cross-vendor.md` erklärt das
-  Verhalten gegenüber Cyclone/Fast-DDS.
+**Follow-up tasks**:
+- F2b: PosixSlotAllocator publishes PID_SHM_LOCATOR in the SEDP sample.
+- F-Dual: a DataWriter with feature `flatdata-integration` sets the PID
+  automatically.
+- Documentation: `internal/integration/flatdata-cross-vendor.md` explains the
+  behaviour towards Cyclone/Fast-DDS.
 
-## Referenzen
+## References
 
 - `docs/specs/zerodds-flatdata-1.0.md` §3, D-3, D-4
 - DDSI-RTPS 2.5 §9.6.2.3 (Parameter ID Encoding, Vendor-Specific Bit)

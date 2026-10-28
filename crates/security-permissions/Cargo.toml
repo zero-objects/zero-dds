@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "DDS-Security 1.1 permissions/governance XML parser + access-control plugin (S/MIME-CMS signature via rustls-webpki, topic wildcard match, delegation chain)."
+description = "DDS-Security 1.2 (§10.4) permissions/governance XML parser + access-control plugin (S/MIME-CMS signature via rustls-webpki, topic wildcard match, delegation chain)."
 homepage = "https://zerodds.org"
 documentation = "https://docs.rs/zerodds-security-permissions"
 readme = "README.md"
@@ -45,6 +45,7 @@ aws-lc = ["dep:aws-lc-rs", "rustls-webpki/aws-lc-rs", "zerodds-security-pki/aws-
 wolfcrypt = ["dep:wolfcrypt-compat", "rustls-webpki/ring", "zerodds-security-pki/wolfcrypt", "zerodds-security-crypto/wolfcrypt", "std"]
 
 [dependencies]
+zerodds-foundation = { version = "1.0.0-rc.7", path = "../foundation", default-features = false }
 zerodds-security = { version = "1.0.0-rc.7", path = "../security" }
 # DelegationLink + Sign/Verify + Chain. Backend selected by our features above.
 zerodds-security-pki = { version = "1.0.0-rc.7", path = "../security-pki", default-features = false }
@@ -52,7 +53,7 @@ zerodds-security-pki = { version = "1.0.0-rc.7", path = "../security-pki", defau
 # together from one caller path. Backend selected by our features above.
 zerodds-security-crypto = { version = "1.0.0-rc.7", path = "../security-crypto", default-features = false }
 # Read-only XML parser. Apache-2.0 / MIT. Pure Rust, lightweight.
-roxmltree = { workspace = true }
+roxmltree = { workspace = true, features = ["std", "positions"] }
 # PKCS#7/CMS SignedData parser (RFC 5652). Apache-2.0 / MIT.
 cms = { version = "0.2", default-features = false, features = ["std"] }
 # X.509 cert struct (RFC 5280) — compatible with `cms` SignerInfo.
@@ -77,3 +78,5 @@ rustls-webpki = { workspace = true }
 [dev-dependencies]
 # Test keys for chain-validation tests.
 ring = { workspace = true }
+# Certificates whose DER ends in 0x00, for the c.id tests.
+rcgen = "0.13"

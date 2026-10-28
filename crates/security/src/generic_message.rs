@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! DDS-Security 1.2 §7.5.5 — `ParticipantGenericMessage` (C3.4).
+//! DDS-Security 1.2 §7.3.22 — `ParticipantGenericMessage` (C3.4).
 //!
 //! Wire data type for the two builtin topics from §7.5.3 + §7.5.4:
 //!
@@ -31,7 +31,7 @@
 //! The encoding is XCDR1 (PL_CDR_LE) — the ParticipantGenericMessage
 //! is transported as the `serialized_payload` of a DATA submessage.
 //!
-//! `message_class_id`-Konstanten (Spec §7.5.5):
+//! `message_class_id`-Constants (Spec §7.5.5):
 //!
 //! | class_id                                  | Meaning                                         |
 //! |-------------------------------------------|-------------------------------------------------|
@@ -120,8 +120,11 @@ const MAX_GENERIC_MESSAGE_BYTES: usize = 256 * 1024;
 /// Maximum `message_data` sequence length (DoS cap).
 const MAX_MESSAGE_DATA_LEN: u32 = 64;
 
-/// Maximum `message_class_id` length (spec: string<256>).
-const MAX_CLASS_ID_LEN: u32 = 256;
+/// Longest `message_class_id` taken: the whole message bound. §7.3.22 types it
+/// `GenericMessageClassId = string<>`, unbounded; 256 octets refused a longer
+/// class a peer may define (§7.5.3.5: "Additional values of the
+/// GenericMessageClassId may be defined with each plugin implementation").
+const MAX_CLASS_ID_LEN: u32 = MAX_GENERIC_MESSAGE_BYTES as u32;
 
 impl ParticipantGenericMessage {
     /// Encode → XCDR1-LE bytes (without the PL_CDR encapsulation header — the
@@ -129,14 +132,22 @@ impl ParticipantGenericMessage {
     /// is not PL_CDR (ParameterList) but structured CDR).
     #[must_use]
     pub fn to_cdr_le(&self) -> Vec<u8> {
+        self.to_cdr(true)
+    }
+
+    /// Encode → XCDR1 bytes in the byte order `little_endian` names,
+    /// without the encapsulation header (see [`Self::to_cdr_le`]).
+    #[must_use]
+    pub fn to_cdr(&self, little_endian: bool) -> Vec<u8> {
+        let le = little_endian;
         let mut out = Vec::with_capacity(128);
-        encode_message_identity(&mut out, &self.message_identity, true);
-        encode_message_identity(&mut out, &self.related_message_identity, true);
+        encode_message_identity(&mut out, &self.message_identity, le);
+        encode_message_identity(&mut out, &self.related_message_identity, le);
         out.extend_from_slice(&self.destination_participant_key);
         out.extend_from_slice(&self.destination_endpoint_key);
         out.extend_from_slice(&self.source_endpoint_key);
-        encode_string(&mut out, &self.message_class_id, true);
-        encode_u32(&mut out, self.message_data.len() as u32, true);
+        encode_string(&mut out, &self.message_class_id, le);
+        encode_u32(&mut out, self.message_data.len() as u32, le);
         for dh in &self.message_data {
             // Spec `sequence<DataHolder>` (GenericMessageData): each
             // DataHolder INLINE as a CDR struct (4-aligned), NOT
@@ -145,7 +156,7 @@ impl ParticipantGenericMessage {
             // octet-seq length prefix would be misinterpreted as the
             // class_id string length ("deserialization failed").
             align(&mut out, 4);
-            out.extend_from_slice(&dh.to_cdr_le());
+            out.extend_from_slice(&dh.to_cdr(le));
         }
         out
     }
@@ -156,13 +167,23 @@ impl ParticipantGenericMessage {
     /// `BadArgument` on truncation, exceeded DoS caps, or
     /// non-UTF-8 in `message_class_id`.
     pub fn from_cdr_le(bytes: &[u8]) -> SecurityResult<Self> {
+        Self::from_cdr(bytes, true)
+    }
+
+    /// Decode from XCDR1 bytes in the byte order `little_endian` names —
+    /// what the encapsulation in front of them says (DDSI-RTPS 2.5
+    /// §10.2: `CDR_BE` 0x0000, `CDR_LE` 0x0001).
+    ///
+    /// # Errors
+    /// As [`Self::from_cdr_le`].
+    pub fn from_cdr(bytes: &[u8], little_endian: bool) -> SecurityResult<Self> {
         if bytes.len() > MAX_GENERIC_MESSAGE_BYTES {
             return Err(SecurityError::new(
                 SecurityErrorKind::BadArgument,
                 "generic_message: payload exceeds DoS cap",
             ));
         }
-        let mut cur = Cursor::new(bytes, true);
+        let mut cur = Cursor::new(bytes, little_endian);
         let message_identity = decode_message_identity(&mut cur)?;
         let related_message_identity = decode_message_identity(&mut cur)?;
         let destination_participant_key = cur.read_array16()?;
@@ -172,7 +193,7 @@ impl ParticipantGenericMessage {
         if message_class_id.len() > MAX_CLASS_ID_LEN as usize {
             return Err(SecurityError::new(
                 SecurityErrorKind::BadArgument,
-                "generic_message: message_class_id exceeds 256 bytes",
+                "generic_message: message_class_id exceeds the message bound",
             ));
         }
         let count = cur.read_u32()?;
@@ -187,7 +208,7 @@ impl ParticipantGenericMessage {
             // Inline DataHolder (4-aligned), the length is determined by the
             // decoder itself — no length prefix (see to_cdr_le).
             cur.align(4)?;
-            let (dh, consumed) = DataHolder::from_cdr_le_consumed(&cur.buf[cur.pos..])?;
+            let (dh, consumed) = DataHolder::from_cdr_consumed(&cur.buf[cur.pos..], cur.le)?;
             cur.advance(consumed)?;
             message_data.push(dh);
         }
@@ -349,10 +370,77 @@ fn decode_string(cur: &mut Cursor<'_>) -> SecurityResult<String> {
     Ok(s.to_string())
 }
 
+/// CDR-LE encapsulation kind (DDSI-RTPS 2.5 §10.2). A
+/// `ParticipantGenericMessage` is structured CDR, not a ParameterList, so
+/// it travels as CDR_LE where `ParticipantBuiltinTopicData` takes PL_CDR_LE.
+pub const ENCAPSULATION_CDR_LE: [u8; 2] = [0x00, 0x01];
+
+/// CDR-BE encapsulation kind (DDSI-RTPS 2.5 §10.2).
+pub const ENCAPSULATION_CDR_BE: [u8; 2] = [0x00, 0x00];
+
+/// Encapsulation header length (DDSI-RTPS 2.5 §10.1: two octets of kind,
+/// two of options).
+pub const ENCAPSULATION_HEADER_LEN: usize = 4;
+
+/// Encodes a `ParticipantGenericMessage` as the `serialized_payload` of a
+/// DATA submessage: the CDR-LE encapsulation header and the XCDR1 body.
+#[must_use]
+pub fn encode_generic_message(msg: &ParticipantGenericMessage) -> Vec<u8> {
+    let body = msg.to_cdr_le();
+    let mut out = Vec::with_capacity(ENCAPSULATION_HEADER_LEN + body.len());
+    out.extend_from_slice(&ENCAPSULATION_CDR_LE);
+    out.extend_from_slice(&[0, 0]); // options (Spec: must be 0)
+    out.extend_from_slice(&body);
+    out
+}
+
+/// Decodes a `ParticipantGenericMessage` from `serialized_payload` bytes
+/// (with a 4-byte encapsulation header).
+///
+/// CDR_LE (0x0001) and CDR_BE (0x0000), DDSI-RTPS 2.5 §10.2: the body is
+/// read in the byte order the encapsulation names, the inline
+/// `DataHolder`s included. A big-endian kind used to be rejected, because
+/// the body decoder read little-endian only and a byte-swapped message
+/// raised no error of its own.
+///
+/// # Errors
+/// `BadArgument` if the encapsulation header is missing or carries a kind
+/// other than CDR_LE or CDR_BE; CDR decode errors are propagated.
+pub fn decode_generic_message(bytes: &[u8]) -> SecurityResult<ParticipantGenericMessage> {
+    if bytes.len() < ENCAPSULATION_HEADER_LEN {
+        return Err(SecurityError::new(
+            SecurityErrorKind::BadArgument,
+            "generic_message: encapsulation-header truncated",
+        ));
+    }
+    let kind = [bytes[0], bytes[1]];
+    let little_endian = match kind {
+        ENCAPSULATION_CDR_LE => true,
+        ENCAPSULATION_CDR_BE => false,
+        _ => {
+            return Err(SecurityError::new(
+                SecurityErrorKind::BadArgument,
+                "generic_message: the encapsulation is neither CDR_LE nor CDR_BE",
+            ));
+        }
+    };
+    ParticipantGenericMessage::from_cdr(&bytes[ENCAPSULATION_HEADER_LEN..], little_endian)
+}
+
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::*;
+
+    /// §7.3.22: `GenericMessageClassId` is `string<>`. A class id of more
+    /// than 256 octets, which a plugin may define (§7.5.3.5), was refused.
+    #[test]
+    fn a_message_class_id_is_not_bounded_to_256_octets() {
+        let mut m = sample_msg();
+        m.message_class_id = alloc::format!("com.acme.{}", "x".repeat(600));
+        let back = ParticipantGenericMessage::from_cdr_le(&m.to_cdr_le()).unwrap();
+        assert_eq!(back.message_class_id, m.message_class_id);
+    }
 
     fn sample_msg() -> ParticipantGenericMessage {
         ParticipantGenericMessage {

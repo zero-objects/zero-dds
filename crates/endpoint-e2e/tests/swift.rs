@@ -4,7 +4,7 @@
 //! Swift endpoint ping-pong: the generated `idlc` types (own XCDR2 wire core)
 //! plus the Swift endpoint SDK (`Client` poll loop and `AsyncReader` stream),
 //! XRCE-framed over a real UDP socket. Sync and async variants. Gated on
-//! `swiftc` (local macOS only — codepit has no Swift toolchain).
+//! `swiftc` (local macOS only — the Linux test host has no Swift toolchain).
 //!
 //! The generated module and the SDK both define `Endianness`/`Writer`/`Reader`
 //! (the shared wire core), which would collide in one module — so the SDK is
@@ -15,19 +15,38 @@
 
 use std::process::{Child, Command, Stdio};
 
-use zerodds_endpoint_e2e::{IDL, Peer, bind_peer, ping_pong};
-use zerodds_idl::config::ParserConfig;
-use zerodds_idl_swift::{SwiftGenOptions, generate_swift_module};
+use zerodds_endpoint_e2e::codegen::{
+    Language, endpoints_dir, runtime_dir, scratch_dir, source, tool_available,
+};
+use zerodds_endpoint_e2e::{Peer, bind_peer, ping_pong};
 
 fn swiftc_available() -> bool {
-    Command::new("swiftc").arg("--version").output().is_ok()
+    tool_available("swiftc", "--version")
 }
 
-/// The generated Ping/Pong module (own wire core), as an app-module source file.
+/// The generated Ping/Pong types + codec, as an app-module source file.
+///
+/// The runtime's own sources compile beside it as one module rather than as a
+/// separate one — that is how `wireprobe-zerodds-swift-gen` builds its probe,
+/// and it is what keeps `ZdWriter` reachable without an `import ZdWire` the
+/// generator does not emit.
 fn gen_swift() -> String {
-    let ast = zerodds_idl::parse(IDL, &ParserConfig::default()).expect("parse");
-    let src = generate_swift_module(&ast, &SwiftGenOptions::default()).expect("gen");
-    format!("import Foundation\n{src}")
+    format!("import Foundation\n{}", source(Language::Swift))
+}
+
+/// Every `.swift` in `runtime/swift/Sources/ZdWire`, which compiles into the
+/// app module beside the generated codec.
+fn runtime_sources() -> Vec<std::path::PathBuf> {
+    let dir = runtime_dir("swift").join("Sources/ZdWire");
+    let mut out: Vec<_> = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("read {}: {e}", dir.display()))
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|x| x == "swift"))
+        .collect();
+    out.sort();
+    assert!(!out.is_empty(), "no runtime sources in {}", dir.display());
+    out
 }
 
 // The app: a real UDP `Transport`, plus `Client` (sync poll) or `AsyncReader`
@@ -104,11 +123,20 @@ let port = UInt16(args.count > 2 ? args[2] : "0") ?? 0
 guard let transport = UDPTransport(port: port) else { fail("udp init failed") }
 
 // Marshal the Ping with the generated codec, hand the bytes to the SDK.
-let sample = try Ping(seq: 1, msg: "hello from app").marshalXCDR(.little)
+// The generated codec throws a ZdWireError on a refusal; this app owns
+// the exit code for one, the same as the wireprobe harness does.
+let zdFraming = ZdPlCdr1Framing("sentinel-must-understand", 16128, true, true, true, true)
+let zdWriter = ZdWriter(ZdEndianness.little, 4, zdFraming, false)
+do {
+    try zd_enc_Ping(zdWriter, Ping(seq: 1, msg: "hello from app"))
+} catch {
+    fail("encode failed: \(error)")
+}
+let sample = zdWriter.finish()
 
 var body: [UInt8]? = nil
 if mode == "async" {
-    let client = Client(transport)
+    let client = Client(transport, objectId: xrceObjectId(0x001, objkDataWriter))
     client.write(sample)
     let reader = AsyncReader(transport)
     body = await withTaskGroup(of: [UInt8]?.self) { group in
@@ -119,7 +147,7 @@ if mode == "async" {
         return first
     }
 } else {
-    let client = Client(transport)
+    let client = Client(transport, objectId: xrceObjectId(0x001, objkDataWriter))
     client.write(sample)
     let deadline = Date().addingTimeInterval(10)
     while Date() < deadline {
@@ -129,7 +157,13 @@ if mode == "async" {
 }
 
 guard let got = body else { fail("\(mode): no pong") }
-let pong = try Pong.unmarshalXCDR(got, .little)
+let zdReader = ZdReader([UInt8](got), ZdEndianness.little, 4, zdFraming)
+let pong: Pong
+do {
+    pong = try zd_dec_Pong(zdReader, ZdTryConstruct.discard)
+} catch {
+    fail("decode failed: \(error)")
+}
 print("PONG seq=\(pong.seq) reply=\(pong.reply)")
 "#;
 
@@ -137,12 +171,8 @@ print("PONG seq=\(pong.seq) reply=\(pong.reply)")
 /// child (stdout piped). Compiles the SDK as its own `Zerodds` module first so
 /// the shared wire-core types don't collide with the generated module.
 fn build_swift_app(mode: &str, port: u16) -> Child {
-    let sdk = format!(
-        "{}/../../endpoints/swift/Sources/Zerodds/Zerodds.swift",
-        env!("CARGO_MANIFEST_DIR")
-    );
-    let dir = std::env::temp_dir().join(format!("pp_swift_{mode}_{}", std::process::id()));
-    std::fs::create_dir_all(&dir).expect("mkdir");
+    let sdk = endpoints_dir("swift").join("Sources/Zerodds/Zerodds.swift");
+    let dir = scratch_dir(&format!("swift_{mode}"));
     std::fs::write(dir.join("gen.swift"), gen_swift()).expect("write gen");
     std::fs::write(dir.join("main.swift"), APP_MAIN).expect("write main");
 
@@ -175,6 +205,7 @@ fn build_swift_app(mode: &str, port: u16) -> Child {
         .args(["-swift-version", "5", "-module-name", "pingpongapp"])
         .arg("-I")
         .arg(&dir)
+        .args(runtime_sources())
         .arg(dir.join("gen.swift"))
         .arg(dir.join("main.swift"))
         .arg(dir.join("Zerodds.o"))

@@ -39,10 +39,15 @@ public final class ParameterList {
         return params;
     }
 
-    /** First parameter with {@code id} (must-understand/vendor bits masked). */
+    /** Parameter identity ignores only must-understand, never the vendor namespace. */
+    static boolean sameId(int left, int right) {
+        return (left & 0xBFFF) == (right & 0xBFFF);
+    }
+
+    /** First parameter with {@code id}, ignoring only its must-understand bit. */
     public byte[] find(int id) {
         for (Parameter p : params) {
-            if ((p.id & 0x3FFF) == (id & 0x3FFF)) {
+            if (sameId(p.id, id)) {
                 return p.value;
             }
         }

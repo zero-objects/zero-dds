@@ -1,33 +1,179 @@
-.TH ZERODDS-MQTT-BRIDGED.YAML 5 "2026-05-06" "1.0.0-rc.1" "ZeroDDS Manual"
+.TH ZERODDS-MQTT-BRIDGED.YAML 5 "" "ZeroDDS" "ZeroDDS Manual"
 .SH NAME
 zerodds-mqtt-bridged.yaml \- configuration file for zerodds-mqtt-bridged(1)
+.SH SYNOPSIS
+.I /etc/zerodds/mqtt-bridged.yaml
+.SH DESCRIPTION
+YAML document describing how the MQTT bridge daemon maps DDS topics onto MQTT
+topics. The schema is the one of
+.IR zerodds-mqtt-bridge-1.0 " \(sc3;"
+the parser that reads it is
+.IR crates/mqtt-bridge/src/daemon/config.rs::load_from_str .
+.PP
+Top-level keys:
+.BR domain ", " log_level ", " mqtt ", " auth ", " acl ", " metrics ", " topics .
+.PP
+An unknown top-level key is
+.I not
+a parse error. The daemon logs a WARN line on stderr and starts with the
+defaults \(em watch the WARN log.
+.PP
+.BI ${VAR} " and " ${VAR:-default}
+are substituted from the environment before the document is parsed, so
+credentials belong in the environment, not in the file.
 .SH KEYS
-.SS participant
-.B domain_id ", " qos_profile .
+.SS Top level
+.TP
+.B domain
+Integer DDS domain ID. Default
+.IR 0 .
+.TP
+.B log_level
+.IR trace " | " debug " | " info " | " warn " | " error .
 .SS mqtt
 .TP
 .B broker_url
-URL of the MQTT broker, e.g.
-.IR mqtts://broker.example:8883 .
+.IR mqtt:// ", " mqtts:// ", " ws:// " or " wss://
+URL of the broker, e.g.
+.IR "mqtt://localhost:1883"
+or
+.IR "wss://broker:443/mqtt" .
+The WebSocket schemes carry MQTT in binary frames (MQTT 5.0 \(sc6); the path
+defaults to
+.IR /mqtt .
 .TP
 .B client_id
-MQTT client identifier; must be globally unique.
+MQTT client identifier; must be unique on the broker.
 .TP
-.B username ", " password_file
-SASL credentials. Password is read from the file with mode 0600.
+.B drain_timeout_secs
+Seconds the shutdown waits for the broker's acknowledgements of QoS 1/2
+messages before DISCONNECT (spec \(sc9.2). Default 30.
+.TP
+.B keep_alive_secs
+CONNECT keep-alive in seconds.
+.TP
+.B clean_start
+Boolean.
+.I false
+keeps the session across a reconnect.
+.TP
+.B username ", " password
+Legacy credentials for the CONNECT packet. They are a fallback:
+.BR auth.username " and " auth.password
+win when both are set.
 .TP
 .B tls
-.B enabled ", " ca ", " cert ", " key .
+Sub-map with
+.B enabled
+(boolean),
+.B ca_file
+(trust anchor for the broker certificate),
+.BR cert_file " and " key_file
+(client material for mTLS) and
+.B server_name
+(SNI/hostname override). The client keys are named
+.BR cert_file / key_file ,
+not
+.IR client_cert_file / client_key_file .
+.SS auth
 .TP
-.B keepalive_secs ", " session_expiry_secs
-MQTT 5 session-handling.
-.SS routes (list)
-.B dds_topic ", " type ", " mqtt_topic ", " direction ", " mqtt_qos
-(0|1|2),
-.B retain ", " expiry_secs ", " content_type
-(optional).
-.SS logging ", " observability
-identical to other ZeroDDS bridge configs.
+.B mode
+.IR none " | " bearer " | " sasl " | " sasl_plain " | " mtls " (\(sc7.2)."
+.TP
+.B bearer_token
+Token sent as the CONNECT password when
+.B mode
+is
+.IR bearer .
+.TP
+.B bearer_subject
+Subject that single token authenticates as.
+.TP
+.B username ", " password
+SASL-PLAIN credentials towards the broker.
+.TP
+.B sasl_users
+Map
+.IR user: password
+used by the daemon-internal ACL path to validate inbound subjects.
+.SS acl
+Daemon-side access control, evaluated before MQTT. The subject is taken from
+the TLS certificate DN, the MQTT username or the JWT
+.I sub
+claim, in that order.
+.TP
+.B default_deny
+Boolean.
+.I true
+denies a topic no rule names, also without any rule;
+.I false
+opens the unnamed rest. Not set: a topic no rule names is denied once a
+rule exists or an auth mode other than
+.I none
+is set; with neither, every topic is open.
+.TP
+.B rules
+List of subject-keyed rules. Each entry carries
+.B subject
+plus the topic pattern lists
+.BR allow_publish " and " allow_subscribe .
+The daemon inverts this into a topic-keyed map.
+.SS metrics
+.TP
+.B enabled
+Boolean. Turns on the admin endpoint serving
+.IR /metrics ", " /catalog " and " /healthz .
+.TP
+.B listen
+Admin listen address. Default
+.IR "127.0.0.1:9092"
+when
+.B enabled
+is true; each bridge daemon has its own port, so several run on one
+host without a collision.
+The key is
+.BR listen ,
+not
+.IR address .
+.SS topics (list)
+.TP
+.B dds_name
+DDS topic name.
+.TP
+.B dds_type
+Fully-qualified IDL type.
+.TP
+.B mqtt_topic
+MQTT topic or filter. Defaults to a slug of
+.BR dds_name .
+.TP
+.B direction
+.IR in " | " out " | " bidir .
+.I in
+carries MQTT messages from the broker into DDS (the daemon subscribes on
+the broker and creates a DataWriter),
+.I out
+carries DDS samples to the broker (a DataReader, published to
+.BR mqtt_topic ),
+.I bidir
+both. Default
+.IR bidir .
+.TP
+.B mqtt_qos
+.IR 0 " | " 1 " | " 2 .
+.TP
+.B retain
+Boolean; sets the MQTT retain flag on published messages.
+.TP
+.B qos
+DDS QoS sub-map with
+.BR reliability ", " durability " and "
+.B history
+carrying
+.BR depth .
+.SH EXAMPLES
+See
+.IR /usr/share/zerodds/configs/mqtt-bridged.yaml.example .
 .SH SEE ALSO
 .BR zerodds-mqtt-bridged (1),
 .BR zerodds-xmlc (1).

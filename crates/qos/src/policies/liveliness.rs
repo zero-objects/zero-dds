@@ -4,7 +4,7 @@
 //!
 //! Wire-Format (DDSI-RTPS §9.6.3.2): u32 kind + Duration lease = 12 byte.
 
-use zerodds_cdr::{BufferReader, BufferWriter, DecodeError, EncodeError};
+use zerodds_wire::{Reader, WireError, Writer};
 
 use crate::duration::Duration;
 
@@ -21,12 +21,12 @@ pub enum LivelinessKind {
     Automatic = 0,
     /// Participant assertion propagates to all writers.
     ManualByParticipant = 1,
-    /// Writer-granulare manuelle Assertion.
+    /// Writer-granular manual assertion.
     ManualByTopic = 2,
 }
 
 impl LivelinessKind {
-    /// Strikter Mapper.
+    /// Strict mapper.
     #[must_use]
     pub const fn try_from_u32(v: u32) -> Option<Self> {
         match v {
@@ -68,23 +68,20 @@ impl Default for LivelinessQosPolicy {
 
 impl LivelinessQosPolicy {
     /// Wire-Encoding.
-    ///
-    /// # Errors
-    /// Buffer-Overflow.
-    pub fn encode_into(self, w: &mut BufferWriter) -> Result<(), EncodeError> {
-        w.write_u32(self.kind as u32)?;
-        self.lease_duration.encode_into(w)
+    pub fn encode_into(self, w: &mut Writer) {
+        w.write_u32(self.kind as u32);
+        self.lease_duration.encode_into(w);
     }
 
     /// Wire-Decoding (strict).
     ///
     /// # Errors
     /// Buffer underflow or unknown kind value.
-    pub fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
+    pub fn decode_from(r: &mut Reader<'_>) -> Result<Self, WireError> {
+        let at = r.position();
         let v = r.read_u32()?;
-        let kind = LivelinessKind::try_from_u32(v).ok_or(DecodeError::InvalidEnum {
-            kind: "LivelinessKind",
-            value: v,
+        let kind = LivelinessKind::try_from_u32(v).ok_or_else(|| {
+            WireError::refused(at, &alloc::format!("a LivelinessKind enumerator, not {v}"))
         })?;
         let lease_duration = Duration::decode_from(r)?;
         Ok(Self {
@@ -98,7 +95,7 @@ impl LivelinessQosPolicy {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use zerodds_cdr::Endianness;
+    use zerodds_wire::Endianness;
 
     #[test]
     fn default_automatic_infinite() {
@@ -134,11 +131,11 @@ mod tests {
                 kind,
                 lease_duration: Duration::from_millis(1234),
             };
-            let mut w = BufferWriter::new(Endianness::Little);
-            p.encode_into(&mut w).unwrap();
-            let bytes = w.into_bytes();
+            let mut w = Writer::new(Endianness::Little);
+            p.encode_into(&mut w);
+            let bytes = w.finish();
             assert_eq!(bytes.len(), 12);
-            let mut r = BufferReader::new(&bytes, Endianness::Little);
+            let mut r = Reader::new(&bytes, Endianness::Little);
             assert_eq!(LivelinessQosPolicy::decode_from(&mut r).unwrap(), p);
         }
     }
@@ -162,29 +159,27 @@ mod tests {
     /// Decode with an unknown kind discriminator → `InvalidEnum` error.
     #[test]
     fn decode_unknown_kind_errors() {
-        let mut w = BufferWriter::new(Endianness::Little);
-        w.write_u32(7).unwrap();
+        let mut w = Writer::new(Endianness::Little);
+        w.write_u32(7);
         // valid lease, irrelevant since kind-validate failt first.
-        Duration::from_millis(10).encode_into(&mut w).unwrap();
-        let bytes = w.into_bytes();
-        let mut r = BufferReader::new(&bytes, Endianness::Little);
+        Duration::from_millis(10).encode_into(&mut w);
+        let bytes = w.finish();
+        let mut r = Reader::new(&bytes, Endianness::Little);
         let err = LivelinessQosPolicy::decode_from(&mut r).unwrap_err();
         assert!(matches!(
             err,
-            zerodds_cdr::DecodeError::InvalidEnum {
-                kind: "LivelinessKind",
-                value: 7
-            }
+            zerodds_wire::WireError::OutOfRange { expected, .. }
+                    if expected.contains("LivelinessKind") && expected.contains("7")
         ));
     }
 
     /// Decode with a short buffer (kind ok, lease missing) → short read.
     #[test]
     fn decode_short_buffer_no_lease_errors() {
-        let mut w = BufferWriter::new(Endianness::Little);
-        w.write_u32(0).unwrap();
-        let bytes = w.into_bytes();
-        let mut r = BufferReader::new(&bytes, Endianness::Little);
+        let mut w = Writer::new(Endianness::Little);
+        w.write_u32(0);
+        let bytes = w.finish();
+        let mut r = Reader::new(&bytes, Endianness::Little);
         assert!(LivelinessQosPolicy::decode_from(&mut r).is_err());
     }
 

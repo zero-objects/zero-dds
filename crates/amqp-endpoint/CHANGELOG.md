@@ -2,6 +2,14 @@
 
 Format follows [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), versioning follows [Semantic Versioning](https://semver.org/lang/de/).
 
+## [Unreleased]
+
+### Fixed
+
+- `parse_config` and `parse_governance` refuse a text that nests deeper
+  than `zerodds_foundation::XML_NESTING_LIMIT` before the parser sees it;
+  a long run of unclosed start tags overflowed the stack.
+
 ## [1.0.0-rc.1] — 2026-05-06
 
 Initial release materialization of the `zerodds-amqp-endpoint` crate.

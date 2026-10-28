@@ -39,7 +39,7 @@ impl TypeRef {
     }
 }
 
-/// OPC-UA Reference-Kind aus §9.2 (Subset).
+/// OPC-UA reference kind from §9.2 (subset).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ReferenceKind {
     /// `HasSubtype` — inheritance of DataTypes (Tab 9.15 etc.).
@@ -65,7 +65,7 @@ pub enum ReferenceKind {
 pub struct ValueRank(pub i32);
 
 impl ValueRank {
-    /// Skalar (ValueRank = -1).
+    /// Scalar (ValueRank = -1).
     pub const SCALAR: Self = Self(-1);
 }
 

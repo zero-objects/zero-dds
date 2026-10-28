@@ -4,9 +4,11 @@
 // TopicTypedSmoke.java -- reference smoke for zerodds-xcdr2-java-1.0 §10.
 //
 // Shows the encode/decode roundtrip of a hand-implemented
-// `org.zerodds.cdr.TopicTypeSupport<Point>` (matches what idl-java
-// would emit per IDL `struct`). No live DDS -- only the XCDR2
-// wire layer.
+// `org.zerodds.cdr.TopicTypeSupport<Point>` (matches what
+// `zerodds-idlc --lang java` would emit per IDL `struct` -- see
+// `tools/idlc/src/java_support.rs`), calling straight into the
+// `org.zerodds.wire` runtime, the one XCDR2 codec this binding has.
+// No live DDS -- only the XCDR2 wire layer.
 //
 // Run:
 //   cd crates/java-omgdds/java
@@ -22,8 +24,10 @@ import java.util.Objects;
 import org.zerodds.cdr.EndianMode;
 import org.zerodds.cdr.ExtensibilityKind;
 import org.zerodds.cdr.TopicTypeSupport;
-import org.zerodds.cdr.Xcdr2Reader;
-import org.zerodds.cdr.Xcdr2Writer;
+import org.zerodds.wire.Endianness;
+import org.zerodds.wire.PlCdr1Framing;
+import org.zerodds.wire.Reader;
+import org.zerodds.wire.Writer;
 
 public final class TopicTypedSmoke {
 
@@ -59,15 +63,23 @@ public final class TopicTypedSmoke {
             return ExtensibilityKind.FINAL;
         }
 
+        private static Endianness order(EndianMode endian) {
+            switch (endian) {
+                case LITTLE_ENDIAN: return Endianness.LITTLE;
+                case BIG_ENDIAN: return Endianness.BIG;
+                default: throw new IllegalArgumentException("Unsupported byte order");
+            }
+        }
+
         @Override
         public byte[] encode(Point s) { return encode(s, EndianMode.LITTLE_ENDIAN); }
 
         @Override
         public byte[] encode(Point s, EndianMode endian) {
-            Xcdr2Writer w = new Xcdr2Writer(endian);
-            w.writeInt32(s.getX());
-            w.writeInt32(s.getY());
-            return w.toByteArray();
+            Writer w = new Writer(order(endian), 4, PlCdr1Framing.defaults(), false);
+            w.writeI32(s.getX());
+            w.writeI32(s.getY());
+            return w.finish();
         }
 
         @Override
@@ -75,10 +87,12 @@ public final class TopicTypedSmoke {
 
         @Override
         public Point decode(byte[] bytes, int offset, int length) {
-            Xcdr2Reader r = new Xcdr2Reader(bytes, offset, length, EndianMode.LITTLE_ENDIAN);
+            Reader r = new Reader(
+                    java.util.Arrays.copyOfRange(bytes, offset, offset + length),
+                    Endianness.LITTLE, 4, PlCdr1Framing.defaults());
             Point p = new Point();
-            p.setX(r.readInt32());
-            p.setY(r.readInt32());
+            p.setX(r.readI32());
+            p.setY(r.readI32());
             return p;
         }
 

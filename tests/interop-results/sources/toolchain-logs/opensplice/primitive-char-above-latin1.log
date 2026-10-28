@@ -1,0 +1,3 @@
+## wireprobe-opensplice, exit 5
+### stderr
+wireprobe-fill: Sample.too_wide: expected a character below U+0100, found U+0161

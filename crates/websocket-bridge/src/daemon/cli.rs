@@ -12,6 +12,11 @@
 //! * `--flag=value`
 //! * `--bool-flag`            (no-arg, for `--help` / `--version`)
 //! * repetitions for `--topic` (multi-value)
+//!
+//! `--config`, `--set` and `--check-config` are taken out before this parser
+//! runs (`zerodds_config::CommandLine`); what remains are this daemon's
+//! convenience flags, which [`CliArgs::sets`] turns into `--set` entries so
+//! they sit in the flag layer above every file.
 
 use std::string::String;
 use std::vec::Vec;
@@ -20,22 +25,21 @@ use std::vec::Vec;
 #[derive(Debug, Clone, Default)]
 pub struct CliArgs {
     /// `--config <FILE>` — path to the YAML config.
-    pub config: Option<String>,
     /// `--listen <ADDR>` — override for the bind address.
     pub listen: Option<String>,
     /// `--domain <ID>` — DDS domain id override.
     pub domain: Option<i32>,
     /// `--topic <NAME[:KEY]>` — single-topic overrides (multiple).
     pub topics: Vec<String>,
-    /// `--tls-cert <FILE>` — TLS cert file. L5 stub.
+    /// `--tls-cert <FILE>` — TLS cert file (PEM); enables `wss://`.
     pub tls_cert: Option<String>,
-    /// `--tls-key <FILE>` — TLS key file. L5 stub.
+    /// `--tls-key <FILE>` — TLS key file (PEM).
     pub tls_key: Option<String>,
-    /// `--auth-token <SECRET>` — bearer token auth. L5 stub.
+    /// `--auth-token <SECRET>` — bearer token auth.
     pub auth_token: Option<String>,
     /// `--log-level <LEVEL>` — `trace|debug|info|warn|error`.
     pub log_level: Option<String>,
-    /// `--metrics <ADDR>` — Prometheus listen address. L5 stub.
+    /// `--metrics <ADDR>` — Prometheus listen address.
     pub metrics: Option<String>,
     /// `--version` — print version info + exit.
     pub version: bool,
@@ -43,35 +47,8 @@ pub struct CliArgs {
     pub help: bool,
 }
 
-/// Error during CLI parse.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CliError {
-    /// Unknown flag.
-    UnknownFlag(String),
-    /// The flag needs a value but has none.
-    MissingValue(String),
-    /// Value not parseable (e.g. `--domain abc`).
-    InvalidValue {
-        /// Flag name.
-        flag: String,
-        /// Raw value.
-        value: String,
-    },
-}
-
-impl core::fmt::Display for CliError {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Self::UnknownFlag(name) => write!(f, "unknown flag: {name}"),
-            Self::MissingValue(name) => write!(f, "flag {name} requires a value"),
-            Self::InvalidValue { flag, value } => {
-                write!(f, "flag {flag} got invalid value: {value}")
-            }
-        }
-    }
-}
-
-impl std::error::Error for CliError {}
+pub use zerodds_config::cli::CliError;
+use zerodds_config::cli::Flags;
 
 /// Help text per Spec §2.
 pub const HELP_TEXT: &str = "\
@@ -81,17 +58,21 @@ USAGE:
     zerodds-ws-bridged [OPTIONS]
 
 OPTIONS:
-    --config <FILE>         Path to the config file (YAML)
     --listen <ADDR>         Bind address (default 0.0.0.0:8080)
     --domain <ID>           DDS domain id (default 0)
     --topic <NAME>          Single-topic override (multiple)
-    --tls-cert <FILE>       TLS cert (PEM); enables wss:// — L5 stub
-    --tls-key <FILE>        TLS key (PEM) — L5 stub
-    --auth-token <SECRET>   Bearer token auth — L5 stub
+    --tls-cert <FILE>       TLS cert (PEM); enables wss://
+    --tls-key <FILE>        TLS key (PEM)
+    --auth-token <SECRET>   Bearer token auth
     --log-level <LEVEL>     trace/debug/info/warn/error (default info)
-    --metrics <ADDR>        Prometheus scrape endpoint — L5 stub
+    --metrics <ADDR>        Prometheus scrape endpoint
     --version               Version info
     --help                  Help
+
+Each option above is `--set` of its file key (`--listen X` is
+`--set listen=X`), so it wins over the files. The file is
+ws-bridged.yaml with ws-bridged.d/ in the system configuration
+directory unless --config names another.
 
 EXIT CODES:
     0   normal shutdown (SIGTERM/SIGINT)
@@ -106,53 +87,67 @@ Spec: docs/specs/zerodds-ws-bridge-1.0.md
 /// Version string.
 pub const VERSION_TEXT: &str = "zerodds-ws-bridged 1.0";
 
+impl CliArgs {
+    /// The convenience flags as `PATH=VALUE` assignments, in the order the
+    /// daemon applies them.
+    #[must_use]
+    pub fn sets(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        if let Some(v) = &self.listen {
+            out.push(format!("listen={v}"));
+        }
+        if let Some(v) = self.domain {
+            out.push(format!("domain={v}"));
+        }
+        if let Some(v) = &self.log_level {
+            out.push(format!("log_level={v}"));
+        }
+        if let Some(v) = &self.auth_token {
+            out.push("auth.mode=bearer".to_string());
+            out.push(format!("auth.bearer_token={v}"));
+        }
+        if let Some(v) = &self.tls_cert {
+            out.push(format!("tls.cert_file={v}"));
+            out.push("tls.enabled=true".to_string());
+        }
+        if let Some(v) = &self.tls_key {
+            out.push(format!("tls.key_file={v}"));
+            out.push("tls.enabled=true".to_string());
+        }
+        if let Some(v) = &self.metrics {
+            out.push(format!("metrics.listen={v}"));
+            out.push("metrics.enabled=true".to_string());
+        }
+        for name in &self.topics {
+            out.push(format!("+topics={name}"));
+        }
+        out
+    }
+}
+
 /// Parses the CLI args (typically from `std::env::args().skip(1).collect()`).
 ///
 /// # Errors
 /// See [`CliError`].
 pub fn parse(args: &[String]) -> Result<CliArgs, CliError> {
     let mut out = CliArgs::default();
-    let mut i = 0;
-    while i < args.len() {
-        let raw = &args[i];
-        // Split `--flag=value`.
-        let (flag, inline) = match raw.split_once('=') {
-            Some((k, v)) => (k.to_string(), Some(v.to_string())),
-            None => (raw.clone(), None),
-        };
-        let take_value = |i: &mut usize, flag: &str| -> Result<String, CliError> {
-            if let Some(v) = inline.clone() {
-                Ok(v)
-            } else {
-                *i += 1;
-                args.get(*i)
-                    .cloned()
-                    .ok_or_else(|| CliError::MissingValue(flag.to_string()))
-            }
-        };
-        match flag.as_str() {
+    let mut flags = Flags::new(args);
+    while let Some(flag) = flags.next_flag() {
+        match flag.name() {
             "--help" | "-h" => out.help = true,
             "--version" | "-V" => out.version = true,
-            "--config" => out.config = Some(take_value(&mut i, "--config")?),
-            "--listen" => out.listen = Some(take_value(&mut i, "--listen")?),
-            "--domain" => {
-                let v = take_value(&mut i, "--domain")?;
-                out.domain = Some(v.parse().map_err(|_| CliError::InvalidValue {
-                    flag: "--domain".to_string(),
-                    value: v,
-                })?);
-            }
+            "--listen" => out.listen = Some(flags.value(&flag)?),
+            "--domain" => out.domain = Some(flags.parsed(&flag)?),
             "--topic" => {
-                out.topics.push(take_value(&mut i, "--topic")?);
+                out.topics.push(flags.value(&flag)?);
             }
-            "--tls-cert" => out.tls_cert = Some(take_value(&mut i, "--tls-cert")?),
-            "--tls-key" => out.tls_key = Some(take_value(&mut i, "--tls-key")?),
-            "--auth-token" => out.auth_token = Some(take_value(&mut i, "--auth-token")?),
-            "--log-level" => out.log_level = Some(take_value(&mut i, "--log-level")?),
-            "--metrics" => out.metrics = Some(take_value(&mut i, "--metrics")?),
+            "--tls-cert" => out.tls_cert = Some(flags.value(&flag)?),
+            "--tls-key" => out.tls_key = Some(flags.value(&flag)?),
+            "--auth-token" => out.auth_token = Some(flags.value(&flag)?),
+            "--log-level" => out.log_level = Some(flags.value(&flag)?),
+            "--metrics" => out.metrics = Some(flags.value(&flag)?),
             other => return Err(CliError::UnknownFlag(other.to_string())),
         }
-        i += 1;
     }
     Ok(out)
 }
@@ -169,7 +164,7 @@ mod tests {
     #[test]
     fn empty_args_yield_default() {
         let p = parse(&[]).unwrap();
-        assert!(p.config.is_none());
+        assert!(p.listen.is_none());
         assert!(!p.help);
     }
 
@@ -181,8 +176,8 @@ mod tests {
 
     #[test]
     fn space_separated_value() {
-        let p = parse(&args(&["--config", "/tmp/c.yaml"])).unwrap();
-        assert_eq!(p.config.as_deref(), Some("/tmp/c.yaml"));
+        let p = parse(&args(&["--listen", "0.0.0.0:1"])).unwrap();
+        assert_eq!(p.listen.as_deref(), Some("0.0.0.0:1"));
     }
 
     #[test]
@@ -216,7 +211,29 @@ mod tests {
 
     #[test]
     fn missing_value_rejected() {
-        let err = parse(&args(&["--config"])).unwrap_err();
+        let err = parse(&args(&["--listen"])).unwrap_err();
         assert!(matches!(err, CliError::MissingValue(_)));
+    }
+
+    #[test]
+    fn convenience_flags_become_sets() {
+        let p = parse(&args(&[
+            "--listen",
+            "0.0.0.0:1",
+            "--auth-token",
+            "t",
+            "--topic",
+            "A",
+        ]))
+        .unwrap();
+        assert_eq!(
+            p.sets(),
+            [
+                "listen=0.0.0.0:1",
+                "auth.mode=bearer",
+                "auth.bearer_token=t",
+                "+topics=A"
+            ]
+        );
     }
 }

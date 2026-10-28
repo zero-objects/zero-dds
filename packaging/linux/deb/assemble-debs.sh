@@ -64,8 +64,8 @@ ensure_sdk_stage () {
 }
 
 build_pkg () {
-    local name="$1"        # z.B. zerodds-ws-bridge
-    local daemon="$2"      # ws-bridged | "" fuer core/cli/dev
+    local name="$1"        # e.g. zerodds-ws-bridge
+    local daemon="$2"      # ws-bridged | "" for core/cli/dev
     local conf="${3:-$daemon.yaml}"   # config basename; bridges = <daemon>.yaml,
                                       # router = router.json (JSON config)
     local stage
@@ -111,13 +111,19 @@ CONTROL
                 "$stage/usr/lib/tmpfiles.d/zerodds.conf"
             install -Dm0644 packaging/linux/systemd/zerodds-sysusers.conf \
                 "$stage/usr/lib/sysusers.d/zerodds.conf"
+            # The runtime configuration every program reads: its page and a
+            # template with every key at its default.
+            install -Dm0644 packaging/linux/configs/zerodds.yaml.example \
+                "$stage/usr/share/zerodds/configs/zerodds.yaml.example"
+            install -Dm0644 man/man5/zerodds.yaml.5 \
+                "$stage/usr/share/man/man5/zerodds.yaml.5"
             ;;
         zerodds-cli)
-            # Bin-Liste auf real-existierende Workspace-bins beschraenkt.
+            # Bin list restricted to workspace bins that actually exist.
             # 7 user-facing CLIs (record/bench/monitor/spy/snitch/pcap/mq)
-            # plus die internen Build-Tools (admin/idlc/xmlc/etc.).
+            # plus the internal build tools (admin/idlc/xmlc/etc.).
             for tool in admin idlc replay perf xmlc traceability lint chaos \
-                        dashboard recorder-bridge ros2-shim \
+                        dashboard recorder-bridge secure-permissions \
                         record bench monitor spy snitch pcap mq; do
                 src="target/$TARGET/release/zerodds-$tool"
                 if [ -f "$src" ]; then
@@ -143,7 +149,19 @@ CONTROL
             rm -f "$stage/usr/bin/zerodds-idlc"
             rmdir "$stage/usr/bin" 2>/dev/null || true
             ;;
-        zerodds-*-bridge|zerodds-ros2)
+        zerodds-ros2)
+            # The diagnostics CLI of the RMW, its pages and the ros2 drop-in
+            # template. No service: rcl loads the RMW into each node.
+            install -Dm0755 "target/$TARGET/release/zerodds-ros2-shim" \
+                "$stage/usr/bin/zerodds-ros2-shim"
+            install -Dm0644 packaging/linux/configs/ros2.yaml.example \
+                "$stage/usr/share/zerodds/configs/ros2.yaml.example"
+            install -Dm0644 man/man1/zerodds-ros2-shim.1 \
+                "$stage/usr/share/man/man1/zerodds-ros2-shim.1"
+            install -Dm0644 man/man5/zerodds-ros2.yaml.5 \
+                "$stage/usr/share/man/man5/zerodds-ros2.yaml.5"
+            ;;
+        zerodds-*-bridge)
             local bin="zerodds-$daemon"
             install -Dm0755 "target/$TARGET/release/$bin" \
                 "$stage/usr/bin/$bin"
@@ -160,6 +178,29 @@ CONTROL
                     "$stage/usr/share/man/man5/zerodds-$daemon.yaml.5"
             fi
             ;;
+        zerodds-durability)
+            # Durability service (TRANSIENT/PERSISTENT), default build: the
+            # sqlite and file stores, no DuckDB (feature `lakehouse` is opt-in).
+            install -Dm0755 "target/$TARGET/release/zerodds-durability-svc" \
+                "$stage/usr/bin/zerodds-durability-svc"
+            install -Dm0644 packaging/linux/systemd/zerodds-durability-svc.service \
+                "$stage/usr/lib/systemd/system/zerodds-durability-svc.service"
+            install -Dm0644 man/man1/zerodds-durability-svc.1 \
+                "$stage/usr/share/man/man1/zerodds-durability-svc.1"
+            ;;
+        zerodds-naming)
+            # Standalone OMG CosNaming 1.3 server.
+            install -Dm0755 "target/$TARGET/release/zerodds-naming-svc" \
+                "$stage/usr/bin/zerodds-naming-svc"
+            install -Dm0644 packaging/linux/systemd/zerodds-naming-svc.service \
+                "$stage/usr/lib/systemd/system/zerodds-naming-svc.service"
+            install -Dm0640 packaging/linux/configs/naming-svc.yaml.example \
+                "$stage/usr/share/zerodds/configs/naming-svc.yaml.example"
+            install -Dm0644 man/man1/zerodds-naming-svc.1 \
+                "$stage/usr/share/man/man1/zerodds-naming-svc.1"
+            install -Dm0644 man/man5/zerodds-naming-svc.yaml.5 \
+                "$stage/usr/share/man/man5/zerodds-naming-svc.yaml.5"
+            ;;
         zerodds-router)
             # Routing service: own case because its config is JSON
             # (router.json.example), not the bridge <daemon>.yaml.
@@ -173,6 +214,24 @@ CONTROL
                 install -Dm0644 "man/man1/zerodds-router.1" \
                     "$stage/usr/share/man/man1/zerodds-router.1"
             fi
+            ;;
+        zerodds-xrce-agent)
+            # DDS-XRCE agent daemon: bridges eProsima-compatible DDS-XRCE
+            # Micro clients (UDP/TCP/serial) into the DDS data space. Own
+            # case because the binary/config-stem (zerodds-xrce-agentd /
+            # xrce-agentd.yaml) don't match the zerodds-*-bridge glob's
+            # $daemon-based naming, same reason router/durability have
+            # their own case above.
+            install -Dm0755 "target/$TARGET/release/zerodds-xrce-agentd" \
+                "$stage/usr/bin/zerodds-xrce-agentd"
+            install -Dm0644 packaging/linux/systemd/zerodds-xrce-agentd.service \
+                "$stage/usr/lib/systemd/system/zerodds-xrce-agentd.service"
+            install -Dm0640 packaging/linux/configs/xrce-agentd.yaml.example \
+                "$stage/usr/share/zerodds/configs/xrce-agentd.yaml.example"
+            install -Dm0644 man/man1/zerodds-xrce-agentd.1 \
+                "$stage/usr/share/man/man1/zerodds-xrce-agentd.1"
+            install -Dm0644 man/man5/zerodds-xrce-agentd.yaml.5 \
+                "$stage/usr/share/man/man5/zerodds-xrce-agentd.yaml.5"
             ;;
     esac
 
@@ -189,7 +248,13 @@ build_pkg zerodds-coap-bridge  coap-bridged
 build_pkg zerodds-amqp-bridge  amqp-bridged
 build_pkg zerodds-grpc-bridge  grpc-bridged
 build_pkg zerodds-corba-bridge corba-bridged
-build_pkg zerodds-ros2         ros2-shim
+build_pkg zerodds-zenoh-bridge zenoh-bridged
+build_pkg zerodds-opcua-bridge opcua-bridged
+build_pkg zerodds-webdds-bridge webdds-bridged
+build_pkg zerodds-ros2         ""
 build_pkg zerodds-router       router         router.json
+build_pkg zerodds-durability   durability-svc
+build_pkg zerodds-naming       naming-svc
+build_pkg zerodds-xrce-agent   xrce-agentd
 
 echo "Built $(ls "$OUT" | wc -l) .deb files in $OUT"

@@ -44,6 +44,9 @@ pub struct GrpcRequest {
     pub method: String,
     /// `grpc-encoding` header (`identity`/`gzip` etc.).
     pub encoding: Option<String>,
+    /// Custom metadata: every header that is not a pseudo-header
+    /// (`authorization` for §7.2 among them), in arrival order.
+    pub metadata: Vec<(String, String)>,
     /// Length-Prefixed-Message bytes.
     pub body: Vec<u8>,
 }
@@ -76,6 +79,9 @@ pub struct GrpcServer {
     decoder: HpackDecoder,
     encoder: HpackEncoder,
     streams: alloc::collections::BTreeMap<StreamId, StreamSlot>,
+    /// Encoded control frames the peer is owed, in the order they became
+    /// due. Drained by [`GrpcServer::take_control_frames`].
+    pending_control: Vec<u8>,
 }
 
 impl GrpcServer {
@@ -101,7 +107,15 @@ impl GrpcServer {
         let request = match frame.header.frame_type {
             FrameType::Headers => self.handle_headers(&frame)?,
             FrameType::Data => self.handle_data(&frame)?,
-            FrameType::Settings | FrameType::Ping | FrameType::WindowUpdate => None,
+            FrameType::Settings => {
+                self.acknowledge_settings(&frame);
+                None
+            }
+            FrameType::Ping => {
+                self.acknowledge_ping(&frame);
+                None
+            }
+            FrameType::WindowUpdate => None,
             FrameType::RstStream => {
                 self.streams.remove(&frame.header.stream_id);
                 None
@@ -109,6 +123,58 @@ impl GrpcServer {
             _ => None,
         };
         Ok((request, consumed))
+    }
+
+    /// The control frames the peer is owed, taken out of the server.
+    ///
+    /// Empty until a SETTINGS or a PING has arrived that requires an
+    /// acknowledgement. A caller that never drains this loses nothing it
+    /// had before; a caller driving a socket has to write it, because
+    /// RFC 7540 §6.5.3 and §6.7 make both acknowledgements mandatory and
+    /// a conforming client tears the connection down without them.
+    ///
+    /// This was the whole of what `grpcurl` — and therefore every Go
+    /// gRPC client — hit against `zerodds-grpc-bridged`: SETTINGS, PING
+    /// and WINDOW_UPDATE were consumed and answered with nothing, and
+    /// the connection ended in an EOF before a single request reached
+    /// the dispatcher. `tests/bridge_e2e.rs` drives the same server with
+    /// a client written in this tree that asks for no acknowledgement,
+    /// so it could not see it.
+    pub fn take_control_frames(&mut self) -> Vec<u8> {
+        core::mem::take(&mut self.pending_control)
+    }
+
+    /// RFC 7540 §6.5.3 — a SETTINGS without ACK is answered by an empty
+    /// SETTINGS with ACK on stream 0. A SETTINGS that already carries
+    /// ACK is the peer answering ours and is not answered again.
+    fn acknowledge_settings(&mut self, frame: &Frame<'_>) {
+        if frame.header.flags.has(Flags::ACK) {
+            return;
+        }
+        self.push_control(FrameType::Settings, Flags::ACK, &[]);
+    }
+
+    /// RFC 7540 §6.7 — a PING without ACK is answered by a PING with ACK
+    /// carrying the same eight opaque octets.
+    fn acknowledge_ping(&mut self, frame: &Frame<'_>) {
+        if frame.header.flags.has(Flags::ACK) {
+            return;
+        }
+        self.push_control(FrameType::Ping, Flags::ACK, frame.payload);
+    }
+
+    /// Encodes one control frame on stream 0 and queues it.
+    fn push_control(&mut self, frame_type: FrameType, flags: u8, payload: &[u8]) {
+        let header = FrameHeader {
+            length: u32::try_from(payload.len()).unwrap_or(0),
+            frame_type,
+            flags: Flags(flags),
+            stream_id: 0,
+        };
+        let mut out = alloc::vec![0u8; 9 + payload.len()];
+        if encode_frame(&header, payload, &mut out, self.settings.max_frame_size).is_ok() {
+            self.pending_control.extend_from_slice(&out);
+        }
     }
 
     fn handle_headers(&mut self, frame: &Frame<'_>) -> Result<Option<GrpcRequest>, &'static str> {
@@ -140,6 +206,25 @@ impl GrpcServer {
         if frame.header.flags.has(Flags::END_STREAM) {
             return Ok(Some(self.finalize_request(frame.header.stream_id)?));
         }
+        // A complete Length-Prefixed-Message is a request even without
+        // END_STREAM.
+        //
+        // END_STREAM alone was the trigger, which serves a unary call and
+        // nothing else: on a client- or bidi-streaming call the client
+        // sends its message and keeps the stream open for the reply, so
+        // the flag never arrives and the request was never dispatched.
+        // `grpc.reflection.v1alpha.ServerReflection/ServerReflectionInfo`
+        // — the call behind `grpcurl list` — is bidi-streaming, so the
+        // reflection service this bridge advertises could not be reached
+        // by the client it exists for. Measured against grpcurl 1.9.3:
+        // HEADERS(END_HEADERS) then DATA(len=8, no END_STREAM), then the
+        // client waiting until it gave up.
+        //
+        // A unary call reaches the same point at the same frame, because
+        // its single DATA carries both the whole message and END_STREAM.
+        if decode_message(&slot.body).is_ok() {
+            return Ok(Some(self.finalize_request(frame.header.stream_id)?));
+        }
         Ok(None)
     }
 
@@ -157,12 +242,19 @@ impl GrpcServer {
             .iter()
             .find(|h| h.name == "grpc-encoding")
             .map(|h| h.value.clone());
+        let metadata = slot
+            .headers
+            .iter()
+            .filter(|h| !h.name.starts_with(':'))
+            .map(|h| (h.name.clone(), h.value.clone()))
+            .collect();
         Ok(GrpcRequest {
             stream_id,
             path: path.clone(),
             service,
             method,
             encoding,
+            metadata,
             body: slot.body,
         })
     }

@@ -1,7 +1,7 @@
-# Generated test-only CA + certs + signed XML. Reproduzierbar via gen.sh.
-# Wir tracken nur die QUELLEN: gen.sh + governance.xml + permissions_*.xml.
-# Alles Generierte (certs, CMS-p7s, die cyclone-XMLs mit maschinen-
-# spezifischen Absolutpfaden) erzeugt gen.sh und wird NICHT getrackt.
+# Generated test-only CA + certs + signed XML. Reproducible via gen.sh.
+# We track only the SOURCES: gen.sh + governance.xml + permissions_*.xml.
+# Everything generated (certs, CMS p7s, the cyclone XMLs with machine-
+# specific absolute paths) is produced by gen.sh and NOT tracked.
 certs/
 *.p7s
 *.srl

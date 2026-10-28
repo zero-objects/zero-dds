@@ -3,7 +3,7 @@
 
 //! Crate `zerodds-security-logging`. Safety classification: **SAFE** (a pure I/O wrapper; no secrets are buffered outside the log line itself).
 //!
-//! Production-grade logging backends for DDS-Security 1.1/1.2 §8.6
+//! Production-grade logging backends for DDS-Security 1.2 §9.6 and §10.6
 //! (the `LoggingPlugin` SPI from `zerodds-security`).
 //!
 //! ## Layer position
@@ -11,11 +11,14 @@
 //! Layer 4 — Core Services. Consumed by end-user builds + the DCPS runtime
 //! (feature `security`).
 //!
-//! ## Public API (as of 1.0.0-rc.1)
+//! ## Public API
 //!
 //! - [`StderrLoggingPlugin`] — structured log lines to `stderr`.
 //! - [`JsonLinesLoggingPlugin`] — `application/x-ndjson` to a file.
 //! - [`SyslogLoggingPlugin`] — RFC-5424 UDP backend (facility `LOCAL0`).
+//! - [`LogTopicLoggingPlugin`] — the builtin `DDS:Logging:DDS_LogTopic`
+//!   (DDS-Security 1.2 §10.6): publishes `BuiltinLoggingTypeV2` on
+//!   `DDS:Security:LogTopicV2` through a [`LogTopicPublisher`].
 //! - [`FanOutLoggingPlugin`] — fan-out to multiple backends.
 //!
 //! # What this crate provides
@@ -41,7 +44,7 @@
 //! - Log rotation in the plugin itself — the job of the operating system /
 //!   `logrotate`.
 
-#![cfg_attr(not(feature = "std"), no_std)]
+// Needs `std`: every backend writes to a file, to stderr or to a socket.
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 // Three plugin impls for box polymorphism — SPI-driven.
@@ -49,19 +52,41 @@
 
 extern crate alloc;
 
+#[macro_use]
+mod control;
 mod fanout;
 #[cfg(feature = "std")]
 mod from_properties;
 mod jsonl;
+#[cfg(feature = "std")]
+mod log_topic;
 mod stderr_sink;
 mod syslog;
 
+pub use control::{LogControl, LogOptionsError};
 pub use fanout::FanOutLoggingPlugin;
+pub use zerodds_security::logging::{LogOptions, LoggerListener};
+
+/// The minimum level a sink logs when none is given: by
+/// [`StderrLoggingPlugin::new`] and, without `org.zerodds.sec.log.level`, by the
+/// `dds.sec.log.*` properties. DDS-Security 1.2 §9.6.2.1.1 names the levels
+/// and leaves the default to the implementation.
+pub const DEFAULT_LOG_LEVEL: zerodds_security::logging::LogLevel =
+    zerodds_security::logging::LogLevel::Informational;
 #[cfg(feature = "std")]
 pub use from_properties::{
-    LogConfigError, PROP_LOG_JSONL_PATH, PROP_LOG_LEVEL, PROP_LOG_PLUGIN, PROP_LOG_SYSLOG_ADDR,
-    PROP_LOG_SYSLOG_APP, PROP_LOG_SYSLOG_HOST, logging_plugin_from_properties, parse_log_level,
+    LOG_TOPIC_SINKS, LogConfigError, PROP_LOG_BUILTIN_DISTRIBUTE, PROP_LOG_BUILTIN_LEGACY_TOPIC,
+    PROP_LOG_BUILTIN_LOG_FILE, PROP_LOG_BUILTIN_LOGGING_LEVEL, PROP_LOG_JSONL_PATH, PROP_LOG_LEVEL,
+    PROP_LOG_PLUGIN, PROP_LOG_SYSLOG_ADDR, PROP_LOG_SYSLOG_APP, PROP_LOG_SYSLOG_HOST,
+    log_topic_distribute_requested, log_topic_legacy_requested, log_topic_requested,
+    logging_plugin_from_properties, logging_plugin_from_properties_with_publisher, parse_log_level,
 };
 pub use jsonl::JsonLinesLoggingPlugin;
+#[cfg(feature = "std")]
+pub use log_topic::{
+    BuiltinLoggingType, BuiltinLoggingTypeV2, FACILITY_SEC_AUTH, LegacyTime, LogTopicLoggingPlugin,
+    LogTopicPublishError, LogTopicPublisher, LogTopicWriterSlot, LoggingLevel, NameValuePair,
+    NameValuePairSeq, Time,
+};
 pub use stderr_sink::StderrLoggingPlugin;
 pub use syslog::SyslogLoggingPlugin;

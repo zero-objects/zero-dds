@@ -1,18 +1,25 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! IDL -> native endpoint SDK codegen (ADR 0013), C89 target.
+//! IDL -> native endpoint SDK codegen (ADR 0013), C89 / Python / Java.
 //!
-//! Parses an IDL file with the vendored ZeroDDS parser (`zerodds_idl`) and
-//! emits the `wire-fixed` codec (C89 `<name>_encode`/`<name>_decode` over the
-//! zdw wire-core primitives) per struct, byte-identical to the Rust core.
+//! Parses an IDL file with `zerodds-idl-parse`, lowers it with
+//! `zerodds-idl-lower`, and emits the wire-fixed codec (C89
+//! `<name>_encode` / `<name>_decode` over the zdw wire-core primitives)
+//! per struct, byte-identical to the Rust core.
 //!
-//! Covered: primitives (int/float/bool/octet), string, sequence<octet>, nested
-//! structs, sequence<struct>, and the three extensibility modes -- `@final`
-//! (plain), `@appendable` (DHEADER), `@mutable` (DHEADER + per-member EMHEADER
-//! LC4). The extensibility default for an unannotated struct is APPENDABLE
-//! (OMG XTypes 1.3 section 7.3.3.1), matching the ZeroDDS Rust codegen.
+//! Covered: primitives (int/float/bool/octet), string, `sequence<octet>`,
+//! nested structs, `sequence<struct>`, and the three extensibility modes —
+//! `@final` (plain), `@appendable` (DHEADER), `@mutable` (DHEADER +
+//! per-member EMHEADER LC4).
 //!
-//! usage: zerodds-endpoint-codegen <input.idl> <out-dir>
+//! The extensibility of an unannotated struct and the effective member id
+//! of every member are read off the model rather than re-derived from
+//! annotations here: `idl-lower`'s completion pass already applies
+//! XTypes 1.3 §7.3.1.2.1.1's `@autoid`, §7.3.1.2.1.2's `@id` and the
+//! previous-plus-one default, and a second implementation of those rules
+//! is a second set of answers.
+//!
+//! usage: zerodds-endpoint-codegen <input.idl> `<out-dir>` [c|python|java]
 
 #![allow(
     clippy::print_stderr,
@@ -26,71 +33,98 @@
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
 
-use zerodds_idl::ast::types::{
-    Annotation, AnnotationParams, ConstExpr, ConstrTypeDecl, Declarator, Definition, FloatingType,
-    IntegerType, LiteralKind, PrimitiveType, Specification, StructDcl, StructDef, TypeDecl,
-    TypeSpec,
-};
-use zerodds_idl::config::ParserConfig;
+use zerodds_ast::{Ast, Extensibility, MemberNode, PrimitiveKind, TypeKind, TypeNode};
+use zerodds_ast_core::{Id, Ref};
 
 const CAP: usize = 256;
 const SEQ_STRUCT_CAP: usize = 16;
 
-#[derive(Clone, Copy, PartialEq)]
-enum Ext {
-    Final,
-    Appendable,
-    Mutable,
+/// One struct member, already resolved to what the emitters need.
+struct Field {
+    /// Member name.
+    name: String,
+    /// The member's declared type, after aliases are followed.
+    kind: TypeKind,
+    /// Effective XTypes member id.
+    id: u32,
 }
 
-fn last(name: &zerodds_idl::ast::types::ScopedName) -> String {
-    name.parts
-        .last()
-        .map(|p| p.text.clone())
-        .unwrap_or_default()
+/// The types the emitters walk, in declaration order.
+struct Model {
+    ast: Ast,
+    structs: Vec<Id<TypeNode>>,
+    names: BTreeSet<String>,
 }
 
-/// Extensibility from annotations; default APPENDABLE (spec SX2).
-fn extensibility(anns: &[Annotation]) -> Ext {
-    for a in anns {
-        match last(&a.name).as_str() {
-            "final" | "Final" => return Ext::Final,
-            "appendable" | "Appendable" => return Ext::Appendable,
-            "mutable" | "Mutable" => return Ext::Mutable,
-            "extensibility" | "Extensibility" => {
-                if let AnnotationParams::Single(ConstExpr::Scoped(sn)) = &a.params {
-                    match last(sn).to_ascii_uppercase().as_str() {
-                        "FINAL" => return Ext::Final,
-                        "APPENDABLE" => return Ext::Appendable,
-                        "MUTABLE" => return Ext::Mutable,
-                        _ => {}
-                    }
-                }
-            }
-            _ => {}
-        }
+impl Model {
+    fn fields(&self, id: Id<TypeNode>) -> Vec<Field> {
+        let TypeKind::Structure { members, .. } = &self.ast.type_(id).expect("struct").kind else {
+            return Vec::new();
+        };
+        members
+            .iter()
+            .filter_map(|member| {
+                let node = self.ast.member(*member).ok()?;
+                Some(Field {
+                    name: node.name.clone(),
+                    kind: self.resolved_kind(&node.type_),
+                    id: member_id(node),
+                })
+            })
+            .collect()
     }
-    Ext::Appendable
-}
 
-/// Explicit @id(N) on a member, if any.
-fn member_id(anns: &[Annotation]) -> Option<u32> {
-    for a in anns {
-        if last(&a.name) == "id" {
-            if let AnnotationParams::Single(ConstExpr::Literal(lit)) = &a.params {
-                if lit.kind == LiteralKind::Integer {
-                    return lit.raw.trim().parse::<u32>().ok();
-                }
+    /// The kind behind a reference, following `typedef` chains.
+    ///
+    /// A member declared through an alias encodes as what the alias
+    /// names; the alias itself has no wire form.
+    fn resolved_kind(&self, reference: &Ref<TypeNode>) -> TypeKind {
+        let mut current = reference.resolved();
+        for _ in 0..64 {
+            let Some(id) = current else {
+                panic!("a member's type never resolved");
+            };
+            let node = self.ast.type_(id).expect("member type");
+            match &node.kind {
+                TypeKind::Alias { aliased } => current = aliased.resolved(),
+                other => return other.clone(),
             }
         }
+        panic!("a typedef chain longer than 64 links");
     }
-    None
+
+    /// The simple name of a type reference, for a nested struct.
+    fn type_name(&self, reference: &Ref<TypeNode>) -> String {
+        reference
+            .resolved()
+            .and_then(|id| self.ast.type_(id).ok())
+            .map(|node| node.name.clone())
+            .unwrap_or_default()
+    }
+
+    fn extensibility(&self, id: Id<TypeNode>) -> Extensibility {
+        self.ast.effective_extensibility(id)
+    }
+
+    fn name(&self, id: Id<TypeNode>) -> String {
+        self.ast.type_(id).expect("struct").name.clone()
+    }
+}
+
+/// The effective member id the frontend assigned.
+fn member_id(member: &MemberNode) -> u32 {
+    member
+        .facets
+        .xtypes
+        .as_ref()
+        .and_then(|xtypes| xtypes.effective_member_id())
+        .expect("the frontend assigns every member an effective id")
 }
 
 fn snake(name: &str) -> String {
     let mut out = String::new();
-    for (i, c) in name.chars().enumerate() {
-        if c.is_uppercase() && i > 0 {
+    for (index, c) in name.chars().enumerate() {
+        if c.is_uppercase() && index > 0 {
             out.push('_');
         }
         out.push(c.to_ascii_lowercase());
@@ -102,12 +136,31 @@ fn cap_macro(prefix: &str, field: &str) -> String {
     format!("{}_{}_CAP", prefix.to_uppercase(), field.to_uppercase())
 }
 
-/// The C field declaration + encode/decode statements for one field, appended
-/// to the given buffers. Returns false on an unsupported type.
+/// Whether a kind is a narrow string.
+fn is_narrow_string(kind: &TypeKind) -> bool {
+    matches!(
+        kind,
+        TypeKind::String {
+            width: zerodds_ast::CharWidth::Char,
+            ..
+        }
+    )
+}
+
+/// Whether a kind is an octet-like scalar, for `sequence<octet>`.
+fn is_octet(kind: &TypeKind) -> bool {
+    matches!(
+        kind,
+        TypeKind::Primitive(PrimitiveKind::Octet | PrimitiveKind::UInt8)
+    )
+}
+
+/// The C field declaration and encode/decode statements for one field.
+/// Returns false on a type outside the C89 subset.
 fn emit_field(
-    structs: &BTreeSet<String>,
+    model: &Model,
     prefix: &str,
-    ts: &TypeSpec,
+    kind: &TypeKind,
     field: &str,
     hdr: &mut String,
     fields: &mut String,
@@ -115,35 +168,27 @@ fn emit_field(
     dec: &mut String,
 ) -> bool {
     let cap = cap_macro(prefix, field);
-    match ts {
-        TypeSpec::Primitive(p) => {
-            let (cty, put, get) = match prim_calls(*p) {
-                Some(t) => t,
-                None => return false,
+    match kind {
+        TypeKind::Primitive(p) => {
+            let Some((cty, put, get)) = prim_calls(*p) else {
+                return false;
             };
             let _ = writeln!(fields, "    {cty} {field};");
             let _ = writeln!(enc, "    {}", put.replace("{n}", field));
             let _ = writeln!(dec, "    {}", get.replace("{n}", field));
             true
         }
-        TypeSpec::String(s) if !s.wide => {
+        kind if is_narrow_string(kind) => {
             let _ = writeln!(hdr, "#define {cap} {CAP}");
             let _ = writeln!(fields, "    char {field}[{cap}];");
             let _ = writeln!(enc, "    zdw_put_string(w, s->{field});");
             let _ = writeln!(dec, "    zdw_get_string(r, s->{field}, {cap});");
             true
         }
-        TypeSpec::Scoped(sn) if structs.contains(&last(sn)) => {
-            let ref_ty = last(sn);
-            let ref_pfx = snake(&ref_ty);
-            let _ = writeln!(fields, "    {ref_ty} {field};");
-            let _ = writeln!(enc, "    {ref_pfx}_encode(w, &s->{field});");
-            let _ = writeln!(dec, "    {ref_pfx}_decode(r, &s->{field});");
-            true
-        }
-        TypeSpec::Sequence(seq) => match seq.elem.as_ref() {
-            TypeSpec::Primitive(PrimitiveType::Octet)
-            | TypeSpec::Primitive(PrimitiveType::Integer(IntegerType::UInt8)) => {
+        TypeKind::Structure { .. } => false,
+        TypeKind::Sequence { element, .. } => {
+            let inner = model.resolved_kind(element);
+            if is_octet(&inner) {
                 let _ = writeln!(hdr, "#define {cap} {CAP}");
                 let _ = writeln!(fields, "    unsigned char {field}[{cap}];");
                 let _ = writeln!(fields, "    size_t {field}_len;");
@@ -152,127 +197,151 @@ fn emit_field(
                     dec,
                     "    zdw_get_seq_u8(r, s->{field}, {cap}, &s->{field}_len);"
                 );
-                true
+                return true;
             }
-            TypeSpec::Scoped(sn) if structs.contains(&last(sn)) => {
-                // sequence<struct>: collection DHEADER + u32 count + elements.
-                let ref_ty = last(sn);
-                let ref_pfx = snake(&ref_ty);
-                let _ = writeln!(hdr, "#define {cap} {SEQ_STRUCT_CAP}");
-                let _ = writeln!(fields, "    {ref_ty} {field}[{cap}];");
-                let _ = writeln!(fields, "    size_t {field}_len;");
-                let _ = writeln!(enc, "    {{ size_t _i; size_t _d = zdw_dheader_begin(w);");
-                let _ = writeln!(enc, "      zdw_put_u32(w, (unsigned long)s->{field}_len);");
-                let _ = writeln!(enc, "      for (_i = 0; _i < s->{field}_len; _i++)");
-                let _ = writeln!(enc, "        {ref_pfx}_encode(w, &s->{field}[_i]);");
-                let _ = writeln!(enc, "      zdw_dheader_end(w, _d); }}");
-                let _ = writeln!(dec, "    {{ size_t _i; unsigned long _dh = 0, _c = 0;");
-                let _ = writeln!(dec, "      zdw_dheader_read(r, &_dh); zdw_get_u32(r, &_c);");
-                let _ = writeln!(dec, "      s->{field}_len = (size_t)_c;");
-                let _ = writeln!(
-                    dec,
-                    "      for (_i = 0; _i < (size_t)_c && _i < {cap}; _i++)"
-                );
-                let _ = writeln!(dec, "        {ref_pfx}_decode(r, &s->{field}[_i]); }}");
-                true
+            let ref_ty = model.type_name(element);
+            if !matches!(inner, TypeKind::Structure { .. }) || !model.names.contains(&ref_ty) {
+                return false;
             }
-            _ => false,
-        },
+            // sequence<struct>: collection DHEADER + u32 count + elements.
+            let ref_pfx = snake(&ref_ty);
+            let _ = writeln!(hdr, "#define {cap} {SEQ_STRUCT_CAP}");
+            let _ = writeln!(fields, "    {ref_ty} {field}[{cap}];");
+            let _ = writeln!(fields, "    size_t {field}_len;");
+            let _ = writeln!(enc, "    {{ size_t _i; size_t _d = zdw_dheader_begin(w);");
+            let _ = writeln!(enc, "      zdw_put_u32(w, (unsigned long)s->{field}_len);");
+            let _ = writeln!(enc, "      for (_i = 0; _i < s->{field}_len; _i++)");
+            let _ = writeln!(enc, "        {ref_pfx}_encode(w, &s->{field}[_i]);");
+            let _ = writeln!(enc, "      zdw_dheader_end(w, _d); }}");
+            let _ = writeln!(dec, "    {{ size_t _i; unsigned long _dh = 0, _c = 0;");
+            let _ = writeln!(dec, "      zdw_dheader_read(r, &_dh); zdw_get_u32(r, &_c);");
+            let _ = writeln!(dec, "      s->{field}_len = (size_t)_c;");
+            let _ = writeln!(
+                dec,
+                "      for (_i = 0; _i < (size_t)_c && _i < {cap}; _i++)"
+            );
+            let _ = writeln!(dec, "        {ref_pfx}_decode(r, &s->{field}[_i]); }}");
+            true
+        }
         _ => false,
     }
 }
 
-fn prim_calls(p: PrimitiveType) -> Option<(&'static str, &'static str, &'static str)> {
-    use IntegerType::*;
-    Some(match p {
-        PrimitiveType::Octet | PrimitiveType::Char | PrimitiveType::Integer(Int8 | UInt8) => (
-            "unsigned char",
-            "zdw_put_u8(w, s->{n});",
-            "zdw_get_u8(r, &s->{n});",
-        ),
-        PrimitiveType::Integer(Short | UShort | Int16 | UInt16) => (
+/// A nested-struct member, which needs the reference rather than the
+/// resolved kind to name its type.
+fn emit_nested(
+    model: &Model,
+    reference: &Ref<TypeNode>,
+    field: &str,
+    fields: &mut String,
+    enc: &mut String,
+    dec: &mut String,
+) -> bool {
+    let ref_ty = model.type_name(reference);
+    if !model.names.contains(&ref_ty) {
+        return false;
+    }
+    let ref_pfx = snake(&ref_ty);
+    let _ = writeln!(fields, "    {ref_ty} {field};");
+    let _ = writeln!(enc, "    {ref_pfx}_encode(w, &s->{field});");
+    let _ = writeln!(dec, "    {ref_pfx}_decode(r, &s->{field});");
+    true
+}
+
+fn prim_calls(kind: PrimitiveKind) -> Option<(&'static str, &'static str, &'static str)> {
+    Some(match kind {
+        PrimitiveKind::Octet | PrimitiveKind::Char | PrimitiveKind::Int8 | PrimitiveKind::UInt8 => {
+            (
+                "unsigned char",
+                "zdw_put_u8(w, s->{n});",
+                "zdw_get_u8(r, &s->{n});",
+            )
+        }
+        PrimitiveKind::Int16 | PrimitiveKind::UInt16 => (
             "unsigned int",
             "zdw_put_u16(w, s->{n});",
             "zdw_get_u16(r, &s->{n});",
         ),
-        PrimitiveType::Integer(Long | ULong | Int32 | UInt32) => (
+        PrimitiveKind::Int32 | PrimitiveKind::UInt32 => (
             "unsigned long",
             "zdw_put_u32(w, s->{n});",
             "zdw_get_u32(r, &s->{n});",
         ),
-        PrimitiveType::Integer(LongLong | ULongLong | Int64 | UInt64) => (
+        PrimitiveKind::Int64 | PrimitiveKind::UInt64 => (
             "zdw_u64_t",
             "zdw_put_u64(w, s->{n});",
             "zdw_get_u64(r, &s->{n});",
         ),
-        PrimitiveType::Floating(FloatingType::Float) => (
+        PrimitiveKind::Float32 => (
             "float",
             "zdw_put_f32(w, s->{n});",
             "zdw_get_f32(r, &s->{n});",
         ),
-        PrimitiveType::Floating(FloatingType::Double) => (
+        PrimitiveKind::Float64 => (
             "double",
             "zdw_put_f64(w, s->{n});",
             "zdw_get_f64(r, &s->{n});",
         ),
-        PrimitiveType::Boolean => (
+        PrimitiveKind::Boolean => (
             "int",
             "zdw_put_bool(w, s->{n});",
             "zdw_get_bool(r, &s->{n});",
         ),
-        _ => return None,
+        PrimitiveKind::WChar | PrimitiveKind::Float128 => return None,
     })
 }
 
-fn emit_struct(structs: &BTreeSet<String>, hdr: &mut String, src: &mut String, s: &StructDef) {
-    let name = &s.name.text;
-    let prefix = snake(name);
-    let ext = extensibility(&s.annotations);
+fn emit_struct(model: &Model, hdr: &mut String, src: &mut String, id: Id<TypeNode>) {
+    let name = model.name(id);
+    let prefix = snake(&name);
+    let ext = model.extensibility(id);
 
     let mut fields = String::new();
-    // Per-member encode/decode fragments (so @mutable can wrap each in an EMHEADER).
-    let mut members: Vec<(Option<u32>, bool, String, String)> = Vec::new();
-    let mut seq_index: u32 = 0;
-    for member in &s.members {
-        let explicit_id = member_id(&member.annotations);
-        for decl in &member.declarators {
-            let Declarator::Simple(id) = decl else {
-                panic!("array declarators not in the C89 subset yet");
-            };
-            let field = &id.text;
-            let mut enc = String::new();
-            let mut dec = String::new();
-            if !emit_field(
-                structs,
+    let mut members: Vec<(u32, String, String)> = Vec::new();
+    for field in model.fields(id) {
+        let mut enc = String::new();
+        let mut dec = String::new();
+        let ok = match &field.kind {
+            TypeKind::Structure { .. } => {
+                let reference = member_type_ref(model, id, &field.name);
+                emit_nested(
+                    model,
+                    &reference,
+                    &field.name,
+                    &mut fields,
+                    &mut enc,
+                    &mut dec,
+                )
+            }
+            kind => emit_field(
+                model,
                 &prefix,
-                &member.type_spec,
-                field,
+                kind,
+                &field.name,
                 hdr,
                 &mut fields,
                 &mut enc,
                 &mut dec,
-            ) {
-                panic!("unsupported member type for {name}.{field}");
-            }
-            let mid = explicit_id.unwrap_or(seq_index);
-            members.push((Some(mid), false, enc, dec));
-            seq_index += 1;
+            ),
+        };
+        if !ok {
+            panic!("unsupported member type for {name}.{}", field.name);
         }
+        members.push((field.id, enc, dec));
     }
 
-    // Assemble encode/decode bodies per extensibility mode.
     let mut encode = String::new();
     let mut decode = String::new();
     match ext {
-        Ext::Final => {
-            for (_, _, e, d) in &members {
+        Extensibility::Final => {
+            for (_, e, d) in &members {
                 encode.push_str(e);
                 decode.push_str(d);
             }
         }
-        Ext::Appendable => {
+        Extensibility::Appendable => {
             let _ = writeln!(encode, "    {{ size_t _d = zdw_dheader_begin(w);");
-            for (_, _, e, _) in &members {
+            for (_, e, _) in &members {
                 encode.push_str(e);
             }
             let _ = writeln!(encode, "    zdw_dheader_end(w, _d); }}");
@@ -280,25 +349,22 @@ fn emit_struct(structs: &BTreeSet<String>, hdr: &mut String, src: &mut String, s
                 decode,
                 "    {{ unsigned long _dh = 0; zdw_dheader_read(r, &_dh);"
             );
-            for (_, _, _, d) in &members {
+            for (_, _, d) in &members {
                 decode.push_str(d);
             }
             let _ = writeln!(decode, "    }}");
         }
-        Ext::Mutable => {
+        Extensibility::Mutable => {
             let _ = writeln!(
                 encode,
                 "    {{ size_t _d = zdw_dheader_begin(w); size_t _e;"
             );
-            for (mid, mu, e, _) in &members {
-                let id = mid.unwrap_or(0);
-                let muf = if *mu { 1 } else { 0 };
-                let _ = writeln!(encode, "    _e = zdw_emheader_begin(w, {id}uL, {muf});");
+            for (mid, e, _) in &members {
+                let _ = writeln!(encode, "    _e = zdw_emheader_begin(w, {mid}uL, 0);");
                 encode.push_str(e);
                 let _ = writeln!(encode, "    zdw_emheader_end(w, _e);");
             }
             let _ = writeln!(encode, "    zdw_dheader_end(w, _d); }}");
-            // Decode: @mutable members in any order, dispatch by member-ID.
             let _ = writeln!(
                 decode,
                 "    {{ unsigned long _dh = 0, _id = 0, _ni = 0; int _mu = 0; size_t _start;"
@@ -313,12 +379,11 @@ fn emit_struct(structs: &BTreeSet<String>, hdr: &mut String, src: &mut String, s
                 "        if (zdw_emheader_read(r, &_id, &_mu, &_ni) != ZDW_OK) break;"
             );
             let mut first = true;
-            for (mid, _, _, d) in &members {
-                let id = mid.unwrap_or(0);
+            for (mid, _, d) in &members {
                 let kw = if first { "if" } else { "else if" };
                 first = false;
-                let _ = writeln!(decode, "        {kw} (_id == {id}uL) {{");
-                decode.push_str(&d.replace("\n", "\n  "));
+                let _ = writeln!(decode, "        {kw} (_id == {mid}uL) {{");
+                decode.push_str(&d.replace('\n', "\n  "));
                 let _ = writeln!(decode, "        }}");
             }
             let _ = writeln!(
@@ -347,68 +412,77 @@ fn emit_struct(structs: &BTreeSet<String>, hdr: &mut String, src: &mut String, s
     );
 }
 
-/// The Python field encode/decode expressions for a member (mirrors the C
-/// emitter; uses the zerodds_wire.py + collection-DHEADER helpers).
+/// The declared reference of one member, by name.
+fn member_type_ref(model: &Model, struct_: Id<TypeNode>, field: &str) -> Ref<TypeNode> {
+    let TypeKind::Structure { members, .. } = &model.ast.type_(struct_).expect("struct").kind
+    else {
+        panic!("not a struct");
+    };
+    members
+        .iter()
+        .filter_map(|id| model.ast.member(*id).ok())
+        .find(|node| node.name == field)
+        .map(|node| node.type_.clone())
+        .expect("the member exists")
+}
+
+/// The Python field encode/decode expressions for a member.
 fn py_field(
-    structs: &BTreeSet<String>,
-    ts: &TypeSpec,
+    model: &Model,
+    kind: &TypeKind,
+    reference: &Ref<TypeNode>,
     field: &str,
     enc: &mut String,
     dec: &mut String,
 ) -> bool {
-    let (e, d) = match ts {
-        TypeSpec::Primitive(p) => {
+    let (e, d) = match kind {
+        TypeKind::Primitive(p) => {
             let call = match p {
-                PrimitiveType::Octet
-                | PrimitiveType::Char
-                | PrimitiveType::Integer(IntegerType::Int8 | IntegerType::UInt8) => "u8",
-                PrimitiveType::Integer(
-                    IntegerType::Short
-                    | IntegerType::UShort
-                    | IntegerType::Int16
-                    | IntegerType::UInt16,
-                ) => "u16",
-                PrimitiveType::Integer(
-                    IntegerType::Long
-                    | IntegerType::ULong
-                    | IntegerType::Int32
-                    | IntegerType::UInt32,
-                ) => "u32",
-                PrimitiveType::Integer(
-                    IntegerType::LongLong
-                    | IntegerType::ULongLong
-                    | IntegerType::Int64
-                    | IntegerType::UInt64,
-                ) => "u64",
-                PrimitiveType::Floating(FloatingType::Float) => "f32",
-                PrimitiveType::Floating(FloatingType::Double) => "f64",
-                PrimitiveType::Boolean => "bool",
-                _ => return false,
+                PrimitiveKind::Octet
+                | PrimitiveKind::Char
+                | PrimitiveKind::Int8
+                | PrimitiveKind::UInt8 => "u8",
+                PrimitiveKind::Int16 | PrimitiveKind::UInt16 => "u16",
+                PrimitiveKind::Int32 | PrimitiveKind::UInt32 => "u32",
+                PrimitiveKind::Int64 | PrimitiveKind::UInt64 => "u64",
+                PrimitiveKind::Float32 => "f32",
+                PrimitiveKind::Float64 => "f64",
+                PrimitiveKind::Boolean => "bool",
+                PrimitiveKind::WChar | PrimitiveKind::Float128 => return false,
             };
             (
                 format!("w.put_{call}(s['{field}'])"),
                 format!("d['{field}'] = r.get_{call}()"),
             )
         }
-        TypeSpec::String(st) if !st.wide => (
+        kind if is_narrow_string(kind) => (
             format!("w.put_string(s['{field}'])"),
             format!("d['{field}'] = r.get_string()"),
         ),
-        TypeSpec::Scoped(sn) if structs.contains(&last(sn)) => {
-            let p = snake(&last(sn));
+        TypeKind::Structure { .. } => {
+            let ref_ty = model.type_name(reference);
+            if !model.names.contains(&ref_ty) {
+                return false;
+            }
+            let p = snake(&ref_ty);
             (
                 format!("{p}_encode(w, s['{field}'])"),
                 format!("d['{field}'] = {p}_decode(r)"),
             )
         }
-        TypeSpec::Sequence(seq) => match seq.elem.as_ref() {
-            TypeSpec::Primitive(PrimitiveType::Octet)
-            | TypeSpec::Primitive(PrimitiveType::Integer(IntegerType::UInt8)) => (
-                format!("w.put_seq_u8(s['{field}'])"),
-                format!("d['{field}'] = r.get_seq_u8()"),
-            ),
-            TypeSpec::Scoped(sn) if structs.contains(&last(sn)) => {
-                let p = snake(&last(sn));
+        TypeKind::Sequence { element, .. } => {
+            let inner = model.resolved_kind(element);
+            if is_octet(&inner) {
+                (
+                    format!("w.put_seq_u8(s['{field}'])"),
+                    format!("d['{field}'] = r.get_seq_u8()"),
+                )
+            } else {
+                let ref_ty = model.type_name(element);
+                if !matches!(inner, TypeKind::Structure { .. }) || !model.names.contains(&ref_ty) {
+                    return false;
+                }
+                let p = snake(&ref_ty);
                 (
                     format!(
                         "_b = w.dheader_begin(); w.put_u32(len(s['{field}']))\n        for _e in s['{field}']: {p}_encode(w, _e)\n        w.dheader_end(_b)"
@@ -418,8 +492,7 @@ fn py_field(
                     ),
                 )
             }
-            _ => return false,
-        },
+        }
         _ => return false,
     };
     enc.push_str(&format!("    {e}\n"));
@@ -427,42 +500,39 @@ fn py_field(
     true
 }
 
-fn emit_struct_py(structs: &BTreeSet<String>, out: &mut String, s: &StructDef) {
-    let name = &s.name.text;
-    let prefix = snake(name);
-    let ext = extensibility(&s.annotations);
+fn emit_struct_py(model: &Model, out: &mut String, id: Id<TypeNode>) {
+    let name = model.name(id);
+    let prefix = snake(&name);
+    let ext = model.extensibility(id);
     let mut enc = String::new();
     let mut dec = String::new();
-    let mut mids: Vec<u32> = Vec::new();
-    let mut idx = 0u32;
-    for m in &s.members {
-        let mid = member_id(&m.annotations).unwrap_or(idx);
-        for decl in &m.declarators {
-            let Declarator::Simple(id) = decl else {
-                panic!("array declarator")
-            };
-            if !py_field(structs, &m.type_spec, &id.text, &mut enc, &mut dec) {
-                panic!("unsupported type in {name}.{}", id.text);
-            }
-            mids.push(mid);
-            idx += 1;
+    let mut ids: Vec<u32> = Vec::new();
+    for field in model.fields(id) {
+        let reference = member_type_ref(model, id, &field.name);
+        if !py_field(
+            model,
+            &field.kind,
+            &reference,
+            &field.name,
+            &mut enc,
+            &mut dec,
+        ) {
+            panic!("unsupported type in {name}.{}", field.name);
         }
+        ids.push(field.id);
     }
     let _ = writeln!(out, "\ndef {prefix}_encode(w, s):");
     match ext {
-        Ext::Final => {
-            out.push_str(&enc);
-        }
-        Ext::Appendable => {
+        Extensibility::Final => out.push_str(&enc),
+        Extensibility::Appendable => {
             let _ = writeln!(out, "    _d = w.dheader_begin()");
             out.push_str(&enc);
             let _ = writeln!(out, "    w.dheader_end(_d)");
         }
-        Ext::Mutable => {
+        Extensibility::Mutable => {
             let _ = writeln!(out, "    _d = w.dheader_begin()");
-            // one emheader per member: re-emit fields wrapped
-            for (i, line) in enc.lines().enumerate() {
-                let _ = writeln!(out, "    _e = w.emheader_begin({}, 0)", mids[i]);
+            for (index, line) in enc.lines().enumerate() {
+                let _ = writeln!(out, "    _e = w.emheader_begin({}, 0)", ids[index]);
                 let _ = writeln!(out, "    {}", line.trim_start());
                 let _ = writeln!(out, "    w.emheader_end(_e)");
             }
@@ -472,20 +542,18 @@ fn emit_struct_py(structs: &BTreeSet<String>, out: &mut String, s: &StructDef) {
     let _ = writeln!(out, "\ndef {prefix}_decode(r):");
     let _ = writeln!(out, "    d = {{}}");
     match ext {
-        Ext::Final => {
-            out.push_str(&dec);
-        }
-        Ext::Appendable => {
+        Extensibility::Final => out.push_str(&dec),
+        Extensibility::Appendable => {
             let _ = writeln!(out, "    r.dheader_read()");
             out.push_str(&dec);
         }
-        Ext::Mutable => {
+        Extensibility::Mutable => {
             let _ = writeln!(out, "    _dh = r.dheader_read(); _start = r.pos");
             let _ = writeln!(out, "    while r.pos - _start < _dh:");
             let _ = writeln!(out, "        _id, _mu, _ni = r.emheader_read()");
-            for (i, line) in dec.lines().enumerate() {
-                let kw = if i == 0 { "if" } else { "elif" };
-                let _ = writeln!(out, "        {kw} _id == {}:", mids[i]);
+            for (index, line) in dec.lines().enumerate() {
+                let kw = if index == 0 { "if" } else { "elif" };
+                let _ = writeln!(out, "        {kw} _id == {}:", ids[index]);
                 let _ = writeln!(out, "            {}", line.trim_start());
             }
             let _ = writeln!(out, "        else:");
@@ -495,77 +563,67 @@ fn emit_struct_py(structs: &BTreeSet<String>, out: &mut String, s: &StructDef) {
     let _ = writeln!(out, "    return d");
 }
 
-fn generate_py(spec: &Specification) -> String {
+fn generate_py(model: &Model) -> String {
     let mut out = String::new();
     let _ = writeln!(
         out,
         "# Generated by zerodds-endpoint-codegen (ADR 0013). DO NOT EDIT."
     );
     let _ = writeln!(out, "from __future__ import print_function");
-    let mut structs = Vec::new();
-    collect_structs(&spec.definitions, &mut structs);
-    let names: BTreeSet<String> = structs.iter().map(|s| s.name.text.clone()).collect();
-    for s in structs {
-        emit_struct_py(&names, &mut out, s);
+    for id in &model.structs {
+        emit_struct_py(model, &mut out, *id);
     }
     out
 }
 
-/// Java field encode/decode over a Map<String,Object> (mirrors the C/Python
-/// emitters; uses the Zdw.Writer/Reader primitives).
-fn java_field(ts: &TypeSpec, field: &str, enc: &mut String, dec: &mut String) -> bool {
-    let (e, d) = match ts {
-        TypeSpec::Primitive(p) => {
+/// Java field encode/decode over a `Map<String,Object>`.
+fn java_field(
+    kind: &TypeKind,
+    model: &Model,
+    field: &str,
+    enc: &mut String,
+    dec: &mut String,
+) -> bool {
+    let (e, d) = match kind {
+        TypeKind::Primitive(p) => {
             let (put, get) = match p {
-                PrimitiveType::Octet
-                | PrimitiveType::Char
-                | PrimitiveType::Integer(IntegerType::Int8 | IntegerType::UInt8) => (
+                PrimitiveKind::Octet
+                | PrimitiveKind::Char
+                | PrimitiveKind::Int8
+                | PrimitiveKind::UInt8 => (
                     "w.u8(n(s,\"F\").intValue());",
                     "d.put(\"F\", (long) r.u8());",
                 ),
-                PrimitiveType::Integer(
-                    IntegerType::Short
-                    | IntegerType::UShort
-                    | IntegerType::Int16
-                    | IntegerType::UInt16,
-                ) => (
+                PrimitiveKind::Int16 | PrimitiveKind::UInt16 => (
                     "w.u16(n(s,\"F\").intValue());",
                     "d.put(\"F\", (long) r.u16());",
                 ),
-                PrimitiveType::Integer(
-                    IntegerType::Long
-                    | IntegerType::ULong
-                    | IntegerType::Int32
-                    | IntegerType::UInt32,
-                ) => ("w.u32(n(s,\"F\").longValue());", "d.put(\"F\", r.u32());"),
-                PrimitiveType::Integer(
-                    IntegerType::LongLong
-                    | IntegerType::ULongLong
-                    | IntegerType::Int64
-                    | IntegerType::UInt64,
-                ) => ("w.u64(n(s,\"F\").longValue());", "d.put(\"F\", r.u64());"),
-                PrimitiveType::Floating(FloatingType::Float) => {
+                PrimitiveKind::Int32 | PrimitiveKind::UInt32 => {
+                    ("w.u32(n(s,\"F\").longValue());", "d.put(\"F\", r.u32());")
+                }
+                PrimitiveKind::Int64 | PrimitiveKind::UInt64 => {
+                    ("w.u64(n(s,\"F\").longValue());", "d.put(\"F\", r.u64());")
+                }
+                PrimitiveKind::Float32 => {
                     ("w.f32(n(s,\"F\").floatValue());", "d.put(\"F\", r.f32());")
                 }
-                PrimitiveType::Floating(FloatingType::Double) => {
+                PrimitiveKind::Float64 => {
                     ("w.f64(n(s,\"F\").doubleValue());", "d.put(\"F\", r.f64());")
                 }
-                _ => return false,
+                PrimitiveKind::WChar | PrimitiveKind::Boolean | PrimitiveKind::Float128 => {
+                    return false;
+                }
             };
             (put.replace('F', field), get.replace('F', field))
         }
-        TypeSpec::String(st) if !st.wide => (
+        kind if is_narrow_string(kind) => (
             "w.str((String) s.get(\"F\"));".replace('F', field),
             "d.put(\"F\", r.str());".replace('F', field),
         ),
-        TypeSpec::Sequence(seq) => match seq.elem.as_ref() {
-            TypeSpec::Primitive(PrimitiveType::Octet)
-            | TypeSpec::Primitive(PrimitiveType::Integer(IntegerType::UInt8)) => (
-                "w.seqU8((byte[]) s.get(\"F\"));".replace('F', field),
-                "d.put(\"F\", r.seqU8());".replace('F', field),
-            ),
-            _ => return false,
-        },
+        TypeKind::Sequence { element, .. } if is_octet(&model.resolved_kind(element)) => (
+            "w.seqU8((byte[]) s.get(\"F\"));".replace('F', field),
+            "d.put(\"F\", r.seqU8());".replace('F', field),
+        ),
         _ => return false,
     };
     enc.push_str(&format!("        {e}\n"));
@@ -573,7 +631,7 @@ fn java_field(ts: &TypeSpec, field: &str, enc: &mut String, dec: &mut String) ->
     true
 }
 
-fn generate_java(spec: &Specification, base: &str) -> String {
+fn generate_java(model: &Model, base: &str) -> String {
     let class = format!("{base}_gen");
     let mut out = String::new();
     let _ = writeln!(
@@ -587,34 +645,22 @@ fn generate_java(spec: &Specification, base: &str) -> String {
         out,
         "    private static Number n(Map<String,Object> s, String k) {{ return (Number) s.get(k); }}"
     );
-    let mut structs = Vec::new();
-    collect_structs(&spec.definitions, &mut structs);
-    for s in structs {
-        let prefix = snake(&s.name.text);
-        let ext = extensibility(&s.annotations);
-        // Per-field encode/decode statements + member ids (scalar members only:
-        // the Java emitter covers primitives/string/seq<octet>, all three
-        // extensibility modes; nested/seq<struct> extend via the same lambdas).
-        let mut ef: Vec<String> = Vec::new();
-        let mut df: Vec<String> = Vec::new();
+    for id in &model.structs {
+        let name = model.name(*id);
+        let prefix = snake(&name);
+        let ext = model.extensibility(*id);
+        let mut encoders: Vec<String> = Vec::new();
+        let mut decoders: Vec<String> = Vec::new();
         let mut ids: Vec<u32> = Vec::new();
-        let mut idx = 0u32;
-        for m in &s.members {
-            let mid = member_id(&m.annotations).unwrap_or(idx);
-            for decl in &m.declarators {
-                let Declarator::Simple(id) = decl else {
-                    panic!("array decl")
-                };
-                let mut e = String::new();
-                let mut d = String::new();
-                if !java_field(&m.type_spec, &id.text, &mut e, &mut d) {
-                    panic!("unsupported java type in {}.{}", s.name.text, id.text);
-                }
-                ef.push(e.trim().to_string());
-                df.push(d.trim().to_string());
-                ids.push(mid);
-                idx += 1;
+        for field in model.fields(*id) {
+            let mut e = String::new();
+            let mut d = String::new();
+            if !java_field(&field.kind, model, &field.name, &mut e, &mut d) {
+                panic!("unsupported java type in {name}.{}", field.name);
             }
+            encoders.push(e.trim().to_string());
+            decoders.push(d.trim().to_string());
+            ids.push(field.id);
         }
 
         let _ = writeln!(
@@ -622,31 +668,31 @@ fn generate_java(spec: &Specification, base: &str) -> String {
             "\n    public static void {prefix}Encode(Zdw.Writer w, final Map<String,Object> s) {{"
         );
         match ext {
-            Ext::Final => {
-                for e in &ef {
+            Extensibility::Final => {
+                for e in &encoders {
                     let _ = writeln!(out, "        {e}");
                 }
             }
-            Ext::Appendable => {
+            Extensibility::Appendable => {
                 let _ = writeln!(
                     out,
                     "        w.dheader(new Zdw.Body() {{ public void write(Zdw.Writer w) {{"
                 );
-                for e in &ef {
+                for e in &encoders {
                     let _ = writeln!(out, "            {e}");
                 }
                 let _ = writeln!(out, "        }} }});");
             }
-            Ext::Mutable => {
+            Extensibility::Mutable => {
                 let _ = writeln!(
                     out,
                     "        w.dheader(new Zdw.Body() {{ public void write(final Zdw.Writer w) {{"
                 );
-                for (i, e) in ef.iter().enumerate() {
+                for (index, e) in encoders.iter().enumerate() {
                     let _ = writeln!(
                         out,
                         "            w.emheader({}, false, new Zdw.Body() {{ public void write(Zdw.Writer w) {{ {e} }} }});",
-                        ids[i]
+                        ids[index]
                     );
                 }
                 let _ = writeln!(out, "        }} }});");
@@ -662,22 +708,15 @@ fn generate_java(spec: &Specification, base: &str) -> String {
             out,
             "        Map<String,Object> d = new HashMap<String,Object>();"
         );
-        match ext {
-            Ext::Final => {}
-            Ext::Appendable => {
-                let _ = writeln!(out, "        r.dheaderRead();");
-            }
-            Ext::Mutable => {
-                let _ = writeln!(out, "        r.dheaderRead();");
-            }
+        if ext != Extensibility::Final {
+            let _ = writeln!(out, "        r.dheaderRead();");
         }
-        for (i, d) in df.iter().enumerate() {
-            if ext == Ext::Mutable {
+        for d in &decoders {
+            if ext == Extensibility::Mutable {
                 let _ = writeln!(out, "        r.emheaderRead(); {d}");
             } else {
                 let _ = writeln!(out, "        {d}");
             }
-            let _ = i;
         }
         let _ = writeln!(out, "        return d;");
         let _ = writeln!(out, "    }}");
@@ -686,20 +725,7 @@ fn generate_java(spec: &Specification, base: &str) -> String {
     out
 }
 
-/// zerodds-lint: recursion-depth 64 (IDL module/struct nesting; bounded by type depth)
-fn collect_structs<'a>(defs: &'a [Definition], out: &mut Vec<&'a StructDef>) {
-    for d in defs {
-        match d {
-            Definition::Module(m) => collect_structs(&m.definitions, out),
-            Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Struct(StructDcl::Def(s)))) => {
-                out.push(s);
-            }
-            _ => {}
-        }
-    }
-}
-
-fn generate(spec: &Specification, base: &str) -> (String, String) {
+fn generate(model: &Model, base: &str) -> (String, String) {
     let guard = format!("{}_GEN_H", base.to_uppercase());
     let mut hdr = String::new();
     let _ = writeln!(
@@ -717,28 +743,66 @@ fn generate(spec: &Specification, base: &str) -> (String, String) {
     );
     let _ = writeln!(src, "#include \"{base}_gen.h\"\n");
 
-    let mut structs = Vec::new();
-    collect_structs(&spec.definitions, &mut structs);
-    let names: BTreeSet<String> = structs.iter().map(|s| s.name.text.clone()).collect();
-    // Forward-declare so a nested reference resolves regardless of order.
-    for s in &structs {
-        emit_struct(&names, &mut hdr, &mut src, s);
+    for id in &model.structs {
+        emit_struct(model, &mut hdr, &mut src, *id);
     }
     let _ = writeln!(hdr, "\n#endif");
     (hdr, src)
+}
+
+/// Parse and lower one file into a resolved model.
+fn load(text: &str, path: &str) -> Model {
+    let parsed = zerodds_idl_parse::parse(text);
+    let errors: Vec<_> = parsed
+        .diagnostics()
+        .iter()
+        .filter(|d| d.severity == zerodds_idl_parse::Severity::Error)
+        .collect();
+    assert!(errors.is_empty(), "{path} does not parse: {errors:?}");
+
+    let lowered = zerodds_idl_lower::lower(&parsed.syntax(), path);
+    assert!(
+        lowered.diagnostics.is_empty(),
+        "{path} does not lower: {:?}",
+        lowered.diagnostics
+    );
+    let mut ast = lowered.ast;
+    let report = ast.resolve_all_by_name().expect("a resolve pass");
+    assert!(
+        report.is_clean(),
+        "{path} names types it does not declare: {:?}",
+        report.broken
+    );
+
+    // Declaration order is arena order, and a nested struct has to be
+    // emitted before the one that holds it for the C89 output to compile.
+    let structs: Vec<Id<TypeNode>> = ast
+        .types()
+        .filter(|(_, node)| matches!(node.kind, TypeKind::Structure { .. }))
+        .map(|(id, _)| id)
+        .collect();
+    let names: BTreeSet<String> = structs
+        .iter()
+        .filter_map(|id| ast.type_(*id).ok().map(|node| node.name.clone()))
+        .collect();
+    Model {
+        ast,
+        structs,
+        names,
+    }
 }
 
 fn main() {
     let mut args = std::env::args().skip(1);
     let input = args
         .next()
-        .expect("usage: <input.idl> <out-dir> [c|python]");
+        .expect("usage: <input.idl> <out-dir> [c|python|java]");
     let out_dir = args
         .next()
-        .expect("usage: <input.idl> <out-dir> [c|python]");
+        .expect("usage: <input.idl> <out-dir> [c|python|java]");
     let lang = args.next().unwrap_or_else(|| "c".to_string());
     let text = std::fs::read_to_string(&input).expect("read idl");
-    let spec = zerodds_idl::parse(&text, &ParserConfig::default()).expect("parse idl");
+    let model = load(&text, &input);
 
     let base = std::path::Path::new(&input)
         .file_stem()
@@ -747,20 +811,20 @@ fn main() {
     let dir = std::path::Path::new(&out_dir);
     match lang.as_str() {
         "python" | "py" => {
-            std::fs::write(dir.join(format!("{base}_gen.py")), generate_py(&spec))
+            std::fs::write(dir.join(format!("{base}_gen.py")), generate_py(&model))
                 .expect("write py");
             eprintln!("generated {base}_gen.py in {out_dir}");
         }
         "java" => {
             std::fs::write(
                 dir.join(format!("{base}_gen.java")),
-                generate_java(&spec, base),
+                generate_java(&model, base),
             )
             .expect("write java");
             eprintln!("generated {base}_gen.java in {out_dir}");
         }
         _ => {
-            let (hdr, src) = generate(&spec, base);
+            let (hdr, src) = generate(&model, base);
             std::fs::write(dir.join(format!("{base}_gen.h")), hdr).expect("write h");
             std::fs::write(dir.join(format!("{base}_gen.c")), src).expect("write c");
             eprintln!("generated {base}_gen.h + {base}_gen.c in {out_dir}");

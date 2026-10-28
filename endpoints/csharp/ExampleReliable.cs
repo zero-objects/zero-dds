@@ -29,6 +29,11 @@ namespace ZeroDDS.Examples
     {
         private const int N = 12;
 
+        /// The DataWriter this example writes to (ObjectId = raw 0x001 +
+        /// OBJK_DATAWRITER, DDS-XRCE 1.0 §7.2.1). It rides in every frame's
+        /// BaseObjectRequest.
+        private const ushort WriterId = 0x0015;
+
         // Reading { uint32 id; float value; string label } -- the same shape as
         // the Rust example's `Reading`, marshalled with the pure-C# XCDR2 writer
         // (ZeroDDS.Writer), byte-identical to the Rust core.
@@ -53,7 +58,7 @@ namespace ZeroDDS.Examples
         {
             var sock = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
             sock.Connect(new IPEndPoint(IPAddress.Loopback, port));
-            var writer = AsyncReliableWriter.Start(sock, 64);
+            var writer = AsyncReliableWriter.Start(sock, WriterId, 64);
             for (int i = 0; i < N; i++)
             {
                 var item = Sample(i);
@@ -92,7 +97,7 @@ namespace ZeroDDS.Examples
 
             var dsock = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
             dsock.Connect(new IPEndPoint(IPAddress.Loopback, sinkPort));
-            var writer = AsyncReliableWriter.Start(dsock, 1 << 20);
+            var writer = AsyncReliableWriter.Start(dsock, WriterId, 1 << 20);
             var s = Sample(1);
             var sw = Stopwatch.StartNew();
             for (int i = 0; i < iters; i++)
@@ -109,7 +114,7 @@ namespace ZeroDDS.Examples
             var sw2 = Stopwatch.StartNew();
             for (int i = 0; i < iters; i++)
             {
-                isock.Send(ReliableWire.WriteFrame((ushort)i, s));
+                isock.Send(ReliableWire.WriteFrame((ushort)i, WriterId, s));
             }
             long inlineNs = sw2.ElapsedTicks * 100L / iters;
 
@@ -177,7 +182,7 @@ namespace ZeroDDS.Examples
 
             var sock = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
             sock.Connect(new IPEndPoint(IPAddress.Loopback, rxPort));
-            var writer = AsyncReliableWriter.Start(sock, 64);
+            var writer = AsyncReliableWriter.Start(sock, WriterId, 64);
             for (int i = 0; i < N; i++)
             {
                 var item = Sample(i);

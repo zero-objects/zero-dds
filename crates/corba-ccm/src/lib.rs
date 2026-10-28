@@ -32,6 +32,7 @@ pub mod component_def;
 pub mod context;
 pub mod dynamic_api;
 pub mod home;
+pub mod lwccm;
 pub mod orb_extensions;
 pub mod port;
 
@@ -53,11 +54,20 @@ pub mod timer;
 pub use cidl::{Composition, HomeExecutor, StorageHome, StorageType};
 pub use cif::{ComponentExecutor, ExecutorLocator, KeyedExecutor, SessionExecutor};
 pub use component_def::{
-    AttributeDef, ComponentDef, EventSinkDef, EventSourceDef, FacetDef, ReceptacleDef,
+    AttributeDef, ComponentDef, ComponentTypeTable, EventSinkDef, EventSourceDef, FacetDef,
+    InheritanceError, ReceptacleDef,
 };
 pub use context::ComponentContext;
-pub use home::{HomeDef, HomeFinder};
-pub use port::{ConnectionId, EventStream, PortRegistry};
+#[cfg(feature = "std")]
+pub use home::HomeFinder;
+pub use home::{
+    COMPONENT_HOME_FINDER_INITIAL_REFERENCE, ComponentHomeFinder, FacetRef,
+    GET_COMPONENT_GIOP_OPERATION, HomeDef, HomeNotFound,
+};
+pub use lwccm::{LwccmExclusion, LwccmMinorCode, LwccmRejection, disabled_by, rejection_for};
+#[cfg(feature = "std")]
+pub use port::PortRegistry;
+pub use port::{ConnectionId, EventStream};
 
 #[cfg(feature = "std")]
 pub use container::{Container, ContainerError, ContainerType, LifecycleState};

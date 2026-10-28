@@ -1,107 +1,46 @@
-# Installation
+# Installation from the candidate checkout
 
-ZeroDDS ships as native packages on Debian/Ubuntu, RHEL/Fedora,
-macOS (Homebrew + .pkg), and Windows (.msi). For Rust development
-the workspace also builds from source via Cargo.
+This guide follows the source revision you have checked out. It does not
+assert that RC7 packages, container images or registry crates have been
+published. Release-channel availability must be checked separately when the
+candidate is released.
 
-For the package-build scripts see `pkg/` in the repository.
+## Requirements
 
-## Debian / Ubuntu
+The workspace declares Rust 1.88 or newer in [Cargo.toml](../../Cargo.toml).
+Install a compatible Rust toolchain and your platform's native linker.
+Run the commands below from the ZeroDDS checkout root. Keep Cargo.lock and
+the source revision together.
 
-```bash
-# When the apt repo lands at apt.zerodds.org,
-# the install will look like this:
-curl -fsSL https://apt.zerodds.org/key.gpg | sudo apt-key add -
-echo "deb https://apt.zerodds.org/ stable main" | sudo tee /etc/apt/sources.list.d/zerodds.list
-sudo apt update
-sudo apt install zerodds-tools libzerodds-dev
-```
-
-Until the public apt repo is hosted, build the .deb locally:
+## Build the introductory examples
 
 ```bash
-git clone https://github.com/zero-objects/zero-dds.git
-cd zerodds
-cp -r pkg/debian debian
-dpkg-buildpackage -us -uc -b
-sudo dpkg -i ../zerodds-tools_*.deb
+cargo build --locked -j 1 -p zerodds-dcps \
+  --example hello_dds_publisher --example hello_dds_subscriber
 ```
 
-## RHEL / Fedora / openSUSE
+This builds just the two examples needed for the next chapter, not every
+binding, bridge and tool in the workspace. Their executables are placed in
+target/debug/examples (with .exe on Windows). Cargo may need network access
+to fetch dependencies on the first build.
 
-```bash
-# Local build:
-git clone https://github.com/zero-objects/zero-dds.git
-cd zerodds
-rpmdev-setuptree
-cp pkg/rpm/zerodds.spec ~/rpmbuild/SPECS/
-git archive --format=tar.gz --prefix=zerodds-1.0.0-rc.3.1/ HEAD \
-  > ~/rpmbuild/SOURCES/zerodds-1.0.0-rc.3.1.tar.gz
-rpmbuild -ba ~/rpmbuild/SPECS/zerodds.spec
-sudo dnf install ~/rpmbuild/RPMS/x86_64/zerodds-tools-*.rpm
-```
+The commands describe the current source targets. They are not a claim
+that every platform or external distribution channel has passed the RC7
+release gate.
 
-## macOS
+## Configuration before running
 
-### Homebrew (recommended)
+The participant factory loads runtime configuration from
+/etc/zerodds/zerodds.yaml, then sorted YAML fragments in
+/etc/zerodds/zerodds.d and /run/zerodds/zerodds.d. Missing implicit paths
+use defaults. Malformed or unreadable configuration fails startup.
+The examples have no --config argument.
 
-```bash
-brew tap zerodds/zerodds https://github.com/zero-objects/homebrew-zerodds
-brew install zerodds
-```
-
-### .pkg (Universal — Apple Silicon + Intel)
-
-```bash
-git clone https://github.com/zero-objects/zero-dds.git
-cd zerodds
-VERSION=1.0.0-rc.3.1 ./pkg/macos/build_pkg.sh
-sudo installer -pkg dist/macos/zerodds-1.0.0-rc.3.1.pkg -target /
-```
-
-The .pkg installs to `/usr/local/{bin,lib,include}`.
-
-## Windows
-
-```powershell
-# Build the MSI from source:
-git clone https://github.com/zero-objects/zero-dds.git
-cd zerodds
-pwsh -File pkg/windows/build.ps1
-msiexec /i dist/windows/zerodds-1.0.0-rc.3.1-x64.msi /qn
-
-# Verify:
-& "$env:ProgramFiles\ZeroDDS\bin\zerodds-admin.exe" --version
-```
-
-The installer adds `%ProgramFiles%\ZeroDDS\bin` to the user PATH —
-new shells pick it up.
-
-## From source (Rust)
-
-```bash
-git clone https://github.com/zero-objects/zero-dds.git
-cd zerodds
-cargo build --workspace --release
-```
-
-Binaries land in `target/release/`. Reach the rust API via the
-`zerodds` crate (`crates/rs/`) once it is wired up; for now use
-`zerodds-dcps` directly.
-
-## Verify
-
-After install, on any platform:
-
-```bash
-zerodds-admin --version
-zerodds-perf hw-info
-```
-
-`zerodds-perf hw-info` prints CPU-feature detection (AES-NI / ARMv8-AES
-/ PCLMULQDQ / SHA / AVX2 / NEON) — useful as a deployment-audit
-breadcrumb.
+See the [runtime configuration contract](../../crates/config/README.md)
+and [executable layering examples](../../crates/dcps/tests/runtime_config_layering.rs).
+Do not copy legacy ZERODDS_PEERS or ZERODDS_CONFIG exports into this workflow.
 
 ## Next
 
-→ [DDS in 5 minutes](concepts.md)
+[Run the publisher and subscriber](first-publisher.md) ·
+[Website companion](../../website/docs/examples/getting-started-first-publisher.html)

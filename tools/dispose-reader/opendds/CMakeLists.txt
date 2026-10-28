@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.12)
+project(opendds_dispose_reader CXX)
+find_package(OpenDDS REQUIRED)
+add_library(keyed_idl)
+opendds_target_sources(keyed_idl PUBLIC KeyedPointA.idl)
+target_link_libraries(keyed_idl PUBLIC OpenDDS::Dcps)
+add_executable(opendds_dispose_reader reader.cpp)
+target_link_libraries(opendds_dispose_reader OpenDDS::Dcps OpenDDS::Rtps OpenDDS::Rtps_Udp keyed_idl)

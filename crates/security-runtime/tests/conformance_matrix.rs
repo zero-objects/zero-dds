@@ -39,8 +39,12 @@
 
 use std::sync::{Arc, Mutex};
 
-use zerodds_security::access_control::{AccessControlPlugin, AccessDecision, PermissionsHandle};
-use zerodds_security::authentication::{AuthenticationPlugin, IdentityHandle};
+use zerodds_security::access_control::{AccessControlPlugin, EndpointRequest, PermissionsHandle};
+use zerodds_security::authentication::{
+    AlgorithmMasks, AuthenticationExtensions, AuthenticationListener, AuthenticationPlugin,
+    HandshakeHandle, HandshakeStepOutcome, IdentityHandle, LocalIdentityValidation,
+    ParticipantSecurityConfig, RemoteIdentityValidation, SharedSecretHandle,
+};
 use zerodds_security::crypto::{CryptoHandle, CryptographicPlugin};
 use zerodds_security::data_tagging::{DataTag, DataTaggingPlugin};
 use zerodds_security::error::{SecurityError, SecurityErrorKind, SecurityResult};
@@ -64,7 +68,7 @@ fn auth_accepts_builtin_pki_plugin() {
     // Spec requirement: an invalid PropertyList → AuthenticationFailed
     // (not panic, not silent success). No cert properties =
     // misconfigured local identity → must be an error.
-    let res = plugin.validate_local_identity(&PropertyList::new(), [0xAA; 16]);
+    let res = plugin.validate_local_identity(0, &PropertyList::new(), [0xAA; 16]);
     assert!(
         res.is_err(),
         "Builtin Auth must return an error without cert properties"
@@ -75,76 +79,121 @@ fn auth_accepts_builtin_pki_plugin() {
 fn auth_rejects_misimplemented_plugin() {
     /// A plugin with an empty class id (violates spec §8.3.1.1).
     struct BrokenAuth;
+    fn broken<T>() -> SecurityResult<T> {
+        Err(SecurityError::new(
+            SecurityErrorKind::AuthenticationFailed,
+            "broken: never success",
+        ))
+    }
+    impl AuthenticationExtensions for BrokenAuth {
+        fn plugin_class_id(&self) -> &str {
+            "" // Spec violation — the class id must be non-empty.
+        }
+    }
     impl AuthenticationPlugin for BrokenAuth {
         fn validate_local_identity(
             &mut self,
-            _props: &PropertyList,
-            _participant_guid: [u8; 16],
-        ) -> SecurityResult<IdentityHandle> {
-            Err(SecurityError::new(
-                SecurityErrorKind::AuthenticationFailed,
-                "broken: never success",
-            ))
+            _domain_id: u32,
+            _participant_qos: &PropertyList,
+            _candidate_participant_guid: [u8; 16],
+        ) -> SecurityResult<LocalIdentityValidation> {
+            broken()
+        }
+        fn get_identity_token(&mut self, _handle: IdentityHandle) -> SecurityResult<Vec<u8>> {
+            broken()
+        }
+        fn get_identity_status_token(
+            &mut self,
+            _handle: IdentityHandle,
+        ) -> SecurityResult<Vec<u8>> {
+            broken()
+        }
+        fn set_participant_security_config(
+            &mut self,
+            _handle: IdentityHandle,
+            _config: &ParticipantSecurityConfig,
+        ) -> SecurityResult<AlgorithmMasks> {
+            broken()
+        }
+        fn set_permissions_credential_and_token(
+            &mut self,
+            _handle: IdentityHandle,
+            _credential: &[u8],
+            _token: &[u8],
+        ) -> SecurityResult<()> {
+            broken()
         }
         fn validate_remote_identity(
             &mut self,
             _local: IdentityHandle,
             _remote_participant_guid: [u8; 16],
             _remote_auth_token: &[u8],
-        ) -> SecurityResult<IdentityHandle> {
-            Err(SecurityError::new(
-                SecurityErrorKind::AuthenticationFailed,
-                "broken",
-            ))
+            _remote_auth_request_token: Option<&[u8]>,
+        ) -> SecurityResult<RemoteIdentityValidation> {
+            broken()
         }
         fn begin_handshake_request(
             &mut self,
             _initiator: IdentityHandle,
             _replier: IdentityHandle,
-        ) -> SecurityResult<(
-            zerodds_security::authentication::HandshakeHandle,
-            zerodds_security::authentication::HandshakeStepOutcome,
-        )> {
-            Err(SecurityError::new(
-                SecurityErrorKind::AuthenticationFailed,
-                "broken",
-            ))
+            _pdata: &[u8],
+        ) -> SecurityResult<(HandshakeHandle, HandshakeStepOutcome)> {
+            broken()
         }
         fn begin_handshake_reply(
             &mut self,
             _replier: IdentityHandle,
             _initiator: IdentityHandle,
             _request_token: &[u8],
-        ) -> SecurityResult<(
-            zerodds_security::authentication::HandshakeHandle,
-            zerodds_security::authentication::HandshakeStepOutcome,
-        )> {
-            Err(SecurityError::new(
-                SecurityErrorKind::AuthenticationFailed,
-                "broken",
-            ))
+            _pdata: &[u8],
+        ) -> SecurityResult<(HandshakeHandle, HandshakeStepOutcome)> {
+            broken()
         }
         fn process_handshake(
             &mut self,
-            _handshake: zerodds_security::authentication::HandshakeHandle,
+            _handshake: HandshakeHandle,
             _token: &[u8],
-        ) -> SecurityResult<zerodds_security::authentication::HandshakeStepOutcome> {
-            Err(SecurityError::new(
-                SecurityErrorKind::AuthenticationFailed,
-                "broken",
-            ))
+        ) -> SecurityResult<HandshakeStepOutcome> {
+            broken()
         }
-        fn shared_secret(
-            &self,
-            _handshake: zerodds_security::authentication::HandshakeHandle,
-        ) -> SecurityResult<zerodds_security::authentication::SharedSecretHandle> {
-            Err(SecurityError::new(
-                SecurityErrorKind::AuthenticationFailed,
-                "broken",
-            ))
+        fn shared_secret(&self, _handshake: HandshakeHandle) -> SecurityResult<SharedSecretHandle> {
+            broken()
         }
-        fn plugin_class_id(&self) -> &str {
-            "" // Spec violation — the class id must be non-empty.
+        fn get_authenticated_peer_credential_token(
+            &mut self,
+            _handshake: HandshakeHandle,
+        ) -> SecurityResult<Vec<u8>> {
+            broken()
+        }
+        fn set_listener(
+            &mut self,
+            _listener: Option<std::sync::Arc<dyn AuthenticationListener>>,
+        ) -> SecurityResult<()> {
+            broken()
+        }
+        fn return_identity_token(&mut self, _token: &[u8]) -> SecurityResult<()> {
+            broken()
+        }
+        fn return_identity_status_token(&mut self, _token: &[u8]) -> SecurityResult<()> {
+            broken()
+        }
+        fn return_authenticated_peer_credential_token(
+            &mut self,
+            _token: &[u8],
+        ) -> SecurityResult<()> {
+            broken()
+        }
+        fn return_handshake_handle(&mut self, _handshake: HandshakeHandle) -> SecurityResult<()> {
+            broken()
+        }
+        fn return_identity_handle(&mut self, _handle: IdentityHandle) -> SecurityResult<()> {
+            broken()
+        }
+        fn return_sharedsecret_handle(
+            &mut self,
+            _handle: SharedSecretHandle,
+        ) -> SecurityResult<()> {
+            broken()
         }
     }
 
@@ -155,7 +204,7 @@ fn auth_rejects_misimplemented_plugin() {
         "the BrokenAuth stub demonstrates an empty class id (= misimplementation)"
     );
     // Negative SPI contract: every call returns an error.
-    let r = plugin.validate_local_identity(&PropertyList::new(), [0; 16]);
+    let r = plugin.validate_local_identity(0, &PropertyList::new(), [0; 16]);
     assert!(matches!(
         r.unwrap_err().kind,
         SecurityErrorKind::AuthenticationFailed
@@ -172,8 +221,11 @@ fn access_control_accepts_builtin_permissions_plugin() {
     assert_eq!(plugin.plugin_class_id(), "DDS:Access:Permissions:1.2");
     // The builtin runs without registered permissions → returns an error
     // (spec-conform: AccessControl is non-default-permissive).
-    let res =
-        plugin.validate_local_permissions(IdentityHandle(1), [0xAA; 16], &PropertyList::new());
+    let props = PropertyList::new();
+    let res = plugin.validate_local_permissions(
+        IdentityHandle(1),
+        &zerodds_security::access_control::ParticipantRequest::new(0, [0xAA; 16], &props),
+    );
     assert!(
         res.is_err(),
         "the builtin AccessControl must return an error without registered permissions"
@@ -182,69 +234,16 @@ fn access_control_accepts_builtin_permissions_plugin() {
 
 #[test]
 fn access_control_rejects_misimplemented_plugin() {
-    /// A plugin that always returns "Permit" — spec §9.4 requires
-    /// that non-validated permissions always yield `Deny`.
-    struct AlwaysPermit;
-    impl AccessControlPlugin for AlwaysPermit {
-        fn validate_local_permissions(
-            &mut self,
-            _local: IdentityHandle,
-            _participant_guid: [u8; 16],
-            _props: &PropertyList,
-        ) -> SecurityResult<PermissionsHandle> {
-            Ok(PermissionsHandle(0))
-        }
-        fn validate_remote_permissions(
-            &mut self,
-            _local: IdentityHandle,
-            _remote: IdentityHandle,
-            _remote_token: &[u8],
-            _remote_credential: &[u8],
-        ) -> SecurityResult<PermissionsHandle> {
-            Ok(PermissionsHandle(0))
-        }
-        fn check_create_datawriter(
-            &self,
-            _p: PermissionsHandle,
-            _topic: &str,
-        ) -> SecurityResult<AccessDecision> {
-            Ok(AccessDecision::Permit)
-        }
-        fn check_create_datareader(
-            &self,
-            _p: PermissionsHandle,
-            _topic: &str,
-        ) -> SecurityResult<AccessDecision> {
-            Ok(AccessDecision::Permit)
-        }
-        fn check_remote_datawriter_match(
-            &self,
-            _l: PermissionsHandle,
-            _r: PermissionsHandle,
-            _topic: &str,
-        ) -> SecurityResult<AccessDecision> {
-            Ok(AccessDecision::Permit)
-        }
-        fn check_remote_datareader_match(
-            &self,
-            _l: PermissionsHandle,
-            _r: PermissionsHandle,
-            _topic: &str,
-        ) -> SecurityResult<AccessDecision> {
-            Ok(AccessDecision::Permit)
-        }
-        fn plugin_class_id(&self) -> &str {
-            "DDS:Access:AlwaysPermit"
-        }
-    }
-
-    let plugin: Box<dyn AccessControlPlugin> = Box::new(AlwaysPermit);
+    // The mock permits every check, with no document behind any handle:
+    // the permissions bypass a plugin must not have.
+    use zerodds_security::mock::MockAccessControlPlugin as AlwaysPermit;
+    let plugin: Box<dyn AccessControlPlugin> = Box::new(AlwaysPermit::new());
     // Misimplementation demonstration: Permit on a NON-validated
     // PermissionsHandle(0). The builtin (`PermissionsAccessControl`)
     // would return `Deny` here (see the `access_control_accepts_*` test
     // above — the builtin is non-default-permissive).
     let decision = plugin
-        .check_create_datawriter(PermissionsHandle(0), "any-topic")
+        .check_create_datawriter(PermissionsHandle(0), &EndpointRequest::new(0, "any-topic"))
         .expect("ok");
     assert!(
         decision.is_permitted(),
@@ -387,6 +386,23 @@ fn logging_rejects_misimplemented_plugin() {
     // empty after the log call).
     struct DropEverything;
     impl LoggingPlugin for DropEverything {
+        // Test double: it records `log` calls only; the Table 46 operations
+        // have nothing to configure.
+        fn set_log_options(
+            &self,
+            _options: zerodds_security::logging::LogOptions,
+        ) -> Result<(), zerodds_security::error::SecurityError> {
+            Ok(())
+        }
+        fn enable_logging(&self) -> Result<(), zerodds_security::error::SecurityError> {
+            Ok(())
+        }
+        fn set_listener(
+            &self,
+            _listener: Option<std::sync::Arc<dyn zerodds_security::logging::LoggerListener>>,
+        ) -> Result<(), zerodds_security::error::SecurityError> {
+            Ok(())
+        }
         fn log(&self, _l: LogLevel, _p: [u8; 16], _c: &str, _m: &str) {
             // explicit no-op
         }
@@ -417,7 +433,7 @@ fn logging_rejects_misimplemented_plugin() {
 #[test]
 fn data_tagging_accepts_builtin_plugin() {
     let mut plugin: Box<dyn DataTaggingPlugin> = Box::new(BuiltinDataTaggingPlugin::new());
-    assert_eq!(plugin.plugin_class_id(), "DDS:Tagging:Builtin");
+    assert_eq!(plugin.plugin_class_id(), "DDS:Tagging:DDS_Discovery");
     let g = [0xCC; 16];
     plugin.set_tags(
         g,

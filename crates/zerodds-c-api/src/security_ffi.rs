@@ -55,38 +55,81 @@ pub struct ZeroDdsSecurityConfig {
     pub governance_path: Option<PathBuf>,
     /// CMS-signed permissions XML.
     pub permissions_path: Option<PathBuf>,
+    /// Plugins of the application (AccessControl, Logging, DataTagging) that
+    /// replace the builtin ones, see `plugin_ffi`.
+    pub plugins: crate::plugin_ffi::ApplicationPlugins,
 }
 
 impl ZeroDdsSecurityConfig {
     /// Turns the builder into a [`SecurityProfileConfig`]. Returns
     /// `Err(missing-field-name)` if a path is missing.
     fn try_to_profile_cfg(&self, domain_id: u32) -> Result<SecurityProfileConfig, &'static str> {
+        // The vendor-form settings are `security.*` keys of the configuration
+        // (files over the environment, as every runtime setting).
+        let source = zerodds_dcps::runtime::ConfigSource::from_standard_paths()
+            .map_err(|_| "the ZeroDDS configuration does not load")?;
+        self.try_to_profile_cfg_with_env(domain_id, &|name| source.var(name))
+    }
+
+    /// [`Self::try_to_profile_cfg`] with the environment given. The three
+    /// vendor-form settings (`ZERODDS_SEC_KX_KEY_FALLBACK`,
+    /// `ZERODDS_SEC_COMPATIBILITY_CHECK`, `ZERODDS_SEC_ALGO_NAME_NUL`, `ZERODDS_SEC_SUBJECT_NAME_FORM`) come
+    /// from it, as they do for the enclave directory
+    /// (`SecurityProfile::from_enclave_dir`): this path had the defaults only,
+    /// so a variable set for an application that creates its runtime from the
+    /// six paths had no effect.
+    fn try_to_profile_cfg_with_env(
+        &self,
+        domain_id: u32,
+        env: &dyn Fn(&str) -> Option<String>,
+    ) -> Result<SecurityProfileConfig, &'static str> {
+        let forms = zerodds_security_runtime::vendor_form_settings_from_env(env)
+            .map_err(|_| "a ZERODDS_SEC_* vendor-form setting has a value that is not allowed")?;
         Ok(SecurityProfileConfig {
             domain_id,
             identity_ca_pem: self
                 .identity_ca_path
                 .clone()
-                .ok_or("identity_ca_path not set")?,
+                .ok_or("identity_ca_path not set")?
+                .into(),
             identity_cert_pem: self
                 .identity_cert_path
                 .clone()
-                .ok_or("identity_cert_path not set")?,
+                .ok_or("identity_cert_path not set")?
+                .into(),
             identity_key_pem: self
                 .identity_key_path
                 .clone()
-                .ok_or("identity_key_path not set")?,
+                .ok_or("identity_key_path not set")?
+                .into(),
             permissions_ca_pem: self
                 .permissions_ca_path
                 .clone()
-                .ok_or("permissions_ca_path not set")?,
+                .ok_or("permissions_ca_path not set")?
+                .into(),
             governance_p7s: self
                 .governance_path
                 .clone()
-                .ok_or("governance_path not set")?,
+                .ok_or("governance_path not set")?
+                .into(),
             permissions_p7s: self
                 .permissions_path
                 .clone()
-                .ok_or("permissions_path not set")?,
+                .ok_or("permissions_path not set")?
+                .into(),
+            identity_key_password: None,
+            identity_key_password_reading: Default::default(),
+            symmetric_cipher_bits: 256,
+            max_blocks_per_session: None,
+            partition_matching: zerodds_security_runtime::PartitionMatching::Subset,
+            plaintext_loopback: false,
+            compatibility_checks: forms.compatibility_checks,
+            kx_key_fallback: forms.kx_key_fallback,
+            algo_name_nul: forms.algo_name_nul,
+            algorithm_names: forms.algorithm_names,
+            subject_name_form: forms.subject_name_form,
+            origin_authentication_fallback: forms.origin_authentication_fallback,
+            identity_crl: None,
         })
     }
 }
@@ -262,6 +305,12 @@ pub unsafe extern "C" fn zerodds_runtime_create_secure(
     // SAFETY: cfg per the FFI contract from _create + not further mutated.
     let cfg_ref: &ZeroDdsSecurityConfig = unsafe { &*cfg };
 
+    // An Authentication or a Cryptographic plugin of the application replaces
+    // the builtin PKI and AES-GCM plugins the files would build.
+    if cfg_ref.plugins.authentication.is_some() || cfg_ref.plugins.cryptographic.is_some() {
+        return create_with_application_plugins(domain_id, cfg_ref);
+    }
+
     let profile_cfg = match cfg_ref.try_to_profile_cfg(domain_id) {
         Ok(c) => c,
         Err(msg) => {
@@ -288,18 +337,34 @@ pub unsafe extern "C" fn zerodds_runtime_create_secure(
     };
 
     // General FFI path: XCDR2-first writer encap (matches the plain path + apps).
-    finish_secure_runtime(domain_id, profile, secured_data_representation_offer())
+    finish_secure_runtime(
+        domain_id,
+        profile.into(),
+        secured_data_representation_offer(),
+        &cfg_ref.plugins,
+    )
+}
+
+/// The SROS2 enclave directory the runtime configuration names:
+/// `security.enclave_dir`, env `ZERODDS_SECURITY_DIR`, over the standard
+/// layers. `Ok(None)` when no layer sets it.
+///
+/// # Errors
+/// An invalid or unreadable configuration, with its diagnostic.
+pub fn configured_enclave_dir() -> Result<Option<std::path::PathBuf>, String> {
+    crate::ffi_runtime_config(alloc::vec::Vec::new()).map(|config| config.security_enclave_dir)
 }
 
 /// Creates a ZeroDDS runtime with DDS-Security from an **SROS2 enclave**
-/// (C7 "secure by default"). Reads `ZERODDS_SECURITY_DIR` (enclave directory)
-/// and `ROS_DOMAIN_ID`, and builds the `SecurityProfile` in one call — no
-/// per-path setter ceremony.
+/// (C7 "secure by default"). The enclave directory is the runtime setting
+/// `security.enclave_dir` (env `ZERODDS_SECURITY_DIR`, or a file of the
+/// standard layers), and the `SecurityProfile` is built in one call — no
+/// per-path setter ceremony. `domain_id` is the domain of both the runtime
+/// and the governance/permissions check.
 ///
-/// Return: NULL if `ZERODDS_SECURITY_DIR` is not set (the caller then falls
-/// back to the plain path) OR on a load/verify error (stderr diag);
-/// otherwise the secured runtime. `domain_id` does not override `ROS_DOMAIN_ID` —
-/// it is the explicit value the runtime starts with.
+/// Return: NULL if no enclave directory is configured (the caller then falls
+/// back to the plain path) OR on a configuration, load or verify error
+/// (stderr diag); otherwise the secured runtime.
 ///
 /// # Safety
 /// No pointer arguments; always callable.
@@ -312,26 +377,89 @@ pub unsafe extern "C" fn zerodds_runtime_create_secure_from_env(
     participant_guid[..12].copy_from_slice(&prefix.0);
     participant_guid[12..].copy_from_slice(&[0x00, 0x00, 0x01, 0xC1]);
 
-    match SecurityProfile::from_env(participant_guid) {
-        // SROS2/rmw path: keep `ros_defaults()` XCDR1-first writer encap so
-        // rmw_zerodds stays wire-compatible with default rmw readers.
-        Ok(Some(profile)) => finish_secure_runtime(
-            domain_id,
-            profile,
-            RuntimeConfig::ros_defaults().data_representation_offer,
-        ),
+    let dir = match configured_enclave_dir() {
+        Ok(Some(dir)) => dir,
         Ok(None) => {
             eprintln!(
-                "zerodds_runtime_create_secure_from_env: ZERODDS_SECURITY_DIR not set — \
-                 no enclave to load"
+                "zerodds_runtime_create_secure_from_env: security.enclave_dir \
+                 (ZERODDS_SECURITY_DIR) not set — no enclave to load"
+            );
+            return ptr::null_mut();
+        }
+        Err(e) => {
+            eprintln!("zerodds_runtime_create_secure_from_env: invalid configuration: {e}");
+            return ptr::null_mut();
+        }
+    };
+    match SecurityProfile::from_enclave_dir(&dir, domain_id, participant_guid) {
+        // SROS2/rmw path: keep `ros_defaults()` XCDR1-first writer encap so
+        // rmw_zerodds stays wire-compatible with default rmw readers.
+        Ok(profile) => finish_secure_runtime(
+            domain_id,
+            profile.into(),
+            RuntimeConfig::ros_defaults().data_representation_offer,
+            &crate::plugin_ffi::ApplicationPlugins::default(),
+        ),
+        Err(e) => {
+            eprintln!(
+                "zerodds_runtime_create_secure_from_env: enclave {}: {e}",
+                dir.display()
             );
             ptr::null_mut()
         }
-        Err(e) => {
-            eprintln!("zerodds_runtime_create_secure_from_env: {e}");
-            ptr::null_mut()
-        }
     }
+}
+
+/// The secured `rmw_zerodds` runtime from layers the caller loaded (the RMW
+/// reads `--config`/`--set` from its process's command line): `Ok(None)`
+/// when the configuration names no enclave (`security.enclave_dir`), the
+/// plain path then applies. A Rust helper, not a C ABI.
+///
+/// # Errors
+/// An invalid configuration, an enclave that does not load, or a refused
+/// start (the reason is on stderr, as for the C entry points).
+pub fn runtime_create_secure_ros_from_source(
+    domain_id: u32,
+    source: &zerodds_dcps::runtime::ConfigSource,
+    rcl_enclave: Option<&std::path::Path>,
+) -> Result<Option<*mut ZeroDdsRuntime>, String> {
+    let config = crate::ffi_config_from_source(
+        source,
+        RuntimeConfig::ros_defaults().data_representation_offer,
+    )?;
+    // The enclave rcl resolved (`ROS_SECURITY_KEYSTORE`/`enclaves/<name>`,
+    // `rmw_security_options_t::security_root_path`) or the configuration's
+    // `security.enclave_dir`; two different ones is a contradiction.
+    let dir = match (rcl_enclave, config.security_enclave_dir.as_deref()) {
+        (Some(rcl), Some(cfg)) if rcl != cfg => {
+            return Err(format!(
+                "rcl names the enclave {} and security.enclave_dir names {}; name one",
+                rcl.display(),
+                cfg.display()
+            ));
+        }
+        (Some(rcl), _) => rcl.to_path_buf(),
+        (None, Some(cfg)) => cfg.to_path_buf(),
+        (None, None) => return Ok(None),
+    };
+    let prefix = random_guid_prefix();
+    let mut participant_guid = [0u8; 16];
+    participant_guid[..12].copy_from_slice(&prefix.0);
+    participant_guid[12..].copy_from_slice(&[0x00, 0x00, 0x01, 0xC1]);
+    let profile = SecurityProfile::from_enclave_dir(&dir, domain_id, participant_guid)
+        .map_err(|e| format!("enclave {}: {e}", dir.display()))?;
+    let rt = finish_secure_runtime_with(
+        domain_id,
+        profile.into(),
+        config,
+        &crate::plugin_ffi::ApplicationPlugins::default(),
+    );
+    if rt.is_null() {
+        return Err(format!(
+            "secured runtime for domain {domain_id} not started"
+        ));
+    }
+    Ok(Some(rt))
 }
 
 /// Data-representation offer for the general [`zerodds_runtime_create_secure`]
@@ -339,15 +467,182 @@ pub unsafe extern "C" fn zerodds_runtime_create_secure_from_env(
 ///
 /// XCDR2 is FIRST — the byte-oriented FFI writer derives its emitted
 /// encapsulation header from the offer's first element, and these apps
-/// serialize XCDR2 bodies, matching the plain `zerodds_runtime_create` default
-/// (offer `[XCDR2]`). XCDR1 stays in the SET so the reader still accepts foreign
-/// XCDR1 writers (Cyclone / rmw_*) config-free — the cross-vendor acceptance the
-/// secured path needs. Kept separate from the SROS2/rmw `from_env` path, which
-/// keeps `ros_defaults()` (XCDR1-first) so rmw_zerodds writers stay
-/// wire-compatible with default rmw readers that offer XCDR1 only.
+/// serialize XCDR2 bodies. XCDR1 stays in the SET so the reader still accepts
+/// foreign XCDR1 writers (Cyclone / rmw_*) config-free — the cross-vendor
+/// acceptance the secured path needs. Kept separate from the SROS2/rmw
+/// `from_env` path, which keeps `ros_defaults()` (XCDR1-first) so rmw_zerodds
+/// writers stay wire-compatible with default rmw readers that offer XCDR1 only.
+///
+/// It is [`crate::ffi_data_representation_offer`] and not a second copy of
+/// it. When this function held its own copy, the plain
+/// `zerodds_runtime_create` was on `RuntimeConfig::default()` instead —
+/// and stayed there when that default became XCDR1-first, which stamped
+/// `0x0001` on the FFI's XCDR2 bodies and took plain zerodds↔zerodds to
+/// zero samples while the secured path measured 13/13. One function is
+/// what keeps the secured and the plain path from parting again.
 fn secured_data_representation_offer() -> alloc::vec::Vec<i16> {
-    use zerodds_rtps::publication_data::data_representation as dr;
-    alloc::vec![dr::XCDR2, dr::XCDR]
+    crate::ffi_data_representation_offer()
+}
+
+/// `zerodds_runtime_create_secure` with an Authentication plugin of the
+/// application, and a Cryptographic plugin of the application or the builtin
+/// one. The governance is read and verified from `governance_path` and
+/// `permissions_ca_path`; the plugin validates the identity, with the paths
+/// that are set as the properties of Table 50 (`file:` URIs). The builtin
+/// AccessControl plugin needs the identity certificate of the builtin PKI
+/// plugin, so with these plugins the AccessControl plugin is the application's
+/// or there is none (the governance decides).
+fn create_with_application_plugins(
+    domain_id: u32,
+    cfg: &ZeroDdsSecurityConfig,
+) -> *mut ZeroDdsRuntime {
+    use zerodds_security::authentication::{AuthenticationPlugin, ValidationResult};
+    use zerodds_security::properties::{Property, PropertyList};
+    use zerodds_security_runtime::Material;
+    let fail = |message: &str| {
+        eprintln!("zerodds_runtime_create_secure: {message}");
+        ptr::null_mut()
+    };
+    let Some(auth_handle) = cfg.plugins.authentication.as_ref() else {
+        return fail(
+            "a Cryptographic plugin of the application needs an Authentication plugin of \
+             the application: it gets the SharedSecret from the plugin it agrees with",
+        );
+    };
+    let (Some(governance), Some(permissions_ca)) = (
+        cfg.governance_path.as_ref(),
+        cfg.permissions_ca_path.as_ref(),
+    ) else {
+        return fail("governance_path and permissions_ca_path must be set");
+    };
+    let forms = match zerodds_security_runtime::vendor_form_settings_from_env(&|name| {
+        std::env::var(name).ok()
+    }) {
+        Ok(forms) => forms,
+        Err(_) => {
+            return fail("a ZERODDS_SEC_* vendor-form setting has a value that is not allowed");
+        }
+    };
+    let unused = || Material::File(PathBuf::new());
+    let profile_cfg = SecurityProfileConfig {
+        domain_id,
+        identity_ca_pem: unused(),
+        identity_cert_pem: unused(),
+        identity_key_pem: unused(),
+        permissions_ca_pem: permissions_ca.clone().into(),
+        governance_p7s: governance.clone().into(),
+        permissions_p7s: unused(),
+        identity_key_password: None,
+        identity_key_password_reading: Default::default(),
+        symmetric_cipher_bits: 256,
+        max_blocks_per_session: None,
+        partition_matching: zerodds_security_runtime::PartitionMatching::Subset,
+        plaintext_loopback: false,
+        compatibility_checks: forms.compatibility_checks,
+        kx_key_fallback: forms.kx_key_fallback,
+        algo_name_nul: forms.algo_name_nul,
+        algorithm_names: forms.algorithm_names,
+        subject_name_form: forms.subject_name_form,
+        origin_authentication_fallback: forms.origin_authentication_fallback,
+        identity_crl: None,
+    };
+    let (governance, _governance_signed, _permissions_ca) =
+        match zerodds_security_runtime::governance_from_files(&profile_cfg) {
+            Ok(g) => g,
+            Err(e) => return fail(&format!("{e}")),
+        };
+
+    let prefix = random_guid_prefix();
+    let mut candidate = [0u8; 16];
+    candidate[..12].copy_from_slice(&prefix.0);
+    candidate[12..].copy_from_slice(&[0x00, 0x00, 0x01, 0xC1]);
+
+    // `validate_local_identity` with the settings of the configuration as the
+    // properties of Table 50.
+    let mut properties = PropertyList::new();
+    for (name, path) in [
+        ("dds.sec.auth.identity_ca", &cfg.identity_ca_path),
+        ("dds.sec.auth.identity_certificate", &cfg.identity_cert_path),
+        ("dds.sec.auth.private_key", &cfg.identity_key_path),
+        ("dds.sec.access.permissions_ca", &cfg.permissions_ca_path),
+        ("dds.sec.access.governance", &cfg.governance_path),
+        ("dds.sec.access.permissions", &cfg.permissions_path),
+    ] {
+        if let Some(path) = path {
+            properties.set(Property::local(name, format!("file:{}", path.display())));
+        }
+    }
+    let mut auth = match auth_handle.instantiate() {
+        Ok(a) => a,
+        Err(e) => return fail(&format!("Authentication plugin of the application: {e}")),
+    };
+    let validated = loop {
+        match auth.validate_local_identity(domain_id, &properties, candidate) {
+            Ok(v) if v.result == ValidationResult::PendingRetry => {
+                std::thread::sleep(zerodds_security_runtime::profile::LOCAL_VALIDATION_RETRY_DELAY);
+            }
+            Ok(v) => break v,
+            Err(e) => return fail(&format!("validate_local_identity of the plugin: {e}")),
+        }
+    };
+    if !validated.result.is_success() {
+        return fail("validate_local_identity of the plugin of the application failed");
+    }
+
+    let crypto: Box<dyn zerodds_security::cryptographic::CryptographicPluginInterfaces> =
+        match cfg.plugins.cryptographic.as_ref() {
+            Some(handle) => Box::new(handle.instantiate()),
+            None => Box::new(zerodds_security_runtime::builtin_crypto_plugin(
+                &profile_cfg,
+                &governance,
+                auth_handle.secrets(),
+            )),
+        };
+    let gate = match zerodds_security_runtime::gate_with_crypto(&profile_cfg, &governance, crypto) {
+        Ok(g) => g,
+        Err(e) => return fail(&format!("{e}")),
+    };
+    let auth: Arc<std::sync::Mutex<dyn AuthenticationPlugin>> =
+        Arc::new(std::sync::Mutex::new(auth));
+    finish_secure_runtime(
+        domain_id,
+        Parts {
+            gate,
+            auth,
+            identity: validated.identity,
+            guid: validated.adjusted_participant_guid,
+            governance,
+            builtin: None,
+        },
+        secured_data_representation_offer(),
+        &cfg.plugins,
+    )
+}
+
+/// What the tail of the runtime creation needs of a security setup: the builtin
+/// profile, or the pieces of a setup made with plugins of the application.
+struct Parts {
+    gate: Arc<zerodds_security_runtime::SharedSecurityGate>,
+    auth: Arc<std::sync::Mutex<dyn zerodds_security::authentication::AuthenticationPlugin>>,
+    identity: zerodds_security::authentication::IdentityHandle,
+    guid: [u8; 16],
+    governance: zerodds_security_runtime::Governance,
+    /// The builtin profile, where the files made it: it arms the builtin
+    /// AccessControl plugin.
+    builtin: Option<SecurityProfile>,
+}
+
+impl From<SecurityProfile> for Parts {
+    fn from(profile: SecurityProfile) -> Self {
+        Self {
+            gate: Arc::clone(&profile.gate),
+            auth: profile.pki.clone(),
+            identity: profile.identity_handle,
+            guid: profile.adjusted_participant_guid,
+            governance: profile.governance.clone(),
+            builtin: Some(profile),
+        }
+    }
 }
 
 /// Shared tail of [`zerodds_runtime_create_secure`] +
@@ -361,10 +656,29 @@ fn secured_data_representation_offer() -> alloc::vec::Vec<i16> {
 /// `ros_defaults()`' XCDR1-first ordering for rmw wire compatibility.
 fn finish_secure_runtime(
     domain_id: u32,
-    profile: SecurityProfile,
+    profile: Parts,
     data_rep_offer: alloc::vec::Vec<i16>,
+    plugins: &crate::plugin_ffi::ApplicationPlugins,
 ) -> *mut ZeroDdsRuntime {
-    // DDS-Security §8.4.2.9.3 `check_create_participant`: consult BOTH governance
+    // Resolve and validate files before arming any security endpoint state.
+    let base_config = match crate::ffi_runtime_config(data_rep_offer) {
+        Ok(config) => config,
+        Err(error) => {
+            eprintln!("zerodds_runtime_create_secure: invalid configuration: {error}");
+            return ptr::null_mut();
+        }
+    };
+    finish_secure_runtime_with(domain_id, profile, base_config, plugins)
+}
+
+/// [`finish_secure_runtime`] over a configuration the caller already loaded.
+fn finish_secure_runtime_with(
+    domain_id: u32,
+    profile: Parts,
+    base_config: RuntimeConfig,
+    plugins: &crate::plugin_ffi::ApplicationPlugins,
+) -> *mut ZeroDdsRuntime {
+    // DDS-Security §9.4.2.9.3 `check_create_participant`: consult BOTH governance
     // and permissions. With `enable_join_access_control=TRUE` the participant may
     // create iff its permissions grant an `<allow_rule>` whose `<domains>` covers
     // this domain. A fully access-controlled governance is NOT un-joinable per se
@@ -372,45 +686,87 @@ fn finish_secure_runtime(
     // (Cyclone DDS + Fast DDS both join such a governance; SROS2 full-lockdown
     // relies on it). The earlier gate checked governance topology ONLY and denied
     // unconditionally — a spec bug that blocked ZeroDDS from every fully-locked
-    // secured domain (verified cross-vendor on codepit, 2026-06-14).
+    // secured domain (verified cross-vendor on the Linux test host, 2026-06-14).
     let now_secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    if !profile
-        .governance
-        .check_create_participant(&profile.permissions, domain_id, now_secs)
-    {
+    let join_permitted = match &profile.builtin {
+        Some(builtin) => {
+            profile
+                .governance
+                .check_create_participant(&builtin.permissions, domain_id, now_secs)
+        }
+        // Plugins of the application: the domain needs a rule; whether the
+        // participant may join is the AccessControl plugin's to say
+        // (`check_create_participant` below), as the governance alone cannot.
+        None => profile.governance.find_domain_rule(domain_id).is_some(),
+    };
+    if !join_permitted {
         eprintln!(
             "zerodds_runtime_create_secure(domain_id={domain_id}): check_create_participant \
-             denied (DDS-Security §8.4.2.9.3: join access control enabled and no permissions \
+             denied (DDS-Security §9.4.2.9.3: join access control enabled and no permissions \
              grant covers this domain, or no governance domain rule) — participant create denied"
         );
         return ptr::null_mut();
     }
 
-    // DDS-Security §9.3.3: the runtime MUST run with the identity-adjusted
+    // DDS-Security §7.4.3: the runtime MUST run with the identity-adjusted
     // GUID prefix (not the random candidate), so that the SPDP beacon,
     // handshake c.pdata and all entity GUIDs are consistent + cross-vendor
     // accepted.
     let mut adjusted_prefix_bytes = [0u8; 12];
-    adjusted_prefix_bytes.copy_from_slice(&profile.adjusted_participant_guid[..12]);
+    adjusted_prefix_bytes.copy_from_slice(&profile.guid[..12]);
     let prefix = zerodds_rtps::wire_types::GuidPrefix::from_bytes(adjusted_prefix_bytes);
+
+    // DDS-Security 1.2 §9.4.2.9.4 / §9.4.2.9.5: the gate carries the
+    // governance, the profile carries the permissions, and the endpoint-create
+    // check needs both. Without this the runtime would hold a gate that knows
+    // a topic is access-controlled and has nothing to decide with, and every
+    // `create_datawriter`/`create_datareader` on such a topic would be refused
+    // as `NoPermissions`.
+    if let Some(builtin) = &profile.builtin {
+        if let Err(e) = zerodds_security_runtime::arm_endpoint_access_control(builtin) {
+            eprintln!("zerodds_runtime_create_secure(domain_id={domain_id}): {e}");
+            return core::ptr::null_mut();
+        }
+    }
 
     // A5: this is the secured `rmw_zerodds` entry point (SROS2 enclave), so it
     // gets the same ROS-2 out-of-the-box profile as the plain path — the reader
     // offers XCDR1+XCDR2 to match rmw_cyclonedds/rmw_fastrtps writers config-free.
     // `security_guid_prefix` MUST match the identity-derived `prefix` we pass to
-    // `DcpsRuntime::start`, or the §9.3.3 GUID-prefix guard rejects the runtime.
+    // `DcpsRuntime::start`, or the §7.4.3 GUID-prefix guard rejects the runtime.
     // `data_rep_offer` param: general FFI path passes XCDR2-first (honest encap
     // for the app's XCDR2 bodies — old ros_defaults() XCDR1-first stamped an
     // XCDR1 header on XCDR2 bodies → typed reader misparse → 0 secured samples);
     // SROS2/rmw `from_env` keeps ros_defaults() XCDR1-first for rmw compatibility.
+    // The plugins of the application replace the builtin ones: the
+    // AccessControl plugin in the gate (DDS-Security 1.2 §9.8.1 step 2:
+    // `validate_local_permissions` first, whose handle is the local one),
+    // the Logging and the DataTagging plugin in the runtime configuration.
+    if let Some(handle) = plugins.access_control.as_ref() {
+        if let Err(e) = install_access_control(domain_id, &profile, handle) {
+            eprintln!("zerodds_runtime_create_secure(domain_id={domain_id}): {e}");
+            return core::ptr::null_mut();
+        }
+    }
+    let security_logger = plugins
+        .logging
+        .as_ref()
+        .map(crate::plugin_ffi::logging_for_runtime)
+        .or_else(|| base_config.security_logger.clone());
+    let security_data_tagging = plugins
+        .data_tagging
+        .as_ref()
+        .map(crate::plugin_ffi::data_tagging_for_runtime)
+        .or_else(|| base_config.security_data_tagging.clone());
     let rt_cfg = RuntimeConfig {
         security: Some(Arc::clone(&profile.gate)),
         security_guid_prefix: Some(prefix),
-        data_representation_offer: data_rep_offer,
-        ..RuntimeConfig::ros_defaults()
+        security_logger,
+        security_data_tagging,
+        ..base_config
     };
 
     let rt = match DcpsRuntime::start(domain_id as i32, prefix, rt_cfg) {
@@ -437,11 +793,45 @@ fn finish_secure_runtime(
     // existing `data_protection_kind` path.
     rt.enable_security_builtins_with_auth(
         zerodds_rtps::wire_types::VendorId::ZERODDS,
-        profile.pki.clone(),
-        profile.identity_handle,
+        profile.auth.clone(),
+        profile.identity,
     );
 
     Box::into_raw(Box::new(ZeroDdsRuntime { rt, _shutdown: () }))
+}
+
+/// Installs the AccessControl plugin of the application in the gate of
+/// `profile`: `validate_local_permissions` (DDS-Security 1.2 §9.8.1 step 2)
+/// gives the local handle.
+fn install_access_control(
+    domain_id: u32,
+    profile: &Parts,
+    handle: &crate::plugin_ffi::AccessControlHandle,
+) -> Result<(), String> {
+    use zerodds_security::access_control::{AccessControlPlugin, ParticipantRequest};
+    let mut plugin = handle
+        .instantiate()
+        .map_err(|e| format!("AccessControl plugin of the application: {e}"))?;
+    let properties = zerodds_security::properties::PropertyList::new();
+    let request = ParticipantRequest::new(domain_id, profile.guid, &properties);
+    let local = plugin
+        .validate_local_permissions(profile.identity, &request)
+        .map_err(|e| format!("validate_local_permissions of the plugin of the application: {e}"))?;
+    // §9.8.1 step 3: `check_create_participant`; a participant the plugin
+    // refuses is not created.
+    let permitted = plugin
+        .check_create_participant(local, &request)
+        .map_err(|e| format!("check_create_participant of the plugin of the application: {e}"))?;
+    if !permitted.is_permitted() {
+        return Err(String::from(
+            "the AccessControl plugin of the application refuses the participant \
+             (check_create_participant, DDS-Security 1.2 §9.8.1 step 3)",
+        ));
+    }
+    profile
+        .gate
+        .set_access_control(Box::new(plugin), local)
+        .map_err(|e| format!("AccessControl plugin of the application: {e:?}"))
 }
 
 #[cfg(test)]
@@ -513,6 +903,66 @@ mod tests {
         unsafe { zerodds_security_config_destroy(cfg) };
     }
 
+    /// The six-path configuration reads the vendor-form settings from the
+    /// environment, as the enclave directory does.
+    #[test]
+    fn the_six_path_config_reads_the_vendor_form_settings() {
+        let cfg = ZeroDdsSecurityConfig {
+            identity_ca_path: Some("/a".into()),
+            identity_cert_path: Some("/b".into()),
+            identity_key_path: Some("/c".into()),
+            permissions_ca_path: Some("/d".into()),
+            governance_path: Some("/e".into()),
+            permissions_path: Some("/f".into()),
+            plugins: crate::plugin_ffi::ApplicationPlugins::default(),
+        };
+        let none = |_: &str| None;
+        let defaults = cfg.try_to_profile_cfg_with_env(0, &none).unwrap();
+        assert_eq!(
+            defaults.algo_name_nul,
+            zerodds_security_runtime::AlgoNameNul::Spec
+        );
+        assert!(!defaults.kx_key_fallback);
+        assert_eq!(
+            defaults.algorithm_names,
+            zerodds_security_runtime::AlgorithmNames::V1_2
+        );
+        assert!(defaults.compatibility_checks);
+        assert_eq!(
+            defaults.subject_name_form,
+            zerodds_security_runtime::SubjectNameForm::Rfc4514
+        );
+        let set = |name: &str| match name {
+            "ZERODDS_SEC_SUBJECT_NAME_FORM" => Some("x509_name_oneline".to_string()),
+            "ZERODDS_SEC_ALGO_NAME_NUL" => Some("mirror".to_string()),
+            "ZERODDS_SEC_KX_KEY_FALLBACK" => Some("accept".to_string()),
+            "ZERODDS_SEC_ALGORITHM_NAMES" => Some("1.1".to_string()),
+            _ => None,
+        };
+        let with = cfg.try_to_profile_cfg_with_env(0, &set).unwrap();
+        assert_eq!(
+            with.algo_name_nul,
+            zerodds_security_runtime::AlgoNameNul::Mirror
+        );
+        assert!(with.kx_key_fallback);
+        assert_eq!(
+            with.subject_name_form,
+            zerodds_security_runtime::SubjectNameForm::X509NameOneline
+        );
+        assert_eq!(
+            with.algorithm_names,
+            zerodds_security_runtime::AlgorithmNames::V1_1
+        );
+        let bad_form =
+            |name: &str| (name == "ZERODDS_SEC_SUBJECT_NAME_FORM").then(|| "dn".to_string());
+        assert!(cfg.try_to_profile_cfg_with_env(0, &bad_form).is_err());
+        let bad = |name: &str| (name == "ZERODDS_SEC_ALGO_NAME_NUL").then(|| "nul".to_string());
+        assert!(cfg.try_to_profile_cfg_with_env(0, &bad).is_err());
+        let bad_names =
+            |name: &str| (name == "ZERODDS_SEC_ALGORITHM_NAMES").then(|| "1.0".to_string());
+        assert!(cfg.try_to_profile_cfg_with_env(0, &bad_names).is_err());
+    }
+
     #[test]
     fn missing_path_yields_null_runtime() {
         let cfg = zerodds_security_config_create();
@@ -531,8 +981,8 @@ mod tests {
 
     #[test]
     fn secure_from_env_null_when_dir_unset() {
-        // C7: without ZERODDS_SECURITY_DIR the env variant returns NULL, so that
-        // the caller (rmw-shim) falls back to the plain path.
+        // C7: without an enclave directory in any layer the env variant returns
+        // NULL, so that the caller (rmw-shim) falls back to the plain path.
         if std::env::var("ZERODDS_SECURITY_DIR").is_ok() {
             return;
         }

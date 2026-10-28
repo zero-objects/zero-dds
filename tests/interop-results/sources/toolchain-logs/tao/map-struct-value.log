@@ -1,0 +1,2 @@
+wireprobe-tao: the probe did not compile
+genC.cpp:94:27: error: '_tc__tao_map_CORBA_Long_m_K_' is not a member of 'm::S'

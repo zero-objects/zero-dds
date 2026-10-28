@@ -1,0 +1,5 @@
+// `sequence<map>`, unannotated
+struct Sample {
+    sequence<map<long, long> > entries;
+    long tail;
+};

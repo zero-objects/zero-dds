@@ -71,7 +71,7 @@ fn single_request_reply_roundtrip() {
     let req_id = SampleIdentity::new([0xAA; 16], 1);
     let req_hdr = RequestHeader::new(req_id, "Calculator::add");
     let req_payload = vec![0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00]; // a=1, b=2
-    let req_frame = encode_request_frame(&req_hdr, &req_payload);
+    let req_frame = encode_request_frame(&req_hdr, &req_payload).unwrap();
     wire.put_request(req_frame);
 
     // Step 2-3: the replier fetches the frame, decodes.
@@ -112,7 +112,7 @@ fn many_concurrent_request_reply_pairs() {
     for i in 0u64..100 {
         let id = SampleIdentity::new([i as u8; 16], i);
         let hdr = RequestHeader::new(id, "Calculator::compute");
-        let frame = encode_request_frame(&hdr, &[i as u8]);
+        let frame = encode_request_frame(&hdr, &[i as u8]).unwrap();
         wire.put_request(frame);
         sent_ids.push(id);
     }
@@ -151,7 +151,7 @@ fn many_concurrent_request_reply_pairs() {
 fn reply_with_remote_exception_propagates_correctly() {
     let req_id = SampleIdentity::new([0x42; 16], 7);
     let req_hdr = RequestHeader::new(req_id, "Calculator::divide");
-    let req_frame = encode_request_frame(&req_hdr, &[10, 0, 0, 0, 0, 0, 0, 0]);
+    let req_frame = encode_request_frame(&req_hdr, &[10, 0, 0, 0, 0, 0, 0, 0]).unwrap();
 
     let (decoded_req, _) = decode_request_frame(&req_frame).unwrap();
     let reply_hdr = ReplyHeader {
@@ -170,7 +170,7 @@ fn request_with_long_operation_name_roundtrips() {
     let req_id = SampleIdentity::new([0x99; 16], 42);
     let long_op = "VeryLongServiceName::very_long_operation_with_descriptive_name";
     let req_hdr = RequestHeader::new(req_id, long_op);
-    let frame = encode_request_frame(&req_hdr, &[]);
+    let frame = encode_request_frame(&req_hdr, &[]).unwrap();
 
     let (back_hdr, _) = decode_request_frame(&frame).unwrap();
     assert_eq!(back_hdr.instance_name, long_op);
@@ -182,7 +182,7 @@ fn large_payload_roundtrip() {
     let req_id = SampleIdentity::new([0xCC; 16], 100);
     let req_hdr = RequestHeader::new(req_id, "Stream::write");
     let large_payload: Vec<u8> = (0..65_000u32).map(|i| (i & 0xFF) as u8).collect();
-    let frame = encode_request_frame(&req_hdr, &large_payload);
+    let frame = encode_request_frame(&req_hdr, &large_payload).unwrap();
 
     let (back_hdr, back_payload) = decode_request_frame(&frame).unwrap();
     assert_eq!(back_hdr, req_hdr);

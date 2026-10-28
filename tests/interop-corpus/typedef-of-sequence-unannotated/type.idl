@@ -1,0 +1,8 @@
+// `typedef` of a sequence, unannotated
+typedef sequence<long, 4> Ids;
+typedef Ids IdList;
+
+struct Sample {
+    IdList ids;
+    long tail;
+};

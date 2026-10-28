@@ -19,7 +19,7 @@ use std::io::{Read, Write};
 use zerodds_corba_giop::{GiopError, Message, Version, decode_message_ctx, encode_message};
 
 use crate::error::IiopError;
-use zerodds_cdr::Endianness;
+use zerodds_wire::Endianness;
 
 /// Hard cap on a single GIOP message body read off the wire (16 MiB).
 ///
@@ -151,9 +151,9 @@ fn reassemble_fragments<R: Read + ?Sized>(
         first_header.message_type,
         total,
     );
-    let mut hw = zerodds_cdr::BufferWriter::new(first_header.endianness());
+    let mut hw = zerodds_wire::Writer::new(first_header.endianness());
     reasm_header.encode(&mut hw)?;
-    let mut full = hw.into_bytes();
+    let mut full = hw.finish();
     full.extend_from_slice(&acc);
     let (msg, endianness, _) = decode_message_ctx(&full)?;
     Ok((msg, endianness))
@@ -256,9 +256,9 @@ pub fn write_giop_message_fragmented<W: Write + ?Sized>(
                 u32::try_from(payload_len).map_err(|_| overflow())?,
             );
             write_header(w, &h, endianness)?;
-            let mut idw = zerodds_cdr::BufferWriter::new(endianness);
-            idw.write_u32(req_id).map_err(|_| overflow())?;
-            w.write_all(&idw.into_bytes())?;
+            let mut idw = zerodds_wire::Writer::new(endianness);
+            idw.write_u32(req_id);
+            w.write_all(&idw.finish())?;
             w.write_all(chunk)?;
         }
         off += chunk_len;
@@ -272,9 +272,9 @@ fn write_header<W: Write + ?Sized>(
     h: &zerodds_corba_giop::MessageHeader,
     endianness: Endianness,
 ) -> Result<(), IiopError> {
-    let mut hw = zerodds_cdr::BufferWriter::new(endianness);
+    let mut hw = zerodds_wire::Writer::new(endianness);
     h.encode(&mut hw)?;
-    w.write_all(&hw.into_bytes())?;
+    w.write_all(&hw.finish())?;
     Ok(())
 }
 
@@ -386,18 +386,18 @@ mod tests {
             mtype,
             body.len() as u32,
         );
-        let mut w = zerodds_cdr::BufferWriter::new(endian);
+        let mut w = zerodds_wire::Writer::new(endian);
         header.encode(&mut w).unwrap();
-        buf.extend_from_slice(&w.into_bytes());
+        buf.extend_from_slice(&w.finish());
         buf.extend_from_slice(body);
     }
 
     /// Fragment continuation body: request_id(4 bytes, GIOP 1.2) + data.
     fn frag_body(endian: Endianness, data: &[u8]) -> alloc::vec::Vec<u8> {
         let mut fb = alloc::vec::Vec::new();
-        let mut idw = zerodds_cdr::BufferWriter::new(endian);
-        idw.write_u32(7).unwrap(); // == sample_request().request_id
-        fb.extend_from_slice(&idw.into_bytes());
+        let mut idw = zerodds_wire::Writer::new(endian);
+        idw.write_u32(7); // == sample_request().request_id
+        fb.extend_from_slice(&idw.finish());
         fb.extend_from_slice(data);
         fb
     }
@@ -587,11 +587,11 @@ mod tests {
             zerodds_corba_giop::MessageType::Request,
             u32::MAX, // far beyond MAX_GIOP_MESSAGE_SIZE
         );
-        let mut w = zerodds_cdr::BufferWriter::new(Endianness::Big);
+        let mut w = zerodds_wire::Writer::new(Endianness::Big);
         header.encode(&mut w).unwrap();
         // No body bytes follow — read_giop_message_full must reject
         // before attempting to read/allocate `message_size` bytes.
-        let mut r = Cursor::new(w.into_bytes());
+        let mut r = Cursor::new(w.finish());
         let err = read_giop_message(&mut r).unwrap_err();
         assert!(
             matches!(err, IiopError::Giop(GiopError::Malformed(_))),
@@ -618,9 +618,9 @@ mod tests {
             zerodds_corba_giop::MessageType::Fragment,
             u32::MAX,
         );
-        let mut fw = zerodds_cdr::BufferWriter::new(Endianness::Big);
+        let mut fw = zerodds_wire::Writer::new(Endianness::Big);
         frag_header.encode(&mut fw).unwrap();
-        wire.extend_from_slice(&fw.into_bytes());
+        wire.extend_from_slice(&fw.finish());
 
         let mut r = Cursor::new(&wire);
         let err = read_giop_message(&mut r).unwrap_err();

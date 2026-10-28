@@ -1,0 +1,1 @@
+genTypeSupportImpl.cpp:595:51: error: no match for call to '(const zd_c1::m::Inner) ()'

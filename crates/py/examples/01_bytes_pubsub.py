@@ -28,9 +28,9 @@ def run_publisher(domain_id: int, topic_name: str, count: int) -> None:
     publisher = participant.create_publisher()
     writer = publisher.create_bytes_writer(topic)
 
-    print(f"[pub] warte auf Subscriber auf Topic '{topic_name}' ...")
+    print(f"[pub] waiting for Subscriber on Topic '{topic_name}' ...")
     writer.wait_for_matched_subscription(1, timeout_secs=30.0)
-    print("[pub] matched, sende")
+    print("[pub] matched, sending")
 
     for i in range(count):
         payload = f"message-{i:04d}".encode()
@@ -45,9 +45,9 @@ def run_subscriber(domain_id: int, topic_name: str, count: int) -> None:
     subscriber = participant.create_subscriber()
     reader = subscriber.create_bytes_reader(topic)
 
-    print(f"[sub] warte auf Publisher auf Topic '{topic_name}' ...")
+    print(f"[sub] waiting for Publisher on Topic '{topic_name}' ...")
     reader.wait_for_matched_publication(1, timeout_secs=30.0)
-    print("[sub] matched, empfange")
+    print("[sub] matched, receiving")
 
     received = 0
     while received < count:

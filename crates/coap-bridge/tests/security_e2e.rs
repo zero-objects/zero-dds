@@ -3,8 +3,8 @@
 
 //! E2E test for `zerodds-coap-bridged` §7 security wireup.
 //!
-//! Spec status §7.1 (DTLS): rejected (next phase) — so only Auth
-//! (§7.2) + topic ACL (§7.3) are covered here.
+//! Auth (§7.2) and topic ACL (§7.3) over plain CoAP. DTLS (§7.1) is
+//! covered by `daemon_dtls_e2e.rs` (features `daemon` + `dtls`).
 //!
 //! Tests:
 //! * §7.2 Bearer token via CoAP option 65000.
@@ -229,5 +229,43 @@ fn auth_none_open_topic_works_unauthenticated() {
     client.send_to(&bytes, &addr).expect("send");
     let resp = recv_msg(&client);
     assert_eq!(resp.code, CoapCode::CHANGED);
+    drop(h);
+}
+
+/// §9.2 SIGHUP: the reloaded ACL decides the next request — alice's POST
+/// to `forbidden` is 4.03 until the reloaded configuration grants it (2.04).
+#[test]
+fn sighup_applies_the_reloaded_acl() {
+    use std::sync::atomic::Ordering;
+    let cfg = make_secure_cfg(true);
+    let mut granted = cfg.clone();
+    granted.topic_acl.insert(
+        "Forbidden".into(),
+        (vec!["alice".into()], vec!["alice".into()]),
+    );
+    let next = std::sync::Arc::new(std::sync::Mutex::new(granted));
+    let n = std::sync::Arc::clone(&next);
+    let h = server::start_with_reload(
+        cfg,
+        zerodds_dcps::runtime::RuntimeConfig::default(),
+        Some(Box::new(move || Ok(n.lock().unwrap().clone()))),
+    )
+    .expect("start");
+    let addr = h.local_addr.clone();
+    let client = client_socket();
+    let post = |mid: u16| {
+        let mut req = CoapMessage::new(MessageType::Confirmable, CoapCode::POST, mid);
+        req.token = mid.to_be_bytes().to_vec();
+        req.options.push(CoapOption::uri_path("forbidden"));
+        req.options
+            .push(auth_token_option(b"Bearer secret-coap-token"));
+        req.payload = b"payload".to_vec();
+        client.send_to(&encode(&req).unwrap(), &addr).unwrap();
+        recv_msg(&client).code
+    };
+    assert_eq!(post(0x2001), CoapCode::new(4, 3), "before the reload");
+    h.reload_flag.store(true, Ordering::SeqCst);
+    std::thread::sleep(Duration::from_millis(400));
+    assert_eq!(post(0x2002), CoapCode::CHANGED, "after the reload");
     drop(h);
 }

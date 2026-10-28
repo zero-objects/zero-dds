@@ -1,0 +1,5 @@
+module m {
+  struct B;
+  @appendable struct A { long value; sequence<B> bs; };
+  @appendable struct B { long weight; sequence<A> as; };
+};

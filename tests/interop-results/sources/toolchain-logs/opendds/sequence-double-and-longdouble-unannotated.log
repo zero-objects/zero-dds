@@ -1,0 +1,1 @@
+wireprobe-fill: zd_c35::Sample.wide[0]: a long double, whose C++ mapping is x87 extended and not §9.3.1.3's binary128

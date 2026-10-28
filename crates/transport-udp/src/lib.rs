@@ -41,8 +41,6 @@
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
-/// Opt-2 (spec `zerodds-zero-copy-1.0` §9): Linux `recvmmsg` batch recv.
-/// Only compiled with the `recvmmsg-batch` feature enabled + on Linux.
 #[cfg(all(feature = "std", feature = "recvmmsg-batch", target_os = "linux"))]
 pub mod recv_batch;
 #[cfg(feature = "std")]
@@ -56,4 +54,4 @@ pub mod interfaces;
 #[cfg(feature = "std")]
 pub use interfaces::{EligibleInterface, eligible_ipv4_interfaces};
 #[cfg(feature = "std")]
-pub use udp_transport::{MAX_DATAGRAM_SIZE, UdpTransport, UdpTransportError};
+pub use udp_transport::{MAX_DATAGRAM_SIZE, UdpTransport, UdpTransportConfig, UdpTransportError};

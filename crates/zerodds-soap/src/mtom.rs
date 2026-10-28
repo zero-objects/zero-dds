@@ -6,25 +6,25 @@
 //! W3C MTOM Recommendation (`http://www.w3.org/2005/REC-soap12-mtom-20050125/`)
 //! + XOP (`http://www.w3.org/TR/xop10/`).
 //!
-//! Erlaubt das Anhaengen binaerer Daten an SOAP-Messages via
+//! Allows attaching binary data to SOAP messages via
 //! MIME multipart/related container instead of Base64 inlining.
 
 use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
-/// Eine MTOM/XOP-Attachment-Part.
+/// An MTOM/XOP attachment part.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Attachment {
-    /// Content-Id (z.B. `<image1@demo>`).
+    /// Content-Id (e.g. `<image1@demo>`).
     pub content_id: String,
-    /// MIME-Type (z.B. `image/png`).
+    /// MIME-Type (e.g. `image/png`).
     pub content_type: String,
     /// Bytes.
     pub bytes: Vec<u8>,
 }
 
-/// Komplette MTOM-Message: SOAP-Envelope + Attachments.
+/// Complete MTOM message: SOAP envelope + attachments.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MtomMessage {
     /// Boundary string for the multipart container.

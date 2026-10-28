@@ -5,7 +5,7 @@
 
 /// REP-2004 — Package Quality Levels.
 ///
-/// Spec-Zitat: "ROS 2 packages are sorted into quality levels using a
+/// Spec quote: "ROS 2 packages are sorted into quality levels using a
 /// formal, well-defined system. The category each package falls into
 /// depends on the development practices that have been used to
 /// produce that package."

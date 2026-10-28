@@ -6,10 +6,10 @@
 //! traits + stubs + skeletons, valuetypes, in phase 2: components,
 //! homes, POA bindings).
 //!
-//! Analogous to `zerodds-idl-cpp` / `-csharp` / `-java` but emits Rust
-//! instead of C++/C#/Java. Consumes the `zerodds-corba-codegen` helpers
-//! (special-types tables, stub/skeleton templates) and
-//! `zerodds-idl-rust::type_map` for DataType mapping.
+//! Over the common AST, `zerodds-corba-codegen`'s Annex A.1 tables and
+//! its repository-id rule. The data types — `struct`, `union`, `enum`
+//! and their `encode`/`decode` — are `zerodds-lang-rules`', and this
+//! output is written to be concatenated with that one.
 //!
 //! ## Layer position
 //!
@@ -18,7 +18,7 @@
 //!
 //! ## Spec source
 //!
-//! `docs/specs/zerodds-corba-rust-1.0.md` (ZeroDDS vendor spec).
+//! `docs/specs/zerodds-corba-rust-1.1.md` (ZeroDDS vendor spec).
 //! Conformance basis: OMG CORBA 3.3 Annex A, OMG IDL4.
 //!
 //! ## What is emitted
@@ -53,10 +53,11 @@ pub mod emitter;
 pub mod error;
 pub mod interface_emit;
 pub mod runtime;
+pub mod type_map;
 pub mod value_wire;
 pub mod valuetype_emit;
 
-pub use emitter::{CorbaRustGenOptions, generate_corba_rust_module};
+pub use emitter::{CorbaRustGenOptions, Ctx, generate_corba_rust_module};
 pub use error::{CorbaRustError, Result};
 pub use runtime::{
     AsyncCorbaChannel, AsyncReply, AsyncReplyCallback, ComponentHome, ComponentServant,

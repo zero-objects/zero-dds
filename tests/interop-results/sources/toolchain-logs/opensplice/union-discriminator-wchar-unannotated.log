@@ -1,0 +1,4 @@
+## wireprobe-opensplice, exit 4
+### stderr
+wireprobe-opensplice: idlpp failed
+***DDS parse error L undefined at line: 3 (searching from scope '(null)')

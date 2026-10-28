@@ -1,0 +1,8 @@
+module probe {
+    abstract interface Abstracted { };
+    interface Special {
+        void in_v(in Abstracted v);
+        void out_v(out Abstracted v);
+        Abstracted ret_v();
+    };
+};

@@ -105,7 +105,8 @@ int main(void)
         }
         frame_len = zdw_xrce_write_frame(frame, sizeof(frame),
             ZDW_XRCE_SESSION_NOKEY, ZDW_XRCE_STREAM_BEST_EFFORT,
-            (unsigned int)(i + 1), body, w.len);
+            (unsigned int)(i + 1),
+            ZDW_XRCE_OBJECT_ID(0x001, ZDW_OBJK_DATAWRITER), body, w.len);
         if (frame_len == 0) {
             fprintf(stderr, "frame %d failed\n", i);
             return 1;

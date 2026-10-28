@@ -8,15 +8,15 @@
 
 use std::sync::Arc;
 
-use zerodds_cdr::{BufferReader, BufferWriter, Endianness};
 use zerodds_corba_ccm::dynamic_api::{DsiServant, Request, ServerRequest, dispatch_dsi};
 use zerodds_corba_interop::runtime::{CorbaServer, IiopCorbaConnection, object_reference};
 use zerodds_corba_rust::SkeletonResult;
+use zerodds_wire::{Endianness, Reader, Writer};
 
 fn long_bytes(v: i32) -> Vec<u8> {
-    let mut w = BufferWriter::new(Endianness::Big);
-    w.write_u32(v as u32).unwrap();
-    w.into_bytes()
+    let mut w = Writer::new(Endianness::Big);
+    w.write_u32(v as u32);
+    w.finish()
 }
 
 /// DII against an `add(in long a, in long b) -> long` server: two CDR long
@@ -26,12 +26,12 @@ fn dii_invoke_add_returns_sum() {
     let server = CorbaServer::new();
     server.register(b"Bench", |op, body, e| {
         if op == "add" {
-            let mut r = BufferReader::new(body, e);
+            let mut r = Reader::new(body, e);
             let a = r.read_u32().unwrap() as i32;
             let b = r.read_u32().unwrap() as i32;
-            let mut w = BufferWriter::new(e);
-            w.write_u32(a.wrapping_add(b) as u32).unwrap();
-            SkeletonResult::Reply(w.into_bytes())
+            let mut w = Writer::new(e);
+            w.write_u32(a.wrapping_add(b) as u32);
+            SkeletonResult::Reply(w.finish())
         } else {
             SkeletonResult::BadOperation
         }
@@ -53,7 +53,7 @@ fn dii_invoke_add_returns_sum() {
     req.invoke(&conn, &ior, Endianness::Big).unwrap();
 
     let result = req.result.expect("DII result set");
-    let mut r = BufferReader::new(&result.value, Endianness::Big);
+    let mut r = Reader::new(&result.value, Endianness::Big);
     assert_eq!(r.read_u32().unwrap() as i32, 5);
     acceptor.shutdown();
 }
@@ -70,6 +70,9 @@ fn dsi_dispatch_via_server_request() {
             let mut body = req.input_body();
             body.reverse();
             req.set_result(body);
+        }
+        fn primary_interface(&self) -> String {
+            "IDL:Dsi:1.0".into()
         }
     }
 

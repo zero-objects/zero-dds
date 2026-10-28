@@ -40,6 +40,7 @@ mod memory;
 mod model;
 mod store;
 mod tiered;
+mod topic_meta;
 
 pub use contract::Contract;
 pub use error::{Result, StoreError};
@@ -47,3 +48,4 @@ pub use memory::InMemoryStore;
 pub use model::{Cursor, DurabilitySample, Page, Selector, StoreStats};
 pub use store::DurabilityStore;
 pub use tiered::TieredStore;
+pub use topic_meta::TopicMeta;

@@ -1,0 +1,1 @@
+module m { const long CAP = 8; @appendable struct S { string<CAP> text; }; };

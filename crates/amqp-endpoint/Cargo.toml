@@ -10,8 +10,8 @@ description = "DDS-AMQP 1.0 bidirectional endpoint stack: SASL + session/link li
 homepage = "https://zerodds.org"
 documentation = "https://docs.rs/zerodds-amqp-endpoint"
 readme = "README.md"
-keywords = ["dds", "amqp", "amqp-1-0", "endpoint", "no-std"]
-categories = ["network-programming", "encoding", "no-std"]
+keywords = ["dds", "amqp", "amqp-1-0", "endpoint"]
+categories = ["network-programming", "encoding"]
 publish = true
 
 [lints]
@@ -27,7 +27,13 @@ path = "src/bin/zerodds-amqp-bridged.rs"
 required-features = ["std"]
 
 [features]
-default = ["std"]
+default = ["std", "ring-backend"]
+# The crypto backend of bridge-security (JWT verify and the rustls TLS
+# provider): `ring-backend` (default) or `aws-lc` (aws-lc-rs, FIPS 140-3
+# validatable). A FIPS build: `--no-default-features --features <the
+# default list without ring-backend>,aws-lc`; with both, aws-lc is used.
+ring-backend = ["zerodds-bridge-security?/ring-backend"]
+aws-lc = ["zerodds-bridge-security?/aws-lc"]
 std = [
     "alloc",
     "dep:roxmltree",
@@ -38,12 +44,17 @@ std = [
     "dep:zerodds-observability-otlp",
     "dep:zerodds-qos",
     "dep:signal-hook",
+    "dep:zerodds-config",
+    "dep:zerodds-dcps",
+    "dep:zerodds-rtps",
+    "dep:zerodds-types",
 ]
 alloc = []
 # Cross-vendor interop tests against RabbitMQ/qpid (Spec §10 + §12.3).
 cross-vendor-tests = ["std"]
 
 [dependencies]
+zerodds-foundation = { version = "1.0.0-rc.7", path = "../foundation", default-features = false }
 # Wire codec from the sibling crate.
 zerodds-amqp-bridge = { version = "1.0.0-rc.7", path = "../amqp-bridge", default-features = false, features = ["alloc"] }
 # SHA-256 for §7.6.1 group-id (KeyHash → hex digest) + SASL SCRAM-SHA-256.
@@ -52,21 +63,32 @@ sha2 = { workspace = true }
 hmac = { workspace = true }
 base64 = { workspace = true }
 # Spec §9.2 — XML configuration loader (std-only).
-roxmltree = { workspace = true, optional = true }
+roxmltree = { workspace = true, optional = true, features = ["std", "positions"] }
 # Bridge-security substrate (Bridge-Spec §7.1 TLS / §7.2 Auth / §7.3 ACL).
-zerodds-bridge-security = { version = "1.0.0-rc.7", path = "../bridge-security", optional = true }
+zerodds-bridge-security = { version = "1.0.0-rc.7", path = "../bridge-security", optional = true, default-features = false, features = ["std"] }
 rustls = { workspace = true, optional = true }
 # Cross-cutting daemon observability: Prometheus + OTLP + shutdown watcher + QoS mapper.
 zerodds-monitor = { version = "1.0.0-rc.7", path = "../monitor", optional = true, default-features = false, features = ["std", "prometheus-server"] }
 zerodds-observability-otlp = { version = "1.0.0-rc.7", path = "../observability-otlp", optional = true }
 zerodds-qos = { version = "1.0.0-rc.7", path = "../qos", optional = true, default-features = false, features = ["alloc"] }
 signal-hook = { workspace = true, optional = true }
+# The layered configuration every ZeroDDS program reads (--config, --set,
+# --check-config, drop-ins, environment beneath the files).
+zerodds-config = { version = "1.0.0-rc.7", path = "../config", optional = true }
+zerodds-dcps = { version = "1.0.0-rc.7", path = "../dcps", optional = true, default-features = false, features = ["std"] }
+# Wire types of the bridge daemon's DDS side (GUID prefix, entity ids,
+# change kinds, status-info bits, representation ids).
+zerodds-rtps = { version = "1.0.0-rc.7", path = "../rtps", optional = true, default-features = false, features = ["std"] }
+zerodds-types = { version = "1.0.0-rc.7", path = "../types", optional = true, default-features = false, features = ["alloc"] }
 
 [dev-dependencies]
-# §9.1 Annex-A IDL roundtrip test: parser verification that the
-# `module zerodds::amqp` from the spec parses and that the annex_a.rs
-# mirror matches it exactly.
-zerodds-idl = { path = "../idl" }
+# §9.1 Annex-A IDL roundtrip test: frontend verification that the
+# `module zerodds::amqp` from the spec parses and lowers, and that the
+# annex_a.rs mirror matches it exactly.
+zerodds-idl-parse = { path = "../idl-parse" }
+zerodds-idl-lower = { path = "../idl-lower" }
+zerodds-ast = { path = "../ast" }
+zerodds-ast-core = { path = "../ast-core" }
 proptest = { workspace = true }
 # Self-signed certs + PEM loader for the §7.1 TLS tests in
 # `tests/security_e2e.rs`. Per-crate, no workspace edit.
@@ -75,6 +97,9 @@ rustls-pemfile = { workspace = true }
 # Cross-stack interop capstone: drive the AMQP 0.9.1 client (Path B) alongside
 # the in-crate AMQP 1.0 client (Path A) against the same RabbitMQ queue.
 zerodds-amqp-0-9-1 = { path = "../amqp-0-9-1" }
+# One DDS domain per test, host-wide (the domain number is the UDP port).
+zerodds-test-domains = { path = "../test-domains" }
+zerodds-test-vendor-reader = { path = "../test-vendor-reader" }
 # SIGTERM-graceful shutdown in DaemonGuard (otherwise SIGKILL → corrupt
 # `.profraw` under cargo-llvm-cov). Unix-only via cfg gate.
 [target.'cfg(unix)'.dev-dependencies]

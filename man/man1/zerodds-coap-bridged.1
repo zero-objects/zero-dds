@@ -1,10 +1,12 @@
-.TH ZERODDS-COAP-BRIDGED 1 "2026-05-06" "1.0.0-rc.1" "ZeroDDS Manual"
+.TH ZERODDS-COAP-BRIDGED 1 "" "ZeroDDS" "ZeroDDS Manual"
 .SH NAME
 zerodds-coap-bridged \- DDS to CoAP bridge daemon
 .SH SYNOPSIS
 .B zerodds-coap-bridged
-[\fB\-c\fR \fIFILE\fR]
-[\fB\-\-validate\-only\fR]
+[\fB\-\-config\fR \fIFILE\fR]
+[\fB\-\-bind\fR \fIADDR\fR]
+[\fB\-\-domain\fR \fIID\fR]
+[\fB\-\-topic\fR \fIDDS:URI\fR]...
 [\fB\-V\fR | \fB\-h\fR]
 .SH DESCRIPTION
 .B zerodds-coap-bridged
@@ -12,11 +14,86 @@ exposes DDS topics as CoAP resources (RFC 7252) over UDP and DTLS, with
 support for CoAP-Block (RFC 7959) and Observe (RFC 7641). Maps GET to
 take_next_sample, PUT/POST to write, OBSERVE to a long-lived reader.
 Implements
-.IR zerodds-coap-bridge-1.0 (7).
+.IR docs/specs/zerodds-coap-bridge-1.0.md .
 .SH OPTIONS
-.BR \-c ", " \-\-config , \-\-log\-level , \-\-validate\-only , \-V , \-h .
+.TP
+.BR \-\-config =\fIFILE\fR
+Path to the config file (YAML). See
+.BR zerodds-coap-bridged.yaml (5).
+.TP
+.BR \-\-bind =\fIADDR\fR
+UDP bind address. Default:
+.IR 0.0.0.0:5683 .
+.TP
+.BR \-\-domain =\fIID\fR
+DDS domain ID. Default: 0.
+.TP
+.BR \-\-dtls\-psk\-id =\fIID\fR
+DTLS PSK identity; enables
+.IR coaps:// .
+.TP
+.BR \-\-dtls\-psk =\fISECRET\fR
+DTLS PSK secret, hex; enables
+.IR coaps:// .
+.TP
+.BR \-\-dtls\-cert =\fIFILE\fR
+DTLS server cert, PEM; enables
+.IR coaps:// .
+.TP
+.BR \-\-dtls\-key =\fIFILE\fR
+DTLS server key, PKCS#8 PEM.
+.TP
+.BR \-\-topic =\fIDDS:URI\fR
+Topic override (repeatable).
+.TP
+.BR \-\-log\-level =\fILEVEL\fR
+One of
+.IR trace ", " debug ", " info ", " warn ", " error .
+.TP
+.BR \-\-metrics =\fIADDR\fR
+Prometheus listener.
+.TP
+.BR \-V ", " \-\-version
+Version info.
+.TP
+.BR \-h ", " \-\-help
+Show the option synopsis.
+.TP
+.BR \-\-set " \fIPATH\fR=\fIVALUE\fR"
+One setting above every file, repeatable;
+.BI + PATH = VALUE
+appends to a list.
+.TP
+.B \-\-check\-config
+Validate and print the effective configuration with the origin of every
+value, then exit: 0 valid, 1 invalid value or unknown key, 2 unreadable
+file, syntax error or include cycle.
 .SH SIGNALS
-SIGTERM, SIGHUP.
+SIGTERM stops the daemon.
+SIGHUP reads the configuration again: the topic ACL and the auth settings
+apply from then on, the DTLS material to new handshakes. Changed topics,
+binds or domain need a restart and are logged. A configuration that does
+not load changes nothing.
+.SH ENVIRONMENT
+.TP
+.B OTEL_EXPORTER_OTLP_ENDPOINT
+Optional OTLP endpoint, such as http://localhost:4318.
+.SH EXIT STATUS
+.TP
+.B 0
+Normal shutdown.
+.TP
+.B 1
+Configuration error.
+.TP
+.B 2
+Bind error \(em address in use.
+.TP
+.B 3
+DDS discovery error.
+.TP
+.B 4
+DTLS or OSCORE setup error.
 .SH FILES
 .I /etc/zerodds/coap-bridged.yaml .
 .SH SEE ALSO

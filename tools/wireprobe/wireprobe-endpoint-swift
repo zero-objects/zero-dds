@@ -1,0 +1,25 @@
+#!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 ZeroDDS Contributors
+#
+# wireprobe-endpoint-swift — one IDL type and one JSON sample, through the
+# hand-written endpoint SDK in endpoints/swift/Sources/Zerodds/Zerodds.swift.
+#
+# The same command line as every other column's probe, so a case runs
+# through any of them by substituting the program name:
+#
+#   wireprobe-endpoint-swift --idl robot.idl --type common::Robot \
+#       --values robot.json --encoding plain-cdr2 --endian le \
+#       --out robot.endpoint-swift.plain-cdr2.le.bin
+#
+# 214 hand-written lines, and the widest of the four surfaces: the only
+# one of them with a \`putF64\`, so the only one that can write an IDL
+# \`double\` at all, and the only one with a \`putBool\`.
+#
+# The body is tools/wireprobe/endpoint-common.sh; it is shared because
+# the ten differ only in which compiler runs and which SDK is linked,
+# and ten copies of the caching and the exit codes would be ten places
+# for them to drift apart.
+set -uo pipefail
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/endpoint-common.sh"
+endpoint_probe swift "$@"

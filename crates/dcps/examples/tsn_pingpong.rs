@@ -43,9 +43,6 @@ fn real_main() -> i32 {
     use zerodds_dcps::runtime::{
         DcpsRuntime, RuntimeConfig, UserReaderConfig, UserTransportKind, UserWriterConfig,
     };
-    use zerodds_qos::{
-        DeadlineQosPolicy, DurabilityKind, LifespanQosPolicy, LivelinessQosPolicy, OwnershipKind,
-    };
     use zerodds_rtps::wire_types::GuidPrefix;
 
     let role = std::env::args().nth(1).unwrap_or_default();
@@ -53,7 +50,7 @@ fn real_main() -> i32 {
     let topic = "TsnPingPong";
     let payload = b"tsn-roundtrip-0123456789";
 
-    // Distinct host_id prefixes (different first 4 bytes).
+    // Distinct host_id prefixes (different octets 2..6).
     let prefix = match role.as_str() {
         "ping" => GuidPrefix::from_bytes([0xA1, 0x11, 0x00, 0x01, 1, 2, 3, 4, 5, 6, 7, 8]),
         "pong" => GuidPrefix::from_bytes([0xB2, 0x22, 0x00, 0x02, 8, 7, 6, 5, 4, 3, 2, 1]),
@@ -78,41 +75,12 @@ fn real_main() -> i32 {
     let writer_cfg = |topic: &str| UserWriterConfig {
         topic_name: topic.into(),
         type_name: "RawBytes".into(),
-        reliable: true,
-        durability: DurabilityKind::Volatile,
-        deadline: DeadlineQosPolicy::default(),
-        latency_budget: Default::default(),
-        destination_order: Default::default(),
-        lifespan: LifespanQosPolicy::default(),
-        liveliness: LivelinessQosPolicy::default(),
-        ownership: OwnershipKind::Shared,
-        ownership_strength: 0,
-        presentation: Default::default(),
-        partition: vec![],
-        user_data: vec![],
-        topic_data: vec![],
-        group_data: vec![],
-        type_identifier: zerodds_types::TypeIdentifier::None,
-        data_representation_offer: None,
+        ..Default::default()
     };
     let reader_cfg = |topic: &str| UserReaderConfig {
         topic_name: topic.into(),
         type_name: "RawBytes".into(),
-        reliable: true,
-        durability: DurabilityKind::Volatile,
-        deadline: DeadlineQosPolicy::default(),
-        latency_budget: Default::default(),
-        destination_order: Default::default(),
-        liveliness: LivelinessQosPolicy::default(),
-        ownership: OwnershipKind::Shared,
-        presentation: Default::default(),
-        partition: vec![],
-        user_data: vec![],
-        topic_data: vec![],
-        group_data: vec![],
-        type_identifier: zerodds_types::TypeIdentifier::None,
-        type_consistency: zerodds_types::qos::TypeConsistencyEnforcement::default(),
-        data_representation_offer: None,
+        ..Default::default()
     };
 
     let deadline = Instant::now() + Duration::from_secs(20);

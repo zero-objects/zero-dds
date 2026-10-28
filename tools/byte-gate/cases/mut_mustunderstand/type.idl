@@ -1,0 +1,1 @@
+@mutable struct M { @id(1) @must_understand long a; @id(2) long b; };

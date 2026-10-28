@@ -26,7 +26,6 @@ ZeroDDS defines its own handshake explicitly as its own spec:
 ## What this crate provides
 
 - `TcpTransport` — `Transport` trait implementation with a connection pool
-- `TcpTransport::without_handshake` — Cyclone `ddsi_tcp` compat mode
 - `TcpTransportError` — typed errors
 - `framing` — length-prefix frame encoder/decoder (§2.1)
 - `handshake` — BindConnection request/response (§3.1+§3.2)
@@ -36,13 +35,12 @@ ZeroDDS defines its own handshake explicitly as its own spec:
 | Peer | Status |
 |---|---|
 | ZeroDDS ↔ ZeroDDS | ✅ full (handshake + RTPS frames) |
-| ZeroDDS ↔ Cyclone | ✅ via `without_handshake` (raw RTPS frames) |
-| ZeroDDS ↔ FastDDS | optional extension point (vendor-specific handshake) |
-| ZeroDDS ↔ RTI | optional extension point (TLS handshake) |
+| ZeroDDS ↔ Cyclone | ❌ open — raw RTPS frames are rejected by the mandatory handshake |
+| ZeroDDS ↔ FastDDS | ❌ open — 0x71/0x72 BindConnection submessages unimplemented |
+| ZeroDDS ↔ RTI | ❌ open — TLS-oriented handshake unimplemented |
 
-Cross-vendor extensions are documented as optional in the
-ZeroDDS TCP Transport 1.0 spec §6 — no spec gap, since OMG
-standardizes no TCP handshake.
+The three cross-vendor modes are open items, listed in
+[`docs/spec-coverage/zerodds-tcp-transport-1.0.open.md`](../../docs/spec-coverage/zerodds-tcp-transport-1.0.open.md).
 
 ## Tests
 

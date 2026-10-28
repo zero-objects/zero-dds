@@ -6,7 +6,7 @@
 //! - `WriterDataLifecycle`: bool autodispose (4 bytes with padding).
 //! - `ReaderDataLifecycle`: 2 × Duration (16 byte).
 
-use zerodds_cdr::{BufferReader, BufferWriter, DecodeError, EncodeError};
+use zerodds_wire::{Reader, WireError, Writer};
 
 use crate::duration::Duration;
 use crate::wire_helpers::{read_bool_padded, write_bool_padded};
@@ -28,18 +28,15 @@ impl Default for WriterDataLifecycleQosPolicy {
 
 impl WriterDataLifecycleQosPolicy {
     /// Wire-Encoding (1 bool + 3 pad = 4 byte).
-    ///
-    /// # Errors
-    /// Buffer-Overflow.
-    pub fn encode_into(self, w: &mut BufferWriter) -> Result<(), EncodeError> {
-        write_bool_padded(w, self.autodispose_unregistered_instances)
+    pub fn encode_into(self, w: &mut Writer) {
+        write_bool_padded(w, self.autodispose_unregistered_instances);
     }
 
     /// Wire-Decoding.
     ///
     /// # Errors
     /// Buffer-Underflow.
-    pub fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
+    pub fn decode_from(r: &mut Reader<'_>) -> Result<Self, WireError> {
         Ok(Self {
             autodispose_unregistered_instances: read_bool_padded(r)?,
         })
@@ -66,19 +63,16 @@ impl Default for ReaderDataLifecycleQosPolicy {
 
 impl ReaderDataLifecycleQosPolicy {
     /// Wire-Encoding (2 × Duration = 16 byte).
-    ///
-    /// # Errors
-    /// Buffer-Overflow.
-    pub fn encode_into(self, w: &mut BufferWriter) -> Result<(), EncodeError> {
-        self.autopurge_nowriter_samples_delay.encode_into(w)?;
-        self.autopurge_disposed_samples_delay.encode_into(w)
+    pub fn encode_into(self, w: &mut Writer) {
+        self.autopurge_nowriter_samples_delay.encode_into(w);
+        self.autopurge_disposed_samples_delay.encode_into(w);
     }
 
     /// Wire-Decoding.
     ///
     /// # Errors
     /// Buffer-Underflow.
-    pub fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
+    pub fn decode_from(r: &mut Reader<'_>) -> Result<Self, WireError> {
         let nowriter = Duration::decode_from(r)?;
         let disposed = Duration::decode_from(r)?;
         Ok(Self {
@@ -92,7 +86,7 @@ impl ReaderDataLifecycleQosPolicy {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use zerodds_cdr::Endianness;
+    use zerodds_wire::Endianness;
 
     #[test]
     fn writer_default_is_autodispose_true() {
@@ -104,11 +98,11 @@ mod tests {
         let p = WriterDataLifecycleQosPolicy {
             autodispose_unregistered_instances: false,
         };
-        let mut w = BufferWriter::new(Endianness::Little);
-        p.encode_into(&mut w).unwrap();
-        let bytes = w.into_bytes();
+        let mut w = Writer::new(Endianness::Little);
+        p.encode_into(&mut w);
+        let bytes = w.finish();
         assert_eq!(bytes.len(), 4);
-        let mut r = BufferReader::new(&bytes, Endianness::Little);
+        let mut r = Reader::new(&bytes, Endianness::Little);
         assert_eq!(
             WriterDataLifecycleQosPolicy::decode_from(&mut r).unwrap(),
             p
@@ -128,11 +122,11 @@ mod tests {
             autopurge_nowriter_samples_delay: Duration::from_secs(5),
             autopurge_disposed_samples_delay: Duration::from_secs(10),
         };
-        let mut w = BufferWriter::new(Endianness::Little);
-        p.encode_into(&mut w).unwrap();
-        let bytes = w.into_bytes();
+        let mut w = Writer::new(Endianness::Little);
+        p.encode_into(&mut w);
+        let bytes = w.finish();
         assert_eq!(bytes.len(), 16);
-        let mut r = BufferReader::new(&bytes, Endianness::Little);
+        let mut r = Reader::new(&bytes, Endianness::Little);
         assert_eq!(
             ReaderDataLifecycleQosPolicy::decode_from(&mut r).unwrap(),
             p

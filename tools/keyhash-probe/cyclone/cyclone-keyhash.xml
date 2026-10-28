@@ -1,0 +1,15 @@
+<CycloneDDS>
+  <Domain id="any">
+    <General>
+      <Interfaces><NetworkInterface address="127.0.0.1"/></Interfaces>
+      <AllowMulticast>false</AllowMulticast>
+    </General>
+    <Discovery>
+      <ParticipantIndex>auto</ParticipantIndex>
+      <Peers><Peer address="localhost"/></Peers>
+    </Discovery>
+    <Internal>
+      <GenerateKeyhash>true</GenerateKeyhash>
+    </Internal>
+  </Domain>
+</CycloneDDS>

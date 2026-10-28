@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Endpoint-Flap — toggelt ein Linux-Interface up/down im Takt.
+//! Endpoint flap — toggles a Linux interface up/down on a cycle.
 //!
-//! Zwischen Up- und Down-Phasen liegt das konfigurierte Intervall. Vor
-//! dem Down wird ein optionales `pre_down`-Hook gerufen (z.B. um
-//! gleichzeitig iptables-Regeln zu setzen).
+//! Between up and down phases lies the configured interval. Before
+//! before the down an optional `pre_down` hook is called (e.g. to
+//! setting iptables rules concurrently).
 //!
-//! Auf Nicht-Linux-Plattformen sind die Funktionen Stubs.
+//! On non-Linux platforms the functions are stubs.
 
 #[cfg(target_os = "linux")]
 use std::process::Command;
@@ -15,31 +15,31 @@ use std::time::Duration;
 #[cfg(target_os = "linux")]
 use std::time::Instant;
 
-/// Endpoint-Flap-Konfig.
+/// Endpoint-flap config.
 #[derive(Clone, Debug)]
 pub struct FlapConfig {
-    /// Interface-Name (z.B. `"eth0"`).
+    /// Interface name (e.g., `"eth0"`).
     pub interface: String,
-    /// Intervall zwischen Toggle-Events.
+    /// Interval between toggle events.
     pub interval: Duration,
-    /// Wallclock-Dauer der gesamten Flap-Phase.
+    /// Wallclock duration of the entire flap phase.
     pub total: Duration,
-    /// Wenn `true`, beginnt der Cycle mit DOWN; sonst mit UP.
+    /// If `true`, the cycle starts with DOWN; otherwise with UP.
     pub start_down: bool,
 }
 
-/// Errors aus dem flap-Wrapper.
+/// Errors from the flap wrapper.
 #[derive(Debug)]
 pub enum FlapError {
-    /// Plattform unterstuetzt kein ip-link.
+    /// Platform does not support ip-link.
     Unsupported,
-    /// Aufrufer hat nicht euid=0.
+    /// Caller does not have euid=0.
     NotRoot,
-    /// `ip`-Binary nicht ausfuehrbar.
+    /// `ip` binary not executable.
     Spawn(std::io::Error),
-    /// `ip` returnte non-zero.
+    /// `ip` returned non-zero.
     NonZeroExit {
-        /// stderr-Output.
+        /// stderr output.
         stderr: String,
         /// Exit-Code.
         code: Option<i32>,
@@ -50,10 +50,10 @@ impl std::fmt::Display for FlapError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Unsupported => write!(f, "endpoint-flap only on Linux"),
-            Self::NotRoot => write!(f, "ip benoetigt root oder CAP_NET_ADMIN"),
-            Self::Spawn(e) => write!(f, "konnte ip nicht starten: {e}"),
+            Self::NotRoot => write!(f, "ip requires root or CAP_NET_ADMIN"),
+            Self::Spawn(e) => write!(f, "could not start ip: {e}"),
             Self::NonZeroExit { stderr, code } => {
-                write!(f, "ip fehlgeschlagen (exit {code:?}): {stderr}")
+                write!(f, "ip failed (exit {code:?}): {stderr}")
             }
         }
     }
@@ -61,14 +61,14 @@ impl std::fmt::Display for FlapError {
 
 impl std::error::Error for FlapError {}
 
-/// Statistik aus einem Flap-Lauf.
+/// Statistics from a flap run.
 #[derive(Default, Clone, Debug)]
 pub struct FlapStats {
-    /// Anzahl Up-Transitionen.
+    /// Count of up transitions.
     pub up_count: u64,
-    /// Anzahl Down-Transitionen.
+    /// Count of down transitions.
     pub down_count: u64,
-    /// Wallclock-Gesamt.
+    /// Wallclock total.
     pub total: Duration,
 }
 
@@ -83,11 +83,11 @@ fn require_root() -> Result<(), FlapError> {
     }
 }
 
-/// Fuehrt den Flap-Cycle aus. Blockiert bis `total` abgelaufen ist und
-/// laesst das Interface am Ende **immer up** stehen.
+/// Runs the flap cycle. Blocks until `total` has elapsed and
+/// leaves the interface **always up** at the end.
 ///
 /// # Errors
-/// IO-/Privilege-Fehler.
+/// IO-/Privilege error.
 #[cfg(target_os = "linux")]
 pub fn run(cfg: &FlapConfig) -> Result<FlapStats, FlapError> {
     require_root()?;
@@ -105,7 +105,7 @@ pub fn run(cfg: &FlapConfig) -> Result<FlapStats, FlapError> {
         std::thread::sleep(cfg.interval);
         down_phase = !down_phase;
     }
-    // Recovery: Interface immer up zuruecklassen.
+    // Recovery: always leave the interface up.
     let _ = run_ip(&["link", "set", "dev", &cfg.interface, "up"]);
     stats.total = start.elapsed();
     Ok(stats)
@@ -140,7 +140,7 @@ mod libc_stub {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)] // tests duerfen unwrap nutzen.
+#[allow(clippy::unwrap_used)] // tests may use unwrap.
 mod tests {
     use super::*;
 

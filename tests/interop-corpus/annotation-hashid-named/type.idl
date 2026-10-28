@@ -1,0 +1,6 @@
+// `@hashid("name")`
+@mutable struct Sample {
+    @hashid("alpha") long renamed;
+    @hashid long beta;
+    long plain;
+};

@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 # ZeroDDS — IDL → Go codegen backend
 
-`zerodds-idlc --go` emits **native Go** from OMG IDL: a self-contained source
+`zerodds-idlc generate --lang go` emits **native Go** from OMG IDL: a self-contained source
 file with a shared XCDR2 `Writer` (byte-identical to the hand-written
 `endpoints/go` core) and, per IDL `struct`, a Go struct plus a
 `MarshalXCDR(endian)` method whose wire output matches the Rust goldens exactly.
@@ -12,8 +12,8 @@ Crate: [`crates/idl-go`](../crates/idl-go) · registered in `tools/idlc`
 ## Usage
 
 ```sh
-zerodds-idlc types.idl --go        # emits types.go
-zerodds-idlc types.idl --all       # all 17 backends, incl. Go
+zerodds-idlc generate --lang go types.idl   # emits types.go
+zerodds-idlc generate --lang all types.idl   # every backend, Go included
 ```
 
 ## Mapping

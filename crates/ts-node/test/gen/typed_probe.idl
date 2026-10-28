@@ -1,0 +1,11 @@
+// The IDL of test/generated-typesupport.test.ts. typed_probe.ts beside it is
+// `zerodds-idlc generate --lang typescript --out test/gen test/gen/typed_probe.idl`
+// output; regenerate it with that command when this file changes.
+module probe {
+  @appendable
+  struct Reading {
+    @key long id;
+    double value;
+    string<16> label;
+  };
+};

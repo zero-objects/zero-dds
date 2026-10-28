@@ -7,8 +7,8 @@
 
 //! Annex C C.1.7 — Address-Resolution Wildcard.
 //!
-//! Spec §C.1.7: ein attached link mit Wildcard-Adresse SHALL
-//! Transfers von allen matchenden Topics empfangen.
+//! Spec §C.1.7: an attached link with a wildcard address SHALL
+//! receive transfers from all matching topics.
 
 mod common;
 
@@ -33,7 +33,7 @@ fn c1_7_prefix_wildcard_matches_multiple_topics() {
         router.resolve("sensor.humidity").unwrap().topic,
         "AllSensors"
     );
-    // Bare-Adresse, die nicht auf Pattern matched, wird als
+    // A bare address that does not match a pattern is
     // direkter Topic-Name interpretiert (Spec §7.3 Fallback).
     assert_eq!(router.resolve("actuator.x").unwrap().topic, "actuator.x");
 }
@@ -70,7 +70,7 @@ fn c1_7_global_wildcard_matches_anything() {
 
 #[test]
 fn c1_7_static_alias_takes_precedence_over_wildcard() {
-    // Spec §7.3: Static aliases werden zuerst probiert.
+    // Spec §7.3: static aliases are tried first.
     let mut router = AddressRouter::new();
     router.add_route(
         "specific",

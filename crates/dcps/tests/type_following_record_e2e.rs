@@ -18,7 +18,7 @@
 //! match no typed writer, so without type-following the session would record 0
 //! frames.
 //!
-//! Linux-only (macOS multicast loopback is unreliable for SPDP). Run on codepit.
+//! Linux-only (macOS multicast loopback is unreliable for SPDP). Run on the Linux test host.
 
 #![cfg(all(target_os = "linux", feature = "std"))]
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
@@ -29,9 +29,6 @@ use std::time::{Duration, Instant};
 
 use zerodds_dcps::runtime::{
     DcpsRuntime, RuntimeConfig, UserReaderConfig, UserSample, UserWriterConfig,
-};
-use zerodds_qos::{
-    DeadlineQosPolicy, DurabilityKind, LifespanQosPolicy, LivelinessQosPolicy, OwnershipKind,
 };
 use zerodds_recorder::format::{ParticipantEntry, SampleKind};
 use zerodds_recorder::reader::RecordReader;
@@ -58,22 +55,7 @@ fn writer_config(topic: &str, type_name: &str) -> UserWriterConfig {
     UserWriterConfig {
         topic_name: topic.into(),
         type_name: type_name.into(),
-        reliable: true,
-        durability: DurabilityKind::Volatile,
-        deadline: DeadlineQosPolicy::default(),
-        latency_budget: Default::default(),
-        destination_order: Default::default(),
-        lifespan: LifespanQosPolicy::default(),
-        liveliness: LivelinessQosPolicy::default(),
-        ownership: OwnershipKind::Shared,
-        ownership_strength: 0,
-        presentation: Default::default(),
-        partition: vec![],
-        user_data: vec![],
-        topic_data: vec![],
-        group_data: vec![],
-        type_identifier: zerodds_types::TypeIdentifier::None,
-        data_representation_offer: None,
+        ..Default::default()
     }
 }
 
@@ -81,21 +63,7 @@ fn reader_config(topic: &str, type_name: &str) -> UserReaderConfig {
     UserReaderConfig {
         topic_name: topic.into(),
         type_name: type_name.into(),
-        reliable: true,
-        durability: DurabilityKind::Volatile,
-        deadline: DeadlineQosPolicy::default(),
-        latency_budget: Default::default(),
-        destination_order: Default::default(),
-        liveliness: LivelinessQosPolicy::default(),
-        ownership: OwnershipKind::Shared,
-        presentation: Default::default(),
-        partition: vec![],
-        user_data: vec![],
-        topic_data: vec![],
-        group_data: vec![],
-        type_identifier: zerodds_types::TypeIdentifier::None,
-        type_consistency: zerodds_types::qos::TypeConsistencyEnforcement::default(),
-        data_representation_offer: None,
+        ..Default::default()
     }
 }
 
@@ -139,11 +107,11 @@ fn resolve_type(rt: &Arc<DcpsRuntime>, topic: &str, timeout: Duration) -> Option
 
 #[test]
 fn record_captures_typed_topic_via_type_following() {
-    let domain = 143;
+    let domain = common::unique_domain();
     let prefix_a = GuidPrefix::from_bytes([0xA1; 12]);
     let prefix_b = {
         let mut p = [0xB2; 12];
-        p[..4].copy_from_slice(&prefix_a.to_bytes()[..4]);
+        p[..6].copy_from_slice(&prefix_a.to_bytes()[..6]);
         GuidPrefix::from_bytes(p)
     };
     let rt_a = DcpsRuntime::start(domain, prefix_a, RuntimeConfig::default()).expect("rt_a");
@@ -248,3 +216,8 @@ fn record_captures_typed_topic_via_type_following() {
     }
     assert_eq!(read_back, n, ".zddsrec did not replay every captured frame");
 }
+
+/// Leases a DDS domain no other process on this host holds — the
+/// domain number is the UDP port number, so it is a host-wide resource.
+#[path = "common/mod.rs"]
+mod common;

@@ -98,8 +98,8 @@ dependency, to avoid a cycle).
 
 **Tests:** `crates/observability-otlp/src/lib.rs::tests::metrics_json_roundtrip_shape`.
 
-**Status:** done (histogram export + caller-side snapshot bridge as specified;
-the counter/gauge omission is the documented spec design decision, not a gap)
+**Status:** done — histogram export and the caller-side snapshot bridge, as the
+spec lays them out. Counters and gauges are omitted by the spec itself.
 
 ## §6 Security
 

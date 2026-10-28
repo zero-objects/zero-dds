@@ -19,7 +19,7 @@
 //! `zerodds-transport-tsn`. Direct consumers: `zerodds-dcps`,
 //! `zerodds-discovery`.
 //!
-//! ## Public API (as of 1.0.0-rc.1)
+//! ## Public API
 //!
 //! - [`Transport`] — trait for send/receive operations with Locator
 //!   addressing.
@@ -148,6 +148,11 @@ pub struct ReceivedDatagram {
     pub data: alloc::sync::Arc<[u8]>,
 }
 
+/// What [`Transport::max_message_size`] answers by default: 1472 octets,
+/// 1500 of an Ethernet payload less the IPv4 header (20) and the UDP header
+/// (8).
+pub const DEFAULT_MAX_MESSAGE_SIZE: usize = 1472;
+
 /// Abstract transport: sends/receives datagrams to/from locators.
 ///
 /// Implementations are synchronous and blocking. Async wrappers can
@@ -159,6 +164,33 @@ pub trait Transport {
     /// # Errors
     /// [`SendError`].
     fn send(&self, dest: &Locator, data: &[u8]) -> Result<(), SendError>;
+
+    /// Sends a datagram with the TRANSPORT_PRIORITY of the writer it is
+    /// from (DDS 1.4 §2.2.3.15, "a hint to the infrastructure"). `0` is no
+    /// priority and the same as [`Self::send`]; a transport that has no
+    /// way to carry one sends as [`Self::send`] does.
+    ///
+    /// # Errors
+    /// [`SendError`].
+    fn send_with_priority(
+        &self,
+        dest: &Locator,
+        data: &[u8],
+        priority: i32,
+    ) -> Result<(), SendError> {
+        let _ = priority;
+        self.send(dest, data)
+    }
+
+    /// The largest RTPS message, in octets, this transport sends in one
+    /// datagram. DDSI-RTPS 2.5 §8.4.14.1: "the transport with the smallest
+    /// maximum message size determines the fragment size", over all the
+    /// transports available to a writer. The default is
+    /// [`DEFAULT_MAX_MESSAGE_SIZE`], what an Ethernet frame carries in a UDP
+    /// datagram; a transport with another limit says so.
+    fn max_message_size(&self) -> usize {
+        DEFAULT_MAX_MESSAGE_SIZE
+    }
 
     /// Receives the next datagram. Blocking; concrete
     /// implementations can configure a timeout via an internal setting.
@@ -176,6 +208,50 @@ pub trait Transport {
     /// so peers can reach it over any of them.
     fn local_locators(&self) -> alloc::vec::Vec<Locator> {
         alloc::vec![self.local_locator()]
+    }
+
+    /// The peer behind `dest` is gone: a transport that keeps state per
+    /// destination (the UDP transport's connected socket per target) drops
+    /// it. Nothing by default.
+    fn forget_destination(&self, _dest: &Locator) {}
+
+    /// The owner of this transport stops using it: what the transport
+    /// runs ends, and what it holds open closes. A `recv` that waits
+    /// returns, and a later `send` or `recv` may fail. Without it a
+    /// receive loop that waits until the transport's own stop (a TCP
+    /// connection reader, a per-peer SHM thread) kept a shutdown's join
+    /// waiting. Nothing by default: a socket's read timeout ends its wait.
+    fn close(&self) {}
+
+    /// Receives up to `max` datagrams, appending them to `out`, and returns
+    /// how many were appended. Blocking for the first one, exactly like
+    /// [`Self::recv`]; whatever else has already arrived comes with it.
+    ///
+    /// The default appends the single [`Self::recv`] result, so a transport
+    /// that has nothing to batch needs no implementation and behaves as
+    /// before. A transport whose kernel interface can hand over several
+    /// datagrams per syscall overrides this — that is the whole point of the
+    /// method: a caller holding a `dyn Transport` cannot reach an inherent
+    /// batch method, so without it the batch path is unreachable from the
+    /// DCPS receive loop no matter which features are enabled.
+    ///
+    /// `out` is **not** cleared, so a caller can keep its capacity across
+    /// iterations. A return of `0` means the wait ended with nothing (only
+    /// possible for an implementation that maps a timeout to zero rather than
+    /// to [`RecvError::Timeout`]).
+    ///
+    /// # Errors
+    /// [`RecvError`], on the same conditions as [`Self::recv`].
+    fn recv_batch(
+        &self,
+        out: &mut alloc::vec::Vec<ReceivedDatagram>,
+        max: usize,
+    ) -> Result<usize, RecvError> {
+        if max == 0 {
+            return Ok(0);
+        }
+        out.push(self.recv()?);
+        Ok(1)
     }
 }
 

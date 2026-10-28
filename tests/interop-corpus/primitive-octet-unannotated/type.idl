@@ -1,0 +1,5 @@
+// primitive `octet`, unannotated
+struct Sample {
+    octet raw_octet_a;
+    octet raw_octet_b;
+};

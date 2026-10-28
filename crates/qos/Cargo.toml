@@ -29,6 +29,6 @@ default = ["std"]
 std = ["alloc"]
 alloc = []
 [dependencies]
-zerodds-cdr = { version = "1.0.0-rc.7", path = "../cdr", default-features = false, features = ["alloc"] }
+zerodds-wire = { version = "1.0.0-rc.7", path = "../wire" }
 
 [dev-dependencies]

@@ -1,0 +1,19 @@
+# The crate is named `hdds` on purpose: hddsgen's output refers to
+# `::hdds::api::DDS` by absolute path, so what it needs has to arrive
+# under that name for the generated file to compile verbatim. The
+# published runtime is a dependency under an alias and is re-exported —
+# this crate adds the four items 1.2.0's output needs and 1.1.2 does not
+# have. See src/lib.rs.
+[package]
+name = "hdds"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+hdds_upstream = { package = "hdds", version = "1.1.2" }
+
+[workspace]

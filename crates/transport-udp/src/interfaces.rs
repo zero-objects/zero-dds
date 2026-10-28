@@ -35,10 +35,11 @@ pub struct EligibleInterface {
 /// is by IPv4 address ascending, then name, then index — stable and
 /// independent of OS enumeration order.
 ///
-/// Multicast-capability is assumed here: this set drives **unicast** locator
-/// announcement (a unicast SEDP destination does not require the interface to
-/// be multicast-capable). The per-interface multicast join/TX that would need
-/// the actual `IFF_MULTICAST` flag is deferred discovery-hardening.
+/// Multicast-capability is assumed here: `if-addrs` does not expose
+/// `IFF_MULTICAST`. The set drives the announced unicast locators and the
+/// interfaces the SPDP group is joined and sent on; a join or a send on an
+/// interface that cannot carry multicast fails there and is skipped
+/// ([`crate::UdpTransport::bind_multicast_v4_on_with_config`]).
 #[must_use]
 pub fn eligible_ipv4_interfaces() -> Vec<EligibleInterface> {
     let ifaces = match if_addrs::get_if_addrs() {

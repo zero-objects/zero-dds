@@ -1,0 +1,45 @@
+// SPDX-License-Identifier: Apache-2.0
+// Reconstructed source for combo_gen.py. Extensibility left at the
+// specification default (appendable) throughout, matching the fixture's
+// explicit extensibility="appendable" on both the struct and the union.
+//
+// Deviation: the fixture's Python field names are literally `mode` (of
+// type `Mode`) and `reading` (of type `Reading`). Today's idlc rejects
+// that combination outright (IDL0008: a type name and a member name that
+// differ only in case collide under OMG IDL 4.2 SS7.2.3.1's
+// case-insensitive single namespace per scope) -- something the removed
+// `idl-python` tool evidently accepted. The enum and union are renamed
+// `ModeKind`/`ReadingUnion` here to keep the field names, which is what
+// the ported tests actually read off a decoded instance
+// (`instance.mode`, `instance.reading`); the module's exported type names
+// change accordingly (`mod.combo.ModeKind`, not `mod.combo.Mode`).
+module combo {
+  enum ModeKind {
+    MODE_IDLE,
+    MODE_ACTIVE,
+    MODE_FAULT
+  };
+
+  typedef double CurrentInAmpsType;
+
+  struct Sample {
+    long seq;
+    double value;
+  };
+
+  union ReadingUnion switch (ModeKind) {
+    case MODE_IDLE: long idleTicks;
+    case MODE_ACTIVE: double activeRate;
+    default: string faultCode;
+  };
+
+  struct Telemetry {
+    long unitId;
+    ModeKind mode;
+    CurrentInAmpsType batteryCurrent;
+    sequence<Sample> history;
+    ReadingUnion reading;
+    @optional double calibration;
+    long window[4];
+  };
+};

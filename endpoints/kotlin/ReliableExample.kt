@@ -18,7 +18,7 @@ fun main(args: Array<String>) {
     val n = if (args.size > 1) args[1].toInt() else 12
 
     val host = InetAddress.getByName("127.0.0.1")
-    val writer = AsyncReliableWriter(host, port)
+    val writer = AsyncReliableWriter(host, port, 0x0015)
     writer.start()
 
     for (i in 0 until n) {

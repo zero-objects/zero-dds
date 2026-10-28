@@ -17,6 +17,15 @@
 #     This establishes the OIDC trust and the workflow can
 #     publish without a token. The provenance attestation is generated
 #     automatically (Sigstore-signed, supply-chain-tracked).
+#     The same publisher setup is separately required for @zerodds/wire.
+#
+# Not called from release.yml: npm validates the CALLING workflow's filename,
+# not the one that runs `npm publish`. Through a `uses:` call from
+# release.yml the claim would read release.yml while the Trusted Publisher
+# above is registered for publish-npm.yml, and the publish would be refused.
+# Wiring it into release.yml therefore requires changing the "Workflow" field
+# of the Trusted Publisher on npmjs.com to release.yml first. Until then this
+# workflow is started as a top-level workflow_dispatch run after a release.
 #
 # Note: @zerodds/node is pure-TS FFI (koffi against libzerodds.so/dylib/dll).
 # There is NO native build in the npm tarball — the user must install libzerodds via
@@ -83,9 +92,11 @@ jobs:
 
       - name: Sync version from Cargo.toml workspace
         working-directory: crates/ts-node
+        env:
+          VERSION_OVERRIDE: ${{ inputs.version_override }}
         run: |
-          if [ -n "${{ inputs.version_override }}" ]; then
-            WS_VERSION="${{ inputs.version_override }}"
+          if [ -n "$VERSION_OVERRIDE" ]; then
+            WS_VERSION="$VERSION_OVERRIDE"
             echo "Using version_override: $WS_VERSION"
           else
             # workspace version: e.g. "1.0.0-rc.2"
@@ -94,6 +105,14 @@ jobs:
           fi
           # npm accepts SemVer pre-releases directly (1.0.0-rc.2).
           npm version "$WS_VERSION" --no-git-tag-version --allow-same-version
+          cd ../../runtime/typescript
+          npm version "$WS_VERSION" --no-git-tag-version --allow-same-version
+
+      - name: Build and pack canonical wire runtime
+        working-directory: runtime/typescript
+        run: |
+          npm ci --ignore-scripts
+          npm pack
 
       - name: Install deps
         working-directory: crates/ts-node
@@ -103,10 +122,17 @@ jobs:
         working-directory: crates/ts-node
         run: npm run build
 
-      - name: Run tests (smoke only)
+      - name: Build native binding dependency
+        # Build the ordinary native dependency before the binding tests.
+        # rustup selects the checked-in rust-toolchain.toml for Cargo.
+        # This is a build prerequisite, not an uploaded npm payload.
+        working-directory: .
+        run: cargo build --locked --release -p zerodds-c-api --jobs 1
+
+      - name: Run native binding tests
         working-directory: crates/ts-node
-        run: npm test || echo "tests skipped (libzerodds runtime not installed in CI)"
-        continue-on-error: true
+        # A missing native runtime is a preparation failure, never a pass.
+        run: npm test
 
       - name: npm pack (dry-run preview)
         working-directory: crates/ts-node
@@ -119,12 +145,24 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: npm-tarball
-          path: crates/ts-node/*.tgz
+          path: |
+            crates/ts-node/*.tgz
+            runtime/typescript/*.tgz
+          if-no-files-found: error
+
+      - name: Publish wire runtime
+        if: ${{ !inputs.dry_run }}
+        working-directory: runtime/typescript
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: npm publish ./*.tgz --provenance --access public --tag "$RELEASE_TAG"
 
       - name: npm publish (OIDC Trusted Publishing + Provenance)
         if: ${{ !inputs.dry_run }}
         working-directory: crates/ts-node
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
         # No NODE_AUTH_TOKEN — OIDC via id-token + npmjs.com Trusted Publisher config.
         # --provenance generates a Sigstore attestation (supply-chain transparency log).
         run: |
-          npm publish --provenance --access public --tag "${{ inputs.tag }}"
+          npm publish ./*.tgz --provenance --access public --tag "$RELEASE_TAG"

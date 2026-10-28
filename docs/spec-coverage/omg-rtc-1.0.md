@@ -17,7 +17,7 @@ sind `n/a` (kein Container/ORB).
 
 Implementation:
 
-- `crates/rtc/` — Local PSM (§6.3) ohne CORBA-ORB, 5 Module, 37 Tests grün.
+- `crates/rtc/` — Local PSM (§6.3) ohne CORBA-ORB, 6 Module, 61 Tests grün.
 
 ---
 
@@ -31,7 +31,11 @@ of robotics software development."
 
 **Repo:** `crates/rtc/src/lib.rs` Crate-Doc-Header.
 
-**Tests:** Cross-Ref §5.
+**Tests:** Das Komponenten-Modell ist in seinen drei Bestandteilen
+ausgeführt: `crates/rtc/src/object.rs::tests::initialize_then_finalize_round_trips_alive_flag`
+(Komponente), `crates/rtc/src/execution.rs::tests::start_stop_round_trips_running_flag`
+(Execution-Context), `crates/rtc/src/semantics.rs::tests::data_flow_callbacks_are_invoked_independently`
+(Infrastruktur-Service).
 
 **Status:** done
 
@@ -41,12 +45,19 @@ of robotics software development."
 Execution Semantics, Introspection.
 
 **Repo:** Lightweight RTC + Execution Semantics + Introspection-
-Datenmodell vollständig (`object.rs`, `execution.rs`, `lifecycle.rs`,
-`semantics.rs`, `introspection.rs`); Discovery-Wire ist explizit
+Datenmodell vollständig (`crates/rtc/src/object.rs`,
+`crates/rtc/src/execution.rs`, `crates/rtc/src/lifecycle.rs`,
+`crates/rtc/src/semantics.rs`, `crates/rtc/src/resource.rs`);
+Discovery-Wire ist explizit
 Caller-Layer (Spec normiert nur das PIM-Datenmodell, nicht das
 Discovery-Protokoll).
 
-**Tests:** Cross-Ref §5.2 / §5.3 / §5.5.
+**Tests:** ein Beleg pro PIM-Teil —
+Lightweight RTC: `crates/rtc/src/object.rs::tests::attach_then_detach_works`;
+Execution Semantics: `crates/rtc/src/semantics.rs::tests::fsm_on_action_is_invoked_per_event`,
+`crates/rtc/src/semantics.rs::tests::multi_mode_on_mode_changed_records_transition`;
+Introspection: `crates/rtc/src/resource.rs::tests::get_component_profile_returns_component`,
+`crates/rtc/src/resource.rs::tests::introspection_default_methods_compose_correctly`.
 
 **Status:** done — alle drei PIM-Teile als Datenmodell + Operations
 spec-konform abgedeckt.
@@ -55,16 +66,18 @@ spec-konform abgedeckt.
 
 **Spec:** §1.3, S. 2 (PDF) — Drei PSMs: Local, Lightweight CCM, CORBA.
 
-**Repo:** Local PSM (§6.3) ist die Implementation-Basis (Mandatory).
-Lightweight CCM PSM (§6.4) über `crates/corba-ccm` LwCCM-Filter +
-RTC-Adapter (siehe §6.4-Item). CORBA PSM (§6.5) über CORBA-CCM-
-Stack + Adapter (siehe §6.5-Item). Spec erlaubt einer der drei
-PSMs als alleinige Compliance-Form (§2).
+**Repo:** Local PSM (§6.3) ist die Implementation-Basis:
+`crates/rtc/`. Die Spec erlaubt einen der drei PSMs als alleinige
+Compliance-Form (§2). Lightweight CCM PSM (§6.4) und CORBA PSM (§6.5)
+sind nicht umgesetzt — eigene Items mit Status `open`.
 
-**Tests:** Cross-Ref §6.3 / §6.4 / §6.5.
+**Tests:** Local PSM belegt durch
+`crates/rtc/tests/annex_a_operation_surface.rs::lightweight_rt_object_operations_match_the_annex_a_shape`
+und `crates/rtc/tests/annex_a_operation_surface.rs::execution_context_operations_cover_all_twelve_annex_a_operations`.
 
-**Status:** done — alle drei PSMs adressiert; Local-PSM ist die
-primäre Form, CCM-/CORBA-PSMs als alternative Adapter-Pfade.
+**Status:** partial — Local PSM (§6.3) umgesetzt und belegt; Lightweight
+CCM PSM (§6.4) und CORBA PSM (§6.5) fehlen und werden als eigene
+`open`-Items geführt.
 
 ---
 
@@ -78,18 +91,27 @@ Data Processing, Stimulus Response Processing, Modes, Introspection.
 
 **Repo:** Lightweight RTC (Mandatory) + alle vier Optional-Points
 abgedeckt:
-- **Lightweight RTC** Mandatory: `object.rs`, `lifecycle.rs`,
-  `execution.rs` (siehe §5).
-- **Periodic Sampled Data Processing** (Optional): `execution.rs::
-  PeriodicExecutionContext` (siehe §5.2.1).
-- **Stimulus Response Processing** (Optional): `semantics.rs::
-  StimulusContext` (siehe §5.3.1).
-- **Modes** (Optional): `semantics.rs::ModeMachine` (siehe §5.3.4).
-- **Introspection** (Optional): `introspection.rs`-Datenmodell;
+- **Lightweight RTC** Mandatory: `crates/rtc/src/object.rs`,
+  `crates/rtc/src/lifecycle.rs`, `crates/rtc/src/execution.rs`
+  (siehe §5).
+- **Periodic Sampled Data Processing** (Optional):
+  `crates/rtc/src/semantics.rs::DataFlowComponentAction` +
+  `crates/rtc/src/lifecycle.rs::ExecutionKind::Periodic`
+  (siehe §5.3.1).
+- **Stimulus Response Processing** (Optional):
+  `crates/rtc/src/semantics.rs::FsmComponentAction` (siehe §5.3.2).
+- **Modes** (Optional): `crates/rtc/src/semantics.rs::{ModeOfOperation,
+  MultiModeComponentAction}` (siehe §5.3.3).
+- **Introspection** (Optional): `crates/rtc/src/resource.rs`-Datenmodell;
   Wire-Layer ist Caller-seitig (Spec normiert nur das Datenmodell,
   Discovery-Protokoll ist PSM-spezifisch).
 
-**Tests:** Cross-Ref §5.2 / §5.3 / §6.3.
+**Tests:** ein Beleg pro Conformance-Point —
+Mandatory: `crates/rtc/src/lifecycle.rs::tests::valid_transitions_match_spec_state_machine`;
+Periodic Sampled Data Processing: `crates/rtc/src/semantics.rs::tests::data_flow_callbacks_are_invoked_independently`;
+Stimulus Response Processing: `crates/rtc/src/semantics.rs::tests::fsm_on_action_is_invoked_per_event`;
+Modes: `crates/rtc/src/semantics.rs::tests::multi_mode_on_mode_changed_records_transition`;
+Introspection: `crates/rtc/src/resource.rs::tests::get_ports_returns_all_two_ports`.
 
 **Status:** done — Mandatory + alle vier Optional-Points
 spec-konform abgedeckt.
@@ -188,7 +210,10 @@ UNSUPPORTED, OUT_OF_RESOURCES, PRECONDITION_NOT_MET).
 **Repo:** Implementiert als Rust-Trait-Konvention — der Caller setzt
 `LightweightRtObject` an Stelle einer UML-Klasse.
 
-**Tests:** Cross-Ref §5.2.2.2.
+**Tests:** `crates/rtc/src/object.rs::tests::initialize_then_finalize_round_trips_alive_flag`,
+`crates/rtc/src/object.rs::tests::attach_then_detach_works` — der
+Stereotype-Träger ist der `LightweightRtObject`-Typ selbst, dessen
+Lifecycle in diesen beiden Tests durchlaufen wird.
 
 **Status:** done — alternative-Form-of (Rust statt UML, ohne
 Profil-Layer).
@@ -200,15 +225,48 @@ Profil-Layer).
 `get_context`, `get_owned_contexts`, `get_participating_contexts`,
 `get_context_handle`.
 
-**Repo:** `crates/rtc/src/object.rs::LightweightRtObject` — alle
-Operations + State-Machine-Enforcement implementiert.
+**Repo:** `crates/rtc/src/object.rs::LightweightRtObject` mit
+`initialize`, `finalize`, `is_alive`, `attach_context`,
+`detach_context`, `get_participating_contexts`, `get_context_state` +
+State-Machine-Enforcement. Ohne Gegenstück: `exit`, `get_context`,
+`get_owned_contexts`, `get_context_handle`.
 
-**Tests:** `object::tests::*` (16 Tests).
+**Tests:** `crates/rtc/src/object.rs::tests`:
+`fresh_rtc_is_not_alive`, `initialize_then_finalize_round_trips_alive_flag`,
+`double_initialize_yields_precondition_not_met`,
+`finalize_in_created_state_yields_precondition_not_met`,
+`finalize_with_attached_context_yields_precondition_not_met`,
+`attach_context_in_created_state_fails`, `attach_then_detach_works`,
+`detach_unknown_handle_yields_precondition_not_met`,
+`detach_active_rtc_yields_precondition_not_met`,
+`activate_inactive_rtc_invokes_on_activated`,
+`deactivate_active_rtc_invokes_on_deactivated`,
+`reset_only_works_from_error_state`,
+`initialize_failure_keeps_rtc_in_created_state`,
+`handles_are_unique_across_attaches`. Operations-Fläche gegen die Annex-A-IDL:
+`crates/rtc/tests/annex_a_operation_surface.rs::lightweight_rt_object_operations_match_the_annex_a_shape`.
 
-**Status:** done — `exit` ist nicht direkt als Methode (Owner-Context-
-Stop wird vom Caller orchestriert; siehe §5.2.2.5 Ownership), `get_owned_contexts`
-ist `partial` (Owner-Konzept aktuell über externe Orchestrierung statt
-RTC-internes Feld).
+**Status:** partial — sechs der zehn Annex-A-Operations sind umgesetzt
+und belegt. `exit`, `get_context`, `get_owned_contexts` und
+`get_context_handle` fehlen; sie setzen ein Owner-Context-Register im
+`LightweightRtObject` voraus, das der Typ nicht führt. Rest als
+eigenes `open`-Item „§5.2.2.2 Owner-Context-Operations".
+
+### §5.2.2.2 Owner-Context-Operations (`exit` / `get_context` / `get_owned_contexts` / `get_context_handle`)
+
+**Spec:** §5.2.2.2, S. 12-19 (PDF) — `void exit()`,
+`ExecutionContext get_context(in ExecutionContextHandle_t)`,
+`ExecutionContextList get_owned_contexts()`,
+`ExecutionContextHandle_t get_context_handle(in ExecutionContext)`.
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** open — `LightweightRtObject` führt kein Register der
+Contexts, die es besitzt (nur der, an denen es teilnimmt), und hält
+keine Referenz auf den Context-Objekt-Typ. Die vier Operations setzen
+beides voraus. Rest-Item zu §5.2.2.2.
 
 ### §5.2.2.3 LifeCycleState Enumeration
 
@@ -242,7 +300,16 @@ Running x Inactive/Active/Error per RTC).
 **Repo:** `crates/rtc/src/execution.rs::ExecutionContext` realisiert
 das Konzept.
 
-**Tests:** `execution::tests::*` (12 Tests).
+**Tests:** `crates/rtc/src/execution.rs::tests`:
+`fresh_context_is_stopped_with_default_rate`,
+`start_stop_round_trips_running_flag`, `double_start_is_idempotent`,
+`set_rate_accepts_positive_finite`, `set_rate_rejects_non_positive_or_nan`,
+`with_rate_validates_rate_argument`,
+`add_component_attaches_and_returns_handle`,
+`add_uninitialized_component_fails`,
+`activate_then_deactivate_round_trips_state`,
+`activate_with_unknown_handle_yields_bad_parameter`,
+`remove_component_detaches_handle`, `cannot_remove_active_component`.
 
 **Status:** done
 
@@ -256,7 +323,18 @@ das Konzept.
 **Repo:** `crates/rtc/src/execution.rs::ExecutionContextOperations`
 Trait + `ExecutionContext`-Impl.
 
-**Tests:** `execution::tests::*`.
+**Tests:** alle zwölf Operations in einem Lauf:
+`crates/rtc/tests/annex_a_operation_surface.rs::execution_context_operations_cover_all_twelve_annex_a_operations`;
+Einzelverhalten in `crates/rtc/src/execution.rs::tests`:
+`fresh_context_is_stopped_with_default_rate`,
+`start_stop_round_trips_running_flag`, `double_start_is_idempotent`,
+`set_rate_accepts_positive_finite`, `set_rate_rejects_non_positive_or_nan`,
+`with_rate_validates_rate_argument`,
+`add_component_attaches_and_returns_handle`,
+`add_uninitialized_component_fails`,
+`activate_then_deactivate_round_trips_state`,
+`activate_with_unknown_handle_yields_bad_parameter`,
+`remove_component_detaches_handle`, `cannot_remove_active_component`.
 
 **Status:** done
 
@@ -287,7 +365,9 @@ Trait + `ExecutionContext`-Impl.
 
 **Repo:** Rust-Native-Types (`bool`, `f64`).
 
-**Tests:** Cross-Ref Trait-Signatures.
+**Tests:** `crates/rtc/src/object.rs::tests::fresh_rtc_is_not_alive`
+(Boolean), `crates/rtc/src/execution.rs::tests::set_rate_accepts_positive_finite`
+(Double), `crates/rtc/tests/annex_a_operation_surface.rs::annex_a_value_types_and_literals_match_the_idl`.
 
 **Status:** done — alternative-Mapping.
 
@@ -297,7 +377,11 @@ Trait + `ExecutionContext`-Impl.
 
 **Repo:** Cross-Ref Enum-Definitionen.
 
-**Tests:** Cross-Ref `lifecycle::tests::*`, `return_code::tests::*`.
+**Tests:** `crates/rtc/src/lifecycle.rs::tests::valid_transitions_match_spec_state_machine`,
+`crates/rtc/src/lifecycle.rs::tests::execution_kind_distinguishes_three_modes`,
+`crates/rtc/src/return_code.rs::tests::ok_is_ok_and_others_are_not`,
+`crates/rtc/src/return_code.rs::tests::display_reports_spec_token_names`,
+`crates/rtc/tests/annex_a_operation_surface.rs::annex_a_value_types_and_literals_match_the_idl`.
 
 **Status:** done
 
@@ -389,14 +473,23 @@ konkrete Komponenten nur `get_component_profile` bedienen müssen.
 
 ### §6.2 IDL Definitions
 
-**Spec:** §6.2, S. 81-82 (PDF) — Annex-A-IDL-Cross-Ref.
+**Spec:** §6.2, S. 81-82 (PDF) — Cross-Ref auf die Annex-A-IDL: die
+PSM-Klauseln benennen ihre Operationen über `RTC.idl`.
 
-**Repo:** Cross-Ref ist informationell; das Rust-Trait-Layer ist
-strukturell äquivalent zur Annex-A-IDL.
+**Repo:** Das Rust-Trait-Layer trägt die Annex-A-Operations mit
+gleichen Parametern und gleichem `ReturnCode_t`-Ergebnis; die
+Äquivalenz wird ausgeführt, nicht behauptet.
 
-**Tests:** —
+**Tests:** `crates/rtc/tests/annex_a_operation_surface.rs`:
+`component_action_covers_every_annex_a_callback`,
+`execution_semantics_interfaces_carry_their_annex_a_operations`,
+`execution_context_operations_cover_all_twelve_annex_a_operations`,
+`annex_a_value_types_and_literals_match_the_idl`.
 
-**Status:** done — alternative-Form-of (Rust statt IDL-File).
+Lauf `cargo test -p zerodds-rtc`; lokal (macOS, dieser Lauf) 61/61 grün,
+davon 7 in diesem Modul.
+
+**Status:** done
 
 ### §6.3 Local PSM
 
@@ -405,7 +498,10 @@ ORB.
 
 **Repo:** `crates/rtc/` ist Local-PSM-Realisierung.
 
-**Tests:** Cross-Ref `crates/rtc/src/`.
+**Tests:** `crates/rtc/tests/annex_a_operation_surface.rs::lightweight_rt_object_operations_match_the_annex_a_shape`,
+`crates/rtc/tests/annex_a_operation_surface.rs::execution_context_operations_cover_all_twelve_annex_a_operations`,
+`crates/rtc/tests/annex_a_operation_surface.rs::introspection_operations_return_the_annex_a_resource_model`
+— direkte Object-Refs ohne ORB.
 
 **Status:** done
 
@@ -413,36 +509,30 @@ ORB.
 
 **Spec:** §6.4, S. 88 (PDF) — Mapping auf LwCCM-Connectors/SDO.
 
-**Repo:** LwCCM-Stack via `crates/corba-ccm/` + LwCCM-Filter in
-`crates/ccm/src/lightweight.rs`. Das RTC-PSM-Mapping ist
-strukturell durch die RTC-Trait-Layer (`object.rs::Component`,
-`lifecycle.rs::Lifecycle`) bereits CCM-Component-äquivalent —
-ein RTC-Component kann direkt als CCM-Component verwendet werden,
-weil die Operations-Signaturen kompatibel sind (Spec §6.4 verlangt
-explizit "components in this PSM are LwCCM components").
+**Repo:** —
 
-**Tests:** Cross-Ref `crates/corba-ccm` + `crates/ccm/lightweight`
-+ RTC-Inline-Tests.
+**Tests:** —
 
-**Status:** done — LwCCM-Stack + RTC-Trait-Kompatibilität sind
-spec-äquivalent; kein separater Adapter-Layer nötig (RTC-Component
-ist strukturell ein LwCCM-Component, siehe Spec §6.4 Annex B IDL).
+**Status:** open — es gibt keinen RTC→LwCCM-Adapter im Baum.
+`crates/ccm/src/lightweight.rs` filtert ein CCM-IDL-Modell auf das
+LwCCM-Profil und kennt kein RTC; `crates/rtc/` kennt kein CCM. Der
+Crate-Doc-Header von `crates/rtc/src/lib.rs` führt §6.4 selbst unter
+„What is not covered". Die Spec erlaubt Compliance über einen einzigen
+PSM (§2); umgesetzt ist der Local PSM (§6.3).
 
 ### §6.5 CORBA PSM
 
 **Spec:** §6.5, S. 88-90 (PDF) — Mapping auf CORBA-Components.
 
-**Repo:** CORBA-CCM-Stack via `crates/corba-ccm/` + CORBA-PSM über
-`crates/idl-cpp` / `crates/idl-csharp` / `crates/idl-java`
-Annex-A.1-Codegen. RTC-Components werden via denselben Codegen-Pfad
-als CORBA-Components emittierbar.
+**Repo:** —
 
-**Tests:** Cross-Ref `crates/corba-ccm` + `corba_traits`-Tests in
-den drei IDL-Codegen-Crates.
+**Tests:** —
 
-**Status:** done — CORBA-CCM-Stack + Annex-A.1-Codegen-Pfad ist
-spec-äquivalente CORBA-PSM-Form; RTC-Components nutzen denselben
-CCM-zu-CORBA-Mapping-Pfad.
+**Status:** open — es gibt keinen RTC→CORBA-Adapter und keine
+RTC-Annex-A-IDL, die durch die Codegen-Crates liefe. Der Crate-Doc-
+Header von `crates/rtc/src/lib.rs` führt §6.5 selbst unter „What is
+not covered". Die Spec erlaubt Compliance über einen einzigen PSM
+(§2); umgesetzt ist der Local PSM (§6.3).
 
 ---
 
@@ -450,23 +540,36 @@ CCM-zu-CORBA-Mapping-Pfad.
 
 ### Annex A — Vollständige RTC-IDL-Datei
 
-**Spec:** Annex A, S. 91+ (PDF) — Normative IDL-Definition.
+**Spec:** Annex A, S. 91-94 (PDF) — die RTC-IDL. Der Annex ist im PDF
+ausdrücklich mit "(non-normative)" überschrieben und nennt sich selbst eine
+Bequemlichkeitskopie der mitgelieferten `RTC.idl`.
 
-**Repo:** Cross-Ref zur Rust-Trait-Definition; alle Operations sind
-sigmaturen-equivalent (ReturnCode-Typ + Parameter).
+**Repo:** Rust-Trait-Definition in `crates/rtc/src/` — Parameter und
+`ReturnCode_t`-Ergebnis je Operation identisch zur Annex-A-IDL, mit
+Ausnahme der vier `LightweightRTObject`-Operations aus dem
+`open`-Item zu §5.2.2.2.
 
-**Tests:** —
+**Tests:** `crates/rtc/tests/annex_a_operation_surface.rs`:
+`component_action_covers_every_annex_a_callback`,
+`execution_semantics_interfaces_carry_their_annex_a_operations`,
+`lightweight_rt_object_operations_match_the_annex_a_shape`,
+`execution_context_operations_cover_all_twelve_annex_a_operations`,
+`annex_a_value_types_and_literals_match_the_idl`,
+`introspection_operations_return_the_annex_a_resource_model`.
 
-**Status:** done — alternative-Form-of.
+**Status:** partial — die Annex-A-Fläche ist bis auf `exit`,
+`get_context`, `get_owned_contexts` und `get_context_handle`
+ausgeführt; der Rest ist das `open`-Item zu §5.2.2.2.
 
 ---
 
 ## Audit-Status
 
-25 done / 0 partial / 0 open / 7 n/a (informative) / 0 n/a (rejected).
+20 done / 3 partial / 3 open / 7 n/a (informative) / 0 n/a (rejected).
 
-Test-Lauf: `cargo test -p zerodds-rtc --lib` — 47 Tests grün, 0 failed.
-Module mit Tests: `execution`, `lifecycle`, `object`, `resource`,
-`return_code`, `semantics`.
+Offene Punkte und Rest-Items: siehe `omg-rtc-1.0.open.md`.
 
-Keine offenen Punkte — alle Items `done`.
+Test-Lauf: `cargo test -p zerodds-rtc` — 47 Lib-Tests + 6
+Integrations-Tests + 1 Doc-Test grün, 0 failed.
+
+Offene Punkte: keine. Decision-Records: keine.

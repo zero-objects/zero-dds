@@ -26,4 +26,10 @@ std = ["alloc"]
 alloc = []
 
 [dependencies]
-zerodds-cdr = { version = "1.0.0-rc.7", path = "../cdr" }
+zerodds-wire = { version = "1.0.0-rc.7", path = "../wire" }
+# GSSUP credential source (gssup_store): PBKDF2-HMAC-SHA-256 salted
+# password file, the same primitive amqp-endpoint's SASL SCRAM-SHA-256
+# uses (crates/amqp-endpoint/src/scram.rs) for the same reason — no
+# plain-text password in a daemon's configuration.
+sha2 = { workspace = true }
+hmac = { workspace = true }

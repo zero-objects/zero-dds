@@ -1,0 +1,29 @@
+[package]
+name = "zerodds-interop-results"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "The interop result tree and the two tables generated from it"
+publish = false
+
+[[bin]]
+name = "interop-results"
+path = "src/main.rs"
+
+[lib]
+name = "zerodds_interop_results"
+path = "src/lib.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+zerodds-ast = { path = "../../crates/ast" }
+zerodds-ast-core = { path = "../../crates/ast-core" }
+zerodds-ast-layout = { path = "../../crates/ast-layout" }
+zerodds-idl-lower = { path = "../../crates/idl-lower" }
+zerodds-wire-probe = { path = "../../crates/wire-probe" }
+serde_json = "1.0"

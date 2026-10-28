@@ -1,33 +1,28 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Conformance markers for DDS-XML 1.0 §2.4 + §7.2.0.
+//! Conformance markers for DDS-XML 1.0 clause 2 and §7.2.
 //!
-//! § 2.4 — *Atomic building-block selection.* The spec requires that the
-//! implementation can atomically state per building block: "selected"
-//! or "not selected". We mark that via
-//! [`SUPPORTED_BUILDING_BLOCKS`] — the list of the building blocks
-//! productively supported by the crate. An `assert!`-based
-//! test table (`tests::supported_blocks_match_repo`) verifies
-//! that the list matches the actually exposed modules.
+//! Clause 2 (Conformance Criteria) has no conformance points of its own;
+//! it says a reference to the specification "shall result in a selection of
+//! building blocks where all selected building blocks shall be supported
+//! entirely". [`SUPPORTED_BUILDING_BLOCKS`] lists the building blocks of
+//! §7.3.1 this crate reads, with the module and the top-level element of
+//! each. Unit tests check the list for duplicates and against the count
+//! the specification names.
 //!
-//! § 7.2.0 — *1-to-1 mapping of IDL data types.* The spec says: "The XML
-//! representation of resources that correspond to data-types defined
-//! in the DDS IDL PSM is obtained by performing a 1-to-1 mapping of
-//! the corresponding IDL data type." We encode this mapping
-//! table as [`IDL_TO_XML_MAPPING`] — per IDL data type category
-//! a reference to the producing function or module, so that
-//! reviewers/testers can see the completeness of the coverage in one
-//! place.
+//! §7.2 says the XML representation of resources that correspond to data
+//! types of the DDS IDL PSM is obtained by a 1-to-1 mapping of the IDL type.
+//! [`IDL_TO_XML_MAPPING`] names, per IDL type category, the subsection of
+//! §7.1.4 or §7.2 that defines it and the function that reads it.
 
 extern crate alloc;
 
-/// List of the building blocks from DDS-XML 1.0 §7.3.1.1 that are
-/// productively supported in this crate.
+/// The building blocks of DDS-XML 1.0 §7.3.1 this crate reads.
 ///
-/// Spec §7.3.1.1: "This specification breaks the syntax used to
+/// Spec §7.3.1: "This specification breaks the syntax used to
 /// represent DDS resources in XML into the six different building
-/// blocks: Building Block QoS, Types, Domains, DomainParticipants,
-/// Applications, Data Samples."
+/// building blocks": QoS, Types, Domains, DomainParticipants,
+/// Applications, Data Samples.
 ///
 /// Per entry: `(spec_name, module_name, top_level_element)`.
 pub const SUPPORTED_BUILDING_BLOCKS: &[(&str, &str, &str)] = &[
@@ -44,59 +39,68 @@ pub const SUPPORTED_BUILDING_BLOCKS: &[(&str, &str, &str)] = &[
 ];
 
 /// 1-to-1 mapping IDL data type -> XML constructor + producing
-/// API function. Spec §7.2.0.
+/// API function. Spec §7.2.
 ///
 /// Per entry: `(idl_category, spec_section, repo_path)`.
 pub const IDL_TO_XML_MAPPING: &[(&str, &str, &str)] = &[
     (
         "boolean",
-        "§7.1.4 Tab.7.1",
-        "types::parse_bool / parse_bool_strict",
+        "§7.1.4 Table 7.1",
+        "types::parse_bool / qos_parser::parse_bool_strict",
     ),
     (
         "long (32-bit signed)",
-        "§7.1.4 Tab.7.1",
+        "§7.1.4 Table 7.1",
         "types::parse_long",
     ),
     (
         "unsigned long (32-bit)",
-        "§7.1.4 Tab.7.1",
+        "§7.1.4 Table 7.1",
         "types::parse_ulong",
     ),
-    ("string", "§7.1.4 Tab.7.1", "types::parse_string"),
-    ("enum", "§7.1.4 Tab.7.1 / §7.2.1", "types::parse_enum"),
+    ("string", "§7.1.4 Table 7.1", "types::parse_string"),
+    ("enum", "§7.1.4 Table 7.1 / §7.2.1", "types::parse_enum"),
     ("LENGTH_UNLIMITED", "§7.2.2.1", "types::LENGTH_UNLIMITED"),
     (
         "DURATION_INFINITE_SEC/NSEC",
-        "§7.2.2.2 / §7.2.2.3",
+        "§7.2.2.1",
         "types::DURATION_INFINITE_SEC / DURATION_INFINITE_NSEC",
     ),
     (
         "DURATION_ZERO_SEC/NSEC",
-        "§7.2.2.4 / §7.2.2.5",
+        "§7.2.2.1",
         "types::DURATION_ZERO_SEC / DURATION_ZERO_NSEC",
     ),
     (
+        "TIME_INVALID_SEC/NSEC",
+        "§7.2.2.1",
+        "types::TIME_INVALID_SEC / TIME_INVALID_NSEC",
+    ),
+    (
         "nonNegativeInteger_UNLIMITED",
-        "§7.2.2.8",
-        "types::parse_long (Number-or-Symbol)",
+        "§7.2.2.1",
+        "types::parse_long (number or LENGTH_UNLIMITED)",
     ),
     (
         "positiveInteger_UNLIMITED",
-        "§7.2.2.9",
+        "§7.2.2.1",
         "types::parse_positive_long_unlimited",
     ),
     (
         "nonNegativeInteger_Duration_SEC",
-        "§7.2.2.10",
+        "§7.2.2.1",
         "types::parse_duration_sec",
     ),
     (
         "nonNegativeInteger_Duration_NSEC",
-        "§7.2.2.11",
+        "§7.2.2.1",
         "types::parse_duration_nsec",
     ),
-    ("struct (IDL)", "§7.2.3", "qos_parser::* (recursive)"),
+    (
+        "struct (IDL)",
+        "§7.2.3",
+        "qos_parser::* (one reader per policy)",
+    ),
     (
         "sequence<T> (IDL)",
         "§7.2.4.1",
@@ -105,14 +109,18 @@ pub const IDL_TO_XML_MAPPING: &[(&str, &str, &str)] = &[
     (
         "sequence<octet> (IDL)",
         "§7.2.4.2",
-        "types::parse_octet_sequence + qos_parser::base64_decode",
+        "types::parse_octet_sequence; qos_parser reads <value> and <valueB64>",
     ),
     (
         "T[N] (IDL Array)",
         "§7.2.5",
-        "parser::XmlElement::sequence_elements (re-use)",
+        "parser::XmlElement::sequence_elements (same as a sequence)",
     ),
-    ("Duration_t", "§7.2.6", "qos_parser::parse_duration"),
+    (
+        "Duration_t",
+        "§7.2.6",
+        "qos_parser (duration elements; sec / nanosec)",
+    ),
 ];
 
 #[cfg(test)]
@@ -123,8 +131,8 @@ mod tests {
 
     #[test]
     fn supported_blocks_match_spec_count() {
-        // Spec §7.3.1.1 names **6** building blocks — that is exactly
-        // our list.
+        // Spec §7.3.1 names six building blocks; the list has one entry
+        // for each.
         assert_eq!(SUPPORTED_BUILDING_BLOCKS.len(), 6);
     }
 
@@ -153,8 +161,8 @@ mod tests {
     #[test]
     fn idl_mapping_covers_required_categories() {
         // Sanity: the mapping table contains at least all categories
-        // from §7.1.4 Tab.7.1 (boolean, enum, long, ulong, string) +
-        // §7.2.x (sequences, arrays, Duration).
+        // from §7.1.4 Table 7.1 (boolean, enum, long, ulong, string) and
+        // Duration_t (§7.2.6).
         let names: BTreeSet<&str> = IDL_TO_XML_MAPPING
             .iter()
             .map(|(name, _, _)| *name)
@@ -183,11 +191,17 @@ mod tests {
     }
 
     #[test]
-    fn idl_mapping_includes_section_7_2_x_items() {
-        // §7.2.x items that are fully live after K7-A must appear
-        // in the table — otherwise §7.2.0 cannot be "done".
+    fn idl_mapping_names_the_sections_of_7_2() {
+        // The subsections of §7.2 that define a mapping appear in the table.
         let sections: BTreeSet<&str> = IDL_TO_XML_MAPPING.iter().map(|(_, sec, _)| *sec).collect();
-        for required in ["§7.2.2.9", "§7.2.4.1", "§7.2.4.2", "§7.2.5", "§7.2.6"] {
+        for required in [
+            "§7.2.2.1",
+            "§7.2.3",
+            "§7.2.4.1",
+            "§7.2.4.2",
+            "§7.2.5",
+            "§7.2.6",
+        ] {
             assert!(
                 sections.contains(required),
                 "mapping table missing § section `{required}`"

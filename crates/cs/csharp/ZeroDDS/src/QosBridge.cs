@@ -163,6 +163,49 @@ public static class QosBridge
         public UIntPtr NamesLen;
     }
 
+    // DDS-Security 1.2 section 7.3.21: ZeroDdsPropertyQosPolicy and
+    // ZeroDdsDataTagQosPolicy, the trailing members of the DataWriter and
+    // DataReader QoS structs. All-zero is no entries.
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct NativePropertyPolicy
+    {
+        public IntPtr Entries;
+        public UIntPtr EntriesLen;
+        public IntPtr BinaryEntries;
+        public UIntPtr BinaryEntriesLen;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct NativeDataTagPolicy
+    {
+        public IntPtr Tags;
+        public UIntPtr TagsLen;
+    }
+
+    // DDS-XTypes 1.3 Annex D: ZeroDdsDataRepresentationQosPolicy (`is_set`,
+    // `count`, `ids[8]`) and ZeroDdsTypeConsistencyEnforcementQosPolicy, the
+    // members that follow GroupData (TopicData for the Topic) in the Topic,
+    // DataWriter and DataReader QoS structs, before Property and DataTags.
+    // All-zero leaves the policies at their defaults. The eight ids are single
+    // fields so the struct stays blittable without unsafe code.
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct NativeDataRepresentationPolicy
+    {
+        public byte IsSet;
+        public byte Count;
+        public short Id0, Id1, Id2, Id3, Id4, Id5, Id6, Id7;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct NativeTypeConsistencyPolicy
+    {
+        public byte IsSet;
+        public byte Kind;
+        public byte IgnoreSequenceBounds;
+        public byte IgnoreStringBounds;
+        public byte IgnoreMemberNames;
+        public byte PreventTypeWidening;
+        public byte ForceTypeValidation;
+    }
+
     [StructLayout(LayoutKind.Sequential)]
     public struct NativeDomainParticipantQos
     {
@@ -186,6 +229,7 @@ public static class QosBridge
         internal NativeLifespan Lifespan;
         internal NativeOwnership Ownership;
         internal NativeBytesData TopicData;
+        internal NativeDataRepresentationPolicy DataRepresentation;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -219,6 +263,9 @@ public static class QosBridge
         internal NativeBytesData UserData;
         internal NativeBytesData TopicData;
         internal NativeBytesData GroupData;
+        internal NativeDataRepresentationPolicy DataRepresentation;
+        internal NativePropertyPolicy Property;
+        internal NativeDataTagPolicy DataTags;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -240,6 +287,10 @@ public static class QosBridge
         internal NativeBytesData UserData;
         internal NativeBytesData TopicData;
         internal NativeBytesData GroupData;
+        internal NativeDataRepresentationPolicy DataRepresentation;
+        internal NativeTypeConsistencyPolicy TypeConsistency;
+        internal NativePropertyPolicy Property;
+        internal NativeDataTagPolicy DataTags;
     }
 
     private static NativeDuration N(Duration d) =>
@@ -251,19 +302,51 @@ public static class QosBridge
         return new NativePartition { Names = names, NamesLen = count };
     }
 
+    /// The octets of UserData, TopicData or GroupData, pinned for the call.
+    private static NativeBytesData Bytes(byte[] value, NativeQosScope scope) =>
+        new() { Value = scope.Pin(value), ValueLen = (UIntPtr)value.Length };
+
+    private static NativeReliability R(ReliabilityPolicy p) =>
+        new() { Kind = (uint)p.Kind, MaxBlockingTime = N(p.MaxBlockingTime) };
+
+    private static NativeDurabilityService DS(DurabilityServicePolicy p) => new()
+    {
+        ServiceCleanupDelay = N(p.ServiceCleanupDelay),
+        HistoryKind = (uint)p.HistoryKind,
+        HistoryDepth = p.HistoryDepth,
+        MaxSamples = p.MaxSamples,
+        MaxInstances = p.MaxInstances,
+        MaxSamplesPerInstance = p.MaxSamplesPerInstance,
+    };
+
+    private static NativeLiveliness L(LivelinessPolicy p) =>
+        new() { Kind = (uint)p.Kind, LeaseDuration = N(p.LeaseDuration) };
+
+    private static NativePresentation Pres(PresentationPolicy p) => new()
+    {
+        AccessScope = (uint)p.AccessScope,
+        CoherentAccess = p.CoherentAccess,
+        OrderedAccess = p.OrderedAccess,
+    };
+
+    private static NativeHistory H(HistoryPolicy p) => new() { Kind = (uint)p.Kind, Depth = p.Depth };
+
+    private static NativeResourceLimits RL(ResourceLimitsPolicy p) => new()
+    {
+        MaxSamples = p.MaxSamples,
+        MaxInstances = p.MaxInstances,
+        MaxSamplesPerInstance = p.MaxSamplesPerInstance,
+    };
+
+    private static NativeEntityFactory EF(EntityFactoryPolicy p) =>
+        new() { AutoenableCreatedEntities = p.AutoenableCreatedEntities };
+
     public static NativeDomainParticipantQos ToNative(DomainParticipantQos q, NativeQosScope scope)
     {
         return new NativeDomainParticipantQos
         {
-            UserData = new NativeBytesData
-            {
-                Value = scope.Pin(q.UserData.Value),
-                ValueLen = (UIntPtr)q.UserData.Value.Length,
-            },
-            EntityFactory = new NativeEntityFactory
-            {
-                AutoenableCreatedEntities = q.EntityFactory.AutoenableCreatedEntities,
-            },
+            UserData = Bytes(q.UserData.Value, scope),
+            EntityFactory = EF(q.EntityFactory),
         };
     }
 
@@ -272,47 +355,18 @@ public static class QosBridge
         return new NativeTopicQos
         {
             Durability = new NativeDurability { Kind = (uint)q.Durability.Kind },
-            DurabilityService = new NativeDurabilityService
-            {
-                ServiceCleanupDelay = N(q.DurabilityService.ServiceCleanupDelay),
-                HistoryKind = (uint)q.DurabilityService.HistoryKind,
-                HistoryDepth = q.DurabilityService.HistoryDepth,
-                MaxSamples = q.DurabilityService.MaxSamples,
-                MaxInstances = q.DurabilityService.MaxInstances,
-                MaxSamplesPerInstance = q.DurabilityService.MaxSamplesPerInstance,
-            },
+            DurabilityService = DS(q.DurabilityService),
             Deadline = new NativeDeadline { Period = N(q.Deadline.Period) },
             LatencyBudget = new NativeLatencyBudget { Duration = N(q.LatencyBudget.Duration) },
-            Liveliness = new NativeLiveliness
-            {
-                Kind = (uint)q.Liveliness.Kind,
-                LeaseDuration = N(q.Liveliness.LeaseDuration),
-            },
-            Reliability = new NativeReliability
-            {
-                Kind = (uint)q.Reliability.Kind,
-                MaxBlockingTime = N(q.Reliability.MaxBlockingTime),
-            },
+            Liveliness = L(q.Liveliness),
+            Reliability = R(q.Reliability),
             DestinationOrder = new NativeDestinationOrder { Kind = (uint)q.DestinationOrder.Kind },
-            History = new NativeHistory
-            {
-                Kind = (uint)q.History.Kind,
-                Depth = q.History.Depth,
-            },
-            ResourceLimits = new NativeResourceLimits
-            {
-                MaxSamples = q.ResourceLimits.MaxSamples,
-                MaxInstances = q.ResourceLimits.MaxInstances,
-                MaxSamplesPerInstance = q.ResourceLimits.MaxSamplesPerInstance,
-            },
+            History = H(q.History),
+            ResourceLimits = RL(q.ResourceLimits),
             TransportPriority = new NativeTransportPriority { Value = q.TransportPriority.Value },
             Lifespan = new NativeLifespan { Duration = N(q.Lifespan.Duration) },
             Ownership = new NativeOwnership { Kind = (uint)q.Ownership.Kind },
-            TopicData = new NativeBytesData
-            {
-                Value = scope.Pin(q.TopicData.Value),
-                ValueLen = (UIntPtr)q.TopicData.Value.Length,
-            },
+            TopicData = Bytes(q.TopicData.Value, scope),
         };
     }
 
@@ -320,22 +374,10 @@ public static class QosBridge
     {
         return new NativePublisherQos
         {
-            Presentation = new NativePresentation
-            {
-                AccessScope = (uint)q.Presentation.AccessScope,
-                CoherentAccess = q.Presentation.CoherentAccess,
-                OrderedAccess = q.Presentation.OrderedAccess,
-            },
+            Presentation = Pres(q.Presentation),
             Partition = P(q.Partition, scope),
-            GroupData = new NativeBytesData
-            {
-                Value = scope.Pin(q.GroupData.Value),
-                ValueLen = (UIntPtr)q.GroupData.Value.Length,
-            },
-            EntityFactory = new NativeEntityFactory
-            {
-                AutoenableCreatedEntities = q.EntityFactory.AutoenableCreatedEntities,
-            },
+            GroupData = Bytes(q.GroupData.Value, scope),
+            EntityFactory = EF(q.EntityFactory),
         };
     }
 
@@ -344,22 +386,10 @@ public static class QosBridge
         // Identical layout — Pub/Sub QoS have the same fields per Spec §2.2.3.x.
         return new NativePublisherQos
         {
-            Presentation = new NativePresentation
-            {
-                AccessScope = (uint)q.Presentation.AccessScope,
-                CoherentAccess = q.Presentation.CoherentAccess,
-                OrderedAccess = q.Presentation.OrderedAccess,
-            },
+            Presentation = Pres(q.Presentation),
             Partition = P(q.Partition, scope),
-            GroupData = new NativeBytesData
-            {
-                Value = scope.Pin(q.GroupData.Value),
-                ValueLen = (UIntPtr)q.GroupData.Value.Length,
-            },
-            EntityFactory = new NativeEntityFactory
-            {
-                AutoenableCreatedEntities = q.EntityFactory.AutoenableCreatedEntities,
-            },
+            GroupData = Bytes(q.GroupData.Value, scope),
+            EntityFactory = EF(q.EntityFactory),
         };
     }
 
@@ -367,70 +397,28 @@ public static class QosBridge
     {
         return new NativeDataWriterQos
         {
-            Reliability = new NativeReliability
-            {
-                Kind = (uint)q.Reliability.Kind,
-                MaxBlockingTime = N(q.Reliability.MaxBlockingTime),
-            },
+            Reliability = R(q.Reliability),
             Durability = new NativeDurability { Kind = (uint)q.Durability.Kind },
-            DurabilityService = new NativeDurabilityService
-            {
-                ServiceCleanupDelay = N(q.DurabilityService.ServiceCleanupDelay),
-                HistoryKind = (uint)q.DurabilityService.HistoryKind,
-                HistoryDepth = q.DurabilityService.HistoryDepth,
-                MaxSamples = q.DurabilityService.MaxSamples,
-                MaxInstances = q.DurabilityService.MaxInstances,
-                MaxSamplesPerInstance = q.DurabilityService.MaxSamplesPerInstance,
-            },
+            DurabilityService = DS(q.DurabilityService),
             Deadline = new NativeDeadline { Period = N(q.Deadline.Period) },
             LatencyBudget = new NativeLatencyBudget { Duration = N(q.LatencyBudget.Duration) },
-            Liveliness = new NativeLiveliness
-            {
-                Kind = (uint)q.Liveliness.Kind,
-                LeaseDuration = N(q.Liveliness.LeaseDuration),
-            },
+            Liveliness = L(q.Liveliness),
             DestinationOrder = new NativeDestinationOrder { Kind = (uint)q.DestinationOrder.Kind },
             Lifespan = new NativeLifespan { Duration = N(q.Lifespan.Duration) },
             Ownership = new NativeOwnership { Kind = (uint)q.Ownership.Kind },
             OwnershipStrength = new NativeOwnershipStrength { Value = q.OwnershipStrength.Value },
             Partition = P(q.Partition, scope),
-            Presentation = new NativePresentation
-            {
-                AccessScope = (uint)q.Presentation.AccessScope,
-                CoherentAccess = q.Presentation.CoherentAccess,
-                OrderedAccess = q.Presentation.OrderedAccess,
-            },
-            History = new NativeHistory
-            {
-                Kind = (uint)q.History.Kind,
-                Depth = q.History.Depth,
-            },
-            ResourceLimits = new NativeResourceLimits
-            {
-                MaxSamples = q.ResourceLimits.MaxSamples,
-                MaxInstances = q.ResourceLimits.MaxInstances,
-                MaxSamplesPerInstance = q.ResourceLimits.MaxSamplesPerInstance,
-            },
+            Presentation = Pres(q.Presentation),
+            History = H(q.History),
+            ResourceLimits = RL(q.ResourceLimits),
             TransportPriority = new NativeTransportPriority { Value = q.TransportPriority.Value },
             WriterDataLifecycle = new NativeWriterDataLifecycle
             {
                 AutodisposeUnregisteredInstances = q.WriterDataLifecycle.AutodisposeUnregisteredInstances,
             },
-            UserData = new NativeBytesData
-            {
-                Value = scope.Pin(q.UserData.Value),
-                ValueLen = (UIntPtr)q.UserData.Value.Length,
-            },
-            TopicData = new NativeBytesData
-            {
-                Value = scope.Pin(q.TopicData.Value),
-                ValueLen = (UIntPtr)q.TopicData.Value.Length,
-            },
-            GroupData = new NativeBytesData
-            {
-                Value = scope.Pin(q.GroupData.Value),
-                ValueLen = (UIntPtr)q.GroupData.Value.Length,
-            },
+            UserData = Bytes(q.UserData.Value, scope),
+            TopicData = Bytes(q.TopicData.Value, scope),
+            GroupData = Bytes(q.GroupData.Value, scope),
         };
     }
 
@@ -438,39 +426,17 @@ public static class QosBridge
     {
         return new NativeDataReaderQos
         {
-            Reliability = new NativeReliability
-            {
-                Kind = (uint)q.Reliability.Kind,
-                MaxBlockingTime = N(q.Reliability.MaxBlockingTime),
-            },
+            Reliability = R(q.Reliability),
             Durability = new NativeDurability { Kind = (uint)q.Durability.Kind },
             Deadline = new NativeDeadline { Period = N(q.Deadline.Period) },
             LatencyBudget = new NativeLatencyBudget { Duration = N(q.LatencyBudget.Duration) },
-            Liveliness = new NativeLiveliness
-            {
-                Kind = (uint)q.Liveliness.Kind,
-                LeaseDuration = N(q.Liveliness.LeaseDuration),
-            },
+            Liveliness = L(q.Liveliness),
             DestinationOrder = new NativeDestinationOrder { Kind = (uint)q.DestinationOrder.Kind },
             Ownership = new NativeOwnership { Kind = (uint)q.Ownership.Kind },
             Partition = P(q.Partition, scope),
-            Presentation = new NativePresentation
-            {
-                AccessScope = (uint)q.Presentation.AccessScope,
-                CoherentAccess = q.Presentation.CoherentAccess,
-                OrderedAccess = q.Presentation.OrderedAccess,
-            },
-            History = new NativeHistory
-            {
-                Kind = (uint)q.History.Kind,
-                Depth = q.History.Depth,
-            },
-            ResourceLimits = new NativeResourceLimits
-            {
-                MaxSamples = q.ResourceLimits.MaxSamples,
-                MaxInstances = q.ResourceLimits.MaxInstances,
-                MaxSamplesPerInstance = q.ResourceLimits.MaxSamplesPerInstance,
-            },
+            Presentation = Pres(q.Presentation),
+            History = H(q.History),
+            ResourceLimits = RL(q.ResourceLimits),
             TimeBasedFilter = new NativeTimeBasedFilter
             {
                 MinimumSeparation = N(q.TimeBasedFilter.MinimumSeparation),
@@ -480,21 +446,9 @@ public static class QosBridge
                 AutopurgeNoWriterSamplesDelay = N(q.ReaderDataLifecycle.AutopurgeNoWriterSamplesDelay),
                 AutopurgeDisposedSamplesDelay = N(q.ReaderDataLifecycle.AutopurgeDisposedSamplesDelay),
             },
-            UserData = new NativeBytesData
-            {
-                Value = scope.Pin(q.UserData.Value),
-                ValueLen = (UIntPtr)q.UserData.Value.Length,
-            },
-            TopicData = new NativeBytesData
-            {
-                Value = scope.Pin(q.TopicData.Value),
-                ValueLen = (UIntPtr)q.TopicData.Value.Length,
-            },
-            GroupData = new NativeBytesData
-            {
-                Value = scope.Pin(q.GroupData.Value),
-                ValueLen = (UIntPtr)q.GroupData.Value.Length,
-            },
+            UserData = Bytes(q.UserData.Value, scope),
+            TopicData = Bytes(q.TopicData.Value, scope),
+            GroupData = Bytes(q.GroupData.Value, scope),
         };
     }
 }

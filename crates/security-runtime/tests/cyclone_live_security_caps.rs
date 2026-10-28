@@ -20,7 +20,7 @@
 //!
 //! # Test flow
 //!
-//! 1. SSH starts `ddsperf -i 42 pub 1Hz` on `llvm@llvm`.
+//! 1. SSH starts `ddsperf -i 42 pub 1Hz` on the lab host (`ZERODDS_LAB_SSH`).
 //! 2. Locally the test binds to `239.255.0.1:17900` (multicast, domain 42)
 //!    and joins the MC group on the LAN interface.
 //! 3. The test periodically sends its own SPDP beacon — **with
@@ -42,10 +42,11 @@
 //! # Dependencies
 //!
 //! - `sshpass`, `ssh` available locally
-//! - `llvm@llvm:22` reachable with password `llvm`
-//! - `ddsperf` on `llvm`, `/tmp/cyc.xml` pinned to `enp6s18`
+//! - the lab host reachable over ssh: `ZERODDS_LAB_SSH=user@host`,
+//!   `ZERODDS_LAB_SSH_PASSWORD`
+//! - `ddsperf` on the lab host, `/tmp/cyc.xml` pinned to its interface
 //! - `allmulticast on` on `enp6s18` (otherwise the virtio MC filter)
-//! - Mac + llvm on the same LAN (192.168.178.0/24 typical)
+//! - this host and the lab host on the same LAN
 
 #![allow(
     clippy::expect_used,
@@ -79,9 +80,16 @@ use zerodds_security_runtime::{
     PeerCapabilities, ProtectionLevel, SuiteHint, advertise_security_caps,
 };
 
-const SSH_USER: &str = "llvm";
-const SSH_PASS: &str = "llvm";
-const SSH_HOST: &str = "llvm";
+/// `user@host` of the lab host this test reaches over ssh:
+/// `ZERODDS_LAB_SSH`.
+fn lab_ssh_target() -> String {
+    std::env::var("ZERODDS_LAB_SSH").expect("ZERODDS_LAB_SSH=user@host of the lab host")
+}
+
+/// The password `sshpass` hands ssh: `ZERODDS_LAB_SSH_PASSWORD`.
+fn lab_ssh_password() -> String {
+    std::env::var("ZERODDS_LAB_SSH_PASSWORD").expect("ZERODDS_LAB_SSH_PASSWORD for sshpass")
+}
 const CYCLONE_DOMAIN: u32 = 42;
 /// Multicast port for domain 42: 7400 + 250 * 42 = 17900.
 const SPDP_MULTICAST_PORT: u16 = 17900;
@@ -104,13 +112,13 @@ impl CycloneSubprocess {
         );
         let child = Command::new("sshpass")
             .arg("-p")
-            .arg(SSH_PASS)
+            .arg(lab_ssh_password())
             .arg("ssh")
             .arg("-o")
             .arg("StrictHostKeyChecking=no")
             .arg("-o")
             .arg("ConnectTimeout=5")
-            .arg(format!("{SSH_USER}@{SSH_HOST}"))
+            .arg(lab_ssh_target())
             .arg(&remote_cmd)
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -123,11 +131,11 @@ impl Drop for CycloneSubprocess {
     fn drop(&mut self) {
         let _ = Command::new("sshpass")
             .arg("-p")
-            .arg(SSH_PASS)
+            .arg(lab_ssh_password())
             .arg("ssh")
             .arg("-o")
             .arg("StrictHostKeyChecking=no")
-            .arg(format!("{SSH_USER}@{SSH_HOST}"))
+            .arg(lab_ssh_target())
             .arg("pkill -f 'ddsperf.*-i 42' || true")
             .output();
         let _ = self.child.kill();
@@ -136,7 +144,7 @@ impl Drop for CycloneSubprocess {
 }
 
 fn detect_local_interface() -> Ipv4Addr {
-    // macOS + Linux: verwende die Default-Route-IP.
+    // macOS + Linux: use the default-route IP.
     if let Ok(out) = Command::new("ipconfig").args(["getifaddr", "en0"]).output() {
         if let Ok(s) = core::str::from_utf8(&out.stdout) {
             if let Ok(ip) = s.trim().parse::<Ipv4Addr>() {
@@ -167,6 +175,7 @@ fn build_secure_beacon_data(local_ip: Ipv4Addr, unicast_port: u16) -> Participan
             u32::from(SPDP_MULTICAST_PORT),
         )],
         domain_id: Some(CYCLONE_DOMAIN),
+        domain_tag: Default::default(),
         builtin_endpoint_set: flags,
         lease_duration: DdsDuration::from_secs(30),
         user_data: Vec::new(),
@@ -178,6 +187,11 @@ fn build_secure_beacon_data(local_ip: Ipv4Addr, unicast_port: u16) -> Participan
         sig_algo_info: None,
         kx_algo_info: None,
         sym_cipher_algo_info: None,
+        available_builtin_endpoints_ext: 0,
+        expects_inline_qos: false,
+        manual_liveliness_count: None,
+        builtin_endpoint_qos: None,
+        entity_name: None,
     };
 
     // Here the interesting part: full-encrypt PropertyList content.
@@ -198,7 +212,7 @@ fn build_secure_beacon_data(local_ip: Ipv4Addr, unicast_port: u16) -> Participan
 }
 
 #[test]
-#[ignore = "requires SSH access to llvm@llvm + Cyclone DDS (ddsperf)"]
+#[ignore = "requires SSH access to the lab host (ZERODDS_LAB_SSH) + Cyclone DDS (ddsperf)"]
 fn cyclone_accepts_beacon_with_security_caps() {
     let interface = detect_local_interface();
     assert!(

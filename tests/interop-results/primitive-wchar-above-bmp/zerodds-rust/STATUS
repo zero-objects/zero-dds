@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of primitive-wchar-above-bmp that zerodds-rust produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	Sample.too_wide: expected a character in the Basic Multilingual Plane, found U+1F600
+plain-cdr1	be	refused	Sample.too_wide: expected a character in the Basic Multilingual Plane, found U+1F600
+pl-cdr1	le	refused	Sample.too_wide: expected a character in the Basic Multilingual Plane, found U+1F600
+pl-cdr1	be	refused	Sample.too_wide: expected a character in the Basic Multilingual Plane, found U+1F600
+plain-cdr2	le	refused	Sample.too_wide: expected a character in the Basic Multilingual Plane, found U+1F600
+plain-cdr2	be	refused	Sample.too_wide: expected a character in the Basic Multilingual Plane, found U+1F600
+delimited-cdr	le	refused	Sample.too_wide: expected a character in the Basic Multilingual Plane, found U+1F600
+delimited-cdr	be	refused	Sample.too_wide: expected a character in the Basic Multilingual Plane, found U+1F600
+pl-cdr2	le	refused	Sample.too_wide: expected a character in the Basic Multilingual Plane, found U+1F600
+pl-cdr2	be	refused	Sample.too_wide: expected a character in the Basic Multilingual Plane, found U+1F600

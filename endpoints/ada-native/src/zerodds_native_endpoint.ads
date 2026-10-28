@@ -55,6 +55,10 @@ package Zerodds_Native_Endpoint is
       Session : Byte := 16#80#;
       Stream  : Byte := 16#01#;
       Seq     : Interfaces.Unsigned_16 := 1;
+      --  ObjectId of the target DataWriter, written into every frame's
+      --  BaseObjectRequest (DDS-XRCE 1.0 7.7.8). The endpoint profile has no
+      --  CREATE handshake, so the integrator supplies the id the agent knows.
+      Object_Id : Interfaces.Unsigned_16 := 0;
    end record;
 
    procedure Write (W : in out Async_Writer; Sample : Byte_Array; Ok : out Boolean);

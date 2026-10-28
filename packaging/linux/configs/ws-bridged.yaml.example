@@ -1,11 +1,15 @@
 # /etc/zerodds/ws-bridged.yaml.example
-# Default configuration for zerodds-ws-bridged.
+# Configuration of zerodds-ws-bridged.
 # Spec: zerodds-ws-bridge-1.0 §3 (config schema), §11 (deployment).
 #
-# Parser-Source-of-Truth: crates/websocket-bridge/src/daemon/config.rs::load_from_str.
-# Unbekannte top-level Keys werden mit einer WARN-Zeile auf stderr geloggt,
-# der Daemon startet trotzdem. Tippfehler in Keys fallen also nicht durch
-# einen Validation-Error auf — auf das WARN-Log achten.
+# Read by crates/websocket-bridge/src/daemon/config.rs (DaemonConfig::from_config)
+# over the shared layers: this file, ws-bridged.d/, include:, the
+# environment beneath, --set above. An unknown key in a known section or a
+# value of the wrong type stops the start with file and line; an unknown
+# top-level key is a WARN line on stderr, and an error under --check-config.
+#
+# The file holds only keys the daemon reads; crates/websocket-bridge/tests/example_yaml_loadback.rs
+# loads it back.
 
 listen: "0.0.0.0:8080"
 domain: 0
@@ -15,35 +19,40 @@ tls:
   enabled: false
   cert_file: "/etc/zerodds/certs/ws-bridged.crt"
   key_file:  "/etc/zerodds/certs/ws-bridged.key"
-  # client_ca_file: "/etc/zerodds/certs/clients-ca.pem"  # für mTLS
+  # client_ca_file: "/etc/zerodds/certs/clients-ca.pem"  # for mTLS
 
-# Auth-Modi: none | bearer | jwt | mtls | sasl  (Spec §7.2).
-# `bearer` ist single-subject — alle Connections mit korrektem Token
-# laufen als `bearer_subject`. Für Multi-User → `jwt`.
+# Auth modes: none | bearer | jwt | mtls (Spec §7.2).
+# `bearer` has one subject: every connection with the right token runs as
+# `bearer_subject`. For several users: `jwt`.
 auth:
   mode: "none"
-  # bearer_token: "${WS_BRIDGE_TOKEN}"   # ENV-Substitution wird vor Parse expandiert
+  # bearer_token: "${WS_BRIDGE_TOKEN}"   # ${VAR} is substituted before parsing
   # bearer_subject: "service-account"
-
-# Topic-ACL (Spec §7.3). Bei auth_mode != none Pflicht für alle Topics,
-# sonst werden Connections mit "acl reject" abgelehnt.
-# acl:
-#   Chat::Message:
-#     read: "service-account, alice"   # CSV-Liste der erlaubten Subjects
-#     write: "service-account"
+  # jwt:                                  # mode "jwt": one identity per token
+  #   public_key: "/etc/zerodds/ws-bridged/jwt-rs256.pem"   # required; RS256
+  #   issuer: "https://idp.example.org"
+  #   audience: "zerodds-ws"
+  #   required_claim: "scope=dds.write"
 
 metrics:
   enabled: false
-  address: "127.0.0.1:9091"   # /metrics + /catalog + /healthz
+  listen: "127.0.0.1:9091"    # /metrics + /catalog + /healthz
 
 topics:
-  # DDS-Topic ↔ WS-URL Mapping. Cross-Ref: zerodds-ws-bridge-1.0 §5.
+  # DDS topic <-> WebSocket path. zerodds-ws-bridge-1.0 §5.
   - name: "Chat::Message"
-    type: "Chat::Message"        # Default = name wenn nicht gesetzt
+    type: "Chat::Message"        # default: name
     direction: "bidir"           # in | out | bidir
-    ws_path: "/chat"             # Default = /topics/<slug-of-name>
+    ws_path: "/chat"             # default: /topics/<slug-of-name>
     qos:
       reliability: "reliable"
       durability: "volatile"
       history:
         depth: 10
+    # Topic ACL (Spec §3/§7.3). With auth.mode other than none every topic
+    # needs one, else connections are refused with "acl reject".
+    # `*` = everyone, `<name>` = this subject,
+    # `*group:<g>*` = the JWT claim `groups` contains `<g>`.
+    acl:
+      read:  ["*"]
+      write: ["service-account", "alice"]

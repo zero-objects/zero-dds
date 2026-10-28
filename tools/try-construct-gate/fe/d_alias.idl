@@ -1,0 +1,2 @@
+@try_construct(TRIM) typedef string<5> String5;
+@appendable struct S { long a; String5 m; long b; };

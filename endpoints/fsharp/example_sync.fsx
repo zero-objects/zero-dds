@@ -12,19 +12,19 @@ open ZeroDDS
 type Reading = { Id: uint32; Value: float32; Label: string }
 
 let marshal (r: Reading) (endian: Endian) =
-    let w = Writer(endian)
+    let w = Writer(endian, XCDR2)
     w.PutU32(r.Id)
     w.PutF32(r.Value)
     w.PutString(r.Label)
     w.Bytes()
 
 let decodeReading (body: byte[]) =
-    let r = Reader(body, LE)
+    let r = Reader(body, LE, XCDR2)
     { Id = r.GetU32(); Value = r.GetF32(); Label = r.GetString() }
 
 let total = 5
 let t = memTransport ()
-let c = Client(t)
+let c = Client(t, xrceObjectId 0x001 ObjkDataWriter)
 
 // Publisher: frame + deliver 5 typed readings with varying values.
 for i in 0 .. total - 1 do

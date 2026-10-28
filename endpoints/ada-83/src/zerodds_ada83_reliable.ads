@@ -50,17 +50,41 @@ package Zerodds_Ada83_Reliable is
    ------------------------------------------------------------------
    --  Wire frames (little-endian, byte-identical to the reference).
    ------------------------------------------------------------------
-   --  WRITE_DATA id=0x07 flags=0x03; the 2-byte header sequence carries the
-   --  sample's RFC-1982 seq. Session 0x80 (no key), stream 0x80 (reliable).
-   function Write_Frame (Seq : Seq_Type; Body_FS : Frame_Store) return Frame_Store;
-   --  Deframe a reliable WRITE_DATA -> (Seq, body). Body Len=0 if invalid.
+   --  Wire size of the BaseObjectRequest preceding the sample (7.7.8).
+   Base_Size : constant := 4;
+
+   --  WRITE_DATA id=0x07 flags=0x01 (E flag LE + DataFormat FORMAT_DATA); the
+   --  2-byte header sequence carries the sample's RFC-1982 seq, and the
+   --  submessage body is the BaseObjectRequest (7.7.8: request_id = that same
+   --  seq, object_id = `Object_Id`, the target DataWriter) then the sample.
+   --  Session 0x80 (no key), stream 0x80 (reliable).
+   function Write_Frame
+     (Seq : Seq_Type; Object_Id : Integer; Body_FS : Frame_Store) return Frame_Store;
+   --  Deframe a reliable WRITE_DATA -> (Seq, body). Body Len=0 if invalid or if
+   --  the body is too short to hold the BaseObjectRequest.
    procedure Read_Frame (F : Frame_Store; Seq : out Seq_Type; Body_FS : out Frame_Store);
 
-   --  ACKNACK id=0x0A flags=0x01, body(5)= first(i16 LE)*nack[0]*nack[1]*stream.
+   --  Unannotated types setting: the way the Annex A types of DDS-XRCE 1.0
+   --  without an @extensibility annotation are written. By DDS-XTypes 1.3
+   --  7.3.1.2.1.8 they are APPENDABLE and carry a DHEADER (Appendable, the
+   --  default); Final writes the FINAL form of the reference implementation
+   --  (eProsima), without DHEADER. In this SDK the setting covers
+   --  ACKNACK_Payload, the only unannotated type it writes. HEARTBEAT_Payload
+   --  and the other Annex A types annotated FINAL stay FINAL in both modes.
+   --  Parsers accept both forms in either setting.
+   type Unannotated_Types is (Appendable, Final);
+
+   --  ACKNACK id=0x0A flags=0x01.
+   --  Appendable: body(9)= DHEADER(u32 LE = 5)*first(i16 LE)*nack[0]*nack[1]*
+   --  stream; length field 9; the frame is 17 octets.
+   --  Final: body(5)= first(i16 LE)*nack[0]*nack[1]*stream; length field 5;
+   --  the frame is 13 octets.
+   --  Parse_Acknack accepts body length 9 and the FINAL form of 5 octets.
    --  The header uses the XRCE control convention (stream=NONE, message seq) so
    --  the bytes match the reference golden; the target stream is in the body.
    function Acknack_Frame (First_Unacked : Seq_Type; Bitmap : Bitmap_Type;
-                           Stream : Byte := Reliable_Stream; Msg_Seq : Seq_Type := 1)
+                           Stream : Byte := Reliable_Stream; Msg_Seq : Seq_Type := 1;
+                           Mode : Unannotated_Types := Appendable)
                            return Frame_Store;
    procedure Parse_Acknack (F : Frame_Store; Ok : out Boolean;
                             First_Unacked : out Seq_Type; Bitmap : out Bitmap_Type);
@@ -117,6 +141,8 @@ package Zerodds_Ada83_Reliable is
    ------------------------------------------------------------------
    type Receiver_State is record
       Expected : Seq_Type := 0;
+      --  Form of the ACKNACK built by Receiver_Acknack (per receiver).
+      Mode     : Unannotated_Types := Appendable;
       Slots    : Slot_Array (0 .. Recv_Buffer - 1);
    end record;
 
@@ -133,6 +159,12 @@ package Zerodds_Ada83_Reliable is
 
    --  NACK bitmap of the missing slots in [Expected, Expected+16).
    function Pending_Acknack (R : Receiver_State) return Bitmap_Type;
+
+   --  ACKNACK for the receiver's current state: Pending_Acknack bitmap and
+   --  R.Expected, written in the form R.Mode selects.
+   function Receiver_Acknack (R : Receiver_State;
+                              Stream : Byte := Reliable_Stream;
+                              Msg_Seq : Seq_Type := 1) return Frame_Store;
 
    procedure Reset (R : in out Receiver_State);
 

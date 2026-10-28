@@ -1,0 +1,2 @@
+typedef long Matrix[2][3];
+@final struct Sample { Matrix grid; long tail; };

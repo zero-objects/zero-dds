@@ -1,49 +1,49 @@
 # `zerodds/py-runtime`
 
-Sandbox-Runtime-Image fuer **Python-Bindings** (`zerodds-py` via PyO3 +
-maturin). Zielgruppe: Coding-Challenges in Zero-Learn-Sandboxes und
-Quickstart-Demos fuer Python-DDS-Entwicklung.
+Sandbox runtime image for **Python bindings** (`zerodds-py` via PyO3 +
+maturin). Target audience: coding challenges in Zero-Learn sandboxes and
+quickstart demos for Python DDS development.
 
-Teil von [**ZeroDDS**](../../../README.md). Anders als die Daemon-Images
-(`zerodds/cli`, `zerodds/ws-bridged`, …) liefert dieses Image **keinen
-ENTRYPOINT-Service**, sondern eine bereite Python-Umgebung mit
-installiertem `zerodds`-Wheel.
+Part of [**ZeroDDS**](../../../README.md). Unlike the daemon images
+(`zerodds/cli`, `zerodds/ws-bridged`, …) this image provides **no
+ENTRYPOINT service**, but a ready Python environment with the
+`zerodds` wheel installed.
 
 ---
 
 ## Build
 
-Vom Repo-Root:
+From the repo root:
 
 ```bash
 docker build \
   -f packaging/docker/py-runtime/Dockerfile \
-  -t zerodds/py-runtime:rc3 \
+  -t zerodds/py-runtime:rc7 \
   .
 ```
 
-Erst-Build dauert 5-15 Min (Cargo-Workspace + maturin-Wheel-Build).
-Folge-Builds nutzen cargo-chef-Caching aggressiv und sind deutlich
-schneller.
+The first build takes 5-15 min (cargo workspace + maturin wheel build).
+Subsequent builds use cargo-chef caching aggressively and are considerably
+faster.
 
 ## Run
 
-Direkt als Python-REPL (default CMD):
+Directly as a Python REPL (default CMD):
 
 ```bash
-docker run --rm -it zerodds/py-runtime:rc3
+docker run --rm -it zerodds/py-runtime:rc7
 ```
 
-Mit gemountetem Lerner-Code:
+With mounted learner code:
 
 ```bash
 docker run --rm -it \
   -v "$PWD/workspace:/workspace" \
-  zerodds/py-runtime:rc3 \
+  zerodds/py-runtime:rc7 \
   python3 /workspace/main.py
 ```
 
-Sandbox-Style (read-only-root, kein Netz nach aussen):
+Sandbox style (read-only root, no network to the outside):
 
 ```bash
 docker run --rm \
@@ -51,70 +51,85 @@ docker run --rm \
   --tmpfs /tmp/session:rw,size=64m \
   --network none \
   -v "$PWD/workspace:/workspace:ro" \
-  zerodds/py-runtime:rc3 \
+  zerodds/py-runtime:rc7 \
   python3 /workspace/loopback_pubsub.py
 ```
 
-## Was drin ist
+## What is inside
 
-| Komponente | Version | Pfad |
+| Component | Version | Path |
 | --- | --- | --- |
-| Python | 3.11 (Debian-bookworm-slim) | `/opt/zerodds/bin/python3` |
-| `zerodds` Wheel | RC-Build aus `crates/py` | `/opt/zerodds/lib/python3.11/site-packages/zerodds/` |
-| tini (PID 1) | bookworm-package | `/usr/bin/tini` |
+| Python | 3.11 (Debian bookworm-slim) | `/opt/zerodds/bin/python3` |
+| `zerodds` wheel | RC build from `crates/py` | `/opt/zerodds/lib/python3.11/site-packages/zerodds/` |
+| tini (PID 1) | bookworm package | `/usr/bin/tini` |
 
-`PATH` enthält das venv (`/opt/zerodds/bin`) zuerst — `python3` und
-`pip` zeigen ohne weitere Massnahmen auf die ZeroDDS-Installation.
+`PATH` contains the venv (`/opt/zerodds/bin`) first — `python3` and
+`pip` point to the ZeroDDS installation without further steps.
 
-`PYTHONDONTWRITEBYTECODE=1` und `PYTHONUNBUFFERED=1` sind gesetzt; das
-Image laeuft sauber mit `--read-only` (kein `.pyc`-Schreiben in
-Site-Packages, Logs gehen ungepuffert auf stdout).
+`PYTHONDONTWRITEBYTECODE=1` and `PYTHONUNBUFFERED=1` are set; the
+image runs cleanly with `--read-only` (no `.pyc` writing into
+site-packages, logs go unbuffered to stdout).
 
-## Lerner-Workflow
+## Learner workflow
 
-Einfacher Codec-Roundtrip ohne Discovery:
+Types come from real IDL, not from a Python decorator (no more
+`@idl_struct` — RC7 removes the second, hand-written Python
+CDR codec in favour of exactly one, C2(7)). Generate once:
+
+```idl
+// greeting.idl
+@final
+struct Greeting {
+  long id;
+  string text;
+};
+```
+
+```bash
+zerodds-idlc generate --lang python --out . greeting.idl
+mv greeting.py greeting_gen.py
+```
+
+Simple codec round trip without discovery:
 
 ```python
-import zerodds
+import greeting_gen as generated  # freshly generated, see above
 
-# IDL-aequivalenter Dataclass-Decorator (kein zerodds-idlc noetig — der
-# @idl_struct-Pfad ist die offizielle Python-API laut Vendor-Spec
-# zerodds-py-1.0).
-@zerodds.idl_struct
-class Greeting:
-    id: zerodds.Int32
-    text: str
+descriptor = generated.ZD_TOPIC_DESCRIPTORS["Greeting"]
+Greeting = descriptor.cls
 
 g = Greeting(id=42, text="hallo welt")
-buf = zerodds.encode(g)
-roundtrip = zerodds.decode(Greeting, buf)
+buf = descriptor.encode(g)
+roundtrip = descriptor.decode(buf)
 assert roundtrip == g
 ```
 
-Loopback-Pub/Sub im selben Container (Discovery via Multicast-Loopback —
-funktioniert ohne Multi-Container-Setup):
+Loopback pub/sub in the same container (discovery via multicast loopback —
+works without a multi-container setup):
 
 ```python
 import multiprocessing, time, zerodds
+import greeting_gen as generated
 
-@zerodds.idl_struct
-class Greeting:
-    id: zerodds.Int32
-    text: str
+descriptor = generated.ZD_TOPIC_DESCRIPTORS["Greeting"]
+Greeting = descriptor.cls
 
 def publisher():
-    p = zerodds.DomainParticipant(domain_id=0)
-    w = p.create_writer(Greeting, topic="greetings")
+    p = zerodds.DomainParticipantFactory.instance().create_participant(0)
+    topic = zerodds.IdlTopic(p, "greetings", descriptor)
+    w = topic.create_writer(p.create_publisher())
     for i in range(5):
         w.write(Greeting(id=i, text=f"hello {i}"))
         time.sleep(0.1)
 
 def subscriber():
-    p = zerodds.DomainParticipant(domain_id=0)
-    r = p.create_reader(Greeting, topic="greetings")
+    p = zerodds.DomainParticipantFactory.instance().create_participant(0)
+    topic = zerodds.IdlTopic(p, "greetings", descriptor)
+    r = topic.create_reader(p.create_subscriber())
     for _ in range(5):
-        sample = r.take_next(timeout=1.0)
-        print(sample)
+        r.wait_for_data(1.0)
+        for sample in r.take():
+            print(sample)
 
 if __name__ == "__main__":
     multiprocessing.Process(target=subscriber).start()
@@ -124,18 +139,16 @@ if __name__ == "__main__":
 
 ## Limits
 
-- **Discovery nur via Loopback-Multicast** im selben Container. Multi-
-  Host-Discovery braucht den `unicast static peer-list` aus
-  `documentation/06-operations/deployment.md` — der ist in RC3 als
-  `planned` markiert.
-- **Kein FFI-Loader nach `/etc`/`/usr`** zur Laufzeit — alles geht
-  ueber das fertige Wheel.
-- Container-Start braucht etwa 800 ms (Python-Interpreter + zerodds-
-  Import). Fuer kurze Coding-Challenges einkalkulieren.
+- **Discovery only via loopback multicast** within the same container.
+  Multi-host discovery uses unicast peers: `discovery.peers` / `ZERODDS_PEERS` (see `docs/doc-map/config.en.md`).
+- **No FFI loader to `/etc`/`/usr`** at runtime — everything goes
+  through the prebuilt wheel.
+- Container start takes about 800 ms (Python interpreter + zerodds
+  import). Factor this in for short coding challenges.
 
 ## See also
 
-- [`crates/py/README.md`](../../../crates/py/README.md) — Python-Binding-Crate.
-- [`docs/specs/zerodds-py-1.0.md`](../../../docs/specs/zerodds-py-1.0.md) — Vendor-Spec.
-- [`packaging/docker/cpp-runtime/`](../cpp-runtime/) — C/C++-Schwester-Image.
-- [`packaging/docker/ts-node-runtime/`](../ts-node-runtime/) — TS-Node-Schwester-Image.
+- [`crates/py/README.md`](../../../crates/py/README.md) — Python binding crate.
+- [`docs/specs/zerodds-py-1.0.md`](../../../docs/specs/zerodds-py-1.0.md) — vendor spec.
+- [`packaging/docker/cpp-runtime/`](../cpp-runtime/) — C/C++ sibling image.
+- [`packaging/docker/ts-node-runtime/`](../ts-node-runtime/) — TS-Node sibling image.

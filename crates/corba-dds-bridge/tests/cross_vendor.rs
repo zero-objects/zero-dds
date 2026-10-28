@@ -51,24 +51,39 @@ fn omniidl_smoke_check_present() {
     );
 }
 
+/// omniORB's `catior` reads the IOR the daemon prints: the type id, the
+/// IIOP profile's host and port.
 #[test]
-#[ignore = "requires catior + a published IOR from zerodds-corba-bridged"]
-fn catior_dumps_zerodds_ior_with_iiop_profile() {
-    // Caller setup: ZeroDDS-Corba-bridged exposes an IOR via stdout
-    // when started with `--print-ior`. Capture it, pipe to catior.
-    if !catior_available() {
-        eprintln!("catior not available; skipping");
-        return;
-    }
-    let example_ior = "IOR:010000001100000049444c3a44756d6d793a312e30000000010000000000000054000000010102000a0000003132372e302e302e310000d2040b00000000000d00000000000000010000000000000000000000000000000003000000010000000c00000000000000010001000000000005";
-    let out = Command::new("catior")
-        .arg(example_ior)
+#[ignore = "requires catior (omniORB tools)"]
+fn catior_reads_the_ior_the_daemon_prints() {
+    assert!(
+        catior_available(),
+        "catior is not installed; this test measures against it"
+    );
+    let out = Command::new(env!("CARGO_BIN_EXE_zerodds-corba-bridged"))
+        .args([
+            "--dump-iors",
+            "--iiop-bind",
+            "127.0.0.1:6833",
+            "--topic",
+            "IDL:Foo/Bar:1.0=Foo::Bar::Req",
+        ])
         .output()
-        .expect("catior");
+        .expect("zerodds-corba-bridged --dump-iors");
+    assert!(out.status.success());
     let stdout = String::from_utf8_lossy(&out.stdout);
-    eprintln!("catior stdout: {stdout}");
-    // Functional assert: catior accepted the IOR (exit 0).
-    assert!(out.status.success() || stdout.contains("Type ID"));
+    let ior = stdout
+        .split_whitespace()
+        .find(|w| w.starts_with("IOR:"))
+        .expect("an IOR on stdout");
+    let cat = Command::new("catior").arg(ior).output().expect("catior");
+    let text = String::from_utf8_lossy(&cat.stdout);
+    assert!(cat.status.success(), "catior refused the IOR: {text}");
+    assert!(text.contains("IDL:Foo/Bar:1.0"), "{text}");
+    assert!(
+        text.contains("127.0.0.1") && text.contains("6833"),
+        "{text}"
+    );
 }
 
 #[test]

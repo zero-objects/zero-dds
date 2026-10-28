@@ -37,6 +37,11 @@ on:
         default: false
   workflow_call:
     inputs:
+      source_ref:
+        description: "Immutable release source commit selected by the caller"
+        required: false
+        type: string
+        default: ""
       dry_run:
         required: false
         type: boolean
@@ -51,6 +56,8 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.source_ref || github.sha }}
 
       - name: Setup JDK
         uses: actions/setup-java@v5

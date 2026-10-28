@@ -25,18 +25,37 @@ path = "src/lib.rs"
 name = "zerodds-router"
 path = "src/bin/zerodds-router.rs"
 
+[features]
+# C2(2): the `threads.*` real-time scheduling + CPU affinity config keys
+# (`zerodds-rt-linux`, via `zerodds-dcps`). Off by default — the router has
+# no documented real-time use case of its own; build with `--features rt`
+# to apply a `threads.recv_policy=fifo`-style config on this daemon instead
+# of it refusing to start with a "feature missing" error.
+rt = ["zerodds-dcps/rt"]
+
 [dependencies]
+zerodds-foundation = { version = "1.0.0-rc.7", path = "../foundation", default-features = false }
 zerodds-dcps = { version = "1.0.0-rc.7", path = "../dcps" }
 zerodds-qos = { version = "1.0.0-rc.7", path = "../qos" }
 zerodds-rtps = { version = "1.0.0-rc.7", path = "../rtps" }
-zerodds-cdr = { version = "1.0.0-rc.7", path = "../cdr" }
+zerodds-wire = { version = "1.0.0-rc.7", path = "../wire" }
 zerodds-types = { version = "1.0.0-rc.7", path = "../types" }
 zerodds-sql-filter = { version = "1.0.0-rc.7", path = "../sql-filter" }
 zerodds-monitor = { version = "1.0.0-rc.7", path = "../monitor" }
-roxmltree = { workspace = true }
+roxmltree = { workspace = true, features = ["std", "positions"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "1"
 ctrlc = { workspace = true }
 
 [dev-dependencies]
+# One DDS domain per test process, host-wide (the domain number is the UDP port).
+zerodds-test-domains = { path = "../test-domains" }
+# key_holder_reaches_the_output_datagram.rs: builds a real keyed
+# CompleteTypeObject (the same `model_from_idl` -> `complete_type_object`
+# path `zerodds-dcps`'s own runtime tests use) so `write_user_lifecycle`
+# can resolve it and re-encode the forwarded `key_holder` as a wire
+# serializedKey.
+zerodds-wire-probe = { path = "../wire-probe" }
+# dispose_reaches_a_foreign_reader.rs: a DDS reader of another vendor.
+zerodds-test-vendor-reader = { path = "../test-vendor-reader" }

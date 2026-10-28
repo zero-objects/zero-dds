@@ -1,0 +1,2 @@
+@appendable struct ACell { long a; long b; };
+@final struct SeqA { sequence<ACell> cells; };

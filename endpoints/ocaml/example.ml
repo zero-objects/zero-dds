@@ -6,7 +6,7 @@
 
 let sample id label =
   let open Zerodds.Wire in
-  let w = writer LE in
+  let w = writer LE XCDR2 in
   put_u32 w id;
   put_string w label;
   bytes w
@@ -14,22 +14,22 @@ let sample id label =
 let () =
   (* sync *)
   let t = Zerodds.MemTransport.create () in
-  let c = Zerodds.Client.create t in
+  let c = Zerodds.Client.create t (Zerodds.Endpoint.object_id 0x001 Zerodds.Endpoint.objk_datawriter) in
   Zerodds.Client.write c (sample 0x42 "sync-hello");
   (match Zerodds.Client.poll c with
    | Some body ->
-       let id = Zerodds.Wire.get_u32 (Zerodds.Wire.reader body Zerodds.Wire.LE) in
+       let id = Zerodds.Wire.get_u32 (Zerodds.Wire.reader body Zerodds.Wire.LE Zerodds.Wire.XCDR2) in
        Printf.printf "sync: received id=0x%x\n" id
    | None -> print_string "sync: nothing\n");
 
   (* async *)
   let t2 = Zerodds.MemTransport.create () in
-  let w = Zerodds.Client.create t2 in
+  let w = Zerodds.Client.create t2 (Zerodds.Endpoint.object_id 0x001 Zerodds.Endpoint.objk_datawriter) in
   for i = 0 to 2 do Zerodds.Client.write w (sample (0x100 + i) "async") done;
   let r = Zerodds.AsyncReader.start t2 in
   for _ = 0 to 2 do
     let body = Zerodds.AsyncReader.recv r in
-    let id = Zerodds.Wire.get_u32 (Zerodds.Wire.reader body Zerodds.Wire.LE) in
+    let id = Zerodds.Wire.get_u32 (Zerodds.Wire.reader body Zerodds.Wire.LE Zerodds.Wire.XCDR2) in
     Printf.printf "async: received id=0x%x\n" id
   done;
   Zerodds.AsyncReader.stop r;

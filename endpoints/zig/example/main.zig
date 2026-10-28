@@ -36,16 +36,15 @@ const Loopback = struct {
 
 fn onSample(ctx: *anyopaque, body: []const u8) void {
     _ = ctx;
-    var r = zerodds.Reader.init(body, .little);
+    var r = zerodds.Reader.init(body, .little, .xcdr2);
     std.debug.print("async: received id=0x{X}\n", .{r.getU32()});
 }
 
-pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const alloc = gpa.allocator();
+pub fn main(zd_init: std.process.Init) !void {
+    const alloc = zd_init.arena.allocator();
 
     // sample body = id + label
-    var bw = zerodds.Writer.init(alloc, .little);
+    var bw = zerodds.Writer.init(alloc, .little, .xcdr2);
     defer bw.deinit();
     try bw.putU32(0x42);
     try bw.putString("hello");
@@ -55,9 +54,9 @@ pub fn main() !void {
     var lb = Loopback{};
     const t = zerodds.Transport{ .ctx = &lb, .deliver = Loopback.deliver, .receive = Loopback.receive };
     var c = zerodds.Client{ .transport = &t };
-    _ = c.write(body);
+    _ = try c.write(body);
     if (c.poll()) |b| {
-        var r = zerodds.Reader.init(b, .little);
+        var r = zerodds.Reader.init(b, .little, .xcdr2);
         std.debug.print("sync: received id=0x{X}\n", .{r.getU32()});
     }
 
@@ -65,8 +64,8 @@ pub fn main() !void {
     var lb2 = Loopback{};
     const t2 = zerodds.Transport{ .ctx = &lb2, .deliver = Loopback.deliver, .receive = Loopback.receive };
     var w = zerodds.Client{ .transport = &t2 };
-    _ = w.write(body);
-    _ = w.write(body);
+    _ = try w.write(body);
+    _ = try w.write(body);
     var reader = zerodds.AsyncReader{ .transport = &t2, .on_sample = onSample, .ctx = &lb2 };
     _ = reader.run(0);
 

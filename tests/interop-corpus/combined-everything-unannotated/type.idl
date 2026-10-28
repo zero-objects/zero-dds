@@ -1,0 +1,36 @@
+// one aggregate holding most of the corpus, unannotated
+@bit_bound(16)
+enum Colour { RED, @value(9) GREEN, BLUE };
+
+@bit_bound(8)
+bitmask Flags {
+    @position(0) LOW,
+    @position(7) HIGH
+};
+
+struct Leaf {
+    @key long k;
+    short v;
+};
+
+struct Middle {
+    Leaf node;
+    sequence<string> names;
+};
+
+union Choice switch (short) {
+    case -1: long whole;
+    default: double fraction;
+};
+
+typedef sequence<Colour, 4> Palette;
+
+struct Sample {
+    @key Middle body;
+    Choice picked;
+    Palette hues;
+    Flags marks;
+    @optional string note;
+    double grid[2][2];
+    long tail;
+};

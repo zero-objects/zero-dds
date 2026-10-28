@@ -104,11 +104,23 @@ impl PendingAssembly {
 }
 
 /// FRAGMENT reassembler over all reliable streams.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct FragmentAssembler {
     pending: BTreeMap<AssemblerKey, PendingAssembly>,
     gc_ttl: Duration,
     drop_count: u64,
+}
+
+/// The same as [`FragmentAssembler::new`]: a derived `Default` gave a
+/// GC TTL of zero, and every [`FragmentAssembler::gc`] call discarded the
+/// reassemblies still in progress — measured in `zerodds-xrce-agentd`,
+/// whose per-client assembler is created with `or_default()`: the second
+/// of two 50 kB samples lost its first fragment to the 100 ms tick and
+/// never completed.
+impl Default for FragmentAssembler {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl FragmentAssembler {
@@ -287,6 +299,29 @@ mod tests {
             stream_id: 0x80,
             base_seq: 0,
         }
+    }
+
+    #[test]
+    fn a_default_assembler_keeps_a_reassembly_in_progress_across_gc() {
+        let mut a = FragmentAssembler::default();
+        let t0 = Duration::from_secs(3);
+        assert!(
+            a.add_fragment(k(), 0, false, vec![1, 2], t0)
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(a.gc(t0 + Duration::from_millis(100)), 0);
+        let done = a
+            .add_fragment(k(), 2, true, vec![3], t0 + Duration::from_millis(150))
+            .unwrap();
+        assert_eq!(done, Some(vec![1, 2, 3]));
+        // A run silent for longer than the TTL is still discarded.
+        assert!(
+            a.add_fragment(k(), 0, false, vec![9], t0)
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(a.gc(t0 + DEFAULT_GC_TTL + Duration::from_millis(1)), 1);
     }
 
     #[test]

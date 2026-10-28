@@ -1,0 +1,6 @@
+// No annotation at all: 7.2.2.7 makes that DISCARD.
+@appendable struct S {
+    long a;
+    string<5> m;
+    long b;
+};

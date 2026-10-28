@@ -4,13 +4,15 @@
 //! OMG CORBA 3.3 Part 1 §11 — Portable Object Adapter (POA).
 //!
 //! Crate `zerodds-corba-poa`. Safety classification: **STANDARD**.
-//! `no_std + alloc`, `forbid(unsafe_code)`.
+//! `forbid(unsafe_code)`. [`Poa`] needs `std` (its servant table is behind
+//! a `std::sync::Mutex`); the policies, the POAManager state machine, the
+//! active-object map and the servant traits are `no_std + alloc`.
 //!
 //! Full POA stack with all 7 policies in all modes, the POAManager
 //! state machine, POA hierarchy, active-object map, ServantManager
 //! hooks and a policy-compatibility validator.
 //!
-//! ## Public API (as of 1.0.0-rc.1)
+//! ## Public API
 //!
 //! - [`Poa`] / [`PoaConfig`] — POA instance with a hierarchy.
 //! - [`PoaManager`] / [`PoaManagerState`] — state machine
@@ -36,12 +38,12 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
-#[cfg(feature = "alloc")]
 extern crate alloc;
 
 pub mod active_object_map;
 pub mod error;
 pub mod object_id;
+#[cfg(feature = "std")]
 pub mod poa;
 pub mod poa_manager;
 pub mod policies;
@@ -51,6 +53,7 @@ pub mod servant_manager;
 pub use active_object_map::{ActiveObjectMap, ServantId};
 pub use error::{PoaError, PoaResult};
 pub use object_id::ObjectId;
+#[cfg(feature = "std")]
 pub use poa::{Poa, PoaConfig};
 pub use poa_manager::{PoaManager, PoaManagerState};
 pub use policies::{

@@ -1,0 +1,18 @@
+// `sequence` of each primitive kind, empty
+@final struct Sample {
+    sequence<boolean> flag_none;
+    sequence<octet> raw_octet_none;
+    sequence<uint8> unsigned_byte_none;
+    sequence<int8> signed_byte_none;
+    sequence<char> letter_none;
+    sequence<wchar> wide_letter_none;
+    sequence<short> short_signed_none;
+    sequence<unsigned short> short_unsigned_none;
+    sequence<long> long_signed_none;
+    sequence<unsigned long> long_unsigned_none;
+    sequence<long long> llong_signed_none;
+    sequence<unsigned long long> llong_unsigned_none;
+    sequence<float> single_float_none;
+    sequence<double> double_float_none;
+    long tail;
+};

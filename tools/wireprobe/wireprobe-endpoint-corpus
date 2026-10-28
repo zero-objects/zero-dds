@@ -1,0 +1,338 @@
+#!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 ZeroDDS Contributors
+#
+# wireprobe-endpoint-corpus — the seventeen hand-written endpoint SDKs over
+# the whole interop corpus, in all ten configurations, against the
+# octets the Rust column recorded.
+#
+#   tools/wireprobe/wireprobe-endpoint-corpus                 # all seventeen
+#   tools/wireprobe/wireprobe-endpoint-corpus --langs go,lua
+#   tools/wireprobe/wireprobe-endpoint-corpus --jobs 2 --out results.tsv
+#
+#   --langs <list>  default: every language `endpoint_build` has a recipe
+#                   for
+#   --jobs <n>      probes in parallel, 1..4; default ENDPOINT_JOBS or 1
+#   --out <file>    the row per cell; default $TMPDIR/zd-endpoint-corpus.tsv
+#   --octets <dir>  keep every cell's octets under
+#                   <dir>/<case>/endpoint-<lang>/<encoding>.<endian>.bin,
+#                   which is the shape the ledger reads. Left off, the
+#                   octets are compared and dropped.
+#   --cases <list>  only these cases, comma-separated
+#   --numbers <f>   bits (the default) or natural — which spelling of an
+#                   integer argument the generated program hands the
+#                   binding. See `wireprobe-endpoint-gen --help`; the
+#                   difference between the two sweeps is the whole of
+#                   what `endpoint-number-surface` reports.
+#
+# `tools/interop-results/endpoint-record.sh` is this program with the
+# ledger's arguments and the ledger's one-line summary. There is one
+# sweep and not two: a second copy of "generate, compile, run, compare"
+# is a second place for the comparison to drift.
+#
+# ## What it counts, and why it is three numbers and not one
+#
+# `endpoints/<language>` is a runtime and not a codec: eight primitive
+# writes, no header of any kind, no 64-bit float. A corpus case it
+# cannot express is the extent of that binding and not a defect of the
+# language, and counting it as a failure would say something false
+# about twenty of the twenty-one bindings at once. So each language gets
+# three numbers over the 3 760 cells:
+#
+#   REACHED   cells the write surface expresses
+#   SAME      of those, byte-identical to zerodds-rust
+#   DIFFERENT of those, not
+#
+# and a fourth, NO-FORM, which is the rest, each with the
+# construct that put it there.  `docs/specs/zerodds-verdicts-1.0.md`
+# calls the first three `bytes`/`same`/`different` and the fourth is
+# `out-of-profile` read against the binding's surface rather than
+# against a specification.
+#
+# ## The comparison
+#
+# Always `tests/interop-results/<case>/zerodds-rust/<encoding>.<endian>.bin`,
+# never a constant written here. A cell whose Rust octets are missing is
+# `NOREF` and is outside every denominator: it is a case the reference
+# column did not write either.
+#
+# ## The output
+#
+# One TSV row per cell, tab separated, no header:
+#
+#   <case>  <language>  <encoding>  <endian>  <verdict>  <detail>
+#
+# `verdict` is one of `same`, `different`, `no-form`, `refused`,
+# `generator-defect` and `harness-gap`, which are the names
+# `docs/specs/zerodds-verdicts-1.0.md` gives and no others. For
+# `different`, `detail` is the first differing octet offset, this
+# column's octets and the Rust column's. For `no-form` it is the
+# construct the generator named.
+#
+# Two of the probe's exit codes have no verdict here because the spec
+# gives them none: 2 (called wrong) and 9 (`toolchain-absent`) are "not a
+# measurement, the collection stops". A cell that answers either writes
+# no row and the run leaves `--out` exactly as it found it. Missing
+# toolchains exit 9; invocation, timeout and resource failures exit 125.
+set -uo pipefail
+
+cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)" || exit 2
+
+langs="ada,ada-83,ada-native,d,elixir,fsharp,go,java,julia,kotlin,lua,nim,node,ocaml,python,swift,zig"
+jobs="${ENDPOINT_JOBS:-1}"
+out="${TMPDIR:-/tmp}/zd-endpoint-corpus.tsv"
+cases=""
+numbers="bits"
+octets=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --langs) langs="$2"; shift 2 ;;
+        --jobs) jobs="$2"; shift 2 ;;
+        --out) out="$2"; shift 2 ;;
+        --octets) octets="$2"; shift 2 ;;
+        --cases) cases="$2"; shift 2 ;;
+        --numbers) numbers="$2"; shift 2 ;;
+        *) echo "wireprobe-endpoint-corpus: \`$1\` is not an option" >&2; exit 2 ;;
+    esac
+done
+case "$jobs" in 1|2|3|4) ;; *) echo "endpoint corpus: --jobs must be 1..4" >&2; exit 2 ;; esac
+if [[ ! "$langs" =~ ^[a-z0-9-]+(,[a-z0-9-]+)*$ ]] ||
+   { [ -n "$cases" ] && [[ ! "$cases" =~ ^[a-zA-Z0-9_-]+(,[a-zA-Z0-9_-]+)*$ ]]; }; then
+    echo "endpoint corpus: invalid language/case list" >&2; exit 2
+fi
+if [ "${ENDPOINT_CORPUS_SUPERVISED:-0}" != 1 ]; then
+    export ENDPOINT_CORPUS_SUPERVISED=1
+    exec python3 tools/wireprobe/probe-process.py --timeout "${ENDPOINT_SWEEP_TIMEOUT:-21600}" --grace 6 -- \
+        bash "$0" --langs "$langs" --jobs "$jobs" --out "$out" --cases "$cases" \
+        --numbers "$numbers" --octets "$octets"
+fi
+export CARGO_BUILD_JOBS=1
+
+# The generator is built once, here, rather than by each of the
+# thousands of probes: `probe_generator` stats every `.rs` under
+# `crates/` on each call, and eighteen thousand of those walks is most
+# of a sweep.
+if [ -z "${WIREPROBE_ENDPOINT_GEN:-}" ]; then
+    cargo build -q -j 1 -p zerodds-wireprobe-endpoint-gen || exit 125
+    export WIREPROBE_ENDPOINT_GEN="${CARGO_TARGET_DIR:-$PWD/target}/debug/wireprobe-endpoint-gen"
+fi
+# CARGO_TARGET_DIR moves cargo's output; without this, a host that sets
+# it answers `refused (exit 127)` for every cell of every language at
+# once, which run3 of tools/endpoints-gate measured.
+[ -x "$WIREPROBE_ENDPOINT_GEN" ] || { echo "endpoint generator not executable: $WIREPROBE_ENDPOINT_GEN" >&2; exit 125; }
+export ENDPOINT_NUMBERS="$numbers"
+
+work="$(mktemp -d)"
+trap 'rm -rf "${work:?}"' EXIT
+trap 'exit 125' HUP INT TERM
+export ENDPOINT_ROWS="$work/rows"
+mkdir -p "$ENDPOINT_ROWS"
+export ENDPOINT_OCTETS=""
+[ -z "$octets" ] || export ENDPOINT_OCTETS="$work/octets"
+
+# Where a cell that answered exit 9 says so. A child of `xargs` cannot
+# stop its parent, so it appends one line here and the parent reads the
+# file after the run — the same shape `vendor-corpus-sweep.sh` uses for
+# its build count.
+export ENDPOINT_ABSENT="$work/toolchain-absent"
+: > "$ENDPOINT_ABSENT"
+
+if [ -n "$cases" ]; then
+    printf '%s\n' "$cases" | tr ',' '\n' > "$work/cases"
+else
+    for d in tests/interop-corpus/*/; do basename "$d"; done > "$work/cases"
+fi
+
+# One line per cell, fed to xargs. Built up front so the parallel run is
+# a flat list and not a nest of loops whose failures would be invisible.
+: > "$work/cells"
+while read -r case_; do
+    d="tests/interop-corpus/$case_"
+    if [ ! -f "$d/type.idl" ] || [ ! -f "$d/values.json" ] || [ ! -f "$d/type" ]; then
+        echo "endpoint corpus: incomplete requested case $case_" >&2; exit 125
+    fi
+    for lang in $(printf '%s' "$langs" | tr ',' ' '); do
+        [ -x "tools/wireprobe/wireprobe-endpoint-$lang" ] || { echo "unknown endpoint $lang" >&2; exit 2; }
+        for encoding in plain-cdr1 pl-cdr1 plain-cdr2 delimited-cdr pl-cdr2; do
+            for endian in le be; do
+                printf '%s %s %s %s\n' "$case_" "$lang" "$encoding" "$endian" \
+                    >> "$work/cells"
+            done
+        done
+    done
+done < "$work/cases"
+[ -s "$work/cells" ] || { echo "endpoint corpus: empty cell set" >&2; exit 125; }
+LC_ALL=C sort "$work/cells" > "$work/expected"
+if [ "$(uniq "$work/expected" | wc -l)" -ne "$(wc -l < "$work/expected")" ]; then
+    echo "endpoint corpus: duplicate requested cells" >&2; exit 2
+fi
+
+cat > "$work/one" <<'CELL'
+#!/bin/bash
+# One cell: generate, compile, run, compare.
+set -uo pipefail
+case_="$1"; lang="$2"; encoding="$3"; endian="$4"
+d="tests/interop-corpus/$case_"
+ref="tests/interop-results/$case_/zerodds-rust/$encoding.$endian.bin"
+row() { printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$case_" "$lang" "$encoding" "$endian" "$1" "$2" \
+    > "$ENDPOINT_ROWS/$case_.$lang.$encoding.$endian"; }
+# A missing reference is not an answer about this column, and the probe
+# runs either way.
+#
+# It used to exit here with `noref`, a word that is in no row of
+# `docs/specs/zerodds-verdicts-1.0.md` and that its rules forbid outright:
+# "A verdict is produced by something that ran and said so. Never by the
+# absence of a file." Three hundred cells — the seventeen bindings over
+# `primitive-char-above-latin1` and `primitive-wchar-above-bmp`, ten
+# slots each — were filed under it without the probe being started once,
+# while all twenty-one other columns answered `refused` with a clause.
+# The report then read as though the bindings had been asked.
+#
+# So the probe runs and says what it says. If it refuses, that is a
+# measurement of the binding and lands in the `case` below. If it writes
+# octets where the reference column wrote none, that is a divergence in
+# reach and is reported as one rather than hidden: no other column got
+# past the value, and a binding that did put something on the wire has
+# put something there that no peer sent.
+type_=$(cat "$d/type")
+diag=$(mktemp)
+trap 'rm -f "$diag"' EXIT
+trap 'exit 255' HUP INT TERM
+# `--out` when the octets are being kept, so the ledger's .bin files come
+# out of the same run that produced the verdict and cannot disagree with
+# it.
+keep=""
+if [ -n "$ENDPOINT_OCTETS" ]; then
+    mkdir -p "$ENDPOINT_OCTETS/$case_/endpoint-$lang"
+    keep="$ENDPOINT_OCTETS/$case_/endpoint-$lang/$encoding.$endian.bin"
+fi
+if [ -n "$keep" ]; then
+    ./tools/wireprobe/wireprobe-endpoint-"$lang" \
+        --idl "$d/type.idl" --type "$type_" --values "$d/values.json" \
+        --encoding "$encoding" --endian "$endian" --numbers "$ENDPOINT_NUMBERS" \
+        --out "$keep" 2> "$diag"
+    code=$?
+    got=$(od -An -tx1 -v "$keep" 2>/dev/null | tr -d ' \n')
+else
+    got=$(./tools/wireprobe/wireprobe-endpoint-"$lang" \
+            --idl "$d/type.idl" --type "$type_" --values "$d/values.json" \
+            --encoding "$encoding" --endian "$endian" --numbers "$ENDPOINT_NUMBERS" \
+            2> "$diag")
+    code=$?
+fi
+reason=$(tr '\n' ' ' < "$diag" | sed 's/\t/ /g; s/  */ /g')
+rm -f "$diag"
+case "$code" in
+    0)
+        if { [ -n "$keep" ] && [ ! -f "$keep" ]; } ||
+           [[ ! "$got" =~ ^([0-9a-f][0-9a-f])*$ ]]; then
+            printf '%s\t125\tmissing or malformed successful octets\n' "$lang" >> "$ENDPOINT_ABSENT"
+            exit 255
+        fi ;;
+    # 2 and 9 write **no row**. Neither is a measurement:
+    # `docs/specs/zerodds-verdicts-1.0.md` says of both that "the
+    # collection stops". 2 is a probe that was called wrong; 9 is a host
+    # that has not got this binding's compiler, which is a fact about the
+    # host and none about the case. They used to fall into the `*)` arm
+    # below and be written down as the binding refusing the case — the
+    # shape that put 17 760 cells reading `nim is not on the path` into
+    # the matrix. The parent reads this file and stops.
+    2|9)
+        printf '%s\t%s\t%s\n' "$lang" "$code" "$reason" >> "$ENDPOINT_ABSENT"
+        exit 255 ;;
+    # 3 is `no-form` — the extent of the binding, not a defect of the
+    # language. 7 is `generator-defect` and 6 is `harness-gap`;
+    # `docs/specs/zerodds-verdicts-1.0.md` gives them all and there is no
+    # code here that is not in that table.
+    3) row no-form "${reason#no-form: }"; exit 0 ;;
+    7) row generator-defect "$reason"; exit 0 ;;
+    6) row harness-gap "$reason"; exit 0 ;;
+    1|4|5|8) row refused "exit $code :: $reason"; exit 0 ;;
+    *) printf '%s\t%s\t%s\n' "$lang" "$code" "$reason" >> "$ENDPOINT_ABSENT"; exit 255 ;;
+esac
+if [ ! -f "$ref" ]; then
+    # The probe carried a value the reference column refused. Loud,
+    # because the octets have no reader: `primitive-char-above-latin1`
+    # is U+0161 in a `char`, which §7.2.2.2.1.2.2 says "shall be
+    # representable using 8 bits", and every other column says so too.
+    row different "this column wrote ${#got} hex digits where the Rust column wrote no octets at all :: $got"
+    exit 0
+fi
+want=$(od -An -tx1 -v "$ref" | tr -d ' \n')
+if [ "$got" = "$want" ]; then row same ""; exit 0; fi
+# The first differing octet, so a row says where and not only that.
+offset=0
+while [ $((offset * 2)) -lt ${#got} ] && [ $((offset * 2)) -lt ${#want} ]; do
+    a=${got:$((offset * 2)):2}; b=${want:$((offset * 2)):2}
+    [ "$a" = "$b" ] || break
+    offset=$((offset + 1))
+done
+row different "at octet $offset: $lang $got / rust $want"
+CELL
+chmod +x "$work/one"
+
+# Four arguments per invocation and not one line: `xargs -I{}` hands the
+# line over whole on GNU and splits it on a tab on BSD, so a cells file
+# with tab-separated fields came out as one field on macOS and every row
+# read `noref`. A space is a separator both agree on, and no corpus case
+# name, language, encoding or byte order carries one.
+if ! xargs -P "$jobs" -n 4 "$work/one" < "$work/cells"; then
+    echo "endpoint corpus: worker/infrastructure failure, output unchanged" >&2
+    cat "$ENDPOINT_ABSENT" >&2
+    if [ -s "$ENDPOINT_ABSENT" ] && awk -F'\t' '$2 != 9 { exit 1 }' "$ENDPOINT_ABSENT"; then exit 9; fi
+    exit 125
+fi
+
+# A column whose compiler is not on this host measured nothing, and
+# nothing is not a row. The output is replaced whole — there is no merge
+# by cell here — so installing what the other columns measured would
+# delete this column's previous rows from it and turn "not measured in
+# this run" into "gone from the record". So the file stays as it is and
+# the run ends non-zero, naming the column and the tool.
+#
+# `--langs` is how a host with twelve of the seventeen toolchains sweeps:
+# name the twelve. A run that swept a column it cannot compile is not a
+# run that measured twelve columns and one absence, it is a run whose
+# answer for that column would have been about the host.
+if [ -s "$ENDPOINT_ABSENT" ]; then
+    echo "wireprobe-endpoint-corpus: a toolchain is absent; $out is left as it stands" >&2
+    LC_ALL=C sort -u -k1,1 "$ENDPOINT_ABSENT" | while IFS=$'\t' read -r l c r; do
+        echo "  endpoint-$l: exit $c :: $r" >&2
+    done
+    echo "wireprobe-endpoint-corpus: \
+$(cut -f1 "$ENDPOINT_ABSENT" | LC_ALL=C sort -u | tr '\n' ' ')— \
+no cell recorded for these; re-run with --langs naming the rest" >&2
+    exit 9
+fi
+
+cat "$ENDPOINT_ROWS/"* > "$work/results" || exit 125
+awk -F'\t' 'NF != 6 { exit 1 } { print $1 " " $2 " " $3 " " $4 }' "$work/results" \
+    | LC_ALL=C sort > "$work/actual" || exit 125
+if ! cmp -s "$work/expected" "$work/actual"; then
+    echo "endpoint corpus: incomplete or duplicate result coordinates, output unchanged" >&2
+    exit 125
+fi
+if [ -n "$octets" ]; then
+    mkdir -p "$octets" || exit 125
+    if [ -d "$work/octets" ]; then cp -R "$work/octets/." "$octets/" || exit 125; fi
+fi
+staged=$(mktemp "$out.tmp.XXXXXX") || exit 125
+if ! LC_ALL=C sort "$work/results" > "$staged" || ! mv "$staged" "$out"; then
+    rm -f "$staged"; exit 125
+fi
+
+echo "rows: $(wc -l < "$out") -> $out" >&2
+for lang in $(printf '%s' "$langs" | tr ',' ' '); do
+    reached=$(awk -F'\t' -v l="$lang" '$2==l && ($5=="same" || $5=="different")' "$out" | wc -l)
+    same=$(awk -F'\t' -v l="$lang" '$2==l && $5=="same"' "$out" | wc -l)
+    differ=$(awk -F'\t' -v l="$lang" '$2==l && $5=="different"' "$out" | wc -l)
+    no_form=$(awk -F'\t' -v l="$lang" '$2==l && $5=="no-form"' "$out" | wc -l)
+    refused=$(awk -F'\t' -v l="$lang" \
+        '$2==l && ($5=="refused" || $5=="generator-defect" || $5=="harness-gap")' \
+        "$out" | wc -l)
+    # No NOREF column: a cell whose reference is missing is now a cell
+    # the probe was asked about like any other, and its answer is in one
+    # of the five above.
+    printf '%-8s REACHED=%s SAME=%s DIFFERENT=%s NO-FORM=%s REFUSED=%s\n' \
+        "$lang" "$reached" "$same" "$differ" "$no_form" "$refused"
+done

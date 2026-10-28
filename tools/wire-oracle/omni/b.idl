@@ -1,0 +1,2 @@
+bitset B { bitfield<3> low; };
+struct S { B v; };

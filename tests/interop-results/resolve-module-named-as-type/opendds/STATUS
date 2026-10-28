@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of resolve-module-named-as-type that opendds produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	Error - tao_idl: illegal redefinition "common" and "common"
+plain-cdr1	be	refused	Error - tao_idl: illegal redefinition "common" and "common"
+pl-cdr1	le	refused	Error - tao_idl: illegal redefinition "common" and "common"
+pl-cdr1	be	refused	Error - tao_idl: illegal redefinition "common" and "common"
+plain-cdr2	le	refused	Error - tao_idl: illegal redefinition "common" and "common"
+plain-cdr2	be	refused	Error - tao_idl: illegal redefinition "common" and "common"
+delimited-cdr	le	refused	Error - tao_idl: illegal redefinition "common" and "common"
+delimited-cdr	be	refused	Error - tao_idl: illegal redefinition "common" and "common"
+pl-cdr2	le	refused	Error - tao_idl: illegal redefinition "common" and "common"
+pl-cdr2	be	refused	Error - tao_idl: illegal redefinition "common" and "common"

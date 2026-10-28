@@ -1,9 +1,7 @@
 # `zerodds-endpoint-ocaml` 1.0 — Spec-Coverage
 
 **Quelle:** `docs/specs/zerodds-endpoint-ocaml-1.0.md` — ZeroDDS OCaml
-Endpoint-SDK-Spec. Ergänzt die Codegen-Coverage `zerodds-xcdr2-ocaml`
-(`docs/spec-coverage/zerodds-xcdr2-ocaml-1.0.md`) — dort das Marshalling,
-hier der Transport.
+Endpoint-SDK-Spec. Das Marshalling kommt aus `crates/lang-rules`, Spalte `Language::Ocaml`; hier steht der Transport.
 
 Implementation:
 
@@ -52,7 +50,7 @@ Konstanten `session_nokey` (`0x80`) und `stream_best_effort` (`0x01`).
 **Tests:** Live-E2E `ocaml_endpoint_sync`
 (`crates/endpoint-e2e/tests/ocaml.rs`) — die eingebettete OCaml-App
 (`OCAML_MAIN`) baut ein `Gen.Ping`-Sample über den generierten
-`zerodds-idlc --ocaml`-Codec, sendet es über `Zerodds.Client.write` an den
+`zerodds-idlc generate --lang ocaml`-Codec, sendet es über `Zerodds.Client.write` an den
 Rust-Peer und pollt `Zerodds.Client.poll` bis zum `Gen.Pong`-Reply
 (10s-Deadline).
 
@@ -83,21 +81,22 @@ Mutex/Condition-FIFO); `endpoints/ocaml/zerodds.ml::AsyncReader`
 **Spec:** §5.1 — eine OCaml-App tauscht mit dem geteilten Rust-XRCE-Peer über
 einen echten UDP-Socket ein typisiertes Sample aus, einmal über den sync
 `Client`, einmal über `AsyncReader`, jeweils mit dem vollen Stack
-(generierte `Gen.Ping`/`Gen.Pong`-Typen aus `zerodds-idlc --ocaml` +
+(generierte `Gen.Ping`/`Gen.Pong`-Typen aus `zerodds-idlc generate --lang ocaml` +
 `endpoints/ocaml`).
 
 **Repo:** `crates/endpoint-e2e/tests/ocaml.rs` — `OCAML_MAIN` (eine
 eingebettete OCaml-Quelle, per CLI-Argument `sync`/`async`), zusammen mit dem
-generierten `gen.ml` (`Gen.Ping`/`Gen.Pong`, eigenes `module Gen.Wire`) und
+generierten Modul aus `crates/endpoint-e2e/tests/ocaml.rs::gen_module`
+(gen.ml — `Gen.Ping`/`Gen.Pong`, eigenes `module Gen.Wire`) und
 dem SDK `zerodds.ml` (eigenes `module Zerodds.Wire`) kompiliert. Beide
 Wire-Module bleiben getrennte Kompiliereinheiten, sodass keine
 Namenskollision entsteht (Kommentar im Test dokumentiert das explizit).
 
-**Tests (codepit):**
+**Tests:** (Linux)
 - `ocaml_endpoint_sync` — voller Stack über `Zerodds.Client`.
 - `ocaml_endpoint_async` — voller Stack über `Zerodds.AsyncReader`.
 
-2/2 grün (codepit).
+2/2 grün (Linux).
 
 **Status:** done.
 
@@ -127,7 +126,7 @@ Kernel.
 Socket); `endpoints/ocaml/reliable_app.ml` (live UDP-Sender-App für das E2E,
 argv = `<peer-port> <N>`).
 
-**Tests (codepit):**
+**Tests:** (Linux)
 - `ocaml_reliable_unit_and_golden` (`crates/endpoint-e2e/tests/ocaml_reliable.rs`)
   kompiliert und läuft `endpoints/ocaml/reliable_test.ml` — ein einzelnes
   Script (keine benannten `Test*`-Funktionen wie bei Go, sondern ~34
@@ -158,7 +157,7 @@ argv = `<peer-port> <N>`).
 - `ocaml_reliable_example` — `example_reliable` läuft und meldet
   `delivered: 0 1 2 ... 11` + `RELIABLE OK`.
 
-5/5 grün (codepit), davon 4 in diesem Abschnitt (Latenz-Bench in §6).
+5/5 grün (Linux), davon 4 in diesem Abschnitt (Latenz-Bench in §6).
 
 **Status:** done.
 
@@ -175,7 +174,7 @@ Batch-Timing) von inline `Unix.sendto` (echter Kernelübergang) vs.
 `Mailbox.put` (Mutex sperren, Cons, Signal, entsperren, kein Syscall), kein
 Live-Peer nötig (Loopback-Socket, nur lokale Dispatch-Kosten unter Messung).
 
-**Tests (codepit):** `ocaml_reliable_latency_bench`
+**Tests:** (Linux) `ocaml_reliable_latency_bench`
 (`crates/endpoint-e2e/tests/ocaml_reliable.rs`) — Mailbox-Enqueue-Median
 **~30 ns** vs. inline `sendto`-Median **~4,1 µs** (~130–140×). Genauer
 Messwert schwankt pro Lauf (Batch-Median über `Unix.gettimeofday`); Test
@@ -188,9 +187,9 @@ den konkreten Faktor.
 
 ## Audit-Status
 
-6 done / 0 partial / 0 open / 0 n/a (informativ) / 0 n/a (rejected).
+6 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
 
-Test-Lauf (codepit, verifiziert): `cargo test -p zerodds-endpoint-e2e --test ocaml`
+Test-Lauf (Linux, verifiziert): `cargo test -p zerodds-endpoint-e2e --test ocaml`
 2/2 (Ping-Pong: `ocaml_endpoint_sync`/`ocaml_endpoint_async`);
 `--test ocaml_reliable` 5/5 (`ocaml_reliable_unit_and_golden` — ~34
 sequenzielle Checks inkl. Byte-Golden, `ocaml_reliable_loss_recovery`,

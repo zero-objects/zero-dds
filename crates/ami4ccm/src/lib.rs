@@ -21,10 +21,10 @@
 //! `#pragma ami4ccm interface "<name>"` and
 //! `#pragma ami4ccm receptacle "<comp>::<recep>"` (spec §7.7).
 //!
-//! The transformation operates on the AST layer of [`zerodds_idl::ast`]:
-//! the input is `InterfaceDef`, the output is two newly constructed
-//! `InterfaceDef` instances (`InterfaceKind::Local`), which every
-//! codegen backend (cpp/cs/java/ts) can treat like normal interfaces.
+//! The transformation operates on the common AST: the input is an
+//! interface in a [`zerodds_ast::Ast`], the output two `local interface`
+//! declarations added beside it, which every codegen backend
+//! (cpp/cs/java/ts) can treat like normal interfaces.
 //!
 //! # What is not covered
 //!
@@ -78,7 +78,8 @@ pub use multiplex::{
     ReceptacleArity, context_method_for_receptacle, sequence_typedef_for_interface,
 };
 pub use pragma::{Ami4CcmPragma, ParsePragmaError, parse_pragma};
-pub use scope_resolver::{context_from_specification, populate_from_specification};
+pub use scope_resolver::{context_from_model, populate_from_model};
 pub use transform::{
-    Ami4CcmInterfaces, TransformContext, transform_interface, transform_interface_in_context,
+    Ami4CcmInterfaces, TransformContext, TransformError, transform_interface,
+    transform_interface_in_context,
 };

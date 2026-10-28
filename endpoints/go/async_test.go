@@ -32,7 +32,7 @@ func (m *memTransport) Receive(buf []byte) (int, bool, error) {
 }
 
 func sampleBody(id uint32) []byte {
-	w := NewWriter(Little)
+	w := NewWriter(Little, Xcdr2)
 	w.PutU32(id)
 	w.PutU16(0)
 	w.PutU8(0)
@@ -42,7 +42,7 @@ func sampleBody(id uint32) []byte {
 func TestAsyncLoopback(t *testing.T) {
 	const N = 5
 	tr := &memTransport{}
-	w := NewAsyncWriter(tr)
+	w := NewAsyncWriter(tr, XrceObjectID(0x001, uint16(ObjkDataWriter)))
 	for i := 0; i < N; i++ {
 		if err := w.Write(sampleBody(0x1000 + uint32(i))); err != nil {
 			t.Fatalf("write %d: %v", i, err)
@@ -57,7 +57,7 @@ func TestAsyncLoopback(t *testing.T) {
 	for len(got) < N {
 		select {
 		case body := <-r.Samples:
-			got = append(got, NewReader(body, Little).GetU32())
+			got = append(got, NewReader(body, Little, Xcdr2).GetU32())
 		case <-timeout:
 			t.Fatalf("timeout, got %d/%d", len(got), N)
 		}
@@ -85,7 +85,7 @@ func (f *floodTransport) Receive(buf []byte) (int, bool, error) {
 // so close(done) never landed and the goroutine leaked.
 func TestAsyncCloseUnblocksFullChannel(t *testing.T) {
 	body := sampleBody(0x9000)
-	frame := XrceWriteFrame(XrceSessionNoKey, XrceStreamBestEffort, 1, body)
+	frame := XrceWriteFrame(XrceSessionNoKey, XrceStreamBestEffort, 1, XrceObjectID(0x001, uint16(ObjkDataWriter)), body)
 	frame[4] = xrceSMData // hub -> endpoint DATA (0x09)
 	tr := &floodTransport{frame: frame}
 
@@ -144,7 +144,7 @@ func TestAsyncUDP(t *testing.T) {
 	defer conn.Close()
 
 	tr := &udpTransport{conn: conn, peer: conn.LocalAddr().(*net.UDPAddr)}
-	w := NewAsyncWriter(tr)
+	w := NewAsyncWriter(tr, XrceObjectID(0x001, uint16(ObjkDataWriter)))
 	for i := 0; i < N; i++ {
 		if err := w.Write(sampleBody(0x2000 + uint32(i))); err != nil {
 			t.Fatalf("write %d: %v", i, err)

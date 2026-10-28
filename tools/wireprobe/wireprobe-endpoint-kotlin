@@ -1,0 +1,25 @@
+#!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 ZeroDDS Contributors
+#
+# wireprobe-endpoint-kotlin — one IDL type and one JSON sample, through the
+# hand-written endpoint SDK in endpoints/kotlin/src/Zerodds.kt.
+#
+# The same command line as every other column's probe, so a case runs
+# through any of them by substituting the program name:
+#
+#   wireprobe-endpoint-kotlin --idl robot.idl --type common::Robot \
+#       --values robot.json --encoding plain-cdr2 --endian le \
+#       --out robot.endpoint-kotlin.plain-cdr2.le.bin
+#
+# 209 hand-written lines. Its own test compares one fixture structure
+# against two golden files in two byte orders; this compares whatever the
+# corpus holds against the octets the Rust column recorded.
+#
+# The body is tools/wireprobe/endpoint-common.sh; it is shared because
+# the ten differ only in which compiler runs and which SDK is linked,
+# and ten copies of the caching and the exit codes would be ten places
+# for them to drift apart.
+set -uo pipefail
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/endpoint-common.sh"
+endpoint_probe kotlin "$@"

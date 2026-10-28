@@ -59,13 +59,60 @@ export class Runtime {
   }
 }
 
+/// How a type's body is framed, XTypes 1.3 §7.3.1.2.1 — the choice that
+/// decides which encapsulation identifier the sample has to carry.
+export type Extensibility = "final" | "appendable" | "mutable";
+
+/// The C ABI's own numbering for `zerodds_writer_set_wire_extensibility`.
+const WIRE_EXTENSIBILITY: Record<Extensibility, number> = {
+  final: 0,
+  appendable: 1,
+  mutable: 2,
+};
+
 /// DataWriter — pub-side.
 export class Writer {
   private handle: unknown | null;
 
-  constructor(rt: Runtime, topicName: string, typeName: string, reliable = true) {
+  /// `extensibility` names how the payloads handed to {@link write} are
+  /// framed. It is not decoration: the encapsulation identifier the runtime
+  /// stamps is chosen from it (XTypes 1.3 §7.6.3.1.2 Table 59 / DDSI-RTPS 2.5
+  /// §10.5), an `@appendable` body opens with a DHEADER and a `@mutable` one
+  /// with an EMHEADER per member, and a writer that leaves this at the C ABI's
+  /// default announces `PLAIN_CDR2_LE` (0x0007) over a body that is neither —
+  /// measured. Cyclone decodes such a sample anyway (it reads the body with
+  /// its own type, not with the header); OpenDDS refuses it in `to_encoding_i`
+  /// — "expected APPENDABLE extensibility, but got ..." — and nothing arrives
+  /// on the topic.
+  constructor(
+    rt: Runtime,
+    topicName: string,
+    typeName: string,
+    reliable = true,
+    extensibility: Extensibility = "final",
+  ) {
+    const code = WIRE_EXTENSIBILITY[extensibility];
+    // Rejected before the writer exists rather than after: a create followed
+    // by a destroy would put an endpoint through discovery that is torn down
+    // again a moment later. `undefined` is what an untyped JS caller reaches
+    // here with, and reading it as FINAL is the guess this argument exists to
+    // stop.
+    if (code === undefined) {
+      throw new ZeroDdsError(
+        -1,
+        `Writer: extensibility must be "final", "appendable" or "mutable", got ${JSON.stringify(extensibility)}`,
+      );
+    }
     const h = N.zerodds_writer_create(rt.raw, topicName, typeName, reliable ? 1 : 0);
     if (!h) throw new ZeroDdsError(-1, "zerodds_writer_create");
+    const rc = N.zerodds_writer_set_wire_extensibility(h, code) as number;
+    if (rc !== 0) {
+      // Destroyed rather than kept: a writer that could not declare its own
+      // framing publishes samples no strict peer accepts, and doing that
+      // quietly is the failure this call exists to end.
+      N.zerodds_writer_destroy(h);
+      throw new ZeroDdsError(rc, "zerodds_writer_set_wire_extensibility");
+    }
     this.handle = h;
   }
 

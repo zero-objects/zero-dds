@@ -5,7 +5,7 @@
 //! PROCESS and restart it; all PERSISTENT samples survive (re-served from the
 //! sqlite file). Cross-process by necessity (separate daemon process), so it
 //! relies on real RTPS discovery — run it where cross-process multicast works
-//! (Linux/codepit). Linux-gated.
+//! (Linux, test host). Linux-gated.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 #![cfg(target_os = "linux")]
@@ -126,7 +126,12 @@ fn tmp_db() -> String {
 
 #[test]
 fn daemon_kill9_restart_survives() {
-    let domain = 81;
+    // Leased, not fixed: the domain number is the UDP port (RTPS 9.6.1.4.1),
+    // so it is a resource of the whole host. A fixed number here met a
+    // daemon of another checkout's run on the same number — measured: two
+    // `zerodds-durability-svc --domain 81` alive for forty minutes, and this
+    // test counted 159 samples on its topic where its writer had sent 20.
+    let domain = zerodds_test_domains::unique_domain();
     let topic = "CrashTopic";
     let db = tmp_db();
 

@@ -1,33 +1,49 @@
 # /etc/zerodds/grpc-bridged.yaml.example
-# Spec: zerodds-grpc-bridge-1.0 §4, §11.
+# Configuration of zerodds-grpc-bridged.
+# Spec: zerodds-grpc-bridge-1.0 §3 (config schema), §11 (deployment).
+#
+# Read by crates/grpc-bridge/src/bin/zerodds-grpc-bridged.rs (DaemonConfig::from_config)
+# over the shared layers: this file, grpc-bridged.d/, include:, the
+# environment beneath, --set above. An unknown key in a known section or a
+# value of the wrong type stops the start with file and line; an unknown
+# top-level key is a WARN line on stderr, and an error under --check-config.
+#
+# The file holds only keys the daemon reads; the tests of the same file
+# load it back.
 
-participant:
-  domain_id: 0
-  qos_profile: builtin/reliable_keep_last_10
+domain: 0
+log_level: info
 
 grpc:
   bind: "0.0.0.0:50051"
   tls:
     enabled: false
-    cert: /etc/zerodds/certs/grpc-bridged.crt
-    key:  /etc/zerodds/certs/grpc-bridged.key
-    client_ca: ""          # optional mTLS
-  max_message_bytes: 4194304  # 4 MiB
-  reflection: true
+    cert_file: "/etc/zerodds/certs/grpc-bridged.crt"
+    key_file:  "/etc/zerodds/certs/grpc-bridged.key"
+    # client_ca_file: "/etc/zerodds/certs/grpc-client-ca.pem"   # mTLS
+    # require_client_cert: false
+  reflection:
+    enabled: true          # grpc.reflection.v1alpha; /catalog lists the topics
 
-routes:
-  # DDS-Topic <-> gRPC-Service. Cross-Ref: zerodds-grpc-bridge-1.0 §5.
-  - dds_topic:     "Inventory"
-    type:          "demo::Erp::Stock"
-    grpc_service:  "Inventory"
-    grpc_method:   "Stream"
-    direction:     "dds_to_grpc"
+auth:
+  mode: "none"             # none | bearer | jwt | mtls (Spec §7.2), checked per call
+  # bearer_token: "..."    # mode bearer: Authorization: Bearer <token>
+  # bearer_subject: "alice"
+  # jwt:                   # mode jwt: RS256
+  #   public_key: "/etc/zerodds/jwt-pub.pem"
+  #   issuer: "https://idp.example.org"
+  #   audience: "zerodds-grpc"
+  #   required_claim: "scope=dds.read"
 
-logging:
-  level: info
-  format: json
-  destination: journal
+metrics:
+  enabled: false
+  listen: "127.0.0.1:9095"   # /metrics + /catalog + /healthz
 
-observability:
-  metrics_bind: "127.0.0.1:9095"
-  otlp_endpoint: ""
+topics:
+  # DDS topic <-> gRPC service. zerodds-grpc-bridge-1.0 §5.
+  - dds_name:     "Inventory"
+    grpc_service: "InventoryStream"
+    direction:    "out"    # in | out | bidir
+    # acl:                 # Spec §7.3: Publish needs publish, Subscribe subscribe
+    #   publish:   ["alice"]
+    #   subscribe: ["*"]

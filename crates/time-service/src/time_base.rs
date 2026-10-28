@@ -283,7 +283,7 @@ mod tests {
     fn current_time_is_recent_century() {
         // Sanity: current_time returns a value in a plausible range
         // (after 2020, before 2200). The tick range for 2020-01-01 is
-        // (2020 - 1582 = 438 Jahre) * 365.25 * 24 * 60 * 60 * 10_000_000
+        // (2020 - 1582 = 438 years) * 365.25 * 24 * 60 * 60 * 10_000_000
         // ≈ 1.38e17.
         let t = current_time();
         assert!(t > 130_000_000_000_000_000);

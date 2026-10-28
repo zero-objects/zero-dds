@@ -11,7 +11,7 @@ homepage = "https://zerodds.org"
 documentation = "https://docs.rs/zerodds-time-service"
 readme = "README.md"
 keywords = ["dds", "time-service", "omg", "tio", "uto"]
-categories = ["network-programming", "date-and-time", "no-std"]
+categories = ["network-programming", "date-and-time"]
 publish = true
 
 [lints]

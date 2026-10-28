@@ -1,37 +1,37 @@
-# `zerodds-deployment` v1.0 — Linux/macOS/Windows Packaging-Konventionen
+# `zerodds-deployment` v1.0 — Linux/macOS/Windows packaging conventions
 
-ZeroDDS Vendor-Spec. Spezifiziert die Packaging-, Installations- und
-Deployment-Konventionen für sämtliche ZeroDDS-Binaries und die
-shared-Library `libzerodds`.
+ZeroDDS vendor spec. Specifies the packaging, installation and
+deployment conventions for all ZeroDDS binaries and the
+shared library `libzerodds`.
 
 ## Motivation
 
-ZeroDDS liefert sieben Bridge-Daemons, eine ABI-Library und siebzehn
-CLI-Tools. Ohne einheitliche Packaging-Konvention werden
-Operations-Teams pro Plattform unterschiedlich beliefert; Patch-
-Rollouts dauern länger, Config-Pfade differenzieren, Logs landen an
-unerwarteten Orten.
+ZeroDDS ships eight bridge daemons, an ABI library and seventeen
+CLI tools. Without a uniform packaging convention,
+operations teams are supplied differently per platform; patch
+rollouts take longer, config paths diverge, logs end up in
+unexpected places.
 
-Diese Spec normiert pro Plattform:
-- Wo Binaries leben.
-- Wo Configs leben.
-- Wo Logs leben.
-- Welche Service-Manager-Integration gilt (systemd / launchd / Win-
-  Service).
-- Welcher Installer-Mechanismus die Pflicht-Distribution ist.
-- Welche Container-Images auf der Registry liegen.
+This spec standardizes per platform:
+- Where binaries live.
+- Where configs live.
+- Where logs live.
+- Which service manager integration applies (systemd / launchd / Windows
+  service).
+- Which installer mechanism is the mandatory distribution.
+- Which container images are in the registry.
 
-Diese Spec wird referenziert von §11 jeder Bridge-Spec
-(`zerodds-ws-bridge-1.0`, `zerodds-mqtt-bridge-1.0`, etc.) und von
+This spec is referenced by §11 of every bridge spec
+(`zerodds-ws-bridge-1.0`, `zerodds-mqtt-bridge-1.0`, etc.) and by
 §6 `zerodds-ffi-loader-1.0`.
 
 ## §1 Targets
 
-ZeroDDS-Releases umfassen drei Klassen von Artefakten:
+ZeroDDS releases comprise three classes of artefacts:
 
-### §1.1 Daemons (7 Bridges)
+### §1.1 Daemons (8 bridges)
 
-| Daemon | Spec-Cross-Ref |
+| Daemon | Spec cross-ref |
 |--------|----------------|
 | `zerodds-ws-bridged` | `zerodds-ws-bridge-1.0` §11 |
 | `zerodds-mqtt-bridged` | `zerodds-mqtt-bridge-1.0` §11 |
@@ -39,79 +39,140 @@ ZeroDDS-Releases umfassen drei Klassen von Artefakten:
 | `zerodds-amqp-bridged` | `zerodds-amqp-bridge-daemon-1.0` §11 |
 | `zerodds-grpc-bridged` | `zerodds-grpc-bridge-1.0` §11 |
 | `zerodds-corba-bridged` | `zerodds-corba-bridge-1.0` §11 |
-| `zerodds-ros2-shim` | `zerodds-ros2-bridge-1.0` §11 (Diagnose-Tool, kein klassischer Daemon) |
+| `zerodds-zenoh-bridged` | no bridge spec document of its own; see `crates/zenoh-bridge/README.md`, `man/man1/zerodds-zenoh-bridged.1`, `man/man5/zerodds-zenoh-bridged.yaml.5` |
+| `zerodds-ros2-shim` | `zerodds-ros2-bridge-1.0` §11 (diagnostic tool, not a classic daemon) |
 
 ### §1.2 Library
 
-| Artefakt | Spec-Cross-Ref |
+| Artefact | Spec cross-ref |
 |----------|----------------|
 | `libzerodds.so` / `.dylib` / `.dll` + `zerodds.h` | `zerodds-ffi-loader-1.0` §6 |
 
-### §1.3 CLI-Tools (17)
+### §1.3 CLI tools (17)
 
 ```
-zerodds-admin                   # Admin-CLI (Domain-Inspect, QoS-Validate/Check, Discovery-Snapshot)
-zerodds-bench                   # Benchmark-Suite (latency/throughput/loss)
-zerodds-bench-suite             # Multi-Scenario-Bench-Runner
-zerodds-idlc                    # IDL-Compiler → Rust/C++/Java/C#/Python/TS Codegen
-zerodds-spy                     # Topic-Spy (live-Sample-Dump)
-zerodds-record                  # Recorder (zddsrec-Format)
-zerodds-replay                  # Replay aus zddsrec
-zerodds-snitch                  # Discovery-Probe (SPDP/SEDP-Dumper)
-zerodds-monitor                 # Monitor-CLI (`zerodds-monitor-1.1`)
-zerodds-mq                      # Multi-Domain-Bridge (DDS↔DDS)
-zerodds-pcap                    # PCAP-Dumper für RTPS-Wire
-zerodds-perf                    # Performance-Probe
-zerodds-ros2-shim               # ROS-2-Diagnose
-zerodds-secure-keygen           # DDS-Security Cert/Key-Erzeugung
-zerodds-secure-permissions      # Permissions/Governance-XML-Tool
-zerodds-typeobject              # TypeObject-Inspect
-zerodds-xmlc                    # DDS-XML-Config-Validator/Renderer
+zerodds-admin                   # admin CLI (domain inspect, QoS validate/check, discovery snapshot)
+zerodds-bench                   # benchmark suite (latency/throughput/loss)
+zerodds-bench-suite             # multi-scenario bench runner
+zerodds-idlc                    # IDL compiler → Rust/C++/Java/C#/Python/TS codegen
+zerodds-spy                     # topic spy (live sample dump)
+zerodds-record                  # recorder (zddsrec format)
+zerodds-replay                  # replay from zddsrec
+zerodds-snitch                  # discovery probe (SPDP/SEDP dumper)
+zerodds-monitor                 # monitor CLI (`zerodds-monitor-1.1`)
+zerodds-mq                      # multi-domain bridge (DDS↔DDS)
+zerodds-pcap                    # PCAP dumper for the RTPS wire
+zerodds-perf                    # performance probe
+zerodds-ros2-shim               # ROS-2 diagnostics
+zerodds-secure-keygen           # DDS-Security cert/key generation
+zerodds-secure-permissions      # permissions/governance XML tool
+zerodds-typeobject              # TypeObject inspect
+zerodds-xmlc                    # DDS-XML config validator/renderer
 ```
 
 ## §2 Linux
 
-### §2.1 Datei-Layout (FHS)
+### §2.1 File layout (FHS)
 
 ```
-/usr/bin/zerodds-*                       # Binaries (alle 7 Daemons + 17 CLIs)
-/usr/lib/libzerodds.so                   # ABI-Library
-/usr/lib/libzerodds.so.1                 # Major-Symlink
-/usr/lib/libzerodds.so.1.0.0             # Versioned-Symlink
+/usr/bin/zerodds-*                       # binaries (all 8 daemons + 17 CLIs)
+/usr/lib/libzerodds.so                   # ABI library
+/usr/lib/libzerodds.so.1                 # major symlink
+/usr/lib/libzerodds.so.1.0.0             # versioned symlink
 /usr/lib/pkgconfig/zerodds.pc            # pkg-config
-/usr/include/zerodds.h                   # C-Header
-/usr/include/zerodds/                    # C++-Headers
+/usr/include/zerodds.h                   # C header
+/usr/include/zerodds/                    # C++ headers
 /usr/lib/systemd/system/zerodds-*.service
-/etc/zerodds/                            # Config-Default
+/etc/zerodds/                            # config default
+  ├── zerodds.yaml                       # DDS runtime base
+  ├── zerodds.d/                         # sorted runtime fragments
   ├── ws-bridged.yaml
   ├── mqtt-bridged.yaml
   ├── coap-bridged.yaml
   ├── amqp-bridged.yaml
   ├── grpc-bridged.yaml
   ├── corba-bridged.yaml
+  ├── zenoh-bridged.yaml
   └── certs/
-/var/log/zerodds/                        # Log-Default
-/var/lib/zerodds/                        # State (IORs, recorder-files)
-/usr/share/man/man1/zerodds-*.1.gz       # Manuals
-/usr/share/man/man5/zerodds-*.yaml.5.gz
+/var/log/zerodds/                        # log default
+/var/lib/zerodds/                        # state (IORs, recorder files)
+/usr/share/man/man1/zerodds-*.1.gz       # manuals
+/usr/share/man/man5/zerodds*.yaml.5.gz
 /usr/share/doc/zerodds/                  # CHANGELOG, LICENSE, README
 /usr/share/bash-completion/completions/  # bash/zsh/fish completions
 ```
+
+#### Runtime configuration from RC7 on
+
+Every ZeroDDS program reads its configuration in four layers; the later one
+wins:
+
+1. built-in defaults,
+2. environment variables, under the names of the table `SETTINGS`
+   (`crates/dcps/src/runtime.rs`), e.g. `ZERODDS_RECV_BATCH` for
+   `transport.recv_batch`,
+3. files: with `--config PATH` this base (must exist) and the
+   neighbouring `PATH.d/`; without `--config` the platform's system directory
+   — `/etc/zerodds` on Linux (§2.1), `/usr/local/etc/zerodds` on macOS
+   (§3.1), `%PROGRAMDATA%\ZeroDDS` on Windows (§4.1) — with
+   `zerodds.yaml`, then YAML files sorted by file name from
+   `zerodds.d/`, on Linux last from `/run/zerodds/zerodds.d`,
+4. `--set path=value` on the command line, repeatable, in the
+   given order; `--set +path=value` appends to a list.
+
+Explicit `include:` entries can load further files or directories
+relative to the including file, also nested; cycles and more than
+16 levels are rejected. Includes come before the file's own values. Maps
+are merged, lists are replaced and extended with `+name`. A list
+from the environment (comma-separated) is a sequence in layer 3, to which a
+drop-in can append with `+name`. Lists are written as a block list (`- a`) or
+as a flat inline list of scalars (`[a, "b"]`); inline maps and
+nested inline lists are rejected.
+
+Missing implicit default paths are allowed. Invalid known values,
+unreadable files and include errors prevent the start; the message names
+the layer (file:line, `$VARIABLE` or the `--set`). A `--set` on a
+path that no setting reads is rejected. Unknown keys in files
+produce a warning at startup. `--check-config` loads all layers as at
+startup, prints every value with its origin and exits with 0 (valid), 1
+(invalid value or unknown key) or 2 (file unreadable,
+syntax error, include cycle).
+
+In C, `zerodds_runtime_create_from_config(domain, path, sets, n_sets)` selects
+the same layers (`path` = `--config`, `NULL` = system directory; `sets` =
+`"path=value"` entries like `--set`); `zerodds_runtime_create` reads the environment
+and the system directory. In Rust,
+`zerodds_dcps::cli::Configured::from_env_args()` provides these layers for a program; `ConfigSource::from_command_line` and
+`ConfigSource::from_path` are the building blocks underneath. Explicit
+caller configuration remains authoritative. `RuntimeConfig::default()` reads
+neither files nor the environment. `ConfigSource::origins()` shows the origin.
+
+A bridge daemon reads its own file instead of `zerodds.yaml`: without
+`--config` `<stem>.yaml` with `<stem>.d/` in the system directory (`ws-bridged.yaml`
+etc.), with `--config` the named base. The runtime keys may be in this
+file and apply to the DDS side of the daemon; it does not read `zerodds.yaml`.
+`ZERODDS_CONFIG` does not select a file in the runtime path. ROS selectors and
+explicit security APIs keep their own contracts.
+
+Keys, values and environment variables: `man/man5/zerodds.yaml.5`; every setting with its default: `packaging/linux/configs/zerodds.yaml.example` (installed under `/usr/share/zerodds/configs/`).
+
+Executable layering examples: [runtime_config_layering.rs](../../crates/dcps/tests/runtime_config_layering.rs).
+Website guide: [Runtime files](../../website/why-zerodds-for-ros/config-complexity.html#runtime-dateien).
 
 ### §2.2 Distributions
 
 #### §2.2.1 Debian/Ubuntu (`.deb`)
 
-Pakete:
-- `zerodds-core` — `libzerodds`, headers, manuals (Pflicht-Dep)
+Packages:
+- `zerodds-core` — `libzerodds`, headers, manuals (mandatory dependency)
 - `zerodds-ws-bridge` — `zerodds-ws-bridged` + service
-- `zerodds-mqtt-bridge` — analog
-- `zerodds-coap-bridge`, `-amqp-bridge`, `-grpc-bridge`, `-corba-bridge`, `-ros2`
-- `zerodds-cli` — alle 17 CLI-Tools
-- `zerodds-dev` — `zerodds.h`, pkg-config, Static-Libs
+- `zerodds-mqtt-bridge` — likewise
+- `zerodds-coap-bridge`, `-amqp-bridge`, `-grpc-bridge`, `-corba-bridge`, `-zenoh-bridge`, `-ros2`
+- `zerodds-cli` — all 17 CLI tools
+- `zerodds-dev` — `zerodds.h`, pkg-config, static libs
 
-Repo: `deb https://packages.zerodds.io/apt stable main`. Signed mit
-Release-GPG-Key (`/etc/apt/trusted.gpg.d/zerodds.gpg`).
+Repo: `deb https://packages.zerodds.io/apt stable main`. Signed with the
+release GPG key (`/etc/apt/trusted.gpg.d/zerodds.gpg`).
 
 ```bash
 curl -fsSL https://packages.zerodds.io/apt/zerodds.gpg | sudo tee /etc/apt/trusted.gpg.d/zerodds.gpg > /dev/null
@@ -122,25 +183,25 @@ sudo apt install zerodds-ws-bridge
 
 #### §2.2.2 RHEL/Fedora (`.rpm`)
 
-Analoges Paket-Set unter `dnf install`. Repo `https://packages.zerodds.io/yum/`.
-GPG-Key in `/etc/pki/rpm-gpg/RPM-GPG-KEY-zerodds`.
+The same package set via `dnf install`. Repo `https://packages.zerodds.io/yum/`.
+GPG key in `/etc/pki/rpm-gpg/RPM-GPG-KEY-zerodds`.
 
 #### §2.2.3 Arch Linux (PKGBUILD)
 
-AUR-Pakete `zerodds-core`, `zerodds-ws-bridge`, etc. Pacman-Hook
-für Service-Reload bei Update.
+AUR packages `zerodds-core`, `zerodds-ws-bridge`, etc. Pacman hook
+for service reload on update.
 
-#### §2.2.4 AppImage (Static-Build)
+#### §2.2.4 AppImage (static build)
 
-Pro Daemon ein eigenes AppImage:
+One AppImage per daemon:
 - `zerodds-ws-bridged-1.0.0-x86_64.AppImage`
 - `zerodds-mqtt-bridged-1.0.0-x86_64.AppImage`
 - ...
 
-Statisch gegen musl gelinkt für Distro-Unabhängigkeit. Hosting auf
-GitHub-Releases + S3-Mirror.
+Statically linked against musl for distro independence. Hosted on
+GitHub Releases + S3 mirror.
 
-### §2.3 systemd-Unit (Beispiel)
+### §2.3 systemd unit (example)
 
 ```ini
 # /usr/lib/systemd/system/zerodds-ws-bridged.service
@@ -174,26 +235,32 @@ LimitNOFILE=65536
 WantedBy=multi-user.target
 ```
 
-System-User `zerodds:zerodds` wird vom Postinst-Script per `useradd
---system` angelegt.
+The system user `zerodds:zerodds` is created by the postinst script via `useradd
+--system`.
 
 ## §3 macOS
 
-### §3.1 Datei-Layout
+### §3.1 File layout
 
 ```
-/usr/local/bin/zerodds-*                       # Binaries (Apple-Silicon-Universal)
-/usr/local/lib/libzerodds.dylib                # ABI-Library
+/usr/local/bin/zerodds-*                       # binaries (Apple Silicon universal)
+/usr/local/lib/libzerodds.dylib                # ABI library
 /usr/local/include/zerodds.h
 /usr/local/include/zerodds/
 /usr/local/lib/pkgconfig/zerodds.pc
-/usr/local/etc/zerodds/                        # Config-Default
-/usr/local/var/log/zerodds/                    # Log-Default
+/usr/local/etc/zerodds/                        # config default
+/usr/local/var/log/zerodds/                    # log default
 /usr/local/var/lib/zerodds/
-/Library/LaunchDaemons/org.zerodds.*.plist     # System-Daemons
-~/Library/LaunchAgents/org.zerodds.*.plist     # User-Agents (optional)
+/Library/LaunchDaemons/org.zerodds.*.plist     # system daemons
+~/Library/LaunchAgents/org.zerodds.*.plist     # user agents (optional)
 /usr/local/share/man/man1/zerodds-*.1
 ```
+
+The configuration system directory on macOS is always
+`/usr/local/etc/zerodds`, also on Apple Silicon. Homebrew's prefix
+(`/opt/homebrew/etc`) belongs to Homebrew: the services of the formulae (§3.2.1)
+pass `--config #{etc}/zerodds/<programm>.yaml`; a program started
+by hand without `--config` reads `/usr/local/etc/zerodds`.
 
 ### §3.2 Distributions
 
@@ -232,15 +299,54 @@ class Zerodds < Formula
 end
 ```
 
-`brew services start zerodds` startet den ws-Daemon (oder per
-Sub-Formula `brew install zerodds-mqtt-bridge`).
+`brew services start zerodds` starts the ws daemon (or via a
+sub-formula `brew install zerodds-mqtt-bridge`).
 
-#### §3.2.2 PKG-Installer
+The sub-formulae do not download an archive of their own. They depend on `zerodds`
+(`depends_on "zerodds"`), take the daemon binary from its bundle and
+only bring the `service do` block with
+`--config #{etc}/zerodds/<programm>.yaml` and an `install` method that
+copies the example configuration from `#{pkgshare}/configs` to `#{etc}/zerodds`.
+`zerodds-ros2` is not a service — rcl loads the RMW into every node —
+and only installs `ros2.yaml.example` as `ros2.yaml`.
 
-Signed `.pkg`-Installer (Apple-Developer-ID notarized) für Enterprise-
-Rollout. Ships in `releases/` auf GitHub.
+The bundle that the meta formula installs is built and
+rendered in the repository. The job `macos-bundle` (`ci/full.yml`) runs on a
+macOS runner and packs per target `zerodds-<v>-<target>.tar.gz` with the
+layout from §3.1:
 
-### §3.3 launchd-Plist (Beispiel)
+```
+bin/zerodds-*                            # 7 daemons + 17 CLIs (§1.1/§1.3)
+lib/libzerodds.dylib
+include/zerodds.h
+include/zerodds/*                        # C++ convenience headers
+include/dds/                             # DDS-PSM-Cxx headers
+lib/pkgconfig/zerodds.pc
+share/zerodds/configs/*.yaml.example
+share/man/man1/zerodds-*.1
+share/man/man5/zerodds*.yaml.5
+share/launchd/*.plist
+```
+
+`<v>` is the workspace version from `Cargo.toml`. Next to each archive is
+`zerodds-<v>-<target>.tar.gz.sha256`.
+`packaging/github-actions/render-homebrew.sh` writes the sha256 into the
+formulae; if one of the archives is missing, it aborts with the name of the missing
+file.
+
+Runner requirement: a Mac (Apple Silicon) as a GitLab runner with the tag
+`macos`, shell executor, Xcode Command Line Tools (`cc`, `ar`, `tar`,
+`shasum`) and rustup. Both Apple targets (`aarch64-apple-darwin`,
+`x86_64-apple-darwin`) are installed in the job with `rustup target add`;
+`ruby -c` checks every rendered formula, `brew style --formula` additionally,
+if `brew` is on the `PATH`.
+
+#### §3.2.2 PKG installer
+
+Signed `.pkg` installer (Apple Developer ID notarized) for enterprise
+rollout. Ships in `releases/` on GitHub.
+
+### §3.3 launchd plist (example)
 
 ```xml
 <!-- /Library/LaunchDaemons/org.zerodds.ws-bridged.plist -->
@@ -275,7 +381,7 @@ Rollout. Ships in `releases/` auf GitHub.
 
 ## §4 Windows
 
-### §4.1 Datei-Layout
+### §4.1 File layout
 
 ```
 %PROGRAMFILES%\ZeroDDS\
@@ -301,12 +407,12 @@ Rollout. Ships in `releases/` auf GitHub.
 
 ### §4.2 Distributions
 
-#### §4.2.1 MSI-Installer (WiX)
+#### §4.2.1 MSI installer (WiX)
 
-`zerodds-1.0.0-x64.msi` — signed mit EV-Code-Signing-Cert. Installiert
-Binaries, registriert Services, schreibt Start-Menü-Einträge.
+`zerodds-1.0.0-x64.msi` — signed with an EV code signing cert. Installs
+binaries, registers services, writes Start menu entries.
 
-Optional-Features pro Bridge-Daemon (Custom-Install).
+Optional features per bridge daemon (custom install).
 
 #### §4.2.2 Scoop
 
@@ -315,7 +421,7 @@ scoop bucket add zerodds https://github.com/zero-objects/scoop-zerodds
 scoop install zerodds zerodds-ws-bridge
 ```
 
-Manifest pro Komponente.
+One manifest per component.
 
 #### §4.2.3 Chocolatey
 
@@ -324,7 +430,7 @@ choco install zerodds
 choco install zerodds-ws-bridge
 ```
 
-### §4.3 Win-Service
+### §4.3 Windows service
 
 ```powershell
 sc.exe create ZeroDDSWSBridge `
@@ -339,15 +445,15 @@ sc.exe failure ZeroDDSWSBridge reset= 60 actions= restart/5000/restart/10000/res
 sc.exe start ZeroDDSWSBridge
 ```
 
-Pro Bridge-Daemon ein Service. Im MSI-Installer als
-`ServiceInstall`-Custom-Action automatisch registriert.
+One service per bridge daemon. Registered automatically in the MSI installer as a
+`ServiceInstall` custom action.
 
 ## §5 Docker
 
-Pro Daemon ein eigenes Image; Multi-Stage-Build mit `cargo-chef` für
-Cache-Effizienz.
+One image per daemon; multi-stage build with `cargo-chef` for
+cache efficiency.
 
-### §5.1 Image-Liste
+### §5.1 Image list
 
 ```
 zerodds/ws-bridged:1.0
@@ -356,16 +462,17 @@ zerodds/coap-bridged:1.0
 zerodds/amqp-bridged:1.0
 zerodds/grpc-bridged:1.0
 zerodds/corba-bridged:1.0
-zerodds/ros2-humble:1.0    # mit RMW-Shim vorinstalliert
+zerodds/zenoh-bridged:1.0
+zerodds/ros2-humble:1.0    # diagnostic CLI; RMW library open, see ros2-bridge §11
 zerodds/ros2-iron:1.0
 zerodds/ros2-jazzy:1.0
-zerodds/cli:1.0            # alle 17 CLI-Tools (debug/admin)
+zerodds/cli:1.0            # all 17 CLI tools (debug/admin)
 ```
 
-Multi-arch: `linux/amd64`, `linux/arm64`. Push auf
-`docker.io/zerodds/*` und `ghcr.io/zero-objects/*`.
+Multi-arch: `linux/amd64`, `linux/arm64`. Push to
+`docker.io/zerodds/*` and `ghcr.io/zero-objects/*`.
 
-### §5.2 Beispiel-Dockerfile
+### §5.2 Example Dockerfile
 
 ```dockerfile
 # stage 1: build
@@ -383,13 +490,12 @@ RUN apt-get update && apt-get install -y ca-certificates libssl3 && rm -rf /var/
 RUN useradd --system --uid 999 zerodds
 COPY --from=builder /build/target/release/zerodds-ws-bridged /usr/local/bin/
 USER zerodds
-ENV ZERODDS_CONFIG=/etc/zerodds/ws-bridged.yaml
 EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/zerodds-ws-bridged"]
 CMD ["--config", "/etc/zerodds/ws-bridged.yaml"]
 ```
 
-### §5.3 Docker-Compose-Beispiel
+### §5.3 Docker Compose example
 
 ```yaml
 version: "3.9"
@@ -416,9 +522,9 @@ services:
       - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
 ```
 
-## §6 Cargo-Dist-Setup
+## §6 cargo-dist setup
 
-Workspace-Cargo.toml:
+Workspace Cargo.toml:
 
 ```toml
 [workspace.metadata.dist]
@@ -444,27 +550,27 @@ checksum              = "sha512"
 sign-artifacts        = ["minisign", "cosign"]
 ```
 
-`cargo dist init` + `cargo dist build` + GitHub-Actions-Workflow
-erzeugt Releases auf Tag-Push.
+`cargo dist init` + `cargo dist build` + a GitHub Actions workflow
+produce releases on tag push.
 
-## §7 Version-Sync
+## §7 Version sync
 
-Alle ZeroDDS-Crates teilen die Version aus Workspace-Root:
+All ZeroDDS crates share the version from the workspace root:
 
 ```toml
-# Cargo.toml (Workspace-Root)
+# Cargo.toml (workspace root)
 [workspace.package]
 version       = "1.0.0-rc.1"
 edition       = "2021"
 rust-version  = "1.88"
 license       = "Apache-2.0 OR MIT"
-authors       = ["Sandra Keßler <sandra@ifyna.de>", "ZeroDDS Contributors"]
+authors       = ["ZeroDDS Contributors <admin@zerodds.org>"]
 homepage      = "https://zerodds.io"
 repository    = "https://github.com/zero-objects/zerodds"
 description   = "ZeroDDS — Rust-native DDS implementation"
 ```
 
-Pro Crate:
+Per crate:
 ```toml
 [package]
 name    = "zerodds-ws-bridge"
@@ -475,15 +581,15 @@ license.workspace      = true
 authors.workspace      = true
 ```
 
-Bump-Process: ein einzelner Commit ändert `[workspace.package].version`,
-`cargo dist plan` validiert, alle Bridges + Library + CLIs werden
-gemeinsam released. Pre-Release-Tags (`-rc.1`, `-rc.2`) erlaubt;
-finaler Tag `1.0.0`.
+Bump process: a single commit changes `[workspace.package].version`,
+`cargo dist plan` validates, all bridges + library + CLIs are
+released together. Pre-release tags (`-rc.1`, `-rc.2`) are allowed;
+final tag `1.0.0`.
 
-## §8 Cross-References zu Bridge-Specs
+## §8 Cross-references to bridge specs
 
-Diese Spec definiert die Konventionen, die in den folgenden Bridge-
-Spec-`§11 Packaging`-Sektionen referenziert werden:
+This spec defines the conventions that are referenced in the following bridge
+spec `§11 Packaging` sections:
 
 - `zerodds-ws-bridge-1.0` §11
 - `zerodds-mqtt-bridge-1.0` §11
@@ -492,16 +598,16 @@ Spec-`§11 Packaging`-Sektionen referenziert werden:
 - `zerodds-grpc-bridge-1.0` §11
 - `zerodds-corba-bridge-1.0` §11
 - `zerodds-ros2-bridge-1.0` §11
-- `zerodds-ffi-loader-1.0` §6 (Library-Packaging)
+- `zerodds-ffi-loader-1.0` §6 (library packaging)
 
-Erweiterte Cross-Refs:
+Extended cross-refs:
 - Observability: `zerodds-monitor-1.1`, `zerodds-observability-otlp-1.0`
-- Recorder-Format: `zddsrec-1.0`
-- Wire-Format: `zerodds-xcdr2-bindings-conformance-1.0`
+- Recorder format: `zddsrec-1.0`
+- Wire format: `zerodds-xcdr2-bindings-conformance-1.0`
 
 ## §9 Versioning
 
-`1.0` initial. Patch für Bugfixes in Installer-Skripten + Service-
-Files, Minor für additive Distros (z.B. NixOS, Alpine-apk-Repo,
-SUSE-OBS), Major bei tiefgreifenden Layout-Änderungen (z.B. von
-`/usr/lib/` auf `/opt/zerodds/`).
+`1.0` initial. Patch for bug fixes in installer scripts + service
+files, minor for additive distros (e.g. NixOS, Alpine apk repo,
+SUSE OBS), major for far-reaching layout changes (e.g. from
+`/usr/lib/` to `/opt/zerodds/`).

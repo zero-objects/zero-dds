@@ -1,91 +1,164 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-
-//! C++ codegen — DDS 1.4 §B.4 Annex C++ PSM.
+//! The C++ PSM — DDS 1.4 §B.6.
 
 use alloc::format;
-use alloc::string::String;
+use alloc::string::{String, ToString};
 
-use crate::DlrlTypeInfo;
+use crate::{DlrlAttributeType, DlrlCollection, DlrlFieldType, DlrlMonoType, DlrlTypeInfo};
 
-/// Generates a C++ class header derived from ObjectRoot
-/// (`class T : public DLRL::ObjectRoot`). Spec §B.6.
-#[allow(clippy::format_collect)]
+/// A basic type's member type, getter return type and what the getter
+/// appends to the member, in the classic IDL-to-C++ mapping the C++ PSM
+/// uses (`DDS::Long`, a string held in `DDS::String_var` and returned as
+/// `const char*`).
+fn cpp_basic(ty: DlrlFieldType) -> (&'static str, &'static str, &'static str) {
+    let scalar = |t: &'static str| (t, t, "");
+    match ty {
+        DlrlFieldType::Boolean => scalar("DDS::Boolean"),
+        DlrlFieldType::Char => scalar("DDS::Char"),
+        DlrlFieldType::Octet => scalar("DDS::Octet"),
+        DlrlFieldType::Int8 => scalar("DDS::Int8"),
+        DlrlFieldType::UInt8 => scalar("DDS::UInt8"),
+        DlrlFieldType::Short => scalar("DDS::Short"),
+        DlrlFieldType::UShort => scalar("DDS::UShort"),
+        DlrlFieldType::Long => scalar("DDS::Long"),
+        DlrlFieldType::ULong => scalar("DDS::ULong"),
+        DlrlFieldType::LongLong => scalar("DDS::LongLong"),
+        DlrlFieldType::ULongLong => scalar("DDS::ULongLong"),
+        DlrlFieldType::Float => scalar("DDS::Float"),
+        DlrlFieldType::Double => scalar("DDS::Double"),
+        DlrlFieldType::String => ("DDS::String_var", "const char*", ".in()"),
+    }
+}
+
+/// How one mono-valued type is spelled: the member, the getter's return
+/// type, what the getter appends to the member, and the setter's
+/// parameter. An enumeration or a structure is the type `idlc generate
+/// --lang cpp` declares for it, by its fully qualified name; a structure
+/// is returned and taken by `const&`.
+struct Spelling {
+    member: String,
+    getter: String,
+    read: &'static str,
+    param: String,
+}
+
+fn cpp_mono(ty: Option<&DlrlMonoType>) -> Spelling {
+    let plain = |t: String| Spelling {
+        member: t.clone(),
+        getter: t.clone(),
+        read: "",
+        param: t,
+    };
+    match ty {
+        Some(DlrlMonoType::Basic(DlrlFieldType::String)) => Spelling {
+            member: "DDS::String_var".to_string(),
+            getter: "const char*".to_string(),
+            read: ".in()",
+            param: "const char*".to_string(),
+        },
+        Some(DlrlMonoType::Basic(basic)) => plain(cpp_basic(*basic).0.to_string()),
+        Some(DlrlMonoType::Enum { name, .. }) => plain(format!("::{name}")),
+        Some(DlrlMonoType::Struct { name }) => Spelling {
+            member: format!("::{name}"),
+            getter: format!("const ::{name}&"),
+            read: "",
+            param: format!("const ::{name}&"),
+        },
+        // An unresolved key names a type no header declares.
+        None => plain("DLRL_UNRESOLVED_KEY_TYPE".to_string()),
+    }
+}
+
+/// The collection a multi-valued attribute is held in: `DLRL::List`,
+/// `DLRL::StrMap` or `DLRL::IntMap`, the templates behind the PSM's
+/// `FooList`/`FooStrMap`/`FooIntMap` (DDS 1.2 §8.2.2.3.2.3 reads
+/// `<templateDef name="BarStrMap" pattern="StrMap" itemType="Bar"/>` as
+/// "a hypothetical typedef StrMap<Foo> FooStrMap"). `IntMap` carries its
+/// key type.
+fn cpp_collection(basis: &DlrlCollection, item: &DlrlMonoType) -> String {
+    let item = cpp_mono(Some(item)).member;
+    match basis {
+        DlrlCollection::List => format!("DLRL::List< {item} >"),
+        DlrlCollection::StrMap => format!("DLRL::StrMap< {item} >"),
+        DlrlCollection::IntMap(key) => format!("DLRL::IntMap< {}, {item} >", cpp_basic(*key).0),
+    }
+}
+
+/// The object class: derives from `ObjectRoot`, one member and getter per
+/// key, one member, getter and setter per mono-valued attribute, one
+/// collection and accessor per multi-valued attribute, one `RefList` and
+/// accessor per relation. Every member is value-initialised.
 #[must_use]
 pub fn generate_cpp_object(info: &DlrlTypeInfo) -> String {
-    let cls = simple_name(&info.name);
+    let class = info.simple_name();
     let mut out = format!(
-        "// Generated DLRL Object — Spec §B.6\n\
-class {cls} : public DLRL::ObjectRoot {{\npublic:\n"
+        "// Generated DLRL object — DDS 1.4 §B.6\n\
+         class {class} : public DLRL::ObjectRoot {{\n\
+         public:\n"
     );
-    for k in &info.keys {
-        out.push_str(&format!("    DDS::Long {k}_;\n"));
+    for key in &info.keys {
+        let Spelling {
+            member,
+            getter,
+            read,
+            ..
+        } = cpp_mono(info.key_type(key));
+        out.push_str(&format!("    {member} {key}_{{}};\n"));
         out.push_str(&format!(
-            "    DDS::Long get_{k}() const {{ return {k}_; }}\n"
+            "    {getter} get_{key}() const {{ return {key}_{read}; }}\n"
         ));
     }
-    for (rel, target) in &info.relations {
-        let target_cls = simple_name(target);
+    for (attribute, ty) in &info.attributes {
+        match ty {
+            DlrlAttributeType::Mono(mono) => {
+                let Spelling {
+                    member,
+                    getter,
+                    read,
+                    param,
+                } = cpp_mono(Some(mono));
+                out.push_str(&format!("    {member} {attribute}_{{}};\n"));
+                out.push_str(&format!(
+                    "    {getter} get_{attribute}() const {{ return {attribute}_{read}; }}\n"
+                ));
+                out.push_str(&format!(
+                    "    void set_{attribute}({param} v) {{ {attribute}_ = v; }}\n"
+                ));
+            }
+            DlrlAttributeType::Multi { basis, item } => {
+                let collection = cpp_collection(basis, item);
+                out.push_str(&format!("    {collection} {attribute}_{{}};\n"));
+                out.push_str(&format!(
+                    "    {collection}& get_{attribute}() {{ return {attribute}_; }}\n"
+                ));
+            }
+        }
+    }
+    for (relation, target) in &info.relations {
+        let target_class = crate::simple_name(target);
         out.push_str(&format!(
-            "    DLRL::RefList< {target_cls}* > {rel}_;\n\
-    DLRL::RefList< {target_cls}* >& {rel}() {{ return {rel}_; }}\n"
+            "    DLRL::RefList< {target_class}* > {relation}_;\n"
+        ));
+        out.push_str(&format!(
+            "    DLRL::RefList< {target_class}* >& get_{relation}() {{ return {relation}_; }}\n"
         ));
     }
     out.push_str("};\n");
     out
 }
 
-/// Generates a C++ Home class for a DLRL type. Spec §B.3.
+/// The home class: §B.7 makes it the factory and the registry for its
+/// object class.
 #[must_use]
 pub fn generate_cpp_home(info: &DlrlTypeInfo) -> String {
-    let cls = simple_name(&info.name);
+    let class = info.simple_name();
     format!(
-        "// Generated DLRL Home — Spec §B.3\n\
-class {cls}Home : public DLRL::HomeBase {{\npublic:\n\
-    {cls}* create();\n\
-    void destroy({cls}* obj);\n\
-    {cls}* find_by_key(/* key fields */);\n\
-}};\n"
+        "// Generated DLRL home — DDS 1.4 §B.7\n\
+         class {class}Home : public DLRL::ObjectHome {{\n\
+         public:\n    \
+             {class}* create_object() {{ return new {class}(); }}\n    \
+             void delete_object({class}* o) {{ delete o; }}\n\
+         }};\n"
     )
-}
-
-fn simple_name(scoped: &str) -> &str {
-    scoped.rsplit("::").next().unwrap_or(scoped)
-}
-
-#[cfg(test)]
-#[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
-mod tests {
-    use super::*;
-
-    fn trade_info() -> DlrlTypeInfo {
-        DlrlTypeInfo {
-            name: "demo::Trade".into(),
-            keys: alloc::vec!["symbol".into()],
-            relations: alloc::vec![("quotes".into(), "demo::Quote".into())],
-        }
-    }
-
-    #[test]
-    fn cpp_object_inherits_object_root() {
-        let s = generate_cpp_object(&trade_info());
-        assert!(s.contains("class Trade : public DLRL::ObjectRoot"));
-        assert!(s.contains("symbol_"));
-        assert!(s.contains("get_symbol"));
-        assert!(s.contains("RefList< Quote* > quotes_"));
-    }
-
-    #[test]
-    fn cpp_home_inherits_home_base() {
-        let s = generate_cpp_home(&trade_info());
-        assert!(s.contains("class TradeHome : public DLRL::HomeBase"));
-        assert!(s.contains("Trade* create();"));
-        assert!(s.contains("void destroy(Trade* obj);"));
-    }
-
-    #[test]
-    fn simple_name_strips_scope() {
-        assert_eq!(simple_name("a::b::C"), "C");
-        assert_eq!(simple_name("Foo"), "Foo");
-    }
 }

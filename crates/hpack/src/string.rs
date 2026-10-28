@@ -70,7 +70,7 @@ pub fn encode_string(s: &str, huffman_compress: bool) -> Vec<u8> {
 /// Returns `(decoded_string, bytes_consumed)`.
 ///
 /// # Errors
-/// Siehe [`StringError`].
+/// See [`StringError`].
 pub fn decode_string(input: &[u8]) -> Result<(String, usize), StringError> {
     let (bytes, consumed) = decode_bytes(input)?;
     let s = String::from_utf8(bytes).map_err(|_| StringError::NotUtf8)?;

@@ -22,7 +22,12 @@ use zerodds_durability_store_sqlite::SqliteStore;
 
 #[test]
 fn auto_discovery_serves_transient_topic() {
-    let domain = 73;
+    // Leased, not fixed: the domain number is the UDP port (RTPS 9.6.1.4.1),
+    // so it is a resource of the whole host. A fixed number here met a
+    // daemon of another checkout's run on the same number — measured: two
+    // `zerodds-durability-svc --domain 81` alive for forty minutes, and this
+    // test counted 159 samples on its topic where its writer had sent 20.
+    let domain = zerodds_test_domains::unique_domain();
     let topic = "AutoSensor";
     let store: Arc<dyn DurabilityStore> =
         Arc::new(SqliteStore::open_in_memory(keep_all()).unwrap());

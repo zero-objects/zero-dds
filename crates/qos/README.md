@@ -34,7 +34,7 @@ assert!(matches!(
 ));
 ```
 
-## Public API (1.0.0-rc.1)
+## Public API
 
 **Top-Level:** `Duration`, `Pid`, `CompatibilityResult`, `IncompatibleReason`, `check_compatibility`.
 
@@ -53,7 +53,8 @@ Full list in the [rustdoc](https://docs.rs/zerodds-qos).
 
 ## Stability
 
-All items listed in the public API are semver-stable from `1.0.0-rc.1`.
+`1.0.0-rc.7`, a pre-release. The public API can still change before
+1.0.0; the crate's CHANGELOG lists every change.
 
 ## Links
 

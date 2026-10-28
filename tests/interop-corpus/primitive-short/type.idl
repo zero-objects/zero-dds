@@ -1,0 +1,5 @@
+// primitive `short`
+@final struct Sample {
+    short short_signed_a;
+    short short_signed_b;
+};

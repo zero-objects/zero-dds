@@ -11,7 +11,6 @@
 //! on. This separation eases testing (no fakes needed).
 
 extern crate alloc;
-use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use crate::datagram::encode_data_datagram;
@@ -22,7 +21,7 @@ use crate::wire_types::{EntityId, Guid, GuidPrefix, SequenceNumber, VendorId};
 
 /// Stateless Best-Effort Writer.
 ///
-/// Pflegt nur den naechsten zu vergebenden `SequenceNumber`. Jeder
+/// Maintains only the next `SequenceNumber` to assign. Each
 /// `write()` call increments the SN, builds a DATA submessage and
 /// returns the finished datagram. The caller sends it via the transport.
 #[derive(Debug, Clone)]
@@ -90,9 +89,10 @@ impl BestEffortWriter {
             writer_id: self.guid.entity_id,
             writer_sn: sn,
             inline_qos: None,
+            data_flag: true,
             key_flag: false,
             non_standard_flag: false,
-            serialized_payload: Arc::from(payload),
+            serialized_payload: crate::payload::Payload::from(payload),
         };
         let header = RtpsHeader::new(self.vendor_id, self.guid.prefix);
         encode_data_datagram(header, &[data])
@@ -134,7 +134,7 @@ mod tests {
         let bytes = w.write(b"hello world").unwrap();
         let parsed = decode_datagram(&bytes).unwrap();
         assert_eq!(parsed.submessages.len(), 1);
-        match &parsed.submessages[0] {
+        match &parsed.submessages[0].submessage {
             ParsedSubmessage::Data(d) => {
                 assert_eq!(d.writer_sn, SequenceNumber(1));
                 assert_eq!(d.serialized_payload.as_ref(), b"hello world");
@@ -178,7 +178,7 @@ mod tests {
         for i in 0..3 {
             let bytes = w.write(format!("msg-{i}").as_bytes()).unwrap();
             let parsed = decode_datagram(&bytes).unwrap();
-            if let ParsedSubmessage::Data(d) = &parsed.submessages[0] {
+            if let ParsedSubmessage::Data(d) = &parsed.submessages[0].submessage {
                 sns.push(d.writer_sn);
             }
         }

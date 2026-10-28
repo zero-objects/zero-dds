@@ -26,6 +26,11 @@ with Zerodds_Ada83_Reliable;  use Zerodds_Ada83_Reliable;
 
 procedure Example_Ada83_Reliable is
 
+   --  The DataWriter this example writes to (ObjectId = raw 16#001# plus
+   --  OBJK_DATAWRITER, DDS-XRCE 1.0 7.2.1). It rides in every frame's
+   --  BaseObjectRequest.
+   Writer_Id : constant Integer := 16#0015#;
+
    Start : constant Time := Clock;
 
    function Now_Ms return Long_Integer is
@@ -121,7 +126,7 @@ begin
             Set_Exit_Status (1);
             return;
          end if;
-         Send (Write_Frame (Seq, Body_FS));
+         Send (Write_Frame (Seq, Writer_Id, Body_FS));
       end;
    end loop;
 
@@ -152,7 +157,7 @@ begin
                      begin
                         Get_In_Flight (S, Target, PL, GOk);
                         if GOk then
-                           Send (Write_Frame (Target, PL));
+                           Send (Write_Frame (Target, Writer_Id, PL));
                         end if;
                      end;
                   end if;

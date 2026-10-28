@@ -11,14 +11,15 @@
 //! - §2.2.2.2.1.13 `create_contentfilteredtopic`.
 //!
 //! In v1.2 we stay simple: the `Topic<T>` is a handle that carries
-//! name + type_name and a generic `PhantomData<T>` for static type
+//! name + type_name and a generic `PhantomData<fn() -> T>` for static type
 //! safety. The topic references its `DomainParticipant` so that
 //! `TopicDescription::get_participant` works faithfully to spec. The
 //! cycle is broken in the topic registry: it holds only
 //! `Arc<TopicInner>`, **not** the cloned `DomainParticipant` handle.
 
 extern crate alloc;
-use alloc::string::{String, ToString};
+use alloc::borrow::Cow;
+use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::marker::PhantomData;
@@ -58,26 +59,571 @@ pub trait TopicDescription {
     fn get_participant(&self) -> &DomainParticipant;
 }
 
+/// How many of each kind of user one topic has right now, as
+/// `DomainParticipant::delete_topic` counts them. An all-zero value is the
+/// precondition of DDS 1.4 §2.2.2.2.1.6 satisfied: "The deletion of a Topic
+/// is not allowed if there are any existing DataReader, DataWriter,
+/// ContentFilteredTopic, or MultiTopic objects that are using the Topic."
+///
+/// Read it with [`crate::DomainParticipant::topic_users`].
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct TopicUserCounts {
+    /// DataWriters created on the topic (§2.2.2.4.2).
+    pub data_writers: usize,
+    /// DataReaders created on the topic (§2.2.2.5.2). A reader created on a
+    /// `ContentFilteredTopic` of the topic counts here as well.
+    pub data_readers: usize,
+    /// ContentFilteredTopics over the topic (§2.2.2.3.3).
+    pub content_filtered_topics: usize,
+    /// MultiTopics over the topic (§2.2.2.3.4).
+    pub multi_topics: usize,
+}
+
+/// Which of the four object kinds the spec names in `delete_topic`'s
+/// precondition a ledger entry counts. `TopicUserKind` is internal; the
+/// counts it maintains are read through [`TopicUserCounts`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TopicUserKind {
+    /// A `DataWriter` on the topic (§2.2.2.4.2).
+    DataWriter,
+    /// A `DataReader` on the topic (§2.2.2.5.2).
+    DataReader,
+    /// A `ContentFilteredTopic` on the topic (§2.2.2.3.3).
+    ContentFilteredTopic,
+    /// A `MultiTopic` over the topic (§2.2.2.3.4).
+    MultiTopic,
+}
+
+impl TopicUserCounts {
+    /// `true` when nothing uses the topic, i.e. when `delete_topic` may
+    /// delete it.
+    pub(crate) fn is_empty(&self) -> bool {
+        *self == Self::default()
+    }
+
+    fn field(&mut self, kind: TopicUserKind) -> &mut usize {
+        match kind {
+            TopicUserKind::DataWriter => &mut self.data_writers,
+            TopicUserKind::DataReader => &mut self.data_readers,
+            TopicUserKind::ContentFilteredTopic => &mut self.content_filtered_topics,
+            TopicUserKind::MultiTopic => &mut self.multi_topics,
+        }
+    }
+
+    /// One more user of that kind.
+    pub(crate) fn add(&mut self, kind: TopicUserKind) {
+        let field = self.field(kind);
+        *field = field.saturating_add(1);
+    }
+
+    /// The sum of two counts.
+    pub(crate) fn plus(self, other: Self) -> Self {
+        Self {
+            data_writers: self.data_writers.saturating_add(other.data_writers),
+            data_readers: self.data_readers.saturating_add(other.data_readers),
+            content_filtered_topics: self
+                .content_filtered_topics
+                .saturating_add(other.content_filtered_topics),
+            multi_topics: self.multi_topics.saturating_add(other.multi_topics),
+        }
+    }
+
+    /// One user fewer. A count only ever reaches zero: each object that
+    /// adds itself removes itself exactly once, on the same topic name, so
+    /// there is no case where this is asked to take below zero. The
+    /// saturating subtraction makes that a floor rather than a wrap.
+    pub(crate) fn remove(&mut self, kind: TopicUserKind) {
+        let field = self.field(kind);
+        *field = field.saturating_sub(1);
+    }
+}
+
+/// The deletion state a ContentFilteredTopic or MultiTopic shares between
+/// all its handles. DDS 1.4 §2.2.2.2.1.8 and §2.2.2.2.1.10: deleting one
+/// "with existing DataReader objects attached to it" returns
+/// PRECONDITION_NOT_MET; a deleted one answers ALREADY_DELETED
+/// (§2.2.1.1).
+#[derive(Debug)]
+pub(crate) struct DescriptionLife {
+    state: std::sync::Mutex<DescriptionLifeState>,
+}
+
+#[derive(Debug)]
+struct DescriptionLifeState {
+    deleted: bool,
+    /// Live handles that count as users of the related topics.
+    handles: usize,
+    /// DataReaders created on the description that still exist.
+    readers: usize,
+}
+
+impl DescriptionLife {
+    /// A description with its first handle.
+    pub(crate) fn new() -> Self {
+        Self {
+            state: std::sync::Mutex::new(DescriptionLifeState {
+                deleted: false,
+                handles: 1,
+                readers: 0,
+            }),
+        }
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, DescriptionLifeState> {
+        self.state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// One more handle. `true` if it is a user of the related topics,
+    /// `false` if the description is deleted and released them already.
+    pub(crate) fn add_handle(&self) -> bool {
+        let mut st = self.lock();
+        st.handles = st.handles.saturating_add(1);
+        !st.deleted
+    }
+
+    /// One handle fewer. `true` if it was a user of the related topics.
+    pub(crate) fn drop_handle(&self) -> bool {
+        let mut st = self.lock();
+        st.handles = st.handles.saturating_sub(1);
+        !st.deleted
+    }
+
+    /// `true` once `delete` has succeeded.
+    pub(crate) fn is_deleted(&self) -> bool {
+        self.lock().deleted
+    }
+
+    /// `AlreadyDeleted` once `delete` has succeeded.
+    pub(crate) fn check_not_deleted(&self) -> Result<()> {
+        if self.lock().deleted {
+            return Err(DdsError::AlreadyDeleted);
+        }
+        Ok(())
+    }
+
+    /// Deletes the description. Returns how many handles counted as users
+    /// of the related topics until now; the caller gives those back.
+    ///
+    /// # Errors
+    /// `AlreadyDeleted` if it is deleted; `PreconditionNotMet` while a
+    /// DataReader created on it exists.
+    pub(crate) fn delete(&self) -> Result<usize> {
+        let mut st = self.lock();
+        if st.deleted {
+            return Err(DdsError::AlreadyDeleted);
+        }
+        if st.readers > 0 {
+            return Err(DdsError::PreconditionNotMet {
+                reason: "DataReader objects are attached to the topic description",
+            });
+        }
+        st.deleted = true;
+        Ok(st.handles)
+    }
+
+    /// Records a DataReader created on the description, held by the
+    /// returned guard until the reader is deleted.
+    ///
+    /// # Errors
+    /// `AlreadyDeleted` if the description is deleted.
+    pub(crate) fn attach_reader(self: &Arc<Self>) -> Result<DescriptionReaderUse> {
+        let mut st = self.lock();
+        if st.deleted {
+            return Err(DdsError::AlreadyDeleted);
+        }
+        st.readers = st.readers.saturating_add(1);
+        Ok(DescriptionReaderUse {
+            life: Arc::clone(self),
+        })
+    }
+}
+
+/// One DataReader's hold on its ContentFilteredTopic or MultiTopic; the end
+/// of the reader gives it back.
+#[derive(Debug)]
+pub(crate) struct DescriptionReaderUse {
+    life: Arc<DescriptionLife>,
+}
+
+impl Drop for DescriptionReaderUse {
+    fn drop(&mut self) {
+        let mut st = self.life.lock();
+        st.readers = st.readers.saturating_sub(1);
+    }
+}
+
 /// Typed topic handle.
 #[derive(Debug)]
 pub struct Topic<T: DdsType> {
     inner: Arc<TopicInner>,
+    codec: Arc<dyn TopicCodec<T>>,
     /// Owning participant (no cycle: in the topic registry the
     /// participant holds only the inner, not the handle). `None` for
     /// builtin topics constructed without a participant (see
     /// [`Self::new_orphan`]).
     participant: Option<DomainParticipant>,
-    _t: PhantomData<T>,
+    /// A topic holds no `T`, so it is `Send` and `Sync` whatever `T` is.
+    _t: PhantomData<fn() -> T>,
 }
 
-/// Inner state of a topic (shared via Arc, since handles are cloned).
+/// Body and key codecs; framing bounds and entity policies remain with callers.
+///
+/// Implementations are Rust-only. Reader paths invoke this contract under
+/// cache locks, so it must not admit Python or other foreign callbacks.
+pub(crate) trait TopicCodec<T: DdsType>: core::fmt::Debug + Send + Sync {
+    fn dependent_type_objects(&self) -> &[zerodds_types::TypeObject] {
+        &[]
+    }
+    /// The strongly connected component the type belongs to
+    /// ([`DdsType::type_component`]).
+    fn type_component(&self) -> Option<&zerodds_types::resolve::TypeComponent> {
+        None
+    }
+    fn validate_sample(&self, _sample: &T) -> Result<()> {
+        Ok(())
+    }
+    fn extensibility(&self) -> crate::dds_type::Extensibility {
+        T::extensibility()
+    }
+
+    fn validates_static_metadata(&self) -> bool {
+        true
+    }
+    fn encode(
+        &self,
+        sample: &T,
+        out: &mut Vec<u8>,
+        xcdr1: bool,
+        big_endian: bool,
+    ) -> core::result::Result<(), crate::dds_type::EncodeError>;
+
+    fn decode(
+        &self,
+        bytes: &[u8],
+        representation: u8,
+        big_endian: bool,
+    ) -> core::result::Result<T, crate::dds_type::DecodeError>;
+
+    /// Actual hash and holder, distinct from the absence of a keyed instance.
+    /// The static adapter retains the existing infallible holder contract.
+    fn key_material(&self, sample: &T) -> Option<([u8; 16], Vec<u8>)>;
+
+    /// The key holder alone, with the statically known maximum length that
+    /// decides how XTypes 1.3 §7.6.8 hashes it, for a caller that may
+    /// already know the hash of these octets. `None` where the codec has no
+    /// holder of its own to give; the caller then asks [`Self::key_material`],
+    /// which also answers for a keyless type.
+    fn key_holder(&self, _sample: &T) -> Option<(Vec<u8>, usize)> {
+        None
+    }
+
+    /// [`Self::key_holder`] written into `out`, which is cleared first and
+    /// keeps its capacity; the statically known maximum length is the
+    /// answer, `None` as there.
+    fn key_holder_into(&self, sample: &T, out: &mut Vec<u8>) -> Option<usize> {
+        let (holder, max) = self.key_holder(sample)?;
+        *out = holder;
+        Some(max)
+    }
+
+    fn decode_key_holder(
+        &self,
+        bytes: &[u8],
+    ) -> core::result::Result<T, crate::dds_type::DecodeError>;
+}
+
+/// The KeyHash under which an endpoint of a topic without a key tracks its
+/// one instance (DDS 1.4 §2.2.1.2.2). It is not sent: a keyless writer's
+/// DATA carries no PID_KEY_HASH.
+pub(crate) const KEYLESS_INSTANCE_KEY: [u8; 16] = [0u8; 16];
+
+/// The key holder of the last sample an endpoint keyed and its KeyHash.
+///
+/// XTypes 1.3 §7.6.8 makes the hash of a holder that can exceed sixteen
+/// octets the MD5 of it, and a writer usually writes — and a reader
+/// usually receives — the same instance again. [`Self::key_material`]
+/// compares the holder with the last one and reuses its hash, so a
+/// repeated instance costs a comparison and not a digest. Measured on the
+/// Linux test host with a 1 kB string key (`zerodds_perf`): the MD5 was
+/// about half the writing thread's time, and the reading thread spent
+/// as much on it for samples `KEEP_LAST` then replaced.
+///
+/// [`Self::key_hash`] also keeps the buffer it writes the holder into, so a
+/// writer that only needs the hash allocates nothing per sample.
+#[cfg(feature = "std")]
+#[derive(Debug, Default)]
+pub(crate) struct KeyMaterialCache(std::sync::Mutex<KeyMaterial>);
+
+/// What [`KeyMaterialCache`] holds between calls.
+#[cfg(feature = "std")]
+#[derive(Debug, Default)]
+pub(crate) struct KeyMaterial {
+    /// The last holder and its KeyHash.
+    last: Option<(Vec<u8>, [u8; 16])>,
+    /// The buffer the next holder is written into.
+    scratch: Vec<u8>,
+}
+
+#[cfg(feature = "std")]
+impl KeyMaterialCache {
+    /// The KeyHash of `sample`, taken from the last call when the holder is
+    /// the same octets. Without allocating once the buffers have grown: the
+    /// holder is written into a buffer kept here, and a new holder's buffer
+    /// and the last one's trade places. `None` for a keyless type.
+    pub(crate) fn key_hash<T: DdsType>(
+        &self,
+        codec: &dyn TopicCodec<T>,
+        sample: &T,
+    ) -> Option<[u8; 16]> {
+        let mut state = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        let mut holder = core::mem::take(&mut state.scratch);
+        let Some(max) = codec.key_holder_into(sample, &mut holder) else {
+            state.scratch = holder;
+            drop(state);
+            return codec.key_material(sample).map(|(hash, _)| hash);
+        };
+        if let Some((bytes, hash)) = state.last.as_ref() {
+            if *bytes == holder {
+                let hash = *hash;
+                state.scratch = holder;
+                return Some(hash);
+            }
+        }
+        let hash = crate::dds_type::compute_key_hash(&holder, max);
+        state.scratch = state
+            .last
+            .replace((holder, hash))
+            .map(|(bytes, _)| bytes)
+            .unwrap_or_default();
+        Some(hash)
+    }
+
+    /// The key holder that a KeyHash spells out, for an instance known by
+    /// its hash alone: DDSI-RTPS 2.5 §9.6.4.8 Step 5.1 makes the KeyHash of
+    /// a key of at most sixteen octets that key's PLAIN_CDR2-BE octets,
+    /// padded with zeros. The octets count as a holder only if they hash
+    /// back to `hash`; the MD5 of Step 5.2 never does.
+    pub(crate) fn holder_from_hash<T: DdsType>(
+        &self,
+        codec: &dyn TopicCodec<T>,
+        hash: [u8; 16],
+    ) -> Option<Vec<u8>> {
+        let key = codec.decode_key_holder(&hash).ok()?;
+        (self.key_hash(codec, &key)? == hash)
+            .then(|| self.holder_of(hash))
+            .flatten()
+    }
+
+    /// A copy of the last holder [`Self::key_hash`] wrote, when its hash is
+    /// `hash` — for the instance tracker, which keeps the holder of a new
+    /// instance, without writing the holder a second time. `None` when
+    /// another key was written since.
+    pub(crate) fn holder_of(&self, hash: [u8; 16]) -> Option<Vec<u8>> {
+        let state = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        state
+            .last
+            .as_ref()
+            .filter(|(_, last)| *last == hash)
+            .map(|(bytes, _)| bytes.clone())
+    }
+
+    /// [`TopicCodec::key_material`] for `sample`, the hash taken from the
+    /// last call when the holder is the same octets.
+    pub(crate) fn key_material<T: DdsType>(
+        &self,
+        codec: &dyn TopicCodec<T>,
+        sample: &T,
+    ) -> Option<([u8; 16], Vec<u8>)> {
+        let Some((holder, max)) = codec.key_holder(sample) else {
+            return codec.key_material(sample);
+        };
+        let mut state = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some((bytes, hash)) = state.last.as_ref() {
+            if *bytes == holder {
+                return Some((*hash, holder));
+            }
+        }
+        let hash = crate::dds_type::compute_key_hash(&holder, max);
+        state.last = Some((holder.clone(), hash));
+        Some((hash, holder))
+    }
+}
+
+/// The XTypes description of a topic type that is not the Rust type the topic
+/// carries: the `CompleteTypeObject` of the type and the objects it names by
+/// hash. See [`crate::DomainParticipant::create_topic_with_type_information`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TopicTypeInformation {
+    /// The complete object of the topic type.
+    pub object: zerodds_types::TypeObject,
+    /// Every object the root names by hash, directly or through another.
+    pub dependencies: Vec<zerodds_types::TypeObject>,
+}
+
+/// Exact delegation to the existing static DdsType codec defaults and overrides.
+///
+/// Carries the type's dependency objects (`DdsType::type_object_dependencies`)
+/// so that endpoint creation registers the whole closure the type's
+/// own object names by hash, not the top-level object alone.
+#[derive(Debug)]
+pub(crate) struct StaticTopicCodec {
+    dependencies: Vec<zerodds_types::TypeObject>,
+    /// `false` for a topic created under a type name other than the one
+    /// `T` carries ([`Self::named_of`]): its metadata is then not `T`'s
+    /// own and is not checked against it.
+    validates_metadata: bool,
+    component: Option<zerodds_types::resolve::TypeComponent>,
+}
+
+impl StaticTopicCodec {
+    pub(crate) fn of<T: DdsType>() -> Self {
+        Self {
+            dependencies: T::type_object_dependencies(),
+            validates_metadata: true,
+            component: T::type_component(),
+        }
+    }
+
+    /// The codec of a topic whose type is described by `dependencies`
+    /// and not by `T`'s own objects.
+    pub(crate) fn described_by<T: DdsType>(dependencies: Vec<zerodds_types::TypeObject>) -> Self {
+        Self {
+            dependencies,
+            ..Self::named_of::<T>()
+        }
+    }
+
+    /// The codec of a topic whose type name the creator chose.
+    pub(crate) fn named_of<T: DdsType>() -> Self {
+        Self {
+            validates_metadata: false,
+            ..Self::of::<T>()
+        }
+    }
+}
+
+impl<T: DdsType> TopicCodec<T> for StaticTopicCodec {
+    fn dependent_type_objects(&self) -> &[zerodds_types::TypeObject] {
+        &self.dependencies
+    }
+
+    fn validates_static_metadata(&self) -> bool {
+        self.validates_metadata
+    }
+
+    fn type_component(&self) -> Option<&zerodds_types::resolve::TypeComponent> {
+        self.component.as_ref()
+    }
+
+    fn key_material(&self, sample: &T) -> Option<([u8; 16], Vec<u8>)> {
+        if !T::has_key() {
+            return None;
+        }
+        let mut holder = crate::dds_type::PlainCdr2BeKeyHolder::new();
+        sample.encode_key_holder_be(&mut holder);
+        let max = T::key_holder_max_size().unwrap_or(usize::MAX);
+        let hash = crate::dds_type::compute_key_hash(holder.as_bytes(), max);
+        // The holder's own buffer, moved: a copy here was one allocation per
+        // write of a keyed sample.
+        Some((hash, holder.into_bytes()))
+    }
+
+    fn key_holder(&self, sample: &T) -> Option<(Vec<u8>, usize)> {
+        if !T::has_key() {
+            return None;
+        }
+        let mut holder = crate::dds_type::PlainCdr2BeKeyHolder::new();
+        sample.encode_key_holder_be(&mut holder);
+        Some((
+            holder.into_bytes(),
+            T::key_holder_max_size().unwrap_or(usize::MAX),
+        ))
+    }
+
+    fn key_holder_into(&self, sample: &T, out: &mut Vec<u8>) -> Option<usize> {
+        if !T::has_key() {
+            return None;
+        }
+        let mut holder = crate::dds_type::PlainCdr2BeKeyHolder::reusing(core::mem::take(out));
+        sample.encode_key_holder_be(&mut holder);
+        *out = holder.into_bytes();
+        Some(T::key_holder_max_size().unwrap_or(usize::MAX))
+    }
+
+    fn decode_key_holder(
+        &self,
+        bytes: &[u8],
+    ) -> core::result::Result<T, crate::dds_type::DecodeError> {
+        T::decode_key_holder_be(bytes)
+    }
+
+    fn encode(
+        &self,
+        sample: &T,
+        out: &mut Vec<u8>,
+        xcdr1: bool,
+        big_endian: bool,
+    ) -> core::result::Result<(), crate::dds_type::EncodeError> {
+        match (xcdr1, big_endian) {
+            (false, false) => sample.encode(out),
+            (false, true) => sample.encode_be(out),
+            (true, false) => sample.encode_xcdr1(out),
+            (true, true) => sample.encode_xcdr1_be(out),
+        }
+    }
+
+    fn decode(
+        &self,
+        bytes: &[u8],
+        representation: u8,
+        big_endian: bool,
+    ) -> core::result::Result<T, crate::dds_type::DecodeError> {
+        match (representation, big_endian) {
+            (0, false) => T::decode_xcdr1(bytes),
+            (0, true) => T::decode_xcdr1_be(bytes),
+            (_, false) => T::decode(bytes),
+            (_, true) => T::decode_be(bytes),
+        }
+    }
+}
+
+/// Metadata captured once per topic from static accessors or validated type support.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct TopicTypeMetadata {
+    pub type_name: Cow<'static, str>,
+    pub type_identifier: zerodds_types::TypeIdentifier,
+    pub type_object: Option<zerodds_types::type_object::TypeObject>,
+    pub keyed: bool,
+    pub extensibility: crate::dds_type::Extensibility,
+    pub key_holder_max_size: Option<usize>,
+    pub max_serialized_size: Option<usize>,
+}
+
+impl TopicTypeMetadata {
+    pub(crate) fn of<T: DdsType>() -> Self {
+        Self {
+            type_name: Cow::Borrowed(T::type_name()),
+            type_identifier: T::type_identifier(),
+            type_object: T::type_object(),
+            keyed: T::has_key(),
+            extensibility: T::extensibility(),
+            key_holder_max_size: T::key_holder_max_size(),
+            max_serialized_size: T::max_serialized_size(),
+        }
+    }
+}
+
+/// Shared topic identity with owned TypeObject and TypeIdentifier.
 pub(crate) struct TopicInner {
+    pub metadata: TopicTypeMetadata,
     /// Topic name (e.g. "ChatterTopic").
     pub name: String,
-    /// Type name from `T::TYPE_NAME` (eager-copied so the inner has no
+    /// Type name from `T::type_name()` (eager-copied so the inner has no
     /// generic type — this simplifies the participant registry data
     /// structure in .2a).
-    pub type_name: &'static str,
+    pub type_name: Cow<'static, str>,
     /// Topic QoS — mutable via `Entity::set_qos`.
     #[cfg(feature = "std")]
     pub qos: std::sync::Mutex<TopicQos>,
@@ -94,9 +640,51 @@ pub(crate) struct TopicInner {
     /// `inconsistent_topic_status` with delta detection.
     #[cfg(feature = "std")]
     pub inconsistent_topic_count: std::sync::atomic::AtomicI64,
-    /// Last seen value for the delta trigger.
+    /// The total when the status was last read or handed to a listener;
+    /// `total_count_change` counts from it (DDS 1.4 §2.2.4.1).
     #[cfg(feature = "std")]
-    pub last_inconsistent_topic: std::sync::atomic::AtomicI64,
+    pub read_inconsistent_topic: std::sync::atomic::AtomicI64,
+    /// What the runtime's listener dispatcher runs for this topic; set
+    /// once, by the first handle that has a participant with a runtime.
+    #[cfg(feature = "std")]
+    pub driver: std::sync::OnceLock<Arc<TopicStatusDriver>>,
+    /// How many times the application obtained the topic through
+    /// `create_topic` and has not deleted it: DDS 1.4 §2.2.2.2.1.11 "If a
+    /// Topic is obtained multiple times by means of find_topic or
+    /// create_topic, it must also be deleted that same number of times
+    /// using delete_topic." The last `delete_topic` deletes it.
+    pub obtained: core::sync::atomic::AtomicU32,
+    /// The dependency closure of the topic's `TypeObject`
+    /// ([`TopicCodec::dependent_type_objects`]), recorded when the
+    /// participant creates the topic: what a MultiTopic needs to read the
+    /// members of the topic's type.
+    pub type_dependencies: std::sync::OnceLock<Vec<zerodds_types::TypeObject>>,
+}
+
+impl TopicInner {
+    /// A topic with no listener, nothing counted and no status driver yet.
+    fn new(name: String, metadata: TopicTypeMetadata, qos: TopicQos) -> Self {
+        Self {
+            name,
+            type_name: metadata.type_name.clone(),
+            metadata,
+            #[cfg(feature = "std")]
+            qos: std::sync::Mutex::new(qos),
+            #[cfg(not(feature = "std"))]
+            qos,
+            entity_state: crate::entity::EntityState::new(),
+            #[cfg(feature = "std")]
+            listener: std::sync::Mutex::new(None),
+            #[cfg(feature = "std")]
+            inconsistent_topic_count: std::sync::atomic::AtomicI64::new(0),
+            #[cfg(feature = "std")]
+            read_inconsistent_topic: std::sync::atomic::AtomicI64::new(0),
+            #[cfg(feature = "std")]
+            driver: std::sync::OnceLock::new(),
+            obtained: core::sync::atomic::AtomicU32::new(1),
+            type_dependencies: std::sync::OnceLock::new(),
+        }
+    }
 }
 
 impl core::fmt::Debug for TopicInner {
@@ -114,28 +702,77 @@ impl core::fmt::Debug for TopicInner {
 }
 
 impl<T: DdsType> Topic<T> {
+    /// Whether the topic was created by another participant than `owner`
+    /// (a publisher's or subscriber's). `false` where either is unknown: a
+    /// builtin topic belongs to no participant.
+    pub(crate) fn created_by_another_than(
+        &self,
+        owner: &std::sync::Mutex<Option<alloc::sync::Weak<crate::participant::ParticipantInner>>>,
+    ) -> bool {
+        let Some(mine) = self.participant.as_ref() else {
+            return false;
+        };
+        let Some(owner) = owner
+            .lock()
+            .ok()
+            .and_then(|o| o.as_ref().and_then(|w| w.upgrade()))
+        else {
+            return false;
+        };
+        !mine.is(&owner)
+    }
+
     /// Creates a new topic handle. Normally called by
     /// `DomainParticipant::create_topic<T>(name, qos)`.
     #[must_use]
     pub fn new(name: String, qos: TopicQos, participant: DomainParticipant) -> Self {
-        Self {
-            inner: Arc::new(TopicInner {
-                name,
-                type_name: T::TYPE_NAME,
-                #[cfg(feature = "std")]
-                qos: std::sync::Mutex::new(qos),
-                #[cfg(not(feature = "std"))]
-                qos,
-                entity_state: crate::entity::EntityState::new(),
-                #[cfg(feature = "std")]
-                listener: std::sync::Mutex::new(None),
-                #[cfg(feature = "std")]
-                inconsistent_topic_count: std::sync::atomic::AtomicI64::new(0),
-                #[cfg(feature = "std")]
-                last_inconsistent_topic: std::sync::atomic::AtomicI64::new(-1),
-            }),
+        let metadata = TopicTypeMetadata::of::<T>();
+        Self::with_static_metadata(name, qos, participant, metadata)
+    }
+
+    /// Retain the exact snapshot already validated by the participant registry.
+    /// Only static DdsType creation calls this, not a foreign descriptor factory.
+    pub(crate) fn with_static_metadata(
+        name: String,
+        qos: TopicQos,
+        participant: DomainParticipant,
+        metadata: TopicTypeMetadata,
+    ) -> Self {
+        let topic = Self {
+            inner: Arc::new(TopicInner::new(name, metadata, qos)),
             participant: Some(participant),
+            codec: Arc::new(StaticTopicCodec::of::<T>()),
             _t: PhantomData,
+        };
+        #[cfg(feature = "std")]
+        topic.register_status_driver();
+        topic
+    }
+
+    /// Hands this topic's INCONSISTENT_TOPIC status to the runtime's
+    /// listener dispatcher, once per topic and only where a runtime
+    /// exists. The driver holds the topic and the participant weakly.
+    #[cfg(feature = "std")]
+    fn register_status_driver(&self) {
+        let Some(participant) = self.participant.as_ref() else {
+            return;
+        };
+        let Some(runtime) = participant.runtime() else {
+            return;
+        };
+        let mut created = false;
+        let driver = self.inner.driver.get_or_init(|| {
+            created = true;
+            Arc::new(TopicStatusDriver {
+                inner: Arc::downgrade(&self.inner),
+                participant: participant.downgrade(),
+            })
+        });
+        if created {
+            runtime
+                .listener_dispatcher()
+                .register(Arc::downgrade(driver)
+                    as alloc::sync::Weak<dyn crate::listener_dispatcher::StatusDriver>);
         }
     }
 
@@ -147,23 +784,11 @@ impl<T: DdsType> Topic<T> {
     /// avoid it.
     #[must_use]
     pub fn new_orphan(name: String, qos: TopicQos) -> Self {
+        let metadata = TopicTypeMetadata::of::<T>();
         Self {
-            inner: Arc::new(TopicInner {
-                name,
-                type_name: T::TYPE_NAME,
-                #[cfg(feature = "std")]
-                qos: std::sync::Mutex::new(qos),
-                #[cfg(not(feature = "std"))]
-                qos,
-                entity_state: crate::entity::EntityState::new(),
-                #[cfg(feature = "std")]
-                listener: std::sync::Mutex::new(None),
-                #[cfg(feature = "std")]
-                inconsistent_topic_count: std::sync::atomic::AtomicI64::new(0),
-                #[cfg(feature = "std")]
-                last_inconsistent_topic: std::sync::atomic::AtomicI64::new(-1),
-            }),
+            inner: Arc::new(TopicInner::new(name, metadata, qos)),
             participant: None,
+            codec: Arc::new(StaticTopicCodec::of::<T>()),
             _t: PhantomData,
         }
     }
@@ -174,20 +799,43 @@ impl<T: DdsType> Topic<T> {
         &self.inner.name
     }
 
-    /// Type name (from `T::TYPE_NAME`).
+    /// Type name (from `T::type_name()`).
     #[must_use]
-    pub fn type_name(&self) -> &'static str {
-        self.inner.type_name
+    pub fn type_name(&self) -> &str {
+        &self.inner.type_name
+    }
+
+    /// Accessors may describe runtime types: reject changed identity rather
+    /// than announcing contradictory endpoints under one shared topic.
+    /// This does not authorize later mutation of the type's codecs.
+    pub(crate) fn checked_type_metadata(&self) -> Result<&TopicTypeMetadata> {
+        if self.codec.validates_static_metadata()
+            && self.inner.metadata != TopicTypeMetadata::of::<T>()
+        {
+            return Err(DdsError::PreconditionNotMet {
+                reason: "DdsType metadata changed after topic creation (name, identifier, object, keyedness, extensibility or key maximum)",
+            });
+        }
+        Ok(&self.inner.metadata)
     }
 
     /// Sets the `TopicListener` + StatusMask. `None` clears the slot.
     /// Spec §2.2.2.3.2.x set_listener.
     #[cfg(feature = "std")]
     pub fn set_listener(&self, listener: Option<ArcTopicListener>, mask: StatusMask) {
+        let listener = listener.or_else(|| {
+            (mask != 0)
+                .then(|| alloc::sync::Arc::new(crate::listener::NilListener) as ArcTopicListener)
+        });
         if let Ok(mut slot) = self.inner.listener.lock() {
             *slot = listener.map(|l| (l, mask));
         }
         self.inner.entity_state.set_listener_mask(mask);
+        crate::listener_dispatcher::ListenerDispatcher::listener_set(
+            self.participant
+                .as_ref()
+                .and_then(DomainParticipant::runtime),
+        );
     }
 
     /// Current listener clone, if any.
@@ -199,29 +847,7 @@ impl<T: DdsType> Topic<T> {
             .lock()
             .ok()
             .and_then(|s| s.as_ref().map(|(l, _)| Arc::clone(l)))
-    }
-
-    /// Snapshot of the bubble-up chain (Topic → Participant) — for
-    /// hot-path listener dispatch (e.g. on_inconsistent_topic).
-    ///
-    /// The hot path currently has no inconsistent-topic trigger (that
-    /// requires cross-vendor type-mismatch detection in WP 2.x); the
-    /// snapshot API already exists so it can be wired in later without an
-    /// API change.
-    #[cfg(feature = "std")]
-    #[must_use]
-    pub(crate) fn listener_chain(&self) -> crate::listener_dispatch::TopicListenerChain {
-        let topic = self
-            .inner
-            .listener
-            .lock()
-            .ok()
-            .and_then(|s| s.as_ref().map(|(l, m)| (Arc::clone(l), *m)));
-        let participant = self
-            .participant
-            .as_ref()
-            .and_then(|p| p.snapshot_listener());
-        crate::listener_dispatch::TopicListenerChain { topic, participant }
+            .filter(|l| !l.is_nil())
     }
 
     /// Records an InconsistentTopic detection (e.g. when a remote topic
@@ -235,36 +861,45 @@ impl<T: DdsType> Topic<T> {
             .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
     }
 
-    /// Current `InconsistentTopicStatus` + trigger via bubble-up on a
-    /// delta versus the last call.
+    /// `InconsistentTopicStatus` as it stands, after the listener path
+    /// had its look; does not reset the change field.
     #[cfg(feature = "std")]
     #[must_use]
     pub fn inconsistent_topic_status(&self) -> crate::status::InconsistentTopicStatus {
-        let curr = self
-            .inner
-            .inconsistent_topic_count
-            .load(std::sync::atomic::Ordering::Acquire);
-        let prev = self
-            .inner
-            .last_inconsistent_topic
-            .swap(curr, std::sync::atomic::Ordering::AcqRel);
-        let delta = if prev < 0 { curr } else { curr - prev };
-        let status = crate::status::InconsistentTopicStatus {
-            total_count: curr as i32,
-            total_count_change: delta as i32,
-        };
-        // Trigger the listener only on an actual delta — otherwise the
-        // listener would fire on every status read (idempotent).
-        let actually_changed = if prev < 0 { curr != 0 } else { prev != curr };
-        if actually_changed {
-            let chain = self.listener_chain();
-            crate::listener_dispatch::dispatch_inconsistent_topic(
-                &chain,
-                self.inner.entity_state.instance_handle(),
-                status,
-            );
+        poll_inconsistent_topic(&self.inner, self.participant.as_ref());
+        inconsistent_topic_record(&self.inner, self.participant.as_ref())
+    }
+
+    /// `get_inconsistent_topic_status` (DDS 1.4 §2.2.2.3.2, §2.2.4.1): the
+    /// total and its change since the status was last read or handed to a
+    /// listener. Reading resets the change field.
+    ///
+    /// # Errors
+    /// [`DdsError::AlreadyDeleted`] after delete. The status of a disabled entity is untriggered, all zero (§2.2.2.1.1.7).
+    #[cfg(feature = "std")]
+    pub fn get_inconsistent_topic_status(
+        &self,
+    ) -> crate::error::Result<crate::status::InconsistentTopicStatus> {
+        self.inner.entity_state.check_not_deleted()?;
+        // DDS 1.4 §2.2.2.1.1.7: "get_status_changes and other get status
+        // operations (although the status of a disabled entity never
+        // changes)" are allowed on a disabled entity; its status is untriggered.
+        if !self.inner.entity_state.is_enabled() {
+            return Ok(Default::default());
         }
-        status
+        poll_inconsistent_topic(&self.inner, self.participant.as_ref());
+        let status = inconsistent_topic_record(&self.inner, self.participant.as_ref());
+        self.inner.read_inconsistent_topic.store(
+            i64::from(status.total_count),
+            std::sync::atomic::Ordering::Release,
+        );
+        // Read before the flag is cleared (DDS 1.4 §2.2.4.1): a listener
+        // look that saw the status unread looks again after setting the
+        // flag (`poll_ledger`) and finds it read.
+        self.inner
+            .entity_state
+            .clear_status_changes(crate::psm_constants::status::INCONSISTENT_TOPIC);
+        Ok(status)
     }
 
     /// Topic QoS (cloned). The inner mutex allows set_qos.
@@ -280,10 +915,50 @@ impl<T: DdsType> Topic<T> {
         }
     }
 
+    /// `true` if the topic's type has a key. DDS 1.4 §2.2.1.2.2: "If no key
+    /// is provided, the data set associated with the Topic is restricted to
+    /// a single instance."
+    pub(crate) fn is_keyed(&self) -> bool {
+        self.inner.metadata.keyed
+    }
+
     /// Internal access to the shared state (for Publisher/Subscriber).
     #[allow(dead_code)]
     pub(crate) fn inner(&self) -> Arc<TopicInner> {
         Arc::clone(&self.inner)
+    }
+
+    /// The participant that created this topic, or `None` for a builtin
+    /// `Topic::new_orphan` — which no `create_topic` registered and which
+    /// [`crate::DomainParticipant::delete_topic`] therefore refuses, the
+    /// way [`TopicDescription::get_participant`] panics instead of
+    /// answering.
+    pub(crate) fn owning_participant(&self) -> Option<&DomainParticipant> {
+        self.participant.as_ref()
+    }
+
+    /// Registers one more live user of this topic on the participant that
+    /// owns it — the one whose `delete_topic` decides on the count (DDS 1.4
+    /// §2.2.2.2.1.6). A `Publisher`/`Subscriber` of another participant may
+    /// create an endpoint on this topic, and the count belongs where the
+    /// topic is. Nothing to record for a builtin topic, which no participant
+    /// owns.
+    pub(crate) fn attach_user(&self, kind: TopicUserKind) {
+        if let Some(owner) = self.participant.as_ref() {
+            owner
+                .inner()
+                .add_typed_topic_user(&self.inner.name, &self.inner.type_name, kind);
+        }
+    }
+
+    /// The counterpart of [`Self::attach_user`]: the `Drop` of a DataWriter,
+    /// DataReader or ContentFilteredTopic.
+    pub(crate) fn detach_user(&self, kind: TopicUserKind) {
+        if let Some(owner) = self.participant.as_ref() {
+            owner
+                .inner()
+                .remove_typed_topic_user(&self.inner.name, &self.inner.type_name, kind);
+        }
     }
 
     /// Internal constructor for shared-handle rehydration in the
@@ -293,8 +968,123 @@ impl<T: DdsType> Topic<T> {
         Self {
             inner,
             participant: Some(participant),
+            codec: Arc::new(StaticTopicCodec::of::<T>()),
             _t: PhantomData,
         }
+    }
+
+    pub(crate) fn codec(&self) -> &dyn TopicCodec<T> {
+        self.codec.as_ref()
+    }
+
+    /// The codec as a shared handle, for what outlives a borrow of the
+    /// topic (a ReadCondition's trigger).
+    pub(crate) fn codec_arc(&self) -> Arc<dyn TopicCodec<T>> {
+        Arc::clone(&self.codec)
+    }
+
+    pub(crate) fn with_codec(mut self, codec: Arc<dyn TopicCodec<T>>) -> Self {
+        self.codec = codec;
+        self
+    }
+}
+
+/// The bubble-up chain (Topic → Participant) of one topic.
+#[cfg(feature = "std")]
+fn topic_listener_chain(
+    inner: &TopicInner,
+    participant: Option<&DomainParticipant>,
+) -> crate::listener_dispatch::TopicListenerChain {
+    let topic = inner
+        .listener
+        .lock()
+        .ok()
+        .and_then(|s| s.as_ref().map(|(l, m)| (Arc::clone(l), *m)));
+    let participant = participant.and_then(|p| p.snapshot_listener());
+    crate::listener_dispatch::TopicListenerChain { topic, participant }
+}
+
+#[cfg(feature = "std")]
+fn inconsistent_topic_total(inner: &TopicInner, participant: Option<&DomainParticipant>) -> i64 {
+    // Two counters, one status. The `Topic`'s own counts what
+    // `create_topic` and `record_inconsistent_topic` saw locally; the
+    // runtime's counts what the two-step rule of XTypes 1.3 §7.6.3.4.2
+    // rejected against a discovered peer, per topic name. They used to
+    // be unconnected, so a type inconsistency found in discovery
+    // raised no `on_inconsistent_topic` at all — and for a suite whose
+    // whole question is type consistency that is the one status that
+    // says why a pair produced nothing.
+    let from_runtime = participant
+        .and_then(|p| p.runtime())
+        .map_or(0, |rt| rt.inconsistent_topic_count_for(&inner.name));
+    let local = inner
+        .inconsistent_topic_count
+        .load(std::sync::atomic::Ordering::Acquire);
+    local.saturating_add(i64::try_from(from_runtime).unwrap_or(i64::MAX))
+}
+
+/// INCONSISTENT_TOPIC as it stands: the total, and its change since the
+/// status was last read or handed to a listener.
+#[cfg(feature = "std")]
+fn inconsistent_topic_record(
+    inner: &TopicInner,
+    participant: Option<&DomainParticipant>,
+) -> crate::status::InconsistentTopicStatus {
+    let total = inconsistent_topic_total(inner, participant);
+    let read = inner
+        .read_inconsistent_topic
+        .load(std::sync::atomic::Ordering::Acquire);
+    crate::status::InconsistentTopicStatus {
+        total_count: i32::try_from(total).unwrap_or(i32::MAX),
+        total_count_change: i32::try_from(total - read).unwrap_or(i32::MAX),
+    }
+}
+
+/// Calls `on_inconsistent_topic` while the status has a change nobody
+/// read: the total grew since it was last read or handed to a listener.
+/// A listener that took the status reads it: its change counts from
+/// there. With no listener the change stays, for the getter or for a
+/// listener set later.
+#[cfg(feature = "std")]
+fn poll_inconsistent_topic(inner: &TopicInner, participant: Option<&DomainParticipant>) {
+    let status = inconsistent_topic_record(inner, participant);
+    let total = i64::from(status.total_count);
+    if status.total_count_change == 0 {
+        return;
+    }
+    let bit = crate::psm_constants::status::INCONSISTENT_TOPIC;
+    inner.entity_state.set_status_bits(bit);
+    let chain = topic_listener_chain(inner, participant);
+    if crate::listener_dispatch::dispatch_inconsistent_topic(
+        &chain,
+        inner.entity_state.instance_handle(),
+        status,
+    ) {
+        inner
+            .read_inconsistent_topic
+            .store(total, std::sync::atomic::Ordering::Release);
+        inner.entity_state.clear_status_changes(bit);
+    }
+}
+
+/// What the runtime's listener dispatcher runs for a topic. Weak on both
+/// sides: the topic owns it, and it must not keep the topic or its
+/// participant alive.
+#[cfg(feature = "std")]
+pub(crate) struct TopicStatusDriver {
+    inner: alloc::sync::Weak<TopicInner>,
+    participant: alloc::sync::Weak<crate::participant::ParticipantInner>,
+}
+
+#[cfg(feature = "std")]
+impl crate::listener_dispatcher::StatusDriver for TopicStatusDriver {
+    fn drive(&self) {
+        let (Some(inner), Some(participant)) = (self.inner.upgrade(), self.participant.upgrade())
+        else {
+            return;
+        };
+        let participant = DomainParticipant::from_inner(participant);
+        poll_inconsistent_topic(&inner, Some(&participant));
     }
 }
 
@@ -303,6 +1093,7 @@ impl<T: DdsType> Clone for Topic<T> {
         Self {
             inner: Arc::clone(&self.inner),
             participant: self.participant.clone(),
+            codec: Arc::clone(&self.codec),
             _t: PhantomData,
         }
     }
@@ -310,7 +1101,7 @@ impl<T: DdsType> Clone for Topic<T> {
 
 impl<T: DdsType> TopicDescription for Topic<T> {
     fn get_type_name(&self) -> &str {
-        self.inner.type_name
+        &self.inner.type_name
     }
     fn get_name(&self) -> &str {
         &self.inner.name
@@ -341,34 +1132,212 @@ impl<T: DdsType> crate::entity::Entity for Topic<T> {
         self.inner.qos.lock().map(|q| q.clone()).unwrap_or_default()
     }
 
-    /// TopicQos. Spec §2.2.3: all topic policies (TOPIC_DATA, DURABILITY,
-    /// RELIABILITY, HISTORY, RESOURCE_LIMITS, ...) are **immutable**
-    /// after `enable()` — only TOPIC_DATA is Changeable=YES.
-    fn set_qos(&self, qos: Self::Qos) -> Result<()> {
+    /// TopicQos. DDS 1.4 §2.2.3: TOPIC_DATA, DEADLINE, LATENCY_BUDGET,
+    /// TRANSPORT_PRIORITY and LIFESPAN are Changeable=YES; DURABILITY,
+    /// DURABILITY_SERVICE, LIVELINESS, RELIABILITY, DESTINATION_ORDER,
+    /// HISTORY, RESOURCE_LIMITS, OWNERSHIP and DATA_REPRESENTATION (XTypes
+    /// 1.3 §7.6.3.1.1) are not, once the topic is enabled. A new TOPIC_DATA reaches every DataWriter and DataReader of
+    /// the topic that does not set its own, in its SEDP announcement
+    /// (§2.2.3.2). The other changeable ones are defaults a DataWriter or
+    /// DataReader copies at creation (`copy_from_topic_qos`) and do not
+    /// reach an existing one.
+    fn set_qos(&self, qos: impl Into<crate::qos::QosArg<Self::Qos>>) -> Result<()> {
+        let qos = qos.into().try_resolve(|| {
+            self.participant
+                .as_ref()
+                .map(DomainParticipant::get_default_topic_qos)
+                .ok_or(DdsError::PreconditionNotMet {
+                    reason: "a built-in topic has no participant default",
+                })
+        })?;
+        qos.check_consistency()?;
         let enabled = self.inner.entity_state.is_enabled();
-        if let Ok(mut current) = self.inner.qos.lock() {
-            if enabled {
-                // Spec §2.2.3: DURABILITY and RELIABILITY are
-                // Changeable=NO post-enable.
-                if current.durability != qos.durability {
-                    return Err(crate::entity::immutable_if_enabled("DURABILITY"));
-                }
-                if current.reliability != qos.reliability {
-                    return Err(crate::entity::immutable_if_enabled("RELIABILITY"));
-                }
+        let Ok(mut current) = self.inner.qos.lock() else {
+            return Ok(());
+        };
+        if enabled {
+            let immutable = [
+                ("DURABILITY", current.durability != qos.durability),
+                (
+                    "DURABILITY_SERVICE",
+                    current.durability_service != qos.durability_service,
+                ),
+                ("LIVELINESS", current.liveliness != qos.liveliness),
+                ("RELIABILITY", current.reliability != qos.reliability),
+                (
+                    "DESTINATION_ORDER",
+                    current.destination_order != qos.destination_order,
+                ),
+                ("HISTORY", current.history != qos.history),
+                (
+                    "RESOURCE_LIMITS",
+                    current.resource_limits != qos.resource_limits,
+                ),
+                ("OWNERSHIP", current.ownership != qos.ownership),
+                (
+                    "DATA_REPRESENTATION",
+                    current.data_representation != qos.data_representation,
+                ),
+            ];
+            if let Some((policy, _)) = immutable.iter().find(|(_, changed)| *changed) {
+                return Err(crate::entity::immutable_if_enabled(policy));
             }
-            *current = qos;
+        }
+        if current.topic_data != qos.topic_data {
+            if let Some(rt) = self.participant.as_ref().and_then(|p| p.runtime()) {
+                rt.update_user_topic_data(&self.inner.name, &qos.topic_data.value)?;
+            }
+        }
+        let changed = *current != qos;
+        *current = qos;
+        drop(current);
+        // DDSI-RTPS 2.5 Table 8.84: "each time the QoS of an existing
+        // Topic is modified" — announced again, under its GUID.
+        if enabled && changed {
+            if let Some(rt) = self.participant.as_ref().and_then(|p| p.runtime()) {
+                crate::participant::announce_topic(rt, &self.inner)?;
+            }
         }
         Ok(())
     }
 
+    /// DDS 1.4 §2.2.2.1.1.7: refused while the participant is disabled.
     fn enable(&self) -> Result<()> {
-        self.inner.entity_state.enable();
-        Ok(())
+        self.inner.entity_state.enable_entity()
     }
 
     fn entity_state(&self) -> Arc<crate::entity::EntityState> {
         Arc::clone(&self.inner.entity_state)
+    }
+}
+
+/// What a DataReader on a [`ContentFilteredTopic`] needs when it registers
+/// with the runtime, which may be at its `enable` long after its creation:
+/// the filter property with the parameters current then, and the list of
+/// readers a later `set_filter_parameters` announces again.
+#[cfg(feature = "std")]
+#[derive(Clone)]
+pub(crate) struct CftLink {
+    name: String,
+    related_topic_name: String,
+    filter_class_name: String,
+    filter_expression: String,
+    params: Arc<RwLock<FilterParams>>,
+    readers: Arc<std::sync::Mutex<Vec<zerodds_rtps::wire_types::EntityId>>>,
+}
+
+#[cfg(feature = "std")]
+impl CftLink {
+    /// `PID_CONTENT_FILTER_PROPERTY` with the parameters as they are now.
+    pub(crate) fn property(&self) -> zerodds_rtps::subscription_data::ContentFilterProperty {
+        zerodds_rtps::subscription_data::ContentFilterProperty {
+            content_filtered_topic_name: self.name.clone(),
+            related_topic_name: self.related_topic_name.clone(),
+            filter_class_name: self.filter_class_name.clone(),
+            filter_expression: self.filter_expression.clone(),
+            expression_parameters: self
+                .params
+                .read()
+                .map(|p| p.raw.clone())
+                .unwrap_or_default(),
+        }
+    }
+
+    /// Records a registered DataReader of the topic.
+    pub(crate) fn attach(&self, eid: zerodds_rtps::wire_types::EntityId) {
+        if let Ok(mut readers) = self.readers.lock() {
+            readers.push(eid);
+        }
+    }
+}
+
+/// What kind of TopicDescription a [`TopicDescriptionHandle`] names (DDS 1.4
+/// §2.2.2.3: Topic, ContentFilteredTopic and MultiTopic specialize
+/// TopicDescription).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TopicDescriptionKind {
+    /// A [`Topic`].
+    Topic,
+    /// A [`ContentFilteredTopic`].
+    ContentFilteredTopic,
+    /// A [`MultiTopic`].
+    MultiTopic,
+}
+
+/// Builds one more handle on a ContentFilteredTopic or MultiTopic that lives
+/// in a participant's registry; `None` if it is deleted or gone. The handle
+/// is a `Box<ContentFilteredTopic<T>>`-like value behind `dyn Any`.
+#[cfg(feature = "std")]
+#[derive(Clone)]
+pub(crate) struct Reviver(
+    pub(crate) Arc<dyn Fn() -> Option<Box<dyn core::any::Any + Send>> + Send + Sync>,
+);
+
+#[cfg(feature = "std")]
+impl core::fmt::Debug for Reviver {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("Reviver")
+    }
+}
+
+/// A ContentFilteredTopic or MultiTopic in the registry of its participant:
+/// what `lookup_topicdescription` finds (DDS 1.4 §2.2.2.2.1.12). It holds
+/// the description weakly, so it neither keeps it alive nor counts as a user
+/// of its related topics; it is gone with the last handle or once deleted.
+#[cfg(feature = "std")]
+#[derive(Debug)]
+pub(crate) struct DescriptionEntry {
+    pub(crate) name: String,
+    pub(crate) type_name: String,
+    pub(crate) kind: TopicDescriptionKind,
+    life: alloc::sync::Weak<DescriptionLife>,
+    revive: Reviver,
+    /// Deletes the description, as `delete_contentfilteredtopic` or
+    /// `delete_multitopic` does (`delete_contained_entities`).
+    delete: DeleteDescription,
+}
+
+/// See [`DescriptionEntry::delete`].
+#[cfg(feature = "std")]
+#[derive(Clone)]
+pub(crate) struct DeleteDescription(pub(crate) Arc<dyn Fn() -> Result<()> + Send + Sync>);
+
+#[cfg(feature = "std")]
+impl core::fmt::Debug for DeleteDescription {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("DeleteDescription")
+    }
+}
+
+#[cfg(feature = "std")]
+impl DescriptionEntry {
+    /// `true` while a handle exists and the description is not deleted.
+    pub(crate) fn is_live(&self) -> bool {
+        self.life.upgrade().is_some_and(|life| !life.is_deleted())
+    }
+
+    /// `true` if `held` is a DataReader's hold on this description.
+    pub(crate) fn is_held_by(&self, held: &DescriptionReaderUse) -> bool {
+        self.life
+            .upgrade()
+            .is_some_and(|life| Arc::ptr_eq(&life, &held.life))
+    }
+
+    /// The deletion as a value, to call outside the registry lock.
+    pub(crate) fn delete_handle(&self) -> DeleteDescription {
+        self.delete.clone()
+    }
+
+    /// The handle the application gets from the lookup.
+    pub(crate) fn handle(&self, participant: DomainParticipant) -> TopicDescriptionHandle {
+        TopicDescriptionHandle {
+            name: self.name.clone(),
+            type_name: self.type_name.clone(),
+            participant,
+            kind: self.kind,
+            remote: false,
+            revive: Some(self.revive.clone()),
+        }
     }
 }
 
@@ -379,23 +1348,141 @@ impl<T: DdsType> crate::entity::Entity for Topic<T> {
 /// The spec API returns the abstract base class because the caller
 /// generally does not yet know the type (e.g. after discovery). We pack
 /// name + type name + participant into a cloneable handle; the caller
-/// can read `get_type_name()` and then obtain a typed handle via
-/// `create_topic::<T>`.
+/// reads `kind()` and `get_type_name()` and gets the typed object with
+/// [`Self::topic`], [`Self::content_filtered_topic`] or
+/// [`Self::multitopic`], from which a DataWriter or DataReader is created.
 #[derive(Debug, Clone)]
 pub struct TopicDescriptionHandle {
     name: String,
     type_name: String,
     participant: DomainParticipant,
+    kind: TopicDescriptionKind,
+    /// Announced by a remote endpoint and not created here (`find_topic`).
+    remote: bool,
+    #[cfg(feature = "std")]
+    revive: Option<Reviver>,
 }
 
 impl TopicDescriptionHandle {
-    /// Constructs a handle (internal; mainly for tests + the lookup API).
+    /// Constructs a handle on a Topic (internal; mainly for tests + the
+    /// lookup API).
     pub(crate) fn new(name: String, type_name: String, participant: DomainParticipant) -> Self {
         Self {
             name,
             type_name,
             participant,
+            kind: TopicDescriptionKind::Topic,
+            remote: false,
+            #[cfg(feature = "std")]
+            revive: None,
         }
+    }
+
+    /// The handle of a topic that a remote endpoint announced and this
+    /// participant does not have.
+    pub(crate) fn remote(name: String, type_name: String, participant: DomainParticipant) -> Self {
+        Self {
+            remote: true,
+            ..Self::new(name, type_name, participant)
+        }
+    }
+
+    /// The `InstanceHandle` of the Topic the handle names (DDS 1.4
+    /// §2.2.2.1.1.9 `get_instance_handle`); `None` for a ContentFilteredTopic
+    /// or a MultiTopic, and for a topic this participant does not have.
+    #[must_use]
+    pub fn instance_handle(&self) -> Option<crate::instance_handle::InstanceHandle> {
+        if self.kind != TopicDescriptionKind::Topic {
+            return None;
+        }
+        self.participant
+            .registered_topic(&self.name, &self.type_name)
+            .map(|topic| topic.entity_state.instance_handle())
+    }
+
+    /// What the handle names.
+    #[must_use]
+    pub fn kind(&self) -> TopicDescriptionKind {
+        self.kind
+    }
+
+    /// The [`Topic`] of type `T` the handle names, to create DataWriters and
+    /// DataReaders from (DDS 1.4 §2.2.2.2.1.11, §2.2.2.2.1.12). A topic that
+    /// only a remote endpoint announced is created here with the
+    /// participant's default Topic QoS ("middleware implementations could
+    /// choose to propagate topics and make remotely created topics locally
+    /// available").
+    ///
+    /// # Errors
+    /// `BadParameter` if the handle names a ContentFilteredTopic or a
+    /// MultiTopic, or the type name of `T` is not the handle's;
+    /// `AlreadyDeleted` if the topic is gone; any error of `create_topic`
+    /// for a remote topic.
+    #[cfg(feature = "std")]
+    pub fn topic<T: DdsType>(&self) -> Result<Topic<T>> {
+        if self.kind != TopicDescriptionKind::Topic {
+            return Err(DdsError::BadParameter {
+                what: "the handle names a ContentFilteredTopic or a MultiTopic, not a Topic",
+            });
+        }
+        if T::type_name() != self.type_name {
+            return Err(DdsError::BadParameter {
+                what: "the type name of T is not the type name of the topic",
+            });
+        }
+        if self.remote {
+            return self
+                .participant
+                .create_topic::<T>(&self.name, self.participant.get_default_topic_qos());
+        }
+        let inner = self
+            .participant
+            .registered_topic(&self.name, &self.type_name)
+            .ok_or(DdsError::AlreadyDeleted)?;
+        Ok(Topic::<T>::from_inner(inner, self.participant.clone()))
+    }
+
+    /// The [`ContentFilteredTopic`] of type `T` the handle names: one more
+    /// handle on it, which counts as a user of the related topic until it is
+    /// dropped.
+    ///
+    /// # Errors
+    /// `BadParameter` if the handle names another kind or `T` is not its
+    /// type; `AlreadyDeleted` if it is deleted or gone.
+    #[cfg(feature = "std")]
+    pub fn content_filtered_topic<T: DdsType + 'static>(&self) -> Result<ContentFilteredTopic<T>> {
+        self.revived(TopicDescriptionKind::ContentFilteredTopic)
+    }
+
+    /// The [`MultiTopic`] of type `T` the handle names; as
+    /// [`Self::content_filtered_topic`].
+    ///
+    /// # Errors
+    /// As [`Self::content_filtered_topic`].
+    #[cfg(feature = "std")]
+    pub fn multitopic<T: DdsType + 'static>(&self) -> Result<MultiTopic<T>> {
+        self.revived(TopicDescriptionKind::MultiTopic)
+    }
+
+    #[cfg(feature = "std")]
+    fn revived<D: 'static>(&self, kind: TopicDescriptionKind) -> Result<D> {
+        if self.kind != kind {
+            return Err(DdsError::BadParameter {
+                what: "the handle names another kind of TopicDescription",
+            });
+        }
+        let Some(revive) = self.revive.as_ref() else {
+            return Err(DdsError::AlreadyDeleted);
+        };
+        let Some(object) = (revive.0)() else {
+            return Err(DdsError::AlreadyDeleted);
+        };
+        object
+            .downcast::<D>()
+            .map(|boxed| *boxed)
+            .map_err(|_| DdsError::BadParameter {
+                what: "the TopicDescription is of another type than T",
+            })
     }
 }
 
@@ -434,9 +1521,10 @@ pub struct ContentFilteredTopic<T: DdsType> {
     /// only the `filter_parameters` are mutable, not the expression
     /// itself).
     filter_expression: String,
-    /// Pre-parsed AST. We parse once in the constructor so that
-    /// `evaluate` is on the hot path.
-    parsed: Arc<Expr>,
+    /// The filter: the pre-parsed `DDSSQL` AST (parsed once in the
+    /// constructor so that `evaluate` is on the hot path), or the filter
+    /// class an application registered.
+    filter: FilterImpl<T>,
     /// Filter parameters (`%0`, `%1`, ...). Passed as strings (spec
     /// §2.2.2.3.3 — the parameters are strings substituted into the
     /// expression). We keep them as strings + parsed `Value` in parallel
@@ -447,7 +1535,99 @@ pub struct ContentFilteredTopic<T: DdsType> {
     #[cfg(not(feature = "std"))]
     params: FilterParams,
     participant: DomainParticipant,
-    _t: PhantomData<T>,
+    /// The live DataReaders created on this ContentFilteredTopic, whose SEDP
+    /// subscriptions carry the filter and are re-announced when the
+    /// parameters change.
+    #[cfg(feature = "std")]
+    readers: Arc<std::sync::Mutex<Vec<zerodds_rtps::wire_types::EntityId>>>,
+    /// Deleted flag and reader count, shared by the handles.
+    life: Arc<DescriptionLife>,
+    /// See [`Topic`]: no `T` is held.
+    _t: PhantomData<fn() -> T>,
+}
+
+/// A content filter class the application registers
+/// ([`DomainParticipant::register_contentfilter`]) and names in
+/// [`DomainParticipant::create_contentfilteredtopic_with_class`].
+///
+/// DDSI-RTPS 2.5 §8.7.3.4: an implementation of content-filtered topics
+/// recognizes the `DDSSQL` class, and "for all other filter classes, both
+/// implementations must allow the user to register the same custom filter
+/// class". The class name travels in the reader's
+/// `PID_CONTENT_FILTER_PROPERTY`; a peer that has not registered the class
+/// ignores the filter (§8.7.3.4) and the samples are filtered on the reader
+/// side.
+pub trait ContentFilter<T>: Send + Sync {
+    /// Checks an expression with its parameters, when a
+    /// ContentFilteredTopic is created and when its parameters are set.
+    ///
+    /// # Errors
+    /// `BadParameter` if the expression or a parameter is not valid for
+    /// this class.
+    fn compile(&self, expression: &str, parameters: &[String]) -> Result<()>;
+
+    /// Whether `sample` passes the filter with the parameters current now.
+    fn evaluate(&self, sample: &T, expression: &str, parameters: &[String]) -> bool;
+}
+
+/// How a ContentFilteredTopic filters.
+pub(crate) enum FilterImpl<T> {
+    /// `DDSSQL`: the parsed expression.
+    Sql(Arc<Expr>),
+    /// A registered filter class.
+    Custom {
+        class: String,
+        filter: Arc<dyn ContentFilter<T>>,
+    },
+}
+
+impl<T> core::fmt::Debug for FilterImpl<T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("FilterImpl")
+            .field("class", &self.class_name())
+            .finish()
+    }
+}
+
+impl<T> Clone for FilterImpl<T> {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Sql(e) => Self::Sql(Arc::clone(e)),
+            Self::Custom { class, filter } => Self::Custom {
+                class: class.clone(),
+                filter: Arc::clone(filter),
+            },
+        }
+    }
+}
+
+impl<T> FilterImpl<T> {
+    /// The filter class name of `PID_CONTENT_FILTER_PROPERTY`.
+    fn class_name(&self) -> &str {
+        match self {
+            Self::Sql(_) => zerodds_rtps::subscription_data::filter_class::DDSSQL,
+            Self::Custom { class, .. } => class,
+        }
+    }
+}
+
+/// A ContentFilteredTopic's expression with its live parameters.
+#[cfg(feature = "std")]
+pub(crate) struct CftEvaluator {
+    parsed: Arc<Expr>,
+    params: Arc<RwLock<FilterParams>>,
+}
+
+#[cfg(feature = "std")]
+impl CftEvaluator {
+    /// Whether `row` passes; one the expression cannot be evaluated against
+    /// does not (DDS 1.4 §2.2.2.3.3).
+    pub(crate) fn accepts<R: RowAccess>(&self, row: &R) -> bool {
+        let Ok(params) = self.params.read() else {
+            return false;
+        };
+        self.parsed.evaluate(row, &params.values).unwrap_or(false)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -469,20 +1649,32 @@ impl<T: DdsType> ContentFilteredTopic<T> {
         filter_expression: String,
         filter_parameters: Vec<String>,
         participant: DomainParticipant,
+        custom: Option<(String, Arc<dyn ContentFilter<T>>)>,
     ) -> Result<Self> {
-        let parsed =
-            zerodds_sql_filter::parse(&filter_expression).map_err(|_| DdsError::BadParameter {
-                what: "filter expression syntax",
-            })?;
-        // Check parameter indices.
-        let used = parsed.collect_param_indices();
-        if let Some(max) = used.iter().max() {
-            if (*max as usize) >= filter_parameters.len() {
-                return Err(DdsError::BadParameter {
-                    what: "filter parameter %N out of range",
-                });
+        let filter = match custom {
+            // A registered class checks its own expression syntax.
+            Some((class, filter)) => {
+                filter.compile(&filter_expression, &filter_parameters)?;
+                FilterImpl::Custom { class, filter }
             }
-        }
+            None => {
+                let parsed = zerodds_sql_filter::parse(&filter_expression).map_err(|_| {
+                    DdsError::BadParameter {
+                        what: "filter expression syntax",
+                    }
+                })?;
+                // Check parameter indices.
+                let used = parsed.collect_param_indices();
+                if let Some(max) = used.iter().max() {
+                    if (*max as usize) >= filter_parameters.len() {
+                        return Err(DdsError::BadParameter {
+                            what: "filter parameter %N out of range",
+                        });
+                    }
+                }
+                FilterImpl::Sql(Arc::new(parsed))
+            }
+        };
         let values: Vec<Value> = filter_parameters
             .iter()
             .map(|s| param_string_to_value(s))
@@ -491,24 +1683,181 @@ impl<T: DdsType> ContentFilteredTopic<T> {
             raw: filter_parameters,
             values,
         };
+        // A ContentFilteredTopic is one of the four object kinds that hold
+        // its related Topic (DDS 1.4 §2.2.2.2.1.6), so from here the topic
+        // cannot be deleted. `Drop` gives the count back.
+        related_topic.attach_user(TopicUserKind::ContentFilteredTopic);
         Ok(Self {
             name,
             related_topic,
             filter_expression,
-            parsed: Arc::new(parsed),
+            filter,
             #[cfg(feature = "std")]
             params: Arc::new(RwLock::new(fp)),
             #[cfg(not(feature = "std"))]
             params: fp,
             participant,
+            #[cfg(feature = "std")]
+            readers: Arc::new(std::sync::Mutex::new(Vec::new())),
+            life: Arc::new(DescriptionLife::new()),
             _t: PhantomData,
         })
+    }
+
+    /// The filter as a reader announces it over SEDP (DDSI-RTPS 2.5
+    /// §9.6.3.4): this topic's name, the related topic's, the `DDSSQL`
+    /// class, the expression and the current parameters.
+    #[must_use]
+    pub fn content_filter_property(
+        &self,
+    ) -> zerodds_rtps::subscription_data::ContentFilterProperty {
+        zerodds_rtps::subscription_data::ContentFilterProperty {
+            content_filtered_topic_name: self.name.clone(),
+            related_topic_name: self.related_topic.name().into(),
+            filter_class_name: self.filter.class_name().into(),
+            filter_expression: self.filter_expression.clone(),
+            expression_parameters: self.get_filter_parameters(),
+        }
+    }
+
+    /// The filter of a DataReader created on this topic: parameters set
+    /// later reach it. `DDSSQL` evaluates the expression against the sample's
+    /// fields; a registered class evaluates through its [`ContentFilter`].
+    #[cfg(feature = "std")]
+    pub(crate) fn reader_filter(&self) -> Arc<dyn Fn(&T) -> bool + Send + Sync>
+    where
+        T: 'static,
+    {
+        match &self.filter {
+            FilterImpl::Sql(parsed) => {
+                let evaluator = CftEvaluator {
+                    parsed: Arc::clone(parsed),
+                    params: Arc::clone(&self.params),
+                };
+                Arc::new(move |sample: &T| {
+                    evaluator.accepts(&crate::dds_type::DdsTypeRow::new(sample))
+                })
+            }
+            FilterImpl::Custom { filter, .. } => {
+                let filter = Arc::clone(filter);
+                let params = Arc::clone(&self.params);
+                let expression = self.filter_expression.clone();
+                Arc::new(move |sample: &T| {
+                    let Ok(params) = params.read() else {
+                        return false;
+                    };
+                    filter.evaluate(sample, &expression, &params.raw)
+                })
+            }
+        }
+    }
+
+    /// What a DataReader on this topic needs at its registration
+    /// ([`CftLink`]).
+    #[cfg(feature = "std")]
+    pub(crate) fn link(&self) -> CftLink {
+        CftLink {
+            name: self.name.clone(),
+            related_topic_name: self.related_topic.name().into(),
+            filter_class_name: self.filter.class_name().into(),
+            filter_expression: self.filter_expression.clone(),
+            params: Arc::clone(&self.params),
+            readers: Arc::clone(&self.readers),
+        }
+    }
+
+    /// DDS 1.4 §2.2.2.2.1.8: deletes this ContentFilteredTopic for every
+    /// handle of it; its uses of the related topic end here.
+    ///
+    /// # Errors
+    /// `AlreadyDeleted` if it is deleted already; `PreconditionNotMet`
+    /// while a DataReader created on it exists.
+    pub(crate) fn delete_description(&self) -> Result<()> {
+        let handles = self.life.delete()?;
+        for _ in 0..handles {
+            self.related_topic
+                .detach_user(TopicUserKind::ContentFilteredTopic);
+        }
+        Ok(())
+    }
+
+    /// This ContentFilteredTopic as the participant registry keeps it.
+    #[cfg(feature = "std")]
+    pub(crate) fn description_entry(&self) -> DescriptionEntry
+    where
+        T: 'static,
+    {
+        let name = self.name.clone();
+        let related = self.related_topic.inner();
+        let codec = self.related_topic.codec_arc();
+        let expression = self.filter_expression.clone();
+        let filter = self.filter.clone();
+        let params = Arc::clone(&self.params);
+        let readers = Arc::clone(&self.readers);
+        let participant = Arc::downgrade(self.participant.inner());
+        let life = Arc::downgrade(&self.life);
+        let revive_name = name.clone();
+        let revive: Arc<dyn Fn() -> Option<Box<dyn core::any::Any + Send>> + Send + Sync> =
+            Arc::new(move || {
+                let life = life.upgrade()?;
+                if life.is_deleted() {
+                    return None;
+                }
+                let participant = DomainParticipant::from_inner(participant.upgrade()?);
+                let related_topic =
+                    Topic::<T>::from_inner(Arc::clone(&related), participant.clone())
+                        .with_codec(Arc::clone(&codec));
+                if life.add_handle() {
+                    related_topic.attach_user(TopicUserKind::ContentFilteredTopic);
+                }
+                Some(Box::new(ContentFilteredTopic::<T> {
+                    name: revive_name.clone(),
+                    related_topic,
+                    filter_expression: expression.clone(),
+                    filter: filter.clone(),
+                    params: Arc::clone(&params),
+                    participant,
+                    readers: Arc::clone(&readers),
+                    life,
+                    _t: PhantomData,
+                }))
+            });
+        let reviver = Arc::clone(&revive);
+        let delete: Arc<dyn Fn() -> Result<()> + Send + Sync> = Arc::new(move || {
+            let Some(object) = reviver() else {
+                return Ok(());
+            };
+            match object.downcast::<ContentFilteredTopic<T>>() {
+                Ok(cft) => cft.delete_description(),
+                Err(_) => Ok(()),
+            }
+        });
+        DescriptionEntry {
+            name,
+            type_name: self.related_topic.type_name().into(),
+            kind: TopicDescriptionKind::ContentFilteredTopic,
+            life: Arc::downgrade(&self.life),
+            revive: Reviver(revive),
+            delete: DeleteDescription(delete),
+        }
+    }
+
+    /// Records a DataReader created on this topic (DDS 1.4 §2.2.2.2.1.8).
+    pub(crate) fn attach_reader(&self) -> Result<DescriptionReaderUse> {
+        self.life.attach_reader()
     }
 
     /// Spec §2.2.2.3.3.4 `get_filter_expression`.
     #[must_use]
     pub fn get_filter_expression(&self) -> &str {
         &self.filter_expression
+    }
+
+    /// Spec §2.2.2.3.3.5 `get_expression_parameters` (the IDL name; the
+    /// operation list of §2.2.2.3.3 names it so).
+    #[must_use]
+    pub fn get_expression_parameters(&self) -> Vec<String> {
+        self.get_filter_parameters()
     }
 
     /// Spec §2.2.2.3.3.5 `get_filter_parameters`.
@@ -533,14 +1882,23 @@ impl<T: DdsType> ContentFilteredTopic<T> {
     /// strictly).
     ///
     /// # Errors
-    /// `BadParameter` if a `%N` index is outside the new vec.
+    /// `BadParameter` if a `%N` index is outside the new vec;
+    /// `AlreadyDeleted` if the topic is deleted.
     pub fn set_filter_parameters(&self, params: Vec<String>) -> Result<()> {
-        let used = self.parsed.collect_param_indices();
-        if let Some(max) = used.iter().max() {
-            if (*max as usize) >= params.len() {
-                return Err(DdsError::BadParameter {
-                    what: "filter parameter %N out of range",
-                });
+        self.life.check_not_deleted()?;
+        match &self.filter {
+            FilterImpl::Sql(parsed) => {
+                let used = parsed.collect_param_indices();
+                if let Some(max) = used.iter().max() {
+                    if (*max as usize) >= params.len() {
+                        return Err(DdsError::BadParameter {
+                            what: "filter parameter %N out of range",
+                        });
+                    }
+                }
+            }
+            FilterImpl::Custom { filter, .. } => {
+                filter.compile(&self.filter_expression, &params)?;
             }
         }
         let values: Vec<Value> = params.iter().map(|s| param_string_to_value(s)).collect();
@@ -557,6 +1915,19 @@ impl<T: DdsType> ContentFilteredTopic<T> {
                     reason: "filter params poisoned",
                 })?;
             *w = fp;
+        }
+        // Every live reader announces the new parameters. A reader that was
+        // deleted since has no announcement left and is dropped from the
+        // list.
+        #[cfg(feature = "std")]
+        if let Some(rt) = self.participant.runtime() {
+            let property = self.content_filter_property();
+            if let Ok(mut readers) = self.readers.lock() {
+                readers.retain(|eid| {
+                    rt.update_user_reader_content_filter(*eid, Some(property.clone()))
+                        .is_ok()
+                });
+            }
         }
         #[cfg(not(feature = "std"))]
         {
@@ -599,7 +1970,12 @@ impl<T: DdsType> ContentFilteredTopic<T> {
         };
         #[cfg(not(feature = "std"))]
         let params = self.params.values.clone();
-        self.parsed
+        let FilterImpl::Sql(parsed) = &self.filter else {
+            return Err(DdsError::BadParameter {
+                what: "evaluate is for the DDSSQL filter class; a registered class evaluates samples",
+            });
+        };
+        parsed
             .evaluate(row, &params)
             .map_err(|e| DdsError::BadParameter {
                 what: match e {
@@ -613,17 +1989,41 @@ impl<T: DdsType> ContentFilteredTopic<T> {
 
 impl<T: DdsType> Clone for ContentFilteredTopic<T> {
     fn clone(&self) -> Self {
+        // A clone is one more handle on the same ContentFilteredTopic, and
+        // for as long as it is a handle it is a user of the related topic
+        // (DDS 1.4 §2.2.2.2.1.6); `Drop` takes it back again.
+        if self.life.add_handle() {
+            self.related_topic
+                .attach_user(TopicUserKind::ContentFilteredTopic);
+        }
         Self {
             name: self.name.clone(),
             related_topic: self.related_topic.clone(),
             filter_expression: self.filter_expression.clone(),
-            parsed: Arc::clone(&self.parsed),
+            filter: self.filter.clone(),
             #[cfg(feature = "std")]
             params: Arc::clone(&self.params),
             #[cfg(not(feature = "std"))]
             params: self.params.clone(),
             participant: self.participant.clone(),
+            #[cfg(feature = "std")]
+            readers: Arc::clone(&self.readers),
+            life: Arc::clone(&self.life),
             _t: PhantomData,
+        }
+    }
+}
+
+/// The ContentFilteredTopic is gone with its last handle, so it stops using
+/// its related topic (DDS 1.4 §2.2.2.2.1.6 counts *existing*
+/// ContentFilteredTopics). Every handle added itself in `new`/`clone` and
+/// removes itself here.
+impl<T: DdsType> Drop for ContentFilteredTopic<T> {
+    fn drop(&mut self) {
+        // A deleted ContentFilteredTopic gave its uses back at `delete`.
+        if self.life.drop_handle() {
+            self.related_topic
+                .detach_user(TopicUserKind::ContentFilteredTopic);
         }
     }
 }
@@ -644,24 +2044,27 @@ impl<T: DdsType> TopicDescription for ContentFilteredTopic<T> {
 
 /// `MultiTopic<T>` — spec §2.2.2.3.4 (DDS 1.4 optional feature).
 ///
-/// A MultiTopic combines several underlying topics into a single
-/// TopicDescription via a `subscription_expression` (SQL subset). The
-/// resulting type `T` is user-defined; the underlying topics may have
-/// different types.
+/// A MultiTopic combines the topics of the `FROM` clause of its
+/// `subscription_expression` (Annex B.2: `SELECT … FROM … NATURAL JOIN … WHERE
+/// …`) into the type named by `type_name`. A DataReader on it
+/// ([`crate::Subscriber::create_datareader_with_multitopic`]) reads the
+/// topics, joins their instances, keeps the fields of the `SELECT` list,
+/// applies `WHERE` and delivers samples of the result type; the model is
+/// described in `crate::multitopic`.
 ///
-/// **Cross-topic sample routing:** the join operator is live via
-/// [`hash_join_two`] and [`Self::evaluate_joined`]. The
-/// `subscription_expression` references fields as
-/// `<topic_name>.<field_path>` (dotted), and [`JoinedRow`] dispatches
-/// the lookups to the matching topic sources.
+/// The result type needs a `TypeObject` ([`DdsType::type_object`]), or a
+/// type registered under `type_name`
+/// ([`crate::serialized_type::SerializedTypeSupport::register_type`]); so do
+/// the topics of the `FROM` clause, since their members are named by the
+/// expression.
 pub struct MultiTopic<T: DdsType> {
     name: String,
     type_name: String,
-    /// List of related topics as untyped handles.
+    /// The topics of the `FROM` clause.
     related_topic_names: Vec<String>,
     subscription_expression: String,
-    /// Pre-parsed AST of the subscription expression.
-    parsed: Arc<Expr>,
+    /// The `WHERE` condition, parsed.
+    parsed: Option<Arc<Expr>>,
     /// Mutable filter parameters (spec §2.2.2.3.4.7
     /// `set_expression_parameters`).
     #[cfg(feature = "std")]
@@ -669,7 +2072,17 @@ pub struct MultiTopic<T: DdsType> {
     #[cfg(not(feature = "std"))]
     params: FilterParams,
     participant: DomainParticipant,
-    _t: PhantomData<T>,
+    /// Deleted flag and reader count, shared by the handles.
+    life: Arc<DescriptionLife>,
+    /// What the expression computes over the topics.
+    #[cfg(feature = "std")]
+    plan: Arc<crate::multitopic::MultiTopicPlan>,
+    /// The topic description a reader of the MultiTopic is built on: the
+    /// result type under the MultiTopic's name. It is not announced.
+    #[cfg(feature = "std")]
+    result_topic: Topic<T>,
+    /// See [`Topic`]: no `T` is held.
+    _t: PhantomData<fn() -> T>,
 }
 
 impl<T: DdsType> core::fmt::Debug for MultiTopic<T> {
@@ -688,29 +2101,25 @@ impl<T: DdsType> MultiTopic<T> {
     /// `DomainParticipant::create_multitopic`).
     ///
     /// # Errors
-    /// `BadParameter` on an empty name or empty expression, or if the
-    /// expression does not parse, or if a referenced `%N` parameter is
-    /// outside the `expression_parameters` vec, or if
-    /// `related_topic_names` is empty.
+    /// `BadParameter` if a referenced `%N` parameter is outside the
+    /// `expression_parameters` vec.
+    #[cfg(feature = "std")]
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         name: String,
         type_name: String,
-        related_topic_names: Vec<String>,
         subscription_expression: String,
+        expression: zerodds_sql_filter::TopicExpression,
         expression_parameters: Vec<String>,
         participant: DomainParticipant,
+        plan: Arc<crate::multitopic::MultiTopicPlan>,
+        result_topic: Topic<T>,
     ) -> Result<Self> {
-        if related_topic_names.is_empty() {
-            return Err(DdsError::BadParameter {
-                what: "multitopic needs at least one related topic",
-            });
-        }
-        let parsed = zerodds_sql_filter::parse(&subscription_expression).map_err(|_| {
-            DdsError::BadParameter {
-                what: "multitopic subscription expression syntax",
-            }
-        })?;
-        let used = parsed.collect_param_indices();
+        let used = expression
+            .condition
+            .as_ref()
+            .map(Expr::collect_param_indices)
+            .unwrap_or_default();
         if let Some(max) = used.iter().max() {
             if (*max as usize) >= expression_parameters.len() {
                 return Err(DdsError::BadParameter {
@@ -726,19 +2135,141 @@ impl<T: DdsType> MultiTopic<T> {
             raw: expression_parameters,
             values,
         };
+        let related_topic_names = expression.from.clone();
+        // A MultiTopic uses each of its related topics (DDS 1.4
+        // §2.2.2.2.1.6), so each of those becomes undeletable while this
+        // one exists. `related_topic_names` are names, not topic handles:
+        // the count is kept on the participant that created the MultiTopic,
+        // which is the one that can act on it, and `Drop` gives the counts
+        // back under the same names.
+        for related in &related_topic_names {
+            participant
+                .inner()
+                .add_topic_user(related, TopicUserKind::MultiTopic);
+        }
         Ok(Self {
             name,
             type_name,
             related_topic_names,
             subscription_expression,
-            parsed: Arc::new(parsed),
-            #[cfg(feature = "std")]
+            parsed: expression.condition.map(Arc::new),
             params: Arc::new(RwLock::new(fp)),
-            #[cfg(not(feature = "std"))]
-            params: fp,
             participant,
+            life: Arc::new(DescriptionLife::new()),
+            plan,
+            result_topic,
             _t: PhantomData,
         })
+    }
+
+    /// What the expression computes over the topics.
+    #[cfg(feature = "std")]
+    pub(crate) fn plan(&self) -> &Arc<crate::multitopic::MultiTopicPlan> {
+        &self.plan
+    }
+
+    /// The topic description a reader of this MultiTopic is built on.
+    #[cfg(feature = "std")]
+    pub(crate) fn result_topic(&self) -> &Topic<T> {
+        &self.result_topic
+    }
+
+    /// The expression parameters as they are at the moment of the call, for
+    /// every evaluation of `WHERE`.
+    #[cfg(feature = "std")]
+    pub(crate) fn parameter_values(&self) -> crate::multitopic::ParameterValues {
+        let params = Arc::clone(&self.params);
+        Arc::new(move || params.read().map(|p| p.values.clone()).unwrap_or_default())
+    }
+
+    /// DDS 1.4 §2.2.2.2.1.10: deletes this MultiTopic for every handle of
+    /// it; its uses of the related topics end here.
+    ///
+    /// # Errors
+    /// `AlreadyDeleted` if it is deleted already; `PreconditionNotMet`
+    /// while a DataReader created on it exists.
+    pub(crate) fn delete_description(&self) -> Result<()> {
+        let handles = self.life.delete()?;
+        for _ in 0..handles {
+            for related in &self.related_topic_names {
+                self.participant
+                    .inner()
+                    .remove_topic_user(related, TopicUserKind::MultiTopic);
+            }
+        }
+        Ok(())
+    }
+
+    /// This MultiTopic as the participant registry keeps it.
+    #[cfg(feature = "std")]
+    pub(crate) fn description_entry(&self) -> DescriptionEntry
+    where
+        T: 'static,
+    {
+        let name = self.name.clone();
+        let type_name = self.type_name.clone();
+        let related_names = self.related_topic_names.clone();
+        let expression = self.subscription_expression.clone();
+        let parsed = self.parsed.clone();
+        let params = Arc::clone(&self.params);
+        let plan = Arc::clone(&self.plan);
+        let result_inner = self.result_topic.inner();
+        let result_codec = self.result_topic.codec_arc();
+        let participant = Arc::downgrade(self.participant.inner());
+        let life = Arc::downgrade(&self.life);
+        let (revive_name, revive_type) = (name.clone(), type_name.clone());
+        let revive: Arc<dyn Fn() -> Option<Box<dyn core::any::Any + Send>> + Send + Sync> =
+            Arc::new(move || {
+                let life = life.upgrade()?;
+                if life.is_deleted() {
+                    return None;
+                }
+                let participant = DomainParticipant::from_inner(participant.upgrade()?);
+                if life.add_handle() {
+                    for related in &related_names {
+                        participant
+                            .inner()
+                            .add_topic_user(related, TopicUserKind::MultiTopic);
+                    }
+                }
+                Some(Box::new(MultiTopic::<T> {
+                    name: revive_name.clone(),
+                    type_name: revive_type.clone(),
+                    related_topic_names: related_names.clone(),
+                    subscription_expression: expression.clone(),
+                    parsed: parsed.clone(),
+                    params: Arc::clone(&params),
+                    participant: participant.clone(),
+                    life,
+                    plan: Arc::clone(&plan),
+                    result_topic: Topic::<T>::from_inner(Arc::clone(&result_inner), participant)
+                        .with_codec(Arc::clone(&result_codec)),
+                    _t: PhantomData,
+                }))
+            });
+        let reviver = Arc::clone(&revive);
+        let delete: Arc<dyn Fn() -> Result<()> + Send + Sync> = Arc::new(move || {
+            let Some(object) = reviver() else {
+                return Ok(());
+            };
+            match object.downcast::<MultiTopic<T>>() {
+                Ok(multitopic) => multitopic.delete_description(),
+                Err(_) => Ok(()),
+            }
+        });
+        DescriptionEntry {
+            name,
+            type_name,
+            kind: TopicDescriptionKind::MultiTopic,
+            life: Arc::downgrade(&self.life),
+            revive: Reviver(revive),
+            delete: DeleteDescription(delete),
+        }
+    }
+
+    /// Records a DataReader created on this topic (DDS 1.4 §2.2.2.2.1.10).
+    pub(crate) fn attach_reader(&self) -> Result<DescriptionReaderUse> {
+        self.life.attach_reader()
     }
 
     /// Spec §2.2.2.3.4.4 `get_subscription_expression`.
@@ -767,9 +2298,15 @@ impl<T: DdsType> MultiTopic<T> {
     ///
     /// # Errors
     /// `BadParameter` if a referenced `%N` parameter is outside the new
-    /// vec; `PreconditionNotMet` on lock poisoning.
+    /// vec; `PreconditionNotMet` on lock poisoning; `AlreadyDeleted` if
+    /// the topic is deleted.
     pub fn set_expression_parameters(&self, params: Vec<String>) -> Result<()> {
-        let used = self.parsed.collect_param_indices();
+        self.life.check_not_deleted()?;
+        let used = self
+            .parsed
+            .as_ref()
+            .map(|expr| expr.collect_param_indices())
+            .unwrap_or_default();
         if let Some(max) = used.iter().max() {
             if (*max as usize) >= params.len() {
                 return Err(DdsError::BadParameter {
@@ -808,136 +2345,52 @@ impl<T: DdsType> MultiTopic<T> {
     pub fn get_related_topic_names(&self) -> &[String] {
         &self.related_topic_names
     }
-
-    /// Evaluates the `subscription_expression` against a [`JoinedRow`]
-    /// (cross-topic predicate). Spec §2.2.2.3.4.
-    ///
-    /// # Errors
-    /// `PreconditionNotMet` on lock poisoning or SQL eval error.
-    pub fn evaluate_joined(&self, row: &JoinedRow<'_>) -> Result<bool> {
-        #[cfg(feature = "std")]
-        let values = {
-            let p = self
-                .params
-                .read()
-                .map_err(|_| DdsError::PreconditionNotMet {
-                    reason: "multitopic params poisoned",
-                })?;
-            p.values.clone()
-        };
-        #[cfg(not(feature = "std"))]
-        let values = self.params.values.clone();
-        self.parsed
-            .evaluate(row, &values)
-            .map_err(|_| DdsError::PreconditionNotMet {
-                reason: "multitopic SQL evaluation failed",
-            })
-    }
-}
-
-/// `JoinedRow` — a `RowAccess` adapter over several named topic
-/// sources. Dotted paths `topic.field.sub` are split at the first `.`:
-/// the prefix matches the topic name, the rest is forwarded to its
-/// [`RowAccess::get`].
-///
-/// If no topic source knows the prefix, the whole path is forwarded to
-/// all sources (fallback for undotted field references).
-pub struct JoinedRow<'a> {
-    sources: Vec<(String, &'a dyn RowAccess)>,
-}
-
-impl<'a> JoinedRow<'a> {
-    /// Constructor.
-    #[must_use]
-    pub fn new(sources: Vec<(String, &'a dyn RowAccess)>) -> Self {
-        Self { sources }
-    }
-}
-
-impl RowAccess for JoinedRow<'_> {
-    fn get(&self, path: &str) -> Option<Value> {
-        if let Some((prefix, rest)) = path.split_once('.') {
-            for (name, src) in &self.sources {
-                if name == prefix {
-                    return src.get(rest);
-                }
-            }
-        }
-        // No prefix match -> query all sources, first answer wins.
-        for (_, src) in &self.sources {
-            if let Some(v) = src.get(path) {
-                return Some(v);
-            }
-        }
-        None
-    }
-}
-
-/// Hash-join helper for two typed streams. Iterates the left list,
-/// builds a HashMap `key -> [&L]` (build phase), then iterates the right
-/// list (probe phase) and produces a result via `combine` for each
-/// matching `(L, R)` pair. Optionally, an additional predicate via
-/// `predicate` (e.g. `MultiTopic::evaluate_joined`) is checked on each
-/// pair.
-///
-/// Spec: §2.2.2.3.4 (MultiTopic) — the hash join is the idiomatic
-/// O(n+m) implementation of the `subscription_expression`.
-#[cfg(feature = "std")]
-#[allow(clippy::too_many_arguments)]
-pub fn hash_join_two<L, R, T, KL, KR, C, P>(
-    left: &[L],
-    left_topic: &str,
-    key_left: KL,
-    right: &[R],
-    right_topic: &str,
-    key_right: KR,
-    combine: C,
-    predicate: P,
-) -> Vec<T>
-where
-    L: RowAccess,
-    R: RowAccess,
-    KL: Fn(&L) -> String,
-    KR: Fn(&R) -> String,
-    C: Fn(&L, &R) -> T,
-    P: Fn(&JoinedRow<'_>) -> Result<bool>,
-{
-    use std::collections::HashMap;
-    let mut idx: HashMap<String, Vec<&L>> = HashMap::with_capacity(left.len());
-    for l in left {
-        idx.entry(key_left(l)).or_default().push(l);
-    }
-    let mut out = Vec::new();
-    for r in right {
-        let k = key_right(r);
-        let Some(matches) = idx.get(&k) else { continue };
-        for l in matches {
-            let row = JoinedRow::new(alloc::vec![
-                (left_topic.to_string(), *l as &dyn RowAccess),
-                (right_topic.to_string(), r as &dyn RowAccess),
-            ]);
-            if predicate(&row).unwrap_or(false) {
-                out.push(combine(l, r));
-            }
-        }
-    }
-    out
 }
 
 impl<T: DdsType> Clone for MultiTopic<T> {
     fn clone(&self) -> Self {
+        // A clone is one more handle on the same MultiTopic, and a handle
+        // that exists is a user of every related topic (DDS 1.4
+        // §2.2.2.2.1.6). `Drop` takes the counts back.
+        if self.life.add_handle() {
+            for related in &self.related_topic_names {
+                self.participant
+                    .inner()
+                    .add_topic_user(related, TopicUserKind::MultiTopic);
+            }
+        }
         Self {
             name: self.name.clone(),
             type_name: self.type_name.clone(),
             related_topic_names: self.related_topic_names.clone(),
             subscription_expression: self.subscription_expression.clone(),
-            parsed: Arc::clone(&self.parsed),
+            parsed: self.parsed.clone(),
             #[cfg(feature = "std")]
             params: Arc::clone(&self.params),
             #[cfg(not(feature = "std"))]
             params: self.params.clone(),
             participant: self.participant.clone(),
+            life: Arc::clone(&self.life),
+            #[cfg(feature = "std")]
+            plan: Arc::clone(&self.plan),
+            #[cfg(feature = "std")]
+            result_topic: self.result_topic.clone(),
             _t: PhantomData,
+        }
+    }
+}
+
+/// The MultiTopic is gone with its last handle, so it stops using its
+/// related topics (DDS 1.4 §2.2.2.2.1.6 counts *existing* MultiTopics).
+impl<T: DdsType> Drop for MultiTopic<T> {
+    fn drop(&mut self) {
+        // A deleted MultiTopic gave its uses back at `delete`.
+        if self.life.drop_handle() {
+            for related in &self.related_topic_names {
+                self.participant
+                    .inner()
+                    .remove_topic_user(related, TopicUserKind::MultiTopic);
+            }
         }
     }
 }
@@ -954,32 +2407,8 @@ impl<T: DdsType> TopicDescription for MultiTopic<T> {
     }
 }
 
-/// Heuristic conversion of a `filter_parameter` string into a `Value`:
-/// first Bool, then Int, then Float, otherwise String. We strip flanking
-/// `'...'` quotes because the spec examples often provide the strings
-/// that way.
 fn param_string_to_value(s: &str) -> Value {
-    let trimmed = s.trim();
-    // Bool.
-    if trimmed.eq_ignore_ascii_case("TRUE") {
-        return Value::Bool(true);
-    }
-    if trimmed.eq_ignore_ascii_case("FALSE") {
-        return Value::Bool(false);
-    }
-    // Int.
-    if let Ok(i) = trimmed.parse::<i64>() {
-        return Value::Int(i);
-    }
-    // Float.
-    if let Ok(f) = trimmed.parse::<f64>() {
-        return Value::Float(f);
-    }
-    // String (with optional ''-strip).
-    if trimmed.len() >= 2 && trimmed.starts_with('\'') && trimmed.ends_with('\'') {
-        return Value::String(trimmed[1..trimmed.len() - 1].to_string());
-    }
-    Value::String(trimmed.to_string())
+    Value::from_parameter(s)
 }
 
 #[cfg(test)]
@@ -989,6 +2418,140 @@ mod tests {
     use crate::dds_type::RawBytes;
     use crate::factory::DomainParticipantFactory;
     use crate::qos::DomainParticipantQos;
+
+    #[test]
+    #[allow(clippy::too_many_lines)] // Exercise each accessor against both endpoint factories.
+    fn endpoint_creation_refuses_each_metadata_drift_and_shares_snapshot() {
+        use crate::dds_type::{DecodeError, EncodeError, Extensibility};
+        use crate::qos::{DataReaderQos, DataWriterQos, PublisherQos, SubscriberQos};
+        use core::sync::atomic::{AtomicU8, Ordering};
+        static CHANGE: AtomicU8 = AtomicU8::new(0);
+        struct Changing(RawBytes);
+        impl DdsType for Changing {
+            const TYPE_NAME: &'static str = "test::TopicMetadata";
+            fn type_name() -> &'static str {
+                if CHANGE.load(Ordering::SeqCst) == 1 {
+                    "test::ChangedName"
+                } else {
+                    Self::TYPE_NAME
+                }
+            }
+            fn type_identifier() -> zerodds_types::TypeIdentifier {
+                if CHANGE.load(Ordering::SeqCst) == 2 {
+                    zerodds_types::TypeIdentifier::EquivalenceHashComplete(
+                        zerodds_types::EquivalenceHash([1; 14]),
+                    )
+                } else {
+                    zerodds_types::TypeIdentifier::None
+                }
+            }
+            fn type_object() -> Option<zerodds_types::type_object::TypeObject> {
+                (CHANGE.load(Ordering::SeqCst) == 3).then(|| {
+                    zerodds_types::type_object::TypeObject::Complete(
+                        zerodds_types::type_object::CompleteTypeObject::Struct(
+                            zerodds_types::builder::TypeObjectBuilder::struct_type(Self::TYPE_NAME)
+                                .build_complete(),
+                        ),
+                    )
+                })
+            }
+            fn has_key() -> bool {
+                CHANGE.load(Ordering::SeqCst) == 4
+            }
+            fn extensibility() -> Extensibility {
+                if CHANGE.load(Ordering::SeqCst) == 5 {
+                    Extensibility::Appendable
+                } else {
+                    Extensibility::Final
+                }
+            }
+            fn key_holder_max_size() -> Option<usize> {
+                if CHANGE.load(Ordering::SeqCst) == 6 {
+                    Some(4)
+                } else {
+                    None
+                }
+            }
+            fn encode(&self, out: &mut Vec<u8>) -> core::result::Result<(), EncodeError> {
+                self.0.encode(out)
+            }
+            fn decode(bytes: &[u8]) -> core::result::Result<Self, DecodeError> {
+                RawBytes::decode(bytes).map(Self)
+            }
+        }
+        let p = DomainParticipantFactory::instance()
+            .create_participant_offline(0, DomainParticipantQos::default());
+        let topic = p
+            .create_topic::<Changing>("Metadata", TopicQos::default())
+            .unwrap();
+        let cloned = topic.clone();
+        assert!(Arc::ptr_eq(&topic.codec, &cloned.codec));
+        let reconstructed = p
+            .create_topic::<Changing>("Metadata", TopicQos::default())
+            .unwrap();
+        assert!(core::ptr::eq(
+            topic.checked_type_metadata().unwrap(),
+            cloned.checked_type_metadata().unwrap()
+        ));
+        assert!(core::ptr::eq(
+            topic.checked_type_metadata().unwrap(),
+            reconstructed.checked_type_metadata().unwrap()
+        ));
+        let publisher = p.create_publisher(PublisherQos::default());
+        let subscriber = p.create_subscriber(SubscriberQos::default());
+        assert!(
+            publisher
+                .create_datawriter(&topic, DataWriterQos::default())
+                .is_ok()
+        );
+        assert!(
+            subscriber
+                .create_datareader(&topic, DataReaderQos::default())
+                .is_ok()
+        );
+        for change in 1..=6 {
+            CHANGE.store(change, Ordering::SeqCst);
+            let created = p.create_topic::<Changing>("Metadata", TopicQos::default());
+            if change == 1 {
+                // XTypes 1.3 §7.6.4.1: another type name under the name of
+                // a topic is another topic of that name, "provided that all
+                // of them […] have consistent QoS with one another", and
+                // the QoS here is the same.
+                assert!(created.is_ok(), "a second type name is a second topic");
+            } else {
+                assert!(
+                    matches!(created, Err(DdsError::InconsistentPolicy { .. })),
+                    "registry must refuse metadata change {change}"
+                );
+            }
+            assert!(
+                matches!(
+                    publisher.create_datawriter(&topic, DataWriterQos::default()),
+                    Err(DdsError::PreconditionNotMet { .. })
+                ),
+                "metadata change {change}"
+            );
+            assert!(
+                matches!(
+                    subscriber.create_datareader(&topic, DataReaderQos::default()),
+                    Err(DdsError::PreconditionNotMet { .. })
+                ),
+                "metadata change {change}"
+            );
+            assert_eq!(topic.type_name(), Changing::TYPE_NAME);
+        }
+        CHANGE.store(0, Ordering::SeqCst);
+        assert!(topic.checked_type_metadata().is_ok());
+        let restored = p
+            .create_topic::<Changing>("Metadata", TopicQos::default())
+            .unwrap();
+        assert!(Arc::ptr_eq(&topic.inner, &restored.inner));
+        // Five of the six drifts keep the type name and are inconsistent.
+        assert_eq!(
+            topic.inner.inconsistent_topic_count.load(Ordering::SeqCst),
+            5
+        );
+    }
 
     #[test]
     fn topic_implements_topic_description() {
@@ -1044,447 +2607,6 @@ mod tests {
             res,
             Err(crate::error::DdsError::BadParameter { .. })
         ));
-    }
-
-    // -------- MultiTopic (§2.2.2.3.4) --------
-
-    #[test]
-    fn multitopic_compiles_and_implements_topic_description() {
-        let p = DomainParticipantFactory::instance()
-            .create_participant_offline(13, DomainParticipantQos::default());
-        let mt = p
-            .create_multitopic::<RawBytes>(
-                "Combined",
-                "MyResultType",
-                alloc::vec!["TopicA".into(), "TopicB".into()],
-                "x > %0",
-                alloc::vec!["10".into()],
-            )
-            .unwrap();
-        let td: &dyn TopicDescription = &mt;
-        assert_eq!(td.get_name(), "Combined");
-        assert_eq!(td.get_type_name(), "MyResultType");
-        assert_eq!(td.get_participant().domain_id(), 13);
-        assert_eq!(mt.get_subscription_expression(), "x > %0");
-        assert_eq!(mt.get_related_topic_names().len(), 2);
-        assert_eq!(mt.get_expression_parameters().len(), 1);
-    }
-
-    #[test]
-    fn multitopic_set_expression_parameters_roundtrip() {
-        let p = DomainParticipantFactory::instance()
-            .create_participant_offline(0, DomainParticipantQos::default());
-        let mt = p
-            .create_multitopic::<RawBytes>(
-                "MT",
-                "T",
-                alloc::vec!["A".into()],
-                "v = %0",
-                alloc::vec!["100".into()],
-            )
-            .unwrap();
-        assert_eq!(
-            mt.get_expression_parameters(),
-            alloc::vec!["100".to_string()]
-        );
-        mt.set_expression_parameters(alloc::vec!["200".into()])
-            .unwrap();
-        assert_eq!(
-            mt.get_expression_parameters(),
-            alloc::vec!["200".to_string()]
-        );
-    }
-
-    #[test]
-    fn multitopic_rejects_empty_name() {
-        let p = DomainParticipantFactory::instance()
-            .create_participant_offline(0, DomainParticipantQos::default());
-        let res = p.create_multitopic::<RawBytes>(
-            "",
-            "T",
-            alloc::vec!["A".into()],
-            "x > 0",
-            alloc::vec::Vec::new(),
-        );
-        assert!(matches!(res, Err(DdsError::BadParameter { .. })));
-    }
-
-    #[test]
-    fn multitopic_rejects_empty_type_name() {
-        let p = DomainParticipantFactory::instance()
-            .create_participant_offline(0, DomainParticipantQos::default());
-        let res = p.create_multitopic::<RawBytes>(
-            "MT",
-            "",
-            alloc::vec!["A".into()],
-            "x > 0",
-            alloc::vec::Vec::new(),
-        );
-        assert!(matches!(res, Err(DdsError::BadParameter { .. })));
-    }
-
-    #[test]
-    fn multitopic_rejects_empty_related_topics() {
-        let p = DomainParticipantFactory::instance()
-            .create_participant_offline(0, DomainParticipantQos::default());
-        let res = p.create_multitopic::<RawBytes>(
-            "MT",
-            "T",
-            alloc::vec::Vec::new(),
-            "x > 0",
-            alloc::vec::Vec::new(),
-        );
-        assert!(matches!(res, Err(DdsError::BadParameter { .. })));
-    }
-
-    #[test]
-    fn multitopic_rejects_invalid_expression() {
-        let p = DomainParticipantFactory::instance()
-            .create_participant_offline(0, DomainParticipantQos::default());
-        let res = p.create_multitopic::<RawBytes>(
-            "MT",
-            "T",
-            alloc::vec!["A".into()],
-            "x === bogus",
-            alloc::vec::Vec::new(),
-        );
-        assert!(matches!(res, Err(DdsError::BadParameter { .. })));
-    }
-
-    #[test]
-    fn multitopic_rejects_param_index_out_of_range() {
-        let p = DomainParticipantFactory::instance()
-            .create_participant_offline(0, DomainParticipantQos::default());
-        // Expression references %1, but params has only 1 entry.
-        let res = p.create_multitopic::<RawBytes>(
-            "MT",
-            "T",
-            alloc::vec!["A".into()],
-            "x = %1",
-            alloc::vec!["only_zero".into()],
-        );
-        assert!(matches!(res, Err(DdsError::BadParameter { .. })));
-    }
-
-    #[test]
-    fn multitopic_set_params_validates_index_range() {
-        let p = DomainParticipantFactory::instance()
-            .create_participant_offline(0, DomainParticipantQos::default());
-        let mt = p
-            .create_multitopic::<RawBytes>(
-                "MT",
-                "T",
-                alloc::vec!["A".into()],
-                "x = %0 OR y = %1",
-                alloc::vec!["a".into(), "b".into()],
-            )
-            .unwrap();
-        // Set with too few params → BadParameter.
-        let res = mt.set_expression_parameters(alloc::vec!["only_zero".into()]);
-        assert!(matches!(res, Err(DdsError::BadParameter { .. })));
-    }
-
-    #[test]
-    fn multitopic_clone_shares_params() {
-        let p = DomainParticipantFactory::instance()
-            .create_participant_offline(0, DomainParticipantQos::default());
-        let mt = p
-            .create_multitopic::<RawBytes>(
-                "MT",
-                "T",
-                alloc::vec!["A".into()],
-                "v = %0",
-                alloc::vec!["init".into()],
-            )
-            .unwrap();
-        let mt2 = mt.clone();
-        // An update on one clone is reflected in the other
-        // (shared Arc<RwLock<FilterParams>>).
-        mt.set_expression_parameters(alloc::vec!["updated".into()])
-            .unwrap();
-        assert_eq!(
-            mt2.get_expression_parameters(),
-            alloc::vec!["updated".to_string()]
-        );
-    }
-
-    // -------- MultiTopic Hash-Join (§2.2.2.3.4-r-cross-topic-join) --------
-
-    struct OrderRow {
-        id: i64,
-        amount: i64,
-    }
-    impl RowAccess for OrderRow {
-        fn get(&self, p: &str) -> Option<Value> {
-            match p {
-                "id" => Some(Value::Int(self.id)),
-                "amount" => Some(Value::Int(self.amount)),
-                _ => None,
-            }
-        }
-    }
-
-    struct CustomerRow {
-        id: i64,
-        country: String,
-    }
-    impl RowAccess for CustomerRow {
-        fn get(&self, p: &str) -> Option<Value> {
-            match p {
-                "id" => Some(Value::Int(self.id)),
-                "country" => Some(Value::String(self.country.clone())),
-                _ => None,
-            }
-        }
-    }
-
-    #[test]
-    fn joined_row_dispatches_dotted_paths_by_topic_prefix() {
-        let o = OrderRow { id: 7, amount: 100 };
-        let c = CustomerRow {
-            id: 7,
-            country: "DE".into(),
-        };
-        let row = JoinedRow::new(alloc::vec![
-            ("Order".into(), &o as &dyn RowAccess),
-            ("Customer".into(), &c as &dyn RowAccess),
-        ]);
-        assert_eq!(row.get("Order.amount"), Some(Value::Int(100)));
-        assert_eq!(
-            row.get("Customer.country"),
-            Some(Value::String("DE".into()))
-        );
-        assert_eq!(row.get("Order.country"), None); // prefix matched -> no field
-    }
-
-    #[test]
-    fn joined_row_undotted_falls_back_to_first_match() {
-        let o = OrderRow { id: 7, amount: 100 };
-        let c = CustomerRow {
-            id: 9,
-            country: "DE".into(),
-        };
-        let row = JoinedRow::new(alloc::vec![
-            ("Order".into(), &o as &dyn RowAccess),
-            ("Customer".into(), &c as &dyn RowAccess),
-        ]);
-        // "country" exists only in CustomerRow → found via fallback.
-        assert_eq!(row.get("country"), Some(Value::String("DE".into())));
-        // "amount" exists only in OrderRow.
-        assert_eq!(row.get("amount"), Some(Value::Int(100)));
-    }
-
-    #[test]
-    fn multitopic_evaluate_joined_uses_dotted_paths() {
-        let p = DomainParticipantFactory::instance()
-            .create_participant_offline(50, DomainParticipantQos::default());
-        let mt = p
-            .create_multitopic::<RawBytes>(
-                "Sales",
-                "Sale",
-                alloc::vec!["Order".into(), "Customer".into()],
-                "Order.id = Customer.id AND Customer.country = %0",
-                alloc::vec!["DE".into()],
-            )
-            .unwrap();
-        let o = OrderRow { id: 1, amount: 50 };
-        let c = CustomerRow {
-            id: 1,
-            country: "DE".into(),
-        };
-        let row = JoinedRow::new(alloc::vec![
-            ("Order".into(), &o as &dyn RowAccess),
-            ("Customer".into(), &c as &dyn RowAccess),
-        ]);
-        assert!(mt.evaluate_joined(&row).unwrap());
-
-        let c_us = CustomerRow {
-            id: 1,
-            country: "US".into(),
-        };
-        let row2 = JoinedRow::new(alloc::vec![
-            ("Order".into(), &o as &dyn RowAccess),
-            ("Customer".into(), &c_us as &dyn RowAccess),
-        ]);
-        assert!(!mt.evaluate_joined(&row2).unwrap());
-    }
-
-    #[test]
-    fn hash_join_two_combines_matching_rows() {
-        let p = DomainParticipantFactory::instance()
-            .create_participant_offline(51, DomainParticipantQos::default());
-        let mt = p
-            .create_multitopic::<RawBytes>(
-                "Sales",
-                "Sale",
-                alloc::vec!["Order".into(), "Customer".into()],
-                "Customer.country = %0",
-                alloc::vec!["DE".into()],
-            )
-            .unwrap();
-        let orders = alloc::vec![
-            OrderRow { id: 1, amount: 50 },
-            OrderRow { id: 2, amount: 70 },
-            OrderRow { id: 3, amount: 90 },
-        ];
-        let customers = alloc::vec![
-            CustomerRow {
-                id: 1,
-                country: "DE".into(),
-            },
-            CustomerRow {
-                id: 2,
-                country: "US".into(),
-            },
-            CustomerRow {
-                id: 3,
-                country: "DE".into(),
-            },
-        ];
-        let out: alloc::vec::Vec<(i64, i64, String)> = hash_join_two(
-            &orders,
-            "Order",
-            |o| o.id.to_string(),
-            &customers,
-            "Customer",
-            |c| c.id.to_string(),
-            |o, c| (o.id, o.amount, c.country.clone()),
-            |row| mt.evaluate_joined(row),
-        );
-        assert_eq!(out.len(), 2);
-        // Expect ids 1 and 3 (DE), not 2 (US).
-        assert!(out.iter().any(|(i, _, _)| *i == 1));
-        assert!(out.iter().any(|(i, _, _)| *i == 3));
-        assert!(out.iter().all(|(_, _, c)| c == "DE"));
-    }
-
-    #[test]
-    fn hash_join_two_returns_empty_when_no_keys_match() {
-        let p = DomainParticipantFactory::instance()
-            .create_participant_offline(52, DomainParticipantQos::default());
-        let mt = p
-            .create_multitopic::<RawBytes>(
-                "Sales",
-                "Sale",
-                alloc::vec!["Order".into(), "Customer".into()],
-                "Order.id = Customer.id",
-                alloc::vec::Vec::new(),
-            )
-            .unwrap();
-        let orders = alloc::vec![OrderRow { id: 1, amount: 50 }];
-        let customers = alloc::vec![CustomerRow {
-            id: 99,
-            country: "DE".into(),
-        }];
-        let out: alloc::vec::Vec<i64> = hash_join_two(
-            &orders,
-            "Order",
-            |o| o.id.to_string(),
-            &customers,
-            "Customer",
-            |c| c.id.to_string(),
-            |o, _| o.id,
-            |row| mt.evaluate_joined(row),
-        );
-        assert!(out.is_empty());
-    }
-
-    #[test]
-    fn hash_join_two_emits_cartesian_for_duplicate_keys() {
-        let p = DomainParticipantFactory::instance()
-            .create_participant_offline(53, DomainParticipantQos::default());
-        let mt = p
-            .create_multitopic::<RawBytes>(
-                "Sales",
-                "Sale",
-                alloc::vec!["Order".into(), "Customer".into()],
-                "Order.id = Customer.id",
-                alloc::vec::Vec::new(),
-            )
-            .unwrap();
-        // Two orders with id=1, one customer with id=1
-        let orders = alloc::vec![
-            OrderRow { id: 1, amount: 10 },
-            OrderRow { id: 1, amount: 20 },
-        ];
-        let customers = alloc::vec![CustomerRow {
-            id: 1,
-            country: "DE".into(),
-        }];
-        let out: alloc::vec::Vec<i64> = hash_join_two(
-            &orders,
-            "Order",
-            |o| o.id.to_string(),
-            &customers,
-            "Customer",
-            |c| c.id.to_string(),
-            |o, _| o.amount,
-            |row| mt.evaluate_joined(row),
-        );
-        assert_eq!(out.len(), 2);
-        assert!(out.contains(&10));
-        assert!(out.contains(&20));
-    }
-
-    #[test]
-    fn hash_join_two_predicate_can_filter_pairs() {
-        let p = DomainParticipantFactory::instance()
-            .create_participant_offline(54, DomainParticipantQos::default());
-        // Predicate requires amount > 60.
-        let mt = p
-            .create_multitopic::<RawBytes>(
-                "Sales",
-                "Sale",
-                alloc::vec!["Order".into(), "Customer".into()],
-                "Order.amount > 60",
-                alloc::vec::Vec::new(),
-            )
-            .unwrap();
-        let orders = alloc::vec![
-            OrderRow { id: 1, amount: 50 },
-            OrderRow { id: 2, amount: 70 },
-        ];
-        let customers = alloc::vec![
-            CustomerRow {
-                id: 1,
-                country: "DE".into(),
-            },
-            CustomerRow {
-                id: 2,
-                country: "DE".into(),
-            },
-        ];
-        let out: alloc::vec::Vec<i64> = hash_join_two(
-            &orders,
-            "Order",
-            |o| o.id.to_string(),
-            &customers,
-            "Customer",
-            |c| c.id.to_string(),
-            |o, _| o.amount,
-            |row| mt.evaluate_joined(row),
-        );
-        // Only amount=70 may pass.
-        assert_eq!(out, alloc::vec![70]);
-    }
-
-    #[test]
-    fn delete_multitopic_rejects_foreign_participant() {
-        let p1 = DomainParticipantFactory::instance()
-            .create_participant_offline(0, DomainParticipantQos::default());
-        let p2 = DomainParticipantFactory::instance()
-            .create_participant_offline(1, DomainParticipantQos::default());
-        let mt = p1
-            .create_multitopic::<RawBytes>(
-                "MT",
-                "T",
-                alloc::vec!["A".into()],
-                "x > 0",
-                alloc::vec::Vec::new(),
-            )
-            .unwrap();
-        let res = p2.delete_multitopic(&mt);
-        assert!(matches!(res, Err(DdsError::BadParameter { .. })));
     }
 
     #[test]

@@ -42,7 +42,8 @@ package body Zerodds_Native_Endpoint is
      (W : in out Async_Writer; Sample : Byte_Array; Ok : out Boolean)
    is
       Frame : constant Byte_Array :=
-        Native_Framing.Xrce_Write_Frame (W.Session, W.Stream, W.Seq, Sample);
+        Native_Framing.Xrce_Write_Frame
+          (W.Session, W.Stream, W.Seq, W.Object_Id, Sample);
    begin
       W.Seq := W.Seq + 1;
       W.Trans.Deliver (Frame, Ok);                    -- dispatching

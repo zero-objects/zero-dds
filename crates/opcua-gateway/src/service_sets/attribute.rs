@@ -60,7 +60,7 @@ pub struct HistoryData {
 /// `ExtensibleParameter`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExtensibleParameterHistoryData {
-    /// Geerbtes `parameter_type_id`.
+    /// Inherited `parameter_type_id`.
     pub base: ExtensibleParameter,
     /// `HistoryData parameter_data`.
     pub parameter_data: HistoryData,
@@ -131,7 +131,7 @@ pub enum HistoryUpdateType {
 /// Spec Tab 8.6 — `ExtensibleParameterHistoryUpdate`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExtensibleParameterHistoryUpdate {
-    /// Geerbtes `parameter_type_id`.
+    /// Inherited `parameter_type_id`.
     pub base: ExtensibleParameter,
     /// `HistoryUpdateType parameter_data`.
     pub parameter_data: HistoryUpdateType,
@@ -246,7 +246,7 @@ impl HistoryReadDetails {
 /// Spec Tab 8.6 — `ExtensibleParameterHistoryReadDetails`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExtensibleParameterHistoryReadDetails {
-    /// Geerbtes `parameter_type_id`.
+    /// Inherited `parameter_type_id`.
     pub base: ExtensibleParameter,
     /// `HistoryReadDetails parameter_data`.
     pub parameter_data: HistoryReadDetails,
@@ -384,7 +384,7 @@ impl HistoryUpdateDetails {
 /// Spec Tab 8.6 — `ExtensibleParameterHistoryUpdateDetails`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExtensibleParameterHistoryUpdateDetails {
-    /// Geerbtes `parameter_type_id`.
+    /// Inherited `parameter_type_id`.
     pub base: ExtensibleParameter,
     /// `HistoryUpdateDetails parameter_data`.
     pub parameter_data: HistoryUpdateDetails,

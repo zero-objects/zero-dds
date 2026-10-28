@@ -1,26 +1,26 @@
 #!/usr/bin/env bash
 # packaging/github-actions/sign-macos.sh
-# Codesign + notarize + .pkg-installer für macOS-binaries.
+# Codesign + notarize + .pkg installer for macOS binaries.
 #
 # Spec: docs/specs/zerodds-deployment-1.0.md §3.2 (macOS distribution).
 #
 # Required env vars (set by release.yml):
-#   APPLE_ID                       — Apple-ID email
+#   APPLE_ID                       — Apple ID email
 #   APPLE_TEAM_ID                  — 10-char team identifier
 #   APPLE_NOTARY_PASSWORD          — app-specific password for notarytool
 #   DEV_ID_APPLICATION             — "Developer ID Application: <name> (TEAMID)"
 #   DEV_ID_INSTALLER               — "Developer ID Installer: <name> (TEAMID)"
-#                                    (optional — wenn nicht gesetzt, kein .pkg)
+#                                    (optional — if not set, no .pkg)
 #
 # Inputs:
-#   $1 — directory mit cargo-dist artifacts (typ. target/distrib)
+#   $1 — directory with cargo-dist artifacts (typically target/distrib)
 #
-# Output (im DIST_DIR):
-#   1. Jedes Mach-O-binary signed (hardened-runtime + timestamp)
-#   2. Tarballs (.tar.xz) re-packed mit signed binaries + sha512 neu
-#   3. Pro target ein zerodds-bundle-<target>.pkg (signed + notarized + stapled)
-#   4. Notarize .pkg + .zip (.tar.xz nicht notarisierbar — bleibt
-#      gatekeeper-blocked; user-workaround in release-body documentiert)
+# Output (in DIST_DIR):
+#   1. Every Mach-O binary signed (hardened runtime + timestamp)
+#   2. Tarballs (.tar.xz) re-packed with signed binaries + sha512 recomputed
+#   3. Per target one zerodds-bundle-<target>.pkg (signed + notarized + stapled)
+#   4. Notarize .pkg + .zip (.tar.xz cannot be notarized — stays
+#      gatekeeper-blocked; user workaround documented in the release body)
 
 set -euo pipefail
 
@@ -55,11 +55,11 @@ done < <(find "$DIST_DIR" -type f \( -perm -111 -o -name "*.dylib" \))
 echo "  signed $SIGNED_COUNT binaries"
 
 # ============================================================
-# 2) Re-pack tarballs mit signed binaries
+# 2) Re-pack tarballs with signed binaries
 # ============================================================
-# cargo-dist hat die tarballs BEVOR signing erstellt; sie enthalten
-# adhoc-binaries. Wir re-erstellen jeden tarball aus dem (jetzt
-# signed) unzipped-dir.
+# cargo-dist created the tarballs BEFORE signing; they contain
+# ad-hoc binaries. We re-create each tarball from the (now
+# signed) unzipped dir.
 echo "==> re-packing tarballs"
 shopt -s nullglob
 for archive in "$DIST_DIR"/*.tar.xz; do
@@ -70,7 +70,7 @@ for archive in "$DIST_DIR"/*.tar.xz; do
         # macOS bsd-tar: --no-mac-metadata strips ._-shadow files
         (cd "$DIST_DIR" && tar --no-mac-metadata -cJf "$base.tar.xz.tmp" "$base")
         mv "$DIST_DIR/$base.tar.xz.tmp" "$archive"
-        # sha512 neu berechnen wenn .sha512 file existiert
+        # Recompute sha512 if a .sha512 file exists
         if [ -f "$archive.sha512" ]; then
             (cd "$DIST_DIR" && shasum -a 512 "$base.tar.xz" > "$base.tar.xz.sha512")
         fi
@@ -78,7 +78,7 @@ for archive in "$DIST_DIR"/*.tar.xz; do
 done
 
 # ============================================================
-# 3) Build .pkg installer pro target (alle bins zusammen)
+# 3) Build .pkg installer per target (all bins together)
 # ============================================================
 if [ -n "${DEV_ID_INSTALLER:-}" ]; then
     case "$(uname -m)" in
@@ -92,7 +92,7 @@ if [ -n "${DEV_ID_INSTALLER:-}" ]; then
 
     echo "==> building .pkg installer: $PKG_NAME"
     mkdir -p "$PKG_ROOT/usr/local/bin"
-    # Sammle alle signed binaries aus den unzipped dirs
+    # Collect all signed binaries from the unzipped dirs
     BIN_COUNT=0
     for src_dir in "$DIST_DIR"/*-"$TARGET"; do
         if [ -d "$src_dir" ]; then
@@ -115,7 +115,7 @@ if [ -n "${DEV_ID_INSTALLER:-}" ]; then
                  --timestamp \
                  "$PKG_OUT"
         echo "  pkgbuild done: $(ls -lh "$PKG_OUT" | awk '{print $5}')"
-        # sha512 für .pkg
+        # sha512 for .pkg
         (cd "$DIST_DIR" && shasum -a 512 "$PKG_NAME" > "$PKG_NAME.sha512")
     else
         echo "  no binaries collected; skipping pkgbuild" >&2
@@ -126,7 +126,7 @@ else
 fi
 
 # ============================================================
-# 4) Notarize .pkg + .zip (notarytool akzeptiert nur .zip/.pkg/.dmg)
+# 4) Notarize .pkg + .zip (notarytool accepts only .zip/.pkg/.dmg)
 # ============================================================
 if [ -z "${APPLE_ID:-}" ] || [ -z "${APPLE_TEAM_ID:-}" ] || [ -z "${APPLE_NOTARY_PASSWORD:-}" ]; then
     echo "==> APPLE_ID/TEAM_ID/NOTARY_PASSWORD not set; skipping notarization"
@@ -142,7 +142,7 @@ for archive in "$DIST_DIR"/*.pkg "$DIST_DIR"/*.zip "$DIST_DIR"/*.dmg; do
             --team-id "$APPLE_TEAM_ID" \
             --password "$APPLE_NOTARY_PASSWORD" \
             --wait; then
-        # Nur .pkg/.dmg/.app sind stapelbar
+        # Only .pkg/.dmg/.app can be stapled
         case "$archive" in
             *.pkg|*.dmg|*.app)
                 xcrun stapler staple "$archive" || echo "  warn: staple failed for $archive"

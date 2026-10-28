@@ -1,23 +1,36 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 //
-// xcdr2-wire-vectors.test.ts — mandatory conformance tests for
-// `@zerodds/cdr` against `zerodds-xcdr2-bindings-conformance-1.0` §6
-// (wire test vectors V-1..V-12).
+// xcdr2-wire-vectors.test.ts — mandatory conformance tests against
+// `zerodds-xcdr2-bindings-conformance-1.0` §6 (wire test vectors
+// V-1..V-12).
 //
 // Per vector:
 //   1. Build sample
 //   2. encode(sample) → bytes byte-exact against spec
 //   3. decode(bytes) → roundtrip sample (deep-equal)
 //
-// The tests use the helper library directly (Xcdr2Writer/Xcdr2Reader/
-// md5) and replicate the pattern that `idl-ts` emits per sample.
-// This covers L1 (wire); L2 (codegen) is checked separately in
-// `crates/idl-ts/tests/compile_check.rs`.
+// These tests call `@zerodds/wire`'s `Writer`/`Reader`
+// (`runtime/typescript`) directly — the one XCDR2 codec this binding
+// has. The hand-written `../src/cdr/writer.ts`/`reader.ts` this file
+// used to test is removed; nothing in `crates/ts-node` still has its
+// own copy of the codec to keep in sync with this runtime.
+//
+// This covers L1 (wire); L2 (codegen) has no TypeScript `TypeSupport`
+// companion generator yet (unlike C#/Java/Python's `tools/idlc/src/
+// {csharp,java,python}_support.rs`) — building one is separate,
+// larger work than porting this file onto the one codec that exists.
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { Xcdr2Reader, Xcdr2Writer, md5 } from "../src/cdr/index.js";
+import {
+  Writer,
+  Reader,
+  Endianness,
+  FixedDigitCount,
+  PID_FLAGS_SENTINEL_MUST_UNDERSTAND,
+  type PlCdr1Framing,
+} from "@zerodds/wire";
 
 // === Hex-Helpers ============================================================
 
@@ -50,19 +63,38 @@ function assertBytesEq(actual: Uint8Array, expected: Uint8Array, label: string):
     );
 }
 
+// XCDR2's MAXALIGN (§7.4.1.1.1) and the spec's PL_CDR1 framing (only
+// exercised here as the constructors' required argument; the V-1..V-12
+// vectors are all plain XCDR2 DHEADER/EMHEADER, never PL_CDR1).
+const XCDR2_MAX_ALIGN = 4;
+const FRAMING: PlCdr1Framing = {
+    pidFlags: PID_FLAGS_SENTINEL_MUST_UNDERSTAND,
+    shortMaxId: 0x3f00,
+    padsDeclaredLength: true,
+    padsOptionalLength: true,
+    memberMustUnderstand: true,
+    padAfterValue: true,
+};
+
+function newWriter(order: Endianness = Endianness.Little): Writer {
+    return new Writer(order, XCDR2_MAX_ALIGN, FRAMING, false);
+}
+
+function newReader(bytes: Uint8Array, order: Endianness = Endianness.Little): Reader {
+    return new Reader(bytes, order, XCDR2_MAX_ALIGN, FRAMING);
+}
+
 // === V-1 Empty Final Struct =================================================
 
 interface VEmpty {}
 
 test("V-1 Empty Final Struct: encode → 0 bytes; roundtrip", () => {
-    const w = new Xcdr2Writer("le");
-    const bytes = w.toBytes();
+    const w = newWriter();
+    const bytes = w.finish();
     assertBytesEq(bytes, new Uint8Array(0), "V-1 encode");
 
-    const r = new Xcdr2Reader(bytes, 0, bytes.length, "le");
     const out: VEmpty = {};
     assert.deepEqual(out, {});
-    assert.equal(r.pos, 0);
 });
 
 // === V-2 Plain Primitives Final =============================================
@@ -73,16 +105,16 @@ interface VPoint {
 }
 
 function encodePoint(s: VPoint): Uint8Array {
-    const w = new Xcdr2Writer("le");
-    w.writeInt32(s.x);
-    w.writeInt32(s.y);
-    return w.toBytes();
+    const w = newWriter();
+    w.writeI32(s.x);
+    w.writeI32(s.y);
+    return w.finish();
 }
 
 function decodePoint(bytes: Uint8Array): VPoint {
-    const r = new Xcdr2Reader(bytes, 0, bytes.length, "le");
-    const x = r.readInt32();
-    const y = r.readInt32();
+    const r = newReader(bytes);
+    const x = r.readI32();
+    const y = r.readI32();
     return { x, y };
 }
 
@@ -111,33 +143,33 @@ interface VAll {
 }
 
 function encodeAll(s: VAll): Uint8Array {
-    const w = new Xcdr2Writer("le");
+    const w = newWriter();
     w.writeBool(s.b);
-    w.writeOctet(s.o);
-    w.writeInt16(s.s);
-    w.writeUint16(s.us);
-    w.writeInt32(s.l);
-    w.writeUint32(s.ul);
-    w.writeInt64(s.ll);
-    w.writeUint64(s.ull);
-    w.writeFloat32(s.f);
-    w.writeFloat64(s.d);
-    return w.toBytes();
+    w.writeU8(s.o);
+    w.writeI16(s.s);
+    w.writeU16(s.us);
+    w.writeI32(s.l);
+    w.writeU32(s.ul);
+    w.writeI64(s.ll);
+    w.writeU64(s.ull);
+    w.writeF32(s.f);
+    w.writeF64(s.d);
+    return w.finish();
 }
 
 function decodeAll(bytes: Uint8Array): VAll {
-    const r = new Xcdr2Reader(bytes, 0, bytes.length, "le");
+    const r = newReader(bytes);
     return {
         b: r.readBool(),
-        o: r.readOctet(),
-        s: r.readInt16(),
-        us: r.readUint16(),
-        l: r.readInt32(),
-        ul: r.readUint32(),
-        ll: r.readInt64(),
-        ull: r.readUint64(),
-        f: r.readFloat32(),
-        d: r.readFloat64(),
+        o: r.readU8(),
+        s: r.readI16(),
+        us: r.readU16(),
+        l: r.readI32(),
+        ul: r.readU32(),
+        ll: r.readI64(),
+        ull: r.readU64(),
+        f: r.readF32(),
+        d: r.readF64(),
     };
 }
 
@@ -184,11 +216,11 @@ interface VGreeting {
 test("V-4 String Final: uint32 length-with-NUL + bytes + NUL", () => {
     const sample: VGreeting = { text: "hello" };
     const expected = fromHex("06 00 00 00 68 65 6C 6C 6F 00");
-    const w = new Xcdr2Writer("le");
+    const w = newWriter();
     w.writeString(sample.text);
-    const enc = w.toBytes();
+    const enc = w.finish();
     assertBytesEq(enc, expected, "V-4 encode");
-    const r = new Xcdr2Reader(expected, 0, expected.length, "le");
+    const r = newReader(expected);
     const dec: VGreeting = { text: r.readString() };
     assert.deepEqual(dec, sample);
 });
@@ -204,17 +236,17 @@ test("V-5 Sequence<int32> Final: count + elements", () => {
     const expected = fromHex(
         "03 00 00 00  01 00 00 00  02 00 00 00  03 00 00 00",
     );
-    const w = new Xcdr2Writer("le");
-    w.writeUint32(sample.ids.length);
+    const w = newWriter();
+    w.writeU32(sample.ids.length);
     for (const e of sample.ids) {
-        w.writeInt32(e);
+        w.writeI32(e);
     }
-    assertBytesEq(w.toBytes(), expected, "V-5 encode");
-    const r = new Xcdr2Reader(expected, 0, expected.length, "le");
-    const n = r.readUint32();
+    assertBytesEq(w.finish(), expected, "V-5 encode");
+    const r = newReader(expected);
+    const n = r.readSequenceLength();
     const ids: number[] = [];
     for (let i = 0; i < n; i++) {
-        ids.push(r.readInt32());
+        ids.push(r.readI32());
     }
     assert.deepEqual({ ids }, sample);
 });
@@ -236,22 +268,21 @@ test("V-6 Sequence<string> Final: DHEADER (XTypes 7.4.3.5 non-primitive elems)",
             "00 00" +
             "03 00 00 00 62 63 00",
     );
-    const w = new Xcdr2Writer("le");
-    const tok = w.beginAppendable();
-    w.writeUint32(sample.tags.length);
+    const w = newWriter();
+    const d = w.writeDheader();
+    w.writeU32(sample.tags.length);
     for (const e of sample.tags) {
         w.writeString(e);
     }
-    w.endAppendable(tok);
-    assertBytesEq(w.toBytes(), expected, "V-6 encode");
-    const r = new Xcdr2Reader(expected, 0, expected.length, "le");
-    const dtok = r.beginAppendable();
-    const n = r.readUint32();
+    w.finishDheader(d);
+    assertBytesEq(w.finish(), expected, "V-6 encode");
+    const r = newReader(expected);
+    r.readDheader();
+    const n = r.readSequenceLength();
     const tags: string[] = [];
     for (let i = 0; i < n; i++) {
         tags.push(r.readString());
     }
-    r.endAppendable(dtok);
     assert.deepEqual({ tags }, sample);
 });
 
@@ -264,11 +295,11 @@ interface VS {
 test("V-7 Nested Modules Final: 4 bytes, type-name 'Outer::Inner::S'", () => {
     const sample: VS = { x: 1234 };
     const expected = fromHex("D2 04 00 00");
-    const w = new Xcdr2Writer("le");
-    w.writeInt32(sample.x);
-    assertBytesEq(w.toBytes(), expected, "V-7 encode");
-    const r = new Xcdr2Reader(expected, 0, expected.length, "le");
-    const dec: VS = { x: r.readInt32() };
+    const w = newWriter();
+    w.writeI32(sample.x);
+    assertBytesEq(w.finish(), expected, "V-7 encode");
+    const r = newReader(expected);
+    const dec: VS = { x: r.readI32() };
     assert.deepEqual(dec, sample);
 });
 
@@ -280,23 +311,28 @@ interface VSensor {
 }
 
 function encodeSensor(s: VSensor): Uint8Array {
-    const w = new Xcdr2Writer("le");
-    w.writeInt32(s.id);
-    w.writeFloat64(s.value);
-    return w.toBytes();
+    const w = newWriter();
+    w.writeI32(s.id);
+    w.writeF64(s.value);
+    return w.finish();
 }
 
 function keyHashSensor(s: VSensor): Uint8Array {
     // XTypes 1.3 §7.6.8.4: holder ≤ 16 octets -> zero-pad; otherwise MD5.
-    const w = new Xcdr2Writer("be");
-    w.writeInt32(s.id);
-    const holder = w.toBytes();
-    if (holder.length <= 16) {
-        const h = new Uint8Array(16);
-        h.set(holder);
-        return h;
+    // `@zerodds/wire` has no MD5 (unlike runtime/csharp's
+    // `Writer.Md5Digest()` / runtime/java's `Writer.md5()`) — a real gap
+    // for a `@key` whose holder exceeds 16 octets, out of scope to add in
+    // a codec-consolidation pass. V-8's holder is 4 octets, so only the
+    // zero-pad half is exercised here.
+    const w = newWriter(Endianness.Big);
+    w.writeI32(s.id);
+    const holder = w.finish();
+    if (holder.length > 16) {
+        throw new Error("this runtime has no MD5; V-8's holder must stay <= 16 octets");
     }
-    return md5(holder);
+    const h = new Uint8Array(16);
+    h.set(holder);
+    return h;
 }
 
 test("V-8 Keyed Struct: payload + key-hash", () => {
@@ -309,14 +345,14 @@ test("V-8 Keyed Struct: payload + key-hash", () => {
     const enc = encodeSensor(sample);
     assertBytesEq(enc, expectedPayload, "V-8 encode");
 
-    // Key-hash zero-padded auf 16 Bytes (Holder = 4 Byte ≤ 16 per XTypes §7.6.8.4).
+    // Key hash zero-padded to 16 bytes (holder = 4 bytes ≤ 16 per XTypes §7.6.8.4).
     const expectedHash = fromHex("00 00 00 2A 00 00 00 00 00 00 00 00 00 00 00 00");
     const hash = keyHashSensor(sample);
     assertBytesEq(hash, expectedHash, "V-8 key-hash");
 
-    const r = new Xcdr2Reader(enc, 0, enc.length, "le");
-    const id = r.readInt32();
-    const value = r.readFloat64();
+    const r = newReader(enc);
+    const id = r.readI32();
+    const value = r.readF64();
     assert.deepEqual({ id, value }, sample);
 });
 
@@ -328,20 +364,19 @@ interface VV {
 }
 
 function encodeV(s: VV): Uint8Array {
-    const w = new Xcdr2Writer("le");
-    const tok = w.beginAppendable();
-    w.writeInt32(s.a);
-    w.writeInt32(s.b);
-    w.endAppendable(tok);
-    return w.toBytes();
+    const w = newWriter();
+    const d = w.writeDheader();
+    w.writeI32(s.a);
+    w.writeI32(s.b);
+    w.finishDheader(d);
+    return w.finish();
 }
 
 function decodeV(bytes: Uint8Array): VV {
-    const r = new Xcdr2Reader(bytes, 0, bytes.length, "le");
-    const tok = r.beginAppendable();
-    const a = r.readInt32();
-    const b = r.readInt32();
-    r.endAppendable(tok);
+    const r = newReader(bytes);
+    r.readDheader();
+    const a = r.readI32();
+    const b = r.readI32();
     return { a, b };
 }
 
@@ -352,7 +387,7 @@ test("V-9 Appendable Struct: DHEADER=8 + 2 longs", () => {
     assert.deepEqual(decodeV(expected), sample);
 });
 
-// === V-10 Mutable Struct ====================================================
+// === V-10 Mutable Struct =====================================================
 
 interface VM {
     a: number;
@@ -360,65 +395,67 @@ interface VM {
 }
 
 function encodeM(s: VM): Uint8Array {
-    const w = new Xcdr2Writer("le");
-    const tok = w.beginMutable();
+    const w = newWriter();
+    const d = w.writeDheader();
     // member id=1, LC=2 (inline 4 bytes for int32).
-    w.writeEmHeader(1, 2, false);
-    w.writeInt32(s.a);
-    // member id=2, LC=3 + nextInt = body-size (string).
-    w.writeEmHeader(2, 3, false, 0);
-    const bodyStart = w.pos;
+    const h0 = w.writeEmheader(1, 2, false);
+    w.writeI32(s.a);
+    w.finishEmheader(h0);
+    // member id=2, LC=5: XTypes 1.3 §7.4.3.4.2 reuses a self-delimiting
+    // member's own leading length word as the NEXTINT for length codes
+    // 5-7, rather than writing a separate one (LC=4). A `string` writes
+    // its own length prefix first, so it is exactly that case; no
+    // NEXTINT placeholder is reserved. (The removed hand-written
+    // `../src/cdr/writer.ts` wrote this member under an ad hoc "LC=3"
+    // that does not exist in the wire's own length-code table at all —
+    // §7.4.3.4.2's actual LC3 means 8 inline octets, no NEXTINT ever —
+    // and then manually patched a NEXTINT after it anyway. A conformant
+    // peer reading that LC3 would consume exactly 8 inline octets and
+    // desync from that member on: not the C#/Java case's non-optimal
+    // wire, but an outright wire bug.)
+    const h1 = w.writeEmheader(2, 5, false);
     w.writeString(s.b);
-    w.patchUint32(bodyStart - 4, w.pos - bodyStart);
-    w.endMutable(tok);
-    return w.toBytes();
+    w.finishEmheader(h1);
+    w.finishDheader(d);
+    return w.finish();
 }
 
 function decodeM(bytes: Uint8Array): VM {
-    const r = new Xcdr2Reader(bytes, 0, bytes.length, "le");
+    const r = newReader(bytes);
     let a = 0;
     let b = "";
-    const tok = r.beginMutable();
-    while (r.pos < tok.bodyEnd) {
-        const emh = r.readEmHeader();
-        switch (emh.memberId) {
-            case 1: {
-                a = r.readInt32();
-                break;
-            }
-            case 2: {
-                if (emh.lc === 3) {
-                    r.readUint32(); // skip nextInt
-                }
-                b = r.readString();
-                break;
-            }
-            default: {
-                if (emh.nextInt !== null) {
-                    r.readBytes(emh.nextInt);
-                } else {
-                    const sz = Xcdr2Reader.lcInlineSize(emh.lc);
-                    if (sz > 0) r.readBytes(sz);
-                }
-            }
+    const declared = r.readDheader();
+    const end = r.readerPosition() + declared;
+    while (r.readerPosition() < end) {
+        const emh = r.readEmheader();
+        if (emh.memberId === 1) {
+            a = r.readI32();
+        } else if (emh.memberId === 2) {
+            b = r.readString();
+        } else {
+            r.readerSkipTo(r.readerPosition() + emh.extent);
         }
     }
-    r.endMutable(tok);
+    r.readerSkipTo(end);
     return { a, b };
 }
 
-test("V-10 Mutable Struct: DHEADER=23, EMHEADER ambient-LE, LC=3+nextInt for string", () => {
+test("V-10 Mutable Struct: DHEADER=19, EMHEADER ambient-LE, LC=5 for the string", () => {
     const sample: VM = { a: 42, b: "hi" };
-    // EMHEADER ambient-LE per XTypes 1.3 §7.4.3.4.5: u32=0x20000001 -> 01 00 00 20.
+    // [0..4]   DHEADER (LE u32 = body-len = 19)
+    // [4..8]   EMHEADER id=1 LC=2 (ambient-LE per XTypes §7.4.3.4.5)
+    // [8..12]  a-value LE
+    // [12..16] EMHEADER id=2 LC=5 (NEXTINT reused: none reserved here)
+    // [16..20] string length-incl-NUL, which IS the reused NEXTINT
+    // [20..23] "hi\0"
     const expected = fromHex(
-        "17 00 00 00" +
+        "13 00 00 00" +
             "01 00 00 20" +
             "2A 00 00 00" +
-            "02 00 00 30" +
-            "07 00 00 00" +
+            "02 00 00 50" +
             "03 00 00 00 68 69 00",
     );
-    assert.equal(expected.length, 4 + 23, "V-10 wire is DHEADER + 23 body-bytes");
+    assert.equal(expected.length, 4 + 19, "V-10 wire is DHEADER + 19 body-bytes");
     assertBytesEq(encodeM(sample), expected, "V-10 encode");
     assert.deepEqual(decodeM(expected), sample);
 });
@@ -430,38 +467,31 @@ interface VO {
 }
 
 function encodeO(s: VO): Uint8Array {
-    const w = new Xcdr2Writer("le");
-    const tok = w.beginMutable();
+    const w = newWriter();
+    const d = w.writeDheader();
     if (s.maybe !== undefined && s.maybe !== null) {
-        w.writeEmHeader(1, 2, false);
-        w.writeInt32(s.maybe);
+        const h0 = w.writeEmheader(1, 2, false);
+        w.writeI32(s.maybe);
+        w.finishEmheader(h0);
     }
-    w.endMutable(tok);
-    return w.toBytes();
+    w.finishDheader(d);
+    return w.finish();
 }
 
 function decodeO(bytes: Uint8Array): VO {
-    const r = new Xcdr2Reader(bytes, 0, bytes.length, "le");
+    const r = newReader(bytes);
     let maybe: number | undefined;
-    const tok = r.beginMutable();
-    while (r.pos < tok.bodyEnd) {
-        const emh = r.readEmHeader();
-        switch (emh.memberId) {
-            case 1: {
-                maybe = r.readInt32();
-                break;
-            }
-            default: {
-                if (emh.nextInt !== null) {
-                    r.readBytes(emh.nextInt);
-                } else {
-                    const sz = Xcdr2Reader.lcInlineSize(emh.lc);
-                    if (sz > 0) r.readBytes(sz);
-                }
-            }
+    const declared = r.readDheader();
+    const end = r.readerPosition() + declared;
+    while (r.readerPosition() < end) {
+        const emh = r.readEmheader();
+        if (emh.memberId === 1) {
+            maybe = r.readI32();
+        } else {
+            r.readerSkipTo(r.readerPosition() + emh.extent);
         }
     }
-    r.endMutable(tok);
+    r.readerSkipTo(end);
     return { maybe };
 }
 
@@ -497,42 +527,29 @@ test("V-12 Mutable Sentinel: no PID_LIST_END after the mutable body", () => {
     assert.deepEqual(dec, { a: 42, b: "hi" });
 });
 
-// === Cross-Vector Sanity ====================================================
-
-test("md5 RFC 1321 self-check: 'abc' → 0x900150983CD24FB0D6963F7D28E17F72", () => {
-    const enc = new TextEncoder().encode("abc");
-    const expected = fromHex("900150983CD24FB0D6963F7D28E17F72");
-    assertBytesEq(md5(enc), expected, "md5(abc)");
-});
-
-test("md5 RFC 1321 self-check: empty input → 0xD41D8CD98F00B204E9800998ECF8427E", () => {
-    const expected = fromHex("D41D8CD98F00B204E9800998ECF8427E");
-    assertBytesEq(md5(new Uint8Array(0)), expected, "md5(empty)");
-});
-
-// === fixed<P,S> packed BCD (CORBA/GIOP §9.3.2.7) ============================
+// === fixed<P,S> packed BCD (CORBA/GIOP §9.3.2.8) ============================
 // Oracle vectors (JacORB 3.9 / omniORB 4.3, == crates/cdr/src/fixed.rs).
 
 test("fixed<5,2> 123.45 → 12 34 5c; roundtrip", () => {
-    const w = new Xcdr2Writer("le");
-    w.writeFixedBcd("123.45", 5, 2);
-    assertBytesEq(w.toBytes(), fromHex("12 34 5c"), "fixed<5,2>");
-    const r = new Xcdr2Reader(w.toBytes(), 0, 3, "le");
-    assert.equal(r.readFixedBcd(5, 2), "123.45");
+    const w = newWriter();
+    w.writeFixed("123.45", 5, 2, FixedDigitCount.Declared);
+    assertBytesEq(w.finish(), fromHex("12 34 5c"), "fixed<5,2>");
+    const r = newReader(w.finish());
+    assert.equal(r.readFixed(5, 2, FixedDigitCount.Declared), "123.45");
 });
 
 test("fixed<4,0> 1234 → 01 23 4c (keeps MSD); roundtrip", () => {
-    const w = new Xcdr2Writer("le");
-    w.writeFixedBcd("1234", 4, 0);
-    assertBytesEq(w.toBytes(), fromHex("01 23 4c"), "fixed<4,0>");
-    const r = new Xcdr2Reader(w.toBytes(), 0, 3, "le");
-    assert.equal(r.readFixedBcd(4, 0), "1234");
+    const w = newWriter();
+    w.writeFixed("1234", 4, 0, FixedDigitCount.Declared);
+    assertBytesEq(w.finish(), fromHex("01 23 4c"), "fixed<4,0>");
+    const r = newReader(w.finish());
+    assert.equal(r.readFixed(4, 0, FixedDigitCount.Declared), "1234");
 });
 
 test("fixed<6,2> -1.50 → 00 00 15 0d; roundtrip", () => {
-    const w = new Xcdr2Writer("le");
-    w.writeFixedBcd("-1.50", 6, 2);
-    assertBytesEq(w.toBytes(), fromHex("00 00 15 0d"), "fixed<6,2> neg");
-    const r = new Xcdr2Reader(w.toBytes(), 0, 4, "le");
-    assert.equal(r.readFixedBcd(6, 2), "-1.50");
+    const w = newWriter();
+    w.writeFixed("-1.50", 6, 2, FixedDigitCount.Declared);
+    assertBytesEq(w.finish(), fromHex("00 00 15 0d"), "fixed<6,2> neg");
+    const r = newReader(w.finish());
+    assert.equal(r.readFixed(6, 2, FixedDigitCount.Declared), "-1.50");
 });

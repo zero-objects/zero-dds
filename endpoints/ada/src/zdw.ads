@@ -19,6 +19,15 @@ package Zdw is
    ZDW_LE : constant int := 0;
    ZDW_BE : constant int := 1;
 
+   --  Alignment caps. `zerodds_wire.h` defines both as macros, which no
+   --  binding can import, and `zdw_writer_init` sets the writer's field to
+   --  the XCDR2 one. XTypes 1.3 section 7.4.1 puts MAXALIGN at eight under
+   --  XCDR1, so a sample holding an eight-octet primitive needs the other
+   --  constant -- and until it was named here the only way to say so from
+   --  Ada was a literal.
+   ZDW_XCDR2_MAX_ALIGN : constant int := 4;
+   ZDW_XCDR1_MAX_ALIGN : constant int := 8;
+
    --  Result codes.
    ZDW_OK        : constant int := 0;
    ZDW_E_Overrun : constant int := 1;
@@ -130,7 +139,72 @@ package Zdw is
       N     : access size_t) return int
      with Import, Convention => C, External_Name => "zdw_get_seq_u8";
 
+   function Get_Bool (R : access Zdw_Reader; Out_V : access int) return int
+     with Import, Convention => C, External_Name => "zdw_get_bool";
+
+   function Get_F64 (R : access Zdw_Reader; Out_V : access double) return int
+     with Import, Convention => C, External_Name => "zdw_get_f64";
+
+   --  Raw bytes, no alignment.
+   function Get_Bytes
+     (R : access Zdw_Reader; Out_D : System.Address; N : size_t) return int
+     with Import, Convention => C, External_Name => "zdw_get_bytes";
+
+   --  --- framing (XCDR2) ---
+   --
+   --  These six and `Put_Bytes`, `Padding_For`, `Get_Bool`, `Get_Bytes` and
+   --  `Get_F64` are the eleven exported functions of `endpoints/c` that this
+   --  package did not bind. The header calls itself "the exact same C89 XCDR
+   --  primitives" and this was a strict subset: the whole framing half was
+   --  unreachable from Ada, so no `@appendable` or `@mutable` type and no
+   --  delimited collection had a form here.
+
+   --  Raw bytes, no alignment.
+   function Put_Bytes
+     (W : access Zdw_Writer; Data : System.Address; N : size_t) return int
+     with Import, Convention => C, External_Name => "zdw_put_bytes";
+
+   --  Reserves a 4-aligned DHEADER slot and returns the body-start position
+   --  to pass back to `DHeader_End`. XTypes 1.3 section 7.4.3.5.
+   function DHeader_Begin (W : access Zdw_Writer) return size_t
+     with Import, Convention => C, External_Name => "zdw_dheader_begin";
+
+   --  Back-patches the DHEADER with the byte length written since
+   --  `Body_Start`. The DHEADER's own four octets are not counted.
+   function DHeader_End
+     (W : access Zdw_Writer; Body_Start : size_t) return int
+     with Import, Convention => C, External_Name => "zdw_dheader_end";
+
+   function DHeader_Read
+     (R : access Zdw_Reader; Out_Len : access unsigned_long) return int
+     with Import, Convention => C, External_Name => "zdw_dheader_read";
+
+   --  The C core's member header, which is LC4 and only LC4. The other
+   --  seven length codes of section 7.4.3.4.2 are in `Zdw_Xcdr`, because
+   --  `zdw_emheader_begin` takes no length code and the recorded octets of
+   --  every measured writer carry LC1, LC2, LC3 and LC5.
+   function EMHeader_Begin
+     (W               : access Zdw_Writer;
+      Member_Id       : unsigned_long;
+      Must_Understand : int) return size_t
+     with Import, Convention => C, External_Name => "zdw_emheader_begin";
+
+   function EMHeader_End
+     (W : access Zdw_Writer; Body_Start : size_t) return int
+     with Import, Convention => C, External_Name => "zdw_emheader_end";
+
+   function EMHeader_Read
+     (R               : access Zdw_Reader;
+      Member_Id       : access unsigned_long;
+      Must_Understand : access int;
+      Nextint         : access unsigned_long) return int
+     with Import, Convention => C, External_Name => "zdw_emheader_read";
+
    --  --- helper ---
+
+   --  Padding to push `Pos` to the next multiple of `Align`.
+   function Padding_For (Pos : size_t; Align : size_t) return size_t
+     with Import, Convention => C, External_Name => "zdw_padding_for";
 
    function U64_From_UL (V : unsigned_long) return Zdw_U64
      with Import, Convention => C, External_Name => "zdw_u64_from_ul";

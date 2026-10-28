@@ -1,0 +1,2 @@
+@appendable enum K { K1, @default_literal K2, K3 };
+@appendable struct S { long a; K m; long b; };

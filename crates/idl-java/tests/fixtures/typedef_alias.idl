@@ -1,3 +1,0 @@
-// Fixture: typedef → Wrapper-Class.
-typedef long Counter;
-typedef sequence<long> Bag;

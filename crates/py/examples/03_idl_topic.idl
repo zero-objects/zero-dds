@@ -1,0 +1,13 @@
+// SPDX-License-Identifier: Apache-2.0
+// Source for 03_idl_topic_gen.py (committed). Regenerate with:
+//   zerodds-idlc generate --lang python --out . 03_idl_topic.idl
+// then rename the output `03_idl_topic.py` to `03_idl_topic_gen.py`.
+module sensors {
+  @final
+  struct TemperatureReading {
+    string sensor_id;
+    long timestamp_us;
+    double celsius;
+    sequence<octet> raw;
+  };
+};

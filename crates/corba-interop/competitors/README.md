@@ -6,7 +6,7 @@ Complete suite for the entire CORBA crate family.
 
 ```sh
 # Everything (unit tests of all crates + codegen E2E + cross-ORB interop):
-bash crates/corba-interop/competitors/run_suite.sh        # auf codepit (ORBs installiert)
+bash crates/corba-interop/competitors/run_suite.sh        # auf dem Linux-Testhost (ORBs installiert)
 
 # Cross-ORB interop only (ZeroDDS ↔ omniORB/TAO/JacORB):
 bash crates/corba-interop/competitors/run_interop.sh

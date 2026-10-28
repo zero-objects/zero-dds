@@ -29,8 +29,9 @@ REVISION`; `zerodds_abi_revision()` runtime-checkbar.
 **Repo:** `crates/zerodds-c-api/include/zerodds.h`,
 `crates/zerodds-c-api/src/lib.rs`.
 
-**Tests:** `crates/zerodds-c-api/tests/smoke_ffi.rs` (abi_revision-
-Symbol-Check).
+**Tests:** `crates/zerodds-c-api/tests/abi_compat.rs::the_header_macro_and_the_exported_revision_agree`,
+`crates/zerodds-c-api/tests/abi_compat.rs::abi_snapshot_matches`,
+`crates/zerodds-c-api/tests/abi_compat.rs::extract_symbols_finds_known_functions`.
 
 **Status:** done
 
@@ -41,7 +42,10 @@ Mangling, `-fvisibility=hidden`.
 
 **Repo:** `crates/zerodds-c-api/src/{factory_ffi.rs,participant_ffi.rs,publisher_ffi.rs,subscriber_ffi.rs,topic_ffi.rs,qos_ffi.rs,condition_ffi.rs,listener_ffi.rs,builtin_ffi.rs,extra_ffi.rs,xcdr2.rs}`.
 
-**Tests:** `crates/zerodds-c-api/tests/smoke_ffi.rs`.
+**Tests:** `crates/zerodds-c-api/tests/abi_compat.rs::extract_symbols_finds_known_functions`,
+`crates/zerodds-c-api/tests/abi_compat.rs::abi_snapshot_matches` — die Snapshot-Datei listet jedes
+exportierte Symbol namentlich, ein neuer oder umbenannter Export bricht den
+Vergleich.
 
 **Status:** done
 
@@ -68,7 +72,11 @@ safe; `bytes_t.data` aus `_take` nur bis zum nächsten Call gültig.
 **Repo:** `crates/zerodds-c-api/src/{factory_ffi.rs,participant_ffi.rs,topic_ffi.rs,publisher_ffi.rs,subscriber_ffi.rs}`,
 `crates/zerodds-c-api/src/entities.rs`.
 
-**Tests:** `crates/zerodds-c-api/tests/smoke_ffi.rs` (destroy-Sequence).
+**Tests:** `crates/zerodds-c-api/tests/smoke_ffi.rs::ffi_pub_sub_roundtrip`,
+`crates/zerodds-c-api/tests/smoke_ffi.rs::ffi_handles_null_safely`,
+`crates/zerodds-c-api/tests/smoke_ffi.rs::ffi_take_into_null_safe`,
+`crates/zerodds-c-api/tests/smoke_ffi.rs::ffi_runtime_create_domain_too_large_returns_null`,
+`crates/zerodds-c-api/tests/waitset_event_driven.rs::waitset_wait_null_and_timeout_safe`.
 
 **Status:** done
 
@@ -77,13 +85,12 @@ safe; `bytes_t.data` aus `_take` nur bis zum nächsten Call gültig.
 **Spec:** §2.5 — alle ABI-Funktionen thread-safe; Listener-Callbacks
 auf dedizierten Threads.
 
-**Repo:** `crates/zerodds-c-api/src/{listener_ffi.rs,entities.rs}`.
+**Repo:** —
 
-**Tests:** `crates/zerodds-c-api/tests/smoke_ffi.rs` (Send+Sync
-implizit).
+**Tests:** —
 
-**Status:** done
-
+**Status:** open — kein Test ruft die ABI aus mehreren Threads. `Send`/`Sync` stehen
+im Typsystem, gemessen ist die Nebenläufigkeit nicht.
 ### §2.6 Callback-API Listener
 
 **Spec:** §2.6 — `zerodds_data_available_cb` + `zerodds_reader_set_
@@ -91,7 +98,11 @@ listener` mit user_data.
 
 **Repo:** `crates/zerodds-c-api/src/listener_ffi.rs`.
 
-**Tests:** Inline `#[cfg(test)] mod tests` in `listener_ffi.rs`.
+**Tests:** `crates/zerodds-c-api/src/listener_ffi.rs::tests::dp_set_get_listener_roundtrip`,
+`::poll_listeners_returns_count_and_clears_state`,
+`::poll_fires_data_available_and_data_on_readers`,
+`::poll_fires_inconsistent_topic_for_topic_and_participant`,
+`::dw_set_listener_clear_via_null`.
 
 **Status:** done
 
@@ -102,10 +113,15 @@ listener` mit user_data.
 **Spec:** §3.1 — Loader mit ENV-Override `ZERODDS_LIB`, Wheel-internes
 `_lib/`, System-Linker Fallback; `Runtime`/`Writer`/`Reader`-Klassen.
 
-**Repo:** `crates/py/python/`,
+**Repo:** `crates/py/python/zerodds/loader.py` (`load_library` mit der
+Drei-Stufen-Auflösung `ZERODDS_LIB` → paketinternes `_lib/` → System-Linker;
+`Runtime`, `Writer`, `Reader`, `DomainParticipantFactory`),
 `examples/tutorials/dds-chat/ports/python-cli/src/dds_chat_tutorial/{__init__.py,main.py,live_pubsub.py,message.py}`.
 
-**Tests:** `examples/tutorials/dds-chat/ports/python-cli/tests/{test_codec.py,test_fixtures.py,test_live_pubsub.py}`.
+**Tests:** `crates/py/python/tests/test_loader_smoke.py`
+(`test_loader_resolves_library` und die drei folgenden; 4 passed gegen
+`ZERODDS_LIB=target/release/libzerodds.dylib`),
+`examples/tutorials/dds-chat/ports/python-cli/tests/{test_codec.py,test_fixtures.py,test_live_pubsub.py}`.
 
 **Status:** done
 
@@ -115,13 +131,20 @@ listener` mit user_data.
 Java-Seite (kein `System.loadLibrary`, kein JNI-Adapter). Eine
 frühere JNI-Bridge wurde entfernt.
 
-**Repo:** `crates/java-omgdds/java/src/main/java/`,
+**Repo:** `crates/java-omgdds/java/src/main/java/org/omg/dds/**` (Pure-Java-PSM:
+`domain/`, `pub/`, `sub/`, `topic/`, `core/`) und
+`crates/java-omgdds/java/src/main/java/org/zerodds/**` (`InProcessBus`,
+`cdr/`, `rtps/`, `bridge/GrpcBridgeClient`); `crates/java-omgdds/java/pom.xml`
+baut ein portables JAR ohne `.so`/`.dylib`/`.dll`,
 `examples/tutorials/dds-chat/ports/java-cli/src/main/java/io/zerodds/chat/Main.java`,
 `examples/tutorials/dds-chat/ports/java-cli/pom.xml`.
 
-**Tests:** `crates/java-omgdds/java/src/test/java/.../*Test.java`
-(`mvn test`, 18 grün);
-`examples/tutorials/dds-chat/ports/java-cli/` (Maven Test-Folder).
+**Tests:** `crates/java-omgdds/java/src/test/java/org/omg/dds/QuickstartApiTest.java::serviceEnvironmentBootstrapBySystemProperty`,
+`crates/java-omgdds/java/src/test/java/org/omg/dds/QuickstartApiTest.java::byteArrayQuickstartRoundTrip`,
+`crates/java-omgdds/java/src/test/java/org/omg/dds/PubSubLoopbackTest.java::singleWriterSingleReaderRoundTrip`,
+`crates/java-omgdds/java/src/test/java/org/omg/dds/Xcdr2CodecTest.java::primitivesRoundTrip`;
+Lauf: `mvn -o test` in `crates/java-omgdds/java` — 103 Tests, 1
+übersprungen.
 
 **Status:** done
 
@@ -130,12 +153,23 @@ frühere JNI-Bridge wurde entfernt.
 **Spec:** §3.3 — `[DllImport("zerodds")]`, NuGet `runtimes/<rid>/
 native/`-Layout, IDisposable-Wrapper.
 
-**Repo:** `crates/cs/csharp/`,
+**Repo:** `crates/cs/csharp/ZeroDDS/src/Native.cs` (77 `[DllImport("zerodds",
+EntryPoint = …)]`-Deklarationen mit explizitem EntryPoint, NativeAOT-tauglich)
+über `crates/cs/csharp/ZeroDDS/src/{Domain,Topic,Pub,Sub,Qos,Conditions,Listener}.cs`
+als IDisposable-Wrapper; `crates/cs/csharp/ZeroDDS/ZeroDDS.csproj` trägt die
+NuGet-Metadaten,
 `examples/tutorials/dds-chat/ports/csharp-cli/src/Program.cs`,
 `examples/tutorials/dds-chat/ports/csharp-cli/test/FixturesTests.cs`.
 
-**Tests:** `examples/tutorials/dds-chat/ports/csharp-cli/test/FixturesTests.cs`,
-`crates/cs/`-Tests.
+**Tests:** `crates/cs/csharp/ZeroDDS.Cdr.Tests/Xcdr2WireVectorsTests.cs::V1_EmptyFinal_EncodesToZeroBytes`,
+`crates/cs/csharp/ZeroDDS.Cdr.Tests/Xcdr2WireVectorsTests.cs::V2_PlainPrimitivesFinal_MatchesWire`,
+`crates/cs/csharp/ZeroDDS.Cdr.Tests/Xcdr2WireVectorsTests.cs::V4_StringFinal_MatchesWire`,
+`crates/cs/csharp/ZeroDDS.Cdr.Tests/Xcdr2WireVectorsTests.cs::V10_Mutable_MatchesWire`,
+`crates/cs/csharp/ZeroDDS.Cdr.Tests/Xcdr2WireVectorsTests.cs::V12_MutableSentinel_NoExplicitSentinelEmitted`,
+`crates/cs/csharp/ZeroDDS.Cdr.Tests/Xcdr2WireVectorsTests.cs::FixedBcd_OracleVectors_Roundtrip`;
+dazu `crates/cs/csharp/build_cs_smoke.sh`, das
+`crates/cs/csharp/ZeroDDS.Tests/Program.cs` gegen die gebaute `libzerodds`
+fährt, und `examples/tutorials/dds-chat/ports/csharp-cli/test/FixturesTests.cs`.
 
 **Status:** done
 
@@ -149,23 +183,35 @@ native/`-Layout, IDisposable-Wrapper.
 `examples/tutorials/dds-chat/ports/cpp-tui/test/live_pubsub_test.cpp`,
 `examples/tutorials/dds-chat/ports/cpp-tui/CMakeLists.txt`.
 
-**Tests:** `examples/tutorials/dds-chat/ports/cpp-tui/test/live_pubsub_test.cpp`,
-`crates/cpp/tests/`.
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_participant_lifecycle`, `crates/cpp/tests/smoke_dds_psm.cpp::test_topic_creation`,
+`crates/cpp/tests/smoke_dds_psm.cpp::test_publisher_subscriber_lifecycle`,
+`crates/cpp/tests/smoke_dds_psm.cpp::test_writer_reader_lifecycle`,
+`crates/cpp/tests/smoke_dds_psm.cpp::test_take_on_empty_returns_empty`, `crates/cpp/tests/smoke_dds_psm.cpp::test_status_getters`;
+gefahren über `crates/cpp/tests/cpp_smoke_via_cargo.rs::dds_psm_cxx_smoke`.
 
 **Status:** done
 
 ### §3.5 TypeScript/JavaScript Node N-API + WASM
 
-**Spec:** §3.5 — Node via napi-rs in `crates/ts-node/`; WASM via
+**Spec:** §3.5 — Node via koffi-FFI in `crates/ts-node/`; WASM via
 wasm-bindgen in `crates/ts-wasm/`; WASM-Build nutzt WS-Bridge als
 Daemon.
 
-**Repo:** `crates/ts-node/src/`,
-`crates/ts-wasm/src/`,
+**Repo:** `crates/ts-node/src/{native.ts,index.ts,dds.ts,qos.ts}`
+(koffi-Deklarationen über `zerodds.h`, Library-Auflösung mit
+`ZERODDS_LIB`-Übersteuerung),
+`crates/ts-wasm/src/lib.rs` (`CdrEncoder`/`CdrDecoder` per wasm-bindgen über
+`zerodds-wire`; die frühere Fassung band gegen das im Rebuild entfallene
+`zerodds-cdr`) und `crates/ts-wasm/src/{index.ts,cdr/,dcps/}` (DCPS-über-
+WebSocket-Fassade zum `crates/websocket-bridge/`-Daemon),
 `examples/tutorials/dds-chat/ports/ts-node/src/live_pubsub.ts`,
 `examples/tutorials/dds-chat/ports/ts-browser/src/live_pubsub.ts`.
 
-**Tests:** `examples/tutorials/dds-chat/ports/ts-node/test/live_pubsub.test.ts`,
+**Tests:** `cargo test -p zerodds-ts-wasm` — 6/6 (`tests::primitive_roundtrip_little_endian`
+und fünf weitere); `npm test` in `crates/ts-wasm/` — 4/4 in
+`test/smoke.test.mjs` gegen die aus dieser Quelle mit
+`npm run build:wasm` erzeugte `pkg-node/` und 4/4 in `test/dcps.test.ts`;
+`examples/tutorials/dds-chat/ports/ts-node/test/live_pubsub.test.ts`,
 `examples/tutorials/dds-chat/ports/ts-browser/test/live_pubsub.test.ts`.
 
 **Status:** done
@@ -179,7 +225,12 @@ Function-Cast.
 `examples/tutorials/dds-chat/apps/flutter-mobile/lib/native/live_pubsub.dart`
 (Cluster-C dart:ffi-Loader voll wired).
 
-**Tests:** `examples/tutorials/dds-chat/apps/flutter-mobile/test/{fixtures_test.dart,live_pubsub_test.dart,message_codec_test.dart}`.
+**Tests:** `examples/tutorials/dds-chat/apps/flutter-mobile/test/live_pubsub_test.dart` — `"cross-process Pub/Sub round-trip"`;
+`examples/tutorials/dds-chat/apps/flutter-mobile/test/message_codec_test.dart` — `"encapsulation header is PL_CDR2_LE"`,
+`"message roundtrip"`, `"room field roundtrip"`;
+`examples/tutorials/dds-chat/apps/flutter-mobile/test/fixtures_test.dart` — `"01-simple fixture decodes correctly"`,
+`"03-unicode fixture decodes correctly"`. Die Dart-Tests tragen Sätze statt
+Bezeichner; zitiert wird der Satz, den `flutter test` ausgibt.
 
 **Status:** done
 
@@ -192,21 +243,56 @@ encode+write/Close).
 
 **Repo:** Per-Sprach-Loader (siehe §3.x), `crates/zerodds-c-api/src/`.
 
-**Tests:** Cross-Lang-Live-Tests (siehe §5).
+**Tests:** `crates/zerodds-c-api/tests/smoke_ffi.rs::ffi_pub_sub_roundtrip` läuft genau die sechs Schritte:
+`zerodds_runtime_create`, `zerodds_writer_create`/`zerodds_reader_create`
+mit Topic- und Typnamen, fünf `zerodds_writer_write`, `zerodds_reader_take`
+mit `zerodds_buffer_free`, dann die `*_destroy`-Kette.
+`crates/zerodds-c-api/tests/smoke_ffi.rs::ffi_pub_sub_roundtrip_via_take_into` (Take in einen vom Aufrufer
+gestellten Puffer), `crates/zerodds-c-api/tests/smoke_ffi.rs::ffi_pub_sub_roundtrip_via_loan` (Loan-Pfad).
+`tools/traceability/tests/ffi_loader_packaging.rs::the_shipped_header_declares_the_lifecycle_entry_points` prüft, dass
+`zerodds.h` diese Einstiegspunkte deklariert. Gate: die drei Roundtrip-
+Tests sind auf macOS `#[ignore]` (Multicast-Loopback), auf Linux laufen
+sie im Default-Lauf; der Header-Test hat kein Gate.
 
 **Status:** done
 
 ### §4.2 CDR-Encoding pro Sprache
 
-**Spec:** §4.2 — `crates/py/zerodds/cdr.py`, `crates/java/com/zerodds/
-cdr/`, `ZeroDDS.Cdr`, `<zerodds/cdr.hpp>`, `@zerodds/cdr`,
-`crates/xcdr2-ts/`.
+**Spec:** §4.2 — der CDR-Codec je Sprache: die Wire-Laufzeit in
+`runtime/<Sprache>` mit dem Code, den `zerodds-idlc generate` erzeugt.
 
-**Repo:** `crates/{xcdr2-c,xcdr2-cpp,xcdr2-csharp,xcdr2-java,xcdr2-rust,xcdr2-ts}/`.
+**Repo:** Rust `crates/wire/src/{writer.rs,reader.rs}`;
+C `runtime/c/include/zerodds_wire.h` + Code aus `zerodds-idlc generate
+--lang c`, dazu `<stem>_typesupport.h` mit einer `zerodds_typesupport_t`
+je Topic-Typ (`tools/idlc/src/c_support.rs`) für den Typed-Dispatch aus
+`crates/zerodds-c-api/include/zerodds_xcdr2.h`, ohne eigenen Codec;
+C++ `runtime/cpp/include/zerodds/wire.hpp` + Code aus `zerodds-idlc
+generate --lang c++` (`crates/cpp/include/dds/topic/{xcdr2.hpp,
+xcdr2_md5.hpp}` entfernt);
+C# `runtime/csharp/src/{Writer.cs,Reader.cs}`;
+Java `runtime/java/src/main/java/org/zerodds/wire/`;
+TS/Node `runtime/typescript/src/`; WASM der wasm-bindgen-Codec
+`crates/ts-wasm/src/lib.rs`, selbst über `zerodds-wire` (kein eigener
+Codec — das ehemalige Verzeichnis crates/ts-wasm/src/cdr duplizierte ihn und ist
+entfernt);
+Python `runtime/python/zerodds_wire/`.
 
-**Tests:** `crates/zerodds-c-api/tests/xcdr2_wire_vectors.rs` deckt
-Wire-Identität gegen Spec; Per-Sprach-Codec-Tests in den Per-Sprach-
-Crates.
+**Tests:** `crates/zerodds-c-api/tests/xcdr2_wire_vectors.rs` (13 Fälle:
+`v1_empty_final_struct`, `v2_plain_primitives_final`,
+`v3_mixed_primitives_final`, `v4_string_final`, `v5_sequence_int32_final`,
+`v6_sequence_string_final`, `v7_nested_modules_final`, `v8_keyed_struct_final`,
+`v9_appendable_struct`, `v10_mutable_struct`, `v11_optional_member_some`,
+`v11_optional_member_none`, `v12_mutable_no_explicit_sentinel`) ist der
+Referenz-Satz. Pro Sprache dieselben Vektoren:
+`crates/cs/csharp/ZeroDDS.Cdr.Tests/Xcdr2WireVectorsTests.cs::V1_EmptyFinal_EncodesToZeroBytes`,
+`::V4_StringFinal_MatchesWire`, `::V10_Mutable_MatchesWire`;
+`crates/java-omgdds/java/src/test/java/org/zerodds/cdr/Xcdr2WireVectorsTest.java::v1EmptyFinal`,
+`::v3MixedPrimitives`, `::v4Greeting`;
+`crates/ts-node/test/xcdr2-wire-vectors.test.ts` —
+`"V-1 Empty Final Struct: encode → 0 bytes; roundtrip"`;
+`crates/ts-wasm/test/smoke.test.mjs` —
+`"wasm encode-decode primitive roundtrip (LE)"`;
+`crates/py/python/tests/test_loader_smoke.py::test_loader_resolves_library`.
 
 **Status:** done
 
@@ -222,9 +308,15 @@ Roundtrip), Per-Sprach-Live-Pub/Sub-Implementationen unter
 `examples/tutorials/dds-chat/ports/`,
 `tests/cross_lang_live/` (Cluster-C zentraler Cross-Lang-Harness).
 
-**Tests:** `tests/cross_lang_live/{live_pubsub_c.sh,live_pubsub_cpp.sh,live_pubsub_csharp.sh,live_pubsub_java.sh,live_pubsub_python.sh,live_pubsub_typescript.sh,run_all.sh}`
-(Per-Sprach-Sub-Skripte mit Rust-Pub-Subprocess);
-Per-Sprach-`tests/test_live_pubsub.*` in den dds-chat-Ports.
+**Tests:** `crates/zerodds-c-api/tests/smoke_ffi.rs::ffi_pub_sub_roundtrip` ist die
+Rust-Seite des Roundtrips; die Per-Sprach-Sub-Skripte
+`tests/cross_lang_live/{live_pubsub_c.sh,live_pubsub_cpp.sh,live_pubsub_csharp.sh,live_pubsub_java.sh,live_pubsub_python.sh,live_pubsub_typescript.sh}`
+starten sie gegen den jeweiligen Port, `tests/cross_lang_live/run_all.sh`
+fährt alle sechs. Die Port-Seite trägt Namen:
+`examples/tutorials/dds-chat/ports/python-cli/tests/test_live_pubsub.py::test_pub_sub_round_trip`,
+`examples/tutorials/dds-chat/ports/java-cli/src/test/java/io/zerodds/chat/LivePubSubTest.java::pubSubRoundTrip`,
+`examples/tutorials/dds-chat/ports/csharp-cli/test/LivePubSubTests.cs::PubSubRoundTrip`,
+`examples/tutorials/dds-chat/ports/ts-node/test/live_pubsub.test.ts` — `"cross-process pub/sub round-trip"`.
 
 **Status:** done
 
@@ -242,10 +334,40 @@ Pfaden; PyPI/Maven Central/NuGet/npm-ESM/pub.dev.
 `packaging/windows/{msi,scoop,chocolatey}/`,
 `packaging/linux/rpm/zerodds.pc`.
 
-**Tests:** Inline-Tests pro Per-Sprach-Crate prüfen Library-Lookup;
-ABI-Compat siehe §8.2.
+**Tests:** `tools/traceability/tests/ffi_loader_packaging.rs::the_shipped_header_declares_the_lifecycle_entry_points`,
+`tools/traceability/tests/ffi_loader_packaging.rs::the_linux_packages_install_the_library_and_resolve_the_prefixes`
+(SONAME-Kette `libzerodds.so.1.0.0` → `.so.1` → `.so` plus `zerodds.pc`
+mit `includedir`/`libdir`/`-lzerodds`),
+`tools/traceability/tests/ffi_loader_packaging.rs::the_macos_packages_install_the_header_and_the_dylib`
+(Homebrew-Formula und `.pkg`-Build unter `/usr/local`),
+`tools/traceability/tests/ffi_loader_packaging.rs::the_python_wheel_carries_the_distribution_name_of_the_clause`.
+Kein Gate; alle vier laufen im Default-Lauf.
 
-**Status:** done
+**Status:** partial — Library, Header und pkg-config sind für Linux und
+macOS in den Paketen und werden gegen die Klausel geprüft; die
+PyPI-Distribution heisst wie die Klausel sie nennt. Nicht erfüllt sind der
+Windows-Anteil und drei der sechs Per-Sprach-Packages; beides als
+§6b geführt.
+
+### §6b Windows-Header/-Library und die fehlenden Per-Sprach-Packages
+
+**Spec:** §6 — `%PROGRAMFILES%\ZeroDDS\include\zerodds.h`,
+`bin\zerodds.dll`, `lib\zerodds.lib`; NuGet `ZeroDDS` mit
+`runtimes/<rid>/native/`, npm `@zerodds/sdk` und `@zerodds/wasm`,
+pub.dev `zerodds`, Maven Central `eu.ifyna:zerodds-java-omgdds`.
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** open — `packaging/windows/msi/zerodds.wxs` hat das
+`Devel`-Feature ausdrücklich entfernt, also liefert kein Windows-Paket
+Header, DLL oder Import-Library aus. Von den Per-Sprach-Packages
+existiert im Baum nur das PyPI-Wheel unter dem genannten Namen; das
+npm-Paket heisst `@zerodds/wire` statt `@zerodds/sdk`/`@zerodds/wasm`,
+ein NuGet- und ein pub.dev-Package gibt es nicht, und das Maven-Modul
+trägt die Koordinaten `org.zerodds:omgdds` statt
+`eu.ifyna:zerodds-java-omgdds`.
 
 ## §7 Versioning + ABI-Compat-Promise
 
@@ -254,10 +376,16 @@ ABI-Compat siehe §8.2.
 **Spec:** §7 — Patch=keine ABI-Änderungen, Minor=additive Symbole,
 Major=Breaking + ABI_REVISION-Bump.
 
-**Repo:** `crates/zerodds-c-api/src/lib.rs` (abi_revision-Funktion),
-`crates/zerodds-c-api/include/zerodds.h` (Versions-Macros).
+**Repo:** `crates/zerodds-c-api/src/lib.rs::zerodds_abi_revision`
+(exportierte Funktion) + `ZERODDS_ABI_REVISION` (Rust-Konstante);
+`crates/zerodds-c-api/include/zerodds.h` (`#define ZERODDS_ABI_REVISION`,
+aus dem cbindgen-Preamble in `crates/zerodds-c-api/cbindgen.toml`).
 
-**Tests:** `crates/zerodds-c-api/tests/smoke_ffi.rs::*abi_revision*`.
+**Tests:** `crates/zerodds-c-api/tests/abi_compat.rs::the_header_macro_and_the_exported_revision_agree`
+(Header-Macro, Rust-Konstante und Rückgabewert der Funktion tragen
+dieselbe Zahl, und `zerodds_abi_revision` steht in der Symbol-Surface),
+`crates/zerodds-c-api/tests/abi_compat.rs::abi_snapshot_matches`
+(additiv ja, Entfernen/Umbenennen nein).
 
 **Status:** done
 
@@ -296,13 +424,26 @@ Liste gegen `abi.snapshot.json`, fail bei unbeabsichtigten Änderungen.
 **Spec:** §8.3 — pro Sprach-Crate ≥ 5 Loader-Tests + Cross-Lang-Live-
 Test in `tests/cross_lang_live/`.
 
-**Repo:** Per-Sprach-Crates `crates/{py,cpp,cs,java,ts-node,ts-wasm}/
-tests/`, `examples/tutorials/dds-chat/ports/*/test*/`,
+**Repo:** Per-Sprach-Testbäume `crates/py/python/tests/`,
+`crates/cpp/tests/`, `crates/cs/csharp/{ZeroDDS.Tests,ZeroDDS.Cdr.Tests}/`,
+`crates/java-omgdds/java/src/test/java/`, `crates/ts-node/test/`,
+`crates/ts-wasm/test/`, `examples/tutorials/dds-chat/ports/*/test*/`,
 `tests/cross_lang_live/run_all.sh` (Cluster-C zentraler
 Cross-Lang-Matrix-Runner).
 
-**Tests:** Per-Sprach-`tests/test_live_pubsub.*` in den dds-chat-
-Ports + `tests/cross_lang_live/live_pubsub_*.sh` Per-Sprach-Skripte.
+**Tests:** Per Sprache:
+`crates/py/python/tests/test_loader_smoke.py::test_loader_resolves_library`,
+`::test_loader_runtime_create_participant_offline`,
+`::test_loader_factory_singleton`,
+`::test_loader_zerodds_error_is_runtime_error_subclass`;
+`crates/cpp/tests/smoke_dds_psm.cpp::test_participant_lifecycle`;
+`crates/cs/csharp/ZeroDDS.Cdr.Tests/Xcdr2WireVectorsTests.cs::V1_EmptyFinal_EncodesToZeroBytes`;
+`crates/java-omgdds/java/src/test/java/org/omg/dds/QuickstartApiTest.java::serviceEnvironmentBootstrapBySystemProperty`;
+`crates/ts-wasm/test/smoke.test.mjs` — `"wasm version string"`.
+Der Cross-Lang-Live-Test selbst:
+`examples/tutorials/dds-chat/ports/python-cli/tests/test_live_pubsub.py::test_pub_sub_round_trip` und
+`examples/tutorials/dds-chat/ports/java-cli/src/test/java/io/zerodds/chat/LivePubSubTest.java::pubSubRoundTrip`,
+gefahren über `tests/cross_lang_live/run_all.sh`.
 
 **Status:** done
 
@@ -336,8 +477,13 @@ Sprach-Loader, Major=Breaking-ABI.
 
 ## Audit-Status
 
-20 done / 0 partial / 0 open / 3 n/a (informative) / 0 n/a (rejected).
+18 done / 1 partial / 2 open / 3 n/a (informative) / 0 n/a (rejected).
 
 Test-Lauf: `cargo test -p zerodds-c-api` — Tests grün, 0 failed.
+Per-Sprach-Seiten: `cargo test -p zerodds-ts-wasm` 6/6;
+`npm test` in `crates/ts-wasm/` 8/8; `mvn test` in `crates/java-omgdds/java/`
+95 Tests, 0 Failures; `dotnet test` in `crates/cs/csharp/` 31 + 6 grün und
+`build_cs_smoke.sh` ohne Fehlschlag; `pytest crates/py/python/tests/test_loader_smoke.py`
+4 passed.
 
-Keine offenen Punkte oder Decision-Records — alle Items `done` / `n/a (informative)`.
+Offene Punkte: siehe `zerodds-ffi-loader-1.0.open.md`. Decision-Records: keine.

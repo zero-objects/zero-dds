@@ -7,7 +7,7 @@
 import Zerodds
 
 func sample(_ id: UInt32, _ label: String) -> [UInt8] {
-    var w = Writer(.little)
+    var w = Writer(.little, .xcdr2)
     w.putU32(id)
     w.putString(label)
     return w.bytes()
@@ -15,21 +15,21 @@ func sample(_ id: UInt32, _ label: String) -> [UInt8] {
 
 // --- sync ---
 let t = MemTransport()
-let c = Client(t)
+let c = Client(t, objectId: xrceObjectId(0x001, objkDataWriter))
 c.write(sample(0x42, "sync-hello"))
 if let body = c.poll() {
-    var r = Reader(body, .little)
+    var r = Reader(body, .little, .xcdr2)
     print("sync: received id=0x" + String(r.getU32(), radix: 16))
 }
 
 // --- async (AsyncStream) ---
 let t2 = MemTransport()
-let w = Client(t2)
+let w = Client(t2, objectId: xrceObjectId(0x001, objkDataWriter))
 for i in 0..<3 { w.write(sample(0x100 + UInt32(i), "async")) }
 let reader = AsyncReader(t2)
 var n = 0
 for await body in reader.stream() {
-    var r = Reader(body, .little)
+    var r = Reader(body, .little, .xcdr2)
     print("async: received id=0x" + String(r.getU32(), radix: 16))
     n += 1
     if n == 3 { break }

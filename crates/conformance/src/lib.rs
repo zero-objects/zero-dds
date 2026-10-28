@@ -20,14 +20,11 @@
 //! * [`coap_plugtest`] — IETF-Plugtest (RFC 7252 + 7641 + 7959).
 //! * [`dds_xml_xvendor`] — DDS-XML 1.0 Cross-Vendor + W3C-XSD.
 
-#![no_std]
+// Needs `std`: the suites run against the bridges, which need it.
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
 extern crate alloc;
-
-#[cfg(feature = "std")]
-extern crate std;
 
 pub mod autobahn_ws;
 pub mod coap_plugtest;

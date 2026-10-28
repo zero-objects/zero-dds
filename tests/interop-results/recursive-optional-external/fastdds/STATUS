@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of recursive-optional-external that fastdds produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	the fill: error: no matching function for call to 'eprosima::fastcdr::optional<eprosima::fastcdr::external<zd_c2::m::Node> >::value(int)'
+plain-cdr1	be	refused	the fill: error: no matching function for call to 'eprosima::fastcdr::optional<eprosima::fastcdr::external<zd_c2::m::Node> >::value(int)'
+pl-cdr1	le	refused	the fill: error: no matching function for call to 'eprosima::fastcdr::optional<eprosima::fastcdr::external<zd_c2::m::Node> >::value(int)'
+pl-cdr1	be	refused	the fill: error: no matching function for call to 'eprosima::fastcdr::optional<eprosima::fastcdr::external<zd_c2::m::Node> >::value(int)'
+plain-cdr2	le	refused	the fill: error: no matching function for call to 'eprosima::fastcdr::optional<eprosima::fastcdr::external<zd_c2::m::Node> >::value(int)'
+plain-cdr2	be	refused	the fill: error: no matching function for call to 'eprosima::fastcdr::optional<eprosima::fastcdr::external<zd_c2::m::Node> >::value(int)'
+delimited-cdr	le	refused	the fill: error: no matching function for call to 'eprosima::fastcdr::optional<eprosima::fastcdr::external<zd_c2::m::Node> >::value(int)'
+delimited-cdr	be	refused	the fill: error: no matching function for call to 'eprosima::fastcdr::optional<eprosima::fastcdr::external<zd_c2::m::Node> >::value(int)'
+pl-cdr2	le	refused	the fill: error: no matching function for call to 'eprosima::fastcdr::optional<eprosima::fastcdr::external<zd_c2::m::Node> >::value(int)'
+pl-cdr2	be	refused	the fill: error: no matching function for call to 'eprosima::fastcdr::optional<eprosima::fastcdr::external<zd_c2::m::Node> >::value(int)'

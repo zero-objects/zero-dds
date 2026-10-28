@@ -22,8 +22,11 @@ path = "src/lib.rs"
 
 [dependencies]
 zerodds-types = { version = "1.0.0-rc.7", path = "../types" }
-zerodds-idl = { version = "1.0.0-rc.7", path = "../idl" }
-zerodds-cdr = { version = "1.0.0-rc.7", path = "../cdr" }
+zerodds-ast = { version = "1.0.0-rc.7", path = "../ast" }
+zerodds-idl-parse = { version = "1.0.0-rc.7", path = "../idl-parse" }
+zerodds-idl-compose = { version = "1.0.0-rc.7", path = "../idl-compose" }
+zerodds-wire-codec = { version = "1.0.0-rc.7", path = "../wire-codec" }
+zerodds-ast-layout = { version = "1.0.0-rc.7", path = "../ast-layout" }
 serde_json = "1"
 rusqlite = { workspace = true }
 

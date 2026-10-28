@@ -43,6 +43,18 @@ use zerodds_websocket_bridge::daemon::server;
 use zerodds_websocket_bridge::frame::Frame;
 use zerodds_websocket_bridge::handshake::compute_accept;
 
+/// The daemon child, killed and reaped when the test ends, also when an
+/// assertion fails before the test's own SIGTERM: a bare `Child` is not
+/// killed on drop, and a failed run left the daemon running for hours.
+struct Reaped(std::process::Child);
+
+impl Drop for Reaped {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
 fn build_handshake_request(host: &str, path: &str, key: &str) -> String {
     format!(
         "GET {path} HTTP/1.1\r\n\
@@ -366,4 +378,155 @@ fn metrics_counters_track_frames_in_and_out() {
 
     drop(stream);
     handle.shutdown();
+}
+
+/// `direction` means what it means in the other bridge daemons: `in`
+/// carries client frames into DDS (a DataWriter), `out` carries DDS
+/// samples to the clients (a DataReader). A publish or subscribe against
+/// the direction a topic does not carry gets an error frame, not silence.
+#[test]
+fn direction_in_writes_into_dds_and_out_reads_from_it() {
+    let mut cfg = make_test_config(0);
+    cfg.topics.clear();
+    for (name, direction) in [("IntoDds", "in"), ("OutOfDds", "out")] {
+        cfg.topics.push(TopicConfig {
+            name: name.to_string(),
+            type_name: name.to_string(),
+            direction: direction.to_string(),
+            ws_path: format!("/topics/{name}"),
+            reliability: "reliable".to_string(),
+            durability: "volatile".to_string(),
+            history_depth: 10,
+        });
+    }
+    let mut handle = server::start(cfg).expect("daemon start");
+    assert!(handle.user_writers.contains_key("IntoDds"));
+    assert!(!handle.user_readers.contains_key("IntoDds"));
+    assert!(handle.user_readers.contains_key("OutOfDds"));
+    assert!(!handle.user_writers.contains_key("OutOfDds"));
+
+    let mut stream = ws_client_connect(&handle.local_addr, "/");
+    for (op, reason) in [
+        (
+            "{\"op\":\"publish\",\"topic\":\"OutOfDds\",\"data\":\"x\"}",
+            "not-bridged-into-dds",
+        ),
+        (
+            "{\"op\":\"subscribe\",\"topic\":\"IntoDds\"}",
+            "not-bridged-out-of-dds",
+        ),
+    ] {
+        let bytes = encode(&Frame::text(op).with_mask([1, 2, 3, 4])).expect("encode");
+        stream.write_all(&bytes).expect("send");
+        let frame = read_frame_from(&mut stream);
+        let text = std::str::from_utf8(&frame.payload).expect("text frame");
+        assert!(text.contains(reason), "{op}: {text}");
+    }
+    drop(stream);
+    handle.shutdown();
+}
+
+/// Outbound notify frames to an idle subscriber must not wait for the
+/// connection's 500 ms reader timeout to expire.
+#[test]
+fn subscriber_delivery_does_not_wait_for_reader_timeout() {
+    let mut cfg = make_test_config(0);
+    cfg.domain = 198;
+    let mut handle = server::start(cfg).expect("daemon start");
+
+    let mut sub_stream = ws_client_connect(&handle.local_addr, "/topics/trade");
+    sub_stream
+        .set_read_timeout(Some(Duration::from_millis(500)))
+        .expect("set read-timeout");
+
+    std::thread::sleep(Duration::from_millis(150));
+
+    let reader_eid = *handle
+        .user_readers
+        .get("TradeE2E")
+        .expect("daemon registered user_reader for TradeE2E");
+
+    for seq in 0..5 {
+        // Sleep 40 ms so the daemon's reader loop is parked inside its 500 ms read().
+        std::thread::sleep(Duration::from_millis(40));
+        let t0 = std::time::Instant::now();
+        let payload = format!("{{\"seq\":{seq}}}").into_bytes();
+        assert!(
+            handle.runtime.test_inject_user_alive(reader_eid, payload),
+            "inject sample"
+        );
+        let frame = read_frame_from(&mut sub_stream);
+        let elapsed = t0.elapsed();
+        let text = std::str::from_utf8(&frame.payload).expect("utf8");
+        assert!(text.contains(&format!("\"seq\":{seq}")), "got: {text}");
+        assert!(
+            elapsed < Duration::from_millis(100),
+            "sample {seq} took {elapsed:?} (expected < 100 ms; reader lock contention?)"
+        );
+    }
+
+    handle.shutdown();
+}
+
+/// Spec §9.2 through the binary: `READY=1` to `$NOTIFY_SOCKET` once it
+/// serves, SIGTERM ends the process with exit 0 after `STOPPING=1`.
+/// The binary parked forever and was still running 3 s after SIGTERM.
+#[cfg(unix)]
+#[test]
+fn the_binary_exits_0_on_sigterm() {
+    use std::process::{Command, Stdio};
+    // sd_notify: the packaged units are Type=notify.
+    let dir = std::env::temp_dir().join(format!("zd-notify-e2e-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let sock_path = dir.join("notify.sock");
+    let _ = std::fs::remove_file(&sock_path);
+    let notify = std::os::unix::net::UnixDatagram::bind(&sock_path).unwrap();
+    notify
+        .set_read_timeout(Some(std::time::Duration::from_secs(10)))
+        .unwrap();
+    let next_state = || {
+        let mut buf = [0u8; 64];
+        let n = notify.recv(&mut buf).expect("a notify datagram");
+        String::from_utf8_lossy(&buf[..n]).into_owned()
+    };
+    let mut child = Reaped(
+        Command::new(env!("CARGO_BIN_EXE_zerodds-ws-bridged"))
+            .args(["--set", "listen=127.0.0.1:0", "--set", "domain=99"])
+            .env("NOTIFY_SOCKET", &sock_path)
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("spawn"),
+    );
+    // The signal handler is installed before the daemon says `running`; a
+    // SIGTERM before that ends the process by the default action.
+    use std::io::BufRead;
+    let mut lines = std::io::BufReader::new(child.0.stderr.take().unwrap()).lines();
+    assert!(
+        lines
+            .by_ref()
+            .map_while(Result::ok)
+            .any(|l| l.contains("running")),
+        "the daemon never reported running"
+    );
+    std::thread::spawn(move || lines.for_each(drop));
+    assert_eq!(next_state(), "READY=1");
+    let killed = Command::new("kill")
+        .args(["-TERM", &child.0.id().to_string()])
+        .status()
+        .unwrap();
+    assert!(killed.success());
+    let started = std::time::Instant::now();
+    let status = loop {
+        if let Some(st) = child.0.try_wait().unwrap() {
+            break st;
+        }
+        if started.elapsed() > std::time::Duration::from_secs(5) {
+            panic!("still running 5 s after SIGTERM");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    };
+    assert_eq!(status.code(), Some(0));
+    assert_eq!(next_state(), "STOPPING=1");
+    let _ = std::fs::remove_dir_all(&dir);
 }

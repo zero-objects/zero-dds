@@ -1,0 +1,21 @@
+// SPDX-License-Identifier: Apache-2.0
+// Reconstructed source for xcdr1_gen.py. Top-level (no module). Generate
+// with `--encoding xcdr1`: this fixture exists to exercise the classic-CDR
+// wire (no DHEADER, PL_CDR1 for @mutable), not XCDR2.
+@final
+struct X1Final {
+  octet a;
+  double d;
+};
+
+@appendable
+struct X1App {
+  long a;
+  double d;
+};
+
+@mutable
+struct X1Mut {
+  @id(1) long a;
+  @id(2) double d;
+};

@@ -24,7 +24,7 @@ header appears exactly once and before all frames.
 `FrameView`), `crates/recorder/src/writer.rs` (`RecordWriter`),
 `crates/recorder/src/reader.rs` (`RecordReader`).
 
-**Tests:** `crates/recorder/src/format.rs::tests::header_roundtrip`,
+**Tests:** `crates/recorder/src/format.rs::header_writes_magic_and_version`,
 `header_writes_magic_and_version`, `frame_roundtrip`,
 `header_must_come_before_frames`, `header_only_once`, `bad_magic_rejected`,
 `truncated_header_detected`, `truncated_frame_detected`, `write_all_helper`.
@@ -42,7 +42,7 @@ repeated strings.
 
 **Tests:** `crates/recorder/src/session.rs::tests::session_drops_unknown_topic`,
 `session_unknown_participant_falls_back_to_idx_zero`,
-`crates/recorder/src/format.rs::tests::frame_idx_must_be_in_range`.
+`crates/recorder/src/writer.rs::frame_idx_must_be_in_range`.
 
 **Status:** done
 
@@ -68,7 +68,7 @@ hooks without breaking the 1.0 wire form).
 **Repo:** `crates/recorder/src/format.rs` (`Header` version field + read-time
 check).
 
-**Tests:** `crates/recorder/src/format.rs::tests::unsupported_version_rejected`,
+**Tests:** `crates/recorder/src/reader.rs::unsupported_version_rejected`,
 `header_writes_magic_and_version`.
 
 **Status:** done

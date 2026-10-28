@@ -10,20 +10,22 @@
 // intentional here.
 #![allow(clippy::print_stdout, clippy::expect_used)]
 
-use zerodds_cdr::Endianness;
-use zerodds_endpoint_rust::{Client, MemTransport, Reading};
+use zerodds_endpoint_rust::{Client, MemTransport, OBJK_DATAWRITER, Reading, xrce_object_id};
+use zerodds_wire::Endianness;
 
 fn main() {
     let total: u32 = 5;
     let transport = MemTransport::new();
-    let mut client = Client::new(transport.clone());
+    let mut client = Client::new(transport.clone(), xrce_object_id(0x001, OBJK_DATAWRITER));
     for i in 0..total {
         let r = Reading {
             id: 0x1000 + i,
             value: 20.0 + (i as f32) * 0.5,
             label: format!("bay-{i:02}"),
         };
-        client.write(&r.marshal(Endianness::Little));
+        client
+            .write(&r.marshal(Endianness::Little))
+            .expect("sample fits the 16-bit submessage_length");
     }
 
     let mut got: u32 = 0;

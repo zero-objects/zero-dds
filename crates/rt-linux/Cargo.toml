@@ -11,7 +11,7 @@ homepage = "https://zerodds.org"
 documentation = "https://docs.rs/zerodds-rt-linux"
 readme = "README.md"
 keywords = ["dds", "real-time", "linux", "scheduler", "ffi"]
-categories = ["os::linux-apis", "no-std"]
+categories = ["os::linux-apis"]
 publish = true
 
 [lints]
@@ -21,6 +21,8 @@ workspace = true
 path = "src/lib.rs"
 
 [features]
+# The API returns `std::io::Result`; the crate needs `std` whatever the
+# features say. `std` stays so that a manifest naming it keeps resolving.
 default = ["std"]
 std = []
 

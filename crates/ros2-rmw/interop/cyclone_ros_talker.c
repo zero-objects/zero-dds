@@ -42,7 +42,7 @@ int main(int argc, char **argv) {
   }
   fprintf(stderr, "talker: matched subscriber=%d (current_count=%u)\n",
           matched, matched ? pm.current_count : 0u);
-  dds_sleepfor(DDS_MSECS(200)); /* Reliable-Handshake settlen lassen */
+  dds_sleepfor(DDS_MSECS(200)); /* Let reliable handshake settle. */
 
   for (int i = 0; i < n; i++) {
     std_msgs_msg_dds__String_ msg;

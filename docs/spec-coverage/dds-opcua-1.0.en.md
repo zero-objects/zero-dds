@@ -26,7 +26,14 @@ systems that use OPC UA."
 
 **Repo:** `crates/opcua-gateway/src/lib.rs` crate doc.
 
-**Tests:** cross-ref §8.2/§9.2/§9.3.
+**Tests:** the two directions the quote names as the bridge — OPC UA to DDS:
+`crates/opcua-gateway/src/types.rs::tests::primitive_mapping_matches_spec_table_8_1`,
+`crates/opcua-gateway/src/subscription_mapping/variant_dds.rs::tests::builtin_scalar_mappings_match_spec`;
+DDS to OPC UA:
+`crates/opcua-gateway/src/dds_to_ua/walker.rs::tests::primitive_dds_to_opc_ua_names_match_spec_tab_92`,
+`crates/opcua-gateway/src/address_space.rs::tests::topic_node_carries_parent_domain_reference`;
+that both directions are declared at once:
+`crates/opcua-gateway/src/conformance.rs::tests::declares_all_four_conformance_points`.
 
 **Status:** done
 
@@ -42,7 +49,15 @@ systems that use OPC UA."
 `dds_to_ua/walker.rs`; subscription mapping in
 `crates/opcua-gateway/src/subscription_mapping/{behavior,config,variant_dds}.rs`.
 
-**Tests:** cross-ref `subscription_mapping::tests::*`.
+**Tests:** UA type system:
+`crates/opcua-gateway/src/types.rs::tests::{builtin_type_kind_values_match_spec,
+primitive_mapping_matches_spec_table_8_1, xtypes_names_match_spec_table_8_1}`;
+UA subscription model:
+`crates/opcua-gateway/src/subscription_mapping/variant_dds.rs::tests::{primitive_scalar_mappings_match_spec_tab_816,
+builtin_scalar_mappings_match_spec, classify_scalar_array_matrix,
+array_1d_wraps_in_sequence, matrix_returns_named_struct,
+all_25_builtins_have_matrix_alias}`;
+`crates/opcua-gateway/src/conformance.rs::tests::points_are_numbered_one_to_four_uniquely`.
 
 **Status:** done
 
@@ -53,7 +68,11 @@ systems that use OPC UA."
 **Repo:** point 1 + service sets in
 `crates/opcua-gateway/src/service_sets/{attribute, method, query, view}.rs`.
 
-**Tests:** cross-ref `service_sets::tests::*`.
+**Tests:** `crates/opcua-gateway/src/service_sets/mod.rs::tests::{idl_module_paths_match_spec,
+all_service_sets_covers_four_sets, filter_operator_values_match_spec,
+timestamps_to_return_values_match_spec,
+filter_operand_kind_discriminant_roundtrip}`;
+`crates/opcua-gateway/src/conformance.rs::tests::complete_points_subsume_their_basic`.
 
 **Status:** done
 
@@ -63,10 +82,15 @@ systems that use OPC UA."
 historical).
 
 **Repo:** type system via `dds_to_ua/walker.rs` (see §9.2); GDS mapping in
-`address_space.rs::{DomainNode, TopicNode, SampleVariable}` (see §9.3).
+`crates/opcua-gateway/src/address_space.rs::{DomainNode, TopicNode, SampleVariable}` (see §9.3).
 
-**Tests:** cross-ref `dds_to_ua::walker::tests::*` +
-`address_space::tests::*`.
+**Tests:** DDS type system:
+`crates/opcua-gateway/src/dds_to_ua/walker.rs::tests::{struct_emits_data_type_and_variable_type,
+enum_emits_enumeration_subtype, union_emits_union_subtype_with_switchfield,
+primitive_dds_to_opc_ua_names_match_spec_tab_92}`;
+DDS global data space:
+`crates/opcua-gateway/src/address_space.rs::tests::{domain_node_for_zero_yields_browse_name_domain0,
+topic_node_carries_parent_domain_reference, scalar_topic_sample_is_a_leaf}`.
 
 **Status:** done
 
@@ -78,7 +102,11 @@ historical).
 `crates/opcua-gateway/src/historical/{adapter, config, qos}.rs` with a
 DDS-DurabilityService → UA-HistoryRead mapping.
 
-**Tests:** cross-ref `historical::tests::*`.
+**Tests:** `crates/opcua-gateway/src/historical/adapter.rs::tests::{raw_read_returns_samples_in_range,
+at_time_returns_nearest_prior_sample}`;
+`crates/opcua-gateway/src/historical/config.rs::tests::{historical_default_has_history_and_current_read_bits,
+history_read_bit_value_matches_spec}`;
+`crates/opcua-gateway/src/conformance.rs::tests::complete_points_subsume_their_basic`.
 
 **Status:** done
 
@@ -93,8 +121,9 @@ title + number + `subsumes_basic`), `DECLARED_CONFORMANCE` (= all four) +
 `is_multi_point_conformant()` / `declares()`. A server-stack integrator can
 query the conformance status programmatically instead of reading prose.
 
-**Tests:** `conformance::tests::*` (declares-all-four, is-multi-point,
-unique numbering, complete-subsumes-basic, distinct titles).
+**Tests:** `crates/opcua-gateway/src/conformance.rs::tests::{declares_all_four_conformance_points,
+is_multi_point, points_are_numbered_one_to_four_uniquely,
+complete_points_subsume_their_basic, every_point_has_a_distinct_title}` (5).
 
 **Status:** done
 
@@ -118,7 +147,9 @@ OPCUA/DDS specs are fulfilled operationally in the consumer items §8/§9.
 
 ---
 
-## §4 Terms and definitions
+## §4-§7 Terminology + informative sections
+
+### §4 Terms and definitions
 
 **Spec:** §4 (PDF) — glossary.
 
@@ -128,7 +159,7 @@ OPCUA/DDS specs are fulfilled operationally in the consumer items §8/§9.
 
 **Status:** `n/a (informative)` — glossary; without a code mapping.
 
-## §5 Symbols and abbreviations
+### §5 Symbols and abbreviations
 
 **Spec:** §5 (PDF) — abbreviations (DDS, OPC-UA, GDS, etc.).
 
@@ -140,7 +171,7 @@ OPCUA/DDS specs are fulfilled operationally in the consumer items §8/§9.
 
 ---
 
-## §6 Additional information
+### §6 Additional information
 
 **Spec:** §6 (PDF) — informative annex (roadmap, acknowledgements).
 
@@ -150,7 +181,7 @@ OPCUA/DDS specs are fulfilled operationally in the consumer items §8/§9.
 
 **Status:** `n/a (informative)`
 
-## §7 UA/DDS overview (informative)
+### §7 UA/DDS overview (informative)
 
 **Spec:** §7 (PDF) — non-normative overview material on UA + DDS.
 
@@ -183,7 +214,8 @@ OPC-UA built-in type IDs (Boolean=1, ..., DiagnosticInfo=25).
 **Repo:** `crates/opcua-gateway/src/types.rs::BuiltinTypeKind` with all 25
 values + a `value()` method.
 
-**Tests:** `types::tests::builtin_type_kind_values_match_spec`.
+**Tests:** `crates/opcua-gateway/src/types.rs::tests::builtin_type_kind_values_match_spec`,
+`crates/opcua-gateway/src/types.rs::tests::node_class_values_match_bit_flags`.
 
 **Status:** done
 
@@ -212,7 +244,7 @@ ExtensionObject/DataValue/Variant/DiagnosticInfo with the exact
 IDL-equivalent structures.
 
 **Repo:** fully modeled in:
-* `types.rs::{Guid, StatusCode, ByteString, QualifiedName, LocalizedText}`.
+* `crates/opcua-gateway/src/types.rs::{Guid, StatusCode, ByteString, QualifiedName, LocalizedText}`.
 * `node_id.rs::{NodeId, NodeIdentifier, NodeIdentifierKind,
   ExpandedNodeId}` with all 4 identifier cases (Numeric/String/Guid/Opaque)
   + a 4096-byte limit validation.
@@ -232,24 +264,63 @@ point; the mutable @optional-field model would be extendable analogous to
 
 ### §8.3 OPC UA service sets mapping
 
-**Spec:** §8.3, p. 16-30 — View/Query/Attribute/Method service set as
-DDS-RPC interfaces.
+**Spec:** §8.3, p. 16-30 — the four service sets View, Query, Attribute and
+Method are mapped onto DDS-RPC interfaces; the spec fixes the method list per
+set (View 5, Query 2, Attribute 4, Method 1), the IDL module paths and the
+enum values for `BrowseDirection`, `TimestampsToReturn` and the filter
+operators.
 
 **Repo:** `crates/opcua-gateway/src/service_sets/{view,query,attribute,
-method}.rs` with DDS-RPC bindings via `crates/rpc/`.
+method}.rs` with DDS-RPC bindings via `crates/rpc/`; the shared enums and
+module paths in `crates/opcua-gateway/src/service_sets/mod.rs`.
 
-**Tests:** inline.
+**Tests:** method count per set:
+`crates/opcua-gateway/src/service_sets/view.rs::tests::view_set_has_five_methods_per_spec`,
+`crates/opcua-gateway/src/service_sets/query.rs::tests::query_set_has_two_methods_per_spec`,
+`crates/opcua-gateway/src/service_sets/attribute.rs::tests::attribute_set_has_four_methods_per_spec`,
+`crates/opcua-gateway/src/service_sets/method.rs::tests::method_set_has_one_method_per_spec`;
+signatures and enum values:
+`crates/opcua-gateway/src/service_sets/view.rs::tests::{browse_method_first_param_is_server_id,
+browse_method_carries_view_description,
+browse_direction_uses_spec_values_with_gap, all_methods_return_response_header}`,
+`crates/opcua-gateway/src/service_sets/query.rs::tests::{query_first_carries_content_filter_inputs,
+query_next_uses_release_continuation_flag}`,
+`crates/opcua-gateway/src/service_sets/attribute.rs::tests::{read_carries_timestamps_to_return,
+history_update_uses_extensible_details_sequence, history_read_details_kind_discriminant,
+history_update_details_kind_discriminant, perform_update_type_values_match_spec,
+history_update_type_values_match_spec}`,
+`crates/opcua-gateway/src/service_sets/method.rs::tests::{call_carries_methods_to_call_input,
+call_method_request_holds_node_ids_and_variants}`,
+`crates/opcua-gateway/src/service_sets/mod.rs::tests::{idl_module_paths_match_spec,
+all_service_sets_covers_four_sets, filter_operator_values_match_spec,
+timestamps_to_return_values_match_spec,
+filter_operand_kind_discriminant_roundtrip}`.
 
 **Status:** done
 
 ### §8.4 OPC UA subscription model mapping
 
-**Spec:** §8.4, p. 31-48 — mapping OPC-UA subscriptions onto DDS DataReader
-listeners with MonitoredItems push.
+**Spec:** §8.4, p. 31-48 — OPC-UA subscriptions are mapped onto DDS
+DataReader listeners: a MonitoredItem carries exactly one filter, the
+subscription lifetime is bound to the publishing interval, and Table 8.16
+fixes the Variant-to-DDS-type assignment for scalar, 1-D array and matrix.
 
 **Repo:** `crates/opcua-gateway/src/subscription_mapping/{behavior,config,variant_dds}.rs`.
 
-**Tests:** inline.
+**Tests:** configuration constraints:
+`crates/opcua-gateway/src/subscription_mapping/config.rs::tests::{data_item_with_two_filters_is_invalid,
+data_item_with_one_filter_is_valid, subscription_protocol_lifetime_constraint,
+monitored_item_kind_discriminants, assignment_input_kind_discriminants}`;
+push behaviour:
+`crates/opcua-gateway/src/subscription_mapping/behavior.rs::tests::{constant_assignment_writes_single_field,
+data_change_finds_and_assigns_value, data_change_unknown_handle_is_error,
+event_field_assignment_picks_correct_index,
+event_field_index_out_of_range_is_error, build_client_handles_indexes_correctly}`;
+Variant to DDS type (Table 8.16):
+`crates/opcua-gateway/src/subscription_mapping/variant_dds.rs::tests::{classify_scalar_array_matrix,
+primitive_scalar_mappings_match_spec_tab_816, builtin_scalar_mappings_match_spec,
+array_1d_wraps_in_sequence, matrix_returns_named_struct,
+all_25_builtins_have_matrix_alias}`.
 
 **Status:** done
 
@@ -274,19 +345,40 @@ primitive/string/enum/aggregated/collection/nested/alias/keyed types →
 OPC-UA variables.
 
 **Repo:** full DDS→UA type walking in
-`crates/opcua-gateway/src/dds_to_ua/walker.rs::{Walker, NodeKind, NodeSpec}`
+`crates/opcua-gateway/src/dds_to_ua/walker.rs::{walk_dds_type, DdsType,
+WalkOutput}` and `crates/opcua-gateway/src/dds_to_ua/node_spec.rs::NodeSpec`
 with recursive aggregated (struct/union) and collection handling
 (sequence-of-struct, Map<String, Sequence<Struct>>); the inverse mapping
 symmetric via `BuiltinTypeKind`. **Instance side:**
-`address_space.rs::build_sample_instance` recursively decomposes a
+`crates/opcua-gateway/src/address_space.rs::build_sample_instance` recursively decomposes a
 structured sample into an `InstanceNode` variable hierarchy (HasComponent
 member components, nested; collections as array/object variables) —
 mirroring the §9.2 type recursion on the §9.3 instance side.
 `SampleVariable::scalar` remains for the simple scalar value path.
 
-**Tests:** cross-ref `dds_to_ua::walker::tests::*` +
-`address_space::tests::*` (incl. `struct_sample_decomposes_*`,
-`nested_struct_sample_recurses_*`, `union_sample_has_switchfield_*`).
+**Tests:** type walker:
+`crates/opcua-gateway/src/dds_to_ua/walker.rs::tests::{struct_emits_data_type_and_variable_type,
+struct_dt_subtypes_structure, nested_struct_recurses,
+enum_emits_enumeration_subtype, bitmask_emits_optionset_subtype,
+union_emits_union_subtype_with_switchfield,
+union_with_invalid_discriminator_is_rejected, array_of_struct_recurses_into_struct,
+sequence_of_struct_recurses, map_recurses_into_key_and_value,
+alias_is_transparent, member_modeling_rule_reflects_optional,
+primitive_dds_to_opc_ua_names_match_spec_tab_92,
+alias_resolve_unwraps_recursively}` (14);
+naming:
+`crates/opcua-gateway/src/dds_to_ua/naming.rs::tests::{struct_data_type_appends_suffix,
+struct_variable_type_appends_suffix, array_element_single_dim_uses_underscore,
+array_element_multi_dim_concatenates_with_underscore,
+array_element_zero_dim_returns_bare_name, undefined_position_uses_decimal_index}`;
+instance builder:
+`crates/opcua-gateway/src/address_space.rs::tests::{struct_sample_decomposes_into_component_variables,
+nested_struct_sample_recurses_into_components, array_member_is_an_array_variable,
+sequence_member_is_a_one_dim_array_variable,
+sequence_of_struct_is_an_array_not_decomposed,
+union_sample_has_switchfield_and_case_components,
+key_and_optional_members_surface_on_instance,
+alias_member_is_transparent_on_instance}`.
 
 **Status:** done — data model + scalar mapping + aggregated/collection/
 nested recursion in **both the type walker and the instance builder**.
@@ -300,22 +392,37 @@ DDS sample → OPC-UA variable.
 **Repo:** `crates/opcua-gateway/src/address_space.rs::{DomainNode,
 TopicNode, SampleVariable, mangle_topic_node_browse_name}`.
 
-**Tests:** `address_space::tests::domain_node_for_zero_yields_browse_name_domain0`,
-`domain_node_for_42_yields_browse_name_domain42`,
-`mangle_topic_node_browse_name_is_pass_through`,
-`topic_node_carries_parent_domain_reference`,
-`sample_variable_scalar_has_value_rank_minus_1`.
+**Tests:** `crates/opcua-gateway/src/address_space.rs::tests::{domain_node_for_zero_yields_browse_name_domain0,
+domain_node_for_42_yields_browse_name_domain42,
+mangle_topic_node_browse_name_is_pass_through,
+topic_node_carries_parent_domain_reference,
+sample_variable_scalar_has_value_rank_minus_1}` (5).
 
 **Status:** done
 
 ### §9.3.4 Reading historical data from instance nodes
 
-**Spec:** §9.3.4 — historical-access subset (conformance point 4
-"complete").
+**Spec:** §9.3.4 — historical access on instance nodes (conformance point 4
+"complete"): an instance node is historizing only when `Historizing` is set
+and the `HistoryRead` bit (value 4) is present in `AccessLevel`; the
+DataReader history QoS has to be deep enough; `ReadRawModified` returns the
+samples of a time range, `ReadAtTime` the sample preceding each requested
+time.
 
 **Repo:** `crates/opcua-gateway/src/historical/{adapter,config,qos}.rs`.
 
-**Tests:** inline.
+**Tests:** AccessLevel + Historizing:
+`crates/opcua-gateway/src/historical/config.rs::tests::{historical_default_has_history_and_current_read_bits,
+historizing_false_fails_validation, missing_history_read_bit_fails_validation,
+history_read_bit_value_matches_spec}`;
+history QoS depth:
+`crates/opcua-gateway/src/historical/qos.rs::tests::{keep_all_always_valid,
+keep_last_with_sufficient_depth_valid, keep_last_below_minimum_violates}`;
+read paths:
+`crates/opcua-gateway/src/historical/adapter.rs::tests::{raw_read_returns_samples_in_range,
+raw_read_truncates_at_num_values_per_node, raw_read_invalid_range_errors,
+at_time_returns_nearest_prior_sample, at_time_empty_req_times_errors,
+unknown_instance_errors}`.
 
 **Status:** done
 

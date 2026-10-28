@@ -24,17 +24,17 @@ pub struct AuthSubject {
     pub groups: Vec<String>,
     /// Free-form claims (any string value).
     pub claims: HashMap<String, String>,
+    /// mTLS: `mtls:<SHA-256 of the client certificate, hex>`. An ACL entry
+    /// may name it instead of the subject DN in [`Self::name`], to pin one
+    /// certificate.
+    pub fingerprint: Option<String>,
 }
 
 impl AuthSubject {
     /// Anonymous subject for `AuthMode::None`.
     #[must_use]
     pub fn anonymous() -> Self {
-        Self {
-            name: "anonymous".to_string(),
-            groups: Vec::new(),
-            claims: HashMap::new(),
-        }
+        Self::new("anonymous")
     }
 
     /// Plain constructor.
@@ -44,6 +44,7 @@ impl AuthSubject {
             name: name.into(),
             groups: Vec::new(),
             claims: HashMap::new(),
+            fingerprint: None,
         }
     }
 
@@ -106,6 +107,13 @@ pub enum AuthMode {
         pkcs1_pubkey_der: Vec<u8>,
         /// Optional issuer match (`iss` claim).
         expected_issuer: Option<String>,
+        /// Optional audience match (`aud` claim, a string or an array
+        /// that has to contain it; RFC 7519 §4.1.3).
+        expected_audience: Option<String>,
+        /// Optional `(claim, value)` the token has to carry. The claim
+        /// matches when it equals the value or, as a space-separated list
+        /// such as OAuth `scope` (RFC 8693 §4.2), contains it.
+        required_claim: Option<(String, String)>,
     },
     /// mTLS — identity is supplied by the TLS layer (client cert), not
     /// by this function. [`AuthMode::validate`] with `Mtls` expects
@@ -152,12 +160,25 @@ impl AuthMode {
             Self::Jwt {
                 pkcs1_pubkey_der,
                 expected_issuer,
+                expected_audience,
+                required_claim,
             } => {
                 let hdr = input
                     .authorization_header
                     .ok_or(AuthError::MissingCredentials)?;
                 let token = strip_bearer(hdr)?;
-                validate_jwt_rs256(token, pkcs1_pubkey_der, expected_issuer.as_deref())
+                validate_jwt_rs256(
+                    token,
+                    pkcs1_pubkey_der,
+                    &JwtChecks {
+                        issuer: expected_issuer.as_deref(),
+                        audience: expected_audience.as_deref(),
+                        required_claim: required_claim
+                            .as_ref()
+                            .map(|(k, v)| (k.as_str(), v.as_str())),
+                        now: unix_now(),
+                    },
+                )
             }
             Self::Mtls => input
                 .mtls_subject
@@ -220,10 +241,42 @@ fn parse_sasl_plain(blob: &[u8]) -> Result<(&str, &str), AuthError> {
 
 // ---------- JWT RS256 ----------------------------------------------------
 
+/// Clock skew accepted on `exp` and `nbf`, in seconds. RFC 7519 §4.1.4
+/// allows "some small leeway"; 60 s is the default of the `jsonwebtoken`
+/// crate's `Validation`.
+pub const JWT_CLOCK_LEEWAY_SECS: u64 = 60;
+
+/// The claim checks after the signature.
+struct JwtChecks<'a> {
+    issuer: Option<&'a str>,
+    audience: Option<&'a str>,
+    required_claim: Option<(&'a str, &'a str)>,
+    /// Seconds since the epoch.
+    now: u64,
+}
+
+fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
+}
+
+/// A NumericDate claim (RFC 7519 §2): seconds, possibly fractional.
+fn numeric_date(payload: &str, key: &str) -> Result<Option<u64>, AuthError> {
+    let Some(raw) = json_field(payload, key) else {
+        return Ok(None);
+    };
+    let whole = raw.split('.').next().unwrap_or("");
+    whole
+        .parse::<u64>()
+        .map(Some)
+        .map_err(|_| AuthError::MalformedCredentials(format!("jwt: {key} is not a NumericDate")))
+}
+
 fn validate_jwt_rs256(
     token: &str,
     pkcs1_pubkey_der: &[u8],
-    expected_issuer: Option<&str>,
+    checks: &JwtChecks<'_>,
 ) -> Result<AuthSubject, AuthError> {
     use base64::Engine as _;
     let engine = base64::engine::general_purpose::URL_SAFE_NO_PAD;
@@ -283,11 +336,45 @@ fn validate_jwt_rs256(
     let sub = json_field(payload_str, "sub")
         .ok_or_else(|| AuthError::Rejected("jwt: no sub claim".into()))?;
 
-    if let Some(expected) = expected_issuer {
+    // RFC 7519 §4.1.4 / §4.1.5: a token past `exp` or before `nbf` is
+    // not accepted. Both are optional; a present one is enforced.
+    if let Some(exp) = numeric_date(payload_str, "exp")? {
+        if checks.now >= exp.saturating_add(JWT_CLOCK_LEEWAY_SECS) {
+            return Err(AuthError::Rejected("jwt: expired".into()));
+        }
+    }
+    if let Some(nbf) = numeric_date(payload_str, "nbf")? {
+        if checks.now.saturating_add(JWT_CLOCK_LEEWAY_SECS) < nbf {
+            return Err(AuthError::Rejected("jwt: not yet valid".into()));
+        }
+    }
+
+    if let Some(expected) = checks.issuer {
         let iss = json_field(payload_str, "iss")
             .ok_or_else(|| AuthError::Rejected("jwt: no iss claim".into()))?;
         if iss != expected {
             return Err(AuthError::Rejected(format!("jwt: iss != {expected}")));
+        }
+    }
+    if let Some(expected) = checks.audience {
+        let matches = match json_array(payload_str, "aud") {
+            Some(list) => list.iter().any(|a| a == expected),
+            None => json_field(payload_str, "aud").is_some_and(|a| a == expected),
+        };
+        if !matches {
+            return Err(AuthError::Rejected(format!("jwt: aud lacks {expected}")));
+        }
+    }
+    if let Some((claim, value)) = checks.required_claim {
+        let matches = match json_array(payload_str, claim) {
+            Some(list) => list.iter().any(|v| v == value),
+            None => json_field(payload_str, claim)
+                .is_some_and(|v| v == value || v.split(' ').any(|p| p == value)),
+        };
+        if !matches {
+            return Err(AuthError::Rejected(format!(
+                "jwt: claim {claim} lacks {value}"
+            )));
         }
     }
 
@@ -298,6 +385,80 @@ fn validate_jwt_rs256(
         }
     }
     Ok(subj)
+}
+
+/// The PKCS#1 `RSAPublicKey` DER that [`AuthMode::Jwt`] verifies with,
+/// out of a PEM file's text.
+///
+/// Accepts `-----BEGIN RSA PUBLIC KEY-----` (PKCS#1, RFC 8017 §A.1.1) and
+/// `-----BEGIN PUBLIC KEY-----` (X.509 `SubjectPublicKeyInfo`, RFC 5280
+/// §4.1.2.7, as `openssl rsa -pubout` writes it) with the rsaEncryption
+/// algorithm; the latter is unwrapped to the key inside its BIT STRING.
+///
+/// # Errors
+/// A message naming what the text lacks.
+pub fn jwt_public_key_from_pem(pem: &str) -> Result<Vec<u8>, String> {
+    use base64::Engine as _;
+    fn block(pem: &str, label: &str) -> Option<String> {
+        let begin = format!("-----BEGIN {label}-----");
+        let end = format!("-----END {label}-----");
+        let start = pem.find(&begin)? + begin.len();
+        let stop = pem[start..].find(&end)? + start;
+        Some(pem[start..stop].split_whitespace().collect())
+    }
+    let decode = |b64: String| {
+        base64::engine::general_purpose::STANDARD
+            .decode(b64)
+            .map_err(|e| format!("pem base64: {e}"))
+    };
+    if let Some(b64) = block(pem, "RSA PUBLIC KEY") {
+        return decode(b64);
+    }
+    let Some(b64) = block(pem, "PUBLIC KEY") else {
+        return Err("no RSA PUBLIC KEY or PUBLIC KEY block".into());
+    };
+    let spki = decode(b64)?;
+    // SEQUENCE { SEQUENCE { OID rsaEncryption, NULL }, BIT STRING }
+    let (tag, outer, _) = der_tlv(&spki).ok_or("spki: bad outer TLV")?;
+    if tag != 0x30 {
+        return Err("spki: not a SEQUENCE".into());
+    }
+    let (tag, alg, rest) = der_tlv(outer).ok_or("spki: bad algorithm TLV")?;
+    if tag != 0x30 {
+        return Err("spki: no AlgorithmIdentifier".into());
+    }
+    let (tag, oid, _) = der_tlv(alg).ok_or("spki: bad OID TLV")?;
+    const RSA_ENCRYPTION: &[u8] = &[0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01];
+    if tag != 0x06 || oid != RSA_ENCRYPTION {
+        return Err("spki: algorithm is not rsaEncryption".into());
+    }
+    let (tag, bits, _) = der_tlv(rest).ok_or("spki: bad BIT STRING TLV")?;
+    match (tag, bits.split_first()) {
+        (0x03, Some((0, key))) => Ok(key.to_vec()),
+        _ => Err("spki: no BIT STRING with the key".into()),
+    }
+}
+
+/// One DER TLV: tag, contents, what follows.
+fn der_tlv(input: &[u8]) -> Option<(u8, &[u8], &[u8])> {
+    let (&tag, rest) = input.split_first()?;
+    let (&first, rest) = rest.split_first()?;
+    let (len, rest) = if first < 0x80 {
+        (usize::from(first), rest)
+    } else {
+        let n = usize::from(first & 0x7f);
+        if n == 0 || n > 4 || rest.len() < n {
+            return None;
+        }
+        let len = rest[..n]
+            .iter()
+            .fold(0usize, |acc, b| (acc << 8) | usize::from(*b));
+        (len, &rest[n..])
+    };
+    if rest.len() < len {
+        return None;
+    }
+    Some((tag, &rest[..len], &rest[len..]))
 }
 
 /// Mini JSON field extractor for the JWT header and payload maps.
@@ -479,6 +640,8 @@ mod tests {
         let m = AuthMode::Jwt {
             pkcs1_pubkey_der: vec![0u8; 32],
             expected_issuer: None,
+            expected_audience: None,
+            required_claim: None,
         };
         // base64url("{\"alg\":\"RS256\"}") = "eyJhbGciOiJSUzI1NiJ9"
         // base64url("{\"sub\":\"a\"}") = "eyJzdWIiOiJhIn0"
@@ -497,6 +660,8 @@ mod tests {
         let m = AuthMode::Jwt {
             pkcs1_pubkey_der: vec![0u8; 32],
             expected_issuer: None,
+            expected_audience: None,
+            required_claim: None,
         };
         // base64url("{\"alg\":\"HS256\"}") = "eyJhbGciOiJIUzI1NiJ9"
         let token = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhIn0.AAAA";
@@ -507,5 +672,151 @@ mod tests {
             })
             .unwrap_err();
         assert!(matches!(err, AuthError::Rejected(_)));
+    }
+
+    /// An RSA key from `openssl genpkey`: the private half as PKCS#8 DER
+    /// for signing, the public half as the SPKI PEM `openssl` writes.
+    fn rsa_key() -> (Vec<u8>, String) {
+        use std::process::Command;
+        static SEQ: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let dir = std::env::temp_dir().join(format!("zd-jwt-{}-{seq}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let key = dir.join("key.pem");
+        let run = |args: &[&str]| {
+            let out = Command::new("openssl")
+                .args(args)
+                .output()
+                .expect("openssl on PATH: the JWT round trip needs a real RSA key");
+            assert!(out.status.success(), "openssl {args:?}: {out:?}");
+            out.stdout
+        };
+        run(&[
+            "genpkey",
+            "-algorithm",
+            "RSA",
+            "-pkeyopt",
+            "rsa_keygen_bits:2048",
+            "-out",
+            key.to_str().unwrap(),
+        ]);
+        let der = run(&[
+            "pkcs8",
+            "-topk8",
+            "-nocrypt",
+            "-outform",
+            "DER",
+            "-in",
+            key.to_str().unwrap(),
+        ]);
+        let spki = run(&["pkey", "-pubout", "-in", key.to_str().unwrap()]);
+        let _ = std::fs::remove_dir_all(&dir);
+        (der, String::from_utf8(spki).unwrap())
+    }
+
+    fn sign(pkcs8: &[u8], payload: &str) -> String {
+        use crate::backend::{rand, signature};
+        use base64::Engine as _;
+        let b64 = |b: &[u8]| base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(b);
+        let signed = format!(
+            "{}.{}",
+            b64(br#"{"alg":"RS256","typ":"JWT"}"#),
+            b64(payload.as_bytes())
+        );
+        let pair = signature::RsaKeyPair::from_pkcs8(pkcs8).unwrap();
+        let mut sig = vec![0u8; 256]; // rsa_keygen_bits:2048
+        pair.sign(
+            &signature::RSA_PKCS1_SHA256,
+            &rand::SystemRandom::new(),
+            signed.as_bytes(),
+            &mut sig,
+        )
+        .unwrap();
+        format!("{signed}.{}", b64(&sig))
+    }
+
+    /// A token signed with a real key, checked with its SPKI PEM: the
+    /// signature, `exp`, `nbf`, `iss`, `aud` and a required claim.
+    #[test]
+    fn a_signed_jwt_is_checked_for_time_audience_and_claim() {
+        let (pkcs8, spki_pem) = rsa_key();
+        let mode = AuthMode::Jwt {
+            pkcs1_pubkey_der: jwt_public_key_from_pem(&spki_pem).unwrap(),
+            expected_issuer: Some("zerodds-test".into()),
+            expected_audience: Some("zerodds-grpc".into()),
+            required_claim: Some(("scope".into(), "dds.read".into())),
+        };
+        let now = unix_now();
+        let check = |payload: String| {
+            mode.validate(&AuthInput {
+                authorization_header: Some(&format!("Bearer {}", sign(&pkcs8, &payload))),
+                ..Default::default()
+            })
+        };
+        let token = |exp: u64, nbf: u64, aud: &str, scope: &str| {
+            format!(
+                r#"{{"sub":"alice","iss":"zerodds-test","aud":{aud},"scope":"{scope}","exp":{exp},"nbf":{nbf}}}"#
+            )
+        };
+        let ok = check(token(
+            now + 600,
+            now - 10,
+            r#"["x","zerodds-grpc"]"#,
+            "dds.write dds.read",
+        ));
+        assert_eq!(ok.unwrap().name, "alice");
+        let late = now - JWT_CLOCK_LEEWAY_SECS - 1;
+        for (why, payload) in [
+            (
+                "expired",
+                token(late, now - 900, r#""zerodds-grpc""#, "dds.read"),
+            ),
+            (
+                "not yet valid",
+                token(
+                    now + 900,
+                    now + JWT_CLOCK_LEEWAY_SECS + 60,
+                    r#""zerodds-grpc""#,
+                    "dds.read",
+                ),
+            ),
+            ("aud", token(now + 600, now, r#""other""#, "dds.read")),
+            (
+                "claim",
+                token(now + 600, now, r#""zerodds-grpc""#, "dds.write"),
+            ),
+        ] {
+            let err = check(payload).unwrap_err();
+            assert!(matches!(err, AuthError::Rejected(_)), "{why}: {err:?}");
+        }
+        // A signature by another key is refused.
+        let (other, _) = rsa_key();
+        let forged = format!(
+            "Bearer {}",
+            sign(
+                &other,
+                &token(now + 600, now, r#""zerodds-grpc""#, "dds.read")
+            )
+        );
+        assert!(
+            mode.validate(&AuthInput {
+                authorization_header: Some(&forged),
+                ..Default::default()
+            })
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn a_pkcs1_pem_and_an_spki_pem_yield_the_same_key() {
+        let (_, spki_pem) = rsa_key();
+        let from_spki = jwt_public_key_from_pem(&spki_pem).unwrap();
+        use base64::Engine as _;
+        let pkcs1_pem = format!(
+            "-----BEGIN RSA PUBLIC KEY-----\n{}\n-----END RSA PUBLIC KEY-----\n",
+            base64::engine::general_purpose::STANDARD.encode(&from_spki)
+        );
+        assert_eq!(jwt_public_key_from_pem(&pkcs1_pem).unwrap(), from_spki);
+        assert!(jwt_public_key_from_pem("no key here").is_err());
     }
 }

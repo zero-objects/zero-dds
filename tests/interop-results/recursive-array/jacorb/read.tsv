@@ -1,0 +1,14 @@
+# What jacorb got back when it read the bytes of recursive-array, held against
+# tests/interop-corpus/recursive-array/values.json and never against another
+# column's reading of the same bytes.
+# encoding	endian	verdict	detail
+plain-cdr1	le	no-form	tests/interop-corpus/recursive-array/type.idl: the layout could not be planned: error [IDL0014] at 30..65: `::m::Node` closes a type cycle with
+plain-cdr1	be	no-form	tests/interop-corpus/recursive-array/type.idl: the layout could not be planned: error [IDL0014] at 30..65: `::m::Node` closes a type cycle with
+pl-cdr1	le	no-form	tests/interop-corpus/recursive-array/type.idl: the layout could not be planned: error [IDL0014] at 30..65: `::m::Node` closes a type cycle with
+pl-cdr1	be	no-form	tests/interop-corpus/recursive-array/type.idl: the layout could not be planned: error [IDL0014] at 30..65: `::m::Node` closes a type cycle with
+plain-cdr2	le	no-form	tests/interop-corpus/recursive-array/type.idl: the layout could not be planned: error [IDL0014] at 30..65: `::m::Node` closes a type cycle with
+plain-cdr2	be	no-form	tests/interop-corpus/recursive-array/type.idl: the layout could not be planned: error [IDL0014] at 30..65: `::m::Node` closes a type cycle with
+delimited-cdr	le	no-form	tests/interop-corpus/recursive-array/type.idl: the layout could not be planned: error [IDL0014] at 30..65: `::m::Node` closes a type cycle with
+delimited-cdr	be	no-form	tests/interop-corpus/recursive-array/type.idl: the layout could not be planned: error [IDL0014] at 30..65: `::m::Node` closes a type cycle with
+pl-cdr2	le	no-form	tests/interop-corpus/recursive-array/type.idl: the layout could not be planned: error [IDL0014] at 30..65: `::m::Node` closes a type cycle with
+pl-cdr2	be	no-form	tests/interop-corpus/recursive-array/type.idl: the layout could not be planned: error [IDL0014] at 30..65: `::m::Node` closes a type cycle with

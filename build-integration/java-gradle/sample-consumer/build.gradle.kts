@@ -27,31 +27,26 @@ java {
 sourceSets {
     main {
         java {
-            // ZeroDDS Java runtime the generated Robot.java references but
-            // the omgdds artifact does NOT ship: the org.zerodds.types.*
-            // annotations (Extensibility, Key, …) and the
-            // org.omg.dds.topic.TopicType<T> interface. Compile them from
-            // source alongside the generated + hand-written classes.
-            // (mirrors the C# sample's <Compile Include=".../idl-csharp/runtime/Omg.Types.cs">)
-            srcDir("../../../crates/idl-java/runtime")
+            // The wire runtime the generated codec calls (org.zerodds.wire.*).
+            srcDir("../../../runtime/java/src/main/java")
         }
     }
 }
 
 application {
-    mainClass.set("com.example.Main")
+    // The generated classes are in the unnamed package, so Main is too.
+    mainClass.set("Main")
 }
 
 dependencies {
-    // Generated Java needs org.zerodds.cdr / org.omg.dds.topic.TopicTypeSupport
-    // from crates/java-omgdds (same runtime the Maven sample needs —
-    // ../../java-maven/README.md documents a further gap this alone does
-    // NOT close: org.zerodds.types.{Extensibility,Key} and
-    // org.omg.dds.topic.TopicType<T> don't exist anywhere in the repo).
-    implementation("org.zerodds:omgdds:0.0.0")
+    // org.zerodds.cdr.* for the generated TypeSupport classes, from
+    // crates/java-omgdds/java (`mvn install` it first).
+    implementation("org.zerodds:omgdds:1.0.0-rc.7")
 }
 
 zeroddsIdlc {
     idlFiles.from("idl/Robot.idl")
     backend.set("java")
+    // Main.java reads the fields: the OMG IDL-to-Java mapping (the default is psm, with accessors)
+    extraArgs.set(listOf("--java-mapping", "omg"))
 }

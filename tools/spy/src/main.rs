@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! `zerodds-spy` — abonniert ein DDS-Topic und dumpt die Samples.
+//! `zerodds-spy` — subscribes to a DDS topic and dumps the samples.
 
 #![allow(clippy::print_stdout, clippy::print_stderr)]
 
@@ -13,15 +13,18 @@ use std::time::{Duration, Instant};
 
 use std::sync::mpsc::Receiver;
 
+use zerodds_ast_layout::key::Endianness;
 use zerodds_cli_common::{
     TypeFollower, install_signal_handler, raw_reader_config_typed, stable_prefix,
 };
 use zerodds_dcps::runtime::{DcpsRuntime, RuntimeConfig, UserSample};
 use zerodds_recorder_decode::json_sink::data_to_json;
 use zerodds_recorder_decode::type_source::TypeBook;
+use zerodds_recorder_decode::wire::encoding_of;
 use zerodds_spy::{Command, SubscribeArgs, format_hex_snippet, parse_args};
-use zerodds_types::dynamic::codec::decode_dynamic;
+use zerodds_types::dynamic::DynamicData;
 use zerodds_types::dynamic::type_::DynamicType;
+use zerodds_wire_codec::{ProbeRequest, decode};
 
 const MARKER_SPY: u8 = 0xFB;
 
@@ -36,7 +39,18 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
-    let cmd = match parse_args(&args) {
+    let configured = match zerodds_dcps::cli::Configured::from_args(args) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("error: configuration: {e}");
+            return ExitCode::from(2);
+        }
+    };
+    if let Some(code) = configured.check_config() {
+        return code;
+    }
+
+    let cmd = match parse_args(&configured.args) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("error: {e}");
@@ -46,11 +60,11 @@ fn main() -> ExitCode {
     };
 
     match cmd {
-        Command::Subscribe(s) => run_subscribe(&s),
+        Command::Subscribe(s) => run_subscribe(&s, configured.runtime),
     }
 }
 
-fn run_subscribe(s: &SubscribeArgs) -> ExitCode {
+fn run_subscribe(s: &SubscribeArgs, config: RuntimeConfig) -> ExitCode {
     if s.topic.is_empty() {
         eprintln!("error: --topic is required");
         return ExitCode::from(2);
@@ -63,7 +77,7 @@ fn run_subscribe(s: &SubscribeArgs) -> ExitCode {
         }
     };
     let prefix = stable_prefix(MARKER_SPY);
-    let runtime = match DcpsRuntime::start(domain_id, prefix, RuntimeConfig::default()) {
+    let runtime = match DcpsRuntime::start(domain_id, prefix, config) {
         Ok(r) => r,
         Err(e) => {
             eprintln!("error: DcpsRuntime::start failed: {e:?}");
@@ -71,7 +85,7 @@ fn run_subscribe(s: &SubscribeArgs) -> ExitCode {
         }
     };
 
-    let mut decoder = match SpyDecoder::from_args(s) {
+    let mut decoder = match SpyDecoder::from_args(s, runtime.codec_dialect()) {
         Ok(d) => d,
         Err(code) => return code,
     };
@@ -129,8 +143,14 @@ fn run_subscribe(s: &SubscribeArgs) -> ExitCode {
         }
 
         // Drain every attached reader (non-blocking sweep), then sleep briefly.
+        //
+        // Every condition that ends the run is checked inside the inner drain
+        // as well as around the sweep. A writer that publishes faster than this
+        // loop prints keeps `try_recv` answering, and a check that only runs
+        // between sweeps would then never run at all: `--duration` would not
+        // expire and SIGINT would not be seen.
         let mut got_any = false;
-        for (ty_name, rx) in &readers {
+        'sweep: for (ty_name, rx) in &readers {
             while let Ok(sample) = rx.try_recv() {
                 got_any = true;
                 match sample {
@@ -163,9 +183,26 @@ fn run_subscribe(s: &SubscribeArgs) -> ExitCode {
                     UserSample::Lifecycle { kind, .. } => {
                         println!("[lifecycle] {kind:?}");
                     }
+                    UserSample::CoherentSetEnd { set_first_sn, .. } => {
+                        // DDSI-RTPS 2.5 §8.7.6 — the writer closed the coherent
+                        // set that starts at this SN. No user data.
+                        println!("[coherent-set-end] first_sn={set_first_sn:?}");
+                    }
                 }
+                // `break 'sweep`, not `break`: an unlabelled break leaves this
+                // reader and the sweep moves on to the next one, which drains
+                // and prints further samples after the count was reached — the
+                // outer loop only notices once every reader has been visited.
                 if s.max_samples.is_some_and(|max| received >= max) {
-                    break;
+                    break 'sweep;
+                }
+                if stop.load(Ordering::Relaxed) {
+                    break 'sweep;
+                }
+                if let Some(end) = deadline {
+                    if Instant::now() >= end {
+                        break 'sweep;
+                    }
                 }
             }
         }
@@ -179,6 +216,9 @@ fn run_subscribe(s: &SubscribeArgs) -> ExitCode {
         "zerodds-spy: stopped after {elapsed:.1}s · attached-types={} received={received}",
         readers.len()
     );
+    // The worker threads hold the runtime: a drop alone neither stops it
+    // nor announces the departure nor closes the same-host channels.
+    runtime.shutdown();
     drop(runtime);
     ExitCode::SUCCESS
 }
@@ -192,16 +232,24 @@ fn run_subscribe(s: &SubscribeArgs) -> ExitCode {
 struct SpyDecoder {
     book: Option<TypeBook>,
     cache: std::collections::HashMap<String, Option<DynamicType>>,
+    dialect: zerodds_ast_layout::Dialect,
 }
 
 impl SpyDecoder {
     /// Build from CLI flags. `--decode` requires `--type-file`; an unreadable or
-    /// unparseable IDL is a hard error (exit 3).
-    fn from_args(s: &SubscribeArgs) -> Result<Self, ExitCode> {
+    /// unparseable IDL is a hard error (exit 3). `--dialect` names the CDR
+    /// dialect; without it, `configured` — the runtime's
+    /// `wire.codec_dialect` — applies.
+    fn from_args(
+        s: &SubscribeArgs,
+        configured: zerodds_ast_layout::Dialect,
+    ) -> Result<Self, ExitCode> {
+        let dialect = s.dialect.unwrap_or(configured);
         if !s.decode {
             return Ok(Self {
                 book: None,
                 cache: std::collections::HashMap::new(),
+                dialect,
             });
         }
         let Some(type_file) = s.type_file.as_deref() else {
@@ -225,6 +273,7 @@ impl SpyDecoder {
         Ok(Self {
             book: Some(book),
             cache: std::collections::HashMap::new(),
+            dialect,
         })
     }
 
@@ -244,7 +293,19 @@ impl SpyDecoder {
             .entry(type_name.to_string())
             .or_insert_with(|| book.resolve(type_name).ok())
             .as_ref()?;
-        match decode_dynamic(ty, payload, representation == 1, big_endian) {
+        // The framing follows from the type's extensibility; the reader is
+        // told the XCDR version, the byte order and the dialect.
+        let request = ProbeRequest::in_dialect(
+            type_name,
+            encoding_of(ty, representation == 1),
+            if big_endian {
+                Endianness::Big
+            } else {
+                Endianness::Little
+            },
+            self.dialect,
+        );
+        match decode::<DynamicData>(ty.ast(), &request, payload) {
             Ok(d) => Some(data_to_json(&d).to_string()),
             Err(e) => {
                 eprintln!("warn: decode {type_name} failed: {e:?}");
@@ -292,21 +353,26 @@ fn print_help() {
 \n\
          OPTIONS:\n  \
            -d, --domain <ID>     DDS Domain ID (default 0)\n  \
-           -t, --topic <NAME>    Topic to subscribe (REQUIRED)\n  \
-               --type <NAME>     Announce this IDL type directly (default: discover & follow)\n  \
-           -n, --count <N>       Stop after N samples (default: unlimited)\n  \
-               --duration <DUR>  Stop after duration (5, 30s, 2m, 1h)\n  \
-           -x, --hex <BYTES>     Print first BYTES as hex (default 32, 0=off)\n  \
-               --decode          Decode samples to typed JSON (needs --type-file)\n  \
-               --type-file <IDL> Out-of-band IDL providing the types to decode\n\
+           -t, --topic <NAME>    Topic to subscribe (REQUIRED)\n      \
+           --type <NAME>     Announce this IDL type directly (default: discover & follow)\n  \
+           -n, --count <N>       Stop after N samples (default: unlimited)\n      \
+           --duration <DUR>  Stop after duration (5, 30s, 2m, 1h)\n  \
+           -x, --hex <BYTES>     Print first BYTES as hex (default 32, 0=off)\n      \
+           --decode          Decode samples to typed JSON (needs --type-file)\n      \
+           --type-file <IDL> Out-of-band IDL providing the types to decode\n      \
+           --dialect <NAME>  Wire dialect to decode in (default: wire.codec_dialect,\n                             \
+                             specification; cyclone, rti, fastdds, opendds, ...)\n\
 \n\
          GLOBAL OPTIONS:\n  \
            -h, --help            Show this message\n  \
            -V, --version         Print version\n\
 \n\
+         {config}\n\
+\n\
          EXIT CODES:\n  \
            0    success\n  \
            2    CLI parse error\n  \
-           3    DDS / I/O error\n"
+           3    DDS / I/O error\n",
+        config = zerodds_dcps::cli::HELP
     );
 }

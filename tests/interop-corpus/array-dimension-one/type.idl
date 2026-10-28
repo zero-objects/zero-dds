@@ -1,0 +1,8 @@
+// arrays of one element, in one and in two dimensions
+// IDL 4.2 §7.4.1.4.4.4: a dimension of one is an array, not the element.
+@final struct Sample {
+    long single[1];
+    string text[1];
+    long grid[1][1];
+    octet tail;
+};

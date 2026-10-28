@@ -1,0 +1,8 @@
+module probe {
+    typedef sequence<any> AnySeq;
+    interface Special {
+        void in_v(in AnySeq v);
+        void out_v(out AnySeq v);
+        AnySeq ret_v();
+    };
+};

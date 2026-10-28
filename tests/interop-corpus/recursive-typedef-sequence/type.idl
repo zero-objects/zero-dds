@@ -1,0 +1,15 @@
+// the legal self-recursion of recursive-self-sequence, written through
+// a typedef: `sequence<NodeRef>` with `typedef Node NodeRef` is the
+// same cycle spelled differently, and a planner that compared raw type
+// ids instead of following the alias chain would miss it.
+// OMG IDL 4.2 §7.4.1.4.4.4.4 admits the cycle because the sequence's
+// length is what makes a value finite.
+module m {
+  struct Node;
+  typedef Node NodeRef;
+
+  @appendable struct Node {
+    long value;
+    sequence<NodeRef> children;
+  };
+};

@@ -87,7 +87,7 @@ fn probe_short_duration_terminates_json() {
 
 #[test]
 fn probe_implicit_subcommand() {
-    // -d 5 ohne explizites "probe" → muss als probe geparst werden.
+    // -d 5 without an explicit "probe" → must be parsed as probe.
     let start = Instant::now();
     let out = Command::new(bin())
         .args(["-d", "0", "--duration", "1s"])

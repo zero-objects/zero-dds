@@ -12,7 +12,7 @@
 
     <types>           -> OBJK_TYPE         (0x0A)
     <qos_profile>     -> OBJK_QOSPROFILE   (0x0B)
-    <domain>          -> OBJK_DOMAIN       (0x0F)
+    <domain>          -> OBJK_OTHER        (0x0F)
     <topic>           -> OBJK_TOPIC        (0x02)
     <application>     -> OBJK_APPLICATION  (0x0C)
     <participant>     -> OBJK_PARTICIPANT  (0x01)

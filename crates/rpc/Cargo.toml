@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "DDS-RPC 1.0 (formal/16-12-04): Requester/Replier-Runtime, Service-Mapping (IDL→Wire), Topic-Naming, function_call/dispatch_request, Evolution-Rules + Cross-PSM-Cross-Reference."
+description = "DDS-RPC 1.0 (formal/2017-04-01): Requester/Replier-Runtime, Service-Mapping (IDL→Wire), Topic-Naming, function_call/dispatch_request, Evolution-Rules + Cross-PSM-Cross-Reference."
 homepage = "https://zerodds.org"
 documentation = "https://docs.rs/zerodds-rpc"
 readme = "README.md"
@@ -28,10 +28,24 @@ safety = []
 
 [dependencies]
 zerodds-dcps = { version = "1.0.0-rc.7", path = "../dcps" }
-zerodds-idl = { version = "1.0.0-rc.7", path = "../idl" }
+# The common AST the service model is lowered from, and the handle type
+# its nodes are addressed by.
+zerodds-ast = { version = "1.0.0-rc.7", path = "../ast" }
+zerodds-ast-core = { version = "1.0.0-rc.7", path = "../ast-core" }
 zerodds-qos = { version = "1.0.0-rc.7", path = "../qos" }
 zerodds-rtps = { version = "1.0.0-rc.7", path = "../rtps" }
 zerodds-types = { version = "1.0.0-rc.7", path = "../types" }
 zerodds-xml = { version = "1.0.0-rc.7", path = "../xml" }
 
 [dev-dependencies]
+# The frontend the tests build their models with: real IDL through the
+# parser and the lowering, rather than syntax values written by hand.
+zerodds-idl-parse = { version = "1.0.0-rc.7", path = "../idl-parse" }
+zerodds-idl-lower = { version = "1.0.0-rc.7", path = "../idl-lower" }
+# The language bindings of §7.11, so the names this crate derives for the
+# topic types and the names a generated header writes are held against
+# each other rather than read from one paragraph twice.
+zerodds-lang-rules = { version = "1.0.0-rc.7", path = "../lang-rules" }
+zerodds-lang-render = { version = "1.0.0-rc.7", path = "../lang-render" }
+# `Language`, to ask the generator for the Java declarations and codec.
+zerodds-lang-cst = { version = "1.0.0-rc.7", path = "../lang-cst" }

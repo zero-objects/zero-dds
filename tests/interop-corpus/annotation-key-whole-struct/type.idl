@@ -1,0 +1,10 @@
+// `@key` on an unkeyed nested structure
+@final struct Inner {
+    long a;
+    short b;
+};
+
+@final struct Sample {
+    @key Inner nested;
+    long other;
+};

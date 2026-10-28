@@ -8,6 +8,7 @@
 --  usage: test_native_framing <golden_dir>
 
 with Ada.Command_Line;      use Ada.Command_Line;
+with Interfaces;
 with Ada.Text_IO;           use Ada.Text_IO;
 with Ada.Streams;           use Ada.Streams;
 with Ada.Streams.Stream_IO;
@@ -56,15 +57,21 @@ procedure Test_Native_Framing is
    end Compare;
 
    Dir  : constant String := (if Argument_Count >= 1 then Argument (1) else ".");
+   --  The DataWriter every frame in this test addresses (7.2.1: raw 16#001#
+   --  plus OBJK_DATAWRITER).
+   Writer_Id : constant Interfaces.Unsigned_16 :=
+     Xrce_Object_Id (16#001#, Objk_DataWriter);
    Xrce : constant Byte_Array :=
-     Xrce_Write_Frame (16#80#, 16#01#, 1, Encode_Final (Little));
+     Xrce_Write_Frame (16#80#, 16#01#, 1, Writer_Id, Encode_Final (Little));
    Ok   : Boolean := True;
 
    --  Negative frame vectors (self-contained): the reader must bound the body
    --  to the declared submessage_length and reject malformed frames.
    procedure Negative_Frame_Vectors (Pass : in out Boolean) is
-      First  : constant Byte_Array := Xrce_Write_Frame (16#80#, 16#01#, 1, (16#AA#, 16#BB#, 16#CC#));
-      Second : constant Byte_Array := Xrce_Write_Frame (16#80#, 16#01#, 2, (16#DD#, 16#EE#));
+      First  : constant Byte_Array :=
+        Xrce_Write_Frame (16#80#, 16#01#, 1, Writer_Id, (16#AA#, 16#BB#, 16#CC#));
+      Second : constant Byte_Array :=
+        Xrce_Write_Frame (16#80#, 16#01#, 2, Writer_Id, (16#DD#, 16#EE#));
       Concat : constant Byte_Array := First & Second;
       Bf     : Natural;
       Bl     : Integer;
@@ -103,12 +110,75 @@ procedure Test_Native_Framing is
             Put_Line ("negative: truncated header rejected");
          end if;
       end;
+      --  A sample the 16-bit submessage_length cannot describe. There was no
+      --  bound at all here; the implicit Constraint_Error of
+      --  `Unsigned_16 (Sample'Length)` was the only thing standing in the way
+      --  and it goes away under -gnatp.
+      declare
+         Big : constant Byte_Array (1 .. 16#10000#) := (others => 0);
+      begin
+         declare
+            Ignored : constant Byte_Array :=
+              Xrce_Write_Frame (16#80#, 16#01#, 1, Writer_Id, Big);
+            pragma Unreferenced (Ignored);
+         begin
+            Put_Line ("negative: sample above 65535 not refused"); Pass := False;
+         end;
+      exception
+         when Sample_Too_Large =>
+            Put_Line ("negative: sample above 65535 refused");
+      end;
+
+      --  The largest sample the writer's own buffer can carry still frames,
+      --  so the two bounds are not confused with one another: 65535 is the
+      --  submessage_length field's and 4096 is `Max_Buffer`'s.
+      declare
+         Largest : constant Byte_Array (1 .. 4084) := (others => 0);
+         Framed  : constant Byte_Array :=
+           Xrce_Write_Frame (16#80#, 16#01#, 1, Writer_Id, Largest);
+      begin
+         if Framed'Length /= 8 + XRCE_Base_Size + 4084 then
+            Put_Line ("negative: a 4084 sample must still frame"); Pass := False;
+         else
+            Put_Line ("negative: a 4084 sample still frames");
+         end if;
+      end;
+
+      --  One octet more than the buffer holds. `Put_Bytes` used to set
+      --  `W.Overflow` and return, and `Bytes (W)` handed back the eight-octet
+      --  header as if it were a frame.
+      declare
+         Over : constant Byte_Array (1 .. 4085) := (others => 0);
+      begin
+         declare
+            Ignored : constant Byte_Array :=
+              Xrce_Write_Frame (16#80#, 16#01#, 1, Writer_Id, Over);
+            pragma Unreferenced (Ignored);
+         begin
+            Put_Line ("negative: a frame past Max_Buffer not refused"); Pass := False;
+         end;
+      exception
+         when Frame_Does_Not_Fit =>
+            Put_Line ("negative: a frame past Max_Buffer refused");
+      end;
    end Negative_Frame_Vectors;
 
 begin
    Ok := Compare (Xrce, Dir & "/golden_xrce_le.bin", "xrce") and then Ok;
-   Ok := Compare (Serial_Frame (Xrce), Dir & "/golden_serial_le.bin", "serial")
+   Ok := Compare (Serial_Frame (1, 0, Xrce), Dir & "/golden_serial_le.bin",
+                  "serial")
      and then Ok;
+   declare
+      use type Interfaces.Unsigned_16;
+      Check : constant Byte_Array (0 .. 8) :=
+        [16#31#, 16#32#, 16#33#, 16#34#, 16#35#, 16#36#, 16#37#, 16#38#, 16#39#];
+   begin
+      if Fcs16 (Check) = 16#906E# then
+         Put_Line ("fcs16 check value 0x906E ok");
+      else
+         Put_Line ("fcs16 check value wrong"); Ok := False;
+      end if;
+   end;
    Negative_Frame_Vectors (Ok);
 
    if Ok then

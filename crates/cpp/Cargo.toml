@@ -34,3 +34,4 @@ safety = []
 [dependencies]
 
 [dev-dependencies]
+zerodds-test-domains = { path = "../test-domains" }

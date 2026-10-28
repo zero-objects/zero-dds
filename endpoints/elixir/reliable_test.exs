@@ -259,6 +259,8 @@ case System.argv() do
         {:ok, p} -> check.(p.first_unacked == 1, "golden_acknack_parse")
         :error -> check.(false, "golden_acknack_parse")
       end
+
+      check.(byte_size(gold_an) == 17, "golden_acknack_size_17")
     else
       IO.puts("skip byte-golden: goldens not found in #{dir}")
     end
@@ -266,6 +268,45 @@ case System.argv() do
   [] ->
     IO.puts("skip byte-golden: no golden dir arg")
 end
+
+# legacy FINAL form (body length 5, no DHEADER), as sent by eProsima clients
+legacy_an = <<0x80, 0x00, 1::little-16, 0x0A, 0x01, 5::little-16, 1::little-16, 0, 0, 0x80>>
+
+case Reliable.parse_acknack(legacy_an) do
+  {:ok, p} ->
+    check.(p.first_unacked == 1 and p.nack_bitmap == 0 and p.stream_id == 0x80, "acknack_legacy_final_parse")
+
+  :error ->
+    check.(false, "acknack_legacy_final_parse")
+end
+
+new_an = Reliable.acknack_frame(0x80, 0x00, 1, 1, 0, 0x80)
+check.(byte_size(new_an) == 17 and binary_part(new_an, 6, 2) == <<9, 0>> and binary_part(new_an, 8, 4) == <<5, 0, 0, 0>>, "acknack_dheader_layout")
+check.(Reliable.parse_acknack(binary_part(legacy_an, 0, 10)) == :error, "acknack_short_rejected")
+
+# unannotated_types: :final -> 13-octet FINAL golden of the reference implementation
+final_golden = <<0x80, 0x00, 0x01, 0x00, 0x0A, 0x01, 0x05, 0x00, 0x01, 0x00, 0x00, 0x00, 0x80>>
+final_an = Reliable.acknack_frame(0x80, 0x00, 1, 1, 0, 0x80, :final)
+check.(final_an == final_golden, "acknack_final_matches_13_octet_golden")
+check.(byte_size(Reliable.acknack_frame(0x80, 0x00, 1, 1, 0, 0x80, :appendable)) == 17, "acknack_appendable_is_17_octets")
+check.(byte_size(Reliable.acknack_frame(0x80, 0x00, 1, 1, 0, 0x80)) == 17, "acknack_default_is_appendable")
+
+check.(
+  match?({:ok, %{first_unacked: 1, nack_bitmap: 0, stream_id: 0x80}}, Reliable.parse_acknack(final_an)) and
+    match?({:ok, %{first_unacked: 1, nack_bitmap: 0, stream_id: 0x80}}, Reliable.parse_acknack(new_an)),
+  "acknack_parser_accepts_both_forms"
+)
+
+# the receiver carries the mode
+{:ok, rf} = Receiver.recv_data(Receiver.new(unannotated_types: :final), 0, <<1>>)
+{_, rf} = Receiver.drain_in_order(rf)
+{:ok, ra} = Receiver.recv_data(Receiver.new(), 0, <<1>>)
+{_, ra} = Receiver.drain_in_order(ra)
+check.(
+  Receiver.acknack_frame(rf, 0x80, 0x00, 1, 0) == final_golden and
+    Receiver.acknack_frame(ra, 0x80, 0x00, 1, 0) == new_an,
+  "receiver_acknack_follows_unannotated_types"
+)
 
 failed = Agent.get(failures, & &1)
 

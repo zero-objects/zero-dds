@@ -1,0 +1,8 @@
+// `typedef` of a map, unannotated
+typedef map<string, long> Table;
+typedef Table Lookup;
+
+struct Sample {
+    Lookup entries;
+    long tail;
+};

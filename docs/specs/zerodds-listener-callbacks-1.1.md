@@ -199,12 +199,79 @@ SUBSCRIPTION_MATCHED      (0x4000) | on_subscription_matched        | Sub, DR
 ### §4.1 Caller-driven poll delivery
 
 Callbacks are delivered from `zerodds_poll_listeners()`, which the caller
-invokes periodically from its own event loop (Tokio tick, .NET timer,
-Python asyncio, JS `setInterval`). They are never delivered synchronously
-inside a `set_listener`/`write`/`take` call. This satisfies DDS 1.4
-§2.2.4.0 ("listener calls happen in implementation-specific threads") —
-here the implementation-specific thread is the caller's poll thread,
-which keeps the model lock-free and free of reentrancy hazards.
+invokes from its own event loop (Tokio tick, .NET timer, Python asyncio,
+JS `setInterval`). They are never delivered synchronously inside a
+`set_listener`/`write`/`take` call. This satisfies DDS 1.4 §2.2.4.0
+("listener calls happen in implementation-specific threads") — here the
+implementation-specific thread is the caller's poll thread, which keeps
+the model lock-free and free of reentrancy hazards.
+
+**The loop does not have to run on a timer.** `zerodds_data_notify_fd()`
+returns a descriptor that becomes readable when a sample reaches any
+reader; a caller puts it in the readiness interface it already has and
+calls `zerodds_poll_listeners()` when it fires. The callbacks stay
+caller-driven — the reentrancy argument above is unchanged — while the
+period stops being a floor under latency.
+
+That floor is not theoretical. Measured on an overbooked host (load
+90–140), three poll variants — `poll(0)` busy, `poll(5 ms)`, and
+`wait_for_data(1 ms)` — delivered **one** sample between two processes
+across 46 million iterations over several minutes, while raw UDP ran in
+the same window and the waker path came through. A poll spends the CPU
+that the delivery threads need, so it deepens the overbooking it suffers
+from. A caller on a timer is fine at low load and is the wrong shape
+under pressure; the descriptor is how it stops being a timer.
+
+### §4.1.1 Many readers, one wait point
+
+A process with several readers does not need a callback and does not need
+a thread per reader. One `ReadCondition` per reader, all in one WaitSet,
+the descriptor in the loop it already has:
+
+```c
+for (int i = 0; i < n; i++) {
+    cond[i] = zerodds_dr_create_readcondition(
+        reader[i], ZERODDS_NOT_READ_SAMPLE_STATE,
+        ZERODDS_ANY_VIEW_STATE, ZERODDS_ANY_INSTANCE_STATE);
+    zerodds_waitset_attach_condition(ws, cond[i]);
+}
+
+int fd = zerodds_data_notify_fd();
+for (;;) {
+    fd_set r; FD_ZERO(&r); FD_SET(fd, &r);
+    select(fd + 1, &r, NULL, NULL, NULL);        /* sleeps */
+
+    size_t n_active = 0;
+    zerodds_waitset_wait(ws, active, cap, &n_active, 0, 0);
+    for (size_t i = 0; i < n_active; i++) {
+        /* active[i] is the condition; its reader has samples */
+    }
+}
+```
+
+`zerodds_waitset_wait` with a zero timeout is the readiness query — it
+does not block, it reports which conditions hold. A caller that keeps its
+own mapping from condition to reader can equally ask each one with
+`zerodds_condition_get_trigger_value`.
+
+### §4.1.2 Why the descriptor rather than a callback
+
+For a language binding the descriptor is the better fit, not the weaker
+one. `select`, `epoll`, `kqueue`, `QSocketNotifier`,
+`asyncio.add_reader`, Java's `Selector` and Go's netpoller all take a
+descriptor and keep their own event loop. A callback does the opposite:
+it imposes a foreign thread on the caller, and in a runtime with a global
+lock — CPython, Ruby, a single-threaded JS runtime — that is the more
+expensive of the two, not the more convenient.
+
+DDS 1.4 asks for the callback, and someone arriving from Fast DDS or
+Cyclone will register one and wonder why it is quiet. That argument
+stands on its own and is why `on_data_available` remains on the list. But
+when it is built, it must run on a dispatch thread of its own and never
+in `recv_user_data_loop`: a listener that blocks in the receive thread
+stalls delivery for **every** reader of the participant. It is the
+classic trap, and it would catch exactly the unpractised callers the
+callback exists for.
 
 ### §4.2 Re-entrancy
 

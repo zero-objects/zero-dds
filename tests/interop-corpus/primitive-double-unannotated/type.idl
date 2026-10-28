@@ -1,0 +1,5 @@
+// primitive `double`, unannotated
+struct Sample {
+    double double_float_a;
+    double double_float_b;
+};

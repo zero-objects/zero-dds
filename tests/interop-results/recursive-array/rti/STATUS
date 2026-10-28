@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of recursive-array that rti produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	tests/interop-corpus/recursive-array/type.idl: the layout could not be planned: error [IDL0014] at 30..65: `::m::Node` closes a type cycle with nothing on it that terminates a value —
+plain-cdr1	be	refused	tests/interop-corpus/recursive-array/type.idl: the layout could not be planned: error [IDL0014] at 30..65: `::m::Node` closes a type cycle with nothing on it that terminates a value —
+pl-cdr1	le	refused	tests/interop-corpus/recursive-array/type.idl: the layout could not be planned: error [IDL0014] at 30..65: `::m::Node` closes a type cycle with nothing on it that terminates a value —
+pl-cdr1	be	refused	tests/interop-corpus/recursive-array/type.idl: the layout could not be planned: error [IDL0014] at 30..65: `::m::Node` closes a type cycle with nothing on it that terminates a value —
+plain-cdr2	le	refused	tests/interop-corpus/recursive-array/type.idl: the layout could not be planned: error [IDL0014] at 30..65: `::m::Node` closes a type cycle with nothing on it that terminates a value —
+plain-cdr2	be	refused	tests/interop-corpus/recursive-array/type.idl: the layout could not be planned: error [IDL0014] at 30..65: `::m::Node` closes a type cycle with nothing on it that terminates a value —
+delimited-cdr	le	refused	tests/interop-corpus/recursive-array/type.idl: the layout could not be planned: error [IDL0014] at 30..65: `::m::Node` closes a type cycle with nothing on it that terminates a value —
+delimited-cdr	be	refused	tests/interop-corpus/recursive-array/type.idl: the layout could not be planned: error [IDL0014] at 30..65: `::m::Node` closes a type cycle with nothing on it that terminates a value —
+pl-cdr2	le	refused	tests/interop-corpus/recursive-array/type.idl: the layout could not be planned: error [IDL0014] at 30..65: `::m::Node` closes a type cycle with nothing on it that terminates a value —
+pl-cdr2	be	refused	tests/interop-corpus/recursive-array/type.idl: the layout could not be planned: error [IDL0014] at 30..65: `::m::Node` closes a type cycle with nothing on it that terminates a value —

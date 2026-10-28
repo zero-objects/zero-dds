@@ -1,0 +1,126 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 ZeroDDS Contributors
+#
+# man-gate — every option a shipped CLI has is in its man-page, and every
+# option its man-page names exists.
+#
+#   tools/man-gate               check, exit 1 on a difference
+#   tools/man-gate --list        print the differences and exit 0
+#
+# ## Why this exists
+#
+# Measured 2026-09-09 across the 19 pages in `man/man1/`: ten of them had
+# drifted. Seventy-seven options existed in a program and were named nowhere
+# in its page, and twelve options were documented that no program has —
+# `--validate-only` on six bridges, `--feature` and `--include` on
+# `zerodds-idlc` (removed with the rc.6 flag surface), `--graph-dump` and
+# `--watch` on the ROS 2 shim.
+#
+# A man-page is the reference a packaged tool ships with, and an operator has
+# no second source. Documenting an option that does not exist is worse than
+# documenting none: the reader writes it into a unit file and the daemon
+# refuses to start.
+#
+# ## What it compares, and what it does not
+#
+# The truth is `--help` of the built binary. The gate extracts long options
+# from both sides and compares the sets, and does the same for the exit codes
+# where both sides name them — `zerodds-ws-bridged.1` documented 64 and 73
+# while the program returns 1 and 2, which sends an operator's failure
+# handling after numbers that never arrive. It says nothing about whether a
+# description is accurate — that needs a reader — only that the option is
+# named at all. `--help` and `--version` are exempt: pages conventionally
+# describe them in prose or not at all.
+#
+# roff writes a hyphen as `\-`, so the page is unescaped before matching. A
+# gate that missed that would find every page empty and pass every time,
+# which is how this drift stayed invisible.
+set -uo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT" || exit 2
+
+list_only=0
+[ "${1:-}" = "--list" ] && list_only=1
+
+MAN_DIR="man/man1"
+BIN_DIR="target/debug"
+
+[ -d "$MAN_DIR" ] || { echo "man-gate: no $MAN_DIR" >&2; exit 2; }
+
+fail=0
+missing_total=0
+stale_total=0
+codes_total=0
+unbuilt=()
+
+for page in "$MAN_DIR"/*.1; do
+    tool="$(basename "$page" .1)"
+    bin="$BIN_DIR/$tool"
+    if [ ! -x "$bin" ]; then
+        unbuilt+=("$tool")
+        continue
+    fi
+    # `--help` may go to either stream, and a tool that exits non-zero on
+    # `--help` still printed it.
+    help_text="$("$bin" --help 2>&1 || true)"
+    help_flags="$(printf '%s' "$help_text" \
+        | grep -oE '(^|[^a-zA-Z0-9-])--[a-z][a-z0-9-]+' \
+        | grep -oE -- '--[a-z][a-z0-9-]+' \
+        | grep -vxE -- '--help|--version' | sort -u)"
+    man_flags="$(sed 's/\\-/-/g' "$page" \
+        | grep -oE '(^|[^a-zA-Z0-9-])--[a-z][a-z0-9-]+' \
+        | grep -oE -- '--[a-z][a-z0-9-]+' \
+        | grep -vxE -- '--help|--version' | sort -u)"
+
+    missing="$(comm -23 <(printf '%s\n' "$help_flags") <(printf '%s\n' "$man_flags") | grep -v '^$' || true)"
+    stale="$(comm -13 <(printf '%s\n' "$help_flags") <(printf '%s\n' "$man_flags") | grep -v '^$' || true)"
+
+    # Exit codes, where both sides name them. A page that documents 64 and 73
+    # while the program returns 1 and 2 sends an operator's `ExecStart=`
+    # failure handling after the wrong number — three pages did.
+    # `(^|two spaces)N`: some tools list one code per line, `zerodds-admin`
+    # puts all three on one. A pattern that only anchors at the line start
+    # reads that as a single code and reports a difference that is not there.
+    help_codes="$(printf '%s' "$help_text" | sed -n '/EXIT/,/^$/p' \
+        | grep -oE '(^|[[:space:]]{2,})[0-9]+([[:space:]]{2,}|$)' \
+        | grep -oE '[0-9]+' | sort -un)"
+    man_codes="$(sed 's/\\-/-/g' "$page" | sed -n '/^\.SH EXIT/,/^\.SH /p' \
+        | grep -oE '^\.B [0-9]+' | grep -oE '[0-9]+' | sort -un)"
+    codes_differ=""
+    if [ -n "$help_codes" ] && [ "$help_codes" != "$man_codes" ]; then
+        codes_differ="program: $(echo $help_codes) | page: $(echo ${man_codes:-none})"
+    fi
+
+    if [ -n "$missing" ] || [ -n "$stale" ] || [ -n "$codes_differ" ]; then
+        fail=1
+        echo "$tool:"
+        [ -n "$missing" ] && {
+            echo "  the program has, the page does not name:"
+            printf '    %s\n' $missing
+            missing_total=$((missing_total + $(printf '%s\n' $missing | wc -w)))
+        }
+        [ -n "$stale" ] && {
+            echo "  the page names, the program does not have:"
+            printf '    %s\n' $stale
+            stale_total=$((stale_total + $(printf '%s\n' $stale | wc -w)))
+        }
+        [ -n "$codes_differ" ] && {
+            echo "  exit codes differ — $codes_differ"
+            codes_total=$((codes_total + 1))
+        }
+    fi
+done
+
+if [ ${#unbuilt[@]} -gt 0 ]; then
+    # Not a pass and not a failure: nothing was compared. Says so and stops,
+    # rather than reporting "no differences" over a set it never read.
+    echo "man-gate: not built, so not compared: ${unbuilt[*]}" >&2
+    echo "man-gate: build them first — cargo build --workspace --bins --features zerodds-xrce-agent/daemon,zerodds-corba-cosnaming/daemon" >&2
+    exit 2
+fi
+
+echo "man-gate: $missing_total undocumented, $stale_total documented and gone, $codes_total with different exit codes"
+[ "$list_only" -eq 1 ] && exit 0
+exit "$fail"

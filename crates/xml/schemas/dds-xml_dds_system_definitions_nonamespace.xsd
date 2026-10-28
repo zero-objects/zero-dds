@@ -1,32 +1,24 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!--
-    DDS-XML 1.0 §8.1 — DDS System Block Set (chameleon).
-    Vereint QoS + Types + Domains + DomainParticipants + Applications.
--->
+
 <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
-           elementFormDefault="unqualified"
+           elementFormDefault="qualified"
            attributeFormDefault="unqualified">
 
-    <xs:include schemaLocation="dds-xml_qos_definitions_nonamespace.xsd"/>
-    <xs:include schemaLocation="dds-xml_types_definitions_nonamespace.xsd"/>
-    <xs:include schemaLocation="dds-xml_domains_definitions_nonamespace.xsd"/>
-    <xs:include schemaLocation="dds-xml_domain_participants_definitions_nonamespace.xsd"/>
-    <xs:include schemaLocation="dds-xml_applications_definitions_nonamespace.xsd"/>
-
-    <!-- <dds> root: top level for a complete system. -->
+    <!-- Include all the necessary building blocks -->
+    
+    <xs:include schemaLocation="http://www.omg.org/spec/DDS-XML/20180501/dds-xml_application_definitions_nonamespace.xsd" />
+    
+    <!-- Define DDS top-level element -->
     <xs:complexType name="ddsSystem">
-        <xs:sequence>
-            <xs:element name="qos_library" type="qosLibrary"
-                        minOccurs="0" maxOccurs="unbounded"/>
-            <xs:element name="types" type="typeLibrary"
-                        minOccurs="0" maxOccurs="unbounded"/>
-            <xs:element name="domain_library" type="domainLibrary"
-                        minOccurs="0" maxOccurs="unbounded"/>
-            <xs:element name="domain_participant_library"
-                        type="domainParticipantLibrary"
-                        minOccurs="0" maxOccurs="unbounded"/>
-            <xs:element name="application_library" type="applicationLibrary"
-                        minOccurs="0" maxOccurs="unbounded"/>
-        </xs:sequence>
+        <xs:choice minOccurs="0" maxOccurs="unbounded">
+            <xs:element name="types" type="typeLibrary" />
+            <xs:element name="qos_library" type="qosLibrary" />                            
+            <xs:element name="domain_library" type="domainLibrary" />
+            <xs:element name="domain_participant_library" 
+                        type="domainParticipantLibrary" />
+            <xs:element name="application_library" 
+                        type="applicationLibrary" />
+        </xs:choice>
     </xs:complexType>
+
 </xs:schema>

@@ -283,7 +283,22 @@ auf Topic- und DomainParticipant-Listenern.
 **Spec:** §7.1 — C++ wrappt die C-vtable.
 
 **Repo:** `crates/cpp/include/dds/pub/DataWriterListener.hpp`,
-`crates/cpp/include/dds/sub/DataReaderListener.hpp`.
+`crates/cpp/include/dds/sub/DataReaderListener.hpp` — je ein
+`_DataWriterListenerBridge`/`_DataReaderListenerBridge` mit statischen
+`extern "C"`-Shims, `user_data` zeigt auf die C++-Listener-Subklasse.
+
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_listener_bridge_dispatches_to_virtual`
+— liest die vom Bridge installierte vtable über `zerodds_dw_get_listener`/
+`zerodds_dr_get_listener` zurück und ruft die Einträge genau so auf, wie es
+`zerodds_poll_listeners()` tut (`fn(vt->user_data, handle)`): `user_data` ist
+identisch mit der C++-Subklasse, `on_publication_matched` und
+`on_liveliness_lost` erreichen je ihre eigene virtuelle Methode (Writer),
+`on_data_available` die des Readers, ein NULL-`user_data` feuert nichts, und
+`attach(..., nullptr, 0)` räumt die Registrierung wieder ab.
+`crates/cpp/tests/smoke_dds_psm.cpp::test_listener_attach_detach` deckt
+daneben den Fall ohne Poll ab. Gefahren über
+`crates/cpp/tests/cpp_smoke_via_cargo.rs::dds_psm_cxx_smoke`; lokal
+(macOS, dieser Lauf) 1/1 grün, `OK — all DDS-PSM-Cxx smoke tests passed`.
 
 **Status:** done
 
@@ -292,7 +307,25 @@ auf Topic- und DomainParticipant-Listenern.
 **Spec:** §7.2 — `IDataWriterListener<T>` + `GCHandle`-`user_data`;
 `ListenerPoll.PollAll()`.
 
-**Repo:** `crates/cs/csharp/ZeroDDS/src/Listener.cs`.
+**Repo:** `crates/cs/csharp/ZeroDDS/src/Listener.cs` —
+`IDataWriterListener<T>`/`IDataReaderListener<T>`, die
+`[UnmanagedCallersOnly(CallConvs = [CallConvCdecl])]`-Trampoline in
+`ListenerTrampolines` (kein Delegate-Marshalling, keine Reflection),
+`WriterListenerRegistration`/`ReaderListenerRegistration` halten die Vtable in
+`Marshal.AllocHGlobal`-Speicher und den Sink in einem `GCHandle`, dessen
+`GCHandle.ToIntPtr` das `user_data` ist; `ListenerPoll.PollAll()` ruft
+`zerodds_poll_listeners`. Bindung an die C-FFI über
+`crates/cs/csharp/ZeroDDS/src/Native.cs`
+(`DwSetListenerRaw`/`DrSetListenerRaw`, `PollListeners`).
+
+**Tests:** `crates/cs/csharp/ZeroDDS.Tests/Program.cs`, Block „Listener attach +
+active firing": kein Callback vor dem ersten Poll (§4.1), je einmal
+`on_publication_matched` und `on_subscription_matched` beim ersten Poll mit
+zurückgelesenem Status (§6.1/§6.2), kein zweiter Callback ohne Delta (§6),
+`on_data_available` nach einem `Write` (§6.3), und kein Callback mehr nach
+`Dispose` der Registrierung (§1.3/§9). Lauf über
+`crates/cs/csharp/build_cs_smoke.sh`:
+`OK — all C# DDS-PSM-Cxx smoke tests passed`.
 
 **Status:** done
 
@@ -301,12 +334,24 @@ auf Topic- und DomainParticipant-Listenern.
 **Spec:** §7.3 — In-Process-Java-Heap-Listener am `InProcessBus` +
 Multi-Process-gRPC-Bridge.
 
-**Repo:** `crates/java-omgdds/java/` (In-Process-Listener) +
-`org.zerodds.bridge.GrpcBridgeClient`
-(`crates/java-omgdds/java/src/main/java/org/zerodds/bridge/GrpcBridgeClient.java`).
+**Repo:** `crates/java-omgdds/java/src/main/java/org/omg/dds/sub/DataReaderListener.java`
+und `.../pub/DataWriterListener.java` (Java-Heap-Objekte, keine Vtable und kein
+`user_data` dazwischen), gebunden über `DataReader.setListener`/`getListener`
+und `DataWriter.setListener`/`getListener`; die Match-Ereignisse kommen aus
+`org/zerodds/internal/InProcessBus.java`
+(`Endpoint.onWriterPresenceChanged`, `WriterPresence.onReaderPresenceChanged`),
+`on_data_available` direkt aus dem Zustellpfad `DataReader.onWrite`. Status-Typen
+`org/omg/dds/core/status/{SubscriptionMatchedStatus,PublicationMatchedStatus}.java`.
+Multi-Prozess über `org/zerodds/bridge/GrpcBridgeClient.java`.
 
-**Tests:** `crates/java-omgdds/java/src/test/java/org/zerodds/bridge/GrpcBridgeClientTest.java`,
-`crates/java-omgdds/run_grpc_bridge_e2e.sh`.
+**Tests:** `crates/java-omgdds/java/src/test/java/org/omg/dds/ListenerTest.java`
+(5 Fälle: Match plus ein Callback je Sample, Writer-Seite `on_publication_matched`
+mit Un-Match, `setListener(null)` stellt nichts mehr zu während die Samples
+weiter ankommen, nicht überlappende PARTITION ist kein Match, und der Status
+bleibt ohne Listener lesbar), `crates/java-omgdds/java/src/test/java/org/zerodds/bridge/GrpcBridgeClientTest.java`
+mit `crates/java-omgdds/run_grpc_bridge_e2e.sh` (3/3 gegen den laufenden
+`zerodds-grpc-bridged --features dds-runtime`). `mvn test` gesamt: 95 Tests,
+0 Failures.
 
 **Status:** done
 
@@ -316,7 +361,13 @@ Multi-Process-gRPC-Bridge.
 Listener-Äquivalent unter dem GIL.
 
 **Repo:** `crates/py/src/ffi.rs` (`wait_for_data`,
-`wait_for_matched_subscription`, `wait_for_matched_publication`).
+`wait_for_matched_subscription`, `wait_for_matched_publication` — die
+Warte-Operationen geben den GIL per `py.detach` frei), `crates/py/src/listener.rs`
+(`DataWriterListener`/`DataReaderListener` als Callback-Halter).
+
+**Tests:** `crates/py/python/tests/test_listener.py` (6 Fälle über die
+Listener-Konstruktion und `set_listener` auf Reader und Writer),
+`crates/py/python/tests/test_smoke.py`.
 
 **Status:** done
 
@@ -326,7 +377,19 @@ Listener-Äquivalent unter dem GIL.
 Node-Event-Loop.
 
 **Repo:** `crates/ts-node/src/dds.ts` (`DataReader.waitForMatched`,
-`DataWriter.waitForMatched`).
+`DataWriter.waitForMatched`, dazu die Promise-Formen
+`waitForMatchedSubscription`/`waitForMatchedPublication`).
+
+**Tests:** `crates/ts-node/test/smoke.test.ts` — `"ts pub-sub roundtrip"` wartet mit
+`DataWriter.waitForMatched(1, 5000n)` auf das Match, bevor geschrieben wird;
+`"typed facade: createTypedTopic + createTypedWriter"`,
+`"async layer: writeAsync / takeAsync / streamSample"` und
+`"fluent facade: bytes pub/sub roundtrip"` nutzen
+`waitForMatchedSubscription`/`waitForMatchedPublication` als
+Caller-getriebenes Listener-Äquivalent;
+`"dds-psm-cxx api: GuardCondition + WaitSet"` deckt den Wartepfad.
+`crates/ts-node/test/qos.test.ts` übt dieselbe API über neun QoS-Fälle. Lauf
+`npm test` in `crates/ts-node`.
 
 **Status:** done
 
@@ -337,11 +400,22 @@ Node-Event-Loop.
 **Spec:** §8 — Identity-Roundtrip, NULL-Clear, Poll feuert auf Delta /
 nichts ohne Delta, Aggregator-Firing, Inconsistent-Topic-Firing.
 
-**Repo / Tests:** `listener_ffi::tests::dp_set_get_listener_roundtrip`,
-`dw_set_listener_clear_via_null`,
-`poll_listeners_returns_count_and_clears_state`,
-`poll_fires_data_available_and_data_on_readers`,
-`poll_fires_inconsistent_topic_for_topic_and_participant`.
+**Repo:** `crates/zerodds-c-api/src/listener_ffi.rs` — Set/Get-API,
+`zerodds_poll_listeners()` samt Aggregatoren.
+
+**Tests:** `crates/zerodds-c-api/src/listener_ffi.rs` — fünf Tests, einer je
+Pflicht der Klausel:
+- Pflicht 1 (Identity-Roundtrip): `listener_ffi::tests::dp_set_get_listener_roundtrip`.
+- Pflicht 2 (NULL-Clear): `listener_ffi::tests::dw_set_listener_clear_via_null`.
+- Pflicht 3 (Poll feuert auf Delta, nichts ohne Delta):
+  `listener_ffi::tests::poll_listeners_returns_count_and_clears_state`.
+- Pflicht 4 (Aggregator-Firing inkl. `on_data_on_readers`-Set-Semantik):
+  `listener_ffi::tests::poll_fires_data_available_and_data_on_readers`.
+- Pflicht 5 (Inconsistent-Topic auf Topic und DomainParticipant):
+  `listener_ffi::tests::poll_fires_inconsistent_topic_for_topic_and_participant`.
+
+Lauf `cargo test -p zerodds-c-api --lib listener_ffi`; lokal (macOS, dieser
+Lauf) 5/5 grün, 0 Fehler.
 
 **Status:** done
 
@@ -366,6 +440,10 @@ späteren Poll überlebt.
 
 **Spec:** §10 — Semver-Policy: append-only Struktur-Evolution, Major-Bump
 für Breaking-Changes.
+
+**Repo:** —
+
+**Tests:** —
 
 **Status:** n/a (informative) — eine vorausschauende Versionierungs-Policy,
 keine implementierbare Anforderung.
@@ -393,6 +471,15 @@ gefeuert (§6); `user_data` durch jede Fire-Stelle gereicht.
 26 done / 0 partial / 0 open / 1 n/a (informative) / 0 n/a (rejected).
 
 Test-Lauf: `cargo test -p zerodds-c-api -p zerodds-discovery -p zerodds-dcps --lib`
-— 664 Tests grün, 0 failed.
+— 791 Tests grün, 0 failed, 1 ignored.
+Sprachseiten: `crates/cs/csharp/build_cs_smoke.sh` ohne Fehlschlag;
+`mvn test` in `crates/java-omgdds/java/` 95 Tests, 0 Failures, darunter
+`ListenerTest` 5/5; `run_grpc_bridge_e2e.sh` 3/3;
+`pytest crates/py/python/tests/test_listener.py`;
+`cargo test -p zerodds-cpp --test cpp_smoke_via_cargo` 1/1 (§7.1, lokal
+macOS, dieser Lauf); `npm test` in `crates/ts-node` — `smoke.test.ts` 8/8
+(§7.5, lokal macOS, dieser Lauf);
+`cargo test -p zerodds-c-api --lib listener_ffi` 5/5 (§8, lokal macOS,
+dieser Lauf).
 
 Offene Punkte: keine. Decision-Records: keine.

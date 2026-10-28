@@ -1,0 +1,7 @@
+## wireprobe-rti, exit 4
+### stderr
+wireprobe-rti: rtiddsgen failed
+INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+ERROR com.rti.ndds.nddsgen.Nddsgen gen.idl line 8:14 external members can't be marked as optional
+ERROR com.rti.ndds.nddsgen.Main Fail:  java.util.concurrent.ExecutionException: java.lang.Exception: The file couldn't be parsed and the rawTree wasn't generated
+INFO com.rti.ndds.nddsgen.Main Done (failures)

@@ -1,0 +1,5 @@
+// primitive `float`
+@final struct Sample {
+    float single_float_a;
+    float single_float_b;
+};

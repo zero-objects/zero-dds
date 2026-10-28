@@ -15,7 +15,7 @@
 
 IDL          := idl/Robot.idl
 GEN_DIR      := generated
-GEN_SPEC     := $(GEN_DIR)/robot.ads
+GEN_SPEC     := $(GEN_DIR)/zd_types.ads
 ZERODDS_IDLC ?= zerodds-idlc
 GPR          := robot_demo.gpr
 
@@ -24,12 +24,12 @@ GPR          := robot_demo.gpr
 all: build
 
 # make's own mtime rule: only re-invoke zerodds-idlc when idl/Robot.idl is
-# newer than the last-generated robot.ads.
+# newer than the last-generated zd_types.ads.
 generate: $(GEN_SPEC)
 
 $(GEN_SPEC): $(IDL)
 	mkdir -p $(GEN_DIR)
-	$(ZERODDS_IDLC) generate $(IDL) --ada -o $(GEN_DIR)
+	$(ZERODDS_IDLC) generate --lang ada --out $(GEN_DIR) $(IDL)
 
 build: generate
 	gprbuild -P $(GPR)

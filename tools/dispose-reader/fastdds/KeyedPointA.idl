@@ -1,0 +1,15 @@
+// KeyedPointA of ../KeyedPointA.idl for fastddsgen. `@must_understand` on
+// the key is what XTypes 1.3 §7.2.2.4.4.4.8 makes implicit ("key members
+// shall always have their 'must understand' attribute set to true").
+// ZeroDDS and Cyclone DDS set IS_MUST_UNDERSTAND on a key member without
+// it; the Fast DDS 3.6.1 type support fastddsgen generates does not
+// (measured on the Linux test host: its TypeLookup reply carries member flags 0x0021,
+// TRY_CONSTRUCT1 | IS_KEY), so the two minimal TypeObjects differ in that
+// one flag, their hashes differ, and the reader does not match a ZeroDDS
+// writer that announces its TypeInformation. Written out, the flag gives
+// both the TypeObject the specification asks for.
+@final
+struct KeyedPointA {
+    @key @must_understand long id;
+    long value;
+};

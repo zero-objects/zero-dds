@@ -1,0 +1,16 @@
+static uint8_t o1v[3] = { 1, 2, 3 };
+static int16_t s2v[2] = { -1, 2 };
+static int32_t l4v[2] = { 1, 2 };
+static double d8v[1] = { 1.5 };
+static Cell scv[1] = { { 1, 2 } };
+sample.s = (char *)"abc";
+sample.o1._length = 3; sample.o1._maximum = 3; sample.o1._buffer = o1v; sample.o1._release = false;
+sample.s2._length = 2; sample.s2._maximum = 2; sample.s2._buffer = s2v; sample.s2._release = false;
+sample.l4._length = 2; sample.l4._maximum = 2; sample.l4._buffer = l4v; sample.l4._release = false;
+sample.d8._length = 1; sample.d8._maximum = 1; sample.d8._buffer = d8v; sample.d8._release = false;
+sample.sc._length = 1; sample.sc._maximum = 1; sample.sc._buffer = scv; sample.sc._release = false;
+sample.arr[0].a = 3; sample.arr[0].b = 4;
+sample.arr[1].a = 5; sample.arr[1].b = 6;
+sample.ap[0] = 7; sample.ap[1] = 8;
+sample.nested.a = 9; sample.nested.b = 10;
+sample.tail = 11;

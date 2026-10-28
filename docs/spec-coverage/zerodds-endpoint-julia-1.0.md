@@ -1,9 +1,7 @@
 # `zerodds-endpoint-julia` 1.0 — Spec-Coverage
 
 **Quelle:** docs/specs/zerodds-endpoint-julia-1.0.md — ZeroDDS Julia
-Endpoint-SDK-Spec. Ergänzt die Codegen-Coverage `zerodds-xcdr2-julia`
-(`docs/spec-coverage/zerodds-xcdr2-julia-1.0.md`) — dort das Marshalling, hier
-der Transport.
+Endpoint-SDK-Spec. Das Marshalling kommt aus `crates/lang-rules`, Spalte `Language::Julia`; hier steht der Transport.
 
 Implementation:
 
@@ -79,11 +77,11 @@ SDK zu vermeiden; Modus `sync`/`async` per CLI-Argument; ein `armed`-Flag
 serialisiert den ersten `recvfrom`-Arm gegen den libuv-Datagram-Drop, bevor
 der erste `send` läuft).
 
-**Tests (codepit):**
+**Tests:** (Linux)
 - `julia_endpoint_sync` — voller Stack über `ZeroDDS.Client`.
 - `julia_endpoint_async` — voller Stack über `ZeroDDS.start_reader`.
 
-2/2 grün (codepit).
+2/2 grün (Linux).
 
 **Status:** done.
 
@@ -108,7 +106,7 @@ Payload als Sentinel für „keine weiteren Samples"), `run_bench` (§6);
 `endpoints/julia/example_reliable.jl` (lauffähige In-Process-Demo, kein
 Socket).
 
-**Tests (codepit):**
+**Tests:** (Linux)
 - `julia_reliable_unit_and_golden`
   (`crates/endpoint-e2e/tests/julia_reliable.rs`) läuft
   `julia reliable_test.jl <golden_dir>` — 26 `check(...)`-Assertions:
@@ -137,7 +135,7 @@ Socket).
 - `julia_reliable_no_loss` — lossless Baseline; 12/12.
 
 3 von 4 Tests dieses Abschnitts (Latenz-Bench in §6); zusammen mit §6
-4/4 grün (codepit).
+4/4 grün (Linux).
 
 **Status:** done.
 
@@ -156,7 +154,7 @@ ist Lock+Condvar-basiert, kein wait-free SPSC-Ring — im Spec-Text als
 bekannte Grenze dokumentiert (`reliable_app.jl` Kopfkommentar), das Enqueue
 bleibt trotzdem deutlich unter dem inline-Syscall.
 
-**Tests (codepit):** `julia_reliable_producer_latency`
+**Tests:** (Linux) `julia_reliable_producer_latency`
 (`crates/endpoint-e2e/tests/julia_reliable.rs`) — Channel-Enqueue **80–106 ns**
 vs. inline `send` **6.1–6.5 µs** (~60–75×).
 
@@ -166,9 +164,9 @@ vs. inline `send` **6.1–6.5 µs** (~60–75×).
 
 ## Audit-Status
 
-6 done / 0 partial / 0 open / 0 n/a (informativ) / 0 n/a (rejected).
+6 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
 
-Test-Lauf (codepit, verifiziert): `cargo test -p zerodds-endpoint-e2e --test
+Test-Lauf (Linux, verifiziert): `cargo test -p zerodds-endpoint-e2e --test
 julia` 2/2 (Ping-Pong: `julia_endpoint_sync`/`julia_endpoint_async`);
 `--test julia_reliable` 4/4 (`julia_reliable_unit_and_golden` — 26
 `check(...)`-Assertions inkl. Byte-Golden, `julia_reliable_loss_recovery`,

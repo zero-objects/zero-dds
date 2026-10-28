@@ -1,0 +1,13 @@
+## wireprobe-opensplice, exit 5
+### stderr
+wireprobe-opensplice: the probe did not compile
+genSplDcps.h:19:68: error: expected identifier before 'static'
+genSplDcps.h:19:68: error: storage class specified for parameter 'from'
+genSplDcps.h:19:80: error: expected ')' before ',' token
+genSplDcps.h:19:82: error: expected unqualified-id before 'struct'
+genDcps_impl.cpp:8:18: error: expected identifier before 'static'
+genDcps_impl.cpp:8:18: error: storage class specified for parameter 'from'
+genDcps_impl.cpp:8:30: error: expected ')' before ',' token
+genDcps_impl.cpp:9:5: error: expected unqualified-id before 'struct'
+genDcps_impl.cpp:17:1: error: 'staticTypeSupportMetaHolder' does not name a type; did you mean '_cxx_staticTypeSupportMetaHolder'?
+genDcps_impl.cpp:30:1: error: 'staticTypeSupportMetaHolder' does not name a type; did you mean '_cxx_staticTypeSupportMetaHolder'?

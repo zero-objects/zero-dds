@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of union-discriminator-longlong-unannotated that rti produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	wireprobe-rti: rtiddsgen failed
+plain-cdr1	be	refused	wireprobe-rti: rtiddsgen failed
+pl-cdr1	le	refused	wireprobe-rti: rtiddsgen failed
+pl-cdr1	be	refused	wireprobe-rti: rtiddsgen failed
+plain-cdr2	le	refused	wireprobe-rti: rtiddsgen failed
+plain-cdr2	be	refused	wireprobe-rti: rtiddsgen failed
+delimited-cdr	le	refused	wireprobe-rti: rtiddsgen failed
+delimited-cdr	be	refused	wireprobe-rti: rtiddsgen failed
+pl-cdr2	le	refused	wireprobe-rti: rtiddsgen failed
+pl-cdr2	be	refused	wireprobe-rti: rtiddsgen failed

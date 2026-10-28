@@ -43,12 +43,12 @@ module Robot {
 Compile:
 
 ```bash
-zerodds-idlc Robot.idl --rust  -o gen/rust
-zerodds-idlc Robot.idl --cpp   -o gen/cpp
-zerodds-idlc Robot.idl --java  -o gen/java
-zerodds-idlc Robot.idl --csharp -o gen/cs
-zerodds-idlc Robot.idl --ts    -o gen/ts        # per DDS-TS 1.0 spec
-zerodds-idlc Robot.idl --python -o gen/py
+zerodds-idlc generate --lang rust       --out gen/rust Robot.idl
+zerodds-idlc generate --lang c++        --out gen/cpp  Robot.idl
+zerodds-idlc generate --lang java       --out gen/java Robot.idl
+zerodds-idlc generate --lang c#         --out gen/cs   Robot.idl
+zerodds-idlc generate --lang typescript --out gen/ts   Robot.idl
+zerodds-idlc generate --lang python     --out gen/py   Robot.idl
 ```
 
 Each backend produces:

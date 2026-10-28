@@ -66,24 +66,6 @@ pub fn derive_session_key(master_key: &[u8], master_salt: &[u8], session_id: &[u
     derive_with_tag(master_key, master_salt, SESSION_KEY_TAG, session_id)
 }
 
-/// Spec §10.5.2 Tab.74 — session receiver-specific key derivation.
-///
-/// Computed for per-receiver-specific MACs in DataReader-specific
-/// slots (instead of a global sender key).
-#[must_use]
-pub fn derive_session_hmac_key(
-    master_receiver_specific_key: &[u8],
-    master_salt: &[u8],
-    session_id: &[u8; 4],
-) -> [u8; 32] {
-    derive_with_tag(
-        master_receiver_specific_key,
-        master_salt,
-        SESSION_RECEIVER_KEY_TAG,
-        session_id,
-    )
-}
-
 /// Session key **byte-identical to cyclone** (`crypto_calculate_key_impl`,
 /// crypto_utils.c): `HMAC-SHA256(master_key, "SessionKey" || master_salt[..key_bytes]
 /// || session_id_BE)`. The tag prefix comes **first** (unlike
@@ -101,6 +83,29 @@ pub fn derive_session_key_cyclone(
     let hmac_key = hmac::Key::new(hmac::HMAC_SHA256, master_key);
     let mut ctx = hmac::Context::with_key(&hmac_key);
     ctx.update(SESSION_KEY_TAG);
+    let salt_len = key_bytes.min(master_salt.len());
+    ctx.update(&master_salt[..salt_len]);
+    ctx.update(session_id);
+    let mut out = [0u8; 32];
+    out.copy_from_slice(ctx.sign().as_ref());
+    out
+}
+
+/// `SessionReceiverSpecificKey` (DDS-Security 1.2 §10.5.3.3.3):
+/// `HMAC256(MasterReceiverSpecificKey, "SessionReceiverKey" | MasterSalt |
+/// SessionId)`, the salt cut to the key length as for
+/// [`derive_session_key_cyclone`] (Cyclone DDS does the same). The caller
+/// truncates the 32 octets to the key length of the suite.
+#[must_use]
+pub fn derive_session_receiver_key_cyclone(
+    master_receiver_specific_key: &[u8],
+    master_salt: &[u8],
+    session_id: &[u8; 4],
+    key_bytes: usize,
+) -> [u8; 32] {
+    let hmac_key = hmac::Key::new(hmac::HMAC_SHA256, master_receiver_specific_key);
+    let mut ctx = hmac::Context::with_key(&hmac_key);
+    ctx.update(SESSION_RECEIVER_KEY_TAG);
     let salt_len = key_bytes.min(master_salt.len());
     ctx.update(&master_salt[..salt_len]);
     ctx.update(session_id);
@@ -203,7 +208,7 @@ mod tests {
         let salt = [0xBB; 32];
         let sid = [0x01, 0x02, 0x03, 0x04];
         let sender = derive_session_key(&mk, &salt, &sid);
-        let receiver = derive_session_hmac_key(&mk, &salt, &sid);
+        let receiver = derive_session_receiver_key_cyclone(&mk, &salt, &sid, 32);
         assert_ne!(sender, receiver);
     }
 

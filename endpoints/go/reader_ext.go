@@ -21,9 +21,14 @@ func (r *Reader) GetU16() uint16 {
 	return uint16(le[0]) | uint16(le[1])<<8
 }
 
-// GetU64 reads a uint64 (XCDR2: 4-aligned).
+// GetU64 reads a uint64 at its natural eight-octet alignment, which the
+// reader's MaxAlign then caps: eight under XCDR1, four under XCDR2.
+//
+// It passed 4 here while the writer passed 8, which under XCDR1 read the four
+// octets of padding as the value's low half and returned a different number
+// with no error anywhere.
 func (r *Reader) GetU64() uint64 {
-	le := r.getLE(4, 8)
+	le := r.getLE(8, 8)
 	var v uint64
 	for i := 0; i < 8; i++ {
 		v |= uint64(le[i]) << (8 * i)

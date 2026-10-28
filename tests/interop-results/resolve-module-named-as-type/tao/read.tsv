@@ -1,0 +1,14 @@
+# What tao got back when it read the bytes of resolve-module-named-as-type, held against
+# tests/interop-corpus/resolve-module-named-as-type/values.json and never against another
+# column's reading of the same bytes.
+# encoding	endian	verdict	detail
+plain-cdr1	le	no-form	tests/interop-corpus/resolve-module-named-as-type/type.idl: the layout could not be planned: error [IDL0008] at 19..40: `common` is the name of
+plain-cdr1	be	no-form	tests/interop-corpus/resolve-module-named-as-type/type.idl: the layout could not be planned: error [IDL0008] at 19..40: `common` is the name of
+pl-cdr1	le	no-form	tests/interop-corpus/resolve-module-named-as-type/type.idl: the layout could not be planned: error [IDL0008] at 19..40: `common` is the name of
+pl-cdr1	be	no-form	tests/interop-corpus/resolve-module-named-as-type/type.idl: the layout could not be planned: error [IDL0008] at 19..40: `common` is the name of
+plain-cdr2	le	no-form	tests/interop-corpus/resolve-module-named-as-type/type.idl: the layout could not be planned: error [IDL0008] at 19..40: `common` is the name of
+plain-cdr2	be	no-form	tests/interop-corpus/resolve-module-named-as-type/type.idl: the layout could not be planned: error [IDL0008] at 19..40: `common` is the name of
+delimited-cdr	le	no-form	tests/interop-corpus/resolve-module-named-as-type/type.idl: the layout could not be planned: error [IDL0008] at 19..40: `common` is the name of
+delimited-cdr	be	no-form	tests/interop-corpus/resolve-module-named-as-type/type.idl: the layout could not be planned: error [IDL0008] at 19..40: `common` is the name of
+pl-cdr2	le	no-form	tests/interop-corpus/resolve-module-named-as-type/type.idl: the layout could not be planned: error [IDL0008] at 19..40: `common` is the name of
+pl-cdr2	be	no-form	tests/interop-corpus/resolve-module-named-as-type/type.idl: the layout could not be planned: error [IDL0008] at 19..40: `common` is the name of

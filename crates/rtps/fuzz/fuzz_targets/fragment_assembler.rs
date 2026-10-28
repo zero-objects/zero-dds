@@ -44,6 +44,7 @@ fuzz_target!(|data: &[u8]| {
     };
 
     let df = DataFragSubmessage {
+        inline_qos: None,
         extra_flags: 0,
         reader_id: EntityId::user_reader_with_key([1, 2, 3]),
         writer_id: EntityId::user_writer_with_key([4, 5, 6]),
@@ -54,7 +55,6 @@ fuzz_target!(|data: &[u8]| {
         sample_size,
         serialized_payload: payload.into(),
         inline_qos_flag: false,
-        hash_key_flag: false,
         key_flag: false,
         non_standard_flag: false,
     };

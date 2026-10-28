@@ -1,0 +1,6 @@
+// primitive `wchar`, with a code point outside the Basic Multilingual Plane
+@final struct Sample {
+    wchar letter_a;
+    wchar too_wide;
+    long after;
+};

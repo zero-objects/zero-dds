@@ -1,6 +1,6 @@
-# Cyclone-DDS Python-Client fuer Cross-Vendor-Interop-Tests gegen
-# ZeroDDS. Das Image bringt cyclonedds-python (mitgelieferte C-Lib)
-# und die Pub/Sub-Scripts mit.
+# Cyclone DDS Python client for cross-vendor interop tests against
+# ZeroDDS. The image brings cyclonedds-python (with the bundled C lib)
+# and the pub/sub scripts.
 #
 # Build:   docker build -f Dockerfile.cyclone-python -t zerodds-cyclone-shapes .
 # Use via: docker-compose.yml services cyclone-shapes-pub/sub.
@@ -16,6 +16,6 @@ COPY cyclonedds.xml /app/
 
 ENV CYCLONEDDS_URI=file:///app/cyclonedds.xml
 
-# Default: Pub; via compose command override als Sub setzen.
+# Default: pub; set it to sub via a compose command override.
 ENTRYPOINT ["python3"]
 CMD ["cyclone_shapes_pub.py"]

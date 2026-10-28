@@ -2,75 +2,75 @@
 // Copyright 2026 ZeroDDS Contributors
 //! `DynamicData` → JSON, and an NDJSON sample sink.
 //!
-//! One JSON object per decoded sample (newline-delimited). Each line carries the
-//! topic, receive timestamp, writer GUID, the decoded `value` tree, and the raw
-//! CDR bytes (hex) so `zerodds-replay` can re-publish byte-exact from JSON.
+//! One JSON object per decoded sample (newline-delimited). Each line carries
+//! the topic, receive timestamp, writer GUID, the decoded `value` tree, and
+//! the raw CDR bytes (hex) so `zerodds-replay` can re-publish byte-exact from
+//! JSON.
+//!
+//! ## What JSON cannot hold
+//!
+//! Three of the value tree's forms have no JSON number that is equal to them,
+//! and each is written as a **string** rather than as the nearest `f64`:
+//!
+//! - an integer outside `i64`/`u64` — IDL has `long long` and the value tree
+//!   holds an `i128`, so a `uint64` above `2^63` is representable in neither
+//!   arm of `serde_json::Number`;
+//! - a `fixed<P, S>`, which is a decimal and not a binary float;
+//! - a `long double`, which is 113 bits of significand against `f64`'s 53.
+//!
+//! A JSON number in this output is therefore exact, and a JSON string in a
+//! numeric position says the value did not fit rather than that it was
+//! rounded. `NaN` and `±inf` are the one remaining gap and become `null`:
+//! JSON has no spelling for them at all, and a string there would collide
+//! with the three cases above.
 
 use std::io::Write;
 
 use serde_json::{Map, Number, Value};
-use zerodds_types::dynamic::data::{DynamicData, DynamicValue};
-use zerodds_types::dynamic::descriptor::TypeKind;
+use zerodds_types::dynamic::DynamicData;
 
-/// Convert a decoded aggregate [`DynamicData`] to a JSON object
-/// (`{ member_name: value, … }`, type-declared order). Unset members are omitted.
+/// Convert a decoded [`DynamicData`] to JSON.
+///
+/// An aggregate becomes an object in the order the reader met its members —
+/// for a `@mutable` type, the order the *writer* chose.
 #[must_use]
 /// zerodds-lint: recursion-depth 64 (walks decoded DynamicData; bounded by type nesting).
 pub fn data_to_json(d: &DynamicData) -> Value {
-    let ty = d.dynamic_type();
-    let mut obj = Map::new();
-    for m in ty.members() {
-        if let Some(v) = d.get_value(m.id()) {
-            obj.insert(m.name().to_string(), value_to_json(v));
+    match d {
+        DynamicData::Boolean(b) => Value::Bool(*b),
+        DynamicData::Integer { value, .. } => integer_json(*value),
+        DynamicData::Float { value, .. } => f64_json(*value),
+        DynamicData::LongDouble(x) => Value::String(x.to_string()),
+        DynamicData::Character { value, .. } | DynamicData::Text(value) => {
+            Value::String(value.clone())
         }
-    }
-    Value::Object(obj)
-}
-
-/// Convert a [`DynamicValue`] to JSON.
-#[must_use]
-/// zerodds-lint: recursion-depth 64 (walks decoded DynamicData; bounded by type nesting).
-pub fn value_to_json(v: &DynamicValue) -> Value {
-    match v {
-        DynamicValue::Bool(b) => Value::Bool(*b),
-        DynamicValue::Byte(x) | DynamicValue::UInt8(x) | DynamicValue::Char8(x) => {
-            Value::Number(Number::from(*x))
+        DynamicData::Fixed(text) => Value::String(text.clone()),
+        DynamicData::Enumerator(name) => Value::String(name.clone()),
+        DynamicData::Bits(items) | DynamicData::Collection(items) => {
+            Value::Array(items.iter().map(data_to_json).collect())
         }
-        DynamicValue::Int8(x) => Value::Number(Number::from(*x)),
-        DynamicValue::Int16(x) => Value::Number(Number::from(*x)),
-        DynamicValue::UInt16(x) | DynamicValue::Char16(x) => Value::Number(Number::from(*x)),
-        DynamicValue::Int32(x) => Value::Number(Number::from(*x)),
-        DynamicValue::UInt32(x) => Value::Number(Number::from(*x)),
-        DynamicValue::Int64(x) => Value::Number(Number::from(*x)),
-        DynamicValue::UInt64(x) => Value::Number(Number::from(*x)),
-        DynamicValue::Float32(x) => f64_json(f64::from(*x)),
-        DynamicValue::Float64(x) => f64_json(*x),
-        DynamicValue::String(s) => Value::String(s.clone()),
-        DynamicValue::WString(u) => Value::String(String::from_utf16_lossy(u)),
-        DynamicValue::Complex(d) => data_to_json(d),
-        DynamicValue::Sequence(items) => Value::Array(items.iter().map(element_to_json).collect()),
-        DynamicValue::Map(entries) => Value::Array(
-            entries
+        DynamicData::Bitfields(fields) | DynamicData::Aggregate(fields) => Value::Object(
+            fields
                 .iter()
-                .map(|(k, v)| {
-                    let mut o = Map::new();
-                    o.insert("key".to_string(), element_to_json(k));
-                    o.insert("value".to_string(), element_to_json(v));
-                    Value::Object(o)
-                })
-                .collect(),
+                .map(|(name, v)| (name.clone(), data_to_json(v)))
+                .collect::<Map<String, Value>>(),
         ),
-        DynamicValue::None => Value::Null,
+        _ => Value::Null,
     }
 }
 
-/// A collection element is either a composite (struct/union → object) or a
-/// scalar wrapper holding its value under member id 0.
-fn element_to_json(d: &DynamicData) -> Value {
-    match d.dynamic_type().kind() {
-        TypeKind::Structure | TypeKind::Union => data_to_json(d),
-        _ => d.get_value(0).map_or(Value::Null, value_to_json),
-    }
+/// An `i128` as a JSON number where one is equal to it, and as a decimal
+/// string where none is.
+fn integer_json(value: i128) -> Value {
+    i64::try_from(value).map_or_else(
+        |_| {
+            u64::try_from(value).map_or_else(
+                |_| Value::String(value.to_string()),
+                |u| Value::Number(Number::from(u)),
+            )
+        },
+        |i| Value::Number(Number::from(i)),
+    )
 }
 
 /// NaN / ±inf are not representable in JSON → `null`.
@@ -82,9 +82,10 @@ fn f64_json(x: f64) -> Value {
 /// base64 dependency).
 #[must_use]
 pub fn to_hex(bytes: &[u8]) -> String {
+    use core::fmt::Write as _;
     let mut s = String::with_capacity(bytes.len() * 2);
     for b in bytes {
-        s.push_str(&format!("{b:02x}"));
+        let _ = write!(s, "{b:02x}");
     }
     s
 }
@@ -100,7 +101,7 @@ pub fn from_hex(s: &str) -> Option<Vec<u8>> {
     }
     (0..s.len())
         .step_by(2)
-        .map(|i| u8::from_str_radix(&s[i..i + 2], 16).ok())
+        .map(|i| u8::from_str_radix(s.get(i..i + 2)?, 16).ok())
         .collect()
 }
 
@@ -179,10 +180,19 @@ impl<W: Write> JsonSink<W> {
 #[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
-    use crate::type_source::dynamic_type_from_idl;
-    use zerodds_types::dynamic::codec::{decode_dynamic, encode_dynamic};
-    use zerodds_types::dynamic::type_::DynamicType;
-    use zerodds_types::dynamic::{DynamicDataFactory, DynamicValue as DV};
+    use crate::type_source::TypeBook;
+    use zerodds_ast_layout::key::{Encoding, Endianness};
+    use zerodds_wire_codec::{ProbeRequest, decode, encode};
+
+    const IDL: &str = r"
+        module cuas {
+            @final struct Track {
+                unsigned long id;
+                string name;
+                sequence<long> xs;
+            };
+        };
+    ";
 
     #[test]
     fn hex_roundtrip() {
@@ -191,49 +201,118 @@ mod tests {
         assert!(from_hex("abc").is_none());
     }
 
+    /// The real recorder flow: encode a value, decode the octets back, and
+    /// render the decoded tree. The JSON is produced from what came off the
+    /// wire and not from what went onto it.
     #[test]
     fn decoded_sample_to_json() {
-        const IDL: &str = r#"
-            module cuas {
-                @final struct Track {
-                    unsigned long id;
-                    string name;
-                    sequence<long> xs;
-                };
-            };
-        "#;
-        let ty = dynamic_type_from_idl(IDL, "Track").unwrap();
-        let mut d = DynamicDataFactory::create_data(&ty).unwrap();
-        d.set_uint32_value(0, 7).unwrap();
-        d.set_string_value(1, "alpha").unwrap();
-        let mut xs = Vec::new();
-        for v in [1_i32, 2, 3] {
-            let mut e = DynamicDataFactory::create_data(&DynamicType::new_primitive(
-                zerodds_types::dynamic::descriptor::TypeKind::Int32,
-            ))
-            .unwrap();
-            e.set_value_raw(0, DV::Int32(v));
-            xs.push(e);
-        }
-        d.set_sequence_value(2, xs).unwrap();
+        let book = TypeBook::from_idl(IDL).expect("idl");
+        let request = ProbeRequest::new("cuas::Track", Encoding::DelimitedCdr, Endianness::Little);
+        let value = DynamicData::Aggregate(vec![
+            (
+                String::from("id"),
+                DynamicData::Integer {
+                    kind: None,
+                    value: 7,
+                },
+            ),
+            (
+                String::from("name"),
+                DynamicData::Text(String::from("alpha")),
+            ),
+            (
+                String::from("xs"),
+                DynamicData::Collection(vec![
+                    DynamicData::Integer {
+                        kind: None,
+                        value: 1,
+                    },
+                    DynamicData::Integer {
+                        kind: None,
+                        value: 2,
+                    },
+                    DynamicData::Integer {
+                        kind: None,
+                        value: 3,
+                    },
+                ]),
+            ),
+        ]);
 
-        // Decode-from-wire path → JSON (the real recorder flow).
-        let bytes = encode_dynamic(&d, true, false).unwrap();
-        let back = decode_dynamic(&ty, &bytes, true, false).unwrap();
+        let bytes = encode(book.ast(), &request, &value).expect("encode");
+        let back: DynamicData = decode(book.ast(), &request, &bytes).expect("decode");
         let j = data_to_json(&back);
         assert_eq!(j["id"], serde_json::json!(7));
         assert_eq!(j["name"], serde_json::json!("alpha"));
         assert_eq!(j["xs"], serde_json::json!([1, 2, 3]));
 
         let line = sample_line("Track", "cuas::Track", 1_700, "aabbccdd", j, &bytes);
-        let parsed: Value = serde_json::from_str(&line).unwrap();
+        let parsed: Value = serde_json::from_str(&line).expect("line parses");
         assert_eq!(parsed["topic"], serde_json::json!("Track"));
         assert_eq!(parsed["type"], serde_json::json!("cuas::Track"));
         assert_eq!(parsed["value"]["name"], serde_json::json!("alpha"));
-        // raw_cdr round-trips back to the exact wire bytes (replay fidelity).
         assert_eq!(
             from_hex(parsed["raw_cdr"].as_str().unwrap()).unwrap(),
             bytes
+        );
+    }
+
+    /// A `uint64` above `2^63` has no `i64` and the value tree holds it
+    /// exactly; it must reach JSON as a number and not as a rounded float.
+    #[test]
+    fn a_large_unsigned_integer_stays_a_number() {
+        let v = DynamicData::Integer {
+            kind: None,
+            value: i128::from(u64::MAX),
+        };
+        assert_eq!(data_to_json(&v), serde_json::json!(u64::MAX));
+    }
+
+    /// Beyond `u64` there is no JSON number at all, and the decimal string
+    /// says so rather than losing digits.
+    #[test]
+    fn an_integer_past_u64_becomes_its_exact_decimal() {
+        let big = i128::from(u64::MAX) + 1;
+        assert_eq!(
+            data_to_json(&DynamicData::Integer {
+                kind: None,
+                value: big
+            }),
+            Value::String(big.to_string())
+        );
+    }
+
+    /// A `fixed` is a decimal. Writing it as an `f64` would make
+    /// `fixed<28,4>` a different number, so it stays the text the canonical
+    /// form gives it.
+    #[test]
+    fn a_fixed_keeps_its_decimal_digits() {
+        let text = String::from("1234567890123456789012.3456");
+        assert_eq!(
+            data_to_json(&DynamicData::Fixed(text.clone())),
+            Value::String(text)
+        );
+    }
+
+    #[test]
+    fn not_a_number_has_no_json_spelling() {
+        assert_eq!(
+            data_to_json(&DynamicData::Float {
+                kind: None,
+                value: f64::NAN
+            }),
+            Value::Null
+        );
+    }
+
+    /// An enumerator is its name. The number behind it depends on `@value`
+    /// and on the dialect, and two peers that number theirs differently
+    /// still mean the same enumerator.
+    #[test]
+    fn an_enumerator_is_written_by_name() {
+        assert_eq!(
+            data_to_json(&DynamicData::Enumerator(String::from("RED"))),
+            serde_json::json!("RED")
         );
     }
 }

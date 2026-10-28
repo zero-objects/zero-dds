@@ -18,11 +18,11 @@
 
 use alloc::vec::Vec;
 
-use zerodds_cdr::{BufferReader, BufferWriter};
+use zerodds_wire::{Reader, Writer};
 
 use crate::error::{GiopError, GiopResult};
 
-/// Standardisierte ServiceContext-Tags (Spec §13.7 / §15.3.1).
+/// The standardised ServiceContext tags (spec §13.7 / §15.3.1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
 pub enum ServiceContextTag {
@@ -90,7 +90,7 @@ impl ServiceContext {
     }
 }
 
-/// ServiceContextList = `sequence<ServiceContext>`.
+/// `ServiceContextList` = `sequence<ServiceContext>`.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ServiceContextList(pub Vec<ServiceContext>);
 
@@ -113,32 +113,32 @@ impl ServiceContextList {
         self.0.is_empty()
     }
 
-    /// CDR-Encode.
+    /// CDR encode.
     ///
     /// # Errors
-    /// Buffer-Schreibfehler.
-    pub fn encode(&self, w: &mut BufferWriter) -> GiopResult<()> {
+    /// Buffer write error.
+    pub fn encode(&self, w: &mut Writer) -> GiopResult<()> {
         // sequence<ServiceContext> = unsigned long count + items.
         let count = u32::try_from(self.0.len())
             .map_err(|_| GiopError::Malformed("service_context list too long".into()))?;
-        w.write_u32(count)?;
+        w.write_u32(count);
         for ctx in &self.0 {
             // ServiceContext = ServiceId + sequence<octet>.
-            w.write_u32(ctx.context_id)?;
+            w.write_u32(ctx.context_id);
             // CDR sequence<octet>: length + data.
             let n = u32::try_from(ctx.context_data.len())
                 .map_err(|_| GiopError::Malformed("context_data too long".into()))?;
-            w.write_u32(n)?;
-            w.write_bytes(&ctx.context_data)?;
+            w.write_u32(n);
+            w.write_bytes(&ctx.context_data);
         }
         Ok(())
     }
 
-    /// CDR-Decode.
+    /// CDR decode.
     ///
     /// # Errors
     /// Buffer read error or length overflow.
-    pub fn decode(r: &mut BufferReader<'_>) -> GiopResult<Self> {
+    pub fn decode(r: &mut Reader<'_>) -> GiopResult<Self> {
         let count = r.read_u32()? as usize;
         let mut out = Vec::with_capacity(count.min(64));
         for _ in 0..count {
@@ -158,7 +158,7 @@ impl ServiceContextList {
 #[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
-    use zerodds_cdr::Endianness;
+    use zerodds_wire::Endianness;
 
     #[test]
     fn standard_tag_values_match_spec() {
@@ -172,13 +172,13 @@ mod tests {
     #[test]
     fn empty_list_round_trip() {
         let list = ServiceContextList::default();
-        let mut w = BufferWriter::new(Endianness::Big);
+        let mut w = Writer::new(Endianness::Big);
         list.encode(&mut w).unwrap();
-        let bytes = w.into_bytes();
+        let bytes = w.finish();
         // 4 bytes: count=0.
         assert_eq!(bytes.len(), 4);
         assert_eq!(&bytes, &[0, 0, 0, 0]);
-        let mut r = BufferReader::new(&bytes, Endianness::Big);
+        let mut r = Reader::new(&bytes, Endianness::Big);
         let decoded = ServiceContextList::decode(&mut r).unwrap();
         assert!(decoded.is_empty());
     }
@@ -189,10 +189,10 @@ mod tests {
             ServiceContext::new(1, alloc::vec![0xde, 0xad]),
             ServiceContext::new(15, alloc::vec![0xbe, 0xef, 0xca, 0xfe]),
         ]);
-        let mut w = BufferWriter::new(Endianness::Big);
+        let mut w = Writer::new(Endianness::Big);
         list.encode(&mut w).unwrap();
-        let bytes = w.into_bytes();
-        let mut r = BufferReader::new(&bytes, Endianness::Big);
+        let bytes = w.finish();
+        let mut r = Reader::new(&bytes, Endianness::Big);
         let decoded = ServiceContextList::decode(&mut r).unwrap();
         assert_eq!(decoded, list);
     }
@@ -203,10 +203,10 @@ mod tests {
             ServiceContextTag::CodeSets.as_u32(),
             alloc::vec![1, 2, 3, 4, 5, 6, 7, 8],
         )]);
-        let mut w = BufferWriter::new(Endianness::Little);
+        let mut w = Writer::new(Endianness::Little);
         list.encode(&mut w).unwrap();
-        let bytes = w.into_bytes();
-        let mut r = BufferReader::new(&bytes, Endianness::Little);
+        let bytes = w.finish();
+        let mut r = Reader::new(&bytes, Endianness::Little);
         let decoded = ServiceContextList::decode(&mut r).unwrap();
         assert_eq!(decoded, list);
     }

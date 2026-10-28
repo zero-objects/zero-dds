@@ -24,7 +24,7 @@
 //!     populates the registry (real async resolution).
 //!
 //! Linux-only: macOS multicast loopback is unreliable for SPDP (see
-//! `same_host_e2e.rs`). Run on codepit.
+//! `same_host_e2e.rs`). Run on the Linux test host.
 
 #![cfg(all(target_os = "linux", feature = "std"))]
 #![allow(
@@ -39,9 +39,6 @@ use std::time::{Duration, Instant};
 
 use zerodds_dcps::runtime::{
     DcpsRuntime, RuntimeConfig, UserReaderConfig, UserSample, UserWriterConfig,
-};
-use zerodds_qos::{
-    DeadlineQosPolicy, DurabilityKind, LifespanQosPolicy, LivelinessQosPolicy, OwnershipKind,
 };
 use zerodds_rtps::wire_types::{EntityId, GuidPrefix};
 use zerodds_types::builder::{Extensibility, TypeObjectBuilder};
@@ -87,22 +84,8 @@ fn writer_config(type_id: TypeIdentifier) -> UserWriterConfig {
     UserWriterConfig {
         topic_name: TOPIC.into(),
         type_name: "gap2::Evo".into(),
-        reliable: true,
-        durability: DurabilityKind::Volatile,
-        deadline: DeadlineQosPolicy::default(),
-        latency_budget: Default::default(),
-        destination_order: Default::default(),
-        lifespan: LifespanQosPolicy::default(),
-        liveliness: LivelinessQosPolicy::default(),
-        ownership: OwnershipKind::Shared,
-        ownership_strength: 0,
-        presentation: Default::default(),
-        partition: vec![],
-        user_data: vec![],
-        topic_data: vec![],
-        group_data: vec![],
         type_identifier: type_id,
-        data_representation_offer: None,
+        ..Default::default()
     }
 }
 
@@ -110,21 +93,9 @@ fn reader_config(type_id: TypeIdentifier, tce: TypeConsistencyEnforcement) -> Us
     UserReaderConfig {
         topic_name: TOPIC.into(),
         type_name: "gap2::Evo".into(),
-        reliable: true,
-        durability: DurabilityKind::Volatile,
-        deadline: DeadlineQosPolicy::default(),
-        latency_budget: Default::default(),
-        destination_order: Default::default(),
-        liveliness: LivelinessQosPolicy::default(),
-        ownership: OwnershipKind::Shared,
-        presentation: Default::default(),
-        partition: vec![],
-        user_data: vec![],
-        topic_data: vec![],
-        group_data: vec![],
         type_identifier: type_id,
         type_consistency: tce,
-        data_representation_offer: None,
+        ..Default::default()
     }
 }
 
@@ -172,7 +143,7 @@ fn two_runtimes(domain: i32) -> (Arc<DcpsRuntime>, Arc<DcpsRuntime>) {
     let prefix_a = GuidPrefix::from_bytes([0xA7; 12]);
     let prefix_b = {
         let mut p = [0xB8; 12];
-        p[..4].copy_from_slice(&prefix_a.to_bytes()[..4]); // same host-id
+        p[..6].copy_from_slice(&prefix_a.to_bytes()[..6]); // same vendor and host id
         GuidPrefix::from_bytes(p)
     };
     let rt_a = DcpsRuntime::start(domain, prefix_a, RuntimeConfig::default()).expect("rt_a");
@@ -256,7 +227,10 @@ fn run_fetch_and_resolve(domain: i32, tce: TypeConsistencyEnforcement) {
 /// Non-strict (default TCE): the resolution-miss resolves via getTypes.
 #[test]
 fn gap2_typelookup_fetch_resolves_match_nonstrict() {
-    run_fetch_and_resolve(151, TypeConsistencyEnforcement::default());
+    run_fetch_and_resolve(
+        common::unique_domain(),
+        TypeConsistencyEnforcement::default(),
+    );
 }
 
 /// Strict (`force_type_validation`): the reader DEFERS on the miss and
@@ -267,7 +241,7 @@ fn gap2_typelookup_fetch_resolves_match_nonstrict() {
 fn gap2_typelookup_fetch_resolves_match_strict() {
     let mut tce = TypeConsistencyEnforcement::default();
     tce.force_type_validation = true;
-    run_fetch_and_resolve(152, tce);
+    run_fetch_and_resolve(common::unique_domain(), tce);
 }
 
 /// Strict fail-closed: an UNRESOLVED writer type that is structurally
@@ -276,10 +250,13 @@ fn gap2_typelookup_fetch_resolves_match_strict() {
 /// must not optimistically match on the miss.
 #[test]
 fn gap2_typelookup_strict_incompatible_never_matches() {
-    let (rt_a, rt_b) = two_runtimes(153);
+    let (rt_a, rt_b) = two_runtimes(common::unique_domain());
 
-    // Writer @final {a: i16}; reader @final {a: i32}. Under strict TCE
-    // (no coercion) i16↛i32 → structurally incompatible.
+    // Writer @final {a: i16}; reader @final {a: i32}. i16 ↛ i32 under any
+    // TCE — XTypes 1.3 §7.2.4.4.4, Table 15, gives a primitive type one
+    // assignable source, the same primitive type — so the pair is
+    // structurally incompatible and what this test measures is the
+    // fail-closed path, not the coercion setting.
     let writer_obj = TypeObject::Minimal(MinimalTypeObject::Struct(
         TypeObjectBuilder::struct_type("::gap2::Narrow")
             .extensibility(Extensibility::Final)
@@ -321,3 +298,8 @@ fn gap2_typelookup_strict_incompatible_never_matches() {
         "strict reader must NOT match a structurally-incompatible writer type"
     );
 }
+
+/// Leases a DDS domain no other process on this host holds — the
+/// domain number is the UDP port number, so it is a host-wide resource.
+#[path = "common/mod.rs"]
+mod common;

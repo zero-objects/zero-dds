@@ -1,0 +1,4 @@
+wireprobe-jacorb: the probe did not compile
+./Choice.java:33: error: incompatible types: possible lossy conversion from int to short
+./ChoiceHelper.java:70: error: incompatible types: possible lossy conversion from int to short
+./ChoiceHelper.java:92: error: incompatible types: possible lossy conversion from int to short

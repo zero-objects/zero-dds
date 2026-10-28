@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of evolution-mutable-optional that cyclone produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	the fill: error: assignment to 'int32_t *' {aka 'int *'} from 'int' makes pointer from integer without a cast [-Wint-conversion]
+plain-cdr1	be	refused	the fill: error: assignment to 'int32_t *' {aka 'int *'} from 'int' makes pointer from integer without a cast [-Wint-conversion]
+pl-cdr1	le	refused	the fill: error: assignment to 'int32_t *' {aka 'int *'} from 'int' makes pointer from integer without a cast [-Wint-conversion]
+pl-cdr1	be	refused	the fill: error: assignment to 'int32_t *' {aka 'int *'} from 'int' makes pointer from integer without a cast [-Wint-conversion]
+plain-cdr2	le	refused	the fill: error: assignment to 'int32_t *' {aka 'int *'} from 'int' makes pointer from integer without a cast [-Wint-conversion]
+plain-cdr2	be	refused	the fill: error: assignment to 'int32_t *' {aka 'int *'} from 'int' makes pointer from integer without a cast [-Wint-conversion]
+delimited-cdr	le	refused	the fill: error: assignment to 'int32_t *' {aka 'int *'} from 'int' makes pointer from integer without a cast [-Wint-conversion]
+delimited-cdr	be	refused	the fill: error: assignment to 'int32_t *' {aka 'int *'} from 'int' makes pointer from integer without a cast [-Wint-conversion]
+pl-cdr2	le	refused	the fill: error: assignment to 'int32_t *' {aka 'int *'} from 'int' makes pointer from integer without a cast [-Wint-conversion]
+pl-cdr2	be	refused	the fill: error: assignment to 'int32_t *' {aka 'int *'} from 'int' makes pointer from integer without a cast [-Wint-conversion]

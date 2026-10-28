@@ -1,224 +1,274 @@
-# `zerodds-xcdr2-c` 1.0 -- Spec-Coverage
+# `zerodds-xcdr2-c` 1.0 — Spec-Coverage
 
-**Quelle:** `docs/specs/zerodds-xcdr2-c-1.0.md` (185 Zeilen) -- ZeroDDS C-FFI XCDR2-Encoding-Spec.
+**Quelle:** `internal/standards/cache/omg/dds-xtypes-1.3.pdf` (§7.2, §7.4) und `internal/standards/cache/omg/idl-4.2.pdf` (§7) — was die C-Spalte beantwortet.
 
-Implementation:
+Der Mechanismus, den diese Spalte mit den zwanzig anderen teilt — die beiden Walks, die Rahmung, Table 9, der KeyHash und der Treiber —, steht in `zerodds-xcdr2-bindings-conformance-1.0.md`. Dieses Dokument führt nur, was die C-Spalte selbst entscheidet, und ihre eigenen Nachweise.
 
-- `crates/zerodds-c-api/` — C-FFI XCDR2-TypeSupport-Encoding.
+## §7.5.1 Die Teile der Spalte
 
-## §1 Motivation
+### §7.5.1 Der konkrete Syntaxbaum und seine Textform
 
-### §1 Keine OMG-DDS-C-PSM-Spec
+**Spec:** §7.5.1 — Plain Language Binding — die Abbildung auf die Zielsprache ist PSM-eigen. Die Deklarationen dieser Spalte werden als Baum gebaut und erst danach als Text geschrieben; kein Emitter setzt Quelltext zusammen.
 
-**Spec:** §1 -- "Es gibt keine OMG-DDS-C-PSM-Spec. Die existierende zerodds-c-api-1.0 deckt Entity-Lifecycle und QoS ab, aber nicht typisiertes Encoding."
+**Repo:** `crates/lang-cst/src/c/`, `crates/lang-render/src/c.rs`
 
-**Repo:** Motivations-Text der Vendor-Spec.
-
-**Tests:** --
-
-**Status:** n/a (informative)
-
-## §2 TypeSupport-Pattern
-
-### §2 `zerodds_typesupport_t`-Struct mit Function-Table
-
-**Spec:** §2 -- C-Struct mit `type_hash[16]`, `type_name`, `is_keyed`, `extensibility`, plus Function-Pointer `encode/decode/key_hash/sample_free`.
-
-**Repo:** `crates/zerodds-c-api/src/xcdr2.rs` definiert `zerodds_typesupport_t` als `#[repr(C)]`-Struct in `crates/zerodds-c-api/include/zerodds/typesupport.h`.
-
-**Tests:** `crates/zerodds-c-api/tests/xcdr2_c_compile.rs` (12 tests) compilet generierten C-Code gegen Header.
+**Tests:** `crates/lang-render/tests/rendering.rs`: `a_c_else_holding_one_if_renders_as_else_if`, `a_c_else_holding_anything_else_keeps_its_block`, `a_c_struct_renders_with_its_members`, `a_c_prototype_with_no_parameters_writes_void`, `a_c_pointer_type_binds_to_the_declarator`, `a_c_file_writes_its_include_guard_at_both_ends`;
+querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_output_with_exactly_one_newline`, `crates/lang-render/tests/rendering.rs::no_rendered_line_carries_trailing_whitespace`.
 
 **Status:** done
 
-## §3 Required FFI-Functions
+### §7.5.1 Der Regelkatalog
 
-### §3 Topic + Writer/Reader + Standalone Encode/Decode
+**Spec:** §7.5.1 — Plain Language Binding — die Abbildung auf die Zielsprache ist PSM-eigen. Was aus welchem Modellknoten wird, steht als Regelmenge und nicht als Sonderfall im Walk.
 
-**Spec:** §3 -- 6 FFI-Funktionen: `zerodds_topic_create_typed`, `zerodds_writer_write_typed`, `zerodds_reader_take_typed`, `zerodds_xcdr2_encode`, `zerodds_xcdr2_decode`. Return-Codes 0=OK, -7=BAD_PARAMETER, -13=BUFFER_TOO_SMALL, -3=UNSUPPORTED.
+**Repo:** `crates/lang-rules/src/rule/c.rs`
 
-**Repo:** `crates/zerodds-c-api/src/xcdr2.rs` exportiert die FFI-Funktionen. Status-Codes via zentralem `zerodds-c-api`-Status-Mapping.
-
-**Tests:** `crates/zerodds-c-api/tests/xcdr2_wire_vectors.rs` (13 tests) ruft die FFI-Encoders/Decoder; `crates/zerodds-c-api/tests/smoke_ffi.rs`.
-
-**Status:** done
-
-## §4 Codegen-Pflicht
-
-### §4 idl-cpp `--c-mode` Codegen
-
-**Spec:** §4 -- "Pro IDL-`struct` muss ein C-Codegen (idl-c, falls existent, oder als Aufgabe von idl-cpp via `extern C`-Wrapper) bereitstellen: Datenstruktur `MyType_t` + `extern const zerodds_typesupport_t MyType_typesupport`."
-
-**Repo:** `crates/idl-cpp/src/c_mode.rs` (`emit_struct`, `emit_encode_body`, `emit_decode_body`, `emit_key_hash_body`, `emit_free_body`) -- volle C-Codegen-Path. `MyType_typesupport`-Static-Tabelle in emit_struct.
-
-**Tests:** `crates/zerodds-c-api/tests/xcdr2_c_codegen.rs` (12 tests) verifiziert generierten C-Output.
+**Tests:** `crates/lang-rules/tests/apply.rs::every_language_catalogue_fires_on_the_same_model`,
+`crates/lang-rules/tests/apply.rs::every_catalogue_serialises_and_reads_back_the_same`
 
 **Status:** done
 
-## §5 Wire-Type-Mapping
+### §7.5.1 Der Materialisierer
 
-### §5 IDL-zu-C99-Typen + Wire-Layout
+**Spec:** §7.5.1 — Plain Language Binding — die Abbildung auf die Zielsprache ist PSM-eigen. Der Materialisierer trägt die Eigenheiten der Sprache: Namens- und Schlüsselwortbehandlung, Kollisionen und das, was die Sprache gar nicht ausdrücken kann.
 
-**Spec:** §5, Tabelle 16 IDL-Typen → C99 → XCDR2 LE. Strings + Sequences sind heap-allocated; sample_free() MUSS sie freigeben.
+**Repo:** `crates/lang-rules/src/adapter/c.rs`
 
-**Repo:** `crates/idl-cpp/src/c_mode.rs::emit_primitive_write`, `emit_sequence_write`, `emit_member_write`. Heap-Allocation in `emit_decode_body` mit malloc.
-
-**Tests:** V-4 (string), V-5/V-6 (sequence) in `xcdr2_wire_vectors.rs`; Memory-Free in `xcdr2_c_compile.rs`.
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_every_wired_language`
 
 **Status:** done
 
-## §6 Memory-Ownership
+### §7.5.1 Das Codec-Backend
 
-### §6 Caller/Callee-Vertrag für Encode/Decode/Free
+**Spec:** §7.5.1 — Plain Language Binding — die Abbildung auf die Zielsprache ist PSM-eigen. Das Backend liefert die Schreibweise, in der die geteilte Kodierungsentscheidung in dieser Sprache steht — Empfänger, Methodenname, Argumentform.
 
-**Spec:** §6, Tabelle 4 Einträge -- Caller bietet `out_buf` (oder NULL für Size-Probe), Callee schreibt `out_len`; Decode allokiert Strings/Sequences im Sample; `ts.sample_free` gibt heap-Pointer frei.
+**Repo:** `crates/lang-rules/src/emit/c.rs`
 
-**Repo:** `crates/zerodds-c-api/src/xcdr2.rs::zerodds_xcdr2_encode` Size-Probe mit NULL `out_buf` (returns required size in `out_len`). Decode-Pfad allokiert via Codegen-emittierter `MyType_decode`.
-
-**Tests:** Size-Probe-Test + Free-Path-Test in `xcdr2_c_compile.rs`.
-
-**Status:** done
-
-## §7 Conformance
-
-### §7 L1 Wire (V-1..V-12 byte-genau via FFI)
-
-**Spec:** §7 -- "L1 (Wire): `crates/zerodds-c-api/tests/xcdr2_wire_vectors.rs` prüft V-1..V-12 byte-genau via FFI."
-
-**Repo:** `crates/zerodds-c-api/tests/xcdr2_wire_vectors.rs` (13 tests).
-
-**Tests:** dito.
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_a_full_codec_in_every_wired_language`,
+`crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`
 
 **Status:** done
 
-### §7 L2 Codegen
+### §7.5.1 Der Table-9-Defaulter
 
-**Spec:** §7 -- "L2 (Codegen): C-Codegen ist Teil von idl-cpp (`--c-mode`-Flag) ODER separate idl-c-Crate."
+**Spec:** §7.5.1 — Plain Language Binding — die Abbildung auf die Zielsprache ist PSM-eigen. Ein Leser ohne Tab.9-Antwort hat an fünf Stellen keinen definierten Wert; diese Datei ist die Antwort dieser Spalte.
 
-**Repo:** `crates/idl-cpp/src/c_mode.rs` als Bestandteil von idl-cpp. Treiber `crates/zerodds-c-api/tests/xcdr2_c_codegen.rs` (12 tests).
+**Repo:** `crates/lang-rules/src/default_c.rs`
 
-**Tests:** dito.
-
-**Status:** done
-
-### §7 L3 Cross-Lang
-
-**Spec:** §7 -- "L3 (Cross-Lang): C-Encoder vs Rust-Decoder, C-Decoder vs Rust-Encoder."
-
-**Repo:** `crates/conformance/tests/cross_language_xcdr2.rs::l3_3_c_ffi_binding` ruft die zerodds-c-api Wire-Vector-Test-Suite per Subprocess gegen identische V-1..V-12-Hex-Fixtures.
-
-**Tests:** `crates/conformance/tests/cross_language_xcdr2.rs::l3_3_c_ffi_binding`.
+**Tests:** `crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`
 
 **Status:** done
 
-### §7 L4 Cross-Vendor
+### §7.5.1 Die Wire-Laufzeit
 
-**Spec:** §7 -- "L4 (Cross-Vendor): C-FFI über RTPS gegen Cyclone DDS."
+**Spec:** §7.5.1 — Plain Language Binding — die Abbildung auf die Zielsprache ist PSM-eigen. Die Laufzeit liest §7.4 eigenständig aus dem Klauseltext und ruft keine andere Spalte; dort liegt die Unabhängigkeit dieser Spalte.
 
-**Repo:** `tests/interop/xcdr2_cross_vendor.sh` orchestriert Cross-Vendor-Setup; Fixture-Tree `crates/discovery/tests/fixtures/cyclone-xcdr2/` hält V-1..V-12. C-FFI-Encoder dispatcht über dieselbe `crates/cdr`-Logik; daher deckt `crates/cdr/tests/xcdr2_cross_vendor_fixtures.rs` Cyclone-Äquivalenz für C-FFI mit ab. Alle 12 Vektoren wurden live gegen Cyclone DDS 0.11 (erzwungenes XCDR2) auf dem Linux-Bench-Host aufgenommen und byte-genau verglichen: V-2..V-9 + V-11b byte-genau (V-3/V-8 belegen den XCDR2-64-Bit-Alignment-Cap §7.4.1.1.1, V-6 den `sequence<string>`-DHEADER §7.4.3.5); V-10/V-11a konforme LC-Divergenz (kein Bug, Spec §6 erlaubt, Decoder liest alle LCs). Beide aufgedeckten Gaps (Alignment + Sequence-DHEADER) sind über alle 6 Bindings gefixt; `v6.bin` korrigiert.
+**Repo:** `runtime/c`, Endpoint-SDK `endpoints/c`
 
-**Tests:** `crates/cdr/tests/xcdr2_cross_vendor_fixtures.rs` (15 Tests); Encoder-Seite `crates/zerodds-c-api/tests/xcdr2_wire_vectors.rs` (13 Tests) gegen die korrigierten Vektoren grün (V-6 mit DHEADER, V-3/V-8 4-Byte-aligned).
-
-**Status:** done -- alle deterministischen Vektoren (V-1..V-9, V-11b) byte-genau gegen Cyclone DDS 0.11; mutable V-10/V-11a konforme LC-Divergenz (spec-erlaubt, Roundtrip-Interop). Per-Capture-Verfahren auf dem Linux-Bench-Host reproduzierbar.
-
-## §8 Examples
-
-### §8 C-Smoke-Demo
-
-**Spec:** §8 -- "`#include zerodds.h` + generated `MyType_typesupport`, Topic-Create-Typed + Writer."
-
-**Repo:** Smoke-Demo-Snippet im Spec-Body (illustrativ).
-
-**Tests:** Compile-Pfad in `xcdr2_c_compile.rs`.
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_runtime`,
+`crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_an_endpoint_sdk`
 
 **Status:** done
 
-### §8 sync + async Deep-Examples + Quickstart
+## §7.2.2 Was diese Spalte selbst entscheidet
 
-**Spec:** §8 -- lauffähige sync/async Deep-Examples (Sensor-Telemetrie `Reading{id,value,label}`).
+### §7.2.2.2 Jedes IDL-Primitiv erreicht einen C-Typ fester Breite
 
-**Repo:** `endpoints/c/examples/example_sync.c` (C89-Poll-Loop), `endpoints/c/examples/example_async.c` (C11-Reactor + Callback), `endpoints/c/QUICKSTART.md`.
+**Spec:** §7.2.2.2 — Primitive Types — BOOLEAN, BYTE, INT8..UINT64, FLOAT32, FLOAT64, FLOAT128, CHAR8, CHAR16; jede Breite ist festgelegt.
 
-**Tests:** CI-Job `endpoints-native` → `make -C endpoints/c examples`; codepit-verifiziert (5/5 Feld-Decode, byte-identisch via `zdw`).
+**Repo:** `crates/lang-rules/src/adapter/c.rs`
 
-**Status:** done
-
-## §9 Errata + Edge-Cases
-
-### §9.1 const-Strings via malloc/free
-
-**Spec:** §9.1 -- "MyType_t.text ist `char*` (mutable); decode allokiert per malloc und sample_free ruft free."
-
-**Repo:** `crates/idl-cpp/src/c_mode.rs::emit_decode_body` malloc-Pfad; `emit_free_body` free-Pfad.
-
-**Tests:** String-Member-Test in `xcdr2_c_codegen.rs`.
+**Tests:** `crates/lang-rules/tests/c_end_to_end.rs::every_idl_primitive_reaches_a_c_type`,
+`crates/lang-rules/tests/c_end_to_end.rs::a_struct_of_primitives_becomes_a_c_struct`
 
 **Status:** done
 
-### §9.2 Sequence-Bound-Prüfung
+### §7.2.2.2 `long double` ist ein C-Typ in der Deklaration und in beiden Codecs
 
-**Spec:** §9.2 -- "Generierter decode prüft Bound aus IDL `sequence<T, N>`-Annotation und fällt bei Verletzung mit -7 zurück."
+**Spec:** §7.2.2.2 — FLOAT128 ist ein IEEE-754-binary128-Wert von 16 Oktetten.
 
-**Repo:** `crates/idl-cpp/src/c_mode.rs::emit_sequence_read` mit Bound-Check.
+**Repo:** `crates/lang-rules/src/adapter/c.rs`
 
-**Tests:** Bound-Edge-Case in `crates/idl-cpp/tests/edge_cases.rs`.
-
-**Status:** done
-
-### §9.3 C99 vs C++ ABI
-
-**Spec:** §9.3 -- "Strukturen sind `extern C`-kompatibel; C++ Konsumenten linken direkt gegen C-FFI."
-
-**Repo:** `#[repr(C)]`-Struct + `extern "C"`-Wrappers in `xcdr2.rs`.
-
-**Tests:** `xcdr2_c_compile.rs` compiliert C99 + C++ Konsumenten gleichermaßen.
+**Tests:** `crates/lang-rules/tests/c_end_to_end.rs::a_long_double_is_one_c_type_in_the_declaration_and_in_both_codecs`
 
 **Status:** done
 
-### §9.4 enum-Width int32_t
+### §7.2.2.4.3 Eine Sequenz wird eine Länge und ein Puffer
 
-**Spec:** §9.4 -- "C-Codegen emittiert enum-Typen mit explizitem `int32_t`-Storage (nicht `int`) für ABI-Stabilität."
+**Spec:** §7.2.2.4.3 — Sequence — eindimensional, Schranke optional.
 
-**Repo:** `crates/idl-cpp/src/c_mode.rs` enum-Pfad emittiert `int32_t`-typedef.
+**Repo:** `crates/lang-rules/src/adapter/c.rs`
 
-**Tests:** Enum-Tests in `xcdr2_c_codegen.rs`.
+**Tests:** `crates/lang-rules/tests/c_end_to_end.rs::a_sequence_becomes_a_length_and_a_buffer`,
+`crates/lang-rules/tests/c_end_to_end.rs::two_collections_of_the_same_shape_are_one_declaration`
 
 **Status:** done
 
-### §9.5 Escaping reservierter Keywords
+### §7.2.2.4.4.4.7 Ein optionales Member ist ein Zeiger, und NULL ist das abwesende
 
-**Spec:** in `zerodds-xcdr2-c-1.0` nicht explizit normiert (keine
-OMG-C-PSM-Spec, §1); hier getrackt, weil der C-Mode-Pfad bis 2026-07-28
-(github-triage #14) GAR KEINE Reserved-Word-Prüfung oder -Escaping hatte
-— ein IDL-Identifier, der mit einem C-Keyword kollidiert (`int`,
-`struct`, `default`, `register`, ...), erzeugte klaglos ungültiges C
-(`int32_t int;`). Der Voll-C++-Pfad (`idl4-cpp-1.0.en.md` §7.1.2) fing
-das immerhin per Hard-Reject ab -- C-Mode nicht einmal das.
 
-**Repo:** `crates/idl-cpp/src/c_keywords.rs` -- vollständige
-ISO/IEC-9899-C89..C23-Keyword-Tabelle (`C_RESERVED`) + `escape_c_ident`
-(Suffix-Underscore, die in C idiomatische Escaping-Konvention -- C hat
-keine Raw-Identifier-/Stropping-Syntax). Verdrahtet in
-`crates/idl-cpp/src/c_mode.rs` an jeder Stelle, an der ein blankes (nicht
-modul-präfigiertes) C-Token aus einem IDL-Namen emittiert wird:
-`c_identifier` (unscoped Struct-/Union-/Enum-/Bitmask-/Bitset-/
-Typedef-Typnamen), `union_case_field` (Union-Payload-Feldnamen), sowie
-jede Struct-/Union-Member-Feldnamen-Ableitung, die sowohl in der
-`typedef struct`-Deklaration als auch in den Encode-/Decode-/Free-/
-Key-Hash-Bodies verwendet wird (Deklaration und Feldzugriff bleiben so
-konsistent). Modul-präfigierte Compound-Tokens (`{c_name}_{enumerator}`)
-bleiben unverändert, da sie konstruktionsbedingt nie mit einem blanken
-Keyword kollidieren können.
+**Spec:** §7.2.2.4.4.4.7 — Ein Struct-Member darf optional sein; ein Union-Member nie.
 
-**Tests:** `crates/idl-cpp/src/c_mode.rs::tests::{struct_field_named_c_keyword_is_escaped,
-top_level_type_named_c_keyword_is_escaped,
-union_case_field_named_c_keyword_is_escaped,
-enum_value_named_c_keyword_stays_compound_and_valid}` +
-`crates/idl-cpp/src/c_keywords.rs::tests::*` (Listen-Abdeckung,
-Escape-Roundtrip, Alle-Keywords-Sweep) + `crates/zerodds-c-api/tests/xcdr2_c_compile.rs::v12_keyword_identifiers_compiles`
-(echter `-std=c99 -Wall -Werror`-Compile mit `gcc`/`clang` einer Union +
-Struct mit `int`/`register`/`static`/`for`-Identifiern -- belegt, dass
-der escapte Output tatsächlich valides C ist, nicht nur strukturell
-keyword-frei).
+**Repo:** `crates/lang-rules/src/adapter/c.rs`
+
+**Tests:** `crates/lang-rules/tests/c_end_to_end.rs::an_optional_member_is_a_pointer_and_null_is_the_absent_one`,
+`crates/lang-rules/tests/c_end_to_end.rs::an_optional_member_is_written_only_when_it_is_there`
+
+**Status:** done
+
+### §7.2.2.4.1.1 Eine Enumeration wird ein Integer mit Konstanten und kein C-`enum`
+
+**Spec:** §7.2.2.4.1.1 — Enumeration — Int32-Literale, geordnet, `bit_bound` 1..32.
+
+**Repo:** `crates/lang-rules/src/adapter/c.rs`
+
+**Tests:** `crates/lang-rules/tests/c_end_to_end.rs::an_enumeration_becomes_an_integer_and_constants_not_a_c_enum`,
+`crates/lang-rules/tests/c_end_to_end.rs::an_unknown_enumerator_is_refused_rather_than_handed_back_as_a_number`
+
+**Status:** done
+
+### IDL 4.2 §7.4.13 Ein `bitset` wird getrennte Integer und keine C-Bitfelder
+
+**Spec:** IDL 4.2 §7.4.13 — `bitset` mit `bitfield`-Membern deklarierter Breite.
+
+**Repo:** `crates/lang-rules/src/adapter/c.rs`
+
+**Tests:** `crates/lang-rules/tests/c_end_to_end.rs::a_bitset_becomes_separate_integers_not_c_bitfields`,
+`crates/lang-rules/tests/c_end_to_end.rs::a_bitset_that_inherits_packs_the_base_at_the_low_positions`
+
+**Status:** done
+
+### §7.2.2.4.4.3 Eine Union wird ein Diskriminator neben einer C-`union`
+
+**Spec:** §7.2.2.4.4.3 — Union — der Diskriminator ist immer das erste Member und trägt `must_understand=true`.
+
+**Repo:** `crates/lang-rules/src/adapter/c.rs`
+
+**Tests:** `crates/lang-rules/tests/c_end_to_end.rs::a_union_becomes_a_discriminator_beside_a_union`,
+`crates/lang-rules/tests/c_end_to_end.rs::a_union_selects_its_branch_by_the_discriminator`
+
+**Status:** done
+
+### IDL 4.2 §7.5.2 `module` wird ein Präfix, weil C keine Namensräume hat
+
+**Spec:** IDL 4.2 §7.5.2 — `module` ist ein Naming-Scope; ein Identifier ist je Scope einmalig.
+
+**Repo:** `crates/lang-rules/src/adapter/c.rs`
+
+**Tests:** `crates/lang-rules/tests/c_end_to_end.rs::a_module_becomes_a_prefix_because_c_has_no_namespaces`
+
+**Status:** done
+
+### §7.2.2.4.4.4.9 Jede Zeile von Tab.9 hat einen C-Default, und jeder gerufene Defaulter ist definiert
+
+**Spec:** §7.2.2.4.4.4.9 — Ein Member, das der Strom nicht trug, nimmt seinen Default nach Tab.9.
+
+**Repo:** `crates/lang-rules/src/default_c.rs`
+
+**Tests:** `crates/lang-rules/tests/c_end_to_end.rs::every_table_nine_row_has_a_c_default`,
+`crates/lang-rules/tests/c_end_to_end.rs::every_defaulter_the_decoder_calls_is_also_defined`,
+`crates/lang-rules/tests/c_end_to_end.rs::an_explicit_default_beats_table_nine`
+
+**Status:** done
+
+### §7.4.3 Encoder und Decoder tragen verschiedene Namen, ebenso Daten- und Key-Encoder
+
+**Spec:** §7.4.3 — XCDR Version 2 — Plain CDR2, Delimited CDR2 und PL_CDR2.
+
+**Repo:** `crates/lang-rules/src/emit/c.rs`
+
+**Tests:** `crates/lang-rules/tests/c_end_to_end.rs::the_encoder_and_the_decoder_do_not_share_a_name`,
+`crates/lang-rules/tests/c_end_to_end.rs::the_data_and_key_encoders_do_not_share_a_name`,
+`crates/lang-rules/tests/c_end_to_end.rs::a_decoder_reads_a_primitive_through_the_runtime_and_not_by_hand`
+
+**Status:** done
+
+## §7.3.1 Woran die Spalte gehalten wird
+
+### §7.3.1 Jeder Korpusfall rendert oder benennt die Schicht, die ihn abgelehnt hat
+
+**Spec:** §7.3.1 — Jeder Korpusfall rendert oder benennt die Schicht, die ihn abgelehnt hat. Ein Fall, der zu rendern aufhört, würde sonst erst von der nächsten Messung gefunden — ein Build-Verzeichnis vom Konstrukt entfernt, das ihn verursacht hat.
+
+**Repo:** `crates/lang-rules/src/emit/c.rs`, `crates/lang-rules/src/adapter/c.rs`
+
+**Tests:** `crates/lang-rules/tests/c_end_to_end.rs::a_member_of_type_any_is_refused_by_name_rather_than_emitted`
+
+**Status:** done
+
+### §7.5.2 Ein Typ ist deklariert, bevor er benutzt wird
+
+**Spec:** §7.5.2 — Ein Typ ist deklariert, bevor er benutzt wird. Die Reihenfolge der Ausgabe ist eine Eigenschaft der Zielsprache und nicht der Quelle.
+
+**Repo:** `crates/lang-rules/src/emit/c.rs`, `crates/lang-rules/src/adapter/c.rs`
+
+**Tests:** `crates/lang-rules/tests/c_end_to_end.rs::a_type_is_declared_before_it_is_used`
+
+**Status:** done
+
+### §7.3.1 Zwei Läufe über eine Quelle erzeugen denselben Text
+
+**Spec:** §7.3.1 — Zwei Läufe über eine Quelle erzeugen denselben Text. Ohne diese Eigenschaft ist jeder Diff eines erzeugten Baums unlesbar.
+
+**Repo:** `crates/lang-rules/src/emit/c.rs`, `crates/lang-rules/src/adapter/c.rs`
+
+**Tests:** `crates/lang-rules/tests/c_end_to_end.rs::two_runs_over_one_source_produce_the_same_text`
+
+**Status:** done
+
+### §7.4 Die beiden C-Generatoren lesen den Korpus identisch
+
+**Spec:** §7.4 — Die beiden C-Generatoren lesen den Korpus identisch.
+
+**Repo:** `crates/lang-rules/src/emit/c.rs`, `crates/lang-rules/src/adapter/c.rs`
+
+**Tests:** `crates/wire-probe/tests/probe_agreement.rs::the_two_c_generators_read_the_corpus_identically`
+
+**Status:** done
+
+### §7.4 Die Oktette der Spalte werden gegen eine feste Aufzeichnung gehalten
+
+**Spec:** §7.4 — Die Oktette der Spalte werden gegen eine feste Aufzeichnung gehalten. Gemessen gegen `crates/wire-probe/tests/fixtures/rust_column_baseline.txt`, nicht neben den anderen Spalten: drei Spalten, die sich gemeinsam bewegt haben, ähneln einander weiterhin.
+
+**Repo:** `crates/lang-rules/src/emit/c.rs`, `crates/lang-rules/src/adapter/c.rs`
+
+**Tests:** `crates/wire-probe/tests/three_column_gate.rs::the_three_columns_agree`
+
+**Status:** done
+
+### §7.2.2.4.8 `@verbatim` landet an den Stellen, die die Klausel für diese Sprache nennt
+
+**Spec:** §7.2.2.4.8 — `@verbatim` landet an den Stellen, die die Klausel für diese Sprache nennt.
+
+**Repo:** `crates/lang-rules/src/adapter/c.rs`, `crates/lang-rules/src/verbatim.rs`
+
+**Tests:** `crates/lang-rules/tests/verbatim_every_column.rs::every_column_places_the_six_slots_in_its_declarations`,
+`crates/lang-rules/tests/verbatim_every_column.rs::every_column_ends_its_source_file_with_the_end_file_text`,
+`crates/lang-rules/tests/verbatim_every_column.rs::a_directive_reaches_its_own_column_and_no_other`,
+`crates/lang-rules/tests/verbatim_end_to_end.rs::c_places_the_file_slots_and_the_declaration_text_inside_the_struct`
+
+**Status:** done
+
+## §7.3.1 Treiber und Messung
+
+### §7.3.1 `idlc generate --lang c`
+
+**Spec:** §7.3.1 — die IDL-Type-Representation ist die Eingabe der Erzeugung; die Ausgabe ist die Quelle dieser Spalte.
+
+**Repo:** `tools/idlc/src/generate.rs`, `tools/idlc/src/main.rs`
+
+**Tests:** `tools/idlc/src/generate.rs::tests::every_language_round_trips_through_its_own_name`,
+`tools/idlc/src/generate.rs::tests::language_names_lists_every_language_once`
+
+**Status:** done
+
+### §7.4 Der Messaufbau dieser Spalte
+
+**Spec:** §7.4 — die Oktette einer Spalte werden gegen aufgezeichnete Oktette verglichen und nicht in ihren eigenen Tests behauptet.
+
+**Repo:** `tools/wireprobe/wireprobe-zerodds-c-gen/`, `tools/wireprobe/wireprobe-zerodds-c`, `tools/wireprobe/wireprobe-zerodds-c-corpus`
+
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_cell_generator`,
+`crates/lang-rules/tests/every_language_has_its_parts.rs::every_cell_generator_guards_against_a_missing_toolchain`
 
 **Status:** done
 
@@ -226,6 +276,8 @@ keyword-frei).
 
 ## Audit-Status
 
-15 done / 0 partial / 0 open / 1 n/a (informative) / 0 n/a (rejected).
+24 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
 
-Test-Lauf: `cargo test -p zerodds-c-api` -- unittest 68 + smoke_ffi 1 + xcdr2_c_codegen 12 + xcdr2_c_compile 12 + xcdr2_wire_vectors 13 = 106 Tests grün, 0 failed; `cargo test -p zerodds-conformance --test cross_language_xcdr2 l3_3_c_ffi_binding` -- 1 Test grün; `cargo test -p zerodds-cdr --test xcdr2_cross_vendor_fixtures` -- 15 Tests grün.
+Test-Lauf: `cargo test -p zerodds-lang-rules` — 1024 Tests grün, 0 failed (20 ignoriert: die Vollkorpus-Compile-Läufe, die `--include-ignored` verlangen).
+
+Offene Punkte: keine. Decision-Records: keine.

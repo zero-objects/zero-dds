@@ -1,443 +1,302 @@
 # `zerodds-idlc` Handbook
 
-End-user reference for the ZeroDDS IDL compiler. This document is the
-primary operator manual: install, invoke, integrate, and troubleshoot.
+Operator reference for the CLI and Rust build integration in the current
+source tree. This revision replaces the pre-rebuild compiler instructions.
+It describes source-backed interfaces, not the availability of an RC7
+release or a certification of every language, annotation and transport.
 
-This handbook covers the CLI, the full annotation set, and build
-integration end to end; for the resulting on-the-wire byte form see
-[`cdr-wire-format.md`](cdr-wire-format.md).
+## 1 What the compiler does
 
----
+`zerodds-idlc` checks, lints and formats IDL, displays its model, and generates
+language declarations plus codecs. The implementation is in
+[tools/idlc](../../tools/idlc/README.md). Its composition pipeline uses
+[zerodds-idl-compose](../../crates/idl-compose/src/lib.rs), parsing/lowering
+and resolution, then the language rules and renderers. It is not the old
+Earley/`zerodds-idl-<language>` emitter architecture.
 
-## 1 What is `zerodds-idlc`?
+Keep four different outcomes separate:
 
-`zerodds-idlc` is the OMG IDL 4.2 compiler that turns `.idl` schema
-files into language stubs across 17 codegen backends (Rust, C, C++,
-C#, Java, Python, TypeScript, Go, Ada, Zig, Nim, D, Elixir, OCaml,
-Julia, Lua, Swift) plus the matching XCDR1 / XCDR2 encoder / decoder
-and `KeyHash` implementation. It is the single source of truth for
-cross-language type compatibility: a Rust publisher and a Java
-subscriber see the same wire bytes for the same schema because both
-compile the same `.idl` through the same compiler.
+1. The frontend accepts a schema.
+2. The selected backend generates source and that source compiles with its
+   matching wire runtime.
+3. A codec preserves the intended values under the selected encoding.
+4. A typed DDS endpoint interoperates with a particular peer.
 
-Internally `zerodds-idlc` is a thin CLI on top of the `zerodds-idl`
-parser crate (Earley engine + grammar deltas) and the per-language
-emitter crates (`zerodds-idl-rust`, `zerodds-idl-cpp`,
-`zerodds-idl-csharp`, `zerodds-idl-java`, `zerodds-idl-ts`,
-`zerodds-idl-python`, `zerodds-idl-go`, `zerodds-idl-ada`,
-`zerodds-idl-zig`, `zerodds-idl-nim`, `zerodds-idl-d`,
-`zerodds-idl-elixir`, `zerodds-idl-ocaml`, `zerodds-idl-julia`,
-`zerodds-idl-lua`, `zerodds-idl-swift`).
-
----
+A successful earlier step does not establish a later one. In particular,
+the language list is not a promise of full typed DDS integration for each
+target. C# runtime/consumer integration requires separate verification.
 
 ## 2 Installation
 
-### 2.1 From source
+Use an existing, trusted ZeroDDS checkout. Run from its root:
 
-```bash
-git clone https://github.com/zero-objects/zero-dds.git
-cd zero-dds
-cargo install --path tools/idlc
-zerodds-idlc --version
+```sh
+cargo build --locked -j 1 -p zerodds-idlc
+./target/debug/zerodds-idlc --version
+./target/debug/zerodds-idlc --help
 ```
 
-### 2.2 From crates.io
+A custom Cargo target directory changes the executable path. Add
+`--offline` only when the dependencies are already cached. Building with one
+job bounds compiler concurrency, not the total memory of all other processes.
 
-```bash
-cargo install zerodds-idlc
-```
+Optional installation from this same checkout:
 
-### 2.3 Homebrew (macOS / Linux)
-
-```bash
-brew tap zero-objects/zero-dds
-brew install zerodds-idlc
-```
-
-### 2.4 APT (Debian / Ubuntu)
-
-```bash
-curl -fsSL https://zerodds.org/apt/zerodds.gpg \
-  | sudo tee /etc/apt/keyrings/zerodds.gpg > /dev/null
-echo "deb [signed-by=/etc/apt/keyrings/zerodds.gpg] \
-  https://zerodds.org/apt stable main" \
-  | sudo tee /etc/apt/sources.list.d/zerodds.list
-sudo apt update
-sudo apt install zerodds-idlc
-```
-
-### 2.5 Scoop (Windows)
-
-```powershell
-scoop bucket add zerodds https://github.com/zero-objects/scoop-zerodds
-scoop install zerodds-idlc
-```
-
-### 2.6 Verifying the install
-
-```bash
-zerodds-idlc --version
+```sh
+cargo install --locked --path tools/idlc --jobs 1
 zerodds-idlc --help
 ```
 
----
+This handbook does not assert that this revision is already available on
+crates.io, Homebrew, APT or Scoop. Distribution availability must be verified
+for the eventual release separately. The remaining CLI examples assume the
+matching executable is on `PATH`, or that its full path replaces
+`zerodds-idlc`.
 
 ## 3 CLI reference
 
-### 3.1 Top-level synopsis
+The [argument parser](../../tools/idlc/src/main.rs) is the authority.
+The [manpage](../../man/man1/zerodds-idlc.1) is a second local reference.
 
+```text
+zerodds-idlc check      [OPTIONS] FILE...
+zerodds-idlc lint       [OPTIONS] FILE...
+zerodds-idlc format     [OPTIONS] FILE...
+zerodds-idlc dump-ast   [OPTIONS] FILE...
+zerodds-idlc print-deps [OPTIONS] FILE...
+zerodds-idlc generate --lang LANGUAGE [OPTIONS] FILE...
 ```
-zerodds-idlc <COMMAND> <input.idl> [OPTIONS]
-zerodds-idlc <input.idl> [BACKEND-FLAGS]          # flat form
-```
 
-`zerodds-idlc` accepts a sub-command form (`generate`, `check`,
-`dump-ast`, `dump-typeobject`, `print-deps`) and a flat form where
-backend flags are passed directly. The sub-command, if present, is the
-first positional argument; global flags may precede it. The flat form
-is equivalent to `generate`.
+The subcommand comes first. One or more input files are accepted, but each
+is processed as a separate unit. There is no flat generation form.
 
-One `.idl` input file per invocation — `#include`d files are expanded
-in-place by the built-in preprocessor.
-
-### 3.2 Global flags
-
-| Flag | Description |
+| Option | Scope and meaning |
 |---|---|
-| `-h`, `--help` | Print help and exit |
-| `-V`, `--version` | Print version and exit |
-| `-v`, `--verbose` | Increase log verbosity (repeat: `-vv`, `-vvv`) |
-| `-q`, `--quiet` | Suppress non-error output |
-| `--color <when>` | `auto` (default), `always`, `never` |
-| `-I <dir>` | Add `<dir>` to the `#include` search path (repeatable) |
-| `-D <name>[=<value>]` | Define a preprocessor macro (repeatable) |
+| `--strict` | All commands: reject vendor extensions, using the OMG IDL 4.2 dialect |
+| `--json` | All commands: request machine-readable frontend/lint diagnostics |
+| `--deny-warnings` | Make reported warnings fail the command |
+| `--default-extensibility final\|appendable\|mutable` | Default for unannotated aggregates; normally appendable, explicit annotations win |
+| `--check` | `format` only: do not rewrite, fail if input is not canonical |
+| `--write` | `format` only: rewrite non-canonical input in place |
+| `--lang NAME` | `generate` only, required: one target per invocation |
+| `--out DIR` | `generate` only: output directory, default current directory |
+| `--encoding ENC` | `generate` only: encoding version, described below |
+| `--endian le\|be` | `generate` only: planned byte order, default little-endian |
+| `--xcdr-endianness BE\|LE` | Alternate spelling of `--endian` |
+| `-h`, `--help` | Help |
+| `-V`, `--version` | Version |
 
-### 3.3 Sub-command: `generate`
+Write option values as separate arguments. `format --check` and
+`format --write` are mutually exclusive. `--json` is not a promise that
+every output stream contains only JSON: model views, formatted text,
+generation errors and I/O failures have their own output paths.
 
-Compile an `.idl` file into language stubs.
+Without `--strict`, the frontend enables its vendor-extension dialect set.
+Strict acceptance is a syntax/model result, not proof that another vendor
+accepts the input or that generated endpoints interoperate.
 
+### Check, lint and inspect
+
+From the ZeroDDS root, using the checked-in companion schema:
+
+```sh
+zerodds-idlc check zerodds-examples/idlc-buildrs/idl/Robot.idl
+zerodds-idlc lint zerodds-examples/idlc-buildrs/idl/Robot.idl
+zerodds-idlc dump-ast zerodds-examples/idlc-buildrs/idl/Robot.idl
+zerodds-idlc print-deps zerodds-examples/idlc-buildrs/idl/Robot.idl
 ```
-zerodds-idlc generate <input.idl> <BACKEND...> [OPTIONS]
+
+`check` runs composition and reports frontend diagnostics. `lint` first
+reports those diagnostics and, if there are no errors, applies the
+[model lint rules](../../tools/idlc/src/lint.rs). These include wide mutable
+structures, target-language keyword collisions, a topic with no key,
+unbounded collections/keys and unused typedefs. They are not a two-schema
+evolution comparison or a live QoS compatibility test.
+
+`print-deps` reports the types each declaration names, not a Make depfile or
+an include-file dependency list. `dump-ast` prints the resolved model view.
+Neither is a `dump-typeobject` command.
+
+The similarly named `zerodds-lint` is a separate
+[internal Rust workspace checker](../../crates/lint/README.md), not an IDL
+analyzer.
+
+### Format
+
+```sh
+zerodds-idlc format --check zerodds-examples/idlc-buildrs/idl/Robot.idl
 ```
 
-Backend selectors — repeatable, combine to emit several at once:
+Exit 1 can mean that this valid input needs formatting. Without `--check`
+or `--write`, canonical text goes to stdout. `--write` changes the named
+files, so review the diff. The formatter checks frontend validity and
+preserves token spellings, comments and directives. It refuses output it
+cannot preserve. Do not redirect output over the input file itself.
 
-| Flag | Output |
+### Exit status
+
+| Code | Meaning in this implementation |
 |---|---|
-| `--c` | C99 header (`<base>.h`) |
-| `--cpp` | C++17 header (`<base>.hpp`) |
-| `--rust` | Rust module (`<base>.rs`) |
-| `--csharp` | C# source (`<base>.cs`) |
-| `--java` | Java files (`<pkg>/<Type>.java`) |
-| `--python` | Python module (`<base>.py`) |
-| `--ts` | TypeScript module per DDS-TS 1.0 (`<base>.ts`) |
-| `--go` | Go module (`<base>.go`) |
-| `--ada` | Ada package spec/body (`<base>.ads`/`.adb`) |
-| `--zig` | Zig module (`<base>.zig`) |
-| `--nim` | Nim module (`<base>.nim`) |
-| `--d` | D module (`<base>.d`) |
-| `--elixir` | Elixir module (`<base>.ex`) |
-| `--ocaml` | OCaml module (`<base>.ml`) |
-| `--julia` | Julia module (`<base>.jl`) |
-| `--lua` | Lua module (`<base>.lua`) |
-| `--swift` | Swift module (`<base>.swift`) |
-| `--all` | All 17 backends in one invocation |
+| 0 | No errors, and no warning made fatal by `--deny-warnings` |
+| 1 | Diagnostics failed, formatting check differed, generation/output writing failed, or warnings were denied |
+| 2 | Invalid command line |
+| 3 | At least one top-level input could not be read |
 
-Options:
+A missing included file is reported by composition and is not the same
+top-level read failure. Generation is not transactional across files: a
+failure can leave earlier outputs in place. Check the exit status and use
+a fresh output directory before integrating generated files.
 
-| Flag | Description |
-|---|---|
-| `-o`, `--output <dir>` | Output directory |
-| `--out-<lang> <dir>` | Per-backend output override (`<lang>` = `rust`/`c`/`cpp`/`csharp`/`java`/`python`/`ts`/`go`/`ada`/`zig`/`nim`/`d`/`elixir`/`ocaml`/`julia`/`lua`/`swift`); overrides `-o` for that backend |
-| `--corba` | Additionally emit CORBA service code (with `--cpp`/`--csharp`/`--java`/`--rust`) |
-| `--rti` | Accept the RTI Connext grammar delta while parsing |
-| `--opendds`, `--cyclone` | Vendor-intent markers (vendor `#pragma`s are honoured regardless) |
-| `--default-extensibility <kind>`, `-de` | Extensibility for types without `@final`/`@appendable`/`@mutable`: `final`, `appendable`, `mutable` |
-| `--default-nested <true\|false>` | Mark types without `@nested`/`@topic` as `@nested` |
-| `--no-typeobject` | Suppress XTypes TypeObject emission (default: on) |
-| `--with-typeobject` | Force TypeObject emission on (this is the default) |
-| `--scaffold` | Also emit the per-backend build file — see §6 |
+## 4 Generation and wire runtimes
 
-The encoding version (XCDR1 vs XCDR2) is **not** a code-generation
-choice — like RTI Connext, Fast DDS and Cyclone DDS, the generated code
-supports the extensible-types representations and the wire version is
-negotiated at runtime from each type's extensibility and the data-
-representation QoS.
+The current accepted names come directly from
+[`Language::ALL` and `as_str`](../../crates/lang-cst/src/common.rs):
 
-### 3.4 Sub-command: `check`
-
-Parse and validate `.idl` without emitting code. Exit 0 on success,
-non-zero on a parse error. Accepts `--rti`, `--opendds`, `--cyclone`.
-
-```
-zerodds-idlc check <input.idl> [--rti]
+```text
+rust, c++, c, java, c#, python, typescript, go, ocaml, ada, d,
+elixir, julia, lua, nim, swift, zig, node, ada83, f#, kotlin
 ```
 
-### 3.5 Sub-command: `dump-ast`
+These are 21 target names. Spellings are exact: use `c++`, `c#`, `f#`
+and `typescript`, not old backend flags or assumed aliases. Quote names
+containing punctuation in shell examples.
 
-Print the parsed AST to stdout. Equivalent to the flat `--parse-only`
-flag.
-
-```
-zerodds-idlc dump-ast <input.idl>
-```
-
-### 3.6 Sub-command: `dump-typeobject`
-
-Lower every named type to its XTypes 1.3 Minimal `TypeObject` and print
-them in topological order (dependencies first). Cross-type references
-are resolved to their equivalence hash.
-
-```
-zerodds-idlc dump-typeobject <input.idl>
+```sh
+idl_output="$(mktemp -d)"
+zerodds-idlc generate --lang rust --out "$idl_output/rust" \
+  zerodds-examples/idlc-buildrs/idl/Robot.idl
+zerodds-idlc generate --lang c --out "$idl_output/c" \
+  zerodds-examples/idlc-buildrs/idl/Robot.idl
+zerodds-idlc generate --lang 'c#' --out "$idl_output/csharp" \
+  zerodds-examples/idlc-buildrs/idl/Robot.idl
 ```
 
-### 3.7 Sub-command: `print-deps`
+The output is source, not a built application. Use the matching runtime
+from the same candidate revision. Rust calls `zerodds-wire`; the C header
+includes `zerodds_wire.h` from [runtime/c](../../runtime/c).
+Other targets have their own [runtime directories](../../runtime).
+Do not substitute a legacy binding runtime merely because the generated
+filename looks familiar.
 
-Print a Make-style dependency line — the input plus every `#include`d
-file. For build-system glue.
+[Output naming](../../tools/idlc/src/generate.rs) normally uses the input
+stem and target extension, such as `Robot.rs`, `Robot.h`, `Robot.cs`
+or `Robot.py`. Important exceptions:
 
-```
-zerodds-idlc print-deps <input.idl>     # → "input.o: input.idl include1.idl ..."
-```
+- Java codec output is split into `ZdTypes.java` and `ZdCodec.java`.
+  Eligible topic aggregates additionally produce `ZdTypeSupports.java`, which
+  requires the Java DDS binding. Wire-only consumers compile the first two.
+- C# additionally produces `<stem>.TypeSupport.cs` for eligible topic aggregates.
+  The main file uses `ZeroDds.Wire`; the companion also requires `ZeroDDS.Cdr`.
+  Its explicit representation contract needs the matching native `typed_wire`
+  entry points when creating DDS entities. See the [CLI binding contract](../../tools/idlc/README.md).
+- Ada uses `zd_types.ads` and, where required, `zd_types.adb`.
+- Ada 83 uses `zd83_types.ads` and, where required, `zd83_types.adb`.
 
-### 3.8 Exit codes
+No project scaffold is emitted. Use separate output directories when
+generating independent schemas, especially for fixed-name compilation
+units or inputs with identical stems. The generator creates parent
+directories and overwrites matching output files, but does not remove
+obsolete output left by older schemas. Preserve hand-written sources.
 
-| Code | Meaning |
-|---|---|
-| `0` | Success |
-| `1` | Parse error (lex / syntax / build) |
-| `2` | CLI usage error (bad flag, missing input, IO error) |
-| `3` | Backend not supported on this build, or a codegen error |
+### Encoding is a code-generation choice
 
----
+The accepted `--encoding` values are `xcdr1`, `plain-cdr1`, `pl-cdr1`,
+`xcdr2`, `plain-cdr2`, `pl-cdr2` and `delimited-cdr`.
+The default is XCDR2. The flag selects the version used when planning the
+codec. The type's own extensibility selects framing within that version.
+The XCDR2 spellings therefore do not force every aggregate to use one
+uniform encapsulation kind.
 
-## 4 Per-language backends
-
-Each backend emits a single source file per input IDL containing all
-the types it defines — `zerodds-idlc` is a single-file generator, not a
-project scaffolder. The Java backend is the exception: it emits one
-`.java` file per class under the package directory tree. Pass
-`--scaffold` (§6) to additionally emit the matching build file.
-
-When TypeObject emission is on (the default), each backend file ends
-with the XCDR2-serialized XTypes Minimal `TypeObject` of every named
-type — see §4.8.
-
-### 4.1 Rust
-
-```bash
-zerodds-idlc generate Robot.idl --rust -o gen/rust
-```
-
-Emits `gen/rust/Robot.rs` — one module containing every type, its
-`zerodds_cdr::CdrEncode` / `CdrDecode` impls, and (with `--corba`) a
-second file `Robot_corba.rs` with the CORBA service code.
-
-Consume it as a module (`mod robot;` over `Robot.rs`) or, with
-`--scaffold`, as a crate via the emitted `Cargo.toml`.
-
-### 4.2 C99
-
-```bash
-zerodds-idlc generate Robot.idl --c -o gen/c
+```sh
+zerodds-idlc generate --lang rust --encoding xcdr1 --out "$idl_output/v1" \
+  zerodds-examples/idlc-buildrs/idl/Robot.idl
+zerodds-idlc generate --lang rust --encoding xcdr2 --endian be \
+  --out "$idl_output/v2-be" zerodds-examples/idlc-buildrs/idl/Robot.idl
 ```
 
-Emits `gen/c/Robot.h` — a self-contained C99 header with the struct
-definitions and inline encode/decode declarations. `--scaffold` adds a
-`CMakeLists.txt`.
+Changing XCDR1 to XCDR2 can change emitted codec bodies. Byte order is held
+by the wire reader/writer; `--endian` supplies the planned value in the
+generated preamble, rather than creating a second set of byte-swapped
+method bodies. Construct readers/writers consistently with the sample's
+actual representation. The CLI does not create a participant, negotiate
+DataRepresentation QoS, or make a generated codec automatically support
+every representation.
 
-### 4.3 C++17
+## 5 Includes, annotations and unsupported constructs
 
-```bash
-zerodds-idlc generate Robot.idl --cpp -o gen/cpp
-```
+The CLI uses the composition loader without an extra include search list.
+Quoted includes resolve beside the including file, with a path from the
+working directory as a fallback. The Rust build API additionally provides
+explicit include directories and macro definitions.
 
-Emits `gen/cpp/Robot.hpp` — a header-only C++17 unit (namespaces,
-classes, serialisation). With `--corba` it additionally contains the
-CORBA Annex-A.1 trait specialisations. `--scaffold` adds a
-`CMakeLists.txt`.
+Use include guards or `#pragma once` where appropriate. Do not treat
+separate top-level CLI inputs as one shared model. For Rust inputs with
+shared declarations, consider `Config::compile_bundle`.
 
-### 4.4 C#
+There is no blanket annotation-support table here: syntax acceptance,
+model semantics, target storage, codec behavior and discovery metadata
+must each be checked for the construct and language in question.
 
-```bash
-zerodds-idlc generate Robot.idl --csharp -o gen/cs
-```
+Examples of distinctions that matter:
 
-Emits `gen/cs/Robot.cs`. With `--corba` it includes the CORBA traits.
-`--scaffold` adds a `Robot.csproj` (SDK-style).
+- Explicit final/appendable/mutable annotations override the configured
+  default. Omitting an annotation is not equivalent to selecting final.
+- A member cannot simultaneously be a key and optional. `check` reports
+  such frontend errors rather than relying on a backend workaround.
+- Rust external members use `Box<T>`, and optional external members use
+  `Option<Box<T>>`. Regenerate and adjust constructors when migrating old
+  inline-generated storage. See the
+  [compiled storage regression](../../crates/zerodds-build/tests/dds_type.rs).
+- Optional framing and enum width depend on representation and layout
+  rules. Neither is universally a one-byte wire encoding.
+- Generation can refuse a valid construct that the target cannot encode.
+  A successful parse is not permission to omit an unsupported field.
 
-### 4.5 Java 17
-
-```bash
-zerodds-idlc generate Robot.idl --java -o gen/java
-```
-
-Emits one `.java` file per class under the package directory derived
-from the IDL `module` tree (e.g. `gen/java/com/example/robot/Pose.java`).
-With TypeObject emission on, a `TypeObjects.java` is written alongside.
-`--scaffold` adds a `pom.xml`.
-
-Maven integration via `exec-maven-plugin` in the `generate-sources`
-phase:
-
-```xml
-<plugin>
-  <groupId>org.codehaus.mojo</groupId>
-  <artifactId>exec-maven-plugin</artifactId>
-  <executions>
-    <execution>
-      <phase>generate-sources</phase>
-      <goals><goal>exec</goal></goals>
-      <configuration>
-        <executable>zerodds-idlc</executable>
-        <arguments>
-          <argument>generate</argument>
-          <argument>${project.basedir}/src/main/idl/Robot.idl</argument>
-          <argument>--java</argument>
-          <argument>-o</argument>
-          <argument>${project.build.directory}/generated-sources/java</argument>
-        </arguments>
-      </configuration>
-    </execution>
-  </executions>
-</plugin>
-```
-
-### 4.6 Python 3.10+
-
-```bash
-zerodds-idlc generate Robot.idl --python -o gen/py
-```
-
-Emits `gen/py/Robot.py` — a `@dataclass`-based module with
-`encode_cdr()` / `decode_cdr()` helpers. `--scaffold` adds a
-`pyproject.toml`.
-
-### 4.7 TypeScript (DDS-TS 1.0)
-
-```bash
-zerodds-idlc generate Robot.idl --ts -o gen/ts
-```
-
-Emits `gen/ts/Robot.ts` per the DDS-TS 1.0 PSM. `--scaffold` adds a
-`package.json` + `tsconfig.json`.
-
-npm integration:
-
-```json
-{
-  "scripts": {
-    "build:idl": "zerodds-idlc generate src/idl/Robot.ts --ts -o src/gen"
-  }
-}
-```
-
-### 4.8 TypeObject block
-
-With TypeObject emission on (the default; `--no-typeobject` to suppress),
-every backend file ends with the XTypes 1.3 Minimal `TypeObject` of
-each named type, XCDR2-LE serialized as a byte constant — a Rust
-`pub mod type_objects`, a C/C++ `static`/`constexpr` array, a C#/Java
-`TypeObjects` class, a Python `bytes([...])`, a TS `Uint8Array`. This
-mirrors the default-on TypeObject generation of RTI Connext, Fast DDS
-and Cyclone DDS and feeds XTypes discovery / TypeLookup.
-
----
-
-## 5 Annotations and pragmas
-
-The compiler honours the following annotations from XTypes 1.3 and
-DDS 1.4:
-
-| Annotation | Effect on codegen |
-|---|---|
-| `@key` | Field is part of the instance key; included in `KeyHash`. |
-| `@id(N)` | Member ID for `MUTABLE` extensibility — preserved across versions. |
-| `@hashid("name")` | Use 32-bit MurmurHash3 of the literal as member ID. |
-| `@final` | Struct cannot evolve; no `DHEADER` on the wire. |
-| `@appendable` | Struct can grow at the end; `DHEADER` prefix. |
-| `@mutable` | Struct supports per-field versioning; `DHEADER` + `EMHEADER`. |
-| `@optional` | Field encoded as 1-byte presence + value; XCDR2 only. |
-| `@nested` | Type is only used as a member; no top-level Topic. |
-| `@try_construct(USE_DEFAULT\|TRIM\|DISCARD)` | Receive-side fallback for missing / oversized members. |
-| `@external` | Member stored as pointer (Rust `Box`, C++ `unique_ptr`) to break cycles. |
-| `@verbatim("rust", "...")` | Inject literal target-language code (also `cpp`, `csharp`, `java`, `python`, `ts`). |
-| `@autoid(SEQUENTIAL\|HASH)` | Default member-ID strategy for the struct. |
-| `@bit_bound(N)` | Override default bit-width of integer / enum members. |
-| `@must_understand` | Receiver MUST recognise this member, else discard the sample. |
-| `@unit("m/s")`, `@min`, `@max`, `@range` | Documentation-only; preserved in `TypeObject`. |
-
-Pragmas (legacy IDL 3.x form, accepted for compatibility):
-
-```idl
-#pragma keylist Robot::Pose robot_id
-#pragma DCPSTopic com::example::Pose Robot::Pose
-```
-
-These are translated to `@key` annotations internally.
-
----
+For coverage, consult the actual
+[codec tests](../../crates/lang-rules/tests/codec.rs),
+[generated-consumer tests](../../crates/zerodds-build/tests/dds_type.rs)
+and relevant measured examples. Do not infer interoperability, annotation
+preservation in every TypeObject, or plugin support from a declaration
+being accepted.
 
 ## 6 build.rs integration (Rust)
 
-A typical Rust crate that consumes IDL types ships its `.idl` files
-in the source tree and compiles them through a `build.rs`:
+The [build helper](../../crates/zerodds-build/README.md) is a library
+dependency, not a subprocess invocation of the CLI. The executable
+[idlc-buildrs companion](../../zerodds-examples/idlc-buildrs/README.md)
+contains this workflow. Its [Cargo.toml](../../zerodds-examples/idlc-buildrs/Cargo.toml)
+uses local path dependencies for the current checkout, so it does not
+assume that RC7 packages have already been published.
+
+For that existing companion layout, the dependencies are:
+
+```toml
+[build-dependencies]
+zerodds-build = { path = "../../crates/zerodds-build" }
+
+[dependencies]
+zerodds-wire = { path = "../../crates/wire" }
+zerodds-dcps = { path = "../../crates/dcps" }
+zerodds-types = { path = "../../crates/types" }
+zerodds-sql-filter = { path = "../../crates/sql-filter" }
+```
+
+Adjust paths for another project. They are relative to its Cargo manifest,
+not this handbook. The complete companion manifest also isolates its
+workspace and declares the demo binary.
+
+[build.rs](../../zerodds-examples/idlc-buildrs/build.rs):
 
 ```rust
-// build.rs
-use std::process::Command;
-
-fn main() {
-    let idl_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("idl");
-    let out_dir = std::env::var("OUT_DIR").unwrap();
-
-    println!("cargo:rerun-if-changed={}", idl_dir.display());
-    for entry in std::fs::read_dir(&idl_dir).unwrap() {
-        let path = entry.unwrap().path();
-        if path.extension().and_then(|e| e.to_str()) != Some("idl") {
-            continue;
-        }
-        println!("cargo:rerun-if-changed={}", path.display());
-
-        let out_file = std::path::Path::new(&out_dir)
-            .join(path.file_stem().unwrap())
-            .with_extension("rs");
-
-        let status = Command::new("zerodds-idlc")
-            .arg("generate")
-            .arg(&path)
-            .arg("--rust")
-            .arg("-o")
-            .arg(&out_dir)
-            .status()
-            .expect("failed to run zerodds-idlc");
-        assert!(status.success(),
-            "zerodds-idlc failed for {}", path.display());
-
-        // The generated file carries file-level `#![allow(...)]` inner
-        // attributes (it is meant to stand alone as its own module file).
-        // `include!`, below, splices those tokens into the *including*
-        // file rather than a fresh one, and an inner attribute is only
-        // legal at the very start of the file it textually ends up in —
-        // so strip them here and re-apply the same allows as outer
-        // attributes on the `include!` call site instead (see `lib.rs`).
-        let generated = std::fs::read_to_string(&out_file).unwrap();
-        let stripped: String = generated
-            .lines()
-            .filter(|l| !l.trim_start().starts_with("#!["))
-            .collect::<Vec<_>>()
-            .join("\n");
-        std::fs::write(&out_file, stripped).unwrap();
-    }
+fn main() -> Result<(), zerodds_build::Error> {
+    zerodds_build::Config::new()
+        .include_dir("idl")
+        .dds_type_impls(true)
+        .compile(&["idl/Robot.idl"])
 }
 ```
 
-In `lib.rs`, include the generated module (`Robot.idl` → `Robot.rs`) with
-the equivalent outer attributes re-applied (see the `build.rs` comment
-above):
+[src/lib.rs](../../zerodds-examples/idlc-buildrs/src/lib.rs):
 
 ```rust
 #[allow(
@@ -452,347 +311,125 @@ mod robot {
 pub use robot::Robot;
 ```
 
-> ▶ Runnable example: [`idlc-buildrs`](https://github.com/zero-objects/zero-dds-snippets/tree/master/idlc-buildrs)
-> (both fences above, verbatim — `build.rs` runs the real `zerodds-idlc`
-> CLI, `lib.rs`/`main.rs` `include!` and round-trip the generated
-> `Robot::Pose`).
+Both the CLI and this helper generate declarations and codecs. The Rust
+CLI path does not by itself add the `zerodds_dcps::DdsType` bridge.
+`dds_type_impls(true)` asks the build helper for that additional interface,
+including type metadata, key handling, filtering and representation
+methods. It is off by default for codec-only consumers.
 
-This pattern is the same as `tonic-build` / `prost-build`. For
-projects that prefer a build-script-free workflow, commit the
-generated stubs to the repository — the output is deterministic.
+This is not a promise that every type can be encoded as XCDR1. Where XCDR1
+generation is unsupported, the bridge retains refusing trait defaults
+rather than relabeling XCDR2 bytes as XCDR1. A TypeObject returned by a
+local method is also not proof of an end-to-end TypeLookup exchange.
 
----
+Generated inherent `encode`/`decode` methods operate on wire
+writers/readers. When calling the trait's byte-buffer interface, disambiguate:
 
-## 7 Cookbook
-
-### 7.1 Struct with optional fields
-
-```idl
-@appendable
-struct Telemetry {
-    @key string<32> robot_id;
-    @optional double battery_v;
-    @optional double cpu_load;
-};
+```rust
+let mut bytes = Vec::new();
+<Robot::Pose as zerodds_dcps::DdsType>::encode(&pose, &mut bytes)?;
+let decoded = <Robot::Pose as zerodds_dcps::DdsType>::decode(&bytes)?;
 ```
 
-Compile:
+This last fragment belongs inside a fallible function with a `pose`
+value already constructed. The companion's complete source contains the
+actual value and assertions.
 
-```bash
-zerodds-idlc generate Telemetry.idl --rust -o gen/rust
+### Configuration and rebuilds
+
+| Build-helper method | Purpose |
+|---|---|
+| `include_dir` | Add an include search directory |
+| `define` | Define a preprocessing macro |
+| `out_dir` | Override the default Cargo `OUT_DIR` |
+| `default_extensibility` | Select the default for unannotated aggregates |
+| `typeobject` | Control standalone raw TypeObject constants, default on |
+| `type_identifier_constants` | Request identifier constants, default off |
+| `dds_type_impls` | Request the Rust DDS bridge, default off |
+| `header_comment` | Set the generated header comment |
+| `emit_cargo_directives` | Control Cargo rebuild directives, default on |
+
+These are a typed build API, not one-for-one CLI flags. In particular,
+the current CLI does not expose `-I`, `-D` or the build helper's metadata
+switches. The helper reports top-level and included files through
+`cargo:rerun-if-changed`. `compile` emits per input;
+`compile_bundle(idls, name)` composes shared inputs into one Rust module.
+
+The [zerodds-build-sample companion](../../zerodds-examples/zerodds-build-sample/README.md)
+adds a quoted include and vendor key pragma. Both companions use the
+library API and need no `zerodds-idlc` executable on `PATH`.
+
+## 7 Executable companions and verification boundaries
+
+Run these commands from the ZeroDDS root with the Examples checkout nested
+at `zerodds-examples/`:
+
+```sh
+cargo test -j 1 --manifest-path zerodds-examples/idlc-buildrs/Cargo.toml
+cargo run -j 1 --manifest-path zerodds-examples/idlc-buildrs/Cargo.toml \
+  --bin idlc-buildrs-demo
+cargo test -j 1 --manifest-path zerodds-examples/zerodds-build-sample/Cargo.toml
+cargo run -j 1 --manifest-path zerodds-examples/zerodds-build-sample/Cargo.toml \
+  --bin zerodds-build-sample-demo
 ```
 
-The Rust backend emits `Option<f64>` for `@optional` members; on the
-wire the field is preceded by a 1-byte presence flag (XCDR2).
-
-### 7.2 Valuetype with inheritance
-
-```idl
-valuetype Vehicle {
-    public string id;
-    public double mass_kg;
-};
-valuetype Truck : Vehicle {
-    public double payload_kg;
-};
-```
-
-The C++ backend emits virtual class hierarchies; the Java backend
-uses `extends`; the Rust backend emits a flattened struct with a
-type-tag enum (Rust has no inheritance — the discriminator is
-preserved on the wire).
-
-### 7.3 Sequence of typed data
-
-```idl
-@final
-struct PointCloud {
-    sequence<float, 65536> x;
-    sequence<float, 65536> y;
-    sequence<float, 65536> z;
-};
-```
-
-`sequence<T, N>` is a bounded sequence — the compiler emits a
-`Vec<T>` (Rust) / `std::vector<T>` (C++) / `T[]` (Java) and
-validates `len <= N` on the encode path. Without the bound the
-sequence is unbounded; encoders accept any length up to the
-participant `max_message_size`.
-
-### 7.4 Recursive types
-
-```idl
-struct TreeNode {
-    @key long id;
-    string label;
-    sequence<@external TreeNode> children;
-};
-```
-
-`@external` is required on members that would otherwise create a
-cycle. The Rust backend emits `Box<TreeNode>` inside the sequence;
-the C++ backend emits `std::unique_ptr<TreeNode>`.
-
-### 7.5 Modules and namespaces
-
-```idl
-module com {
-    module example {
-        module robot {
-            @final
-            struct Pose { /* ... */ };
-        };
-    };
-};
-```
-
-The compiler maps modules to:
-
-* Rust: nested `mod` tree, `com::example::robot::Pose`.
-* C++: nested `namespace`, `com::example::robot::Pose`.
-* C#: nested `namespace`, `com.example.robot.Pose`.
-* Java: package `com.example.robot.Pose`.
-* Python: nested package, `com.example.robot.Pose`.
-* TypeScript: nested namespace under `package.json::name`.
-
-### 7.6 Includes
-
-```idl
-// Common.idl
-struct Vec3 { double x; double y; double z; };
-
-// Robot.idl
-#include "Common.idl"
-struct Pose { Vec3 position; double yaw; };
-```
-
-Compile:
-
-```bash
-zerodds-idlc generate Robot.idl --rust -o gen/rust -I .
-```
-
-The compiler resolves `#include` against `-I` paths in the order
-given. Each included file is compiled exactly once; transitive
-includes are detected and short-circuited.
-
-### 7.7 Custom annotations
-
-```idl
-@annotation owner {
-    string name;
-    string email;
-};
-
-@owner(name = "Alice", email = "alice@example.com")
-struct Sensor { /* ... */ };
-```
-
-User-defined annotations are preserved in the `TypeObject` but do
-not affect codegen by default. Plugin emitters (`--rust-plugin
-my_plugin.so`) can read them.
-
-### 7.8 Key extraction
-
-```idl
-@final
-struct PoseKey {
-    @key string<32> robot_id;
-    @key long sub_id;
-    double x;
-    double y;
-};
-```
-
-Compile:
-
-```bash
-zerodds-idlc generate PoseKey.idl --rust -o gen/rust
-```
-
-`KeyHash` is computed per DDSI-RTPS 2.5 §9.6.3.8: serialise the key
-fields in big-endian XCDR1, then MD5 the result if it exceeds 16
-bytes, otherwise use the serialised key directly. This algorithm is
-spec-mandated and not configurable — it matches RTI Connext, Fast DDS
-and Cyclone DDS for cross-vendor interop.
-
-### 7.9 Type evolution
-
-`@appendable` and `@mutable` types can evolve:
-
-```idl
-// v1
-@mutable
-struct Config {
-    @id(1) string host;
-    @id(2) long port;
-};
-
-// v2 — add field, keep IDs stable
-@mutable
-struct Config {
-    @id(1) string host;
-    @id(2) long port;
-    @id(3) @optional string username;
-};
-```
-
-Subscribers built against v1 can read v2 samples (the new field is
-ignored); subscribers built against v2 can read v1 samples (the
-optional field decodes as `None`). Compatibility is checked by the
-`TypeObject` exchange in the discovery phase — see XTypes 1.3
-§7.6.5.
-
-### 7.10 Bitset / bitmask
-
-```idl
-bitmask FaultFlags {
-    @position(0) BATTERY_LOW,
-    @position(1) MOTOR_OVERHEAT,
-    @position(2) ENCODER_FAILURE,
-};
-
-bitset SensorStatus {
-    bitfield<3> ready;
-    bitfield<5> error_code;
-    bitfield<8> reserved;
-};
-```
-
-Both compile to per-language bitfield types (Rust `bitflags!`,
-C++ `enum class : uint64_t`, Java `EnumSet`, etc.).
-
-### 7.11 String bounds
-
-```idl
-@final
-struct Message {
-    string<256> subject;       // bounded
-    string body;               // unbounded
-    wstring<128> author;       // 16-bit chars, bounded
-};
-```
-
-Bounded strings have their bound validated on the encode path and
-declared in the `TypeObject`. Unbounded strings are accepted up to
-the participant `max_message_size`.
-
-### 7.12 Enums with explicit bit-width
-
-```idl
-@bit_bound(8)
-enum Severity {
-    INFO,
-    WARNING,
-    ERROR,
-    CRITICAL,
-};
-```
-
-`@bit_bound(8)` makes the enum encode as a single byte instead of
-the default 32-bit. Useful for protocol structs where every byte
-counts (sensor packets, telemetry).
-
----
-
-## 8 Output layout summary
-
-| Backend | Generated source | `--scaffold` build file |
-|---|---|---|
-| `--rust` | `<base>.rs` (+ `<base>_corba.rs` with `--corba`) | `Cargo.toml` |
-| `--c` | `<base>.h` | `CMakeLists.txt` |
-| `--cpp` | `<base>.hpp` | `CMakeLists.txt` |
-| `--csharp` | `<base>.cs` | `<base>.csproj` |
-| `--java` | `<package>/<Type>.java` (+ `TypeObjects.java`) | `pom.xml` |
-| `--python` | `<base>.py` | `pyproject.toml` |
-| `--ts` | `<base>.ts` | `package.json`, `tsconfig.json` |
-| `--go` | `<base>.go` | see [`idl-go.md`](../../docs/idl/idl-go.md) |
-| `--ada` | `<base>.ads`/`.adb` | see [`idl-ada.md`](../../docs/idl/idl-ada.md) |
-| `--zig` | `<base>.zig` | see [`idl-zig.md`](../../docs/idl/idl-zig.md) |
-| `--nim` | `<base>.nim` | see [`idl-nim.md`](../../docs/idl/idl-nim.md) |
-| `--d` | `<base>.d` | see [`idl-d.md`](../../docs/idl/idl-d.md) |
-| `--elixir` | `<base>.ex` | see [`idl-elixir.md`](../../docs/idl/idl-elixir.md) |
-| `--ocaml` | `<base>.ml` | see [`idl-ocaml.md`](../../docs/idl/idl-ocaml.md) |
-| `--julia` | `<base>.jl` | see [`idl-julia.md`](../../docs/idl/idl-julia.md) |
-| `--lua` | `<base>.lua` | see [`idl-lua.md`](../../docs/idl/idl-lua.md) |
-| `--swift` | `<base>.swift` | see [`idl-swift.md`](../../docs/idl/idl-swift.md) |
-
-`<base>` is the input file stem (`Robot.idl` → `Robot`). All paths are
-relative to the backend's output directory (`--out-<lang>` if given,
-otherwise `-o`). With TypeObject emission on (the default), the
-serialized Minimal `TypeObject`s are appended to the generated source
-(for `--java`: written as a separate `TypeObjects.java`).
-
----
-
-## 9 Troubleshooting
-
-### 9.1 `parse failed: unexpected token '@' at line N`
-
-The grammar mode does not recognise the annotation. Remove it, or
-upgrade the compiler — XTypes 1.3 annotations are supported since
-`1.0.0-rc.1`. For RTI `@RTI_*` vendor annotations pass `--rti`.
-
-### 9.2 `parse failed: unknown identifier 'string<32>' at line N`
-
-You probably wrote `string <32>` (with a space). The bound form is
-`string<N>` with no space, or `string` for unbounded.
-
-### 9.3 `validation: @key on @optional field is not allowed`
-
-XTypes 1.3 §7.2.2.4.4: key members cannot be `@optional`. Either
-drop `@optional` or move the key to a separate non-optional field.
-
-### 9.4 `output IO error: cannot create <dir>/...`
-
-The output directory's parent is missing or read-only. `zerodds-idlc`
-creates the output directory itself but not its grandparents — run
-`mkdir -p` on the parent first.
-
-### 9.5 `KeyHash mismatch with peer vendor`
-
-The most common cause is endianness. ZeroDDS computes the KeyHash in
-big-endian XCDR1 per DDSI-RTPS 2.5 §9.6.3.8 — the spec-mandated
-algorithm. Verify with `zerodds-idlc dump-typeobject` that both sides
-agree on the type structure.
-
-### 9.6 `Java: stale generated code after an IDL change`
-
-Re-run `mvn generate-sources`, or delete
-`target/generated-sources/java` and rebuild — `zerodds-idlc` overwrites
-generated source but the Maven build may cache the old classes.
-
-### 9.7 `Python: ModuleNotFoundError`
-
-The generated `<base>.py` is not on `PYTHONPATH`. Add its directory to
-`sys.path` or `PYTHONPATH`.
-
-### 9.8 `TypeObject emission skipped — RecursiveType(...)`
-
-A type references itself transitively (a dependency cycle). The
-TypeObject mapper does not yet emit XTypes Strongly-Connected-Component
-identifiers, so the TypeObject block is skipped — the type definitions
-and CDR codecs are still generated. `--no-typeobject` suppresses the
-warning.
-
-### 9.9 Wire bytes differ from a reference vendor
-
-Use `dump-typeobject` to confirm the type structure matches and
-`dump-ast` to confirm the IDL parsed identically. If both agree but the
-wire bytes still differ, the cause is usually the encoding version
-(XCDR1 vs XCDR2) — that is negotiated at runtime from the type's
-extensibility and the data-representation QoS, not at code-generation
-time (see [`cdr-wire-format.md`](cdr-wire-format.md)).
-
----
-
-## 10 Cross-reference
-
-* [`cdr-wire-format.md`](cdr-wire-format.md) — on-the-wire byte form.
-* [`../05-integration/java.md`](../05-integration/java.md),
-  [`typescript-wasm.md`](../05-integration/typescript-wasm.md) — wiring
-  generated stubs into a participant.
-* Per-crate `README.md` under `crates/idl*/` — backend internals.
-* OMG IDL 4.2 — `https://www.omg.org/spec/IDL/4.2/`.
-* OMG XTypes 1.3 — `https://www.omg.org/spec/DDS-XTypes/1.3/`.
-* OMG DDS-TS 1.0 — the TypeScript PSM.
+The source tests assert value round-trips, type names, key presence and
+nonempty TypeObjects. They do not run a cross-vendor DDS network exchange.
+
+Other relevant executable material:
+
+- [Java combo README](../../zerodds-examples/idl-conformance/java/README.md)
+  and [App.java](../../zerodds-examples/idl-conformance/java/App.java):
+  fresh three-file output, explicit generated descriptor, matching Java wire
+  runtime and in-process DDS API loopback. See the
+  [Java integration guide](../05-integration/java.md) for packaging and boundaries.
+- [C# combo README](../../zerodds-examples/idl-conformance/csharp/README.md)
+  and [Program.cs](../../zerodds-examples/idl-conformance/csharp/Program.cs):
+  fresh codec/companion output connected to the typed native DDS API.
+  Key/lifecycle and transport claims require the matching measured candidate,
+  not merely a successful generated-source compile.
+- [C combo README](../../zerodds-examples/idl-conformance/_interop/c/README.md)
+  and [driver](../../zerodds-examples/idl-conformance/_interop/c/interop.c):
+  current CLI-generated C plus a matching wire runtime, explicit framing
+  defaults and malformed-input checks.
+- [Rust feature harness](../../zerodds-examples/idl-conformance/_interop/rust-features/src/main.rs)
+  and [build script](../../zerodds-examples/idl-conformance/_interop/rust-features/build.rs):
+  feature codec round-trips including fixed-point values. Its ENCODE path
+  writes payload files, so use an isolated output area when measuring.
+
+Verification for this handbook revision: CLI and build-API statements were
+checked against source, local references were checked, and companion
+snippets were compared with their actual files. This documentation pass
+did not rebuild or execute these command blocks. Existing measured
+C/feature results are scoped evidence, not proof that every command and
+language described here was rerun at the same release head.
+
+## 8 Migrating older instructions and troubleshooting
+
+The following old forms are not current interfaces:
+
+- Flat `zerodds-idlc schema.idl --rust`, backend flags such as `--java`,
+  `--all`, `-o`, `--output` and `--out-<language>`.
+- `dump-typeobject`, `--parse-only`, `--scaffold`, `--corba` and
+  `--rust-plugin`.
+- Vendor selector flags `--rti`, `--cyclone`, `--opendds`, and CLI
+  `--default-nested`, `--no-typeobject` or `--with-typeobject`.
+- Old `CdrEncode`/`CdrDecode` assumptions and the statement that CLI
+  generation is types-only.
+
+Do not mechanically replace a flag and keep an old runtime shim. Regenerate
+into a fresh directory, identify the runtime the source imports, adapt the
+consumer, then compile and test its values and bytes.
+
+For a missing include, check the including file's directory and the build
+API's search list. For a type-name collision, inspect the frontend diagnostic
+and qualify the type where required instead of renaming wire-visible members
+without reviewing the effect. Whitespace before a string bound is not by
+itself an error. For an output failure, inspect permissions and the actual
+I/O diagnostic; parent directories are created recursively.
+
+For different peer bytes, compare the full schema, defaults, extensibility,
+encoding version, byte order, encapsulation and sample value. Equal values
+and identical bytes are different results. Preserve both and the exact
+compiler/runtime identities. Do not conclude that runtime negotiation must
+have selected the right codec merely because generation succeeded.

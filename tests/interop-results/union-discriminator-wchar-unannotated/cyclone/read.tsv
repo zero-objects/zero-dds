@@ -1,0 +1,14 @@
+# What cyclone got back when it read the bytes of union-discriminator-wchar-unannotated, held against
+# tests/interop-corpus/union-discriminator-wchar-unannotated/values.json and never against another
+# column's reading of the same bytes.
+# encoding	endian	verdict	detail
+plain-cdr1	le	unwritten	
+plain-cdr1	be	unwritten	
+pl-cdr1	le	unwritten	
+pl-cdr1	be	unwritten	
+plain-cdr2	le	unwritten	
+plain-cdr2	be	unwritten	
+delimited-cdr	le	unwritten	
+delimited-cdr	be	unwritten	
+pl-cdr2	le	unwritten	
+pl-cdr2	be	unwritten	

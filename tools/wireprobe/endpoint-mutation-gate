@@ -1,0 +1,178 @@
+#!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 ZeroDDS Contributors
+#
+# endpoint-mutation-gate — proof that `wireprobe-endpoint-corpus` can
+# report a divergence.
+#
+#   tools/wireprobe/endpoint-mutation-gate
+#   tools/wireprobe/endpoint-mutation-gate --langs go,zig
+#
+# ## Why
+#
+# The sweep's answer over the whole corpus is thousands of cells reached
+# and every one of them the same, in all seventeen languages. An instrument
+# that cannot fail reads exactly like that, and
+# `tools/wireprobe/diagnostics.sh` carries the afternoon this tree lost
+# to one: a mutation planted in the C generator to check a new gate did
+# not reach the gate at all, and the gate reported the mutation as
+# caught-nothing.
+#
+# So the whole of `endpoints/` is copied, one defect is planted in each
+# binding's copy, and the sweep is pointed at the copy through
+# `ZERODDS_ENDPOINT_ROOT`. The defect is in `put_string`: the CDR length
+# of a string counts the terminating NUL (OMG CDR 15.3.2.7, and
+# `endpoints/golden-gen`'s `write_string`), and the copy writes the
+# length without it. Every string case must then diverge.
+#
+# One variable and one defect, seventeen times over. The clause is the
+# same in all seventeen — a `+ 1` on the length word — so the mutation is
+# the same statement in seventeen spellings and not seventeen different
+# experiments.
+#
+# A run that ends `GATE OK` is a sweep that reports a planted defect. A
+# run that does not is a sweep whose green means nothing.
+set -uo pipefail
+
+cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)" || exit 2
+
+langs="ada,ada-83,ada-native,d,elixir,go,java,julia,kotlin,lua,nim,node,ocaml,fsharp,python,swift,zig"
+# Two @final string cases exercise the mutation. annotation-key-single
+# contains only long fields and is the unchanged control, not a string case.
+cases="string-bounded-utf8,string-unbounded-ascii,annotation-key-single"
+jobs="${ENDPOINT_JOBS:-1}"
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --langs) langs="$2"; shift 2 ;;
+        --cases) cases="$2"; shift 2 ;;
+        --jobs) jobs="$2"; shift 2 ;;
+        --help|-h) sed -n '5,34p' "${BASH_SOURCE[0]}"; exit 0 ;;
+        *) echo "endpoint-mutation-gate: \`$1\` is not an option" >&2; exit 2 ;;
+    esac
+done
+case "$jobs" in 1|2|3|4) ;; *) echo "mutation gate: --jobs must be 1..4" >&2; exit 2 ;; esac
+if [ "${ENDPOINT_MUTATION_SUPERVISED:-0}" != 1 ]; then
+    export ENDPOINT_MUTATION_SUPERVISED=1
+    exec python3 tools/wireprobe/probe-process.py --timeout "${ENDPOINT_MUTATION_TIMEOUT:-43200}" --grace 9 -- \
+        bash "$0" --langs "$langs" --cases "$cases" --jobs "$jobs"
+fi
+
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+trap 'exit 125' HUP INT TERM
+mkdir -p "$work/tree"
+cp -R endpoints "$work/tree/endpoints"
+
+# A mutation cannot claim an unrelated pre-existing divergence as its success.
+if ! tools/wireprobe/wireprobe-endpoint-corpus --langs "$langs" --cases "$cases" --jobs "$jobs" \
+    --out "$work/baseline.tsv" > "$work/baseline.log" 2>&1; then
+    cat "$work/baseline.log" >&2; exit 125
+fi
+if ! awk -F'\t' 'NF != 6 || $5 != "same" { exit 1 } END { if (NR == 0) exit 1 }' "$work/baseline.tsv"; then
+    echo "mutation gate: baseline must reach every selected cell with identical bytes" >&2
+    exit 1
+fi
+
+# mutate <file under endpoints/> <from> <to>
+#
+# `grep -F` first: a substitution that matched nothing would leave the
+# copy identical to the original, and the gate would then report the
+# sweep as blind when it was the mutation that never happened. That is
+# the exact failure this program exists because of.
+mutate() {
+    local file="$work/tree/endpoints/$1" from="$2" to="$3"
+    if [ ! -f "$file" ]; then
+        echo "endpoint-mutation-gate: no endpoints/$1" >&2
+        exit 2
+    fi
+    if ! grep -qF -- "$from" "$file"; then
+        echo "endpoint-mutation-gate: \`$from\` is not in endpoints/$1" >&2
+        exit 2
+    fi
+    python3 - "$file" "$from" "$to" <<'PY'
+import sys, pathlib
+path, old, new = pathlib.Path(sys.argv[1]), sys.argv[2], sys.argv[3]
+path.write_text(path.read_text().replace(old, new, 1))
+PY
+}
+
+# The same clause in seventeen spellings: the length word of `put_string`
+# loses the NUL it counts.
+mutate go/wire.go           'w.PutU32(uint32(len(s) + 1))'      'w.PutU32(uint32(len(s)))'
+mutate lua/zerodds.lua      'self:putU32(#s + 1)'               'self:putU32(#s)'
+mutate ocaml/zerodds.ml     'put_u32 w (String.length s + 1);'  'put_u32 w (String.length s);'
+mutate julia/zerodds.jl     'put_u32!(w, sizeof(s) + 1)'        'put_u32!(w, sizeof(s))'
+mutate elixir/lib/zerodds.ex 'put_u32(w, byte_size(s) + 1)'     'put_u32(w, byte_size(s))'
+mutate zig/src/zerodds.zig  'try self.putU32(@intCast(s.len + 1));' \
+                            'try self.putU32(@intCast(s.len));'
+mutate nim/zerodds.nim      'w.putU32(uint32(s.len + 1))'       'w.putU32(uint32(s.len))'
+mutate d/zerodds.d          'putU32(cast(uint)(s.length + 1));' 'putU32(cast(uint)(s.length));'
+mutate kotlin/src/Zerodds.kt 'putU32((raw.size + 1).toLong())'  'putU32((raw.size).toLong())'
+mutate node/zerodds.js      'this.putU32(raw.length + 1);'      'this.putU32(raw.length);'
+mutate fsharp/zerodds.fs    'this.PutU32(uint32 (raw.Length + 1))' \
+                            'this.PutU32(uint32 (raw.Length))'
+mutate swift/Sources/Zerodds/Zerodds.swift 'putU32(UInt32(bytes.count + 1))' \
+                            'putU32(UInt32(bytes.count))'
+# `endpoints/ada` writes its strings through the C wire-core it imports.
+mutate c/src/zerodds_wire.c 'zdw_put_u32(w, (unsigned long)(n + 1u))' \
+                            'zdw_put_u32(w, (unsigned long)(n))'
+mutate python/zerodds_wire.py 'self.put_u32(len(raw) + 1)'        'self.put_u32(len(raw))'
+mutate java/Zdw.java        'u32(utf8.length + 1);'             'u32(utf8.length);'
+mutate ada-83/src/zerodds_ada83_wire.adb    "Put_U32 (W, Long_Integer (S'Length + 1));" \
+                            "Put_U32 (W, Long_Integer (S'Length));"
+mutate ada-native/src/zerodds_native_wire.adb "Put_U32 (W, Unsigned_32 (S'Length + 1));" \
+                            "Put_U32 (W, Unsigned_32 (S'Length));"
+
+export ZERODDS_ENDPOINT_ROOT="$work/tree"
+# A cache of its own. The key already carries the SDK's sources, so a
+# mutated build can never be served the original's entry — but a run that
+# shared the directory would leave every mutated binary behind for the
+# next honest sweep to find.
+export ZERODDS_ENDPOINT_CACHE="$work/cache"
+
+if ! tools/wireprobe/wireprobe-endpoint-corpus --langs "$langs" --cases "$cases" --jobs "$jobs" \
+    --out "$work/mutated.tsv" > "$work/summary" 2>&1; then
+    cat "$work/summary" >&2; exit 125
+fi
+cat "$work/summary"
+cut -f1-4 "$work/baseline.tsv" > "$work/baseline.coordinates"
+cut -f1-4 "$work/mutated.tsv" > "$work/mutated.coordinates"
+cmp -s "$work/baseline.coordinates" "$work/mutated.coordinates" || {
+    echo "mutation gate: result coordinates changed" >&2; exit 125;
+}
+if ! awk -F'\t' 'NF != 6 { exit 1 }
+    $1 == "annotation-key-single" { if ($5 != "same") exit 1; next }
+    $5 != "different" { exit 1 }
+    END { if (NR == 0) exit 1 }' "$work/mutated.tsv"; then
+    echo "mutation gate: string cells must diverge and the integer-only control must remain identical" >&2
+    exit 1
+fi
+
+status=0
+for lang in $(printf '%s' "$langs" | tr ',' ' '); do
+    differ=$(awk -F'\t' -v l="$lang" '$2==l && $5=="different"' "$work/mutated.tsv" | wc -l)
+    reached=$(awk -F'\t' -v l="$lang" '$2==l && ($5=="same" || $5=="different")' \
+        "$work/mutated.tsv" | wc -l)
+    if [ "$reached" -eq 0 ]; then
+        # Not a pass and not a failure of the mutation: the sweep never
+        # got far enough to have an opinion, and reporting that as either
+        # is what this program exists to stop.
+        #
+        # And it says why it cannot say anything. Without the reasons
+        # this line is a dead end: the run happened on a machine nobody
+        # is sitting at, the TSV goes away with the job, and the next
+        # step is to reproduce a container. Three rows are enough to
+        # tell an absent toolchain from a probe that ran and refused.
+        echo "endpoint-mutation-gate: $lang reached no cell; the gate says nothing" >&2
+        awk -F'\t' -v l="$lang" '$2==l {print "    " $1 "/" $3 "/" $4 ": " $5 " " $6}' \
+            "$work/mutated.tsv" | sort -u | head -3 >&2
+        status=1
+    elif [ "$differ" -eq 0 ]; then
+        echo "endpoint-mutation-gate: $lang reported no divergence for a planted one" >&2
+        status=1
+    else
+        echo "$lang: $differ of $reached cells report the planted defect"
+    fi
+done
+[ "$status" = 0 ] && echo "GATE OK"
+exit "$status"

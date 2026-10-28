@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! `zerodds-snitch` — kurzer Discovery-Probe-Run, druckt entdeckte
-//! Participants + Endpoint-Zähler.
+//! `zerodds-snitch` — short discovery probe run, prints discovered
+//! participants + endpoint counters.
 
 #![allow(clippy::print_stdout, clippy::print_stderr)]
 
@@ -29,7 +29,19 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
-    let cmd = match parse_args(&args) {
+    let configured = match zerodds_dcps::cli::Configured::from_args(args) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("error: configuration: {e}");
+            return ExitCode::from(2);
+        }
+    };
+    if let Some(code) = configured.check_config() {
+        return code;
+    }
+    let config = &configured.runtime;
+
+    let cmd = match parse_args(&configured.args) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("error: {e}");
@@ -39,11 +51,11 @@ fn main() -> ExitCode {
     };
 
     match cmd {
-        Command::Probe(p) => run_probe(&p),
+        Command::Probe(p) => run_probe(&p, config),
     }
 }
 
-fn run_probe(p: &ProbeArgs) -> ExitCode {
+fn run_probe(p: &ProbeArgs, config: &RuntimeConfig) -> ExitCode {
     let domain_id: i32 = match p.domain.try_into() {
         Ok(v) => v,
         Err(_) => {
@@ -52,7 +64,7 @@ fn run_probe(p: &ProbeArgs) -> ExitCode {
         }
     };
     let prefix = stable_prefix(MARKER_SNITCH);
-    let runtime = match DcpsRuntime::start(domain_id, prefix, RuntimeConfig::default()) {
+    let runtime = match DcpsRuntime::start(domain_id, prefix, config.clone()) {
         Ok(r) => r,
         Err(e) => {
             eprintln!("error: DcpsRuntime::start failed: {e:?}");
@@ -83,6 +95,9 @@ fn run_probe(p: &ProbeArgs) -> ExitCode {
         ProbeFormat::Json => render_json(&participants, pubs, subs),
     }
 
+    // The worker threads hold the runtime: a drop alone neither stops it
+    // nor announces the departure nor closes the same-host channels.
+    runtime.shutdown();
     drop(runtime);
     ExitCode::SUCCESS
 }
@@ -180,4 +195,5 @@ fn print_help() {
            2    CLI parse error\n  \
            3    DDS / I/O error\n"
     );
+    println!("\n{}", zerodds_dcps::cli::HELP);
 }

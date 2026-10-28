@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="de">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <title>ZeroDDS Dashboard</title>
@@ -16,18 +16,18 @@ code { background: #111; padding: 2px 6px; border-radius: 3px; }
 <body>
 <div class="bootstrap">
   <h1>ZeroDDS Dashboard</h1>
-  <p><span class="spinner"></span>Verbinde mit lokalem HTTP-Server (<code>http://127.0.0.1:8089/</code>)…</p>
-  <p>Die Native-App startet einen eingebetteten Server in-process. Das Hauptfenster sollte automatisch dorthin weiterleiten.</p>
-  <p>Falls nichts passiert: pruefe ob Port 8089 frei ist, oder starte den Standalone-Server:</p>
+  <p><span class="spinner"></span>Connecting to the local HTTP server (<code>http://127.0.0.1:8089/</code>)…</p>
+  <p>The native app starts an embedded server in-process. The main window should redirect there automatically.</p>
+  <p>If nothing happens: check that port 8089 is free, or start the standalone server:</p>
   <pre>cargo run --release -p dds-dashboard -- --bind 127.0.0.1:8089 --demo</pre>
 </div>
 <script>
-// Phase-C: wenn Tauri-IPC verfuegbar ist, kann das Frontend
-// __TAURI__.invoke('get_topics') etc. statt HTTP-fetch nehmen — kein
-// CORS, ein Round-Trip weniger. Der Splash redirected trotzdem zum
-// Server, weil das HTML-UI dort liegt; der HTTP-Pfad bleibt der
-// Default. Die IPC-Variante ist im Frontend-Code unter window.__TAURI__
-// auspackbar (siehe documentation/05-integration/tauri-ipc.md).
+// Phase C: when Tauri IPC is available, the frontend can use
+// __TAURI__.invoke('get_topics') etc. instead of an HTTP fetch — no
+// CORS, one round trip less. The splash still redirects to the
+// server, because the HTML UI lives there; the HTTP path stays the
+// default. The IPC variant can be unpacked in the frontend code under
+// window.__TAURI__ (see documentation/05-integration/tauri-ipc.md).
 function isTauri() {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 }

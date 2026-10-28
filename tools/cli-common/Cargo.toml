@@ -14,12 +14,12 @@ keywords = ["dds", "cli", "zerodds", "internal"]
 categories = ["command-line-utilities", "development-tools"]
 publish = true
 
-# Diese Crate ist primaer fuer interne ZeroDDS-Tools gedacht, aber sie
-# enthaelt keine geheimen oder unfertigen Pfade — die 5 Helper sind
+# This crate is primarily intended for internal ZeroDDS tools, but it
+# contains no secret or unfinished paths — the 5 helpers are
 # stable APIs (parse_duration, install_signal_handler, stable_prefix,
-# participant_guid, raw_reader_config) und werden public published damit
-# die abhaengigen `zerodds-record/-bench/-monitor/-spy/-snitch/-pcap/-mq`
-# Crates auf crates.io aufloesen.
+# participant_guid, raw_reader_config) and are published publicly so that
+# the dependent `zerodds-record/-bench/-monitor/-spy/-snitch/-pcap/-mq`
+# crates on crates.io resolve.
 
 [lints]
 workspace = true

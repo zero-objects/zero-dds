@@ -179,7 +179,7 @@ fn mk() -> (DomainParticipant, Topic<RawBytes>, Publisher, Subscriber) {
 // ============================================================================
 
 #[test]
-fn inconsistent_topic_listener_fires_on_type_mismatch() {
+fn inconsistent_topic_listener_fires_on_qos_mismatch_of_a_name() {
     let p = DomainParticipantFactory::instance()
         .create_participant_offline(0, DomainParticipantQos::default());
     let t1 = p
@@ -187,12 +187,16 @@ fn inconsistent_topic_listener_fires_on_type_mismatch() {
         .unwrap();
     let pc = Arc::new(TopicC::default());
     t1.set_listener(Some(pc.clone()), bits::ANY);
-    // A second create_topic with the same name but a different type fails.
+    // XTypes 1.3 §7.6.4.1: a second create_topic of the name with another
+    // type is a second topic, "provided that [they] have consistent QoS
+    // with one another"; one whose QoS is not consistent fails.
     use zerodds_dcps::dds_type::{DdsType, DecodeError, EncodeError};
     #[derive(Debug, Clone, Default)]
     struct Other;
     impl DdsType for Other {
         const TYPE_NAME: &'static str = "Other";
+        /// @final with no member that XCDR1 and XCDR2 frame differently: one stream.
+        const XCDR1_MATCHES_XCDR2: bool = true;
         const HAS_KEY: bool = false;
         fn encode(&self, _out: &mut Vec<u8>) -> core::result::Result<(), EncodeError> {
             Ok(())
@@ -201,7 +205,9 @@ fn inconsistent_topic_listener_fires_on_type_mismatch() {
             Ok(Self)
         }
     }
-    let _ = p.create_topic::<Other>("DupT", TopicQos::default());
+    let mut other_qos = TopicQos::default();
+    other_qos.topic_data.value = vec![1];
+    assert!(p.create_topic::<Other>("DupT", other_qos).is_err());
     let s = t1.inconsistent_topic_status();
     assert!(s.total_count >= 1);
     assert_eq!(pc.inconsistent.load(Ordering::Relaxed), 1);
@@ -240,9 +246,7 @@ fn inconsistent_topic_no_delta_no_listener() {
 #[test]
 fn offered_deadline_missed_via_runtime_counter() {
     use zerodds_dcps::runtime::{DcpsRuntime, RuntimeConfig, UserWriterConfig};
-    use zerodds_qos::{
-        DeadlineQosPolicy, DurabilityKind, LifespanQosPolicy, LivelinessQosPolicy, OwnershipKind,
-    };
+    use zerodds_qos::DeadlineQosPolicy;
     use zerodds_rtps::wire_types::GuidPrefix;
     // Tick period shorter than the deadline period so that under
     // CI container throttling (llvm-cov + serialized tests) enough
@@ -251,29 +255,21 @@ fn offered_deadline_missed_via_runtime_counter() {
         tick_period: core::time::Duration::from_millis(5),
         ..RuntimeConfig::default()
     };
-    let rt = DcpsRuntime::start(0, GuidPrefix::from_bytes([1; 12]), cfg).unwrap();
+    let rt = DcpsRuntime::start(
+        common::unique_domain(),
+        GuidPrefix::from_bytes([1; 12]),
+        cfg,
+    )
+    .unwrap();
     let eid = rt
         .register_user_writer(UserWriterConfig {
             topic_name: "T".into(),
             type_name: "RawBytes".into(),
             reliable: false,
-            durability: DurabilityKind::Volatile,
             deadline: DeadlineQosPolicy {
                 period: zerodds_qos::Duration::from_millis(50_i32),
             },
-            latency_budget: Default::default(),
-            destination_order: Default::default(),
-            lifespan: LifespanQosPolicy::default(),
-            liveliness: LivelinessQosPolicy::default(),
-            ownership: OwnershipKind::Shared,
-            ownership_strength: 0,
-            presentation: Default::default(),
-            partition: vec![],
-            user_data: vec![],
-            topic_data: vec![],
-            group_data: vec![],
-            type_identifier: zerodds_types::TypeIdentifier::None,
-            data_representation_offer: None,
+            ..Default::default()
         })
         .unwrap();
     // DDS 1.4 §2.2.3.1: deadline = maximum interval between *two*
@@ -327,7 +323,7 @@ fn offered_deadline_missed_listener_fires_on_delta() {
 #[test]
 fn requested_deadline_missed_via_runtime_counter() {
     use zerodds_dcps::runtime::{DcpsRuntime, RuntimeConfig, UserReaderConfig};
-    use zerodds_qos::{DeadlineQosPolicy, DurabilityKind, LivelinessQosPolicy, OwnershipKind};
+    use zerodds_qos::DeadlineQosPolicy;
     use zerodds_rtps::wire_types::GuidPrefix;
     // See `offered_deadline_missed_via_runtime_counter` — tick=5ms
     // so the CI container deterministically manages ticks within the
@@ -336,33 +332,76 @@ fn requested_deadline_missed_via_runtime_counter() {
         tick_period: core::time::Duration::from_millis(5),
         ..RuntimeConfig::default()
     };
-    let rt = DcpsRuntime::start(0, GuidPrefix::from_bytes([2; 12]), cfg).unwrap();
+    let rt = DcpsRuntime::start(
+        common::unique_domain(),
+        GuidPrefix::from_bytes([2; 12]),
+        cfg,
+    )
+    .unwrap();
     let (eid, _rx) = rt
         .register_user_reader(UserReaderConfig {
             topic_name: "T".into(),
             type_name: "RawBytes".into(),
             reliable: false,
-            durability: DurabilityKind::Volatile,
+            deadline: DeadlineQosPolicy {
+                period: zerodds_qos::Duration::from_millis(50_i32),
+            },
+            ..Default::default()
+        })
+        .unwrap();
+    // REQUESTED_DEADLINE_MISSED is missed for an instance (DDS 1.4
+    // §2.2.4.1): before a sample there is none to miss.
+    std::thread::sleep(std::time::Duration::from_millis(120));
+    assert_eq!(rt.user_reader_requested_deadline_missed(eid), 0);
+    let writer = rt
+        .register_user_writer(zerodds_dcps::runtime::UserWriterConfig {
+            property: Default::default(),
+            data_tags: Default::default(),
+            topic_name: "T".into(),
+            type_name: "RawBytes".into(),
+            reliable: false,
+            durability: zerodds_qos::DurabilityKind::Volatile,
+            durability_service: zerodds_qos::DurabilityServiceQosPolicy::default(),
+            // DEADLINE is requested-offered (DDS 1.4 §2.2.3.7): the
+            // default, infinite period does not match a reader asking
+            // for 50 ms.
             deadline: DeadlineQosPolicy {
                 period: zerodds_qos::Duration::from_millis(50_i32),
             },
             latency_budget: Default::default(),
             destination_order: Default::default(),
-            liveliness: LivelinessQosPolicy::default(),
-            ownership: OwnershipKind::Shared,
+            lifespan: zerodds_qos::LifespanQosPolicy::default(),
+            liveliness: zerodds_qos::LivelinessQosPolicy::default(),
+            ownership: zerodds_qos::OwnershipKind::Shared,
+            ownership_strength: 0,
+            transport_priority: 0,
             presentation: Default::default(),
             partition: vec![],
             user_data: vec![],
             topic_data: vec![],
             group_data: vec![],
             type_identifier: zerodds_types::TypeIdentifier::None,
-            type_consistency: zerodds_types::qos::TypeConsistencyEnforcement::default(),
             data_representation_offer: None,
+            group_entity_id: None,
+            data_max_size_serialized: None,
+            entity_name: None,
         })
         .unwrap();
+    // The sample has to reach the reader: before the pair matches it goes
+    // nowhere, and a reader without an instance misses nothing.
+    let matched = std::time::Instant::now();
+    while rt.user_writer_matched_count(writer) == 0 {
+        assert!(
+            matched.elapsed() < std::time::Duration::from_secs(5),
+            "the writer did not match the reader in its own runtime"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    rt.write_user_sample(writer, b"first".to_vec())
+        .expect("first write");
     std::thread::sleep(std::time::Duration::from_millis(250));
     let n = rt.user_reader_requested_deadline_missed(eid);
-    assert!(n > 0);
+    assert!(n > 0, "no deadline missed after one sample and 250 ms");
     rt.shutdown();
 }
 
@@ -499,10 +538,7 @@ fn requested_incompatible_qos_dispatcher_fires_listener() {
 #[test]
 fn liveliness_lost_via_runtime_writer_lease() {
     use zerodds_dcps::runtime::{DcpsRuntime, RuntimeConfig, UserWriterConfig};
-    use zerodds_qos::{
-        DeadlineQosPolicy, DurabilityKind, LifespanQosPolicy, LivelinessKind, LivelinessQosPolicy,
-        OwnershipKind,
-    };
+    use zerodds_qos::{LivelinessKind, LivelinessQosPolicy};
     use zerodds_rtps::wire_types::GuidPrefix;
     // See `offered_deadline_missed_via_runtime_counter` — tick=5ms
     // under CI container throttling.
@@ -510,30 +546,22 @@ fn liveliness_lost_via_runtime_writer_lease() {
         tick_period: core::time::Duration::from_millis(5),
         ..RuntimeConfig::default()
     };
-    let rt = DcpsRuntime::start(0, GuidPrefix::from_bytes([3; 12]), cfg).unwrap();
+    let rt = DcpsRuntime::start(
+        common::unique_domain(),
+        GuidPrefix::from_bytes([3; 12]),
+        cfg,
+    )
+    .unwrap();
     let eid = rt
         .register_user_writer(UserWriterConfig {
             topic_name: "T".into(),
             type_name: "RawBytes".into(),
             reliable: false,
-            durability: DurabilityKind::Volatile,
-            deadline: DeadlineQosPolicy::default(),
-            latency_budget: Default::default(),
-            destination_order: Default::default(),
-            lifespan: LifespanQosPolicy::default(),
             liveliness: LivelinessQosPolicy {
                 kind: LivelinessKind::ManualByTopic,
                 lease_duration: zerodds_qos::Duration::from_millis(50_i32),
             },
-            ownership: OwnershipKind::Shared,
-            ownership_strength: 0,
-            presentation: Default::default(),
-            partition: vec![],
-            user_data: vec![],
-            topic_data: vec![],
-            group_data: vec![],
-            type_identifier: zerodds_types::TypeIdentifier::None,
-            data_representation_offer: None,
+            ..Default::default()
         })
         .unwrap();
     std::thread::sleep(std::time::Duration::from_millis(250));
@@ -619,29 +647,21 @@ fn liveliness_changed_dispatcher_fires_listener() {
 #[test]
 fn sample_lost_recorder_increments_counter() {
     use zerodds_dcps::runtime::{DcpsRuntime, RuntimeConfig, UserReaderConfig};
-    use zerodds_qos::{DeadlineQosPolicy, DurabilityKind, LivelinessQosPolicy, OwnershipKind};
+
     use zerodds_rtps::wire_types::GuidPrefix;
     let cfg = RuntimeConfig::default();
-    let rt = DcpsRuntime::start(0, GuidPrefix::from_bytes([4; 12]), cfg).unwrap();
+    let rt = DcpsRuntime::start(
+        common::unique_domain(),
+        GuidPrefix::from_bytes([4; 12]),
+        cfg,
+    )
+    .unwrap();
     let (eid, _rx) = rt
         .register_user_reader(UserReaderConfig {
             topic_name: "T".into(),
             type_name: "RawBytes".into(),
             reliable: false,
-            durability: DurabilityKind::Volatile,
-            deadline: DeadlineQosPolicy::default(),
-            latency_budget: Default::default(),
-            destination_order: Default::default(),
-            liveliness: LivelinessQosPolicy::default(),
-            ownership: OwnershipKind::Shared,
-            presentation: Default::default(),
-            partition: vec![],
-            user_data: vec![],
-            topic_data: vec![],
-            group_data: vec![],
-            type_identifier: zerodds_types::TypeIdentifier::None,
-            type_consistency: zerodds_types::qos::TypeConsistencyEnforcement::default(),
-            data_representation_offer: None,
+            ..Default::default()
         })
         .unwrap();
     rt.record_sample_lost(eid, 3);
@@ -685,29 +705,21 @@ fn sample_lost_dispatcher_fires_listener() {
 fn sample_rejected_recorder_increments_counter() {
     use zerodds_dcps::runtime::{DcpsRuntime, RuntimeConfig, UserReaderConfig};
     use zerodds_dcps::status::SampleRejectedStatusKind;
-    use zerodds_qos::{DeadlineQosPolicy, DurabilityKind, LivelinessQosPolicy, OwnershipKind};
+
     use zerodds_rtps::wire_types::GuidPrefix;
     let cfg = RuntimeConfig::default();
-    let rt = DcpsRuntime::start(0, GuidPrefix::from_bytes([5; 12]), cfg).unwrap();
+    let rt = DcpsRuntime::start(
+        common::unique_domain(),
+        GuidPrefix::from_bytes([5; 12]),
+        cfg,
+    )
+    .unwrap();
     let (eid, _rx) = rt
         .register_user_reader(UserReaderConfig {
             topic_name: "T".into(),
             type_name: "RawBytes".into(),
             reliable: false,
-            durability: DurabilityKind::Volatile,
-            deadline: DeadlineQosPolicy::default(),
-            latency_budget: Default::default(),
-            destination_order: Default::default(),
-            liveliness: LivelinessQosPolicy::default(),
-            ownership: OwnershipKind::Shared,
-            presentation: Default::default(),
-            partition: vec![],
-            user_data: vec![],
-            topic_data: vec![],
-            group_data: vec![],
-            type_identifier: zerodds_types::TypeIdentifier::None,
-            type_consistency: zerodds_types::qos::TypeConsistencyEnforcement::default(),
-            data_representation_offer: None,
+            ..Default::default()
         })
         .unwrap();
     rt.record_sample_rejected(
@@ -833,7 +845,7 @@ fn requested_incompat_listener_only_on_change() {
 }
 
 // ============================================================================
-// 12. Manual-Liveliness-Assert auf Writer (Spec §2.2.2.4.2.20).
+// 12. Manual liveliness assert on the writer (Spec §2.2.2.4.2.20).
 // ============================================================================
 
 #[test]
@@ -846,3 +858,8 @@ fn assert_liveliness_offline_no_op() {
     w.assert_liveliness();
     assert_eq!(w.liveliness_lost_count(), 0);
 }
+
+/// Leases a DDS domain no other process on this host holds — the
+/// domain number is the UDP port number, so it is a host-wide resource.
+#[path = "common/mod.rs"]
+mod common;

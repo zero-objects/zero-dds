@@ -1,0 +1,11 @@
+wireprobe-tao: tao_idl refused the IDL
+Error - /opt/opendds/bin/tao_idl: "gen.idl", line 1: fixed data types are not supported
+Error - /opt/opendds/bin/tao_idl: "gen.idl", line 1: fixed data types are not supported
+Error - /opt/opendds/bin/tao_idl: "gen.idl", line 1: fixed data types are not supported
+Error - /opt/opendds/bin/tao_idl: "gen.idl", line 1: fixed data types are not supported
+Error - /opt/opendds/bin/tao_idl: "gen.idl", line 1: fixed data types are not supported
+Error - /opt/opendds/bin/tao_idl: "gen.idl", line 1: fixed data types are not supported
+Error - /opt/opendds/bin/tao_idl: "gen.idl", line 1: fixed data types are not supported
+Error - /opt/opendds/bin/tao_idl: "gen.idl", line 1: fixed data types are not supported
+Error - /opt/opendds/bin/tao_idl: "gen.idl", line 1: fixed data types are not supported
+Error - /opt/opendds/bin/tao_idl: "gen.idl", line 1: fixed data types are not supported

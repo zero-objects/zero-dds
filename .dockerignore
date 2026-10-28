@@ -1,10 +1,10 @@
-# Cargo + Rust build artifacts — gehoeren nie in den Docker-Context,
-# weil die builder-Stage sie sowieso selbst erzeugt (siehe cargo-chef
+# Cargo + Rust build artifacts never belong in the Docker context,
+# because the builder stage produces them itself anyway (see cargo-chef
 # in packaging/docker/*/Dockerfile).
 target/
 **/target/
 
-# Node/TypeScript build artifacts und Caches.
+# Node/TypeScript build artifacts and caches.
 node_modules/
 **/node_modules/
 dist/
@@ -34,16 +34,16 @@ build/
 **/qt-tileview/build/
 **/qt-tileview/gen/
 
-# Wheels und Distributions-Artefakte.
+# Wheels and distribution artifacts.
 wheels/
 **/wheels/
 *.whl
 *.egg-info/
 
-# Git-Verzeichnis — Dockerfiles brauchen keinen Repo-Zugriff.
+# Git directory — the Dockerfiles need no repository access.
 .git/
 
-# Lokale Planning- und Release-Tooling-Daten.
+# Local planning and release tooling data.
 .planning/
 .publish-rc1.log
 .publish-rc1.order
@@ -56,8 +56,20 @@ wheels/
 *.swp
 .DS_Store
 
-# Output-Reports und temporaere Spec-Coverage-Generierung.
+# Output reports and temporary spec coverage generation.
 mutants-out/
 diagrams/LINK-INVENTORY.md
 diagrams/OLD-CONTENT-AUDIT.md
 diagrams/REMAINDER.md
+
+# Not sources of any image: the interop matrix (GBs of recorded runs), the
+# internal notes (never part of a published artifact), the public mirror
+# and examples checkouts, the website, and scratch directories.
+matrix/
+internal/
+github/
+zerodds-examples/
+website/
+ci-plan/
+tmpjc/
+xcdr2-le/

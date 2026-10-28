@@ -10,10 +10,11 @@ use zerodds_dcps::qos::{
     HistoryQosPolicy, OwnershipKind, OwnershipQosPolicy, OwnershipStrengthQosPolicy,
     PartitionQosPolicy, PresentationAccessScope, PresentationQosPolicy, PublisherQos,
     ReliabilityKind, ReliabilityQosPolicy, SubscriberQos, TimeBasedFilterQosPolicy,
+    WriterDataLifecycleQosPolicy,
 };
 use zerodds_qos::Duration;
 
-use crate::cli::{AccessScopeArg, DurabilityArg, Options};
+use crate::cli::{AccessScopeArg, DurabilityArg, FinalInstanceStateArg, Options};
 
 /// `-x [1|2]` → XTypes 1.3 §7.6.3.1.2 DataRepresentation id list.
 /// `1` = XCDR (id `0`), `2` = XCDR2 (id `2`) — matches the
@@ -106,6 +107,19 @@ pub fn writer_qos(opts: &Options) -> DataWriterQos {
     }
     if let Some(part) = partition(&opts.partition) {
         qos.partition = part;
+    }
+    // README `--final-instance-state u`: the writer unregisters its instances
+    // on shutdown and the reader is expected to report
+    // NOT_ALIVE_NO_WRITERS. DDS 1.4 §2.2.3.21 defaults
+    // `autodispose_unregistered_instances` to TRUE, which makes
+    // `unregister_instance` dispose first — the reader would then report
+    // NOT_ALIVE_DISPOSED. The OMG reference client
+    // (`srcCxx/shape_main.cxx`, `init_publisher`) sets the flag to FALSE for
+    // exactly this option; this client does the same.
+    if matches!(opts.final_instance_state, Some(FinalInstanceStateArg::U)) {
+        qos.writer_data_lifecycle = WriterDataLifecycleQosPolicy {
+            autodispose_unregistered_instances: false,
+        };
     }
     qos.data_representation = data_representation_list(opts.data_representation);
     qos

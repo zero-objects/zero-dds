@@ -3,7 +3,7 @@
 
 //! DefinitionKind — Spec §10.5.2.
 //!
-//! Alle 26 IR-Definition-Kinds.
+//! All 26 IR-Definition-Kinds.
 
 /// All Spec §10.5.2 DefinitionKind values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

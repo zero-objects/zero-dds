@@ -133,6 +133,7 @@ mod tests {
     #[test]
     fn writer_reader_qos_match_by_defaults() {
         let pub_data = PublicationBuiltinTopicData {
+            vendor_id: Some(crate::wire_types::VendorId::ZERODDS),
             key: Guid::new(
                 GuidPrefix::from_bytes([1; 12]),
                 EntityId::user_writer_with_key([0, 0, 1]),
@@ -141,6 +142,7 @@ mod tests {
             topic_name: alloc::string::String::from("T"),
             type_name: alloc::string::String::from("X"),
             durability: DurabilityKind::TransientLocal,
+            durability_service: zerodds_qos::DurabilityServiceQosPolicy::default(),
             reliability: ReliabilityQos {
                 kind: ReliabilityKind::Reliable,
                 max_blocking_time: Duration {
@@ -161,16 +163,26 @@ mod tests {
             topic_data: alloc::vec::Vec::new(),
             group_data: alloc::vec::Vec::new(),
             type_information: None,
+            type_id_v1: None,
+            type_object_v1: None,
             data_representation: alloc::vec![2],
             security_info: None,
+            sym_cipher_algo_info: None,
+            data_tags: Default::default(),
+            properties: Default::default(),
             service_instance_name: None,
             related_entity_guid: None,
             topic_aliases: None,
             type_identifier: zerodds_types::TypeIdentifier::None,
             unicast_locators: alloc::vec::Vec::new(),
             multicast_locators: alloc::vec::Vec::new(),
+            group_guid: None,
+            data_max_size_serialized: None,
+            entity_name: None,
         };
         let sub_data = SubscriptionBuiltinTopicData {
+            content_filter_unreadable: false,
+            vendor_id: Some(crate::wire_types::VendorId::ZERODDS),
             key: Guid::new(
                 GuidPrefix::from_bytes([2; 12]),
                 EntityId::user_reader_with_key([0, 0, 2]),
@@ -189,6 +201,7 @@ mod tests {
             ownership: zerodds_qos::OwnershipKind::Shared,
             liveliness: zerodds_qos::LivelinessQosPolicy::default(),
             deadline: zerodds_qos::DeadlineQosPolicy::default(),
+            time_based_filter: zerodds_qos::TimeBasedFilterQosPolicy::default(),
             latency_budget: zerodds_qos::LatencyBudgetQosPolicy::default(),
             destination_order: zerodds_qos::DestinationOrderQosPolicy::default(),
             presentation: zerodds_qos::PresentationQosPolicy::default(),
@@ -196,16 +209,26 @@ mod tests {
             user_data: alloc::vec::Vec::new(),
             topic_data: alloc::vec::Vec::new(),
             group_data: alloc::vec::Vec::new(),
+            type_consistency: zerodds_types::qos::TypeConsistencyEnforcement::default(),
             type_information: None,
+            type_id_v1: None,
+            type_object_v1: None,
             data_representation: alloc::vec![2],
             content_filter: None,
             security_info: None,
+            sym_cipher_algo_info: None,
+            data_tags: Default::default(),
+            properties: Default::default(),
             service_instance_name: None,
             related_entity_guid: None,
             topic_aliases: None,
             type_identifier: zerodds_types::TypeIdentifier::None,
             unicast_locators: alloc::vec::Vec::new(),
             multicast_locators: alloc::vec::Vec::new(),
+            expects_inline_qos: false,
+            group_guid: None,
+            type_consistency_announced: true,
+            entity_name: None,
         };
         let wq = pub_data.as_writer_qos();
         let rq = sub_data.as_reader_qos();
@@ -220,6 +243,7 @@ mod tests {
     #[test]
     fn besteffort_writer_reliable_reader_is_incompatible_via_bridge() {
         let pub_data = PublicationBuiltinTopicData {
+            vendor_id: Some(crate::wire_types::VendorId::ZERODDS),
             key: Guid::new(
                 GuidPrefix::from_bytes([1; 12]),
                 EntityId::user_writer_with_key([0, 0, 1]),
@@ -228,6 +252,7 @@ mod tests {
             topic_name: alloc::string::String::from("T"),
             type_name: alloc::string::String::from("X"),
             durability: DurabilityKind::Volatile,
+            durability_service: zerodds_qos::DurabilityServiceQosPolicy::default(),
             reliability: ReliabilityQos {
                 kind: ReliabilityKind::BestEffort,
                 max_blocking_time: Duration {
@@ -248,16 +273,26 @@ mod tests {
             topic_data: alloc::vec::Vec::new(),
             group_data: alloc::vec::Vec::new(),
             type_information: None,
+            type_id_v1: None,
+            type_object_v1: None,
             data_representation: alloc::vec![2],
             security_info: None,
+            sym_cipher_algo_info: None,
+            data_tags: Default::default(),
+            properties: Default::default(),
             service_instance_name: None,
             related_entity_guid: None,
             topic_aliases: None,
             type_identifier: zerodds_types::TypeIdentifier::None,
             unicast_locators: alloc::vec::Vec::new(),
             multicast_locators: alloc::vec::Vec::new(),
+            group_guid: None,
+            data_max_size_serialized: None,
+            entity_name: None,
         };
         let sub_data = SubscriptionBuiltinTopicData {
+            content_filter_unreadable: false,
+            vendor_id: Some(crate::wire_types::VendorId::ZERODDS),
             key: Guid::new(
                 GuidPrefix::from_bytes([2; 12]),
                 EntityId::user_reader_with_key([0, 0, 2]),
@@ -276,6 +311,7 @@ mod tests {
             ownership: zerodds_qos::OwnershipKind::Shared,
             liveliness: zerodds_qos::LivelinessQosPolicy::default(),
             deadline: zerodds_qos::DeadlineQosPolicy::default(),
+            time_based_filter: zerodds_qos::TimeBasedFilterQosPolicy::default(),
             latency_budget: zerodds_qos::LatencyBudgetQosPolicy::default(),
             destination_order: zerodds_qos::DestinationOrderQosPolicy::default(),
             presentation: zerodds_qos::PresentationQosPolicy::default(),
@@ -283,16 +319,26 @@ mod tests {
             user_data: alloc::vec::Vec::new(),
             topic_data: alloc::vec::Vec::new(),
             group_data: alloc::vec::Vec::new(),
+            type_consistency: zerodds_types::qos::TypeConsistencyEnforcement::default(),
             type_information: None,
+            type_id_v1: None,
+            type_object_v1: None,
             data_representation: alloc::vec![2],
             content_filter: None,
             security_info: None,
+            sym_cipher_algo_info: None,
+            data_tags: Default::default(),
+            properties: Default::default(),
             service_instance_name: None,
             related_entity_guid: None,
             topic_aliases: None,
             type_identifier: zerodds_types::TypeIdentifier::None,
             unicast_locators: alloc::vec::Vec::new(),
             multicast_locators: alloc::vec::Vec::new(),
+            expects_inline_qos: false,
+            group_guid: None,
+            type_consistency_announced: true,
+            entity_name: None,
         };
         let wq = pub_data.as_writer_qos();
         let rq = sub_data.as_reader_qos();
@@ -316,6 +362,7 @@ mod tests {
     #[test]
     fn volatile_writer_transient_local_reader_incompatible_via_bridge() {
         let pub_data = PublicationBuiltinTopicData {
+            vendor_id: Some(crate::wire_types::VendorId::ZERODDS),
             key: Guid::new(
                 GuidPrefix::from_bytes([1; 12]),
                 EntityId::user_writer_with_key([0, 0, 1]),
@@ -324,6 +371,7 @@ mod tests {
             topic_name: alloc::string::String::from("T"),
             type_name: alloc::string::String::from("X"),
             durability: DurabilityKind::Volatile,
+            durability_service: zerodds_qos::DurabilityServiceQosPolicy::default(),
             reliability: ReliabilityQos {
                 kind: ReliabilityKind::Reliable,
                 max_blocking_time: Duration {
@@ -344,16 +392,26 @@ mod tests {
             topic_data: alloc::vec::Vec::new(),
             group_data: alloc::vec::Vec::new(),
             type_information: None,
+            type_id_v1: None,
+            type_object_v1: None,
             data_representation: alloc::vec![2],
             security_info: None,
+            sym_cipher_algo_info: None,
+            data_tags: Default::default(),
+            properties: Default::default(),
             service_instance_name: None,
             related_entity_guid: None,
             topic_aliases: None,
             type_identifier: zerodds_types::TypeIdentifier::None,
             unicast_locators: alloc::vec::Vec::new(),
             multicast_locators: alloc::vec::Vec::new(),
+            group_guid: None,
+            data_max_size_serialized: None,
+            entity_name: None,
         };
         let sub_data = SubscriptionBuiltinTopicData {
+            content_filter_unreadable: false,
+            vendor_id: Some(crate::wire_types::VendorId::ZERODDS),
             key: Guid::new(
                 GuidPrefix::from_bytes([2; 12]),
                 EntityId::user_reader_with_key([0, 0, 2]),
@@ -372,6 +430,7 @@ mod tests {
             ownership: zerodds_qos::OwnershipKind::Shared,
             liveliness: zerodds_qos::LivelinessQosPolicy::default(),
             deadline: zerodds_qos::DeadlineQosPolicy::default(),
+            time_based_filter: zerodds_qos::TimeBasedFilterQosPolicy::default(),
             latency_budget: zerodds_qos::LatencyBudgetQosPolicy::default(),
             destination_order: zerodds_qos::DestinationOrderQosPolicy::default(),
             presentation: zerodds_qos::PresentationQosPolicy::default(),
@@ -379,16 +438,26 @@ mod tests {
             user_data: alloc::vec::Vec::new(),
             topic_data: alloc::vec::Vec::new(),
             group_data: alloc::vec::Vec::new(),
+            type_consistency: zerodds_types::qos::TypeConsistencyEnforcement::default(),
             type_information: None,
+            type_id_v1: None,
+            type_object_v1: None,
             data_representation: alloc::vec![2],
             content_filter: None,
             security_info: None,
+            sym_cipher_algo_info: None,
+            data_tags: Default::default(),
+            properties: Default::default(),
             service_instance_name: None,
             related_entity_guid: None,
             topic_aliases: None,
             type_identifier: zerodds_types::TypeIdentifier::None,
             unicast_locators: alloc::vec::Vec::new(),
             multicast_locators: alloc::vec::Vec::new(),
+            expects_inline_qos: false,
+            group_guid: None,
+            type_consistency_announced: true,
+            entity_name: None,
         };
         let wq = pub_data.as_writer_qos();
         let rq = sub_data.as_reader_qos();

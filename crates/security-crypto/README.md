@@ -1,6 +1,6 @@
 # `zerodds-security-crypto`
 
-AES-GCM / HMAC crypto plugin for DDS-Security 1.1.
+AES-GCM / HMAC crypto plugin for DDS-Security 1.2 (§9.5, §10.5).
 
 Part of [**ZeroDDS**](../../README.md). Safety classification: **SAFE**.
 

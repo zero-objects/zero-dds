@@ -29,9 +29,6 @@ use std::time::{Duration, Instant};
 use zerodds_dcps::runtime::{
     DcpsRuntime, RuntimeConfig, UserReaderConfig, UserTransportKind, UserWriterConfig,
 };
-use zerodds_qos::{
-    DeadlineQosPolicy, DurabilityKind, LifespanQosPolicy, LivelinessQosPolicy, OwnershipKind,
-};
 use zerodds_rtps::wire_types::{EntityId, GuidPrefix};
 
 fn wait_for_peers(rt: &Arc<DcpsRuntime>, n: usize, timeout: Duration) -> bool {
@@ -76,22 +73,7 @@ fn make_writer_config(topic: &str) -> UserWriterConfig {
     UserWriterConfig {
         topic_name: topic.into(),
         type_name: "RawBytes".into(),
-        reliable: true,
-        durability: DurabilityKind::Volatile,
-        deadline: DeadlineQosPolicy::default(),
-        latency_budget: Default::default(),
-        destination_order: Default::default(),
-        lifespan: LifespanQosPolicy::default(),
-        liveliness: LivelinessQosPolicy::default(),
-        ownership: OwnershipKind::Shared,
-        ownership_strength: 0,
-        presentation: Default::default(),
-        partition: vec![],
-        user_data: vec![],
-        topic_data: vec![],
-        group_data: vec![],
-        type_identifier: zerodds_types::TypeIdentifier::None,
-        data_representation_offer: None,
+        ..Default::default()
     }
 }
 
@@ -99,25 +81,11 @@ fn make_reader_config(topic: &str) -> UserReaderConfig {
     UserReaderConfig {
         topic_name: topic.into(),
         type_name: "RawBytes".into(),
-        reliable: true,
-        durability: DurabilityKind::Volatile,
-        deadline: DeadlineQosPolicy::default(),
-        latency_budget: Default::default(),
-        destination_order: Default::default(),
-        liveliness: LivelinessQosPolicy::default(),
-        ownership: OwnershipKind::Shared,
-        presentation: Default::default(),
-        partition: vec![],
-        user_data: vec![],
-        topic_data: vec![],
-        group_data: vec![],
-        type_identifier: zerodds_types::TypeIdentifier::None,
-        type_consistency: zerodds_types::qos::TypeConsistencyEnforcement::default(),
-        data_representation_offer: None,
+        ..Default::default()
     }
 }
 
-/// Distinct host_id (first 4 prefix bytes) → no same-host SHM bind,
+/// Distinct host_id (prefix octets 2..6) → no same-host SHM bind,
 /// user traffic is guaranteed to travel over the `user_transport`.
 fn distinct_host_prefixes() -> (GuidPrefix, GuidPrefix) {
     let a = GuidPrefix::from_bytes([
@@ -196,7 +164,7 @@ fn roundtrip_over(transport: UserTransportKind, domain: i32, topic: &str, payloa
 fn e2e_roundtrip_over_udpv4() {
     roundtrip_over(
         UserTransportKind::UdpV4,
-        130,
+        common::unique_domain(),
         "MatrixUdpV4",
         b"udpv4-roundtrip-0123456789",
     );
@@ -206,10 +174,132 @@ fn e2e_roundtrip_over_udpv4() {
 fn e2e_roundtrip_over_tcpv4() {
     roundtrip_over(
         UserTransportKind::TcpV4,
-        131,
+        common::unique_domain(),
         "MatrixTcpV4",
         b"tcpv4-roundtrip-0123456789",
     );
+}
+
+/// Two writers in runtimes of their own reach one reader over TCPv4. The
+/// reader's listener read one connection until it closed and left the
+/// second unread, and the second writer's send waited for ever on its
+/// handshake.
+#[test]
+fn e2e_two_tcpv4_writers_reach_one_reader() {
+    let domain = common::unique_domain();
+    let (prefix_r, prefix_w1) = distinct_host_prefixes();
+    let prefix_w2 = GuidPrefix::from_bytes([
+        0x7B, 0x3E, 0x51, 0x09, 0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80,
+    ]);
+    let cfg = || RuntimeConfig {
+        user_transport: Some(UserTransportKind::TcpV4),
+        ..RuntimeConfig::default()
+    };
+    let rt_r = Arc::new(DcpsRuntime::start(domain, prefix_r, cfg()).expect("reader start"));
+    let rt_w1 = Arc::new(DcpsRuntime::start(domain, prefix_w1, cfg()).expect("w1 start"));
+    let rt_w2 = Arc::new(DcpsRuntime::start(domain, prefix_w2, cfg()).expect("w2 start"));
+    assert!(wait_for_peers(&rt_r, 2, Duration::from_secs(10)));
+
+    let topic = "MatrixTcpV4TwoWriters";
+    let (reader_eid, rx) = rt_r
+        .register_user_reader(make_reader_config(topic))
+        .unwrap();
+    let w1 = rt_w1
+        .register_user_writer(make_writer_config(topic))
+        .unwrap();
+    let w2 = rt_w2
+        .register_user_writer(make_writer_config(topic))
+        .unwrap();
+    assert!(wait_for_matched(
+        &rt_r,
+        reader_eid,
+        2,
+        Duration::from_secs(10)
+    ));
+    assert!(wait_for_writer_matched(
+        &rt_w1,
+        w1,
+        1,
+        Duration::from_secs(10)
+    ));
+    assert!(wait_for_writer_matched(
+        &rt_w2,
+        w2,
+        1,
+        Duration::from_secs(10)
+    ));
+
+    rt_w1.write_user_sample(w1, b"from-w1".to_vec()).unwrap();
+    rt_w2.write_user_sample(w2, b"from-w2".to_vec()).unwrap();
+    let mut got = Vec::new();
+    while got.len() < 2 {
+        match rx.recv_timeout(Duration::from_secs(5)) {
+            Ok(zerodds_dcps::runtime::UserSample::Alive { payload, .. }) => {
+                got.push(payload.as_slice().to_vec());
+            }
+            Ok(_) => {}
+            Err(_) => panic!("the reader got {} of 2 samples", got.len()),
+        }
+    }
+    got.sort();
+    assert_eq!(got, [b"from-w1".to_vec(), b"from-w2".to_vec()]);
+
+    for rt in [&rt_w1, &rt_w2, &rt_r] {
+        rt.shutdown();
+    }
+}
+
+/// `shutdown` of a TCPv4 participant returns while its peer is alive and
+/// connected. Its TCP accept worker read the peer's connection without a
+/// timeout, and the join waited until the peer went away.
+#[test]
+fn e2e_tcpv4_shutdown_returns_while_the_peer_is_connected() {
+    let domain = common::unique_domain();
+    let (prefix_a, prefix_b) = distinct_host_prefixes();
+    let cfg = || RuntimeConfig {
+        user_transport: Some(UserTransportKind::TcpV4),
+        ..RuntimeConfig::default()
+    };
+    let rt_a = Arc::new(DcpsRuntime::start(domain, prefix_a, cfg()).expect("rt_a start"));
+    let rt_b = Arc::new(DcpsRuntime::start(domain, prefix_b, cfg()).expect("rt_b start"));
+    assert!(wait_for_peers(&rt_a, 1, Duration::from_secs(10)));
+
+    let topic = "MatrixTcpV4Shutdown";
+    let writer_eid = rt_a
+        .register_user_writer(make_writer_config(topic))
+        .unwrap();
+    let (reader_eid, rx) = rt_b
+        .register_user_reader(make_reader_config(topic))
+        .unwrap();
+    assert!(wait_for_matched(
+        &rt_b,
+        reader_eid,
+        1,
+        Duration::from_secs(10)
+    ));
+    assert!(wait_for_writer_matched(
+        &rt_a,
+        writer_eid,
+        1,
+        Duration::from_secs(10)
+    ));
+    rt_a.write_user_sample(writer_eid, b"connect".to_vec())
+        .unwrap();
+    rx.recv_timeout(Duration::from_secs(5))
+        .expect("a sample over TCPv4");
+
+    let (done_tx, done_rx) = std::sync::mpsc::channel();
+    let rt = Arc::clone(&rt_a);
+    std::thread::spawn(move || {
+        let start = Instant::now();
+        rt.shutdown();
+        let _ = done_tx.send(start.elapsed());
+    });
+    let took = done_rx
+        .recv_timeout(Duration::from_secs(10))
+        .expect("shutdown returns while the peer is connected");
+    assert!(took < Duration::from_secs(2), "shutdown took {took:?}");
+    rt_b.shutdown();
 }
 
 #[test]
@@ -220,7 +310,7 @@ fn e2e_roundtrip_over_udpv6() {
     }
     roundtrip_over(
         UserTransportKind::UdpV6,
-        132,
+        common::unique_domain(),
         "MatrixUdpV6",
         b"udpv6-roundtrip-0123456789",
     );
@@ -234,7 +324,7 @@ fn e2e_roundtrip_over_tcpv6() {
     }
     roundtrip_over(
         UserTransportKind::TcpV6,
-        133,
+        common::unique_domain(),
         "MatrixTcpV6",
         b"tcpv6-roundtrip-0123456789",
     );
@@ -245,7 +335,7 @@ fn e2e_roundtrip_over_tcpv6() {
 fn e2e_roundtrip_over_uds() {
     roundtrip_over(
         UserTransportKind::Uds,
-        134,
+        common::unique_domain(),
         "MatrixUds",
         b"uds-roundtrip-0123456789",
     );
@@ -257,8 +347,13 @@ fn e2e_roundtrip_over_shm() {
     let _ = std::fs::remove_dir_all("/tmp/zerodds-shm");
     roundtrip_over(
         UserTransportKind::Shm,
-        135,
+        common::unique_domain(),
         "MatrixShm",
         b"shm-roundtrip-0123456789",
     );
 }
+
+/// Leases a DDS domain no other process on this host holds — the
+/// domain number is the UDP port number, so it is a host-wide resource.
+#[path = "common/mod.rs"]
+mod common;

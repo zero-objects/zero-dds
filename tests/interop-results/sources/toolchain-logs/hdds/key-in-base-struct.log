@@ -1,0 +1,7 @@
+## wireprobe-hdds, exit 4
+### stderr
+wireprobe-hdds: the probe did not compile
+error[E0063]: missing field `base` in initializer of `Sample`
+error[E0063]: missing field `base` in initializer of `Sample`
+error[E0063]: missing field `base` in initializer of `Sample`
+error: could not compile `wireprobe-hdds-run-566493-16552` (bin "wireprobe-hdds-run-566493-16552") due to 3 previous errors

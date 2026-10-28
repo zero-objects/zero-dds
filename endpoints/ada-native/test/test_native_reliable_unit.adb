@@ -255,7 +255,7 @@ begin
    --  10) frame round-trips: Write_Frame -> Read_Frame preserves seq + body
    declare
       P     : constant Payload := Make_Payload ([16#DE#, 16#AD#, 16#BE#, 16#EF#]);
-      Frame : constant Byte_Array := Write_Frame (7, P);
+      Frame : constant Byte_Array := Write_Frame (7, 16#0015#, P);
       RSeq  : Native_Reliable.Seq_Type;
       RBody : Payload;
       Valid : Boolean;
@@ -280,6 +280,51 @@ begin
       Check (Okp and A = 5 and B = 9, "parse_heartbeat_roundtrip");
       Parse_Acknack (AN, Okp, A, Bm);
       Check (Okp and A = 5 and Bm = 2#0000_0000_0000_0011#, "parse_acknack_roundtrip");
+      Check (AN'Length = 17 and then AN (6) = 9 and then AN (8) = 5,
+             "acknack_17_octets_with_dheader");
+   end;
+
+   --  11b) legacy FINAL ACKNACK (5-octet body, no DHEADER) is still parsed
+   declare
+      L : Byte_Array (0 .. 12) :=
+        [16#80#, 0, 1, 0, 16#0A#, 1, 5, 0, 7, 0, 16#02#, 16#01#, 16#80#];
+      Okp : Boolean;
+      A : Native_Reliable.Seq_Type;
+      Bm : Unsigned_16;
+   begin
+      Parse_Acknack (L, Okp, A, Bm);
+      Check (Okp and A = 7 and Bm = 16#0102#, "acknack_legacy_5_octet_parsed");
+      L (6) := 4;
+      Parse_Acknack (L, Okp, A, Bm);
+      Check (not Okp, "acknack_short_body_rejected");
+   end;
+
+   --  11c) unannotated types setting: Final = 13-octet FINAL golden, default
+   --       = 17-octet appendable form; the parser accepts both
+   declare
+      Final_Gold : constant Byte_Array (0 .. 12) :=
+        [16#80#, 16#00#, 16#01#, 16#00#, 16#0A#, 16#01#, 16#05#, 16#00#,
+         16#01#, 16#00#, 16#00#, 16#00#, 16#80#];
+      Fin : constant Byte_Array := Acknack_Frame (1, 0, Mode => Final);
+      Def : constant Byte_Array := Acknack_Frame (1, 0);
+      R   : Receiver_State;
+      Okp : Boolean;
+      A   : Native_Reliable.Seq_Type;
+      Bm  : Unsigned_16;
+   begin
+      Check (Fin'Length = 13 and then Fin = Final_Gold, "acknack_final_golden_13_octets");
+      Check (Def'Length = 17 and then Def (6) = 9 and then Def (8) = 5,
+             "acknack_default_17_octets");
+      Check (Def = Acknack_Frame (1, 0, Mode => Appendable),
+             "acknack_default_is_appendable");
+      Parse_Acknack (Fin, Okp, A, Bm);
+      Check (Okp and A = 1 and Bm = 0, "acknack_final_parsed");
+      Parse_Acknack (Def, Okp, A, Bm);
+      Check (Okp and A = 1 and Bm = 0, "acknack_appendable_parsed");
+      R.Mode := Final;
+      Check (Receiver_Acknack (R)'Length = 13, "receiver_final_acknack_13_octets");
+      R.Mode := Appendable;
+      Check (Receiver_Acknack (R)'Length = 17, "receiver_appendable_acknack_17_octets");
    end;
 
    --  12) byte-golden: HEARTBEAT + ACKNACK identical to the reference

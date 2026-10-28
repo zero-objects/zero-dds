@@ -1,0 +1,5 @@
+// N3: does the key holder reorder members by ascending member id?
+@final struct KeyOrder { @id(5) @key long b; @id(2) @key long a; };
+// N7: a key holder over 16 bytes, which is the MD5 branch
+@final struct KeyBig { @key long a; @key long b; @key long c; @key long d; @key long e; };
+@final struct KeyMixed { @id(5) @key octet b; @id(2) @key long a; };

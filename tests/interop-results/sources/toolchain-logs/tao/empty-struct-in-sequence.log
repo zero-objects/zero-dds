@@ -1,0 +1,2 @@
+wireprobe-tao: tao_idl refused the IDL
+Error - /opt/opendds/bin/tao_idl: "gen.idl", line 3: Illegal syntax following struct '{' opener

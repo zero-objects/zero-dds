@@ -193,4 +193,91 @@ mod tests {
         assert_eq!(read_frame(&mut cur).unwrap(), b"aaa");
         assert_eq!(read_frame(&mut cur).unwrap(), b"bbbb");
     }
+
+    /// A `Read` that never hands out more than `chunk` bytes per call —
+    /// the in-memory stand-in for TCP segmentation, where one `write`
+    /// on the sender can arrive as several `read`s on the receiver.
+    struct ChunkedReader<'a> {
+        bytes: &'a [u8],
+        chunk: usize,
+    }
+
+    impl std::io::Read for ChunkedReader<'_> {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            let n = self.bytes.len().min(buf.len()).min(self.chunk);
+            buf[..n].copy_from_slice(&self.bytes[..n]);
+            self.bytes = &self.bytes[n..];
+            Ok(n)
+        }
+    }
+
+    /// The length prefix itself arrives split: one byte per `read`.
+    /// `read_frame` must still reassemble the announced length and the
+    /// complete payload.
+    #[test]
+    fn reassembles_frame_split_across_reads() {
+        let payload: alloc::vec::Vec<u8> = (0..=255u8).cycle().take(4096).collect();
+        let mut wire = alloc::vec::Vec::new();
+        write_frame(&mut wire, &payload).unwrap();
+
+        for chunk in [1usize, 3, 4, 5, 4095] {
+            let mut r = ChunkedReader {
+                bytes: &wire,
+                chunk,
+            };
+            let back = read_frame(&mut r).unwrap();
+            assert_eq!(back, payload, "chunk size {chunk}");
+        }
+    }
+
+    /// A `Read` over a list of writes. Every `read` is served from one
+    /// write only and stops at its boundary, which is what a receiver
+    /// observes when the sender emits two `write` calls.
+    struct WriteBoundaryReader {
+        writes: alloc::vec::Vec<alloc::vec::Vec<u8>>,
+        at: usize,
+    }
+
+    impl std::io::Read for WriteBoundaryReader {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            while self.at < self.writes.len() && self.writes[self.at].is_empty() {
+                self.at += 1;
+            }
+            if self.at >= self.writes.len() {
+                return Ok(0);
+            }
+            let current = &mut self.writes[self.at];
+            let n = current.len().min(buf.len());
+            buf[..n].copy_from_slice(&current[..n]);
+            current.drain(..n);
+            Ok(n)
+        }
+    }
+
+    /// The exact split the spec item names: length prefix plus the first
+    /// half in one write, the second half in a second write. Both halves
+    /// are one frame on the wire, so the reader must return exactly one
+    /// payload and leave the stream positioned behind it.
+    #[test]
+    fn reassembles_message_split_across_two_writes() {
+        let payload = b"the second half arrives in a separate write";
+        let split = payload.len() / 2;
+
+        // Write 1: the 4-byte length prefix plus the first half.
+        let mut first = alloc::vec::Vec::new();
+        first.extend_from_slice(&(payload.len() as u32).to_be_bytes());
+        first.extend_from_slice(&payload[..split]);
+        // Write 2: the remainder, plus an unrelated follow-up frame so
+        // reassembly cannot succeed by simply draining the stream.
+        let mut second = alloc::vec::Vec::new();
+        second.extend_from_slice(&payload[split..]);
+        write_frame(&mut second, b"next").unwrap();
+
+        let mut r = WriteBoundaryReader {
+            writes: alloc::vec![first, second],
+            at: 0,
+        };
+        assert_eq!(read_frame(&mut r).unwrap(), payload);
+        assert_eq!(read_frame(&mut r).unwrap(), b"next");
+    }
 }

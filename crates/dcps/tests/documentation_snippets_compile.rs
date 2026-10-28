@@ -38,15 +38,18 @@ fn first_publisher_snippet() {
         DeadlineQosPolicy, DurabilityKind, LifespanQosPolicy, LivelinessQosPolicy, OwnershipKind,
     };
     use zerodds_rtps::wire_types::GuidPrefix;
-    use zerodds_types::{PrimitiveKind, TypeIdentifier, qos::TypeConsistencyEnforcement};
+    use zerodds_types::{PrimitiveKind, TypeIdentifier};
 
     // Publisher fence (line 33): GuidPrefix + UserWriterConfig field set.
     let _pub_prefix = GuidPrefix::from_bytes([0x01; 12]);
     let writer_cfg = UserWriterConfig {
+        property: Default::default(),
+        data_tags: Default::default(),
         topic_name: "HelloTopic".into(),
         type_name: "RawBytes".into(),
         reliable: true,
         durability: DurabilityKind::Volatile,
+        durability_service: zerodds_qos::DurabilityServiceQosPolicy::default(),
         deadline: DeadlineQosPolicy::default(),
         latency_budget: Default::default(),
         destination_order: Default::default(),
@@ -54,6 +57,7 @@ fn first_publisher_snippet() {
         liveliness: LivelinessQosPolicy::default(),
         ownership: OwnershipKind::Shared,
         ownership_strength: 0,
+        transport_priority: 0,
         presentation: Default::default(),
         partition: vec![],
         user_data: vec![],
@@ -61,6 +65,9 @@ fn first_publisher_snippet() {
         group_data: vec![],
         type_identifier: TypeIdentifier::Primitive(PrimitiveKind::UInt8),
         data_representation_offer: None,
+        group_entity_id: None,
+        data_max_size_serialized: None,
+        entity_name: None,
     };
     assert_eq!(writer_cfg.topic_name, "HelloTopic");
     assert!(writer_cfg.reliable);
@@ -70,21 +77,8 @@ fn first_publisher_snippet() {
     let reader_cfg = UserReaderConfig {
         topic_name: "HelloTopic".into(),
         type_name: "RawBytes".into(),
-        reliable: true,
-        durability: DurabilityKind::Volatile,
-        deadline: DeadlineQosPolicy::default(),
-        latency_budget: Default::default(),
-        destination_order: Default::default(),
-        liveliness: LivelinessQosPolicy::default(),
-        ownership: OwnershipKind::Shared,
-        presentation: Default::default(),
-        partition: vec![],
-        user_data: vec![],
-        topic_data: vec![],
-        group_data: vec![],
         type_identifier: TypeIdentifier::Primitive(PrimitiveKind::UInt8),
-        type_consistency: TypeConsistencyEnforcement::default(),
-        data_representation_offer: None,
+        ..Default::default()
     };
     assert_eq!(reader_cfg.topic_name, writer_cfg.topic_name);
 }
@@ -169,10 +163,13 @@ fn qos_policies_full_writer_snippet() {
 
     // Doc fence, verbatim:
     let cfg = UserWriterConfig {
+        property: Default::default(),
+        data_tags: Default::default(),
         topic_name: "Telemetry".into(),
         type_name: "Robot::Pose".into(),
         reliable: true, // = Reliability::Reliable
         durability: DurabilityKind::TransientLocal,
+        durability_service: zerodds_qos::DurabilityServiceQosPolicy::default(),
         deadline: DeadlineQosPolicy {
             period: Duration::from_millis(50),
         },
@@ -187,6 +184,7 @@ fn qos_policies_full_writer_snippet() {
         },
         ownership: OwnershipKind::Exclusive,
         ownership_strength: 100,
+        transport_priority: 0,
         presentation: Default::default(),
         partition: vec!["sensor.*".into()],
         user_data: vec![],
@@ -194,6 +192,9 @@ fn qos_policies_full_writer_snippet() {
         group_data: vec![],
         type_identifier: TypeIdentifier::Primitive(PrimitiveKind::UInt8),
         data_representation_offer: None,
+        group_entity_id: None,
+        data_max_size_serialized: None,
+        entity_name: None,
     };
     assert_eq!(cfg.ownership_strength, 100);
     assert_eq!(cfg.partition, vec!["sensor.*".to_string()]);
@@ -276,15 +277,30 @@ fn monitoring_metrics_gauge_snippet() {
 /// `documentation/04-idl/idlc-handbook.md` lines 388 (`build.rs`
 /// integration) + 442 (`include!`). The doc's `build.rs` fence shells out
 /// to the `zerodds-idlc` binary (a separate process, not something this
-/// non-network compile test invokes — see file doc-comment); this test
-/// instead pins the library the CLI's `generate --rust` subcommand wraps
-/// (`zerodds_idl::parse` + `zerodds_idl_rust::generate_rust_module`),
-/// generating the exact `idl/Robot.idl` companion input
+/// non-network compile test invokes — see the file doc-comment); this test
+/// instead pins the libraries the CLI's `generate --rust` subcommand
+/// wraps, generating the exact `idl/Robot.idl` companion input
 /// (`zerodds-examples/idlc-buildrs`, which runs the real CLI end to end
-/// via a live `build.rs` + `include!`). If the codegen library's API or
-/// the generated code's shape drifts, this test breaks.
+/// via a live `build.rs` + `include!`).
+///
+/// The chain is the rebuilt one — parse, lower, adapt, apply,
+/// materialise, render — which replaced `zerodds_idl::parse` +
+/// `zerodds_idl_rust::generate_rust_module`; `crates/lang-rules/tests/
+/// end_to_end.rs` is the same chain asserted at the source level. If its
+/// API or the generated code's shape drifts, this test breaks.
+///
+/// **What this no longer asserts and `docs/OPEN-ITEMS.md` carries**: the
+/// old backend also emitted `impl zerodds_dcps::DdsType for Pose`, and
+/// the rebuilt one emits the declaration and not the codec, because the
+/// codec is a layout plan executed by `zerodds-wire-codec` rather than
+/// generated source. Until the `--rust` column emits a `DdsType` again,
+/// the doc's `include!`d module is a set of types without a topic.
 #[test]
 fn idlc_handbook_buildrs_snippet() {
+    use zerodds_lang_rules::adapter::cst::rust_items;
+    use zerodds_lang_rules::rule::rust;
+    use zerodds_lang_rules::{ModelGraph, apply};
+
     let idl = r#"
 module Robot {
     @appendable
@@ -296,11 +312,35 @@ module Robot {
     };
 };
 "#;
-    let ast = zerodds_idl::parse(idl, &zerodds_idl::config::ParserConfig::default())
-        .expect("parse Robot.idl");
-    let opts = zerodds_idl_rust::RustGenOptions::default();
-    let rust = zerodds_idl_rust::generate_rust_module(&ast, &opts).expect("generate rust");
+    let parsed = zerodds_idl_parse::parse(idl);
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "Robot.idl does not parse: {:?}",
+        parsed.diagnostics()
+    );
+    let lowered = zerodds_idl_lower::lower(&parsed.syntax(), "Robot.idl");
+    assert!(
+        lowered.diagnostics.is_empty(),
+        "Robot.idl does not lower: {:?}",
+        lowered.diagnostics
+    );
 
-    assert!(rust.contains("pub struct Pose"));
-    assert!(rust.contains("impl zerodds_dcps::DdsType for Pose"));
+    let ast: zerodds_ast::Ast = lowered.ast;
+    let model = ModelGraph::of(&ast);
+    let applied = apply(&model, &rust::catalogue()).expect("apply the Rust rules");
+    let items = rust_items(&ast, &applied).expect("materialise the Rust items");
+    let file = zerodds_lang_cst::rust::File {
+        inner_attrs: Vec::new(),
+        doc: zerodds_lang_cst::common::Doc::none(),
+        uses: Vec::new(),
+        items,
+    };
+    let rust = zerodds_lang_render::rust::file(&file);
+
+    assert!(rust.contains("pub struct Pose"), "generated:\n{rust}");
+    // The IDL-to-Rust type mapping the doc's `include!`d module depends
+    // on: `string` is `String`, `double` is `f64`.
+    assert!(rust.contains("pub robot_id: String"), "generated:\n{rust}");
+    assert!(rust.contains("pub x: f64"), "generated:\n{rust}");
+    assert!(rust.contains("pub theta: f64"), "generated:\n{rust}");
 }

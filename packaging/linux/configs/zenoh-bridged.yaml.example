@@ -1,0 +1,85 @@
+# /etc/zerodds/zenoh-bridged.yaml.example
+# Configuration of zerodds-zenoh-bridged.
+#
+# Read by crates/zenoh-bridge/src/daemon/config.rs (DaemonConfig::from_config)
+# over the shared layers: this file, zenoh-bridged.d/, include:, the
+# environment beneath, --set above. An unknown key in a known section or a
+# value of the wrong type stops the start with file and line.
+#
+# Wire-compatible with Eclipse Zenoh's own DDS bridge (zenoh-plugin-dds /
+# zenoh-bridge-dds, github.com/eclipse-zenoh/zenoh-plugin-dds): the default
+# key-expression layout, payload framing and QoS-to-CongestionControl
+# mapping below match that plugin's, so a zerodds-zenoh-bridged on one site
+# and a zenoh-bridge-dds on another interoperate on the same Zenoh network.
+# See crates/zenoh-bridge/src/mapping.rs for the exact source citations.
+#
+# The file holds only keys the daemon reads; crates/zenoh-bridge/tests/example_yaml_loadback.rs
+# loads it back.
+
+domain: 0
+log_level: info
+
+zenoh:
+  mode: peer                    # peer | client | router
+  connect: []                   # e.g. ["tcp/192.168.1.10:7447"]
+  listen: []                    # e.g. ["tcp/0.0.0.0:7447"]
+  scouting:
+    multicast:
+      enabled: true              # Zenoh's own default
+  scope: ""                     # key-expression scope/prefix; empty matches
+                                 # zenoh-plugin-dds's own default (no "dds/"
+                                 # segment); set to "dds" for the historic
+                                 # ZeroDDS-only layout instead
+  reliable_routes_blocking: true # CongestionControl::Block for a RELIABLE
+                                 # DDS writer's Zenoh put, matching the
+                                 # plugin's own default
+  queries_timeout_ms: 5000       # TRANSIENT_LOCAL late-joiner query timeout
+  # config_file: "/etc/zerodds/zenoh-advanced.json5"  # full zenoh::Config
+  #   passthrough (TLS, auth, transport tuning) as the base; mode/connect/
+  #   listen/scouting above are applied over it
+
+discovery:
+  auto_bridge: true              # bridge every discovered DDS topic, like
+                                 # zenoh-plugin-dds does
+  poll_interval_ms: 1000         # longest time between two discovery passes;
+                                 # a discovery change starts a pass at once
+  allow: []                     # glob patterns against the derived key
+                                 # expression; empty = everything allowed
+  deny: []                      # deny wins over allow
+
+limits:
+  max_payload_bytes: 1048576    # 1 MiB; an oversize sample is refused
+                                 # (logged + counted), never silently
+                                 # truncated
+
+metrics:
+  enabled: false
+  listen: "127.0.0.1:9097"      # /metrics + /catalog + /healthz
+
+topics:
+  # DDS topic <-> Zenoh key expression. crates/zenoh-bridge/src/daemon/config.rs.
+  - dds_name:  "Chatter"
+    dds_type:  "std_msgs::String"
+    direction: "bidir"           # in (Zenoh->DDS) | out (DDS->Zenoh) | bidir
+    partition: ""                # DDS partition; adds a key-expression segment
+    key_expr:  ""                # overrides the derived key expression
+    keyed:     false
+    qos:
+      reliability:   "reliable"
+      durability:    "volatile"  # volatile | transient_local | transient | persistent
+      extensibility: "final"     # final | appendable | mutable — picks the
+                                 # RTPS encapsulation header on the Zenoh
+                                 # side (crates/zenoh-bridge/src/mapping.rs)
+      history:
+        depth: 1                 # PublicationCache/FetchingSubscriber depth
+                                 # for a transient_local topic
+
+  # A keyed topic bridged Zenoh->DDS needs a type_file (a CompleteTypeObject
+  # blob, e.g. produced by zerodds-idlc) to derive the real per-instance key
+  # hash — without one the daemon refuses to start rather than collapsing
+  # every instance onto one default key.
+  # - dds_name:  "DeviceShadow"
+  #   dds_type:  "demo::Iot::Shadow"
+  #   direction: "bidir"
+  #   keyed:     true
+  #   type_file: "/etc/zerodds/types/DeviceShadow.typeobject"

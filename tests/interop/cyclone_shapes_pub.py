@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Cyclone-DDS Python-basierter ShapesDemo-Publisher.
+"""Cyclone DDS Python-based ShapesDemo publisher.
 
-Setzt denselben Topic-Namen + Type-Namen wie ZeroDDS's
-`hello_dds::interop::ShapeType`. Damit kann ein ZeroDDS-Subscriber
-die Samples dieses Cyclone-Publishers empfangen — als Cross-Vendor-
-Wire-Beweis fuer WP 2.1 Stufe 1.
+Sets the same topic name + type name as ZeroDDS's
+`hello_dds::interop::ShapeType`. A ZeroDDS subscriber can thus
+receive the samples of this Cyclone publisher — as cross-vendor
+wire evidence for WP 2.1 stage 1.
 
-Benoetigt: `pip install cyclonedds` (mitgelieferte C-Lib). Linux mit
-funktionierendem IP-Multicast auf loopback oder lokalem Subnet.
+Requires: `pip install cyclonedds` (bundled C lib). Linux with
+working IP multicast on loopback or the local subnet.
 
 CLI:
     python3 cyclone_shapes_pub.py [topic=Square] [color=RED] [domain=0]
@@ -29,7 +29,7 @@ from cyclonedds.topic import Topic  # type: ignore[import-not-found]
 
 @dataclass
 class ShapeType(IdlStruct, typename="ShapeType"):
-    """Spec-kompatibel mit RTI/Cyclone/Fast-DDS ShapesDemo.
+    """Spec-compatible with the RTI/Cyclone/Fast DDS ShapesDemo.
 
     IDL:
         struct ShapeType {

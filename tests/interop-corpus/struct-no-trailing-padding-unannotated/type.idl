@@ -1,0 +1,5 @@
+// structure that does not pad to its own alignment, unannotated
+struct Sample {
+    long a;
+    short b;
+};

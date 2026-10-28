@@ -1,0 +1,1 @@
+@mutable struct S { long a; @try_construct(TRIM) sequence<long, 4> m; long b; };

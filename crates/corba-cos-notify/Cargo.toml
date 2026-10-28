@@ -22,9 +22,10 @@ path = "src/lib.rs"
 
 [features]
 default = ["std"]
-std = ["alloc", "zerodds-cdr/std"]
-alloc = ["zerodds-cdr/alloc"]
+std = ["alloc", "zerodds-corba-rt/std"]
+alloc = ["zerodds-corba-rt/alloc"]
 
 [dependencies]
-# StructuredEvent values (Property.value / remainder_of_body) are CORBA `any`.
-zerodds-cdr = { version = "1.0.0-rc.7", path = "../cdr", default-features = false }
+# StructuredEvent values (Property.value / remainder_of_body) are CORBA `any`,
+# which lives in the CORBA runtime and not in the wire runtime.
+zerodds-corba-rt = { version = "1.0.0-rc.7", path = "../corba-rt", default-features = false }

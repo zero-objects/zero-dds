@@ -10,9 +10,9 @@
 
 use std::sync::{Arc, Mutex};
 
-use zerodds_cdr::{BufferReader, BufferWriter, CdrDecode, CdrEncode, Endianness};
 use zerodds_corba_interop::runtime::{AmiClient, CorbaServer, object_reference};
 use zerodds_corba_rust::{AsyncCorbaChannel, CorbaException, SkeletonResult};
+use zerodds_wire::{Endianness, Reader, Writer};
 
 const MARSHAL: CorbaException = CorbaException::SystemException {
     minor: 0,
@@ -34,8 +34,8 @@ struct MathAddPoller {
 impl MathAddPoller {
     fn get_reply(&self, ch: &mut dyn AsyncCorbaChannel) -> Result<i32, CorbaException> {
         let (b, e) = ch.get_reply(self.request_id)??;
-        let mut r = BufferReader::new(&b, e);
-        let __ret = i32::decode(&mut r).map_err(|_| MARSHAL)?;
+        let mut r = Reader::new(&b, e);
+        let __ret = r.read_i32().map_err(|_| MARSHAL)?;
         Ok(__ret)
     }
 }
@@ -45,9 +45,9 @@ struct MathDivmodPoller {
 impl MathDivmodPoller {
     fn get_reply(&self, ch: &mut dyn AsyncCorbaChannel) -> Result<(i32, i32), CorbaException> {
         let (b, e) = ch.get_reply(self.request_id)??;
-        let mut r = BufferReader::new(&b, e);
-        let q = i32::decode(&mut r).map_err(|_| MARSHAL)?;
-        let rr = i32::decode(&mut r).map_err(|_| MARSHAL)?;
+        let mut r = Reader::new(&b, e);
+        let q = r.read_i32().map_err(|_| MARSHAL)?;
+        let rr = r.read_i32().map_err(|_| MARSHAL)?;
         Ok((q, rr))
     }
 }
@@ -65,16 +65,16 @@ impl MathStub {
         b: i32,
     ) -> Result<u32, CorbaException> {
         let _ = &self.object_ref; // (in the AMI path the channel is target-bound)
-        let mut w = BufferWriter::new(Endianness::Big);
-        a.encode(&mut w).map_err(|_| MARSHAL)?;
-        b.encode(&mut w).map_err(|_| MARSHAL)?;
+        let mut w = Writer::new(Endianness::Big);
+        w.write_i32(a);
+        w.write_i32(b);
         ch.send(
             "add",
-            &w.into_bytes(),
+            &w.finish(),
             Box::new(move |reply| match reply {
                 Ok((body, e)) => {
-                    let mut r = BufferReader::new(&body, e);
-                    let __ret = match i32::decode(&mut r) {
+                    let mut r = Reader::new(&body, e);
+                    let __ret = match r.read_i32() {
                         Ok(v) => v,
                         Err(_) => {
                             handler.add_excep(MARSHAL);
@@ -95,23 +95,23 @@ impl MathStub {
         a: i32,
         b: i32,
     ) -> Result<u32, CorbaException> {
-        let mut w = BufferWriter::new(Endianness::Big);
-        a.encode(&mut w).map_err(|_| MARSHAL)?;
-        b.encode(&mut w).map_err(|_| MARSHAL)?;
+        let mut w = Writer::new(Endianness::Big);
+        w.write_i32(a);
+        w.write_i32(b);
         ch.send(
             "divmod",
-            &w.into_bytes(),
+            &w.finish(),
             Box::new(move |reply| match reply {
                 Ok((body, e)) => {
-                    let mut r = BufferReader::new(&body, e);
-                    let q = match i32::decode(&mut r) {
+                    let mut r = Reader::new(&body, e);
+                    let q = match r.read_i32() {
                         Ok(v) => v,
                         Err(_) => {
                             handler.divmod_excep(MARSHAL);
                             return;
                         }
                     };
-                    let rr = match i32::decode(&mut r) {
+                    let rr = match r.read_i32() {
                         Ok(v) => v,
                         Err(_) => {
                             handler.divmod_excep(MARSHAL);
@@ -131,10 +131,10 @@ impl MathStub {
         a: i32,
         b: i32,
     ) -> Result<MathAddPoller, CorbaException> {
-        let mut w = BufferWriter::new(Endianness::Big);
-        a.encode(&mut w).map_err(|_| MARSHAL)?;
-        b.encode(&mut w).map_err(|_| MARSHAL)?;
-        let id = ch.send_poll("add", &w.into_bytes())?;
+        let mut w = Writer::new(Endianness::Big);
+        w.write_i32(a);
+        w.write_i32(b);
+        let id = ch.send_poll("add", &w.finish())?;
         Ok(MathAddPoller { request_id: id })
     }
 
@@ -144,10 +144,10 @@ impl MathStub {
         a: i32,
         b: i32,
     ) -> Result<MathDivmodPoller, CorbaException> {
-        let mut w = BufferWriter::new(Endianness::Big);
-        a.encode(&mut w).map_err(|_| MARSHAL)?;
-        b.encode(&mut w).map_err(|_| MARSHAL)?;
-        let id = ch.send_poll("divmod", &w.into_bytes())?;
+        let mut w = Writer::new(Endianness::Big);
+        w.write_i32(a);
+        w.write_i32(b);
+        let id = ch.send_poll("divmod", &w.finish())?;
         Ok(MathDivmodPoller { request_id: id })
     }
 }
@@ -156,19 +156,19 @@ impl MathStub {
 fn with_math<F: FnOnce(MathStub, AmiClient)>(f: F) {
     let server = CorbaServer::new();
     server.register(b"Math", |op, body, e| {
-        let mut r = BufferReader::new(body, e);
+        let mut r = Reader::new(body, e);
         let a = r.read_u32().unwrap() as i32;
         let b = r.read_u32().unwrap() as i32;
-        let mut w = BufferWriter::new(e);
+        let mut w = Writer::new(e);
         match op {
             "add" => {
-                w.write_u32(a.wrapping_add(b) as u32).unwrap();
-                SkeletonResult::Reply(w.into_bytes())
+                w.write_u32(a.wrapping_add(b) as u32);
+                SkeletonResult::Reply(w.finish())
             }
             "divmod" => {
-                w.write_u32((a / b) as u32).unwrap();
-                w.write_u32((a % b) as u32).unwrap();
-                SkeletonResult::Reply(w.into_bytes())
+                w.write_u32((a / b) as u32);
+                w.write_u32((a % b) as u32);
+                SkeletonResult::Reply(w.finish())
             }
             _ => SkeletonResult::BadOperation,
         }

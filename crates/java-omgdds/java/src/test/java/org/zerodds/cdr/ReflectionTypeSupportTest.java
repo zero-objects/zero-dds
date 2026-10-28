@@ -18,14 +18,21 @@ import java.util.Map;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.omg.dds.type.Extensibility;
+import org.omg.dds.type.Key;
+import org.zerodds.wire.Endianness;
+import org.zerodds.wire.PlCdr1Framing;
+import org.zerodds.wire.Reader;
+import org.zerodds.wire.Writer;
 
 /**
  * DDS-Java-PSM 1.0 §8 / §1.2 reflection-marshalling proof. The decisive
- * property is <em>byte-identity</em> with the typed {@link Xcdr2Writer} path:
- * a reflection-marshalled plain bean produces exactly the reference wire
- * vectors V-2/V-3/V-8/V-9 from {@code Xcdr2WireVectorsTest}. Plus roundtrips
- * for nested beans, sequences, maps and mutable extensibility, the §7.6.8
- * key-hash, and §7.8.1.3 {@code createType(Class<?>)}.
+ * property is <em>byte-identity</em> with the typed {@code org.zerodds.wire}
+ * path — the one XCDR2 codec this binding has: a reflection-marshalled plain
+ * bean produces exactly the reference wire vectors V-2/V-3/V-8/V-9 from
+ * {@code Xcdr2WireVectorsTest}. Plus roundtrips for nested beans, sequences,
+ * maps and mutable extensibility, the §7.6.8 key-hash, and §7.8.1.3
+ * {@code createType(Class<?>)}.
  */
 @DisplayName("Reflection TypeSupport (Java-PSM §8)")
 final class ReflectionTypeSupportTest {
@@ -37,18 +44,6 @@ final class ReflectionTypeSupportTest {
             out[i] = (byte) Integer.parseInt(t.substring(i * 2, i * 2 + 2), 16);
         }
         return out;
-    }
-
-    // Reflectively-honoured annotations (matched by simple name, mirroring the
-    // org.zerodds.types.* annotations idl-java emits — no compile dependency).
-    @Retention(RetentionPolicy.RUNTIME)
-    @Target(ElementType.FIELD)
-    @interface Key {}
-
-    @Retention(RetentionPolicy.RUNTIME)
-    @Target(ElementType.TYPE)
-    @interface Extensibility {
-        String value();
     }
 
     // ==================================================================
@@ -80,30 +75,33 @@ final class ReflectionTypeSupportTest {
      * unsigned types, so {@code int}→INT32 and {@code long}→INT64 (a plain bean
      * therefore cannot reproduce V-3's uint32/uint64 mix — that is inherent to
      * the Java Type Representation, not a codec gap). The decisive property is
-     * byte-identity with the typed {@link Xcdr2Writer} path for these exact
-     * Java types, which we assert directly.
+     * byte-identity with the typed {@code org.zerodds.wire.Writer} path for
+     * these exact Java types, which we assert directly.
      */
+    // A record extends java.lang.Record, not java.lang.Object, so it is EXTENSIBLE unless it
+    // says otherwise (DDS-Java-PSM 1.0 8.6.1.2); this one says FINAL.
+    @Extensibility(Extensibility.Kind.FINAL_EXTENSIBILITY)
     record Mixed(boolean b, byte o, short s, char c, int i, long l, float f, double d) {}
 
     @Test
-    @DisplayName("Mixed record is byte-identical to the typed Xcdr2Writer path")
+    @DisplayName("Mixed record is byte-identical to the typed Writer path")
     void mixedIsByteIdenticalToTypedPath() {
         Mixed m = new Mixed(true, (byte) 0xAB, (short) -12345, 'Z',
                 -1234567, -987654321L, 2.5f, 3.14159);
 
-        // Reference: drive Xcdr2Writer with the same field types/order the
-        // reflection codec sees (boolean, octet, int16, char8, int32, int64,
-        // float32, float64) — natural alignment, no DHEADER (FINAL).
-        Xcdr2Writer w = new Xcdr2Writer();
-        w.writeBoolean(true);
-        w.writeOctet((byte) 0xAB);
-        w.writeInt16((short) -12345);
+        // Reference: drive the runtime Writer with the same field types/order
+        // the reflection codec sees (boolean, octet, int16, char8, int32,
+        // int64, float32, float64) -- natural alignment, no DHEADER (FINAL).
+        Writer w = new Writer(Endianness.LITTLE, 4, PlCdr1Framing.defaults(), false);
+        w.writeBool(true);
+        w.writeU8(0xAB);
+        w.writeI16(-12345);
         w.writeChar('Z');
-        w.writeInt32(-1234567);
-        w.writeInt64(-987654321L);
-        w.writeFloat32(2.5f);
-        w.writeFloat64(3.14159);
-        byte[] expected = w.toByteArray();
+        w.writeI32(-1234567);
+        w.writeI64(-987654321L);
+        w.writeF32(2.5f);
+        w.writeF64(3.14159);
+        byte[] expected = w.finish();
 
         byte[] actual = ReflectionTypeSupport.of(Mixed.class).encode(m);
         assertArrayEquals(expected, actual);
@@ -234,7 +232,11 @@ final class ReflectionTypeSupportTest {
     // Appendable + Mutable extensibility
     // ==================================================================
 
-    @Extensibility("APPENDABLE")
+    // DDS-Java-PSM 1.0 §8.6.1.2 names FINAL, EXTENSIBLE and MUTABLE for the Java Type
+    // Representation, and org.omg.dds.type.Extensibility.Kind has no APPENDABLE. XTypes 1.3
+    // §7.2.2.4.4.4: EXTENSIBLE is the name XTypes 1.1 gave to APPENDABLE, so the class is
+    // written delimited, with a DHEADER.
+    @Extensibility(Extensibility.Kind.EXTENSIBLE_EXTENSIBILITY)
     static final class V {
         int a;
         int b;
@@ -243,8 +245,8 @@ final class ReflectionTypeSupportTest {
     }
 
     @Test
-    @DisplayName("@Extensibility(APPENDABLE) bean == V-9 DHEADER wire vector")
-    void appendableMatchesV9() {
+    @DisplayName("@Extensibility(EXTENSIBLE) bean is APPENDABLE: a DHEADER (XTypes 1.3)")
+    void extensibleIsAppendable() {
         ReflectionTypeSupport<V> ts = ReflectionTypeSupport.of(V.class);
         assertEquals(ExtensibilityKind.APPENDABLE, ts.getExtensibility());
         byte[] actual = ts.encode(new V(1, 2));
@@ -254,7 +256,7 @@ final class ReflectionTypeSupportTest {
         assertEquals(2, back.b);
     }
 
-    @Extensibility("MUTABLE")
+    @Extensibility(Extensibility.Kind.MUTABLE_EXTENSIBILITY)
     static final class M {
         int a;
         String b;
@@ -269,8 +271,8 @@ final class ReflectionTypeSupportTest {
         assertEquals(ExtensibilityKind.MUTABLE, ts.getExtensibility());
         byte[] wire = ts.encode(new M(42, "hi"));
         // Starts with a DHEADER (mutable PL_CDR2).
-        Xcdr2Reader r = new Xcdr2Reader(wire);
-        int body = r.readDHeader();
+        Reader r = new Reader(wire, Endianness.LITTLE, 4, PlCdr1Framing.defaults());
+        int body = r.readDheader();
         assertTrue(body > 0);
         M back = ts.decode(wire);
         assertEquals(42, back.a);
@@ -287,7 +289,7 @@ final class ReflectionTypeSupportTest {
         assertEquals(3.5, back.d, 0.0);
     }
 
-    @Extensibility("MUTABLE")
+    @Extensibility(Extensibility.Kind.MUTABLE_EXTENSIBILITY)
     static final class ML {
         int a;
         long big;

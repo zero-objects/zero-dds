@@ -32,7 +32,7 @@ metrics = ["std", "dep:zerodds-monitor"]
 zerodds-rtps = { version = "1.0.0-rc.7", path = "../rtps", default-features = false, features = ["alloc"] }
 zerodds-types = { version = "1.0.0-rc.7", path = "../types", default-features = false, features = ["alloc"] }
 zerodds-qos = { version = "1.0.0-rc.7", path = "../qos", default-features = false, features = ["alloc"] }
-zerodds-cdr = { version = "1.0.0-rc.7", path = "../cdr", default-features = false, features = ["alloc"] }
+zerodds-wire = { version = "1.0.0-rc.7", path = "../wire" }
 # C3.4-c: security builtin-endpoint slots (DCPSParticipantStatelessMessage +
 # DCPSParticipantVolatileMessageSecure). We reimplement the CDR
 # encapsulation wrap inline (codec.rs) so that no Cargo cycle arises with
@@ -50,6 +50,8 @@ zerodds-transport-udp = { path = "../transport-udp" }
 zerodds-security-pki = { path = "../security-pki" }
 rcgen = "0.13"
 rustls-pki-types = { workspace = true }
+# cyclone_live_sedp shares the SPDP port with a local Cyclone (SO_REUSEADDR).
+socket2 = { workspace = true }
 
 [[example]]
 name = "spdp_demo"

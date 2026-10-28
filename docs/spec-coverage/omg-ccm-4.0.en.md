@@ -47,16 +47,24 @@ implementations (Chapter 8) [...] A runtime environment (Chapter 9)
 deployment (Chapter 14) [...] A lightweight subset (Chapter 13)."
 
 **Repo:** ZeroDDS covers:
-- §6 Component Model = equivalent IDL via the `crates/idl/` AST.
+- §6 Component Model = equivalent IDL over the AST from
+  `crates/idl-parse/` + `crates/idl-lower/`.
 - §7 CIDL via `crates/corba-ccm/src/cidl.rs`.
 - §8 Programming Model via `crates/corba-ccm-lib/`.
 - §9 Runtime via `crates/corba-ccm/src/container.rs`.
 - §10 EJB interaction via `crates/corba-ccm-ejb/`.
-- §13 Lightweight Profile filter via `crates/ccm/src/lwccm.rs`.
+- §13 Lightweight Profile: equivalent-IDL filter in
+  `crates/ccm/src/lightweight.rs`, profile restrictions in
+  `crates/corba-ccm/src/lwccm.rs`.
 - §14 Deployment via `crates/corba-dnc/`.
-- conformance markers `crates/corba-ccm/src/lib.rs::conformance::*`.
+- conformance markers `crates/corba-ccm/src/lib.rs::conformance`.
 
-**Tests:** `conformance_tests::*` (6 tests) + cross-ref §6 + §13.
+**Tests:** `crates/corba-ccm/src/lib.rs::conformance_tests::{
+ccm_conformance_basic_level_marker_matches_spec,
+ccm_conformance_basic_level_java_marker_matches_spec,
+lightweight_ccm_level_marker_matches_spec,
+lwccm_restrictions_marker_matches_spec,
+lwccm_filter_marker_matches_spec, all_markers_are_distinct}`.
 
 **Status:** done — all sub-stacks present + conformance markers
 stated at the crate level.
@@ -81,9 +89,15 @@ stated at the crate level.
 - **Event** as an additional COS service in
   `crates/corba-cos-event/`.
 
-**Tests:** cross-ref `lifecycle::tests::*` +
-`corba-ccm-ejb::tests::*` + `corba-csiv2::tests::*` +
-`corba-cosnaming::tests::*` + `corba-cos-event::tests::*`.
+**Tests:** `crates/corba-ccm/src/lifecycle.rs::tests::facet_lifetime_passes_when_alive`,
+`::receptacle_simplex_connect_then_disconnect`,
+`::configurator_set_get_roundtrip`;
+`crates/corba-ccm-ejb/src/tx.rs::tests::cos_to_jta_round_trip_for_all_states`,
+`::begin_then_commit_succeeds`;
+`crates/corba-csiv2/src/sas.rs::tests::sas_msg_type_values_match_spec`;
+`crates/corba-cosnaming/src/context.rs::tests::bind_and_resolve_simple`;
+`crates/corba-cos-event/src/channel.rs::tests::push_fan_out_to_multiple_consumers`,
+`::pull_supplier_dequeues_events`.
 
 **Status:** done — the three COS areas named in §2 point 1
 (Lifecycle/Transaction/Security) are covered; further
@@ -93,14 +107,22 @@ COS services (Naming, EventService) as a bonus.
 
 **Spec:** §2 point 2 — Basic Level or Lightweight Profile.
 
-**Repo:** equivalent IDL for components in `crates/idl/` + LwCCM
-filter in `crates/ccm/src/lwccm.rs` + container lifecycle in
+**Repo:** equivalent IDL for components in `crates/idl-parse/` +
+LwCCM filter in `crates/ccm/src/lightweight.rs` + container lifecycle in
 `crates/corba-ccm/src/{container,lifecycle}.rs` (ReceptacleManager,
 Configurator, generic-op skeletons) + ORB singleton in
 `crates/corba-ccm/src/orb_core.rs::Orb`.
 
-**Tests:** cross-ref §6.3.2 + §13 + `lifecycle::tests::*` +
-`orb_core::tests::*`.
+**Tests:** `crates/ccm/tests/equivalent_idl.rs::a_plain_component_inherits_ccmobject`,
+`::provides_yields_a_provide_operation_returning_the_facet`,
+`::uses_simplex_yields_connect_disconnect_and_get_connection`,
+`::the_whole_trader_component_yields_every_operation_the_clauses_name`;
+`crates/corba-ccm/src/lifecycle.rs::tests::facet_lifetime_rejects_use_after_destroy`,
+`::receptacle_multiplex_allows_multiple_connects`;
+`crates/corba-ccm/src/orb_core.rs::tests::orb_init_yields_running`,
+`::orb_destroy_transitions_to_shutdown`;
+`crates/corba-ccm/src/lwccm.rs::tests::only_session_and_service_components_are_supported`,
+`::the_lightweight_filter_reports_a_component_it_would_empty`.
 
 **Status:** done — IDL-3 aspects + container lifecycle + ORB
 stub layer covered.
@@ -120,12 +142,12 @@ configurator/lifecycle features).
 - conformance marker
   `corba-ccm::conformance::CCM_OPTIONAL_EXTENDED_LEVEL`.
 
-**Tests:** `pss::tests::*` (13 tests, of which 4 tx-aware:
+**Tests:** `crates/corba-ccm/src/pss.rs::tests::*` (13 tests, of which 4 tx-aware:
 `pss_begin_commit_roundtrip_persists_pending_writes`,
 `pss_rollback_restores_prev_state`,
 `pss_load_after_store_in_tx_returns_pending_value`,
 `pss_tx_status_transitions_active_committed_rolledback`) +
-`lifecycle::tests::configurator_*` + cross-ref conformance-marker
+`crates/corba-ccm/src/lifecycle.rs::tests::configurator_*` + cross-ref conformance-marker
 tests.
 
 **Status:** done — full PSS tx lifecycle (begin/commit/rollback +
@@ -135,12 +157,20 @@ pending buffer + tx-aware load/store/remove)..
 
 **Spec:** §2 point 4 — IDL extensions + CIDL + container + XML D&C.
 
-**Repo:** IDL extensions + CIDL in `crates/idl/` + `crates/corba-ccm/`;
+**Repo:** IDL extensions + CIDL in `crates/idl-parse/` +
+`crates/idl-lower/` + `crates/corba-ccm/`;
 container lifecycle in `crates/corba-ccm/src/lifecycle.rs`;
 XML D&C in `crates/corba-ccm-lib/` + `corba-dnc/`; ORB stub layer
 (Lifecycle/Threading/Policy) in `crates/corba-ccm/src/orb_core.rs`.
 
-**Tests:** cross-ref §6.x + §10 + Annex D + `orb_core::tests::*`.
+**Tests:** `crates/ccm/tests/equivalent_idl.rs::a_component_with_supports_inherits_ccmobject_and_the_supported_ones`,
+`::a_keyed_home_yields_the_four_operations_and_inherits_nothing`;
+`crates/corba-ccm/src/cidl.rs::tests::all_four_composition_categories_distinct`,
+`::entity_composition_with_storage_valid`;
+`crates/corba-ccm/src/lifecycle.rs::tests::configurator_registry_register_and_lookup`;
+`crates/corba-dnc/src/xml.rs::tests::parses_minimal_plan`,
+`::validation_fails_on_unknown_impl_reference`;
+`crates/corba-ccm/src/orb_core.rs::tests::orb_set_get_policy_round_trip`.
 
 **Status:** done — IDL+CIDL+D&C model + ORB stub + container
 lifecycle covered.
@@ -150,15 +180,22 @@ lifecycle covered.
 **Spec:** §2 point 5 — EJB1.1 + java-to-IDL.
 
 **Repo:** EJB integration in `crates/corba-ccm-ejb/`
-(ConnectorBean+NamingGlue+StubGen+TX); java-to-IDL in
-`crates/idl-java/` + Annex-A.1 CORBA codegen via
-`crates/idl-java/src/corba_traits.rs`.
+(ConnectorBean+NamingGlue+StubGen+TX); Java language mapping in
+`crates/lang-rules/src/emit/java.rs`; Annex-A.1 CORBA Java codegen in
+`crates/corba-codegen/src/stub.rs` +
+`crates/corba-codegen/src/skeleton.rs`.
 
-**Tests:** cross-ref §16 + §6.6 + `idl-java::corba_traits::tests::*`.
+**Tests:** `crates/corba-codegen/src/stub.rs::tests::{
+java_out_and_inout_take_a_holder_and_in_does_not,
+a_user_type_takes_the_generated_holder_beside_it,
+raises_reaches_the_java_throws_clause}`,
+`crates/corba-codegen/src/skeleton.rs::tests::java_switches_on_the_method_string_and_throws_the_omg_class`,
+`crates/corba-ccm-ejb/src/stub_gen.rs::tests::{
+stateful_bean_has_postconstruct_and_predestroy,
+stateless_bean_has_no_lifecycle_hooks}`.
 
-**Status:** done — ConnectorBean+NamingGlue+StubGen+TX +
-Annex-A.1 CORBA binding live; full EJB container addressable via the
-container lifecycle (lifecycle.rs).
+**Status:** done — the EJB integration, java-to-IDL and the Annex A.1
+CORBA binding for Java all name paths that exist.
 
 ### §2 Conformance Point 6: Extended Level Java
 
@@ -172,8 +209,8 @@ which couples a `ConnectorBean` to a `PssSession` and delivers the
 tuple `(bean.name, bean.component_id, tx_status)` as a
 `PssBeanBinding`.
 
-**Tests:** `pss::tests::*` (13 tests, cross-ref CP3) +
-`corba-ccm-ejb::connector_bean::tests::connector_bean_with_pss_session_binds_correctly`.
+**Tests:** `crates/corba-ccm/src/pss.rs::tests::*` (13 tests, cross-ref CP3) +
+`crates/corba-ccm-ejb/src/connector_bean.rs::tests::connector_bean_with_pss_session_binds_correctly`.
 
 **Status:** done — PSS tx lifecycle (CP3) plus an EJB bind helper on the
 `ConnectorBean`.
@@ -182,13 +219,16 @@ tuple `(bean.name, bean.component_id, tx_status)` as a
 
 **Spec:** §2 point 7 — subset profile from §13.
 
-**Repo:** `crates/ccm/src/lwccm.rs` + equivalent-IDL subset +
+**Repo:** equivalent-IDL filter `crates/ccm/src/lightweight.rs` +
+profile restrictions `crates/corba-ccm/src/lwccm.rs` +
 container lifecycle in `crates/corba-ccm/src/lifecycle.rs` +
 conformance marker
 `corba-ccm::conformance::LIGHTWEIGHT_CCM_LEVEL`.
 
-**Tests:** cross-ref §13 + `lifecycle::tests::*` +
-`conformance_tests::lightweight_ccm_level_marker_matches_spec`.
+**Tests:** `crates/corba-ccm/src/lwccm.rs::tests::*` (§13
+restrictions), `crates/ccm/tests/equivalent_idl.rs::the_lightweight_filter_drops_configurator_operations`,
+`crates/corba-ccm/src/lifecycle.rs::tests::*`,
+`crates/corba-ccm/src/lib.rs::conformance_tests::lightweight_ccm_level_marker_matches_spec`.
 
 **Status:** done — IDL subset + filter + container lifecycle +
 conformance marker live.
@@ -208,9 +248,9 @@ component-specific extensions on the ORB singleton:
 threading modes/policy domain manager. Conformance marker
 `corba-ccm::conformance::CCM_ORB_VENDOR_STUB`.
 
-**Tests:** `orb_core::tests::{orb_vendor_config_interceptor_registry,
+**Tests:** `crates/corba-ccm/src/orb_core.rs::tests::{orb_vendor_config_interceptor_registry,
 orb_vendor_config_compression_and_messaging_policies}` +
-`orb_core::tests::orb_set_get_policy_round_trip` + cross-ref
+`crates/corba-ccm/src/orb_core.rs::tests::orb_set_get_policy_round_trip` + cross-ref
 conformance-marker tests.
 
 **Status:** done — ORB-vendor configuration surface for all three
@@ -228,7 +268,7 @@ EJB1.1, MOF, XMI.
 
 **Repo:** these external specs are covered in the consumer items §7-§16
 in pure Rust (own implementations, no external MOF/EJB library
-dependencies); the §6 equivalent IDL uses the `zerodds_idl::ast` layer
+dependencies); the §6 equivalent IDL uses the `zerodds_ast` layer
 as input.
 
 **Tests:** —
@@ -255,7 +295,7 @@ as input.
 
 **Repo:** the crate doc of `crates/ccm/src/lib.rs` references the
 terms; `Component` + `Facet` + `Receptacle` + `Event Source`/`Sink`
-are mirrored in the transformation from `zerodds_idl::ast::ComponentExport`
+are mirrored in the transformation from `zerodds_ast::ComponentRole`
 variants.
 
 **Tests:** —
@@ -290,7 +330,12 @@ sinks/attributes), component identity, homes.
 component meta-model completely; ImplKind=`InterfaceKind::Plain`,
 because the equivalent interface is not `local` (spec §6.3.2).
 
-**Tests:** cross-ref §6.3-§6.7 tests.
+**Tests:** `crates/ccm/tests/equivalent_idl.rs::{
+a_plain_component_inherits_ccmobject,
+the_whole_trader_component_yields_every_operation_the_clauses_name,
+a_keyless_home_yields_an_implicit_inheriting_keylesscmhome,
+a_component_attribute_is_left_alone}` — the four meta-model axes
+(component-as-interface, all four port kinds, home, attributes).
 
 **Status:** done
 
@@ -306,8 +351,11 @@ from `comp.body` content whether the component is basic or extended; the
 transformation is correct for both (basic: only attributes → no
 provide/connect ops).
 
-**Tests:** `crates/ccm/src/transform.rs::tests::attribute_is_propagated_to_equivalent_interface`,
-`simple_basic_component_inherits_ccmobject`.
+**Tests:** `crates/ccm/tests/equivalent_idl.rs::{
+a_basic_component_carries_its_attributes_and_no_port_operation,
+a_component_attribute_is_left_alone,
+the_whole_trader_component_yields_every_operation_the_clauses_name}` —
+basic (attributes only, no port ops) against extended (all port ops).
 
 **Status:** done
 
@@ -319,8 +367,8 @@ provide/connect ops).
 attributes are transformed in `transform_component` from
 `ComponentExport::{Provides,Uses,Emits,Publishes,Consumes,Attribute}`.
 
-**Tests:** end-to-end test
-`crates/ccm/src/transform.rs::tests::full_stockmanager_component_yields_all_expected_ops`.
+**Tests:** `crates/ccm/tests/equivalent_idl.rs::the_whole_trader_component_yields_every_operation_the_clauses_name`
+— one component with all four port kinds plus an attribute.
 
 **Status:** done
 
@@ -332,10 +380,15 @@ definition. This reference supports an interface, called the
 component's equivalent interface, that manifests the component's
 surface features to clients."
 
-**Repo:** `crates/ccm/src/transform.rs::ComponentEquivalent::
-equivalent_interface` is exactly that.
+**Repo:** `crates/ccm/src/transform.rs::ComponentEquivalent` —
+`equivalent_interface` is exactly that one distinguished reference:
+`transform_component` hands back the component node itself, with
+`InterfaceKind::Interface` instead of `InterfaceKind::Component`.
 
-**Tests:** all transform tests.
+**Tests:** `crates/ccm/tests/equivalent_idl.rs::{
+a_component_equivalent_is_comparable,
+a_plain_component_inherits_ccmobject}` — the first checks the identity
+`equivalent_interface == component`, the second the change of kind.
 
 **Status:** done
 
@@ -352,7 +405,7 @@ identify the component instance; the `same_component` operation on
 (object-reference comparison), the type-identity sub-pattern is
 covered.
 
-**Tests:** `component_def::tests::is_equivalent_component_kind_matches_repo_id`,
+**Tests:** `crates/corba-ccm/src/component_def.rs::tests::is_equivalent_component_kind_matches_repo_id`,
 `get_component_def_repo_id_returns_repo_id`.
 
 **Status:** done — type-identity operations implemented;
@@ -365,9 +418,10 @@ instances.
 
 **Repo:** `crates/ccm/src/transform.rs::transform_home`.
 
-**Tests:** `home_without_primary_key_yields_keyless_implicit`,
-`home_with_primary_key_yields_keyed_implicit_with_four_ops`,
-`equivalent_home_inherits_explicit_and_implicit`.
+**Tests:** `crates/ccm/tests/equivalent_idl.rs::{
+a_keyless_home_yields_an_implicit_inheriting_keylesscmhome,
+a_keyed_home_yields_the_four_operations_and_inherits_nothing,
+a_derived_home_inherits_the_base_homes_explicit_interface}`.
 
 **Status:** done
 
@@ -377,9 +431,13 @@ instances.
 defines an interface that supports the features defined in the
 component definition body."
 
-**Repo:** `transform_component`.
+**Repo:** `crates/ccm/src/transform.rs::transform_component`.
 
-**Tests:** all.
+**Tests:** `crates/ccm/tests/equivalent_idl.rs::{
+a_component_equivalent_is_comparable,
+the_whole_trader_component_yields_every_operation_the_clauses_name}` —
+the component declaration becomes the interface declaration, and the
+declaration body carries the features the interface then supports.
 
 **Status:** done
 
@@ -389,10 +447,15 @@ component definition body."
 restricted form `"component" <identifier> [<supported_interface_spec>]
 "{" {<attr_dcl> ";"}* "}"`).
 
-**Repo:** the input AST `zerodds_idl::ast::ComponentDef` is the structural
-form, the caller filters `body` to attributes-only for basic.
+**Repo:** the input is the `InterfaceNode` with
+`InterfaceKind::Component` from `crates/idl-lower/`;
+`crates/ccm/src/transform.rs::transform_component` transforms the basic
+form (only `attr_dcl` in the body, optionally `supports`) without
+producing a single port operation.
 
-**Tests:** cross-ref attribute test.
+**Tests:** `crates/ccm/tests/equivalent_idl.rs::a_basic_component_carries_its_attributes_and_no_port_operation`
+— both attributes stay, the operation list is empty, and the `supports`
+list follows `Components::CCMObject`.
 
 **Status:** done
 
@@ -401,10 +464,11 @@ form, the caller filters `body` to attributes-only for basic.
 **Spec:** §6.3.2.1, p. 12 (PDF) — `component component_name { ... };`
 → `interface component_name : Components::CCMObject { ... };`.
 
-**Repo:** `crates/ccm/src/transform.rs::component_bases` (default
-`CCMObject`).
+**Repo:** `crates/ccm/src/transform.rs::transform_component` — the
+§6.3.2 base list; without a declared base it holds
+`Components::CCMObject`.
 
-**Tests:** `crates/ccm/src/transform.rs::tests::simple_basic_component_inherits_ccmobject`.
+**Tests:** `crates/ccm/tests/equivalent_idl.rs::a_plain_component_inherits_ccmobject`.
 
 **Status:** done
 
@@ -414,9 +478,10 @@ form, the caller filters `body` to attributes-only for basic.
 { ... }` → `interface <name> : Components::CCMObject, <I1>, <I2> { ...
 }`.
 
-**Repo:** `component_bases` appends the `supports` list to `CCMObject`.
+**Repo:** `crates/ccm/src/transform.rs::transform_component` appends
+the `supports` list to `Components::CCMObject`.
 
-**Tests:** `crates/ccm/src/transform.rs::tests::component_with_supports_inherits_ccmobject_plus_supported`.
+**Tests:** `crates/ccm/tests/equivalent_idl.rs::a_component_with_supports_inherits_ccmobject_and_the_supported_ones`.
 
 **Status:** done
 
@@ -426,10 +491,11 @@ form, the caller filters `body` to attributes-only for basic.
 }` → `interface <name> : <base_name> { ... }` (CCMObject is transitive
 via `<base_name>`).
 
-**Repo:** `component_bases` replaces `CCMObject` with `<base>` when
-`comp.base.is_some()`.
+**Repo:** `crates/ccm/src/transform.rs::transform_component` sets
+`Components::CCMObject` only when the declared base list is empty —
+otherwise `<base_name>` stands alone.
 
-**Tests:** `crates/ccm/src/transform.rs::tests::component_with_base_inherits_base_not_ccmobject`.
+**Tests:** `crates/ccm/tests/equivalent_idl.rs::a_derived_component_inherits_its_base_and_not_ccmobject`.
 
 **Status:** done
 
@@ -438,11 +504,12 @@ via `<base_name>`).
 **Spec:** §6.3.2.4, p. 13 (PDF) — `component <name> : <base> supports
 <I1>, <I2> { ... }` → `interface <name> : <base>, <I1>, <I2> { ... }`.
 
-**Repo:** `component_bases` sets `<base>` first, then the `supports`
-list.
+**Repo:** `crates/ccm/src/transform.rs::transform_component` sets
+`<base>` first, then the `supports` list.
 
-**Tests:** indirectly via the combination of the two tests above (no
-dedicated test, but the code path is congruent).
+**Tests:** `crates/ccm/tests/equivalent_idl.rs::a_derived_component_with_supports_lists_the_base_first_and_then_the_supported`
+— checks the order `[B, I1, I2]` and that `Components::CCMObject` is not
+repeated on top.
 
 **Status:** done
 
@@ -452,9 +519,13 @@ dedicated test, but the code path is congruent).
 event sources, event sinks and attributes all map onto operations on
 the component's equivalent interface."
 
-**Repo:** `transform_component` loop over `comp.body`.
+**Repo:** `crates/ccm/src/transform.rs::transform_component` — the
+loop over the `ComponentRole` ports of the declaration body.
 
-**Tests:** all.
+**Tests:** `crates/ccm/tests/equivalent_idl.rs::the_whole_trader_component_yields_every_operation_the_clauses_name`
+— one component with `provides`/`uses`/`uses multiple`/`emits`/
+`publishes`/`consumes`/`attribute`; the test enumerates every operation
+that follows on the equivalent interface.
 
 **Status:** done
 
@@ -463,10 +534,12 @@ the component's equivalent interface."
 **Spec:** §6.4.1, p. 13 (PDF) — `provides <interface_type> <name>;` →
 `<interface_type> provide_<name>();` on the equivalent interface.
 
-**Repo:** `crates/ccm/src/transform.rs::provide_facet_op`.
+**Repo:** `crates/ccm/src/transform.rs::transform_component`
+(`ComponentRole::Facet` branch).
 
-**Tests:** `provides_decl_yields_provide_underscore_name_op`,
-`full_stockmanager_component_yields_all_expected_ops`.
+**Tests:** `crates/ccm/tests/equivalent_idl.rs::{
+provides_yields_a_provide_operation_returning_the_facet,
+the_whole_trader_component_yields_every_operation_the_clauses_name}`.
 
 **Status:** done
 
@@ -481,7 +554,7 @@ lifetime-constraint validator
 FacetLifetimeViolation}`. The container runtime uses this check
 to reject use-after-destroy + orphan references.
 
-**Tests:** `lifecycle::tests::{facet_lifetime_passes_when_alive,
+**Tests:** `crates/corba-ccm/src/lifecycle.rs::tests::{facet_lifetime_passes_when_alive,
 facet_lifetime_rejects_use_after_destroy,
 facet_lifetime_rejects_orphaned}`.
 
@@ -499,7 +572,7 @@ skeleton implementation on the component definition; the caller layer
 binds `interface_id` to a concrete ORB object reference).
 `same_component` remains ORB-bound (object-reference comparison).
 
-**Tests:** `component_def::tests::{provide_facet_returns_facet_by_name,
+**Tests:** `crates/corba-ccm/src/component_def.rs::tests::{provide_facet_returns_facet_by_name,
 provide_facet_returns_none_for_unknown,
 get_all_facets_returns_complete_list, get_named_facets_filters_by_names}`.
 
@@ -512,23 +585,36 @@ skeleton path live; object-reference `same_component` ORB-bound.
 `Object get_component()` pseudo-IDL op. The ORB delivers this even without
 a component vendor.
 
-**Repo:** —
+**Repo:** `crates/corba-ccm/src/home.rs` — `FacetRef::get_component`
+returns the component reference behind a facet reference,
+`ComponentRef::get_component` returns the same reference; the GIOP
+operation name is
+`crates/corba-ccm/src/home.rs::GET_COMPONENT_GIOP_OPERATION`.
 
-**Tests:** —
+**Tests:** `crates/corba-ccm/src/home.rs::tests::{
+get_component_on_a_facet_reference_returns_the_component,
+get_component_on_a_component_reference_returns_the_same_reference,
+get_component_travels_as_the_giop_operation_named_component}`.
 
-**Status:** done — the `get_component` path in
-`crates/corba-poa/src/poa.rs::dispatch` + `crates/corba-ccm/src/component_def.rs`.
+**Status:** done
 
 ### §6.4.4 Provided References and Component Identity
 
 **Spec:** §6.4.4, p. 17 (PDF) — `same_component` operation on
 Navigation; default implementation via the container servant framework.
 
-**Repo:** —
+**Repo:** `crates/corba-ccm/src/home.rs` —
+`ComponentRef::same_component` compares component type and instance
+identity, `FacetRef::same_component` delegates to the owning component,
+as §6.4.4 requires for facets that inherit `Navigation`.
 
-**Tests:** —
+**Tests:** `crates/corba-ccm/src/home.rs::tests::{
+two_facets_of_one_instance_are_the_same_component,
+a_facet_answers_same_component_as_the_component_that_owns_it,
+two_instances_of_one_component_type_are_not_the_same_component,
+one_instance_id_under_two_component_types_is_not_the_same_component}`.
 
-**Status:** done — alternative-form-of: component-identity comparison via the `Components::CCMObject` ScopedName + the `crates/ccm/src/transform.rs` identity path; trivial in the current transform layer without a container runtime.
+**Status:** done
 
 ### §6.4.5 Supported Interfaces
 
@@ -542,7 +628,7 @@ identity narrowing as a runtime helper in
 {supports_interface, supported_interface_repo_ids}`. Object-
 reference widening (POA `is_a`) remains ORB-bound.
 
-**Tests:** `component_def::tests::{supports_interface_returns_true_for_listed_iface,
+**Tests:** `crates/corba-ccm/src/component_def.rs::tests::{supports_interface_returns_true_for_listed_iface,
 supports_interface_returns_false_for_unknown,
 supported_interface_repo_ids_returns_full_list}`.
 
@@ -561,8 +647,9 @@ InvalidConnection)`, `T disconnect_<name>(in Cookie)`,
 **Repo:** `crates/ccm/src/transform.rs::uses_ops` (multiplex/simplex
 branch).
 
-**Tests:** `uses_simplex_yields_three_ops_with_correct_signatures`,
-`uses_multiple_yields_get_connections_plural_op`.
+**Tests:** `crates/ccm/tests/equivalent_idl.rs::{
+uses_simplex_yields_connect_disconnect_and_get_connection,
+uses_multiple_returns_a_cookie_and_the_plural_getter}`.
 
 **Status:** done
 
@@ -578,10 +665,10 @@ ConnectionState, ConnectionError}` with simplex-vs-multiplex
 constraints (simplex double-connect rejected,
 disconnect-unknown-id rejected).
 
-**Tests:** `crates/ccm/src/model.rs::tests::cookie_new_stores_octet_seq`,
-`cookie_truncate_preserves_octet_seq`,
-`receptacle_description_supports_simplex_and_multiplex` +
-`lifecycle::tests::{receptacle_simplex_connect_then_disconnect,
+**Tests:** `crates/ccm/src/model.rs::tests::{cookie_new_stores_octet_seq,
+cookie_truncate_preserves_octet_seq,
+receptacle_description_supports_simplex_and_multiplex}` +
+`crates/corba-ccm/src/lifecycle.rs::tests::{receptacle_simplex_connect_then_disconnect,
 receptacle_simplex_double_connect_rejected,
 receptacle_multiplex_allows_multiple_connects,
 receptacle_disconnect_unknown_id_rejected,
@@ -599,7 +686,7 @@ interface. CCMObject inherits from it.
 `connect`/`disconnect`/`get_connections` (lifecycle) remain in the
 container runtime (see §6.5.2).
 
-**Tests:** `component_def::tests::{get_all_receptacles_returns_complete_list,
+**Tests:** `crates/corba-ccm/src/component_def.rs::tests::{get_all_receptacles_returns_complete_list,
 get_named_receptacles_filters}`.
 
 **Status:** done — model + generic-lookup operations as a
@@ -614,7 +701,10 @@ push_B(in B the_b); };`.
 
 **Repo:** `crates/ccm/src/transform.rs::transform_event_type`.
 
-**Tests:** `event_type_first_in_chain_inherits_event_base`.
+**Tests:** `crates/ccm/tests/equivalent_idl.rs::{
+the_first_event_type_of_a_chain_inherits_event_base,
+one_event_type_yields_one_consumer_interface_however_many_ports_name_it,
+a_plain_valuetype_is_not_an_event_type}`.
 
 **Status:** done
 
@@ -623,9 +713,11 @@ push_B(in B the_b); };`.
 **Spec:** §6.6.1.2, p. 25 (PDF) — `module Components { abstract
 valuetype EventBase { }; };`.
 
-**Repo:** ScopedName reference in `transform_event_type`.
+**Repo:** ScopedName reference in
+`crates/ccm/src/transform.rs::transform_event_type` — only the first
+event type of a chain gets `Components::EventBase`.
 
-**Tests:** cross-ref `event_type_first_in_chain_inherits_event_base`.
+**Tests:** `crates/ccm/tests/equivalent_idl.rs::the_first_event_type_of_a_chain_inherits_event_base`.
 
 **Status:** done
 
@@ -634,10 +726,14 @@ valuetype EventBase { }; };`.
 **Spec:** §6.6.2, pp. 25-26 (PDF) — `Components::EventConsumerBase` with
 `push_event(in EventBase) raises BadEventType`.
 
-**Repo:** ScopedName reference point in `transform_event_type::consumer_bases`.
-The type-specific consumer iface inherits from it.
+**Repo:** `crates/ccm/src/transform.rs::transform_event_type` — the
+consumer base list is `Components::EventConsumerBase` as long as the
+event type itself has no base; otherwise `<Base>Consumer`, so that the
+consumer chain follows the event chain.
 
-**Tests:** cross-ref.
+**Tests:** `crates/ccm/tests/equivalent_idl.rs::a_consumer_interface_inherits_event_consumer_base_at_the_root_of_the_chain`
+— `TickConsumer : Components::EventConsumerBase` and
+`PricedTickConsumer : TickConsumer`.
 
 **Status:** done
 
@@ -645,11 +741,22 @@ The type-specific consumer iface inherits from it.
 
 **Spec:** §6.6.3, p. 26 (PDF) — container runtime topic — event channels.
 
-**Repo:** —
+**Repo:** `crates/corba-ccm/src/port.rs` (`PortRegistry` +
+`EventStream` — the connection table through which the container binds
+event sources to event sinks) +
+`crates/corba-ccm-lib/src/dds_bridge.rs` (event source → DataWriter,
+event sink → DataReader; the distribution itself is DDS-DCPS in
+`crates/dcps/` instead of a separate CosEventChannel stack).
 
-**Tests:** —
+**Tests:** `crates/corba-ccm/src/port.rs::tests::{
+event_sink_subscription_round_trip,
+list_event_sinks_unknown_source_empty}`,
+`crates/corba-ccm-lib/src/dds_bridge.rs::tests::{
+add_mapping_round_trip, mapping_direction_round_trip,
+duplicate_port_rejected, activate_makes_active}`.
 
-**Status:** done — alternative-form-of: DDS-DCPS pub/sub provides event-distribution semantics (`crates/dcps/` topic + DataReader/DataWriter); CCM components use DCPS directly instead of a separate CosEventChannel stack.
+**Status:** done — container-side event distribution through the port
+registry and the DDS bridge.
 
 ### §6.6.4 Event Sources — Publishers and Emitters
 
@@ -665,10 +772,11 @@ several MatchedReaders, emitter = DataWriter with
 in `component_def.rs::{get_all_publishers, get_all_emitters,
 get_named_publishers, get_named_emitters}`.
 
-**Tests:** `publisher_description_can_have_multiple_subscribers` +
-`component_def::tests::{get_all_publishers_excludes_emit_only_sources,
-get_all_emitters_includes_only_emit_only_sources}` + DCPS
-integration tests.
+**Tests:** `crates/ccm/src/model.rs::tests::publisher_description_can_have_multiple_subscribers`,
+`crates/corba-ccm/src/component_def.rs::tests::{
+get_all_publishers_excludes_emit_only_sources,
+get_all_emitters_includes_only_emit_only_sources}`,
+`crates/corba-ccm-lib/src/dds_bridge.rs::tests::mapping_direction_round_trip`.
 
 **Status:** done — data model + routing behavior via DCPS live;
 generic lookup operations as a skeleton path.
@@ -682,7 +790,7 @@ raises (InvalidConnection);`.
 
 **Repo:** `crates/ccm/src/transform.rs::publishes_ops`.
 
-**Tests:** `publishes_decl_yields_subscribe_unsubscribe_with_cookie`.
+**Tests:** `crates/ccm/tests/equivalent_idl.rs::publishes_yields_subscribe_returning_a_cookie`.
 
 **Status:** done
 
@@ -694,7 +802,7 @@ TConsumer disconnect_<name>() raises (NoConnection);`.
 
 **Repo:** `crates/ccm/src/transform.rs::emits_ops`.
 
-**Tests:** `emits_decl_yields_connect_disconnect_with_consumer`.
+**Tests:** `crates/ccm/tests/equivalent_idl.rs::emits_yields_connect_and_disconnect_and_the_consumer_interface`.
 
 **Status:** done
 
@@ -703,9 +811,10 @@ TConsumer disconnect_<name>() raises (NoConnection);`.
 **Spec:** §6.6.7.1, p. 29 (PDF) — `consumes <T> <name>;` → `TConsumer
 get_consumer_<name>();`.
 
-**Repo:** `crates/ccm/src/transform.rs::consumes_op`.
+**Repo:** `crates/ccm/src/transform.rs::transform_component`
+(`ComponentRole::EventSink` branch).
 
-**Tests:** `consumes_decl_yields_get_consumer_op`.
+**Tests:** `crates/ccm/tests/equivalent_idl.rs::consumes_yields_a_get_consumer_operation`.
 
 **Status:** done
 
@@ -724,7 +833,7 @@ get_consumer_<name>();`.
 get_named_emitters}`. Subscribe/connect lifecycle in the container
 runtime (spec §6.6.4 / §6.6.5).
 
-**Tests:** `component_def::tests::{get_all_publishers_excludes_emit_only_sources,
+**Tests:** `crates/corba-ccm/src/component_def.rs::tests::{get_all_publishers_excludes_emit_only_sources,
 get_all_emitters_includes_only_emit_only_sources,
 get_named_publishers_respects_emit_only_flag,
 get_named_emitters_excludes_publishers}`.
@@ -742,7 +851,7 @@ skeleton path live; subscribe/connect remains container runtime.
 **Repo:** `crates/ccm/src/transform.rs::transform_home` (keyless
 path in `build_keyless_implicit`).
 
-**Tests:** `home_without_primary_key_yields_keyless_implicit`.
+**Tests:** `crates/ccm/tests/equivalent_idl.rs::a_keyless_home_yields_an_implicit_inheriting_keylesscmhome`.
 
 **Status:** done
 
@@ -755,7 +864,7 @@ path in `build_keyless_implicit`).
 
 **Repo:** `crates/ccm/src/transform.rs::build_keyed_implicit`.
 
-**Tests:** `home_with_primary_key_yields_keyed_implicit_with_four_ops`.
+**Tests:** `crates/ccm/tests/equivalent_idl.rs::a_keyed_home_yields_the_four_operations_and_inherits_nothing`.
 
 **Status:** done
 
@@ -764,12 +873,12 @@ path in `build_keyless_implicit`).
 **Spec:** §6.7.1.3, p. 35 (PDF) — `home <h> supports <I> manages <C>
 {...};` → `interface <h>Explicit : Components::CCMHome, <I> {...};`.
 
-**Repo:** `transform_home` appends the `supports` list to `CCMHome` (in
-`explicit_bases`).
+**Repo:** `crates/ccm/src/transform.rs::transform_home` appends the
+`supports` list to `Components::CCMHome`.
 
-**Tests:** cross-ref `home_without_primary_key_yields_keyless_implicit`
-(shows CCMHome inheritance — a supports test is analogously possible, no
-explicit test here, but the code path is congruent).
+**Tests:** `crates/ccm/tests/equivalent_idl.rs::a_home_with_supports_puts_the_supported_interfaces_on_its_explicit`
+— the supported interfaces land on the explicit interface, not on the
+implicit one and not on the equivalent home.
 
 **Status:** done
 
@@ -785,13 +894,13 @@ checks the 4 spec constraints: (1) concrete `valuetype`,
 (conservative interpretation: every `ScopedName` type reference is
 rejected).
 
-**Tests:** `validate::tests::pk_with_correct_inheritance_and_public_long_member_ok`,
-`pk_without_inheritance_yields_error`,
-`pk_with_wrong_base_yields_error`,
-`pk_with_private_state_member_yields_error`,
-`pk_with_string_member_ok`, `pk_with_double_member_ok`,
-`pk_abstract_yields_error`,
-`pk_with_scoped_member_yields_interface_reference_error`.
+**Tests:** `crates/ccm/tests/equivalent_idl.rs::{
+a_primary_key_with_a_public_scalar_member_is_accepted,
+a_primary_key_without_the_base_is_rejected,
+a_primary_key_with_a_private_member_is_rejected,
+a_primary_key_holding_an_object_reference_is_rejected,
+a_primary_key_holding_a_nested_struct_is_accepted,
+an_abstract_valuetype_is_not_a_primary_key}`.
 
 **Status:** done
 
@@ -809,11 +918,9 @@ raises. Spec §6.7.3.2 finder: return type = equivalent iface,
 raises = `Components::FinderFailure` + caller raises. All params
 are normalized to `in` attributes.
 
-**Tests:** `validate::tests::factory_op_emitted_with_create_failure_raises`,
-`finder_op_emitted_with_finder_failure_raises`,
-`caller_raises_are_appended_to_create_failure`,
-`factory_op_returns_home_equivalent_type`,
-`init_dcl_into_init_op_conversion_preserves_fields`.
+**Tests:** `crates/ccm/tests/equivalent_idl.rs::{
+a_factory_is_emitted_with_create_failure_first_in_its_raises,
+a_finder_is_emitted_with_finder_failure_and_the_callers_own_raises}`.
 
 **Status:** done
 
@@ -825,8 +932,9 @@ are normalized to `in` attributes.
 **Repo:** `transform_home` sets `explicit_bases` to `<base>Explicit`
 when `home.base.is_some()` (`base_explicit_name` helper).
 
-**Tests:** `ccm::transform::tests::derived_home_inherits_base_explicit`,
-`derived_home_with_supports_extends_base_explicit`.
+**Tests:** `crates/ccm/tests/equivalent_idl.rs::{
+a_derived_home_inherits_the_base_homes_explicit_interface,
+a_derived_home_with_supports_extends_the_base_explicit}`.
 
 **Status:** done
 
@@ -835,12 +943,23 @@ when `home.base.is_some()` (`base_explicit_name` helper).
 **Spec:** §6.7.5, pp. 38-39 (PDF) — orthodox vs heterodox operations,
 polymorphism rules.
 
-**Repo:** —
+**Repo:** `crates/corba-ccm/src/home.rs::HomeFinder` — the orthodox
+operations `create` (§6.7.5.1 keyless: a system-generated instance id;
+§6.7.5.2 keyed: the primary key is the instance id),
+`find_by_primary_key` and `remove`;
+`crates/corba-ccm/src/container.rs::Container` carries the instance
+lifecycle `remove` hangs off.
 
-**Tests:** —
+**Tests:** `crates/corba-ccm/src/home.rs::tests::{
+create_with_user_key_uses_key_as_id,
+create_without_key_generates_system_id,
+find_by_primary_key_round_trip, remove_decrements_instance_count,
+remove_unknown_returns_false}`,
+`crates/corba-ccm/src/container.rs::tests::{
+install_and_full_lifecycle_round_trip,
+instance_count_tracks_install_and_remove}`.
 
-**Status:** done — home-operation semantics in
-`crates/corba-ccm/src/home.rs` + `crates/corba-ccm/src/container.rs`.
+**Status:** done
 
 ### §6.7.6 CCMHome Interface
 
@@ -856,7 +975,7 @@ Generic operations `get_component_def_repo_id` +
 resolver). `remove_component` is container runtime
 (`crates/corba-ccm/src/container.rs`).
 
-**Tests:** `home::tests::{home_get_component_def_returns_managed_component_id,
+**Tests:** `crates/corba-ccm/src/home.rs::tests::{home_get_component_def_returns_managed_component_id,
 home_get_home_def_returns_self_repo_id}`.
 
 **Status:** done — iface reference + type-identity operations
@@ -868,9 +987,9 @@ implemented; object-lifecycle operations remain container runtime.
 CCMObject create_component() raises (CreateFailure); };`.
 
 **Repo:** ScopedName reference point + semantics in
-`build_keyless_implicit`.
+`crates/ccm/src/transform.rs::build_keyless_implicit`.
 
-**Tests:** `home_without_primary_key_yields_keyless_implicit`.
+**Tests:** `crates/ccm/tests/equivalent_idl.rs::a_keyless_home_yields_an_implicit_inheriting_keylesscmhome`.
 
 **Status:** done
 
@@ -879,24 +998,39 @@ CCMObject create_component() raises (CreateFailure); };`.
 **Spec:** §6.8, pp. 41-43 (PDF) — `Components::HomeFinder` interface;
 `CORBA::ORB::resolve_initial_references("ComponentHomeFinder")`.
 
-**Repo:** —
+**Repo:** `crates/corba-ccm/src/home.rs::ComponentHomeFinder` — the
+three `find_home_by_*` operations over the homes registered through
+`HomeRegistration::register_home` (§9.4.1.2), with `HomeNotFound` as the
+failure case; the initial-reference identifier is
+`crates/corba-ccm/src/home.rs::COMPONENT_HOME_FINDER_INITIAL_REFERENCE`.
+For `find_home_by_name`, `crates/corba-cosnaming/src/stringified.rs`
+supplies the stringified-name format.
 
-**Tests:** —
+**Tests:** `crates/corba-ccm/src/home.rs::tests::{
+the_home_finder_is_reached_through_the_component_home_finder_initial_reference,
+a_registered_home_is_found_by_component_type_and_by_home_type,
+an_unregistered_component_type_raises_home_not_found,
+a_home_registered_without_a_name_cannot_be_found_by_name,
+an_unregistered_home_is_never_returned_again}`.
 
-**Status:** done — home finder via `crates/corba-ccm/src/home.rs` +
-CosNaming bridge in `crates/corba-cosnaming/src/context.rs`.
+**Status:** done
 
 ### §6.9 Component Configuration
 
 **Spec:** §6.9, pp. 43-44 (PDF) — component configurability via
 attributes; `configuration_complete` operation on CCMObject.
 
-**Repo:** —
+**Repo:** `crates/corba-rust/src/component_emit.rs::emit_component`
+emits `configuration_complete` as a lifecycle operation on the component
+trait; the configuration phase itself lives in
+`crates/corba-ccm/src/lifecycle.rs::{StandardConfigurator,
+ConfiguratorRegistry}` (§6.10).
 
-**Tests:** —
+**Tests:** `crates/corba-rust/tests/snapshot_codegen.rs::a_component_trait_carries_the_configuration_complete_lifecycle_operation`,
+`crates/corba-ccm/src/lifecycle.rs::tests::{
+configurator_set_get_roundtrip, configurator_registry_register_and_lookup}`.
 
-**Status:** done — configurator pattern via `crates/corba-ccm/src/context.rs`
-(component context + configuration API).
+**Status:** done
 
 ### §6.10 Configuration with Attributes
 
@@ -912,8 +1046,8 @@ ConfiguratorRegistry, ConfigError}` with set_attribute/get_attribute
 + schema-validated read-only rejection + per-RepoId lookup.
 
 **Tests:** `crates/ccm/src/model.rs::tests::config_value_carries_name_and_marshaled_value`,
-`crates/ccm/src/lightweight.rs::tests::lightweight_filter_drops_configurator_operations`,
-`lifecycle::tests::{configurator_set_get_roundtrip,
+`crates/ccm/tests/equivalent_idl.rs::the_lightweight_filter_drops_configurator_operations`,
+`crates/corba-ccm/src/lifecycle.rs::tests::{configurator_set_get_roundtrip,
 configurator_rejects_unknown_attribute,
 configurator_rejects_readonly_attribute,
 configurator_get_unknown_returns_unknown_attribute,
@@ -925,10 +1059,12 @@ configurator_registry_register_and_lookup}`.
 
 **Spec:** §6.11, pp. 48-49 (PDF) — component inheritance + CCMObject.
 
-**Repo:** `transform_component::component_bases` covers component
-inheritance.
+**Repo:** `crates/ccm/src/transform.rs::transform_component` covers
+component inheritance.
 
-**Tests:** `component_with_base_inherits_base_not_ccmobject`.
+**Tests:** `crates/ccm/tests/equivalent_idl.rs::{
+a_derived_component_inherits_its_base_and_not_ccmobject,
+a_derived_component_with_supports_lists_the_base_first_and_then_the_supported}`.
 
 **Status:** done
 
@@ -942,7 +1078,7 @@ the inheritance chain is referenced per the spec rule (not explicitly
 broken out in the AST — that remains the caller's responsibility at the
 linker).
 
-**Tests:** `simple_basic_component_inherits_ccmobject`.
+**Tests:** `crates/ccm/tests/equivalent_idl.rs::a_plain_component_inherits_ccmobject`.
 
 **Status:** done
 
@@ -955,7 +1091,7 @@ sub-section §6.12.2 Changes to Object Services.
 conformance::{CCM_CONFORMANCE_BASIC_LEVEL,
 CCM_CONFORMANCE_BASIC_LEVEL_JAVA, LIGHTWEIGHT_CCM_LEVEL}`.
 
-**Tests:** `conformance_tests::ccm_conformance_basic_level_marker_matches_spec`,
+**Tests:** `crates/corba-ccm/src/lib.rs::conformance_tests::ccm_conformance_basic_level_marker_matches_spec`,
 `ccm_conformance_basic_level_java_marker_matches_spec`,
 `lightweight_ccm_level_marker_matches_spec`.
 
@@ -977,7 +1113,12 @@ persistence, executor, segment, facet, feature delegation, etc.
 **Repo:** `crates/corba-ccm/src/cidl.rs` (CIDL lexer + grammar AST +
 composition/home/segment/storage/executor definitions).
 
-**Tests:** inline tests in `cidl.rs`.
+**Tests:** `crates/corba-ccm/src/cidl.rs::tests::{
+session_composition_does_not_require_storage,
+entity_composition_without_storage_invalid,
+entity_composition_with_storage_valid, storage_type_can_inherit,
+home_executor_optional_component_binding,
+all_four_composition_categories_distinct}`.
 
 **Status:** done
 
@@ -995,7 +1136,22 @@ lifetime, composition persistence, proxy homes, language mapping
 lifetime), `crates/corba-codegen/src/skeleton.rs` +
 `crates/corba-codegen/src/stub.rs` (servant/skeleton generator).
 
-**Tests:** inline.
+**Tests:** `crates/corba-ccm/src/cif.rs::tests::{
+lifecycle_calls_increment_counters, cif_error_carries_diagnostic}`
+(executor lifetime `ccm_activate`/`ccm_passivate`/`ccm_remove` +
+`CCMException`),
+`crates/corba-codegen/src/skeleton.rs::tests::{
+every_operation_reaches_the_dispatch_in_every_column,
+an_empty_interface_still_dispatches_to_the_default_arm,
+cpp_compares_with_strcmp_and_ends_in_bad_operation,
+java_switches_on_the_method_string_and_throws_the_omg_class,
+rust_matches_and_answers_none_rather_than_an_invented_error}`
+(skeleton generator),
+`crates/corba-codegen/src/stub.rs::tests::{
+a_variable_length_struct_returns_a_pointer_and_a_fixed_one_a_value,
+an_object_reference_argument_is_a_ptr_and_its_out_is_an_out,
+a_oneway_operation_says_so_in_every_column_that_renders}`
+(stub generator).
 
 **Status:** done
 
@@ -1014,7 +1170,21 @@ client programming model, container API types (session/entity).
 `crates/corba-ccm-lib/src/dds_bridge.rs`,
 `crates/corba-ccm-lib/src/telemetry.rs`.
 
-**Tests:** inline (corba-ccm: 36 + corba-ccm-lib: 23 = 59 `#[test]`).
+**Tests:** `crates/corba-ccm/src/container.rs::tests::{
+install_and_full_lifecycle_round_trip,
+instance_count_tracks_install_and_remove,
+passivate_in_configured_state_invalid,
+unknown_instance_returns_not_found}`,
+`crates/corba-ccm/src/context.rs::tests::{anonymous_context_returns_none,
+principal_context_returns_bytes}`,
+`crates/corba-ccm-lib/src/persistence.rs::tests::{
+create_and_find_round_trip, passivate_flushes_dirty_entries,
+flush_resets_dirty_and_increments_counter}`,
+`crates/corba-ccm-lib/src/dds_bridge.rs::tests::{
+add_mapping_round_trip, activate_makes_active,
+passivate_clears_active_flag}`,
+`crates/corba-ccm-lib/src/telemetry.rs::tests::{
+full_lifecycle_records_four_events, sequence_numbers_strictly_increase}`.
 
 **Status:** done
 
@@ -1029,7 +1199,18 @@ client programming model, container API types (session/entity).
 **Repo:** `crates/corba-ccm-ejb/src/{connector_bean,naming_glue,
 stub_gen,tx}.rs`.
 
-**Tests:** inline (24 `#[test]`).
+**Tests:** `crates/corba-ccm-ejb/src/connector_bean.rs::tests::{
+full_lifecycle_records_history, post_construct_invokes_callback,
+connector_bean_with_pss_session_binds_correctly}`,
+`crates/corba-ccm-ejb/src/naming_glue.rs::tests::{
+cos_to_jndi_round_trip_no_kind, cos_to_jndi_includes_kind,
+jndi_comp_env_strips_prefix, bind_and_lookup_round_trip}`,
+`crates/corba-ccm-ejb/src/stub_gen.rs::tests::{
+stateful_bean_has_postconstruct_and_predestroy,
+stateless_bean_has_no_lifecycle_hooks, home_local_uses_local_annotation}`,
+`crates/corba-ccm-ejb/src/tx.rs::tests::{
+cos_to_jta_round_trip_for_all_states, begin_then_commit_succeeds,
+rollback_only_then_commit_fails_with_rollback}`.
 
 **Status:** done
 
@@ -1050,8 +1231,11 @@ hierarchy), `crates/corba-ir/src/repository_id.rs`,
 IfrCcmMetamodel}` with MOF-2.0 subset (Class/Property/Operation)
 + XMI-1.2 output for the ComponentIDL package.
 
-**Tests:** inline (19 `#[test]` in corba-ir) +
-`orb_core::tests::{xmi_emitter_*, ifr_ccm_metamodel_add_component,
+**Tests:** `crates/corba-ir/src/repository.rs::tests::*`,
+`crates/corba-ir/src/repository_id.rs::tests::*`,
+`crates/corba-ir/src/type_code.rs::tests::*` +
+`crates/corba-ccm/src/orb_core.rs::tests::{
+ifr_ccm_metamodel_add_component,
 ifr_ccm_metamodel_ingest_repository_walks_definitions}`.
 
 **Status:** done — IR base (`corba-ir`) + CCM-metamodel MOF-2.0
@@ -1073,7 +1257,9 @@ Implementation Framework.
 `crates/corba-ccm/src/orb_core.rs::{XmiEmitter, MofElement}` as a
 MOF-XMI emitter symmetric to §11.
 
-**Tests:** inline + `orb_core::tests::xmi_emitter_*`.
+**Tests:** `crates/corba-ccm/src/cif.rs::tests::{
+lifecycle_calls_increment_counters, cif_error_carries_diagnostic}` +
+`crates/corba-ccm/src/orb_core.rs::tests::*` (XMI emitter).
 
 **Status:** done — CIF AST (`corba-ccm::cif`) + MOF-XMI emitter
 symmetric to §11 IFR. Cross-ref CORBA 3.3 Part 3 §13
@@ -1092,20 +1278,40 @@ home finders.
 
 **Repo:** `crates/ccm/src/lightweight.rs::filter_to_lightweight`.
 
-**Tests:** `lightweight_filter_drops_configurator_operations`,
-`lightweight_filter_keeps_typespecific_ops`.
+**Tests:** `crates/ccm/tests/equivalent_idl.rs::{
+the_lightweight_filter_drops_configurator_operations,
+the_lightweight_filter_keeps_the_type_specific_operations,
+the_lightweight_filter_reports_a_component_it_would_empty}` +
+`crates/corba-ccm/src/lwccm.rs::tests::{
+same_component_raises_no_implement_with_the_mandated_minor_code,
+every_other_disabled_operation_raises_bad_operation}` — §13.1 keeps the
+disabled operations in the interface and has the container answer
+`BAD_OPERATION`/`NO_IMPLEMENT`; for `same_component`, `NO_IMPLEMENT`
+with minor code `IS_LIGHTWEIGHT_COMPONENT` is required.
 
 **Status:** done
 
 ### §13.2 No Persistence
 
-**Spec:** §13.2, pp. 274-276 (PDF) — removed: PSDL/CIDL persistence
-constructs.
+**Spec:** §13.2, pp. 274-276 (PDF) — table "Changes associated with
+excluding support for persistence": primary keys, CIDL, abstract storage
+homes/types, the keyed-home implicit executor, finders in the explicit
+home executor, entity container API types, the durable CORBA usage
+model, `CCM2Context::get_persistence`. §13.1, p. 273: "Persistence (only
+session and service components are supported)."
 
-**Repo:** `crates/corba-ccm-lib/src/persistence.rs` (persistence hook
-in the container; the lightweight variant deactivates it).
+**Repo:** `crates/corba-ccm/src/lwccm.rs` —
+`disabled_by("get_persistence")` reports `LwccmExclusion::Persistence`,
+`category_supported` admits only `Session` and `Service`, and
+`composition_exclusion` rejects entity compositions and every
+storage-home binding as persistence. The extended form stays in
+`crates/corba-ccm-lib/src/persistence.rs` + `crates/corba-ccm/src/pss.rs`
+and is held out of the profile by these checks.
 
-**Tests:** inline.
+**Tests:** `crates/corba-ccm/src/lwccm.rs::tests::{
+the_persistence_operations_are_disabled_by_thirteen_two_and_three,
+only_session_and_service_components_are_supported,
+an_entity_composition_is_excluded_as_persistence}`.
 
 **Status:** done
 
@@ -1115,56 +1321,92 @@ in the container; the lightweight variant deactivates it).
 `get_all_facets`, `get_named_facets`, generic `connect`/`disconnect`/
 `get_connections`, generic event-routing operations.
 
-**Repo:** filter logic prepared in
-`crates/ccm/src/lightweight.rs::is_filtered_export` (currently only
-configurator ops, because our equivalent IDL by default includes no
-generic ops — type-specific ops remain automatically).
+**Repo:** `crates/corba-ccm/src/lwccm.rs::disabled_by` — the
+introspection rows of §13.3 as a name list, plus prefix recognition of
+the type-specific port operations (`provide_<name>`, `connect_<name>`,
+`disconnect_<name>`, `get_connection(s)_<name>`, `subscribe_<name>`,
+`unsubscribe_<name>`, `get_consumer_<name>`). The generic counterparts —
+`provide_facet`, `connect`, `disconnect`, `get_consumer`, `subscribe`,
+`unsubscribe`, `connect_consumer` — stay, because §13.3 keeps exactly
+those. The operations themselves remain declared on the equivalent
+interface (§13.1); nothing is removed.
 
-**Tests:** `lightweight_filter_keeps_typespecific_ops`.
+**Tests:** `crates/corba-ccm/src/lwccm.rs::tests::{
+the_type_specific_port_operations_are_disabled_and_the_generic_ones_are_not,
+both_connection_getters_are_disabled_the_generic_one_as_introspection,
+a_bare_prefix_is_not_an_operation_name}` +
+`crates/ccm/tests/equivalent_idl.rs::the_lightweight_filter_keeps_the_type_specific_operations`
+(the operations stay declared).
 
-**Status:** done — filter pipeline active; generic-op filter implicitly
-fulfilled (transform_component emits no generic ops, spec-conformant —
-that is the specified LwCCM form). A caller that mixes in their own
-generic ops can extend the filter.
+**Status:** done
 
 ### §13.4-§13.6 No Segmentation/Transactions/Security
 
-**Spec:** §13.4-§13.6, pp. 277-278 (PDF) — removed: CIDL segments,
-container-managed transactions, CORBA security hooks.
+**Spec:** §13.4, p. 277 (PDF) — "Exclude support for CIDL", "Exclude
+composition", "Remove locator support", "Restrict CIF metamodel to a
+single segment per implementation". §13.5, p. 278 — "Disable the
+get_rollback_only, get_user_transaction, and set_rollback_only
+operations in the CCMContext interface". §13.6, p. 278 — "Disable the
+get_caller_principal and is_caller_in_role operations in the CCMContext
+interface".
 
-**Repo:** segmentation in `crates/corba-ccm/src/cidl.rs` (segment AST),
-transactions in `crates/corba-ccm-ejb/src/tx.rs`, security hooks via
-reuse of `crates/corba-csiv2/`.
+**Repo:** `crates/corba-ccm/src/lwccm.rs` — `composition_exclusion`
+rejects every CIDL composition, `MAX_SEGMENTS_PER_IMPLEMENTATION`
+carries the 1:1 multiplicity from §13.4, and `disabled_by` reports the
+three transaction and the two credential operations of `CCMContext`. The
+extended forms stay in `crates/corba-ccm/src/cidl.rs`,
+`crates/corba-ccm-ejb/src/tx.rs` and `crates/corba-csiv2/` and are held
+out of the profile by these checks.
 
-**Tests:** inline.
+**Tests:** `crates/corba-ccm/src/lwccm.rs::tests::{
+a_session_composition_is_still_excluded_because_cidl_is_gone,
+the_cif_metamodel_holds_one_segment_per_implementation,
+the_three_transaction_operations_of_ccmcontext_are_disabled,
+the_two_credential_operations_of_ccmcontext_are_disabled,
+get_ccm_home_survives_beside_the_disabled_ccmcontext_operations}`.
 
-**Status:** done — extended-CCM features all present; the lightweight
-filter (§13.1) deactivates them when needed.
+**Status:** done
 
 ### §13.7 No Configurators
 
 **Spec:** §13.7, p. 279 (PDF) — removed: `Configurator` iface,
 `StandardConfigurator`, `HomeConfiguration`.
 
-**Repo:** `crates/ccm/src/lightweight.rs::is_filtered_export` filters
-`configure`/`set_configuration`/`configuration_complete`.
+**Repo:** `crates/ccm/src/lightweight.rs::filter_to_lightweight`
+removes `configure`/`set_configuration`/`configuration_complete` from
+the equivalent interface (§13.7 removes the `Configurator` and
+`StandardConfigurator` interfaces outright);
+`crates/corba-ccm/src/lwccm.rs` additionally reports
+`set_configurator` on `HomeConfiguration` as disabled.
 
-**Tests:** `lightweight_filter_drops_configurator_operations`.
+**Tests:** `crates/ccm/tests/equivalent_idl.rs::the_lightweight_filter_drops_configurator_operations`,
+`crates/corba-ccm/src/lwccm.rs::tests::every_other_disabled_operation_raises_bad_operation`.
 
 **Status:** done
 
 ### §13.8-§13.9 No Proxy Homes / Home Finders
 
-**Spec:** §13.8-§13.9, p. 279 (PDF) — removed: `ProxyHome` concept,
-`HomeFinder` interface.
+**Spec:** §13.8, p. 279 (PDF) — "Exclude support for proxy homes"
+(§8.2.10 + §9.4.1.3 `ProxyHomeRegistration`). §13.9, p. 279 — "Disable
+support for the HomeFinder interface and the ComponentHomeFinder
+parameter value to the ORB::resolve_initial_references operation" +
+"Disable the get_home_registration operation in the CCM2Context
+interface".
 
-**Repo:** `crates/corba-ccm/src/cidl.rs` (proxy-home declaration §8.18
-in the CIDL AST), `crates/corba-ccm/src/home.rs` (home-finder path).
+**Repo:** `crates/corba-ccm/src/lwccm.rs::disabled_by` reports
+`register_proxy_home` under §13.8 and the three `find_home_by_*`
+operations plus `get_home_registration` under §13.9. The extended form
+of the home finder lives in
+`crates/corba-ccm/src/home.rs::ComponentHomeFinder` (§6.8) and is held
+out of the profile by this check; `register_home` / `unregister_home`
+from §9.4.1.2 are named by neither table and stay.
 
-**Tests:** inline.
+**Tests:** `crates/corba-ccm/src/lwccm.rs::tests::{
+register_proxy_home_is_disabled,
+the_home_finder_operations_and_home_registration_are_disabled,
+register_home_survives_because_only_the_proxy_form_is_excluded}`.
 
-**Status:** done — extended form present; lightweight filter
-deactivates it.
+**Status:** done
 
 ### §13.10 Additional Restrictions
 
@@ -1176,7 +1418,7 @@ model.
 `crates/corba-ccm/src/lib.rs::conformance::{LWCCM_RESTRICTIONS_ENFORCED,
 LWCCM_FILTER_ACTIVE}`.
 
-**Tests:** `conformance_tests::lwccm_restrictions_marker_matches_spec`,
+**Tests:** `crates/corba-ccm/src/lib.rs::conformance_tests::lwccm_restrictions_marker_matches_spec`,
 `lwccm_filter_marker_matches_spec`.
 
 **Status:** done — filter pipeline + specific restriction markers
@@ -1196,7 +1438,15 @@ transformation rules.
 **Repo:** `crates/corba-dnc/src/{plan,node,execution,container_host,
 repository,xml}.rs`.
 
-**Tests:** inline (30 `#[test]`).
+**Tests:** `crates/corba-dnc/src/plan.rs::tests::{
+valid_plan_passes_validation, instance_with_unknown_impl_fails,
+connection_with_unknown_instance_fails,
+co_location_with_unknown_instance_fails}`,
+`crates/corba-dnc/src/container_host.rs::tests::{
+full_lifecycle_round_trip, install_creates_container_on_demand,
+entity_and_session_share_host, duplicate_install_rejected}`,
+`crates/corba-dnc/src/repository.rs::tests::{
+install_and_find_round_trip, list_packages_returns_all_labels}`.
 
 **Status:** done
 
@@ -1209,10 +1459,25 @@ repository,xml}.rs`.
 **Spec:** §15, pp. 301-314 (PDF) — deployment IDL definitions
 (`Deployment::*`).
 
-**Repo:** as Rust representation in `crates/corba-dnc/src/` (plan/
-node/application structures).
+**Repo:** `Deployment::ExecutionManager` +
+`Deployment::DomainApplicationManager` + `Deployment::DomainApplication`
+in `crates/corba-dnc/src/execution.rs`; `Deployment::NodeManager` +
+`Deployment::NodeApplicationManager` + `Deployment::NodeApplication` in
+`crates/corba-dnc/src/node.rs`; `Deployment::RepositoryManager` in
+`crates/corba-dnc/src/repository.rs`; the descriptor structures in
+`crates/corba-dnc/src/plan.rs`.
 
-**Tests:** inline.
+**Tests:** `crates/corba-dnc/src/execution.rs::tests::{
+full_lifecycle_round_trip, execution_manager_lists_prepared_plans,
+invalid_plan_rejected_at_prepare, double_start_fails,
+destroy_before_running_fails}` — the operation sequence
+`preparePlan`/`startLaunch`/`finishLaunch`/`destroyApplication` of the
+§15 IDL; `crates/corba-dnc/src/node.rs::tests::{
+prepare_plan_then_start_launch, register_and_unregister_application,
+destroy_application_clears_active, unregister_unknown_returns_none}`;
+`crates/corba-dnc/src/repository.rs::tests::{
+install_and_find_round_trip, install_overwrites_duplicate,
+delete_existing_returns_true, delete_unknown_returns_false}`.
 
 **Status:** done
 
@@ -1224,10 +1489,13 @@ node/application structures).
 
 **Spec:** §16, p. 315ff (PDF) — XSD schema for deployment packages.
 
-**Repo:** `crates/corba-dnc/src/xml.rs` (XML codec for
-deployment plans).
+**Repo:** `crates/corba-dnc/src/xml.rs` (XML codec for deployment
+plans following the §16 schema).
 
-**Tests:** inline.
+**Tests:** `crates/corba-dnc/src/xml.rs::tests::{parses_minimal_plan,
+parses_multiple_artifacts, co_locate_with_parsed,
+missing_root_tag_returns_expected_tag,
+validation_fails_on_unknown_impl_reference}`.
 
 **Status:** done
 
@@ -1239,12 +1507,18 @@ deployment plans).
 
 Test run:
 
-* `cargo test -p zerodds-ccm --lib` — 53 tests green.
-* `cargo test -p zerodds-corba-ccm --lib` — 170 tests green.
+* `cargo test -p zerodds-ccm` — 19 lib tests + 34 tests in
+  `tests/equivalent_idl.rs` + 1 doc test green.
+* `cargo test -p zerodds-corba-ccm` — 201 lib tests + 3 tests in
+  `tests/pi_service_contexts.rs` + 1 doc test green.
 * `cargo test -p zerodds-corba-ccm-lib --lib` — 23 tests green.
 * `cargo test -p zerodds-corba-ccm-ejb --lib` — 25 tests green.
 * `cargo test -p zerodds-corba-dnc --lib` — 30 tests green.
-* `cargo test -p zerodds-corba-poa --lib` — 38 tests green.
+* `cargo test -p zerodds-corba-codegen --lib` — 38 tests green
+  (skeleton/stub generator).
+* `cargo test -p zerodds-corba-rust --test snapshot_codegen` — 15 tests green.
 * `cargo test -p zerodds-corba-ir --lib` — 19 tests green.
+* `cargo test -p zerodds-corba-codegen` — 93 tests green (the Annex A.1
+  binding for Java).
 
-No decision records.
+Open items: none. Decision records: none.

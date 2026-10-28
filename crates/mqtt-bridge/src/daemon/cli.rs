@@ -9,8 +9,6 @@ use std::vec::Vec;
 /// Parsed CLI args.
 #[derive(Debug, Clone, Default)]
 pub struct CliArgs {
-    /// `--config <FILE>`.
-    pub config: Option<String>,
     /// `--broker <URL>`.
     pub broker: Option<String>,
     /// `--client-id <ID>`.
@@ -39,33 +37,8 @@ pub struct CliArgs {
     pub help: bool,
 }
 
-/// Error during CLI parsing.
-#[derive(Debug, Clone)]
-pub enum CliError {
-    /// Unknown flag.
-    UnknownFlag(String),
-    /// Flag needs a value.
-    MissingValue(String),
-    /// Value not parsable.
-    InvalidValue {
-        /// Flag name.
-        flag: String,
-        /// Raw value.
-        value: String,
-    },
-}
-
-impl core::fmt::Display for CliError {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Self::UnknownFlag(n) => write!(f, "unknown flag: {n}"),
-            Self::MissingValue(n) => write!(f, "flag {n} needs a value"),
-            Self::InvalidValue { flag, value } => write!(f, "bad value for {flag}: {value}"),
-        }
-    }
-}
-
-impl std::error::Error for CliError {}
+pub use zerodds_config::cli::CliError;
+use zerodds_config::cli::Flags;
 
 /// Help text.
 pub const HELP_TEXT: &str = "\
@@ -75,20 +48,24 @@ USAGE:
     zerodds-mqtt-bridged [OPTIONS]
 
 OPTIONS:
-    --config <FILE>        Path to the config file (YAML)
-    --broker <URL>         MQTT broker URL (mqtt://, mqtts://)
+    --broker <URL>         MQTT broker URL (mqtt://, mqtts://, ws://, wss://)
     --client-id <ID>       MQTT client ID
     --domain <ID>          DDS domain ID (default 0)
     --username <USER>      MQTT username
     --password <PASS>      MQTT password
-    --tls-ca <FILE>        CA cert — L5 stub
-    --tls-cert <FILE>      Client cert — L5 stub
-    --tls-key <FILE>       Client key — L5 stub
+    --tls-ca <FILE>        CA cert of the broker (enables mqtts)
+    --tls-cert <FILE>      Client cert (mTLS)
+    --tls-key <FILE>       Client key (mTLS)
     --topic <DDS:MQTT>     Topic override (repeatable)
     --log-level <LEVEL>    trace/debug/info/warn/error
-    --metrics <ADDR>       Prometheus listen — L5 stub
+    --metrics <ADDR>       Prometheus listen (enables metrics)
     --version              Version info
     --help                 Help
+
+Each option above is `--set` of its file key (`--broker X` is
+`--set mqtt.broker_url=X`), so it wins over the files. The file is
+mqtt-bridged.yaml with mqtt-bridged.d/ in the system configuration
+directory unless --config names another.
 
 EXIT CODES:
     0   normal shutdown
@@ -102,53 +79,64 @@ EXIT CODES:
 /// Versions-String.
 pub const VERSION_TEXT: &str = "zerodds-mqtt-bridged 1.0";
 
+impl CliArgs {
+    /// The convenience flags as `PATH=VALUE` assignments, in the order the
+    /// daemon applies them.
+    #[must_use]
+    pub fn sets(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut push = |key: &str, value: &Option<String>| {
+            if let Some(v) = value {
+                out.push(format!("{key}={v}"));
+            }
+        };
+        push("mqtt.broker_url", &self.broker);
+        push("mqtt.client_id", &self.client_id);
+        push("domain", &self.domain.map(|d| d.to_string()));
+        push("mqtt.username", &self.username);
+        push("mqtt.password", &self.password);
+        push("mqtt.tls.ca_file", &self.tls_ca);
+        push("mqtt.tls.cert_file", &self.tls_cert);
+        push("mqtt.tls.key_file", &self.tls_key);
+        push("log_level", &self.log_level);
+        push("metrics.listen", &self.metrics);
+        if self.tls_ca.is_some() || self.tls_cert.is_some() || self.tls_key.is_some() {
+            out.push("mqtt.tls.enabled=true".to_string());
+        }
+        if self.metrics.is_some() {
+            out.push("metrics.enabled=true".to_string());
+        }
+        for topic in &self.topics {
+            out.push(format!("+topics={topic}"));
+        }
+        out
+    }
+}
+
 /// Parst Args.
 ///
 /// # Errors
 /// [`CliError`].
 pub fn parse(args: &[String]) -> Result<CliArgs, CliError> {
     let mut out = CliArgs::default();
-    let mut i = 0;
-    while i < args.len() {
-        let raw = &args[i];
-        let (flag, inline) = match raw.split_once('=') {
-            Some((k, v)) => (k.to_string(), Some(v.to_string())),
-            None => (raw.clone(), None),
-        };
-        let take_value = |i: &mut usize, flag: &str| -> Result<String, CliError> {
-            if let Some(v) = inline.clone() {
-                Ok(v)
-            } else {
-                *i += 1;
-                args.get(*i)
-                    .cloned()
-                    .ok_or_else(|| CliError::MissingValue(flag.to_string()))
-            }
-        };
-        match flag.as_str() {
+    let mut flags = Flags::new(args);
+    while let Some(flag) = flags.next_flag() {
+        match flag.name() {
             "--help" | "-h" => out.help = true,
             "--version" | "-V" => out.version = true,
-            "--config" => out.config = Some(take_value(&mut i, "--config")?),
-            "--broker" => out.broker = Some(take_value(&mut i, "--broker")?),
-            "--client-id" => out.client_id = Some(take_value(&mut i, "--client-id")?),
-            "--domain" => {
-                let v = take_value(&mut i, "--domain")?;
-                out.domain = Some(v.parse().map_err(|_| CliError::InvalidValue {
-                    flag: "--domain".to_string(),
-                    value: v,
-                })?);
-            }
-            "--username" => out.username = Some(take_value(&mut i, "--username")?),
-            "--password" => out.password = Some(take_value(&mut i, "--password")?),
-            "--tls-ca" => out.tls_ca = Some(take_value(&mut i, "--tls-ca")?),
-            "--tls-cert" => out.tls_cert = Some(take_value(&mut i, "--tls-cert")?),
-            "--tls-key" => out.tls_key = Some(take_value(&mut i, "--tls-key")?),
-            "--topic" => out.topics.push(take_value(&mut i, "--topic")?),
-            "--log-level" => out.log_level = Some(take_value(&mut i, "--log-level")?),
-            "--metrics" => out.metrics = Some(take_value(&mut i, "--metrics")?),
+            "--broker" => out.broker = Some(flags.value(&flag)?),
+            "--client-id" => out.client_id = Some(flags.value(&flag)?),
+            "--domain" => out.domain = Some(flags.parsed(&flag)?),
+            "--username" => out.username = Some(flags.value(&flag)?),
+            "--password" => out.password = Some(flags.value(&flag)?),
+            "--tls-ca" => out.tls_ca = Some(flags.value(&flag)?),
+            "--tls-cert" => out.tls_cert = Some(flags.value(&flag)?),
+            "--tls-key" => out.tls_key = Some(flags.value(&flag)?),
+            "--topic" => out.topics.push(flags.value(&flag)?),
+            "--log-level" => out.log_level = Some(flags.value(&flag)?),
+            "--metrics" => out.metrics = Some(flags.value(&flag)?),
             other => return Err(CliError::UnknownFlag(other.to_string())),
         }
-        i += 1;
     }
     Ok(out)
 }
@@ -195,5 +183,33 @@ mod tests {
     #[test]
     fn help_short_form() {
         assert!(parse(&args(&["-h"])).unwrap().help);
+    }
+
+    /// `--tls-*`, `--topic` and `--metrics` were parsed and then dropped by
+    /// the daemon; as `--set` entries they reach the configuration.
+    #[test]
+    fn every_convenience_flag_becomes_a_set() {
+        let p = parse(&args(&[
+            "--broker",
+            "mqtts://b:8883",
+            "--tls-ca",
+            "/ca.pem",
+            "--topic",
+            "Chat::Message:chat/msg",
+            "--metrics",
+            "127.0.0.1:9",
+        ]))
+        .unwrap();
+        let sets = p.sets();
+        for want in [
+            "mqtt.broker_url=mqtts://b:8883",
+            "mqtt.tls.ca_file=/ca.pem",
+            "mqtt.tls.enabled=true",
+            "metrics.listen=127.0.0.1:9",
+            "metrics.enabled=true",
+            "+topics=Chat::Message:chat/msg",
+        ] {
+            assert!(sets.iter().any(|s| s == want), "missing {want} in {sets:?}");
+        }
     }
 }

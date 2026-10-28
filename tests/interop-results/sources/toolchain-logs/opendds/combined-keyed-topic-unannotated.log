@@ -1,0 +1,1 @@
+genC.cpp: In function 'CORBA::Boolean operator<<(TAO_OutputCDR&, const zd_c12::robotics::Telemetry&)':

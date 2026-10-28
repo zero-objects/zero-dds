@@ -1,31 +1,76 @@
 # /etc/zerodds/corba-bridged.yaml.example
-# Spec: zerodds-corba-bridge-1.0 §4, §11.
+# Configuration of zerodds-corba-bridged.
+# Spec: zerodds-corba-bridge-1.0 §3 (schema), §11 (deployment).
+#
+# Read by crates/corba-dds-bridge/src/bridge_daemon.rs
+# (DaemonConfig::from_config) over the shared layers: this file,
+# corba-bridged.d/, include:, the environment beneath, --set above. An
+# unknown key in a known section or a value of the wrong type stops the
+# start with file and line; an unknown top-level key is a WARN line on
+# stderr, and an error under --check-config.
 
-participant:
-  domain_id: 0
-  qos_profile: builtin/reliable_keep_last_10
+domain: 0
+log_level: info
 
 corba:
-  iiop_listen: "0.0.0.0:2809"
-  giop_version: "1.2"
-  ior_persistence: /var/lib/zerodds/corba-ior-cache.bin
-  csiv2:
+  orb_id: "zerodds-corba-bridge"
+  iiop:
+    bind: "0.0.0.0:6833"
+    advertise_host: "127.0.0.1"       # host in the IORs when bind is a wildcard
+    giop_version: "1.2"               # 1.0 | 1.1 | 1.2 (mapped operations need 1.2)
+    fragment_size: 65536              # replies above it go out in fragments
+    max_message_size: 33554432        # larger inbound messages: MessageError
+  ssliop:
     enabled: false
-    cert:   /etc/zerodds/certs/csiv2-bridged.crt
-    key:    /etc/zerodds/certs/csiv2-bridged.key
-    truststore: /etc/zerodds/certs/csiv2-trust.pem
+    bind: "0.0.0.0:6834"
+    cert_file: "/etc/zerodds/certs/corba-bridged.crt"
+    key_file:  "/etc/zerodds/certs/corba-bridged.key"
+    ca_file:   "/etc/zerodds/certs/corba-ca.pem"   # client certificates
+    require_client_cert: false
+  ior:
+    naming_service: ""                # corbaname:/corbaloc: URL; empty = do not rebind
+    publish_to_naming: false          # true rebinds every mapping's IOR into naming_service
+    naming_retry_ms: 30000            # total retry budget while the NameService is not up yet
+    ior_file: "/var/lib/zerodds/corba-bridge.ior"
+  naming:
+    serve: false                      # host a NameService in-process, sharing this transport: not built
+  csiv2:
+    enabled: false                    # true: every request's SAS EstablishContext is evaluated
+    target_supports: []               # e.g. [principal_name] to allow identity assertion
+    gssup:
+      password_file: "/etc/zerodds/corba-bridged-gssup.passwd"
+      target_name: ""                 # AS-context target name advertised in the IOR
 
-routes:
-  - dds_topic:    "PortfolioUpdate"
-    type:         "fin::Portfolio::Update"
-    corba_iface:  "::fin::PortfolioPublisher"
-    direction:    "bidirectional"
+acl:
+  default_deny: false
+  rules:
+    - subject: "*"                    # or mtls:<SHA-256 of the client certificate>
+      allow_invoke: ["IDL:fin/*"]
 
-logging:
-  level: info
-  format: json
-  destination: journal
+metrics:
+  enabled: false
+  listen: "127.0.0.1:9096"            # /metrics + /catalog + /healthz
+  path: "/metrics"
 
-observability:
-  metrics_bind: "127.0.0.1:9096"
-  otlp_endpoint: ""
+mappings:
+  # CORBA operation <-> DDS topics. Cross-Ref: zerodds-corba-bridge-1.0 §5.
+  - repo_id:   "IDL:fin/PortfolioPublisher:1.0"
+    operation: "publish_update"
+    direction: "corba_to_dds"         # corba_to_dds | dds_to_corba | bidir
+    request_topic:
+      dds_name: "fin::Portfolio::UpdateRequest"
+      dds_type: "fin::Portfolio::UpdateRequest"
+    reply_topic:
+      dds_name: "fin::Portfolio::UpdateReply"
+    correlation_id: "request_id"      # the first member; nothing else is read
+    timeout_ms: 5000                  # no reply by then: CORBA::TIMEOUT
+    qos:
+      reliability: "reliable"
+      durability: "volatile"
+  - repo_id:   "IDL:fin/PortfolioListener:1.0"
+    operation: "on_update"
+    direction: "dds_to_corba"
+    notify_topic:
+      dds_name: "fin::Portfolio::Update"
+    targets:
+      - "corbaloc:iiop:1.2@listener.example:2809/PortfolioListener"

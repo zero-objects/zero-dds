@@ -1,0 +1,13 @@
+## wireprobe-opensplice, exit 5
+### stderr
+wireprobe-opensplice: the probe did not compile
+gen.h:13:14: error: 'Branch' in namespace 'm' does not name a type
+fill.inc:2:39: error: 'struct m::Node' has no member named 'link'
+fill.inc:2:39: error: 'struct m::Node' has no member named 'link'
+fill.inc:2:52: error: template argument 1 is invalid
+fill.inc:2:60: error: expected initializer before 'zd_case_1'
+fill.inc:3:1: error: 'zd_case_1' was not declared in this scope
+fill.inc:7:8: error: 'struct m::Node' has no member named 'link'
+fill.inc:8:8: error: 'struct m::Node' has no member named 'link'
+gen.h:13:14: error: 'Branch' in namespace 'm' does not name a type
+gen.h:13:14: error: 'Branch' in namespace 'm' does not name a type

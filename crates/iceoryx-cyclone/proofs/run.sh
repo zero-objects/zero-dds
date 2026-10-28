@@ -6,7 +6,7 @@
 #   READ  : a Cyclone publisher → the ZeroDDS reader bin reads it   (READER OK)
 #   WRITE : the ZeroDDS writer bin → a Cyclone subscriber reads it  (CYCLONE OK)
 #
-# Linux host with iceoryx POSH + iox-roudi + Cyclone-iox (e.g. codepit). The
+# Linux host with iceoryx POSH + iox-roudi + Cyclone-iox (e.g. The Linux test host). The
 # Cyclone URI configures the installed psmx_iox: INSTANCE_NAME is the iceoryx
 # service string, ALLOW_NONDISCOVERED_WRITERS lets Cyclone accept the ZeroDDS
 # writer (which is not a discovered DDS writer). NOTE: do NOT also use the legacy
@@ -28,10 +28,14 @@ cd "$HERE"
 gcc cyclone_pub.c sample.c -I. -I"$CYCLONE/include" -L"$CYCLONE/lib" -lddsc -o cyclone_pub
 gcc cyclone_sub.c sample.c -I. -I"$CYCLONE/include" -L"$CYCLONE/lib" -lddsc -o cyclone_sub
 ( cd "$CRATE" && cargo build --features posh )
-READER="$CRATE/target/debug/zerodds-cyclone-iox-reader"
-WRITER="$CRATE/target/debug/zerodds-cyclone-iox-writer"
+# The crate is a workspace member (a path dependency of zerodds-dcps), so its
+# binaries land in the workspace's target directory, not under the crate.
+TARGET_DIR="$(cd "$CRATE" && cargo metadata --format-version 1 --no-deps \
+  | grep -o '"target_directory":"[^"]*"' | cut -d'"' -f4)"
+READER="$TARGET_DIR/debug/zerodds-cyclone-iox-reader"
+WRITER="$TARGET_DIR/debug/zerodds-cyclone-iox-writer"
 
-pkill -f iox-roudi 2>/dev/null || true; sleep 1; rm -f /dev/shm/iceoryx* 2>/dev/null || true
+pkill -x iox-roudi 2>/dev/null || true; sleep 1; rm -f /dev/shm/iceoryx* 2>/dev/null || true
 iox-roudi -c roudi.toml >roudi.log 2>&1 &
 ROUDI=$!
 trap 'kill $ROUDI 2>/dev/null || true' EXIT

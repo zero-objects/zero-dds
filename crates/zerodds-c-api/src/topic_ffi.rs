@@ -96,7 +96,8 @@ pub unsafe extern "C" fn zerodds_topic_get_qos(
     }
 }
 
-/// Set QoS (Spec §2.2.2.3.2.x). NULL = default.
+/// Set QoS (Spec §2.2.2.3.2.x). NULL = the participant's default topic
+/// QoS (`TOPIC_QOS_DEFAULT`, DDS 1.4 §2.2.2.1.1.1).
 ///
 /// # Safety
 /// `t` valid.
@@ -111,7 +112,9 @@ pub unsafe extern "C" fn zerodds_topic_set_qos(
     // SAFETY: see fn # Safety doc — t NULL-checked above; qos NULL-tolerant.
     unsafe {
         let new_qos = if qos.is_null() {
-            zerodds_dcps::qos::TopicQos::default()
+            crate::extra_ffi::current_default(
+                (*t).participant.as_ref().map(|dp| &dp.default_topic_qos),
+            )
         } else {
             crate::qos_ffi::topic_qos_from_c(qos)
         };
@@ -132,7 +135,10 @@ pub struct ZeroDdsInconsistentTopicStatus {
     pub total_count_change: i32,
 }
 
-/// Returns the InconsistentTopicStatus.
+/// `get_inconsistent_topic_status` (DDS 1.4 §2.2.2.3.2): the times the
+/// two-step rule of XTypes 1.3 §7.6.3.4.2 refused a discovered endpoint on
+/// this topic's name, and the change since the status was last read.
+/// Reading resets the change. It answered zeros whatever happened.
 ///
 /// # Safety
 /// `t` and `out` valid.
@@ -144,8 +150,28 @@ pub unsafe extern "C" fn zerodds_topic_get_inconsistent_topic_status(
     if t.is_null() || out.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    // SAFETY: see fn # Safety doc — t+out NULL-checked above.
-    unsafe { *out = ZeroDdsInconsistentTopicStatus::default() };
+    // SAFETY: see fn # Safety doc — t+out NULL-checked above; the
+    // participant pointer comes from `zerodds_dp_create_topic`.
+    let topic = unsafe { &*t };
+    let total = if topic.participant.is_null() {
+        0
+    } else {
+        // SAFETY: as above.
+        let participant = unsafe { &*topic.participant };
+        participant.rt.as_ref().map_or(0, |rt| {
+            i32::try_from(rt.inconsistent_topic_count_for(&topic.name)).unwrap_or(i32::MAX)
+        })
+    };
+    let read = topic
+        .inconsistent_topic_read
+        .swap(total, core::sync::atomic::Ordering::AcqRel);
+    // SAFETY: out NULL-checked above.
+    unsafe {
+        *out = ZeroDdsInconsistentTopicStatus {
+            total_count: total,
+            total_count_change: total.saturating_sub(read),
+        };
+    }
     ZeroDdsStatus::Ok as c_int
 }
 

@@ -1,0 +1,5 @@
+// bounded `sequence` filled to its bound
+@final struct Sample {
+    sequence<long, 3> ids;
+    octet tail;
+};

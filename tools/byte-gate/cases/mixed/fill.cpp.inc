@@ -1,0 +1,10 @@
+sample.b(true);
+sample.o(0xAB);
+sample.s(-12345);
+sample.us(54321);
+sample.l(-1234567);
+sample.ul(2345678);
+sample.ll(-987654321);
+sample.ull(123456789);
+sample.f(2.5f);
+sample.d(3.14159);

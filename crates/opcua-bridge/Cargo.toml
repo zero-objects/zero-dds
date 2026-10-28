@@ -1,0 +1,134 @@
+[package]
+name = "zerodds-opcua-bridge"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "OMG DDS-OPCUA Gateway 1.0 daemon: opc.tcp server + client + Part-14 UADP PubSub over zerodds-dcps."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-opcua-bridge"
+readme = "README.md"
+keywords = ["dds", "opcua", "gateway", "iiot", "daemon"]
+categories = ["network-programming"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std", "daemon", "ring-backend"]
+std = ["alloc", "zerodds-opcua-gateway/std", "zerodds-opcua-uacp/std", "zerodds-opcua-server/std", "zerodds-opcua-pubsub/std"]
+alloc = []
+# The crypto backend of `zerodds-bridge-security` (its ACL layer's own
+# dependency graph pulls one in, though this daemon reads no JWT/TLS
+# through it today): `ring-backend` (default) or `aws-lc` (FIPS
+# 140-3-validatable). A FIPS build: `--no-default-features --features
+# <the default list without ring-backend>,aws-lc`.
+ring-backend = ["zerodds-bridge-security?/ring-backend"]
+aws-lc = ["zerodds-bridge-security?/aws-lc"]
+# Secured SecurityPolicies for the opc.tcp SecureChannel (Part 6 §6.7),
+# passed through to `zerodds-opcua-uacp`/`zerodds-opcua-server`.
+crypto = [
+    "std",
+    "zerodds-opcua-uacp/crypto",
+    "zerodds-opcua-server/crypto",
+    "dep:rsa",
+    "dep:pem",
+    "dep:rand",
+]
+# `daemon` enables the `zerodds-opcua-bridged` binary + the DDS pump.
+daemon = [
+    "std",
+    "dep:zerodds-config",
+    "dep:zerodds-dcps",
+    "dep:zerodds-rtps",
+    "dep:zerodds-qos",
+    "dep:zerodds-types",
+    "dep:zerodds-ast",
+    "dep:zerodds-ast-layout",
+    "dep:zerodds-idl-compose",
+    "dep:zerodds-idl-parse",
+    "dep:zerodds-wire-codec",
+    "dep:zerodds-discovery",
+    "dep:zerodds-bridge-security",
+    "dep:zerodds-monitor",
+    "dep:zerodds-observability-otlp",
+    "dep:zerodds-foundation",
+    "dep:signal-hook",
+]
+# C2(2): passthrough for `zerodds-dcps/rt` (real-time scheduling + CPU
+# affinity via `zerodds-rt-linux`). Off by default; implies `daemon`.
+rt = ["daemon", "zerodds-dcps/rt"]
+# Part 14 §8 UADP message security (SecurityGroup/SKS): signs/encrypts
+# every `opcua.pubsub.connections[].security`-configured connection's
+# NetworkMessages. Passthrough to `zerodds-opcua-pubsub/security`
+# (RustCrypto, no extra system deps).
+pubsub-security = ["zerodds-opcua-pubsub/security"]
+
+[dependencies]
+zerodds-opcua-gateway = { version = "1.0.0-rc.7", path = "../opcua-gateway", default-features = false, features = ["alloc"] }
+zerodds-opcua-uacp = { version = "1.0.0-rc.7", path = "../opcua-uacp", default-features = false, features = ["alloc"] }
+zerodds-opcua-server = { version = "1.0.0-rc.7", path = "../opcua-server", default-features = false, features = ["alloc"] }
+zerodds-opcua-pubsub = { version = "1.0.0-rc.7", path = "../opcua-pubsub", default-features = false, features = ["alloc"] }
+
+zerodds-dcps = { version = "1.0.0-rc.7", path = "../dcps", optional = true, default-features = false, features = ["std"] }
+zerodds-config = { version = "1.0.0-rc.7", path = "../config", optional = true }
+zerodds-rtps = { version = "1.0.0-rc.7", path = "../rtps", optional = true, default-features = false, features = ["std"] }
+zerodds-qos = { version = "1.0.0-rc.7", path = "../qos", optional = true, default-features = false, features = ["alloc"] }
+# The reflective type layer: an operator-supplied IDL file compiles to a
+# `DynamicType`/`CompleteTypeObject`, which is what lets this daemon decode
+# and encode a DDS topic's samples without a codegen'd Rust type.
+zerodds-types = { version = "1.0.0-rc.7", path = "../types", optional = true, default-features = false, features = ["alloc"] }
+zerodds-ast = { version = "1.0.0-rc.7", path = "../ast", optional = true }
+zerodds-ast-layout = { version = "1.0.0-rc.7", path = "../ast-layout", optional = true }
+zerodds-idl-compose = { version = "1.0.0-rc.7", path = "../idl-compose", optional = true }
+zerodds-idl-parse = { version = "1.0.0-rc.7", path = "../idl-parse", optional = true }
+# `default::of_type::<DynamicData>` — Table 9's zero value for a type,
+# used as the PubSub `PublishedDataSet`'s initial fields and as
+# `dynamic_value::unflatten`'s `default` before any real sample exists.
+zerodds-wire-codec = { version = "1.0.0-rc.7", path = "../wire-codec", optional = true }
+# `TypeLookupServer`/`TypeRegistry` access for the opportunistic
+# discovered-topic resolution path (see `dds_bridge::resolve_discovered`).
+zerodds-discovery = { version = "1.0.0-rc.7", path = "../discovery", optional = true, default-features = false, features = ["std"] }
+# Bridge-Spec-style ACL (subject-keyed allow/deny per DDS topic).
+zerodds-bridge-security = { version = "1.0.0-rc.7", path = "../bridge-security", optional = true, default-features = false, features = ["std"] }
+# Cross-cutting daemon observability: Prometheus + OTLP + graceful shutdown.
+zerodds-monitor = { version = "1.0.0-rc.7", path = "../monitor", optional = true, default-features = false, features = ["std", "prometheus-server"] }
+zerodds-observability-otlp = { version = "1.0.0-rc.7", path = "../observability-otlp", optional = true }
+# `Span`/`SpanContext`/`TraceId`/`SpanId` — this daemon builds its own
+# lifecycle spans directly (there is no builder in
+# `zerodds-observability-otlp` itself, only the exporter).
+zerodds-foundation = { version = "1.0.0-rc.7", path = "../foundation", optional = true, default-features = false, features = ["std"] }
+signal-hook = { workspace = true, optional = true }
+
+# SecureChannel crypto material (feature `crypto`): PEM decoding for the
+# server/peer RSA keys the config points at. `zerodds-opcua-uacp/crypto`
+# already carries `rsa`; named again here because this crate parses the
+# PEM files itself (see `security.rs`), not just passes bytes through.
+rsa = { version = "0.9", default-features = false, features = ["std", "pem"], optional = true }
+pem = { version = "3", optional = true }
+# A real OS CSPRNG for the secured-handshake path — the same crate/version
+# `crates/opcua-server`'s own crypto e2e test uses for the same reason.
+rand = { version = "0.8", default-features = false, features = ["std", "std_rng", "getrandom"], optional = true }
+
+[dev-dependencies]
+zerodds-test-domains = { path = "../test-domains" }
+# Generates a real, self-signed X.509 certificate (RSA-signed, matching
+# this daemon's RSA-only SecureChannel crypto) for the secured-daemon
+# e2e test — never a fake `b"cert-der"` placeholder.
+rcgen = "0.13"
+# IDL-source-to-`Ast` convenience the unit/e2e tests build a `DynamicType`
+# from — the same crate `crates/xrce-agent`'s own tests use for the same
+# reason (a build-only tool, never in the daemon's own runtime path; the
+# daemon compiles operator IDL via `zerodds-idl-compose` — see `idl.rs`).
+zerodds-wire-probe = { path = "../wire-probe" }
+
+[[bin]]
+name = "zerodds-opcua-bridged"
+path = "src/bin/zerodds-opcua-bridged.rs"
+required-features = ["daemon"]

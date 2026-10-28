@@ -1,0 +1,17 @@
+// every primitive, widest first, unannotated
+struct Sample {
+    double double_float;
+    float single_float;
+    unsigned long long llong_unsigned;
+    long long llong_signed;
+    unsigned long long_unsigned;
+    long long_signed;
+    unsigned short short_unsigned;
+    short short_signed;
+    wchar wide_letter;
+    char letter;
+    int8 signed_byte;
+    uint8 unsigned_byte;
+    octet raw_octet;
+    boolean flag;
+};

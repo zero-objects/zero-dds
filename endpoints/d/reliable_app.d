@@ -45,7 +45,7 @@ void main(string[] args)
             stderr.writeln("submit failed: ", st);
             return;
         }
-        sock.sendTo(reliableWriteFrame(seq, sampleOf(i)), peer);
+        sock.sendTo(reliableWriteFrame(seq, 0x0015, sampleOf(i)), peer);
     }
 
     // Recovery loop: heartbeat + drain ACKNACKs + retransmit, until window empty.
@@ -84,7 +84,7 @@ void main(string[] args)
             ushort seq = cast(ushort)(base + i);
             auto p = s.getInFlight(seq);
             if (p !is null)
-                sock.sendTo(reliableWriteFrame(seq, p), peer);
+                sock.sendTo(reliableWriteFrame(seq, 0x0015, p), peer);
         }
     }
 

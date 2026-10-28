@@ -1,0 +1,150 @@
+#!/bin/bash
+# wireprobe-ocaml-corpus — the shared-walk OCaml column over the whole corpus,
+# in both directions, against the octets the Rust column recorded.
+#
+#   tools/wireprobe/wireprobe-ocaml-corpus
+#   tools/wireprobe/wireprobe-ocaml-corpus --encoding plain-cdr2 --endian le
+#
+# Ten cells by default — `plain-cdr1`, `pl-cdr1`, `plain-cdr2`,
+# `delimited-cdr` and `pl-cdr2`, each little- and big-endian — and one
+# line per cell:
+#
+#   plain-cdr2.le  write MATCH=372 DIFFER=0 REFUSED=2 NOREF=4
+#   plain-cdr2.le  read  MATCH=371 DIFFER=1 REFUSED=2 NOREF=4
+#
+# `DIFFER` is the number that matters: a case the OCaml runtime writes
+# differently from the Rust one is a case where one of the two has
+# misread DDS-XTypes 1.3, and neither calls the other.
+#
+# ## The two directions are measured in different currencies
+#
+# **Writing** compares octets: the probe's bytes against
+# `tests/interop-results/<case>/zerodds-rust/<encoding>.<endian>.bin`.
+#
+# **Reading** compares *values*: the probe is handed the Rust column's
+# own bytes and its JSON is compared against the case's `values.json`
+# after both are canonicalised in Rust — re-encoding what the decoder
+# built and comparing bytes would pass any value the decoder invents
+# that the encoder writes the same way.
+#
+# The root type comes from the corpus's own `type` file: reading it off
+# the IDL picks the last declaration, which is the wrong root wherever a
+# case declares two.
+#
+# ## What one cell costs here
+#
+# Every case compiles `runtime/ocaml/zdwire.ml` and the generated
+# `main.ml` from source, because a cell shares nothing with its
+# neighbours. Measured on an M1: 0.55 s per case with `ocamlc` and
+# 2.9 s with `ocamlopt`, which is 4 min and 20 min for one direction of
+# one cell over the 420-case corpus. `ZERODDS_OCAML_COMPILER` picks the
+# compiler; the driver's default is the bytecode one, and the octets do
+# not depend on the choice.
+set -uo pipefail
+cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)" || exit 6
+
+probe=./tools/wireprobe/wireprobe-zerodds-ocaml
+encodings=(plain-cdr1 pl-cdr1 plain-cdr2 delimited-cdr pl-cdr2)
+endians=(le be)
+directions=(write read)
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --encoding) encodings=("$2"); shift 2 ;;
+        --endian) endians=("$2"); shift 2 ;;
+        --direction) directions=("$2"); shift 2 ;;
+        --help|-h) sed -n '2,42p' "${BASH_SOURCE[0]}"; exit 0 ;;
+        *) echo "$(basename "$0"): \`$1\` is not an option" >&2; exit 2 ;;
+    esac
+done
+
+L="${OCAML_CORPUS_LOG:-${TMPDIR:-/tmp}/zd-ocaml-corpus.txt}"
+# One sweep at a time per log: two of them interleaving produce numbers
+# that mean nothing, which is worse than a refusal to start.
+lock="$L.lock"
+if ! mkdir "$lock" 2>/dev/null; then
+    echo "$(basename "$0"): a sweep is already running; its log is $L" >&2
+    exit 2
+fi
+work="$(mktemp -d)"
+trap 'rmdir "$lock" 2>/dev/null; rm -rf "$work"' EXIT
+: > "$L"
+
+# The generator is built once here rather than by each of 3 760 probe
+# runs: checking staleness shells out to cargo, and doing that per case
+# is most of the sweep's wall time.
+cargo build -q -p zerodds-wireprobe-ocaml-gen 2>&1 | head -20
+gen="${CARGO_TARGET_DIR:-$PWD/target}/debug/wireprobe-zerodds-ocaml-gen"
+[ -x "$gen" ] || { echo "$(basename "$0"): the generator did not build" >&2; exit 6; }
+export WIREPROBE_OCAML_GEN="$gen"
+
+# The read direction is compared in Rust, against
+# `crates/wire-probe/src/canonical.rs` — the whole reason this column
+# hands its JSON out instead of reaching a verdict itself.
+compare="${WIREPROBE_COMPARE:-${CARGO_TARGET_DIR:-$PWD/target}/debug/wireprobe-compare}"
+if printf '%s\n' "${directions[@]}" | grep -qx read; then
+    cargo build -q -p zerodds-wire-probe --bin wireprobe-compare 2>&1 | head -20
+    [ -x "$compare" ] || {
+        echo "$(basename "$0"): $compare is not there; nothing would be measured" >&2
+        exit 6
+    }
+fi
+
+status=0
+for encoding in "${encodings[@]}"; do
+for endian in "${endians[@]}"; do
+for direction in "${directions[@]}"; do
+  ok=0; bad=0; refused=0; noref=0
+  for d in tests/interop-corpus/*/; do
+    c=$(basename "$d")
+    r="tests/interop-results/$c/zerodds-rust/$encoding.$endian.bin"
+    [ -f "$d/type.idl" ] && [ -f "$d/values.json" ] || continue
+    [ -f "$r" ] || { noref=$((noref+1)); continue; }
+    t=$(cat "$d/type")
+    [ -n "$t" ] || { noref=$((noref+1)); continue; }
+    code=0
+    if [ "$direction" = write ]; then
+      # No pipe around the probe: `$?` after one is the last stage's,
+      # and the exit code *is* the verdict here.
+      said=$("$probe" --idl "$d/type.idl" --type "$t" --values "$d/values.json" \
+            --encoding "$encoding" --endian "$endian" 2>&1) || code=$?
+      got=$(printf '%s\n' "$said" | tail -1)
+      want=$(od -An -tx1 -v "$r" | tr -d ' \n')
+      if [ "$code" = 0 ] && [ "$got" = "$want" ]; then
+        ok=$((ok+1))
+      elif [ "$code" != 0 ]; then
+        refused=$((refused+1))
+        echo "REFUSED($code) $encoding.$endian write $c :: $(printf '%s\n' "$said" | head -2 | tr '\n' ' ')" >> "$L"
+      else
+        bad=$((bad+1))
+        {
+          echo "DIFFER $encoding.$endian write $c"
+          echo "  ocaml $got"
+          echo "  rust $want"
+        } >> "$L"
+      fi
+    else
+      said=$("$probe" --idl "$d/type.idl" --type "$t" --in "$r" \
+            --encoding "$encoding" --endian "$endian" \
+            --values-out "$work/read.json" 2>&1) || code=$?
+      if [ "$code" != 0 ]; then
+        refused=$((refused+1))
+        echo "REFUSED($code) $encoding.$endian read $c :: $(printf '%s\n' "$said" | head -2 | tr '\n' ' ')" >> "$L"
+      elif "$compare" --idl "$d/type.idl" --type "$t" \
+            --expected "$d/values.json" --found "$work/read.json" \
+            > "$work/why.txt" 2>&1; then
+        ok=$((ok+1))
+      else
+        bad=$((bad+1))
+        echo "DIFFER $encoding.$endian read $c :: $(head -3 "$work/why.txt" | tr '\n' ' ')" >> "$L"
+      fi
+    fi
+  done
+  printf '%s.%s  %-5s MATCH=%d DIFFER=%d REFUSED=%d NOREF=%d\n' \
+      "$encoding" "$endian" "$direction" "$ok" "$bad" "$refused" "$noref"
+  [ "$bad" -eq 0 ] || status=1
+done
+done
+done
+echo "per case: $L" >&2
+exit "$status"

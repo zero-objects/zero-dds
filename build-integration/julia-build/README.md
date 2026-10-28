@@ -1,51 +1,36 @@
-# Julia `deps/build.jl`
+# Julia — `deps/build.jl`
 
-The idiomatic native Julia package build step. Mirrors `zerodds-build` /
-CMake's `zerodds_idlc_generate()` for the Julia ecosystem. See
-`sample-consumer/deps/build.jl`.
+`Pkg.build()` runs `deps/build.jl`, which calls `zerodds-idlc generate
+--lang julia --out src/gen idl/Robot.idl` when `src/gen/Robot.jl` is
+missing or older than the IDL file. `Pkg.build` re-runs `build.jl` every
+time; the mtime check is the script's own.
 
 ## Usage
 
-```
+```bash
 julia --project=sample-consumer -e 'using Pkg; Pkg.build()'
 julia --project=sample-consumer sample-consumer/src/RobotDemo.jl
 ```
 
-`Pkg.build()` runs `deps/build.jl`, which regenerates `src/gen/Robot.jl`
-from `idl/Robot.idl` only when the `.idl` is newer than the generated
-file (`build.jl` does its own `mtime` comparison — `Pkg.build` itself
-has no incremental concept, it always re-executes `build.jl`).
+`ZERODDS_IDLC` overrides the `zerodds-idlc` on `PATH`. The generated file
+names `.ZeroddsWire`; `src/RobotDemo.jl` includes the runtime
+`runtime/julia/zerodds_wire.jl` first. That runtime imports the standard
+library `InteractiveUtils`, which `Project.toml` lists so the package
+precompiles.
 
-## Validation status
+## Checked
 
-Not build-validated in this pass: Julia was not installed on the local
-macOS dev machine, and the shared Linux validation host was flagged
-mid-task as overloaded (further installs/builds there were stopped
-rather than pushed through). `deps/build.jl` and the sample were written
-and reviewed against the actual generated Julia API surface (confirmed
-via a real `zerodds-idlc generate --julia` run — `struct Pose`,
-`marshal_xcdr`, `unmarshal_xcdr_Pose`, `LE`/`BE`, field names verbatim),
-but not run. Central serial validation (once the host has room) should
-run `julia --project=sample-consumer -e 'using Pkg; Pkg.build()'` then
-`julia --project=sample-consumer sample-consumer/src/RobotDemo.jl`.
+macOS (Julia 1.12.6): `Pkg.build()` generates and precompiles `RobotDemo`;
+both the script and `using RobotDemo; RobotDemo.main()` print
 
-## Known IDL-surface gap this sample works around (not a build-tool gap)
+```
+OK: Robot::Pose round-tripped through generated zd_enc_Robot_Pose/zd_dec_Robot_Pose (40 wire bytes), robot_id=r2d2
+```
 
-`crates/idl-julia` has no `Definition::Module` arm (same family finding
-noted in the Swift/Nim/D READMEs) — the sample `.idl` is a flat,
-unwrapped `struct Pose`.
+Running `deps/build.jl` again without a change prints `up to date,
+skipping regeneration`.
 
-## What a fuller pass would add
+## Not covered
 
-- **General Registry publication.** This sample consumes `zerodds-idlc`
-  as a build step *inside its own* `deps/build.jl`; there is no separate
-  "zerodds_idlc" Julia package to depend on (Julia's build-step
-  convention is per-package, not a shared plugin registered elsewhere —
-  unlike Gradle/SPM/Mix). A fuller pass would extract the
-  generate-if-stale logic into a small shared `.jl` helper file other
-  packages could `include()`.
-- `#include` dependency tracking (same gap as the other integrations).
-- Precompilation interaction: `Pkg.build()` must run *before* Julia
-  precompiles `RobotDemo` (true today because `Pkg.build` and
-  precompilation are already separate, ordered Pkg operations) — not
-  wired into `Pkg.precompile()` directly.
+- An `#include`d IDL file is not part of the mtime check.
+- No shared package; each consumer carries its own `deps/build.jl`.

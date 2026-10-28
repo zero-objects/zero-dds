@@ -34,11 +34,16 @@
 # Wire (little-endian, 8-byte header + body):
 #   [0]=session [1]=stream [2..4]=seq u16 LE [4]=submsg id [5]=flags
 #   [6..8]=body-len u16 LE [8..]=body
-#   WRITE_DATA id=0x07 flags=0x03 body=sample; header seq = the sample's
+#   WRITE_DATA id=0x07 flags=0x01 body = BaseObjectRequest + sample; header seq = the sample's
 #     RFC-1982 sequence number, on the reliable stream (id 0x80).
 #   HEARTBEAT id=0x0B flags=0x01 body(5)= first i16 LE, last i16 LE, stream
-#   ACKNACK   id=0x0A flags=0x01 body(5)= first_unacked i16 LE, nack[0],
-#     nack[1], stream
+#   ACKNACK   id=0x0A flags=0x01 body(9)= DHEADER u32 LE (=5), first_unacked
+#     i16 LE, nack[0], nack[1], stream. ACKNACK_Payload has no @extensibility,
+#     so it is APPENDABLE (DDS-XTypes 1.3 section 7.3.1.2.1.8) and carries a
+#     DHEADER in XCDR2 (unannotated_types="appendable", the default). With
+#     unannotated_types="final" the body is the 5 octets of the FINAL form of
+#     the reference implementation (eProsima), length field 5, 13-octet
+#     frame. The parser accepts both forms in either setting.
 #   HEARTBEAT/ACKNACK travel on the control stream (session 0x80, stream
 #   NONE 0x00); the target reliable stream id rides in the body's last byte.
 #
@@ -61,7 +66,11 @@ RELIABLE_STREAM_ID = 0x80
 _SM_WRITE_DATA = 0x07
 _SM_ACKNACK = 0x0A
 _SM_HEARTBEAT = 0x0B
-_WRITE_FLAGS = 0x03
+# E flag (little-endian body) + DataFormat FORMAT_DATA (0b000) in bits 1..3 --
+# DDS-XRCE 1.0 Sec 8.3.5.8.
+_WRITE_FLAGS = 0x01
+# Wire size of the BaseObjectRequest that precedes the sample (Sec 7.7.8).
+BASE_SIZE = 4
 _CTRL_FLAGS = 0x01
 
 # Heartbeat period (spec recommends 100 ms; 500 ms here -- no Tx-pacing layer
@@ -71,12 +80,27 @@ HEARTBEAT_PERIOD_S = 0.5
 SENDER_WINDOW = 16
 # Receiver out-of-order buffer cap (DoS bound).
 RECEIVER_BUFFER = 64
-# Per-sample payload cap (u16 submessage length limit).
-MAX_PAYLOAD = 65535
+# Per-sample payload cap: the largest sample whose body (BaseObjectRequest +
+# sample, Sec 7.7.8) still fits the 16-bit submessage_length.
+MAX_PAYLOAD = 0xFFFF - BASE_SIZE
 
 _HEADER_FMT = struct.Struct("<BBHBBH")  # session,stream,seq,submsg,flags,len
 _HEARTBEAT_BODY_FMT = struct.Struct("<HHB")  # first,last,stream
 _ACKNACK_BODY_FMT = struct.Struct("<HBBB")  # first_unacked,nack_lo,nack_hi,stream
+_ACKNACK_DHEADER = struct.pack("<I", _ACKNACK_BODY_FMT.size)  # APPENDABLE: DHEADER = 5
+
+# How the types of DDS-XRCE 1.0 Annex A without @extensibility are written
+# (DDS-XTypes 1.3 section 7.3.1.2.1.8). This module writes one such type,
+# ACKNACK_Payload; HEARTBEAT_Payload is FINAL in Annex A and does not change.
+UNANNOTATED_APPENDABLE = "appendable"  # with a DHEADER (default)
+UNANNOTATED_FINAL = "final"  # without a DHEADER (reference implementation)
+
+
+def _check_unannotated_types(mode):
+    if mode != UNANNOTATED_APPENDABLE and mode != UNANNOTATED_FINAL:
+        raise ValueError(
+            "unannotated_types must be 'appendable' or 'final', got %r" % (mode,))
+    return mode
 
 
 # --- RFC-1982 16-bit serial-number comparison ---------------------------
@@ -95,26 +119,45 @@ def seq_gt(a, b):
 # --- wire codec ----------------------------------------------------------
 
 
-def reliable_write_frame(seq, sample):
-    """Reliable WRITE_DATA frame; header seq carries the sample's seqnr."""
+def reliable_write_frame(seq, object_id, sample):
+    """Reliable WRITE_DATA frame; header seq carries the sample's seqnr.
+
+    The submessage body is the BaseObjectRequest (Sec 7.7.8: request_id then
+    object_id, each two octets most significant first) followed by the sample.
+    `object_id` names the target DataWriter; the request_id is the sample's own
+    sequence number, unique per stream as Sec 7.7.8 requires.
+
+    The 16-bit submessage_length field cannot describe a body larger than
+    0xFFFF; raise rather than truncate the length while appending the full
+    payload (mirrors the C SDK's rejection).
+    """
     sample = bytes(sample)
+    body_len = BASE_SIZE + len(sample)
+    if body_len > 0xFFFF:
+        raise ValueError("sample exceeds 16-bit submessage_length")
     header = _HEADER_FMT.pack(
         XRCE_SESSION_NOKEY,
         RELIABLE_STREAM_ID,
         seq & 0xFFFF,
         _SM_WRITE_DATA,
         _WRITE_FLAGS,
-        len(sample) & 0xFFFF,
+        body_len & 0xFFFF,
     )
-    return header + sample
+    base = struct.pack(">HH", seq & 0xFFFF, object_id & 0xFFFF)
+    return header + base + sample
 
 
 def reliable_unframe(frame):
-    """`(seq, sample)` from a WRITE_DATA frame, or `None`."""
-    if len(frame) < 8 or frame[4] != _SM_WRITE_DATA:
+    """`(seq, sample)` from a WRITE_DATA frame, or `None`. The sample starts
+    after the BaseObjectRequest; a body too short to hold one is refused
+    rather than handed back truncated."""
+    if len(frame) < 8 + BASE_SIZE or frame[4] != _SM_WRITE_DATA:
+        return None
+    sm_len = struct.unpack_from("<H", frame, 6)[0]
+    if sm_len < BASE_SIZE or 8 + sm_len > len(frame):
         return None
     seq = struct.unpack_from("<H", frame, 2)[0]
-    return seq, bytes(frame[8:])
+    return seq, bytes(frame[8 + BASE_SIZE:8 + sm_len])
 
 
 def heartbeat_frame(msg_seq, first, last, stream_id,
@@ -136,13 +179,18 @@ def parse_heartbeat(frame):
 
 
 def acknack_frame(msg_seq, first_unacked, nack_bitmap, stream_id,
-                   session=XRCE_SESSION_NOKEY, stream_hdr=XRCE_STREAM_NONE):
-    """ACKNACK control frame. Byte-identical to `golden_acknack_le.bin` for
+                   session=XRCE_SESSION_NOKEY, stream_hdr=XRCE_STREAM_NONE,
+                   unannotated_types=UNANNOTATED_APPENDABLE):
+    """ACKNACK control frame. With `unannotated_types="appendable"` (default)
+    17 octets, byte-identical to `golden_acknack_le.bin` for
     `(session=0x80, stream_hdr=0x00, msg_seq=1, first_unacked=1,
-    nack_bitmap=0, stream_id=0x80)`."""
+    nack_bitmap=0, stream_id=0x80)`; with `"final"` 13 octets (body length 5,
+    no DHEADER)."""
+    final = _check_unannotated_types(unannotated_types) == UNANNOTATED_FINAL
     header = _HEADER_FMT.pack(session, stream_hdr, msg_seq & 0xFFFF,
-                               _SM_ACKNACK, _CTRL_FLAGS, 5)
-    body = _ACKNACK_BODY_FMT.pack(
+                               _SM_ACKNACK, _CTRL_FLAGS,
+                               _ACKNACK_BODY_FMT.size if final else 9)
+    body = (b"" if final else _ACKNACK_DHEADER) + _ACKNACK_BODY_FMT.pack(
         first_unacked & 0xFFFF,
         nack_bitmap & 0xFF,
         (nack_bitmap >> 8) & 0xFF,
@@ -152,10 +200,16 @@ def acknack_frame(msg_seq, first_unacked, nack_bitmap, stream_id,
 
 
 def parse_acknack(frame):
-    """`(first_unacked, nack_bitmap, stream)` from an ACKNACK frame, or `None`."""
+    """`(first_unacked, nack_bitmap, stream)` from an ACKNACK frame, or `None`.
+    Accepts body length 9 (DHEADER + 5 octets) and the FINAL form (5)."""
     if len(frame) < 13 or frame[4] != _SM_ACKNACK:
         return None
-    first_unacked, lo, hi, stream = _ACKNACK_BODY_FMT.unpack_from(frame, 8)
+    off = 8
+    if frame[6] | (frame[7] << 8) >= 9:
+        if len(frame) < 17:
+            return None
+        off = 12  # skip the 4-octet DHEADER
+    first_unacked, lo, hi, stream = _ACKNACK_BODY_FMT.unpack_from(frame, off)
     return first_unacked, lo | (hi << 8), stream
 
 
@@ -244,9 +298,24 @@ class ReliableReceiver(object):
     """Reliable receiver: buffers out-of-order samples, delivers them
     contiguously, and reports the missing seqnrs for ACKNACK."""
 
-    def __init__(self):
+    def __init__(self, unannotated_types=UNANNOTATED_APPENDABLE):
+        """`unannotated_types`: `"appendable"` (default) or `"final"`, the
+        form of the ACKNACK frames `acknack_frame()` writes."""
+        self._unannotated_types = _check_unannotated_types(unannotated_types)
         self._expected = 0
         self._received = {}  # seq -> bytes
+
+    @property
+    def unannotated_types(self):
+        return self._unannotated_types
+
+    def acknack_frame(self, hint_last_seen=None, msg_seq=1,
+                      session=XRCE_SESSION_NOKEY, stream_hdr=XRCE_STREAM_NONE):
+        """The ACKNACK frame for `pending_acknack(hint_last_seen)`, in the
+        form of this receiver's `unannotated_types`."""
+        first, bitmap, stream_id = self.pending_acknack(hint_last_seen)
+        return acknack_frame(msg_seq, first, bitmap, stream_id, session,
+                             stream_hdr, self._unannotated_types)
 
     def expected(self):
         return self._expected
@@ -312,8 +381,10 @@ class ReliableWriter(object):
     of the queue on every loop iteration, exactly like the Rust/C writer's
     separate `running` atomic (not routed through their ring either)."""
 
-    def __init__(self, sock, window=SENDER_WINDOW, maxsize=1024):
+    def __init__(self, sock, object_id, window=SENDER_WINDOW, maxsize=1024):
         self._sock = sock
+        # ObjectId of the target DataWriter (Sec 7.7.8 BaseObjectRequest).
+        self._object_id = object_id
         self._window = window
         self._queue = queue.Queue(maxsize=maxsize)
         self._closing = threading.Event()
@@ -353,7 +424,8 @@ class ReliableWriter(object):
                     break
                 status, seq = sender.submit(item)
                 if status == "ok":
-                    self._safe_send(reliable_write_frame(seq, item))
+                    self._safe_send(
+                        reliable_write_frame(seq, self._object_id, item))
 
             # 2) Period-gated HEARTBEAT.
             hb = sender.pending_heartbeat(time.monotonic())
@@ -381,7 +453,8 @@ class ReliableWriter(object):
                         seq = (first_unacked + i) & 0xFFFF
                         payload = sender.get_in_flight(seq)
                         if payload is not None:
-                            self._safe_send(reliable_write_frame(seq, payload))
+                            self._safe_send(
+                                reliable_write_frame(seq, self._object_id, payload))
 
             # 4) Exit once closed AND the window (+ queue backlog) has
             #    drained -- or, as a safety valve, once the post-close

@@ -148,6 +148,7 @@ impl ActiveObjectMap {
     }
 
     /// Sets the uniqueness policy (internal, for POA construction).
+    #[cfg(feature = "std")]
     pub(crate) fn set_uniqueness(&mut self, u: IdUniquenessPolicy) {
         self.uniqueness = u;
     }

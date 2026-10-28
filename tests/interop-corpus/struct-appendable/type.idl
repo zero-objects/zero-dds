@@ -1,0 +1,6 @@
+// appendable structure
+@appendable struct Sample {
+    long a;
+    double b;
+    short c;
+};

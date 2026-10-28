@@ -1,18 +1,27 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// OpenDDS C++ Roundtrip-Bench-App. Apples-to-apples mit
+// OpenDDS C++ roundtrip bench app. Apples-to-apples with
 // ZeroDDS/Cyclone/FastDDS/RTI via gemeinsame roundtrip.idl.
 //
 // OpenDDS nutzt die klassische OMG-DDS-C++-API (DDS::DomainParticipant
 // etc). Codegen: opendds_idl + tao_idl (via opendds_target_sources im
 // CMake). Discovery MUSS RTPS sein (opendds_rtps.ini) — OpenDDS-Default
-// ist InfoRepo, das spricht kein anderer Vendor.
+// is InfoRepo, which no other vendor speaks.
 //
-// Aufruf braucht `-DCPSConfigFile opendds_rtps.ini`:
+// Call needs `-DCPSConfigFile opendds_rtps.ini`:
 //   ./opendds-roundtrip pong 10 -DCPSConfigFile ../opendds_rtps.ini
 //   ./opendds-roundtrip ping --payload 64 -DCPSConfigFile ../opendds_rtps.ini
+//
+// With BENCH_RICH defined (target opendds-roundtrip-rich) the sample type is
+// the codec-heavy roundtrip_rich.idl → RoundtripBench::RoundtripRich, on the
+// topics RoundtripRichBench_* of the other rich builds.
 
+#ifdef BENCH_RICH
+#include "roundtrip_richTypeSupportImpl.h"
+#else
 #include "roundtripTypeSupportImpl.h"
+#endif
+#include "bench_common.hpp"
 
 #include <dds/DCPS/Service_Participant.h>
 #include <dds/DCPS/Marked_Default_Qos.h>
@@ -33,19 +42,67 @@
 
 namespace {
 
-// Domain via ZERODDS_BENCH_DOMAIN env-var ueberschreibbar (Default 200).
+using bench::now_ns;
+using bench::print_quantiles;
+
 static DDS::DomainId_t resolve_domain() {
-    const char* s = std::getenv("ZERODDS_BENCH_DOMAIN");
-    if (s) { try { return static_cast<DDS::DomainId_t>(std::stoi(s)); } catch (...) {} }
-    return 200;
+    return static_cast<DDS::DomainId_t>(bench::env_domain());
 }
+static bool bench_xcdr1() {
+    return bench::xcdr1_requested();
+}
+static DDS::DataRepresentationId_t bench_repr() {
+    return bench_xcdr1() ? DDS::XCDR_DATA_REPRESENTATION : DDS::XCDR2_DATA_REPRESENTATION;
+}
+
+#ifdef BENCH_RICH
+using Sample                = RoundtripBench::RoundtripRich;
+using SampleTypeSupport_var = RoundtripBench::RoundtripRichTypeSupport_var;
+using SampleTypeSupportImpl = RoundtripBench::RoundtripRichTypeSupportImpl;
+using SampleDataWriter      = RoundtripBench::RoundtripRichDataWriter;
+using SampleDataWriter_ptr  = RoundtripBench::RoundtripRichDataWriter_ptr;
+using SampleDataWriter_var  = RoundtripBench::RoundtripRichDataWriter_var;
+using SampleDataReader      = RoundtripBench::RoundtripRichDataReader;
+using SampleDataReader_var  = RoundtripBench::RoundtripRichDataReader_var;
+constexpr const char* kProgram = "opendds-roundtrip-rich";
+const char* kReqTopic  = "RoundtripRichBench_Request";
+const char* kEchoTopic = "RoundtripRichBench_Echo";
+constexpr size_t kNumWaypoints = 8;
+
+void populate(Sample& m, size_t payload_size) {
+    m.name = "opendds-rich-roundtrip-bench";
+    for (size_t i = 0; i < 16; ++i) m.transform[i] = static_cast<double>(i) * 1.5 + 0.25;
+    m.waypoints.length(static_cast<CORBA::ULong>(kNumWaypoints));
+    for (CORBA::ULong i = 0; i < kNumWaypoints; ++i) {
+        auto& w = m.waypoints[i];
+        w.id = static_cast<CORBA::ULong>(i);
+        w.position.x = 1.0 * i; w.position.y = 2.0 * i; w.position.z = 3.0 * i;
+        w.velocity.x = 0.1 * i; w.velocity.y = 0.2 * i; w.velocity.z = 0.3 * i;
+        std::string lbl = std::string("wp-") + std::to_string(i);
+        w.label = lbl.c_str();
+        w.weight = 0.5 * static_cast<double>(i) + 1.0;
+    }
+    m.payload.length(static_cast<CORBA::ULong>(payload_size));
+    for (size_t i = 0; i < payload_size; ++i) m.payload[i] = 0xAB;
+}
+#else
+using Sample                = RoundtripBench::Roundtrip;
+using SampleTypeSupport_var = RoundtripBench::RoundtripTypeSupport_var;
+using SampleTypeSupportImpl = RoundtripBench::RoundtripTypeSupportImpl;
+using SampleDataWriter      = RoundtripBench::RoundtripDataWriter;
+using SampleDataWriter_ptr  = RoundtripBench::RoundtripDataWriter_ptr;
+using SampleDataWriter_var  = RoundtripBench::RoundtripDataWriter_var;
+using SampleDataReader      = RoundtripBench::RoundtripDataReader;
+using SampleDataReader_var  = RoundtripBench::RoundtripDataReader_var;
+constexpr const char* kProgram = "opendds-roundtrip";
 const char* kReqTopic  = "RoundtripBench_Request";
 const char* kEchoTopic = "RoundtripBench_Echo";
 
-uint64_t now_ns() {
-    auto t = std::chrono::steady_clock::now().time_since_epoch();
-    return std::chrono::duration_cast<std::chrono::nanoseconds>(t).count();
+void populate(Sample& m, size_t payload_size) {
+    m.payload.length(static_cast<CORBA::ULong>(payload_size));
+    for (size_t i = 0; i < payload_size; ++i) m.payload[i] = 0xAB;
 }
+#endif
 
 DDS::DataWriterQos reliable_dw_qos(DDS::Publisher_var& pub) {
     DDS::DataWriterQos qos;
@@ -53,12 +110,12 @@ DDS::DataWriterQos reliable_dw_qos(DDS::Publisher_var& pub) {
     qos.reliability.kind = DDS::RELIABLE_RELIABILITY_QOS;
     qos.history.kind = DDS::KEEP_LAST_HISTORY_QOS;
     qos.history.depth = 64;
-    // XCDR2 erzwingen. RTI ist matching-strict: wenn writer advertise
+    // Force XCDR2. RTI is matching-strict: if writer advertises
     // "XCDR, XCDR2" → RTI-reader (XCDR2-only) sagt "incompatible".
-    // Alle apps auf XCDR2-only zwingen damit cross-vendor jeder mit
+    // Force all apps to XCDR2-only so cross-vendor everyone with
     // jedem matched (XCDR2 ist verpflichtend in XTypes 1.3).
     qos.representation.value.length(1);
-    qos.representation.value[0] = DDS::XCDR2_DATA_REPRESENTATION;
+    qos.representation.value[0] = bench_repr();
     return qos;
 }
 
@@ -68,16 +125,22 @@ DDS::DataReaderQos reliable_dr_qos(DDS::Subscriber_var& sub) {
     qos.reliability.kind = DDS::RELIABLE_RELIABILITY_QOS;
     qos.history.kind = DDS::KEEP_LAST_HISTORY_QOS;
     qos.history.depth = 64;
-    // ALLOW_TYPE_COERCION — der Match faellt auf den (cross-vendor byte-
-    // identischen) COMPLETE-TypeObject zurueck, wenn ein Vendor wie RTI
-    // einen abweichenden MINIMAL-TypeObject emittiert (XTypes 1.3 §7.6.3).
+    // ALLOW_TYPE_COERCION — the match falls back to the (cross-vendor byte-
+    // identical) COMPLETE TypeObject when a vendor like RTI
+    // emits a diverging MINIMAL TypeObject (XTypes 1.3 §7.6.3).
     qos.type_consistency.kind = DDS::ALLOW_TYPE_COERCION;
+    // Only in the XCDR1 run: the reader's default list is left alone for the
+    // XCDR2 pairs, as in the matrix of 23.05.
+    if (bench_xcdr1()) {
+        qos.representation.value.length(1);
+        qos.representation.value[0] = bench_repr();
+    }
     return qos;
 }
 
 // DDS-Security 1.2 (env-driven) — setzt die Standard-PropertyQosPolicy
-// analog Fast-DDS/RTI. OpenDDS braucht zusaetzlich `DCPSSecurity=1`
-// global (via -DCPSConfigFile opendds_rtps_sec.ini oder -DCPSSecurity 1).
+// like Fast-DDS/RTI. OpenDDS additionally needs `DCPSSecurity=1`
+// globally (via -DCPSConfigFile opendds_rtps_sec.ini or -DCPSSecurity 1).
 //   ZERODDS_BENCH_SECURITY=1, ZERODDS_BENCH_SEC_NAME, ZERODDS_BENCH_SEC_DIR
 void apply_security(DDS::DomainParticipantQos& qos) {
     const char* sec = std::getenv("ZERODDS_BENCH_SECURITY");
@@ -115,32 +178,32 @@ DDS::DomainParticipant_var make_participant(DDS::DomainParticipantFactory_var& d
 }
 
 void register_type(DDS::DomainParticipant_var& dp) {
-    RoundtripBench::RoundtripTypeSupport_var ts =
-        new RoundtripBench::RoundtripTypeSupportImpl;
+    SampleTypeSupport_var ts =
+        new SampleTypeSupportImpl;
     ts->register_type(dp, "");
 }
 
 CORBA::String_var type_name() {
-    RoundtripBench::RoundtripTypeSupport_var ts =
-        new RoundtripBench::RoundtripTypeSupportImpl;
+    SampleTypeSupport_var ts =
+        new SampleTypeSupportImpl;
     return ts->get_type_name();
 }
 
 // Event-driven Pong-Listener: `on_data_available` feuert im OpenDDS-
-// Recv-Thread, sobald ein Request-Sample da ist — kein Busy-/Sleep-Poll.
-// Nimmt das Sample und schreibt es 1:1 auf das Echo-Topic.
+// Recv thread as soon as a request sample is present — no busy/sleep poll.
+// Takes the sample and writes it 1:1 to the echo topic.
 class PongListener : public virtual OpenDDS::DCPS::LocalObject<DDS::DataReaderListener> {
 public:
-    explicit PongListener(RoundtripBench::RoundtripDataWriter_ptr dw)
-        : dw_(RoundtripBench::RoundtripDataWriter::_duplicate(dw)), echoed_(0) {}
+    explicit PongListener(SampleDataWriter_ptr dw)
+        : dw_(SampleDataWriter::_duplicate(dw)), echoed_(0) {}
 
     uint64_t echoed() const { return echoed_.load(); }
 
     void on_data_available(DDS::DataReader_ptr reader) override {
-        RoundtripBench::RoundtripDataReader_var dr =
-            RoundtripBench::RoundtripDataReader::_narrow(reader);
+        SampleDataReader_var dr =
+            SampleDataReader::_narrow(reader);
         if (!dr) return;
-        RoundtripBench::Roundtrip sample;
+        Sample sample;
         DDS::SampleInfo info;
         while (dr->take_next_sample(sample, info) == DDS::RETCODE_OK) {
             if (info.valid_data) {
@@ -164,7 +227,7 @@ public:
         DDS::DataReader_ptr, const DDS::SampleLostStatus&) override {}
 
 private:
-    RoundtripBench::RoundtripDataWriter_var dw_;
+    SampleDataWriter_var dw_;
     std::atomic<uint64_t>                   echoed_;
 };
 
@@ -187,11 +250,11 @@ int run_pong(uint64_t max_runtime_s) {
 
     DDS::DataWriter_var dw_base = pub->create_datawriter(t_echo, reliable_dw_qos(pub), 0,
         OpenDDS::DCPS::DEFAULT_STATUS_MASK);
-    RoundtripBench::RoundtripDataWriter_var dw =
-        RoundtripBench::RoundtripDataWriter::_narrow(dw_base);
+    SampleDataWriter_var dw =
+        SampleDataWriter::_narrow(dw_base);
 
-    // Listener BEVOR der Reader erstellt wird — der Reader bekommt ihn
-    // direkt mit, on_data_available feuert ab dem ersten Sample.
+    // Listener BEFORE the reader is created — the reader gets it
+    // right away, on_data_available fires from the first sample.
     PongListener* pong_impl = new PongListener(dw.in());
     DDS::DataReaderListener_var listener = pong_impl;
     DDS::DataReader_var dr_base = sub->create_datareader(t_req, reliable_dr_qos(sub),
@@ -205,25 +268,6 @@ int run_pong(uint64_t max_runtime_s) {
     dp->delete_contained_entities();
     dpf->delete_participant(dp);
     return 0;
-}
-
-void print_quantiles(std::vector<uint64_t>& rtts, size_t payload_size) {
-    if (rtts.empty()) { std::cout << "no samples\n"; return; }
-    std::sort(rtts.begin(), rtts.end());
-    auto pct = [&](double p) {
-        size_t idx = std::min(rtts.size() - 1,
-                              static_cast<size_t>(p * (double)(rtts.size() - 1)));
-        return rtts[idx];
-    };
-    std::cout
-        << "payload=" << payload_size
-        << "  n=" << rtts.size()
-        << "  min=" << rtts.front()/1000.0 << "us"
-        << "  p50=" << pct(0.50)/1000.0 << "us"
-        << "  p90=" << pct(0.90)/1000.0 << "us"
-        << "  p99=" << pct(0.99)/1000.0 << "us"
-        << "  p999=" << pct(0.999)/1000.0 << "us"
-        << "  max=" << rtts.back()/1000.0 << "us\n";
 }
 
 int run_ping(size_t payload_size, uint64_t warmup, uint64_t samples) {
@@ -246,10 +290,10 @@ int run_ping(size_t payload_size, uint64_t warmup, uint64_t samples) {
         OpenDDS::DCPS::DEFAULT_STATUS_MASK);
     DDS::DataReader_var dr_base = sub->create_datareader(t_echo, reliable_dr_qos(sub), 0,
         OpenDDS::DCPS::DEFAULT_STATUS_MASK);
-    RoundtripBench::RoundtripDataWriter_var dw =
-        RoundtripBench::RoundtripDataWriter::_narrow(dw_base);
-    RoundtripBench::RoundtripDataReader_var dr =
-        RoundtripBench::RoundtripDataReader::_narrow(dr_base);
+    SampleDataWriter_var dw =
+        SampleDataWriter::_narrow(dw_base);
+    SampleDataReader_var dr =
+        SampleDataReader::_narrow(dr_base);
 
     // Auf Match warten — publication_matched + subscription_matched.
     {
@@ -267,9 +311,8 @@ int run_ping(size_t payload_size, uint64_t warmup, uint64_t samples) {
 
     std::vector<uint64_t> rtts;
     rtts.reserve(samples);
-    RoundtripBench::Roundtrip msg;
-    msg.payload.length(static_cast<CORBA::ULong>(payload_size));
-    for (size_t i = 0; i < payload_size; ++i) msg.payload[i] = 0xAB;
+    Sample msg;
+    populate(msg, payload_size);
 
     uint64_t total = warmup + samples;
     for (uint64_t seq = 0; seq < total; ++seq) {
@@ -280,7 +323,7 @@ int run_ping(size_t payload_size, uint64_t warmup, uint64_t samples) {
         auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(50);
         bool got = false;
         while (!got && std::chrono::steady_clock::now() < deadline) {
-            RoundtripBench::Roundtrip echo;
+            Sample echo;
             DDS::SampleInfo info;
             if (dr->take_next_sample(echo, info) == DDS::RETCODE_OK && info.valid_data) {
                 uint64_t now = now_ns();
@@ -305,7 +348,7 @@ int main(int argc, char** argv) {
     DDS::DomainParticipantFactory_var dpf =
         TheParticipantFactoryWithArgs(argc, argv);
     if (argc < 2) {
-        std::cerr << "Usage: opendds-roundtrip pong|ping [opts] -DCPSConfigFile <ini>\n";
+        std::cerr << "Usage: " << kProgram << " pong|ping [opts] -DCPSConfigFile <ini>\n";
         return 2;
     }
     std::string mode = argv[1];
@@ -314,18 +357,8 @@ int main(int argc, char** argv) {
         uint64_t rt_s = (argc > 2 && argv[2][0] != '-') ? std::stoull(argv[2]) : 30;
         rc = run_pong(rt_s);
     } else if (mode == "ping") {
-        size_t   payload = 64;
-        uint64_t warmup  = 200;
-        uint64_t samples = 5000;
-        for (int i = 2; i + 1 < argc; i += 2) {
-            std::string flag = argv[i];
-            if (flag.rfind("--", 0) != 0) continue;
-            uint64_t v = std::stoull(argv[i+1]);
-            if      (flag == "--payload") payload = static_cast<size_t>(v);
-            else if (flag == "--samples") samples = v;
-            else if (flag == "--warmup")  warmup  = v;
-        }
-        rc = run_ping(payload, warmup, samples);
+        bench::PingArgs a = bench::parse_ping_args(argc, argv, 2);
+        rc = run_ping(a.payload, a.warmup, a.samples);
     } else {
         std::cerr << "unknown mode: " << mode << "\n";
         rc = 2;

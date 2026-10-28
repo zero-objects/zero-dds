@@ -1,0 +1,20 @@
+// SPDX-License-Identifier: Apache-2.0
+// Fixture for test_idl_topic.py (SS6.1 — the IdlTopic/IdlWriter/IdlReader
+// bridge over a generated TopicDescriptor). @final, matching the removed
+// `zerodds.idl` decorator's own default.
+module sensor_msgs {
+  module msg {
+    @final
+    struct Temperature {
+      long celsius;
+      string sensor_id;
+    };
+
+    @final
+    struct Reading {
+      float value;
+      string label;
+      sequence<octet> payload;
+    };
+  };
+};

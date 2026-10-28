@@ -4,35 +4,94 @@
 //! Go endpoint ping-pong: raw generated codegen over UDP, plus the full stack
 //! (generated types + endpoint SDK, sync `Client` and async `AsyncReader`) with
 //! XRCE framing. Gated on `go`.
+//!
+//! The generated codec calls `runtime/go` (module `zdwire`) rather than
+//! carrying its own marshaller, so every app here requires two modules: the
+//! wire runtime and — for the framing cases — `endpoints/go`
+//! (module `zeroddsendpoint`).
 
 #![allow(clippy::expect_used, clippy::panic, clippy::print_stderr)]
 
-use std::path::Path;
 use std::process::{Child, Command, Stdio};
 
-use zerodds_endpoint_e2e::{IDL, Peer, bind_peer, ping_pong};
-use zerodds_idl::config::ParserConfig;
-use zerodds_idl_go::{GoGenOptions, generate_go_module};
+use zerodds_endpoint_e2e::codegen::{
+    Language, endpoints_dir, runtime_dir, scratch_dir, source, tool_available,
+};
+use zerodds_endpoint_e2e::{Peer, bind_peer, ping_pong, xcdr2_reader, xcdr2_writer};
 
 fn go_available() -> bool {
-    Command::new("go").arg("version").output().is_ok()
+    tool_available("go", "version")
 }
 
-/// Generated Ping/Pong module (package main) with the imports the app needs.
+/// The generated `Ping`/`Pong` module, as `package main` with the imports the
+/// app adds. The generator emits bare declarations; the package clause and the
+/// import block are this harness's to write.
 fn gen_module(extra_imports: &str) -> String {
-    let ast = zerodds_idl::parse(IDL, &ParserConfig::default()).expect("parse");
-    let src = generate_go_module(
-        &ast,
-        &GoGenOptions {
-            package_name: "main".to_string(),
-        },
+    format!(
+        "package main\n\nimport (\n\t\"zdwire\"\n{extra_imports})\n\n{}",
+        source(Language::Go)
     )
-    .expect("gen");
-    src.replacen(
-        "import \"math\"\n",
-        &format!("import (\n\t\"math\"\n{extra_imports})\n"),
-        1,
-    )
+}
+
+/// The XCDR2 little-endian writer the peer decodes. The `PlCdr1Framing` fields
+/// govern PL-CDR1 only and never fire under plain XCDR2; they are spelled out
+/// because `NewWriter` takes the struct positionally and a zero value would be
+/// a different framing silently.
+const GO_WRITER: &str = "\tzd_framing := zdwire.PlCdr1Framing{\n\
+     \t\tPidFlags:                  \"sentinel-must-understand\",\n\
+     \t\tHighestShortID:            16128,\n\
+     \t\tPadDeclaredLength:         true,\n\
+     \t\tPadDeclaredOptionalLength: true,\n\
+     \t\tMemberMustUnderstand:      true,\n\
+     \t\tPadAfterValue:             true,\n\
+     \t}\n\
+     \tzd_w := zdwire.NewWriter(zdwire.LittleEndian, 4, zd_framing, false)\n\
+     \tZd_enc_Ping(zd_w, Ping{Seq: 1, Msg: \"hello from app\"})\n\
+     \tsample := zd_w.Finish()\n";
+
+/// Decodes a `Pong` body with the generated decoder and prints the line the
+/// peer asserts on.
+const GO_PRINT_PONG: &str = "\tzd_r := zdwire.NewReader(body, zdwire.LittleEndian, 4, \
+     \"sentinel-must-understand\", 16128)\n\
+     \tpong := Zd_dec_Pong(zd_r, zdwire.TryConstructDiscard)\n\
+     \tfmt.Printf(\"PONG seq=%d reply=%s\\n\", pong.Seq, pong.Reply)\n";
+
+/// The `go.mod` for an app that needs the wire runtime, and optionally the
+/// endpoint SDK.
+fn go_mod(with_endpoint: bool) -> String {
+    let mut out = format!(
+        "module pingpongapp\n\ngo 1.21\n\nrequire zdwire v0.0.0\n\nreplace zdwire => {}\n",
+        runtime_dir("go").display()
+    );
+    if with_endpoint {
+        out.push_str(&format!(
+            "\nrequire zeroddsendpoint v0.0.0\n\nreplace zeroddsendpoint => {}\n",
+            endpoints_dir("go").display()
+        ));
+    }
+    out
+}
+
+/// Writes `main.go` + `go.mod` into a fresh directory and runs `go run .`.
+fn spawn_go(label: &str, src: &str, with_endpoint: bool, args: &[String]) -> Child {
+    let dir = scratch_dir(label);
+    std::fs::write(dir.join("main.go"), src).expect("write main.go");
+    std::fs::write(dir.join("go.mod"), go_mod(with_endpoint)).expect("write go.mod");
+    Command::new("go")
+        .arg("run")
+        .arg(".")
+        .args(args)
+        // Pure Go, no cgo: `net` links the system resolver through cgo by
+        // default on macOS, and a cgo-linked Go binary aborts before `main`
+        // on this host (`dyld: missing LC_UUID load command`). Nothing here
+        // needs cgo — the app resolves a numeric loopback address — so the
+        // pure-Go resolver is both sufficient and the portable choice.
+        .env("CGO_ENABLED", "0")
+        .current_dir(&dir)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn go")
 }
 
 // ---- 1) raw codegen over a plain UDP socket ----
@@ -44,36 +103,29 @@ func main() {
 		panic(err)
 	}
 	defer conn.Close()
-	if _, err := conn.Write((Ping{Seq: 1, Msg: "hello from app"}).MarshalXCDR(Little)); err != nil {
+__WRITER__
+	if _, err := conn.Write(sample); err != nil {
 		panic(err)
 	}
 	buf := make([]byte, 4096)
-	_ = conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+	_ = conn.SetReadDeadline(time.Now().Add(30 * time.Second))
 	n, err := conn.Read(buf)
 	if err != nil {
 		panic(err)
 	}
-	pong := UnmarshalXCDRPong(buf[:n], Little)
-	fmt.Printf("PONG seq=%d reply=%s\n", pong.Seq, pong.Reply)
+	body := buf[:n]
+__PRINT__
 }
 "#;
 
 fn build_go_raw(port: u16) -> Child {
     let mut src = gen_module("\t\"fmt\"\n\t\"net\"\n\t\"os\"\n\t\"time\"\n");
-    // The raw app sends a bare XCDR2 sample (no XRCE frame), so the peer's
-    // xrce_unframe would reject it — the raw case uses its own tiny harness.
-    src.push_str(GO_RAW_MAIN);
-    let dir = std::env::temp_dir().join(format!("pp_go_raw_{}", std::process::id()));
-    std::fs::create_dir_all(&dir).expect("mkdir");
-    std::fs::write(dir.join("main.go"), &src).expect("write");
-    Command::new("go")
-        .arg("run")
-        .arg(dir.join("main.go"))
-        .arg(port.to_string())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn go")
+    src.push_str(
+        &GO_RAW_MAIN
+            .replace("__WRITER__", GO_WRITER)
+            .replace("__PRINT__", GO_PRINT_PONG),
+    );
+    spawn_go("go_raw", &src, false, &[port.to_string()])
 }
 
 #[test]
@@ -82,25 +134,25 @@ fn go_raw_udp() {
         eprintln!("SKIP go_raw_udp: `go` not on PATH");
         return;
     }
-    // The raw app sends a bare XCDR2 Ping (no XRCE frame); run a minimal peer.
+    // The raw app sends a bare XCDR2 Ping (no XRCE frame), so the peer's
+    // `xrce_unframe` would reject it — the raw case runs its own tiny peer.
     use std::net::UdpSocket;
     use std::time::Duration;
-    use zerodds_cdr::{BufferReader, BufferWriter, Endianness};
     let sock = UdpSocket::bind("127.0.0.1:0").expect("bind");
     let port = sock.local_addr().expect("addr").port();
     let child = build_go_raw(port);
-    sock.set_read_timeout(Some(Duration::from_secs(30)))
+    sock.set_read_timeout(Some(Duration::from_secs(90)))
         .expect("timeout");
     let mut buf = [0u8; 4096];
     let (n, app) = sock.recv_from(&mut buf).expect("recv");
-    let mut r = BufferReader::new(&buf[..n], Endianness::Little).xcdr2();
+    let mut r = xcdr2_reader(&buf[..n]);
     let seq = r.read_u32().expect("seq");
     let msg = r.read_string().expect("msg");
     assert_eq!((seq, msg.as_str()), (1, "hello from app"));
-    let mut w = BufferWriter::new(Endianness::Little).xcdr2();
-    w.write_u32(seq).expect("s");
-    w.write_string(&format!("pong:{msg}")).expect("r");
-    sock.send_to(&w.into_bytes(), app).expect("send");
+    let mut w = xcdr2_writer();
+    w.write_u32(seq);
+    w.write_string(&format!("pong:{msg}"));
+    sock.send_to(&w.finish(), app).expect("send");
     let out = child.wait_with_output().expect("wait");
     assert!(
         String::from_utf8_lossy(&out.stdout).contains("PONG seq=1 reply=pong:hello from app"),
@@ -146,26 +198,26 @@ func main() {
 	}
 	defer conn.Close()
 	tr := &udpTransport{conn: conn, peer: peer}
-	sample := (Ping{Seq: 1, Msg: "hello from app"}).MarshalXCDR(Little)
+__WRITER__
 	var body []byte
 	if mode == "async" {
 		reader := zerodds.NewAsyncReader(tr)
 		defer reader.Close()
-		if err := zerodds.NewAsyncWriter(tr).Write(sample); err != nil {
+		if err := zerodds.NewAsyncWriter(tr, zerodds.XrceObjectID(0x001, uint16(zerodds.ObjkDataWriter))).Write(sample); err != nil {
 			panic(err)
 		}
 		select {
 		case body = <-reader.Samples:
-		case <-time.After(10 * time.Second):
+		case <-time.After(30 * time.Second):
 			panic("async: no pong")
 		}
 	} else {
-		client := zerodds.NewClient(tr)
+		client := zerodds.NewClient(tr, zerodds.XrceObjectID(0x001, uint16(zerodds.ObjkDataWriter)))
 		if err := client.Write(sample); err != nil {
 			panic(err)
 		}
 		var ok bool
-		body, ok, err = client.Receive(10 * time.Second)
+		body, ok, err = client.Receive(30 * time.Second)
 		if err != nil {
 			panic(err)
 		}
@@ -173,37 +225,24 @@ func main() {
 			panic("sync: no pong")
 		}
 	}
-	pong := UnmarshalXCDRPong(body, Little)
-	fmt.Printf("PONG seq=%d reply=%s\n", pong.Seq, pong.Reply)
+__PRINT__
 }
 "#;
 
 fn build_go_endpoint(mode: &str, port: u16) -> Child {
     let mut src =
         gen_module("\t\"fmt\"\n\t\"net\"\n\t\"os\"\n\t\"time\"\n\n\tzerodds \"zeroddsendpoint\"\n");
-    src.push_str(GO_ENDPOINT_MAIN);
-    let endpoints_go = format!("{}/../../endpoints/go", env!("CARGO_MANIFEST_DIR"));
-    let dir = std::env::temp_dir().join(format!("pp_go_ep_{mode}_{}", std::process::id()));
-    std::fs::create_dir_all(&dir).expect("mkdir");
-    std::fs::write(dir.join("main.go"), &src).expect("write");
-    std::fs::write(
-        dir.join("go.mod"),
-        format!(
-            "module pingpongapp\n\ngo 1.19\n\nrequire zeroddsendpoint v0.0.0\n\nreplace zeroddsendpoint => {}\n",
-            Path::new(&endpoints_go).canonicalize().expect("endpoints/go path").display()
-        ),
+    src.push_str(
+        &GO_ENDPOINT_MAIN
+            .replace("__WRITER__", GO_WRITER)
+            .replace("__PRINT__", GO_PRINT_PONG),
+    );
+    spawn_go(
+        &format!("go_ep_{mode}"),
+        &src,
+        true,
+        &[mode.to_string(), port.to_string()],
     )
-    .expect("go.mod");
-    Command::new("go")
-        .arg("run")
-        .arg(".")
-        .arg(mode)
-        .arg(port.to_string())
-        .current_dir(&dir)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn go")
 }
 
 fn endpoint_case(mode: &str) {

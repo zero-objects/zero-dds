@@ -1,0 +1,1 @@
+fill_3.inc:5:11: error: 'sample.ids' is a pointer; did you mean to use '->'?

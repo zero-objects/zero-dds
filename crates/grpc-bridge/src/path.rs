@@ -32,7 +32,7 @@ impl std::error::Error for PathError {}
 /// Returns `(service_name, method_name)`. Both MUST be non-empty.
 ///
 /// # Errors
-/// Siehe [`PathError`].
+/// See [`PathError`].
 pub fn parse_path(path: &str) -> Result<(String, String), PathError> {
     let stripped = path.strip_prefix('/').ok_or(PathError::NotAbsolute)?;
     let mut parts = stripped.splitn(2, '/');

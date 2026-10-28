@@ -196,6 +196,12 @@ impl TsnTransport {
 }
 
 impl Transport for TsnTransport {
+    /// An Ethernet frame carries 1500 octets of payload (IEEE 802.3), the
+    /// 4 octets of a VLAN tag not counted.
+    fn max_message_size(&self) -> usize {
+        1500
+    }
+
     fn send(&self, dest: &Locator, data: &[u8]) -> Result<(), SendError> {
         if dest.kind != LocatorKind::Tsn {
             return Err(SendError::UnsupportedLocator);

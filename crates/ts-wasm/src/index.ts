@@ -3,19 +3,30 @@
 //
 // index.ts — public surface of the @zerodds/wasm package.
 //
-// Combines three layers:
+// Combines two layers:
 //   1. the wasm-bindgen CDR codec glue (default `init`, `version`, CdrEncoder,
-//      CdrDecoder) — generated under pkg-web/ by `wasm-pack build --target web`;
+//      CdrDecoder) — generated under pkg-web/ by `wasm-pack build --target web`.
+//      `CdrEncoder`/`CdrDecoder` build on `zerodds-wire`'s `Writer`/`Reader`
+//      (see lib.rs), the same runtime the generated Rust encoders call — the
+//      one CDR codec this package carries;
 //   2. the DDS-TS Annex C browser DCPS-over-WebSocket runtime (facade + flat
-//      C.2 operations);
-//   3. the @zerodds/cdr XCDR2 codec re-export.
+//      C.2 operations).
+//
+// A package that generates TypeScript for the browser and wants a pure-TS
+// (non-WASM) codec depends on `@zerodds/wire` (`runtime/typescript`)
+// directly — the package `zerodds-idlc generate --lang typescript` already
+// imports from, and the one this package used to re-export its own,
+// dead-relative-to-that-codegen copy of (`./cdr/`, XTypes 1.3 §7.4.3.4.2's
+// EMHEADER LC=3 written with a NEXTINT for a variable-length @mutable
+// member — 8 inline octets and no NEXTINT is what a conformant peer reads
+// there, so that copy desynced from the member on; removed with it).
 //
 // The snippet `import init, { DomainParticipantFactory } from '@zerodds/wasm'`
 // resolves `init` (default, WASM bootstrap) and `DomainParticipantFactory`
 // (DCPS facade) from here.
 
 // 1. WASM codec glue. `init` is the default __wbg_init bootstrap.
-import init, { version, CdrEncoder, CdrDecoder } from "../pkg-web/dds_ts_wasm.js";
+import init, { version, CdrEncoder, CdrDecoder } from "../pkg-web/zerodds_ts_wasm.js";
 export default init;
 export { version, CdrEncoder, CdrDecoder };
 
@@ -75,15 +86,3 @@ export {
   bytesToBase64,
   base64ToBytes,
 } from "./dcps/transport.js";
-
-// 3. XCDR2 codec re-export (so codegen output can `import { Xcdr2Writer } from
-//    '@zerodds/wasm'` if desired).
-export {
-  Xcdr2Writer,
-  Xcdr2Reader,
-  md5,
-  XcdrError,
-  type DdsTopicType,
-  type ExtensibilityKind,
-  type EndianMode,
-} from "./cdr/index.js";

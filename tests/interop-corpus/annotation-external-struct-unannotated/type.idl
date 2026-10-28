@@ -1,0 +1,10 @@
+// `@external` on an aggregate member, unannotated
+struct Inner {
+    long a;
+    short b;
+};
+
+struct Sample {
+    @external Inner nested;
+    long tail;
+};

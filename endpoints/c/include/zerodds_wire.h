@@ -37,6 +37,7 @@ extern "C" {
 #define ZDW_OK        0
 #define ZDW_E_OVERrun 1  /* writer: not enough room / reader: not enough data */
 #define ZDW_E_INVALID 2  /* malformed input (e.g. bad string terminator)      */
+#define ZDW_E_RANGE   3  /* a value that does not fit the wire width it names */
 
 /* A 64-bit value as two 32-bit halves (portable to true C89, which has no
  * standard 64-bit integer). `hi` is the most significant 32 bits. */
@@ -72,6 +73,13 @@ void zdw_reader_init(zdw_reader *r, const unsigned char *buf, size_t len, int en
 
 /* --- writer: aligned primitives (return ZDW_OK or set + return the error) --- */
 
+/* The integer writers take the value in a C type that may be wider than the
+ * wire width they name (`unsigned int` for u16, `unsigned long` for u32 and
+ * the two u64 halves). A value past the wire width is refused with
+ * ZDW_E_RANGE and nothing is written: `zdw_put_u16(w, 70000)` writing 0x1170
+ * -- the low sixteen bits -- was the defect class every other binding's
+ * range-edge test exists to stop, and truncating here would reintroduce it
+ * under the one binding without such a test. */
 int zdw_put_u8(zdw_writer *w, unsigned char v);
 int zdw_put_u16(zdw_writer *w, unsigned int v);
 int zdw_put_u32(zdw_writer *w, unsigned long v);
@@ -131,7 +139,9 @@ int zdw_dheader_read(zdw_reader *r, unsigned long *len);
  * zdw_dheader_begin/end around the members. */
 
 /* Writes the LC4 EMHEADER for `member_id` and reserves the NEXTINT slot;
- * returns the body-start position for zdw_emheader_end. */
+ * returns the body-start position for zdw_emheader_end. A `member_id` past
+ * the 28 bits the EMHEADER carries is refused with ZDW_E_RANGE and nothing
+ * is written: a masked id would put a DIFFERENT member's id on the wire. */
 size_t zdw_emheader_begin(zdw_writer *w, unsigned long member_id,
                           int must_understand);
 /* Back-patches the NEXTINT with the member body byte length. */

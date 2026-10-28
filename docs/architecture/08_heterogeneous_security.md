@@ -17,7 +17,7 @@ industrial edge gateways. There, the following typically share **one interface**
 |-------------------------|-----------------------------|---------------------------------|
 | Legacy ECU without cert | Plain (no security plugin)   | The supplier cannot do X.509    |
 | Fast subsystem          | HMAC-SHA256 (SIGN only)      | The latency budget forbids encrypt |
-| Regular peer            | AES-GCM-128                  | Default suite v1.4              |
+| Regular peer            | AES-GCM-256                  | Default suite (DDS-Security 1.2 §10.5.1.1) |
 | High-assurance peer     | AES-GCM-256 + OCSP           | Compliance / safety cert        |
 | Intra-host loopback     | Plain (never leaves the host) | Performance                    |
 
@@ -219,7 +219,7 @@ ZeroDDS namespace:
           <match cert_cn_pattern="*.fast.example" />
         </peer_class>
         <peer_class name="secure" protection="ENCRYPT">
-          <match auth_plugin_class="DDS:Auth:PKI-DH:1.2" suite="AES_128_GCM" />
+          <match auth_plugin_class="DDS:Auth:PKI-DH:1.2" suite="AES_256_GCM" />
         </peer_class>
         <peer_class name="highassurance" protection="ENCRYPT">
           <match cert_cn_pattern="*.ha.*" suite="AES_256_GCM" require_ocsp="true" />

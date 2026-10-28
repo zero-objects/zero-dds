@@ -15,7 +15,8 @@
 //!   (D&C §9).
 //! * [`node`] — NodeManager / NodeApplicationManager (D&C §9).
 //! * [`container_host`] — ContainerHost: binds a
-//!   `zerodds-corba-ccm::Container` to a plan application run.
+//!   `zerodds-corba-ccm::Container` to a plan application run. Behind the
+//!   `std` feature, like the container itself.
 //!
 //! ## Example
 //!
@@ -34,6 +35,7 @@ extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std;
 
+#[cfg(feature = "std")]
 pub mod container_host;
 pub mod execution;
 pub mod node;
@@ -41,6 +43,7 @@ pub mod plan;
 pub mod repository;
 pub mod xml;
 
+#[cfg(feature = "std")]
 pub use container_host::{ContainerHost, HostError};
 pub use execution::{DomainApplication, DomainApplicationManager, ExecutionManager};
 pub use node::{NodeApplication, NodeApplicationManager, NodeManager};

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
 # Builds the Cyclone ROS talker, captures an RTPS pcap of the ROS-2 wire
-# (ground truth) and prints a summary. Runs on codepit.
+# (ground truth) and prints a summary. Runs on the Linux test host.
 #
 # Env: CYCLONE (default /opt/cyclone), COUNT (default 20), OUT (pcap path).
 set -uo pipefail

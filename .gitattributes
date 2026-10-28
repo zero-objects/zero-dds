@@ -1,0 +1,2 @@
+runtime/cpp/include/dds/rpc/normative/*.h -text
+crates/lang-rules/tests/omg-dds-rpc-idl/robot.idl -text

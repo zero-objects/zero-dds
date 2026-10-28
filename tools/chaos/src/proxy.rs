@@ -3,9 +3,9 @@
 
 //! UDP-Chaos-Proxy.
 //!
-//! Hoert auf einem lokalen Bind, leitet auf einen Remote-Forward-Target
-//! weiter und injiziert konfigurierbares Chaos. Plattformneutral, kein
-//! root noetig — perfekt fuer macOS-Devs und CI-Container.
+//! Listens on a local bind, forwards to a remote forward target
+//! and injects configurable chaos. Platform-neutral, no
+//! no root needed — perfect for macOS devs and CI containers.
 
 use std::collections::VecDeque;
 use std::net::{SocketAddr, UdpSocket};
@@ -13,23 +13,23 @@ use std::time::{Duration, Instant};
 
 use crate::prng::Xorshift64;
 
-/// Chaos-Konfiguration.
+/// Chaos configuration.
 #[derive(Clone)]
 pub struct ChaosConfig {
-    /// Wahrscheinlichkeit ein Paket zu droppen (0.0 - 1.0).
+    /// Probability of dropping a packet (0.0 - 1.0).
     pub loss: f64,
-    /// Wenn aktiv: nach einem Drop folgen `burst-1` weitere Drops zwingend.
+    /// When active: after a drop, `burst-1` further drops necessarily follow.
     pub loss_burst: u32,
-    /// Wahrscheinlichkeit ein Paket zu duplizieren.
+    /// Probability of duplicating a packet.
     pub duplicate: f64,
-    /// Wahrscheinlichkeit ein Paket im Buffer zurueckzuhalten und mit
-    /// einem spaeteren zu vertauschen.
+    /// Probability of holding a packet in the buffer and swapping it
+    /// with a later one.
     pub reorder: f64,
-    /// Untergrenze des Jitter-Fensters (delay vor Forward).
+    /// Lower bound of the jitter window (delay before forward).
     pub jitter_min: Duration,
-    /// Obergrenze des Jitter-Fensters.
+    /// Upper bound of the jitter window.
     pub jitter_max: Duration,
-    /// PRNG-Seed (deterministisch wenn gesetzt).
+    /// PRNG seed (deterministic when set).
     pub seed: u64,
 }
 
@@ -47,41 +47,41 @@ impl Default for ChaosConfig {
     }
 }
 
-/// Ergebnis-Counter, am Proxy-Ende ausgegeben.
+/// Result counters, emitted at the proxy end.
 #[derive(Default, Clone, Debug)]
 pub struct ChaosStats {
-    /// Erfolgreich an Forward gesendete Pakete.
+    /// Packets successfully sent to forward.
     pub forwarded: u64,
-    /// Wegen Loss verworfene Pakete.
+    /// Packets discarded due to loss.
     pub dropped: u64,
-    /// Wegen Duplicate zusaetzlich erzeugte Kopien.
+    /// Extra copies produced due to duplication.
     pub duplicated: u64,
-    /// Reorder-Vorgaenge (Held-Slot-Tausch).
+    /// Reorder operations (held-slot swaps).
     pub reordered: u64,
-    /// Bytes auf der Eingangsseite (Bind).
+    /// Bytes on the ingress side (bind).
     pub bytes_in: u64,
-    /// Bytes auf der Forward-Seite.
+    /// Bytes on the forward side.
     pub bytes_out: u64,
 }
 
-/// Eine Egress-Wartung — pendet ein Paket zur Versendung an einer
-/// Wallclock-Frist.
+/// An egress pending entry — queues a packet for sending at a
+/// Wallclock deadline.
 struct PendingPacket {
     when: Instant,
     target: SocketAddr,
     bytes: Vec<u8>,
 }
 
-/// Bidirektionaler UDP-Chaos-Proxy: Pakete zwischen Client (jede
-/// Source != forward_to) und dem Forward-Target werden in beide
-/// Richtungen weitergeleitet, Chaos ist symmetrisch konfiguriert.
+/// Bidirectional UDP chaos proxy: packets between client (any
+/// source != forward_to) and the forward target are routed in both
+/// directions, chaos is configured symmetrically.
 ///
-/// Routing-Modell:
-///   * Eingang vom forward_to → an letzten bekannten Client zurueck.
-///   * Eingang von beliebigem anderem Source → an forward_to,
-///     letzter-Client-Source wird gemerkt (last-sender-wins).
+/// Routing model:
+///   * ingress from forward_to → back to the last known client.
+///   * ingress from any other source → to forward_to,
+///     the last-client source is remembered (last-sender-wins).
 ///
-/// Damit funktioniert sowohl Pub→Sub als auch Ping↔Pong durch den
+/// This makes both Pub→Sub and Ping↔Pong work through the
 /// Proxy.
 pub struct UdpChaosProxy {
     listen: UdpSocket,
@@ -89,22 +89,22 @@ pub struct UdpChaosProxy {
     cfg: ChaosConfig,
     rng: Xorshift64,
     pending: VecDeque<PendingPacket>,
-    /// Reorder-Buffer-Slot: ein Paket, das wir kurz zuruecklegen, um
-    /// es mit dem naechsten zu tauschen.
+    /// Reorder buffer slot: a packet that we briefly hold back to
+    /// swap it with the next one.
     held: Option<PendingPacket>,
     drops_left: u32,
-    /// Letzter bekannter Client (≠ forward_to) — fuer Reply-Routing.
+    /// Last known client (≠ forward_to) — for reply routing.
     last_client: Option<SocketAddr>,
-    /// Lese-Counter, ueber `run_for` aktualisiert.
+    /// Read counter, updated via `run_for`.
     pub stats: ChaosStats,
 }
 
 impl UdpChaosProxy {
-    /// Erzeugt einen Proxy auf dem Bind-Socket. Der Proxy liest von
-    /// `bind`, forwarded zu `forward`. Antworten von `forward` werden
-    /// auf demselben Socket erwartet — das matchet das Standard-DDS-
-    /// Pattern, in dem die SPDP-/SEDP-Antworten via Default-Locator
-    /// zurueckkommen.
+    /// Creates a proxy on the bind socket. The proxy reads from
+    /// `bind`, forwards to `forward`. Replies from `forward` are
+    /// expected on the same socket — this matches the standard DDS
+    /// pattern in which the SPDP/SEDP replies via default locator
+    /// return.
     pub fn new(bind: SocketAddr, forward: SocketAddr, cfg: ChaosConfig) -> std::io::Result<Self> {
         let listen = UdpSocket::bind(bind)?;
         listen.set_nonblocking(true)?;
@@ -126,39 +126,39 @@ impl UdpChaosProxy {
         })
     }
 
-    /// Returnt die tatsaechliche Bind-Adresse (relevant wenn 0:0).
+    /// Returns the actual bind address (relevant when 0:0).
     pub fn local_addr(&self) -> std::io::Result<SocketAddr> {
         self.listen.local_addr()
     }
 
-    /// Tick fuer eine begrenzte Wallclock-Dauer. Nicht-blockierend pro
-    /// Iteration; spinned mit short sleeps wenn die Pending-Queue leer
-    /// ist und kein Paket eintraf.
+    /// Tick for a bounded wallclock duration. Non-blocking per
+    /// iteration; spins with short sleeps when the pending queue is empty
+    /// and no packet arrived.
     pub fn run_for(&mut self, total: Duration) -> std::io::Result<()> {
         let deadline = Instant::now() + total;
         let mut buf = vec![0u8; 65_536];
         while Instant::now() < deadline {
             self.flush_due_packets()?;
-            // Receive: nicht-blockierend pro Loop.
+            // Receive: non-blocking per loop.
             match self.listen.recv_from(&mut buf) {
                 Ok((n, from)) => {
                     self.stats.bytes_in = self.stats.bytes_in.saturating_add(n as u64);
                     let target = if from == self.forward_to {
-                        // Reply von forward_to → an letzten bekannten
-                        // Client zurueckschleusen.
+                        // Reply from forward_to → to last known
+                        // Send client back.
                         match self.last_client {
                             Some(c) => c,
-                            None => continue, // kein Client bekannt — droppen
+                            None => continue, // no client known — drop
                         }
                     } else {
-                        // Eingang von Client → forward_to, Source merken.
+                        // Ingress from client → forward_to, remember source.
                         self.last_client = Some(from);
                         self.forward_to
                     };
                     self.process_inbound(&buf[..n], target);
                 }
                 Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                    // sleep kurz wenn keine Pending-Queue
+                    // sleep briefly when there is no pending queue
                     if self.pending.is_empty() && self.held.is_none() {
                         std::thread::sleep(Duration::from_micros(200));
                     }
@@ -171,7 +171,7 @@ impl UdpChaosProxy {
         if let Some(h) = self.held.take() {
             self.pending.push_back(h);
         }
-        // Restpakete senden, ignoriere Jitter-Frist.
+        // Send remaining packets, ignore jitter deadline.
         while let Some(p) = self.pending.pop_front() {
             let _ = self.listen.send_to(&p.bytes, p.target);
             self.stats.forwarded = self.stats.forwarded.saturating_add(1);
@@ -181,7 +181,7 @@ impl UdpChaosProxy {
     }
 
     fn process_inbound(&mut self, bytes: &[u8], target: SocketAddr) {
-        // 1) Loss (mit Burst).
+        // 1) Loss (with burst).
         if self.drops_left > 0 {
             self.drops_left -= 1;
             self.stats.dropped += 1;
@@ -192,7 +192,7 @@ impl UdpChaosProxy {
             self.drops_left = self.cfg.loss_burst.saturating_sub(1);
             return;
         }
-        // 2) Reorder: in Held-Slot legen, oder Held mit aktuellem tauschen.
+        // 2) Reorder: place into held slot, or swap held with current.
         if self.cfg.reorder > 0.0 && self.rng.bernoulli(self.cfg.reorder) {
             let now = Instant::now();
             let when = self.compute_jitter(now);
@@ -207,7 +207,7 @@ impl UdpChaosProxy {
             }
             return;
         }
-        // Held vorher rausgeben (in normaler Ordnung).
+        // Emit held packets first (in normal order).
         if let Some(prev) = self.held.take() {
             self.enqueue(prev);
         }
@@ -232,8 +232,8 @@ impl UdpChaosProxy {
     }
 
     fn enqueue(&mut self, p: PendingPacket) {
-        // Insert sortiert nach `when`, sodass flush_due_packets in
-        // O(1) pro entnommenem Paket arbeitet.
+        // Insert sorted by `when`, so that flush_due_packets in
+        // O(1) per packet removed.
         let pos = self.pending.iter().position(|q| q.when > p.when);
         match pos {
             Some(i) => self.pending.insert(i, p),
@@ -266,8 +266,8 @@ impl UdpChaosProxy {
             if p.when > now {
                 break;
             }
-            // Pop and send. front() oben hat Some geliefert; pop_front()
-            // ist dadurch garantiert Some.
+            // Pop and send. front() above returned Some; pop_front()
+            // is therefore guaranteed to be Some.
             let Some(p) = self.pending.pop_front() else {
                 break;
             };
@@ -280,7 +280,7 @@ impl UdpChaosProxy {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)] // tests duerfen unwrap nutzen.
+#[allow(clippy::unwrap_used)] // tests may use unwrap.
 mod tests {
     use super::*;
     use std::net::{Ipv4Addr, SocketAddrV4};
@@ -370,7 +370,7 @@ mod tests {
         let t0 = Instant::now();
         sender.send_to(b"z", proxy_addr).unwrap();
         proxy.run_for(Duration::from_millis(60)).unwrap();
-        // Forward muss erst nach mind. 20ms passiert sein.
+        // Forward must have happened only after at least 20ms.
         assert_eq!(proxy.stats.forwarded, 1);
         assert!(t0.elapsed() >= Duration::from_millis(20));
     }

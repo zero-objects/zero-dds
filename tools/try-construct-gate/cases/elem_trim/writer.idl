@@ -1,0 +1,2 @@
+typedef string<16> String16;
+@appendable struct S { long a; sequence<String16, 10> m; long b; };

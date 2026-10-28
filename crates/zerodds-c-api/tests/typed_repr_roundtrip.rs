@@ -136,7 +136,10 @@ fn typed_take_carries_writer_representation() {
 
     // SAFETY: valid C strings + NULL-checked FFI per each fn # Safety.
     unsafe {
-        let rt = zerodds_runtime_create(181);
+        // Domain 83, not 181: `7400 + 250*181` is 52650, inside the
+        // kernel's ephemeral port range, where the SPDP multicast bind
+        // fails and this returns NULL.
+        let rt = zerodds_runtime_create(83);
         assert!(!rt.is_null(), "runtime_create");
         let writer = zerodds_writer_create(rt, topic.as_ptr(), typ.as_ptr(), 0);
         let reader = zerodds_reader_create(rt, topic.as_ptr(), typ.as_ptr(), 0);

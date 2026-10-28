@@ -1,0 +1,1 @@
+module m { @final struct Inner { @key long a; long b; }; @appendable struct S { @key Inner i; long c; }; };

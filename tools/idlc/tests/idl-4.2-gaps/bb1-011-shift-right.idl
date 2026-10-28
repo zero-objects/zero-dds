@@ -1,0 +1,2 @@
+// IDL 4.2 Annex A production 11 — the right shift operator.
+const long K = 8 >> 2;

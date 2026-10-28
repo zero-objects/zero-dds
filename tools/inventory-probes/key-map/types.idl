@@ -1,0 +1,12 @@
+// N10 — §7.6.8's permitted list for a key member is "primitive,
+// aggregation, enumeration, bitmask, array, and sequence", and `map` is
+// not on it.
+//
+// There is no probe program in this group and there does not need to be:
+// three of the four front ends refuse the file, so there is nothing to
+// serialise and the refusal is the whole result. The fourth accepts it,
+// and what it generates is the result there.
+@final struct Sample {
+    @key map<long, long> m;
+    long n;
+};

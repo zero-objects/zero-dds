@@ -32,5 +32,5 @@ codec over a live `GNAT.Sockets` UDP socket.
 
 Stage 1 binds the audited C89 wire-core (`endpoints/c`) through `Interfaces.C`, so
 the bytes are byte-identical to the Rust core (XCDR2, align cap 4). The same types
-can be generated from IDL with `zerodds-idlc --ada` (pure-Ada package `Zdgen`) —
+can be generated from IDL with `zerodds-idlc generate --lang ada` (pure-Ada package `Zdgen`) —
 see [`docs/specs/zerodds-xcdr2-ada-1.0.md`](../../docs/specs/zerodds-xcdr2-ada-1.0.md).

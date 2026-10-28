@@ -1,0 +1,7 @@
+// 7.3.1.2.1.12: the annotation's own parameter defaults to USE_DEFAULT,
+// so the bare form is not DISCARD.
+@appendable struct S {
+    long a;
+    @try_construct string<5> m;
+    long b;
+};

@@ -2,15 +2,20 @@
 // Copyright 2026 ZeroDDS Contributors
 //
 // Wire-vector tests against `zerodds-xcdr2-bindings-conformance-1.0` §6 V-1..V-12.
-// These classes are hand-written equivalents of what
-// `idl-csharp` emits as `*TypeSupport`; they verify the
-// `ZeroDDS.Cdr` helper library byte for byte.
+//
+// These `IDdsTopicType<T>` classes are hand-written equivalents of what
+// `zerodds-idlc --lang 'c#'` emits as `*TypeSupport` (see
+// `tools/idlc/src/csharp_support.rs`): they call `ZeroDds.Wire.Writer` /
+// `ZeroDds.Wire.Reader` (`runtime/csharp`) exactly as the generated companion
+// does, so this file is the byte oracle for the *one* C# CDR codec — there is
+// no second, hand-rolled XCDR2 implementation left to keep in sync with it.
 
 using System;
 using System.Collections.Generic;
 using System.Text;
 using Xunit;
 using ZeroDDS.Cdr;
+using ZeroDds.Wire;
 using Omg.Types; // ExtensibilityKind
 
 namespace ZeroDDS.Cdr.Tests;
@@ -85,6 +90,29 @@ public sealed record class O11
 }
 
 // ============================================================================
+// Shared helpers
+// ============================================================================
+
+internal static class WireVectorCodec
+{
+    /// <summary>XCDR2's alignment cap. XTypes 1.3 §7.4.1.1.1.</summary>
+    internal const int Xcdr2MaxAlignment = 4;
+
+    internal static Endianness Order(EndianMode endian) => endian switch
+    {
+        EndianMode.LittleEndian => Endianness.Little,
+        EndianMode.BigEndian => Endianness.Big,
+        _ => throw new ArgumentOutOfRangeException(nameof(endian)),
+    };
+
+    internal static Writer NewWriter(EndianMode endian) =>
+        new(Order(endian), Xcdr2MaxAlignment, PlCdr1Framing.Defaults(), false);
+
+    internal static Reader NewReader(ReadOnlySpan<byte> bytes) =>
+        new(bytes.ToArray(), Endianness.Little, Xcdr2MaxAlignment, PlCdr1Framing.Defaults());
+}
+
+// ============================================================================
 // TypeSupport classes (hand-written, codegen-equivalent)
 // ============================================================================
 
@@ -95,7 +123,7 @@ public sealed class EmptyTypeSupport : IDdsTopicType<Empty>
     public bool IsKeyed => false;
     public ExtensibilityKind Extensibility => ExtensibilityKind.Final;
     public byte[] Encode(Empty sample) => Encode(sample, EndianMode.LittleEndian);
-    public byte[] Encode(Empty sample, EndianMode endian) => new Xcdr2Writer(endian).ToArray();
+    public byte[] Encode(Empty sample, EndianMode endian) => WireVectorCodec.NewWriter(endian).Finish();
     public Empty Decode(ReadOnlySpan<byte> bytes) => new();
     public byte[] KeyHash(Empty sample) => new byte[16];
 }
@@ -109,15 +137,15 @@ public sealed class PointTypeSupport : IDdsTopicType<Point>
     public byte[] Encode(Point sample) => Encode(sample, EndianMode.LittleEndian);
     public byte[] Encode(Point sample, EndianMode endian)
     {
-        var w = new Xcdr2Writer(endian);
-        w.WriteInt32(sample.X);
-        w.WriteInt32(sample.Y);
-        return w.ToArray();
+        var w = WireVectorCodec.NewWriter(endian);
+        w.WriteI32(sample.X);
+        w.WriteI32(sample.Y);
+        return w.Finish();
     }
     public Point Decode(ReadOnlySpan<byte> bytes)
     {
-        var r = new Xcdr2Reader(bytes, EndianMode.LittleEndian);
-        return new Point { X = r.ReadInt32(), Y = r.ReadInt32() };
+        var r = WireVectorCodec.NewReader(bytes);
+        return new Point { X = r.ReadI32(), Y = r.ReadI32() };
     }
     public byte[] KeyHash(Point sample) => new byte[16];
 }
@@ -131,34 +159,34 @@ public sealed class AllTypeSupport : IDdsTopicType<All>
     public byte[] Encode(All sample) => Encode(sample, EndianMode.LittleEndian);
     public byte[] Encode(All sample, EndianMode endian)
     {
-        var w = new Xcdr2Writer(endian);
+        var w = WireVectorCodec.NewWriter(endian);
         w.WriteBool(sample.B);
-        w.WriteOctet(sample.O);
-        w.WriteInt16(sample.S);
-        w.WriteUInt16(sample.Us);
-        w.WriteInt32(sample.L);
-        w.WriteUInt32(sample.Ul);
-        w.WriteInt64(sample.Ll);
-        w.WriteUInt64(sample.Ull);
-        w.WriteFloat32(sample.F);
-        w.WriteFloat64(sample.D);
-        return w.ToArray();
+        w.WriteU8(sample.O);
+        w.WriteI16(sample.S);
+        w.WriteU16(sample.Us);
+        w.WriteI32(sample.L);
+        w.WriteU32(sample.Ul);
+        w.WriteI64(sample.Ll);
+        w.WriteU64(sample.Ull);
+        w.WriteF32(sample.F);
+        w.WriteF64(sample.D);
+        return w.Finish();
     }
     public All Decode(ReadOnlySpan<byte> bytes)
     {
-        var r = new Xcdr2Reader(bytes, EndianMode.LittleEndian);
+        var r = WireVectorCodec.NewReader(bytes);
         return new All
         {
             B = r.ReadBool(),
-            O = r.ReadOctet(),
-            S = r.ReadInt16(),
-            Us = r.ReadUInt16(),
-            L = r.ReadInt32(),
-            Ul = r.ReadUInt32(),
-            Ll = r.ReadInt64(),
-            Ull = r.ReadUInt64(),
-            F = r.ReadFloat32(),
-            D = r.ReadFloat64(),
+            O = r.ReadU8(),
+            S = r.ReadI16(),
+            Us = r.ReadU16(),
+            L = r.ReadI32(),
+            Ul = r.ReadU32(),
+            Ll = r.ReadI64(),
+            Ull = r.ReadU64(),
+            F = r.ReadF32(),
+            D = r.ReadF64(),
         };
     }
     public byte[] KeyHash(All sample) => new byte[16];
@@ -173,14 +201,14 @@ public sealed class GreetingTypeSupport : IDdsTopicType<Greeting>
     public byte[] Encode(Greeting sample) => Encode(sample, EndianMode.LittleEndian);
     public byte[] Encode(Greeting sample, EndianMode endian)
     {
-        var w = new Xcdr2Writer(endian);
+        var w = WireVectorCodec.NewWriter(endian);
         w.WriteString(sample.Text);
-        return w.ToArray();
+        return w.Finish();
     }
     public Greeting Decode(ReadOnlySpan<byte> bytes)
     {
-        var r = new Xcdr2Reader(bytes, EndianMode.LittleEndian);
-        return new Greeting { Text = r.ReadString() };
+        var r = WireVectorCodec.NewReader(bytes);
+        return new Greeting { Text = r.ReadStringAlloc() };
     }
     public byte[] KeyHash(Greeting sample) => new byte[16];
 }
@@ -194,17 +222,18 @@ public sealed class BagTypeSupport : IDdsTopicType<Bag>
     public byte[] Encode(Bag sample) => Encode(sample, EndianMode.LittleEndian);
     public byte[] Encode(Bag sample, EndianMode endian)
     {
-        var w = new Xcdr2Writer(endian);
-        w.WriteSequenceLength(sample.Ids.Count);
-        foreach (var i in sample.Ids) w.WriteInt32(i);
-        return w.ToArray();
+        // A sequence of a primitive-element type has no DHEADER. XTypes 1.3 §7.4.3.5.
+        var w = WireVectorCodec.NewWriter(endian);
+        w.WriteU32((uint)sample.Ids.Count);
+        foreach (var i in sample.Ids) w.WriteI32(i);
+        return w.Finish();
     }
     public Bag Decode(ReadOnlySpan<byte> bytes)
     {
-        var r = new Xcdr2Reader(bytes, EndianMode.LittleEndian);
-        int n = r.ReadSequenceLength();
-        var list = new List<int>(n);
-        for (int i = 0; i < n; i++) list.Add(r.ReadInt32());
+        var r = WireVectorCodec.NewReader(bytes);
+        uint n = r.ReadSequenceLength();
+        var list = new List<int>((int)n);
+        for (uint i = 0; i < n; i++) list.Add(r.ReadI32());
         return new Bag { Ids = list };
     }
     public byte[] KeyHash(Bag sample) => new byte[16];
@@ -219,24 +248,24 @@ public sealed class TagsTypeSupport : IDdsTopicType<Tags>
     public byte[] Encode(Tags sample) => Encode(sample, EndianMode.LittleEndian);
     public byte[] Encode(Tags sample, EndianMode endian)
     {
-        // XCDR2 §7.4.3.5: seq<string> has non-primitive elements -> prepend a DHEADER
-        // (uint32 = byte length of [count + elements]). Verified against CycloneDDS.
-        var w = new Xcdr2Writer(endian);
-        using (var dh = w.BeginAppendable())
-        {
-            w.WriteSequenceLength(sample.TagList.Count);
-            foreach (var s in sample.TagList) w.WriteString(s);
-        }
-        return w.ToArray();
+        // XCDR2 §7.4.3.5: seq<string> has non-primitive elements -> prepend a
+        // DHEADER (uint32 = byte length of [count + elements]). Verified
+        // byte-for-byte against `zerodds-idlc --lang 'c#'`'s own generated
+        // companion (`zd_enc_seq_string` in the emitted `ZdCodec`).
+        var w = WireVectorCodec.NewWriter(endian);
+        var d = w.WriteDheader();
+        w.WriteU32((uint)sample.TagList.Count);
+        foreach (var s in sample.TagList) w.WriteString(s);
+        w.FinishDheader(d);
+        return w.Finish();
     }
     public Tags Decode(ReadOnlySpan<byte> bytes)
     {
-        var r = new Xcdr2Reader(bytes, EndianMode.LittleEndian);
-        var dh = r.BeginDHeader();
-        int n = r.ReadSequenceLength();
-        var list = new List<string>(n);
-        for (int i = 0; i < n; i++) list.Add(r.ReadString());
-        r.EndDHeader(dh);
+        var r = WireVectorCodec.NewReader(bytes);
+        r.ReadDheader();
+        uint n = r.ReadSequenceLength();
+        var list = new List<string>((int)n);
+        for (uint i = 0; i < n; i++) list.Add(r.ReadStringAlloc());
         return new Tags { TagList = list };
     }
     public byte[] KeyHash(Tags sample) => new byte[16];
@@ -251,14 +280,14 @@ public sealed class S7TypeSupport : IDdsTopicType<S7>
     public byte[] Encode(S7 sample) => Encode(sample, EndianMode.LittleEndian);
     public byte[] Encode(S7 sample, EndianMode endian)
     {
-        var w = new Xcdr2Writer(endian);
-        w.WriteInt32(sample.X);
-        return w.ToArray();
+        var w = WireVectorCodec.NewWriter(endian);
+        w.WriteI32(sample.X);
+        return w.Finish();
     }
     public S7 Decode(ReadOnlySpan<byte> bytes)
     {
-        var r = new Xcdr2Reader(bytes, EndianMode.LittleEndian);
-        return new S7 { X = r.ReadInt32() };
+        var r = WireVectorCodec.NewReader(bytes);
+        return new S7 { X = r.ReadI32() };
     }
     public byte[] KeyHash(S7 sample) => new byte[16];
 }
@@ -272,26 +301,26 @@ public sealed class SensorTypeSupport : IDdsTopicType<Sensor>
     public byte[] Encode(Sensor sample) => Encode(sample, EndianMode.LittleEndian);
     public byte[] Encode(Sensor sample, EndianMode endian)
     {
-        var w = new Xcdr2Writer(endian);
-        w.WriteInt32(sample.Id);
-        w.WriteFloat64(sample.Value);
-        return w.ToArray();
+        var w = WireVectorCodec.NewWriter(endian);
+        w.WriteI32(sample.Id);
+        w.WriteF64(sample.Value);
+        return w.Finish();
     }
     public Sensor Decode(ReadOnlySpan<byte> bytes)
     {
-        var r = new Xcdr2Reader(bytes, EndianMode.LittleEndian);
-        return new Sensor { Id = r.ReadInt32(), Value = r.ReadFloat64() };
+        var r = WireVectorCodec.NewReader(bytes);
+        return new Sensor { Id = r.ReadI32(), Value = r.ReadF64() };
     }
     public byte[] KeyHash(Sensor sample)
     {
-        // PlainCdr2BeKeyHolder per XTypes 1.3 §7.6.8.
-        var kw = new Xcdr2Writer(EndianMode.BigEndian);
-        kw.WriteInt32(sample.Id);
-        var kb = kw.ToArray();
-        if (kb.Length > 16) return Md5.Hash(kb);
-        var h = new byte[16];
-        Array.Copy(kb, 0, h, 0, kb.Length);
-        return h;
+        // PlainCdr2BeKeyHolder per XTypes 1.3 §7.6.8: big-endian, the @key
+        // members alone. The holder is 4 bytes here, so it is zero-padded
+        // rather than hashed (>16 bytes would use `Md5Digest()` instead —
+        // see `SensorTypeSupport`'s generated counterpart in
+        // `tools/idlc/src/csharp_support.rs::key_support`).
+        var kw = new Writer(Endianness.Big, WireVectorCodec.Xcdr2MaxAlignment, PlCdr1Framing.Defaults(), false);
+        kw.WriteI32(sample.Id);
+        return kw.ZeroPadded();
     }
 }
 
@@ -304,21 +333,21 @@ public sealed class V9TypeSupport : IDdsTopicType<V9Sample>
     public byte[] Encode(V9Sample sample) => Encode(sample, EndianMode.LittleEndian);
     public byte[] Encode(V9Sample sample, EndianMode endian)
     {
-        var w = new Xcdr2Writer(endian);
-        using (var __ = w.BeginAppendable())
-        {
-            w.WriteInt32(sample.A);
-            w.WriteInt32(sample.B);
-        }
-        return w.ToArray();
+        var w = WireVectorCodec.NewWriter(endian);
+        var d = w.WriteDheader();
+        w.WriteI32(sample.A);
+        w.WriteI32(sample.B);
+        w.FinishDheader(d);
+        return w.Finish();
     }
     public V9Sample Decode(ReadOnlySpan<byte> bytes)
     {
-        var r = new Xcdr2Reader(bytes, EndianMode.LittleEndian);
-        var s = r.BeginDHeader();
-        var a = r.ReadInt32();
-        var b = r.ReadInt32();
-        r.EndDHeader(s);
+        var r = WireVectorCodec.NewReader(bytes);
+        uint declared = r.ReadDheader();
+        long end = r.ReaderPosition() + declared;
+        int a = r.ReaderPosition() < end ? r.ReadI32() : 0;
+        int b = r.ReaderPosition() < end ? r.ReadI32() : 0;
+        r.ReaderSkipTo(end);
         return new V9Sample { A = a, B = b };
     }
     public byte[] KeyHash(V9Sample sample) => new byte[16];
@@ -333,39 +362,45 @@ public sealed class M10TypeSupport : IDdsTopicType<M10>
     public byte[] Encode(M10 sample) => Encode(sample, EndianMode.LittleEndian);
     public byte[] Encode(M10 sample, EndianMode endian)
     {
-        var w = new Xcdr2Writer(endian);
-        using (var __ = w.BeginMutable())
-        {
-            // @id(1) long a -> LC=2 (4-byte fix)
-            w.WriteEmHeader(1u, 2, false);
-            w.WriteInt32(sample.A);
-            // @id(2) string b -> LC=4 (variable, NEXTINT = body byte length).
-            // LC=3 would mean a fixed 8-byte body with no NEXTINT and desyncs
-            // any spec-compliant (Rust/Cyclone/FastDDS) reader.
-            var sub = new Xcdr2Writer(endian);
-            sub.WriteString(sample.B);
-            var subBytes = sub.ToArray();
-            w.WriteEmHeader(2u, 4, false);
-            w.WriteUInt32((uint)subBytes.Length);
-            w.WriteBytes(subBytes);
-        }
-        return w.ToArray();
+        var w = WireVectorCodec.NewWriter(endian);
+        var d = w.WriteDheader();
+        // @id(1) long a -> LC=2 (fixed 4-byte member).
+        var h0 = w.WriteEmheader(1u, 2, false);
+        w.WriteI32(sample.A);
+        w.FinishEmheader(h0);
+        // @id(2) string b -> LC=5: XTypes 1.3 §7.4.3.4.2 has the NEXTINT of
+        // length codes 5-7 "reused also as part of the serialized member …
+        // because the serialization of certain members also starts with an
+        // integer length, which would take exactly the same value as
+        // NEXTINT" — a `string` is exactly that case, so its own length
+        // prefix stands in for the NEXTINT and none is written separately.
+        // LC=4 (a *second*, separate length field ahead of the string's own)
+        // is what the removed hand-written `ZeroDDS.Cdr.Xcdr2Writer` used to
+        // emit here; that put four extra bytes on the wire that no
+        // spec-compliant peer writes or expects.
+        var h1 = w.WriteEmheader(2u, 5, false);
+        w.WriteString(sample.B);
+        w.FinishEmheader(h1);
+        w.FinishDheader(d);
+        return w.Finish();
     }
     public M10 Decode(ReadOnlySpan<byte> bytes)
     {
-        var r = new Xcdr2Reader(bytes, EndianMode.LittleEndian);
+        var r = WireVectorCodec.NewReader(bytes);
+        uint declared = r.ReadDheader();
+        long end = r.ReaderPosition() + declared;
         int a = 0;
         string b = string.Empty;
-        var s = r.BeginDHeader();
-        while (!r.DHeaderDone(s))
+        while (r.ReaderPosition() < end && r.ReaderStatus() == Status.Ok)
         {
-            var (id, lc, _) = r.ReadEmHeader();
-            if (lc >= 4) { _ = r.ReadUInt32(); }
-            if (id == 1u) a = r.ReadInt32();
-            else if (id == 2u) b = r.ReadString();
-            else throw new XcdrException($"unknown id {id}");
+            var h = r.ReadEmheader();
+            if (r.ReaderStatus() != Status.Ok) break;
+            long memberEnd = r.ReaderPosition() + h.Extent;
+            if (h.MemberId == 1u) a = r.ReadI32();
+            else if (h.MemberId == 2u) b = r.ReadStringAlloc();
+            else r.ReaderSkipTo(memberEnd);
         }
-        r.EndDHeader(s);
+        r.ReaderSkipTo(end);
         return new M10 { A = a, B = b };
     }
     public byte[] KeyHash(M10 sample) => new byte[16];
@@ -380,30 +415,32 @@ public sealed class O11TypeSupport : IDdsTopicType<O11>
     public byte[] Encode(O11 sample) => Encode(sample, EndianMode.LittleEndian);
     public byte[] Encode(O11 sample, EndianMode endian)
     {
-        var w = new Xcdr2Writer(endian);
-        using (var __ = w.BeginMutable())
+        var w = WireVectorCodec.NewWriter(endian);
+        var d = w.WriteDheader();
+        if (sample.Maybe is not null)
         {
-            if (sample.Maybe is not null)
-            {
-                w.WriteEmHeader(1u, 2, false);
-                w.WriteInt32(sample.Maybe.Value);
-            }
+            var h0 = w.WriteEmheader(1u, 2, false);
+            w.WriteI32(sample.Maybe.Value);
+            w.FinishEmheader(h0);
         }
-        return w.ToArray();
+        w.FinishDheader(d);
+        return w.Finish();
     }
     public O11 Decode(ReadOnlySpan<byte> bytes)
     {
-        var r = new Xcdr2Reader(bytes, EndianMode.LittleEndian);
+        var r = WireVectorCodec.NewReader(bytes);
+        uint declared = r.ReadDheader();
+        long end = r.ReaderPosition() + declared;
         int? maybe = null;
-        var s = r.BeginDHeader();
-        while (!r.DHeaderDone(s))
+        while (r.ReaderPosition() < end && r.ReaderStatus() == Status.Ok)
         {
-            var (id, lc, _) = r.ReadEmHeader();
-            if (lc >= 4) { _ = r.ReadUInt32(); }
-            if (id == 1u) maybe = r.ReadInt32();
-            else throw new XcdrException($"unknown id {id}");
+            var h = r.ReadEmheader();
+            if (r.ReaderStatus() != Status.Ok) break;
+            long memberEnd = r.ReaderPosition() + h.Extent;
+            if (h.MemberId == 1u) maybe = r.ReadI32();
+            else r.ReaderSkipTo(memberEnd);
         }
-        r.EndDHeader(s);
+        r.ReaderSkipTo(end);
         return new O11 { Maybe = maybe };
     }
     public byte[] KeyHash(O11 sample) => new byte[16];
@@ -591,32 +628,44 @@ public class Xcdr2WireVectorsTests
     [Fact]
     public void V10_Mutable_MatchesWire()
     {
-        // Note on a spec discrepancy: §6 V-10 lists DHEADER=20, but the
-        // body is actually 23 bytes (4 EMHEADER + 4 value + 4 EMHEADER
-        // + 4 NEXTINT + 7 string). XTypes 1.3 §7.4.4.4 defines DHEADER as
-        // the body length excluding the 4-byte header itself -> we set DHEADER=23.
+        // Note on TWO spec discrepancies against §6 V-10's literal listing:
+        //
+        // 1. §6 V-10 lists DHEADER=20; XTypes 1.3 §7.4.4.4 defines DHEADER
+        //    as the body length excluding the 4-byte header itself.
+        //
+        // 2. The removed hand-written `ZeroDDS.Cdr.Xcdr2Writer` wrote the
+        //    `string b` member under length code 4 — a separate 4-byte
+        //    NEXTINT ahead of the string's own 4-byte length prefix — giving
+        //    DHEADER=23 / total 27 bytes. XTypes 1.3 §7.4.3.4.2 permits
+        //    that framing and length code 5, whose NEXTINT "is reused also
+        //    as part of the serialized member". The `ZeroDds.Wire.Writer`/
+        //    `Reader` runtime (and the `zerodds-idlc --lang 'c#'` companion
+        //    built on it) use the compact framing, LC=5 here
+        //    (`docs/specs/zerodds-ast-1.0.md` §7.1), giving DHEADER=19 /
+        //    total 23 bytes. Verified against the CLI's own generated output.
         var sample = new M10 { A = 42, B = "hi" };
         var bytes = M10TypeSupport.Instance.Encode(sample);
 
-        // [0..4]   = DHEADER  (LE uint32 = body-len = 23)
+        // [0..4]   = DHEADER  (LE uint32 = body-len = 19)
         // [4..8]   = EMHEADER id=1 LC=2 (ambient-LE uint32 per XTypes §7.4.3.4.5)
         // [8..12]  = a-value LE
-        // [12..16] = EMHEADER id=2 LC=4 (ambient-LE; variable member + NEXTINT)
-        // [16..20] = NEXTINT (LE uint32 = string-byte-len)
-        // [20..27] = string-prefix(4) + "hi\0"(3) = 7 bytes
-        Assert.Equal((uint)23, BitConverter.ToUInt32(bytes, 0));
+        // [12..16] = EMHEADER id=2 LC=5 (ambient-LE; NEXTINT reused, none reserved)
+        // [16..20] = string length-incl-NUL (the reused NEXTINT)
+        // [20..23] = "hi\0"
+        var expected = Hex("13 00 00 00 01 00 00 20 2A 00 00 00 02 00 00 50 03 00 00 00 68 69 00");
+        Assert.Equal(ToHex(expected), ToHex(bytes));
+        Assert.Equal((uint)19, BitConverter.ToUInt32(bytes, 0));
         var em1 = BitConverter.ToUInt32(bytes, 4);
         Assert.Equal((uint)1, em1 & 0x0FFFFFFFu);
         Assert.Equal(2, (int)((em1 >> 28) & 0x7));
         Assert.Equal(42, BitConverter.ToInt32(bytes, 8));
         var em2 = BitConverter.ToUInt32(bytes, 12);
         Assert.Equal((uint)2, em2 & 0x0FFFFFFFu);
-        Assert.Equal(4, (int)((em2 >> 28) & 0x7));
-        Assert.Equal((uint)7, BitConverter.ToUInt32(bytes, 16));
-        Assert.Equal((uint)3, BitConverter.ToUInt32(bytes, 20)); // string length-incl-NUL
-        Assert.Equal((byte)'h', bytes[24]);
-        Assert.Equal((byte)'i', bytes[25]);
-        Assert.Equal((byte)0, bytes[26]);
+        Assert.Equal(5, (int)((em2 >> 28) & 0x7));
+        Assert.Equal((uint)3, BitConverter.ToUInt32(bytes, 16)); // string length-incl-NUL, IS the NEXTINT
+        Assert.Equal((byte)'h', bytes[20]);
+        Assert.Equal((byte)'i', bytes[21]);
+        Assert.Equal((byte)0, bytes[22]);
         // Roundtrip:
         Assert.Equal(sample, M10TypeSupport.Instance.Decode(bytes));
         Assert.Equal(ExtensibilityKind.Mutable, M10TypeSupport.Instance.Extensibility);
@@ -662,7 +711,7 @@ public class Xcdr2WireVectorsTests
                      "XCDR2 mutable stream MUST NOT emit explicit sentinel");
     }
 
-    // fixed<P,S> packed BCD (CORBA/GIOP §9.3.2.7); oracle vectors == the Rust,
+    // fixed<P,S> packed BCD ([CDR] §9.3.2.8); oracle vectors == the Rust,
     // C++, Python, TS PSMs + JacORB 3.9 / omniORB 4.3.
     [Theory]
     [InlineData("123.45", 5, 2, "12 34 5c")]
@@ -670,12 +719,12 @@ public class Xcdr2WireVectorsTests
     [InlineData("-1.50", 6, 2, "00 00 15 0d")]
     public void FixedBcd_OracleVectors_Roundtrip(string val, int p, int s, string hex)
     {
-        var w = new Xcdr2Writer(EndianMode.LittleEndian);
-        w.WriteFixedBcd(decimal.Parse(val, System.Globalization.CultureInfo.InvariantCulture), p, s);
-        Assert.Equal(Hex(hex), w.ToArray());
+        var w = new Writer(Endianness.Little, WireVectorCodec.Xcdr2MaxAlignment, PlCdr1Framing.Defaults(), false);
+        w.WriteFixed(val, p, s, FixedDigitCount.Declared);
+        Assert.Equal(Hex(hex), w.Finish());
 
-        var r = new Xcdr2Reader(w.ToArray(), EndianMode.LittleEndian);
+        var r = new Reader(w.Finish(), Endianness.Little, WireVectorCodec.Xcdr2MaxAlignment, PlCdr1Framing.Defaults());
         Assert.Equal(decimal.Parse(val, System.Globalization.CultureInfo.InvariantCulture),
-                     r.ReadFixedBcd(p, s));
+                     decimal.Parse(r.ReadFixed(p, s, FixedDigitCount.Declared), System.Globalization.CultureInfo.InvariantCulture));
     }
 }

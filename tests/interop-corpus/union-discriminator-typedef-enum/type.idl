@@ -1,0 +1,15 @@
+// a union switching on a typedef of an enumeration
+// IDL 4.2 §7.4.1.4.4.2.4 with §7.4.1.4.4.5: the alias resolves to the
+// enumeration and the case labels are its enumerators.
+enum Colour { RED, GREEN, BLUE };
+typedef Colour Shade;
+
+union Choice switch (Shade) {
+    case RED: long whole;
+    default: double fraction;
+};
+
+@final struct Sample {
+    Choice picked;
+    long tail;
+};

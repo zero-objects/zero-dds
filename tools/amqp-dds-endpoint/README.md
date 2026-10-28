@@ -28,28 +28,59 @@ DataWriter/DataReader pairs.
 ```bash
 amqp-dds-endpoint --listen 0.0.0.0:5672
 amqp-dds-endpoint --config /etc/zerodds/endpoint.xml
+echo 'secret' | amqp-dds-endpoint --hash-password alice >> /etc/zerodds/amqp-users
 ```
 
-A minimal XML config file (per Spec §9.2):
+A configuration file (Spec §9.2). An unknown element or attribute is refused
+with its line.
 
 ```xml
-<dds_amqp_endpoint>
+<dds-amqp xmlns="http://www.zerodds.org/dds-amqp/v1.0">
   <endpoint name="warehouse">
-    <listen_uri>amqp://0.0.0.0:5672</listen_uri>
-    <limits><max_frame_size>65536</max_frame_size></limits>
-    <tls enabled="false"/>
+    <listen-uri>amqp://0.0.0.0:5671</listen-uri>
+    <limits max-frame-size="65536"/>
+    <tls enabled="true" cert="/etc/zerodds/amqp-cert.pem" key="/etc/zerodds/amqp-key.pem"
+         ca="/etc/zerodds/amqp-ca.pem" require-client-cert="false"/>
+    <sasl>
+      <mechanism>SCRAM-SHA-256</mechanism>
+      <mechanism>PLAIN</mechanism>
+      <credential-store-uri>file:///etc/zerodds/amqp-users</credential-store-uri>
+    </sasl>
   </endpoint>
-</dds_amqp_endpoint>
+</dds-amqp>
 ```
+
+`--listen` beats `<listen-uri>`.
+
+## SASL (Spec §2.1 Cl. 6/7, §10.2)
+
+* `PLAIN` only on a TLS connection; a `PLAIN` init on plaintext gets outcome
+  `auth` and the connection closes.
+* `SCRAM-SHA-256` and `PLAIN` are checked against the credential store: one
+  line per user, `<user> SCRAM-SHA-256$<iterations>:<salt>$<StoredKey>:<ServerKey>`
+  (RFC 5803, base64). It holds no passwords; `--hash-password` writes a line.
+* `EXTERNAL` is the client certificate (`mtls:<SHA-256 of the DER>`), offered
+  only with `require-client-cert="true"`.
+* `ANONYMOUS` only when named, or when there is no credential store. Without
+  it, a client that skips SASL gets the SASL header back and is closed
+  (AMQP 1.0 §5.3.1).
+* Without an `<sasl>` block: `ANONYMOUS`, and `EXTERNAL` for a client with a
+  certificate. With a store and no mechanism list: `SCRAM-SHA-256`, and
+  `PLAIN` on TLS.
+
+A mechanism that cannot work as configured (`PLAIN` without TLS or store,
+`SCRAM-SHA-256` without a store, `EXTERNAL` without client certificates) stops
+the start with the reason.
+
+SIGTERM and SIGINT stop the accept loop.
 
 ## Features
 
-* `default = []` — pure-std, plaintext AMQP only.
-* `tls` — enable rustls 0.23 TLS termination (Spec §10.1).
+* `default = ["tls"]` — rustls TLS termination (Spec §10.1); the binary needs it.
 
 ## Stability
 
-`1.0.0-rc.1` — public CLI: `--config`, `--listen`, `--help`.
+Public CLI: `--config`, `--listen`, `--hash-password`, `--help`.
 Breaking changes require a major version bump.
 
 ## Build & test
@@ -57,7 +88,6 @@ Breaking changes require a major version bump.
 ```bash
 cargo build -p amqp-dds-endpoint
 cargo test  -p amqp-dds-endpoint
-cargo build -p amqp-dds-endpoint --features tls
 ```
 
 ## Links

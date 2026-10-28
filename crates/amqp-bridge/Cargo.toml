@@ -6,12 +6,12 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "OASIS AMQP 1.0 Wire-Codec — no_std + alloc Type-System + Frame-Format + Performatives + Message-Sections + Codec-/Codec-Lite-Profile-Marker."
+description = "OASIS AMQP 1.0 wire codec — type system, frame format, performatives, message sections and the codec/codec-lite profile marker — with the DDS-AMQP 1.0 §7 type mapping and its §8.1 body encodings over the common AST."
 homepage = "https://zerodds.org"
 documentation = "https://docs.rs/zerodds-amqp-bridge"
 readme = "README.md"
-keywords = ["dds", "amqp", "amqp-1-0", "oasis", "no-std"]
-categories = ["network-programming", "encoding", "no-std"]
+keywords = ["dds", "amqp", "amqp-1-0", "oasis"]
+categories = ["network-programming", "encoding"]
 publish = true
 
 [lints]
@@ -19,6 +19,15 @@ workspace = true
 
 [lib]
 path = "src/lib.rs"
+
+[dependencies]
+# The DDS-AMQP 1.0 §7 type mapping is driven by the model, so the
+# codegen module reads the common AST and writes the language CSTs. The
+# wire codec below it depends on none of them.
+zerodds-ast = { path = "../ast", version = "1.0.0-rc.7" }
+zerodds-ast-core = { path = "../ast-core", version = "1.0.0-rc.7" }
+zerodds-lang-cst = { path = "../lang-cst", version = "1.0.0-rc.7" }
+zerodds-lang-render = { path = "../lang-render", version = "1.0.0-rc.7" }
 
 [features]
 default = ["std"]
@@ -35,6 +44,8 @@ codec-lite = []
 [dev-dependencies]
 proptest = { workspace = true }
 criterion = { workspace = true }
+zerodds-idl-parse = { path = "../idl-parse", version = "1.0.0-rc.7" }
+zerodds-idl-lower = { path = "../idl-lower", version = "1.0.0-rc.7" }
 
 [[bench]]
 name = "decode_hotpaths"

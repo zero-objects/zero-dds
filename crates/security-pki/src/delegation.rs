@@ -523,7 +523,7 @@ pub struct DelegationChain {
     /// 16-byte GUID of the origin participant. For 1-hop = delegator of
     /// the only link; for N-hop = delegator of the **first** link.
     pub origin_guid: [u8; 16],
-    /// Links in order: links[0] = origin → first intermediate stage,
+    /// Links in order: links\[0\] = origin → first intermediate stage,
     /// links[N-1] = last intermediate stage → edge.
     pub links: Vec<DelegationLink>,
 }

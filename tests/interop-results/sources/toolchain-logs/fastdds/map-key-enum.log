@@ -1,0 +1,2 @@
+fastddsgen failed and named no case
+fastddsgen failed: ERROR: context [/struct_type /content_for_struct_type /_sub25 /struct_member /get_type_identifier /get_type_identifier_registry /map_name] 44:45 no such property or can't access: com.eprosima.fastdds.

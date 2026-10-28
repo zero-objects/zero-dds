@@ -1,0 +1,1 @@
+genCdrAux.ipp:175:31: error: 'const class zd_c2::Sample' has no member named 'operator()'; did you mean 'operator!='?

@@ -1,26 +1,26 @@
 #!/usr/bin/env bash
-# pkg/macos/build_pkg.sh — Baut den ZeroDDS-macOS-Installer (.pkg).
+# pkg/macos/build_pkg.sh — builds the ZeroDDS macOS installer (.pkg).
 #
-# Voraussetzungen:
-#   * Xcode-CLI-Tools (productbuild, pkgbuild)
+# Prerequisites:
+#   * Xcode CLI tools (productbuild, pkgbuild)
 #   * Rust toolchain 1.85+
-#   * Optional: Apple-Developer-ID-Cert fuer Code-Signing
+#   * Optional: Apple Developer ID cert for code signing
 #
-# Build-Layout (in $TMPROOT):
+# Build layout (in $TMPROOT):
 #   /usr/local/bin/dds-{admin,perf,idlc,xmlc,chaos}
 #   /usr/local/bin/roundtrip-1us
 #   /usr/local/lib/libzerodds.dylib
 #   /usr/local/include/zerodds/zerodds.h
 #
-# Universal Binary:
-#   Cargo Target wird zweimal gebaut (aarch64-apple-darwin +
-#   x86_64-apple-darwin), dann via `lipo` zu einem fat-Binary
-#   zusammengefuehrt.
+# Universal binary:
+#   The Cargo target is built twice (aarch64-apple-darwin +
+#   x86_64-apple-darwin), then merged via `lipo` into one fat
+#   binary.
 #
-# Code-Signing:
-#   Wenn $DEVELOPER_ID gesetzt ist, wird `productsign --sign` genutzt
-#   plus `notarytool submit` (Notarisierung erfordert Apple-ID +
-#   App-spezifisches PWD ueber Keychain — siehe NOTARYTOOL_KEYCHAIN_PROFILE).
+# Code signing:
+#   If $DEVELOPER_ID is set, `productsign --sign` is used
+#   plus `notarytool submit` (notarization requires an Apple ID +
+#   app-specific password via Keychain — see NOTARYTOOL_KEYCHAIN_PROFILE).
 
 set -euo pipefail
 
@@ -78,7 +78,7 @@ pkgbuild \
     --install-location / \
     "$COMPONENT"
 
-# Distribution-pkg (mit License + Welcome).
+# Distribution pkg (with license + welcome).
 DIST_XML="$TMPROOT/distribution.xml"
 cat >"$DIST_XML" <<EOF
 <?xml version="1.0" encoding="utf-8"?>
@@ -110,7 +110,7 @@ productbuild \
     --package-path "$OUT_DIR" \
     "$OUT_PKG"
 
-# Code-Signing (optional).
+# Code signing (optional).
 if [[ -n "${DEVELOPER_ID:-}" ]]; then
     echo "==> productsign --sign \"$DEVELOPER_ID\""
     SIGNED="$OUT_DIR/zerodds-${VERSION}-signed.pkg"

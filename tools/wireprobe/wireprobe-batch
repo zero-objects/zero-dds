@@ -1,0 +1,837 @@
+#!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 ZeroDDS Contributors
+#
+# wireprobe-batch — the whole corpus through one vendor, in one build.
+#
+#   wireprobe-batch --vendor cyclone --corpus tests/interop-corpus out.tsv
+#
+#   --vendor <name>   cyclone, fastdds or opendds
+#   --corpus <dir>    default tests/interop-corpus in this checkout
+#   --cases <file>    a case name per line; default every case in the corpus
+#   --chunk <n>       cases per build; default 60, 0 for the whole corpus
+#
+# ## What it replaces
+#
+# `wireprobe-<vendor>` builds a probe for one case. Over the corpus that
+# is 335 runs of the vendor's code generator and 335 compiles per
+# system, which is where a re-record's hours go. Every one of those
+# builds compiles the same generated code shape with a different type in
+# it, and the vendors do not require it: `idlc`, `fastddsgen` and
+# `opendds_idl` each take as many types in a file as they are given.
+#
+# So this writes one IDL holding many cases, runs the generator once
+# over it, compiles one program with one function per case, and runs it
+# once. The per-case probes stay exactly as they are — they are what a
+# single case, a single question or an excluded case needs, and they are
+# what `byte-gate` and the pairwise run call.
+#
+# ## Why chunks and not the whole corpus in one file
+#
+# Because one of the three front ends will not take it. `fastddsgen`
+# 4.0 dies on the full 335-case file with
+#
+#     no such property: PrimitiveTypeCode.CScopedname
+#     org.stringtemplate.v4.misc.STNoSuchPropertyException
+#
+# — a stack trace with no line number in it, so there is nothing to
+# blame and nothing to exclude. A run that met that and kept excluding
+# cases to get past it would empty the corpus and report what was left.
+#
+# 60 cases per build is 6 builds for 335 rather than 335, keeps a front
+# end's failure to a sixtieth of the corpus, and gives a chunk that
+# fails unattributably something to do: it splits in half and each half
+# is tried on its own, down to a single case, where the failure finally
+# belongs to that case and is recorded as its refusal.
+#
+# ## The output
+#
+#   <case>  <version>  <endian>  <status>  <bytes-or-reason>
+#
+# the shape `vendor-corpus-sweep.sh` writes, minus the vendor column
+# which is `--vendor`. `status` is `wrote` or `refused`, and a refusal
+# carries the front end's or the compiler's own first line rather than
+# an empty cell.
+#
+# ## A case that does not build
+#
+# It is excluded and recorded, and the batch is rebuilt without it.
+# Both `idlc` and the C compiler name a file and a line;
+# `batch_blame_log` maps that line back to the case whose module owns
+# it. Converging by exclusion rather than by bisection, because the
+# diagnostic already says which line and the corpus has a hundred-odd
+# refusals per vendor — bisecting those would cost more builds than the
+# arrangement saves.
+#
+# A round that excludes nothing and still fails is not a case's fault.
+# It stops, loudly, rather than excluding the corpus one case at a time
+# until nothing is left and reporting an empty column as a result.
+set -uo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$HERE/.." && pwd)"
+ROOT="$(cd "$ROOT/.." && pwd)"
+# shellcheck source=diagnostics.sh
+. "$HERE/diagnostics.sh"
+# shellcheck source=batch-common.sh
+. "$HERE/batch-common.sh"
+# shellcheck source=../interop-vendors.sh
+. "$ROOT/tools/interop-vendors.sh"
+
+# `wireprobe-fill` is what puts the sample into the vendor's generated
+# type; without it every case in the sweep reports a refusal whose reason
+# is a missing file, and 1160 such rows in a 1504-row column read exactly
+# like vendor rejections. Measured 2026-08-16 — a whole run was thrown
+# away to that.
+#
+# So: prefer whichever build exists, release first because a sweep is
+# hundreds of invocations, and refuse to start when neither does.
+if [ -n "${WIREPROBE_FILL:-}" ]; then
+    FILL="$WIREPROBE_FILL"
+elif [ -x "${CARGO_TARGET_DIR:-$ROOT/target}/release/wireprobe-fill" ]; then
+    FILL="${CARGO_TARGET_DIR:-$ROOT/target}/release/wireprobe-fill"
+else
+    FILL="${CARGO_TARGET_DIR:-$ROOT/target}/debug/wireprobe-fill"
+fi
+if [ ! -x "$FILL" ]; then
+    echo "wireprobe-batch: $FILL is not there." >&2
+    echo "  Build it first: cargo build --release --bin wireprobe-fill" >&2
+    echo "  Every case would otherwise be recorded as refused, with a" >&2
+    echo "  missing file as the vendor's reason." >&2
+    exit 2
+fi
+CORPUS="${INTEROP_CORPUS:-$ROOT/tests/interop-corpus}"
+# Where the complete tool output of every refusal is archived, one
+# file per (vendor, case); `refuse` appends to it.
+TOOL_LOGS="${TOOL_LOGS:-$ROOT/tests/interop-results/sources/toolchain-logs}"
+vendor=""
+cases_file=""
+out=""
+chunk="${WIREPROBE_BATCH_CHUNK:-60}"
+keep="${WIREPROBE_BATCH_KEEP:-}"
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --vendor) vendor="$2"; shift 2 ;;
+        --corpus) CORPUS="$2"; shift 2 ;;
+        --cases) cases_file="$2"; shift 2 ;;
+        --chunk) chunk="$2"; shift 2 ;;
+        --help|-h) sed -n '5,52p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -*) echo "wireprobe-batch: \`$1\` is not an option" >&2; exit 2 ;;
+        *) out="$1"; shift ;;
+    esac
+done
+[ -n "$vendor" ] || { echo "wireprobe-batch: --vendor is required" >&2; exit 2; }
+[ -n "$out" ] || { echo "wireprobe-batch: an output path is required" >&2; exit 2; }
+case "$vendor" in
+    cyclone|fastdds|opendds) ;;
+    *) echo "wireprobe-batch: \`$vendor\` has no batch driver; the per-case probe is tools/wireprobe/wireprobe-$vendor" >&2
+       exit 2 ;;
+esac
+
+work="$(mktemp -d)"
+if [ -n "$keep" ]; then
+    echo "wireprobe-batch: working in $work" >&2
+else
+    trap 'rm -rf "$work"' EXIT
+fi
+
+if [ -n "$cases_file" ]; then
+    # Filtered, not copied. A name with no `type.idl` behind it becomes
+    # an empty module, which the front end reports as a syntax error
+    # against a case that does not exist, and the loop then excludes a
+    # real one every round chasing it.
+    while IFS= read -r name; do
+        [ -n "$name" ] && [ -f "$CORPUS/$name/type.idl" ] && printf '%s\n' "$name"
+    done < "$cases_file" | LC_ALL=C sort > "$work/cases"
+else
+    (cd "$CORPUS" && for d in */; do [ -f "$d/type.idl" ] && basename "$d"; done) \
+        | LC_ALL=C sort > "$work/cases"
+fi
+total=$(grep -c . < "$work/cases" || true)
+echo "wireprobe-batch: $vendor, $total case(s)" >&2
+
+: > "$work/refused.tsv"
+: > "$work/no-retry"
+builds=0
+
+# A front end that does not terminate holds the whole corpus. Measured
+# 2026-08-16: Cyclone's `idlc` on `recursive-mutual` — two structs
+# reaching each other through sequences — ran 51 minutes and reached
+# 14.2 GB RSS on a 15 GB host before it was killed by hand. Without a
+# bound the round repeats it forever, because a chunk of one case cannot
+# be split any further.
+#
+# Ten minutes is far past any legitimate generation in this corpus; the
+# slowest honest one is `fastddsgen` at well under a minute.
+GENERATE_TIMEOUT="${WIREPROBE_GENERATE_TIMEOUT:-600}"
+
+# Time alone does not bound this failure mode. Measured on the same
+# case: within the ten minutes `idlc` reached 10.2 GB on a 15 GB host,
+# and the run before it reached 14.2 GB and had to be killed by hand
+# before the host went with it. An address-space cap makes the front end
+# fail on its own allocation rather than take the machine, and it fails
+# early enough to leave the sweep running.
+#
+# 4 GiB is well past any honest generation here — the whole corpus in
+# one translation unit peaks far below it.
+GENERATE_ADDRESS_SPACE_KB="${WIREPROBE_GENERATE_ADDRESS_SPACE_KB:-4194304}"
+
+# Applied in a subshell so the cap dies with the generator and does not
+# reach the compile step, which legitimately needs more.
+bounded() {
+    ( ulimit -v "$GENERATE_ADDRESS_SPACE_KB" 2>/dev/null
+      exec timeout "$GENERATE_TIMEOUT" "$@" )
+}
+
+# The clock alone, for a generator that runs on a JVM. A JVM reserves far
+# more address space than it uses, so the cap refuses it before it reads
+# the file — the reason `bounded.sh` keeps `fastddsgen` off its ceiling.
+# Measured on the test host, OpenJDK 21.0.11: `fastddsgen` under
+# `ulimit -v 4194304` ends with "Failed to reserve memory for metaspace"
+# and a crash report on a file it generates in a second without the cap,
+# and the batch recorded that as "fastddsgen failed" for the case.
+bounded_time() {
+    timeout "$GENERATE_TIMEOUT" "$@"
+}
+
+# --------------------------------------------------------------------
+# The per-vendor pieces. Everything else here is the same for all three.
+# --------------------------------------------------------------------
+case "$vendor" in
+  cyclone)
+    GENERATED="gen.h gen.c"
+    generate_cmd() { bounded "${CYCLONE_HOME:-/opt/cyclone}/bin/idlc" gen.idl; }
+    generate_log_file() { printf 'gen.idl'; }
+    # The program, for a diagnostic row. `generate_log_file` is the file
+    # its line numbers refer to and is not a name anybody ran.
+    generate_program() { printf 'idlc'; }
+    # Two warnings `idlc` writes per member rather than per file, and
+    # the cascade it prints after the error it stopped on.
+    generate_ignore='[Ww]arning:|Explicit defaults are not supported|No default extensibility|File write error'
+
+    template="$HERE/cyclone-batch-template.c"
+    fill_vendor="cyclone"
+    driver_source="driver.c"
+    compile_cmd() {
+        gcc -o probe driver.c gen.c -I. \
+            -I"${CYCLONE_HOME:-/opt/cyclone}/include" \
+            -L"${CYCLONE_HOME:-/opt/cyclone}/lib" -lddsc \
+            -Wl,-rpath,"${CYCLONE_HOME:-/opt/cyclone}/lib"
+    }
+    # `<T>_desc` is what `idlc` writes beside each type.
+    case_body() { # <function name> <c type> <case dir>
+        printf 'static void %s(void) {\n' "$1"
+        printf '    %s sample;\n    memset(&sample, 0, sizeof(sample));\n' "$2"
+        printf '#include "%s"\n' "$3"
+        printf '    struct dds_cdrstream_desc desc;\n'
+        printf '    dds_cdrstream_desc_from_topic_desc(&desc, &%s_desc);\n' "$2"
+        printf '    zd_emit("%s", &sample, &desc);\n}\n' "$4"
+    }
+    ;;
+  fastdds)
+    GENERATED="gen.hpp genCdrAux.hpp genPubSubTypes.hpp"
+    generate_cmd() { bounded_time "${FASTDDSGEN}" -t . -replace gen.idl; }
+    generate_log_file() { printf 'gen.idl'; }
+    generate_program() { printf 'fastddsgen'; }
+    generate_ignore='[Ww]arning'
+
+    template="$HERE/fastdds-batch-template.cpp"
+    fill_vendor="fastdds"
+    driver_source="driver.cpp"
+    compile_cmd() {
+        g++ -std=c++17 -o probe driver.cpp genPubSubTypes.cxx genTypeObjectSupport.cxx \
+            -I. -I"${FASTDDS_HOME:-/opt/fastdds}/include" \
+            -L"${FASTDDS_HOME:-/opt/fastdds}/lib" -lfastcdr -lfastdds \
+            -Wl,-rpath,"${FASTDDS_HOME:-/opt/fastdds}/lib"
+    }
+    case_body() {
+        printf 'static void %s() {\n' "$1"
+        printf '    %s sample;\n' "$2"
+        printf '#include "%s"\n' "$3"
+        printf '    zd_emit<%s, %sPubSubType>("%s", sample);\n}\n' "$2" "$2" "$4"
+    }
+    ;;
+  opendds)
+    GENERATED="genC.h genTypeSupportImpl.h"
+    # `classic` or `face`, per chunk. The cases whose IDL names `fixed<`
+    # are swept as chunks of their own through the FACE mapping, the one
+    # OpenDDS carries `fixed` in; `wireprobe-opendds` says why.
+    opendds_mapping=classic
+    generate_cmd() {
+        if [ "$opendds_mapping" = face ]; then
+            bounded "${OPENDDS_HOME:-/opt/opendds}/bin/opendds_idl" \
+                -I"${OPENDDS_HOME:-/opt/opendds}/include" -Lface --idl-version 4 gen.idl
+            return
+        fi
+        bounded "${TAO_IDL}" -I"${OPENDDS_HOME:-/opt/opendds}/include" \
+                -Sa -St --idl-version 4 gen.idl \
+            && bounded "${OPENDDS_HOME:-/opt/opendds}/bin/opendds_idl" \
+                   -I"${OPENDDS_HOME:-/opt/opendds}/include" --idl-version 4 gen.idl
+    }
+    generate_log_file() { printf 'gen.idl'; }
+    # OpenDDS runs two, and the pair disagree about which annotations
+    # they know; `tao_idl` is the one this log is. A FACE chunk runs
+    # `opendds_idl` alone.
+    generate_program() {
+        if [ "$opendds_mapping" = face ]; then printf 'opendds_idl'; else printf 'tao_idl'; fi
+    }
+    generate_ignore='[Ww]arning'
+    template="$HERE/opendds-batch-template.cpp"
+    fill_vendor="omniorb"
+    driver_source="driver.cpp"
+    compile_cmd() {
+        if [ "$opendds_mapping" = face ]; then
+            # Header-only types, so no `genC.cpp`; the force-included
+            # header names the FACE `Fixed` the omniORB fill's
+            # `CORBA::Fixed`.
+            g++ -std=c++17 -include "$HERE/opendds-face-fixed.h" -o probe driver.cpp \
+                genTypeSupportImpl.cpp -I. \
+                -I"${OPENDDS_HOME:-/opt/opendds}/include" \
+                -L"${OPENDDS_HOME:-/opt/opendds}/lib" \
+                -lOpenDDS_FACE -lOpenDDS_Dcps -lTAO_AnyTypeCode -lTAO_Valuetype -lTAO -lACE \
+                -Wl,-rpath,"${OPENDDS_HOME:-/opt/opendds}/lib"
+            return
+        fi
+        g++ -std=c++17 -o probe driver.cpp genC.cpp genTypeSupportImpl.cpp -I. \
+            -I"${OPENDDS_HOME:-/opt/opendds}/include" \
+            -L"${OPENDDS_HOME:-/opt/opendds}/lib" \
+            -lOpenDDS_Dcps -lTAO_AnyTypeCode -lTAO_Valuetype -lTAO -lACE \
+            -Wl,-rpath,"${OPENDDS_HOME:-/opt/opendds}/lib"
+    }
+    case_body() {
+        printf 'static void %s() {\n' "$1"
+        printf '    %s sample;\n' "$2"
+        printf '#include "%s"\n' "$3"
+        printf '    zd_emit("%s", sample);\n}\n' "$4"
+    }
+    ;;
+esac
+
+# `opendds_idl` reads its templates out of `$DDS_ROOT/dds/idl`.
+if [ "$vendor" = opendds ] && [ -z "${DDS_ROOT:-}" ]; then
+    for candidate in "${OPENDDS_HOME:-/opt/opendds}/share/dds" "${OPENDDS_HOME:-/opt/opendds}"; do
+        [ -f "$candidate/dds/idl/IDLTemplate.txt" ] && { DDS_ROOT="$candidate"; break; }
+    done
+    export DDS_ROOT="${DDS_ROOT:-${OPENDDS_HOME:-/opt/opendds}/share/dds}"
+    export TAO_ROOT="${TAO_ROOT:-${OPENDDS_HOME:-/opt/opendds}}"
+fi
+
+# drop_case <case> <chunk dir> — take it out of the next round.
+#
+# Not `grep -vxF … > next && mv`: `grep -v` exits 1 when it selects no
+# lines, which is exactly the case when the file holds only the case
+# being excluded. The `&&` then did not run, the case stayed, and the
+# round repeated with the same one case — 1,771 builds on a corpus of
+# 335 before the run was stopped.
+drop_case() {
+    local name=$1 dir=$2
+    grep -vxF "$name" "$dir/cases" > "$dir/cases.next" || true
+    mv "$dir/cases.next" "$dir/cases"
+}
+
+# refuse_fill <case> <reason>
+#
+# A refusal that came from `wireprobe-fill` and not from the vendor: the
+# construct has no form in the statements this harness generates. Worth
+# separating from the rest because it is the one refusal a per-case
+# retry cannot change — the per-case probe calls the same `wireprobe-fill`
+# with the same arguments and gets the same answer — so the case is put
+# on the no-retry list and the retry phase does not pay for it.
+refuse_fill() {
+    refuse "$1" "$2"
+    printf '%s\n' "$1" >> "$work/no-retry"
+}
+
+# refuse <case> <reason> — record it, and drop it from the next round.
+#
+# The reason is cleaned of everything that is not a property of the
+# case. A toolchain diagnostic names the file it was reading, which here
+# is a temporary directory that exists for one run, and a line number
+# that depends on which other cases happened to share the chunk. Both
+# change on every re-record and neither says anything about the case, so
+# what is kept is the sentence: `syntax error`, not
+# `/tmp/tmp.8ym4qW5oXS/chunk.000.d/build/gen.idl:3:1: syntax error`.
+#
+# `fastddsgen` colours its diagnostics, and the escape sequences are a
+# property of the terminal it was run under. They go first, before the
+# paths, so that a coloured `gen.idl:` prefix is still recognised. The
+# directory a front end was installed in goes the same way: `Error -
+# /opt/opendds/bin/tao_idl:` is where this machine keeps OpenDDS and
+# not a fact about the case.
+refuse() {
+    local reason
+    # The complete text first, verbatim minus machine paths, into the
+    # archive: the one-line reason below is for the table, and "syntax
+    # error" with the construct stripped answers nothing a reader asks.
+    if [ -n "$2" ]; then
+        mkdir -p "$TOOL_LOGS/$vendor"
+        printf '%s\n' "$2" | sed "s|$ROOT/||g" >> "$TOOL_LOGS/$vendor/$1.log"
+    fi
+    reason="$(printf '%s' "$2" | tr '\n\t' '  ' \
+        | sed -e "s/$(printf '\033')\\[[0-9;]*m//g" \
+              -e 's|[^ ]*gen\.idl:[0-9]*:[0-9]*: *||g' \
+              -e 's|[^ ]*gen\.idl:[0-9]*: *||g' \
+              -e 's|"[^"]*gen\.idl", line [0-9]*: *||g' \
+              -e 's|[^ ]*fill_[0-9]*\.inc:[0-9]*:[0-9]*: *|the fill: |g' \
+              -e 's|[^ ]*fill_[0-9]*\.inc|the fill|g' \
+              -e 's|[^ ]*driver\.c[a-z]*:[0-9]*:[0-9]*: *||g' \
+              -e 's|[^ ]*/\([a-z_]*idl\)|\1|g' \
+        | cut -c1-200)"
+    [ -n "$reason" ] || reason="$vendor would not take this case"
+    printf '%s\t%s\n' "$1" "$reason" >> "$work/refused.tsv"
+}
+
+# blamed_line <log> <needle>...
+#
+# The compiler's own diagnostic about one case, and not the note above
+# it. gcc prints
+#
+#   fill_1.inc: In function 'zd_case_1':
+#   fill_1.inc:1:14: error: 'sample.nested' is a pointer; did you mean '->'?
+#
+# and a first-match grep for `zd_case_1` takes the first of the two —
+# which names the case correctly and says nothing about why it was
+# refused. So an `error:` line comes first, and a case is named by more
+# than one needle because the two lines do not name it the same way: the
+# note carries the driver function, the error the fill it was written
+# into.
+#
+# Every candidate names the case. A first `error:` line from anywhere in
+# the log would be a reason belonging to some *other* case, which is
+# worse than a useless one — six Cyclone cases were briefly recorded
+# with one case's `'sample.nested' is a pointer` between them.
+blamed_line() {
+    local log=$1 line="" needle
+    shift
+    for needle in "$@"; do
+        line="$(grep -F "$needle" "$log" | grep -m1 -F 'error:')"
+        [ -n "$line" ] && break
+    done
+    if [ -z "$line" ]; then
+        for needle in "$@"; do
+            line="$(grep -m1 -F "$needle" "$log")"
+            [ -n "$line" ] && break
+        done
+    fi
+    printf '%s' "$line" | tr '\t' ' ' | cut -c1-200
+}
+
+# run_chunk <chunk dir>
+#
+# One chunk to the end: build, exclude what the toolchain blames, build
+# again, and run. Rows land in `<chunk dir>/kept.tsv` and exclusions in
+# the shared `refused.tsv`.
+#
+# Returns 9 when the toolchain failed and named no case. That is not a
+# verdict about any case, so the caller splits the chunk rather than
+# guessing which one to drop.
+run_chunk() {
+    local chunk_dir=$1
+    local round=0 remaining blamed name reason index fill_failed scoped c_name
+    local gen_status cc_status
+    local last printed culprit
+    while :; do
+    round=$((round + 1))
+    remaining=$(grep -c . < "$chunk_dir/cases" || true)
+    if [ "$remaining" -eq 0 ]; then
+        echo "wireprobe-batch: every case was excluded; nothing was measured" >&2
+        break
+    fi
+    rm -rf "$chunk_dir/build"
+    mkdir -p "$chunk_dir/build"
+    batch_wrap_idl "$CORPUS" "$chunk_dir/cases" "$chunk_dir/build/gen.idl" "$chunk_dir/build/map.tsv"
+
+    builds=$((builds + 1))
+    echo "wireprobe-batch: round $round, $remaining case(s), build $builds" >&2
+
+    # -- the vendor's code generator, once ---------------------------
+    ( cd "$chunk_dir/build" && generate_cmd ) > "$chunk_dir/build/gen.log" 2>&1
+    gen_status=$?
+    probe_diagnostics_batch "$vendor" "$chunk_dir/build" "$chunk_dir/build/map.tsv" \
+        "$chunk_dir/build/gen.log" "$(generate_program)" "$gen_status"
+    if [ "$gen_status" -ne 0 ]; then
+        # `first`, past the front end's warnings and past the cascade
+        # it prints after the error it stopped on. `$generate_ignore` is
+        # the vendor's list of both.
+        blamed="$(batch_blame_log "$chunk_dir/build/map.tsv" "$chunk_dir/build/gen.log" \
+                                  "$(generate_log_file)" first "" "$generate_ignore")"
+        if [ -z "$blamed" ] && [ "$remaining" -eq 1 ]; then
+            # One case left and the log names none: it is this one. The
+            # caller cannot split a chunk of one, so returning 9 here
+            # asked for a split that could not happen and the round
+            # repeated. A timeout is the case that reaches this — the
+            # front end printed nothing to blame because it never
+            # finished.
+            name=$(grep -m1 . < "$chunk_dir/cases")
+            if [ "$gen_status" -eq 124 ]; then
+                reason="$(generate_program) did not finish within ${GENERATE_TIMEOUT}s"
+            else
+                # The generator's own first error, where it printed one
+                # without a file and line to attach it to: fastddsgen's
+                # template failures (`ERROR: context [...] no such
+                # property ...`, `ERROR: Cannot generate the files`)
+                # are its answer to the case and were recorded as "failed
+                # and named no case" for four of them.
+                own="$(sed 's/\x1b\[[0-9;]*m//g' "$chunk_dir/build/gen.log" \
+                    | grep -m1 -iE '^(error|exception|.*error:)' | tr '\t' ' ' | cut -c1-200)"
+                if [ -n "$own" ]; then
+                    reason="$(generate_program) failed: $own"
+                else
+                    reason="$(generate_program) failed and named no case"
+                fi
+            fi
+            refuse "$name" "$reason"
+            drop_case "$name" "$chunk_dir"
+            continue
+        fi
+        if [ -z "$blamed" ]; then
+            # Nothing to blame. The caller splits this chunk and tries
+            # the halves; at one case the branch above ends it.
+            cp "$chunk_dir/build/gen.log" "$chunk_dir/unattributable.log"
+            return 9
+        fi
+        while IFS=$'\t' read -r name reason; do
+            [ -n "$name" ] || continue
+            refuse "$name" "$reason"
+            drop_case "$name" "$chunk_dir"
+        done <<< "$blamed"
+        continue
+    fi
+
+    # -- the fill for every case, and the driver ----------------------
+    : > "$chunk_dir/build/cases.inc"
+    : > "$chunk_dir/build/calls.inc"
+    index=0
+    fill_failed=0
+    while IFS=$'\t' read -r _line case_name module; do
+        [ -n "$case_name" ] || continue
+        index=$((index + 1))
+        scoped="$(batch_scoped_type "$CORPUS" "$case_name" "$module")"
+        c_name="$("$FILL" --vendor "$fill_vendor" --idl "$chunk_dir/build/gen.idl" \
+                          --type "$scoped" --print-c-name 2>"$chunk_dir/build/fill.err")"
+        if [ -z "$c_name" ]; then
+            refuse_fill "$case_name" "$(cat "$chunk_dir/build/fill.err")"
+            drop_case "$case_name" "$chunk_dir"
+            fill_failed=1
+            continue
+        fi
+        if ! "$FILL" --vendor "$fill_vendor" --idl "$chunk_dir/build/gen.idl" --type "$scoped" \
+                     --values "$CORPUS/$case_name/values.json" \
+                     --out "$chunk_dir/build/fill_$index.inc" 2>"$chunk_dir/build/fill.err"; then
+            # The fill has no form for the construct. That is this
+            # harness's limit and is worded as such — the message names
+            # the probe, not the vendor — but it is a row, not a
+            # silence.
+            refuse_fill "$case_name" "$(cat "$chunk_dir/build/fill.err")"
+            drop_case "$case_name" "$chunk_dir"
+            fill_failed=1
+            continue
+        fi
+        case_body "zd_case_$index" "$c_name" "fill_$index.inc" "$case_name" \
+            >> "$chunk_dir/build/cases.inc"
+        printf '    zd_case_%s();\n' "$index" >> "$chunk_dir/build/calls.inc"
+    done < "$chunk_dir/build/map.tsv"
+    if [ "$fill_failed" = 1 ]; then
+        # The excluded cases changed the module numbering, so the whole
+        # round is redone rather than patched.
+        continue
+    fi
+
+    python3 - "$template" "$chunk_dir/build/cases.inc" "$chunk_dir/build/calls.inc" \
+        > "$chunk_dir/build/$driver_source" <<'PY'
+import sys
+template, cases, calls = sys.argv[1:4]
+text = open(template).read()
+text = text.replace("@CASES@", open(cases).read())
+text = text.replace("@CALLS@", open(calls).read())
+sys.stdout.write(text)
+PY
+
+    # -- one compile, one link ---------------------------------------
+    ( cd "$chunk_dir/build" && compile_cmd ) > "$chunk_dir/build/cc.log" 2>&1
+    cc_status=$?
+    probe_diagnostics_batch "$vendor" "$chunk_dir/build" "$chunk_dir/build/map.tsv" \
+        "$chunk_dir/build/cc.log" cc "$cc_status"
+    if [ "$cc_status" -ne 0 ]; then
+        # `all` and only `error:` lines: the compiler reported every
+        # one it found, so one round removes the lot, and a warning
+        # about a case is not a reason to drop it.
+        blamed="$(batch_blame_log "$chunk_dir/build/map.tsv" "$chunk_dir/build/cc.log" "gen.idl" all "error:")"
+        if [ -z "$blamed" ]; then
+            # The compiler blamed the *generated* file, not the IDL.
+            # `opendds_idl` writes one `genTypeSupportImpl.cpp` for the
+            # whole batch, and the errors in it are about a type it
+            # names in full:
+            #
+            #   no matching function for call to 'serialized_size(…,
+            #   const TAO::unbounded_value_sequence<
+            #       zd_c23::Sample::_tao_seq_CORBA_Long_>::value_type&)'
+            #
+            # `zd_c23` is the module this run gave one case, so the
+            # message says exactly which case without a line number
+            # being involved. Read it, rather than splitting the chunk
+            # to find out what the compiler already said: 679 builds
+            # before this, for a corpus of 335.
+            blamed="$(grep -oE 'zd_c[0-9]+' "$chunk_dir/build/cc.log" | sort -u \
+                      | while read -r module; do
+                            nm="$(awk -F'\t' -v m="$module" '$3 == m {print $2}' \
+                                  "$chunk_dir/build/map.tsv")"
+                            [ -n "$nm" ] && printf '%s\t%s\n' "$nm" \
+                                "$(blamed_line "$chunk_dir/build/cc.log" "$module")"
+                        done)"
+        fi
+        if [ -z "$blamed" ]; then
+            # The compiler blamed the driver, not the IDL. Its line
+            # numbers point into the driver, whose functions are in the
+            # corpus's order, so the case is read out of the function
+            # name in the diagnostic.
+            blamed="$(grep -oE 'zd_case_[0-9]+' "$chunk_dir/build/cc.log" | sort -u \
+                      | while read -r fn; do
+                            n="${fn#zd_case_}"
+                            nm="$(awk -F'\t' -v k="$n" 'NR == k {print $2}' "$chunk_dir/build/map.tsv")"
+                            [ -n "$nm" ] && printf '%s\t%s\n' "$nm" \
+                                "$(blamed_line "$chunk_dir/build/cc.log" "fill_$n.inc:" "$fn")"
+                        done)"
+        fi
+        if [ -z "$blamed" ]; then
+            cp "$chunk_dir/build/cc.log" "$chunk_dir/unattributable.log"
+            return 9
+        fi
+        while IFS=$'\t' read -r name reason; do
+            [ -n "$name" ] || continue
+            refuse "$name" "$reason"
+            drop_case "$name" "$chunk_dir"
+        done <<< "$blamed"
+        continue
+    fi
+
+    # -- one process, every row --------------------------------------
+    if ! ( cd "$chunk_dir/build" && LD_LIBRARY_PATH="${OPENDDS_HOME:-/opt/opendds}/lib:${LD_LIBRARY_PATH:-}" \
+           ./probe ) > "$chunk_dir/rows.tsv" 2>"$chunk_dir/run.log"; then
+        # The program was killed part way. Everything it printed before
+        # that is kept — those rows are real, and the driver is line
+        # buffered so that they survive the signal — and the case it
+        # died in is found from what it managed to print.
+        #
+        # The last case named is the one to blame when it printed fewer
+        # than its four combinations: it was in the middle of answering.
+        # When it printed all four it had finished, and the culprit is
+        # the next case in the list, which printed nothing at all.
+        last="$(awk -F'\t' 'END {print $1}' "$chunk_dir/rows.tsv")"
+        if [ -z "$last" ]; then
+            culprit="$(head -1 "$chunk_dir/cases")"
+        else
+            printed=$(awk -F'\t' -v c="$last" '$1 == c' "$chunk_dir/rows.tsv" | wc -l)
+            if [ "$printed" -lt 4 ]; then
+                culprit="$last"
+            else
+                culprit="$(awk -v last="$last" '$0 == last { getline; print; exit }' "$chunk_dir/cases")"
+                [ -n "$culprit" ] || culprit="$last"
+            fi
+        fi
+        refuse "$culprit" "the batch was killed while serialising this case: $(head -1 "$chunk_dir/run.log" | tr '\t' ' ' | cut -c1-160)"
+        drop_case "$culprit" "$chunk_dir"
+        cat "$chunk_dir/rows.tsv" >> "$chunk_dir/kept.tsv"
+        continue
+    fi
+    cat "$chunk_dir/rows.tsv" >> "$chunk_dir/kept.tsv"
+    break
+    done
+    return 0
+}
+
+# run_or_split <chunk dir>
+#
+# A chunk, or its halves when the toolchain would not say which case is
+# at fault. At one case there is nothing left to split and the failure
+# is recorded against it — with the toolchain's own text, which is what
+# a reader needs and what an exit code cannot give.
+run_or_split() {
+    local chunk_dir=$1 count half
+    if run_chunk "$chunk_dir"; then
+        return 0
+    fi
+    count=$(grep -c . < "$chunk_dir/cases" || true)
+    if [ "$count" -le 1 ]; then
+        name=$(head -1 "$chunk_dir/cases")
+        if [ -n "$name" ]; then
+            refuse "$name" "$vendor's toolchain failed on this case alone: $(grep -m1 -i 'error\|exception' "$chunk_dir/unattributable.log" | tr '\t' ' ' | cut -c1-160)"
+        fi
+        return 0
+    fi
+    half=$(( (count + 1) / 2 ))
+    echo "wireprobe-batch: a chunk of $count blamed no case; splitting" >&2
+    mkdir -p "$chunk_dir/a" "$chunk_dir/b"
+    head -"$half" "$chunk_dir/cases" > "$chunk_dir/a/cases"
+    tail -n +"$((half + 1))" "$chunk_dir/cases" > "$chunk_dir/b/cases"
+    run_or_split "$chunk_dir/a"
+    run_or_split "$chunk_dir/b"
+    cat "$chunk_dir/a/kept.tsv" "$chunk_dir/b/kept.tsv" 2>/dev/null >> "$chunk_dir/kept.tsv"
+    return 0
+}
+
+# -- the corpus, in chunks ----------------------------------------------
+: > "$work/kept.tsv"
+# OpenDDS's `fixed` cases go apart: one translation unit holds one C++
+# mapping, and `fixed` exists only in the FACE one. `//` comments are
+# not the IDL, so a case that only mentions the keyword stays classic.
+: > "$work/cases.face"
+if [ "$vendor" = opendds ]; then
+    while IFS= read -r name; do
+        if sed -e 's://.*$::' "$CORPUS/$name/type.idl" \
+                | grep -qE '(^|[^[:alnum:]_])fixed[[:space:]]*<'; then
+            printf '%s\n' "$name" >> "$work/cases.face"
+        fi
+    done < "$work/cases"
+    grep -vxFf "$work/cases.face" "$work/cases" > "$work/cases.classic" || true
+    mv "$work/cases.classic" "$work/cases"
+fi
+if [ "$chunk" -le 0 ]; then
+    chunk=$(grep -c . < "$work/cases" || true)
+    [ "$chunk" -gt 0 ] || chunk=1
+fi
+if [ -s "$work/cases" ]; then
+    split -l "$chunk" -d -a 3 "$work/cases" "$work/chunk."
+fi
+if [ -s "$work/cases.face" ]; then
+    split -l "$chunk" -d -a 3 "$work/cases.face" "$work/chunk.face."
+fi
+for chunk_file in "$work"/chunk.*; do
+    # No match leaves the pattern itself, when every case was excluded.
+    [ -f "$chunk_file" ] || continue
+    case "$chunk_file" in
+        "$work"/chunk.face.*) opendds_mapping=face ;;
+        *) opendds_mapping=classic ;;
+    esac
+    chunk_dir="$chunk_file.d"
+    mkdir -p "$chunk_dir"
+    mv "$chunk_file" "$chunk_dir/cases"
+    run_or_split "$chunk_dir"
+    cat "$chunk_dir/kept.tsv" 2>/dev/null >> "$work/kept.tsv"
+done
+
+# -- every excluded case, asked again on its own ------------------------
+#
+# The batch is an optimisation; `wireprobe-<vendor>` is the reference.
+# A case can be excluded from a batch for a reason that is not a
+# property of the case at all:
+#
+#   * a root-anchored scoped name. `module-root-anchored` says
+#     `::common::util::Location`, and inside `module zd_c7 { … }` that
+#     path no longer exists. Four cases, refused by the batch and
+#     accepted alone;
+#   * a diagnostic blamed on the wrong case, which is a defect here and
+#     not in the corpus.
+#
+# So each exclusion is retried with the per-case probe. A case that
+# fails there too keeps the batch's reason, which is the front end's own
+# text; a case that succeeds contributes its rows and is not refused at
+# all. The cost is one per-case build per exclusion, and most
+# exclusions fail at the front end without ever reaching a compiler.
+retried=0
+recovered=0
+: > "$work/recovered.tsv"
+: > "$work/still-refused.tsv"
+probe="$HERE/wireprobe-$vendor"
+# The retry runs the per-case probe, which finds its two helpers the way
+# every other caller does. Exported here because this script found
+# `wireprobe-fill` itself and the probe would otherwise look for it on
+# `$PATH` and quietly produce nothing.
+export WIREPROBE_FILL="$FILL"
+export WIREPROBE_DUMP="${WIREPROBE_DUMP:-$(dirname "$FILL")/wireprobe-dump}"
+if [ -x "$probe" ]; then
+    while IFS=$'\t' read -r name reason; do
+        [ -n "$name" ] || continue
+        if grep -qxF "$name" "$work/no-retry" 2>/dev/null; then
+            printf '%s\t%s\n' "$name" "$reason" >> "$work/still-refused.tsv"
+            continue
+        fi
+        retried=$((retried + 1))
+        if "$probe" --idl "$CORPUS/$name/type.idl" \
+                    --type "$(cat "$CORPUS/$name/type" 2>/dev/null || echo Sample)" \
+                    --values "$CORPUS/$name/values.json" --matrix \
+                    > "$work/one.tsv" 2>/dev/null && [ -s "$work/one.tsv" ]
+        then
+            recovered=$((recovered + 1))
+            awk -F'\t' -v c="$name" '{print c "\t" $1 "\t" $2 "\t" $3}' "$work/one.tsv" \
+                >> "$work/recovered.tsv"
+        else
+            printf '%s\t%s\n' "$name" "$reason" >> "$work/still-refused.tsv"
+        fi
+    done < <(awk -F'\t' '!seen[$1]++' "$work/refused.tsv")
+    echo "wireprobe-batch: $retried excluded case(s) retried alone, $recovered recovered" >&2
+else
+    cp "$work/refused.tsv" "$work/still-refused.tsv"
+fi
+mv "$work/still-refused.tsv" "$work/refused.tsv"
+[ -s "$work/recovered.tsv" ] && cat "$work/recovered.tsv" >> "$work/kept.tsv"
+
+# -- the two halves, in the corpus's order -------------------------------
+cut -f1 "$work/refused.tsv" | LC_ALL=C sort -u > "$work/refused.names"
+{
+    # A case that ended up refused is not also a kept row. A batch that
+    # was killed part way leaves real rows behind for the case it died
+    # in, and printing both would put a payload and a refusal in the
+    # same cell — two answers where the tree allows one.
+    [ -f "$work/kept.tsv" ] && awk -F'\t' -v names="$work/refused.names" '
+        BEGIN { while ((getline line < names) > 0) refused[line] = 1 }
+        { if ($1 in refused) next
+          key = $1 "\t" $2 "\t" $3
+          if (seen[key]++) next
+          cell = $4
+          if (substr(cell, 1, 1) == "!")
+              print $1 "\t" $2 "\t" $3 "\trefused\t" substr(cell, 2)
+          else
+              print $1 "\t" $2 "\t" $3 "\twrote\t" cell }' "$work/kept.tsv"
+    # A refused case is four rows, not one: the matrix keeps its shape.
+    awk -F'\t' '!seen[$1]++' "$work/refused.tsv" \
+    | while IFS=$'\t' read -r name reason; do
+        [ -n "$name" ] || continue
+        for e in xcdr1 xcdr2; do
+            for o in le be; do
+                printf '%s\t%s\t%s\trefused\t%s\n' "$name" "$e" "$o" "$reason"
+            done
+        done
+    done
+} | LC_ALL=C sort > "$work/all.tsv"
+
+mv "$work/all.tsv" "$out"
+cells=$(wc -l < "$out")
+carried=$(awk -F'\t' '$4 == "wrote"' "$out" | wc -l)
+echo "wireprobe-batch: $vendor: $builds batch build(s) + $retried per-case retries \
+for $cells cells, $carried carrying bytes" >&2
+# -- no bytes: a broken harness, or every case refused ------------------
+#
+# Both look the same from the row count, and they are opposite findings.
+# The rule is provenance, which this script already keeps: `refuse_fill`
+# is a refusal that came from `wireprobe-fill` — the harness's own — and
+# it puts the case on `no-retry`. Every other refusal carries the front
+# end's or the compiler's own sentence, which means the vendor was
+# reached and answered.
+#
+# So a run that carried no bytes is a harness failure when *nothing*
+# reached the vendor, and a result when something did. The measured case
+# is `--cases` over the six `identifier-target-keyword-*` cases: Fast
+# DDS refused all six, each with fastddsgen's or g++'s own text —
+# `const zd_c5::static& data);` is fastddsgen's generated C++ and it is
+# invalid — and the old rule threw all six away and recorded
+# `not-measured`, which is the pass a column gets for not being asked.
+#
+# A vendor whose toolchain is absent is caught before this, by
+# `vendor_present` in `tools/interop-vendors.sh`; that is the condition
+# this guard used to be a second line for.
+if [ "$carried" -eq 0 ]; then
+    from_vendor=$(awk -F'\t' -v names="$work/no-retry" '
+        BEGIN { while ((getline line < names) > 0) ours[line] = 1 }
+        $4 == "refused" && !($1 in ours) && $5 != "" { n++ }
+        END { print n + 0 }' "$out")
+    if [ "$from_vendor" -eq 0 ]; then
+        echo "wireprobe-batch: $vendor produced no bytes and nothing reached it; \
+that is a harness failure, not a result" >&2
+        exit 1
+    fi
+    echo "wireprobe-batch: $vendor produced no bytes; $from_vendor of $cells cell(s) carry its \
+own refusal, so the run measured them. The distinct reasons:" >&2
+    awk -F'\t' '$4 == "refused" && $5 != "" { print "  " $5 }' "$out" | LC_ALL=C sort -u >&2
+fi

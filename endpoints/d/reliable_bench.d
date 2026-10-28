@@ -15,7 +15,7 @@ import reliable;
 void main()
 {
     enum int ITERS = 20_000;
-    ubyte[] frame = reliableWriteFrame(0, [1, 2, 3, 4]);
+    ubyte[] frame = reliableWriteFrame(0, 0x0015, [1, 2, 3, 4]);
 
     // Inline path: a real sendto per sample (kernel transition).
     auto sock = new UdpSocket();

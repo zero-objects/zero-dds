@@ -1,0 +1,38 @@
+{
+  "body": {
+    "node": {
+      "k": -1431655766,
+      "v": -21846
+    },
+    "names": [
+      "AAAAAAAAAAAA",
+      "AAAAAAAAAAAAAAAA",
+      "AAAAAAAAAAAAAAAAAAAA"
+    ]
+  },
+  "picked": {
+    "_d": 7,
+    "fraction": -9.87654321e+120
+  },
+  "hues": [
+    "BLUE",
+    "BLUE",
+    "BLUE",
+    "BLUE"
+  ],
+  "marks": [
+    "LOW",
+    "HIGH"
+  ],
+  "grid": [
+    [
+      -9.87654321e+120,
+      -9.87654321e+120
+    ],
+    [
+      -9.87654321e+120,
+      -9.87654321e+120
+    ]
+  ],
+  "tail": -1431655766
+}

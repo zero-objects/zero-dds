@@ -1,0 +1,5 @@
+// bounded `wstring`, multi-byte
+@final struct Sample {
+    wstring<16> text;
+    long tail;
+};

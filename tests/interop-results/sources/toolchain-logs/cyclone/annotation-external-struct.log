@@ -1,0 +1,1 @@
+fill_4.inc:1:14: error: 'sample.nested' is a pointer; did you mean to use '->'?

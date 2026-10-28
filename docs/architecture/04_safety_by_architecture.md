@@ -316,7 +316,7 @@ On Track-C activation these standards are targeted (in priority):
 When a commit violates the safety rules:
 
 1. **CI blocks the merge.** Lint or test failures appear in the PR.
-2. **Auto-fix where possible.** Claude-team agents can fix many violations automatically (e.g. replace `.unwrap()` with explicit error handling).
+2. **Auto-fix where possible.** Many violations can be fixed automatically (e.g. replace `.unwrap()` with explicit error handling).
 3. **Escalation on genuine conflicts.** When a safety rule must be broken out of technical necessity (e.g. a performance-critical `unsafe` block), a formal safety-waiver request is required. It requires:
    - A technical justification
    - An alternatives analysis (why other ways do not work)

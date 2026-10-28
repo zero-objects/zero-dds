@@ -1,62 +1,35 @@
 # `zerodds-idl-compose`
 
-[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
-[![docs.rs](https://docs.rs/zerodds-idl-compose/badge.svg)](https://docs.rs/zerodds-idl-compose)
+The shared IDL composition pipeline. One call — `compose` — takes a path
+and produces the model plus its registered type objects, so a `build.rs`
+and the command-line tool see the same thing from the same file.
 
-Shared IDL composition pipeline for [ZeroDDS](https://zerodds.org), extracted
-from `zerodds-idlc` so build-time consumers other than the CLI —
-[`zerodds-build`](../../crates/zerodds-build), the CMake
-`zerodds_idlc_generate()` wrapper, future language build-graph integrations —
-get CLI-feature-equivalent output instead of reimplementing a thinner
-version of the pipeline ad hoc.
+## What this crate no longer does
 
-## Layer position
+It used to do five things, and it existed because only the CLI did all
+five: the `build.rs` scripts called the parser directly and got none of
+them. Four have since moved into the front end:
 
-Layer 3 (schema), build-time tool, std-only. Depends only on `zerodds-idl`.
+| step | where it is now |
+|---|---|
+| `#include` / `#define` expansion | `zerodds-idl-parse::preprocess` |
+| parse | `zerodds-idl-parse::parse_preprocessed` |
+| vendor key pragmas → `@key` | `zerodds-idl-lower`'s `apply_keylists` |
+| default extensibility | `Ast::effective_extensibility` |
+| type objects | `zerodds-types::from_ast` |
 
-## What it does
+The fourth is worth naming. It used to **write** an explicit
+`@final`/`@appendable` onto every unannotated aggregate so each backend
+would agree. The model answers the question instead, in one place, and
+nothing is written into the tree — which is what stops two backends from
+disagreeing without either being wrong.
 
-`zerodds-idlc generate` runs five steps on a raw `.idl` file before handing
-the AST to a `zerodds-idl-*` language emitter:
+`ComposeOptions::default_extensibility` is still there, because XTypes
+1.3 §7.3.1.2.1.8 provides for it in as many words. It fills silence and
+never overrules the source.
 
-1. **Preprocess** — `#include`/`#define`/`#ifdef`/`#pragma` expansion
-   (`zerodds_idl::preprocessor`), with `-I`/`-D`-equivalent knobs
-   (`ComposeOptions::include_dirs` / `defines`).
-2. **Parse** — OMG IDL 4.2 -> AST.
-3. **Vendor key-pragmas** — `#pragma keylist` / `DCPS_DATA_KEY` / `cats`
-   (Cyclone / OpenDDS / OpenSplice) become synthetic `@key` annotations
-   (`key_pragmas`).
-4. **Default extensibility / nested** — un-annotated `struct`/`union`/`enum`
-   get an explicit `@final`/`@appendable`/`@mutable`/`@nested` so every
-   backend sees the same default (`default_ext`).
-5. **TypeObject lowering** — XTypes-1.3 minimal `TypeObject`s, XCDR2-LE
-   serialised, one per named type, topologically ordered (`typeobject`).
+## Include resolution
 
-Before this crate existed, only the CLI ran all five steps. The five
-in-repo `build.rs` scripts that called `zerodds_idl::parse` +
-`zerodds_idl_rust::generate_rust_module` directly (`crates/spatial-dds`,
-`crates/spatial-ros2`, `crates/corba-interop`, and two
-`zerodds-examples/*`) got none of them — no `#include` tracking, no vendor
-key-pragma support, no default-extensibility, no TypeObject block — so their
-generated types were not feature-equivalent to what the CLI would have
-produced for the same IDL.
-
-## Usage
-
-```rust
-use std::path::Path;
-use zerodds_idl_compose::{compose, ComposeOptions};
-
-let opts = ComposeOptions {
-    include_dirs: vec!["idl/".into()],
-    ..ComposeOptions::default()
-};
-let out = compose(Path::new("idl/Robot.idl"), &opts).expect("compose");
-// out.ast            -> hand to a zerodds-idl-* emitter (e.g. zerodds_idl_rust)
-// out.type_objects    -> zerodds_idl_compose::typeobject::render_rust(&out.type_objects, &out.ast, "Robot")
-// out.dependency_files -> cargo:rerun-if-changed / Makefile deps
-```
-
-`zerodds-idlc` itself is refactored on top of this crate — the CLI is now a
-thin arg-parser + per-backend emit loop around `compose()`, so CLI and
-non-CLI consumers cannot drift.
+A quoted include resolves beside the including file first, then along
+the search list, and only last as written. An include that works because
+of where the build ran is one that breaks on another machine.

@@ -1,0 +1,10 @@
+wireprobe-omniorb: omniidl failed
+gen.idl:1: Error in look-up of 'map': 'map' not found
+gen.idl:1: Syntax error in definition
+gen.idl:1: Syntax error in abstract valuetype
+gen.idl:3: Error in look-up of 'map': 'map' not found
+gen.idl:3: Syntax error in member declaration
+gen.idl:3: Error in look-up of 'zd_anon_1': 'zd_anon_1' not found
+gen.idl:3: Error in look-up of 'entries': 'entries' not found
+omniidl: 7 errors.
+wireprobe: omniidl ran under a 4194304K ceiling and a 300s clock

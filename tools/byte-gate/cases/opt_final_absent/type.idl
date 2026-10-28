@@ -1,0 +1,1 @@
+@final struct Sample { long a; @optional octet b; long c; };

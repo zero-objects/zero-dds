@@ -1,0 +1,53 @@
+#!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 ZeroDDS Contributors
+#
+# gen-source-diff — two `gen-source-snapshot` trees, cell by cell.
+#
+#   tools/wireprobe/gen-source-diff <before> <after>
+#
+# Prints one line per configuration that is not the same in both, and
+# exits non-zero if there is one. A change that was meant is read off
+# this list and argued; a change that was not is the finding.
+#
+# The generated source and not the octets, for the reason
+# `gen-source-snapshot` gives: a column's octets come out of its runtime
+# compiling that source, so two sources that compare equal cannot
+# produce different octets, and the comparison covers the read direction
+# and every case a toolchain is missing on this machine.
+set -uo pipefail
+
+before="${1:-}"
+after="${2:-}"
+if [ -z "$before" ] || [ -z "$after" ]; then
+    echo "gen-source-diff: two snapshot directories are required" >&2
+    exit 2
+fi
+
+moved=0
+total=0
+for column in c cpp csharp java typescript; do
+    [ -d "$before/$column" ] || continue
+    n=0
+    while IFS= read -r exit_before; do
+        slot="${exit_before%/.exit}"
+        rel="${slot#"$before"/}"
+        total=$((total + 1))
+        # `.stdout` is not compared: a generator writes its files and
+        # says nothing on it, and a difference there is not a difference
+        # in what gets compiled.
+        if ! diff -r -q --exclude=.stdout --exclude=.stderr \
+                "$slot" "$after/$rel" >/dev/null 2>&1; then
+            echo "moved  $rel"
+            n=$((n + 1))
+        fi
+    done < <(find "$before/$column" -name .exit | sort)
+    if [ "$n" -gt 0 ]; then
+        echo "$column: $n configuration(s) moved"
+    else
+        echo "$column: nothing moved"
+    fi
+    moved=$((moved + n))
+done
+echo "$moved of $total configuration(s) moved"
+[ "$moved" -eq 0 ]

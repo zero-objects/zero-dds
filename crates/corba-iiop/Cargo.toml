@@ -10,8 +10,8 @@ description = "OMG CORBA 3.3 Part 2 §14 + §15.7 + §15.9 — full IIOP-TCP tra
 homepage = "https://zerodds.org"
 documentation = "https://docs.rs/zerodds-corba-iiop"
 readme = "README.md"
-keywords = ["dds", "corba", "iiop", "giop", "no-std"]
-categories = ["network-programming", "no-std"]
+keywords = ["dds", "corba", "iiop", "giop"]
+categories = ["network-programming"]
 publish = true
 
 [lints]
@@ -22,14 +22,14 @@ path = "src/lib.rs"
 
 [features]
 default = ["std"]
-std = ["alloc"]
-alloc = []
+std = ["alloc", "dep:zerodds-corba-ccm", "zerodds-corba-giop/std"]
+alloc = ["zerodds-corba-giop/alloc"]
 # SSLIOP — IIOP over TLS (rustls). Requires std.
 tls = ["std", "dep:rustls", "dep:rustls-pemfile", "dep:rustls-pki-types"]
 
 [dependencies]
-zerodds-cdr = { version = "1.0.0-rc.7", path = "../cdr" }
-zerodds-corba-giop = { version = "1.0.0-rc.7", path = "../corba-giop" }
+zerodds-wire = { version = "1.0.0-rc.7", path = "../wire" }
+zerodds-corba-giop = { version = "1.0.0-rc.7", path = "../corba-giop", default-features = false }
 # SSLIOP transport (feature `tls`): rustls 0.23 + PEM loader + PKI types.
 rustls = { workspace = true, optional = true }
 rustls-pemfile = { workspace = true, optional = true }
@@ -39,7 +39,7 @@ rustls-pki-types = { workspace = true, optional = true }
 # connection send/receive path. corba-ccm has no dependency on
 # corba-iiop, so this is cycle-free. The connection wire-up is std-only
 # (TCP); the default features (`std`) are sufficient.
-zerodds-corba-ccm = { version = "1.0.0-rc.7", path = "../corba-ccm" }
+zerodds-corba-ccm = { version = "1.0.0-rc.7", path = "../corba-ccm", optional = true }
 
 [dev-dependencies]
 # Self-signed test certs for the SSLIOP roundtrip (feature `tls`).

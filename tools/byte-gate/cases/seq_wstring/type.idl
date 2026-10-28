@@ -1,0 +1,1 @@
+@final struct Wide { sequence<wstring> texts; octet tail; };

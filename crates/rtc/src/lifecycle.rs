@@ -8,7 +8,7 @@ use crate::return_code::ReturnCode;
 /// `LifeCycleState` (spec §5.2.2.3, p. 19) — lifecycle states of an
 /// RTC within an `ExecutionContext`.
 ///
-/// Spec-Zitat (§5.2.2.3.1-§5.2.2.3.4): "CREATED — instantiated but not
+/// Spec quote (§5.2.2.3.1-§5.2.2.3.4): "CREATED — instantiated but not
 /// yet initialized; INACTIVE — Alive but not invoked; ACTIVE — Alive
 /// and will be invoked when context is Running; ERROR — encountered
 /// problem and cannot continue without reset."
@@ -37,7 +37,7 @@ pub enum ExecutionKind {
     Other,
 }
 
-/// `ComponentAction` Trait — Spec §5.2.2.4 (S. 20-21).
+/// `ComponentAction` Trait — Spec §5.2.2.4 (p. 20-21).
 ///
 /// Spec-Zitat: "ComponentAction interface provides callbacks
 /// corresponding to the execution of the lifecycle operations of

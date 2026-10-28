@@ -12,7 +12,7 @@ pub mod enum_type;
 pub mod struct_type;
 pub mod union_type;
 
-use zerodds_cdr::{BufferReader, BufferWriter, EncodeError};
+use zerodds_wire::{Reader, WireError, Writer};
 
 use crate::error::TypeCodecError;
 use crate::type_object::kinds::{
@@ -22,8 +22,8 @@ use crate::type_object::kinds::{
 
 pub use alias_type::{CommonAliasBody, MinimalAliasBody, MinimalAliasType};
 pub use annotation_type::{
-    AnnotationParameterValue, CommonAnnotationParameter, MinimalAnnotationParameter,
-    MinimalAnnotationType,
+    CommonAnnotationParameter, MinimalAnnotationParameter, MinimalAnnotationType,
+    ordered_by_name_hash,
 };
 pub use bitmask_type::{CommonBitflag, MinimalBitflag, MinimalBitmaskType};
 pub use bitset_type::{CommonBitfield, HoldingType, MinimalBitfield, MinimalBitsetType};
@@ -65,6 +65,25 @@ pub enum MinimalTypeObject {
     Enumerated(MinimalEnumeratedType),
     /// `bitmask`.
     Bitmask(MinimalBitmaskType),
+    /// The `default:` arm of Annex B's `union MinimalTypeObject`:
+    /// `MinimalExtendedType extended_type`, under the comment
+    /// `// =========== Future extensibility ============`.
+    ///
+    /// `MinimalExtendedType` is
+    /// `@extensibility(MUTABLE) @nested struct { /* Empty. Available
+    /// for future extension */ }`, so under encoding version 2 the
+    /// arm is a `DHEADER` over a member list this revision has no
+    /// member of. The member list is held verbatim — the `DHEADER`
+    /// excluded, because that is a length the encoder writes and a
+    /// byte order this value does not carry — so an object of a
+    /// future TypeKind survives a decode and an encode unchanged
+    /// instead of being refused.
+    Extended {
+        /// The TypeKind the stream carried.
+        type_kind: u8,
+        /// The `MinimalExtendedType` member list, verbatim.
+        body: alloc::vec::Vec<u8>,
+    },
 }
 
 impl MinimalTypeObject {
@@ -82,15 +101,16 @@ impl MinimalTypeObject {
             Self::Map(_) => TK_MAP,
             Self::Enumerated(_) => TK_ENUM,
             Self::Bitmask(_) => TK_BITMASK,
+            Self::Extended { type_kind, .. } => *type_kind,
         }
     }
 
     /// Encode as `{ octet _d; body }`.
     ///
     /// # Errors
-    /// Buffer overflow.
-    pub fn encode_into(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
-        w.write_u8(self.discriminator())?;
+    /// A length that does not fit a `u32`.
+    pub fn encode_into(&self, w: &mut Writer) -> Result<(), WireError> {
+        w.write_u8(self.discriminator());
         match self {
             Self::Alias(a) => a.encode_into(w),
             Self::Annotation(a) => a.encode_into(w),
@@ -102,6 +122,10 @@ impl MinimalTypeObject {
             Self::Map(m) => m.encode_into(w),
             Self::Enumerated(e) => e.encode_into(w),
             Self::Bitmask(b) => b.encode_into(w),
+            // The member list goes back behind a `DHEADER` this
+            // encoder writes, so the value carries no byte order of
+            // its own.
+            Self::Extended { body, .. } => crate::framing::encode_extended_members(w, body),
         }
     }
 
@@ -110,7 +134,7 @@ impl MinimalTypeObject {
     /// # Errors
     /// `TypeCodecError::UnknownTypeKind` on an unknown discriminator,
     /// otherwise a CDR decoder error.
-    pub fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, TypeCodecError> {
+    pub fn decode_from(r: &mut Reader<'_>) -> Result<Self, TypeCodecError> {
         let d = r.read_u8()?;
         Ok(match d {
             TK_ALIAS => Self::Alias(MinimalAliasType::decode_from(r)?),
@@ -123,7 +147,15 @@ impl MinimalTypeObject {
             TK_MAP => Self::Map(MinimalMapType::decode_from(r)?),
             TK_ENUM => Self::Enumerated(MinimalEnumeratedType::decode_from(r)?),
             TK_BITMASK => Self::Bitmask(MinimalBitmaskType::decode_from(r)?),
-            other => return Err(TypeCodecError::UnknownTypeKind { kind: other }),
+            // Annex B: `default: MinimalExtendedType extended_type;`.
+            // Refusing here refused every stream carrying a TypeKind a
+            // later revision defines, including one this reader could
+            // have skipped past — the arm is `@extensibility(MUTABLE)`
+            // and a `DHEADER` says how far.
+            other => Self::Extended {
+                type_kind: other,
+                body: crate::framing::decode_extended_members(r)?,
+            },
         })
     }
 
@@ -131,10 +163,10 @@ impl MinimalTypeObject {
     ///
     /// # Errors
     /// Encode error.
-    pub fn to_bytes_le(&self) -> Result<alloc::vec::Vec<u8>, EncodeError> {
-        let mut w = BufferWriter::new(zerodds_cdr::Endianness::Little);
+    pub fn to_bytes_le(&self) -> Result<alloc::vec::Vec<u8>, WireError> {
+        let mut w = crate::framing::xcdr2_writer();
         self.encode_into(&mut w)?;
-        Ok(w.into_bytes())
+        Ok(w.finish())
     }
 
     /// Convenience: deserialize from LE bytes.
@@ -142,7 +174,7 @@ impl MinimalTypeObject {
     /// # Errors
     /// Decode error.
     pub fn from_bytes_le(bytes: &[u8]) -> Result<Self, TypeCodecError> {
-        let mut r = BufferReader::new(bytes, zerodds_cdr::Endianness::Little);
+        let mut r = crate::framing::xcdr2_reader(bytes);
         Self::decode_from(&mut r)
     }
 }

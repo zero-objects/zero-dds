@@ -14,7 +14,7 @@
 
 use std::time::{Duration, SystemTime};
 
-use zerodds_durability_store::{Contract, DurabilitySample, DurabilityStore, Selector};
+use zerodds_durability_store::{Contract, DurabilitySample, DurabilityStore, Selector, TopicMeta};
 use zerodds_durability_store_lakehouse::LakehouseStore;
 use zerodds_qos::policies::history::HistoryKind;
 use zerodds_qos::policies::resource_limits::LENGTH_UNLIMITED;
@@ -137,6 +137,55 @@ fn persistent_survives_reopen() {
     assert_eq!(all[5].sequence, 5);
     assert_eq!(all[2].payload, b"p-1-2");
     let _ = std::fs::remove_file(&db);
+}
+
+#[test]
+fn topic_meta_round_trips_across_reopen() {
+    let db = tmp("meta-roundtrip", "duckdb");
+    let meta = TopicMeta {
+        type_name: "demo::Command".to_string(),
+        keyed: true,
+        contract: Contract {
+            history_kind: HistoryKind::KeepLast,
+            history_depth: 5,
+            ..keep_all()
+        },
+    };
+    {
+        let store = LakehouseStore::open(&db, keep_all()).unwrap();
+        assert_eq!(store.topic_meta("Commands").unwrap(), None);
+        store.set_topic_meta("Commands", meta.clone()).unwrap();
+    }
+    let reopened = LakehouseStore::open(&db, keep_all()).unwrap();
+    assert_eq!(reopened.topic_meta("Commands").unwrap(), Some(meta));
+    let _ = std::fs::remove_file(&db);
+}
+
+/// Also exercises `cleanup`'s path that reads the contract while already
+/// holding the connection lock — the deadlock this fix's `contract_for_conn`
+/// split closed (`contract_for` used to re-lock `self.conn`, which is not
+/// reentrant, inside `cleanup`'s row-filtering closure).
+#[test]
+fn topic_meta_contract_governs_cleanup_no_deadlock() {
+    let store = LakehouseStore::open_in_memory(keep_all()).unwrap();
+    store
+        .set_topic_meta(
+            "T",
+            TopicMeta {
+                type_name: "T".to_string(),
+                keyed: false,
+                contract: Contract {
+                    cleanup_delay: Duration::ZERO,
+                    ..keep_all()
+                },
+            },
+        )
+        .unwrap();
+    store.store(sample("T", 1, 0)).unwrap();
+    let now = SystemTime::UNIX_EPOCH + Duration::from_secs(100);
+    store.unregister("T", &[1u8; 16], now).unwrap();
+    assert_eq!(store.cleanup(now).unwrap(), 1);
+    assert_eq!(store.stats("T").unwrap().samples, 0);
 }
 
 #[test]

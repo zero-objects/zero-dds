@@ -1,0 +1,4 @@
+## wireprobe-hdds, exit 4
+### stderr
+wireprobe-hdds: hddsgen refused the file
+Parse error: [Unknown type] at 1:35: Expected type, found Annotation

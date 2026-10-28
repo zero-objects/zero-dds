@@ -1,0 +1,12 @@
+// an empty `@appendable` struct as a sequence and an array element
+// XTypes 1.3 §7.4.3.5.3: the delimiter is written for an appendable
+// aggregate whether or not it has members.
+module m {
+  @appendable struct E { };
+
+  @appendable struct S {
+    sequence<E> items;
+    E pair[2];
+    long tail;
+  };
+};

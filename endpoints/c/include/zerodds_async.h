@@ -66,13 +66,19 @@ typedef struct {
     unsigned char        session;
     unsigned char        stream;
     unsigned int         seq;
+    /* ObjectId of the target DataWriter, written into every frame's
+     * BaseObjectRequest (DDS-XRCE 1.0 Sec 7.7.8). The endpoint profile has no
+     * CREATE handshake, so the integrator supplies the id the agent knows. */
+    unsigned int         object_id;
 } zdw_async_writer;
 
 /* Bind a writer to a transport + scratch buffer. `session >= 0x80` is a
- * best-effort no-key session (ZDW_XRCE_SESSION_NOKEY). */
+ * best-effort no-key session (ZDW_XRCE_SESSION_NOKEY). `object_id` is the
+ * target DataWriter's XRCE ObjectId. */
 void zdw_async_writer_init(zdw_async_writer *w, const zdw_transport *t,
                            unsigned char *txbuf, size_t txcap,
-                           unsigned char session, unsigned char stream);
+                           unsigned char session, unsigned char stream,
+                           unsigned int object_id);
 
 /* Frame `sample` (an XCDR body) as WRITE_DATA and deliver it. Returns
  * ZDW_T_OK or ZDW_T_ERROR. */

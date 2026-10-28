@@ -16,7 +16,7 @@
 //!
 //! struct CompoundSecMech {
 //!     AssociationOptions   target_requires;
-//!     IOP::TaggedComponent transport_mech;  // typisch TAG_TLS_SEC_TRANS
+//!     IOP::TaggedComponent transport_mech;  // typically TAG_TLS_SEC_TRANS
 //!     AsContextSec         as_context_mech;
 //!     SasContextSec        sas_context_mech;
 //! };
@@ -24,7 +24,7 @@
 
 use alloc::vec::Vec;
 
-use zerodds_cdr::{BufferReader, BufferWriter, DecodeError, EncodeError};
+use zerodds_wire::{Reader, WireError, Writer};
 
 use crate::association_options::AssociationOptions;
 
@@ -84,44 +84,49 @@ pub struct CompoundSecMechList {
 }
 
 // ============================================================
-// CDR-Wire-Encoding (Spec §24.2.6.5 + §10.5 IOR-Component-Body)
+// The CDR wire encoding (spec §24.2.6.5 and §10.5, IOR component body)
 // ============================================================
 
-fn write_octet_seq(w: &mut BufferWriter, bytes: &[u8]) -> Result<(), EncodeError> {
-    let n = u32::try_from(bytes.len()).map_err(|_| EncodeError::ValueOutOfRange {
-        message: "csiv2 octet/seq length exceeds u32::MAX",
-    })?;
-    w.write_u32(n)?;
-    w.write_bytes(bytes)
+fn write_octet_seq(w: &mut Writer, bytes: &[u8]) -> Result<(), WireError> {
+    let n = length_u32(bytes.len(), w.position())?;
+    w.write_u32(n);
+    w.write_bytes(bytes);
+    Ok(())
 }
 
-fn read_octet_seq(r: &mut BufferReader<'_>) -> Result<Vec<u8>, DecodeError> {
+/// A length as a `u32`, or the refusal that names what overran.
+fn length_u32(len: usize, at: usize) -> Result<u32, WireError> {
+    u32::try_from(len).map_err(|_| WireError::OutOfRange {
+        at,
+        expected: alloc::format!("a CSIv2 octet sequence of at most u32::MAX bytes, not {len}"),
+    })
+}
+
+fn read_octet_seq(r: &mut Reader<'_>) -> Result<Vec<u8>, WireError> {
     let n = r.read_u32()? as usize;
     let bytes = r.read_bytes(n)?;
     Ok(bytes.to_vec())
 }
 
-fn write_octet_seq_seq(w: &mut BufferWriter, items: &[Vec<u8>]) -> Result<(), EncodeError> {
-    let n = u32::try_from(items.len()).map_err(|_| EncodeError::ValueOutOfRange {
-        message: "csiv2 octet/seq length exceeds u32::MAX",
-    })?;
-    w.write_u32(n)?;
+fn write_octet_seq_seq(w: &mut Writer, items: &[Vec<u8>]) -> Result<(), WireError> {
+    let n = length_u32(items.len(), w.position())?;
+    w.write_u32(n);
     for item in items {
         write_octet_seq(w, item)?;
     }
     Ok(())
 }
 
-fn read_octet_seq_seq(r: &mut BufferReader<'_>) -> Result<Vec<Vec<u8>>, DecodeError> {
+fn read_octet_seq_seq(r: &mut Reader<'_>) -> Result<Vec<Vec<u8>>, WireError> {
     let n = r.read_u32()? as usize;
     // Each element needs >= 4 bytes (its own octet-seq length prefix).
     // Reject before `Vec::with_capacity` — mirrors
-    // `crates/cdr/src/composite.rs`'s `len > reader.remaining()` guard.
+    // the wire runtime's `len > reader.remaining()` guard.
     if n > r.remaining() / 4 {
-        return Err(DecodeError::LengthExceeded {
-            announced: n,
-            remaining: r.remaining(),
-            offset: r.position(),
+        return Err(WireError::ImpossibleLength {
+            at: r.position(),
+            claimed: n,
+            available: r.remaining(),
         });
     }
     let mut out = Vec::with_capacity(n);
@@ -132,23 +137,23 @@ fn read_octet_seq_seq(r: &mut BufferReader<'_>) -> Result<Vec<Vec<u8>>, DecodeEr
 }
 
 impl AsContextSec {
-    /// CDR-Encode (Spec §24.2.6.5.4).
+    /// CDR encode (spec §24.2.6.5.4).
     ///
     /// # Errors
-    /// `EncodeError::ValueOutOfRange { message: "csiv2 octet/seq length exceeds u32::MAX" }` if an octet-seq would be larger than
+    /// [`WireError::OutOfRange`] if an octet-seq would be larger than
     /// `u32::MAX`.
-    pub fn encode(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
-        w.write_u16(self.target_supports.0)?;
-        w.write_u16(self.target_requires.0)?;
+    pub fn encode(&self, w: &mut Writer) -> Result<(), WireError> {
+        w.write_u16(self.target_supports.0);
+        w.write_u16(self.target_requires.0);
         write_octet_seq(w, &self.client_authentication_mech)?;
         write_octet_seq(w, &self.target_name)
     }
 
-    /// CDR-Decode.
+    /// CDR decode.
     ///
     /// # Errors
-    /// `DecodeError::*` if the reader is truncated.
-    pub fn decode(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
+    /// [`WireError`] if the reader is truncated.
+    pub fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
         let target_supports = AssociationOptions(r.read_u16()?);
         let target_requires = AssociationOptions(r.read_u16()?);
         let client_authentication_mech = read_octet_seq(r)?;
@@ -163,24 +168,25 @@ impl AsContextSec {
 }
 
 impl SasContextSec {
-    /// CDR-Encode (Spec §24.2.6.5.5).
+    /// CDR encode (spec §24.2.6.5.5).
     ///
     /// # Errors
-    /// `EncodeError::ValueOutOfRange { message: "csiv2 octet/seq length exceeds u32::MAX" }` if a seq would be larger than
+    /// [`WireError::OutOfRange`] if a seq would be larger than
     /// `u32::MAX`.
-    pub fn encode(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
-        w.write_u16(self.target_supports.0)?;
-        w.write_u16(self.target_requires.0)?;
+    pub fn encode(&self, w: &mut Writer) -> Result<(), WireError> {
+        w.write_u16(self.target_supports.0);
+        w.write_u16(self.target_requires.0);
         write_octet_seq_seq(w, &self.privilege_authorities)?;
         write_octet_seq_seq(w, &self.supported_naming_mechanisms)?;
-        w.write_u32(self.supported_identity_types)
+        w.write_u32(self.supported_identity_types);
+        Ok(())
     }
 
-    /// CDR-Decode.
+    /// CDR decode.
     ///
     /// # Errors
-    /// `DecodeError::*` if the reader is truncated.
-    pub fn decode(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
+    /// [`WireError`] if the reader is truncated.
+    pub fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
         let target_supports = AssociationOptions(r.read_u16()?);
         let target_requires = AssociationOptions(r.read_u16()?);
         let privilege_authorities = read_octet_seq_seq(r)?;
@@ -197,24 +203,24 @@ impl SasContextSec {
 }
 
 impl CompoundSecMech {
-    /// CDR-Encode (Spec §24.2.6.5).
+    /// CDR encode (spec §24.2.6.5).
     ///
     /// # Errors
-    /// `EncodeError::ValueOutOfRange { message: "csiv2 octet/seq length exceeds u32::MAX" }`.
-    pub fn encode(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
-        w.write_u16(self.target_requires.0)?;
+    /// [`WireError::OutOfRange`].
+    pub fn encode(&self, w: &mut Writer) -> Result<(), WireError> {
+        w.write_u16(self.target_requires.0);
         // IOP::TaggedComponent for transport_mech: tag (u32) + sequence<octet> data.
-        w.write_u32(self.transport_mech_tag)?;
+        w.write_u32(self.transport_mech_tag);
         write_octet_seq(w, &self.transport_mech_data)?;
         self.as_context.encode(w)?;
         self.sas_context.encode(w)
     }
 
-    /// CDR-Decode.
+    /// CDR decode.
     ///
     /// # Errors
-    /// `DecodeError::*`.
-    pub fn decode(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
+    /// [`WireError`].
+    pub fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
         let target_requires = AssociationOptions(r.read_u16()?);
         let transport_mech_tag = r.read_u32()?;
         let transport_mech_data = read_octet_seq(r)?;
@@ -231,43 +237,40 @@ impl CompoundSecMech {
 }
 
 impl CompoundSecMechList {
-    /// CDR-Encode (Spec §24.2.6.5). Used in the IOR as the
+    /// CDR encode (spec §24.2.6.5). Used in the IOR as the
     /// `TAG_CSI_SEC_MECH_LIST=33` component body (CDR encapsulation:
     /// 1-byte endianness + 1-byte padding/reserved + this body).
     ///
     /// # Errors
-    /// `EncodeError::ValueOutOfRange { message: "csiv2 octet/seq length exceeds u32::MAX" }` if `mechanism_list.len()` > `u32::MAX`.
-    pub fn encode(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
-        w.write_u8(u8::from(self.stateful))?;
-        let n =
-            u32::try_from(self.mechanism_list.len()).map_err(|_| EncodeError::ValueOutOfRange {
-                message: "csiv2 octet/seq length exceeds u32::MAX",
-            })?;
-        w.write_u32(n)?;
+    /// [`WireError::OutOfRange`] if `mechanism_list.len()` > `u32::MAX`.
+    pub fn encode(&self, w: &mut Writer) -> Result<(), WireError> {
+        w.write_u8(u8::from(self.stateful));
+        let n = length_u32(self.mechanism_list.len(), w.position())?;
+        w.write_u32(n);
         for mech in &self.mechanism_list {
             mech.encode(w)?;
         }
         Ok(())
     }
 
-    /// CDR-Decode.
+    /// CDR decode.
     ///
     /// # Errors
-    /// `DecodeError::*`.
-    pub fn decode(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
+    /// [`WireError`].
+    pub fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
         let stateful = r.read_u8()? != 0;
         let n = r.read_u32()? as usize;
         // Every `CompoundSecMech` needs >= 38 bytes: target_requires(2) +
         // transport_mech_tag(4) + transport_mech_data length-prefix(4) +
         // AsContextSec(>=12) + SasContextSec(>=16). Reject before
-        // `Vec::with_capacity` — mirrors `crates/cdr/src/composite.rs`'s
+        // `Vec::with_capacity` — mirrors the wire runtime's
         // `len > reader.remaining()` guard.
         const MIN_COMPOUND_SEC_MECH_BYTES: usize = 38;
         if n > r.remaining() / MIN_COMPOUND_SEC_MECH_BYTES {
-            return Err(DecodeError::LengthExceeded {
-                announced: n,
-                remaining: r.remaining(),
-                offset: r.position(),
+            return Err(WireError::ImpossibleLength {
+                at: r.position(),
+                claimed: n,
+                available: r.remaining(),
             });
         }
         let mut mechanism_list = Vec::with_capacity(n);
@@ -331,12 +334,12 @@ mod tests {
     }
 
     /// Spec §24.2.6.5 — CompoundSecMechList CDR roundtrip. Wire-up
-    /// for F-CORBA-CSIV2-NOT-WIRED: csiv2 now uses zerodds-cdr in
+    /// for F-CORBA-CSIV2-NOT-WIRED: csiv2 now uses zerodds-wire in
     /// production (it was a Cargo dep without actual use before the
     /// review).
     #[test]
     fn cdr_roundtrip_compound_sec_mech_list() {
-        use zerodds_cdr::{BufferReader, BufferWriter, Endianness};
+        use zerodds_wire::{Endianness, Reader, Writer};
 
         let original = CompoundSecMechList {
             stateful: true,
@@ -365,12 +368,12 @@ mod tests {
             }],
         };
 
-        let mut w = BufferWriter::new(Endianness::Little);
+        let mut w = Writer::new(Endianness::Little);
         original.encode(&mut w).expect("encode");
-        let bytes = w.into_bytes();
+        let bytes = w.finish();
         assert!(!bytes.is_empty());
 
-        let mut r = BufferReader::new(&bytes, Endianness::Little);
+        let mut r = Reader::new(&bytes, Endianness::Little);
         let decoded = CompoundSecMechList::decode(&mut r).expect("decode");
         assert_eq!(original, decoded);
     }
@@ -380,53 +383,53 @@ mod tests {
     // rejected cleanly (no OOM, no panic) before `Vec::with_capacity`
     // runs, when it cannot possibly fit the bytes actually remaining.
     // Mirrors the established `len > reader.remaining()` guard in
-    // crates/cdr/src/composite.rs.
+    // the wire runtime.
     // -------------------------------------------------------------
 
     #[test]
     fn octet_seq_seq_rejects_oversized_count() {
-        use zerodds_cdr::{BufferReader, BufferWriter, Endianness};
-        let mut w = BufferWriter::new(Endianness::Little);
+        use zerodds_wire::{Endianness, Reader, Writer};
+        let mut w = Writer::new(Endianness::Little);
         // Announce a huge element count, but supply no element bytes.
-        w.write_u32(1_000_000_000).expect("write");
-        let bytes = w.into_bytes();
-        let mut r = BufferReader::new(&bytes, Endianness::Little);
+        w.write_u32(1_000_000_000);
+        let bytes = w.finish();
+        let mut r = Reader::new(&bytes, Endianness::Little);
         let res = read_octet_seq_seq(&mut r);
         assert!(
-            matches!(res, Err(DecodeError::LengthExceeded { .. })),
+            matches!(res, Err(WireError::ImpossibleLength { .. })),
             "expected clean rejection, got {res:?}"
         );
     }
 
     #[test]
     fn compound_sec_mech_list_rejects_oversized_count() {
-        use zerodds_cdr::{BufferReader, BufferWriter, Endianness};
-        let mut w = BufferWriter::new(Endianness::Little);
-        w.write_u8(1).expect("write stateful"); // stateful = true
+        use zerodds_wire::{Endianness, Reader, Writer};
+        let mut w = Writer::new(Endianness::Little);
+        w.write_u8(1); // stateful = true
         // Announce a huge mechanism_list count, but supply no element
         // bytes. A naive `Vec::with_capacity(n)` (element size well
         // over 100 bytes) would attempt a many-GB allocation from a
         // handful of header bytes.
-        w.write_u32(1_000_000_000).expect("write count");
-        let bytes = w.into_bytes();
-        let mut r = BufferReader::new(&bytes, Endianness::Little);
+        w.write_u32(1_000_000_000);
+        let bytes = w.finish();
+        let mut r = Reader::new(&bytes, Endianness::Little);
         let res = CompoundSecMechList::decode(&mut r);
         assert!(
-            matches!(res, Err(DecodeError::LengthExceeded { .. })),
+            matches!(res, Err(WireError::ImpossibleLength { .. })),
             "expected clean rejection, got {res:?}"
         );
     }
 
     #[test]
     fn cdr_roundtrip_empty_list() {
-        use zerodds_cdr::{BufferReader, BufferWriter, Endianness};
+        use zerodds_wire::{Endianness, Reader, Writer};
         let original = CompoundSecMechList::default();
-        let mut w = BufferWriter::new(Endianness::Little);
+        let mut w = Writer::new(Endianness::Little);
         original.encode(&mut w).expect("encode");
-        let bytes = w.into_bytes();
+        let bytes = w.finish();
         // 1-byte stateful + 3-byte CDR padding to u32 alignment + 4-byte length=0
         assert_eq!(bytes.len(), 8);
-        let mut r = BufferReader::new(&bytes, Endianness::Little);
+        let mut r = Reader::new(&bytes, Endianness::Little);
         let decoded = CompoundSecMechList::decode(&mut r).expect("decode");
         assert_eq!(original, decoded);
     }

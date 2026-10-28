@@ -10,8 +10,8 @@ repository = "https://github.com/zero-objects/zero-dds"
 homepage = "https://zerodds.org"
 documentation = "https://docs.rs/zerodds-proto"
 readme = "README.md"
-keywords = ["dds", "protobuf", "xtypes", "schema", "no-std"]
-categories = ["network-programming", "data-structures", "no-std"]
+keywords = ["dds", "protobuf", "xtypes", "schema"]
+categories = ["network-programming", "data-structures"]
 publish = true
 
 [lints]
@@ -27,4 +27,20 @@ std = ["alloc", "zerodds-types/std"]
 alloc = ["zerodds-types/alloc"]
 
 [dependencies]
-zerodds-types = { version = "1.0.0-rc.7", path = "../types", default-features = false, features = ["alloc"] }
+# The model. A `DynamicType` is a view on one, so a mapping step answers a
+# handle into a model rather than a description of a type — see
+# `src/mapper.rs`.
+zerodds-ast = { version = "1.0.0-rc.7", path = "../ast", default-features = false }
+zerodds-ast-core = { version = "1.0.0-rc.7", path = "../ast-core", default-features = false }
+zerodds-types = { version = "1.0.0-rc.7", path = "../types", default-features = false, features = ["alloc", "dynamic"] }
+
+[dev-dependencies]
+# `tests/byte_identity.rs` holds a proto-derived type against the same data
+# model written as IDL and lowered by the front end — a comparison between
+# two types this crate built would agree with itself.
+zerodds-idl-parse = { version = "1.0.0-rc.7", path = "../idl-parse" }
+zerodds-idl-lower = { version = "1.0.0-rc.7", path = "../idl-lower" }
+# One layout plan against one value, in both directions. The reflective
+# codec lives here and not in `zerodds-types`.
+zerodds-wire-codec = { version = "1.0.0-rc.7", path = "../wire-codec" }
+zerodds-ast-layout = { version = "1.0.0-rc.7", path = "../ast-layout" }

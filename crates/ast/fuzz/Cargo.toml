@@ -1,0 +1,23 @@
+[package]
+name = "zerodds-ast-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+zerodds-ast = { path = ".." }
+
+# Fuzz crates are their own workspace root; cargo-fuzz drives them
+# directly, not through the parent workspace.
+[workspace]
+
+[[bin]]
+name = "model_snapshot"
+path = "fuzz_targets/model_snapshot.rs"
+test = false
+doc = false
+bench = false

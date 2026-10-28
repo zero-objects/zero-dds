@@ -38,10 +38,17 @@ use crate::allocator::{InMemorySlotAllocator, SlotError, SlotHandle};
 use crate::backend::SlotBackend;
 use crate::slot::ReaderMask;
 
+/// Spec §5.1 straggler timeout: a committed slot that not every active
+/// reader has read is force-freed once its sample is this old. Covers the
+/// reader that is alive (so no SPDP lease expiry fires) but has stopped
+/// reading; without it one such reader would hold the slot pool forever.
+pub const STRAGGLER_TIMEOUT: Duration = Duration::from_secs(60);
+
 /// Writes FlatStruct samples directly into SHM slots — without CDR encoding.
 pub struct FlatWriter<T: FlatStruct> {
     alloc: Arc<InMemorySlotAllocator>,
     active_readers_mask: ReaderMask,
+    straggler_timeout: Duration,
     _t: PhantomData<fn() -> T>,
 }
 
@@ -53,8 +60,42 @@ impl<T: FlatStruct> FlatWriter<T> {
         Self {
             alloc,
             active_readers_mask,
+            straggler_timeout: STRAGGLER_TIMEOUT,
             _t: PhantomData,
         }
+    }
+
+    /// Overrides the spec §5.1 straggler timeout (`STRAGGLER_TIMEOUT`,
+    /// 60 s) for this writer.
+    #[must_use]
+    pub fn with_straggler_timeout(mut self, timeout: Duration) -> Self {
+        self.straggler_timeout = timeout;
+        self
+    }
+
+    /// The straggler timeout in force for this writer (spec §5.1).
+    #[must_use]
+    pub fn straggler_timeout(&self) -> Duration {
+        self.straggler_timeout
+    }
+
+    /// Reserves a slot, force-freeing straggler slots first if the pool is
+    /// exhausted (spec §5.1).
+    fn reserve(&self) -> Result<SlotHandle, SlotError> {
+        match self.alloc.reserve_slot(self.active_readers_mask) {
+            Err(SlotError::NoFreeSlot) => {}
+            other => return other,
+        }
+        // Nothing free: a slot whose sample has outlived the straggler
+        // timeout counts as read by every active reader.
+        if self
+            .alloc
+            .evict_stale(self.straggler_timeout, self.active_readers_mask)?
+            == 0
+        {
+            return Err(SlotError::NoFreeSlot);
+        }
+        self.alloc.reserve_slot(self.active_readers_mask)
     }
 
     /// Spec §8.1 write_flat — reserve + memcpy + commit in a single call.
@@ -64,7 +105,7 @@ impl<T: FlatStruct> FlatWriter<T> {
     /// `SampleTooLarge` when the slot is smaller than T::WIRE_SIZE.
     pub fn write(&self, sample: &T) -> Result<u32, SlotError> {
         let bytes = sample.as_bytes();
-        let handle = self.alloc.reserve_slot(self.active_readers_mask)?;
+        let handle = self.reserve()?;
         match self.alloc.commit_slot(handle, bytes) {
             Ok(sn) => Ok(sn),
             Err(e) => {
@@ -120,7 +161,7 @@ impl<T: FlatStruct> FlatWriter<T> {
     /// # Errors
     /// `NoFreeSlot`.
     pub fn loan_slot(&self) -> Result<FlatSlot<'_, T>, SlotError> {
-        let handle = self.alloc.reserve_slot(self.active_readers_mask)?;
+        let handle = self.reserve()?;
         Ok(FlatSlot {
             handle,
             writer: self,
@@ -764,5 +805,59 @@ mod tests {
             .expect("write_bp");
         assert_eq!(outcome, WriteOutcome::TimedOut);
         assert!(start.elapsed() >= Duration::from_millis(50));
+    }
+
+    /// Spec §5.1 — the straggler timeout is 60 s unless the writer is told
+    /// otherwise.
+    #[test]
+    fn straggler_timeout_defaults_to_sixty_seconds() {
+        let alloc = fresh_alloc(1);
+        let writer = FlatWriter::<Pose>::new(Arc::clone(&alloc), 0b1);
+        assert_eq!(writer.straggler_timeout(), Duration::from_secs(60));
+        assert_eq!(STRAGGLER_TIMEOUT, Duration::from_secs(60));
+        let short = FlatWriter::<Pose>::new(Arc::clone(&alloc), 0b1)
+            .with_straggler_timeout(Duration::from_millis(5));
+        assert_eq!(short.straggler_timeout(), Duration::from_millis(5));
+    }
+
+    /// Spec §5.1 — "Slot ist frei wenn … `commit_time + 60s` überschritten":
+    /// a reader that stays alive but stops reading must not hold the slot
+    /// pool forever. Once the sample is older than the timeout, the next
+    /// write takes the slot.
+    #[test]
+    fn write_reclaims_a_slot_held_past_the_straggler_timeout() {
+        let alloc = fresh_alloc(1);
+        let writer = FlatWriter::<Pose>::new(Arc::clone(&alloc), 0b1)
+            .with_straggler_timeout(Duration::from_millis(10));
+        writer.write(&Pose { x: 1, y: 1, z: 1 }).expect("first");
+
+        // Reader bit 0 never marks it read → the single slot is blocked.
+        assert_eq!(
+            writer.write(&Pose { x: 2, y: 2, z: 2 }),
+            Err(SlotError::NoFreeSlot),
+            "before the timeout the slot stays held"
+        );
+
+        std::thread::sleep(Duration::from_millis(20));
+        let sn = writer.write(&Pose { x: 3, y: 3, z: 3 }).expect("reclaimed");
+        assert_eq!(sn, 1);
+        let reader = FlatReader::<Pose>::new(Arc::clone(&alloc), 0);
+        assert_eq!(
+            reader.read().expect("read"),
+            Some(Pose { x: 3, y: 3, z: 3 })
+        );
+    }
+
+    /// Spec §5.1 — the same reclaim applies to the explicit loan path.
+    #[test]
+    fn loan_slot_reclaims_a_slot_held_past_the_straggler_timeout() {
+        let alloc = fresh_alloc(1);
+        let writer = FlatWriter::<Pose>::new(Arc::clone(&alloc), 0b1)
+            .with_straggler_timeout(Duration::from_millis(10));
+        writer.write(&Pose { x: 1, y: 1, z: 1 }).expect("first");
+        assert!(matches!(writer.loan_slot(), Err(SlotError::NoFreeSlot)));
+        std::thread::sleep(Duration::from_millis(20));
+        let slot = writer.loan_slot().expect("reclaimed loan");
+        slot.commit(Pose { x: 4, y: 4, z: 4 }).expect("commit");
     }
 }

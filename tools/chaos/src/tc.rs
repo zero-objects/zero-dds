@@ -3,48 +3,48 @@
 
 //! Linux `tc qdisc`-Wrapper.
 //!
-//! Spawnt `tc` mit den passenden netem-Parametern. Operiert mit
-//! Root-Privilegien (oder `CAP_NET_ADMIN`) — lehnt ohne sauber ab.
+//! Spawns `tc` with the matching netem parameters. Operates with
+//! root privileges (or `CAP_NET_ADMIN`) — rejects cleanly without them.
 //!
-//! Auf Nicht-Linux-Plattformen sind die Funktionen Stubs, die einen
-//! `Unsupported`-Fehler zurueckgeben — das Tool bleibt auch auf
-//! macOS/Windows compileierbar.
+//! On non-Linux platforms the functions are stubs that return an
+//! `Unsupported` error — the tool remains, even on
+//! compilable on macOS/Windows.
 
 #[cfg(target_os = "linux")]
 use std::process::Command;
 use std::time::Duration;
 
-/// Konfigurations-Knobs fuer `tc qdisc add ... netem ...`.
+/// Configuration knobs for `tc qdisc add ... netem ...`.
 #[derive(Default, Clone, Debug)]
 pub struct NetemConfig {
     /// Packet-Loss-Rate (0.0 - 1.0).
     pub loss: f64,
-    /// Mittlerer Delay.
+    /// Average delay.
     pub delay: Duration,
-    /// Jitter (zufaellig in [-jitter, +jitter] um delay).
+    /// Jitter (random in [-jitter, +jitter] around delay).
     pub jitter: Duration,
-    /// Duplicate-Wahrscheinlichkeit.
+    /// Duplicate probability.
     pub duplicate: f64,
-    /// Reorder-Wahrscheinlichkeit (zwingt netem in pkt(N) auf pkt(N+1)-Position).
+    /// Reorder probability (forces netem to move pkt(N) to pkt(N+1) position).
     pub reorder: f64,
-    /// Korrelation der Loss-Verteilung in % (0=unkorreliert, 25=GE-Modell).
+    /// Correlation of the loss distribution in % (0=uncorrelated, 25=GE model).
     pub loss_correlation_pct: u32,
 }
 
-/// Errors aus dem tc-Wrapper.
+/// Errors from the tc wrapper.
 #[derive(Debug)]
 pub enum TcError {
-    /// Plattform unterstuetzt kein tc-Backend.
+    /// Platform does not support a tc backend.
     Unsupported,
-    /// Aufrufer hat nicht euid=0 / CAP_NET_ADMIN.
+    /// Caller does not have euid=0 / CAP_NET_ADMIN.
     NotRoot,
-    /// `tc`-Binary nicht ausfuehrbar.
+    /// `tc` binary not executable.
     Spawn(std::io::Error),
-    /// `tc` gestartet, aber mit Fehlercode beendet.
+    /// `tc` started, but exited with an error code.
     NonZeroExit {
-        /// stderr-Output von tc.
+        /// stderr output from tc.
         stderr: String,
-        /// Exit-Code (None wenn ueber Signal beendet).
+        /// Exit code (None if terminated by signal).
         code: Option<i32>,
     },
 }
@@ -52,11 +52,11 @@ pub enum TcError {
 impl core::fmt::Display for TcError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            TcError::Unsupported => write!(f, "tc-Backend nur auf Linux unterstuetzt"),
-            TcError::NotRoot => write!(f, "tc benoetigt root oder CAP_NET_ADMIN"),
-            TcError::Spawn(e) => write!(f, "konnte tc nicht starten: {e}"),
+            TcError::Unsupported => write!(f, "tc backend only supported on Linux"),
+            TcError::NotRoot => write!(f, "tc requires root or CAP_NET_ADMIN"),
+            TcError::Spawn(e) => write!(f, "could not start tc: {e}"),
             TcError::NonZeroExit { stderr, code } => {
-                write!(f, "tc fehlgeschlagen (exit {code:?}): {stderr}")
+                write!(f, "tc failed (exit {code:?}): {stderr}")
             }
         }
     }
@@ -66,8 +66,8 @@ impl std::error::Error for TcError {}
 
 #[cfg(target_os = "linux")]
 fn require_root() -> Result<(), TcError> {
-    // SAFETY: libc::geteuid ist signaturkompatibel; effective UID lesen
-    // ist read-only und thread-safe.
+    // SAFETY: libc::geteuid is signature-compatible; reading the effective UID
+    // is read-only and thread-safe.
     let euid = unsafe { libc_stub::geteuid() };
     if euid != 0 {
         Err(TcError::NotRoot)
@@ -76,14 +76,14 @@ fn require_root() -> Result<(), TcError> {
     }
 }
 
-/// Setzt netem auf das Interface. Idempotent: vorhandene qdisc wird
-/// vorher abgeraeumt.
+/// Sets netem on the interface. Idempotent: an existing qdisc is
+/// cleaned up beforehand.
 #[cfg(target_os = "linux")]
 pub fn apply(interface: &str, cfg: &NetemConfig) -> Result<(), TcError> {
     require_root()?;
     let _ = Command::new("tc")
         .args(["qdisc", "del", "dev", interface, "root"])
-        .output(); // ignoriere — qdisc existiert evtl. nicht.
+        .output(); // ignore — qdisc may not exist.
 
     let mut args: Vec<String> = vec![
         "qdisc".into(),
@@ -128,13 +128,13 @@ pub fn apply(interface: &str, cfg: &NetemConfig) -> Result<(), TcError> {
     Ok(())
 }
 
-/// Stub fuer Nicht-Linux-Plattformen.
+/// Stub for non-Linux platforms.
 #[cfg(not(target_os = "linux"))]
 pub fn apply(_interface: &str, _cfg: &NetemConfig) -> Result<(), TcError> {
     Err(TcError::Unsupported)
 }
 
-/// Entfernt die Root-qdisc vom Interface.
+/// Removes the root qdisc from the interface.
 #[cfg(target_os = "linux")]
 pub fn clear(interface: &str) -> Result<(), TcError> {
     require_root()?;
@@ -151,7 +151,7 @@ pub fn clear(interface: &str) -> Result<(), TcError> {
     Ok(())
 }
 
-/// Stub fuer Nicht-Linux-Plattformen.
+/// Stub for non-Linux platforms.
 #[cfg(not(target_os = "linux"))]
 pub fn clear(_interface: &str) -> Result<(), TcError> {
     Err(TcError::Unsupported)
@@ -165,15 +165,15 @@ fn format_ms(d: Duration) -> String {
 
 #[cfg(target_os = "linux")]
 mod libc_stub {
-    // Mini-libc-Binding fuer geteuid: vermeidet eine schwergewichtige
-    // libc-Crate-Dep nur fuer einen Permissions-Check.
+    // Mini libc binding for geteuid: avoids a heavyweight
+    // libc crate dep just for a permissions check.
     unsafe extern "C" {
         pub fn geteuid() -> u32;
     }
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)] // tests duerfen unwrap nutzen.
+#[allow(clippy::unwrap_used)] // tests may use unwrap.
 mod tests {
     use super::*;
 
@@ -188,10 +188,10 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn non_root_returns_not_root() {
-        // SAFETY: geteuid ist read-only.
+        // SAFETY: geteuid is read-only.
         let euid = unsafe { libc_stub::geteuid() };
         if euid == 0 {
-            // root: Test trifft keine Aussage; skip.
+            // root: test makes no assertion; skip.
             return;
         }
         let cfg = NetemConfig::default();

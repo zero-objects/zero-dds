@@ -1,0 +1,25 @@
+#!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 ZeroDDS Contributors
+#
+# wireprobe-endpoint-fsharp — one IDL type and one JSON sample, through the
+# hand-written endpoint SDK in endpoints/fsharp/zerodds.fs.
+#
+# The same command line as every other column's probe, so a case runs
+# through any of them by substituting the program name:
+#
+#   wireprobe-endpoint-fsharp --idl robot.idl --type common::Robot \
+#       --values robot.json --encoding plain-cdr2 --endian le \
+#       --out robot.endpoint-fsharp.plain-cdr2.le.bin
+#
+# 223 hand-written lines, through \`dotnet fsi\` and not \`dotnet build\`:
+# MSBuild spends two to four seconds per invocation before a source file
+# is read, and a corpus sweep is thousands of runs.
+#
+# The body is tools/wireprobe/endpoint-common.sh; it is shared because
+# the ten differ only in which compiler runs and which SDK is linked,
+# and ten copies of the caching and the exit codes would be ten places
+# for them to drift apart.
+set -uo pipefail
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/endpoint-common.sh"
+endpoint_probe fsharp "$@"

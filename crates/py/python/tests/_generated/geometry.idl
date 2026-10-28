@@ -1,0 +1,42 @@
+// SPDX-License-Identifier: Apache-2.0
+// Composite-extension shapes: nested struct, sequence<primitive>,
+// sequence<struct>, a fixed-count array and an @optional scalar. All
+// @final, matching the hand-written `zerodds.idl` decorator's default
+// (now removed) that these fixtures replace.
+module geom {
+  @final
+  struct Vec3 {
+    float x;
+    float y;
+    float z;
+  };
+
+  @final
+  struct Pose {
+    Vec3 position;
+    string label;
+  };
+};
+
+module container {
+  @final
+  struct Grid {
+    sequence<long> values;
+  };
+
+  @final
+  struct Mesh {
+    sequence<geom::Vec3> points;
+  };
+
+  @final
+  struct FixedArr {
+    long raw[4];
+  };
+
+  @final
+  struct Maybe {
+    string tag;
+    @optional long maybe_num;
+  };
+};

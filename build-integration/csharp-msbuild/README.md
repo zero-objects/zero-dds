@@ -18,82 +18,38 @@ and CMake's `zerodds_idlc_generate()` for the MSBuild/.NET ecosystem.
 </ItemGroup>
 ```
 
-## Validated
+The target runs `zerodds-idlc generate --lang $(ZeroddsIdlcBackend) --out
+<dir> <file.idl>` once per `ZeroddsIdl` item. Properties:
 
-Against a locally-built `zerodds-idlc` 1.0.0-rc.6 (dotnet SDK 9.0.106,
-`net8.0` target):
+| Property | Default |
+|---|---|
+| `ZeroddsIdlcExecutable` | `zerodds-idlc` from `PATH` |
+| `ZeroddsIdlcBackend` | `csharp` |
+| `ZeroddsIdlcOutputDir` | `$(IntermediateOutputPath)zerodds-idlc\`; `IntermediateOutputPath` is not yet set where the file is imported, so the files land in `zerodds-idlc/` next to the project |
 
-- **Generation + incrementality: validated, works.** `dotnet build
-  /t:ZeroddsIdlcGenerate` runs `zerodds-idlc generate idl/Robot.idl
-  --csharp -o zerodds-idlc/`. Confirmed by `stat` on the output file's
-  mtime across three runs: touching `idl/Robot.idl` changes the output
-  mtime (regeneration happened); rebuilding again unchanged leaves the
-  mtime untouched (MSBuild's own `Inputs`/`Outputs` staleness check
-  skipped the `Exec`, not a lucky no-op `zerodds-idlc` run — confirmed
-  via `-v:normal`, no `zerodds-idlc generate` line on the second run).
-- **Full `dotnet build` (compile): blocked by a discovered, pre-existing
-  runtime bug — not a build-integration bug, not silently worked around.**
+Generated C# needs two runtime assemblies: `runtime/csharp/ZeroDds.Wire.csproj`
+(codec) and `crates/cs/csharp/ZeroDDS.Cdr/ZeroDDS.Cdr.csproj` (`EndianMode`,
+`IDdsTopicType<T>`, and `Omg.Types`, which it compiles in). Referencing
+`crates/idl-csharp/runtime/Omg.Types.cs` a second time gives two
+`Omg.Types.ExtensibilityKind` types and error CS0738.
 
-### The blocking bug (out of scope: runtime libraries, not build tooling)
+## Checked
 
-The generated `Robot.cs` needs two runtime pieces that, before this pass,
-**no `.csproj` in the repo referenced together** (confirmed via a
-repo-wide grep for both file names across `.csproj`):
+`sample-consumer/` (dotnet SDK 9.0.106, `net8.0`):
 
-1. `crates/cs/csharp/ZeroDDS.Cdr/ZeroDDS.Cdr.csproj` — `Xcdr2Writer`,
-   `Xcdr2Reader`, `EndianMode`, and its own `IDdsTopicType<T>` +
-   `ExtensibilityKind` (`ZeroDDS.Cdr/src/IDdsTopicType.cs`,
-   `ZeroDDS.Cdr/src/ExtensibilityKind.cs`).
-2. `crates/idl-csharp/runtime/Omg.Types.cs` — a bare `.cs` file (no
-   `.csproj` of its own), "shipped alongside generated sources" per its
-   own header comment. Defines `ITopicType<T>`, `[Extensibility(...)]`,
-   `[Key]`, and **its own separate** `ExtensibilityKind`.
-
-The generated `Robot.cs` itself does `using Omg.Types; using
-ZeroDDS.Cdr;` and needs symbols from *both* — the `Pose` record
-implements `Omg.Types.ITopicType<Pose>` (line 12), while
-`PoseTypeSupport` implements `ZeroDDS.Cdr.IDdsTopicType<Pose>` (line 21).
-Compiling both runtime pieces together — which the generated code
-requires — fails:
-
-```
-error CS0104: "ExtensibilityKind" ist ein mehrdeutiger Verweis zwischen
-"Omg.Types.ExtensibilityKind" und "ZeroDDS.Cdr.ExtensibilityKind".
-error CS0738: "PoseTypeSupport" implementiert den Schnittstellenmember
-"IDdsTopicType<Pose>.Extensibility" nicht. "PoseTypeSupport.Extensibility"
-hat nicht den entsprechenden Rückgabetyp "ExtensibilityKind" ...
+```bash
+cd build-integration/csharp-msbuild/sample-consumer
+dotnet build -p:ZeroddsIdlcExecutable=<repo>/target/debug/zerodds-idlc
+DOTNET_ROLL_FORWARD=Major dotnet run --no-build
+# OK: Robot.Pose round-tripped through generated PoseTypeSupport (40 wire bytes), Robot_id=r2d2
 ```
 
-Two independently-evolved runtime type systems (`Omg.Types.ITopicType<T>`
-+ its `ExtensibilityKind`, vs `ZeroDDS.Cdr.IDdsTopicType<T>` + its own
-different `ExtensibilityKind`) collide the moment both are compiled
-together — which every consumer of `idl-csharp`-generated code that
-needs both wire-format types (`Xcdr2Writer`/`Reader`) and the
-topic-marker/attribute types must do. This means **`idl-csharp`'s
-generated output was never actually build-validated end to end against
-its own runtime before this pass** — `crates/cs/Examples/TopicTypedSmoke.csproj`
-only references `ZeroDDS.Cdr` (not `Omg.Types.cs`), so it never hits
-this collision.
+After `touch idl/Robot.idl` the next build runs `zerodds-idlc` again; a
+build without a change does not (MSBuild's `Inputs`/`Outputs` check).
 
-This is a runtime-library coherence bug (`crates/cs/csharp/ZeroDDS.Cdr`
-+ `crates/idl-csharp/runtime/Omg.Types.cs`), not a code-generation-emitter
-bug (`crates/idl-csharp/src`) and not a build-tool-integration bug — the
-`.targets` file, `Inputs`/`Outputs`, and `ProjectReference`/`Compile`
-wiring in `sample-consumer/ZeroddsIdlcSample.csproj` are all correct;
-the two runtime pieces they wire in are the ones that don't coexist.
-Flagged here rather than fixed (touching either runtime piece is outside
-this task's build-tool-integration scope) or silently worked around
-(e.g. dropping one runtime reference would make the sample compile but
-would stop proving the *actual* generated output builds).
+## Not covered
 
-## What a fuller pass would add
-
-- A packaged MSBuild SDK/task (`Microsoft.Build.Utilities.Task`) instead
-  of a plain `.targets` file — would give typed `[Required]` properties
-  instead of raw MSBuild property/item syntax, and could shell out via
-  the `ToolTask` base class (built-in `stdout`/`stderr` capture and
-  cross-platform executable resolution) instead of a raw `<Exec>`.
-- `#include` dependency tracking (same gap as the other integrations).
-- NuGet packaging (`Microsoft.Build.Framework`
-  `Sdk="ZeroDDS.Idlc.Sdk/1.0.0"` import) instead of a relative
-  `<Import Project="...">` path.
+- An `#include`d IDL file is not an input of the target: changing only it
+  does not regenerate. `zerodds_idlc_generate()` in CMake reads the
+  depfile for that.
+- No NuGet packaging of the target; it is imported by relative path.

@@ -23,7 +23,7 @@ fn connect() -> Amqp091Client {
 }
 
 #[test]
-#[ignore = "needs live RabbitMQ 4.0 on localhost:5672 (codepit); set AMQP_RABBITMQ=1"]
+#[ignore = "needs live RabbitMQ 4.0 on localhost:5672 (Linux test host); set AMQP_RABBITMQ=1"]
 fn zerodds_amqp091_self_roundtrip() {
     if std::env::var("AMQP_RABBITMQ").is_err() {
         eprintln!("AMQP_RABBITMQ not set — skipping AMQP 0.9.1 e2e");
@@ -47,7 +47,7 @@ fn zerodds_amqp091_self_roundtrip() {
 }
 
 #[test]
-#[ignore = "needs live RabbitMQ 4.0 on localhost:5672 (codepit); set AMQP_RABBITMQ=1"]
+#[ignore = "needs live RabbitMQ 4.0 on localhost:5672 (Linux test host); set AMQP_RABBITMQ=1"]
 fn zerodds_amqp091_publish_consumed_by_proton_10() {
     if std::env::var("AMQP_RABBITMQ").is_err() {
         return;
@@ -86,7 +86,7 @@ rcv.accept(); conn.close()
 }
 
 #[test]
-#[ignore = "needs live RabbitMQ 4.0 on localhost:5672 (codepit); set AMQP_RABBITMQ=1"]
+#[ignore = "needs live RabbitMQ 4.0 on localhost:5672 (Linux test host); set AMQP_RABBITMQ=1"]
 fn zerodds_amqp091_consumes_pika_published() {
     if std::env::var("AMQP_RABBITMQ").is_err() {
         return;
@@ -124,7 +124,7 @@ c.close()
 }
 
 #[test]
-#[ignore = "needs live RabbitMQ 4.0 on localhost:5672 (codepit); set AMQP_RABBITMQ=1"]
+#[ignore = "needs live RabbitMQ 4.0 on localhost:5672 (Linux test host); set AMQP_RABBITMQ=1"]
 fn zerodds_amqp091_exchange_routing() {
     if std::env::var("AMQP_RABBITMQ").is_err() {
         return;
@@ -158,7 +158,7 @@ fn zerodds_amqp091_exchange_routing() {
 }
 
 #[test]
-#[ignore = "needs live RabbitMQ 4.0 on localhost:5672 (codepit); set AMQP_RABBITMQ=1"]
+#[ignore = "needs live RabbitMQ 4.0 on localhost:5672 (Linux test host); set AMQP_RABBITMQ=1"]
 fn zerodds_amqp091_async_consume() {
     if std::env::var("AMQP_RABBITMQ").is_err() {
         return;
@@ -182,7 +182,7 @@ fn zerodds_amqp091_async_consume() {
 }
 
 #[test]
-#[ignore = "needs live RabbitMQ 4.0 on localhost:5672 (codepit); set AMQP_RABBITMQ=1"]
+#[ignore = "needs live RabbitMQ 4.0 on localhost:5672 (Linux test host); set AMQP_RABBITMQ=1"]
 fn zerodds_amqp091_publisher_confirms() {
     if std::env::var("AMQP_RABBITMQ").is_err() {
         return;
@@ -208,7 +208,7 @@ fn zerodds_amqp091_publisher_confirms() {
 }
 
 #[test]
-#[ignore = "needs live RabbitMQ 4.0 on localhost:5672 (codepit); set AMQP_RABBITMQ=1"]
+#[ignore = "needs live RabbitMQ 4.0 on localhost:5672 (Linux test host); set AMQP_RABBITMQ=1"]
 fn zerodds_amqp091_transactions() {
     if std::env::var("AMQP_RABBITMQ").is_err() {
         return;
@@ -241,7 +241,7 @@ fn zerodds_amqp091_transactions() {
 }
 
 #[test]
-#[ignore = "needs live RabbitMQ 4.0 on localhost:5672 (codepit); set AMQP_RABBITMQ=1"]
+#[ignore = "needs live RabbitMQ 4.0 on localhost:5672 (Linux test host); set AMQP_RABBITMQ=1"]
 fn zerodds_amqp091_reject_requeue() {
     if std::env::var("AMQP_RABBITMQ").is_err() {
         return;
@@ -274,7 +274,7 @@ fn zerodds_amqp091_reject_requeue() {
 }
 
 #[test]
-#[ignore = "needs live RabbitMQ 4.0 on localhost:5672 (codepit); set AMQP_RABBITMQ=1"]
+#[ignore = "needs live RabbitMQ 4.0 on localhost:5672 (Linux test host); set AMQP_RABBITMQ=1"]
 fn zerodds_amqp091_channel_flow_and_close() {
     if std::env::var("AMQP_RABBITMQ").is_err() {
         return;
@@ -289,7 +289,7 @@ fn zerodds_amqp091_channel_flow_and_close() {
 }
 
 #[test]
-#[ignore = "needs live RabbitMQ 4.0 on localhost:5672 (codepit); set AMQP_RABBITMQ=1"]
+#[ignore = "needs live RabbitMQ 4.0 on localhost:5672 (Linux test host); set AMQP_RABBITMQ=1"]
 fn zerodds_amqp091_content_properties() {
     if std::env::var("AMQP_RABBITMQ").is_err() {
         return;

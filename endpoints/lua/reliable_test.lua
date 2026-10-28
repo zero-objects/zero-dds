@@ -203,7 +203,7 @@ end
 do
   local sent = {}
   local s = rel.Sender.new()
-  local w = rel.AsyncWriter.new(s, function(frame) sent[#sent + 1] = frame end)
+  local w = rel.AsyncWriter.new(s, function(frame) sent[#sent + 1] = frame end, 0x0015)
   check(w:push("\1") and w:push("\2"), "asyncwriter_push_ok")
   check(not w:isEmpty(), "asyncwriter_not_empty_before_drain")
   local n = w:drain()
@@ -214,7 +214,7 @@ end
 do
   -- push cap mirrors SENDER_WINDOW; drain() must free room for more pushes.
   local s = rel.Sender.new()
-  local w = rel.AsyncWriter.new(s, function() end)
+  local w = rel.AsyncWriter.new(s, function() end, 0x0015)
   for _ = 1, rel.SENDER_WINDOW do
     check(w:push("\0"), "asyncwriter_push_within_window")
   end
@@ -231,6 +231,33 @@ local function readFile(path)
   local data = f:read("*a")
   f:close()
   return data
+end
+
+do
+  local an = rel.acknackFrame(rel.SESSION_NOKEY, rel.STREAM_NONE, 1, 1, 0, 0, 0x80)
+  check(an == "\x80\x00\x01\x00\x0A\x01\x09\x00\x05\x00\x00\x00\x01\x00\x00\x00\x80",
+    "acknack_17_octets_with_dheader")
+  local p1 = rel.parseAcknack(an)
+  check(p1 ~= nil and p1.firstUnacked == 1 and p1.streamId == 0x80, "acknack_parse_dheader_form")
+  local legacy = "\x80\x00\x01\x00\x0A\x01\x05\x00\x05\x00\x0F\x00\x80"
+  local p2 = rel.parseAcknack(legacy)
+  check(p2 ~= nil and p2.firstUnacked == 5 and p2.nackLo == 0x0F and p2.streamId == 0x80,
+    "acknack_parse_legacy_5_octet")
+end
+
+do
+  local finalGolden = "\x80\x00\x01\x00\x0A\x01\x05\x00\x01\x00\x00\x00\x80"
+  local fin = rel.acknackFrame(rel.SESSION_NOKEY, rel.STREAM_NONE, 1, 1, 0, 0, 0x80, "final")
+  check(fin == finalGolden, "acknack_final_13_octet_golden")
+  local app = rel.acknackFrame(rel.SESSION_NOKEY, rel.STREAM_NONE, 1, 1, 0, 0, 0x80)
+  check(#app == 17 and app == rel.acknackFrame(rel.SESSION_NOKEY, rel.STREAM_NONE, 1, 1, 0, 0, 0x80, "appendable"),
+    "acknack_default_is_appendable_17_octets")
+  local pf, pa = rel.parseAcknack(fin), rel.parseAcknack(app)
+  check(pf ~= nil and pf.firstUnacked == 1 and pf.streamId == 0x80
+    and pa ~= nil and pa.firstUnacked == 1 and pa.streamId == 0x80, "acknack_parse_both_forms")
+  check(#rel.Receiver.new({ unannotatedTypes = "final" }):acknackFrame() == 13, "receiver_final_writes_13_octets")
+  check(#rel.Receiver.new():acknackFrame() == 17, "receiver_default_writes_17_octets")
+  check(not pcall(rel.acknackFrame, 0x80, 0, 1, 1, 0, 0, 0x80, "mutable"), "acknack_unknown_mode_refused")
 end
 
 if #arg >= 1 then

@@ -5,7 +5,7 @@
 //!
 //! Consumes a [`DdsType`] (lightweight DDS-XTypes tree) and
 //! emits OPC-UA node specs. Complete recursion: nested
-//! structures, sequence-of-struct, Map<String, Sequence<Struct>>,
+//! structures, sequence-of-struct, Map<String, `Sequence<Struct>`>,
 //! alias resolution etc. — the walker applies the mapping rules from
 //! §9.2 to each type independently and recurses into the
 //! members.

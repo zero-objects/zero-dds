@@ -14,6 +14,11 @@ use alloc::string::String;
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum DdsError {
+    /// Runtime configuration could not be loaded or validated.
+    Configuration {
+        /// Source path and invalid setting supplied by the typed loader.
+        message: String,
+    },
     /// Invalid parameter (e.g. an empty topic name).
     BadParameter {
         /// Which parameter, briefly.
@@ -95,11 +100,54 @@ pub enum DdsError {
     /// NOT_ENABLED. §2.1.2 — entities are disabled after `create_*`
     /// until `enable()`; many ops must then return NotEnabled.
     NotEnabled,
+    /// The participant QoS asked for DDS-Security and the configuration
+    /// could not be carried out.
+    ///
+    /// DDS-Security 1.2 §7.3.21 / Tables 50, 63, 71: the plugins are selected and
+    /// configured through the participant's `PropertyQosPolicy`. When
+    /// that list carries `dds.sec.auth.*` / `dds.sec.access.*` properties
+    /// and one of them is absent, unreadable or unsupported, creating the
+    /// participant fails with this error rather than succeeding without a
+    /// security bundle — a participant that comes up in plaintext because
+    /// a path was wrong is the failure class `docs/silent-drop-sweep.md`
+    /// names.
+    ///
+    /// The message names the offending property. It carries no key or
+    /// certificate content: the same reason
+    /// [`Self::NotAllowedBySecurity`] gives.
+    SecurityConfiguration {
+        /// What is missing, unreadable or unsupported, naming the
+        /// `dds.sec.*` property.
+        message: String,
+    },
+    /// C2(2) — a `threads.*` real-time scheduling or CPU-affinity request
+    /// (`threads.recv_policy`/`_priority`/`_deadline`/`_cpus`, or the tick
+    /// equivalents) could not be applied to the worker thread it names.
+    ///
+    /// The syscalls (`sched_setattr(2)`/`sched_setaffinity(2)`, via
+    /// `zerodds-rt-linux`) must run on the worker's own thread, so this is
+    /// reported back to [`crate::runtime::DcpsRuntime::start`] after the
+    /// thread has already been spawned; `start` then stops and joins every
+    /// thread it started and returns this error rather than let the
+    /// participant run with a requested real-time setting silently
+    /// unapplied — see `docs/silent-drop-sweep.md`. Without the `rt`
+    /// build feature, or on a non-Linux target, every non-empty request
+    /// fails this way too (never a quiet no-op).
+    ThreadTuning {
+        /// The worker thread the request was for (`zdds-recv-user`,
+        /// `zdds-tick`, …; `zdds-recv-user-N` for an extra recv worker).
+        thread: String,
+        /// What was requested and why it failed, including the OS/kernel
+        /// reason (`EPERM`/`EBUSY`/`EINVAL`/`Unsupported`, or that the `rt`
+        /// feature is not built in).
+        message: String,
+    },
 }
 
 impl core::fmt::Display for DdsError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
+            Self::Configuration { message } => write!(f, "runtime configuration: {message}"),
             Self::BadParameter { what } => write!(f, "bad parameter: {what}"),
             Self::PreconditionNotMet { reason } => write!(f, "precondition not met: {reason}"),
             Self::WireError { message } => write!(f, "wire/cdr error: {message}"),
@@ -119,6 +167,12 @@ impl core::fmt::Display for DdsError {
             Self::NoData => f.write_str("no data available"),
             Self::Other { reason } => write!(f, "dds error: {reason}"),
             Self::NotEnabled => f.write_str("entity not enabled"),
+            Self::SecurityConfiguration { message } => {
+                write!(f, "dds-security configuration: {message}")
+            }
+            Self::ThreadTuning { thread, message } => {
+                write!(f, "real-time thread tuning failed on `{thread}`: {message}")
+            }
         }
     }
 }
@@ -165,6 +219,7 @@ impl DdsError {
     #[must_use]
     pub fn as_return_code(&self) -> i32 {
         match self {
+            Self::Configuration { .. } => return_code::BAD_PARAMETER,
             Self::BadParameter { .. } => return_code::BAD_PARAMETER,
             Self::PreconditionNotMet { .. } => return_code::PRECONDITION_NOT_MET,
             Self::WireError { .. } | Self::TransportError { .. } | Self::Other { .. } => {
@@ -180,6 +235,15 @@ impl DdsError {
             Self::AlreadyDeleted => return_code::ALREADY_DELETED,
             Self::NoData => return_code::NO_DATA,
             Self::NotEnabled => return_code::NOT_ENABLED,
+            // DDS-Security 1.2 §9.8.1: when the identity, the permissions or
+            // the permission to join the domain are not validated, "the
+            // create_participant operation shall return NIL and set the return
+            // code to NOT_ALLOWED_BY_SECURITY"; a security configuration that
+            // does not load fails the same step.
+            Self::SecurityConfiguration { .. } => return_code::NOT_ALLOWED_BY_SECURITY,
+            // The participant could not be brought up in the state it was
+            // asked for (a requested real-time setting).
+            Self::ThreadTuning { .. } => return_code::PRECONDITION_NOT_MET,
         }
     }
 }
@@ -214,6 +278,19 @@ mod tests {
         assert_eq!(
             DdsError::Other { reason: "z" }.as_return_code(),
             return_code::ERROR
+        );
+    }
+
+    /// DDS-Security 1.2 §9.8.1, §7.3.25: a security configuration that does not
+    /// validate fails `create_participant` with NOT_ALLOWED_BY_SECURITY.
+    #[test]
+    fn a_security_configuration_that_does_not_validate_is_not_allowed_by_security() {
+        assert_eq!(
+            DdsError::SecurityConfiguration {
+                message: "m".into()
+            }
+            .as_return_code(),
+            return_code::NOT_ALLOWED_BY_SECURITY
         );
     }
 

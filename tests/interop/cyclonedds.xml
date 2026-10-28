@@ -1,15 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Cyclone-DDS Konfig fuer den Interop-Harness (WP 0.6 W2).
+  Cyclone DDS config for the interop harness (WP 0.6 W2).
 
-  Phase-0-Ziel: deterministische Discovery-Domain (0) auf
-  Loopback-/lokalem-Subnet, damit tshark-Captures eindeutige RTPS-
-  Frames liefern. Defaults sind Cyclone's Standard-Werte ausser
-  AllowMulticast=spdp (statt default), um Multicast-Diskussionen
-  zu vereinfachen.
+  Phase 0 goal: a deterministic discovery domain (0) on loopback or
+  the local subnet, so that tshark captures yield unambiguous RTPS
+  frames. The defaults are Cyclone's standard values, except
+  AllowMulticast=spdp (instead of default), to simplify multicast
+  discussions.
 
-  Phase 1: erweitern um statische Peers, RTPS-Reliability-QoS,
-  Discovery-Locator-Override fuer ZeroDDS-Reader/Writer.
+  Phase 1: extend with static peers, RTPS reliability QoS,
+  discovery locator override for ZeroDDS readers/writers.
 -->
 <CycloneDDS xmlns="https://cdds.io/config"
             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"

@@ -1,0 +1,61 @@
+// `ShapeExtendedType` — the type RTI Connext 7.x ShapesDemo publishes
+// when it is started without `-dataType Shape`.
+//
+// This is NOT a fourth `ShapeType`. It is a different topic type with a
+// different name, and SEDP matches it only against other
+// `ShapeExtendedType` endpoints. The three files beside it that do
+// declare a `ShapeType` are `omg-dds-rtps.idl`, `omg-dds-security.idl`
+// and `shapesdemo.idl`; read `README.md` here before you use any of
+// them.
+//
+// Who speaks this one
+//   RTI Connext 7.x ShapesDemo in its default mode, and the Fast DDS
+//   ShapesDemo build that follows it. On our side
+//   `crates/dcps/src/interop.rs` carries a hand-written
+//   `ShapeExtendedType`, and the two shapes-demo examples reach it
+//   through `ZERODDS_SHAPE_EXTENDED=1`.
+//
+// Where the declaration comes from
+//   Transcribed from the one `crates/dcps/src/interop.rs` quotes in its
+//   own doc comment — that is, from what our type claims to be. Whether
+//   RTI's shipped `ShapeType.idl` spells it character for character the
+//   same is not measured here, and the two suites' files in this
+//   directory are the ones that were taken verbatim from a suite
+//   checkout. What this file does establish is that the hand-written
+//   codec and our IDL front end agree on the octets of the declaration
+//   the hand-written codec says it implements.
+//
+// Why `@final` and why the members are in this order
+//   `crates/dcps/src/interop.rs` states both: `@final`, so PLAIN_CDR2
+//   under XCDR2 with no DHEADER and the encapsulation id `CDR2_LE`
+//   (`0x00 0x07`), XTypes 1.3 Tab. 59; and `fillKind` before `angle`,
+//   which is the order RTI's demo writes and therefore the order the
+//   octets are in.
+//
+// Why the enum is not an `octet`
+//   XTypes 1.3 §7.3.1.2.1.3 gives an enumeration whose members carry no
+//   `@bit_bound` the default bit bound 32, so the discriminant is four
+//   octets in the stream's byte order — not one.
+//
+// What checks it
+//   `crates/dcps/tests/shapes_type_idl_agreement.rs` encodes the same
+//   values through this file and through the hand-written type and
+//   compares the octets, in all four modes the matrix carries.
+
+@extensibility(FINAL)
+enum ShapeFillKind {
+    SOLID_FILL,
+    TRANSPARENT_FILL,
+    HORIZONTAL_HATCH,
+    VERTICAL_HATCH
+};
+
+@extensibility(FINAL)
+struct ShapeExtendedType {
+    @key string color;
+    long x;
+    long y;
+    long shapesize;
+    ShapeFillKind fillKind;
+    float angle;
+};

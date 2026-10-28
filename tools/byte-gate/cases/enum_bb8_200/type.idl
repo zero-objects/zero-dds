@@ -1,0 +1,2 @@
+@bit_bound(8) enum Small { @value(3) RED, @value(9) GREEN, @value(200) BLUE };
+@final struct Sample { Small first; Small second; octet tail; };

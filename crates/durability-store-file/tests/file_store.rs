@@ -8,7 +8,7 @@
 
 use std::time::{Duration, SystemTime};
 
-use zerodds_durability_store::{Contract, DurabilitySample, DurabilityStore, Selector};
+use zerodds_durability_store::{Contract, DurabilitySample, DurabilityStore, Selector, TopicMeta};
 use zerodds_durability_store_file::FileStore;
 use zerodds_qos::policies::history::HistoryKind;
 use zerodds_qos::policies::resource_limits::LENGTH_UNLIMITED;
@@ -151,6 +151,86 @@ fn unregister_cleanup_purges_instance_dir() {
     assert_eq!(store.cleanup(t0 + Duration::from_secs(5)).unwrap(), 0);
     assert_eq!(store.cleanup(t0 + Duration::from_secs(11)).unwrap(), 1);
     assert_eq!(store.stats("T").unwrap().samples, 0);
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn topic_meta_round_trips_across_reopen() {
+    let root = tmp("meta-roundtrip");
+    let meta = TopicMeta {
+        type_name: "demo::Command".to_string(),
+        keyed: true,
+        contract: Contract {
+            history_kind: HistoryKind::KeepLast,
+            history_depth: 5,
+            ..keep_all()
+        },
+    };
+    {
+        let store = FileStore::open(&root, keep_all()).unwrap();
+        assert_eq!(store.topic_meta("Commands").unwrap(), None);
+        store.set_topic_meta("Commands", meta.clone()).unwrap();
+    }
+    // Reopen from disk = a restart: the sidecar survives.
+    let reopened = FileStore::open(&root, keep_all()).unwrap();
+    assert_eq!(reopened.topic_meta("Commands").unwrap(), Some(meta));
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn topic_meta_absent_on_a_pre_existing_store_directory() {
+    // Simulates the on-disk format from before `.meta` sidecars existed: a
+    // topic directory with samples but no sidecar must still open, and
+    // `topic_meta` must return `None` (not an error) for it.
+    let root = tmp("old-format");
+    {
+        let store = FileStore::open(&root, keep_all()).unwrap();
+        store.store(sample("OldTopic", 1, 0)).unwrap();
+    }
+    let reopened = FileStore::open(&root, keep_all()).unwrap();
+    assert_eq!(reopened.topic_meta("OldTopic").unwrap(), None);
+    assert_eq!(reopened.replay_for_topic("OldTopic").unwrap().len(), 1);
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn topic_meta_contract_governs_retention_over_set_contract() {
+    let root = tmp("meta-governs");
+    let store = FileStore::open(&root, keep_all()).unwrap();
+    store
+        .set_contract(
+            "T",
+            Contract {
+                history_kind: HistoryKind::KeepLast,
+                history_depth: 100,
+                ..keep_all()
+            },
+        )
+        .unwrap();
+    store
+        .set_topic_meta(
+            "T",
+            TopicMeta {
+                type_name: "T".to_string(),
+                keyed: false,
+                contract: Contract {
+                    history_kind: HistoryKind::KeepLast,
+                    history_depth: 2,
+                    ..keep_all()
+                },
+            },
+        )
+        .unwrap();
+    for seq in 0..5 {
+        store.store(sample("T", 1, seq)).unwrap();
+    }
+    let seqs: Vec<u64> = store
+        .replay_for_topic("T")
+        .unwrap()
+        .iter()
+        .map(|s| s.sequence)
+        .collect();
+    assert_eq!(seqs, vec![3, 4]);
     let _ = std::fs::remove_dir_all(&root);
 }
 

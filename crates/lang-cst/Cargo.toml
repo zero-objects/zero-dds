@@ -1,0 +1,19 @@
+[package]
+name = "zerodds-lang-cst"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Concrete syntax trees for the 21 target languages of Language::ALL. Built, never parsed; typed construction with no string escape hatch."
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/zerodds-lang-cst"
+readme = "README.md"
+keywords = ["dds", "idl", "codegen", "cst"]
+categories = ["compilers", "development-tools"]
+
+[dependencies]
+
+[lints]
+workspace = true

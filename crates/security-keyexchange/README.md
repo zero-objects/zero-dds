@@ -4,14 +4,14 @@
 [![docs.rs](https://docs.rs/zerodds-security-keyexchange/badge.svg)](https://docs.rs/zerodds-security-keyexchange)
 
 Ephemeral Diffie-Hellman key agreement for the DDS-Security
-authentication handshake per OMG DDS-Security 1.1 §8.3.2. Wrapper around
+authentication handshake per OMG DDS-Security 1.2 §10.3.4. Wrapper around
 `ring::agreement` + `ring::hkdf`. Safety classification: **SAFE**.
 
 ## Spec mapping
 
 | Spec | Section |
 |------|-----------|
-| OMG DDS-Security 1.1 | §8.3.2 (authentication handshake), §8.3.2.11 (key establishment) |
+| OMG DDS-Security 1.2 | §10.3.4 (authentication handshake), §8.3 (key establishment algorithms) |
 
 ## What's inside
 
@@ -46,11 +46,12 @@ assert_eq!(s1, s2);
 
 ## Non-goals
 
-RSA-OAEP key transport (spec §8.3.2.11 alternative form) is not in RC1 — all relevant vendors (Cyclone DDS, FastDDS, RTI Connext) speak ECDH/X25519.
+There is no RSA key transport in DDS-Security 1.2: §8.3 Table 26 names the three DH suites and nothing else.
 
 ## Stability
 
-`1.0.0-rc.1`. Public API + wire format (public-key encoding) RC1-stable.
+`1.0.0-rc.7`, a pre-release. The public API can still change before
+1.0.0; the crate's CHANGELOG lists every change.
 
 ## Tests
 

@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of array-in-union-branch that opendds produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	wireprobe-fill: zd_c15::Sample.picked.block: an array as a union case member, whose §1.2.9 accessor is a slice pointer with no modifier a temporary fits
+plain-cdr1	be	refused	wireprobe-fill: zd_c15::Sample.picked.block: an array as a union case member, whose §1.2.9 accessor is a slice pointer with no modifier a temporary fits
+pl-cdr1	le	refused	wireprobe-fill: zd_c15::Sample.picked.block: an array as a union case member, whose §1.2.9 accessor is a slice pointer with no modifier a temporary fits
+pl-cdr1	be	refused	wireprobe-fill: zd_c15::Sample.picked.block: an array as a union case member, whose §1.2.9 accessor is a slice pointer with no modifier a temporary fits
+plain-cdr2	le	refused	wireprobe-fill: zd_c15::Sample.picked.block: an array as a union case member, whose §1.2.9 accessor is a slice pointer with no modifier a temporary fits
+plain-cdr2	be	refused	wireprobe-fill: zd_c15::Sample.picked.block: an array as a union case member, whose §1.2.9 accessor is a slice pointer with no modifier a temporary fits
+delimited-cdr	le	refused	wireprobe-fill: zd_c15::Sample.picked.block: an array as a union case member, whose §1.2.9 accessor is a slice pointer with no modifier a temporary fits
+delimited-cdr	be	refused	wireprobe-fill: zd_c15::Sample.picked.block: an array as a union case member, whose §1.2.9 accessor is a slice pointer with no modifier a temporary fits
+pl-cdr2	le	refused	wireprobe-fill: zd_c15::Sample.picked.block: an array as a union case member, whose §1.2.9 accessor is a slice pointer with no modifier a temporary fits
+pl-cdr2	be	refused	wireprobe-fill: zd_c15::Sample.picked.block: an array as a union case member, whose §1.2.9 accessor is a slice pointer with no modifier a temporary fits

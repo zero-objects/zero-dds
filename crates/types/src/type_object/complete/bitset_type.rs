@@ -4,7 +4,7 @@
 
 use alloc::vec::Vec;
 
-use zerodds_cdr::{BufferReader, BufferWriter, EncodeError};
+use zerodds_wire::{Reader, WireError, Writer};
 
 use crate::error::TypeCodecError;
 use crate::type_object::common::{
@@ -34,19 +34,19 @@ pub struct CompleteBitsetType {
 }
 
 impl CompleteBitsetType {
-    pub(super) fn encode_into(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
-        w.write_u16(self.bitset_flags.0)?;
+    pub(super) fn encode_into(&self, w: &mut Writer) -> Result<(), WireError> {
+        w.write_u16(self.bitset_flags.0);
         self.detail.encode_into(w)?;
         encode_seq(w, &self.field_seq, |w, f| {
-            w.write_u16(f.common.position)?;
-            w.write_u16(f.common.flags.0)?;
-            w.write_u8(f.common.bitcount)?;
-            w.write_u8(f.common.holder_type)?;
+            w.write_u16(f.common.position);
+            w.write_u16(f.common.flags.0);
+            w.write_u8(f.common.bitcount);
+            w.write_u8(f.common.holder_type);
             f.detail.encode_into(w)
         })
     }
 
-    pub(super) fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, TypeCodecError> {
+    pub(super) fn decode_from(r: &mut Reader<'_>) -> Result<Self, TypeCodecError> {
         let bitset_flags = BitsetTypeFlag(r.read_u16()?);
         let detail = CompleteTypeDetail::decode_from(r)?;
         let field_seq = decode_seq(r, |r| {

@@ -1,0 +1,10 @@
+// `union` over `long long`
+union Choice switch (long long) {
+    case -987654321987: long whole;
+    case 1: double fraction;
+};
+
+@final struct Sample {
+    Choice picked;
+    long tail;
+};

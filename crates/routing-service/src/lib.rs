@@ -31,6 +31,12 @@
 //!   re-ingested by a router input on the same domain — preventing
 //!   router-internal loops (bidirectional bridges, multi-route cycles) while
 //!   application writers stay visible.
+//! * **Relay mode** — a route with `relay` forwards every sample, dispose and
+//!   unregister unchanged on behalf of the writer that wrote it, on the same
+//!   domain and topic (DDS-Security 1.2 §7.1.1.4, DDSI-RTPS 2.5 §8.7.9). Its
+//!   input is a relay reader: a protected payload is forwarded still
+//!   encrypted, and a reader that also has the sample from its writer takes
+//!   it once, as that writer's.
 //! * **Content filtering** (v3) — a DDS SQL filter (`temp > 50 AND zone = 'A'`)
 //!   evaluated per sample against the decoded body.
 //! * **Field transformation** (v3) — rename / constant-set / drop members,

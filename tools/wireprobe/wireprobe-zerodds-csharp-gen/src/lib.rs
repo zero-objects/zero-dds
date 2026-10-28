@@ -1,0 +1,612 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 ZeroDDS Contributors
+//! Crate `zerodds-wireprobe-csharp-gen`. Safety classification: **TOOLING**.
+//!
+//! `wireprobe-zerodds-csharp-gen` — the C# compilation unit the C#
+//! probe compiles.
+//!
+//! The C# spelling and nothing else. [`zerodds_wireprobe_gen`] is the
+//! stem: the command line, the IDL, the model, the layout key, the
+//! sample, the files and the exit codes are there, once, for all five
+//! columns.
+//!
+//! A `ZdTypes.cs` of declarations and a `Probe.cs` of codec methods, the
+//! statements that fill one sample, and a `Main` that writes the bytes
+//! to standard output. `tools/wireprobe/wireprobe-zerodds-csharp` is the
+//! shell around it.
+//!
+//! Nothing here writes a byte. The declarations come from the C#
+//! materialiser, the codec from the shared walk through
+//! [`zerodds_lang_rules::emit::csharp::CSharp`], and the bytes come out
+//! of `runtime/csharp` when the compiled program runs. `runtime/csharp`
+//! implements DDS-XTypes 1.3 §7.4 from the clause and calls nothing in
+//! Rust, which is what makes this a sixth reading of the specification
+//! rather than a rendering of the first one's answer.
+//!
+//! ## Both directions
+//!
+//! `--values` generates the write direction: the sample is filled from
+//! the JSON and the octets go to standard output. `--read` generates the
+//! read direction: the octets arrive on standard input and the values go
+//! to standard output as the canonical JSON of
+//! `crates/wire-probe/src/canonical.rs`. The two are exclusive and the
+//! stem is what refuses both at once — this column used to take both and
+//! silently generate the reader, which handed a caller a measurement of
+//! the direction it did not ask for.
+//!
+//! ## The support namespace
+//!
+//! The C# materialiser emits `ZeroDds.Idl` — the `IdlName` attribute and
+//! a `Float128` carrier — into every file, so that one generated source
+//! is one compiler argument. This probe compiles the file *with*
+//! `runtime/csharp`, which declares the same two names in the same
+//! namespace, and two declarations of one name is CS0101. So the
+//! generated copy is dropped and the runtime's superset is used;
+//! `adapter::csharp::drop_support_namespace` is that seam and says so.
+#![forbid(unsafe_code)]
+
+mod dump;
+mod fill;
+
+use std::fmt::Write as _;
+use zerodds_ast::{Ast, TypeNode};
+use zerodds_ast_core::Id;
+use zerodds_ast_layout::{Endianness, KeyHolderNesting, LayoutKey, PidFlagPolicy, Purpose};
+use zerodds_lang_rules::default_csharp::csharp_defaulters_called_by;
+use zerodds_lang_rules::emit::csharp::CSharp;
+use zerodds_lang_rules::emit::decode::{decoder_from, decoder_name};
+use zerodds_lang_rules::emit::encode::{codec_from, codec_name, key_holder};
+use zerodds_lang_rules::encode::EncodeError;
+use zerodds_lang_rules::rule;
+use zerodds_lang_rules::{ModelGraph, apply};
+use zerodds_wireprobe_gen::{Column, Emit, File, Refusal, Session, gap};
+
+/// The C# column.
+#[derive(Debug, Clone, Copy)]
+pub struct Renderer;
+
+impl Column for Renderer {
+    const BINARY: &'static str = "wireprobe-zerodds-csharp-gen";
+    const LANGUAGE: &'static str = "C#";
+    const OUTPUT: &'static str = "ZdTypes.cs and Probe.cs go";
+    const FORMS: &'static [Emit] = &[Emit::Payload, Emit::PayloadWithEncapsulation, Emit::KeyHash];
+
+    fn render(session: &Session<'_>) -> Result<Vec<File>, Refusal> {
+        let sources = sources(session)?;
+        Ok(vec![
+            File::new("ZdTypes.cs", sources.types),
+            File::new("Probe.cs", sources.probe),
+        ])
+    }
+}
+
+/// The two C# files.
+#[derive(Debug)]
+pub struct Sources {
+    /// The declarations.
+    pub types: String,
+    /// The codec, the fill and `Main`.
+    pub probe: String,
+}
+
+/// Generate both files.
+///
+/// # Errors
+/// [`Refusal`], classified so the command can answer in the verdict's
+/// own exit code.
+pub fn sources(session: &Session<'_>) -> Result<Sources, Refusal> {
+    let ast = &session.ast;
+    let root = session.root;
+
+    let graph = ModelGraph::of(ast);
+    let applied = apply(&graph, &rule::csharp::catalogue()).map_err(|error| gap!("{error:?}"))?;
+    // The materialiser is the authority on what C# has a form for, so
+    // its refusal is exit 3 and every other stop is exit 6.
+    let mut declarations = zerodds_lang_rules::adapter::csharp::csharp_file(ast, &applied)
+        .map_err(|error| Refusal::NoForm(format!("{error:?}")))?;
+    // The runtime declares `ZeroDds.Idl.IdlNameAttribute` and
+    // `ZeroDds.Idl.Float128`, and two declarations of one name in one
+    // compilation is CS0101.
+    if !zerodds_lang_rules::adapter::csharp::drop_support_namespace(&mut declarations) {
+        return Err(gap!(
+            "the materialiser emitted no ZeroDds.Idl namespace, so the probe cannot tell \
+             whether the runtime's is the one in force"
+        ));
+    }
+    declarations.doc = zerodds_lang_cst::common::Doc::lines(&[
+        "Generated by wireprobe-zerodds-csharp-gen. Do not edit.",
+        "",
+        "The C# shape of one IDL file. The support namespace is not here: it",
+        "comes from runtime/csharp, which declares a superset of it.",
+    ]);
+    let types = zerodds_lang_render::csharp::file(&declarations);
+
+    let key = session.key;
+    // What the chosen direction calls, and nothing else. A method the
+    // probe never reaches is dead source in a file compiled with
+    // `TreatWarningsAsErrors`, and generating both halves would double
+    // the compile of every case in the corpus sweep.
+    let members = if session.args.read {
+        // The Table 9 defaulters first, so a reader reads in the order
+        // it is built: `zerodds_lang_rules::decode_c` prepends C's in
+        // the same place and for the same reason.
+        let decoders = decoder_from::<CSharp>(ast, root, key, session.codec_options)
+            .map_err(|error| from_codec(&error))?;
+        let mut all =
+            csharp_defaulters_called_by(ast, &decoders).map_err(|error| from_codec(&error))?;
+        all.extend(decoders);
+        all
+    } else if session.args.emit == Emit::KeyHash {
+        key_hash_codec(session)?
+    } else {
+        codec_from::<CSharp>(ast, root, key, session.codec_options)
+            .map_err(|error| from_codec(&error))?
+    };
+    let codec = zerodds_lang_render::csharp::type_decl(&zerodds_lang_cst::csharp::TypeDecl::Class(
+        zerodds_lang_cst::csharp::Class {
+            doc: zerodds_lang_cst::common::Doc::none(),
+            attributes: Vec::new(),
+            modifiers: vec![
+                zerodds_lang_cst::csharp::Modifier::Public,
+                zerodds_lang_cst::csharp::Modifier::Static,
+            ],
+            name: zerodds_lang_cst::common::Ident::new("ZdCodec"),
+            generics: Vec::new(),
+            bases: Vec::new(),
+            constraints: Vec::new(),
+            members,
+        },
+    ));
+
+    let probe = if session.args.read {
+        read_harness(session, &codec)?
+    } else if session.args.emit == Emit::KeyHash {
+        let filled = fill::fill(ast, root, session.sample()?)?;
+        key_hash_harness(session, &codec, filled.statements())?
+    } else {
+        let filled = fill::fill(ast, root, session.sample()?)?;
+        harness(session, &codec, filled.statements())?
+    };
+    Ok(Sources { types, probe })
+}
+
+/// The command, for `main`.
+///
+/// zerodds-lint: recursion-depth 1 — this does not recurse. The callee
+/// is `zerodds_wireprobe_gen::cli_main`, a different function in
+/// another crate; `dds_bounded_recursion` compares only the last
+/// segment of a call path, so the delegation reads as a self-call.
+pub fn cli_main() {
+    zerodds_wireprobe_gen::cli_main::<Renderer>();
+}
+
+// A generated probe carries no `using` directive at all.
+//
+// Every runtime name the harness and the codec write is rooted at
+// `global::ZeroDds.Wire`. C# resolves a simple name against the global
+// namespace, which is where every generated type sits, so a corpus case
+// declaring `enum Status` would put its own type in front of the
+// runtime's and `Status.Discarded` would be CS0117 — measured on
+// `enum-sparse-values` and its unannotated twin. An import would not
+// help: it is the *global* declaration that wins, not the imported one.
+
+/// The PL_CDR1 framing one layout key adds up to, as the C# expression
+/// that builds it.
+///
+/// One place, so the two directions cannot part over a flag: a reader
+/// configured with a framing the writer did not use finds the next
+/// parameter at an offset no writer produced.
+fn framing_expression(key: LayoutKey) -> String {
+    let headers = key.pl_cdr1_headers;
+    format!(
+        "new global::ZeroDds.Wire.PlCdr1Framing({}, {}, {}, {}, {}, {})",
+        match key.pid_flags {
+            PidFlagPolicy::SentinelMustUnderstand =>
+                "global::ZeroDds.Wire.PidFlagPolicy.SentinelMustUnderstand",
+            PidFlagPolicy::Bare => "global::ZeroDds.Wire.PidFlagPolicy.Bare",
+            PidFlagPolicy::ImplExtensionOnMembers =>
+                "global::ZeroDds.Wire.PidFlagPolicy.ImplExtensionOnMembers",
+        },
+        key.short_pid_range.highest_short_id(),
+        headers.pads_declared_length(),
+        headers.pads_declared_optional_length(),
+        key.member_pid_carries_must_understand(),
+        headers.pads_after_value()
+    )
+}
+
+/// The codec class's members, at one level of indentation inside
+/// `Probe`.
+fn codec_members(codec: &str) -> String {
+    let mut out = String::new();
+    for line in codec.lines() {
+        // `type_decl` renders `public static class ZdCodec { … }`; the
+        // members are what is wanted, and the class's own two lines are
+        // not.
+        if line.trim_start().starts_with("public static class ZdCodec")
+            || line.trim() == "{" && out.is_empty()
+        {
+            continue;
+        }
+        if line == "}" {
+            continue;
+        }
+        let _ = writeln!(out, "{line}");
+    }
+    out
+}
+
+/// `Probe.cs` for the read direction: bytes on standard input,
+/// canonical JSON on standard output.
+///
+/// Standard input and not a path baked into the generated C#: the path
+/// would be part of the program, so a probe compiled for one payload
+/// could not be run against another, and the shell wrapper would have to
+/// regenerate for every byte string it wanted read.
+fn read_harness(session: &Session<'_>, codec: &str) -> Result<String, Refusal> {
+    let args = session.args;
+    let ast: &Ast = &session.ast;
+    let root: Id<TypeNode> = session.root;
+    let key: LayoutKey = session.key;
+    let sample_type = zerodds_lang_render::csharp::type_(
+        &<CSharp as zerodds_lang_rules::emit::CodecTarget>::value_type(ast, root),
+    );
+    let decoder = decoder_name::<CSharp>(ast, root);
+    let order = match args.endianness {
+        Endianness::Little => "global::ZeroDds.Wire.Endianness.Little",
+        Endianness::Big => "global::ZeroDds.Wire.Endianness.Big",
+    };
+    let framing = framing_expression(key);
+    let max_align = args.encoding.max_alignment();
+    let strip = usize::from(args.encapsulation()) * 4;
+
+    let mut out = String::new();
+    out.push_str(
+        "// Generated by wireprobe-zerodds-csharp-gen. Do not edit.\n\
+         //\n\
+         // The values come out of runtime/csharp when this runs. Nothing here\n\
+         // decides a wire question.\n\n",
+    );
+    out.push_str("public static class Probe\n{\n");
+    out.push_str(&codec_members(codec));
+
+    let dump = dump::dump(ast, root, key.union_label)?;
+    if !dump.functions.is_empty() {
+        out.push('\n');
+        for line in dump.functions.lines() {
+            let _ = writeln!(out, "    {line}");
+        }
+    }
+    let _ = write!(
+        out,
+        "\n    static {sample_type} zd_sample;\n\n\
+         \x20   /// <summary>Everything on standard input. A payload is one message\n\
+         \x20   /// and the probe is handed the whole of it.</summary>\n\
+         \x20   static byte[] ZdSlurp()\n\
+         \x20   {{\n\
+         \x20       var buffer = new System.IO.MemoryStream();\n\
+         \x20       using (var stdin = System.Console.OpenStandardInput())\n\
+         \x20       {{\n\
+         \x20           stdin.CopyTo(buffer);\n\
+         \x20       }}\n\
+         \x20       return buffer.ToArray();\n\
+         \x20   }}\n\n\
+         \x20   static void ZdDump()\n\
+         \x20   {{\n"
+    );
+    for line in dump.body.lines() {
+        let _ = writeln!(out, "        {line}");
+    }
+    out.push_str("    }\n\n");
+
+    let _ = write!(
+        out,
+        "    public static int Main()\n\
+         \x20   {{\n\
+         \x20       byte[] zd_input = ZdSlurp();\n\
+         \x20       int zd_at = 0;\n\
+         \x20       int zd_len = zd_input.Length;\n"
+    );
+    if strip > 0 {
+        // The encapsulation identifier is not re-read for the encoding:
+        // the caller named one, and a probe that took the stream's word
+        // for it could not be pointed at a stream to test what it does
+        // with a header it disagrees with.
+        //
+        // The **options** word is read, because §7.6.3.1.2 says a
+        // receiver shall use its low two bits to find where the
+        // serialized data ended. Without them the trailing padding is
+        // handed to the decoder as data.
+        let _ = write!(
+            out,
+            "        if (zd_len < {strip})\n\
+             \x20       {{\n\
+             \x20           System.Console.Error.WriteLine(\"wireprobe-zerodds-csharp: fewer than the four-byte encapsulation header\");\n\
+             \x20           return 1;\n\
+             \x20       }}\n\
+             \x20       int zd_declared = zd_input[3] & 3;\n\
+             \x20       zd_at += {strip};\n\
+             \x20       zd_len -= {strip};\n\
+             \x20       if (zd_len < zd_declared)\n\
+             \x20       {{\n\
+             \x20           System.Console.Error.WriteLine(\"wireprobe-zerodds-csharp: the options field declares \"\n\
+             \x20               + zd_declared + \" padding byte(s) and only \" + zd_len + \" follow the header\");\n\
+             \x20           return 1;\n\
+             \x20       }}\n\
+             \x20       zd_len -= zd_declared;\n"
+        );
+    }
+    let _ = write!(
+        out,
+        "        byte[] zd_body = new byte[zd_len];\n\
+         \x20       System.Array.Copy(zd_input, zd_at, zd_body, 0, zd_len);\n\
+         \x20       var r = new global::ZeroDds.Wire.Reader(zd_body, {order}, {max_align}, {framing});\n\
+         \x20       try\n\
+         \x20       {{\n\
+         \x20           // The top-level type is not a member of anything, so no\n\
+         \x20           // `@try_construct` governs it and 7.2.2.7's default stands.\n\
+         \x20           zd_sample = {decoder}(r, global::ZeroDds.Wire.TryConstruct.Discard);\n\
+         \x20       }}\n\
+         \x20       catch (global::ZeroDds.Wire.WireException error)\n\
+         \x20       {{\n\
+         \x20           System.Console.Error.WriteLine(\"wireprobe-zerodds-csharp: \" + error.Message);\n\
+         \x20           return 1;\n\
+         \x20       }}\n\
+         \x20       if (r.ReaderStatus() == global::ZeroDds.Wire.Status.Discarded)\n\
+         \x20       {{\n\
+         \x20           // Not a failed decode. DDS-XTypes 1.3 7.2.2.7: the receiver\n\
+         \x20           // drops the object and carries on, and a caller that cannot\n\
+         \x20           // tell that from a broken peer cannot tell a narrowed type\n\
+         \x20           // from a corrupt stream. Exit code 3, the Rust probe's.\n\
+         \x20           System.Console.Error.WriteLine(\"wireprobe-zerodds-csharp: at \" + r.ReaderPosition() + \": Discarded\");\n\
+         \x20           return 3;\n\
+         \x20       }}\n\
+         \x20       if (r.ReaderStatus() != global::ZeroDds.Wire.Status.Ok)\n\
+         \x20       {{\n\
+         \x20           System.Console.Error.WriteLine(\"wireprobe-zerodds-csharp: at \" + r.ReaderPosition() + \": \" + r.ReaderStatus());\n\
+         \x20           return 1;\n\
+         \x20       }}\n\
+         \x20       // Nothing may be left over that is not padding. A decoder that\n\
+         \x20       // stopped short and said nothing is the silent-drop shape: the\n\
+         \x20       // sample comes back looking plausible with its last members\n\
+         \x20       // missing. Padding is the one thing a writer legitimately\n\
+         \x20       // leaves behind, and it is what alignment asks for from this\n\
+         \x20       // offset and never more.\n\
+         \x20       int zd_left = r.ReaderRemaining();\n\
+         \x20       int zd_pad = ({max_align} - (r.ReaderPosition() % {max_align})) % {max_align};\n\
+         \x20       if (zd_left > zd_pad)\n\
+         \x20       {{\n\
+         \x20           System.Console.Error.WriteLine(\"wireprobe-zerodds-csharp: \" + zd_left + \" byte(s) left at offset \"\n\
+         \x20               + r.ReaderPosition() + \", of which at most \" + zd_pad + \" could be padding\");\n\
+         \x20           return 1;\n\
+         \x20       }}\n\
+         \x20       ZdDump();\n\
+         \x20       Zdj.Flush();\n\
+         \x20       return 0;\n\
+         \x20   }}\n\
+         }}\n"
+    );
+    Ok(out)
+}
+
+/// `Probe.cs`: the codec, the sample, the fill and `Main`.
+/// The key holder and the codec it calls: the C column's KeyHash run in
+/// C#, planned under the holder's own layout key, plus a data-planned
+/// set under the dialect that writes a keyless nested aggregate whole.
+/// A type with no `@key` member has one instance and no KeyHash, and
+/// every column answers that the same way.
+fn key_hash_codec(session: &Session<'_>) -> Result<Vec<zerodds_lang_cst::csharp::Member>, Refusal> {
+    let ast = &session.ast;
+    let root = session.root;
+    let holder_key = session.holder_key;
+    let mut members = codec_from::<CSharp>(ast, root, holder_key, session.codec_options)
+        .map_err(|error| from_codec(&error))?;
+    if holder_key.key_holder_nesting == KeyHolderNesting::KeylessNestedWhole {
+        let as_data = LayoutKey {
+            purpose: Purpose::Data,
+            ..holder_key
+        };
+        members.extend(
+            codec_from::<CSharp>(ast, root, as_data, session.codec_options)
+                .map_err(|error| from_codec(&error))?,
+        );
+    }
+    let Some(holder) =
+        key_holder::<CSharp>(ast, root, holder_key).map_err(|error| from_codec(&error))?
+    else {
+        return Err(gap!("{} declares no @key member", session.args.type_name));
+    };
+    members.push(holder);
+    Ok(members)
+}
+
+/// `Probe.cs` for a KeyHash run: the sample, its key holder written
+/// big-endian under PLAIN_CDR2's alignment cap (XTypes 1.3 §7.6.8), and
+/// the sixteen octets DDSI-RTPS 2.5 §9.6.3.8 makes of it. A value the
+/// wire has no form for is refused with exit 1, as in the payload run.
+fn key_hash_harness(session: &Session<'_>, codec: &str, fill: &str) -> Result<String, Refusal> {
+    let ast: &Ast = &session.ast;
+    let root: Id<TypeNode> = session.root;
+    let sample_type = zerodds_lang_render::csharp::type_(
+        &<CSharp as zerodds_lang_rules::emit::CodecTarget>::value_type(ast, root),
+    );
+    let holder = format!(
+        "zd_keyholder_{}",
+        <CSharp as zerodds_lang_rules::emit::CodecTarget>::type_name(ast, root)
+    );
+    let form = match zerodds_ast_layout::keyhash::key_hash_form_for(ast, root, session.holder_key)
+        .map_err(|error| gap!("key-holder maximum size: {error}"))?
+    {
+        zerodds_ast_layout::keyhash::KeyHashForm::ZeroPadded => "ZeroPadded",
+        zerodds_ast_layout::keyhash::KeyHashForm::Md5 => "Md5Digest",
+    };
+    let mut out = String::new();
+    out.push_str(
+        "// Generated by wireprobe-zerodds-csharp-gen. Do not edit.\n\
+         //\n\
+         // The KeyHash comes out of runtime/csharp when this runs. Nothing here\n\
+         // decides a wire question.\n\n",
+    );
+    out.push_str("public static class Probe\n{\n");
+    out.push_str(&codec_members(codec));
+    let _ = write!(
+        out,
+        "\n    static {sample_type} zd_sample;\n\n\
+         \x20   static void ZdFill()\n\
+         \x20   {{\n{fill}    }}\n\n\
+         \x20   public static int Main()\n\
+         \x20   {{\n\
+         \x20       ZdFill();\n\
+         \x20       // The holder is PLAIN_CDR2 big-endian whatever the sample is,\n\
+         \x20       // so its alignment cap is PLAIN_CDR2's. XTypes 1.3 7.6.8.\n\
+         \x20       var w = new global::ZeroDds.Wire.Writer(global::ZeroDds.Wire.Endianness.Big, 4, null, false);\n\
+         \x20       byte[] zd_hash;\n\
+         \x20       try\n\
+         \x20       {{\n\
+         \x20           {holder}(w, zd_sample);\n\
+         \x20           zd_hash = w.{form}();\n\
+         \x20       }}\n\
+         \x20       catch (global::ZeroDds.Wire.WireException error)\n\
+         \x20       {{\n\
+         \x20           System.Console.Error.WriteLine(\"wireprobe-zerodds-csharp: \" + error.Message);\n\
+         \x20           return 1;\n\
+         \x20       }}\n\
+         \x20       using (var zd_out = System.Console.OpenStandardOutput())\n\
+         \x20       {{\n\
+         \x20           zd_out.Write(zd_hash, 0, zd_hash.Length);\n\
+         \x20       }}\n\
+         \x20       return 0;\n\
+         \x20   }}\n\
+         }}\n"
+    );
+    Ok(out)
+}
+
+fn harness(session: &Session<'_>, codec: &str, fill: &str) -> Result<String, Refusal> {
+    let args = session.args;
+    let ast: &Ast = &session.ast;
+    let root: Id<TypeNode> = session.root;
+    let key: LayoutKey = session.key;
+    let sample_type = zerodds_lang_render::csharp::type_(
+        &<CSharp as zerodds_lang_rules::emit::CodecTarget>::value_type(ast, root),
+    );
+    let encoder = codec_name::<CSharp>(ast, root, Purpose::Data);
+    let order = match args.endianness {
+        Endianness::Little => "global::ZeroDds.Wire.Endianness.Little",
+        Endianness::Big => "global::ZeroDds.Wire.Endianness.Big",
+    };
+    let framing = framing_expression(key);
+    let short_codes = key.length_codes.short_code_where_it_fits();
+
+    let mut out = String::new();
+    out.push_str(
+        "// Generated by wireprobe-zerodds-csharp-gen. Do not edit.\n\
+         //\n\
+         // The bytes come out of runtime/csharp when this runs. Nothing here\n\
+         // decides a wire question.\n\n",
+    );
+    out.push_str("public static class Probe\n{\n");
+    out.push_str(&codec_members(codec));
+
+    let _ = write!(
+        out,
+        "\n    static {sample_type} zd_sample;\n\n\
+         \x20   static void ZdFill()\n\
+         \x20   {{\n{fill}    }}\n\n\
+         \x20   public static int Main()\n\
+         \x20   {{\n\
+         \x20       ZdFill();\n\
+         \x20       var w = new global::ZeroDds.Wire.Writer({order}, {}, {framing}, {});\n",
+        args.encoding.max_alignment(),
+        if short_codes { "true" } else { "false" },
+    );
+    if args.encapsulation() {
+        let header = session.encapsulation_header();
+        let _ = writeln!(
+            out,
+            "        byte[] zd_head = new byte[] {{ 0x{:02x}, 0x{:02x}, 0x{:02x}, 0x{:02x} }};",
+            header[0], header[1], header[2], header[3]
+        );
+    }
+    // The write refusal, in the probe's own words.
+    //
+    // `runtime/csharp` raises a `WireException` for a value the wire has
+    // no form for — a `char` above U+00FF is §7.2.2.2.1.2.2's, and the
+    // runtime refuses it rather than putting a different character out.
+    // Unhandled, .NET prints a stack trace and the process *aborts*, so
+    // the recorder wrote `Abort trap: 6` into the ledger where a reason
+    // belongs. Measured on `primitive-char-above-latin1`, ten slots.
+    // The catch is what stops that.
+    //
+    // The code is **1** and not 6. 6 is `harness-gap` — a tool of ours
+    // that has not been written — and this harness was written, ran, and
+    // refused: what said no is a runtime that read the clause. The Rust
+    // probe answers 1 for the same sample and the TypeScript column's
+    // generated harness says so at its own `catch`; the Java column
+    // reaches the same 1 by letting the exception out of `main`,
+    // measured on this case: `WireException$OutOfRange: at 1: expected a
+    // char…`, exit 1. `docs/specs/zerodds-verdicts-1.0.md`.
+    //
+    // Not measured here for want of a `dotnet` on the host this was
+    // written on; the three columns above it are.
+    let _ = write!(
+        out,
+        "        byte[] zd_body;\n\
+         \x20       try\n\
+         \x20       {{\n\
+         \x20           {encoder}(w, zd_sample);\n\
+         \x20           zd_body = w.Finish();\n\
+         \x20       }}\n\
+         \x20       catch (global::ZeroDds.Wire.WireException error)\n\
+         \x20       {{\n\
+         \x20           System.Console.Error.WriteLine(\"wireprobe-zerodds-csharp: \" + error.Message);\n\
+         \x20           return 1;\n\
+         \x20       }}\n\
+         \x20       using (var zd_out = System.Console.OpenStandardOutput())\n\
+         \x20       {{\n"
+    );
+    if args.encapsulation() {
+        // §7.4.1.1 pads the serialized data to the next four-byte
+        // boundary with zeros, and §7.6.3.1.2 puts the count of those
+        // bytes in the encapsulation options so a receiver can find
+        // where the data ended. Both halves or neither: padding without
+        // the count hands a conforming receiver up to three bytes of
+        // zero as data, and the count without the padding tells it to
+        // cut bytes that are data. Cyclone, RTI and Fast DDS all write
+        // both, and so does the Rust column —
+        // `wire-codec/src/encode.rs`, `Emit::PayloadWithEncapsulation`.
+        //
+        // `Emit::Payload` stays unpadded: that is the serialized data
+        // itself, and it is what the ledger records.
+        out.push_str(
+            "            int zd_pad = global::ZeroDds.Wire.Encapsulation.Padding(zd_body.Length);\n\
+             \x20           zd_head[3] = (byte)(zd_head[3] | (zd_pad & 3));\n\
+             \x20           zd_out.Write(zd_head, 0, zd_head.Length);\n",
+        );
+    }
+    out.push_str("            zd_out.Write(zd_body, 0, zd_body.Length);\n");
+    if args.encapsulation() {
+        out.push_str("            zd_out.Write(new byte[zd_pad], 0, zd_pad);\n");
+    }
+    out.push_str(
+        "            zd_out.Flush();\n\
+         \x20       }\n\
+         \x20       return 0;\n\
+         \x20   }\n\
+         }\n",
+    );
+    Ok(out)
+}
+
+/// The verdict a codec error answers in.
+///
+/// One place per generator, reading `EncodeError::is_spec_refusal`: a
+/// clause of the specification is `refused` (exit 1) and everything else
+/// is this tree's own gap (exit 6).
+fn from_codec(error: &EncodeError) -> Refusal {
+    if error.is_spec_refusal() {
+        Refusal::Refused(format!("{error}"))
+    } else {
+        Refusal::Gap(format!("{error}"))
+    }
+}

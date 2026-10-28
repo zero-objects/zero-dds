@@ -1,0 +1,7 @@
+module outer {
+  @final struct Point { long x; };
+  module inner {
+    @final struct Point { long y; };
+    @appendable struct Holder { Point p; };
+  };
+};

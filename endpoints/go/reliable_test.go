@@ -371,7 +371,7 @@ func TestSeqLtGtRfc1982Wraparound(t *testing.T) {
 // mirroring `endpoints/c/test/test_reliable.c`'s unconditional hardcoded
 // assertion.
 var wantHeartbeatGolden = []byte{0x80, 0x00, 0x01, 0x00, 0x0B, 0x01, 0x05, 0x00, 0x01, 0x00, 0x03, 0x00, 0x80}
-var wantAckNackGolden = []byte{0x80, 0x00, 0x01, 0x00, 0x0A, 0x01, 0x05, 0x00, 0x01, 0x00, 0x00, 0x00, 0x80}
+var wantAckNackGolden = []byte{0x80, 0x00, 0x01, 0x00, 0x0A, 0x01, 0x09, 0x00, 0x05, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x80}
 
 func TestByteGoldenHeartbeat(t *testing.T) {
 	got := HeartbeatFrame(XrceSessionNoKey, StreamNone, 1, HeartbeatBody{First: 1, Last: 3, StreamID: ReliableStreamID})
@@ -390,6 +390,33 @@ func TestByteGoldenAckNack(t *testing.T) {
 	}
 	if golden, ok := readGoldenFile("golden_acknack_le.bin"); ok && !bytes.Equal(got, golden) {
 		t.Fatalf("ACKNACK frame != cargo golden: got % X, golden % X", got, golden)
+	}
+}
+
+// UnannotatedTypes: Final writes the 13-octet FINAL golden, the default the
+// 17-octet form; the parser accepts both.
+func TestAckNackUnannotatedTypes(t *testing.T) {
+	finalGolden := []byte{0x80, 0x00, 0x01, 0x00, 0x0A, 0x01, 0x05, 0x00, 0x01, 0x00, 0x00, 0x00, 0x80}
+	body := AckNackBody{FirstUnacked: 1, StreamID: ReliableStreamID}
+	fin := AckNackFrameWith(XrceSessionNoKey, StreamNone, 1, body, UnannotatedFinal)
+	if !bytes.Equal(fin, finalGolden) {
+		t.Fatalf("FINAL ACKNACK = % X, want % X", fin, finalGolden)
+	}
+	app := AckNackFrameWith(XrceSessionNoKey, StreamNone, 1, body, UnannotatedAppendable)
+	if len(app) != 17 || app[6] != 9 || !bytes.Equal(app, AckNackFrame(XrceSessionNoKey, StreamNone, 1, body)) {
+		t.Fatalf("APPENDABLE ACKNACK = % X, want 17 octets, length field 9, equal to the default", app)
+	}
+	for _, f := range [][]byte{fin, app} {
+		got, ok := ParseAckNack(f)
+		if !ok || got != body {
+			t.Fatalf("ParseAckNack(% X) = %+v, ok=%v, want %+v", f, got, ok, body)
+		}
+	}
+	if got := NewReliableReceiverWith(UnannotatedFinal).AckNackFrame(XrceSessionNoKey, StreamNone, 1, nil); len(got) != 13 || got[6] != 5 {
+		t.Fatalf("receiver with UnannotatedFinal wrote % X, want the 13-octet form", got)
+	}
+	if len(NewReliableReceiver().AckNackFrame(XrceSessionNoKey, StreamNone, 1, nil)) != 17 {
+		t.Fatalf("default receiver did not write the 17-octet form")
 	}
 }
 
@@ -420,7 +447,17 @@ func TestFrameRoundTripParsing(t *testing.T) {
 		t.Fatalf("ParseAckNack round-trip = %+v, ok=%v, want %+v", got2, ok2, an)
 	}
 
-	frame := ReliableWriteFrame(42, u32le(0xCAFEBABE))
+	// Legacy FINAL form: 5-octet body without DHEADER (eProsima clients).
+	legacy := []byte{0x80, 0x00, 0x07, 0x00, 0x0A, 0x01, 0x05, 0x00, 0x05, 0x00, 0x0F, 0x00, 0x80}
+	got3, ok4 := ParseAckNack(legacy)
+	if !ok4 || got3 != an {
+		t.Fatalf("ParseAckNack legacy 5-octet = %+v, ok=%v, want %+v", got3, ok4, an)
+	}
+	if len(f2) != 17 || f2[6] != 9 {
+		t.Fatalf("ACKNACK frame length = %d, length field = %d, want 17 / 9", len(f2), f2[6])
+	}
+
+	frame := ReliableWriteFrame(42, XrceObjectID(0x001, uint16(ObjkDataWriter)), u32le(0xCAFEBABE))
 	seq, sample, ok3 := ReliableReadFrame(frame)
 	if !ok3 || seq != 42 || !bytes.Equal(sample, u32le(0xCAFEBABE)) {
 		t.Fatalf("ReliableReadFrame round-trip: seq=%d sample=%v ok=%v", seq, sample, ok3)
@@ -508,7 +545,7 @@ func (lt *loopLossyTransport) Receive(buf []byte) (int, bool, error) {
 func TestReliableAsyncWriterLossRecovery(t *testing.T) {
 	const n = 12
 	tr := newLoopLossyTransport(3) // drop every 3rd distinct sample once
-	w := NewReliableAsyncWriter(tr, 0)
+	w := NewReliableAsyncWriter(tr, 0, XrceObjectID(0x001, uint16(ObjkDataWriter)))
 	for i := 0; i < n; i++ {
 		w.Enqueue(u32le(uint32(i)))
 	}

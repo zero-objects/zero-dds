@@ -12,11 +12,13 @@ import zerodds.RecvStatus
 import zerodds.ReliableReceiver
 import zerodds.ReliableSender
 import zerodds.SubmitStatus
+import zerodds.UnannotatedTypes
 import zerodds.REL_MAX_PAYLOAD
 import zerodds.REL_RECV_BUF
 import zerodds.REL_WINDOW
 import zerodds.acknackFrame
 import zerodds.heartbeatFrame
+import zerodds.parseAckNack
 import java.io.File
 
 private fun check(cond: Boolean, msg: String) {
@@ -213,9 +215,39 @@ fun main(args: Array<String>) {
 
     val ak = acknackFrame(AckNack(1, 0, 0, 0x80))
     val akExpect = byteArrayOf(
+        0x80.toByte(), 0x00, 0x01, 0x00, 0x0a, 0x01, 0x09, 0x00,
+        0x05, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x80.toByte(),
+    )
+    check(ak.size == 17, "acknack frame is 17 octets")
+    check(ak.contentEquals(akExpect), "acknack byte-golden (hardcoded)")
+
+    // legacy FINAL form (body-len 5, no DHEADER) is still parsed
+    val legacy = byteArrayOf(
+        0x80.toByte(), 0x00, 0x01, 0x00, 0x0a, 0x01, 0x05, 0x00, 0x07, 0x00, 0x03, 0x00, 0x80.toByte(),
+    )
+    val lg = parseAckNack(legacy)
+    check(lg != null && lg.firstUnacked == 7 && lg.nackLo == 3 && lg.nackHi == 0 && lg.stream == 0x80,
+        "legacy 5-octet acknack parsed")
+    val cur = parseAckNack(akExpect)
+    check(cur != null && cur.firstUnacked == 1 && cur.stream == 0x80, "17-octet acknack parsed")
+    check(parseAckNack(legacy.copyOf(12)) == null, "short acknack rejected")
+
+    // unannotated types: FINAL form (eProsima), 13 octets
+    val akFinal = acknackFrame(AckNack(1, 0, 0, 0x80), UnannotatedTypes.FINAL)
+    val akFinalExpect = byteArrayOf(
         0x80.toByte(), 0x00, 0x01, 0x00, 0x0a, 0x01, 0x05, 0x00, 0x01, 0x00, 0x00, 0x00, 0x80.toByte(),
     )
-    check(ak.contentEquals(akExpect), "acknack byte-golden (hardcoded)")
+    check(akFinal.size == 13, "FINAL acknack frame is 13 octets")
+    check(akFinal.contentEquals(akFinalExpect), "FINAL acknack byte-golden (hardcoded)")
+    check(acknackFrame(AckNack(1, 0, 0, 0x80), UnannotatedTypes.APPENDABLE).contentEquals(akExpect),
+        "APPENDABLE acknack equals the default form")
+    val pf = parseAckNack(akFinalExpect)
+    check(pf != null && pf.firstUnacked == 1 && pf.stream == 0x80, "parser accepts the FINAL form")
+    val pa = parseAckNack(akExpect)
+    check(pa != null && pa.firstUnacked == 1 && pa.stream == 0x80, "parser accepts the APPENDABLE form")
+    check(ReliableReceiver(unannotatedTypes = UnannotatedTypes.FINAL).pendingAcknackFrame(0).size == 13,
+        "receiver with FINAL builds 13-octet acknack")
+    check(ReliableReceiver().pendingAcknackFrame(0).size == 17, "receiver default builds 17-octet acknack")
 
     if (args.size >= 2) {
         val gHb = File(args[0]).readBytes()

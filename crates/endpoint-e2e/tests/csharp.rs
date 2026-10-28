@@ -17,20 +17,14 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 
 use zerodds_dotnet_build_lock::dotnet_build_guard;
-use zerodds_endpoint_e2e::{IDL, Peer, bind_peer, ping_pong};
-use zerodds_idl::config::ParserConfig;
-use zerodds_idl_csharp::{CsGenOptions, generate_csharp};
+use zerodds_endpoint_e2e::codegen::{
+    Language, endpoints_dir, runtime_dir, scratch_dir, source, tool_available,
+};
+use zerodds_endpoint_e2e::{Peer, bind_peer, ping_pong, xcdr2_reader, xcdr2_writer};
 
-/// The `dotnet` binary: on PATH, else the codepit `~/.dotnet/dotnet` install.
+/// The `dotnet` binary: on PATH, else the test host's `~/.dotnet/dotnet` install.
 fn dotnet_bin() -> Option<String> {
-    let on_path = Command::new("dotnet")
-        .arg("--version")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false);
-    if on_path {
+    if tool_available("dotnet", "--version") {
         return Some("dotnet".to_string());
     }
     let home = std::env::var_os("HOME")?;
@@ -41,19 +35,42 @@ fn dotnet_bin() -> Option<String> {
     None
 }
 
-/// Absolute path to the real `ZeroDDS.Cdr.csproj` (the runtime the generated
-/// TypeSupport codec references).
-fn zerodds_cdr_csproj() -> String {
-    let p = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../cs/csharp/ZeroDDS.Cdr/ZeroDDS.Cdr.csproj")
-        .canonicalize()
-        .expect("ZeroDDS.Cdr.csproj must exist");
-    p.to_string_lossy().into_owned()
+/// Absolute path to the C# wire runtime project the generated codec calls.
+/// `crates/cs`'s `ZeroDDS.Cdr` went with the IDL transplant; what the generator
+/// emits against now is `ZeroDds.Wire`.
+fn wire_csproj() -> String {
+    runtime_dir("csharp")
+        .join("ZeroDds.Wire.csproj")
+        .to_string_lossy()
+        .into_owned()
+}
+
+/// Splits the generated C# into `(the declarations, the codec's members)`.
+///
+/// `ZdCodec`'s methods are emitted `private static`, so no other class can
+/// call them; the members are lifted out of the class and dropped into
+/// `Program` instead. `wireprobe-zerodds-csharp-gen` does the same with the
+/// same text — its `Probe` class carries `private static void zd_enc_Ping`
+/// as its own member.
+fn split_generated() -> (String, String) {
+    let text = source(Language::CSharp);
+    let at = text
+        .find("public static class ZdCodec")
+        .expect("generated C# declares `public static class ZdCodec`");
+    let types = text[..at].trim_end().to_string();
+    let body = &text[at..];
+    let open = body.find('{').expect("class opens a brace");
+    let members = body[open + 1..]
+        .trim_end()
+        .strip_suffix('}')
+        .expect("class closes with `}`")
+        .to_string();
+    (types, members)
 }
 
 /// The pure-C# endpoint SDK source (`endpoints/csharp/Zerodds.cs`).
 fn endpoint_sdk_source() -> String {
-    let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../endpoints/csharp/Zerodds.cs");
+    let p = endpoints_dir("csharp").join("Zerodds.cs");
     std::fs::read_to_string(&p).expect("endpoints/csharp/Zerodds.cs must exist")
 }
 
@@ -82,7 +99,7 @@ fn csproj() -> String {
   </ItemGroup>
 </Project>
 "#,
-        zerodds_cdr_csproj()
+        wire_csproj()
     )
 }
 
@@ -116,6 +133,8 @@ public sealed class UdpTransport : ZeroDDS.ITransport
 
 public static class Program
 {
+__CODEC__
+
     public static async Task<int> Main(string[] args)
     {
         string mode = args[0];
@@ -126,7 +145,13 @@ public static class Program
 
         // The typed Ping, encoded by the GENERATED TypeSupport (real XCDR2).
         var ping = new Ping { Seq = 1, Msg = "hello from app" };
-        byte[] sample = PingTypeSupport.Instance.Encode(ping);
+        var zdFraming = new global::ZeroDds.Wire.PlCdr1Framing(
+            global::ZeroDds.Wire.PidFlagPolicy.SentinelMustUnderstand, 16128,
+            true, true, true, true);
+        var zdW = new global::ZeroDds.Wire.Writer(
+            global::ZeroDds.Wire.Endianness.Little, 4, zdFraming, false);
+        zd_enc_Ping(zdW, ping);
+        byte[] sample = zdW.Finish();
 
         byte[]? body = null;
 
@@ -143,7 +168,8 @@ public static class Program
         else
         {
             var transport = new UdpTransport(sock);
-            var client = new ZeroDDS.Client(transport);
+            var client = new ZeroDDS.Client(transport,
+                ZeroDDS.Xrce.ObjectId(0x001, ZeroDDS.Xrce.ObjkDataWriter));
             client.Write(sample); // SDK frames it (XRCE WRITE_DATA) and delivers.
 
             if (mode == "async")
@@ -178,7 +204,12 @@ public static class Program
             return 1;
         }
 
-        var pong = PongTypeSupport.Instance.Decode(body);
+        var zdFraming2 = new global::ZeroDds.Wire.PlCdr1Framing(
+            global::ZeroDds.Wire.PidFlagPolicy.SentinelMustUnderstand, 16128,
+            true, true, true, true);
+        var zdR = new global::ZeroDds.Wire.Reader(
+            body, global::ZeroDds.Wire.Endianness.Little, 4, zdFraming2);
+        var pong = zd_dec_Pong(zdR, global::ZeroDds.Wire.TryConstruct.Discard);
         Console.WriteLine($"PONG seq={pong.Seq} reply={pong.Reply}");
         return 0;
     }
@@ -189,14 +220,15 @@ public static class Program
 /// returning the path to the produced `app.dll`. Panics (fails the test, with
 /// the build log) on a build failure.
 fn build_app(dotnet: &str, dir: &Path) -> PathBuf {
-    let ast = zerodds_idl::parse(IDL, &ParserConfig::default()).expect("parse IDL");
-    let generated = generate_csharp(&ast, &CsGenOptions::default()).expect("generate C#");
+    let (types, codec) = split_generated();
+    let generated = format!("{types}\n{codec}");
 
     std::fs::create_dir_all(dir).expect("mkdir");
     std::fs::write(dir.join("app.csproj"), csproj()).expect("csproj");
-    std::fs::write(dir.join("Generated.cs"), &generated).expect("generated");
+    std::fs::write(dir.join("Generated.cs"), &types).expect("generated");
     std::fs::write(dir.join("Zerodds.cs"), endpoint_sdk_source()).expect("sdk");
-    std::fs::write(dir.join("Program.cs"), PROGRAM).expect("program");
+    // The codec's members go INSIDE `Program`: see `split_generated`.
+    std::fs::write(dir.join("Program.cs"), PROGRAM.replace("__CODEC__", &codec)).expect("program");
 
     let out = dir.join("out");
     // Build up front (off the peer's clock) so the app starts — and sends its
@@ -243,7 +275,7 @@ fn spawn_app(dotnet: &str, dll: &Path, mode: &str, port: u16) -> Child {
 }
 
 fn work_dir(tag: &str) -> PathBuf {
-    std::env::temp_dir().join(format!("pp_cs_{tag}_{}", std::process::id()))
+    scratch_dir(&format!("cs_{tag}"))
 }
 
 // ---- full stack: generated types + endpoint SDK (sync/async) over XRCE ----
@@ -280,7 +312,6 @@ fn csharp_raw_udp() {
     };
     use std::net::UdpSocket;
     use std::time::Duration;
-    use zerodds_cdr::{BufferReader, BufferWriter, Endianness};
 
     let dir = work_dir("raw");
     let dll = build_app(&dotnet, &dir);
@@ -294,15 +325,15 @@ fn csharp_raw_udp() {
 
     let mut buf = [0u8; 4096];
     let (n, app) = sock.recv_from(&mut buf).expect("recv ping");
-    let mut r = BufferReader::new(&buf[..n], Endianness::Little).xcdr2();
+    let mut r = xcdr2_reader(&buf[..n]);
     let seq = r.read_u32().expect("seq");
     let msg = r.read_string().expect("msg");
     assert_eq!((seq, msg.as_str()), (1, "hello from app"));
 
-    let mut w = BufferWriter::new(Endianness::Little).xcdr2();
-    w.write_u32(seq).expect("s");
-    w.write_string(&format!("pong:{msg}")).expect("r");
-    sock.send_to(&w.into_bytes(), app).expect("send pong");
+    let mut w = xcdr2_writer();
+    w.write_u32(seq);
+    w.write_string(&format!("pong:{msg}"));
+    sock.send_to(&w.finish(), app).expect("send pong");
 
     let out = child.wait_with_output().expect("wait");
     assert!(

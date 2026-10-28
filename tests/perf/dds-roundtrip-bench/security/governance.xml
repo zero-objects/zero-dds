@@ -14,16 +14,16 @@
           <topic_expression>*</topic_expression>
           <enable_discovery_protection>true</enable_discovery_protection>
           <enable_liveliness_protection>true</enable_liveliness_protection>
-          <!-- Per-topic read/write Access-Control-Enforcement AUS: OpenDDS'
-               AccessControl lehnt die Kombination aus per-Topic-read/write-AC +
-               dieser (FastDDS-orientierten) Permissions-Datei ab und meldet das
-               irrefuehrend als "No governance exists for this domain", was sogar
-               opendds<->opendds secure blockiert. Mit =false akzeptieren ALLE
-               vier Stacks (Cyclone/FastDDS/OpenDDS/ZeroDDS) dieselbe Governance.
-               Verschluesselung (ENCRYPT data/metadata/rtps/discovery/liveliness),
-               Authentifizierung (PKI-DH) und participant-level join_access_control
-               bleiben voll aktiv — nur die per-Topic-Permission-Enforcement
-               entfaellt (die Permissions granten ohnehin "*"-Topics). -->
+          <!-- Per-topic read/write access control enforcement OFF: OpenDDS'
+               AccessControl rejects the combination of per-topic read/write AC +
+               this (FastDDS-oriented) permissions file and reports it
+               misleadingly as "No governance exists for this domain", which even
+               blocks opendds<->opendds secure. With =false ALL
+               four stacks (Cyclone/FastDDS/OpenDDS/ZeroDDS) accept the same governance.
+               Encryption (ENCRYPT data/metadata/rtps/discovery/liveliness),
+               authentication (PKI-DH) and participant-level join_access_control
+               stay fully active — only the per-topic permission enforcement
+               is dropped (the permissions grant "*" topics anyway). -->
           <enable_read_access_control>false</enable_read_access_control>
           <enable_write_access_control>false</enable_write_access_control>
           <metadata_protection_kind>ENCRYPT</metadata_protection_kind>

@@ -2,6 +2,19 @@
 
 Format follows [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), versioning follows [Semantic Versioning](https://semver.org/lang/de/).
 
+## [Unreleased]
+
+### Changed
+
+- `DsiServant` has `primary_interface()` (required) and
+  `all_interfaces()` (default none), the DSI counterparts of
+  `_primary_interface`/`_all_interfaces`. `dispatch_dsi` answers the
+  `CORBA::Object` operations (`_is_a`, `_non_existent`, `_interface`,
+  `_repository_id`, `_component`, `_domain_managers`) from them, the way the
+  generated skeletons and the POA do; `dynamic_invoke` no longer receives
+  them — it used to, and an echoing servant answered `_is_a` with its own
+  request body.
+
 ## [1.0.0-rc.1] — 2026-05-06
 
 Initial release materialization of the `zerodds-corba-ccm` crate.

@@ -1,0 +1,6 @@
+module m {
+  @appendable struct Node {
+    long value;
+    sequence<Node> children;
+  };
+};

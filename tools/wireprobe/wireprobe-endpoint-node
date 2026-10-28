@@ -1,0 +1,25 @@
+#!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 ZeroDDS Contributors
+#
+# wireprobe-endpoint-node — one IDL type and one JSON sample, through the
+# hand-written endpoint SDK in endpoints/node/zerodds.js.
+#
+# The same command line as every other column's probe, so a case runs
+# through any of them by substituting the program name:
+#
+#   wireprobe-endpoint-node --idl robot.idl --type common::Robot \
+#       --values robot.json --encoding plain-cdr2 --endian le \
+#       --out robot.endpoint-node.plain-cdr2.le.bin
+#
+# 203 hand-written lines. The build copies the SDK into the cache entry
+# and the generated program requires it by \`__dirname\`, so the run can
+# never pick up a copy a node_modules shadowed.
+#
+# The body is tools/wireprobe/endpoint-common.sh; it is shared because
+# the ten differ only in which compiler runs and which SDK is linked,
+# and ten copies of the caching and the exit codes would be ten places
+# for them to drift apart.
+set -uo pipefail
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/endpoint-common.sh"
+endpoint_probe node "$@"

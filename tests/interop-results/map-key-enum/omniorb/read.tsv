@@ -1,0 +1,14 @@
+# What omniorb got back when it read the bytes of map-key-enum, held against
+# tests/interop-corpus/map-key-enum/values.json and never against another
+# column's reading of the same bytes.
+# encoding	endian	verdict	detail
+plain-cdr1	le	no-form	Sample.entries: an enumeration with a @bit_bound, where CORBA's holder is always a 32-bit unsigned long
+plain-cdr1	be	no-form	Sample.entries: an enumeration with a @bit_bound, where CORBA's holder is always a 32-bit unsigned long
+pl-cdr1	le	no-form	Sample.entries: an enumeration with a @bit_bound, where CORBA's holder is always a 32-bit unsigned long
+pl-cdr1	be	no-form	Sample.entries: an enumeration with a @bit_bound, where CORBA's holder is always a 32-bit unsigned long
+plain-cdr2	le	no-form	Sample.entries: an enumeration with a @bit_bound, where CORBA's holder is always a 32-bit unsigned long
+plain-cdr2	be	no-form	Sample.entries: an enumeration with a @bit_bound, where CORBA's holder is always a 32-bit unsigned long
+delimited-cdr	le	no-form	Sample.entries: an enumeration with a @bit_bound, where CORBA's holder is always a 32-bit unsigned long
+delimited-cdr	be	no-form	Sample.entries: an enumeration with a @bit_bound, where CORBA's holder is always a 32-bit unsigned long
+pl-cdr2	le	no-form	Sample.entries: an enumeration with a @bit_bound, where CORBA's holder is always a 32-bit unsigned long
+pl-cdr2	be	no-form	Sample.entries: an enumeration with a @bit_bound, where CORBA's holder is always a 32-bit unsigned long

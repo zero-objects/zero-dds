@@ -8,7 +8,7 @@ ROS-2 IDL type + RMW default QoS. A CycloneDDS publisher that emits exactly
 that is wire-identical to a real `ros2 topic pub`.
 
 ## Hosts
-- **codepit** (Debian 13): CycloneDDS `/opt/cyclone` (libddsc 11.0.1, idlc,
+- **the Linux test host** (Debian 13): CycloneDDS `/opt/cyclone` (libddsc 11.0.1, idlc,
   ddsperf), FastDDS `/opt/fastdds` 3.6.1. Loopback wire tests + pcap.
 - **m1 (macOS, WiFi)**: for fragmentation/WiFi tests (pain cluster C3).
 

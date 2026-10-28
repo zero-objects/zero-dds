@@ -1,0 +1,5 @@
+// unbounded `wstring`, multi-byte, unannotated
+struct Sample {
+    wstring text;
+    long tail;
+};

@@ -50,7 +50,7 @@ impl Labels {
         self.pairs.len()
     }
 
-    /// Leer?
+    /// Empty?
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.pairs.is_empty()
@@ -73,7 +73,7 @@ impl Ord for Labels {
 /// the identity of a metric item.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct MetricKey {
-    /// Statischer Metric-Name.
+    /// Static metric name.
     pub name: &'static str,
     /// Labels (sorted).
     pub labels: Labels,

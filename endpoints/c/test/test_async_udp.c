@@ -99,7 +99,8 @@ int main(void)
         int i;
         zdw_async_writer_init(&w, &(zdw_transport){&u, udp_deliver, udp_receive},
                               txbuf, sizeof(txbuf),
-                              ZDW_XRCE_SESSION_NOKEY, ZDW_XRCE_STREAM_BEST_EFFORT);
+                              ZDW_XRCE_SESSION_NOKEY, ZDW_XRCE_STREAM_BEST_EFFORT,
+                              ZDW_XRCE_OBJECT_ID(0x001, ZDW_OBJK_DATAWRITER));
         for (i = 0; i < N; i++) {
             sensor_reading s;
             zdw_writer bw;

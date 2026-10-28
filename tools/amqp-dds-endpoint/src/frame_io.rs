@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! AMQP-1.0 Frame-IO ueber blocking `std::io::Read`/`Write`.
+//! AMQP 1.0 frame IO over blocking `std::io::Read`/`Write`.
 //!
 //! Spec `amqp-1.0-transport`:
 //! * §2.2 Protocol Header (`AMQP\0\1\0\0` AMQP / `AMQP\3\1\0\0` SASL).
@@ -13,7 +13,7 @@ use zerodds_amqp_bridge::frame::{
     FrameError, FrameHeader, FrameType, decode_frame_header, encode_frame_header,
 };
 
-/// Spec §2.2 — AMQP Protocol-ID. Erstes Byte des
+/// Spec §2.2 — AMQP protocol ID. First byte of the
 /// Protocol-Headers.
 pub mod protocol {
     /// `AMQP` Magic-Bytes.
@@ -30,7 +30,7 @@ pub mod protocol {
     pub const REVISION: u8 = 0x00;
 }
 
-/// AMQP-Protokoll-Variante des Protocol-Headers.
+/// AMQP protocol variant of the protocol header.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AmqpProtocol {
     /// `AMQP\0\1\0\0` — AMQP Frame-Layer.
@@ -56,52 +56,52 @@ impl AmqpProtocol {
     }
 }
 
-/// Eingelesener Protocol-Header.
+/// Read protocol header.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProtocolHeader {
-    /// AMQP-Frame-Variante.
+    /// AMQP frame variant.
     pub protocol: AmqpProtocol,
-    /// Major-Version (AMQP 1.0: 1).
+    /// Major version (AMQP 1.0: 1).
     pub major: u8,
-    /// Minor-Version (AMQP 1.0: 0).
+    /// Minor version (AMQP 1.0: 0).
     pub minor: u8,
     /// Revision.
     pub revision: u8,
 }
 
-/// Eingelesener Frame: Header + Body-Bytes.
+/// Read frame: header + body bytes.
 #[derive(Debug, Clone)]
 pub struct Frame {
-    /// 8-Byte-Header.
+    /// 8-byte header.
     pub header: FrameHeader,
-    /// Body-Bytes (kann leer sein bei Empty-Frames per §2.4.5
+    /// Body bytes (may be empty for empty frames per §2.4.5
     /// Heartbeats).
     pub body: Vec<u8>,
 }
 
-/// IO-/Frame-Fehler.
+/// IO-/Frame error.
 #[derive(Debug)]
 pub enum FrameIoError {
-    /// `std::io::Error` aus dem Stream.
+    /// `std::io::Error` from the stream.
     Io(io::Error),
-    /// Frame-Header-Decoding hat fehlgeschlagen.
+    /// Frame header decoding failed.
     Frame(FrameError),
-    /// Protocol-Header magic stimmt nicht.
+    /// Protocol header magic does not match.
     InvalidProtocolMagic([u8; 4]),
-    /// Unbekannte Protocol-Id (nicht 0x00 oder 0x03).
+    /// Unknown protocol id (not 0x00 or 0x03).
     UnsupportedProtocolId(u8),
-    /// Major/Minor stimmt nicht mit AMQP 1.0.0.
+    /// Major/minor does not match AMQP 1.0.0.
     UnsupportedVersion {
-        /// Empfangener Major.
+        /// Received major.
         major: u8,
-        /// Empfangener Minor.
+        /// Received minor.
         minor: u8,
     },
-    /// Frame-Body laenger als die Resource-Limits zulassen.
+    /// Frame body longer than the resource limits allow.
     FrameTooLarge {
-        /// Empfangene Frame-Groesse.
+        /// Received frame size.
         size: u32,
-        /// Konfiguriertes max-frame-size.
+        /// Configured max-frame-size.
         max: u32,
     },
 }
@@ -137,12 +137,12 @@ impl From<FrameError> for FrameIoError {
     }
 }
 
-/// Spec §2.2 — Protocol-Header lesen (8 Bytes blocking).
+/// Spec §2.2 — read protocol header (8 bytes blocking).
 ///
 /// # Errors
-/// `Io` bei TCP-Fehler, `InvalidProtocolMagic` bei falschem
-/// Magic-Bytes, `UnsupportedProtocolId`/`UnsupportedVersion` bei
-/// nicht-AMQP-1.0-Header.
+/// `Io` on TCP error, `InvalidProtocolMagic` on wrong
+/// magic bytes, `UnsupportedProtocolId`/`UnsupportedVersion` on
+/// non-AMQP-1.0 header.
 pub fn read_protocol_header<R: Read>(r: &mut R) -> Result<ProtocolHeader, FrameIoError> {
     let mut buf = [0u8; 8];
     r.read_exact(&mut buf)?;
@@ -170,19 +170,19 @@ pub fn read_protocol_header<R: Read>(r: &mut R) -> Result<ProtocolHeader, FrameI
     })
 }
 
-/// Spec §2.2 — Protocol-Header schreiben.
+/// Spec §2.2 — write protocol header.
 ///
 /// # Errors
-/// `Io` bei Stream-Fehler.
+/// `Io` on stream error.
 pub fn write_protocol_header<W: Write>(w: &mut W, p: AmqpProtocol) -> Result<(), FrameIoError> {
     w.write_all(&p.as_bytes())?;
     Ok(())
 }
 
-/// Spec §2.3 — kompletten Frame lesen (Header + Body).
+/// Spec §2.3 — read complete frame (header + body).
 ///
-/// `max_frame_size` ist der konfigurierte DoS-Cap; Frames die das
-/// ueberschreiten werden ohne Body-Read verworfen.
+/// `max_frame_size` is the configured DoS cap; frames that
+/// exceed it are discarded without a body read.
 ///
 /// # Errors
 /// `Io`/`Frame`/`FrameTooLarge`.
@@ -197,8 +197,8 @@ pub fn read_frame<R: Read>(r: &mut R, max_frame_size: u32) -> Result<Frame, Fram
         });
     }
     let body_offset = header.body_offset();
-    // Spec §2.3.1.3: extended-Header-Bytes liegen zwischen 8 und
-    // body_offset. Wir lesen sie, ignorieren den Inhalt aber
+    // Spec §2.3.1.3: extended header bytes lie between 8 and
+    // body_offset. We read it, but ignore the content
     // (forwards-compat).
     let extended_header_len = body_offset.saturating_sub(8);
     if extended_header_len > 0 {
@@ -213,13 +213,13 @@ pub fn read_frame<R: Read>(r: &mut R, max_frame_size: u32) -> Result<Frame, Fram
     Ok(Frame { header, body })
 }
 
-/// Spec §2.3 — Frame schreiben (Header + Body).
+/// Spec §2.3 — write frame (header + body).
 ///
-/// Wir setzen `header.size = 8 + body.len()` automatisch und
-/// `doff = 2` (kein extended-header).
+/// We set `header.size = 8 + body.len()` automatically and
+/// `doff = 2` (no extended header).
 ///
 /// # Errors
-/// `Io` bei Stream-Fehler.
+/// `Io` on stream error.
 pub fn write_frame<W: Write>(
     w: &mut W,
     frame_type: FrameType,
@@ -249,7 +249,7 @@ pub fn write_frame<W: Write>(
     Ok(())
 }
 
-/// Spec §2.4.5 — Empty-Frame als Heartbeat.
+/// Spec §2.4.5 — empty frame as heartbeat.
 ///
 /// # Errors
 /// `Io`.
@@ -330,7 +330,7 @@ mod tests {
 
     #[test]
     fn frame_too_large_rejected() {
-        // Konstruiere einen Header der size=1024 deklariert.
+        // Construct a header that declares size=1024.
         let header = FrameHeader::new_amqp(1024, 2, 0);
         let mut buf = encode_frame_header(header).to_vec();
         buf.extend(std::iter::repeat_n(0u8, 1024 - 8));
@@ -349,7 +349,7 @@ mod tests {
     fn empty_frame_heartbeat() {
         let mut buf: Vec<u8> = Vec::new();
         write_empty_frame(&mut buf, FrameType::Amqp, 0).unwrap();
-        // Spec §2.4.5: SIZE=8, DOFF=2, body leer.
+        // Spec §2.4.5: SIZE=8, DOFF=2, empty body.
         assert_eq!(buf.len(), 8);
         let mut r = Cursor::new(buf);
         let f = read_frame(&mut r, 512).unwrap();
@@ -368,8 +368,8 @@ mod tests {
 
     #[test]
     fn extended_header_skipped() {
-        // Spec §2.3.1.3: extended-Header-Bytes (4 byte zwischen
-        // header und body) werden uebersprungen.
+        // Spec §2.3.1.3: extended header bytes (4 bytes between
+        // header and body) are skipped.
         let header = FrameHeader::new_amqp(16, 3, 0);
         let mut buf = encode_frame_header(header).to_vec();
         buf.extend([0xDEu8, 0xAD, 0xBE, 0xEF]); // ext header (skip)

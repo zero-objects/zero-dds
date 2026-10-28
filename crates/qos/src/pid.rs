@@ -4,11 +4,11 @@
 //!
 //! Each QoS value is encapsulated in a SEDP ParameterList as a
 //! `{ pid, length, value }` triple. The PIDs are fixed in
-//! DDSI-RTPS 2.5 Table 9.9 "Data representations for built-in endpoints".
+//! DDSI-RTPS 2.5 Table 9.18 "ParameterId values for the built-in endpoints".
 //! We duplicate them here (instead of importing zerodds-rtps),
 //! to keep `zerodds-qos` independent of `zerodds-rtps`.
 
-/// DDSI-RTPS Table 9.9. 16-bit parameter IDs.
+/// DDSI-RTPS 2.5 Table 9.18. 16-bit parameter IDs.
 ///
 /// The values are OMG-public and stable across all vendors.
 #[non_exhaustive]
@@ -70,4 +70,79 @@ impl Pid {
     // ---------------------------------------------------------------------
     /// `PID_SENTINEL` — marks the end of a ParameterList.
     pub const SENTINEL: u16 = 0x0001;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Pid;
+
+    /// DDS 1.4 §2.2.2.1.3: the abstract `QosPolicy` root "has an attribute
+    /// **name** that is used to identify uniquely each QoS policy". On the
+    /// wire that identity is the PID, and a policy that shared one with
+    /// another would be indistinguishable to every peer — a silent
+    /// mis-decode rather than a refusal. So the twenty declared policy
+    /// identifiers are checked to be pairwise distinct, and distinct from
+    /// the sentinel that ends the list.
+    #[test]
+    fn every_qos_policy_has_a_distinct_identifier() {
+        let policies: [(&str, u16); 20] = [
+            ("USER_DATA", Pid::USER_DATA),
+            ("TOPIC_DATA", Pid::TOPIC_DATA),
+            ("GROUP_DATA", Pid::GROUP_DATA),
+            ("DURABILITY", Pid::DURABILITY),
+            ("DURABILITY_SERVICE", Pid::DURABILITY_SERVICE),
+            ("DEADLINE", Pid::DEADLINE),
+            ("LATENCY_BUDGET", Pid::LATENCY_BUDGET),
+            ("LIVELINESS", Pid::LIVELINESS),
+            ("RELIABILITY", Pid::RELIABILITY),
+            ("LIFESPAN", Pid::LIFESPAN),
+            ("DESTINATION_ORDER", Pid::DESTINATION_ORDER),
+            ("HISTORY", Pid::HISTORY),
+            ("RESOURCE_LIMITS", Pid::RESOURCE_LIMITS),
+            ("OWNERSHIP", Pid::OWNERSHIP),
+            ("OWNERSHIP_STRENGTH", Pid::OWNERSHIP_STRENGTH),
+            ("PRESENTATION", Pid::PRESENTATION),
+            ("PARTITION", Pid::PARTITION),
+            ("TIME_BASED_FILTER", Pid::TIME_BASED_FILTER),
+            ("READER_DATA_LIFECYCLE", Pid::READER_DATA_LIFECYCLE),
+            ("WRITER_DATA_LIFECYCLE", Pid::WRITER_DATA_LIFECYCLE),
+        ];
+        for (i, (left_name, left)) in policies.iter().enumerate() {
+            assert_ne!(
+                *left,
+                Pid::SENTINEL,
+                "{left_name} collides with PID_SENTINEL"
+            );
+            for (right_name, right) in policies.iter().skip(i + 1) {
+                assert_ne!(
+                    left, right,
+                    "{left_name} and {right_name} share the identifier {left:#06x}"
+                );
+            }
+        }
+    }
+
+    /// The two policies OMG left without a standard PID carry the vendor
+    /// bit, so a foreign stack skips them instead of decoding them as
+    /// whatever standard parameter happens to sit at that number.
+    #[test]
+    fn the_two_unstandardised_policies_are_marked_vendor_specific() {
+        const VENDOR_BIT: u16 = 0x8000;
+        assert_ne!(Pid::READER_DATA_LIFECYCLE & VENDOR_BIT, 0);
+        assert_ne!(Pid::WRITER_DATA_LIFECYCLE & VENDOR_BIT, 0);
+        // And every standardised one does not carry it.
+        for standard in [
+            Pid::USER_DATA,
+            Pid::DURABILITY,
+            Pid::HISTORY,
+            Pid::RELIABILITY,
+            Pid::TRANSPORT_PRIORITY,
+        ] {
+            assert_eq!(
+                standard & VENDOR_BIT,
+                0,
+                "{standard:#06x} is not a vendor PID"
+            );
+        }
+    }
 }

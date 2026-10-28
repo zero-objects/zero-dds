@@ -1,0 +1,70 @@
+# The rules of DDS-XTypes 1.3 that this scan takes as its denominator on the
+# axis where the specification has no machine-readable inventory: §7.2.4.4,
+# assignability. One line per rule: the roster id, the axis, the clause or
+# table it comes from, and a literal fragment of the specification.
+#
+# `roster.py` fails if any fragment is not on some line of the PDF text, so no
+# line here can stand on a rule the document does not carry. The fragments are
+# short because `pdftotext -layout` puts the columns of a table on one line and
+# breaks a cell's sentence across several; a fragment has to fit on one line to
+# be findable at all.
+#
+# What this proves and what it does not: every rule listed is in the
+# specification. That these are *all* the rules of §7.2.4.4 is a claim of the
+# person who read the clause, not a check — XTypes 1.3 has no Annex A.
+#id	axis	refs	anchor
+as-equiv	assign	7.2.4.4.1	Assignability of Equivalent Types
+as-nonser	assign	7.2.4.4.2	Members that are marked as non-serialized
+as-delimited	assign	7.2.4.2	Concept of Delimited Types
+as-strong	assign	7.2.4.3	alternatively if T1 is assignable-from T2 and T2 is a delimited type
+as-alias-1	assign	7.2.4.4.3, Table 14	T2 if and only if T1.base_type
+as-alias-2	assign	7.2.4.4.3, Table 14	ALIAS_TYPE T2 if and only if T1
+as-alias-3	assign	7.2.4.4.3, Table 14	ALIAS_TYPE ALIAS_TYPE if and only if
+as-alias-resolve	assign	7.2.4.4.3	fully resolved to their ultimate base types
+as-prim-same	assign	7.2.4.4.4, Table 15	Any Primitive Type The same Primitive Type
+as-prim-u8-bm	assign	7.2.4.4.4, Table 15	UINT8_TYPE BITMASK_TYPE if and only if
+as-prim-u16-bm	assign	7.2.4.4.4, Table 15	UINT16_TYPE BITMASK_TYPE if and only if
+as-prim-u32-bm	assign	7.2.4.4.4, Table 15	UINT32_TYPE BITMASK_TYPE if and only if
+as-prim-u64-bm	assign	7.2.4.4.4, Table 15	UINT64_TYPE BITMASK_TYPE if and only if
+as-str-1	assign	7.2.4.4.5, Table 16	STRING_TYPE STRING_TYPE if and only if
+as-str-len	assign	7.2.4.4.5, Table 16	O2.length <= T1.length
+as-str-narrow-wide	assign	7.2.4.4.5.1	from string types of wide characters, because of the possibility
+as-arr-bounds	assign	7.2.4.4.6, Table 17	T1.bounds[] ==
+as-arr-elem	assign	7.2.4.4.6, Table 17	ARRAY_TYPE ARRAY_TYPE if and only if
+as-seq-elem	assign	7.2.4.4.6, Table 17	SEQUENCE_TYPE SEQUENCE_TYPE if and only if
+as-seq-len	assign	7.2.4.4.6, Table 17	O1.length is set to O2.length.
+as-map-key	assign	7.2.4.4.6, Table 17	T1.key_element_type is
+as-map-val	assign	7.2.4.4.6, Table 17	T2.key_element_type
+as-coll-discard	assign	7.2.4.4.6, Table 17	If DISCARD, O2 cannot
+as-coll-usedefault	assign	7.2.4.4.6, Table 17	If USE_DEFAULT or TRIM,
+as-bm-bound	assign	7.2.4.4.7, Table 18	BITMASK_TYPE BITMASK_TYPE if and only if T1.bound ==
+as-bm-u32	assign	7.2.4.4.7, Table 18	UINT_32_TYPE if and only if T1.bound is
+as-bm-u16	assign	7.2.4.4.7, Table 18	UINT_16_TYPE if and only if T1.bound is
+as-bm-u64	assign	7.2.4.4.7, Table 18	UINT_64_TYPE if and only if T1.bound is
+as-bm-u8	assign	7.2.4.4.7, Table 18	UINT_8_TYPE if and only if T1.bound is
+as-enum-ext	assign	7.2.4.4.7, Table 18	T1.extensibility == T2.extensibility
+as-enum-names	assign	7.2.4.4.7, Table 18	value in T1 and T2 also have the same
+as-enum-ignore-names	assign	7.2.4.4.7, Table 18	with the @ignore_literal_names
+as-enum-final	assign	7.2.4.4.7, Table 18	If extensibility is final T1 and T2 have
+as-union-ext	assign	7.2.4.4.8, Table 19	T1.extensibility ==
+as-union-disc-strong	assign	7.2.4.4.8, Table 19	T1.discriminator.type is-
+as-union-disc-key	assign	7.2.4.4.8, Table 19	Either the discriminators of both
+as-union-name-id	assign	7.2.4.4.8, Table 19	Any members in T1 and T2 that
+as-union-label-t2	assign	7.2.4.4.8, Table 19	For all non-default labels in T2
+as-union-label-t1	assign	7.2.4.4.8, Table 19	If any non-default labels in T1
+as-union-both-default	assign	7.2.4.4.8, Table 19	If T1 and T2 both have default
+as-union-final-labels	assign	7.2.4.4.8, Table 19	extensibility is final then the set
+as-struct-ext	assign	7.2.4.4.8, Table 19	T1 and T2 have the same
+as-struct-name-id	assign	7.2.4.4.8, Table 19	same ID also have the same name.
+as-struct-one-common	assign	7.2.4.4.8, Table 19	of T1 and one corresponding
+as-struct-keyerased	assign	7.2.4.4.8, Table 19	KeyErased(m1.type) is-assignable-
+as-struct-mustunderstand	assign	7.2.4.4.8, Table 19	Members for which both optional is
+as-struct-key-present	assign	7.2.4.4.8, Table 19	Members marked as key in either T1
+as-struct-key-string	assign	7.2.4.4.8, Table 19	For any string key member m2 in
+as-struct-key-enum	assign	7.2.4.4.8, Table 19	For any enumerated key member m2
+as-struct-key-seqmap	assign	7.2.4.4.8, Table 19	For any sequence or map key
+as-struct-key-aggr	assign	7.2.4.4.8, Table 19	For any structure or union key
+as-struct-key-union	assign	7.2.4.4.8, Table 19	For any union key member m2 in
+as-struct-appendable	assign	7.2.4.4.8, Table 19	AND if T1 is appendable, then
+as-struct-final	assign	7.2.4.4.8, Table 19	AND if T1 is final, then they meet the
+as-struct-inherit	assign	7.2.4.4.8, Table 19	conditions, members belonging to base

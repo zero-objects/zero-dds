@@ -53,9 +53,8 @@ let _allowed = acl.check(&subj, AclOp::Write, "/topics/trade");
 
 ## Stability
 
-`1.0.0-rc.1` — the public API is RC1-stable. Breaking changes require a
-major bump. New auth modes or ACL operations are additive discriminants
-and thus major-additive.
+`1.0.0-rc.7`, a pre-release. The public API can still change before
+1.0.0; the crate's CHANGELOG lists every change.
 
 ## Build & test
 

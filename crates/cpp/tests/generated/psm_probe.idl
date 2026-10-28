@@ -1,0 +1,112 @@
+module psmprobe {
+    enum Colour { RED, GREEN, BLUE };
+
+    typedef sequence<long> LongSeq;
+    typedef long Grid[2][3];
+
+    @appendable
+    struct Inner {
+        long a;
+        string label;
+    };
+
+    @appendable
+    struct Base {
+        @key long id;
+    };
+
+    @appendable
+    struct Reading : Base {
+        double value;
+        string label;
+        wstring wlabel;
+        wchar initial;
+        long double precise;
+        Colour shade;
+        Inner nested;
+        sequence<Inner> history;
+        LongSeq counts;
+        Grid cells;
+        map<string, long> tags;
+        @optional long maybe;
+        @optional Inner maybe_inner;
+        sequence<wstring> names;
+    };
+
+    @appendable
+    union Choice switch (long) {
+        case 1: long number;
+        case 2: string text;
+        default: Inner nested;
+    };
+
+    // The unions of IDL4 to C++ 1.0 §7.2.4.3.2 (DDS-PSM-Cxx 1.0 §7.4.4): one with a default
+    // case and a member under two labels, one with an implicit default.
+    @appendable
+    struct Piece {
+        long x;
+    };
+
+    @appendable
+    union SpecUnion switch (octet) {
+        case 1: long a_long;
+        case 2:
+        case 3: short a_short;
+        case 4: Piece a_struct;
+        default: octet a_byte_default;
+    };
+
+    @appendable
+    union ImplicitUnion switch (octet) {
+        case 1: long a_long;
+        case 2:
+        case 3: short a_short;
+    };
+
+    @appendable
+    struct UnionHolder {
+        @key long key;
+        SpecUnion with_default;
+        ImplicitUnion without_default;
+    };
+
+    // The example of DDS-PSM-Cxx 1.0 §8.2.
+    typedef sequence<octet> plot_t;
+    struct RadarTrack {
+        string id;
+        long x;
+        long y;
+        @optional long z;
+        @external plot_t plot;
+    };
+
+    // Every type of DDS-PSM-Cxx 1.0 Table 7.1.
+    @appendable
+    struct Primitives {
+        boolean b;
+        char c;
+        wchar w;
+        octet o;
+        short s;
+        unsigned short us;
+        long l;
+        unsigned long ul;
+        long long ll;
+        unsigned long long ull;
+        float f;
+        double d;
+        long double ld;
+        string str;
+        wstring wstr;
+        sequence<long> seq;
+        sequence<long, 4> bounded;
+        map<long, double> m;
+        long arr[3];
+    };
+
+    @appendable
+    struct Holder {
+        @key long key;
+        Choice pick;
+    };
+};

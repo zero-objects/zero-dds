@@ -1,0 +1,14 @@
+# What tao got back when it read the bytes of map-nested, held against
+# tests/interop-corpus/map-nested/values.json and never against another
+# column's reading of the same bytes.
+# encoding	endian	verdict	detail
+plain-cdr1	le	no-form	Sample.entries: a map, which no CORBA IDL front end on the test host parses
+plain-cdr1	be	no-form	Sample.entries: a map, which no CORBA IDL front end on the test host parses
+pl-cdr1	le	no-form	Sample.entries: a map, which no CORBA IDL front end on the test host parses
+pl-cdr1	be	no-form	Sample.entries: a map, which no CORBA IDL front end on the test host parses
+plain-cdr2	le	no-form	Sample.entries: a map, which no CORBA IDL front end on the test host parses
+plain-cdr2	be	no-form	Sample.entries: a map, which no CORBA IDL front end on the test host parses
+delimited-cdr	le	no-form	Sample.entries: a map, which no CORBA IDL front end on the test host parses
+delimited-cdr	be	no-form	Sample.entries: a map, which no CORBA IDL front end on the test host parses
+pl-cdr2	le	no-form	Sample.entries: a map, which no CORBA IDL front end on the test host parses
+pl-cdr2	be	no-form	Sample.entries: a map, which no CORBA IDL front end on the test host parses

@@ -1,0 +1,10 @@
+// `sequence<sequence<struct>>`
+@appendable struct Cell {
+    long a;
+    short b;
+};
+
+@final struct Sample {
+    sequence<sequence<Cell> > grid;
+    long tail;
+};

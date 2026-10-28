@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Cross-ORB OTS capture against JacORB 3.9 (codepit, JDK8): a real
+// Cross-ORB OTS capture against JacORB 3.9 (Linux test host, JDK8): a real
 // TransactionService coordinator yields a live PropagationContext, serialized
 // exactly as JacORB's ClientContextTransferInterceptor puts it into IIOP
 // service context id=0. Feeds the ZeroDDS decode test

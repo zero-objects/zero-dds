@@ -98,7 +98,9 @@ packet.
 **Repo:** the PUBLISH variable header in
 `crates/mqtt-bridge/src/codec.rs::encode_publish/decode_publish`.
 
-**Tests:** cross-ref `publish_qos*_round_trip`.
+**Tests:** `codec::tests::publish_qos0_no_packet_id_round_trip`,
+`codec::tests::publish_qos1_includes_packet_id_round_trip`,
+`codec::tests::publish_qos2_round_trip`.
 
 **Status:** done — for PUBLISH; further packet types implementable
 analogously.
@@ -134,7 +136,8 @@ dispatch.
 
 **Repo:** `crates/mqtt-bridge/src/control_packets.rs::{encode_connect_body, decode_connect_body}` (`ConnectBody`).
 
-**Tests:** `control_packets::tests::connect_round_trip`.
+**Tests:** `control_packets::tests::connect_body_round_trip_minimal`,
+`control_packets::tests::connect_body_round_trip_with_will_and_credentials`.
 
 **Status:** done
 
@@ -144,7 +147,7 @@ dispatch.
 
 **Repo:** `control_packets::{encode_connack_body, decode_connack_body}` (`ConnackBody`).
 
-**Tests:** `control_packets::tests::connack_round_trip`.
+**Tests:** `control_packets::tests::connack_body_round_trip`.
 
 **Status:** done
 
@@ -177,7 +180,7 @@ packet-identifier requirement at QoS>0 is enforced.
 **Repo:** `control_packets::{encode_ack_body, decode_ack_body}` (shared
 `AckBody` structure).
 
-**Tests:** `control_packets::tests::ack_round_trip`.
+**Tests:** `control_packets::tests::ack_body_round_trip_with_properties`.
 
 **Status:** done
 
@@ -189,7 +192,7 @@ handshake).
 **Repo:** `control_packets::{encode_ack_body, decode_ack_body}` (same
 AckBody structure).
 
-**Tests:** `control_packets::tests::ack_round_trip`.
+**Tests:** `control_packets::tests::ack_body_round_trip_with_properties`.
 
 **Status:** done
 
@@ -199,7 +202,7 @@ AckBody structure).
 
 **Repo:** `control_packets::{encode_ack_body, decode_ack_body}`.
 
-**Tests:** `control_packets::tests::ack_round_trip`.
+**Tests:** `control_packets::tests::ack_body_round_trip_with_properties`.
 
 **Status:** done
 
@@ -209,7 +212,7 @@ AckBody structure).
 
 **Repo:** `control_packets::{encode_ack_body, decode_ack_body}`.
 
-**Tests:** `control_packets::tests::ack_round_trip`.
+**Tests:** `control_packets::tests::ack_body_round_trip_with_properties`.
 
 **Status:** done
 
@@ -220,7 +223,7 @@ list.
 
 **Repo:** `control_packets::{encode_subscribe_body, decode_subscribe_body}`.
 
-**Tests:** `control_packets::tests::subscribe_round_trip`.
+**Tests:** `control_packets::tests::subscribe_body_round_trip_with_two_filters`.
 
 **Status:** done
 
@@ -231,7 +234,7 @@ per subscription.
 
 **Repo:** `control_packets::{encode_suback_body, decode_suback_body}`.
 
-**Tests:** `control_packets::tests::suback_round_trip`.
+**Tests:** `control_packets::tests::suback_body_round_trip_with_reason_codes`.
 
 **Status:** done
 
@@ -241,7 +244,7 @@ per subscription.
 
 **Repo:** `control_packets::{encode_unsubscribe_body, decode_unsubscribe_body}`.
 
-**Tests:** `control_packets::tests::unsubscribe_round_trip`.
+**Tests:** `control_packets::tests::unsubscribe_body_round_trip`.
 
 **Status:** done
 
@@ -251,7 +254,7 @@ per subscription.
 
 **Repo:** `control_packets::{encode_unsuback_body, decode_unsuback_body}`.
 
-**Tests:** `control_packets::tests::unsuback_round_trip`.
+**Tests:** `control_packets::tests::unsuback_body_round_trip_via_alias`.
 
 **Status:** done
 
@@ -281,7 +284,7 @@ per subscription.
 
 **Repo:** `control_packets::{encode_disconnect_body, decode_disconnect_body}`.
 
-**Tests:** `control_packets::tests::disconnect_round_trip`.
+**Tests:** `control_packets::tests::disconnect_body_round_trip_with_reason_string_property`.
 
 **Status:** done
 
@@ -292,7 +295,7 @@ SASL-like challenge/response).
 
 **Repo:** `control_packets::{encode_auth_body, decode_auth_body}`.
 
-**Tests:** `control_packets::tests::auth_round_trip`.
+**Tests:** `control_packets::tests::auth_body_round_trip_via_alias`.
 
 **Status:** done
 
@@ -314,8 +317,12 @@ keep-alive timer as a wall-clock tick in
 `record_packet`/`is_expired`/`remaining` and the spec-§3.1.2.10-conformant
 1.5× period expiry rule.
 
-**Tests:** inline (~99 inline `#[test]` across mqtt-bridge incl.
-`keep_alive::tests::*` (5 tests)).
+**Tests:** `keep_alive::tests::keep_alive_zero_is_disabled`,
+`keep_alive::tests::fresh_tracker_not_expired`,
+`keep_alive::tests::record_packet_resets_timer`,
+`keep_alive::tests::small_keep_alive_expires_after_1_5x`,
+`keep_alive::tests::remaining_decreases_over_time`;
+`broker::tests::qos_round_trip`; `topic_filter::tests::*`.
 
 **Status:** done — session manager, subscription tree, retained messages,
 will handling, QoS levels (0/1/2) + the keep-alive timer implemented
@@ -329,7 +336,7 @@ subscribers, and runs the QoS 0/1/2 protocol flow.
 
 **Repo:** `crates/mqtt-bridge/src/server.rs::{MqttBrokerServer, ServerHandle}`
 — a `TcpListener` + accept loop, per connection a reader/writer thread
-(event-driven via an mpsc channel), wiring the `broker.rs` engine:
+(event-driven via an mpsc channel), wiring the `crates/mqtt-bridge/src/broker.rs` engine:
 CONNECT/CONNACK, SUBSCRIBE/SUBACK (+ retained replay §3.3.1.3), PUBLISH
 fan-out, QoS 0/1/2 (exactly-once delivers on PUBREL, §4.3.3),
 UNSUBSCRIBE/UNSUBACK, PINGREQ/PINGRESP, will on abnormal disconnect
@@ -338,10 +345,16 @@ protocol level — 5.0 and 3.1.1 at the same broker.
 `crates/mqtt-bridge/src/net.rs::{MqttClient, read_packet}` — TCP framing + a
 lightweight version-aware client.
 
-**Tests:** `crates/mqtt-bridge/tests/broker_server_e2e.rs` (6, in-process:
-pub/sub, retained, wildcards, QoS 2, cross-version 3.1.1⇄5.0); live
-`crates/mqtt-bridge/tests/mosquitto_interop_e2e.rs` (real
-`mosquitto_pub`/`mosquitto_sub` 5.0 + 3.1.1 against the ZeroDDS broker).
+**Tests:** `crates/mqtt-bridge/tests/broker_server_e2e.rs::publish_subscribe_qos1`,
+`retained_message_delivered_to_late_subscriber`, `wildcard_plus_and_hash`,
+`qos2_exactly_once_delivery`, `cross_version_v5_publishes_v311_subscribes`,
+`cross_version_v311_publishes_v5_subscribes`,
+`pingreq_is_answered_with_a_bodyless_pingresp_within_the_keep_alive`; live
+`crates/mqtt-bridge/tests/mosquitto_interop_e2e.rs::mosquitto_v5_clients_through_zerodds_broker`,
+`mosquitto_v311_clients_through_zerodds_broker`,
+`zerodds_client_through_zerodds_broker_cross_version`,
+`zerodds_311_client_receives_from_mosquitto`,
+`mosquitto_311_client_receives_from_zerodds`.
 
 **Status:** done
 
@@ -385,7 +398,7 @@ server with MQTT bridge functionality.
 
 **Repo:** wire codec + broker logic + network server in the `mqtt-bridge`
 crate. The targets *MQTT client* (`net.rs::MqttClient`) and *MQTT server*
-(`server.rs::MqttBrokerServer`) are realized and interop-tested against the
+(`crates/mqtt-bridge/src/server.rs::MqttBrokerServer`) are realized and interop-tested against the
 Eclipse Mosquitto reference (`tests/mosquitto_interop_e2e.rs`).
 
 **Tests:** `crates/mqtt-bridge/tests/mosquitto_interop_e2e.rs`.

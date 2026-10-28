@@ -18,6 +18,77 @@ import org.junit.jupiter.api.Test;
 final class RtpsWireTest {
 
     @Test
+    void parameterLookupPreservesVendorNamespaceAndOnlyMasksMustUnderstand() {
+        byte[] standard = new byte[] {1, 2, 3, 4};
+        byte[] vendor = new byte[] {5, 6, 7, 8};
+        for (int id : new int[] {0x0002, 0x0075}) {
+            for (int flag : new int[] {0, 0x4000}) {
+                for (boolean vendorFirst : new boolean[] {true, false}) {
+                    ParameterList list = new ParameterList();
+                    if (vendorFirst) list.add(id | 0x8000 | flag, vendor).add(id | flag, standard);
+                    else list.add(id | flag, standard).add(id | 0x8000 | flag, vendor);
+                    byte[] encoded = list.toBytesLe();
+                    ParameterList decoded = ParameterList.fromBytesLe(encoded, 0, encoded.length);
+                    for (int queryFlag : new int[] {0, 0x4000}) {
+                        assertArrayEquals(standard, decoded.find(id | queryFlag));
+                        assertArrayEquals(vendor, decoded.find(id | 0x8000 | queryFlag));
+                        List<byte[]> standardMatches = DiscoveryData.findAll(decoded, id | queryFlag);
+                        List<byte[]> vendorMatches = DiscoveryData.findAll(decoded, id | 0x8000 | queryFlag);
+                        assertEquals(1, standardMatches.size());
+                        assertEquals(1, vendorMatches.size());
+                        assertArrayEquals(standard, standardMatches.get(0));
+                        assertArrayEquals(vendor, vendorMatches.get(0));
+                    }
+                }
+            }
+        }
+        ParameterList vendorOnly = new ParameterList().add(0xC075, vendor);
+        org.junit.jupiter.api.Assertions.assertNull(vendorOnly.find(0x0075));
+        assertTrue(DiscoveryData.findAll(vendorOnly, 0x4075).isEmpty());
+        assertArrayEquals(vendor, vendorOnly.find(0x8075));
+    }
+
+    /** Independent XTypes aggregate framing, not produced by DiscoveryData. */
+    private static byte[] standardTypeInformationVector() {
+        java.nio.ByteBuffer b = java.nio.ByteBuffer.allocate(100).order(java.nio.ByteOrder.LITTLE_ENDIAN);
+        b.putInt(96);
+        for (int i = 0; i < 2; i++) {
+            b.putInt(0x40001001 + i).putInt(40).putInt(36).putInt(20);
+            b.put((byte)(0xf1 + i));
+            for (int n = 0; n < 14; n++) b.put((byte)(i * 16 + n + 1));
+            b.put((byte)0).putInt(77 + i).putInt(0).putInt(4).putInt(0);
+        }
+        assertEquals(100, b.position());
+        return b.array();
+    }
+
+    @Test
+    void standardTypeInformationIsCarriedForBothEndpointKindsSeparatelyFromVendorHash() {
+        byte[] info = standardTypeInformationVector();
+        byte[] vendor = new byte[16]; // Four-aligned fixture avoids parameter padding ambiguity.
+        java.util.Arrays.fill(vendor, (byte)0x55);
+        Locator locator = Locator.udpV4(new byte[] {127, 0, 0, 1}, 7411);
+        for (boolean writer : new boolean[] {true, false}) {
+            byte[] payload = DiscoveryData.buildEndpoint(writer, new byte[12], new byte[16], "T", "S",
+                    Rtps.RELIABILITY_BEST_EFFORT, Rtps.DURABILITY_VOLATILE,
+                    new int[] {Rtps.DATA_REP_XCDR2}, locator, vendor, info);
+            DiscoveryData.Endpoint endpoint = DiscoveryData.parseEndpoint(writer, payload);
+            assertNotNull(endpoint);
+            assertArrayEquals(info, endpoint.typeInformation);
+            assertArrayEquals(vendor, endpoint.typeId);
+            byte[] legacy = DiscoveryData.buildEndpoint(writer, new byte[12], new byte[16], "T", "S",
+                    Rtps.RELIABILITY_BEST_EFFORT, Rtps.DURABILITY_VOLATILE,
+                    new int[] {Rtps.DATA_REP_XCDR2}, locator, vendor);
+            org.junit.jupiter.api.Assertions.assertNull(DiscoveryData.parseEndpoint(writer, legacy).typeInformation,
+                    "vendor hash must not masquerade as standard TypeInformation");
+        }
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class, () ->
+                DiscoveryData.buildEndpoint(true, new byte[12], new byte[16], "T", "S",
+                        Rtps.RELIABILITY_BEST_EFFORT, Rtps.DURABILITY_VOLATILE,
+                        new int[] {Rtps.DATA_REP_XCDR2}, locator, vendor, new byte[65533]));
+    }
+
+    @Test
     void parameterListRoundtripAndPadding() {
         ParameterList pl = new ParameterList()
                 .add(Rtps.PID_TOPIC_NAME, ParameterList.cdrString("Chatter"))
@@ -127,8 +198,10 @@ final class RtpsWireTest {
     void twoParticipantsExchangeSampleOverUdp() throws Exception {
         List<String> logs = new CopyOnWriteArrayList<>();
         RtpsParticipant.LOG = logs::add;
-        RtpsParticipant pub = RtpsParticipant.newParticipant(7);
-        RtpsParticipant sub = RtpsParticipant.newParticipant(7);
+        // Domain 7 is one the Rust tests keep (crates/test-domains RESERVED_DOMAINS): leased.
+        org.zerodds.testing.TestDomains.Lease lease = org.zerodds.testing.TestDomains.lease();
+        RtpsParticipant pub = RtpsParticipant.newParticipant(lease.id());
+        RtpsParticipant sub = RtpsParticipant.newParticipant(lease.id());
         try {
             LinkedBlockingQueue<byte[]> got = new LinkedBlockingQueue<>();
             sub.createReader("Chatter", "zerodds::RawBytes", false, got::add);
@@ -155,6 +228,7 @@ final class RtpsWireTest {
         } finally {
             pub.close();
             sub.close();
+            lease.close();
             RtpsParticipant.LOG = m -> System.err.println("[rtps] " + m);
         }
     }

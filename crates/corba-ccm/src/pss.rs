@@ -322,7 +322,7 @@ impl PssSession {
     /// writes into the pending buffer, otherwise straight through.
     ///
     /// # Errors
-    /// Siehe [`PssError`].
+    /// See [`PssError`].
     pub fn store(&self, pid: Pid, value: Vec<u8>) -> Result<(), PssError> {
         if self.is_in_transaction() {
             let mut pending = self
@@ -339,7 +339,7 @@ impl PssSession {
     /// Spec PSS §6 — `remove(pid)`. Tx-aware, analogous to `store`.
     ///
     /// # Errors
-    /// Siehe [`PssError`].
+    /// See [`PssError`].
     pub fn remove(&self, pid: &Pid) -> Result<(), PssError> {
         if self.is_in_transaction() {
             let mut pending = self
@@ -357,7 +357,7 @@ impl PssSession {
     /// `StorageHome` (without the tx pending buffer).
     ///
     /// # Errors
-    /// Siehe [`PssError`].
+    /// See [`PssError`].
     pub fn flush(&self, pid: Pid, value: Vec<u8>) -> Result<(), PssError> {
         self.home.create(pid, value)
     }
@@ -367,7 +367,7 @@ impl PssSession {
     /// `None` (delete pending) it returns `NotFound`.
     ///
     /// # Errors
-    /// Siehe [`PssError`].
+    /// See [`PssError`].
     pub fn load(&self, pid: &Pid) -> Result<Vec<u8>, PssError> {
         if self.is_in_transaction() {
             let pending = self

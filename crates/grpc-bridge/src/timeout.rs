@@ -37,7 +37,7 @@ impl TimeoutUnit {
         }
     }
 
-    /// Konvertiert Wire-Char.
+    /// Converts a wire char.
     #[must_use]
     pub const fn from_char(c: char) -> Option<Self> {
         match c {
@@ -100,7 +100,7 @@ pub fn encode_timeout(value: u32, unit: TimeoutUnit) -> Result<String, TimeoutEr
 /// Spec §"Timeout" — decodes the `grpc-timeout` header value.
 ///
 /// # Errors
-/// Siehe [`TimeoutError`].
+/// See [`TimeoutError`].
 pub fn decode_timeout(header: &str) -> Result<(u32, TimeoutUnit), TimeoutError> {
     if header.is_empty() {
         return Err(TimeoutError::Empty);

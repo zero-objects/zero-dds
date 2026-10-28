@@ -1,0 +1,7 @@
+module probe {
+    interface Special {
+        void in_v(in unsigned long long v);
+        void out_v(out unsigned long long v);
+        unsigned long long ret_v();
+    };
+};

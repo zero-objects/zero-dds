@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of sequence-primitives-bounded that rti produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	wireprobe-rti: the probe did not compile
+plain-cdr1	be	refused	wireprobe-rti: the probe did not compile
+pl-cdr1	le	refused	wireprobe-rti: the probe did not compile
+pl-cdr1	be	refused	wireprobe-rti: the probe did not compile
+plain-cdr2	le	refused	wireprobe-rti: the probe did not compile
+plain-cdr2	be	refused	wireprobe-rti: the probe did not compile
+delimited-cdr	le	refused	wireprobe-rti: the probe did not compile
+delimited-cdr	be	refused	wireprobe-rti: the probe did not compile
+pl-cdr2	le	refused	wireprobe-rti: the probe did not compile
+pl-cdr2	be	refused	wireprobe-rti: the probe did not compile

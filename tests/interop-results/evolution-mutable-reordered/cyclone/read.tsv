@@ -1,0 +1,14 @@
+# What cyclone got back when it read the bytes of evolution-mutable-reordered, held against
+# tests/interop-corpus/evolution-mutable-reordered/values.json and never against another
+# column's reading of the same bytes.
+# encoding	endian	verdict	detail
+plain-cdr1	le	same	
+plain-cdr1	be	same	
+pl-cdr1	le	version-alias	plain-cdr1
+pl-cdr1	be	version-alias	plain-cdr1
+plain-cdr2	le	same	
+plain-cdr2	be	same	
+delimited-cdr	le	version-alias	plain-cdr2
+delimited-cdr	be	version-alias	plain-cdr2
+pl-cdr2	le	version-alias	plain-cdr2
+pl-cdr2	be	version-alias	plain-cdr2

@@ -11,7 +11,7 @@ module Reading = struct
 
   let marshal (v : t) (endian : Zerodds.Wire.endian) : bytes =
     let open Zerodds.Wire in
-    let w = writer endian in
+    let w = writer endian XCDR2 in
     put_u32 w v.id;
     put_f32 w v.value;
     put_string w v.label;
@@ -19,7 +19,7 @@ module Reading = struct
 
   let decode (body : bytes) : t =
     let open Zerodds.Wire in
-    let r = reader body LE in
+    let r = reader body LE XCDR2 in
     let id = get_u32 r in
     let value = get_f32 r in
     let label = get_string r in
@@ -29,7 +29,7 @@ end
 let () =
   let total = 5 in
   let t = Zerodds.MemTransport.create () in
-  let c = Zerodds.Client.create t in
+  let c = Zerodds.Client.create t (Zerodds.Endpoint.object_id 0x001 Zerodds.Endpoint.objk_datawriter) in
   for i = 0 to total - 1 do
     let r =
       Reading.

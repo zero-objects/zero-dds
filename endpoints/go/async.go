@@ -3,7 +3,10 @@
 
 package zerodds
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 // Transport is the single integration point: the endpoint hands framed messages
 // to it and receives frames back. The integrator implements it for their link.
@@ -73,22 +76,36 @@ type AsyncWriter struct {
 	Transport Transport
 	Session   byte
 	Stream    byte
-	seq       uint16
+	// ObjectID names the target DataWriter in every frame's BaseObjectRequest
+	// (DDS-XRCE 1.0 §7.7.8).
+	ObjectID uint16
+	seq      uint16
 }
 
-// NewAsyncWriter returns a writer over t with a best-effort no-key session.
-func NewAsyncWriter(t Transport) *AsyncWriter {
+// NewAsyncWriter returns a writer over t with a best-effort no-key session,
+// writing to the DataWriter objectID.
+func NewAsyncWriter(t Transport, objectID uint16) *AsyncWriter {
 	return &AsyncWriter{
 		Transport: t,
 		Session:   XrceSessionNoKey,
 		Stream:    XrceStreamBestEffort,
+		ObjectID:  objectID,
 		seq:       1,
 	}
 }
 
 // Write frames and delivers one sample, advancing the sequence.
+//
+// The same refusal Client.Write carries, for the same reason: XrceWriteFrame
+// answers nil above 0xFFFF and delivering that nil would put an empty datagram
+// on the wire and return no error.
 func (w *AsyncWriter) Write(sample []byte) error {
-	frame := XrceWriteFrame(w.Session, w.Stream, w.seq, sample)
+	frame := XrceWriteFrame(w.Session, w.Stream, w.seq, w.ObjectID, sample)
+	if frame == nil {
+		return fmt.Errorf(
+			"zerodds: %d octets: the 16-bit XRCE submessage_length describes at most %d",
+			len(sample), 0xFFFF)
+	}
 	w.seq++
 	return w.Transport.Deliver(frame)
 }

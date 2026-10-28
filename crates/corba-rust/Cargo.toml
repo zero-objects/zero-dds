@@ -21,10 +21,30 @@ workspace = true
 path = "src/lib.rs"
 
 [dependencies]
-zerodds-idl = { version = "1.0.0-rc.7", path = "../idl" }
-zerodds-idl-rust = { version = "1.0.0-rc.7", path = "../idl-rust" }
-zerodds-cdr = { version = "1.0.0-rc.7", path = "../cdr" }
+# The model the generator walks, and the handle type its nodes are
+# addressed by.
+zerodds-ast = { version = "1.0.0-rc.7", path = "../ast" }
+zerodds-ast-core = { version = "1.0.0-rc.7", path = "../ast-core" }
+# The Annex A.1 tables and the repository-id rule, over that model.
 zerodds-corba-codegen = { version = "1.0.0-rc.7", path = "../corba-codegen" }
+# The runtime the generated code marshals with, and the CORBA types
+# `zerodds-wire` deliberately does not carry.
+zerodds-wire = { version = "1.0.0-rc.7", path = "../wire" }
+zerodds-corba-rt = { version = "1.0.0-rc.7", path = "../corba-rt" }
+# `object_ops`: the six `CORBA::Object` operations (CORBA 3.3 Part 2
+# §15.4.2) every generated `dispatch_<iface>` answers ahead of its own
+# `match operation`, via `runtime::dispatch_object_operation`.
+zerodds-corba-giop = { version = "1.0.0-rc.7", path = "../corba-giop" }
 
 [dev-dependencies]
 insta = { workspace = true }
+# The frontend the snapshot and compile checks parse their IDL with.
+zerodds-idl-parse = { version = "1.0.0-rc.7", path = "../idl-parse" }
+zerodds-idl-lower = { version = "1.0.0-rc.7", path = "../idl-lower" }
+# The data column, so `tests/compile_check.rs` compiles the two outputs
+# a user concatenates rather than one of them.
+zerodds-ast = { version = "1.0.0-rc.7", path = "../ast" }
+zerodds-lang-rules = { path = "../lang-rules" }
+zerodds-lang-cst = { version = "1.0.0-rc.7", path = "../lang-cst" }
+zerodds-lang-render = { version = "1.0.0-rc.7", path = "../lang-render" }
+zerodds-ast-layout = { version = "1.0.0-rc.7", path = "../ast-layout" }

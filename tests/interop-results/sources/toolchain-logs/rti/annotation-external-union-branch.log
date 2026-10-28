@@ -1,0 +1,5 @@
+## wireprobe-rti, exit 5
+### stderr
+wireprobe-rti: the probe did not compile
+fill.inc:1:24: error: 'sample.choice._u.nested' is a pointer; did you mean to use '->'?
+fill.inc:2:24: error: 'sample.choice._u.nested' is a pointer; did you mean to use '->'?

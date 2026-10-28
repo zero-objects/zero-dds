@@ -8,12 +8,12 @@
 
 use std::time::Duration;
 
-use zerodds_cdr::Endianness;
 use zerodds_corba_interop::runtime::{
     CorbaServer, IiopCorbaConnection, object_reference_from_ior, stringify_object_ref_uds,
 };
 use zerodds_corba_interop::{decode_string_body, encode_string_body};
 use zerodds_corba_rust::CorbaConnection;
+use zerodds_wire::Endianness;
 
 fn temp_socket() -> std::path::PathBuf {
     std::env::temp_dir().join(format!(

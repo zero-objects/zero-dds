@@ -13,7 +13,7 @@
 //! Layer 4 — core services. The consumer path builds on the
 //! foundation tracing primitives ([`zerodds_foundation::tracing`]).
 //!
-//! ## Public API (as of 1.0.0-rc.1)
+//! ## Public API
 //!
 //! - [`Counter`] / [`Gauge`] / [`LabeledHistogram`] — metric types.
 //! - [`Labels`] — key/value pairs for metric identity.
@@ -46,7 +46,8 @@
 //! ```
 
 #![warn(missing_docs)]
-#![cfg_attr(not(feature = "std"), no_std)]
+// Needs `std`: the registry is shared behind `std::sync`, and the Prometheus server is
+// a TCP listener.
 
 #[cfg(feature = "alloc")]
 extern crate alloc;

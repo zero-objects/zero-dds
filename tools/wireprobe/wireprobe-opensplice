@@ -1,0 +1,211 @@
+#!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 ZeroDDS Contributors
+#
+# wireprobe-opensplice — one IDL type and one JSON value, through
+# OpenSplice Community Edition 6.9's own serializer.
+#
+# The same command line as `wireprobe-zerodds`, so a case runs through
+# both by substituting the program name. See
+# `docs/specs/zerodds-interop-suite-1.0.md`.
+#
+#   wireprobe-opensplice --idl robot.idl --type common::Robot \
+#                        --values robot.json --encoding xcdr1 --endian le \
+#                        --out robot.opensplice.xcdr1.le.bin
+#
+# `opensplice-idl.py` rewrites the corpus IDL into the IDL 3.5 that
+# `idlpp` reads, or refuses it with the construct OpenSplice has no
+# equivalent for (exit 3). `idlpp -S -l cpp` generates the standalone C++
+# (SACPP) type support, `wireprobe-fill --vendor omniorb` the statements
+# that put the JSON sample into it — SACPP is the CORBA C++ mapping — and
+# `opensplice-template.cpp` calls `CdrTypeSupport::serialize`.
+#
+# OpenSplice 6.9 writes XCDR1 in the host's byte order and nothing else:
+# every other combination is a refusal row, printed as such.
+#
+# The read direction is the same command line with `--in` instead of
+# `--values`: `CdrTypeSupport::deserialize` and `wireprobe-dump --vendor
+# omniorb`, in the one representation OpenSplice reads.
+#
+#   wireprobe-opensplice --idl robot.idl --type common::Robot \
+#                        --in robot.rti.xcdr1.le.bin --encoding xcdr1 \
+#                        --endian le --values-out robot.read.json
+#
+# Nothing here decides any wire question.
+set -euo pipefail
+
+FILL="${WIREPROBE_FILL:-wireprobe-fill}"
+DUMP="${WIREPROBE_DUMP:-wireprobe-dump}"
+OSPL_HOME="${OSPL_HOME:-/opt/opensplice-6.9}"
+TOOLS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TEMPLATE="$TOOLS/opensplice-template.cpp"
+DECODE_TEMPLATE="$TOOLS/opensplice-decode-template.cpp"
+LOWER="$TOOLS/opensplice-idl.py"
+# shellcheck source=probe-cache.sh
+. "$TOOLS/probe-cache.sh"
+# shellcheck source=bounded.sh
+. "$TOOLS/bounded.sh"
+# shellcheck source=diagnostics.sh
+. "$TOOLS/diagnostics.sh"
+
+idl=""; type_name=""; values=""; encoding="xcdr1"; endian="le"; emit="payload"
+out=""; input=""; values_out=""; matrix=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --matrix) matrix=1; shift ;;
+        --idl) idl="$2"; shift 2 ;;
+        --type) type_name="$2"; shift 2 ;;
+        --values) values="$2"; shift 2 ;;
+        --in) input="$2"; shift 2 ;;
+        --values-out) values_out="$2"; shift 2 ;;
+        --encoding) encoding="$2"; shift 2 ;;
+        --endian) endian="$2"; shift 2 ;;
+        --emit) emit="$2"; shift 2 ;;
+        --out) out="$2"; shift 2 ;;
+        # `--dialect` names which implementation's answers to give, and
+        # this probe can only give OpenSplice's.
+        --dialect)
+            if [ "$2" != "opensplice" ]; then
+                echo "wireprobe-opensplice: --dialect $2 is not this probe's; it writes what OpenSplice writes" >&2
+                exit 3
+            fi
+            shift 2 ;;
+        # Accepted and ignored: these select between shapes this project
+        # can produce, and OpenSplice has exactly one of each.
+        --length-codes|--collection-delimiters|--map-length|--wstring-length) shift 2 ;;
+        --pl-cdr1-headers|--default-extensibility|--key-holder) shift 2 ;;
+        --help|-h) sed -n '5,34p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        *) echo "wireprobe-opensplice: \`$1\` is not an option" >&2; exit 2 ;;
+    esac
+done
+[ -n "$idl" ] || { echo "wireprobe-opensplice: --idl is required" >&2; exit 2; }
+[ -n "$type_name" ] || { echo "wireprobe-opensplice: --type is required" >&2; exit 2; }
+if [ -n "$input" ] && [ -n "$values" ]; then
+    echo "wireprobe-opensplice: --in reads bytes and --values writes them; pick one" >&2; exit 2
+fi
+if [ -z "$input" ] && [ -z "$values" ]; then
+    echo "wireprobe-opensplice: --values is required, or --in to read bytes back" >&2; exit 2
+fi
+
+case "$encoding" in
+    xcdr1|plain-cdr1|pl-cdr1) version_word=xcdr1; version_number=1 ;;
+    xcdr2|plain-cdr2|delimited-cdr|pl-cdr2) version_word=xcdr2; version_number=2 ;;
+    *) echo "wireprobe-opensplice: \`$encoding\` is not an encoding" >&2; exit 2 ;;
+esac
+case "$endian" in
+    le|little) endian_word=le ;;
+    be|big) endian_word=be ;;
+    *) echo "wireprobe-opensplice: \`$endian\` is not a byte order" >&2; exit 2 ;;
+esac
+case "$emit" in
+    payload) ;;
+    *) echo "wireprobe-opensplice: --emit $emit is not implemented here yet" >&2; exit 3 ;;
+esac
+
+IDLPP="$OSPL_HOME/bin/idlpp"
+[ -x "$IDLPP" ] || { echo "wireprobe-opensplice: $IDLPP is not there" >&2; exit 4; }
+export OSPL_HOME
+export OSPL_URI="file://$OSPL_HOME/etc/config/ospl_sp_no_network.xml"
+export PATH="$OSPL_HOME/bin:$PATH"
+export LD_LIBRARY_PATH="$OSPL_HOME/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+work="$(mktemp -d)"
+trap 'probe_keep_generated "$work" "opensplice" "$idl"; rm -rf "$work"' EXIT
+
+# A refusal of the IDL is OpenSplice's answer for this type, stated with
+# the construct: exit 3, as every probe here refuses what its front end
+# cannot carry.
+python3 "$LOWER" "$idl" "$work/gen.idl" "$type_name" || exit $?
+cpp_name="$("$FILL" --vendor omniorb --idl "$idl" --type "$type_name" --print-c-name)"
+
+generate() {
+    bounded_run_native idlpp "$IDLPP" -S -l cpp gen.idl > idlpp.log 2>&1 || {
+        echo "wireprobe-opensplice: idlpp failed" >&2
+        grep -m5 -i "error" idlpp.log >&2 || sed -n 1,5p idlpp.log >&2
+        exit 4; }
+}
+
+compile() { # <source> <binary>
+    g++ -std=c++11 -o "$2" "$1" gen.cpp genDcps.cpp genDcps_impl.cpp genSplDcps.cpp \
+        -I. -I"$TOOLS" -I"$OSPL_HOME/include" -I"$OSPL_HOME/include/sys" \
+        -I"$OSPL_HOME/include/dcps/C++/SACPP" -L"$OSPL_HOME/lib" \
+        -ldcpssacpp -lddskernel -Wl,-rpath,"$OSPL_HOME/lib" > cc.log 2>&1 || {
+        echo "wireprobe-opensplice: the probe did not compile" >&2
+        grep -m10 "error:" cc.log >&2
+        exit 5; }
+}
+
+build_cached() { # <kind> <template> <inc> -> sets $binary
+    local kind="$1" template="$2" inc="$3" key cached build
+    # The two directions named literally, and not through `$template`
+    # alone: a cache key that only ever said `$template` would still
+    # hash the right file at run time, but nothing here could tell a
+    # reviewer — or `record_shape.rs`'s static check — that the decode
+    # call names `$DECODE_TEMPLATE` and the encode call names
+    # `$TEMPLATE`, which is exactly the defect `probe-cache.sh`'s "the
+    # template is an input" note exists to catch in the other six
+    # drivers.
+    if [ "$kind" = decode ]; then
+        key="$(probe_cache_key opensplice decode "$cpp_name" -- "$work/gen.idl" "$inc" "$DECODE_TEMPLATE" "$LOWER")"
+    else
+        key="$(probe_cache_key opensplice encode "$cpp_name" -- "$work/gen.idl" "$inc" "$TEMPLATE" "$LOWER")"
+    fi
+    cached="$(probe_cache_dir "$key")"
+    if [ -z "$cached" ] || [ ! -x "$cached/probe" ]; then
+        (
+            cd "$work"
+            generate
+            sed -e "s/@TYPE@/$cpp_name/g" "$template" > probe.cpp
+            compile probe.cpp probe
+        )
+        probe_diagnostics_after opensplice "$work" "$idl" $?
+        if [ -n "$cached" ]; then
+            build="$(mktemp -d "$WIREPROBE_CACHE/build.XXXXXX")"
+            cp "$work/probe" "$build/probe"
+            probe_diagnostics_publish "$work" "$build"
+            probe_generated_publish "$work" "$build"
+            probe_cache_publish "$build" "$cached"
+        fi
+    else
+        # A cache hit does not compile, so the build said nothing this
+        # run; what it said when it was built is replayed.
+        probe_diagnostics_cached opensplice "$cached" "$idl"
+        probe_generated_cached "$cached" "$work"
+    fi
+    if [ -n "$cached" ] && [ -x "$cached/probe" ]; then binary="$cached/probe"; else binary="$work/probe"; fi
+}
+
+if [ -n "$input" ]; then
+    "$DUMP" --vendor omniorb --idl "$idl" --type "$type_name" --out "$work/dump.inc"
+    build_cached decode "$DECODE_TEMPLATE" "$work/dump.inc"
+    # The participant writes its log files into the working directory.
+    ( cd "$work" && "$binary" "$endian_word" "$version_number" ) < "$input" > "$work/values.json"
+    if [ -n "$values_out" ]; then cp "$work/values.json" "$values_out"; else cat "$work/values.json"; fi
+    exit 0
+fi
+
+"$FILL" --vendor omniorb --idl "$idl" --type "$type_name" --values "$values" \
+        --out "$work/fill.inc"
+build_cached encode "$TEMPLATE" "$work/fill.inc"
+
+# The participant writes its log files into the working directory.
+( cd "$work" && "$binary" ) > "$work/rows.tsv"
+if [ "$matrix" = 1 ]; then
+    cat "$work/rows.tsv"
+    exit 0
+fi
+row="$(awk -F'\t' -v v="$version_word" -v o="$endian_word" '$1 == v && $2 == o {print $3}' \
+       "$work/rows.tsv")"
+if [ -z "$row" ]; then
+    echo "wireprobe-opensplice: the probe printed no $version_word/$endian_word row" >&2
+    exit 1
+fi
+case "$row" in
+    '!'*) echo "wireprobe-opensplice: ${row#!}" >&2; exit 1 ;;
+esac
+
+if [ -n "$out" ]; then
+    printf '%s' "$row" | perl -ne 'print pack("H*", $_)' > "$out"
+else
+    printf '%s\n' "$row"
+fi

@@ -37,7 +37,7 @@ modulo 0x10000.
 **Repo:** `zerodds.d` — `class Client` (line 162–182), `struct Transport`
 (line 155–158), `memTransport()` as an in-memory FIFO for tests/examples.
 
-**Tests (codepit):** `d_endpoint_sync` (Ping-Pong E2E, §4).
+**Tests:** (Linux) `d_endpoint_sync` (Ping-Pong E2E, §4).
 
 **Status:** done.
 
@@ -53,7 +53,7 @@ the sync `Client` sends inline.
 **Repo:** `zerodds.d` — `class AsyncReader` (line 214–222), `readerLoop`
 (line 201–212).
 
-**Tests (codepit):** `d_endpoint_async` (Ping-Pong E2E, §4).
+**Tests:** (Linux) `d_endpoint_async` (Ping-Pong E2E, §4).
 
 **Status:** done.
 
@@ -66,7 +66,7 @@ the sync `Client` (§2), full stack via the async `AsyncReader` (§3).
 
 **Repo:** `crates/endpoint-e2e/tests/d.rs`.
 
-**Tests (codepit):** `d_raw_udp` + `d_endpoint_sync` + `d_endpoint_async` —
+**Tests:** (Linux) `d_raw_udp` + `d_endpoint_sync` + `d_endpoint_async` —
 3/3 passed.
 
 **Status:** done.
@@ -89,7 +89,7 @@ separate drain thread owns the socket and the sender state.
 ACKNACK-driven retransmit loop), `endpoints/d/example_reliable.d` (in-process
 demo), `endpoints/d/reliable_test.d` (unit + byte-golden suite).
 
-**Tests (codepit):**
+**Tests:** (Linux)
 - `d_reliable_unit_and_golden` — `reliable_test.d` asserts monotone seq,
   payload-too-large, window-full, heartbeat first/silenced-&lt;500ms/
   after-500ms/empty, ACKNACK clear/full-clear, in-order drain, reorder,
@@ -119,7 +119,7 @@ decoupled writer removes from the producer's hot path.
 **Repo:** `endpoints/d/reliable_bench.d` — `ITERS = 20000`, `MonoTime`
 timestamps around `sendto` and `ring.enqueue`, sorted, median taken.
 
-**Tests (codepit):** `d_reliable_latency_bench` — inline-sendto median
+**Tests:** (Linux) `d_reliable_latency_bench` — inline-sendto median
 3600 ns; ring-enqueue median 0 ns.
 
 **HONEST NOTE:** the ring enqueue falls below this machine's `MonoTime`
@@ -127,14 +127,14 @@ resolution — the median reads 0 ns as a bench-granularity limit, not a claim
 of "infinitely fast". What is measurable and real: the 3600 ns syscall is
 removed from the producer's path once decoupled via the ring.
 
-**Status:** done (measurement carries the granularity limit noted above;
-the limit itself is not a defect, it is a property of the bench resolution).
+**Status:** done — measured to the resolution limit of the bench setup. The
+limit belongs to the instrument, not to the implementation.
 
 ## Audit Status
 
 6 done / 0 partial / 0 open / 0 n/a (informational) / 0 n/a (rejected).
 
-Test run (codepit, verified): `cargo test -p zerodds-endpoint-e2e --test d`
+Test run (Linux, verified): `cargo test -p zerodds-endpoint-e2e --test d`
 3/3 (`d_raw_udp`, `d_endpoint_sync`, `d_endpoint_async`); `--test d_reliable`
 5/5 (`d_reliable_loss_recovery`, `d_reliable_no_loss`,
 `d_reliable_unit_and_golden`, `d_reliable_example`,

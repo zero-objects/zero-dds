@@ -96,11 +96,17 @@ fn security_plugin_chain_snippet() {
     let qos = DomainParticipantQos {
         property: PropertyQosPolicy::new()
             .with("dds.sec.log.plugin", "stderr,jsonl") // fan out to both
-            .with("dds.sec.log.level", "Notice") // min level
-            .with("dds.sec.log.jsonl.path", "/var/log/zerodds-audit.jsonl"),
+            .with("org.zerodds.sec.log.level", "Notice") // min level
+            .with(
+                "org.zerodds.sec.log.jsonl.path",
+                "/var/log/zerodds-audit.jsonl",
+            ),
         ..Default::default()
     };
 
     assert_eq!(qos.property.get("dds.sec.log.plugin"), Some("stderr,jsonl"));
-    assert_eq!(qos.property.get("dds.sec.log.level"), Some("Notice"));
+    assert_eq!(
+        qos.property.get("org.zerodds.sec.log.level"),
+        Some("Notice")
+    );
 }

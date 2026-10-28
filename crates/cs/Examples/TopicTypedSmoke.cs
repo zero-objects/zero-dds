@@ -4,8 +4,10 @@
 // TopicTypedSmoke.cs — reference smoke for zerodds-xcdr2-csharp-1.0 §10.
 //
 // Shows the encode/decode roundtrip of a hand-implemented
-// `IDdsTopicType<Point>` (equivalent to what idl-csharp would emit per
-// IDL `struct`). No live DDS — only the XCDR2 wire layer.
+// `IDdsTopicType<Point>` (equivalent to what `zerodds-idlc --lang 'c#'`
+// emits per IDL `struct` — see `tools/idlc/src/csharp_support.rs`), calling
+// straight into the `ZeroDds.Wire` runtime (`runtime/csharp`), the one
+// XCDR2 codec this binding has. No live DDS — only the XCDR2 wire layer.
 //
 // Run:
 //   cd crates/cs/Examples
@@ -13,6 +15,7 @@
 
 using System;
 using ZeroDDS.Cdr;
+using ZeroDds.Wire;
 using Omg.Types; // ExtensibilityKind
 
 namespace ZeroDDS.Examples;
@@ -36,20 +39,27 @@ public sealed class PointTypeSupport : IDdsTopicType<Point>
     public bool IsKeyed => false;
     public ExtensibilityKind Extensibility => ExtensibilityKind.Final;
 
+    private static Endianness Order(EndianMode endian) => endian switch
+    {
+        EndianMode.LittleEndian => Endianness.Little,
+        EndianMode.BigEndian => Endianness.Big,
+        _ => throw new ArgumentOutOfRangeException(nameof(endian)),
+    };
+
     public byte[] Encode(Point sample) => Encode(sample, EndianMode.LittleEndian);
 
     public byte[] Encode(Point sample, EndianMode endian)
     {
-        var w = new Xcdr2Writer(endian);
-        w.WriteInt32(sample.X);
-        w.WriteInt32(sample.Y);
-        return w.ToArray();
+        var w = new Writer(Order(endian), 4, PlCdr1Framing.Defaults(), false);
+        w.WriteI32(sample.X);
+        w.WriteI32(sample.Y);
+        return w.Finish();
     }
 
     public Point Decode(ReadOnlySpan<byte> bytes)
     {
-        var r = new Xcdr2Reader(bytes, EndianMode.LittleEndian);
-        return new Point { X = r.ReadInt32(), Y = r.ReadInt32() };
+        var r = new Reader(bytes.ToArray(), Endianness.Little, 4, PlCdr1Framing.Defaults());
+        return new Point { X = r.ReadI32(), Y = r.ReadI32() };
     }
 
     public byte[] KeyHash(Point sample) => new byte[16];

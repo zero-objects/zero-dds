@@ -8,5 +8,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../csharp/ZeroDDS.Cdr/ZeroDDS.Cdr.csproj" />
+    <ProjectReference Include="../../../runtime/csharp/ZeroDds.Wire.csproj" />
   </ItemGroup>
 </Project>

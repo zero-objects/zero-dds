@@ -58,7 +58,7 @@ fn md5_empty_string_first_14_bytes_golden_vector() {
 // ============================================================================
 // §7.3.4.6 — indirect hash TypeIdentifiers (PlainCollectionHeader with
 // EK_MINIMAL/EK_COMPLETE as the element). Fixed wire-byte vectors against
-// the XCDR2-LE encoding (XTypes 1.3 §7.3.4.7.1).
+// the XCDR2-LE encoding (XTypes 1.3 §7.3.4.7).
 // ============================================================================
 
 use zerodds_types::type_identifier::{
@@ -94,7 +94,7 @@ fn fixed_hash_complete() -> EquivalenceHash {
 
 #[test]
 fn indirect_hash_plain_sequence_small_minimal_wire_vector() {
-    // sequence<X, 5> wo X = EK_MINIMAL hash[14]={0xA0..0xAD}.
+    // sequence<X, 5> where X = EK_MINIMAL hash[14]={0xA0..0xAD}.
     // Wire (XCDR2 LE):
     //   0x80                         -- TI_PLAIN_SEQUENCE_SMALL
     //   0xF1                         -- equiv_kind (EK_MINIMAL)
@@ -130,7 +130,7 @@ fn indirect_hash_plain_sequence_small_minimal_wire_vector() {
 
 #[test]
 fn indirect_hash_plain_sequence_large_complete_wire_vector() {
-    // sequence<X, 1000> wo X = EK_COMPLETE hash[14]={0xC0..0xCD}.
+    // sequence<X, 1000> where X = EK_COMPLETE hash[14]={0xC0..0xCD}.
     let ti = TypeIdentifier::PlainSequenceLarge {
         header: PlainCollectionHeader {
             equiv_kind: EK_COMPLETE,
@@ -161,7 +161,7 @@ fn indirect_hash_plain_sequence_large_complete_wire_vector() {
 
 #[test]
 fn indirect_hash_plain_array_small_minimal_wire_vector() {
-    // T[3,4] wo T = EK_MINIMAL hash. array_bounds = octet seq.
+    // T[3,4] where T = EK_MINIMAL hash. array_bounds = octet seq.
     let ti = TypeIdentifier::PlainArraySmall {
         header: PlainCollectionHeader {
             equiv_kind: EK_MINIMAL,
@@ -192,7 +192,7 @@ fn indirect_hash_plain_array_small_minimal_wire_vector() {
 
 #[test]
 fn indirect_hash_plain_array_large_complete_wire_vector() {
-    // T[300, 400] wo T = EK_COMPLETE hash. array_bounds = uint32 seq.
+    // T[300, 400] where T = EK_COMPLETE hash. array_bounds = uint32 seq.
     let ti = TypeIdentifier::PlainArrayLarge {
         header: PlainCollectionHeader {
             equiv_kind: EK_COMPLETE,
@@ -231,7 +231,7 @@ fn indirect_hash_plain_array_large_complete_wire_vector() {
 
 #[test]
 fn indirect_hash_plain_map_small_minimal_keys_complete_values_wire_vector() {
-    // map<K, V, 10> wo K = EK_MINIMAL, V = EK_COMPLETE, bound=10.
+    // map<K, V, 10> where K = EK_MINIMAL, V = EK_COMPLETE, bound=10.
     let ti = TypeIdentifier::PlainMapSmall {
         header: PlainCollectionHeader {
             equiv_kind: EK_COMPLETE,
@@ -264,7 +264,7 @@ fn indirect_hash_plain_map_small_minimal_keys_complete_values_wire_vector() {
 
 #[test]
 fn indirect_hash_plain_map_large_complete_keys_minimal_values_wire_vector() {
-    // map<K, V, 65536> wo bound > 255 → MapLarge.
+    // map<K, V, 65536> where bound > 255 → MapLarge.
     let ti = TypeIdentifier::PlainMapLarge {
         header: PlainCollectionHeader {
             equiv_kind: EK_MINIMAL,
@@ -290,8 +290,8 @@ fn indirect_hash_plain_map_large_complete_keys_minimal_values_wire_vector() {
         EK_MINIMAL,
     ];
     expected.extend_from_slice(&fixed_hash_minimal().0);
-    // 1 byte alignment-pad: write_u16(key_flags) faellt auf odd offset
-    // 23 (1+1+2+4+1+14) — Buffer aligned auf 2-byte boundary.
+    // 1 byte alignment-pad: write_u16(key_flags) falls on an odd offset
+    // 23 (1+1+2+4+1+14) — buffer aligned to 2-byte boundary.
     expected.push(0x00);
     expected.extend_from_slice(&[0x00, 0x00]);
     expected.push(EK_COMPLETE);

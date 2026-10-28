@@ -1,0 +1,11 @@
+// inheritance from an empty base
+// XTypes 1.3 §7.4.1.1.5.1: the base's members come first; there are none,
+// and the derived type's own delimiter is unaffected.
+module m {
+  @appendable struct Base { };
+
+  @appendable struct S : Base {
+    long a;
+    short b;
+  };
+};

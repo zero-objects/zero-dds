@@ -1,16 +1,186 @@
-.TH ZERODDS-GRPC-BRIDGED.YAML 5 "2026-05-06" "1.0.0-rc.1" "ZeroDDS Manual"
+.TH ZERODDS-GRPC-BRIDGED.YAML 5 "" "ZeroDDS" "ZeroDDS Manual"
 .SH NAME
 zerodds-grpc-bridged.yaml \- configuration file for zerodds-grpc-bridged(1)
+.SH SYNOPSIS
+.I /etc/zerodds/grpc-bridged.yaml
+.SH DESCRIPTION
+YAML document describing how the gRPC bridge daemon exposes DDS topics as gRPC
+services. The schema is the one of
+.IR zerodds-grpc-bridge-1.0 " \(sc3;"
+the parser that reads it is
+.I parse_yaml_subset
+in
+.IR crates/grpc-bridge/src/bin/zerodds-grpc-bridged.rs .
+.PP
+Top-level keys:
+.BR domain ", " log_level ", " grpc ", " auth ", " metrics ", " topics .
+.PP
+An unknown top-level key is
+.I not
+a parse error. The daemon logs a WARN line on stderr naming the key and the
+expected set, then starts with the defaults \(em watch the WARN log.
+.PP
+.BI ${VAR} " and " ${VAR:-default}
+are substituted from the environment before the document is parsed.
 .SH KEYS
-.SS participant
-.B domain_id ", " qos_profile .
+.SS Top level
+.TP
+.B domain
+Integer DDS domain ID. Default
+.IR 0 .
+.TP
+.B log_level
+.IR trace " | " debug " | " info " | " warn " | " error .
+A
+.B \-\-log\-level
+on the command line wins over this key.
 .SS grpc
-.B bind ", " tls.enabled ", " tls.cert ", " tls.key ", " tls.client_ca
-(mTLS),
-.B max_message_bytes ", " reflection .
-.SS routes
-.B dds_topic ", " type ", " grpc_service ", " grpc_method ", " direction .
-.SS logging ", " observability
-identical to other ZeroDDS bridge configs.
+.TP
+.B bind
+HTTP/2 listen address, e.g.
+.IR "0.0.0.0:50051" .
+.TP
+.B tls
+Sub-map with
+.B enabled
+(boolean) and the server material
+.BR cert_file " / " key_file ,
+PEM, readable by user
+.IR zerodds .
+ALPN is
+.IR h2 .
+.B client_ca_file
+names the CA for client certificates;
+.B require_client_cert
+(boolean, default false) makes a client without a certificate fail the
+handshake. With
+.B enabled
+and no
+.BR cert_file / key_file
+the daemon does not start (exit 4).
+.TP
+.B reflection
+Sub-map with
+.BR enabled .
+Turns on
+.IR grpc.reflection.v1alpha ;
+the admin
+.I /catalog
+mirrors the same topic set.
+.SS auth
+.TP
+.B mode
+.IR none " | " bearer " | " jwt " | " mtls " (\(sc7.2),"
+checked on every call; a failed check is
+.IR UNAUTHENTICATED .
+A mode whose input is missing stops the start.
+.TP
+.BR bearer_token ", " bearer_subject
+For
+.IR bearer :
+the token in the
+.I authorization
+metadata
+.RI ( "Bearer <token>" )
+and the subject it stands for (default
+.IR anonymous ).
+.TP
+.B jwt
+Sub-map for
+.BR jwt :
+.B public_key
+(PEM file, PKCS#1 or SubjectPublicKeyInfo, RS256),
+.BR issuer ,
+.BR audience ,
+.B required_claim
+.RI ( claim=value ;
+a space-separated claim such as
+.I scope
+matches when it contains the value).
+.I exp
+and
+.I nbf
+are enforced with 60 s leeway. The subject is the
+.I sub
+claim.
+.PP
+For
+.IR mtls ,
+.B grpc.tls.enabled
+and
+.B grpc.tls.client_ca_file
+are required; the subject is the client certificate's subject DN (RFC 4514,
+such as
+.IR CN=alice,O=Example );
+an ACL entry may name its fingerprint
+.I mtls:<SHA-256 hex>
+instead.
+.SS metrics
+.TP
+.B enabled
+Boolean. Turns on the admin endpoint serving
+.IR /metrics ", " /catalog " and " /healthz .
+.TP
+.B listen
+Admin listen address. Default
+.IR "127.0.0.1:9095"
+when
+.B enabled
+is true; each bridge daemon has its own port, so several run on one
+host without a collision.
+.SS topics (list)
+.TP
+.B dds_name
+DDS topic name.
+.TP
+.B grpc_service
+Name of the generated gRPC service.
+.TP
+.B direction
+.IR in " | " out " | " bidir .
+.I in
+carries
+.B Publish
+calls into DDS (the daemon creates a DataWriter),
+.I out
+carries DDS samples to
+.B Subscribe
+calls (a DataReader),
+.I bidir
+both. Default
+.IR bidir .
+A call against the direction a topic does not carry ends with
+.B FAILED_PRECONDITION
+(9); a failed DDS write with
+.B UNAVAILABLE
+(14).
+.TP
+.B acl
+Sub-map with
+.B publish
+and
+.B subscribe
+(lists of subjects,
+.I *
+for all,
+.I *group:<g>*
+for a JWT group), \(sc7.3.
+.B Publish
+needs
+.BR publish ,
+.B Subscribe
+needs
+.BR subscribe ;
+otherwise the call is
+.IR PERMISSION_DENIED .
+Without any
+.B acl
+every topic is open under
+.BI "auth.mode: " none
+and closed under every other mode; with one, a topic without an entry is
+closed.
+.SH EXAMPLES
+See
+.IR /usr/share/zerodds/configs/grpc-bridged.yaml.example .
 .SH SEE ALSO
 .BR zerodds-grpc-bridged (1).

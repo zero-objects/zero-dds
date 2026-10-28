@@ -9,19 +9,17 @@ use std::vec::Vec;
 /// Parsed CLI args.
 #[derive(Debug, Clone, Default)]
 pub struct CliArgs {
-    /// `--config <FILE>`.
-    pub config: Option<String>,
     /// `--bind <ADDR>`.
     pub bind: Option<String>,
     /// `--domain <ID>`.
     pub domain: Option<i32>,
-    /// `--dtls-psk-id <ID>` — L5 stub.
+    /// `--dtls-psk-id <ID>` — DTLS PSK identity (Spec §7.1).
     pub dtls_psk_id: Option<String>,
-    /// `--dtls-psk <SECRET>` — L5 stub.
+    /// `--dtls-psk <SECRET>` — DTLS PSK secret, hex (Spec §7.1).
     pub dtls_psk: Option<String>,
-    /// `--dtls-cert <FILE>` — L5 stub.
+    /// `--dtls-cert <FILE>` — DTLS server certificate, PEM (Spec §7.1).
     pub dtls_cert: Option<String>,
-    /// `--dtls-key <FILE>` — L5 stub.
+    /// `--dtls-key <FILE>` — DTLS server key, PKCS#8 PEM (Spec §7.1).
     pub dtls_key: Option<String>,
     /// `--topic` (multi).
     pub topics: Vec<String>,
@@ -35,33 +33,8 @@ pub struct CliArgs {
     pub help: bool,
 }
 
-/// CLI error.
-#[derive(Debug, Clone)]
-pub enum CliError {
-    /// Unknown flag.
-    UnknownFlag(String),
-    /// Missing value.
-    MissingValue(String),
-    /// Value not parseable.
-    InvalidValue {
-        /// Flag.
-        flag: String,
-        /// Value.
-        value: String,
-    },
-}
-
-impl core::fmt::Display for CliError {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Self::UnknownFlag(n) => write!(f, "unknown flag: {n}"),
-            Self::MissingValue(n) => write!(f, "flag {n} needs a value"),
-            Self::InvalidValue { flag, value } => write!(f, "bad value for {flag}: {value}"),
-        }
-    }
-}
-
-impl std::error::Error for CliError {}
+pub use zerodds_config::cli::CliError;
+use zerodds_config::cli::Flags;
 
 /// Help text.
 pub const HELP_TEXT: &str = "\
@@ -71,18 +44,22 @@ USAGE:
     zerodds-coap-bridged [OPTIONS]
 
 OPTIONS:
-    --config <FILE>        Path to the config file (YAML)
     --bind <ADDR>          UDP bind address (default 0.0.0.0:5683)
     --domain <ID>          DDS domain ID (default 0)
-    --dtls-psk-id <ID>     DTLS PSK identity — L5 stub
-    --dtls-psk <SECRET>    DTLS PSK secret — L5 stub
-    --dtls-cert <FILE>     DTLS server cert — L5 stub
-    --dtls-key <FILE>      DTLS server key — L5 stub
+    --dtls-psk-id <ID>     DTLS PSK identity (enables coaps://)
+    --dtls-psk <SECRET>    DTLS PSK secret, hex (enables coaps://)
+    --dtls-cert <FILE>     DTLS server cert, PEM (enables coaps://)
+    --dtls-key <FILE>      DTLS server key, PKCS#8 PEM
     --topic <DDS:URI>      Topic override (repeatable)
     --log-level <LEVEL>    trace/debug/info/warn/error
-    --metrics <ADDR>       Prometheus listener — L5 stub
+    --metrics <ADDR>       Prometheus listener (enables metrics)
     --version              Version info
     --help                 Help
+
+Each option above is `--set` of its file key (`--bind X` is
+`--set coap.bind=X`), so it wins over the files. The file is
+coap-bridged.yaml with coap-bridged.d/ in the system configuration
+directory unless --config names another.
 
 EXIT CODES:
     0   normal shutdown
@@ -95,51 +72,83 @@ EXIT CODES:
 /// Version string.
 pub const VERSION_TEXT: &str = "zerodds-coap-bridged 1.0";
 
+fn unpaired(given: &str, needs: &str) -> CliError {
+    CliError::Unpaired {
+        given: given.to_string(),
+        needs: needs.to_string(),
+    }
+}
+
+impl CliArgs {
+    /// The convenience flags as `PATH=VALUE` assignments, in the order the
+    /// daemon applies them.
+    ///
+    /// # Errors
+    /// [`CliError::Unpaired`] when only one flag of a pair is given
+    /// (`--dtls-cert`/`--dtls-key`, `--dtls-psk-id`/`--dtls-psk`).
+    pub fn sets(&self) -> Result<Vec<String>, CliError> {
+        let mut out = Vec::new();
+        if let Some(v) = &self.bind {
+            out.push(format!("coap.bind={v}"));
+        }
+        if let Some(v) = self.domain {
+            out.push(format!("domain={v}"));
+        }
+        if let Some(v) = &self.log_level {
+            out.push(format!("log_level={v}"));
+        }
+        match (&self.dtls_cert, &self.dtls_key) {
+            (Some(cert), Some(key)) => {
+                out.push(format!("coap.dtls.cert_file={cert}"));
+                out.push(format!("coap.dtls.key_file={key}"));
+                out.push("coap.dtls.enabled=true".to_string());
+            }
+            (None, None) => {}
+            (Some(_), None) => return Err(unpaired("--dtls-cert", "--dtls-key")),
+            (None, Some(_)) => return Err(unpaired("--dtls-key", "--dtls-cert")),
+        }
+        match (&self.dtls_psk_id, &self.dtls_psk) {
+            (Some(id), Some(secret)) => {
+                out.push(format!("+coap.dtls.psk={id}={secret}"));
+                out.push("coap.dtls.enabled=true".to_string());
+            }
+            (None, None) => {}
+            (Some(_), None) => return Err(unpaired("--dtls-psk-id", "--dtls-psk")),
+            (None, Some(_)) => return Err(unpaired("--dtls-psk", "--dtls-psk-id")),
+        }
+        if let Some(v) = &self.metrics {
+            out.push(format!("metrics.listen={v}"));
+            out.push("metrics.enabled=true".to_string());
+        }
+        for topic in &self.topics {
+            out.push(format!("+topics={topic}"));
+        }
+        Ok(out)
+    }
+}
+
 /// Parses args.
 ///
 /// # Errors
 /// [`CliError`].
 pub fn parse(args: &[String]) -> Result<CliArgs, CliError> {
     let mut out = CliArgs::default();
-    let mut i = 0;
-    while i < args.len() {
-        let raw = &args[i];
-        let (flag, inline) = match raw.split_once('=') {
-            Some((k, v)) => (k.to_string(), Some(v.to_string())),
-            None => (raw.clone(), None),
-        };
-        let take_value = |i: &mut usize, flag: &str| -> Result<String, CliError> {
-            if let Some(v) = inline.clone() {
-                Ok(v)
-            } else {
-                *i += 1;
-                args.get(*i)
-                    .cloned()
-                    .ok_or_else(|| CliError::MissingValue(flag.to_string()))
-            }
-        };
-        match flag.as_str() {
+    let mut flags = Flags::new(args);
+    while let Some(flag) = flags.next_flag() {
+        match flag.name() {
             "--help" | "-h" => out.help = true,
             "--version" | "-V" => out.version = true,
-            "--config" => out.config = Some(take_value(&mut i, "--config")?),
-            "--bind" => out.bind = Some(take_value(&mut i, "--bind")?),
-            "--domain" => {
-                let v = take_value(&mut i, "--domain")?;
-                out.domain = Some(v.parse().map_err(|_| CliError::InvalidValue {
-                    flag: "--domain".to_string(),
-                    value: v,
-                })?);
-            }
-            "--dtls-psk-id" => out.dtls_psk_id = Some(take_value(&mut i, "--dtls-psk-id")?),
-            "--dtls-psk" => out.dtls_psk = Some(take_value(&mut i, "--dtls-psk")?),
-            "--dtls-cert" => out.dtls_cert = Some(take_value(&mut i, "--dtls-cert")?),
-            "--dtls-key" => out.dtls_key = Some(take_value(&mut i, "--dtls-key")?),
-            "--topic" => out.topics.push(take_value(&mut i, "--topic")?),
-            "--log-level" => out.log_level = Some(take_value(&mut i, "--log-level")?),
-            "--metrics" => out.metrics = Some(take_value(&mut i, "--metrics")?),
+            "--bind" => out.bind = Some(flags.value(&flag)?),
+            "--domain" => out.domain = Some(flags.parsed(&flag)?),
+            "--dtls-psk-id" => out.dtls_psk_id = Some(flags.value(&flag)?),
+            "--dtls-psk" => out.dtls_psk = Some(flags.value(&flag)?),
+            "--dtls-cert" => out.dtls_cert = Some(flags.value(&flag)?),
+            "--dtls-key" => out.dtls_key = Some(flags.value(&flag)?),
+            "--topic" => out.topics.push(flags.value(&flag)?),
+            "--log-level" => out.log_level = Some(flags.value(&flag)?),
+            "--metrics" => out.metrics = Some(flags.value(&flag)?),
             other => return Err(CliError::UnknownFlag(other.to_string())),
         }
-        i += 1;
     }
     Ok(out)
 }

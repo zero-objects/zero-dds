@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Counter — monotoner u64 (Spec §1.2).
+//! Counter — monotonic u64 (Spec §1.2).
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::Labels;
 
-/// Monoton wachsender u64-Zaehler.
+/// Monotonically increasing u64 counter.
 #[derive(Debug)]
 pub struct Counter {
     name: &'static str,
@@ -26,12 +26,12 @@ impl Counter {
         }
     }
 
-    /// Inkrement um 1.
+    /// Increment by 1.
     pub fn inc(&self) {
         self.value.fetch_add(1, Ordering::Relaxed);
     }
 
-    /// Inkrement um `n`.
+    /// Increment by `n`.
     pub fn add(&self, n: u64) {
         self.value.fetch_add(n, Ordering::Relaxed);
     }

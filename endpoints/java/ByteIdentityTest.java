@@ -14,7 +14,7 @@ import java.util.Arrays;
 public class ByteIdentityTest {
 
     static byte[] encode(int endian) {
-        Zdw.Writer w = new Zdw.Writer(endian);
+        Zdw.Writer w = new Zdw.Writer(endian, Zdw.XCDR2);
         w.u32(0xA1B2C3D4L);
         w.u16(0x1234);
         w.u8(0x5A);
@@ -34,7 +34,7 @@ public class ByteIdentityTest {
             return 1;
         }
         System.out.println(tag + ": " + out.length + " bytes byte-identical to Rust golden");
-        Zdw.Reader r = new Zdw.Reader(out, endian);
+        Zdw.Reader r = new Zdw.Reader(out, endian, Zdw.XCDR2);
         long id = r.u32(); int kind = r.u16(); int flags = r.u8();
         float value = r.f32(); long stamp = r.u64(); String label = r.str();
         byte[] raw = r.seqU8();

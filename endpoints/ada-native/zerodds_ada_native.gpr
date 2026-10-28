@@ -14,6 +14,7 @@ project Zerodds_Ada_Native is
      ("test_native_identity.adb", "test_native_roundtrip.adb",
       "test_native_framing.adb", "test_native_reflect.adb",
       "test_oop_endpoint.adb", "test_native_reliable_unit.adb",
+      "test_native_surface.adb",
       "example_native_reliable.adb");
 
    package Compiler is

@@ -1,0 +1,13 @@
+// `union` over an `enum`, unannotated
+enum Colour { RED, GREEN, BLUE };
+
+union Choice switch (Colour) {
+    case RED: long whole;
+    case GREEN:
+    case BLUE: double fraction;
+};
+
+struct Sample {
+    Choice picked;
+    long tail;
+};

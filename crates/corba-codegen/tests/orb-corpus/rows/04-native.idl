@@ -1,0 +1,8 @@
+module probe {
+    native Handle;
+    interface Special {
+        void in_v(in Handle v);
+        void out_v(out Handle v);
+        Handle ret_v();
+    };
+};

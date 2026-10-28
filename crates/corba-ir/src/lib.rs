@@ -11,7 +11,7 @@
 //! `DefinitionKind` (`dk_*` constants), structured `RepositoryId`
 //! with a spec §10.7.3.1 format parser/builder.
 //!
-//! ## Public API (as of 1.0.0-rc.1)
+//! ## Public API
 //!
 //! - [`RepositoryId`] — `IDL:<scoped>:<major>.<minor>` parser/builder.
 //! - [`TypeCode`] / [`TcKind`] / [`UnionMember`] — TypeCode model.
@@ -21,7 +21,7 @@
 //!
 //! ## Consumers
 //!
-//! - [`zerodds_corba_poa`] uses `RepositoryId::parse` for typed
+//! - `zerodds_corba_poa` uses `RepositoryId::parse` for typed
 //!   validation of servant interfaces (spec §11.3.5.20.4 `_is_a`).
 //! - External CORBA applications consume the IR via IIOP/IOR.
 //!

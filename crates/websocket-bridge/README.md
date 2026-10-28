@@ -71,9 +71,8 @@ assert_eq!(accept, "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=");
 
 ## Stability
 
-`1.0.0-rc.1`. Public API + wire format (RFC 6455 / RFC 7692) +
-error discriminants are RC1-stable; breaking changes require a
-major bump.
+`1.0.0-rc.7`, a pre-release. The public API can still change before
+1.0.0; the crate's CHANGELOG lists every change.
 
 ## Tests
 

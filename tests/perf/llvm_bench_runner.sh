@@ -1,43 +1,43 @@
 #!/usr/bin/env bash
 # tests/perf/llvm_bench_runner.sh
 #
-# Native Bench-Runner für den `llvm@llvm` Bare-Metal-Host (CI-3 Welle).
-# Wird via SSH vom GitLab-CI-Job `bench-llvm` aufgerufen oder lokal vom
-# Entwickler.
+# Native bench runner for a bare-metal test host.
+# Called via SSH from a CI bench job or locally by the
+# developer.
 #
-# Voraussetzungen auf dem Host (siehe Bootstrap unten):
-#   - rustup + cargo via ~/.cargo/bin (User-Install, kein root)
+# Prerequisites on the host (see bootstrap below):
+#   - rustup + cargo via ~/.cargo/bin (user install, no root)
 #   - ddsperf (Cyclone DDS), libfastrtps-dev, libddsc-dev
 #   - git
 #
-# Was der Skript macht:
-#   1. Workspace ins ~/zerodds-bench/<commit>/ klonen / aktualisieren
-#   2. Criterion-Bench-Suite voll laufen mit `--save-baseline llvm-<sha>`
-#   3. ddsperf-Cross-Vendor-Latenz-Test (ZeroDDS spdp_demo + ddsperf
-#      ping/pong); 60 s, RTT-Histogramm in result.json
-#   4. Throughput-Test mit ddsperf (1 KB samples, 10000 max throughput)
-#   5. Sammelt:
-#        - target/criterion/        (criterion-Daten)
+# What the script does:
+#   1. Clone / update the workspace into ~/zerodds-bench/<commit>/
+#   2. Run the full Criterion bench suite with `--save-baseline llvm-<sha>`
+#   3. ddsperf cross-vendor latency test (ZeroDDS spdp_demo + ddsperf
+#      ping/pong); 60 s, RTT histogram in result.json
+#   4. Throughput test with ddsperf (1 KB samples, 10000 max throughput)
+#   5. Collects:
+#        - target/criterion/        (criterion data)
 #        - bench-output.log         (criterion stdout)
-#        - latency_<vendor>.json    (RTT-Histogram per Vendor)
+#        - latency_<vendor>.json    (RTT histogram per vendor)
 #        - throughput_<vendor>.json (msgs/sec, MB/sec, lost)
-#        - bench-summary.md         (Markdown-Zusammenfassung)
+#        - bench-summary.md         (Markdown summary)
 #
 # Exit:
-#   0 — Bench-Run erfolgreich, alle Artefakte geschrieben
-#   1 — Fehler beim Bench-Run / fehlende Artefakte
-#   2 — Voraussetzungen nicht erfüllt
+#   0 — bench run successful, all artifacts written
+#   1 — error during the bench run / missing artifacts
+#   2 — prerequisites not met
 
 set -euo pipefail
 
 GITREF="${GITREF:-main}"
 COMMIT="${COMMIT:-${GITREF}}"
-REPO_URL="${REPO_URL:-https://gitlab.sandra-kessler.eu/fishermen21/zerodds.git}"
+REPO_URL="${REPO_URL:-https://github.com/zero-objects/zero-dds.git}"
 WORKDIR="${WORKDIR:-$HOME/zerodds-bench/$COMMIT}"
 OUTDIR="${OUTDIR:-$WORKDIR/bench-output}"
 RUNTIME_SECS="${RUNTIME_SECS:-60}"
 
-# --- Voraussetzungen ---
+# --- Prerequisites ---
 need() {
     if ! command -v "$1" >/dev/null 2>&1; then
         echo "[llvm-bench] missing tool: $1 ($2)" >&2
@@ -51,7 +51,7 @@ need ddsperf "apt install cyclonedds-tools" || exit 2
 
 mkdir -p "$WORKDIR" "$OUTDIR"
 
-# --- Step 1: Workspace bereitstellen ---
+# --- Step 1: provide the workspace ---
 if [ ! -d "$WORKDIR/.git" ]; then
     git clone --depth 1 --branch "$GITREF" "$REPO_URL" "$WORKDIR"
 fi
@@ -59,12 +59,12 @@ cd "$WORKDIR"
 git fetch --depth 1 origin "$GITREF"
 git checkout -q "$COMMIT" 2>/dev/null || git checkout -q FETCH_HEAD
 
-# --- Step 2: Criterion-Suite ---
+# --- Step 2: Criterion suite ---
 echo "[llvm-bench] cargo bench --workspace -- --save-baseline llvm-$COMMIT"
 cargo bench --workspace -- --save-baseline "llvm-$COMMIT" \
     2>&1 | tee "$OUTDIR/bench-output.log"
 
-# Criterion-Daten kopieren (target/criterion/ kann gross sein, nur estimates).
+# Copy Criterion data (target/criterion/ can be large, estimates only).
 mkdir -p "$OUTDIR/criterion"
 find target/criterion -name "estimates.json" -path "*/llvm-$COMMIT/*" \
     | while read -r f; do
@@ -74,7 +74,7 @@ find target/criterion -name "estimates.json" -path "*/llvm-$COMMIT/*" \
         cp "$f" "$dest"
     done
 
-# --- Step 3: ddsperf Latenz (Cyclone Self-Test als Sanity) ---
+# --- Step 3: ddsperf latency (Cyclone self test as sanity check) ---
 echo "[llvm-bench] ddsperf latency-test (Cyclone self, $RUNTIME_SECS s)"
 ddsperf -1 ping 1Hz size 1024 \
     >"$OUTDIR/cyclone_ping.log" 2>&1 &
@@ -86,10 +86,10 @@ sleep "$RUNTIME_SECS"
 kill -INT "$PING_PID" "$PONG_PID" 2>/dev/null || true
 wait "$PING_PID" "$PONG_PID" 2>/dev/null || true
 
-# Aus dem ping-Log RTT-Histogramm extrahieren. Real ddsperf-2.x format:
+# Extract the RTT histogram from the ping log. Real ddsperf-2.x format:
 #   "size 1024 mean 145.409us min 145.409us 50% 145.409us 90% 145.409us
 #    99% 145.409us max 145.409us cnt 1"
-# Beachte: floats mit `us`-Suffix, kein 99.9%, "mean" vor "min".
+# Note: floats with `us` suffix, no 99.9%, "mean" before "min".
 python3 - <<PY
 import json, re, pathlib, statistics
 out = pathlib.Path("$OUTDIR/latency_cyclone.json")
@@ -101,7 +101,7 @@ pat = re.compile(
 hits = pat.findall(log)
 result = {"vendor": "cyclone", "samples_count_lines": len(hits)}
 if hits:
-    # Aggregat über alle Lines: median pro Statistik (robust gegen Warm-Up).
+    # Aggregate over all lines: median per statistic (robust against warm-up).
     means = [float(h[0]) for h in hits]
     mins  = [float(h[1]) for h in hits]
     p50s  = [float(h[2]) for h in hits]
@@ -134,14 +134,14 @@ sleep "$RUNTIME_SECS"
 kill -INT "$PUB_PID" "$SUB_PID" 2>/dev/null || true
 wait "$PUB_PID" "$SUB_PID" 2>/dev/null || true
 
-# --- Step 4b: ZeroDDS-Self Throughput + Ping/Pong (CI-3b Welle) ---
+# --- Step 4b: ZeroDDS self throughput + ping/pong (CI-3b wave) ---
 echo "[llvm-bench] zerodds_perf build --release"
 cargo build --release --example zerodds_perf -p dds-dcps \
     >"$OUTDIR/zerodds_perf_build.log" 2>&1
 ZD_PERF="$WORKDIR/target/release/examples/zerodds_perf"
 
 if [ -x "$ZD_PERF" ]; then
-    # ZeroDDS-Self Throughput (1 KB samples)
+    # ZeroDDS self throughput (1 KB samples)
     echo "[llvm-bench] zerodds_perf throughput (Self, $RUNTIME_SECS s, 1 KB)"
     "$ZD_PERF" pub 1024 "$RUNTIME_SECS" >"$OUTDIR/zerodds_pub.log" 2>&1 &
     ZD_PUB_PID=$!
@@ -149,7 +149,7 @@ if [ -x "$ZD_PERF" ]; then
     ZD_SUB_PID=$!
     wait "$ZD_PUB_PID" "$ZD_SUB_PID" 2>/dev/null || true
 
-    # ZeroDDS-Self Ping/Pong RTT
+    # ZeroDDS self ping/pong RTT
     echo "[llvm-bench] zerodds_perf pingpong (Self, 30s)"
     "$ZD_PERF" pong 30 >"$OUTDIR/zerodds_pong.log" 2>&1 &
     ZD_PONG_PID=$!
@@ -164,7 +164,7 @@ import json, re, pathlib, statistics
 out = pathlib.Path("$OUTDIR/zerodds_perf.json")
 result = {"vendor": "zerodds"}
 
-# Throughput aus zerodds_sub.log
+# Throughput from zerodds_sub.log
 sub_log = pathlib.Path("$OUTDIR/zerodds_sub.log").read_text(errors="replace")
 sub_pat = re.compile(r"size N total (\d+) delta (\d+) rate ([\d.]+) kS/s")
 sub_hits = sub_pat.findall(sub_log)
@@ -173,7 +173,7 @@ if sub_hits:
     result["throughput_kS_per_s_median"] = statistics.median(rates)
     result["samples_total"] = int(sub_hits[-1][0])
 
-# RTT aus zerodds_pingpong.log
+# RTT from zerodds_pingpong.log
 pp_log = pathlib.Path("$OUTDIR/zerodds_pingpong.log").read_text(errors="replace")
 rtt_pat = re.compile(
     r"rtt mean (\d+)us min (\d+) 50% (\d+) 90% (\d+) 99% (\d+) max (\d+) cnt (\d+)"
@@ -197,10 +197,10 @@ else
     echo "[llvm-bench] zerodds_perf binary not built — skipping ZeroDDS-Self bench"
 fi
 
-# --- Step 4c: Cross-Vendor-Throughput (CI-3c v1) ---
-# Throughput-Numbers fuer ZeroDDS<->Cyclone via die bestehenden interop-
-# scripts. Nutzt cyclonedds-python und ZeroDDS shapes_demo. Latenz-Test
-# kommt durch CI-3c v2 (Apex.AI Step 4d).
+# --- Step 4c: cross-vendor throughput (CI-3c v1) ---
+# Throughput numbers for ZeroDDS<->Cyclone via the existing interop
+# scripts. Uses cyclonedds-python and ZeroDDS shapes_demo. The latency test
+# comes with CI-3c v2 (Apex.AI step 4d).
 XV_RUNTIME=20
 XV_PUB="$WORKDIR/target/release/examples/shapes_demo_publisher"
 XV_SUB="$WORKDIR/target/release/examples/shapes_demo_subscriber"
@@ -261,13 +261,13 @@ else
     echo "[llvm-bench] missing prerequisites for cross-vendor throughput — skipping"
 fi
 
-# --- Step 4d: Apex.AI Cross-Vendor Latency (CI-3c v2) ---
-# Verwendet das `apex-perf:cyclonedds` Docker-Image (build via
-# tests/perf/apex/Dockerfile) fuer Cyclone-Self-Latency mit echten
-# percentiles aus Apex.AIs JSON-Output.
+# --- Step 4d: Apex.AI cross-vendor latency (CI-3c v2) ---
+# Uses the `apex-perf:cyclonedds` Docker image (build via
+# tests/perf/apex/Dockerfile) for Cyclone self latency with real
+# percentiles from Apex.AI's JSON output.
 #
-# Cross-Vendor (ZeroDDS↔Cyclone) braucht ein ZeroDDS-Apex-Plugin
-# (CI-3d, nach C-API-Welle). Vorher: nur Cyclone-Self als Reference.
+# Cross-vendor (ZeroDDS↔Cyclone) needs a ZeroDDS Apex plugin
+# (CI-3d, after the C API wave). Until then: only Cyclone self as reference.
 APEX_RUNTIME=15
 if docker image inspect apex-perf:cyclonedds >/dev/null 2>&1; then
     echo "[llvm-bench] Apex.AI Cyclone-Self ($APEX_RUNTIME s, Array1k @ 1000 Hz)"
@@ -293,7 +293,7 @@ result = {"vendor": "cyclone-via-apex"}
 if sub_json.exists():
     data = json.loads(sub_json.read_text())
     rows = data.get("analysis_results", [])
-    # Drop ersten Eintrag (cold-start + Discovery), aggregiere rest.
+    # Drop the first entry (cold start + discovery), aggregate the rest.
     steady = [r for r in rows[1:] if r.get("num_samples_received", 0) > 0]
     if steady:
         latencies_mean_us = [r["latency_mean"] * 1_000_000 for r in steady]
@@ -348,7 +348,7 @@ out.write_text(json.dumps(result, indent=2))
 print("[llvm-bench] wrote", out, ":", json.dumps(result))
 PY
 
-# --- Step 5: Markdown-Zusammenfassung ---
+# --- Step 5: Markdown summary ---
 python3 - <<PY
 import json, pathlib, datetime, subprocess
 out = pathlib.Path("$OUTDIR/bench-summary.md")
@@ -363,22 +363,22 @@ ts = datetime.datetime.now().isoformat(timespec="seconds")
 
 bench_count = sum(1 for _ in pathlib.Path("$OUTDIR/criterion").rglob("estimates.json"))
 
-content = f"""# Bench-Run-Zusammenfassung
+content = f"""# Bench run summary
 
 * commit: \`{sha}\`
 * host: \`{host}\`
 * timestamp: {ts}
 * runtime per stage: {$RUNTIME_SECS} s
 
-## Criterion-Suite
+## Criterion suite
 
-* benchmarks erfasst: {bench_count}
+* benchmarks recorded: {bench_count}
 * baseline: \`llvm-{sha[:8]}\`
 * details: \`bench-output.log\` + \`criterion/\`
 
-## Cyclone-Self ddsperf-Latenz (1 KB ping/pong, median über alle Sekunden)
+## Cyclone self ddsperf latency (1 KB ping/pong, median over all seconds)
 
-| Statistik | µs |
+| Statistic | µs |
 |---|--:|
 | min | {lat.get('min_us', 'n/a')} |
 | mean | {lat.get('mean_us', 'n/a')} |
@@ -387,18 +387,18 @@ content = f"""# Bench-Run-Zusammenfassung
 | p99 | {lat.get('p99_us', 'n/a')} |
 | max | {lat.get('max_us', 'n/a')} |
 
-## Cyclone-Self ddsperf-Throughput (1 KB samples)
+## Cyclone self ddsperf throughput (1 KB samples)
 
 * samples total: {thr.get('samples_total', 'n/a')}, lost: {thr.get('samples_lost', 'n/a')}
 * rate (median): {thr.get('rate_kS_per_s_median', 'n/a')} kS/s, {thr.get('rate_Mb_per_s_median', 'n/a')} Mb/s
 * rate (max):    {thr.get('rate_kS_per_s_max', 'n/a')} kS/s, {thr.get('rate_Mb_per_s_max', 'n/a')} Mb/s
 
-## ZeroDDS-Self (CI-3b Welle)
+## ZeroDDS self (CI-3b wave)
 """
 zd = load("$OUTDIR/zerodds_perf.json")
 if zd:
     content += f"""
-| Metrik | Wert |
+| Metric | Value |
 |---|--:|
 | throughput median | {zd.get('throughput_kS_per_s_median', 'n/a')} kS/s |
 | samples total | {zd.get('samples_total', 'n/a')} |
@@ -430,12 +430,12 @@ else:
 
 content += """
 
-## Folge-Welle CI-3d
+## Follow-up wave CI-3d
 
-* ZeroDDS-C-API exponieren (cbindgen-Header + extern-C-shim)
-* ZeroDDS-Plugin fuer Apex.AI performance_test schreiben
-* Echte cross-vendor-Latenz mit timestamped Payloads
-* Apex.AI performance_test gegen alle drei Vendoren parallel
+* Expose the ZeroDDS C API (cbindgen header + extern-C shim)
+* Write a ZeroDDS plugin for Apex.AI performance_test
+* Real cross-vendor latency with timestamped payloads
+* Apex.AI performance_test against all three vendors in parallel
 """
 out.write_text(content)
 print("[llvm-bench] wrote", out)

@@ -1,0 +1,87 @@
+# jacorb idl — /opt/jacorb
+# Recorded by crates/corba-codegen/tests/orb-corpus/record.sh.
+# Each block is one row of rows/, the compiler log, then every
+# generated line naming a probe operation, verbatim.
+
+=== 01-object
+void in_v(org.omg.CORBA.Object v);
+void out_v(org.omg.CORBA.ObjectHolder v);
+void inout_v(org.omg.CORBA.ObjectHolder v);
+org.omg.CORBA.Object ret_v();
+
+=== 02-valuebase
+void in_v(java.io.Serializable v);
+void out_v(java.io.SerializableHolder v);
+java.io.Serializable ret_v();
+
+=== 03-abstractbase
+void in_v(probe.Abstracted v);
+void out_v(probe.AbstractedHolder v);
+probe.Abstracted ret_v();
+
+=== 04-native
+void in_v(probe.Handle v);
+void out_v(probe.HandleHolder v);
+probe.Handle ret_v();
+
+=== 05-typecode
+log: Can't recover from previous error(s), giving up.
+log: SEVERE org.jacorb.idl.lexer emit_error Parse error 
+log: SEVERE org.jacorb.idl.lexer emit_error row.idl, line:3(37): Undefined name: probe.Special.CORBA.TypeCode
+log: SEVERE: Parse error 
+log: SEVERE: row.idl, line:3(37): Undefined name: probe.Special.CORBA.TypeCode
+log: (no operations interface generated)
+
+=== 06-any
+void in_v(org.omg.CORBA.Any v);
+void out_v(org.omg.CORBA.AnyHolder v);
+void inout_v(org.omg.CORBA.AnyHolder v);
+org.omg.CORBA.Any ret_v();
+
+=== 07-anyseq
+void in_v(org.omg.CORBA.Any[] v);
+void out_v(probe.AnySeqHolder v);
+org.omg.CORBA.Any[] ret_v();
+
+=== 08-string
+void in_v(java.lang.String v);
+void out_v(org.omg.CORBA.StringHolder v);
+void inout_v(org.omg.CORBA.StringHolder v);
+java.lang.String ret_v();
+
+=== 09-wstring
+void in_v(java.lang.String v);
+void out_v(org.omg.CORBA.StringHolder v);
+void inout_v(org.omg.CORBA.StringHolder v);
+java.lang.String ret_v();
+
+=== 10-time
+void in_v(long v);
+void out_v(org.omg.CORBA.LongHolder v);
+long ret_v();
+
+=== 11-fixed
+void in_v(java.math.BigDecimal v);
+void out_v(probe.MoneyHolder v);
+java.math.BigDecimal ret_v();
+
+=== 12-ulonglong
+void in_v(long v);
+void out_v(org.omg.CORBA.LongHolder v);
+long ret_v();
+
+=== 13-longdouble
+void in_v(double v);
+void out_v(org.omg.CORBA.DoubleHolder v);
+double ret_v();
+
+=== 14-shape
+void out_variable(probe.WithStringHolder v);
+void out_fixed(probe.TwoLongsHolder v);
+probe.WithString ret_variable();
+probe.TwoLongs ret_fixed();
+
+=== 15-typedefs
+void in_v(java.lang.String p1, org.omg.CORBA.Any p2, double p3, probe.WithString p4, int[] p5);
+void out_v(org.omg.CORBA.StringHolder p1, org.omg.CORBA.AnyHolder p2, org.omg.CORBA.DoubleHolder p3, probe.WithStringHolder p4, probe.LongsAliasHolder p5);
+java.lang.String ret_v();

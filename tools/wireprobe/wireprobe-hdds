@@ -1,0 +1,312 @@
+#!/bin/bash
+# wireprobe-hdds — one IDL type and one JSON value, through HDDS's own
+# generated serialiser.
+#
+# The same command line as `wireprobe-zerodds`, so a case runs through
+# both by substituting the program name. See
+# `docs/specs/zerodds-interop-suite-1.0.md`.
+#
+#   wireprobe-hdds --idl robot.idl --type common::Robot \
+#                  --values robot.json --encoding xcdr2 --endian le \
+#                  --out robot.hdds.xcdr2.le.bin
+#
+# `hddsgen gen rust` generates the type; `wireprobe-fill --vendor hdds`
+# supplies the expression that constructs the sample; the template calls
+# the generated `encode_*` method. Nothing here decides any wire
+# question.
+#
+# The read direction takes `--in` instead of `--values`: hddsgen's own
+# `decode_xcdr{1,2}_le` reads the payload and `wireprobe-dump --vendor
+# hdds` supplies the expression that prints the decoded struct as the
+# JSON `wireprobe-compare` reads, written to `--values-out` or standard
+# output.
+#
+# **HDDS generates no big-endian encoder.** Measured: `hddsgen gen rust`
+# emits `encode_xcdr1_le`, `encode_xcdr2_le` and their `_at` variants,
+# and no `_be` of any kind. `--endian be` is therefore refused rather
+# than answered with little-endian octets, which would be recorded as
+# HDDS's big-endian answer.
+set -euo pipefail
+
+HDDSGEN="${HDDSGEN:-/root/hdds-probe/hdds_gen_src/target/release/hddsgen}"
+HDDS_VERSION="${HDDS_VERSION:-1.1.2}"
+FILL="${WIREPROBE_FILL:-wireprobe-fill}"
+DUMP="${WIREPROBE_DUMP:-wireprobe-dump}"
+TOOLS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TEMPLATE="$TOOLS/hdds-template.rs"
+
+idl=""; type_name=""; values=""; encoding="xcdr2"; endian="le"
+out=""; input=""; values_out=""; matrix=0; reading=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --idl) idl="$2"; shift 2 ;;
+        --type) type_name="$2"; shift 2 ;;
+        --values) values="$2"; shift 2 ;;
+        --in) input="$2"; shift 2 ;;
+        --values-out) values_out="$2"; shift 2 ;;
+        --encoding) encoding="$2"; shift 2 ;;
+        --endian) endian="$2"; shift 2 ;;
+        --out) out="$2"; shift 2 ;;
+        --matrix) matrix=1; shift ;;
+        --dialect)
+            if [ "$2" != "hdds" ]; then
+                echo "wireprobe-hdds: --dialect $2 is not this probe's; it writes what HDDS writes" >&2
+                exit 3
+            fi
+            shift 2 ;;
+        # Accepted and ignored: these select between shapes this project
+        # can produce, and HDDS has exactly one of each.
+        --length-codes|--collection-delimiters|--map-length|--wstring-length) shift 2 ;;
+        --pl-cdr1-headers|--default-extensibility|--key-holder) shift 2 ;;
+        --emit) shift 2 ;;
+        --help|-h) sed -n '2,28p' "${BASH_SOURCE[0]}"; exit 0 ;;
+        *) echo "wireprobe-hdds: \`$1\` is not an option" >&2; exit 2 ;;
+    esac
+done
+
+[ -n "$idl" ] || { echo "wireprobe-hdds: --idl is required" >&2; exit 2; }
+[ -n "$type_name" ] || { echo "wireprobe-hdds: --type is required" >&2; exit 2; }
+
+# `--in` reads bytes back instead of writing them. The decoded struct
+# comes from hddsgen's own `decode_xcdr{1,2}_le` and `wireprobe-dump
+# --vendor hdds` writes the JSON printer over it; see the comment on the
+# dump emitter. The read direction exists for the pairwise run of the
+# interop suite's P2, and for turning this column's `harness-gap` read
+# cells into measurements of HDDS's decoder.
+if [ -n "$input" ]; then
+    reading=1
+    if [ -n "$values" ]; then
+        echo "wireprobe-hdds: --in reads bytes and --values writes them; pick one" >&2
+        exit 2
+    fi
+elif [ -n "$values_out" ]; then
+    echo "wireprobe-hdds: --values-out needs --in to say which bytes to read" >&2
+    exit 2
+fi
+if [ "$reading" = 0 ]; then
+    [ -n "$values" ] || { echo "wireprobe-hdds: --values is required, or --in to read bytes back" >&2; exit 2; }
+fi
+if [ "$reading" = 1 ] && [ "$matrix" = 1 ]; then
+    echo "wireprobe-hdds: --matrix asks for the write direction and --in reads bytes; pick one" >&2
+    exit 2
+fi
+
+# `--matrix` answers every combination from one build, so the two
+# single-run checks below apply only to a single-cell run.
+be_reason="hddsgen generates no big-endian encoder (no encode_*_be exists in its output)"
+if [ "$matrix" != 1 ]; then
+    if [ "$endian" != "le" ]; then
+        echo "wireprobe-hdds: $be_reason, so there is no HDDS answer for --endian $endian" >&2
+        exit 3
+    fi
+    case "$encoding" in
+        xcdr2|plain-cdr2|delimited-cdr) stem="xcdr2" ;;
+        xcdr1|plain-cdr1)              stem="xcdr1" ;;
+        pl-cdr1|pl-cdr2)
+            echo "wireprobe-hdds: hddsgen generates no parameter-list encoder, so there is no HDDS answer for --encoding $encoding" >&2
+            exit 3 ;;
+        *) echo "wireprobe-hdds: \`$encoding\` is not an encoding this probe knows" >&2; exit 2 ;;
+    esac
+    # The read direction drives the decoder the generator emits beside
+    # the encoder; measured: `decode_xcdr1_le` and `decode_xcdr2_le` (the
+    # recursive-type logs name the missing associated item, so it is an
+    # inherent function on the struct).
+    if [ "$reading" = 1 ]; then method="decode_${stem}_le"; else method="encode_${stem}_le"; fi
+fi
+
+[ -x "$HDDSGEN" ] || { echo "wireprobe-hdds: $HDDSGEN is not executable; set HDDSGEN" >&2; exit 5; }
+
+# The generated-source helper, for the one reason this probe needs it:
+# `hddsgen` is the second pure-Rust generator, and what it makes of a
+# case is the comparison `docs/structural-review.md` had to do by hand.
+. "$TOOLS/diagnostics.sh"
+
+work="$(mktemp -d)"
+trap 'probe_keep_generated "$work" "hdds" "$idl"; rm -rf "$work"' EXIT
+
+cp "$idl" "$work/gen.idl"
+if ! "$HDDSGEN" gen rust "$work/gen.idl" > "$work/generated.rs" 2> "$work/gen.log"; then
+    echo "wireprobe-hdds: hddsgen refused the file" >&2
+    head -5 "$work/gen.log" >&2
+    exit 4
+fi
+# `hddsgen` reports a rejected file on stderr and still exits zero for
+# some shapes, so an empty or error-only output is caught here rather
+# than surfacing as a Rust compile error about a missing type.
+if ! grep -q "pub struct\|pub enum" "$work/generated.rs"; then
+    echo "wireprobe-hdds: hddsgen produced no type" >&2
+    head -5 "$work/gen.log" >&2
+    exit 4
+fi
+
+if [ "$reading" = 1 ]; then
+    # The JSON printer over hddsgen's generated type. A refusal here is
+    # this probe's gap and not HDDS's: the type was generated, and what
+    # is missing is the walk from the decoded value to the document the
+    # comparison reads. Exit 6 keeps the cell `harness-gap`.
+    if ! "$DUMP" --vendor hdds --idl "$idl" --type "$type_name" --out "$work/dump.inc"; then
+        echo "wireprobe-hdds: no JSON dump over hddsgen's generated types for this shape" >&2
+        exit 6
+    fi
+    rust_name="$("$FILL" --vendor hdds --idl "$idl" --type "$type_name" --print-c-name)"
+    # `decode_xcdr{1,2}_le` is an inherent associated function on the
+    # generated struct, returning `(Self, usize)`; `sample` is what the
+    # template binds and what `dump.inc` reads.
+    cat > "$work/fill.inc" <<FILL
+{
+    let mut zd_bytes = Vec::new();
+    use std::io::Read as _;
+    if let Err(error) = std::io::stdin().read_to_end(&mut zd_bytes) {
+        eprintln!("wireprobe-hdds:  the payload failed: {error}");
+        std::process::exit(6);
+    }
+    match ${rust_name}::${method}(&zd_bytes) {
+        Ok((value, _length)) => value,
+        Err(error) => {
+            eprintln!("wireprobe-hdds: the generated decoder refused: {error:?}");
+            std::process::exit(4);
+        }
+    }
+}
+FILL
+    cat > "$work/drive.inc" <<'DRIVE'
+{
+    let zd_value: serde_json::Value = include!("dump.inc");
+    match serde_json::to_string(&zd_value) {
+        Ok(zd_text) => println!("{zd_text}"),
+        Err(error) => {
+            eprintln!("wireprobe-hdds: writing the decoded value as JSON failed: {error}");
+            std::process::exit(6);
+        }
+    }
+}
+DRIVE
+else
+    "$FILL" --vendor hdds --idl "$idl" --type "$type_name" \
+            --values "$values" --out "$work/fill.inc"
+    # `drive.inc` is what `main` does with the sample: one cell to standard
+    # output, or the four `--matrix` rows in the shape every vendor sweep
+    # reads — `<encoding>\t<order>\t<hex-or-!reason>`. The big-endian rows
+    # are refusals stated by this build rather than rows left out, so a
+    # sweep does not re-ask per cell for an answer that does not exist.
+    if [ "$matrix" = 1 ]; then
+        cat > "$work/drive.inc" <<DRIVE
+{
+    for (name, result) in [
+        ("xcdr1", attempt!(sample, encode_xcdr1_le)),
+        ("xcdr2", attempt!(sample, encode_xcdr2_le)),
+    ] {
+        match result {
+            Ok(hex) => println!("{name}\tle\t{hex}"),
+            Err(message) => println!(
+                "{name}\tle\t!hdds refused to encode the sample: {}",
+                message.replace(['\t', '\n'], " ")
+            ),
+        }
+        println!("{name}\tbe\t!${be_reason}");
+    }
+}
+DRIVE
+    else
+        cat > "$work/drive.inc" <<DRIVE
+{
+    match attempt!(sample, ${method}) {
+        Ok(hex) => println!("{hex}"),
+        Err(message) => {
+            eprintln!("wireprobe-hdds: hdds refused to encode the sample: {message}");
+            std::process::exit(4);
+        }
+    }
+}
+DRIVE
+    fi
+fi
+cp "$TEMPLATE" "$work/main.rs"
+
+# `hdds` here is the declaration shim in `hdds-shim/`, not the published
+# crate. hddsgen 1.2.0 emits code against a runtime that is not
+# published: `hdds` 1.1.2 declares `Cdr2Encode` without the
+# `encode_cdr2_le_at` the generated code implements, and the
+# `ci-v1.1.5` branch drops the trait entirely. The shim carries
+# signatures only — the encoders compiled here are hddsgen's own output,
+# unedited, and they are what produces the octets.
+#
+# Set HDDS_RUNTIME=crate to build against the published crate instead,
+# for the day the two line up again.
+cat > "$work/Cargo.toml" <<TOML
+[package]
+name = "wireprobe-hdds-run"
+version = "0.0.0"
+edition = "2021"
+
+[dependencies]
+TOML
+if [ "${HDDS_RUNTIME:-shim}" = "crate" ]; then
+    printf 'hdds = "%s"\n' "$HDDS_VERSION" >> "$work/Cargo.toml"
+else
+    printf 'hdds = { path = "%s/hdds-shim" }\n' "$TOOLS" >> "$work/Cargo.toml"
+fi
+# The read direction builds a `serde_json::Value` and prints it. The
+# write direction decides no JSON and does not pull the crate.
+if [ "$reading" = 1 ]; then
+    printf 'serde_json = "1"\n' >> "$work/Cargo.toml"
+fi
+cat >> "$work/Cargo.toml" <<TOML
+
+[[bin]]
+name = "wireprobe-hdds-run"
+path = "main.rs"
+
+[workspace]
+TOML
+
+# One shared target directory across invocations: a corpus sweep is
+# hundreds of these and a cold `hdds` build is the whole cost. The
+# binary's name is this invocation's own — two parallel cases sharing
+# one target directory and one binary name would let case A run case
+# B's freshly written binary and record B's octets under A's name.
+export CARGO_TARGET_DIR="${WIREPROBE_HDDS_TARGET:-${TMPDIR:-/tmp}/wireprobe-hdds-target}"
+bin_name="wireprobe-hdds-run-$$-$RANDOM"
+sed -i.bak "s/^name = \"wireprobe-hdds-run\"\$/name = \"$bin_name\"/" "$work/Cargo.toml" \
+    && rm -f "$work/Cargo.toml.bak"
+build_status=0
+(cd "$work" && cargo build --release --quiet 2> "$work/build.log") || build_status=$?
+probe_diagnostics_after hdds "$work" "$idl" "$build_status"
+if [ "$build_status" -ne 0 ]; then
+    echo "wireprobe-hdds: the probe did not compile" >&2
+    grep -E "^error" "$work/build.log" | head -5 >&2
+    exit 4
+fi
+
+if [ "$reading" = 1 ]; then
+    # The payload comes in on standard input, so one compiled program can
+    # be run against any byte string. A nonzero exit is the generated
+    # decoder's own answer and is passed through: 4 is its refusal, and
+    # the sweep reads that as `refused`.
+    code=0
+    "$CARGO_TARGET_DIR/release/$bin_name" < "$input" > "$work/values.json" || code=$?
+    if [ "$code" != 0 ]; then
+        echo "wireprobe-hdds: the decode probe exited $code" >&2
+        exit "$code"
+    fi
+    if [ -n "$values_out" ]; then
+        cp "$work/values.json" "$values_out"
+    else
+        cat "$work/values.json"
+    fi
+    exit 0
+fi
+
+if [ "$matrix" = 1 ]; then
+    "$CARGO_TARGET_DIR/release/$bin_name"
+    exit $?
+fi
+
+hex="$("$CARGO_TARGET_DIR/release/$bin_name")"
+
+if [ -n "$out" ]; then
+    # `perl` and not `xxd`: the test host has no `xxd`.
+    printf '%s' "$hex" | perl -ne 'print pack("H*", $_)' > "$out"
+else
+    printf '%s\n' "$hex"
+fi

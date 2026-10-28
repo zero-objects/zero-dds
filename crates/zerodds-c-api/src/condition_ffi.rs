@@ -15,6 +15,10 @@
 //!   fixed-interval poll loop on the data path. Guard/Status conditions, which
 //!   have no waker, are observed within a short wakeup cap.
 //!
+//! The same signal is available as a descriptor through
+//! `zerodds_data_notify_fd`, for a caller whose event loop already has a wait
+//! point of its own and cannot block in `zerodds_waitset_wait`.
+//!
 //! Triggering:
 //! - GuardCondition: `set_trigger_value`.
 //! - StatusCondition: active if `enabled_statuses & current_status_mask != 0`.
@@ -41,6 +45,7 @@ use std::time::{Duration, Instant};
 
 use crate::ZeroDdsStatus;
 use crate::entities::{ZeroDdsDataReader, ZeroDdsDataWriter};
+use crate::ffi_helpers::copy_list_out;
 
 // ---------------------------------------------------------------------------
 // Event-driven data-availability signal (no busy-poll)
@@ -72,6 +77,39 @@ struct DataEvent {
     /// Lock anchor for the condvar; the protected value is the wake generation.
     wake_gen: Mutex<u64>,
     cvar: Condvar,
+    /// The same signal as a readable descriptor, for callers with an event
+    /// loop of their own.
+    ///
+    /// A `Condvar` can only be waited on by a thread that has nothing else to
+    /// do. An `epoll`, `kqueue`, `select`, `asyncio`, `libuv` or .NET loop
+    /// already has a wait point and cannot add one; without a descriptor such a
+    /// caller has to spend a thread parked in `zerodds_waitset_wait` and hand
+    /// the wake across — which is why the callback path in
+    /// `docs/specs/zerodds-listener-callbacks-1.1.md` §4.1 settles for a poll
+    /// the caller drives.
+    #[cfg(unix)]
+    pipe: Option<NotifyPipe>,
+}
+
+/// A self-pipe carrying the data-availability signal to a caller's event loop.
+///
+/// `UnixStream::pair` rather than `libc::pipe` or `eventfd`: it is in `std`, so
+/// this crate takes no new dependency, and both ends are ordinary descriptors
+/// that every readiness interface accepts. `eventfd` would be one descriptor
+/// instead of two, but it is Linux only and this crate also builds for macOS
+/// and the BSDs.
+#[cfg(unix)]
+struct NotifyPipe {
+    /// The end the caller polls. Never written to here.
+    read_end: std::os::unix::net::UnixStream,
+    /// The end [`DataEvent::signal`] writes one byte to.
+    write_end: std::os::unix::net::UnixStream,
+    /// Whether an unread byte is already in the pipe.
+    ///
+    /// Coalescing, so a burst of samples does not fill the buffer and so a
+    /// caller that reads one byte per wake does not fall behind by one wake per
+    /// sample. The pipe carries "something arrived", never a count.
+    armed: AtomicBool,
 }
 
 impl DataEvent {
@@ -82,7 +120,64 @@ impl DataEvent {
             *g = g.wrapping_add(1);
         }
         self.cvar.notify_all();
+        self.raise_fd();
     }
+
+    /// Puts one byte in the pipe if it is not already armed.
+    #[cfg(unix)]
+    fn raise_fd(&self) {
+        use std::io::Write as _;
+        let Some(pipe) = self.pipe.as_ref() else {
+            return;
+        };
+        // `swap` before the write: two signals racing here must produce at most
+        // one byte, and the loser must not return before the winner's byte is
+        // in the pipe — which it does not, because the loser sees `true` only
+        // after the winner set it, and the winner writes before any reader can
+        // disarm.
+        if pipe.armed.swap(true, Ordering::AcqRel) {
+            return;
+        }
+        // A full pipe already holds a wake the caller has not collected, so
+        // `EAGAIN` here is the state we wanted anyway. Any other error means
+        // the descriptor is unusable; disarm so a later signal tries again
+        // rather than leaving the caller with a pipe that never fires.
+        if (&pipe.write_end).write(&[1u8]).is_err() {
+            pipe.armed.store(false, Ordering::Release);
+        }
+    }
+
+    /// No descriptor off Unix; the condvar is the only wait point there.
+    #[cfg(not(unix))]
+    #[allow(clippy::unused_self)]
+    fn raise_fd(&self) {}
+
+    /// Empties the pipe and disarms it.
+    ///
+    /// Called by every `zerodds_waitset_wait` before it evaluates the trigger
+    /// values, so the descriptor reflects "a signal has arrived since the last
+    /// look" and not "a signal has ever arrived". Disarming *before* the read
+    /// is deliberate: a signal that lands between the two re-arms and writes,
+    /// and the caller wakes again — one spurious wake, never a missed one.
+    #[cfg(unix)]
+    fn drain_fd(&self) {
+        use std::io::Read as _;
+        let Some(pipe) = self.pipe.as_ref() else {
+            return;
+        };
+        pipe.armed.store(false, Ordering::Release);
+        let mut sink = [0u8; 64];
+        while let Ok(n) = (&pipe.read_end).read(&mut sink) {
+            if n < sink.len() {
+                break;
+            }
+        }
+    }
+
+    /// No descriptor off Unix.
+    #[cfg(not(unix))]
+    #[allow(clippy::unused_self)]
+    fn drain_fd(&self) {}
 }
 
 fn data_event() -> &'static Arc<DataEvent> {
@@ -92,7 +187,30 @@ fn data_event() -> &'static Arc<DataEvent> {
         Arc::new(DataEvent {
             wake_gen: Mutex::new(0),
             cvar: Condvar::new(),
+            #[cfg(unix)]
+            pipe: new_notify_pipe(),
         })
+    })
+}
+
+/// Builds the self-pipe, or `None` if the process cannot spare two descriptors.
+///
+/// A failure here costs the descriptor and nothing else: the condvar path is
+/// untouched, `zerodds_waitset_wait` behaves as before, and
+/// `zerodds_data_notify_fd` reports it rather than handing back a descriptor
+/// that never fires.
+#[cfg(unix)]
+fn new_notify_pipe() -> Option<NotifyPipe> {
+    let (read_end, write_end) = std::os::unix::net::UnixStream::pair().ok()?;
+    // Non-blocking on both ends. The writer runs in the receive path and must
+    // never block there; the reader is drained in a loop that stops on
+    // `WouldBlock`.
+    read_end.set_nonblocking(true).ok()?;
+    write_end.set_nonblocking(true).ok()?;
+    Some(NotifyPipe {
+        read_end,
+        write_end,
+        armed: AtomicBool::new(false),
     })
 }
 
@@ -165,9 +283,19 @@ unsafe fn register_condition_data_waker(cond: *mut core::ffi::c_void) {
             return;
         }
         let drr = &*reader;
-        drr.rt
-            .register_user_reader_waker(drr.eid, Some(make_data_waker()));
+        // A reader not registered with the runtime yet takes the waker at
+        // its registration (DDS 1.4 §2.2.2.1.1.7).
+        drr.lifecycle.want_waker();
+        if drr.lifecycle.is_registered() {
+            register_reader_data_waker(drr);
+        }
     }
+}
+
+/// Sets the global data-availability waker on the runtime slot of `drr`.
+pub(crate) fn register_reader_data_waker(drr: &ZeroDdsDataReader) {
+    drr.rt
+        .register_user_reader_waker(drr.eid, Some(make_data_waker()));
 }
 
 // ---------------------------------------------------------------------------
@@ -281,10 +409,11 @@ pub struct ZeroDdsQueryCondition {
     sample_states: u32,
     view_states: u32,
     instance_states: u32,
-    /// Filter expression.
-    expression: alloc::string::String,
-    /// Filter parameters.
-    parameters: Vec<alloc::string::String>,
+    /// Filter expression. Behind a lock: `zerodds_querycondition_set_expression`
+    /// changes it while a wait may be evaluating it.
+    expression: std::sync::RwLock<alloc::string::String>,
+    /// Filter parameters, behind a lock for `zerodds_querycondition_set_parameters`.
+    parameters: std::sync::RwLock<Vec<alloc::string::String>>,
 }
 
 // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
@@ -297,22 +426,12 @@ unsafe impl Sync for ZeroDdsQueryCondition {}
 // ---------------------------------------------------------------------------
 
 fn drain_channel_into_cache(drr: &ZeroDdsDataReader) {
-    use zerodds_dcps::runtime::UserSample;
-    if let (Ok(rx), Ok(mut cache)) = (drr.rx.lock(), drr.read_cache.lock()) {
-        while let Ok(s) = rx.try_recv() {
-            let pass = if let Some(filter) = &drr.cft_filter {
-                match &s {
-                    UserSample::Alive { payload, .. } => filter.evaluate(payload),
-                    UserSample::Lifecycle { .. } => true,
-                }
-            } else {
-                true
-            };
-            if pass {
-                cache.push((s, crate::entities::ReadSampleState::NotRead));
-            }
-        }
-    }
+    // Same resolution the take/read path uses (`InstanceTracker`
+    // view_state/instance_state/generation counts baked once at arrival),
+    // not a second, unresolved trigger-only copy — see
+    // `subscriber_ffi::resolve_instances_and_ownership`'s doc comment for
+    // why re-baking an already-cached entry would corrupt that state.
+    let _ = crate::subscriber_ffi::drain_fresh_into_read_cache(drr, usize::MAX);
 }
 
 fn cache_has_matching(
@@ -325,16 +444,156 @@ fn cache_has_matching(
         Ok(g) => g,
         Err(_) => return false,
     };
-    cache.iter().any(|(_sample, st)| {
-        let s_bit = match st {
-            crate::entities::ReadSampleState::Read => 1u32,
-            crate::entities::ReadSampleState::NotRead => 2u32,
-        };
-        let s_ok = sample_states == 0 || (sample_states & s_bit) != 0;
-        let v_ok = view_states == 0 || (view_states & 1u32) != 0; // RC1: all samples NEW
-        let i_ok = instance_states == 0 || (instance_states & 1u32) != 0; // RC1: ALIVE
-        s_ok && v_ok && i_ok
+    cache.iter().any(|(_sample, st, info)| {
+        crate::subscriber_ffi::entry_in_states(
+            *st,
+            info,
+            (sample_states, view_states, instance_states),
+        )
     })
+}
+
+/// The expression of a QueryCondition, parsed, with its parameters and the type it reads the
+/// fields of a sample through (DDS 1.4 §2.2.2.5.9, Annex B).
+pub(crate) struct Query {
+    /// The condition; none when the expression only orders.
+    expr: Option<zerodds_sql_filter::Expr>,
+    /// The fields of `ORDER BY` (Annex B.2 `QueryExpression`).
+    order_by: Vec<alloc::string::String>,
+    values: Vec<zerodds_sql_filter::Value>,
+    typed: Option<Arc<zerodds_dcps::serialized_type::SerializedTypeSupport>>,
+    /// The expression names a field and the reader has no type to find it in. No sample can
+    /// be evaluated; a read that would have to evaluate one is refused (see `blocked`).
+    blocked: bool,
+}
+
+impl Query {
+    /// The query of `expression` over `drr`. `BadParameter` when the expression does not
+    /// parse. An expression that names a field on a reader without a type
+    /// (`zerodds_dr_set_type_objects`) is `blocked`: no sample passes it, and a read that
+    /// finds a sample to evaluate returns `PreconditionNotMet` instead of passing it.
+    pub(crate) fn prepare(
+        drr: &ZeroDdsDataReader,
+        expression: &str,
+        params: &[alloc::string::String],
+    ) -> Result<Self, ZeroDdsStatus> {
+        let parsed = zerodds_sql_filter::parse_query_expression(expression)
+            .map_err(|_| ZeroDdsStatus::BadParameter)?;
+        let (expr, order_by) = (parsed.condition, parsed.order_by);
+        let typed = drr
+            .query_type
+            .lock()
+            .ok()
+            .and_then(|g| g.clone())
+            .or_else(|| drr.cft_filter.as_ref().and_then(|f| f.typed.clone()));
+        // A field the reader has no type for cannot be read, in the condition
+        // or in `ORDER BY`.
+        let blocked = typed.is_none()
+            && (expr
+                .as_ref()
+                .is_some_and(zerodds_sql_filter::Expr::references_fields)
+                || !order_by.is_empty());
+        let values = params
+            .iter()
+            .map(|p| zerodds_sql_filter::Value::from_parameter(p))
+            .collect();
+        Ok(Self {
+            expr,
+            order_by,
+            values,
+            typed,
+            blocked,
+        })
+    }
+
+    /// Whether the expression orders (`ORDER BY`).
+    pub(crate) fn orders(&self) -> bool {
+        !self.order_by.is_empty()
+    }
+
+    /// The `ORDER BY` key of a sample: the value of each field, `null` for
+    /// a notice without data or a field the sample lacks.
+    pub(crate) fn order_key(
+        &self,
+        sample: &zerodds_dcps::runtime::UserSample,
+    ) -> Vec<zerodds_sql_filter::Value> {
+        use zerodds_dcps::runtime::UserSample;
+        use zerodds_sql_filter::{RowAccess, Value};
+        let row = match (sample, &self.typed) {
+            (
+                UserSample::Alive {
+                    payload,
+                    representation,
+                    big_endian,
+                    ..
+                },
+                Some(typed),
+            ) => typed
+                .read_body(
+                    payload.as_ref(),
+                    zerodds_dcps::serialized_type::read_body_representation(*representation),
+                    *big_endian,
+                )
+                .ok(),
+            _ => None,
+        };
+        self.order_by
+            .iter()
+            .map(|field| {
+                row.as_ref()
+                    .and_then(|row| crate::entities::TypedRow(row).get(field))
+                    .unwrap_or(Value::Null)
+            })
+            .collect()
+    }
+
+    /// Whether the expression cannot be evaluated for want of the reader's type.
+    pub(crate) fn blocked(&self) -> bool {
+        self.blocked
+    }
+
+    /// Whether `sample` satisfies the expression. A body that does not decode, or a field the
+    /// expression cannot resolve, does not.
+    pub(crate) fn matches(&self, sample: &zerodds_dcps::runtime::UserSample) -> bool {
+        use zerodds_dcps::runtime::UserSample;
+        if self.blocked {
+            return matches!(sample, UserSample::Lifecycle { .. });
+        }
+        match sample {
+            UserSample::Alive {
+                payload,
+                representation,
+                big_endian,
+                ..
+            } => match &self.typed {
+                Some(typed) => {
+                    let representation =
+                        zerodds_dcps::serialized_type::read_body_representation(*representation);
+                    match typed.read_body(payload.as_ref(), representation, *big_endian) {
+                        Ok(row) => self.expr.as_ref().is_none_or(|expr| {
+                            expr.evaluate(&crate::entities::TypedRow(&row), &self.values)
+                                .unwrap_or(false)
+                        }),
+                        Err(_) => false,
+                    }
+                }
+                None => {
+                    struct EmptyRow;
+                    impl zerodds_sql_filter::RowAccess for EmptyRow {
+                        fn get(&self, _path: &str) -> Option<zerodds_sql_filter::Value> {
+                            None
+                        }
+                    }
+                    self.expr
+                        .as_ref()
+                        .is_none_or(|expr| expr.evaluate(&EmptyRow, &self.values).unwrap_or(false))
+                }
+            },
+            UserSample::Lifecycle { .. } => true,
+            // Not a sample — see `drain_channel_into_cache`.
+            UserSample::CoherentSetEnd { .. } => false,
+        }
+    }
 }
 
 fn cache_has_matching_query(
@@ -345,33 +604,44 @@ fn cache_has_matching_query(
     expression: &str,
     params: &[alloc::string::String],
 ) -> bool {
-    use zerodds_dcps::runtime::UserSample;
-    if !cache_has_matching(drr, sample_states, view_states, instance_states) {
+    let Ok(query) = Query::prepare(drr, expression, params) else {
         return false;
-    }
-    // Parse the filter expression.
-    let expr = match zerodds_sql_filter::parse(expression) {
-        Ok(e) => e,
-        Err(_) => return false,
     };
-    let values: Vec<zerodds_sql_filter::Value> = params
-        .iter()
-        .map(|p| zerodds_sql_filter::Value::String(p.clone()))
-        .collect();
     let cache = match drr.read_cache.lock() {
         Ok(g) => g,
         Err(_) => return false,
     };
-    struct EmptyRow;
-    impl zerodds_sql_filter::RowAccess for EmptyRow {
-        fn get(&self, _path: &str) -> Option<zerodds_sql_filter::Value> {
-            None
+    cache.iter().any(|(sample, st, info)| {
+        crate::subscriber_ffi::entry_in_states(
+            *st,
+            info,
+            (sample_states, view_states, instance_states),
+        ) && query.matches(sample)
+    })
+}
+
+/// The query of a QueryCondition, or `None` for a ReadCondition.
+///
+/// # Safety
+/// `c` valid or NULL, as for [`condition_state_masks`].
+pub(crate) unsafe fn condition_query(
+    c: *const core::ffi::c_void,
+) -> Result<Option<Query>, ZeroDdsStatus> {
+    // SAFETY: see fn # Safety doc — the kind is read after the NULL check.
+    unsafe {
+        match condition_kind(c) {
+            Some(ConditionKind::Query) => {
+                let q = &*(c as *const ZeroDdsQueryCondition);
+                if q.reader.is_null() {
+                    return Err(ZeroDdsStatus::BadHandle);
+                }
+                let (expression, parameters) = query_snapshot(q);
+                Query::prepare(&*q.reader, &expression, &parameters).map(Some)
+            }
+            Some(ConditionKind::Read) => Ok(None),
+            _ => Err(ZeroDdsStatus::BadParameter),
         }
     }
-    cache.iter().any(|(s, _)| match s {
-        UserSample::Alive { .. } => expr.evaluate(&EmptyRow, &values).unwrap_or(true),
-        UserSample::Lifecycle { .. } => true,
-    })
 }
 
 // ---------------------------------------------------------------------------
@@ -435,15 +705,13 @@ pub unsafe extern "C" fn zerodds_condition_get_trigger_value(c: *const core::ffi
                 .trigger
                 .load(Ordering::SeqCst),
             ConditionKind::Status => {
-                // RC1: any non-empty `enabled_statuses` triggers if at least
-                // one status counter is > 0. Since we have the entity pointer but
-                // no type tag for it, we return `true` if enabled_statuses
-                // != 0 as a spec-conformant fallback — the listener FFI in the
-                // follow-up WP wires this per entity type.
-                (*(c as *const ZeroDdsStatusCondition))
-                    .enabled_statuses
-                    .load(Ordering::SeqCst)
-                    != 0
+                // DDS 1.4 §2.2.2.1.6: the trigger is the entity's
+                // StatusChangedFlags masked by the enabled statuses. It was
+                // `enabled_statuses != 0`: a WaitSet holding a
+                // StatusCondition returned at once, whatever had changed.
+                let sc = &*(c as *const ZeroDdsStatusCondition);
+                let enabled = sc.enabled_statuses.load(Ordering::SeqCst);
+                enabled != 0 && status_changes_of(sc.entity) & enabled != 0
             }
             ConditionKind::Read => {
                 let r = &*(c as *const ZeroDdsReadCondition);
@@ -453,6 +721,16 @@ pub unsafe extern "C" fn zerodds_condition_get_trigger_value(c: *const core::ffi
                 let drr = &*r.reader;
                 // Spec §2.2.2.5.8: trigger_value true if the reader has samples that
                 // match the (sample_states, view_states, instance_states) mask.
+                //
+                // The cache first, and the channel only if the cache does not
+                // already answer. A drain takes two locks and, on a reader with
+                // a content filter, evaluates the filter over every sample it
+                // moves — work this question does not need when the answer is
+                // already in hand. A WaitSet over N readers asks all N on every
+                // wake, and the ones that are already ready are the common case.
+                if cache_has_matching(drr, r.sample_states, r.view_states, r.instance_states) {
+                    return true;
+                }
                 drain_channel_into_cache(drr);
                 cache_has_matching(drr, r.sample_states, r.view_states, r.instance_states)
             }
@@ -462,6 +740,20 @@ pub unsafe extern "C" fn zerodds_condition_get_trigger_value(c: *const core::ffi
                     return false;
                 }
                 let drr = &*q.reader;
+                // Same order as the ReadCondition above, and it matters more
+                // here: the filter expression is evaluated per sample on top of
+                // the drain's own work.
+                let (expression, parameters) = query_snapshot(q);
+                if cache_has_matching_query(
+                    drr,
+                    q.sample_states,
+                    q.view_states,
+                    q.instance_states,
+                    &expression,
+                    &parameters,
+                ) {
+                    return true;
+                }
                 drain_channel_into_cache(drr);
                 // Spec §2.2.2.5.9: additionally evaluate the filter expression.
                 cache_has_matching_query(
@@ -469,8 +761,8 @@ pub unsafe extern "C" fn zerodds_condition_get_trigger_value(c: *const core::ffi
                     q.sample_states,
                     q.view_states,
                     q.instance_states,
-                    &q.expression,
-                    &q.parameters,
+                    &expression,
+                    &parameters,
                 )
             }
         }
@@ -669,9 +961,101 @@ pub unsafe extern "C" fn zerodds_dr_create_querycondition(
             sample_states,
             view_states,
             instance_states,
-            expression,
-            parameters,
+            expression: std::sync::RwLock::new(expression),
+            parameters: std::sync::RwLock::new(parameters),
         }))
+    }
+}
+
+/// The expression and parameters of a query condition as they are now.
+fn query_snapshot(
+    q: &ZeroDdsQueryCondition,
+) -> (alloc::string::String, Vec<alloc::string::String>) {
+    (
+        q.expression.read().map(|g| g.clone()).unwrap_or_default(),
+        q.parameters.read().map(|g| g.clone()).unwrap_or_default(),
+    )
+}
+
+/// Replaces the filter expression of a QueryCondition (DDS-PSM-Cxx 1.0
+/// `QueryCondition::expression(const std::string&)`).
+///
+/// Returns `BadHandle` for NULL or a condition that is not a QueryCondition,
+/// `BadParameter` for a NULL or non-UTF-8 expression.
+///
+/// # Safety
+/// `c` is NULL or a condition from `zerodds_dr_create_querycondition`;
+/// `expr` is NULL or NUL-terminated.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn zerodds_querycondition_set_expression(
+    c: *mut core::ffi::c_void,
+    expr: *const core::ffi::c_char,
+) -> c_int {
+    // SAFETY: see fn # Safety doc — the kind is read from the header after the NULL check.
+    unsafe {
+        if !matches!(condition_kind(c), Some(ConditionKind::Query)) {
+            return ZeroDdsStatus::BadHandle as c_int;
+        }
+        if expr.is_null() {
+            return ZeroDdsStatus::BadParameter as c_int;
+        }
+        let Ok(text) = std::ffi::CStr::from_ptr(expr).to_str() else {
+            return ZeroDdsStatus::BadParameter as c_int;
+        };
+        let q = &*(c as *const ZeroDdsQueryCondition);
+        match q.expression.write() {
+            Ok(mut g) => {
+                *g = text.to_string();
+                ZeroDdsStatus::Ok as c_int
+            }
+            Err(_) => ZeroDdsStatus::Error as c_int,
+        }
+    }
+}
+
+/// Replaces the parameters of a QueryCondition (DDS 1.4 §2.2.2.5.9
+/// `set_query_parameters`).
+///
+/// Returns `BadHandle` for NULL or a condition that is not a QueryCondition.
+/// A NULL entry or a non-UTF-8 entry is `BadParameter`, and then nothing changes.
+///
+/// # Safety
+/// `c` is NULL or a condition from `zerodds_dr_create_querycondition`;
+/// `params[0..count]` are NUL-terminated strings, or `params` is NULL with `count` 0.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn zerodds_querycondition_set_parameters(
+    c: *mut core::ffi::c_void,
+    params: *const *const core::ffi::c_char,
+    count: usize,
+) -> c_int {
+    // SAFETY: see fn # Safety doc.
+    unsafe {
+        if !matches!(condition_kind(c), Some(ConditionKind::Query)) {
+            return ZeroDdsStatus::BadHandle as c_int;
+        }
+        let mut next: Vec<alloc::string::String> = Vec::with_capacity(count);
+        if count > 0 {
+            if params.is_null() {
+                return ZeroDdsStatus::BadParameter as c_int;
+            }
+            for &p in slice::from_raw_parts(params, count) {
+                if p.is_null() {
+                    return ZeroDdsStatus::BadParameter as c_int;
+                }
+                let Ok(text) = std::ffi::CStr::from_ptr(p).to_str() else {
+                    return ZeroDdsStatus::BadParameter as c_int;
+                };
+                next.push(text.to_string());
+            }
+        }
+        let q = &*(c as *const ZeroDdsQueryCondition);
+        match q.parameters.write() {
+            Ok(mut g) => {
+                *g = next;
+                ZeroDdsStatus::Ok as c_int
+            }
+            Err(_) => ZeroDdsStatus::Error as c_int,
+        }
     }
 }
 
@@ -794,10 +1178,18 @@ pub unsafe extern "C" fn zerodds_waitset_detach_condition(
 }
 
 /// Waits until at least one condition triggers or a timeout.
-/// Writes active conditions into `out_active[0..*out_count]`.
+///
+/// Writes the active conditions into `out_active`: the first
+/// `min(len, cap)` handles, `*out_count` set to the **total** number of active
+/// conditions. The return value is `OutOfResources` when `len > cap` (so a
+/// caller retries with a buffer of `*out_count`), `Ok` when the buffer held
+/// every active condition, and `Timeout` when none triggered within the
+/// deadline. A NULL `out_active` with `cap == 0` asks for the length alone
+/// (`docs/specs/zerodds-c-api-1.0.md` §2.8).
 ///
 /// # Safety
-/// `w`, `out_active`, `out_count`, `timeout` valid.
+/// `w`, `out_count`, `timeout` valid; `out_active[0..cap]` writeable, or
+/// `out_active` NULL exactly when `cap == 0`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_waitset_wait(
     w: *mut ZeroDdsWaitSet,
@@ -807,7 +1199,10 @@ pub unsafe extern "C" fn zerodds_waitset_wait(
     timeout_sec: i32,
     timeout_nanosec: u32,
 ) -> c_int {
-    if w.is_null() || out_active.is_null() || out_count.is_null() {
+    if w.is_null() || out_count.is_null() {
+        return ZeroDdsStatus::BadParameter as c_int;
+    }
+    if out_active.is_null() && cap != 0 {
         return ZeroDdsStatus::BadParameter as c_int;
     }
     let timeout = if timeout_sec == i32::MAX && timeout_nanosec == u32::MAX {
@@ -816,8 +1211,9 @@ pub unsafe extern "C" fn zerodds_waitset_wait(
         Duration::new(timeout_sec.max(0) as u64, timeout_nanosec)
     };
     let deadline = Instant::now() + timeout;
-    // SAFETY: see fn # Safety doc — w+out_active+out_count NULL-checked above; the conds items
-    // come from attach_condition (the caller provided valid condition pointers).
+    // SAFETY: see fn # Safety doc — w+out_count NULL-checked above, and a NULL
+    // `out_active` is admitted only for `cap == 0`; the conds items come from
+    // attach_condition (the caller provided valid condition pointers).
     unsafe {
         let ws = &*w;
         let ev = data_event();
@@ -826,6 +1222,10 @@ pub unsafe extern "C" fn zerodds_waitset_wait(
             // that lands between the check and the block is not lost: if the
             // generation moved, we loop and re-check instead of blocking.
             let seen_gen = ev.wake_gen.lock().map(|g| *g).unwrap_or(0);
+            // And empty the descriptor in the same breath, so a caller that
+            // alternates `select` with a zero-timeout wait here sees one
+            // readable event per arrival rather than a pipe that stays hot.
+            ev.drain_fd();
 
             let conds: Vec<*mut core::ffi::c_void> =
                 ws.conditions.lock().map(|g| g.clone()).unwrap_or_default();
@@ -836,11 +1236,7 @@ pub unsafe extern "C" fn zerodds_waitset_wait(
                 }
             }
             if !active.is_empty() {
-                let n = active.len().min(cap);
-                let dst = slice::from_raw_parts_mut(out_active, n);
-                dst.copy_from_slice(&active[..n]);
-                *out_count = n;
-                return ZeroDdsStatus::Ok as c_int;
+                return copy_list_out(out_active, cap, &active, out_count);
             }
             let now = Instant::now();
             if now >= deadline {
@@ -881,8 +1277,15 @@ pub unsafe extern "C" fn zerodds_waitset_wait(
 
 /// Returns all attached conditions.
 ///
+/// The first `min(len, cap)` handles are written into `out`, `*out_count` is
+/// set to the **total** number of attached conditions, and the return value is
+/// `OutOfResources` when `len > cap` (so a caller retries with a buffer of
+/// `*out_count`), `Ok` otherwise. A NULL `out` with `cap == 0` asks for the
+/// length alone (`docs/specs/zerodds-c-api-1.0.md` §2.8).
+///
 /// # Safety
-/// `w`, `out`, `out_count` valid.
+/// `w`, `out_count` valid; `out[0..cap]` writeable, or `out` NULL exactly
+/// when `cap == 0`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_waitset_get_conditions(
     w: *mut ZeroDdsWaitSet,
@@ -890,23 +1293,181 @@ pub unsafe extern "C" fn zerodds_waitset_get_conditions(
     cap: usize,
     out_count: *mut usize,
 ) -> c_int {
-    if w.is_null() || out.is_null() || out_count.is_null() {
+    if w.is_null() || out_count.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
-    // SAFETY: see fn # Safety doc — w+out+out_count NULL-checked above; out[0..cap]
-    // must be writeable (caller pledge).
+    // SAFETY: see fn # Safety doc — w+out_count NULL-checked above; the
+    // buffer contract is enforced by `copy_list_out`.
     unsafe {
         let conds: Vec<*mut core::ffi::c_void> = (*w)
             .conditions
             .lock()
             .map(|g| g.clone())
             .unwrap_or_default();
-        let n = conds.len().min(cap);
-        let dst = slice::from_raw_parts_mut(out, n);
-        dst.copy_from_slice(&conds[..n]);
-        *out_count = n;
+        copy_list_out(out, cap, &conds, out_count)
     }
-    ZeroDdsStatus::Ok as c_int
+}
+
+/// A descriptor that becomes readable when a sample arrives on any reader.
+///
+/// For a caller that already has an event loop. Put the descriptor in
+/// `select`, `poll`, `epoll`, `kqueue`, or whatever the language's loop
+/// accepts; when it reads ready, call [`zerodds_waitset_wait`] with a zero
+/// timeout to learn *which* conditions triggered. The descriptor says that
+/// something arrived, never what or how much.
+///
+/// ```c
+/// int fd = zerodds_data_notify_fd();
+/// fd_set r; FD_ZERO(&r); FD_SET(fd, &r);
+/// select(fd + 1, &r, NULL, NULL, NULL);          // sleeps, does not poll
+/// zerodds_waitset_wait(ws, active, cap, &n, 0, 0);
+/// ```
+///
+/// Without this, a caller with its own loop had two choices, and the callback
+/// spec (`docs/specs/zerodds-listener-callbacks-1.1.md` §4.1) took the second:
+/// park a thread in [`zerodds_waitset_wait`] and forward the wake, or drive
+/// `zerodds_poll_listeners` on a timer. A poll's period is a floor under
+/// latency in each direction, and it spends the CPU that the delivery threads
+/// need — measured on an overbooked host, three poll variants delivered one
+/// sample between two processes across 46 million iterations while the waker
+/// path came through.
+///
+/// The descriptor is process-global and level-triggered until drained: it is
+/// emptied by [`zerodds_waitset_wait`], so alternating the two is the intended
+/// use. Reading it directly is allowed and drains one wake; the byte carries no
+/// meaning.
+///
+/// Owned by the library — do not `close` it. It stays valid for the life of the
+/// process.
+///
+/// # Returns
+/// The descriptor, or `-1` where there is none: on Windows, which has no
+/// descriptor `select` accepts for this, and in the (unexpected) case that the
+/// process could not spare two descriptors at startup. `-1` is not an error to
+/// recover from — it means this caller must use [`zerodds_waitset_wait`]
+/// itself.
+#[unsafe(no_mangle)]
+pub extern "C" fn zerodds_data_notify_fd() -> c_int {
+    #[cfg(unix)]
+    {
+        use std::os::unix::io::AsRawFd as _;
+        data_event()
+            .pipe
+            .as_ref()
+            .map_or(-1, |p| p.read_end.as_raw_fd())
+    }
+    #[cfg(not(unix))]
+    {
+        -1
+    }
+}
+
+/// Whether this reader is holding samples the application has not read.
+///
+/// The question a loop asks after [`zerodds_data_notify_fd`] wakes it: which
+/// of my readers has something? It answers from what the reader already holds
+/// and moves what the receive path has queued into that cache — it does not
+/// decode a sample, does not consume one, and leaves every sample readable by
+/// `zerodds_dr_take` / `zerodds_dr_read` afterwards.
+///
+/// Cheaper than a `ReadCondition` when the caller only wants a yes or no: no
+/// condition object, no WaitSet, no state masks. On a reader with a content
+/// filter it is cheaper again on the second and later calls, because the
+/// filter runs once per sample as it is moved, not once per question.
+///
+/// # Safety
+/// `dr` is NULL or a live reader handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn zerodds_dr_has_data(dr: *mut ZeroDdsDataReader) -> bool {
+    if dr.is_null() {
+        return false;
+    }
+    // The sample-state bit for NOT_READ (1 is READ, 2 is NOT_READ), and any
+    // view or instance state. "Unread" is the question a wake-up asks; a
+    // caller that wants a different mask builds a ReadCondition.
+    const NOT_READ: u32 = 2;
+    const ANY: u32 = 0;
+    // SAFETY: see fn # Safety doc — NULL-checked above; the caller pledges a
+    // live reader.
+    unsafe {
+        let drr = &*dr;
+        // The cache first: a reader that already holds an unread sample needs
+        // no channel work to answer.
+        if cache_has_matching(drr, NOT_READ, ANY, ANY) {
+            return true;
+        }
+        drain_channel_into_cache(drr);
+        cache_has_matching(drr, NOT_READ, ANY, ANY)
+    }
+}
+
+/// The StatusChangedFlags (DDS 1.4 §2.2.4.1) of `entity`, by what it was
+/// created as: a writer's and a reader's from the runtime, DATA_AVAILABLE
+/// while a reader holds an unread sample, DATA_ON_READERS while one of a
+/// subscriber's readers does, INCONSISTENT_TOPIC while a topic's count
+/// moved since it was read. 0 for a participant, a publisher, and anything
+/// else.
+///
+/// # Safety
+/// `entity` is a live entity handle or an address no entity has.
+pub(crate) unsafe fn status_changes_of(entity: *mut core::ffi::c_void) -> u32 {
+    use crate::entities::StatusEntityKind;
+    use zerodds_dcps::psm_constants::status;
+    const NOT_READ: u32 = 2;
+    const ANY: u32 = 0;
+    let unread = |drr: &ZeroDdsDataReader| {
+        cache_has_matching(drr, NOT_READ, ANY, ANY) || {
+            drain_channel_into_cache(drr);
+            cache_has_matching(drr, NOT_READ, ANY, ANY)
+        }
+    };
+    // SAFETY: the kind is what the live handle at this address was created
+    // as (`note_status_entity`), so the cast is to its own type.
+    unsafe {
+        match crate::entities::status_entity_kind(entity) {
+            Some(StatusEntityKind::DataWriter) => {
+                let dw = &*(entity as *const ZeroDdsDataWriter);
+                dw.rt.user_writer_status_changes(dw.eid)
+            }
+            Some(StatusEntityKind::DataReader) => {
+                let dr = &*(entity as *const ZeroDdsDataReader);
+                let mut changes = dr.rt.user_reader_status_changes(dr.eid);
+                if unread(dr) {
+                    changes |= status::DATA_AVAILABLE;
+                }
+                changes
+            }
+            Some(StatusEntityKind::Subscriber) => {
+                let sub = &*(entity as *const crate::entities::ZeroDdsSubscriber);
+                let readers = sub
+                    .datareaders
+                    .lock()
+                    .map(|r| r.clone())
+                    .unwrap_or_default();
+                if readers.iter().any(|dr| !dr.is_null() && unread(&**dr)) {
+                    status::DATA_ON_READERS
+                } else {
+                    0
+                }
+            }
+            Some(StatusEntityKind::Topic) => {
+                let topic = &*(entity as *const crate::entities::ZeroDdsTopic);
+                if topic.participant.is_null() {
+                    return 0;
+                }
+                let participant = &*topic.participant;
+                let total = participant.rt.as_ref().map_or(0, |rt| {
+                    i32::try_from(rt.inconsistent_topic_count_for(&topic.name)).unwrap_or(i32::MAX)
+                });
+                if total != topic.inconsistent_topic_read.load(Ordering::Acquire) {
+                    status::INCONSISTENT_TOPIC
+                } else {
+                    0
+                }
+            }
+            None => 0,
+        }
+    }
 }
 
 // suppress unused-import warning
@@ -932,6 +1493,155 @@ mod tests {
         assert_eq!(core::mem::offset_of!(ZeroDdsQueryCondition, header), 0);
     }
 
+    /// The descriptor exists and is not one of the standard streams.
+    #[cfg(unix)]
+    #[test]
+    fn notify_fd_is_a_real_descriptor() {
+        let fd = zerodds_data_notify_fd();
+        assert!(fd > 2, "expected a descriptor of its own, got {fd}");
+        assert_eq!(fd, zerodds_data_notify_fd(), "the descriptor is stable");
+    }
+
+    /// A signal makes the descriptor readable, and `select` returns without
+    /// anyone polling.
+    ///
+    /// On an event of its own, not the process-global one: every
+    /// `zerodds_waitset_wait` in this binary drains that descriptor, so a test
+    /// asserting on its state would be racing every other test in the file.
+    /// What is under test is the mechanism — `raise_fd`, `drain_fd`, and a
+    /// `select` that returns because a byte was written — and that is the same
+    /// code either way.
+    ///
+    /// The wait is the point: a `select` with a long timeout returns only
+    /// because the signal wrote a byte. A poll loop would return early and fail
+    /// the lower bound, so the timeout is there to fail the test rather than to
+    /// drive it.
+    #[cfg(unix)]
+    #[test]
+    fn a_signal_wakes_a_select() {
+        use std::io::Read as _;
+        use std::os::unix::io::AsRawFd as _;
+
+        let ev = Arc::new(DataEvent {
+            wake_gen: Mutex::new(0),
+            pipe: new_notify_pipe(),
+            cvar: Condvar::new(),
+        });
+        let fd = ev.pipe.as_ref().expect("pipe").read_end.as_raw_fd();
+        assert!(fd > 2, "expected a descriptor of its own, got {fd}");
+
+        // Signal from another thread once the reader is inside `select`, so
+        // the wake is what returns the call and not a byte written earlier.
+        let signaller = Arc::clone(&ev);
+        let handle = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(50));
+            signaller.signal();
+        });
+
+        let started = Instant::now();
+        let readable = wait_readable(fd, Duration::from_secs(5));
+        let waited = started.elapsed();
+        handle.join().expect("signalling thread");
+
+        assert!(readable, "select did not report the descriptor readable");
+        assert!(
+            waited >= Duration::from_millis(40),
+            "returned before the signal was sent ({waited:?}) — the descriptor \
+             was already hot"
+        );
+        assert!(
+            waited < Duration::from_secs(4),
+            "select ran to its timeout ({waited:?}) — the signal never arrived"
+        );
+
+        // One byte, coalesced: three signals before a drain add nothing.
+        ev.drain_fd();
+        ev.signal();
+        ev.signal();
+        ev.signal();
+        let mut buf = [0u8; 16];
+        let pipe = ev.pipe.as_ref().expect("pipe");
+        let n = (&pipe.read_end).read(&mut buf).expect("read");
+        assert_eq!(n, 1, "expected the pipe to coalesce to a single byte");
+
+        // And after a drain it is quiet until the next signal. Kept in this
+        // test rather than its own: the event is process-global, so two tests
+        // asserting on its state would signal into each other's wait.
+        ev.drain_fd();
+        assert!(
+            !wait_readable(fd, Duration::from_millis(100)),
+            "descriptor still readable after a drain"
+        );
+        ev.signal();
+        assert!(
+            wait_readable(fd, Duration::from_secs(2)),
+            "descriptor did not come back after a fresh signal"
+        );
+        ev.drain_fd();
+    }
+
+    /// `select(2)` on one descriptor, through the raw syscall so the test
+    /// depends on nothing this crate does not already depend on.
+    #[cfg(unix)]
+    fn wait_readable(fd: c_int, timeout: Duration) -> bool {
+        // SAFETY: `fds` is a live, zeroed `fd_set` sized by the kernel's own
+        // header; `fd` is a descriptor this process owns and is below
+        // `FD_SETSIZE` (it is one of the first handful opened). `select` reads
+        // and writes only the two structures passed by pointer.
+        unsafe {
+            let mut fds: FdSet = core::mem::zeroed();
+            fd_set_insert(&mut fds, fd);
+            let mut tv = TimeVal {
+                tv_sec: timeout.as_secs() as isize,
+                tv_usec: isize::try_from(timeout.subsec_micros()).unwrap_or(0),
+            };
+            select(
+                fd + 1,
+                &raw mut fds,
+                ptr::null_mut(),
+                ptr::null_mut(),
+                &raw mut tv,
+            ) > 0
+        }
+    }
+
+    #[cfg(unix)]
+    const FD_SETSIZE_WORDS: usize = 1024 / (8 * core::mem::size_of::<usize>());
+
+    /// The kernel's `fd_set`: a bitmap of `FD_SETSIZE` bits.
+    #[cfg(unix)]
+    #[repr(C)]
+    struct FdSet {
+        bits: [usize; FD_SETSIZE_WORDS],
+    }
+
+    /// The kernel's `timeval`.
+    #[cfg(unix)]
+    #[repr(C)]
+    struct TimeVal {
+        tv_sec: isize,
+        tv_usec: isize,
+    }
+
+    #[cfg(unix)]
+    fn fd_set_insert(set: &mut FdSet, fd: c_int) {
+        let bits = 8 * core::mem::size_of::<usize>();
+        let index = (fd as usize) / bits;
+        let bit = (fd as usize) % bits;
+        set.bits[index] |= 1usize << bit;
+    }
+
+    #[cfg(unix)]
+    unsafe extern "C" {
+        fn select(
+            nfds: c_int,
+            readfds: *mut FdSet,
+            writefds: *mut FdSet,
+            exceptfds: *mut FdSet,
+            timeout: *mut TimeVal,
+        ) -> c_int;
+    }
+
     #[test]
     fn guardcondition_lifecycle_and_trigger() {
         let g = zerodds_guardcondition_create();
@@ -954,6 +1664,57 @@ mod tests {
             let _ = zerodds_statuscondition_set_enabled_statuses(sc, 0x1234);
             assert_eq!(zerodds_statuscondition_get_enabled_statuses(sc), 0x1234);
             zerodds_statuscondition_destroy(sc);
+        }
+    }
+
+    /// DDS 1.4 §2.2.2.1.6 through C: a writer's StatusCondition on
+    /// PUBLICATION_MATCHED triggers once a reader matched and stops after
+    /// the status was read; one on a participant, which has no status of
+    /// its own, never triggers. It triggered whenever a mask was set.
+    #[test]
+    fn a_status_condition_triggers_on_the_entitys_flags() {
+        use crate::participant_ffi::{
+            zerodds_dp_create_publisher, zerodds_dp_create_subscriber, zerodds_dp_create_topic,
+            zerodds_dp_delete_contained_entities,
+        };
+        use crate::publisher_ffi::{
+            ZeroDdsPublicationMatchedStatus, zerodds_dw_get_publication_matched_status,
+            zerodds_pub_create_datawriter,
+        };
+        use crate::subscriber_ffi::zerodds_sub_create_datareader;
+        use zerodds_dcps::psm_constants::status::PUBLICATION_MATCHED;
+        let f = crate::factory_ffi::zerodds_dpf_get_instance();
+        // SAFETY: every handle comes from a create call; the conditions are
+        // destroyed before the entities.
+        unsafe {
+            let p = crate::factory_ffi::zerodds_dpf_create_participant(f, 39, ptr::null());
+            let t = zerodds_dp_create_topic(p, c"CondFlags".as_ptr(), c"T".as_ptr(), ptr::null());
+            let dw = zerodds_pub_create_datawriter(
+                zerodds_dp_create_publisher(p, ptr::null()),
+                t,
+                ptr::null(),
+            );
+            let sc = zerodds_entity_get_statuscondition(dw.cast());
+            assert_eq!(
+                zerodds_statuscondition_set_enabled_statuses(sc, PUBLICATION_MATCHED),
+                0
+            );
+            let on_participant = zerodds_entity_get_statuscondition(p.cast());
+            assert!(!zerodds_condition_get_trigger_value(sc.cast()));
+
+            let sub = zerodds_dp_create_subscriber(p, ptr::null());
+            let _dr = zerodds_sub_create_datareader(sub, t, ptr::null());
+            assert!(zerodds_condition_get_trigger_value(sc.cast()));
+            assert!(!zerodds_condition_get_trigger_value(on_participant.cast()));
+
+            let mut st = ZeroDdsPublicationMatchedStatus::default();
+            assert_eq!(zerodds_dw_get_publication_matched_status(dw, &mut st), 0);
+            assert!(!zerodds_condition_get_trigger_value(sc.cast()));
+
+            zerodds_statuscondition_destroy(sc);
+            zerodds_statuscondition_destroy(on_participant);
+            zerodds_dp_delete_contained_entities(p);
+            crate::factory_ffi::zerodds_dpf_delete_participant(f, p);
         }
     }
 
@@ -1010,6 +1771,136 @@ mod tests {
             assert_eq!(count, 0);
             zerodds_waitset_destroy(ws);
             zerodds_guardcondition_destroy(g);
+        }
+    }
+
+    /// `zerodds_waitset_get_conditions` writes `min(len, cap)` entries but
+    /// reports the total and returns `OutOfResources` when the buffer is too
+    /// small, so no condition is dropped silently
+    /// (`docs/specs/zerodds-c-api-1.0.md` §2.8).
+    #[test]
+    fn waitset_get_conditions_reports_the_total() {
+        let ws = zerodds_waitset_create();
+        let gs: [*mut ZeroDdsGuardCondition; 3] = [
+            zerodds_guardcondition_create(),
+            zerodds_guardcondition_create(),
+            zerodds_guardcondition_create(),
+        ];
+        let mut count: usize = 0;
+        // SAFETY: ws + gs from create fns; every buffer is stack-local.
+        unsafe {
+            // Empty: nothing attached yet.
+            let rc = zerodds_waitset_get_conditions(ws, ptr::null_mut(), 0, &mut count);
+            assert_eq!(rc, ZeroDdsStatus::Ok as c_int);
+            assert_eq!(count, 0);
+
+            for g in gs {
+                assert_eq!(
+                    zerodds_waitset_attach_condition(ws, g as *mut core::ffi::c_void),
+                    ZeroDdsStatus::Ok as c_int
+                );
+            }
+
+            // Too small: `cap` entries written, the total reported.
+            let mut buf: [*mut core::ffi::c_void; 2] = [ptr::null_mut(); 2];
+            let rc = zerodds_waitset_get_conditions(ws, buf.as_mut_ptr(), 2, &mut count);
+            assert_eq!(rc, ZeroDdsStatus::OutOfResources as c_int);
+            assert_eq!(count, 3);
+            assert_eq!(buf[0], gs[0] as *mut core::ffi::c_void);
+            assert_eq!(buf[1], gs[1] as *mut core::ffi::c_void);
+
+            // `cap == 0` with NULL asks for the length alone.
+            let rc = zerodds_waitset_get_conditions(ws, ptr::null_mut(), 0, &mut count);
+            assert_eq!(rc, ZeroDdsStatus::OutOfResources as c_int);
+            assert_eq!(count, 3);
+
+            // Exactly full: `cap == len`.
+            let mut exact: [*mut core::ffi::c_void; 3] = [ptr::null_mut(); 3];
+            let rc = zerodds_waitset_get_conditions(ws, exact.as_mut_ptr(), 3, &mut count);
+            assert_eq!(rc, ZeroDdsStatus::Ok as c_int);
+            assert_eq!(count, 3);
+            assert_eq!(exact[0], gs[0] as *mut core::ffi::c_void);
+            assert_eq!(exact[1], gs[1] as *mut core::ffi::c_void);
+            assert_eq!(exact[2], gs[2] as *mut core::ffi::c_void);
+
+            // Enough room: every entry, `Ok`.
+            let mut all: [*mut core::ffi::c_void; 4] = [ptr::null_mut(); 4];
+            let rc = zerodds_waitset_get_conditions(ws, all.as_mut_ptr(), 4, &mut count);
+            assert_eq!(rc, ZeroDdsStatus::Ok as c_int);
+            assert_eq!(count, 3);
+            assert_eq!(all[0], gs[0] as *mut core::ffi::c_void);
+            assert_eq!(all[1], gs[1] as *mut core::ffi::c_void);
+            assert_eq!(all[2], gs[2] as *mut core::ffi::c_void);
+
+            // NULL with `cap > 0` is refused.
+            let rc = zerodds_waitset_get_conditions(ws, ptr::null_mut(), 4, &mut count);
+            assert_eq!(rc, ZeroDdsStatus::BadParameter as c_int);
+
+            zerodds_waitset_destroy(ws);
+            for g in gs {
+                zerodds_guardcondition_destroy(g);
+            }
+        }
+    }
+
+    /// The active-conditions list of `zerodds_waitset_wait` follows the same
+    /// total-length contract as `zerodds_waitset_get_conditions`
+    /// (`docs/specs/zerodds-c-api-1.0.md` §2.8).
+    #[test]
+    fn waitset_wait_reports_the_total() {
+        let ws = zerodds_waitset_create();
+        let gs: [*mut ZeroDdsGuardCondition; 2] = [
+            zerodds_guardcondition_create(),
+            zerodds_guardcondition_create(),
+        ];
+        let mut count: usize = 0;
+        // SAFETY: ws + gs from create fns; every buffer is stack-local.
+        unsafe {
+            // Empty: no condition attached, none active.
+            let rc = zerodds_waitset_wait(ws, ptr::null_mut(), 0, &mut count, 0, 0);
+            assert_eq!(rc, ZeroDdsStatus::Timeout as c_int);
+            assert_eq!(count, 0);
+
+            for g in gs {
+                zerodds_guardcondition_set_trigger_value(g, true);
+                assert_eq!(
+                    zerodds_waitset_attach_condition(ws, g as *mut core::ffi::c_void),
+                    ZeroDdsStatus::Ok as c_int
+                );
+            }
+
+            // Too small: `cap` entries written, the total reported.
+            let mut buf: [*mut core::ffi::c_void; 1] = [ptr::null_mut(); 1];
+            let rc = zerodds_waitset_wait(ws, buf.as_mut_ptr(), 1, &mut count, 0, 0);
+            assert_eq!(rc, ZeroDdsStatus::OutOfResources as c_int);
+            assert_eq!(count, 2);
+            assert_eq!(buf[0], gs[0] as *mut core::ffi::c_void);
+
+            // `cap == 0` with NULL asks for the length alone.
+            let rc = zerodds_waitset_wait(ws, ptr::null_mut(), 0, &mut count, 0, 0);
+            assert_eq!(rc, ZeroDdsStatus::OutOfResources as c_int);
+            assert_eq!(count, 2);
+
+            // Exactly full: `cap == len`.
+            let mut exact: [*mut core::ffi::c_void; 2] = [ptr::null_mut(); 2];
+            let rc = zerodds_waitset_wait(ws, exact.as_mut_ptr(), 2, &mut count, 0, 0);
+            assert_eq!(rc, ZeroDdsStatus::Ok as c_int);
+            assert_eq!(count, 2);
+            assert_eq!(exact[0], gs[0] as *mut core::ffi::c_void);
+            assert_eq!(exact[1], gs[1] as *mut core::ffi::c_void);
+
+            // Enough room: every active entry, `Ok`.
+            let mut all: [*mut core::ffi::c_void; 4] = [ptr::null_mut(); 4];
+            let rc = zerodds_waitset_wait(ws, all.as_mut_ptr(), 4, &mut count, 0, 0);
+            assert_eq!(rc, ZeroDdsStatus::Ok as c_int);
+            assert_eq!(count, 2);
+            assert_eq!(all[0], gs[0] as *mut core::ffi::c_void);
+            assert_eq!(all[1], gs[1] as *mut core::ffi::c_void);
+
+            zerodds_waitset_destroy(ws);
+            for g in gs {
+                zerodds_guardcondition_destroy(g);
+            }
         }
     }
 }

@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of const-expression-operators that fastdds produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	error: mismatched input '010' expecting {'TRUE', 'FALSE', INTEGER_LITERAL, HEX_LITERAL, FLOATING_PT_LITERAL, FIXED_PT_LITERAL, WIDE_CHARACTER_LITERAL, CHARACTER_LITER
+plain-cdr1	be	refused	error: mismatched input '010' expecting {'TRUE', 'FALSE', INTEGER_LITERAL, HEX_LITERAL, FLOATING_PT_LITERAL, FIXED_PT_LITERAL, WIDE_CHARACTER_LITERAL, CHARACTER_LITER
+pl-cdr1	le	refused	error: mismatched input '010' expecting {'TRUE', 'FALSE', INTEGER_LITERAL, HEX_LITERAL, FLOATING_PT_LITERAL, FIXED_PT_LITERAL, WIDE_CHARACTER_LITERAL, CHARACTER_LITER
+pl-cdr1	be	refused	error: mismatched input '010' expecting {'TRUE', 'FALSE', INTEGER_LITERAL, HEX_LITERAL, FLOATING_PT_LITERAL, FIXED_PT_LITERAL, WIDE_CHARACTER_LITERAL, CHARACTER_LITER
+plain-cdr2	le	refused	error: mismatched input '010' expecting {'TRUE', 'FALSE', INTEGER_LITERAL, HEX_LITERAL, FLOATING_PT_LITERAL, FIXED_PT_LITERAL, WIDE_CHARACTER_LITERAL, CHARACTER_LITER
+plain-cdr2	be	refused	error: mismatched input '010' expecting {'TRUE', 'FALSE', INTEGER_LITERAL, HEX_LITERAL, FLOATING_PT_LITERAL, FIXED_PT_LITERAL, WIDE_CHARACTER_LITERAL, CHARACTER_LITER
+delimited-cdr	le	refused	error: mismatched input '010' expecting {'TRUE', 'FALSE', INTEGER_LITERAL, HEX_LITERAL, FLOATING_PT_LITERAL, FIXED_PT_LITERAL, WIDE_CHARACTER_LITERAL, CHARACTER_LITER
+delimited-cdr	be	refused	error: mismatched input '010' expecting {'TRUE', 'FALSE', INTEGER_LITERAL, HEX_LITERAL, FLOATING_PT_LITERAL, FIXED_PT_LITERAL, WIDE_CHARACTER_LITERAL, CHARACTER_LITER
+pl-cdr2	le	refused	error: mismatched input '010' expecting {'TRUE', 'FALSE', INTEGER_LITERAL, HEX_LITERAL, FLOATING_PT_LITERAL, FIXED_PT_LITERAL, WIDE_CHARACTER_LITERAL, CHARACTER_LITER
+pl-cdr2	be	refused	error: mismatched input '010' expecting {'TRUE', 'FALSE', INTEGER_LITERAL, HEX_LITERAL, FLOATING_PT_LITERAL, FIXED_PT_LITERAL, WIDE_CHARACTER_LITERAL, CHARACTER_LITER

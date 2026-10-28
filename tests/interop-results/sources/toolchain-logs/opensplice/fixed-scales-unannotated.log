@@ -1,0 +1,4 @@
+## wireprobe-opensplice, exit 4
+### stderr
+wireprobe-opensplice: idlpp failed
+*** DDS error in file gen.idl: Type 'fixed' (defined in Sample) unsupported near the token #pragma  keylist Sample (line: 13, column: 0)

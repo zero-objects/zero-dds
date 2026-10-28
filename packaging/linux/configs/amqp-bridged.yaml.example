@@ -1,34 +1,66 @@
 # /etc/zerodds/amqp-bridged.yaml.example
-# Spec: zerodds-amqp-bridge-daemon-1.0 §4, §11.
+# Configuration of zerodds-amqp-bridged.
+# Spec: zerodds-amqp-bridge-daemon-1.0 §3 (schema), §11 (deployment).
+#
+# Read by crates/amqp-endpoint/src/bridge_daemon.rs (DaemonConfig::from_config)
+# over the shared layers: this file, amqp-bridged.d/, include:, the
+# environment beneath, --set above. An unknown key in a known section or a
+# value of the wrong type stops the start with file and line; an unknown
+# top-level key is a WARN line on stderr, and an error under --check-config.
 
-participant:
-  domain_id: 0
-  qos_profile: builtin/reliable_keep_last_10
+domain: 0
+log_level: info
 
 amqp:
-  broker_url: "amqp://localhost:5672"
-  vhost: "/"
+  broker_url: "amqp://localhost:5672"   # amqp:// or amqps:// (then amqp.tls.enabled)
+  container_id: "zerodds-amqp-bridge"   # also seeds the DDS GUID prefix
+  channel_max: 128
+  max_frame_size: 65536
+  idle_time_out_ms: 30000
+  hostname: "localhost"                 # open.hostname (virtual host)
   sasl:
-    mechanism: "PLAIN"     # ANONYMOUS | PLAIN | EXTERNAL
-    username:  ""
-    password_file: ""
+    mechanism: "PLAIN"                  # PLAIN | SCRAM-SHA-256 | EXTERNAL | ANONYMOUS | XOAUTH2
+    username: "zerodds"
+    password: "${AMQP_PASSWORD}"        # XOAUTH2: the bearer token
   tls:
     enabled: false
-    ca:   /etc/zerodds/certs/amqp-ca.pem
-    cert: /etc/zerodds/certs/amqp-bridged.crt
-    key:  /etc/zerodds/certs/amqp-bridged.key
+    ca_file:   "/etc/zerodds/certs/amqp-ca.pem"
+    cert_file: "/etc/zerodds/certs/amqp-bridged.crt"   # EXTERNAL: the identity
+    key_file:  "/etc/zerodds/certs/amqp-bridged.key"
+    verify_hostname: true               # always; false is refused
+    alpn: ["amqp"]
+  reconnect:
+    initial_delay_ms: 500
+    max_delay_ms: 30000
+    factor: 2.0
 
-routes:
-  - dds_topic:    "OrderEvent"
-    type:         "demo::Erp::Order"
-    amqp_address: "orders.events"
-    direction:    "dds_to_amqp"
+acl:
+  default_deny: false                   # true: a topic no rule names is closed
+  rules:
+    - topic: "OrderEvent"
+      read: ["zerodds"]                 # SASL subjects allowed DDS -> AMQP
+      write: []                         # SASL subjects allowed AMQP -> DDS
 
-logging:
-  level: info
-  format: json
-  destination: journal
+metrics:
+  enabled: false
+  listen: "127.0.0.1:9094"              # /metrics + /catalog + /healthz
+  path: "/metrics"
 
-observability:
-  metrics_bind: "127.0.0.1:9094"
-  otlp_endpoint: ""
+topics:
+  # DDS topic <-> AMQP address. Cross-Ref: zerodds-amqp-bridge-daemon-1.0 §5.
+  - dds_name:     "OrderEvent"
+    dds_type:     "OrderEvent"          # default: dds_name
+    keyed:        true                  # the type has @key fields
+    amqp_address: "/queues/orders.events"
+    direction:    "out"                 # in | out | bidir
+    sender:
+      settled: false                    # AT_LEAST_ONCE: wait for the disposition
+      durable: 1                        # 0 none | 1 configuration | 2 unsettled-state
+      snd_settle_mode: 0                # 0 unsettled | 1 settled | 2 mixed
+      rcv_settle_mode: 0                # 0 first | 1 second
+    receiver:
+      credit: 256
+    qos:
+      reliability: "reliable"           # reliable | best_effort (best_effort: settled)
+      durability: "volatile"            # volatile | transient_local | transient | persistent
+      history: { kind: "keep_last", depth: 10 }   # the sender queue while no credit

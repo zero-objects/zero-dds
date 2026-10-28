@@ -1,9 +1,7 @@
 # `zerodds-endpoint-julia` 1.0 — Spec Coverage
 
 **Source:** docs/specs/zerodds-endpoint-julia-1.0.md — the ZeroDDS Julia
-endpoint SDK spec. Complements the codegen coverage `zerodds-xcdr2-julia`
-(`docs/spec-coverage/zerodds-xcdr2-julia-1.0.md`) — that doc covers
-marshalling, this one covers transport.
+endpoint SDK spec. The marshalling comes from `crates/lang-rules`, column `Language::Julia`; this document covers the transport.
 
 Implementation:
 
@@ -77,11 +75,11 @@ the `Endian`/`Writer`/`LE` name clash between generated code and the SDK;
 mode `sync`/`async` via CLI argument; an `armed` flag serializes the first
 `recvfrom` arm against a libuv datagram drop before the first `send` runs).
 
-**Tests (codepit):**
+**Tests:** (Linux)
 - `julia_endpoint_sync` — full stack via `ZeroDDS.Client`.
 - `julia_endpoint_async` — full stack via `ZeroDDS.start_reader`.
 
-2/2 passed (codepit).
+2/2 passed (Linux).
 
 **Status:** done.
 
@@ -105,7 +103,7 @@ retransmit) — the producer never enters the kernel.
 as the "no more samples" sentinel), `run_bench` (§6);
 `endpoints/julia/example_reliable.jl` (runnable in-process demo, no socket).
 
-**Tests (codepit):**
+**Tests:** (Linux)
 - `julia_reliable_unit_and_golden`
   (`crates/endpoint-e2e/tests/julia_reliable.rs`) runs `julia
   reliable_test.jl <golden_dir>` — 26 `check(...)` assertions: monotonic seq
@@ -133,7 +131,7 @@ as the "no more samples" sentinel), `run_bench` (§6);
 - `julia_reliable_no_loss` — lossless baseline; 12/12.
 
 3 of the 4 tests in this section (latency bench in §6); combined with §6,
-4/4 passed (codepit).
+4/4 passed (Linux).
 
 **Status:** done.
 
@@ -152,7 +150,7 @@ lock+condvar-based, not a wait-free SPSC ring — documented as a known limit
 in the spec text (`reliable_app.jl` header comment); the enqueue still comes
 in well below the inline syscall.
 
-**Tests (codepit):** `julia_reliable_producer_latency`
+**Tests:** (Linux) `julia_reliable_producer_latency`
 (`crates/endpoint-e2e/tests/julia_reliable.rs`) — channel enqueue **80–106 ns**
 vs. inline `send` **6.1–6.5 µs** (~60–75×).
 
@@ -164,7 +162,7 @@ vs. inline `send` **6.1–6.5 µs** (~60–75×).
 
 6 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
 
-Test run (codepit, verified): `cargo test -p zerodds-endpoint-e2e --test
+Test run (Linux, verified): `cargo test -p zerodds-endpoint-e2e --test
 julia` 2/2 (ping-pong: `julia_endpoint_sync`/`julia_endpoint_async`);
 `--test julia_reliable` 4/4 (`julia_reliable_unit_and_golden` — 26
 `check(...)` assertions incl. byte-golden, `julia_reliable_loss_recovery`,

@@ -1,0 +1,8 @@
+# What opendds's front end said about recursive-mutual-optional. Not why a slot carries no
+# bytes — that is STATUS beside this file — but what the front end printed
+# while it did take the case. tests/interop-results/WARNINGS.md says what
+# each of these means and which of them changes a verdict.
+# program	warning
+tao_idl	Warning - /opt/opendds/bin/tao_idl: "gen.idl", line 14: error in lookup of symbol: mutable
+tao_idl	Warning - /opt/opendds/bin/tao_idl: "gen.idl", line 16: error in lookup of symbol: optional
+tao_idl	Warning - /opt/opendds/bin/tao_idl: "gen.idl", line 24: error in lookup of symbol: appendable

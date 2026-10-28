@@ -13,7 +13,7 @@
 //!
 //! Layer 6 — PSMs / Bindings.
 //!
-//! ## Public API (as of 1.0.0-rc.1)
+//! ## Public API
 //!
 //! No Rust public API. The caller API lives under `include/dds/dds.hpp`
 //! and is consumed via C++ compile against `libzerodds.dylib` (from

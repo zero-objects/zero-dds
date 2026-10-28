@@ -1,0 +1,2 @@
+@appendable enum K { K1, @default_literal K2, K3 };
+@appendable union U switch (K) { case K1: long v1; case K2: long v2; case K3: long v3; };

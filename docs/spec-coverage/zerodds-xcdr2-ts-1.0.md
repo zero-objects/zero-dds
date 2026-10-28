@@ -1,270 +1,285 @@
-# `zerodds-xcdr2-ts` 1.0 -- Spec-Coverage
+# `zerodds-xcdr2-ts` 1.0 — Spec-Coverage
 
-**Quelle:** `docs/specs/zerodds-xcdr2-ts-1.0.md` (185 Zeilen) -- ZeroDDS TypeScript TypeSupport-Codegen-Spec.
+**Quelle:** `internal/standards/cache/omg/dds-xtypes-1.3.pdf` (§7.2, §7.4) und `internal/standards/cache/omg/idl-4.2.pdf` (§7) — was die TypeScript-Spalte beantwortet.
 
-Implementation:
+Der Mechanismus, den diese Spalte mit den zwanzig anderen teilt — die beiden Walks, die Rahmung, Table 9, der KeyHash und der Treiber —, steht in `zerodds-xcdr2-bindings-conformance-1.0.md`. Dieses Dokument führt nur, was die TypeScript-Spalte selbst entscheidet, und ihre eigenen Nachweise.
 
-- `crates/ts-node/` — TypeScript XCDR2-TypeSupport-Codegen.
+Die Seite heißt aus historischen Gründen `ts`; die Spalte selbst heißt `typescript` — so nimmt sie `idlc generate --lang`, so steht sie in `crates/lang-cst/src/common.rs` und so heißt ihr Verzeichnis unter `runtime/`.
 
-## §1 Motivation
+## §7.5.1 Die Teile der Spalte
 
-### §1 OMG-DDS-TS-1.0 ohne Wire-Encoding
+### §7.5.1 Der konkrete Syntaxbaum und seine Textform
 
-**Spec:** §1 -- "OMG DDS-TS 1.0 spezifiziert TypeScript-Mapping für IDL-Datentypen, sagt aber nichts über Wire-Encoding. Heute liefert `crates/idl-ts` nur Type-Definitions; `encode/decode` fehlen komplett."
+**Spec:** §7.5.1 — Plain Language Binding — die Abbildung auf die Zielsprache ist PSM-eigen. Die Deklarationen dieser Spalte werden als Baum gebaut und erst danach als Text geschrieben; kein Emitter setzt Quelltext zusammen.
 
-**Repo:** Motivations-Text der Vendor-Spec.
+**Repo:** `crates/lang-cst/src/typescript/`, `crates/lang-render/src/typescript.rs`
 
-**Tests:** --
-
-**Status:** n/a (informative)
-
-## §2 TypeSupport-Pattern
-
-### §2 `DdsTopicType<T>`-Interface mit Module-Level-Const
-
-**Spec:** §2 -- TypeScript-Interface `DdsTopicType<T>` mit `typeName`, `isKeyed`, `extensibility`, `encode(sample, endian?)`, `decode(bytes, offset?, length?)`, `keyHash(sample)`, sowie den Stream-Helfern `encodeInto(w, sample)` / `decodeFrom(r)` für nested Aggregate (siehe §4). Plus types `ExtensibilityKind`, `EndianMode`.
-
-**Repo:** `crates/ts-node/src/cdr/types.ts` hält Interface + types.
-
-**Tests:** `crates/ts-node/test/xcdr2-wire-vectors.test.ts` (15 Tests inkl. V-Reihe + md5).
+**Tests:** `crates/lang-cst/src/typescript/mod.rs::tests` (9 Tests):
+`every_type_keyword_writes_its_own_spelling`,
+`a_reserved_binding_escapes_with_a_trailing_underscore`,
+`a_contextual_keyword_is_a_legal_binding_and_keeps_its_spelling`,
+`a_predefined_type_name_is_reserved_although_javascript_does_not_reserve_it`,
+`a_property_name_keeps_its_text_whichever_form_it_takes`,
+`a_bigint_literal_type_carries_its_suffix_in_the_written_form`;
+`crates/lang-render/tests/dispatch_chains.rs::a_node_dispatch_chain_of_ten_thousand_arms_renders_flat`;
+querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_output_with_exactly_one_newline`, `crates/lang-render/tests/rendering.rs::no_rendered_line_carries_trailing_whitespace`.
 
 **Status:** done
 
-## §3 Required API-Surface
+### §7.5.1 Der Regelkatalog
 
-### §3 `*TypeSupport: DdsTopicType<T>` Module-Level-Const
+**Spec:** §7.5.1 — Plain Language Binding — die Abbildung auf die Zielsprache ist PSM-eigen. Was aus welchem Modellknoten wird, steht als Regelmenge und nicht als Sonderfall im Walk.
 
-**Spec:** §3 -- "MyTypeTypeSupport: DdsTopicType<MyType> = { typeName, isKeyed, extensibility, encode/decode/keyHash }."
+**Repo:** `crates/lang-rules/src/rule/typescript.rs`
 
-**Repo:** `crates/idl-ts/src/lib.rs::emit_struct_typesupport` (Zeile 1612ff) emittiert exakt diese Form.
-
-**Tests:** `crates/ts-node/test/xcdr2-wire-vectors.test.ts`; Codegen-Snapshot-Pfad über idl-ts lib unit tests.
-
-**Status:** done
-
-## §4 Codegen-Pflicht (idl-ts)
-
-### §4 Interface + TypeSupport-Const + Auto-Import
-
-**Spec:** §4 -- "Pro IDL-`struct` MUSS idl-ts emittieren: 1) interface MyType (existiert), 2) NEU: export const MyTypeTypeSupport: DdsTopicType<MyType>, 3) NEU: Auto-Import-Stub `import { DdsTopicType, Xcdr2Writer, Xcdr2Reader } from '@zerodds/cdr'`."
-
-**Repo:** `crates/idl-ts/src/lib.rs` (Zeile 207 `DdsTopicType, EndianMode,...` Auto-Import-Set; Zeile 1373ff "(6) zerodds-xcdr2-ts-1.0 §3 + §4"; Zeile 1612ff `emit_struct_typesupport`).
-
-**Tests:** Snapshot-Coverage via lib-internal Tests in `idl-ts`.
+**Tests:** `crates/lang-rules/tests/apply.rs::every_language_catalogue_fires_on_the_same_model`,
+`crates/lang-rules/tests/apply.rs::every_catalogue_serialises_and_reads_back_the_same`
 
 **Status:** done
 
-### §4 TS-Namespace = IDL-Modul-Pfad
+### §7.5.1 Der Materialisierer
 
-**Spec:** §4 -- "Generierter Code lebt in einem TS-Namespace der dem IDL-Modul-Pfad entspricht."
+**Spec:** §7.5.1 — Plain Language Binding — die Abbildung auf die Zielsprache ist PSM-eigen. Der Materialisierer trägt die Eigenheiten der Sprache: Namens- und Schlüsselwortbehandlung, Kollisionen und das, was die Sprache gar nicht ausdrücken kann.
 
-**Repo:** `crates/idl-ts/src/lib.rs` Module-Path → `export namespace`.
+**Repo:** `crates/lang-rules/src/adapter/typescript.rs`
 
-**Tests:** V-7 Nested Modules Test im wire-vectors-Test-File.
-
-**Status:** done
-
-### §4 Nested-Aggregate-Codec: `encodeInto` / `decodeFrom`
-
-**Spec:** §4 -- `DdsTopicType<T>` (`crates/ts-node/src/cdr/types.ts`) trägt neben `encode`/`decode` die Stream-Helfer `encodeInto(w: Xcdr2Writer, sample: T)` / `decodeFrom(r: Xcdr2Reader): T`, sodass ein struct-wertiges Member eines äußeren Typs in denselben CDR-Stream delegiert (XCDR2-Alignment relativ zum äußeren Stream bleibt erhalten).
-
-**Repo:** `crates/idl-ts/src/lib.rs` — ein Typ-Resolver (`build_type_registry`/`TYPE_REG`, keyed by simple name) klassifiziert scoped Member-Refs als Struct/Union/IntLike/Typedef; der Encode-Pfad ruft für ein Struct-Member `{dotted}TypeSupport.encodeInto(w, …)` (Typedef → rekursiv, Enum/IntLike → int32), der Decode-Pfad `{dotted}TypeSupport.decodeFrom(r)`. Davor wurde jedes scoped Member als `int32` codiert (stille Korruption).
-
-**Tests:** `crates/idl-ts/tests/nested_codec.rs` (5 Tests inkl. nested-struct-Roundtrip-Form); `crates/idl-ts/tests/compile_check.rs::compiles_struct_with_union_member_gated` (tsc).
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_every_wired_language`
 
 **Status:** done
 
-### §4 Gating nicht-codierbarer Member (fixed/any/union)
+### §7.5.1 Das Codec-Backend
 
-**Spec:** §4 -- für Konstrukte ohne XCDR2-Wire-Codec (`fixed`, `any` sowie eine `union`-Referenz — Unions haben in TS keinen eigenen Codec) wird das **interface** emittiert, aber **kein** `*TypeSupport` — analog zu idl-csharp/idl-java. Es entsteht kein generierter Codec, der zur Laufzeit wirft oder Daten korrumpiert; die Codegen-Arme für `fixed`/`any` liefern zudem ein `Err(IdlTsError::Unsupported)` statt eines Platzhalters.
+**Spec:** §7.5.1 — Plain Language Binding — die Abbildung auf die Zielsprache ist PSM-eigen. Das Backend liefert die Schreibweise, in der die geteilte Kodierungsentscheidung in dieser Sprache steht — Empfänger, Methodenname, Argumentform.
 
-**Repo:** `crates/idl-ts/src/lib.rs::struct_xcdr2_codecable` / `typespec_xcdr2_codecable`; `emit_struct` gatet einen nicht-codierbaren Struct.
+**Repo:** `crates/lang-rules/src/emit/typescript.rs`
 
-**Tests:** `crates/idl-ts/tests/nested_codec.rs::struct_with_union_member_is_gated_not_broken`; `compile_check.rs::compiles_struct_with_{union,fixed,any}_member_gated`.
-
-**Status:** done
-
-## §5 Wire-Type-Mapping
-
-### §5 IDL-zu-TypeScript-Typen + Wire-Layout
-
-**Spec:** §5, Tabelle 18 IDL-Typen → TS → XCDR2 LE. "bigint für 64-Bit-Integer ist Pflicht."
-
-**Repo:** `crates/idl-ts/src/lib.rs::ts_type_for` mapt IDL-Primitive auf TypeScript-Typen inkl. `bigint`. `crates/ts-node/src/cdr/writer.ts` + `reader.ts` mit `writeInt64`/`writeUint64` als bigint-Pfad.
-
-**Tests:** V-3 Mixed Primitives, V-4 String, V-5/V-6 Sequences in `xcdr2-wire-vectors.test.ts`; smoke.test.ts.
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_a_full_codec_in_every_wired_language`,
+`crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`
 
 **Status:** done
 
-## §6 Extensibility
+### §7.5.1 Der Table-9-Defaulter
 
-### §6 Final / Appendable / Mutable Helpers
+**Spec:** §7.5.1 — Plain Language Binding — die Abbildung auf die Zielsprache ist PSM-eigen. Ein Leser ohne Tab.9-Antwort hat an fünf Stellen keinen definierten Wert; diese Datei ist die Antwort dieser Spalte.
 
-**Spec:** §6 -- "`Xcdr2Writer.beginAppendable()` / `beginMutable()` / `writeEmHeader(id, lc)` sind Helper-Methoden."
+**Repo:** `crates/lang-rules/src/default_typescript.rs`
 
-**Repo:** `crates/ts-node/src/cdr/writer.ts` hält `beginAppendable`, `beginMutable`, `writeEmHeader`.
-
-**Tests:** V-9, V-10, V-11 in `xcdr2-wire-vectors.test.ts`.
+**Tests:** `crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`
 
 **Status:** done
 
-## §7 Key-Extraction
+### §7.5.1 Die Wire-Laufzeit
 
-### §7 md5 RFC-1321 pure-TS
+**Spec:** §7.5.1 — Plain Language Binding — die Abbildung auf die Zielsprache ist PSM-eigen. Die Laufzeit liest §7.4 eigenständig aus dem Klauseltext und ruft keine andere Spalte; dort liegt die Unabhängigkeit dieser Spalte.
 
-**Spec:** §7 -- "md5 ist eine pure-TS RFC-1321-Implementation (kein Web-Crypto-API weil sync und ohne Promise gebraucht)."
+**Repo:** `runtime/typescript`, Endpoint-SDK `endpoints/typescript`
 
-**Repo:** `crates/ts-node/src/cdr/md5.ts` (RFC-1321 pure-TypeScript, sync).
-
-**Tests:** md5-self-checks 'abc' und empty input in `xcdr2-wire-vectors.test.ts`; V-8 Keyed Struct.
-
-**Status:** done
-
-## §8 Helper-Library `@zerodds/cdr`
-
-### §8 index + types + writer + reader + md5 + errors
-
-**Spec:** §8, Tabelle 6 Files.
-
-**Repo:** `crates/ts-node/src/cdr/`: `index.ts`, `types.ts`, `writer.ts`, `reader.ts`, `md5.ts`, `errors.ts` -- alle 6 vorhanden.
-
-**Tests:** `npm run test:wire` -- 15 Tests grün.
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_runtime`,
+`crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_an_endpoint_sdk`
 
 **Status:** done
 
-### §8 Pure TypeScript >=5.0 Browser+Node
+## §7.2.2 Was diese Spalte selbst entscheidet
 
-**Spec:** §8 -- "Pure TypeScript >= 5.0. Browser- und Node-Target gleichermaßen (`Uint8Array` + `DataView` sind universal). Keine `Buffer`-Dependency."
+### §7.2.2.2 Ein 64-Bit-Integer wird ein `bigint`, alles Schmalere eine `number`
 
-**Repo:** `package.json` TypeScript >= 5; Helper nutzen ausschließlich Uint8Array + DataView.
+**Spec:** §7.2.2.2 — Primitive Types — BOOLEAN, BYTE, INT8..UINT64, FLOAT32, FLOAT64, FLOAT128, CHAR8, CHAR16; jede Breite ist festgelegt.
 
-**Tests:** `npm run test:wire` lauffähig auf Node, browser-CSP-kompatibel.
+**Repo:** `crates/lang-rules/src/adapter/typescript.rs`
 
-**Status:** done
-
-### §8 ts-wasm Re-Export
-
-**Spec:** §8 -- "ts-wasm-Variante (`crates/ts-wasm/src/cdr/`) ist binary-identisch über re-export."
-
-**Repo:** ts-wasm-Pfad re-exportiert dieselben Module aus ts-node.
-
-**Tests:** Re-Export wird durch ts-wasm Build-Pfad gedeckt.
+**Tests:** `crates/lang-rules/src/adapter/typescript.rs::tests::a_sixty_four_bit_integer_is_a_bigint_and_everything_narrower_is_a_number`,
+`crates/lang-rules/src/adapter/typescript.rs::tests::a_bigint_field_starts_from_a_bigint_literal`
 
 **Status:** done
 
-## §9 Conformance
+### §7.5.1 Ein Struct wird ein Interface und eine Factory, nie eine Klasse
 
-### §9 L1 Wire (V-1..V-12)
+**Spec:** §7.5.1 — Plain Language Binding — die Abbildung auf die Zielsprache ist PSM-eigen.
 
-**Spec:** §9 -- "L1 (Wire): `crates/ts-node/test/xcdr2-wire-vectors.test.ts` prüft V-1..V-12."
+**Repo:** `crates/lang-rules/src/adapter/typescript.rs`
 
-**Repo:** `crates/ts-node/test/xcdr2-wire-vectors.test.ts` mit V-1..V-12 (13 V-tests + 2 md5).
-
-**Tests:** `npm run test:wire` -- 15 Tests grün.
+**Tests:** `crates/lang-rules/src/adapter/typescript.rs::tests::a_struct_is_an_interface_and_a_factory_and_never_a_class`
 
 **Status:** done
 
-### §9 L2 Codegen Snapshots
+### §7.2.2.4.3 Ein `map`-Member wird eine `readonly Map` über einem gestaffelten Entry-Typ
 
-**Spec:** §9 -- "L2 (Codegen): `crates/idl-ts/tests/snapshots/` mit generierten *.ts-Files."
+**Spec:** §7.2.2.4.3 — Map — Key/Value-Paare; §7.4.3.5.3 Regeln 11-16 legen Reihenfolge und Rahmung fest.
 
-**Repo:** `crates/idl-ts/tests/snapshot_xcdr2_vectors.rs` hält 11 V-i-Snapshots als eigenständigen Test-Tree.
+**Repo:** `crates/lang-rules/src/adapter/typescript.rs`
 
-**Tests:** `crates/idl-ts/tests/snapshot_xcdr2_vectors.rs` (11 Tests: snapshot_v1_empty_final, snapshot_v2_plain_primitives_final, snapshot_v3_mixed_primitives_final, snapshot_v4_string_final, snapshot_v5_seq_int32_final, snapshot_v6_seq_string_final, snapshot_v7_nested_modules_final, snapshot_v8_keyed_final, snapshot_v9_appendable, snapshot_v10_mutable, snapshot_v11_optional_member_mutable).
-
-**Status:** done
-
-### §9 L3 Cross-Lang Runner
-
-**Spec:** §9 -- "L3 (Cross-Lang): `crates/conformance/tests/cross_language_xcdr2.rs` ruft `node --import tsx ts-runner.ts`."
-
-**Repo:** `crates/conformance/tests/cross_language_xcdr2.rs::l3_6_typescript_binding` ruft die ts-node Wire-Vector-Suite via `npx tsx`-Subprocess gegen identische V-1..V-12-Hex-Fixtures.
-
-**Tests:** `crates/conformance/tests/cross_language_xcdr2.rs::l3_6_typescript_binding`.
+**Tests:** `crates/lang-rules/src/adapter/typescript.rs::tests::a_map_member_is_a_readonly_map_over_a_staged_entry_type`,
+`crates/lang-rules/src/adapter/typescript.rs::tests::two_maps_of_one_typescript_shape_and_two_idl_shapes_are_two_entry_types`
 
 **Status:** done
 
-### §9 L4 Cross-Vendor (FFI)
+### §7.2.2.4.4.4.7 Ein optionales Member ist ein Fragezeichen und kein `null`
 
-**Spec:** §9 -- "L4 (Cross-Vendor): TS Encoder über FFI in zerodds-c-api → Cyclone."
+**Spec:** §7.2.2.4.4.4.7 — Ein Struct-Member darf optional sein; ein Union-Member nie.
 
-**Repo:** Alle 12 Vektoren wurden live gegen Cyclone DDS 0.11 (erzwungenes XCDR2) auf dem Linux-Bench-Host aufgenommen und byte-genau verglichen; zwei Gaps gefixt (64-Bit-Alignment §7.4.1.1.1, Sequence-DHEADER §7.4.3.5 für nicht-primitive Elemente). Der TS-Encoder ist byte-verifiziert: `crates/ts-node/test/xcdr2-wire-vectors.test.ts` (`node --test`, 19/19) prüft V-1..V-12 byte-genau inkl. V-6 `sequence<string>`-DHEADER (`beginAppendable`/`endAppendable`). V-10/V-11a konforme LC-Divergenz.
+**Repo:** `crates/lang-rules/src/adapter/typescript.rs`
 
-**Tests:** `crates/ts-node/test/xcdr2-wire-vectors.test.ts` (node, 19/19) + `crates/cdr/tests/xcdr2_cross_vendor_fixtures.rs` (15 Tests).
-
-**Status:** done -- TS-Encoder byte-genau gegen Cyclone DDS 0.11 (V-1..V-9/V-11b, node-ausgeführt), mutable V-10/V-11a konforme LC-Divergenz.
-
-## §10 Examples
-
-### §10 topic-typed-smoke.ts
-
-**Spec:** §10 -- "`crates/ts-node/examples/topic-typed-smoke.ts` ist Referenz-Smoke."
-
-**Repo:** `crates/ts-node/examples/topic-typed-smoke.ts` (eigenständiger Examples-Tree). Lauf via `npx tsx examples/topic-typed-smoke.ts` -> Encode/Decode-Roundtrip OK.
-
-**Tests:** Manueller Run wie oben dokumentiert; zusätzlich smoke.test.ts.
+**Tests:** `crates/lang-rules/src/adapter/typescript.rs::tests::an_optional_member_is_a_question_mark_and_not_a_null`,
+`crates/lang-rules/tests/typescript_reader_generates.rs::an_optional_member_gets_a_reader`
 
 **Status:** done
 
-### §10 sync + async Deep-Examples (via Node-Runtime)
+### §7.2.2.4.4.3 Eine Union wird eine diskriminierte Union, verengt auf ein Literal
 
-**Spec:** §10 -- lauffähige sync/async Deep-Examples (Sensor-Telemetrie `Reading{id,value,label}`).
+**Spec:** §7.2.2.4.4.3 — Union — der Diskriminator ist immer das erste Member und trägt `must_understand=true`.
 
-**Repo:** `endpoints/node/example_sync.js` (Poll-Loop), `endpoints/node/example_async.js` (async-Iterator), `endpoints/node/QUICKSTART.md`. Der TS-Wire ist byte-identisch mit dem JS-Wire; die getypte Runtime lebt in `crates/ts-node/src/cdr/{writer,reader}.ts` (`@zerodds/cdr`). Ein separater `endpoints/ts`-Tree wäre eine vierte Kopie derselben Byte-Form (bewusst nicht dupliziert).
+**Repo:** `crates/lang-rules/src/adapter/typescript.rs`
 
-**Tests:** CI-Job `endpoints-node` führt beide Deep-Examples aus (byte-identisch gegen die Rust-Golden); `@zerodds/cdr` hat eigene TS-Tests.
-
-**Status:** done
-
-## §11 Errata + Open-Questions
-
-### §11.1 Number Präzision
-
-**Spec:** §11.1 -- "int32/uint32 passen in 53-bit Mantisse. int64/uint64 brauchen `bigint`. Codegen emittiert striktes Type."
-
-**Repo:** `idl-ts` ts_type_for emit `bigint` für 64-Bit.
-
-**Tests:** V-3 Mixed Primitives Test (long long, ull) verwendet bigint.
+**Tests:** `crates/lang-rules/src/adapter/typescript.rs::tests::a_union_is_a_discriminated_union_narrowed_on_a_literal`,
+`crates/lang-rules/src/adapter/typescript.rs::tests::a_union_discriminant_takes_the_discriminators_own_literal_form`
 
 **Status:** done
 
-### §11.2 UTF-8 Encoding
+### §7.2.2.4.1.1 Eine Enumeration wird ein `as const`-Objekt neben einer String-Literal-Union
 
-**Spec:** §11.2 -- "TextEncoder('utf-8') ist universal. Helper kapselt das."
+**Spec:** §7.2.2.4.1.1 — Enumeration — Int32-Literale, geordnet, `bit_bound` 1..32.
 
-**Repo:** `crates/ts-node/src/cdr/writer.ts` writeString nutzt TextEncoder.
+**Repo:** `crates/lang-rules/src/adapter/typescript.rs`
 
-**Tests:** V-4 String, V-6 Sequence<string>.
-
-**Status:** done
-
-### §11.3 ESM vs CJS
-
-**Spec:** §11.3 -- "NPM-Paket emittiert dual (ESM + CJS) via `exports`-Feld; Codegen-Output ist ESM-only (TypeScript-Sources)."
-
-**Repo:** `crates/ts-node/package.json` mit `exports`-Feld.
-
-**Tests:** Tests laufen unter ESM via tsx-Importer.
+**Tests:** `crates/lang-rules/src/adapter/typescript.rs::tests::an_enumeration_is_an_as_const_object_beside_a_string_literal_union`,
+`crates/lang-rules/tests/typescript_reader_generates.rs::a_signed_enumerator_pattern_gets_a_reader`
 
 **Status:** done
 
-### §11.4 Tree-Shaking
+### IDL 4.2 §7.4.1.4 Eine Konstante jenseits des sicheren Integer-Bereichs wird abgelehnt statt gerundet
 
-**Spec:** §11.4 -- "Per-Type *TypeSupport-Const wird beim Bundlen nicht eliminiert wenn der Type benutzt wird; Side-effect-frei via `// @__PURE__`-Annotations."
+**Spec:** IDL 4.2 §7.4.1.4 — `const` — ein zur Übersetzungszeit ausgewerteter Wert seines deklarierten Typs.
 
-**Repo:** `crates/idl-ts/src/lib.rs` emit Annotation falls Side-effect-frei.
+**Repo:** `crates/lang-rules/src/adapter/typescript.rs`
 
-**Tests:** Indirekt durch Smoke-Tests.
+**Tests:** `crates/lang-rules/src/adapter/typescript.rs::tests::a_constant_past_the_safe_integer_range_is_refused_rather_than_rounded`,
+`crates/lang-rules/src/adapter/typescript.rs::tests::an_unevaluated_array_length_is_named_and_not_substituted`
 
 **Status:** done
 
-### §11.5 Browser-CSP
+### IDL 4.2 §7.5.2 `module` wird ein Namensraum; ein wiedereröffnetes Modul bleibt einer
 
-**Spec:** §11.5 -- "MD5 als pure-TS implementiert (kein WebCrypto-Async-API), damit keyHash synchron bleibt."
+**Spec:** IDL 4.2 §7.5.2 — `module` ist ein Naming-Scope; ein Identifier ist je Scope einmalig.
 
-**Repo:** `crates/ts-node/src/cdr/md5.ts` pure-TS sync.
+**Repo:** `crates/lang-rules/src/adapter/typescript.rs`
 
-**Tests:** md5-self-checks.
+**Tests:** `crates/lang-rules/src/adapter/typescript.rs::tests::a_module_is_a_namespace_and_two_modules_do_not_collide`,
+`crates/lang-rules/src/adapter/typescript.rs::tests::a_module_reopened_beside_a_nested_one_is_one_namespace`,
+`crates/lang-rules/src/adapter/typescript.rs::tests::a_nested_name_that_would_capture_a_root_reference_is_refused`
+
+**Status:** done
+
+### §7.4 Das erzeugte Modul benennt nichts, was die Laufzeit nicht hat
+
+**Spec:** §7.4 — Data Representation — die erzeugte Quelle ruft eine Laufzeit, die §7.4 aus dem Klauseltext liest.
+
+**Repo:** `runtime/typescript`
+
+**Tests:** `crates/lang-rules/tests/typescript_names_its_runtime.rs::the_backend_names_nothing_the_runtime_does_not_export`,
+`crates/lang-rules/tests/typescript_names_its_runtime.rs::what_the_runtime_carries_and_the_backend_has_not_reached`
+
+**Status:** done
+
+### §7.4.3 Jede Rahmungsform bekommt einen Leser, und der erzeugte Leser typprüft
+
+**Spec:** §7.4.3 — XCDR Version 2 — Plain CDR2, Delimited CDR2 und PL_CDR2.
+
+**Repo:** `crates/lang-rules/src/emit/typescript.rs`
+
+**Tests:** `crates/lang-rules/tests/typescript_reader_generates.rs::a_mutable_struct_gets_a_reader`,
+`crates/lang-rules/tests/typescript_reader_generates.rs::an_appendable_struct_gets_a_reader`,
+`crates/lang-rules/tests/typescript_reader_generates.rs::the_generated_reader_type_checks`,
+`crates/lang-rules/tests/typescript_codec.rs::a_structure_of_primitives_becomes_a_typescript_encoder`
+
+**Status:** done
+
+### IDL 4.2 §7.4.3 `interface` wird ein Client, ein Handler und ein Service-Descriptor
+
+**Spec:** IDL 4.2 §7.4.3 — `interface` — Operationen mit `in`/`out`/`inout`-Parametern.
+
+**Repo:** `crates/lang-rules/src/adapter/interface.rs`
+
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::typescript_maps_an_interface_to_a_client_a_handler_and_a_descriptor`,
+`crates/lang-rules/tests/interface_bindings.rs::typescript_aggregates_out_parameters_into_the_resolved_value`,
+`crates/lang-rules/tests/interface_bindings.rs::typescript_writes_the_service_descriptor_of_eleven_five`
+
+**Status:** done
+
+## §7.3.1 Woran die Spalte gehalten wird
+
+### §7.3.1 Jeder Korpusfall rendert oder benennt die Schicht, die ihn abgelehnt hat
+
+**Spec:** §7.3.1 — Jeder Korpusfall rendert oder benennt die Schicht, die ihn abgelehnt hat. Ein Fall, der zu rendern aufhört, würde sonst erst von der nächsten Messung gefunden — ein Build-Verzeichnis vom Konstrukt entfernt, das ihn verursacht hat.
+
+**Repo:** `crates/lang-rules/src/emit/typescript.rs`, `crates/lang-rules/src/adapter/typescript.rs`
+
+**Tests:** `crates/lang-rules/src/adapter/typescript.rs::tests::every_corpus_case_renders_or_names_its_failure`
+
+**Status:** done
+
+### §7.3.1 Die erzeugte Quelle übersetzt unter dem Übersetzer der Sprache
+
+**Spec:** §7.3.1 — Die erzeugte Quelle übersetzt unter dem Übersetzer der Sprache. Ein Snapshot sagt, dass der Emitter den Text erzeugt hat, den er letztes Mal erzeugt hat; er sagt nicht, dass der Text die Sprache ist. Fehlt der Übersetzer, sagt der Test das auf Standardfehler.
+
+**Repo:** `crates/lang-rules/src/emit/typescript.rs`, `crates/lang-rules/src/adapter/typescript.rs`
+
+**Tests:** `crates/lang-rules/tests/typescript_descriptors.rs::the_generated_types_type_check`
+
+**Status:** done
+
+### §7.4 Ein Konstrukt ohne Datenform in dieser Sprache wird benannt und nicht ausgelassen
+
+**Spec:** §7.4 — Ein Konstrukt ohne Datenform in dieser Sprache wird benannt und nicht ausgelassen. Ein stillschweigend ausgelassenes Konstrukt ist die schlimmste Fehlerklasse: der Empfänger sieht keinen Fehler, sondern falsche Daten.
+
+**Repo:** `crates/lang-rules/src/emit/typescript.rs`, `crates/lang-rules/src/adapter/typescript.rs`
+
+**Tests:** `crates/lang-rules/src/adapter/typescript.rs::tests::a_construct_with_no_typescript_data_form_is_named_and_not_left_out`
+
+**Status:** done
+
+### §7.4 Die Oktette der Spalte werden gegen eine feste Aufzeichnung gehalten
+
+**Spec:** §7.4 — Die Oktette der Spalte werden gegen eine feste Aufzeichnung gehalten. Gemessen gegen `crates/wire-probe/tests/fixtures/rust_column_baseline.txt`, nicht neben den anderen Spalten: drei Spalten, die sich gemeinsam bewegt haben, ähneln einander weiterhin.
+
+**Repo:** `crates/lang-rules/src/emit/typescript.rs`, `crates/lang-rules/src/adapter/typescript.rs`
+
+**Tests:** `crates/wire-probe/tests/typescript_column_gate.rs::the_typescript_column_writes_what_the_rust_column_recorded`
+
+**Status:** done
+
+### §7.2.2.4.8 `@verbatim` landet an den Stellen, die die Klausel für diese Sprache nennt
+
+**Spec:** §7.2.2.4.8 — `@verbatim` landet an den Stellen, die die Klausel für diese Sprache nennt.
+
+**Repo:** `crates/lang-rules/src/adapter/typescript.rs`, `crates/lang-rules/src/verbatim.rs`
+
+**Tests:** `crates/lang-rules/tests/verbatim_every_column.rs::every_column_places_the_six_slots_in_its_declarations`,
+`crates/lang-rules/tests/verbatim_every_column.rs::every_column_ends_its_source_file_with_the_end_file_text`,
+`crates/lang-rules/tests/verbatim_every_column.rs::a_directive_reaches_its_own_column_and_no_other`
+
+**Status:** done
+
+## §7.3.1 Treiber und Messung
+
+### §7.3.1 `idlc generate --lang typescript`
+
+**Spec:** §7.3.1 — die IDL-Type-Representation ist die Eingabe der Erzeugung; die Ausgabe ist die Quelle dieser Spalte.
+
+**Repo:** `tools/idlc/src/generate.rs`, `tools/idlc/src/main.rs`
+
+**Tests:** `tools/idlc/src/generate.rs::tests::every_language_round_trips_through_its_own_name`,
+`tools/idlc/src/generate.rs::tests::language_names_lists_every_language_once`
+
+**Status:** done
+
+### §7.4 Der Messaufbau dieser Spalte
+
+**Spec:** §7.4 — die Oktette einer Spalte werden gegen aufgezeichnete Oktette verglichen und nicht in ihren eigenen Tests behauptet.
+
+**Repo:** `tools/wireprobe/wireprobe-zerodds-typescript-gen/`, `tools/wireprobe/wireprobe-zerodds-typescript`, `tools/wireprobe/wireprobe-typescript-corpus`
+
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_cell_generator`,
+`crates/lang-rules/tests/every_language_has_its_parts.rs::every_cell_generator_guards_against_a_missing_toolchain`
 
 **Status:** done
 
@@ -272,6 +287,8 @@ Implementation:
 
 ## Audit-Status
 
-22 done / 0 partial / 0 open / 1 n/a (informative) / 0 n/a (rejected).
+24 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
 
-Test-Lauf: `cargo test -p zerodds-idl-ts` -- 168 Tests grün (134 lib + nested_codec 5 + snapshot_xcdr2_vectors 11 + compile_check/edge integration); `npm run test:wire` -- 15 Tests grün; `cargo test -p zerodds-conformance --test cross_language_xcdr2 l3_6_typescript_binding` -- 1 Test grün; `cargo test -p zerodds-cdr --test xcdr2_cross_vendor_fixtures` -- 15 Tests grün; `npx tsx crates/ts-node/examples/topic-typed-smoke.ts` -- OK.
+Test-Lauf: `cargo test -p zerodds-lang-rules` — 1024 Tests grün, 0 failed (20 ignoriert: die Vollkorpus-Compile-Läufe, die `--include-ignored` verlangen).
+
+Offene Punkte: keine. Decision-Records: keine.

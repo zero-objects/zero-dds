@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of empty-struct-as-base that cyclone produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	1261 | struct zd_c42_m_Base parent;
+plain-cdr1	be	refused	1261 | struct zd_c42_m_Base parent;
+pl-cdr1	le	refused	1261 | struct zd_c42_m_Base parent;
+pl-cdr1	be	refused	1261 | struct zd_c42_m_Base parent;
+plain-cdr2	le	refused	1261 | struct zd_c42_m_Base parent;
+plain-cdr2	be	refused	1261 | struct zd_c42_m_Base parent;
+delimited-cdr	le	refused	1261 | struct zd_c42_m_Base parent;
+delimited-cdr	be	refused	1261 | struct zd_c42_m_Base parent;
+pl-cdr2	le	refused	1261 | struct zd_c42_m_Base parent;
+pl-cdr2	be	refused	1261 | struct zd_c42_m_Base parent;

@@ -1,0 +1,5 @@
+## wireprobe-opensplice, exit 5
+### stderr
+wireprobe-opensplice: the probe did not compile
+genSplDcps.cpp:21:11: error: narrowing conversion of '-2401053088876215618' from 'long int' to 'long unsigned int' [-Wnarrowing]
+genSplDcps.cpp:58:11: error: narrowing conversion of '-2401053088876215618' from 'long int' to 'long unsigned int' [-Wnarrowing]

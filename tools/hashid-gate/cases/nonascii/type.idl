@@ -1,0 +1,3 @@
+@mutable struct Sample {
+    @hashid("größe") long size;
+};

@@ -1,0 +1,207 @@
+#!/bin/bash
+# wireprobe-rti — one IDL type and one JSON value, through RTI Connext
+# DDS's own serialiser.
+#
+# The same command line as `wireprobe-zerodds`, so a case runs through
+# both by substituting the program name. See
+# `docs/specs/zerodds-interop-suite-1.0.md`.
+#
+#   wireprobe-rti --idl robot.idl --type common::Robot \
+#                 --values robot.json --encoding xcdr2 --endian le \
+#                 --out robot.rti.xcdr2.le.bin
+#
+# RTI's `rtiddsgen` generates the type support; `wireprobe-fill`
+# supplies the statements that put the JSON sample into it; the template
+# calls `PRESTypePlugin_interpretedSerialize`. Nothing here decides any
+# wire question.
+#
+# The read direction is the same command line with `--in` instead of
+# `--values`: `wireprobe-dump` supplies the statements that print the
+# sample and the template calls `PRESTypePlugin_interpretedDeserialize`.
+#
+#   wireprobe-rti --idl robot.idl --type common::Robot \
+#                 --in robot.cyclone.xcdr2.le.bin --encoding xcdr2 \
+#                 --endian le --values-out robot.read.json
+set -euo pipefail
+
+NDDSHOME="${NDDSHOME:-/opt/rti.com/rti_connext_dds-7.7.0}"
+# The generator's platform string and the library directory are not the
+# same platform: `rtiddsgen` has no target for the toolchain the
+# libraries were built with, and the C it emits is the same either way.
+RTI_TARGET="${RTI_TARGET:-x64Linux4gcc7.3.0}"
+RTI_LIB="${RTI_LIB:-$NDDSHOME/lib/x64Linux4gcc8.5.0}"
+FILL="${WIREPROBE_FILL:-wireprobe-fill}"
+DUMP="${WIREPROBE_DUMP:-wireprobe-dump}"
+TOOLS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TEMPLATE="$TOOLS/rti-template.c"
+DECODE_TEMPLATE="$TOOLS/rti-decode-template.c"
+# shellcheck source=probe-cache.sh
+. "$TOOLS/probe-cache.sh"
+# shellcheck source=bounded.sh
+. "$TOOLS/bounded.sh"
+# shellcheck source=diagnostics.sh
+. "$TOOLS/diagnostics.sh"
+
+idl=""; type_name=""; values=""; encoding="xcdr2"; endian="le"; emit="payload"
+out=""; input=""; values_out=""; matrix=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+        # Every combination out of the one build, as
+        # `<version>\t<endian>\t<hex>` rows.
+        --matrix) matrix=1; shift ;;
+        --idl) idl="$2"; shift 2 ;;
+        --type) type_name="$2"; shift 2 ;;
+        --values) values="$2"; shift 2 ;;
+        --in) input="$2"; shift 2 ;;
+        --values-out) values_out="$2"; shift 2 ;;
+        --encoding) encoding="$2"; shift 2 ;;
+        --endian) endian="$2"; shift 2 ;;
+        --emit) emit="$2"; shift 2 ;;
+        --out) out="$2"; shift 2 ;;
+        # `--dialect` names which implementation's answers to give, and
+        # this probe can only give RTI's. Accepting another and
+        # producing these bytes anyway would report a divergence the run
+        # never measured, so it is refused the way `--emit` is.
+        --dialect)
+            if [ "$2" != "rti" ]; then
+                echo "wireprobe-rti: --dialect $2 is not this probe's; it writes what RTI writes" >&2
+                exit 3
+            fi
+            shift 2 ;;
+        # Accepted and ignored: these select between shapes this project
+        # can produce, and RTI has exactly one of each. Ignoring them
+        # lets the same command line drive all four probes.
+        --length-codes|--collection-delimiters|--map-length|--wstring-length) shift 2 ;;
+        --pl-cdr1-headers|--default-extensibility|--key-holder) shift 2 ;;
+        --help|-h) sed -n '2,26p' "${BASH_SOURCE[0]}"; exit 0 ;;
+        *) echo "wireprobe-rti: \`$1\` is not an option" >&2; exit 2 ;;
+    esac
+done
+[ -n "$idl" ] || { echo "wireprobe-rti: --idl is required" >&2; exit 2; }
+[ -n "$type_name" ] || { echo "wireprobe-rti: --type is required" >&2; exit 2; }
+if [ -n "$input" ] && [ -n "$values" ]; then
+    echo "wireprobe-rti: --in reads bytes and --values writes them; pick one" >&2; exit 2
+fi
+if [ -z "$input" ] && [ -z "$values" ]; then
+    echo "wireprobe-rti: --values is required, or --in to read bytes back" >&2; exit 2
+fi
+
+case "$encoding" in
+    xcdr1|plain-cdr1|pl-cdr1) version_word=1 ;;
+    xcdr2|plain-cdr2|delimited-cdr|pl-cdr2) version_word=2 ;;
+    *) echo "wireprobe-rti: \`$encoding\` is not an encoding" >&2; exit 2 ;;
+esac
+case "$endian" in
+    le|little) endian_word=le ;;
+    be|big) endian_word=be ;;
+    *) echo "wireprobe-rti: \`$endian\` is not a byte order" >&2; exit 2 ;;
+esac
+case "$emit" in
+    payload) ;;
+    *) echo "wireprobe-rti: --emit $emit is not implemented here yet" >&2; exit 3 ;;
+esac
+
+work="$(mktemp -d)"
+# Kept before the removal and on every exit path, including a
+# refusal: the generated source of a case a front end could not carry
+# is the one a reader most wants to see.
+trap 'probe_keep_generated "$work" "rti" "$idl"; rm -rf "$work"' EXIT
+
+cp "$idl" "$work/gen.idl"
+c_name="$("$FILL" --vendor rti --idl "$idl" --type "$type_name" --print-c-name)"
+
+if [ -n "$input" ]; then
+    "$DUMP" --vendor rti --idl "$idl" --type "$type_name" --out "$work/dump.inc"
+    # As above, for the read direction.
+    key="$(probe_cache_key rti decode "$c_name" -- "$idl" "$work/dump.inc" "$DECODE_TEMPLATE")"
+    cached="$(probe_cache_dir "$key")"
+    if [ -z "$cached" ] || [ ! -x "$cached/probe" ]; then
+        (
+            cd "$work"
+            export NDDSHOME
+            bounded_run rtiddsgen "$NDDSHOME/bin/rtiddsgen" -language C -platform "$RTI_TARGET" -replace gen.idl \
+                > gen.log 2>&1 \
+                || { echo "wireprobe-rti: rtiddsgen failed" >&2; sed -n 1,10p gen.log >&2; exit 4; }
+            sed -e "s/@TYPE@/$c_name/g" "$DECODE_TEMPLATE" > probe.c
+            gcc -o probe probe.c gen.c genPlugin.c genSupport.c \
+                -I. -I"$TOOLS" -I"$NDDSHOME/include" -I"$NDDSHOME/include/ndds" \
+                -L"$RTI_LIB" -lnddsc -lnddscore -ldl -lm -lpthread -lrt \
+                -Wl,-rpath,"$RTI_LIB" -DRTI_UNIX -DRTI_LINUX -DRTI_64BIT > cc.log 2>&1 \
+                || { echo "wireprobe-rti: the decode probe did not compile" >&2; \
+                     grep -m10 "error:" cc.log >&2; exit 5; }
+        )
+        probe_diagnostics_after rti "$work" "$idl" $?
+        if [ -n "$cached" ]; then
+            build="$(mktemp -d "$WIREPROBE_CACHE/build.XXXXXX")"
+            cp "$work/probe" "$build/probe"
+            probe_diagnostics_publish "$work" "$build"
+            probe_generated_publish "$work" "$build"
+            probe_cache_publish "$build" "$cached"
+        fi
+    else
+        # A cache hit does not compile, so the build said nothing
+        # this run. What it said when it was built is replayed,
+        # or a re-record would be silent for every case it did
+        # not rebuild.
+        probe_diagnostics_cached rti "$cached" "$idl"
+        probe_generated_cached "$cached" "$work"
+    fi
+    if [ -n "$cached" ] && [ -x "$cached/probe" ]; then binary="$cached/probe"; else binary="$work/probe"; fi
+    bounded_run_native "the rti read probe" "$binary" "$endian_word" "$version_word" \
+        < "$input" > "$work/values.json"
+    if [ -n "$values_out" ]; then cp "$work/values.json" "$values_out"; else cat "$work/values.json"; fi
+    exit 0
+fi
+
+"$FILL" --vendor rti --idl "$idl" --type "$type_name" --values "$values" \
+        --out "$work/fill.inc"
+
+# Neither setting is in the key: the template takes the representation
+# and the byte order on its command line, so one binary answers all four
+# combinations and `rtiddsgen` runs once per case instead of four times.
+key="$(probe_cache_key rti encode "$c_name" -- "$idl" "$work/fill.inc" "$TEMPLATE")"
+cached="$(probe_cache_dir "$key")"
+if [ -z "$cached" ] || [ ! -x "$cached/probe" ]; then
+    (
+        cd "$work"
+        export NDDSHOME
+        bounded_run rtiddsgen "$NDDSHOME/bin/rtiddsgen" -language C -platform "$RTI_TARGET" -replace gen.idl \
+            > gen.log 2>&1 \
+            || { echo "wireprobe-rti: rtiddsgen failed" >&2; sed -n 1,10p gen.log >&2; exit 4; }
+        sed -e "s/@TYPE@/$c_name/g" "$TEMPLATE" > probe.c
+        gcc -o probe probe.c gen.c genPlugin.c genSupport.c \
+            -I. -I"$NDDSHOME/include" -I"$NDDSHOME/include/ndds" \
+            -L"$RTI_LIB" -lnddsc -lnddscore -ldl -lm -lpthread -lrt \
+            -Wl,-rpath,"$RTI_LIB" -DRTI_UNIX -DRTI_LINUX -DRTI_64BIT > cc.log 2>&1 \
+            || { echo "wireprobe-rti: the probe did not compile" >&2; \
+                 grep -m10 "error:" cc.log >&2; exit 5; }
+    )
+    probe_diagnostics_after rti "$work" "$idl" $?
+    if [ -n "$cached" ]; then
+        build="$(mktemp -d "$WIREPROBE_CACHE/build.XXXXXX")"
+        cp "$work/probe" "$build/probe"
+        probe_diagnostics_publish "$work" "$build"
+        probe_generated_publish "$work" "$build"
+        probe_cache_publish "$build" "$cached"
+    fi
+else
+    # A cache hit does not compile, so the build said nothing
+    # this run. What it said when it was built is replayed,
+    # or a re-record would be silent for every case it did
+    # not rebuild.
+    probe_diagnostics_cached rti "$cached" "$idl"
+    probe_generated_cached "$cached" "$work"
+fi
+if [ -n "$cached" ] && [ -x "$cached/probe" ]; then binary="$cached/probe"; else binary="$work/probe"; fi
+if [ "$matrix" = 1 ]; then
+    bounded_run_native "the rti probe" "$binary" --matrix
+    exit 0
+fi
+bounded_run_native "the rti probe" "$binary" "$endian_word" "$version_word" \
+    > "$work/bytes.bin"
+
+if [ -n "$out" ]; then
+    cp "$work/bytes.bin" "$out"
+else
+    od -An -tx1 -v "$work/bytes.bin" | tr -d ' \n'; echo
+fi

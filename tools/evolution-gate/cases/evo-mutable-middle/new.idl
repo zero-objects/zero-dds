@@ -1,0 +1,6 @@
+@mutable
+struct Evo {
+    @id(1) long a;
+    @id(2) string s;
+    @id(3) long c;
+};

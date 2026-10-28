@@ -65,6 +65,225 @@ use crate::status::{
 };
 
 // ============================================================================
+// The callbacks, declared once
+// ============================================================================
+//
+// DataWriterListener, DataReaderListener, SubscriberListener and
+// TopicListener declare the callbacks of DDS 1.4 §2.2.4.2; PublisherListener,
+// SubscriberListener and DomainParticipantListener repeat them for the
+// bubble-up of §2.2.4.2.3. Each callback has its entity form beside it
+// (§2.3.3). The macros below are the one definition of a callback pair, so
+// that the traits that repeat a callback cannot drift from the one that
+// declares it; `$doc` is the sentence of the handle form.
+
+/// The entity-form sentence of DDS 1.4 §2.3.3 for the handle form `$handle`
+/// of an entity spelled `$entity`.
+macro_rules! entity_form_doc {
+    ($handle:ident, $entity:literal) => {
+        concat!(
+            "Entity form of [`Self::",
+            stringify!($handle),
+            "`] (DDS 1.4 §2.3.3: the listener operation gets the entity, here `",
+            $entity,
+            "`, not a handle of it). The dispatcher calls this form; the default calls the \
+             handle form, so a listener that implements the handle form is called as before, \
+             and one that implements this form gets the entity."
+        )
+    };
+}
+
+/// One writer callback: the handle form and the entity form on an
+/// `AnyDataWriter`.
+macro_rules! writer_callback {
+    ($doc:expr, $handle:ident, $entity_form:ident, $status:ty) => {
+        #[doc = $doc]
+        fn $handle(&self, _writer: InstanceHandle, _status: $status) {}
+
+        #[doc = entity_form_doc!($handle, "writer")]
+        #[cfg(feature = "std")]
+        fn $entity_form(&self, writer: &crate::publisher::AnyDataWriter, status: $status) {
+            self.$handle(writer.instance_handle(), status);
+        }
+    };
+}
+
+/// One reader callback with a status: the handle form and the entity form on
+/// an `AnyDataReader`.
+macro_rules! reader_callback {
+    ($doc:expr, $handle:ident, $entity_form:ident, $status:ty) => {
+        #[doc = $doc]
+        fn $handle(&self, _reader: InstanceHandle, _status: $status) {}
+
+        #[doc = entity_form_doc!($handle, "reader")]
+        #[cfg(feature = "std")]
+        fn $entity_form(&self, reader: &crate::subscriber::AnyDataReader, status: $status) {
+            self.$handle(reader.instance_handle(), status);
+        }
+    };
+}
+
+/// `on_inconsistent_topic` (§2.2.4.2.5) and its entity form.
+macro_rules! topic_callbacks {
+    ($doc:expr) => {
+        #[doc = $doc]
+        fn on_inconsistent_topic(&self, _topic: InstanceHandle, _status: InconsistentTopicStatus) {}
+
+        #[doc = entity_form_doc!(on_inconsistent_topic, "topic")]
+        #[cfg(feature = "std")]
+        fn on_inconsistent_topic_entity(
+            &self,
+            topic: &crate::topic::TopicDescriptionHandle,
+            status: InconsistentTopicStatus,
+        ) {
+            if let Some(handle) = topic.instance_handle() {
+                self.on_inconsistent_topic(handle, status);
+            }
+        }
+    };
+}
+
+/// The four writer callbacks of §2.2.4.2.4, declared by `DataWriterListener`;
+/// `from <Trait>` repeats them as the bubble-up from that trait.
+macro_rules! writer_callbacks {
+    (from $from:literal) => {
+        writer_callbacks!(
+            concat!(
+                "Bubble-up from [`",
+                $from,
+                "::on_offered_deadline_missed`]."
+            ),
+            concat!(
+                "Bubble-up from [`",
+                $from,
+                "::on_offered_incompatible_qos`]."
+            ),
+            concat!("Bubble-up from [`", $from, "::on_liveliness_lost`]."),
+            concat!("Bubble-up from [`", $from, "::on_publication_matched`].")
+        );
+    };
+    ($deadline:expr, $incompatible:expr, $lost:expr, $matched:expr) => {
+        writer_callback!(
+            $deadline,
+            on_offered_deadline_missed,
+            on_offered_deadline_missed_entity,
+            OfferedDeadlineMissedStatus
+        );
+        writer_callback!(
+            $incompatible,
+            on_offered_incompatible_qos,
+            on_offered_incompatible_qos_entity,
+            OfferedIncompatibleQosStatus
+        );
+        writer_callback!(
+            $lost,
+            on_liveliness_lost,
+            on_liveliness_lost_entity,
+            LivelinessLostStatus
+        );
+        writer_callback!(
+            $matched,
+            on_publication_matched,
+            on_publication_matched_entity,
+            PublicationMatchedStatus
+        );
+    };
+}
+
+/// The seven reader callbacks of §2.2.4.2.6, declared by
+/// `DataReaderListener`; `from <Trait>` repeats them as the bubble-up from
+/// that trait.
+macro_rules! reader_callbacks {
+    (from $from:literal) => {
+        reader_callbacks!(
+            concat!("Bubble-up from [`", $from, "::on_data_available`]."),
+            concat!("Bubble-up from [`", $from, "::on_sample_lost`]."),
+            concat!("Bubble-up from [`", $from, "::on_sample_rejected`]."),
+            concat!(
+                "Bubble-up from [`",
+                $from,
+                "::on_requested_deadline_missed`]."
+            ),
+            concat!(
+                "Bubble-up from [`",
+                $from,
+                "::on_requested_incompatible_qos`]."
+            ),
+            concat!("Bubble-up from [`", $from, "::on_liveliness_changed`]."),
+            concat!("Bubble-up from [`", $from, "::on_subscription_matched`].")
+        );
+    };
+    (
+        $available:expr,
+        $lost:expr,
+        $rejected:expr,
+        $deadline:expr,
+        $incompatible:expr,
+        $liveliness:expr,
+        $matched:expr
+    ) => {
+        #[doc = $available]
+        fn on_data_available(&self, _reader: InstanceHandle) {}
+
+        #[doc = entity_form_doc!(on_data_available, "reader")]
+        #[cfg(feature = "std")]
+        fn on_data_available_entity(&self, reader: &crate::subscriber::AnyDataReader) {
+            self.on_data_available(reader.instance_handle());
+        }
+
+        reader_callback!(
+            $lost,
+            on_sample_lost,
+            on_sample_lost_entity,
+            SampleLostStatus
+        );
+        reader_callback!(
+            $rejected,
+            on_sample_rejected,
+            on_sample_rejected_entity,
+            SampleRejectedStatus
+        );
+        reader_callback!(
+            $deadline,
+            on_requested_deadline_missed,
+            on_requested_deadline_missed_entity,
+            RequestedDeadlineMissedStatus
+        );
+        reader_callback!(
+            $incompatible,
+            on_requested_incompatible_qos,
+            on_requested_incompatible_qos_entity,
+            RequestedIncompatibleQosStatus
+        );
+        reader_callback!(
+            $liveliness,
+            on_liveliness_changed,
+            on_liveliness_changed_entity,
+            LivelinessChangedStatus
+        );
+        reader_callback!(
+            $matched,
+            on_subscription_matched,
+            on_subscription_matched_entity,
+            SubscriptionMatchedStatus
+        );
+    };
+}
+
+/// `on_data_on_readers` (§2.2.4.2.7.1) and its entity form.
+macro_rules! data_on_readers_callback {
+    ($doc:expr) => {
+        #[doc = $doc]
+        fn on_data_on_readers(&self, _subscriber: InstanceHandle) {}
+
+        #[doc = entity_form_doc!(on_data_on_readers, "subscriber")]
+        #[cfg(feature = "std")]
+        fn on_data_on_readers_entity(&self, subscriber: &crate::subscriber::Subscriber) {
+            self.on_data_on_readers(crate::entity::Entity::get_instance_handle(subscriber));
+        }
+    };
+}
+
+// ============================================================================
 // TopicListener (Spec §2.2.2.3.2)
 // ============================================================================
 
@@ -73,9 +292,18 @@ use crate::status::{
 /// Exactly one callback: `on_inconsistent_topic`. The `topic` parameter
 /// is passed as an opaque [`InstanceHandle`] (Spec §2.3.3 IDL-PSM).
 pub trait TopicListener: Send + Sync {
-    /// Spec §2.2.4.2.5 — called when another topic with the same name
-    /// but a different type definition is discovered.
-    fn on_inconsistent_topic(&self, _topic: InstanceHandle, _status: InconsistentTopicStatus) {}
+    /// `true` for the 'nil' listener ([`NilListener`]): DDS 1.4 §2.2.4.3.1
+    /// "the operation will be considered handled by a NO-OP operation", and
+    /// §2.2.4.1 "the act of calling the 'nil' listener does not reset the
+    /// communication status".
+    fn is_nil(&self) -> bool {
+        false
+    }
+
+    topic_callbacks!(
+        "Spec §2.2.4.2.5 — called when another topic with the same name but a different type \
+         definition is discovered."
+    );
 }
 
 // ============================================================================
@@ -87,31 +315,20 @@ pub trait TopicListener: Send + Sync {
 /// 4 callbacks: `on_offered_deadline_missed`, `on_offered_incompatible_qos`,
 /// `on_liveliness_lost`, `on_publication_matched`.
 pub trait DataWriterListener: Send + Sync {
-    /// Spec §2.2.4.2.4.1 — the writer did not honor the offered DEADLINE
-    /// promise.
-    fn on_offered_deadline_missed(
-        &self,
-        _writer: InstanceHandle,
-        _status: OfferedDeadlineMissedStatus,
-    ) {
+    /// `true` for the 'nil' listener ([`NilListener`]): DDS 1.4 §2.2.4.3.1
+    /// "the operation will be considered handled by a NO-OP operation", and
+    /// §2.2.4.1 "the act of calling the 'nil' listener does not reset the
+    /// communication status".
+    fn is_nil(&self) -> bool {
+        false
     }
 
-    /// Spec §2.2.4.2.4.2 — a matched reader has incompatible requested
-    /// QoS.
-    fn on_offered_incompatible_qos(
-        &self,
-        _writer: InstanceHandle,
-        _status: OfferedIncompatibleQosStatus,
-    ) {
-    }
-
-    /// Spec §2.2.4.2.4.3 — the writer was declared not_alive from the
-    /// readers' point of view.
-    fn on_liveliness_lost(&self, _writer: InstanceHandle, _status: LivelinessLostStatus) {}
-
-    /// Spec §2.2.4.2.4.4 — a new compatible reader matched (or one
-    /// disappeared).
-    fn on_publication_matched(&self, _writer: InstanceHandle, _status: PublicationMatchedStatus) {}
+    writer_callbacks!(
+        "Spec §2.2.4.2.4.1 — the writer did not honor the offered DEADLINE promise.",
+        "Spec §2.2.4.2.4.2 — a matched reader has incompatible requested QoS.",
+        "Spec §2.2.4.2.4.3 — the writer was declared not_alive from the readers' point of view.",
+        "Spec §2.2.4.2.4.4 — a new compatible reader matched (or one disappeared)."
+    );
 }
 
 // ============================================================================
@@ -124,27 +341,15 @@ pub trait DataWriterListener: Send + Sync {
 /// within the publisher". We mirror the 4 DataWriterListener methods
 /// 1:1, so that the publisher works as a bubble-up target.
 pub trait PublisherListener: Send + Sync {
-    /// Bubble-up from [`DataWriterListener::on_offered_deadline_missed`].
-    fn on_offered_deadline_missed(
-        &self,
-        _writer: InstanceHandle,
-        _status: OfferedDeadlineMissedStatus,
-    ) {
+    /// `true` for the 'nil' listener ([`NilListener`]): DDS 1.4 §2.2.4.3.1
+    /// "the operation will be considered handled by a NO-OP operation", and
+    /// §2.2.4.1 "the act of calling the 'nil' listener does not reset the
+    /// communication status".
+    fn is_nil(&self) -> bool {
+        false
     }
 
-    /// Bubble-up from [`DataWriterListener::on_offered_incompatible_qos`].
-    fn on_offered_incompatible_qos(
-        &self,
-        _writer: InstanceHandle,
-        _status: OfferedIncompatibleQosStatus,
-    ) {
-    }
-
-    /// Bubble-up from [`DataWriterListener::on_liveliness_lost`].
-    fn on_liveliness_lost(&self, _writer: InstanceHandle, _status: LivelinessLostStatus) {}
-
-    /// Bubble-up from [`DataWriterListener::on_publication_matched`].
-    fn on_publication_matched(&self, _writer: InstanceHandle, _status: PublicationMatchedStatus) {}
+    writer_callbacks!(from "DataWriterListener");
 }
 
 // ============================================================================
@@ -156,41 +361,24 @@ pub trait PublisherListener: Send + Sync {
 /// 7 reader-specific callbacks (the eighth, `on_data_on_readers`,
 /// belongs to the [`SubscriberListener`]).
 pub trait DataReaderListener: Send + Sync {
-    /// Spec §2.2.4.2.6.1 — new data has arrived at the reader.
-    fn on_data_available(&self, _reader: InstanceHandle) {}
-
-    /// Spec §2.2.4.2.6.2 — a sample was never received (e.g. overwritten
-    /// by a newer one).
-    fn on_sample_lost(&self, _reader: InstanceHandle, _status: SampleLostStatus) {}
-
-    /// Spec §2.2.4.2.6.3 — a sample was rejected (RESOURCE_LIMITS).
-    fn on_sample_rejected(&self, _reader: InstanceHandle, _status: SampleRejectedStatus) {}
-
-    /// Spec §2.2.4.2.6.4 — the reader did not receive a sample within
-    /// the requested DEADLINE.
-    fn on_requested_deadline_missed(
-        &self,
-        _reader: InstanceHandle,
-        _status: RequestedDeadlineMissedStatus,
-    ) {
+    /// `true` for the 'nil' listener ([`NilListener`]): DDS 1.4 §2.2.4.3.1
+    /// "the operation will be considered handled by a NO-OP operation", and
+    /// §2.2.4.1 "the act of calling the 'nil' listener does not reset the
+    /// communication status".
+    fn is_nil(&self) -> bool {
+        false
     }
 
-    /// Spec §2.2.4.2.6.5 — a matched writer has incompatible offered
-    /// QoS.
-    fn on_requested_incompatible_qos(
-        &self,
-        _reader: InstanceHandle,
-        _status: RequestedIncompatibleQosStatus,
-    ) {
-    }
-
-    /// Spec §2.2.4.2.6.6 — the liveliness status of the matched writers
-    /// has changed.
-    fn on_liveliness_changed(&self, _reader: InstanceHandle, _status: LivelinessChangedStatus) {}
-
-    /// Spec §2.2.4.2.6.7 — a new compatible writer matched (or went away).
-    fn on_subscription_matched(&self, _reader: InstanceHandle, _status: SubscriptionMatchedStatus) {
-    }
+    reader_callbacks!(
+        "Spec §2.2.4.2.6.1 — new data has arrived at the reader.",
+        "Spec §2.2.4.2.6.2 — a sample was lost, \"never received\" (§2.2.4.1): a gap a BEST_EFFORT \
+         reader stepped over, what a writer that left had not delivered.",
+        "Spec §2.2.4.2.6.3 — a sample was rejected (RESOURCE_LIMITS).",
+        "Spec §2.2.4.2.6.4 — the reader did not receive a sample within the requested DEADLINE.",
+        "Spec §2.2.4.2.6.5 — a matched writer has incompatible offered QoS.",
+        "Spec §2.2.4.2.6.6 — the liveliness status of the matched writers has changed.",
+        "Spec §2.2.4.2.6.7 — a new compatible writer matched (or went away)."
+    );
 }
 
 // ============================================================================
@@ -201,41 +389,20 @@ pub trait DataReaderListener: Send + Sync {
 ///
 /// Inherits all 7 reader callbacks + 1 additional `on_data_on_readers`.
 pub trait SubscriberListener: Send + Sync {
-    /// Spec §2.2.4.2.7.1 — some reader of the subscriber has new data
-    /// (subscriber-level notification).
-    fn on_data_on_readers(&self, _subscriber: InstanceHandle) {}
-
-    /// Bubble-up from [`DataReaderListener::on_data_available`].
-    fn on_data_available(&self, _reader: InstanceHandle) {}
-
-    /// Bubble-up from [`DataReaderListener::on_sample_lost`].
-    fn on_sample_lost(&self, _reader: InstanceHandle, _status: SampleLostStatus) {}
-
-    /// Bubble-up from [`DataReaderListener::on_sample_rejected`].
-    fn on_sample_rejected(&self, _reader: InstanceHandle, _status: SampleRejectedStatus) {}
-
-    /// Bubble-up from [`DataReaderListener::on_requested_deadline_missed`].
-    fn on_requested_deadline_missed(
-        &self,
-        _reader: InstanceHandle,
-        _status: RequestedDeadlineMissedStatus,
-    ) {
+    /// `true` for the 'nil' listener ([`NilListener`]): DDS 1.4 §2.2.4.3.1
+    /// "the operation will be considered handled by a NO-OP operation", and
+    /// §2.2.4.1 "the act of calling the 'nil' listener does not reset the
+    /// communication status".
+    fn is_nil(&self) -> bool {
+        false
     }
 
-    /// Bubble-up from [`DataReaderListener::on_requested_incompatible_qos`].
-    fn on_requested_incompatible_qos(
-        &self,
-        _reader: InstanceHandle,
-        _status: RequestedIncompatibleQosStatus,
-    ) {
-    }
+    data_on_readers_callback!(
+        "Spec §2.2.4.2.7.1 — some reader of the subscriber has new data (subscriber-level \
+         notification)."
+    );
 
-    /// Bubble-up from [`DataReaderListener::on_liveliness_changed`].
-    fn on_liveliness_changed(&self, _reader: InstanceHandle, _status: LivelinessChangedStatus) {}
-
-    /// Bubble-up from [`DataReaderListener::on_subscription_matched`].
-    fn on_subscription_matched(&self, _reader: InstanceHandle, _status: SubscriptionMatchedStatus) {
-    }
+    reader_callbacks!(from "DataReaderListener");
 }
 
 // ============================================================================
@@ -256,71 +423,27 @@ pub trait SubscriberListener: Send + Sync {
 ///                  `on_subscription_matched`)
 /// - 1 subscriber  (`on_data_on_readers`)
 pub trait DomainParticipantListener: Send + Sync {
+    /// `true` for the 'nil' listener ([`NilListener`]): DDS 1.4 §2.2.4.3.1
+    /// "the operation will be considered handled by a NO-OP operation", and
+    /// §2.2.4.1 "the act of calling the 'nil' listener does not reset the
+    /// communication status".
+    fn is_nil(&self) -> bool {
+        false
+    }
+
     // -------- Topic --------
 
-    /// Bubble-up from [`TopicListener::on_inconsistent_topic`].
-    fn on_inconsistent_topic(&self, _topic: InstanceHandle, _status: InconsistentTopicStatus) {}
+    topic_callbacks!("Bubble-up from [`TopicListener::on_inconsistent_topic`].");
 
     // -------- Writer side --------
 
-    /// Bubble-up from [`PublisherListener::on_offered_deadline_missed`].
-    fn on_offered_deadline_missed(
-        &self,
-        _writer: InstanceHandle,
-        _status: OfferedDeadlineMissedStatus,
-    ) {
-    }
-
-    /// Bubble-up from [`PublisherListener::on_offered_incompatible_qos`].
-    fn on_offered_incompatible_qos(
-        &self,
-        _writer: InstanceHandle,
-        _status: OfferedIncompatibleQosStatus,
-    ) {
-    }
-
-    /// Bubble-up from [`PublisherListener::on_liveliness_lost`].
-    fn on_liveliness_lost(&self, _writer: InstanceHandle, _status: LivelinessLostStatus) {}
-
-    /// Bubble-up from [`PublisherListener::on_publication_matched`].
-    fn on_publication_matched(&self, _writer: InstanceHandle, _status: PublicationMatchedStatus) {}
+    writer_callbacks!(from "PublisherListener");
 
     // -------- Reader side --------
 
-    /// Bubble-up from [`SubscriberListener::on_data_on_readers`].
-    fn on_data_on_readers(&self, _subscriber: InstanceHandle) {}
+    data_on_readers_callback!("Bubble-up from [`SubscriberListener::on_data_on_readers`].");
 
-    /// Bubble-up from [`SubscriberListener::on_data_available`].
-    fn on_data_available(&self, _reader: InstanceHandle) {}
-
-    /// Bubble-up from [`SubscriberListener::on_sample_lost`].
-    fn on_sample_lost(&self, _reader: InstanceHandle, _status: SampleLostStatus) {}
-
-    /// Bubble-up from [`SubscriberListener::on_sample_rejected`].
-    fn on_sample_rejected(&self, _reader: InstanceHandle, _status: SampleRejectedStatus) {}
-
-    /// Bubble-up from [`SubscriberListener::on_requested_deadline_missed`].
-    fn on_requested_deadline_missed(
-        &self,
-        _reader: InstanceHandle,
-        _status: RequestedDeadlineMissedStatus,
-    ) {
-    }
-
-    /// Bubble-up from [`SubscriberListener::on_requested_incompatible_qos`].
-    fn on_requested_incompatible_qos(
-        &self,
-        _reader: InstanceHandle,
-        _status: RequestedIncompatibleQosStatus,
-    ) {
-    }
-
-    /// Bubble-up from [`SubscriberListener::on_liveliness_changed`].
-    fn on_liveliness_changed(&self, _reader: InstanceHandle, _status: LivelinessChangedStatus) {}
-
-    /// Bubble-up from [`SubscriberListener::on_subscription_matched`].
-    fn on_subscription_matched(&self, _reader: InstanceHandle, _status: SubscriptionMatchedStatus) {
-    }
+    reader_callbacks!(from "SubscriberListener");
 }
 
 // ============================================================================
@@ -340,6 +463,51 @@ pub type BoxedDataReaderListener = Box<dyn DataReaderListener>;
 pub type BoxedSubscriberListener = Box<dyn SubscriberListener>;
 /// Cf. [`BoxedTopicListener`].
 pub type BoxedDomainParticipantListener = Box<dyn DomainParticipantListener>;
+
+/// The 'nil' listener of DDS 1.4 §2.2.2.1.1.3: "a Listener whose operations
+/// perform no action". An entity whose listener is set to nil with a mask
+/// handles the statuses of the mask by doing nothing: they do not bubble up
+/// to the listener of the entity above, and the status is not reset
+/// (§2.2.4.3.1, §2.2.4.2.1). `set_listener(None, mask)` installs it for a
+/// non-empty mask.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct NilListener;
+
+impl TopicListener for NilListener {
+    fn is_nil(&self) -> bool {
+        true
+    }
+}
+
+impl DataWriterListener for NilListener {
+    fn is_nil(&self) -> bool {
+        true
+    }
+}
+
+impl PublisherListener for NilListener {
+    fn is_nil(&self) -> bool {
+        true
+    }
+}
+
+impl DataReaderListener for NilListener {
+    fn is_nil(&self) -> bool {
+        true
+    }
+}
+
+impl SubscriberListener for NilListener {
+    fn is_nil(&self) -> bool {
+        true
+    }
+}
+
+impl DomainParticipantListener for NilListener {
+    fn is_nil(&self) -> bool {
+        true
+    }
+}
 
 /// Arc variant: per slot we store the listener as `Arc<dyn ...>`,
 /// because the hot path briefly clones the listener under the slot mutex

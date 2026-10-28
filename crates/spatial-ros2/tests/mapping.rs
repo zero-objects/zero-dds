@@ -8,22 +8,35 @@
     missing_docs
 )]
 
-use zerodds_cdr::{BufferReader, BufferWriter, CdrDecode, CdrEncode, Endianness};
 use zerodds_spatial_dds::builtin::Time;
 use zerodds_spatial_dds::spatial::common::FrameRef;
 use zerodds_spatial_dds::spatial::core::{FrameTransform, FramedPose, GeoPose, PoseSE3};
 use zerodds_spatial_dds::spatial::semantics::{Detection3D, Detection3DSet};
 use zerodds_spatial_dds::spatial::vio::ImuSample;
 use zerodds_spatial_ros2::convert::*;
+use zerodds_spatial_ros2::geographic_msgs::msg as geog;
+use zerodds_spatial_ros2::geometry_msgs::msg as geo;
 use zerodds_spatial_ros2::naming::{RosMessage, ros_topic, ros_type_name};
+use zerodds_spatial_ros2::sensor_msgs::msg as sensor;
+use zerodds_spatial_ros2::tf2_msgs::msg as tf2;
+use zerodds_spatial_ros2::vision_msgs::msg as vision;
+use zerodds_wire::{Endianness, Reader, Writer};
 
 /// XCDR2 wire round-trip.
-fn wire<T: CdrEncode + CdrDecode + PartialEq + std::fmt::Debug>(v: &T) -> T {
-    let mut w = BufferWriter::new(Endianness::Little).xcdr2();
-    v.encode(&mut w).expect("encode");
-    let bytes = w.into_bytes();
-    let mut r = BufferReader::new(&bytes, Endianness::Little).xcdr2();
-    T::decode(&mut r).expect("decode")
+///
+/// A macro and not a generic function: the generated `encode`/`decode`
+/// are inherent methods, so each type keeps the plan its own
+/// extensibility asks for instead of one shared signature deciding.
+macro_rules! wire {
+    ($ty:path, $value:expr) => {{
+        let value = ($value).clone();
+        let mut w = Writer::new(Endianness::Little);
+        value.encode(&mut w).expect("encode");
+        let bytes = w.finish();
+        let mut r = Reader::new(&bytes, Endianness::Little);
+        let back = <$ty>::decode(&mut r).expect("decode");
+        assert_eq!(back, value);
+    }};
 }
 
 fn frame(fqn: &str) -> FrameRef {
@@ -56,7 +69,7 @@ fn framed_pose_maps_and_round_trips() {
     assert_eq!(ros.pose.position.x, 1.0);
     assert_eq!(ros.header.stamp.sec, 12);
     // ROS message survives the XCDR wire.
-    assert_eq!(wire(&ros), ros);
+    wire!(geo::PoseStamped, ros);
     // Semantic round-trip is lossless for the mapped fields.
     assert_eq!(framed_pose_from_ros(&ros), f);
 }
@@ -78,12 +91,12 @@ fn frame_transform_and_tf_message() {
     assert_eq!(ros.header.frame_id, "odom");
     assert_eq!(ros.child_frame_id, "base_link");
     assert_eq!(ros.transform.translation.x, 0.5);
-    assert_eq!(wire(&ros), ros);
+    wire!(geo::TransformStamped, ros);
     assert_eq!(frame_transform_from_ros(&ros), t);
 
     let tf = tf_message_from(std::slice::from_ref(&t));
     assert_eq!(tf.transforms.len(), 1);
-    assert_eq!(wire(&tf), tf);
+    wire!(tf2::TFMessage, tf);
 }
 
 #[test]
@@ -100,7 +113,7 @@ fn geo_pose_maps_and_round_trips() {
     let ros = geo_pose_to_ros(&g);
     assert_eq!(ros.pose.position.latitude, 52.52);
     assert_eq!(ros.header.frame_id, "earth");
-    assert_eq!(wire(&ros), ros);
+    wire!(geog::GeoPoseStamped, ros);
     assert_eq!(geo_pose_from_ros(&ros), g);
 }
 
@@ -128,7 +141,7 @@ fn detection3d_maps_with_covariance() {
     // Block-diagonal 6x6: pos block top-left, rot block bottom-right.
     assert_eq!(ros.results[0].pose.covariance[0], 1.0); // cov_pos[0,0]
     assert_eq!(ros.results[0].pose.covariance[6 * 3 + 3], 4.0); // cov_rot[0,0]
-    assert_eq!(wire(&ros), ros);
+    wire!(vision::Detection3D, ros);
     assert_eq!(detection3d_from_ros(&ros), d);
 }
 
@@ -154,7 +167,7 @@ fn detection3d_set_maps_to_array() {
     let ros = detection3d_set_to_ros(&s);
     assert_eq!(ros.detections.len(), 1);
     assert_eq!(ros.header.frame_id, "map");
-    assert_eq!(wire(&ros), ros);
+    wire!(vision::Detection3DArray, ros);
     assert_eq!(detection3d_set_from_ros(&ros), s);
 }
 
@@ -173,7 +186,7 @@ fn imu_maps_and_round_trips() {
     assert_eq!(ros.angular_velocity.x, 0.1);
     // ROS convention: no orientation estimate.
     assert_eq!(ros.orientation_covariance[0], -1.0);
-    assert_eq!(wire(&ros), ros);
+    wire!(sensor::Imu, ros);
     assert_eq!(imu_from_ros(&ros), s);
 }
 

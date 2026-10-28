@@ -1,0 +1,3 @@
+## wireprobe-opensplice, exit 3
+### stderr
+opensplice-idl: OpenSplice 6.9 has no union topic types (`#pragma keylist`, and with it the type support, exists for structs only)

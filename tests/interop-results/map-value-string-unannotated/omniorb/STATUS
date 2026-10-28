@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of map-value-string-unannotated that omniorb produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	gen.idl:2: Error in look-up of 'map': 'map' not found
+plain-cdr1	be	refused	gen.idl:2: Error in look-up of 'map': 'map' not found
+pl-cdr1	le	refused	gen.idl:2: Error in look-up of 'map': 'map' not found
+pl-cdr1	be	refused	gen.idl:2: Error in look-up of 'map': 'map' not found
+plain-cdr2	le	no-version-2	
+plain-cdr2	be	no-version-2	
+delimited-cdr	le	no-version-2	
+delimited-cdr	be	no-version-2	
+pl-cdr2	le	no-version-2	
+pl-cdr2	be	no-version-2	

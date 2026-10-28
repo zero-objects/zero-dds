@@ -31,7 +31,7 @@ let median_ns_per_op (f : unit -> unit) : float =
   ns.(samples / 2)
 
 let () =
-  let frame = reliable_write_frame 0 (Bytes.of_string "\001\002\003\004") in
+  let frame = reliable_write_frame 0 0x0015 (Bytes.of_string "\001\002\003\004") in
 
   (* Inline path: a real sendto per sample (kernel transition). *)
   let sock = Unix.socket Unix.PF_INET Unix.SOCK_DGRAM 0 in

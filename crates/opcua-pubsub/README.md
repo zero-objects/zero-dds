@@ -24,6 +24,17 @@ additive profile, not a change to the gateway.
 6. Transport carriers (UDP multicast, Ethernet, MQTT/AMQP).
 7. DataSet ↔ DDS-topic bridge + daemon.
 
+## Interop proof
+
+`proofs/open62541_uadp.sh` runs both directions of the UADP wire against
+open62541. The decoder reads `tutorial_pubsub_publish`'s NetworkMessages off
+the multicast group and is checked against that example's own configuration
+(PublisherId 2234, WriterGroupId 100, DataSetWriterId 62541); the publisher
+sends to `tutorial_pubsub_subscribe`, whose target variables are then read back
+by `proofs/uadp_target_check.c` — a client built against open62541 alone, so no
+ZeroDDS code is in that assertion path. The script exits 77 when no open62541
+build is present, rather than passing.
+
 ## License
 
 Apache-2.0

@@ -6,12 +6,22 @@
 //! Segment layout:
 //!
 //! ```text
-//!   0x00 | u32 segment_magic (0x5A445353 = "ZDSS")
+//!   0x00 | u32 segment_magic (0x5A445332 = "ZDS2")
 //!   0x04 | u32 slot_count
 //!   0x08 | u32 slot_total_size
 //!   0x0c | u32 next_sn (atomic counter)
-//!   0x10 | [slot_total_size; slot_count]   ← Slot-Array
+//!   0x10 | u32 notify generation (futex / os_sync word, §4.2)
+//!   0x14 | u32 waiters (threads parked on the generation, all processes)
+//!   0x18 | padding
+//!   0x20 | [slot_total_size; slot_count]   ← Slot-Array
 //! ```
+//!
+//! A bump wakes the parked threads only when `waiters` is not zero, so a
+//! write and the read of it cost no syscall while nobody waits. The magic
+//! "ZDS2" names this layout. A segment of the layout without the waiter
+//! count (magic "ZDSS") is refused: its readers do not count themselves,
+//! and a writer that skips the wake would leave them parked until their
+//! timeout.
 //!
 //! Per slot:
 //!
@@ -44,16 +54,19 @@ use crate::allocator::{SlotError, SlotHandle};
 use crate::backend::SlotBackend;
 use crate::slot::{ReaderMask, SLOT_HEADER_SIZE, SlotHeader};
 
-const SEGMENT_MAGIC: u32 = 0x5A44_5353; // "ZDSS"
+const SEGMENT_MAGIC: u32 = 0x5A44_5332; // "ZDS2"
 
 /// Segment header size in bytes. Layout: u32 magic, slot_count,
 /// slot_total_size, next_sn (offset 0x00..0x0c), then a u32 notify generation
-/// at offset 0x10 (Spec §4.2 cross-process futex word), padded to 0x20 so the
-/// slot array stays 8-byte aligned.
+/// at offset 0x10 (Spec §4.2 cross-process futex word) and a u32 waiter count
+/// at 0x14, padded to 0x20 so the slot array stays 8-byte aligned.
 const SEGMENT_HEADER_SIZE: usize = 0x20;
 
 /// Byte offset of the notify-generation u32 within the segment header.
 const GEN_OFFSET: usize = 0x10;
+
+/// Byte offset of the waiter count u32 within the segment header.
+const WAITERS_OFFSET: usize = 0x14;
 
 /// Error while setting up the POSIX segment.
 #[derive(Debug)]
@@ -157,8 +170,9 @@ impl PosixSlotAllocator {
             .create()?;
 
         // Spec §7.1: owner-only 0600 on both the flink file and the backing
-        // shm object (the `shared_memory` crate leaves them at the umask
-        // default, typically 0644 — world-readable). A peer must be the same
+        // shm object. `shared_memory` creates the object with 0600 already
+        // (`shm_open` with S_IRUSR | S_IWUSR); the flink file it writes gets
+        // the umask default, typically 0644 — world-readable. A peer must be the same
         // uid to attach (cross-host/cross-uid is gated separately); 0600 stops
         // any other local user reading the zero-copy payload.
         #[cfg(unix)]
@@ -186,6 +200,7 @@ impl PosixSlotAllocator {
             p.add(2).write(slot_total_size_u32);
             p.add(3).write(0); // next_sn = 0
             p.add(GEN_OFFSET / 4).write(0); // notify generation = 0 (§4.2)
+            p.add(WAITERS_OFFSET / 4).write(0); // nobody parked yet
             // Zero the slots.
             core::ptr::write_bytes(base.add(header_size), 0u8, slot_count * slot_total_size);
         }
@@ -254,7 +269,7 @@ impl PosixSlotAllocator {
     /// OS shm id of the backing segment (e.g. for the §7.1 permission check).
     // Currently only exercised by the Linux permission test; kept available for
     // the production §7.1 check (unused in the non-test lib build).
-    #[cfg(target_os = "linux")]
+    #[cfg(unix)]
     #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn shmem_os_id(&self) -> &str {
         self.shmem
@@ -321,14 +336,38 @@ impl PosixSlotAllocator {
         Some(unsafe { &*(shmem.as_ptr().add(GEN_OFFSET) as *const AtomicU32) })
     }
 
+    /// `&AtomicU32` view of the waiter count at [`WAITERS_OFFSET`].
+    fn waiters_atomic(&self) -> Option<&AtomicU32> {
+        let shmem = self.shmem.as_ref()?;
+        // SAFETY: WAITERS_OFFSET (0x14) is inside the header (size 0x20),
+        // 4-aligned; the segment outlives this borrow (owned by self).
+        Some(unsafe { &*(shmem.as_ptr().add(WAITERS_OFFSET) as *const AtomicU32) })
+    }
+
     /// Spec §4.2: bump the shared generation and wake any cross-process waiters
-    /// (futex on Linux; no-op wake elsewhere — readers there fall back to the
-    /// caller-driven poll).
+    /// (futex on Linux, `os_sync_wake_by_address_all` on macOS from 14.4;
+    /// elsewhere readers fall back to the caller-driven poll). The wake is a
+    /// syscall, made only when a thread is parked.
     fn bump_notify(&self) {
         if let Some(g) = self.gen_atomic() {
-            g.fetch_add(1, Ordering::Release);
+            g.fetch_add(1, Ordering::SeqCst);
+            // Pairs with the fence in `wait_for_change`: either the load below
+            // sees the waiter's count, or the waiter's park, which compares the
+            // generation first, sees this add.
+            core::sync::atomic::fence(Ordering::SeqCst);
+            let parked = self
+                .waiters_atomic()
+                .is_some_and(|w| w.load(Ordering::SeqCst) > 0);
             #[cfg(target_os = "linux")]
-            futex::wake_all(g);
+            if parked {
+                futex::wake_all(g);
+            }
+            #[cfg(target_os = "macos")]
+            if parked {
+                os_sync::wake_all(g);
+            }
+            #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+            let _ = parked;
         }
     }
 }
@@ -367,6 +406,75 @@ mod futex {
                 core::ptr::from_ref(&ts),
                 0,
                 0,
+            );
+        }
+    }
+}
+
+/// macOS cross-process wait on the shared generation word (Spec §4.2):
+/// `os_sync_wait_on_address` (macOS 14.4) with the SHARED flag parks on a
+/// word in memory several processes map, as the Linux futex does. Looked up
+/// at run time: a binary that names the symbols does not start on an older
+/// macOS; without them the reader keeps the caller-driven poll.
+#[cfg(target_os = "macos")]
+mod os_sync {
+    use core::ffi::c_void;
+    use core::sync::atomic::AtomicU32;
+    use std::sync::OnceLock;
+
+    type WaitFn = unsafe extern "C" fn(*mut c_void, u64, usize, u32, u32, u64) -> i32;
+    type WakeFn = unsafe extern "C" fn(*mut c_void, usize, u32) -> i32;
+
+    fn api() -> Option<(WaitFn, WakeFn)> {
+        static API: OnceLock<Option<(WaitFn, WakeFn)>> = OnceLock::new();
+        *API.get_or_init(|| {
+            // SAFETY: dlsym with NUL-terminated names; a non-null result is the
+            // function of that name in <os/os_sync_wait_on_address.h>, whose C
+            // signature the two types above repeat.
+            unsafe {
+                let wait = libc::dlsym(
+                    libc::RTLD_DEFAULT,
+                    c"os_sync_wait_on_address_with_timeout".as_ptr(),
+                );
+                let wake = libc::dlsym(libc::RTLD_DEFAULT, c"os_sync_wake_by_address_all".as_ptr());
+                if wait.is_null() || wake.is_null() {
+                    return None;
+                }
+                Some((
+                    core::mem::transmute::<*mut c_void, WaitFn>(wait),
+                    core::mem::transmute::<*mut c_void, WakeFn>(wake),
+                ))
+            }
+        })
+    }
+
+    pub(super) fn wake_all(word: &AtomicU32) {
+        if let Some((_, wake_by_address)) = api() {
+            let ptr = core::ptr::from_ref(word).cast::<c_void>().cast_mut();
+            // SAFETY: ptr is a valid, aligned u32 in shared memory.
+            unsafe {
+                wake_by_address(ptr, 4, libc::OS_SYNC_WAKE_BY_ADDRESS_SHARED);
+            }
+        }
+    }
+
+    /// Parks until `*word != expected`, a wake, or `timeout`.
+    pub(super) fn wait(word: &AtomicU32, expected: u32, timeout: core::time::Duration) {
+        let Some((wait_on_address, _)) = api() else {
+            return;
+        };
+        let ns = u64::try_from(timeout.as_nanos()).unwrap_or(u64::MAX).max(1);
+        let ptr = core::ptr::from_ref(word).cast::<c_void>().cast_mut();
+        // SAFETY: ptr is a valid, aligned u32 in shared memory; the call
+        // compares it with `expected` before it sleeps.
+        unsafe {
+            wait_on_address(
+                ptr,
+                u64::from(expected),
+                4,
+                libc::OS_SYNC_WAIT_ON_ADDRESS_SHARED,
+                libc::OS_CLOCK_MACH_ABSOLUTE_TIME,
+                ns,
             );
         }
     }
@@ -546,14 +654,22 @@ impl SlotBackend for PosixSlotAllocator {
     }
 
     fn wait_for_change(&self, last: u64, timeout: core::time::Duration) {
-        // Cross-process futex park on the shared generation word (Linux). On
-        // other platforms there is no portable cross-process futex; the reader
-        // there falls back to the caller-driven poll (no event-driven wait).
-        #[cfg(target_os = "linux")]
-        if let Some(g) = self.gen_atomic() {
+        // Cross-process park on the shared generation word: futex on Linux,
+        // `os_sync_wait_on_address` on macOS. Elsewhere the reader falls back
+        // to the caller-driven poll (no event-driven wait).
+        // The waiter count goes up before the park and down after it, so a
+        // bump in between wakes; see `bump_notify` for the pairing fence.
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        if let (Some(g), Some(w)) = (self.gen_atomic(), self.waiters_atomic()) {
+            w.fetch_add(1, Ordering::SeqCst);
+            core::sync::atomic::fence(Ordering::SeqCst);
+            #[cfg(target_os = "linux")]
             futex::wait(g, last as u32, timeout);
+            #[cfg(target_os = "macos")]
+            os_sync::wait(g, last as u32, timeout);
+            w.fetch_sub(1, Ordering::SeqCst);
         }
-        #[cfg(not(target_os = "linux"))]
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
         let _ = (last, timeout);
     }
 }
@@ -585,11 +701,11 @@ mod tests {
         let consumer = PosixSlotAllocator::attach(&flink).expect("attach");
         assert_eq!(SlotBackend::slot_count(&owner).unwrap(), 4);
         assert_eq!(SlotBackend::slot_count(&consumer).unwrap(), 4);
-        // Slot-Total-Size: 16 + 64 = 80 → padded auf 128.
+        // Slot total size: 16 + 64 = 80 → padded to 128.
         assert_eq!(SlotBackend::slot_total_size(&owner), 128);
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[test]
     fn futex_notify_wakes_consumer_across_mappings() {
         // Spec §4.2: the consumer parks on a cross-process futex on the shared
@@ -622,6 +738,121 @@ mod tests {
             "generation must have advanced"
         );
         h.join().unwrap();
+    }
+
+    /// No wake is lost between a waiter counting itself and its park: owner
+    /// and consumer hand 2 000 samples through 4 slots, each parking on the
+    /// shared generation whenever it has nothing to do. A lost wake leaves
+    /// both parked until the 5 s timeout.
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn every_bump_reaches_a_parked_peer_and_the_count_returns_to_zero() {
+        use alloc::sync::Arc;
+        use core::time::Duration;
+        use std::time::Instant;
+        const ROUNDS: usize = 2_000;
+        let flink = unique_flink();
+        let owner = PosixSlotAllocator::create(&flink, 4, 64).expect("create");
+        let consumer = Arc::new(PosixSlotAllocator::attach(&flink).expect("attach"));
+
+        let c = Arc::clone(&consumer);
+        let reader = std::thread::spawn(move || {
+            let mut slowest = Duration::ZERO;
+            for _ in 0..ROUNDS {
+                loop {
+                    let seen = c.notify_generation();
+                    if let Some(h) = c.next_unread_slot(0).expect("scan") {
+                        c.mark_read(h, 0).expect("mark");
+                        break;
+                    }
+                    let start = Instant::now();
+                    c.wait_for_change(seen, Duration::from_secs(5));
+                    slowest = slowest.max(start.elapsed());
+                }
+            }
+            slowest
+        });
+        let mut slowest = Duration::ZERO;
+        for _ in 0..ROUNDS {
+            loop {
+                let seen = owner.notify_generation();
+                match owner.reserve_slot(0b1) {
+                    Err(SlotError::NoFreeSlot) => {
+                        let start = Instant::now();
+                        owner.wait_for_change(seen, Duration::from_secs(5));
+                        slowest = slowest.max(start.elapsed());
+                    }
+                    reserved => {
+                        let h = reserved.expect("reserve");
+                        owner.commit_slot(h, &[1, 2, 3, 4]).expect("commit");
+                        break;
+                    }
+                }
+            }
+        }
+        let slowest = slowest.max(reader.join().expect("reader"));
+        assert!(
+            slowest < Duration::from_secs(2),
+            "a park lasted {slowest:?}: a wake was lost"
+        );
+        let waiters = owner.waiters_atomic().expect("header");
+        assert_eq!(waiters.load(Ordering::SeqCst), 0);
+    }
+
+    /// A segment of the layout without the waiter count (magic "ZDSS") is
+    /// refused: its readers would park without counting themselves.
+    #[test]
+    fn a_segment_without_the_waiter_count_is_refused() {
+        let flink = unique_flink();
+        let owner = PosixSlotAllocator::create(&flink, 4, 64).expect("create");
+        let base = owner.shmem.as_ref().expect("mapping").as_ptr();
+        // SAFETY: the header is SEGMENT_HEADER_SIZE bytes at the start of the
+        // owner's mapping; the magic is its first u32.
+        unsafe { base.cast::<u32>().write(0x5A44_5353) };
+        assert!(matches!(
+            PosixSlotAllocator::attach(&flink),
+            Err(PosixSlotError::InvalidHeader)
+        ));
+    }
+
+    /// Spec §7.1, portable half: the flink file that names the segment must
+    /// be owner-only on every unix. The `/dev/shm` object carries the same
+    /// mode but only exists on Linux — that half is
+    /// `segment_is_owner_only_0600`.
+    #[cfg(unix)]
+    #[test]
+    fn flink_file_is_owner_only_0600() {
+        use std::os::unix::fs::PermissionsExt;
+        let flink = unique_flink();
+        let _owner = PosixSlotAllocator::create(&flink, 4, 64).expect("create");
+        let mode = std::fs::metadata(&flink)
+            .expect("flink stat")
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(mode, 0o600, "flink file must be 0600, was {mode:o}");
+    }
+
+    /// Spec §7.1 on macOS and the BSDs: the shm object has no path there,
+    /// so its mode is read off a descriptor of it.
+    #[cfg(all(unix, not(target_os = "linux")))]
+    #[test]
+    fn shm_object_is_owner_only_0600_by_descriptor() {
+        let flink = unique_flink();
+        let owner = PosixSlotAllocator::create(&flink, 4, 64).expect("create");
+        let name = std::ffi::CString::new(owner.shmem_os_id()).unwrap();
+        // SAFETY: a NUL-terminated name; read-only open of an existing object.
+        let fd = unsafe { libc::shm_open(name.as_ptr(), libc::O_RDONLY) };
+        assert!(fd >= 0, "shm_open: {}", std::io::Error::last_os_error());
+        // SAFETY: an all-zero stat is a valid out-parameter; fd is open.
+        let mut st: libc::stat = unsafe { core::mem::zeroed() };
+        // SAFETY: fd is a valid descriptor and st a valid out-parameter.
+        let rc = unsafe { libc::fstat(fd, &mut st) };
+        // SAFETY: fd came from shm_open above and is closed once.
+        unsafe { libc::close(fd) };
+        assert_eq!(rc, 0, "fstat: {}", std::io::Error::last_os_error());
+        let mode = u32::from(st.st_mode) & 0o777;
+        assert_eq!(mode, 0o600, "shm object must be 0600, was {mode:o}");
     }
 
     #[cfg(target_os = "linux")]

@@ -1,0 +1,6 @@
+@final struct Cell { long a; long b; };
+@mutable struct LenMap2 {
+    map<long, long> prim;
+    map<long, Cell> agg;
+    long tail;
+};

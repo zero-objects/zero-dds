@@ -37,7 +37,7 @@ use zerodds_rtps::wire_types::{EntityId, Guid, GuidPrefix};
 
 use crate::error::{RpcError, RpcResult};
 use crate::service_mapping::ServiceDef;
-use crate::topic_naming::ServiceTopicNames;
+use crate::topic_naming::{BindingStyle, ServiceTopicNames, TopicNameOverrides};
 
 // ---------------------------------------------------------------------
 // Builder
@@ -47,6 +47,8 @@ use crate::topic_naming::ServiceTopicNames;
 #[derive(Debug, Clone)]
 pub struct RpcEndpointBuilder {
     service: ServiceDef,
+    style: BindingStyle,
+    overrides: TopicNameOverrides,
     instance_name: Option<String>,
     topic_aliases: Vec<String>,
     participant_prefix: GuidPrefix,
@@ -80,6 +82,11 @@ impl RpcEndpointBuilder {
         let type_name_reply = alloc::format!("{}_Reply", service.name);
         Ok(Self {
             service,
+            // §7.4.1's first alternative, which captures the interface
+            // segment. A caller building endpoints for the
+            // request-reply binding says so with `binding_style`.
+            style: BindingStyle::FunctionCall,
+            overrides: TopicNameOverrides::none(),
             instance_name: None,
             topic_aliases: Vec::new(),
             participant_prefix,
@@ -90,7 +97,35 @@ impl RpcEndpointBuilder {
         })
     }
 
-    /// Sets the `PID_SERVICE_INSTANCE_NAME` (DDS-RPC §7.8.2). Allows
+    /// Which language binding these endpoints are for. §7.4.1: the
+    /// request-reply binding does not capture `<interface_name>`, so the
+    /// two styles produce different topic names for one service and both
+    /// sides have to agree (§7.4.2).
+    #[must_use]
+    pub const fn binding_style(mut self, style: BindingStyle) -> Self {
+        self.style = style;
+        self
+    }
+
+    /// The run-time topic-name layer of §7.4.2.3 — what `ServiceParams`,
+    /// `ClientParams`, `RequesterParams` and `ReplierParams` carry. It
+    /// takes precedence over the IDL annotations and the default.
+    #[must_use]
+    pub fn topic_name_overrides(mut self, overrides: TopicNameOverrides) -> Self {
+        self.overrides = overrides;
+        self
+    }
+
+    /// The topic names these endpoints will carry, after §7.4.2.3's
+    /// precedence.
+    ///
+    /// # Errors
+    /// `RpcError::InvalidServiceName` for a name §7.4.1 does not admit.
+    pub fn topic_names(&self) -> RpcResult<ServiceTopicNames> {
+        self.service.topic_names_with(self.style, &self.overrides)
+    }
+
+    /// Sets the `PID_SERVICE_INSTANCE_NAME` (DDS-RPC 1.0 §7.6.2.1). Allows
     /// addressing multiple instances of the same service type on one
     /// participant disjointly (e.g. `"calc-A"` vs. `"calc-B"`).
     #[must_use]
@@ -131,7 +166,7 @@ impl RpcEndpointBuilder {
     /// (nothing to transport).
     pub fn build_requester(&self) -> RpcResult<RequesterEndpoint> {
         self.check_non_empty()?;
-        let topics = self.service.topic_names()?;
+        let topics = self.topic_names()?;
         let req_writer_guid = Guid::new(self.participant_prefix, self.request_entity);
         let rep_reader_guid = Guid::new(self.participant_prefix, self.reply_entity);
 
@@ -140,12 +175,14 @@ impl RpcEndpointBuilder {
             req_writer_guid,
             /*related=*/ rep_reader_guid,
             /*request_side=*/ true,
+            /*service_side=*/ false,
         );
         let reply_reader = self.subscription(
             &topics,
             rep_reader_guid,
             /*related=*/ req_writer_guid,
             /*request_side=*/ false,
+            /*service_side=*/ false,
         );
         Ok(RequesterEndpoint {
             request_writer,
@@ -160,7 +197,7 @@ impl RpcEndpointBuilder {
     /// See [`Self::build_requester`].
     pub fn build_replier(&self) -> RpcResult<ReplierEndpoint> {
         self.check_non_empty()?;
-        let topics = self.service.topic_names()?;
+        let topics = self.topic_names()?;
         let req_reader_guid = Guid::new(self.participant_prefix, self.request_entity);
         let rep_writer_guid = Guid::new(self.participant_prefix, self.reply_entity);
 
@@ -169,12 +206,14 @@ impl RpcEndpointBuilder {
             req_reader_guid,
             /*related=*/ rep_writer_guid,
             /*request_side=*/ true,
+            /*service_side=*/ true,
         );
         let reply_writer = self.publication(
             &topics,
             rep_writer_guid,
             /*related=*/ req_reader_guid,
             /*request_side=*/ false,
+            /*service_side=*/ true,
         );
         Ok(ReplierEndpoint {
             request_reader,
@@ -195,6 +234,7 @@ impl RpcEndpointBuilder {
         my_guid: Guid,
         related: Guid,
         request_side: bool,
+        service_side: bool,
     ) -> PublicationBuiltinTopicData {
         let (topic_name, type_name) = if request_side {
             (topics.request.clone(), self.type_name_request.clone())
@@ -202,11 +242,13 @@ impl RpcEndpointBuilder {
             (topics.reply.clone(), self.type_name_reply.clone())
         };
         PublicationBuiltinTopicData {
+            vendor_id: Some(zerodds_rtps::wire_types::VendorId::ZERODDS),
             key: my_guid,
             participant_key: Guid::new(self.participant_prefix, EntityId::PARTICIPANT),
             topic_name,
             type_name,
             durability: zerodds_rtps::publication_data::DurabilityKind::default(),
+            durability_service: zerodds_qos::DurabilityServiceQosPolicy::default(),
             reliability: zerodds_rtps::publication_data::ReliabilityQos::default(),
             ownership: zerodds_qos::OwnershipKind::Shared,
             ownership_strength: 0,
@@ -221,19 +263,56 @@ impl RpcEndpointBuilder {
             topic_data: Vec::new(),
             group_data: Vec::new(),
             type_information: None,
+            type_id_v1: None,
+            type_object_v1: None,
             data_representation: Vec::new(),
             security_info: None,
-            service_instance_name: self.instance_name.clone(),
-            related_entity_guid: Some(related),
-            topic_aliases: if self.topic_aliases.is_empty() {
-                None
+            sym_cipher_algo_info: None,
+            data_tags: Default::default(),
+            properties: Default::default(),
+            service_instance_name: if service_side {
+                self.instance_name.clone()
             } else {
-                Some(self.topic_aliases.clone())
+                None
             },
+            related_entity_guid: Some(related),
+            topic_aliases: self.aliases(topics, request_side),
             type_identifier: zerodds_types::TypeIdentifier::None,
             unicast_locators: Vec::new(),
             multicast_locators: Vec::new(),
+            group_guid: None,
+            data_max_size_serialized: None,
+            entity_name: None,
         }
+    }
+
+    /// The `PID_TOPIC_ALIASES` this endpoint announces.
+    ///
+    /// §7.4.3: "In case of single and multiple inheritance, the request
+    /// and reply topics shall additionally have topic-aliases, which are
+    /// obtained using the rules in sub clause 7.4.1 for each parent
+    /// interface. Topic aliases are announced during the endpoint
+    /// discovery protocol." So the inheritance aliases come from the
+    /// service and are not something a caller has to remember to set;
+    /// `topic_aliases()` adds to them rather than replacing them,
+    /// because a caller's alias is a deployment fact and the parents'
+    /// are a specification one.
+    fn aliases(&self, topics: &ServiceTopicNames, request_side: bool) -> Option<Vec<String>> {
+        let derived = if request_side {
+            &topics.request_aliases
+        } else {
+            &topics.reply_aliases
+        };
+        if derived.is_empty() && self.topic_aliases.is_empty() {
+            return None;
+        }
+        let mut out = derived.clone();
+        for alias in &self.topic_aliases {
+            if !out.iter().any(|seen| seen == alias) {
+                out.push(alias.clone());
+            }
+        }
+        Some(out)
     }
 
     fn subscription(
@@ -242,6 +321,7 @@ impl RpcEndpointBuilder {
         my_guid: Guid,
         related: Guid,
         request_side: bool,
+        service_side: bool,
     ) -> SubscriptionBuiltinTopicData {
         let (topic_name, type_name) = if request_side {
             (topics.request.clone(), self.type_name_request.clone())
@@ -249,6 +329,8 @@ impl RpcEndpointBuilder {
             (topics.reply.clone(), self.type_name_reply.clone())
         };
         SubscriptionBuiltinTopicData {
+            content_filter_unreadable: false,
+            vendor_id: Some(zerodds_rtps::wire_types::VendorId::ZERODDS),
             key: my_guid,
             participant_key: Guid::new(self.participant_prefix, EntityId::PARTICIPANT),
             topic_name,
@@ -258,6 +340,7 @@ impl RpcEndpointBuilder {
             ownership: zerodds_qos::OwnershipKind::Shared,
             liveliness: zerodds_qos::LivelinessQosPolicy::default(),
             deadline: zerodds_qos::DeadlineQosPolicy::default(),
+            time_based_filter: zerodds_qos::TimeBasedFilterQosPolicy::default(),
             latency_budget: zerodds_qos::LatencyBudgetQosPolicy::default(),
             destination_order: zerodds_qos::DestinationOrderQosPolicy::default(),
             presentation: zerodds_qos::PresentationQosPolicy::default(),
@@ -265,20 +348,30 @@ impl RpcEndpointBuilder {
             user_data: Vec::new(),
             topic_data: Vec::new(),
             group_data: Vec::new(),
+            type_consistency: zerodds_types::qos::TypeConsistencyEnforcement::default(),
             type_information: None,
+            type_id_v1: None,
+            type_object_v1: None,
             data_representation: Vec::new(),
             content_filter: None,
             security_info: None,
-            service_instance_name: self.instance_name.clone(),
-            related_entity_guid: Some(related),
-            topic_aliases: if self.topic_aliases.is_empty() {
-                None
+            sym_cipher_algo_info: None,
+            data_tags: Default::default(),
+            properties: Default::default(),
+            service_instance_name: if service_side {
+                self.instance_name.clone()
             } else {
-                Some(self.topic_aliases.clone())
+                None
             },
+            related_entity_guid: Some(related),
+            topic_aliases: self.aliases(topics, request_side),
             type_identifier: zerodds_types::TypeIdentifier::None,
             unicast_locators: Vec::new(),
             multicast_locators: Vec::new(),
+            expects_inline_qos: false,
+            group_guid: None,
+            type_consistency_announced: true,
+            entity_name: None,
         }
     }
 }
@@ -290,18 +383,18 @@ impl RpcEndpointBuilder {
 /// Requester-Pair (Request-Writer + Reply-Reader).
 #[derive(Debug, Clone, PartialEq)]
 pub struct RequesterEndpoint {
-    /// SEDP-Daten des Request-Writers.
+    /// SEDP data of the request writer.
     pub request_writer: PublicationBuiltinTopicData,
-    /// SEDP-Daten des Reply-Readers.
+    /// SEDP data of the reply reader.
     pub reply_reader: SubscriptionBuiltinTopicData,
 }
 
 /// Replier-Pair (Request-Reader + Reply-Writer).
 #[derive(Debug, Clone, PartialEq)]
 pub struct ReplierEndpoint {
-    /// SEDP-Daten des Request-Readers.
+    /// SEDP data of the request reader.
     pub request_reader: SubscriptionBuiltinTopicData,
-    /// SEDP-Daten des Reply-Writers.
+    /// SEDP data of the reply writer.
     pub reply_writer: PublicationBuiltinTopicData,
 }
 
@@ -309,65 +402,37 @@ pub struct ReplierEndpoint {
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
-    use crate::annotations::lower_rpc_annotations;
     use crate::service_mapping::lower_service;
-    use zerodds_idl::ast::{
-        Annotation, AnnotationParams, Export, Identifier, IntegerType, InterfaceDef, InterfaceKind,
-        OpDecl, ParamAttribute, ParamDecl, PrimitiveType, ScopedName, TypeSpec,
-    };
-    use zerodds_idl::errors::Span;
+    use zerodds_ast::Ast;
 
-    fn sp() -> Span {
-        Span::SYNTHETIC
-    }
-
-    fn ident(t: &str) -> Identifier {
-        Identifier::new(t, sp())
-    }
-
-    fn long_t() -> TypeSpec {
-        TypeSpec::Primitive(PrimitiveType::Integer(IntegerType::Long))
-    }
-
-    fn ann_simple(name: &str) -> Annotation {
-        Annotation {
-            name: ScopedName {
-                absolute: false,
-                parts: alloc::vec![ident(name)],
-                span: sp(),
-            },
-            params: AnnotationParams::None,
-            span: sp(),
-        }
+    /// Parse, lower, resolve.
+    fn model(idl: &str) -> Ast {
+        let parsed = zerodds_idl_parse::parse(idl);
+        assert!(
+            parsed.diagnostics().iter().all(|d| !d.is_error()),
+            "the source does not parse: {:?}",
+            parsed.diagnostics()
+        );
+        let lowered = zerodds_idl_lower::lower(&parsed.syntax(), "rpc_endpoint.idl");
+        assert!(
+            lowered.diagnostics.iter().all(|d| !d.is_error()),
+            "the source does not lower: {:?}",
+            lowered.diagnostics
+        );
+        let mut ast = lowered.ast;
+        let report = ast.resolve_all_by_name().expect("a resolve pass");
+        assert!(
+            report.broken.is_empty(),
+            "every name must resolve: {:?}",
+            report.broken
+        );
+        ast
     }
 
     fn calc_service() -> ServiceDef {
-        let add = OpDecl {
-            name: ident("add"),
-            oneway: false,
-            return_type: Some(long_t()),
-            params: alloc::vec![ParamDecl {
-                attribute: ParamAttribute::In,
-                type_spec: long_t(),
-                name: ident("a"),
-                annotations: Vec::new(),
-                span: sp(),
-            }],
-            raises: Vec::new(),
-            context: Vec::new(),
-            annotations: Vec::new(),
-            span: sp(),
-        };
-        let i = InterfaceDef {
-            kind: InterfaceKind::Plain,
-            name: ident("Calculator"),
-            bases: Vec::new(),
-            exports: alloc::vec![Export::Op(add)],
-            annotations: alloc::vec![ann_simple("service")],
-            span: sp(),
-        };
-        let lowered = lower_rpc_annotations(&i.annotations);
-        lower_service(&i, &lowered).unwrap()
+        let ast = model("@service interface Calculator { long add(in long a); };");
+        let (id, _) = ast.interfaces().next().expect("one interface");
+        lower_service(&ast, id).expect("a service")
     }
 
     fn pp() -> GuidPrefix {
@@ -387,8 +452,34 @@ mod tests {
         let svc = calc_service();
         let b = RpcEndpointBuilder::new(svc, pp(), req_eid(), rep_eid()).unwrap();
         let r = b.build_requester().unwrap();
-        assert_eq!(r.request_writer.topic_name, "Calculator_Request");
-        assert_eq!(r.reply_reader.topic_name, "Calculator_Reply");
+        assert_eq!(r.request_writer.topic_name, "Calculator_Service_Request");
+        assert_eq!(r.reply_reader.topic_name, "Calculator_Service_Reply");
+    }
+
+    /// §7.4.1's last paragraph: under the request-reply binding the
+    /// interface segment is not captured, so the same service lands on
+    /// different topics — which is why both sides have to name the same
+    /// style (§7.4.2).
+    #[test]
+    fn the_binding_style_decides_the_topic_name() {
+        let svc = calc_service();
+        let b = RpcEndpointBuilder::new(svc, pp(), req_eid(), rep_eid())
+            .unwrap()
+            .binding_style(BindingStyle::RequestReply);
+        let r = b.build_requester().unwrap();
+        assert_eq!(r.request_writer.topic_name, "Service_Request");
+        assert_eq!(r.reply_reader.topic_name, "Service_Reply");
+    }
+
+    /// §7.4.2.3: the run-time layer beats the default.
+    #[test]
+    fn the_run_time_service_name_reaches_the_endpoints() {
+        let svc = calc_service();
+        let b = RpcEndpointBuilder::new(svc, pp(), req_eid(), rep_eid())
+            .unwrap()
+            .topic_name_overrides(TopicNameOverrides::with_service_name("Live"));
+        let r = b.build_requester().unwrap();
+        assert_eq!(r.request_writer.topic_name, "Calculator_Live_Request");
     }
 
     #[test]
@@ -413,8 +504,71 @@ mod tests {
         let svc = calc_service();
         let b = RpcEndpointBuilder::new(svc, pp(), req_eid(), rep_eid()).unwrap();
         let r = b.build_replier().unwrap();
-        assert_eq!(r.request_reader.topic_name, "Calculator_Request");
-        assert_eq!(r.reply_writer.topic_name, "Calculator_Reply");
+        assert_eq!(r.request_reader.topic_name, "Calculator_Service_Request");
+        assert_eq!(r.reply_writer.topic_name, "Calculator_Service_Reply");
+    }
+
+    /// §7.4.3: "the request and reply topics shall additionally have
+    /// topic-aliases, which are obtained using the rules in sub clause
+    /// 7.4.1 for each parent interface. Topic aliases are announced
+    /// during the endpoint discovery protocol."
+    #[test]
+    fn the_parent_interfaces_are_announced_as_topic_aliases() {
+        let ast = model(
+            "interface Adder { void a(); };
+             interface Subtractor { void s(); };
+             interface Calculator : Adder, Subtractor { long add(in long a, in long b); };",
+        );
+        let (id, _) = ast.interfaces().last().expect("Calculator");
+        let svc = crate::service_mapping::lower_service(&ast, id).expect("the service");
+        let b = RpcEndpointBuilder::new(svc, pp(), req_eid(), rep_eid()).unwrap();
+        let r = b.build_requester().unwrap();
+        assert_eq!(
+            r.request_writer.topic_aliases.as_deref(),
+            Some(
+                [
+                    "Adder_Service_Request".to_string(),
+                    "Subtractor_Service_Request".to_string()
+                ]
+                .as_slice()
+            )
+        );
+        assert_eq!(
+            r.reply_reader.topic_aliases.as_deref(),
+            Some(
+                [
+                    "Adder_Service_Reply".to_string(),
+                    "Subtractor_Service_Reply".to_string()
+                ]
+                .as_slice()
+            )
+        );
+    }
+
+    /// A caller's alias is added to the ones the hierarchy contributes,
+    /// not substituted for them.
+    #[test]
+    fn a_caller_alias_joins_the_derived_ones() {
+        let ast = model(
+            "interface Adder { void a(); };
+             interface Calculator : Adder { long add(in long a); };",
+        );
+        let (id, _) = ast.interfaces().last().expect("Calculator");
+        let svc = crate::service_mapping::lower_service(&ast, id).expect("the service");
+        let b = RpcEndpointBuilder::new(svc, pp(), req_eid(), rep_eid())
+            .unwrap()
+            .topic_aliases(alloc::vec!["LegacyCalc_Request".into()]);
+        let r = b.build_requester().unwrap();
+        assert_eq!(
+            r.request_writer.topic_aliases.as_deref(),
+            Some(
+                [
+                    "Adder_Service_Request".to_string(),
+                    "LegacyCalc_Request".to_string()
+                ]
+                .as_slice()
+            )
+        );
     }
 
     #[test]
@@ -434,6 +588,10 @@ mod tests {
 
     #[test]
     fn instance_name_propagated_to_both_sides() {
+        // Named for the audit item that had it propagate to both sides;
+        // §7.6.2.1.1/2 corrects it to the service side only: "the
+        // client-side DataWriter [DataReader] shall not include
+        // service_instance_name".
         let svc = calc_service();
         let b = RpcEndpointBuilder::new(svc, pp(), req_eid(), rep_eid())
             .unwrap()
@@ -441,11 +599,13 @@ mod tests {
         let r = b.build_requester().unwrap();
         assert_eq!(
             r.request_writer.service_instance_name.as_deref(),
-            Some("calc-A")
+            None,
+            "the client-side DataWriter announces no service_instance_name"
         );
         assert_eq!(
             r.reply_reader.service_instance_name.as_deref(),
-            Some("calc-A")
+            None,
+            "the client-side DataReader announces no service_instance_name"
         );
         let p = b.build_replier().unwrap();
         assert_eq!(
@@ -502,10 +662,7 @@ mod tests {
 
     #[test]
     fn empty_service_yields_error() {
-        let svc = ServiceDef {
-            name: "Empty".into(),
-            methods: Vec::new(),
-        };
+        let svc = ServiceDef::new("Empty", Vec::new());
         let b = RpcEndpointBuilder::new(svc, pp(), req_eid(), rep_eid()).unwrap();
         let err = b.build_requester().unwrap_err();
         assert!(matches!(err, RpcError::EmptyService(ref n) if n == "Empty"));
@@ -515,10 +672,7 @@ mod tests {
 
     #[test]
     fn invalid_service_name_rejected_in_builder_new() {
-        let svc = ServiceDef {
-            name: String::new(),
-            methods: Vec::new(),
-        };
+        let svc = ServiceDef::new(String::new(), Vec::new());
         let err = RpcEndpointBuilder::new(svc, pp(), req_eid(), rep_eid()).unwrap_err();
         assert!(matches!(err, RpcError::InvalidServiceName(_)));
     }

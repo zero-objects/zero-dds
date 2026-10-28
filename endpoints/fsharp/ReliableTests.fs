@@ -198,8 +198,46 @@ let main argv =
 
     let akFrame = Wire.ackNackFrame { FirstUnacked = 1s; NackLo = 0uy; NackHi = 0uy; StreamId = 0x80uy } 1us
     let akExpect =
-        [| 0x80uy; 0x00uy; 0x01uy; 0x00uy; 0x0auy; 0x01uy; 0x05uy; 0x00uy; 0x01uy; 0x00uy; 0x00uy; 0x00uy; 0x80uy |]
+        [| 0x80uy; 0x00uy; 0x01uy; 0x00uy; 0x0auy; 0x01uy; 0x09uy; 0x00uy
+           0x05uy; 0x00uy; 0x00uy; 0x00uy; 0x01uy; 0x00uy; 0x00uy; 0x00uy; 0x80uy |]
+    check (akFrame.Length = 17) "acknack frame is 17 octets"
     check (eq akFrame akExpect) "acknack byte-golden (hardcoded)"
+
+    // legacy FINAL form (body-len 5, no DHEADER) is still parsed
+    let legacy =
+        [| 0x80uy; 0x00uy; 0x01uy; 0x00uy; 0x0auy; 0x01uy; 0x05uy; 0x00uy; 0x07uy; 0x00uy; 0x03uy; 0x00uy; 0x80uy |]
+    check
+        (match Wire.tryParseAckNack legacy with
+         | Some a -> a.FirstUnacked = 7s && a.NackLo = 3uy && a.NackHi = 0uy && a.StreamId = 0x80uy
+         | None -> false)
+        "legacy 5-octet acknack parsed"
+    check
+        (match Wire.tryParseAckNack akExpect with
+         | Some a -> a.FirstUnacked = 1s && a.StreamId = 0x80uy
+         | None -> false)
+        "17-octet acknack parsed"
+    check (Wire.tryParseAckNack legacy.[0..11] |> Option.isNone) "short acknack rejected"
+
+    // unannotated types: Final form (eProsima), 13 octets
+    let ackOne = { FirstUnacked = 1s; NackLo = 0uy; NackHi = 0uy; StreamId = 0x80uy }
+    let akFinal = Wire.ackNackFrameWith Final ackOne 1us
+    let akFinalExpect =
+        [| 0x80uy; 0x00uy; 0x01uy; 0x00uy; 0x0auy; 0x01uy; 0x05uy; 0x00uy; 0x01uy; 0x00uy; 0x00uy; 0x00uy; 0x80uy |]
+    check (akFinal.Length = 13) "Final acknack frame is 13 octets"
+    check (eq akFinal akFinalExpect) "Final acknack byte-golden (hardcoded)"
+    check (eq (Wire.ackNackFrameWith Appendable ackOne 1us) akExpect) "Appendable acknack equals the default form"
+    check
+        (match Wire.tryParseAckNack akFinalExpect with
+         | Some a -> a.FirstUnacked = 1s && a.StreamId = 0x80uy
+         | None -> false)
+        "parser accepts the Final form"
+    check
+        (match Wire.tryParseAckNack akExpect with
+         | Some a -> a.FirstUnacked = 1s && a.StreamId = 0x80uy
+         | None -> false)
+        "parser accepts the Appendable form"
+    check (ReliableReceiver(Final).PendingAckNackFrame(1us).Length = 13) "receiver with Final builds 13-octet acknack"
+    check (ReliableReceiver().PendingAckNackFrame(1us).Length = 17) "receiver default builds 17-octet acknack"
 
     if argv.Length >= 2 then
         let gHb = File.ReadAllBytes(argv.[0])

@@ -1,83 +1,184 @@
-.TH ZERODDS-WS-BRIDGED.YAML 5 "2026-05-06" "1.0.0-rc.1" "ZeroDDS Manual"
+.TH ZERODDS-WS-BRIDGED.YAML 5 "" "ZeroDDS" "ZeroDDS Manual"
 .SH NAME
 zerodds-ws-bridged.yaml \- configuration file for zerodds-ws-bridged(1)
 .SH SYNOPSIS
 .I /etc/zerodds/ws-bridged.yaml
 .SH DESCRIPTION
-YAML document describing how the WebSocket bridge daemon binds DDS topics
-to WebSocket URLs. Top-level keys
-.BR participant ", " websocket ", " routes ", " logging ", " observability .
+YAML document describing how the WebSocket bridge daemon binds DDS topics to
+WebSocket URLs. The schema is the one of
+.IR zerodds-ws-bridge-1.0 " \(sc3;"
+the parser that reads it is
+.IR crates/websocket-bridge/src/daemon/config.rs::load_from_str .
+.PP
+Top-level keys:
+.BR listen ", " domain ", " log_level ", " tls ", " auth ", " metrics ", " topics .
+.PP
+An unknown top-level key is
+.I not
+a parse error. The daemon logs a WARN line on stderr and starts with the
+defaults for everything the unknown key was meant to configure. A typo in a
+key therefore does not abort the start \(em watch the WARN log.
+.PP
+.BI ${VAR} " and " ${VAR:-default}
+are substituted from the environment before the document is parsed.
 .SH KEYS
-.SS participant
+.SS Top level
 .TP
-.B domain_id
-Integer DDS-Domain-ID. Default
-.IR 0 .
-.TP
-.B qos_profile
-Profile name resolved by the QoS-Library, e.g.
-.IR builtin/reliable_keep_last_10 .
-.SS websocket
-.TP
-.B bind
-Listen address, e.g.
+.B listen
+WebSocket listen address, e.g.
 .IR "0.0.0.0:8080" .
 .TP
-.B tls.enabled
+.B domain
+Integer DDS domain ID. Default
+.IR 0 .
+.TP
+.B log_level
+.IR trace " | " debug " | " info " | " warn " | " error .
+A
+.B \-\-log\-level
+on the command line wins over this key.
+.SS tls
+.TP
+.B enabled
 Boolean. When true,
-.BR cert " and " key
+.BR cert_file " and " key_file
 must point to PEM material readable by user
 .IR zerodds .
 .TP
-.B origin_allowlist
-List of regexes matched against the WS Origin header. Empty list = allow all.
+.B cert_file
+Server certificate chain, PEM.
 .TP
-.B max_message_bytes
-DoS-cap on individual frames; default
-.IR 1048576
-(1 MiB).
+.B key_file
+Server private key, PEM.
 .TP
-.B ping_interval_secs
-Send ping every N seconds.
+.B client_ca_file
+Trust anchor for client certificates. Setting it turns on mTLS.
+.SS auth
 .TP
-.B pong_timeout_secs
-Drop client when no pong within this window.
-.SS routes (list)
-Each entry has:
+.B mode
+.IR none " | " bearer " | " jwt " | " mtls " (\(sc7.2)."
+For
+.IR mtls ,
+.B tls.enabled
+and
+.B tls.client_ca_file
+are required; the subject is the client certificate's subject DN (RFC 4514);
+an ACL entry may name its fingerprint
+.I mtls:<SHA-256 hex>
+instead.
 .TP
-.B dds_topic
-Topic name on the DDS side.
+.B bearer_token
+Shared token accepted in the
+.I Authorization
+header when
+.B mode
+is
+.IR bearer .
+.TP
+.B bearer_subject
+Subject every connection authenticated by that single token runs as.
+.TP
+.B jwt
+Sub-map for
+.BR jwt :
+.B public_key
+(PEM file, PKCS#1 or SubjectPublicKeyInfo, RS256),
+.BR issuer ,
+.BR audience ,
+.B required_claim
+.RI ( claim=value ;
+a space-separated claim such as
+.I scope
+matches when it contains the value).
+.I exp
+and
+.I nbf
+are enforced with 60 s leeway. The subject is the
+.I sub
+claim. Without
+.B public_key
+the daemon does not start (exit 1).
+.I bearer
+is single-subject; for per-user identities use
+.IR jwt .
+.SS metrics
+.TP
+.B enabled
+Boolean. Turns on the admin endpoint serving
+.IR /metrics ", " /catalog " and " /healthz .
+.TP
+.B listen
+Admin listen address. Default
+.IR "127.0.0.1:9091"
+when
+.B enabled
+is true; each bridge daemon has its own port, so several run on one
+host without a collision.
+The key is
+.BR listen ,
+not
+.IR address .
+.SS topics (list)
+Each entry maps one DDS topic to one WebSocket path.
+.TP
+.B name
+DDS topic name.
 .TP
 .B type
-Fully-qualified IDL type, e.g.
-.IR demo::Chat::Message .
-.TP
-.B ws_path
-HTTP path the client connects to, e.g.
-.IR /chat .
+Fully-qualified IDL type. Defaults to
+.BR name .
 .TP
 .B direction
-One of
-.IR dds_to_ws ", " ws_to_dds ", " bidirectional .
-.SS logging
+.IR in " | " out " | " bidir .
+.I in
+carries frames from WebSocket clients into DDS (the daemon creates a
+DataWriter),
+.I out
+carries DDS samples to subscribed clients (a DataReader),
+.I bidir
+both. Default
+.IR bidir .
+A publish to a topic that is not bridged into DDS, or a subscribe to one
+that is not bridged out of DDS, is answered with an error frame
+(code 404, reason
+.I not-bridged-into-dds
+or
+.IR not-bridged-out-of-dds ).
 .TP
-.B level
-trace | debug | info | warn | error.
+.B ws_path
+HTTP path clients connect to. Defaults to
+.IR /topics/<slug-of-name> .
 .TP
-.B format
-.I json
-(machine readable, recommended for journald) or
-.IR pretty .
+.B qos
+Sub-map with
+.B reliability
+.RI ( reliable " | " best_effort ),
+.B durability
+.RI ( volatile " | " transient_local )
+and
+.B history
+carrying
+.BR depth .
 .TP
-.B destination
-.I journal " | " "file:/path"
-.SS observability
-.TP
-.B metrics_bind
-Prometheus listen address.
-.TP
-.B otlp_endpoint
-HTTP endpoint for OTLP export, empty disables.
+.B acl
+Per-topic access control, sub-map with the subject lists
+.BR read " and " write .
+.B acl
+belongs to the topic entry, not to the top level.
+.I "*"
+matches every subject,
+.I <name>
+is an exact subject match,
+.I *group:<g>*
+matches a JWT
+.I groups
+claim containing
+.IR <g> .
+When
+.B auth.mode
+is not
+.IR none ,
+a topic without an ACL rejects every connection.
 .SH EXAMPLES
 See
 .IR /usr/share/zerodds/configs/ws-bridged.yaml.example .

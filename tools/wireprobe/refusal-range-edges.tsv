@@ -1,0 +1,55 @@
+# refusal-range-edges.tsv — the values every binding must answer the
+# same way, and that no corpus sample holds.
+#
+# `docs/OPEN-ITEMS.md` (Guards): the corpus sweep is the executable
+# contract for the wire answers — 3760 cells per language, octet by
+# octet — and it says nothing about the values a sample never holds.
+# Both defects the last pass through `endpoints/c` found were of that
+# kind (`-0.0`, a bitset holder wider than its anchor), and no second
+# file of reference octets would have caught them: the corpus *cannot*
+# carry these values, because `wireprobe-endpoint-gen` refuses a sample
+# that does not fit its member before a renderer sees it. The gap was
+# that refusals and range edges had no case list at all. This file is
+# that list.
+#
+# One row per edge. Each row has exactly one right answer, derived from
+# the named clause and not from any implementation, and every binding —
+# the fifteen endpoint bindings, the three runtime columns, the probe —
+# has to give it. `answer` is either
+#
+#   refuse       the call reports an error and writes nothing. *How* is
+#                the binding's own idiom — a compile-time type error, an
+#                exception, an error return — and any of those is the
+#                same answer. Octets are the wrong answer: a masked,
+#                truncated or canonicalised value on the wire is the
+#                silent-drop class (`put_u16(70000)` -> `7011`).
+#   <hex>        the exact octets, on a little-endian stream at offset 0
+#                from a fresh writer. For these rows a refusal is the
+#                wrong answer: the value has an exact form in the width
+#                and refusing it refuses a value the type system holds.
+#
+# `tools/wireprobe/endpoint-number-surface` already asks the four
+# integer rows of the fifteen endpoint bindings and exits 8 when a
+# binding answers `over-u16` with octets; the remaining rows are the
+# same treatment for every other operation, written down first so the
+# later tests measure against the clause and not against each binding's
+# own habits.
+#
+# edge	operation	argument	answer	clause	why
+over-u8	put_u8	256	refuse	XTypes 1.3 Table 31	Byte/Int8/UInt8 occupy one octet; 256 has no 8-bit form. Masking to 0x00 drops the whole value without a word.
+over-u16	put_u16	70000	refuse	XTypes 1.3 Table 31	0x11170 has no 16-bit form. The masked 0x1170 ("7011") is the recorded defect class: seven bindings answered it with octets before the surface check existed.
+over-u32	put_u32	4294967296	refuse	XTypes 1.3 Table 31	2^32 has no 32-bit form.
+negative-u16	put_u16	-12345	c7cf	XTypes 1.3 §7.4.1.1.1, Table 31 (two's complement; inventory C8)	-12345 is exactly 0xCFC7 in sixteen bits. Octets are the right answer here: a binding that refuses every negative `short` cannot carry the IDL type at all.
+negative-u32	put_u32	-1234567	7929edff	XTypes 1.3 §7.4.1.1.1, Table 31 (inventory C8)	-1234567 is 0xFFED2979 — the corpus's own value, `vendor_bytes.md` `mixed`, three vendors.
+past-2-63	put_u64	16045690984833335998	bec2addeefbeadde	XTypes 1.3 Table 31	0xDEADBEEFDEADC2BE is exact in 64 unsigned bits. A binding that routes it through a signed 64-bit intermediate refuses it or flips it; both are the binding's arithmetic and not the caller's value.
+negative-zero-f32	put_f32	-0.0	00000080	XTypes 1.3 Table 31 Float32, IEEE 754 (inventory C9)	-0.0 and +0.0 are distinct IEEE 754 values with distinct bit patterns. A binding that canonicalises writes 00000000 — different octets for the value the caller passed. Found once in `endpoints/c`.
+negative-zero-f64	put_f64	-0.0	0000000000000080	XTypes 1.3 Table 31 Float64, IEEE 754 (inventory C9)	The same edge at eight octets.
+char-above-8-bit	put char (Char8)	U+0100	refuse	XTypes 1.3 §7.2.2.2.1.2.2 ("representable using 8 bits"; inventory D1)	No measured front end can even be handed a Char8 above U+00FF — the value is unrepresentable before any serialiser runs. Narrowing writes a character nobody wrote.
+wchar-above-bmp	put wchar (Char16)	U+1D11E	refuse	XTypes 1.3 Table 31 (Char16 is one 16-bit unit), §7.4.1.1.2 (surrogate pairs are the wstring's; inventory D5)	A scalar Char16 cannot carry a supplementary code point. Fast DDS's answer — truncate to sixteen bits — is the recorded wrong value D5 names.
+member-id-past-28-bit	EMHEADER member id	0x10000000	refuse	XTypes 1.3 §7.2.2.4.4.4.4 (ids 0 to 0x0FFFFFFF), §7.4.3.4.2 (EMHEADER1 masks with 0x0FFFFFFF)	The header formula masks the id, so writing a larger one aliases the member onto `id & 0x0FFFFFFF` — a well-formed header for the wrong member, unreadably silent.
+short-pid-past-0x3f00	PL_CDR1 parameter header	member id 0x3F01	refuse the short form; write PID_EXTENDED	XTypes 1.3 §7.4.1.2.2 (short-form ids 0 to 0x3F00 inclusive; 0x3F01-0x3FFF reserved; inventory I12, I14)	A short pid in the reserved range collides with the protocol's own parameters — PID_EXTENDED is 0x3F01 itself. Id 0x3F00 exactly still takes the short form; the off-by-one was a recorded defect (I12).
+fixed-digits-past-31	fixed<32,2>	declaration	refuse	OMG IDL 4.2 §7.4.1.4.4.3.4 rule (42) (digits capped at 31; inventory P4)	The BCD rule is defined up to 31 digits; every measured ORB family refuses past it.
+fixed-scale-past-digits	fixed<5,6>	declaration	refuse	OMG IDL 4.2 §7.4.1.4.4.3.4 rule (42) (the scale shall not exceed the digits; inventory P4)	The declaration names a value the type cannot hold.
+bitset-anchor-width	bitset holder	a 12+12-bit chain, {a=0x111, b=0x222}	11212200	XTypes 1.3 CommonBitfield (`holder_type` must be a primitive integer type), Table 31 (widths 8/16/32/64; inventory P1)	The anchor is the smallest of 1, 2, 4 or 8 octets that holds the whole chain — here four. Three octets is a width no `holder_type` can name and no reader can be told about; a holder wider than the anchor was found once in `endpoints/c`.
+lc-body-size-mismatch	EMHEADER LC 0..3	LC=1 over a 3-octet member value	refuse	XTypes 1.3 §7.4.3.4.2 (LC 0..3 declare member lengths 1, 2, 4, 8)	Under LC 0..3 the code *is* the length. A body of another size misdeclares it and the reader's skip lands inside data; LC 4..7 exist for every other size, so there is never a reason to lie.
+frame-past-0xffff	zdw_xrce_write_frame (and any 16-bit frame length)	a 65536-octet payload	refuse	DDS-XRCE 1.0 §8.3 (submessage_length is a 16-bit count; §8.3.5.14 FRAGMENT is the path for more)	A wrapped length is put_u16(70000) at frame scale: the header promises 0 octets and the peer reads the payload as the next frame. `endpoints/c` returns 0 here; a frame writer that ran past its own buffer was a recorded defect in one binding.

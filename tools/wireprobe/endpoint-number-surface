@@ -1,0 +1,706 @@
+#!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 ZeroDDS Contributors
+#
+# endpoint-number-surface — what each endpoint SDK does with a number
+# its writer cannot hold.
+#
+#   tools/wireprobe/endpoint-number-surface
+#   tools/wireprobe/endpoint-number-surface --langs go,lua
+#
+# ## The question, and why it is not the corpus's
+#
+# Every write these seventeen bindings export is named for an unsigned
+# wire width — `put_u8`, `put_u16`, `put_u32`, `put_u64` — and the IDL
+# types they carry are not all unsigned. A `short` of -12345 and an
+# `unsigned long long` of 16045690984833335998 both have to reach one of
+# them, and none of the seventeen converts, so the conversion is the
+# caller's in all seventeen.
+#
+# `wireprobe-endpoint-corpus` answers the wire question and hands each
+# binding the same unsigned bit pattern to keep it that way. This asks
+# the other one: what happens when the argument is a number the write
+# cannot hold. The corpus cannot ask it — no IDL type carries 70000 into
+# an `unsigned short`, and `wireprobe-endpoint-gen` refuses a sample that
+# does not fit its member before a renderer sees it — so it is asked
+# directly, of the exported call.
+#
+# ## What counts as a finding
+#
+# Not "the binding refused". A `put_u16` that will not take 70000 is a
+# binding that says so, and it is said in two places: at compile time
+# where the parameter is the wire width itself (Go, Zig, Swift,
+# Ada-native, D, Nim), and at run time where it is wider and the write
+# checks the range (the other eleven).
+#
+# The finding is the other answer: octets. A binding that takes 70000,
+# writes `70 11` and returns is one that dropped the high half of a
+# value without a word, and a caller who mis-sized a member learns it
+# from a peer's decoder or does not learn it. This tree calls that the
+# worst class there is, so this exits non-zero when it happens, with the
+# language and the octets named.
+#
+# The standard is not in dispute and is not the measurement: 70000 is
+# not representable in sixteen bits, and -12345 in sixteen bits is
+# `c7 cf` on a little-endian wire by two's complement. What is measured
+# is which of the bindings says which.
+set -uo pipefail
+
+cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)" || exit 2
+root="$PWD"
+
+langs="ada,ada-83,ada-native,d,elixir,fsharp,go,java,julia,kotlin,lua,nim,node,ocaml,python,swift,zig"
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --langs) langs="$2"; shift 2 ;;
+        --help|-h) sed -n '5,45p' "${BASH_SOURCE[0]}"; exit 0 ;;
+        *) echo "endpoint-number-surface: \`$1\` is not an option" >&2; exit 2 ;;
+    esac
+done
+
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+
+# One row per question. `call` is the write and `argument` the number,
+# spelled the same way everywhere; where a language needs a suffix the
+# emitter adds it and says why.
+#
+#   over-u16     70000 into sixteen bits — 0x11170, and 0x1170 of it fits
+#   negative-u16 a `short` of -12345 — 0xcfc7 by two's complement
+#   negative-u32 a `long` of -1234567 — 0xffed2979
+#   past-2-63    an `unsigned long long` of 0xdeadbeefdeadc2be, written
+#                as the decimal a caller reads off the sample
+questions="over-u16 put_u16 70000
+negative-u16 put_u16 -12345
+negative-u32 put_u32 -1234567
+past-2-63 put_u64 16045690984833335998"
+
+# --- one program per (language, question) -----------------------------
+#
+# Each prints the octets in hexadecimal, or `REFUSED <reason>`, and
+# nothing else. The octets go to standard output here rather than to a
+# file: there is one write per program and no framing to get wrong.
+
+emit_go() { # $1 call  $2 argument
+    local call="$1" argument="$2" put
+    case "$call" in
+        put_u8) put=PutU8 ;; put_u16) put=PutU16 ;;
+        put_u32) put=PutU32 ;; put_u64) put=PutU64 ;;
+    esac
+    mkdir -p "$work/go"
+    cat > "$work/go/go.mod" <<EOF
+module zdnumbersurface
+
+go 1.19
+
+require zeroddsendpoint v0.0.0
+
+replace zeroddsendpoint => $root/endpoints/go
+EOF
+    cat > "$work/go/main.go" <<EOF
+package main
+
+import (
+	"fmt"
+
+	zerodds "zeroddsendpoint"
+)
+
+func main() {
+	w := zerodds.NewWriter(zerodds.Little, zerodds.Xcdr2)
+	w.$put($argument)
+	fmt.Printf("%x\n", w.Buf)
+}
+EOF
+    if ! (cd "$work/go" && GOFLAGS=-mod=mod GOTOOLCHAIN=local CGO_ENABLED=0 \
+            GOCACHE="${ZERODDS_GO_CACHE:-${TMPDIR:-/tmp}/zd-endpoint-go-cache}" \
+            go run .) > "$work/go/out" 2>&1; then
+        echo "REFUSED $(grep -m1 -E 'error|cannot|overflow' "$work/go/out" | cut -c1-120)"
+        return
+    fi
+    tail -1 "$work/go/out"
+}
+
+emit_lua() {
+    local call="$1" argument="$2" put
+    case "$call" in
+        put_u8) put=putU8 ;; put_u16) put=putU16 ;;
+        put_u32) put=putU32 ;; put_u64) put=putU64 ;;
+    esac
+    # `$LUA`: Debian ships no unversioned `lua` (endpoints-gate's run_lua).
+    LUA_PATH="$root/endpoints/lua/?.lua;;" "${LUA:-lua}" -e "
+local zd = require('zerodds')
+local w = zd.Writer.new(zd.LE, zd.XCDR2)
+local ok, err = pcall(function() w:$put($argument) end)
+if ok then
+  print((w:bytes():gsub('.', function(c) return string.format('%02x', c:byte()) end)))
+else
+  print('REFUSED ' .. tostring(err))
+end" 2>&1 | tail -1
+}
+
+emit_julia() {
+    local call="$1" argument="$2"
+    julia --startup-file=no --history-file=no --color=no -e "
+include(\"$root/endpoints/julia/zerodds.jl\")
+w = ZeroDDS.Writer(ZeroDDS.LE, ZeroDDS.XCDR2)
+try
+    ZeroDDS.$call!(w, $argument)
+    println(bytes2hex(ZeroDDS.bytes(w)))
+catch e
+    println(\"REFUSED \", e)
+end" 2>&1 | tail -1
+}
+
+emit_ocaml() {
+    local call="$1" argument="$2" suffix=""
+    # `put_u64` takes an `Int64`, whose literal carries an `L`.
+    [ "$call" = put_u64 ] && suffix=L
+    mkdir -p "$work/ocaml"
+    cp "$root/endpoints/ocaml/zerodds.ml" "$work/ocaml/"
+    # The run-time refusal is caught as well as the compile-time one. OCaml
+    # answered every one of these questions at compile time until its integer
+    # writes grew a range check, and an uncaught `Invalid_argument` prints
+    # `Fatal error: exception …` — which is a refusal wearing the wrong
+    # words, and the one string this table must never have to be read past.
+    cat > "$work/ocaml/probe.ml" <<EOF
+let () =
+  match
+    let w = Zerodds.Wire.writer Zerodds.Wire.LE Zerodds.Wire.XCDR2 in
+    Zerodds.Wire.$call w ($argument$suffix);
+    Zerodds.Wire.bytes w
+  with
+  | out ->
+    Bytes.iter (fun c -> Printf.printf "%02x" (Char.code c)) out;
+    print_newline ()
+  | exception Invalid_argument reason -> print_endline ("REFUSED " ^ reason)
+EOF
+    if ! (cd "$work/ocaml" && ocamlfind ocamlopt -thread -package threads.posix \
+            -linkpkg zerodds.ml probe.ml -o probe) > "$work/ocaml/build.log" 2>&1; then
+        echo "REFUSED $(grep -m1 -E 'Error|error' "$work/ocaml/build.log" | cut -c1-120)"
+        return
+    fi
+    "$work/ocaml/probe" 2>&1 | tail -1
+}
+
+emit_elixir() {
+    local call="$1" argument="$2"
+    elixir -e "
+Code.require_file(\"$root/endpoints/elixir/lib/zerodds.ex\")
+w = ZeroDDS.Wire.writer(:little, :xcdr2)
+try do
+  w = ZeroDDS.Wire.$call(w, $argument)
+  IO.puts(Base.encode16(ZeroDDS.Wire.bytes(w), case: :lower))
+rescue
+  e -> IO.puts(\"REFUSED \" <> Exception.message(e))
+end" 2>&1 | tail -1
+}
+
+
+# --- the ten the fold brought with it ---------------------------------
+#
+# Same contract: print the octets in hexadecimal, or `REFUSED <reason>`,
+# and nothing else. Four of these refuse at compile time, because their
+# parameter is the wire width itself and the argument is a literal
+# outside it; that is the answer and it is reported as one.
+
+emit_zig() {
+    local call="$1" argument="$2" put
+    case "$call" in
+        put_u8) put=putU8 ;; put_u16) put=putU16 ;;
+        put_u32) put=putU32 ;; put_u64) put=putU64 ;;
+    esac
+    mkdir -p "$work/zig"
+    # The whole module directory: `zerodds.zig` imports `reliable.zig`.
+    cp "$root"/endpoints/zig/src/*.zig "$work/zig/"
+    cat > "$work/zig/probe.zig" <<EOF
+const std = @import("std");
+const zd = @import("zerodds.zig");
+pub fn main(zd_init: std.process.Init) !void {
+    // xcdr2: this probe writes one scalar from a freshly made writer, so
+    // MAXALIGN never applies before the first octet -- the choice cannot
+    // change the answer -- and xcdr2 is what refusal-edge-surface's zig
+    // probes use for the same put_* calls.
+    var w = zd.Writer.init(zd_init.arena.allocator(), .little, .xcdr2);
+    defer w.deinit();
+    try w.$put($argument);
+    var stdout_buf: [256]u8 = undefined;
+    var stdout_file = std.Io.File.stdout().writer(zd_init.io, &stdout_buf);
+    const out = &stdout_file.interface;
+    defer out.flush() catch {};
+    for (w.bytes()) |b| try out.print("{x:0>2}", .{b});
+    try out.print("\n", .{});
+}
+EOF
+    if ! (cd "$work/zig" && "${ZIG:-zig}" build-exe \
+            --global-cache-dir "${ZIG_GLOBAL_CACHE_DIR:-${TMPDIR:-/tmp}/zd-zig-cache}" \
+            -femit-bin=probe probe.zig) > "$work/zig/build.log" 2>&1; then
+        echo "REFUSED $(grep -m1 -E 'error' "$work/zig/build.log" | cut -c1-120)"
+        return
+    fi
+    "$work/zig/probe" 2>&1 | tail -1
+}
+
+emit_nim() {
+    local call="$1" argument="$2" put
+    case "$call" in
+        put_u8) put=putU8 ;; put_u16) put=putU16 ;;
+        put_u32) put=putU32 ;; put_u64) put=putU64 ;;
+    esac
+    mkdir -p "$work/nim"
+    cat > "$work/nim/probe.nim" <<EOF
+import zerodds
+import strutils
+var w = initWriter(eLE, eXcdr2)
+w.$put($argument)
+var s = ""
+for b in w.bytes(): s.add(toLowerAscii(toHex(int(b), 2)))
+echo s
+EOF
+    if ! (cd "$work/nim" && "${NIM:-nim}" c --hints:off --colors:off \
+            --nimcache:"$work/nim/cache" --path:"$root/endpoints/nim" \
+            -o:probe probe.nim) > "$work/nim/build.log" 2>&1; then
+        echo "REFUSED $(grep -m1 -E 'Error' "$work/nim/build.log" | cut -c1-120)"
+        return
+    fi
+    "$work/nim/probe" 2>&1 | tail -1
+}
+
+emit_d() {
+    local call="$1" argument="$2" put
+    case "$call" in
+        put_u8) put=putU8 ;; put_u16) put=putU16 ;;
+        put_u32) put=putU32 ;; put_u64) put=putU64 ;;
+    esac
+    mkdir -p "$work/d"
+    cat > "$work/d/probe.d" <<EOF
+import std.stdio;
+import zerodds;
+void main() {
+    auto w = Writer(Endian.LE, Encoding.XCDR2);
+    w.$put($argument);
+    foreach (b; w.bytes()) writef("%02x", b);
+    writeln();
+}
+EOF
+    if ! (cd "$work/d" && "${GDC:-gdc}" -I"$root/endpoints/d" -o probe probe.d \
+            "$root/endpoints/d/zerodds.d") > "$work/d/build.log" 2>&1; then
+        echo "REFUSED $(grep -m1 -E 'error' "$work/d/build.log" | cut -c1-120)"
+        return
+    fi
+    "$work/d/probe" 2>&1 | tail -1
+}
+
+emit_kotlin() {
+    local call="$1" argument="$2" put suffix=""
+    case "$call" in
+        put_u8) put=putU8 ;; put_u16) put=putU16 ;;
+        # `putU32` and `putU64` both take a Long.
+        put_u32) put=putU32; suffix=L ;; put_u64) put=putU64; suffix=L ;;
+    esac
+    local kotlinc="${KOTLINC:-kotlinc}" stdlib
+    stdlib="${KOTLIN_STDLIB:-$(dirname "$(dirname "$(readlink -f \
+        "$(command -v "$kotlinc")")")")/lib/kotlin-stdlib.jar}"
+    mkdir -p "$work/kotlin"
+    cp "$root/endpoints/kotlin/src/Zerodds.kt" "$work/kotlin/"
+    cat > "$work/kotlin/Probe.kt" <<EOF
+import zerodds.Encoding
+import zerodds.Endian
+import zerodds.Writer
+fun main() {
+    val w = Writer(Endian.LITTLE, Encoding.XCDR2)
+    w.$put($argument$suffix)
+    println(w.bytes().joinToString("") { "%02x".format(it) })
+}
+EOF
+    if ! (cd "$work/kotlin" && "$kotlinc" -Werror -d classes Zerodds.kt Probe.kt) \
+            > "$work/kotlin/build.log" 2>&1; then
+        echo "REFUSED $(grep -m1 -E '(error|warning):' "$work/kotlin/build.log" | cut -c1-120)"
+        return
+    fi
+    if ! "${JAVA:-java}" -cp "$work/kotlin/classes:$stdlib" ProbeKt \
+            > "$work/kotlin/out" 2>&1; then
+        echo "REFUSED $(head -1 "$work/kotlin/out" | cut -c1-120)"
+        return
+    fi
+    tail -1 "$work/kotlin/out"
+}
+
+emit_node() {
+    local call="$1" argument="$2" put suffix=""
+    case "$call" in
+        put_u8) put=putU8 ;; put_u16) put=putU16 ;;
+        put_u32) put=putU32 ;;
+        # `putU64` takes a BigInt; the SDK says why (a JavaScript number
+        # loses precision above 2^53).
+        put_u64) put=putU64; suffix=n ;;
+    esac
+    "${NODE:-node}" --throw-deprecation -e "
+const zd = require('$root/endpoints/node/zerodds.js');
+const w = new zd.Writer(zd.LITTLE, zd.XCDR2);
+try {
+  w.$put($argument$suffix);
+  console.log(Buffer.from(w.bytes()).toString('hex'));
+} catch (e) {
+  console.log('REFUSED ' + e.message);
+}" 2>&1 | tail -1
+}
+
+emit_fsharp() {
+    local call="$1" argument="$2" put suffix=""
+    case "$call" in
+        put_u8) put=PutU8 ;; put_u16) put=PutU16 ;;
+        put_u32) put=PutU32; suffix=u ;; put_u64) put=PutU64; suffix=UL ;;
+    esac
+    # `-1234567u` is not a literal in F#: the suffix makes it unsigned and
+    # the minus is then applied to an unsigned value. Dropped for a
+    # negative argument, so what the compiler sees is the `int` a caller
+    # would actually write and the refusal below is the binding's.
+    case "$argument" in -*) suffix="" ;; esac
+    mkdir -p "$work/fsharp"
+    cp "$root/endpoints/fsharp/zerodds.fs" "$work/fsharp/"
+    cat > "$work/fsharp/probe.fsx" <<EOF
+#load "zerodds.fs"
+open ZeroDDS
+try
+    let w = Writer(LE, XCDR2)
+    w.$put($argument$suffix)
+    printfn "%s" (w.Bytes() |> Array.map (sprintf "%02x") |> String.concat "")
+with e -> printfn "REFUSED %s" e.Message
+EOF
+    if ! (cd "$work/fsharp" && DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1 \
+            "${DOTNET:-dotnet}" fsi --nologo --warnaserror+ probe.fsx) \
+            > "$work/fsharp/out" 2>&1; then
+        echo "REFUSED $(grep -m1 -E 'error' "$work/fsharp/out" | cut -c1-120)"
+        return
+    fi
+    tail -1 "$work/fsharp/out"
+}
+
+emit_swift() {
+    local call="$1" argument="$2" put
+    case "$call" in
+        put_u8) put=putU8 ;; put_u16) put=putU16 ;;
+        put_u32) put=putU32 ;; put_u64) put=putU64 ;;
+    esac
+    mkdir -p "$work/swift"
+    cat > "$work/swift/main.swift" <<EOF
+import Foundation
+var w = Writer(.little, .xcdr2)
+w.$put($argument)
+print(w.bytes().map { String(format: "%02x", \$0) }.joined())
+EOF
+    if ! (cd "$work/swift" && "${SWIFTC:-swiftc}" -warnings-as-errors -swift-version 5 \
+            "$root/endpoints/swift/Sources/Zerodds/Zerodds.swift" main.swift -o probe) \
+            > "$work/swift/build.log" 2>&1; then
+        echo "REFUSED $(grep -m1 -E 'error' "$work/swift/build.log" | cut -c1-120)"
+        return
+    fi
+    "$work/swift/probe" 2>&1 | tail -1
+}
+
+emit_java() {
+    local call="$1" argument="$2" put suffix=""
+    case "$call" in
+        put_u8) put=u8 ;; put_u16) put=u16 ;;
+        # `u32` and `u64` both take a long.
+        put_u32) put=u32; suffix=L ;; put_u64) put=u64; suffix=L ;;
+    esac
+    mkdir -p "$work/java"
+    cp "$root/endpoints/java/Zdw.java" "$work/java/"
+    cat > "$work/java/Probe.java" <<EOF
+public final class Probe {
+    public static void main(String[] args) {
+        Zdw.Writer w = new Zdw.Writer(Zdw.LE, Zdw.XCDR2);
+        try {
+            w.$put($argument$suffix);
+        } catch (IllegalArgumentException e) {
+            System.out.println("REFUSED " + e.getMessage());
+            return;
+        }
+        StringBuilder s = new StringBuilder();
+        for (byte b : w.bytes()) s.append(String.format("%02x", b));
+        System.out.println(s);
+    }
+}
+EOF
+    if ! (cd "$work/java" && "${JAVAC:-javac}" -Xlint:all -Werror -encoding UTF-8 \
+            -d classes Zdw.java Probe.java) > "$work/java/build.log" 2>&1; then
+        echo "REFUSED $(grep -m1 -E 'error' "$work/java/build.log" | cut -c1-120)"
+        return
+    fi
+    "${JAVA:-java}" -cp "$work/java/classes" Probe 2>&1 | tail -1
+}
+
+emit_python() {
+    local call="$1" argument="$2"
+    PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$root/endpoints/python" \
+        "${PYTHON:-python3}" -W error -c "
+import zerodds_wire as zd
+w = zd.Writer(zd.LE, zd.XCDR2)
+try:
+    w.$call($argument)
+except ValueError as e:
+    print('REFUSED ' + str(e))
+else:
+    print(w.bytes().hex())
+" 2>&1 | tail -1
+}
+
+# The three Ada bindings share one shape: a `probe.adb` that writes into
+# the binding's own writer and prints the octets. They differ in which
+# package it is and how a 64-bit value is spelled, which is the whole of
+# what the case statements below carry.
+emit_ada() {
+    local call="$1" argument="$2" put ctype
+    # The C type of that parameter, and only that one: `-gnatwae` makes an
+    # idle `use type` clause an error, so naming all four would report
+    # this program's warning where the binding's answer belongs.
+    #
+    # Put_U64 takes a two-word record, whose aggregate needs no operator,
+    # so it gets no clause at all.
+    local clause=""
+    case "$call" in
+        put_u8) put=Put_U8; ctype=unsigned_char ;;
+        put_u16) put=Put_U16; ctype=unsigned ;;
+        put_u32) put=Put_U32; ctype=unsigned_long ;;
+        put_u64) put=Put_U64; ctype="" ;;
+    esac
+    # Only for a negative argument: that is the one spelling with an
+    # operator in it. For 70000 the clause would be idle, and idle is an
+    # error under -gnatwae.
+    case "$argument" in
+        -*) [ -n "$ctype" ] && clause="   use type Interfaces.C.$ctype;"$'\n' ;;
+    esac
+    mkdir -p "$work/ada"
+    local arg="$argument"
+    # `zdw_put_u64` takes a two-word record; the argument is split the way
+    # `wireprobe-endpoint-gen` splits it. In Python and not in the shell:
+    # bash's arithmetic is signed 64-bit, so `16045690984833335998 >> 32`
+    # is a negative number there and the halves came out as
+    # `bec2addeefbfaedf` — this program's arithmetic reported as the
+    # binding's.
+    if [ "$call" = put_u64 ]; then
+        arg="(Hi => $(python3 -c "print($argument >> 32)"), \
+              Lo => $(python3 -c "print($argument & 0xffffffff)"))"
+    fi
+    cat > "$work/ada/probe.adb" <<EOF
+with Ada.Text_IO;
+with Interfaces.C;
+with Zdw;
+procedure Probe is
+   use Zdw;
+   use type Interfaces.C.int;
+   --  The parameter's own scalar type, so a negative or out-of-range
+   --  literal has its operator directly visible and gnat reports the
+   --  binding's answer instead of a visibility rule. Emitted only where
+   --  there is one: -gnatwae makes an idle use clause an error, and
+   --  Put_U64's parameter is a record whose aggregate needs none. No
+   --  backticks in this comment either -- the heredoc is unquoted,
+   --  because the call and the argument are substituted into it, and a
+   --  backtick here is a command substitution the shell ran.
+$clause   type Octets is array (Natural range <>) of aliased Interfaces.C.unsigned_char;
+   pragma Convention (C, Octets);
+   Buf  : aliased Octets (0 .. 255) := [others => 0];
+   W    : aliased Zdw.Zdw_Writer;
+   Digs : constant String := "0123456789abcdef";
+begin
+   Writer_Init (W'Access, Buf'Address, Buf'Length, ZDW_LE);
+   if $put (W'Access, $arg) /= Zdw.ZDW_OK then
+      Ada.Text_IO.Put_Line ("REFUSED the writer reported an error");
+      return;
+   end if;
+   for I in 0 .. Natural (W.Len) - 1 loop
+      Ada.Text_IO.Put (Digs (Natural (Buf (I)) / 16 + 1));
+      Ada.Text_IO.Put (Digs (Natural (Buf (I)) mod 16 + 1));
+   end loop;
+   Ada.Text_IO.New_Line;
+end Probe;
+EOF
+    if ! (cd "$work/ada" \
+          && gcc -std=c89 -pedantic -Wall -Werror -O1 -c \
+                -I"$root/endpoints/c/include" -o zerodds_wire.o \
+                "$root/endpoints/c/src/zerodds_wire.c" \
+          && gnatmake -q -gnat2022 -gnatwae -D "$work/ada" \
+                -aI"$root/endpoints/ada/src" -o probe probe.adb \
+                -largs "$work/ada/zerodds_wire.o") > "$work/ada/build.log" 2>&1; then
+        echo "REFUSED $(grep -m1 -E 'probe\.adb:[0-9]+' "$work/ada/build.log" \
+            || grep -m1 -iE 'error' "$work/ada/build.log" | cut -c1-120)"
+        return
+    fi
+    "$work/ada/probe" 2>&1 | tail -1
+}
+
+emit_ada_83() {
+    local call="$1" argument="$2" put
+    case "$call" in
+        put_u8) put=Put_U8 ;; put_u16) put=Put_U16 ;;
+        put_u32) put=Put_U32 ;; put_u64) put=Put_U64 ;;
+    esac
+    local arg="$argument"
+    # See `emit_ada`: the shell's arithmetic is signed and this value is
+    # not.
+    if [ "$call" = put_u64 ]; then
+        arg="$(python3 -c "print($argument >> 32)"), $(python3 -c "print($argument & 0xffffffff)")"
+    fi
+    mkdir -p "$work/ada83"
+    cat > "$work/ada83/probe.adb" <<EOF
+with Text_IO;
+with Zerodds_Ada83_Wire; use Zerodds_Ada83_Wire;
+procedure Probe is
+   W    : Writer;
+   Digs : constant String := "0123456789abcdef";
+begin
+   Init (W, Little);
+   $put (W, $arg);
+   if W.Overflow then
+      Text_IO.Put_Line ("REFUSED the writer overflowed");
+      return;
+   end if;
+   for I in 0 .. Length (W) - 1 loop
+      Text_IO.Put (Digs (Integer (W.Buf (I)) / 16 + 1));
+      Text_IO.Put (Digs (Integer (W.Buf (I)) mod 16 + 1));
+   end loop;
+   Text_IO.New_Line;
+end Probe;
+EOF
+    if ! (cd "$work/ada83" && gnatmake -q -gnat83 -gnatwae -D "$work/ada83" \
+            -aI"$root/endpoints/ada-83/src" -o probe probe.adb) \
+            > "$work/ada83/build.log" 2>&1; then
+        echo "REFUSED $(grep -m1 -E 'probe\.adb:[0-9]+' "$work/ada83/build.log" \
+            || grep -m1 -iE 'error' "$work/ada83/build.log" | cut -c1-120)"
+        return
+    fi
+    # A run-time Constraint_Error is an answer and not a crash of this
+    # program: `tail -1` carries the exception line out as the refusal.
+    if ! "$work/ada83/probe" > "$work/ada83/out" 2>&1; then
+        echo "REFUSED $(tail -1 "$work/ada83/out" | cut -c1-120)"
+        return
+    fi
+    tail -1 "$work/ada83/out"
+}
+
+emit_ada_native() {
+    local call="$1" argument="$2" put utype
+    case "$call" in
+        put_u8) put=Put_U8 ;; put_u16) put=Put_U16; utype=Unsigned_16 ;;
+        put_u32) put=Put_U32; utype=Unsigned_32 ;; put_u64) put=Put_U64; utype=Unsigned_64 ;;
+    esac
+    # As in `emit_ada`: the parameter's own type made directly visible for
+    # a negative argument and for nothing else. `Byte` is the package's own
+    # and its operators come with the `use` below.
+    # The `with` goes with it: an unreferenced unit is an error there too.
+    local with_clause="" clause=""
+    case "$argument" in
+        -*) if [ -n "${utype:-}" ]; then
+                with_clause="with Interfaces;"$'\n'
+                clause="   use type Interfaces.$utype;"$'\n'
+            fi ;;
+    esac
+    mkdir -p "$work/adanative"
+    cat > "$work/adanative/probe.adb" <<EOF
+with Ada.Text_IO;
+${with_clause}with Zerodds_Native_Wire; use Zerodds_Native_Wire;
+procedure Probe is
+$clause   W    : Writer;
+   Digs : constant String := "0123456789abcdef";
+begin
+   Init (W, Little);
+   $put (W, $argument);
+   declare
+      Out_Bytes : constant Byte_Array := Bytes (W);
+   begin
+      for B of Out_Bytes loop
+         Ada.Text_IO.Put (Digs (Natural (B) / 16 + 1));
+         Ada.Text_IO.Put (Digs (Natural (B) mod 16 + 1));
+      end loop;
+   end;
+   Ada.Text_IO.New_Line;
+exception
+   when others =>
+      Ada.Text_IO.Put_Line ("REFUSED a constraint check rejected the argument");
+end Probe;
+EOF
+    if ! (cd "$work/adanative" && gnatmake -q -gnat2022 -gnatwae -D "$work/adanative" \
+            -aI"$root/endpoints/ada-native/src" -o probe probe.adb) \
+            > "$work/adanative/build.log" 2>&1; then
+        echo "REFUSED $(grep -m1 -E 'probe\.adb:[0-9]+' "$work/adanative/build.log" \
+            || grep -m1 -iE 'error' "$work/adanative/build.log" | cut -c1-120)"
+        return
+    fi
+    "$work/adanative/probe" 2>&1 | tail -1
+}
+
+# --- the table --------------------------------------------------------
+
+# The control. `put_u16(1)` is `01 00` in every binding and has no
+# question in it, so a program that does not answer it is this program's
+# failure and not the binding's: a constructor that grew an argument, a
+# renamed write, an emitter nobody wrote. Each of those printed a compiler
+# message here and was read as a refusal — a table that says "refuses"
+# for a binding that was never asked. A binding whose control does not
+# come back as `0100` gets no row below, and the run exits 3.
+broken=0
+working=""
+for lang in $(printf '%s' "$langs" | tr ',' ' '); do
+    control=$("emit_${lang//-/_}" put_u16 1 < /dev/null 2>&1 | tr -d '\r')
+    if [ "$control" = 0100 ]; then
+        working="$working $lang"
+    else
+        broken=$((broken + 1))
+        echo "endpoint-number-surface: $lang does not answer the control put_u16(1):" >&2
+        echo "  ${control:0:200}" >&2
+    fi
+done
+
+printf '%-12s %-10s %-22s %s\n' question call argument answer
+silent=0
+unread=0
+while read -r name call argument; do
+    [ -n "$name" ] || continue
+    for lang in $working; do
+        # `< /dev/null`: `go run`, `julia` and `elixir` all read
+        # standard input, and without this the first of them swallows
+        # the rest of the question list and the table stops after one
+        # row — which looked like a loop that had finished.
+        # `-` is not a character a shell function name may carry, so the
+        # two hyphenated bindings map onto underscores here and nowhere
+        # else.
+        answer=$("emit_${lang//-/_}" "$call" "$argument" < /dev/null 2>&1 | tr -d '\r')
+        printf '%-12s %-10s %-22s %-8s %s\n' \
+            "$name" "$call" "$argument" "$lang" "${answer:0:110}"
+        # A question whose argument does not fit the width, answered
+        # with octets, is the silent one. `over-u16` is the only such
+        # question here: the negatives and the value past 2⁶³ all have
+        # an exact form in the width and octets are the right answer to
+        # them.
+        if [ "$name" = over-u16 ] && [ "${answer#REFUSED}" = "$answer" ] \
+                && printf '%s' "$answer" | grep -qE '^[0-9a-f]+$'; then
+            silent=$((silent + 1))
+            echo "  ^ $lang wrote octets for a value that does not fit $call" >&2
+        fi
+        # Neither octets nor a refusal: a crash, a version banner, an
+        # interpreter's last line. Not an answer, and not passed over.
+        if [ "${answer#REFUSED }" = "$answer" ] \
+                && ! printf '%s' "$answer" | grep -qE '^[0-9a-f]+$'; then
+            unread=$((unread + 1))
+            echo "  ^ $lang answered neither octets nor a refusal" >&2
+        fi
+    done
+done <<< "$questions"
+
+if [ "$broken" -gt 0 ] || [ "$unread" -gt 0 ]; then
+    echo >&2
+    echo "endpoint-number-surface: $broken binding(s) failed the control and" >&2
+    echo "$unread answer(s) were neither octets nor a refusal. The table above" >&2
+    echo "is not a measurement of those." >&2
+    exit 3
+fi
+
+if [ "$silent" -gt 0 ]; then
+    echo >&2
+    echo "endpoint-number-surface: $silent of the bindings dropped the high" >&2
+    echo "half of a value and returned. That is the class this tree treats" >&2
+    echo "as the worst there is; the others refuse the same call." >&2
+    exit 8
+fi

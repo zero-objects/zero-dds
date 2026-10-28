@@ -10,8 +10,8 @@ description = "Bidirectional CORBA-Object ↔ DDS-Topic bridge: GIOP request →
 homepage = "https://zerodds.org"
 documentation = "https://docs.rs/zerodds-corba-dds-bridge"
 readme = "README.md"
-keywords = ["dds", "corba", "bridge", "giop", "no-std"]
-categories = ["network-programming", "no-std"]
+keywords = ["dds", "corba", "bridge", "giop"]
+categories = ["network-programming"]
 publish = true
 
 [lints]
@@ -27,31 +27,67 @@ path = "src/bin/zerodds-corba-bridged.rs"
 required-features = ["std"]
 
 [features]
-default = ["std"]
+default = ["std", "ring-backend"]
+# The crypto backend of bridge-security (JWT verify and the rustls TLS
+# provider): `ring-backend` (default) or `aws-lc` (aws-lc-rs, FIPS 140-3
+# validatable). A FIPS build: `--no-default-features --features <the
+# default list without ring-backend>,aws-lc`; with both, aws-lc is used.
+ring-backend = ["zerodds-bridge-security?/ring-backend"]
+aws-lc = ["zerodds-bridge-security?/aws-lc"]
 std = [
     "alloc",
+    "dep:zerodds-corba-iiop",
+    "zerodds-corba-giop/std",
+    "zerodds-corba-ior/std",
+    "zerodds-corba-poa/std",
+    "zerodds-corba-csiv2/std",
+    "zerodds-corba-cosnaming/serve",
+    "sha2/std",
     "dep:zerodds-bridge-security",
     "dep:rustls",
     "dep:zerodds-monitor",
     "dep:zerodds-observability-otlp",
     "dep:zerodds-qos",
     "dep:signal-hook",
+    "dep:zerodds-config",
+    "dep:zerodds-dcps",
+    "dep:zerodds-rtps",
+    "dep:zerodds-types",
 ]
-alloc = []
+alloc = [
+    "zerodds-corba-giop/alloc",
+    "zerodds-corba-ior/alloc",
+    "zerodds-corba-poa/alloc",
+    "zerodds-corba-csiv2/alloc",
+    "zerodds-corba-cosnaming/alloc",
+]
 # Cross-vendor interop tests against omniORB (Spec §10 + §12.3).
 cross-vendor-tests = ["std"]
 
 [dependencies]
-zerodds-corba-giop = { version = "1.0.0-rc.7", path = "../corba-giop" }
-zerodds-corba-ior = { version = "1.0.0-rc.7", path = "../corba-ior" }
-zerodds-corba-iiop = { version = "1.0.0-rc.7", path = "../corba-iiop" }
-zerodds-corba-poa = { version = "1.0.0-rc.7", path = "../corba-poa" }
-zerodds-corba-csiv2 = { version = "1.0.0-rc.7", path = "../corba-csiv2" }
-zerodds-cdr = { version = "1.0.0-rc.7", path = "../cdr" }
-sha2 = { workspace = true, features = ["std"] }
+# The layered configuration every ZeroDDS program reads (--config, --set,
+# --check-config, drop-ins, environment beneath the files).
+zerodds-config = { version = "1.0.0-rc.7", path = "../config", optional = true }
+zerodds-dcps = { version = "1.0.0-rc.7", path = "../dcps", optional = true, default-features = false, features = ["std"] }
+# Wire types of the bridge daemon's DDS side (entity ids, representation ids).
+zerodds-rtps = { version = "1.0.0-rc.7", path = "../rtps", optional = true, default-features = false, features = ["std"] }
+zerodds-types = { version = "1.0.0-rc.7", path = "../types", optional = true, default-features = false, features = ["alloc"] }
+zerodds-corba-giop = { version = "1.0.0-rc.7", path = "../corba-giop", default-features = false }
+zerodds-corba-ior = { version = "1.0.0-rc.7", path = "../corba-ior", default-features = false }
+zerodds-corba-iiop = { version = "1.0.0-rc.7", path = "../corba-iiop", optional = true, features = [
+    "tls",
+] }
+zerodds-corba-poa = { version = "1.0.0-rc.7", path = "../corba-poa", default-features = false }
+zerodds-corba-csiv2 = { version = "1.0.0-rc.7", path = "../corba-csiv2", default-features = false }
+# The NamingContext wire codec (client side: rebind/unbind into
+# corba.ior.naming_service) and, in-process, the servant + graph
+# corba.naming.serve hosts on this daemon's own GIOP transport.
+zerodds-corba-cosnaming = { version = "1.0.0-rc.7", path = "../corba-cosnaming", default-features = false }
+zerodds-wire = { version = "1.0.0-rc.7", path = "../wire" }
+sha2 = { workspace = true }
 # Bridge-security substrate (SSLIOP TaggedComponent 0x06 via rustls,
 # CSIv2 token + mTLS auth, topic ACL — Bridge-Spec §7.1/§7.2/§7.3).
-zerodds-bridge-security = { version = "1.0.0-rc.7", path = "../bridge-security", optional = true }
+zerodds-bridge-security = { version = "1.0.0-rc.7", path = "../bridge-security", optional = true, default-features = false, features = ["std"] }
 rustls = { workspace = true, optional = true }
 # Cross-cutting daemon observability: Prometheus + OTLP + shutdown + QoS mapper.
 zerodds-monitor = { version = "1.0.0-rc.7", path = "../monitor", optional = true, default-features = false, features = ["std", "prometheus-server"] }
@@ -62,6 +98,17 @@ signal-hook = { workspace = true, optional = true }
 [dev-dependencies]
 # Self-signed certs for §7.1 TLS tests in `tests/security_e2e.rs`.
 rcgen = "0.13"
+# One DDS domain per spawned daemon, host-wide (the domain number is the
+# UDP port) — csiv2_e2e.rs / naming_service_e2e.rs spawn real
+# `zerodds-corba-bridged` subprocesses that bind SPDP on it.
+zerodds-test-domains = { path = "../test-domains" }
+# tests/naming_service_e2e.rs spawns the real zerodds-naming-svc binary
+# (feature `daemon`, only built with this enabled — the crate's own
+# dependency above only asks for `serve`, the servant/wire half this
+# crate calls directly).
+zerodds-corba-cosnaming = { version = "1.0.0-rc.7", path = "../corba-cosnaming", features = [
+    "daemon",
+] }
 
 # SIGTERM-graceful shutdown in the DaemonGuard (otherwise SIGKILL →
 # corrupt `.profraw` under cargo-llvm-cov). Unix-only via cfg gate.

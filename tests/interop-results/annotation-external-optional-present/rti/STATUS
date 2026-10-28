@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of annotation-external-optional-present that rti produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	ERROR com.rti.ndds.nddsgen.Nddsgen gen.idl line 8:14 external members can't be marked as optional
+plain-cdr1	be	refused	ERROR com.rti.ndds.nddsgen.Nddsgen gen.idl line 8:14 external members can't be marked as optional
+pl-cdr1	le	refused	ERROR com.rti.ndds.nddsgen.Nddsgen gen.idl line 8:14 external members can't be marked as optional
+pl-cdr1	be	refused	ERROR com.rti.ndds.nddsgen.Nddsgen gen.idl line 8:14 external members can't be marked as optional
+plain-cdr2	le	refused	ERROR com.rti.ndds.nddsgen.Nddsgen gen.idl line 8:14 external members can't be marked as optional
+plain-cdr2	be	refused	ERROR com.rti.ndds.nddsgen.Nddsgen gen.idl line 8:14 external members can't be marked as optional
+delimited-cdr	le	refused	ERROR com.rti.ndds.nddsgen.Nddsgen gen.idl line 8:14 external members can't be marked as optional
+delimited-cdr	be	refused	ERROR com.rti.ndds.nddsgen.Nddsgen gen.idl line 8:14 external members can't be marked as optional
+pl-cdr2	le	refused	ERROR com.rti.ndds.nddsgen.Nddsgen gen.idl line 8:14 external members can't be marked as optional
+pl-cdr2	be	refused	ERROR com.rti.ndds.nddsgen.Nddsgen gen.idl line 8:14 external members can't be marked as optional

@@ -363,6 +363,48 @@ fn rsa_verify(
     }
 }
 
+/// Signs `data` with the AsymmetricSignatureAlgorithm of `policy`.
+///
+/// Part 4 §6.1.8 defines the application- and user-token signatures of
+/// CreateSession/ActivateSession as an RSA signature over the peer's
+/// ApplicationInstanceCertificate concatenated with the last nonce; this is
+/// the primitive that produces them. See [`signature_data`] for the exact byte
+/// sequence to pass in.
+///
+/// # Errors
+/// [`CryptoError::Rsa`] if the RSA operation fails.
+pub fn sign_with_policy<R: RngCore + CryptoRng>(
+    rng: &mut R,
+    policy: SecurityPolicy,
+    private_key: &RsaPrivateKey,
+    data: &[u8],
+) -> Result<Vec<u8>, CryptoError> {
+    rsa_sign(rng, private_key, policy.asym_pss(), data)
+}
+
+/// Verifies a [`sign_with_policy`] signature.
+///
+/// # Errors
+/// [`CryptoError::BadSignature`] if the signature does not verify.
+pub fn verify_with_policy(
+    policy: SecurityPolicy,
+    public_key: &RsaPublicKey,
+    data: &[u8],
+    signature: &[u8],
+) -> Result<(), CryptoError> {
+    rsa_verify(public_key, policy.asym_pss(), data, signature)
+}
+
+/// The byte sequence Part 4 §6.1.8 signs: the peer's DER certificate followed
+/// by the last nonce it sent.
+#[must_use]
+pub fn signature_data(peer_certificate: &[u8], peer_nonce: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(peer_certificate.len() + peer_nonce.len());
+    out.extend_from_slice(peer_certificate);
+    out.extend_from_slice(peer_nonce);
+    out
+}
+
 /// The SHA-1 thumbprint of a DER certificate (used in the
 /// `AsymmetricAlgorithmSecurityHeader.ReceiverCertificateThumbprint`).
 #[must_use]
@@ -402,6 +444,37 @@ pub fn build_symmetric_chunk(
     request_id: u32,
     body: &[u8],
 ) -> Result<Vec<u8>, CryptoError> {
+    build_symmetric_chunk_typed(
+        mode,
+        keys,
+        message_type,
+        ChunkType::Final,
+        channel_id,
+        token_id,
+        sequence_number,
+        request_id,
+        body,
+    )
+}
+
+/// [`build_symmetric_chunk`] with an explicit `IsFinal` byte, for the
+/// intermediate (`C`) and abort (`A`) chunks of a chunked Message
+/// (Part 6 §6.7.2.2 / §6.7.3).
+///
+/// # Errors
+/// [`CryptoError`] on a bad key/IV length.
+#[allow(clippy::too_many_arguments)]
+pub fn build_symmetric_chunk_typed(
+    mode: SecuredMode,
+    keys: &DerivedKeys,
+    message_type: MessageType,
+    chunk_type: ChunkType,
+    channel_id: u32,
+    token_id: u32,
+    sequence_number: u32,
+    request_id: u32,
+    body: &[u8],
+) -> Result<Vec<u8>, CryptoError> {
     let sig_len = HMAC_SHA256_LEN;
 
     // Plaintext region after the headers: SequenceHeader || Body.
@@ -434,7 +507,7 @@ pub fn build_symmetric_chunk(
         let mut w = UaWriter::new();
         MessageHeader {
             message_type,
-            chunk_type: ChunkType::Final,
+            chunk_type,
             message_size,
         }
         .encode(&mut w);
@@ -474,6 +547,9 @@ pub fn build_symmetric_chunk(
 pub struct OpenedChunk {
     /// Message type.
     pub message_type: MessageType,
+    /// The `IsFinal` byte: `F` final, `C` intermediate, `A` abort
+    /// (Part 6 §6.7.2.2).
+    pub chunk_type: ChunkType,
     /// SecureChannel id.
     pub channel_id: u32,
     /// Token id (symmetric) — `None` for asymmetric chunks.
@@ -541,6 +617,7 @@ pub fn open_symmetric_chunk(
     }
     Ok(OpenedChunk {
         message_type: header.message_type,
+        chunk_type: header.chunk_type,
         channel_id,
         token_id: Some(token_id),
         sequence_number: u32::from_le_bytes(slice4(&plain, 0)?),
@@ -712,6 +789,7 @@ pub fn open_asymmetric_chunk(
 
     Ok(OpenedChunk {
         message_type: header.message_type,
+        chunk_type: header.chunk_type,
         channel_id,
         token_id: None,
         sequence_number: u32::from_le_bytes(slice4(&plaintext, 0)?),

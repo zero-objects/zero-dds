@@ -55,6 +55,7 @@ fn local_sub_reader_guid() -> Guid {
 
 fn sample_pub() -> PublicationBuiltinTopicData {
     PublicationBuiltinTopicData {
+        vendor_id: Some(zerodds_rtps::wire_types::VendorId::ZERODDS),
         key: Guid::new(
             GuidPrefix::from_bytes(REMOTE_PREFIX),
             EntityId::user_writer_with_key([0x10, 0x20, 0x30]),
@@ -63,6 +64,7 @@ fn sample_pub() -> PublicationBuiltinTopicData {
         topic_name: "ChatterTopic".into(),
         type_name: "std_msgs::String".into(),
         durability: DurabilityKind::TransientLocal,
+        durability_service: zerodds_qos::DurabilityServiceQosPolicy::default(),
         reliability: ReliabilityQos {
             kind: ReliabilityKind::Reliable,
             max_blocking_time: DdsDuration::from_secs(10),
@@ -80,19 +82,29 @@ fn sample_pub() -> PublicationBuiltinTopicData {
         topic_data: Vec::new(),
         group_data: Vec::new(),
         type_information: None,
+        type_id_v1: None,
+        type_object_v1: None,
         data_representation: Vec::new(),
         security_info: None,
+        sym_cipher_algo_info: None,
+        data_tags: Default::default(),
+        properties: Default::default(),
         service_instance_name: None,
         related_entity_guid: None,
         topic_aliases: None,
         type_identifier: zerodds_types::TypeIdentifier::None,
         unicast_locators: Vec::new(),
         multicast_locators: Vec::new(),
+        group_guid: None,
+        data_max_size_serialized: None,
+        entity_name: None,
     }
 }
 
 fn sample_sub() -> SubscriptionBuiltinTopicData {
     SubscriptionBuiltinTopicData {
+        content_filter_unreadable: false,
+        vendor_id: Some(zerodds_rtps::wire_types::VendorId::ZERODDS),
         key: Guid::new(
             GuidPrefix::from_bytes(REMOTE_PREFIX),
             EntityId::user_reader_with_key([0xA0, 0xB0, 0xC0]),
@@ -105,6 +117,7 @@ fn sample_sub() -> SubscriptionBuiltinTopicData {
         ownership: zerodds_qos::OwnershipKind::Shared,
         liveliness: zerodds_qos::LivelinessQosPolicy::default(),
         deadline: zerodds_qos::DeadlineQosPolicy::default(),
+        time_based_filter: zerodds_qos::TimeBasedFilterQosPolicy::default(),
         latency_budget: zerodds_qos::LatencyBudgetQosPolicy::default(),
         destination_order: zerodds_qos::DestinationOrderQosPolicy::default(),
         presentation: zerodds_qos::PresentationQosPolicy::default(),
@@ -112,16 +125,26 @@ fn sample_sub() -> SubscriptionBuiltinTopicData {
         user_data: Vec::new(),
         topic_data: Vec::new(),
         group_data: Vec::new(),
+        type_consistency: zerodds_types::qos::TypeConsistencyEnforcement::default(),
         type_information: None,
+        type_id_v1: None,
+        type_object_v1: None,
         data_representation: Vec::new(),
         content_filter: None,
         security_info: None,
+        sym_cipher_algo_info: None,
+        data_tags: Default::default(),
+        properties: Default::default(),
         service_instance_name: None,
         related_entity_guid: None,
         topic_aliases: None,
         type_identifier: zerodds_types::TypeIdentifier::None,
         unicast_locators: Vec::new(),
         multicast_locators: Vec::new(),
+        expects_inline_qos: false,
+        group_guid: None,
+        type_consistency_announced: true,
+        entity_name: None,
     }
 }
 
@@ -157,12 +180,12 @@ fn publication_announce_then_reader_fills_cache() {
     for dg in dgs {
         let parsed = decode_datagram(&dg.bytes).expect("decode");
         for sub in parsed.submessages {
-            if let ParsedSubmessage::Data(d) = sub {
+            if let ParsedSubmessage::Data(d) = sub.submessage {
                 let delta = reader
                     .handle_data(parsed.header.guid_prefix, &d)
                     .expect("handle_data");
                 for s in delta.added {
-                    cache.insert_publication(s, now);
+                    cache.insert_publication(s.data, now);
                 }
             }
         }
@@ -207,13 +230,13 @@ fn multiple_publications_accumulate_in_cache() {
         for dg in dgs {
             let parsed = decode_datagram(&dg.bytes).unwrap();
             for sub in parsed.submessages {
-                if let ParsedSubmessage::Data(d) = sub {
+                if let ParsedSubmessage::Data(d) = sub.submessage {
                     for s in reader
                         .handle_data(parsed.header.guid_prefix, &d)
                         .unwrap()
                         .added
                     {
-                        cache.insert_publication(s, now);
+                        cache.insert_publication(s.data, now);
                     }
                 }
             }
@@ -253,13 +276,13 @@ fn subscription_announce_then_reader_fills_cache() {
     for dg in writer.announce(&original).unwrap() {
         let parsed = decode_datagram(&dg.bytes).unwrap();
         for sub in parsed.submessages {
-            if let ParsedSubmessage::Data(d) = sub {
+            if let ParsedSubmessage::Data(d) = sub.submessage {
                 for s in reader
                     .handle_data(parsed.header.guid_prefix, &d)
                     .unwrap()
                     .added
                 {
-                    cache.insert_subscription(s, now);
+                    cache.insert_subscription(s.data, now);
                 }
             }
         }
@@ -273,7 +296,7 @@ fn subscription_announce_then_reader_fills_cache() {
 #[test]
 fn matching_publications_and_subscriptions_by_topic() {
     // End-to-end matching: publication + subscription with the same
-    // (topic, type) land in the cache; `match_publications/subscriptions`
+    // topic land in the cache; `match_publications/subscriptions`
     // returns them via the lookup.
     let mut p_writer =
         SedpPublicationsWriter::new(GuidPrefix::from_bytes(REMOTE_PREFIX), VendorId::ZERODDS);
@@ -310,13 +333,13 @@ fn matching_publications_and_subscriptions_by_topic() {
     for dg in p_writer.announce(&sample_pub()).unwrap() {
         let parsed = decode_datagram(&dg.bytes).unwrap();
         for sub in parsed.submessages {
-            if let ParsedSubmessage::Data(d) = sub {
+            if let ParsedSubmessage::Data(d) = sub.submessage {
                 for s in p_reader
                     .handle_data(parsed.header.guid_prefix, &d)
                     .unwrap()
                     .added
                 {
-                    cache.insert_publication(s, now);
+                    cache.insert_publication(s.data, now);
                 }
             }
         }
@@ -324,24 +347,20 @@ fn matching_publications_and_subscriptions_by_topic() {
     for dg in s_writer.announce(&sample_sub()).unwrap() {
         let parsed = decode_datagram(&dg.bytes).unwrap();
         for sub in parsed.submessages {
-            if let ParsedSubmessage::Data(d) = sub {
+            if let ParsedSubmessage::Data(d) = sub.submessage {
                 for s in s_reader
                     .handle_data(parsed.header.guid_prefix, &d)
                     .unwrap()
                     .added
                 {
-                    cache.insert_subscription(s, now);
+                    cache.insert_subscription(s.data, now);
                 }
             }
         }
     }
 
-    let matching_pubs: Vec<_> = cache
-        .match_publications("ChatterTopic", "std_msgs::String")
-        .collect();
-    let matching_subs: Vec<_> = cache
-        .match_subscriptions("ChatterTopic", "std_msgs::String")
-        .collect();
+    let matching_pubs: Vec<_> = cache.match_publications("ChatterTopic").collect();
+    let matching_subs: Vec<_> = cache.match_subscriptions("ChatterTopic").collect();
     assert_eq!(matching_pubs.len(), 1);
     assert_eq!(matching_subs.len(), 1);
 }

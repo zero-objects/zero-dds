@@ -12,7 +12,7 @@
     <packaging>jar</packaging>
 
     <name>ZeroDDS Native Java-PSM (org.omg.dds)</name>
-    <description>Pure-Java implementation of the OMG DDS Java-PSM 1.0 — no JNI required. Spec formal/2013-07-01.</description>
+    <description>Pure-Java implementation of the OMG DDS Java-PSM 1.0 — no JNI required. Spec formal/2013-11-02.</description>
     <url>https://zerodds.org</url>
 
     <licenses>
@@ -46,6 +46,9 @@
     </issueManagement>
 
     <properties>
+        <rtps.test.spdp-period>1000</rtps.test.spdp-period>
+        <rtps.test.heartbeat-response-delay>0</rtps.test.heartbeat-response-delay>
+        <rtps.test.nack-response-delay>0</rtps.test.nack-response-delay>
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -61,11 +64,54 @@
     </dependencies>
 
     <build>
+        <resources>
+            <resource><directory>src/main/resources</directory></resource>
+            <resource>
+                <directory>${project.basedir}/../idl/typelookup</directory>
+                <targetPath>META-INF/typelookup</targetPath>
+                <includes><include>LICENSE.cyclone</include><include>NOTICE.cyclone.md</include><include>README.md</include></includes>
+            </resource>
+        </resources>
         <plugins>
+            <!-- The main sources compile without a warning under -Xlint:all -Werror, except the
+                 category "unchecked": the declaration of EntityQos.withPolicies(P...) in the
+                 normative OMG source (Annex B) has a parameterized vararg, which javac reports as
+                 possible heap pollution, and an interface method cannot carry @SafeVarargs. That file
+                 stays as the OMG wrote it, so the category is off for the main sources;
+                 "options" is off because the java8 profile uses release 8. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.13.0</version>
+                <executions>
+                    <execution>
+                        <id>default-compile</id>
+                        <configuration>
+                            <compilerArgs>
+                                <arg>-Xlint:all,-unchecked,-options</arg>
+                                <arg>-Werror</arg>
+                            </compilerArgs>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.2.5</version>
+                <configuration>
+                    <!--
+                        The tests that talk RTPS between participants of one JVM need the fast
+                        timings; the defaults of the runtime are those of DDSI-RTPS 2.5 (SPDP period
+                        30 s, heartbeatResponseDelay 500 ms, nackResponseDelay 200 ms). RtpsTimingsTest
+                        checks the defaults without these properties.
+                    -->
+                    <systemPropertyVariables>
+                        <zerodds.rtps.spdp-period-millis>${rtps.test.spdp-period}</zerodds.rtps.spdp-period-millis>
+                        <zerodds.rtps.heartbeat-response-delay-millis>${rtps.test.heartbeat-response-delay}</zerodds.rtps.heartbeat-response-delay-millis>
+                        <zerodds.rtps.nack-response-delay-millis>${rtps.test.nack-response-delay}</zerodds.rtps.nack-response-delay-millis>
+                    </systemPropertyVariables>
+                </configuration>
             </plugin>
             <!--
                 Packaging fix: the IDL-Java runtime (annotation bridge
@@ -98,6 +144,9 @@
                         <configuration>
                             <sources>
                                 <source>${project.basedir}/../../idl-java/runtime</source>
+                                <!-- Generated codecs and native type support use
+                                     this runtime in installed consumer JARs. -->
+                                <source>${project.basedir}/../../../runtime/java/src/main/java</source>
                             </sources>
                         </configuration>
                     </execution>
@@ -125,8 +174,10 @@
                      test helper uses a record). -->
                 <maven.compiler.source>8</maven.compiler.source>
                 <maven.compiler.target>8</maven.compiler.target>
+                <maven.compiler.release>8</maven.compiler.release>
                 <maven.compiler.testSource>17</maven.compiler.testSource>
                 <maven.compiler.testTarget>17</maven.compiler.testTarget>
+                <maven.compiler.testRelease>17</maven.compiler.testRelease>
             </properties>
         </profile>
         <profile>

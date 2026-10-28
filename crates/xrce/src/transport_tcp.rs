@@ -208,6 +208,7 @@ fn read_exact_eof<R: Read>(r: &mut R, buf: &mut [u8]) -> Result<(), XrceError> {
 mod tests {
     #![allow(clippy::expect_used, clippy::unwrap_used)]
     use super::*;
+    use crate::handshake::{ClientRepresentation, XRCE_VERSION};
     use crate::header::{ClientKey, MessageHeader, SessionId, StreamId};
     use crate::object_id::ObjectId;
     use crate::object_info::BaseObjectRequest;
@@ -250,7 +251,15 @@ mod tests {
         let mut client = XrceTcpClient::connect(addr).unwrap();
         let msg = message_with(
             CreateClientPayload {
-                representation: alloc::vec![b'X', b'R', b'C', b'E', 1, 0],
+                representation: ClientRepresentation {
+                    timestamp: None,
+                    version: XRCE_VERSION,
+                    vendor_id: [0, 0],
+                    client_key: ClientKey([0, 0, 0, 0]),
+                    session_id: 0,
+                    properties: None,
+                    requested_mtu: None,
+                },
             }
             .into_submessage()
             .unwrap(),
@@ -414,5 +423,87 @@ mod tests {
     #[test]
     fn tcp_length_prefix_size_constant() {
         assert_eq!(TCP_LENGTH_PREFIX_SIZE, 2);
+    }
+
+    /// Spec §3.1.8 normative reference [TCP] RFC 793: TCP is a byte
+    /// stream, so it carries no message boundaries of its own. §11.3.3
+    /// therefore prefixes every XRCE message with its length. The test
+    /// writes two complete frames in a **single** `write_all` — one TCP
+    /// segment's worth of bytes with no boundary between the messages —
+    /// and the receiver still recovers exactly two messages, delimited by
+    /// the length prefix and in send order.
+    #[test]
+    fn rfc793_byte_stream_is_delimited_by_the_length_prefix_not_by_writes() {
+        let (server, addr) = loopback_pair();
+        let m1 = message_with(ResetPayload.into_submessage().unwrap());
+        let m2 = message_with(
+            WriteDataPayload {
+                base: BaseObjectRequest {
+                    request_id: [0x00, 0x02],
+                    object_id: ObjectId::from_raw(0x0DA5),
+                },
+                serialized_data: alloc::vec![7, 7, 7],
+            }
+            .into_submessage()
+            .unwrap(),
+        );
+        let expected = (m1.clone(), m2.clone());
+
+        let server_thread = thread::spawn(move || {
+            let (mut peer, _) = server.accept().unwrap();
+            let a = peer.recv_message().unwrap();
+            let b = peer.recv_message().unwrap();
+            (a, b)
+        });
+
+        // One write, two framed messages, no flush in between.
+        let mut fused = alloc::vec::Vec::new();
+        for m in [&m1, &m2] {
+            let body = m.encode().unwrap();
+            let len = u16::try_from(body.len()).unwrap();
+            fused.extend_from_slice(&len.to_le_bytes());
+            fused.extend_from_slice(&body);
+        }
+        let mut raw = TcpStream::connect(addr).unwrap();
+        raw.write_all(&fused).unwrap();
+
+        assert_eq!(server_thread.join().unwrap(), expected);
+    }
+
+    /// Spec §3.1.8: the same stream property in the other direction — a
+    /// frame split across two writes (prefix first, body later) still
+    /// arrives as one message, because the reader consumes from the byte
+    /// stream until the announced length is complete.
+    #[test]
+    fn rfc793_frame_split_across_two_writes_is_reassembled() {
+        let (server, addr) = loopback_pair();
+        let msg = message_with(
+            WriteDataPayload {
+                base: BaseObjectRequest {
+                    request_id: [0x00, 0x03],
+                    object_id: ObjectId::from_raw(0x0DA5),
+                },
+                serialized_data: alloc::vec![1, 2, 3, 4, 5, 6, 7, 8],
+            }
+            .into_submessage()
+            .unwrap(),
+        );
+        let expected = msg.clone();
+
+        let server_thread = thread::spawn(move || {
+            let (mut peer, _) = server.accept().unwrap();
+            peer.recv_message().unwrap()
+        });
+
+        let body = msg.encode().unwrap();
+        let len = u16::try_from(body.len()).unwrap();
+        let mut raw = TcpStream::connect(addr).unwrap();
+        raw.write_all(&len.to_le_bytes()).unwrap();
+        let (head, tail) = body.split_at(3);
+        raw.write_all(head).unwrap();
+        thread::sleep(Duration::from_millis(20));
+        raw.write_all(tail).unwrap();
+
+        assert_eq!(server_thread.join().unwrap(), expected);
     }
 }

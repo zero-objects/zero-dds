@@ -54,8 +54,8 @@ sudo zerodds-chaos tc-clear --iface eth0
 
 ## Stability
 
-`1.0.0-rc.1` — public CLI is stable. Breaking changes require a
-major version bump.
+`1.0.0-rc.7`, a pre-release. The public API can still change before
+1.0.0; the crate's CHANGELOG lists every change.
 
 ## Build & test
 

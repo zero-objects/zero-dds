@@ -200,7 +200,7 @@ impl<T: DdsType + Send + Sync + 'static> AsyncDataReader<T> {
         }
     }
 
-    /// Spec §6.2 `publication_matched_stream` —
+    /// Reader-side half of the spec §6.2 listener bridge —
     /// `Stream<Item = SubscriptionMatchedStatus>`. Emits the
     /// full reader-side match status (DDS 1.4 §2.2.4.1
     /// SUBSCRIPTION_MATCHED) every time the count of
@@ -208,9 +208,13 @@ impl<T: DdsType + Send + Sync + 'static> AsyncDataReader<T> {
     /// `total_count` (cumulative), `total_count_change` (delta),
     /// `current_count` (currently matched), `current_count_change`
     /// (signed delta), `last_publication_handle`.
+    ///
+    /// The `PublicationMatchedStatus` stream the spec names is the
+    /// writer-side counterpart,
+    /// [`crate::AsyncDataWriter::publication_matched_stream`].
     #[must_use]
-    pub fn publication_matched_stream(&self) -> PublicationMatchedStream<T> {
-        PublicationMatchedStream {
+    pub fn subscription_matched_stream(&self) -> SubscriptionMatchedStream<T> {
+        SubscriptionMatchedStream {
             reader: Arc::clone(&self.inner),
             poll_interval: Duration::from_millis(20),
             sleep_until: None,
@@ -288,16 +292,16 @@ impl<T: DdsType + Send + Sync + 'static> Stream for DataAvailableStream<T> {
 }
 
 /// Stream of publication-matched counts. Yields every new count.
-pub struct PublicationMatchedStream<T: DdsType + Send + Sync + 'static> {
+pub struct SubscriptionMatchedStream<T: DdsType + Send + Sync + 'static> {
     reader: Arc<DataReader<T>>,
     poll_interval: Duration,
     sleep_until: Option<std::time::Instant>,
     last_count: usize,
 }
 
-impl<T: DdsType + Send + Sync + 'static> Unpin for PublicationMatchedStream<T> {}
+impl<T: DdsType + Send + Sync + 'static> Unpin for SubscriptionMatchedStream<T> {}
 
-impl<T: DdsType + Send + Sync + 'static> Stream for PublicationMatchedStream<T> {
+impl<T: DdsType + Send + Sync + 'static> Stream for SubscriptionMatchedStream<T> {
     type Item = zerodds_dcps::status::SubscriptionMatchedStatus;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
@@ -342,7 +346,7 @@ impl<T: DdsType + Send + Sync + 'static> Stream for PublicationMatchedStream<T> 
     }
 }
 
-fn schedule_wake(cx: &mut Context<'_>, deadline: std::time::Instant) {
+pub(crate) fn schedule_wake(cx: &mut Context<'_>, deadline: std::time::Instant) {
     let waker = cx.waker().clone();
     let remaining = deadline.saturating_duration_since(std::time::Instant::now());
     std::thread::spawn(move || {
@@ -351,7 +355,7 @@ fn schedule_wake(cx: &mut Context<'_>, deadline: std::time::Instant) {
     });
 }
 
-fn schedule_wake_in(cx: &mut Context<'_>, interval: Duration) {
+pub(crate) fn schedule_wake_in(cx: &mut Context<'_>, interval: Duration) {
     let waker = cx.waker().clone();
     std::thread::spawn(move || {
         std::thread::sleep(interval);

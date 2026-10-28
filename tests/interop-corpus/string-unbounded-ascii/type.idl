@@ -1,0 +1,5 @@
+// unbounded `string`, ASCII
+@final struct Sample {
+    string text;
+    long tail;
+};

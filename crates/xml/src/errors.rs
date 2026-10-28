@@ -13,7 +13,7 @@ use core::fmt;
 /// §7.2 (XML Representation of DDS IDL PSM).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum XmlError {
-    /// XML is not well-formed per [XML] §2.1.
+    /// XML is not well-formed per \[XML\] §2.1.
     ///
     /// Spec ref: DDS-XML 1.0 §7.1.1 ("XML shall be well-formed").
     InvalidXml(String),
@@ -55,8 +55,7 @@ pub enum XmlError {
     /// configured in the loader (default: 1024 list elements, 64 KiB
     /// strings).
     ///
-    /// No direct spec reference; follows the ZeroDDS security posture
-    /// (`docs/spec-coverage/zerodds-xml-1.0.open.md` risks section).
+    /// No spec reference; a resource cap of this crate.
     LimitExceeded(String),
 
     /// A cross-reference (e.g. `base_name` of a QoS profile
@@ -65,6 +64,13 @@ pub enum XmlError {
     ///
     /// Spec ref: DDS-XML 1.0 §7.3.2.4.2 (QoS profile inheritance).
     UnresolvedReference(String),
+
+    /// A form other DDS products write but the DDS-XML 1.0 schemas do not
+    /// define, found while the reading does not accept vendor forms.
+    /// The message names the path, the form and the specification's form.
+    ///
+    /// Spec ref: DDS-XML 1.0 §7.1.2 (the XSD files are normative).
+    VendorForm(String),
 }
 
 impl fmt::Display for XmlError {
@@ -82,6 +88,7 @@ impl fmt::Display for XmlError {
             Self::ValueOutOfRange(msg) => write!(f, "value out of range: {msg}"),
             Self::LimitExceeded(msg) => write!(f, "DoS limit exceeded: {msg}"),
             Self::UnresolvedReference(name) => write!(f, "unresolved reference `{name}`"),
+            Self::VendorForm(msg) => write!(f, "vendor form: {msg}"),
         }
     }
 }

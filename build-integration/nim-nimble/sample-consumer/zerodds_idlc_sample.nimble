@@ -24,4 +24,4 @@ requires "nim >= 1.6.0"
 # incremental).
 before build:
   mkDir("src/gen")
-  exec "zerodds-idlc generate idl/Robot.idl --nim -o src/gen"
+  exec "zerodds-idlc generate --lang nim --out src/gen idl/Robot.idl"

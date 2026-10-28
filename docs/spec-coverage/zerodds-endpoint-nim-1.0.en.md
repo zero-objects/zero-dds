@@ -27,8 +27,9 @@ LE, submessage id, flags, length LE) + payload, byte-identical to
 session `0x80`, stream `0x01`); `endpoints/nim/reliable.nim::reliableWriteFrame`
 (reliable, stream `0x80`) — identical byte layout, different stream id.
 
-**Tests:** `endpoints/nim/test.nim` (byte identity of the wire core, CI job
-`endpoints-nim`); live frame round-trip in §2/§3/§4.
+**Tests:** `endpoints/nim/test.nim` — the marks `"sync loopback: 5 samples OK"`,
+`"async loopback: 5 samples OK"` und `"negative frame vectors: OK"`
+(byte identity of the wire core, CI job `endpoints-nim`); the frame roundtrip live in §2/§3/§4.
 
 **Status:** done.
 
@@ -42,9 +43,9 @@ non-blocking and returns `Option[seq[byte]]`.
 
 **Tests:** `nim_endpoint_sync` (`crates/endpoint-e2e/tests/nim.rs`) — a live
 poll loop against the Rust peer: an app built from generated `idlc` types
-(`gen.nim`) plus the endpoint SDK exchanges a typed sample with the shared
+(gen.nim) plus the endpoint SDK exchanges a typed sample with the shared
 Rust XRCE peer over a real UDP socket
-(`crates/endpoint-e2e/tests/nim.rs::build_nim_endpoint` compiles `gen.nim` + a
+(`crates/endpoint-e2e/tests/nim.rs::build_nim_endpoint` compiles gen.nim + a
 copy of `zerodds.nim` + `main.nim`, spawns the app).
 
 **Status:** done.
@@ -62,7 +63,7 @@ copy of `zerodds.nim` + `main.nim`, spawns the app).
 sends in both modes (the SDK only has a sync writer), the async path exercises
 purely the `AsyncReader` `Future`.
 
-**Tests (codepit):** `nim_endpoint_sync`, `nim_endpoint_async` — both green.
+**Tests:** (Linux) `nim_endpoint_sync`, `nim_endpoint_async` — both green.
 
 **Status:** done.
 
@@ -83,7 +84,7 @@ HEARTBEAT, receives ACKNACK, retransmits from `inFlight`).
 `endpoints/nim/reliable_test.nim` (unit + byte-golden);
 `endpoints/nim/example_reliable.nim` (in-process demo, no socket).
 
-**Tests (codepit):**
+**Tests:** (Linux)
 
 - `nim_reliable_loss_recovery` (`crates/endpoint-e2e/tests/nim_reliable.rs`) —
   12 samples, the peer drops every 3rd datagram; the app retransmits on
@@ -117,29 +118,30 @@ socket syscall (`reliable-endpoint` §5 item 4, latency bench).
 path; `inline`: `sock.send` directly on the producer thread; `decoupled`:
 `gChan.send` into a Channel drained by a separate thread.
 
-**Tests (codepit):** `nim_reliable_producer_latency` — enqueue **192 ns** vs.
+**Tests:** (Linux) `nim_reliable_producer_latency` — enqueue **192 ns** vs.
 inline `sendto` **3926 ns** (~20x).
 
-**Status:** done (measurement present); further reduction via a wait-free
-ring remains open (see §4, honestly noted — not a separate tracking item,
-since it is not a spec requirement).
+**Status:** done — enqueue 192 ns against inline `sendto` at 3926 ns, which is
+the decoupling §4 asks for. The spec does not prescribe the queue
+implementation; a wait-free ring would be an optimisation and is recorded as
+one in `docs/OPEN-ITEMS.md`.
 
 ---
 
 ## Audit-Status
 
-6 done / 0 partial / 0 open / 0 n/a.
+5 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
 
-Test-run (codepit, verified): `cargo test -p zerodds-endpoint-e2e --test
+Test-run (Linux, verified): `cargo test -p zerodds-endpoint-e2e --test
 nim` -> `nim_endpoint_sync` + `nim_endpoint_async` 2/2 green; `--test
 nim_reliable` -> `nim_reliable_loss_recovery`, `nim_reliable_no_loss`,
 `nim_reliable_unit_and_golden`, `nim_reliable_producer_latency` 4/4 green;
 latency measurement 192 ns (enqueue) vs. 3926 ns (inline sendto), ~20x. No
-GitLab CI job runs `zerodds-endpoint-e2e` — these are manual codepit runs,
+GitLab CI job runs `zerodds-endpoint-e2e` — these are manual Linux runs,
 not wired into CI (the `endpoints-nim` job covers only the wire core/examples,
 not reliable/E2E).
 
 Open items: the `zerodds-endpoint-e2e` tests (ping-pong + reliable) are not
-wired into GitLab CI — they run manually on codepit only. A true wait-free
+wired into GitLab CI — they run manually on the Linux test host only. A true wait-free
 SPSC ring instead of the lock-based `Channel` remains a possible further
 latency reduction (not an open spec item, see §4).

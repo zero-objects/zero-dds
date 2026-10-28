@@ -1,0 +1,11 @@
+wireprobe-omniorb: omniidl failed
+gen.idl:1: Syntax error in union declaration
+gen.idl:1: Syntax error in definition
+gen.idl:2: Syntax error in definition
+gen.idl:3: Syntax error in definition
+gen.idl:3: Syntax error in abstract valuetype
+gen.idl:4: Syntax error in definition
+gen.idl:5: Syntax error in definition
+gen.idl:5: Syntax error in abstract valuetype
+gen.idl:6: Syntax error in definition
+gen.idl:6: Syntax error in abstract valuetype

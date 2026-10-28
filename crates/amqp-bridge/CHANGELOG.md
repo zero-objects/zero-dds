@@ -15,7 +15,7 @@ Initial release materialization of the `zerodds-amqp-bridge` crate.
 
 **Type System (`types` module):**
 - `AmqpValue::{Null, Boolean, Ulong, Long, Str, Symbol, Binary, ...}`.
-- `FormatCode` + `codes::*` Format-Code-Konstanten.
+- `FormatCode` + `codes::*` Format-code constants.
 - `TypeError`.
 - `decode_value(input) -> Result<(AmqpValue, usize), TypeError>`.
 - `encode_null` / `encode_boolean` / `encode_long` / `encode_ulong` / `encode_string` / `encode_symbol` / `encode_binary`.

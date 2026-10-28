@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of recursive-mutual-optional that opendds produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	Error - tao_idl: illegal use of incomplete type, - ::zd_c1::m::B
+plain-cdr1	be	refused	Error - tao_idl: illegal use of incomplete type, - ::zd_c1::m::B
+pl-cdr1	le	refused	Error - tao_idl: illegal use of incomplete type, - ::zd_c1::m::B
+pl-cdr1	be	refused	Error - tao_idl: illegal use of incomplete type, - ::zd_c1::m::B
+plain-cdr2	le	refused	Error - tao_idl: illegal use of incomplete type, - ::zd_c1::m::B
+plain-cdr2	be	refused	Error - tao_idl: illegal use of incomplete type, - ::zd_c1::m::B
+delimited-cdr	le	refused	Error - tao_idl: illegal use of incomplete type, - ::zd_c1::m::B
+delimited-cdr	be	refused	Error - tao_idl: illegal use of incomplete type, - ::zd_c1::m::B
+pl-cdr2	le	refused	Error - tao_idl: illegal use of incomplete type, - ::zd_c1::m::B
+pl-cdr2	be	refused	Error - tao_idl: illegal use of incomplete type, - ::zd_c1::m::B

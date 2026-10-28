@@ -12,6 +12,7 @@
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::thread;
 
+use zerodds_xrce::handshake::{ClientRepresentation, XRCE_VERSION};
 use zerodds_xrce::header::{ClientKey, MessageHeader, SessionId, StreamId};
 use zerodds_xrce::serial_number::SerialNumber16;
 use zerodds_xrce::submessages::{CreateClientPayload, Message};
@@ -43,7 +44,15 @@ fn tls_handshake_and_message_roundtrip() {
         header,
         vec![
             CreateClientPayload {
-                representation: vec![b'X', b'R', b'C', b'E', 1, 0],
+                representation: ClientRepresentation {
+                    timestamp: None,
+                    version: XRCE_VERSION,
+                    vendor_id: [0, 0],
+                    client_key: ClientKey([0xCA, 0xFE, 0xBA, 0xBE]),
+                    session_id: 0,
+                    properties: None,
+                    requested_mtu: None,
+                },
             }
             .into_submessage()
             .unwrap(),

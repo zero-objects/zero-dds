@@ -5,10 +5,11 @@
 //! → `$OUT_DIR/corba_gen.rs`, wrapped in `pub mod corba_gen { … }`.
 //!
 //! Two-stage composition into ONE module:
-//!   1. **Data types** (struct/enum/union/exception) via
-//!      `zerodds-idl-rust` in `cdr_only` mode — only type declarations +
-//!      the classic `CdrEncode`/`CdrDecode`, without the `DdsType` impl, which
-//!      would pull in `zerodds_dcps`/`zerodds_types`/`zerodds_sql_filter`.
+//!   1. **Data types** (struct/enum/union) and their `encode`/`decode`
+//!      via `zerodds-lang-rules`, which replaced `zerodds-idl-rust`.
+//!      Its `cdr_only` flag has no counterpart and needs none: the
+//!      materialiser emits the declaration and the codec and nothing
+//!      else, so there is no `DdsType` impl to switch off.
 //!   2. **Interfaces** (stubs/skeletons) via `zerodds-corba-rust`.
 //!
 //! Both outputs are placed into the same `corba_gen` module so that the
@@ -17,6 +18,13 @@
 //! in the middle of a module) and replaced by a single module-top attribute.
 
 use std::path::PathBuf;
+
+use zerodds_ast::TypeKind;
+use zerodds_ast_layout::key::{Dialect, Encoding, Endianness, LayoutKey, Purpose};
+use zerodds_lang_rules::adapter::cst::{nest_by_module, rust_items};
+use zerodds_lang_rules::encode::rust_codec;
+use zerodds_lang_rules::rule::rust;
+use zerodds_lang_rules::{ModelGraph, apply};
 
 const FEATURE_MATRIX_IDL: &str = r#"
         interface Echo {
@@ -191,8 +199,14 @@ fn merge_modules(code: &str) -> String {
     passthrough.push_str(rest);
     let mut out = passthrough;
     for (name, body) in mods {
+        // `use super::*;` at the top of every generated module: the two
+        // columns put the runtime import at the file's top level, and a
+        // Rust module does not inherit its parent's `use`. Without it
+        // an `impl` inside `pub mod CosNaming` names a `Writer` that is
+        // not in scope — which is what appeared the moment the data
+        // column started nesting.
         out.push_str(&format!(
-            "\npub mod {name} {{\n{}\n}}\n",
+            "\npub mod {name} {{\nuse super::*;\n{}\n}}\n",
             merge_modules(&body)
         ));
     }
@@ -276,40 +290,95 @@ fn strip_inner_attrs(code: &str) -> String {
 }
 
 fn main() {
-    // Full 4.2 profile: enables all CORBA building blocks (oneway, attribute,
-    // interface, union, enum, exception, raises, …) — `default()` gates these.
-    let ast = zerodds_idl::parse(
-        FEATURE_MATRIX_IDL,
-        &zerodds_idl::config::ParserConfig::full_4_2(),
-    )
-    .expect("parse feature-matrix IDL");
+    // Stage 0: parse, lower, resolve. The resolve pass is the caller's
+    // — `zerodds-idl-lower` leaves a name it could not bind on the spot
+    // pending — and a model handed to either column without it has an
+    // unresolved type for every forward reference.
+    let parsed = zerodds_idl_parse::parse(FEATURE_MATRIX_IDL);
+    assert!(
+        parsed.diagnostics().iter().all(|d| !d.is_error()),
+        "the feature-matrix IDL must parse: {:?}",
+        parsed.diagnostics()
+    );
+    let lowered = zerodds_idl_lower::lower(&parsed.syntax(), "feature-matrix.idl");
+    assert!(
+        lowered.diagnostics.iter().all(|d| !d.is_error()),
+        "the feature-matrix IDL must lower: {:?}",
+        lowered.diagnostics
+    );
+    let mut ast = lowered.ast;
+    let report = ast.resolve_all_by_name().expect("a resolve pass");
+    assert!(
+        report.broken.is_empty(),
+        "every name in the feature-matrix IDL must resolve: {:?}",
+        report.broken
+    );
 
-    // Stage 1: data types (cdr_only — no DdsType/dcps).
-    let types = zerodds_idl_rust::generate_rust_module(
-        &ast,
-        &zerodds_idl_rust::RustGenOptions {
-            cdr_only: true,
-            ..Default::default()
-        },
-    )
-    .expect("generate idl-rust data types");
+    // Stage 1: the data types and their codecs, from
+    // `zerodds-lang-rules`, with the data rules a CORBA target needs
+    // (`rust::corba_data_catalogue`).
+    let graph = ModelGraph::of(&ast);
+    let applied = apply(&graph, &rust::corba_data_catalogue()).expect("apply the Rust rules");
+    let mut items = rust_items(&ast, &applied).expect("materialise the data types");
 
-    // Stage 2: interfaces (stubs/skeletons).
+    // The `encode` and `decode` beside the declarations. The key is
+    // omniORB's classic CDR, big-endian: that is what a GIOP request
+    // body carries (CORBA 3.3 part 2 §15.3) and what the generated
+    // stubs write.
+    let key = LayoutKey::in_dialect(
+        Dialect::OmniOrb,
+        Encoding::PlainCdr1,
+        Endianness::Big,
+        Purpose::Data,
+    );
+    // The codecs land in the same module as the declaration they are an
+    // `impl` of, which is why they are nested rather than appended.
+    let mut codecs = Vec::new();
+    for (id, node) in ast.types() {
+        if node.name.is_empty() {
+            continue;
+        }
+        if !matches!(
+            node.kind,
+            TypeKind::Structure { .. }
+                | TypeKind::Union { .. }
+                | TypeKind::Enumeration { .. }
+                | TypeKind::Bitmask { .. }
+                | TypeKind::Bitset { .. }
+        ) {
+            continue;
+        }
+        for item in rust_codec(&ast, id, key).expect("a codec for every declared data type") {
+            codecs.push((node.module, item));
+        }
+    }
+    items.extend(nest_by_module(&ast, codecs).expect("a scope for every codec's declaration"));
+
+    let file = zerodds_lang_cst::rust::File {
+        inner_attrs: Vec::new(),
+        doc: zerodds_lang_cst::common::Doc::none(),
+        uses: Vec::new(),
+        items,
+    };
+    let types = zerodds_lang_render::rust::file(&file);
+
+    // Stage 2: the interfaces — traits, stubs, skeletons.
     let ifaces = zerodds_corba_rust::generate_corba_rust_module(
         &ast,
         &zerodds_corba_rust::CorbaRustGenOptions::default(),
     )
-    .expect("generate corba-rust module");
+    .expect("generate the CORBA service module");
 
-    // Merge identically named `pub mod` from both passes (#4(4)) — otherwise
-    // double definition for module-nested IDLs (CosNaming, Notification).
+    // Merge identically named `pub mod` from both passes — otherwise a
+    // module-nested IDL (CosNaming, Notification) declares the module
+    // twice.
     let body = merge_modules(&format!(
         "{}\n{}",
         strip_inner_attrs(&types),
         strip_inner_attrs(&ifaces)
     ));
     let wrapped = format!(
-        "#[allow(warnings, clippy::all, clippy::pedantic)]\npub mod corba_gen {{\n#![allow(warnings, clippy::all, clippy::pedantic)]\n{body}\n}}\n"
+        "#[allow(warnings, clippy::all, clippy::pedantic)]\npub mod corba_gen {{\n#![allow(warnings, clippy::all, clippy::pedantic)]\nuse zerodds_wire::{{Reader, WireError, Writer}};\n{body}\n}}\n"
     );
     let out = PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR")).join("corba_gen.rs");
     std::fs::write(&out, wrapped).expect("write generated module");

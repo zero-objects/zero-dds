@@ -1,52 +1,52 @@
 # `zerodds/cpp-runtime`
 
-Sandbox-Runtime-Image fuer **C- und C++-Bindings** plus Build-Toolchain.
-Zielgruppe: Coding-Challenges in Zero-Learn-Sandboxes und allgemein
-Quickstart-Demos fuer C/C++-DDS-Entwicklung.
+Sandbox runtime image for **C and C++ bindings** plus a build toolchain.
+Target audience: coding challenges in Zero-Learn sandboxes and, in general,
+quickstart demos for C/C++ DDS development.
 
-Teil von [**ZeroDDS**](../../../README.md). Anders als die Daemon-Images
-liefert dieses Image **keinen ENTRYPOINT-Service**, sondern Tools +
-Library + Header. Lerner kompiliert eigenen Code im Container.
+Part of [**ZeroDDS**](../../../README.md). Unlike the daemon images,
+this image provides **no ENTRYPOINT service**, but tools +
+library + headers. The learner compiles their own code in the container.
 
-Ein **gemeinsames Image** fuer reines C **und** C++, weil die Toolchain
-identisch ist (clang, libzerodds.so, gemeinsame Header). Der Unterschied
-ist allein, welchen Compiler/Header der Lerner anspricht.
+One **shared image** for plain C **and** C++, because the toolchain
+is identical (clang, libzerodds.so, shared headers). The only difference
+is which compiler/headers the learner uses.
 
 ---
 
 ## Build
 
-Vom Repo-Root:
+From the repo root:
 
 ```bash
 docker build \
   -f packaging/docker/cpp-runtime/Dockerfile \
-  -t zerodds/cpp-runtime:rc3 \
+  -t zerodds/cpp-runtime:rc7 \
   .
 ```
 
-Erst-Build dauert 5-15 Min (cargo-chef-Cold-Cache, Rust-Compile von
-`zerodds-c-api`). Folge-Builds sind durch Layer-Caching deutlich
-schneller.
+The first build takes 5-15 min (cargo-chef cold cache, Rust compile of
+`zerodds-c-api`). Subsequent builds are considerably faster thanks to layer
+caching.
 
 ## Run
 
-Interaktive Shell (default CMD):
+Interactive shell (default CMD):
 
 ```bash
-docker run --rm -it zerodds/cpp-runtime:rc3
+docker run --rm -it zerodds/cpp-runtime:rc7
 ```
 
-Mit gemountetem Lerner-Code:
+With mounted learner code:
 
 ```bash
 docker run --rm -it \
   -v "$PWD/workspace:/workspace" \
-  zerodds/cpp-runtime:rc3 \
+  zerodds/cpp-runtime:rc7 \
   bash -c 'cd /workspace && make && ./app'
 ```
 
-Sandbox-Style (read-only-root, kein Netz nach aussen):
+Sandbox style (read-only root, no network to the outside):
 
 ```bash
 docker run --rm \
@@ -54,35 +54,36 @@ docker run --rm \
   --tmpfs /tmp:rw,size=64m \
   --network none \
   -v "$PWD/workspace:/workspace" \
-  zerodds/cpp-runtime:rc3 \
+  zerodds/cpp-runtime:rc7 \
   bash /workspace/run.sh
 ```
 
-## Was drin ist
+## What is inside
 
-| Komponente | Pfad |
+| Component | Path |
 | --- | --- |
 | `libzerodds.so` (cdylib) | `/usr/local/lib/libzerodds.so` |
-| C-Header (FFI) | `/usr/local/include/zerodds.h`, `/usr/local/include/zerodds_xcdr2.h` |
-| C++-RAII-Header (ZeroDDS-Style) | `/usr/local/include/zerodds/dds.hpp` |
-| C++-Header (OMG DDS-PSM-Cxx) | `/usr/local/include/dds/dds.hpp` |
-| `zerodds-idlc` | `/usr/local/bin/zerodds-idlc` (mit `--c` und `--cpp` Flag) |
-| Compiler | `clang`, `clang++` (`CC`/`CXX` voreingestellt) |
-| Build-Tools | `cmake`, `make`, `lld`, `pkg-config` |
+| `libzerodds_wire.a` (the one C++ wire codec, `runtime/cpp`) | `/usr/local/lib/libzerodds_wire.a` |
+| C headers (FFI) | `/usr/local/include/zerodds.h`, `/usr/local/include/zerodds_xcdr2.h` |
+| C++ RAII headers (ZeroDDS style) + wire codec headers | `/usr/local/include/zerodds/dds.hpp`, `/usr/local/include/zerodds/wire.hpp` |
+| C++ headers (OMG DDS-PSM-Cxx) | `/usr/local/include/dds/dds.hpp` |
+| `zerodds-idlc` | `/usr/local/bin/zerodds-idlc` (`generate --lang c`, `--lang c++`) |
+| Compiler | `clang`, `clang++` (`CC`/`CXX` preset) |
+| Build tools | `cmake`, `make`, `lld`, `pkg-config` |
 | Init | `tini` (PID 1) |
 
-`LD_LIBRARY_PATH` ist auf `/usr/local/lib` gesetzt, `ldconfig` hat
-`libzerodds.so` registriert — `clang -lzerodds` und `dlopen()` finden
-die Bibliothek ohne weitere Angaben.
+`LD_LIBRARY_PATH` is set to `/usr/local/lib`, `ldconfig` has
+registered `libzerodds.so` — `clang -lzerodds` and `dlopen()` find
+the library without further settings.
 
-## Lerner-Workflow — reines C
+## Learner workflow — plain C
 
 ```bash
-# IDL -> C-Header
-zerodds-idlc --c -o gen chat.idl
-# erzeugt gen/chat.h mit C-Typen und Codec-Stubs.
+# IDL -> C header
+zerodds-idlc generate --lang c --out gen chat.idl
+# generates gen/chat.h with C types and codec stubs.
 
-# Lerner schreibt main.c:
+# the learner writes main.c:
 cat > main.c <<'EOF'
 #include <stdio.h>
 #include <zerodds.h>
@@ -102,14 +103,16 @@ clang -std=c11 -Wall -Igen -L/usr/local/lib -lzerodds \
 ./chat-c
 ```
 
-## Lerner-Workflow — C++17
+## Learner workflow — C++17
 
 ```bash
-# IDL -> C++-Header
-zerodds-idlc --cpp -o gen chat.idl
-# erzeugt gen/chat.hpp mit RAII-Wrapper-Klassen + OMG-DDS-PSM-Cxx-Mapping.
+# IDL -> C++ header
+zerodds-idlc generate --lang c++ --cpp-mapping native --out gen chat.idl
+# generates gen/chat.hpp with the codec's structs (public fields) for
+# zerodds::TypedWriter<T>. Without `--cpp-mapping native` the default is the mapping
+# of DDS-PSM-Cxx 1.0 (classes with accessor functions, for dds::pub::DataWriter<T>).
 
-# Lerner schreibt main.cpp:
+# the learner writes main.cpp:
 cat > main.cpp <<'EOF'
 #include <iostream>
 #include <zerodds/dds.hpp>
@@ -124,25 +127,24 @@ int main() {
 }
 EOF
 
-clang++ -std=c++17 -Wall -Igen -L/usr/local/lib -lzerodds \
+clang++ -std=c++17 -Wall -Igen -L/usr/local/lib -lzerodds -lzerodds_wire \
         main.cpp -o chat-cpp
 ./chat-cpp
 ```
 
 ## Limits
 
-- **Discovery nur via Loopback-Multicast** im selben Container. Multi-
-  Host-Discovery braucht den `unicast static peer-list`
-  (`documentation/06-operations/deployment.md`), in RC3 noch `planned`.
-- **Keine system-Pakete-Installation zur Laufzeit** bei
-  `--read-only`-Mounts — alle Build-Tools muessen im Image sein
-  (sind sie: clang/cmake/make/lld/pkg-config).
-- Container-Start ~400 ms (kein Interpreter-Cold-Start).
+- **Discovery only via loopback multicast** within the same container.
+  Multi-host discovery uses unicast peers: `discovery.peers` / `ZERODDS_PEERS` (see `docs/doc-map/config.en.md`).
+- **No installation of system packages at runtime** with
+  `--read-only` mounts — all build tools must be in the image
+  (they are: clang/cmake/make/lld/pkg-config).
+- Container start ~400 ms (no interpreter cold start).
 
 ## See also
 
-- [`crates/zerodds-c-api/README.md`](../../../crates/zerodds-c-api/README.md) — C-FFI-Crate.
-- [`crates/cpp/README.md`](../../../crates/cpp/README.md) — C++-RAII-Wrapper-Crate.
-- [`crates/idl-cpp/README.md`](../../../crates/idl-cpp/README.md) — IDL→C++/C-Codegen (idl-cpp deckt beide Modi ueber `--c` / `--cpp` ab).
-- [`packaging/docker/py-runtime/`](../py-runtime/) — Python-Schwester-Image.
-- [`packaging/docker/ts-node-runtime/`](../ts-node-runtime/) — TS-Node-Schwester-Image.
+- [`crates/zerodds-c-api/README.md`](../../../crates/zerodds-c-api/README.md) — C-FFI crate.
+- [`crates/cpp/README.md`](../../../crates/cpp/README.md) — C++ RAII wrapper crate.
+- [`crates/idl-cpp/README.md`](../../../crates/idl-cpp/README.md) — IDL→C++/C codegen (idl-cpp covers both modes via `--c` / `--cpp`).
+- [`packaging/docker/py-runtime/`](../py-runtime/) — Python sibling image.
+- [`packaging/docker/ts-node-runtime/`](../ts-node-runtime/) — TS-Node sibling image.

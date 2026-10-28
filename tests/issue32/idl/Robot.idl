@@ -1,0 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Reporter-equivalent typed restart payload for issue #32.
+struct Robot {
+  unsigned long id;
+  unsigned long label;
+};

@@ -1,26 +1,111 @@
-.TH ZERODDS-ROS2-SHIM 1 "2026-05-06" "1.0.0-rc.1" "ZeroDDS Manual"
+.TH ZERODDS-ROS2-SHIM 1 "" "ZeroDDS" "ZeroDDS Manual"
 .SH NAME
 zerodds-ros2-shim \- ROS-2 RMW shim and diagnostics
 .SH SYNOPSIS
 .B zerodds-ros2-shim
-[\fB\-c\fR \fIFILE\fR]
-[\fB\-\-watch\fR]
-[\fB\-\-graph\-dump\fR \fIFILE\fR]
-[\fB\-\-validate\-only\fR]
+.I SUBCOMMAND
+[\fB\-\-config\fR \fIFILE\fR]
+[\fB\-\-set\fR \fIPATH\fR=\fIVALUE\fR]...
+[\fB\-\-check\-config\fR]
+[\fB\-\-domain\fR \fIID\fR]
 [\fB\-V\fR | \fB\-h\fR]
 .SH DESCRIPTION
 .B zerodds-ros2-shim
-is the diagnose- and bridge-companion to
+is the diagnostics tool of
 .BR rmw_zerodds_cpp ,
 the RMW implementation that lets ROS-2 nodes use ZeroDDS as their
-underlying middleware. The CLI in default mode prints the live
-ROS-graph; with
-.B \-\-watch
-it stays attached and emits structured updates whenever nodes/topics
-appear. Implements
-.IR zerodds-ros2-bridge-1.0 (7).
+middleware. It is not a daemon: rcl loads the RMW library into each node.
+The tool reads what the RMW reads \(em the runtime configuration
+.RI ( zerodds.yaml ,
+its drop-ins,
+.IR include: ,
+the environment) with its
+.B ros2
+section, see
+.BR zerodds-ros2.yaml (5)
+\(em and shows the mangling, the QoS profiles and overrides, discovery and
+security as a node would get them. Implements
+.IR docs/specs/zerodds-ros2-bridge-1.0.md .
+.SH SUBCOMMANDS
+.TP
+.B info
+Show the RMW-Compat-Level and the active mangling.
+.TP
+.B topics
+List the configured topic overrides.
+.TP
+.BI topic " ROS_TOPIC"
+Show the DDS topic for the given ROS topic under the configured mangling,
+and its override, if any.
+.TP
+.BI qos " PROFILE"
+Show a profile of
+.BR ros2.qos_profiles :
+.IR default ", " sensor_data ", " services ", " parameters ", " parameter_events ,
+or one the configuration adds. A field the profile leaves out keeps what the
+application requests.
+.TP
+.B enclaves
+Show the SROS2 enclave the RMW uses
+.RB ( security.enclave_dir ,
+env
+.BR ZERODDS_SECURITY_DIR ).
+.TP
+.BI validate " FILE"
+Validate FILE as a runtime base with its sibling FILE.d directory, as the RMW
+would read it from the system directory.
+.TP
+.B selftest
+Round-trip test (mangle + qos lookup).
+.TP
+.B catalog
+Print the JSON catalog (Spec \(sc5.2).
+.TP
+.B metrics
+Print the Prometheus metric-name catalog (\(sc8.2).
+.TP
+.B doctor
+Diagnose the RMW, environment, discovery and security setup.
+.TP
+.B graph
+Show the local participant and topic graph.
 .SH OPTIONS
-.BR \-c , \-\-watch , \-\-graph\-dump =\fIFILE\fR , \-\-validate\-only , \-V , \-h .
+.TP
+.BR \-\-config =\fIFILE\fR
+The runtime base, with drop-ins in its sibling FILE.d directory. Without it,
+zerodds.yaml and zerodds.d in the system configuration directory
+(/etc/zerodds on Linux) are read, as the RMW reads them; a missing file there
+means the built-in defaults. The RMW itself takes no flag; this option checks
+a file before it is installed.
+.TP
+.BR \-\-set " \fIPATH\fR=\fIVALUE\fR"
+One setting above every file, repeatable: a runtime setting or a
+.B ros2
+key.
+.TP
+.B \-\-check\-config
+Validate the runtime configuration and its
+.B ros2
+section, print every value with its origin, then exit (0 valid, 1 invalid).
+.PP
+.BR \-\-runtime\-config ,
+.B \-\-log\-level
+and
+.B \-\-enclave
+are refused with where the value belongs:
+.BR \-\-config ,
+.IR "\-\-ros\-args \-\-log\-level" ,
+.BR security.enclave_dir .
+.TP
+.BR \-\-domain =\fIID\fR
+Override
+.BR ROS_DOMAIN_ID .
+.TP
+.BR \-V ", " \-\-version
+Print version.
+.TP
+.BR \-h ", " \-\-help
+Show the option synopsis.
 .SH ENVIRONMENT
 .TP
 .B RMW_IMPLEMENTATION
@@ -31,9 +116,9 @@ to route the rcl-stack through ZeroDDS.
 .B ROS_DOMAIN_ID
 Standard ROS-2 domain id; mapped 1:1 onto DDS-Domain-ID.
 .SH FILES
-.IR /etc/zerodds/ros2-shim.yaml ", " /var/lib/zerodds/ros2-graph.json .
+.IR /etc/zerodds/zerodds.yaml ", " /etc/zerodds/zerodds.d/ .
 .SH SEE ALSO
-.BR zerodds-ros2-shim.yaml (5),
+.BR zerodds-ros2.yaml (5),
 .BR ros2cli (1).
 .SH AUTHORS
 ZeroDDS Contributors.

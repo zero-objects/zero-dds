@@ -5,6 +5,14 @@ SemVer per [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- The TCP locator kinds are `0x01F0_0004` / `0x01F0_0005` by default (see `zerodds-rtps`); `max_message_size` has a test.
+
+### Added
+
+- `Transport::max_message_size` is `framing::MAX_FRAME_SIZE` (DDSI-RTPS 2.5 §8.4.14.1).
+
 ## [1.0.0-rc.1] — 2026-05-05
 
 ### RC1 audit

@@ -3,7 +3,7 @@
 
 //! Crate `zerodds-security-pki`. Safety classification: **SAFE** (a pure wrapper around `rustls-webpki`; no raw-crypto code in this crate).
 //!
-//! PKI/X.509 backend for the DDS-Security 1.1 §8.3
+//! PKI/X.509 backend for the DDS-Security 1.2 §9.3/§10.3
 //! `AuthenticationPlugin` SPI: identity validation, handshake-token
 //! sign/verify, OCSP stapling liveness, CRL validation, delegation chains.
 //!
@@ -11,17 +11,20 @@
 //!
 //! Layer 4 — Core Services. Consumes `zerodds-security` (SPI).
 //!
-//! ## Public API (as of 1.0.0-rc.1)
+//! ## Public API
 //!
 //! - [`PkiAuthenticationPlugin`] — `AuthenticationPlugin` impl (X.509 + RSA-PSS + ECDSA-P256/P384 + Ed25519).
 //! - [`IdentityConfig`] / [`IdentityHandle`] — identity loading.
-//! - [`HandshakeToken`] / [`HandshakeError`] — handshake state machine (challenge/response).
-//! - [`AuthRequestMessage`] — `auth_request` token codec (spec §9.3.2.4).
+//! - [`handshake_token`] — the three `HandshakeMessageToken`s of §10.3.2.5: [`build_request_token`] / [`parse_request_token`] and the reply and final pairs.
+//! - [`AuthRequestToken`] — `auth_request` token codec (spec §9.3.2.4).
 //! - [`IdentityStatusToken`] — identity-status subscription (spec §8.3.2.13).
 //! - `ocsp` module — OCSP stapling validation (RFC 6960).
 //! - `crl` module — CRL online checks + cache.
 //! - `delegation` module — `DelegationLink` sign/verify + `DelegationChain`.
-//! - [`PskAuthenticationPlugin`] — PSK variant (spec §10.7).
+//! - [`PskAuthenticationPlugin`] — `DDS:Auth:PSK` (spec §10.7), and
+//!   [`PskHandshakeAuthenticationPlugin`], a PSK handshake of ZeroDDS.
+//! - `x509v1_compat` module — the explicitly switched-on X.509 v1
+//!   identity-certificate deviation from §10.3.1.3, off by default.
 //!
 //! # Architecture rationale
 //!
@@ -45,7 +48,8 @@
 //! let local = plugin.validate_with_config(cfg, [0xAA; 16])?;
 //! ```
 
-#![cfg_attr(not(feature = "std"), no_std)]
+// Needs `std`: the plugin state sits behind `std::sync`, OCSP goes over the network, and
+// x509-cert is built with its `std` feature.
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
@@ -110,6 +114,7 @@ pub(crate) mod compat {
 pub mod auth_request;
 pub mod crl;
 pub mod delegation;
+pub mod encrypted_key;
 pub mod guid_adjust;
 pub mod handshake_token;
 mod identity;
@@ -118,6 +123,8 @@ pub mod identity_token;
 mod ocsp;
 mod plugin;
 pub mod psk;
+pub mod subject;
+pub mod x509v1_compat;
 
 pub use auth_request::{
     AUTH_REQUEST_CLASS_ID, AuthRequestToken, FUTURE_CHALLENGE_KEY, auth_request_properties,
@@ -131,25 +138,49 @@ pub use delegation::{
 pub use guid_adjust::adjust_participant_guid_prefix;
 pub use handshake_token::{
     FinalBuildInput, FinalTokenView, ReplyBuildInput, ReplyTokenView, RequestBuildInput,
-    RequestTokenView, algo, build_final_token, build_reply_token, build_request_token, class_id,
-    compute_hash_c, final_signing_bytes, parse_final_token, parse_reply_token, parse_request_token,
-    prop, reply_signing_bytes, serialize_bin_prop_seq,
+    RequestTokenView, algo, build_auth_request_token, build_final_token, build_reply_token,
+    build_request_token, class_id, compute_hash_c, final_signing_bytes, parse_auth_request_token,
+    parse_final_token, parse_reply_token, parse_request_token, prop, reply_signing_bytes,
+    serialize_bin_prop_seq,
 };
-pub use identity::{CertKeyAlgo, IdentityConfig, PkiError, first_cert_der};
+pub use identity::{
+    CertKeyAlgo, IdentityConfig, IdentitySigner, PkiError, cert_key_algo, crls_der, first_cert_der,
+    private_key_pkcs8_der,
+};
 pub use identity_status::{
     IDENTITY_STATUS_CLASS_ID, IdentityStatusKind, IdentityStatusToken, KEY_EXPIRY_TIME,
     KEY_OCSP_RESPONSE, KEY_OCSP_STATUS, identity_status_properties,
 };
 pub use identity_token::{
     IDENTITY_TOKEN_CLASS_ID, IdentityToken, KEY_CA_ALGO, KEY_CA_SN, KEY_CERT_ALGO, KEY_CERT_SN,
-    build_identity_token_from_der, build_identity_token_from_pem, subject_match,
+    build_identity_token_from_der, build_identity_token_from_der_named,
+    build_identity_token_from_der_with, build_identity_token_from_pem,
+    build_identity_token_from_pem_named, certificate_algorithm_name, format_subject_name,
+    subject_match,
 };
-pub use ocsp::{OcspStatus, parse_ocsp_status, require_good_status};
-pub use plugin::PkiAuthenticationPlugin;
+pub use ocsp::{
+    OcspOutcome, OcspPolicy, OcspStatus, OcspUnreachable, OcspVerdict, build_request,
+    check_identity, parse_ocsp_status, query_responder, require_good_status, responder_urls,
+    verify_staple,
+};
+pub use plugin::{
+    AlgorithmNames, PERMISSIONS_CREDENTIAL_CERT, PkiAuthenticationPlugin, verify_der_signature,
+};
 pub use psk::{
     HKDF_INFO_SHARED_SECRET, PROP_PSK_ID, PROP_PSK_KEY_HEX, PskAuthenticationPlugin,
-    derive_psk_shared_secret,
+    PskHandshakeAuthenticationPlugin, SPEC_CLASS_ID as PSK_SPEC_CLASS_ID, derive_psk_shared_secret,
 };
+pub use subject::subject_attributes;
+pub use x509v1_compat::{
+    CertAcceptance, CertPolicy, LOG_CATEGORY_X509V1_DEVIATION, PROP_ACCEPT_X509V1_IDENTITY,
+    SPEC_CLAUSE_IDENTITY_CERTIFICATE, property_enables_deviation,
+};
+
+// The key-agreement suite `PkiAuthenticationPlugin::set_preferred_kx_suite`
+// takes. Re-exported so a caller configuring the plugin from a
+// `dds.sec.auth.key_establishment_algorithm` property (DDS-Security 1.2
+// §10.3.1 Table 50) does not need a second dependency just to name the type.
+pub use zerodds_security_keyexchange::KxSuite;
 
 // Re-exports from `zerodds-security` for easier user import.
 pub use zerodds_security::authentication::{

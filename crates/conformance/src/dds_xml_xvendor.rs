@@ -201,7 +201,7 @@ fn case_5_4_field_kind_xsd_mapping() -> CaseResult {
     }
 }
 
-/// Komplette DDS-XML Test-Suite.
+/// Complete DDS-XML test suite.
 pub const SUITE: &[TestCase] = &[
     TestCase {
         name: "ddsxml-6.2-decl-text",

@@ -37,16 +37,16 @@ fn reader_qos_default_is_best_effort() {
 #[test]
 fn durability_roundtrip_both_endian() {
     use crate::policies::{DurabilityKind, DurabilityQosPolicy};
-    use zerodds_cdr::{BufferReader, BufferWriter, Endianness};
+    use zerodds_wire::{Endianness, Reader, Writer};
 
     for endian in [Endianness::Little, Endianness::Big] {
         let p = DurabilityQosPolicy {
             kind: DurabilityKind::Transient,
         };
-        let mut w = BufferWriter::new(endian);
-        p.encode_into(&mut w).unwrap();
-        let bytes = w.into_bytes();
-        let mut r = BufferReader::new(&bytes, endian);
+        let mut w = Writer::new(endian);
+        p.encode_into(&mut w);
+        let bytes = w.finish();
+        let mut r = Reader::new(&bytes, endian);
         assert_eq!(DurabilityQosPolicy::decode_from(&mut r).unwrap(), p);
     }
 }
@@ -54,16 +54,16 @@ fn durability_roundtrip_both_endian() {
 #[test]
 fn history_roundtrip_big_endian() {
     use crate::policies::{HistoryKind, HistoryQosPolicy};
-    use zerodds_cdr::{BufferReader, BufferWriter, Endianness};
+    use zerodds_wire::{Endianness, Reader, Writer};
 
     let p = HistoryQosPolicy {
         kind: HistoryKind::KeepAll,
         depth: 0x1234_5678,
     };
-    let mut w = BufferWriter::new(Endianness::Big);
-    p.encode_into(&mut w).unwrap();
-    let bytes = w.into_bytes();
-    let mut r = BufferReader::new(&bytes, Endianness::Big);
+    let mut w = Writer::new(Endianness::Big);
+    p.encode_into(&mut w);
+    let bytes = w.finish();
+    let mut r = Reader::new(&bytes, Endianness::Big);
     assert_eq!(HistoryQosPolicy::decode_from(&mut r).unwrap(), p);
 }
 
@@ -183,31 +183,27 @@ fn try_from_u32_rejects_extreme_values() {
 #[test]
 fn strict_decoder_rejects_unknown_discriminator() {
     use crate::policies::{DurabilityQosPolicy, ReliabilityQosPolicy};
-    use zerodds_cdr::{BufferReader, DecodeError, Endianness};
+    use zerodds_wire::{Endianness, Reader};
 
     let bad = 99u32.to_le_bytes();
-    let mut r = BufferReader::new(&bad, Endianness::Little);
+    let mut r = Reader::new(&bad, Endianness::Little);
     let err = DurabilityQosPolicy::decode_from(&mut r).unwrap_err();
     assert!(matches!(
         err,
-        DecodeError::InvalidEnum {
-            kind: "DurabilityKind",
-            value: 99,
-        }
+        zerodds_wire::WireError::OutOfRange { expected, .. }
+                if expected.contains("DurabilityKind") && expected.contains("99")
     ));
 
     // Reliability
     let mut bad2 = alloc::vec::Vec::new();
     bad2.extend_from_slice(&99u32.to_le_bytes());
     bad2.extend_from_slice(&[0u8; 8]); // Duration fills bytes
-    let mut r = BufferReader::new(&bad2, Endianness::Little);
+    let mut r = Reader::new(&bad2, Endianness::Little);
     let err = ReliabilityQosPolicy::decode_from(&mut r).unwrap_err();
     assert!(matches!(
         err,
-        DecodeError::InvalidEnum {
-            kind: "ReliabilityKind",
-            ..
-        }
+        zerodds_wire::WireError::OutOfRange { expected, .. }
+                if expected.contains("ReliabilityKind")
     ));
 }
 

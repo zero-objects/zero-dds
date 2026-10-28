@@ -1,315 +1,136 @@
-//! Cross-vendor live-interop helpers for C5.5.
-//!
-//! Provides subprocess spawners for FastDDS and Cyclone tools that are
-//! executed over `ssh llvm@llvm` on the lab host. The structs hold the
-//! local child handle plus a `Drop` impl that kills the remote process
-//! via `pkill` — otherwise `fastdds shape` / `ddsperf` processes would
-//! linger on the VM.
-//!
-//! # Type strategy
-//!
-//! `RemoteSubprocess` is a generic wrapper: the `pkill_pattern`
-//! identifies the remote program, the local `Child` holds the
-//! SSH session. Without an SSH key, the lab password is piped in via
-//! `sshpass` — acceptable for a lab setup, to be replaced by
-//! key-based auth in production.
-//!
-//! # `#[ignore]` strategy
-//!
-//! All live tests are marked with `#[ignore]`. Locally:
-//!
-//! ```bash
-//! cargo test -p zerodds-discovery --features live-interop \
-//!     --test fastdds_live_pub -- --ignored --nocapture
-//! ```
-//!
-//! If you cannot reach the lab, read `live_host_available()` — as soon
-//! as the env var `LLVM_HOST_AVAILABLE=1` is not set AND `sshpass`
-//! or the host connection is missing, the helpers skip with a clear
-//! error message.
-
+//! Local vendor children for the existing live suites. No SSH or global cleanup.
 #![allow(dead_code, clippy::expect_used, clippy::print_stderr)]
 
-use core::time::Duration;
+use std::fs::OpenOptions;
+use std::io;
+use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
+use std::sync::atomic::{AtomicU64, Ordering};
 
-/// SSH user for the vendor lab host (see memory `reference_bench_hosts`).
-/// `llvm` was decommissioned (~2026-06); `codepit` is its replacement and
-/// hosts the vendor binaries (`/opt/cyclone/bin/ddsperf`, the FastDDS/OpenDDS
-/// shapes apps under `/root/xv-demos/`). Auth is key-based — NO password.
-pub const SSH_USER: &str = "root";
-/// SSH password for the lab host. Lab-only — production needs key auth.
-pub const SSH_PASS: &str = "";
-/// SSH hostname; resolved via `~/.ssh/config`.
-pub const SSH_HOST: &str = "codepit";
-/// Default timeout for live-subprocess bring-up.
-pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
-
-/// Reliability variant for FastDDS tools. `fastdds shape` accepts
-/// exactly these two variants (see `fastdds shape --help`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FastReliability {
     BestEffort,
     Reliable,
 }
-
-/// Durability variant for FastDDS tools.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FastDurability {
     Volatile,
     TransientLocal,
 }
-
-/// Complete QoS set for FastDDS tools.
 #[derive(Debug, Clone, Copy)]
 pub struct FastQos {
     pub reliability: FastReliability,
     pub durability: FastDurability,
 }
 
-impl FastQos {
-    /// Default for the `fastdds shape` default profile.
-    pub const DEFAULT: Self = Self {
-        reliability: FastReliability::Reliable,
-        durability: FastDurability::Volatile,
-    };
-
-    /// Maps to CLI flags for `fastdds shape`. `-r reliable|besteffort`,
-    /// `-d volatile|transient_local`.
-    pub fn cli_flags(&self) -> [&'static str; 4] {
-        let r = match self.reliability {
-            FastReliability::BestEffort => "besteffort",
-            FastReliability::Reliable => "reliable",
-        };
-        let d = match self.durability {
-            FastDurability::Volatile => "volatile",
-            FastDurability::TransientLocal => "transient_local",
-        };
-        ["-r", r, "-d", d]
-    }
-}
-
-/// Whether to attempt live cross-vendor interop. This is **explicit opt-in
-/// only** (`INTEROP_HOST_AVAILABLE=1`, or the legacy `LLVM_HOST_AVAILABLE`).
-///
-/// HISTORY / why opt-in: the old fallback returned `true` whenever `sshpass`
-/// happened to be installed locally, then SSHed to the now-dead `llvm` host —
-/// so on CI the spawns failed, the tests hit their early `return`, and counted
-/// as **passing in 0.02 s without exercising a single vendor sample** (silent
-/// false-green that masked XCDR2-default cross-vendor being unverified). Now
-/// nothing runs unless someone explicitly opts in on a host that can reach the
-/// vendor lab (`codepit`). See [`require_or_skip`] for the loud-skip / enforce
-/// behaviour.
-pub fn live_host_available() -> bool {
-    std::env::var("INTEROP_HOST_AVAILABLE").is_ok() || std::env::var("LLVM_HOST_AVAILABLE").is_ok()
-}
-
-/// Gate for a live cross-vendor test. Returns `true` if the test should run.
-///
-/// When the lab host is not opted-in:
-/// - `INTEROP_REQUIRE=1` set → **panics** (hard fail). Use this on a release
-///   gate so a missing vendor host can never silently pass.
-/// - otherwise → prints a single, greppable `INTEROP-SKIP[...]` line and
-///   returns `false` (the caller returns early). The skip is now **loud and
-///   visible** instead of an invisible `return`.
-#[must_use]
 pub fn require_or_skip(label: &str) -> bool {
-    if live_host_available() {
+    if std::env::var("INTEROP_REQUIRE").as_deref() == Ok("1")
+        || std::env::var("INTEROP_HOST_AVAILABLE").as_deref() == Ok("1")
+    {
         return true;
     }
-    let msg = format!(
-        "INTEROP-SKIP[{label}]: vendor lab host {SSH_USER}@{SSH_HOST} not opted-in \
-         (set INTEROP_HOST_AVAILABLE=1 on a host that can reach it)"
-    );
-    assert!(
-        std::env::var("INTEROP_REQUIRE").is_err(),
-        "{msg} — INTEROP_REQUIRE=1 set: refusing to pass a cross-vendor test that did not run"
-    );
-    eprintln!("⚠️  {msg} — skipping (set INTEROP_REQUIRE=1 to make this a failure)");
+    eprintln!("INTEROP-SKIP[{label}]: opt in with INTEROP_REQUIRE=1 and local vendor binaries");
     false
 }
 
-/// Generic SSH subprocess wrapper. `pkill_pattern` is the
-/// `pkill -f` argument with which `Drop` kills the remote process.
-pub struct RemoteSubprocess {
+#[derive(Debug)]
+pub struct VendorChild {
     child: Child,
-    pkill_pattern: String,
-    label: String,
+    log: PathBuf,
 }
 
-impl RemoteSubprocess {
-    /// Spawns `cmd` over `sshpass+ssh` on `llvm`. `pkill_pattern`
-    /// matches the remote process (regex-free, used as a substring
-    /// with `pkill -f`).
-    pub fn spawn(label: &str, cmd: &str, pkill_pattern: &str) -> std::io::Result<Self> {
-        let child = Command::new("sshpass")
-            .arg("-p")
-            .arg(SSH_PASS)
-            .arg("ssh")
-            .arg("-o")
-            .arg("StrictHostKeyChecking=no")
-            .arg("-o")
-            .arg("ConnectTimeout=5")
-            .arg(format!("{SSH_USER}@{SSH_HOST}"))
-            .arg(cmd)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
+impl VendorChild {
+    fn spawn(label: &str, command: &mut Command) -> io::Result<Self> {
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let directory =
+            std::env::var_os("INTEROP_LOG_DIR").map_or_else(std::env::temp_dir, PathBuf::from);
+        std::fs::create_dir_all(&directory)?;
+        let log = directory.join(format!(
+            "{label}-{}-{}.log",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        let file = OpenOptions::new().write(true).create_new(true).open(&log)?;
+        let child = command
+            .stdout(Stdio::from(file.try_clone()?))
+            .stderr(Stdio::from(file))
             .spawn()?;
-        Ok(Self {
-            child,
-            pkill_pattern: pkill_pattern.to_string(),
-            label: label.to_string(),
-        })
+        eprintln!("vendor pid={} log={}", child.id(), log.display());
+        Ok(Self { child, log })
     }
-
-    /// Synonym to make the caller code more readable.
-    pub fn label(&self) -> &str {
-        &self.label
+    pub fn ensure_running(&mut self) -> io::Result<()> {
+        if let Some(status) = self.child.try_wait()? {
+            return Err(io::Error::other(format!(
+                "vendor exited {status}: {}",
+                self.log.display()
+            )));
+        }
+        Ok(())
+    }
+    pub fn output(&self) -> io::Result<String> {
+        std::fs::read_to_string(&self.log)
     }
 }
-
-impl Drop for RemoteSubprocess {
+impl Drop for VendorChild {
     fn drop(&mut self) {
-        // Best-effort: kill the remote process, then the local SSH child.
-        let cmd = format!("pkill -f '{}' || true", self.pkill_pattern);
-        let _ = Command::new("sshpass")
-            .arg("-p")
-            .arg(SSH_PASS)
-            .arg("ssh")
-            .arg("-o")
-            .arg("StrictHostKeyChecking=no")
-            .arg(format!("{SSH_USER}@{SSH_HOST}"))
-            .arg(&cmd)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
 }
 
-/// Starts `fastdds shape publisher` on the Linux bench host.
-///
-/// We set `--domain` explicitly; the topic is one of the three
-/// shape topics (`Square`, `Triangle`, `Circle`) per FastDDS convention.
-/// Color `RED` as the default, because that is the first available one
-/// for the `fastdds shape` default profile.
-pub fn start_fastdds_pub(
-    topic: &str,
-    domain: u32,
-    qos: &FastQos,
-) -> std::io::Result<RemoteSubprocess> {
-    let flags = qos.cli_flags();
-    let cmd = format!(
-        "timeout 60 fastdds shape publisher --domain {} {} {} {} {} --topic {} --color RED \
-         > /tmp/fastdds_pub_{}.log 2>&1",
-        domain, flags[0], flags[1], flags[2], flags[3], topic, topic
-    );
-    RemoteSubprocess::spawn(
-        &format!("fastdds-pub:{topic}"),
-        &cmd,
-        &format!("fastdds shape publisher --domain {domain}"),
-    )
+fn start_fastdds(mode: &str, topic: &str, domain: u32, qos: &FastQos) -> io::Result<VendorChild> {
+    let binary = std::env::var_os("FASTDDS_SHAPES").ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::NotFound,
+            "FASTDDS_SHAPES must name the built local vendor client",
+        )
+    })?;
+    let mut command = Command::new(binary);
+    command.args([
+        mode,
+        topic,
+        &domain.to_string(),
+        match qos.reliability {
+            FastReliability::BestEffort => "besteffort",
+            FastReliability::Reliable => "reliable",
+        },
+        match qos.durability {
+            FastDurability::Volatile => "volatile",
+            FastDurability::TransientLocal => "transient_local",
+        },
+    ]);
+    VendorChild::spawn(&format!("fastdds-{mode}-{domain}-{topic}"), &mut command)
+}
+pub fn start_fastdds_pub(topic: &str, domain: u32, qos: &FastQos) -> io::Result<VendorChild> {
+    start_fastdds("pub", topic, domain, qos)
+}
+pub fn start_fastdds_sub(topic: &str, domain: u32, qos: &FastQos) -> io::Result<VendorChild> {
+    start_fastdds("sub", topic, domain, qos)
+}
+/// A Cyclone reader through the `cyclonedds` Python binding: `script` is
+/// run with `python3` (or `PYTHON`) and the given arguments; what it
+/// prints goes to the child's log.
+pub fn start_cyclone_python(label: &str, script: &str, args: &[String]) -> io::Result<VendorChild> {
+    let directory =
+        std::env::var_os("INTEROP_LOG_DIR").map_or_else(std::env::temp_dir, PathBuf::from);
+    std::fs::create_dir_all(&directory)?;
+    let path = directory.join(format!("{label}-{}.py", std::process::id()));
+    std::fs::write(&path, script)?;
+    let python = std::env::var_os("PYTHON").unwrap_or_else(|| "python3".into());
+    let mut command = Command::new(python);
+    command.arg("-u").arg(&path).args(args);
+    VendorChild::spawn(label, &mut command)
 }
 
-/// Starts `fastdds shape subscriber` on the Linux bench host.
-pub fn start_fastdds_sub(
-    topic: &str,
-    domain: u32,
-    qos: &FastQos,
-) -> std::io::Result<RemoteSubprocess> {
-    let flags = qos.cli_flags();
-    let cmd = format!(
-        "timeout 60 fastdds shape subscriber --domain {} {} {} {} {} --topic {} \
-         > /tmp/fastdds_sub_{}.log 2>&1",
-        domain, flags[0], flags[1], flags[2], flags[3], topic, topic
-    );
-    RemoteSubprocess::spawn(
-        &format!("fastdds-sub:{topic}"),
-        &cmd,
-        &format!("fastdds shape subscriber --domain {domain}"),
-    )
-}
-
-/// Starts `fastdds discovery` in server mode. The discovery-server spec
-/// lives in FastDDS' server-client discovery protocol (see FastDDS 2.9
-/// user manual §16). We set the GUID prefix to `44.53.00.5f.45.50...`
-/// (the default prefix documented by eProsima as a reference).
-pub fn start_fastdds_discovery_server(domain: u32, port: u16) -> std::io::Result<RemoteSubprocess> {
-    let cmd = format!(
-        "timeout 60 fastdds discovery -i 0 -d {domain} -p {port} \
-         > /tmp/fastdds_disc_{domain}.log 2>&1"
-    );
-    RemoteSubprocess::spawn(
-        &format!("fastdds-disc:{domain}"),
-        &cmd,
-        &format!("fastdds discovery -i 0 -d {domain}"),
-    )
-}
-
-/// Cyclone pub via `ddsperf` — needed for gap-filler tests
-/// (cyclone_typelookup_sub_side). `-D` is the duration in
-/// seconds, `-i` is the domain ID (see memory
-/// `reference_ddsperf_flags` — beware the flag trap).
-pub fn start_cyclone_ddsperf_pub(
-    domain: u32,
-    duration_secs: u32,
-) -> std::io::Result<RemoteSubprocess> {
-    let cmd = format!(
-        "CYCLONEDDS_URI=file:///tmp/cyc.xml timeout {} ddsperf -i {} -D {} pub 1Hz \
-         > /tmp/cyc_pub.log 2>&1",
-        duration_secs + 5,
-        domain,
-        duration_secs,
-    );
-    RemoteSubprocess::spawn(
-        &format!("cyc-pub:{domain}"),
-        &cmd,
-        &format!("ddsperf -i {domain}"),
-    )
-}
-
-/// Cyclone sub via `ddsperf`.
-pub fn start_cyclone_ddsperf_sub(
-    domain: u32,
-    duration_secs: u32,
-) -> std::io::Result<RemoteSubprocess> {
-    let cmd = format!(
-        "CYCLONEDDS_URI=file:///tmp/cyc.xml timeout {} ddsperf -i {} -D {} sub \
-         > /tmp/cyc_sub.log 2>&1",
-        duration_secs + 5,
-        domain,
-        duration_secs,
-    );
-    RemoteSubprocess::spawn(
-        &format!("cyc-sub:{domain}"),
-        &cmd,
-        &format!("ddsperf -i {domain}"),
-    )
-}
-
-/// Detects the local LAN IP — on macOS via `ipconfig`, on Linux via
-/// `hostname -I`. Needed for SPDP beacons (Cyclone/FastDDS
-/// send unicast replies to the locator announced in the beacon).
-pub fn detect_local_interface() -> Option<std::net::Ipv4Addr> {
-    if cfg!(target_os = "macos") {
-        if let Ok(out) = Command::new("ipconfig").args(["getifaddr", "en0"]).output() {
-            if let Ok(s) = core::str::from_utf8(&out.stdout) {
-                if let Ok(ip) = s.trim().parse::<std::net::Ipv4Addr>() {
-                    return Some(ip);
-                }
-            }
-        }
-    } else if let Ok(out) = Command::new("hostname").arg("-I").output() {
-        if let Ok(s) = core::str::from_utf8(&out.stdout) {
-            for tok in s.split_whitespace() {
-                if let Ok(ip) = tok.parse::<std::net::Ipv4Addr>() {
-                    if !ip.is_loopback() && !ip.is_link_local() {
-                        return Some(ip);
-                    }
-                }
-            }
-        }
-    }
-    None
+pub fn start_cyclone_ddsperf_sub(domain: u32, duration_secs: u32) -> io::Result<VendorChild> {
+    let binary = std::env::var_os("DDSPERF").unwrap_or_else(|| "ddsperf".into());
+    let mut command = Command::new(binary);
+    command.args([
+        "-i",
+        &domain.to_string(),
+        "-D",
+        &duration_secs.to_string(),
+        "sub",
+    ]);
+    VendorChild::spawn(&format!("cyclone-sub-{domain}"), &mut command)
 }

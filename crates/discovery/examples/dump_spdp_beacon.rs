@@ -2,7 +2,7 @@
 //!
 //! Invocation:
 //! ```bash
-//! cargo run --example dump_spdp_beacon -- 192.168.178.60 54321 42 > /tmp/beacon.bin
+//! cargo run --example dump_spdp_beacon -- 192.0.2.60 54321 42 > /tmp/beacon.bin
 //! ```
 //!
 //! Used for a multicast sanity check: copy the binary to the test host,
@@ -53,6 +53,7 @@ fn main() {
         metatraffic_unicast_locators: vec![Locator::udp_v4(ip, u32::from(uc_port))],
         metatraffic_multicast_locators: vec![Locator::udp_v4([239, 255, 0, 1], mc_port)],
         domain_id: Some(domain),
+        domain_tag: Default::default(),
         builtin_endpoint_set: flags,
         lease_duration: DdsDuration::from_secs(30),
         user_data: Vec::new(),
@@ -63,6 +64,11 @@ fn main() {
         sig_algo_info: None,
         kx_algo_info: None,
         sym_cipher_algo_info: None,
+        available_builtin_endpoints_ext: 0,
+        expects_inline_qos: false,
+        manual_liveliness_count: None,
+        builtin_endpoint_qos: None,
+        entity_name: None,
     };
 
     let mut beacon = SpdpBeacon::new(data);

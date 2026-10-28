@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of array-2d-primitives-unannotated that ros-cyclone produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	wireprobe-ros-package: Sample.flag: a multi-dimensional array, which rosidl's IDL parser refuses by name
+plain-cdr1	be	refused	wireprobe-ros-package: Sample.flag: a multi-dimensional array, which rosidl's IDL parser refuses by name
+pl-cdr1	le	refused	wireprobe-ros-package: Sample.flag: a multi-dimensional array, which rosidl's IDL parser refuses by name
+pl-cdr1	be	refused	wireprobe-ros-package: Sample.flag: a multi-dimensional array, which rosidl's IDL parser refuses by name
+plain-cdr2	le	no-version-2	
+plain-cdr2	be	no-version-2	
+delimited-cdr	le	no-version-2	
+delimited-cdr	be	no-version-2	
+pl-cdr2	le	no-version-2	
+pl-cdr2	be	no-version-2	

@@ -47,6 +47,27 @@ impl SessionId {
     pub fn carries_client_key(self) -> bool {
         self.0 <= 127
     }
+
+    /// `true` for `SESSION_ID_NONE_WITH_CLIENT_KEY` and
+    /// `SESSION_ID_NONE_WITHOUT_CLIENT_KEY`: the header belongs to no
+    /// session (Spec §8.3.2.1).
+    #[must_use]
+    pub fn is_none(self) -> bool {
+        self.0 == SESSION_ID_NONE_WITH_CLIENT_KEY || self.0 == SESSION_ID_NONE_WITHOUT_CLIENT_KEY
+    }
+
+    /// The `SESSION_ID_NONE_*` value that goes with a `session_id` of the
+    /// same kind: with a ClientKey in the header for 0 to 127, without for
+    /// 128 to 255 (Spec §8.3.2.1). A client's first message, the
+    /// CREATE_CLIENT, carries it, as the session does not exist yet.
+    #[must_use]
+    pub fn none_like(self) -> Self {
+        if self.carries_client_key() {
+            Self(SESSION_ID_NONE_WITH_CLIENT_KEY)
+        } else {
+            Self(SESSION_ID_NONE_WITHOUT_CLIENT_KEY)
+        }
+    }
 }
 
 /// `StreamId`. Values:
@@ -253,6 +274,19 @@ impl MessageHeader {
 mod tests {
     #![allow(clippy::expect_used, clippy::unwrap_used)]
     use super::*;
+
+    /// Spec §8.3.2.1: 0x00 and 0x80 are the "no session" values, one for each
+    /// kind of header; every other session id is a session.
+    #[test]
+    fn only_0x00_and_0x80_are_the_no_session_values() {
+        for v in 0..=255u8 {
+            assert_eq!(SessionId(v).is_none(), v == 0x00 || v == 0x80, "{v:#x}");
+        }
+        assert_eq!(SessionId(0x05).none_like(), SessionId(0x00));
+        assert_eq!(SessionId(0x7f).none_like(), SessionId(0x00));
+        assert_eq!(SessionId(0x81).none_like(), SessionId(0x80));
+        assert_eq!(SessionId(0xff).none_like(), SessionId(0x80));
+    }
 
     #[test]
     fn session_id_127_carries_client_key() {

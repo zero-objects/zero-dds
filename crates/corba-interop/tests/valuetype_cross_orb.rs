@@ -17,10 +17,10 @@
 
 use std::rc::Rc;
 
-use zerodds_cdr::{BufferReader, BufferWriter, CdrDecode, CdrEncode, Endianness};
 use zerodds_corba_interop::runtime::{IiopCorbaConnection, object_reference_from_ior};
 use zerodds_corba_rust::value_wire::{ValueMarshal, ValueReader, ValueRegistry, ValueWriter};
 use zerodds_corba_rust::{CorbaConnection, ValueBase};
+use zerodds_wire::{Endianness, Reader, Writer};
 
 #[derive(Debug, PartialEq, Eq)]
 struct Point {
@@ -33,18 +33,19 @@ impl ValueBase for Point {
     }
 }
 impl ValueMarshal for Point {
-    fn marshal_state(&self, w: &mut BufferWriter) -> Result<(), zerodds_cdr::EncodeError> {
-        self.x.encode(w)?;
-        self.y.encode(w)
+    fn marshal_state(&self, w: &mut Writer) -> Result<(), zerodds_wire::WireError> {
+        w.write_i32(self.x);
+        w.write_i32(self.y);
+        Ok(())
     }
 }
 fn registry() -> ValueRegistry {
     let mut reg = ValueRegistry::new();
     reg.register(
         "IDL:Point:1.0",
-        Box::new(|r: &mut BufferReader<'_>| {
-            let x = i32::decode(r)?;
-            let y = i32::decode(r)?;
+        Box::new(|r: &mut Reader<'_>| {
+            let x = r.read_i32()?;
+            let y = r.read_i32()?;
             Ok(Rc::new(Point { x, y }) as Rc<dyn core::any::Any>)
         }),
     );
@@ -52,23 +53,23 @@ fn registry() -> ValueRegistry {
 }
 
 #[test]
-#[ignore = "needs live foreign ValueEcho server via VALUEECHO_IOR env (codepit)"]
+#[ignore = "needs live foreign ValueEcho server via VALUEECHO_IOR env (Linux test host)"]
 fn valuetype_echo_against_foreign_server() {
     let ior = std::env::var("VALUEECHO_IOR").expect("VALUEECHO_IOR env");
     let oref = object_reference_from_ior(ior.trim()).expect("parse IOR");
     let conn = IiopCorbaConnection::new();
 
     // In-arg: marshal Point(42,-7) as a valuetype into the request body.
-    let mut w = BufferWriter::new(Endianness::Big);
+    let mut w = Writer::new(Endianness::Big);
     let p: Rc<dyn ValueMarshal> = Rc::new(Point { x: 42, y: -7 });
     ValueWriter::new().write(&mut w, Some(&p)).unwrap();
 
     let (reply, reply_e) = conn
-        .invoke(&oref, "echo", Endianness::Big, &w.into_bytes())
+        .invoke(&oref, "echo", Endianness::Big, &w.finish())
         .expect("foreign echo invoke");
 
     // Reply: the Point re-marshalled back by the foreign ORB.
-    let mut r = BufferReader::new(&reply, reply_e);
+    let mut r = Reader::new(&reply, reply_e);
     let got = ValueReader::new()
         .read(&mut r, 0, &registry())
         .unwrap()

@@ -1,0 +1,29 @@
+#!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 ZeroDDS Contributors
+#
+# wireprobe-endpoint-elixir — one IDL type and one JSON sample, through
+# the hand-written endpoint SDK in endpoints/elixir/lib/zerodds.ex.
+#
+# The same command line as every other column's probe, so a case runs
+# through any of them by substituting the program name:
+#
+#   wireprobe-endpoint-elixir --idl robot.idl --type common::Robot \
+#       --values robot.json --encoding plain-cdr2 --endian le \
+#       --out robot.endpoint-elixir.plain-cdr2.le.bin
+#
+# Binaries and bitstring syntax carry the wire — no NIF, no native
+# addon. `elixirc --warnings-as-errors` is pointed at the SDK as well as
+# at the generated file, and a warning printed at run time fails the cell
+# rather than being carried past: Elixir reports one and returns 0.
+#
+# The write direction only. This column measures what the SDK puts on
+# the wire.
+#
+# The body is tools/wireprobe/endpoint-common.sh; the fifteen differ only
+# in which compiler runs and which SDK is linked, and fifteen copies of
+# the caching and the exit codes would be fifteen places for them to
+# drift apart.
+set -uo pipefail
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/endpoint-common.sh"
+endpoint_probe elixir "$@"

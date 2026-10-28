@@ -1,0 +1,45 @@
+// The type the C TypeSupport test runs a sample of through the table:
+// every shape the walks over a decoded sample have to follow — a string,
+// a wstring and a fixed (text), sequences and a map (buffers), an array, a
+// union with a default arm, an @optional member, a recursion through an
+// @optional member, and a base type that holds the key, two members of it
+// (a derived structure defines no key fields of its own, XTypes 1.3
+// §7.2.2.4.5).
+module t {
+  enum Color { RED, GREEN, BLUE };
+
+  union Shape switch (Color) {
+    case RED: string label;
+    case GREEN: case BLUE: sequence<long> points;
+  };
+
+  union Small switch (long) {
+    case 1: long a;
+    default: string d;
+  };
+
+  struct Node;
+  @mutable struct Node {
+    long value;
+    @optional Node next;
+  };
+
+  @appendable struct Base {
+    @key string sensor;
+    @key long id;
+    string origin;
+  };
+
+  @appendable struct Reading : Base {
+    wstring text;
+    sequence<string> tags;
+    string pair[2];
+    map<string, long> counts;
+    Shape outline;
+    Small tiny;
+    @optional string note;
+    Node chain;
+    fixed<5,2> price;
+    sequence<sequence<string>> nested;
+  };
+};

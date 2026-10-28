@@ -1,0 +1,14 @@
+// a member typed by a name qualified from the enclosing module
+module outer {
+    module inner {
+        @final struct Point {
+            long x;
+            long y;
+        };
+    };
+
+    @final struct Sample {
+        outer::inner::Point point;
+        double b;
+    };
+};

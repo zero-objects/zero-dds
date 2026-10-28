@@ -1,0 +1,19 @@
+[package]
+name = "zerodds-float128"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "IEEE 754 binary128 in software: the sixteen bytes CDR gives `long double`, as a value type with exact conversions, IEEE comparison, and round-tripping decimal."
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/zerodds-float128"
+readme = "README.md"
+keywords = ["dds", "idl", "float128", "long-double"]
+categories = ["mathematics", "encoding"]
+
+[dependencies]
+
+[lints]
+workspace = true

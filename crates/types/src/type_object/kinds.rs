@@ -19,7 +19,7 @@ pub const TK_ENUM: u8 = 0x40;
 /// `bitmask`.
 pub const TK_BITMASK: u8 = 0x41;
 
-/// `annotation` (§7.2.2.2 = 0x50).
+/// `annotation` (Annex B, 0x50).
 pub const TK_ANNOTATION: u8 = 0x50;
 
 /// `struct` (§7.2.2.2 = 0x51).

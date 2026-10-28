@@ -12,7 +12,7 @@ import java.util.List;
 
 /**
  * Pure-Java multi-process bridge client for {@code zerodds-grpc-bridged}
- * (DDS-Java-PSM 1.0 §8.7, listener-callbacks spec §7.3 "gRPC-Bridge-Pfad").
+ * (DDS-Java-PSM 1.0 §8.7, listener-callbacks spec §7.3 "gRPC bridge path").
  *
  * <p>A Java process drives a DDS runtime that lives in a separate process via
  * gRPC: {@code Publish(Sample{payload})} writes opaque bytes to a DDS
@@ -86,7 +86,8 @@ public final class GrpcBridgeClient {
     /**
      * gRPC {@code Subscribe} on the topic service. Returns the next
      * {@code Sample.payload} the bridge has, or {@code null} when the DDS
-     * reader currently has no data (pull-based stream cardinality, §4.2).
+     * reader currently has no data (the gRPC stream carries one message per
+     * sample; there is no subscription state on the wire).
      */
     public byte[] subscribe(String servicePath) throws IOException {
         try (Socket sock = openAndHandshake()) {

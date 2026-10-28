@@ -97,7 +97,7 @@ defmodule Mix.Tasks.Compile.ZeroddsIdl do
 
   defp generate_one(idl, backend, output_dir, include_dirs, executable) do
     include_args = Enum.flat_map(include_dirs, &["-I", &1])
-    args = ["generate", idl, "--#{backend}", "-o", output_dir] ++ include_args
+    args = ["generate", "--lang", backend, "--out", output_dir] ++ include_args ++ [idl]
 
     case System.cmd(executable, args, stderr_to_stdout: true) do
       {_output, 0} ->

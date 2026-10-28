@@ -1,4 +1,0 @@
-// Fixture: sequence<long> becomes java.util.List<Integer>.
-struct Bag {
-    sequence<long> items;
-};

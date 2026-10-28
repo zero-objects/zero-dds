@@ -16,7 +16,7 @@ struct Reading {
     string label;
 
     ubyte[] marshal(Endian endian) {
-        auto w = Writer(endian);
+        auto w = Writer(endian, Encoding.XCDR2);
         w.putU32(id);
         w.putF32(value);
         w.putString(label);
@@ -25,7 +25,7 @@ struct Reading {
 }
 
 Reading decodeReading(const(ubyte)[] body) {
-    auto r = Reader(body, Endian.LE);
+    auto r = Reader(body, Endian.LE, Encoding.XCDR2);
     return Reading(r.getU32(), r.getF32(), r.getString());
 }
 
@@ -36,7 +36,7 @@ void main() {
     // Publisher: frame + feed 5 typed readings to the reader actor.
     foreach (i; 0 .. total) {
         auto rd = Reading(cast(uint)(0x2000 + i), 100.0f - i, format("sensor-%02d", i));
-        reader.feed(writeFrame(SessionNoKey, StreamBestEffort, i + 1, rd.marshal(Endian.LE)));
+        reader.feed(writeFrame(SessionNoKey, StreamBestEffort, i + 1, xrceObjectId(0x001, ObjkDataWriter), rd.marshal(Endian.LE)));
     }
 
     // Subscriber: recv each decoded body; decode every field; stop at `total`.

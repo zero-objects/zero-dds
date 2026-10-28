@@ -15,6 +15,29 @@ use alloc::vec::Vec;
 /// as 6).
 pub const OBSERVE_OPTION_NUMBER: u16 = 6;
 
+/// Spec §3.4 — 128 seconds after which a notification counts as
+/// fresher regardless of its sequence number.
+pub const FRESHNESS_WINDOW_MS: u64 = 128_000;
+
+/// Spec §3.4 "Reordering" — decides whether a newly received
+/// notification (`v2` at client-local time `t2_ms`) is fresher than
+/// the one currently stored (`v1` at `t1_ms`).
+///
+/// The spec states the rule as: the new notification is fresher iff
+/// `(v1 < v2 and v2 - v1 < 2^23)` or `(v1 > v2 and v1 - v2 > 2^23)`
+/// or `t2 > t1 + 128 seconds`.
+#[must_use]
+pub const fn notification_is_fresher(v1: u32, t1_ms: u64, v2: u32, t2_ms: u64) -> bool {
+    const HALF: u32 = 1 << 23;
+    if v1 < v2 && v2 - v1 < HALF {
+        return true;
+    }
+    if v1 > v2 && v1 - v2 > HALF {
+        return true;
+    }
+    t2_ms > t1_ms + FRESHNESS_WINDOW_MS
+}
+
 /// Observer entry per (resource path, token).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ObserverEntry {
@@ -162,5 +185,53 @@ mod tests {
     fn observers_of_unknown_returns_empty() {
         let r = ObserveRegistry::new();
         assert!(r.observers_of("nope").is_empty());
+    }
+
+    #[test]
+    fn notifications_are_ordered_by_sequence_number_per_spec_3_4() {
+        // RFC 7641 §3.4: v2 is fresher when it is ahead of v1 by less
+        // than 2^23 within the same 128-second window.
+        assert!(notification_is_fresher(10, 0, 11, 1_000));
+        assert!(!notification_is_fresher(11, 0, 10, 1_000));
+        // A step of exactly 2^23 is not "less than 2^23" — it stays
+        // stale, which is what keeps the wrap rule unambiguous.
+        assert!(!notification_is_fresher(0, 0, 1 << 23, 1_000));
+        assert!(notification_is_fresher(0, 0, (1 << 23) - 1, 1_000));
+    }
+
+    #[test]
+    fn wrapped_sequence_number_is_still_recognised_as_fresher() {
+        // §3.4, second clause: v1 > v2 but the gap exceeds 2^23, so
+        // the counter has wrapped past 2^24 and v2 is the newer one.
+        let v1 = 0x00ff_ffff;
+        let v2 = 2;
+        assert!(v1 > v2 && v1 - v2 > (1 << 23));
+        assert!(notification_is_fresher(v1, 0, v2, 1_000));
+    }
+
+    #[test]
+    fn notification_older_than_the_freshness_window_is_always_accepted() {
+        // §3.4, third clause: after 128 seconds the sequence-number
+        // comparison is abandoned and the new notification wins.
+        assert!(!notification_is_fresher(500, 0, 100, FRESHNESS_WINDOW_MS));
+        assert!(notification_is_fresher(
+            500,
+            0,
+            100,
+            FRESHNESS_WINDOW_MS + 1
+        ));
+        assert_eq!(FRESHNESS_WINDOW_MS, 128_000);
+    }
+
+    #[test]
+    fn deregister_ends_the_observe_relationship_per_spec_3_6() {
+        // §3.6: the server removes the client from the list of
+        // observers; no further notification is emitted for it.
+        let mut r = ObserveRegistry::new();
+        r.register("dds/Trade".into(), alloc::vec![7], alloc::vec![1]);
+        assert_eq!(r.next_seq("dds/Trade").len(), 1);
+        assert!(r.deregister("dds/Trade", &[7]));
+        assert!(r.next_seq("dds/Trade").is_empty());
+        assert_eq!(r.observer_count(), 0);
     }
 }

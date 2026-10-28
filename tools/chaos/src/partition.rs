@@ -3,47 +3,47 @@
 
 //! Network-Partition via `iptables` (Linux).
 //!
-//! Erstellt ein Set von INPUT/OUTPUT-Regeln das den Traffic zwischen
-//! konfigurierten IP-Gruppen blockiert. Phase-A: zwei Gruppen
-//! ("A", "B"). Konfiguration:
+//! Creates a set of INPUT/OUTPUT rules that blocks traffic between
+//! configured IP groups blocked. Phase-A: two groups
+//! ("A", "B"). Configuration:
 //!
-//! * Gruppe A = Liste von IPs/CIDRs
-//! * Gruppe B = Liste von IPs/CIDRs
+//! * Group A = list of IPs/CIDRs
+//! * Group B = list of IPs/CIDRs
 //!
-//! Das Tool fuegt fuer jede A↔B-Paarung eine DROP-Regel hinzu (in
-//! beiden Richtungen). `clear` entfernt sie wieder.
+//! The tool adds a DROP rule for each A↔B pairing (in
+//! both directions). `clear` removes them again.
 //!
-//! Auf Nicht-Linux-Plattformen sind die Funktionen Stubs.
+//! On non-Linux platforms the functions are stubs.
 
 #[cfg(target_os = "linux")]
 use std::process::Command;
 
-/// Partition-Konfig mit zwei Gruppen.
+/// Partition config with two groups.
 #[derive(Clone, Debug)]
 pub struct PartitionConfig {
-    /// Gruppe-A-IPs (oder CIDRs).
+    /// Group-A IPs (or CIDRs).
     pub group_a: Vec<String>,
-    /// Gruppe-B-IPs (oder CIDRs).
+    /// Group-B IPs (or CIDRs).
     pub group_b: Vec<String>,
 }
 
-/// Errors aus dem partition-Wrapper.
+/// Errors from the partition wrapper.
 #[derive(Debug)]
 pub enum PartitionError {
-    /// Plattform unterstuetzt kein iptables.
+    /// Platform does not support iptables.
     Unsupported,
-    /// Aufrufer hat nicht euid=0.
+    /// Caller does not have euid=0.
     NotRoot,
-    /// `iptables`-Binary nicht ausfuehrbar.
+    /// `iptables` binary not executable.
     Spawn(std::io::Error),
-    /// `iptables` returnte non-zero.
+    /// `iptables` returned non-zero.
     NonZeroExit {
-        /// Output-Mitschnitt.
+        /// Output capture.
         stderr: String,
         /// Exit-Code.
         code: Option<i32>,
     },
-    /// Empty-Group oder nur eine Gruppe.
+    /// Empty group or only one group.
     EmptyGroup,
 }
 
@@ -51,26 +51,26 @@ impl std::fmt::Display for PartitionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Unsupported => write!(f, "partition only on Linux"),
-            Self::NotRoot => write!(f, "iptables benoetigt root"),
-            Self::Spawn(e) => write!(f, "konnte iptables nicht starten: {e}"),
+            Self::NotRoot => write!(f, "iptables requires root"),
+            Self::Spawn(e) => write!(f, "could not start iptables: {e}"),
             Self::NonZeroExit { stderr, code } => {
-                write!(f, "iptables fehlgeschlagen (exit {code:?}): {stderr}")
+                write!(f, "iptables failed (exit {code:?}): {stderr}")
             }
-            Self::EmptyGroup => write!(f, "beide Gruppen muessen >=1 IP enthalten"),
+            Self::EmptyGroup => write!(f, "both groups must contain >=1 IP"),
         }
     }
 }
 
 impl std::error::Error for PartitionError {}
 
-/// Komment-Tag fuer iptables-Regeln, damit `clear` sie identifizieren
-/// kann.
+/// Comment tag for iptables rules so `clear` can identify them
+/// can.
 #[cfg(target_os = "linux")]
 const COMMENT_TAG: &str = "zerodds-chaos-partition";
 
 #[cfg(target_os = "linux")]
 fn require_root() -> Result<(), PartitionError> {
-    // SAFETY: geteuid ist read-only.
+    // SAFETY: geteuid is read-only.
     let euid = unsafe { libc_stub::geteuid() };
     if euid != 0 {
         Err(PartitionError::NotRoot)
@@ -79,10 +79,10 @@ fn require_root() -> Result<(), PartitionError> {
     }
 }
 
-/// Setzt die Partition-Regeln. Idempotent: ruft vorher `clear`.
+/// Sets the partition rules. Idempotent: calls `clear` first.
 ///
 /// # Errors
-/// Wie [`PartitionError`].
+/// See [`PartitionError`].
 #[cfg(target_os = "linux")]
 pub fn apply(cfg: &PartitionConfig) -> Result<(), PartitionError> {
     require_root()?;
@@ -122,7 +122,7 @@ pub fn apply(cfg: &PartitionConfig) -> Result<(), PartitionError> {
                 "-j",
                 "DROP",
             ])?;
-            // Plus INPUT/OUTPUT fuer same-host Setups (loopback-Tests)
+            // Plus INPUT/OUTPUT for same-host setups (loopback tests)
             run_iptables(&[
                 "-A",
                 "INPUT",
@@ -156,19 +156,19 @@ pub fn apply(cfg: &PartitionConfig) -> Result<(), PartitionError> {
     Ok(())
 }
 
-/// Stub fuer Nicht-Linux.
+/// Stub for non-Linux.
 #[cfg(not(target_os = "linux"))]
 pub fn apply(_cfg: &PartitionConfig) -> Result<(), PartitionError> {
     Err(PartitionError::Unsupported)
 }
 
-/// Entfernt alle iptables-Regeln mit unserem COMMENT_TAG.
+/// Removes all iptables rules with our COMMENT_TAG.
 #[cfg(target_os = "linux")]
 pub fn clear() -> Result<(), PartitionError> {
     require_root()?;
-    // Alle Regeln mit unserem Comment-Tag finden und droppen.
-    // iptables hat kein direktes "clear by comment" → wir listen
-    // mit -S, parsen, und droppen pro-Zeile.
+    // Find all rules with our comment tag and drop them.
+    // iptables has no direct "clear by comment" → we list
+    // with -S, parse, and drop per line.
     for chain in ["FORWARD", "INPUT", "OUTPUT"] {
         let out = Command::new("iptables")
             .args(["-S", chain])
@@ -189,7 +189,7 @@ pub fn clear() -> Result<(), PartitionError> {
     Ok(())
 }
 
-/// Stub fuer Nicht-Linux.
+/// Stub for non-Linux.
 #[cfg(not(target_os = "linux"))]
 pub fn clear() -> Result<(), PartitionError> {
     Err(PartitionError::Unsupported)
@@ -218,7 +218,7 @@ mod libc_stub {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)] // tests duerfen unwrap nutzen.
+#[allow(clippy::unwrap_used)] // tests may use unwrap.
 mod tests {
     use super::*;
 
@@ -249,7 +249,7 @@ mod tests {
         // SAFETY: geteuid read-only.
         let euid = unsafe { libc_stub::geteuid() };
         if euid != 0 {
-            // Without root we hit NotRoot first, was OK fuer den Test.
+            // Without root we hit NotRoot first, which is OK for the test.
             return;
         }
         let cfg = PartitionConfig {

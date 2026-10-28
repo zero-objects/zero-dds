@@ -44,7 +44,7 @@ now reports 1.
 Root-caused + fixed. The "~3×" was **not** polling, **not** the DDS core, **not**
 the codec, **not** the network path — it was the **same-host SHM carrier**.
 
-Decomposition (codepit, 64 B, reliable, 2-proc, localhost):
+Decomposition (Linux test host, 64 B, reliable, 2-proc, localhost):
 - dcps core (native reader, UDP): RTT **28 µs** ≈ Cyclone ddsperf **30 µs**.
 - c-api + listener + condvar, no Python (`zerodds-c-api/examples/capi_latency.rs`):
   RTT **18 µs** — beats Cyclone.

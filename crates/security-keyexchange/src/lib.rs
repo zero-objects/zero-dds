@@ -4,7 +4,8 @@
 //! Crate `zerodds-security-keyexchange`. Safety classification: **SAFE** (a thin wrapper around `ring::agreement` + `ring::hkdf`).
 //!
 //! X25519 / P-256 ephemeral Diffie-Hellman for the
-//! DDS-Security 1.1 authentication handshake (spec §8.3.2).
+//! DDS-Security 1.2 authentication handshake (spec §10.3.4; key
+//! establishment algorithms §8.3).
 //!
 //! ## Layer position
 //!
@@ -37,25 +38,32 @@
 //! assert_eq!(s1, s2);
 //! ```
 //!
-//! ## Public API (as of 1.0.0-rc.1)
+//! ## Public API
 //!
-//! - [`KeyExchange`] + [`KxSuite::X25519`] / [`KxSuite::EcdhP256`] —
-//!   ephemeral-DH roundtrip with deterministic SharedSecret derivation.
+//! - [`KeyExchange`] + [`KxSuite::EcdhP256`] (`ECDHE-CEUM+P256`,
+//!   `CryptoAlgorithm Id 0x21`) / [`KxSuite::EcdhP384`]
+//!   (`ECDHE-CEUM+P384`, `0x22`) / [`KxSuite::X25519`] — ephemeral-DH
+//!   roundtrip with deterministic SharedSecret derivation.
+//!
+//! [`KxSuite::DhModp2048_256`] is `DHE+MODP-2048-256` (`CryptoAlgorithm Id
+//! 0x20`, §8.3 Table 26): finite-field Diffie-Hellman over the RFC 5114 §2.3
+//! group, in `modp` (`ring` has no finite-field DH).
 //!
 //! ## Non-goals
 //!
-//! RSA-OAEP key transport (spec §8.3.2.11 as an optional alternative for
-//! legacy vendors without ECDH/X25519) is explicitly not in RC1: all
-//! relevant vendors (Cyclone DDS, FastDDS, RTI Connext) speak
-//! ECDH or X25519, and `ring 0.17` exposes no RSA encrypt API.
-//! If a concrete legacy use case appears, the path via
-//! the `rsa` crate is reintroduced as a major-2.0 additive extension.
+//! There is no RSA key transport in DDS-Security 1.2: §8.3 Table 26
+//! names the three DH suites above and nothing else. An earlier note
+//! here claimed "RSA-OAEP, spec §8.3.2.11"; that clause does not exist
+//! in the specification.
 
-#![cfg_attr(not(feature = "std"), no_std)]
+// Needs `std`: the key pairs are drawn from the backend's `SystemRandom`, an
+// operating-system random source.
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
 extern crate alloc;
+
+mod modp;
 
 // Crypto primitive backend: `ring` (default) or `aws-lc-rs` (FIPS, via `aws-lc`).
 // ring-API-compatible; the agreement/rand calls below go through `backend::`.
@@ -75,7 +83,9 @@ compile_error!(
 
 use alloc::vec::Vec;
 
-use crate::backend::agreement::{self, ECDH_P256, EphemeralPrivateKey, PublicKey, X25519};
+use crate::backend::agreement::{
+    self, ECDH_P256, ECDH_P384, EphemeralPrivateKey, PublicKey, X25519,
+};
 use crate::backend::rand::SystemRandom;
 use zerodds_security::error::{SecurityError, SecurityErrorKind, SecurityResult};
 
@@ -83,7 +93,7 @@ use zerodds_security::error::{SecurityError, SecurityErrorKind, SecurityResult};
 ///
 /// The default is `EcdhP256` (NIST P-256, `ECDH+prime256v1-CEUM`) — the
 /// cross-vendor-interoperable key agreement mandated by the
-/// DDS-Security-1.2 spec (§9.3.2.3.1) (cyclone/FastDDS/OpenDDS). `X25519` is **not** a spec algorithm,
+/// DDS-Security-1.2 spec (§10.3.1.4, §8.3 Table 26) (cyclone/FastDDS/OpenDDS). `X25519` is **not** a spec algorithm,
 /// but a ZeroDDS vendor extension — only opt-in between pure ZeroDDS peers
 /// (via `with_suite`), NEVER as a cross-vendor default.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -93,6 +103,16 @@ pub enum KxSuite {
     /// NIST P-256 ECDH. 65-byte uncompressed public key (0x04 || X || Y).
     /// Spec default (§9.3.2.3.1), cross-vendor.
     EcdhP256,
+    /// `ECDHE-CEUM+P384` — DDS-Security 1.2 §8.3 Table 26,
+    /// `CryptoAlgorithm Id 0x22`: the Cofactor Ephemeral Unified Model
+    /// over NIST P-384 (secp384r1). 97-byte uncompressed public key
+    /// (`0x04 || X || Y`).
+    EcdhP384,
+    /// `DHE+MODP-2048-256` — DDS-Security 1.2 §8.3 Table 26,
+    /// `CryptoAlgorithm Id 0x20`: the Diffie-Hellman public key of the 2048-bit
+    /// MODP group with 256-bit prime order subgroup of RFC 5114 §2.3, the
+    /// big-endian representation of the number (up to 256 octets).
+    DhModp2048_256,
 }
 
 impl Default for KxSuite {
@@ -108,13 +128,33 @@ impl KxSuite {
         match self {
             Self::X25519 => 32,
             Self::EcdhP256 => 65,
+            Self::EcdhP384 => 97,
+            // The largest; the public key is the number without leading zeros.
+            Self::DhModp2048_256 => modp::MODULUS_LEN,
         }
     }
 
-    fn algorithm(self) -> &'static agreement::Algorithm {
+    /// `CryptoAlgorithm Id` of the suite — DDS-Security 1.2 §8.3
+    /// Table 26. `None` for [`Self::X25519`], which the table does not
+    /// name and which therefore has no identifier to announce.
+    #[must_use]
+    pub const fn crypto_algorithm_id(self) -> Option<u8> {
         match self {
-            Self::X25519 => &X25519,
-            Self::EcdhP256 => &ECDH_P256,
+            Self::X25519 => None,
+            Self::EcdhP256 => Some(0x21),
+            Self::EcdhP384 => Some(0x22),
+            Self::DhModp2048_256 => Some(0x20),
+        }
+    }
+
+    /// The `ring` algorithm of an elliptic-curve suite; `None` for the
+    /// finite-field one.
+    fn algorithm(self) -> Option<&'static agreement::Algorithm> {
+        match self {
+            Self::X25519 => Some(&X25519),
+            Self::EcdhP256 => Some(&ECDH_P256),
+            Self::EcdhP384 => Some(&ECDH_P384),
+            Self::DhModp2048_256 => None,
         }
     }
 }
@@ -126,8 +166,18 @@ impl KxSuite {
 /// `agree_ephemeral` call, which enforces PFS (perfect forward secrecy).
 pub struct KeyExchange {
     suite: KxSuite,
-    private: EphemeralPrivateKey,
-    public: PublicKey,
+    key: Ephemeral,
+}
+
+/// The ephemeral key of a suite.
+enum Ephemeral {
+    /// `ring`: X25519, P-256, P-384.
+    Curve {
+        private: EphemeralPrivateKey,
+        public: PublicKey,
+    },
+    /// `DHE+MODP-2048-256`.
+    Modp(modp::ModpKey),
 }
 
 impl KeyExchange {
@@ -147,7 +197,31 @@ impl KeyExchange {
     /// see [`Self::new`].
     pub fn with_suite(suite: KxSuite) -> SecurityResult<Self> {
         let rng = SystemRandom::new();
-        let private = EphemeralPrivateKey::generate(suite.algorithm(), &rng).map_err(|_| {
+        let Some(algorithm) = suite.algorithm() else {
+            // Rejection sampling: x uniform in [1, q-1].
+            for _ in 0..64 {
+                let mut random = [0u8; 32];
+                crate::backend::rand::SecureRandom::fill(&rng, &mut random).map_err(|_| {
+                    SecurityError::new(
+                        SecurityErrorKind::CryptoFailed,
+                        "keyexchange: system RNG unavailable",
+                    )
+                })?;
+                let key = modp::ModpKey::from_random(&random);
+                zeroize::Zeroize::zeroize(&mut random);
+                if let Some(key) = key {
+                    return Ok(Self {
+                        suite,
+                        key: Ephemeral::Modp(key),
+                    });
+                }
+            }
+            return Err(SecurityError::new(
+                SecurityErrorKind::CryptoFailed,
+                "keyexchange: no private exponent in range after 64 draws",
+            ));
+        };
+        let private = EphemeralPrivateKey::generate(algorithm, &rng).map_err(|_| {
             SecurityError::new(
                 SecurityErrorKind::CryptoFailed,
                 "keyexchange: ephemeral-key generation failed",
@@ -161,8 +235,7 @@ impl KeyExchange {
         })?;
         Ok(Self {
             suite,
-            private,
-            public,
+            key: Ephemeral::Curve { private, public },
         })
     }
 
@@ -176,7 +249,10 @@ impl KeyExchange {
     /// suite-dependent (see [`KxSuite::public_key_len`]).
     #[must_use]
     pub fn public_key(&self) -> &[u8] {
-        self.public.as_ref()
+        match &self.key {
+            Ephemeral::Curve { public, .. } => public.as_ref(),
+            Ephemeral::Modp(key) => key.public(),
+        }
     }
 
     /// Derives the SharedSecret from the remote public key. Consumes
@@ -187,6 +263,16 @@ impl KeyExchange {
     /// * `CryptoFailed` if `ring` rejects the agreement (e.g.
     ///   small-subgroup attack, identity point, off-curve point).
     pub fn derive_shared_secret(self, remote_public_key: &[u8]) -> SecurityResult<Vec<u8>> {
+        let (private, algorithm) = match (self.key, self.suite.algorithm()) {
+            (Ephemeral::Modp(key), _) => return key.agree(remote_public_key),
+            (Ephemeral::Curve { private, .. }, Some(algorithm)) => (private, algorithm),
+            (Ephemeral::Curve { .. }, None) => {
+                return Err(SecurityError::new(
+                    SecurityErrorKind::Internal,
+                    "keyexchange: a curve key for a finite-field suite",
+                ));
+            }
+        };
         if remote_public_key.len() != self.suite.public_key_len() {
             return Err(SecurityError::new(
                 SecurityErrorKind::BadArgument,
@@ -197,7 +283,7 @@ impl KeyExchange {
                 ),
             ));
         }
-        let peer = agreement::UnparsedPublicKey::new(self.suite.algorithm(), remote_public_key);
+        let peer = agreement::UnparsedPublicKey::new(algorithm, remote_public_key);
         // Return the **raw** DH output (P-256: 32-byte X coordinate; X25519: 32-byte
         // shared secret) — NO additional HKDF. DDS-Security §9.3.2.5 / cyclone
         // `generate_shared_secret`: the SharedSecret is `SHA256(raw_dh)` (in
@@ -209,9 +295,9 @@ impl KeyExchange {
         // mirrors aws-lc-rs' API) kept the older 4-arg form with an `error_value`
         // and a fallible kdf (`FnOnce(&[u8]) -> Result<R, E>`).
         #[cfg(not(any(feature = "aws-lc", feature = "wolfcrypt")))]
-        let agreed = agreement::agree_ephemeral(self.private, &peer, |raw_dh| raw_dh.to_vec());
+        let agreed = agreement::agree_ephemeral(private, &peer, |raw_dh| raw_dh.to_vec());
         #[cfg(any(feature = "aws-lc", feature = "wolfcrypt"))]
-        let agreed = agreement::agree_ephemeral(self.private, peer, (), |raw_dh| {
+        let agreed = agreement::agree_ephemeral(private, peer, (), |raw_dh| {
             Ok::<Vec<u8>, ()>(raw_dh.to_vec())
         });
         let secret = agreed.map_err(|_| {
@@ -247,6 +333,27 @@ mod tests {
         let kx = KeyExchange::new().unwrap();
         assert_eq!(kx.public_key().len(), 65);
         assert_eq!(kx.public_key()[0], 0x04);
+    }
+
+    /// DDS-Security 1.2 §8.3 Table 26: `DHE+MODP-2048-256`, Id 0x20; the
+    /// public key is a number of up to 256 octets, and the two parties
+    /// derive the same secret.
+    #[test]
+    fn modp_2048_256_agrees_and_has_id_0x20() {
+        assert_eq!(KxSuite::DhModp2048_256.crypto_algorithm_id(), Some(0x20));
+        let alice = KeyExchange::with_suite(KxSuite::DhModp2048_256).unwrap();
+        let bob = KeyExchange::with_suite(KxSuite::DhModp2048_256).unwrap();
+        assert!(alice.public_key().len() <= 256 && alice.public_key().len() > 200);
+        assert_ne!(alice.public_key()[0], 0, "no leading zero");
+        let (a_pub, b_pub) = (alice.public_key().to_vec(), bob.public_key().to_vec());
+        let s1 = alice.derive_shared_secret(&b_pub).unwrap();
+        let s2 = bob.derive_shared_secret(&a_pub).unwrap();
+        assert_eq!(s1, s2);
+        let carol = KeyExchange::with_suite(KxSuite::DhModp2048_256).unwrap();
+        assert!(
+            carol.derive_shared_secret(&[1]).is_err(),
+            "1 is no public key"
+        );
     }
 
     #[test]
@@ -331,6 +438,45 @@ mod tests {
         let s2 = bob.derive_shared_secret(&a_pub).unwrap();
         assert_eq!(s1.len(), 32);
         assert_eq!(s1, s2);
+    }
+
+    /// DDS-Security 1.2 §8.3 Table 26 names `ECDHE-CEUM+P384` under
+    /// `CryptoAlgorithm Id 0x22`, with the Diffie-Hellman public key on
+    /// NIST P-384 (secp384r1). Uncompressed point over a 384-bit curve
+    /// is `0x04` plus two 48-octet coordinates = 97 octets, and two
+    /// parties must land on the same secret.
+    #[test]
+    fn p384_matches_the_spec_table_and_derives_one_shared_secret() {
+        assert_eq!(KxSuite::EcdhP384.crypto_algorithm_id(), Some(0x22));
+        assert_eq!(KxSuite::EcdhP256.crypto_algorithm_id(), Some(0x21));
+        assert_eq!(
+            KxSuite::X25519.crypto_algorithm_id(),
+            None,
+            "X25519 is not in Table 26 and has no id to announce"
+        );
+
+        let alice = KeyExchange::with_suite(KxSuite::EcdhP384).unwrap();
+        let bob = KeyExchange::with_suite(KxSuite::EcdhP384).unwrap();
+        assert_eq!(alice.public_key().len(), 97);
+        assert_eq!(alice.public_key()[0], 0x04, "uncompressed point");
+        assert_eq!(KxSuite::EcdhP384.public_key_len(), 97);
+
+        let a_pub = alice.public_key().to_vec();
+        let b_pub = bob.public_key().to_vec();
+        let s1 = alice.derive_shared_secret(&b_pub).unwrap();
+        let s2 = bob.derive_shared_secret(&a_pub).unwrap();
+        assert_eq!(s1, s2);
+        assert_ne!(a_pub, b_pub);
+    }
+
+    /// A P-384 endpoint must not accept a P-256 public key: the point
+    /// lies on a different curve and is the wrong length.
+    #[test]
+    fn p384_rejects_a_p256_public_key() {
+        let alice = KeyExchange::with_suite(KxSuite::EcdhP384).unwrap();
+        let bob = KeyExchange::with_suite(KxSuite::EcdhP256).unwrap();
+        let err = alice.derive_shared_secret(bob.public_key()).unwrap_err();
+        assert_eq!(err.kind, SecurityErrorKind::BadArgument);
     }
 
     #[test]

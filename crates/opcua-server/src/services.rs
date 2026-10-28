@@ -20,9 +20,10 @@ use zerodds_opcua_uacp::securechannel::node_ids;
 use zerodds_opcua_uacp::securechannel::{RequestHeader, ResponseHeader, null_extension_object};
 
 use crate::wire::{
-    read_array, read_byte_string, read_string, read_string_array, read_u32_array,
-    skip_diagnostic_info_array, write_array, write_byte_string, write_empty_diagnostic_info_array,
-    write_string, write_string_array, write_u32_array,
+    read_array, read_bool, read_byte_string, read_i64_array, read_string, read_string_array,
+    read_u32_array, skip_diagnostic_info_array, write_array, write_bool, write_byte_string,
+    write_empty_diagnostic_info_array, write_i64_array, write_string, write_string_array,
+    write_u32_array,
 };
 
 /// The `Value` attribute id (Part 4 §A.1).
@@ -1544,6 +1545,1003 @@ impl DeleteSubscriptionsResponse {
 }
 
 // ---------------------------------------------------------------------------
+// BrowseNext (Part 4 §5.9.3).
+// ---------------------------------------------------------------------------
+
+/// `BrowseNextRequest`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BrowseNextRequest {
+    /// Common request header.
+    pub request_header: RequestHeader,
+    /// `TRUE` frees the continuation points instead of continuing them.
+    pub release_continuation_points: bool,
+    /// The continuation points a previous Browse/BrowseNext returned.
+    pub continuation_points: Vec<Vec<u8>>,
+}
+
+impl BrowseNextRequest {
+    fn decode_body(r: &mut UaReader<'_>) -> Result<Self, DecodeError> {
+        let request_header = decode_request_header(r)?;
+        let release_continuation_points = r.read_u8()? != 0;
+        let n = r.read_i32()?;
+        let mut continuation_points = Vec::new();
+        if n > 0 {
+            let n = n as usize;
+            zerodds_opcua_pubsub::binary::check_array_len(
+                r,
+                n,
+                4,
+                "ContinuationPoint array length exceeds remaining bytes",
+            )?;
+            for _ in 0..n {
+                continuation_points.push(read_byte_string(r)?);
+            }
+        }
+        Ok(Self {
+            request_header,
+            release_continuation_points,
+            continuation_points,
+        })
+    }
+
+    fn encode_into(&self, w: &mut UaWriter) -> Result<(), EncodeError> {
+        node_ids::BROWSE_NEXT_REQUEST.encode(w)?;
+        encode_request_header(&self.request_header, w)?;
+        w.write_u8(u8::from(self.release_continuation_points));
+        let len = i32::try_from(self.continuation_points.len()).map_err(|_| {
+            EncodeError::LengthOverflow {
+                what: "ContinuationPoints",
+                len: self.continuation_points.len(),
+            }
+        })?;
+        w.write_i32(len);
+        for cp in &self.continuation_points {
+            write_byte_string(w, cp)?;
+        }
+        Ok(())
+    }
+}
+
+/// `BrowseNextResponse`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BrowseNextResponse {
+    /// Common response header.
+    pub response_header: ResponseHeader,
+    /// One result per continuation point.
+    pub results: Vec<BrowseResult>,
+}
+
+impl BrowseNextResponse {
+    fn decode_body(r: &mut UaReader<'_>) -> Result<Self, DecodeError> {
+        let response_header = decode_response_header(r)?;
+        let results = read_array::<BrowseResult>(r)?;
+        skip_diagnostic_info_array(r)?;
+        Ok(Self {
+            response_header,
+            results,
+        })
+    }
+
+    fn encode_into(&self, w: &mut UaWriter) -> Result<(), EncodeError> {
+        node_ids::BROWSE_NEXT_RESPONSE.encode(w)?;
+        encode_response_header(&self.response_header, w)?;
+        write_array(w, &self.results, "Results")?;
+        write_empty_diagnostic_info_array(w);
+        Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// ModifySubscription (Part 4 §5.14.3).
+// ---------------------------------------------------------------------------
+
+/// `ModifySubscriptionRequest`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ModifySubscriptionRequest {
+    /// Common request header.
+    pub request_header: RequestHeader,
+    /// The subscription to modify.
+    pub subscription_id: u32,
+    /// Requested publishing interval (ms).
+    pub requested_publishing_interval: f64,
+    /// Requested lifetime count.
+    pub requested_lifetime_count: u32,
+    /// Requested max keep-alive count.
+    pub requested_max_keep_alive_count: u32,
+    /// Max notifications per Publish (`0` = no limit).
+    pub max_notifications_per_publish: u32,
+    /// Relative priority.
+    pub priority: u8,
+}
+
+impl ModifySubscriptionRequest {
+    fn decode_body(r: &mut UaReader<'_>) -> Result<Self, DecodeError> {
+        Ok(Self {
+            request_header: decode_request_header(r)?,
+            subscription_id: r.read_u32()?,
+            requested_publishing_interval: r.read_f64()?,
+            requested_lifetime_count: r.read_u32()?,
+            requested_max_keep_alive_count: r.read_u32()?,
+            max_notifications_per_publish: r.read_u32()?,
+            priority: r.read_u8()?,
+        })
+    }
+
+    fn encode_into(&self, w: &mut UaWriter) -> Result<(), EncodeError> {
+        node_ids::MODIFY_SUBSCRIPTION_REQUEST.encode(w)?;
+        encode_request_header(&self.request_header, w)?;
+        w.write_u32(self.subscription_id);
+        w.write_f64(self.requested_publishing_interval);
+        w.write_u32(self.requested_lifetime_count);
+        w.write_u32(self.requested_max_keep_alive_count);
+        w.write_u32(self.max_notifications_per_publish);
+        w.write_u8(self.priority);
+        Ok(())
+    }
+}
+
+/// `ModifySubscriptionResponse`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ModifySubscriptionResponse {
+    /// Common response header.
+    pub response_header: ResponseHeader,
+    /// Revised publishing interval (ms).
+    pub revised_publishing_interval: f64,
+    /// Revised lifetime count.
+    pub revised_lifetime_count: u32,
+    /// Revised max keep-alive count.
+    pub revised_max_keep_alive_count: u32,
+}
+
+impl ModifySubscriptionResponse {
+    fn decode_body(r: &mut UaReader<'_>) -> Result<Self, DecodeError> {
+        Ok(Self {
+            response_header: decode_response_header(r)?,
+            revised_publishing_interval: r.read_f64()?,
+            revised_lifetime_count: r.read_u32()?,
+            revised_max_keep_alive_count: r.read_u32()?,
+        })
+    }
+
+    fn encode_into(&self, w: &mut UaWriter) -> Result<(), EncodeError> {
+        node_ids::MODIFY_SUBSCRIPTION_RESPONSE.encode(w)?;
+        encode_response_header(&self.response_header, w)?;
+        w.write_f64(self.revised_publishing_interval);
+        w.write_u32(self.revised_lifetime_count);
+        w.write_u32(self.revised_max_keep_alive_count);
+        Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// ModifyMonitoredItems (Part 4 §5.13.3).
+// ---------------------------------------------------------------------------
+
+/// `MonitoredItemModifyRequest` (Part 4 §5.13.3.2).
+#[derive(Debug, Clone, PartialEq)]
+pub struct MonitoredItemModifyRequest {
+    /// Server-assigned monitored item id.
+    pub monitored_item_id: u32,
+    /// The requested monitoring parameters.
+    pub requested_parameters: MonitoringParameters,
+}
+
+impl UaEncode for MonitoredItemModifyRequest {
+    fn encode(&self, w: &mut UaWriter) -> Result<(), EncodeError> {
+        w.write_u32(self.monitored_item_id);
+        self.requested_parameters.encode(w)?;
+        Ok(())
+    }
+}
+
+impl UaDecode for MonitoredItemModifyRequest {
+    fn decode(r: &mut UaReader<'_>) -> Result<Self, DecodeError> {
+        Ok(Self {
+            monitored_item_id: r.read_u32()?,
+            requested_parameters: MonitoringParameters::decode(r)?,
+        })
+    }
+}
+
+/// `MonitoredItemModifyResult` (Part 4 §5.13.3.2).
+#[derive(Debug, Clone, PartialEq)]
+pub struct MonitoredItemModifyResult {
+    /// Per-item StatusCode.
+    pub status_code: u32,
+    /// Revised sampling interval (ms).
+    pub revised_sampling_interval: f64,
+    /// Revised queue size.
+    pub revised_queue_size: u32,
+    /// Filter result (null when no filter errors occurred).
+    pub filter_result: ExtensionObject,
+}
+
+impl UaEncode for MonitoredItemModifyResult {
+    fn encode(&self, w: &mut UaWriter) -> Result<(), EncodeError> {
+        w.write_u32(self.status_code);
+        w.write_f64(self.revised_sampling_interval);
+        w.write_u32(self.revised_queue_size);
+        self.filter_result.encode(w)?;
+        Ok(())
+    }
+}
+
+impl UaDecode for MonitoredItemModifyResult {
+    fn decode(r: &mut UaReader<'_>) -> Result<Self, DecodeError> {
+        Ok(Self {
+            status_code: r.read_u32()?,
+            revised_sampling_interval: r.read_f64()?,
+            revised_queue_size: r.read_u32()?,
+            filter_result: ExtensionObject::decode(r)?,
+        })
+    }
+}
+
+/// `ModifyMonitoredItemsRequest`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ModifyMonitoredItemsRequest {
+    /// Common request header.
+    pub request_header: RequestHeader,
+    /// The subscription owning the items.
+    pub subscription_id: u32,
+    /// TimestampsToReturn for the modified items.
+    pub timestamps_to_return: i32,
+    /// The items to modify.
+    pub items_to_modify: Vec<MonitoredItemModifyRequest>,
+}
+
+impl ModifyMonitoredItemsRequest {
+    fn decode_body(r: &mut UaReader<'_>) -> Result<Self, DecodeError> {
+        Ok(Self {
+            request_header: decode_request_header(r)?,
+            subscription_id: r.read_u32()?,
+            timestamps_to_return: r.read_i32()?,
+            items_to_modify: read_array::<MonitoredItemModifyRequest>(r)?,
+        })
+    }
+
+    fn encode_into(&self, w: &mut UaWriter) -> Result<(), EncodeError> {
+        node_ids::MODIFY_MONITORED_ITEMS_REQUEST.encode(w)?;
+        encode_request_header(&self.request_header, w)?;
+        w.write_u32(self.subscription_id);
+        w.write_i32(self.timestamps_to_return);
+        write_array(w, &self.items_to_modify, "ItemsToModify")?;
+        Ok(())
+    }
+}
+
+/// `ModifyMonitoredItemsResponse`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ModifyMonitoredItemsResponse {
+    /// Common response header.
+    pub response_header: ResponseHeader,
+    /// One result per modified item.
+    pub results: Vec<MonitoredItemModifyResult>,
+}
+
+impl ModifyMonitoredItemsResponse {
+    fn decode_body(r: &mut UaReader<'_>) -> Result<Self, DecodeError> {
+        let response_header = decode_response_header(r)?;
+        let results = read_array::<MonitoredItemModifyResult>(r)?;
+        skip_diagnostic_info_array(r)?;
+        Ok(Self {
+            response_header,
+            results,
+        })
+    }
+
+    fn encode_into(&self, w: &mut UaWriter) -> Result<(), EncodeError> {
+        node_ids::MODIFY_MONITORED_ITEMS_RESPONSE.encode(w)?;
+        encode_response_header(&self.response_header, w)?;
+        write_array(w, &self.results, "Results")?;
+        write_empty_diagnostic_info_array(w);
+        Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// SetMonitoringMode (Part 4 §5.13.4) / DeleteMonitoredItems (§5.13.6).
+// ---------------------------------------------------------------------------
+
+/// `SetMonitoringModeRequest`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SetMonitoringModeRequest {
+    /// Common request header.
+    pub request_header: RequestHeader,
+    /// The subscription owning the items.
+    pub subscription_id: u32,
+    /// The MonitoringMode to set (Part 4 §7.23).
+    pub monitoring_mode: i32,
+    /// The items to set it on.
+    pub monitored_item_ids: Vec<u32>,
+}
+
+impl SetMonitoringModeRequest {
+    fn decode_body(r: &mut UaReader<'_>) -> Result<Self, DecodeError> {
+        Ok(Self {
+            request_header: decode_request_header(r)?,
+            subscription_id: r.read_u32()?,
+            monitoring_mode: r.read_i32()?,
+            monitored_item_ids: read_u32_array(r)?,
+        })
+    }
+
+    fn encode_into(&self, w: &mut UaWriter) -> Result<(), EncodeError> {
+        node_ids::SET_MONITORING_MODE_REQUEST.encode(w)?;
+        encode_request_header(&self.request_header, w)?;
+        w.write_u32(self.subscription_id);
+        w.write_i32(self.monitoring_mode);
+        write_u32_array(w, &self.monitored_item_ids)?;
+        Ok(())
+    }
+}
+
+/// `SetMonitoringModeResponse`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SetMonitoringModeResponse {
+    /// Common response header.
+    pub response_header: ResponseHeader,
+    /// One StatusCode per item.
+    pub results: Vec<u32>,
+}
+
+impl SetMonitoringModeResponse {
+    fn decode_body(r: &mut UaReader<'_>) -> Result<Self, DecodeError> {
+        let response_header = decode_response_header(r)?;
+        let results = read_u32_array(r)?;
+        skip_diagnostic_info_array(r)?;
+        Ok(Self {
+            response_header,
+            results,
+        })
+    }
+
+    fn encode_into(&self, w: &mut UaWriter) -> Result<(), EncodeError> {
+        node_ids::SET_MONITORING_MODE_RESPONSE.encode(w)?;
+        encode_response_header(&self.response_header, w)?;
+        write_u32_array(w, &self.results)?;
+        write_empty_diagnostic_info_array(w);
+        Ok(())
+    }
+}
+
+/// `DeleteMonitoredItemsRequest`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DeleteMonitoredItemsRequest {
+    /// Common request header.
+    pub request_header: RequestHeader,
+    /// The subscription owning the items.
+    pub subscription_id: u32,
+    /// The items to delete.
+    pub monitored_item_ids: Vec<u32>,
+}
+
+impl DeleteMonitoredItemsRequest {
+    fn decode_body(r: &mut UaReader<'_>) -> Result<Self, DecodeError> {
+        Ok(Self {
+            request_header: decode_request_header(r)?,
+            subscription_id: r.read_u32()?,
+            monitored_item_ids: read_u32_array(r)?,
+        })
+    }
+
+    fn encode_into(&self, w: &mut UaWriter) -> Result<(), EncodeError> {
+        node_ids::DELETE_MONITORED_ITEMS_REQUEST.encode(w)?;
+        encode_request_header(&self.request_header, w)?;
+        w.write_u32(self.subscription_id);
+        write_u32_array(w, &self.monitored_item_ids)?;
+        Ok(())
+    }
+}
+
+/// `DeleteMonitoredItemsResponse`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DeleteMonitoredItemsResponse {
+    /// Common response header.
+    pub response_header: ResponseHeader,
+    /// One StatusCode per item.
+    pub results: Vec<u32>,
+}
+
+impl DeleteMonitoredItemsResponse {
+    fn decode_body(r: &mut UaReader<'_>) -> Result<Self, DecodeError> {
+        let response_header = decode_response_header(r)?;
+        let results = read_u32_array(r)?;
+        skip_diagnostic_info_array(r)?;
+        Ok(Self {
+            response_header,
+            results,
+        })
+    }
+
+    fn encode_into(&self, w: &mut UaWriter) -> Result<(), EncodeError> {
+        node_ids::DELETE_MONITORED_ITEMS_RESPONSE.encode(w)?;
+        encode_response_header(&self.response_header, w)?;
+        write_u32_array(w, &self.results)?;
+        write_empty_diagnostic_info_array(w);
+        Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// SetTriggering (Part 4 §5.13.5).
+// ---------------------------------------------------------------------------
+
+/// `SetTriggeringRequest`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SetTriggeringRequest {
+    /// Common request header.
+    pub request_header: RequestHeader,
+    /// The subscription owning the items.
+    pub subscription_id: u32,
+    /// The triggering item.
+    pub triggering_item_id: u32,
+    /// Links to add (processed after `links_to_remove`).
+    pub links_to_add: Vec<u32>,
+    /// Links to remove (processed first).
+    pub links_to_remove: Vec<u32>,
+}
+
+impl SetTriggeringRequest {
+    fn decode_body(r: &mut UaReader<'_>) -> Result<Self, DecodeError> {
+        Ok(Self {
+            request_header: decode_request_header(r)?,
+            subscription_id: r.read_u32()?,
+            triggering_item_id: r.read_u32()?,
+            links_to_add: read_u32_array(r)?,
+            links_to_remove: read_u32_array(r)?,
+        })
+    }
+
+    fn encode_into(&self, w: &mut UaWriter) -> Result<(), EncodeError> {
+        node_ids::SET_TRIGGERING_REQUEST.encode(w)?;
+        encode_request_header(&self.request_header, w)?;
+        w.write_u32(self.subscription_id);
+        w.write_u32(self.triggering_item_id);
+        write_u32_array(w, &self.links_to_add)?;
+        write_u32_array(w, &self.links_to_remove)?;
+        Ok(())
+    }
+}
+
+/// `SetTriggeringResponse`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SetTriggeringResponse {
+    /// Common response header.
+    pub response_header: ResponseHeader,
+    /// One StatusCode per added link.
+    pub add_results: Vec<u32>,
+    /// One StatusCode per removed link.
+    pub remove_results: Vec<u32>,
+}
+
+impl SetTriggeringResponse {
+    fn decode_body(r: &mut UaReader<'_>) -> Result<Self, DecodeError> {
+        let response_header = decode_response_header(r)?;
+        let add_results = read_u32_array(r)?;
+        skip_diagnostic_info_array(r)?;
+        let remove_results = read_u32_array(r)?;
+        skip_diagnostic_info_array(r)?;
+        Ok(Self {
+            response_header,
+            add_results,
+            remove_results,
+        })
+    }
+
+    fn encode_into(&self, w: &mut UaWriter) -> Result<(), EncodeError> {
+        node_ids::SET_TRIGGERING_RESPONSE.encode(w)?;
+        encode_response_header(&self.response_header, w)?;
+        write_u32_array(w, &self.add_results)?;
+        write_empty_diagnostic_info_array(w);
+        write_u32_array(w, &self.remove_results)?;
+        write_empty_diagnostic_info_array(w);
+        Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Republish (Part 4 §5.14.6) / TransferSubscriptions (§5.14.7).
+// ---------------------------------------------------------------------------
+
+/// `RepublishRequest`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RepublishRequest {
+    /// Common request header.
+    pub request_header: RequestHeader,
+    /// The subscription to republish from.
+    pub subscription_id: u32,
+    /// The sequence number to retransmit.
+    pub retransmit_sequence_number: u32,
+}
+
+impl RepublishRequest {
+    fn decode_body(r: &mut UaReader<'_>) -> Result<Self, DecodeError> {
+        Ok(Self {
+            request_header: decode_request_header(r)?,
+            subscription_id: r.read_u32()?,
+            retransmit_sequence_number: r.read_u32()?,
+        })
+    }
+
+    fn encode_into(&self, w: &mut UaWriter) -> Result<(), EncodeError> {
+        node_ids::REPUBLISH_REQUEST.encode(w)?;
+        encode_request_header(&self.request_header, w)?;
+        w.write_u32(self.subscription_id);
+        w.write_u32(self.retransmit_sequence_number);
+        Ok(())
+    }
+}
+
+/// `RepublishResponse`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RepublishResponse {
+    /// Common response header.
+    pub response_header: ResponseHeader,
+    /// The retransmitted NotificationMessage.
+    pub notification_message: NotificationMessage,
+}
+
+impl RepublishResponse {
+    fn decode_body(r: &mut UaReader<'_>) -> Result<Self, DecodeError> {
+        Ok(Self {
+            response_header: decode_response_header(r)?,
+            notification_message: NotificationMessage::decode(r)?,
+        })
+    }
+
+    fn encode_into(&self, w: &mut UaWriter) -> Result<(), EncodeError> {
+        node_ids::REPUBLISH_RESPONSE.encode(w)?;
+        encode_response_header(&self.response_header, w)?;
+        self.notification_message.encode(w)?;
+        Ok(())
+    }
+}
+
+/// `TransferResult` (Part 4 §5.14.7.2).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TransferResult {
+    /// Per-subscription StatusCode.
+    pub status_code: u32,
+    /// Sequence numbers still in the retransmission queue.
+    pub available_sequence_numbers: Vec<u32>,
+}
+
+impl UaEncode for TransferResult {
+    fn encode(&self, w: &mut UaWriter) -> Result<(), EncodeError> {
+        w.write_u32(self.status_code);
+        write_u32_array(w, &self.available_sequence_numbers)?;
+        Ok(())
+    }
+}
+
+impl UaDecode for TransferResult {
+    fn decode(r: &mut UaReader<'_>) -> Result<Self, DecodeError> {
+        Ok(Self {
+            status_code: r.read_u32()?,
+            available_sequence_numbers: read_u32_array(r)?,
+        })
+    }
+}
+
+/// `TransferSubscriptionsRequest`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TransferSubscriptionsRequest {
+    /// Common request header.
+    pub request_header: RequestHeader,
+    /// The subscriptions to transfer to this session.
+    pub subscription_ids: Vec<u32>,
+    /// Whether the first Publish after the transfer repeats current values.
+    pub send_initial_values: bool,
+}
+
+impl TransferSubscriptionsRequest {
+    fn decode_body(r: &mut UaReader<'_>) -> Result<Self, DecodeError> {
+        Ok(Self {
+            request_header: decode_request_header(r)?,
+            subscription_ids: read_u32_array(r)?,
+            send_initial_values: r.read_u8()? != 0,
+        })
+    }
+
+    fn encode_into(&self, w: &mut UaWriter) -> Result<(), EncodeError> {
+        node_ids::TRANSFER_SUBSCRIPTIONS_REQUEST.encode(w)?;
+        encode_request_header(&self.request_header, w)?;
+        write_u32_array(w, &self.subscription_ids)?;
+        w.write_u8(u8::from(self.send_initial_values));
+        Ok(())
+    }
+}
+
+/// `TransferSubscriptionsResponse`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TransferSubscriptionsResponse {
+    /// Common response header.
+    pub response_header: ResponseHeader,
+    /// One result per subscription.
+    pub results: Vec<TransferResult>,
+}
+
+impl TransferSubscriptionsResponse {
+    fn decode_body(r: &mut UaReader<'_>) -> Result<Self, DecodeError> {
+        let response_header = decode_response_header(r)?;
+        let results = read_array::<TransferResult>(r)?;
+        skip_diagnostic_info_array(r)?;
+        Ok(Self {
+            response_header,
+            results,
+        })
+    }
+
+    fn encode_into(&self, w: &mut UaWriter) -> Result<(), EncodeError> {
+        node_ids::TRANSFER_SUBSCRIPTIONS_RESPONSE.encode(w)?;
+        encode_response_header(&self.response_header, w)?;
+        write_array(w, &self.results, "Results")?;
+        write_empty_diagnostic_info_array(w);
+        Ok(())
+    }
+}
+
+/// `StatusChangeNotification` (Part 4 §7.25.4) — the notification a
+/// Subscription sends when its status changes (e.g. `Bad_Timeout` on lifetime
+/// expiry, `Good_SubscriptionTransferred` to the session it left).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StatusChangeNotification {
+    /// The StatusCode that indicates the status change.
+    pub status: u32,
+}
+
+impl StatusChangeNotification {
+    /// Wraps this notification in its `ExtensionObject` (TypeId 820).
+    ///
+    /// # Errors
+    /// [`EncodeError`] on an oversized field.
+    pub fn to_extension_object(&self) -> Result<ExtensionObject, EncodeError> {
+        let mut w = UaWriter::new();
+        w.write_u32(self.status);
+        // The DiagnosticInfo of the status change; we emit the empty form.
+        w.write_u8(0);
+        Ok(ExtensionObject {
+            type_id: node_ids::STATUS_CHANGE_NOTIFICATION,
+            body: ExtensionObjectBody::ByteString(w.into_vec()),
+        })
+    }
+
+    /// Recovers a `StatusChangeNotification` from its `ExtensionObject`.
+    ///
+    /// # Errors
+    /// [`DecodeError`] if the body is not a matching ByteString.
+    pub fn from_extension_object(eo: &ExtensionObject) -> Result<Self, DecodeError> {
+        match &eo.body {
+            ExtensionObjectBody::ByteString(b) => {
+                let mut r = UaReader::new(b);
+                let status = r.read_u32()?;
+                crate::wire::skip_one_diagnostic_info(&mut r)?;
+                Ok(Self { status })
+            }
+            _ => Err(DecodeError::MalformedMessage {
+                message: "StatusChangeNotification ExtensionObject is not a ByteString body",
+            }),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// HistoryRead (Part 4 §5.10.3; the HistoryReadDetails/HistoryData shapes are
+// OPC UA Part 11 §6 — Historical Access).
+// ---------------------------------------------------------------------------
+
+/// `ReadRawModifiedDetails` (Part 11 §6.4.3, Table 35) — a time-range read.
+/// `is_read_modified` names the "Read Modified" function (superseded
+/// values a Server kept after an update) — DDS has no concept of a sample
+/// being modified after the fact, only disposed/replaced, so this gateway
+/// always writes/expects `false` and [`crate::server::Server`] refuses a
+/// request with it `true` (`Bad_HistoryOperationUnsupported`) rather than
+/// silently answering as if it were a plain raw read.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ReadRawModifiedDetails {
+    /// `true` = Read Modified (not supported here), `false` = Read Raw.
+    pub is_read_modified: bool,
+    /// Start of the requested period (`UtcTime`, DateTime ticks).
+    pub start_time: i64,
+    /// End of the requested period.
+    pub end_time: i64,
+    /// Maximum number of values returned for any one node (`0` = unlimited).
+    pub num_values_per_node: u32,
+    /// Whether boundary values outside the range should be included.
+    pub return_bounds: bool,
+}
+
+impl ReadRawModifiedDetails {
+    fn to_extension_object(&self) -> Result<ExtensionObject, EncodeError> {
+        let mut w = UaWriter::new();
+        write_bool(&mut w, self.is_read_modified);
+        w.write_i64(self.start_time);
+        w.write_i64(self.end_time);
+        w.write_u32(self.num_values_per_node);
+        write_bool(&mut w, self.return_bounds);
+        Ok(ExtensionObject {
+            type_id: node_ids::READ_RAW_MODIFIED_DETAILS,
+            body: ExtensionObjectBody::ByteString(w.into_vec()),
+        })
+    }
+
+    fn from_extension_object(eo: &ExtensionObject) -> Result<Self, DecodeError> {
+        match &eo.body {
+            ExtensionObjectBody::ByteString(b) => {
+                let mut r = UaReader::new(b);
+                Ok(Self {
+                    is_read_modified: read_bool(&mut r)?,
+                    start_time: r.read_i64()?,
+                    end_time: r.read_i64()?,
+                    num_values_per_node: r.read_u32()?,
+                    return_bounds: read_bool(&mut r)?,
+                })
+            }
+            _ => Err(DecodeError::MalformedMessage {
+                message: "ReadRawModifiedDetails ExtensionObject is not a ByteString body",
+            }),
+        }
+    }
+}
+
+/// `ReadAtTimeDetails` (Part 11 §6.4.4/§6.5.5, Table 36).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ReadAtTimeDetails {
+    /// The specific timestamps to read a value at.
+    pub req_times: Vec<i64>,
+    /// Whether "simple bounds" interpolation applies (this gateway always
+    /// returns the nearest prior sample, the simple-bounds behaviour,
+    /// regardless of this flag — DDS keeps no continuous function to
+    /// interpolate between samples).
+    pub use_simple_bounds: bool,
+}
+
+impl ReadAtTimeDetails {
+    fn to_extension_object(&self) -> Result<ExtensionObject, EncodeError> {
+        let mut w = UaWriter::new();
+        write_i64_array(&mut w, &self.req_times)?;
+        write_bool(&mut w, self.use_simple_bounds);
+        Ok(ExtensionObject {
+            type_id: node_ids::READ_AT_TIME_DETAILS,
+            body: ExtensionObjectBody::ByteString(w.into_vec()),
+        })
+    }
+
+    fn from_extension_object(eo: &ExtensionObject) -> Result<Self, DecodeError> {
+        match &eo.body {
+            ExtensionObjectBody::ByteString(b) => {
+                let mut r = UaReader::new(b);
+                Ok(Self {
+                    req_times: read_i64_array(&mut r)?,
+                    use_simple_bounds: read_bool(&mut r)?,
+                })
+            }
+            _ => Err(DecodeError::MalformedMessage {
+                message: "ReadAtTimeDetails ExtensionObject is not a ByteString body",
+            }),
+        }
+    }
+}
+
+/// `HistoryReadDetails` (Part 11 §6.4, Table 34) — the extensible parameter
+/// naming which HistoryRead function to perform. DDS has no "Processed"
+/// (aggregate) or "Event" history, so only the two variants a DDS-OPCUA
+/// gateway can serve are named here; a request naming another one is a
+/// [`DecodeError::MalformedMessage`], never silently misread as one of
+/// these two.
+#[derive(Debug, Clone, PartialEq)]
+pub enum HistoryReadDetails {
+    /// `ReadRawModifiedDetails`.
+    RawModified(ReadRawModifiedDetails),
+    /// `ReadAtTimeDetails`.
+    AtTime(ReadAtTimeDetails),
+}
+
+impl HistoryReadDetails {
+    fn to_extension_object(&self) -> Result<ExtensionObject, EncodeError> {
+        match self {
+            Self::RawModified(d) => d.to_extension_object(),
+            Self::AtTime(d) => d.to_extension_object(),
+        }
+    }
+
+    fn from_extension_object(eo: &ExtensionObject) -> Result<Self, DecodeError> {
+        if eo.type_id == node_ids::READ_RAW_MODIFIED_DETAILS {
+            Ok(Self::RawModified(
+                ReadRawModifiedDetails::from_extension_object(eo)?,
+            ))
+        } else if eo.type_id == node_ids::READ_AT_TIME_DETAILS {
+            Ok(Self::AtTime(ReadAtTimeDetails::from_extension_object(eo)?))
+        } else {
+            Err(DecodeError::MalformedMessage {
+                message: "HistoryReadDetails names a HistoryRead function this gateway does not implement (only ReadRaw/ReadAtTime, no Processed/Event/Modified history)",
+            })
+        }
+    }
+}
+
+/// `HistoryReadValueId` (Part 4 §5.10.3, Table 33).
+#[derive(Debug, Clone, PartialEq)]
+pub struct HistoryReadValueId {
+    /// Node to read history from.
+    pub node_id: NodeId,
+    /// Index range (empty = whole value).
+    pub index_range: String,
+    /// Requested data encoding.
+    pub data_encoding: QualifiedName,
+    /// Continuation point from a previous HistoryRead on this node, or empty.
+    pub continuation_point: Vec<u8>,
+}
+
+impl UaEncode for HistoryReadValueId {
+    fn encode(&self, w: &mut UaWriter) -> Result<(), EncodeError> {
+        self.node_id.encode(w)?;
+        write_string(w, &self.index_range)?;
+        self.data_encoding.encode(w)?;
+        write_byte_string(w, &self.continuation_point)?;
+        Ok(())
+    }
+}
+
+impl UaDecode for HistoryReadValueId {
+    fn decode(r: &mut UaReader<'_>) -> Result<Self, DecodeError> {
+        Ok(Self {
+            node_id: NodeId::decode(r)?,
+            index_range: read_string(r)?,
+            data_encoding: QualifiedName::decode(r)?,
+            continuation_point: read_byte_string(r)?,
+        })
+    }
+}
+
+/// `HistoryData` (Part 11 §6.6.2, Table 47) — the historical values for one
+/// HistoricalDataNode. DDS has no Events, so this gateway never returns the
+/// sibling `HistoryEvent` structure.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct HistoryData {
+    /// The historical samples, in the order the query returned them.
+    pub data_values: Vec<DataValue>,
+}
+
+impl HistoryData {
+    fn to_extension_object(&self) -> Result<ExtensionObject, EncodeError> {
+        let mut w = UaWriter::new();
+        write_array(&mut w, &self.data_values, "DataValues")?;
+        Ok(ExtensionObject {
+            type_id: node_ids::HISTORY_DATA,
+            body: ExtensionObjectBody::ByteString(w.into_vec()),
+        })
+    }
+
+    fn from_extension_object(eo: &ExtensionObject) -> Result<Self, DecodeError> {
+        match &eo.body {
+            ExtensionObjectBody::ByteString(b) => {
+                let mut r = UaReader::new(b);
+                Ok(Self {
+                    data_values: read_array::<DataValue>(&mut r)?,
+                })
+            }
+            _ => Err(DecodeError::MalformedMessage {
+                message: "HistoryData ExtensionObject is not a ByteString body",
+            }),
+        }
+    }
+}
+
+/// `HistoryReadResult` (Part 4 §5.10.3, Table 32).
+#[derive(Debug, Clone, PartialEq)]
+pub struct HistoryReadResult {
+    /// Per-node operation status.
+    pub status_code: u32,
+    /// Set when more data remains — pass back on the next HistoryRead to
+    /// continue.
+    pub continuation_point: Vec<u8>,
+    /// The historical samples this call returned.
+    pub history_data: HistoryData,
+}
+
+impl UaEncode for HistoryReadResult {
+    fn encode(&self, w: &mut UaWriter) -> Result<(), EncodeError> {
+        w.write_u32(self.status_code);
+        write_byte_string(w, &self.continuation_point)?;
+        self.history_data.to_extension_object()?.encode(w)?;
+        Ok(())
+    }
+}
+
+impl UaDecode for HistoryReadResult {
+    fn decode(r: &mut UaReader<'_>) -> Result<Self, DecodeError> {
+        let status_code = r.read_u32()?;
+        let continuation_point = read_byte_string(r)?;
+        let eo = ExtensionObject::decode(r)?;
+        let history_data = if eo.type_id == node_ids::HISTORY_DATA {
+            HistoryData::from_extension_object(&eo)?
+        } else {
+            HistoryData::default()
+        };
+        Ok(Self {
+            status_code,
+            continuation_point,
+            history_data,
+        })
+    }
+}
+
+/// `HistoryReadRequest` (Part 4 §5.10.3, Table 31).
+#[derive(Debug, Clone, PartialEq)]
+pub struct HistoryReadRequest {
+    /// Common request header.
+    pub request_header: RequestHeader,
+    /// Which HistoryRead function to perform.
+    pub history_read_details: HistoryReadDetails,
+    /// TimestampsToReturn (0 Source / 1 Server / 2 Both / 3 Neither).
+    pub timestamps_to_return: i32,
+    /// Whether continuation points named below should be released instead
+    /// of continued.
+    pub release_continuation_points: bool,
+    /// Nodes/attributes to read history from.
+    pub nodes_to_read: Vec<HistoryReadValueId>,
+}
+
+impl HistoryReadRequest {
+    fn decode_body(r: &mut UaReader<'_>) -> Result<Self, DecodeError> {
+        let request_header = decode_request_header(r)?;
+        let details_eo = ExtensionObject::decode(r)?;
+        let history_read_details = HistoryReadDetails::from_extension_object(&details_eo)?;
+        let timestamps_to_return = r.read_i32()?;
+        let release_continuation_points = read_bool(r)?;
+        let nodes_to_read = read_array::<HistoryReadValueId>(r)?;
+        Ok(Self {
+            request_header,
+            history_read_details,
+            timestamps_to_return,
+            release_continuation_points,
+            nodes_to_read,
+        })
+    }
+
+    fn encode_into(&self, w: &mut UaWriter) -> Result<(), EncodeError> {
+        node_ids::HISTORY_READ_REQUEST.encode(w)?;
+        encode_request_header(&self.request_header, w)?;
+        self.history_read_details.to_extension_object()?.encode(w)?;
+        w.write_i32(self.timestamps_to_return);
+        write_bool(w, self.release_continuation_points);
+        write_array(w, &self.nodes_to_read, "NodesToRead")?;
+        Ok(())
+    }
+}
+
+/// `HistoryReadResponse`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct HistoryReadResponse {
+    /// Common response header.
+    pub response_header: ResponseHeader,
+    /// One result per requested node.
+    pub results: Vec<HistoryReadResult>,
+}
+
+impl HistoryReadResponse {
+    fn decode_body(r: &mut UaReader<'_>) -> Result<Self, DecodeError> {
+        let response_header = decode_response_header(r)?;
+        let results = read_array::<HistoryReadResult>(r)?;
+        skip_diagnostic_info_array(r)?;
+        Ok(Self {
+            response_header,
+            results,
+        })
+    }
+
+    fn encode_into(&self, w: &mut UaWriter) -> Result<(), EncodeError> {
+        node_ids::HISTORY_READ_RESPONSE.encode(w)?;
+        encode_response_header(&self.response_header, w)?;
+        write_array(w, &self.results, "Results")?;
+        write_empty_diagnostic_info_array(w);
+        Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Dispatch enums.
 // ---------------------------------------------------------------------------
 
@@ -1562,25 +2560,73 @@ pub enum ServiceRequest {
     Write(WriteRequest),
     /// Browse.
     Browse(BrowseRequest),
+    /// BrowseNext.
+    BrowseNext(BrowseNextRequest),
     /// GetEndpoints.
     GetEndpoints(GetEndpointsRequest),
     /// FindServers.
     FindServers(FindServersRequest),
     /// CreateSubscription.
     CreateSubscription(CreateSubscriptionRequest),
+    /// ModifySubscription.
+    ModifySubscription(ModifySubscriptionRequest),
     /// SetPublishingMode.
     SetPublishingMode(SetPublishingModeRequest),
     /// CreateMonitoredItems.
     CreateMonitoredItems(CreateMonitoredItemsRequest),
+    /// ModifyMonitoredItems.
+    ModifyMonitoredItems(ModifyMonitoredItemsRequest),
+    /// SetMonitoringMode.
+    SetMonitoringMode(SetMonitoringModeRequest),
+    /// SetTriggering.
+    SetTriggering(SetTriggeringRequest),
+    /// DeleteMonitoredItems.
+    DeleteMonitoredItems(DeleteMonitoredItemsRequest),
     /// Publish.
     Publish(PublishRequest),
+    /// Republish.
+    Republish(RepublishRequest),
+    /// TransferSubscriptions.
+    TransferSubscriptions(TransferSubscriptionsRequest),
     /// DeleteSubscriptions.
     DeleteSubscriptions(DeleteSubscriptionsRequest),
     /// Call.
     Call(CallRequest),
+    /// HistoryRead.
+    HistoryRead(HistoryReadRequest),
 }
 
 impl ServiceRequest {
+    /// The request header every service message carries (Part 4 §7.33).
+    #[must_use]
+    pub const fn request_header(&self) -> &RequestHeader {
+        match self {
+            Self::CreateSession(m) => &m.request_header,
+            Self::ActivateSession(m) => &m.request_header,
+            Self::CloseSession(m) => &m.request_header,
+            Self::Read(m) => &m.request_header,
+            Self::Write(m) => &m.request_header,
+            Self::Browse(m) => &m.request_header,
+            Self::BrowseNext(m) => &m.request_header,
+            Self::GetEndpoints(m) => &m.request_header,
+            Self::FindServers(m) => &m.request_header,
+            Self::CreateSubscription(m) => &m.request_header,
+            Self::ModifySubscription(m) => &m.request_header,
+            Self::SetPublishingMode(m) => &m.request_header,
+            Self::CreateMonitoredItems(m) => &m.request_header,
+            Self::ModifyMonitoredItems(m) => &m.request_header,
+            Self::SetMonitoringMode(m) => &m.request_header,
+            Self::SetTriggering(m) => &m.request_header,
+            Self::DeleteMonitoredItems(m) => &m.request_header,
+            Self::Publish(m) => &m.request_header,
+            Self::Republish(m) => &m.request_header,
+            Self::TransferSubscriptions(m) => &m.request_header,
+            Self::DeleteSubscriptions(m) => &m.request_header,
+            Self::Call(m) => &m.request_header,
+            Self::HistoryRead(m) => &m.request_header,
+        }
+    }
+
     /// Encodes the full body (`TypeId` + fields).
     ///
     /// # Errors
@@ -1594,14 +2640,23 @@ impl ServiceRequest {
             Self::Read(m) => m.encode_into(&mut w)?,
             Self::Write(m) => m.encode_into(&mut w)?,
             Self::Browse(m) => m.encode_into(&mut w)?,
+            Self::BrowseNext(m) => m.encode_into(&mut w)?,
             Self::GetEndpoints(m) => m.encode_into(&mut w)?,
             Self::FindServers(m) => m.encode_into(&mut w)?,
             Self::CreateSubscription(m) => m.encode_into(&mut w)?,
+            Self::ModifySubscription(m) => m.encode_into(&mut w)?,
             Self::SetPublishingMode(m) => m.encode_into(&mut w)?,
             Self::CreateMonitoredItems(m) => m.encode_into(&mut w)?,
+            Self::ModifyMonitoredItems(m) => m.encode_into(&mut w)?,
+            Self::SetMonitoringMode(m) => m.encode_into(&mut w)?,
+            Self::SetTriggering(m) => m.encode_into(&mut w)?,
+            Self::DeleteMonitoredItems(m) => m.encode_into(&mut w)?,
             Self::Publish(m) => m.encode_into(&mut w)?,
+            Self::Republish(m) => m.encode_into(&mut w)?,
+            Self::TransferSubscriptions(m) => m.encode_into(&mut w)?,
             Self::DeleteSubscriptions(m) => m.encode_into(&mut w)?,
             Self::Call(m) => m.encode_into(&mut w)?,
+            Self::HistoryRead(m) => m.encode_into(&mut w)?,
         }
         Ok(w.into_vec())
     }
@@ -1625,22 +2680,40 @@ impl ServiceRequest {
             Self::Write(WriteRequest::decode_body(&mut r)?)
         } else if type_id == node_ids::BROWSE_REQUEST {
             Self::Browse(BrowseRequest::decode_body(&mut r)?)
+        } else if type_id == node_ids::BROWSE_NEXT_REQUEST {
+            Self::BrowseNext(BrowseNextRequest::decode_body(&mut r)?)
         } else if type_id == node_ids::GET_ENDPOINTS_REQUEST {
             Self::GetEndpoints(GetEndpointsRequest::decode_body(&mut r)?)
         } else if type_id == node_ids::FIND_SERVERS_REQUEST {
             Self::FindServers(FindServersRequest::decode_body(&mut r)?)
         } else if type_id == node_ids::CREATE_SUBSCRIPTION_REQUEST {
             Self::CreateSubscription(CreateSubscriptionRequest::decode_body(&mut r)?)
+        } else if type_id == node_ids::MODIFY_SUBSCRIPTION_REQUEST {
+            Self::ModifySubscription(ModifySubscriptionRequest::decode_body(&mut r)?)
         } else if type_id == node_ids::SET_PUBLISHING_MODE_REQUEST {
             Self::SetPublishingMode(SetPublishingModeRequest::decode_body(&mut r)?)
         } else if type_id == node_ids::CREATE_MONITORED_ITEMS_REQUEST {
             Self::CreateMonitoredItems(CreateMonitoredItemsRequest::decode_body(&mut r)?)
+        } else if type_id == node_ids::MODIFY_MONITORED_ITEMS_REQUEST {
+            Self::ModifyMonitoredItems(ModifyMonitoredItemsRequest::decode_body(&mut r)?)
+        } else if type_id == node_ids::SET_MONITORING_MODE_REQUEST {
+            Self::SetMonitoringMode(SetMonitoringModeRequest::decode_body(&mut r)?)
+        } else if type_id == node_ids::SET_TRIGGERING_REQUEST {
+            Self::SetTriggering(SetTriggeringRequest::decode_body(&mut r)?)
+        } else if type_id == node_ids::DELETE_MONITORED_ITEMS_REQUEST {
+            Self::DeleteMonitoredItems(DeleteMonitoredItemsRequest::decode_body(&mut r)?)
         } else if type_id == node_ids::PUBLISH_REQUEST {
             Self::Publish(PublishRequest::decode_body(&mut r)?)
+        } else if type_id == node_ids::REPUBLISH_REQUEST {
+            Self::Republish(RepublishRequest::decode_body(&mut r)?)
+        } else if type_id == node_ids::TRANSFER_SUBSCRIPTIONS_REQUEST {
+            Self::TransferSubscriptions(TransferSubscriptionsRequest::decode_body(&mut r)?)
         } else if type_id == node_ids::DELETE_SUBSCRIPTIONS_REQUEST {
             Self::DeleteSubscriptions(DeleteSubscriptionsRequest::decode_body(&mut r)?)
         } else if type_id == node_ids::CALL_REQUEST {
             Self::Call(CallRequest::decode_body(&mut r)?)
+        } else if type_id == node_ids::HISTORY_READ_REQUEST {
+            Self::HistoryRead(HistoryReadRequest::decode_body(&mut r)?)
         } else {
             return Err(DecodeError::MalformedMessage {
                 message: "unsupported OPC-UA service request type",
@@ -1664,22 +2737,74 @@ pub enum ServiceResponse {
     Write(WriteResponse),
     /// Browse.
     Browse(BrowseResponse),
+    /// BrowseNext.
+    BrowseNext(BrowseNextResponse),
     /// GetEndpoints.
     GetEndpoints(GetEndpointsResponse),
     /// FindServers.
     FindServers(FindServersResponse),
     /// CreateSubscription.
     CreateSubscription(CreateSubscriptionResponse),
+    /// ModifySubscription.
+    ModifySubscription(ModifySubscriptionResponse),
     /// SetPublishingMode.
     SetPublishingMode(SetPublishingModeResponse),
     /// CreateMonitoredItems.
     CreateMonitoredItems(CreateMonitoredItemsResponse),
+    /// ModifyMonitoredItems.
+    ModifyMonitoredItems(ModifyMonitoredItemsResponse),
+    /// SetMonitoringMode.
+    SetMonitoringMode(SetMonitoringModeResponse),
+    /// SetTriggering.
+    SetTriggering(SetTriggeringResponse),
+    /// DeleteMonitoredItems.
+    DeleteMonitoredItems(DeleteMonitoredItemsResponse),
     /// Publish.
     Publish(PublishResponse),
+    /// Republish.
+    Republish(RepublishResponse),
+    /// TransferSubscriptions.
+    TransferSubscriptions(TransferSubscriptionsResponse),
     /// DeleteSubscriptions.
     DeleteSubscriptions(DeleteSubscriptionsResponse),
     /// Call.
     Call(CallResponse),
+    /// HistoryRead.
+    HistoryRead(HistoryReadResponse),
+    /// ServiceFault (Part 4 §7.34) — the response a server sends when it
+    /// rejects a request outright. Without this variant every rejection a
+    /// foreign server sends decodes as "unsupported service response type"
+    /// and the status code it carries is lost.
+    ServiceFault(ServiceFault),
+}
+
+/// Part 4 §7.34 — a ServiceFault carries nothing but a `ResponseHeader`; the
+/// rejection reason is its `service_result`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ServiceFault {
+    /// The response header, whose `service_result` is the rejection reason.
+    pub response_header: ResponseHeader,
+}
+
+impl ServiceFault {
+    /// A fault answering `request_handle` with `service_result`.
+    #[must_use]
+    pub fn new(request_handle: u32, service_result: u32) -> Self {
+        Self {
+            response_header: ResponseHeader::new(request_handle, service_result),
+        }
+    }
+
+    fn encode_into(&self, w: &mut UaWriter) -> Result<(), EncodeError> {
+        node_ids::SERVICE_FAULT.encode(w)?;
+        encode_response_header(&self.response_header, w)
+    }
+
+    fn decode_body(r: &mut UaReader<'_>) -> Result<Self, DecodeError> {
+        Ok(Self {
+            response_header: decode_response_header(r)?,
+        })
+    }
 }
 
 impl ServiceResponse {
@@ -1696,14 +2821,24 @@ impl ServiceResponse {
             Self::Read(m) => m.encode_into(&mut w)?,
             Self::Write(m) => m.encode_into(&mut w)?,
             Self::Browse(m) => m.encode_into(&mut w)?,
+            Self::BrowseNext(m) => m.encode_into(&mut w)?,
             Self::GetEndpoints(m) => m.encode_into(&mut w)?,
             Self::FindServers(m) => m.encode_into(&mut w)?,
             Self::CreateSubscription(m) => m.encode_into(&mut w)?,
+            Self::ModifySubscription(m) => m.encode_into(&mut w)?,
             Self::SetPublishingMode(m) => m.encode_into(&mut w)?,
             Self::CreateMonitoredItems(m) => m.encode_into(&mut w)?,
+            Self::ModifyMonitoredItems(m) => m.encode_into(&mut w)?,
+            Self::SetMonitoringMode(m) => m.encode_into(&mut w)?,
+            Self::SetTriggering(m) => m.encode_into(&mut w)?,
+            Self::DeleteMonitoredItems(m) => m.encode_into(&mut w)?,
             Self::Publish(m) => m.encode_into(&mut w)?,
+            Self::Republish(m) => m.encode_into(&mut w)?,
+            Self::TransferSubscriptions(m) => m.encode_into(&mut w)?,
             Self::DeleteSubscriptions(m) => m.encode_into(&mut w)?,
             Self::Call(m) => m.encode_into(&mut w)?,
+            Self::HistoryRead(m) => m.encode_into(&mut w)?,
+            Self::ServiceFault(m) => m.encode_into(&mut w)?,
         }
         Ok(w.into_vec())
     }
@@ -1727,22 +2862,42 @@ impl ServiceResponse {
             Self::Write(WriteResponse::decode_body(&mut r)?)
         } else if type_id == node_ids::BROWSE_RESPONSE {
             Self::Browse(BrowseResponse::decode_body(&mut r)?)
+        } else if type_id == node_ids::BROWSE_NEXT_RESPONSE {
+            Self::BrowseNext(BrowseNextResponse::decode_body(&mut r)?)
         } else if type_id == node_ids::GET_ENDPOINTS_RESPONSE {
             Self::GetEndpoints(GetEndpointsResponse::decode_body(&mut r)?)
         } else if type_id == node_ids::FIND_SERVERS_RESPONSE {
             Self::FindServers(FindServersResponse::decode_body(&mut r)?)
         } else if type_id == node_ids::CREATE_SUBSCRIPTION_RESPONSE {
             Self::CreateSubscription(CreateSubscriptionResponse::decode_body(&mut r)?)
+        } else if type_id == node_ids::MODIFY_SUBSCRIPTION_RESPONSE {
+            Self::ModifySubscription(ModifySubscriptionResponse::decode_body(&mut r)?)
         } else if type_id == node_ids::SET_PUBLISHING_MODE_RESPONSE {
             Self::SetPublishingMode(SetPublishingModeResponse::decode_body(&mut r)?)
         } else if type_id == node_ids::CREATE_MONITORED_ITEMS_RESPONSE {
             Self::CreateMonitoredItems(CreateMonitoredItemsResponse::decode_body(&mut r)?)
+        } else if type_id == node_ids::MODIFY_MONITORED_ITEMS_RESPONSE {
+            Self::ModifyMonitoredItems(ModifyMonitoredItemsResponse::decode_body(&mut r)?)
+        } else if type_id == node_ids::SET_MONITORING_MODE_RESPONSE {
+            Self::SetMonitoringMode(SetMonitoringModeResponse::decode_body(&mut r)?)
+        } else if type_id == node_ids::SET_TRIGGERING_RESPONSE {
+            Self::SetTriggering(SetTriggeringResponse::decode_body(&mut r)?)
+        } else if type_id == node_ids::DELETE_MONITORED_ITEMS_RESPONSE {
+            Self::DeleteMonitoredItems(DeleteMonitoredItemsResponse::decode_body(&mut r)?)
         } else if type_id == node_ids::PUBLISH_RESPONSE {
             Self::Publish(PublishResponse::decode_body(&mut r)?)
+        } else if type_id == node_ids::REPUBLISH_RESPONSE {
+            Self::Republish(RepublishResponse::decode_body(&mut r)?)
+        } else if type_id == node_ids::TRANSFER_SUBSCRIPTIONS_RESPONSE {
+            Self::TransferSubscriptions(TransferSubscriptionsResponse::decode_body(&mut r)?)
         } else if type_id == node_ids::DELETE_SUBSCRIPTIONS_RESPONSE {
             Self::DeleteSubscriptions(DeleteSubscriptionsResponse::decode_body(&mut r)?)
         } else if type_id == node_ids::CALL_RESPONSE {
             Self::Call(CallResponse::decode_body(&mut r)?)
+        } else if type_id == node_ids::HISTORY_READ_RESPONSE {
+            Self::HistoryRead(HistoryReadResponse::decode_body(&mut r)?)
+        } else if type_id == node_ids::SERVICE_FAULT {
+            Self::ServiceFault(ServiceFault::decode_body(&mut r)?)
         } else {
             return Err(DecodeError::MalformedMessage {
                 message: "unsupported OPC-UA service response type",
@@ -1867,6 +3022,74 @@ mod tests {
         });
         let rb = resp.encode().expect("encode");
         assert_eq!(ServiceResponse::decode(&rb).expect("decode"), resp);
+    }
+
+    #[test]
+    fn history_read_raw_round_trips() {
+        let req = ServiceRequest::HistoryRead(HistoryReadRequest {
+            request_header: req_header(),
+            history_read_details: HistoryReadDetails::RawModified(ReadRawModifiedDetails {
+                is_read_modified: false,
+                start_time: 100,
+                end_time: 200,
+                num_values_per_node: 10,
+                return_bounds: true,
+            }),
+            timestamps_to_return: 0,
+            release_continuation_points: false,
+            nodes_to_read: alloc::vec![HistoryReadValueId {
+                node_id: NodeId::numeric(1, 42),
+                index_range: String::new(),
+                data_encoding: QualifiedName {
+                    namespace_index: 0,
+                    name: String::new(),
+                },
+                continuation_point: alloc::vec![1, 2, 3],
+            }],
+        });
+        let body = req.encode().expect("encode");
+        assert_eq!(ServiceRequest::decode(&body).expect("decode"), req);
+
+        let resp = ServiceResponse::HistoryRead(HistoryReadResponse {
+            response_header: ResponseHeader::new(1, 0),
+            results: alloc::vec![HistoryReadResult {
+                status_code: 0,
+                continuation_point: Vec::new(),
+                history_data: HistoryData {
+                    data_values: alloc::vec![DataValue::new_value(
+                        Variant::scalar(VariantValue::Int32(7)),
+                        0,
+                        123,
+                    )],
+                },
+            }],
+        });
+        let rb = resp.encode().expect("encode");
+        assert_eq!(ServiceResponse::decode(&rb).expect("decode"), resp);
+    }
+
+    #[test]
+    fn history_read_at_time_round_trips() {
+        let req = ServiceRequest::HistoryRead(HistoryReadRequest {
+            request_header: req_header(),
+            history_read_details: HistoryReadDetails::AtTime(ReadAtTimeDetails {
+                req_times: alloc::vec![10, 20, 30],
+                use_simple_bounds: true,
+            }),
+            timestamps_to_return: 2,
+            release_continuation_points: true,
+            nodes_to_read: alloc::vec![HistoryReadValueId {
+                node_id: NodeId::numeric(1, 43),
+                index_range: String::new(),
+                data_encoding: QualifiedName {
+                    namespace_index: 0,
+                    name: String::new(),
+                },
+                continuation_point: Vec::new(),
+            }],
+        });
+        let body = req.encode().expect("encode");
+        assert_eq!(ServiceRequest::decode(&body).expect("decode"), req);
     }
 
     #[test]

@@ -1,0 +1,90 @@
+#!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 ZeroDDS Contributors
+#
+# three-column-gate — do the Rust, C and Python columns agree?
+#
+# One command, one verdict, over the whole interop corpus in every
+# configuration, in both directions.
+#
+#   tools/wireprobe/three-column-gate            the fast tier
+#   tools/wireprobe/three-column-gate --full     every column, every case
+#
+# The gate itself is `crates/wire-probe/tests/three_column_gate.rs`; this
+# builds what the three columns need and runs it with the tier set. The
+# test is also what `cargo test --workspace` runs, in the fast tier, so
+# the two are the same gate and not two.
+#
+# ## The tiers
+#
+#   fast   the Rust and Python columns over every case; the C column over
+#          one case per construct family plus every case a column has been
+#          measured disagreeing on. About a minute and a half warm on an
+#          M1. What it leaves out is named in `representative` in the
+#          test and repeated in the fixture the run writes.
+#
+#   full   the same with the C column over every case. About 24 minutes
+#          the first time on an M1 and about a minute after that, because
+#          compiled probes are kept in target/wireprobe-c-cache and only
+#          a probe that is not there is built.
+#
+#          The first time is long on macOS for a reason that has nothing
+#          to do with this repository: the system validates the signature
+#          of every freshly linked binary on its first execution, about
+#          235 ms each, and the check is serialised across processes —
+#          40 fresh binaries take the same 9.1 s whether they run one at
+#          a time or ten at a time. The matrix is 5,500 distinct
+#          binaries. On Linux there is no such check.
+#
+# ## One gate at a time
+#
+# The gate takes an exclusive lock, target/three-column-gate.lock, for
+# the whole run. A second gate in the same checkout stops immediately
+# and names the process holding it — it does not wait, and it does not
+# report.
+#
+# That is not politeness about CPU. The intermediates and the report are
+# fixed paths under target/, and two runs sharing them interleave into
+# one file: the reader gets some rows from its own run and some from the
+# other's, and the mixture parses. A gate that can quietly report a
+# result mixed out of two runs is not a gate, and this one was caught
+# doing it twice on 2026-08-10.
+#
+# A lock left behind by a run that was killed is cleared automatically —
+# the holder's pid is checked — and the takeover says so.
+#
+# ## What it writes
+#
+#   crates/wire-probe/tests/fixtures/three_column_matrix.md
+#
+# the matrix per column, per direction and per configuration, every
+# disagreement, and what the run did not cover. Written through a
+# temporary and renamed into place, so a killed run never leaves half a
+# report behind.
+set -euo pipefail
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+root="$(cd "$here/../.." && pwd)"
+tier=fast
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --full) tier=full; shift ;;
+        --fast) tier=fast; shift ;;
+        --help|-h) sed -n '5,40p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        *) echo "three-column-gate: \`$1\` is not an option" >&2; exit 2 ;;
+    esac
+done
+
+# The two foreign columns are driven by programs, and a gate that built
+# them lazily inside the test would charge the build to the first
+# column's stopwatch and report it as that column's cost.
+echo "three-column-gate: building the C and Python matrix drivers" >&2
+cargo build -q --manifest-path "$root/Cargo.toml" --release \
+    -p zerodds-wireprobe-c-gen --bin wireprobe-c-matrix
+cargo build -q --manifest-path "$root/Cargo.toml" --release \
+    -p zerodds-wireprobe-python-gen --bin wireprobe-python-matrix
+
+echo "three-column-gate: tier $tier" >&2
+ZERODDS_GATE_TIER="$tier" cargo test --manifest-path "$root/Cargo.toml" \
+    -p zerodds-wire-probe --test three_column_gate -- --nocapture

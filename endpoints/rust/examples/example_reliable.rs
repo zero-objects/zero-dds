@@ -25,13 +25,18 @@ use std::net::UdpSocket;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use zerodds_cdr::Endianness;
 use zerodds_endpoint_rust::Reading;
 use zerodds_endpoint_rust::reliable::{
     AsyncReliableWriter, ReliableReceiver, acknack_frame, parse_heartbeat, unframe, write_frame,
 };
+use zerodds_wire::Endianness;
 
 const N: u32 = 12;
+
+/// The DataWriter this example writes to (`ObjectId` = raw 0x001 +
+/// `OBJK_DATAWRITER`, DDS-XRCE 1.0 §7.2.1). It rides in every frame's
+/// `BaseObjectRequest`.
+const WRITER_ID: u16 = 0x0015;
 
 fn sample(i: u32) -> Vec<u8> {
     Reading {
@@ -54,7 +59,7 @@ fn main() {
 fn send_to_peer(port: u16) {
     let sock = UdpSocket::bind("127.0.0.1:0").expect("bind");
     sock.connect(("127.0.0.1", port)).expect("connect");
-    let mut writer = AsyncReliableWriter::start(sock, 64);
+    let mut writer = AsyncReliableWriter::start(sock, 64, WRITER_ID);
     let handle = writer.handle();
     for i in 0..N {
         let mut item = sample(i);
@@ -88,7 +93,7 @@ fn bench() {
     });
     let dsock = UdpSocket::bind("127.0.0.1:0").expect("bind");
     dsock.connect(("127.0.0.1", sink_port)).expect("connect");
-    let mut writer = AsyncReliableWriter::start(dsock, 1 << 20);
+    let mut writer = AsyncReliableWriter::start(dsock, 1 << 20, WRITER_ID);
     let handle = writer.handle();
     let s = sample(1);
     let t0 = Instant::now();
@@ -107,7 +112,10 @@ fn bench() {
     isock.connect(("127.0.0.1", sink_port)).expect("connect");
     let t1 = Instant::now();
     for i in 0..iters {
-        let _ = isock.send(&write_frame(i as u16, &s));
+        let _ = isock.send(
+            &write_frame(i as u16, WRITER_ID, &s)
+                .expect("sample fits the 16-bit submessage_length"),
+        );
     }
     let inline_ns = t1.elapsed().as_nanos() / u128::from(iters);
 
@@ -162,7 +170,7 @@ fn standalone_demo() {
 
     let sock = UdpSocket::bind("127.0.0.1:0").expect("bind tx");
     sock.connect(("127.0.0.1", rx_port)).expect("connect");
-    let mut writer = AsyncReliableWriter::start(sock, 64);
+    let mut writer = AsyncReliableWriter::start(sock, 64, WRITER_ID);
     let handle = writer.handle();
     for i in 0..N {
         let mut item = sample(i);

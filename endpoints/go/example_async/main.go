@@ -21,7 +21,7 @@ type Reading struct {
 }
 
 func (r Reading) marshal(endian zerodds.Endianness) []byte {
-	w := zerodds.NewWriter(endian)
+	w := zerodds.NewWriter(endian, zerodds.Xcdr2)
 	w.PutU32(r.ID)
 	w.PutF32(r.Value)
 	w.PutString(r.Label)
@@ -29,7 +29,7 @@ func (r Reading) marshal(endian zerodds.Endianness) []byte {
 }
 
 func decodeReading(body []byte) Reading {
-	rd := zerodds.NewReader(body, zerodds.Little)
+	rd := zerodds.NewReader(body, zerodds.Little, zerodds.Xcdr2)
 	return Reading{ID: rd.GetU32(), Value: rd.GetF32(), Label: rd.GetString()}
 }
 
@@ -57,7 +57,7 @@ func (l *loopback) Receive(buf []byte) (int, bool, error) {
 func main() {
 	const total = 5
 	tr := &loopback{}
-	writer := zerodds.NewAsyncWriter(tr)
+	writer := zerodds.NewAsyncWriter(tr, zerodds.XrceObjectID(0x001, uint16(zerodds.ObjkDataWriter)))
 
 	// Publisher.
 	for i := 0; i < total; i++ {

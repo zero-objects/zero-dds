@@ -62,6 +62,9 @@ impl std::error::Error for ReadError {}
 
 /// Reader for `.zddsrec` buffers.
 pub struct RecordReader<'a> {
+    /// Topics that `TopicAdd` frames put into the index after the
+    /// header. Their indices continue the header's list.
+    added_topics: Vec<TopicEntry>,
     bytes: &'a [u8],
     cursor: usize,
 }
@@ -70,7 +73,22 @@ impl<'a> RecordReader<'a> {
     /// Creates a reader. `parse_header` must be called first,
     /// then `next_frame` until None.
     pub fn new(bytes: &'a [u8]) -> Self {
-        Self { bytes, cursor: 0 }
+        Self {
+            bytes,
+            cursor: 0,
+            added_topics: Vec::new(),
+        }
+    }
+
+    /// The topics added after the header, in the order they were added.
+    ///
+    /// Their indices continue the header's list: the first addition is
+    /// `header.topics.len()`. Only filled once the frames carrying them
+    /// have been read, so this answers the state as of the last frame
+    /// returned, not the state of the whole file.
+    #[must_use]
+    pub fn added_topics(&self) -> &[TopicEntry] {
+        &self.added_topics
     }
 
     /// Bytes not yet consumed.
@@ -208,8 +226,23 @@ impl<'a> RecordReader<'a> {
     /// # Errors
     /// `BadFrameMagic`, `Truncated`, `BadSampleKind`.
     pub fn next_frame_view(&mut self) -> Result<Option<FrameView<'a>>, ReadError> {
-        if self.cursor >= self.bytes.len() {
-            return Ok(None);
+        // Topic additions are consumed here rather than answered to the
+        // caller. They carry no sample, and a caller that walks frames to
+        // read data would have to know about them to skip them — which
+        // every caller would then do the same way. What they change is
+        // this reader's own topic list, which is where the change
+        // belongs. More than one may stand in a row.
+        loop {
+            if self.cursor >= self.bytes.len() {
+                return Ok(None);
+            }
+            if self.bytes[self.cursor] != crate::format::TOPIC_ADD_MAGIC {
+                break;
+            }
+            self.cursor += 1;
+            let type_name = self.read_string("topic_add_type")?;
+            let name = self.read_string("topic_add_name")?;
+            self.added_topics.push(TopicEntry { name, type_name });
         }
         let magic = self.read_u8("frame_magic")?;
         if magic != FRAME_MAGIC {

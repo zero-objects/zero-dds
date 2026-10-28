@@ -2,6 +2,24 @@
 
 Format follows [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), versioning follows [Semantic Versioning](https://semver.org/lang/de/).
 
+## [Unreleased]
+
+### Fixed
+
+- `SASContextBody` is a union over `typedef short MsgType` (`CSI.idl`):
+  the discriminator was written and read as an `unsigned long`, four octets
+  at offset 4 instead of two at offset 2. ZeroDDS read its own messages
+  back because the padding in front is zero; JacORB 3.9 read every
+  `CompleteEstablishContext` and `ContextError` from the bridge as
+  `MTEstablishContext` and failed the call ("Could not parse SAS reply").
+- `MTMessageInContext` is 5, not 2.
+- `AuthorizationToken` is `sequence<AuthorizationElement>`
+  (`AuthorizationElement { the_type, the_element }`), not
+  `sequence<octet>`; a token with elements was misread.
+- `IdentityToken` has a `default` branch (`IdentityExtension`); an
+  unknown `IdentityTokenType` decodes into `IdentityToken::Extension`
+  instead of failing the whole context, and the authenticator refuses it.
+
 ## [1.0.0-rc.1] — 2026-05-06
 
 Initial release materialization of the `zerodds-corba-csiv2` crate.

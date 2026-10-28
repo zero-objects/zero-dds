@@ -4,7 +4,7 @@
 
 use alloc::vec::Vec;
 
-use zerodds_cdr::{BufferReader, BufferWriter, EncodeError};
+use zerodds_wire::{Reader, WireError, Writer};
 
 use crate::error::TypeCodecError;
 use crate::type_object::common::{
@@ -36,18 +36,18 @@ pub struct CompleteBitmaskType {
 }
 
 impl CompleteBitmaskType {
-    pub(super) fn encode_into(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
-        w.write_u16(self.bitmask_flags.0)?;
-        w.write_u16(self.bit_bound)?;
+    pub(super) fn encode_into(&self, w: &mut Writer) -> Result<(), WireError> {
+        w.write_u16(self.bitmask_flags.0);
+        w.write_u16(self.bit_bound);
         self.detail.encode_into(w)?;
         encode_seq(w, &self.flag_seq, |w, f| {
-            w.write_u16(f.common.position)?;
-            w.write_u16(f.common.flags.0)?;
+            w.write_u16(f.common.position);
+            w.write_u16(f.common.flags.0);
             f.detail.encode_into(w)
         })
     }
 
-    pub(super) fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, TypeCodecError> {
+    pub(super) fn decode_from(r: &mut Reader<'_>) -> Result<Self, TypeCodecError> {
         let bitmask_flags = BitmaskTypeFlag(r.read_u16()?);
         let bit_bound = r.read_u16()?;
         let detail = CompleteTypeDetail::decode_from(r)?;

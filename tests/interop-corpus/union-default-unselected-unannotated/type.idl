@@ -1,0 +1,10 @@
+// `union` with no `default`, discriminator matching nothing, unannotated
+union Choice switch (long) {
+    case 1: long whole;
+    case 2: double fraction;
+};
+
+struct Sample {
+    Choice picked;
+    long tail;
+};

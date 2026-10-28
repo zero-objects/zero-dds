@@ -1,0 +1,183 @@
+#!/bin/bash
+# wireprobe-tao — one IDL type and one JSON value, through TAO 2.5.24's
+# own `TAO_OutputCDR`.
+#
+# The same command line as `wireprobe-zerodds`. See
+# `docs/specs/zerodds-interop-suite-1.0.md` and `docs/corba-column.md`.
+#
+#   wireprobe-tao --idl robot.idl --type common::Robot \
+#                 --values robot.json --encoding xcdr1 --endian le \
+#                 --out robot.tao.xcdr1.le.bin
+#
+# `wireprobe-corba-idl` prints the type as CORBA IDL, `tao_idl -as`
+# generates the C++, `wireprobe-fill` supplies the statements that put
+# the JSON sample into it, and the template calls `TAO_OutputCDR`.
+#
+# ## The one thing TAO cannot be asked for
+#
+# `--endian be` in the **write** direction. `ACE_OutputCDR::write_4`
+# swaps only when libACE was built with `ACE_ENABLE_SWAP_ON_WRITE`, and
+# the build on the test host was not — measured 2026-08-10, a
+# `TAO_OutputCDR` constructed big-endian reports `do_byte_swap() == 1`
+# and still writes `01000000` for a `long` of 1. Writing those bytes
+# under a big-endian label would record a divergence the run never
+# measured, so they are refused instead. The **read** direction takes
+# both orders: swapping on input is unconditional in ACE.
+#
+# `-as` is passed to `tao_idl` because the printed IDL uses anonymous
+# types — `string<16>` inline, `long items[3]` on a member — which
+# tao_idl otherwise refuses with "anonymous types require the IDL
+# version to be 4 or later". It is a front-end permission and changes no
+# byte.
+set -euo pipefail
+
+FILL="${WIREPROBE_FILL:-wireprobe-fill}"
+DUMP="${WIREPROBE_DUMP:-wireprobe-dump}"
+CORBA_IDL="${WIREPROBE_CORBA_IDL:-wireprobe-corba-idl}"
+TAO="${TAO_HOME:-/opt/opendds}"
+TAO_IDL="${TAO_IDL:-$TAO/bin/tao_idl}"
+TOOLS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TEMPLATE="$TOOLS/tao-template.cpp"
+DECODE_TEMPLATE="$TOOLS/tao-decode-template.cpp"
+# shellcheck source=probe-cache.sh
+. "$TOOLS/probe-cache.sh"
+# shellcheck source=bounded.sh
+. "$TOOLS/bounded.sh"
+# shellcheck source=diagnostics.sh
+. "$TOOLS/diagnostics.sh"
+# shellcheck source=corba-common.sh
+. "$TOOLS/corba-common.sh"
+
+corba_parse_arguments tao "$@"
+
+if [ -z "$input" ] && [ "$big" = 1 ] && [ "$matrix" = 0 ]; then
+    echo "wireprobe-tao: libACE here was built without ACE_ENABLE_SWAP_ON_WRITE, so TAO writes host order only; the read direction takes both" >&2
+    exit 3
+fi
+
+work="$(mktemp -d)"
+# Kept before the removal and on every exit path, including a
+# refusal: the generated source of a case a front end could not carry
+# is the one a reader most wants to see.
+trap 'probe_keep_generated "$work" "tao" "$idl"; rm -rf "$work"' EXIT
+
+# `$?` is read before the `if`, not inside it: after `if ! cmd` bash has
+# already replaced the command's status with the negation's, so `$?` in
+# the branch is 0 and `exit "$status"` exits 0. Measured on 2026-08-10:
+# a missing `wireprobe-ros-package` made `wireprobe-ros` print nothing
+# and exit 0, and a corpus sweep recorded 648 empty payloads as bytes.
+# `|| status=$?` and not a bare call: `set -e` ends the script *at* a
+# failing command, so a bare call's `status=$?` never runs and neither
+# does the reporting under it. The comment above was written against
+# `if !` and does not reach this; a command in an `||` list is exempt.
+status=0
+"$CORBA_IDL" --idl "$idl" --type "$type_name" --out "$work/gen.idl" || status=$?
+if [ "$status" -ne 0 ]; then
+    [ "$status" = 3 ] && exit 3
+    echo "wireprobe-tao: the CORBA IDL could not be printed" >&2
+    exit "$status"
+fi
+cpp_name="$("$FILL" --vendor tao --idl "$idl" --type "$type_name" --print-c-name)"
+
+tao_generate() {
+    bounded_run_native tao_idl "$TAO_IDL" -as -I"$TAO/include" -o . gen.idl > idl.log 2>&1 || true
+    # tao_idl warns about GPERF on every run and still exits zero on a
+    # real error, so the error lines are what decides.
+    if grep -q "^Error" idl.log; then
+        echo "wireprobe-tao: tao_idl refused the IDL" >&2
+        grep -m10 "^Error" idl.log >&2
+        exit 4
+    fi
+}
+
+tao_link=(-I. -I"$TOOLS" -I"$TAO/include" -L"$TAO/lib" -lTAO -lACE -lTAO_AnyTypeCode
+          -Wl,-rpath,"$TAO/lib")
+
+if [ -n "$input" ]; then
+    "$DUMP" --vendor tao --idl "$idl" --type "$type_name" --out "$work/dump.inc"
+    # The byte order is not in the key: the decode template takes it as
+    # its argument, so one build per case answers both orders. Swapping
+    # on *read* is unconditional in ACE, which is why the read direction
+    # has both and the write direction has one.
+    key="$(probe_cache_key tao decode "$cpp_name" -- "$work/gen.idl" "$work/dump.inc" "$DECODE_TEMPLATE")"
+    cached="$(probe_cache_dir "$key")"
+    if [ -z "$cached" ] || [ ! -x "$cached/probe" ]; then
+        (
+            cd "$work"
+            tao_generate
+            sed -e "s/@TYPE@/$cpp_name/g" "$DECODE_TEMPLATE" > probe.cpp
+            g++ -o probe probe.cpp genC.cpp "${tao_link[@]}" > cc.log 2>&1 \
+                || { echo "wireprobe-tao: the decode probe did not compile" >&2; \
+                     grep -m10 "error:" cc.log >&2; exit 5; }
+        )
+        probe_diagnostics_after tao "$work" "$idl" $?
+        if [ -n "$cached" ]; then
+            build="$(mktemp -d "$WIREPROBE_CACHE/build.XXXXXX")"
+            cp "$work/probe" "$build/probe"
+            probe_diagnostics_publish "$work" "$build"
+            probe_generated_publish "$work" "$build"
+            probe_cache_publish "$build" "$cached"
+        fi
+    else
+        # A cache hit does not compile, so the build said nothing
+        # this run. What it said when it was built is replayed,
+        # or a re-record would be silent for every case it did
+        # not rebuild.
+        probe_diagnostics_cached tao "$cached" "$idl"
+        probe_generated_cached "$cached" "$work"
+    fi
+    if [ -n "$cached" ] && [ -x "$cached/probe" ]; then binary="$cached/probe"; else binary="$work/probe"; fi
+    "$binary" "$endian_word" < "$input" > "$work/values.json"
+    if [ -n "$values_out" ]; then cp "$work/values.json" "$values_out"; else cat "$work/values.json"; fi
+    exit 0
+fi
+
+"$FILL" --vendor tao --idl "$idl" --type "$type_name" --values "$values" \
+        --out "$work/fill.inc"
+key="$(probe_cache_key tao encode "$cpp_name" -- "$work/gen.idl" "$work/fill.inc" "$TEMPLATE")"
+cached="$(probe_cache_dir "$key")"
+if [ -z "$cached" ] || [ ! -x "$cached/probe" ]; then
+    (
+        cd "$work"
+        tao_generate
+        sed -e "s/@TYPE@/$cpp_name/g" "$TEMPLATE" > probe.cpp
+        g++ -o probe probe.cpp genC.cpp "${tao_link[@]}" > cc.log 2>&1 \
+            || { echo "wireprobe-tao: the probe did not compile" >&2; \
+                 grep -m10 "error:" cc.log >&2; exit 5; }
+    )
+    probe_diagnostics_after tao "$work" "$idl" $?
+    if [ -n "$cached" ]; then
+        build="$(mktemp -d "$WIREPROBE_CACHE/build.XXXXXX")"
+        cp "$work/probe" "$build/probe"
+        probe_diagnostics_publish "$work" "$build"
+        probe_generated_publish "$work" "$build"
+        probe_cache_publish "$build" "$cached"
+    fi
+else
+    # A cache hit does not compile, so the build said nothing
+    # this run. What it said when it was built is replayed,
+    # or a re-record would be silent for every case it did
+    # not rebuild.
+    probe_diagnostics_cached tao "$cached" "$idl"
+    probe_generated_cached "$cached" "$work"
+fi
+if [ -n "$cached" ] && [ -x "$cached/probe" ]; then binary="$cached/probe"; else binary="$work/probe"; fi
+if [ "$matrix" = 1 ]; then
+    # TAO writes host order only, so the other order is a row that says
+    # so rather than an absent line.
+    if hex=$("$binary" 2>"$work/err" | od -An -tx1 -v | tr -d ' \n') && [ -n "$hex" ]; then
+        printf 'xcdr1\tle\t%s\n' "$hex"
+    else
+        printf 'xcdr1\tle\t!%s\n' "$(head -1 "$work/err" | tr '\t' ' ' | cut -c1-200)"
+    fi
+    printf 'xcdr1\tbe\t!%s\n' \
+        "libACE here was built without ACE_ENABLE_SWAP_ON_WRITE, so TAO writes host order only"
+    exit 0
+fi
+"$binary" > "$work/bytes.bin"
+
+if [ -n "$out" ]; then
+    cp "$work/bytes.bin" "$out"
+else
+    od -An -tx1 -v "$work/bytes.bin" | tr -d ' \n'; echo
+fi

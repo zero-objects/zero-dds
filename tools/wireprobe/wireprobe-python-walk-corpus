@@ -1,0 +1,155 @@
+#!/bin/bash
+# wireprobe-python-walk-corpus — the shared-walk Python column over the
+# whole corpus, in both directions, against the octets the Rust column
+# recorded.
+#
+#   tools/wireprobe/wireprobe-python-walk-corpus
+#   tools/wireprobe/wireprobe-python-walk-corpus --encoding plain-cdr2 --endian le
+#
+# Ten cells by default — `plain-cdr1`, `pl-cdr1`, `plain-cdr2`,
+# `delimited-cdr` and `pl-cdr2`, each little- and big-endian — and one
+# line per cell:
+#
+#   plain-cdr2.le  write MATCH=408 DIFFER=0 REFUSED=0 NOREF=3
+#   plain-cdr2.le  read  MATCH=408 DIFFER=0 REFUSED=0 NOREF=3
+#
+# `DIFFER` is the number that matters. A case the Python runtime writes
+# differently from the Rust one is a case where one of the two has
+# misread DDS-XTypes 1.3, and neither calls the other.
+#
+# `REFUSED` is a case that did not generate or did not run, and each is
+# named with its reason and its exit code in the log.
+# `docs/specs/zerodds-verdicts-1.0.md` gives the codes: 3 (Python has no
+# form for it) is a different finding from 6 (a tool of ours has not
+# written it) and from 7 (the generator emitted something that is not a
+# program). `NOREF` is a case the Rust column has no recorded octets for
+# either.
+#
+# ## The two directions are measured in different currencies
+#
+# **Writing** compares octets: the probe's bytes against
+# `tests/interop-results/<case>/zerodds-rust/<encoding>.<endian>.bin`,
+# byte for byte.
+#
+# **Reading** compares *values*, and it has to. Re-encoding what the
+# decoder built and comparing bytes passes any value the decoder invents
+# that the encoder writes the same way — measured, in `fixed`, where the
+# reader returned the BCD field's leading zeros and both encodings held
+# the same nibbles. So the probe is handed the Rust column's own bytes
+# and its `to_json` output is compared against the case's `values.json`
+# after both have been canonicalised.
+#
+# The root type comes from the corpus's own `type` file. Reading it off
+# the IDL instead picks the last declaration, which is the wrong root for
+# `recursive-mutual` and `resolve-forward-declared`.
+set -uo pipefail
+cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)" || exit 6
+
+probe=./tools/wireprobe/wireprobe-zerodds-python-walk
+encodings=(plain-cdr1 pl-cdr1 plain-cdr2 delimited-cdr pl-cdr2)
+endians=(le be)
+directions=(write read)
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --encoding) encodings=("$2"); shift 2 ;;
+        --endian) endians=("$2"); shift 2 ;;
+        --direction) directions=("$2"); shift 2 ;;
+        --help|-h) sed -n '2,46p' "${BASH_SOURCE[0]}"; exit 0 ;;
+        *) echo "$(basename "$0"): \`$1\` is not an option" >&2; exit 2 ;;
+    esac
+done
+
+L="${PYTHON_WALK_CORPUS_LOG:-${TMPDIR:-/tmp}/zd-python-walk-corpus.txt}"
+# One sweep at a time per log. Two of them interleaving produced rows for
+# more cases than the corpus has and numbers that meant nothing, which is
+# worse than a refusal to start.
+lock="$L.lock"
+if ! mkdir "$lock" 2>/dev/null; then
+    echo "$(basename "$0"): a sweep is already running; its log is $L" >&2
+    exit 2
+fi
+work="$(mktemp -d)"
+trap 'rmdir "$lock" 2>/dev/null; rm -rf "$work"' EXIT
+: > "$L"
+
+# The generator is built once here rather than by each of 3 760 probe
+# runs: `probe_generator` shells out to `cargo build` to check staleness,
+# and doing that per case is most of the sweep's wall time.
+cargo build -q -p zerodds-wireprobe-python-gen 2>&1 | head -20
+gen="${CARGO_TARGET_DIR:-$PWD/target}/debug/wireprobe-zerodds-python-gen"
+[ -x "$gen" ] || { echo "$(basename "$0"): the generator did not build" >&2; exit 6; }
+export WIREPROBE_PYTHON_WALK_GEN="$gen"
+
+# The read direction is compared in Rust, against
+# `crates/wire-probe/src/canonical.rs`. A second canonicaliser in a
+# second language would be a second chance for two columns to part over a
+# spelling rather than over a value, which is the whole reason this
+# column hands its JSON out instead of reaching a verdict itself.
+compare="${WIREPROBE_COMPARE:-${CARGO_TARGET_DIR:-$PWD/target}/debug/wireprobe-compare}"
+if printf '%s\n' "${directions[@]}" | grep -qx read; then
+    cargo build -q -p zerodds-wire-probe --bin wireprobe-compare 2>&1 | head -20
+    [ -x "$compare" ] || {
+        echo "$(basename "$0"): $compare is not there; nothing would be measured" >&2
+        exit 6
+    }
+fi
+
+status=0
+for encoding in "${encodings[@]}"; do
+for endian in "${endians[@]}"; do
+for direction in "${directions[@]}"; do
+  ok=0; bad=0; refused=0; noref=0
+  for d in tests/interop-corpus/*/; do
+    c=$(basename "$d")
+    r="tests/interop-results/$c/zerodds-rust/$encoding.$endian.bin"
+    [ -f "$d/type.idl" ] && [ -f "$d/values.json" ] || continue
+    [ -f "$r" ] || { noref=$((noref+1)); continue; }
+    t=$(cat "$d/type")
+    [ -n "$t" ] || { noref=$((noref+1)); continue; }
+    code=0
+    if [ "$direction" = write ]; then
+      # No pipe around the probe: `$?` after one is the last stage's, and
+      # the exit code *is* the verdict here.
+      said=$("$probe" --idl "$d/type.idl" --type "$t" --values "$d/values.json" \
+            --encoding "$encoding" --endian "$endian" 2>&1) || code=$?
+      got=$(printf '%s\n' "$said" | tail -1)
+      want=$(od -An -tx1 -v "$r" | tr -d ' \n')
+      if [ "$code" = 0 ] && [ "$got" = "$want" ]; then
+        ok=$((ok+1))
+      elif [ "$code" != 0 ]; then
+        refused=$((refused+1))
+        echo "REFUSED($code) $encoding.$endian write $c :: $(printf '%s\n' "$said" | head -2 | tr '\n' ' ')" >> "$L"
+      else
+        bad=$((bad+1))
+        {
+          echo "DIFFER $encoding.$endian write $c"
+          echo "  python $got"
+          echo "  rust   $want"
+        } >> "$L"
+      fi
+    else
+      said=$("$probe" --idl "$d/type.idl" --type "$t" --in "$r" \
+            --encoding "$encoding" --endian "$endian" \
+            --values-out "$work/read.json" 2>&1) || code=$?
+      if [ "$code" != 0 ]; then
+        refused=$((refused+1))
+        echo "REFUSED($code) $encoding.$endian read $c :: $(printf '%s\n' "$said" | head -2 | tr '\n' ' ')" >> "$L"
+      elif "$compare" --idl "$d/type.idl" --type "$t" \
+            --expected "$d/values.json" --found "$work/read.json" \
+            > "$work/why.txt" 2>&1; then
+        ok=$((ok+1))
+      else
+        bad=$((bad+1))
+        echo "DIFFER $encoding.$endian read $c :: $(head -3 "$work/why.txt" | tr '\n' ' ')" >> "$L"
+      fi
+    fi
+  done
+  printf '%s.%s  %-5s MATCH=%d DIFFER=%d REFUSED=%d NOREF=%d\n' \
+      "$encoding" "$endian" "$direction" "$ok" "$bad" "$refused" "$noref"
+  [ "$bad" -eq 0 ] || status=1
+done
+done
+done
+echo "per case: $L" >&2
+exit "$status"

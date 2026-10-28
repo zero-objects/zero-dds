@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of annotation-external-struct-unannotated that fastdds produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	the fill: error: 'class eprosima::fastcdr::external<zd_c9::Inner>' has no member named 'a'
+plain-cdr1	be	refused	the fill: error: 'class eprosima::fastcdr::external<zd_c9::Inner>' has no member named 'a'
+pl-cdr1	le	refused	the fill: error: 'class eprosima::fastcdr::external<zd_c9::Inner>' has no member named 'a'
+pl-cdr1	be	refused	the fill: error: 'class eprosima::fastcdr::external<zd_c9::Inner>' has no member named 'a'
+plain-cdr2	le	refused	the fill: error: 'class eprosima::fastcdr::external<zd_c9::Inner>' has no member named 'a'
+plain-cdr2	be	refused	the fill: error: 'class eprosima::fastcdr::external<zd_c9::Inner>' has no member named 'a'
+delimited-cdr	le	refused	the fill: error: 'class eprosima::fastcdr::external<zd_c9::Inner>' has no member named 'a'
+delimited-cdr	be	refused	the fill: error: 'class eprosima::fastcdr::external<zd_c9::Inner>' has no member named 'a'
+pl-cdr2	le	refused	the fill: error: 'class eprosima::fastcdr::external<zd_c9::Inner>' has no member named 'a'
+pl-cdr2	be	refused	the fill: error: 'class eprosima::fastcdr::external<zd_c9::Inner>' has no member named 'a'

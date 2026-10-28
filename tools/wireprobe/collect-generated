@@ -1,0 +1,316 @@
+#!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 ZeroDDS Contributors
+#
+# collect-generated — one IDL case, and what every toolchain made of it.
+#
+#   tools/wireprobe/collect-generated out/generated
+#   tools/wireprobe/collect-generated out/generated --cases primitive-mixed,sequence-of-long
+#   tools/wireprobe/collect-generated out/generated --only zerodds-rust,cyclone
+#
+# ## What this is for
+#
+# The octet ledger under `tests/interop-results/` answers what each
+# column puts on the wire. It does not answer what each column's front
+# end *wrote*, and that question has no home: every probe generates a
+# file, measures the bytes it produces, and deletes the file with its
+# `mktemp -d`. `docs/structural-review.md` had to reconstruct the
+# comparison by hand — which is how it found that five columns flatten
+# an inherited struct where HDDS nests it.
+#
+# This fills `<out>/<case>/<system>/` with the sources themselves, so
+# the comparison is a directory listing rather than an investigation.
+#
+# ## The two paths in
+#
+# A column whose materialiser is a Rust function renders the whole
+# corpus in one `cargo test`, under the switch that column already
+# carries — `ZD_PYTHON_OUT`, `ZD_TS_OUT`, and so on. That is one process
+# for 376 cases.
+#
+# A column that needs a toolchain — ours through a compiler, and every
+# vendor — runs one process per case, and keeps its generated files
+# through `probe_keep_generated` in `diagnostics.sh`.
+#
+# Both land in the same layout. Which path a system took is not visible
+# in the output, and should not be: the file is the file.
+#
+# ## What a missing directory means
+#
+# That the toolchain is not on this host. A vendor probe that cannot
+# find its generator is skipped and named on stderr, never silently
+# passed over — an empty column and an absent column read the same in a
+# side-by-side view, and only one of them is a finding.
+set -uo pipefail
+
+cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+
+out=""
+only=""
+cases=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --cases) cases="$2"; shift 2 ;;
+        --only) only="$2"; shift 2 ;;
+        --help|-h) sed -n '5,45p' "${BASH_SOURCE[0]}"; exit 0 ;;
+        -*) echo "collect-generated: \`$1\` is not an option" >&2; exit 2 ;;
+        *) out="$1"; shift ;;
+    esac
+done
+[ -n "$out" ] || { echo "collect-generated: name an output directory" >&2; exit 2; }
+mkdir -p "$out"
+out="$(cd "$out" && pwd)"
+
+wanted() {
+    [ -z "$only" ] && return 0
+    echo ",$only," | grep -q ",$1,"
+}
+
+wanted_case() {
+    [ -z "$cases" ] && return 0
+    echo ",$cases," | grep -q ",$1,"
+}
+
+staging="$(mktemp -d)"
+trap 'rm -rf "$staging"' EXIT
+
+if command -v timeout > /dev/null 2>&1; then
+    clock=(timeout "${WIREPROBE_TIMEOUT:-120}")
+elif command -v gtimeout > /dev/null 2>&1; then
+    clock=(gtimeout "${WIREPROBE_TIMEOUT:-120}")
+else
+    clock=()
+    echo "collect-generated: no timeout(1) here; a front end that hangs will \
+stop the collection" >&2
+fi
+
+# -- the columns that render in one process -------------------------------
+#
+# `<variable> <cargo target> <test name> <system> <layout>`, where the
+# layout is `nested` for a column that writes `<dir>/<case>/<file>` and
+# `flat` for one that writes `<dir>/<case>.<ext>`.
+in_process=(
+    "ZD_RUST_OUT|--test end_to_end|every_corpus_case_renders_or_names_its_failure|zerodds-rust|nested"
+    "ZD_PYTHON_OUT|--lib|adapter::python::tests::every_corpus_case_renders_or_names_its_failure|zerodds-python|nested"
+    "ZD_JAVA_OUT|--lib|adapter::java::tests::every_corpus_case_renders_or_names_its_failure|zerodds-java|nested"
+    "ZD_CSHARP_OUT|--lib|adapter::csharp::tests::every_corpus_case_renders_or_names_its_failure|zerodds-csharp|nested"
+    "ZD_TS_OUT|--lib|adapter::typescript::tests::every_corpus_case_renders_or_names_its_failure|zerodds-typescript|nested"
+    "ZERODDS_CPP_OUT|--lib|adapter::cpp::tests::every_corpus_case_renders_or_names_its_refusal|zerodds-cpp|flat"
+)
+
+for entry in "${in_process[@]}"; do
+    IFS='|' read -r variable target test_name system layout <<< "$entry"
+    wanted "$system" || continue
+    stage="$staging/$system"
+    mkdir -p "$stage"
+    echo "collect-generated: $system" >&2
+    if ! env "$variable=$stage" cargo test -q -p zerodds-lang-rules $target \
+            "$test_name" -- --exact --nocapture > "$staging/$system.log" 2>&1; then
+        echo "collect-generated: $system did not render the corpus; see $staging/$system.log" >&2
+        tail -5 "$staging/$system.log" >&2
+        continue
+    fi
+    # The same manifest the probe loop writes, so a reader gets a
+    # reason from every column and not only from the ones that run a
+    # toolchain. These columns either render a case or their corpus
+    # test names it — `docs/language-limits.md` is where the naming
+    # lives, so that is where the pane points.
+    manifest="$out/.collected/$system.tsv"
+    mkdir -p "$out/.collected"
+    : > "$manifest"
+
+    if [ "$layout" = nested ]; then
+        for d in "$stage"/*/; do
+            [ -d "$d" ] || continue
+            case_name=$(basename "$d")
+            wanted_case "$case_name" || continue
+            mkdir -p "$out/$case_name/$system"
+            cp "$d"* "$out/$case_name/$system/" 2>/dev/null || true
+        done
+    else
+        for f in "$stage"/*.*; do
+            [ -f "$f" ] || continue
+            base=$(basename "$f")
+            case_name="${base%.*}"
+            wanted_case "$case_name" || continue
+            mkdir -p "$out/$case_name/$system"
+            cp "$f" "$out/$case_name/$system/"
+        done
+    fi
+
+    for d in tests/interop-corpus/*/; do
+        case_name=$(basename "$d")
+        wanted_case "$case_name" || continue
+        [ -f "$d/type.idl" ] || continue
+        if [ -d "$out/$case_name/$system" ]; then
+            printf '%s\tkept\tok\t\n' "$case_name" >> "$manifest"
+        else
+            printf '%s\tnone\trefused\t%s\n' "$case_name" \
+                "the materialiser produced nothing for this case; the rule that stops it is in docs/language-limits.md" \
+                >> "$manifest"
+        fi
+    done
+done
+
+# -- the columns that need a toolchain ------------------------------------
+#
+# One probe per case. `probe_keep_generated` writes straight into the
+# output tree, so there is nothing to move afterwards.
+# `<system>|<probe>|<encoding>|<endian>`. Both belong to the probe and
+# not to the collection: JacORB's `org.jacorb.orb.CDROutputStream` has
+# no `setLittleEndian`, so that probe writes big endian only and
+# refuses `le` by name — one more argument reading as a missing
+# install. Neither choice changes what a front end generates; they are
+# what it takes to reach the front end at all.
+#
+# On the encoding: a CORBA ORB implements GIOP's CDR, which is XTypes
+# 1.3 §7.4.2 encoding **version 1**, and refuses `plain-cdr2` by name;
+# `rosidl_typesupport_fastrtps` writes plain CDR version 1 only. Asking
+# every probe for the same encoding got four systems to refuse all 376
+# cases and report as an absent toolchain — a wrong argument reading as
+# a missing install.
+probes=(
+    "zerodds-c|tools/wireprobe/wireprobe-zerodds-c|plain-cdr2|le"
+    "cyclone|tools/wireprobe/wireprobe-cyclone|plain-cdr2|le"
+    "fastdds|tools/wireprobe/wireprobe-fastdds|plain-cdr2|le"
+    "opendds|tools/wireprobe/wireprobe-opendds|plain-cdr2|le"
+    "rti|tools/wireprobe/wireprobe-rti|plain-cdr2|le"
+    "tao|tools/wireprobe/wireprobe-tao|plain-cdr1|le"
+    "omniorb|tools/wireprobe/wireprobe-omniorb|plain-cdr1|le"
+    "jacorb|tools/wireprobe/wireprobe-jacorb|plain-cdr1|be"
+    "ros|tools/wireprobe/wireprobe-ros|plain-cdr1|le"
+    "hdds|tools/wireprobe/wireprobe-hdds|plain-cdr2|le"
+)
+
+for entry in "${probes[@]}"; do
+    IFS='|' read -r system probe encoding endian <<< "$entry"
+    wanted "$system" || continue
+    [ -x "$probe" ] || { echo "collect-generated: $system has no probe here" >&2; continue; }
+    kept=0; refused=0; timedout=0
+    # What happened to each case, so the page can say *why* a column is
+    # empty. Without it a reader sees one blank in three situations —
+    # the toolchain is not installed, the front end refused this case,
+    # the case was not attempted — and only two of the three are a
+    # finding about the toolchain.
+    manifest="$out/.collected/$system.tsv"
+    mkdir -p "$out/.collected"
+    : > "$manifest"
+    for d in tests/interop-corpus/*/; do
+        case_name=$(basename "$d")
+        wanted_case "$case_name" || continue
+        [ -f "$d/type.idl" ] && [ -f "$d/values.json" ] && [ -f "$d/type" ] || continue
+        # Under a clock, because a front end that does not come back
+        # stops the whole collection. Measured: Cyclone's `idlc` on
+        # `recursive-self-sequence` — `struct Node { sequence<Node>
+        # children; }`, which IDL 4.2 allows and XTypes §7.2.3 gives an
+        # SCC rule for — ran 24 minutes at 99% of a core and 11 GiB of
+        # a 15 GiB host before it was killed, and it was still growing.
+        # One case would have taken the machine down and the run with
+        # it.
+        ${clock[@]+"${clock[@]}"} env WIREPROBE_KEEP_GENERATED="$out" "$probe" \
+            --idl "$d/type.idl" --type "$(cat "$d/type")" --values "$d/values.json" \
+            --encoding "$encoding" --endian "$endian" > /dev/null 2>"$staging/$system.err"
+        status=$?
+        if [ "$status" -eq 124 ]; then
+            timedout=$((timedout + 1))
+            echo "collect-generated: $system did not come back on $case_name" >&2
+        fi
+        # The probe's own status, not the presence of the directory:
+        # the trap copies the input IDL too, so a directory exists even
+        # for a probe that never reached its front end. Counting the
+        # directory would have reported a toolchain that is not
+        # installed as a column that generated something.
+        # Two facts, not one: whether files were kept, and what the
+        # probe did. They come apart — a front end can write its header
+        # and then have the build refuse, and the header is worth
+        # keeping and the refusal worth stating.
+        if [ -d "$out/$case_name/$system" ]; then files=kept; else files=none; fi
+        # The octet ledger's own words, and not a second vocabulary:
+        # `docs/specs/zerodds-verdicts-1.0.md` is where each one gets
+        # its meaning and the evidence that produces it.
+        # `tools/interop-results/src/ledger.rs` keeps `no-form` apart
+        # from `refused` because a limit of the target's specification
+        # and a toolchain saying no are different answers. The probes
+        # carry the distinction in their exit code — 3 for no form, 6
+        # for a construct the target has and this harness has not
+        # written — so nothing here has to read a message to classify.
+        # The first line that is an answer about the case. A probe may
+        # say other things first — `generator.sh` announces a rebuild
+        # on stderr, by design — and taking `head -1` recorded that
+        # notice as the reason a case had no form.
+        reason="$(grep -v '; rebuilding$' "$staging/$system.err" 2>/dev/null \
+            | head -1 | tr '\t' ' ' | cut -c1-160)"
+        case "$status" in
+            0) outcome=ok; reason="" ;;
+            # A probe that was called wrong measured nothing. Exit 2 fell
+            # into the `*)` arm below and was written down as the column
+            # refusing the case — a fault of this harness entering the
+            # matrix as a measurement, with no way to see it afterwards.
+            2)
+                echo "collect-generated: $system was called wrong on $case_name: $reason" >&2
+                exit 2
+                ;;
+            # `toolchain-absent`: this machine has not got the column's
+            # toolchain. Also not a
+            # measurement: it says nothing about the case and everything
+            # about the host. It shared exit 6 with `harness-gap` until
+            # 2026-08-27, and four columns — nim, zig, julia, swift —
+            # wrote tens of thousands of cells reading as refusals when
+            # nobody had installed their compiler. Each surfaced by
+            # accident.
+            9)
+                echo "collect-generated: $system has no toolchain here: $reason" >&2
+                exit 9
+                ;;
+            3) outcome=no-form ;;
+            6) outcome=harness-gap ;;
+            7) outcome=generator-defect ;;
+            8) outcome=mapping-divergence ;;
+            124) outcome=timed-out; reason="no answer within ${WIREPROBE_TIMEOUT:-120}s" ;;
+            *) outcome=refused ;;
+        esac
+        printf '%s\t%s\t%s\t%s\n' "$case_name" "$files" "$outcome" "$reason" \
+            >> "$manifest"
+        if [ "$status" -eq 0 ]; then
+            kept=$((kept + 1))
+        else
+            refused=$((refused + 1))
+            if [ "$refused" -eq 1 ]; then
+                printf 'collect-generated: %s refused %s: ' "$system" "$case_name" >&2
+                head -1 "$staging/$system.err" >&2
+            fi
+        fi
+    done
+    # A probe copies the corpus IDL into its work directory before it
+    # runs, so a verbatim copy of the input is not something the front
+    # end produced. Dropped by content, not by name: a probe that
+    # *rewrites* the IDL — adding annotations a generator needs — wrote
+    # something, and that file stays.
+    for d in "$out"/*/"$system"; do
+        [ -d "$d" ] || continue
+        case_name=$(basename "$(dirname "$d")")
+        source="tests/interop-corpus/$case_name/type.idl"
+        for f in "$d"/*; do
+            [ -f "$f" ] || continue
+            if [ -f "$source" ] && cmp -s "$f" "$source"; then rm -f "$f"; fi
+        done
+        rmdir "$d" 2>/dev/null || true
+        rmdir "$(dirname "$d")" 2>/dev/null || true
+    done
+    with_files=$(find "$out" -mindepth 2 -maxdepth 2 -type d -name "$system" 2>/dev/null | wc -l | tr -d ' ')
+    if [ "$with_files" -eq 0 ]; then
+        echo "collect-generated: $system generated nothing here — toolchain absent?" >&2
+        head -2 "$staging/$system.err" >&2 2>/dev/null || true
+    elif [ "$kept" -eq 0 ]; then
+        # Sources but no successful probe: the front end ran and what
+        # came after it did not. The files are the point here, so this
+        # is a kept column and not an absent one.
+        echo "collect-generated: $system generated $with_files case(s); no probe ran to completion" >&2
+    else
+        echo "collect-generated: $system $with_files case(s) with sources, $kept probe(s) ran, $refused refused, $timedout timed out" >&2
+    fi
+done
+
+systems=$(find "$out" -mindepth 2 -maxdepth 2 -type d -exec basename {} \; | sort -u | tr '\n' ' ')
+echo "collect-generated: $(find "$out" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ') case(s)"
+echo "collect-generated: systems: $systems"

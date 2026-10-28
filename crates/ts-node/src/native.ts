@@ -74,7 +74,14 @@ function findLibrary(): string {
   return fname; // last attempt — koffi searches in standard paths
 }
 
-const lib = koffi.load(findLibrary());
+/// The `libzerodds` this module bound against. Exported so a test can link
+/// a recording stub against the same library — koffi resolves every declared
+/// symbol at load time, so a stub that defines only the handful of functions
+/// under test still has to supply the rest, and it does that by depending on
+/// this file.
+export const LIBRARY_PATH = findLibrary();
+
+const lib = koffi.load(LIBRARY_PATH);
 
 // Status codes from `enum ZeroDdsStatus` (crates/zerodds-c-api). Only the codes
 // the binding branches on are mirrored here.
@@ -103,6 +110,12 @@ export const zerodds_writer_create = lib.func(
 );
 export const zerodds_writer_write = lib.func(
   "int zerodds_writer_write(ZeroDdsWriter* writer, const uint8_t* payload, size_t len)",
+);
+// The encapsulation identifier the runtime stamps on the payload is chosen
+// from this, and the C ABI's default is FINAL: `0` FINAL, `1` APPENDABLE,
+// `2` MUTABLE.
+export const zerodds_writer_set_wire_extensibility = lib.func(
+  "int zerodds_writer_set_wire_extensibility(ZeroDdsWriter* writer, int extensibility)",
 );
 export const zerodds_writer_wait_for_matched = lib.func(
   "int zerodds_writer_wait_for_matched(ZeroDdsWriter* writer, int min_count, uint64_t timeout_ms)",
@@ -201,6 +214,12 @@ export const zerodds_pub_delete_datawriter = lib.func(
 );
 export const zerodds_dw_write = lib.func(
   "int zerodds_dw_write(ZeroDdsDataWriter* dw, const uint8_t* payload, size_t len, uint64_t handle)",
+);
+// The keyed write: the sample goes out with its 16-byte DDS KeyHash, the key
+// the runtime keeps the instance under. `zerodds_dw_write` writes every
+// sample under the all-zero key.
+export const zerodds_dw_write_keyed = lib.func(
+  "int zerodds_dw_write_keyed(ZeroDdsDataWriter* dw, const uint8_t* payload, size_t len, const uint8_t* key_hash, size_t key_len)",
 );
 export const zerodds_dw_wait_for_matched = lib.func(
   "int zerodds_dw_wait_for_matched(ZeroDdsDataWriter* dw, int min, uint64_t timeout_ms)",
@@ -382,6 +401,56 @@ export const PartitionPolicy = koffi.struct("ZeroDdsPartitionQosPolicy", {
   names_len: "size_t",
 });
 
+// DDS-XTypes 1.3 Annex D: the trailing members of the Topic, DataWriter and
+// DataReader QoS structs. An all-zero value leaves the policy at its default.
+export const DataRepresentationPolicy = koffi.struct(
+  "ZeroDdsDataRepresentationQosPolicy",
+  {
+    is_set: "uint8_t",
+    count: "uint8_t",
+    ids: koffi.array("int16_t", 8),
+  },
+);
+export const TypeConsistencyEnforcementPolicy = koffi.struct(
+  "ZeroDdsTypeConsistencyEnforcementQosPolicy",
+  {
+    is_set: "uint8_t",
+    kind: "uint8_t",
+    ignore_sequence_bounds: "uint8_t",
+    ignore_string_bounds: "uint8_t",
+    ignore_member_names: "uint8_t",
+    prevent_type_widening: "uint8_t",
+    force_type_validation: "uint8_t",
+  },
+);
+// DDS-Security 1.2 §7.3.21: the trailing `property` and `data_tags` members of
+// the DataWriter and DataReader QoS structs. An all-zero value is no entries.
+export const PropertyEntry = koffi.struct("ZeroDdsPropertyEntry", {
+  name: "char *",
+  value: "char *",
+  propagate: "uint8_t",
+});
+export const BinaryPropertyEntry = koffi.struct("ZeroDdsBinaryPropertyEntry", {
+  name: "char *",
+  value: koffi.pointer("uint8_t"),
+  value_len: "size_t",
+  propagate: "uint8_t",
+});
+export const PropertyQosPolicy = koffi.struct("ZeroDdsPropertyQosPolicy", {
+  entries: koffi.pointer("uint8_t"),
+  entries_len: "size_t",
+  binary_entries: koffi.pointer("uint8_t"),
+  binary_entries_len: "size_t",
+});
+export const Tag = koffi.struct("ZeroDdsTag", {
+  name: "char *",
+  value: "char *",
+});
+export const DataTagQosPolicy = koffi.struct("ZeroDdsDataTagQosPolicy", {
+  tags: koffi.pointer("uint8_t"),
+  tags_len: "size_t",
+});
+
 // Aggregate QoS structs (field order MUST match zerodds.h exactly).
 export const DataWriterQosStruct = koffi.struct("ZeroDdsDataWriterQos", {
   reliability: ReliabilityPolicy,
@@ -403,6 +472,9 @@ export const DataWriterQosStruct = koffi.struct("ZeroDdsDataWriterQos", {
   user_data: BytesPolicy,
   topic_data: BytesPolicy,
   group_data: BytesPolicy,
+  data_representation: DataRepresentationPolicy,
+  property: PropertyQosPolicy,
+  data_tags: DataTagQosPolicy,
 });
 
 export const DataReaderQosStruct = koffi.struct("ZeroDdsDataReaderQos", {
@@ -422,6 +494,10 @@ export const DataReaderQosStruct = koffi.struct("ZeroDdsDataReaderQos", {
   user_data: BytesPolicy,
   topic_data: BytesPolicy,
   group_data: BytesPolicy,
+  data_representation: DataRepresentationPolicy,
+  type_consistency: TypeConsistencyEnforcementPolicy,
+  property: PropertyQosPolicy,
+  data_tags: DataTagQosPolicy,
 });
 
 export const PublisherQosStruct = koffi.struct("ZeroDdsPublisherQos", {
@@ -447,6 +523,7 @@ export const TopicQosStruct = koffi.struct("ZeroDdsTopicQos", {
   lifespan: LifespanPolicy,
   ownership: OwnershipPolicy,
   topic_data: BytesPolicy,
+  data_representation: DataRepresentationPolicy,
 });
 
 export const ContentFilteredTopicPtr = koffi.pointer(
@@ -471,6 +548,25 @@ export const zerodds_pub_create_datawriter_qos = lib.func(
 );
 export const zerodds_sub_create_datareader_qos = lib.func(
   "ZeroDdsDataReader* zerodds_sub_create_datareader(ZeroDdsSubscriber* sub, ZeroDdsTopic* topic, ZeroDdsDataReaderQos* qos)",
+);
+
+// The endpoints of a generated TypeSupport: the writer offers, and the reader
+// accepts, the codec's extensibility and representation, and both carry its
+// CompleteTypeObject, fixed before discovery. `extensibility` is 0 (final),
+// 1 (appendable) or 2 (mutable); `representation` is XTypes 1.3 §7.6.3.1.1's
+// DataRepresentationId, 0 (XCDR1) or 2 (XCDR2). Declared twice, like the
+// untyped creates: once for a NULL QoS, once for a QoS struct.
+export const zerodds_pub_create_datawriter_typed_wire = lib.func(
+  "ZeroDdsDataWriter* zerodds_pub_create_datawriter_typed_wire(ZeroDdsPublisher* pub, ZeroDdsTopic* topic, const void* qos, const uint8_t* type_object, size_t len, int is_keyed, int extensibility, int representation)",
+);
+export const zerodds_pub_create_datawriter_typed_wire_qos = lib.func(
+  "ZeroDdsDataWriter* zerodds_pub_create_datawriter_typed_wire(ZeroDdsPublisher* pub, ZeroDdsTopic* topic, ZeroDdsDataWriterQos* qos, const uint8_t* type_object, size_t len, int is_keyed, int extensibility, int representation)",
+);
+export const zerodds_sub_create_datareader_typed_wire = lib.func(
+  "ZeroDdsDataReader* zerodds_sub_create_datareader_typed_wire(ZeroDdsSubscriber* sub, ZeroDdsTopic* topic, const void* qos, const uint8_t* type_object, size_t len, int is_keyed, int representation)",
+);
+export const zerodds_sub_create_datareader_typed_wire_qos = lib.func(
+  "ZeroDdsDataReader* zerodds_sub_create_datareader_typed_wire(ZeroDdsSubscriber* sub, ZeroDdsTopic* topic, ZeroDdsDataReaderQos* qos, const uint8_t* type_object, size_t len, int is_keyed, int representation)",
 );
 
 // ContentFilteredTopic (Spec §2.2.2.3.3).

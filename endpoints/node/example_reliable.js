@@ -18,7 +18,7 @@ async function main() {
   const port = parseInt(process.argv[2], 10);
   const n = process.argv[3] ? parseInt(process.argv[3], 10) : 12;
 
-  const writer = new AsyncReliableWriter('127.0.0.1', port);
+  const writer = new AsyncReliableWriter('127.0.0.1', port, 0x0015);
   writer.start();
 
   for (let i = 0; i < n; i++) {

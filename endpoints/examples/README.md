@@ -34,7 +34,7 @@ languages, and asserts all six exchanges: three publishes (endpoint->hub) and th
    language equivalent).
 3. Hand the frame to a transport via the frame-hook — here a UDP socket;
    another target fills the same hook with its own transport (see
-   `../c/src/zerodds_endpoint.c` `zdw_serial_frame` for the Annex-C HDLC serial
-   framing).
+   `../c/src/zerodds_endpoint.c` `zdw_serial_frame` for the DDS-XRCE Annex C
+   serial framing).
 
 The hub stays Rust; the endpoint is conservative C89/pure-Python/pure-Java.

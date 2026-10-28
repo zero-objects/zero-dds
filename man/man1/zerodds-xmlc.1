@@ -1,4 +1,4 @@
-.TH ZERODDS-XMLC 1 "June 2026" "ZeroDDS 1.0.0-rc.3" "User Commands"
+.TH ZERODDS-XMLC 1 "" "ZeroDDS" "User Commands"
 .SH NAME
 zerodds-xmlc \- DDS-XML validator, deployment renderer, type lister
 .SH SYNOPSIS
@@ -26,19 +26,37 @@ writers/readers underneath.
 List the
 .B <types>
 (XTypes) definitions, recursing into modules.
+.SH OPTIONS
 .TP
-.B help
+.B \-\-skip\-unknown
+Leave out what the DDS-XML 1.0 schemas do not define (the elements and
+attributes of another product's file) and list each omission with its path on
+standard error. Without it the first such element is an error.
+.TP
+.B \-\-vendor\-forms
+Read the forms other DDS products write (such as
+.B <topic_filter>
+as an element,
+.BR qos_profile_ref ,
+.BR <participant_qos> ,
+IDL type names) and list each with its path on standard error. Without it the
+first such form is an error that names the form DDS-XML 1.0 uses.
+.TP
+.BR \-h ", " \-\-help
 Show usage.
 .SH EXIT STATUS
 .TP
 .B 0
-Success / valid.
+Nothing to report.
 .TP
 .B 1
-Parse or validation error.
+A library failed to parse.
 .TP
 .B 2
-CLI parse error / bad invocation.
+The command line was wrong.
+.TP
+.B 3
+A file could not be read.
 .SH EXAMPLES
 Validate a deployment file:
 .PP

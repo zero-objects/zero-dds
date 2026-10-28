@@ -73,11 +73,8 @@ for frame in reader.frames() {
 
 ## Stability
 
-`1.0.0-rc.1`. Wire format `ZDDSREC_VERSION = 1` is RC1-stable; an
-incompatible change would bump the version constant (the `Reader`
-rejects unknown versions). Additive extensions (streaming
-reader, IndexAddFrame, optional compression) are designed as
-major-2.0 hooks — see spec §"Stability and roadmap".
+`1.0.0-rc.7`, a pre-release. The public API can still change before
+1.0.0; the crate's CHANGELOG lists every change.
 
 ## Tests
 

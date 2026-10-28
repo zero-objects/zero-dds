@@ -65,7 +65,7 @@ pub struct BrowseDescription {
     pub reference_type_id: NodeId,
     /// `boolean include_subtypes`.
     pub include_subtypes: bool,
-    /// `uint32 node_class_mask` — Bitfield aus `NodeClass.value()`.
+    /// `uint32 node_class_mask` — bitfield from `NodeClass.value()`.
     pub node_class_mask: u32,
     /// `uint32 result_mask`.
     pub result_mask: u32,
@@ -88,7 +88,7 @@ impl ViewServiceMethods {
     pub const UNREGISTER_NODES: &'static str = "unregister_nodes";
 }
 
-// Method-Signaturen — Spec §8.3.2.2 IDL @DDSService interface View.
+// Method signatures — Spec §8.3.2.2 IDL @DDSService interface View.
 const BROWSE_PARAMS: &[ServiceParam] = &[
     ServiceParam {
         name: "server_id",
@@ -263,7 +263,7 @@ mod tests {
 
     #[test]
     fn browse_method_first_param_is_server_id() {
-        // Spec §8.3 einleitend: "The first parameter of each method is
+        // Spec §8.3 introduction: "The first parameter of each method is
         // always the input parameter server_id".
         for m in SERVICE_SET.methods {
             assert_eq!(
@@ -278,7 +278,7 @@ mod tests {
 
     #[test]
     fn browse_method_carries_view_description() {
-        // Spec §8.3.2.2 IDL — browse hat `in ViewDescription view_description`.
+        // Spec §8.3.2.2 IDL — browse has `in ViewDescription view_description`.
         let browse = SERVICE_SET
             .methods
             .iter()

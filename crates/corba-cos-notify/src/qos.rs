@@ -9,7 +9,7 @@
 
 use alloc::string::String;
 
-use zerodds_cdr::CorbaAny;
+use zerodds_corba_rt::CorbaAny;
 
 use crate::event::{Property, PropertySeq};
 
@@ -71,7 +71,7 @@ impl QoSProperties {
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use zerodds_cdr::AnyValue;
+    use zerodds_corba_rt::AnyValue;
 
     #[test]
     fn qos_set_get_overwrite() {

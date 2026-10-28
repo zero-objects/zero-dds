@@ -7,6 +7,7 @@
 
 import zerodds.AsyncReader
 import zerodds.Client
+import zerodds.Encoding
 import zerodds.Endian
 import zerodds.MemTransport
 import zerodds.Reader
@@ -14,7 +15,7 @@ import zerodds.Writer
 
 data class Reading(val id: Long, val value: Float, val label: String) {
     fun marshal(endian: Endian): ByteArray {
-        val w = Writer(endian)
+        val w = Writer(endian, Encoding.XCDR2)
         w.putU32(id)
         w.putF32(value)
         w.putString(label)
@@ -23,14 +24,14 @@ data class Reading(val id: Long, val value: Float, val label: String) {
 }
 
 fun decodeReading(body: ByteArray): Reading {
-    val r = Reader(body, Endian.LITTLE)
+    val r = Reader(body, Endian.LITTLE, Encoding.XCDR2)
     return Reading(r.getU32(), r.getF32(), r.getString())
 }
 
 fun main() {
     val total = 5
     val t = MemTransport()
-    val c = Client(t)
+    val c = Client(t, zerodds.xrceObjectId(0x001, zerodds.OBJK_DATAWRITER))
 
     // Publisher: frame + deliver 5 typed readings with varying values.
     for (i in 0 until total) {

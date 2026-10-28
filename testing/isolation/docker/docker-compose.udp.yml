@@ -1,6 +1,6 @@
-# L3 UDP-Smoke: zwei Container im gleichen bridge-network,
-# statische IPs (das Smoke-Tool parst nur numerische IPv4, noch
-# keine Hostname-Resolution).
+# L3 UDP smoke test: two containers in the same bridge network,
+# static IPs (the smoke tool parses only numeric IPv4, no
+# hostname resolution yet).
 #
 # Run:
 #   cd testing/isolation/docker

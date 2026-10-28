@@ -1,0 +1,1 @@
+@final struct TypeB { short a; char b; };

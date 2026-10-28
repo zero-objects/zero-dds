@@ -1,25 +1,25 @@
-# `.zddsrec` v1.0 — Recording-Format-Spec
+# `.zddsrec` v1.0 — Recording format spec
 
-ZeroDDS Vendor-Spec. In `crates/recorder` (`zerodds-recorder`) implementiert.
+ZeroDDS vendor spec. Implemented in `crates/recorder` (`zerodds-recorder`).
 
-## Ziele
+## Goals
 
-* **Kompakt**: keine textuellen Annotationen im Hot-Path. CDR-Payloads
-  bleiben unverändert; Header sammelt Metadata einmalig.
-* **Streamfreundlich**: Frames sind eigenständig parsebar nach
-  einem einmal gelesenen Header. Reader und Writer sind beide
-  inkrementell.
-* **Spezifizierbar**: byte-genau in 1 Seite, keine Reflection-Magie.
+* **Compact**: no textual annotations in the hot path. CDR payloads
+  remain unchanged; the header collects metadata once.
+* **Stream-friendly**: frames can be parsed on their own after
+  a header that is read once. Reader and writer are both
+  incremental.
+* **Specifiable**: byte-exact on 1 page, no reflection magic.
 
-## Datei-Struktur
+## File structure
 
-Endianness: **little-endian** für alle Multi-Byte-Integer.
+Endianness: **little-endian** for all multi-byte integers.
 
 ```
 +========== Header ==========+
 | Magic    "ZDDS"  (4 byte)  |
-| Version  u32     (LE)      |  // = 1 fuer diese Spec
-| TimeBase i64     (LE) ns   |  // UNIX-Epoch-Anchor
+| Version  u32     (LE)      |  // = 2 for this spec
+| TimeBase i64     (LE) ns   |  // UNIX epoch anchor
 | ParticipantCount u32 (LE)  |
 | TopicCount       u32 (LE)  |
 | Participants[]             |
@@ -40,80 +40,107 @@ Endianness: **little-endian** für alle Multi-Byte-Integer.
 | PayloadLen     u32 (LE)    |
 | Payload        bytes       |
 +============================+
-| FrameMagic 'F' ... weitere |
+| FrameMagic 'F' ... further |
 +============================+
 ```
 
-EOF: kein expliziter Marker — der Reader stoppt wenn der Cursor das
-File-Ende erreicht.
+EOF: no explicit marker — the reader stops when the cursor reaches the
+end of the file.
 
-## Indizes
+## Indices
 
-`ParticipantIdx` und `TopicIdx` sind 0-basierte Indizes in die
-entsprechenden Header-Listen. Wenn ein neuer Participant oder Topic
-mitten im Stream auftaucht, kann er **nicht** nachträglich
-appendet werden — der Recorder muss vor dem ersten Frame alle
-möglichen Sources kennen. Für Live-Discovery gilt: einen
-Header pro abgeschlossenem Bereich, mehrere `.zddsrec`-Files pro
-Session.
+`ParticipantIdx` and `TopicIdx` are 0-based indices into the
+corresponding header lists.
 
-(Reserve-Hook fuer eine zukuenftige Major-Version: `IndexAddFrame` mit eigenem Magic-Byte als
-optionale Inline-Erweiterung.)
+A topic that appears in the middle of the stream is appended with a `TopicAdd`
+(see below). Its index continues the header list: the
+first `TopicAdd` of a file has the index `TopicCount`, the second
+`TopicCount + 1`. A reader that processes the `TopicAdd` entries in the order
+in which they appear in the stream arrives at the same index for the same topic
+as the writer.
 
-## SampleKind-Codierung
+For participants this does not exist yet — there it still holds that the
+recorder must know them before the first frame.
 
-| Wert | Spec-Mapping (DDS 1.4 §2.2.4.4.5) |
-|------|-----------------------------------|
-| 0    | `ALIVE`                           |
-| 1    | `NOT_ALIVE_DISPOSED`              |
-| 2    | `NOT_ALIVE_UNREGISTERED`          |
+### TopicAdd
 
-Andere Werte: Reader returnt `BadSampleKind(b)`-Fehler.
+```
++========== TopicAdd ========+
+| Magic        'T'  (1 byte) |
+| TypeLen      u32  (LE)     |
+| TypeName     UTF-8         |
+| NameLen      u32  (LE)     |
+| Name         UTF-8         |
++============================+
+```
 
-## Versionierung
+Stands between frames, at any position at which a frame may also
+stand. Carries no sample.
 
-`Version = ZDDSREC_VERSION` (= 1). Reader lehnt
-`UnsupportedVersion(v)` für `v > ZDDSREC_VERSION` ab — ältere
-Versionen können Reader-seitig im Compatibility-Pfad gelesen
-werden.
+**Why it exists.** A recorder learns the type name of a topic
+from the writer that publishes it. A writer that starts after the recorder
+is the normal case and not an error. Without `TopicAdd` there would remain
+two options, and both were bad: give up the topic, or
+register a reader with a placeholder type that no typed
+writer ever matches — and then record nothing for the entire runtime
+without anyone noticing.
 
-Backward-incompatible Aenderungen heben die Major-Version. Additive
-Aenderungen, die mit Default-Werten read-only-rückwaerts-kompatibel
-bleiben (z.B. neue Frame-Magics ignorieren), bleiben in derselben
-Major-Version.
+**Version.** `TopicAdd` exists from version 2 on. A version 2 file
+without `TopicAdd` is byte for byte a version 1 file; a reader for version
+2 reads both.
 
-## Use-Cases
+## SampleKind encoding
 
-* **Crash-Reproduce**: Production-Recorder schreibt 24h-Trace,
-  Test-Setup spielt mit `--time-scale 60` (1h Wallclock) ab.
-* **Forensic Diff**: zwei Traces mit identischem `TimeBase` zeitlich
-  überlagern.
-* **Soak-Replay**: Chaos-Test-Suite (F.2) injiziert auf einem Replay
-  realistische Loss-/Jitter-Pattern.
+| Value | Spec mapping (DDS 1.4 §2.2.4.4.5) |
+|-------|-----------------------------------|
+| 0     | `ALIVE`                           |
+| 1     | `NOT_ALIVE_DISPOSED`              |
+| 2     | `NOT_ALIVE_UNREGISTERED`          |
+
+Other values: the reader returns a `BadSampleKind(b)` error.
+
+## Versioning
+
+`Version = ZDDSREC_VERSION` (= 1). The reader rejects with
+`UnsupportedVersion(v)` for `v > ZDDSREC_VERSION` — older
+versions can be read on the reader side in the compatibility path.
+
+Backward-incompatible changes raise the major version. Additive
+changes that remain read-only backward-compatible with default values
+(e.g. ignoring new frame magics) stay in the same
+major version.
+
+## Use cases
+
+* **Crash reproduce**: a production recorder writes a 24h trace,
+  a test setup plays it back with `--time-scale 60` (1h wall clock).
+* **Forensic diff**: overlay two traces with identical `TimeBase`
+  in time.
+* **Soak replay**: the chaos test suite (F.2) injects realistic
+  loss/jitter patterns on a replay.
 
 ## Tooling
 
-| Tool                                      | Funktion             |
+| Tool                                      | Function             |
 |-------------------------------------------|----------------------|
-| `crates/recorder` library                 | API fuer Apps        |
-| `tools/replay` Bin (`zerodds-replay`)     | inspect/dump/replay  |
-| `tools/recorder-bridge`                   | Live-record-from-domain |
+| `crates/recorder` library                 | API for apps         |
+| `tools/replay` binary (`zerodds-replay`)  | inspect/dump/replay  |
+| `tools/recorder-bridge`                   | live record from domain |
 
-## Stabilitaet und Roadmap
+## Stability and roadmap
 
-`zerodds-recorder` 1.0 deckt das core-Format + Reader + Writer +
-in-Process-`RecordingSession`. Die folgenden Erweiterungen sind als
-**additive** Major-2.0-Hooks vorgesehen, ohne dass die 1.0-Wire-Form
-zu brechen:
+`zerodds-recorder` 1.0 covers the core format + reader + writer +
+in-process `RecordingSession`. The following extensions are planned as
+**additive** major-2.0 hooks, without breaking the 1.0 wire form:
 
-* Live-Recording aus DcpsRuntime via `zerodds-c-api`-Hook (Pfad ueber
+* Live recording from DcpsRuntime via a `zerodds-c-api` hook (path via
   `tools/recorder-bridge`).
-* Live-Replay → `zerodds_writer_write` Re-Injection.
-* `IndexAddFrame` fuer inline-discovery additions (Reserve-Magic-Byte
-  bereits am End-Of-Stream-Cursor anschliessbar).
-* Optionale `zlib`/`zstd` Frame-Compression mit separatem FrameMagic
-  als opt-in Erweiterung.
+* Live replay → `zerodds_writer_write` re-injection.
+* `IndexAddFrame` for inline discovery additions (reserve magic byte
+  already attachable at the end-of-stream cursor).
+* Optional `zlib`/`zstd` frame compression with a separate FrameMagic
+  as an opt-in extension.
 
-Der Reader 1.0 lehnt unbekannte FrameMagic-Bytes mit
-`ReadError::UnknownFrameMagic` ab — additive Frame-Typen koennen
-sicher hinzugefuegt werden.
+The 1.0 reader rejects unknown FrameMagic bytes with
+`ReadError::UnknownFrameMagic` — additive frame types can
+be added safely.

@@ -25,31 +25,13 @@
 use std::time::{Duration, Instant};
 
 use zerodds_dcps::runtime::{DcpsRuntime, RuntimeConfig, UserReaderConfig, UserWriterConfig};
-use zerodds_qos::{
-    DeadlineQosPolicy, DurabilityKind, LifespanQosPolicy, LivelinessQosPolicy, OwnershipKind,
-};
 use zerodds_rtps::wire_types::{GuidPrefix, Locator};
 
 fn writer_cfg(topic: &str) -> UserWriterConfig {
     UserWriterConfig {
         topic_name: topic.into(),
         type_name: "RawBytes".into(),
-        reliable: true,
-        durability: DurabilityKind::Volatile,
-        deadline: DeadlineQosPolicy::default(),
-        latency_budget: Default::default(),
-        destination_order: Default::default(),
-        lifespan: LifespanQosPolicy::default(),
-        liveliness: LivelinessQosPolicy::default(),
-        ownership: OwnershipKind::Shared,
-        ownership_strength: 0,
-        presentation: Default::default(),
-        partition: vec![],
-        user_data: vec![],
-        topic_data: vec![],
-        group_data: vec![],
-        type_identifier: zerodds_types::TypeIdentifier::None,
-        data_representation_offer: None,
+        ..Default::default()
     }
 }
 
@@ -57,21 +39,7 @@ fn reader_cfg(topic: &str) -> UserReaderConfig {
     UserReaderConfig {
         topic_name: topic.into(),
         type_name: "RawBytes".into(),
-        reliable: true,
-        durability: DurabilityKind::Volatile,
-        deadline: DeadlineQosPolicy::default(),
-        latency_budget: Default::default(),
-        destination_order: Default::default(),
-        liveliness: LivelinessQosPolicy::default(),
-        ownership: OwnershipKind::Shared,
-        presentation: Default::default(),
-        partition: vec![],
-        user_data: vec![],
-        group_data: vec![],
-        topic_data: vec![],
-        type_identifier: zerodds_types::TypeIdentifier::None,
-        type_consistency: zerodds_types::qos::TypeConsistencyEnforcement::default(),
-        data_representation_offer: None,
+        ..Default::default()
     }
 }
 
@@ -92,7 +60,7 @@ fn clients_discover_each_other_through_the_server() {
     let host = [0x71u8; 4];
     let mk = |tag: u8| {
         let mut p = [tag; 12];
-        p[..4].copy_from_slice(&host);
+        p[2..6].copy_from_slice(&host);
         GuidPrefix::from_bytes(p)
     };
 

@@ -17,19 +17,21 @@ typedef struct rmw_zerodds_Option_RmwEventCallback rmw_zerodds_Option_RmwEventCa
 
 typedef struct rmw_zerodds_Option_RmwNodeCallback rmw_zerodds_Option_RmwNodeCallback;
 
+typedef struct rmw_zerodds_Option_RmwZerodsFieldGetter rmw_zerodds_Option_RmwZerodsFieldGetter;
+
 typedef struct rmw_zerodds_Option_ZeroDdsEndpointCallback rmw_zerodds_Option_ZeroDdsEndpointCallback;
 
 typedef struct rmw_zerodds_Option_ZeroDdsTopicCallback rmw_zerodds_Option_ZeroDdsTopicCallback;
 
 /**
- * Opaque-Handle: rmw_zerodds Client (request-Pub + reply-Sub auf
- * `<service>_Request` / `<service>_Reply`).
+ * A ROS 2 service client: request writer on `rq/…Request`, reply reader on
+ * `rr/…Reply`.
  */
 typedef struct rmw_zerodds_RmwZerodsClient rmw_zerodds_RmwZerodsClient;
 
 /**
  * Opaque handle: rmw_zerodds context (1:1 to a domain-participant
- * init). Hardcoded domain 0 in current distros; later from init_options.
+ * init). The domain is `rmw_init`'s `options->domain_id`.
  */
 typedef struct rmw_zerodds_RmwZerodsContext rmw_zerodds_RmwZerodsContext;
 
@@ -44,7 +46,8 @@ typedef struct rmw_zerodds_RmwZerodsNode rmw_zerodds_RmwZerodsNode;
 typedef struct rmw_zerodds_RmwZerodsPublisher rmw_zerodds_RmwZerodsPublisher;
 
 /**
- * Opaque-Handle: rmw_zerodds Service (request-Sub + reply-Pub).
+ * A ROS 2 service: request reader on `rq/…Request`, reply writer on
+ * `rr/…Reply`.
  */
 typedef struct rmw_zerodds_RmwZerodsService rmw_zerodds_RmwZerodsService;
 
@@ -59,6 +62,180 @@ typedef struct rmw_zerodds_RmwZerodsSubscription rmw_zerodds_RmwZerodsSubscripti
  * and gets back which indices have data ready.
  */
 typedef struct rmw_zerodds_RmwZerodsWaitSet rmw_zerodds_RmwZerodsWaitSet;
+
+/**
+ * One `rosidl_dynamic_typesupport_dynamic_type_builder_impl_t`: a
+ * private, single-struct model under construction. See the module note.
+ */
+typedef struct rmw_zerodds_ZddsDynBuilder rmw_zerodds_ZddsDynBuilder;
+
+/**
+ * One `rosidl_dynamic_typesupport_dynamic_data_impl_t`: a value of a
+ * [`ZddsDynType`], plus the small scratch buffers the string/wstring
+ * borrow accessors below need to hand C a stable pointer.
+ */
+typedef struct rmw_zerodds_ZddsDynData rmw_zerodds_ZddsDynData;
+
+/**
+ * One `rosidl_dynamic_typesupport_dynamic_type_impl_t`: a finished,
+ * self-contained type.
+ */
+typedef struct rmw_zerodds_ZddsDynType rmw_zerodds_ZddsDynType;
+
+/**
+ * `rmw_qos_profile_t`, flattened for the C boundary.
+ */
+typedef struct rmw_zerodds_RmwZerodsQos {
+  /**
+   * `rmw_qos_history_policy_e`: 0 SYSTEM_DEFAULT, 1 KEEP_LAST, 2 KEEP_ALL.
+   */
+  uint32_t history;
+  /**
+   * `depth`; `0` under KEEP_LAST is `RMW_QOS_POLICY_DEPTH_SYSTEM_DEFAULT`.
+   */
+  uint64_t depth;
+  /**
+   * `rmw_qos_reliability_policy_e`: 0 SYSTEM_DEFAULT, 1 RELIABLE,
+   * 2 BEST_EFFORT, 4 BEST_AVAILABLE.
+   */
+  uint32_t reliability;
+  /**
+   * `rmw_qos_durability_policy_e`: 0 SYSTEM_DEFAULT, 1 TRANSIENT_LOCAL,
+   * 2 VOLATILE, 4 BEST_AVAILABLE.
+   */
+  uint32_t durability;
+  /**
+   * `deadline`, nanoseconds, `0` = none.
+   */
+  uint64_t deadline_ns;
+  /**
+   * `lifespan`, nanoseconds, `0` = none.
+   */
+  uint64_t lifespan_ns;
+  /**
+   * `rmw_qos_liveliness_policy_e`: 0 SYSTEM_DEFAULT, 1 AUTOMATIC,
+   * 2 MANUAL_BY_NODE (deprecated), 3 MANUAL_BY_TOPIC, 5 BEST_AVAILABLE.
+   */
+  uint32_t liveliness;
+  /**
+   * `liveliness_lease_duration`, nanoseconds, `0` = none.
+   */
+  uint64_t liveliness_lease_ns;
+  /**
+   * `avoid_ros_namespace_conventions`: `1` = the DDS topic is the ROS
+   * name without the `rt/` prefix.
+   */
+  uint32_t avoid_ros_namespace_conventions;
+} rmw_zerodds_RmwZerodsQos;
+
+/**
+ * A unicast locator of an endpoint, for `rmw_*_get_network_flow_endpoints`:
+ * `kind` 1 UDPv4, 2 UDPv6, 4 TCPv4, 8 TCPv6, others not IP.
+ */
+typedef struct rmw_zerodds_RmwZerodsLocator {
+  /**
+   * DDSI-RTPS locator kind.
+   */
+  int32_t kind;
+  /**
+   * Port.
+   */
+  uint32_t port;
+  /**
+   * Address bytes; IPv4 in the last four.
+   */
+  uint8_t address[16];
+} rmw_zerodds_RmwZerodsLocator;
+
+/**
+ * A publisher's communication status, cumulative since it was created
+ * (DDS 1.4 §2.2.4.1). `rmw_take_event` reports the change to the values it
+ * read last.
+ */
+typedef struct rmw_zerodds_RmwZerodsPublisherStatus {
+  /**
+   * OFFERED_DEADLINE_MISSED `total_count`.
+   */
+  uint64_t offered_deadline_missed_total;
+  /**
+   * LIVELINESS_LOST `total_count`.
+   */
+  uint64_t liveliness_lost_total;
+  /**
+   * OFFERED_INCOMPATIBLE_QOS `total_count`.
+   */
+  uint64_t offered_incompatible_qos_total;
+  /**
+   * The DDS QosPolicyId of the last incompatible policy, 0 for none.
+   */
+  uint32_t offered_incompatible_qos_last_policy_id;
+  /**
+   * Subscriptions matched now.
+   */
+  uint64_t matched_current;
+  /**
+   * Readers of an incompatible type refused on the topic.
+   */
+  uint64_t incompatible_type_total;
+} rmw_zerodds_RmwZerodsPublisherStatus;
+
+/**
+ * A subscription's communication status, cumulative since it was created.
+ */
+typedef struct rmw_zerodds_RmwZerodsSubscriptionStatus {
+  /**
+   * REQUESTED_DEADLINE_MISSED `total_count`.
+   */
+  uint64_t requested_deadline_missed_total;
+  /**
+   * Writers seen becoming alive.
+   */
+  uint64_t liveliness_alive;
+  /**
+   * Writers seen becoming not alive.
+   */
+  uint64_t liveliness_not_alive;
+  /**
+   * REQUESTED_INCOMPATIBLE_QOS `total_count`.
+   */
+  uint64_t requested_incompatible_qos_total;
+  /**
+   * The DDS QosPolicyId of the last incompatible policy, 0 for none.
+   */
+  uint32_t requested_incompatible_qos_last_policy_id;
+  /**
+   * SAMPLE_LOST `total_count`.
+   */
+  uint64_t sample_lost_total;
+  /**
+   * Publishers matched now.
+   */
+  uint64_t matched_current;
+  /**
+   * Writers of an incompatible type refused on the topic.
+   */
+  uint64_t incompatible_type_total;
+} rmw_zerodds_RmwZerodsSubscriptionStatus;
+
+/**
+ * Where a taken sample came from, for `rmw_message_info_t`: the writer's
+ * GUID (the publisher GID), its source timestamp in nanoseconds (`-1`
+ * unknown) and its RTPS sequence number (`-1` unknown).
+ */
+typedef struct rmw_zerodds_RmwZerodsSampleOrigin {
+  /**
+   * The writer's GUID.
+   */
+  uint8_t writer_guid[16];
+  /**
+   * Source timestamp, nanoseconds since the Unix epoch, `-1` unknown.
+   */
+  int64_t source_timestamp_ns;
+  /**
+   * The writer's sequence number of the sample, `-1` unknown.
+   */
+  int64_t sequence_number;
+} rmw_zerodds_RmwZerodsSampleOrigin;
 
 #ifdef __cplusplus
 extern "C" {
@@ -90,6 +267,24 @@ extern "C" {
  * otherwise leak.
  */
  struct rmw_zerodds_RmwZerodsContext *rmw_zerodds_init(uint32_t domain_id);
+
+/**
+ * `rmw_init` with the security options rcl resolved
+ * (`rmw_security_options_t`): `security_root_path` is the enclave directory
+ * rcl found under `ROS_SECURITY_KEYSTORE` for the node's enclave (NULL
+ * without `ROS_SECURITY_ENABLE=true`), `enforce` is
+ * `ROS_SECURITY_STRATEGY=Enforce`. The RMW used to ignore both: a node
+ * started with ROS security switched on ran plaintext unless
+ * `security.enclave_dir` was also set.
+ *
+ * # Safety
+ * `security_root_path` is NULL or a NUL-terminated string; the caller
+ * calls `rmw_zerodds_shutdown` with the returned handle.
+ */
+
+struct rmw_zerodds_RmwZerodsContext *rmw_zerodds_init_with_security(uint32_t domain_id,
+                                                                    const char *security_root_path,
+                                                                    int enforce);
 
 /**
  * `rmw_shutdown(*mut Context)` — logical shutdown only. NULL-safe.
@@ -177,16 +372,71 @@ struct rmw_zerodds_RmwZerodsNode *rmw_zerodds_create_node(struct rmw_zerodds_Rmw
  int32_t rmw_zerodds_destroy_node(struct rmw_zerodds_RmwZerodsNode *node);
 
 /**
- * `rmw_create_publisher(node, type_name, topic_name, reliable)`.
+ * `rmw_create_publisher(node, type_name, topic_name, qos)`. The endpoint is
+ * created with the resolved [`RmwZerodsQos`] (see [`qos::resolve`]), which
+ * is also written to `actual` for `rmw_publisher_get_actual_qos`.
  *
  * # Safety
- * Pointer validity as always; strings NUL-terminated.
+ * Pointer validity as always; strings NUL-terminated; `qos` points at an
+ * [`RmwZerodsQos`]; `actual` is NULL or writable.
  */
 
 struct rmw_zerodds_RmwZerodsPublisher *rmw_zerodds_create_publisher(struct rmw_zerodds_RmwZerodsNode *node,
                                                                     const char *type_name,
                                                                     const char *topic_name,
-                                                                    int reliable);
+                                                                    const struct rmw_zerodds_RmwZerodsQos *qos,
+                                                                    struct rmw_zerodds_RmwZerodsQos *actual);
+
+/**
+ * [`rmw_zerodds_create_publisher`] that announces the type hash in
+ * USER_DATA (`type_hash_user_data`), as every RMW from Iron on does;
+ * `ros2 topic info -v` and `rmw_get_publishers_info_by_topic` of any RMW
+ * read it from there.
+ *
+ * # Safety
+ * As [`rmw_zerodds_create_publisher`]; `type_hash` NULL or NUL-terminated.
+ */
+
+struct rmw_zerodds_RmwZerodsPublisher *rmw_zerodds_create_publisher_hashed(struct rmw_zerodds_RmwZerodsNode *node,
+                                                                           const char *type_name,
+                                                                           const char *topic_name,
+                                                                           const struct rmw_zerodds_RmwZerodsQos *qos,
+                                                                           struct rmw_zerodds_RmwZerodsQos *actual,
+                                                                           const char *type_hash);
+
+/**
+ * The publisher's GID: its DDS writer GUID, the value graph queries
+ * (`rmw_get_publishers_info_by_topic`) report for it (16 bytes into `out`).
+ *
+ * # Safety
+ * `pub_` from `rmw_zerodds_create_publisher` or NULL; `out` writable for
+ * 16 bytes.
+ */
+ int32_t rmw_zerodds_publisher_gid(struct rmw_zerodds_RmwZerodsPublisher *pub_, uint8_t *out);
+
+/**
+ * The unicast locators of a publisher's writer; returns the count, copies
+ * at most `capacity` into `out` (NULL to ask for the count).
+ *
+ * # Safety
+ * `pub_` from `rmw_zerodds_create_publisher` or NULL; `out` writable for
+ * `capacity` elements or NULL.
+ */
+
+uintptr_t rmw_zerodds_publisher_unicast_locators(struct rmw_zerodds_RmwZerodsPublisher *pub_,
+                                                 struct rmw_zerodds_RmwZerodsLocator *out,
+                                                 uintptr_t capacity);
+
+/**
+ * [`rmw_zerodds_publisher_unicast_locators`] for a subscription's reader.
+ *
+ * # Safety
+ * As [`rmw_zerodds_publisher_unicast_locators`].
+ */
+
+uintptr_t rmw_zerodds_subscription_unicast_locators(struct rmw_zerodds_RmwZerodsSubscription *sub,
+                                                    struct rmw_zerodds_RmwZerodsLocator *out,
+                                                    uintptr_t capacity);
 
 /**
  * Number of remote subscriptions currently matched to this publisher — the
@@ -197,6 +447,28 @@ struct rmw_zerodds_RmwZerodsPublisher *rmw_zerodds_create_publisher(struct rmw_z
  * `pub_` must come from `rmw_zerodds_create_publisher` or be NULL.
  */
  uintptr_t rmw_zerodds_publisher_matched_count(struct rmw_zerodds_RmwZerodsPublisher *pub_);
+
+/**
+ * The communication status of a publisher's writer, cumulative; the C side
+ * turns it into the change `rmw_take_event` reports.
+ *
+ * # Safety
+ * `pub_` from `rmw_zerodds_create_publisher` or NULL; `out` writable.
+ */
+
+int32_t rmw_zerodds_publisher_get_status(struct rmw_zerodds_RmwZerodsPublisher *pub_,
+                                         struct rmw_zerodds_RmwZerodsPublisherStatus *out);
+
+/**
+ * The communication status of a subscription's reader, cumulative; the C
+ * side turns it into the change `rmw_take_event` reports.
+ *
+ * # Safety
+ * `sub` from `rmw_zerodds_create_subscription` or NULL; `out` writable.
+ */
+
+int32_t rmw_zerodds_subscription_get_status(struct rmw_zerodds_RmwZerodsSubscription *sub,
+                                            struct rmw_zerodds_RmwZerodsSubscriptionStatus *out);
 
 /**
  * Number of remote publishers currently matched to this subscription — the
@@ -217,7 +489,7 @@ struct rmw_zerodds_RmwZerodsPublisher *rmw_zerodds_create_publisher(struct rmw_z
  int32_t rmw_zerodds_destroy_publisher(struct rmw_zerodds_RmwZerodsPublisher *pub_);
 
 /**
- * `rmw_publish(pub, payload, len)` — schreibt CDR-encoded bytes.
+ * `rmw_publish(pub, payload, len)` — writes CDR-encoded bytes.
  *
  * # Safety
  * `pub_` valid; `payload` of `len` bytes lives during the call.
@@ -228,16 +500,65 @@ int32_t rmw_zerodds_publish(struct rmw_zerodds_RmwZerodsPublisher *pub_,
                             uintptr_t len);
 
 /**
- * `rmw_create_subscription(node, type, topic, reliable)`.
+ * The delivery mode the RMW's C layer selects for new publishers and
+ * subscriptions: the runtime's `delivery.mode` (env `ZERODDS_DELIVERY_MODE`).
+ * 0 Portable, 1 RawSameHost, 2 Iceoryx; 0 for a NULL context.
  *
  * # Safety
- * Wie create_publisher.
+ * `ctx` must be NULL or come from `rmw_zerodds_init` and still be alive.
+ */
+ int32_t rmw_zerodds_delivery_mode(const struct rmw_zerodds_RmwZerodsContext *ctx);
+
+/**
+ * `rmw_publisher_assert_liveliness`: a MANUAL_BY_TOPIC liveliness assertion
+ * (DDS 1.4 §2.2.3.11). The C layer returned OK without asserting.
+ *
+ * # Safety
+ * `pub_` from `rmw_zerodds_create_publisher` or NULL.
+ */
+ int32_t rmw_zerodds_publisher_assert_liveliness(struct rmw_zerodds_RmwZerodsPublisher *pub_);
+
+/**
+ * `rmw_publisher_wait_for_all_acked`: blocks until every matched
+ * subscription acknowledged every sample, or `timeout_ns` elapses
+ * (`RMW_RET_TIMEOUT`). The C layer returned OK without waiting.
+ *
+ * # Safety
+ * As [`rmw_zerodds_publisher_assert_liveliness`].
+ */
+
+int32_t rmw_zerodds_publisher_wait_for_all_acked(struct rmw_zerodds_RmwZerodsPublisher *pub_,
+                                                 uint64_t timeout_ns);
+
+/**
+ * `rmw_create_subscription(node, type, topic, qos)`; the QoS as for
+ * [`rmw_zerodds_create_publisher`], KEEP_LAST bounding the inbox.
+ *
+ * # Safety
+ * Like create_publisher.
  */
 
 struct rmw_zerodds_RmwZerodsSubscription *rmw_zerodds_create_subscription(struct rmw_zerodds_RmwZerodsNode *node,
                                                                           const char *type_name,
                                                                           const char *topic_name,
-                                                                          int reliable);
+                                                                          const struct rmw_zerodds_RmwZerodsQos *qos,
+                                                                          struct rmw_zerodds_RmwZerodsQos *actual);
+
+/**
+ * [`rmw_zerodds_create_subscription`] that announces the type hash in
+ * USER_DATA, as [`rmw_zerodds_create_publisher_hashed`].
+ *
+ * # Safety
+ * As [`rmw_zerodds_create_subscription`]; `type_hash` NULL or
+ * NUL-terminated.
+ */
+
+struct rmw_zerodds_RmwZerodsSubscription *rmw_zerodds_create_subscription_hashed(struct rmw_zerodds_RmwZerodsNode *node,
+                                                                                 const char *type_name,
+                                                                                 const char *topic_name,
+                                                                                 const struct rmw_zerodds_RmwZerodsQos *qos,
+                                                                                 struct rmw_zerodds_RmwZerodsQos *actual,
+                                                                                 const char *type_hash);
 
 /**
  * `rmw_destroy_subscription(*mut Subscription)`.
@@ -381,17 +702,31 @@ int32_t rmw_zerodds_subscription_enable_iceoryx(struct rmw_zerodds_RmwZerodsSubs
                                                 const char *name);
 
 /**
- * `rmw_take(sub, *mut buf, *mut len)` — versucht ein Sample zu lesen.
- * Caller MUSS `rmw_zerodds_buffer_free(buf, len)` aufrufen.
+ * `rmw_take(sub, *mut buf, *mut len)` — tries to read a sample.
+ * Caller MUST call `rmw_zerodds_buffer_free(buf, len)`.
  *
  * # Safety
- * Pointer-Validitaet; out_buf/out_len NULL-checked unten.
+ * Pointer validity; out_buf/out_len NULL-checked below.
  */
 
 int32_t rmw_zerodds_take(struct rmw_zerodds_RmwZerodsSubscription *sub,
                          uint8_t **out_buf,
                          uintptr_t *out_len,
                          uint8_t *out_big_endian);
+
+/**
+ * [`rmw_zerodds_take`] that also reports where the sample came from into
+ * `out_origin` (NULL: not reported).
+ *
+ * # Safety
+ * As [`rmw_zerodds_take`]; `out_origin` writable or NULL.
+ */
+
+int32_t rmw_zerodds_take_with_origin(struct rmw_zerodds_RmwZerodsSubscription *sub,
+                                     uint8_t **out_buf,
+                                     uintptr_t *out_len,
+                                     uint8_t *out_big_endian,
+                                     struct rmw_zerodds_RmwZerodsSampleOrigin *out_origin);
 
 /**
  * Readiness query: `1` if the subscription has a sample ready to take, `0` if
@@ -447,119 +782,9 @@ int32_t rmw_zerodds_context_wait_block(struct rmw_zerodds_RmwZerodsContext *ctx,
  * CDR bytes from rmw_zerodds_take.
  *
  * # Safety
- * Wie zerodds_buffer_free.
+ * Like zerodds_buffer_free.
  */
  void rmw_zerodds_buffer_free(uint8_t *buf, uintptr_t len);
-
-/**
- * `rmw_create_client(node, service, type_name)`.
- *
- * # Safety
- * Pointer-Validitaet wie Publisher/Subscription-create.
- */
-
-struct rmw_zerodds_RmwZerodsClient *rmw_zerodds_create_client(struct rmw_zerodds_RmwZerodsNode *node,
-                                                              const char *service_name,
-                                                              const char *type_name);
-
-/**
- * `rmw_destroy_client(*mut Client)`.
- *
- * # Safety
- * `client` from `rmw_zerodds_create_client` or NULL.
- */
- int32_t rmw_zerodds_destroy_client(struct rmw_zerodds_RmwZerodsClient *client);
-
-/**
- * `rmw_send_request(client, payload, len)`.
- *
- * # Safety
- * `client` valid; payload + len lives during the call.
- */
-
-int32_t rmw_zerodds_send_request(struct rmw_zerodds_RmwZerodsClient *client,
-                                 const uint8_t *payload,
-                                 uintptr_t len);
-
-/**
- * `rmw_take_response(client, *mut buf, *mut len)`.
- *
- * # Safety
- * Wie rmw_zerodds_take.
- */
-
-int32_t rmw_zerodds_take_response(struct rmw_zerodds_RmwZerodsClient *client,
-                                  uint8_t **out_buf,
-                                  uintptr_t *out_len,
-                                  uint8_t *out_big_endian);
-
-/**
- * `1` if a reply is queued for `client`, `0` if none, negative on a bad handle.
- *
- * # Safety
- * `client` must come from `rmw_zerodds_create_client` or be NULL.
- */
- int32_t rmw_zerodds_client_has_data(struct rmw_zerodds_RmwZerodsClient *client);
-
-/**
- * `1` if the matching service server is available (the client's request writer
- * has a matched reader AND its reply reader has a matched writer), else `0`.
- * Non-blocking (uses a zero-timeout matched check).
- *
- * # Safety
- * `client` must come from `rmw_zerodds_create_client` or be NULL.
- */
- int32_t rmw_zerodds_client_server_available(struct rmw_zerodds_RmwZerodsClient *client);
-
-/**
- * `rmw_create_service(node, service, type_name)` — Server-side.
- *
- * # Safety
- * Wie rmw_zerodds_create_client.
- */
-
-struct rmw_zerodds_RmwZerodsService *rmw_zerodds_create_service(struct rmw_zerodds_RmwZerodsNode *node,
-                                                                const char *service_name,
-                                                                const char *type_name);
-
-/**
- * `rmw_destroy_service(*mut Service)`.
- *
- * # Safety
- * `service` from `rmw_zerodds_create_service` or NULL.
- */
- int32_t rmw_zerodds_destroy_service(struct rmw_zerodds_RmwZerodsService *service);
-
-/**
- * `rmw_take_request(service, *mut buf, *mut len)`.
- *
- * # Safety
- * Pointer-Validitaet wie rmw_zerodds_take.
- */
-
-int32_t rmw_zerodds_take_request(struct rmw_zerodds_RmwZerodsService *service,
-                                 uint8_t **out_buf,
-                                 uintptr_t *out_len,
-                                 uint8_t *out_big_endian);
-
-/**
- * `1` if a request is queued for `service`, `0` if none, negative on bad handle.
- *
- * # Safety
- * `service` must come from `rmw_zerodds_create_service` or be NULL.
- */
- int32_t rmw_zerodds_service_has_data(struct rmw_zerodds_RmwZerodsService *service);
-
-/**
- * `rmw_send_response(service, payload, len)`.
- *
- * # Safety
- * Wie rmw_zerodds_publish.
- */
-
-int32_t rmw_zerodds_send_response(struct rmw_zerodds_RmwZerodsService *service,
-                                  const uint8_t *payload,
-                                  uintptr_t len);
 
 /**
  * `rmw_create_wait_set()`.
@@ -582,7 +807,7 @@ int32_t rmw_zerodds_send_response(struct rmw_zerodds_RmwZerodsService *service,
  * Adds a subscription to the wait set.
  *
  * # Safety
- * `ws` + `sub` muessen valid sein.
+ * `ws` + `sub` must be valid.
  */
 
 int32_t rmw_zerodds_wait_set_add_subscription(struct rmw_zerodds_RmwZerodsWaitSet *ws,
@@ -596,7 +821,7 @@ int32_t rmw_zerodds_wait_set_add_subscription(struct rmw_zerodds_RmwZerodsWaitSe
  *
  * Readiness is the non-destructive [`rmw_zerodds_subscription_has_data`] peek;
  * the blocking is parked on the context's shared condvar via
- * [`WaitNotify::wait_until`] — no spin loop, no fixed-tick poll. The generation
+ * `WaitNotify::wait_until` — no spin loop, no fixed-tick poll. The generation
  * is snapshotted before the readiness check so a sample arriving in between
  * wakes the very next block instead of being missed.
  *
@@ -626,7 +851,7 @@ int32_t rmw_zerodds_borrow_loaned_message(struct rmw_zerodds_RmwZerodsPublisher 
  * frees it.
  *
  * # Safety
- * `pub_` valid; `ptr`/`len` aus rmw_zerodds_borrow_loaned_message.
+ * `pub_` valid; `ptr`/`len` from rmw_zerodds_borrow_loaned_message.
  */
 
 int32_t rmw_zerodds_publish_loaned_message(struct rmw_zerodds_RmwZerodsPublisher *pub_,
@@ -637,7 +862,7 @@ int32_t rmw_zerodds_publish_loaned_message(struct rmw_zerodds_RmwZerodsPublisher
  * Discards a loan without publishing it.
  *
  * # Safety
- * Wie rmw_zerodds_publish_loaned_message.
+ * Like rmw_zerodds_publish_loaned_message.
  */
 
 int32_t rmw_zerodds_return_loaned_message(struct rmw_zerodds_RmwZerodsPublisher *pub_,
@@ -739,26 +964,877 @@ int32_t rmw_zerodds_subscription_set_event_callback(struct rmw_zerodds_RmwZerods
                                                     const void *user_data);
 
 /**
- * Sets the rmw `on_new_request` callback on a service (request inbox).
+ * Sets a subscription's content filter (`rmw_subscription_set_content_filter`),
+ * or clears it with an empty `expression`; the filter is announced in the
+ * reader's SEDP subscription. `RMW_RET_INVALID_ARGUMENT` for an expression
+ * that does not parse or names a parameter beyond `count`.
  *
  * # Safety
- * `service` must come from `rmw_zerodds_create_service` or be NULL.
+ * `sub` from `rmw_zerodds_create_subscription` or NULL; the strings
+ * NUL-terminated; `params[0..count]` valid or `count == 0`.
  */
 
-int32_t rmw_zerodds_service_set_event_callback(struct rmw_zerodds_RmwZerodsService *service,
-                                               struct rmw_zerodds_Option_RmwEventCallback cb,
-                                               const void *user_data);
+int32_t rmw_zerodds_subscription_set_filter(struct rmw_zerodds_RmwZerodsSubscription *sub,
+                                            const char *expression,
+                                            const char *const *params,
+                                            uintptr_t count);
 
 /**
- * Sets the rmw `on_new_response` callback on a client (reply inbox).
+ * Whether the message behind `ctx` passes the subscription's content filter
+ * (1) or not (0); 1 without a filter. A message the expression cannot be
+ * evaluated against (a field the getter does not answer, a type mismatch)
+ * does not pass (DDS 1.4 §2.2.2.3.3).
  *
  * # Safety
- * `client` must come from `rmw_zerodds_create_client` or be NULL.
+ * `sub` from `rmw_zerodds_create_subscription` or NULL; `getter` callable
+ * with `ctx` for the duration of the call.
+ */
+
+int32_t rmw_zerodds_subscription_filter_accepts(struct rmw_zerodds_RmwZerodsSubscription *sub,
+                                                const void *ctx,
+                                                struct rmw_zerodds_Option_RmwZerodsFieldGetter getter);
+
+/**
+ * Sets (or with NULL clears) the callback of a publisher QoS event —
+ * `rmw_event_set_callback` for an event of `rmw_publisher_event_init`.
+ * `kind` is the shim's number for the event (`events::EventKind`); the
+ * callback gets `user_data` and the number of new events.
+ *
+ * # Safety
+ * `pub_` from `rmw_zerodds_create_publisher` or NULL; `user_data` valid
+ * until the callback is cleared.
+ */
+
+int32_t rmw_zerodds_publisher_set_status_callback(struct rmw_zerodds_RmwZerodsPublisher *pub_,
+                                                  uint32_t kind,
+                                                  struct rmw_zerodds_Option_RmwEventCallback cb,
+                                                  const void *user_data);
+
+/**
+ * [`rmw_zerodds_publisher_set_status_callback`] for a subscription event.
+ *
+ * # Safety
+ * `sub` from `rmw_zerodds_create_subscription` or NULL; `user_data` valid
+ * until the callback is cleared.
+ */
+
+int32_t rmw_zerodds_subscription_set_status_callback(struct rmw_zerodds_RmwZerodsSubscription *sub,
+                                                     uint32_t kind,
+                                                     struct rmw_zerodds_Option_RmwEventCallback cb,
+                                                     const void *user_data);
+
+/**
+ * Creates a `ZddsDynBuilder` for `name` (a ROS 2 fully qualified type
+ * name, `pkg::msg::Type`), an `@final` struct with no members yet.
+ * NULL on a name the model refuses.
+ *
+ * # Safety
+ * `name` NUL-terminated or NULL; `name_len` is not read (the ROS 2
+ * interface always hands a NUL-terminated `const char *` here; the
+ * length parameter is accepted for signature parity and ignored, as
+ * `serialization_support_interface.h` itself allows — none of its
+ * `_init`-family functions promise the string is not also
+ * NUL-terminated).
+ */
+ struct rmw_zerodds_ZddsDynBuilder *zerodds_dyn_builder_init(const char *name, uintptr_t name_len);
+
+/**
+ * Deep-copies `src` into a new, independent `ZddsDynBuilder`. NULL on
+ * failure.
+ *
+ * # Safety
+ * `src` a live `ZddsDynBuilder` or NULL.
+ */
+
+struct rmw_zerodds_ZddsDynBuilder *zerodds_dyn_builder_clone(const struct rmw_zerodds_ZddsDynBuilder *src);
+
+/**
+ * Frees a `ZddsDynBuilder`. A NULL/already-finished pointer is a no-op —
+ * [`zerodds_dyn_builder_finish`]/[`zerodds_dyn_data_from_builder`]
+ * consume the builder and the C wrapper nulls its local copy, matching
+ * `dynamic_type_init_from_dynamic_type_builder` followed by
+ * `dynamic_type_builder_fini` on the same handle.
+ *
+ * # Safety
+ * `b` a `ZddsDynBuilder` this module allocated, or NULL.
+ */
+ void zerodds_dyn_builder_free(struct rmw_zerodds_ZddsDynBuilder *b);
+
+/**
+ * Borrows the name [`zerodds_dyn_builder_init`] was given.
+ *
+ * # Safety
+ * `b` non-NULL and live; `out_ptr`/`out_len` writable.
+ */
+
+int32_t zerodds_dyn_builder_get_name(const struct rmw_zerodds_ZddsDynBuilder *b,
+                                     const char **out_ptr,
+                                     uintptr_t *out_len);
+
+/**
+ * Renames a builder's display name — what
+ * [`zerodds_dyn_builder_get_name`] and, once finished,
+ * [`zerodds_dyn_type_get_name`] report. Does not rename the module path
+ * the model declared the struct under (§7.5.2 gives the interface no
+ * call to re-home a type in a new module, and every reader of a
+ * `ZddsDynType` reaches it by handle, not by re-resolving the display
+ * name).
+ *
+ * # Safety
+ * `b` non-NULL and live; `name` NUL-terminated or NULL.
+ */
+
+int32_t zerodds_dyn_builder_set_name(struct rmw_zerodds_ZddsDynBuilder *b,
+                                     const char *name,
+                                     uintptr_t name_len);
+
+/**
+ * Adds a scalar/array/bounded-sequence/unbounded-sequence member of a
+ * primitive or string kind to `b`'s struct. Covers every
+ * `dynamic_type_builder_add_*_member` in the interface except the four
+ * `add_complex_*` families, which go through
+ * [`zerodds_dyn_builder_add_nested_member`]/
+ * [`zerodds_dyn_builder_add_nested_member_from_builder`].
+ *
+ * `id`: the member id, or [`MEMBER_ID_INVALID`] (as `u64`) for none —
+ * the model then numbers it "previous member plus one", exactly as an
+ * IDL member with no `@id` is numbered.
+ *
+ * `str_bound`: for `kind == String8`/`String16`, 0 = unbounded, `N` =
+ * bounded/fixed at `N` (this interface's `fixed_*` and `bounded_*`
+ * member families both reach here identically — XTypes has one
+ * `string<N>`/`wstring<N>` construct, not two, see the crate's README).
+ * Ignored for every other kind.
+ *
+ * `container_bound`: for `shape == Array`, the one array dimension (must
+ * be nonzero); for `shape == BoundedSequence`, the sequence bound (must
+ * be nonzero); ignored for `Scalar`/`UnboundedSequence`.
+ *
+ * `default_value`: the member's default, empty (zero-length, or NULL)
+ * for none. Text as `rosidl_dynamic_typesupport_dynamic_type_builder_
+ * init_from_description` passes it on — see the module note and
+ * [`ros_default_literal`]; refused with `RCUTILS_RET_ERROR` where it
+ * does not translate to this kind's literal form, or where it does not
+ * then read in the member's own type (`@optional` never reaches here —
+ * this interface has no such annotation — so only the text itself is
+ * ever the reason).
+ *
+ * # Safety
+ * `b` non-NULL and live; `name`/`default_value` NUL-terminated or NULL.
+ */
+
+int32_t zerodds_dyn_builder_add_member(struct rmw_zerodds_ZddsDynBuilder *b,
+                                       uint32_t kind_tag,
+                                       uint32_t shape_tag,
+                                       uint64_t id,
+                                       const char *name,
+                                       uintptr_t name_len,
+                                       uint64_t str_bound,
+                                       uint64_t container_bound,
+                                       const char *default_value,
+                                       uintptr_t default_value_len);
+
+/**
+ * Adds a nested/complex member whose type is `nested`, already finished.
+ *
+ * # Safety
+ * `b`/`nested` non-NULL and live; `name` NUL-terminated or NULL.
+ */
+
+int32_t zerodds_dyn_builder_add_nested_member(struct rmw_zerodds_ZddsDynBuilder *b,
+                                              uint32_t shape_tag,
+                                              uint64_t id,
+                                              const char *name,
+                                              uintptr_t name_len,
+                                              uint64_t container_bound,
+                                              const struct rmw_zerodds_ZddsDynType *nested);
+
+/**
+ * As [`zerodds_dyn_builder_add_nested_member`], but the nested type's
+ * own builder has not been finished yet — the
+ * `add_complex_*_member_builder` family, for a type graph the caller is
+ * still assembling bottom-up.
+ *
+ * # Safety
+ * `b`/`nested` non-NULL and live; `name` NUL-terminated or NULL.
+ */
+
+int32_t zerodds_dyn_builder_add_nested_member_from_builder(struct rmw_zerodds_ZddsDynBuilder *b,
+                                                           uint32_t shape_tag,
+                                                           uint64_t id,
+                                                           const char *name,
+                                                           uintptr_t name_len,
+                                                           uint64_t container_bound,
+                                                           const struct rmw_zerodds_ZddsDynBuilder *nested);
+
+/**
+ * Finishes `b` into a self-contained `ZddsDynType`, consuming `b`.
+ * NULL on failure (`b` is still consumed either way, matching the
+ * interface's "OUT" contract: `dynamic_type_init_from_dynamic_type_builder`
+ * takes the builder and hands back a type, not a shared view of it).
+ *
+ * # Safety
+ * `b` non-NULL, live, and not reused after this call.
+ */
+ struct rmw_zerodds_ZddsDynType *zerodds_dyn_builder_finish(struct rmw_zerodds_ZddsDynBuilder *b);
+
+/**
+ * As [`zerodds_dyn_builder_finish`], but produces the type's
+ * default-valued `ZddsDynData` directly —
+ * `dynamic_data_init_from_dynamic_type_builder`.
+ *
+ * # Safety
+ * As [`zerodds_dyn_builder_finish`].
+ */
+
+struct rmw_zerodds_ZddsDynData *zerodds_dyn_data_from_builder(struct rmw_zerodds_ZddsDynBuilder *b);
+
+/**
+ * Frees a `ZddsDynType`.
+ *
+ * # Safety
+ * `t` a `ZddsDynType` this module allocated, or NULL.
+ */
+ void zerodds_dyn_type_free(struct rmw_zerodds_ZddsDynType *t);
+
+/**
+ * Deep-clones a `ZddsDynType`. NULL on failure.
+ *
+ * # Safety
+ * `t` non-NULL and live.
+ */
+ struct rmw_zerodds_ZddsDynType *zerodds_dyn_type_clone(const struct rmw_zerodds_ZddsDynType *t);
+
+/**
+ * Structural equality — `dynamic_type_equals`.
+ *
+ * # Safety
+ * `a`/`b` non-NULL and live.
+ */
+
+uint8_t zerodds_dyn_type_equals(const struct rmw_zerodds_ZddsDynType *a,
+                                const struct rmw_zerodds_ZddsDynType *b);
+
+/**
+ * `dynamic_type_get_member_count`.
+ *
+ * # Safety
+ * `t` non-NULL and live.
+ */
+ uint64_t zerodds_dyn_type_member_count(const struct rmw_zerodds_ZddsDynType *t);
+
+/**
+ * Borrows the type's display name.
+ *
+ * # Safety
+ * `t` non-NULL and live; `out_ptr`/`out_len` writable.
+ */
+
+int32_t zerodds_dyn_type_get_name(const struct rmw_zerodds_ZddsDynType *t,
+                                  const char **out_ptr,
+                                  uintptr_t *out_len);
+
+/**
+ * Produces `t`'s default-valued `ZddsDynData` —
+ * `dynamic_data_init_from_dynamic_type`. NULL on failure.
+ *
+ * # Safety
+ * `t` non-NULL and live.
+ */
+
+struct rmw_zerodds_ZddsDynData *zerodds_dyn_data_from_type(const struct rmw_zerodds_ZddsDynType *t);
+
+/**
+ * Frees a `ZddsDynData`.
+ *
+ * # Safety
+ * `d` a `ZddsDynData` this module allocated, or NULL.
+ */
+ void zerodds_dyn_data_free(struct rmw_zerodds_ZddsDynData *d);
+
+/**
+ * Deep-clones a `ZddsDynData`. NULL on failure.
+ *
+ * # Safety
+ * `d` non-NULL and live.
+ */
+ struct rmw_zerodds_ZddsDynData *zerodds_dyn_data_clone(const struct rmw_zerodds_ZddsDynData *d);
+
+/**
+ * Value equality — `dynamic_data_equals`.
+ *
+ * # Safety
+ * `a`/`b` non-NULL and live.
+ */
+
+uint8_t zerodds_dyn_data_equals(const struct rmw_zerodds_ZddsDynData *a,
+                                const struct rmw_zerodds_ZddsDynData *b);
+
+/**
+ * `dynamic_data_get_item_count` (§7.5.2.11.6): a collection's element
+ * count, a bitmask's number of flags that are set, the number of members
+ * a structure or a union holds, and one for a value that is atomic — a
+ * primitive or an enumerated one.
+ *
+ * # Safety
+ * `d` non-NULL and live.
+ */
+ uint64_t zerodds_dyn_data_item_count(const struct rmw_zerodds_ZddsDynData *d);
+
+/**
+ * `dynamic_data_get_member_id_by_name`.
+ *
+ * # Safety
+ * `d` non-NULL and live; `out_id` writable.
+ */
+
+int32_t zerodds_dyn_data_member_id_by_name(const struct rmw_zerodds_ZddsDynData *d,
+                                           const char *name,
+                                           uintptr_t name_len,
+                                           uint64_t *out_id);
+
+/**
+ * `dynamic_data_get_member_id_at_index`/`dynamic_data_get_array_index`:
+ * both read as "the id at this position", which for a struct is the
+ * member id at that declaration index and for a collection is the index
+ * itself (a collection's "member id" *is* its element index — §7.5.2.1).
+ *
+ * # Safety
+ * `d` non-NULL and live; `out_id` writable.
+ */
+
+int32_t zerodds_dyn_data_id_at_index(const struct rmw_zerodds_ZddsDynData *d,
+                                     uint64_t index,
+                                     uint64_t *out_id);
+
+/**
+ * `dynamic_data_get_name`: the type's qualified name for a root value,
+ * or the member/loan name a nested value was produced under (see
+ * [`zerodds_dyn_data_get_complex`]/[`zerodds_dyn_data_loan`]).
+ *
+ * # Safety
+ * `d` non-NULL and live; `out_ptr`/`out_len` writable.
+ */
+
+int32_t zerodds_dyn_data_get_name(const struct rmw_zerodds_ZddsDynData *d,
+                                  const char **out_ptr,
+                                  uintptr_t *out_len);
+
+/**
+ * `dynamic_data_clear_all_values` (§7.5.2.11.3): resets every
+ * member/element to its default — a collection member's own recorded one
+ * where it has one, the type's Table 9 default otherwise. Key members are
+ * reset too; [`zerodds_dyn_data_clear_nonkey_values`] keeps them.
+ *
+ * # Safety
+ * `d` non-NULL and live.
+ */
+ int32_t zerodds_dyn_data_clear_all_values(struct rmw_zerodds_ZddsDynData *d);
+
+/**
+ * `dynamic_data_clear_nonkey_values` (§7.5.2.11.3): "exactly the same
+ * effect as clear_all_values with one exception: the values of key
+ * fields of aggregated types retain their values."
+ *
+ * # Safety
+ * `d` non-NULL and live.
+ */
+ int32_t zerodds_dyn_data_clear_nonkey_values(struct rmw_zerodds_ZddsDynData *d);
+
+/**
+ * `dynamic_data_clear_value`: resets one member/element to its default
+ * — a collection member's own recorded one where it has one (see the
+ * module note); the member's own scalar `@default` where its
+ * declaration carries one instead (§7.2.2.4.4.4.9); its type's Table 9
+ * default otherwise. An element of a collection always takes its
+ * type's default — a collection default names a *member*, and an
+ * element is not one.
+ *
+ * # Safety
+ * `d` non-NULL and live.
+ */
+ int32_t zerodds_dyn_data_clear_value(struct rmw_zerodds_ZddsDynData *d, uint64_t id);
+
+/**
+ * `dynamic_data_get_float64_value`.
+ *
+ * # Safety
+ * `d` non-NULL and live; `out` writable.
+ */
+
+int32_t zerodds_dyn_data_get_float64(const struct rmw_zerodds_ZddsDynData *d,
+                                     uint64_t id,
+                                     double *out);
+
+/**
+ * `dynamic_data_set_float64_value`.
+ *
+ * # Safety
+ * `d` non-NULL and live.
+ */
+ int32_t zerodds_dyn_data_set_float64(struct rmw_zerodds_ZddsDynData *d, uint64_t id, double value);
+
+/**
+ * `dynamic_data_insert_float64_value`.
+ *
+ * # Safety
+ * `d` non-NULL and live; `out_id` writable or NULL.
+ */
+
+int32_t zerodds_dyn_data_insert_float64(struct rmw_zerodds_ZddsDynData *d,
+                                        double value,
+                                        uint64_t *out_id);
+
+/**
+ * Borrows `id`'s string value as UTF-8 into `d`'s scratch buffer —
+ * `dynamic_data_get_string_value`/`_fixed_string_value`/
+ * `_bounded_string_value` alike (the interface's three string-getter
+ * families read back identically; `string_length`/`string_bound` name a
+ * constraint on how the value was *declared*, not a second wire form).
+ *
+ * # Safety
+ * `d` non-NULL and live; `out_ptr`/`out_len` writable.
+ */
+
+int32_t zerodds_dyn_data_get_string(struct rmw_zerodds_ZddsDynData *d,
+                                    uint64_t id,
+                                    const char **out_ptr,
+                                    uintptr_t *out_len);
+
+/**
+ * Sets `id`'s string value from UTF-8, honouring `bound` (0 = unbounded)
+ * — `dynamic_data_set_string_value`/`_fixed_string_value`/
+ * `_bounded_string_value`. Refused (not truncated) past `bound`: a
+ * silently truncated string on a bounded/fixed member would put a
+ * shorter value on the wire than the caller asked to send.
+ *
+ * # Safety
+ * `d` non-NULL and live; `(ptr, len)` a valid UTF-8 byte span.
+ */
+
+int32_t zerodds_dyn_data_set_string(struct rmw_zerodds_ZddsDynData *d,
+                                    uint64_t id,
+                                    const uint8_t *ptr,
+                                    uintptr_t len,
+                                    uint64_t bound);
+
+/**
+ * `dynamic_data_insert_string_value`/`_fixed_string_value`/
+ * `_bounded_string_value`.
+ *
+ * # Safety
+ * As [`zerodds_dyn_data_set_string`]; `out_id` writable or NULL.
+ */
+
+int32_t zerodds_dyn_data_insert_string(struct rmw_zerodds_ZddsDynData *d,
+                                       const uint8_t *ptr,
+                                       uintptr_t len,
+                                       uint64_t bound,
+                                       uint64_t *out_id);
+
+/**
+ * Borrows `id`'s wide-string value as UTF-16 code units into `d`'s
+ * scratch buffer.
+ *
+ * # Safety
+ * `d` non-NULL and live; `out_ptr`/`out_len` writable.
+ */
+
+int32_t zerodds_dyn_data_get_wstring(struct rmw_zerodds_ZddsDynData *d,
+                                     uint64_t id,
+                                     const uint16_t **out_ptr,
+                                     uintptr_t *out_len);
+
+/**
+ * Sets `id`'s wide-string value from UTF-16 code units, honouring
+ * `bound` (0 = unbounded).
+ *
+ * # Safety
+ * `d` non-NULL and live; `(ptr, len)` a valid UTF-16 span.
+ */
+
+int32_t zerodds_dyn_data_set_wstring(struct rmw_zerodds_ZddsDynData *d,
+                                     uint64_t id,
+                                     const uint16_t *ptr,
+                                     uintptr_t len,
+                                     uint64_t bound);
+
+/**
+ * `dynamic_data_insert_wstring_value` and its `_fixed`/`_bounded` kin.
+ *
+ * # Safety
+ * As [`zerodds_dyn_data_set_wstring`]; `out_id` writable or NULL.
+ */
+
+int32_t zerodds_dyn_data_insert_wstring(struct rmw_zerodds_ZddsDynData *d,
+                                        const uint16_t *ptr,
+                                        uintptr_t len,
+                                        uint64_t bound,
+                                        uint64_t *out_id);
+
+/**
+ * `dynamic_data_clear_sequence_data`: empties a collection.
+ *
+ * # Safety
+ * `d` non-NULL and live.
+ */
+ int32_t zerodds_dyn_data_seq_clear(struct rmw_zerodds_ZddsDynData *d);
+
+/**
+ * `dynamic_data_remove_sequence_data`: removes the element at index
+ * `id`, shifting later elements down (their ids/indices change — the
+ * same renumbering removing an element from any `sequence<T>` on the
+ * wire implies).
+ *
+ * # Safety
+ * `d` non-NULL and live.
+ */
+ int32_t zerodds_dyn_data_seq_remove(struct rmw_zerodds_ZddsDynData *d, uint64_t id);
+
+/**
+ * `dynamic_data_insert_sequence_data`: appends the element type's
+ * default value, answering its index.
+ *
+ * # Safety
+ * `d` non-NULL and live; `out_id` writable or NULL.
+ */
+ int32_t zerodds_dyn_data_seq_insert_default(struct rmw_zerodds_ZddsDynData *d, uint64_t *out_id);
+
+/**
+ * `dynamic_data_get_complex_value`: a clone of the nested value at
+ * `id`, as its own `ZddsDynData`. NULL on failure.
+ *
+ * # Safety
+ * `d` non-NULL and live.
+ */
+
+struct rmw_zerodds_ZddsDynData *zerodds_dyn_data_get_complex(const struct rmw_zerodds_ZddsDynData *d,
+                                                             uint64_t id);
+
+/**
+ * `dynamic_data_set_complex_value`: overwrites the value at `id` with a
+ * copy of `value`'s tree.
+ *
+ * # Safety
+ * `d`/`value` non-NULL and live.
+ */
+
+int32_t zerodds_dyn_data_set_complex(struct rmw_zerodds_ZddsDynData *d,
+                                     uint64_t id,
+                                     const struct rmw_zerodds_ZddsDynData *value);
+
+/**
+ * `dynamic_data_insert_complex_value_copy`: appends a copy of `value`'s
+ * tree to a collection.
+ *
+ * # Safety
+ * `d`/`value` non-NULL and live; `out_id` writable or NULL.
+ */
+
+int32_t zerodds_dyn_data_insert_complex_copy(struct rmw_zerodds_ZddsDynData *d,
+                                             const struct rmw_zerodds_ZddsDynData *value,
+                                             uint64_t *out_id);
+
+/**
+ * `dynamic_data_insert_complex_value`: appends `value`'s tree, then
+ * frees `value` (the non-copying insert — the interface's counterpart
+ * to [`zerodds_dyn_data_insert_complex_copy`]).
+ *
+ * # Safety
+ * `d`/`value` non-NULL and live; `value` not used again after this
+ * call.
+ */
+
+int32_t zerodds_dyn_data_insert_complex(struct rmw_zerodds_ZddsDynData *d,
+                                        struct rmw_zerodds_ZddsDynData *value,
+                                        uint64_t *out_id);
+
+/**
+ * `dynamic_data_loan_value` (§7.5.2.11.7): a clone of the value at `id`,
+ * tagged so [`zerodds_dyn_data_return_loan`] knows where to write it back.
+ *
+ * Implemented as copy-out/write-back rather than a true zero-copy
+ * alias: [`DynamicData`]'s tree has no interior-mutable child-borrow
+ * primitive to alias into safely across the FFI boundary, and the
+ * sequential loan/return pattern this API is documented for — loan,
+ * mutate, return, and only then loan or mutate the parent again — is
+ * behaviourally identical either way.
+ *
+ * "A given DynamicData object may support only a single outstanding loan
+ * at a time […] If an application violates this constraint, the loan
+ * operation shall return a nil value". A loan of a value that does not
+ * exist is nil as well.
+ *
+ * # Safety
+ * `d` non-NULL and live.
+ */
+
+struct rmw_zerodds_ZddsDynData *zerodds_dyn_data_loan(struct rmw_zerodds_ZddsDynData *d,
+                                                      uint64_t id);
+
+/**
+ * `dynamic_data_return_loaned_value`: writes `loaned` back into `d` at
+ * the id it was loaned at ([`zerodds_dyn_data_loan`]'s tag — the
+ * interface's own C signature for this call carries no member id, only
+ * the parent and the loaned value, so the loaned value has to remember
+ * it) and frees it.
+ *
+ * §7.5.2.11.7: "The return_loaned_value operation shall return
+ * RETCODE_PRECONDITION_NOT_MET if the provided sample object does not
+ * represent an outstanding loan from the sample on which the operation is
+ * invoked." A value that is not a loan, one from another parent and one
+ * that was already returned are refused, RCUTILS_RET_INVALID_ARGUMENT,
+ * and write nothing.
+ *
+ * # Safety
+ * `d`/`loaned` non-NULL and live; `loaned` not used again after this
+ * call.
+ */
+
+int32_t zerodds_dyn_data_return_loan(struct rmw_zerodds_ZddsDynData *d,
+                                     struct rmw_zerodds_ZddsDynData *loaned);
+
+/**
+ * `dynamic_data_serialize`: the value as a CDR stream *with* its 4-byte
+ * encapsulation header (`rmw_zerodds_take`'s own buffers carry the same
+ * header; `rmw_serialize`/`rmw_take_serialized_message` across every rmw
+ * implementation do too). Always `@final` little-endian PLAIN_CDR1 —
+ * see the module note; a writer-negotiated `DataRepresentation` QoS is
+ * not reachable from a bare `dynamic_data_impl_t*`, since the interface
+ * gives this call no writer/QoS context at all.
+ *
+ * # Safety
+ * `d` non-NULL and live; `out_ptr`/`out_len` writable.
+ */
+
+int32_t zerodds_dyn_data_serialize(const struct rmw_zerodds_ZddsDynData *d,
+                                   uint8_t **out_ptr,
+                                   uintptr_t *out_len);
+
+/**
+ * `dynamic_data_deserialize`: replaces the value from a CDR stream that
+ * carries its own 4-byte encapsulation header — the representation "the
+ * topic uses" is read from that header rather than assumed, so a real
+ * wire sample decodes in whatever representation its writer actually
+ * used.
+ *
+ * # Safety
+ * `d` non-NULL and live; `(bytes_ptr, bytes_len)` a valid byte span of
+ * at least 4 bytes.
+ */
+
+int32_t zerodds_dyn_data_deserialize(struct rmw_zerodds_ZddsDynData *d,
+                                     const uint8_t *bytes_ptr,
+                                     uintptr_t bytes_len);
+
+/**
+ * Frees a buffer [`zerodds_dyn_data_serialize`] returned.
+ *
+ * # Safety
+ * `(ptr, len)` exactly as returned by [`zerodds_dyn_data_serialize`],
+ * not freed twice.
+ */
+ void zerodds_dyn_bytes_free(uint8_t *ptr, uintptr_t len);
+
+/**
+ * `rmw_create_client`: `service_name` is the ROS name (`/add_two_ints`),
+ * the types are the DDS type names of request and response
+ * (`example_interfaces::srv::dds_::AddTwoInts_Request_`). `actual` (may be
+ * NULL) gets the QoS the endpoints were created with.
+ *
+ * # Safety
+ * `node` live; strings NUL-terminated; `qos` valid; `actual` NULL or valid.
+ */
+
+struct rmw_zerodds_RmwZerodsClient *rmw_zerodds_create_client(struct rmw_zerodds_RmwZerodsNode *node,
+                                                              const char *service_name,
+                                                              const char *request_type,
+                                                              const char *response_type,
+                                                              const struct rmw_zerodds_RmwZerodsQos *qos,
+                                                              struct rmw_zerodds_RmwZerodsQos *actual);
+
+/**
+ * [`rmw_zerodds_create_client`] whose two endpoints announce the
+ * service's type hash after the client id (`clientid=…;typehash=…;`),
+ * as `rmw_cyclonedds_cpp` from Iron on writes it.
+ *
+ * # Safety
+ * As [`rmw_zerodds_create_client`]; `type_hash` NULL or NUL-terminated.
+ */
+
+struct rmw_zerodds_RmwZerodsClient *rmw_zerodds_create_client_hashed(struct rmw_zerodds_RmwZerodsNode *node,
+                                                                     const char *service_name,
+                                                                     const char *request_type,
+                                                                     const char *response_type,
+                                                                     const struct rmw_zerodds_RmwZerodsQos *qos,
+                                                                     struct rmw_zerodds_RmwZerodsQos *actual,
+                                                                     const char *type_hash);
+
+/**
+ * `rmw_destroy_client`.
+ *
+ * # Safety
+ * `client` from `rmw_zerodds_create_client` or NULL.
+ */
+ int32_t rmw_zerodds_destroy_client(struct rmw_zerodds_RmwZerodsClient *client);
+
+/**
+ * `rmw_send_request`: `stream` is `[CDR_LE encapsulation][body]`; the rmw
+ * sequence id of the request goes to `out_seq`.
+ *
+ * # Safety
+ * `client` valid; `stream[..len]` readable; `out_seq` valid.
+ */
+
+int32_t rmw_zerodds_send_request(struct rmw_zerodds_RmwZerodsClient *client,
+                                 const uint8_t *stream,
+                                 uintptr_t len,
+                                 int64_t *out_seq);
+
+/**
+ * `rmw_take_response`: the next reply to this client as
+ * `[encapsulation][body]` and its request's rmw sequence id. A NULL buffer
+ * means none; replies to other clients are skipped.
+ *
+ * # Safety
+ * `client` valid; out pointers valid.
+ */
+
+int32_t rmw_zerodds_take_response(struct rmw_zerodds_RmwZerodsClient *client,
+                                  uint8_t **out_buf,
+                                  uintptr_t *out_len,
+                                  uint8_t *out_big_endian,
+                                  int64_t *out_seq);
+
+/**
+ * `1` if a reply is queued for `client` (possibly one for another client of
+ * the service, which a take skips), `0` if none.
+ *
+ * # Safety
+ * `client` from `rmw_zerodds_create_client` or NULL.
+ */
+ int32_t rmw_zerodds_client_has_data(struct rmw_zerodds_RmwZerodsClient *client);
+
+/**
+ * `1` if a server is available: the request writer has a matched reader
+ * and the reply reader a matched writer.
+ *
+ * # Safety
+ * `client` from `rmw_zerodds_create_client` or NULL.
+ */
+ int32_t rmw_zerodds_client_server_available(struct rmw_zerodds_RmwZerodsClient *client);
+
+/**
+ * The client's GID: the GUID of its request writer, the `writer_guid` a
+ * server's `rmw_request_id_t` names (16 bytes into `out`).
+ *
+ * # Safety
+ * `client` from `rmw_zerodds_create_client` or NULL; `out` writable for
+ * 16 bytes.
+ */
+ int32_t rmw_zerodds_client_gid(struct rmw_zerodds_RmwZerodsClient *client, uint8_t *out);
+
+/**
+ * Sets the rmw `on_new_response` callback.
+ *
+ * # Safety
+ * `client` from `rmw_zerodds_create_client` or NULL.
  */
 
 int32_t rmw_zerodds_client_set_event_callback(struct rmw_zerodds_RmwZerodsClient *client,
                                               struct rmw_zerodds_Option_RmwEventCallback cb,
                                               const void *user_data);
+
+/**
+ * `rmw_create_service`; arguments as [`rmw_zerodds_create_client`].
+ *
+ * # Safety
+ * As [`rmw_zerodds_create_client`].
+ */
+
+struct rmw_zerodds_RmwZerodsService *rmw_zerodds_create_service(struct rmw_zerodds_RmwZerodsNode *node,
+                                                                const char *service_name,
+                                                                const char *request_type,
+                                                                const char *response_type,
+                                                                const struct rmw_zerodds_RmwZerodsQos *qos,
+                                                                struct rmw_zerodds_RmwZerodsQos *actual);
+
+/**
+ * [`rmw_zerodds_create_service`] whose two endpoints announce the
+ * service's type hash after the service id, as
+ * [`rmw_zerodds_create_client_hashed`].
+ *
+ * # Safety
+ * As [`rmw_zerodds_create_service`]; `type_hash` NULL or NUL-terminated.
+ */
+
+struct rmw_zerodds_RmwZerodsService *rmw_zerodds_create_service_hashed(struct rmw_zerodds_RmwZerodsNode *node,
+                                                                       const char *service_name,
+                                                                       const char *request_type,
+                                                                       const char *response_type,
+                                                                       const struct rmw_zerodds_RmwZerodsQos *qos,
+                                                                       struct rmw_zerodds_RmwZerodsQos *actual,
+                                                                       const char *type_hash);
+
+/**
+ * `rmw_destroy_service`.
+ *
+ * # Safety
+ * `service` from `rmw_zerodds_create_service` or NULL.
+ */
+ int32_t rmw_zerodds_destroy_service(struct rmw_zerodds_RmwZerodsService *service);
+
+/**
+ * `rmw_take_request`: the next request as `[encapsulation][body]` and the
+ * request id rcl passes back to [`rmw_zerodds_send_response`]. A NULL
+ * buffer means none.
+ *
+ * # Safety
+ * `service` valid; out pointers valid, `out_writer_guid` 16 bytes.
+ */
+
+int32_t rmw_zerodds_take_request(struct rmw_zerodds_RmwZerodsService *service,
+                                 uint8_t **out_buf,
+                                 uintptr_t *out_len,
+                                 uint8_t *out_big_endian,
+                                 uint8_t *out_writer_guid,
+                                 int64_t *out_seq);
+
+/**
+ * `rmw_send_response`: `stream` is `[CDR_LE encapsulation][body]`, the
+ * request id the one [`rmw_zerodds_take_request`] gave. Waits up to 100 ms
+ * for the client's reply reader; `RMW_RET_TIMEOUT` when it does not appear,
+ * `RMW_RET_OK` without sending when the client is gone (as both other
+ * RMWs), `RMW_RET_ERROR` for an unknown request id.
+ *
+ * # Safety
+ * `service` valid; `writer_guid` 16 bytes; `stream[..len]` readable.
+ */
+
+int32_t rmw_zerodds_send_response(struct rmw_zerodds_RmwZerodsService *service,
+                                  const uint8_t *writer_guid,
+                                  int64_t seq,
+                                  const uint8_t *stream,
+                                  uintptr_t len);
+
+/**
+ * `1` if a request is queued for `service`, `0` if none.
+ *
+ * # Safety
+ * `service` from `rmw_zerodds_create_service` or NULL.
+ */
+ int32_t rmw_zerodds_service_has_data(struct rmw_zerodds_RmwZerodsService *service);
+
+/**
+ * Sets the rmw `on_new_request` callback.
+ *
+ * # Safety
+ * `service` from `rmw_zerodds_create_service` or NULL.
+ */
+
+int32_t rmw_zerodds_service_set_event_callback(struct rmw_zerodds_RmwZerodsService *service,
+                                               struct rmw_zerodds_Option_RmwEventCallback cb,
+                                               const void *user_data);
 
 #ifdef __cplusplus
 }  // extern "C"

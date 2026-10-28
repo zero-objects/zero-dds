@@ -1,0 +1,7 @@
+// `sequence` of an array, unannotated
+typedef long Triple[3];
+
+struct Sample {
+    sequence<Triple> rows;
+    long tail;
+};

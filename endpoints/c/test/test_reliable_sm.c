@@ -308,8 +308,8 @@ static void t_byte_golden(const char *hb_path, const char *an_path)
 
     /* ACKNACK: parse the golden, rebuild it, expect byte-identity. */
     gn = rd(an_path, gold, (long)sizeof(gold));
-    CHECK(gn == 13, "acknack golden is 13 bytes");
-    if (gn == 13) {
+    CHECK(gn == 17, "acknack golden is 17 bytes");
+    if (gn == 17) {
         session = gold[0]; hstream = gold[1]; seqlo = gold[2]; seqhi = gold[3];
         CHECK(zdw_xrce_acknack_read(gold, (size_t)gn, &fu, &nack, &stream) == ZDW_T_OK,
               "parse golden acknack");
@@ -317,13 +317,70 @@ static void t_byte_golden(const char *hb_path, const char *an_path)
                                       (unsigned int)seqlo | ((unsigned int)seqhi << 8),
                                       fu, (unsigned char)(nack & 0xff),
                                       (unsigned char)((nack >> 8) & 0xff), stream);
-        CHECK(mlen == 13 && memcmp(mine, gold, 13) == 0,
+        CHECK(mlen == 17 && memcmp(mine, gold, 17) == 0,
               "acknack build byte-identical to golden");
+        /* legacy FINAL form (body length 5, no DHEADER), as sent by eProsima */
+        {
+            unsigned char legacy[13];
+            int lfu = 0; unsigned int lnack = 0xFFFF; unsigned char lst = 0;
+            memcpy(legacy, gold, 8);
+            legacy[6] = 5;
+            memcpy(legacy + 8, gold + 12, 5);
+            CHECK(zdw_xrce_acknack_read(legacy, 13, &lfu, &lnack, &lst) == ZDW_T_OK
+                  && lfu == fu && lnack == nack && lst == stream,
+                  "legacy 5-octet acknack parsed");
+            legacy[6] = 4;
+            CHECK(zdw_xrce_acknack_read(legacy, 13, &lfu, &lnack, &lst) != ZDW_T_OK,
+                  "acknack body length 4 rejected");
+        }
     }
+}
+
+/* Unannotated types: FINAL = 13-octet ACKNACK of the reference implementation,
+ * default = 17-octet APPENDABLE form; the parser accepts both. */
+static void t_unannotated_types(void)
+{
+    static const unsigned char final_golden[13] = {
+        0x80, 0x00, 0x01, 0x00, 0x0a, 0x01, 0x05, 0x00,
+        0x01, 0x00, 0x00, 0x00, 0x80 };
+    static const unsigned char appendable_golden[17] = {
+        0x80, 0x00, 0x01, 0x00, 0x0a, 0x01, 0x09, 0x00,
+        0x05, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x80 };
+    unsigned char f[32];
+    size_t n;
+    int fu = 0; unsigned int nack = 0xFFFF; unsigned char st = 0;
+
+    n = zdw_xrce_acknack_frame_with(f, sizeof(f), 0x80, 0x00, 1, 1, 0, 0, 0x80,
+                                    ZDW_UNANNOTATED_FINAL);
+    CHECK(n == 13 && memcmp(f, final_golden, 13) == 0, "FINAL acknack is the 13-octet golden");
+    CHECK(zdw_xrce_acknack_read(f, n, &fu, &nack, &st) == ZDW_T_OK
+          && fu == 1 && nack == 0 && st == 0x80, "FINAL acknack parsed");
+
+    n = zdw_xrce_acknack_frame(f, sizeof(f), 0x80, 0x00, 1, 1, 0, 0, 0x80);
+    CHECK(n == 17 && memcmp(f, appendable_golden, 17) == 0, "default acknack is the 17-octet form");
+    nack = 0xFFFF; fu = 0; st = 0;
+    CHECK(zdw_xrce_acknack_read(f, n, &fu, &nack, &st) == ZDW_T_OK
+          && fu == 1 && nack == 0 && st == 0x80, "APPENDABLE acknack parsed");
+    n = zdw_xrce_acknack_frame_with(f, 12, 0x80, 0x00, 1, 1, 0, 0, 0x80,
+                                    ZDW_UNANNOTATED_FINAL);
+    CHECK(n == 0, "FINAL acknack refuses a 12-octet buffer");
+
+    /* the reliable stream carries the setting */
+    zdw_reliable_init_with(&R, 0x80, ZDW_UNANNOTATED_FINAL);
+    CHECK(zdw_reliable_unannotated_types(&R) == ZDW_UNANNOTATED_FINAL, "stream mode FINAL");
+    zdw_reliable_reset(&R);
+    CHECK(zdw_reliable_unannotated_types(&R) == ZDW_UNANNOTATED_FINAL, "reset keeps the mode");
+    n = zdw_reliable_acknack_frame(&R, f, sizeof(f), 0x80, 0x00, 1);
+    CHECK(n == 13 && f[6] == 5, "stream FINAL acknack is 13 octets");
+    zdw_reliable_init(&R, 0x80);
+    CHECK(zdw_reliable_unannotated_types(&R) == ZDW_UNANNOTATED_APPENDABLE, "default stream mode");
+    n = zdw_reliable_acknack_frame(&R, f, sizeof(f), 0x80, 0x00, 1);
+    CHECK(n == 17 && f[6] == 9 && f[8] == 5, "default stream acknack is 17 octets");
 }
 
 int main(int argc, char **argv)
 {
+    t_unannotated_types();
     t_submit_monotonic();
     t_submit_too_large();
     t_submit_window_full();

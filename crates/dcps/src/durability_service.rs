@@ -12,9 +12,13 @@
 //! * `PERSISTENT`: like TRANSIENT, but disk-persistent.
 //!
 //! This module implements the backend abstraction for TRANSIENT +
-//! PERSISTENT. The RTPS path feeds it in the writer data path
-//! (`runtime.rs::handle_user_publish`) and consumes it on late-joiner
-//! match (in addition to the writer's own TRANSIENT_LOCAL history).
+//! PERSISTENT. The RTPS path feeds it on every live write
+//! (`DataWriter::write*` in `publisher.rs`), and consumes it exactly once,
+//! at writer creation, in `DcpsRuntime::attach_durability_backend` — which
+//! folds the stored history straight into the writer's own `HistoryCache`,
+//! the same one a TRANSIENT_LOCAL writer already serves late joiners from.
+//! See that function's doc comment for the design and why it replaced an
+//! earlier "re-inject on first late-joiner match" path.
 //!
 //! Architecture:
 //!
@@ -60,12 +64,104 @@ pub struct DurabilitySample {
     pub payload: Vec<u8>,
     /// Creation timestamp (wall clock).
     pub created_at: SystemTime,
+    /// DDS 1.4 §2.2.3.16 LIFESPAN: when the sample expires, the writer's
+    /// source timestamp plus its LIFESPAN duration; `None` for an INFINITE
+    /// lifespan. An expired sample is "removed … from the transient and
+    /// persistent information caches" and replayed no more.
+    pub expires_at: Option<SystemTime>,
+}
+
+impl DurabilitySample {
+    /// `true` once the sample has expired at `now` (LIFESPAN).
+    #[must_use]
+    pub fn expired_at(&self, now: SystemTime) -> bool {
+        self.expires_at.is_some_and(|expiry| expiry <= now)
+    }
+}
+
+/// The writers that write each instance of the stores of a participant, and
+/// whether the instance has been disposed: DDS 1.4 §2.2.3.4 keeps the
+/// information on an instance "until … the instance has been explicitly
+/// disposed, … there are no more 'live' DataWriter entities writing the
+/// instance, … and a time interval longer than service_cleanup_delay has
+/// elapsed". The store itself does not know the writers; this does, and
+/// tells a writer that leaves whether it was the last.
+#[derive(Debug, Default)]
+pub struct LiveStoreWriters {
+    instances: Mutex<BTreeMap<Key, LiveInstance>>,
+}
+
+#[derive(Debug, Default)]
+struct LiveInstance {
+    writers: alloc::collections::BTreeSet<u64>,
+    disposed: bool,
+}
+
+impl LiveStoreWriters {
+    /// `writer` writes the instance: a write brings a disposed instance
+    /// back as well.
+    pub fn joined(&self, topic: &str, instance_key: [u8; 16], writer: u64) {
+        if let Ok(mut g) = self.instances.lock() {
+            let entry = g.entry((topic.to_string(), instance_key)).or_default();
+            entry.writers.insert(writer);
+            entry.disposed = false;
+        }
+    }
+
+    /// `writer` stops writing the instance (it unregistered it, or it was
+    /// deleted); `disposed` says it also disposed the instance. `true` when
+    /// the instance is disposed and no live writer is left: the
+    /// `service_cleanup_delay` of the instance starts now.
+    pub fn left(&self, topic: &str, instance_key: [u8; 16], writer: u64, disposed: bool) -> bool {
+        let Ok(mut g) = self.instances.lock() else {
+            return false;
+        };
+        let key = (topic.to_string(), instance_key);
+        let entry = g.entry(key.clone()).or_default();
+        entry.writers.remove(&writer);
+        entry.disposed |= disposed;
+        let due = entry.writers.is_empty() && entry.disposed;
+        if entry.writers.is_empty() && !entry.disposed {
+            // Nobody writes it and it is not disposed: nothing to track.
+            g.remove(&key);
+        }
+        due
+    }
+
+    /// `true` while `writer` is one of the live writers of the instance.
+    #[must_use]
+    pub fn is_live(&self, topic: &str, instance_key: [u8; 16], writer: u64) -> bool {
+        self.instances.lock().ok().is_some_and(|g| {
+            g.get(&(topic.to_string(), instance_key))
+                .is_some_and(|i| i.writers.contains(&writer))
+        })
+    }
+
+    /// How many live writers write the instance (diagnostics, tests).
+    #[must_use]
+    pub fn writer_count(&self, topic: &str, instance_key: [u8; 16]) -> usize {
+        self.instances
+            .lock()
+            .ok()
+            .and_then(|g| {
+                g.get(&(topic.to_string(), instance_key))
+                    .map(|i| i.writers.len())
+            })
+            .unwrap_or(0)
+    }
 }
 
 /// Trait for durability storage backends. Both implementations
 /// (in-memory + on-disk) satisfy the same interface so the runtime
 /// path can swap them.
 pub trait DurabilityBackend: Send + Sync {
+    /// The sequence number of the next sample stored here: above every
+    /// sequence number this store holds or has handed out, whichever writer
+    /// stores it, so the samples of a writer created after another was
+    /// deleted (or after a restart, for a persistent store) do not take the
+    /// place of the earlier ones.
+    fn next_sequence(&self) -> u64;
+
     /// Persists a sample.
     ///
     /// # Errors
@@ -73,12 +169,24 @@ pub trait DurabilityBackend: Send + Sync {
     /// I/O error for on-disk backends.
     fn store(&self, sample: DurabilitySample) -> Result<()>;
 
-    /// Returns all stored samples for a topic in order of their
-    /// sequence number (sorted per instance).
+    /// Returns the stored samples for a topic as they stand at `now`, in
+    /// order of their sequence number (sorted per instance): first the
+    /// instances whose `service_cleanup_delay` has run out and the samples
+    /// whose LIFESPAN has expired are removed ([`Self::cleanup`]), so what
+    /// is returned is what DDS 1.4 §2.2.3.4 and §2.2.3.16 let the service
+    /// keep.
     ///
     /// # Errors
     /// I/O error for on-disk backends.
-    fn replay_for_topic(&self, topic: &str) -> Result<Vec<DurabilitySample>>;
+    fn replay_for_topic_at(&self, topic: &str, now: SystemTime) -> Result<Vec<DurabilitySample>>;
+
+    /// [`Self::replay_for_topic_at`] at the current wall-clock time.
+    ///
+    /// # Errors
+    /// As [`Self::replay_for_topic_at`].
+    fn replay_for_topic(&self, topic: &str) -> Result<Vec<DurabilitySample>> {
+        self.replay_for_topic_at(topic, SystemTime::now())
+    }
 
     /// Marks an instance as `unregister` so that its associated
     /// samples are removed after `service_cleanup_delay`. `now` is the
@@ -95,7 +203,9 @@ pub trait DurabilityBackend: Send + Sync {
     ) -> Result<()>;
 
     /// Deletes all instances whose `unregister` timestamp + cleanup
-    /// delay is before `now`. Returns the number of removed instances.
+    /// delay is before `now`, and every sample whose LIFESPAN has expired
+    /// at `now` (an instance left without samples goes with them). Returns
+    /// the number of removed instances.
     ///
     /// # Errors
     /// I/O error for on-disk backends.
@@ -106,11 +216,9 @@ pub trait DurabilityBackend: Send + Sync {
 ///
 /// QoS Duration stores `fraction` as `2^-32 s`, not as nanos.
 fn cleanup_delay(qos: &DurabilityServiceQosPolicy) -> CoreDuration {
-    let secs = u64::try_from(qos.service_cleanup_delay.seconds.max(0)).unwrap_or(0);
-    // fraction (2^-32 s) → nanoseconds
-    let frac = u64::from(qos.service_cleanup_delay.fraction);
-    let nanos = (frac.saturating_mul(1_000_000_000) >> 32) as u32;
-    CoreDuration::new(secs, nanos)
+    // Rounded to the nearest nanosecond, a whole second carrying.
+    let (secs, nanos) = qos.service_cleanup_delay.to_sec_nanosec();
+    CoreDuration::new(u64::try_from(secs.max(0)).unwrap_or(0), nanos)
 }
 
 /// Per-instance slot with ringbuffer-like history.
@@ -170,6 +278,7 @@ struct InMemoryState {
 pub struct InMemoryDurabilityBackend {
     qos: DurabilityServiceQosPolicy,
     state: Mutex<InMemoryState>,
+    sequence: core::sync::atomic::AtomicU64,
 }
 
 impl InMemoryDurabilityBackend {
@@ -179,6 +288,7 @@ impl InMemoryDurabilityBackend {
         Self {
             qos,
             state: Mutex::new(InMemoryState::default()),
+            sequence: core::sync::atomic::AtomicU64::new(1),
         }
     }
 
@@ -196,6 +306,11 @@ impl InMemoryDurabilityBackend {
 }
 
 impl DurabilityBackend for InMemoryDurabilityBackend {
+    fn next_sequence(&self) -> u64 {
+        self.sequence
+            .fetch_add(1, core::sync::atomic::Ordering::Relaxed)
+    }
+
     fn store(&self, sample: DurabilitySample) -> Result<()> {
         let mut g = self
             .state
@@ -222,6 +337,17 @@ impl DurabilityBackend for InMemoryDurabilityBackend {
             });
         }
         let slot = g.by_key.entry(key).or_default();
+        // A sample written after the writer unregistered the instance brings
+        // it back: the cleanup delay starts again at the next unregister
+        // (DDS 1.4 §2.2.3.4, condition 2).
+        slot.unregistered_at = None;
+        // Expired samples make room first (DDS 1.4 §2.2.3.16).
+        let now = SystemTime::now();
+        let purged = {
+            let before = slot.samples.len();
+            slot.samples.retain(|s| !s.expired_at(now));
+            before - slot.samples.len()
+        };
         let before = slot.samples.len();
         slot.push(
             sample,
@@ -229,12 +355,13 @@ impl DurabilityBackend for InMemoryDurabilityBackend {
             self.qos.history_depth,
             self.qos.max_samples_per_instance,
         )?;
-        let delta = slot.samples.len() as isize - before as isize;
+        let delta = slot.samples.len() as isize - before as isize - purged as isize;
         g.total_samples = (g.total_samples as isize + delta).max(0) as usize;
         Ok(())
     }
 
-    fn replay_for_topic(&self, topic: &str) -> Result<Vec<DurabilitySample>> {
+    fn replay_for_topic_at(&self, topic: &str, now: SystemTime) -> Result<Vec<DurabilitySample>> {
+        self.cleanup(now)?;
         let g = self
             .state
             .lock()
@@ -277,10 +404,22 @@ impl DurabilityBackend for InMemoryDurabilityBackend {
             .map_err(|_| DdsError::PreconditionNotMet {
                 reason: "in-memory durability backend poisoned",
             })?;
+        // DDS 1.4 §2.2.3.16: an expired sample leaves the store.
+        let mut purged = 0usize;
+        for slot in g.by_key.values_mut() {
+            let before = slot.samples.len();
+            slot.samples.retain(|s| !s.expired_at(now));
+            purged += before - slot.samples.len();
+        }
+        g.total_samples = g.total_samples.saturating_sub(purged);
         let to_remove: Vec<Key> = g
             .by_key
             .iter()
             .filter_map(|(k, slot)| {
+                // An instance left without a sample has nothing to keep.
+                if slot.samples.is_empty() {
+                    return Some(k.clone());
+                }
                 slot.unregistered_at.and_then(|ts| {
                     let due = ts.checked_add(delay)?;
                     if now >= due { Some(k.clone()) } else { None }
@@ -307,6 +446,9 @@ impl DurabilityBackend for InMemoryDurabilityBackend {
 pub struct OnDiskDurabilityBackend {
     qos: DurabilityServiceQosPolicy,
     root: PathBuf,
+    /// The next sequence number: above the highest one stored under `root`
+    /// when the backend was opened.
+    sequence: core::sync::atomic::AtomicU64,
 }
 
 impl OnDiskDurabilityBackend {
@@ -319,7 +461,12 @@ impl OnDiskDurabilityBackend {
         std::fs::create_dir_all(&root).map_err(|e| DdsError::PreconditionNotMet {
             reason: io_static_msg(&e, "durability backend: cannot create root"),
         })?;
-        Ok(Self { qos, root })
+        let next = highest_stored_sequence(&root).saturating_add(1);
+        Ok(Self {
+            qos,
+            root,
+            sequence: core::sync::atomic::AtomicU64::new(next),
+        })
     }
 
     fn instance_dir(&self, topic: &str, key: &[u8; 16]) -> PathBuf {
@@ -352,7 +499,7 @@ impl OnDiskDurabilityBackend {
                 }
                 if let Ok(samples) = std::fs::read_dir(inst_dir.path()) {
                     for s in samples.flatten() {
-                        if s.file_name() != ".unregistered" {
+                        if is_sample_bin(&s.file_name().to_string_lossy()) {
                             total += 1;
                         }
                     }
@@ -374,6 +521,35 @@ impl OnDiskDurabilityBackend {
     }
 }
 
+/// The highest sequence number of a stored sample under `root`; 0 for an
+/// empty store.
+fn highest_stored_sequence(root: &std::path::Path) -> u64 {
+    let mut highest = 0u64;
+    let Ok(topics) = std::fs::read_dir(root) else {
+        return 0;
+    };
+    for topic in topics.flatten() {
+        let Ok(instances) = std::fs::read_dir(topic.path()) else {
+            continue;
+        };
+        for instance in instances.flatten() {
+            let Ok(files) = std::fs::read_dir(instance.path()) else {
+                continue;
+            };
+            for file in files.flatten() {
+                let name = file.file_name().to_string_lossy().to_string();
+                if let Some(seq) = name
+                    .strip_suffix(".bin")
+                    .and_then(|stem| stem.parse::<u64>().ok())
+                {
+                    highest = highest.max(seq);
+                }
+            }
+        }
+    }
+    highest
+}
+
 fn io_static_msg(_e: &std::io::Error, msg: &'static str) -> &'static str {
     msg
 }
@@ -392,6 +568,34 @@ fn sanitize_topic(topic: &str) -> String {
         .collect()
 }
 
+/// `true` for a sample payload file (`<sequence>.bin`) — as opposed to the
+/// `.unregistered` cleanup marker or a `<sequence>.ts` source-timestamp
+/// sidecar (see [`OnDiskDurabilityBackend::store`]). Counting/removal logic
+/// that means "an actual stored sample" checks this, not merely "not the
+/// unregistered marker" — a name-based negative check silently started
+/// counting the `.ts` sidecar as a second sample per write once it was
+/// added.
+fn is_sample_bin(name: &str) -> bool {
+    name.ends_with(".bin")
+}
+
+/// The `<sequence>.ts` sidecar path for a stored sample: its
+/// [`DurabilitySample::created_at`], persisted separately from the payload
+/// because the file's own mtime is the write time, not necessarily the
+/// sample's original source timestamp (an app using an explicit
+/// `write_w_timestamp`, or a sample that outlives a filesystem copy/backup,
+/// would otherwise silently lose it — see `replay_for_topic`).
+fn timestamp_sidecar_path(inst_dir: &std::path::Path, sequence: u64) -> PathBuf {
+    inst_dir.join(alloc::format!("{sequence}.ts"))
+}
+
+/// The `<sequence>.exp` sidecar path of a stored sample: its
+/// [`DurabilitySample::expires_at`] (LIFESPAN), Unix nanoseconds as ASCII.
+/// Absent for a sample that never expires.
+fn expiry_sidecar_path(inst_dir: &std::path::Path, sequence: u64) -> PathBuf {
+    inst_dir.join(alloc::format!("{sequence}.exp"))
+}
+
 fn hex16(b: &[u8; 16]) -> String {
     let mut s = String::with_capacity(32);
     for x in b {
@@ -404,6 +608,11 @@ fn hex16(b: &[u8; 16]) -> String {
 }
 
 impl DurabilityBackend for OnDiskDurabilityBackend {
+    fn next_sequence(&self) -> u64 {
+        self.sequence
+            .fetch_add(1, core::sync::atomic::Ordering::Relaxed)
+    }
+
     fn store(&self, sample: DurabilitySample) -> Result<()> {
         // Pre-check caps.
         if self.qos.max_samples != LENGTH_UNLIMITED {
@@ -452,8 +661,10 @@ impl DurabilityBackend for OnDiskDurabilityBackend {
                     .collect();
                 existing.sort_by_key(|(seq, _)| *seq);
                 while existing.len() >= depth {
-                    let (_, p) = existing.remove(0);
+                    let (seq, p) = existing.remove(0);
                     let _ = std::fs::remove_file(&p);
+                    let _ = std::fs::remove_file(timestamp_sidecar_path(&inst_dir, seq));
+                    let _ = std::fs::remove_file(expiry_sidecar_path(&inst_dir, seq));
                 }
             }
             HistoryKind::KeepAll => {
@@ -463,7 +674,7 @@ impl DurabilityBackend for OnDiskDurabilityBackend {
                             reason: io_static_msg(&e, "durability backend: readdir failed"),
                         })?
                         .flatten()
-                        .filter(|e| e.file_name() != ".unregistered")
+                        .filter(|e| is_sample_bin(&e.file_name().to_string_lossy()))
                         .count();
                     if count >= self.qos.max_samples_per_instance as usize {
                         return Err(DdsError::OutOfResources {
@@ -473,14 +684,59 @@ impl DurabilityBackend for OnDiskDurabilityBackend {
                 }
             }
         }
+        // A sample written after the writer unregistered the instance brings
+        // it back (DDS 1.4 §2.2.3.4, condition 2).
+        match std::fs::remove_file(inst_dir.join(".unregistered")) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => {
+                return Err(DdsError::PreconditionNotMet {
+                    reason: io_static_msg(&e, "durability backend: marker removal failed"),
+                });
+            }
+        }
         let path = inst_dir.join(alloc::format!("{}.bin", sample.sequence));
         std::fs::write(&path, &sample.payload).map_err(|e| DdsError::PreconditionNotMet {
             reason: io_static_msg(&e, "durability backend: write failed"),
         })?;
+        // `created_at` (DDS 1.4 §2.2.2.4.2.16 source_timestamp) has to
+        // survive the round trip through disk as the sample's OWN value —
+        // the file's mtime is merely the write time, which coincides with
+        // `created_at` only for the common case of a live write stamped with
+        // the current clock. An explicit `write_w_timestamp`, or any tooling
+        // that copies/restores the store (mtimes are not sample data), would
+        // otherwise silently replace the real timestamp with whatever the
+        // filesystem happens to report on the next `replay_for_topic`.
+        let nanos = sample
+            .created_at
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        std::fs::write(
+            timestamp_sidecar_path(&inst_dir, sample.sequence),
+            nanos.to_string().as_bytes(),
+        )
+        .map_err(|e| DdsError::PreconditionNotMet {
+            reason: io_static_msg(&e, "durability backend: timestamp sidecar write failed"),
+        })?;
+        if let Some(expiry) = sample.expires_at {
+            let nanos = expiry
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos();
+            std::fs::write(
+                expiry_sidecar_path(&inst_dir, sample.sequence),
+                nanos.to_string().as_bytes(),
+            )
+            .map_err(|e| DdsError::PreconditionNotMet {
+                reason: io_static_msg(&e, "durability backend: expiry sidecar write failed"),
+            })?;
+        }
         Ok(())
     }
 
-    fn replay_for_topic(&self, topic: &str) -> Result<Vec<DurabilitySample>> {
+    fn replay_for_topic_at(&self, topic: &str, now: SystemTime) -> Result<Vec<DurabilitySample>> {
+        self.cleanup(now)?;
         let topic_dir = self.root.join(sanitize_topic(topic));
         let mut out = Vec::new();
         let dirs = match std::fs::read_dir(&topic_dir) {
@@ -512,16 +768,25 @@ impl DurabilityBackend for OnDiskDurabilityBackend {
                     std::fs::read(entry.path()).map_err(|e| DdsError::PreconditionNotMet {
                         reason: io_static_msg(&e, "durability backend: read failed"),
                     })?;
-                let created_at = entry
-                    .metadata()
-                    .and_then(|m| m.modified())
+                // The `.ts` sidecar (written by `store`) carries the sample's
+                // OWN `created_at`. Its absence means this sample predates
+                // the sidecar (an older store on disk) — the file's mtime is
+                // the best remaining approximation, not a second source of
+                // truth to prefer over the sidecar.
+                let created_at = std::fs::read_to_string(timestamp_sidecar_path(&inst_path, seq))
+                    .ok()
+                    .and_then(|s| s.trim().parse::<u64>().ok())
+                    .map(|nanos| SystemTime::UNIX_EPOCH + CoreDuration::from_nanos(nanos))
+                    .or_else(|| entry.metadata().and_then(|m| m.modified()).ok())
                     .unwrap_or(SystemTime::UNIX_EPOCH);
+                let expires_at = read_expiry(&inst_path, seq);
                 out.push(DurabilitySample {
                     topic: topic.to_string(),
                     instance_key: key,
                     sequence: seq,
                     payload,
                     created_at,
+                    expires_at,
                 });
             }
         }
@@ -571,7 +836,35 @@ impl DurabilityBackend for OnDiskDurabilityBackend {
                 if !inst_dir.file_type().map(|t| t.is_dir()).unwrap_or(false) {
                     continue;
                 }
-                let marker = inst_dir.path().join(".unregistered");
+                let path = inst_dir.path();
+                // DDS 1.4 §2.2.3.16: an expired sample leaves the store.
+                let mut left = 0usize;
+                if let Ok(entries) = std::fs::read_dir(&path) {
+                    for entry in entries.flatten() {
+                        let name = entry.file_name().to_string_lossy().to_string();
+                        let Some(seq) = name
+                            .strip_suffix(".bin")
+                            .and_then(|stem| stem.parse::<u64>().ok())
+                        else {
+                            continue;
+                        };
+                        if read_expiry(&path, seq).is_some_and(|expiry| expiry <= now) {
+                            let _ = std::fs::remove_file(entry.path());
+                            let _ = std::fs::remove_file(timestamp_sidecar_path(&path, seq));
+                            let _ = std::fs::remove_file(expiry_sidecar_path(&path, seq));
+                        } else {
+                            left += 1;
+                        }
+                    }
+                }
+                // An instance left without a sample has nothing to keep.
+                if left == 0 {
+                    if std::fs::remove_dir_all(&path).is_ok() {
+                        removed += 1;
+                    }
+                    continue;
+                }
+                let marker = path.join(".unregistered");
                 let Ok(content) = std::fs::read_to_string(&marker) else {
                     continue;
                 };
@@ -580,13 +873,21 @@ impl DurabilityBackend for OnDiskDurabilityBackend {
                 };
                 let unreg = SystemTime::UNIX_EPOCH + CoreDuration::from_nanos(nanos as u64);
                 let due = unreg.checked_add(delay).unwrap_or(SystemTime::UNIX_EPOCH);
-                if now >= due && std::fs::remove_dir_all(inst_dir.path()).is_ok() {
+                if now >= due && std::fs::remove_dir_all(&path).is_ok() {
                     removed += 1;
                 }
             }
         }
         Ok(removed)
     }
+}
+
+/// The expiry stored with a sample, if any.
+fn read_expiry(inst_dir: &std::path::Path, sequence: u64) -> Option<SystemTime> {
+    std::fs::read_to_string(expiry_sidecar_path(inst_dir, sequence))
+        .ok()
+        .and_then(|s| s.trim().parse::<u64>().ok())
+        .map(|nanos| SystemTime::UNIX_EPOCH + CoreDuration::from_nanos(nanos))
 }
 
 fn parse_hex16(s: &str) -> Option<[u8; 16]> {
@@ -645,6 +946,7 @@ mod tests {
             sequence: seq,
             payload: payload.to_vec(),
             created_at: SystemTime::now(),
+            expires_at: None,
         }
     }
 
@@ -903,6 +1205,121 @@ mod tests {
         b.store(sample("T", 1, 2, b"b")).unwrap();
         let r = b.store(sample("T", 1, 3, b"c"));
         assert!(matches!(r, Err(DdsError::OutOfResources { .. })));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    fn expiring(topic: &str, key_byte: u8, seq: u64, at: SystemTime) -> DurabilitySample {
+        DurabilitySample {
+            expires_at: Some(at),
+            ..sample(topic, key_byte, seq, b"v")
+        }
+    }
+
+    /// DDS 1.4 §2.2.3.16: an expired sample is removed from the transient
+    /// information cache; one inside its LIFESPAN stays.
+    #[test]
+    fn in_memory_replay_drops_the_expired_sample() {
+        let b = InMemoryDurabilityBackend::new(keep_all_qos());
+        let t0 = SystemTime::now();
+        b.store(expiring("L", 1, 1, t0 + StdDuration::from_secs(10)))
+            .unwrap();
+        b.store(sample("L", 1, 2, b"forever")).unwrap();
+        assert_eq!(
+            b.replay_for_topic_at("L", t0 + StdDuration::from_secs(5))
+                .unwrap()
+                .len(),
+            2
+        );
+        let later = b
+            .replay_for_topic_at("L", t0 + StdDuration::from_secs(11))
+            .unwrap();
+        assert_eq!(later.len(), 1);
+        assert_eq!(later[0].sequence, 2);
+        assert_eq!(b.len(), 1, "the sample left the store, not just the replay");
+    }
+
+    #[test]
+    fn on_disk_replay_drops_the_expired_sample() {
+        let root = tmp_dir("lifespan");
+        let b = OnDiskDurabilityBackend::new(&root, keep_all_qos()).unwrap();
+        let t0 = SystemTime::now();
+        b.store(expiring("L", 1, 1, t0 + StdDuration::from_secs(10)))
+            .unwrap();
+        b.store(sample("L", 1, 2, b"forever")).unwrap();
+        let inside = b
+            .replay_for_topic_at("L", t0 + StdDuration::from_secs(5))
+            .unwrap();
+        assert_eq!(inside.len(), 2);
+        assert!(inside[0].expires_at.is_some(), "the expiry is read back");
+        let later = b
+            .replay_for_topic_at("L", t0 + StdDuration::from_secs(11))
+            .unwrap();
+        assert_eq!(later.len(), 1);
+        assert_eq!(later[0].sequence, 2);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// An instance whose only sample expired has nothing to keep.
+    #[test]
+    fn an_instance_without_a_sample_left_is_removed() {
+        let b = InMemoryDurabilityBackend::new(keep_all_qos());
+        let t0 = SystemTime::now();
+        b.store(expiring("L", 1, 1, t0 + StdDuration::from_secs(1)))
+            .unwrap();
+        assert_eq!(b.cleanup(t0 + StdDuration::from_secs(2)).unwrap(), 1);
+    }
+
+    /// DDS 1.4 §2.2.3.4: the information stays until `service_cleanup_delay`
+    /// has run out, and a sample written after the unregister brings the
+    /// instance back.
+    #[test]
+    fn replay_applies_the_service_cleanup_delay() {
+        let qos = DurabilityServiceQosPolicy {
+            service_cleanup_delay: zerodds_qos::Duration::from_secs(10),
+            ..keep_all_qos()
+        };
+        let b = InMemoryDurabilityBackend::new(qos);
+        let t0 = SystemTime::now();
+        b.store(sample("D", 1, 1, b"a")).unwrap();
+        b.unregister_instance("D", [1u8; 16], t0).unwrap();
+        assert_eq!(
+            b.replay_for_topic_at("D", t0 + StdDuration::from_secs(5))
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(
+            b.replay_for_topic_at("D", t0 + StdDuration::from_secs(11))
+                .unwrap()
+                .is_empty()
+        );
+        // A new sample after an unregister starts over.
+        b.store(sample("D", 2, 2, b"b")).unwrap();
+        b.unregister_instance("D", [2u8; 16], t0).unwrap();
+        b.store(sample("D", 2, 3, b"c")).unwrap();
+        assert_eq!(
+            b.replay_for_topic_at("D", t0 + StdDuration::from_secs(11))
+                .unwrap()
+                .len(),
+            2,
+            "the instance written again is not due for removal"
+        );
+    }
+
+    /// The sequence numbers of a store never repeat, and an on-disk store
+    /// continues above what it holds when it is opened again.
+    #[test]
+    fn next_sequence_continues_above_what_the_store_holds() {
+        let b = InMemoryDurabilityBackend::new(keep_all_qos());
+        assert_eq!(b.next_sequence(), 1);
+        assert_eq!(b.next_sequence(), 2);
+        let root = tmp_dir("sequence");
+        {
+            let d = OnDiskDurabilityBackend::new(&root, keep_all_qos()).unwrap();
+            d.store(sample("S", 1, 7, b"x")).unwrap();
+        }
+        let reopened = OnDiskDurabilityBackend::new(&root, keep_all_qos()).unwrap();
+        assert_eq!(reopened.next_sequence(), 8);
         let _ = std::fs::remove_dir_all(&root);
     }
 

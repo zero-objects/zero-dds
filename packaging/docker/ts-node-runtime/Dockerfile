@@ -1,11 +1,11 @@
-# packaging/docker/ts-node-runtime/Dockerfile — RC3 Sandbox-Runtime
-# fuer TypeScript-Bindings unter Node.js. `@zerodds/node` (aus
-# crates/ts-node) liegt global installiert, libzerodds.so wird ueber
-# koffi-FFI gefunden, zerodds-idlc fuer `--ts`-Codegen ist da, tsx
-# fuer Inline-TypeScript-Run ohne separaten Build-Step.
+# packaging/docker/ts-node-runtime/Dockerfile — sandbox runtime
+# for the TypeScript bindings under Node.js. `@zerodds/node` (from
+# crates/ts-node) is installed globally, libzerodds.so is found through
+# the koffi FFI, zerodds-idlc is there for `--lang typescript`, and tsx
+# runs TypeScript inline without a separate build step.
 #
-# Build vom Repo-Root:
-#   docker build -f packaging/docker/ts-node-runtime/Dockerfile -t zerodds/ts-node-runtime:rc3 .
+# Build from the repository root:
+#   docker build -f packaging/docker/ts-node-runtime/Dockerfile -t zerodds/ts-node-runtime:rc7 .
 
 FROM rust:1.88-bookworm AS chef
 # iceoryx2-pal-posix (pulled into the workspace recipe via the
@@ -24,10 +24,10 @@ RUN cargo chef prepare --recipe-path recipe.json
 
 FROM chef AS rust-builder
 COPY --from=planner /build/recipe.json recipe.json
-# Zwei Packages: zerodds-c-api (cdylib fuer koffi-FFI) und zerodds-idlc
-# (bin fuer Lerner-Codegen). cargo erlaubt mehrfaches -p; --bin geht
-# nur, wenn die bin im -p-Package liegt — fuer Cross-Package wuerde
-# der Build sonst scheitern.
+# Two packages: zerodds-c-api (cdylib for the koffi FFI) and zerodds-idlc
+# (bin for learner code generation). cargo allows -p more than once; --bin
+# works only if the bin lies in the -p package — across packages
+# the build would fail otherwise.
 RUN cargo chef cook --release --recipe-path recipe.json \
     -p zerodds-c-api -p zerodds-idlc
 COPY . .
@@ -41,9 +41,9 @@ RUN npm install --no-audit --no-fund
 COPY crates/ts-node/src /build/src
 COPY crates/ts-node/test /build/test
 RUN npm run build
-# `npm pack` packt das Distribution-Bundle (dist/ + src/ + package.json
-# laut "files"-Liste) in ein versioniertes .tgz, das wir in der
-# Runtime-Stage als globales Package installieren.
+# `npm pack` packs the distribution bundle (dist/ + src/ + package.json
+# per the "files" list) into a versioned .tgz, which we install
+# as a global package in the runtime stage.
 RUN npm pack && mv zerodds-node-*.tgz /build/zerodds-node.tgz
 
 FROM node:22-bookworm-slim AS runtime
@@ -51,18 +51,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates tini \
     && rm -rf /var/lib/apt/lists/*
 
-# Native Lib aus dem Rust-Builder. koffi laedt sie zur Laufzeit ueber
-# LD_LIBRARY_PATH; ldconfig stellt sicher, dass auch dlopen() ohne
-# expliziten Pfad geht.
+# Native lib from the Rust builder. koffi loads it at runtime through
+# LD_LIBRARY_PATH; ldconfig makes sure that dlopen() without an
+# explicit path works too.
 COPY --from=rust-builder /build/target/release/libzerodds.so /usr/local/lib/libzerodds.so
 RUN echo "/usr/local/lib" > /etc/ld.so.conf.d/zerodds.conf && ldconfig
 
-# IDL-Compiler fuer Lerner (`zerodds-idlc --ts -o out chat.idl`).
+# IDL compiler for learners (`zerodds-idlc generate --lang typescript --out out chat.idl`).
 COPY --from=rust-builder /build/target/release/zerodds-idlc /usr/local/bin/zerodds-idlc
 
-# @zerodds/node global installieren — Lerner kann via
-# `import { ... } from '@zerodds/node'` ohne lokales node_modules
-# arbeiten. tsx liefert TS-Direct-Run ohne tsc-Build.
+# Install @zerodds/node globally — a learner can work via
+# `import { ... } from '@zerodds/node'` without a local node_modules.
+# tsx runs TS directly without a tsc build.
 COPY --from=node-builder /build/zerodds-node.tgz /tmp/zerodds-node.tgz
 RUN npm install -g --omit=dev /tmp/zerodds-node.tgz tsx@4 \
     && rm /tmp/zerodds-node.tgz

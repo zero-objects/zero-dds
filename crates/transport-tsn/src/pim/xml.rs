@@ -53,6 +53,8 @@ pub enum ParseXmlError {
 /// # Errors
 /// See [`ParseXmlError`].
 pub fn parse_dds_tsn_xml(src: &str) -> Result<DdsTsnConfig, ParseXmlError> {
+    zerodds_foundation::check_nesting(src, zerodds_foundation::XML_NESTING_LIMIT)
+        .map_err(|e| ParseXmlError::Wellformedness(e.to_string()))?;
     let doc = Document::parse(src).map_err(|e| ParseXmlError::Wellformedness(e.to_string()))?;
     let root = doc.root_element();
     if root.tag_name().name() != "dds_tsn" {
@@ -483,5 +485,22 @@ mod tests {
     #[test]
     fn parse_mac_rejects_short_input() {
         assert!(parse_mac("aa:bb:cc").is_none());
+    }
+}
+
+#[cfg(test)]
+mod nesting_tests {
+    use super::*;
+
+    /// `roxmltree` recurses once per open element; a dds_tsn document from outside
+    /// with a long run of unclosed start tags is refused before it reaches
+    /// the parser, instead of overflowing the stack.
+    #[test]
+    fn a_deeply_nested_text_is_refused_before_the_parser() {
+        let text = "<a>".repeat(100_000);
+        assert!(matches!(
+            parse_dds_tsn_xml(&text),
+            Err(ParseXmlError::Wellformedness(_))
+        ));
     }
 }

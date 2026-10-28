@@ -71,10 +71,12 @@ pub type ZeroDdsDecodeFn =
 /// Representation-aware decoder (Bug R4b). Identical to [`ZeroDdsDecodeFn`]
 /// but receives the wire XCDR version tag (`0` = XCDR1, `1` = XCDR2,
 /// matching `UserSample::Alive.representation` / `zerodds_reader_take`'s
-/// `out_repr`). A codegen decoder uses it to select `max_align` (8 for
-/// XCDR1, 4 for XCDR2) so a multi-member 64-bit-containing sample
-/// round-trips without an underrun regardless of the publisher's
-/// negotiated representation.
+/// `out_repr`), with [`REPR_BIG_ENDIAN`] set for a big-endian sample. A
+/// codegen decoder uses the version to select `max_align` (8 for XCDR1,
+/// 4 for XCDR2), so a multi-member 64-bit-containing sample round-trips
+/// without an underrun regardless of the publisher's negotiated
+/// representation, and the bit to read the octets in the order they were
+/// written.
 ///
 /// When a TypeSupport sets this pointer, [`zerodds_reader_take_typed`]
 /// recovers the writer's actual representation (instead of discarding it)
@@ -85,6 +87,12 @@ pub type ZeroDdsDecodeReprFn = unsafe extern "C" fn(
     representation: u8,
     out_sample: *mut c_void,
 ) -> c_int;
+
+/// The bit of the `representation` byte [`ZeroDdsDecodeReprFn`] receives
+/// that says the sample is big-endian (`ZERODDS_TS_REPR_BIG_ENDIAN` in
+/// `zerodds_xcdr2.h`): the byte order of the encapsulation identifier,
+/// DDSI-RTPS 2.5 §10.5.
+pub const REPR_BIG_ENDIAN: u8 = 0x80;
 
 /// Key-hash function (XTypes 1.3 §7.6.8). Writes 16 bytes into
 /// `out_hash`. Return 0 = OK.
@@ -376,6 +384,27 @@ pub unsafe extern "C" fn zerodds_writer_write_typed(
     let Some(enc) = ts_ref.encode else {
         return ZeroDdsStatus::Unsupported as c_int;
     };
+    // A keyed type's sample goes out with its KeyHash; a table that says
+    // keyed and gives no function would collapse every instance into one.
+    if ts_ref.is_keyed != 0 && ts_ref.key_hash.is_none() {
+        return ZeroDdsStatus::BadParameter as c_int;
+    }
+    // The encapsulation identifier names the body's framing (XTypes 1.3
+    // §7.6.3.1.2 Table 59): the table knows its type's extensibility, and a
+    // writer left at the default FINAL stamps PLAIN_CDR2 on a DHEADER or an
+    // EMHEADER, which a reader that believes the header misreads.
+    let extensibility = match ts_ref.extensibility {
+        0 => zerodds_types::qos::ExtensibilityForRepr::Final,
+        1 => zerodds_types::qos::ExtensibilityForRepr::Appendable,
+        2 => zerodds_types::qos::ExtensibilityForRepr::Mutable,
+        _ => return ZeroDdsStatus::BadParameter as c_int,
+    };
+    // SAFETY: writer NULL-checked above; it comes from
+    // `zerodds_writer_create*` and lives for the call.
+    let (rt, eid) = unsafe { ((*writer).rt.clone(), (*writer).eid) };
+    if let Err(error) = rt.set_user_writer_wire_extensibility(eid, extensibility) {
+        return crate::write_status(&error);
+    }
     // Step 1: size probe.
     let mut needed: usize = 0;
     // SAFETY: enc comes from codegen, `sample` caller-validated.
@@ -400,9 +429,28 @@ pub unsafe extern "C" fn zerodds_writer_write_typed(
     if enc_rc != ZeroDdsStatus::Ok as c_int {
         return enc_rc;
     }
-    // Step 4: pass-through to the wire writer.
-    // SAFETY: writer NULL-checked; buf has `written` initialized bytes.
-    unsafe { crate::zerodds_writer_write(writer, buf.as_ptr(), written) }
+    let Some(payload) = buf.get(..written) else {
+        return ZeroDdsStatus::BadParameter as c_int;
+    };
+    // Step 4: pass-through to the wire writer, with the KeyHash of a keyed
+    // type in the inline QoS (DDSI-RTPS 2.5 §9.6.4.8).
+    if let Some(key_hash) = ts_ref.key_hash.filter(|_| ts_ref.is_keyed != 0) {
+        let mut key = [0u8; 16];
+        // SAFETY: the codegen function writes 16 bytes; `sample` is the
+        // caller's valid sample.
+        let rc = unsafe { key_hash(sample, key.as_mut_ptr()) };
+        if rc != ZeroDdsStatus::Ok as c_int {
+            return rc;
+        }
+        return match rt.write_user_sample_keyed(eid, payload, key, None) {
+            Ok(()) => ZeroDdsStatus::Ok as c_int,
+            Err(error) => crate::write_status(&error),
+        };
+    }
+    match rt.write_user_sample_borrowed(eid, payload) {
+        Ok(()) => ZeroDdsStatus::Ok as c_int,
+        Err(error) => crate::write_status(&error),
+    }
 }
 
 /// Reads a typed sample. Fetches bytes via `zerodds_reader_take`
@@ -446,13 +494,18 @@ pub unsafe extern "C" fn zerodds_reader_take_typed(
     // to pick `max_align` (8 vs 4) — without it a 64-bit-containing
     // multi-member XCDR2 sample underruns.
     let mut repr: u8 = 0;
-    // SAFETY: buf/len/repr are local stack pointers, reader NULL-checked.
+    // And its byte order: a big-endian peer's octets read as little-endian
+    // give a sample of other values, with nothing said.
+    let mut big_endian: u8 = 0;
+    // SAFETY: buf/len/repr/big_endian are local stack pointers, reader
+    // NULL-checked.
     let rc = unsafe {
-        crate::zerodds_reader_take(
+        crate::zerodds_reader_take_endian(
             reader,
             &mut buf as *mut *mut u8,
             &mut len as *mut usize,
             &mut repr as *mut u8,
+            &mut big_endian as *mut u8,
         )
     };
     if rc != ZeroDdsStatus::Ok as c_int {
@@ -466,8 +519,16 @@ pub unsafe extern "C" fn zerodds_reader_take_typed(
     // (version-fixed) decoder for TypeSupport tables that predate
     // `decode_repr`.
     let dec_rc = if let Some(dec2) = ts_ref.decode_repr {
+        let representation = if big_endian != 0 {
+            repr | REPR_BIG_ENDIAN
+        } else {
+            repr
+        };
         // SAFETY: dec2 from codegen; buf valid for `len` bytes.
-        unsafe { dec2(buf, len, repr, out_sample) }
+        unsafe { dec2(buf, len, representation, out_sample) }
+    } else if big_endian != 0 {
+        // The legacy decoder has no way to be told the order.
+        ZeroDdsStatus::Unsupported as c_int
     } else if let Some(dec) = ts_ref.decode {
         // SAFETY: dec from codegen; buf valid for `len` bytes.
         unsafe { dec(buf, len, out_sample) }
@@ -843,5 +904,88 @@ mod tests {
         assert_eq!(rc, ZeroDdsStatus::Ok as c_int);
         assert_eq!(out.x, 1);
         assert_eq!(out.y, -2);
+    }
+
+    /// `zerodds_xcdr2_encode`'s byte-buffer contract: a zero-byte payload is
+    /// `Ok` with `out_len == 0`, a buffer that is exactly the sample size is
+    /// filled, and one byte too few reports the needed size and copies nothing
+    /// (`copy_to_out_buf`).
+    #[test]
+    fn xcdr2_encode_bounds() {
+        static EMPTY_NAME: &[u8] = b"Empty\0";
+        // SAFETY: FFI-boundary; test-only encoder writing no bytes.
+        unsafe extern "C" fn empty_encode(
+            _sample: *const c_void,
+            out_buf: *mut u8,
+            out_cap: usize,
+            out_len: *mut usize,
+        ) -> c_int {
+            // SAFETY: wrapper contract, test-controlled pointers.
+            unsafe { copy_to_out_buf(&[], out_buf, out_cap, out_len) }
+        }
+        let empty_ts = ZeroDdsTypeSupport {
+            type_hash: [0u8; 16],
+            type_name: EMPTY_NAME.as_ptr() as *const c_char,
+            is_keyed: 0,
+            extensibility: 0,
+            _reserved: [0u8; 6],
+            encode: Some(empty_encode),
+            decode: None,
+            key_hash: None,
+            sample_free: None,
+            decode_repr: None,
+        };
+        let s = PointSample { x: 1, y: -2 };
+
+        // Empty result: nothing to encode, `Ok`, length 0.
+        let mut buf = [0u8; 8];
+        let mut written = 0usize;
+        // SAFETY: test-controlled pointers.
+        let rc = unsafe {
+            zerodds_xcdr2_encode(
+                &empty_ts,
+                &s as *const _ as *const c_void,
+                buf.as_mut_ptr(),
+                buf.len(),
+                &mut written,
+            )
+        };
+        assert_eq!(rc, ZeroDdsStatus::Ok as c_int);
+        assert_eq!(written, 0);
+
+        // Exactly full: cap == 8.
+        let ts = point_typesupport();
+        let mut buf = [0u8; 8];
+        let mut written = 0usize;
+        // SAFETY: test-controlled pointers.
+        let rc = unsafe {
+            zerodds_xcdr2_encode(
+                &ts,
+                &s as *const _ as *const c_void,
+                buf.as_mut_ptr(),
+                buf.len(),
+                &mut written,
+            )
+        };
+        assert_eq!(rc, ZeroDdsStatus::Ok as c_int);
+        assert_eq!(written, 8);
+        assert_eq!(buf, [0x01, 0x00, 0x00, 0x00, 0xFE, 0xFF, 0xFF, 0xFF]);
+
+        // One byte more than the buffer holds: cap == 7.
+        let mut small = [0u8; 8];
+        let mut written = 0usize;
+        // SAFETY: test-controlled pointers.
+        let rc = unsafe {
+            zerodds_xcdr2_encode(
+                &ts,
+                &s as *const _ as *const c_void,
+                small.as_mut_ptr(),
+                7,
+                &mut written,
+            )
+        };
+        assert_eq!(rc, ZeroDdsStatus::Unsupported as c_int);
+        assert_eq!(written, 8, "the needed size is reported");
+        assert_eq!(small, [0u8; 8], "nothing is copied when it does not fit");
     }
 }

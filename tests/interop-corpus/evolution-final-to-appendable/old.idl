@@ -1,0 +1,6 @@
+@final
+struct Evo {
+    long a;
+    double b;
+    short c;
+};

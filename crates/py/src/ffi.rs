@@ -34,11 +34,18 @@ use zerodds_dcps::interop::ShapeType;
 use zerodds_dcps::runtime::RuntimeConfig;
 use zerodds_dcps::sample::Sample;
 use zerodds_dcps::sample_info::{InstanceStateKind, SampleStateKind, ViewStateKind};
+use zerodds_dcps::serialized_type::{SerializedSample, SerializedTypeSupport};
 use zerodds_dcps::{
     DataReader, DataReaderQos, DataWriter, DataWriterQos, DdsError, DomainParticipant,
     DomainParticipantFactory, DomainParticipantQos, Publisher, PublisherQos, RawBytes, Subscriber,
     SubscriberQos, Topic, TopicQos,
 };
+use zerodds_wire::{Endianness, Reader, Writer};
+
+/// XCDR2's MAXALIGN — XTypes 1.3 §7.4.1.1.1 caps alignment at four.
+const XCDR2_MAX_ALIGN: usize = 4;
+/// Classic CDR's MAXALIGN — XCDR1 aligns an eight-octet primitive to eight.
+const XCDR1_MAX_ALIGN: usize = 8;
 
 fn dds_err_to_py(e: DdsError) -> PyErr {
     match e {
@@ -199,7 +206,8 @@ impl PyFactory {
         let cfg = RuntimeConfig {
             tick_period: Duration::from_millis(20),
             spdp_period: Duration::from_millis(100),
-            ..RuntimeConfig::default()
+            ..RuntimeConfig::from_standard_paths()
+                .map_err(|e| PyRuntimeError::new_err(e.to_string()))?
         };
         let p = DomainParticipantFactory::instance()
             .create_participant_with_config(domain_id, DomainParticipantQos::default(), cfg)
@@ -219,6 +227,41 @@ struct PyParticipant {
 
 #[pymethods]
 impl PyParticipant {
+    fn create_descriptor_topic(
+        &self,
+        name: &str,
+        type_name: &str,
+        type_objects: Vec<Vec<u8>>,
+        keyed: bool,
+        extensibility: u8,
+        representation: u8,
+    ) -> PyResult<PyDescriptorTopic> {
+        if !matches!(representation, 0 | 2) {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "representation must be DDS 0 or 2",
+            ));
+        }
+        let (type_object, type_dependencies) = type_objects.split_first().ok_or_else(|| {
+            pyo3::exceptions::PyValueError::new_err("complete root TypeObject required")
+        })?;
+        let support = SerializedTypeSupport::from_type_objects(
+            type_name,
+            type_object,
+            type_dependencies,
+            keyed,
+            extensibility,
+        )
+        .map_err(pyo3::exceptions::PyValueError::new_err)?;
+        let inner = self
+            .inner
+            .create_serialized_topic(name, TopicQos::default(), Arc::clone(&support))
+            .map_err(dds_err_to_py)?;
+        Ok(PyDescriptorTopic {
+            inner,
+            support,
+            representation,
+        })
+    }
     #[getter]
     fn domain_id(&self) -> i32 {
         self.inner.domain_id()
@@ -444,6 +487,22 @@ struct PyPublisher {
 
 #[pymethods]
 impl PyPublisher {
+    fn create_descriptor_writer(&self, topic: &PyDescriptorTopic) -> PyResult<PyDescriptorWriter> {
+        let qos = DataWriterQos {
+            data_representation: Some(vec![i16::from(topic.representation)]),
+            ..DataWriterQos::default()
+        };
+        let inner = Arc::new(
+            self.inner
+                .create_datawriter(&topic.inner, qos)
+                .map_err(dds_err_to_py)?,
+        );
+        Ok(PyDescriptorWriter {
+            inner,
+            support: Arc::clone(&topic.support),
+            representation: topic.representation,
+        })
+    }
     fn create_bytes_writer(&self, topic: &PyBytesTopic) -> PyResult<PyBytesWriter> {
         let w = self
             .inner
@@ -516,6 +575,22 @@ struct PySubscriber {
 
 #[pymethods]
 impl PySubscriber {
+    fn create_descriptor_reader(&self, topic: &PyDescriptorTopic) -> PyResult<PyDescriptorReader> {
+        let qos = DataReaderQos {
+            data_representation: Some(vec![i16::from(topic.representation)]),
+            ..DataReaderQos::default()
+        };
+        let inner = Arc::new(
+            self.inner
+                .create_datareader(&topic.inner, qos)
+                .map_err(dds_err_to_py)?,
+        );
+        Ok(PyDescriptorReader {
+            inner,
+            support: Arc::clone(&topic.support),
+            representation: topic.representation,
+        })
+    }
     fn create_bytes_reader(&self, topic: &PyBytesTopic) -> PyResult<PyBytesReader> {
         let r = self
             .inner
@@ -661,14 +736,25 @@ impl PyBytesWriter {
         .map_err(dds_err_to_py)
     }
 
+    /// `wait_for_acknowledgments` (DDS 1.4 §2.2.2.4.1.12): blocks until
+    /// every sample written so far is acknowledged by the matched reliable
+    /// readers, or raises `TimeoutError` after `timeout_secs`. A writer that
+    /// is deleted before then discards what is not acknowledged.
+    fn wait_for_acknowledgments(&self, py: Python<'_>, timeout_secs: f64) -> PyResult<()> {
+        let timeout = descriptor_timeout(timeout_secs)?;
+        let writer = Arc::clone(&self.inner);
+        py.detach(|| writer.wait_for_acknowledgments(timeout))
+            .map_err(dds_err_to_py)
+    }
+
     fn matched_subscription_count(&self) -> usize {
         self.inner.matched_subscription_count()
     }
 
     /// Spec §2.2.2.4.2.5 `register_instance`. `RawBytes` is an unkeyed
-    /// type (`HAS_KEY=false`), so there is a single notional instance and
-    /// this returns `HANDLE_NIL` (0). The method exists for spec-shaped
-    /// API parity; keyed lifecycle is exercised via `ShapeWriter`.
+    /// type (`HAS_KEY=false`): the topic has one instance, and this
+    /// returns its handle whatever `data` holds. Keyed lifecycle is
+    /// exercised via `ShapeWriter`.
     fn register_instance(&self, py: Python<'_>, data: &[u8]) -> PyResult<u64> {
         let sample = RawBytes::new(data.to_vec());
         let writer = Arc::clone(&self.inner);
@@ -677,8 +763,9 @@ impl PyBytesWriter {
             .map_err(dds_err_to_py)
     }
 
-    /// Spec §2.2.2.4.2.14 `lookup_instance`. Returns `HANDLE_NIL` (0) for
-    /// the unkeyed `RawBytes` type.
+    /// Spec §2.2.2.4.2.14 `lookup_instance`: the handle of the one
+    /// instance of the unkeyed `RawBytes` type once it is registered,
+    /// `HANDLE_NIL` (0) before.
     fn lookup_instance(&self, py: Python<'_>, data: &[u8]) -> u64 {
         let sample = RawBytes::new(data.to_vec());
         let writer = Arc::clone(&self.inner);
@@ -716,19 +803,21 @@ impl PyBytesWriter {
     // nil handle without error). Keyed lifecycle is exercised via
     // `ShapeWriter` (keyed by color).
 
-    /// `get_publication_matched_status` — (current_count, current_count, last_handle=0).
-    /// RC1: ZeroDDS-DCPS exposes only `matched_subscription_count`; total/change maintenance follows.
-    fn publication_matched_status(&self) -> (i32, i32, i32, i32, u64) {
-        let n = self.inner.matched_subscription_count() as i32;
-        (n, 0, n, 0, 0)
+    /// `get_publication_matched_status` (DDS 1.4 §2.2.4.1) — `(total_count,
+    /// total_count_change, current_count, current_count_change,
+    /// last_subscription_handle)`. Reading resets the changes.
+    fn publication_matched_status(&self) -> PyResult<(i32, i32, i32, i32, u64)> {
+        publication_matched_of(&self.inner)
     }
-    /// `get_liveliness_lost_status` — (count, 0).
-    fn liveliness_lost_status(&self) -> (i32, i32) {
-        (self.inner.liveliness_lost_count() as i32, 0)
+    /// `get_liveliness_lost_status` — `(total_count, total_count_change)`;
+    /// reading resets the change.
+    fn liveliness_lost_status(&self) -> PyResult<(i32, i32)> {
+        liveliness_lost_of(&self.inner)
     }
-    /// `get_offered_deadline_missed_status` — (count, 0).
-    fn offered_deadline_missed_status(&self) -> (i32, i32) {
-        (self.inner.offered_deadline_missed_count() as i32, 0)
+    /// `get_offered_deadline_missed_status` — `(total_count,
+    /// total_count_change)`; reading resets the change.
+    fn offered_deadline_missed_status(&self) -> PyResult<(i32, i32)> {
+        offered_deadline_missed_of(&self.inner)
     }
 
     /// §6.5 — attach a listener with all status kinds.
@@ -741,6 +830,249 @@ impl PyBytesWriter {
     /// §6.5 — clear the listener slot (Spec §2.2.2.4.2.x).
     fn clear_listener(&self) {
         self.inner.set_listener(None, 0);
+    }
+}
+
+/// A per-topic Rust codec, never a Python callback retained by a DDS entity.
+#[pyclass(name = "DescriptorTopic", module = "zerodds_py")]
+struct PyDescriptorTopic {
+    inner: Topic<SerializedSample>,
+    support: Arc<SerializedTypeSupport>,
+    representation: u8,
+}
+
+#[pymethods]
+impl PyDescriptorTopic {
+    #[getter]
+    fn type_name(&self) -> &str {
+        self.inner.type_name()
+    }
+}
+
+#[pyclass(name = "DescriptorWriter", module = "zerodds_py")]
+struct PyDescriptorWriter {
+    inner: Arc<DataWriter<SerializedSample>>,
+    support: Arc<SerializedTypeSupport>,
+    representation: u8,
+}
+
+/// A writer's matched status as `(total_count, total_count_change,
+/// current_count, current_count_change, last_subscription_handle)`, for
+/// every Python writer class whatever its sample type.
+fn publication_matched_of<T: zerodds_dcps::DdsType>(
+    writer: &DataWriter<T>,
+) -> PyResult<(i32, i32, i32, i32, u64)> {
+    let s = writer
+        .get_publication_matched_status()
+        .map_err(dds_err_to_py)?;
+    Ok((
+        s.total_count,
+        s.total_count_change,
+        s.current_count,
+        s.current_count_change,
+        s.last_subscription_handle.as_raw(),
+    ))
+}
+
+/// A writer's liveliness-lost status as `(total_count, total_count_change)`.
+fn liveliness_lost_of<T: zerodds_dcps::DdsType>(writer: &DataWriter<T>) -> PyResult<(i32, i32)> {
+    let s = writer.get_liveliness_lost_status().map_err(dds_err_to_py)?;
+    Ok((s.total_count, s.total_count_change))
+}
+
+/// A writer's offered-deadline-missed status as `(total_count,
+/// total_count_change)`.
+fn offered_deadline_missed_of<T: zerodds_dcps::DdsType>(
+    writer: &DataWriter<T>,
+) -> PyResult<(i32, i32)> {
+    let s = writer
+        .get_offered_deadline_missed_status()
+        .map_err(dds_err_to_py)?;
+    Ok((s.total_count, s.total_count_change))
+}
+
+/// A reader's matched status as `(total_count, total_count_change,
+/// current_count, current_count_change, last_publication_handle)`, for
+/// every Python reader class whatever its sample type.
+fn subscription_matched_of<T: zerodds_dcps::DdsType + Send + 'static>(
+    reader: &DataReader<T>,
+) -> PyResult<(i32, i32, i32, i32, u64)> {
+    let s = reader
+        .get_subscription_matched_status()
+        .map_err(dds_err_to_py)?;
+    Ok((
+        s.total_count,
+        s.total_count_change,
+        s.current_count,
+        s.current_count_change,
+        s.last_publication_handle.as_raw(),
+    ))
+}
+
+/// A reader's sample-lost status as `(total_count, total_count_change)`.
+fn sample_lost_of<T: zerodds_dcps::DdsType + Send + 'static>(
+    reader: &DataReader<T>,
+) -> PyResult<(i32, i32)> {
+    let s = reader.get_sample_lost_status().map_err(dds_err_to_py)?;
+    Ok((s.total_count, s.total_count_change))
+}
+
+/// A reader's requested-deadline-missed status as `(total_count,
+/// total_count_change)`.
+fn requested_deadline_missed_of<T: zerodds_dcps::DdsType + Send + 'static>(
+    reader: &DataReader<T>,
+) -> PyResult<(i32, i32)> {
+    let s = reader
+        .get_requested_deadline_missed_status()
+        .map_err(dds_err_to_py)?;
+    Ok((s.total_count, s.total_count_change))
+}
+
+fn descriptor_timeout(seconds: f64) -> PyResult<Duration> {
+    Duration::try_from_secs_f64(seconds).map_err(|_| {
+        pyo3::exceptions::PyValueError::new_err("timeout must be a finite nonnegative duration")
+    })
+}
+
+#[pymethods]
+impl PyDescriptorWriter {
+    fn write(&self, py: Python<'_>, body: &[u8]) -> PyResult<()> {
+        let sample = self
+            .support
+            .read_body(body, self.representation, false)
+            .map_err(pyo3::exceptions::PyValueError::new_err)?;
+        py.detach(|| self.inner.write(&sample))
+            .map_err(dds_err_to_py)
+    }
+    fn register_instance(&self, py: Python<'_>, body: &[u8]) -> PyResult<u64> {
+        let sample = self
+            .support
+            .read_body(body, self.representation, false)
+            .map_err(pyo3::exceptions::PyValueError::new_err)?;
+        py.detach(|| self.inner.register_instance(&sample))
+            .map(|h| h.as_raw())
+            .map_err(dds_err_to_py)
+    }
+    fn dispose(&self, py: Python<'_>, body: &[u8]) -> PyResult<()> {
+        let sample = self
+            .support
+            .read_body(body, self.representation, false)
+            .map_err(pyo3::exceptions::PyValueError::new_err)?;
+        py.detach(|| {
+            self.inner
+                .dispose(&sample, self.inner.lookup_instance(&sample))
+        })
+        .map_err(dds_err_to_py)
+    }
+    fn unregister_instance(&self, py: Python<'_>, body: &[u8]) -> PyResult<()> {
+        let sample = self
+            .support
+            .read_body(body, self.representation, false)
+            .map_err(pyo3::exceptions::PyValueError::new_err)?;
+        py.detach(|| {
+            self.inner
+                .unregister_instance(&sample, self.inner.lookup_instance(&sample))
+        })
+        .map_err(dds_err_to_py)
+    }
+    fn wait_for_matched_subscription(
+        &self,
+        py: Python<'_>,
+        count: usize,
+        timeout_secs: f64,
+    ) -> PyResult<()> {
+        let timeout = descriptor_timeout(timeout_secs)?;
+        py.detach(|| self.inner.wait_for_matched_subscription(count, timeout))
+            .map_err(dds_err_to_py)
+    }
+    /// `wait_for_acknowledgments` (DDS 1.4 §2.2.2.4.1.12): blocks until
+    /// every sample written so far is acknowledged by the matched reliable
+    /// readers, or raises `TimeoutError` after `timeout_secs`.
+    fn wait_for_acknowledgments(&self, py: Python<'_>, timeout_secs: f64) -> PyResult<()> {
+        let timeout = descriptor_timeout(timeout_secs)?;
+        py.detach(|| self.inner.wait_for_acknowledgments(timeout))
+            .map_err(dds_err_to_py)
+    }
+    fn matched_subscription_count(&self) -> usize {
+        self.inner.matched_subscription_count()
+    }
+    /// `get_publication_matched_status` (DDS 1.4 §2.2.4.1) — `(total_count,
+    /// total_count_change, current_count, current_count_change,
+    /// last_subscription_handle)`. Reading resets the changes.
+    fn publication_matched_status(&self) -> PyResult<(i32, i32, i32, i32, u64)> {
+        publication_matched_of(&self.inner)
+    }
+    /// `get_liveliness_lost_status` — `(total_count, total_count_change)`;
+    /// reading resets the change.
+    fn liveliness_lost_status(&self) -> PyResult<(i32, i32)> {
+        liveliness_lost_of(&self.inner)
+    }
+    /// `get_offered_deadline_missed_status` — `(total_count,
+    /// total_count_change)`; reading resets the change.
+    fn offered_deadline_missed_status(&self) -> PyResult<(i32, i32)> {
+        offered_deadline_missed_of(&self.inner)
+    }
+}
+
+#[pyclass(name = "DescriptorReader", module = "zerodds_py")]
+struct PyDescriptorReader {
+    inner: Arc<DataReader<SerializedSample>>,
+    support: Arc<SerializedTypeSupport>,
+    representation: u8,
+}
+
+#[pymethods]
+impl PyDescriptorReader {
+    fn take_with_info<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyList>> {
+        let samples = py
+            .detach(|| self.inner.take_with_info())
+            .map_err(dds_err_to_py)?;
+        let out = PyList::empty(py);
+        for sample in samples {
+            let body = self
+                .support
+                .write_body(&sample.data, self.representation, false)
+                .map_err(pyo3::exceptions::PyValueError::new_err)?;
+            out.append((
+                PyBytes::new(py, &body),
+                Py::new(py, PySampleInfo::from_info(&sample.info))?,
+            ))?;
+        }
+        Ok(out)
+    }
+    fn wait_for_data(&self, py: Python<'_>, timeout_secs: f64) -> PyResult<()> {
+        let timeout = descriptor_timeout(timeout_secs)?;
+        py.detach(|| self.inner.wait_for_data(timeout))
+            .map_err(dds_err_to_py)
+    }
+    fn wait_for_matched_publication(
+        &self,
+        py: Python<'_>,
+        count: usize,
+        timeout_secs: f64,
+    ) -> PyResult<()> {
+        let timeout = descriptor_timeout(timeout_secs)?;
+        py.detach(|| self.inner.wait_for_matched_publication(count, timeout))
+            .map_err(dds_err_to_py)
+    }
+    fn matched_publication_count(&self) -> usize {
+        self.inner.matched_publication_count()
+    }
+    /// `get_subscription_matched_status` (DDS 1.4 §2.2.4.1) — `(total_count,
+    /// total_count_change, current_count, current_count_change,
+    /// last_publication_handle)`. Reading resets the changes.
+    fn subscription_matched_status(&self) -> PyResult<(i32, i32, i32, i32, u64)> {
+        subscription_matched_of(&self.inner)
+    }
+    /// `get_sample_lost_status` — `(total_count, total_count_change)`;
+    /// reading resets the change.
+    fn sample_lost_status(&self) -> PyResult<(i32, i32)> {
+        sample_lost_of(&self.inner)
+    }
+    /// `get_requested_deadline_missed_status` — `(total_count,
+    /// total_count_change)`; reading resets the change.
+    fn requested_deadline_missed_status(&self) -> PyResult<(i32, i32)> {
+        requested_deadline_missed_of(&self.inner)
     }
 }
 
@@ -808,18 +1140,21 @@ impl PyBytesReader {
         self.inner.matched_publication_count()
     }
 
-    /// `get_subscription_matched_status` — (current_count, 0, current, 0, last=0).
-    fn subscription_matched_status(&self) -> (i32, i32, i32, i32, u64) {
-        let n = self.inner.matched_publication_count() as i32;
-        (n, 0, n, 0, 0)
+    /// `get_subscription_matched_status` (DDS 1.4 §2.2.4.1) — `(total_count,
+    /// total_count_change, current_count, current_count_change,
+    /// last_publication_handle)`. Reading resets the changes.
+    fn subscription_matched_status(&self) -> PyResult<(i32, i32, i32, i32, u64)> {
+        subscription_matched_of(&self.inner)
     }
-    /// `get_sample_lost_status` — (count, 0).
-    fn sample_lost_status(&self) -> (i32, i32) {
-        (self.inner.sample_lost_count() as i32, 0)
+    /// `get_sample_lost_status` — `(total_count, total_count_change)`;
+    /// reading resets the change.
+    fn sample_lost_status(&self) -> PyResult<(i32, i32)> {
+        sample_lost_of(&self.inner)
     }
-    /// `get_requested_deadline_missed_status` — (count, 0).
-    fn requested_deadline_missed_status(&self) -> (i32, i32) {
-        (self.inner.requested_deadline_missed_count() as i32, 0)
+    /// `get_requested_deadline_missed_status` — `(total_count,
+    /// total_count_change)`; reading resets the change.
+    fn requested_deadline_missed_status(&self) -> PyResult<(i32, i32)> {
+        requested_deadline_missed_of(&self.inner)
     }
     /// `get_liveliness_changed_status` — Spec §2.2.4.2.14
     /// `LIVELINESS_CHANGED_STATUS`. Returns
@@ -902,6 +1237,24 @@ impl From<ShapeType> for PyShape {
     }
 }
 
+/// The octets the Rust `ShapeType` codec puts on the wire for `shape` —
+/// XCDR2 little-endian, `@appendable` as the OMG `shape.idl` declares it,
+/// so the body opens with a DHEADER and closes with the
+/// `additional_payload_size` sequence.
+///
+/// Exposed for the vendor spec's §5.5 claim: the generated Python
+/// `zerodds-idlc --lang python` codec is byte-identical to the Rust one.
+/// Measured against this function it is compared to the encoder in use, not
+/// to a literal copied out of a Rust test that can move underneath it.
+#[pyfunction]
+fn shape_reference_octets<'py>(py: Python<'py>, shape: &PyShape) -> PyResult<Bound<'py, PyBytes>> {
+    let sample: ShapeType = shape.into();
+    let mut out = Vec::new();
+    zerodds_dcps::DdsType::encode(&sample, &mut out)
+        .map_err(|e| PyRuntimeError::new_err(format!("ShapeType::encode failed: {e:?}")))?;
+    Ok(PyBytes::new(py, &out))
+}
+
 #[pyclass(name = "ShapeWriter", module = "zerodds_py")]
 struct PyShapeWriter {
     inner: Arc<DataWriter<ShapeType>>,
@@ -972,6 +1325,17 @@ impl PyShapeWriter {
             writer.wait_for_matched_subscription(min_count, Duration::from_secs_f64(timeout_secs))
         })
         .map_err(dds_err_to_py)
+    }
+
+    /// `wait_for_acknowledgments` (DDS 1.4 §2.2.2.4.1.12): blocks until
+    /// every sample written so far is acknowledged by the matched reliable
+    /// readers, or raises `TimeoutError` after `timeout_secs`. A writer that
+    /// is deleted before then discards what is not acknowledged.
+    fn wait_for_acknowledgments(&self, py: Python<'_>, timeout_secs: f64) -> PyResult<()> {
+        let timeout = descriptor_timeout(timeout_secs)?;
+        let writer = Arc::clone(&self.inner);
+        py.detach(|| writer.wait_for_acknowledgments(timeout))
+            .map_err(dds_err_to_py)
     }
 
     /// §6.5 — attach a listener with all status kinds.
@@ -1068,12 +1432,11 @@ impl PyShapeReader {
 // Provided so the Python binding can behaviorally demonstrate keyed lifecycle
 // (dispose → NOT_ALIVE_DISPOSED, unregister → NOT_ALIVE_NO_WRITERS) with a wire
 // codec whose `decode` is *key-only tolerant* — i.e. it reconstructs the value
-// from the BE key-holder bytes the runtime stores for a lifecycle marker
-// (Spec §2.2.2.5.1.13). The `ShapeType` codec is not key-tolerant, so markers
-// for that type cannot be materialized on the reader.
+// from the PLAIN_CDR2 big-endian key holder the runtime stores for a lifecycle
+// marker (Spec §2.2.2.5.1.13). The `ShapeType` codec is not key-tolerant, so
+// markers for that type cannot be materialized on the reader.
 
 /// Keyed conformance type: `Reading { @key long id; long seq; double value }`.
-/// Wire form (self-consistent, big-endian): `u32 id | u32 seq | f64 value`.
 #[pyclass(name = "KeyedReading", module = "zerodds_py", from_py_object)]
 #[derive(Clone)]
 struct PyKeyedReading {
@@ -1111,49 +1474,138 @@ struct KeyedReading {
     value: f64,
 }
 
+/// The key holder of a `Reading` — `@key long id` as PLAIN_CDR2 big-endian,
+/// XTypes 1.3 §7.6.8. Four octets, which is what the runtime hands
+/// [`zerodds_dcps::DdsType::decode`] for a lifecycle marker.
+const KEYED_READING_KEY_HOLDER_LEN: usize = 4;
+
+/// The full sample: `int32 id | int32 seq | double value`. `value` lands on
+/// offset eight under both MAXALIGNs, so the octets are the same under XCDR1
+/// (MAXALIGN 8) and XCDR2 (MAXALIGN 4) — the two codecs below still pass their
+/// own bound rather than asserting the equivalence, because the type has an
+/// eight-octet member and `XCDR1_MATCHES_XCDR2` is documented to rule those out.
+const KEYED_READING_SAMPLE_LEN: usize = 16;
+
+impl KeyedReading {
+    fn encode_endian(
+        &self,
+        out: &mut Vec<u8>,
+        endian: Endianness,
+        max_align: usize,
+    ) -> core::result::Result<(), zerodds_dcps::dds_type::EncodeError> {
+        let mut w = Writer::with_max_align(endian, max_align);
+        w.write_i32(self.id);
+        w.write_i32(self.seq);
+        w.write_f64(self.value);
+        out.extend_from_slice(w.as_bytes());
+        Ok(())
+    }
+
+    fn decode_endian(
+        bytes: &[u8],
+        endian: Endianness,
+        max_align: usize,
+    ) -> core::result::Result<Self, zerodds_dcps::dds_type::DecodeError> {
+        // The key holder no longer arrives here. It used to: the runtime
+        // handed `decode` the holder of a dispose/unregister marker, and this
+        // function told the two streams apart by length — which works only
+        // while they differ in length and reads the wrong octets when they do
+        // not. `DdsType::decode_key_holder_be` is where the holder is read
+        // now, and it says so in its own signature.
+        if bytes.len() < KEYED_READING_SAMPLE_LEN {
+            return Err(zerodds_dcps::dds_type::DecodeError::Invalid {
+                what: "KeyedReading: payload shorter than the three members",
+            });
+        }
+        let mut r = Reader::with_max_align(bytes, endian, max_align);
+        Ok(Self {
+            id: r.read_i32()?,
+            seq: r.read_i32()?,
+            value: r.read_f64()?,
+        })
+    }
+}
+
 impl zerodds_dcps::DdsType for KeyedReading {
     const TYPE_NAME: &'static str = "conformance::Reading";
     const HAS_KEY: bool = true;
     // `@key long id` → 4-byte BE key holder → zero-pad KeyHash path.
-    const KEY_HOLDER_MAX_SIZE: Option<usize> = Some(4);
+    const KEY_HOLDER_MAX_SIZE: Option<usize> = Some(KEYED_READING_KEY_HOLDER_LEN);
+    /// The conformance IDL declares no extensibility; XTypes 1.3 §7.3.1.2.1.8
+    /// makes that the tree's default, and `crates/dcps` reads it as `@final`.
+    const EXTENSIBILITY: zerodds_dcps::dds_type::Extensibility =
+        zerodds_dcps::dds_type::Extensibility::Final;
 
     fn encode(
         &self,
         out: &mut Vec<u8>,
     ) -> core::result::Result<(), zerodds_dcps::dds_type::EncodeError> {
-        out.extend_from_slice(&(self.id as u32).to_be_bytes());
-        out.extend_from_slice(&(self.seq as u32).to_be_bytes());
-        out.extend_from_slice(&self.value.to_bits().to_be_bytes());
-        Ok(())
+        self.encode_endian(out, Endianness::Little, XCDR2_MAX_ALIGN)
+    }
+
+    fn encode_be(
+        &self,
+        out: &mut Vec<u8>,
+    ) -> core::result::Result<(), zerodds_dcps::dds_type::EncodeError> {
+        self.encode_endian(out, Endianness::Big, XCDR2_MAX_ALIGN)
     }
 
     fn decode(bytes: &[u8]) -> core::result::Result<Self, zerodds_dcps::dds_type::DecodeError> {
-        // Key-only tolerant (Spec §2.2.2.5.1.13): a lifecycle marker holder
-        // carries just the 4-byte BE `id`; full samples carry all 16 bytes.
-        if bytes.len() < 4 {
-            return Err(zerodds_dcps::dds_type::DecodeError::Invalid {
-                what: "KeyedReading: truncated key",
-            });
-        }
-        let id = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) as i32;
-        let seq = if bytes.len() >= 8 {
-            u32::from_be_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]) as i32
-        } else {
-            0
-        };
-        let value = if bytes.len() >= 16 {
-            f64::from_bits(u64::from_be_bytes([
-                bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14],
-                bytes[15],
-            ]))
-        } else {
-            0.0
-        };
-        Ok(Self { id, seq, value })
+        Self::decode_endian(bytes, Endianness::Little, XCDR2_MAX_ALIGN)
+    }
+
+    fn decode_be(bytes: &[u8]) -> core::result::Result<Self, zerodds_dcps::dds_type::DecodeError> {
+        Self::decode_endian(bytes, Endianness::Big, XCDR2_MAX_ALIGN)
+    }
+
+    fn encode_xcdr1(
+        &self,
+        out: &mut Vec<u8>,
+    ) -> core::result::Result<(), zerodds_dcps::dds_type::EncodeError> {
+        self.encode_endian(out, Endianness::Little, XCDR1_MAX_ALIGN)
+    }
+
+    fn encode_xcdr1_be(
+        &self,
+        out: &mut Vec<u8>,
+    ) -> core::result::Result<(), zerodds_dcps::dds_type::EncodeError> {
+        self.encode_endian(out, Endianness::Big, XCDR1_MAX_ALIGN)
+    }
+
+    fn decode_xcdr1(
+        bytes: &[u8],
+    ) -> core::result::Result<Self, zerodds_dcps::dds_type::DecodeError> {
+        Self::decode_endian(bytes, Endianness::Little, XCDR1_MAX_ALIGN)
+    }
+
+    fn decode_xcdr1_be(
+        bytes: &[u8],
+    ) -> core::result::Result<Self, zerodds_dcps::dds_type::DecodeError> {
+        Self::decode_endian(bytes, Endianness::Big, XCDR1_MAX_ALIGN)
     }
 
     fn encode_key_holder_be(&self, holder: &mut zerodds_dcps::dds_type::PlainCdr2BeKeyHolder) {
         holder.write_u32(self.id as u32);
+    }
+
+    /// The inverse of the holder above — four big-endian octets and nothing
+    /// else. DDS 1.4 §2.2.2.5.1.13 makes the key the only meaningful part of
+    /// a dispose/unregister sample, and `Self::decode` reads the type's own
+    /// sixteen-octet stream, not this.
+    fn decode_key_holder_be(
+        bytes: &[u8],
+    ) -> core::result::Result<Self, zerodds_dcps::dds_type::DecodeError> {
+        let head: [u8; KEYED_READING_KEY_HOLDER_LEN] = bytes
+            .get(..KEYED_READING_KEY_HOLDER_LEN)
+            .and_then(|b| b.try_into().ok())
+            .ok_or(zerodds_dcps::dds_type::DecodeError::Invalid {
+                what: "truncated KeyedReading key holder",
+            })?;
+        Ok(Self {
+            id: i32::from_be_bytes(head),
+            seq: 0,
+            value: 0.0,
+        })
     }
 }
 
@@ -1263,6 +1715,17 @@ impl PyKeyedWriter {
             writer.wait_for_matched_subscription(min_count, Duration::from_secs_f64(timeout_secs))
         })
         .map_err(dds_err_to_py)
+    }
+
+    /// `wait_for_acknowledgments` (DDS 1.4 §2.2.2.4.1.12): blocks until
+    /// every sample written so far is acknowledged by the matched reliable
+    /// readers, or raises `TimeoutError` after `timeout_secs`. A writer that
+    /// is deleted before then discards what is not acknowledged.
+    fn wait_for_acknowledgments(&self, py: Python<'_>, timeout_secs: f64) -> PyResult<()> {
+        let timeout = descriptor_timeout(timeout_secs)?;
+        let writer = Arc::clone(&self.inner);
+        py.detach(|| writer.wait_for_acknowledgments(timeout))
+            .map_err(dds_err_to_py)
     }
 }
 
@@ -1406,6 +1869,9 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyFactory>()?;
     m.add_class::<PyParticipant>()?;
     m.add_class::<PyBytesTopic>()?;
+    m.add_class::<PyDescriptorTopic>()?;
+    m.add_class::<PyDescriptorWriter>()?;
+    m.add_class::<PyDescriptorReader>()?;
     m.add_class::<PyShapeTopic>()?;
     m.add_class::<PyPublisher>()?;
     m.add_class::<PySubscriber>()?;
@@ -1428,6 +1894,9 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::listener::PyDataReaderListener>()?;
     m.add_class::<crate::conditions::PyReadCondition>()?;
     m.add_class::<crate::conditions::PyQueryCondition>()?;
+    // §5.5 — the Rust codec's own octets, so the pure-Python one can be
+    // measured against it rather than against a copied literal.
+    m.add_function(wrap_pyfunction!(shape_reference_octets, m)?)?;
     // §6.6 — SampleState/ViewState/InstanceState bitmask constants
     // (DDS 1.4 §2.2.2.5.1.4). Exposed as module attributes so that
     // users can use `zerodds._core.SAMPLE_STATE_ANY` etc.

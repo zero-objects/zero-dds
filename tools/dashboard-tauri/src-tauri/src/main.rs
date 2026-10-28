@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Tauri 2.0 Native-App-Wrapper für das ZeroDDS-Dashboard.
+//! Tauri 2.0 native app wrapper for the ZeroDDS dashboard.
 //!
-//! Embedded den HTTP-Server aus dem `zerodds-dashboard`-Crate
-//! in-process; das Frontend ist die gleiche SPA wie im Standalone-
-//! Mode. Zusaetzlich exposed das Native-App eine Tauri-Command-API
-//! ueber die das Frontend / ein Plugin via `__TAURI__.invoke()`
-//! State-Updates pushen kann — schneller als der Round-Trip ueber
-//! HTTP-POST und ohne CORS.
+//! Embeds the HTTP server from the `zerodds-dashboard` crate
+//! in-process; the frontend is the same SPA as in standalone
+//! mode. Additionally the native app exposes a Tauri command API
+//! through which the frontend / a plugin via `__TAURI__.invoke()`
+//! can push state updates — faster than the round-trip over
+//! HTTP POST and without CORS.
 
 #![cfg_attr(
     all(not(debug_assertions), target_os = "windows"),
@@ -22,7 +22,7 @@ use std::thread;
 use zerodds_dashboard::DashboardState;
 use tauri::{Manager, State};
 
-/// Globaler State-Container für Tauri.
+/// Global state container for Tauri.
 struct DashboardCtx {
     state: Arc<DashboardState>,
 }
@@ -56,7 +56,7 @@ fn main() {
             get_recording,
         ])
         .setup(|app| {
-            // Bei DevTools-Builds Auto-Open auf macOS/Linux.
+            // On DevTools builds auto-open on macOS/Linux.
             #[cfg(debug_assertions)]
             if let Some(window) = app.get_webview_window("main") {
                 window.open_devtools();
@@ -70,7 +70,7 @@ fn main() {
 // ---- Inject-Commands (Frontend → Backend) ----
 
 /// `__TAURI__.invoke('inject_topics', { json: '...' })`
-/// Gleiche Semantik wie POST /api/inject/topics.
+/// Same semantics as POST /api/inject/topics.
 #[tauri::command]
 fn inject_topics(json: String, ctx: State<DashboardCtx>) -> Result<usize, String> {
     ctx.state.inject_topics_json(&json)
@@ -87,8 +87,8 @@ fn inject_histograms(json: String, ctx: State<DashboardCtx>) -> Result<usize, St
 }
 
 // ---- Read-Only-Commands (Backend → Frontend) ----
-// Wer das HTTP-API umgehen will (z.B. weil CSP fetch()-Block hat),
-// bekommt hier den gleichen JSON-Body als Tauri-Command-Result.
+// Whoever wants to bypass the HTTP API (e.g. because CSP has a fetch() block),
+// gets here the same JSON body as a Tauri command result.
 
 #[tauri::command]
 fn get_topics(ctx: State<DashboardCtx>) -> String {

@@ -1,0 +1,1 @@
+@final struct MapKeyStr { map<string, long> entries; long tail; };

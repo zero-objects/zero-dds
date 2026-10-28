@@ -23,10 +23,26 @@
     missing_docs
 )]
 
+use zerodds_dcps::qos::{HistoryKind, HistoryQosPolicy};
 use zerodds_dcps::{
     DataReaderQos, DomainParticipantFactory, DomainParticipantQos, RawBytes, SubscriberQos,
     TopicQos,
 };
+
+/// KEEP_ALL: every test in this file pushes several samples to this
+/// keyless (single-instance) topic and asserts on more than the single
+/// newest of them — the default KEEP_LAST(1) would (correctly) evict the
+/// rest, since `take()`/`read()` route through the same HISTORY-enforcing
+/// cache as `take_with_info()`.
+fn unbounded_history() -> DataReaderQos {
+    DataReaderQos {
+        history: HistoryQosPolicy {
+            kind: HistoryKind::KeepAll,
+            depth: 1,
+        },
+        ..DataReaderQos::default()
+    }
+}
 
 #[test]
 fn filter_drops_samples_that_return_false() {
@@ -37,7 +53,7 @@ fn filter_drops_samples_that_return_false() {
         .expect("topic");
     let subscriber = p.create_subscriber(SubscriberQos::default());
     let reader = subscriber
-        .create_datareader::<RawBytes>(&topic, DataReaderQos::default())
+        .create_datareader::<RawBytes>(&topic, unbounded_history())
         .expect("reader")
         // Only let through samples with an even first byte.
         .with_filter(|s| s.data.first().is_some_and(|b| b % 2 == 0));
@@ -63,7 +79,7 @@ fn without_filter_all_samples_pass_through() {
         .expect("topic");
     let subscriber = p.create_subscriber(SubscriberQos::default());
     let reader = subscriber
-        .create_datareader::<RawBytes>(&topic, DataReaderQos::default())
+        .create_datareader::<RawBytes>(&topic, unbounded_history())
         .expect("reader");
 
     reader.__push_raw(vec![1]).unwrap();
@@ -84,7 +100,7 @@ fn filter_applies_also_to_read_peek() {
         .expect("topic");
     let subscriber = p.create_subscriber(SubscriberQos::default());
     let reader = subscriber
-        .create_datareader::<RawBytes>(&topic, DataReaderQos::default())
+        .create_datareader::<RawBytes>(&topic, unbounded_history())
         .expect("reader")
         .with_filter(|s| s.data.len() >= 2);
 

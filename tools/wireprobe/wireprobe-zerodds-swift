@@ -1,0 +1,141 @@
+#!/bin/bash
+# wireprobe-zerodds-swift — one IDL type and one JSON value, through the
+# ZeroDDS Swift binding built by the shared codec walk.
+#
+# The same command line as `wireprobe-zerodds`, so a case runs through
+# both by substituting the program name. See
+# `docs/specs/zerodds-interop-suite-1.0.md` §3a.
+#
+#   wireprobe-zerodds-swift --idl robot.idl --type common::Robot \
+#                           --values robot.json --encoding xcdr2 \
+#                           --endian le --out robot.zerodds-swift.xcdr2.le.bin
+#
+#   wireprobe-zerodds-swift --idl robot.idl --type common::Robot \
+#                           --in robot.cyclone.xcdr2.le.bin \
+#                           --encoding xcdr2 --endian le \
+#                           --values-out robot.read.json
+#
+# ## What is shared with the Rust probe and what is not
+#
+# Shared: the frontend, the common AST and the layout plan. Which
+# members are written, in what order, with which header and which length
+# code is `zerodds-ast-layout`'s answer, and a second answer would be a
+# second place for the wire format to live.
+#
+# Not shared: the serialiser. The generated program is compiled together
+# with `runtime/swift/Sources/ZdWire/*.swift`, which implements
+# DDS-XTypes 1.3 §7.4 a further time in Swift. Nothing here reaches the
+# Rust runtime through FFI: a probe that did would be byte-identical by
+# construction and would prove nothing about whether the two read the
+# specification the same way.
+#
+# ## The exit codes
+#
+# `docs/specs/zerodds-verdicts-1.0.md`, and structural rather than read
+# out of a message:
+#
+#   0  it carried the case
+#   1  the sample is outside the type — `primitive-char-above-latin1` is
+#      a `char` holding U+0161 and §7.2.2.2.1.2.2 says a CHAR_8_TYPE
+#      "shall be representable using 8 bits". The Rust probe answers 1
+#      for the same sample. The refusal happens at run time, in
+#      `zdCheckedChar`, so it is the runtime's and not a gap.
+#   2  the command line
+#   3  no-form — Swift has no form for the construct, which is
+#      `adapter/swift.rs`'s answer and nobody else's
+#   6  harness-gap — a tool of ours has not written it: the generator
+#      did not build, the walk stopped, or the toolchain is missing
+#   7  generator-defect — the generator accepted the case and the Swift
+#      it produced does not compile
+set -euo pipefail
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+root="$(cd "$here/../.." && pwd)"
+runtime="${ZERODDS_SWIFT_RUNTIME:-$root/runtime/swift}"
+SWIFTC="${SWIFTC:-swiftc}"
+
+if ! "$SWIFTC" --version >/dev/null 2>&1; then
+    echo "wireprobe-zerodds-swift: \`$SWIFTC\` is not on the path; the Swift column is unmeasured here" >&2
+    exit 9
+fi
+
+gen="${WIREPROBE_SWIFT_GEN:-}"
+if [ -z "$gen" ]; then
+    gen="${CARGO_TARGET_DIR:-$root/target}/debug/wireprobe-zerodds-swift-gen"
+    # Built when it is missing *or stale*: a generator older than the
+    # sources it came from measures the previous build.
+    . "$here/generator.sh"
+    probe_generator zerodds-wireprobe-swift-gen "$gen" "$root" || exit 6
+fi
+
+out=""
+values_out=""
+argv=()
+idl=""
+reading=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --out) out="$2"; shift 2 ;;
+        --values-out) values_out="$2"; argv+=("$1" "$2"); shift 2 ;;
+        --in) reading=1; argv+=("$1" "$2"); shift 2 ;;
+        --idl|--type|--values|--encoding|--endian|--emit|--dialect)
+            if [ "$1" = --idl ]; then idl="$2"; fi
+            argv+=("$1" "$2"); shift 2 ;;
+        --help|-h) sed -n '2,50p' "${BASH_SOURCE[0]}"; exit 0 ;;
+        *) echo "wireprobe-zerodds-swift: \`$1\` is not an option" >&2; exit 2 ;;
+    esac
+done
+
+. "$here/diagnostics.sh"
+
+work="$(mktemp -d)"
+trap 'probe_keep_generated "$work" "zerodds-swift" "$idl" main.swift; rm -rf "$work"' EXIT
+
+# The generator's own code passes straight through: 3 is "Swift has no
+# form for it" and 6 is "a tool of ours stopped", and folding the two
+# into one here would lose the distinction the ledger turns on.
+code=0
+"$gen" "${argv[@]}" --out-dir "$work" || code=$?
+[ "$code" = 0 ] || exit "$code"
+
+# The Swift compiler is the syntax and type check in one: a generated
+# file that is not Swift is the generator's defect, exit 7, which every
+# compiled column reports the same way. The runtime's sources compile
+# beside the probe as one module rather than linking from anywhere;
+# `-suppress-warnings` because the walk declares every local `var` and
+# the advisory to write `let` is not a defect. `-swift-version 5` pins
+# the language mode the runtime is written in.
+if ! "$SWIFTC" -swift-version 5 -suppress-warnings -o "$work/probe" \
+        "$work/main.swift" "$runtime"/Sources/ZdWire/*.swift > "$work/build.log" 2>&1; then
+    echo "wireprobe-zerodds-swift: the generated Swift does not compile" >&2
+    head -20 "$work/build.log" >&2 || true
+    probe_diagnostics_after "zerodds-swift" "$work" "$idl" 7
+    exit 7
+fi
+probe_diagnostics_after "zerodds-swift" "$work" "$idl" 0
+
+code=0
+"$work/probe" > "$work/bytes.bin" 2> "$work/run.log" || code=$?
+if [ "$code" != 0 ]; then
+    head -5 "$work/run.log" >&2 || true
+    [ "$code" = 1 ] && exit 1
+    [ "$code" = 3 ] && exit 3
+    echo "wireprobe-zerodds-swift: the probe did not run" >&2
+    exit 6
+fi
+
+# The read direction writes its JSON where `--values-out` said and puts
+# nothing on stdout, so there are no octets to hand back.
+if [ "$reading" = 1 ]; then
+    [ -n "$values_out" ] || {
+        echo "wireprobe-zerodds-swift: --in without --values-out" >&2
+        exit 2
+    }
+    exit 0
+fi
+
+if [ -n "$out" ]; then
+    cp "$work/bytes.bin" "$out"
+else
+    od -An -tx1 -v "$work/bytes.bin" | tr -d ' \n'; echo
+fi

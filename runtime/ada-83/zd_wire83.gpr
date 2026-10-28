@@ -1,0 +1,27 @@
+--  SPDX-License-Identifier: Apache-2.0
+--  Copyright 2026 ZeroDDS Contributors
+--
+--  The Ada 83 wire runtime as a GNAT project. The probe driver compiles
+--  the runtime's sources beside the generated probe; this project is
+--  for building and testing the runtime on its own:
+--
+--     gprbuild -P zd_wire83.gpr && obj/zd_wire83_selftest
+--
+--  `-gnat83` is the point of it. Without that switch GNAT accepts Ada
+--  2012 here and the column's sources build on a development machine
+--  and fail in the matrix, which is what happened: this runtime carried
+--  nineteen if expressions, eight declarations below a body and six
+--  anonymous array types before anything ever compiled it as Ada 83.
+
+project Zd_Wire83 is
+
+   for Source_Dirs use ("src", "tests");
+   for Object_Dir use "obj";
+   for Exec_Dir use "obj";
+   for Main use ("zd_wire83_selftest.adb");
+
+   package Compiler is
+      for Default_Switches ("Ada") use ("-gnat83", "-gnatf");
+   end Compiler;
+
+end Zd_Wire83;

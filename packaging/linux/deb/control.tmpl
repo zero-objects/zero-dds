@@ -23,12 +23,13 @@ Description: ZeroDDS shared library and runtime metadata
 Package: zerodds-cli
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}, zerodds-core (= ${binary:Version})
-Description: ZeroDDS administration and diagnostic CLIs (17 tools)
- Ships zerodds-admin, zerodds-bench, zerodds-idlc, zerodds-spy,
- zerodds-record, zerodds-replay, zerodds-snitch, zerodds-monitor,
- zerodds-mq, zerodds-pcap, zerodds-perf, zerodds-secure-keygen,
- zerodds-secure-permissions, zerodds-typeobject, zerodds-xml-config,
- zerodds-bench-suite, zerodds-ros2-shim.
+Description: ZeroDDS administration and diagnostic CLIs (18 tools)
+ Ships zerodds-admin, zerodds-bench, zerodds-chaos, zerodds-dashboard,
+ zerodds-idlc, zerodds-lint, zerodds-monitor, zerodds-mq, zerodds-pcap,
+ zerodds-perf, zerodds-record, zerodds-recorder-bridge, zerodds-replay,
+ zerodds-secure-permissions, zerodds-snitch, zerodds-spy,
+ zerodds-traceability and zerodds-xmlc. zerodds-ros2-shim is in
+ zerodds-ros2.
 
 Package: zerodds-dev
 Architecture: any
@@ -76,5 +77,26 @@ Description: ZeroDDS DDS to CORBA GIOP/IIOP bridge daemon
 Package: zerodds-ros2
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}, zerodds-core (= ${binary:Version})
-Description: ZeroDDS ROS-2 RMW shim and diagnostics
+Description: ZeroDDS ROS 2 diagnostics (zerodds-ros2-shim)
+ zerodds-ros2-shim, which prints what rmw_zerodds_cpp reads from the runtime
+ configuration, its man pages and the ros2 drop-in template. The RMW library
+ itself is not here: it ships per ROS distro as
+ ros-<distro>-rmw-zerodds-cpp, built from the ament package rmw_zerodds_cpp
+ (packaging/linux/deb/build-rmw-deb.sh).
  Spec: zerodds-ros2-bridge-1.0 §11.
+
+Package: zerodds-durability
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, zerodds-core (= ${binary:Version})
+Description: ZeroDDS Durability-Service daemon
+ zerodds-durability-svc keeps TRANSIENT and PERSISTENT samples for late
+ joiners, one daemon per domain, with the sqlite or file store
+ (see zerodds-durability-svc(1)).
+
+Package: zerodds-naming
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, zerodds-core (= ${binary:Version}), adduser
+Description: ZeroDDS OMG CosNaming 1.3 NameService daemon
+ zerodds-naming-svc: NamingContext + NamingContextExt + BindingIterator
+ over IIOP/SSLIOP, optionally CSIv2 GSSUP, persisted to a file
+ (see zerodds-naming-svc(1)).

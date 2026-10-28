@@ -138,6 +138,28 @@ impl ReliableStreamState {
         self.received.len()
     }
 
+    /// The highest sequence number the peer has acknowledged of what this
+    /// stream sent: the one before the oldest still in flight, or the last one
+    /// sent when none is in flight. `None` when nothing was sent.
+    #[must_use]
+    pub fn highest_acked(&self) -> Option<SerialNumber16> {
+        let sent_any = self.next_seq.raw() != 0 || !self.in_flight.is_empty();
+        if !sent_any {
+            return None;
+        }
+        let first_unacked = if self.in_flight.is_empty() {
+            self.next_seq
+        } else {
+            self.window_base
+        };
+        let before = first_unacked.raw().wrapping_sub(1);
+        // Nothing before the first message sent: it is not acknowledged yet.
+        if self.in_flight.contains_key(&0) && first_unacked.raw() == 0 {
+            return None;
+        }
+        Some(SerialNumber16::new(before))
+    }
+
     /// Aktuelle Empfangs-Erwartungs-Seqnr (Receiver).
     #[must_use]
     pub fn expected(&self) -> SerialNumber16 {
@@ -297,7 +319,10 @@ impl ReliableStreamState {
     /// Stores it in the out-of-order buffer (or discards it as a duplicate).
     ///
     /// # Errors
-    /// `ValueOutOfRange` if the receiver buffer is full (DoS protection).
+    /// `ValueOutOfRange` if the receiver buffer is full (DoS protection). The
+    /// sample at `expected_seq` is accepted even then: it is released by the
+    /// next [`Self::drain_in_order`], and it is the one that empties a buffer
+    /// that waits for it.
     pub fn recv_data(&mut self, seq: SerialNumber16, payload: Vec<u8>) -> Result<(), XrceError> {
         // Already delivered (before expected_seq)?
         if seq.wrapping_lt(self.expected_seq) {
@@ -306,7 +331,7 @@ impl ReliableStreamState {
         if self.received.contains_key(&seq.raw()) {
             return Ok(()); // already in the buffer
         }
-        if self.received.len() >= self.config.receiver_buffer {
+        if self.received.len() >= self.config.receiver_buffer && seq != self.expected_seq {
             return Err(XrceError::ValueOutOfRange {
                 message: "reliable receiver buffer full",
             });
@@ -536,6 +561,18 @@ mod tests {
         assert!(res.is_err());
     }
 
+    /// A full buffer waits for `expected_seq`; that sample is accepted and
+    /// releases everything held.
+    #[test]
+    fn recv_data_accepts_the_expected_sample_when_the_buffer_is_full() {
+        let mut s = rs();
+        for i in 1..=RECEIVER_BUFFER_CAP as u16 {
+            s.recv_data(SerialNumber16::new(i), alloc::vec![1]).unwrap();
+        }
+        s.recv_data(SerialNumber16::new(0), alloc::vec![0]).unwrap();
+        assert_eq!(s.drain_in_order().len(), RECEIVER_BUFFER_CAP + 1);
+    }
+
     #[test]
     fn pending_acknack_marks_missing_slots() {
         let mut s = rs();
@@ -549,6 +586,31 @@ mod tests {
         assert!(bitmap & (1 << 2) != 0);
         assert!(bitmap & (1 << 1) == 0); // seq 1 present
         assert!(bitmap & (1 << 3) == 0); // seq 3 present
+    }
+
+    /// The highest acknowledged sequence number: none before anything is
+    /// acknowledged, then the one before the oldest in flight.
+    #[test]
+    fn highest_acked_follows_the_acknacks() {
+        let mut s = rs();
+        assert_eq!(s.highest_acked(), None, "nothing sent");
+        for i in 0..5u8 {
+            s.submit(alloc::vec![i]).unwrap();
+        }
+        assert_eq!(s.highest_acked(), None, "nothing acknowledged");
+        s.recv_acknack(AckNackPayload {
+            first_unacked_seq_num: 3,
+            // 3 and 4 are still missing at the peer.
+            nack_bitmap: [0b11, 0],
+            stream_id: 0x80,
+        });
+        assert_eq!(s.highest_acked(), Some(SerialNumber16::new(2)));
+        s.recv_acknack(AckNackPayload {
+            first_unacked_seq_num: 5,
+            nack_bitmap: [0, 0],
+            stream_id: 0x80,
+        });
+        assert_eq!(s.highest_acked(), Some(SerialNumber16::new(4)));
     }
 
     #[test]

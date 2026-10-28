@@ -1,0 +1,12 @@
+struct GapProbe {
+  string s;
+  long b;
+  octet c;
+  double d;
+  octet e;
+  short f;
+};
+
+interface Sink {
+  void put(in GapProbe g);
+};

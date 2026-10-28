@@ -10,7 +10,7 @@
 //! `zerodds-replay` read the NDJSON back.
 //!
 //! Linux-only: macOS multicast loopback is unreliable for cross-process DDS
-//! discovery (see project memory). Run on codepit.
+//! discovery. Run on the Linux test host.
 
 #![cfg(target_os = "linux")]
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic, missing_docs)]
@@ -21,16 +21,12 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
+use zerodds_ast_layout::key::{Encoding, Endianness};
 use zerodds_dcps::runtime::{DcpsRuntime, RuntimeConfig, UserWriterConfig};
-use zerodds_qos::{
-    DeadlineQosPolicy, DurabilityKind, LifespanQosPolicy, LivelinessQosPolicy, OwnershipKind,
-};
-use zerodds_recorder_decode::type_source::dynamic_type_from_idl;
+use zerodds_recorder_decode::type_source::TypeBook;
 use zerodds_rtps::wire_types::GuidPrefix;
-use zerodds_types::dynamic::DynamicDataFactory;
-use zerodds_types::dynamic::codec::encode_dynamic;
-use zerodds_types::dynamic::data::DynamicValue as DV;
-use zerodds_types::dynamic::type_::DynamicType;
+use zerodds_types::dynamic::DynamicData;
+use zerodds_wire_codec::{ProbeRequest, encode};
 
 const IDL: &str = r#"
     module cuas {
@@ -43,73 +39,109 @@ const IDL: &str = r#"
 "#;
 const TOPIC: &str = "TrackTopic";
 const TYPE_NAME: &str = "cuas::Track";
-const DOMAIN: u32 = 47;
+/// The domain is leased and not written down. A fixed number here is a
+/// live socket on `7400 + 250*n` shared with every other test binary
+/// cargo runs beside this one, and what that looks like is not a bind
+/// error but an empty table: the recorder attaches, no sample of ours
+/// arrives, and the first query returns no rows.
+fn lease_domain() -> u32 {
+    u32::try_from(zerodds_test_domains::unique_domain()).unwrap_or(47)
+}
 
 fn record_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_zerodds-record"))
 }
 
+/// The `cuas::Track` every sample of the test carries.
+fn canonical_value() -> DynamicData {
+    let int = |value: i128| DynamicData::Integer { kind: None, value };
+    DynamicData::Aggregate(vec![
+        (String::from("id"), int(42)),
+        (
+            String::from("name"),
+            DynamicData::Text(String::from("bandit")),
+        ),
+        (
+            String::from("xs"),
+            DynamicData::Collection(vec![int(7), int(-3), int(1000)]),
+        ),
+    ])
+}
+
 fn make_wire() -> Vec<u8> {
-    let ty = dynamic_type_from_idl(IDL, "Track").unwrap();
-    let mut d = DynamicDataFactory::create_data(&ty).unwrap();
-    d.set_uint32_value(0, 42).unwrap();
-    d.set_string_value(1, "bandit").unwrap();
-    let mut xs = Vec::new();
-    for v in [7_i32, -3, 1000] {
-        let mut e = DynamicDataFactory::create_data(&DynamicType::new_primitive(
-            zerodds_types::dynamic::descriptor::TypeKind::Int32,
-        ))
-        .unwrap();
-        e.set_value_raw(0, DV::Int32(v));
-        xs.push(e);
-    }
-    d.set_sequence_value(2, xs).unwrap();
-    // XCDR2 little-endian — matches the writer's default encapsulation header.
-    // DEFAULT_OFFER is `[XCDR2]` (feat/xcdr2 01df55e9), so `write_user_sample`
-    // stamps a CDR2/D_CDR2_LE header; the body bytes must be XCDR2 to match,
-    // else the recorder decodes an XCDR1 body as XCDR2 and misreads `id` as a
-    // length prefix.
-    encode_dynamic(&d, true, false).unwrap()
+    let book = TypeBook::from_idl(IDL).unwrap();
+    let value = canonical_value();
+    // The body has to be the encoding the writer *declares*, and the writer
+    // declares `data_representation_offer.first()`. That is
+    // `DEFAULT_OFFER = [XCDR, XCDR2]` — XCDR**1** first — so
+    // `user_payload_encap` stamps `CDR_LE` (0x01) and a reader derives
+    // `representation = 0` from it.
+    //
+    // The comment this replaces said `DEFAULT_OFFER` was `[XCDR2]`, citing a
+    // commit from before the list gained its XCDR1 head. Writing an XCDR2
+    // body under an XCDR1 header does not fail where the mismatch is: the
+    // reader honours the header, reads the XCDR2 delimiter as `id`, and then
+    // reads `id` as the length of `name` —
+    // `at 4: a length of 42 with 28 bytes left`, with 42 being the `id` that
+    // was written.
+    let request = ProbeRequest::new(TYPE_NAME, Encoding::PlainCdr1, Endianness::Little);
+    encode(book.ast(), &request, &value).unwrap()
 }
 
 fn writer_config() -> UserWriterConfig {
     UserWriterConfig {
         topic_name: TOPIC.to_string(),
         type_name: TYPE_NAME.to_string(),
-        reliable: true,
-        durability: DurabilityKind::Volatile,
-        deadline: DeadlineQosPolicy::default(),
-        latency_budget: Default::default(),
-        destination_order: Default::default(),
-        lifespan: LifespanQosPolicy::default(),
-        liveliness: LivelinessQosPolicy::default(),
-        ownership: OwnershipKind::Shared,
-        ownership_strength: 0,
-        presentation: Default::default(),
-        partition: Vec::new(),
-        user_data: Vec::new(),
-        topic_data: Vec::new(),
-        group_data: Vec::new(),
-        type_identifier: zerodds_types::TypeIdentifier::None,
-        data_representation_offer: None,
+        ..Default::default()
     }
+}
+
+/// The receive time of the one sample [`seed_an_earlier_recording`] writes.
+const STALE_RECV_TS_NS: i64 = 1;
+
+/// Leaves at `db` what an earlier `--out-sqlite` to the same path left: the
+/// topic's table with one sample in it.
+///
+/// `-o` and `--out-json` replace their file. `--out-sqlite` appended to it,
+/// so the database of a second recording held both, and `zerodds-replay`
+/// paced the second one's samples behind the first's by the time between
+/// the two recordings — hours, on a host that runs the example twice.
+fn seed_an_earlier_recording(db: &std::path::Path) {
+    let book = TypeBook::from_idl(IDL).unwrap();
+    let ty = book.resolve(TYPE_NAME).unwrap();
+    let mut sink =
+        zerodds_recorder_decode::sqlite_sink::SqliteSink::open(db.to_str().unwrap()).unwrap();
+    sink.ensure_topic(TOPIC, TYPE_NAME, IDL, &ty).unwrap();
+    sink.insert_sample(
+        TOPIC,
+        &ty,
+        STALE_RECV_TS_NS,
+        "00",
+        &make_wire(),
+        &canonical_value(),
+    )
+    .unwrap();
 }
 
 #[test]
 fn live_record_decode_roundtrip() {
+    // Held for the life of this process, so the recorder subprocess can be
+    // pointed at the same number.
+    let domain = lease_domain();
     let dir = tempfile::tempdir().unwrap();
     let idl_path = dir.path().join("tracks.idl");
     std::fs::write(&idl_path, IDL).unwrap();
     let db_path = dir.path().join("tracks.db");
     let json_path = dir.path().join("tracks.ndjson");
     let zddsrec_path = dir.path().join("cap.zddsrec");
+    seed_an_earlier_recording(&db_path);
 
     // --- Publisher: a real typed writer pumping the canonical sample. ---
     let mut prefix = [0u8; 12];
     prefix[0..4].copy_from_slice(&std::process::id().to_le_bytes());
     prefix[11] = 0xAA;
     let runtime = DcpsRuntime::start(
-        i32::try_from(DOMAIN).unwrap(),
+        i32::try_from(domain).unwrap(),
         GuidPrefix::from_bytes(prefix),
         RuntimeConfig::default(),
     )
@@ -140,7 +172,7 @@ fn live_record_decode_roundtrip() {
             "-t",
             TOPIC,
             "-d",
-            &DOMAIN.to_string(),
+            &domain.to_string(),
             "--duration",
             "5s",
             "-o",
@@ -165,6 +197,17 @@ fn live_record_decode_roundtrip() {
 
     // --- Assert SQLite: typed row + joined sequence child. ---
     let conn = rusqlite::Connection::open(&db_path).expect("open db");
+    let stale: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM t_TrackTopic WHERE recv_ts_ns = ?1",
+            [STALE_RECV_TS_NS],
+            |r| r.get(0),
+        )
+        .expect("count stale rows");
+    assert_eq!(
+        stale, 0,
+        "the database holds a row of the recording before this one"
+    );
     let (id, name): (i64, String) = conn
         .query_row(
             "SELECT id, name FROM t_TrackTopic ORDER BY sample_id LIMIT 1",

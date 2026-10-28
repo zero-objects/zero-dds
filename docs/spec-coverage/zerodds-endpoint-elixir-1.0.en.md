@@ -1,9 +1,7 @@
 # `zerodds-endpoint-elixir` 1.0 — Spec Coverage
 
 **Source:** `docs/specs/zerodds-endpoint-elixir-1.0.md` — the ZeroDDS Elixir
-endpoint SDK spec. Complements the codegen coverage `zerodds-xcdr2-elixir`
-(`docs/spec-coverage/zerodds-xcdr2-elixir-1.0.md`) — that doc covers
-marshalling, this one covers transport.
+endpoint SDK spec. The marshalling comes from `crates/lang-rules`, column `Language::Elixir`; this document covers the transport.
 
 Implementation:
 
@@ -79,14 +77,14 @@ no XRCE frame, uses only the generated
 mode `sync`/`async` via CLI argument; the generated `Zdgen.*` types and the
 `ZeroDDS.*` SDK live in disjoint namespaces and are loaded side by side).
 
-**Tests (codepit):**
+**Tests:** (Linux)
 - `elixir_raw_udp` — generated `Ping`/`Pong` codec directly over a raw UDP
   socket, no XRCE framing.
 - `elixir_endpoint_sync` — full stack via `ZeroDDS.Client`.
 - `elixir_endpoint_async` — full stack via `ZeroDDS.AsyncReader` (poll for
   the write side, process/mailbox for the read side).
 
-3/3 passed (codepit).
+3/3 passed (Linux).
 
 **Status:** done.
 
@@ -116,7 +114,7 @@ cascade, socket ownership handoff `controlling_process` → `activate`);
 socket); `endpoints/elixir/reliable_app.exs` (live UDP sender app for the
 E2E, including a `bench` mode).
 
-**Tests (codepit):**
+**Tests:** (Linux)
 - `elixir_reliable_unit_and_golden`
   (`crates/endpoint-e2e/tests/elixir_reliable.rs`) runs
   `elixir -r lib/reliable.ex reliable_test.exs [golden_dir]` — 22 unit
@@ -152,7 +150,7 @@ E2E, including a `bench` mode).
   `RELIABLE OK` (12 samples, drop simulation + ACKNACK recovery in the
   in-process model).
 
-5/5 passed (codepit), 4 of which belong to this section (latency bench in
+5/5 passed (Linux), 4 of which belong to this section (latency bench in
 §6).
 
 **Status:** done.
@@ -172,7 +170,7 @@ iterations of inline `:gen_udp.send` (connected socket) vs. 20000 iterations
 of `ZeroDDS.Reliable.Drain.submit/2`, no live peer needed (an arbitrary bound
 UDP port, only local dispatch cost under measurement).
 
-**Tests (codepit):** `elixir_reliable_producer_latency`
+**Tests:** (Linux) `elixir_reliable_producer_latency`
 (`crates/endpoint-e2e/tests/elixir_reliable.rs`) — `submit` cast **452 ns**
 vs. inline `:gen_udp.send` **5618 ns** (~12×).
 
@@ -184,7 +182,7 @@ vs. inline `:gen_udp.send` **5618 ns** (~12×).
 
 6 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
 
-Test run (codepit, verified): `cargo test -p zerodds-endpoint-e2e --test elixir`
+Test run (Linux, verified): `cargo test -p zerodds-endpoint-e2e --test elixir`
 3/3 (ping-pong: `elixir_raw_udp`/`elixir_endpoint_sync`/`elixir_endpoint_async`);
 `--test elixir_reliable` 5/5 (`elixir_reliable_unit_and_golden` — 22 Elixir
 unit checks incl. byte-golden, `elixir_reliable_loss_recovery`,

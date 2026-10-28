@@ -1,0 +1,6 @@
+// `@optional` with a value
+@final struct Sample {
+    long a;
+    @optional long b;
+    long c;
+};

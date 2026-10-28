@@ -5,6 +5,9 @@ version.workspace = true
 edition = "2021"
 license = "Apache-2.0"
 description = "ZeroDDS ↔ Cyclone DDS same-host zero-copy bridge over the iceoryx C++ (POSH) shared-memory transport, via the libiceoryx_binding_c C ABI."
+homepage = "https://zerodds.org"
+keywords = ["dds", "iceoryx", "cyclonedds", "zero-copy", "shared-memory"]
+categories = ["network-programming", "os::linux-apis"]
 repository = "https://github.com/zero-objects/zero-dds"
 # Publishable: with default features the crate builds on any platform (it only
 # exposes the DdsPsmxMetadata representation type). The `posh` FFI that links

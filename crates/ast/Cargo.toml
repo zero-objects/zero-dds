@@ -1,0 +1,23 @@
+[package]
+name = "zerodds-ast"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Common AST for the ZeroDDS type system: source-neutral node space with per-source typed facets. Implements docs/specs/zerodds-ast-1.0.md."
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/zerodds-ast"
+readme = "README.md"
+keywords = ["dds", "idl", "ast", "compiler"]
+categories = ["compilers", "parser-implementations"]
+
+[dependencies]
+zerodds-ast-core = { path = "../ast-core", version = "1.0.0-rc.7" }
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true

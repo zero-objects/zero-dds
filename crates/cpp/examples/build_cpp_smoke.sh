@@ -21,6 +21,7 @@ echo "[cpp-smoke] g++ -std=c++17 ..."
 g++ -std=c++17 -O2 -Wall -Wextra \
     -I "$REPO/crates/zerodds-c-api/include" \
     -I "$REPO/crates/cpp/include" \
+    -I "$REPO/runtime/cpp/include" \
     -o /tmp/zerodds_cpp_smoke \
     "$REPO/crates/cpp/examples/cpp_smoke.cpp" \
     $LINK_FLAGS

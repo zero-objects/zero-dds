@@ -6,7 +6,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
-description = "Native Rust endpoint SDK (ADR 0013): a thin XRCE + XCDR2 client over the zerodds-cdr core, with sync (poll) and async (thread + channel) deep examples."
+description = "Native Rust endpoint SDK (ADR 0013): a thin XRCE + XCDR2 client over the zerodds-wire core, with sync (poll) and async (thread + channel) deep examples."
 publish = false
 
 [package.metadata.dist]
@@ -16,4 +16,15 @@ dist = false
 workspace = true
 
 [dependencies]
-zerodds-cdr = { version = "1.0.0-rc.7", path = "../../crates/cdr", default-features = false, features = ["std"] }
+zerodds-wire = { version = "1.0.0-rc.7", path = "../../crates/wire" }
+# DDS-XRCE 1.0 client (see `src/xrce_client.rs`): this endpoint is Rust, so
+# `XrceClient` there is a type alias for `crates/xrce-client`'s own client
+# rather than a second state machine or a second wire encoder — this crate
+# only adds a `ClientTransport` adapter over its own `MemTransport`.
+# `zerodds-xrce` is a dev-only dependency of that module's tests, which
+# build synthetic agent replies (`AgentRepresentation`/`ResultStatus`/
+# `StatusAgentPayload`) the same way `crates/xrce-client`'s own tests do.
+zerodds-xrce-client = { version = "1.0.0-rc.7", path = "../../crates/xrce-client" }
+
+[dev-dependencies]
+zerodds-xrce = { version = "1.0.0-rc.7", path = "../../crates/xrce" }

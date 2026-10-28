@@ -1,0 +1,13 @@
+// a module reopened, unqualified reference, unannotated
+module common {
+    struct First {
+        long a;
+    };
+};
+
+module common {
+    struct Sample {
+        First head;
+        double b;
+    };
+};

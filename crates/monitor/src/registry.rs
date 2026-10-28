@@ -18,7 +18,7 @@ pub struct Registry {
 }
 
 impl Registry {
-    /// Leere Registry.
+    /// Empty registry.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
@@ -131,7 +131,7 @@ pub struct RegistrySnapshot {
     pub gauges: Vec<(MetricKey, i64)>,
     /// Histogram-Snapshots.
     pub histograms: Vec<(MetricKey, zerodds_foundation::tracing::Histogram)>,
-    /// HELP-Texte pro Metric-Name.
+    /// HELP texts per metric name.
     pub helps: Vec<(&'static str, &'static str)>,
 }
 

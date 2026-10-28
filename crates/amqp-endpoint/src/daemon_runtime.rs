@@ -3,10 +3,10 @@
 
 //! Cross-cutting daemon runtime for the AMQP daemon.
 //!
-//! Bietet Standard-Counter (§8.2 Prometheus), `/catalog`-/`/healthz`-
+//! Provides standard counters (§8.2 Prometheus), `/catalog`-/`/healthz`-
 //! /`/metrics`-Endpoint (§5.2), Signal-Watcher (§9.2), OTLP-Exporter
 //! (§8.3) — all as generic ones, wired up in the binary main loop
-//! Komponenten.
+//! Components.
 
 #![allow(clippy::print_stderr)]
 
@@ -27,17 +27,17 @@ pub const SERVICE_VERSION: &str = env!("CARGO_PKG_VERSION");
 /// Standard metric set for the AMQP daemon.
 #[derive(Clone)]
 pub struct BridgeMetrics {
-    /// Eingehende AMQP-Frames.
+    /// Incoming AMQP frames.
     pub frames_in_total: Arc<Counter>,
-    /// Ausgehende AMQP-Frames.
+    /// Outgoing AMQP frames.
     pub frames_out_total: Arc<Counter>,
     /// Bytes in.
     pub bytes_in_total: Arc<Counter>,
     /// Bytes out.
     pub bytes_out_total: Arc<Counter>,
-    /// Aktive Broker-Connections.
+    /// Active broker connections.
     pub connections_active: Arc<Gauge>,
-    /// Lifetime Broker-Connect-Versuche.
+    /// Lifetime broker connection attempts.
     pub connections_total: Arc<Counter>,
     /// AMQP → DDS Samples.
     pub dds_samples_in_total: Arc<Counter>,
@@ -45,6 +45,11 @@ pub struct BridgeMetrics {
     pub dds_samples_out_total: Arc<Counter>,
     /// Wire-Errors.
     pub errors_total: Arc<Counter>,
+    /// The registry the families of spec §8.2 go into once the topics are
+    /// known; `None` from [`Self::register`].
+    pub registry: Option<Arc<Registry>>,
+    /// Spec §8.2 (`zerodds_amqp_bridge_*`), after [`Self::with_topics`].
+    pub spec: Option<Arc<SpecMetrics>>,
 }
 
 impl BridgeMetrics {
@@ -80,7 +85,196 @@ impl BridgeMetrics {
             dds_samples_out_total: registry
                 .counter("zerodds_amqp_dds_samples_out_total", Labels::new()),
             errors_total: registry.counter("zerodds_amqp_errors_total", Labels::new()),
+            registry: None,
+            spec: None,
         }
+    }
+
+    /// [`Self::register`], keeping the registry for the families of spec
+    /// §8.2.
+    pub fn register_shared(registry: &Arc<Registry>) -> Self {
+        Self {
+            registry: Some(Arc::clone(registry)),
+            ..Self::register(registry)
+        }
+    }
+
+    /// The same set with the families of spec §8.2 registered for these
+    /// topics (index = topic index of the configuration) and the SASL
+    /// mechanism of the configuration. Without a registry, unchanged.
+    #[must_use]
+    pub fn with_topics(&self, topics: &[String], sasl_mechanism: &str) -> Self {
+        let mut out = self.clone();
+        if let Some(r) = &self.registry {
+            out.spec = Some(Arc::new(SpecMetrics::register(r, topics, sasl_mechanism)));
+        }
+        out
+    }
+}
+
+/// Counters of one DDS topic (spec §8.2, label `dds_topic`).
+pub struct TopicMetrics {
+    /// AMQP transfers received for the topic (broker → DDS).
+    pub transfers_in: Arc<Counter>,
+    /// AMQP transfers sent for the topic (DDS → broker).
+    pub transfers_out: Arc<Counter>,
+    /// Message bytes received.
+    pub bytes_in: Arc<Counter>,
+    /// Message bytes sent.
+    pub bytes_out: Arc<Counter>,
+    /// DDS samples taken from the topic.
+    pub dds_received: Arc<Counter>,
+    /// DDS samples written to the topic.
+    pub dds_published: Arc<Counter>,
+}
+
+/// Spec §8.2: `zerodds_amqp_bridge_*`. Label values come from the
+/// configuration, and a rejection's `reason` is its AMQP error condition
+/// when that is an `amqp:` symbol, else `other`: nothing a broker sends
+/// grows the label set without bound.
+pub struct SpecMetrics {
+    registry: Arc<Registry>,
+    /// Per topic, by the configuration's topic index.
+    pub topics: Vec<TopicMetrics>,
+    /// `connections_total{state="established"}`.
+    pub connections_established: Arc<Counter>,
+    /// `connections_total{state="failed"}`: the connect failed.
+    pub connections_failed: Arc<Counter>,
+    /// `connections_total{state="lost"}`: an established connection ended.
+    pub connections_lost: Arc<Counter>,
+    /// `links_active{role="sender"}`.
+    pub links_sender: Arc<Gauge>,
+    /// `links_active{role="receiver"}`.
+    pub links_receiver: Arc<Gauge>,
+    /// Deliveries settled `accepted`, both directions.
+    pub dispositions_accepted: Arc<Counter>,
+    /// Deliveries settled `released` or `modified`, both directions.
+    pub dispositions_released: Arc<Counter>,
+    /// Link credit granted to the broker.
+    pub credit_topup: Arc<Counter>,
+    /// `sasl_failures_total{mechanism}` of the configured mechanism.
+    pub sasl_failures: Arc<Counter>,
+}
+
+impl SpecMetrics {
+    fn register(registry: &Arc<Registry>, topics: &[String], sasl_mechanism: &str) -> Self {
+        for (name, help) in [
+            (
+                "zerodds_amqp_bridge_connections_total",
+                "Broker connections by how they went",
+            ),
+            ("zerodds_amqp_bridge_links_active", "Attached links by role"),
+            (
+                "zerodds_amqp_bridge_transfers_in_total",
+                "Transfers received from the broker",
+            ),
+            (
+                "zerodds_amqp_bridge_transfers_out_total",
+                "Transfers sent to the broker",
+            ),
+            (
+                "zerodds_amqp_bridge_bytes_in_total",
+                "Message bytes received from the broker",
+            ),
+            (
+                "zerodds_amqp_bridge_bytes_out_total",
+                "Message bytes sent to the broker",
+            ),
+            (
+                "zerodds_amqp_bridge_dispositions_accepted_total",
+                "Deliveries settled accepted, both directions",
+            ),
+            (
+                "zerodds_amqp_bridge_dispositions_rejected_total",
+                "Deliveries settled rejected, both directions",
+            ),
+            (
+                "zerodds_amqp_bridge_dispositions_released_total",
+                "Deliveries settled released or modified, both directions",
+            ),
+            (
+                "zerodds_amqp_bridge_credit_topup_total",
+                "Link credit grants to the broker",
+            ),
+            (
+                "zerodds_amqp_bridge_dds_samples_received",
+                "DDS samples taken for the broker",
+            ),
+            (
+                "zerodds_amqp_bridge_dds_samples_published",
+                "DDS samples written from the broker",
+            ),
+            (
+                "zerodds_amqp_bridge_sasl_failures_total",
+                "Connects refused in the SASL phase",
+            ),
+        ] {
+            registry.set_help(name, help);
+        }
+        let topic = |t: &String| Labels::new().with("dds_topic", t.clone());
+        let conn = |state: &str| {
+            registry.counter(
+                "zerodds_amqp_bridge_connections_total",
+                Labels::new().with("state", state.to_string()),
+            )
+        };
+        let role = |r: &str| {
+            registry.gauge(
+                "zerodds_amqp_bridge_links_active",
+                Labels::new().with("role", r.to_string()),
+            )
+        };
+        Self {
+            topics: topics
+                .iter()
+                .map(|t| TopicMetrics {
+                    transfers_in: registry
+                        .counter("zerodds_amqp_bridge_transfers_in_total", topic(t)),
+                    transfers_out: registry
+                        .counter("zerodds_amqp_bridge_transfers_out_total", topic(t)),
+                    bytes_in: registry.counter("zerodds_amqp_bridge_bytes_in_total", topic(t)),
+                    bytes_out: registry.counter("zerodds_amqp_bridge_bytes_out_total", topic(t)),
+                    dds_received: registry
+                        .counter("zerodds_amqp_bridge_dds_samples_received", topic(t)),
+                    dds_published: registry
+                        .counter("zerodds_amqp_bridge_dds_samples_published", topic(t)),
+                })
+                .collect(),
+            connections_established: conn("established"),
+            connections_failed: conn("failed"),
+            connections_lost: conn("lost"),
+            links_sender: role("sender"),
+            links_receiver: role("receiver"),
+            dispositions_accepted: registry.counter(
+                "zerodds_amqp_bridge_dispositions_accepted_total",
+                Labels::new(),
+            ),
+            dispositions_released: registry.counter(
+                "zerodds_amqp_bridge_dispositions_released_total",
+                Labels::new(),
+            ),
+            credit_topup: registry.counter("zerodds_amqp_bridge_credit_topup_total", Labels::new()),
+            sasl_failures: registry.counter(
+                "zerodds_amqp_bridge_sasl_failures_total",
+                Labels::new().with("mechanism", sasl_mechanism.to_string()),
+            ),
+            registry: Arc::clone(registry),
+        }
+    }
+
+    /// A delivery settled `rejected` with the AMQP error condition `condition`.
+    pub fn rejected(&self, condition: Option<&str>) {
+        let reason = match condition {
+            Some(c) if c.starts_with("amqp:") && c.len() <= 64 => c.to_string(),
+            Some(_) => "other".to_string(),
+            None => "none".to_string(),
+        };
+        self.registry
+            .counter(
+                "zerodds_amqp_bridge_dispositions_rejected_total",
+                Labels::new().with("reason", reason),
+            )
+            .inc();
     }
 }
 
@@ -276,7 +470,7 @@ fn admin_handle(
     let _ = stream.write_all(resp.as_bytes());
 }
 
-/// Endpoint-String parsen.
+/// Parse endpoint string.
 #[must_use]
 pub fn otlp_config_from_endpoint(service_name: &str, raw: &str) -> OtlpConfig {
     let trimmed = raw
@@ -392,7 +586,7 @@ pub fn install_signal_watcher(
     _shutdown_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
     _reload_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) -> std::io::Result<std::thread::JoinHandle<()>> {
-    // Windows: signal_hook::iterator nur POSIX. Spawn dummy thread,
+    // Windows: signal_hook::iterator is POSIX-only. Spawn a dummy thread,
     // shutdown runs over the normal socket-close paths.
     Ok(std::thread::spawn(|| {}))
 }

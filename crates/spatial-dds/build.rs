@@ -1,39 +1,129 @@
 // SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 ZeroDDS Contributors
 //! Generates the SpatialDDS Rust types from the vendored spec IDL using
-//! ZeroDDS' own IDL→Rust codegen — the profile is not hand-written, it is the
-//! real OpenArCloud SpatialDDS IDL run through ZeroDDS.
-// A build script legitimately fails the build by panicking on a bad IDL / env.
-#![allow(clippy::expect_used, clippy::unwrap_used)]
+//! ZeroDDS' own IDL front end and rule catalogue — the profile is not
+//! hand-written, it is the real OpenArCloud SpatialDDS IDL run through
+//! this tree's `idl-parse` → `idl-lower` → `lang-rules` pipeline.
+//!
+//! The encoding is chosen per type from the extensibility the IDL
+//! declares, not fixed for the file: SpatialDDS writes
+//! `@extensibility(APPENDABLE)` on almost every aggregate, and an
+//! appendable type is `DelimitedCdr` (XTypes 1.3 §7.4.2, Table 59). A
+//! single key for the whole file would have put an appendable type on
+//! the wire without its DHEADER — this tree has recorded that shape of
+//! defect before, and the peer sees a truncated sample rather than an
+//! error.
+
+// A build script legitimately fails the build by panicking on a bad IDL
+// or a missing environment variable: it has nothing to hand the
+// compiler, and failing the build is all it can do about it.
+#![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
+
 use std::path::PathBuf;
 
-use zerodds_idl::config::ParserConfig;
-use zerodds_idl_rust::{RustGenOptions, generate_rust_module};
+use zerodds_ast::facet::Extensibility;
+use zerodds_ast::{Ast, TypeKind, TypeNode};
+use zerodds_ast_core::Id;
+use zerodds_ast_layout::key::{Encoding, Endianness, LayoutKey};
+use zerodds_lang_rules::adapter::cst::{nest_by_module, rust_item_pairs};
+use zerodds_lang_rules::encode::rust_codec;
+use zerodds_lang_rules::rule::rust;
+use zerodds_lang_rules::{ModelGraph, apply};
+
+/// The encoding an aggregate is generated for, from what it declares.
+/// XTypes 1.3 §7.4.2, Table 59.
+fn encoding_for(ast: &Ast, id: Id<TypeNode>) -> Encoding {
+    match ast.effective_extensibility(id) {
+        Extensibility::Final => Encoding::PlainCdr2,
+        Extensibility::Appendable => Encoding::DelimitedCdr,
+        Extensibility::Mutable => Encoding::PlCdr2,
+    }
+}
 
 fn main() {
     println!("cargo:rerun-if-changed=idl/spatial_core.idl");
+    println!("cargo:rerun-if-changed=build.rs");
+
     let idl = std::fs::read_to_string("idl/spatial_core.idl").expect("read spatial_core.idl");
-    let ast =
-        zerodds_idl::parse(&idl, &ParserConfig::default()).expect("parse SpatialDDS core IDL");
-    let opts = RustGenOptions {
-        cdr_only: true,
-        ..RustGenOptions::default()
+    let parsed = zerodds_idl_parse::parse(&idl);
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "the SpatialDDS IDL must parse: {:?}",
+        parsed.diagnostics()
+    );
+    let lowered = zerodds_idl_lower::lower(&parsed.syntax(), "spatial_core.idl");
+    assert!(
+        lowered.diagnostics.iter().all(|d| !d.is_error()),
+        "the SpatialDDS IDL must lower: {:?}",
+        lowered
+            .diagnostics
+            .iter()
+            .filter(|d| d.is_error())
+            .collect::<Vec<_>>()
+    );
+    let mut ast = lowered.ast;
+    let report = ast.resolve_all_by_name().expect("a resolve pass");
+    assert!(
+        report.broken.is_empty(),
+        "every name in the SpatialDDS IDL must resolve: {:?}",
+        report.broken
+    );
+
+    // The declarations, through the rule catalogue.
+    let graph = ModelGraph::of(&ast);
+    let applied = apply(&graph, &rust::catalogue()).expect("apply the Rust rules");
+    // Types and codecs are folded together, in one list. Folding them
+    // separately and concatenating gives two `pub mod spatial`, and Rust
+    // allows a name once per scope where IDL §7.5 lets a module reopen.
+    let mut pairs = rust_item_pairs(&ast, &applied).expect("materialise the SpatialDDS types");
+
+    // The codecs, beside the declaration they are an `impl` of — hence
+    // nested by module rather than appended.
+    for (id, node) in ast.types() {
+        if node.name.is_empty() {
+            continue;
+        }
+        if !matches!(
+            node.kind,
+            TypeKind::Structure { .. }
+                | TypeKind::Union { .. }
+                | TypeKind::Enumeration { .. }
+                | TypeKind::Bitmask { .. }
+                | TypeKind::Bitset { .. }
+        ) {
+            continue;
+        }
+        let key = LayoutKey::data(encoding_for(&ast, id), Endianness::Little);
+        for item in rust_codec(&ast, id, key).expect("a codec for every declared SpatialDDS type") {
+            pairs.push((node.module, item));
+        }
+    }
+    let items = nest_by_module(&ast, pairs).expect("a scope for every declaration");
+
+    let file = zerodds_lang_cst::rust::File {
+        inner_attrs: Vec::new(),
+        doc: zerodds_lang_cst::common::Doc::lines(&[
+            "Generated by zerodds-lang-rules from idl/spatial_core.idl.",
+            "",
+            "Do not edit: the point of this file is that nobody did.",
+        ]),
+        // The file is included at the crate root, and every nested module
+        // reaches these through its own `use super::*`.
+        uses: vec![zerodds_lang_cst::rust::Use {
+            path: zerodds_lang_cst::common::Path::single("zerodds_wire"),
+            names: vec![
+                zerodds_lang_cst::common::Ident::new("Narrowed"),
+                zerodds_lang_cst::common::Ident::new("Reader"),
+                zerodds_lang_cst::common::Ident::new("TryConstruct"),
+                zerodds_lang_cst::common::Ident::new("WireError"),
+                zerodds_lang_cst::common::Ident::new("Writer"),
+            ],
+            visibility: zerodds_lang_cst::common::Visibility::Private,
+        }],
+        items,
     };
-    let rust = generate_rust_module(&ast, &opts).expect("generate Rust");
-    // The generated module carries crate-level `#![allow(..)]` inner attributes
-    // + crate-relative module paths (`spatial::`, `builtin::`); we include it at
-    // this crate's root, so strip the inner attributes (they cannot sit after
-    // other items) — the `#[allow]` on the include site covers them.
-    let rust: String = rust
-        .lines()
-        .filter(|l| !l.trim_start().starts_with("#!["))
-        .collect::<Vec<_>>()
-        .join("\n");
-    // The codegen emits crate-root-relative paths (`spatial::`, `builtin::`);
-    // included into this crate they must be `crate::`-anchored so edition-2024
-    // path resolution does not read them as extern crates.
-    let rust = rust
-        .replace("spatial::", "crate::spatial::")
-        .replace("builtin::", "crate::builtin::");
-    let out = PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("spatial_core.rs");
-    std::fs::write(&out, rust).expect("write generated module");
+    let rendered = zerodds_lang_render::rust::file(&file);
+
+    let out = PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR")).join("spatial_core.rs");
+    std::fs::write(&out, rendered).expect("write the generated module");
 }

@@ -1,0 +1,5 @@
+// primitive `uint8`
+@final struct Sample {
+    uint8 unsigned_byte_a;
+    uint8 unsigned_byte_b;
+};

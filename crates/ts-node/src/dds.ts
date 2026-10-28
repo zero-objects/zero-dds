@@ -29,6 +29,23 @@ export interface TopicTraits<T> {
   decode(bytes: Uint8Array, endian?: "le" | "be", representation?: number): T;
   readonly isKeyed?: boolean;
   keyHash?(value: T): Uint8Array;
+  /// The wire contract of a generated TypeSupport, which the writer and
+  /// reader declare to the C ABI when they are created. Absent for traits
+  /// written by hand, whose endpoints stay untyped.
+  readonly wire?: GeneratedWire;
+}
+
+/// What a TypeSupport `zerodds-idlc generate --lang typescript` emitted says
+/// about its own wire: the C ABI's `*_typed_wire` creates take exactly this.
+export interface GeneratedWire {
+  readonly isKeyed: boolean;
+  /// 0 final, 1 appendable, 2 mutable.
+  readonly extensibility: number;
+  /// XTypes 1.3 §7.6.3.1.1's DataRepresentationId: 0 XCDR1, 2 XCDR2.
+  readonly representation: number;
+  /// The CompleteTypeObject, read when an endpoint is created — the
+  /// generated getter throws for a type that has none.
+  typeObject(): Uint8Array;
 }
 
 /// A TypeSupport as emitted by `idlc ts` (the `<Type>TypeSupport` const). The
@@ -41,6 +58,13 @@ export interface TypeSupport<T> {
   decode(bytes: Uint8Array, ...rest: unknown[]): T;
   readonly isKeyed?: boolean;
   keyHash?(sample: T): Uint8Array;
+  /// Present on a generated TypeSupport: 0 final, 1 appendable, 2 mutable.
+  readonly extensibility?: number;
+  /// Present on a generated TypeSupport: the DataRepresentationId it
+  /// encodes and decodes, 0 (XCDR1) or 2 (XCDR2).
+  readonly representation?: number;
+  /// Present on a generated TypeSupport: its CompleteTypeObject.
+  readonly typeObject?: Uint8Array;
 }
 
 /// Adapts a {@link TypeSupport} (codegen output) to the internal
@@ -53,10 +77,33 @@ function traitsFromTypeSupport<T>(ts: TypeSupport<T>): TopicTraits<T> {
     // The generated decode is `decode(bytes, offset, length, endian,
     // representation)` — pass the full arg list so endian/representation land in
     // the right slots (not in `offset`).
+    //
+    // Its `representation` is XTypes 1.3 §7.6.3.1.1's DataRepresentationId
+    // (XCDR = 0, XCDR2 = 2) — what the generated TypeSupport declares in its
+    // own `representation` field and the only values it accepts — while
+    // `TopicTraits` carries the C ABI SampleInfo's XCDR version (0 = XCDR1,
+    // 1 = XCDR2). Passed through unchanged, every XCDR2 sample was refused.
     decode: (b, endian, representation) =>
-      ts.decode(b, 0, b.length, endian ?? "le", representation ?? 1),
+      ts.decode(b, 0, b.length, endian ?? "le", (representation ?? 1) === 0 ? 0 : 2),
     isKeyed: ts.isKeyed,
     keyHash: ts.keyHash ? (v: T) => ts.keyHash!(v) : undefined,
+    wire: generatedWire(ts),
+  };
+}
+
+/// The wire contract of a TypeSupport the generator emitted — it carries a
+/// numeric `extensibility` and `representation` and a `typeObject` — or
+/// `undefined` for one written by hand.
+function generatedWire<T>(ts: TypeSupport<T>): GeneratedWire | undefined {
+  const { extensibility, representation } = ts;
+  if (typeof extensibility !== "number" || typeof representation !== "number" || !("typeObject" in ts)) {
+    return undefined;
+  }
+  return {
+    isKeyed: ts.isKeyed === true,
+    extensibility,
+    representation,
+    typeObject: () => ts.typeObject as Uint8Array,
   };
 }
 
@@ -375,6 +422,11 @@ export class DataWriter<T> {
   ) {}
   static create<T>(pub: Publisher, topic: Topic<T>, qos?: DataWriterQos): DataWriter<T> {
     let dw: unknown;
+    // A generated TypeSupport's writer offers the codec's own extensibility
+    // and representation, so the encapsulation identifier names the body it
+    // encodes, and it advertises the CompleteTypeObject.
+    const wire = topic.traits.wire;
+    const typeObject = wire ? wire.typeObject() : new Uint8Array(0);
     // A QoS buffer is built whenever an explicit QoS is given OR the publisher
     // carries a PARTITION (which must be copied onto the writer QoS so the
     // C-FFI matcher gates on it; Spec §2.2.3.13).
@@ -382,17 +434,34 @@ export class DataWriter<T> {
       const effective = qos ?? defaultWriterQos();
       const scope = new QosScope();
       const buf = buildDataWriterQosBuffer(effective, scope, pub.partition);
-      dw = N.zerodds_pub_create_datawriter_qos(pub.raw, topic.raw, buf);
+      dw = wire
+        ? N.zerodds_pub_create_datawriter_typed_wire_qos(
+            pub.raw, topic.raw, buf, typeObject, typeObject.length,
+            wire.isKeyed ? 1 : 0, wire.extensibility, wire.representation)
+        : N.zerodds_pub_create_datawriter_qos(pub.raw, topic.raw, buf);
       void scope;
     } else {
-      dw = N.zerodds_pub_create_datawriter(pub.raw, topic.raw, null);
+      dw = wire
+        ? N.zerodds_pub_create_datawriter_typed_wire(
+            pub.raw, topic.raw, null, typeObject, typeObject.length,
+            wire.isKeyed ? 1 : 0, wire.extensibility, wire.representation)
+        : N.zerodds_pub_create_datawriter(pub.raw, topic.raw, null);
     }
     if (!dw) throw new ZeroDdsError(-1, "create_datawriter");
     return new DataWriter<T>(dw, pub.raw, topic.traits);
   }
   write(sample: T): void {
     const bytes = this.traits.encode(sample);
-    const rc = N.zerodds_dw_write(this.handle, bytes, bytes.length, 0n) as number;
+    // A keyed type's sample carries its KeyHash, so the runtime keeps it
+    // under its own instance: `zerodds_dw_write` writes under the all-zero
+    // key, and two samples of one key arrived as two instances — which
+    // EXCLUSIVE ownership, arbitrating per instance, cannot act on.
+    const rc = (this.traits.isKeyed && this.traits.keyHash
+      ? (() => {
+          const key = this.traits.keyHash!(sample);
+          return N.zerodds_dw_write_keyed(this.handle, bytes, bytes.length, key, key.length);
+        })()
+      : N.zerodds_dw_write(this.handle, bytes, bytes.length, 0n)) as number;
     if (rc !== 0) throw new ZeroDdsError(rc, "DataWriter::write");
   }
 
@@ -535,8 +604,12 @@ export class Subscriber {
 
 /// DataReader<T>.
 export class DataReader<T> {
-  /// Samples drained by `waitForData()` but not yet returned from `take()`.
-  private pending: T[] = [];
+  /// What `waitForData()` drained from the native reader and no take has
+  /// returned yet — whole, with each SampleInfo and every lifecycle-only
+  /// marker, so `take()` and `takeWithInfo()` both answer with it. Keeping
+  /// only the valid payloads lost the rest: `takeWithInfo()` after
+  /// `waitForData()` saw neither the sample nor a dispose.
+  private pending: SampleWithInfo<T>[] = [];
 
   constructor(
     private handle: unknown | null,
@@ -601,16 +674,28 @@ export class DataReader<T> {
   }
   static create<T>(sub: Subscriber, topic: Topic<T>, qos?: DataReaderQos): DataReader<T> {
     let dr: unknown;
+    // A generated TypeSupport's reader accepts the codec's representation
+    // only and advertises the CompleteTypeObject.
+    const wire = topic.traits.wire;
+    const typeObject = wire ? wire.typeObject() : new Uint8Array(0);
     // Build a QoS buffer when an explicit QoS is given OR the subscriber carries
     // a PARTITION (propagated onto the reader QoS; Spec §2.2.3.13).
     if (qos || sub.partition.length > 0) {
       const effective = qos ?? defaultReaderQos();
       const scope = new QosScope();
       const buf = buildDataReaderQosBuffer(effective, scope, sub.partition);
-      dr = N.zerodds_sub_create_datareader_qos(sub.raw, topic.raw, buf);
+      dr = wire
+        ? N.zerodds_sub_create_datareader_typed_wire_qos(
+            sub.raw, topic.raw, buf, typeObject, typeObject.length,
+            wire.isKeyed ? 1 : 0, wire.representation)
+        : N.zerodds_sub_create_datareader_qos(sub.raw, topic.raw, buf);
       void scope;
     } else {
-      dr = N.zerodds_sub_create_datareader(sub.raw, topic.raw, null);
+      dr = wire
+        ? N.zerodds_sub_create_datareader_typed_wire(
+            sub.raw, topic.raw, null, typeObject, typeObject.length,
+            wire.isKeyed ? 1 : 0, wire.representation)
+        : N.zerodds_sub_create_datareader(sub.raw, topic.raw, null);
     }
     if (!dr) throw new ZeroDdsError(-1, "create_datareader");
     return new DataReader<T>(dr, sub.raw, topic.traits);
@@ -665,24 +750,16 @@ export class DataReader<T> {
     return this.traits.decode(copy, endian, representation);
   }
 
-  /// Drains every currently-available sample into an array (payloads only;
-  /// lifecycle-only markers are dropped). Backed by the batch take path so
-  /// CFT + EXCLUSIVE-ownership filtering is applied.
-  private drainAll(): T[] {
-    const out: T[] = [];
-    for (const s of this.drainBatch()) {
-      if (s.validData && s.data !== null) out.push(s.data);
-    }
-    return out;
-  }
 
   /// Takes all currently-available samples. Returns an iterable (array) so a
   /// caller can `for (const s of reader.take())`. Includes any samples buffered
   /// by a preceding `waitForData()`.
   take(): Sample<T>[] {
-    const buffered = this.pending;
-    this.pending = [];
-    return buffered.concat(this.drainAll());
+    const out: T[] = [];
+    for (const s of this.takeWithInfo()) {
+      if (s.validData && s.data !== null) out.push(s.data);
+    }
+    return out;
   }
 
   /// Takes all currently-available samples WITH their SampleInfo, surfacing the
@@ -692,7 +769,9 @@ export class DataReader<T> {
   /// are NOT dropped. Backed by the batch take path (CFT + EXCLUSIVE-ownership
   /// filtering + per-instance handle resolution applied).
   takeWithInfo(): SampleWithInfo<T>[] {
-    return this.drainBatch();
+    const buffered = this.pending;
+    this.pending = [];
+    return buffered.concat(this.drainBatch());
   }
 
   /// `lookup_instance` (Spec §2.2.2.5.x) — handle for `sample`'s key.
@@ -747,7 +826,9 @@ export class DataReader<T> {
     if (this.pending.length > 0) return true;
     const deadline = Date.now() + timeoutMs;
     for (;;) {
-      const batch = this.drainAll();
+      // A lifecycle-only marker counts: a dispose or an unregister reaches
+      // the reader as a sample whose `valid_data` is false.
+      const batch = this.drainBatch();
       if (batch.length > 0) {
         this.pending.push(...batch);
         return true;

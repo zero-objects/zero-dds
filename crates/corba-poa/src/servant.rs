@@ -11,7 +11,9 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
+use zerodds_corba_giop::object_ops::{self, OBJECT_REPOSITORY_ID, ObjectOpReply};
 use zerodds_corba_ir::{IrResult, RepositoryId};
+use zerodds_wire::Endianness;
 
 /// Servant — Spec §11.3.3.
 pub trait Servant: core::fmt::Debug + Send + Sync {
@@ -39,15 +41,47 @@ pub trait Servant: core::fmt::Debug + Send + Sync {
     }
 
     /// `true` if the servant implements the given repository ID
-    /// (Spec §11.3.5.20.4 `_is_a`).
+    /// (Spec §11.3.5.20.4 `_is_a`) — every object reference answers
+    /// `true` for [`OBJECT_REPOSITORY_ID`] regardless of what
+    /// [`Servant::all_interfaces`] lists (CORBA 3.3 Part 1 §4.3.1: it
+    /// is the root of the object-reference type hierarchy).
     fn is_a(&self, repository_id: &str) -> bool {
-        self.all_interfaces().iter().any(|i| i == repository_id)
+        repository_id == OBJECT_REPOSITORY_ID
+            || self.all_interfaces().iter().any(|i| i == repository_id)
     }
 
     /// Typed variant of [`Servant::is_a`] — compares against
     /// the canonical string form of the [`RepositoryId`].
     fn is_a_typed(&self, repository_id: &RepositoryId) -> bool {
         self.is_a(&repository_id.to_canonical())
+    }
+
+    /// Answers one of the six `CORBA::Object` operations CORBA 3.3
+    /// Part 2 §15.4.2 lets a client send as a GIOP request without the
+    /// target interface having declared it (`_interface`, `_is_a`,
+    /// `_non_existent`/`_not_existent`, `_domain_managers`,
+    /// `_component`, `_repository_id`) — Part 1 §8.3 gives their
+    /// semantics on `CORBA::Object` itself.
+    ///
+    /// `None` when `operation` is not one of the six — the POA's own
+    /// dispatch continues to [`Servant::invoke`] as before. The default
+    /// implementation uses [`Servant::primary_interface`] as the
+    /// most-derived repository id and [`Servant::is_a`] for the
+    /// base-interface chain; a servant with a structured identity it
+    /// would rather not restring can override it directly.
+    fn dispatch_object_operation(
+        &self,
+        operation: &str,
+        body: &[u8],
+        endianness: Endianness,
+    ) -> Option<ObjectOpReply> {
+        object_ops::dispatch(
+            operation,
+            body,
+            endianness,
+            &self.primary_interface(),
+            &|id| self.is_a(id),
+        )
     }
 
     /// Processes a request — opaque body bytes in, reply
@@ -98,6 +132,51 @@ mod tests {
         };
         assert!(s.is_a("IDL:demo/Echo:1.0"));
         assert!(!s.is_a("IDL:demo/Other:1.0"));
+    }
+
+    #[test]
+    fn is_a_is_true_for_corba_object_regardless_of_the_servant() {
+        let s = EchoServant {
+            repo_id: "IDL:demo/Echo:1.0".into(),
+        };
+        assert!(s.is_a(OBJECT_REPOSITORY_ID));
+    }
+
+    #[test]
+    fn dispatch_object_operation_answers_is_a_repository_id_and_non_existent() {
+        let s = EchoServant {
+            repo_id: "IDL:demo/Echo:1.0".into(),
+        };
+        let e = Endianness::Big;
+
+        let body = {
+            let mut w = zerodds_wire::Writer::new(e);
+            w.write_string("IDL:demo/Echo:1.0");
+            w.finish()
+        };
+        let Some(ObjectOpReply::Ok(reply)) = s.dispatch_object_operation("_is_a", &body, e) else {
+            panic!("expected Ok");
+        };
+        let mut r = zerodds_wire::Reader::new(&reply, e);
+        assert!(r.read_bool().unwrap());
+
+        let Some(ObjectOpReply::Ok(reply)) = s.dispatch_object_operation("_repository_id", &[], e)
+        else {
+            panic!("expected Ok");
+        };
+        let mut r = zerodds_wire::Reader::new(&reply, e);
+        assert_eq!(r.read_string().unwrap(), "IDL:demo/Echo:1.0");
+
+        let Some(ObjectOpReply::Ok(reply)) = s.dispatch_object_operation("_non_existent", &[], e)
+        else {
+            panic!("expected Ok");
+        };
+        let mut r = zerodds_wire::Reader::new(&reply, e);
+        assert!(!r.read_bool().unwrap());
+
+        // Not one of the six — the servant's own `invoke` continues to
+        // handle it.
+        assert_eq!(s.dispatch_object_operation("ping", &[], e), None);
     }
 
     #[test]

@@ -12,10 +12,10 @@
 
 use std::rc::Rc;
 
-use zerodds_cdr::{BufferReader, BufferWriter, CdrDecode, CdrEncode, Endianness};
 use zerodds_corba_interop::runtime::{CorbaServer, IiopCorbaConnection, object_reference};
 use zerodds_corba_rust::value_wire::{ValueMarshal, ValueReader, ValueRegistry, ValueWriter};
 use zerodds_corba_rust::{CorbaConnection, ValueBase};
+use zerodds_wire::{Endianness, Reader, Writer};
 
 // valuetype Point { public long x; public long y; }; — as emitted by the codegen.
 #[derive(Debug, PartialEq, Eq)]
@@ -29,9 +29,10 @@ impl ValueBase for Point {
     }
 }
 impl ValueMarshal for Point {
-    fn marshal_state(&self, w: &mut BufferWriter) -> Result<(), zerodds_cdr::EncodeError> {
-        self.x.encode(w)?;
-        self.y.encode(w)
+    fn marshal_state(&self, w: &mut Writer) -> Result<(), zerodds_wire::WireError> {
+        w.write_i32(self.x);
+        w.write_i32(self.y);
+        Ok(())
     }
 }
 
@@ -47,9 +48,10 @@ impl ValueBase for Extended {
     }
 }
 impl ValueMarshal for Extended {
-    fn marshal_state(&self, w: &mut BufferWriter) -> Result<(), zerodds_cdr::EncodeError> {
-        self.version.encode(w)?; // base state first (§15.3.4)
-        self.name.encode(w)
+    fn marshal_state(&self, w: &mut Writer) -> Result<(), zerodds_wire::WireError> {
+        w.write_i32(self.version); // base state first (§15.3.4)
+        w.write_string(&self.name);
+        Ok(())
     }
 }
 
@@ -57,17 +59,17 @@ fn registry() -> ValueRegistry {
     let mut reg = ValueRegistry::new();
     reg.register(
         "IDL:Point:1.0",
-        Box::new(|r: &mut BufferReader<'_>| {
-            let x = i32::decode(r)?;
-            let y = i32::decode(r)?;
+        Box::new(|r: &mut Reader<'_>| {
+            let x = r.read_i32()?;
+            let y = r.read_i32()?;
             Ok(Rc::new(Point { x, y }) as Rc<dyn core::any::Any>)
         }),
     );
     reg.register(
         "IDL:Extended:1.0",
-        Box::new(|r: &mut BufferReader<'_>| {
-            let version = i32::decode(r)?;
-            let name = String::decode(r)?;
+        Box::new(|r: &mut Reader<'_>| {
+            let version = r.read_i32()?;
+            let name = r.read_string()?;
             Ok(Rc::new(Extended { version, name }) as Rc<dyn core::any::Any>)
         }),
     );
@@ -84,16 +86,16 @@ fn valuetype_echo_roundtrip() {
         if op != "echo" {
             return SkeletonResult::BadOperation;
         }
-        let mut r = BufferReader::new(body, e);
+        let mut r = Reader::new(body, e);
         let mut vr = ValueReader::new();
         let v = vr.read(&mut r, 0, &registry()).unwrap().expect("non-null");
         let p = v.downcast_ref::<Point>().expect("Point");
         // Re-marshal as the reply.
-        let mut w = BufferWriter::new(e);
+        let mut w = Writer::new(e);
         let mut vw = ValueWriter::new();
         let echo: Rc<dyn ValueMarshal> = Rc::new(Point { x: p.x, y: p.y });
         vw.write(&mut w, Some(&echo)).unwrap();
-        SkeletonResult::Reply(w.into_bytes())
+        SkeletonResult::Reply(w.finish())
     });
     let acceptor = server.serve("127.0.0.1:0".parse().unwrap()).unwrap();
     let addr = acceptor.listen_addr();
@@ -106,13 +108,13 @@ fn valuetype_echo_roundtrip() {
     let conn = IiopCorbaConnection::new();
 
     for e in [Endianness::Big, Endianness::Little] {
-        let mut w = BufferWriter::new(e);
+        let mut w = Writer::new(e);
         let mut vw = ValueWriter::new();
         let p: Rc<dyn ValueMarshal> = Rc::new(Point { x: 42, y: -7 });
         vw.write(&mut w, Some(&p)).unwrap();
-        let (reply, reply_e) = conn.invoke(&ior, "echo", e, &w.into_bytes()).unwrap();
+        let (reply, reply_e) = conn.invoke(&ior, "echo", e, &w.finish()).unwrap();
 
-        let mut r = BufferReader::new(&reply, reply_e);
+        let mut r = Reader::new(&reply, reply_e);
         let mut vr = ValueReader::new();
         let got = vr.read(&mut r, 0, &registry()).unwrap().unwrap();
         assert_eq!(
@@ -135,7 +137,7 @@ fn valuetype_sharing_over_giop() {
         if op != "pair" {
             return SkeletonResult::BadOperation;
         }
-        let mut r = BufferReader::new(body, e);
+        let mut r = Reader::new(body, e);
         let mut vr = ValueReader::new();
         let reg = registry();
         let a = vr.read(&mut r, 0, &reg).unwrap().unwrap();
@@ -154,12 +156,12 @@ fn valuetype_sharing_over_giop() {
     let conn = IiopCorbaConnection::new();
 
     for e in [Endianness::Big, Endianness::Little] {
-        let mut w = BufferWriter::new(e);
+        let mut w = Writer::new(e);
         let mut vw = ValueWriter::new();
         let p: Rc<dyn ValueMarshal> = Rc::new(Point { x: 5, y: 9 });
         vw.write(&mut w, Some(&p)).unwrap();
         vw.write(&mut w, Some(&p)).unwrap(); // same instance → indirection
-        let (reply, _e) = conn.invoke(&ior, "pair", e, &w.into_bytes()).unwrap();
+        let (reply, _e) = conn.invoke(&ior, "pair", e, &w.finish()).unwrap();
         assert_eq!(reply, vec![1], "value sharing lost over GIOP ({e:?})");
     }
     acceptor.shutdown();
@@ -175,18 +177,18 @@ fn valuetype_inheritance_flattened_roundtrip() {
         if op != "echo" {
             return SkeletonResult::BadOperation;
         }
-        let mut r = BufferReader::new(body, e);
+        let mut r = Reader::new(body, e);
         let mut vr = ValueReader::new();
         let v = vr.read(&mut r, 0, &registry()).unwrap().unwrap();
         let x = v.downcast_ref::<Extended>().unwrap();
-        let mut w = BufferWriter::new(e);
+        let mut w = Writer::new(e);
         let mut vw = ValueWriter::new();
         let echo: Rc<dyn ValueMarshal> = Rc::new(Extended {
             version: x.version,
             name: x.name.clone(),
         });
         vw.write(&mut w, Some(&echo)).unwrap();
-        SkeletonResult::Reply(w.into_bytes())
+        SkeletonResult::Reply(w.finish())
     });
     let acceptor = server.serve("127.0.0.1:0".parse().unwrap()).unwrap();
     let addr = acceptor.listen_addr();
@@ -198,7 +200,7 @@ fn valuetype_inheritance_flattened_roundtrip() {
     );
     let conn = IiopCorbaConnection::new();
 
-    let mut w = BufferWriter::new(Endianness::Big);
+    let mut w = Writer::new(Endianness::Big);
     let mut vw = ValueWriter::new();
     let v: Rc<dyn ValueMarshal> = Rc::new(Extended {
         version: 3,
@@ -206,10 +208,10 @@ fn valuetype_inheritance_flattened_roundtrip() {
     });
     vw.write(&mut w, Some(&v)).unwrap();
     let (reply, reply_e) = conn
-        .invoke(&ior, "echo", Endianness::Big, &w.into_bytes())
+        .invoke(&ior, "echo", Endianness::Big, &w.finish())
         .unwrap();
 
-    let mut r = BufferReader::new(&reply, reply_e);
+    let mut r = Reader::new(&reply, reply_e);
     let mut vr = ValueReader::new();
     let got = vr.read(&mut r, 0, &registry()).unwrap().unwrap();
     assert_eq!(

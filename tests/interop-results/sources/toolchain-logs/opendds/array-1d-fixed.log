@@ -1,0 +1,2 @@
+genC.h:510:20: error: 'Price' in namespace 'zd_c9' does not name a type
+genC.h:55:21: error: invalid use of incomplete type 'struct zd_c1::Sample'

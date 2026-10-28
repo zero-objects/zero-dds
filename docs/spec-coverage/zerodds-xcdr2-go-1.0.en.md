@@ -1,267 +1,286 @@
-# `zerodds-xcdr2-go` 1.0 — Spec-Coverage
+# `zerodds-xcdr2-go` 1.0 — Spec Coverage
 
-**Source:** `docs/specs/zerodds-xcdr2-go-1.0.md` — ZeroDDS Go XCDR2 TypeSupport codegen spec.
+**Source:** `internal/standards/cache/omg/dds-xtypes-1.3.pdf` (§7.2, §7.4) and `internal/standards/cache/omg/idl-4.2.pdf` (§7) — what the Go column answers.
 
-Implementation:
+The mechanism this column shares with the other twenty — the two walks, the framing, Table 9, the key hash and the driver — is in `zerodds-xcdr2-bindings-conformance-1.0.md`. This document carries only what the Go column decides for itself, and its own evidence.
 
-- `crates/idl-go/` — IDL → Go codegen (`MarshalXCDR`, self-contained writer).
-- `endpoints/go/` — pure-Go XCDR2 wire core (writer/reader) + sync/async SDK.
+## §7.5.1 The parts of the column
 
-## §1 Motivation
+### §7.5.1 The concrete syntax tree and its text form
 
-### §1 No OMG IDL-to-Go wire mapping
+**Spec:** §7.5.1 — Plain language binding — the mapping onto the target language is the PSM's own. This column's declarations are built as a tree and only then written as text; no emitter concatenates source.
 
-**Spec:** §1 — ZeroDDS defines the Go XCDR2 wire mapping, which OMG does not have.
+**Repo:** `crates/lang-cst/src/go/`, `crates/lang-render/src/go.rs`
 
-**Repo:** Motivation text of the vendor spec.
-
-**Tests:** —
-
-**Status:** n/a (informative)
-
-## §2 Marshal pattern
-
-### §2 struct + `MarshalXCDR(endian) []byte`
-
-**Spec:** §2 — one Go `struct` + `MarshalXCDR` method per IDL `@final struct`.
-
-**Repo:** `crates/idl-go/src/emitter.rs::emit_struct` emits exactly this form.
-
-**Tests:** `crates/idl-go/tests/golden.rs::final_struct_emits_type_and_marshal`
+**Tests:** `crates/lang-cst/src/go/mod.rs::tests` (9 tests):
+`every_primitive_writes_its_own_spelling`,
+`a_keyword_escapes_with_a_trailing_underscore`,
+`a_predeclared_name_escapes_although_it_would_parse`,
+`exporting_moves_the_first_letter_and_nothing_else`,
+`an_array_type_nests_outermost_dimension_first`,
+`a_field_carries_its_idl_spelling_in_a_tag`;
+`crates/lang-render/tests/dispatch_chains.rs::a_go_dispatch_chain_of_ten_thousand_arms_renders_flat`;
+across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_output_with_exactly_one_newline`, `crates/lang-render/tests/rendering.rs::no_rendered_line_carries_trailing_whitespace`.
 
 **Status:** done
 
-## §3 Required API surface
+### §7.5.1 The rule catalogue
 
-### §3 Writer/reader primitives + generated MarshalXCDR
+**Spec:** §7.5.1 — Plain language binding — the mapping onto the target language is the PSM's own. What becomes of which model node is a rule set and not a special case inside the walk.
 
-**Spec:** §3 — writer (PutU8..PutSeqU8, Bytes), reader (GetU8/GetU16/GetU32/GetU64/GetF32/GetString/GetSeqU8), generated `MarshalXCDR`.
+**Repo:** `crates/lang-rules/src/rule/go.rs`
 
-**Repo:** `endpoints/go/wire.go` (writer, Reader.GetU32), `endpoints/go/reader_ext.go` (GetU8/GetU16/GetU64/GetF32/GetString/GetSeqU8), `crates/idl-go/src/emitter.rs` (MarshalXCDR).
-
-**Tests:** `endpoints/go/wire_test.go`, `endpoints/go/example_sync` + `example_async` (full field decode via Reader), `crates/idl-go/tests/golden.rs`.
-
-**Status:** done
-
-### §3.a Generated `UnmarshalXCDR` (decode codegen)
-
-**Spec:** §3/§11 — bidirectional binding: generated `UnmarshalXCDR` as the exact inverse of `MarshalXCDR`.
-
-**Repo:** `map_get` (inverse of `map_type`) + `Reader` wire core in the prelude + `unmarshalFrom{ty}`/`UnmarshalXCDR{ty}` per struct+union (`crates/idl-go/src/emitter.rs`).
-
-**Tests:** `crates/idl-go/tests/golden.rs` — 8 `decode_roundtrip_*` (final/nested/array/union/map/mutable/wide/longdouble), `marshal(unmarshal(golden)) == golden` LE+BE.
+**Tests:** `crates/lang-rules/tests/apply.rs::every_language_catalogue_fires_on_the_same_model`,
+`crates/lang-rules/tests/apply.rs::every_catalogue_serialises_and_reads_back_the_same`
 
 **Status:** done
 
-**Decision record:** Decode codegen covers every field type: prim/string/seq<octet>/enum/typedef/nested/seq<struct>(DHEADER)/array/union(disc+switch)/map(count+pairs)/@mutable(DHEADER+EMHEADER+NEXTINT skip)/wchar/wstring/long double. @final=inline, @appendable=DHEADER skip, @mutable=DHEADER + per-member EMHEADER+NEXTINT skip.
+### §7.5.1 The materialiser
 
-## §4 Codegen requirement (`idl-go`)
+**Spec:** §7.5.1 — Plain language binding — the mapping onto the target language is the PSM's own. The materialiser carries the language's own rules: names and keywords, collisions, and what the language cannot express at all.
 
-### §4 struct + MarshalXCDR + embedded writer
+**Repo:** `crates/lang-rules/src/adapter/go.rs`
 
-**Spec:** §4 — per struct: Go struct, `MarshalXCDR`, self-contained writer.
-
-**Repo:** `crates/idl-go/src/emitter.rs` (WIRE_PRELUDE + emit_struct); `tools/idlc` `Backend::Go`, `--go`.
-
-**Tests:** `crates/idl-go/tests/golden.rs` (smoke + byte_identity).
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_every_wired_language`
 
 **Status:** done
 
-## §5 Wire type mapping
+### §7.5.1 The codec backend
 
-### §5 IDL → Go → XCDR2 (alignment cap 4)
+**Spec:** §7.5.1 — Plain language binding — the mapping onto the target language is the PSM's own. The backend supplies the spelling the shared encoding decision takes in this language — receiver, method name, argument form.
 
-**Spec:** §5 — bool/octet/char/short..long long/float/double/string/sequence<octet>/sequence<primitive> with exact wire layout.
+**Repo:** `crates/lang-rules/src/emit/go.rs`
 
-**Repo:** `crates/idl-go/src/emitter.rs::map_type`/`map_primitive`/`map_integer`/`map_sequence`; `endpoints/go/wire.go` (Put*/getLE align cap 4).
-
-**Tests:** `crates/idl-go/tests/golden.rs::byte_identity_vs_rust_goldens` (@final LE+BE).
-
-**Status:** done
-
-### §5.a enum
-
-**Spec:** §5 — IDL `enum` (32-bit signed integer on the wire, XTypes 1.3 §7.4.5.1).
-
-**Repo:** `crates/idl-go/src/emitter.rs::emit_enum` + `map_type` (Scoped→enum→`PutU32(uint32(...))`, i32 wire).
-
-**Tests:** `crates/idl-go/tests/golden.rs::enum_emits_int32_type_and_member_marshals` + `enum_member_is_byte_identical_i32` (`go run`, LE `02000000efbeadde`).
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_a_full_codec_in_every_wired_language`,
+`crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`
 
 **Status:** done
 
-### §5.b nested struct member + sequence<struct>
+### §7.5.1 The Table 9 defaulter
 
-**Spec:** §5 — nested @final/@appendable struct member + `sequence<struct>` (collection DHEADER, XTypes 1.3 §7.4.3.5.3).
+**Spec:** §7.5.1 — Plain language binding — the mapping onto the target language is the PSM's own. A reader with no Table 9 answer has no defined value at five positions; this file is this column's answer.
 
-**Repo:** `crates/idl-go/src/emitter.rs`: `marshalInto(w)` per struct (stream-relative alignment) + `map_type` scoped struct → `{expr}.marshalInto($w)` + `map_sequence` struct element → collection DHEADER + count + per-element `marshalInto`.
+**Repo:** `crates/lang-rules/src/default_go.rs`
 
-**Tests:** `crates/idl-go/tests/golden.rs::nested_struct_emits_marshal_into` + `nested_is_byte_identical_vs_rust_golden` (`go run`, byte-identical against `golden_nested_le/be.bin`).
-
-**Status:** done
-
-### §5.c typedef
-
-**Spec:** §5 — `typedef` (wire-transparent alias; a member of its alias type marshals byte-identically to the underlying type).
-
-**Repo:** `crates/idl-go/src/emitter.rs::collect_typedefs`/`resolve_typedef` — the alias chain (including `sequence` elements) is resolved to the underlying type before `map_type`.
-
-**Tests:** `crates/idl-go/tests/golden.rs::typedef_resolves_to_underlying_type` + `typedef_is_byte_identical_vs_rust_golden` (byte-identical against `golden_typedef_le/be.bin`).
+**Tests:** `crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`
 
 **Status:** done
 
-### §5.d array
+### §7.5.1 The wire runtime
 
-**Spec:** §5 — fixed arrays (XCDR2 §7.4.3.5.3: elements inline, row-major, multi-dim; no length prefix for primitive elements).
+**Spec:** §7.5.1 — Plain language binding — the mapping onto the target language is the PSM's own. The runtime reads §7.4 from the clause text on its own and calls no other column; that is where this column's independence lives.
 
-**Repo:** `crates/idl-go/src/emitter.rs`: `Declarator::Array` branch — `array_size` evaluates the bound, `build_array_put` nests the element put in row-major loops; the field type becomes the language-native array.
+**Repo:** `runtime/go`, endpoint SDK `endpoints/go`
 
-**Tests:** `crates/idl-go/tests/golden.rs::array_*` (byte-identical against `golden_array_le/be.bin`: `long xs[3]` + `short m[2][2]` + `octet bs[4]`).
-
-**Status:** done
-
-### §5.e union
-
-**Spec:** §5 — `union switch(...)` (XCDR2 §7.4.3.5.4: discriminator inline, then the selected member; no DHEADER for @final).
-
-**Repo:** `crates/idl-go/src/emitter.rs::emit_union` — a holder with a discriminator + one field per case member; `marshalInto` puts the discriminator, then a `switch`/`case`/`match` dispatches on the selected member. Integer-family discriminator + integer labels.
-
-**Tests:** `crates/idl-go/tests/golden.rs::union_*` (byte-identical against `golden_union_le/be.bin`: disc=2 selects `unsigned short b` — checks non-first-case dispatch).
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_runtime`,
+`crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_an_endpoint_sdk`
 
 **Status:** done
 
-### §5.f map
+## §7.2.2 What this column decides for itself
 
-**Spec:** §5 — `map<K, V>` (XCDR2 §7.4.3.5: entries sorted ascending by key, `u32 count` + key/value pairs; no DHEADER for a primitive key/value pair, otherwise DHEADER-framed).
+### §7.2.2.2 Every IDL primitive reaches a Go type and none has an implementation-defined width
 
-**Repo:** `crates/idl-go/src/emitter.rs` — map member in the native associative idiom + key sorting before marshalling; primitive-pair rule for the collection DHEADER.
+**Spec:** §7.2.2.2 — Primitive types — BOOLEAN, BYTE, INT8..UINT64, FLOAT32, FLOAT64, FLOAT128, CHAR8, CHAR16; every width is fixed.
 
-**Tests:** `crates/idl-go/tests/golden.rs::map_*` (byte-identical against `golden_map_le/be.bin`: `map<long, unsigned long>` {1,2}).
+**Repo:** `crates/lang-rules/src/adapter/go.rs`
 
-**Status:** done
-
-### §5.g wchar / wstring
-
-**Spec:** §5 — `wchar` (wchar32, UTF-32 code point) + `wstring` (u32 octet length + UTF-16 code units, no BOM).
-
-**Repo:** `crates/idl-go/src/emitter.rs` — `putWString`/`put_wstring` (manual UTF-16 with surrogate pairs) + `wchar`→`putU32`. Wire core in the prelude.
-
-**Tests:** `crates/idl-go/tests/golden.rs::wide_is_byte_identical_vs_rust_golden` (byte-identical against `golden_wide_le/be.bin`: c=U+03A9, s="wπ").
+**Tests:** `crates/lang-rules/tests/go_end_to_end.rs::every_idl_primitive_reaches_a_go_type`,
+`crates/lang-rules/tests/go_end_to_end.rs::no_generated_type_has_an_implementation_defined_width`
 
 **Status:** done
 
-### §5.h long double
+### §7.2.2.2 `long double` becomes a string and never a `float64`
 
-**Spec:** §5 — `long double` (IEEE binary128, 16 bytes).
+**Spec:** §7.2.2.2 — FLOAT128 is an IEEE 754 binary128 value of sixteen octets.
 
-**Repo:** `crates/idl-go/src/emitter.rs` — `putLongDouble`/`put_long_double`: binary128 via exact widening of the `float64` value (sign + 15-bit exponent + 112-bit mantissa), endian-correct.
+**Repo:** `crates/lang-rules/src/adapter/go.rs`
 
-**Tests:** `crates/idl-go/tests/golden.rs::longdouble_is_byte_identical_vs_rust_golden` (byte-identical against `golden_longdouble_le/be.bin`: d=1.1).
-
-**Status:** done
-
-**Note (honest):** Input precision = `float64` (resp. the language's native float), exactly widened to binary128 — covers every float64-representable value. The Rust reference (`idl-rust` + `zerodds-cdr`) remains blocked on native `f128` (no stable Rust f128, ~2027); the goldens are hardcoded from the float64 bits, without f128.
-
-
-## §6 Extensibility
-
-### §6 @final (compact) + @appendable (DHEADER)
-
-**Spec:** §6 — @final without DHEADER, @appendable with uint32 body length + body.
-
-**Repo:** `crates/idl-go/src/emitter.rs::emit_struct` (Final/Appendable branches).
-
-**Tests:** `crates/idl-go/tests/golden.rs::final_struct_...` + `appendable_struct_frames_a_dheader`.
+**Tests:** `crates/lang-rules/tests/go_end_to_end.rs::a_long_double_is_a_string_and_never_a_float64`
 
 **Status:** done
 
-### §6.a @mutable (EMHEADER)
+### §7.2.2.4.4.4.7 An optional member becomes a pointer and the others do not
 
-**Spec:** §6 — @mutable EMHEADER framing.
+**Spec:** §7.2.2.4.4.4.7 — A structure member may be optional; a union member never is.
 
-**Repo:** `crates/idl-go/src/emitter.rs` — @mutable `marshalInto`: DHEADER-framed member list, per member an EMHEADER (LC4 = `0x40000000 | member-id`) + NEXTINT (body length) + body (serialized into a sub-writer). Member ids from `@id(n)` or sequential.
+**Repo:** `crates/lang-rules/src/adapter/go.rs`
 
-**Tests:** `crates/idl-go/tests/golden.rs::mutable_*` (byte-identical against `golden_mutable_le/be.bin`).
-
-**Status:** done
-## §7 Key extraction
-
-### §7 Non-keyed 16-zero-byte key; keyed KeyHash
-
-**Spec:** §7 — non-keyed → 16 zero bytes; keyed → MD5 of the key members (XCDR2-BE).
-
-**Repo:** `endpoints/go/wire.go` (the writer in big mode produces the BE key serialization; non-keyed 16-zero is trivial).
-
-**Tests:** — (key-hash helper; per-struct KeyHash codegen see below.)
+**Tests:** `crates/lang-rules/tests/go_end_to_end.rs::an_optional_member_becomes_a_pointer_and_the_others_do_not`,
+`crates/lang-rules/tests/go_codec.rs::an_optional_member_reads_through_a_pointer`
 
 **Status:** done
 
-### §7.a Per-struct generated `keyHash` from `@key`
+### §7.2.2.4.3 A `map` becomes a slice of entries and never a Go map
 
-**Spec:** §7 / XTypes §7.6.8 — codegen of a `keyHash` method from `@key` members.
+**Spec:** §7.2.2.4.3 — Map — key/value pairs; §7.4.3.5.3 rules 11-16 fix the order and the framing.
 
-**Repo:** `crates/idl-go/src/emitter.rs` — structs with `@key` members get a `keyHash`/`Key_Hash` method: the `@key` members are serialized PLAIN_CDR2-BE (member-id order), a ≤16-byte key holder is zero-padded to 16 bytes, larger (or dynamically sized) ones via MD5(bytes)[0..16]. The static max-key-size analysis lives in the shared `zerodds_idl::keyhash`.
+**Repo:** `crates/lang-rules/src/adapter/go.rs`
 
-**Tests:** `crates/idl-go/tests/golden.rs::keyhash_is_byte_identical_vs_rust_golden` (byte-identical against `golden_keyhash.bin` via `zerodds_cdr::compute_key_hash`).
-
-**Status:** done
-
-**Note:** Both branches implemented (XTypes §7.6.8.4 step 5): the static max-key-size analysis (`zerodds_idl::keyhash`) decides ≤16 bytes → zero-pad, otherwise MD5(bytes)[0..16]. Byte-verified against `golden_keyhash_md5.bin` (5×@key long = 20 bytes).
-
-
-## §8 Wire core
-
-### §8 `endpoints/go` as reference writer/reader
-
-**Spec:** §8 — reference wire core, byte-identical to `zerodds-cdr`.
-
-**Repo:** `endpoints/go/wire.go`, `endpoints/go/reader_ext.go`.
-
-**Tests:** `endpoints/go/wire_test.go`, CI job `endpoints-go`.
+**Tests:** `crates/lang-rules/tests/go_end_to_end.rs::a_map_becomes_a_slice_of_entries_and_never_a_go_map`
 
 **Status:** done
 
-## §9 Conformance
+### §7.2.2.4.2 A `typedef` becomes an alias and not a defined type
 
-### §9 Golden byte identity @final LE+BE
+**Spec:** §7.2.2.4.2 — Alias — `typedef` onto `base_type`, with no kind of its own when types are compared.
 
-**Spec:** §9 — encoding == golden_le.bin / golden_be.bin byte-for-byte.
+**Repo:** `crates/lang-rules/src/adapter/go.rs`
 
-**Repo:** `crates/idl-go`, `endpoints/go`.
-
-**Tests:** `crates/idl-go/tests/golden.rs::byte_identity_vs_rust_goldens` (CI `idl-go`); `endpoints/go/wire_test.go` (CI `endpoints-go`).
+**Tests:** `crates/lang-rules/tests/go_end_to_end.rs::a_typedef_becomes_an_alias_and_not_a_defined_type`
 
 **Status:** done
 
-## §10 Examples
+### §7.2.2.4.1.1 An enum becomes a defined type with its numbering written out
 
-### §10 sync + async deep examples + quickstart
+**Spec:** §7.2.2.4.1.1 — Enumeration — int32 literals, ordered, `bit_bound` 1..32.
 
-**Spec:** §10 — runnable sync/async examples.
+**Repo:** `crates/lang-rules/src/adapter/go.rs`
 
-**Repo:** `endpoints/go/example_sync/main.go`, `endpoints/go/example_async/main.go`, `endpoints/go/QUICKSTART.md`.
-
-**Tests:** CI job `endpoints-go` runs both (`go run ./example_sync` + `./example_async`).
+**Tests:** `crates/lang-rules/tests/go_end_to_end.rs::an_enum_becomes_a_defined_type_with_its_numbering_written_out`
 
 **Status:** done
 
-## §11 Errata + open questions
+### §7.2.2.4.1.2 A bitmask becomes an unsigned type with one constant per bit; the complement is Go's own
 
-### §11 Honest non-goals
+**Spec:** §7.2.2.4.1.2 — Bitmask — bound 1..64, named bits.
 
-**Spec:** §11 — former non-goals are now built: decode codegen (§3.a), @mutable (§6.a), keyHash codegen (§7.a), wchar/wstring/map/array/nested/union/long double (§5). Full IDL4 byte-verified.
+**Repo:** `crates/lang-rules/src/adapter/go.rs`
 
-**Repo:** see §3.a/§5.a/§6.a/§7.a (each `done` with decision record).
+**Tests:** `crates/lang-rules/tests/go_end_to_end.rs::a_bitmask_becomes_an_unsigned_type_and_one_constant_per_bit`,
+`crates/lang-rules/tests/go_codec.rs::a_bitmask_mask_is_gos_own_and_typed`
 
-**Tests:** —
+**Status:** done — the reader keeps the declared bits with the mask of the declared bits
+(a typed `uint64` value, for example `uint64(9)`); no complement is written.
 
-**Status:** n/a (informative)
+### IDL 4.2 §7.2.3 A Go keyword and a predeclared identifier are both escaped
+
+**Spec:** IDL 4.2 §7.2.3 — Identifiers are ASCII and case-insensitive on comparison; a collision has to be reported.
+
+**Repo:** `crates/lang-rules/src/adapter/go.rs`
+
+**Tests:** `crates/lang-rules/tests/go_end_to_end.rs::a_member_named_after_a_go_keyword_is_escaped_and_keeps_its_idl_name`,
+`crates/lang-rules/tests/go_end_to_end.rs::a_member_named_after_a_predeclared_identifier_is_escaped_too`,
+`crates/lang-rules/tests/go_end_to_end.rs::two_members_that_would_reach_one_go_name_are_refused_by_name`
+
+**Status:** done
+
+### IDL 4.2 §7.5.2 `module` flattens onto the name because a Go package is a directory
+
+**Spec:** IDL 4.2 §7.5.2 — `module` is a naming scope; an identifier is unique per scope.
+
+**Repo:** `crates/lang-rules/src/adapter/go.rs`
+
+**Tests:** `crates/lang-rules/tests/go_end_to_end.rs::a_module_flattens_onto_the_name_because_a_go_package_is_a_directory`
+
+**Status:** done
+
+### §7.4.3 The read direction opens with Table 9; a mutable aggregate compiles with its seen flags
+
+**Spec:** §7.4.3 — XCDR version 2 — plain CDR2, delimited CDR2 and PL_CDR2.
+
+**Repo:** `crates/lang-rules/src/emit/go.rs`
+
+**Tests:** `crates/lang-rules/tests/go_codec.rs::the_read_direction_opens_with_table_9_and_returns_the_sample`,
+`crates/lang-rules/tests/go_codec.rs::a_mutable_aggregate_compiles_with_its_seen_flags`,
+`crates/lang-rules/tests/go_codec.rs::the_shapes_the_corpus_has_reach_the_end_of_both_walks`
+
+**Status:** done
+
+## §7.3.1 How the column is held to it
+
+### §7.3.1 Every corpus case renders or names the layer that refused it
+
+**Spec:** §7.3.1 — Every corpus case renders or names the layer that refused it. A case that stopped rendering would otherwise be found by whichever probe ran next, a build directory away from the construct that caused it.
+
+**Repo:** `crates/lang-rules/src/emit/go.rs`, `crates/lang-rules/src/adapter/go.rs`
+
+**Tests:** `crates/lang-rules/tests/go_end_to_end.rs::every_corpus_case_renders_or_names_its_failure`
+
+**Status:** done
+
+### §7.3.1 The generated source compiles under the language's own compiler
+
+**Spec:** §7.3.1 — The generated source compiles under the language's own compiler. A snapshot says the emitter produced the text it produced last time; it does not say the text is the language. Where the compiler is absent the test says so on standard error.
+
+**Repo:** `crates/lang-rules/src/emit/go.rs`, `crates/lang-rules/src/adapter/go.rs`
+
+**Tests:** `crates/lang-rules/tests/go_end_to_end.rs::the_generated_go_compiles`
+
+**Status:** done
+
+### §7.3.1 The generated source is already in the language's canonical form
+
+**Spec:** §7.3.1 — The generated source is already in the language's canonical form. A formatter that still changes the output is a difference a user sees in their own diff.
+
+**Repo:** `crates/lang-rules/src/emit/go.rs`, `crates/lang-rules/src/adapter/go.rs`
+
+**Tests:** `crates/lang-rules/tests/go_end_to_end.rs::the_generated_go_is_gofmt_stable`
+
+**Status:** done
+
+### §7.3.1 Two runs over one source produce the same text
+
+**Spec:** §7.3.1 — Two runs over one source produce the same text. Without it every diff of a generated tree is unreadable.
+
+**Repo:** `crates/lang-rules/src/emit/go.rs`, `crates/lang-rules/src/adapter/go.rs`
+
+**Tests:** `crates/lang-rules/tests/go_end_to_end.rs::two_runs_over_one_source_produce_the_same_text`
+
+**Status:** done
+
+### §7.2.2.4 Every construct the completeness table claims for this column also produces output
+
+**Spec:** §7.2.2.4 — Every construct the completeness table claims for this column also produces output. The table in `crates/lang-rules/src/coverage.rs` is the claim; this test is what checks it.
+
+**Repo:** `crates/lang-rules/src/emit/go.rs`, `crates/lang-rules/src/adapter/go.rs`
+
+**Tests:** `crates/lang-rules/tests/go_end_to_end.rs::every_construct_the_table_claims_for_go_produces_output`
+
+**Status:** done
+
+### §7.2.2.4.8 `@verbatim` lands at the placements the clause names for this language
+
+**Spec:** §7.2.2.4.8 — `@verbatim` lands at the placements the clause names for this language.
+
+**Repo:** `crates/lang-rules/src/adapter/go.rs`, `crates/lang-rules/src/verbatim.rs`
+
+**Tests:** `crates/lang-rules/tests/verbatim_every_column.rs::every_column_places_the_six_slots_in_its_declarations`,
+`crates/lang-rules/tests/verbatim_every_column.rs::every_column_ends_its_source_file_with_the_end_file_text`,
+`crates/lang-rules/tests/verbatim_every_column.rs::a_directive_reaches_its_own_column_and_no_other`
+
+**Status:** done
+
+## §7.3.1 Driver and measurement
+
+### §7.3.1 `idlc generate --lang go`
+
+**Spec:** §7.3.1 — the IDL type representation is the input of generation; the output is this column's source.
+
+**Repo:** `tools/idlc/src/generate.rs`, `tools/idlc/src/main.rs`
+
+**Tests:** `tools/idlc/src/generate.rs::tests::every_language_round_trips_through_its_own_name`,
+`tools/idlc/src/generate.rs::tests::language_names_lists_every_language_once`
+
+**Status:** done
+
+### §7.4 The measurement harness of this column
+
+**Spec:** §7.4 — a column's octets are compared against recorded octets rather than asserted in its own tests.
+
+**Repo:** `tools/wireprobe/wireprobe-zerodds-go-gen/`, `tools/wireprobe/wireprobe-zerodds-go`, `tools/wireprobe/wireprobe-go-corpus`
+
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_cell_generator`,
+`crates/lang-rules/tests/every_language_has_its_parts.rs::every_cell_generator_guards_against_a_missing_toolchain`
+
+**Status:** done
 
 ---
 
-## Audit-Status
+## Audit Status
 
-20 done / 0 partial / 0 open / 2 n/a (informative) / 0 n/a (rejected).
+24 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
 
-Test run: `GOLDEN_DIR=<gold> cargo test -p zerodds-idl-go` — 31 tests green, 0 failed (codepit, toolchain `go`).
+Test run: `cargo test -p zerodds-lang-rules` — 1024 tests green, 0 failed (20 ignored: the whole-corpus compile runs, which need `--include-ignored`).
 
 Open items: none. Decision records: none.

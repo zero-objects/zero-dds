@@ -1,0 +1,38 @@
+[package]
+name = "zerodds-wireprobe-gen"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "The stem the five ZeroDDS codec-column generators are renderers on: the command line, the IDL, the model, the layout key, the sample, the files and the exit codes, in one place."
+repository.workspace = true
+homepage.workspace = true
+publish = false
+
+[lib]
+name = "zerodds_wireprobe_gen"
+path = "src/lib.rs"
+
+[dependencies]
+zerodds-ast = { path = "../../../crates/ast", version = "1.0.0-rc.7" }
+zerodds-ast-core = { path = "../../../crates/ast-core", version = "1.0.0-rc.7" }
+zerodds-ast-layout = { path = "../../../crates/ast-layout", version = "1.0.0-rc.7" }
+zerodds-idl-parse = { path = "../../../crates/idl-parse", version = "1.0.0-rc.7" }
+zerodds-idl-lower = { path = "../../../crates/idl-lower", version = "1.0.0-rc.7" }
+zerodds-lang-rules = { path = "../../../crates/lang-rules", version = "1.0.0-rc.7" }
+serde_json = "1"
+
+# The five renderers, for `axes_reach_every_column`. A dev-dependency
+# back on a crate that depends on this one is allowed and is what makes
+# the check possible at all: the claim it holds — every axis this stem
+# parses reaches every column — cannot be made from either side alone.
+[dev-dependencies]
+zerodds-wireprobe-c-gen = { path = "../wireprobe-zerodds-c-gen", version = "1.0.0-rc.7" }
+zerodds-wireprobe-cpp-gen = { path = "../wireprobe-zerodds-cpp-gen", version = "1.0.0-rc.7" }
+zerodds-wireprobe-csharp-gen = { path = "../wireprobe-zerodds-csharp-gen", version = "1.0.0-rc.7" }
+zerodds-wireprobe-java-gen = { path = "../wireprobe-zerodds-java-gen", version = "1.0.0-rc.7" }
+zerodds-wireprobe-typescript-gen = { path = "../wireprobe-zerodds-typescript-gen", version = "1.0.0-rc.7" }
+
+[lints]
+workspace = true

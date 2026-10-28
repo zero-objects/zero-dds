@@ -1,0 +1,13 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 ZeroDDS Contributors
+// ShapeType for OpenSplice idlpp (IDL 3.5): no @appendable/@key, keys by pragma.
+// Under XCDR1 an appendable struct carries no DHEADER, so the bytes equal
+// the @appendable ShapeType of srcCxx/shape.idl.
+struct ShapeType {
+  string<128> color;
+  long x;
+  long y;
+  long shapesize;
+  sequence<octet> additional_payload_size;
+};
+#pragma keylist ShapeType color

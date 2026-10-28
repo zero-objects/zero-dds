@@ -1,0 +1,10 @@
+// two-dimensional array of a structure, unannotated
+struct Cell {
+    long a;
+    short b;
+};
+
+struct Sample {
+    Cell grid[2][2];
+    long tail;
+};

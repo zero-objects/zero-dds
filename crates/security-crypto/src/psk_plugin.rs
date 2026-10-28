@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Built-in pre-shared-key cryptographic plugin (spec §10.9).
+//! A pre-shared-key crypto plugin of ZeroDDS: the key material of the
+//! endpoint and participant slots is derived from a pre-shared key by
+//! HKDF-SHA256 and a session id, in place of the token exchange.
 //!
-//! Spec class ID `"DDS:Crypto:PSK:AES-GCM-GMAC:1.2"`. The wire layout
-//! is **identical** to the X.509 path ([`AesGcmCryptoPlugin`]) — spec
-//! §10.9 guarantees that explicitly. Difference: the master keys
-//! are derived directly from the pre-shared key via HKDF-SHA256
-//! instead of from a DH shared secret.
+//! This is not `DDS:Crypto:PSK` of DDS-Security 1.2 §10.9, which protects
+//! whole RTPS messages with key material derived as §10.5.2.1.3 says;
+//! that plugin is [`crate::psk_rtps::PskCryptoPlugin`]. Class ID
+//! `"ZeroDDS:Crypto:PSK-Derived:1.0"`. The wire layout is that of the
+//! X.509 path ([`AesGcmCryptoPlugin`]).
 //!
 //! In the SRTPS_PREFIX submessage header the PSK path sets the
 //! `PreSharedKeyFlag` (spec §10.9.1) — see
@@ -15,9 +17,9 @@
 //!
 //! # Architecture
 //!
-//! Composition instead of inheritance: `PskCryptoPlugin` holds an
+//! Composition instead of inheritance: `PskDerivedCryptoPlugin` holds an
 //! [`AesGcmCryptoPlugin`] and delegates AEAD hot-path calls (encrypt,
-//! decrypt, multi-MAC, …) 1:1 to it. The only extension is the
+//! decrypt, …) 1:1 to it. The only extension is the
 //! `register_psk_local`/`register_psk_remote` configuration API: a pre-shared key is
 //! expanded per `(local, remote)` pair via HKDF, and the plugin
 //! writes the resulting KeyMaterial directly into the
@@ -28,22 +30,22 @@ use alloc::vec::Vec;
 
 use crate::backend::hkdf;
 use zerodds_security::authentication::{IdentityHandle, SharedSecretHandle};
-use zerodds_security::crypto::{CryptoHandle, CryptographicPlugin, ReceiverMac};
+use zerodds_security::crypto::{CryptoHandle, CryptographicPlugin};
 use zerodds_security::error::{SecurityError, SecurityErrorKind, SecurityResult};
 
 use crate::plugin::AesGcmCryptoPlugin;
 use crate::suite::Suite;
 
 /// Plugin-Class-Id (Spec §10.9).
-pub const CLASS_ID_PSK_CRYPTO: &str = "DDS:Crypto:PSK:AES-GCM-GMAC:1.2";
+pub const CLASS_ID_PSK_CRYPTO: &str = "ZeroDDS:Crypto:PSK-Derived:1.0";
 
 /// HKDF info string for the master-key derivation from the pre-shared
 /// key. Spec-conformant domain separator (§10.9.2).
 pub const HKDF_INFO_PSK_MASTER_KEY: &[u8] = b"DDS-Security-1.2-PSK-MasterKey";
 
-/// PSK crypto plugin. Class ID `"DDS:Crypto:PSK:AES-GCM-GMAC:1.2"`,
+/// PSK crypto plugin of ZeroDDS. Class ID `"ZeroDDS:Crypto:PSK-Derived:1.0"`,
 /// wire layout = AES-GCM plugin.
-pub struct PskCryptoPlugin {
+pub struct PskDerivedCryptoPlugin {
     inner: AesGcmCryptoPlugin,
     suite: Suite,
     /// Pre-shared keys per identity-handle pair (local configuration).
@@ -53,11 +55,12 @@ pub struct PskCryptoPlugin {
     psks: BTreeMap<u64, Vec<u8>>,
 }
 
-impl PskCryptoPlugin {
-    /// Constructor with the default suite `AES-GCM-128`.
+impl PskDerivedCryptoPlugin {
+    /// Constructor with the default suite `AES-GCM-256` (a missing or `AUTO`
+    /// cipher is `AES256-GCM`, DDS-Security 1.2 §10.5.1.1).
     #[must_use]
     pub fn new() -> Self {
-        Self::with_suite(Suite::Aes128Gcm)
+        Self::with_suite(Suite::Aes256Gcm)
     }
 
     /// Constructor with an explicit suite.
@@ -206,7 +209,7 @@ impl PskCryptoPlugin {
     }
 }
 
-impl Default for PskCryptoPlugin {
+impl Default for PskDerivedCryptoPlugin {
     fn default() -> Self {
         Self::new()
     }
@@ -293,7 +296,7 @@ impl From<HkdfLen> for hkdf::Algorithm {
     }
 }
 
-impl CryptographicPlugin for PskCryptoPlugin {
+impl CryptographicPlugin for PskDerivedCryptoPlugin {
     fn register_local_participant(
         &mut self,
         identity: IdentityHandle,
@@ -320,6 +323,14 @@ impl CryptographicPlugin for PskCryptoPlugin {
     ) -> SecurityResult<CryptoHandle> {
         self.inner
             .register_local_endpoint(participant, is_writer, properties)
+    }
+
+    fn endpoint_payload_token(&self, handle: CryptoHandle) -> Option<Vec<u8>> {
+        self.inner.endpoint_payload_token(handle)
+    }
+
+    fn endpoint_relay_token(&self, handle: CryptoHandle) -> Option<Vec<u8>> {
+        self.inner.endpoint_relay_token(handle)
     }
 
     fn create_local_participant_crypto_tokens(
@@ -363,39 +374,6 @@ impl CryptographicPlugin for PskCryptoPlugin {
             .decrypt_submessage(local, remote, ciphertext, aad_extension)
     }
 
-    fn encrypt_submessage_multi(
-        &self,
-        local: CryptoHandle,
-        receivers: &[(CryptoHandle, u32)],
-        plaintext: &[u8],
-        aad_extension: &[u8],
-    ) -> SecurityResult<(Vec<u8>, Vec<ReceiverMac>)> {
-        self.inner
-            .encrypt_submessage_multi(local, receivers, plaintext, aad_extension)
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn decrypt_submessage_with_receiver_mac(
-        &self,
-        local: CryptoHandle,
-        remote: CryptoHandle,
-        own_key_id: u32,
-        own_mac_key_handle: CryptoHandle,
-        ciphertext: &[u8],
-        macs: &[ReceiverMac],
-        aad_extension: &[u8],
-    ) -> SecurityResult<Vec<u8>> {
-        self.inner.decrypt_submessage_with_receiver_mac(
-            local,
-            remote,
-            own_key_id,
-            own_mac_key_handle,
-            ciphertext,
-            macs,
-            aad_extension,
-        )
-    }
-
     fn plugin_class_id(&self) -> &str {
         CLASS_ID_PSK_CRYPTO
     }
@@ -408,19 +386,19 @@ mod tests {
 
     #[test]
     fn class_id_matches_spec() {
-        let p = PskCryptoPlugin::new();
-        assert_eq!(p.plugin_class_id(), "DDS:Crypto:PSK:AES-GCM-GMAC:1.2");
+        let p = PskDerivedCryptoPlugin::new();
+        assert_eq!(p.plugin_class_id(), "ZeroDDS:Crypto:PSK-Derived:1.0");
     }
 
     #[test]
     fn transform_kind_id_aes128_matches_x509_path() {
-        let p = PskCryptoPlugin::with_suite(Suite::Aes128Gcm);
+        let p = PskDerivedCryptoPlugin::with_suite(Suite::Aes128Gcm);
         assert_eq!(p.suite().transform_kind_id(), 0x02);
     }
 
     #[test]
     fn transform_kind_id_aes256_matches_x509_path() {
-        let p = PskCryptoPlugin::with_suite(Suite::Aes256Gcm);
+        let p = PskDerivedCryptoPlugin::with_suite(Suite::Aes256Gcm);
         assert_eq!(p.suite().transform_kind_id(), 0x04);
     }
 
@@ -450,14 +428,14 @@ mod tests {
 
     #[test]
     fn register_psk_rejects_empty_key() {
-        let mut p = PskCryptoPlugin::new();
+        let mut p = PskDerivedCryptoPlugin::new();
         let err = p.register_psk(1, Vec::new()).unwrap_err();
         assert_eq!(err.kind, SecurityErrorKind::BadArgument);
     }
 
     #[test]
     fn register_psk_remote_unknown_id_rejected() {
-        let mut p = PskCryptoPlugin::new();
+        let mut p = PskDerivedCryptoPlugin::new();
         let local = p
             .register_local_participant(IdentityHandle(1), &[])
             .unwrap();
@@ -470,8 +448,8 @@ mod tests {
     #[test]
     fn psk_encrypt_decrypt_roundtrip_two_plugins_same_psk() {
         let psk = alloc::vec![0x77u8; 32];
-        let mut alice = PskCryptoPlugin::new();
-        let mut bob = PskCryptoPlugin::new();
+        let mut alice = PskDerivedCryptoPlugin::new();
+        let mut bob = PskDerivedCryptoPlugin::new();
         alice.register_psk(7, psk.clone()).unwrap();
         bob.register_psk(7, psk).unwrap();
 

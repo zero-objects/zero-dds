@@ -1,9 +1,7 @@
 # `zerodds-endpoint-csharp` 1.0 — Spec-Coverage
 
 **Quelle:** `docs/specs/zerodds-endpoint-csharp-1.0.md` — ZeroDDS C#
-Endpoint-SDK-Spec. Ergänzt die Codegen-Coverage `zerodds-xcdr2-csharp`
-(`docs/spec-coverage/zerodds-xcdr2-csharp-1.0.md`) — dort das Marshalling,
-hier der Transport.
+Endpoint-SDK-Spec. Das Marshalling kommt aus `crates/lang-rules`, Spalte `Language::CSharp`; hier steht der Transport.
 
 Implementation:
 
@@ -82,13 +80,13 @@ Endpoint-SDK) sync und async.
 den `Pong` mit `PongTypeSupport.Decode` dekodiert; Modus per CLI-Argument
 (`sync`/`async`/`raw`).
 
-**Tests (codepit, `dotnet`-gated):**
+**Tests:** (Linux, `dotnet`-gated)
 - `csharp_raw_udp` — generierter `Ping`/`Pong`-Codec direkt über einen rohen
   UDP-Socket, ohne XRCE-Framing.
 - `csharp_endpoint_sync` — voller Stack über `ZeroDDS.Client`.
 - `csharp_endpoint_async` — voller Stack über `ZeroDDS.AsyncReader`.
 
-3/3 grün (codepit, `dotnet` >= .NET 8 auf PATH oder `~/.dotnet/dotnet`; kein
+3/3 grün (Linux, `dotnet` >= .NET 8 auf PATH oder `~/.dotnet/dotnet`; kein
 `dotnet` ⇒ lauter Skip, kein false-green).
 
 **Status:** done.
@@ -116,7 +114,7 @@ ACKNACK-getriebenes Retransmit) — der Producer geht nie in den Kernel.
 Drain-`Thread` `zerodds-reliable-drain`); `endpoints/csharp/ExampleReliable.cs`
 (alle drei Modi: E2E-Sender, Bench, In-Process-Demo).
 
-**Tests (codepit, `dotnet`-gated):**
+**Tests:** (Linux, `dotnet`-gated)
 - `csharp_reliable_unit_and_golden`
   (`crates/endpoint-e2e/tests/csharp_reliable.rs`) baut + läuft
   `endpoints/csharp/ReliableTests.cs` (`ZeroDDS.Tests.ReliableTests.Main`) —
@@ -153,7 +151,7 @@ Drain-`Thread` `zerodds-reliable-drain`); `endpoints/csharp/ExampleReliable.cs`
   (In-Process-Demo: lossy Receiver-Thread + `AsyncReliableWriter`-Sender)
   meldet `OK: 12 samples delivered gap-free in order despite injected loss`.
 
-5/5 grün (codepit), davon 4 in diesem Abschnitt (Latenz-Bench in §6).
+5/5 grün (Linux), davon 4 in diesem Abschnitt (Latenz-Bench in §6).
 
 **Status:** done.
 
@@ -170,10 +168,10 @@ den Ring/Socket, damit `Enqueue` nie Backpressure trifft) vs. 50000
 Iterationen inline `Socket.Send` (kein Live-Peer nötig, Loopback-Sink), via
 `Stopwatch` gemessen (1 Tick = 100 ns).
 
-**Tests (codepit):** `csharp_reliable_latency_bench`
+**Tests:** (Linux) `csharp_reliable_latency_bench`
 (`crates/endpoint-e2e/tests/csharp_reliable.rs`) — Modus `bench`; Assert nur
 auf Vorhandensein der `LATENCY`-Zeile (kein hartcodierter Schwellwert im
-Rust-Test), Messwert wird geloggt. Beobachtete Größenordnung (codepit):
+Rust-Test), Messwert wird geloggt. Beobachtete Größenordnung (Linux):
 Ring-Enqueue **~6–10 µs** vs. inline `Socket.Send` **~442–504 µs**
 (~50–70×) — der .NET-JIT/GC-Overhead macht die absoluten Werte gegenüber
 Go/Rust höher, das Verhältnis (Enqueue ohne Kernel-Übergang vs. inline
@@ -185,9 +183,9 @@ Syscall) bleibt dieselbe Evidenz.
 
 ## Audit-Status
 
-6 done / 0 partial / 0 open / 0 n/a (informativ) / 0 n/a (rejected).
+6 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
 
-Test-Lauf (codepit, verifiziert): `cargo test -p zerodds-endpoint-e2e --test csharp`
+Test-Lauf (Linux, verifiziert): `cargo test -p zerodds-endpoint-e2e --test csharp`
 3/3 (Ping-Pong: `csharp_raw_udp`/`csharp_endpoint_sync`/`csharp_endpoint_async`);
 `--test csharp_reliable` 5/5 (`csharp_reliable_loss_recovery`,
 `csharp_reliable_no_loss_baseline`, `csharp_reliable_unit_and_golden` — 32

@@ -57,7 +57,7 @@ pub fn authenticate_mqtt(
         AuthMode::SaslPlain { .. } => {
             let user = username.ok_or(AuthError::MissingCredentials)?;
             let pass = password.ok_or(AuthError::MissingCredentials)?;
-            // SASL-PLAIN-Frame `\0user\0pass` zusammenbauen.
+            // SASL-PLAIN-Frame `\0user\0pass` build.
             let mut blob = Vec::with_capacity(2 + user.len() + pass.len());
             blob.push(0);
             blob.extend_from_slice(user.as_bytes());
@@ -105,6 +105,19 @@ pub fn ctx_from_daemon_config(
                 write: write.clone(),
             },
         );
+    }
+    // Spec §7.3 `acl.default_deny`: `false` opens every resource that no
+    // rule names; `true` (the default) leaves the ACL fail-closed.
+    if !cfg.acl_default_deny {
+        sc.topic_acl_default = Some(AclEntry::allow_all());
+    } else if cfg.acl_default_deny_set {
+        // An explicit `default_deny: true`: a default entry that names no
+        // subject denies the unnamed rest, and keeps `build_ctx` from its open
+        // fallback for an ACL nobody configured.
+        sc.topic_acl_default = Some(AclEntry {
+            read: Vec::new(),
+            write: Vec::new(),
+        });
     }
     let ctx = build_ctx(&sc)?;
     let client_tls = if cfg.broker_tls_enabled {
@@ -173,6 +186,30 @@ pub fn outbound_credentials(
 mod tests {
     use super::*;
     use std::collections::HashMap;
+
+    /// An explicit `acl.default_deny: true` denies an unnamed topic even with
+    /// no rule and `auth: none`; without an `acl:` section the ACL nobody
+    /// configured stays open. The explicit setting used to be overridden.
+    #[test]
+    fn an_explicit_default_deny_is_honoured_without_rules() {
+        let load = |yaml: &str| {
+            let mut c = zerodds_config::Config::default();
+            c.push(
+                zerodds_config::parse_str(yaml, "<t>").unwrap(),
+                "<t>".into(),
+            )
+            .unwrap();
+            crate::daemon::config::DaemonConfig::from_config(Some(&c)).unwrap()
+        };
+        let subject = AuthSubject::new("zerodds-mqtt-bridge");
+        let open = load("domain: 0\n");
+        let (ctx, _) = ctx_from_daemon_config(&open).unwrap();
+        assert!(authorize(&ctx.acl, &subject, AclOp::Read, "Trade"));
+        let closed = load("acl:\n  default_deny: true\n");
+        let (ctx, _) = ctx_from_daemon_config(&closed).unwrap();
+        assert!(!authorize(&ctx.acl, &subject, AclOp::Read, "Trade"));
+        assert!(!authorize(&ctx.acl, &subject, AclOp::Write, "Trade"));
+    }
 
     #[test]
     fn mqtt_sasl_plain_accepts_user_pass() {

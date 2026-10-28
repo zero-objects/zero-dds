@@ -305,13 +305,3 @@ Test categories:
 | Model checking | `kani` | For safe crates, nightly CI |
 | Interop | own harness with docker-compose | PR + nightly |
 | Performance regression | Criterion.rs + custom harness | Nightly, alerts on >5% regression |
-
-## 9 Claude-Teams collaboration model
-
-The codebase is explicitly structured so that agentic development scales:
-
-- **Crate-level agents:** a dedicated Claude agent can work per crate without conflicts with other crates. Crate-internal API changes stay local.
-- **Spec sections as work packages:** OMG spec sections map to code modules with `#[spec(...)]` annotations. An agent takes a section, implements, tests against spec vectors.
-- **Test-first workflow:** the agent reads an OMG spec chapter, generates conformance tests (property-based + example-based), implements against green tests.
-- **Review layer:** human senior engineers review architectural decisions, protocol state machines and safety-critical changes. Routine implementations are reviewed agent-to-agent.
-- **Documentation sync:** Claude Teams keep these architecture documents in sync with the code. On every relevant commit it is checked automatically whether documentation needs updating.

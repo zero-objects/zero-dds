@@ -71,6 +71,53 @@ mod tests {
         }
     }
 
+    /// Spec `dds-amqp-1.0` §7.6.2: the hash is one-way and "the
+    /// subscriber SHALL NOT attempt to reconstruct the key fields from
+    /// `group-id`". What can be measured is that nothing of the key is
+    /// left in the value to reconstruct from: no byte of the key
+    /// survives as a hex pair at its own position, the length is
+    /// constant regardless of how long the key was, and a one-bit change
+    /// in the key changes most of the digest.
+    #[test]
+    fn group_id_carries_no_recoverable_trace_of_the_key() {
+        let key: &[u8] = b"\x00\x00\x00\x07\x00\x00\x00\x0aSENSOR-ALPHA";
+        let id = group_id(key);
+
+        // The key's own hex spelling does not occur in the digest.
+        let mut key_hex = String::new();
+        for b in key {
+            let _ = core::fmt::Write::write_fmt(&mut key_hex, core::format_args!("{b:02x}"));
+        }
+        assert!(!id.contains(&key_hex), "the whole key must not appear");
+        // Nor does any four-octet window of it.
+        for w in key.windows(4) {
+            let mut hex = String::new();
+            for b in w {
+                let _ = core::fmt::Write::write_fmt(&mut hex, core::format_args!("{b:02x}"));
+            }
+            assert!(!id.contains(&hex), "key window {hex} leaked into group-id");
+        }
+
+        // A long and a short key produce the same-length value: the
+        // digest carries no length information about the key either.
+        assert_eq!(group_id(b"x").len(), group_id(&[0u8; 4096]).len());
+
+        // One flipped bit changes most of the digest — the value is not
+        // a positional encoding of the key.
+        let mut flipped = key.to_vec();
+        flipped[3] ^= 0x01;
+        let other = group_id(&flipped);
+        let same = id
+            .chars()
+            .zip(other.chars())
+            .filter(|(a, b)| a == b)
+            .count();
+        assert!(
+            same < 32,
+            "one flipped key bit left {same}/64 hex digits unchanged"
+        );
+    }
+
     #[test]
     fn distinct_keyhash_yields_distinct_group_id() {
         let a = group_id(b"\x00\x00\x00\x07");

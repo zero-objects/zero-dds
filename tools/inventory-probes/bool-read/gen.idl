@@ -1,0 +1,2 @@
+@final struct B { boolean flag; long n; };
+@final struct C { char letter; long n; };

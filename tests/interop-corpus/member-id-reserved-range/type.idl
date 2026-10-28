@@ -1,0 +1,6 @@
+// a member whose id is inside the range §7.4.1.2.2 reserves in the
+// short parameter header, so it can only travel in the extended one
+@mutable struct Sample {
+    @id(1) long a;
+    @id(16132) long z;
+};

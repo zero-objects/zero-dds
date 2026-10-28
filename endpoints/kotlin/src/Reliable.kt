@@ -12,6 +12,13 @@
 //   [0]=session [1]=stream [2..4)=seq LE [4]=submsg id [5]=flags
 //   [6..8)=body-len LE [8..)=body
 //
+// ACKNACK_Payload has no @extensibility. With UnannotatedTypes.APPENDABLE
+// (default; DDS-XTypes 1.3 7.3.1.2.1.8) the body is a 4-octet DHEADER (= 5)
+// followed by the 5 payload octets (first_unacked i16, nack_bitmap[2],
+// stream_id), body-len 9, frame 17 octets. With UnannotatedTypes.FINAL (the
+// eProsima form) there is no DHEADER: body-len 5, frame 13 octets. The parser
+// accepts both forms in either setting. HEARTBEAT_Payload is FINAL in both.
+//
 // Sequence numbers live in the RFC-1982 16-bit space [0,65535]. The in-flight
 // map (a TreeMap) stores numeric key order, which is NOT the RFC-1982 order
 // across a 16-bit wrap. The HEARTBEAT window bounds are therefore derived from
@@ -41,7 +48,12 @@ const val REL_STREAM_NONE = 0x00 // control-frame stream in the golden layout
 const val REL_SM_WRITE_DATA = 0x07
 const val REL_SM_ACKNACK = 0x0A
 const val REL_SM_HEARTBEAT = 0x0B
-const val REL_FLAGS_WRITE = 0x03
+// E flag (little-endian body) + DataFormat FORMAT_DATA (0b000) in bits 1..3 —
+// DDS-XRCE 1.0 §8.3.5.8.
+const val REL_FLAGS_WRITE = 0x01
+
+/** Wire size of the BaseObjectRequest that precedes the sample (§7.7.8). */
+const val REL_BASE_SIZE = 4
 const val REL_FLAGS_CTRL = 0x01
 
 /** Sender window cap: 16 in-flight samples (matches the 16-bit ACKNACK bitmap). */
@@ -86,32 +98,51 @@ class AckNack(firstUnacked: Int, nackLo: Int, nackHi: Int, stream: Int) {
 
 class WriteData(val seq: Int, val sample: ByteArray)
 
+/**
+ * Extensibility assumed for the DDS-XRCE 1.0 Annex A types without
+ * `@extensibility` (here: ACKNACK_Payload). APPENDABLE (default) writes the
+ * DHEADER of DDS-XTypes 1.3 7.3.1.2.1.8; FINAL writes the eProsima form
+ * without DHEADER. Readers accept both.
+ */
+enum class UnannotatedTypes { APPENDABLE, FINAL }
+
 // --- frame builders ---
 
-/** Reliable WRITE_DATA frame: the header seq carries the RFC-1982 sample seq. */
-fun reliableWriteFrame(seq: Int, sample: ByteArray): ByteArray {
-    val out = ByteArray(8 + sample.size)
+/**
+ * Reliable WRITE_DATA frame: the header seq carries the RFC-1982 sample seq,
+ * and the submessage body is the BaseObjectRequest (§7.7.8: request_id then
+ * object_id, each two octets most significant first) followed by the sample.
+ * [objectId] names the target DataWriter; the request_id is the sample's own
+ * sequence number, unique per stream as §7.7.8 requires.
+ */
+fun reliableWriteFrame(seq: Int, objectId: Int, sample: ByteArray): ByteArray {
+    val bodyLen = REL_BASE_SIZE + sample.size
+    val out = ByteArray(8 + bodyLen)
     out[0] = REL_SESSION_NOKEY.toByte()
     out[1] = REL_STREAM_RELIABLE.toByte()
     out[2] = (seq and 0xFF).toByte()
     out[3] = ((seq shr 8) and 0xFF).toByte()
     out[4] = REL_SM_WRITE_DATA.toByte()
     out[5] = REL_FLAGS_WRITE.toByte()
-    out[6] = (sample.size and 0xFF).toByte()
-    out[7] = ((sample.size shr 8) and 0xFF).toByte()
-    System.arraycopy(sample, 0, out, 8, sample.size)
+    out[6] = (bodyLen and 0xFF).toByte()
+    out[7] = ((bodyLen shr 8) and 0xFF).toByte()
+    out[8] = ((seq shr 8) and 0xFF).toByte()
+    out[9] = (seq and 0xFF).toByte()
+    out[10] = ((objectId shr 8) and 0xFF).toByte()
+    out[11] = (objectId and 0xFF).toByte()
+    System.arraycopy(sample, 0, out, 8 + REL_BASE_SIZE, sample.size)
     return out
 }
 
-// golden layout: session, stream=NONE, msg-seq=1, submsg, flags, len=5
-private fun ctrlHeader(submsg: Int): ByteArray = byteArrayOf(
+// golden layout: session, stream=NONE, msg-seq=1, submsg, flags, len
+private fun ctrlHeader(submsg: Int, bodyLen: Int): ByteArray = byteArrayOf(
     REL_SESSION_NOKEY.toByte(), REL_STREAM_NONE.toByte(), 0x01, 0x00,
-    submsg.toByte(), REL_FLAGS_CTRL.toByte(), 0x05, 0x00,
+    submsg.toByte(), REL_FLAGS_CTRL.toByte(), bodyLen.toByte(), 0x00,
 )
 
 fun heartbeatFrame(h: Heartbeat): ByteArray {
     val out = ByteArray(13)
-    System.arraycopy(ctrlHeader(REL_SM_HEARTBEAT), 0, out, 0, 8)
+    System.arraycopy(ctrlHeader(REL_SM_HEARTBEAT, 5), 0, out, 0, 8)
     out[8] = (h.first and 0xFF).toByte()
     out[9] = ((h.first shr 8) and 0xFF).toByte()
     out[10] = (h.last and 0xFF).toByte()
@@ -120,14 +151,24 @@ fun heartbeatFrame(h: Heartbeat): ByteArray {
     return out
 }
 
-fun acknackFrame(a: AckNack): ByteArray {
-    val out = ByteArray(13)
-    System.arraycopy(ctrlHeader(REL_SM_ACKNACK), 0, out, 0, 8)
-    out[8] = (a.firstUnacked and 0xFF).toByte()
-    out[9] = ((a.firstUnacked shr 8) and 0xFF).toByte()
-    out[10] = (a.nackLo and 0xFF).toByte()
-    out[11] = (a.nackHi and 0xFF).toByte()
-    out[12] = (a.stream and 0xFF).toByte()
+/**
+ * ACKNACK frame. APPENDABLE (default): DHEADER = 5, body-len 9, 17 octets.
+ * FINAL: no DHEADER, body-len 5, 13 octets.
+ */
+fun acknackFrame(a: AckNack, mode: UnannotatedTypes = UnannotatedTypes.APPENDABLE): ByteArray {
+    val appendable = mode != UnannotatedTypes.FINAL
+    val out = ByteArray(if (appendable) 17 else 13)
+    System.arraycopy(ctrlHeader(REL_SM_ACKNACK, if (appendable) 9 else 5), 0, out, 0, 8)
+    var o = 8
+    if (appendable) {
+        out[8] = 5 // DHEADER u32 LE = 5 (out[9..12) stay 0)
+        o = 12
+    }
+    out[o] = (a.firstUnacked and 0xFF).toByte()
+    out[o + 1] = ((a.firstUnacked shr 8) and 0xFF).toByte()
+    out[o + 2] = (a.nackLo and 0xFF).toByte()
+    out[o + 3] = (a.nackHi and 0xFF).toByte()
+    out[o + 4] = (a.stream and 0xFF).toByte()
     return out
 }
 
@@ -137,13 +178,14 @@ private fun i16(b: ByteArray, off: Int): Int =
     (b[off].toInt() and 0xFF) or ((b[off + 1].toInt() and 0xFF) shl 8)
 
 fun parseWrite(f: ByteArray): WriteData? {
-    if (f.size < 8 || (f[4].toInt() and 0xFF) != REL_SM_WRITE_DATA) return null
-    // Body is bounded by the declared submessage length, never frame[8..] — a
-    // trailing-byte or wrong-length datagram must not leak into the sample.
+    if (f.size < 8 + REL_BASE_SIZE || (f[4].toInt() and 0xFF) != REL_SM_WRITE_DATA) return null
+    // Body is bounded by the declared submessage length, never frame[12..] — a
+    // trailing-byte or wrong-length datagram must not leak into the sample, and
+    // a body too short to hold the BaseObjectRequest is refused.
     val smLen = i16(f, 6)
-    if (8 + smLen > f.size) return null
+    if (smLen < REL_BASE_SIZE || 8 + smLen > f.size) return null
     val seq = i16(f, 2)
-    return WriteData(seq, f.copyOfRange(8, 8 + smLen))
+    return WriteData(seq, f.copyOfRange(8 + REL_BASE_SIZE, 8 + smLen))
 }
 
 /** Parses a control frame by byte[4]=submsg-id, body at offset 8 (peer contract). */
@@ -152,9 +194,18 @@ fun parseHeartbeat(f: ByteArray): Heartbeat? {
     return Heartbeat(i16(f, 8), i16(f, 10), f[12].toInt() and 0xFF)
 }
 
+/**
+ * Parses an ACKNACK frame: body-len 9 (4-octet DHEADER, payload at offset 12) or
+ * FINAL body-len 5 (payload at offset 8). Shorter frames are rejected.
+ */
 fun parseAckNack(f: ByteArray): AckNack? {
     if (f.size < 13 || (f[4].toInt() and 0xFF) != REL_SM_ACKNACK) return null
-    return AckNack(i16(f, 8), f[10].toInt() and 0xFF, f[11].toInt() and 0xFF, f[12].toInt() and 0xFF)
+    var off = 8
+    if (i16(f, 6) >= 9) {
+        if (f.size < 17) return null
+        off = 12
+    }
+    return AckNack(i16(f, off), f[off + 2].toInt() and 0xFF, f[off + 3].toInt() and 0xFF, f[off + 4].toInt() and 0xFF)
 }
 
 // --- sender ---
@@ -246,7 +297,11 @@ class ReliableSender(stream: Int = REL_STREAM_RELIABLE) {
 
 enum class RecvStatus { OK, BUFFER_FULL }
 
-class ReliableReceiver(stream: Int = REL_STREAM_RELIABLE) {
+class ReliableReceiver(
+    stream: Int = REL_STREAM_RELIABLE,
+    /** Extensibility of the unannotated Annex A types this receiver writes (ACKNACK_Payload). */
+    val unannotatedTypes: UnannotatedTypes = UnannotatedTypes.APPENDABLE,
+) {
     private val stream: Int = stream and 0xFF
     private var expectedSeq = 0
     private val received = TreeMap<Int, ByteArray>()
@@ -290,6 +345,9 @@ class ReliableReceiver(stream: Int = REL_STREAM_RELIABLE) {
         return AckNack(expectedSeq, bitmap and 0xFF, (bitmap shr 8) and 0xFF, stream)
     }
 
+    /** [pendingAcknack] as a frame in this receiver's [unannotatedTypes] form. */
+    fun pendingAcknackFrame(hint: Int?): ByteArray = acknackFrame(pendingAcknack(hint), unannotatedTypes)
+
     fun reset() {
         expectedSeq = 0
         received.clear()
@@ -311,6 +369,8 @@ class ReliableReceiver(stream: Int = REL_STREAM_RELIABLE) {
 class AsyncReliableWriter(
     private val peerHost: InetAddress,
     private val peerPort: Int,
+    /** ObjectId of the target DataWriter (§7.7.8 BaseObjectRequest). */
+    private val objectId: Int,
     private val drainDeadlineMs: Long = 20_000L,
 ) : AutoCloseable {
     private val queue = ArrayBlockingQueue<ByteArray>(4096)
@@ -372,7 +432,7 @@ class AsyncReliableWriter(
                     val payload = queue.poll() ?: break
                     val r = sender.submit(payload)
                     if (r.status != SubmitStatus.OK) break // only payload-too-large lands here
-                    send(reliableWriteFrame(r.seq, payload))
+                    send(reliableWriteFrame(r.seq, objectId, payload))
                     deliveredCount.incrementAndGet()
                 }
 
@@ -421,7 +481,7 @@ class AsyncReliableWriter(
         for (i in 0 until 16) {
             if (((bitmap shr i) and 1) == 0) continue // acknowledged / outside in-flight set
             val seq = (base + i) and 0xFFFF
-            sender.getInFlight(seq)?.let { send(reliableWriteFrame(seq, it)) }
+            sender.getInFlight(seq)?.let { send(reliableWriteFrame(seq, objectId, it)) }
         }
     }
 

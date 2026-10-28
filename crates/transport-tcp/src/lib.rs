@@ -28,17 +28,20 @@
 //! - Length-prefix frame (4 bytes BE) — DDSI-RTPS §9.5 conformant.
 //! - 16-byte ZeroDDS handshake with magic + version + vendor id +
 //!   logical port + reason code.
-//! - Cyclone `ddsi_tcp` compat: handshake-skip mode for raw RTPS
-//!   frames.
 //! - `TcpTransport` pool with connection reuse + backoff.
 //!
 //! ## Cross-vendor interop
 //!
-//! - ZeroDDS ↔ ZeroDDS: full (handshake active).
-//! - ZeroDDS ↔ Cyclone: full via handshake-skip mode.
-//! - ZeroDDS ↔ FastDDS/RTI: extension point (vendor-specific
-//!   handshake formats; non-OMG-normative). See the
-//!   ZeroDDS TCP Transport 1.0 spec §6.
+//! - ZeroDDS ↔ ZeroDDS: full (handshake active on both roles).
+//! - ZeroDDS ↔ Cyclone: none. Cyclone `ddsi_tcp` sends raw RTPS
+//!   frames without a handshake, and `accept_one` rejects those with
+//!   `HandshakeError::BadMagic`. A handshake-skip mode is an open item.
+//! - ZeroDDS ↔ FastDDS/RTI: none. Their BindConnection formats
+//!   (FastDDS submessages 0x71/0x72, RTI TLS-oriented) are
+//!   vendor-specific and unimplemented; open items.
+//!
+//! The open items are listed in
+//! `docs/spec-coverage/zerodds-tcp-transport-1.0.open.md`.
 
 #![deny(unsafe_code)]
 #![warn(missing_docs)]

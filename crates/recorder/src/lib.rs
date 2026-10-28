@@ -10,7 +10,7 @@
 //!
 //! Layer 4 — core services. Pure Rust + alloc, without ZeroDDS crate deps.
 //!
-//! ## Public API (as of 1.0.0-rc.1)
+//! ## Public API
 //!
 //! - [`Header`], [`Frame`], [`FrameView`], [`SampleKind`], `ParticipantEntry`, `TopicEntry`.
 //! - [`RecordWriter`] / [`WriteError`] — writes a `.zddsrec` stream.

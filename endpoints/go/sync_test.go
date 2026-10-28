@@ -11,7 +11,7 @@ import (
 func TestSyncLoopback(t *testing.T) {
 	const N = 5
 	tr := &memTransport{}
-	c := NewClient(tr)
+	c := NewClient(tr, XrceObjectID(0x001, uint16(ObjkDataWriter)))
 
 	for i := 0; i < N; i++ {
 		if err := c.Write(sampleBody(0x3000 + uint32(i))); err != nil {
@@ -24,7 +24,7 @@ func TestSyncLoopback(t *testing.T) {
 		if err != nil || !ok {
 			t.Fatalf("receive %d: ok=%v err=%v", i, ok, err)
 		}
-		if id := NewReader(body, Little).GetU32(); id != 0x3000+uint32(i) {
+		if id := NewReader(body, Little, Xcdr2).GetU32(); id != 0x3000+uint32(i) {
 			t.Fatalf("sample %d: id 0x%X out of order", i, id)
 		}
 	}

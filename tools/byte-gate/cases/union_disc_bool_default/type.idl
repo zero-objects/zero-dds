@@ -1,0 +1,2 @@
+@final union UB switch (boolean) { case TRUE: long a; default: short b; };
+@final struct SB { UB u; long tail; };

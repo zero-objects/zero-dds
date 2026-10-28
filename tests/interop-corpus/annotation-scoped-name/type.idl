@@ -1,0 +1,10 @@
+// an annotation named by a scoped name
+module ann {
+    @annotation mark { long value; };
+};
+
+@final struct Sample {
+    @::key long a;
+    @ann::mark(7) short b;
+    long c;
+};

@@ -56,9 +56,13 @@ private:
 // A fire-and-forget writer: frames an XCDR sample as XRCE WRITE_DATA.
 class AsyncWriter {
 public:
+    // `object_id` is the target DataWriter's XRCE ObjectId; it goes into
+    // every frame's BaseObjectRequest (DDS-XRCE 1.0 Sec 7.7.8).
     AsyncWriter(const zdw_transport* transport, unsigned char* txbuf,
-                std::size_t txcap, unsigned char session, unsigned char stream) {
-        zdw_async_writer_init(&w_, transport, txbuf, txcap, session, stream);
+                std::size_t txcap, unsigned char session, unsigned char stream,
+                unsigned int object_id) {
+        zdw_async_writer_init(&w_, transport, txbuf, txcap, session, stream,
+                              object_id);
     }
 
     // Returns true on delivery.

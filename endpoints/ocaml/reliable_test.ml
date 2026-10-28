@@ -217,9 +217,44 @@ let () =
   let ak = acknack_frame { ak_first_unacked = 1; ak_nack = (0, 0); ak_stream = 0x80 } in
   let ak_expect =
     bytes_of_ints
-      [ 0x80; 0x00; 0x01; 0x00; 0x0a; 0x01; 0x05; 0x00; 0x01; 0x00; 0x00; 0x00; 0x80 ]
+      [ 0x80; 0x00; 0x01; 0x00; 0x0a; 0x01; 0x09; 0x00; 0x05; 0x00; 0x00; 0x00;
+        0x01; 0x00; 0x00; 0x00; 0x80 ]
   in
   check (ak = ak_expect) "acknack byte-golden (hardcoded)";
+  check (Bytes.length ak = 17) "acknack frame is 17 octets";
+  check (parse_acknack ak = Some { ak_first_unacked = 1; ak_nack = (0, 0); ak_stream = 0x80 })
+    "acknack DHEADER form parsed";
+  (* legacy FINAL form (body length 5, no DHEADER), as sent by eProsima clients *)
+  let legacy =
+    bytes_of_ints
+      [ 0x80; 0x00; 0x01; 0x00; 0x0a; 0x01; 0x05; 0x00; 0x03; 0x00; 0x01; 0x00; 0x80 ]
+  in
+  check (parse_acknack legacy = Some { ak_first_unacked = 3; ak_nack = (1, 0); ak_stream = 0x80 })
+    "acknack legacy FINAL form parsed";
+  check (parse_acknack (Bytes.sub legacy 0 12) = None) "acknack shorter than 13 rejected";
+  check (parse_acknack (Bytes.sub ak 0 16) = None) "acknack truncated DHEADER form rejected";
+
+  (* unannotated_types: Final writes the 13-octet FINAL golden of the reference implementation *)
+  let final_golden =
+    bytes_of_ints
+      [ 0x80; 0x00; 0x01; 0x00; 0x0a; 0x01; 0x05; 0x00; 0x01; 0x00; 0x00; 0x00; 0x80 ]
+  in
+  let ak_rec = { ak_first_unacked = 1; ak_nack = (0, 0); ak_stream = 0x80 } in
+  check (acknack_frame ~unannotated_types:Final ak_rec = final_golden)
+    "acknack Final equals the 13-octet FINAL golden";
+  check (acknack_frame ~unannotated_types:Appendable ak_rec = ak_expect && Bytes.length ak = 17)
+    "acknack Appendable (default) is the 17-octet form";
+  check (parse_acknack final_golden = Some ak_rec && parse_acknack ak = Some ak_rec)
+    "acknack parser accepts both forms";
+  (let mk u =
+     let r = Receiver.create ?unannotated_types:u () in
+     ignore (Receiver.recv_data r 0 (bytes_of_ints [ 1 ]));
+     ignore (Receiver.drain_in_order r);
+     r
+   in
+   check (Receiver.acknack_frame (mk (Some Final)) (Some 0) = final_golden
+          && Receiver.acknack_frame (mk None) (Some 0) = ak_expect)
+     "receiver acknack follows unannotated_types");
 
   if Array.length Sys.argv >= 3 then begin
     let g_hb = read_file Sys.argv.(1) in

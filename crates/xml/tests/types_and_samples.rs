@@ -18,16 +18,16 @@
 )]
 
 use zerodds_xml::{
-    Extensibility, PrimitiveType, PrimitiveValue, SampleValue, StructMember, StructType, TypeDef,
-    TypeRef, UnionDiscriminator, parse_dds_xml, parse_sample, parse_type_libraries,
-    serialize_sample,
+    Extensibility, PrimitiveType, PrimitiveValue, ReadOptions, SampleValue, StructMember,
+    StructType, TypeDef, TypeRef, UnionDiscriminator, parse_dds_xml, parse_sample,
+    parse_type_libraries, parse_type_libraries_with, serialize_sample,
 };
 
 // ---------- §7.3.3 Types ---------------------------------------------------
 
 #[test]
 fn t01_struct_with_long_member() {
-    let xml = r#"<types><struct name="X"><member name="x" type="long"/></struct></types>"#;
+    let xml = r#"<types><struct name="X"><member name="x" type="int32"/></struct></types>"#;
     let libs = parse_type_libraries(xml).expect("parse");
     let TypeDef::Struct(s) = &libs[0].types[0] else {
         panic!("expected struct");
@@ -43,21 +43,8 @@ fn t01_struct_with_long_member() {
 #[test]
 fn t02_all_15_primitive_types() {
     let names = [
-        "boolean",
-        "octet",
-        "char",
-        "wchar",
-        "short",
-        "ushort",
-        "long",
-        "ulong",
-        "longlong",
-        "ulonglong",
-        "float",
-        "double",
-        "longdouble",
-        "string",
-        "wstring",
+        "boolean", "byte", "char8", "char16", "int16", "uint16", "int32", "uint32", "int64",
+        "uint64", "float32", "float64", "float128", "string", "wstring",
     ];
     let mut body = String::new();
     body.push_str("<types><struct name=\"All\">");
@@ -74,7 +61,7 @@ fn t02_all_15_primitive_types() {
         let TypeRef::Primitive(p) = member.type_ref else {
             panic!("expected primitive for {expected}");
         };
-        assert_eq!(p.as_xml(), *expected);
+        assert_eq!(PrimitiveType::from_xml(expected), Some(p));
     }
 }
 
@@ -82,11 +69,11 @@ fn t02_all_15_primitive_types() {
 fn t03_extensibility_final_appendable_mutable() {
     for (kw, expected) in [
         ("final", Extensibility::Final),
-        ("appendable", Extensibility::Appendable),
+        ("append", Extensibility::Appendable),
         ("mutable", Extensibility::Mutable),
     ] {
         let xml = format!(
-            r#"<types><struct name="S" extensibility="{kw}"><member name="a" type="long"/></struct></types>"#
+            r#"<types><struct name="S" extensibility="{kw}"><member name="a" type="int32"/></struct></types>"#
         );
         let libs = parse_type_libraries(&xml).expect("parse");
         let TypeDef::Struct(s) = &libs[0].types[0] else {
@@ -96,11 +83,28 @@ fn t03_extensibility_final_appendable_mutable() {
     }
 }
 
+/// XTypes 1.3 §7.3.3's `extensibilityKind` enumerates `final`,
+/// `append` and `mutable` and nothing else; the uppercase IDL
+/// keyword spellings are not in the grammar.
+#[test]
+fn t03_extensibility_uppercase_rejected() {
+    for kw in ["FINAL", "APPENDABLE", "MUTABLE"] {
+        let xml = format!(
+            r#"<types><struct name="S" extensibility="{kw}"><member name="a" type="int32"/></struct></types>"#
+        );
+        let err = parse_type_libraries(&xml).expect_err("uppercase extensibility");
+        assert!(
+            matches!(err, zerodds_xml::XmlError::BadEnum(_)),
+            "{kw}: {err:?}"
+        );
+    }
+}
+
 #[test]
 fn t04_struct_inheritance_basetype() {
     let xml = r#"<types>
-        <struct name="Parent"><member name="a" type="long"/></struct>
-        <struct name="Child" baseType="Parent"><member name="b" type="long"/></struct>
+        <struct name="Parent"><member name="a" type="int32"/></struct>
+        <struct name="Child" baseType="Parent"><member name="b" type="int32"/></struct>
     </types>"#;
     let libs = parse_type_libraries(xml).expect("parse");
     let TypeDef::Struct(child) = &libs[0].types[1] else {
@@ -112,7 +116,7 @@ fn t04_struct_inheritance_basetype() {
 #[test]
 fn t05_struct_member_key_true() {
     let xml =
-        r#"<types><struct name="K"><member name="id" type="long" key="true"/></struct></types>"#;
+        r#"<types><struct name="K"><member name="id" type="int32" key="true"/></struct></types>"#;
     let libs = parse_type_libraries(xml).expect("parse");
     let TypeDef::Struct(s) = &libs[0].types[0] else {
         panic!()
@@ -122,7 +126,7 @@ fn t05_struct_member_key_true() {
 
 #[test]
 fn t06_struct_member_optional_true() {
-    let xml = r#"<types><struct name="O"><member name="x" type="long" optional="true"/></struct></types>"#;
+    let xml = r#"<types><struct name="O"><member name="x" type="int32" optional="true"/></struct></types>"#;
     let libs = parse_type_libraries(xml).expect("parse");
     let TypeDef::Struct(s) = &libs[0].types[0] else {
         panic!()
@@ -132,7 +136,7 @@ fn t06_struct_member_optional_true() {
 
 #[test]
 fn t07_struct_member_id_override() {
-    let xml = r#"<types><struct name="I"><member name="x" type="long" id="42"/></struct></types>"#;
+    let xml = r#"<types><struct name="I"><member name="x" type="int32" id="42"/></struct></types>"#;
     let libs = parse_type_libraries(xml).expect("parse");
     let TypeDef::Struct(s) = &libs[0].types[0] else {
         panic!()
@@ -142,7 +146,7 @@ fn t07_struct_member_id_override() {
 
 #[test]
 fn t08_struct_member_array_dimensions_multi() {
-    let xml = r#"<types><struct name="A"><member name="m" type="long" arrayDimensions="3,4"/></struct></types>"#;
+    let xml = r#"<types><struct name="A"><member name="m" type="int32" arrayDimensions="3,4"/></struct></types>"#;
     let libs = parse_type_libraries(xml).expect("parse");
     let TypeDef::Struct(s) = &libs[0].types[0] else {
         panic!()
@@ -193,14 +197,15 @@ fn t11_enum_without_values_implicit_numbering() {
 
 #[test]
 fn t12_union_with_cases() {
-    let xml = r#"<types><union name="V" discriminator="long">
+    let xml = r#"<types><union name="V">
+<discriminator type="int32"/>
         <case>
             <caseDiscriminator value="0"/>
-            <member name="i" type="long"/>
+            <member name="i" type="int32"/>
         </case>
         <case>
             <caseDiscriminator value="1"/>
-            <member name="f" type="float"/>
+            <member name="f" type="float32"/>
         </case>
     </union></types>"#;
     let libs = parse_type_libraries(xml).expect("parse");
@@ -216,7 +221,8 @@ fn t12_union_with_cases() {
 
 #[test]
 fn t13_union_with_default_case() {
-    let xml = r#"<types><union name="V" discriminator="long">
+    let xml = r#"<types><union name="V">
+<discriminator type="int32"/>
         <case>
             <caseDiscriminator value="default"/>
             <member name="s" type="string"/>
@@ -236,15 +242,18 @@ fn t13_union_with_default_case() {
 fn t14_bitmask_and_bitset() {
     let xml = r#"<types>
         <bitmask name="F" bitBound="32">
-            <bit_value name="A" position="0"/>
-            <bit_value name="B" position="1"/>
+            <flag name="A" position="0"/>
+            <flag name="B" position="1"/>
         </bitmask>
         <bitset name="S">
             <bitfield name="ready" type="boolean" mask="0x01"/>
-            <bitfield name="error" type="long" mask="0x06"/>
+            <bitfield name="error" type="int32" mask="0x06"/>
         </bitset>
     </types>"#;
-    let libs = parse_type_libraries(xml).expect("parse");
+    // `<bitset>` is not in the types schema: a vendor form.
+    let libs = parse_type_libraries_with(xml, &ReadOptions::accept_vendor_forms())
+        .expect("parse")
+        .value;
     let TypeDef::Bitmask(bm) = &libs[0].types[0] else {
         panic!()
     };
@@ -260,8 +269,8 @@ fn t14_bitmask_and_bitset() {
 #[test]
 fn t15_typedef_simple_and_array() {
     let xml = r#"<types>
-        <typedef name="Velocity" type="float" arrayDimensions="3"/>
-        <typedef name="UserId" type="long"/>
+        <typedef name="Velocity" type="float32" arrayDimensions="3"/>
+        <typedef name="UserId" type="int32"/>
     </types>"#;
     let libs = parse_type_libraries(xml).expect("parse");
     let TypeDef::Typedef(td0) = &libs[0].types[0] else {
@@ -280,7 +289,7 @@ fn t16_module_three_levels_deep() {
         <module name="A">
             <module name="B">
                 <module name="C">
-                    <struct name="Deep"><member name="x" type="long"/></struct>
+                    <struct name="Deep"><member name="x" type="int32"/></struct>
                 </module>
             </module>
         </module>
@@ -306,7 +315,7 @@ fn t17_dds_xml_resolve_type() {
     let xml = r#"<dds>
         <types>
             <module name="MyModule">
-                <struct name="State"><member name="id" type="long"/></struct>
+                <struct name="State"><member name="id" type="int32"/></struct>
             </module>
         </types>
     </dds>"#;
@@ -323,8 +332,8 @@ fn t17_dds_xml_resolve_type() {
 #[test]
 fn t18_struct_with_inheritance_resolves() {
     let xml = r#"<dds><types>
-        <struct name="P"><member name="a" type="long"/></struct>
-        <struct name="C" baseType="P"><member name="b" type="long"/></struct>
+        <struct name="P"><member name="a" type="int32"/></struct>
+        <struct name="C" baseType="P"><member name="b" type="int32"/></struct>
     </types></dds>"#;
     let dds = parse_dds_xml(xml).expect("parse");
     let TypeDef::Struct(c) = dds.resolve_type("C").expect("c") else {
@@ -415,8 +424,9 @@ fn t21_sample_with_sequence_items() {
 #[test]
 fn t22_sample_with_union_active_branch() {
     let xml = r#"<dds><types>
-        <union name="V" discriminator="long">
-            <case><caseDiscriminator value="0"/><member name="i" type="long"/></case>
+        <union name="V">
+<discriminator type="int32"/>
+            <case><caseDiscriminator value="0"/><member name="i" type="int32"/></case>
             <case><caseDiscriminator value="default"/><member name="s" type="string"/></case>
         </union>
     </types></dds>"#;
@@ -426,12 +436,14 @@ fn t22_sample_with_union_active_branch() {
     let v = parse_sample(sample, &td, &dds.type_libraries).expect("parse");
     let SampleValue::Union {
         discriminator,
+        member,
         value,
     } = v
     else {
         panic!()
     };
     assert_eq!(discriminator, "0");
+    assert_eq!(member, "i");
     assert!(matches!(
         *value,
         SampleValue::Primitive(PrimitiveValue::I32(99))
@@ -441,8 +453,8 @@ fn t22_sample_with_union_active_branch() {
 #[test]
 fn t23_sample_with_nested_struct() {
     let xml = r#"<dds><types>
-        <struct name="Inner"><member name="x" type="long"/></struct>
-        <struct name="Outer"><member name="inner" type="Inner"/></struct>
+        <struct name="Inner"><member name="x" type="int32"/></struct>
+        <struct name="Outer"><member name="inner" type="nonBasic" nonBasicTypeName="Inner"/></struct>
     </types></dds>"#;
     let dds = parse_dds_xml(xml).expect("parse");
     let outer = dds.resolve_type("Outer").expect("Outer").clone();
@@ -514,7 +526,7 @@ fn t25_sample_optional_member_missing_ok() {
 
 #[test]
 fn t26_sample_must_understand_attribute_parses() {
-    let xml = r#"<types><struct name="X"><member name="m" type="long" mustUnderstand="true"/></struct></types>"#;
+    let xml = r#"<types><struct name="X"><member name="m" type="int32" mustUnderstand="true"/></struct></types>"#;
     let libs = parse_type_libraries(xml).expect("parse");
     let TypeDef::Struct(s) = &libs[0].types[0] else {
         panic!()

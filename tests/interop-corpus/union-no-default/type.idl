@@ -1,0 +1,1 @@
+module m { @appendable union U switch(long) { case 1: long a; case 2: double b; }; };

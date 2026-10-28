@@ -37,6 +37,18 @@ use zerodds_coap_bridge::daemon::server;
 use zerodds_coap_bridge::message::{CoapCode, CoapMessage, MessageType};
 use zerodds_coap_bridge::option::{CoapOption, OptionValue, numbers};
 
+/// The daemon child, killed and reaped when the test ends, also when an
+/// assertion fails before the test's own SIGTERM: a bare `Child` is not
+/// killed on drop, and a failed run left the daemon running for hours.
+struct Reaped(std::process::Child);
+
+impl Drop for Reaped {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
 fn make_test_config(bind: &str) -> DaemonConfig {
     let mut cfg = DaemonConfig::default_for_dev();
     cfg.bind = bind.to_string();
@@ -275,5 +287,104 @@ fn dtls_enabled_fails_closed_never_serves_plaintext() {
     assert!(
         msg.contains("dtls") && msg.contains("refusing"),
         "fail-closed error must explain the dtls refusal, got: {msg}"
+    );
+}
+
+/// Spec §9.2 through the binary: `READY=1` to `$NOTIFY_SOCKET` once it
+/// serves, SIGTERM ends the process with exit 0 after `STOPPING=1`.
+/// The binary parked forever and was still running 3 s after SIGTERM.
+#[cfg(unix)]
+#[test]
+fn the_binary_exits_0_on_sigterm() {
+    use std::process::{Command, Stdio};
+    // sd_notify: the packaged units are Type=notify.
+    let dir = std::env::temp_dir().join(format!("zd-notify-e2e-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let sock_path = dir.join("notify.sock");
+    let _ = std::fs::remove_file(&sock_path);
+    let notify = std::os::unix::net::UnixDatagram::bind(&sock_path).unwrap();
+    notify
+        .set_read_timeout(Some(std::time::Duration::from_secs(10)))
+        .unwrap();
+    let next_state = || {
+        let mut buf = [0u8; 64];
+        let n = notify.recv(&mut buf).expect("a notify datagram");
+        String::from_utf8_lossy(&buf[..n]).into_owned()
+    };
+    let mut child = Reaped(
+        Command::new(env!("CARGO_BIN_EXE_zerodds-coap-bridged"))
+            .args(["--set", "coap.bind=127.0.0.1:0", "--set", "domain=99"])
+            .env("NOTIFY_SOCKET", &sock_path)
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("spawn"),
+    );
+    // The signal handler is installed before the daemon says `running`; a
+    // SIGTERM before that ends the process by the default action.
+    use std::io::BufRead;
+    let mut lines = std::io::BufReader::new(child.0.stderr.take().unwrap()).lines();
+    assert!(
+        lines
+            .by_ref()
+            .map_while(Result::ok)
+            .any(|l| l.contains("running")),
+        "the daemon never reported running"
+    );
+    std::thread::spawn(move || lines.for_each(drop));
+    assert_eq!(next_state(), "READY=1");
+    let killed = Command::new("kill")
+        .args(["-TERM", &child.0.id().to_string()])
+        .status()
+        .unwrap();
+    assert!(killed.success());
+    let started = std::time::Instant::now();
+    let status = loop {
+        if let Some(st) = child.0.try_wait().unwrap() {
+            break st;
+        }
+        if started.elapsed() > std::time::Duration::from_secs(5) {
+            panic!("still running 5 s after SIGTERM");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    };
+    assert_eq!(status.code(), Some(0));
+    assert_eq!(next_state(), "STOPPING=1");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Spec §9.2 / RFC 7641 §4.2: at shutdown every observer gets a
+/// notification with a non-2.xx code (5.03, no Observe option) with its
+/// token, which ends the observation on the client. Before, the registry
+/// was dropped and the client kept waiting.
+#[test]
+fn the_shutdown_ends_every_observation_with_5_03() {
+    let cfg = make_test_config("127.0.0.1:0");
+    let mut handle = server::start(cfg).expect("daemon start");
+    let server_addr = handle.local_addr.clone();
+    let client = client_socket();
+    let mut req = CoapMessage::new(MessageType::Confirmable, CoapCode::GET, 0x7001);
+    req.token = b"obs-end".to_vec();
+    req.options.push(CoapOption::observe(0));
+    req.options.push(CoapOption::uri_path("trade"));
+    client
+        .send_to(&encode(&req).expect("encode"), &server_addr)
+        .expect("send");
+    assert_eq!(recv_msg(&client).code, CoapCode::CONTENT);
+
+    handle.shutdown();
+    // Notifications of samples other tests write to `Trade` on the same
+    // domain may come first.
+    let end = loop {
+        let m = recv_msg(&client);
+        if m.code != CoapCode::CONTENT {
+            break m;
+        }
+    };
+    assert_eq!(end.code, CoapCode::new(5, 3));
+    assert_eq!(end.token, b"obs-end".to_vec());
+    assert!(
+        !end.options.iter().any(|o| o.number == numbers::OBSERVE),
+        "no Observe option: the observation ends"
     );
 }

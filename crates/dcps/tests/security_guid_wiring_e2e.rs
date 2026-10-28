@@ -45,9 +45,8 @@
     clippy::print_stdout
 )]
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
-use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use zerodds_dcps::runtime::RuntimeConfig;
@@ -56,42 +55,10 @@ use zerodds_rtps::wire_types::{EntityId, Guid, GuidPrefix, VendorId};
 use zerodds_security_pki::{adjust_participant_guid_prefix, first_cert_der};
 use zerodds_security_runtime::{SecurityBundle, SecurityProfile, SecurityProfileConfig};
 
-// Keep openssl calls serial — avoids a race on the shared `.srl` counter
-// file and sub-process startup storms (mirrors
-// `zerodds-c-api/tests/security_ffi_e2e.rs`).
-static OPENSSL_LOCK: Mutex<()> = Mutex::new(());
+#[path = "common/pki.rs"]
+mod pki;
 
-fn openssl_available() -> bool {
-    Command::new("openssl")
-        .arg("version")
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
-}
-
-fn must_run(label: &str, mut cmd: Command) {
-    let out = cmd
-        .output()
-        .unwrap_or_else(|e| panic!("openssl {label}: spawn failed: {e}"));
-    if !out.status.success() {
-        panic!(
-            "openssl {label}: exit={:?}\nstdout: {}\nstderr: {}",
-            out.status,
-            String::from_utf8_lossy(&out.stdout),
-            String::from_utf8_lossy(&out.stderr),
-        );
-    }
-}
-
-fn tempdir_unique(prefix: &str) -> PathBuf {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    let p = std::env::temp_dir().join(format!("{prefix}{now}_{}", std::process::id()));
-    std::fs::create_dir_all(&p).unwrap();
-    p
-}
+use pki::{must_run, openssl_available, tempdir_unique};
 
 /// Generates a test CA + two leaf identities (`alice`, `bob`) plus a
 /// CA-self-signed CMS governance.p7s/permissions.p7s (Cyclone/FastDDS/OMG
@@ -102,75 +69,17 @@ fn tempdir_unique(prefix: &str) -> PathBuf {
 /// wiring + discovery, not the crypto-transform path (that is covered
 /// elsewhere).
 fn gen_fixtures(dir: &Path) {
-    let _g = OPENSSL_LOCK.lock().unwrap();
+    let _g = pki::OPENSSL_LOCK.lock().unwrap();
+    pki::mint_ca_and_leaves(
+        dir,
+        "/CN=ZeroDDS Test GUID-Wiring CA",
+        "/CN=zerodds-guid-{name}",
+        &["alice", "bob"],
+    );
+    // The CMS steps below sign with the same CA, by path.
     let certs = dir.join("certs");
-    std::fs::create_dir_all(&certs).unwrap();
-
-    let ca_key = certs.join("identity_ca_key.pem");
     let ca_cert = certs.join("identity_ca.pem");
-    let mut c = Command::new("openssl");
-    c.args([
-        "ecparam",
-        "-name",
-        "prime256v1",
-        "-genkey",
-        "-noout",
-        "-out",
-    ])
-    .arg(&ca_key);
-    must_run("ecparam ca-key", c);
-
-    let mut c = Command::new("openssl");
-    c.args(["req", "-x509", "-new", "-nodes", "-key"])
-        .arg(&ca_key)
-        .args([
-            "-days",
-            "30",
-            "-subj",
-            "/CN=ZeroDDS Test GUID-Wiring CA",
-            "-out",
-        ])
-        .arg(&ca_cert);
-    must_run("ca self-sign", c);
-
-    let mint = |name: &str| -> (PathBuf, PathBuf) {
-        let key = certs.join(format!("{name}_key.pem"));
-        let csr = certs.join(format!("{name}.csr"));
-        let cert = certs.join(format!("{name}_cert.pem"));
-
-        let mut c = Command::new("openssl");
-        c.args([
-            "genpkey",
-            "-algorithm",
-            "EC",
-            "-pkeyopt",
-            "ec_paramgen_curve:P-256",
-            "-out",
-        ])
-        .arg(&key);
-        must_run("genpkey leaf-key", c);
-
-        let mut c = Command::new("openssl");
-        c.args(["req", "-new", "-key"])
-            .arg(&key)
-            .args(["-subj", &format!("/CN=zerodds-guid-{name}"), "-out"])
-            .arg(&csr);
-        must_run("leaf csr", c);
-
-        let mut c = Command::new("openssl");
-        c.args(["x509", "-req", "-in"])
-            .arg(&csr)
-            .args(["-CA"])
-            .arg(&ca_cert)
-            .args(["-CAkey"])
-            .arg(&ca_key)
-            .args(["-CAcreateserial", "-days", "30", "-out"])
-            .arg(&cert);
-        must_run("leaf ca-sign", c);
-        (cert, key)
-    };
-    mint("alice");
-    mint("bob");
+    let ca_key = certs.join("identity_ca_key.pem");
 
     // Governance: domain 0, wide open (no protection kinds, no access
     // control) — SPDP/SEDP discovery bootstraps in plaintext (same
@@ -181,7 +90,7 @@ fn gen_fixtures(dir: &Path) {
 <dds xmlns="http://www.omg.org/spec/DDS-SECURITY/20170801/omg_shared_ca_governance">
   <domain_access_rules>
     <domain_rule>
-      <domains><id>0</id></domains>
+      <domains><id>0</id></domains><allow_unauthenticated_participants>false</allow_unauthenticated_participants><enable_join_access_control>false</enable_join_access_control>
       <topic_access_rules>
         <topic_rule>
           <topic_expression>*</topic_expression>
@@ -256,12 +165,25 @@ fn profile_cfg(dir: &Path, name: &str) -> SecurityProfileConfig {
     let certs = dir.join("certs");
     SecurityProfileConfig {
         domain_id: 0,
-        identity_ca_pem: certs.join("identity_ca.pem"),
-        identity_cert_pem: certs.join(format!("{name}_cert.pem")),
-        identity_key_pem: certs.join(format!("{name}_key.pem")),
-        permissions_ca_pem: certs.join("identity_ca.pem"),
-        governance_p7s: dir.join("governance.p7s"),
-        permissions_p7s: dir.join("permissions.p7s"),
+        identity_ca_pem: certs.join("identity_ca.pem").into(),
+        identity_cert_pem: certs.join(format!("{name}_cert.pem")).into(),
+        identity_key_pem: certs.join(format!("{name}_key.pem")).into(),
+        permissions_ca_pem: certs.join("identity_ca.pem").into(),
+        governance_p7s: dir.join("governance.p7s").into(),
+        permissions_p7s: dir.join("permissions.p7s").into(),
+        identity_key_password: None,
+        identity_key_password_reading: Default::default(),
+        symmetric_cipher_bits: 256,
+        max_blocks_per_session: None,
+        partition_matching: zerodds_security_permissions::PartitionMatching::Subset,
+        plaintext_loopback: false,
+        compatibility_checks: true,
+        kx_key_fallback: false,
+        algo_name_nul: Default::default(),
+        algorithm_names: Default::default(),
+        subject_name_form: Default::default(),
+        origin_authentication_fallback: false,
+        identity_crl: None,
     }
 }
 
@@ -300,7 +222,7 @@ fn with_security_bundle_wires_the_identity_adjusted_prefix_not_random() {
     let cfg = profile_cfg(&tmp, "alice");
     let candidate = candidate_guid(0x11);
 
-    let expected = expected_adjusted_prefix(&cfg.identity_cert_pem, &candidate);
+    let expected = expected_adjusted_prefix(cfg.identity_cert_pem.path().unwrap(), &candidate);
     // Sanity: the adjustment must actually change the prefix (high bit of
     // byte 0 is always set per §9.3.3 — the raw candidate here does not
     // have it), otherwise this test would not distinguish "wired
@@ -342,7 +264,7 @@ fn with_security_bundle_wires_the_identity_adjusted_prefix_not_random() {
 /// 2. the two participants actually find each other via SPDP and
 ///    complete the PKI auth handshake over real UDP — proving the wiring
 ///    holds under live secured discovery, not just in a config struct.
-#[serial_test::serial(security_live)]
+#[serial_test::file_serial(security_live)]
 #[test]
 fn secured_participants_on_public_rust_api_use_identity_adjusted_guids_and_discover() {
     if !openssl_available() {
@@ -356,8 +278,8 @@ fn secured_participants_on_public_rust_api_use_identity_adjusted_guids_and_disco
     let cfg_b = profile_cfg(&tmp, "bob");
     let cand_a = candidate_guid(0x2a);
     let cand_b = candidate_guid(0x4b);
-    let expected_a = expected_adjusted_prefix(&cfg_a.identity_cert_pem, &cand_a);
-    let expected_b = expected_adjusted_prefix(&cfg_b.identity_cert_pem, &cand_b);
+    let expected_a = expected_adjusted_prefix(cfg_a.identity_cert_pem.path().unwrap(), &cand_a);
+    let expected_b = expected_adjusted_prefix(cfg_b.identity_cert_pem.path().unwrap(), &cand_b);
     assert_ne!(
         expected_a, expected_b,
         "distinct identities → distinct prefixes"
@@ -380,11 +302,12 @@ fn secured_participants_on_public_rust_api_use_identity_adjusted_guids_and_disco
 
     // The PUBLIC API: DomainParticipantFactory, not DcpsRuntime::start.
     let factory = DomainParticipantFactory::instance();
+    let domain = common::unique_domain();
     let participant_a = factory
-        .create_participant_with_config(0, DomainParticipantQos::default(), rt_cfg_a)
+        .create_participant_with_config(domain, DomainParticipantQos::default(), rt_cfg_a)
         .expect("alice participant create");
     let participant_b = factory
-        .create_participant_with_config(0, DomainParticipantQos::default(), rt_cfg_b)
+        .create_participant_with_config(domain, DomainParticipantQos::default(), rt_cfg_b)
         .expect("bob participant create");
 
     // (1) on-wire GUID == §9.3.3-derived value, on the public API path.
@@ -451,3 +374,8 @@ fn secured_participants_on_public_rust_api_use_identity_adjusted_guids_and_disco
         rt_b.discovered_participants().len(),
     );
 }
+
+/// Leases a DDS domain no other process on this host holds — the
+/// domain number is the UDP port number, so it is a host-wide resource.
+#[path = "common/mod.rs"]
+mod common;

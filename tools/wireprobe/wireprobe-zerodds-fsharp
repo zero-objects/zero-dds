@@ -1,0 +1,192 @@
+#!/bin/bash
+# wireprobe-zerodds-fsharp — one IDL type and one JSON value, through the
+# ZeroDDS F# binding built by the shared codec walk.
+#
+# The same command line as `wireprobe-zerodds`, so a case runs through
+# both by substituting the program name. See
+# `docs/specs/zerodds-interop-suite-1.0.md` §3a.
+#
+#   wireprobe-zerodds-fsharp --idl robot.idl --type common::Robot \
+#                            --values robot.json --encoding xcdr2 \
+#                            --endian le --out robot.zerodds-fsharp.xcdr2.le.bin
+#
+#   wireprobe-zerodds-fsharp --idl robot.idl --type common::Robot \
+#                            --in robot.cyclone.xcdr2.le.bin \
+#                            --encoding xcdr2 --endian le \
+#                            --values-out robot.read.json
+#
+# ## What is shared with the Rust probe and what is not
+#
+# Shared: the frontend, the common AST and the layout plan. Which members
+# are written, in what order, with which header and which length code is
+# `zerodds-ast-layout`'s answer, and a second answer would be a second
+# place for the wire format to live.
+#
+# Not shared: the serialiser. The generated program runs under `dotnet
+# fsi` against `runtime/fsharp/ZdWire.fs`, which implements
+# DDS-XTypes 1.3 §7.4 a further time in F#. Nothing here reaches the Rust
+# runtime through FFI: a probe that did would be byte-identical by
+# construction and would prove nothing about whether the two read the
+# specification the same way.
+#
+# ## Why `dotnet fsi` and not a compiled binary
+#
+# `csc`/`fsc` invoked directly need an explicit set of reference
+# assemblies resolved off the installed SDK, which is what
+# `wireprobe-zerodds-csharp` spends most of its own preamble computing.
+# `dotnet fsi` resolves them itself and JITs the script in about a
+# second, which is fast enough for this probe's per-case cost and needs
+# none of that machinery. A corpus sweep that needed the last few hundred
+# milliseconds back can add the `fsc.dll` path later without changing
+# what this script accepts or answers.
+#
+# ## The exit codes
+#
+# `docs/specs/zerodds-verdicts-1.0.md`, and structural rather than read
+# out of a message:
+#
+#   0  it carried the case
+#   1  refused — it was asked and said no, in the probe's own words
+#   2  the command line
+#   3  no-form — F# has no form for the construct, which is
+#      `adapter/fsharp.rs`'s answer and nobody else's
+#   6  harness-gap — a tool of ours has not written it: the generator did
+#      not build, the shared walk has no writer or reader for a
+#      construct, or the probe did not run
+#   7  generator-defect — the generator accepted the case and the F# it
+#      produced does not compile
+#   9  toolchain-absent — no `dotnet` on this host; not a measurement
+set -euo pipefail
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+root="$(cd "$here/../.." && pwd)"
+runtime="${ZERODDS_FSHARP_RUNTIME:-$root/runtime/fsharp}"
+DOTNET="${DOTNET:-dotnet}"
+
+if ! command -v "$DOTNET" >/dev/null 2>&1; then
+    echo "wireprobe-zerodds-fsharp: no \`$DOTNET\` on PATH; the F# column is unmeasured here" >&2
+    exit 9
+fi
+if ! "$DOTNET" fsi --help >/dev/null 2>&1; then
+    echo "wireprobe-zerodds-fsharp: \`$DOTNET fsi\` did not run; a runtime-only install has \
+no F# Interactive" >&2
+    exit 9
+fi
+
+gen="${WIREPROBE_FSHARP_GEN:-}"
+if [ -z "$gen" ]; then
+    gen="${CARGO_TARGET_DIR:-$root/target}/debug/wireprobe-zerodds-fsharp-gen"
+    # Built when it is missing *or stale*: a generator older than the
+    # sources it came from measures the previous build.
+    . "$here/generator.sh"
+    probe_generator zerodds-wireprobe-fsharp-gen "$gen" "$root" || exit 6
+fi
+
+out=""
+values_out=""
+argv=()
+idl=""
+reading=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --out) out="$2"; shift 2 ;;
+        --values-out) values_out="$2"; argv+=("$1" "$2"); shift 2 ;;
+        --in) reading=1; argv+=("$1" "$2"); shift 2 ;;
+        --idl|--type|--values|--encoding|--endian|--emit|--dialect)
+            if [ "$1" = --idl ]; then idl="$2"; fi
+            argv+=("$1" "$2"); shift 2 ;;
+        --help|-h) sed -n '2,58p' "${BASH_SOURCE[0]}"; exit 0 ;;
+        *) echo "wireprobe-zerodds-fsharp: \`$1\` is not an option" >&2; exit 2 ;;
+    esac
+done
+
+. "$here/diagnostics.sh"
+. "$here/probe-cache.sh"
+
+work="$(mktemp -d)"
+trap 'probe_keep_generated "$work" "zerodds-fsharp" "$idl" Main.fsx Types.fs; rm -rf "$work"' EXIT
+
+# The generator's own code passes straight through: 3 is "F# has no form
+# for it" and 6 is "a tool of ours stopped", and folding the two into
+# one here would lose the distinction the ledger turns on.
+code=0
+"$gen" "${argv[@]}" --out-dir "$work" || code=$?
+[ "$code" = 0 ] || exit "$code"
+
+# `Types.fs` is `#load`ed by `Main.fsx`, so both travel together; the
+# runtime is copied beside them rather than referenced by an absolute
+# path, exactly as the Zig driver copies `zdwire.zig` next to `main.zig`.
+cp "$runtime/ZdWire.fs" "$work/ZdWire.fs"
+
+dotnet_version="$("$DOTNET" --version)"
+cache_key="$(probe_cache_key zerodds-fsharp "$dotnet_version" -- \
+    "$work/Main.fsx" "$work/Types.fs" "$work/ZdWire.fs")"
+cache_dir="$(probe_cache_dir "$cache_key")"
+# Only the write direction is answerable from the cache. What a read
+# produces is a file at `--values-out` and not octets this script holds,
+# so a hit would return 0 with nothing written where the caller looks —
+# the silent-drop shape.
+if [ -n "$cache_dir" ] && [ "$reading" != 1 ] && [ -f "$cache_dir/bytes.bin" ]; then
+    cp "$cache_dir/bytes.bin" "$work/bytes.bin"
+    code=0
+else
+    # `dotnet fsi` compiles and runs in one step: a compiler diagnostic
+    # is the line `<file>(<line>,<col>): error FS<NNNN>: ...`, which is
+    # how a generator defect (exit 7) is told apart from the probe's own
+    # deliberate exit — a stack trace from an uncaught exception carries
+    # no such line and is a gap of ours (exit 6), not F#'s refusal.
+    #
+    # The octets go to standard output, as they do in every sibling
+    # script column, so the redirection here is the one that names
+    # `bytes.bin`. The script is named by its full path rather than
+    # entered with `cd`: `#load` resolves against the script's own
+    # directory and not the working directory, and a `cd` would move a
+    # relative `--in` or `--values-out` out from under the caller.
+    code=0
+    "$DOTNET" fsi --nologo --exec "$work/Main.fsx" \
+        > "$work/bytes.bin" 2> "$work/fsi.log" || code=$?
+    if grep -qE '\): error FS[0-9]+:' "$work/fsi.log" 2>/dev/null; then
+        echo "wireprobe-zerodds-fsharp: the generated F# does not compile" >&2
+        head -20 "$work/fsi.log" >&2 || true
+        probe_diagnostics_after "zerodds-fsharp" "$work" "$idl" 7
+        exit 7
+    fi
+    if [ "$code" != 0 ] && [ "$code" != 1 ] && [ "$code" != 3 ]; then
+        head -5 "$work/fsi.log" >&2 || true
+        echo "wireprobe-zerodds-fsharp: the probe did not run" >&2
+        probe_diagnostics_after "zerodds-fsharp" "$work" "$idl" 6
+        exit 6
+    fi
+    if [ "$code" = 1 ]; then
+        head -5 "$work/fsi.log" >&2 || true
+        probe_diagnostics_after "zerodds-fsharp" "$work" "$idl" 1
+        exit 1
+    fi
+    if [ "$code" = 3 ]; then
+        head -5 "$work/fsi.log" >&2 || true
+        probe_diagnostics_after "zerodds-fsharp" "$work" "$idl" 3
+        exit 3
+    fi
+    probe_diagnostics_after "zerodds-fsharp" "$work" "$idl" 0
+    if [ -n "$cache_dir" ] && [ "$reading" != 1 ] && [ -f "$work/bytes.bin" ]; then
+        publish="$(mktemp -d)"
+        cp "$work/bytes.bin" "$publish/bytes.bin"
+        probe_cache_publish "$publish" "$cache_dir"
+    fi
+fi
+
+# The read direction writes its JSON where `--values-out` said and
+# writes no octets, so there are none to hand back.
+if [ "$reading" = 1 ]; then
+    [ -n "$values_out" ] || {
+        echo "wireprobe-zerodds-fsharp: --in without --values-out" >&2
+        exit 2
+    }
+    exit 0
+fi
+
+if [ -n "$out" ]; then
+    cp "$work/bytes.bin" "$out"
+else
+    od -An -tx1 -v "$work/bytes.bin" | tr -d ' \n'; echo
+fi

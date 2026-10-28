@@ -1,179 +1,193 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 //
-// dds/domain/DomainParticipant.hpp — DDS-PSM-Cxx 1.0 §7.5.11.
+// dds/domain/DomainParticipant.hpp — DDS-PSM-Cxx 1.0 §7.7.
 
 #ifndef ZERODDS_DDS_DOMAIN_DOMAINPARTICIPANT_HPP
 #define ZERODDS_DDS_DOMAIN_DOMAINPARTICIPANT_HPP
 
-#include <cstdint>
+
+#include "zerodds/psm/cxx.hpp"
+#include <stdint.h>
+
+#include "zerodds/psm/check_status.hpp"
+#include <stdint.h>
+#include <algorithm>
+#include <utility>
 #include <vector>
 
+#include "dds/core/Reference.hpp"
 #include "dds/core/Exception.hpp"
 #include "dds/core/InstanceHandle.hpp"
-#include "dds/core/qos.hpp"
 #include "dds/core/qos_bridge.hpp"
-#include "dds/topic/Topic.hpp"
+#include "dds/core/status/Status.hpp"
+#include "dds/core/TEntity.hpp"
+#include "dds/domain/detail/DomainParticipantDelegate.hpp"
+#include "dds/domain/DomainParticipantListener.hpp"
+#include "dds/domain/TDomainParticipant.hpp"
+#include "dds/topic/BuiltinTopic.hpp"
+#include "dds/topic/AnyTopic.hpp"
+#include "dds/topic/TTopicDescription.hpp"
 #include "zerodds.h"
 
 namespace dds {
+namespace sub {
+class Subscriber;
+} // namespace sub
+
 namespace domain {
+namespace detail {
+struct ParticipantAccess;
 
-/// DomainParticipant (Spec §7.5.11.5).
-class DomainParticipant {
+/// The participants this process created and the application still holds.
+/// `dds::domain::find` (DDS-PSM-Cxx 1.0 §7.7) looks one up by domain id;
+/// the registry holds no strong reference, so it does not keep one alive.
+class ParticipantRegistry {
+    typedef std::pair<uint32_t, ::zerodds::cxx::weak_ptr<DomainParticipantDelegate> > Entry;
+    typedef std::vector<Entry> Entries;
+
+    /// Matches the entries whose participant is gone.
+    struct IsExpired {
+        bool operator()(const Entry& e) const { return e.second.expired(); }
+    };
+
 public:
-    /// Constructs a participant for the given domain id with default QoS.
-    explicit DomainParticipant(uint32_t domain_id) {
-        const zerodds_ZeroDdsDomainParticipantFactory* f = zerodds_dpf_get_instance();
-        handle_ = zerodds_dpf_create_participant(f, domain_id, nullptr);
-        if (handle_ == nullptr) {
-            throw ::dds::core::Error("DomainParticipant::create failed");
+    static void add(uint32_t domain_id, const ::zerodds::cxx::shared_ptr<DomainParticipantDelegate>& d) {
+        ::zerodds::cxx::lock_guard< ::zerodds::cxx::mutex> lock(mutex());
+        Entries& list = entries();
+        list.erase(std::remove_if(list.begin(), list.end(), IsExpired()), list.end());
+        list.push_back(Entry(domain_id, ::zerodds::cxx::weak_ptr<DomainParticipantDelegate>(d)));
+    }
+    /// A live participant of `domain_id`, or an empty pointer.
+    static ::zerodds::cxx::shared_ptr<DomainParticipantDelegate> find(uint32_t domain_id) {
+        ::zerodds::cxx::lock_guard< ::zerodds::cxx::mutex> lock(mutex());
+        const Entries& list = entries();
+        for (Entries::const_iterator it = list.begin(); it != list.end(); ++it) {
+            if (it->first == domain_id) {
+                ::zerodds::cxx::shared_ptr<DomainParticipantDelegate> d = it->second.lock();
+                if (d) {
+                    return d;
+                }
+            }
         }
-    }
-    /// Constructs with explicit QoS. UserData bytes lifetime: the caller
-    /// must keep `qos.user_data().value()` alive during the
-    /// `create_participant` call — the C FFI copies the bytes into the
-    /// Rust heap.
-    DomainParticipant(uint32_t domain_id, const ::dds::core::DomainParticipantQos& qos) {
-        const zerodds_ZeroDdsDomainParticipantFactory* f = zerodds_dpf_get_instance();
-        auto native = ::dds::core::detail::to_native(qos);
-        handle_ = zerodds_dpf_create_participant(f, domain_id, &native);
-        if (handle_ == nullptr) {
-            throw ::dds::core::Error("DomainParticipant::create with QoS failed");
-        }
+        return ::zerodds::cxx::shared_ptr<DomainParticipantDelegate>();
     }
 
-    DomainParticipant(const DomainParticipant&) = delete;
-    DomainParticipant& operator=(const DomainParticipant&) = delete;
-    DomainParticipant(DomainParticipant&& o) noexcept : handle_(o.handle_) {
-        o.handle_ = nullptr;
-    }
-    DomainParticipant& operator=(DomainParticipant&& o) noexcept {
-        if (this != &o) {
-            close();
-            handle_ = o.handle_;
-            o.handle_ = nullptr;
-        }
-        return *this;
-    }
-    ~DomainParticipant() { close(); }
-
-    /// Domain id.
-    uint32_t domain_id() const {
-        return zerodds_dp_get_domain_id(handle_);
-    }
-
-    /// Assert liveliness for all MANUAL_BY_PARTICIPANT writers.
-    void assert_liveliness() {
-        int rc = zerodds_dp_assert_liveliness(handle_);
-        ::dds::core::check_status(rc, "DomainParticipant::assert_liveliness");
-    }
-
-    /// `contains_entity` (Spec §7.5.11.5.x).
-    bool contains_entity(const ::dds::core::InstanceHandle& h) const {
-        return zerodds_dp_contains_entity(handle_, h.value()) != 0;
-    }
-
-    /// `ignore_participant`.
-    void ignore_participant(const ::dds::core::InstanceHandle& h) {
-        int rc = zerodds_dp_ignore_participant(handle_, h.value());
-        ::dds::core::check_status(rc, "DomainParticipant::ignore_participant");
-    }
-    /// `ignore_topic`.
-    void ignore_topic(const ::dds::core::InstanceHandle& h) {
-        int rc = zerodds_dp_ignore_topic(handle_, h.value());
-        ::dds::core::check_status(rc, "DomainParticipant::ignore_topic");
-    }
-    /// `ignore_publication`.
-    void ignore_publication(const ::dds::core::InstanceHandle& h) {
-        int rc = zerodds_dp_ignore_publication(handle_, h.value());
-        ::dds::core::check_status(rc, "DomainParticipant::ignore_publication");
-    }
-    /// `ignore_subscription`.
-    void ignore_subscription(const ::dds::core::InstanceHandle& h) {
-        int rc = zerodds_dp_ignore_subscription(handle_, h.value());
-        ::dds::core::check_status(rc, "DomainParticipant::ignore_subscription");
-    }
-
-    /// `delete_contained_entities`.
-    void delete_contained_entities() {
-        int rc = zerodds_dp_delete_contained_entities(handle_);
-        ::dds::core::check_status(rc, "DomainParticipant::delete_contained_entities");
-    }
-
-    /// `get_discovered_participants` (Spec §7.5.11.5.x).
-    ::dds::core::InstanceHandleSeq get_discovered_participants() const {
-        std::vector<uint64_t> raw(64, 0);
-        size_t count = 0;
-        int rc = zerodds_dp_get_discovered_participants(handle_, raw.data(), &count, raw.size());
-        ::dds::core::check_status(rc, "DomainParticipant::get_discovered_participants");
-        ::dds::core::InstanceHandleSeq out;
-        out.reserve(count);
-        for (size_t i = 0; i < count; ++i) {
-            out.emplace_back(raw[i]);
+    /// Every participant of the process that is still alive.
+    static std::vector< ::zerodds::cxx::shared_ptr<DomainParticipantDelegate> > all() {
+        ::zerodds::cxx::lock_guard< ::zerodds::cxx::mutex> lock(mutex());
+        std::vector< ::zerodds::cxx::shared_ptr<DomainParticipantDelegate> > out;
+        const Entries& list = entries();
+        for (Entries::const_iterator it = list.begin(); it != list.end(); ++it) {
+            ::zerodds::cxx::shared_ptr<DomainParticipantDelegate> d = it->second.lock();
+            if (d) {
+                out.push_back(d);
+            }
         }
         return out;
     }
 
-    /// Native handle (for Topic/Pub/Sub construction).
-    zerodds_ZeroDdsDomainParticipant* native_handle() const { return handle_; }
-
 private:
-    void close() {
-        if (handle_ != nullptr) {
-            const zerodds_ZeroDdsDomainParticipantFactory* f = zerodds_dpf_get_instance();
-            zerodds_dp_delete_contained_entities(handle_);
-            zerodds_dpf_delete_participant(f, handle_);
-            handle_ = nullptr;
-        }
+    static ::zerodds::cxx::mutex& mutex() {
+        static ::zerodds::cxx::mutex m;
+        return m;
     }
-    zerodds_ZeroDdsDomainParticipant* handle_{nullptr};
+    static Entries& entries() {
+        static Entries v;
+        return v;
+    }
+};
+}
+
+/// DomainParticipant (Spec §7.7). Reference type with delegate pattern
+/// (DDS-PSM-Cxx 1.0 §7.5.1.1, §7.5.1.2): `TDomainParticipant` over ZeroDDS's delegate.
+class DomainParticipant : public TDomainParticipant<detail::DomainParticipantDelegate> {
+    friend struct detail::ParticipantAccess;
+
+public:
+    typedef TDomainParticipant<detail::DomainParticipantDelegate> BASE_T;
+    typedef detail::DomainParticipantDelegate DELEGATE_T;
+
+    /// A null participant.
+protected:
+    DomainParticipant() ZERODDS_NOEXCEPT {}
+public:
+
+    /// A participant over a reference to its delegate (`WeakReference<DomainParticipant>::lock()`).
+    explicit DomainParticipant(const BASE_T::DELEGATE_REF_T& ref) : BASE_T(ref) {}
+
+    /// A participant in domain `domain_id` with the default QoS.
+    explicit DomainParticipant(uint32_t domain_id) : BASE_T(domain_id) {
+        detail::ParticipantRegistry::add(domain_id, this->impl_);
+    }
+
+    /// With QoS, and optionally a listener.
+    DomainParticipant(uint32_t domain_id, const ::dds::domain::qos::DomainParticipantQos& qos,
+                      ::dds::domain::DomainParticipantListener* listener = 0,
+                      const ::dds::core::status::StatusMask& mask =
+                          ::dds::core::status::StatusMask::all())
+        : BASE_T(domain_id, qos, listener, mask) {
+        detail::ParticipantRegistry::add(domain_id, this->impl_);
+    }
+
+    /// The null DomainParticipant (`dds::core::null`, DDS-PSM-Cxx 1.0 §7.5.1.2).
+    DomainParticipant(const ::dds::core::null_type&) ZERODDS_NOEXCEPT : BASE_T(DELEGATE_REF_T()) {}
+
+#if ZERODDS_CXX11
+    DomainParticipant(const DomainParticipant&) = default;
+    DomainParticipant& operator=(const DomainParticipant&) = default;
+    DomainParticipant(DomainParticipant&&) = default;
+    DomainParticipant& operator=(DomainParticipant&&) = default;
+    ~DomainParticipant() = default;
+#endif
 };
 
-/// DomainParticipantFactory (Spec §7.5.11.4). Singleton.
-class DomainParticipantFactory {
-public:
-    /// Creates a participant.
-    static DomainParticipant create_participant(uint32_t domain_id) {
-        return DomainParticipant(domain_id);
+namespace detail {
+struct ParticipantAccess {
+    static DomainParticipant share(::zerodds::cxx::shared_ptr<DomainParticipantDelegate> d) {
+        DomainParticipant dp;
+        dp.impl_ = ZERODDS_MOVE(d);
+        return dp;
     }
-    /// Creates a participant with QoS.
-    static DomainParticipant create_participant(uint32_t domain_id,
-                                                const ::dds::core::DomainParticipantQos& qos) {
-        return DomainParticipant(domain_id, qos);
+    static DomainParticipant make(::zerodds::cxx::shared_ptr<zerodds_ZeroDdsDomainParticipant> p) {
+        DomainParticipant dp;
+        dp.impl_ = ::zerodds::cxx::make_shared<DomainParticipantDelegate>(ZERODDS_MOVE(p));
+        return dp;
     }
 };
+/// The DomainParticipant that shares `p`.
+inline DomainParticipant make_participant(::zerodds::cxx::shared_ptr<zerodds_ZeroDdsDomainParticipant> p) {
+    return ParticipantAccess::make(ZERODDS_MOVE(p));
+}
+} // namespace detail
+
+/// The participant this process holds for `domain_id`
+/// (DDS-PSM-Cxx 1.0 `dds::domain::find`); a null participant when none.
+inline DomainParticipant find(uint32_t domain_id) {
+    return detail::ParticipantAccess::share(detail::ParticipantRegistry::find(domain_id));
+}
 
 } // namespace domain
 } // namespace dds
 
-// Topic constructor implementations (forward-declared in Topic.hpp).
+// Out-of-line definition of TopicDescription::domain_participant (needs the
+// complete DomainParticipant).
 namespace dds {
 namespace topic {
-
-template <typename T>
-Topic<T>::Topic(::dds::domain::DomainParticipant& dp, const std::string& name)
-    : TopicDescription(zerodds_dp_create_topic(dp.native_handle(), name.c_str(),
-                                               type_support::type_name(), nullptr)),
-      participant_(dp.native_handle()) {
-    if (handle_ == nullptr) {
-        throw ::dds::core::Error("Topic::create failed");
+template <typename T, typename DELEGATE>
+inline ::dds::domain::DomainParticipant detail::TTopicDescription<T, DELEGATE>::domain_participant() const {
+    if (!this->impl_) {
+        throw ::dds::core::NullReferenceError("TopicDescription::domain_participant: null topic");
     }
+    return ::dds::domain::detail::make_participant(this->delegate()->participant());
 }
-
-template <typename T>
-Topic<T>::Topic(::dds::domain::DomainParticipant& dp, const std::string& name,
-                const ::dds::core::TopicQos& qos)
-    : TopicDescription(nullptr), participant_(dp.native_handle()) {
-    auto native = ::dds::core::detail::to_native(qos);
-    handle_ = zerodds_dp_create_topic(participant_, name.c_str(),
-                                      type_support::type_name(), &native);
-    if (handle_ == nullptr) {
-        throw ::dds::core::Error("Topic::create with QoS failed");
-    }
-}
-
 } // namespace topic
 } // namespace dds
+
+// The holders behind AnyTopic need the complete DomainParticipant.
+#include "dds/topic/detail/AnyTopicDetail.hpp"
+// The listener callbacks hand the application a complete Subscriber.
+#include "dds/sub/Subscriber.hpp"
+#include "dds/domain/detail/DomainParticipantListenerCallbacks.hpp"
 
 #endif // ZERODDS_DDS_DOMAIN_DOMAINPARTICIPANT_HPP

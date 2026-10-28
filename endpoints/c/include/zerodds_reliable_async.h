@@ -52,6 +52,9 @@ typedef struct zdw_async_ring {
     _Atomic int running;
     unsigned long sent;         /* distinct new samples framed + sent */
     unsigned char stream_id;
+    /* ObjectId of the target DataWriter for every frame's BaseObjectRequest
+     * (DDS-XRCE 1.0 Sec 7.7.8). */
+    unsigned int object_id;
     zdw_deliver_fn deliver;
     zdw_poll_fn poll;
     void *ctx;
@@ -63,6 +66,7 @@ typedef struct zdw_async_ring {
 /* Starts the drain thread. `poll` supplies inbound ACKNACKs (may be NULL).
  * Returns 0 on success, -1 on pthread failure. */
 int zdw_async_ring_start(zdw_async_ring *r, unsigned char stream_id,
+                         unsigned int object_id,
                          zdw_deliver_fn deliver, zdw_poll_fn poll, void *ctx);
 /* Wait-free enqueue (no syscall). 0 on success, -1 if the ring is full or the
  * payload exceeds ZDW_RING_SLOTCAP. */

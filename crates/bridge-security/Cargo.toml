@@ -37,6 +37,8 @@ rustls-pki-types = { workspace = true }
 # §7.2 JWT — RS256 validation. Swappable: `ring` (default) or `aws-lc-rs` (FIPS).
 ring = { workspace = true, optional = true }
 aws-lc-rs = { version = "1", optional = true }
+# §7.2 mTLS: the subject DN of the client certificate (RFC 4514 string).
+x509-parser = "0.18"
 # Base64 for JWT header/payload/signature.
 base64 = { version = "0.22", default-features = false, features = ["std"] }
 

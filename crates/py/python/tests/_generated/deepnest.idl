@@ -1,0 +1,22 @@
+// SPDX-License-Identifier: Apache-2.0
+// Reconstructed source for deepnest_gen.py. Extensibility left at the
+// specification default (appendable).
+module d {
+  struct L3 {
+    long v;
+  };
+  struct L2 {
+    L3 inner;
+  };
+  struct L1 {
+    L2 inner;
+  };
+  struct HasSeq {
+    sequence<long> xs;
+  };
+  struct Deep {
+    L1 chain;
+    sequence<sequence<L3>> grid;
+    map<string, HasSeq> table;
+  };
+};

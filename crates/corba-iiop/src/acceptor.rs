@@ -284,10 +284,10 @@ mod tests {
     use super::*;
     use crate::connector::{Connector, ConnectorConfig};
     use std::sync::atomic::AtomicUsize;
-    use zerodds_cdr::Endianness;
     use zerodds_corba_giop::{
         Message, Request, ResponseFlags, ServiceContextList, TargetAddress, Version,
     };
+    use zerodds_wire::Endianness;
 
     #[test]
     fn round_trip_via_acceptor_and_connector() {

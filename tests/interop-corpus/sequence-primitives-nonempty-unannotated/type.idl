@@ -1,0 +1,17 @@
+// `sequence` of each primitive kind, non-empty, unannotated
+struct Sample {
+    sequence<boolean> flag_many;
+    sequence<octet> raw_octet_many;
+    sequence<uint8> unsigned_byte_many;
+    sequence<int8> signed_byte_many;
+    sequence<char> letter_many;
+    sequence<wchar> wide_letter_many;
+    sequence<short> short_signed_many;
+    sequence<unsigned short> short_unsigned_many;
+    sequence<long> long_signed_many;
+    sequence<unsigned long> long_unsigned_many;
+    sequence<long long> llong_signed_many;
+    sequence<unsigned long long> llong_unsigned_many;
+    sequence<float> single_float_many;
+    sequence<double> double_float_many;
+};

@@ -1,9 +1,9 @@
 // C++ smoke test for zerodds/dds.hpp.
 //
 // Build:
-//   cargo build --release -p dds-c-api
+//   cargo build --release -p zerodds-c-api
 //   g++ -std=c++17 -O2 -Wall \
-//       -I crates/dds-c-api/include \
+//       -I crates/zerodds-c-api/include \
 //       -I crates/cpp/include \
 //       -L target/release \
 //       -o /tmp/zerodds_cpp_smoke \
@@ -40,7 +40,7 @@ int main() {
             std::this_thread::sleep_for(10ms);
         }
 
-        // Bis zu 2s einsammeln.
+        // Collect up to 2s.
         int received = 0;
         for (int i = 0; i < 100; ++i) {
             auto sample = r.take();

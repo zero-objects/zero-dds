@@ -1,0 +1,9 @@
+// modules nested two deep
+module outer {
+    module inner {
+        @final struct Sample {
+            long a;
+            double b;
+        };
+    };
+};

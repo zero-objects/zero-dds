@@ -1,0 +1,2 @@
+wireprobe-tao: the probe did not compile
+genC.cpp:50:31: error: '_tc__tao_map_CORBA_Char_CORBA_Octet_' is not a member of 'Sample'

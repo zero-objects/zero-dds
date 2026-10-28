@@ -1,0 +1,5 @@
+// one-dimensional array of `string`, unannotated
+struct Sample {
+    string items[3];
+    long tail;
+};

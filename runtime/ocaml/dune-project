@@ -1,0 +1,4 @@
+(lang dune 3.0)
+; The OCaml wire runtime. One library, one module, no dependencies
+; outside the standard library. See zdwire.ml.
+(name zdwire)

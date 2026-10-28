@@ -1,0 +1,17 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- ReliableTests.fs carries an [<EntryPoint>], which `dotnet fsi` refuses;
+     this project is what lets the reliable suite compile and run at all
+     (endpoints/csharp/ReliableTests.csproj is the same shape). -->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <WarningLevel>5</WarningLevel>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="reliable.fs" />
+    <Compile Include="ReliableTests.fs" />
+  </ItemGroup>
+</Project>

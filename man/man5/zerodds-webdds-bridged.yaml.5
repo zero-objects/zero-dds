@@ -1,0 +1,223 @@
+.TH ZERODDS-WEBDDS-BRIDGED.YAML 5 "" "ZeroDDS" "ZeroDDS Manual"
+.SH NAME
+zerodds-webdds-bridged.yaml \- configuration file for zerodds-webdds-bridged(1)
+.SH SYNOPSIS
+.I /etc/zerodds/webdds-bridged.yaml
+.SH DESCRIPTION
+YAML document describing how the DDS-WEB gateway daemon binds HTTP,
+which topic types it can resolve, and who may reach which Application.
+The parser that reads it is
+.IR crates/webdds-bridge/src/daemon/config.rs::DaemonConfig::from_config .
+.PP
+Top-level keys:
+.BR listen ", " domain ", " log_level ", " max_body_bytes ", " tls ", "
+.BR auth ", " metrics ", " acl ", " types ", " interfaces .
+.PP
+An unknown top-level key is
+.I not
+a parse error. The daemon logs a WARN line on stderr and starts with the
+defaults \(em watch the WARN log. A key inside a known section the
+schema does not name, or a value of the wrong type, stops the start
+with the file and line.
+.PP
+.BI ${VAR} " and " ${VAR:-default}
+are substituted from the environment before the document is parsed.
+.SH KEYS
+.SS Top level
+.TP
+.B listen
+HTTP bind address, serving the REST PSM
+.RI ( /dds/rest1 ),
+the SOAP PSM
+.RI ( /soap ),
+and the WSDL description of both
+.RI ( /wsdl )
+on the one port. Default
+.IR 127.0.0.1:8080 .
+.TP
+.B domain
+Integer. The DDS domain a
+.I domain_participant
+resource is created on names its own
+.I domain_id
+in the request body \(em this key has no effect on that. It is the
+domain the daemon's DDS-RPC client
+.I DomainParticipant
+is created on, when
+.B interfaces
+names at least one IDL file with an operation dispatched over SOAP
+(see
+.B interfaces
+below); with no
+.B interfaces
+configured, no such participant is created and this key has no
+effect at all. Default
+.IR 0 .
+.TP
+.B log_level
+.IR trace " | " debug " | " info " | " warn " | " error .
+.TP
+.B max_body_bytes
+DoS cap on a request's
+.B Content-Length
+or total chunked body size, in bytes. Default
+.IR 8388608 " (8 MiB)."
+.SS tls
+.TP
+.B enabled
+Boolean. With
+.IR true ,
+.B cert_file
+and
+.B key_file
+are mandatory; the daemon refuses to start without them.
+.TP
+.B cert_file
+Server certificate, PEM.
+.TP
+.B key_file
+Server key, PEM.
+.TP
+.B client_ca_file
+Trust anchor for mTLS client certificates
+.RI ( "auth.mode: mtls" " needs this too)."
+.SS auth
+.TP
+.B mode
+.IR none " | " bearer " | " jwt " | " mtls .
+.TP
+.B bearer_token
+Shared token accepted when
+.B mode
+is
+.IR bearer .
+.TP
+.B bearer_subject
+Subject that single token authenticates as. Default
+.IR anonymous .
+.TP
+.B jwt
+Sub-map for
+.BR jwt :
+.B public_key
+(PEM file, PKCS#1 or SubjectPublicKeyInfo, RS256),
+.BR issuer ,
+.BR audience ,
+.B required_claim
+.RI ( claim=value ).
+Without
+.B public_key
+the daemon does not start (exit 1).
+.SS metrics
+.TP
+.B enabled
+Boolean. Toggles the Prometheus
+.I /metrics
+endpoint (a separate listener from
+.BR listen ).
+.TP
+.B listen
+Bind address for
+.IR /metrics .
+Default
+.IR 127.0.0.1:9095 " if " enabled
+and unset.
+.SS acl
+Map of
+.IR "<application name>: { read: [...], write: [...] }" .
+The resource unit is the
+.B Application
+name a request's path names, not the DDS topic underneath it \(em the
+.B zerodds-bridge-security
+ACL is topic-shaped, but a
+.IR domain_participant / publisher / subscriber
+operation names no topic at all, and the WebDDS object model's own
+access-control model (OMG DDS-WEB 1.0 \(sc7.3) is scoped through the
+object tree rooted at
+.IR Application .
+The subject is the one
+.B auth.mode
+yields:
+.I anonymous
+for
+.BR none ,
+the token's subject for
+.BR bearer " and " jwt ,
+the certificate identity for
+.BR mtls .
+An
+.B unlisted
+application default-denies once
+.B auth.mode
+is anything other than
+.IR none .
+.RS
+.TP
+.B read
+Subjects allowed a
+.BR GET / HEAD
+on that application's subtree.
+.TP
+.B write
+Subjects allowed a
+.BR POST / PUT / DELETE .
+.RE
+.SS types
+List of
+.IR "{ name: <scoped type name>, idl_file: <path> }" " or "
+.IR "{ name: <scoped type name>, xml_file: <path> }" .
+Every entry names a type this gateway can resolve for a topic
+(\fBPOST .../topics\fR's
+.B type_name
+field), from a config-named
+.I .idl
+file or a DDS-XML 1.0
+.I <types>
+document — exactly one of
+.B idl_file
+/
+.B xml_file
+per entry. A type not listed here must already be resolvable via
+TypeLookup discovery
+(\fIcrate::types_registry::TypeRegistry::resolve_discovered\fR) before
+a topic names it.
+.SS interfaces
+List of
+.I .idl
+file paths whose
+.I interface
+declarations are described \(em name, and each operation's request/
+reply type names \(em in the WSDL served at
+.IR /wsdl ,
+and dispatchable over SOAP: invoking one of these operations sends a
+real DDS-RPC 1.0 request and waits for its reply, on the daemon's own
+DDS-RPC client
+.I DomainParticipant
+(see
+.B domain
+above). Every named
+.I interface
+shares
+.B one
+request/reply topic pair (DDS-RPC 1.0 \(sc7.4.3/\(sc7.5.1.1, keyed by
+operation), the same convention a
+.I zerodds-idlc generate --lang rust/cpp
+binding for the same
+.I interface
+follows \(em this daemon interoperates with such a generated
+Requester/Replier, not only with itself. An operation naming no
+configured
+.I interface
+(and no WebDDS object-model operation either) answers with a named
+SOAP fault, never a silent no-op; a declared
+.B raises
+exception answers with a named fault too, not an empty or wrong
+success.
+.SH EXAMPLE
+See
+.I /etc/zerodds/webdds-bridged.yaml.example
+(installed alongside this daemon).
+.SH SEE ALSO
+.BR zerodds-webdds-bridged (1).
+.SH AUTHORS
+ZeroDDS Contributors.

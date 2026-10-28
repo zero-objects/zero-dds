@@ -1,0 +1,2 @@
+typedef fixed<31,31> T;
+struct S { T f; };

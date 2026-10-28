@@ -3,8 +3,10 @@
 //
 // Typed.cs — Fluent typed-topic surface for IDL-generated types.
 //
-// `idl-csharp` emits, per IDL struct, a `<Name>TypeSupport : IDdsTopicType<T>`
-// (ZeroDDS.Cdr) with a `public static readonly <Name>TypeSupport Instance`.
+// `zerodds-idlc --lang 'c#'` emits, per IDL struct, a
+// `<Name>TypeSupport : IDdsTopicType<T>` (ZeroDDS.Cdr, backed by the
+// `ZeroDds.Wire` runtime codec) with a
+// `public static readonly <Name>TypeSupport Instance`.
 // The DDS entity layer, however, consumes `ITopicTraits<T>` (ZeroDDS.Topic).
 // This file bridges the two interfaces and lets callers create a typed topic
 // / writer / reader with **no explicit traits argument** — the TypeSupport is
@@ -33,11 +35,19 @@ public interface IKeyHashProvider
     byte[] KeyHashOf(object sample);
 }
 
+internal interface IGeneratedDdsWireTraits
+{
+    bool HasGeneratedWireSupport { get; }
+    int NativeRepresentation { get; }
+    int NativeExtensibility { get; }
+    bool IsKeyed { get; }
+}
+
 /// <summary>
 /// Adapter exposing an <see cref="IDdsTopicType{T}"/> (codegen output) as the
 /// <see cref="ITopicTraits{T}"/> the DDS entity layer consumes.
 /// </summary>
-public sealed class DdsTopicTypeTraits<T> : ITopicTraits<T>, IKeyHashProvider where T : notnull
+public sealed class DdsTopicTypeTraits<T> : ITopicTraits<T>, IKeyHashProvider, IGeneratedDdsWireTraits where T : notnull
 {
     private readonly IDdsTopicType<T> _ts;
 
@@ -47,6 +57,28 @@ public sealed class DdsTopicTypeTraits<T> : ITopicTraits<T>, IKeyHashProvider wh
 
     /// <summary>The wrapped TypeSupport.</summary>
     public IDdsTopicType<T> TypeSupport => _ts;
+
+    bool IGeneratedDdsWireTraits.HasGeneratedWireSupport => _ts is IGeneratedWireTypeSupport;
+
+    // The managed SampleInfo convention is 0/1, while the native explicit
+    // representation API uses 0/2. This conversion is deliberately exhaustive.
+    int IGeneratedDdsWireTraits.NativeRepresentation =>
+        _ts is IGeneratedWireTypeSupport generated ? generated.Representation switch
+        {
+            0 => 0,
+            1 => 2,
+            _ => throw new ArgumentOutOfRangeException(nameof(generated.Representation))
+        } : throw new InvalidOperationException("The support does not declare its wire representation.");
+
+    int IGeneratedDdsWireTraits.NativeExtensibility => _ts.Extensibility switch
+    {
+        global::Omg.Types.ExtensibilityKind.Final => 0,
+        global::Omg.Types.ExtensibilityKind.Appendable => 1,
+        global::Omg.Types.ExtensibilityKind.Mutable => 2,
+        _ => throw new ArgumentOutOfRangeException(nameof(_ts.Extensibility))
+    };
+
+    bool IGeneratedDdsWireTraits.IsKeyed => _ts.IsKeyed;
 
     /// <inheritdoc/>
     public string TypeName => _ts.TypeName;

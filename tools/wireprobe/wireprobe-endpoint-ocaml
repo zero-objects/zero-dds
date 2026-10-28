@@ -1,0 +1,27 @@
+#!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 ZeroDDS Contributors
+#
+# wireprobe-endpoint-ocaml — one IDL type and one JSON sample, through
+# the hand-written endpoint SDK in endpoints/ocaml/zerodds.ml.
+#
+# The same command line as every other column's probe, so a case runs
+# through any of them by substituting the program name:
+#
+#   wireprobe-endpoint-ocaml --idl robot.idl --type common::Robot \
+#       --values robot.json --encoding plain-cdr2 --endian le \
+#       --out robot.endpoint-ocaml.plain-cdr2.le.bin
+#
+# put_u64 takes an Int64, which is the only 64-bit integer OCaml has:
+# the language's own `int` is 63 bits and could not hold the top bit.
+#
+# The write direction only. This column measures what the SDK puts on
+# the wire.
+#
+# The body is tools/wireprobe/endpoint-common.sh; the fifteen differ only
+# in which compiler runs and which SDK is linked, and fifteen copies of
+# the caching and the exit codes would be fifteen places for them to
+# drift apart.
+set -uo pipefail
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/endpoint-common.sh"
+endpoint_probe ocaml "$@"

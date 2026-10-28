@@ -1,0 +1,10 @@
+// `sequence<sequence<struct>>`, unannotated
+struct Cell {
+    long a;
+    short b;
+};
+
+struct Sample {
+    sequence<sequence<Cell> > grid;
+    long tail;
+};

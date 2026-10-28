@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of resolve-module-named-as-type that ros-fastrtps produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	tests/interop-corpus/resolve-module-named-as-type/type.idl: the layout could not be planned: error [IDL0008] at 19..40: `common` is the name of the scope it is declared in, and OMG IDL
+plain-cdr1	be	refused	tests/interop-corpus/resolve-module-named-as-type/type.idl: the layout could not be planned: error [IDL0008] at 19..40: `common` is the name of the scope it is declared in, and OMG IDL
+pl-cdr1	le	refused	tests/interop-corpus/resolve-module-named-as-type/type.idl: the layout could not be planned: error [IDL0008] at 19..40: `common` is the name of the scope it is declared in, and OMG IDL
+pl-cdr1	be	refused	tests/interop-corpus/resolve-module-named-as-type/type.idl: the layout could not be planned: error [IDL0008] at 19..40: `common` is the name of the scope it is declared in, and OMG IDL
+plain-cdr2	le	no-version-2	
+plain-cdr2	be	no-version-2	
+delimited-cdr	le	no-version-2	
+delimited-cdr	be	no-version-2	
+pl-cdr2	le	no-version-2	
+pl-cdr2	be	no-version-2	

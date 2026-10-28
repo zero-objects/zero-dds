@@ -17,7 +17,7 @@ struct Reading
 end
 
 function marshal(r::Reading, endian::ZeroDDS.Endian)
-    w = ZeroDDS.Writer(endian)
+    w = ZeroDDS.Writer(endian, ZeroDDS.XCDR2)
     ZeroDDS.put_u32!(w, r.id)
     ZeroDDS.put_f32!(w, r.value)
     ZeroDDS.put_string!(w, r.label)
@@ -25,7 +25,7 @@ function marshal(r::Reading, endian::ZeroDDS.Endian)
 end
 
 function decode(body::Vector{UInt8})
-    r = ZeroDDS.Reader(body, ZeroDDS.LE)
+    r = ZeroDDS.Reader(body, ZeroDDS.LE, ZeroDDS.XCDR2)
     id = ZeroDDS.get_u32(r)
     value = ZeroDDS.get_f32(r)
     label = ZeroDDS.get_string(r)
@@ -35,7 +35,7 @@ end
 function main()
     total = 5
     t = ZeroDDS.mem_transport()
-    c = ZeroDDS.Client(t)
+    c = ZeroDDS.Client(t, ZeroDDS.xrce_object_id(0x001, ZeroDDS.OBJK_DATAWRITER))
     for i in 0:(total - 1)
         r = Reading(0x2000 + i, 100.0f0 - i, @sprintf("sensor-%02d", i))
         ZeroDDS.write!(c, marshal(r, ZeroDDS.LE))

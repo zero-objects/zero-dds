@@ -1,0 +1,20 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- ExampleReliable.fs carries an [<EntryPoint>], which `dotnet fsi`
+     refuses; built (not run) by the gate, the same way the C column
+     builds its live-peer programs. -->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <WarningLevel>5</WarningLevel>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- zerodds.fs too: the example opens ZeroDDS (the wire SDK) beside
+         ZeroDDSReliable. -->
+    <Compile Include="zerodds.fs" />
+    <Compile Include="reliable.fs" />
+    <Compile Include="ExampleReliable.fs" />
+  </ItemGroup>
+</Project>

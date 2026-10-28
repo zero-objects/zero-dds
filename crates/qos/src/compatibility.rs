@@ -223,28 +223,19 @@ pub fn compute_compatibility(offered: &WriterQos, requested: &ReaderQos) -> Comp
 
 impl PartitionQosPolicy {
     /// §2.2.3.13.6: there must be at least one common partition name.
-    /// Matching is **fnmatch-glob-based** (`*`, `?`, `[...]`):
-    /// an offered pattern can match a requested name or vice versa.
+    /// Matching is **fnmatch-glob-based** (`*`, `?`, `[...]`), applied
+    /// symmetrically: an offered pattern can match a requested name or vice
+    /// versa. An **empty list is the default partition `""`**, so `[]`,
+    /// `[""]` and mixes of the two all match one another; a named partition
+    /// never matches the default.
     ///
-    /// Empty/empty matches (default partition). Empty vs non-empty
-    /// does **not** match (spec-conformant: the default partition is a
-    /// separate namespace).
+    /// Delegates to the shared [`partitions_compatible`] so that this policy
+    /// check and the runtime's writer/reader matching stay identical.
+    ///
+    /// [`partitions_compatible`]: crate::policies::partition::partitions_compatible
     #[must_use]
     pub fn is_compatible_with(&self, requested: &Self) -> bool {
-        if self.names.is_empty() && requested.names.is_empty() {
-            return true;
-        }
-        if self.names.is_empty() || requested.names.is_empty() {
-            return false;
-        }
-        // fnmatch is symmetrically relevant: either the offered pattern
-        // matches the requested text or vice versa.
-        self.names.iter().any(|o| {
-            requested.names.iter().any(|rq| {
-                super::policies::partition::fnmatch(o, rq)
-                    || super::policies::partition::fnmatch(rq, o)
-            })
-        })
+        super::policies::partition::partitions_compatible(&self.names, &requested.names)
     }
 }
 
@@ -298,6 +289,31 @@ mod tests {
         assert!(!req.is_compatible_with(offered));
     }
 
+    /// DDSI-RTPS 2.5 §8.4.4: "An RTPS Writer cannot be matched to an RTPS
+    /// Reader unless either the RTPS Writer has the reliabilityLevel set
+    /// to RELIABLE, or else both the RTPS Writer and RTPS Reader have the
+    /// reliabilityLevel set to BEST_EFFORT." All four combinations, so
+    /// the one forbidden pair is named alongside the three allowed ones.
+    #[test]
+    fn all_four_reliability_combinations_follow_rtps_8_4_4() {
+        let policy = |kind| ReliabilityQosPolicy {
+            kind,
+            max_blocking_time: Duration::ZERO,
+        };
+        let be = policy(ReliabilityKind::BestEffort);
+        let rel = policy(ReliabilityKind::Reliable);
+
+        // writer RELIABLE → both readers match.
+        assert!(rel.is_compatible_with(rel), "RELIABLE/RELIABLE");
+        assert!(rel.is_compatible_with(be), "RELIABLE/BEST_EFFORT");
+        // writer BEST_EFFORT → only a BEST_EFFORT reader matches.
+        assert!(be.is_compatible_with(be), "BEST_EFFORT/BEST_EFFORT");
+        assert!(
+            !be.is_compatible_with(rel),
+            "BEST_EFFORT writer must not match a RELIABLE reader"
+        );
+    }
+
     #[test]
     fn deadline_offered_le_requested() {
         let offered = DeadlineQosPolicy {
@@ -334,7 +350,7 @@ mod tests {
         };
         assert!(offered.is_compatible_with(req));
 
-        // Lease zu lang ⇒ fail.
+        // Lease too long ⇒ fail.
         let req_strict = LivelinessQosPolicy {
             kind: LivelinessKind::Automatic,
             lease_duration: Duration::ZERO,

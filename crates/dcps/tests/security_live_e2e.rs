@@ -38,11 +38,24 @@ use zerodds_security_runtime::SharedSecurityGate;
 // domain → no discovery → no handshake). The crypto token exchanged over
 // VolatileSecure is payload-level Kx-encrypted (no leak),
 // independent of rtps_protection_kind.
-const GOV: &str = r#"<domain_access_rules><domain_rule><domains><id>0</id></domains><topic_access_rules><topic_rule><topic_expression>*</topic_expression></topic_rule></topic_access_rules></domain_rule></domain_access_rules>"#;
+fn gov(domain: i32) -> String {
+    format!(
+        "<dds><domain_access_rules><domain_rule><domains><id>{domain}</id></domains><allow_unauthenticated_participants>false</allow_unauthenticated_participants><enable_join_access_control>false</enable_join_access_control>\
+         <topic_access_rules><topic_rule><topic_expression>*</topic_expression>\
+         </topic_rule></topic_access_rules></domain_rule></domain_access_rules></dds>"
+    )
+}
 
-// Like GOV, but with data_protection_kind=ENCRYPT (user data encrypted,
+// Like `gov`, but with data_protection_kind=ENCRYPT (user data encrypted,
 // SPDP/SEDP stays plaintext since rtps_protection_kind=NONE).
-const GOV_DATA_ENCRYPT: &str = r#"<domain_access_rules><domain_rule><domains><id>0</id></domains><topic_access_rules><topic_rule><topic_expression>*</topic_expression><data_protection_kind>ENCRYPT</data_protection_kind></topic_rule></topic_access_rules></domain_rule></domain_access_rules>"#;
+fn gov_data_encrypt(domain: i32) -> String {
+    format!(
+        "<dds><domain_access_rules><domain_rule><domains><id>{domain}</id></domains><allow_unauthenticated_participants>false</allow_unauthenticated_participants><enable_join_access_control>false</enable_join_access_control>\
+         <topic_access_rules><topic_rule><topic_expression>*</topic_expression>\
+         <data_protection_kind>ENCRYPT</data_protection_kind>\
+         </topic_rule></topic_access_rules></domain_rule></domain_access_rules></dds>"
+    )
+}
 
 struct PkiProvider(Arc<Mutex<PkiAuthenticationPlugin>>);
 impl SharedSecretProvider for PkiProvider {
@@ -74,6 +87,16 @@ fn mint_foreign() -> (Vec<u8>, Vec<u8>) {
     )
 }
 
+/// A participant GUID prefix bound to the identity in `cert_pem`
+/// (DDS-Security 1.2 §10.3.3 Table 59) for the candidate `seed`: the
+/// handshake refuses a `c.pdata` GUID that is not.
+fn bound_prefix(cert_pem: &[u8], seed: u8) -> GuidPrefix {
+    let der = zerodds_security_pki::first_cert_der(cert_pem).unwrap();
+    GuidPrefix::from_bytes(
+        zerodds_security_pki::adjust_participant_guid_prefix(&[seed; 16], &der).unwrap(),
+    )
+}
+
 /// Shared CA + two leaf identities (each cert||CA as a bundle).
 fn mint_ca_two() -> ((Vec<u8>, Vec<u8>), (Vec<u8>, Vec<u8>)) {
     use rcgen::{CertificateParams, KeyPair};
@@ -95,9 +118,17 @@ fn mint_ca_two() -> ((Vec<u8>, Vec<u8>), (Vec<u8>, Vec<u8>)) {
     (mint("alice-live"), mint("bob-live"))
 }
 
-fn gate_for(pki: &Arc<Mutex<PkiAuthenticationPlugin>>, gov: &str) -> Arc<SharedSecurityGate> {
+fn gate_for(
+    domain: i32,
+    pki: &Arc<Mutex<PkiAuthenticationPlugin>>,
+    gov: &str,
+) -> Arc<SharedSecurityGate> {
+    // The gate MUST run on the same domain the governance is written for.
+    // `unique_domain()` leases a domain per test run, so a hardcoded 0 makes
+    // `find_domain_rule` miss, `data_protection` read None, and every
+    // assertion about encrypted user DATA pass on plaintext.
     Arc::new(SharedSecurityGate::new(
-        0,
+        u32::try_from(domain).expect("domain id is non-negative"),
         zerodds_security_permissions::parse_governance_xml(gov).unwrap(),
         Box::new(AesGcmCryptoPlugin::with_secret_provider(
             Suite::Aes128Gcm,
@@ -109,6 +140,7 @@ fn gate_for(pki: &Arc<Mutex<PkiAuthenticationPlugin>>, gov: &str) -> Arc<SharedS
 /// Starts a secured runtime (auth + gate sharing pki) and returns
 /// (runtime, gate). Does NOT wait for the handshake.
 fn start_secured(
+    domain: i32,
     cert: Vec<u8>,
     key: Vec<u8>,
     guid: [u8; 16],
@@ -128,9 +160,9 @@ fn start_secured(
             guid,
         )
         .unwrap();
-    let gate = gate_for(&pki, gov);
+    let gate = gate_for(domain, &pki, gov);
     let rt = DcpsRuntime::start(
-        0,
+        domain,
         prefix,
         RuntimeConfig {
             security: Some(gate.clone()),
@@ -171,22 +203,7 @@ fn writer_cfg(topic: &str) -> UserWriterConfig {
     UserWriterConfig {
         topic_name: topic.into(),
         type_name: "RawBytes".into(),
-        reliable: true,
-        durability: zerodds_qos::DurabilityKind::Volatile,
-        deadline: Default::default(),
-        latency_budget: Default::default(),
-        destination_order: Default::default(),
-        lifespan: Default::default(),
-        liveliness: Default::default(),
-        ownership: zerodds_qos::OwnershipKind::Shared,
-        ownership_strength: 0,
-        presentation: Default::default(),
-        partition: vec![],
-        user_data: vec![],
-        topic_data: vec![],
-        group_data: vec![],
-        type_identifier: zerodds_types::TypeIdentifier::None,
-        data_representation_offer: None,
+        ..Default::default()
     }
 }
 
@@ -194,35 +211,22 @@ fn reader_cfg(topic: &str) -> UserReaderConfig {
     UserReaderConfig {
         topic_name: topic.into(),
         type_name: "RawBytes".into(),
-        reliable: true,
-        durability: zerodds_qos::DurabilityKind::Volatile,
-        deadline: Default::default(),
-        latency_budget: Default::default(),
-        destination_order: Default::default(),
-        liveliness: Default::default(),
-        ownership: zerodds_qos::OwnershipKind::Shared,
-        presentation: Default::default(),
-        partition: vec![],
-        user_data: vec![],
-        topic_data: vec![],
-        group_data: vec![],
-        type_identifier: zerodds_types::TypeIdentifier::None,
-        type_consistency: zerodds_types::qos::TypeConsistencyEnforcement::default(),
-        data_representation_offer: None,
+        ..Default::default()
     }
 }
 
-#[serial_test::serial(security_live)]
+#[serial_test::file_serial(security_live)]
 #[test]
 fn secured_handshake_completes_live_over_udp() {
+    let domain = common::unique_domain();
     let ((a_cert, a_key), (b_cert, b_key)) = mint_ca_two();
-    let a_prefix = GuidPrefix::from_bytes([0x2A; 12]);
-    let b_prefix = GuidPrefix::from_bytes([0x1B; 12]);
+    let a_prefix = bound_prefix(&a_cert, 0x2A);
+    let b_prefix = bound_prefix(&b_cert, 0x1B);
     let a_guid = Guid::new(a_prefix, EntityId::PARTICIPANT).to_bytes();
     let b_guid = Guid::new(b_prefix, EntityId::PARTICIPANT).to_bytes();
 
-    let (rt_a, gate_a) = start_secured(a_cert, a_key, a_guid, a_prefix, GOV);
-    let (rt_b, gate_b) = start_secured(b_cert, b_key, b_guid, b_prefix, GOV);
+    let (rt_a, gate_a) = start_secured(domain, a_cert, a_key, a_guid, a_prefix, &gov(domain));
+    let (rt_b, gate_b) = start_secured(domain, b_cert, b_key, b_guid, b_prefix, &gov(domain));
     assert!(
         wait_handshake(
             &gate_a,
@@ -243,16 +247,31 @@ fn secured_handshake_completes_live_over_udp() {
 /// writer↔reader via SEDP, and a user sample round-trips encrypted
 /// (force-encrypt from the governance → SRTPS on the wire; B only reads because
 /// it decrypts with A's token).
-#[serial_test::serial(security_live)]
+#[serial_test::file_serial(security_live)]
 #[test]
 fn secured_user_data_round_trips_live_over_udp() {
+    let domain = common::unique_domain();
     let ((a_cert, a_key), (b_cert, b_key)) = mint_ca_two();
-    let a_prefix = GuidPrefix::from_bytes([0x3C; 12]);
-    let b_prefix = GuidPrefix::from_bytes([0x4D; 12]);
+    let a_prefix = bound_prefix(&a_cert, 0x3C);
+    let b_prefix = bound_prefix(&b_cert, 0x4D);
     let a_guid = Guid::new(a_prefix, EntityId::PARTICIPANT).to_bytes();
     let b_guid = Guid::new(b_prefix, EntityId::PARTICIPANT).to_bytes();
-    let (rt_a, gate_a) = start_secured(a_cert, a_key, a_guid, a_prefix, GOV_DATA_ENCRYPT);
-    let (rt_b, gate_b) = start_secured(b_cert, b_key, b_guid, b_prefix, GOV_DATA_ENCRYPT);
+    let (rt_a, gate_a) = start_secured(
+        domain,
+        a_cert,
+        a_key,
+        a_guid,
+        a_prefix,
+        &gov_data_encrypt(domain),
+    );
+    let (rt_b, gate_b) = start_secured(
+        domain,
+        b_cert,
+        b_key,
+        b_guid,
+        b_prefix,
+        &gov_data_encrypt(domain),
+    );
 
     // 1. Handshake + token exchange.
     assert!(
@@ -307,25 +326,48 @@ fn secured_user_data_round_trips_live_over_udp() {
     rt_b.shutdown();
 }
 
-/// FU2 S3 — negative control (proof of encryption): A writes
-/// secured DATA; B (same CA, authenticated) decrypts + reads;
-/// C (FOREIGN CA, handshake with A fails) does receive the matched
-/// DATA datagram but CANNOT decrypt it → reads NOTHING. If the
-/// DATA were plaintext, C would read it.
-#[serial_test::serial(security_live)]
+/// FU2 S3 — negative control: A writes secured DATA; B (same CA,
+/// authenticated) decrypts + reads; C (FOREIGN CA, handshake with A fails)
+/// is not matched at all and reads NOTHING. DDS-Security 1.2 §9.8.3.2: with
+/// `allow_unauthenticated_participants` FALSE a participant that fails the
+/// authentication "shall be rejected". C was matched by SEDP before any
+/// authentication, and the test relied on it to show that C cannot decrypt.
+#[serial_test::file_serial(security_live)]
 #[test]
 fn secured_user_data_unreadable_by_unauthenticated_peer_live() {
+    let domain = common::unique_domain();
     let ((a_cert, a_key), (b_cert, b_key)) = mint_ca_two();
     let (c_cert, c_key) = mint_foreign();
-    let a_prefix = GuidPrefix::from_bytes([0x5E; 12]);
-    let b_prefix = GuidPrefix::from_bytes([0x6F; 12]);
-    let c_prefix = GuidPrefix::from_bytes([0x7A; 12]);
+    let a_prefix = bound_prefix(&a_cert, 0x5E);
+    let b_prefix = bound_prefix(&b_cert, 0x6F);
+    let c_prefix = bound_prefix(&c_cert, 0x7A);
     let a_guid = Guid::new(a_prefix, EntityId::PARTICIPANT).to_bytes();
     let b_guid = Guid::new(b_prefix, EntityId::PARTICIPANT).to_bytes();
     let c_guid = Guid::new(c_prefix, EntityId::PARTICIPANT).to_bytes();
-    let (rt_a, gate_a) = start_secured(a_cert, a_key, a_guid, a_prefix, GOV_DATA_ENCRYPT);
-    let (rt_b, gate_b) = start_secured(b_cert, b_key, b_guid, b_prefix, GOV_DATA_ENCRYPT);
-    let (rt_c, _gate_c) = start_secured(c_cert, c_key, c_guid, c_prefix, GOV_DATA_ENCRYPT);
+    let (rt_a, gate_a) = start_secured(
+        domain,
+        a_cert,
+        a_key,
+        a_guid,
+        a_prefix,
+        &gov_data_encrypt(domain),
+    );
+    let (rt_b, gate_b) = start_secured(
+        domain,
+        b_cert,
+        b_key,
+        b_guid,
+        b_prefix,
+        &gov_data_encrypt(domain),
+    );
+    let (rt_c, _gate_c) = start_secured(
+        domain,
+        c_cert,
+        c_key,
+        c_guid,
+        c_prefix,
+        &gov_data_encrypt(domain),
+    );
 
     // A<->B authenticate (same CA). A<->C fails (foreign CA).
     assert!(
@@ -342,14 +384,15 @@ fn secured_user_data_unreadable_by_unauthenticated_peer_live() {
     let writer_eid = rt_a.register_user_writer(writer_cfg("SecuredNeg")).unwrap();
     let (_b_reader, b_rx) = rt_b.register_user_reader(reader_cfg("SecuredNeg")).unwrap();
     let (_c_reader, c_rx) = rt_c.register_user_reader(reader_cfg("SecuredNeg")).unwrap();
-    // A must have matched BOTH readers (B + C) via SEDP.
+    // A matches B, the authenticated one, and not C.
     let deadline = Instant::now() + Duration::from_secs(15);
-    while Instant::now() < deadline && rt_a.user_writer_matched_count(writer_eid) < 2 {
+    while Instant::now() < deadline && rt_a.user_writer_matched_count(writer_eid) < 1 {
         std::thread::sleep(Duration::from_millis(50));
     }
-    assert!(
-        rt_a.user_writer_matched_count(writer_eid) >= 2,
-        "A must match B AND C (otherwise the negative control is not meaningful)"
+    assert_eq!(
+        rt_a.user_writer_matched_count(writer_eid),
+        1,
+        "A matches B; C, which did not authenticate, is rejected"
     );
 
     let payload = b"only-authenticated-may-read".to_vec();
@@ -362,13 +405,18 @@ fn secured_user_data_unreadable_by_unauthenticated_peer_live() {
         }
     }
     assert!(b_got, "B (authenticated) must decrypt + read the sample");
+    assert_eq!(
+        rt_a.user_writer_matched_count(writer_eid),
+        1,
+        "C is still not matched"
+    );
     // C (not authenticated) must read NOTHING.
     let c_got = c_rx.recv_timeout(Duration::from_secs(2)).is_ok();
     assert!(
         !c_got,
         "C (foreign CA) must NOT read the secured sample — proof that user DATA is encrypted. \
          Diagnostics: gov_data={:?}, a_registered_c={} (should be false — otherwise the A<->C handshake succeeded despite the foreign CA)",
-        gate_a.data_protection(),
+        gate_a.data_protection("SecuredNeg"),
         gate_a
             .slot_for(&c_prefix.to_bytes())
             .ok()
@@ -380,3 +428,8 @@ fn secured_user_data_unreadable_by_unauthenticated_peer_live() {
     rt_b.shutdown();
     rt_c.shutdown();
 }
+
+/// Leases a DDS domain no other process on this host holds — the
+/// domain number is the UDP port number, so it is a host-wide resource.
+#[path = "common/mod.rs"]
+mod common;

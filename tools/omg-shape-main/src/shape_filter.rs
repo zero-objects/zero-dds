@@ -14,7 +14,7 @@
 //! (subscriber Step 3 in `interoperability_report.py`) has something to
 //! trigger against on a malformed expression.
 
-use zerodds_dcps::interop::ShapeType;
+use crate::shape_type::ShapeType;
 use zerodds_sql_filter::{RowAccess, Value};
 
 /// `RowAccess` view onto a `ShapeType` sample — maps the SQL-filter

@@ -31,9 +31,9 @@ def run_publisher(
     publisher = participant.create_publisher()
     writer = publisher.create_shape_writer(topic)
 
-    print(f"[pub] '{topic_name}' warte auf Subscriber ...")
+    print(f"[pub] '{topic_name}' waiting for Subscriber ...")
     writer.wait_for_matched_subscription(1, timeout_secs=30.0)
-    print("[pub] matched, sende")
+    print("[pub] matched, sending")
 
     x = 50
     y = 50
@@ -55,9 +55,9 @@ def run_subscriber(domain_id: int, topic_name: str, count: int) -> None:
     subscriber = participant.create_subscriber()
     reader = subscriber.create_shape_reader(topic)
 
-    print(f"[sub] '{topic_name}' warte auf Publisher ...")
+    print(f"[sub] '{topic_name}' waiting for Publisher ...")
     reader.wait_for_matched_publication(1, timeout_secs=30.0)
-    print("[sub] matched, empfange")
+    print("[sub] matched, receiving")
 
     received = 0
     while received < count:

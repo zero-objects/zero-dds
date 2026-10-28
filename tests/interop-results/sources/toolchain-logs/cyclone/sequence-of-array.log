@@ -1,0 +1,1 @@
+fill_4.inc:1:9: error: type defaults to 'int' in declaration of 'zd_seq_1' [-Wimplicit-int]

@@ -11,7 +11,7 @@
 //! - **DDSI-RTPS 2.5 §8.5.4** — SEDP Builtin-Endpoints.
 //! - **XTypes 1.3 §7.6.3.3.4** — TypeLookup-Service
 //!   (`TL_SVC_REQ_{WRITER,READER}` + `TL_SVC_REPLY_{WRITER,READER}`).
-//! - **DDS-Security 1.2 §7.4.2** — Stateless + Volatile-Secure
+//! - **DDS-Security 1.2 §7.5.3/§7.5.4** — Stateless + Volatile-Secure
 //!   builtin endpoints (sub-module `security`).
 //!
 //! ## Public API
@@ -67,5 +67,6 @@ pub use sedp::{
 };
 #[cfg(feature = "alloc")]
 pub use spdp::{
-    DiscoveredParticipant, DiscoveredParticipantsCache, SpdpBeacon, SpdpError, SpdpReader,
+    DiscoveredParticipant, DiscoveredParticipantsCache, SpdpBeacon, SpdpChannel, SpdpError,
+    SpdpReader, SpdpSample,
 };

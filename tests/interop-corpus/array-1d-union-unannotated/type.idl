@@ -1,0 +1,10 @@
+// one-dimensional array of `union`, unannotated
+union Choice switch (long) {
+    case 1: long whole;
+    default: double fraction;
+};
+
+struct Sample {
+    Choice items[2];
+    long tail;
+};

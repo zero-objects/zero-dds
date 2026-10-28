@@ -1,0 +1,3 @@
+// IDL 4.2 Annex A production 17, §7.2.6.3 — adjacent string literals are
+// concatenated.
+const string K = "ab" "cd";

@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of key-in-base-struct that hdds produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	error[E0063]: missing field `base` in initializer of `Sample`
+plain-cdr1	be	one-order-only	
+pl-cdr1	le	refused	error[E0063]: missing field `base` in initializer of `Sample`
+pl-cdr1	be	one-order-only	
+plain-cdr2	le	refused	error[E0063]: missing field `base` in initializer of `Sample`
+plain-cdr2	be	one-order-only	
+delimited-cdr	le	refused	error[E0063]: missing field `base` in initializer of `Sample`
+delimited-cdr	be	one-order-only	
+pl-cdr2	le	refused	error[E0063]: missing field `base` in initializer of `Sample`
+pl-cdr2	be	one-order-only	

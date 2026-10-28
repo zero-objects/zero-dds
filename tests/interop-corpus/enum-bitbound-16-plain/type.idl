@@ -1,0 +1,9 @@
+// `enum` at bit bound 16, implicit values
+@bit_bound(16)
+enum Colour { RED, GREEN, BLUE };
+
+@final struct Sample {
+    Colour first;
+    Colour second;
+    octet tail;
+};

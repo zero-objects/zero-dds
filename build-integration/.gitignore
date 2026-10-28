@@ -23,3 +23,9 @@ elixir-mix/sample-consumer/lib/gen/
 elixir-mix/sample-consumer/_build/
 elixir-mix/sample-consumer/deps/
 swift-spm/sample-consumer/.swiftpm/
+elixir-mix/sample-consumer/mix.lock
+nim-nimble/sample-consumer/main
+d-dub/sample-consumer/.dub/
+d-dub/sample-consumer/zerodds-idlc-sample
+julia-build/sample-consumer/Manifest.toml
+julia-build/sample-consumer/deps/build.log

@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 # ZeroDDS — IDL → Nim codegen backend
 
-`zerodds-idlc --nim` emits **native Nim** from OMG IDL: a self-contained source
+`zerodds-idlc generate --lang nim` emits **native Nim** from OMG IDL: a self-contained source
 file with a shared XCDR2 `Writer` (byte-identical to the `endpoints/nim` core)
 and, per IDL `struct`, a Nim `object` plus a `marshalXCDR(endian): seq[byte]`
 proc whose wire output matches the Rust goldens exactly.
@@ -12,7 +12,7 @@ Crate: [`crates/idl-nim`](../crates/idl-nim) · registered in `tools/idlc`
 ## Usage
 
 ```sh
-zerodds-idlc types.idl --nim      # emits types.nim
+zerodds-idlc generate --lang nim types.idl   # emits types.nim
 ```
 
 ## Mapping

@@ -34,18 +34,18 @@ impl zerodds_corba_rust::ValueBase for AccountValue {
 }
 
 impl zerodds_corba_rust::value_wire::ValueMarshal for AccountValue {
-    fn marshal_state(&self, w: &mut zerodds_cdr::BufferWriter) -> ::core::result::Result<(), zerodds_cdr::EncodeError> {
-        zerodds_cdr::CdrEncode::encode(&self.id, w)?;
-        zerodds_cdr::CdrEncode::encode(&self.balance, w)?;
+    fn marshal_state(&self, w: &mut zerodds_wire::Writer) -> ::core::result::Result<(), zerodds_wire::WireError> {
+        w.write_string(&self.id);
+        w.write_f64(self.balance);
         ::core::result::Result::Ok(())
     }
 }
 
 /// Registers the ValueFactory for `Account` in a `ValueRegistry` (§15.3.4 decode).
 pub fn register_account_value(reg: &mut zerodds_corba_rust::value_wire::ValueRegistry) {
-    reg.register(ACCOUNT_REPOSITORY_ID, ::std::boxed::Box::new(|r: &mut zerodds_cdr::BufferReader<'_>| {
-        let id = <String as zerodds_cdr::CdrDecode>::decode(r)?;
-        let balance = <f64 as zerodds_cdr::CdrDecode>::decode(r)?;
+    reg.register(ACCOUNT_REPOSITORY_ID, ::std::boxed::Box::new(|r: &mut zerodds_wire::Reader<'_>| {
+        let id = r.read_string()?;
+        let balance = r.read_f64()?;
         ::core::result::Result::Ok(::std::rc::Rc::new(AccountValue {
             id,
             balance,
@@ -54,12 +54,14 @@ pub fn register_account_value(reg: &mut zerodds_corba_rust::value_wire::ValueReg
 }
 
 /// IDL `factory create` constructor for valuetype `Account`.
-/// Phase 2 wires this to the ValueFactory registry; phase 1 is a placeholder.
+/// The ValueFactory registry is wired by `register_<v>_value`; this
+/// constructor is not, and says so rather than returning a value it did
+/// not build.
 pub fn account_init_create(id: String, initial_balance: f64) -> ::core::result::Result<::std::boxed::Box<dyn Account>, zerodds_corba_rust::CorbaException> {
     let _ = id;
     let _ = initial_balance;
     ::core::result::Result::Err(zerodds_corba_rust::CorbaException::SystemException {
         minor: 0,
-        message: "corba-rust: ValueFactory init not yet wired (Phase-2)",
+        message: "corba-rust: ValueFactory init not wired",
     })
 }

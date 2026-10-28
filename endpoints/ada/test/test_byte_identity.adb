@@ -16,6 +16,7 @@ with Interfaces.C;          use Interfaces.C;
 with Zdw;                   use Zdw;
 with Sample_Sensor;         use Sample_Sensor;
 with Sample_Fixtures;       use Sample_Fixtures;
+with Deep_Reading;
 
 procedure Test_Byte_Identity is
 
@@ -108,6 +109,41 @@ begin
 
    Ok := Check_Wire (ZDW_LE, Argument (1), "LE") and then Ok;
    Ok := Check_Wire (ZDW_BE, Argument (2), "BE") and then Ok;
+
+   --  `Deep_Reading.Frame` writes an eight-octet envelope and then the body
+   --  into a `Frame_Store`, whose `Data` is `Max_Frame` long. It had no bound:
+   --  a body of `Max_Frame - 7` octets indexed past the end of the array,
+   --  which is a Constraint_Error while checks are on and a write into the
+   --  neighbouring `Len` field under -gnatp. It is a named refusal now.
+   declare
+      Over : Deep_Reading.Frame_Store;
+   begin
+      Over.Len := Deep_Reading.Max_Frame - 7 - Deep_Reading.Base_Size;
+      declare
+         Ignored : constant Deep_Reading.Frame_Store :=
+           Deep_Reading.Frame (1, 16#0015#, Over);
+         pragma Unreferenced (Ignored);
+      begin
+         Put_Line ("negative: a body past Max_Frame not refused");
+         Ok := False;
+      end;
+   exception
+      when Deep_Reading.Body_Too_Large =>
+         Put_Line ("negative: a body past Max_Frame refused");
+   end;
+
+   --  The bound is the store's and not one off it.
+   declare
+      Largest : Deep_Reading.Frame_Store;
+   begin
+      Largest.Len := Deep_Reading.Max_Frame - 8 - Deep_Reading.Base_Size;
+      if Deep_Reading.Frame (1, 16#0015#, Largest).Len /= Deep_Reading.Max_Frame then
+         Put_Line ("negative: the largest body must still frame");
+         Ok := False;
+      else
+         Put_Line ("negative: the largest body still frames");
+      end if;
+   end;
 
    if Ok then
       Put_Line ("ALL OK");

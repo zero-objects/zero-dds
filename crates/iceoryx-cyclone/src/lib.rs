@@ -5,7 +5,7 @@
 //! ZeroDDS ↔ Cyclone DDS same-host zero-copy bridge over the **iceoryx C++
 //! (POSH)** shared-memory transport — the SHM stack Cyclone uses through its
 //! `iox_psmx` plugin (with the `iox-roudi` daemon), as opposed to the
-//! iceoryx2-Rust stack [`zerodds_flatdata`] bridges to natively.
+//! iceoryx2-Rust stack `zerodds_flatdata` bridges to natively.
 //!
 //! This crate FFI-binds the stable `libiceoryx_binding_c` C ABI (no C++ name
 //! mangling) and speaks Cyclone's PSMX chunk convention directly, so a ZeroDDS

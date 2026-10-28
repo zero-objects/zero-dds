@@ -19,7 +19,7 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use zerodds_cdr::{BufferReader, BufferWriter, DecodeError, EncodeError};
+use zerodds_wire::{Reader, WireError, Writer};
 
 /// DoS cap: maximum number of partition names in a QoS policy.
 /// Cyclone/Fast-DDS apps even in large topologies stay
@@ -40,14 +40,13 @@ impl PartitionQosPolicy {
     /// Wire encoding.
     ///
     /// # Errors
-    /// `ValueOutOfRange` on u32 overflow.
-    pub fn encode_into(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
-        let len = u32::try_from(self.names.len()).map_err(|_| EncodeError::ValueOutOfRange {
-            message: "partition list length exceeds u32::MAX",
-        })?;
-        w.write_u32(len)?;
+    /// [`WireError::OutOfRange`] for a list no `u32` count describes.
+    pub fn encode_into(&self, w: &mut Writer) -> Result<(), WireError> {
+        let len = u32::try_from(self.names.len())
+            .map_err(|_| WireError::refused(w.position(), "a partition count a u32 can carry"))?;
+        w.write_u32(len);
         for name in &self.names {
-            w.write_string(name)?;
+            w.write_string(name);
         }
         Ok(())
     }
@@ -56,34 +55,34 @@ impl PartitionQosPolicy {
     /// [`MAX_PARTITIONS`]) and length per name ([`MAX_PARTITION_NAME_LEN`]).
     ///
     /// # Errors
-    /// Buffer underflow; `InvalidString` for names over
-    /// `MAX_PARTITION_NAME_LEN`; `LengthExceeded` for more than
-    /// `MAX_PARTITIONS` entries.
-    pub fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
+    /// [`WireError::OutOfRange`] for more than [`MAX_PARTITIONS`] entries
+    /// or a name over [`MAX_PARTITION_NAME_LEN`],
+    /// [`WireError::ImpossibleLength`] for a count the stream cannot hold,
+    /// and [`WireError::Truncated`] for a stream that ends early.
+    pub fn decode_from(r: &mut Reader<'_>) -> Result<Self, WireError> {
+        let at = r.position();
         let len = r.read_u32()? as usize;
         if len > MAX_PARTITIONS {
-            return Err(DecodeError::LengthExceeded {
-                announced: len,
-                remaining: MAX_PARTITIONS,
-                offset: 0,
-            });
+            return Err(WireError::refused(at, "at most MAX_PARTITIONS entries"));
         }
-        // Additional byte-level cap: each entry at least 4 bytes.
+        // Additional byte-level cap: each entry is at least 4 bytes, so a
+        // count above a quarter of what is left cannot be true.
         if len > r.remaining() / 4 {
-            return Err(DecodeError::LengthExceeded {
-                announced: len,
-                remaining: r.remaining(),
-                offset: 0,
+            return Err(WireError::ImpossibleLength {
+                at,
+                claimed: len,
+                available: r.remaining(),
             });
         }
         let mut names = Vec::with_capacity(len);
         for _ in 0..len {
+            let name_at = r.position();
             let s = r.read_string()?;
             if s.len() > MAX_PARTITION_NAME_LEN {
-                return Err(DecodeError::InvalidString {
-                    offset: 0,
-                    reason: "partition name exceeds MAX_PARTITION_NAME_LEN",
-                });
+                return Err(WireError::refused(
+                    name_at,
+                    "a partition name of at most MAX_PARTITION_NAME_LEN octets",
+                ));
             }
             names.push(s);
         }
@@ -207,11 +206,68 @@ fn matches_class(members: &[u8], ch: u8) -> bool {
     false
 }
 
+/// Canonical PARTITION compatibility check (DDS 1.4 §2.2.3.13.6), shared
+/// by [`PartitionQosPolicy::is_compatible_with`] and the runtime's
+/// writer/reader matching so the two can never disagree.
+///
+/// Semantics:
+/// - An **empty list** is normalized to the single default partition name
+///   `""` (§2.2.3.13: "the empty string … is a valid partition name … an
+///   empty PARTITION QoS is treated as containing the empty string"). Thus
+///   `[]`, `[""]` and any mix of the two all match each other.
+/// - Otherwise the sides match iff **at least one** name on one side
+///   matches **one** name on the other ([`partition_names_match`]): a
+///   wildcard expression on either side matches a literal on the other
+///   under [`fnmatch`], "but no two names that both contain wildcards will
+///   ever be considered to match" (§2.2.3.13).
+///
+/// A named, non-empty partition never matches the default partition, since
+/// `fnmatch("name", "") == false` and `fnmatch("", "name") == false`.
+#[must_use]
+pub fn partitions_compatible(offered: &[String], requested: &[String]) -> bool {
+    // Normalize the empty list to the default partition [""].
+    const DEFAULT: &[String] = &[String::new()];
+    let off: &[String] = if offered.is_empty() { DEFAULT } else { offered };
+    let req: &[String] = if requested.is_empty() {
+        DEFAULT
+    } else {
+        requested
+    };
+    off.iter()
+        .any(|o| req.iter().any(|r| partition_names_match(o, r)))
+}
+
+/// Whether two partition names match (DDS 1.4 §2.2.3.13): two literals when
+/// they are equal, a wildcard expression and a literal when [`fnmatch`]
+/// says so, two wildcard expressions never — "no two names that both
+/// contain wildcards will ever be considered to match". Cyclone DDS
+/// (`partition_patmatch_p`) does the same with `*` and `?`.
+#[must_use]
+pub fn partition_names_match(a: &str, b: &str) -> bool {
+    match (has_wildcard(a), has_wildcard(b)) {
+        (true, true) => false,
+        (true, false) => fnmatch(a, b),
+        (false, true) => fnmatch(b, a),
+        (false, false) => a == b,
+    }
+}
+
+/// Whether `name` holds a wildcard of [`fnmatch`]: `*`, `?`, or a `[`
+/// with a `]` after it (a bracket expression; a lone `[` is a literal).
+fn has_wildcard(name: &str) -> bool {
+    let bytes = name.as_bytes();
+    bytes.iter().any(|&c| c == b'*' || c == b'?')
+        || bytes
+            .iter()
+            .position(|&c| c == b'[')
+            .is_some_and(|open| bytes[open + 1..].contains(&b']'))
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use zerodds_cdr::Endianness;
+    use zerodds_wire::Endianness;
 
     #[test]
     fn default_is_empty() {
@@ -231,10 +287,10 @@ mod tests {
     #[test]
     fn roundtrip_empty() {
         let p = PartitionQosPolicy::default();
-        let mut w = BufferWriter::new(Endianness::Little);
+        let mut w = Writer::new(Endianness::Little);
         p.encode_into(&mut w).unwrap();
-        let bytes = w.into_bytes();
-        let mut r = BufferReader::new(&bytes, Endianness::Little);
+        let bytes = w.finish();
+        let mut r = Reader::new(&bytes, Endianness::Little);
         assert_eq!(PartitionQosPolicy::decode_from(&mut r).unwrap(), p);
     }
 
@@ -243,21 +299,25 @@ mod tests {
         let p = PartitionQosPolicy {
             names: alloc::vec![String::from("sensor_data"), String::from("telemetry_*")],
         };
-        let mut w = BufferWriter::new(Endianness::Little);
+        let mut w = Writer::new(Endianness::Little);
         p.encode_into(&mut w).unwrap();
-        let bytes = w.into_bytes();
-        let mut r = BufferReader::new(&bytes, Endianness::Little);
+        let bytes = w.finish();
+        let mut r = Reader::new(&bytes, Endianness::Little);
         assert_eq!(PartitionQosPolicy::decode_from(&mut r).unwrap(), p);
     }
 
     #[test]
     fn decoder_rejects_too_many_partitions() {
         let mut bytes = alloc::vec::Vec::new();
-        // Length `MAX_PARTITIONS + 1` → LengthExceeded.
+        // A count of `MAX_PARTITIONS + 1` is refused.
         bytes.extend_from_slice(&(MAX_PARTITIONS as u32 + 1).to_le_bytes());
-        let mut r = BufferReader::new(&bytes, Endianness::Little);
+        let mut r = Reader::new(&bytes, Endianness::Little);
         let err = PartitionQosPolicy::decode_from(&mut r).unwrap_err();
-        assert!(matches!(err, DecodeError::LengthExceeded { .. }));
+        assert!(
+            matches!(&err, WireError::OutOfRange { expected, .. }
+                if expected.contains("MAX_PARTITIONS")),
+            "unexpected error: {err}"
+        );
     }
 
     // --- fnmatch ---
@@ -356,7 +416,7 @@ mod tests {
     }
 
     /// ReDoS sanity check: pathological pattern with MAX-len text
-    /// terminiert in &lt;50 ms (iterative Impl ist O(n*m)).
+    /// terminates in &lt;50 ms (iterative impl is O(n*m)).
     #[test]
     fn fnmatch_pathological_pattern_terminates_fast() {
         let pat = "a*a*a*a*a*a*a*b";
@@ -367,5 +427,74 @@ mod tests {
         // The pattern can never match (no 'b' in the text) — expectation: false
         // and above all: it terminates.
         assert!(!result);
+    }
+
+    // --- partitions_compatible: the DDS-spec matrix ---
+
+    fn names(v: &[&str]) -> alloc::vec::Vec<String> {
+        v.iter().map(|s| String::from(*s)).collect()
+    }
+
+    /// The empty list is the default partition `""`: `[]`, `[""]` and any
+    /// mix of the two match one another (DDS 1.4 §2.2.3.13).
+    #[test]
+    fn partitions_default_and_empty_string_are_equivalent() {
+        assert!(partitions_compatible(&names(&[]), &names(&[])));
+        assert!(partitions_compatible(&names(&[]), &names(&[""])));
+        assert!(partitions_compatible(&names(&[""]), &names(&[])));
+        assert!(partitions_compatible(&names(&[""]), &names(&[""])));
+    }
+
+    /// Symmetric fnmatch: a glob on either side matches a literal on the
+    /// other.
+    #[test]
+    fn partitions_wildcard_matches_symmetrically() {
+        assert!(partitions_compatible(&names(&["p1"]), &names(&["p*"])));
+        assert!(partitions_compatible(&names(&["p*"]), &names(&["p1"])));
+    }
+
+    /// DDS 1.4 §2.2.3.13: "no two names that both contain wildcards will
+    /// ever be considered to match". `p*` matched `p*` and `p?`, as `p*`
+    /// read as a literal matches the pattern `p*`.
+    #[test]
+    fn two_wildcard_names_never_match() {
+        assert!(!partitions_compatible(&names(&["p*"]), &names(&["p*"])));
+        assert!(!partitions_compatible(&names(&["p*"]), &names(&["p?"])));
+        assert!(!partitions_compatible(&names(&["*"]), &names(&["[ab]"])));
+        assert!(partitions_compatible(
+            &names(&["p*", "pa"]),
+            &names(&["p?"])
+        ));
+        // A `[` without `]` is no bracket expression: a literal.
+        assert!(partitions_compatible(&names(&["a[b"]), &names(&["a[b"])));
+        assert!(partitions_compatible(&names(&["a*"]), &names(&["a[b"])));
+    }
+
+    /// A non-matching literal/glob pair does not overlap.
+    #[test]
+    fn partitions_non_matching_wildcard_is_incompatible() {
+        assert!(!partitions_compatible(&names(&["x1"]), &names(&["p*"])));
+    }
+
+    /// A named, non-empty partition never matches the default partition.
+    #[test]
+    fn partitions_named_does_not_match_default() {
+        assert!(!partitions_compatible(&names(&["p1"]), &names(&[])));
+        assert!(!partitions_compatible(&names(&[]), &names(&["p1"])));
+        assert!(!partitions_compatible(&names(&["p1"]), &names(&[""])));
+    }
+
+    /// Regression for the fixed runtime bug: exact-equality matching used to
+    /// reject `p1` vs `p*`; a plain common name still matches.
+    #[test]
+    fn partitions_common_literal_matches() {
+        assert!(partitions_compatible(
+            &names(&["a", "b"]),
+            &names(&["c", "b"])
+        ));
+        assert!(!partitions_compatible(
+            &names(&["a", "b"]),
+            &names(&["c", "d"])
+        ));
     }
 }

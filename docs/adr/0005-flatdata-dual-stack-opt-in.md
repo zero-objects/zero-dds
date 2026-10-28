@@ -1,94 +1,94 @@
-# 0005 — Flatdata Dual-Stack: DCPS-Integration als opt-in Feature
+# 0005 — Flatdata dual stack: DCPS integration as an opt-in feature
 
 - **Status:** accepted
-- **Datum:** 2026-05-04
-- **Autoren:** @sandra
-- **Kontext:** crates/dcps, crates/flatdata
-- **Supersedes:** D-9 in zerodds-flatdata-1.0.md (war: "FlatWriter strikt separat")
+- **Date:** 2026-05-04
+- **Authors:** @sandra
+- **Context:** crates/dcps, crates/flatdata
+- **Supersedes:** D-9 in zerodds-flatdata-1.0.md (was: "FlatWriter strictly separate")
 
-## Kontext
+## Context
 
-D-9 in der flatdata-Spec hat ursprünglich gesagt: FlatWriter und
-DataWriter bleiben **strikt separate** Types. Begründung: keine
-Layout-Constraints aus FlatStruct in den DCPS-Layer leaken lassen.
+D-9 in the flatdata spec originally said: FlatWriter and
+DataWriter remain **strictly separate** types. Reason: do not let
+layout constraints from FlatStruct leak into the DCPS layer.
 
-Bei der Phase-2-Decision-Runde wurde die Frage neu gestellt: ist
-das aus Caller-Sicht ergonomisch?
+In the phase-2 decision round the question was asked again: is
+this ergonomic from the caller's point of view?
 
-- **Caller-Reality**: ein Robotics-Caller hat 80 % "normale" Topics
-  (mit Strings, Vecs) und 20 % High-Frequency-Sensor-Topics (Pose,
-  IMU). Er will EINEN Pub/Sub-Stack, nicht zwei.
-- **Type-Inference**: `pub.create_datawriter::<Pose>(&topic, qos)` →
-  und dann `writer.write_flat(&pose)?` ist intuitiver als
+- **Caller reality**: a robotics caller has 80 % "normal" topics
+  (with strings, Vecs) and 20 % high-frequency sensor topics (Pose,
+  IMU). The caller wants ONE pub/sub stack, not two.
+- **Type inference**: `pub.create_datawriter::<Pose>(&topic, qos)` →
+  and then `writer.write_flat(&pose)?` is more intuitive than
   `flat_pub.create_flat_writer::<Pose>(&topic).write(&pose)?`.
-- **Migration**: bestehende Caller, die ihren CDR-DataWriter haben und
-  einen Topic auf Zero-Copy migrieren wollen, müssen sonst den
-  ganzen Pub-Sub-Code austauschen.
+- **Migration**: existing callers that have their CDR DataWriter and
+  want to migrate one topic to zero-copy would otherwise have to replace
+  their whole pub/sub code.
 
-Risiken (siehe Decision-Runde Q3):
-- API-Komplexität: Multi-Pattern-DataWriter
-- Layout-Constraints leaken in DCPS
-- Zwei Wire-Pfade in einer Klasse
-- Reader-Side-Type-Inference-Pain
+Risks (see decision round Q3):
+- API complexity: multi-pattern DataWriter
+- Layout constraints leak into DCPS
+- Two wire paths in one class
+- Reader-side type inference pain
 
-Diese Risiken sind real, aber mit **opt-in via Build-Flag**
-mitigierbar: Caller, der nicht migrieren will, sieht die Methoden
-gar nicht.
+These risks are real, but they can be mitigated with **opt-in via a build flag**:
+a caller that does not want to migrate does not see the methods
+at all.
 
-## Entscheidung
+## Decision
 
-**Dual-Stack-Modus: `DataWriter::write_flat` und
-`DataReader::read_flat` werden als `T: DdsType + FlatStruct`-bound
-Methoden auf den DCPS-Klassen verfügbar — hinter Build-Flag
+**Dual-stack mode: `DataWriter::write_flat` and
+`DataReader::read_flat` become available as methods with a `T: DdsType + FlatStruct`
+bound on the DCPS classes — behind the build flag
 `--features flatdata-integration`.**
 
-Default-Build (ohne Feature):
-- DataWriter/Reader haben **nur** klassische CDR-Pfade (`write`,
+Default build (without the feature):
+- DataWriter/Reader have **only** the classic CDR paths (`write`,
   `take`).
-- FlatWriter/Reader sind separate Types in `crates/flatdata`.
-- Keine Cross-Coupling.
+- FlatWriter/Reader are separate types in `crates/flatdata`.
+- No cross-coupling.
 
-Mit `--features flatdata-integration`:
-- DataWriter bekommt `write_flat`/`loan_flat_slot` als Methoden mit
-  `where T: FlatStruct`-Bound.
-- DataReader bekommt `read_flat`-Method.
-- Pro DataWriter ein `Option<Arc<dyn SlotBackend>>`-Feld; bei `None`
-  fallback auf CDR.
-- Caller-Config bestimmt: SHM für Same-Host, UDP für Cross-Host
-  (siehe ADR-0003 Backend-Trait).
+With `--features flatdata-integration`:
+- DataWriter gets `write_flat`/`loan_flat_slot` as methods with a
+  `where T: FlatStruct` bound.
+- DataReader gets a `read_flat` method.
+- One `Option<Arc<dyn SlotBackend>>` field per DataWriter; on `None`
+  fallback to CDR.
+- The caller config decides: SHM for same-host, UDP for cross-host
+  (see ADR-0003 backend trait).
 
-derive(FlatStruct) Macro (`crates/dcps-derive`) wird **mit diesem
-Feature aktiv** — Caller braucht es, um die `T: FlatStruct`-Bound
-ergonomisch zu erfüllen.
+The derive(FlatStruct) macro (`crates/dcps-derive`) becomes **active with this
+feature** — the caller needs it to satisfy the `T: FlatStruct` bound
+ergonomically.
 
-## Alternativen
+## Alternatives
 
-1. **D-9 beibehalten (FlatWriter strikt separat)** — Caller-
-   Migration teurer; zwei Stacks. Verworfen.
-2. **DCPS-Integration immer aktiv** — Layout-Constraints leaken;
-   Caller-API komplex. Verworfen.
-3. **Opt-in via Feature-Flag** (gewählt) — Caller wählt explizit.
+1. **Keep D-9 (FlatWriter strictly separate)** — caller
+   migration more expensive; two stacks. Rejected.
+2. **DCPS integration always active** — layout constraints leak;
+   caller API complex. Rejected.
+3. **Opt-in via feature flag** (chosen) — the caller chooses explicitly.
 
-## Konsequenzen
+## Consequences
 
-**Positiv**:
-- Caller, der migrate will, behält den gleichen Pub/Sub-Code.
-- Layout-Constraints bleiben klar gekapselt (Feature-Gate).
-- derive(FlatStruct) hat klare Use-Case-Begründung.
+**Positive**:
+- A caller that wants to migrate keeps the same pub/sub code.
+- Layout constraints stay clearly encapsulated (feature gate).
+- derive(FlatStruct) has a clear use-case justification.
 
-**Negativ**:
-- Test-Surface verdoppelt (Default + flatdata-integration).
-- Caller-Doku braucht zwei Codepfade-Beispiele.
-- DCPS-Compile-Time geht hoch wenn Feature aktiv (Macro-Expansion).
+**Negative**:
+- Test surface doubles (default + flatdata-integration).
+- Caller documentation needs examples for two code paths.
+- DCPS compile time goes up when the feature is active (macro expansion).
 
-**Folge-Aufgaben**:
-- F11: derive(FlatStruct) Macro.
-- F-Dual: DataWriter::write_flat/read_flat hinter Feature.
-- ADR-0003 SlotBackend-Trait muss auf DataWriter erweiterbar sein.
-- CI: zweiter Job mit `--features flatdata-integration`.
+**Follow-up tasks**:
+- F11: derive(FlatStruct) macro.
+- F-Dual: DataWriter::write_flat/read_flat behind the feature.
+- The ADR-0003 SlotBackend trait must be extensible to DataWriter.
+- CI: second job with `--features flatdata-integration`.
 
-## Referenzen
+## References
 
 - `docs/specs/zerodds-flatdata-1.0.md` D-9 (superseded)
-- ADR-0003 (Backend-Trait)
+- ADR-0003 (backend trait)
 - ADR-0004 (Iceoryx2 optional)

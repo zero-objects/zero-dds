@@ -1,27 +1,27 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! ZeroDDS Chaos-Engineering Bibliothek.
+//! ZeroDDS Chaos-Engineering library.
 //!
 //! Crate `zerodds-chaos`. Safety classification: **COMFORT** (Test-Tool,
-//! kein Runtime-Pfad).
+//! no runtime path).
 //!
 //! # Module
 //!
 //! * [`proxy`] — In-Process UDP-Chaos-Proxy: injiziert Packet-Loss,
-//!   Jitter, Duplicates, Reorder. Plattform-unabhaengig, kein root.
-//! * [`tc`] — Linux-`tc qdisc`-Wrapper: nutzt `netem` fuer realistische
-//!   Network-Conditions auf einem Interface. Root-Privileg-pflichtig.
-//! * [`partition`] — iptables-basiertes Network-Partition zwischen
+//!   jitter, duplicates, reorder. Platform-independent, no root.
+//! * [`tc`] — Linux `tc qdisc` wrapper: uses `netem` for realistic
+//!   network conditions on an interface. Requires root privilege.
+//! * [`partition`] — iptables-based network partition between
 //!   IP-Gruppen.
-//! * [`endpoint_flap`] — toggelt ein Linux-Interface up/down im Takt.
-//! * [`prng`] — kleiner xorshift64-Generator fuer reproducible-seeds.
+//! * [`endpoint_flap`] — toggles a Linux interface up/down in cycles.
+//! * [`prng`] — small xorshift64 generator for reproducible seeds.
 //!
-//! # Determinismus
+//! # Determinism
 //!
-//! Alle Chaos-Operationen seedbar via `--seed`. Gleicher Seed +
-//! gleicher Eingabe-Strom = bit-identischer Ausgabe-Strom; Voraussetzung
-//! fuer property-test-fitting Pipelines.
+//! All Chaos operations are seedable via `--seed`. Same seed +
+//! same input stream = bit-identical output stream; prerequisite
+//! for property-test-fitting pipelines.
 
 #![warn(missing_docs)]
 

@@ -1,7 +1,7 @@
-//! End-to-End-Tests fuer das `isolation-smoke` Binary (Coverage-
-//! Boost per phase2-0-coverage Empfehlung). Spawnt das gebaute
-//! Binary als Subprozess in Sender/Receiver-Rolle und prueft den
-//! Exit-Code + stderr-Ausgabe.
+//! End-to-end tests for the `isolation-smoke` binary (coverage
+//! boost per phase2-0-coverage recommendation). Spawns the built
+//! binary as a subprocess in sender/receiver role and checks the
+//! Exit code + stderr output.
 
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 
@@ -11,14 +11,14 @@ use std::process::{Command, Stdio};
 use std::time::Duration;
 
 fn smoke_bin() -> PathBuf {
-    // Cargo setzt CARGO_BIN_EXE_<name> fuer jedes bin target der
-    // gleichen Crate. Das ist der robuste Weg, ohne pfade zu raten.
+    // Cargo sets CARGO_BIN_EXE_<name> for every bin target of the
+    // same crate. This is the robust way, without guessing paths.
     PathBuf::from(env!("CARGO_BIN_EXE_isolation-smoke"))
 }
 
 fn unique_port(offset: u16) -> u16 {
-    // Test-Pid + offset als port-basis. Tests laufen seriell auf
-    // cargo test (default), das kollisions-free.
+    // Test pid + offset as port base. Tests run serially on
+    // cargo test (default), collision-free.
     let pid = std::process::id() as u16;
     17000u16.wrapping_add(pid % 500).wrapping_add(offset)
 }
@@ -77,7 +77,7 @@ fn smoke_binary_rejects_unknown_transport() {
 
 #[test]
 fn smoke_binary_rejects_missing_local_for_udp() {
-    // UDP-sender ohne --local → config-Fehler (bind-fehler an 1).
+    // UDP sender without --local → config error (bind error at 1).
     let out = Command::new(smoke_bin())
         .args([
             "--transport=udp",
@@ -87,7 +87,7 @@ fn smoke_binary_rejects_missing_local_for_udp() {
         ])
         .output()
         .expect("run");
-    // Exit-code 1 (config) ist richtig — wir haben --local vergessen.
+    // Exit code 1 (config) is correct — we forgot --local.
     assert_eq!(out.status.code(), Some(1));
 }
 

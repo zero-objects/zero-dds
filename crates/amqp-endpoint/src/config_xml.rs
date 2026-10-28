@@ -71,6 +71,25 @@ pub enum XmlConfigError {
     MissingElement(String),
     /// Required attribute missing.
     MissingAttribute(String),
+    /// An element this loader does not know, where it stands: a misspelt
+    /// element would otherwise drop its setting without a word.
+    UnknownElement {
+        /// The element's name.
+        name: String,
+        /// The element it stands in.
+        parent: String,
+        /// 1-based line.
+        line: u32,
+    },
+    /// An attribute this loader does not know on a known element.
+    UnknownAttribute {
+        /// The attribute's name.
+        name: String,
+        /// Its element.
+        element: String,
+        /// 1-based line.
+        line: u32,
+    },
     /// Value could not be parsed.
     InvalidValue {
         /// Element/attribute name.
@@ -89,6 +108,14 @@ impl fmt::Display for XmlConfigError {
             }
             Self::MissingElement(s) => write!(f, "missing element <{s}>"),
             Self::MissingAttribute(s) => write!(f, "missing attribute @{s}"),
+            Self::UnknownElement { name, parent, line } => {
+                write!(f, "line {line}: unknown element <{name}> in <{parent}>")
+            }
+            Self::UnknownAttribute {
+                name,
+                element,
+                line,
+            } => write!(f, "line {line}: unknown attribute {name} on <{element}>"),
             Self::InvalidValue { field, value } => {
                 write!(f, "invalid value for {field}: '{value}'")
             }
@@ -112,6 +139,8 @@ pub struct DdsAmqpConfig {
 /// # Errors
 /// `XmlConfigError` on parser errors or missing required fields.
 pub fn parse_config(xml: &str) -> Result<DdsAmqpConfig, XmlConfigError> {
+    zerodds_foundation::check_nesting(xml, zerodds_foundation::XML_NESTING_LIMIT)
+        .map_err(|e| XmlConfigError::Parse(e.to_string()))?;
     let doc = roxmltree::Document::parse(xml).map_err(|e| XmlConfigError::Parse(e.to_string()))?;
     let root = doc.root_element();
     if root.tag_name().name() != "dds-amqp" {
@@ -125,13 +154,14 @@ pub fn parse_config(xml: &str) -> Result<DdsAmqpConfig, XmlConfigError> {
         match child.tag_name().name() {
             "endpoint" => cfg.endpoints.push(parse_endpoint(child)?),
             "bridge" => cfg.bridges.push(parse_bridge(child)?),
-            _ => {} // unknown top-level elements are ignored.
+            _ => return Err(unknown(child)),
         }
     }
     Ok(cfg)
 }
 
 fn parse_endpoint(node: roxmltree::Node) -> Result<AmqpEndpointConfig, XmlConfigError> {
+    only_attributes(&node, &["name"])?;
     let mut cfg = AmqpEndpointConfig {
         endpoint_name: attr(&node, "name").unwrap_or_default(),
         bridge_hop_cap: 8,
@@ -147,13 +177,14 @@ fn parse_endpoint(node: roxmltree::Node) -> Result<AmqpEndpointConfig, XmlConfig
             "topics" => cfg.topics = parse_topics(child)?,
             "dynamic" => cfg.dynamic = parse_dynamic(child)?,
             "limits" => cfg.limits = parse_limits(child)?,
-            _ => {}
+            _ => return Err(unknown(child)),
         }
     }
     Ok(cfg)
 }
 
 fn parse_bridge(node: roxmltree::Node) -> Result<AmqpBridgeConfig, XmlConfigError> {
+    only_attributes(&node, &["name"])?;
     let mut cfg = AmqpBridgeConfig {
         bridge_name: attr(&node, "name").unwrap_or_default(),
         bridge_hop_cap: 8,
@@ -167,19 +198,26 @@ fn parse_bridge(node: roxmltree::Node) -> Result<AmqpBridgeConfig, XmlConfigErro
             "tls" => cfg.tls = parse_tls(child)?,
             "sasl" => cfg.sasl = parse_sasl(child)?,
             "topics" => cfg.topics = parse_topics(child)?,
-            _ => {}
+            _ => return Err(unknown(child)),
         }
     }
     Ok(cfg)
 }
 
 fn parse_tls(node: roxmltree::Node) -> Result<TlsConfig, XmlConfigError> {
+    only_attributes(
+        &node,
+        &["enabled", "cert", "key", "ca", "require-client-cert"],
+    )?;
+    if let Some(child) = node.children().find(roxmltree::Node::is_element) {
+        return Err(unknown(child));
+    }
     Ok(TlsConfig {
-        enabled: parse_bool_attr(&node, "enabled").unwrap_or(false),
+        enabled: parse_bool_attr(&node, "enabled")?.unwrap_or(false),
         cert_path: attr(&node, "cert").unwrap_or_default(),
         key_path: attr(&node, "key").unwrap_or_default(),
         ca_path: attr(&node, "ca").unwrap_or_default(),
-        require_client_cert: parse_bool_attr(&node, "require-client-cert").unwrap_or(false),
+        require_client_cert: parse_bool_attr(&node, "require-client-cert")?.unwrap_or(false),
     })
 }
 
@@ -196,7 +234,7 @@ fn parse_sasl(node: roxmltree::Node) -> Result<SaslConfig, XmlConfigError> {
                 sasl.enabled_mechanisms.push(m);
             }
             "credential-store-uri" => sasl.credential_store_uri = text(child),
-            _ => {}
+            _ => return Err(unknown(child)),
         }
     }
     Ok(sasl)
@@ -207,6 +245,8 @@ fn parse_topics(node: roxmltree::Node) -> Result<Vec<TopicMapping>, XmlConfigErr
     for child in node.children().filter(roxmltree::Node::is_element) {
         if child.tag_name().name() == "topic-mapping" {
             out.push(parse_topic_mapping(child)?);
+        } else {
+            return Err(unknown(child));
         }
     }
     Ok(out)
@@ -252,7 +292,7 @@ fn parse_topic_mapping(node: roxmltree::Node) -> Result<TopicMapping, XmlConfigE
                     value: raw,
                 })?;
             }
-            _ => {}
+            _ => return Err(unknown(child)),
         }
     }
     if t.amqp_address.is_empty() {
@@ -278,13 +318,26 @@ fn parse_dynamic(node: roxmltree::Node) -> Result<DynamicTopicConfig, XmlConfigE
                         value: raw,
                     })?;
             }
-            _ => {}
+            _ => return Err(unknown(child)),
         }
     }
     Ok(d)
 }
 
 fn parse_limits(node: roxmltree::Node) -> Result<ResourceLimits, XmlConfigError> {
+    only_attributes(
+        &node,
+        &[
+            "max-connections",
+            "max-sessions-per-connection",
+            "max-links-per-session",
+            "max-frame-size",
+            "idle-timeout-ms",
+        ],
+    )?;
+    if let Some(child) = node.children().find(roxmltree::Node::is_element) {
+        return Err(unknown(child));
+    }
     let mut l = ResourceLimits::default();
     if let Some(s) = attr(&node, "max-connections") {
         l.max_connections = parse_u32_str(&s, "max-connections")?;
@@ -315,6 +368,8 @@ fn parse_limits(node: roxmltree::Node) -> Result<ResourceLimits, XmlConfigError>
 /// # Errors
 /// `XmlConfigError`.
 pub fn parse_governance(xml: &str) -> Result<GovernanceDocument, XmlConfigError> {
+    zerodds_foundation::check_nesting(xml, zerodds_foundation::XML_NESTING_LIMIT)
+        .map_err(|e| XmlConfigError::Parse(e.to_string()))?;
     let doc = roxmltree::Document::parse(xml).map_err(|e| XmlConfigError::Parse(e.to_string()))?;
     let root = doc.root_element();
     if root.tag_name().name() != "governance" {
@@ -327,6 +382,8 @@ pub fn parse_governance(xml: &str) -> Result<GovernanceDocument, XmlConfigError>
     for child in root.children().filter(roxmltree::Node::is_element) {
         if child.tag_name().name() == "rule" {
             g.add_rule(parse_governance_rule(child)?);
+        } else {
+            return Err(unknown(child));
         }
     }
     Ok(g)
@@ -358,7 +415,7 @@ fn parse_governance_rule(node: roxmltree::Node) -> Result<GovernanceRule, XmlCon
                     }
                 };
             }
-            _ => {}
+            _ => return Err(unknown(child)),
         }
     }
     if topic_pattern.is_empty() {
@@ -396,13 +453,48 @@ fn parse_bool(node: roxmltree::Node) -> Result<bool, XmlConfigError> {
     }
 }
 
-fn parse_bool_attr(node: &roxmltree::Node, name: &str) -> Option<bool> {
-    let raw = node.attribute(name)?;
+fn parse_bool_attr(node: &roxmltree::Node, name: &str) -> Result<Option<bool>, XmlConfigError> {
+    let Some(raw) = node.attribute(name) else {
+        return Ok(None);
+    };
     match raw {
-        "true" | "1" | "yes" => Some(true),
-        "false" | "0" | "no" => Some(false),
-        _ => None,
+        "true" | "1" | "yes" => Ok(Some(true)),
+        "false" | "0" | "no" => Ok(Some(false)),
+        _ => Err(XmlConfigError::InvalidValue {
+            field: name.to_string(),
+            value: raw.to_string(),
+        }),
     }
+}
+
+fn line_of(node: &roxmltree::Node) -> u32 {
+    node.document().text_pos_at(node.range().start).row
+}
+
+/// The error for an element no parser here knows.
+fn unknown(node: roxmltree::Node) -> XmlConfigError {
+    XmlConfigError::UnknownElement {
+        name: node.tag_name().name().to_string(),
+        parent: node
+            .parent_element()
+            .map(|p| p.tag_name().name().to_string())
+            .unwrap_or_default(),
+        line: line_of(&node),
+    }
+}
+
+/// Refuses an attribute of `node` not in `allowed`.
+fn only_attributes(node: &roxmltree::Node, allowed: &[&str]) -> Result<(), XmlConfigError> {
+    for a in node.attributes() {
+        if a.namespace().is_none() && !allowed.contains(&a.name()) {
+            return Err(XmlConfigError::UnknownAttribute {
+                name: a.name().to_string(),
+                element: node.tag_name().name().to_string(),
+                line: line_of(node),
+            });
+        }
+    }
+    Ok(())
 }
 
 fn parse_u8(node: roxmltree::Node) -> Result<u8, XmlConfigError> {
@@ -629,22 +721,64 @@ mod tests {
         assert!(matches!(err, XmlConfigError::InvalidValue { .. }));
     }
 
+    /// A misspelt element or attribute used to drop its setting without a
+    /// word (`<listen_uri>` for `<listen-uri>` left the endpoint on its
+    /// default port). The namespace carries the version, so a later
+    /// revision's elements come under another one; within v1.0 an unknown
+    /// name is an error, with its line.
     #[test]
-    fn unknown_elements_are_ignored() {
-        // Forward compat: unknown elements (e.g. from future spec
-        // revisions) are not treated as errors.
-        let xml = r#"<dds-amqp xmlns="http://www.zerodds.org/dds-amqp/v1.0">
-          <endpoint name="ep">
-            <listen-uri>amqp://x:1</listen-uri>
-            <future-feature>some-config</future-feature>
-          </endpoint>
-        </dds-amqp>"#;
-        let cfg = parse_config(xml).unwrap();
-        assert_eq!(cfg.endpoints[0].listen_uri, "amqp://x:1");
+    fn unknown_elements_and_attributes_are_refused_with_their_line() {
+        let cases = [
+            (
+                "<dds-amqp>\n<endpoint name=\"ep\">\n<listen_uri>amqp://x:1</listen_uri>\n</endpoint>\n</dds-amqp>",
+                "line 3: unknown element <listen_uri> in <endpoint>",
+            ),
+            (
+                "<dds-amqp>\n<endpoint name=\"ep\">\n<tls enabld=\"true\"/>\n</endpoint>\n</dds-amqp>",
+                "line 3: unknown attribute enabld on <tls>",
+            ),
+            (
+                "<dds-amqp>\n<endpont/>\n</dds-amqp>",
+                "line 2: unknown element <endpont> in <dds-amqp>",
+            ),
+            (
+                "<dds-amqp><endpoint><sasl><mech>PLAIN</mech></sasl></endpoint></dds-amqp>",
+                "unknown element <mech> in <sasl>",
+            ),
+        ];
+        for (xml, needle) in cases {
+            let err = parse_config(xml).unwrap_err().to_string();
+            assert!(err.contains(needle), "{xml}: {err}");
+        }
+        let err = parse_config("<dds-amqp><endpoint><tls enabled=\"ja\"/></endpoint></dds-amqp>")
+            .unwrap_err();
+        assert!(
+            matches!(err, XmlConfigError::InvalidValue { ref field, .. } if field == "enabled"),
+            "a boolean attribute that is neither true nor false: {err}"
+        );
     }
 
     #[test]
     fn xml_namespace_constant_matches_spec() {
         assert_eq!(XML_NAMESPACE, "http://www.zerodds.org/dds-amqp/v1.0");
+    }
+}
+
+#[cfg(test)]
+mod nesting_tests {
+    use super::*;
+
+    /// `roxmltree` recurses once per open element; a configuration or
+    /// governance document from outside with a long run of unclosed start
+    /// tags is refused before it reaches the parser, instead of
+    /// overflowing the stack.
+    #[test]
+    fn a_deeply_nested_text_is_refused_before_the_parser() {
+        let text = "<a>".repeat(100_000);
+        assert!(matches!(parse_config(&text), Err(XmlConfigError::Parse(_))));
+        assert!(matches!(
+            parse_governance(&text),
+            Err(XmlConfigError::Parse(_))
+        ));
     }
 }

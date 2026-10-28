@@ -1,0 +1,121 @@
+.TH ZERODDS-NAMING-SVC 1 "" "ZeroDDS" "ZeroDDS Manual"
+.SH NAME
+zerodds-naming-svc \- standalone OMG CosNaming 1.3 NameService daemon
+.SH SYNOPSIS
+.B zerodds-naming-svc
+[\fB\-\-config\fR \fIFILE\fR]
+[\fB\-\-set\fR \fIPATH=VALUE\fR]...
+[\fB\-\-check\-config\fR]
+[\fB\-\-bind\fR \fIADDR\fR]
+[\fB\-\-persist\-file\fR \fIFILE\fR]
+[\fB\-V\fR | \fB\-h\fR]
+.SH DESCRIPTION
+.B zerodds-naming-svc
+implements OMG Naming Service 1.3
+.RI ( formal/2004-10-03 )
+in full:
+.BR NamingContext " (bind, rebind, bind_context, rebind_context, resolve,"
+.BR unbind ", " new_context ", " bind_new_context ", " destroy ", " list ),
+.BR NamingContextExt " (" to_string ", " to_name ", " to_url ", " resolve_str ")"
+and
+.BR BindingIterator " (" next_one ", " next_n ", " destroy ),
+over IIOP and, with a certificate, SSLIOP.
+.PP
+The root context's object key is
+.IR NameService ,
+reachable as
+.IR corbaloc::host:2809/NameService
+(the default port); every other bound context and every live
+.B BindingIterator
+gets its own object key, so a resolved sub-context or a
+.B list
+reply's iterator is a fully addressable object in its own right, not a
+handle only the root understands.
+.PP
+With
+.BR \-\-persist\-file ,
+the whole naming graph is written to that file (atomically: a sibling
+temporary file, then a rename) after every operation that changes it, and
+read back at start, so a restart keeps its bindings. Without it the graph
+is in memory only.
+.SH OPTIONS
+.TP
+.BR \-\-config =\fIFILE\fR
+Base file, plus \fIFILE\fR.d/. Without it:
+.I naming-svc.yaml
+and
+.I naming-svc.d/
+in the system directory. See
+.BR zerodds-naming-svc.yaml (5).
+.TP
+.BR \-\-set =\fIPATH=VALUE\fR
+One value above all files; repeatable. Every option below except
+\fB\-\-version\fR/\fB\-\-help\fR is short for \fB\-\-set\fR of its file key.
+.TP
+.BR \-\-check\-config
+Check the configuration, print every value with its origin, exit
+0 (valid) or 1 (invalid).
+.TP
+.BR \-\-bind =\fIADDR\fR
+IIOP listen address. Default:
+.IR 0.0.0.0:2809 .
+.TP
+.BR \-\-advertise\-host =\fIHOST\fR
+The host named in every IOR this daemon hands out, when
+.B \-\-bind
+is a wildcard address. Default:
+.IR 127.0.0.1 .
+.TP
+.BR \-\-persist\-file =\fIFILE\fR
+Where the naming graph is saved. Without it, nothing is persisted.
+.TP
+.BR \-\-ssliop\-bind =\fIADDR\fR
+SSLIOP listen address; enables SSLIOP. Default:
+.IR 0.0.0.0:2810 .
+.TP
+.BR \-\-tls\-cert =\fIFILE\fR
+SSLIOP server certificate (PEM).
+.TP
+.BR \-\-tls\-key =\fIFILE\fR
+SSLIOP server key (PEM).
+.TP
+.BR \-\-log\-level =\fILEVEL\fR
+One of
+.IR trace ", " debug ", " info ", " warn ", " error .
+.TP
+.BR \-V ", " \-\-version
+Print version.
+.TP
+.BR \-h ", " \-\-help
+Show the option synopsis.
+.SH SIGNALS
+SIGTERM and SIGINT stop the daemon: the accept loops close, the graph is
+saved one last time when
+.B naming.persist_file
+is set, then the process exits.
+.SH ENVIRONMENT
+.TP
+.B ZERODDS_NAMING_ADVERTISE_HOST
+The host the IORs name when
+.B naming.bind
+is a wildcard address; the setting
+.BR naming.advertise_host ,
+above the files, below
+.BR \-\-set .
+Default
+.IR 127.0.0.1 .
+.SH EXIT STATUS
+0 normal stop, 1 configuration, 2 bind, 4 TLS.
+.SH FILES
+.IR /etc/zerodds/naming-svc.yaml ,
+the file named by
+.BR naming.persist_file .
+.SH SEE ALSO
+.BR zerodds-naming-svc.yaml (5),
+.BR zerodds-corba-bridged (1).
+.SH STANDARDS
+OMG Naming Service 1.3
+.RI ( formal/2004-10-03 ),
+CORBA 3.4, GIOP 1.2, SSLIOP, CSIv2.
+.SH AUTHORS
+ZeroDDS Contributors.

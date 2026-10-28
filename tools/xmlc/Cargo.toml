@@ -6,12 +6,12 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "ZeroDDS DDS-XML CLI — Validator, Schema-Checker, Deployment-Renderer."
+description = "The ZeroDDS DDS-XML tool: validate an OMG DDS-XML 1.0 document, list its types, or render its deployment."
 homepage = "https://zerodds.org"
 documentation = "https://docs.rs/zerodds-xmlc"
 readme = "README.md"
-keywords = ["dds", "xml", "validator", "deployment", "cli"]
-categories = ["command-line-utilities", "development-tools"]
+keywords = ["dds", "xml", "dds-xml", "omg", "validator"]
+categories = ["development-tools", "command-line-utilities"]
 publish = true
 
 [lints]
@@ -23,5 +23,3 @@ path = "src/main.rs"
 
 [dependencies]
 zerodds-xml = { version = "1.0.0-rc.7", path = "../../crates/xml" }
-
-[dev-dependencies]

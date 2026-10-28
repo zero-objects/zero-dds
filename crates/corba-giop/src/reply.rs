@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Reply-Message — Spec §15.4.3.
+//! The Reply message — Spec §15.4.3.
 //!
 //! GIOP 1.0/1.1 (`§15.4.3.1`):
 //! ```text
@@ -31,7 +31,7 @@
 
 use alloc::vec::Vec;
 
-use zerodds_cdr::{BufferReader, BufferWriter};
+use zerodds_wire::{Reader, Writer};
 
 use crate::error::{GiopError, GiopResult};
 use crate::service_context::ServiceContextList;
@@ -88,7 +88,7 @@ impl ReplyStatusType {
     }
 }
 
-/// Reply-Message-Body.
+/// The Reply body.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Reply {
     /// `request_id`.
@@ -103,11 +103,11 @@ pub struct Reply {
 }
 
 impl Reply {
-    /// CDR-Encode.
+    /// CDR encode.
     ///
     /// # Errors
     /// Buffer write error.
-    pub fn encode(&self, version: Version, w: &mut BufferWriter) -> GiopResult<()> {
+    pub fn encode(&self, version: Version, w: &mut Writer) -> GiopResult<()> {
         // Validate status against version.
         match self.reply_status {
             ReplyStatusType::LocationForwardPerm | ReplyStatusType::NeedsAddressingMode
@@ -121,31 +121,39 @@ impl Reply {
             _ => {}
         }
         if version.uses_v1_2_request_layout() {
-            w.write_u32(self.request_id)?;
-            w.write_u32(self.reply_status.as_u32())?;
+            w.write_u32(self.request_id);
+            w.write_u32(self.reply_status.as_u32());
             self.service_context.encode(w)?;
-            w.align(8);
+            // Only when a body follows — see `Request::encode` for the
+            // clause and for what omniORB says about the alternative.
+            if !self.body.is_empty() {
+                w.align_to(8);
+            }
         } else {
             self.service_context.encode(w)?;
-            w.write_u32(self.request_id)?;
-            w.write_u32(self.reply_status.as_u32())?;
+            w.write_u32(self.request_id);
+            w.write_u32(self.reply_status.as_u32());
         }
-        w.write_bytes(&self.body)?;
+        w.write_bytes(&self.body);
         Ok(())
     }
 
-    /// CDR-Decode.
+    /// CDR decode.
     ///
     /// # Errors
     /// Buffer read error or unknown status.
-    pub fn decode(version: Version, r: &mut BufferReader<'_>) -> GiopResult<Self> {
+    pub fn decode(version: Version, r: &mut Reader<'_>) -> GiopResult<Self> {
         if version.uses_v1_2_request_layout() {
             let request_id = r.read_u32()?;
             let status_raw = r.read_u32()?;
             let reply_status = ReplyStatusType::from_u32(status_raw, version)?;
             let service_context = ServiceContextList::decode(r)?;
-            r.align(8)?;
-            let body = r.read_bytes(r.remaining())?.to_vec();
+            let body = if r.remaining() > 0 {
+                r.align_to(8)?;
+                r.read_bytes(r.remaining())?.to_vec()
+            } else {
+                Vec::new()
+            };
             Ok(Self {
                 request_id,
                 reply_status,
@@ -172,7 +180,7 @@ impl Reply {
 #[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
-    use zerodds_cdr::Endianness;
+    use zerodds_wire::Endianness;
 
     #[test]
     fn reply_status_values_match_spec() {
@@ -193,10 +201,10 @@ mod tests {
             service_context: ServiceContextList::default(),
             body: alloc::vec![0xde, 0xad],
         };
-        let mut w = BufferWriter::new(Endianness::Big);
+        let mut w = Writer::new(Endianness::Big);
         r.encode(Version::V1_0, &mut w).unwrap();
-        let bytes = w.into_bytes();
-        let mut rd = BufferReader::new(&bytes, Endianness::Big);
+        let bytes = w.finish();
+        let mut rd = Reader::new(&bytes, Endianness::Big);
         let decoded = Reply::decode(Version::V1_0, &mut rd).unwrap();
         assert_eq!(decoded, r);
     }
@@ -209,10 +217,10 @@ mod tests {
             service_context: ServiceContextList::default(),
             body: alloc::vec![1, 2, 3, 4, 5, 6, 7, 8],
         };
-        let mut w = BufferWriter::new(Endianness::Little);
+        let mut w = Writer::new(Endianness::Little);
         r.encode(Version::V1_2, &mut w).unwrap();
-        let bytes = w.into_bytes();
-        let mut rd = BufferReader::new(&bytes, Endianness::Little);
+        let bytes = w.finish();
+        let mut rd = Reader::new(&bytes, Endianness::Little);
         let decoded = Reply::decode(Version::V1_2, &mut rd).unwrap();
         assert_eq!(decoded, r);
     }
@@ -225,10 +233,10 @@ mod tests {
             service_context: ServiceContextList::default(),
             body: alloc::vec::Vec::new(),
         };
-        let mut w = BufferWriter::new(Endianness::Big);
+        let mut w = Writer::new(Endianness::Big);
         r.encode(Version::V1_2, &mut w).unwrap();
-        let bytes = w.into_bytes();
-        let mut rd = BufferReader::new(&bytes, Endianness::Big);
+        let bytes = w.finish();
+        let mut rd = Reader::new(&bytes, Endianness::Big);
         let decoded = Reply::decode(Version::V1_2, &mut rd).unwrap();
         assert_eq!(decoded, r);
     }
@@ -241,20 +249,20 @@ mod tests {
             service_context: ServiceContextList::default(),
             body: alloc::vec::Vec::new(),
         };
-        let mut w = BufferWriter::new(Endianness::Big);
+        let mut w = Writer::new(Endianness::Big);
         let err = r.encode(Version::V1_0, &mut w).unwrap_err();
         assert!(matches!(err, GiopError::Malformed(_)));
     }
 
     #[test]
     fn unknown_reply_status_is_diagnostic() {
-        let mut w = BufferWriter::new(Endianness::Big);
+        let mut w = Writer::new(Endianness::Big);
         // Service-context list (empty) + request_id + invalid status.
         ServiceContextList::default().encode(&mut w).unwrap();
-        w.write_u32(1).unwrap();
-        w.write_u32(99).unwrap();
-        let bytes = w.into_bytes();
-        let mut rd = BufferReader::new(&bytes, Endianness::Big);
+        w.write_u32(1);
+        w.write_u32(99);
+        let bytes = w.finish();
+        let mut rd = Reader::new(&bytes, Endianness::Big);
         let err = Reply::decode(Version::V1_0, &mut rd).unwrap_err();
         assert!(matches!(err, GiopError::UnknownReplyStatus(99)));
     }

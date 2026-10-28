@@ -1,4 +1,4 @@
-.TH ZERODDS-RECORD 1 "May 2026" "ZeroDDS 1.0.0-rc.1" "User Commands"
+.TH ZERODDS-RECORD 1 "" "ZeroDDS" "User Commands"
 .SH NAME
 zerodds-record \- capture and inspect ZeroDDS .zddsrec files
 .SH SYNOPSIS
@@ -8,6 +8,11 @@ zerodds-record \- capture and inspect ZeroDDS .zddsrec files
 [\fB\-t\fR \fITOPIC\fR]...
 [\fB\-\-duration\fR \fIDUR\fR]
 [\fB\-\-max\-sample\-bytes\fR \fIN\fR]
+[\fB\-\-decode\fR \fB\-\-type\-file\fR \fIIDL\fR]
+[\fB\-\-map\fR \fITOPIC=Type\fR]...
+[\fB\-\-out\-json\fR \fIFILE\fR]
+[\fB\-\-out\-sqlite\fR \fIFILE\fR]
+[\fB\-\-dialect\fR \fINAME\fR]
 .PP
 .B zerodds-record info
 .I FILE
@@ -53,6 +58,53 @@ indefinite (until SIGINT).
 .TP
 .BR \-\-max\-sample\-bytes " " \fIN\fR
 DoS cap per sample. Default: 1048576.
+.TP
+.BR \-\-config " " \fIPATH\fR
+The base configuration file; its sibling
+.IR PATH .d/
+holds drop-ins. Default: the system configuration directory
+.RI ( /etc/zerodds
+on Linux,
+.I /usr/local/etc/zerodds
+on macOS).
+.TP
+.BR \-\-set " \fIPATH\fR=\fIVALUE\fR"
+One setting above every file, repeatable;
+.BI + PATH = VALUE
+appends to a list.
+.TP
+.B \-\-check\-config
+Validate and print the effective configuration with the origin of every
+value, then exit: 0 valid, 1 invalid value or unknown key, 2 unreadable
+file, syntax error or include cycle.
+.SH DECODED OUTPUT FOR record
+The opaque
+.B .zddsrec
+is always written as well.
+.TP
+.BR \-\-decode
+Decode samples to typed values. Needs
+.BR \-\-type\-file .
+.TP
+.BR \-\-type\-file " " \fIIDL\fR
+Out-of-band IDL providing the types.
+.TP
+.BR \-\-map " " \fITOPIC=Type\fR
+Override which IDL type decodes a topic (repeatable).
+.TP
+.BR \-\-out\-json " " \fIFILE\fR
+Write decoded samples as NDJSON.
+.TP
+.BR \-\-out\-sqlite " " \fIFILE\fR
+Write decoded samples to per-topic SQLite. An existing FILE is replaced, as
+with \fB\-o\fR and \fB\-\-out\-json\fR.
+.TP
+.BR \-\-dialect " " \fINAME\fR
+The wire dialect to decode in: \fIcyclone\fR, \fIrti\fR, \fIfastdds\fR,
+\fIopendds\fR and the others \fBzerodds\-idlc generate \-\-dialect\fR takes.
+Default: the configuration's \fBwire.codec_dialect\fR, itself \fIspecification\fR
+unless set. The decoder does not infer it from the bytes;
+a sample written in another dialect is reported, not accepted.
 .SH GLOBAL OPTIONS
 .TP
 .BR \-h ", " \-\-help

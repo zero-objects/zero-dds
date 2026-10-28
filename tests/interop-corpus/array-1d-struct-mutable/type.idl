@@ -1,0 +1,10 @@
+// one-dimensional array of a mutable structure
+@mutable struct Cell {
+    long a;
+    short b;
+};
+
+@final struct Sample {
+    Cell items[2];
+    octet tail;
+};

@@ -110,8 +110,10 @@ pub enum SuiteHint {
     Aes128Gcm,
     /// AES-256-GCM — for long-term confidentiality / compliance.
     Aes256Gcm,
-    /// HMAC-SHA256 auth-only (no confidentiality, SIGN level).
-    HmacSha256,
+    /// AES-256-GMAC auth-only (no confidentiality, SIGN level; DDS-Security
+    /// 1.2 §10.5.2 Table 77, kind 0x03). It was HMAC-SHA256, which is no
+    /// transformation of the specification.
+    Aes256Gmac,
 }
 
 impl SuiteHint {
@@ -121,7 +123,7 @@ impl SuiteHint {
         match self {
             Self::Aes128Gcm => Suite::Aes128Gcm,
             Self::Aes256Gcm => Suite::Aes256Gcm,
-            Self::HmacSha256 => Suite::HmacSha256,
+            Self::Aes256Gmac => Suite::Aes256Gmac,
         }
     }
 
@@ -131,20 +133,19 @@ impl SuiteHint {
         match suite {
             Suite::Aes128Gcm => Self::Aes128Gcm,
             Suite::Aes256Gcm => Self::Aes256Gcm,
-            // AES-256-GMAC is auth-only (SIGN) — for the capability advertisement
-            // map it to the SIGN hint; the real key suite is set directly via
-            // set_local_protection_suites, not via this hint.
-            Suite::HmacSha256 | Suite::Aes256Gmac => Self::HmacSha256,
+            // AES-128-GMAC is auth-only (SIGN) too; the SIGN hint is the
+            // AES-256 one, the suite of a SIGN rule here.
+            Suite::Aes128Gmac | Suite::Aes256Gmac => Self::Aes256Gmac,
         }
     }
 
     /// Returns the natural protection level of this suite:
-    /// AEAD suites → `Encrypt`, HMAC → `Sign`.
+    /// GCM suites → `Encrypt`, GMAC → `Sign`.
     #[must_use]
     pub fn protection_level(self) -> ProtectionLevel {
         match self {
             Self::Aes128Gcm | Self::Aes256Gcm => ProtectionLevel::Encrypt,
-            Self::HmacSha256 => ProtectionLevel::Sign,
+            Self::Aes256Gmac => ProtectionLevel::Sign,
         }
     }
 }
@@ -477,7 +478,7 @@ mod tests {
 
     #[test]
     fn suite_hint_roundtrip_suite() {
-        for s in [Suite::Aes128Gcm, Suite::Aes256Gcm, Suite::HmacSha256] {
+        for s in [Suite::Aes128Gcm, Suite::Aes256Gcm, Suite::Aes256Gmac] {
             assert_eq!(SuiteHint::from_suite(s).to_suite(), s);
         }
     }
@@ -493,7 +494,7 @@ mod tests {
             ProtectionLevel::Encrypt
         );
         assert_eq!(
-            SuiteHint::HmacSha256.protection_level(),
+            SuiteHint::Aes256Gmac.protection_level(),
             ProtectionLevel::Sign
         );
     }

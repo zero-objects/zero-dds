@@ -7,6 +7,7 @@
 //! Wire encoders/decoders and spec references.
 
 pub use self::data_lifecycle::{ReaderDataLifecycleQosPolicy, WriterDataLifecycleQosPolicy};
+pub use self::data_tag::{DataTagQosPolicy, Tag};
 pub use self::deadline::DeadlineQosPolicy;
 pub use self::destination_order::{DestinationOrderKind, DestinationOrderQosPolicy};
 pub use self::durability::{DurabilityKind, DurabilityQosPolicy};
@@ -17,9 +18,10 @@ pub use self::history::{HistoryKind, HistoryQosPolicy};
 pub use self::latency_budget::LatencyBudgetQosPolicy;
 pub use self::lifespan::LifespanQosPolicy;
 pub use self::liveliness::{LivelinessKind, LivelinessQosPolicy};
+pub use self::name::{QosPolicy, policy_name};
 pub use self::ownership::{OwnershipKind, OwnershipQosPolicy};
 pub use self::ownership_strength::OwnershipStrengthQosPolicy;
-pub use self::partition::PartitionQosPolicy;
+pub use self::partition::{PartitionQosPolicy, partitions_compatible};
 pub use self::presentation::{PresentationAccessScope, PresentationQosPolicy};
 pub use self::property::PropertyQosPolicy;
 pub use self::qos_set::{InconsistentReason, ReaderQos, WriterQos, check_compatibility};
@@ -30,6 +32,8 @@ pub use self::transport_priority::TransportPriorityQosPolicy;
 
 /// Reader-/Writer-Data-Lifecycle-Policies.
 pub mod data_lifecycle;
+/// Property (name/value pairs, DDS-Security `dds.sec.*` config).
+pub mod data_tag;
 /// Deadline.
 pub mod deadline;
 /// Destination-Order.
@@ -50,6 +54,8 @@ pub mod latency_budget;
 pub mod lifespan;
 /// Liveliness.
 pub mod liveliness;
+/// The names of the policies (§2.2.2.1.3, §2.3.3).
+pub mod name;
 /// Ownership.
 pub mod ownership;
 /// Ownership-Strength.
@@ -58,7 +64,6 @@ pub mod ownership_strength;
 pub mod partition;
 /// Presentation.
 pub mod presentation;
-/// Property (name/value pairs, DDS-Security `dds.sec.*` config).
 pub mod property;
 /// WriterQos/ReaderQos-Aggregate + Compatibility + Consistency.
 pub mod qos_set;

@@ -25,7 +25,9 @@ defmodule RobotDemo.MixProject do
 
   defp deps do
     [
-      {:zerodds_idlc, path: "../"}
+      {:zerodds_idlc, path: "../"},
+      # The wire runtime the generated code calls.
+      {:zerodds_wire, path: "../../../runtime/elixir"}
     ]
   end
 end

@@ -1,0 +1,26 @@
+[package]
+name = "zerodds-idl-lower"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Lowers the IDL CST into the common AST: scopes, name binding, resolution, completion by specification rule, and IDL validation."
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/zerodds-idl-lower"
+readme = "README.md"
+keywords = ["dds", "idl", "compiler", "ast"]
+categories = ["compilers"]
+
+[dependencies]
+zerodds-ast = { path = "../ast", version = "1.0.0-rc.7" }
+zerodds-ast-core = { path = "../ast-core", version = "1.0.0-rc.7" }
+zerodds-idl-cst = { path = "../idl-cst", version = "1.0.0-rc.7" }
+zerodds-idl-parse = { path = "../idl-parse", version = "1.0.0-rc.7" }
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true

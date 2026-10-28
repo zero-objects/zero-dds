@@ -75,7 +75,7 @@ function drain(port::Int, chan::Channel{Vector{UInt8}})
             else
                 status, seq = Reliable.submit!(sender, payload)
                 if status == Reliable.SR_OK
-                    send(sock, peer, port, Reliable.reliable_write_frame(seq, payload))
+                    send(sock, peer, port, Reliable.reliable_write_frame(seq, 0x0015, payload))
                 end
             end
         end
@@ -107,7 +107,7 @@ function drain(port::Int, chan::Channel{Vector{UInt8}})
         # 6. retransmit whatever is still in-flight (peer marked it missing)
         if Reliable.in_flight_count(sender) > 0
             for (seq, payload) in Reliable.in_flight_pairs(sender)
-                send(sock, peer, port, Reliable.reliable_write_frame(seq, payload))
+                send(sock, peer, port, Reliable.reliable_write_frame(seq, 0x0015, payload))
             end
         end
     end
@@ -136,7 +136,7 @@ function run_bench(port::Int)
     bind(sock, ip"127.0.0.1", 0)
     t0 = time_ns()
     for i in 0:(iters - 1)
-        send(sock, peer, port, Reliable.reliable_write_frame(UInt16(i & 0xffff), sample))
+        send(sock, peer, port, Reliable.reliable_write_frame(UInt16(i & 0xffff), 0x0015, sample))
     end
     inline_ns = (time_ns() - t0) / iters
     close(sock)

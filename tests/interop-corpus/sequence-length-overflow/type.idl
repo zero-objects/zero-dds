@@ -1,0 +1,6 @@
+// an unbounded sequence, so a hand-built stream can claim a length that
+// no serialized size below 4 GiB can hold
+@final struct Sample {
+    sequence<long> v;
+    long tail;
+};

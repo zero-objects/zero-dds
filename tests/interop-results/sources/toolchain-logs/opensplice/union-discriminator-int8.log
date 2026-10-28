@@ -1,0 +1,5 @@
+## wireprobe-opensplice, exit 4
+### stderr
+wireprobe-opensplice: idlpp failed
+*** DDS error in file gen.idl: Invalid constant, evaluated value is not within range 0..255 near the token : (line: 3, column: 13)
+*** DDS error in file gen.idl: Switch type is not of integer, char, boolean or enum type near the token } (line: 5, column: 1)

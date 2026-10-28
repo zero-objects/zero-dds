@@ -137,3 +137,132 @@ async fn recv(
         .ok()
         .and_then(|r| r.ok())
 }
+
+/// §7.2 `auth.mode: mtls` over DTLS-PSK: the PSK identity of the handshake
+/// is the subject (`psk:<identity>`) the ACL names. The identity did not
+/// reach the request path before, so `mtls` answered every request 4.01.
+#[tokio::test]
+async fn mtls_takes_the_psk_identity_as_the_acl_subject() {
+    let mut cfg = dtls_test_config();
+    cfg.dtls.psk.add("sensor-1", vec![7u8; 16]).unwrap();
+    cfg.dtls.psk.add("sensor-2", vec![8u8; 16]).unwrap();
+    cfg.auth_mode = "mtls".into();
+    cfg.topic_acl.insert(
+        "Trade".into(),
+        (vec!["psk:sensor-1".into()], vec!["psk:sensor-1".into()]),
+    );
+    let mut handle = server::start(cfg).expect("daemon start");
+    let mut dtls_addr = None;
+    for _ in 0..100 {
+        if let Some(a) = handle.dtls_local_addr() {
+            dtls_addr = Some(a);
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    let dtls_addr = dtls_addr.expect("dtls listener never came up");
+    let post = |mid: u16| {
+        let mut m = CoapMessage::new(MessageType::Confirmable, CoapCode::POST, mid);
+        m.token = mid.to_be_bytes().to_vec();
+        m.options.push(CoapOption::uri_path("trade"));
+        m.options.push(CoapOption::content_format(65000));
+        m.payload = b"X@1".to_vec();
+        m
+    };
+    for (identity, secret, expect) in [
+        ("sensor-1", 7u8, CoapCode::CHANGED),
+        ("sensor-2", 8u8, CoapCode::new(4, 3)),
+    ] {
+        let client = DtlsCoapClient::connect_psk(dtls_addr, identity, vec![secret; 16])
+            .await
+            .expect("psk handshake");
+        let req = post(0x5000 + u16::from(secret));
+        client.send_message(&req).await.expect("send POST");
+        let resp = recv(&client).await.expect("POST response");
+        assert_eq!(resp.code, expect, "{identity}");
+        let _ = client.close().await;
+    }
+    handle.shutdown();
+}
+
+/// `auth.mode: mtls` without DTLS stops the start as a configuration error.
+#[test]
+fn mtls_without_dtls_is_a_config_error() {
+    let mut cfg = dtls_test_config();
+    cfg.dtls_enabled = false;
+    cfg.auth_mode = "mtls".into();
+    match server::start(cfg) {
+        Err(server::ServerError::Config(_)) => {}
+        Err(e) => panic!("{e}"),
+        Ok(_) => panic!("started"),
+    }
+}
+
+/// §7.3 over DTLS with a client certificate: the subject is the
+/// certificate's DN (`CN=sensor-9`, RFC 4514); a second certificate from the
+/// same CA is authenticated and refused by the ACL.
+#[tokio::test]
+async fn mtls_takes_the_certificate_dn_as_the_acl_subject() {
+    let dir = std::env::temp_dir().join(format!("zd-coap-mtls-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut ca_params = rcgen::CertificateParams::new(Vec::<String>::new()).unwrap();
+    ca_params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
+    ca_params
+        .distinguished_name
+        .push(rcgen::DnType::CommonName, "coap test CA");
+    let ca_key = rcgen::KeyPair::generate().unwrap();
+    let ca = ca_params.self_signed(&ca_key).unwrap();
+    std::fs::write(dir.join("ca.pem"), ca.pem()).unwrap();
+    let leaf = |cn: &str| {
+        let mut p = rcgen::CertificateParams::new(Vec::<String>::new()).unwrap();
+        p.distinguished_name.push(rcgen::DnType::CommonName, cn);
+        let key = rcgen::KeyPair::generate().unwrap();
+        let cert = p.signed_by(&key, &ca, &ca_key).unwrap();
+        let (c, k) = (dir.join(format!("{cn}.pem")), dir.join(format!("{cn}.key")));
+        std::fs::write(&c, cert.pem()).unwrap();
+        std::fs::write(&k, key.serialize_pem()).unwrap();
+        (
+            c.to_string_lossy().into_owned(),
+            k.to_string_lossy().into_owned(),
+        )
+    };
+    let sensor = leaf("sensor-9");
+    let other = leaf("other");
+
+    let mut cfg = dtls_test_config();
+    cfg.dtls.ca_file = Some(dir.join("ca.pem").to_string_lossy().into_owned());
+    cfg.auth_mode = "mtls".into();
+    cfg.topic_acl.insert(
+        "Trade".into(),
+        (vec!["CN=sensor-9".into()], vec!["CN=sensor-9".into()]),
+    );
+    let mut handle = server::start(cfg).expect("daemon start");
+    let mut dtls_addr = None;
+    for _ in 0..100 {
+        if let Some(a) = handle.dtls_local_addr() {
+            dtls_addr = Some(a);
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    let dtls_addr = dtls_addr.expect("dtls listener never came up");
+    for ((cert, key), mid, expect) in [
+        (&sensor, 0x6001u16, CoapCode::CHANGED),
+        (&other, 0x6002, CoapCode::new(4, 3)),
+    ] {
+        let client = DtlsCoapClient::connect_with_certificate(dtls_addr, "localhost", cert, key)
+            .await
+            .expect("certificate handshake");
+        let mut m = CoapMessage::new(MessageType::Confirmable, CoapCode::POST, mid);
+        m.token = mid.to_be_bytes().to_vec();
+        m.options.push(CoapOption::uri_path("trade"));
+        m.options.push(CoapOption::content_format(65000));
+        m.payload = b"X@2".to_vec();
+        client.send_message(&m).await.expect("send POST");
+        let resp = recv(&client).await.expect("POST response");
+        assert_eq!(resp.code, expect, "{cert}");
+        let _ = client.close().await;
+    }
+    handle.shutdown();
+    let _ = std::fs::remove_dir_all(&dir);
+}

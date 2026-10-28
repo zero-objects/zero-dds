@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 # ZeroDDS — IDL → Ada codegen backend
 
-`zerodds-idlc --ada` emits **native Ada 2012** from OMG IDL: a self-contained
+`zerodds-idlc generate --lang ada` emits **native Ada 2012** from OMG IDL: a self-contained
 package (spec `.ads` + body `.adb`) with a bounded XCDR2 wire buffer
 (byte-identical to the `endpoints/ada-native` core) and, per IDL `struct`, an
 Ada record plus a `Marshal (V; Endian) return Byte_Array` function whose wire
@@ -13,7 +13,7 @@ Crate: [`crates/idl-ada`](../crates/idl-ada) · registered in `tools/idlc`
 ## Usage
 
 ```sh
-zerodds-idlc types.idl --ada      # emits types.ads + types.adb
+zerodds-idlc generate --lang ada types.idl   # emits zd_types.ads + zd_types.adb
 ```
 
 ## Mapping

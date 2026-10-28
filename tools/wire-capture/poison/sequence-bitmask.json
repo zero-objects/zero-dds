@@ -1,0 +1,7 @@
+{
+  "none": [ [ "LOW", "MID", "HIGH" ], [ "LOW", "MID", "HIGH" ] ],
+  "many": [ [ "LOW", "MID", "HIGH" ], [ "LOW", "MID", "HIGH" ],
+            [ "LOW", "MID", "HIGH" ], [ "LOW", "MID", "HIGH" ],
+            [ "LOW", "MID", "HIGH" ] ],
+  "tail": -1431655766
+}

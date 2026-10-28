@@ -8,11 +8,11 @@ use std::net::{Shutdown, SocketAddr, TcpStream};
 use std::sync::Arc;
 use std::time::Duration;
 
-use zerodds_cdr::Endianness;
 use zerodds_corba_ccm::orb_extensions::{
     ClientInterceptionPoint, InterceptorRegistry, ServerInterceptionPoint,
 };
 use zerodds_corba_giop::{Message, Version};
+use zerodds_wire::Endianness;
 
 use crate::error::IiopError;
 use crate::framing::{read_giop_message_full, write_giop_message, write_giop_message_fragmented};

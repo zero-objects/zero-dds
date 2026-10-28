@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! `zerodds-dashboard` — Live-Monitoring-Dashboard fuer ZeroDDS.
+//! `zerodds-dashboard` — live monitoring dashboard for ZeroDDS.
 //!
-//! Startet einen HTTP-Server, der eine SPA + JSON-Endpunkte ausliefert.
-//! Im Standard-Modus mit synthetischem Demo-Backend; alternativ via
-//! Built-in-Topics-Reader an eine echte DcpsRuntime gehaengt.
+//! Starts an HTTP server that serves a SPA + JSON endpoints.
+//! In standard mode with a synthetic demo backend; alternatively via
+//! built-in topics reader attached to a real DcpsRuntime.
 
 #![allow(clippy::print_stderr, clippy::print_stdout)]
 
@@ -22,17 +22,17 @@ use zerodds_dashboard::{ServerError, run_blocking};
 
 fn print_help() {
     println!(
-        "zerodds-dashboard — Live-Monitoring-Dashboard
+        "zerodds-dashboard — live monitoring dashboard
 
 USAGE:
   zerodds-dashboard [--bind ADDR:PORT] [--prometheus ADDR:PORT] [--demo]
 
 OPTIONS:
-  --bind ADDR:PORT        HTTP-Bind fuer SPA + JSON, default 127.0.0.1:8089
-  --prometheus ADDR:PORT  Sidecar-Server fuer /metrics-Scrape (zerodds-monitor-1.0 §6.3),
-                          z.B. 127.0.0.1:9464. Standardmaessig deaktiviert.
-  --demo                  Synthetisches Demo-Backend mit Fake-Daten
-                          fuer UI-Entwicklung
+  --bind ADDR:PORT        HTTP bind for SPA + JSON, default 127.0.0.1:8089
+  --prometheus ADDR:PORT  Sidecar server for the /metrics scrape (zerodds-monitor-1.0 §6.3),
+                          e.g. 127.0.0.1:9464. Disabled by default.
+  --demo                  Synthetic demo backend with fake data
+                          for UI development
 "
     );
 }
@@ -81,7 +81,7 @@ fn parse_args() -> (SocketAddr, Option<SocketAddr>, bool) {
     (bind, prometheus, demo)
 }
 
-/// Synthetische Daten — fuer UI-Entwicklung ohne Live-Domain.
+/// Synthetic data — for UI development without a live domain.
 fn install_demo_data(state: &Arc<DashboardState>) {
     state.set_participants(vec![
         ParticipantInfo {
@@ -167,8 +167,8 @@ fn install_demo_data(state: &Arc<DashboardState>) {
     });
 }
 
-/// Fake-Updater-Thread — bewegt die Histogramme leicht, damit das
-/// Dashboard im Demo-Modus „lebt”.
+/// Fake updater thread — nudges the histograms slightly so the
+/// Dashboard "lives" in demo mode (heartbeat + synthetic samples).
 fn spawn_demo_ticker(state: Arc<DashboardState>) {
     thread::spawn(move || {
         let mut tick: u64 = 0;
@@ -218,15 +218,17 @@ fn main() -> ExitCode {
         spawn_demo_ticker(Arc::clone(&state));
     } else {
         eprintln!(
-            "zerodds-dashboard: ohne --demo leerer State; \
-             Live-Hook an DcpsRuntime via Built-in-Topics + Prometheus-Scrape (siehe README)."
+            "zerodds-dashboard: without --demo empty state; \
+             Live-Hook to DcpsRuntime via Built-in-Topics + Prometheus-Scrape (see README)."
         );
     }
     if let Some(addr) = prometheus {
         let registry = zerodds_monitor::default_registry();
         match zerodds_monitor::serve_prometheus(addr, registry) {
             Ok(_h) => {
-                eprintln!("zerodds-dashboard: Prometheus-Scrape lauscht auf http://{addr}/metrics");
+                eprintln!(
+                    "zerodds-dashboard: Prometheus scrape listening on http://{addr}/metrics"
+                );
             }
             Err(e) => {
                 eprintln!("prometheus server error: {e}");

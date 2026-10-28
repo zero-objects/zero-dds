@@ -20,12 +20,12 @@ use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
-use zerodds_cdr::{BufferReader, BufferWriter, Endianness};
 use zerodds_corba_csiv2::gssup::GssupCredentialToken;
 use zerodds_corba_csiv2::sas::{EstablishContext, IdentityToken, SasMessage};
 use zerodds_corba_giop::{
-    CodeSetContext, LocateReply, LocateStatusType, Message, Reply, ReplyStatusType, Request,
-    ResponseFlags, ServiceContext, ServiceContextList, ServiceContextTag, TargetAddress, Version,
+    CodeSetContext, LocateReply, LocateRequest, LocateStatusType, Message, Reply, ReplyStatusType,
+    Request, ResponseFlags, ServiceContext, ServiceContextList, ServiceContextTag, TargetAddress,
+    Version,
 };
 use zerodds_corba_iiop::{
     Acceptor, AcceptorConfig, BiDirIiopListenPoint, BiDirIiopServiceContext, Connection, Connector,
@@ -33,6 +33,7 @@ use zerodds_corba_iiop::{
 };
 use zerodds_corba_ior::{Ior, ProfileId, TaggedProfile, from_stringified, to_stringified};
 use zerodds_corba_rust::{CorbaConnection, CorbaException, ObjectReference, SkeletonResult};
+use zerodds_wire::{Endianness, Reader, Writer};
 
 use rustls::{ClientConfig, ServerConfig};
 
@@ -55,19 +56,19 @@ fn code_sets_component() -> TaggedComponent {
     const UTF_8: u32 = 0x0501_0001;
     const UTF_16: u32 = 0x0001_0109;
     const UCS_2: u32 = 0x0001_0100;
-    let mut w = BufferWriter::new(Endianness::Big);
-    w.write_u8(0).expect("bo octet"); // big-endian
+    let mut w = Writer::new(Endianness::Big);
+    w.write_u8(0); // big-endian
     // CodeSetComponentInfo: for_char_data (native UTF-8, conv ISO-8859-1) …
-    w.write_u32(UTF_8).expect("char native");
-    w.write_u32(1).expect("char conv count");
-    w.write_u32(ISO_8859_1).expect("char conv");
+    w.write_u32(UTF_8);
+    w.write_u32(1);
+    w.write_u32(ISO_8859_1);
     // … for_wchar_data (native UTF-16, conv UCS-2).
-    w.write_u32(UTF_16).expect("wchar native");
-    w.write_u32(1).expect("wchar conv count");
-    w.write_u32(UCS_2).expect("wchar conv");
+    w.write_u32(UTF_16);
+    w.write_u32(1);
+    w.write_u32(UCS_2);
     TaggedComponent {
         tag: TAG_CODE_SETS,
-        component_data: w.into_bytes(),
+        component_data: w.finish(),
     }
 }
 
@@ -117,7 +118,7 @@ pub fn stringify_object_ref(type_id: &str, host: &str, port: u16, object_key: &[
 /// and the AssociationOptions. Encapsulation layout as expected by omniORB/TAO —
 /// byte-order octet, then three 2-aligned `unsigned short`
 /// (target_supports / target_requires / port). Built with a SINGLE
-/// `BufferWriter` (octet + auto-alignment), not via
+/// `Writer` (octet + auto-alignment), not via
 /// `StructuredComponent::encode_encapsulation`, whose separate writer wrongly
 /// places the u16 at offset 1 instead of 2 (self-consistent, but not
 /// wire-correct).
@@ -127,14 +128,14 @@ fn ssl_component(ssl_port: u16) -> TaggedComponent {
     // → the client must speak TLS (no cleartext fallback).
     const SUPPORTS: u16 = 0x0002 | 0x0004 | 0x0020;
     const REQUIRES: u16 = 0x0002 | 0x0004;
-    let mut w = BufferWriter::new(Endianness::Big);
-    w.write_u8(0).expect("bo octet"); // big-endian
-    w.write_u16(SUPPORTS).expect("target_supports"); // auto-align → Offset 2
-    w.write_u16(REQUIRES).expect("target_requires"); // Offset 4
-    w.write_u16(ssl_port).expect("ssl port"); // Offset 6
+    let mut w = Writer::new(Endianness::Big);
+    w.write_u8(0); // big-endian
+    w.write_u16(SUPPORTS); // auto-align → Offset 2
+    w.write_u16(REQUIRES); // Offset 4
+    w.write_u16(ssl_port); // Offset 6
     TaggedComponent {
         tag: TAG_SSL_SEC_TRANS,
-        component_data: w.into_bytes(),
+        component_data: w.finish(),
     }
 }
 
@@ -147,7 +148,7 @@ fn ssl_port_of(component_data: &[u8]) -> Option<u16> {
         1 => Endianness::Little,
         _ => return None,
     };
-    let mut r = BufferReader::new(component_data, endianness);
+    let mut r = Reader::new(component_data, endianness);
     r.read_u8().ok()?; // byte-order octet
     r.read_u16().ok()?; // target_supports (offset 2)
     r.read_u16().ok()?; // target_requires (offset 4)
@@ -183,12 +184,12 @@ const TAG_ZERODDS_UDS_TRANS: u32 = 0x5A44_5544;
 /// Builds the `TAG_ZERODDS_UDS_TRANS` component: byte-order octet + CDR string
 /// (socket path).
 fn uds_component(path: &str) -> TaggedComponent {
-    let mut w = BufferWriter::new(Endianness::Big);
-    w.write_u8(0).expect("bo octet"); // big-endian
-    w.write_string(path).expect("uds path");
+    let mut w = Writer::new(Endianness::Big);
+    w.write_u8(0); // big-endian
+    w.write_string(path);
     TaggedComponent {
         tag: TAG_ZERODDS_UDS_TRANS,
-        component_data: w.into_bytes(),
+        component_data: w.finish(),
     }
 }
 
@@ -200,7 +201,7 @@ fn uds_path_of(component_data: &[u8]) -> Option<String> {
         1 => Endianness::Little,
         _ => return None,
     };
-    let mut r = BufferReader::new(component_data, endianness);
+    let mut r = Reader::new(component_data, endianness);
     r.read_u8().ok()?; // byte-order octet
     r.read_string().ok()
 }
@@ -315,6 +316,21 @@ fn comm_failure() -> CorbaException {
     CorbaException::SystemException {
         minor: 0,
         message: "CORBA COMM_FAILURE",
+    }
+}
+
+/// The [`SkeletonResult`] for an `operation` against an object key
+/// nothing here has a registered dispatcher for. CORBA 3.3 Part 2
+/// §15.4.2's `_non_existent`/`_not_existent` answers `true` instead of
+/// the `OBJECT_NOT_EXIST` every other operation gets — see
+/// `zerodds_corba_giop::object_ops::unknown_object_reply`'s own doc.
+fn unregistered_key_result(operation: &str, e: Endianness) -> SkeletonResult {
+    match zerodds_corba_giop::object_ops::unknown_object_reply(operation, e) {
+        Some(body) => SkeletonResult::Reply(body),
+        None => SkeletonResult::Exception(CorbaException::SystemException {
+            minor: 0,
+            message: "CORBA OBJECT_NOT_EXIST",
+        }),
     }
 }
 
@@ -827,12 +843,12 @@ fn target_object_key(target: &TargetAddress, e: Endianness) -> Option<Vec<u8>> {
     match target {
         TargetAddress::Key(k) => Some(k.clone()),
         TargetAddress::Profile(bytes) => {
-            let mut r = zerodds_cdr::BufferReader::new(bytes, e);
+            let mut r = zerodds_wire::Reader::new(bytes, e);
             let tp = zerodds_corba_ior::TaggedProfile::decode(&mut r).ok()?;
             tp.as_iiop()?.ok().map(|b| b.object_key)
         }
         TargetAddress::Reference { ior, .. } => {
-            let mut r = zerodds_cdr::BufferReader::new(ior, e);
+            let mut r = zerodds_wire::Reader::new(ior, e);
             let parsed = Ior::decode(&mut r).ok()?;
             parsed
                 .profiles
@@ -846,12 +862,12 @@ fn target_object_key(target: &TargetAddress, e: Endianness) -> Option<Vec<u8>> {
 /// encapsulation (byte-order octet + body), as sent along with the first client
 /// request (§15.8).
 fn bidir_service_context(sc: &BiDirIiopServiceContext) -> ServiceContext {
-    let mut w = BufferWriter::new(Endianness::Big);
-    w.write_u8(0).expect("bo octet"); // big-endian encapsulation
+    let mut w = Writer::new(Endianness::Big);
+    w.write_u8(0); // big-endian encapsulation
     sc.encode(&mut w).expect("encode BiDir SC");
     ServiceContext {
         context_id: IIOP_BI_DIR_TAG,
-        context_data: w.into_bytes(),
+        context_data: w.finish(),
     }
 }
 
@@ -864,7 +880,7 @@ fn parse_bidir(sc: &ServiceContext) -> Option<BiDirIiopServiceContext> {
     } else {
         Endianness::Little
     };
-    let mut r = BufferReader::new(&sc.context_data, e);
+    let mut r = Reader::new(&sc.context_data, e);
     r.read_u8().ok()?; // consume the byte-order octet (position → 1)
     BiDirIiopServiceContext::decode(&mut r).ok()
 }
@@ -986,6 +1002,7 @@ impl BiDirEndpoint {
                 self.stash.insert(r.request_id, (r.body, e, r.reply_status));
                 Ok(())
             }
+            Message::LocateRequest(lr) => self.handle_locate_request(&lr, e),
             _ => Ok(()),
         }
     }
@@ -1015,9 +1032,38 @@ impl BiDirEndpoint {
                     self.stash.insert(r.request_id, (r.body, e, r.reply_status));
                 }
                 Message::Request(req) => self.handle_request(&req, e)?,
+                Message::LocateRequest(lr) => self.handle_locate_request(&lr, e)?,
                 _ => {}
             }
         }
+    }
+
+    /// Answers a `LocateRequest` (GIOP §15.4.5) — a `corbaloc:` client, or
+    /// any ORB that probes an object's location before its first real
+    /// invocation, blocks (→ `COMM_FAILURE`) without a reply. `OBJECT_HERE`
+    /// for a registered key, `UNKNOWN_OBJECT` otherwise.
+    fn handle_locate_request(
+        &mut self,
+        lr: &LocateRequest,
+        e: Endianness,
+    ) -> Result<(), CorbaException> {
+        let here = match &lr.target {
+            TargetAddress::Key(k) => self.objects.contains_key(k),
+            _ => false,
+        };
+        let status = if here {
+            LocateStatusType::ObjectHere
+        } else {
+            LocateStatusType::UnknownObject
+        };
+        let reply = Message::LocateReply(LocateReply {
+            request_id: lr.request_id,
+            locate_status: status,
+            body: Vec::new(),
+        });
+        self.conn
+            .write_message(self.version, e, false, &reply)
+            .map_err(|_| comm_failure())
     }
 
     /// Synchronous call of a peer object: send + fetch reply (reentrant).
@@ -1053,10 +1099,7 @@ impl BiDirEndpoint {
         let dispatcher = self.objects.get(&key).cloned();
         let result = match dispatcher {
             Some(d) => d(&req.operation, &req.body, e),
-            None => SkeletonResult::Exception(CorbaException::SystemException {
-                minor: 0,
-                message: "CORBA OBJECT_NOT_EXIST",
-            }),
+            None => unregistered_key_result(&req.operation, e),
         };
         if req.response_flags.response_expected() {
             let reply = build_reply(req.request_id, result, e);
@@ -1362,10 +1405,7 @@ fn dispatch_connection(
             let dispatcher = objects.lock().unwrap().get(&key).cloned();
             match dispatcher {
                 Some(d) => d(&req.operation, &req.body, endianness),
-                None => SkeletonResult::Exception(CorbaException::SystemException {
-                    minor: 0,
-                    message: "CORBA OBJECT_NOT_EXIST",
-                }),
+                None => unregistered_key_result(&req.operation, endianness),
             }
         } else {
             SkeletonResult::Exception(CorbaException::SystemException {
@@ -1441,15 +1481,15 @@ fn build_reply(request_id: u32, result: SkeletonResult, endianness: Endianness) 
 // ---- Exception-Wire (CORBA §15.4.3) ----------------------------------------
 
 fn encode_system_exception(repo_id: &str, minor: u32, endianness: Endianness) -> Vec<u8> {
-    let mut w = BufferWriter::new(endianness);
-    let _ = w.write_string(repo_id);
-    let _ = w.write_u32(minor);
-    let _ = w.write_u32(1); // completion_status = COMPLETED_NO
-    w.into_bytes()
+    let mut w = Writer::new(endianness);
+    w.write_string(repo_id);
+    w.write_u32(minor);
+    w.write_u32(1); // completion_status = COMPLETED_NO
+    w.finish()
 }
 
 fn decode_system_exception(body: &[u8], endianness: Endianness) -> CorbaException {
-    let mut r = BufferReader::new(body, endianness);
+    let mut r = Reader::new(body, endianness);
     let _repo = r.read_string().unwrap_or_default();
     let minor = r.read_u32().unwrap_or(0);
     let _completion = r.read_u32().unwrap_or(0);
@@ -1464,7 +1504,7 @@ fn decode_user_exception(body: &[u8], endianness: Endianness) -> CorbaException 
     // stub decoder first reads the repo_id (positions the reader), then the
     // members — the members align relative to the body start, so nothing is
     // extracted here; the whole body is passed through.
-    let repository_id = BufferReader::new(body, endianness)
+    let repository_id = Reader::new(body, endianness)
         .read_string()
         .unwrap_or_default();
     CorbaException::UserException {

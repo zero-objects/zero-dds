@@ -12,7 +12,7 @@ Pure-Rust no_std + alloc, `forbid(unsafe_code)`. Part of [**ZeroDDS**](../../REA
 
 - **OMG XTypes 1.3** §7.3 (Type-System: TypeIdentifier / TypeObject / Hashing / Resolution)
 - **OMG XTypes 1.3** §7.5 (DynamicType / DynamicData Reflection-API)
-- **OMG XTypes 1.3** §7.6 (Wire-Encoding + Discovery + Bridge zu DynamicType)
+- **OMG XTypes 1.3** §7.6 (wire encoding, discovery, and the bridge to DynamicType)
 - **OMG XTypes 1.3** §7.2.4 (Assignability + Compatibility)
 - **OMG DDS 1.4** §2.2.3 (TypeConsistencyEnforcement QoS-Policy)
 
@@ -30,7 +30,8 @@ Pure-Rust no_std + alloc, `forbid(unsafe_code)`. Part of [**ZeroDDS**](../../REA
 | `assignability` | §7.2.4 | Type-compatibility rules between writer + reader |
 | `type_matcher` | §7.6.3.7 | TypeConsistencyEnforcement-aware writer↔reader match |
 | `qos` | DDS 1.4 §2.2.3 | TypeConsistencyEnforcement + DataRepresentation |
-| `dynamic` | §7.5 + §7.6.3 | DynamicType / DynamicData + TypeObject-Bridge |
+| `from_ast` | §7.3.4 | The TypeObject of a type in `zerodds-ast`'s model |
+| `framing` | §7.3.4 | The DHEADER framing every TypeObject aggregate takes |
 
 ## Quick Start
 
@@ -48,9 +49,15 @@ let registry = TypeRegistry::new();
 assert!(m.match_types(&writer, &reader, &registry).is_match());
 ```
 
-## DynamicType ↔ TypeObject Bridge
+## The model and the wire form
 
-`zerodds_types::dynamic::DynamicType::to_type_object` supports the bridge for all 10 TypeObject kinds: **Struct, Union, Enumeration, Bitmask, Bitset, Annotation, Alias** plus the collection kinds **Sequence, Array, Map** (XTypes §7.3.4.4 — `CompleteSequenceType` / `CompleteArrayType` / `CompleteMapType`). Anonymous plain collections are additionally referenced inline via `TypeIdentifier` (PlainCollection).
+`from_ast` builds a `TypeObject` from a node in `zerodds-ast`'s model, in both the minimal and the complete form. Nothing in it decides anything about a declaration: a type's extensibility, a member's id, an enumerator's value and a bit bound are all read from the frontend, which is why `builder::Extensibility` and `builder::TryConstruct` are re-exports of the model's own enums and not copies of them.
+
+It refuses two things loudly rather than guessing. A **recursive type**, because XTypes §7.3.4.9 answers it with a strongly connected component identifier over the whole cycle and that is a different computation from a single type's hash. And a construct §7.3 has no kind for — `fixed`, `valuetype`, a value box, `native`, `any`, `ValueBase`, an object reference.
+
+## Not yet back
+
+`dynamic` — `DynamicType`, `DynamicData` and the reflective codec, XTypes §7.5 and §7.6.3. `docs/rebuild-plan.md` step 3 has where it stands.
 
 ## Wiring status
 
@@ -65,11 +72,14 @@ assert!(m.match_types(&writer, &reader, &registry).is_match());
 
 ## Tests
 
-`cargo test -p zerodds-types`: 354+ tests (285 unit + 9 dynamic + 40 compliance_typeobject + 5 fuzz_smoke + 5 proptest_assignability + 8 type_lookup_service + doctests).
+`cargo test -p zerodds-types`: 232 unit tests, plus `compliance_typeobject`, `fuzz_smoke`, `proptest_assignability`, `type_lookup_service` and `evolution_assignability`.
+
+`evolution_assignability` is the one that measures rather than asserts: it asks §7.2.4 about the fifteen `tests/interop-corpus` cases that carry two IDL files, and compares each verdict with the `## Evolution` rows the probe produced from the same two declarations. Three defects in the ported rules came out of it and are named in `docs/rebuild-plan.md` step 3.
 
 ## Stability
 
-All public-API items are semver-stable from `1.0.0-rc.1`.
+`1.0.0-rc.7`, a pre-release. The public API can still change before
+1.0.0; the crate's CHANGELOG lists every change.
 
 ## Links
 

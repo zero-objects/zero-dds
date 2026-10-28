@@ -40,7 +40,7 @@ pub struct OpcUaConnectionConfig {
 /// Spec Tab 8.10 — `OpcUaConnection` (`@nested`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OpcUaConnection {
-    /// `string endpoint_url` — z.B. `opc.tcp://10.0.0.1:4840`.
+    /// `string endpoint_url` — e.g. `opc.tcp://10.0.0.1:4840`.
     pub endpoint_url: String,
     /// `uint32 timeout` (ms).
     pub timeout: u32,
@@ -308,8 +308,8 @@ pub struct DataItemRef {
 pub struct EventFieldRef {
     /// `string event_name` — references an EventItem.
     pub event_name: String,
-    /// `uint32 event_field_index` — Index in den `event_fields` aus
-    /// dem `EventFieldList` (Spec §8.4.3.2.2 normativ).
+    /// `uint32 event_field_index` — index into the `event_fields` from
+    /// the `EventFieldList` (Spec §8.4.3.2.2 normative).
     pub event_field_index: u32,
 }
 
@@ -340,7 +340,7 @@ impl AssignmentInput {
 #[derive(Debug, Clone, PartialEq)]
 pub struct FieldAssignment {
     /// `string dds_output_field_ref` — vollqualifizierter Member-Name
-    /// des Topic-Type-Felds (`<member>[.<nested>]*`, Spec §8.4.2.4
+    /// of the topic type field (`<member>[.<nested>]*`, Spec §8.4.2.4
     /// normativ).
     pub dds_output_field_ref: String,
     /// `@optional @external OpcUaInput opcua_input_ref` — if None,

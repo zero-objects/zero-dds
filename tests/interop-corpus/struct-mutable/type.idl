@@ -1,0 +1,6 @@
+// mutable structure
+@mutable struct Sample {
+    long a;
+    double b;
+    short c;
+};

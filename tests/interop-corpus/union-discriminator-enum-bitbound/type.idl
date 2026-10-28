@@ -1,0 +1,25 @@
+// the same 8-bit enumeration in both positions: a union discriminator
+// and an ordinary member
+// XTypes 1.3 §7.4.3.5.4 (the discriminator is serialised as its own
+// type) with §7.3.1.2.1.9 and §7.4.3.4.2 (the bound decides the width).
+// Neither clause distinguishes the two positions.
+//
+// `marker` sits immediately behind `shade` so the two widths are
+// distinguishable: a one-octet `shade` puts `marker` at offset 1 and a
+// four-octet one puts it at offset 4, where padding alone would have
+// made the two spellings the same octets.
+@bit_bound(8)
+enum Colour { RED, GREEN, BLUE };
+
+union Choice switch (Colour) {
+    case RED: long whole;
+    case GREEN: double fraction;
+    default: short small;
+};
+
+@final struct Sample {
+    Colour shade;
+    octet marker;
+    Choice picked;
+    long tail;
+};

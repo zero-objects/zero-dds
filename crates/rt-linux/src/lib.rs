@@ -79,11 +79,7 @@
 //! Spec: no OMG spec — Linux kernel API. References:
 //! `sched(7)`, `sched_setattr(2)`, `sched_setaffinity(2)`.
 
-#![cfg_attr(not(feature = "std"), no_std)]
 #![warn(missing_docs)]
-
-#[cfg(feature = "std")]
-extern crate std;
 
 pub mod affinity;
 pub mod scheduler;

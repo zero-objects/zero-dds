@@ -1,0 +1,6 @@
+// `@hashid` with no argument, unannotated
+struct Sample {
+    @hashid long alpha;
+    @hashid long beta;
+    long plain;
+};

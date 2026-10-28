@@ -3,13 +3,16 @@
 #
 # Replaces the per-rc copies (.publish-rc1.sh, .publish-rc3.sh, …): pass the
 # workspace version as the single argument. The publish order comes from
-# `zerodds-cargo-dag` (topological sort, --only-publishable), and the loop is
+# `zerodds-cargo-dag` (topological sort, --only-publishable) — which derives the
+# member set from `cargo metadata`, so it covers the crates that are workspace
+# members only because a listed member depends on them by path, not just the
+# names spelled out in `workspace.members`. The loop is
 # idempotent — a crate whose $VERSION already answers 200 on the crates.io API,
 # *or* whose `cargo publish` reports "already exists", is skipped, never a stop.
 # Safe to re-run after any stall / rate-limit / partial run.
 #
-#   scripts/publish-crates.sh 1.0.0-rc.4              # real publish (needs cargo login)
-#   scripts/publish-crates.sh 1.0.0-rc.4 --dry-run    # package+metadata check, no upload
+#   scripts/publish-crates.sh 1.0.0-rc.7              # real publish (needs cargo login)
+#   scripts/publish-crates.sh 1.0.0-rc.7 --dry-run    # package+metadata check, no upload
 #
 # Artifacts (.publish-<version>.{order,log}) are written at repo root and are
 # gitignored — they are the per-run "rc flag" trail, never committed.
@@ -24,7 +27,7 @@ set -u
 VERSION="${1:-}"
 MODE="${2:-}"
 if [ -z "$VERSION" ]; then
-  echo "usage: $0 <version> [--dry-run]   e.g. $0 1.0.0-rc.4" >&2
+  echo "usage: $0 <version> [--dry-run]   e.g. $0 1.0.0-rc.7" >&2
   exit 2
 fi
 case "$VERSION" in
@@ -33,11 +36,11 @@ case "$VERSION" in
 esac
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-cd "$ROOT"
+cd "$ROOT" || exit 1
 ORDER=".publish-${VERSION}.order"
 LOG=".publish-${VERSION}.log"
 # crates.io data-access policy requires a descriptive User-Agent on API calls.
-UA="zerodds-${VERSION}-publish (https://zerodds.org; admin@ifyna.de)"
+UA="zerodds-${VERSION}-publish (https://zerodds.org; admin@zerodds.org)"
 
 echo "[$(date +%T)] generate publish order via cargo-dag…" | tee -a "$LOG"
 cargo run -q -p zerodds-cargo-dag -- . --only-publishable --format flat > "$ORDER" 2>>"$LOG" || {
@@ -63,6 +66,30 @@ if [ "$MODE" = "--dry-run" ]; then
         defer=$((defer+1)); echo "($i/$total) defer $crate (intra-dep @ $VERSION not published yet — ok)" | tee -a "$LOG"
         continue
       fi
+      # Cargo's second phrasing for the same situation: `no matching package
+      # named 'X' found`. It arrives when the dependency has never been on
+      # crates.io at any version, where the first phrasing arrives when some
+      # other version is there.
+      #
+      # Not matched blindly. The named package is only a defer if it is
+      # itself in this publish order — then the real run publishes it first
+      # and the resolution succeeds. A name that is *not* in the order is a
+      # dependency on something that does not exist, which is exactly the
+      # class this gate is for: it is how a crate depending on an
+      # unpublishable one looked before `64c65d784db`, and a typo in a
+      # dependency name looks the same.
+      missing=$(echo "$out" | sed -nE "s/.*no matching package named .([a-z0-9_-]+). found.*/\1/p" | head -1)
+      if [ -n "$missing" ] && grep -qxF "$missing" "$ORDER"; then
+        defer=$((defer+1))
+        echo "($i/$total) defer $crate (needs $missing, which this order publishes first — ok)" | tee -a "$LOG"
+        continue
+      fi
+      if [ -n "$missing" ]; then
+        echo "$out" | tail -15 | tee -a "$LOG"
+        echo "[$(date +%T)] DRY-RUN FAILED on $crate — it needs \`$missing\`, which is NOT in the publish order." | tee -a "$LOG"
+        echo "  Either that crate carries publish = false, or the dependency name is wrong." | tee -a "$LOG"
+        exit 1
+      fi
       echo "$out" | tail -15 | tee -a "$LOG"
       echo "[$(date +%T)] DRY-RUN FAILED on $crate — real packaging/metadata error, fix before publish" | tee -a "$LOG"; exit 1
     fi
@@ -72,12 +99,28 @@ if [ "$MODE" = "--dry-run" ]; then
   exit 0
 fi
 
+# `cargo publish --allow-dirty` packages what is on disk, and an untracked
+# file that .gitignore does not name goes into the .crate with the rest — a
+# binary or a log left in a crate directory would ship. The tree must be
+# clean before the first upload and stay clean between uploads (a build
+# script that writes into its source directory shows up here, too).
+require_clean_tree() {
+  dirty=$(git status --porcelain --untracked-files=all)
+  if [ -n "$dirty" ]; then
+    echo "[$(date +%T)] REFUSED $1 — the tree is not clean; every file listed would be packaged or is a local change:" | tee -a "$LOG"
+    echo "$dirty" | head -20 | tee -a "$LOG"
+    exit 1
+  fi
+}
+require_clean_tree "before the first upload"
+
 echo "[$(date +%T)] PUBLISH $total crates ($VERSION)" | tee -a "$LOG"
 while IFS= read -r crate; do
   i=$((i+1))
   http=$(curl -s -A "$UA" -o /dev/null -w "%{http_code}" \
     "https://crates.io/api/v1/crates/$crate/$VERSION" 2>/dev/null || echo 000)
   if [ "$http" = "200" ]; then skip=$((skip+1)); echo "($i/$total) SKIP $crate (already $VERSION)" | tee -a "$LOG"; continue; fi
+  require_clean_tree "at $crate"
   echo "($i/$total) PUBLISH $crate (http=$http)" | tee -a "$LOG"
   out=$(cargo publish -p "$crate" --allow-dirty 2>&1); rc=$?
   echo "$out" >> "$LOG"

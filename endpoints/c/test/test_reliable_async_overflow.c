@@ -38,10 +38,12 @@ static zdw_async_ring ring;
 static int deliver_cb(void *ctx, const unsigned char *frame, size_t len)
 {
     peer *p = (peer *)ctx;
-    if (len >= 9u && frame[4] == 0x07) { /* WRITE_DATA, 1-byte payload */
+    /* WRITE_DATA with a 1-byte payload: 8-byte header + 4-byte
+     * BaseObjectRequest (DDS-XRCE 1.0 Sec 7.7.8) + the payload. */
+    if (len >= 13u && frame[4] == 0x07) {
         unsigned short seq = (unsigned short)(frame[2] | (frame[3] << 8));
         if (p->delivered[seq & 0xff] == 0) {
-            p->delivered[seq & 0xff] = (unsigned char)(frame[8] + 1);
+            p->delivered[seq & 0xff] = (unsigned char)(frame[12] + 1);
             atomic_fetch_add_explicit(&p->distinct, 1u, memory_order_relaxed);
         }
         if (seq == p->peer_expected) {
@@ -82,7 +84,8 @@ int main(void)
     memset(&g_peer, 0, sizeof(g_peer));
     atomic_store(&g_peer.gate, 0);
 
-    if (zdw_async_ring_start(&ring, 0x80, deliver_cb, poll_cb, &g_peer) != 0) {
+    if (zdw_async_ring_start(&ring, 0x80, ZDW_XRCE_OBJECT_ID(0x001, ZDW_OBJK_DATAWRITER),
+                             deliver_cb, poll_cb, &g_peer) != 0) {
         fprintf(stderr, "ring start failed\n");
         return 1;
     }

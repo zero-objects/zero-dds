@@ -47,7 +47,7 @@ mod linux {
         };
 
         let factory = DomainParticipantFactory::instance();
-        let domain = unique_domain(10);
+        let domain = unique_domain();
         let pub_p = factory
             .create_participant_with_config(domain, DomainParticipantQos::default(), cfg.clone())
             .expect("pub participant");
@@ -109,7 +109,7 @@ mod linux {
         };
 
         let factory = DomainParticipantFactory::instance();
-        let domain = unique_domain(10);
+        let domain = unique_domain();
         let pub_p = factory
             .create_participant_with_config(domain, DomainParticipantQos::default(), cfg.clone())
             .expect("pub participant");

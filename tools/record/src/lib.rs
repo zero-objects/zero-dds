@@ -4,39 +4,39 @@
 //! `zerodds-record` library — CLI parsing + dispatch logic.
 //!
 //! Crate `zerodds-record`. Safety classification: **COMFORT**.
-//! User-facing CLI-Tool; das Recording-Backend ist `zerodds-recorder`.
+//! User-facing CLI tool; the recording backend is `zerodds-recorder`.
 //!
-//! Das eigentliche Recording-Backend liegt in `zerodds-recorder`
-//! (`crates/recorder/`). Diese Crate liefert nur das CLI-Frontend
-//! plus Inspect-Helpers für `.zddsrec`-Files.
+//! The actual recording backend is located in `zerodds-recorder`
+//! (`crates/recorder/`). This crate only provides the CLI frontend
+//! plus inspect helpers for `.zddsrec` files.
 
 #![allow(clippy::module_name_repetitions)]
 
 use std::time::Duration;
 
-/// Sub-command des Record-CLIs.
+/// Sub-command of the record CLI.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
-    /// `record` — startet eine Capture-Session.
+    /// `record` — starts a capture session.
     Record(RecordArgs),
-    /// `info <FILE>` — liest Header eines `.zddsrec` und druckt Metadata.
+    /// `info <FILE>` — reads the header of a `.zddsrec` and prints metadata.
     Info(InfoArgs),
-    /// `list <FILE>` — zählt Frames pro Topic und druckt Sample-Count.
+    /// `list <FILE>` — counts frames per topic and prints the sample count.
     List(InfoArgs),
 }
 
-/// Argumente für `zerodds-record record`.
+/// Arguments for `zerodds-record record`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RecordArgs {
-    /// Output-Pfad für `.zddsrec`. Default: `capture-<timestamp>.zddsrec`.
+    /// Output path for `.zddsrec`. Default: `capture-<timestamp>.zddsrec`.
     pub output: Option<String>,
     /// DDS-Domain-ID. Default: 0.
     pub domain: u32,
-    /// Topic-Filter (Prefix oder Glob); leer = alle Topics.
+    /// Topic filter (prefix or glob); empty = all topics.
     pub topics: Vec<String>,
-    /// Recording-Duration; `None` = bis SIGINT.
+    /// Recording duration; `None` = until SIGINT.
     pub duration: Option<Duration>,
-    /// Maximale Sample-Größe (DoS-Cap). Default 1 MiB.
+    /// Maximum sample size (DoS cap). Default 1 MiB.
     pub max_sample_bytes: usize,
     /// Decode opaque CDR samples to typed values (needs `type_file`).
     pub decode: bool,
@@ -48,6 +48,11 @@ pub struct RecordArgs {
     pub out_json: Option<String>,
     /// Write decoded samples to a per-topic relational SQLite DB at this path.
     pub out_sqlite: Option<String>,
+    /// The wire dialect `--decode` reads in (`--dialect`), as
+    /// `zerodds_ast_layout::Dialect::parse` spells it; `None` leaves it to
+    /// the configuration's `wire.codec_dialect`. See `zerodds-spy`'s
+    /// `--dialect` for why it is not guessed.
+    pub dialect: Option<zerodds_ast_layout::Dialect>,
 }
 
 impl Default for RecordArgs {
@@ -63,31 +68,32 @@ impl Default for RecordArgs {
             map: Vec::new(),
             out_json: None,
             out_sqlite: None,
+            dialect: None,
         }
     }
 }
 
-/// Argumente für `info` und `list`.
+/// Arguments for `info` and `list`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InfoArgs {
-    /// Pfad zur `.zddsrec`-Datei.
+    /// Path to the `.zddsrec` file.
     pub file: String,
 }
 
-/// Parse-Fehler beim CLI-args.
+/// Parse error in the CLI args.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParseError {
-    /// Kein subcommand angegeben.
+    /// No subcommand specified.
     Missing,
-    /// Unbekanntes subcommand.
+    /// Unknown subcommand.
     Unknown(String),
-    /// Required-arg fehlt.
+    /// Required arg missing.
     MissingArg(&'static str),
-    /// Wert ist nicht parse-bar.
+    /// Value is not parseable.
     BadValue {
-        /// Welche flag.
+        /// Which flag.
         flag: &'static str,
-        /// Was eingegeben war.
+        /// What was entered.
         got: String,
     },
 }
@@ -105,10 +111,10 @@ impl std::fmt::Display for ParseError {
 
 impl std::error::Error for ParseError {}
 
-/// Parse `args` (typisch `env::args().skip(1)`) zu einem Command.
+/// Parse `args` (typically `env::args().skip(1)`) into a Command.
 ///
 /// # Errors
-/// Siehe [`ParseError`].
+/// See [`ParseError`].
 pub fn parse_args(args: &[String]) -> Result<Command, ParseError> {
     let sub = args.first().ok_or(ParseError::Missing)?;
     match sub.as_str() {
@@ -167,6 +173,16 @@ fn parse_record(rest: &[String]) -> Result<RecordArgs, ParseError> {
                         .clone(),
                 );
             }
+            "--dialect" => {
+                i += 1;
+                let v = rest.get(i).ok_or(ParseError::MissingArg("dialect"))?;
+                out.dialect = Some(zerodds_ast_layout::Dialect::parse(v).ok_or_else(|| {
+                    ParseError::BadValue {
+                        flag: "dialect",
+                        got: v.clone(),
+                    }
+                })?);
+            }
             "--map" => {
                 i += 1;
                 out.map
@@ -218,11 +234,11 @@ fn parse_duration(s: &str) -> Result<Duration, ParseError> {
     Ok(Duration::from_secs(secs))
 }
 
-/// Versucht den Header eines `.zddsrec` zu lesen und liefert
-/// menschen-lesbare Zusammenfassung.
+/// Tries to read the header of a `.zddsrec` and returns
+/// Human-readable summary.
 ///
 /// # Errors
-/// I/O- oder Format-Fehler.
+/// I/O or format error.
 pub fn read_header_summary(path: &str) -> std::io::Result<HeaderSummary> {
     use zerodds_recorder::reader::RecordReader;
     let bytes = std::fs::read(path)?;
@@ -237,22 +253,22 @@ pub fn read_header_summary(path: &str) -> std::io::Result<HeaderSummary> {
     })
 }
 
-/// Komprimierte Header-Info zum Drucken.
+/// Condensed header info for printing.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HeaderSummary {
-    /// Zeit-Anker in Unix-ns.
+    /// Time anchor in Unix-ns.
     pub time_base_unix_ns: i64,
-    /// Anzahl Participants im Header.
+    /// Number of participants in header.
     pub participants: usize,
     /// Topic-Namen.
     pub topics: Vec<String>,
 }
 
-/// Zählt Frames pro Topic in einem `.zddsrec` und liefert
-/// Topic-Name → Sample-Count Map.
+/// Counts frames per topic in a `.zddsrec` and returns
+/// Topic name to sample count map.
 ///
 /// # Errors
-/// I/O- oder Format-Fehler.
+/// I/O or format error.
 pub fn count_frames_per_topic(path: &str) -> std::io::Result<Vec<(String, u64)>> {
     use zerodds_recorder::reader::RecordReader;
     let bytes = std::fs::read(path)?;
@@ -320,6 +336,23 @@ mod tests {
         assert_eq!(r.topics, vec!["Sensor*"]);
         assert_eq!(r.duration, Some(Duration::from_secs(30)));
         assert_eq!(r.max_sample_bytes, 65536);
+    }
+
+    #[test]
+    fn parse_record_dialect() {
+        let Command::Record(r) =
+            parse_args(&s(&["record", "--decode", "--dialect", "fastdds"])).unwrap()
+        else {
+            panic!("expected record");
+        };
+        assert_eq!(r.dialect, Some(zerodds_ast_layout::Dialect::FastDds));
+        assert!(matches!(
+            parse_args(&s(&["record", "--dialect", "nope"])),
+            Err(ParseError::BadValue {
+                flag: "dialect",
+                ..
+            })
+        ));
     }
 
     #[test]

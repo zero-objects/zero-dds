@@ -7,7 +7,7 @@
 # A throwaway ament/CMake project resolves rclcpp's transitive link deps (far
 # more robust than a hand-written g++ link line).
 #
-# Verified green on codepit (ROS 2 Humble via RoboStack/micromamba):
+# Verified green on the Linux test host (ROS 2 Humble via RoboStack/micromamba):
 #   can_loan=1 got=42 PASS
 #
 # Usage:
@@ -45,6 +45,14 @@ ROS_PREFIX="$ROS_PREFIX" ZERODDS_TARGET="$ZERODDS_TARGET" \
 
 echo "== 3) register into the ROS install =="
 cp "$HERE/librmw_zerodds_cpp.so" "$ROS_PREFIX/lib/"
+# Refresh the Rust bridge + C-API inside the prefix too. An ament install may
+# have left older copies of librmw_zerodds.so / libzerodds.so there; with the
+# prefix on LD_LIBRARY_PATH those would be loaded instead of the build under
+# test, and the run would measure stale code without saying so. $ZERODDS_TARGET
+# also comes first on LD_LIBRARY_PATH below, so the fresh build wins twice.
+for _lib in librmw_zerodds.so libzerodds.so; do
+  [ -f "$ZERODDS_TARGET/$_lib" ] && cp "$ZERODDS_TARGET/$_lib" "$ROS_PREFIX/lib/"
+done
 mkdir -p "$ROS_PREFIX/share/ament_index/resource_index/rmw_implementation"
 touch "$ROS_PREFIX/share/ament_index/resource_index/rmw_implementation/rmw_zerodds_cpp"
 
@@ -65,7 +73,7 @@ cmake --build "$TMP/build" >/dev/null
 
 echo "== 5) run over rmw_zerodds_cpp (both delivery modes) =="
 export RMW_IMPLEMENTATION=rmw_zerodds_cpp
-export LD_LIBRARY_PATH="$ROS_PREFIX/lib:$ZERODDS_TARGET${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+export LD_LIBRARY_PATH="$ZERODDS_TARGET:$ROS_PREFIX/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 rc=0
 
 # Portable (default): serialize struct→CDR at publish, normal RTPS take.

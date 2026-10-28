@@ -136,48 +136,35 @@ pub struct UdpTransportConfig {
     /// optimization. Default `false` for spec conformance, override
     /// via bench/config.
     pub dont_route: bool,
+    /// The largest RTPS message, in octets, the transport is told to send in
+    /// one datagram: what the network path carries without IP
+    /// fragmentation. [`Transport::max_message_size`] reports it, and the
+    /// fragment size of a writer follows the smallest of its transports
+    /// (DDSI-RTPS 2.5 §8.4.14.1). Default `DEFAULT_MAX_MESSAGE_SIZE`,
+    /// 1472: a UDP datagram that fits an Ethernet frame of 1500 octets.
+    /// At most [`MAX_DATAGRAM_SIZE`], which a datagram cannot exceed.
+    pub max_message_size: usize,
 }
 
+/// Default of [`UdpTransportConfig::max_message_size`]: 1500 octets of an
+/// Ethernet payload less the IPv4 header (20) and the UDP header (8).
+pub const DEFAULT_MAX_MESSAGE_SIZE: usize = zerodds_transport::DEFAULT_MAX_MESSAGE_SIZE;
+
 impl Default for UdpTransportConfig {
+    /// The compiled defaults. A DDS participant reads its values from the
+    /// runtime configuration (`transport.udp.*` in `zerodds.yaml`, the
+    /// `ZERODDS_UDP_*` variables, `--set`) and passes them to the
+    /// `_with_config` binds; nothing here reads the environment.
     fn default() -> Self {
-        // Env hooks for bench tuning without a rebuild:
-        //   ZERODDS_UDP_CACHE_ENABLE=0  → cache off (equivalent to ::disabled())
-        //   ZERODDS_UDP_CACHE_MAX=N     → cache max entries (default 16)
-        //   ZERODDS_UDP_CACHE_SNDBUF=N  → SO_SNDBUF in bytes (default 262144,
-        //                                 N=0 → leave the kernel default)
-        // Production code should use UdpTransportConfig directly instead of
-        // these hooks — the env vars are only for A/B bench tests.
-        let enabled = std::env::var("ZERODDS_UDP_CACHE_ENABLE")
-            .ok()
-            .map(|s| s != "0")
-            .unwrap_or(true);
-        let max_entries = std::env::var("ZERODDS_UDP_CACHE_MAX")
-            .ok()
-            .and_then(|s| s.parse::<usize>().ok())
-            .unwrap_or(16);
-        let sndbuf = std::env::var("ZERODDS_UDP_CACHE_SNDBUF")
-            .ok()
-            .and_then(|s| s.parse::<usize>().ok())
-            .map(|n| if n == 0 { None } else { Some(n) })
-            .unwrap_or(Some(256 * 1024));
-        // Cyclone DDS sets SO_RCVBUF=1 MB by default. We adopt that
-        // — better burst absorption on loopback traffic.
-        let rcvbuf = std::env::var("ZERODDS_UDP_RCVBUF")
-            .ok()
-            .and_then(|s| s.parse::<usize>().ok())
-            .map(|n| if n == 0 { None } else { Some(n) })
-            .unwrap_or(Some(1024 * 1024));
-        // SO_DONTROUTE: off by default, env hook for bench tests.
-        let dont_route = std::env::var("ZERODDS_UDP_DONTROUTE")
-            .ok()
-            .map(|s| s == "1")
-            .unwrap_or(false);
         Self {
-            connected_cache_enabled: enabled,
-            connected_cache_max_entries: max_entries,
-            connected_cache_sndbuf: sndbuf,
-            recv_buffer_size: rcvbuf,
-            dont_route,
+            connected_cache_enabled: true,
+            connected_cache_max_entries: 16,
+            connected_cache_sndbuf: Some(256 * 1024),
+            // Cyclone DDS sets SO_RCVBUF=1 MB by default. We adopt that
+            // — better burst absorption on loopback traffic.
+            recv_buffer_size: Some(1024 * 1024),
+            dont_route: false,
+            max_message_size: DEFAULT_MAX_MESSAGE_SIZE,
         }
     }
 }
@@ -223,6 +210,13 @@ impl ConnectedSocketCache {
         self.entries.get(addr)
     }
 
+    /// Drops the socket for `addr`, if there is one.
+    fn remove(&mut self, addr: &SocketAddr) {
+        if self.entries.remove(addr).is_some() {
+            self.insertion_order.retain(|a| a != addr);
+        }
+    }
+
     /// Insert + on overflow drop the FIFO-oldest entry.
     /// Returns `true` if an eviction took place.
     fn insert(&mut self, addr: SocketAddr, sock: UdpSocket) -> bool {
@@ -264,7 +258,7 @@ impl ConnectedSocketCache {
 ///
 /// **Telemetry**: `cache_hits`/`cache_misses`/`cache_evictions` are
 /// exposed via `zerodds-monitor` (see
-/// [`udp_counters`](crate::udp_transport)). Callers can use them to
+/// `udp_counters`). Callers can use them to
 /// check whether the cache hit rate is high enough to justify the win —
 /// with many short-lived locators (e.g. SPDP multicast discovery)
 /// misses dominate and the cache becomes overhead.
@@ -275,6 +269,13 @@ pub struct UdpTransport {
     /// `None` if `connected_cache_enabled=false` — send then goes
     /// classically via `socket.send_to(data, addr)`.
     connected_cache: Option<std::sync::RwLock<ConnectedSocketCache>>,
+    /// One send socket per TRANSPORT_PRIORITY value a writer used, its
+    /// IPv4 TOS or IPv6 Traffic Class set to the value
+    /// ([`Transport::send_with_priority`]); bound to this transport's
+    /// address, made on first use.
+    priority_sockets: std::sync::Mutex<alloc::collections::BTreeMap<(bool, u8), UdpSocket>>,
+    /// [`UdpTransportConfig::max_message_size`].
+    max_message_size: usize,
 }
 
 impl UdpTransport {
@@ -384,6 +385,64 @@ impl UdpTransport {
     }
 }
 
+/// Send buffer a bound socket gets at least: room for the largest datagram.
+/// macOS sizes a UDP socket's send buffer to `net.inet.udp.maxdgram`
+/// (9 216 bytes) and refuses a larger datagram with EMSGSIZE; the connected
+/// cache's sockets had 256 KiB, the bound socket, which sends when the cache
+/// is off, had the default, and every datagram over 9 216 bytes failed.
+const MIN_SEND_BUFFER: usize = 256 * 1024;
+
+/// SO_RCVBUF, SO_SNDBUF and SO_DONTROUTE from `cfg` on a freshly bound
+/// socket. Best-effort: the kernel may clamp a buffer (Linux halves it
+/// against `rmem_max`), which is not a bind error.
+fn apply_socket_options(socket: &UdpSocket, cfg: &UdpTransportConfig) {
+    let sock_ref = socket2::SockRef::from(socket);
+    if let Some(rcv) = cfg.recv_buffer_size {
+        let _ = sock_ref.set_recv_buffer_size(rcv);
+    }
+    if sock_ref
+        .send_buffer_size()
+        .is_ok_and(|current| current < MIN_SEND_BUFFER)
+    {
+        let _ = sock_ref.set_send_buffer_size(MIN_SEND_BUFFER);
+    }
+    // SO_DONTROUTE (Cyclone sets this by default, ddsi_udp.c line 406):
+    // saves the per-send kernel routing-table lookup when the target is
+    // directly reachable (loopback, local LAN). With cross-subnet routing
+    // it must stay off.
+    #[cfg(unix)]
+    if cfg.dont_route {
+        use std::os::fd::AsRawFd;
+        let one: libc::c_int = 1;
+        #[allow(unsafe_code)]
+        // SAFETY: setsockopt(SO_DONTROUTE) on a valid owned socket
+        // (`socket.as_raw_fd()`); `&one` is valid for the call duration,
+        // size_of_val is consistent with the int type. Errno is discarded
+        // (best-effort; on failure the routing default stays active).
+        let _ = unsafe {
+            libc::setsockopt(
+                socket.as_raw_fd(),
+                libc::SOL_SOCKET,
+                libc::SO_DONTROUTE,
+                &one as *const _ as *const libc::c_void,
+                core::mem::size_of_val(&one) as libc::socklen_t,
+            )
+        };
+    }
+}
+
+/// The connected-socket cache `cfg` asks for.
+fn connected_cache_for(
+    cfg: &UdpTransportConfig,
+) -> Option<std::sync::RwLock<ConnectedSocketCache>> {
+    cfg.connected_cache_enabled.then(|| {
+        std::sync::RwLock::new(ConnectedSocketCache::new(
+            cfg.connected_cache_max_entries,
+            cfg.connected_cache_sndbuf,
+        ))
+    })
+}
+
 impl UdpTransport {
     /// Binds to the given IPv4 address + port with the default config
     /// (connected cache on, 16 entries, 256 KB SO_SNDBUF).
@@ -395,7 +454,7 @@ impl UdpTransport {
         Self::bind_v4_with_config(addr, port, UdpTransportConfig::default())
     }
 
-    /// Like [`bind_v4`] with an explicit [`UdpTransportConfig`].
+    /// Like [`Self::bind_v4`] with an explicit [`UdpTransportConfig`].
     ///
     /// # Errors
     /// `UdpTransportError::Bind`.
@@ -414,41 +473,7 @@ impl UdpTransport {
         let _ = socket.set_multicast_loop_v4(true);
         // SO_RCVBUF + SO_DONTROUTE analogous to Cyclone DDS (see ddsi_udp.c
         // line 517 default 1 MB RCVBUF + line 406 SO_DONTROUTE).
-        // Best-effort: the kernel may clamp the setting (e.g. Linux
-        // halves it due to rmem_max), which is not a bind error.
-        if let Some(rcv) = cfg.recv_buffer_size {
-            let sock_ref = socket2::SockRef::from(&socket);
-            let _ = sock_ref.set_recv_buffer_size(rcv);
-        }
-        // SO_DONTROUTE (Cyclone sets this by default, ddsi_udp.c line 406):
-        // Saves the per-send kernel routing-table lookup when the target
-        // is directly reachable (loopback, local LAN). With cross-subnet
-        // routing it must stay off.
-        #[cfg(unix)]
-        if cfg.dont_route {
-            use std::os::fd::AsRawFd;
-            let one: libc::c_int = 1;
-            // SAFETY: the socket fd is valid (just returned by
-            // UdpSocket::bind), optval/len match the POSIX
-            // SO_DONTROUTE contract (int, sizeof(int)). The return is
-            // ignored — best-effort: on error the kernel default
-            // (routing active) remains.
-            #[allow(unsafe_code)]
-            // SAFETY: setsockopt(SO_DONTROUTE) on a valid owned socket
-            // (`socket.as_raw_fd()`); `&one` is valid for the call
-            // duration, size_of_val is consistent with the int type. Errno
-            // is discarded via `let _` (best-effort optimization; on
-            // failure the routing default stays active).
-            let _ = unsafe {
-                libc::setsockopt(
-                    socket.as_raw_fd(),
-                    libc::SOL_SOCKET,
-                    libc::SO_DONTROUTE,
-                    &one as *const _ as *const libc::c_void,
-                    core::mem::size_of_val(&one) as libc::socklen_t,
-                )
-            };
-        }
+        apply_socket_options(&socket, &cfg);
         let local = match socket.local_addr().map_err(UdpTransportError::Bind)? {
             SocketAddr::V4(v4) => v4,
             SocketAddr::V6(_) => {
@@ -459,18 +484,13 @@ impl UdpTransport {
             }
         };
         let local_locator = Locator::udp_v4(local.ip().octets(), u32::from(local.port()));
-        let connected_cache = if cfg.connected_cache_enabled {
-            Some(std::sync::RwLock::new(ConnectedSocketCache::new(
-                cfg.connected_cache_max_entries,
-                cfg.connected_cache_sndbuf,
-            )))
-        } else {
-            None
-        };
+        let connected_cache = connected_cache_for(&cfg);
         Ok(Self {
             socket,
             local_locator,
             connected_cache,
+            priority_sockets: std::sync::Mutex::new(alloc::collections::BTreeMap::new()),
+            max_message_size: cfg.max_message_size,
         })
     }
 
@@ -486,6 +506,18 @@ impl UdpTransport {
     /// # Errors
     /// [`UdpTransportError::Bind`] on bind or setsockopt error.
     pub fn bind_v4_reuse(addr: Ipv4Addr, port: u16) -> Result<Self, UdpTransportError> {
+        Self::bind_v4_reuse_with_config(addr, port, UdpTransportConfig::default())
+    }
+
+    /// Like [`Self::bind_v4_reuse`] with an explicit [`UdpTransportConfig`].
+    ///
+    /// # Errors
+    /// [`UdpTransportError::Bind`] on bind or setsockopt error.
+    pub fn bind_v4_reuse_with_config(
+        addr: Ipv4Addr,
+        port: u16,
+        cfg: UdpTransportConfig,
+    ) -> Result<Self, UdpTransportError> {
         use socket2::{Domain, Protocol, SockAddr, Socket, Type};
         let socket = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))
             .map_err(UdpTransportError::Bind)?;
@@ -501,6 +533,7 @@ impl UdpTransport {
         let bind_addr: SockAddr = SocketAddrV4::new(addr, port).into();
         socket.bind(&bind_addr).map_err(UdpTransportError::Bind)?;
         let std_sock: UdpSocket = socket.into();
+        apply_socket_options(&std_sock, &cfg);
         let local = match std_sock.local_addr().map_err(UdpTransportError::Bind)? {
             SocketAddr::V4(v4) => v4,
             SocketAddr::V6(_) => {
@@ -510,19 +543,13 @@ impl UdpTransport {
             }
         };
         let local_locator = Locator::udp_v4(local.ip().octets(), u32::from(local.port()));
-        let cfg = UdpTransportConfig::default();
-        let connected_cache = if cfg.connected_cache_enabled {
-            Some(std::sync::RwLock::new(ConnectedSocketCache::new(
-                cfg.connected_cache_max_entries,
-                cfg.connected_cache_sndbuf,
-            )))
-        } else {
-            None
-        };
+        let connected_cache = connected_cache_for(&cfg);
         Ok(Self {
             socket: std_sock,
             local_locator,
             connected_cache,
+            priority_sockets: std::sync::Mutex::new(alloc::collections::BTreeMap::new()),
+            max_message_size: cfg.max_message_size,
         })
     }
 
@@ -537,7 +564,7 @@ impl UdpTransport {
         Self::bind_v6_with_config(addr, port, UdpTransportConfig::default())
     }
 
-    /// Like [`bind_v6`] with an explicit [`UdpTransportConfig`].
+    /// Like [`Self::bind_v6`] with an explicit [`UdpTransportConfig`].
     ///
     /// # Errors
     /// `UdpTransportError::Bind`.
@@ -550,29 +577,7 @@ impl UdpTransport {
         let socket = UdpSocket::bind(bind_addr).map_err(UdpTransportError::Bind)?;
         // IPv6 multicast: hopcount default 1 (link-local). Reproducible.
         let _ = socket.set_multicast_loop_v6(true);
-        if let Some(rcv) = cfg.recv_buffer_size {
-            let sock_ref = socket2::SockRef::from(&socket);
-            let _ = sock_ref.set_recv_buffer_size(rcv);
-        }
-        // SO_DONTROUTE also effective for v6 (Cyclone sets this too).
-        #[cfg(unix)]
-        if cfg.dont_route {
-            use std::os::fd::AsRawFd;
-            let one: libc::c_int = 1;
-            #[allow(unsafe_code)]
-            // SAFETY: setsockopt(SO_DONTROUTE) on a valid owned socket;
-            // optval/len match the POSIX contract (int, sizeof(int)).
-            // Best-effort — errno discarded.
-            let _ = unsafe {
-                libc::setsockopt(
-                    socket.as_raw_fd(),
-                    libc::SOL_SOCKET,
-                    libc::SO_DONTROUTE,
-                    &one as *const _ as *const libc::c_void,
-                    core::mem::size_of_val(&one) as libc::socklen_t,
-                )
-            };
-        }
+        apply_socket_options(&socket, &cfg);
         let local = match socket.local_addr().map_err(UdpTransportError::Bind)? {
             SocketAddr::V6(v6) => v6,
             SocketAddr::V4(_) => {
@@ -582,18 +587,13 @@ impl UdpTransport {
             }
         };
         let local_locator = Locator::udp_v6(local.ip().octets(), u32::from(local.port()));
-        let connected_cache = if cfg.connected_cache_enabled {
-            Some(std::sync::RwLock::new(ConnectedSocketCache::new(
-                cfg.connected_cache_max_entries,
-                cfg.connected_cache_sndbuf,
-            )))
-        } else {
-            None
-        };
+        let connected_cache = connected_cache_for(&cfg);
         Ok(Self {
             socket,
             local_locator,
             connected_cache,
+            priority_sockets: std::sync::Mutex::new(alloc::collections::BTreeMap::new()),
+            max_message_size: cfg.max_message_size,
         })
     }
 
@@ -636,6 +636,44 @@ impl UdpTransport {
         port: u16,
         interface: Ipv4Addr,
     ) -> Result<Self, UdpTransportError> {
+        Self::bind_multicast_v4_with_config(group, port, interface, UdpTransportConfig::default())
+    }
+
+    /// Like [`Self::bind_multicast_v4`] with an explicit
+    /// [`UdpTransportConfig`].
+    ///
+    /// # Errors
+    /// As [`Self::bind_multicast_v4`].
+    pub fn bind_multicast_v4_with_config(
+        group: Ipv4Addr,
+        port: u16,
+        interface: Ipv4Addr,
+        cfg: UdpTransportConfig,
+    ) -> Result<Self, UdpTransportError> {
+        Self::bind_multicast_v4_on_with_config(group, port, &[interface], cfg)
+            .map(|(transport, _)| transport)
+    }
+
+    /// Like [`Self::bind_multicast_v4_with_config`], with `group` joined on
+    /// every interface address of `interfaces`: one membership per
+    /// interface, so a datagram to the group is received whichever of them
+    /// it arrives on. With one interface the kernel would pick by route,
+    /// and on a host with a LAN and a container bridge it picked the LAN:
+    /// a participant in a container on the bridge was never heard.
+    ///
+    /// A join that fails is skipped, and the returned list names the
+    /// interface addresses whose join succeeded, in the order given.
+    ///
+    /// # Errors
+    /// `UdpTransportError::Bind` on the bind, or when no join succeeded
+    /// (the last join error). The bind is retried as in
+    /// [`Self::bind_multicast_v4`].
+    pub fn bind_multicast_v4_on_with_config(
+        group: Ipv4Addr,
+        port: u16,
+        interfaces: &[Ipv4Addr],
+        cfg: UdpTransportConfig,
+    ) -> Result<(Self, Vec<Ipv4Addr>), UdpTransportError> {
         const RETRY_BACKOFF_MS: &[u64] = &[100, 300, 700];
 
         let mut last_err: Option<std::io::Error> = None;
@@ -646,7 +684,7 @@ impl UdpTransport {
             if attempt > 0 {
                 std::thread::sleep(core::time::Duration::from_millis(backoff_ms));
             }
-            match Self::try_bind_multicast_v4(group, port, interface) {
+            match Self::try_bind_multicast_v4(group, port, interfaces, &cfg) {
                 Ok(t) => return Ok(t),
                 Err(UdpTransportError::Bind(e)) => {
                     let kind = e.kind();
@@ -674,8 +712,9 @@ impl UdpTransport {
     fn try_bind_multicast_v4(
         group: Ipv4Addr,
         port: u16,
-        interface: Ipv4Addr,
-    ) -> Result<Self, UdpTransportError> {
+        interfaces: &[Ipv4Addr],
+        cfg: &UdpTransportConfig,
+    ) -> Result<(Self, Vec<Ipv4Addr>), UdpTransportError> {
         let socket = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))
             .map_err(UdpTransportError::Bind)?;
         socket
@@ -698,10 +737,30 @@ impl UdpTransport {
         socket
             .bind(&bind_addr.into())
             .map_err(UdpTransportError::Bind)?;
+        let mut joined = Vec::with_capacity(interfaces.len());
+        let mut join_err: Option<std::io::Error> = None;
+        for interface in interfaces {
+            match socket.join_multicast_v4(&group, interface) {
+                Ok(()) => joined.push(*interface),
+                Err(e) => join_err = Some(e),
+            }
+        }
+        if joined.is_empty() {
+            return Err(UdpTransportError::Bind(join_err.unwrap_or_else(|| {
+                std::io::Error::other("no interface to join the multicast group on")
+            })));
+        }
+        // ip(7), IP_MULTICAST_ALL: at its default of 1, Linux gives a
+        // socket bound to INADDR_ANY:port every datagram for that port of
+        // every group any socket on the host joined. A participant with a
+        // group of its own would still hear, and discover, the
+        // participants of another group on the same port.
+        #[cfg(target_os = "linux")]
         socket
-            .join_multicast_v4(&group, &interface)
+            .set_multicast_all_v4(false)
             .map_err(UdpTransportError::Bind)?;
         let socket: UdpSocket = socket.into();
+        apply_socket_options(&socket, cfg);
         let local = match socket.local_addr().map_err(UdpTransportError::Bind)? {
             SocketAddr::V4(v4) => v4,
             SocketAddr::V6(_) => {
@@ -714,20 +773,60 @@ impl UdpTransport {
         // 0.0.0.0 — the caller's view is "I receive on the group".
         let local_locator = Locator::udp_v4(group.octets(), u32::from(local.port()));
         // Multicast receiver sockets normally do not use the send path,
-        // but keep the default config for consistency.
-        let cfg = UdpTransportConfig::default();
-        let connected_cache = if cfg.connected_cache_enabled {
-            Some(std::sync::RwLock::new(ConnectedSocketCache::new(
-                cfg.connected_cache_max_entries,
-                cfg.connected_cache_sndbuf,
-            )))
-        } else {
-            None
+        // but take the same config for consistency.
+        let connected_cache = connected_cache_for(cfg);
+        Ok((
+            Self {
+                socket,
+                local_locator,
+                connected_cache,
+                priority_sockets: std::sync::Mutex::new(alloc::collections::BTreeMap::new()),
+                max_message_size: cfg.max_message_size,
+            },
+            joined,
+        ))
+    }
+
+    /// A sender of multicast through one interface: bound to
+    /// `interface:0`, with `IP_MULTICAST_IF` set to it, so that the kernel
+    /// does not choose the outgoing interface by route (ip(7)). It sends
+    /// without the connected-socket cache, whose sockets would not carry
+    /// the option. `IP_MULTICAST_LOOP` is on, as for every sender here.
+    ///
+    /// # Errors
+    /// `UdpTransportError::Bind` on the socket, an option or the bind.
+    pub fn bind_multicast_sender_v4_with_config(
+        interface: Ipv4Addr,
+        cfg: UdpTransportConfig,
+    ) -> Result<Self, UdpTransportError> {
+        let socket = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))
+            .map_err(UdpTransportError::Bind)?;
+        socket
+            .set_multicast_if_v4(&interface)
+            .map_err(UdpTransportError::Bind)?;
+        socket
+            .set_multicast_loop_v4(true)
+            .map_err(UdpTransportError::Bind)?;
+        let bind_addr: SocketAddr = SocketAddrV4::new(interface, 0).into();
+        socket
+            .bind(&bind_addr.into())
+            .map_err(UdpTransportError::Bind)?;
+        let socket: UdpSocket = socket.into();
+        apply_socket_options(&socket, &cfg);
+        let local = match socket.local_addr().map_err(UdpTransportError::Bind)? {
+            SocketAddr::V4(v4) => v4,
+            SocketAddr::V6(_) => {
+                return Err(UdpTransportError::Bind(std::io::Error::other(
+                    "got V6 address on V4 bind",
+                )));
+            }
         };
         Ok(Self {
             socket,
-            local_locator,
-            connected_cache,
+            local_locator: Locator::udp_v4(local.ip().octets(), u32::from(local.port())),
+            connected_cache: None,
+            priority_sockets: std::sync::Mutex::new(alloc::collections::BTreeMap::new()),
+            max_message_size: cfg.max_message_size,
         })
     }
 
@@ -745,7 +844,149 @@ impl UdpTransport {
     }
 }
 
+impl UdpTransport {
+    /// The send socket for TRANSPORT_PRIORITY `tos` towards an IPv4 or
+    /// IPv6 destination, made on first use: bound to this transport's
+    /// address (a peer sees the same source address as for the transport's
+    /// other datagrams) with `IP_TOS`, or `IPV6_TCLASS`, set to `tos`.
+    fn priority_socket(&self, v6: bool, tos: u8) -> std::io::Result<UdpSocket> {
+        let mut sockets = self
+            .priority_sockets
+            .lock()
+            .map_err(|_| std::io::Error::other("priority sockets poisoned"))?;
+        if let Some(socket) = sockets.get(&(v6, tos)) {
+            return socket.try_clone();
+        }
+        let local_ip = self.socket.local_addr()?.ip();
+        let socket = if v6 {
+            let socket = Socket::new(Domain::IPV6, Type::DGRAM, Some(Protocol::UDP))?;
+            set_traffic_class(&socket, tos)?;
+            let bind_ip = if local_ip.is_ipv6() {
+                local_ip
+            } else {
+                std::net::IpAddr::V6(Ipv6Addr::UNSPECIFIED)
+            };
+            socket.bind(&SocketAddr::new(bind_ip, 0).into())?;
+            socket
+        } else {
+            let socket = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))?;
+            socket.set_tos(u32::from(tos))?;
+            let bind_ip = if local_ip.is_ipv4() {
+                local_ip
+            } else {
+                std::net::IpAddr::V4(Ipv4Addr::UNSPECIFIED)
+            };
+            socket.bind(&SocketAddr::new(bind_ip, 0).into())?;
+            socket
+        };
+        let socket: UdpSocket = socket.into();
+        let handle = socket.try_clone()?;
+        sockets.insert((v6, tos), socket);
+        Ok(handle)
+    }
+}
+
+/// `IPV6_TCLASS` of `socket`. socket2 offers it on Unix only.
+#[cfg(unix)]
+fn set_traffic_class(socket: &Socket, tclass: u8) -> std::io::Result<()> {
+    socket.set_tclass_v6(u32::from(tclass))
+}
+
+/// See the Unix variant; elsewhere there is no traffic class to set.
+#[cfg(not(unix))]
+fn set_traffic_class(_socket: &Socket, _tclass: u8) -> std::io::Result<()> {
+    Err(std::io::Error::other(
+        "no IPv6 traffic class on this platform",
+    ))
+}
+
 impl Transport for UdpTransport {
+    /// [`UdpTransportConfig::max_message_size`], at most
+    /// [`MAX_DATAGRAM_SIZE`].
+    fn max_message_size(&self) -> usize {
+        self.max_message_size.min(MAX_DATAGRAM_SIZE)
+    }
+
+    /// Closes the connected socket kept for `dest`. Entries otherwise left
+    /// only by FIFO eviction, so a process kept a socket, and a file
+    /// descriptor, per destination it ever sent to, up to the cache size:
+    /// 105 to 187 per process in a multi-process test chain at a cache size of 128.
+    fn forget_destination(&self, dest: &Locator) {
+        let Some(cache_lock) = &self.connected_cache else {
+            return;
+        };
+        let Ok(port) = u16::try_from(dest.port) else {
+            return;
+        };
+        let addr = match dest.kind {
+            LocatorKind::UdpV4 => {
+                SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::from(dest.ipv4()), port))
+            }
+            LocatorKind::UdpV6 => {
+                SocketAddr::V6(SocketAddrV6::new(Ipv6Addr::from(dest.address), port, 0, 0))
+            }
+            _ => return,
+        };
+        if let Ok(mut cache) = cache_lock.write() {
+            cache.remove(&addr);
+        }
+    }
+
+    /// TRANSPORT_PRIORITY (DDS 1.4 §2.2.3.15) as the IP header's
+    /// priority: the value, 1 to 255, is written as the IPv4 TOS octet
+    /// or the IPv6 Traffic Class, as RTI Connext's UDP transport does;
+    /// a value above 255 is 255, `0` and below is no priority. The
+    /// datagram goes out of a socket of its own for that value
+    /// (`Self::priority_socket`); where the platform cannot set one,
+    /// it goes out as [`Transport::send`] sends it.
+    fn send_with_priority(
+        &self,
+        dest: &Locator,
+        data: &[u8],
+        priority: i32,
+    ) -> Result<(), SendError> {
+        if priority <= 0 {
+            return self.send(dest, data);
+        }
+        let tos = u8::try_from(priority).unwrap_or(u8::MAX);
+        let port = u16::try_from(dest.port).map_err(|_| SendError::UnsupportedLocator)?;
+        let (v6, addr): (bool, SocketAddr) = match dest.kind {
+            LocatorKind::UdpV4 => (
+                false,
+                SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::from(dest.ipv4()), port)),
+            ),
+            LocatorKind::UdpV6 => (
+                true,
+                SocketAddr::V6(SocketAddrV6::new(Ipv6Addr::from(dest.address), port, 0, 0)),
+            ),
+            _ => return Err(SendError::UnsupportedLocator),
+        };
+        if data.len() > MAX_DATAGRAM_SIZE {
+            return Err(SendError::PayloadTooLarge {
+                size: data.len(),
+                limit: MAX_DATAGRAM_SIZE,
+            });
+        }
+        let Ok(socket) = self.priority_socket(v6, tos) else {
+            return self.send(dest, data);
+        };
+        let counters = udp_counters();
+        socket
+            .send_to(data, addr)
+            .map(|_| {
+                counters.packets_sent.inc();
+                counters.bytes_sent.add(data.len() as u64);
+                #[cfg(feature = "inspect")]
+                dispatch_transport_tap("udp:send", data);
+            })
+            .map_err(|_| {
+                counters.send_errors.inc();
+                SendError::Io {
+                    message: "udp send_to (priority socket) failed",
+                }
+            })
+    }
+
     fn send(&self, dest: &Locator, data: &[u8]) -> Result<(), SendError> {
         let port = u16::try_from(dest.port).map_err(|_| SendError::UnsupportedLocator)?;
         let addr: SocketAddr = match dest.kind {
@@ -886,6 +1127,48 @@ impl Transport for UdpTransport {
         Ok(ReceivedDatagram { source, data })
     }
 
+    /// Linux `recvmmsg` batch recv (Opt-2, spec `zerodds-zero-copy-1.0` §9):
+    /// up to [`crate::recv_batch::DEFAULT_BATCH_SIZE`] datagrams per syscall.
+    ///
+    /// This override is what makes the batch path reachable at all. The DCPS
+    /// receive loop holds an `Arc<dyn Transport>`, so it can never call an
+    /// inherent method on the concrete socket — for a while the loop carried a
+    /// comment claiming it used the batch path and a `socket.recv()` call that
+    /// did not, and enabling the feature changed nothing.
+    ///
+    /// Without the feature, or off Linux, the trait default applies: one
+    /// blocking [`Transport::recv`].
+    #[cfg(all(feature = "recvmmsg-batch", target_os = "linux"))]
+    fn recv_batch(&self, out: &mut Vec<ReceivedDatagram>, max: usize) -> Result<usize, RecvError> {
+        if max == 0 {
+            return Ok(0);
+        }
+        let n = crate::recv_batch::recv_batch_linux(&self.socket, out, max)?;
+        if n == 0 {
+            // `recvmmsg` ran with `MSG_DONTWAIT`, so an empty queue answers
+            // immediately. Handing that back to the caller turns its loop into
+            // a busy spin; the blocking single `recv()` is what makes this
+            // method wait the way `Transport::recv` promises, honouring the
+            // socket timeout the caller configured.
+            return match self.recv() {
+                Ok(dg) => {
+                    out.push(dg);
+                    Ok(1)
+                }
+                Err(RecvError::Timeout) => Ok(0),
+                Err(e) => Err(e),
+            };
+        }
+        let counters = udp_counters();
+        counters.packets_received.add(n as u64);
+        for dg in out.iter().rev().take(n) {
+            counters.bytes_received.add(dg.data.len() as u64);
+            #[cfg(feature = "inspect")]
+            dispatch_transport_tap("udp:recv", &dg.data);
+        }
+        Ok(n)
+    }
+
     fn local_locator(&self) -> Locator {
         self.local_locator
     }
@@ -949,6 +1232,32 @@ mod tests {
         );
     }
 
+    /// TRANSPORT_PRIORITY (DDS 1.4 §2.2.3.15): a datagram sent with one
+    /// arrives, from the sender's address, out of a socket whose IP TOS is
+    /// the priority; the socket is made once per value; priority 0 is a
+    /// plain send.
+    #[test]
+    fn a_priority_send_goes_out_of_a_socket_with_that_tos() {
+        let (sender, receiver) = make_loopback_pair();
+        let dest = receiver.local_locator();
+        sender
+            .send_with_priority(&dest, b"prioritised", 0x28)
+            .expect("send");
+        let received = receiver.recv().expect("recv");
+        assert_eq!(&received.data[..], b"prioritised");
+        assert_eq!(received.source.ipv4(), [127, 0, 0, 1]);
+        let socket = sender.priority_socket(false, 0x28).expect("the socket");
+        assert_eq!(socket2::SockRef::from(&socket).tos().expect("tos"), 0x28);
+        sender
+            .send_with_priority(&dest, b"again", 0x28)
+            .expect("send");
+        assert_eq!(&receiver.recv().expect("recv").data[..], b"again");
+        assert_eq!(sender.priority_sockets.lock().expect("lock").len(), 1);
+        sender.send_with_priority(&dest, b"none", 0).expect("send");
+        assert_eq!(&receiver.recv().expect("recv").data[..], b"none");
+        assert_eq!(sender.priority_sockets.lock().expect("lock").len(), 1);
+    }
+
     #[test]
     fn disabled_cache_uses_listener_source_port() {
         // With cache_disabled() send() runs over socket.send_to() —
@@ -972,6 +1281,61 @@ mod tests {
         assert_eq!(received.source.port, sender.local_locator().port);
     }
 
+    /// With the connected cache off the bound socket sends, and a datagram
+    /// of the largest size arrives whole: macOS sizes a UDP socket's send
+    /// buffer to `net.inet.udp.maxdgram` (9 216 bytes) and refuses anything
+    /// larger with EMSGSIZE, so every larger datagram failed (a multi-process test chain:
+    /// the TRANSIENT_LOCAL contracts never arrived).
+    #[test]
+    fn without_the_cache_a_largest_datagram_arrives() {
+        let cfg = UdpTransportConfig {
+            connected_cache_enabled: false,
+            ..UdpTransportConfig::default()
+        };
+        let sender =
+            UdpTransport::bind_v4_with_config(Ipv4Addr::LOCALHOST, 0, cfg).expect("bind sender");
+        let receiver = UdpTransport::bind_v4(Ipv4Addr::LOCALHOST, 0)
+            .expect("bind receiver")
+            .with_timeout(Some(core::time::Duration::from_secs(2)))
+            .expect("timeout");
+        let big = vec![0x5Au8; MAX_DATAGRAM_SIZE];
+        sender
+            .send(&receiver.local_locator(), &big)
+            .expect("the largest datagram is sent");
+        let got = receiver.recv().expect("and received");
+        assert_eq!(got.data.len(), MAX_DATAGRAM_SIZE);
+    }
+
+    /// A destination whose peer is gone loses its connected socket; a
+    /// later send to it makes one again.
+    #[test]
+    fn forget_destination_closes_its_cached_socket() {
+        let sender = UdpTransport::bind_v4(Ipv4Addr::LOCALHOST, 0).expect("bind sender");
+        let r1 = UdpTransport::bind_v4(Ipv4Addr::LOCALHOST, 0).expect("r1");
+        let r2 = UdpTransport::bind_v4(Ipv4Addr::LOCALHOST, 0).expect("r2");
+        sender.send(&r1.local_locator(), b"a").expect("send r1");
+        sender.send(&r2.local_locator(), b"b").expect("send r2");
+        let entries = || {
+            sender
+                .connected_cache
+                .as_ref()
+                .expect("cache enabled")
+                .read()
+                .expect("read")
+                .entries
+                .len()
+        };
+        assert_eq!(entries(), 2);
+        sender.forget_destination(&r1.local_locator());
+        assert_eq!(entries(), 1, "r1's socket is closed");
+        sender.forget_destination(&r1.local_locator());
+        assert_eq!(entries(), 1, "forgetting twice is harmless");
+        sender
+            .send(&r1.local_locator(), b"c")
+            .expect("send r1 again");
+        assert_eq!(entries(), 2);
+    }
+
     #[test]
     fn cache_fifo_evicts_oldest_at_overflow() {
         // FIFO eviction verification: cache with max_entries=2,
@@ -983,6 +1347,7 @@ mod tests {
             connected_cache_sndbuf: None,
             recv_buffer_size: None,
             dont_route: false,
+            max_message_size: DEFAULT_MAX_MESSAGE_SIZE,
         };
         let sender =
             UdpTransport::bind_v4_with_config(Ipv4Addr::LOCALHOST, 0, cfg).expect("bind sender");
@@ -1058,6 +1423,92 @@ mod tests {
         assert!(matches!(res, Err(SendError::PayloadTooLarge { .. })));
     }
 
+    /// The decisive test for the batch path: it calls `recv_batch`
+    /// **through the trait**, which is the only way the DCPS receive
+    /// loop can reach it — that loop holds an `Arc<dyn Transport>`, and
+    /// an inherent `recv_batch_linux` is invisible from there. That is
+    /// how the loop ended up with a comment claiming the batch path and
+    /// a `socket.recv()` that did not take it.
+    ///
+    /// Written `<UdpTransport as Transport>::recv_batch(&receiver, …)`
+    /// and not `receiver.recv_batch(…)`. Method syntax prefers an
+    /// inherent method, which is the shape of the defect; the qualified
+    /// form resolves to the trait impl — the same function a vtable
+    /// entry holds — so an override that never reached the trait falls
+    /// back to the default here and the assertion below fails.
+    #[test]
+    fn recv_batch_through_the_trait_object_takes_several_datagrams_at_once() {
+        let receiver = UdpTransport::bind_v4(Ipv4Addr::LOCALHOST, 0)
+            .expect("bind")
+            .with_timeout(Some(Duration::from_secs(2)))
+            .expect("timeout");
+        let sender = UdpTransport::bind_v4(Ipv4Addr::LOCALHOST, 0).expect("bind");
+        let target = receiver.local_locator();
+        for i in 0u8..8 {
+            sender.send(&target, &[i; 16]).expect("send");
+        }
+        // Give the kernel a moment to queue all eight on the receive socket.
+        std::thread::sleep(Duration::from_millis(100));
+
+        let mut out: Vec<ReceivedDatagram> = Vec::new();
+        let n =
+            <UdpTransport as Transport>::recv_batch(&receiver, &mut out, 8).expect("recv_batch");
+        assert_eq!(n, out.len(), "the count and the appended datagrams agree");
+        assert!(n >= 1, "at least the blocking first datagram comes back");
+        if cfg!(all(feature = "recvmmsg-batch", target_os = "linux")) {
+            assert!(
+                n > 1,
+                "the batch override must hand over more than one queued datagram, got {n}"
+            );
+        }
+        for dg in &out {
+            assert_eq!(dg.data.len(), 16);
+        }
+    }
+
+    #[test]
+    fn recv_batch_appends_instead_of_clearing() {
+        // A caller keeps its capacity across iterations, so the method must
+        // never drop what is already in the vec.
+        let receiver = UdpTransport::bind_v4(Ipv4Addr::LOCALHOST, 0)
+            .expect("bind")
+            .with_timeout(Some(Duration::from_secs(2)))
+            .expect("timeout");
+        let sender = UdpTransport::bind_v4(Ipv4Addr::LOCALHOST, 0).expect("bind");
+        sender
+            .send(&receiver.local_locator(), b"keep-me")
+            .expect("send");
+        let mut out: Vec<ReceivedDatagram> = alloc_one_placeholder(&receiver);
+        let before = out.len();
+        let n =
+            <UdpTransport as Transport>::recv_batch(&receiver, &mut out, 4).expect("recv_batch");
+        assert_eq!(out.len(), before + n, "the placeholder entry survived");
+    }
+
+    /// One already-received datagram, so
+    /// [`recv_batch_appends_instead_of_clearing`] has something in the vec that
+    /// must survive the call.
+    fn alloc_one_placeholder(t: &UdpTransport) -> Vec<ReceivedDatagram> {
+        alloc::vec![ReceivedDatagram {
+            source: t.local_locator(),
+            data: Arc::from(&b"placeholder"[..]),
+        }]
+    }
+
+    #[test]
+    fn recv_batch_with_zero_max_reads_nothing() {
+        let t = UdpTransport::bind_v4(Ipv4Addr::LOCALHOST, 0)
+            .expect("bind")
+            .with_timeout(Some(Duration::from_millis(50)))
+            .expect("timeout");
+        let mut out: Vec<ReceivedDatagram> = Vec::new();
+        assert_eq!(
+            <UdpTransport as Transport>::recv_batch(&t, &mut out, 0).expect("no read"),
+            0
+        );
+        assert!(out.is_empty());
+    }
+
     #[test]
     fn recv_timeout_returns_timeout_error() {
         let t = UdpTransport::bind_v4(Ipv4Addr::LOCALHOST, 0)
@@ -1089,6 +1540,115 @@ mod tests {
         // The locator points to the group, not to 0.0.0.0.
         assert_eq!(loc.ipv4(), [239, 0, 0, 1]);
         assert!(loc.port > 0);
+    }
+
+    /// A multicast receiver gets the group it joined and not another
+    /// group sent to the same port (see `try_bind_multicast_v4`).
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_multicast_receiver_gets_only_the_group_it_joined() {
+        let own = Ipv4Addr::new(239, 255, 88, 2);
+        let other = Ipv4Addr::new(239, 255, 88, 3);
+        let wait = Some(Duration::from_millis(300));
+        let mine = UdpTransport::bind_multicast_v4(own, 0, Ipv4Addr::UNSPECIFIED)
+            .expect("bind")
+            .with_timeout(wait)
+            .expect("timeout");
+        let port = u16::try_from(mine.local_locator().port).expect("port");
+        let theirs = UdpTransport::bind_multicast_v4(other, port, Ipv4Addr::UNSPECIFIED)
+            .expect("bind the same port")
+            .with_timeout(wait)
+            .expect("timeout");
+        let tx = std::net::UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).expect("sender");
+        tx.set_multicast_loop_v4(true).expect("loop");
+        tx.send_to(b"other group", (other, port)).expect("send");
+        assert_eq!(
+            &theirs.recv().expect("the group it joined").data[..],
+            b"other group"
+        );
+        let res = mine.recv();
+        assert!(matches!(res, Err(RecvError::Timeout)), "got {res:?}");
+    }
+
+    /// A join that fails is skipped, and one that succeeds is enough;
+    /// with none there is no transport. 192.0.2.1 (TEST-NET-1, RFC 5737)
+    /// is the address of no local interface.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_join_on_several_interfaces_skips_the_ones_that_fail() {
+        let group = Ipv4Addr::new(239, 255, 88, 4);
+        let absent = Ipv4Addr::new(192, 0, 2, 1);
+        let (_t, joined) = UdpTransport::bind_multicast_v4_on_with_config(
+            group,
+            0,
+            &[absent, Ipv4Addr::UNSPECIFIED],
+            UdpTransportConfig::default(),
+        )
+        .expect("the second join succeeds");
+        assert_eq!(joined, [Ipv4Addr::UNSPECIFIED]);
+        assert!(
+            UdpTransport::bind_multicast_v4_on_with_config(
+                group,
+                0,
+                &[absent],
+                UdpTransportConfig::default()
+            )
+            .is_err(),
+            "no join, no transport"
+        );
+    }
+
+    /// A receiver joined on every eligible interface hears a sender on
+    /// each of them: what goes out through one interface arrives through
+    /// the membership on that interface, whichever the route would pick.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_group_joined_on_every_interface_hears_a_sender_on_each() {
+        let addresses: Vec<Ipv4Addr> = crate::eligible_ipv4_interfaces()
+            .iter()
+            .map(|e| e.ipv4)
+            .collect();
+        if addresses.is_empty() {
+            eprintln!("no eligible interface in this environment; skipping");
+            return;
+        }
+        let group = Ipv4Addr::new(239, 255, 88, 5);
+        let (rx, joined) = UdpTransport::bind_multicast_v4_on_with_config(
+            group,
+            0,
+            &addresses,
+            UdpTransportConfig::default(),
+        )
+        .expect("bind");
+        let rx = rx
+            .with_timeout(Some(Duration::from_millis(500)))
+            .expect("timeout");
+        let to = Locator::udp_v4(group.octets(), rx.local_locator().port);
+        let mut sent = Vec::new();
+        for interface in &joined {
+            let tx = UdpTransport::bind_multicast_sender_v4_with_config(
+                *interface,
+                UdpTransportConfig::default(),
+            )
+            .expect("sender");
+            assert_eq!(tx.local_locator().ipv4(), interface.octets());
+            if tx.send(&to, &interface.octets()).is_ok() {
+                sent.push(interface.octets().to_vec());
+            }
+        }
+        assert!(
+            !sent.is_empty(),
+            "no interface took the datagram: {joined:?}"
+        );
+        let mut heard = Vec::new();
+        while let Ok(d) = rx.recv() {
+            heard.push(d.data.to_vec());
+        }
+        // Two interfaces on one segment hear each other's copy too, so
+        // the count can be higher; every interface's own must be there.
+        for payload in &sent {
+            assert!(heard.contains(payload), "{payload:?} not heard: {heard:?}");
+        }
     }
 
     #[test]
@@ -1163,5 +1723,26 @@ mod tests {
             }
         }
         assert!(total >= 1, "at least one reuse-socket got a datagram");
+    }
+
+    /// DDSI-RTPS 2.5 §8.4.14.1: the transport reports the largest message it
+    /// sends in one datagram: the configured one, 1472 by default, and never
+    /// more than a UDP datagram holds.
+    #[test]
+    fn max_message_size_is_the_configured_one_up_to_the_datagram_limit() {
+        let t = UdpTransport::bind_v4(Ipv4Addr::LOCALHOST, 0).expect("bind");
+        assert_eq!(t.max_message_size(), 1472);
+        let cfg = UdpTransportConfig {
+            max_message_size: 9000,
+            ..UdpTransportConfig::default()
+        };
+        let t = UdpTransport::bind_v4_with_config(Ipv4Addr::LOCALHOST, 0, cfg).expect("bind");
+        assert_eq!(t.max_message_size(), 9000);
+        let cfg = UdpTransportConfig {
+            max_message_size: 1_000_000,
+            ..UdpTransportConfig::default()
+        };
+        let t = UdpTransport::bind_v4_with_config(Ipv4Addr::LOCALHOST, 0, cfg).expect("bind");
+        assert_eq!(t.max_message_size(), MAX_DATAGRAM_SIZE);
     }
 }

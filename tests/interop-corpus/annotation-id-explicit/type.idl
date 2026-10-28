@@ -1,0 +1,6 @@
+// `@id`
+@mutable struct Sample {
+    @id(10) long first;
+    @id(2) long second;
+    @id(7) short third;
+};

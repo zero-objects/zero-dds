@@ -9,12 +9,12 @@
 //!
 //! * **L1 — Wire**: HTTP upgrade handshake per RFC 6455 §4 via the
 //!   `crate::handshake` module; frame codec via `crate::codec`.
-//! * **L2 — DDS**: each daemon process starts a `DcpsRuntime` with
-//!   `RuntimeConfig::default()` on the configured domain id.
+//! * **L2 — DDS**: each daemon process starts a `DcpsRuntime` with the
+//!   runtime configuration of its layers on the configured domain id.
 //! * **L3 — Bridging**: one reader+writer per `topics[]` entry; WS
 //!   frames `op:publish` write into the writer, DDS samples are
 //!   pushed as `op:notify` to all subscribed WS clients.
-//! * **L4 — Config**: YAML-subset parser without external deps (see
+//! * **L4 — Config**: the shared layered loader `zerodds-config` (see
 //!   [`config`]).
 //!
 //! L5 (auth/TLS) and L6 (multi-tenant) are laid out as stubs — the

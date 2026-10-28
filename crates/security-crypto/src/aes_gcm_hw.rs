@@ -26,7 +26,7 @@
 #[cfg(feature = "std")]
 use std::sync::OnceLock;
 
-/// CPU-Architektur-Label.
+/// CPU architecture label.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Arch {
     /// `x86_64` (Intel/AMD 64-bit).
@@ -38,7 +38,7 @@ pub enum Arch {
 }
 
 impl Arch {
-    /// Aktuelle Compile-Time-Architektur.
+    /// Current compile-time architecture.
     #[must_use]
     pub const fn current() -> Self {
         if cfg!(target_arch = "x86_64") {
@@ -50,7 +50,7 @@ impl Arch {
         }
     }
 
-    /// Maschinenlesbares Label.
+    /// Machine-readable label.
     #[must_use]
     pub const fn label(self) -> &'static str {
         match self {
@@ -64,7 +64,7 @@ impl Arch {
 /// Detected HW capabilities of a CPU.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct HwCapabilities {
-    /// Architektur.
+    /// Architecture.
     pub arch: Arch,
     /// AES block accelerator (AES-NI on x86_64, FEAT_AES on
     /// aarch64).

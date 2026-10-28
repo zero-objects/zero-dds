@@ -15,12 +15,11 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::OnceLock;
 
-use zerodds_cdr::{BufferReader, Endianness};
-use zerodds_endpoint_e2e::{bind_reliable_peer, reliable_receive};
+use zerodds_endpoint_e2e::{bind_reliable_peer, reliable_receive, xcdr2_reader};
 
 const N: usize = 12;
 
-/// The `dotnet` binary: on PATH, else the codepit `~/.dotnet/dotnet` install.
+/// The `dotnet` binary: on PATH, else the test host's `~/.dotnet/dotnet` install.
 fn dotnet_bin() -> Option<String> {
     let on_path = Command::new("dotnet")
         .arg("--version")
@@ -74,6 +73,12 @@ fn csproj(asm: &str) -> String {
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
+    <!-- Run on a newer major runtime when 8.0 is not the one installed. A host
+         carrying only .NET 9 refuses a net8.0 app outright otherwise ("You must
+         install or update .NET to run this application"), which is a missing
+         runtime version and not a failing endpoint. `csharp.rs` carries the
+         same line. -->
+    <RollForward>LatestMajor</RollForward>
     <AssemblyName>{asm}</AssemblyName>
     <NoWarn>CS0168;CS8632;CS0219</NoWarn>
   </PropertyGroup>
@@ -86,27 +91,15 @@ fn csproj(asm: &str) -> String {
 /// `.csproj` producing `<asm>.dll`, builds Release, and returns the dll path.
 /// Panics (fails the test, with the build log) on a build failure.
 fn build(dir: &Path, dotnet: &str, files: &[&str], asm: &str) -> PathBuf {
-    let src = endpoints_csharp();
-    std::fs::create_dir_all(dir).expect("mkdir");
-    for f in files {
-        std::fs::copy(src.join(f), dir.join(f)).unwrap_or_else(|e| panic!("copy {f}: {e}"));
-    }
-    std::fs::write(dir.join("build.csproj"), csproj(asm)).expect("write csproj");
-
-    let out = dir.join("out");
-    let mut c = Command::new(dotnet);
-    c.args(["build", "-c", "Release", "--nologo", "-v", "quiet", "-o"])
-        .arg(&out)
-        .current_dir(dir);
-    dotnet_envs(&mut c);
-    let build = c.output().expect("dotnet build spawn");
-    assert!(
-        build.status.success(),
-        "dotnet build FAILED ({files:?}):\n--- stdout ---\n{}\n--- stderr ---\n{}",
-        String::from_utf8_lossy(&build.stdout),
-        String::from_utf8_lossy(&build.stderr),
-    );
-    out.join(format!("{asm}.dll"))
+    zerodds_endpoint_e2e::build_dotnet_assembly(
+        dir,
+        dotnet,
+        &endpoints_csharp(),
+        files,
+        asm,
+        ("build.csproj", csproj(asm)),
+        dotnet_envs,
+    )
 }
 
 /// Lazily builds (and caches for the process's lifetime) the `ExampleReliable`
@@ -168,7 +161,7 @@ fn run_case(dotnet: &str, drop_every: Option<usize>, label: &str) {
     // Each sample is a Reading { id, value, label }; the id must equal its index
     // (gap-free, in-order delivery despite injected loss).
     for (i, payload) in delivered.iter().enumerate() {
-        let mut r = BufferReader::new(payload, Endianness::Little).xcdr2();
+        let mut r = xcdr2_reader(payload);
         let id = r.read_u32().expect("reading id");
         assert_eq!(id as usize, i, "{label}: sample {i} id (gap-free order)");
     }

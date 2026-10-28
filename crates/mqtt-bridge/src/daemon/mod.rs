@@ -12,7 +12,7 @@
 //! * **L2 — DDS**: `DcpsRuntime` on the domain ID from the config.
 //! * **L3 — bridging**: per topic entry a DDS reader (out direction)
 //!   plus a DDS writer (in direction); MQTT PUBLISH ↔ DDS sample.
-//! * **L4 — config**: YAML subset like the WS daemon (own mini parser).
+//! * **L4 — config**: the shared layered loader `zerodds-config`.
 //!
 //! L5/L6 are stubs.
 
@@ -23,4 +23,4 @@ pub mod qos_translation;
 pub mod runtime_common;
 pub mod security;
 pub mod server;
-pub mod yaml;
+mod ws_transport;

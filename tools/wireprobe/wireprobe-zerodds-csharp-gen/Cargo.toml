@@ -1,0 +1,33 @@
+[package]
+name = "zerodds-wireprobe-csharp-gen"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Generates the C# compilation unit the ZeroDDS C# wire probe compiles: the types, the codec, and the statements that fill or print one sample."
+repository.workspace = true
+homepage.workspace = true
+publish = false
+
+[lib]
+name = "zerodds_wireprobe_csharp_gen"
+path = "src/lib.rs"
+
+[[bin]]
+name = "wireprobe-zerodds-csharp-gen"
+path = "src/main.rs"
+
+[dependencies]
+zerodds-ast = { path = "../../../crates/ast", version = "1.0.0-rc.7" }
+zerodds-ast-core = { path = "../../../crates/ast-core", version = "1.0.0-rc.7" }
+zerodds-ast-layout = { path = "../../../crates/ast-layout", version = "1.0.0-rc.7" }
+zerodds-lang-cst = { path = "../../../crates/lang-cst", version = "1.0.0-rc.7" }
+zerodds-lang-render = { path = "../../../crates/lang-render", version = "1.0.0-rc.7" }
+zerodds-lang-rules = { path = "../../../crates/lang-rules", version = "1.0.0-rc.7" }
+zerodds-wire-probe = { path = "../../../crates/wire-probe", version = "1.0.0-rc.7" }
+zerodds-wireprobe-gen = { path = "../wireprobe-zerodds-gen", version = "1.0.0-rc.7" }
+serde_json = "1"
+
+[lints]
+workspace = true

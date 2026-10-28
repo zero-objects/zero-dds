@@ -1,0 +1,7 @@
+// several `@optional` members, some absent
+@mutable struct Sample {
+    @optional long first;
+    long middle;
+    @optional string text;
+    @optional double last;
+};

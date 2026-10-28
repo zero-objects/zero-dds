@@ -308,7 +308,7 @@ mod tests {
 
     #[test]
     fn invalid_qos_3_rejected_on_encode() {
-        // Spec §3.3.1.2 — QoS=3 ist Malformed Packet.
+        // Spec §3.3.1.2 — QoS=3 is a Malformed Packet.
         let mut p = PublishPacket {
             dup: false,
             qos: 3,

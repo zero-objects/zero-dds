@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
 #
-# Spread-Diagnose: kombiniert phase-timing + perf-record + tcpdump
-# fuer einen einzelnen zerodds-self-Roundtrip-Run, plus Vergleichs-
-# Runs mit verschiedenen Konfigurationen.
+# Spread diagnosis: combines phase timing + perf record + tcpdump
+# for a single zerodds self roundtrip run, plus comparison
+# runs with different configurations.
 #
-# Erzeugt im OUT_DIR:
-#   - phase_<mode>.log   — phase-timing-output pro Mode
-#   - sample_p50_p99_<mode>.csv — pro run: min/p50/p90/p99/p999/max
-#   - perf_<mode>.data   — perf record sample data (wenn perf da)
-#   - pcap_<mode>.pcap   — tcpdump loopback capture (wenn tcpdump da)
-#   - summary.md         — Zusammenfassung
+# Produces in OUT_DIR:
+#   - phase_<mode>.log   — phase timing output per mode
+#   - sample_p50_p99_<mode>.csv — per run: min/p50/p90/p99/p999/max
+#   - perf_<mode>.data   — perf record sample data (if perf is present)
+#   - pcap_<mode>.pcap   — tcpdump loopback capture (if tcpdump is present)
+#   - summary.md         — summary
 #
-# Aufruf:
+# Usage:
 #   spread_diagnose.sh <out_dir> [N=10] [PAYLOADS="0 8192"]
 
 set -u
@@ -64,14 +64,14 @@ run_cell() {
             tcpdump_pid=$!
         fi
         if [ "$HAVE_PERF" = "1" ]; then
-            # Sample pong-process at 999 Hz fuer ~2.5s (covers warmup+samples)
+            # Sample pong-process at 999 Hz for ~2.5s (covers warmup+samples)
             perf record -F 999 -p "$pong_pid" -o "$perf_data" -g \
                 >/dev/null 2>&1 &
             perf_pid=$!
         fi
     fi
 
-    # Ping mit phase-timing
+    # Ping with phase timing
     ZERODDS_PHASE_TIMING=1 ZERODDS_PHASE_DUMP=1 \
         timeout 90 ./zerodds-roundtrip ping --payload "$payload" \
             --samples "$SAMPLES" --warmup "$WARMUP" >"$ping_log" 2>&1
@@ -118,7 +118,7 @@ run_mode() {
     echo "===== Mode: $mode ($env_str) ====="
     for payload in "${PAYLOADS[@]}"; do
         for idx in $(seq 1 "$N_RUNS"); do
-            # Capture nur fuer ersten run pro payload+mode
+            # Capture only for the first run per payload+mode
             local cap=0
             [ "$idx" = "1" ] && cap=1
             printf '[%-30s] payload=%-5d run=%2d ... ' "$mode" "$payload" "$idx"
@@ -143,20 +143,20 @@ run_mode() {
 
 started=$(date +%s)
 
-# Variante A: baseline (cache an, sndbuf 256K, tick 5ms = default)
+# Variant A: baseline (cache on, sndbuf 256K, tick 5ms = default)
 run_mode "baseline"
 
-# Variante B: cache aus (klassisches send_to)
+# Variant B: cache off (classic send_to)
 run_mode "cache_off" ZERODDS_UDP_CACHE_ENABLE=0
 
-# Variante C: cache aus + längerer tick-period (1 sec, drastisch)
+# Variant C: cache off + longer tick period (1 sec, drastic)
 run_mode "cache_off_tick_1s" ZERODDS_UDP_CACHE_ENABLE=0 ZERODDS_TICK_PERIOD_MS=1000
 
-# Variante D: cache an + längerer tick (sehen ob tick die spikes macht)
+# Variant D: cache on + longer tick (see whether the tick causes the spikes)
 run_mode "baseline_tick_1s" ZERODDS_TICK_PERIOD_MS=1000
 
 elapsed=$(( $(date +%s) - started ))
 echo
-echo "Spread-Diagnose fertig in $((elapsed / 60)) min $((elapsed % 60)) s."
+echo "Spread diagnosis done in $((elapsed / 60)) min $((elapsed % 60)) s."
 echo "CSV: $CSV"
-echo "Per-Mode Files in: $OUT_DIR"
+echo "Per-mode files in: $OUT_DIR"

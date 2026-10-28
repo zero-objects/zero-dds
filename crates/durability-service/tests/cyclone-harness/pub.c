@@ -4,7 +4,7 @@
 // service (external_cyclone_ingest, ZD_TYPE="dur::Sample") ingests real
 // foreign-vendor wire bytes. Domain via the DOM env var (default 0).
 //
-// Build (codepit): see README.md in this directory.
+// Build (Linux test host): see README.md in this directory.
 #include "dds/dds.h"
 #include "dur.h"
 #include <stdio.h>

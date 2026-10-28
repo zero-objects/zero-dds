@@ -18,7 +18,7 @@
 //!   * `auth_plugin_class` — exact string comparison. `""` matches
 //!     `None` in the peer (legacy peer without a plugin).
 //!   * `cert_cn_pattern` — wildcard comparison via
-//!     [`cn_pattern_match`](zerodds_security_permissions::cn_pattern_match).
+//!     [`zerodds_security_permissions::cn_pattern_match`].
 //!     A peer without a cert CN does not match.
 //!   * `suite` — the peer must list the suite in its
 //!     `supported_suites` (CSV string comparison).
@@ -52,7 +52,7 @@ fn suite_hint_name(s: SuiteHint) -> &'static str {
     match s {
         SuiteHint::Aes128Gcm => "AES_128_GCM",
         SuiteHint::Aes256Gcm => "AES_256_GCM",
-        SuiteHint::HmacSha256 => "HMAC_SHA256",
+        SuiteHint::Aes256Gmac => "AES256_GMAC",
     }
 }
 
@@ -248,7 +248,7 @@ mod tests {
         PeerCapabilities {
             auth_plugin_class: Some("DDS:Auth:PKI-DH:1.2".into()),
             cert_cn: Some("writer1.fast.example".into()),
-            supported_suites: alloc::vec![SuiteHint::HmacSha256],
+            supported_suites: alloc::vec![SuiteHint::Aes256Gmac],
             ..Default::default()
         }
     }

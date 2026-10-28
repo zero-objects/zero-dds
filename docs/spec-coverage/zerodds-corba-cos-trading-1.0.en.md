@@ -14,7 +14,7 @@ Implementation:
 
 **Repo:** `crates/corba-cos-trading/src/property.rs::Value` (`compare`, `as_f64`).
 
-**Tests:** indirectly via `constraint.rs::tests` (`numeric_comparisons`, `float_and_mixed_numeric`, `string_and_bool`, `incompatible_types_do_not_match`).
+**Tests:** `crates/corba-cos-trading/src/constraint.rs::{numeric_comparisons, float_and_mixed_numeric, string_and_bool, incompatible_types_do_not_match}`.
 
 **Status:** done
 
@@ -24,7 +24,7 @@ Implementation:
 
 **Repo:** `crates/corba-cos-trading/src/trader.rs::Offer` (`new`, `with`).
 
-**Tests:** `crates/corba-cos-trading/src/trader.rs::tests::export_withdraw`.
+**Tests:** `crates/corba-cos-trading/src/trader.rs::export_withdraw`.
 
 **Status:** done
 
@@ -36,7 +36,7 @@ Implementation:
 
 **Repo:** `crates/corba-cos-trading/src/constraint.rs` (`tokenize`, `Parser::parse_or`/`parse_and`/`parse_not`/`parse_comparison`).
 
-**Tests:** `constraint.rs::tests`: `numeric_comparisons`, `boolean_logic_and_precedence`, `parentheses_override_precedence`, `string_and_bool`, `empty_constraint_matches_all`, `negative_numbers`.
+**Tests:** `crates/corba-cos-trading/src/constraint.rs::{numeric_comparisons, boolean_logic_and_precedence, parentheses_override_precedence, string_and_bool, empty_constraint_matches_all, negative_numbers}`.
 
 **Status:** done
 
@@ -46,7 +46,7 @@ Implementation:
 
 **Repo:** `crates/corba-cos-trading/src/constraint.rs::eval` + `keyword_or_ident`.
 
-**Tests:** `constraint.rs::tests::exist_and_missing_property`, `incompatible_types_do_not_match`.
+**Tests:** `crates/corba-cos-trading/src/constraint.rs::{exist_and_missing_property, incompatible_types_do_not_match}`.
 
 **Status:** done
 
@@ -56,7 +56,7 @@ Implementation:
 
 **Repo:** `crates/corba-cos-trading/src/constraint.rs::ConstraintError`, `Constraint::parse`.
 
-**Tests:** `constraint.rs::tests::parse_errors`.
+**Tests:** `crates/corba-cos-trading/src/constraint.rs::parse_errors`.
 
 **Status:** done
 
@@ -68,7 +68,7 @@ Implementation:
 
 **Repo:** `crates/corba-cos-trading/src/trader.rs::Trader` (`export`, `withdraw`, `query`).
 
-**Tests:** `trader.rs::tests`: `query_filters_by_type_and_constraint`, `query_respects_service_type`, `complex_constraint_query`, `bad_constraint_errors`.
+**Tests:** `crates/corba-cos-trading/src/trader.rs::{query_filters_by_type_and_constraint, query_respects_service_type, complex_constraint_query, bad_constraint_errors}`.
 
 **Status:** done
 
@@ -78,7 +78,7 @@ Implementation:
 
 **Repo:** `crates/corba-cos-trading/src/trader.rs::Preference` + `query` sorting.
 
-**Tests:** `trader.rs::tests::preference_max_orders_descending`, `preference_min_and_how_many`.
+**Tests:** `crates/corba-cos-trading/src/trader.rs::{preference_max_orders_descending, preference_min_and_how_many}`.
 
 **Status:** done
 
@@ -90,7 +90,7 @@ Implementation:
 
 **Repo:** `crates/corba-cos-trading/src/federation.rs::Federation` (`link`/`add_proxy`/`query` with `FollowOption` + BFS loop avoidance), `ProxyOffer` with recipe-AND constraint.
 
-**Tests:** `federation.rs::tests`: `query_follows_links_within_hop_limit`, `local_only_link_not_followed`, `if_no_local_only_follows_when_empty`, `cycle_is_not_infinite`, `global_preference_orders_merged_result`, `proxy_offer_redirects_with_recipe`, `unknown_node_link_errors`.
+**Tests:** `crates/corba-cos-trading/src/federation.rs::{query_follows_links_within_hop_limit, local_only_link_not_followed, if_no_local_only_follows_when_empty, cycle_is_not_infinite, global_preference_orders_merged_result, proxy_offer_redirects_with_recipe, unknown_node_link_errors}`.
 
 **Status:** done
 
@@ -100,7 +100,7 @@ Implementation:
 
 **Repo:** `crates/corba-cos-trading/src/dynamic.rs::DynamicPropEval`; resolution in `trader.rs::Trader::effective_props` (before constraint and preference evaluation).
 
-**Tests:** `trader.rs::tests`: `dynamic_property_resolved_in_constraint`, `dynamic_property_used_in_preference`; `dynamic.rs::tests::evaluator_computes_value_from_context`.
+**Tests:** `crates/corba-cos-trading/src/trader.rs::{dynamic_property_resolved_in_constraint, dynamic_property_used_in_preference}`; `crates/corba-cos-trading/src/dynamic.rs::evaluator_computes_value_from_context`.
 
 **Status:** done
 
@@ -110,7 +110,7 @@ Implementation:
 
 **Repo:** `crates/corba-cos-trading/src/service_type.rs::ServiceTypeRepository` (`is_a`/`mandatory_properties`); `trader.rs::Trader::type_matches` + `export_checked`.
 
-**Tests:** `service_type.rs::tests` (5): `is_a_transitive`, `mandatory_properties_inherited`, …; `trader.rs::tests`: `query_on_base_type_matches_subtypes`, `export_checked_validates_mandatory_and_type`, `export_checked_accepts_dynamic_mandatory`.
+**Tests:** `crates/corba-cos-trading/src/service_type.rs::{is_a_transitive, unknown_super_type_rejected, duplicate_type_rejected, mandatory_properties_inherited, effective_properties_merge_without_dup, all_super_types_includes_self}`; `crates/corba-cos-trading/src/trader.rs::{query_on_base_type_matches_subtypes, export_checked_validates_mandatory_and_type, export_checked_accepts_dynamic_mandatory}`.
 
 **Status:** done
 

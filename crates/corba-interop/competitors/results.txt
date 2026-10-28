@@ -1,5 +1,5 @@
 ====================================================================
- CORBA Perf Baseline — codepit, N=50000, Payloads='32 256 4096'
+ CORBA Perf Baseline — the Linux test host, N=50000, Payloads='32 256 4096'
 ====================================================================
 == Build ZeroDDS perf binaries ==
 
@@ -16,9 +16,9 @@ TAO Echo roundtrip (IIOP loopback, payload=32B, N=50000)
   min=24.3us  p50=36.2us  p90=42.8us  p99=85.9us  p99.9=139.3us
 INFO Initialising ORB with ID: 
 INFO InterceptorManager started with 0 Server Interceptors, 0 Client Interceptors and 1 IOR Interceptors
-INFO ClientConnectionManager: created new ClientGIOPConnection to 192.168.178.115:38751 (707f7052)
+INFO ClientConnectionManager: created new ClientGIOPConnection to 192.0.2.115:38751 (707f7052)
 INFO Negotiated char codeset of ISO8859_1 and wchar of UTF16
-INFO Connected to 192.168.178.115:38751 from local port 37678
+INFO Connected to 192.0.2.115:38751 from local port 37678
 JacORB Echo roundtrip (IIOP loopback, payload=32B, N=50000)
   min=43.5us  p50=59.6us  p90=83.6us  p99=140.2us  p99.9=338.4us
 
@@ -33,9 +33,9 @@ TAO Echo roundtrip (IIOP loopback, payload=256B, N=50000)
   min=26.6us  p50=37.9us  p90=46.9us  p99=88.4us  p99.9=135.4us
 INFO Initialising ORB with ID: 
 INFO InterceptorManager started with 0 Server Interceptors, 0 Client Interceptors and 1 IOR Interceptors
-INFO ClientConnectionManager: created new ClientGIOPConnection to 192.168.178.115:46257 (707f7052)
+INFO ClientConnectionManager: created new ClientGIOPConnection to 192.0.2.115:46257 (707f7052)
 INFO Negotiated char codeset of ISO8859_1 and wchar of UTF16
-INFO Connected to 192.168.178.115:46257 from local port 56374
+INFO Connected to 192.0.2.115:46257 from local port 56374
 JacORB Echo roundtrip (IIOP loopback, payload=256B, N=50000)
   min=44.8us  p50=59.2us  p90=81.6us  p99=136.5us  p99.9=263.9us
 
@@ -50,9 +50,9 @@ TAO Echo roundtrip (IIOP loopback, payload=4096B, N=50000)
   min=36.5us  p50=50.6us  p90=61.5us  p99=108.9us  p99.9=147.9us
 INFO Initialising ORB with ID: 
 INFO InterceptorManager started with 0 Server Interceptors, 0 Client Interceptors and 1 IOR Interceptors
-INFO ClientConnectionManager: created new ClientGIOPConnection to 192.168.178.115:39623 (707f7052)
+INFO ClientConnectionManager: created new ClientGIOPConnection to 192.0.2.115:39623 (707f7052)
 INFO Negotiated char codeset of ISO8859_1 and wchar of UTF16
-INFO Connected to 192.168.178.115:39623 from local port 48520
+INFO Connected to 192.0.2.115:39623 from local port 48520
 JacORB Echo roundtrip (IIOP loopback, payload=4096B, N=50000)
   min=53.7us  p50=78.4us  p90=106.6us  p99=173.6us  p99.9=574.3us
 

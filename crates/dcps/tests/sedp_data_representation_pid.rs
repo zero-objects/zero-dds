@@ -40,6 +40,7 @@ use zerodds_rtps::wire_types::{EntityId, Guid, GuidPrefix};
 
 fn make_pub_data(data_rep: Vec<i16>) -> PublicationBuiltinTopicData {
     PublicationBuiltinTopicData {
+        vendor_id: Some(zerodds_rtps::wire_types::VendorId::ZERODDS),
         key: Guid::new(
             GuidPrefix::from_bytes([1; 12]),
             EntityId::user_writer_with_key([0, 0, 1]),
@@ -48,6 +49,7 @@ fn make_pub_data(data_rep: Vec<i16>) -> PublicationBuiltinTopicData {
         topic_name: "Circle".into(),
         type_name: "ShapeType".into(),
         durability: DurabilityKind::Volatile,
+        durability_service: zerodds_qos::DurabilityServiceQosPolicy::default(),
         reliability: ReliabilityQos {
             kind: ReliabilityKind::Reliable,
             max_blocking_time: zerodds_qos::Duration::from_millis(100_i32),
@@ -65,14 +67,22 @@ fn make_pub_data(data_rep: Vec<i16>) -> PublicationBuiltinTopicData {
         topic_data: Vec::new(),
         group_data: Vec::new(),
         type_information: None,
+        type_id_v1: None,
+        type_object_v1: None,
         data_representation: data_rep,
         security_info: None,
+        sym_cipher_algo_info: None,
+        data_tags: Default::default(),
+        properties: Default::default(),
         service_instance_name: None,
         related_entity_guid: None,
         topic_aliases: None,
         type_identifier: zerodds_types::TypeIdentifier::None,
         unicast_locators: Vec::new(),
         multicast_locators: Vec::new(),
+        group_guid: None,
+        data_max_size_serialized: None,
+        entity_name: None,
     }
 }
 
@@ -297,7 +307,7 @@ fn tolerant_both_offer_both_picks_xcdr2_first() {
     assert_eq!(
         result,
         Some(XCDR2),
-        "Tolerant: writer-first XCDR2 ist im reader → pick XCDR2"
+        "Tolerant: writer-first XCDR2 is in the reader → pick XCDR2"
     );
 }
 
@@ -339,19 +349,18 @@ fn encap_for_final_xcdr1_yields_plain_cdr_le() {
     assert_eq!(encap_for_final_le(XCDR), [0x00, 0x01, 0x00, 0x00]);
 }
 
-/// DEFAULT_OFFER sanity check.
-///
-/// `[XCDR2]` (XCDR2-only, since the XCDR2 default flip): the codegen emits
-/// real XCDR2 (body fixed XCDR2-aligned, encap 0x07/0x09/0x0b). XCDR1 must NOT
-/// be in the list — otherwise an XCDR1-only reader matches falsely in tolerant mode
-/// and reads the XCDR2 body wrong. Legacy XCDR1 explicitly via
-/// `ZERODDS_DATA_REPR_OFFER=XCDR1`.
+/// DEFAULT_OFFER is the default of DDS-XTypes 1.3 §7.6.3.1.1: an empty list,
+/// which "shall be taken to be equivalent to a list containing the single
+/// element XCDR". The list of a peer that writes and reads both is a setting
+/// (`OFFER_XCDR1_XCDR2`), XCDR1 first: §7.6.3.1.2 matches the writer's first
+/// element against the reader's list, and the reader's list is `[XCDR1]`
+/// whenever a peer leaves the QoS at the DDS default.
 #[test]
-fn default_offer_is_xcdr2_only() {
+fn default_offer_is_xcdr1_alone_and_both_is_a_setting() {
+    assert_eq!(DEFAULT_OFFER, [XCDR]);
     assert_eq!(
-        DEFAULT_OFFER,
-        [XCDR2],
-        "default offer: XCDR2-only (codegen emits an XCDR2 body; XCDR1 would trigger a tolerant mismatch)"
+        zerodds_rtps::publication_data::data_representation::OFFER_XCDR1_XCDR2,
+        [XCDR, XCDR2]
     );
 }
 
@@ -371,11 +380,24 @@ fn runtime_config_data_rep_offer_default_matches_default_offer() {
     );
 }
 
-/// `RuntimeConfig::data_rep_match_mode` is configurable; default = Tolerant.
+/// `RuntimeConfig::data_rep_match_mode` is configurable; default = Strict,
+/// DDS-XTypes 1.3 §7.6.3.1.1: the offer is compatible when the writer's
+/// offered representation is contained in the reader's sequence.
 #[test]
-fn runtime_config_data_rep_match_mode_default_is_tolerant() {
+fn runtime_config_data_rep_match_mode_default_is_strict() {
     use zerodds_dcps::runtime::RuntimeConfig;
     let cfg = RuntimeConfig::default();
+    assert_eq!(cfg.data_rep_match_mode, DataRepMatchMode::Strict);
+}
+
+/// The tolerant mode stays selectable.
+#[test]
+fn runtime_config_data_rep_match_mode_tolerant_is_selectable() {
+    use zerodds_dcps::runtime::RuntimeConfig;
+    let cfg = RuntimeConfig {
+        data_rep_match_mode: DataRepMatchMode::Tolerant,
+        ..RuntimeConfig::default()
+    };
     assert_eq!(cfg.data_rep_match_mode, DataRepMatchMode::Tolerant);
 }
 
@@ -399,4 +421,55 @@ fn runtime_config_data_rep_match_mode_user_strict() {
         ..RuntimeConfig::default()
     };
     assert_eq!(cfg.data_rep_match_mode, DataRepMatchMode::Strict);
+}
+
+/// DDS-XTypes 1.3 Annex D: `TopicBuiltinTopicData` has
+/// `@id(0x0075) @optional TypeInformation type_information` and
+/// `@id(0x0073) DataRepresentationQosPolicy representation`. The topic
+/// announcement writes both parameters under those ids and reads them back.
+#[test]
+fn topic_data_roundtrip_preserves_data_representation_and_type_information() {
+    use zerodds_rtps::parameter_list::pid;
+    use zerodds_rtps::topic_data::TopicBuiltinTopicData;
+    use zerodds_rtps::wire_types::VendorId;
+
+    assert_eq!(pid::DATA_REPRESENTATION, 0x0073, "Annex D: @id(0x0073)");
+    assert_eq!(pid::TYPE_INFORMATION, 0x0075, "Annex D: @id(0x0075)");
+
+    let key = Guid::new(
+        GuidPrefix::from_bytes([3; 12]),
+        EntityId::user_writer_with_key([0, 0, 7]),
+    );
+    let mut topic = TopicBuiltinTopicData::new(key, "AnnexD", "annex_d::Type");
+    topic.vendor_id = None;
+    topic.data_representation = vec![
+        publication_data::data_representation::XCDR2,
+        publication_data::data_representation::XCDR,
+    ];
+    // The octets of the TypeInformation are kept as they are.
+    topic.type_information = Some(vec![0x10, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8]);
+
+    let bytes = topic.to_pl_cdr_le().expect("encode");
+    let parameter_ids = {
+        // 4 octets of encapsulation, then (id, length, value) with the
+        // length a multiple of four.
+        let mut ids = Vec::new();
+        let mut at = 4;
+        while at + 4 <= bytes.len() {
+            let id = u16::from_le_bytes([bytes[at], bytes[at + 1]]);
+            let length = usize::from(u16::from_le_bytes([bytes[at + 2], bytes[at + 3]]));
+            if id == 0x0001 {
+                break;
+            }
+            ids.push(id);
+            at += 4 + length;
+        }
+        ids
+    };
+    assert!(parameter_ids.contains(&0x0073), "{parameter_ids:x?}");
+    assert!(parameter_ids.contains(&0x0075), "{parameter_ids:x?}");
+
+    let decoded = TopicBuiltinTopicData::from_pl_cdr(&bytes, VendorId::ZERODDS).expect("decode");
+    assert_eq!(decoded.data_representation, topic.data_representation);
+    assert_eq!(decoded.type_information, topic.type_information);
 }

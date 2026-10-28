@@ -23,7 +23,7 @@
 //! - [`zerodds-grpc-bridge`](../zerodds_grpc_bridge/index.html) —
 //!   gRPC-over-HTTP/2 Length-Prefixed-Message-Codec.
 //!
-//! ## Public API (as of 1.0.0-rc.1)
+//! ## Public API
 //!
 //! - [`Encoder`] / [`EncoderError`] — high-level encoder with its own
 //!   dynamic table.

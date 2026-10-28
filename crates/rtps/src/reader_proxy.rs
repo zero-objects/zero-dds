@@ -11,11 +11,46 @@
 //! assumption). Still, the data structure is cut so that `Vec<ReaderProxy>`
 //! is possible later.
 
+// zerodds-lint: allow no_dyn_in_safe
+// (`ChangeFilter` holds the per-reader DDS_FILTER of DDSI-RTPS 2.5 §8.4.7.1 as a
+// closure chosen by the caller; its type cannot be named in the proxy.)
+
 extern crate alloc;
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec::Vec;
 
-use crate::wire_types::{FragmentNumber, Guid, Locator, SequenceNumber};
+use crate::wire_types::{EntityId, FragmentNumber, Guid, Locator, SequenceNumber};
+
+/// `DDS_FILTER(reader_proxy, change)` (DDSI-RTPS 2.5 §8.4.7.1): says
+/// whether a change passes the filters of the matched reader (a
+/// content-filtered topic, a time-based filter) and is sent to it, or does
+/// not and is announced by a GAP with `filteredCount` 1 instead.
+#[derive(Clone)]
+pub struct ChangeFilter(
+    alloc::sync::Arc<dyn Fn(&crate::history_cache::CacheChange) -> bool + Send + Sync>,
+);
+
+impl ChangeFilter {
+    /// A filter that passes the changes `f` returns `true` for.
+    pub fn new<F>(f: F) -> Self
+    where
+        F: Fn(&crate::history_cache::CacheChange) -> bool + Send + Sync + 'static,
+    {
+        Self(alloc::sync::Arc::new(f))
+    }
+
+    /// Whether `change` passes.
+    #[must_use]
+    pub fn passes(&self, change: &crate::history_cache::CacheChange) -> bool {
+        (self.0)(change)
+    }
+}
+
+impl core::fmt::Debug for ChangeFilter {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("ChangeFilter(..)")
+    }
+}
 
 /// Writer-side state for one remote reader.
 #[derive(Debug, Clone)]
@@ -28,6 +63,13 @@ pub struct ReaderProxy {
     pub multicast_locators: Vec<Locator>,
     /// Reliable kind (always true in WP 1.1).
     pub is_reliable: bool,
+    /// `remoteGroupEntityId` (DDSI-RTPS 2.5 §8.4.7.5, Table 8.61): the group
+    /// (Subscriber) the matched reader belongs to, as its SEDP announcement
+    /// names it in `PID_GROUP_GUID`; `ENTITYID_UNKNOWN` where it names none.
+    pub remote_group_entity_id: EntityId,
+    /// `DDS_FILTER` of this reader; `None` is the no-op the spec allows
+    /// (§8.2.10.1: "DDS_FILTER may be a noop"): every change passes.
+    filter: Option<ChangeFilter>,
     /// Highest SN the reader has **already acked**
     /// (from AckNack.reader_sn_state.bitmap_base - 1).
     highest_acked_sn: SequenceNumber,
@@ -51,6 +93,40 @@ pub struct ReaderProxy {
     /// otherwise it stays default. The encap header on sample-write
     /// uses `data_representation::encap_for_final_le(this)`.
     negotiated_data_representation: i16,
+    /// Where the HEARTBEAT/ACKNACK exchange with this reader stands, for a
+    /// writer that has nothing to announce yet. See
+    /// [`Self::handshake_owed`].
+    handshake: Handshake,
+    /// When the last HEARTBEAT went to this reader. See
+    /// [`Self::acknack_received`].
+    heartbeat_at: Option<core::time::Duration>,
+    /// DDSI-RTPS 2.5 §8.4.7.5 `expectsInlineQos`. See
+    /// [`Self::expects_inline_qos`].
+    expects_inline_qos: bool,
+    /// When the oldest repair request still open arrived, for
+    /// `nackResponseDelay` (§8.4.7.1). See [`Self::repair_due`].
+    nack_since: Option<core::time::Duration>,
+    /// Whether the reader's last ACKNACK named as many missing changes as
+    /// one `SequenceNumberSet` holds. See [`Self::note_window`].
+    window_full: bool,
+    /// Whether an ACKNACK with the FinalFlag clear waits for its HEARTBEAT.
+    /// See [`Self::heartbeat_asked`].
+    heartbeat_asked: bool,
+    /// Largest RTPS message the path to this reader carries. See
+    /// [`Self::message_limit`].
+    message_limit: Option<usize>,
+}
+
+/// The first HEARTBEAT/ACKNACK exchange between a writer and a reliable
+/// reader.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Handshake {
+    /// No HEARTBEAT has gone to the reader yet.
+    Owed,
+    /// A HEARTBEAT went out; the reader has not answered one.
+    Sent,
+    /// The reader answered a HEARTBEAT.
+    Done,
 }
 
 impl ReaderProxy {
@@ -67,6 +143,8 @@ impl ReaderProxy {
             unicast_locators,
             multicast_locators,
             is_reliable,
+            remote_group_entity_id: EntityId::UNKNOWN,
+            filter: None,
             // Pre-existing state: nothing acked, nothing sent. SN starts
             // at 1; "0 acked" means "nothing acked" (§8.7.4).
             highest_acked_sn: SequenceNumber(0),
@@ -77,6 +155,198 @@ impl ReaderProxy {
             // Default: XCDR2 (modern). The SEDP match path overwrites
             // with the negotiated value.
             negotiated_data_representation: crate::publication_data::data_representation::XCDR2,
+            handshake: Handshake::Owed,
+            heartbeat_at: None,
+            expects_inline_qos: false,
+            nack_since: None,
+            window_full: false,
+            heartbeat_asked: false,
+            message_limit: None,
+        }
+    }
+
+    /// Sets the `DDS_FILTER` of this reader.
+    #[must_use]
+    pub fn with_filter(mut self, filter: ChangeFilter) -> Self {
+        self.filter = Some(filter);
+        self
+    }
+
+    /// The `DDS_FILTER` of this reader, if it has one.
+    #[must_use]
+    pub fn filter(&self) -> Option<&ChangeFilter> {
+        self.filter.as_ref()
+    }
+
+    /// Sets `remoteGroupEntityId` (Table 8.61).
+    #[must_use]
+    pub fn with_remote_group_entity_id(mut self, group: EntityId) -> Self {
+        self.remote_group_entity_id = group;
+        self
+    }
+
+    /// The largest RTPS message, in octets, that the path to this reader
+    /// carries, when it is larger than the writer's own message size.
+    /// DDSI-RTPS 2.5 §8.4.14.1 fixes the fragment size of a writer for all
+    /// its readers and takes it from the transport with the smallest
+    /// maximum message size; it also asks that data is fragmented only
+    /// where required ("If multiple transports are available to the Writer
+    /// and some transports do not require fragmentation, a regular Data
+    /// Submessage must be sent on those transports instead"). A reader on
+    /// the same host is reached through the loopback interface, which
+    /// carries a sample of that size as one DATA; the fragments of every
+    /// other reader keep the writer's fragment size.
+    /// `None` is the writer's own message size.
+    #[must_use]
+    pub fn message_limit(&self) -> Option<usize> {
+        self.message_limit
+    }
+
+    /// Sets [`Self::message_limit`].
+    pub fn set_message_limit(&mut self, limit: Option<usize>) {
+        self.message_limit = limit;
+    }
+
+    /// Records whether the reader's last ACKNACK named a full
+    /// `SequenceNumberSet` (`RTPS_BITMAP_MAX_BITS` missing changes): it may
+    /// be missing more than one set can name, and only a HEARTBEAT lets it
+    /// ask for the rest (DDSI-RTPS 2.5 §8.4.2.3, a reader sends an ACKNACK
+    /// only in response to one).
+    pub fn note_window(&mut self, full: bool) {
+        self.window_full = full;
+    }
+
+    /// Takes the mark [`Self::note_window`] left: `true` once after a full
+    /// window.
+    pub fn take_full_window(&mut self) -> bool {
+        core::mem::take(&mut self.window_full)
+    }
+
+    /// Records that a NACK from this reader arrived at `now`, when one is
+    /// open: the repair it asked for waits from here
+    /// (`nackResponseDelay`, DDSI-RTPS 2.5 §8.4.7.1). An earlier open
+    /// request keeps its own, earlier time.
+    pub fn note_nack(&mut self, now: core::time::Duration) {
+        if self.has_requests() {
+            self.nack_since.get_or_insert(now);
+        }
+    }
+
+    /// Whether the repair this reader asked for may go out at `now`: a
+    /// request is open and has waited `delay` (DDSI-RTPS 2.5 §8.4.7.1
+    /// `nackResponseDelay`). A request no NACK time was noted for counts
+    /// from the first call that sees it. Nothing open resets the clock.
+    pub fn repair_due(&mut self, now: core::time::Duration, delay: core::time::Duration) -> bool {
+        if !self.has_requests() {
+            self.nack_since = None;
+            return false;
+        }
+        let since = *self.nack_since.get_or_insert(now);
+        now.saturating_sub(since) >= delay
+    }
+
+    /// Clears the NACK time once nothing is open, so the next request
+    /// waits from its own arrival.
+    pub fn repairs_sent(&mut self) {
+        if !self.has_requests() {
+            self.nack_since = None;
+        }
+    }
+
+    fn has_requests(&self) -> bool {
+        !self.requested_changes.is_empty() || !self.requested_fragments.is_empty()
+    }
+
+    /// Whether the reader expects the writer's QoS in-line with every DATA
+    /// (DDSI-RTPS 2.5 §8.4.7.5): what its `PID_EXPECTS_INLINE_QOS` said,
+    /// or its participant's (§8.5.3.2). `false` by default (Table 9.19).
+    #[must_use]
+    pub fn expects_inline_qos(&self) -> bool {
+        self.expects_inline_qos
+    }
+
+    /// Records whether the reader expects in-line QoS. See
+    /// [`Self::expects_inline_qos`].
+    pub fn set_expects_inline_qos(&mut self, expects: bool) {
+        self.expects_inline_qos = expects;
+    }
+
+    /// Whether a writer with nothing written still owes this reader a
+    /// HEARTBEAT: until the reader has answered one. OpenDDS 3.34 counts a
+    /// reliable writer as matched only after that exchange (measured on
+    /// Linux test host: its reader stayed unmatched for 25 s and sent ACKNACKs a
+    /// writer without data never answered).
+    #[must_use]
+    pub fn handshake_owed(&self) -> bool {
+        self.is_reliable && self.handshake != Handshake::Done
+    }
+
+    /// Records that this reader sent an ACKNACK with the FinalFlag clear:
+    /// DDSI-RTPS 2.5 §9.4.5.3, "F=0 means the writer must respond to the
+    /// AckNack message with a Heartbeat message." [`Self::heartbeat_sent`]
+    /// answers it.
+    pub fn heartbeat_asked(&mut self) {
+        self.heartbeat_asked = true;
+    }
+
+    /// Whether an ACKNACK with the FinalFlag clear waits for its HEARTBEAT
+    /// at `now`. One HEARTBEAT that went to this reader less than `spacing`
+    /// ago answers it: a peer that clears F in every ACKNACK, also one that
+    /// acknowledges everything, would otherwise draw a HEARTBEAT per round
+    /// trip.
+    #[must_use]
+    pub fn heartbeat_is_asked(
+        &self,
+        now: core::time::Duration,
+        spacing: core::time::Duration,
+    ) -> bool {
+        self.heartbeat_asked
+            && self
+                .heartbeat_at
+                .is_none_or(|at| now.saturating_sub(at) >= spacing)
+    }
+
+    /// Records that a HEARTBEAT went to this reader at `at`.
+    pub fn heartbeat_sent(&mut self, at: core::time::Duration) {
+        self.heartbeat_asked = false;
+        self.heartbeat_at = Some(at);
+        if self.handshake == Handshake::Owed {
+            self.handshake = Handshake::Sent;
+        }
+    }
+
+    /// Records an ACKNACK from this reader at `now`. It answers a HEARTBEAT
+    /// only once one was sent; a preemptive ACKNACK before that does not.
+    ///
+    /// Once the handshake is done, an ACKNACK to a writer with nothing
+    /// written that arrives at least `period` after the last HEARTBEAT
+    /// answers none: the reader is asking on its own, as an OpenDDS reader
+    /// does every 1, 2, 4 … seconds until a HEARTBEAT reaches it. It
+    /// reopens the handshake. Measured on the Linux test host against OpenDDS 3.35
+    /// (`writer_dispose_sample_vendors`, 2 of 30 runs unmatched for 25 s):
+    /// the one HEARTBEAT went out 1.5 ms after the reader announced
+    /// itself, before it held the writer, and its first preemptive
+    /// ACKNACK 20 ms later closed the handshake here; the six that
+    /// followed were never answered. One answer arriving twice — one
+    /// HEARTBEAT reaching two of the reader's locators — comes within the
+    /// period and reopens nothing.
+    pub fn acknack_received(
+        &mut self,
+        now: core::time::Duration,
+        writer_has_nothing: bool,
+        period: core::time::Duration,
+    ) {
+        match self.handshake {
+            Handshake::Sent => self.handshake = Handshake::Done,
+            Handshake::Done
+                if writer_has_nothing
+                    && self
+                        .heartbeat_at
+                        .is_some_and(|at| now.saturating_sub(at) >= period) =>
+            {
+                self.handshake = Handshake::Owed;
+            }
+            Handshake::Owed | Handshake::Done => {}
         }
     }
 
@@ -140,6 +410,13 @@ impl ReaderProxy {
         if new_acked > self.highest_acked_sn {
             self.highest_acked_sn = new_acked;
         }
+        // What the reader acknowledges it holds, it was sent. A proxy that
+        // joined behind the cache and was brought up by repair is in step
+        // again, so the writer's next change goes to it directly instead of
+        // waiting for the next HEARTBEAT and ACKNACK.
+        if self.highest_acked_sn > self.highest_sent_sn {
+            self.highest_sent_sn = self.highest_acked_sn;
+        }
         // Remove already-acked SNs from requested.
         self.requested_changes
             .retain(|sn| *sn > self.highest_acked_sn);
@@ -149,9 +426,17 @@ impl ReaderProxy {
     }
 
     /// Remembers the SNs requested in the ACKNACK bitmap for re-send.
+    ///
+    /// A number this reader acknowledged before is kept as well: DDSI-RTPS
+    /// 2.5 §8.4.2.3, "if a Writer receives a negative acknowledgement to a
+    /// previously positively acknowledged sample, and the Writer can still
+    /// service the request, the Writer should send the sample." A reader
+    /// that came back under the same GUID asks from 1 again; a change the
+    /// writer no longer holds goes to it as a GAP. The caller passes no
+    /// number below the ACKNACK's own base: that one is acknowledged.
     pub fn requested_changes_set(&mut self, sns: impl IntoIterator<Item = SequenceNumber>) {
         for sn in sns {
-            if sn > self.highest_acked_sn {
+            if sn.0 > 0 {
                 self.requested_changes.insert(sn);
             }
         }
@@ -162,6 +447,15 @@ impl ReaderProxy {
         let sn = *self.requested_changes.iter().next()?;
         self.requested_changes.remove(&sn);
         Some(sn)
+    }
+
+    /// Records that `sn` went out to this proxy as a repair (DATA or GAP).
+    /// The send cursor moves when `sn` is the change it expects next, so a
+    /// run of repairs in order brings a lagging proxy into step.
+    pub fn repaired(&mut self, sn: SequenceNumber) {
+        if sn.0 == self.highest_sent_sn.0 + 1 {
+            self.highest_sent_sn = sn;
+        }
     }
 
     /// Returns the next not-yet-sent SN, if present in the cache.
@@ -242,6 +536,33 @@ impl ReaderProxy {
         Some((sn, frag))
     }
 
+    /// Pulls and removes up to `max` of the open fragments of `sn` that
+    /// follow `after` without a gap, the neighbours that one DATA_FRAG with
+    /// `fragmentsInSubmessage` = 1 + the count returned can carry along.
+    /// Returns `(sn, first, count)`, `None` where `after + 1` is not open.
+    pub fn next_requested_fragment_run_after(
+        &mut self,
+        sn: SequenceNumber,
+        after: FragmentNumber,
+        max: u16,
+    ) -> Option<(SequenceNumber, FragmentNumber, u16)> {
+        let mut count = 0u16;
+        while count < max {
+            let next = FragmentNumber(after.0.saturating_add(u32::from(count) + 1));
+            let Some(set) = self.requested_fragments.get_mut(&sn) else {
+                break;
+            };
+            if !set.remove(&next) {
+                break;
+            }
+            if set.is_empty() {
+                self.requested_fragments.remove(&sn);
+            }
+            count += 1;
+        }
+        (count > 0).then_some((sn, FragmentNumber(after.0.saturating_add(1)), count))
+    }
+
     /// Number of queued fragment resends (sum over all SNs).
     #[must_use]
     pub fn pending_requested_fragment_count(&self) -> usize {
@@ -287,13 +608,18 @@ mod tests {
         assert_eq!(p.highest_acked_sn(), sn(9));
     }
 
+    /// §8.4.2.3: a negative acknowledgement of a change acknowledged
+    /// before is kept for re-send; the ACKNACK that acknowledges a requested
+    /// change removes the request.
     #[test]
-    fn requested_changes_set_above_ack_only() {
+    fn a_request_for_an_acknowledged_change_is_kept() {
         let mut p = proxy();
         p.acked_changes_set(sn(5)); // → highest_acked = 4
         p.requested_changes_set([sn(2), sn(4), sn(6), sn(8)]);
-        // Only SN > 4 survive
-        assert_eq!(p.pending_requested_count(), 2);
+        assert_eq!(p.pending_requested_count(), 4);
+        p.acked_changes_set(sn(7)); // acknowledges up to 6
+        assert_eq!(p.next_requested_change(), Some(sn(8)));
+        assert_eq!(p.next_requested_change(), None);
     }
 
     #[test]
@@ -435,5 +761,42 @@ mod tests {
             core::time::Duration::from_secs(50),
             core::time::Duration::from_secs(1)
         ));
+    }
+
+    #[test]
+    fn the_remote_group_entity_id_is_kept() {
+        let group = EntityId::user_reader_with_key([0, 0, 7]);
+        assert_eq!(proxy().remote_group_entity_id, EntityId::UNKNOWN);
+        assert_eq!(
+            proxy()
+                .with_remote_group_entity_id(group)
+                .remote_group_entity_id,
+            group
+        );
+    }
+
+    #[test]
+    fn next_requested_fragment_run_after_pulls_neighbours_of_one_sn() {
+        let mut p = proxy();
+        p.requested_fragments_set(sn(5), [frag(1), frag(2), frag(3), frag(5), frag(6)]);
+        p.requested_fragments_set(sn(6), [frag(4)]);
+        assert_eq!(p.next_requested_fragment(), Some((sn(5), frag(1))));
+        assert_eq!(
+            p.next_requested_fragment_run_after(sn(5), frag(1), 1),
+            Some((sn(5), frag(2), 1))
+        );
+        assert_eq!(
+            p.next_requested_fragment_run_after(sn(5), frag(2), 9),
+            Some((sn(5), frag(3), 1)),
+            "4 is not open"
+        );
+        assert_eq!(p.next_requested_fragment_run_after(sn(5), frag(3), 9), None);
+        assert_eq!(p.next_requested_fragment(), Some((sn(5), frag(5))));
+        assert_eq!(
+            p.next_requested_fragment_run_after(sn(5), frag(5), 9),
+            Some((sn(5), frag(6), 1))
+        );
+        assert_eq!(p.next_requested_fragment(), Some((sn(6), frag(4))));
+        assert_eq!(p.next_requested_fragment(), None);
     }
 }

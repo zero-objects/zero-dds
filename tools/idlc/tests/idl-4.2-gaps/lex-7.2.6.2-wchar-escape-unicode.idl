@@ -1,0 +1,2 @@
+// IDL 4.2 §7.2.6.2 — a universal character name in a wide character literal.
+const wchar K = L'\u0041';

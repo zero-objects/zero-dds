@@ -1,0 +1,5 @@
+// A derived structure that states no extensibility, of a `@mutable` base.
+// DDS-XTypes 1.3 §7.2.2.4.5: its extensibility is then the base's, so the
+// derived members are framed with EMHEADERs like the base's.
+@mutable struct Base { long base_a; short base_b; };
+struct Sample : Base { double derived_a; octet derived_b; };

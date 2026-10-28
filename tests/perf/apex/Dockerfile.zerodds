@@ -1,16 +1,16 @@
-# Apex.AI performance_test mit ZeroDDS-Plugin (CI-3d Welle).
+# Apex.AI performance_test with the ZeroDDS plugin (CI-3d wave).
 #
-# Multi-Stage:
-#   Stage 1: rust:1.84 baut libzerodds.so (release).
-#   Stage 2: osrf/ros:jazzy + Cyclone-Plugin + ZeroDDS-Plugin
-#            via ament_cmake gegen die libzerodds.so aus Stage 1.
+# Multi-stage:
+#   Stage 1: rust:1.84 builds libzerodds.so (release).
+#   Stage 2: osrf/ros:jazzy + Cyclone plugin + ZeroDDS plugin
+#            via ament_cmake against the libzerodds.so from stage 1.
 #
-# Build (auf llvm-Host):
-#   cd ~/zerodds  # Repo-Root
+# Build (on the Linux build host):
+#   cd ~/zerodds  # repository root
 #   docker build -f tests/perf/apex/Dockerfile.zerodds -t apex-perf:zerodds .
 #
-# Voraussetzung: das Apex.AI-Repo ist als Sibling-Dir verfuegbar als
-# `./performance_test` (siehe tests/perf/apex/Dockerfile fuer Cyclone).
+# Prerequisite: the Apex.AI repository is available as a sibling directory,
+# `./performance_test` (see tests/perf/apex/Dockerfile for Cyclone).
 
 # ===== Stage 1: ZeroDDS C-API + libzerodds.so =====
 FROM rust:1.84-bookworm AS zerodds-build
@@ -20,13 +20,13 @@ COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
 COPY proto ./proto
 
-# Nur die Crates die fuer dds-c-api gebraucht werden — Workspace
-# baut alle, aber wir interessieren uns nur fuer libzerodds.{so,a}.
+# Only the crates dds-c-api needs — the workspace
+# builds all of them, but we only care about libzerodds.{so,a}.
 RUN cargo build -p dds-c-api --release && \
     ls /src/target/release/libzerodds.* && \
     test -f /src/crates/dds-c-api/include/zerodds.h
 
-# ===== Stage 2: Apex.AI performance_test mit Plugins =====
+# ===== Stage 2: Apex.AI performance_test with plugins =====
 FROM osrf/ros:jazzy-desktop
 
 SHELL ["/bin/bash", "-c"]
@@ -35,16 +35,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-jazzy-cyclonedds ros-jazzy-rmw-cyclonedds-cpp \
     && rm -rf /var/lib/apt/lists/*
 
-# ZeroDDS-Artefakte aus Stage 1 mitnehmen.
+# Take the ZeroDDS artifacts from stage 1.
 COPY --from=zerodds-build /src/target/release/libzerodds.so /opt/zerodds/lib/libzerodds.so
 COPY --from=zerodds-build /src/crates/dds-c-api/include/zerodds.h /opt/zerodds/include/zerodds.h
 ENV LD_LIBRARY_PATH=/opt/zerodds/lib:${LD_LIBRARY_PATH}
 ENV ZERODDS_HOME=/opt/zerodds-mock
 
-# ZERODDS_HOME muss aussehen wie ein Repo-Root mit
+# ZERODDS_HOME must look like a repository root with
 #   crates/dds-c-api/include/zerodds.h
 #   target/release/libzerodds.so
-# damit unser CMake das Plugin gegen genau diese libs linkt.
+# so that our CMake links the plugin against exactly these libs.
 RUN mkdir -p /opt/zerodds-mock/crates/dds-c-api/include \
              /opt/zerodds-mock/target/release && \
     ln -s /opt/zerodds/include/zerodds.h \
@@ -52,10 +52,10 @@ RUN mkdir -p /opt/zerodds-mock/crates/dds-c-api/include \
     ln -s /opt/zerodds/lib/libzerodds.so \
           /opt/zerodds-mock/target/release/libzerodds.so
 
-# Apex.AI mit Cyclone-Plugin (Baseline-Build, wie CI-3c v2).
+# Apex.AI with the Cyclone plugin (baseline build, as in CI-3c v2).
 COPY performance_test /perf_test/performance_test
 
-# ZeroDDS-Plugin als zusaetzliches Apex-Plugin-Package.
+# ZeroDDS plugin as an additional Apex plugin package.
 COPY tests/perf/apex/zerodds-plugin /perf_test/performance_test_zerodds_plugin
 
 WORKDIR /perf_test

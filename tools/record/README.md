@@ -1,8 +1,8 @@
 # `zerodds-record`
 
-CLI-Frontend für das ZeroDDS-Capture-Format `.zddsrec`. Schreibt Wire-
-Snapshots aktiver DDS-Topics in eine versionsstabile Binärdatei und
-liest sie für Inspektion zurück.
+CLI frontend for the ZeroDDS capture format `.zddsrec`. Writes wire
+snapshots of active DDS topics into a version-stable binary file and
+reads them back for inspection.
 
 Spec: [`docs/specs/zddsrec-1.0.md`](../../docs/specs/zddsrec-1.0.md) +
 [`docs/specs/zerodds-deployment-1.0.md`](../../docs/specs/zerodds-deployment-1.0.md) §1.1.
@@ -11,13 +11,13 @@ Spec: [`docs/specs/zddsrec-1.0.md`](../../docs/specs/zddsrec-1.0.md) +
 
 ```bash
 cargo install zerodds-record
-# oder als Teil des Workspace-Builds:
+# or as part of the workspace build:
 cargo build --release --bin zerodds-record
 ```
 
-## Sub-Commands
+## Subcommands
 
-### `record` — Capture starten
+### `record` — start a capture
 
 ```bash
 zerodds-record record \
@@ -28,13 +28,13 @@ zerodds-record record \
     --duration 30s
 ```
 
-| Flag | Default | Beschreibung |
+| Flag | Default | Description |
 |---|---|---|
-| `-o`, `--output FILE` | `capture-<ts>.zddsrec` | Output-Pfad |
-| `-d`, `--domain ID` | `0` | DDS-Domain-ID |
-| `-t`, `--topic NAME` | `*` | Topic-Filter (wiederholbar) |
+| `-o`, `--output FILE` | `capture-<ts>.zddsrec` | Output path |
+| `-d`, `--domain ID` | `0` | DDS domain ID |
+| `-t`, `--topic NAME` | `*` | Topic filter (repeatable) |
 | `--duration DUR` | indefinite | `5`, `30s`, `2m`, `1h` |
-| `--max-sample-bytes N` | `1048576` | DoS-Cap pro Sample |
+| `--max-sample-bytes N` | `1048576` | DoS cap per sample |
 | `--decode` | off | Decode samples to typed values (needs `--type-file`) |
 | `--type-file IDL` | — | Out-of-band IDL providing the types |
 | `--map TOPIC=Type` | — | Override which IDL type decodes a topic (repeatable) |
@@ -61,16 +61,16 @@ zerodds-record record -t TrackTopic \
     --out-sqlite tracks.db --out-json tracks.ndjson
 ```
 
-**Type-following:** der `record`-Subcommand entdeckt vor dem Festschreiben des
-`.zddsrec`-Headers den echten IDL-Typnamen jedes Writers der angeforderten
-Topics via SEDP (kurze Settle-Phase) und hängt sich pro `(Topic, Typ)` mit einem
-opaken Reader an. So werden **typisierte Topics** (z.B. `cuas::Track`) erfasst —
-ein generischer `RawBytes`-Reader würde keinen typisierten Writer matchen und
-nichts aufzeichnen. Topics ohne entdeckten Writer fallen (mit Warnung) auf
-`zerodds::RawBytes` zurück. Die Payload wird als rohe CDR-Bytes verlustfrei
-gespeichert (Replay-fähig); der Header trägt den echten Typnamen.
+**Type-following:** before writing the `.zddsrec` header, the `record` subcommand
+discovers the real IDL type name of every writer of the requested
+topics via SEDP (short settle phase) and attaches an opaque reader per
+`(topic, type)`. This way **typed topics** (e.g. `cuas::Track`) are captured —
+a generic `RawBytes` reader would not match a typed writer and would
+record nothing. Topics without a discovered writer fall back (with a warning) to
+`zerodds::RawBytes`. The payload is stored losslessly as raw CDR bytes
+(replay-capable); the header carries the real type name.
 
-### `info <FILE>` — Header inspizieren
+### `info <FILE>` — inspect the header
 
 ```bash
 zerodds-record info capture.zddsrec
@@ -83,7 +83,7 @@ zerodds-record info capture.zddsrec
 #     - LatReq
 ```
 
-### `list <FILE>` — Frames pro Topic zählen
+### `list <FILE>` — count frames per topic
 
 ```bash
 zerodds-record list capture.zddsrec
@@ -94,20 +94,20 @@ zerodds-record list capture.zddsrec
 #          32  LatReq
 ```
 
-## Exit-Codes
+## Exit codes
 
-| Code | Bedeutung |
+| Code | Meaning |
 |---|---|
-| 0 | Erfolg |
-| 2 | CLI-Parse-Fehler |
-| 3 | I/O- oder Format-Fehler beim Lesen |
+| 0 | Success |
+| 2 | CLI parse error |
+| 3 | I/O or format error while reading |
 
-## Spec / Wire-Format
+## Spec / wire format
 
-`.zddsrec` ist binär, length-prefixed, versionsstabil. Header trägt
-`time_base_unix_ns` als Zeit-Anker; alle Frame-Timestamps sind Deltas
-relativ dazu. Backend-Crate: [`zerodds-recorder`](../../crates/recorder).
+`.zddsrec` is binary, length-prefixed, version-stable. The header carries
+`time_base_unix_ns` as the time anchor; all frame timestamps are deltas
+relative to it. Backend crate: [`zerodds-recorder`](../../crates/recorder).
 
 ## License
 
-Apache-2.0. Siehe [`LICENSE`](../../LICENSE).
+Apache-2.0. See [`LICENSE`](../../LICENSE).

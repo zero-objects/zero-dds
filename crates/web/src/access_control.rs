@@ -10,7 +10,7 @@
 //! with a permission rules engine that makes a `Permit` / `Deny`
 //! decision for every REST resource operation.
 //!
-//! The data model follows DDS-Security 1.2 §9.4.1.2 Permissions
+//! The data model follows DDS-Security 1.2 §10.4.1.5 Permissions
 //! Document (subject_name + grants[] + rules[allow|deny] with a
 //! topic filter + validity window).
 

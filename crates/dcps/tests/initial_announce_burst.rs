@@ -24,23 +24,17 @@
     missing_docs
 )]
 
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
 use zerodds_dcps::runtime::RuntimeConfig;
 use zerodds_dcps::{DomainParticipantFactory, DomainParticipantQos};
-
-static NEXT_DOMAIN: AtomicU32 = AtomicU32::new(150);
 
 /// A peer-less participant emits the fast initial-announcement burst, then stops
 /// (the long `spdp_period` keeps it quiet afterwards).
 #[test]
 fn fresh_participant_bursts_then_slows() {
     let factory = DomainParticipantFactory::instance();
-    let dom: i32 = NEXT_DOMAIN
-        .fetch_add(1, Ordering::Relaxed)
-        .try_into()
-        .unwrap();
+    let dom = common::unique_domain();
     // 8 announces @ 100 ms (~700 ms of burst), then a 30 s period — so after the
     // burst nothing more fires inside the measurement window.
     let cfg = RuntimeConfig {
@@ -71,10 +65,7 @@ fn fresh_participant_bursts_then_slows() {
 #[test]
 fn burst_disabled_emits_few_announces() {
     let factory = DomainParticipantFactory::instance();
-    let dom: i32 = NEXT_DOMAIN
-        .fetch_add(1, Ordering::Relaxed)
-        .try_into()
-        .unwrap();
+    let dom = common::unique_domain();
     let cfg = RuntimeConfig {
         spdp_period: Duration::from_secs(30),
         initial_announce_count: 0,
@@ -93,3 +84,8 @@ fn burst_disabled_emits_few_announces() {
         "no burst → only the startup announce in 1.2 s (30 s period), saw {n}"
     );
 }
+
+/// Leases a DDS domain no other process on this host holds — the
+/// domain number is the UDP port number, so it is a host-wide resource.
+#[path = "common/mod.rs"]
+mod common;

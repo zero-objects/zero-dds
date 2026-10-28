@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of map-key-enum-unannotated that rti produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	wireprobe-fill: Sample.entries: a map, which the IDL-to-C mapping §7.5.1 reuses does not have
+plain-cdr1	be	refused	wireprobe-fill: Sample.entries: a map, which the IDL-to-C mapping §7.5.1 reuses does not have
+pl-cdr1	le	refused	wireprobe-fill: Sample.entries: a map, which the IDL-to-C mapping §7.5.1 reuses does not have
+pl-cdr1	be	refused	wireprobe-fill: Sample.entries: a map, which the IDL-to-C mapping §7.5.1 reuses does not have
+plain-cdr2	le	refused	wireprobe-fill: Sample.entries: a map, which the IDL-to-C mapping §7.5.1 reuses does not have
+plain-cdr2	be	refused	wireprobe-fill: Sample.entries: a map, which the IDL-to-C mapping §7.5.1 reuses does not have
+delimited-cdr	le	refused	wireprobe-fill: Sample.entries: a map, which the IDL-to-C mapping §7.5.1 reuses does not have
+delimited-cdr	be	refused	wireprobe-fill: Sample.entries: a map, which the IDL-to-C mapping §7.5.1 reuses does not have
+pl-cdr2	le	refused	wireprobe-fill: Sample.entries: a map, which the IDL-to-C mapping §7.5.1 reuses does not have
+pl-cdr2	be	refused	wireprobe-fill: Sample.entries: a map, which the IDL-to-C mapping §7.5.1 reuses does not have

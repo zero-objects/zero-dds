@@ -307,8 +307,12 @@ target_include_directories(${PROJECT_NAME}-c INTERFACE
   "${ZERODDS_C_INCLUDE_DIR}"
 )
 
-# Expose also zerodds_cxx target
+# Expose also zerodds_cxx target. `runtime/cpp` is the one C++ wire codec
+# (DDS-XTypes 1.3 §7.4) `crates/cpp`'s DDS-PSM-Cxx binding and the
+# `zerodds-idlc generate --lang c++` output build against, so it configures
+# first.
 if(ZERODDS_BUILD_CPP)
+  add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/runtime/cpp")
   add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/crates/cpp")
 endif()
 
@@ -324,8 +328,10 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/zerodds_idlc_generate.cmake")
 # `cmake --install` (a DESTDIR/prefix staging tree) rather than hand-copying
 # individual files — that is what keeps a header from ever being "forgotten"
 # in one packaging path but not another (spec P0-4). What lands here:
-#   - C headers        (zerodds.h + zerodds_xcdr2.h)         -> include/
+#   - C headers        (zerodds.h + zerodds_wire.h)           -> include/
 #   - C++ headers      (dds/**, zerodds/**)                  -> include/  (crates/cpp)
+#   - the C++ wire runtime (zerodds/wire.hpp + libzerodds-wire-cpp.a)
+#                                                              -> include/, lib/ (runtime/cpp)
 #   - the library      (shared + import lib, or static)      -> lib/ (+ bin/ on Win)
 #   - zeroddsConfig.cmake + zeroddsConfigVersion.cmake       -> lib/cmake/zerodds/
 #   - the IDLC generator CMake module                        -> lib/cmake/zerodds/

@@ -4,7 +4,7 @@
 //!
 //! Wire-Format: Duration (8 byte). Default: `INFINITE`.
 
-use zerodds_cdr::{BufferReader, BufferWriter, DecodeError, EncodeError};
+use zerodds_wire::{Reader, WireError, Writer};
 
 use crate::duration::Duration;
 
@@ -25,18 +25,15 @@ impl Default for LifespanQosPolicy {
 
 impl LifespanQosPolicy {
     /// Wire-Encoding.
-    ///
-    /// # Errors
-    /// Buffer-Overflow.
-    pub fn encode_into(self, w: &mut BufferWriter) -> Result<(), EncodeError> {
-        self.duration.encode_into(w)
+    pub fn encode_into(self, w: &mut Writer) {
+        self.duration.encode_into(w);
     }
 
     /// Wire-Decoding.
     ///
     /// # Errors
     /// Buffer-Underflow.
-    pub fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
+    pub fn decode_from(r: &mut Reader<'_>) -> Result<Self, WireError> {
         Ok(Self {
             duration: Duration::decode_from(r)?,
         })
@@ -47,7 +44,7 @@ impl LifespanQosPolicy {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use zerodds_cdr::Endianness;
+    use zerodds_wire::Endianness;
 
     #[test]
     fn default_is_infinite() {
@@ -59,10 +56,10 @@ mod tests {
         let p = LifespanQosPolicy {
             duration: Duration::from_secs(30),
         };
-        let mut w = BufferWriter::new(Endianness::Little);
-        p.encode_into(&mut w).unwrap();
-        let bytes = w.into_bytes();
-        let mut r = BufferReader::new(&bytes, Endianness::Little);
+        let mut w = Writer::new(Endianness::Little);
+        p.encode_into(&mut w);
+        let bytes = w.finish();
+        let mut r = Reader::new(&bytes, Endianness::Little);
         assert_eq!(LifespanQosPolicy::decode_from(&mut r).unwrap(), p);
     }
 }

@@ -199,9 +199,13 @@ def test_bytes_writer_lifecycle_methods_present():
     w = p.create_publisher().create_bytes_writer(t)
     for m in ("register_instance", "dispose", "unregister_instance", "lookup_instance"):
         assert hasattr(w, m), f"BytesWriter missing {m}"
-    # RawBytes is unkeyed → lookup is HANDLE_NIL (0) and register is a no-op
-    # returning the nil handle. dispose/unregister on an unkeyed type have no
-    # per-instance target (DCPS returns BadParameter); the surface exists for
-    # spec-shaped parity. Keyed lifecycle lives on KeyedWriter/ShapeWriter.
+    # RawBytes is unkeyed: the topic has one instance. lookup_instance does
+    # not register it and is HANDLE_NIL (0) before register_instance
+    # (§2.2.2.4.2.14); register_instance returns that instance's handle
+    # (§2.2.2.4.2.5), the same for every value. Keyed lifecycle lives on
+    # KeyedWriter/ShapeWriter.
     assert w.lookup_instance(b"x") == 0
-    assert w.register_instance(b"x") == 0
+    h = w.register_instance(b"x")
+    assert h != 0
+    assert w.register_instance(b"y") == h
+    assert w.lookup_instance(b"x") == h

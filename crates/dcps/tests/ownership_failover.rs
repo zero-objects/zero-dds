@@ -1,9 +1,9 @@
 //! T9 — liveliness-driven OWNERSHIP failover (Spec §2.2.3.23).
 //!
 //! Verifies the DataReader hooks `notify_writer_liveliness_lost`
-//! and `notify_participant_liveliness_lost`, which are called on the
-//! WLP path as soon as a writer/participant lease has expired and
-//! the failover selection must take effect again.
+//! and `notify_participant_liveliness_lost`, for a caller that knows a
+//! writer or a participant is gone and wants the failover selection to take
+//! effect again (the reader does the same by itself when a lease expires).
 
 #![allow(
     clippy::expect_used,

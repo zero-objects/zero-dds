@@ -21,7 +21,7 @@ public final class ReliableBench {
 
     public static void main(String[] args) throws Exception {
         final int iters = 20_000;
-        byte[] frame = ReliableWire.writeFrame(0, new byte[] {1, 2, 3, 4});
+        byte[] frame = ReliableWire.writeFrame(0, 0x0015, new byte[] {1, 2, 3, 4});
 
         InetAddress host = InetAddress.getByName("127.0.0.1");
         DatagramSocket sink = new DatagramSocket(0, host); // bound, never read -- a real destination

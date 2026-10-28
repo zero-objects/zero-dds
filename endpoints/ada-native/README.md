@@ -16,7 +16,7 @@ SPARK analysis.
 | `zerodds_native_wire.*` | XCDR2 primitives + alignment + DHEADER/EMHEADER, LE/BE |
 | `native_samples.*` | `@final`, `@appendable` (nested + `sequence<struct>`), `@mutable` encoders |
 | `native_reflect.*` | descriptor-driven reflective codec over a runtime value tree |
-| `native_framing.*` | XRCE `WRITE_DATA` frame + HDLC serial frame (byte stuffing + CRC-16/CCITT-FALSE) |
+| `native_framing.*` | XRCE `WRITE_DATA` frame + DDS-XRCE Annex C serial frame (addresses, length, byte stuffing, RFC 1662 FCS-16) |
 
 ## Tests (all byte-identical to the Rust goldens)
 
@@ -26,6 +26,25 @@ SPARK analysis.
 | `test_native_roundtrip` | reader round-trips the `@final` sample, LE + BE |
 | `test_native_framing` | XRCE + serial frames vs the `zerodds-xrce` goldens |
 | `test_native_reflect` | the reflective path reproduces all three goldens, LE + BE |
+
+## Unannotated types setting (reliable stream)
+
+`Native_Reliable.Unannotated_Types` (`Appendable` | `Final`, default
+`Appendable`) selects the form of the Annex A types of DDS-XRCE 1.0 that carry
+no `@extensibility` annotation. DDS-XTypes 1.3 section 7.3.1.2.1.8 makes them
+APPENDABLE (DHEADER in front of the members); `Final` writes the FINAL form of
+the reference implementation (eProsima).
+
+- Frame builder: `Acknack_Frame (First_Unacked, Bitmap, Stream, Msg_Seq, Mode)`;
+  `Mode` is the last parameter and defaults to `Appendable`.
+- Reliable receiver: `Receiver_State.Mode` (set per receiver); `Receiver_Acknack`
+  builds the ACKNACK in that form.
+- Types covered: `ACKNACK_Payload` (the only unannotated type this SDK writes).
+  `Appendable`: 9-octet body (DHEADER = 5), length field 9, 17-octet frame.
+  `Final`: 5-octet body, length field 5, 13-octet frame.
+- `HEARTBEAT_Payload` and the other Annex A types annotated FINAL stay FINAL in
+  both modes.
+- `Parse_Acknack` accepts both forms in either setting.
 
 ## Build & test
 

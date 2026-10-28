@@ -1,0 +1,9 @@
+// `@optional @external` on one member, left out
+// The absent form: the presence marker is the plain `@optional`
+// member's, DDS-XTypes 1.3 §7.4.3.5.2 — the indirection carries the
+// absence in the binding and nothing on the wire.
+@final struct Sample {
+    long a;
+    @optional @external long b;
+    long c;
+};

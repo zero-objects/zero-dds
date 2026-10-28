@@ -24,7 +24,8 @@ public class PublishUdp {
         w.seqU8(new byte[] { (byte) 0xDE, (byte) 0xAD, (byte) 0xBE, (byte) 0xEF });
 
         byte[] frame = ZdwEndpoint.xrceWriteFrame(
-            ZdwEndpoint.SESSION_NOKEY, ZdwEndpoint.STREAM_BEST_EFFORT, 1, w.bytes());
+            ZdwEndpoint.SESSION_NOKEY, ZdwEndpoint.STREAM_BEST_EFFORT, 1, ZdwEndpoint.objectId(0x001, ZdwEndpoint.OBJK_DATAWRITER),
+            w.bytes());
         DatagramSocket s = new DatagramSocket();
         s.send(new DatagramPacket(frame, frame.length, InetAddress.getByName(host), port));
         s.close();

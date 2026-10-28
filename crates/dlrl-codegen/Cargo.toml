@@ -6,12 +6,12 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "DLRL code-gen helpers: emits home/object boilerplate for cpp/csharp/java/ts"
+description = "DLRL code-generation helpers (DDS 1.4 Annex B.4): object and home classes for C++, C#, Java and TypeScript from the DLRL pragmas."
 homepage = "https://zerodds.org"
 documentation = "https://docs.rs/zerodds-dlrl-codegen"
 readme = "README.md"
-keywords = ["dds", "dlrl", "codegen", "idl"]
-categories = ["development-tools"]
+keywords = ["dds", "dlrl", "codegen", "omg"]
+categories = ["development-tools", "network-programming"]
 publish = true
 
 [lints]
@@ -22,8 +22,7 @@ path = "src/lib.rs"
 
 [features]
 default = ["std"]
-std = ["alloc"]
-alloc = []
+std = ["zerodds-dlrl/std"]
 
 [dependencies]
-zerodds-dlrl = { version = "1.0.0-rc.7", path = "../dlrl" }
+zerodds-dlrl = { version = "1.0.0-rc.7", path = "../dlrl", default-features = false }

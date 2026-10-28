@@ -10,7 +10,7 @@ using .ZeroDDS
 golden_dir = get(ENV, "GOLDEN_DIR", "build")
 
 function fixture(endian)
-    w = ZeroDDS.Writer(endian)
+    w = ZeroDDS.Writer(endian, ZeroDDS.XCDR2)
     ZeroDDS.put_u32!(w, 0xA1B2C3D4)
     ZeroDDS.put_u16!(w, 0x1234)
     ZeroDDS.put_u8!(w, 0x5A)
@@ -22,7 +22,7 @@ function fixture(endian)
 end
 
 function sample_body(id)
-    w = ZeroDDS.Writer(ZeroDDS.LE)
+    w = ZeroDDS.Writer(ZeroDDS.LE, ZeroDDS.XCDR2)
     ZeroDDS.put_u32!(w, id)
     ZeroDDS.put_u16!(w, 0)
     ZeroDDS.put_u8!(w, 0)
@@ -39,28 +39,28 @@ end
 
 # --- sync loopback ---
 t = ZeroDDS.mem_transport()
-c = ZeroDDS.Client(t)
+c = ZeroDDS.Client(t, ZeroDDS.xrce_object_id(0x001, ZeroDDS.OBJK_DATAWRITER))
 for i in 0:4
     ZeroDDS.write!(c, sample_body(0x3000 + i))
 end
 for i in 0:4
     body = ZeroDDS.poll(c)
     @assert body !== nothing "sync: no sample $i"
-    id = ZeroDDS.get_u32(ZeroDDS.Reader(body, ZeroDDS.LE))
+    id = ZeroDDS.get_u32(ZeroDDS.Reader(body, ZeroDDS.LE, ZeroDDS.XCDR2))
     @assert id == 0x3000 + i "sync: id mismatch"
 end
 println("sync loopback: 5 samples OK")
 
 # --- async loopback (Task + Channel) ---
 t2 = ZeroDDS.mem_transport()
-w = ZeroDDS.Client(t2)
+w = ZeroDDS.Client(t2, ZeroDDS.xrce_object_id(0x001, ZeroDDS.OBJK_DATAWRITER))
 for i in 0:4
     ZeroDDS.write!(w, sample_body(0x1000 + i))
 end
 r = ZeroDDS.start_reader(t2)
 for i in 0:4
     body = ZeroDDS.recv(r)
-    id = ZeroDDS.get_u32(ZeroDDS.Reader(body, ZeroDDS.LE))
+    id = ZeroDDS.get_u32(ZeroDDS.Reader(body, ZeroDDS.LE, ZeroDDS.XCDR2))
     @assert id == 0x1000 + i "async: id mismatch"
 end
 ZeroDDS.stop!(r)
@@ -68,15 +68,25 @@ println("async loopback: 5 samples OK")
 
 # --- negative frame vectors: length bounding + malformed reject ---
 let
-    first = ZeroDDS.write_frame(0x80, 0x01, 1, UInt8[0xAA, 0xBB, 0xCC])
-    second = ZeroDDS.write_frame(0x80, 0x01, 2, UInt8[0xDD, 0xEE])
+    WRITER_ID = ZeroDDS.xrce_object_id(0x001, ZeroDDS.OBJK_DATAWRITER)
+    first = ZeroDDS.write_frame(0x80, 0x01, 1, WRITER_ID, UInt8[0xAA, 0xBB, 0xCC])
+    second = ZeroDDS.write_frame(0x80, 0x01, 2, WRITER_ID, UInt8[0xDD, 0xEE])
     @assert ZeroDDS.read_frame(vcat(first, second)) == UInt8[0xAA, 0xBB, 0xCC] "appended submessage must not leak"
     overlong = copy(first)
     overlong[7] = 0xFF
     overlong[8] = 0xFF
     @assert ZeroDDS.read_frame(overlong) === nothing "over-long length must reject"
     @assert ZeroDDS.read_frame(UInt8[0x80, 0x01, 0x00, 0x00, 0x07]) === nothing "truncated header must reject"
-    @assert ZeroDDS.write_frame(0x80, 0x01, 1, zeros(UInt8, 0x10000)) == UInt8[] "sample > 0xFFFF must be refused"
+    # A refusal and no longer an empty vector: `write!` handed the empty one
+    # to `deliver` and an empty datagram went out with nothing said.
+    @assert (try
+        ZeroDDS.write_frame(0x80, 0x01, 1, WRITER_ID, zeros(UInt8, 0x10000)); false
+    catch e
+        e isa ArgumentError
+    end) "sample > 0xFFFF must be refused"
+    # The bound is the field's and not one off it.
+    @assert length(ZeroDDS.write_frame(0x80, 0x01, 1, WRITER_ID,
+        zeros(UInt8, 0xFFFF - ZeroDDS.XRCE_BASE_SIZE))) == 8 + 0xFFFF "a maximal body must still frame"
 end
 println("negative frame vectors: OK")
 println("ALL OK")

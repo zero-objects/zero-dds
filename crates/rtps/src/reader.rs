@@ -51,15 +51,15 @@ impl BestEffortReader {
     pub fn recv_datagram(&self, datagram: &[u8]) -> Result<Vec<DeliveredSample>, WireError> {
         let parsed = decode_datagram(datagram)?;
         let mut out = Vec::new();
-        for sub in parsed.submessages {
-            if let ParsedSubmessage::Data(d) = sub {
+        for frame in parsed.submessages {
+            if let ParsedSubmessage::Data(d) = frame.submessage {
                 if matches_reader(&d.reader_id, &self.guid.entity_id) {
                     out.push(DeliveredSample {
                         writer_id: d.writer_id,
                         writer_sn: d.writer_sn,
-                        // WP 2.0a: d.serialized_payload is already Arc<[u8]>
-                        // — no second Arc::from alloc, just a move.
-                        payload: d.serialized_payload,
+                        // The DATA's octets as an `Arc` of their own; this
+                        // phase-0 reader is not on the user receive path.
+                        payload: d.serialized_payload.to_arc(),
                     });
                 }
             }

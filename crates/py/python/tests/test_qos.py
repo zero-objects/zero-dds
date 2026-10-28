@@ -23,7 +23,7 @@ pytestmark = pytest.mark.skipif(
 
 
 def test_writer_qos_defaults():
-    """§6.2 — Default ist Reliable + Volatile + KeepLast(1) (DDS 1.4 §2.2.3 Defaults)."""
+    """§6.2 — default is Reliable + Volatile + KeepLast(1) (DDS 1.4 §2.2.3 Defaults)."""
     qos = zerodds.DataWriterQos()
     assert qos.reliability_kind() == "Reliable"
     assert qos.durability_kind() == "Volatile"
@@ -32,7 +32,7 @@ def test_writer_qos_defaults():
 
 
 def test_reader_qos_defaults():
-    """§6.2 — Reader-Default ist BestEffort (DDS 1.4 §2.2.3.14.3)."""
+    """§6.2 — the reader default is BestEffort (DDS 1.4 §2.2.3.14.3)."""
     qos = zerodds.DataReaderQos()
     assert qos.reliability_kind() == "BestEffort"
     assert qos.durability_kind() == "Volatile"

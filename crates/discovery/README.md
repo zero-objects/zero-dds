@@ -13,7 +13,7 @@ Pure-Rust `no_std + alloc`, `forbid(unsafe_code)`, safety class **SAFE**.
 - **DDSI-RTPS 2.5 §8.5.4** — Simple Endpoint Discovery (SEDP).
 - **XTypes 1.3 §7.6.3.3.4** — TypeLookup service (4 builtin endpoints,
   service-instance-name).
-- **DDS-Security 1.2 §7.4.4 + §7.4.5** — Stateless + Volatile-Secure
+- **DDS-Security 1.2 §7.5.3 + §7.5.4** — Stateless + Volatile-Secure
   builtin-endpoint slots.
 
 Coverage-Doc:

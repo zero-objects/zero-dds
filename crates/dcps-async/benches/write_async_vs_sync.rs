@@ -19,6 +19,24 @@ use zerodds_dcps::{
 };
 use zerodds_dcps_async::AsyncDomainParticipantFactory;
 
+/// The writer QoS this bench measures with.
+///
+/// `RESOURCE_LIMITS.max_samples` is 1000 by default, and an offline
+/// writer keeps everything it is handed — nothing takes samples off, so
+/// a criterion loop reaches the limit inside the warm-up. RELIABLE then
+/// does what it is supposed to do: it blocks for `max_blocking_time`
+/// and answers `Timeout`, which is how this bench failed before a
+/// single sample was timed. `0` is the code's own spelling for "no
+/// limit" (`if max_samples > 0 && ...`), and the loop drains in batches
+/// so the queue does not grow without bound either.
+///
+/// What is measured does not change: the call path of `write`.
+fn bench_writer_qos() -> DataWriterQos {
+    let mut qos = DataWriterQos::default();
+    qos.resource_limits.max_samples = 0;
+    qos
+}
+
 fn bench_sync_write(c: &mut Criterion) {
     let factory = DomainParticipantFactory::instance();
     let p = factory.create_participant_offline(99, DomainParticipantQos::default());
@@ -27,13 +45,29 @@ fn bench_sync_write(c: &mut Criterion) {
         .expect("topic");
     let pubr = p.create_publisher(PublisherQos::default());
     let writer = pubr
-        .create_datawriter::<RawBytes>(&topic, DataWriterQos::default())
+        .create_datawriter::<RawBytes>(&topic, bench_writer_qos())
         .expect("writer");
 
+    // The offline writer keeps what it is handed in a queue, and
+    // `RESOURCE_LIMITS.max_samples` is 1000 by default. A criterion loop
+    // reaches that within the warm-up, and then RELIABLE does what it is
+    // supposed to do: it blocks for `max_blocking_time` and answers
+    // `Timeout`. That is the writer behaving correctly, and it made this
+    // bench fail with `write: Timeout` before a single sample was timed.
+    //
+    // A live writer has a reader taking samples off. Here nothing does,
+    // so the loop takes them off itself, in batches, and the drain stays
+    // out of the measured span.
     c.bench_function("sync_write_64_bytes", |b| {
         let payload = RawBytes::new(vec![0xAA; 64]);
+        let mut written = 0_usize;
         b.iter(|| {
             writer.write(black_box(&payload)).expect("write");
+            written += 1;
+            if written >= 500 {
+                written = 0;
+                black_box(writer.__drain_pending());
+            }
         });
     });
 }
@@ -51,13 +85,20 @@ fn bench_async_write(c: &mut Criterion) {
         .expect("topic");
     let pubr = p.create_publisher(PublisherQos::default());
     let writer = pubr
-        .create_datawriter::<RawBytes>(&topic, DataWriterQos::default())
+        .create_datawriter::<RawBytes>(&topic, bench_writer_qos())
         .expect("writer");
 
+    // Same reason as the sync half above.
     c.bench_function("async_write_64_bytes", |b| {
         let payload = RawBytes::new(vec![0xAA; 64]);
+        let mut written = 0_usize;
         b.iter(|| {
             rt.block_on(async { writer.write(black_box(&payload)).await.expect("write") });
+            written += 1;
+            if written >= 500 {
+                written = 0;
+                black_box(writer.as_sync().__drain_pending());
+            }
         });
     });
 }

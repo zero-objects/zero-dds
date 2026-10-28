@@ -1,0 +1,5 @@
+// `sequence<sequence<long>>`, unannotated
+struct Sample {
+    sequence<sequence<long> > rows;
+    long tail;
+};

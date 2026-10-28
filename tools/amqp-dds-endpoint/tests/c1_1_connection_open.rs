@@ -5,16 +5,16 @@
     clippy::print_stderr
 )]
 
-//! Annex C C.1.1 — Connection Open (TLS+PLAIN-Variante).
+//! Annex C C.1.1 — Connection Open (TLS+PLAIN variant).
 //!
-//! Spec-Konstanz §C.1.1: AMQP-1.0-Client connectet ueber TLS,
-//! authentifiziert mit PLAIN, etabliert Session.
+//! Spec conformance §C.1.1: AMQP-1.0 client connects over TLS,
+//! authenticates with PLAIN, establishes session.
 //!
-//! Da unser Daemon (noch) keinen echten TLS-Stack hat, simulieren
-//! wir den Spec-Pfad indem wir den `tls_active`-Flag setzen
-//! (was PLAIN auf der SASL-Verhandlung verfuegbar macht). Der
-//! Test verifiziert, dass der Server PLAIN als angebotenen
-//! Mechanismus listet wenn `tls_active = true`.
+//! Since our daemon has no real TLS stack (yet), we simulate
+//! the spec path by setting the `tls_active` flag
+//! (which makes PLAIN available on the SASL negotiation). The
+//! test verifies that the server lists PLAIN as an offered
+//! mechanism when `tls_active = true`.
 
 mod common;
 
@@ -32,7 +32,7 @@ fn c1_1_connection_open_with_tls_active_advertises_plain() {
         upstream_addr: format!("127.0.0.1:{port}"),
         container_id: "c1-1-client".into(),
         max_frame_size: 65_536,
-        tls_active: true, // signal Klient-Side fuer PLAIN-Erlaubnis
+        tls_active: true, // signal client side for PLAIN permission
         plain_credentials: Some(("alice".into(), "secret".into())),
         io_timeout: Some(Duration::from_secs(2)),
     };
@@ -41,9 +41,9 @@ fn c1_1_connection_open_with_tls_active_advertises_plain() {
     assert!(result.is_ok(), "connection open failed: {result:?}");
     let (_stream, session) = result.unwrap();
     assert_eq!(session.state, ConnectionState::Opened);
-    // Per Spec C.1.1: `subject` der Connection ist der
-    // SASL-Outcome-Identity. Wir verifizieren, dass eine
-    // PLAIN-Mechanism-Negotiation stattgefunden hat.
+    // Per Spec C.1.1: `subject` of the connection is the
+    // SASL outcome identity. We verify that a
+    // PLAIN mechanism negotiation has taken place.
     assert!(session.sasl_mechanism.is_some());
 
     server.shutdown();

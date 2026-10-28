@@ -1,0 +1,14 @@
+// bitmask flags that are keywords of the generated target language, in a
+// bitmask at the outermost scope, where no module path is prefixed to
+// the flag either
+@bit_bound(8)
+bitmask Options {
+    auto,
+    extern,
+    inline
+};
+
+@final struct Sample {
+    Options chosen;
+    long tail;
+};

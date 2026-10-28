@@ -6,7 +6,7 @@
 //! Phase-B-Cluster-10 (Spec-Cycle 5).
 //!
 //! Spec source: OMG RTC 1.0 §5.4.1 (pp. 61-70) resource data model +
-//! §5.4.2 (S. 71-77) Stereotypes-and-Interfaces (Introspection-Iface-
+//! §5.4.2 (p. 71-77) Stereotypes-and-Interfaces (Introspection-Iface-
 //! Operations).
 //!
 //! # Model
@@ -49,12 +49,12 @@ impl Default for ProfileId {
 /// Port-Direction (Spec §5.4.1 Tab 5.10).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PortDirection {
-    /// Eingang.
+    /// Input.
     #[default]
     In,
-    /// Ausgang.
+    /// Output.
     Out,
-    /// Bidirektional (Service-Port).
+    /// Bidirectional (Service-Port).
     InOut,
 }
 

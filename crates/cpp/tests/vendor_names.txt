@@ -1,0 +1,15 @@
+# Names of ours in the normative namespaces that the normative headers of DDS-PSM-Cxx 1.0 do not
+# contain, with the clause that asks for them. Format: <namespace> <name> <reason>.
+dds::domain DomainId PSM 1.0 §7.13 (examples) writes `DomainId id = 0;`; the header dds/domain/DomainId.hpp is not among the normative ones, the type is TDomainId<detail::DomainId> of dds/domain/TDomainId.hpp
+dds::core::xtypes AliasType PSM 1.0 §7.11 (all classes necessary for describing dynamic types); XTypes 1.3 TypeKind ALIAS_TYPE has no class in the normative headers
+dds::core::xtypes ArrayType PSM 1.0 §7.11; XTypes 1.3 TypeKind ARRAY_TYPE
+dds::core::xtypes TArrayType PSM 1.0 §7.11; XTypes 1.3 TypeKind ARRAY_TYPE
+dds::core::xtypes BitField PSM 1.0 §7.11; XTypes 1.3 TypeKind BITSET_TYPE (bit field of a bit set)
+dds::core::xtypes BitFlag PSM 1.0 §7.11; XTypes 1.3 TypeKind BITMASK_TYPE (flag of a bit mask)
+dds::core::xtypes BitMaskType PSM 1.0 §7.11; XTypes 1.3 TypeKind BITMASK_TYPE
+dds::core::xtypes BitSetType PSM 1.0 §7.11; XTypes 1.3 TypeKind BITSET_TYPE
+dds::core::xtypes EnumerationType PSM 1.0 §7.11; XTypes 1.3 TypeKind ENUMERATION_TYPE
+dds::core::xtypes Enumerator PSM 1.0 §7.11; XTypes 1.3 TypeKind ENUMERATION_TYPE (constant of an enumeration)
+dds::core::xtypes OptionalAnnotation PSM 1.0 §7.11; XTypes 1.3 annotation @optional
+dds::core::xtypes TOptionalAnnotation PSM 1.0 §7.11; XTypes 1.3 annotation @optional
+dds::core::xtypes StructForwardDeclaration PSM 1.0 §7.11; the normative headers have TStructForwardDeclaration only as a template without a typedef

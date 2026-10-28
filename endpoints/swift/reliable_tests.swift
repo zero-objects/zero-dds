@@ -173,8 +173,39 @@ run("byte_golden_heartbeat_acknack") {
     check("byte_golden_heartbeat", hb == wantHb, "got \(hb)")
 
     let an = acknackFrame(AckNack(firstUnacked: 1, nackBitmap: 0, streamId: 0x80))
-    let wantAn: [UInt8] = [0x80, 0x00, 0x01, 0x00, 0x0A, 0x01, 0x05, 0x00, 0x01, 0x00, 0x00, 0x00, 0x80]
+    let wantAn: [UInt8] = [0x80, 0x00, 0x01, 0x00, 0x0A, 0x01, 0x09, 0x00, 0x05, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x80]
     check("byte_golden_acknack", an == wantAn, "got \(an)")
+    check("acknack_frame_is_17_octets", an.count == 17)
+    check("acknack_dheader_roundtrip", parseAckNack(an) == AckNack(firstUnacked: 1, nackBitmap: 0, streamId: 0x80))
+}
+
+run("acknack_legacy_final_form_parses") {
+    // body length 5, no DHEADER, as sent by eProsima clients
+    let legacy: [UInt8] = [0x80, 0x00, 0x01, 0x00, 0x0A, 0x01, 0x05, 0x00, 0x03, 0x00, 0x01, 0x00, 0x80]
+    check("acknack_legacy_final_form_parses", parseAckNack(legacy) == AckNack(firstUnacked: 3, nackBitmap: 1, streamId: 0x80))
+    check("acknack_shorter_than_13_rejected", parseAckNack(Array(legacy[0..<12])) == nil)
+    let an = acknackFrame(AckNack(firstUnacked: 1, nackBitmap: 0, streamId: 0x80))
+    check("acknack_truncated_dheader_form_rejected", parseAckNack(Array(an[0..<16])) == nil)
+}
+
+run("acknack_unannotated_types") {
+    let an = AckNack(firstUnacked: 1, nackBitmap: 0, streamId: 0x80)
+    // 13-octet FINAL golden of the reference implementation
+    let finalGolden: [UInt8] = [0x80, 0x00, 0x01, 0x00, 0x0a, 0x01, 0x05, 0x00, 0x01, 0x00, 0x00, 0x00, 0x80]
+    let fin = acknackFrame(an, unannotatedTypes: .final)
+    check("acknack_final_matches_13_octet_golden", fin == finalGolden, "got \(fin)")
+    let app = acknackFrame(an, unannotatedTypes: .appendable)
+    check("acknack_appendable_is_default_17_octets", app.count == 17 && app == acknackFrame(an))
+    check("acknack_parser_accepts_both_forms", parseAckNack(fin) == an && parseAckNack(app) == an)
+
+    let rf = ReliableReceiver(unannotatedTypes: .final)
+    let ra = ReliableReceiver()
+    try? rf.recvData(seq: 0, payload: [1])
+    try? ra.recvData(seq: 0, payload: [1])
+    _ = rf.drainInOrder()
+    _ = ra.drainInOrder()
+    check("receiver_acknack_follows_unannotated_types",
+          rf.acknackFrame(hintLastSeen: 0) == finalGolden && ra.acknackFrame(hintLastSeen: 0) == app)
 }
 
 run("end_to_end_sender_receiver_with_loss_recovery") {
@@ -306,7 +337,7 @@ final class LoopPeer {
 run("async_writer_window_overflow_no_loss") {
     let n = 20 // > reliableSenderWindow (16)
     let peer = LoopPeer()
-    let w = AsyncWriter(sendFn: { peer.onSend($0) }, recvFn: { peer.onRecv() })
+    let w = AsyncWriter(sendFn: { peer.onSend($0) }, recvFn: { peer.onRecv() }, objectId: 0x0015)
     w.start()
 
     for i in 0..<n { _ = w.write([UInt8(i)]) }

@@ -1,0 +1,162 @@
+#!/bin/bash
+# wireprobe-omniorb — one IDL type and one JSON value, through omniORB
+# 4.3.3's own CDR stream.
+#
+# The same command line as `wireprobe-zerodds`, so a case runs through
+# both by substituting the program name. See
+# `docs/specs/zerodds-interop-suite-1.0.md` and `docs/corba-column.md`.
+#
+#   wireprobe-omniorb --idl robot.idl --type common::Robot \
+#                     --values robot.json --encoding xcdr1 --endian le \
+#                     --out robot.omniorb.xcdr1.le.bin
+#
+# `wireprobe-corba-idl` prints the type as CORBA IDL — an ORB front end
+# has no `@final`, no `bitmask` and no `int8` — `omniidl -bcxx`
+# generates the C++, `wireprobe-fill` supplies the statements that put
+# the JSON sample into it, and the template calls omniORB's
+# `cdrMemoryStream`. Nothing here decides any wire question.
+#
+# The read direction is the same command line with `--in` instead of
+# `--values`.
+#
+#   wireprobe-omniorb --idl robot.idl --type common::Robot \
+#                     --in robot.rti.xcdr1.le.bin --encoding xcdr1 \
+#                     --endian le --values-out robot.read.json
+set -euo pipefail
+
+FILL="${WIREPROBE_FILL:-wireprobe-fill}"
+DUMP="${WIREPROBE_DUMP:-wireprobe-dump}"
+CORBA_IDL="${WIREPROBE_CORBA_IDL:-wireprobe-corba-idl}"
+OMNIIDL="${OMNIIDL:-omniidl}"
+TOOLS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TEMPLATE="$TOOLS/omniorb-template.cpp"
+DECODE_TEMPLATE="$TOOLS/omniorb-decode-template.cpp"
+# shellcheck source=probe-cache.sh
+. "$TOOLS/probe-cache.sh"
+# shellcheck source=bounded.sh
+. "$TOOLS/bounded.sh"
+# shellcheck source=diagnostics.sh
+. "$TOOLS/diagnostics.sh"
+# shellcheck source=corba-common.sh
+. "$TOOLS/corba-common.sh"
+
+corba_parse_arguments omniorb "$@"
+
+work="$(mktemp -d)"
+# Kept before the removal and on every exit path, including a
+# refusal: the generated source of a case a front end could not carry
+# is the one a reader most wants to see.
+trap 'probe_keep_generated "$work" "omniorb" "$idl"; rm -rf "$work"' EXIT
+
+# The IDL an ORB can read. Exit 3 — a construct with no CORBA form — is
+# passed through as this probe's exit 3, which the suite reads as "not a
+# case the ORBs can take" and not as a failure.
+# `$?` is read before the `if`, not inside it: after `if ! cmd` bash has
+# already replaced the command's status with the negation's, so `$?` in
+# the branch is 0 and `exit "$status"` exits 0. Measured on 2026-08-10:
+# a missing `wireprobe-ros-package` made `wireprobe-ros` print nothing
+# and exit 0, and a corpus sweep recorded 648 empty payloads as bytes.
+# `|| status=$?` and not a bare call: `set -e` ends the script *at* a
+# failing command, so a bare call's `status=$?` never runs and neither
+# does the reporting under it. The comment above was written against
+# `if !` and does not reach this; a command in an `||` list is exempt.
+status=0
+"$CORBA_IDL" --idl "$idl" --type "$type_name" --out "$work/gen.idl" || status=$?
+if [ "$status" -ne 0 ]; then
+    [ "$status" = 3 ] && exit 3
+    echo "wireprobe-omniorb: the CORBA IDL could not be printed" >&2
+    exit "$status"
+fi
+cpp_name="$("$FILL" --vendor omniorb --idl "$idl" --type "$type_name" --print-c-name)"
+
+if [ -n "$input" ]; then
+    "$DUMP" --vendor omniorb --idl "$idl" --type "$type_name" --out "$work/dump.inc"
+    # The byte order is not in the key: the template takes it as its
+    # first argument, so one build per case answers both orders.
+    key="$(probe_cache_key omniorb decode "$cpp_name" -- "$work/gen.idl" "$work/dump.inc" "$DECODE_TEMPLATE")"
+    cached="$(probe_cache_dir "$key")"
+    if [ -z "$cached" ] || [ ! -x "$cached/probe" ]; then
+        (
+            cd "$work"
+            bounded_run_native omniidl "$OMNIIDL" -bcxx -Wbh=.hh -Wbs=SK.cc gen.idl > idl.log 2>&1 \
+                || { echo "wireprobe-omniorb: omniidl failed" >&2; sed -n 1,10p idl.log >&2; exit 4; }
+            sed -e "s/@TYPE@/$cpp_name/g" "$DECODE_TEMPLATE" > probe.cpp
+            g++ -o probe probe.cpp genSK.cc -I. -I"$TOOLS" \
+                -lomniORB4 -lomniDynamic4 -lomnithread > cc.log 2>&1 \
+                || { echo "wireprobe-omniorb: the decode probe did not compile" >&2; \
+                     grep -m10 "error:" cc.log >&2; exit 5; }
+        )
+        probe_diagnostics_after omniorb "$work" "$idl" $?
+        if [ -n "$cached" ]; then
+            build="$(mktemp -d "$WIREPROBE_CACHE/build.XXXXXX")"
+            cp "$work/probe" "$build/probe"
+            probe_diagnostics_publish "$work" "$build"
+            probe_generated_publish "$work" "$build"
+            probe_cache_publish "$build" "$cached"
+        fi
+    else
+        # A cache hit does not compile, so the build said nothing
+        # this run. What it said when it was built is replayed,
+        # or a re-record would be silent for every case it did
+        # not rebuild.
+        probe_diagnostics_cached omniorb "$cached" "$idl"
+        probe_generated_cached "$cached" "$work"
+    fi
+    if [ -n "$cached" ] && [ -x "$cached/probe" ]; then binary="$cached/probe"; else binary="$work/probe"; fi
+    "$binary" "$endian_word" < "$input" > "$work/values.json"
+    if [ -n "$values_out" ]; then cp "$work/values.json" "$values_out"; else cat "$work/values.json"; fi
+    exit 0
+fi
+
+"$FILL" --vendor omniorb --idl "$idl" --type "$type_name" --values "$values" \
+        --out "$work/fill.inc"
+# As above, for the write direction.
+key="$(probe_cache_key omniorb encode "$cpp_name" -- "$work/gen.idl" "$work/fill.inc" "$TEMPLATE")"
+cached="$(probe_cache_dir "$key")"
+if [ -z "$cached" ] || [ ! -x "$cached/probe" ]; then
+    (
+        cd "$work"
+        bounded_run_native omniidl "$OMNIIDL" -bcxx -Wbh=.hh -Wbs=SK.cc gen.idl > idl.log 2>&1 \
+            || { echo "wireprobe-omniorb: omniidl failed" >&2; sed -n 1,10p idl.log >&2; exit 4; }
+        sed -e "s/@TYPE@/$cpp_name/g" "$TEMPLATE" > probe.cpp
+        g++ -o probe probe.cpp genSK.cc -I. -I"$TOOLS" \
+            -lomniORB4 -lomniDynamic4 -lomnithread > cc.log 2>&1 \
+            || { echo "wireprobe-omniorb: the probe did not compile" >&2; \
+                 grep -m10 "error:" cc.log >&2; exit 5; }
+    )
+    probe_diagnostics_after omniorb "$work" "$idl" $?
+    if [ -n "$cached" ]; then
+        build="$(mktemp -d "$WIREPROBE_CACHE/build.XXXXXX")"
+        cp "$work/probe" "$build/probe"
+        probe_diagnostics_publish "$work" "$build"
+        probe_generated_publish "$work" "$build"
+        probe_cache_publish "$build" "$cached"
+    fi
+else
+    # A cache hit does not compile, so the build said nothing
+    # this run. What it said when it was built is replayed,
+    # or a re-record would be silent for every case it did
+    # not rebuild.
+    probe_diagnostics_cached omniorb "$cached" "$idl"
+    probe_generated_cached "$cached" "$work"
+fi
+if [ -n "$cached" ] && [ -x "$cached/probe" ]; then binary="$cached/probe"; else binary="$work/probe"; fi
+if [ "$matrix" = 1 ]; then
+    # One build, run once per order: omniORB writes both.
+    for o in le be; do
+        if hex=$("$binary" "$o" 2>"$work/err" | od -An -tx1 -v | tr -d ' \n') && [ -n "$hex" ]; then
+            printf 'xcdr1\t%s\t%s\n' "$o" "$hex"
+        else
+            printf 'xcdr1\t%s\t!%s\n' "$o" \
+                "$(head -1 "$work/err" | tr '\t' ' ' | cut -c1-200)"
+        fi
+    done
+    exit 0
+fi
+"$binary" "$endian_word" > "$work/bytes.bin"
+
+if [ -n "$out" ]; then
+    cp "$work/bytes.bin" "$out"
+else
+    od -An -tx1 -v "$work/bytes.bin" | tr -d ' \n'; echo
+fi

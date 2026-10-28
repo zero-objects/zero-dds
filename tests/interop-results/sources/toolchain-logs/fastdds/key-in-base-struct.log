@@ -1,0 +1,2 @@
+[1mgen.idl:12:4: [0m[1;31merror: [0mError in member slot: @key cannot be used in a derived structure.
+fastddsgen failed and named no case

@@ -1,0 +1,16 @@
+{
+  "none": [],
+  "one": [
+    "abc"
+  ],
+  "many": [
+    "",
+    "abc",
+    "über — ሴ"
+  ],
+  "bounded": [
+    "",
+    "abc"
+  ],
+  "tail": -1
+}

@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of key-in-base-struct that opendds produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	Error - tao_idl: Missing '{' or illegal syntax following struct identifier
+plain-cdr1	be	refused	Error - tao_idl: Missing '{' or illegal syntax following struct identifier
+pl-cdr1	le	refused	Error - tao_idl: Missing '{' or illegal syntax following struct identifier
+pl-cdr1	be	refused	Error - tao_idl: Missing '{' or illegal syntax following struct identifier
+plain-cdr2	le	refused	Error - tao_idl: Missing '{' or illegal syntax following struct identifier
+plain-cdr2	be	refused	Error - tao_idl: Missing '{' or illegal syntax following struct identifier
+delimited-cdr	le	refused	Error - tao_idl: Missing '{' or illegal syntax following struct identifier
+delimited-cdr	be	refused	Error - tao_idl: Missing '{' or illegal syntax following struct identifier
+pl-cdr2	le	refused	Error - tao_idl: Missing '{' or illegal syntax following struct identifier
+pl-cdr2	be	refused	Error - tao_idl: Missing '{' or illegal syntax following struct identifier

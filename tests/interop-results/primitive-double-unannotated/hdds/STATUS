@@ -1,0 +1,11 @@
+# The (encoding, byte order) slots of primitive-double-unannotated that hdds produced no
+# bytes for, and why. The rest are the .bin files beside this one.
+# encoding	endian	status	detail
+plain-cdr1	be	one-order-only	
+pl-cdr1	le	version-alias	plain-cdr1
+pl-cdr1	be	one-order-only	
+plain-cdr2	be	one-order-only	
+delimited-cdr	le	version-alias	plain-cdr2
+delimited-cdr	be	one-order-only	
+pl-cdr2	le	version-alias	plain-cdr2
+pl-cdr2	be	one-order-only	

@@ -16,6 +16,7 @@ use alloc::vec::Vec;
 use crate::message::{CoapCode, CoapMessage};
 use crate::option::{CoapOption, OptionNumber, OptionValue};
 
+use super::aead::{aes_ccm_decrypt, aes_ccm_encrypt, oscore_aad, oscore_nonce};
 use super::aead::{protect_request, unprotect_request};
 use super::wire::OscoreOption;
 use super::{OscoreError, SecurityContext};
@@ -147,15 +148,18 @@ fn build_plaintext(inner: &CoapMessage) -> Vec<u8> {
 }
 
 /// Protect a request (RFC 8613 §8.1): encrypt the inner message and produce the
-/// outer message (outer code POST 0.02, class-U options + the OSCORE option with
-/// the Partial IV + Sender ID, ciphertext payload). `version`/`type`/`mid`/`token`
-/// are copied from `inner` for the transport layer.
+/// outer message (class-U options + the OSCORE option with the Partial IV +
+/// Sender ID + optional ID Context, ciphertext payload). The outer code is 0.02
+/// (POST) — or 0.05 (FETCH) when the request carries an Observe option
+/// (§4.1.3.5). `version`/`type`/`mid`/`token` are copied from `inner` for the
+/// transport layer.
 ///
 /// # Errors
 /// `Err` on AEAD failure.
 pub fn protect_request_message(
     ctx: &SecurityContext,
     sender_id: &[u8],
+    kid_context: Option<&[u8]>,
     partial_iv: &[u8],
     inner: &CoapMessage,
 ) -> Result<CoapMessage, OscoreError> {
@@ -170,20 +174,137 @@ pub fn protect_request_message(
     let osc = OscoreOption {
         partial_iv: partial_iv.to_vec(),
         kid: Some(sender_id.to_vec()),
+        kid_context: kid_context.map(<[u8]>::to_vec),
+    };
+    options.push(CoapOption::new(
+        OSCORE_OPTION,
+        OptionValue::Opaque(osc.encode()),
+    ));
+    // §4.1.3.5: with an outer Observe option the outer code is 0.05 (FETCH).
+    let outer_code = if options.iter().any(|o| o.number == 6) {
+        CoapCode::new(0, 5)
+    } else {
+        CoapCode::new(0, 2)
+    };
+    Ok(CoapMessage {
+        version: inner.version,
+        message_type: inner.message_type,
+        code: outer_code,
+        message_id: inner.message_id,
+        token: inner.token.clone(),
+        options,
+        payload: ciphertext,
+    })
+}
+
+/// Protect a response (RFC 8613 §8.3): encrypt the inner response under the
+/// responder's Sender Key. The AAD binds the response to the request's `kid` +
+/// Partial IV. Without `own_piv` the request's nonce is reused (Appendix C.7 —
+/// safe because the two directions use different keys); with `own_piv` the
+/// nonce is built from the responder's own Sender ID + Partial IV (Appendix
+/// C.8 — required for Observe notifications, §4.1.3.5.2). The outer code is
+/// 2.04 (Changed) — or 2.05 (Content) when an Observe option is carried
+/// (§4.1.3.5).
+///
+/// # Errors
+/// `Err` on AEAD failure.
+pub fn protect_response_message(
+    ctx: &SecurityContext,
+    responder_id: &[u8],
+    request_kid: &[u8],
+    request_piv: &[u8],
+    own_piv: Option<&[u8]>,
+    inner: &CoapMessage,
+) -> Result<CoapMessage, OscoreError> {
+    let plaintext = build_plaintext(inner);
+    let aad = oscore_aad(ctx.alg, request_kid, request_piv, &[]);
+    let nonce = match own_piv {
+        Some(piv) => oscore_nonce(&ctx.common_iv, responder_id, piv),
+        None => oscore_nonce(&ctx.common_iv, request_kid, request_piv),
+    };
+    let ciphertext = aes_ccm_encrypt(&ctx.sender_key, &nonce, &plaintext, &aad)?;
+    let mut options: Vec<CoapOption> = inner
+        .options
+        .iter()
+        .filter(|o| is_class_u(o.number) && o.number != OSCORE_OPTION)
+        .cloned()
+        .collect();
+    // §8.3: a response carries no `kid`; the Partial IV only when it is our own.
+    let osc = OscoreOption {
+        partial_iv: own_piv.unwrap_or_default().to_vec(),
+        kid: None,
         kid_context: None,
     };
     options.push(CoapOption::new(
         OSCORE_OPTION,
         OptionValue::Opaque(osc.encode()),
     ));
+    // §4.1.3.5: with an outer Observe option the outer code is 2.05 (Content).
+    let outer_code = if options.iter().any(|o| o.number == 6) {
+        CoapCode::new(2, 5)
+    } else {
+        CoapCode::new(2, 4)
+    };
     Ok(CoapMessage {
         version: inner.version,
         message_type: inner.message_type,
-        code: CoapCode::new(0, 2), // POST
+        code: outer_code,
         message_id: inner.message_id,
         token: inner.token.clone(),
         options,
         payload: ciphertext,
+    })
+}
+
+/// Unprotect a response (RFC 8613 §8.4): decode the OSCORE option, rebuild the
+/// nonce (the request's if the response has no Partial IV, else the responder's
+/// own), verify + decrypt under the Recipient Key, and reconstruct the inner
+/// response. `responder_id` is the peer's Sender ID (used only when the
+/// response carries its own Partial IV).
+///
+/// # Errors
+/// `Err` if the OSCORE option is missing/malformed or the tag fails.
+pub fn unprotect_response_message(
+    ctx: &SecurityContext,
+    responder_id: &[u8],
+    request_kid: &[u8],
+    request_piv: &[u8],
+    outer: &CoapMessage,
+) -> Result<CoapMessage, OscoreError> {
+    let osc_opt = outer
+        .options
+        .iter()
+        .find(|o| o.number == OSCORE_OPTION)
+        .ok_or(OscoreError)?;
+    let osc = OscoreOption::decode(&osc_opt.value.to_wire_bytes())?;
+    let nonce = if osc.partial_iv.is_empty() {
+        oscore_nonce(&ctx.common_iv, request_kid, request_piv)
+    } else {
+        oscore_nonce(&ctx.common_iv, responder_id, &osc.partial_iv)
+    };
+    let aad = oscore_aad(ctx.alg, request_kid, request_piv, &[]);
+    let plaintext = aes_ccm_decrypt(&ctx.recipient_key, &nonce, &outer.payload, &aad)?;
+    if plaintext.is_empty() {
+        return Err(OscoreError);
+    }
+    let code = CoapCode::new(plaintext[0] >> 5, plaintext[0] & 0x1F);
+    let (class_e, payload) = decode_options(&plaintext[1..])?;
+    let mut options: Vec<CoapOption> = outer
+        .options
+        .iter()
+        .filter(|o| o.number != OSCORE_OPTION && is_class_u(o.number))
+        .cloned()
+        .collect();
+    options.extend(class_e);
+    options.sort_by_key(|o| o.number);
+    Ok(CoapMessage {
+        version: outer.version,
+        message_type: outer.message_type,
+        code,
+        message_id: outer.message_id,
+        token: outer.token.clone(),
+        options,
+        payload,
     })
 }
 
@@ -281,7 +402,7 @@ mod tests {
             ],
             payload: Vec::new(),
         };
-        let outer = protect_request_message(&client, &[], &[0x14], &inner).unwrap();
+        let outer = protect_request_message(&client, &[], None, &[0x14], &inner).unwrap();
         // Outer is a POST carrying the OSCORE option; payload is the ciphertext.
         assert_eq!(outer.code, CoapCode::new(0, 2));
         assert!(outer.options.iter().any(|o| o.number == OSCORE_OPTION));
@@ -323,7 +444,7 @@ mod tests {
             )],
             payload: b"hello world".to_vec(),
         };
-        let outer = protect_request_message(&client, &[], &[0x07], &inner).unwrap();
+        let outer = protect_request_message(&client, &[], None, &[0x07], &inner).unwrap();
         let recovered = unprotect_request_message(&server.clone(), &outer).unwrap();
         assert_eq!(recovered.payload, b"hello world");
         assert_eq!(recovered.code, CoapCode::new(0, 2));
@@ -341,9 +462,76 @@ mod tests {
             options: Vec::new(),
             payload: b"x".to_vec(),
         };
-        let mut outer = protect_request_message(&client, &[], &[0x01], &inner).unwrap();
+        let mut outer = protect_request_message(&client, &[], None, &[0x01], &inner).unwrap();
         let n = outer.payload.len();
         outer.payload[n - 1] ^= 0x01; // flip a tag byte
         assert!(unprotect_request_message(&server.clone(), &outer).is_err());
+    }
+
+    #[test]
+    fn protect_unprotect_response_roundtrip_without_piv() {
+        let (client, server) = ctx_pair();
+        let inner = CoapMessage {
+            version: 1,
+            message_type: MessageType::Acknowledgement,
+            code: CoapCode::new(2, 5), // 2.05 Content
+            message_id: 0x1234,
+            token: alloc::vec![0xAB],
+            options: alloc::vec![CoapOption::new(
+                numbers::CONTENT_FORMAT,
+                OptionValue::Uint(0)
+            )],
+            payload: b"Hello World!".to_vec(),
+        };
+        // Server answers the request kid=[] (client Sender ID) piv=0x14.
+        let outer = protect_response_message(&server, &[0x01], &[], &[0x14], None, &inner).unwrap();
+        assert_eq!(outer.code, CoapCode::new(2, 4)); // outer 2.04 Changed (§4.2)
+        let osc = outer
+            .options
+            .iter()
+            .find(|o| o.number == OSCORE_OPTION)
+            .unwrap();
+        assert!(osc.value.to_wire_bytes().is_empty()); // no kid, no PIV (§8.3)
+        let back = unprotect_response_message(&client, &[0x01], &[], &[0x14], &outer).unwrap();
+        assert_eq!(back.code, CoapCode::new(2, 5));
+        assert_eq!(back.payload, b"Hello World!");
+    }
+
+    #[test]
+    fn protect_unprotect_response_roundtrip_with_own_piv() {
+        let (client, server) = ctx_pair();
+        let inner = CoapMessage {
+            version: 1,
+            message_type: MessageType::NonConfirmable,
+            code: CoapCode::new(2, 5),
+            message_id: 7,
+            token: alloc::vec![0x01],
+            options: Vec::new(),
+            payload: b"notify".to_vec(),
+        };
+        let outer = protect_response_message(&server, &[0x01], &[], &[0x14], Some(&[0x03]), &inner)
+            .unwrap();
+        let back = unprotect_response_message(&client, &[0x01], &[], &[0x14], &outer).unwrap();
+        assert_eq!(back.payload, b"notify");
+        // Wrong request PIV in the AAD -> verification fails.
+        assert!(unprotect_response_message(&client, &[0x01], &[], &[0x15], &outer).is_err());
+    }
+
+    #[test]
+    fn observe_notification_gets_outer_2_05() {
+        let (_client, server) = ctx_pair();
+        let inner = CoapMessage {
+            version: 1,
+            message_type: MessageType::NonConfirmable,
+            code: CoapCode::new(2, 5),
+            message_id: 8,
+            token: alloc::vec![0x01],
+            options: alloc::vec![CoapOption::observe(3)],
+            payload: b"n".to_vec(),
+        };
+        let outer = protect_response_message(&server, &[0x01], &[], &[0x14], Some(&[0x04]), &inner)
+            .unwrap();
+        assert_eq!(outer.code, CoapCode::new(2, 5)); // §4.1.3.5 outer Content
+        assert!(outer.options.iter().any(|o| o.number == numbers::OBSERVE));
     }
 }

@@ -1,0 +1,4 @@
+// B4 — the position §7.2.2.7, §7.3.1.2.1.12 and Table 21 all leave out,
+// and that two front ends accept without saying what it means.
+@try_construct(TRIM) typedef string<5> ShortStr;
+struct Sample { ShortStr s; octet tail; };

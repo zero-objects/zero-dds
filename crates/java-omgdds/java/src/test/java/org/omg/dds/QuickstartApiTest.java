@@ -4,7 +4,9 @@ package org.omg.dds;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.omg.dds.core.ServiceConfigurationException;
 import org.omg.dds.core.ServiceEnvironment;
+import org.omg.dds.type.TypeKind;
 import org.omg.dds.domain.DomainParticipant;
 import org.omg.dds.domain.DomainParticipantFactory;
 import org.omg.dds.pub.DataWriter;
@@ -27,31 +29,32 @@ import static org.junit.jupiter.api.Assertions.*;
 class QuickstartApiTest {
 
     @BeforeEach
-    void setUp() {
+    void setUp() throws Exception {
         InProcessBus.instance().reset();
     }
 
     @AfterEach
-    void tearDown() {
+    void tearDown() throws Exception {
         InProcessBus.instance().reset();
     }
 
     @Test
-    void serviceEnvironmentBootstrapByClassName() {
-        ServiceEnvironment env =
-                ServiceEnvironment.createInstance("org.zerodds.ServiceEnvironmentImpl");
-        assertNotNull(env);
-        assertSame(DomainParticipantFactory.getInstance(),
-                DomainParticipantFactory.getInstance(env));
-    }
-
-    @Test
-    void serviceEnvironmentBootstrapBySystemProperty() {
+    void serviceEnvironmentBootstrapBySystemProperty() throws Exception {
+        // §7.3.1: the implementation class is named by the system property
+        // org.omg.dds.serviceClassName and loaded reflectively.
         String prop = ServiceEnvironment.IMPLEMENTATION_CLASS_NAME_PROPERTY;
         String prev = System.getProperty(prop);
         System.setProperty(prop, "org.zerodds.ServiceEnvironmentImpl");
+        ServiceEnvironment env =
+                ServiceEnvironment.createInstance(QuickstartApiTest.class.getClassLoader());
         try {
-            assertNotNull(ServiceEnvironment.createInstance(null));
+            assertNotNull(env);
+            // §7.4.1: the participant factory is a per-ServiceEnvironment
+            // singleton, and two environments do not share one.
+            assertSame(DomainParticipantFactory.getInstance(env),
+                    DomainParticipantFactory.getInstance(env));
+            assertNotSame(Qos.factory(),
+                    DomainParticipantFactory.getInstance(env));
         } finally {
             if (prev == null) {
                 System.clearProperty(prop);
@@ -62,21 +65,49 @@ class QuickstartApiTest {
     }
 
     @Test
-    void serviceEnvironmentRejectsUnknownClass() {
-        assertThrows(ServiceEnvironment.ServiceConfigurationException.class,
-                () -> ServiceEnvironment.createInstance("does.not.Exist"));
+    void serviceEnvironmentCreatesTheStatusAndConditionFactories() throws Exception {
+        // §7.3.1: the environment is the root of every object it creates.
+        System.setProperty(ServiceEnvironment.IMPLEMENTATION_CLASS_NAME_PROPERTY,
+                "org.zerodds.ServiceEnvironmentImpl");
+        ServiceEnvironment env =
+                ServiceEnvironment.createInstance(QuickstartApiTest.class.getClassLoader());
+        assertNotNull(env.getSPI().newWaitSet());
+        assertNotNull(env.getSPI().newGuardCondition());
+        assertNotNull(env.getSPI().nilHandle());
+        assertTrue(env.getSPI().infiniteDuration().isInfinite());
+        assertTrue(env.getSPI().zeroDuration().isZero());
+        assertNotNull(env.getSPI().getPolicyFactory().Reliability());
+        assertNotNull(env.getSPI().getTypeFactory().getPrimitiveType(TypeKind.INT_32_TYPE));
+        assertEquals(13, env.getSPI().allStatusKinds().size());
+        assertTrue(env.getSPI().noStatusKinds().isEmpty());
     }
 
     @Test
-    void getInstanceRejectsNullEnvironment() {
+    void serviceEnvironmentRejectsUnknownClass() throws Exception {
+        String prop = "org.omg.dds.brokenServiceClassName";
+        System.setProperty(prop, "does.not.Exist");
+        try {
+            assertThrows(ServiceConfigurationException.class,
+                    () -> ServiceEnvironment.createInstance(prop, null,
+                            QuickstartApiTest.class.getClassLoader()));
+        } finally {
+            System.clearProperty(prop);
+        }
+    }
+
+    @Test
+    void getInstanceRejectsNullEnvironment() throws Exception {
+        // §7.4.1 names the environment the factory belongs to, and the
+        // normative getInstance(env) of the OMG source reads env.getSPI() straight
+        // away, so a null environment fails with a NullPointerException.
         assertThrows(NullPointerException.class,
                 () -> DomainParticipantFactory.getInstance(null));
     }
 
     @Test
-    void byteArrayQuickstartRoundTrip() {
+    void byteArrayQuickstartRoundTrip() throws Exception {
         ServiceEnvironment env =
-                ServiceEnvironment.createInstance("org.zerodds.ServiceEnvironmentImpl");
+                ServiceEnvironment.createInstance(QuickstartApiTest.class.getClassLoader());
         DomainParticipant participant =
                 DomainParticipantFactory.getInstance(env).createParticipant(10);
 
@@ -86,15 +117,15 @@ class QuickstartApiTest {
 
         writer.write("hello".getBytes());
 
-        List<Sample<byte[]>> samples = reader.take();
+        List<Sample<byte[]>> samples = Qos.take(reader);
         assertEquals(1, samples.size());
         assertEquals("hello", new String(samples.get(0).getData()));
     }
 
     @Test
-    void largeByteArrayGrowsEncoderBuffer() {
+    void largeByteArrayGrowsEncoderBuffer() throws Exception {
         DomainParticipant participant =
-                DomainParticipantFactory.getInstance().createParticipant(11);
+                Qos.factory().createParticipant(11);
         Topic<byte[]> topic = participant.createTopic("BigBytes", byte[].class);
         DataWriter<byte[]> writer = participant.createPublisher().createDataWriter(topic);
         DataReader<byte[]> reader = participant.createSubscriber().createDataReader(topic);
@@ -105,7 +136,7 @@ class QuickstartApiTest {
         }
         writer.write(payload);
 
-        List<Sample<byte[]>> samples = reader.take();
+        List<Sample<byte[]>> samples = Qos.take(reader);
         assertEquals(1, samples.size());
         assertArrayEquals(payload, samples.get(0).getData());
     }
@@ -123,9 +154,9 @@ class QuickstartApiTest {
     }
 
     @Test
-    void singleArgFactoryReflectsTypedBean() {
+    void singleArgFactoryReflectsTypedBean() throws Exception {
         DomainParticipant participant =
-                DomainParticipantFactory.getInstance().createParticipant(12);
+                Qos.factory().createParticipant(12);
         Topic<Temperature> topic = participant.createTopic("Temp", Temperature.class);
         DataWriter<Temperature> writer = participant.createPublisher().createDataWriter(topic);
         DataReader<Temperature> reader = participant.createSubscriber().createDataReader(topic);
@@ -135,22 +166,22 @@ class QuickstartApiTest {
         t.setSensorId("A7");
         writer.write(t);
 
-        List<Sample<Temperature>> samples = reader.take();
+        List<Sample<Temperature>> samples = Qos.take(reader);
         assertEquals(1, samples.size());
         assertEquals(23, samples.get(0).getData().getCelsius());
         assertEquals("A7", samples.get(0).getData().getSensorId());
     }
 
     @Test
-    void getDataAliasesData() {
+    void getDataAliasesData() throws Exception {
         DomainParticipant participant =
-                DomainParticipantFactory.getInstance().createParticipant(13);
+                Qos.factory().createParticipant(13);
         Topic<byte[]> topic = participant.createTopic("Alias", byte[].class);
         DataWriter<byte[]> writer = participant.createPublisher().createDataWriter(topic);
         DataReader<byte[]> reader = participant.createSubscriber().createDataReader(topic);
 
         writer.write(new byte[] {1, 2, 3});
-        Sample<byte[]> s = reader.take().get(0);
-        assertArrayEquals(s.data(), s.getData());
+        Sample<byte[]> s = Qos.take(reader).get(0);
+        assertArrayEquals(s.getData(), s.getData());
     }
 }

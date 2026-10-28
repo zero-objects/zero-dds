@@ -1,0 +1,12 @@
+// `sequence` of a unannotated structure
+struct Cell {
+    long a;
+    short b;
+};
+
+@final struct Sample {
+    sequence<Cell> none;
+    sequence<Cell> one;
+    sequence<Cell> many;
+    long tail;
+};

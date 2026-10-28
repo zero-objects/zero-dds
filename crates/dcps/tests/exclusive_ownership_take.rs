@@ -25,6 +25,7 @@
     missing_docs
 )]
 
+use zerodds_dcps::qos::{HistoryKind, HistoryQosPolicy};
 use zerodds_dcps::{
     DataReaderQos, DomainParticipantFactory, DomainParticipantQos, RawBytes, SubscriberQos,
     TopicQos,
@@ -38,8 +39,17 @@ fn mk_reader(domain: i32, ownership: OwnershipKind) -> zerodds_dcps::DataReader<
         .create_topic::<RawBytes>("OwTopic", TopicQos::default())
         .unwrap();
     let sub = p.create_subscriber(SubscriberQos::default());
+    // KEEP_ALL: every test in this file pushes several samples to this
+    // keyless (single-instance) topic and asserts on more than the single
+    // newest of them — the default KEEP_LAST(1) would (correctly) evict
+    // the rest, since `take()` routes through the same HISTORY-enforcing
+    // cache as `take_with_info()`.
     let qos = DataReaderQos {
         ownership: OwnershipQosPolicy { kind: ownership },
+        history: HistoryQosPolicy {
+            kind: HistoryKind::KeepAll,
+            depth: 1,
+        },
         ..DataReaderQos::default()
     };
     sub.create_datareader::<RawBytes>(&topic, qos).unwrap()
@@ -99,41 +109,44 @@ fn exclusive_ownership_stronger_writer_takes_over() {
     assert_eq!(out[1].data.as_slice(), b"strong");
 }
 
+/// DDS 1.4 §2.2.3.9.2: on equal strength "all DataReader objects will make
+/// the same choice"; the lower GUID wins, as in Cyclone DDS. The higher one
+/// did.
 #[test]
-fn exclusive_ownership_tie_break_by_higher_guid() {
+fn exclusive_ownership_tie_break_by_lower_guid() {
     let reader = mk_reader(313, OwnershipKind::Exclusive);
     let lower = [1u8; 16];
     let higher = [9u8; 16];
-    // Lower-GUID writer arrives first.
-    reader
-        .__push_raw_with_writer(b"lower".to_vec(), lower, 50)
-        .unwrap();
-    // Higher-GUID writer with equal strength wins (tie-break).
+    // Higher-GUID writer arrives first.
     reader
         .__push_raw_with_writer(b"higher".to_vec(), higher, 50)
+        .unwrap();
+    // Lower-GUID writer with equal strength wins (tie-break).
+    reader
+        .__push_raw_with_writer(b"lower".to_vec(), lower, 50)
         .unwrap();
     let out = reader.take().unwrap();
     assert_eq!(out.len(), 2);
-    assert_eq!(out[0].data.as_slice(), b"lower");
-    assert_eq!(out[1].data.as_slice(), b"higher");
+    assert_eq!(out[0].data.as_slice(), b"higher");
+    assert_eq!(out[1].data.as_slice(), b"lower");
 }
 
 #[test]
-fn exclusive_ownership_lower_guid_at_tie_rejected() {
+fn exclusive_ownership_higher_guid_at_tie_rejected() {
     let reader = mk_reader(314, OwnershipKind::Exclusive);
     let higher = [9u8; 16];
     let lower = [1u8; 16];
-    // Higher arrives first, becomes owner.
-    reader
-        .__push_raw_with_writer(b"higher".to_vec(), higher, 50)
-        .unwrap();
-    // Lower GUID with equal strength → reject.
+    // Lower arrives first, becomes owner.
     reader
         .__push_raw_with_writer(b"lower".to_vec(), lower, 50)
         .unwrap();
+    // Higher GUID with equal strength → reject.
+    reader
+        .__push_raw_with_writer(b"higher".to_vec(), higher, 50)
+        .unwrap();
     let out = reader.take().unwrap();
-    assert_eq!(out.len(), 1, "lower-GUID tie must be rejected");
-    assert_eq!(out[0].data.as_slice(), b"higher");
+    assert_eq!(out.len(), 1, "higher-GUID tie must be rejected");
+    assert_eq!(out[0].data.as_slice(), b"lower");
 }
 
 #[test]

@@ -1,0 +1,8 @@
+exception TooFast { long limit; };
+interface Adder { long add(in long a, in long b) raises (TooFast); };
+interface Subtractor { long sub(in long a, in long b); };
+@service(name = "Arithmetic")
+interface Calculator : Adder, Subtractor {
+  void on();
+  void off();
+};

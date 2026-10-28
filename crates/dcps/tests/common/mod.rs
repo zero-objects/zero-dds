@@ -5,6 +5,15 @@
 //! test file.
 
 #![allow(dead_code)]
+// A helper that cannot get a domain, or cannot write its lease, has to
+// stop the test that called it — there is no correct value to return,
+// and a returned default would put two tests on one set of UDP ports.
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::print_stdout,
+    clippy::unwrap_used
+)]
 
 use core::sync::atomic::{AtomicU32, Ordering};
 use std::net::Ipv4Addr;
@@ -49,36 +58,29 @@ pub fn isolated_cfg() -> RuntimeConfig {
     RuntimeConfig {
         tick_period: Duration::from_millis(20),
         spdp_period: Duration::from_millis(100),
+        // The spec's defaults are 200 ms and 500 ms; these tests wait for
+        // repairs by the tick.
+        nack_response_delay: Duration::ZERO,
+        reader_heartbeat_response_delay: Duration::ZERO,
         spdp_multicast_group: group,
         ..RuntimeConfig::default()
     }
 }
 
-/// Returns a domain ID that is **unique within the process**.
-///
-/// Background: the CI has multiple runner instances (host-network,
-/// Docker). When two parallel jobs run the same test binary
-/// and both use a hard-coded domain ID, the UDP/multicast ports
-/// on the host collide → SPDP packets from the "wrong" runner
-/// arrive, and match timeouts hit. This function spreads by
-/// PID + per-test slot so that two parallel runs see different
-/// domains with high probability.
-///
-/// DDS domain IDs lie in `[0, 232]` (OMG DDS §2.2.1); we stay
-/// in the range `[100, 229]` so that we hit neither production defaults
-/// (0, 42) nor the ShapesDemo standard (0).
-pub fn unique_domain(family: u8) -> i32 {
-    static SLOT: AtomicU32 = AtomicU32::new(0);
-    let slot = SLOT.fetch_add(1, Ordering::Relaxed);
-    let pid = std::process::id();
-    let raw = (pid.wrapping_mul(2654435761) ^ slot.wrapping_mul(0x9E3779B9)) as u64;
-    // `family` reserves coarse classes (Lifespan=5, Deadline=6, ...)
-    // so that test failures can be mapped more easily to the correct
-    // path with `strace`. Range [100, 229] (DDS spec §2.2.1:
-    // domain_id <= 232).
-    let offset = i32::from(((raw >> 8) & 0x7F) as u8); // 0..127
-    100 + (i32::from(family) % 13) * 10 + (offset % 10)
-}
+// ---------------------------------------------------------------------
+// Domain leasing
+// ---------------------------------------------------------------------
+//
+// The leasing lives in `crates/test-domains` because the resource is the
+// whole host's: `zerodds-c-api`, `zerodds-durability-service` and
+// `zerodds-routing-service` bind the same ports out of their own test
+// binaries, and a helper private to this directory could not arbitrate
+// them.
+
+#[allow(unused_imports)]
+pub use zerodds_test_domains::{
+    DomainLease, MAX_DOMAIN, RESERVED_DOMAINS, domain_port_window, lease_domain, unique_domain,
+};
 
 /// Discovery match timeout, adaptive for CI vs. a local dev run.
 ///
@@ -128,6 +130,8 @@ impl Drop for ParticipantGuard {
     fn drop(&mut self) {
         if let Some(p) = self.inner.take() {
             let factory = zerodds_dcps::DomainParticipantFactory::instance();
+            // DDS 1.4 §2.2.2.2.2.2: the contained entities go first.
+            let _ = p.delete_contained_entities();
             let _ = factory.delete_participant(&p);
             // p (DomainParticipant Arc) is dropped here; if the
             // factory reference was the last one, this now leads to
@@ -149,4 +153,100 @@ pub fn match_timeout() -> std::time::Duration {
     } else {
         std::time::Duration::from_secs(5)
     }
+}
+
+/// Types the MultiTopic tests join: two topics that share `id`, and the
+/// result of their natural join.
+pub const ORDER_IDL: &str = "@final struct Order { @key long id; double amount; };";
+/// See [`ORDER_IDL`].
+pub const CUSTOMER_IDL: &str = "@final struct Customer { @key long id; string<16> country; };";
+/// The type of `SELECT * FROM Order`.
+pub const ORDER_COPY_IDL: &str = "@final struct OrderCopy { @key long id; double amount; };";
+/// The type of `SELECT * FROM Order NATURAL JOIN Customer`.
+pub const SALE_IDL: &str =
+    "@final struct Sale { @key long id; double amount; string<16> country; };";
+
+/// The type support of the struct `name` of `idl`, whose members and key
+/// are read from its `CompleteTypeObject`.
+pub fn dynamic_support(
+    idl: &str,
+    name: &str,
+    keyed: bool,
+) -> std::sync::Arc<zerodds_dcps::serialized_type::SerializedTypeSupport> {
+    let ast = std::sync::Arc::new(
+        zerodds_wire_probe::encode::model_from_idl(idl, "multitopic.idl").unwrap(),
+    );
+    let type_ = zerodds_types::dynamic::DynamicType::find(&ast, name).unwrap();
+    let object = zerodds_types::type_object::TypeObject::Complete(
+        zerodds_types::from_ast::complete_type_object(&ast, type_.id()).unwrap(),
+    )
+    .to_bytes_le()
+    .unwrap();
+    zerodds_dcps::serialized_type::SerializedTypeSupport::from_type_object(name, &object, keyed, 0)
+        .unwrap()
+}
+
+/// A topic `name` of the type `Order`, which a MultiTopic can read.
+pub fn order_topic(
+    p: &zerodds_dcps::DomainParticipant,
+    name: &str,
+) -> zerodds_dcps::Topic<zerodds_types::dynamic::DynamicSample> {
+    p.create_dynamic_topic(
+        name,
+        zerodds_dcps::TopicQos::default(),
+        dynamic_support(ORDER_IDL, "Order", true),
+    )
+    .unwrap()
+}
+
+/// `SELECT * FROM <topic>` as a MultiTopic `name` of the type `OrderCopy`.
+pub fn order_copy_multitopic(
+    p: &zerodds_dcps::DomainParticipant,
+    name: &str,
+    topic: &str,
+) -> zerodds_dcps::MultiTopic<zerodds_types::dynamic::DynamicSample> {
+    dynamic_support(ORDER_COPY_IDL, "OrderCopy", true)
+        .register_type(p, None)
+        .unwrap();
+    p.create_dynamic_multitopic(
+        name,
+        "OrderCopy",
+        &format!("SELECT * FROM '{topic}'"),
+        Vec::new(),
+    )
+    .unwrap()
+}
+
+/// A struct with a base structure: `id` is inherited.
+pub const DERIVED_ORDER_IDL: &str = "@final struct OrderBase { @key long id; }; \
+     @final struct DerivedOrder : OrderBase { double amount; };";
+
+/// [`dynamic_support`] for a struct that extends the structs `bases`: their
+/// `TypeObject`s are its dependencies.
+pub fn dynamic_support_with_bases(
+    idl: &str,
+    name: &str,
+    bases: &[&str],
+    keyed: bool,
+) -> std::sync::Arc<zerodds_dcps::serialized_type::SerializedTypeSupport> {
+    let ast = std::sync::Arc::new(
+        zerodds_wire_probe::encode::model_from_idl(idl, "multitopic.idl").unwrap(),
+    );
+    let bytes_of = |type_name: &str| {
+        let type_ = zerodds_types::dynamic::DynamicType::find(&ast, type_name).unwrap();
+        zerodds_types::type_object::TypeObject::Complete(
+            zerodds_types::from_ast::complete_type_object(&ast, type_.id()).unwrap(),
+        )
+        .to_bytes_le()
+        .unwrap()
+    };
+    let dependencies: Vec<Vec<u8>> = bases.iter().map(|base| bytes_of(base)).collect();
+    zerodds_dcps::serialized_type::SerializedTypeSupport::from_type_objects(
+        name,
+        &bytes_of(name),
+        &dependencies,
+        keyed,
+        0,
+    )
+    .unwrap()
 }

@@ -1,0 +1,139 @@
+.TH ZERODDS-OPCUA-BRIDGED 1 "" "ZeroDDS" "ZeroDDS Manual"
+.SH NAME
+zerodds-opcua-bridged \- the OMG DDS-OPCUA Gateway 1.0 daemon
+.SH SYNOPSIS
+.B zerodds-opcua-bridged
+[\fB\-\-config\fR \fIFILE\fR]
+[\fB\-\-bind\fR \fIADDR\fR]
+[\fB\-\-domain\fR \fIID\fR]
+[\fB\-\-idl\fR \fIFILE\fR]...
+[\fB\-\-gateway\-config\fR \fIFILE\fR]
+[\fB\-V\fR | \fB\-h\fR]
+.SH DESCRIPTION
+.B zerodds-opcua-bridged
+implements the OMG DDS-OPCUA Gateway 1.0 (formal/2020-01-01) as a running
+process: an
+.I opc.tcp
+server exposing DDS topics in its AddressSpace (Gateway 1.0 \(sc9,
+including Historical Access, \(sc9.3.4), an OPC-UA client
+browsing/subscribing configured foreign servers into DDS (\(sc8), and OPC
+Foundation Part 14 (UADP) PubSub over UDP multicast, both directions,
+optionally secured (Part 14 \(sc8, build feature
+.BR pubsub-security ).
+Per-session
+.B acl.rules
+enforcement backs a
+.I Write
+against this server's own AddressSpace; OTLP lifecycle spans are exported
+when
+.B metrics.otlp_endpoint
+is set.
+.PP
+DDS types are resolved from an operator-supplied
+.I .idl
+file, never a compiled Rust type, through the reflective
+.I SerializedTypeSupport
+layer.
+.PP
+Implements
+.IR docs/specs/zerodds-opcua-bridge-1.0.md .
+.SH OPTIONS
+.TP
+.BR \-\-config =\fIFILE\fR
+Path to the config file (YAML). See
+.BR zerodds-opcua-bridged.yaml (5).
+.TP
+.BR \-\-bind =\fIADDR\fR
+.I opc.tcp
+bind address. Default:
+.IR 0.0.0.0:4840 .
+.TP
+.BR \-\-domain =\fIID\fR
+DDS domain ID. Default: 0.
+.TP
+.BR \-\-idl =\fIFILE\fR
+IDL file to compile (repeatable); the types
+.B opcua.gateway_config
+and
+.B opcua.client.servers[].nodes[]
+name must be declared in one of these files.
+.TP
+.BR \-\-gateway\-config =\fIFILE\fR
+Path to the Spec \(sc10 XML gateway configuration (bridge/connection defs).
+.TP
+.BR \-\-log\-level =\fILEVEL\fR
+One of
+.IR trace ", " debug ", " info ", " warn ", " error .
+.TP
+.BR \-\-metrics =\fIADDR\fR
+Prometheus listener.
+.TP
+.BR \-V ", " \-\-version
+Version info.
+.TP
+.BR \-h ", " \-\-help
+Show the option synopsis.
+.TP
+.BR \-\-set " \fIPATH\fR=\fIVALUE\fR"
+One setting above every file, repeatable;
+.BI + PATH = VALUE
+appends to a list.
+.TP
+.B \-\-check\-config
+Validate and print the effective configuration with the origin of every
+value, then exit: 0 valid, 1 invalid value or unknown key, 2 unreadable
+file, syntax error or include cycle.
+.SH SIGNALS
+SIGTERM/SIGINT stop the daemon: the
+.I opc.tcp
+accept loop and the metrics listener both wake, every worker thread is
+joined, then the process exits 0.
+.br
+SIGHUP re-reads
+.B acl.default_deny
+/
+.B acl.rules
+from the same sources the process started with; a file that fails to load
+changes nothing. Changing
+.BR domain ", " opcua.server.bind ,
+the IDL/gateway-config-driven topic set (including any
+.IR node_id / browse_path
+override and
+.BR opcua.server.historical.topics ),
+.BR acl.users ", " acl.allow_anonymous ,
+.B opcua.pubsub.connections[].security
+or
+.B metrics.otlp_endpoint
+needs a restart \(em SIGHUP's scope has not widened past
+.BR acl.default_deny / acl.rules .
+.SH ENVIRONMENT
+.TP
+.B NOTIFY_SOCKET
+systemd
+.B Type=notify
+readiness/stop notification, sent automatically when set.
+.SH EXIT STATUS
+.TP
+.B 0
+Normal shutdown.
+.TP
+.B 1
+Configuration error.
+.TP
+.B 2
+.I opc.tcp
+bind error \(em address in use.
+.TP
+.B 3
+DDS init error.
+.TP
+.B 4
+SecureChannel/certificate setup error.
+.SH FILES
+.I /etc/zerodds/opcua-bridged.yaml .
+.SH SEE ALSO
+.BR zerodds-opcua-bridged.yaml (5).
+OMG DDS-OPCUA Gateway 1.0 (formal/2020-01-01); OPC Foundation Part 4, Part 6,
+Part 14.
+.SH AUTHORS
+ZeroDDS Contributors.

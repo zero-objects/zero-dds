@@ -21,8 +21,8 @@ a `// SAFETY:` comment; internal code is `unsafe`-free.
 | ROS-2 RMW shim | [`crates/rmw-zerodds-shim`](../rmw-zerodds-shim/README.md) | Apex.AI plugin model |
 
 Python (`crates/py`) and Java (`crates/java-omgdds`) do
-**not** go over the C-API — they use pyo3 / jni-rs direct
-bridges into the Rust stack.
+**not** go over the C-API: Python binds the Rust stack with pyo3, Java
+is a pure-Java stack with its own RTPS implementation.
 
 ## Quick start — pure C
 
@@ -31,34 +31,51 @@ bridges into the Rust stack.
 
 ```c
 #include <stdio.h>
+#include <unistd.h>
 #include <zerodds.h>
 
 int main(void) {
-    zerodds_runtime_t* rt = zerodds_runtime_create();
-    zerodds_participant_t* p =
-        zerodds_runtime_create_participant(rt, /* domain_id */ 0);
+    zerodds_ZeroDdsRuntime *rt = zerodds_runtime_create(/* domain_id */ 0);
+    if (!rt) { return 1; }
+    zerodds_ZeroDdsWriter *w = zerodds_writer_create(rt, "Greetings", "Greeting", /* reliable */ 1);
+    zerodds_ZeroDdsReader *r = zerodds_reader_create(rt, "Greetings", "Greeting", 1);
 
-    zerodds_topic_t* t =
-        zerodds_participant_create_topic(p, "Greetings", "Greeting");
+    /* The CDR body of Greeting { long id = 42; string text = "hi"; }: the
+     * generated encoder (zerodds-idlc generate --lang c) writes these bytes. */
+    const uint8_t payload[] = { 42, 0, 0, 0,   3, 0, 0, 0,   'h', 'i', 0 };
+    if (zerodds_writer_write(w, payload, sizeof payload) != 0) { return 1; }
 
-    zerodds_writer_t* w = zerodds_participant_create_writer(p, t);
-    uint8_t payload[] = { /* CDR-encoded "Greeting{id:42,text:'hi'}" */ };
-    zerodds_writer_write(w, payload, sizeof(payload));
+    for (int i = 0; i < 100; i++) {
+        uint8_t *buf = NULL;
+        uintptr_t len = 0;
+        if (zerodds_reader_take(r, &buf, &len, NULL) != 0) { return 1; }
+        if (buf) {
+            printf("took %lu bytes\n", (unsigned long) len);
+            zerodds_buffer_free(buf, len);
+            break;
+        }
+        usleep(10 * 1000);
+    }
 
+    zerodds_reader_destroy(r);
     zerodds_writer_destroy(w);
-    zerodds_topic_destroy(t);
-    zerodds_participant_destroy(p);
     zerodds_runtime_destroy(rt);
     return 0;
 }
 ```
 
-Build (Linux/macOS, with a built `libzerodds.so` on the `LD_LIBRARY_PATH`):
+Build and run (Linux; on macOS `DYLD_LIBRARY_PATH` instead):
 
 ```bash
-clang -std=c11 -lzerodds main.c -o demo
-./demo
+cargo build -p zerodds-c-api
+cc -std=c11 -Icrates/zerodds-c-api/include main.c -Ltarget/debug -lzerodds -o demo
+LD_LIBRARY_PATH=target/debug ./demo      # prints: took 11 bytes
 ```
+
+The flat runtime API above (`zerodds_runtime_*`, `zerodds_writer_*`,
+`zerodds_reader_*`) sits beside the DCPS-structured one
+(`zerodds_dpf_*`, `zerodds_dp_*`, `zerodds_pub_*`, `zerodds_sub_*`,
+`zerodds_dw_*`, `zerodds_dr_*`) with QoS, listeners and conditions.
 
 ## Type model — byte-oriented samples, optional typed create
 
@@ -66,12 +83,12 @@ The FFI takes **raw CDR bytes** for all samples:
 
 ```c
 zerodds_writer_write(writer, sample_bytes, sample_len);
-zerodds_reader_take(reader, &out_buf, &out_len, ...);  // out_buf via _free()
+zerodds_reader_take(reader, &out_buf, &out_len, &out_repr);  // free out_buf with zerodds_buffer_free
 ```
 
-The CDR encode/decode logic lives in the language bindings:
-`idl-cpp` emits a C++ encoder, `idl-csharp` a C# encoder, etc. The
-C-FFI is neutral for sample payloads — wire-drift tests pass byte-exactly.
+The CDR encode/decode logic is the code `zerodds-idlc generate --lang <language>`
+writes for the application (C, C++, C#, …); the C API does not interpret
+sample payloads.
 
 Type identity can still cross the FFI: the typed-create variants
 (`zerodds_writer_create_typed` / `zerodds_reader_create_typed`) take a
@@ -114,9 +131,8 @@ and tested against Apex.AI plugin conformance.
 
 ## Stability
 
-`1.0.0-rc.2`. The ABI is **stable** from 1.0.0-final; until then
-symbol renames or handle-type changes are possible (every
-break is marked in the CHANGELOG).
+`1.0.0-rc.7`, a pre-release. The public API can still change before
+1.0.0; the crate's CHANGELOG lists every change.
 
 ## Tests
 

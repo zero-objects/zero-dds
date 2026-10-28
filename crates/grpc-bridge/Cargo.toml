@@ -10,8 +10,8 @@ description = "gRPC-over-HTTP/2 + gRPC-Web wire codec — length-prefixed messag
 homepage = "https://zerodds.org"
 documentation = "https://docs.rs/zerodds-grpc-bridge"
 readme = "README.md"
-keywords = ["dds", "grpc", "grpc-web", "http2", "no-std"]
-categories = ["network-programming", "encoding", "no-std"]
+keywords = ["dds", "grpc", "grpc-web", "http2"]
+categories = ["network-programming", "encoding"]
 publish = true
 
 [lints]
@@ -27,7 +27,13 @@ path = "src/bin/zerodds-grpc-bridged.rs"
 required-features = ["std"]
 
 [features]
-default = ["std"]
+default = ["std", "ring-backend"]
+# The crypto backend of bridge-security (JWT verify and the rustls TLS
+# provider): `ring-backend` (default) or `aws-lc` (aws-lc-rs, FIPS 140-3
+# validatable). A FIPS build: `--no-default-features --features <the
+# default list without ring-backend>,aws-lc`; with both, aws-lc is used.
+ring-backend = ["zerodds-bridge-security?/ring-backend"]
+aws-lc = ["zerodds-bridge-security?/aws-lc"]
 std = [
     "alloc",
     "dep:zerodds-bridge-security",
@@ -37,22 +43,26 @@ std = [
     "dep:zerodds-observability-otlp",
     "dep:zerodds-qos",
     "dep:signal-hook",
+    "dep:zerodds-config",
+    "dep:zerodds-dcps",
+    "dep:zerodds-rtps",
 ]
 alloc = []
 # Cross-vendor interop tests against grpcurl (spec §10 + §12.3).
 cross-vendor-tests = ["std"]
-# Bridge spec §4.2 "FUTURE (L2)" — real DDS ingress/egress wiring in the
-# daemon. Pulls the DCPS runtime so `Publish` writes to a DataWriter and
-# `Subscribe` drains a DataReader. Additive over `std`; the `no_std` lib
-# codec is untouched. Enabled by the java-omgdds multi-process e2e (F2b).
-dds-runtime = ["std", "dep:zerodds-dcps", "dep:zerodds-rtps", "dep:zerodds-qos"]
+# The daemon's DDS side (bridge spec §4.2) is part of `std`; this name is
+# kept for build scripts that still pass it.
+dds-runtime = ["std"]
 
 [dependencies]
+# The layered configuration every ZeroDDS program reads (--config, --set,
+# --check-config, drop-ins, environment beneath the files).
+zerodds-config = { version = "1.0.0-rc.7", path = "../config", optional = true }
 zerodds-http2 = { version = "1.0.0-rc.7", path = "../http2" }
 zerodds-hpack = { version = "1.0.0-rc.7", path = "../hpack" }
 # Bridge security substrate (bridge spec §7.1 TLS via rustls = HTTP/2 ALPN,
 # §7.2 auth modes, §7.3 topic ACL).
-zerodds-bridge-security = { version = "1.0.0-rc.7", path = "../bridge-security", optional = true }
+zerodds-bridge-security = { version = "1.0.0-rc.7", path = "../bridge-security", optional = true, default-features = false, features = ["std"] }
 rustls = { workspace = true, optional = true }
 # §7.1 PEM loader for the ALPN-`h2` builder (the foundation loader exposes
 # only a high-level builder; ALPN patching requires raw PEM reading).
@@ -62,7 +72,7 @@ zerodds-monitor = { version = "1.0.0-rc.7", path = "../monitor", optional = true
 zerodds-observability-otlp = { version = "1.0.0-rc.7", path = "../observability-otlp", optional = true }
 zerodds-qos = { version = "1.0.0-rc.7", path = "../qos", optional = true, default-features = false, features = ["alloc"] }
 signal-hook = { workspace = true, optional = true }
-# §4.2 L2 — real DDS side (feature `dds-runtime`). DCPS runtime for the
+# §4.2 L2 — the daemon's DDS side. DCPS runtime for the
 # opaque-bytes ingress writer + egress reader; RTPS for GuidPrefix/EntityId.
 zerodds-dcps = { version = "1.0.0-rc.7", path = "../dcps", optional = true, default-features = false, features = ["std"] }
 zerodds-rtps = { version = "1.0.0-rc.7", path = "../rtps", optional = true, default-features = false, features = ["std"] }
@@ -70,6 +80,10 @@ zerodds-rtps = { version = "1.0.0-rc.7", path = "../rtps", optional = true, defa
 [dev-dependencies]
 # Self-signed certs for §7.1 TLS tests in `tests/security_e2e.rs`.
 rcgen = "0.13"
+# `tests/daemon_security_e2e.rs`: RS256-signed JWTs and the SHA-256 of a
+# client certificate (the mTLS subject), plus base64url for the token.
+ring = { workspace = true }
+base64 = { workspace = true, features = ["std"] }
 
 # SIGTERM-graceful shutdown in the DaemonGuard (otherwise SIGKILL → corrupt
 # `.profraw` under cargo-llvm-cov). Unix-only via cfg gate.

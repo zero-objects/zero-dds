@@ -1,0 +1,10 @@
+// `union` over `uint8`, unannotated
+union Choice switch (uint8) {
+    case 254: long whole;
+    case 3: double fraction;
+};
+
+struct Sample {
+    Choice picked;
+    long tail;
+};

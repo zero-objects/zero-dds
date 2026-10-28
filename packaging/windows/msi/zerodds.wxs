@@ -9,8 +9,8 @@
      xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util"
      xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
 
-  <Package Name="ZeroDDS"
-           Version="1.0.0"
+  <Package Name="ZeroDDS $(var.ReleaseVersion)"
+           Version="$(var.ProductVersion)"
            Manufacturer="ZeroDDS Contributors"
            UpgradeCode="6F8B9A12-2E2A-4F0F-9F0E-0F4F8E4B7A11"
            InstallerVersion="500"
@@ -46,8 +46,8 @@
       <ComponentRef Id="CliDashboard"/>
       <ComponentRef Id="CliRecorderBridge"/>
     </Feature>
-    <!-- Feature "Devel" entfernt — zerodds.h ist nicht im release-artefact
-         (kein zerodds-c-api dist-binary). Analog zu CoreLib/zerodds.dll. -->
+    <!-- Feature "Devel" removed — zerodds.h is not in the release artifact
+         (no zerodds-c-api dist binary). Same as CoreLib/zerodds.dll. -->
     <!-- Feature Id="Devel" -->
 
 
@@ -67,19 +67,19 @@
       </Directory>
     </StandardDirectory>
 
-    <!-- CoreGroup: zerodds-admin als Pflicht-Bin. Eine zerodds.dll
-         war fruehe Pre-1.0-Idee fuer ein C-API-shared-object — wir
-         bauen das als release-artefact aktuell NICHT (zerodds-c-api
-         crate exportiert die ABI als Library, aber kein dist-binary).
-         Wenn das DLL-shipping aktiviert wird, hier eigenen Component
-         hinzufuegen. -->
+    <!-- CoreGroup: zerodds-admin as the required bin. A zerodds.dll
+         was an early pre-1.0 idea for a C API shared object — we
+         currently do NOT build it as a release artifact (the zerodds-c-api
+         crate exports the ABI as a library, but no dist binary).
+         When DLL shipping is enabled, add a separate component
+         here. -->
     <ComponentGroup Id="CoreGroup" Directory="BINDIR">
       <Component Id="AdminBin" Guid="*">
         <File Id="ZeroddsAdmin" Source="$(var.PayloadDir)\bin\zerodds-admin.exe" KeyPath="yes"/>
       </Component>
     </ComponentGroup>
 
-    <!-- Bridge-Daemons mit ServiceInstall (§4.3 Win-Service) -->
+    <!-- Bridge daemons with ServiceInstall (§4.3 Win-Service) -->
     <Component Id="WsBridgeBin" Directory="BINDIR" Guid="*">
       <File Id="WsBridgeExe" Source="$(var.PayloadDir)\bin\zerodds-ws-bridged.exe" KeyPath="yes"/>
       <ServiceInstall Id="WsBridgeService"
@@ -152,9 +152,9 @@
       <File Id="Ros2ShimExe" Source="$(var.PayloadDir)\bin\zerodds-ros2-shim.exe" KeyPath="yes"/>
     </Component>
 
-    <!-- WiX-4 verlangt 1 File = 1 Component bei Components mit Guid="*"
-         (WIX0367). Wir splitten den frueheren CliBundle in 16 separate
-         Components auf. Component-Id ist abgeleitet vom bin-Namen
+    <!-- WiX 4 requires 1 file = 1 component for components with Guid="*"
+         (WIX0367). We split the former CliBundle into 16 separate
+         components. The component Id is derived from the bin name
          (CamelCase). -->
     <Component Id="CliBench" Directory="BINDIR" Guid="*">
       <File Source="$(var.PayloadDir)\bin\zerodds-bench.exe" KeyPath="yes"/>
@@ -186,10 +186,10 @@
     <Component Id="CliXmlc" Directory="BINDIR" Guid="*">
       <File Source="$(var.PayloadDir)\bin\zerodds-xmlc.exe" KeyPath="yes"/>
     </Component>
-    <!-- zerodds-perf, zerodds-traceability, zerodds-lint sind interne
-         Tools (publish=false bzw. dist=false) und werden NICHT in den
-         release-archives ausgeliefert — daher hier auch nicht aus dem
-         payload geholt. -->
+    <!-- zerodds-perf, zerodds-traceability, zerodds-lint are internal
+         tools (publish=false or dist=false) and are NOT shipped in the
+         release archives — so they are not taken from the
+         payload here either. -->
     <!-- Component Id="CliPerf"          (skip, internal) -->
     <!-- Component Id="CliTraceability"  (skip, internal) -->
     <!-- Component Id="CliLint"          (skip, internal) -->
@@ -203,7 +203,7 @@
       <File Source="$(var.PayloadDir)\bin\zerodds-recorder-bridge.exe" KeyPath="yes"/>
     </Component>
 
-    <!-- PATH-Eintrag fuer cmd-Shells. -->
+    <!-- PATH entry for cmd shells. -->
     <Component Id="PathEnv" Directory="BINDIR" Guid="6c2b7e9f-5e1c-4aa8-9b5b-1f2d2c3e4f55">
       <Environment Id="ZeroddsPath" Name="PATH" Value="[BINDIR]" Permanent="no"
                    Part="last" Action="set" System="yes"/>

@@ -8,16 +8,16 @@
 //! Annex C C.2.7 — Loop-Prevention (Bridge-Profile).
 //!
 //! Spec §C.2.7: zwei Sub-Tests, beide MUESSEN passen — analog
-//! zu C.1.15, aber aus Bridge-Profile-Sicht (Outbound + Inbound).
+//! to C.1.15, but from the bridge profile perspective (outbound + inbound).
 //!
-//! (a) Sample, das die Bridge selbst stamped hat und das ueber
-//!     den Broker zurueckkommt → Drop, `transfers.dropped.loop`.
-//! (b) Sample mit `dds:bridge-hop > cap` → Drop,
+//! (a) a sample the bridge stamped itself and that comes back
+//!     comes back from the broker → drop, `transfers.dropped.loop`.
+//! (b) sample with `dds:bridge-hop > cap` → drop,
 //!     `transfers.dropped.hop-cap`.
 //!
-//! Wir testen das auf der Coexistence-Layer-API. Echte
-//! Bridge-zu-Broker-zu-Bridge-Roundtrips brauchen DDS-Side-
-//! Bridge (siehe DDS-Side-Bridge-Welle).
+//! We test this on the coexistence layer API. Real
+//! bridge-to-broker-to-bridge roundtrips need a DDS-side
+//! bridge (see the DDS-side-bridge wave).
 
 mod common;
 
@@ -39,18 +39,18 @@ fn props(entries: Vec<(&str, AmqpExtValue)>) -> AmqpExtValue {
 
 #[test]
 fn c2_7a_outbound_then_inbound_round_trip_drops_self() {
-    // Spec §C.2.7 (a): Bridge sendet Sample (stamp_outbound),
-    // Sample kommt ueber Broker zurueck (inspect_inbound). Eigene
+    // Spec §C.2.7 (a): the bridge sends a sample (stamp_outbound),
+    // Sample comes back via the broker (inspect_inbound). Its own
     // bridge_id im Tag → DropLoop.
     let cfg = CoexistenceConfig::new("bridge-uuid-7a".to_string());
     let metrics = MetricsHub::new();
 
-    // Outbound-Stamp: Bridge schickt Sample raus, fuegt eigene
+    // Outbound stamp: bridge sends the sample out, adds its own
     // bridge_id hinzu.
     let mut outbound = AmqpExtValue::Map(Vec::new());
     stamp_outbound(&cfg, &mut outbound);
 
-    // Sample wandert durch den Broker und kommt als Inbound
+    // Sample travels through the broker and arrives as inbound
     // zurueck. inspect_inbound MUSS DropLoop liefern.
     let decision = inspect_inbound(&cfg, &outbound);
     assert_eq!(decision, InboundDecision::DropLoop);
@@ -63,7 +63,7 @@ fn c2_7a_outbound_then_inbound_round_trip_drops_self() {
 
 #[test]
 fn c2_7b_hop_cap_exceeded_drops_with_metric() {
-    // Spec §C.2.7 (b): Sample mit hop > cap droppt + Counter.
+    // Spec §C.2.7 (b): sample with hop > cap drops + counter.
     let mut cfg = CoexistenceConfig::new("bridge-uuid-7b".to_string());
     cfg.hop_cap = 4; // niedriger Test-Cap
     let metrics = MetricsHub::new();
@@ -80,8 +80,8 @@ fn c2_7b_hop_cap_exceeded_drops_with_metric() {
 
 #[test]
 fn c2_7_multi_bridge_chain_terminates_at_hop_cap() {
-    // Bridge-Chain-Szenario: Sample wandert durch 5 Bridges,
-    // jede stamped und inkrementiert hop. Bei cap=4 droppt
+    // Bridge chain scenario: sample travels through 5 bridges,
+    // each stamps and increments hop. At cap=4 it drops
     // die 5. Bridge.
     let bridges = ["b1", "b2", "b3", "b4", "b5"];
     let mut sample = AmqpExtValue::Map(Vec::new());
@@ -92,10 +92,10 @@ fn c2_7_multi_bridge_chain_terminates_at_hop_cap() {
         stamp_outbound(&cfg, &mut sample);
     }
 
-    // 5. Bridge inspiziert mit cap=4 → DropHopCap (hop ist
-    // nach 4 Stamps = 4 = cap, also genau auf der Grenze;
-    // nach Spec §7.11.4 ist hop > cap drop, hop = cap forwarded.
-    // Also bei cap=3 droppt Bridge 5.
+    // 5th bridge inspects with cap=4 → DropHopCap (hop is
+    // after 4 stamps = 4 = cap, i.e. exactly on the boundary;
+    // per spec §7.11.4, hop > cap is drop, hop = cap forwarded.
+    // So at cap=3, bridge 5 drops.
     let mut cfg = CoexistenceConfig::new(bridges[4].into());
     cfg.hop_cap = 3;
     let decision = inspect_inbound(&cfg, &sample);
@@ -104,8 +104,8 @@ fn c2_7_multi_bridge_chain_terminates_at_hop_cap() {
 
 #[test]
 fn c2_7_foreign_bridges_in_history_dont_trigger_self_drop() {
-    // Bridge sieht eine Liste anderer Bridges in der History,
-    // aber nicht ihre eigene → Forward.
+    // The bridge sees a list of other bridges in the history,
+    // but not its own → forward.
     let cfg = CoexistenceConfig::new("self-bridge".to_string());
     let p = props(vec![
         (

@@ -47,7 +47,7 @@ impl AsyncDomainParticipant {
     /// # Errors
     /// As `DomainParticipant::create_contentfilteredtopic` (empty name /
     /// expression, parse error, missing `%N` parameter).
-    pub fn create_contentfilteredtopic<T: DdsType>(
+    pub fn create_contentfilteredtopic<T: DdsType + 'static>(
         &self,
         name: &str,
         related_topic: &Topic<T>,

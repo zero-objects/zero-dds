@@ -1,49 +1,85 @@
-// SPDX-License-Identifier: Apache-2.0
+/* Copyright 2010, Object Management Group, Inc.
+ * Copyright 2010, PrismTech, Inc.
+ * Copyright 2010, Real-Time Innovations, Inc.
+ * All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.omg.dds.core.status;
 
+import org.omg.dds.core.InstanceHandle;
+
+
 /**
- * OMG DDS LivelinessChangedStatus — DDS-DCPS 1.4 §2.2.4.1.
+ * The liveliness of one or more {@link org.omg.dds.pub.DataWriter}s that were writing
+ * instances read through the {@link org.omg.dds.sub.DataReader} has changed. Some
+ * DataWriter(s) have become "active" or "inactive."
  *
- * <p>Tracks the number of matched DataWriters that are currently asserting
- * liveliness ({@code aliveCount}) vs. those that have lost it
- * ({@code notAliveCount}), plus the change in each since the status was last
- * read.
+ * @see org.omg.dds.core.event.LivelinessChangedEvent
+ * @see LivelinessLostStatus
  */
-public final class LivelinessChangedStatus {
-    private final int aliveCount;
-    private final int notAliveCount;
-    private final int aliveCountChange;
-    private final int notAliveCountChange;
+public abstract class LivelinessChangedStatus extends Status
+{
+    // -----------------------------------------------------------------------
+    // Constants
+    // -----------------------------------------------------------------------
 
-    public LivelinessChangedStatus(int aliveCount, int notAliveCount,
-                                   int aliveCountChange, int notAliveCountChange) {
-        this.aliveCount = aliveCount;
-        this.notAliveCount = notAliveCount;
-        this.aliveCountChange = aliveCountChange;
-        this.notAliveCountChange = notAliveCountChange;
-    }
+    private static final long serialVersionUID = -8771335633962700621L;
 
-    public int aliveCount() {
-        return aliveCount;
-    }
 
-    public int notAliveCount() {
-        return notAliveCount;
-    }
 
-    public int aliveCountChange() {
-        return aliveCountChange;
-    }
+    // -----------------------------------------------------------------------
+    // Methods
+    // -----------------------------------------------------------------------
 
-    public int notAliveCountChange() {
-        return notAliveCountChange;
-    }
+    /**
+     * The total number of currently active {@link org.omg.dds.pub.DataWriter}s that write
+     * the Topic read by the {@link org.omg.dds.sub.DataReader}. This count increases when a
+     * newly matched DataWriter asserts its liveliness for the first time or
+     * when a DataWriter previously considered to be not alive reasserts its
+     * liveliness. The count decreases when a DataWriter considered alive
+     * fails to assert its liveliness and becomes not alive, whether because
+     * it was deleted normally or for some other reason.
+     */
+    public abstract int getAliveCount();
 
-    @Override
-    public String toString() {
-        return "LivelinessChangedStatus(alive=" + aliveCount
-                + ", notAlive=" + notAliveCount
-                + ", aliveChange=" + aliveCountChange
-                + ", notAliveChange=" + notAliveCountChange + ")";
-    }
+    /**
+     * The total count of currently {@link org.omg.dds.pub.DataWriter}s that write the
+     * {@link org.omg.dds.topic.Topic} read by the {@link org.omg.dds.sub.DataReader} that are no longer
+     * asserting their liveliness. This count increases when a DataWriter
+     * considered alive fails to assert its liveliness and becomes not alive
+     * for some reason other than the normal deletion of that DataWriter.
+     * It decreases when a previously not alive DataWriter either reasserts
+     * its liveliness or is deleted normally.
+     */
+    public abstract int getNotAliveCount();
+
+    /**
+     * The change in the aliveCount since the last time the listener was
+     * called or the status was read.
+     */
+    public abstract int getAliveCountChange();
+
+    /**
+     * The change in the notAliveCount since the last time the listener was
+     * called or the status was read.
+     */
+    public abstract int getNotAliveCountChange();
+
+    /**
+     * Handle to the last {@link org.omg.dds.pub.DataWriter} whose change in liveliness
+     * caused this status to change.
+     */
+    public abstract InstanceHandle getLastPublicationHandle();
 }

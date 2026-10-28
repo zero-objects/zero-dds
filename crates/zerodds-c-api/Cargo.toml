@@ -22,10 +22,25 @@ name = "zerodds"
 crate-type = ["cdylib", "staticlib", "rlib"]
 
 [features]
-default = ["std", "same-host-shm", "flatdata-loan"]
+default = ["std", "same-host-shm", "flatdata-loan", "rt", "rpc"]
 std = []
+# DDS-RPC 1.0 C++ binding support: the `@Qos` profile-URL loader
+# (zerodds_endpoint_qos_from_profile_url) and the Enhanced-profile discovery
+# calls (zerodds_*_rpc_*, needs zerodds-rpc). On by default; a build without
+# it does not link zerodds-rpc. zerodds-xml is linked either way, for the
+# QosProvider and zerodds_types_load. The header lists the symbols either
+# way (cbindgen does not evaluate features).
+rpc = ["dep:zerodds-rpc"]
+# C2(2): the `threads.*` real-time scheduling + CPU affinity config keys,
+# applied through `zerodds-rt-linux`. On by default — this crate is the
+# native endpoint SDK (C/C++/C#/TypeScript, Apex.AI, ROS 2 RMW; ADR-0013),
+# the embedding point for the real-time C/C++/Ada endpoints the defense/
+# robotics deployments actually set `threads.recv_policy=fifo` on. Compiles
+# on every target (macOS/Windows return `Unsupported`), so keeping it on by
+# default does not narrow this crate's own platform support.
+rt = ["zerodds-dcps/rt"]
 # Enables the ShmUserTransport (POSIX-SHM multi-peer adapter) as
-# the choice for user_unicast via env var ZERODDS_USER_TRANSPORT=SHM.
+# the choice for user_unicast via transport.user_transport: SHM in configuration.
 same-host-shm = ["zerodds-dcps/same-host-shm"]
 # Zero-copy same-host loan FFI: zerodds_dw_enable_shm_loan +
 # zerodds_dr_enable_shm/take_shm/release_shm. The DataWriter loan
@@ -45,6 +60,7 @@ delivery-iceoryx = ["flatdata-loan", "zerodds-flatdata/iceoryx2-bridge"]
 security = [
     "zerodds-dcps/security",
     "dep:zerodds-security-runtime",
+    "dep:zerodds-security",
 ]
 # FIPS crypto backend (aws-lc-rs / AWS-LC, FIPS-140-3-validatable) for the whole
 # DDS-Security stack behind the C FFI. Implies `security`. Lets a C/C++/Python
@@ -56,14 +72,38 @@ fips = ["security", "zerodds-dcps/fips", "zerodds-security-runtime/fips"]
 wolfcrypt = ["security", "zerodds-dcps/wolfcrypt", "zerodds-security-runtime/wolfcrypt"]
 
 [dependencies]
-zerodds-cdr = { version = "1.0.0-rc.7", path = "../cdr", features = ["alloc", "std"] }
+zerodds-wire = { version = "1.0.0-rc.7", path = "../wire" }
 zerodds-dcps = { version = "1.0.0-rc.7", path = "../dcps" }
+zerodds-config = { version = "1.0.0-rc.7", path = "../config" }
 zerodds-qos = { version = "1.0.0-rc.7", path = "../qos" }
 zerodds-rtps = { version = "1.0.0-rc.7", path = "../rtps" }
 zerodds-sql-filter = { version = "1.0.0-rc.7", path = "../sql-filter" }
+# DDS-RPC 1.0 §7.6.2.2: the Enhanced service-discovery algorithms.
+zerodds-rpc = { version = "1.0.0-rc.7", path = "../rpc", optional = true }
 zerodds-types = { version = "1.0.0-rc.7", path = "../types" }
+# DDS-XML QoS profiles for `zerodds_qosprovider_*` (DDS-PSM-Cxx 1.0 §7.6.2.1),
+# the type libraries of `zerodds_types_load`, and the `@Qos` profile URLs of
+# DDS-RPC 1.0 §7.10.1.
+zerodds-xml = { version = "1.0.0-rc.7", path = "../xml" }
+# `https:` URIs of the QosProvider: rustls (ring provider) over a TcpStream, checked against the
+# webpki roots.
+rustls = { workspace = true }
+rustls-pki-types = { workspace = true }
+webpki-roots = "1"
+# Dynamic types for `dds::core::xtypes` (DDS-PSM-Cxx 1.0 §7.5): a type given as IDL text becomes
+# a model, a TypeObject and a codec that reads and writes a value as JSON.
+zerodds-ast = { version = "1.0.0-rc.7", path = "../ast" }
+zerodds-ast-core = { version = "1.0.0-rc.7", path = "../ast-core" }
+zerodds-ast-layout = { version = "1.0.0-rc.7", path = "../ast-layout" }
+zerodds-idl-parse = { version = "1.0.0-rc.7", path = "../idl-parse" }
+zerodds-idl-lower = { version = "1.0.0-rc.7", path = "../idl-lower" }
+zerodds-wire-codec = { version = "1.0.0-rc.7", path = "../wire-codec" }
+serde_json = "1"
+# The `;base64` form of a `data:` URI for the QosProvider (RFC 2397).
+base64 = { workspace = true }
 # Active only under the `security` feature — otherwise NOT compiled.
 zerodds-security-runtime = { version = "1.0.0-rc.7", path = "../security-runtime", optional = true }
+zerodds-security = { version = "1.0.0-rc.7", path = "../security", optional = true }
 # Active only under the `flatdata-loan` feature — zero-copy SHM slot loan.
 zerodds-flatdata = { version = "1.0.0-rc.7", path = "../flatdata", optional = true, default-features = false, features = ["std", "posix-mmap"] }
 
@@ -72,11 +112,17 @@ zerodds-flatdata = { version = "1.0.0-rc.7", path = "../flatdata", optional = tr
 cbindgen = "0.29"
 
 [dev-dependencies]
+# One DDS domain per test process, host-wide (the domain number is the UDP port).
+zerodds-test-domains = { path = "../test-domains" }
+zerodds-test-vendor-reader = { path = "../test-vendor-reader" }
 # Smoke test via dcps directly (not via FFI — separate C program for FFI tests).
 zerodds-dcps = { path = "../dcps" }
-# XCDR2 conformance tests need the C codegen via idl-cpp.
-zerodds-idl = { path = "../idl" }
-zerodds-idl-cpp = { path = "../idl-cpp" }
+# The XCDR2 C-codegen tests need an IDL front end and the C back end.
+# `zerodds-idl` + `zerodds-idl-cpp` are gone; the front end is now
+# `idl-parse` + `idl-lower` and the C shape comes out of the rule
+# catalogue in `lang-rules` rendered by `lang-render`.
+zerodds-lang-cst = { path = "../lang-cst" }
+zerodds-lang-render = { path = "../lang-render" }
+zerodds-lang-rules = { path = "../lang-rules" }
 # ABI compat snapshot test (§8.2): JSON array of the exported symbols.
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"

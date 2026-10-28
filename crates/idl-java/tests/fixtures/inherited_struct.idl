@@ -1,8 +1,0 @@
-// Fixture: Inheritance → Java extends.
-struct Parent {
-    long id;
-};
-
-struct Child : Parent {
-    string name;
-};

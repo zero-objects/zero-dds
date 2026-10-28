@@ -35,15 +35,15 @@ pub mod kinds;
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 
-use zerodds_cdr::{BufferReader, BufferWriter, DecodeError, EncodeError, Endianness};
+use zerodds_wire::{Reader, WireError, Writer};
 
 use self::kinds::{
-    EK_COMPLETE, EK_MINIMAL, EQUIVALENCE_HASH_LEN, TI_PLAIN_ARRAY_LARGE, TI_PLAIN_ARRAY_SMALL,
-    TI_PLAIN_MAP_LARGE, TI_PLAIN_MAP_SMALL, TI_PLAIN_SEQUENCE_LARGE, TI_PLAIN_SEQUENCE_SMALL,
-    TI_STRING8_LARGE, TI_STRING8_SMALL, TI_STRING16_LARGE, TI_STRING16_SMALL,
-    TI_STRONGLY_CONNECTED_COMPONENT, TK_BOOLEAN, TK_BYTE, TK_CHAR8, TK_CHAR16, TK_FLOAT32,
-    TK_FLOAT64, TK_FLOAT128, TK_INT8, TK_INT16, TK_INT32, TK_INT64, TK_NONE, TK_UINT8, TK_UINT16,
-    TK_UINT32, TK_UINT64,
+    EK_BOTH, EK_COMPLETE, EK_MINIMAL, EQUIVALENCE_HASH_LEN, TI_PLAIN_ARRAY_LARGE,
+    TI_PLAIN_ARRAY_SMALL, TI_PLAIN_MAP_LARGE, TI_PLAIN_MAP_SMALL, TI_PLAIN_SEQUENCE_LARGE,
+    TI_PLAIN_SEQUENCE_SMALL, TI_STRING8_LARGE, TI_STRING8_SMALL, TI_STRING16_LARGE,
+    TI_STRING16_SMALL, TI_STRONGLY_CONNECTED_COMPONENT, TK_BOOLEAN, TK_BYTE, TK_CHAR8, TK_CHAR16,
+    TK_FLOAT32, TK_FLOAT64, TK_FLOAT128, TK_INT8, TK_INT16, TK_INT32, TK_INT64, TK_NONE, TK_UINT8,
+    TK_UINT16, TK_UINT32, TK_UINT64,
 };
 
 /// 14-byte SHA256 hash of a serialized TypeObject.
@@ -58,7 +58,7 @@ impl EquivalenceHash {
     pub const ZERO: Self = Self([0; EQUIVALENCE_HASH_LEN]);
 }
 
-/// Collection element flags (§7.3.4.7.1). A 16-bit bitmask with only one
+/// Collection element flags (Annex B). A 16-bit bitmask with only one
 /// relevant bit (TRY_CONSTRUCT) for TypeIdentifier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct CollectionElementFlag(pub u16);
@@ -68,6 +68,12 @@ impl CollectionElementFlag {
     /// the element of every plain collection by Cyclone + FastDDS
     /// (byte-verified). Bit position is shared with the member-flag types.
     pub const TRY_CONSTRUCT1: u16 = 1 << 0;
+    /// `TRY_CONSTRUCT2`, the second bit of the try-construct pair.
+    pub const TRY_CONSTRUCT2: u16 = 1 << 1;
+    /// `IS_EXTERNAL`: the elements of the collection are `@external`
+    /// (Annex B, `MemberFlag` position 2; `CollectionElementFlag` is
+    /// "T1, T2, X").
+    pub const IS_EXTERNAL: u16 = 1 << 2;
 
     /// The element flags as emitted on the wire: a bare DISCARD.
     #[must_use]
@@ -76,7 +82,7 @@ impl CollectionElementFlag {
     }
 }
 
-/// Equivalence kind of the element of a PlainCollection (§7.3.4.7.1).
+/// Equivalence kind of the element of a PlainCollection (Annex B).
 ///
 /// EK_MINIMAL = the TI is strongly-hashed minimal, EK_COMPLETE =
 /// complete, EK_BOTH = identical for both, `None` = the element is
@@ -94,7 +100,7 @@ pub enum EquivalenceKind {
 }
 
 impl EquivalenceKind {
-    /// Encoded as `octet` (§7.3.4.7.1 EquivalenceKind).
+    /// Encoded as `octet` (Annex B EquivalenceKind).
     #[must_use]
     pub const fn to_u8(self) -> u8 {
         match self {
@@ -105,7 +111,7 @@ impl EquivalenceKind {
         }
     }
 
-    /// Decoder.
+    /// Decode.
     #[must_use]
     pub const fn from_u8(v: u8) -> Self {
         match v {
@@ -117,7 +123,7 @@ impl EquivalenceKind {
     }
 }
 
-/// Header for plain collections (§7.3.4.7.1).
+/// Header for plain collections (Annex B).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct PlainCollectionHeader {
     /// Equivalence kind of the element TypeIdentifier.
@@ -141,14 +147,49 @@ impl PlainCollectionHeader {
     }
 }
 
-/// Identifies a strongly-connected-component ID for recursive types.
+/// `StronglyConnectedComponentId` — Annex B, verbatim:
+///
+/// ```idl
+/// @extensibility(APPENDABLE) @nested
+/// struct StronglyConnectedComponentId {
+///     TypeObjectHashId sc_component_id;
+///     long             scc_length;
+///     long             scc_index;
+/// };
+/// ```
+///
+/// with
+///
+/// ```idl
+/// @extensibility(FINAL) @nested
+/// union TypeObjectHashId switch (octet) {
+///     case EK_COMPLETE:
+///     case EK_MINIMAL:
+///         EquivalenceHash hash;
+/// };
+/// ```
+///
+/// Two things follow from that and neither was here before. The
+/// `TypeObjectHashId` is a union, so the fourteen hash octets are
+/// preceded by their **equivalence kind** — and §7.3.4.6 tells the two
+/// forms apart by exactly that: "those with discriminator
+/// `TI_STRONG_COMPONENT` where the contained `TypeObjectHashId` has
+/// discriminator `EK_MINIMAL`". Without the field a minimal and a
+/// complete component identifier were the same value. And the structure
+/// is `APPENDABLE` in a file whose head says "shall be serialized with
+/// XCDR encoding version 2", so §7.4.2 gives it a `DHEADER`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StronglyConnectedComponentId {
-    /// 14-byte SHA256 of the SCC.
+    /// The `TypeObjectHashId` discriminator: `EK_MINIMAL` or
+    /// `EK_COMPLETE`.
+    pub equivalence_kind: u8,
+    /// The component's 14-octet hash.
     pub hash: EquivalenceHash,
-    /// Component index within the SCC.
+    /// Number of types in the component.
     pub scc_length: i32,
-    /// Index of the type in the SCC.
+    /// Index of this type in the component, numbered from one
+    /// (§7.3.4.9.2 step 4b); 0 in an `SCCIdentifier`, which names the
+    /// component without naming a type in it (§7.3.4.9.3).
     pub scc_index: i32,
 }
 
@@ -208,7 +249,7 @@ pub enum TypeIdentifier {
     PlainArraySmall {
         /// Header.
         header: PlainCollectionHeader,
-        /// Array dimensions (max 2^20 total per §7.3.4.7).
+        /// Array dimensions.
         array_bounds: Vec<u8>,
         /// Element TypeIdentifier.
         element: Box<TypeIdentifier>,
@@ -254,8 +295,26 @@ pub enum TypeIdentifier {
     EquivalenceHashMinimal(EquivalenceHash),
     /// 14-byte hash of the CompleteTypeObject.
     EquivalenceHashComplete(EquivalenceHash),
-    /// Unknown/unsupported discriminator (forward-compat).
-    Unknown(u8),
+    /// The `default:` arm of Annex B's `union TypeIdentifier`:
+    /// `ExtendedTypeDefn extended_defn`, under the comment
+    /// `// ============ Future extensibility ============`.
+    Extended {
+        /// The discriminator the stream carried.
+        discriminator: u8,
+        /// The `ExtendedTypeDefn` member list, verbatim — the
+        /// `DHEADER` excluded, because that is a length this encoder
+        /// writes and a byte order this value does not carry.
+        ///
+        /// Annex B's `default: ExtendedTypeDefn extended_defn;` is a
+        /// `@extensibility(MUTABLE) @nested struct` — "Empty. Available
+        /// for future extension" — so under encoding version 2 the arm
+        /// is a `DHEADER` over a member list this revision has no member
+        /// of. Holding it verbatim is what lets the identifier be
+        /// written back as it arrived; reading it and dropping it moved
+        /// every field after this one in the stream, and reported
+        /// nothing.
+        body: alloc::vec::Vec<u8>,
+    },
 }
 
 /// Primitive kind (no body in the TypeIdentifier, only the discriminator).
@@ -294,7 +353,7 @@ pub enum PrimitiveKind {
 }
 
 impl PrimitiveKind {
-    /// Diskriminator-Byte im TypeIdentifier.
+    /// Discriminator byte in TypeIdentifier.
     #[must_use]
     pub const fn to_u8(self) -> u8 {
         match self {
@@ -350,22 +409,34 @@ impl TypeIdentifier {
     /// TYPE_INFORMATION PID or the TypeLookup RPC).
     ///
     /// # Errors
-    /// `EncodeError` on buffer overflow (very unlikely for normal types;
+    /// `WireError` on buffer overflow (very unlikely for normal types;
     /// the 2^32 limit for large kinds).
-    pub fn encode_into(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
+    pub fn encode_into(&self, w: &mut Writer) -> Result<(), WireError> {
         let d = self.discriminator();
-        w.write_u8(d)?;
+        w.write_u8(d);
         match self {
-            Self::None | Self::Primitive(_) | Self::Unknown(_) => Ok(()),
-            Self::String8Small { bound } | Self::String16Small { bound } => w.write_u8(*bound),
-            Self::String8Large { bound } | Self::String16Large { bound } => w.write_u32(*bound),
+            Self::None | Self::Primitive(_) => Ok(()),
+            // The `ExtendedTypeDefn` member list goes back the way it
+            // came, behind a `DHEADER` this encoder writes. Holding the
+            // list rather than the framed bytes keeps the value free of
+            // a byte order: `encode_appendable` writes the length in the
+            // writer's, whatever that is.
+            Self::Extended { body, .. } => crate::framing::encode_extended_members(w, body),
+            Self::String8Small { bound } | Self::String16Small { bound } => {
+                w.write_u8(*bound);
+                Ok(())
+            }
+            Self::String8Large { bound } | Self::String16Large { bound } => {
+                w.write_u32(*bound);
+                Ok(())
+            }
             Self::PlainSequenceSmall {
                 header,
                 bound,
                 element,
             } => {
                 encode_collection_header(w, *header)?;
-                w.write_u8(*bound)?;
+                w.write_u8(*bound);
                 element.encode_into(w)
             }
             Self::PlainSequenceLarge {
@@ -374,7 +445,7 @@ impl TypeIdentifier {
                 element,
             } => {
                 encode_collection_header(w, *header)?;
-                w.write_u32(*bound)?;
+                w.write_u32(*bound);
                 element.encode_into(w)
             }
             Self::PlainArraySmall {
@@ -384,13 +455,14 @@ impl TypeIdentifier {
             } => {
                 encode_collection_header(w, *header)?;
                 // sequence<octet> — 4-byte length + bytes (XCDR2 LE).
-                let len = u32::try_from(array_bounds.len()).map_err(|_| {
-                    EncodeError::ValueOutOfRange {
-                        message: "plain array dimensions length exceeds u32::MAX",
-                    }
+                let len = u32::try_from(array_bounds.len()).map_err(|_| WireError::OutOfRange {
+                    at: w.position(),
+                    expected: alloc::string::String::from(
+                        "plain array dimensions length exceeds u32::MAX",
+                    ),
                 })?;
-                w.write_u32(len)?;
-                w.write_bytes(array_bounds)?;
+                w.write_u32(len);
+                w.write_bytes(array_bounds);
                 element.encode_into(w)
             }
             Self::PlainArrayLarge {
@@ -399,14 +471,15 @@ impl TypeIdentifier {
                 element,
             } => {
                 encode_collection_header(w, *header)?;
-                let len = u32::try_from(array_bounds.len()).map_err(|_| {
-                    EncodeError::ValueOutOfRange {
-                        message: "plain array dimensions length exceeds u32::MAX",
-                    }
+                let len = u32::try_from(array_bounds.len()).map_err(|_| WireError::OutOfRange {
+                    at: w.position(),
+                    expected: alloc::string::String::from(
+                        "plain array dimensions length exceeds u32::MAX",
+                    ),
                 })?;
-                w.write_u32(len)?;
+                w.write_u32(len);
                 for dim in array_bounds {
-                    w.write_u32(*dim)?;
+                    w.write_u32(*dim);
                 }
                 element.encode_into(w)
             }
@@ -418,9 +491,9 @@ impl TypeIdentifier {
                 key,
             } => {
                 encode_collection_header(w, *header)?;
-                w.write_u8(*bound)?;
+                w.write_u8(*bound);
                 element.encode_into(w)?;
-                w.write_u16(key_flags.0)?;
+                w.write_u16(key_flags.0);
                 key.encode_into(w)
             }
             Self::PlainMapLarge {
@@ -431,26 +504,55 @@ impl TypeIdentifier {
                 key,
             } => {
                 encode_collection_header(w, *header)?;
-                w.write_u32(*bound)?;
+                w.write_u32(*bound);
                 element.encode_into(w)?;
-                w.write_u16(key_flags.0)?;
+                w.write_u16(key_flags.0);
                 key.encode_into(w)
             }
             Self::StronglyConnectedComponent(scc) => {
-                // Spec §7.3.4.9: scc_length >= 0, 0 <= scc_index < scc_length.
-                // Prevent negative values + index OoB (would otherwise
-                // leak as a huge u32 through two's complement).
-                if scc.scc_length < 0 || scc.scc_index < 0 || scc.scc_index >= scc.scc_length {
-                    return Err(EncodeError::ValueOutOfRange {
-                        message: "SCC scc_length/scc_index invalid",
+                // XTypes 1.3 §7.3.4.9.2 step 4b numbers a component's
+                // types "starting with index 1 for the first type", so a
+                // type's index is 1..=scc_length and a component holds at
+                // least one type. §7.3.4.9.3: "There are situations where
+                // an SCC needs to be identified without referencing a
+                // concrete type inside the SCC. In this situation a
+                // TypeIdentifier is constructed the same way as for any
+                // of the types in the SCC except the scc_index field is
+                // set to 0" — the SCCIdentifier — so 0 is written too.
+                //
+                // The bound still exists for the reason it always did: a
+                // negative value would otherwise leave here as a huge
+                // u32 through two's complement.
+                if scc.scc_length < 1 || scc.scc_index < 0 || scc.scc_index > scc.scc_length {
+                    return Err(WireError::OutOfRange {
+                        at: w.position(),
+                        expected: alloc::string::String::from("SCC scc_length/scc_index invalid"),
                     });
                 }
-                w.write_bytes(&scc.hash.0)?;
-                w.write_u32(scc.scc_length as u32)?;
-                w.write_u32(scc.scc_index as u32)
+                if scc.equivalence_kind != EK_MINIMAL && scc.equivalence_kind != EK_COMPLETE {
+                    return Err(WireError::OutOfRange {
+                        at: w.position(),
+                        expected: alloc::format!(
+                            "a TypeObjectHashId discriminator of EK_MINIMAL or EK_COMPLETE, \
+                             and 0x{:02x} is neither",
+                            scc.equivalence_kind
+                        ),
+                    });
+                }
+                // `@extensibility(APPENDABLE)` under encoding version 2:
+                // a DHEADER over the `TypeObjectHashId`, `scc_length`
+                // and `scc_index` that follow.
+                crate::framing::encode_appendable(w, |w| {
+                    w.write_u8(scc.equivalence_kind);
+                    w.write_bytes(&scc.hash.0);
+                    w.write_u32(scc.scc_length as u32);
+                    w.write_u32(scc.scc_index as u32);
+                    Ok(())
+                })
             }
             Self::EquivalenceHashMinimal(h) | Self::EquivalenceHashComplete(h) => {
-                w.write_bytes(&h.0)
+                w.write_bytes(&h.0);
+                Ok(())
             }
         }
     }
@@ -465,18 +567,20 @@ impl TypeIdentifier {
     /// (see [`Self::MAX_DECODE_DEPTH`]).
     ///
     /// # Errors
-    /// `DecodeError` on buffer underflow, an inconsistent length field
+    /// `WireError` on buffer underflow, an inconsistent length field
     /// or when the maximum recursion depth is exceeded.
-    pub fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
+    pub fn decode_from(r: &mut Reader<'_>) -> Result<Self, WireError> {
         Self::decode_with_depth(r, 0)
     }
 
-    fn decode_with_depth(r: &mut BufferReader<'_>, depth: usize) -> Result<Self, DecodeError> {
+    fn decode_with_depth(r: &mut Reader<'_>, depth: usize) -> Result<Self, WireError> {
         if depth >= Self::MAX_DECODE_DEPTH {
-            return Err(DecodeError::LengthExceeded {
-                announced: Self::MAX_DECODE_DEPTH,
-                remaining: 0,
-                offset: r.position(),
+            return Err(WireError::OutOfRange {
+                at: r.position(),
+                expected: alloc::format!(
+                    "a TypeIdentifier nested fewer than {} deep",
+                    Self::MAX_DECODE_DEPTH
+                ),
             });
         }
         let d = r.read_u8()?;
@@ -485,14 +589,21 @@ impl TypeIdentifier {
             TK_BOOLEAN | TK_BYTE | TK_INT8 | TK_INT16 | TK_INT32 | TK_INT64 | TK_UINT8
             | TK_UINT16 | TK_UINT32 | TK_UINT64 | TK_FLOAT32 | TK_FLOAT64 | TK_FLOAT128
             | TK_CHAR8 | TK_CHAR16 => {
-                // Primitive discriminator → no body. The outer match arm
-                // ensures from_u8 returns Some(...) — if someone extends
-                // the list and forgets from_u8, d falls into the
-                // `other =>` path as Unknown(d).
-                match PrimitiveKind::from_u8(d) {
-                    Some(p) => Self::Primitive(p),
-                    None => Self::Unknown(d),
-                }
+                // Primitive discriminator → no body. The outer match
+                // arm ensures `from_u8` returns `Some(..)`; a kind added
+                // to the list and forgotten in `from_u8` would otherwise
+                // become a primitive of the wrong width, so it is
+                // refused by name instead.
+                let Some(p) = PrimitiveKind::from_u8(d) else {
+                    return Err(WireError::OutOfRange {
+                        at: r.position() - 1,
+                        expected: alloc::format!(
+                            "a primitive TypeKind `PrimitiveKind::from_u8` knows, \
+                             and 0x{d:02x} is one this build lists but cannot decode"
+                        ),
+                    });
+                };
+                Self::Primitive(p)
             }
             TI_STRING8_SMALL => Self::String8Small {
                 bound: r.read_u8()?,
@@ -580,28 +691,44 @@ impl TypeIdentifier {
                     key,
                 }
             }
-            TI_STRONGLY_CONNECTED_COMPONENT => {
+            TI_STRONGLY_CONNECTED_COMPONENT => crate::framing::decode_appendable(r, |r| {
+                let at = r.position();
+                let equivalence_kind = r.read_u8()?;
+                if equivalence_kind != EK_MINIMAL && equivalence_kind != EK_COMPLETE {
+                    return Err(WireError::OutOfRange {
+                        at,
+                        expected: alloc::format!(
+                            "a TypeObjectHashId discriminator of EK_MINIMAL or \
+                                 EK_COMPLETE, and 0x{equivalence_kind:02x} is neither"
+                        ),
+                    });
+                }
                 let hash_bytes = r.read_bytes(EQUIVALENCE_HASH_LEN)?;
                 let Ok(h): Result<[u8; EQUIVALENCE_HASH_LEN], _> = hash_bytes.try_into() else {
-                    return Err(DecodeError::UnexpectedEof {
+                    return Err(WireError::Truncated {
+                        at: r.position(),
                         needed: EQUIVALENCE_HASH_LEN,
-                        offset: 0,
+                        available: 0,
                     });
                 };
                 let scc_length = r.read_u32()? as i32;
                 let scc_index = r.read_u32()? as i32;
-                Self::StronglyConnectedComponent(StronglyConnectedComponentId {
-                    hash: EquivalenceHash(h),
-                    scc_length,
-                    scc_index,
-                })
-            }
+                Ok(Self::StronglyConnectedComponent(
+                    StronglyConnectedComponentId {
+                        equivalence_kind,
+                        hash: EquivalenceHash(h),
+                        scc_length,
+                        scc_index,
+                    },
+                ))
+            })?,
             EK_MINIMAL | EK_COMPLETE => {
                 let hash_bytes = r.read_bytes(EQUIVALENCE_HASH_LEN)?;
                 let Ok(h): Result<[u8; EQUIVALENCE_HASH_LEN], _> = hash_bytes.try_into() else {
-                    return Err(DecodeError::UnexpectedEof {
+                    return Err(WireError::Truncated {
+                        at: r.position(),
                         needed: EQUIVALENCE_HASH_LEN,
-                        offset: 0,
+                        available: 0,
                     });
                 };
                 if d == EK_MINIMAL {
@@ -610,7 +737,33 @@ impl TypeIdentifier {
                     Self::EquivalenceHashComplete(EquivalenceHash(h))
                 }
             }
-            other => Self::Unknown(other),
+            // Annex B gives `union TypeIdentifier` a case for
+            // `EK_COMPLETE` and one for `EK_MINIMAL` and none for
+            // `EK_BOTH = 0xF3`; `EK_BOTH` belongs in a
+            // `PlainCollectionHeader`, where a fully descriptive element
+            // needs no equivalence form, and not at this discriminator.
+            // Reading it as the `default:` arm took the fourteen hash
+            // octets that follow it in a stream that carries one and
+            // gave them back as nothing.
+            EK_BOTH => {
+                return Err(WireError::OutOfRange {
+                    at: r.position() - 1,
+                    expected: alloc::string::String::from(
+                        "a TypeIdentifier discriminator Annex B has a case for, and \
+                         EK_BOTH (0xF3) is only a PlainCollectionHeader's equivalence kind",
+                    ),
+                });
+            }
+            // `default: ExtendedTypeDefn extended_defn;`, which is
+            // `@extensibility(MUTABLE)` — a DHEADER over a member list,
+            // aligned to four after the octet discriminator. Reading the
+            // discriminator alone left the body in the stream, and at an
+            // embedded position — a plain sequence's element type, say —
+            // that moved every field after it with no error anywhere.
+            other => Self::Extended {
+                discriminator: other,
+                body: crate::framing::decode_extended_members(r)?,
+            },
         })
     }
 
@@ -633,41 +786,42 @@ impl TypeIdentifier {
             Self::StronglyConnectedComponent(_) => TI_STRONGLY_CONNECTED_COMPONENT,
             Self::EquivalenceHashMinimal(_) => EK_MINIMAL,
             Self::EquivalenceHashComplete(_) => EK_COMPLETE,
-            Self::Unknown(d) => *d,
+            Self::Extended { discriminator, .. } => *discriminator,
         }
     }
 
-    /// Kurzform: encode in neuen BufferWriter, LE.
+    /// Short form: encode into a fresh XCDR2 writer, little-endian.
     ///
     /// # Errors
-    /// `EncodeError` on overflow.
-    pub fn to_bytes_le(&self) -> Result<Vec<u8>, EncodeError> {
-        let mut w = BufferWriter::new(Endianness::Little);
+    /// `WireError` on overflow.
+    pub fn to_bytes_le(&self) -> Result<Vec<u8>, WireError> {
+        let mut w = crate::framing::xcdr2_writer();
         self.encode_into(&mut w)?;
-        Ok(w.into_bytes())
+        Ok(w.finish())
     }
 
     /// Short form: decode from LE bytes.
     ///
     /// # Errors
-    /// `DecodeError`.
-    pub fn from_bytes_le(bytes: &[u8]) -> Result<Self, DecodeError> {
-        let mut r = BufferReader::new(bytes, Endianness::Little);
+    /// `WireError`.
+    pub fn from_bytes_le(bytes: &[u8]) -> Result<Self, WireError> {
+        let mut r = crate::framing::xcdr2_reader(bytes);
         Self::decode_from(&mut r)
     }
 }
 
 fn encode_collection_header(
-    w: &mut BufferWriter,
+    w: &mut Writer,
     header: PlainCollectionHeader,
-) -> Result<(), EncodeError> {
-    w.write_u8(header.equiv_kind)?;
-    w.write_u16(header.element_flags.0)
+) -> Result<(), WireError> {
+    w.write_u8(header.equiv_kind);
+    {
+        w.write_u16(header.element_flags.0);
+        Ok(())
+    }
 }
 
-fn decode_collection_header(
-    r: &mut BufferReader<'_>,
-) -> Result<PlainCollectionHeader, DecodeError> {
+fn decode_collection_header(r: &mut Reader<'_>) -> Result<PlainCollectionHeader, WireError> {
     let equiv_kind = r.read_u8()?;
     let element_flags = CollectionElementFlag(r.read_u16()?);
     Ok(PlainCollectionHeader {
@@ -836,9 +990,93 @@ mod tests {
         roundtrip(outer);
     }
 
+    /// Annex B, octet for octet:
+    ///
+    /// ```idl
+    /// @extensibility(APPENDABLE) @nested
+    /// struct StronglyConnectedComponentId {
+    ///     TypeObjectHashId sc_component_id;
+    ///     long             scc_length;
+    ///     long             scc_index;
+    /// };
+    /// ```
+    ///
+    /// The discriminator `B0`, three octets of padding, a `DHEADER` of
+    /// 24 (`@extensibility(APPENDABLE)` under encoding version 2), then
+    /// the `TypeObjectHashId` — its own `EK_MINIMAL` discriminator
+    /// before the fourteen hash octets — a padding octet, and the two
+    /// `long`s. Thirty-two octets.
+    ///
+    /// The form this tree wrote had neither the `DHEADER` nor the
+    /// equivalence kind: `B0` and straight into the hash, twenty-four
+    /// octets. A round-trip test cannot see that — both halves agree
+    /// with each other — so this asserts the octets.
+    #[test]
+    fn a_component_identifier_is_the_thirty_two_octets_of_annex_b() {
+        let scc = TypeIdentifier::StronglyConnectedComponent(StronglyConnectedComponentId {
+            equivalence_kind: EK_MINIMAL,
+            hash: EquivalenceHash([
+                0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D,
+            ]),
+            scc_length: 2,
+            scc_index: 1,
+        });
+        let bytes = scc.to_bytes_le().unwrap();
+        let expected: alloc::vec::Vec<u8> = alloc::vec![
+            0xB0, 0x00, 0x00, 0x00, // TI_STRONGLY_CONNECTED_COMPONENT, then padding
+            0x18, 0x00, 0x00, 0x00, // DHEADER = 24
+            0xF1, // TypeObjectHashId: EK_MINIMAL
+            0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D,
+            0x00, // padding to the long
+            0x02, 0x00, 0x00, 0x00, // scc_length
+            0x01, 0x00, 0x00, 0x00, // scc_index
+        ];
+        assert_eq!(bytes, expected, "{bytes:02x?}");
+        assert_eq!(TypeIdentifier::from_bytes_le(&bytes).unwrap(), scc);
+    }
+
+    /// The two equivalence forms of one component are different
+    /// identifiers. §7.3.4.6 tells them apart by "the contained
+    /// `TypeObjectHashId` has discriminator `EK_MINIMAL`", and with no
+    /// field for it they were the same fourteen octets.
+    #[test]
+    fn a_minimal_and_a_complete_component_identifier_differ() {
+        let of = |kind| {
+            TypeIdentifier::StronglyConnectedComponent(StronglyConnectedComponentId {
+                equivalence_kind: kind,
+                hash: EquivalenceHash([0x33; 14]),
+                scc_length: 1,
+                scc_index: 1,
+            })
+        };
+        let minimal = of(EK_MINIMAL).to_bytes_le().unwrap();
+        let complete = of(EK_COMPLETE).to_bytes_le().unwrap();
+        assert_ne!(minimal, complete);
+        assert_eq!(minimal.len(), complete.len());
+    }
+
+    /// A `TypeObjectHashId` discriminator the union has no case for is
+    /// refused on both sides rather than carried.
+    #[test]
+    fn a_component_identifier_takes_only_the_two_equivalence_kinds() {
+        let scc = TypeIdentifier::StronglyConnectedComponent(StronglyConnectedComponentId {
+            equivalence_kind: kinds::EK_BOTH,
+            hash: EquivalenceHash::ZERO,
+            scc_length: 1,
+            scc_index: 1,
+        });
+        assert!(scc.to_bytes_le().is_err());
+
+        let mut bytes = alloc::vec![0xB0_u8, 0, 0, 0, 24, 0, 0, 0, kinds::EK_BOTH];
+        bytes.extend_from_slice(&[0u8; 14]);
+        bytes.extend_from_slice(&[0, 1, 0, 0, 0, 1, 0, 0, 0]);
+        assert!(TypeIdentifier::from_bytes_le(&bytes).is_err());
+    }
+
     #[test]
     fn strongly_connected_component_roundtrips() {
         let scc = TypeIdentifier::StronglyConnectedComponent(StronglyConnectedComponentId {
+            equivalence_kind: EK_MINIMAL,
             hash: EquivalenceHash([0x11; 14]),
             scc_length: 5,
             scc_index: 2,
@@ -849,9 +1087,10 @@ mod tests {
     #[test]
     fn scc_encode_rejects_negative_values() {
         let scc = TypeIdentifier::StronglyConnectedComponent(StronglyConnectedComponentId {
+            equivalence_kind: EK_MINIMAL,
             hash: EquivalenceHash::ZERO,
             scc_length: -1,
-            scc_index: 0,
+            scc_index: 1,
         });
         assert!(scc.to_bytes_le().is_err());
     }
@@ -859,9 +1098,10 @@ mod tests {
     #[test]
     fn scc_encode_rejects_index_out_of_bounds() {
         let scc = TypeIdentifier::StronglyConnectedComponent(StronglyConnectedComponentId {
+            equivalence_kind: EK_MINIMAL,
             hash: EquivalenceHash::ZERO,
             scc_length: 3,
-            scc_index: 3, // must be < 3
+            scc_index: 4, // 1..=3 is the range; 4 is past the end
         });
         assert!(scc.to_bytes_le().is_err());
     }
@@ -896,11 +1136,57 @@ mod tests {
         roundtrip(l3);
     }
 
+    /// Annex B's `default: ExtendedTypeDefn extended_defn;`. The arm is
+    /// `@extensibility(MUTABLE)`, so it is an aligned `DHEADER` over a
+    /// member list — here an empty one — and the identifier goes back
+    /// exactly as it came.
+    ///
+    /// The bare discriminator octet this used to feed is not a
+    /// `TypeIdentifier`: reading one and stopping left the body in the
+    /// stream, which at an embedded position moved every field after it
+    /// with no error anywhere.
     #[test]
-    fn unknown_discriminator_preserved_in_decode() {
-        let bytes = [0xC7];
+    fn the_extended_arm_carries_its_body() {
+        let bytes = [0xC7, 0, 0, 0, 0, 0, 0, 0];
         let decoded = TypeIdentifier::from_bytes_le(&bytes).unwrap();
-        assert_eq!(decoded, TypeIdentifier::Unknown(0xC7));
+        assert_eq!(
+            decoded,
+            TypeIdentifier::Extended {
+                discriminator: 0xC7,
+                body: alloc::vec![],
+            }
+        );
+        assert_eq!(decoded.to_bytes_le().unwrap(), bytes);
+    }
+
+    /// A member list a later revision wrote and this one does not know
+    /// survives the round trip verbatim.
+    #[test]
+    fn an_extended_arm_with_a_member_list_round_trips_verbatim() {
+        let mut bytes = alloc::vec![0xC7_u8, 0, 0, 0];
+        bytes.extend_from_slice(&8_u32.to_le_bytes());
+        bytes.extend_from_slice(&[0xDE, 0xAD, 0xBE, 0xEF, 0x01, 0x02, 0x03, 0x04]);
+        let decoded = TypeIdentifier::from_bytes_le(&bytes).unwrap();
+        assert_eq!(
+            decoded,
+            TypeIdentifier::Extended {
+                discriminator: 0xC7,
+                body: alloc::vec![0xDE, 0xAD, 0xBE, 0xEF, 0x01, 0x02, 0x03, 0x04],
+            }
+        );
+        assert_eq!(decoded.to_bytes_le().unwrap(), bytes);
+    }
+
+    /// Annex B's `union TypeIdentifier` has `case EK_COMPLETE:` and
+    /// `case EK_MINIMAL:` and no case for `EK_BOTH = 0xF3`; that value
+    /// is a `PlainCollectionHeader`'s equivalence kind. Read as the
+    /// `default:` arm it took the fourteen hash octets that follow it in
+    /// a real stream and gave back one.
+    #[test]
+    fn ek_both_is_not_a_type_identifier_discriminator() {
+        let mut bytes = alloc::vec![kinds::EK_BOTH];
+        bytes.extend_from_slice(&[0u8; 14]);
+        assert!(TypeIdentifier::from_bytes_le(&bytes).is_err());
     }
 
     // ---- Additional edge-case roundtrips --------------------------------
@@ -960,6 +1246,7 @@ mod tests {
     #[test]
     fn strongly_connected_component_large_scc_length_and_index() {
         let scc = TypeIdentifier::StronglyConnectedComponent(StronglyConnectedComponentId {
+            equivalence_kind: EK_MINIMAL,
             hash: EquivalenceHash([0x5A; 14]),
             scc_length: i32::MAX,
             scc_index: i32::MAX - 1,
@@ -968,16 +1255,21 @@ mod tests {
     }
 
     #[test]
-    fn unknown_discriminators_cover_multiple_bytes() {
+    fn extended_arms_cover_multiple_discriminators() {
         // Deliberately discriminator bytes not assigned to any
         // TK_/TI_/EK_. 0x01 (TK_BOOLEAN), 0x70ff (TI_STRING8_*) etc. are
         // avoided. 0x12-0x1F, 0x40, 0x50, 0xC7, 0xFE, 0xFF are free.
         for d in [0x12_u8, 0x1F, 0x40, 0x50, 0xC7, 0xFE, 0xFF] {
-            let decoded = TypeIdentifier::from_bytes_le(&[d]).unwrap();
-            assert_eq!(decoded, TypeIdentifier::Unknown(d));
-            // Encode should round-trip back to the same discriminator byte.
-            let re = decoded.to_bytes_le().unwrap();
-            assert_eq!(re, alloc::vec![d]);
+            let bytes = [d, 0, 0, 0, 0, 0, 0, 0];
+            let decoded = TypeIdentifier::from_bytes_le(&bytes).unwrap();
+            assert_eq!(
+                decoded,
+                TypeIdentifier::Extended {
+                    discriminator: d,
+                    body: alloc::vec![],
+                }
+            );
+            assert_eq!(decoded.to_bytes_le().unwrap(), bytes);
         }
     }
 
@@ -1025,13 +1317,17 @@ mod tests {
                 key: Box::new(TypeIdentifier::String8Small { bound: 1 }),
             },
             TypeIdentifier::StronglyConnectedComponent(StronglyConnectedComponentId {
+                equivalence_kind: EK_MINIMAL,
                 hash: EquivalenceHash([0; 14]),
                 scc_length: 1,
-                scc_index: 0,
+                scc_index: 1,
             }),
             TypeIdentifier::EquivalenceHashMinimal(EquivalenceHash([0x11; 14])),
             TypeIdentifier::EquivalenceHashComplete(EquivalenceHash([0x22; 14])),
-            TypeIdentifier::Unknown(0x77),
+            TypeIdentifier::Extended {
+                discriminator: 0x77,
+                body: alloc::vec![],
+            },
         ];
         for ti in samples {
             let bytes = ti.to_bytes_le().unwrap();
@@ -1099,10 +1395,20 @@ mod tests {
         assert_eq!(EquivalenceHash::ZERO.0, [0u8; 14]);
     }
 
+    /// The `default:` arm is a discriminator, three octets of padding
+    /// and a `DHEADER` — eight octets for an empty
+    /// `ExtendedTypeDefn`, not one.
+    ///
+    /// This test asserted the one octet, which was the defect: the body
+    /// the specification puts there was neither read nor written, and at
+    /// an embedded position that shifted the whole rest of the stream.
     #[test]
-    fn unknown_discriminator_encodes_exactly_one_byte() {
-        let ti = TypeIdentifier::Unknown(0xC7);
+    fn the_extended_arm_encodes_its_dheader_too() {
+        let ti = TypeIdentifier::Extended {
+            discriminator: 0xC7,
+            body: alloc::vec![],
+        };
         let bytes = ti.to_bytes_le().unwrap();
-        assert_eq!(bytes, alloc::vec![0xC7]);
+        assert_eq!(bytes, alloc::vec![0xC7, 0, 0, 0, 0, 0, 0, 0]);
     }
 }

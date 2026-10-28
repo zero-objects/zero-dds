@@ -1,0 +1,13 @@
+// each integer type at the smallest and largest value it holds
+// IDL 4.2 §7.4.1.4.4.1. The two 64-bit ends are where a generator that
+// carries every literal in a signed 64-bit value gives itself away.
+@final struct Sample {
+    int8 i8_min;
+    uint8 u8_max;
+    short i16_min;
+    unsigned short u16_max;
+    long i32_min;
+    unsigned long u32_max;
+    long long i64_min;
+    unsigned long long u64_max;
+};

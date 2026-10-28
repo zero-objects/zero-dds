@@ -11,6 +11,7 @@ using System;
 using System.Threading;
 using ZeroDDS;
 using ZeroDDS.Cdr;
+using ZeroDds.Wire;
 using ZeroDDS.Cond;
 using ZeroDDS.Core;
 using ZeroDDS.Domain;
@@ -31,13 +32,13 @@ void Expect(bool cond, string msg)
 
 // ---- Lifecycle ----
 {
-    using var dp = DomainParticipantFactory.CreateParticipant(0);
-    Expect(dp.DomainId == 0, "domain id roundtrip");
+    using var dp = DomainParticipantFactory.CreateParticipant(180);
+    Expect(dp.DomainId == 180, "domain id roundtrip");
 }
 
 // ---- Topic ----
 {
-    using var dp = DomainParticipantFactory.CreateParticipant(1);
+    using var dp = DomainParticipantFactory.CreateParticipant(181);
     using var t = new Topic<byte[]>(dp, "ChatterTopic", new ByteSeqTraits());
     Expect(t.Name == "ChatterTopic", $"topic name = '{t.Name}'");
     Expect(t.TypeName == "DDS::Bytes", $"topic type = '{t.TypeName}'");
@@ -45,7 +46,7 @@ void Expect(bool cond, string msg)
 
 // ---- Writer + Reader Lifecycle ----
 {
-    using var dp = DomainParticipantFactory.CreateParticipant(2);
+    using var dp = DomainParticipantFactory.CreateParticipant(182);
     using var t = new Topic<byte[]>(dp, "T", new ByteSeqTraits());
     using var pub = new Publisher(dp);
     using var dw = new DataWriter<byte[]>(pub, t);
@@ -58,7 +59,7 @@ void Expect(bool cond, string msg)
 
 // ---- Take on empty ----
 {
-    using var dp = DomainParticipantFactory.CreateParticipant(3);
+    using var dp = DomainParticipantFactory.CreateParticipant(183);
     using var t = new Topic<byte[]>(dp, "E", new ByteSeqTraits());
     using var sub = new Subscriber(dp);
     using var dr = new DataReader<byte[]>(sub, t);
@@ -68,7 +69,7 @@ void Expect(bool cond, string msg)
 
 // ---- Status getters ----
 {
-    using var dp = DomainParticipantFactory.CreateParticipant(4);
+    using var dp = DomainParticipantFactory.CreateParticipant(184);
     using var t = new Topic<byte[]>(dp, "S", new ByteSeqTraits());
     using var pub = new Publisher(dp);
     using var dw = new DataWriter<byte[]>(pub, t);
@@ -85,7 +86,7 @@ void Expect(bool cond, string msg)
 
 // ---- ReadCondition ----
 {
-    using var dp = DomainParticipantFactory.CreateParticipant(6);
+    using var dp = DomainParticipantFactory.CreateParticipant(186);
     using var t = new Topic<byte[]>(dp, "RC", new ByteSeqTraits());
     using var sub = new Subscriber(dp);
     using var dr = new DataReader<byte[]>(sub, t);
@@ -95,25 +96,76 @@ void Expect(bool cond, string msg)
     Expect(t1 == t2, "read cond stable");
 }
 
-// ---- Listener attach/detach ----
+// ---- Listener attach + active firing ----
+// Vendor spec `zerodds-listener-callbacks-1.1` §4.1 (nothing is delivered
+// synchronously out of set_listener), §6 (the poll fires on a counter delta,
+// exactly once across polls) and §7.2 (the C# bridge).
 {
-    using var dp = DomainParticipantFactory.CreateParticipant(7);
+    using var dp = DomainParticipantFactory.CreateParticipant(187);
     using var t = new Topic<byte[]>(dp, "L", new ByteSeqTraits());
-    using var pub = new Publisher(dp);
-    using var dw = new DataWriter<byte[]>(pub, t);
-    var listener = new TestWriterListener();
-    using var anchor = ZeroDDS.Listener.DataWriterListenerBridge<byte[]>.Attach(dw, listener);
-    Expect(listener.MatchedCount == 0, "listener not yet fired (no poll-call)");
-}
-
-// ---- Extended status getters ----
-{
-    using var dp = DomainParticipantFactory.CreateParticipant(8);
-    using var t = new Topic<byte[]>(dp, "SX", new ByteSeqTraits());
     using var pub = new Publisher(dp);
     using var dw = new DataWriter<byte[]>(pub, t);
     using var sub = new Subscriber(dp);
     using var dr = new DataReader<byte[]>(sub, t);
+
+    var wl = new TestWriterListener();
+    var rl = new TestReaderListener();
+    using var wreg = ZeroDDS.Listener.DataWriterListenerBridge<byte[]>.Attach(dw, wl);
+    using var rreg = ZeroDDS.Listener.DataReaderListenerBridge<byte[]>.Attach(dr, rl);
+
+    // §4.1 — no callback out of the set_listener call itself.
+    Expect(wl.PublicationMatchedFired == 0, "no writer callback before the first poll");
+    Expect(rl.SubscriptionMatchedFired == 0, "no reader callback before the first poll");
+
+    // §6.1 / §6.2 — writer and reader in the same participant match over the
+    // intra-runtime route, so the first poll sees a counter delta.
+    int fired = ZeroDDS.Listener.ListenerPoll.PollAll();
+    Expect(fired > 0, $"first poll fired callbacks (fired={fired})");
+    Expect(wl.PublicationMatchedFired == 1,
+        $"on_publication_matched fired once (n={wl.PublicationMatchedFired})");
+    Expect(rl.SubscriptionMatchedFired == 1,
+        $"on_subscription_matched fired once (n={rl.SubscriptionMatchedFired})");
+    // The status value reaches the callback, not just the notification.
+    Expect(wl.MatchedCount == 1, $"publication-matched status read back (CurrentCount={wl.MatchedCount})");
+    Expect(rl.MatchedCount == 1, $"subscription-matched status read back (CurrentCount={rl.MatchedCount})");
+
+    // §6 — exactly once across polls: no delta, no callback.
+    int again = ZeroDDS.Listener.ListenerPoll.PollAll();
+    Expect(wl.PublicationMatchedFired == 1,
+        $"a poll without a delta fires nothing again (n={wl.PublicationMatchedFired}, fired={again})");
+
+    // §6.3 — data-available on a delivered-sample delta.
+    dw.Write(new byte[] { 7, 7, 7 });
+    for (int i = 0; i < 100 && rl.DataAvailableFired == 0; i++)
+    {
+        ZeroDDS.Listener.ListenerPoll.PollAll();
+        Thread.Sleep(10);
+    }
+    Expect(rl.DataAvailableFired > 0, $"on_data_available fired (n={rl.DataAvailableFired})");
+
+    // §1.3 / §9 — Dispose clears the slot before it frees the vtable, so a
+    // later poll finds no entry rather than a dangling pointer.
+    wreg.Dispose();
+    rreg.Dispose();
+    int afterDetach = wl.PublicationMatchedFired + rl.SubscriptionMatchedFired;
+    ZeroDDS.Listener.ListenerPoll.PollAll();
+    Expect(wl.PublicationMatchedFired + rl.SubscriptionMatchedFired == afterDetach,
+        "no callback after the registration was disposed");
+}
+
+// ---- Extended status getters ----
+{
+    using var dp = DomainParticipantFactory.CreateParticipant(188);
+    using var t = new Topic<byte[]>(dp, "SX", new ByteSeqTraits());
+    // The reader gets a topic of its own: on "SX" it would match the writer,
+    // and a matched live writer makes LIVELINESS_CHANGED alive_count 1
+    // (DDS 1.4 §2.2.4.1) as soon as the match lands, which made this check
+    // depend on how fast that is. Unmatched, every count below is 0.
+    using var tr = new Topic<byte[]>(dp, "SX-reader", new ByteSeqTraits());
+    using var pub = new Publisher(dp);
+    using var dw = new DataWriter<byte[]>(pub, t);
+    using var sub = new Subscriber(dp);
+    using var dr = new DataReader<byte[]>(sub, tr);
 
     var ll = dw.GetLivelinessLostStatus();
     var od = dw.GetOfferedDeadlineMissedStatus();
@@ -128,9 +180,9 @@ void Expect(bool cond, string msg)
         && sr.TotalCount == 0, "reader status zero");
 }
 
-// ---- QoS-Konstruktoren ----
+// ---- QoS constructors ----
 {
-    using var dp = DomainParticipantFactory.CreateParticipant(20,
+    using var dp = DomainParticipantFactory.CreateParticipant(200,
         new ZeroDDS.Qos.DomainParticipantQos
         {
             UserData = new ZeroDDS.Qos.UserDataPolicy { Value = new byte[] { 1, 2, 3 } },
@@ -155,7 +207,7 @@ void Expect(bool cond, string msg)
             Reliability = new ZeroDDS.Qos.ReliabilityPolicy(
                 ZeroDDS.Qos.ReliabilityKind.BestEffort, ZeroDDS.Core.Duration.FromMillis(100)),
         });
-    Expect(dp.DomainId == 20, "qos-constr participant alive");
+    Expect(dp.DomainId == 200, "qos-constr participant alive");
     Expect(t.Name == "QT", "qos-constr topic alive");
 }
 
@@ -176,7 +228,7 @@ void Expect(bool cond, string msg)
     var factory = ZeroDDS.DomainParticipantFactory.Instance;
     Expect(ReferenceEquals(factory, ZeroDDS.DomainParticipantFactory.Instance),
         "factory Instance is singleton");
-    using var participant = factory.CreateParticipant(30);
+    using var participant = factory.CreateParticipant(210);
     using var topic = participant.CreateBytesTopic("FluentChatter");
     using var publisher = participant.CreatePublisher();
     using var subscriber = participant.CreateSubscriber();
@@ -211,7 +263,7 @@ void Expect(bool cond, string msg)
 
 // ---- Typed topic/writer auto-resolving TypeSupport (website typed shape) ----
 {
-    using var participant = ZeroDDS.DomainParticipantFactory.Instance.CreateParticipant(31);
+    using var participant = ZeroDDS.DomainParticipantFactory.Instance.CreateParticipant(211);
     using var publisher = participant.CreatePublisher();
     using var subscriber = participant.CreateSubscriber();
 
@@ -233,7 +285,7 @@ void Expect(bool cond, string msg)
 
 // ---- async/await surface (website async shape) ----
 {
-    using var participant = ZeroDDS.DomainParticipantFactory.Instance.CreateParticipant(32);
+    using var participant = ZeroDDS.DomainParticipantFactory.Instance.CreateParticipant(212);
     using var topic = new Topic<byte[]>(participant, "AsyncT", new ByteSeqTraits());
     using var publisher = new Publisher(participant);
     using var subscriber = new Subscriber(participant);
@@ -276,7 +328,7 @@ void Expect(bool cond, string msg)
 // ---- Partition QoS plumbed end-to-end (QB-cluster) ----
 {
     // Mismatched partitions must NOT communicate; matching ones must.
-    using var participant = ZeroDDS.DomainParticipantFactory.Instance.CreateParticipant(40);
+    using var participant = ZeroDDS.DomainParticipantFactory.Instance.CreateParticipant(220);
     using var topicMis = participant.CreateTypedTopic<DemoTemp>("PTopicMis");
     using var pubA = new Publisher(participant,
         new ZeroDDS.Qos.PublisherQos { Partition = new ZeroDDS.Qos.PartitionPolicy { Names = { "A" } } });
@@ -304,7 +356,7 @@ void Expect(bool cond, string msg)
 
 // ---- Keyed-instance lifecycle surface (QB-cluster) ----
 {
-    using var participant = ZeroDDS.DomainParticipantFactory.Instance.CreateParticipant(41);
+    using var participant = ZeroDDS.DomainParticipantFactory.Instance.CreateParticipant(221);
     using var topic = participant.CreateTypedTopic<KeyedRec>("LifecycleT");
     using var pub = new Publisher(participant);
     using var sub = new Subscriber(participant);
@@ -341,7 +393,7 @@ void Expect(bool cond, string msg)
 
 // ---- ContentFilteredTopic filters samples (QB-cluster) ----
 {
-    using var participant = ZeroDDS.DomainParticipantFactory.Instance.CreateParticipant(42);
+    using var participant = ZeroDDS.DomainParticipantFactory.Instance.CreateParticipant(222);
     using var topic = participant.CreateTypedTopic<KeyedRec>("CftT");
     // KeyedRec is appendable: DHeader(int32) precedes Key(int32), Payload(int32).
     var schema = new System.Collections.Generic.List<ZeroDDS.Sub.CftField>
@@ -386,11 +438,27 @@ Environment.Exit(failures);
 class TestWriterListener : ZeroDDS.Listener.IDataWriterListener<byte[]>
 {
     public int MatchedCount { get; private set; }
+    public int PublicationMatchedFired { get; private set; }
     public void OnLivelinessLost(DataWriter<byte[]> dw, ZeroDDS.Status.LivelinessLostStatus s) { }
     public void OnOfferedDeadlineMissed(DataWriter<byte[]> dw, ZeroDDS.Status.OfferedDeadlineMissedStatus s) { }
     public void OnOfferedIncompatibleQos(DataWriter<byte[]> dw, ZeroDDS.Status.OfferedIncompatibleQosStatus s) { }
     public void OnPublicationMatched(DataWriter<byte[]> dw, ZeroDDS.Status.PublicationMatchedStatus s)
-        { MatchedCount = s.CurrentCount; }
+        { MatchedCount = s.CurrentCount; PublicationMatchedFired++; }
+}
+
+class TestReaderListener : ZeroDDS.Listener.IDataReaderListener<byte[]>
+{
+    public int MatchedCount { get; private set; }
+    public int SubscriptionMatchedFired { get; private set; }
+    public int DataAvailableFired { get; private set; }
+    public void OnDataAvailable(DataReader<byte[]> dr) { DataAvailableFired++; }
+    public void OnSampleRejected(DataReader<byte[]> dr, ZeroDDS.Status.SampleRejectedStatus s) { }
+    public void OnLivelinessChanged(DataReader<byte[]> dr, ZeroDDS.Status.LivelinessChangedStatus s) { }
+    public void OnRequestedDeadlineMissed(DataReader<byte[]> dr, ZeroDDS.Status.RequestedDeadlineMissedStatus s) { }
+    public void OnRequestedIncompatibleQos(DataReader<byte[]> dr, ZeroDDS.Status.RequestedIncompatibleQosStatus s) { }
+    public void OnSubscriptionMatched(DataReader<byte[]> dr, ZeroDDS.Status.SubscriptionMatchedStatus s)
+        { MatchedCount = s.CurrentCount; SubscriptionMatchedFired++; }
+    public void OnSampleLost(DataReader<byte[]> dr, ZeroDDS.Status.SampleLostStatus s) { }
 }
 
 // Hand-written equivalent of `idlc csharp` output for
@@ -414,27 +482,34 @@ namespace demo
         public Omg.Types.ExtensibilityKind Extensibility =>
             Omg.Types.ExtensibilityKind.Appendable;
 
+        private static Endianness Order(ZeroDDS.Cdr.EndianMode endian) => endian switch
+        {
+            ZeroDDS.Cdr.EndianMode.LittleEndian => Endianness.Little,
+            ZeroDDS.Cdr.EndianMode.BigEndian => Endianness.Big,
+            _ => throw new ArgumentOutOfRangeException(nameof(endian)),
+        };
+
         public byte[] Encode(DemoTemp sample) =>
             Encode(sample, ZeroDDS.Cdr.EndianMode.LittleEndian);
 
         public byte[] Encode(DemoTemp sample, ZeroDDS.Cdr.EndianMode endian)
         {
-            var w = new ZeroDDS.Cdr.Xcdr2Writer(endian);
-            using (var __s = w.BeginAppendable())
-            {
-                w.WriteInt32(sample.Celsius);
-                w.WriteString(sample.SensorId);
-            }
-            return w.ToArray();
+            var w = new Writer(Order(endian), 4, PlCdr1Framing.Defaults(), false);
+            var d = w.WriteDheader();
+            w.WriteI32(sample.Celsius);
+            w.WriteString(sample.SensorId);
+            w.FinishDheader(d);
+            return w.Finish();
         }
 
         public DemoTemp Decode(ReadOnlySpan<byte> bytes)
         {
-            var r = new ZeroDDS.Cdr.Xcdr2Reader(bytes, ZeroDDS.Cdr.EndianMode.LittleEndian);
-            var __s = r.BeginDHeader();
-            int c = r.ReadInt32();
-            string id = r.ReadString();
-            r.EndDHeader(__s);
+            var r = new Reader(bytes.ToArray(), Endianness.Little, 4, PlCdr1Framing.Defaults());
+            uint declared = r.ReadDheader();
+            long end = r.ReaderPosition() + declared;
+            int c = r.ReadI32();
+            string id = r.ReadStringAlloc();
+            r.ReaderSkipTo(end);
             return new DemoTemp { Celsius = c, SensorId = id };
         }
 
@@ -458,38 +533,42 @@ namespace demo
         public Omg.Types.ExtensibilityKind Extensibility =>
             Omg.Types.ExtensibilityKind.Appendable;
 
+        private static Endianness Order(ZeroDDS.Cdr.EndianMode endian) => endian switch
+        {
+            ZeroDDS.Cdr.EndianMode.LittleEndian => Endianness.Little,
+            ZeroDDS.Cdr.EndianMode.BigEndian => Endianness.Big,
+            _ => throw new ArgumentOutOfRangeException(nameof(endian)),
+        };
+
         public byte[] Encode(KeyedRec sample) =>
             Encode(sample, ZeroDDS.Cdr.EndianMode.LittleEndian);
 
         public byte[] Encode(KeyedRec sample, ZeroDDS.Cdr.EndianMode endian)
         {
-            var w = new ZeroDDS.Cdr.Xcdr2Writer(endian);
-            using (var __s = w.BeginAppendable())
-            {
-                w.WriteInt32(sample.Key);
-                w.WriteInt32(sample.Payload);
-            }
-            return w.ToArray();
+            var w = new Writer(Order(endian), 4, PlCdr1Framing.Defaults(), false);
+            var d = w.WriteDheader();
+            w.WriteI32(sample.Key);
+            w.WriteI32(sample.Payload);
+            w.FinishDheader(d);
+            return w.Finish();
         }
 
         public KeyedRec Decode(ReadOnlySpan<byte> bytes)
         {
-            var r = new ZeroDDS.Cdr.Xcdr2Reader(bytes, ZeroDDS.Cdr.EndianMode.LittleEndian);
-            var __s = r.BeginDHeader();
-            int k = r.ReadInt32();
-            int p = r.ReadInt32();
-            r.EndDHeader(__s);
+            var r = new Reader(bytes.ToArray(), Endianness.Little, 4, PlCdr1Framing.Defaults());
+            uint declared = r.ReadDheader();
+            long end = r.ReaderPosition() + declared;
+            int k = r.ReadI32();
+            int p = r.ReadI32();
+            r.ReaderSkipTo(end);
             return new KeyedRec { Key = k, Payload = p };
         }
 
         public byte[] KeyHash(KeyedRec sample)
         {
-            var kw = new ZeroDDS.Cdr.Xcdr2Writer(ZeroDDS.Cdr.EndianMode.BigEndian);
-            kw.WriteInt32(sample.Key);
-            var kb = kw.ToArray();
-            var h = new byte[16];
-            System.Array.Copy(kb, 0, h, 0, System.Math.Min(kb.Length, 16));
-            return h;
+            var kw = new Writer(Endianness.Big, 4, PlCdr1Framing.Defaults(), false);
+            kw.WriteI32(sample.Key);
+            return kw.ZeroPadded();
         }
     }
 }

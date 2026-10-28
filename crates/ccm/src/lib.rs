@@ -9,11 +9,12 @@
 //! # Scope
 //!
 //! This crate implements the **Equivalent-IDL transformation part** of
-//! the CCM 4.0 spec from §6 (Component Model). Input is a
-//! `zerodds_idl::ast::ComponentDef` / `HomeDef` / `EventDef`; output is
-//! the spec-conformant `interface` / `valuetype` definitions that an
-//! IDL compiler "implicitly defines" per Spec §6.3.2 / §6.4.1 /
-//! §6.5.1 / §6.6.x / §6.7.1.
+//! the CCM 4.0 spec from §6 (Component Model). Input and output are one
+//! [`zerodds_ast::Ast`]: a `component`, `home` or `eventtype` node is
+//! rewritten into the `interface` / `valuetype` declarations an IDL
+//! compiler "implicitly defines" per Spec §6.3.2 / §6.4.1 / §6.5.1 /
+//! §6.6.x / §6.7.1, and the interfaces those clauses add are declared
+//! beside it.
 //!
 //! Plus models of the `Components::*` core types (CCMObject, Cookie,
 //! ConnectionDescription, Navigation/Receptacles/Events interfaces) as
@@ -48,7 +49,7 @@
 //!
 //! let c = Cookie::new(vec![0x01, 0x02, 0x03]);
 //! assert_eq!(c.cookie_value, vec![0x01, 0x02, 0x03]);
-//! // Spec §6.5.2.4: Truncation auf Base behaelt cookieValue.
+//! // Spec §6.5.2.4: truncation to Base retains cookieValue.
 //! assert_eq!(c.truncate_to_base().cookie_value, c.cookie_value);
 //! ```
 
@@ -66,7 +67,7 @@ pub mod validate;
 pub use lightweight::{LightweightFilterError, filter_to_lightweight};
 pub use model::{Cookie, FailureReason, FeatureName, RepositoryId};
 pub use transform::{
-    ComponentEquivalent, EventTypeEquivalent, HomeEquivalent, scoped_name, transform_component,
+    ComponentEquivalent, EventTypeEquivalent, HomeEquivalent, TransformError, transform_component,
     transform_event_type, transform_home,
 };
 pub use validate::{InitOp, PrimaryKeyError, apply_factory_finder_body, validate_primary_key};

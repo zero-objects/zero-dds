@@ -2,7 +2,7 @@
 
 > **Internal tooling — not on crates.io.**
 
-Custom lints and project rules for ZeroDDS, AST-based on stable Rust (no Nightly, no dylint). Runs in CI and the pre-commit hook; enforces **0 errors / 0 warnings workspace-wide** as the RC1 DoD gate.
+Custom lints and project rules for ZeroDDS, AST-based on stable Rust (no Nightly, no dylint). Runs in CI and the pre-commit hook; enforces **0 errors / 0 warnings workspace-wide** as a CI gate.
 
 Safety classification: **TOOLING**. Part of [**ZeroDDS**](../../README.md).
 

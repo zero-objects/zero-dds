@@ -1,0 +1,10 @@
+module probe {
+    struct TwoLongs { long a; long b; };
+    struct WithString { string s; };
+    interface Special {
+        void out_variable(out WithString v);
+        void out_fixed(out TwoLongs v);
+        WithString ret_variable();
+        TwoLongs ret_fixed();
+    };
+};

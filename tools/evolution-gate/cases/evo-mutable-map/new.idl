@@ -1,0 +1,5 @@
+@mutable
+struct Evo {
+    @id(1) long anchor;
+    @id(2) map<long, long> m;
+};

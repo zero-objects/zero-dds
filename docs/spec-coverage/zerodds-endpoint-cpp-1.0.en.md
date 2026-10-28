@@ -5,10 +5,8 @@ normative C++17 endpoint SDK spec (XRCE framing, sync client, async
 Reader/Writer, reliable stream). Implemented in `endpoints/cpp/`: XRCE
 framing + the sync client over the C89 wire core `zdw` (`endpoints/c`),
 async Reader/Writer as a thin C++17 facade (`zerodds_async.hpp`), and the
-header-only reliable stream (`zerodds_reliable.hpp`). Complements the
-codegen coverage `zerodds-xcdr2-cpp` (`zerodds-xcdr2-cpp-1.0.en.md`) — that
-doc covers the generated `topic_type_support<T>` codec, this one the
-endpoint that transports it.
+header-only reliable stream (`zerodds_reliable.hpp`). The generated `topic_type_support<T>` codec comes from `crates/lang-rules`,
+column `Language::Cpp`; this document covers the endpoint that transports it.
 
 ## §1 XRCE framing
 
@@ -43,7 +41,7 @@ site `crates/endpoint-e2e/tests/cpp.rs::run_sync` (UDP callbacks
 `Reading{id,value,label}`, C++98 poll loop over an in-memory FIFO, full
 field decode).
 
-**Tests (codepit, g++/gcc gated):** `cpp_endpoint_sync` — live ping-pong E2E
+**Tests:** (Linux, g++/gcc gated) `cpp_endpoint_sync` — live ping-pong E2E
 against the shared Rust XRCE peer over real UDP; plus `cpp_raw_udp` (bare
 XCDR2, no XRCE framing, a direct codec call through the generated types
 `topic_type_support<Ping>`/`<Pong>` from `idl-cpp`) as codec build
@@ -66,7 +64,7 @@ writer, both thin C++17 facades over the audited C reactor
 `zdw_async_writer_init` / `zdw_async_write`); `endpoints/cpp/example_async.cpp`
 (sensor-telemetry deep example, C++17 reactor).
 
-**Tests (codepit, g++/gcc gated):** `crates/endpoint-e2e/tests/cpp.rs::run_async`
+**Tests:** (Linux, g++/gcc gated) `crates/endpoint-e2e/tests/cpp.rs::run_async`
 — `AsyncReader` dispatches the received pong to a lambda, `AsyncWriter`
 sends the ping; live ping-pong E2E against the Rust peer over real UDP;
 test name `cpp_endpoint_async`. 1/1 passed. Loud skip only when no compiler
@@ -100,7 +98,7 @@ every 3rd sample dropped in the first round, ACKNACK-driven recovery
 rounds). `endpoints/cpp/test/test_reliable_cpp.cpp` (12 unit checks +
 byte-golden + latency bench).
 
-**Tests (codepit, g++12):**
+**Tests:** (Linux, g++12)
 
 - `cpp_reliable_unit_and_golden` — 12 unit checks (sender: monotonic seq,
   payload-too-large, window-full, heartbeat first/silence/period; receiver:
@@ -156,7 +154,7 @@ example, not a stub). Loud skip only when `g++`/`gcc` is missing from
 
 5 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
 
-Test run (codepit, g++12, verified): `cargo test -p zerodds-endpoint-e2e
+Test run (Linux, g++12, verified): `cargo test -p zerodds-endpoint-e2e
 --test cpp` → 3/3 (`cpp_raw_udp`, `cpp_endpoint_sync`, `cpp_endpoint_async`);
 `--test cpp_reliable` → 4/4 (`cpp_reliable_unit_and_golden` incl.
 12-checks+byte-golden+bench, `cpp_reliable_loss_recovery`,

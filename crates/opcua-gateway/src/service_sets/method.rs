@@ -90,7 +90,7 @@ mod tests {
 
     #[test]
     fn method_set_has_one_method_per_spec() {
-        // Spec §8.3.5.2 IDL — Method interface hat nur `call`.
+        // Spec §8.3.5.2 IDL — the Method interface only has `call`.
         assert_eq!(SERVICE_SET.methods.len(), 1);
         assert_eq!(SERVICE_SET.methods[0].name, "call");
     }

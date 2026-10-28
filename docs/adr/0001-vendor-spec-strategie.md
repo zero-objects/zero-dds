@@ -1,74 +1,73 @@
-# 0001 — Vendor-Spec-Strategie für Lücken im OMG-Ökosystem
+# 0001 — Vendor spec strategy for gaps in the OMG ecosystem
 
 - **Status:** accepted
-- **Datum:** 2026-05-04
-- **Autoren:** @sandra
-- **Kontext:** docs/specs/, docs/spec-coverage/
+- **Date:** 2026-05-04
+- **Authors:** @sandra
+- **Context:** docs/specs/, docs/spec-coverage/
 
-## Kontext
+## Context
 
-Bei der Audit-Vervollständigung (Phase-2 Spec-Coverage) sind zwei
-Themen aufgekommen, die **keine OMG-Spec haben**, aber für ein
-modernes DDS-Stack relevant sind:
+While completing the audit (phase 2 spec coverage), two
+topics came up that **have no OMG spec**, but are relevant for a
+modern DDS stack:
 
-- **async-DDS-API** — Tokio/async-std haben sich seit ~2019 als
-  Standard-Pattern durchgesetzt. Existing DDS-Implementations (RTI,
-  Cyclone, Fast-DDS) bieten C++-`std::future`-Wrappers, aber keine
-  Spec-konforme `async fn`-API. dust-dds hat einen Tokio-only-Pfad.
-- **Zero-Copy / FlatData** — RTI hat "FlatData" als Vendor-Erweiterung,
-  Eclipse Iceoryx hat einen eigenen Standard, ROS-2 hat REP-2007-
-  Loaning. Kein OMG-Konsens.
+- **async DDS API** — Tokio/async-std have become established as the
+  standard pattern since ~2019. Existing DDS implementations (RTI,
+  Cyclone, Fast-DDS) offer C++ `std::future` wrappers, but no
+  spec-conformant `async fn` API. dust-dds has a Tokio-only path.
+- **Zero-Copy / FlatData** — RTI has "FlatData" as a vendor extension,
+  Eclipse Iceoryx has its own standard, ROS-2 has REP-2007
+  loaning. No OMG consensus.
 
-Wir brauchen eine **konsistente Strategie**, wie wir solche Lücken
-schließen, ohne (a) die OMG-Compliance zu kompromittieren und (b) den
-Eindruck zu erwecken, wir würden Standards umgehen.
+We need a **consistent strategy** for how we close such gaps
+without (a) compromising OMG compliance and (b) giving the
+impression that we bypass standards.
 
-## Entscheidung
+## Decision
 
-**Wir definieren eigene Vendor-Specs unter `docs/specs/zerodds-<thema>-N.M.md`.**
+**We define our own vendor specs under `docs/specs/zerodds-<topic>-N.M.md`.**
 
-Diese Specs:
-- bekommen die gleiche Spec-Coverage-Behandlung wie OMG-Specs
-  (`docs/spec-coverage/zerodds-<thema>-N.M.md` mit Items + Repo +
-  Tests + Status, plus `.open.md`).
-- haben eine eigene `## Decisions`-Sektion (D-1..D-N), die im
-  PROCESS.md-Stil dokumentiert ist.
-- starten als `Draft`, werden zu `Final` erst wenn alle Items done +
-  Tooling fertig + funktionsnachweis erbracht ist.
-- definieren eigene Wire-PIDs nur im Vendor-Bereich (>= 0x8000), mit
-  `VENDOR_SPECIFIC_BIT` gesetzt und ohne `MUST_UNDERSTAND`.
+These specs:
+- get the same spec coverage treatment as OMG specs
+  (`docs/spec-coverage/zerodds-<topic>-N.M.md` with items + repo +
+  tests + status, plus `.open.md`).
+- have their own `## Decisions` section (D-1..D-N), documented in
+  the PROCESS.md style.
+- start as `Draft`, and become `Final` only when all items are done +
+  tooling is finished + proof of function has been provided.
+- define their own wire PIDs only in the vendor range (>= 0x8000), with
+  `VENDOR_SPECIFIC_BIT` set and without `MUST_UNDERSTAND`.
 
-## Alternativen
+## Alternatives
 
-1. **Nur OMG-Specs umsetzen, Lücken offen lassen** — verlieren async-
-   und Zero-Copy-Märkte komplett.
-2. **OMG-Spec-Submission anstoßen** — 1-3 Jahre Vorlauf, blockiert
-   uns nicht.
-3. **Defacto-Standard übernehmen** (z.B. RTI FlatData) — Lock-in zu
-   einem Konkurrenz-Vendor.
-4. **Eigene Vendor-Spec mit voller PROCESS.md-Disziplin** (gewählt) —
-   transparent, audit-fähig, kann später in OMG-Submission umgewandelt
-   werden.
+1. **Implement only OMG specs, leave gaps open** — loses the async
+   and zero-copy markets completely.
+2. **Initiate an OMG spec submission** — 1-3 years lead time, does not
+   block us.
+3. **Adopt a de facto standard** (e.g. RTI FlatData) — lock-in to
+   a competing vendor.
+4. **Own vendor spec with full PROCESS.md discipline** (chosen) —
+   transparent, auditable, can later be converted into an OMG submission.
 
-## Konsequenzen
+## Consequences
 
-**Positiv**:
-- Spec-Lücken werden geschlossen ohne dass wir uns auf einen Vendor-
-  Lock-in einlassen.
-- PROCESS.md-Disziplin (Items + Repo + Tests) gilt einheitlich.
-- Vendor-PIDs sind dokumentiert, Cross-Vendor-Compat bleibt erhalten.
+**Positive**:
+- Spec gaps are closed without us entering a vendor
+  lock-in.
+- PROCESS.md discipline (items + repo + tests) applies uniformly.
+- Vendor PIDs are documented, cross-vendor compatibility is preserved.
 
-**Negativ**:
-- Caller, der zwei DDS-Vendoren parallel benutzt, sieht zwei FlatData-
-  Patterns (RTI vs ZeroDDS).
-- Wir tragen alleine den Pflegeaufwand für die Specs.
+**Negative**:
+- A caller that uses two DDS vendors in parallel sees two FlatData
+  patterns (RTI vs ZeroDDS).
+- We alone carry the maintenance effort for the specs.
 
-**Folge-Aufgaben**:
-- ADR-0002 (async runtime-agnostic), ADR-0003 (flatdata Backend-Trait),
-  ADR-0004 (Iceoryx2 optional), ADR-0005 (Dual-Stack opt-in),
+**Follow-up tasks**:
+- ADR-0002 (async runtime-agnostic), ADR-0003 (flatdata backend trait),
+  ADR-0004 (Iceoryx2 optional), ADR-0005 (dual stack opt-in),
   ADR-0006 (PID_SHM_LOCATOR).
 
-## Referenzen
+## References
 
 - `docs/specs/zerodds-async-1.0.md`
 - `docs/specs/zerodds-flatdata-1.0.md`

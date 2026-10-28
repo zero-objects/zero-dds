@@ -1,0 +1,70 @@
+[package]
+name = "zerodds-webdds-bridge"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "OMG DDS-WEB 1.0 gateway daemon: REST-PSM (zerodds-web) + SOAP-PSM (zerodds-soap), one process, backed by zerodds-dcps."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-webdds-bridge"
+readme = "README.md"
+keywords = ["dds", "web", "rest", "soap", "psm"]
+categories = ["network-programming", "web-programming"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["ring-backend"]
+# Crypto backend of bridge-security (JWT verify + the rustls TLS
+# provider): `ring-backend` (default) or `aws-lc` (aws-lc-rs, FIPS
+# 140-3 validatable). A FIPS build:
+# `--no-default-features --features aws-lc`.
+ring-backend = ["zerodds-bridge-security/ring-backend"]
+aws-lc = ["zerodds-bridge-security/aws-lc"]
+# C2(2): passthrough for `zerodds-dcps/rt` (`threads.*` real-time
+# scheduling + CPU affinity via `zerodds-rt-linux`). Off by default.
+rt = ["zerodds-dcps/rt"]
+
+[dependencies]
+zerodds-web = { version = "1.0.0-rc.7", path = "../web", features = ["std"] }
+zerodds-soap = { version = "1.0.0-rc.7", path = "../zerodds-soap", features = ["std"] }
+zerodds-xml-wire = { version = "1.0.0-rc.7", path = "../zerodds-xml-wire" }
+zerodds-xml = { version = "1.0.0-rc.7", path = "../xml", default-features = false, features = ["std"] }
+zerodds-dcps = { version = "1.0.0-rc.7", path = "../dcps", default-features = false, features = ["std"] }
+zerodds-config = { version = "1.0.0-rc.7", path = "../config" }
+zerodds-rtps = { version = "1.0.0-rc.7", path = "../rtps", default-features = false, features = ["std"] }
+zerodds-qos = { version = "1.0.0-rc.7", path = "../qos", default-features = false, features = ["alloc"] }
+zerodds-types = { version = "1.0.0-rc.7", path = "../types", default-features = false, features = ["alloc"] }
+zerodds-ast = { version = "1.0.0-rc.7", path = "../ast" }
+zerodds-ast-core = { version = "1.0.0-rc.7", path = "../ast-core" }
+zerodds-ast-layout = { version = "1.0.0-rc.7", path = "../ast-layout" }
+zerodds-wire-codec = { version = "1.0.0-rc.7", path = "../wire-codec" }
+zerodds-wire-probe = { version = "1.0.0-rc.7", path = "../wire-probe" }
+zerodds-lang-rules = { version = "1.0.0-rc.7", path = "../lang-rules" }
+zerodds-rpc = { version = "1.0.0-rc.7", path = "../rpc" }
+# Bridge-security substrate (Bridge-Spec §7.2 Auth / §7.3 Topic-ACL) — the
+# same auth/ACL model every zerodds-*-bridged daemon shares.
+zerodds-bridge-security = { version = "1.0.0-rc.7", path = "../bridge-security", default-features = false, features = ["std"] }
+# Cross-cutting daemon observability: Prometheus + OTLP + graceful shutdown.
+zerodds-monitor = { version = "1.0.0-rc.7", path = "../monitor", default-features = false, features = ["std", "prometheus-server"] }
+zerodds-observability-otlp = { version = "1.0.0-rc.7", path = "../observability-otlp" }
+signal-hook = { workspace = true }
+
+[dev-dependencies]
+zerodds-test-domains = { path = "../test-domains" }
+# The interop e2e proof for item 1 (one DDS-RPC topic pair per
+# interface): a REAL `zerodds-idlc generate --lang rust` binding
+# (Calculator, with an exception/oneway/attribute/inout — every
+# DDS-RPC 1.0 SS7.5.1.1 construct), not a hand-rolled stand-in.
+zerodds-rpc-rust-e2e = { path = "../rpc-rust-e2e" }
+
+[[bin]]
+name = "zerodds-webdds-bridged"
+path = "src/bin/zerodds-webdds-bridged.rs"

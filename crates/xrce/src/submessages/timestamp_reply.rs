@@ -34,10 +34,10 @@ impl TimestampReplyPayload {
     /// # Errors
     /// None expected.
     pub fn encode_body(self, e: Endianness) -> Result<Vec<u8>, XrceError> {
-        let mut out = alloc::vec![0u8; TIMESTAMP_REPLY_BODY_SIZE];
-        self.transmit_timestamp.encode(&mut out[0..8], e)?;
-        self.receive_timestamp.encode(&mut out[8..16], e)?;
-        self.originate_timestamp.encode(&mut out[16..24], e)?;
+        let mut out = Vec::new();
+        self.transmit_timestamp.encode_into(&mut out, e);
+        self.receive_timestamp.encode_into(&mut out, e);
+        self.originate_timestamp.encode_into(&mut out, e);
         Ok(out)
     }
 
@@ -46,16 +46,13 @@ impl TimestampReplyPayload {
     /// # Errors
     /// `UnexpectedEof`.
     pub fn decode_body(bytes: &[u8], e: Endianness) -> Result<Self, XrceError> {
-        if bytes.len() < TIMESTAMP_REPLY_BODY_SIZE {
-            return Err(XrceError::UnexpectedEof {
-                needed: TIMESTAMP_REPLY_BODY_SIZE,
-                offset: bytes.len(),
-            });
-        }
+        let (transmit_timestamp, at) = TimePoint::decode_at(bytes, 0, e)?;
+        let (receive_timestamp, at) = TimePoint::decode_at(bytes, at, e)?;
+        let (originate_timestamp, _) = TimePoint::decode_at(bytes, at, e)?;
         Ok(Self {
-            transmit_timestamp: TimePoint::decode(&bytes[0..8], e)?,
-            receive_timestamp: TimePoint::decode(&bytes[8..16], e)?,
-            originate_timestamp: TimePoint::decode(&bytes[16..24], e)?,
+            transmit_timestamp,
+            receive_timestamp,
+            originate_timestamp,
         })
     }
 
@@ -103,10 +100,22 @@ mod tests {
                 nanoseconds: 6,
             },
         };
+        // Three Time_t, each APPENDABLE (Annex A gives it no @extensibility):
+        // a DHEADER of 8 and the eight octets, 12 each.
         let body = p.encode_body(Endianness::Little).unwrap();
-        assert_eq!(body.len(), 24);
+        assert_eq!(body.len(), 36);
+        assert_eq!(&body[..12], &[8, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0]);
         let p2 = TimestampReplyPayload::decode_body(&body, Endianness::Little).unwrap();
         assert_eq!(p2, p);
+        // The reference implementation's form: 3 * 8 octets.
+        crate::encoding::with_unannotated_types(crate::encoding::UnannotatedTypes::Final, || {
+            let body = p.encode_body(Endianness::Little).unwrap();
+            assert_eq!(body.len(), TIMESTAMP_REPLY_BODY_SIZE);
+            assert_eq!(
+                TimestampReplyPayload::decode_body(&body, Endianness::Little).unwrap(),
+                p
+            );
+        });
     }
 
     #[test]
@@ -120,9 +129,6 @@ mod tests {
     #[test]
     fn timestamp_reply_decode_short_returns_eof() {
         let res = TimestampReplyPayload::decode_body(&[0; 23], Endianness::Little);
-        assert!(matches!(
-            res,
-            Err(XrceError::UnexpectedEof { needed: 24, .. })
-        ));
+        assert!(matches!(res, Err(XrceError::UnexpectedEof { .. })));
     }
 }

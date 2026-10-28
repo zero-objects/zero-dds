@@ -2,6 +2,16 @@
 
 Format follows [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), versioning follows [Semantic Versioning](https://semver.org/lang/de/).
 
+## [Unreleased]
+
+### Added
+
+- `check_nesting`, `NestingTooDeep` and `XML_NESTING_LIMIT` (module
+  `xml_depth`): the element nesting of an XML text, counted without
+  parsing it, so that a reader refuses a text `roxmltree` would overflow
+  its stack on. Skips comments, CDATA, processing instructions, the
+  DOCTYPE with its internal subset and quoted attribute values.
+
 ## [1.0.0-rc.1]
 
 Initial release materialization of the `zerodds-foundation` crate.

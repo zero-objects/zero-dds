@@ -15,7 +15,7 @@ pub const WSA_NS: &str = "http://www.w3.org/2005/08/addressing";
 /// WS-Addressing-Header. Spec §3.2.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct AddressingHeaders {
-    /// `wsa:To` — Endpoint-Reference des Empfaengers.
+    /// `wsa:To` — endpoint reference of the recipient.
     pub to: Option<String>,
     /// `wsa:Action` — Operation-IRI.
     pub action: Option<String>,

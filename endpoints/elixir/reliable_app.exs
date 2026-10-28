@@ -23,7 +23,7 @@ defmodule ReliableApp do
   def open_drain(port) do
     {:ok, socket} = :gen_udp.open(0, [:binary, active: false])
     :ok = :gen_udp.connect(socket, {127, 0, 0, 1}, port)
-    {:ok, drain} = Drain.start_link(socket)
+    {:ok, drain} = Drain.start_link(socket, 0x0015)
     :ok = :gen_udp.controlling_process(socket, drain)
     :ok = Drain.activate(drain)
     drain
@@ -51,7 +51,7 @@ defmodule ReliableApp do
 
     {:ok, inline_sock} = :gen_udp.open(0, [:binary, active: false])
     :ok = :gen_udp.connect(inline_sock, {127, 0, 0, 1}, port)
-    frame = Reliable.write_frame(0, sample)
+    frame = Reliable.write_frame(0, 0x0015, sample)
     t0 = System.monotonic_time(:nanosecond)
     for _ <- 1..iters, do: :gen_udp.send(inline_sock, frame)
     inline_ns = (System.monotonic_time(:nanosecond) - t0) / iters

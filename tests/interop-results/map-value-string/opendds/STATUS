@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of map-value-string that opendds produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	wireprobe-fill: zd_c13::Sample.entries: a map, which no CORBA IDL front end on the test host parses
+plain-cdr1	be	refused	wireprobe-fill: zd_c13::Sample.entries: a map, which no CORBA IDL front end on the test host parses
+pl-cdr1	le	refused	wireprobe-fill: zd_c13::Sample.entries: a map, which no CORBA IDL front end on the test host parses
+pl-cdr1	be	refused	wireprobe-fill: zd_c13::Sample.entries: a map, which no CORBA IDL front end on the test host parses
+plain-cdr2	le	refused	wireprobe-fill: zd_c13::Sample.entries: a map, which no CORBA IDL front end on the test host parses
+plain-cdr2	be	refused	wireprobe-fill: zd_c13::Sample.entries: a map, which no CORBA IDL front end on the test host parses
+delimited-cdr	le	refused	wireprobe-fill: zd_c13::Sample.entries: a map, which no CORBA IDL front end on the test host parses
+delimited-cdr	be	refused	wireprobe-fill: zd_c13::Sample.entries: a map, which no CORBA IDL front end on the test host parses
+pl-cdr2	le	refused	wireprobe-fill: zd_c13::Sample.entries: a map, which no CORBA IDL front end on the test host parses
+pl-cdr2	be	refused	wireprobe-fill: zd_c13::Sample.entries: a map, which no CORBA IDL front end on the test host parses

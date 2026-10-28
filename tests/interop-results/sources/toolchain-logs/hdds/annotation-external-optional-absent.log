@@ -1,0 +1,6 @@
+## wireprobe-hdds, exit 4
+### stderr
+wireprobe-hdds: the probe did not compile
+error[E0308]: mismatched types
+error[E0308]: mismatched types
+error: could not compile `wireprobe-hdds-run-1083315-2598` (bin "wireprobe-hdds-run-1083315-2598") due to 2 previous errors

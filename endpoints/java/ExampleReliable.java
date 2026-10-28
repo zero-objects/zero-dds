@@ -23,7 +23,7 @@ public final class ExampleReliable {
         int n = args.length > 1 ? Integer.parseInt(args[1]) : 12;
 
         InetAddress host = InetAddress.getByName("127.0.0.1");
-        AsyncReliableWriter writer = new AsyncReliableWriter(host, port);
+        AsyncReliableWriter writer = new AsyncReliableWriter(host, port, 0x0015);
         writer.start();
 
         for (int i = 0; i < n; i++) {

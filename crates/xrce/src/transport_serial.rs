@@ -1,90 +1,97 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! XRCE Serial-Transport-Framer (Spec Annex C, RFC 1662 PPP/HDLC-Framing).
+//! XRCE serial transport framing (DDS-XRCE 1.0 Annex C.1, an HDLC-like
+//! framing after RFC 1662).
 //!
-//! Annex C defines a PPP/HDLC-like framing that marks frame boundaries
-//! via begin/end flags + byte stuffing and appends a CRC-16 for
-//! error detection. This is necessary because serial transports
-//! (RS-232, SPI, I2C) have no inherent frame boundaries.
+//! Serial transports (RS-232, SPI, I2C) have no frame boundaries of their
+//! own; Annex C frames each XRCE Message.
 //!
-//! ## Frame-Layout
+//! ## Frame format (Annex C.1.1)
 //!
 //! ```text
-//!   7E [ stuffed payload + crc16 ] 7E
+//!   7E | sourceAddress | remoteAddress | payloadLength (LE) | payload | frameCheck (LE)
+//!   1    1               1               2                    N         2
 //! ```
 //!
-//! ## Byte-Stuffing
+//! The frame begins with `BEGIN_FLAG` (0x7E); its end follows from
+//! `payloadLength`. `frameCheck` is the 16-bit CRC of RFC 1662 (FCS-16,
+//! polynomial `x^16 + x^12 + x^5 + 1`, reflected, initial value 0xFFFF,
+//! complemented) of the frame "without including the BEGIN_FLAG or
+//! transparency stuffing", little endian (C.1.1.6).
 //!
-//! - `0x7E` (begin/end flag) in the payload → `0x7D 0x5E`
-//! - `0x7D` (escape flag) in the payload → `0x7D 0x5D`
-//! - Generic: `b ∈ {0x7D, 0x7E}` → `0x7D, b XOR 0x20`
+//! ## Transparency (Annex C.1.2)
 //!
-//! ## CRC
+//! Each byte after the flag that is 0x7E or 0x7D is sent as 0x7D followed by
+//! the byte XOR 0x20.
 //!
-//! 16-Bit CRC-CCITT-FALSE: Init=`0xFFFF`, Polynom=`0x1021`,
-//! RefIn=false, RefOut=false, XorOut=`0x0000`.
+//! ## Frame integrity (Annex C.1.3)
 //!
-//! Rationale: Spec §C.1.1.6 requires RFC 1662 CRC-16, polynomial
-//! `x^16+x^12+x^5+1` (= `0x1021`). RFC 1662 technically specifies
-//! init=`0xFFFF` with reflected input/output (X.25/FCS-16). We
-//! choose the unreflected CCITT-FALSE variant, because it (a)
-//! matches the majority of embedded CRC implementations (XMODEM,
-//! ITU-T V.41) and (b) is congruent with the `0x1021` polynomial choice.
-//! Appended as big-endian (most-significant byte first) before the
-//! end flag, because that is the DDS-XCDR convention in the RTPS stack and
-//! the XRCE spec text does not explicitly require it reflected.
+//! A frame is dropped when its `frameCheck` is not the computed CRC, and when
+//! a non-escaped `BEGIN_FLAG` comes before its payload is completely read;
+//! that flag then begins the next frame.
+//!
+//! ## The frame check of Micro-XRCE-DDS
+//!
+//! eProsima Micro-XRCE-DDS 3.0.1 (agent `StreamFramingProtocol.cpp`, client
+//! `stream_framing_protocol.c`) frames as Annex C does but computes
+//! `frameCheck` as CRC-16/ARC (polynomial `x^16 + x^15 + x^2 + 1`,
+//! reflected, initial value 0, not complemented) over the payload alone.
+//! [`FrameCheck::Crc16ArcPayload`] takes and makes those frames; the default
+//! is [`FrameCheck::Rfc1662`].
 
 extern crate alloc;
 use alloc::vec::Vec;
 
 use crate::error::XrceError;
-use crate::submessages::{DOSC_MAX_PAYLOAD_SIZE, Message};
-use crate::transport_udp::MAX_DATAGRAM_SIZE;
+use crate::submessages::Message;
 
-/// Frame boundary flag.
+/// `BEGIN_FLAG` (Annex C.1.1.1).
 pub const FLAG_BYTE: u8 = 0x7E;
-/// Escape byte.
+/// `ESCAPE_FLAG` (Annex C.1.2).
 pub const ESCAPE_BYTE: u8 = 0x7D;
-/// XOR mask for stuffed bytes.
+/// `XOR_FLAG` (Annex C.1.2).
 pub const STUFF_XOR: u8 = 0x20;
+/// The octets of a frame before the payload, after the flag: the two
+/// addresses and `payloadLength`.
+pub const FRAME_HEADER_LEN: usize = 4;
 
 /// Error during serial framing.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum SerialError {
-    /// Frame is shorter than the CRC field (at least 2 bytes) — no
-    /// complete payload possible.
+    /// The frame ends before its header, payload and `frameCheck`.
     FrameTooShort {
-        /// Actual destuffed frame length in bytes.
+        /// The destuffed octets there are.
         actual: usize,
     },
-    /// The computed CRC does not match the one transmitted in the frame.
+    /// `frameCheck` is not the computed CRC (Annex C.1.3).
     CrcMismatch {
-        /// Expected (computed) CRC.
+        /// The computed CRC.
         expected: u16,
-        /// Actual (transmitted) CRC.
+        /// The transmitted `frameCheck`.
         actual: u16,
     },
-    /// Escape sequence ends mid-frame with no following byte.
+    /// A non-escaped `BEGIN_FLAG` before the payload was completely read
+    /// (Annex C.1.3); it begins the next frame.
+    BeginFlagInFrame,
+    /// An escape sequence ends with the input.
     DanglingEscape,
-    /// Escape sequence was followed by a byte, but the byte
-    /// does not fit the stuffing convention (`b XOR 0x20` must yield `0x7D`
-    /// or `0x7E`).
+    /// The byte after `ESCAPE_FLAG` does not stuff 0x7E or 0x7D.
     InvalidEscape {
         /// The byte after `0x7D`.
         byte: u8,
     },
-    /// Frame exceeds the DoS cap.
+    /// A payload longer than `payloadLength` can say (64 KiB).
     FrameTooLong {
-        /// Cap.
+        /// The limit.
         limit: usize,
-        /// Actual length.
+        /// The length.
         actual: usize,
     },
-    /// Wraps an `XrceError` from `Message::decode`.
+    /// The payload is not an XRCE Message.
     Decode(XrceError),
-    /// Wraps an `XrceError` from `Message::encode`.
+    /// The Message does not encode.
     Encode(XrceError),
 }
 
@@ -94,8 +101,14 @@ impl core::fmt::Display for SerialError {
             Self::FrameTooShort { actual } => write!(f, "serial frame too short: {actual} bytes"),
             Self::CrcMismatch { expected, actual } => write!(
                 f,
-                "serial crc mismatch: expected 0x{expected:04x}, actual 0x{actual:04x}"
+                "serial frameCheck mismatch: expected 0x{expected:04x}, actual 0x{actual:04x}"
             ),
+            Self::BeginFlagInFrame => {
+                write!(
+                    f,
+                    "serial BEGIN_FLAG before the payload was completely read"
+                )
+            }
             Self::DanglingEscape => write!(f, "serial dangling escape at end of frame"),
             Self::InvalidEscape { byte } => write!(f, "serial invalid escape byte 0x{byte:02x}"),
             Self::FrameTooLong { limit, actual } => {
@@ -110,56 +123,112 @@ impl core::fmt::Display for SerialError {
 #[cfg(feature = "std")]
 impl std::error::Error for SerialError {}
 
-/// Berechnet CRC-16-CCITT-FALSE.
+/// How `frameCheck` is computed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum FrameCheck {
+    /// Annex C.1.1.6: the FCS-16 of RFC 1662 over the frame without the
+    /// `BEGIN_FLAG`, that is addresses, `payloadLength` and payload.
+    #[default]
+    Rfc1662,
+    /// CRC-16/ARC over the payload alone, what Micro-XRCE-DDS 3.0.1
+    /// computes (see the module doc). Not Annex C; opt-in for its peers.
+    Crc16ArcPayload,
+}
+
+impl FrameCheck {
+    /// The check of `frame`: the four header octets after the flag and the
+    /// payload, destuffed.
+    #[must_use]
+    pub fn compute(self, frame: &[u8]) -> u16 {
+        match self {
+            Self::Rfc1662 => fcs16(frame),
+            Self::Crc16ArcPayload => crc16_arc(frame.get(FRAME_HEADER_LEN..).unwrap_or(&[])),
+        }
+    }
+}
+
+/// A frame of Annex C.1.1, taken apart.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SerialFrame {
+    /// `sourceAddress`: the address of the sender.
+    pub source: u8,
+    /// `remoteAddress`: the address of the recipient.
+    pub remote: u8,
+    /// The XRCE Message.
+    pub payload: Vec<u8>,
+}
+
+/// The 16-bit frame check of RFC 1662 (FCS-16): polynomial
+/// `x^16 + x^12 + x^5 + 1` in reflected form (0x8408), initial value
+/// 0xFFFF, complemented. Its value for "123456789" is 0x906E. The CRC was
+/// CCITT-FALSE (not reflected, not complemented), 0x29B1 for the same input,
+/// and every frame of a peer after Annex C was refused.
 #[must_use]
-pub fn crc16_ccitt_false(data: &[u8]) -> u16 {
+pub fn fcs16(data: &[u8]) -> u16 {
     let mut crc: u16 = 0xFFFF;
     for &b in data {
-        crc ^= u16::from(b) << 8;
+        crc ^= u16::from(b);
         for _ in 0..8 {
-            if (crc & 0x8000) != 0 {
-                crc = (crc << 1) ^ 0x1021;
+            if crc & 0x0001 != 0 {
+                crc = (crc >> 1) ^ 0x8408;
             } else {
-                crc <<= 1;
+                crc >>= 1;
+            }
+        }
+    }
+    !crc
+}
+
+/// CRC-16/ARC: polynomial `x^16 + x^15 + x^2 + 1` in reflected form
+/// (0xA001), initial value 0, not complemented; 0xBB3D for "123456789".
+#[must_use]
+pub fn crc16_arc(data: &[u8]) -> u16 {
+    let mut crc: u16 = 0;
+    for &b in data {
+        crc ^= u16::from(b);
+        for _ in 0..8 {
+            if crc & 0x0001 != 0 {
+                crc = (crc >> 1) ^ 0xA001;
+            } else {
+                crc >>= 1;
             }
         }
     }
     crc
 }
 
-/// Encodes exactly one HDLC frame around `payload`.
-///
-/// Layout: `7E [stuffed payload + crc16 BE] 7E`.
-#[must_use]
-pub fn encode_payload(payload: &[u8]) -> Vec<u8> {
-    let crc = crc16_ccitt_false(payload);
-    let mut out = Vec::with_capacity(payload.len() + 4);
-    out.push(FLAG_BYTE);
-    stuff_into(&mut out, payload);
-    let crc_bytes = crc.to_be_bytes();
-    stuff_into(&mut out, &crc_bytes);
-    out.push(FLAG_BYTE);
-    out
-}
-
-/// Encodes a complete `Message` as an HDLC frame.
+/// One frame around `payload` from `source` to `remote` (Annex C.1.1).
 ///
 /// # Errors
-/// `Encode` if `Message::encode` fails; `FrameTooLong` if the
-/// encoded message is > `MAX_DATAGRAM_SIZE`.
-pub fn encode_message(msg: &Message) -> Result<Vec<u8>, SerialError> {
-    let payload = msg.encode().map_err(SerialError::Encode)?;
-    if payload.len() > MAX_DATAGRAM_SIZE {
-        return Err(SerialError::FrameTooLong {
-            limit: MAX_DATAGRAM_SIZE,
-            actual: payload.len(),
-        });
-    }
-    Ok(encode_payload(&payload))
+/// `FrameTooLong` for a payload of more than 65 535 octets.
+pub fn encode_frame(source: u8, remote: u8, payload: &[u8]) -> Result<Vec<u8>, SerialError> {
+    encode_frame_with(FrameCheck::Rfc1662, source, remote, payload)
 }
 
-fn stuff_into(out: &mut Vec<u8>, data: &[u8]) {
-    for &b in data {
+/// [`encode_frame`] with the frame check `check`.
+///
+/// # Errors
+/// `FrameTooLong` for a payload of more than 65 535 octets.
+pub fn encode_frame_with(
+    check: FrameCheck,
+    source: u8,
+    remote: u8,
+    payload: &[u8],
+) -> Result<Vec<u8>, SerialError> {
+    let length = u16::try_from(payload.len()).map_err(|_| SerialError::FrameTooLong {
+        limit: usize::from(u16::MAX),
+        actual: payload.len(),
+    })?;
+    let mut raw = Vec::with_capacity(FRAME_HEADER_LEN + payload.len() + 2);
+    raw.push(source);
+    raw.push(remote);
+    raw.extend_from_slice(&length.to_le_bytes());
+    raw.extend_from_slice(payload);
+    let frame_check = check.compute(&raw);
+    raw.extend_from_slice(&frame_check.to_le_bytes());
+    let mut out = Vec::with_capacity(raw.len() + 8);
+    out.push(FLAG_BYTE);
+    for &b in &raw {
         if b == FLAG_BYTE || b == ESCAPE_BYTE {
             out.push(ESCAPE_BYTE);
             out.push(b ^ STUFF_XOR);
@@ -167,175 +236,221 @@ fn stuff_into(out: &mut Vec<u8>, data: &[u8]) {
             out.push(b);
         }
     }
-}
-
-/// Destuffs `input` (without begin/end flags). Returns the raw payload
-/// incl. the CRC field.
-fn destuff(input: &[u8]) -> Result<Vec<u8>, SerialError> {
-    let mut out = Vec::with_capacity(input.len());
-    let mut i = 0;
-    while i < input.len() {
-        let b = input[i];
-        if b == ESCAPE_BYTE {
-            i += 1;
-            if i >= input.len() {
-                return Err(SerialError::DanglingEscape);
-            }
-            let unstuffed = input[i] ^ STUFF_XOR;
-            if unstuffed != FLAG_BYTE && unstuffed != ESCAPE_BYTE {
-                return Err(SerialError::InvalidEscape { byte: input[i] });
-            }
-            out.push(unstuffed);
-        } else {
-            out.push(b);
-        }
-        i += 1;
-    }
     Ok(out)
 }
 
-/// Decodes exactly one frame that lies in `bytes` between the begin and
-/// end flag. `bytes` must contain exactly the frame-inner bytes (between
-/// the flags) — without the flags themselves.
+/// A Message as one frame from `source` to `remote`.
 ///
 /// # Errors
-/// - `FrameTooShort` (< 2 byte CRC).
-/// - `DanglingEscape`/`InvalidEscape` from `destuff`.
-/// - `CrcMismatch`.
-pub fn decode_frame_inner(bytes: &[u8]) -> Result<Vec<u8>, SerialError> {
-    let raw = destuff(bytes)?;
-    if raw.len() < 2 {
-        return Err(SerialError::FrameTooShort { actual: raw.len() });
-    }
-    let split = raw.len() - 2;
-    let payload = &raw[..split];
-    let crc_recv = u16::from_be_bytes([raw[split], raw[split + 1]]);
-    let crc_calc = crc16_ccitt_false(payload);
-    if crc_recv != crc_calc {
-        return Err(SerialError::CrcMismatch {
-            expected: crc_calc,
-            actual: crc_recv,
-        });
-    }
-    Ok(payload.to_vec())
+/// `Encode` if the Message does not encode; `FrameTooLong` if it is longer
+/// than `payloadLength` can say.
+pub fn encode_message(msg: &Message, source: u8, remote: u8) -> Result<Vec<u8>, SerialError> {
+    encode_message_with(FrameCheck::Rfc1662, msg, source, remote)
 }
 
-/// Decodes the first complete frame in `input` (with begin/end flags).
-/// Returns `(message, rest)` — `rest` points to the bytes after the
-/// end flag.
+/// [`encode_message`] with the frame check `check`.
 ///
 /// # Errors
-/// - `FrameTooShort` if no complete frame is present.
-/// - Frame decode error (CRC, escape, etc.).
-/// - `Decode` if the payload is not a valid XRCE message.
-pub fn decode_frame(input: &[u8]) -> Result<(Message, &[u8]), SerialError> {
-    // Search for the begin flag.
+/// As [`encode_message`].
+pub fn encode_message_with(
+    check: FrameCheck,
+    msg: &Message,
+    source: u8,
+    remote: u8,
+) -> Result<Vec<u8>, SerialError> {
+    let payload = msg.encode().map_err(SerialError::Encode)?;
+    encode_frame_with(check, source, remote, &payload)
+}
+
+/// The frame in `bytes`, the octets after its `BEGIN_FLAG`, stuffed. Octets
+/// after the frame are ignored.
+///
+/// # Errors
+/// `BeginFlagInFrame`, `DanglingEscape`, `InvalidEscape`, `FrameTooShort`,
+/// `CrcMismatch`.
+pub fn decode_frame_inner(bytes: &[u8]) -> Result<SerialFrame, SerialError> {
+    decode_frame_inner_with(FrameCheck::Rfc1662, bytes)
+}
+
+/// [`decode_frame_inner`] with the frame check `check`.
+///
+/// # Errors
+/// As [`decode_frame_inner`].
+pub fn decode_frame_inner_with(
+    check: FrameCheck,
+    bytes: &[u8],
+) -> Result<SerialFrame, SerialError> {
+    let mut assembler = FrameAssembler::new(check);
+    for &b in bytes {
+        if b == FLAG_BYTE {
+            return Err(SerialError::BeginFlagInFrame);
+        }
+        if let Some(done) = assembler.push(b) {
+            return done;
+        }
+    }
+    if assembler.escaped {
+        return Err(SerialError::DanglingEscape);
+    }
+    Err(SerialError::FrameTooShort {
+        actual: assembler.raw.len(),
+    })
+}
+
+/// The first frame in `input`, its Message, and the octets after it.
+///
+/// # Errors
+/// `FrameTooShort` without a `BEGIN_FLAG` or a complete frame, the errors of
+/// [`decode_frame_inner`], and `Decode` if the payload is no XRCE Message.
+pub fn decode_frame(input: &[u8]) -> Result<(SerialFrame, Message, &[u8]), SerialError> {
+    decode_frame_with(FrameCheck::Rfc1662, input)
+}
+
+/// [`decode_frame`] with the frame check `check`.
+///
+/// # Errors
+/// As [`decode_frame`].
+pub fn decode_frame_with(
+    check: FrameCheck,
+    input: &[u8],
+) -> Result<(SerialFrame, Message, &[u8]), SerialError> {
     let begin = input
         .iter()
         .position(|&b| b == FLAG_BYTE)
         .ok_or(SerialError::FrameTooShort { actual: 0 })?;
-    let after_begin = &input[begin + 1..];
-    // Search for the end flag (the next 0x7E NOT directly after begin — but
-    // it may be that the sender writes several 0x7E in a row
-    // and then an adjacency occurs; we skip empty frames).
-    let mut search_start = 0;
-    while search_start < after_begin.len() && after_begin[search_start] == FLAG_BYTE {
-        search_start += 1;
+    let mut assembler = FrameAssembler::new(check);
+    for (i, &b) in input[begin + 1..].iter().enumerate() {
+        if b == FLAG_BYTE {
+            return Err(SerialError::BeginFlagInFrame);
+        }
+        if let Some(done) = assembler.push(b) {
+            let frame = done?;
+            let msg = Message::decode(&frame.payload).map_err(SerialError::Decode)?;
+            return Ok((frame, msg, &input[begin + 2 + i..]));
+        }
     }
-    let end_rel = after_begin[search_start..]
-        .iter()
-        .position(|&b| b == FLAG_BYTE)
-        .ok_or(SerialError::FrameTooShort {
-            actual: after_begin.len(),
-        })?;
-    let inner_end = search_start + end_rel;
-    let inner = &after_begin[search_start..inner_end];
-    let payload = decode_frame_inner(inner)?;
-    let msg = Message::decode(&payload).map_err(SerialError::Decode)?;
-    let rest = &after_begin[inner_end + 1..];
-    Ok((msg, rest))
+    Err(SerialError::FrameTooShort {
+        actual: assembler.raw.len(),
+    })
 }
 
-/// Streaming decoder: takes a continuous byte stream and
-/// extracts completely received frames.
-///
-/// Anti-bombing: per `push_bytes` call at most
-/// `DOSC_MAX_PAYLOAD_SIZE * 2` bytes are buffered internally (worst case due
-/// to stuffing). Overflow → the internal buffer is put into a resync mode
-/// that skips up to the next `0x7E`.
+/// Collects the destuffed octets of one frame after its flag; the frame is
+/// complete when header, payload and `frameCheck` are there.
+#[derive(Debug)]
+struct FrameAssembler {
+    check: FrameCheck,
+    raw: Vec<u8>,
+    escaped: bool,
+}
+
+impl FrameAssembler {
+    fn new(check: FrameCheck) -> Self {
+        Self {
+            check,
+            raw: Vec::new(),
+            escaped: false,
+        }
+    }
+
+    /// Takes one stuffed octet (not a `BEGIN_FLAG`); the frame, or why it
+    /// is refused, once complete.
+    fn push(&mut self, b: u8) -> Option<Result<SerialFrame, SerialError>> {
+        let octet = if self.escaped {
+            self.escaped = false;
+            let unstuffed = b ^ STUFF_XOR;
+            if unstuffed != FLAG_BYTE && unstuffed != ESCAPE_BYTE {
+                return Some(Err(SerialError::InvalidEscape { byte: b }));
+            }
+            unstuffed
+        } else if b == ESCAPE_BYTE {
+            self.escaped = true;
+            return None;
+        } else {
+            b
+        };
+        self.raw.push(octet);
+        if self.raw.len() < FRAME_HEADER_LEN {
+            return None;
+        }
+        let length = usize::from(u16::from_le_bytes([self.raw[2], self.raw[3]]));
+        let total = FRAME_HEADER_LEN + length + 2;
+        if self.raw.len() < total {
+            return None;
+        }
+        let checked = &self.raw[..FRAME_HEADER_LEN + length];
+        let expected = self.check.compute(checked);
+        let actual = u16::from_le_bytes([self.raw[total - 2], self.raw[total - 1]]);
+        if expected != actual {
+            return Some(Err(SerialError::CrcMismatch { expected, actual }));
+        }
+        Some(Ok(SerialFrame {
+            source: self.raw[0],
+            remote: self.raw[1],
+            payload: self.raw[FRAME_HEADER_LEN..FRAME_HEADER_LEN + length].to_vec(),
+        }))
+    }
+}
+
+/// Streaming framer: takes the octets of a serial line as they come and
+/// returns the complete frames with their Messages.
 #[derive(Debug, Default)]
 pub struct SerialFramer {
-    /// Currently buffered bytes.
-    buf: Vec<u8>,
-    /// `true` when we are currently inside a frame (between begin and end).
-    in_frame: bool,
-    /// `true` when, after an overflow, we skip all bytes up to the next
-    /// `0x7E`.
-    resync: bool,
+    /// How `frameCheck` is computed.
+    check: FrameCheck,
+    /// The frame being read, after its `BEGIN_FLAG`.
+    current: Option<FrameAssembler>,
 }
 
+/// A frame the framer read: its addresses and Message.
+pub type SerialFrameMessage = (SerialFrame, Message);
+
 impl SerialFramer {
-    /// Fresh framer.
+    /// Fresh framer with the frame check of Annex C.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Anti-bombing cap: maximum internal buffer before resync.
-    const BUF_CAP: usize = DOSC_MAX_PAYLOAD_SIZE * 2;
-
-    /// Reset to the initial state.
-    pub fn reset(&mut self) {
-        self.buf.clear();
-        self.in_frame = false;
-        self.resync = false;
+    /// Fresh framer with the frame check `check`.
+    #[must_use]
+    pub fn with_frame_check(check: FrameCheck) -> Self {
+        Self {
+            check,
+            current: None,
+        }
     }
 
-    /// Consumes a byte chunk and returns all frames that became complete
-    /// within the chunk. Frame errors are reported as well.
-    pub fn push_bytes(&mut self, data: &[u8]) -> Vec<Result<Message, SerialError>> {
+    /// Back to waiting for a `BEGIN_FLAG`.
+    pub fn reset(&mut self) {
+        self.current = None;
+    }
+
+    /// Takes `data` and returns the frames completed within it, and the
+    /// errors of the frames refused. Octets before a `BEGIN_FLAG` are
+    /// ignored; a `BEGIN_FLAG` inside a frame refuses that frame and begins
+    /// the next (Annex C.1.3).
+    pub fn push_bytes(&mut self, data: &[u8]) -> Vec<Result<SerialFrameMessage, SerialError>> {
         let mut out = Vec::new();
         for &b in data {
-            if self.resync {
-                if b == FLAG_BYTE {
-                    self.resync = false;
-                    self.in_frame = true;
-                    self.buf.clear();
+            if b == FLAG_BYTE {
+                if let Some(current) = &self.current {
+                    if !current.raw.is_empty() || current.escaped {
+                        out.push(Err(SerialError::BeginFlagInFrame));
+                    }
                 }
+                self.current = Some(FrameAssembler::new(self.check));
                 continue;
             }
-            if b == FLAG_BYTE {
-                if self.in_frame && !self.buf.is_empty() {
-                    // End flag: frame complete.
-                    let inner = core::mem::take(&mut self.buf);
-                    match decode_frame_inner(&inner) {
-                        Ok(payload) => match Message::decode(&payload) {
-                            Ok(msg) => out.push(Ok(msg)),
-                            Err(e) => out.push(Err(SerialError::Decode(e))),
-                        },
-                        Err(e) => out.push(Err(e)),
-                    }
-                    // The next frame could start immediately (if the
-                    // sender uses the end flag simultaneously as the begin
-                    // flag of the next frame — RFC 1662 allows that).
-                    self.in_frame = true;
-                } else {
-                    // Begin flag (or empty frame between two 7E).
-                    self.in_frame = true;
-                    self.buf.clear();
-                }
-            } else if self.in_frame {
-                self.buf.push(b);
-                if self.buf.len() > Self::BUF_CAP {
-                    out.push(Err(SerialError::FrameTooLong {
-                        limit: Self::BUF_CAP,
-                        actual: self.buf.len(),
-                    }));
-                    self.buf.clear();
-                    self.in_frame = false;
-                    self.resync = true;
-                }
-            } // otherwise: bytes outside of frames are ignored.
+            let Some(current) = self.current.as_mut() else {
+                continue;
+            };
+            if let Some(done) = current.push(b) {
+                self.current = None;
+                out.push(done.and_then(|frame| {
+                    let msg = Message::decode(&frame.payload).map_err(SerialError::Decode)?;
+                    Ok((frame, msg))
+                }));
+            }
         }
         out
     }
@@ -345,15 +460,10 @@ impl SerialFramer {
 mod tests {
     #![allow(clippy::expect_used, clippy::unwrap_used)]
     use super::*;
+    use crate::handshake::{ClientRepresentation, XRCE_VERSION};
     use crate::header::{ClientKey, MessageHeader, SessionId, StreamId};
-    use crate::object_id::ObjectId;
-    use crate::object_info::BaseObjectRequest;
     use crate::serial_number::SerialNumber16;
-    use crate::submessages::timestamp::TimePoint;
-    use crate::submessages::{
-        AckNackPayload, CreateClientPayload, FragmentPayload, HeartbeatPayload, ResetPayload,
-        Submessage, TimestampPayload, TimestampReplyPayload, WriteDataPayload,
-    };
+    use crate::submessages::{CreateClientPayload, HeartbeatPayload, Submessage};
 
     fn message_with(sm: Submessage) -> Message {
         let header = MessageHeader::with_client_key(
@@ -366,400 +476,177 @@ mod tests {
         Message::new(header, alloc::vec![sm]).unwrap()
     }
 
-    #[test]
-    fn crc16_ccitt_false_empty_input_returns_init_value() {
-        assert_eq!(crc16_ccitt_false(&[]), 0xFFFF);
+    fn create_client() -> Message {
+        message_with(
+            CreateClientPayload {
+                representation: ClientRepresentation {
+                    timestamp: None,
+                    version: XRCE_VERSION,
+                    vendor_id: [0, 0],
+                    client_key: ClientKey([0x7E, 0x7D, 0, 0]),
+                    session_id: 0,
+                    properties: None,
+                    requested_mtu: None,
+                },
+            }
+            .into_submessage()
+            .unwrap(),
+        )
     }
 
+    /// RFC 1662 FCS-16 (CRC-16/X-25): 0x906E for "123456789", the check
+    /// value of RFC 1662 Appendix C; it was 0x29B1, CCITT-FALSE.
     #[test]
-    fn crc16_ccitt_false_known_vector_123456789() {
-        // CCITT-FALSE: CRC("123456789") = 0x29B1
-        let crc = crc16_ccitt_false(b"123456789");
-        assert_eq!(crc, 0x29B1);
+    fn the_frame_check_is_the_fcs16_of_rfc_1662() {
+        assert_eq!(fcs16(b"123456789"), 0x906E);
+        assert_eq!(fcs16(&[]), 0x0000);
     }
 
+    /// The CRC of Micro-XRCE-DDS: CRC-16/ARC, 0xBB3D for "123456789", over
+    /// the payload alone; a frame of the one check is refused by the other.
     #[test]
-    fn encode_payload_starts_and_ends_with_flag() {
-        let frame = encode_payload(&[1, 2, 3]);
-        assert_eq!(frame.first(), Some(&FLAG_BYTE));
-        assert_eq!(frame.last(), Some(&FLAG_BYTE));
-    }
-
-    #[test]
-    fn encode_payload_stuffs_flag_byte_in_payload() {
-        let frame = encode_payload(&[0x7E]);
-        // 7E [7D 5E (stuffed body)] [7D (escape) ?? (low byte of CRC)]
-        // … we only check that the stuffed body contains 7D 5E.
-        let body = &frame[1..frame.len() - 1];
-        assert!(body.starts_with(&[ESCAPE_BYTE, FLAG_BYTE ^ STUFF_XOR]));
-    }
-
-    #[test]
-    fn encode_payload_stuffs_escape_byte_in_payload() {
-        let frame = encode_payload(&[0x7D]);
-        let body = &frame[1..frame.len() - 1];
-        assert!(body.starts_with(&[ESCAPE_BYTE, ESCAPE_BYTE ^ STUFF_XOR]));
-    }
-
-    #[test]
-    fn encode_decode_roundtrip_no_special_bytes() {
-        let payload = alloc::vec![1, 2, 3, 4, 5, 6, 7, 8];
-        let frame = encode_payload(&payload);
-        let inner = &frame[1..frame.len() - 1];
-        let decoded = decode_frame_inner(inner).unwrap();
-        assert_eq!(decoded, payload);
-    }
-
-    #[test]
-    fn encode_decode_roundtrip_with_flag_byte_in_middle() {
-        let payload = alloc::vec![0xAA, 0x7E, 0xBB, 0x7E, 0xCC];
-        let frame = encode_payload(&payload);
-        let inner = &frame[1..frame.len() - 1];
-        let decoded = decode_frame_inner(inner).unwrap();
-        assert_eq!(decoded, payload);
-    }
-
-    #[test]
-    fn encode_decode_roundtrip_with_escape_byte_in_middle() {
-        let payload = alloc::vec![0xAA, 0x7D, 0xBB, 0x7D, 0xCC];
-        let frame = encode_payload(&payload);
-        let inner = &frame[1..frame.len() - 1];
-        let decoded = decode_frame_inner(inner).unwrap();
-        assert_eq!(decoded, payload);
-    }
-
-    #[test]
-    fn encode_decode_roundtrip_both_special_bytes_combined() {
-        let payload = alloc::vec![0x7E, 0x7D, 0x7E, 0x7D, 0xFF, 0x00, 0x7D, 0x7E];
-        let frame = encode_payload(&payload);
-        let inner = &frame[1..frame.len() - 1];
-        let decoded = decode_frame_inner(inner).unwrap();
-        assert_eq!(decoded, payload);
-    }
-
-    #[test]
-    fn encode_decode_roundtrip_only_flag_bytes() {
-        let payload = alloc::vec![0x7E; 16];
-        let frame = encode_payload(&payload);
-        let inner = &frame[1..frame.len() - 1];
-        let decoded = decode_frame_inner(inner).unwrap();
-        assert_eq!(decoded, payload);
-    }
-
-    #[test]
-    fn encode_decode_roundtrip_only_escape_bytes() {
-        let payload = alloc::vec![0x7D; 16];
-        let frame = encode_payload(&payload);
-        let inner = &frame[1..frame.len() - 1];
-        let decoded = decode_frame_inner(inner).unwrap();
-        assert_eq!(decoded, payload);
-    }
-
-    #[test]
-    fn decode_rejects_crc_mismatch() {
-        let payload = alloc::vec![1, 2, 3, 4];
-        let mut frame = encode_payload(&payload);
-        // Flip the last byte before the end flag.
-        let len = frame.len();
-        frame[len - 2] ^= 0xFF;
-        let inner = &frame[1..frame.len() - 1];
-        let res = decode_frame_inner(inner);
-        assert!(matches!(res, Err(SerialError::CrcMismatch { .. })));
-    }
-
-    #[test]
-    fn decode_rejects_dangling_escape() {
-        let bad = alloc::vec![0x01, 0x02, ESCAPE_BYTE];
-        let res = decode_frame_inner(&bad);
-        assert!(matches!(res, Err(SerialError::DanglingEscape)));
-    }
-
-    #[test]
-    fn decode_rejects_invalid_escape() {
-        // 0x7D 0xFF — 0xFF XOR 0x20 = 0xDF, neither 0x7D nor 0x7E.
-        let bad = alloc::vec![ESCAPE_BYTE, 0xFF, 0x00, 0x00];
-        let res = decode_frame_inner(&bad);
+    fn the_frame_check_of_micro_xrce_dds_is_taken_when_chosen() {
+        assert_eq!(crc16_arc(b"123456789"), 0xBB3D);
+        let payload = [0x10, 0x20, 0x30];
+        let frame = encode_frame_with(FrameCheck::Crc16ArcPayload, 0, 1, &payload).unwrap();
+        let check = crc16_arc(&payload).to_le_bytes();
+        assert_eq!(&frame[frame.len() - 2..], &check);
+        let back = decode_frame_inner_with(FrameCheck::Crc16ArcPayload, &frame[1..]).unwrap();
+        assert_eq!(back.payload, payload);
         assert!(matches!(
-            res,
-            Err(SerialError::InvalidEscape { byte: 0xFF })
+            decode_frame_inner(&frame[1..]),
+            Err(SerialError::CrcMismatch { .. })
+        ));
+        let mut framer = SerialFramer::with_frame_check(FrameCheck::Crc16ArcPayload);
+        let ours = encode_message(&create_client(), 1, 0).unwrap();
+        assert!(matches!(
+            framer.push_bytes(&ours).as_slice(),
+            [Err(SerialError::CrcMismatch { .. })]
         ));
     }
 
+    /// Annex C.1.1: 7E, sourceAddress, remoteAddress, payloadLength little
+    /// endian, payload, frameCheck little endian over the four header octets
+    /// and the payload.
     #[test]
-    fn decode_rejects_short_frame() {
-        let bad = alloc::vec![0x01];
-        let res = decode_frame_inner(&bad);
-        assert!(matches!(res, Err(SerialError::FrameTooShort { actual: 1 })));
-    }
-
-    #[test]
-    fn full_message_encode_decode_create_client() {
-        let msg = message_with(
-            CreateClientPayload {
-                representation: alloc::vec![b'X', b'R', b'C', b'E', 1, 0],
-            }
-            .into_submessage()
-            .unwrap(),
+    fn a_frame_carries_the_addresses_the_length_and_a_little_endian_check() {
+        let frame = encode_frame(0x01, 0x02, &[0x10, 0x20, 0x30]).unwrap();
+        let check = fcs16(&[0x01, 0x02, 0x03, 0x00, 0x10, 0x20, 0x30]).to_le_bytes();
+        assert_eq!(
+            frame,
+            alloc::vec![
+                0x7E, 0x01, 0x02, 0x03, 0x00, 0x10, 0x20, 0x30, check[0], check[1]
+            ]
         );
-        let frame = encode_message(&msg).unwrap();
-        let (back, rest) = decode_frame(&frame).unwrap();
-        assert_eq!(back, msg);
-        assert!(rest.is_empty());
-    }
-
-    #[test]
-    fn full_message_encode_decode_write_data_with_special_bytes() {
-        // Deliberately construct a payload that contains many 0x7E/0x7D.
-        let msg = message_with(
-            WriteDataPayload {
-                base: BaseObjectRequest {
-                    request_id: [0x00, 0x01],
-                    object_id: ObjectId::from_raw(0x0DA5),
-                },
-                serialized_data: alloc::vec![0x7E, 0x7D, 0x00, 0x7E, 0x7D, 0xFF, 0x7E],
+        let back = decode_frame_inner(&frame[1..]).unwrap();
+        assert_eq!(
+            back,
+            SerialFrame {
+                source: 1,
+                remote: 2,
+                payload: alloc::vec![0x10, 0x20, 0x30]
             }
-            .into_submessage()
-            .unwrap(),
         );
-        let frame = encode_message(&msg).unwrap();
-        let (back, _) = decode_frame(&frame).unwrap();
-        assert_eq!(back, msg);
+    }
+
+    /// Annex C.1.2: 0x7E and 0x7D after the flag are stuffed, also in the
+    /// addresses, the length and the check.
+    #[test]
+    fn flag_and_escape_octets_are_stuffed_everywhere_after_the_flag() {
+        let payload = alloc::vec![0x7E, 0x7D, 0x00, 0x7E];
+        let frame = encode_frame(0x7E, 0x7D, &payload).unwrap();
+        assert_eq!(&frame[..5], &[0x7E, 0x7D, 0x5E, 0x7D, 0x5D]);
+        assert!(!frame[1..].contains(&FLAG_BYTE));
+        let back = decode_frame_inner(&frame[1..]).unwrap();
+        assert_eq!(
+            (back.source, back.remote, back.payload),
+            (0x7E, 0x7D, payload)
+        );
+    }
+
+    /// Annex C.1.3: a frame whose frameCheck is not the computed CRC is
+    /// dropped.
+    #[test]
+    fn a_frame_with_a_wrong_check_is_refused() {
+        let mut frame = encode_frame(1, 2, &[1, 2, 3, 4]).unwrap();
+        let last = frame.len() - 1;
+        frame[last] ^= 0x01;
+        assert!(matches!(
+            decode_frame_inner(&frame[1..]),
+            Err(SerialError::CrcMismatch { .. })
+        ));
+    }
+
+    /// Annex C.1.3: a non-escaped BEGIN_FLAG before the payload is read
+    /// drops the frame, and begins the next one.
+    #[test]
+    fn a_begin_flag_inside_a_frame_drops_it_and_begins_the_next() {
+        let good = encode_message(&create_client(), 3, 0).unwrap();
+        let mut bytes = good[..6].to_vec();
+        bytes.extend_from_slice(&good);
+        let mut framer = SerialFramer::new();
+        let out = framer.push_bytes(&bytes);
+        assert_eq!(out.len(), 2, "{out:?}");
+        assert_eq!(out[0], Err(SerialError::BeginFlagInFrame));
+        let (frame, msg) = out[1].clone().unwrap();
+        assert_eq!(frame.source, 3);
+        assert_eq!(msg, create_client());
     }
 
     #[test]
-    fn full_message_encode_decode_acknack() {
-        let msg = message_with(
-            AckNackPayload {
-                first_unacked_seq_num: 5,
-                nack_bitmap: [0xAA, 0x55],
-                stream_id: 0x80,
-            }
-            .into_submessage()
-            .unwrap(),
-        );
-        let frame = encode_message(&msg).unwrap();
-        let (back, _) = decode_frame(&frame).unwrap();
-        assert_eq!(back, msg);
-    }
-
-    #[test]
-    fn full_message_encode_decode_heartbeat() {
-        let msg = message_with(
+    fn the_framer_takes_frames_split_and_back_to_back_and_skips_noise() {
+        let a = encode_message(&create_client(), 1, 0).unwrap();
+        let hb = message_with(
             HeartbeatPayload {
                 first_unacked_seq_nr: 1,
-                last_unacked_seq_nr: 9,
-                stream_id: 0x80,
+                last_unacked_seq_nr: 7,
+                stream_id: StreamId::BUILTIN_RELIABLE.0,
             }
             .into_submessage()
             .unwrap(),
         );
-        let frame = encode_message(&msg).unwrap();
-        let (back, _) = decode_frame(&frame).unwrap();
-        assert_eq!(back, msg);
-    }
-
-    #[test]
-    fn full_message_encode_decode_reset() {
-        let msg = message_with(ResetPayload.into_submessage().unwrap());
-        let frame = encode_message(&msg).unwrap();
-        let (back, _) = decode_frame(&frame).unwrap();
-        assert_eq!(back, msg);
-    }
-
-    #[test]
-    fn full_message_encode_decode_fragment() {
-        let msg = message_with(
-            FragmentPayload {
-                data: alloc::vec![0x7E; 32],
-                last_fragment: true,
-            }
-            .into_submessage()
-            .unwrap(),
-        );
-        let frame = encode_message(&msg).unwrap();
-        let (back, _) = decode_frame(&frame).unwrap();
-        assert_eq!(back, msg);
-    }
-
-    #[test]
-    fn full_message_encode_decode_timestamp() {
-        let msg = message_with(
-            TimestampPayload {
-                transmit_timestamp: TimePoint {
-                    seconds: 100,
-                    nanoseconds: 0,
-                },
-            }
-            .into_submessage()
-            .unwrap(),
-        );
-        let frame = encode_message(&msg).unwrap();
-        let (back, _) = decode_frame(&frame).unwrap();
-        assert_eq!(back, msg);
-    }
-
-    #[test]
-    fn full_message_encode_decode_timestamp_reply() {
-        let msg = message_with(TimestampReplyPayload::default().into_submessage().unwrap());
-        let frame = encode_message(&msg).unwrap();
-        let (back, _) = decode_frame(&frame).unwrap();
-        assert_eq!(back, msg);
-    }
-
-    #[test]
-    fn streaming_framer_single_frame_in_one_chunk() {
-        let msg = message_with(ResetPayload.into_submessage().unwrap());
-        let frame = encode_message(&msg).unwrap();
+        let b = encode_message(&hb, 2, 0).unwrap();
+        let mut stream = alloc::vec![0x00, 0x55];
+        stream.extend_from_slice(&a);
+        stream.extend_from_slice(&b);
         let mut framer = SerialFramer::new();
-        let out = framer.push_bytes(&frame);
-        assert_eq!(out.len(), 1);
-        assert_eq!(*out[0].as_ref().unwrap(), msg);
-    }
-
-    #[test]
-    fn streaming_framer_split_across_two_chunks() {
-        let msg = message_with(
-            CreateClientPayload {
-                representation: alloc::vec![1, 2, 3, 4, 5, 6],
-            }
-            .into_submessage()
-            .unwrap(),
-        );
-        let frame = encode_message(&msg).unwrap();
-        let mid = frame.len() / 2;
-        let mut framer = SerialFramer::new();
-        assert!(framer.push_bytes(&frame[..mid]).is_empty());
-        let out = framer.push_bytes(&frame[mid..]);
-        assert_eq!(out.len(), 1);
-        assert_eq!(*out[0].as_ref().unwrap(), msg);
-    }
-
-    #[test]
-    fn streaming_framer_byte_at_a_time() {
-        let msg = message_with(
-            HeartbeatPayload {
-                first_unacked_seq_nr: 0,
-                last_unacked_seq_nr: 5,
-                stream_id: 0x80,
-            }
-            .into_submessage()
-            .unwrap(),
-        );
-        let frame = encode_message(&msg).unwrap();
-        let mut framer = SerialFramer::new();
-        let mut collected: Vec<Message> = Vec::new();
-        for chunk in frame.chunks(1) {
-            for r in framer.push_bytes(chunk) {
-                collected.push(r.unwrap());
-            }
+        let mut got = Vec::new();
+        for chunk in stream.chunks(3) {
+            got.extend(framer.push_bytes(chunk));
         }
-        assert_eq!(collected.len(), 1);
-        assert_eq!(collected[0], msg);
+        let got: Vec<_> = got.into_iter().map(Result::unwrap).collect();
+        assert_eq!(got.len(), 2);
+        assert_eq!((got[0].0.source, &got[0].1), (1, &create_client()));
+        assert_eq!((got[1].0.source, &got[1].1), (2, &hb));
     }
 
     #[test]
-    fn streaming_framer_three_back_to_back_frames() {
-        let msgs = alloc::vec![
-            message_with(ResetPayload.into_submessage().unwrap()),
-            message_with(
-                AckNackPayload {
-                    first_unacked_seq_num: 5,
-                    nack_bitmap: [0, 0],
-                    stream_id: 0x80,
-                }
-                .into_submessage()
-                .unwrap(),
-            ),
-            message_with(
-                HeartbeatPayload {
-                    first_unacked_seq_nr: 0,
-                    last_unacked_seq_nr: 1,
-                    stream_id: 0x80,
-                }
-                .into_submessage()
-                .unwrap(),
-            ),
-        ];
-        let mut concat = Vec::new();
-        for m in &msgs {
-            concat.extend_from_slice(&encode_message(m).unwrap());
-        }
-        let mut framer = SerialFramer::new();
-        let out = framer.push_bytes(&concat);
-        assert_eq!(out.len(), 3);
-        for (i, r) in out.into_iter().enumerate() {
-            assert_eq!(r.unwrap(), msgs[i]);
-        }
+    fn decode_frame_returns_the_rest_after_the_frame() {
+        let mut bytes = encode_message(&create_client(), 5, 6).unwrap();
+        bytes.extend_from_slice(&[0xAA, 0xBB]);
+        let (frame, msg, rest) = decode_frame(&bytes).unwrap();
+        assert_eq!((frame.source, frame.remote), (5, 6));
+        assert_eq!(msg, create_client());
+        assert_eq!(rest, &[0xAA, 0xBB]);
     }
 
     #[test]
-    fn streaming_framer_skips_garbage_before_first_flag() {
-        let msg = message_with(ResetPayload.into_submessage().unwrap());
-        let frame = encode_message(&msg).unwrap();
-        let mut buf = alloc::vec![0xAB, 0xCD, 0xEF, 0x01]; // garbage
-        buf.extend_from_slice(&frame);
-        let mut framer = SerialFramer::new();
-        let out = framer.push_bytes(&buf);
-        assert_eq!(out.len(), 1);
-        assert_eq!(*out[0].as_ref().unwrap(), msg);
-    }
-
-    #[test]
-    fn streaming_framer_emits_crc_error_for_corrupted_frame() {
-        let msg = message_with(ResetPayload.into_submessage().unwrap());
-        let mut frame = encode_message(&msg).unwrap();
-        // Flip the last byte before the end flag.
-        let len = frame.len();
-        frame[len - 2] ^= 0xFF;
-        let mut framer = SerialFramer::new();
-        let out = framer.push_bytes(&frame);
-        assert_eq!(out.len(), 1);
-        assert!(matches!(out[0], Err(SerialError::CrcMismatch { .. })));
-    }
-
-    #[test]
-    fn streaming_framer_recovers_after_crc_error() {
-        let bad_msg = message_with(ResetPayload.into_submessage().unwrap());
-        let good_msg = message_with(
-            HeartbeatPayload {
-                first_unacked_seq_nr: 0,
-                last_unacked_seq_nr: 1,
-                stream_id: 0x80,
-            }
-            .into_submessage()
-            .unwrap(),
-        );
-        let mut frame_bad = encode_message(&bad_msg).unwrap();
-        let len = frame_bad.len();
-        frame_bad[len - 2] ^= 0xFF; // CRC kaputt
-        let frame_good = encode_message(&good_msg).unwrap();
-        let mut concat = frame_bad.clone();
-        concat.extend_from_slice(&frame_good);
-        let mut framer = SerialFramer::new();
-        let out = framer.push_bytes(&concat);
-        assert_eq!(out.len(), 2);
-        assert!(matches!(out[0], Err(SerialError::CrcMismatch { .. })));
-        assert_eq!(*out[1].as_ref().unwrap(), good_msg);
-    }
-
-    #[test]
-    fn streaming_framer_reset_clears_state() {
-        let msg = message_with(ResetPayload.into_submessage().unwrap());
-        let frame = encode_message(&msg).unwrap();
-        let mut framer = SerialFramer::new();
-        // Halben Frame einspeisen.
-        let _ = framer.push_bytes(&frame[..frame.len() / 2]);
-        framer.reset();
-        // Now feed in the full frame.
-        let out = framer.push_bytes(&frame);
-        assert_eq!(out.len(), 1);
-        assert_eq!(*out[0].as_ref().unwrap(), msg);
-    }
-
-    #[test]
-    fn flag_byte_constants_match_spec() {
-        assert_eq!(FLAG_BYTE, 0x7E);
-        assert_eq!(ESCAPE_BYTE, 0x7D);
-        assert_eq!(STUFF_XOR, 0x20);
+    fn escape_errors_and_short_frames_are_refused() {
+        assert!(matches!(
+            decode_frame_inner(&[0x01, ESCAPE_BYTE]),
+            Err(SerialError::DanglingEscape)
+        ));
+        assert!(matches!(
+            decode_frame_inner(&[ESCAPE_BYTE, 0xFF]),
+            Err(SerialError::InvalidEscape { byte: 0xFF })
+        ));
+        assert!(matches!(
+            decode_frame_inner(&[0x01, 0x02, 0x05]),
+            Err(SerialError::FrameTooShort { actual: 3 })
+        ));
+        assert!(matches!(
+            encode_frame(0, 0, &alloc::vec![0u8; 70_000]),
+            Err(SerialError::FrameTooLong { .. })
+        ));
     }
 }

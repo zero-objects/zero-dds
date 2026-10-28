@@ -17,9 +17,9 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use zerodds_cdr::{BufferReader, BufferWriter, Endianness};
 use zerodds_corba_csiv2::CompoundSecMechList;
 use zerodds_corba_iiop::profile_body::CdrError;
+use zerodds_wire::{Endianness, Reader, Writer};
 
 use crate::component_tags::ComponentId;
 
@@ -37,11 +37,11 @@ impl TaggedComponent {
     ///
     /// # Errors
     /// Buffer write error.
-    pub fn encode(&self, w: &mut BufferWriter) -> Result<(), CdrError> {
-        w.write_u32(self.tag.as_u32())?;
+    pub fn encode(&self, w: &mut Writer) -> Result<(), CdrError> {
+        w.write_u32(self.tag.as_u32());
         let n = u32::try_from(self.component_data.len()).map_err(|_| CdrError::Overflow)?;
-        w.write_u32(n)?;
-        w.write_bytes(&self.component_data)?;
+        w.write_u32(n);
+        w.write_bytes(&self.component_data);
         Ok(())
     }
 
@@ -49,7 +49,7 @@ impl TaggedComponent {
     ///
     /// # Errors
     /// Buffer read error.
-    pub fn decode(r: &mut BufferReader<'_>) -> Result<Self, CdrError> {
+    pub fn decode(r: &mut Reader<'_>) -> Result<Self, CdrError> {
         let tag = ComponentId::from_u32(r.read_u32()?);
         let n = r.read_u32()? as usize;
         let bytes = r.read_bytes(n)?;
@@ -167,14 +167,20 @@ impl StructuredComponent {
     /// CDR decode error in the body.
     pub fn decode(tag: ComponentId, encap: &[u8]) -> Result<Self, CdrError> {
         let endianness = read_endianness(encap)?;
-        let body = &encap[1..];
+        // CORBA 3.3 Part 2 §9.3.3: an encapsulation aligns from its first
+        // octet, the byte order — a `u32` after it sits at offset 4, not 1.
+        let reader = || -> Result<Reader<'_>, CdrError> {
+            let mut r = Reader::new(encap, endianness);
+            r.read_u8()?;
+            Ok(r)
+        };
         match tag {
             ComponentId::OrbType => {
-                let mut r = BufferReader::new(body, endianness);
+                let mut r = reader()?;
                 Ok(Self::OrbType(OrbType(r.read_u32()?)))
             }
             ComponentId::CodeSets => {
-                let mut r = BufferReader::new(body, endianness);
+                let mut r = reader()?;
                 let for_char = decode_code_set_component(&mut r)?;
                 let for_wchar = decode_code_set_component(&mut r)?;
                 Ok(Self::CodeSets(CodeSetComponentInfo {
@@ -183,7 +189,7 @@ impl StructuredComponent {
                 }))
             }
             ComponentId::AlternateIiopAddress => {
-                let mut r = BufferReader::new(body, endianness);
+                let mut r = reader()?;
                 let host = r.read_string()?;
                 let port = r.read_u16()?;
                 Ok(Self::AlternateIiopAddress(AlternateIiopAddress {
@@ -192,7 +198,7 @@ impl StructuredComponent {
                 }))
             }
             ComponentId::SslSecTrans => {
-                let mut r = BufferReader::new(body, endianness);
+                let mut r = reader()?;
                 Ok(Self::Ssl(Ssl {
                     target_supports: r.read_u16()?,
                     target_requires: r.read_u16()?,
@@ -200,7 +206,7 @@ impl StructuredComponent {
                 }))
             }
             ComponentId::TlsSecTrans => {
-                let mut r = BufferReader::new(body, endianness);
+                let mut r = reader()?;
                 let target_supports = r.read_u16()?;
                 let target_requires = r.read_u16()?;
                 let n = r.read_u32()? as usize;
@@ -217,15 +223,15 @@ impl StructuredComponent {
                 }))
             }
             ComponentId::CsiSecMechList => {
-                let mut r = BufferReader::new(body, endianness);
+                let mut r = reader()?;
                 Ok(Self::CsiSecMechList(CompoundSecMechList::decode(&mut r)?))
             }
             ComponentId::RmiCustomMaxStreamFormat => {
-                let mut r = BufferReader::new(body, endianness);
+                let mut r = reader()?;
                 Ok(Self::StreamFormatVersion(StreamFormatVersion(r.read_u8()?)))
             }
             ComponentId::JavaCodebase => {
-                let mut r = BufferReader::new(body, endianness);
+                let mut r = reader()?;
                 Ok(Self::JavaCodebase(r.read_string()?))
             }
             other => Ok(Self::Opaque {
@@ -241,45 +247,45 @@ impl StructuredComponent {
     /// # Errors
     /// Buffer write error.
     pub fn encode_encapsulation(&self, endianness: Endianness) -> Result<Vec<u8>, CdrError> {
-        let mut out = Vec::with_capacity(64);
-        out.push(endianness_to_byte(endianness));
-        let mut w = BufferWriter::new(endianness);
+        // The byte-order octet goes through the writer: the body aligns from
+        // it (CORBA 3.3 Part 2 §9.3.3).
+        let mut w = Writer::new(endianness);
+        w.write_u8(endianness_to_byte(endianness));
         match self {
-            Self::OrbType(OrbType(v)) => w.write_u32(*v)?,
+            Self::OrbType(OrbType(v)) => w.write_u32(*v),
             Self::CodeSets(info) => {
                 encode_code_set_component(&mut w, &info.for_char_data)?;
                 encode_code_set_component(&mut w, &info.for_wchar_data)?;
             }
             Self::AlternateIiopAddress(a) => {
-                w.write_string(&a.host)?;
-                w.write_u16(a.port)?;
+                w.write_string(&a.host);
+                w.write_u16(a.port);
             }
             Self::Ssl(s) => {
-                w.write_u16(s.target_supports)?;
-                w.write_u16(s.target_requires)?;
-                w.write_u16(s.port)?;
+                w.write_u16(s.target_supports);
+                w.write_u16(s.target_requires);
+                w.write_u16(s.port);
             }
             Self::TlsSecTrans(t) => {
-                w.write_u16(t.target_supports)?;
-                w.write_u16(t.target_requires)?;
+                w.write_u16(t.target_supports);
+                w.write_u16(t.target_requires);
                 let n = u32::try_from(t.addresses.len()).map_err(|_| CdrError::Overflow)?;
-                w.write_u32(n)?;
+                w.write_u32(n);
                 for a in &t.addresses {
-                    w.write_string(&a.host)?;
-                    w.write_u16(a.port)?;
+                    w.write_string(&a.host);
+                    w.write_u16(a.port);
                 }
             }
             Self::CsiSecMechList(list) => list.encode(&mut w)?,
-            Self::StreamFormatVersion(StreamFormatVersion(v)) => w.write_u8(*v)?,
-            Self::JavaCodebase(s) => w.write_string(s)?,
+            Self::StreamFormatVersion(StreamFormatVersion(v)) => w.write_u8(*v),
+            Self::JavaCodebase(s) => w.write_string(s),
             Self::Opaque { bytes, .. } => {
                 // The body in `bytes` already includes the endianness
                 // octet — we just return it verbatim.
                 return Ok(bytes.clone());
             }
         }
-        out.extend_from_slice(w.as_bytes());
-        Ok(out)
+        Ok(w.as_bytes().to_vec())
     }
 }
 
@@ -301,7 +307,7 @@ const fn endianness_to_byte(e: Endianness) -> u8 {
     }
 }
 
-fn decode_code_set_component(r: &mut BufferReader<'_>) -> Result<CodeSetComponent, CdrError> {
+fn decode_code_set_component(r: &mut Reader<'_>) -> Result<CodeSetComponent, CdrError> {
     let native_code_set = r.read_u32()?;
     let n = r.read_u32()? as usize;
     let mut conversion = Vec::with_capacity(n.min(16));
@@ -382,12 +388,12 @@ impl CodeSetComponentInfo {
     }
 }
 
-fn encode_code_set_component(w: &mut BufferWriter, c: &CodeSetComponent) -> Result<(), CdrError> {
-    w.write_u32(c.native_code_set)?;
+fn encode_code_set_component(w: &mut Writer, c: &CodeSetComponent) -> Result<(), CdrError> {
+    w.write_u32(c.native_code_set);
     let n = u32::try_from(c.conversion_code_sets.len()).map_err(|_| CdrError::Overflow)?;
-    w.write_u32(n)?;
+    w.write_u32(n);
     for cs in &c.conversion_code_sets {
-        w.write_u32(*cs)?;
+        w.write_u32(*cs);
     }
     Ok(())
 }
@@ -396,6 +402,46 @@ fn encode_code_set_component(w: &mut BufferWriter, c: &CodeSetComponent) -> Resu
 #[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
+
+    /// The alignment of an encapsulation counts its byte-order octet: after
+    /// it come three padding octets before a `u32` (CORBA 3.3 Part 2
+    /// §9.3.3). omniORB 4.3's `catior` called the unpadded form "Broken
+    /// component with tag 1" (Linux test host).
+    #[test]
+    fn a_code_sets_encapsulation_pads_after_the_byte_order_octet() {
+        let cs = StructuredComponent::CodeSets(CodeSetComponentInfo {
+            for_char_data: CodeSetComponent {
+                native_code_set: 0x0501_0001,
+                conversion_code_sets: alloc::vec![0x0001_0001],
+            },
+            for_wchar_data: CodeSetComponent {
+                native_code_set: 0x0001_0109,
+                conversion_code_sets: alloc::vec![],
+            },
+        });
+        let bytes = cs.encode_encapsulation(Endianness::Big).unwrap();
+        assert_eq!(
+            bytes,
+            [
+                0, 0, 0, 0, // byte order, then padding to 4
+                0x05, 0x01, 0x00, 0x01, // native char: UTF-8
+                0, 0, 0, 1, 0x00, 0x01, 0x00, 0x01, // conversion: ISO 8859-1
+                0x00, 0x01, 0x01, 0x09, // native wchar: UTF-16
+                0, 0, 0, 0, // no conversion
+            ]
+        );
+        let ssl = StructuredComponent::Ssl(Ssl {
+            target_supports: 0x66,
+            target_requires: 0x40,
+            port: 6834,
+        });
+        let bytes = ssl.encode_encapsulation(Endianness::Big).unwrap();
+        assert_eq!(bytes, [0, 0, 0x00, 0x66, 0x00, 0x40, 0x1a, 0xb2]);
+        assert_eq!(
+            StructuredComponent::decode(ComponentId::SslSecTrans, &bytes).unwrap(),
+            ssl
+        );
+    }
 
     #[test]
     fn orb_type_round_trip() {
@@ -634,10 +680,10 @@ mod tests {
             tag: ComponentId::OrbType,
             component_data: bytes,
         };
-        let mut w = BufferWriter::new(Endianness::Big);
+        let mut w = Writer::new(Endianness::Big);
         tc.encode(&mut w).unwrap();
-        let buf = w.into_bytes();
-        let mut r = BufferReader::new(&buf, Endianness::Big);
+        let buf = w.finish();
+        let mut r = Reader::new(&buf, Endianness::Big);
         let decoded = TaggedComponent::decode(&mut r).unwrap();
         assert_eq!(decoded, tc);
     }

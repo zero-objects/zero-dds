@@ -1,21 +1,107 @@
-.TH ZERODDS-GRPC-BRIDGED 1 "2026-05-06" "1.0.0-rc.1" "ZeroDDS Manual"
+.TH ZERODDS-GRPC-BRIDGED 1 "" "ZeroDDS" "ZeroDDS Manual"
 .SH NAME
 zerodds-grpc-bridged \- DDS to gRPC bridge daemon
 .SH SYNOPSIS
 .B zerodds-grpc-bridged
-[\fB\-c\fR \fIFILE\fR]
-[\fB\-\-validate\-only\fR]
+[\fB\-\-config\fR \fIFILE\fR]
+[\fB\-\-bind\fR \fIADDR\fR]
+[\fB\-\-domain\fR \fIID\fR]
+[\fB\-\-reflection\fR]
+[\fB\-\-topic\fR \fIDDS:SVC\fR]...
 [\fB\-V\fR | \fB\-h\fR]
 .SH DESCRIPTION
 .B zerodds-grpc-bridged
-exposes DDS topics as bidirectional-streaming gRPC services. Supports
-TLS and mTLS, gRPC-reflection, deadline propagation, retry-policies and
-zero-copy XCDR2 transport. Implements
-.IR zerodds-grpc-bridge-1.0 (7).
+exposes each mapped DDS topic as a gRPC service:
+.B Publish
+writes the
+.I Sample
+payload to the topic,
+.B Subscribe
+returns the next sample (one per call). The payload is opaque bytes, the
+DDS user data as it is. TLS with ALPN
+.IR h2 ,
+mTLS, bearer and JWT authentication, a topic ACL and the reflection
+service are served; the
+.I grpc-timeout
+header is not applied. Implements
+.IR docs/specs/zerodds-grpc-bridge-1.0.md .
 .SH OPTIONS
-.BR \-c , \-\-log\-level , \-\-validate\-only , \-V , \-h .
+.TP
+.BR \-\-config =\fIFILE\fR
+YAML config (Spec \(sc3). See
+.BR zerodds-grpc-bridged.yaml (5).
+.TP
+.BR \-\-bind =\fIADDR\fR
+HTTP/2 bind addr. Default:
+.IR 0.0.0.0:50051 .
+.TP
+.BR \-\-domain =\fIID\fR
+DDS Domain ID. Default: 0.
+.TP
+.BR \-\-tls\-cert =\fIFILE\fR
+TLS cert PEM.
+.TP
+.BR \-\-tls\-key =\fIFILE\fR
+TLS key PEM.
+.TP
+.BR \-\-tls\-client\-ca =\fIFILE\fR
+CA PEM for client certificates (mTLS).
+.TP
+.BR \-\-reflection
+Enable the gRPC reflection service.
+.TP
+.BR \-\-topic =\fIDDS:SVC\fR
+Inline topic mapping override.
+.TP
+.BR \-\-log\-level =\fILEVEL\fR
+One of
+.IR trace ", " debug ", " info ", " warn ", " error .
+.TP
+.BR \-\-metrics =\fIADDR\fR
+Prometheus listen addr.
+.PP
+Test hooks. Real options, documented because the program accepts them
+and an option nobody can find is one nobody maintains.
+.TP
+.BR \-\-once
+Serve one request, then exit.
+.TP
+.BR \-\-idle\-timeout\-ms =\fIN\fR
+Exit after \fIN\fR milliseconds without a request.
+.TP
+.BR \-V ", " \-\-version
+Print version.
+.TP
+.BR \-h ", " \-\-help
+Show the option synopsis.
+.TP
+.BR \-\-set " \fIPATH\fR=\fIVALUE\fR"
+One setting above every file, repeatable;
+.BI + PATH = VALUE
+appends to a list.
+.TP
+.B \-\-check\-config
+Validate and print the effective configuration with the origin of every
+value, then exit: 0 valid, 1 invalid value or unknown key, 2 unreadable
+file, syntax error or include cycle.
 .SH SIGNALS
-SIGTERM, SIGHUP.
+SIGTERM and SIGINT stop the daemon.
+SIGHUP reads the configuration again: the TLS certificate and key, the
+auth settings and the topic ACL apply from then on (the certificate to new
+connections). Changed binds, domain, topic mappings, reflection or TLS on
+or off need a restart and are logged. A configuration that does not load
+changes nothing.
+.SH ENVIRONMENT
+.TP
+.B OTEL_EXPORTER_OTLP_ENDPOINT
+Optional OTLP endpoint, such as http://localhost:4318.
+.SH EXIT STATUS
+0 normal stop, 1 configuration (also an auth mode that cannot be served,
+such as
+.B jwt
+without
+.BR auth.jwt.public_key ),
+2 bind, 3 DDS, 4 TLS.
 .SH FILES
 .I /etc/zerodds/grpc-bridged.yaml .
 .SH SEE ALSO

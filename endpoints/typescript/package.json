@@ -1,0 +1,23 @@
+{
+  "name": "zerodds-xrce-client-ts",
+  "version": "1.0.0-rc.7",
+  "private": true,
+  "description": "Native pure-TypeScript XRCE session client (ADR 0013 / DDS-XRCE 1.0), a typed port of crates/xrce-client + crates/xrce",
+  "main": "dist/xrce_client.js",
+  "types": "dist/xrce_client.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "tsc && node --test dist/xrce_client.test.js"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^20.19.43",
+    "typescript": "^5.6.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "keywords": ["dds", "dds-xrce", "typescript", "endpoint", "zerodds"],
+  "author": "ZeroDDS Contributors <hello@zerodds.org>",
+  "license": "Apache-2.0"
+}

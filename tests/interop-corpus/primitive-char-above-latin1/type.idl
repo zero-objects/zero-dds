@@ -1,0 +1,6 @@
+// primitive `char`, with a code point wider than one byte
+@final struct Sample {
+    char letter_a;
+    char too_wide;
+    long after;
+};

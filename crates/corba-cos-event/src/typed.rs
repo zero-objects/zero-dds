@@ -545,4 +545,162 @@ mod tests {
         assert!(lightweight::is_lightweight("CosLightweightEventChannel"));
         assert!(!lightweight::is_lightweight("CosTypedEventComm"));
     }
+
+    // ---------------------------------------------------------------
+    // §2.5 / §2.5.1 TypedPushConsumer + TypedPushSupplier
+    // ---------------------------------------------------------------
+
+    /// A typed consumer that records the operation it was called with
+    /// and answers with a reply body derived from the arguments.
+    struct EchoConsumer {
+        last: Mutex<Option<TypedInvocation>>,
+        connected: AtomicBool,
+    }
+
+    impl EchoConsumer {
+        fn new() -> Self {
+            Self {
+                last: Mutex::new(None),
+                connected: AtomicBool::new(true),
+            }
+        }
+        fn last_operation(&self) -> Option<String> {
+            self.last
+                .lock()
+                .ok()
+                .and_then(|g| g.as_ref().map(|i| i.operation.clone()))
+        }
+    }
+
+    impl TypedPushConsumer for EchoConsumer {
+        fn invoke(&self, op: &TypedInvocation) -> Result<Vec<u8>, Disconnected> {
+            if !self.connected.load(Ordering::Acquire) {
+                return Err(Disconnected);
+            }
+            if let Ok(mut g) = self.last.lock() {
+                *g = Some(op.clone());
+            }
+            Ok(op.args.clone())
+        }
+
+        fn disconnect(&self) {
+            self.connected.store(false, Ordering::Release);
+        }
+    }
+
+    /// Spec §2.5.1: in typed mode the channel calls the IDL operation
+    /// on the consumer instead of `push(any)` — the operation name and
+    /// its encoded arguments reach the consumer unchanged, and the
+    /// consumer's reply body is returned to the caller.
+    #[test]
+    fn typed_push_consumer_invoke_carries_operation_and_args() {
+        let c = EchoConsumer::new();
+        let reply = c
+            .invoke(&TypedInvocation {
+                operation: "on_tick".into(),
+                args: alloc::vec![1, 2, 3],
+            })
+            .expect("connected consumer accepts the invocation");
+        assert_eq!(reply, alloc::vec![1, 2, 3]);
+        assert_eq!(c.last_operation().as_deref(), Some("on_tick"));
+    }
+
+    /// Spec §2.5.1 + §2.1.5: after `disconnect_push_consumer` the typed
+    /// consumer raises `Disconnected` and records no further calls.
+    #[test]
+    fn typed_push_consumer_disconnect_raises_disconnected() {
+        let c = EchoConsumer::new();
+        c.disconnect();
+        assert_eq!(
+            c.invoke(&TypedInvocation {
+                operation: "on_tick".into(),
+                args: alloc::vec![],
+            })
+            .unwrap_err(),
+            Disconnected
+        );
+        assert!(c.last_operation().is_none());
+    }
+
+    /// A typed supplier that pushes into a connected typed consumer
+    /// until its own `disconnect_push_supplier` ends the connection.
+    struct EchoSupplier {
+        consumer: Arc<EchoConsumer>,
+        connected: AtomicBool,
+    }
+
+    impl EchoSupplier {
+        fn emit(&self, operation: &str) -> Result<Vec<u8>, Disconnected> {
+            if !self.connected.load(Ordering::Acquire) {
+                return Err(Disconnected);
+            }
+            self.consumer.invoke(&TypedInvocation {
+                operation: operation.to_string(),
+                args: alloc::vec![],
+            })
+        }
+    }
+
+    impl TypedPushSupplier for EchoSupplier {
+        fn disconnect(&self) {
+            self.connected.store(false, Ordering::Release);
+            self.consumer.disconnect();
+        }
+    }
+
+    /// Spec §2.5: `disconnect_push_supplier` on the typed supplier
+    /// terminates the connection in both directions.
+    #[test]
+    fn typed_push_supplier_disconnect_terminates_the_connection() {
+        let consumer = Arc::new(EchoConsumer::new());
+        let supplier = EchoSupplier {
+            consumer: Arc::clone(&consumer),
+            connected: AtomicBool::new(true),
+        };
+        supplier.emit("on_tick").expect("still connected");
+        assert_eq!(consumer.last_operation().as_deref(), Some("on_tick"));
+
+        supplier.disconnect();
+        assert_eq!(supplier.emit("on_tick").unwrap_err(), Disconnected);
+        assert_eq!(
+            consumer
+                .invoke(&TypedInvocation {
+                    operation: "on_tick".into(),
+                    args: alloc::vec![],
+                })
+                .unwrap_err(),
+            Disconnected
+        );
+    }
+
+    // ---------------------------------------------------------------
+    // §3.1.3 CosLightweightEventChannel
+    // ---------------------------------------------------------------
+
+    /// Spec §3.1.3: the lightweight channel profile carries no
+    /// per-endpoint disconnect operation — the channel lifecycle is the
+    /// only teardown. `destroy` therefore has to end the delivery for
+    /// consumers that never call a disconnect of their own.
+    #[test]
+    fn lightweight_channel_destroy_is_the_only_teardown() {
+        assert!(lightweight::is_lightweight(
+            lightweight::CHANNEL_PROFILE_NAME
+        ));
+        let chan = TypedEventChannel::new();
+        let c = Arc::new(EchoConsumer::new());
+        chan.register_consumer(
+            "IDL:demo/Tick:1.0",
+            Arc::clone(&c) as Arc<dyn TypedPushConsumer>,
+        );
+
+        let op = TypedInvocation {
+            operation: "on_tick".into(),
+            args: alloc::vec![],
+        };
+        assert_eq!(chan.dispatch("IDL:demo/Tick:1.0", &op), 1);
+
+        chan.destroy();
+        assert!(chan.is_destroyed());
+        assert_eq!(chan.dispatch("IDL:demo/Tick:1.0", &op), 0);
+    }
 }

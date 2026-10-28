@@ -20,8 +20,8 @@
 //! cargo run --example jaeger_talker -p zerodds-observability-otlp
 //! ```
 //!
-//! Verifikation: oeffne `http://localhost:16686` (Jaeger UI),
-//! waehle Service `zerodds-talker`, klicke "Find Traces".
+//! Verification: open `http://localhost:16686` (Jaeger UI),
+//! select Service `zerodds-talker`, click "Find Traces".
 //! You should see 50 `dcps.write` spans and 50 `dcps.read` spans
 //! plus 1 histogram `dcps.write_latency_ns` with ~50 samples.
 

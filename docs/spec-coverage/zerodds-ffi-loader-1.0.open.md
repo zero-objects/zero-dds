@@ -1,19 +1,18 @@
-# `zerodds-ffi-loader` v1.0 — Open + Partial Items
+# zerodds-ffi-loader-1.0 — offene Punkte
 
-Aggregat aus `zerodds-ffi-loader-1.0.md`. Nicht von Hand pflegen — vor jedem
-Audit-Lauf löschen und aus dem Hauptfile neu generieren.
+Aggregat aus `zerodds-ffi-loader-1.0.md`, erzeugt von `website/_tools/gen_open_items.py`.
+Kein eigener Inhalt: jedes Item steht dort mit seinem Beleg.
 
-## Open
+---
 
-— keine. Alle Items im RC1-Cluster-A/B/C-Closeout 2026-05-07 geschlossen
-(§8.2 ABI-Compat-Test als finaler Eintrag, baseline 185 Symbole).
+## §2.5 Thread-Safety
 
-## Partial
+**Status:** `open` — kein Test ruft die ABI aus mehreren Threads. `Send`/`Sync` stehen im Typsystem, gemessen ist die Nebenläufigkeit nicht.
 
-— keine. Alle vormals partial-Items (§3.6 Flutter, §5 Cross-Lang-Live,
-§8.3 Per-Sprach-Loader-Tests) im RC1-Cluster-C-Closeout 2026-05-07
-nach `done` migriert.
+## §6 Library + Header + Per-Sprach-Packages
 
-## Decision-Records (`n/a (rejected)`)
+**Status:** `partial` — Library, Header und pkg-config sind für Linux und macOS in den Paketen und werden gegen die Klausel geprüft; die PyPI-Distribution heisst wie die Klausel sie nennt. Nicht erfüllt sind der Windows-Anteil und drei der sechs Per-Sprach-Packages; beides als §6b geführt.
 
-— keine.
+## §6b Windows-Header/-Library und die fehlenden Per-Sprach-Packages
+
+**Status:** `open` — `packaging/windows/msi/zerodds.wxs` hat das `Devel`-Feature ausdrücklich entfernt, also liefert kein Windows-Paket Header, DLL oder Import-Library aus. Von den Per-Sprach-Packages existiert im Baum nur das PyPI-Wheel unter dem genannten Namen; das npm-Paket heisst `@zerodds/wire` statt `@zerodds/sdk`/`@zerodds/wasm`, ein NuGet- und ein pub.dev-Package gibt es nicht, und das Maven-Modul trägt die Koordinaten `org.zerodds:omgdds` statt `eu.ifyna:zerodds-java-omgdds`.

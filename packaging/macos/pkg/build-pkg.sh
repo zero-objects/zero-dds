@@ -29,7 +29,7 @@ cp crates/zerodds-c-api/include/zerodds.h "$ROOT/usr/local/include/"
 cp packaging/linux/configs/*.yaml.example "$ROOT/usr/local/etc/zerodds/"
 cp packaging/macos/launchd/*.plist "$ROOT/Library/LaunchDaemons/"
 cp man/man1/zerodds-*.1 "$ROOT/usr/local/share/man/man1/"
-cp man/man5/zerodds-*.yaml.5 "$ROOT/usr/local/share/man/man5/"
+cp man/man5/zerodds*.yaml.5 "$ROOT/usr/local/share/man/man5/"
 
 # Pre-/postinstall: System-User _zerodds anlegen, Service registrieren.
 cat > "$SCRIPTS/preinstall" <<'PRE'

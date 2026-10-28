@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 # ZeroDDS — IDL → Swift codegen backend
 
-`zerodds-idlc --swift` emits **native Swift** from OMG IDL: a self-contained
+`zerodds-idlc generate --lang swift` emits **native Swift** from OMG IDL: a self-contained
 source file with a `Writer` (byte-identical to the `endpoints/swift` core) and,
 per IDL `struct`, a Swift struct plus a `marshalXCDR(_ endian) -> [UInt8]`
 method whose wire output matches the Rust goldens exactly.
@@ -12,7 +12,7 @@ Crate: [`crates/idl-swift`](../crates/idl-swift) · registered in `tools/idlc`
 ## Usage
 
 ```sh
-zerodds-idlc types.idl --swift    # emits types.swift
+zerodds-idlc generate --lang swift types.idl   # emits types.swift
 ```
 
 ## Mapping

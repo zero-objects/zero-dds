@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! XRCE-Object-Kinds (Spec §7.2 Table 4).
+//! XRCE-Object-Kinds (Spec §7.7.5, Annex A).
 //!
 //! Each object variant has a 4-bit code carried by the lower 4 bits
 //! of the `ObjectId` (see `crate::object_id`). The constants chosen here
@@ -15,7 +15,7 @@
 
 use crate::error::XrceError;
 
-/// Reserved object kind: no valid object (Spec §7.2.1).
+/// Reserved object kind: no valid object (Spec §7.7.5).
 pub const OBJK_INVALID: u8 = 0x00;
 /// `OBJK_PARTICIPANT` — DomainParticipant.
 pub const OBJK_PARTICIPANT: u8 = 0x01;
@@ -29,18 +29,18 @@ pub const OBJK_SUBSCRIBER: u8 = 0x04;
 pub const OBJK_DATAWRITER: u8 = 0x05;
 /// `OBJK_DATAREADER` — DataReader.
 pub const OBJK_DATAREADER: u8 = 0x06;
-/// `OBJK_TYPE` — type description (Spec §7.5.2).
+/// `OBJK_TYPE` — type description (Spec §7.7.5).
 pub const OBJK_TYPE: u8 = 0x0A;
-/// `OBJK_QOSPROFILE` — QoS profile (Spec §7.5.2).
+/// `OBJK_QOSPROFILE` — QoS profile (Spec §7.7.5).
 pub const OBJK_QOSPROFILE: u8 = 0x0B;
-/// `OBJK_APPLICATION` — application container (Spec §7.5.2).
+/// `OBJK_APPLICATION` — application container (Spec §7.7.5).
 pub const OBJK_APPLICATION: u8 = 0x0C;
-/// `OBJK_AGENT` — agent singleton (Spec §7.5.2.1).
+/// `OBJK_AGENT` — agent singleton (DDS-XRCE 1.0 §7.7.5, Annex A).
 pub const OBJK_AGENT: u8 = 0x0D;
-/// `OBJK_CLIENT` — client object, represents the ProxyClient (§7.5.1).
+/// `OBJK_CLIENT` — client object, represents the ProxyClient (DDS-XRCE 1.0 §7.7.5, Annex A).
 pub const OBJK_CLIENT: u8 = 0x0E;
-/// `OBJK_DOMAIN` — domain kind (Spec §7.5.2).
-pub const OBJK_DOMAIN: u8 = 0x0F;
+/// `OBJK_OTHER` — reserved object kind (DDS-XRCE 1.0 Annex A).
+pub const OBJK_OTHER: u8 = 0x0F;
 
 /// Convenience enum of all object kinds defined in the spec.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -59,7 +59,7 @@ pub enum ObjectKind {
     Application = OBJK_APPLICATION,
     Agent = OBJK_AGENT,
     Client = OBJK_CLIENT,
-    Domain = OBJK_DOMAIN,
+    Other = OBJK_OTHER,
 }
 
 impl ObjectKind {
@@ -89,7 +89,7 @@ impl ObjectKind {
             OBJK_APPLICATION => Ok(Self::Application),
             OBJK_AGENT => Ok(Self::Agent),
             OBJK_CLIENT => Ok(Self::Client),
-            OBJK_DOMAIN => Ok(Self::Domain),
+            OBJK_OTHER => Ok(Self::Other),
             _ => Err(XrceError::ValueOutOfRange {
                 message: "object kind not in DDS-XRCE spec",
             }),
@@ -131,7 +131,7 @@ mod tests {
             ObjectKind::Application,
             ObjectKind::Agent,
             ObjectKind::Client,
-            ObjectKind::Domain,
+            ObjectKind::Other,
         ] {
             assert_eq!(ObjectKind::from_u8(k.to_u8()).unwrap(), k);
         }
@@ -165,12 +165,13 @@ mod tests {
 
     #[test]
     fn raw_const_values_match_spec() {
-        // Sanity check: Spec §7.2 Table 4
+        // DDS-XRCE 1.0 §7.7.5 and Annex A
         assert_eq!(OBJK_PARTICIPANT, 0x01);
         assert_eq!(OBJK_TOPIC, 0x02);
         assert_eq!(OBJK_DATAWRITER, 0x05);
         assert_eq!(OBJK_DATAREADER, 0x06);
         assert_eq!(OBJK_AGENT, 0x0D);
         assert_eq!(OBJK_CLIENT, 0x0E);
+        assert_eq!(OBJK_OTHER, 0x0F); // §7.5.2, Annex A
     }
 }

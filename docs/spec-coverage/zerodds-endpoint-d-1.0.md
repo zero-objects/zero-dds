@@ -37,7 +37,7 @@ Sequenznummer wrapt modulo 0x10000.
 **Repo:** `zerodds.d` — `class Client` (Zeile 162–182), `struct Transport`
 (Zeile 155–158), `memTransport()` als In-Memory-FIFO für Tests/Beispiele.
 
-**Tests (codepit):** `d_endpoint_sync` (Ping-Pong-E2E, §4).
+**Tests:** (Linux) `d_endpoint_sync` (Ping-Pong-E2E, §4).
 
 **Status:** done.
 
@@ -53,7 +53,7 @@ entkoppelter async **Writer** ist Teil des reliable Streams (`SpscRing`, §5)
 **Repo:** `zerodds.d` — `class AsyncReader` (Zeile 214–222), `readerLoop`
 (Zeile 201–212).
 
-**Tests (codepit):** `d_endpoint_async` (Ping-Pong-E2E, §4).
+**Tests:** (Linux) `d_endpoint_async` (Ping-Pong-E2E, §4).
 
 **Status:** done.
 
@@ -67,7 +67,7 @@ Voll-Stack über den sync `Client` (§2), Voll-Stack über den async
 
 **Repo:** `crates/endpoint-e2e/tests/d.rs`.
 
-**Tests (codepit):** `d_raw_udp` + `d_endpoint_sync` + `d_endpoint_async` —
+**Tests:** (Linux) `d_raw_udp` + `d_endpoint_sync` + `d_endpoint_async` —
 3/3 passed.
 
 **Status:** done.
@@ -90,7 +90,7 @@ Lock, kein Syscall; ein separater Drain-Thread besitzt Socket + Sender-State.
 ACKNACK-getriebene Retransmit-Loop), `endpoints/d/example_reliable.d`
 (In-Prozess-Demo), `endpoints/d/reliable_test.d` (Unit- + Byte-Golden-Suite).
 
-**Tests (codepit):**
+**Tests:** (Linux)
 - `d_reliable_unit_and_golden` — `reliable_test.d` prüft monotone Seq,
   Payload-zu-groß, Window-full, Heartbeat first/silenced-&lt;500ms/
   after-500ms/empty, ACKNACK clear/full-clear, in-order Drain, Reorder,
@@ -121,7 +121,7 @@ entkoppelte Writer aus dem Hot-Path des Producers entfernt.
 `MonoTime`-Zeitstempel um `sendto` bzw. `ring.enqueue`, sortiert, Median
 genommen.
 
-**Tests (codepit):** `d_reliable_latency_bench` — inline-sendto-Median
+**Tests:** (Linux) `d_reliable_latency_bench` — inline-sendto-Median
 3600 ns; ring-enqueue-Median 0 ns.
 
 **HONEST NOTE:** Der Ring-Enqueue liegt unterhalb der `MonoTime`-Auflösung
@@ -130,14 +130,14 @@ nicht als Behauptung „unendlich schnell". Messbar und real ist: die
 3600-ns-Syscall wird durch die Entkopplung über den Ring aus dem
 Producer-Pfad entfernt.
 
-**Status:** done (Messung mit dem oben genannten Granularitätslimit; das
-Limit selbst ist kein Defekt, sondern eine Eigenschaft der Bench-Auflösung).
+**Status:** done — gemessen bis an die Auflösungsgrenze des Bench-Aufbaus.
+Die Grenze gehört zum Messmittel, nicht zur Implementierung.
 
 ## Audit-Status
 
-6 done / 0 partial / 0 open / 0 n/a (informativ) / 0 n/a (rejected).
+6 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
 
-Test-run (codepit, verifiziert): `cargo test -p zerodds-endpoint-e2e --test d`
+Test-run (Linux, verifiziert): `cargo test -p zerodds-endpoint-e2e --test d`
 3/3 (`d_raw_udp`, `d_endpoint_sync`, `d_endpoint_async`); `--test d_reliable`
 5/5 (`d_reliable_loss_recovery`, `d_reliable_no_loss`,
 `d_reliable_unit_and_golden`, `d_reliable_example`,

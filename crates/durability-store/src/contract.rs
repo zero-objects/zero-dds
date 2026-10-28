@@ -87,6 +87,49 @@ impl Contract {
     pub fn per_instance_bounded(&self) -> bool {
         self.max_samples_per_instance != LENGTH_UNLIMITED
     }
+
+    /// Serializes to the seven primitive fields a persisted store row holds a
+    /// contract as: `(history_kind, history_depth, max_samples,
+    /// max_instances, max_samples_per_instance, cleanup_delay_secs,
+    /// cleanup_delay_subsec_nanos)`. Shared by every SQL-backed adapter
+    /// (sqlite/lakehouse/postgres) so the column layout and its
+    /// encode/decode exist exactly once, not once per adapter.
+    #[must_use]
+    pub fn to_row(&self) -> (u32, i32, i32, i32, i32, u64, u32) {
+        (
+            self.history_kind as u32,
+            self.history_depth,
+            self.max_samples,
+            self.max_instances,
+            self.max_samples_per_instance,
+            self.cleanup_delay.as_secs(),
+            self.cleanup_delay.subsec_nanos(),
+        )
+    }
+
+    /// Inverse of [`to_row`](Self::to_row). `None` if `history_kind` is not a
+    /// valid [`HistoryKind`] discriminator — a corrupt or foreign row, which
+    /// the caller must refuse loudly (an `Err`), never default silently to a
+    /// made-up contract.
+    #[must_use]
+    pub fn from_row(
+        history_kind: u32,
+        history_depth: i32,
+        max_samples: i32,
+        max_instances: i32,
+        max_samples_per_instance: i32,
+        cleanup_delay_secs: u64,
+        cleanup_delay_subsec_nanos: u32,
+    ) -> Option<Self> {
+        Some(Self {
+            history_kind: HistoryKind::try_from_u32(history_kind)?,
+            history_depth,
+            max_samples,
+            max_instances,
+            max_samples_per_instance,
+            cleanup_delay: Duration::new(cleanup_delay_secs, cleanup_delay_subsec_nanos),
+        })
+    }
 }
 
 impl Default for Contract {
@@ -100,8 +143,39 @@ impl Default for Contract {
 /// Service-cleanup-delay (QoS Duration) → `core::time::Duration`. The QoS
 /// fraction is `2^-32 s`, not nanoseconds.
 fn cleanup_delay(qos: &DurabilityServiceQosPolicy) -> Duration {
-    let secs = u64::try_from(qos.service_cleanup_delay.seconds.max(0)).unwrap_or(0);
-    let frac = u64::from(qos.service_cleanup_delay.fraction);
-    let nanos = (frac.saturating_mul(1_000_000_000) >> 32) as u32;
-    Duration::new(secs, nanos)
+    // Rounded to the nearest nanosecond, a whole second carrying.
+    let (secs, nanos) = qos.service_cleanup_delay.to_sec_nanosec();
+    Duration::new(u64::try_from(secs.max(0)).unwrap_or(0), nanos)
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn row_round_trips_keep_last() {
+        let c = Contract {
+            history_kind: HistoryKind::KeepLast,
+            history_depth: 5,
+            max_samples: 100,
+            max_instances: 10,
+            max_samples_per_instance: 3,
+            cleanup_delay: Duration::new(7, 42),
+        };
+        let (a, b, cc, d, e, f, g) = c.to_row();
+        assert_eq!(Contract::from_row(a, b, cc, d, e, f, g), Some(c));
+    }
+
+    #[test]
+    fn row_round_trips_keep_all_unlimited() {
+        let c = Contract::keep_all();
+        let (a, b, cc, d, e, f, g) = c.to_row();
+        assert_eq!(Contract::from_row(a, b, cc, d, e, f, g), Some(c));
+    }
+
+    #[test]
+    fn from_row_rejects_unknown_history_kind() {
+        assert_eq!(Contract::from_row(99, 0, -1, -1, -1, 0, 0), None);
+    }
 }

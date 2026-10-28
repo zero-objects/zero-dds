@@ -13,8 +13,9 @@ pub mod complete;
 pub mod flags;
 pub mod kinds;
 pub mod minimal;
+pub mod to_minimal;
 
-use zerodds_cdr::{BufferReader, BufferWriter, EncodeError};
+use zerodds_wire::{Reader, WireError, Writer};
 
 use crate::error::TypeCodecError;
 use crate::type_identifier::kinds::{EK_COMPLETE, EK_MINIMAL};
@@ -49,39 +50,90 @@ impl TypeObject {
         }
     }
 
-    /// Encode as `{ octet _d; body }`.
+    /// Encode as `DHEADER { octet _d; body }`.
+    ///
+    /// Annex B declares
+    /// `@extensibility(APPENDABLE) @nested union TypeObject`, and the
+    /// head of the same file says "The types in this file shall be
+    /// serialized with XCDR encoding version 2". §7.4.2 gives an
+    /// appendable object under version 2 a `DHEADER`: a `UInt32` holding
+    /// the byte length of everything after it.
+    ///
+    /// **This used to write the discriminator and the body and no
+    /// header**, and the omission was measurable against a vendor rather
+    /// than only against the clause. `idlc` on
+    /// `zerodds-examples/idl-conformance/proofs/typeobject/idl/
+    /// typeobject.idl` emits `TYPE_MAP_CDR_Plain`, and the
+    /// `MinimalTypeObject` inside it is 55 octets opening
+    /// `33 00 00 00 f1 51 …` — a `DHEADER` of 51, then `EK_MINIMAL`,
+    /// then `TK_STRUCTURE`. Every octet of those 55 is what this
+    /// function now produces (`crates/types/tests/
+    /// typeobject_vendor_dheader.rs`).
+    ///
+    /// The `DHEADER` was never entirely absent from this crate: the hash
+    /// input of §7.3.4.5 had one added on top of `encode_into` by
+    /// `hash::minimal_hash_input`, which is why the `EquivalenceHash` and
+    /// the `typeobject_serialized_size` were right while
+    /// [`Self::to_bytes_le`] was four octets short. That correction now
+    /// lives here, in the one place that writes a `TypeObject`, and
+    /// `hash` no longer adds a second one — a doubled `DHEADER` would
+    /// change every hash this project computes and look like a type
+    /// mismatch at every peer.
     ///
     /// # Errors
-    /// Buffer overflow.
-    pub fn encode_into(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
-        w.write_u8(self.discriminator())?;
-        match self {
-            Self::Minimal(m) => m.encode_into(w),
-            Self::Complete(c) => c.encode_into(w),
-        }
+    /// A length that does not fit a `u32`.
+    pub fn encode_into(&self, w: &mut Writer) -> Result<(), WireError> {
+        crate::framing::encode_appendable(w, |w| {
+            w.write_u8(self.discriminator());
+            match self {
+                Self::Minimal(m) => m.encode_into(w),
+                Self::Complete(c) => c.encode_into(w),
+            }
+        })
     }
 
     /// Decode.
     ///
     /// # Errors
-    /// `TypeCodecError::UnknownTypeKind` on an unknown equivalence kind.
-    pub fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, TypeCodecError> {
-        let d = r.read_u8()?;
-        match d {
-            EK_MINIMAL => Ok(Self::Minimal(MinimalTypeObject::decode_from(r)?)),
-            EK_COMPLETE => Ok(Self::Complete(CompleteTypeObject::decode_from(r)?)),
-            other => Err(TypeCodecError::UnknownTypeKind { kind: other }),
-        }
+    /// `TypeCodecError::UnknownTypeKind` on an unknown equivalence kind,
+    /// or the framing errors of [`crate::framing::decode_appendable`].
+    pub fn decode_from(r: &mut Reader<'_>) -> Result<Self, TypeCodecError> {
+        crate::framing::decode_appendable_with(r, |r| {
+            let d = r.read_u8()?;
+            match d {
+                EK_MINIMAL => Ok(Self::Minimal(MinimalTypeObject::decode_from(r)?)),
+                EK_COMPLETE => Ok(Self::Complete(CompleteTypeObject::decode_from(r)?)),
+                other => Err(TypeCodecError::UnknownTypeKind { kind: other }),
+            }
+        })
     }
 
     /// Convenience: LE-Bytes.
     ///
     /// # Errors
     /// Encode error.
-    pub fn to_bytes_le(&self) -> Result<alloc::vec::Vec<u8>, EncodeError> {
-        let mut w = BufferWriter::new(zerodds_cdr::Endianness::Little);
+    pub fn to_bytes_le(&self) -> Result<alloc::vec::Vec<u8>, WireError> {
+        self.to_bytes_le_with(false)
+    }
+
+    /// LE-Bytes, choosing the minimal-`TypeObject` vendor camp.
+    ///
+    /// `minimal_member_trailing_octet` selects the RTI Connext/CoreDX
+    /// reading of XTypes 1.3 §7.3.4.5 (one trailing octet per minimal
+    /// aggregated member) over the Cyclone/Fast DDS one. See
+    /// `docs/omg-xtypes-issues.md` §C2. `false` reproduces the historic
+    /// [`Self::to_bytes_le`] stream.
+    ///
+    /// # Errors
+    /// Encode error.
+    pub fn to_bytes_le_with(
+        &self,
+        minimal_member_trailing_octet: bool,
+    ) -> Result<alloc::vec::Vec<u8>, WireError> {
+        let mut w = crate::framing::xcdr2_writer()
+            .with_minimal_member_trailing_octet(minimal_member_trailing_octet);
         self.encode_into(&mut w)?;
-        Ok(w.into_bytes())
+        Ok(w.finish())
     }
 
     /// Convenience: from LE bytes.
@@ -89,7 +141,7 @@ impl TypeObject {
     /// # Errors
     /// Decode error.
     pub fn from_bytes_le(bytes: &[u8]) -> Result<Self, TypeCodecError> {
-        let mut r = BufferReader::new(bytes, zerodds_cdr::Endianness::Little);
+        let mut r = crate::framing::xcdr2_reader(bytes);
         Self::decode_from(&mut r)
     }
 }
@@ -103,7 +155,9 @@ impl TypeObject {
 mod tests {
     use super::*;
     use crate::type_identifier::{PrimitiveKind, TypeIdentifier};
-    use crate::type_object::common::{CommonStructMember, CommonUnionMember, NameHash};
+    use crate::type_object::common::{
+        AnnotationParameterValue, CommonStructMember, CommonUnionMember, NameHash,
+    };
     use crate::type_object::flags::{
         AliasMemberFlag, AliasTypeFlag, BitmaskTypeFlag, CollectionElementFlag, CollectionTypeFlag,
         EnumLiteralFlag, EnumTypeFlag, StructMemberFlag, StructTypeFlag, UnionDiscriminatorFlag,
@@ -386,21 +440,17 @@ mod tests {
     fn minimal_annotation_with_named_parameter() {
         use crate::type_object::flags::{AnnotationParameterFlag, AnnotationTypeFlag};
         use crate::type_object::minimal::{
-            AnnotationParameterValue, CommonAnnotationParameter, MinimalAnnotationParameter,
-            MinimalAnnotationType,
+            CommonAnnotationParameter, MinimalAnnotationParameter, MinimalAnnotationType,
         };
         let a = MinimalAnnotationType {
             annotation_flag: AnnotationTypeFlag::default(),
             member_seq: alloc::vec![MinimalAnnotationParameter {
                 common: CommonAnnotationParameter {
-                    member_id: 1,
                     member_flags: AnnotationParameterFlag::default(),
                     member_type_id: TypeIdentifier::Primitive(PrimitiveKind::Int32),
                 },
-                name: alloc::string::String::from("max"),
-                default_value: AnnotationParameterValue {
-                    raw: alloc::vec![0, 0, 0, 10],
-                },
+                name_hash: name_hash([0x70, 0xdd, 0xa5, 0xdf]),
+                default_value: AnnotationParameterValue::Int32(10),
             }],
         };
         roundtrip(TypeObject::Minimal(MinimalTypeObject::Annotation(a)));
@@ -462,7 +512,9 @@ mod tests {
                             ),
                             param_seq: alloc::vec![AppliedAnnotationParameter {
                                 paramname_hash: name_hash([0x01; 4]),
-                                value: alloc::vec![0, 0, 0, 42],
+                                value: crate::type_object::common::AnnotationParameterValue::Int32(
+                                    42
+                                ),
                             }],
                         },
                     ])),
@@ -479,8 +531,12 @@ mod tests {
                     name: alloc::string::String::from("sensor_id"),
                     ann_builtin: AppliedBuiltinMemberAnnotations {
                         unit: Some(alloc::string::String::from("celsius")),
-                        min: Some(alloc::vec![0, 0, 0, 0]),
-                        max: Some(alloc::vec![0xff, 0xff, 0xff, 0xff]),
+                        min: Some(crate::type_object::common::AnnotationParameterValue::Int64(
+                            0
+                        )),
+                        max: Some(crate::type_object::common::AnnotationParameterValue::Int64(
+                            1_000_000,
+                        )),
                         hash_id: None,
                         default_value: None,
                     },
@@ -647,11 +703,11 @@ mod tests {
         let m = CompleteMapType {
             collection_flag: CollectionTypeFlag::default(),
             bound: 200,
-            detail: CompleteTypeDetail {
+            detail: Some(CompleteTypeDetail {
                 ann_builtin: AppliedBuiltinTypeAnnotations::default(),
                 ann_custom: OptionalAppliedAnnotationSeq::default(),
                 type_name: alloc::string::String::from("::StrIntMap"),
-            },
+            }),
             key: CompleteCollectionElement {
                 common: CommonCollectionElement {
                     element_flags: CollectionElementFlag::default(),
@@ -750,24 +806,22 @@ mod tests {
 
     #[test]
     fn complete_annotation_roundtrips() {
-        use crate::type_object::common::{
-            AppliedBuiltinTypeAnnotations, CompleteTypeDetail, OptionalAppliedAnnotationSeq,
+        use crate::type_object::complete::{
+            CompleteAnnotationHeader, CompleteAnnotationParameter, CompleteAnnotationType,
         };
-        use crate::type_object::complete::{CompleteAnnotationParameter, CompleteAnnotationType};
         use crate::type_object::flags::{AnnotationParameterFlag, AnnotationTypeFlag};
         let a = CompleteAnnotationType {
             annotation_flag: AnnotationTypeFlag::default(),
-            detail: CompleteTypeDetail {
-                ann_builtin: AppliedBuiltinTypeAnnotations::default(),
-                ann_custom: OptionalAppliedAnnotationSeq::default(),
-                type_name: alloc::string::String::from("::my_ann"),
+            header: CompleteAnnotationHeader {
+                annotation_name: alloc::string::String::from("my_ann"),
             },
             member_seq: alloc::vec![CompleteAnnotationParameter {
-                member_id: 1,
-                member_flags: AnnotationParameterFlag::default(),
-                member_type_id: TypeIdentifier::Primitive(PrimitiveKind::Int32),
+                common: crate::type_object::minimal::CommonAnnotationParameter {
+                    member_flags: AnnotationParameterFlag::default(),
+                    member_type_id: TypeIdentifier::Primitive(PrimitiveKind::Int32),
+                },
                 name: alloc::string::String::from("max"),
-                default_value: alloc::vec![0, 0, 0, 99],
+                default_value: AnnotationParameterValue::Int32(99),
             }],
         };
         roundtrip(TypeObject::Complete(CompleteTypeObject::Annotation(a)));
@@ -819,11 +873,11 @@ mod tests {
         let s = CompleteSequenceType {
             collection_flag: CollectionTypeFlag::default(),
             bound: 128,
-            detail: CompleteTypeDetail {
+            detail: Some(CompleteTypeDetail {
                 ann_builtin: AppliedBuiltinTypeAnnotations::default(),
                 ann_custom: OptionalAppliedAnnotationSeq::default(),
                 type_name: alloc::string::String::from("::Floats"),
-            },
+            }),
             element: CompleteCollectionElement {
                 common: CommonCollectionElement {
                     element_flags: CollectionElementFlag::default(),
@@ -842,11 +896,125 @@ mod tests {
 
     #[test]
     fn unknown_equivalence_kind_fails_gracefully() {
-        let bytes = [0xAB_u8];
+        // A `DHEADER` of one, then the octet the union has no case for.
+        // The bare octet this used to feed is no longer a `TypeObject` at
+        // all — Annex B's `@extensibility(APPENDABLE)` puts a length in
+        // front of the discriminator.
+        let bytes = [0x01, 0x00, 0x00, 0x00, 0xAB];
         let err = TypeObject::from_bytes_le(&bytes).unwrap_err();
-        assert!(matches!(
-            err,
-            TypeCodecError::UnknownTypeKind { kind: 0xAB }
+        assert!(
+            matches!(err, TypeCodecError::UnknownTypeKind { kind: 0xAB }),
+            "the equivalence kind has to survive the framing: {err:?}"
+        );
+    }
+
+    /// Annex B: `@extensibility(APPENDABLE) @nested union TypeObject`,
+    /// and the file head: "The types in this file shall be serialized
+    /// with XCDR encoding version 2". §7.4.2 gives such an object a
+    /// `DHEADER` over everything that follows.
+    #[test]
+    fn a_type_object_opens_with_a_dheader_over_the_rest() {
+        let object = TypeObject::Minimal(MinimalTypeObject::Struct(
+            crate::builder::TypeObjectBuilder::struct_type("::S")
+                .member("a", TypeIdentifier::Primitive(PrimitiveKind::Int32), |m| m)
+                .build_minimal(),
         ));
+        let bytes = object.to_bytes_le().unwrap();
+        let announced = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) as usize;
+        assert_eq!(announced, bytes.len() - 4);
+        assert_eq!(bytes[4], EK_MINIMAL, "then the equivalence kind");
+    }
+
+    /// Annex B's `default: MinimalExtendedType extended_type;`, under
+    /// the comment `// =========== Future extensibility ============`.
+    ///
+    /// `MinimalExtendedType` is
+    /// `@extensibility(MUTABLE) @nested struct { /* Empty. Available for
+    /// future extension */ }`, so the arm is a `DHEADER` over a member
+    /// list this revision has no member of — aligned to four after the
+    /// TypeKind octet. A TypeKind a later revision defines therefore
+    /// survives a decode and an encode unchanged instead of being
+    /// refused as `UnknownTypeKind`.
+    #[test]
+    fn a_type_kind_this_revision_does_not_define_survives_the_round_trip() {
+        // DHEADER(8), EK_MINIMAL, TypeKind 0xC0, padding, DHEADER(0).
+        let bytes = [
+            0x08, 0x00, 0x00, 0x00, EK_MINIMAL, 0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ];
+        let decoded = TypeObject::from_bytes_le(&bytes).unwrap();
+        assert!(matches!(
+            decoded,
+            TypeObject::Minimal(MinimalTypeObject::Extended {
+                type_kind: 0xC0,
+                ..
+            })
+        ));
+        assert_eq!(decoded.to_bytes_le().unwrap(), bytes);
+    }
+
+    /// A member list a later revision wrote survives verbatim, so the
+    /// object goes back on the wire as it arrived rather than shortened.
+    #[test]
+    fn an_extended_type_kind_keeps_the_member_list_it_arrived_with() {
+        let mut bytes = alloc::vec![0u8; 4];
+        bytes.extend_from_slice(&[EK_COMPLETE, 0xC1, 0x00, 0x00]);
+        bytes.extend_from_slice(&8_u32.to_le_bytes());
+        bytes.extend_from_slice(&[0xDE, 0xAD, 0xBE, 0xEF, 0x01, 0x02, 0x03, 0x04]);
+        let length = (bytes.len() - 4) as u32;
+        bytes[..4].copy_from_slice(&length.to_le_bytes());
+
+        let decoded = TypeObject::from_bytes_le(&bytes).unwrap();
+        let TypeObject::Complete(CompleteTypeObject::Extended { type_kind, body }) = &decoded
+        else {
+            panic!("expected the extended arm: {decoded:?}");
+        };
+        assert_eq!(*type_kind, 0xC1);
+        assert_eq!(
+            body,
+            &alloc::vec![0xDE, 0xAD, 0xBE, 0xEF, 0x01, 0x02, 0x03, 0x04]
+        );
+        assert_eq!(decoded.to_bytes_le().unwrap(), bytes);
+    }
+
+    /// The hash input of §7.3.4.5 and the serialized object are the same
+    /// octets, because they are the same encoder.
+    ///
+    /// `hash::minimal_hash_input` used to add a `DHEADER` of its own on
+    /// top of an `encode_into` that wrote none, which left
+    /// `to_bytes_le` four octets shorter than the stream the
+    /// `EquivalenceHash` and the `typeobject_serialized_size` were taken
+    /// over. A second `DHEADER` here would move every octet of every
+    /// hash this project computes.
+    #[test]
+    fn the_hash_input_is_the_serialized_object() {
+        let minimal = MinimalTypeObject::Struct(
+            crate::builder::TypeObjectBuilder::struct_type("::S")
+                .member("a", TypeIdentifier::Primitive(PrimitiveKind::Int32), |m| m)
+                .build_minimal(),
+        );
+        let complete = CompleteTypeObject::Struct(
+            crate::builder::TypeObjectBuilder::struct_type("::S")
+                .member("a", TypeIdentifier::Primitive(PrimitiveKind::Int32), |m| m)
+                .build_complete(),
+        );
+        assert_eq!(
+            crate::hash::minimal_hash_input(&minimal).unwrap(),
+            TypeObject::Minimal(minimal.clone()).to_bytes_le().unwrap()
+        );
+        assert_eq!(
+            crate::hash::complete_hash_input(&complete).unwrap(),
+            TypeObject::Complete(complete.clone())
+                .to_bytes_le()
+                .unwrap()
+        );
+        // And the announced size is that length, not four less.
+        assert_eq!(
+            crate::hash::minimal_serialized_size(&minimal).unwrap() as usize,
+            TypeObject::Minimal(minimal).to_bytes_le().unwrap().len()
+        );
+        assert_eq!(
+            crate::hash::complete_serialized_size(&complete).unwrap() as usize,
+            TypeObject::Complete(complete).to_bytes_le().unwrap().len()
+        );
     }
 }

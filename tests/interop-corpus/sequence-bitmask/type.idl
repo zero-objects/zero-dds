@@ -1,0 +1,13 @@
+// `sequence<bitmask>`
+@bit_bound(16)
+bitmask Flags {
+    @position(0) LOW,
+    @position(7) MID,
+    @position(15) HIGH
+};
+
+@final struct Sample {
+    sequence<Flags> none;
+    sequence<Flags> many;
+    long tail;
+};

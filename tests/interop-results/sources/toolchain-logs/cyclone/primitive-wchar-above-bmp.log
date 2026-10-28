@@ -1,0 +1,18 @@
+zd_c2::Sample.too_wide: expected a character in the Basic Multilingual Plane, found U+1F600
+
+wireprobe-fill — the C that fills one sample, for a foreign probe
+
+    --vendor cyclone|rti|fastdds|ros|omniorb|tao|jacorb|hdds
+                            which generated API to write against
+                            (`ros` is rosidl's, not a DDS vendor's;
+                            omniorb and tao share the OMG IDL-to-C++
+                            mapping, jacorb the IDL-to-Java one)
+    --idl <file>            the IDL source
+    --type <ScopedName>     the top-level type
+    --values <file>         the sample, as JSON
+    --out <file>            where the statements go (default: stdout)
+    --print-c-name          print the generated name of --type and stop
+                            (with --vendor fastdds, the C++ one;
+                            with --vendor ros, rosidl's; with omniorb
+                            or tao the OMG C++ one, with jacorb Java,
+                            with hdds the Rust path)

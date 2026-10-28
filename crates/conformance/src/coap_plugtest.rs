@@ -186,7 +186,7 @@ fn case_4_3_uri_must_have_brackets() -> CaseResult {
     }
 }
 
-/// Komplette CoAP-Plugtest Test-Suite.
+/// Complete CoAP-Plugtest test suite.
 pub const SUITE: &[TestCase] = &[
     TestCase {
         name: "rfc7959-2.2-szx-table",

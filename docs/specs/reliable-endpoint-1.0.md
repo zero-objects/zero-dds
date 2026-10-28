@@ -1,121 +1,125 @@
-# `reliable-endpoint` v1.0 — Reliable Delivery als Endpoint-Fähigkeit
+# `reliable-endpoint` v1.0 — reliable delivery as an endpoint capability
 
-ZeroDDS Vendor-Spec. Implementiert in `crates/xrce/src/reliable.rs` (Referenz-State-Machine)
-und `crates/xrce/src/submessages/acknack.rs` / `heartbeat.rs` (Wire-Codec). Baut auf
-DDS-XRCE 1.0 §8.4.10/§8.4.11 (Reliable Streams) und §8.3.2 (Stream-IDs) auf.
+ZeroDDS vendor spec. Implemented in `crates/xrce/src/reliable.rs` (reference state machine)
+and `crates/xrce/src/submessages/acknack.rs` / `heartbeat.rs` (wire codec). Builds on
+DDS-XRCE 1.0 §8.4.10/§8.4.11 (reliable streams) and §8.3.2 (stream IDs).
 
-## §1 Entscheidung — Reliable Delivery liegt im Endpoint, nicht am Hub
+## §1 Decision — reliable delivery lives in the endpoint, not at the hub
 
-Der Endpoint ist der Datenproduzent. Reliable Delivery am Rand (Quelle → Aggregator,
-Aggregator → Bus) existiert nur, wenn der reliable **Writer-State** im Endpoint sitzt:
-ein History-Cache bis zum ACK, ein HEARTBEAT-Announce, ACKNACK-Empfang, Retransmit.
-Das an einen zentralen Hub auszulagern macht den Endpoint→Hub-Sprung best-effort und
-bricht genau den einen Sprung, der nicht verlieren darf.
+The endpoint is the data producer. Reliable delivery at the edge (source → aggregator,
+aggregator → bus) only exists if the reliable **writer state** sits in the endpoint:
+a history cache until the ACK, a HEARTBEAT announce, ACKNACK reception, retransmit.
+Moving this out to a central hub makes the endpoint→hub hop best-effort and
+breaks exactly the one hop that must not lose data.
 
-Der Schnitt:
+The cut:
 
-- **Hub:** Discovery (SPDP/SEDP), QoS-Matching, Routing.
-- **Endpoint (Pflicht):** reliable *Delivery* — ein stateful Writer und Reader. Ein
-  begrenzter, komponierbarer Baustein (XRCE Reliable Stream, `stream_id ≥ 128`), kein
-  Voll-Stack. Kollidiert nicht mit einem dünnen Endpoint: Discovery bleibt draußen.
+- **Hub:** discovery (SPDP/SEDP), QoS matching, routing.
+- **Endpoint (mandatory):** reliable *delivery* — a stateful writer and reader. A
+  bounded, composable building block (XRCE reliable stream, `stream_id ≥ 128`), not a
+  full stack. Does not conflict with a thin endpoint: discovery stays outside.
 
-## §2 Zwei Achsen, ein Bauteil
+## §2 Two axes, one component
 
-Async-Write und Reliability sind dasselbe Bauteil: der **drain-Task** des Async-Writers
-hält den reliable State.
+Async write and reliability are the same component: the **drain task** of the async writer
+holds the reliable state.
 
-Das Motiv für Async-Write ist nicht das Warten auf ACKNACK — es ist die **Syscall-Latenz
-in einem engen Producer-Loop**. Ein `sendto` ist ein Kernelübergang (hunderte ns bis µs);
-auf einem Multi-Core-Aggregator, der im ns-Takt produziert, ist das Faktor 100–1000 zu
-teuer. Der Producer darf nie in den Kernel.
+The motive for async write is not waiting for ACKNACK — it is the **syscall latency
+in a tight producer loop**. A `sendto` is a kernel transition (hundreds of ns to µs);
+on a multi-core aggregator that produces at ns intervals, that is a factor of 100–1000 too
+expensive. The producer must never enter the kernel.
 
 ```
-producer   →  enqueue(sample)               // wait-free, ns, kein Kernel
-drain-task →  submit(sample) → seq, history  // reliable Writer-State
-           →  sendmmsg(WRITE_DATA…)           // gebündelt, ein Syscall pro N
-           →  HEARTBEAT (periodisch)
-           ←  ACKNACK  →  retransmit(missing) aus history
+producer   →  enqueue(sample)               // wait-free, ns, no kernel
+drain-task →  submit(sample) → seq, history  // reliable writer state
+           →  sendmmsg(WRITE_DATA…)           // batched, one syscall per N
+           →  HEARTBEAT (periodic)
+           ←  ACKNACK  →  retransmit(missing) from history
            →  prune(acked)
-Backpressure = history/window voll (Producer entscheidet lokal: drop / spin / count)
+Backpressure = history/window full (producer decides locally: drop / spin / count)
 ```
 
-Ein inline arbeitender „AsyncWriter", der den Transport-Deliver direkt auf dem
-Producer-Thread aufruft — ein Syscall, kein Ring, kein Drain, keine History — liefert
-weder Latenz-Entkopplung noch reliable State und ist mit diesem Bauteil nicht konform.
+An inline "AsyncWriter" that calls the transport deliver directly on the
+producer thread — one syscall, no ring, no drain, no history — delivers
+neither latency decoupling nor reliable state and does not conform to this component.
 
-## §3 Kanonischer State-Machine-Kontrakt
+## §3 Canonical state machine contract
 
-Jede Sprache spiegelt diese Oberfläche (idiomatische Namen, identische Semantik).
-RFC-1982 16-bit Sequenznummern.
+Every language mirrors this surface (idiomatic names, identical semantics).
+RFC-1982 16-bit sequence numbers.
 
-### §3.1 Konstanten (verbindlich)
+### §3.1 Constants (binding)
 
-| Konstante | Wert | Begründung |
+| Constant | Value | Rationale |
 |---|---|---|
-| `HEARTBEAT_PERIOD` | 500 ms | Spec empfiehlt 100 ms; 500 ms konservativ ohne Tx-Pacing-Schicht |
-| `SENDER_WINDOW` | 16 | entspricht der 16-bit-ACKNACK-Bitmap |
-| `RECEIVER_BUFFER` | 64 | DoS-Grenze gegen eine Reorder-Flut |
-| `MAX_PAYLOAD` | 65535 | u16-Submessage-Längenlimit |
-| reliable stream id | Bit 7 gesetzt (`≥ 128`) | Spec §8.3.2 |
+| `HEARTBEAT_PERIOD` | 500 ms | spec recommends 100 ms; 500 ms is conservative without a Tx pacing layer |
+| `SENDER_WINDOW` | 16 | corresponds to the 16-bit ACKNACK bitmap |
+| `RECEIVER_BUFFER` | 64 | DoS limit against a reorder flood |
+| `MAX_PAYLOAD` | 65535 | u16 submessage length limit |
+| reliable stream id | bit 7 set (`≥ 128`) | spec §8.3.2 |
 
 ### §3.2 Sender
 
-- `submit(payload) -> seq` — Fehler `PayloadTooLarge` (`len > MAX_PAYLOAD`) und
-  `WindowFull` (`in_flight ≥ SENDER_WINDOW`); weist eine monotone `seq` zu, buffert in
+- `submit(payload) -> seq` — errors `PayloadTooLarge` (`len > MAX_PAYLOAD`) and
+  `WindowFull` (`in_flight ≥ SENDER_WINDOW`); assigns a monotonic `seq`, buffers in
   `in_flight: seq→payload`.
-- `pending_heartbeat(now) -> HEARTBEAT?` — `None` wenn `in_flight` leer; feuert beim
-  ersten Aufruf, danach erst nach `HEARTBEAT_PERIOD`; Body `{ first_unacked, last_unacked, stream_id }`.
-- `recv_acknack(payload)` — `base = first_unacked`; alles `< base` (RFC-1982) ist
-  acknowledged und wird entfernt; im Fenster `[base, base+16)` bedeutet ein gesetztes Bit
-  missing (behalten), ein gelöschtes Bit acked (entfernen).
-- `get_in_flight(seq)` — Retransmit-Lookup.
+- `pending_heartbeat(now) -> HEARTBEAT?` — `None` if `in_flight` is empty; fires on the
+  first call, after that only after `HEARTBEAT_PERIOD`; body `{ first_unacked, last_unacked, stream_id }`.
+- `recv_acknack(payload)` — `base = first_unacked`; everything `< base` (RFC-1982) is
+  acknowledged and is removed; in the window `[base, base+16)` a set bit means
+  missing (keep), a cleared bit means acked (remove).
+- `get_in_flight(seq)` — retransmit lookup.
 
 ### §3.3 Receiver
 
-- `recv_data(seq, payload)` — Duplikat (`seq < expected`) still verworfen; schon
-  gebuffert ist ein No-op; Fehler `BufferFull` bei `RECEIVER_BUFFER`; sonst in den
-  Out-of-Order-Buffer `received: seq→payload`.
-- `drain_in_order() -> [(seq, payload)]` — liefert lückenlos ab `expected`, advanced
+- `recv_data(seq, payload)` — a duplicate (`seq < expected`) is silently discarded; already
+  buffered is a no-op; error `BufferFull` at `RECEIVER_BUFFER`; otherwise into the
+  out-of-order buffer `received: seq→payload`.
+- `drain_in_order() -> [(seq, payload)]` — delivers without gaps from `expected`, advances
   `expected`.
-- `pending_acknack(hint_last_seen) -> ACKNACK` — Bitmap der fehlenden Slots in
-  `[expected, expected+16)`; Slots jenseits `hint_last_seen` werden nicht als missing markiert.
-- `reset()` — kompletter State-Clear (nach einer RESET-Submessage).
+- `pending_acknack(hint_last_seen) -> ACKNACK` — bitmap of the missing slots in
+  `[expected, expected+16)`; slots beyond `hint_last_seen` are not marked as missing.
+- `reset()` — complete state clear (after a RESET submessage).
 
-## §4 Wire-Format (byte-golden)
+## §4 Wire format (byte-golden)
 
-`HEARTBEAT` und `ACKNACK` sind byte-identisch zur Rust-Referenz:
+`HEARTBEAT` and `ACKNACK` are byte-identical to the Rust reference:
 
 - `AckNack { first_unacked_seq_num: i16, nack_bitmap: [u8;2] LE, stream_id: u8 }` —
-  XRCE-Submessage-ID `0x0A`, Flags `0x01` (nur E-Flag = LE gesetzt).
+  XRCE submessage ID `0x0A`, flags `0x01` (only E flag = LE set).
 - `Heartbeat { first_unacked_seq_nr: i16, last_unacked_seq_nr: i16, stream_id: u8 }` —
-  XRCE-Submessage-ID `0x0B`, Flags `0x01` (nur E-Flag = LE gesetzt).
-- `WriteData` (Nutzdaten-Submessage des reliable Streams) — XRCE-Submessage-ID `0x07`,
-  Flags `0x03` (E-Flag = LE plus `DataFormat::Sample`-Bits) im typischen Reliable-Case.
-- Jede Submessage trägt XRCE-Submessage-Header (ID, Flags, Len LE) + die reliable
-  Stream-ID in der Session/Stream-Zeile (`stream_id ≥ 128`, Bit 7 gesetzt, Spec §8.3.2).
+  XRCE submessage ID `0x0B`, flags `0x01` (only E flag = LE set).
+- `WriteData` (payload submessage of the reliable stream) — XRCE submessage ID `0x07`,
+  flags `0x01` (E flag = LE plus `DataFormat` `FORMAT_DATA` = `0b000` in bits
+  1..3, spec §8.3.5.8). The submessage body begins with the `BaseObjectRequest`
+  (§7.7.8: `request_id` then `object_id`, two octets each, most significant first)
+  and carries the sample after it; the `request_id` is the RFC-1982 sequence number
+  of the sample, the `object_id` names the target DataWriter.
+- Every submessage carries the XRCE submessage header (ID, flags, len LE) + the reliable
+  stream ID in the session/stream row (`stream_id ≥ 128`, bit 7 set, spec §8.3.2).
 
-Golden-Quellen: `golden_heartbeat_le.bin` / `golden_acknack_le.bin` des C-SDKs
-(`endpoints/c/test/test_reliable.c`) und `crates/xrce`. Jede Sprache assertet dagegen.
+Golden sources: `golden_heartbeat_le.bin` / `golden_acknack_le.bin` of the C SDK
+(`endpoints/c/test/test_reliable.c`) and `crates/xrce`. Every language asserts against them.
 
-## §5 Test- & Beleg-Pflicht (pro Sprache)
+## §5 Test & evidence obligation (per language)
 
-1. **Unit** — spiegelt die Referenz-Tests: monotone seq, window-full, heartbeat
+1. **Unit** — mirrors the reference tests: monotonic seq, window-full, heartbeat
    first/silence/empty, acknack-clear, reorder, duplicate-drop, buffer-full,
-   pending-acknack-Bitmap, reset.
-2. **Byte-golden** — HEARTBEAT + ACKNACK identisch zu `golden_*.bin`.
-3. **E2E Loss-Recovery** — live gegen den Rust reliable Peer (`zerodds-endpoint-e2e`),
-   `stream_id ≥ 128`, mit injiziertem Drop (jedes n-te Datagramm / `netem drop`); Assert:
-   **alle** Samples lückenlos in-order geliefert trotz Loss.
-4. **Latenz-Bench** — Producer `write→return` im async-entkoppelten Pfad vs. inline
-   Deliver; ein Messwert (ns/µs), der die Entkopplung zeigt.
-5. **Example** — ein lauffähiges `example_reliable_*` (Aggregator sendet N reliable
-   Samples, Reader gibt die lückenlose Sequenz aus). Generiert, kein Stub.
+   pending-acknack bitmap, reset.
+2. **Byte-golden** — HEARTBEAT + ACKNACK identical to `golden_*.bin`.
+3. **E2E loss recovery** — live against the Rust reliable peer (`zerodds-endpoint-e2e`),
+   `stream_id ≥ 128`, with injected drop (every n-th datagram / `netem drop`); assert:
+   **all** samples delivered in order without gaps despite loss.
+4. **Latency bench** — producer `write→return` in the async-decoupled path vs. inline
+   deliver; one measured value (ns/µs) that shows the decoupling.
+5. **Example** — a runnable `example_reliable_*` (aggregator sends N reliable
+   samples, reader prints the gap-free sequence). Generated, not a stub.
 
-Kein false-green: jeder Test läuft auf realer Toolchain, lauter Skip nur bei fehlender
-Toolchain.
+No false green: every test runs on a real toolchain, a loud skip only when the
+toolchain is missing.
 
-## §6 Außerhalb des Scopes (getrennte Runden)
+## §6 Out of scope (separate rounds)
 
-- Fragmentierung (FRAGMENT-Submessage, Payload > 64 KiB).
-- RESET-Handshake über die Live-Verbindung.
-- Kernel-Bypass-Drain (io_uring / AF_XDP) — eine Optimierung nach der `sendmmsg`-Baseline.
+- Fragmentation (FRAGMENT submessage, payload > 64 KiB).
+- RESET handshake over the live connection.
+- Kernel bypass drain (io_uring / AF_XDP) — an optimisation after the `sendmmsg` baseline.

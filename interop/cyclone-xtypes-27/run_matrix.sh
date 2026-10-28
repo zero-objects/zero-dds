@@ -36,17 +36,16 @@ fi
 export CYCLONEDDS_HOME="${CYCLONEDDS_HOME:-}"
 
 # ---- helpers ---------------------------------------------------------------
-IDLC=(cargo run -q --manifest-path "$REPO_ROOT/Cargo.toml" -p zerodds-idlc --)
 
-# Regenerate the reader type with the requested extensibility, then build.
-#   $1 = appendable | final    (final => generated via --cyclone)
+# Build the reader with the requested extensibility. The type is
+# generated in the reader's build.rs (zerodds-build); the case reaches
+# it through the environment, and build.rs refuses a value it does not
+# know rather than defaulting past a typo.
+#   $1 = appendable | final    (final is what `--cyclone` used to mean)
 build_reader() {
-  local ext="$1"; local extra=()
-  [ "$ext" = "final" ] && extra=(--cyclone)
-  rm -f "$READER_DIR/src/robot.rs"
-  "${IDLC[@]}" generate "$HERE/robot.idl" --rust "${extra[@]}" -o "$READER_DIR/src" >/dev/null 2>&1
-  mv "$READER_DIR/src/Robot.rs" "$READER_DIR/src/robot.rs" 2>/dev/null || true
-  ( cd "$READER_DIR" && cargo build -q 2>&1 | tail -3 ) || { log "reader build failed ($ext)"; return 1; }
+  local ext="$1"
+  ( cd "$READER_DIR" && ZERODDS_ROBOT_EXTENSIBILITY="$ext" cargo build -q 2>&1 | tail -3 ) \
+    || { log "reader build failed ($ext)"; return 1; }
 }
 
 FAILS=0

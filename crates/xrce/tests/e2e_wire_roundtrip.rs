@@ -77,20 +77,18 @@ fn message_with_multiple_submessages_roundtrip() {
     );
 }
 
+/// §8.3.1: a message has at least one submessage.
 #[test]
-fn empty_message_roundtrip() {
+fn a_message_needs_a_submessage() {
     let header =
         MessageHeader::without_client_key(SessionId(0xC8), StreamId(0x80), SerialNumber16::new(1))
             .unwrap();
-    let msg = Message::new(header, vec![]).unwrap();
-    let bytes = msg.encode().unwrap();
-    let decoded = Message::decode(&bytes).unwrap();
-    assert_eq!(decoded.submessages.len(), 0);
+    assert!(Message::new(header, vec![]).is_err());
 }
 
 #[test]
 fn sequence_number_increments_correctly() {
-    // Verifiziert dass SequenceNumber Wraparound korrekt funktioniert.
+    // Verifies that SequenceNumber wraparound works correctly.
     let mut seq = SerialNumber16::new(0xFFFE);
     for _ in 0..5 {
         let next = seq.next();

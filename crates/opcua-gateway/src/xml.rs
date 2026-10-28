@@ -130,6 +130,8 @@ pub enum XmlNodeId {
 /// Returns [`OpcuaXmlError`] on malformed XML or missing
 /// required fields.
 pub fn parse_gateway_config(src: &str) -> Result<GatewayConfig, OpcuaXmlError> {
+    zerodds_foundation::check_nesting(src, zerodds_foundation::XML_NESTING_LIMIT)
+        .map_err(|e| OpcuaXmlError::Parse(e.to_string()))?;
     let doc = Document::parse(src).map_err(|e| OpcuaXmlError::Parse(e.to_string()))?;
     let root = doc.root_element();
     if root.tag_name().name() != "zerodds_opcua_gateway" {
@@ -353,5 +355,22 @@ mod tests {
         let xml = r#"<zerodds_opcua_gateway><bridge/></zerodds_opcua_gateway>"#;
         let err = parse_gateway_config(xml).expect_err("error expected");
         assert!(matches!(err, OpcuaXmlError::MissingAttribute { .. }));
+    }
+}
+
+#[cfg(test)]
+mod nesting_tests {
+    use super::*;
+
+    /// `roxmltree` recurses once per open element; a gateway configuration from outside
+    /// with a long run of unclosed start tags is refused before it reaches
+    /// the parser, instead of overflowing the stack.
+    #[test]
+    fn a_deeply_nested_text_is_refused_before_the_parser() {
+        let text = "<a>".repeat(100_000);
+        assert!(matches!(
+            parse_gateway_config(&text),
+            Err(OpcuaXmlError::Parse(_))
+        ));
     }
 }

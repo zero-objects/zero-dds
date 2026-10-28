@@ -24,15 +24,11 @@ Example::
     for payload in reader.take():
         print(payload)
 
-Typed DdsType bindings (`@dataclass` mapping via IDL gen)
-come from `crates/idl-rust` codegen via a Python generator.
+Typed topics come from `zerodds-idlc generate --lang python`: pass a
+generated `ZD_TOPIC_DESCRIPTORS[...]` entry to `IdlTopic`. The generated
+code depends on `zerodds_wire` (`runtime/python`), the one Python CDR
+codec — there is no second, hand-written one to import here.
 """
-
-# Pure Python modules without a dependency on the compiled extension
-# module. So that `zerodds.cdr` and `zerodds.idl` remain usable even
-# without `maturin develop --features extension-module`
-# (pytest in CI needs no Rust build).
-from . import cdr, idl  # noqa: F401
 
 # Optional import of the Rust extension module. If not built, we set
 # all DDS classes to `None` and the user gets a clear `ImportError` on
@@ -105,36 +101,6 @@ except ImportError as _core_err:  # pragma: no cover - only in dev-without-matur
     DataWriterListener = DataReaderListener = _CoreStub  # type: ignore[assignment,misc]
     ReadCondition = QueryCondition = _CoreStub  # type: ignore[assignment,misc]
     sample_state = view_state = instance_state = None  # type: ignore[assignment]
-from .idl import (  # noqa: F401
-    Array,
-    Bool,
-    BoundedString,
-    BoundedWString,
-    Bytes,
-    Char,
-    Float32,
-    Float64,
-    Int8,
-    Int16,
-    Int32,
-    Int64,
-    Map,
-    Octet,
-    Optional,
-    Sequence,
-    String,
-    UInt8,
-    UInt16,
-    UInt32,
-    UInt64,
-    WChar,
-    WString,
-    idl_struct,
-    idl_union,
-    is_idl_struct,
-    type_name_of,
-    type_object_of,
-)
 from .topic import IdlReader, IdlTopic, IdlWriter  # noqa: F401
 
 __all__ = [
@@ -164,36 +130,6 @@ __all__ = [
     "ShapeWriter",
     "Subscriber",
     "WaitSet",
-    "cdr",
-    "idl",
-    "idl_struct",
-    "is_idl_struct",
-    "type_name_of",
-    "type_object_of",
-    "Bool",
-    "Bytes",
-    "Float32",
-    "Float64",
-    "Int8",
-    "Int16",
-    "Int32",
-    "Int64",
-    "String",
-    "UInt8",
-    "UInt16",
-    "UInt32",
-    "UInt64",
-    "Array",
-    "BoundedString",
-    "BoundedWString",
-    "Char",
-    "Map",
-    "Octet",
-    "Optional",
-    "Sequence",
-    "WChar",
-    "WString",
-    "idl_union",
     "IdlTopic",
     "IdlWriter",
     "IdlReader",

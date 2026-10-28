@@ -83,7 +83,6 @@ Deliberate restrictions we keep out of scope to maintain focus:
 ## 6 Project structure at a glance
 
 - **Core team (bootstrap phase):** 2–4 senior engineers in the internal core team. No external hiring ramp until the internal proof is reached.
-- **Claude-Teams augmentation:** throughout, realistically 4–8× acceleration depending on the work area. With a small core team, Claude Teams is the primary force multiplier.
 - **External partnerships:** deferred to the post-proof phase. Ferrous Systems, OMG membership, patent-attorney engagement and community building are activated once the baseline system is internally proven and external funds are available.
 - **Governance:** internal core project of the sponsoring company. No foundation model, no external governance framework. Apache-2.0 license chosen to preserve later optionality (donation to a foundation remains possible but requires no planning now).
 - **License:** Apache 2.0 (decided).
@@ -104,4 +103,4 @@ The following documents together form the architectural foundation:
 | 06 | `06_roadmap.md` | Phase plan, milestones, resources |
 | 07 | `07_risks_and_strategy.md` | Patent, IP, community, competitive response |
 
-Each of these documents is independently readable and can be used in parallel by different stakeholder groups. On changes, cross-reference consistency is to be maintained — a Claude-Teams-supportable pattern.
+Each of these documents is independently readable and can be used in parallel by different stakeholder groups. On changes, cross-reference consistency is to be maintained.

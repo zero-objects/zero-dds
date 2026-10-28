@@ -60,7 +60,7 @@ fn bench_send(c: &mut Criterion) {
             (RTPS_HEADER.len() + SUBMSG_HEADER.len() + payload_size) as u64,
         ));
 
-        // flat: concat in ein Vec, ein sendto.
+        // flat: concat into one Vec, one sendto.
         group.bench_with_input(
             BenchmarkId::new("flat", payload_size),
             &payload,
@@ -77,7 +77,7 @@ fn bench_send(c: &mut Criterion) {
             },
         );
 
-        // vectored: three IoSlices, ein sendmsg.
+        // vectored: three IoSlices, one sendmsg.
         group.bench_with_input(
             BenchmarkId::new("vectored", payload_size),
             &payload,

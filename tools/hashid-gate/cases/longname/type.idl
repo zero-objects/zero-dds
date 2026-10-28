@@ -1,0 +1,3 @@
+@mutable struct Sample {
+    @hashid long a_member_name_long_enough_to_cross_the_md5_block_boundary_at_fifty_six_bytes_and_then_some_more_x;
+};

@@ -15,16 +15,14 @@
     missing_docs
 )]
 
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 
+use zerodds_dcps::qos::{HistoryKind, HistoryQosPolicy};
 use zerodds_dcps::runtime::RuntimeConfig;
 use zerodds_dcps::{
     DataReaderQos, DataWriterQos, DomainParticipantFactory, DomainParticipantQos, PublisherQos,
     RawBytes, SubscriberQos, TopicQos,
 };
-
-static NEXT_DOMAIN: AtomicU32 = AtomicU32::new(200);
 
 fn scheduler_config() -> RuntimeConfig {
     RuntimeConfig {
@@ -41,10 +39,7 @@ fn scheduler_config() -> RuntimeConfig {
 /// arrive.
 #[test]
 fn scheduler_tick_drives_reliable_roundtrip() {
-    let domain: i32 = NEXT_DOMAIN
-        .fetch_add(1, Ordering::Relaxed)
-        .try_into()
-        .expect("domain fits i32");
+    let domain = common::unique_domain();
     let factory = DomainParticipantFactory::instance();
     let p = factory
         .create_participant_with_config(domain, DomainParticipantQos::default(), scheduler_config())
@@ -124,10 +119,7 @@ fn scheduler_tick_idle_participant_parks_long() {
     // Baseline participant: classic fixed 5 ms tick_loop → ~200 iterations/s.
     // `scheduler_tick` defaults to true since D.5e Phase 3 C, so force it off
     // here to measure the fixed-period path this test compares against.
-    let d_dom: i32 = NEXT_DOMAIN
-        .fetch_add(1, Ordering::Relaxed)
-        .try_into()
-        .unwrap();
+    let d_dom = common::unique_domain();
     let p_default = factory
         .create_participant_with_config(
             d_dom,
@@ -142,10 +134,7 @@ fn scheduler_tick_idle_participant_parks_long() {
         .expect("baseline participant");
 
     // Scheduler participant: parks until SPDP/idle floor → far fewer iterations.
-    let s_dom: i32 = NEXT_DOMAIN
-        .fetch_add(1, Ordering::Relaxed)
-        .try_into()
-        .unwrap();
+    let s_dom = common::unique_domain();
     let p_sched = factory
         .create_participant_with_config(s_dom, DomainParticipantQos::default(), scheduler_config())
         .expect("scheduler participant");
@@ -176,10 +165,7 @@ fn scheduler_tick_idle_participant_parks_long() {
 /// does not drop work).
 #[test]
 fn scheduler_tick_sustained_no_loss() {
-    let domain: i32 = NEXT_DOMAIN
-        .fetch_add(1, Ordering::Relaxed)
-        .try_into()
-        .expect("domain fits i32");
+    let domain = common::unique_domain();
     let factory = DomainParticipantFactory::instance();
     let p = factory
         .create_participant_with_config(domain, DomainParticipantQos::default(), scheduler_config())
@@ -192,8 +178,24 @@ fn scheduler_tick_sustained_no_loss() {
     let writer = publisher
         .create_datawriter::<RawBytes>(&topic, DataWriterQos::default())
         .expect("writer");
+    // KEEP_ALL: delivery here is asynchronous relative to `write()` (the
+    // scheduler-tick worker thread, not a synchronous in-process
+    // dispatch), so more than one of this keyless (single-instance)
+    // topic's samples can land in the reader's cache before a `take()`
+    // drains it. The default KEEP_LAST(1) would (correctly) evict the
+    // older one whenever that happens — exactly the loss this test
+    // exists to rule out.
     let reader = subscriber
-        .create_datareader::<RawBytes>(&topic, DataReaderQos::default())
+        .create_datareader::<RawBytes>(
+            &topic,
+            DataReaderQos {
+                history: HistoryQosPolicy {
+                    kind: HistoryKind::KeepAll,
+                    depth: 1,
+                },
+                ..DataReaderQos::default()
+            },
+        )
         .expect("reader");
     writer
         .wait_for_matched_subscription(1, Duration::from_secs(10))
@@ -229,3 +231,8 @@ fn scheduler_tick_sustained_no_loss() {
         assert_eq!(*v, i as u8, "in-order, no loss at {i}");
     }
 }
+
+/// Leases a DDS domain no other process on this host holds — the
+/// domain number is the UDP port number, so it is a host-wide resource.
+#[path = "common/mod.rs"]
+mod common;

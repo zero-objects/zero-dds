@@ -1,16 +1,192 @@
-.TH ZERODDS-AMQP-BRIDGED.YAML 5 "2026-05-06" "1.0.0-rc.1" "ZeroDDS Manual"
+.TH ZERODDS-AMQP-BRIDGED.YAML 5 "" "ZeroDDS" "ZeroDDS Manual"
 .SH NAME
 zerodds-amqp-bridged.yaml \- configuration file for zerodds-amqp-bridged(1)
+.SH SYNOPSIS
+.I /etc/zerodds/amqp-bridged.yaml
+.SH DESCRIPTION
+YAML document describing how the AMQP 1.0 bridge daemon maps DDS topics onto
+AMQP addresses. The schema is the one of
+.IR zerodds-amqp-bridge-daemon-1.0 " \(sc3;"
+the reader is
+.I DaemonConfig::from_config
+in
+.IR crates/amqp-endpoint/src/bridge_daemon.rs .
+.PP
+Top-level keys:
+.BR domain ", " log_level ", " amqp ", " acl ", " metrics ", " topics .
+.PP
+An unknown top-level key is
+.I not
+a parse error. The daemon logs a WARN line on stderr naming the key, then
+starts; under
+.B \-\-check\-config
+it is an error. An unknown key inside a known section, or a value of the
+wrong type, stops the start with file and line.
+.PP
+.BI ${VAR} " and " ${VAR:-default}
+are substituted from the environment before the document is parsed, so the
+broker password belongs in the environment, not in the file.
 .SH KEYS
-.SS participant
-.B domain_id ", " qos_profile .
+.SS Top level
+.TP
+.B domain
+Integer DDS domain ID. Default
+.IR 0 .
+.TP
+.B log_level
+.IR trace " | " debug " | " info " | " warn " | " error .
 .SS amqp
-.B broker_url ", " vhost ", " sasl.mechanism
-(ANONYMOUS|PLAIN|EXTERNAL),
-.B sasl.username ", " sasl.password_file ", " tls.enabled ", " tls.ca ", " tls.cert ", " tls.key .
-.SS routes
-.B dds_topic ", " type ", " amqp_address ", " direction ", " settle_mode .
-.SS logging ", " observability
-identical to other ZeroDDS bridge configs.
+.TP
+.B broker_url
+.IR amqp:// " or " amqps://
+URL of the broker, e.g.
+.IR "amqp://localhost:5672" ;
+ports 5672 and 5671 by default.
+.I amqps://
+needs
+.B tls
+enabled, and the other way round.
+.TP
+.B container_id
+AMQP container identifier of this daemon; it also seeds the GUID prefix of
+the daemon's DDS participant, so two daemons need two ids.
+.TP
+.B channel_max
+Highest channel number the daemon offers in
+.IR Open .
+.TP
+.B max_frame_size
+Largest frame the daemon accepts, in bytes, at least 512; a larger message
+travels as a multi-frame transfer.
+.TP
+.B idle_time_out_ms
+Idle timeout in milliseconds, sent in
+.IR Open ;
+0 announces none. The daemon sends a heartbeat at half the broker's.
+.TP
+.B hostname
+AMQP
+.I Open
+hostname (virtual host); the broker host when empty.
+.TP
+.B sasl
+Sub-map with
+.B mechanism
+.RI ( PLAIN " | " SCRAM-SHA-256 " | " EXTERNAL " | " ANONYMOUS " | " XOAUTH2 )
+and the
+.BR username " / " password
+pair the mechanism needs (for XOAUTH2 the password is the bearer token).
+PLAIN without TLS and ANONYMOUS are refused towards a broker that is not on
+the loopback interface. The broker must offer the configured mechanism.
+.TP
+.B tls
+Sub-map with
+.B enabled
+(boolean),
+.B ca_file
+(required: the trust anchor for the broker certificate), the client material
+.BR cert_file " / " key_file
+(EXTERNAL's identity),
+.B verify_hostname
+(only
+.IR true )
+and
+.B alpn
+(only
+.IR [amqp] ).
+.TP
+.B reconnect
+Sub-map with
+.BR initial_delay_ms ", " max_delay_ms " and " factor
+of the exponential back-off after a lost connection.
+.SS acl
+.TP
+.B default_deny
+Boolean: a topic no rule names is closed.
+.TP
+.B rules
+List of maps with
+.BR topic ", " read " and " write :
+the SASL subjects allowed DDS \(-> AMQP and AMQP \(-> DDS;
+.I *
+allows every subject.
+.SS metrics
+.TP
+.B enabled
+Boolean. Turns on the admin endpoint serving
+.IR /metrics ", " /catalog " and " /healthz .
+.TP
+.B listen
+Admin listen address. Default
+.IR "127.0.0.1:9094"
+when
+.B enabled
+is true; each bridge daemon has its own port, so several run on one
+host without a collision.
+.TP
+.B path
+Only
+.IR /metrics .
+.SS topics (list)
+.TP
+.B dds_name
+DDS topic name.
+.TP
+.B dds_type
+DDS type name; default the topic name.
+.TP
+.B keyed
+Boolean: the type has key fields (entity kind WithKey). Default
+.IR false .
+.TP
+.B amqp_address
+AMQP node address, e.g.
+.IR "/queues/orders.events" .
+.TP
+.B direction
+.IR in " | " out " | " bidir .
+.I in
+carries broker messages into DDS (a receiver link and a DataWriter),
+.I out
+carries DDS samples to the broker (a DataReader and a sender link),
+.I bidir
+both. Default
+.IR bidir .
+.TP
+.B sender
+Sub-map with
+.B settled
+(send settled, at-most-once),
+.B durable
+(terminus durability 0, 1, 2),
+.B snd_settle_mode
+(0, 1, 2) and
+.B rcv_settle_mode
+(0, 1).
+.TP
+.B receiver
+Sub-map with
+.BR credit ,
+the link credit the daemon grants.
+.TP
+.B qos
+Sub-map with
+.B reliability
+.RI ( reliable " | " best_effort ;
+best effort sends settled),
+.B durability
+.RI ( volatile " | " transient_local " | " transient " | " persistent ;
+anything but volatile sends durable messages) and
+.B history
+with
+.B kind
+.RI ( keep_last " | " keep_all )
+and a
+.B depth
+for keep_last: how many samples of a sender wait while the broker grants no
+credit.
+.SH EXAMPLES
+See
+.IR /usr/share/zerodds/configs/amqp-bridged.yaml.example .
 .SH SEE ALSO
 .BR zerodds-amqp-bridged (1).

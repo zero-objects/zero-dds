@@ -61,66 +61,132 @@ int zdw_endpoint_recv(const zdw_transport *t, unsigned char *buf, size_t cap, si
 /* Built-in best-effort stream. */
 #define ZDW_XRCE_STREAM_BEST_EFFORT 0x01
 
-/* Wraps `sample` (an XCDR body) into an XRCE WRITE_DATA (Sample) frame in `out`.
- * Returns the frame length, or 0 if it does not fit. */
+/* Submessage flags of a data submessage: E flag (little-endian body, bit 0) plus
+ * DataFormat FORMAT_DATA (0b000) in bits 1..3 -- DDS-XRCE 1.0 Sec 8.3.5.8. */
+#define ZDW_XRCE_WRITE_FLAGS 0x01
+/* Submessage flags of a control submessage (ACKNACK/HEARTBEAT): the E flag
+ * only -- they define no format bits. */
+#define ZDW_XRCE_FLAG_E_LE 0x01
+/* Wire size of the BaseObjectRequest that precedes the sample (Sec 7.7.8). */
+#define ZDW_XRCE_BASE_SIZE 4u
+/* ObjectKind of a DataWriter (Sec 7.2.2, OBJK_DATAWRITER). */
+#define ZDW_OBJK_DATAWRITER 0x05u
+/* Builds an ObjectId (Sec 7.2.1) from a 12-bit raw id and a 4-bit ObjectKind. */
+#define ZDW_XRCE_OBJECT_ID(raw, kind) \
+    ((unsigned int)((((unsigned int)(raw) & 0x0FFFu) << 4) | ((unsigned int)(kind) & 0x0Fu)))
+
+/* Wraps `sample` (an XCDR body) into an XRCE WRITE_DATA frame in `out`.
+ * The submessage body starts with the BaseObjectRequest (Sec 7.7.8):
+ * `request_id` followed by `object_id`, each two octets, most significant
+ * first. `object_id` identifies the target DataWriter -- without it no XRCE
+ * agent can route the sample. `request_id` is the message's own `seq`, which
+ * Sec 7.7.8 only requires to be unique per stream. Returns the frame length,
+ * or 0 if it does not fit or `object_id` exceeds 16 bits. */
 size_t zdw_xrce_write_frame(unsigned char *out, size_t cap,
                             unsigned char session, unsigned char stream,
-                            unsigned int seq, const unsigned char *sample,
+                            unsigned int seq, unsigned int object_id,
+                            const unsigned char *sample,
                             size_t sample_len);
 
-/* Locates the sample body inside a received WRITE_DATA frame. On success sets
- * *body / *body_len and returns ZDW_T_OK; ZDW_T_ERROR if the frame is not a
- * best-effort no-key WRITE_DATA. */
+/* Locates the sample body inside a received WRITE_DATA/DATA frame -- i.e. the
+ * bytes AFTER the 4-octet BaseObjectRequest. On success sets *body / *body_len
+ * and returns ZDW_T_OK; ZDW_T_ERROR if the frame is not a best-effort no-key
+ * WRITE_DATA/DATA or its body is too short to hold the BaseObjectRequest. */
 int zdw_xrce_read_frame(const unsigned char *frame, size_t len,
                         const unsigned char **body, size_t *body_len);
 
-/* --- XRCE serial framing (DDS-XRCE 1.0 Annex C, RFC 1662 PPP/HDLC) ---
- *
- * Serial links have no frame boundaries, so an XRCE message is wrapped:
- *   7E [ byte-stuffed(payload) byte-stuffed(crc16-BE) ] 7E
- * Stuffing: a 0x7E/0x7D byte becomes 0x7D followed by (byte XOR 0x20). CRC is
- * CRC-16-CCITT-FALSE (init 0xFFFF, poly 0x1021) over the raw payload. This is
- * the framing a `crates/xrce` serial transport exchanges -- the fill for the
- * frame-hook on a serial line. */
+/* Reads the BaseObjectRequest of a received WRITE_DATA/DATA frame into
+ * *request_id / *object_id (either may be NULL). Same acceptance rules as
+ * `zdw_xrce_read_frame`. */
+int zdw_xrce_frame_base(const unsigned char *frame, size_t len,
+                        unsigned int *request_id, unsigned int *object_id);
 
-/* CRC-16-CCITT-FALSE over `data`. */
-unsigned int zdw_crc16_ccitt_false(const unsigned char *data, size_t n);
-/* HDLC-frames `payload` into `out`. Returns the frame length, 0 if it does not
- * fit (worst case 2*(n+2)+2 bytes). */
+/* --- XRCE serial framing (DDS-XRCE 1.0 Annex C.1) ---
+ *
+ * Serial links have no frame boundaries, so an XRCE message is wrapped
+ * (Annex C.1.1):
+ *   7E | sourceAddress | remoteAddress | payloadLength (2, LE) | payload |
+ *   frameCheck (2, LE)
+ * Every byte after the flag that is 0x7E or 0x7D becomes 0x7D followed by
+ * (byte XOR 0x20) (C.1.2). frameCheck is the FCS-16 of RFC 1662 (polynomial
+ * x^16 + x^12 + x^5 + 1, reflected, init 0xFFFF, complemented) over the
+ * addresses, payloadLength and payload (C.1.1.6). This is the framing a
+ * `crates/xrce` serial transport exchanges -- the fill for the frame-hook on
+ * a serial line. */
+
+#define ZDW_SERIAL_HEADER_LEN 4u
+
+/* FCS-16 of RFC 1662 over `data`; 0x906E for "123456789". */
+unsigned int zdw_fcs16(const unsigned char *data, size_t n);
+/* Frames `payload` from `source` to `remote` into `out`. Returns the frame
+ * length, 0 if it does not fit (worst case 1 + 2*(n+6) bytes) or n > 65535. */
 size_t zdw_serial_frame(unsigned char *out, size_t cap,
+                        unsigned char source, unsigned char remote,
                         const unsigned char *payload, size_t n);
-/* De-frames one HDLC frame (`in` including the 0x7E flags): destuffs, checks
- * the trailing CRC, writes the payload to `out`. On ZDW_T_OK *out_len is set. */
+/* De-frames the frame at the start of `in` (beginning with its 0x7E): destuffs,
+ * checks frameCheck, writes the payload to `out`. ZDW_T_ERROR on a check
+ * mismatch, a bad escape, a 0x7E before the frame is complete (C.1.3), or a
+ * frame that ends with `in`. On ZDW_T_OK *out_len, *source and *remote are set
+ * (either pointer may be null), and *consumed (if not null) is the number of
+ * bytes of `in` the frame took. */
 int zdw_serial_deframe(const unsigned char *in, size_t len,
-                       unsigned char *out, size_t cap, size_t *out_len);
+                       unsigned char *source, unsigned char *remote,
+                       unsigned char *out, size_t cap, size_t *out_len,
+                       size_t *consumed);
 
 /* --- reliable stream (DDS-XRCE HEARTBEAT / ACKNACK) ---
  *
  * On a reliable stream (stream_id >= 128) the agent periodically sends a
  * HEARTBEAT (first/last unacked sequence) and the endpoint replies with an
- * ACKNACK (first-unacked + a 16-bit NACK bitmap of missing samples). Both are
- * 5-byte LE bodies. */
+ * ACKNACK (first-unacked + a 16-bit NACK bitmap of missing samples). The
+ * HEARTBEAT body is 5 octets LE (HEARTBEAT_Payload is FINAL in Annex A).
+ * ACKNACK_Payload is APPENDABLE (no @extensibility in DDS-XRCE 1.0 Annex A;
+ * DDS-XTypes 1.3 7.3.1.2.1.8), so by default its body is 9 octets: a 4-octet
+ * DHEADER (= 5) followed by the 5 octets.
+ *
+ * Setting "unannotated types": ZDW_UNANNOTATED_APPENDABLE (0, default) or
+ * ZDW_UNANNOTATED_FINAL (1; no DHEADER, body 5 octets, 13-octet frame, the form
+ * of the reference implementation). It is chosen per reliable stream
+ * (`zdw_reliable_init_with`) or per call (`zdw_xrce_acknack_frame_with`).
+ * ACKNACK_Payload is the only type without @extensibility this SDK writes
+ * (the CREATE_CLIENT builder writes no Property). The readers accept both
+ * forms in either setting. */
+#define ZDW_UNANNOTATED_APPENDABLE 0
+#define ZDW_UNANNOTATED_FINAL      1
 
 /* Builds an ACKNACK message. `nack` is the little-endian 16-bit bitmap (0 = all
- * received). Returns the frame length, or 0 if it does not fit. */
+ * received). Writes the 17-octet frame (9-octet body with DHEADER) and returns
+ * its length, or 0 if it does not fit. Same as `zdw_xrce_acknack_frame_with`
+ * with ZDW_UNANNOTATED_APPENDABLE. */
 size_t zdw_xrce_acknack_frame(unsigned char *out, size_t cap,
                               unsigned char session, unsigned char stream,
                               unsigned int seq, int first_unacked,
                               unsigned char nack_lo, unsigned char nack_hi,
                               unsigned char payload_stream);
+/* As zdw_xrce_acknack_frame, with the unannotated-types setting as an explicit
+ * parameter: ZDW_UNANNOTATED_APPENDABLE writes the 17-octet frame,
+ * ZDW_UNANNOTATED_FINAL the 13-octet frame (body length 5, no DHEADER). */
+size_t zdw_xrce_acknack_frame_with(unsigned char *out, size_t cap,
+                                   unsigned char session, unsigned char stream,
+                                   unsigned int seq, int first_unacked,
+                                   unsigned char nack_lo, unsigned char nack_hi,
+                                   unsigned char payload_stream,
+                                   int unannotated_types);
 /* Parses a HEARTBEAT frame: *first / *last unacked sequence, *stream. */
 int zdw_xrce_heartbeat_read(const unsigned char *frame, size_t len,
                             int *first, int *last, unsigned char *stream);
 
 /* Builds a HEARTBEAT message (the reliable sender announces its unacked window
- * to the peer). Byte-identical to `zdw_xrce_acknack_frame`'s layout with id
- * 0x0B and a 5-byte body (first i16 LE, last i16 LE, stream). Returns the frame
+ * to the peer). Same header layout as `zdw_xrce_acknack_frame` with id
+ * 0x0B and a 5-byte body (no DHEADER) (first i16 LE, last i16 LE, stream). Returns the frame
  * length, or 0 if it does not fit. */
 size_t zdw_xrce_heartbeat_frame(unsigned char *out, size_t cap,
                                 unsigned char session, unsigned char stream,
                                 unsigned int seq, int first, int last,
                                 unsigned char payload_stream);
-/* Parses an ACKNACK frame: *first_unacked, *nack (16-bit LE bitmap), *stream. */
+/* Parses an ACKNACK frame: *first_unacked, *nack (16-bit LE bitmap), *stream.
+ * Accepts body length 9 (DHEADER + 5) and body length 5 (FINAL form), in either
+ * unannotated-types setting. */
 int zdw_xrce_acknack_read(const unsigned char *frame, size_t len,
                           int *first_unacked, unsigned int *nack,
                           unsigned char *stream);
@@ -165,11 +231,20 @@ typedef struct zdw_reliable {
     /* receiver */
     unsigned short expected_seq;
     zdw_rel_slot recv_buf[ZDW_REL_RECV_BUF];
+    /* ZDW_UNANNOTATED_APPENDABLE (default) / ZDW_UNANNOTATED_FINAL: the form of
+     * the ACKNACK frames built by zdw_reliable_acknack_frame. */
+    int unannotated_types;
 } zdw_reliable;
 
 /* Initialise / reset the whole state. */
 void zdw_reliable_init(zdw_reliable *r, unsigned char stream_id);
+/* As zdw_reliable_init, with the unannotated-types setting
+ * (ZDW_UNANNOTATED_APPENDABLE or ZDW_UNANNOTATED_FINAL). zdw_reliable_init means
+ * ZDW_UNANNOTATED_APPENDABLE. zdw_reliable_reset keeps the setting. */
+void zdw_reliable_init_with(zdw_reliable *r, unsigned char stream_id,
+                            int unannotated_types);
 void zdw_reliable_reset(zdw_reliable *r);
+int zdw_reliable_unannotated_types(const zdw_reliable *r);
 
 /* -- sender side -- */
 /* Buffers a new outgoing sample and assigns its RFC-1982 sequence number
@@ -206,6 +281,14 @@ int zdw_reliable_drain(zdw_reliable *r, unsigned char *out, size_t cap,
 /* NACK bitmap for the window [expected, expected+16): bit i set = expected+i not
  * yet received (hint=None semantics -- a clear bit means "received"). */
 unsigned short zdw_reliable_pending_acknack(const zdw_reliable *r);
+/* Builds the ACKNACK frame for the current receive window (first unacked =
+ * expected_seq, bitmap of zdw_reliable_pending_acknack, the stream id of `r`)
+ * in the form of the stream's unannotated-types setting. Returns the frame
+ * length (17 or 13), or 0 if it does not fit. */
+size_t zdw_reliable_acknack_frame(const zdw_reliable *r,
+                                  unsigned char *out, size_t cap,
+                                  unsigned char session, unsigned char stream,
+                                  unsigned int seq);
 size_t zdw_reliable_out_of_order_count(const zdw_reliable *r);
 unsigned short zdw_reliable_expected(const zdw_reliable *r);
 

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 package org.zerodds.internal;
 
+import org.zerodds.core.Values;
 import org.omg.dds.core.InstanceHandle;
 
 import java.util.Arrays;
@@ -28,6 +29,12 @@ public final class InstanceKey {
      * instance_handle mapping). The empty (un-keyed) key maps to a fixed
      * non-NIL handle so a single-instance topic still has a real handle.
      */
+    /** The instance key of a handle this binding produced. */
+    public static InstanceKey of(InstanceHandle handle) {
+        return new InstanceKey(
+                org.zerodds.core.InstanceHandleImpl.bytesOf(handle));
+    }
+
     public static InstanceHandle toHandle(InstanceKey key) {
         byte[] out = new byte[16];
         byte[] k = key.bytes;
@@ -36,12 +43,11 @@ public final class InstanceKey {
         } else if (k.length <= 16) {
             System.arraycopy(k, 0, out, 0, k.length);
         } else {
-            // MD5-free fold: XOR-stripe longer keys into 16 bytes.
-            for (int i = 0; i < k.length; i++) {
-                out[i % 16] ^= k[i];
-            }
+            // DDSI-RTPS 2.5 §9.6.3.8: a key longer than 16 octets is represented by its
+            // MD5 digest. A fold (XOR) maps different keys to one handle.
+            out = org.zerodds.cdr.Md5.hash(k);
         }
-        return InstanceHandle.from(out);
+        return Values.of(out);
     }
 
     @Override

@@ -146,23 +146,50 @@ namespace ZeroDDS
         public const byte SessionNoKey = 0x80;
         public const byte StreamBestEffort = 0x01;
 
-        // The 16-bit submessage_length field cannot describe a sample larger
+        // E flag (little-endian body) + DataFormat FORMAT_DATA (0b000) in bits
+        // 1..3 -- DDS-XRCE 1.0 §8.3.5.8. FORMAT_SAMPLE (0b001, i.e. 0x03) would
+        // additionally require a SampleInfo in the body, which this profile
+        // does not carry.
+        public const byte WriteFlags = 0x01;
+
+        /// Wire size of the BaseObjectRequest that precedes the sample (§7.7.8).
+        public const int BaseSize = 4;
+
+        /// OBJK_DATAWRITER -- the ObjectKind of a DataWriter (§7.2.2).
+        public const ushort ObjkDataWriter = 0x05;
+
+        /// An ObjectId (§7.2.1) from a 12-bit raw id and a 4-bit ObjectKind.
+        public static ushort ObjectId(ushort rawId, ushort kind) =>
+            (ushort)(((rawId & 0x0FFF) << 4) | (kind & 0x0F));
+
+        // The submessage body is the BaseObjectRequest (§7.7.8: request_id then
+        // object_id, each two octets most significant first) followed by the
+        // sample. `objectId` names the target DataWriter -- without it no XRCE
+        // agent can route the sample. The request_id is the message's own
+        // `seq`, which §7.7.8 only requires to be unique per stream.
+        //
+        // The 16-bit submessage_length field cannot describe a body larger
         // than 0xFFFF; refuse rather than truncate the length while copying the
         // full payload (the C SDK rejects the same way).
-        public static byte[] WriteFrame(ushort seq, byte[] sample)
+        public static byte[] WriteFrame(ushort seq, ushort objectId, byte[] sample)
         {
-            if (sample.Length > 0xFFFF)
+            int bodyLen = BaseSize + sample.Length;
+            if (bodyLen > 0xFFFF)
                 throw new ArgumentException("sample exceeds 16-bit submessage_length", nameof(sample));
-            var o = new byte[8 + sample.Length];
+            var o = new byte[8 + bodyLen];
             o[0] = SessionNoKey;
             o[1] = StreamBestEffort;
             o[2] = (byte)(seq & 0xff);
             o[3] = (byte)((seq >> 8) & 0xff);
             o[4] = 0x07;
-            o[5] = 0x03;
-            o[6] = (byte)(sample.Length & 0xff);
-            o[7] = (byte)((sample.Length >> 8) & 0xff);
-            Array.Copy(sample, 0, o, 8, sample.Length);
+            o[5] = WriteFlags;
+            o[6] = (byte)(bodyLen & 0xff);
+            o[7] = (byte)((bodyLen >> 8) & 0xff);
+            o[8] = (byte)((seq >> 8) & 0xff);
+            o[9] = (byte)(seq & 0xff);
+            o[10] = (byte)((objectId >> 8) & 0xff);
+            o[11] = (byte)(objectId & 0xff);
+            Array.Copy(sample, 0, o, 8 + BaseSize, sample.Length);
             return o;
         }
 
@@ -176,12 +203,21 @@ namespace ZeroDDS
         // declared length so trailing bytes never leak in.
         public static byte[]? ReadFrame(byte[] frame)
         {
-            if (frame.Length < 8 || (frame[4] != 0x09 && frame[4] != 0x07)) return null;
+            if (frame.Length < 8 + BaseSize || (frame[4] != 0x09 && frame[4] != 0x07)) return null;
             int smLen = frame[6] | (frame[7] << 8);
-            if (8 + smLen > frame.Length) return null;
-            var body = new byte[smLen];
-            Array.Copy(frame, 8, body, 0, smLen);
+            if (smLen < BaseSize || 8 + smLen > frame.Length) return null;
+            var body = new byte[smLen - BaseSize];
+            Array.Copy(frame, 8 + BaseSize, body, 0, body.Length);
             return body;
+        }
+
+        /// (request_id, object_id) of a data frame (§7.7.8), or null under the
+        /// same rules as <see cref="ReadFrame"/>.
+        public static (ushort RequestId, ushort ObjectId)? FrameBase(byte[] frame)
+        {
+            if (ReadFrame(frame) == null) return null;
+            return ((ushort)((frame[8] << 8) | frame[9]),
+                    (ushort)((frame[10] << 8) | frame[11]));
         }
     }
 
@@ -205,11 +241,19 @@ namespace ZeroDDS
         private readonly ITransport _transport;
         private ushort _seq = 1;
 
-        public Client(ITransport transport) => _transport = transport;
+        private readonly ushort _objectId;
+
+        /// `objectId` names the target DataWriter in every frame's
+        /// BaseObjectRequest (§7.7.8).
+        public Client(ITransport transport, ushort objectId)
+        {
+            _transport = transport;
+            _objectId = objectId;
+        }
 
         public void Write(byte[] sample)
         {
-            var frame = Xrce.WriteFrame(_seq, sample);
+            var frame = Xrce.WriteFrame(_seq, _objectId, sample);
             _seq++;
             _transport.Deliver(frame);
         }

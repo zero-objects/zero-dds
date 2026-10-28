@@ -1,0 +1,1 @@
+fill_1.inc:3:12: error: no matching function for call to 'zd_c1::Sample::note(const char [6])'

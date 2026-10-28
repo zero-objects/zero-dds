@@ -3,33 +3,33 @@
 #
 # L4 Cross-Vendor XCDR2 Conformance — `zerodds-xcdr2-bindings-conformance-1.0` §8.
 #
-# Verifiziert dass ZeroDDS-Encoder die gleichen XCDR2-Wire-Bytes
-# produziert wie Cyclone DDS, und dass ZeroDDS-Decoder Cyclone-Bytes
-# korrekt liest. Die Test-Vektoren V-1..V-12 sind in der Master-Spec
-# §6 woertlich und gelten als spec-genaue Wire-Form.
+# Verifies that the ZeroDDS encoder produces the same XCDR2 wire bytes
+# as Cyclone DDS, and that the ZeroDDS decoder reads Cyclone bytes
+# correctly. The test vectors V-1..V-12 are verbatim in the master spec
+# §6 and count as the spec-exact wire form.
 #
-# Zwei Varianten werden gepruft:
+# Two variants are checked:
 #
 # 1. **Static fixtures**: `crates/discovery/tests/fixtures/cyclone-xcdr2/v*.bin`
-#    sind mit ddsperf/Cyclone-Tools aufgenommene Wire-Frames pro V-i.
-#    ZeroDDS-Decoder muss sie ohne Verlust dekodieren.
+#    are wire frames per V-i recorded with ddsperf/Cyclone tools.
+#    The ZeroDDS decoder must decode them without loss.
 #
-# 2. **Live roundtrip**: `cyclonedds-tools` (cycdr o.ae.) muss im PATH
-#    sein. Wir starten Cyclone-Pub mit V-i-Sample, ZeroDDS-Sub liest
-#    via xv_pub_sub_roundtrip.sh-Pattern.
+# 2. **Live roundtrip**: `cyclonedds-tools` (cycdr or similar) must be in the PATH.
+#    We start a Cyclone pub with a V-i sample, a ZeroDDS sub reads
+#    via the xv_pub_sub_roundtrip.sh pattern.
 #
-# Erfolgs-Kriterium:
-#   - Fixtures: jeder v*.bin dekodiert byte-genau zum erwarteten Sample.
-#   - Live: ZeroDDS encode -> Cyclone decode roundtrips ohne Mismatch.
+# Success criterion:
+#   - Fixtures: every v*.bin decodes byte-exactly to the expected sample.
+#   - Live: ZeroDDS encode -> Cyclone decode roundtrips without mismatch.
 #
-# Voraussetzungen:
-#   - cyclonedds-tools installiert (`ddsperf`, `cycdr`)
-#   - rust-cargo (ZeroDDS-side Encoder/Decoder)
+# Prerequisites:
+#   - cyclonedds-tools installed (`ddsperf`, `cycdr`)
+#   - rust-cargo (ZeroDDS-side encoder/decoder)
 #
-# Plattform: Linux mit IPv4-Multicast auf Loopback. macOS Docker
-# Desktop tunnels Multicast nicht — dort SKIP.
+# Platform: Linux with IPv4 multicast on loopback. macOS Docker
+# Desktop does not tunnel multicast — SKIP there.
 #
-# Verwendung:
+# Usage:
 #   ./tests/interop/xcdr2_cross_vendor.sh
 
 set -euo pipefail
@@ -42,14 +42,14 @@ skip() {
     exit 0
 }
 
-# Plattform-Check: macOS-Docker hat kein Multicast-Loopback.
+# Platform check: macOS Docker has no multicast loopback.
 if [[ "$(uname -s)" == "Darwin" ]]; then
     if [[ -n "${SKIP_LIVE_INTEROP:-}" ]]; then
         echo "INFO: macOS detected, live-multicast disabled. Static fixture check only."
     fi
 fi
 
-# 1. Static-Fixtures-Check.
+# 1. Static fixtures check.
 if [[ ! -d "$FIXTURES_DIR" ]]; then
     echo "WARN: fixtures directory $FIXTURES_DIR missing — generate with"
     echo "  ./tests/interop/capture.sh xcdr2"
@@ -68,12 +68,12 @@ else
     fi
 fi
 
-# 2. Live-Roundtrip-Check (nur wenn Cyclone-Tools verfuegbar).
+# 2. Live roundtrip check (only if Cyclone tools are available).
 if ! command -v ddsperf >/dev/null 2>&1; then
     skip "ddsperf not in PATH — install cyclonedds-tools for live xcdr2 roundtrip"
 fi
 
-# Live-Pfad delegiert an existierendes Script.
+# The live path delegates to an existing script.
 echo "INFO: delegating live roundtrip to xv_pub_sub_roundtrip.sh"
 "${REPO_ROOT}/tests/interop/xv_pub_sub_roundtrip.sh" || {
     echo "FAIL: live xcdr2 roundtrip failed"

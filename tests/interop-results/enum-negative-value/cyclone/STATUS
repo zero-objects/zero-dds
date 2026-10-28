@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of enum-negative-value that cyclone produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	@value(-1) cannot be applied to 'enumerator' element
+plain-cdr1	be	refused	@value(-1) cannot be applied to 'enumerator' element
+pl-cdr1	le	refused	@value(-1) cannot be applied to 'enumerator' element
+pl-cdr1	be	refused	@value(-1) cannot be applied to 'enumerator' element
+plain-cdr2	le	refused	@value(-1) cannot be applied to 'enumerator' element
+plain-cdr2	be	refused	@value(-1) cannot be applied to 'enumerator' element
+delimited-cdr	le	refused	@value(-1) cannot be applied to 'enumerator' element
+delimited-cdr	be	refused	@value(-1) cannot be applied to 'enumerator' element
+pl-cdr2	le	refused	@value(-1) cannot be applied to 'enumerator' element
+pl-cdr2	be	refused	@value(-1) cannot be applied to 'enumerator' element

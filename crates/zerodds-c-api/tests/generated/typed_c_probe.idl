@@ -1,0 +1,12 @@
+// The type `typed_c_via_cargo.rs` writes and takes through the C API's
+// typed path and the TypeSupport `zerodds-idlc generate --lang c` writes
+// for it: keyed, with a string, a sequence and an @optional member, so a
+// taken sample owns storage and `sample_free` has something to release.
+module tp {
+  @appendable struct Reading {
+    @key long id;
+    string name;
+    sequence<double> values;
+    @optional string note;
+  };
+};

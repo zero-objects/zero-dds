@@ -27,7 +27,10 @@ fn main() {
         Ok(b) => {
             b.write_to_file(&header_path);
             patch_option_fn_typedefs(&header_path);
-            println!("cargo:rerun-if-changed=src/lib.rs");
+            // Exported declarations span many FFI modules. Watching only
+            // lib.rs (or a hand-picked subset) leaves a stale public header
+            // when another module changes an ABI contract.
+            println!("cargo:rerun-if-changed=src");
             println!("cargo:rerun-if-changed=cbindgen.toml");
         }
         Err(e) => {

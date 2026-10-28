@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of evolution-union-unselected that jacorb produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	no-form	Evo.picked: a @mutable union, whose per-member headers are XTypes' and not CORBA's
+plain-cdr1	be	no-form	Evo.picked: a @mutable union, whose per-member headers are XTypes' and not CORBA's
+pl-cdr1	le	no-form	Evo.picked: a @mutable union, whose per-member headers are XTypes' and not CORBA's
+pl-cdr1	be	no-form	Evo.picked: a @mutable union, whose per-member headers are XTypes' and not CORBA's
+plain-cdr2	le	no-form	Evo.picked: a @mutable union, whose per-member headers are XTypes' and not CORBA's
+plain-cdr2	be	no-form	Evo.picked: a @mutable union, whose per-member headers are XTypes' and not CORBA's
+delimited-cdr	le	no-form	Evo.picked: a @mutable union, whose per-member headers are XTypes' and not CORBA's
+delimited-cdr	be	no-form	Evo.picked: a @mutable union, whose per-member headers are XTypes' and not CORBA's
+pl-cdr2	le	no-form	Evo.picked: a @mutable union, whose per-member headers are XTypes' and not CORBA's
+pl-cdr2	be	no-form	Evo.picked: a @mutable union, whose per-member headers are XTypes' and not CORBA's

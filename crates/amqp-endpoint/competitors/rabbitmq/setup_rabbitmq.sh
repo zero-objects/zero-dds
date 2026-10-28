@@ -7,7 +7,7 @@
 # (`message_containers` feature flag) — so a single broker backs both the
 # AMQP-1.0 (Path A) and the AMQP-0.9.1 (Path B) ZeroDDS interop tests.
 #
-# Idempotent. Run on the Linux test host (codepit, Debian 13 LXC).
+# Idempotent. Run on the Linux test host (Debian 13 LXC).
 #
 #   Broker:     localhost:5672  (AMQP 0.9.1 + 1.0)
 #   Management: localhost:15672 (HTTP API + UI)

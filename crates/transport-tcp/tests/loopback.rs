@@ -26,7 +26,7 @@ use zerodds_transport_tcp::TcpTransport;
 
 #[test]
 fn loopback_single_frame_end_to_end() {
-    // Bind-Seite (Server).
+    // Bind side (Server).
     let server = TcpTransport::bind_v4(Ipv4Addr::LOCALHOST, 0).expect("bind");
     let server_loc = server.local_locator();
 
@@ -141,6 +141,56 @@ fn concurrent_senders_to_one_server() {
 
     let frames = server_handle.join().expect("server join");
     assert_eq!(frames.len(), 100);
+}
+
+/// §2.1 over a real socket: the sender splits one frame across two
+/// `write` calls with a pause in between, so the receiving side sees the
+/// length prefix and the first payload half before the rest exists. The
+/// frame pump must hand up exactly one reassembled datagram.
+#[test]
+fn frame_split_across_two_writes_is_reassembled() {
+    use std::io::Write;
+    use std::net::{Ipv4Addr as V4, SocketAddrV4, TcpStream};
+
+    let payload = b"length prefix and first half now, second half later";
+    let split = payload.len() / 2;
+
+    let server = TcpTransport::bind_v4(Ipv4Addr::LOCALHOST, 0).expect("bind");
+    let port = u16::try_from(server.local_locator().port).expect("port");
+
+    let server_handle = thread::spawn(move || {
+        server.accept_one().expect("accept_one");
+        let mut out = Vec::new();
+        while let Ok(dg) = server.try_recv() {
+            out.push(dg);
+        }
+        out
+    });
+
+    thread::sleep(Duration::from_millis(50));
+
+    let mut s = TcpStream::connect(SocketAddrV4::new(V4::LOCALHOST, port)).expect("connect");
+    s.set_nodelay(true).expect("nodelay");
+    // The server side speaks the ZeroDDS handshake before any frame.
+    zerodds_transport_tcp::handshake::client_handshake(&mut s, 0).expect("handshake");
+
+    // Write 1: the length prefix plus the first half of the payload.
+    let mut first = Vec::new();
+    first.extend_from_slice(&u32::try_from(payload.len()).expect("len").to_be_bytes());
+    first.extend_from_slice(&payload[..split]);
+    s.write_all(&first).expect("first write");
+    s.flush().expect("flush 1");
+    // The pause makes the split observable: without reassembly the
+    // receiver would have to fail or truncate here.
+    thread::sleep(Duration::from_millis(80));
+    // Write 2: the remainder.
+    s.write_all(&payload[split..]).expect("second write");
+    s.flush().expect("flush 2");
+    s.shutdown(std::net::Shutdown::Both).expect("shutdown");
+
+    let frames = server_handle.join().expect("server thread");
+    assert_eq!(frames.len(), 1, "one frame, not two halves");
+    assert_eq!(&frames[0].data[..], payload);
 }
 
 #[test]

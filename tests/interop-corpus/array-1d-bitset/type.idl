@@ -1,0 +1,10 @@
+// one-dimensional array of `bitset`
+bitset Packed {
+    bitfield<3> low;
+    bitfield<5> high;
+};
+
+@final struct Sample {
+    Packed items[2];
+    octet tail;
+};

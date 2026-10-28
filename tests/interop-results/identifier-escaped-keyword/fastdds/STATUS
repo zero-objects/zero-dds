@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of identifier-escaped-keyword that fastdds produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	the fill: error: 'class zd_c2::Sample' has no member named '_long'; did you mean 'int32_t zd_c2::Sample::m_long'? (not accessible from this context)
+plain-cdr1	be	refused	the fill: error: 'class zd_c2::Sample' has no member named '_long'; did you mean 'int32_t zd_c2::Sample::m_long'? (not accessible from this context)
+pl-cdr1	le	refused	the fill: error: 'class zd_c2::Sample' has no member named '_long'; did you mean 'int32_t zd_c2::Sample::m_long'? (not accessible from this context)
+pl-cdr1	be	refused	the fill: error: 'class zd_c2::Sample' has no member named '_long'; did you mean 'int32_t zd_c2::Sample::m_long'? (not accessible from this context)
+plain-cdr2	le	refused	the fill: error: 'class zd_c2::Sample' has no member named '_long'; did you mean 'int32_t zd_c2::Sample::m_long'? (not accessible from this context)
+plain-cdr2	be	refused	the fill: error: 'class zd_c2::Sample' has no member named '_long'; did you mean 'int32_t zd_c2::Sample::m_long'? (not accessible from this context)
+delimited-cdr	le	refused	the fill: error: 'class zd_c2::Sample' has no member named '_long'; did you mean 'int32_t zd_c2::Sample::m_long'? (not accessible from this context)
+delimited-cdr	be	refused	the fill: error: 'class zd_c2::Sample' has no member named '_long'; did you mean 'int32_t zd_c2::Sample::m_long'? (not accessible from this context)
+pl-cdr2	le	refused	the fill: error: 'class zd_c2::Sample' has no member named '_long'; did you mean 'int32_t zd_c2::Sample::m_long'? (not accessible from this context)
+pl-cdr2	be	refused	the fill: error: 'class zd_c2::Sample' has no member named '_long'; did you mean 'int32_t zd_c2::Sample::m_long'? (not accessible from this context)

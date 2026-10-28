@@ -11,9 +11,15 @@
 //! full CORBA/MQTT/AMQP stacks. It provides:
 //!
 //! - [`services`] — the service messages: Session lifecycle (CreateSession /
-//!   ActivateSession / CloseSession) plus the Read, Write and Call service sets.
-//! - [`address_space`] — a small in-memory AddressSpace (node values + method
-//!   handlers) the server serves.
+//!   ActivateSession / CloseSession) plus the Discovery, Attribute, View,
+//!   Method, MonitoredItem and Subscription service sets.
+//! - [`address_space`] — a small in-memory AddressSpace (Part-3 node attributes,
+//!   a reference graph and method handlers) the server serves.
+//! - [`attributes`] — the Part-3 attribute model: attribute ids, WriteMask and
+//!   AccessLevel bits, `NumericRange`, `TimestampsToReturn`, `MonitoringMode`.
+//! - [`status`] — the StatusCodes the services return.
+//! - [`identity`] — the Part 4 §7.40 UserIdentityTokens and the server-side
+//!   user store that validates them.
 //! - [`server`] — an [`server::Server`] that runs the Hello→OpenSecureChannel→
 //!   Session→service handshake and dispatches services against the
 //!   AddressSpace.
@@ -31,9 +37,12 @@
 extern crate alloc;
 
 pub mod address_space;
+pub mod attributes;
 pub mod client;
+pub mod identity;
 pub mod server;
 pub mod services;
+pub mod status;
 mod wire;
 
 pub use address_space::{AddressSpace, MethodOutcome};

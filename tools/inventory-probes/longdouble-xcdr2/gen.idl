@@ -1,0 +1,9 @@
+// C7 — Float128's encoded size and alignment, Table 31, under encoding
+// version 2. The octet on each side is what makes the offset readable:
+// `d` starts wherever the padding after `head` ends, and `tail` says
+// where it stopped.
+@final struct Sample {
+    octet head;
+    long double d;
+    octet tail;
+};

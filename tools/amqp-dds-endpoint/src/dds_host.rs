@@ -1,39 +1,39 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! DDS-Host Abstraktion fuer die AMQP-Daemon-Bridge.
+//! DDS host abstraction for the AMQP daemon bridge.
 //!
 //! Spec dds-amqp-1.0:
-//! * §2.1 Cl. 3 — Sender/Receiver-Links translaten zu
+//! * §2.1 Cl. 3 — translate Sender/Receiver links to
 //!   DDS-DataWriter/DataReader-Operations.
 //! * §7.4.4 DEADLINE — DDS-side deadline-tracking; Notifications
-//!   ueber `$catalog`-Channel.
-//! * §7.5 Discovery Bridging — `$catalog`-Address liefert Topic-
+//!   via the `$catalog` channel.
+//! * §7.5 discovery bridging — the `$catalog` address returns topic
 //!   Mappings.
-//! * §7.7.1/7.7.2 — `dds:operation` lifecycle-Mapping.
+//! * §7.7.1/7.7.2 — `dds:operation` lifecycle mapping.
 //!
-//! # Architektur
+//! # Architecture
 //!
-//! Die Daemon-Crate kennt die DCPS-Crate nicht direkt; sie
-//! definiert hier eine `DdsHost`-Trait, gegen die der Caller
-//! seinen DDS-Stack anbindet:
-//! * `InMemoryDdsHost` — mitgelieferte In-Memory-Implementierung
-//!   (Tests + leichte Deployments ohne RTPS-Wire).
-//! * Eine zukuenftige `DcpsDdsHost`-Variante wuerde die DCPS-Crate
+//! The daemon crate does not know the DCPS crate directly; it
+//! defines a `DdsHost` trait here that the caller
+//! its DDS stack:
+//! * `InMemoryDdsHost` — bundled in-memory implementation
+//!   (tests + lightweight deployments without an RTPS wire).
+//! * A future `DcpsDdsHost` variant would use the DCPS crate
 //!   wirelevel anbinden (RTPS/UDP).
 //!
 //! # Integrations-Pattern
 //!
 //! 1. Daemon-Boot: `DdsHost::register_topic` pro `TopicMapping`
-//!    aus der Configuration.
-//! 2. Inbound-Attach (Sender-Link, AMQP→DDS): Daemon ruft
-//!    `subscribe_dds_to_amqp` (kein Op auf DDS-Side; Bridge
+//!    from the configuration.
+//! 2. Inbound attach (sender link, AMQP→DDS): the daemon calls
+//!    `subscribe_dds_to_amqp` (no-op on the DDS side; bridge
 //!    leitet AMQP-Transfers an `publish_to_dds`).
-//! 3. Inbound-Attach (Receiver-Link, DDS→AMQP): Daemon ruft
+//! 3. Inbound attach (receiver link, DDS→AMQP): the daemon calls
 //!    `subscribe_amqp_to_dds(topic, callback)`. DDS-Samples
-//!    erzeugen Outbound-AMQP-Transfers via Callback.
-//! 4. `$catalog`-Receiver: Daemon ruft `topics()` und schickt
-//!    pro Eintrag ein Catalog-Sample.
+//!    generate outbound AMQP transfers via callback.
+//! 4. `$catalog` receiver: the daemon calls `topics()` and sends
+//!    one catalog sample per entry.
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
@@ -42,24 +42,24 @@ use zerodds_amqp_endpoint::annex_a::{LinkDirection, TopicMapping};
 use zerodds_amqp_endpoint::management::{CatalogDirection, CatalogEntry, CatalogTypeId};
 use zerodds_amqp_endpoint::routing::AddressResolution;
 
-/// Eindeutiger Topic-Identifier in der DdsHost-Registry.
+/// Unique topic identifier in the DdsHost registry.
 pub type TopicId = u64;
 
-/// Eindeutiger Subscription-Identifier.
+/// Unique subscription identifier.
 pub type SubscriptionId = u64;
 
-/// Sample-Callback: wird aufgerufen wenn ein DDS-Sample fuer eine
-/// AMQP→Subscription verfuegbar ist.
+/// Sample callback: invoked when a DDS sample for a
+/// AMQP→subscription is available.
 pub type SampleCallback = Arc<dyn Fn(&[u8]) + Send + Sync>;
 
-/// DdsHost-Fehler.
+/// DdsHost error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DdsHostError {
-    /// Topic existiert nicht in der Registry.
+    /// Topic does not exist in the registry.
     UnknownTopic(TopicId),
-    /// Topic-Address bereits registriert.
+    /// Topic address already registered.
     DuplicateAddress(String),
-    /// Subscription existiert nicht.
+    /// Subscription does not exist.
     UnknownSubscription(SubscriptionId),
 }
 
@@ -75,21 +75,21 @@ impl core::fmt::Display for DdsHostError {
 
 impl std::error::Error for DdsHostError {}
 
-/// DdsHost-Trait — das Bridge-Interface zur DDS-Side.
+/// DdsHost trait — the bridge interface to the DDS side.
 pub trait DdsHost {
-    /// Spec §2.1 Cl. 3 — Topic-Mapping registrieren.
-    /// Liefert die zugewiesene `TopicId`.
+    /// Spec §2.1 Cl. 3 — register topic mapping.
+    /// Returns the assigned `TopicId`.
     ///
     /// # Errors
-    /// `DuplicateAddress` wenn `mapping.amqp_address` bereits
-    /// registriert ist.
+    /// `DuplicateAddress` if `mapping.amqp_address` is already
+    /// is already registered.
     fn register_topic(&self, mapping: TopicMapping) -> Result<TopicId, DdsHostError>;
 
     /// Spec §2.1 Cl. 3 — AMQP → DDS Publish.
     ///
-    /// `bytes` ist der XCDR2-/JSON-/AMQP-Native-Body je nach
-    /// `mapping.mode`. Der Host ist verantwortlich fuer den
-    /// DDS-Wire-Encode (oder Pass-Through bei MODE_PASSTHROUGH).
+    /// `bytes` is the XCDR2/JSON/AMQP-native body depending on
+    /// `mapping.mode`. The host is responsible for the
+    /// DDS wire encode (or pass-through for MODE_PASSTHROUGH).
     ///
     /// # Errors
     /// `UnknownTopic`.
@@ -97,8 +97,8 @@ pub trait DdsHost {
 
     /// Spec §2.1 Cl. 3 — DDS → AMQP Subscribe.
     ///
-    /// `callback` wird invoked sobald DDS ein Sample liefert.
-    /// Liefert eine `SubscriptionId` zur spaeteren Aufhebung.
+    /// `callback` is invoked as soon as DDS delivers a sample.
+    /// Returns a `SubscriptionId` for later teardown.
     ///
     /// # Errors
     /// `UnknownTopic`.
@@ -108,13 +108,13 @@ pub trait DdsHost {
         callback: SampleCallback,
     ) -> Result<SubscriptionId, DdsHostError>;
 
-    /// Subscription beenden.
+    /// End subscription.
     ///
     /// # Errors
     /// `UnknownSubscription`.
     fn unsubscribe(&self, subscription: SubscriptionId) -> Result<(), DdsHostError>;
 
-    /// Spec §7.5 — alle registrierten Topic-Mappings als
+    /// Spec §7.5 — all registered topic mappings as
     /// Catalog-Entries.
     fn topics(&self) -> Vec<CatalogEntry>;
 
@@ -123,15 +123,15 @@ pub trait DdsHost {
 }
 
 // ============================================================
-// In-Memory-Implementierung
+// In-memory implementation
 // ============================================================
 
-/// In-Memory `DdsHost` — Tests + leichte Deployments ohne
-/// echte DCPS-Wire.
+/// In-memory `DdsHost` — tests + lightweight deployments without
+/// actual DCPS wire.
 ///
-/// Topics werden in einer `BTreeMap<TopicId, ...>` gehalten.
-/// `publish_to_dds(topic, bytes)` invoked alle aktiven
-/// Subscriptions auf dem Topic synchron mit den Bytes.
+/// Topics are held in a `BTreeMap<TopicId, ...>`.
+/// `publish_to_dds(topic, bytes)` invokes all active
+/// Subscriptions on the topic synchronously with the bytes.
 #[derive(Debug, Default)]
 pub struct InMemoryDdsHost {
     inner: Mutex<HostState>,
@@ -160,19 +160,19 @@ impl core::fmt::Debug for TopicEntry {
 }
 
 impl InMemoryDdsHost {
-    /// Frischer Host ohne Topics.
+    /// Fresh host without topics.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Test-helper: Anzahl registrierter Topics.
+    /// Test helper: count of registered topics.
     #[must_use]
     pub fn topic_count(&self) -> usize {
         self.with_state(|s| s.topics.len())
     }
 
-    /// Test-helper: Anzahl Subscriptions auf einem Topic.
+    /// Test helper: number of subscriptions on a topic.
     #[must_use]
     pub fn subscription_count(&self, topic: TopicId) -> usize {
         self.with_state(|s| s.topics.get(&topic).map_or(0, |t| t.subscriptions.len()))
@@ -210,16 +210,16 @@ impl DdsHost for InMemoryDdsHost {
     }
 
     fn publish_to_dds(&self, topic: TopicId, bytes: &[u8]) -> Result<(), DdsHostError> {
-        // Wir sammeln die Callbacks unter Lock und invoken sie
-        // ausserhalb, damit ein Subscriber-Callback nicht
-        // re-entrant publish() aufrufen kann.
+        // We collect the callbacks under lock and invoke them
+        // outside, so that a subscriber callback does not
+        // may call publish() re-entrantly.
         let callbacks: Vec<SampleCallback> = self.with_state(|s| {
             s.topics
                 .get(&topic)
                 .map(|t| t.subscriptions.values().cloned().collect())
                 .unwrap_or_default()
         });
-        // Topic existiert?
+        // Topic exists?
         if self.with_state(|s| !s.topics.contains_key(&topic)) {
             return Err(DdsHostError::UnknownTopic(topic));
         }
@@ -285,10 +285,10 @@ fn topic_mapping_to_catalog(m: &TopicMapping) -> CatalogEntry {
             partitions: m.dds_partition.clone(),
         },
         dds_type_name: m.dds_type_name.clone(),
-        // Spec §7.5: ulong fuer DESC_TRUNCATED, symbol fuer DESC_FULL.
-        // Da wir den Hash nicht kennen, geben wir einen Stub-Wert
-        // zurueck — der Caller muss das mit echtem TypeIdentifier
-        // anreichern, wenn er Spec-konforme Catalog-Entries braucht.
+        // Spec §7.5: ulong for DESC_TRUNCATED, symbol for DESC_FULL.
+        // Since we do not know the hash, we return a stub value
+        // — the caller must enrich this with a real TypeIdentifier
+        // if it needs spec-compliant catalog entries.
         type_id: CatalogTypeId::Truncated(0),
         direction,
     }

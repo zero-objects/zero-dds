@@ -77,7 +77,7 @@ func main() {
 	defer conn.Close()
 
 	tr := &udpTransport{conn: conn}
-	w := zerodds.NewReliableAsyncWriter(tr, 0)
+	w := zerodds.NewReliableAsyncWriter(tr, 0, zerodds.XrceObjectID(0x001, uint16(zerodds.ObjkDataWriter)))
 
 	// Producer: enqueue N samples (payload = the sample index, u32 LE). Never
 	// touches the socket -- the drain goroutine owns the Transport.

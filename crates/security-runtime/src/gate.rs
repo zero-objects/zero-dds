@@ -27,6 +27,10 @@ pub enum SecurityGateError {
     /// Inbound expected a SEC_PREFIX stream but got a different
     /// submessage format (e.g. plaintext where governance requires `SIGN`).
     PolicyViolation(String),
+    /// The AccessControl plugin failed or refused an operation
+    /// (DDS-Security 1.2 §9.4.2.9: "If an error occurs, this method shall
+    /// return false") — it is no `Deny`, the decision was not made.
+    AccessControl(SecurityError),
 }
 
 impl core::fmt::Display for SecurityGateError {
@@ -36,6 +40,7 @@ impl core::fmt::Display for SecurityGateError {
             Self::Wrapper(e) => write!(f, "security-gate wrapper: {e}"),
             Self::Crypto(e) => write!(f, "security-gate crypto: {e}"),
             Self::PolicyViolation(m) => write!(f, "security-gate policy: {m}"),
+            Self::AccessControl(e) => write!(f, "security-gate access control: {e}"),
         }
     }
 }
@@ -264,9 +269,9 @@ mod tests {
     use zerodds_security_permissions::parse_governance_xml;
 
     const GOV: &str = r#"
-<domain_access_rules>
+<dds><domain_access_rules>
   <domain_rule>
-    <domains><id>0</id></domains>
+    <domains><id>0</id></domains><allow_unauthenticated_participants>false</allow_unauthenticated_participants><enable_join_access_control>false</enable_join_access_control>
     <topic_access_rules>
       <topic_rule>
         <topic_expression>Secret*</topic_expression>
@@ -278,7 +283,7 @@ mod tests {
       </topic_rule>
     </topic_access_rules>
   </domain_rule>
-</domain_access_rules>
+</domain_access_rules></dds>
 "#;
 
     #[test]
@@ -365,15 +370,15 @@ mod tests {
 
     /// Governance with `rtps_protection_kind=ENCRYPT` for domain 0.
     const GOV_RTPS: &str = r#"
-<domain_access_rules>
+<dds><domain_access_rules>
   <domain_rule>
-    <domains><id>0</id></domains>
+    <domains><id>0</id></domains><allow_unauthenticated_participants>false</allow_unauthenticated_participants><enable_join_access_control>false</enable_join_access_control>
     <rtps_protection_kind>ENCRYPT</rtps_protection_kind>
     <topic_access_rules>
       <topic_rule><topic_expression>*</topic_expression></topic_rule>
     </topic_access_rules>
   </domain_rule>
-</domain_access_rules>
+</domain_access_rules></dds>
 "#;
 
     fn fake_rtps_message(body: &[u8]) -> Vec<u8> {

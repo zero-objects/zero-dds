@@ -1,0 +1,4 @@
+@mutable struct Sample {
+    @id(10) long a;
+    long b;
+};

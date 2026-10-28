@@ -14,17 +14,19 @@ const Reading = struct {
     value: f32,
     label: []const u8,
     fn marshal(self: Reading, alloc: std.mem.Allocator, endian: zerodds.Endian) ![]u8 {
-        var w = zerodds.Writer.init(alloc, endian);
+        var w = zerodds.Writer.init(alloc, endian, .xcdr2);
         errdefer w.deinit();
         try w.putU32(self.id);
         try w.putF32(self.value);
         try w.putString(self.label);
-        return w.buf.toOwnedSlice();
+        // Zig 0.16's `std.ArrayList` is the unmanaged one: `toOwnedSlice`
+        // takes the allocator, which the writer keeps in `alloc`.
+        return w.buf.toOwnedSlice(w.alloc);
     }
 };
 
 fn decodeReading(body: []const u8) Reading {
-    var r = zerodds.Reader.init(body, .little);
+    var r = zerodds.Reader.init(body, .little, .xcdr2);
     return .{ .id = r.getU32(), .value = r.getF32(), .label = r.getString() };
 }
 
@@ -52,9 +54,8 @@ const Fifo = struct {
     }
 };
 
-pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const alloc = gpa.allocator();
+pub fn main(zd_init: std.process.Init) !void {
+    const alloc = zd_init.arena.allocator();
     const total: usize = 5;
 
     var fifo = Fifo{};
@@ -69,11 +70,14 @@ pub fn main() !void {
         const r = Reading{ .id = @intCast(0x1000 + i), .value = 20.0 + @as(f32, @floatFromInt(i)) * 0.5, .label = label };
         const body = try r.marshal(alloc, .little);
         defer alloc.free(body);
-        _ = client.write(body);
+        _ = try client.write(body);
     }
 
     // Subscriber: poll (pull); decode every field; stop at `total`.
-    const stdout = std.io.getStdOut().writer();
+    var stdout_buf: [4096]u8 = undefined;
+    var stdout_file = std.Io.File.stdout().writer(zd_init.io, &stdout_buf);
+    const stdout = &stdout_file.interface;
+    defer stdout.flush() catch {};
     var got: usize = 0;
     while (got < total) {
         if (client.poll()) |body| {

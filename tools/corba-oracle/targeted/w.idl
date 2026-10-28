@@ -1,0 +1,1 @@
+struct W { octet head; wchar c; octet mid; wstring s; octet tail; };

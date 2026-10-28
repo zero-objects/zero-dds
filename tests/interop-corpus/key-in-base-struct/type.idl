@@ -1,0 +1,13 @@
+// `@key` on a base member, inherited by the derived type
+// XTypes 1.3 §7.2.2.4.5 (a derived type defines no key fields; its keys
+// are its root base's), §7.4.1.1.5.1 (base members first) and §7.6.8
+// (the KeyHash is the key members in that order).
+@final struct Base {
+    @key long region;
+    long payload;
+};
+
+@final struct Sample : Base {
+    short slot;
+    double value;
+};

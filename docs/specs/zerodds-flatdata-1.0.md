@@ -1,61 +1,61 @@
-# `zerodds-flatdata` v1.0 — Zero-Copy Same-Host-Spec
+# `zerodds-flatdata` v1.0 — zero-copy same-host spec
 
-ZeroDDS Vendor-Spec. Status: **Draft 2026-05-04**, in
-`crates/transport-shm` (vorhanden) + `crates/dcps` (Erweiterung
-vorgesehen) implementiert.
+ZeroDDS vendor spec. Status: **Draft 2026-05-04**, implemented in
+`crates/transport-shm` (present) + `crates/dcps` (extension
+planned).
 
 ## Motivation
 
-Same-Host Pub/Sub kostet ueber UDP/RTPS heute ~30 µs Latenz pro 1 kB
-Sample (Loopback-Roundtrip + Encap-Header + 2x Memcpy). Industry-
-Standard fuer Robotics/Avionics ist Zero-Copy via POSIX-SHM. Diese
-Spec definiert den Pfad, sodass Same-Host-Reader Sub-µs-Latenz
-sehen, ohne die UDP-Path-Backwards-Compat zu brechen.
+Same-host pub/sub over UDP/RTPS today costs ~30 µs latency per 1 kB
+sample (loopback roundtrip + encap header + 2x memcpy). The industry
+standard for robotics/avionics is zero-copy via POSIX SHM. This
+spec defines the path so that same-host readers see sub-µs latency
+without breaking the backwards compatibility of the UDP path.
 
-## Ziele
+## Goals
 
-- **Same-Host-Latenz P99 < 5 µs** fuer 1 kB Sample.
-- **Cross-Host-Pfad unveraendert** — UDP/RTPS bleibt Default.
-- **Backwards-Compatibility** — Reader ohne SHM-Support bekommen
-  konventionelle UDP-DATA mit voller Payload (Writer schickt
-  parallel).
-- **Pure-Rust** — kein C-Plugin, kein Iceoryx-Cargo-Dep im Default-
-  Build.
+- **Same-host latency P99 < 5 µs** for a 1 kB sample.
+- **Cross-host path unchanged** — UDP/RTPS remains the default.
+- **Backwards compatibility** — readers without SHM support get
+  conventional UDP DATA with the full payload (the writer sends
+  in parallel).
+- **Pure Rust** — no C plugin, no Iceoryx cargo dep in the default
+  build.
 
-## Nicht-Ziele
+## Non-goals
 
-- Cross-Host-Zero-Copy (RDMA, DPDK) — separate Spec.
-- Iceoryx-Wire-Compat — nur via Optional-Feature
-  `--features iceoryx2-bridge` (nicht Teil v1.0).
+- Cross-host zero-copy (RDMA, DPDK) — separate spec.
+- Iceoryx wire compat — only via the optional feature
+  `--features iceoryx2-bridge` (not part of v1.0).
 
-## §1 FlatStruct-Type-Modell
+## §1 FlatStruct type model
 
-### §1.1 FlatStruct-Trait
+### §1.1 FlatStruct trait
 
 ```rust
-/// Marker-Trait fuer FlatData-faehige Types. Garantiert:
-/// - `Self: Copy` (kein Drop-Glue, plain bytes)
-/// - `Self: 'static` (kein Lifetime-Reference)
-/// - `#[repr(C)]` mit fest definiertem Alignment
-/// - `as_bytes()` und `from_bytes_unchecked()` sind safe-by-Layout
+/// Marker trait for FlatData-capable types. Guarantees:
+/// - `Self: Copy` (no drop glue, plain bytes)
+/// - `Self: 'static` (no lifetime reference)
+/// - `#[repr(C)]` with a fixed, defined alignment
+/// - `as_bytes()` and `from_bytes_unchecked()` are safe by layout
 pub unsafe trait FlatStruct: Copy + 'static + Send + Sync {
-    /// Wire-Size = `core::mem::size_of::<Self>()`.
+    /// Wire size = `core::mem::size_of::<Self>()`.
     const WIRE_SIZE: usize = core::mem::size_of::<Self>();
-    /// Type-Hash (XTypes-1.3 §7.6.3.2.2 + Iceoryx2-FixedSizeName).
+    /// Type hash (XTypes-1.3 §7.6.3.2.2 + Iceoryx2-FixedSizeName).
     const TYPE_HASH: [u8; 16];
-    /// Liefert das Slot-Layout als Slice.
+    /// Returns the slot layout as a slice.
     fn as_bytes(&self) -> &[u8] {
-        // SAFETY: Self ist Copy + repr(C) → byte-cast ist defined.
+        // SAFETY: Self is Copy + repr(C) → byte cast is defined.
         unsafe { core::slice::from_raw_parts(self as *const _ as *const u8, Self::WIRE_SIZE) }
     }
-    /// Rekonstruiert aus rohem Slice. Caller muss Hash + Size validiert haben.
+    /// Reconstructs from a raw slice. The caller must have validated hash + size.
     unsafe fn from_bytes_unchecked(bytes: &[u8]) -> Self;
 }
 ```
 
-### §1.2 Derive-Macro
+### §1.2 Derive macro
 
-`#[derive(FlatStruct)]` generiert `unsafe impl FlatStruct for T`:
+`#[derive(FlatStruct)]` generates `unsafe impl FlatStruct for T`:
 
 ```rust
 #[derive(FlatStruct, Copy, Clone)]
@@ -76,128 +76,128 @@ struct Pose {
 // }
 ```
 
-Macro-Crate: `crates/flatdata-derive` (`zerodds-flatdata-derive`). Der Macro lehnt mit `compile_error!` ab, wenn `T` weder `#[repr(C)]` noch `#[repr(transparent)]` traegt, und auf `enum`/`union`. Der `TYPE_HASH` ist `sha256(<TypeName>{<field-name>:<field-ty>,...})[..16]`.
+Macro crate: `crates/flatdata-derive` (`zerodds-flatdata-derive`). The macro rejects with `compile_error!` if `T` carries neither `#[repr(C)]` nor `#[repr(transparent)]`, and on `enum`/`union`. The `TYPE_HASH` is `sha256(<TypeName>{<field-name>:<field-ty>,...})[..16]`.
 
-## §2 SHM-Slot-Layout
+## §2 SHM slot layout
 
 ```text
-+--------- SHM-Slot (slot_size = sample_size + header_size) ---------+
-| 0x00 | u32  | sequence_number (writer-lokal)                       |
++--------- SHM slot (slot_size = sample_size + header_size) ---------+
+| 0x00 | u32  | sequence_number (writer-local)                       |
 | 0x04 | u32  | sample_size (= FlatStruct::WIRE_SIZE)                |
-| 0x08 | u32  | reader_mask  (Bitmap: welche Reader haben gelesen)   |
+| 0x08 | u32  | reader_mask  (bitmap: which readers have read)       |
 | 0x0c | u32  | _reserved (padding)                                  |
-| 0x10 | [u8] | FlatStruct-Daten                                     |
+| 0x10 | [u8] | FlatStruct data                                      |
 +--------------------------------------------------------------------+
 ```
 
-Header-Size: 16 byte. Slot-Size = 16 + sample_size, gepaddet auf
-naechste 64-byte-Boundary (Cache-Line-Alignment).
+Header size: 16 byte. Slot size = 16 + sample_size, padded to
+the next 64-byte boundary (cache line alignment).
 
 ## §3 Discovery — PID_SHM_LOCATOR
 
-### §3.1 Wire-Format
+### §3.1 Wire format
 
-Vendor-PID `0x8001 PID_SHM_LOCATOR`:
+Vendor PID `0x8001 PID_SHM_LOCATOR`:
 
 ```text
-+----- PID-Value -----+
-| 0x00 | u32 | hostname-hash (FNV-1a der hostname-Bytes)         |
-| 0x04 | u32 | uid (POSIX uid_t) — fuer Same-User-Match          |
++----- PID value -----+
+| 0x00 | u32 | hostname-hash (FNV-1a of the hostname bytes)      |
+| 0x04 | u32 | uid (POSIX uid_t) — for same-user match           |
 | 0x08 | u32 | slot_count                                        |
 | 0x0c | u32 | slot_size                                         |
 | 0x10 |     | segment_path: CDR-String (`/dev/shm/zddspub_<eid>`) |
 +---------------------+
 ```
 
-### §3.2 Match-Logik
+### §3.2 Match logic
 
-Same-Host-Match wenn:
-1. `hostname-hash` aus PID_SHM_LOCATOR == lokaler hostname-hash, UND
-2. `uid` aus PID_SHM_LOCATOR == lokaler uid, UND
-3. lokaler Process kann `mmap()` auf das Segment.
+Same-host match if:
+1. `hostname-hash` from PID_SHM_LOCATOR == local hostname-hash, AND
+2. `uid` from PID_SHM_LOCATOR == local uid, AND
+3. the local process can `mmap()` the segment.
 
-Cross-Host = Match scheitert → Reader nutzt UDP-DATA wie immer.
+Cross-host = match fails → the reader uses UDP DATA as always.
 
-## §4 Wire-Pfad
+## §4 Wire path
 
-### §4.1 Same-Host-Pfad
+### §4.1 Same-host path
 
-1. Writer reserviert via `PosixShmTransport::reserve_slot()` einen
-   Slot. Liefert `SlotHandle = (segment_id, slot_index, &mut [u8])`.
-2. Writer schreibt FlatStruct direkt in `slot.bytes_mut()`.
-3. Writer ruft `commit_slot(slot)`. Backend setzt `sample_size` und
-   `reader_mask = 0`. Backend signalisiert Same-Host-Reader via
-   eventfd oder POSIX-Semaphore.
-4. Reader poll'd Same-Host-Channel (eventfd) oder UDP-Notify.
-5. Reader liest Slot via `mmap`-`&[u8]` ohne Copy. Setzt sein Bit
-   in `reader_mask`. Wenn alle Reader gelesen → Slot wird wieder
-   reservierbar.
+1. The writer reserves a slot via `PosixShmTransport::reserve_slot()`.
+   Returns `SlotHandle = (segment_id, slot_index, &mut [u8])`.
+2. The writer writes the FlatStruct directly into `slot.bytes_mut()`.
+3. The writer calls `commit_slot(slot)`. The backend sets `sample_size` and
+   `reader_mask = 0`. The backend signals same-host readers via
+   eventfd or a POSIX semaphore.
+4. The reader polls the same-host channel (eventfd) or the UDP notify.
+5. The reader reads the slot via `mmap` `&[u8]` without a copy. Sets its bit
+   in `reader_mask`. When all readers have read → the slot becomes
+   reservable again.
 
-### §4.2 Cross-Host-Fallback
+### §4.2 Cross-host fallback
 
-Reader auf anderem Host bekommen unveraenderte UDP-DATA-Submessage
-mit voller Payload. Writer schickt also **parallel**:
-- Same-Host-Reader: SHM-Slot-Notify
-- Cross-Host-Reader: UDP-DATA mit Encap-Header + Payload
+Readers on another host get an unchanged UDP DATA submessage
+with the full payload. So the writer sends **in parallel**:
+- same-host readers: SHM slot notify
+- cross-host readers: UDP DATA with encap header + payload
 
-Die Discovery-Logik teilt die `matched_readers` in zwei Listen.
+The discovery logic splits the `matched_readers` into two lists.
 
-### §4.3 Mixed-Vendor-Compat
+### §4.3 Mixed-vendor compat
 
-Cyclone/Fast-DDS-Reader (egal Same-Host) bekommen **immer** UDP-DATA.
-Sie kennen `PID_SHM_LOCATOR` nicht (Vendor-PID, MUST_UNDERSTAND-Bit
-nicht gesetzt → silently ignoriert). Cross-Vendor-Interop bleibt.
+Cyclone/Fast-DDS readers (regardless of same host) **always** get UDP DATA.
+They do not know `PID_SHM_LOCATOR` (vendor PID, MUST_UNDERSTAND bit
+not set → silently ignored). Cross-vendor interop is preserved.
 
-## §5 Lifetime + Refcount
+## §5 Lifetime + refcount
 
-### §5.1 Slot-Refcount
+### §5.1 Slot refcount
 
-`reader_mask` ist 32-bit Bitmap. Slot ist "frei" wenn:
-- alle Bits gesetzt = alle Reader haben gelesen, ODER
-- `commit_time + 60s` ueberschritten (Timeout — straggler-Reader).
+`reader_mask` is a 32-bit bitmap. A slot is "free" if:
+- all bits are set = all readers have read, OR
+- `commit_time + 60s` has been exceeded (timeout — straggler readers).
 
-Writer-Cache haelt N Slots, pro Slot ein Bit-Index. Wenn Cache voll
-und kein Slot frei: Writer-`write` blockt (Reliable) oder dropped
-(BestEffort) — analog zu RESOURCE_LIMITS.
+The writer cache holds N slots, one bit index per slot. If the cache is full
+and no slot is free: the writer `write` blocks (Reliable) or drops
+(BestEffort) — analogous to RESOURCE_LIMITS.
 
-### §5.2 Reader-Disconnect
+### §5.2 Reader disconnect
 
-Reader, der disconnected wird (SPDP-lease-expiry), wird aus dem
-Bitmap-Allocator entfernt; Writer setzt sein Bit retroaktiv → Slot
-ist frei.
+A reader that gets disconnected (SPDP lease expiry) is removed from the
+bitmap allocator; the writer sets its bit retroactively → the slot
+is free.
 
-## §6 Schema-Versioning
+## §6 Schema versioning
 
-### §6.1 Type-Hash-Check
+### §6.1 Type hash check
 
-Reader liest aus Discovery den `type_hash` des Topic-Type. Beim
-ersten SHM-Slot-Read prüft Reader, dass die ersten 4 byte des
-Slot-Header (sample_size) zu `WIRE_SIZE` passen, sonst Slot-Drop.
+The reader reads the `type_hash` of the topic type from discovery. On the
+first SHM slot read, the reader checks that the first 4 bytes of the
+slot header (sample_size) match `WIRE_SIZE`, otherwise slot drop.
 
-Falls Type-Hash unterschiedlich: Reader matcht nicht — fallback
-auf UDP-DATA. Bei Cyclone/Fast-DDS: gleicher Mechanismus, sie
-sehen einfach die normale UDP-DATA.
+If the type hash differs: the reader does not match — fallback
+to UDP DATA. For Cyclone/Fast-DDS: the same mechanism, they
+simply see the normal UDP DATA.
 
-## §7 Sicherheit
+## §7 Security
 
-### §7.1 POSIX-Permissions
+### §7.1 POSIX permissions
 
-SHM-Segment ist `mode=0600` (owner-read-write only). Cross-User-
-Access wird OS-seitig verweigert.
+The SHM segment is `mode=0600` (owner-read-write only). Cross-user
+access is refused by the OS.
 
-### §7.2 Bounded-Slot-Allocation
+### §7.2 Bounded slot allocation
 
-`slot_count` ist im Discovery-Sample. Reader, der einen Slot-Index
-ausserhalb von `[0, slot_count)` sieht, droppt.
+`slot_count` is in the discovery sample. A reader that sees a slot index
+outside of `[0, slot_count)` drops it.
 
-## §8 API-Surface (DataWriter)
+## §8 API surface (DataWriter)
 
 ```rust
 impl<T: FlatStruct + DdsType> DataWriter<T> {
-    /// Spec §4.1: reserve + write + commit in einem Call.
+    /// Spec §4.1: reserve + write + commit in one call.
     pub fn write_flat(&self, sample: &T) -> Result<()>;
 
-    /// Low-level: explizite Slot-Reservierung.
+    /// Low-level: explicit slot reservation.
     pub fn loan_slot(&self) -> Result<FlatSlot<'_, T>>;
 }
 
@@ -217,13 +217,13 @@ impl<T: FlatStruct> FlatSlot<'_, T> {
 }
 ```
 
-## §9 API-Surface (DataReader)
+## §9 API surface (DataReader)
 
 ```rust
 impl<T: FlatStruct + DdsType> DataReader<T> {
-    /// Liefert eine Slot-Reference die ohne Copy lesbar ist.
-    /// Lifetime gebunden an den Reader; bei `drop` wird das
-    /// Bit im reader_mask gesetzt.
+    /// Returns a slot reference that can be read without a copy.
+    /// Lifetime bound to the reader; on `drop` the
+    /// bit in reader_mask is set.
     pub fn read_flat(&self) -> Result<Option<FlatSampleRef<'_, T>>>;
 }
 
@@ -240,40 +240,40 @@ impl<T: FlatStruct> Deref for FlatSampleRef<'_, T> {
 
 impl<T: FlatStruct> Drop for FlatSampleRef<'_, T> {
     fn drop(&mut self) {
-        // Reader-Bit im reader_mask setzen.
+        // Set the reader bit in reader_mask.
         let _ = self.reader.release_slot(self.handle);
     }
 }
 ```
 
-## §10 Test-Strategie
+## §10 Test strategy
 
-- **Unit:** PosixShmTransport-Slot-Allocator, reserve_slot/commit/release.
-- **Integration:** Same-Host-Pub/Sub mit FlatStruct, Latency-Bench.
-- **Cross-Host-Fallback:** Mixed-Domain (Same-Host + Cross-Host
-  Reader); beide bekommen Sample.
-- **Cyclone-Compat:** Cyclone-Reader ignoriert PID_SHM_LOCATOR und
-  bekommt UDP-DATA wie immer.
-- **Backpressure:** Cache full + matched Reader langsam; Writer
-  blockt korrekt (Reliable) bzw. dropped (BestEffort).
+- **Unit:** PosixShmTransport slot allocator, reserve_slot/commit/release.
+- **Integration:** same-host pub/sub with FlatStruct, latency bench.
+- **Cross-host fallback:** mixed domain (same-host + cross-host
+  readers); both get the sample.
+- **Cyclone compat:** the Cyclone reader ignores PID_SHM_LOCATOR and
+  gets UDP DATA as always.
+- **Backpressure:** cache full + matched reader slow; the writer
+  blocks correctly (Reliable) or drops (BestEffort).
 
-## §11 Performance-Targets
+## §11 Performance targets
 
-- **Same-Host P99 < 5 µs** fuer 1 kB Sample (gegen UDP-Loopback ~30 µs).
-- **Throughput:** ~1 GB/s pro Writer (Memcpy-bound).
-- **0 Heap-Allokation pro write** (Slot-Reuse).
-- **Same-Host-Pub-Latenz < UDP-Pub-Latenz / 5**.
+- **Same-host P99 < 5 µs** for a 1 kB sample (against UDP loopback ~30 µs).
+- **Throughput:** ~1 GB/s per writer (memcpy-bound).
+- **0 heap allocations per write** (slot reuse).
+- **Same-host pub latency < UDP pub latency / 5**.
 
-## §12 Lieferumfang
+## §12 Scope of delivery
 
-- FlatStruct-Trait + derive-Macro
-- PosixShmTransport-Slot-API (reserve_slot / commit_slot / release_slot)
+- FlatStruct trait + derive macro
+- PosixShmTransport slot API (reserve_slot / commit_slot / release_slot)
 - DataWriter::write_flat + loan_slot/FlatSlot
 - DataReader::read_flat + FlatSampleRef
-- PID_SHM_LOCATOR encode/decode + SEDP-Push
-- Same-Host-Match-Logik (hostname+uid)
-- Same-Host-SHM- vs. Cross-Host-UDP-Wire-Pfad
-- Test-Suite (Unit + Integration + Cyclone-Compat) + Latenz-Bench + Doku
+- PID_SHM_LOCATOR encode/decode + SEDP push
+- Same-host match logic (hostname+uid)
+- Same-host SHM vs. cross-host UDP wire path
+- Test suite (unit + integration + Cyclone compat) + latency bench + documentation
 
-Der aktuelle Implementierungs-Stand pro Punkt steht im Coverage-Audit
+The current implementation status per item is in the coverage audit
 `docs/spec-coverage/zerodds-flatdata-1.0.md`.

@@ -1,0 +1,17 @@
+// bounded `sequence` of each primitive kind
+@final struct Sample {
+    sequence<boolean, 4> flag_bounded;
+    sequence<octet, 4> raw_octet_bounded;
+    sequence<uint8, 4> unsigned_byte_bounded;
+    sequence<int8, 4> signed_byte_bounded;
+    sequence<char, 4> letter_bounded;
+    sequence<wchar, 4> wide_letter_bounded;
+    sequence<short, 4> short_signed_bounded;
+    sequence<unsigned short, 4> short_unsigned_bounded;
+    sequence<long, 4> long_signed_bounded;
+    sequence<unsigned long, 4> long_unsigned_bounded;
+    sequence<long long, 4> llong_signed_bounded;
+    sequence<unsigned long long, 4> llong_unsigned_bounded;
+    sequence<float, 4> single_float_bounded;
+    sequence<double, 4> double_float_bounded;
+};

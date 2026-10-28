@@ -1,0 +1,30 @@
+# /etc/zerodds/naming-svc.yaml.example
+# Configuration of zerodds-naming-svc.
+# See zerodds-naming-svc.yaml(5).
+#
+# Read by crates/corba-cosnaming/src/naming_daemon.rs
+# (DaemonConfig::from_config) over the shared layers: this file,
+# naming-svc.d/, include:, the environment beneath, --set above. An
+# unknown key in a known section or a value of the wrong type stops the
+# start with file and line.
+
+log_level: info
+
+naming:
+  bind: "0.0.0.0:2809"
+  advertise_host: "127.0.0.1"       # host in the IORs when bind is a wildcard
+  persist_file: "/var/lib/zerodds/naming/graph.txt"
+
+  ssliop:
+    enabled: false
+    bind: "0.0.0.0:2810"
+    cert_file: "/etc/zerodds/certs/naming-svc.crt"
+    key_file:  "/etc/zerodds/certs/naming-svc.key"
+    ca_file:   "/etc/zerodds/certs/naming-ca.pem"   # client certificates
+    require_client_cert: false
+
+  csiv2:
+    enabled: false
+    target_supports: []               # e.g. [principal_name] to allow identity assertion
+    gssup:
+      password_file: "/etc/zerodds/naming-svc-gssup.passwd"

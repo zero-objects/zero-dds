@@ -1,0 +1,5 @@
+// appendable `union`
+@appendable union Choice switch (long) {
+    case 1: long whole;
+    default: double fraction;
+};

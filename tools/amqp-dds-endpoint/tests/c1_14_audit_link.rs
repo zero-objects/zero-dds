@@ -7,9 +7,9 @@
 
 //! Annex C C.1.14 — Audit Link.
 //!
-//! Spec §C.1.14: Receiver-Link auf `$audit` produziert Stream
-//! von Audit-Events. SASL-Erfolg eines zweiten Klienten erzeugt
-//! `link.attach.success`-Audit-Record mit `subject_name`-Field.
+//! Spec §C.1.14: receiver link on `$audit` produces a stream
+//! of audit events. A second client's SASL success produces
+//! `link.attach.success` audit record with `subject_name` field.
 
 mod common;
 
@@ -18,8 +18,8 @@ use zerodds_amqp_endpoint::management::{AuditEvent, AuditProducer, audit_event_s
 
 #[test]
 fn c1_14_link_attach_success_event_carries_subject() {
-    // Spec §C.1.14: Receiver auf $audit; nach
-    // SASL-Auth + Link-Attach kommt ein Event mit subject_name.
+    // Spec §C.1.14: receiver on $audit; after
+    // SASL auth + link attach an event with subject_name arrives.
     let event = AuditEvent::LinkAttached {
         subject: "alice".into(),
         link: "L1".into(),
@@ -107,8 +107,8 @@ fn c1_14_audit_producer_streams_events_in_order() {
 
 #[test]
 fn c1_14_unauthorized_event_carries_resource_field() {
-    // Spec §C.1.14 + §10.3.3 — bei AccessControl-Reject wird
-    // ein `access.unauthorized`-Event emittiert, das Subject +
+    // Spec §C.1.14 + §10.3.3 — on an AccessControl reject
+    // an `access.unauthorized` event is emitted that contains subject +
     // Resource-Address fuehrt.
     let event = AuditEvent::Unauthorized {
         subject: "eve".into(),
@@ -138,7 +138,7 @@ fn c1_14_unauthorized_event_carries_resource_field() {
 
 #[test]
 fn c1_14_ringbuffer_evicts_oldest_on_overflow() {
-    // §sec:audit-channel: Audit ist read-only-Stream, kein
+    // §sec:audit-channel: audit is a read-only stream, no
     // persistenter Trail. Capacity-bounded queue verdraengt
     // aelteste Events.
     let mut prod = AuditProducer::new(2);
@@ -183,7 +183,7 @@ fn c1_14_ringbuffer_evicts_oldest_on_overflow() {
             }
         })
         .collect();
-    // 'first' wurde verdraengt; 'second' und 'third' bleiben.
+    // 'first' was evicted; 'second' and 'third' remain.
     assert!(!subjects.contains(&"first".to_string()));
     assert!(subjects.contains(&"second".to_string()));
     assert!(subjects.contains(&"third".to_string()));

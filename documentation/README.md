@@ -5,8 +5,13 @@ ZeroDDS is a pure-Rust implementation of [OMG DDS 1.4][dds] +
 with bindings for C, C++, C#, Java, Python, TypeScript, and a ROS-2
 RMW plugin.
 
-For the per-crate API reference see docs.rs; for the full website see
-<https://zerodds.org>.
+These guides follow the checked-out candidate source. Published docs.rs and
+<https://zerodds.org> may describe a different release. The RC7 preparation
+does not itself publish those channels or certify every linked chapter.
+
+Start with the source-backed [publisher/subscriber guide](01-getting-started/first-publisher.md).
+Release coordination and review records belong in internal/, not in the
+product instructions below.
 
 ## Getting started
 

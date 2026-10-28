@@ -4,7 +4,7 @@
 # `ZERODDS_NO_MULTICAST=1` turns off every SPDP multicast send; the
 # processes find each other EXCLUSIVELY via `ZERODDS_PEERS` (unicast
 # initial peers, well-known RTPS ports). Negative control: without peers
-# nothing flows. Runs on a single host (codepit), domain 0.
+# nothing flows. Runs on a single host (Linux test host), domain 0.
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../../.." && pwd)"

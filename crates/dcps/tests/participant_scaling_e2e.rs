@@ -25,9 +25,6 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use zerodds_dcps::runtime::{DcpsRuntime, RuntimeConfig, UserReaderConfig, UserWriterConfig};
-use zerodds_qos::{
-    DeadlineQosPolicy, DurabilityKind, LifespanQosPolicy, LivelinessQosPolicy, OwnershipKind,
-};
 use zerodds_rtps::wire_types::GuidPrefix;
 
 const N: usize = 40; // > 32 (the Fast DDS landmine)
@@ -36,22 +33,7 @@ fn writer_cfg(topic: &str) -> UserWriterConfig {
     UserWriterConfig {
         topic_name: topic.into(),
         type_name: "RawBytes".into(),
-        reliable: true,
-        durability: DurabilityKind::Volatile,
-        deadline: DeadlineQosPolicy::default(),
-        latency_budget: Default::default(),
-        destination_order: Default::default(),
-        lifespan: LifespanQosPolicy::default(),
-        liveliness: LivelinessQosPolicy::default(),
-        ownership: OwnershipKind::Shared,
-        ownership_strength: 0,
-        presentation: Default::default(),
-        partition: vec![],
-        user_data: vec![],
-        topic_data: vec![],
-        group_data: vec![],
-        type_identifier: zerodds_types::TypeIdentifier::None,
-        data_representation_offer: None,
+        ..Default::default()
     }
 }
 
@@ -59,21 +41,7 @@ fn reader_cfg(topic: &str) -> UserReaderConfig {
     UserReaderConfig {
         topic_name: topic.into(),
         type_name: "RawBytes".into(),
-        reliable: true,
-        durability: DurabilityKind::Volatile,
-        deadline: DeadlineQosPolicy::default(),
-        latency_budget: Default::default(),
-        destination_order: Default::default(),
-        liveliness: LivelinessQosPolicy::default(),
-        ownership: OwnershipKind::Shared,
-        presentation: Default::default(),
-        partition: vec![],
-        user_data: vec![],
-        group_data: vec![],
-        topic_data: vec![],
-        type_identifier: zerodds_types::TypeIdentifier::None,
-        type_consistency: zerodds_types::qos::TypeConsistencyEnforcement::default(),
-        data_representation_offer: None,
+        ..Default::default()
     }
 }
 
@@ -81,13 +49,13 @@ fn reader_cfg(topic: &str) -> UserReaderConfig {
 #[test]
 fn forty_participants_on_one_host_no_landmine() {
     let domain = 91;
-    // 40 same-host participants: identical host-id bytes [0..4], unique tail.
+    // 40 same-host participants: identical host-id bytes [2..6], unique tail.
     let host = [0x5Au8; 4];
     let mut rts: Vec<Arc<DcpsRuntime>> = Vec::with_capacity(N);
     for i in 0..N {
         let mut p = [0u8; 12];
-        p[..4].copy_from_slice(&host);
-        p[4] = 0xC0;
+        p[2..6].copy_from_slice(&host);
+        p[6] = 0xC0;
         p[10] = (i as u8).wrapping_add(1);
         p[11] = ((i >> 8) as u8).wrapping_add(1);
         let rt = DcpsRuntime::start(domain, GuidPrefix::from_bytes(p), RuntimeConfig::default())

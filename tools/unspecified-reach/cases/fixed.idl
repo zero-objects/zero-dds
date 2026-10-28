@@ -1,0 +1,4 @@
+// P4 — XTypes has no fixed-point type. Legal IDL 4.2 (§7.4.1.4.4.3.4
+// rule 42), specified by CORBA 3.3 part 2 §9.3.2.8, and carried over by
+// nobody.
+struct Sample { fixed<5,2> f; octet tail; };

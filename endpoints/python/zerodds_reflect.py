@@ -6,6 +6,8 @@
 # generated code. Same bytes as the fixed path. Mirrors endpoints/c/*reflect*.
 from __future__ import print_function
 
+import zerodds_wire as zw
+
 # A field is (kind, value); kind in:
 #   'u8' 'u16' 'u32' 'u64' 'f32' 'f64' 'bool' 'string' 'seq_u8'
 
@@ -68,9 +70,9 @@ def encode_struct(w, s):
         ids = s['ids']
         bs = w.dheader_begin()
         for i, (k, v) in enumerate(fields):
-            e = w.emheader_begin(ids[i], 0)
+            e = w.emheader_begin(ids[i], 0, zw.LC4)
             _encode_field(w, k, v)
-            w.emheader_end(e)
+            w.emheader_end(e, zw.LC4)
         w.dheader_end(bs)
     else:
         raise ValueError(ext)

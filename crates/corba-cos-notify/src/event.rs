@@ -19,7 +19,7 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use zerodds_cdr::CorbaAny;
+use zerodds_corba_rt::CorbaAny;
 
 /// `EventType` (§2.2): domain + type name. `"*"` is a wildcard for filter/subscription.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -151,7 +151,7 @@ impl StructuredEvent {
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use zerodds_cdr::AnyValue;
+    use zerodds_corba_rt::AnyValue;
 
     #[test]
     fn event_type_wildcard_match() {

@@ -1,0 +1,9 @@
+// `string<1>` and `wstring<1>` — the smallest bound there is
+// IDL 4.2 §7.4.1.4.4.3 counts characters; XTypes 1.3 §7.4.3.4.3 puts the
+// terminator inside the length, so a full `string<1>` writes length 2.
+@final struct Sample {
+    string<1> full;
+    string<1> blank;
+    wstring<1> wide;
+    long tail;
+};

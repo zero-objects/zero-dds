@@ -1,7 +1,7 @@
 //! C5.5 — Cyclone gap-filler: TypeLookup responder side.
 //!
-//! `cyclone_live_typelookup.rs` only covers the requester side (we send
-//! a request and parse the reply). This test verifies the **responder
+//! `type_lookup_requests.rs` covers the requester side (we send a
+//! request and parse the reply). This test verifies the **responder
 //! side**: parse Cyclone-like TL requests and build matching replies.
 //!
 //! Since the full live RPC is only wired up in WP 1.6+, we simulate the
@@ -69,12 +69,25 @@ fn typelookup_responder_builds_cyclone_compatible_reply() {
         .expect("reply");
     eprintln!("reply bytes: {}", reply_bytes.len());
 
-    // Wire sanity: the reply begins with a 4-byte count > 0.
+    // Wire sanity. XTypes 1.3 §7.6.3.3.3 declares
+    // `TypeLookup_getTypes_Out` `@extensibility(MUTABLE)`, so the first
+    // word is a DHEADER over the member list and not a sequence count —
+    // this assertion used to read it as the count, which is the shape
+    // the tree wrote before the clause's framing was in place.
     assert!(reply_bytes.len() >= 4, "reply too short");
-    let count_le = u32::from_le_bytes(reply_bytes[..4].try_into().unwrap());
+    let dheader = u32::from_le_bytes(reply_bytes[..4].try_into().unwrap()) as usize;
     assert_eq!(
-        count_le, 1,
-        "expected exactly 1 type in reply, got {count_le}"
+        dheader,
+        reply_bytes.len() - 4,
+        "the DHEADER counts everything after it"
+    );
+    let mut r = zerodds_types::framing::xcdr2_reader(&reply_bytes);
+    let decoded = zerodds_types::type_lookup::GetTypesReply::decode_from(&mut r).expect("decode");
+    assert_eq!(decoded.types.len(), 1, "expected exactly 1 type in reply");
+    // §7.6.3.3.3: the identifier travels with the object.
+    assert_eq!(
+        decoded.types[0].type_identifier,
+        TypeIdentifier::EquivalenceHashMinimal(hash)
     );
 
     // Round trip: client parses the reply.
@@ -90,18 +103,24 @@ fn typelookup_responder_builds_cyclone_compatible_reply() {
 
 #[test]
 fn typelookup_responder_unknown_hash_yields_empty_reply() {
-    // Cross-vendor edge case: the client asks for a hash the server
-    // doesn't have. In this case Cyclone sends a reply with an empty
-    // types list (no error). We must hit the wire format of this empty
-    // reply byte-exact.
+    // The client asks for a hash the server does not have.
+    // §7.6.3.3.4.2 says the reply's `types` "shall contain TypeObjects
+    // that correspond to the TypeIdentifiers in the request" and names
+    // no error path for one that does not, so an unknown hash is
+    // answered with an empty list.
+    //
+    // Not measured against Cyclone. The comment this replaced claimed
+    // the byte form was Cyclone's; nothing in this file has ever spoken
+    // to Cyclone, and the shape it asserted — a bare sequence count in
+    // the first word — was the tree's own, not the clause's.
     let responder = TypeLookupStack::new(GuidPrefix::from_bytes([0x33; 12]));
     // No insert.
     let hash = zerodds_types::EquivalenceHash([0xAA; 14]);
     let reply = responder
         .build_get_types_reply(&[hash], true)
         .expect("reply");
-    // At least 4 bytes (count = 0).
-    assert!(reply.len() >= 4);
-    let count = u32::from_le_bytes(reply[..4].try_into().unwrap());
-    assert_eq!(count, 0, "expected empty types-list, got count={count}");
+    let mut r = zerodds_types::framing::xcdr2_reader(&reply);
+    let decoded = zerodds_types::type_lookup::GetTypesReply::decode_from(&mut r).expect("decode");
+    assert!(decoded.types.is_empty(), "expected an empty types list");
+    assert!(decoded.complete_to_minimal.is_empty());
 }

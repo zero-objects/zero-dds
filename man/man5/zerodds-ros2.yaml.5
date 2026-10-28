@@ -1,0 +1,193 @@
+.TH ZERODDS-ROS2.YAML 5 "" "ZeroDDS" "ZeroDDS Manual"
+.SH NAME
+zerodds-ros2.yaml \- the ros2 section of the ZeroDDS runtime configuration
+.SH SYNOPSIS
+.I /etc/zerodds/zerodds.yaml
+.br
+.I /etc/zerodds/zerodds.d/50-ros2.yaml
+.SH DESCRIPTION
+.I rmw_zerodds_cpp
+reads its ROS settings from the runtime configuration every ZeroDDS program
+reads: the base file
+.IR zerodds.yaml ,
+the drop-ins in
+.I zerodds.d
+in name order,
+.I include:
+files, and the environment beneath them. As every ZeroDDS program, the RMW
+takes
+.B \-\-config
+.I FILE
+(another base with
+.IR FILE.d/ )
+and
+.B \-\-set
+.I path=value
+(above all files) from the command line, here the command line of the ROS
+process outside its
+.B \-\-ros\-args
+\&... \-\- blocks, which belong to rcl.
+The section is
+.BR ros2 ;
+a drop-in holding only that section is the usual form. There is no separate
+shim file. The schema is
+.IR zerodds-ros2-bridge-1.0 " \(sc3;"
+the reader is
+.I Ros2Config::from_config
+in
+.IR crates/rmw-zerodds-shim/src/ros2_config.rs .
+.PP
+The RMW checks the section when
+.I rmw_init
+runs: an unknown key or an invalid value fails initialisation, with the
+setting, its file and line on stderr.
+.B zerodds-ros2-shim \-\-check\-config
+prints the same result before a node starts. Other programs reading the same
+files leave the section to the RMW.
+.PP
+.BI ${VAR} " and " ${VAR:-default}
+are substituted from the environment before the document is parsed.
+.SH KEYS
+.TP
+.B topic_mangling
+.IR rmw " (default): the " rt/
+prefix of REP-2007;
+.IR none :
+the ROS name without its leading slash, for coexistence with DDS
+applications;
+.IR custom :
+the prefix in
+.B custom_mangling
+.BR topic_prefix ,
+which is then required and is refused otherwise. A service
+.I /add_two_ints
+has the DDS topics
+.I rq/add_two_intsRequest
+and
+.IR rr/add_two_intsReply ,
+as with the other RMWs; under
+.I none
+without the prefixes, under
+.I custom
+with
+.B custom_mangling
+.B request_prefix
+and
+.B response_prefix
+(default
+.IR rq/ ", " rr/ ).
+An application's
+.I avoid_ros_namespace_conventions
+drops any prefix: the DDS topic is the ROS name with its leading slash, as
+with the other RMWs.
+.TP
+.B qos_profiles
+Map of named profiles. The built-in table is REP-2009:
+.I sensor_data
+KEEP_LAST(5) BEST_EFFORT VOLATILE,
+.I services
+KEEP_LAST(10) RELIABLE VOLATILE,
+.I parameters
+KEEP_LAST(1000) RELIABLE VOLATILE,
+.I parameter_events
+KEEP_ALL RELIABLE VOLATILE,
+.I default
+KEEP_LAST(10) RELIABLE VOLATILE. An entry, such as
+.B sensor_data
+in the example, replaces the fields it names; a new name adds a profile.
+Fields:
+.BR reliability " (" \fIreliable\fR " | " \fIbest_effort\fR " | " \fIsystem_default\fR ),
+.BR durability " (" \fIvolatile\fR " | " \fItransient_local\fR " | " \fIsystem_default\fR ),
+.BR history " (" \fIkeep_last\fR " | " \fIkeep_all\fR " | " \fIsystem_default\fR ),
+.BR depth ,
+.BR deadline_ms ,
+.BR lifespan_ms ,
+.BR liveliness " (" \fIautomatic\fR " | " \fImanual_by_topic\fR " | " \fIsystem_default\fR ),
+.BR liveliness_lease_ms .
+A duration of 0 means none.
+.TP
+.B topic_overrides
+List of entries, each with
+.B ros_topic
+(the ROS name before mangling) and either
+.B qos_profile
+(a name of the table) or
+.B qos
+(a map of the fields above). The entry replaces those fields of what the
+application requests on that topic;
+.I rmw_*_get_actual_qos
+reports the result.
+.TP
+.B time_based_filter
+TIME_BASED_FILTER minimum_separation in seconds, for every topic
+.RI ( 0.1 )
+or per topic
+.RI ( /scan=0.1 ),
+a comma list; environment
+.IR ZERODDS_TIME_BASED_FILTER .
+.TP
+.B spatial_bridge
+C2(6) — an opt-in content-translation daemon (its own
+.IR DomainParticipant ,
+not part of the RMW's own runtime) that republishes
+.I zerodds-spatial-dds
+topics as the matching ROS 2
+.I zerodds-spatial-ros2
+type and back
+.RI ( crates/rmw\-zerodds\-shim/src/spatial_bridge.rs ).
+.B enabled
+(default false)
+starts it;
+.B mappings
+is a list of entries, each:
+.BR message " (" \fIpose_stamped\fR ", " \fItransform_stamped\fR ", " \fIgeo_pose_stamped\fR ", " \fIdetection3d\fR ", " \fIdetection3d_array\fR " or " \fIimu\fR "; "
+.I tf_message
+is refused by name — no reverse conversion exists for it, and its forward
+one bundles several samples, not one at a time),
+.BR spatial_topic " (the " zerodds\-spatial\-dds
+DCPS topic name, e.g.
+.IR sdds/default/FramedPose ),
+.BR ros_topic " (the ROS logical name, e.g. " /robot1/pose ,
+mangled the same way every other ROS topic on this RMW is), and
+.BR direction " (" \fIdds_to_ros\fR ", " \fIros_to_dds\fR " or " \fIboth\fR ",
+default
+.IR both ).
+Every SpatialDDS-only field a conversion drops (or defaults, going back) is
+named in
+.IR zerodds\-spatial\-ros2 's
+own field-fidelity doc comment and reported once per
+.RI ( topic ", " direction )
+as an observability event
+.RI ( diagnostics.observability ,
+name
+.IR spatial_bridge.field_fidelity ),
+never silently. The SpatialDDS side's DDS type name follows the fixed
+convention
+.I spatial::<module>::<Type>
+(mirroring the Rust module path in
+.IR zerodds\-spatial\-dds );
+a SpatialDDS publisher/subscriber this bridge talks to must use the same
+string — DDS matches by topic name
+.I and
+type name, and this is not XTypes-hash-checked.
+.SS refused
+Each is refused with where the value belongs:
+.I ros2.namespace
+(rcl resolves names with the node namespace:
+.IR "\-\-ros\-args \-r __ns:=/ns" ),
+.I ros2.ros_domain_id
+.RI ( ROS_DOMAIN_ID ),
+.I ros2.enclave
+.RI ( security.enclave_dir ),
+.I logging
+(rcutils:
+.IR "\-\-ros\-args \-\-log\-level" ),
+.I discovery.multicast
+and
+.I discovery.unicast_initial_peers
+.RI ( discovery.no_multicast ", " discovery.peers ).
+.SH EXAMPLES
+See
+.IR /usr/share/zerodds/configs/ros2.yaml.example .
+.SH SEE ALSO
+.BR zerodds-ros2-shim (1).

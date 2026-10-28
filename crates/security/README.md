@@ -3,7 +3,7 @@
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![docs.rs](https://docs.rs/zerodds-security/badge.svg)](https://docs.rs/zerodds-security)
 
-DDS-Security 1.1 (formal/2018-04-01) plugin SPI for the
+DDS-Security 1.2 (formal/2025-03-06, §9) plugin SPI for the
 [ZeroDDS](https://zerodds.org) stack: trait definitions, token
 data model, generic-message topics. Pure Rust + `alloc`. Safety
 classification: **SAFE** (trust-neutral SPI layer).
@@ -27,7 +27,7 @@ Coverage doc: `docs/spec-coverage/dds-security-1.2.md` (50 done / 0 partial / 0 
 - `AccessControlPlugin` — permissions check, topic allow/deny.
 - `CryptographicPlugin` — encrypt/decrypt submessage + key material + receiver-specific MACs.
 - `LoggingPlugin` — audit events.
-- `DataTaggingPlugin` — built-in DataTagging (DDS-Security 1.2 §8.7).
+- `DataTaggingPlugin` — built-in DataTagging (DDS-Security 1.2 §9.7).
 
 **Token data model:**
 - `IdentityToken`, `PermissionsToken`, `CryptoToken`, `IdentityStatusToken`.
@@ -69,7 +69,8 @@ Production use cases build the real plugins (`security-pki`, etc.) and plug them
 
 ## Stability
 
-`1.0.0-rc.1` is **API-frozen** — breaking changes require a v2.0 major bump. Semver patch + minor may only add new methods with a default body or non-breaking enum variants. This frozen pledge is binding, because 7 sister crates + dcps + discovery depend on this SPI.
+`1.0.0-rc.7`, a pre-release. The public API can still change before
+1.0.0; the crate's CHANGELOG lists every change.
 
 ## Tests
 

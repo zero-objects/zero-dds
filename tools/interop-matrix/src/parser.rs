@@ -1,22 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Minimaler JSON-Parser fuer das Matrix-Format.
+//! Minimal JSON parser for the matrix format.
 //!
-//! Wir benutzen keinen serde-Dep — der Code ist klein genug fuer einen
-//! handgeschriebenen Parser. Fehler-Tolerant: unbekannte Felder werden
-//! ignoriert, fehlende Pflichtfelder geben sauberen Fehler.
+//! We use no serde dep — the code is small enough for a
+//! hand-written parser. Error-tolerant: unknown fields are
+//! ignored, missing mandatory fields give a clean error.
 
 use crate::model::{Cell, Matrix, Status, VendorRow};
 
-/// Parser-Fehler.
+/// Parser error.
 #[derive(Debug)]
 pub enum ParseError {
     /// JSON syntax error.
     Syntax(String),
-    /// Erwartetes Pflichtfeld fehlt.
+    /// Expected required field missing.
     Missing(&'static str),
-    /// Wert hatte falschen Typ.
+    /// Value had the wrong type.
     BadType(&'static str),
 }
 
@@ -32,7 +32,7 @@ impl std::fmt::Display for ParseError {
 
 impl std::error::Error for ParseError {}
 
-/// Tiny-Tokenizer fuer JSON.
+/// Tiny tokenizer for JSON.
 struct Lex<'a> {
     s: &'a [u8],
     p: usize,
@@ -181,7 +181,7 @@ impl<'a> Lex<'a> {
 
 /// Mini-JSON-Value.
 #[derive(Clone, Debug)]
-#[allow(dead_code)] // Num/Bool werden parsed aber im Matrix-Schema nicht inspiziert.
+#[allow(dead_code)] // Num/Bool are parsed but not inspected in the matrix schema.
 enum Val {
     Str(String),
     Num(String),
@@ -225,11 +225,11 @@ fn parse_value(lex: &mut Lex<'_>) -> Result<Val, ParseError> {
 
 /// zerodds-lint: recursion-depth 64
 ///
-/// Indirekt rekursiv via `parse_array` / `parse_object`. Tiefe ist
-/// durch die JSON-Verschachtelungs-Tiefe begrenzt; Caller ist die
-/// `interop-matrix.json`-Eingabe deren Schema max ~3 Ebenen tief
-/// geht (resourceMatrix → vendors → results). 64 als grosszügige
-/// obere Schranke fuer pathologische User-Input-Files.
+/// Indirectly recursive via `parse_array` / `parse_object`. Depth is
+/// bounded by the JSON nesting depth; the caller is the
+/// `interop-matrix.json` input whose schema is at most ~3 levels deep
+/// goes (resourceMatrix → vendors → results). 64 as a generous
+/// upper bound for pathological user input files.
 fn parse_value_after(t: Tok, lex: &mut Lex<'_>) -> Result<Val, ParseError> {
     match t {
         Tok::Lbrace => parse_object(lex),
@@ -281,9 +281,9 @@ fn parse_object(lex: &mut Lex<'_>) -> Result<Val, ParseError> {
 
 /// zerodds-lint: recursion-depth 64
 ///
-/// Indirekt rekursiv via `parse_value_after` (per Element). Tiefe
-/// ist durch die JSON-Verschachtelungs-Tiefe begrenzt — siehe
-/// `parse_value_after` fuer die Begruendung der 64er-Schranke.
+/// Indirectly recursive via `parse_value_after` (per element). Depth
+/// is bounded by the JSON nesting depth — see
+/// `parse_value_after` for the rationale of the 64 bound.
 fn parse_array(lex: &mut Lex<'_>) -> Result<Val, ParseError> {
     let mut out = Vec::new();
     let first = lex.next()?;
@@ -307,10 +307,10 @@ fn parse_array(lex: &mut Lex<'_>) -> Result<Val, ParseError> {
     }
 }
 
-/// Parsed das Matrix-JSON.
+/// Parses the matrix JSON.
 ///
 /// # Errors
-/// `Syntax`/`Missing`/`BadType` siehe [`ParseError`].
+/// `Syntax`/`Missing`/`BadType` see [`ParseError`].
 pub fn parse_matrix_json(json: &str) -> Result<Matrix, ParseError> {
     let mut lex = Lex::new(json);
     let v = parse_value(&mut lex)?;
@@ -377,7 +377,7 @@ pub fn parse_matrix_json(json: &str) -> Result<Matrix, ParseError> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)] // tests duerfen unwrap nutzen.
+#[allow(clippy::unwrap_used)] // tests may use unwrap.
 mod tests {
     use super::*;
 

@@ -1,0 +1,20 @@
+// the unannotated #41 and #42 shape
+module common {
+    module util {
+        struct Location {
+            double x;
+            double y;
+            double z;
+        };
+        struct Orientation {
+            double x;
+            double y;
+            double z;
+        };
+    };
+
+    struct Robot {
+        ::common::util::Location location;
+        ::common::util::Orientation orientation;
+    };
+};

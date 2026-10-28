@@ -1,32 +1,32 @@
 #!/usr/bin/env bash
-# Regeneriert das Test-CA + Identity-Certs + Permissions/Governance.p7s
-# für DDS-Security-Cross-Vendor-Bench.
+# Regenerates the test CA + identity certs + permissions/governance .p7s
+# for the DDS-Security cross-vendor bench.
 #
-# **NUR FÜR BENCH/TEST**: das `identity_ca` ist self-signed mit hardcoded
-# Subject; die Private-Keys sind unverschlüsselt. NICHT für Production.
+# **FOR BENCH/TEST ONLY**: the `identity_ca` is self-signed with a hardcoded
+# subject; the private keys are unencrypted. NOT for production.
 #
-# Reproduzierbar: jeder Bench-Operator generiert sich lokal sein eigenes
-# Test-CA — wir tracken NICHT die generierten Keys/Certs/p7s im git
-# (siehe .gitignore in diesem Dir).
+# Reproducible: each bench operator generates their own test CA
+# locally — we do NOT track the generated keys/certs/p7s in git
+# (see .gitignore in this dir).
 #
-# Aufruf:
-#   bash gen.sh              # EC-Certs (Cyclone/OpenDDS/ZeroDDS) — Default
-#   KEY_ALGO=RSA bash gen.sh # RSA-Certs (noetig fuer FastDDS-secured cross-vendor)
+# Usage:
+#   bash gen.sh              # EC certs (Cyclone/OpenDDS/ZeroDDS) — default
+#   KEY_ALGO=RSA bash gen.sh # RSA certs (needed for FastDDS-secured cross-vendor)
 
 set -e
 cd "$(dirname "$0")"
 mkdir -p certs
 
-# Schluesselalgorithmus der Identity-Certs: EC P-256 (Default) oder RSA-2048.
-#   KEY_ALGO=EC  (Default): von Cyclone, OpenDDS und ZeroDDS akzeptiert.
-#   KEY_ALGO=RSA          : noetig fuer FastDDS-secured CROSS-VENDOR. FastDDS'
-#     PKI-DH-Handshake lehnt EC-Identity-Certs cross-vendor ab — FastDDS<->
-#     {Cyclone,OpenDDS,ZeroDDS} secured scheitert mit EC ("match timeout"),
-#     funktioniert mit RSA. Das ist VENDOR-seitig (FastDDS), ohne ZeroDDS
-#     reproduzierbar (cyclone<->fastdds-EC scheitert ebenso); FastDDS<->FastDDS
-#     geht mit EC. ZeroDDS interoperiert secured mit beiden Algorithmen.
-#   `genpkey` liefert PKCS#8 (`BEGIN PRIVATE KEY`); ZeroDDS' PKI-Plugin
-#   (rustls-pki-types) erwartet PKCS#8 strikt.
+# Key algorithm of the identity certs: EC P-256 (default) or RSA-2048.
+#   KEY_ALGO=EC  (default): accepted by Cyclone, OpenDDS and ZeroDDS.
+#   KEY_ALGO=RSA          : needed for FastDDS-secured CROSS-VENDOR. FastDDS'
+#     PKI-DH handshake rejects EC identity certs cross-vendor — FastDDS<->
+#     {Cyclone,OpenDDS,ZeroDDS} secured fails with EC ("match timeout"),
+#     works with RSA. This is on the VENDOR side (FastDDS), reproducible
+#     without ZeroDDS (cyclone<->fastdds-EC fails as well); FastDDS<->FastDDS
+#     works with EC. ZeroDDS interoperates secured with both algorithms.
+#   `genpkey` delivers PKCS#8 (`BEGIN PRIVATE KEY`); ZeroDDS' PKI plugin
+#   (rustls-pki-types) expects PKCS#8 strictly.
 KEY_ALGO="${KEY_ALGO:-EC}"
 genkey() {  # $1 = output key path
     case "$KEY_ALGO" in
@@ -35,16 +35,16 @@ genkey() {  # $1 = output key path
     esac
 }
 
-# 1) Identity-CA (Root) — DDS-Security 1.2 §9.3.1.
+# 1) Identity CA (root) — DDS-Security 1.2 §9.3.1.
 genkey certs/identity_ca_key.pem
 openssl req -x509 -new -nodes -key certs/identity_ca_key.pem -days 365 \
     -subj "/CN=ZeroDDS Bench Identity CA" -out certs/identity_ca.pem
 
-# 2) Permissions-CA — für Tests = Identity-CA.
+# 2) Permissions CA — for tests = identity CA.
 cp certs/identity_ca_key.pem certs/permissions_ca_key.pem
 cp certs/identity_ca.pem      certs/permissions_ca.pem
 
-# 3) Per-Participant Identity-Certs (ping + pong), signiert von der Identity-CA.
+# 3) Per-participant identity certs (ping + pong), signed by the identity CA.
 for who in ping pong; do
     genkey certs/${who}_key.pem
     openssl req -new -key certs/${who}_key.pem \
@@ -56,17 +56,17 @@ for who in ping pong; do
     rm /tmp/${who}.csr
 done
 
-# 4) Governance + Permissions via CMS (RFC 5652 SignedData) signiert mit dem
-#    **Permissions-CA-Cert SELBST** — das ist die dokumentierte DDS-Security-
-#    Konvention aller Vendoren:
-#      FastDDS-Docs (Access-Permissions): `openssl smime -sign -signer
-#        maincacert.pem -inkey maincakey.pem` — der Signer IST die CA.
-#      ZettaScale/Cyclone-KB + OpenDDS-Guide: identisch.
-#    FastDDS' PKCS7-Verify nutzt die `smimesign`-Purpose (EKU emailProtection);
-#    ein separates EE-Signer-Cert OHNE diese EKU faellt durch ("PKCS7 data
+# 4) Governance + permissions via CMS (RFC 5652 SignedData) signed with the
+#    **Permissions CA cert ITSELF** — this is the documented DDS-Security
+#    convention of all vendors:
+#      FastDDS docs (Access Permissions): `openssl smime -sign -signer
+#        maincacert.pem -inkey maincakey.pem` — the signer IS the CA.
+#      ZettaScale/Cyclone KB + OpenDDS guide: identical.
+#    FastDDS' PKCS7 verify uses the `smimesign` purpose (EKU emailProtection);
+#    a separate EE signer cert WITHOUT this EKU fails ("PKCS7 data
 #    verification failed", Permissions.cpp). ZeroDDS' CmsPkcs7Verifier
-#    akzeptiert das CA-self-signed-Pattern (self-trust). => EIN Asset-Tree,
-#    den cyclone/fastdds/opendds/zerodds alle verifizieren.
+#    accepts the CA self-signed pattern (self-trust). => ONE asset tree
+#    that cyclone/fastdds/opendds/zerodds all verify.
 openssl smime -sign -in governance.xml -text -out governance.p7s \
     -signer certs/permissions_ca.pem -inkey certs/permissions_ca_key.pem
 for who in ping pong; do
@@ -74,14 +74,14 @@ for who in ping pong; do
         -signer certs/permissions_ca.pem -inkey certs/permissions_ca_key.pem
 done
 
-# 5) Cyclone-Security-XML-Config-Generator.
-#    CYCLONEDDS_URI braucht absolute `file://`-Pfade auf die Assets. Statt
-#    sie hart zu kodieren, generieren wir die XMLs hier mit dem zur Gen-Zeit
-#    aufgeloesten Absolutpfad ($PWD = dieses security/-Dir) — so laeuft die
-#    Matrix aus JEDEM Checkout, ohne externe Hardcode-Pfade oder manuelles
-#    Editieren. fastdds/opendds/zerodds lesen ihre Pfade dagegen generisch
-#    aus ZERODDS_BENCH_SEC_DIR (programmatisch in den *_app.cpp), brauchen
-#    also keine generierte Datei.
+# 5) Cyclone security XML config generator.
+#    CYCLONEDDS_URI needs absolute `file://` paths to the assets. Instead of
+#    hardcoding them, we generate the XMLs here with the absolute path resolved
+#    at generation time ($PWD = this security/ dir) — so the
+#    matrix runs from ANY checkout, without external hardcoded paths or manual
+#    editing. fastdds/opendds/zerodds, by contrast, read their paths generically
+#    from ZERODDS_BENCH_SEC_DIR (programmatically in the *_app.cpp), and so
+#    need no generated file.
 ABS="$(pwd)"
 for who in ping pong; do
     cat > "cyclone_security_${who}.xml" <<XML

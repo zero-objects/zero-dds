@@ -1,0 +1,5 @@
+// bounded `string`, empty
+@final struct Sample {
+    string<16> text;
+    long tail;
+};

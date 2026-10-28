@@ -1,0 +1,22 @@
+## wireprobe-opensplice, exit 1
+### stderr
+tests/interop-corpus/resolve-module-named-as-type/type.idl: the layout could not be planned: error [IDL0008] at 19..40: `common` is the name of the scope it is declared in, and OMG IDL 4.2 §7.5.2 does not admit redefining that name within its own immediate scope (OMG IDL 4.2 §7.5.2)
+
+wireprobe-fill — the C that fills one sample, for a foreign probe
+
+    --vendor cyclone|rti|fastdds|ros|omniorb|tao|jacorb|hdds
+                            which generated API to write against
+                            (`ros` is rosidl's, not a DDS vendor's;
+                            omniorb and tao share the OMG IDL-to-C++
+                            mapping, jacorb the IDL-to-Java one)
+    --idl <file>            the IDL source
+    --type <ScopedName>     the top-level type
+    --values <file>         the sample, as JSON
+    --defaults              the type's own default sample, instead of --values
+    --out <file>            where the statements go (default: stdout)
+    --print-c-name          print the generated name of --type and stop
+                            (with --vendor fastdds, the C++ one;
+                            with --vendor ros, rosidl's; with omniorb
+                            or tao the OMG C++ one, with jacorb Java,
+                            with hdds the Rust path)
+

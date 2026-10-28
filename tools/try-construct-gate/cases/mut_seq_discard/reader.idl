@@ -1,0 +1,1 @@
+@mutable struct S { long a; sequence<long, 4> m; long b; };

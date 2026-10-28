@@ -6,17 +6,24 @@
 #ifndef ZERODDS_DDS_CORE_INSTANCEHANDLE_HPP
 #define ZERODDS_DDS_CORE_INSTANCEHANDLE_HPP
 
-#include <cstdint>
+
+#include "zerodds/psm/cxx.hpp"
+#include <stdint.h>
+
+#include <stdint.h>
+
+#include "dds/core/TInstanceHandle.hpp"
 #include <vector>
 
 namespace dds {
 namespace core {
 
-/// InstanceHandle (DDS-PSM-Cxx 1.0 §7.5.4). Represents a handle to a
-/// DDS data instance.
+namespace detail {
+
+/// The state of an InstanceHandle: a 64-bit handle, 0 for HANDLE_NIL.
 class InstanceHandle {
 public:
-    InstanceHandle() = default;
+    InstanceHandle() : value_(0) {}
     /// Constructs from a 64-bit raw handle.
     explicit InstanceHandle(uint64_t v) : value_(v) {}
     /// HANDLE_NIL sentinel.
@@ -31,8 +38,13 @@ public:
     bool operator<(const InstanceHandle& rhs) const { return value_ < rhs.value_; }
 
 private:
-    uint64_t value_{0};
+    uint64_t value_;
 };
+
+} // namespace detail
+
+/// InstanceHandle (DDS-PSM-Cxx 1.0 §7.5.4). Represents a handle to a DDS data instance.
+typedef TInstanceHandle<detail::InstanceHandle> InstanceHandle;
 
 /// InstanceHandleSeq (DDS-PSM-Cxx 1.0 §7.5.5).
 typedef std::vector<InstanceHandle> InstanceHandleSeq;

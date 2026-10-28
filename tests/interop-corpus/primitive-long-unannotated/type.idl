@@ -1,0 +1,5 @@
+// primitive `long`, unannotated
+struct Sample {
+    long long_signed_a;
+    long long_signed_b;
+};

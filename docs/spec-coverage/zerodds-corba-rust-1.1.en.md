@@ -88,7 +88,7 @@ Implementation:
 
 **Repo:** `crates/corba-rust/src/ami_emit.rs::emit_ami`; `crates/corba-rust/src/runtime.rs::AsyncCorbaChannel`.
 
-**Tests:** `snapshot_codegen.rs::ami_codegen_emits_handler_sendc_sendp_poller`, `no_ami_codegen_without_annotation`; `compile_check.rs::compile_check_ami`; `corba-interop/tests/ami.rs` (5), `ami_generated.rs` (2).
+**Tests:** `crates/corba-rust/tests/snapshot_codegen.rs::{ami_codegen_emits_handler_sendc_sendp_poller, no_ami_codegen_without_annotation}`; `crates/corba-rust/tests/compile_check.rs::compile_check_ami`; `crates/corba-interop/tests/ami.rs::{ami_callback_multiple_outstanding, ami_polling_get_reply, ami_mixed_callback_and_polling, ami_exception_path, ami_get_reply_unknown_id_errors}`, `crates/corba-interop/tests/ami_generated.rs`.
 
 **Status:** done
 
@@ -100,7 +100,7 @@ Implementation:
 
 **Repo:** `crates/corba-interop/src/runtime.rs::AmhEndpoint`, `AmhResponseHandler`.
 
-**Tests:** `corba-interop/tests/amh.rs::amh_deferred_out_of_order_replies`, `amh_deferred_exception`.
+**Tests:** `crates/corba-interop/tests/amh.rs::{amh_deferred_out_of_order_replies, amh_deferred_exception}`.
 
 **Status:** done
 
@@ -112,7 +112,7 @@ Implementation:
 
 **Repo:** `crates/corba-interop/src/runtime.rs::BiDirEndpoint`, `target_object_key`.
 
-**Tests:** `corba-interop/tests/bidir_giop.rs` (3); cross-ORB live `bidir_cross_orb.rs` (JacORB, ignored).
+**Tests:** `crates/corba-interop/tests/bidir_giop.rs::{acceptor_callbacks_originator_over_shared_connection, out_of_order_reply_demux, sync_invoke_convenience}`; cross-ORB live `crates/corba-interop/tests/bidir_cross_orb.rs` (JacORB, `#[ignore]`).
 
 **Status:** done
 
@@ -124,7 +124,7 @@ Implementation:
 
 **Repo:** `crates/corba-ccm/src/orb_extensions.rs::RequestInfo`, `InterceptorRegistry`, `ServiceContextInjector`.
 
-**Tests:** `corba-ccm/tests/pi_service_contexts.rs` (3): OTS/CSIv2 SC via PI, forward_reference, reply SC.
+**Tests:** `crates/corba-ccm/tests/pi_service_contexts.rs::{ots_and_csiv2_service_contexts_route_through_pi, forward_reference_via_receive_other, reply_service_context_injection}`.
 
 **Status:** done
 
@@ -136,7 +136,7 @@ Implementation:
 
 **Repo:** `crates/corba-rust/src/runtime.rs`; transport `crates/corba-interop/src/runtime.rs`.
 
-**Tests:** `crates/corba-rust/src/runtime.rs::tests` (object-reference roundtrip); transport via interop e2e.
+**Tests:** `crates/corba-rust/src/runtime.rs::{value_tag_list_rejects_oversized_count, value_tag_chunked_list_rejects_oversized_count, value_tag_list_within_bound_still_round_trips}` (the `ValueBase`/`ValueMarshal` stream through `ValueStreamReader`/`ValueStreamWriter`), `crates/corba-rust/tests/wire_giop.rs::{wire_value_tag_roundtrip, wire_value_tag_null_reference, wire_value_tag_truly_unsupported_returns_error, wire_value_tag_multi_repo_id_list_round_trip, wire_value_tag_chunked_with_list_round_trip}`; `CorbaConnection`/`AsyncCorbaChannel`/`SkeletonResult` through the generated code: `crates/corba-rust/tests/compile_check.rs::{compile_check_simple_interface, compile_check_interface_raises}`.
 
 **Status:** done
 
@@ -146,9 +146,14 @@ Implementation:
 
 **Spec:** §10 — `*_REPOSITORY_ID` constant per interface/valuetype, scope-correct (module path + typeprefix).
 
-**Repo:** `crates/corba-rust/src/emitter.rs` (scope threading), `valuetype_emit.rs`, `interface_emit.rs::exc_repo_id`.
+**Repo:** `crates/corba-rust/src/emitter.rs` (scope threading),
+`crates/corba-rust/src/valuetype_emit.rs`,
+`crates/corba-rust/src/interface_emit.rs::emit_interface_exceptions_enum`
+(the `*_REPOSITORY_ID` constant comes from
+`zerodds_corba_codegen::repository_id_of`, i.e. from the model that
+carries `#pragma prefix`/`version`/`ID`).
 
-**Tests:** `snapshot_codegen.rs::scope_aware_exception_repo_id_with_typeprefix`.
+**Tests:** `crates/corba-rust/tests/snapshot_codegen.rs::scope_aware_exception_repo_id_with_typeprefix`.
 
 **Status:** done
 
@@ -170,4 +175,14 @@ Implementation:
 
 14 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
 
-Test run: `cargo test -p zerodds-corba-rust -p zerodds-corba-interop -p zerodds-corba-ccm` — all suites green, 0 failed.
+Test run:
+
+* `cargo test -p zerodds-corba-rust --lib --test wire_giop --test snapshot_codegen`
+  — 20 + 5 + 14 tests green, 0 failed.
+* `cargo test -p zerodds-corba-interop --test amh --test ami --test ami_generated --test bidir_giop`
+  — 2 + 5 + 2 + 3 tests green, 0 failed.
+* `cargo test -p zerodds-corba-ccm --test pi_service_contexts` — 3 tests
+  green, 0 failed.
+
+The `*_cross_orb.rs` suites of §13 carry `#[ignore]` and run only on the
+Linux bench host with JacORB/omniORB/TAO.

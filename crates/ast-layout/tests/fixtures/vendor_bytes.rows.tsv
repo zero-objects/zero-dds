@@ -1,0 +1,1105 @@
+set	case	vendor	encoding	endian	status	length	header	bytes
+byte-gate	array	cyclone	xcdr1	le	wrote	32		01000000020000000300000000000000000000000000f83f0000000000000440
+byte-gate	array	cyclone	xcdr2	le	wrote	28		010000000200000003000000000000000000f83f0000000000000440
+byte-gate	array	cyclone	xcdr1	be	wrote	32		000000010000000200000003000000003ff80000000000004004000000000000
+byte-gate	array	cyclone	xcdr2	be	wrote	28		0000000100000002000000033ff80000000000004004000000000000
+byte-gate	array	rti	xcdr1	le	wrote	32	0001	01000000020000000300000000000000000000000000f83f0000000000000440
+byte-gate	array	rti	xcdr2	le	wrote	28	0007	010000000200000003000000000000000000f83f0000000000000440
+byte-gate	array	rti	xcdr1	be	wrote	32		000000010000000200000003000000003ff80000000000004004000000000000
+byte-gate	array	rti	xcdr2	be	wrote	28		0000000100000002000000033ff80000000000004004000000000000
+byte-gate	array	fastdds	xcdr1	le	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	array	fastdds	xcdr2	le	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	array	fastdds	xcdr1	be	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	array	fastdds	xcdr2	be	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	array	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	array	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	array	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	array	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	array_enum	cyclone	xcdr1	le	wrote	8		0000000002000000
+byte-gate	array_enum	cyclone	xcdr2	le	wrote	12		080000000000000002000000
+byte-gate	array_enum	cyclone	xcdr1	be	wrote	8		0000000000000002
+byte-gate	array_enum	cyclone	xcdr2	be	wrote	12		000000080000000000000002
+byte-gate	array_enum	rti	xcdr1	le	wrote	8	0001	0000000002000000
+byte-gate	array_enum	rti	xcdr2	le	wrote	8	0007	0000000002000000
+byte-gate	array_enum	rti	xcdr1	be	wrote	8		0000000000000002
+byte-gate	array_enum	rti	xcdr2	be	wrote	8		0000000000000002
+byte-gate	array_enum	fastdds	xcdr1	le	wrote	8	0001	0000000002000000
+byte-gate	array_enum	fastdds	xcdr2	le	wrote	8	0007	0000000002000000
+byte-gate	array_enum	fastdds	xcdr1	be	wrote	8	0000	0000000000000002
+byte-gate	array_enum	fastdds	xcdr2	be	wrote	8	0006	0000000000000002
+byte-gate	array_enum	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	array_enum	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	array_enum	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	array_enum	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	array_nested	cyclone	xcdr1	le	wrote	16		01000000020000000300000004000000
+byte-gate	array_nested	cyclone	xcdr2	le	wrote	20		1000000001000000020000000300000004000000
+byte-gate	array_nested	cyclone	xcdr1	be	wrote	16		00000001000000020000000300000004
+byte-gate	array_nested	cyclone	xcdr2	be	wrote	20		0000001000000001000000020000000300000004
+byte-gate	array_nested	rti	xcdr1	le	wrote	16	0001	01000000020000000300000004000000
+byte-gate	array_nested	rti	xcdr2	le	wrote	16	0007	01000000020000000300000004000000
+byte-gate	array_nested	rti	xcdr1	be	wrote	16		00000001000000020000000300000004
+byte-gate	array_nested	rti	xcdr2	be	wrote	16		00000001000000020000000300000004
+byte-gate	array_nested	fastdds	xcdr1	le	wrote	16	0001	01000000020000000300000004000000
+byte-gate	array_nested	fastdds	xcdr2	le	wrote	20	0007	1000000001000000020000000300000004000000
+byte-gate	array_nested	fastdds	xcdr1	be	wrote	16	0000	00000001000000020000000300000004
+byte-gate	array_nested	fastdds	xcdr2	be	wrote	20	0006	0000001000000001000000020000000300000004
+byte-gate	array_nested	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	array_nested	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	array_nested	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	array_nested	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	array_seq	cyclone	xcdr1	le	wrote	29		02000000010000000200000003000000040000000500000006000000ab
+byte-gate	array_seq	cyclone	xcdr2	le	wrote	33		1c00000002000000010000000200000003000000040000000500000006000000ab
+byte-gate	array_seq	cyclone	xcdr1	be	wrote	29		00000002000000010000000200000003000000040000000500000006ab
+byte-gate	array_seq	cyclone	xcdr2	be	wrote	33		0000001c00000002000000010000000200000003000000040000000500000006ab
+byte-gate	array_seq	rti	xcdr1	le	wrote	29	0001	02000000010000000200000003000000040000000500000006000000ab
+byte-gate	array_seq	rti	xcdr2	le	wrote	29	0007	02000000010000000200000003000000040000000500000006000000ab
+byte-gate	array_seq	rti	xcdr1	be	wrote	29		00000002000000010000000200000003000000040000000500000006ab
+byte-gate	array_seq	rti	xcdr2	be	wrote	29		00000002000000010000000200000003000000040000000500000006ab
+byte-gate	array_seq	fastdds	xcdr1	le	wrote	29	0001	02000000010000000200000003000000040000000500000006000000ab
+byte-gate	array_seq	fastdds	xcdr2	le	wrote	33	0007	1c00000002000000010000000200000003000000040000000500000006000000ab
+byte-gate	array_seq	fastdds	xcdr1	be	wrote	29	0000	00000002000000010000000200000003000000040000000500000006ab
+byte-gate	array_seq	fastdds	xcdr2	be	wrote	33	0006	0000001c00000002000000010000000200000003000000040000000500000006ab
+byte-gate	array_seq	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	array_seq	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	array_seq	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	array_seq	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	array_stride	cyclone	xcdr1	le	wrote	15		010000000200000003000000040077
+byte-gate	array_stride	cyclone	xcdr2	le	wrote	19		0e000000010000000200000003000000040077
+byte-gate	array_stride	cyclone	xcdr1	be	wrote	15		000000010002000000000003000477
+byte-gate	array_stride	cyclone	xcdr2	be	wrote	19		0000000e000000010002000000000003000477
+byte-gate	array_stride	rti	xcdr1	le	wrote	15	0001	010000000200000003000000040077
+byte-gate	array_stride	rti	xcdr2	le	wrote	15	0007	010000000200000003000000040077
+byte-gate	array_stride	rti	xcdr1	be	wrote	15		000000010002000000000003000477
+byte-gate	array_stride	rti	xcdr2	be	wrote	15		000000010002000000000003000477
+byte-gate	array_stride	fastdds	xcdr1	le	wrote	15	0001	010000000200000003000000040077
+byte-gate	array_stride	fastdds	xcdr2	le	wrote	19	0007	0e000000010000000200000003000000040077
+byte-gate	array_stride	fastdds	xcdr1	be	wrote	15	0000	000000010002000000000003000477
+byte-gate	array_stride	fastdds	xcdr2	be	wrote	19	0006	0000000e000000010002000300000003000477
+byte-gate	array_stride	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	array_stride	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	array_stride	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	array_stride	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	enum_bb8_200	cyclone	xcdr1	le	wrote	3		c809ab
+byte-gate	enum_bb8_200	cyclone	xcdr2	le	wrote	3		c809ab
+byte-gate	enum_bb8_200	cyclone	xcdr1	be	wrote	3		c809ab
+byte-gate	enum_bb8_200	cyclone	xcdr2	be	wrote	3		c809ab
+byte-gate	enum_bb8_200	rti	xcdr1	le	ungenerated			ERROR com.rti.ndds.nddsgen.Nddsgen gen.idl line 1:0 Only 32 bit bounds are accepted for enumerations.
+byte-gate	enum_bb8_200	rti	xcdr2	le	ungenerated			ERROR com.rti.ndds.nddsgen.Nddsgen gen.idl line 1:0 Only 32 bit bounds are accepted for enumerations.
+byte-gate	enum_bb8_200	rti	xcdr1	be	ungenerated			ERROR com.rti.ndds.nddsgen.Nddsgen gen.idl line 1:0 Only 32 bit bounds are accepted for enumerations.
+byte-gate	enum_bb8_200	rti	xcdr2	be	ungenerated			ERROR com.rti.ndds.nddsgen.Nddsgen gen.idl line 1:0 Only 32 bit bounds are accepted for enumerations.
+byte-gate	enum_bb8_200	fastdds	xcdr1	le	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	enum_bb8_200	fastdds	xcdr2	le	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	enum_bb8_200	fastdds	xcdr1	be	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	enum_bb8_200	fastdds	xcdr2	be	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	enum_bb8_200	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	enum_bb8_200	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	enum_bb8_200	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	enum_bb8_200	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	enum_negative	cyclone	xcdr1	le	ungenerated			gen.idl:1:15: @value(-1) cannot be applied to 'enumerator' element
+byte-gate	enum_negative	cyclone	xcdr2	le	ungenerated			gen.idl:1:15: @value(-1) cannot be applied to 'enumerator' element
+byte-gate	enum_negative	cyclone	xcdr1	be	ungenerated			gen.idl:1:15: @value(-1) cannot be applied to 'enumerator' element
+byte-gate	enum_negative	cyclone	xcdr2	be	ungenerated			gen.idl:1:15: @value(-1) cannot be applied to 'enumerator' element
+byte-gate	enum_negative	rti	xcdr1	le	wrote	8	0001	ffffffffffffff7f
+byte-gate	enum_negative	rti	xcdr2	le	wrote	8	0007	ffffffffffffff7f
+byte-gate	enum_negative	rti	xcdr1	be	wrote	8		ffffffff7fffffff
+byte-gate	enum_negative	rti	xcdr2	be	wrote	8		ffffffff7fffffff
+byte-gate	enum_negative	fastdds	xcdr1	le	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	enum_negative	fastdds	xcdr2	le	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	enum_negative	fastdds	xcdr1	be	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	enum_negative	fastdds	xcdr2	be	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	enum_negative	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	enum_negative	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	enum_negative	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	enum_negative	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	enumeration	cyclone	xcdr1	le	wrote	8		0200000009000000
+byte-gate	enumeration	cyclone	xcdr2	le	wrote	8		0200000009000000
+byte-gate	enumeration	cyclone	xcdr1	be	wrote	8		0000000200000009
+byte-gate	enumeration	cyclone	xcdr2	be	wrote	8		0000000200000009
+byte-gate	enumeration	rti	xcdr1	le	wrote	8	0001	0200000009000000
+byte-gate	enumeration	rti	xcdr2	le	wrote	8	0007	0200000009000000
+byte-gate	enumeration	rti	xcdr1	be	wrote	8		0000000200000009
+byte-gate	enumeration	rti	xcdr2	be	wrote	8		0000000200000009
+byte-gate	enumeration	fastdds	xcdr1	le	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	enumeration	fastdds	xcdr2	le	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	enumeration	fastdds	xcdr1	be	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	enumeration	fastdds	xcdr2	be	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	enumeration	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	enumeration	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	enumeration	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	enumeration	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	ext_appendable	cyclone	xcdr1	le	wrote	18		0700000000000000000000000000f83ffdff
+byte-gate	ext_appendable	cyclone	xcdr2	le	wrote	18		0e00000007000000000000000000f83ffdff
+byte-gate	ext_appendable	cyclone	xcdr1	be	wrote	18		00000007000000003ff8000000000000fffd
+byte-gate	ext_appendable	cyclone	xcdr2	be	wrote	18		0000000e000000073ff8000000000000fffd
+byte-gate	ext_appendable	rti	xcdr1	le	wrote	18	0001	0700000000000000000000000000f83ffdff
+byte-gate	ext_appendable	rti	xcdr2	le	wrote	18	0009	0e00000007000000000000000000f83ffdff
+byte-gate	ext_appendable	rti	xcdr1	be	wrote	18		00000007000000003ff8000000000000fffd
+byte-gate	ext_appendable	rti	xcdr2	be	wrote	18		0000000e000000073ff8000000000000fffd
+byte-gate	ext_appendable	fastdds	xcdr1	le	wrote	18	0001	0700000000000000000000000000f83ffdff
+byte-gate	ext_appendable	fastdds	xcdr2	le	wrote	18	0007	0e00000007000000000000000000f83ffdff
+byte-gate	ext_appendable	fastdds	xcdr1	be	wrote	18	0000	00000007000000003ff8000000000000fffd
+byte-gate	ext_appendable	fastdds	xcdr2	be	wrote	18	0006	0000000e000000073ff8000000000000fffd
+byte-gate	ext_appendable	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	ext_appendable	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	ext_appendable	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	ext_appendable	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	ext_final	cyclone	xcdr1	le	wrote	18		0700000000000000000000000000f83ffdff
+byte-gate	ext_final	cyclone	xcdr2	le	wrote	14		07000000000000000000f83ffdff
+byte-gate	ext_final	cyclone	xcdr1	be	wrote	18		00000007000000003ff8000000000000fffd
+byte-gate	ext_final	cyclone	xcdr2	be	wrote	14		000000073ff8000000000000fffd
+byte-gate	ext_final	rti	xcdr1	le	wrote	18	0001	0700000000000000000000000000f83ffdff
+byte-gate	ext_final	rti	xcdr2	le	wrote	14	0007	07000000000000000000f83ffdff
+byte-gate	ext_final	rti	xcdr1	be	wrote	18		00000007000000003ff8000000000000fffd
+byte-gate	ext_final	rti	xcdr2	be	wrote	14		000000073ff8000000000000fffd
+byte-gate	ext_final	fastdds	xcdr1	le	wrote	18	0001	0700000000000000000000000000f83ffdff
+byte-gate	ext_final	fastdds	xcdr2	le	wrote	14	0007	07000000000000000000f83ffdff
+byte-gate	ext_final	fastdds	xcdr1	be	wrote	18	0000	00000007000000003ff8000000000000fffd
+byte-gate	ext_final	fastdds	xcdr2	be	wrote	14	0006	000000073ff8000000000000fffd
+byte-gate	ext_final	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	ext_final	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	ext_final	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	ext_final	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	ext_mutable	cyclone	xcdr1	le	wrote	56		017f0800000000000400000007000000017f08000100000008000000000000000000f83f017f08000200000004000000fdff0000027f0000
+byte-gate	ext_mutable	cyclone	xcdr2	le	wrote	30		1a000000000000200700000001000030000000000000f83f02000010fdff
+byte-gate	ext_mutable	cyclone	xcdr1	be	wrote	56		7f0100080000000000000004000000077f01000800000001000000083ff80000000000007f0100080000000200000004fffd00007f020000
+byte-gate	ext_mutable	cyclone	xcdr2	be	wrote	30		0000001a2000000000000007300000013ff800000000000010000002fffd
+byte-gate	ext_mutable	rti	xcdr1	le	wrote	32	0003	000004000700000001000800000000000000f83f02000400fdff0000027f0000
+byte-gate	ext_mutable	rti	xcdr2	le	wrote	30	000b	1a000000000000200700000001000030000000000000f83f02000010fdff
+byte-gate	ext_mutable	rti	xcdr1	be	wrote	32		0000000400000007000100083ff800000000000000020004fffd00007f020000
+byte-gate	ext_mutable	rti	xcdr2	be	wrote	30		0000001a2000000000000007300000013ff800000000000010000002fffd
+byte-gate	ext_mutable	fastdds	xcdr1	le	wrote	32	0001	000004000700000001000800000000000000f83f02000200fdff0000023f0000
+byte-gate	ext_mutable	fastdds	xcdr2	le	wrote	30	0007	1a000000000000200700000001000030000000000000f83f02000010fdff
+byte-gate	ext_mutable	fastdds	xcdr1	be	wrote	32	0000	0000000400000007000100083ff800000000000000020002fffd00003f020000
+byte-gate	ext_mutable	fastdds	xcdr2	be	wrote	30	0006	0000001a2000000000000007300000013ff800000000000010000002fffd
+byte-gate	ext_mutable	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	ext_mutable	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	ext_mutable	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	ext_mutable	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	keyed	cyclone	xcdr1	le	wrote	8		0500000006000000
+byte-gate	keyed	cyclone	xcdr2	le	wrote	8		0500000006000000
+byte-gate	keyed	cyclone	xcdr1	be	wrote	8		0000000500000006
+byte-gate	keyed	cyclone	xcdr2	be	wrote	8		0000000500000006
+byte-gate	keyed	rti	xcdr1	le	wrote	8	0001	0500000006000000
+byte-gate	keyed	rti	xcdr2	le	wrote	8	0007	0500000006000000
+byte-gate	keyed	rti	xcdr1	be	wrote	8		0000000500000006
+byte-gate	keyed	rti	xcdr2	be	wrote	8		0000000500000006
+byte-gate	keyed	fastdds	xcdr1	le	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	keyed	fastdds	xcdr2	le	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	keyed	fastdds	xcdr1	be	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	keyed	fastdds	xcdr2	be	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	keyed	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	keyed	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	keyed	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	keyed	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	lc_5_6_7	cyclone	xcdr1	le	wrote	112		017f080001000000080000000400000061626300017f080002000000080000000300000001020300017f080003000000080000000100000007000000017f080004000000100000000100000000000000000000000000f83f017f080005000000080000000200000004000500027f0000
+byte-gate	lc_5_6_7	cyclone	xcdr2	le	wrote	72		440000000100005004000000616263000200005003000000010203000300006001000000070000000400007001000000000000000000f83f05000040080000000200000004000500
+byte-gate	lc_5_6_7	cyclone	xcdr1	be	wrote	112		7f010008000000010000000800000004616263007f010008000000020000000800000003010203007f010008000000030000000800000001000000077f010008000000040000001000000001000000003ff80000000000007f010008000000050000000800000002000400057f020000
+byte-gate	lc_5_6_7	cyclone	xcdr2	be	wrote	72		0000004450000001000000046162630050000002000000030102030060000003000000010000000770000004000000013ff800000000000040000005000000080000000200040005
+byte-gate	lc_5_6_7	rti	xcdr1	le	uncompiled			fill.inc:6:54: error: 'struct DDS_OctetSeq' has no member named '_buffer'
+byte-gate	lc_5_6_7	rti	xcdr2	le	uncompiled			fill.inc:6:54: error: 'struct DDS_OctetSeq' has no member named '_buffer'
+byte-gate	lc_5_6_7	rti	xcdr1	be	uncompiled			fill.inc:6:54: error: 'struct DDS_OctetSeq' has no member named '_buffer'
+byte-gate	lc_5_6_7	rti	xcdr2	be	uncompiled			fill.inc:6:54: error: 'struct DDS_OctetSeq' has no member named '_buffer'
+byte-gate	lc_5_6_7	fastdds	xcdr1	le	wrote	72	0001	010008000400000061626300020007000300000001020300030008000100000007000000040010000100000000000000000000000000f83f050008000200000004000500023f0000
+byte-gate	lc_5_6_7	fastdds	xcdr2	le	wrote	68	0007	400000000100005004000000616263000200005003000000010203000300006001000000070000000400007001000000000000000000f83f050000300200000004000500
+byte-gate	lc_5_6_7	fastdds	xcdr1	be	wrote	72	0000	0001000800000004616263000002000700000003010203000003000800000001000000070004001000000001000000003ff80000000000000005000800000002000400053f020000
+byte-gate	lc_5_6_7	fastdds	xcdr2	be	wrote	68	0006	0000004050000001000000046162630050000002000000030102030860000003000000010000000770000004000000013ff8000000000000300000050000000200040005
+byte-gate	lc_5_6_7	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	lc_5_6_7	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	lc_5_6_7	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	lc_5_6_7	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	map_ll	cyclone	xcdr1	le	ungenerated			gen.idl:1:24: syntax error
+byte-gate	map_ll	cyclone	xcdr2	le	ungenerated			gen.idl:1:24: syntax error
+byte-gate	map_ll	cyclone	xcdr1	be	ungenerated			gen.idl:1:24: syntax error
+byte-gate	map_ll	cyclone	xcdr2	be	ungenerated			gen.idl:1:24: syntax error
+byte-gate	map_ll	rti	xcdr1	le	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 1:26 no viable alternative at input '<' in member declaration
+byte-gate	map_ll	rti	xcdr2	le	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 1:26 no viable alternative at input '<' in member declaration
+byte-gate	map_ll	rti	xcdr1	be	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 1:26 no viable alternative at input '<' in member declaration
+byte-gate	map_ll	rti	xcdr2	be	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 1:26 no viable alternative at input '<' in member declaration
+byte-gate	map_ll	fastdds	xcdr1	le	wrote	13	0001	010000000100000002000000ab
+byte-gate	map_ll	fastdds	xcdr2	le	wrote	13	0007	010000000100000002000000ab
+byte-gate	map_ll	fastdds	xcdr1	be	wrote	13	0000	000000010000000100000002ab
+byte-gate	map_ll	fastdds	xcdr2	be	wrote	13	0006	000000010000000100000002ab
+byte-gate	map_ll	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	map_ll	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	map_ll	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	map_ll	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	map_string	cyclone	xcdr1	le	ungenerated			gen.idl:1:24: syntax error
+byte-gate	map_string	cyclone	xcdr2	le	ungenerated			gen.idl:1:24: syntax error
+byte-gate	map_string	cyclone	xcdr1	be	ungenerated			gen.idl:1:24: syntax error
+byte-gate	map_string	cyclone	xcdr2	be	ungenerated			gen.idl:1:24: syntax error
+byte-gate	map_string	rti	xcdr1	le	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 1:26 no viable alternative at input '<' in member declaration
+byte-gate	map_string	rti	xcdr2	le	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 1:26 no viable alternative at input '<' in member declaration
+byte-gate	map_string	rti	xcdr1	be	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 1:26 no viable alternative at input '<' in member declaration
+byte-gate	map_string	rti	xcdr2	be	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 1:26 no viable alternative at input '<' in member declaration
+byte-gate	map_string	fastdds	xcdr1	le	wrote	17	0001	01000000070000000400000061626300ab
+byte-gate	map_string	fastdds	xcdr2	le	wrote	21	0007	1000000001000000070000000400000061626300ab
+byte-gate	map_string	fastdds	xcdr1	be	wrote	17	0000	00000001000000070000000461626300ab
+byte-gate	map_string	fastdds	xcdr2	be	wrote	21	0006	0000001000000001000000070000000461626300ab
+byte-gate	map_string	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	map_string	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	map_string	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	map_string	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	map_struct	cyclone	xcdr1	le	ungenerated			gen.idl:2:24: syntax error
+byte-gate	map_struct	cyclone	xcdr2	le	ungenerated			gen.idl:2:24: syntax error
+byte-gate	map_struct	cyclone	xcdr1	be	ungenerated			gen.idl:2:24: syntax error
+byte-gate	map_struct	cyclone	xcdr2	be	ungenerated			gen.idl:2:24: syntax error
+byte-gate	map_struct	rti	xcdr1	le	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 2:26 no viable alternative at input '<' in member declaration
+byte-gate	map_struct	rti	xcdr2	le	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 2:26 no viable alternative at input '<' in member declaration
+byte-gate	map_struct	rti	xcdr1	be	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 2:26 no viable alternative at input '<' in member declaration
+byte-gate	map_struct	rti	xcdr2	be	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 2:26 no viable alternative at input '<' in member declaration
+byte-gate	map_struct	fastdds	xcdr1	le	wrote	17	0001	01000000070000000100000002000000ab
+byte-gate	map_struct	fastdds	xcdr2	le	wrote	21	0007	1000000001000000070000000100000002000000ab
+byte-gate	map_struct	fastdds	xcdr1	be	wrote	17	0000	00000001000000070000000100000002ab
+byte-gate	map_struct	fastdds	xcdr2	be	wrote	21	0006	0000001000000001000000070000000100000002ab
+byte-gate	map_struct	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	map_struct	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	map_struct	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	map_struct	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	mixed	cyclone	xcdr1	le	wrote	48		01abc7cf31d400007929edffceca23004f9721c5ffffffff15cd5b070000000000002040000000006e861bf0f9210940
+byte-gate	mixed	cyclone	xcdr2	le	wrote	44		01abc7cf31d400007929edffceca23004f9721c5ffffffff15cd5b0700000000000020406e861bf0f9210940
+byte-gate	mixed	cyclone	xcdr1	be	wrote	48		01abcfc7d4310000ffed29790023caceffffffffc521974f00000000075bcd154020000000000000400921f9f01b866e
+byte-gate	mixed	cyclone	xcdr2	be	wrote	44		01abcfc7d4310000ffed29790023caceffffffffc521974f00000000075bcd1540200000400921f9f01b866e
+byte-gate	mixed	rti	xcdr1	le	wrote	48	0001	01abc7cf31d400007929edffceca23004f9721c5ffffffff15cd5b070000000000002040000000006e861bf0f9210940
+byte-gate	mixed	rti	xcdr2	le	wrote	44	0007	01abc7cf31d400007929edffceca23004f9721c5ffffffff15cd5b0700000000000020406e861bf0f9210940
+byte-gate	mixed	rti	xcdr1	be	wrote	48		01abcfc7d4310000ffed29790023caceffffffffc521974f00000000075bcd154020000000000000400921f9f01b866e
+byte-gate	mixed	rti	xcdr2	be	wrote	44		01abcfc7d4310000ffed29790023caceffffffffc521974f00000000075bcd1540200000400921f9f01b866e
+byte-gate	mixed	fastdds	xcdr1	le	wrote	48	0001	01abc7cf31d400007929edffceca23004f9721c5ffffffff15cd5b070000000000002040000000006e861bf0f9210940
+byte-gate	mixed	fastdds	xcdr2	le	wrote	44	0007	01abc7cf31d400007929edffceca23004f9721c5ffffffff15cd5b0700000000000020406e861bf0f9210940
+byte-gate	mixed	fastdds	xcdr1	be	wrote	48	0000	01abcfc7d4310000ffed29790023caceffffffffc521974f00000000075bcd154020000000000000400921f9f01b866e
+byte-gate	mixed	fastdds	xcdr2	be	wrote	44	0006	01abcfc7d4310000ffed29790023caceffffffffc521974f00000000075bcd1540200000400921f9f01b866e
+byte-gate	mixed	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	mixed	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	mixed	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	mixed	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	mut_mustunderstand	cyclone	xcdr1	le	wrote	36		017f0800010000400400000007000000017f08000200000004000000feffffff027f0000
+byte-gate	mut_mustunderstand	cyclone	xcdr2	le	wrote	20		10000000010000a00700000002000020feffffff
+byte-gate	mut_mustunderstand	cyclone	xcdr1	be	wrote	36		7f0100084000000100000004000000077f0100080000000200000004fffffffe7f020000
+byte-gate	mut_mustunderstand	cyclone	xcdr2	be	wrote	20		00000010a00000010000000720000002fffffffe
+byte-gate	mut_mustunderstand	rti	xcdr1	le	wrote	20	0003	014004000700000002000400feffffff027f0000
+byte-gate	mut_mustunderstand	rti	xcdr2	le	wrote	20	000b	10000000010000a00700000002000020feffffff
+byte-gate	mut_mustunderstand	rti	xcdr1	be	wrote	20		400100040000000700020004fffffffe7f020000
+byte-gate	mut_mustunderstand	rti	xcdr2	be	wrote	20		00000010a00000010000000720000002fffffffe
+byte-gate	mut_mustunderstand	fastdds	xcdr1	le	wrote	20	0001	010004000700000002000400feffffff023f0000
+byte-gate	mut_mustunderstand	fastdds	xcdr2	le	wrote	20	0007	10000000010000200700000002000020feffffff
+byte-gate	mut_mustunderstand	fastdds	xcdr1	be	wrote	20	0000	000100040000000700020004fffffffe3f020000
+byte-gate	mut_mustunderstand	fastdds	xcdr2	be	wrote	20	0006	00000010200000010000000720000002fffffffe
+byte-gate	mut_mustunderstand	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	mut_mustunderstand	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	mut_mustunderstand	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	mut_mustunderstand	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	mut_optional	cyclone	xcdr1	le	wrote	20		017f0800000000000400000007000000027f0000
+byte-gate	mut_optional	cyclone	xcdr2	le	wrote	12		080000000000002007000000
+byte-gate	mut_optional	cyclone	xcdr1	be	wrote	20		7f0100080000000000000004000000077f020000
+byte-gate	mut_optional	cyclone	xcdr2	be	wrote	12		000000082000000000000007
+byte-gate	mut_optional	rti	xcdr1	le	wrote	12	0003	0000040007000000027f0000
+byte-gate	mut_optional	rti	xcdr2	le	wrote	12	000b	080000000000002007000000
+byte-gate	mut_optional	rti	xcdr1	be	wrote	12		00000004000000077f020000
+byte-gate	mut_optional	rti	xcdr2	be	wrote	12		000000082000000000000007
+byte-gate	mut_optional	fastdds	xcdr1	le	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	mut_optional	fastdds	xcdr2	le	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	mut_optional	fastdds	xcdr1	be	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	mut_optional	fastdds	xcdr2	be	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	mut_optional	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	mut_optional	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	mut_optional	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	mut_optional	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	mut_seq_typedef	cyclone	xcdr1	le	wrote	52		017f0800010000000c000000020000000100000002000000017f0800020000000c000000020000000300000004000000027f0000
+byte-gate	mut_seq_typedef	cyclone	xcdr2	le	wrote	36		200000000100006002000000010000000200000002000060020000000300000004000000
+byte-gate	mut_seq_typedef	cyclone	xcdr1	be	wrote	52		7f010008000000010000000c0000000200000001000000027f010008000000020000000c0000000200000003000000047f020000
+byte-gate	mut_seq_typedef	cyclone	xcdr2	be	wrote	36		000000206000000100000002000000010000000260000002000000020000000300000004
+byte-gate	mut_seq_typedef	rti	xcdr1	le	wrote	36	0003	01000c0002000000010000000200000002000c00020000000300000004000000027f0000
+byte-gate	mut_seq_typedef	rti	xcdr2	le	wrote	36	000b	200000000100006002000000010000000200000002000060020000000300000004000000
+byte-gate	mut_seq_typedef	rti	xcdr1	be	wrote	36		0001000c0000000200000001000000020002000c0000000200000003000000047f020000
+byte-gate	mut_seq_typedef	rti	xcdr2	be	wrote	36		000000206000000100000002000000010000000260000002000000020000000300000004
+byte-gate	mut_seq_typedef	fastdds	xcdr1	le	wrote	36	0001	01000c0002000000010000000200000002000c00020000000300000004000000023f0000
+byte-gate	mut_seq_typedef	fastdds	xcdr2	le	wrote	36	0007	200000000100006002000000010000000200000002000060020000000300000004000000
+byte-gate	mut_seq_typedef	fastdds	xcdr1	be	wrote	36	0000	0001000c0000000200000001000000020002000c0000000200000003000000043f020000
+byte-gate	mut_seq_typedef	fastdds	xcdr2	be	wrote	36	0006	000000206000000100000002000000010000000260000002000000020000000300000004
+byte-gate	mut_seq_typedef	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	mut_seq_typedef	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	mut_seq_typedef	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	mut_seq_typedef	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	mut_string	cyclone	xcdr1	le	wrote	40		017f080001000000080000000400000061626300017f0800020000000400000007000000027f0000
+byte-gate	mut_string	cyclone	xcdr2	le	wrote	24		140000000100005004000000616263000200002007000000
+byte-gate	mut_string	cyclone	xcdr1	be	wrote	40		7f010008000000010000000800000004616263007f0100080000000200000004000000077f020000
+byte-gate	mut_string	cyclone	xcdr2	be	wrote	24		000000145000000100000004616263002000000200000007
+byte-gate	mut_string	rti	xcdr1	le	wrote	24	0003	0100080004000000616263000200040007000000027f0000
+byte-gate	mut_string	rti	xcdr2	le	wrote	24	000b	140000000100005004000000616263000200002007000000
+byte-gate	mut_string	rti	xcdr1	be	wrote	24		00010008000000046162630000020004000000077f020000
+byte-gate	mut_string	rti	xcdr2	be	wrote	24		000000145000000100000004616263002000000200000007
+byte-gate	mut_string	fastdds	xcdr1	le	wrote	24	0001	0100080004000000616263000200040007000000023f0000
+byte-gate	mut_string	fastdds	xcdr2	le	wrote	24	0007	140000000100005004000000616263000200002007000000
+byte-gate	mut_string	fastdds	xcdr1	be	wrote	24	0000	00010008000000046162630000020004000000073f020000
+byte-gate	mut_string	fastdds	xcdr2	be	wrote	24	0006	000000145000000100000004616263002000000200000007
+byte-gate	mut_string	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	mut_string	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	mut_string	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	mut_string	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	mut_union	cyclone	xcdr1	le	ungenerated			gen.idl:1:10: Mutable unions are not supported yet
+byte-gate	mut_union	cyclone	xcdr2	le	ungenerated			gen.idl:1:10: Mutable unions are not supported yet
+byte-gate	mut_union	cyclone	xcdr1	be	ungenerated			gen.idl:1:10: Mutable unions are not supported yet
+byte-gate	mut_union	cyclone	xcdr2	be	ungenerated			gen.idl:1:10: Mutable unions are not supported yet
+byte-gate	mut_union	rti	xcdr1	le	wrote	24	0001	00000400010000000100040007000000027f0000feffffff
+byte-gate	mut_union	rti	xcdr2	le	wrote	24	0007	1000000000000020010000000100002007000000feffffff
+byte-gate	mut_union	rti	xcdr1	be	wrote	24		000000040000000100010004000000077f020000fffffffe
+byte-gate	mut_union	rti	xcdr2	be	wrote	24		0000001020000000000000012000000100000007fffffffe
+byte-gate	mut_union	fastdds	xcdr1	le	wrote	24	0001	00000400010000000100040007000000023f0000feffffff
+byte-gate	mut_union	fastdds	xcdr2	le	wrote	24	0007	1000000000000020010000000100002007000000feffffff
+byte-gate	mut_union	fastdds	xcdr1	be	wrote	24	0000	000000040000000100010004000000073f020000fffffffe
+byte-gate	mut_union	fastdds	xcdr2	be	wrote	24	0006	0000001020000000000000012000000100000007fffffffe
+byte-gate	mut_union	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	mut_union	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	mut_union	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	mut_union	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	nested_mutable	cyclone	xcdr1	le	wrote	36		017f08000500000014000000017f0800050000000400000007000000027f0000027f0000
+byte-gate	nested_mutable	cyclone	xcdr2	le	wrote	24		14000000050000400c000000080000000500002007000000
+byte-gate	nested_mutable	cyclone	xcdr1	be	wrote	36		7f01000800000005000000147f0100080000000500000004000000077f0200007f020000
+byte-gate	nested_mutable	cyclone	xcdr2	be	wrote	24		00000014400000050000000c000000082000000500000007
+byte-gate	nested_mutable	rti	xcdr1	le	wrote	20	0003	05000c000500040007000000027f0000027f0000
+byte-gate	nested_mutable	rti	xcdr2	le	wrote	20	000b	1000000005000050080000000500002007000000
+byte-gate	nested_mutable	rti	xcdr1	be	wrote	20		0005000c00050004000000077f0200007f020000
+byte-gate	nested_mutable	rti	xcdr2	be	wrote	20		0000001050000005000000082000000500000007
+byte-gate	nested_mutable	fastdds	xcdr1	le	wrote	20	0001	05000c000500040007000000023f0000023f0000
+byte-gate	nested_mutable	fastdds	xcdr2	le	wrote	20	0007	1000000005000050080000000500002007000000
+byte-gate	nested_mutable	fastdds	xcdr1	be	wrote	20	0000	0005000c00050004000000073f0200003f020000
+byte-gate	nested_mutable	fastdds	xcdr2	be	wrote	20	0006	0000001050000005000000082000000500000007
+byte-gate	nested_mutable	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	nested_mutable	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	nested_mutable	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	nested_mutable	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	nested_seq	cyclone	xcdr1	le	wrote	25		020000000200000001000000020000000100000003000000ab
+byte-gate	nested_seq	cyclone	xcdr2	le	wrote	29		18000000020000000200000001000000020000000100000003000000ab
+byte-gate	nested_seq	cyclone	xcdr1	be	wrote	25		000000020000000200000001000000020000000100000003ab
+byte-gate	nested_seq	cyclone	xcdr2	be	wrote	29		00000018000000020000000200000001000000020000000100000003ab
+byte-gate	nested_seq	rti	xcdr1	le	ungenerated			ERROR com.rti.ndds.nddsgen.Nddsgen gen.idl line 1:35 Sequence of sequences are not supported. Please use an alias/typedef instead
+byte-gate	nested_seq	rti	xcdr2	le	ungenerated			ERROR com.rti.ndds.nddsgen.Nddsgen gen.idl line 1:35 Sequence of sequences are not supported. Please use an alias/typedef instead
+byte-gate	nested_seq	rti	xcdr1	be	ungenerated			ERROR com.rti.ndds.nddsgen.Nddsgen gen.idl line 1:35 Sequence of sequences are not supported. Please use an alias/typedef instead
+byte-gate	nested_seq	rti	xcdr2	be	ungenerated			ERROR com.rti.ndds.nddsgen.Nddsgen gen.idl line 1:35 Sequence of sequences are not supported. Please use an alias/typedef instead
+byte-gate	nested_seq	fastdds	xcdr1	le	wrote	25	0001	020000000200000001000000020000000100000003000000ab
+byte-gate	nested_seq	fastdds	xcdr2	le	wrote	29	0007	18000000020000000200000001000000020000000100000003000000ab
+byte-gate	nested_seq	fastdds	xcdr1	be	wrote	25	0000	000000020000000200000001000000020000000100000003ab
+byte-gate	nested_seq	fastdds	xcdr2	be	wrote	29	0006	00000018000000020000000200000001000000020000000100000003ab
+byte-gate	nested_seq	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	nested_seq	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	nested_seq	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	nested_seq	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	opt_final_absent	cyclone	xcdr1	le	wrote	20		7929edff017f08000100000000000000feffffff
+byte-gate	opt_final_absent	cyclone	xcdr2	le	wrote	12		7929edff00000000feffffff
+byte-gate	opt_final_absent	cyclone	xcdr1	be	wrote	20		ffed29797f0100080000000100000000fffffffe
+byte-gate	opt_final_absent	cyclone	xcdr2	be	wrote	12		ffed297900000000fffffffe
+byte-gate	opt_final_absent	rti	xcdr1	le	wrote	12	0001	7929edff01000000feffffff
+byte-gate	opt_final_absent	rti	xcdr2	le	wrote	12	0007	7929edff00000000feffffff
+byte-gate	opt_final_absent	rti	xcdr1	be	wrote	12		ffed297900010000fffffffe
+byte-gate	opt_final_absent	rti	xcdr2	be	wrote	12		ffed297900000000fffffffe
+byte-gate	opt_final_absent	fastdds	xcdr1	le	wrote	12	0001	7929edff01000000feffffff
+byte-gate	opt_final_absent	fastdds	xcdr2	le	wrote	12	0007	7929edff00000000feffffff
+byte-gate	opt_final_absent	fastdds	xcdr1	be	wrote	12	0000	ffed297900010000fffffffe
+byte-gate	opt_final_absent	fastdds	xcdr2	be	wrote	12	0006	ffed297900010000fffffffe
+byte-gate	opt_final_absent	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	opt_final_absent	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	opt_final_absent	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	opt_final_absent	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	opt_final_present	cyclone	xcdr1	le	wrote	24		7929edff017f08000100000001000000ab000000feffffff
+byte-gate	opt_final_present	cyclone	xcdr2	le	wrote	12		7929edff01ab0000feffffff
+byte-gate	opt_final_present	cyclone	xcdr1	be	wrote	24		ffed29797f0100080000000100000001ab000000fffffffe
+byte-gate	opt_final_present	cyclone	xcdr2	be	wrote	12		ffed297901ab0000fffffffe
+byte-gate	opt_final_present	rti	xcdr1	le	wrote	16	0001	7929edff01000400ab000000feffffff
+byte-gate	opt_final_present	rti	xcdr2	le	wrote	12	0007	7929edff01ab0400feffffff
+byte-gate	opt_final_present	rti	xcdr1	be	wrote	16		ffed297900010004ab000000fffffffe
+byte-gate	opt_final_present	rti	xcdr2	be	wrote	12		ffed297901ab0000fffffffe
+byte-gate	opt_final_present	fastdds	xcdr1	le	wrote	16	0001	7929edff01000100ab000000feffffff
+byte-gate	opt_final_present	fastdds	xcdr2	le	wrote	12	0007	7929edff01ab0100feffffff
+byte-gate	opt_final_present	fastdds	xcdr1	be	wrote	16	0000	ffed297900010001ab000000fffffffe
+byte-gate	opt_final_present	fastdds	xcdr2	be	wrote	12	0006	ffed297901ab0001fffffffe
+byte-gate	opt_final_present	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	opt_final_present	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	opt_final_present	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	opt_final_present	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	pid_3f00	cyclone	xcdr1	le	wrote	36		017f0800ff3e00000400000007000000017f0800003f00000400000009000000027f0000
+byte-gate	pid_3f00	cyclone	xcdr2	le	wrote	20		10000000ff3e002007000000003f002009000000
+byte-gate	pid_3f00	cyclone	xcdr1	be	wrote	36		7f01000800003eff00000004000000077f01000800003f0000000004000000097f020000
+byte-gate	pid_3f00	cyclone	xcdr2	be	wrote	20		0000001020003eff0000000720003f0000000009
+byte-gate	pid_3f00	rti	xcdr1	le	wrote	20	0003	ff3e040007000000003f040009000000027f0000
+byte-gate	pid_3f00	rti	xcdr2	le	wrote	20	000b	10000000ff3e002007000000003f002009000000
+byte-gate	pid_3f00	rti	xcdr1	be	wrote	20		3eff0004000000073f000004000000097f020000
+byte-gate	pid_3f00	rti	xcdr2	be	wrote	20		0000001020003eff0000000720003f0000000009
+byte-gate	pid_3f00	fastdds	xcdr1	le	wrote	20	0001	ff3e040007000000003f040009000000023f0000
+byte-gate	pid_3f00	fastdds	xcdr2	le	wrote	20	0007	10000000ff3e002007000000003f002009000000
+byte-gate	pid_3f00	fastdds	xcdr1	be	wrote	20	0000	3eff0004000000073f000004000000093f020000
+byte-gate	pid_3f00	fastdds	xcdr2	be	wrote	20	0006	0000001020003eff0000000720003f0000000009
+byte-gate	pid_3f00	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	pid_3f00	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	pid_3f00	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	pid_3f00	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	point	cyclone	xcdr1	le	wrote	16		01000000000000000000000000000040
+byte-gate	point	cyclone	xcdr2	le	wrote	12		010000000000000000000040
+byte-gate	point	cyclone	xcdr1	be	wrote	16		00000001000000004000000000000000
+byte-gate	point	cyclone	xcdr2	be	wrote	12		000000014000000000000000
+byte-gate	point	rti	xcdr1	le	wrote	16	0001	01000000000000000000000000000040
+byte-gate	point	rti	xcdr2	le	wrote	12	0007	010000000000000000000040
+byte-gate	point	rti	xcdr1	be	wrote	16		00000001000000004000000000000000
+byte-gate	point	rti	xcdr2	be	wrote	12		000000014000000000000000
+byte-gate	point	fastdds	xcdr1	le	wrote	16	0001	01000000000000000000000000000040
+byte-gate	point	fastdds	xcdr2	le	wrote	12	0007	010000000000000000000040
+byte-gate	point	fastdds	xcdr1	be	wrote	16	0000	00000001000000004000000000000000
+byte-gate	point	fastdds	xcdr2	be	wrote	12	0006	000000014000000000000000
+byte-gate	point	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	point	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	point	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	point	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	robot	cyclone	xcdr1	le	wrote	48		000000000000f03f00000000000000400000000000000840000000000000104000000000000014400000000000001840
+byte-gate	robot	cyclone	xcdr2	le	wrote	48		000000000000f03f00000000000000400000000000000840000000000000104000000000000014400000000000001840
+byte-gate	robot	cyclone	xcdr1	be	wrote	48		3ff000000000000040000000000000004008000000000000401000000000000040140000000000004018000000000000
+byte-gate	robot	cyclone	xcdr2	be	wrote	48		3ff000000000000040000000000000004008000000000000401000000000000040140000000000004018000000000000
+byte-gate	robot	rti	xcdr1	le	wrote	48	0001	000000000000f03f00000000000000400000000000000840000000000000104000000000000014400000000000001840
+byte-gate	robot	rti	xcdr2	le	wrote	60	0009	3800000018000000000000000000f03f0000000000000040000000000000084018000000000000000000104000000000000014400000000000001840
+byte-gate	robot	rti	xcdr1	be	wrote	48		3ff000000000000040000000000000004008000000000000401000000000000040140000000000004018000000000000
+byte-gate	robot	rti	xcdr2	be	wrote	60		00000038000000183ff00000000000004000000000000000400800000000000000000018401000000000000040140000000000004018000000000000
+byte-gate	robot	fastdds	xcdr1	le	ungenerated			Processing the file gen.idl... gen.idl:17:8: error: '::' was not defined previously gen.idl:18:8: error: '::' was not defined previously 
+byte-gate	robot	fastdds	xcdr2	le	ungenerated			Processing the file gen.idl... gen.idl:17:8: error: '::' was not defined previously gen.idl:18:8: error: '::' was not defined previously 
+byte-gate	robot	fastdds	xcdr1	be	ungenerated			Processing the file gen.idl... gen.idl:17:8: error: '::' was not defined previously gen.idl:18:8: error: '::' was not defined previously 
+byte-gate	robot	fastdds	xcdr2	be	ungenerated			Processing the file gen.idl... gen.idl:17:8: error: '::' was not defined previously gen.idl:18:8: error: '::' was not defined previously 
+byte-gate	robot	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	robot	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	robot	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	robot	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	seq_appendable	cyclone	xcdr1	le	wrote	20		0200000001000000020000000300000004000000
+byte-gate	seq_appendable	cyclone	xcdr2	le	wrote	32		1c00000002000000080000000100000002000000080000000300000004000000
+byte-gate	seq_appendable	cyclone	xcdr1	be	wrote	20		0000000200000001000000020000000300000004
+byte-gate	seq_appendable	cyclone	xcdr2	be	wrote	32		0000001c00000002000000080000000100000002000000080000000300000004
+byte-gate	seq_appendable	rti	xcdr1	le	wrote	20	0001	0200000001000000020000000300000004000000
+byte-gate	seq_appendable	rti	xcdr2	le	wrote	28	0007	02000000080000000100000002000000080000000300000004000000
+byte-gate	seq_appendable	rti	xcdr1	be	wrote	20		0000000200000001000000020000000300000004
+byte-gate	seq_appendable	rti	xcdr2	be	wrote	28		00000002000000080000000100000002000000080000000300000004
+byte-gate	seq_appendable	fastdds	xcdr1	le	wrote	20	0001	0200000001000000020000000300000004000000
+byte-gate	seq_appendable	fastdds	xcdr2	le	wrote	32	0007	1c00000002000000080000000100000002000000080000000300000004000000
+byte-gate	seq_appendable	fastdds	xcdr1	be	wrote	20	0000	0000000200000001000000020000000300000004
+byte-gate	seq_appendable	fastdds	xcdr2	be	wrote	32	0006	0000001c00000002000000080000000100000002000000080000000300000004
+byte-gate	seq_appendable	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	seq_appendable	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	seq_appendable	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	seq_appendable	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	seq_array	cyclone	xcdr1	le	wrote	21		0200000001000000020000000100000003000000ab
+byte-gate	seq_array	cyclone	xcdr2	le	wrote	25		140000000200000001000000020000000100000003000000ab
+byte-gate	seq_array	cyclone	xcdr1	be	wrote	21		0000000200000001000000020000000100000003ab
+byte-gate	seq_array	cyclone	xcdr2	be	wrote	25		000000140000000200000001000000020000000100000003ab
+byte-gate	seq_array	rti	xcdr1	le	wrote	21	0001	0200000001000000020000000100000003000000ab
+byte-gate	seq_array	rti	xcdr2	le	wrote	21	0007	0200000001000000020000000100000003000000ab
+byte-gate	seq_array	rti	xcdr1	be	wrote	21		0000000200000001000000020000000100000003ab
+byte-gate	seq_array	rti	xcdr2	be	wrote	21		0000000200000001000000020000000100000003ab
+byte-gate	seq_array	fastdds	xcdr1	le	wrote	21	0001	0200000001000000020000000100000003000000ab
+byte-gate	seq_array	fastdds	xcdr2	le	wrote	25	0007	140000000200000001000000020000000100000003000000ab
+byte-gate	seq_array	fastdds	xcdr1	be	wrote	21	0000	0000000200000001000000020000000100000003ab
+byte-gate	seq_array	fastdds	xcdr2	be	wrote	25	0006	000000140000000200000001000000020000000100000003ab
+byte-gate	seq_array	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	seq_array	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	seq_array	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	seq_array	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	seq_bitmask	cyclone	xcdr1	le	wrote	7		020000000180ab
+byte-gate	seq_bitmask	cyclone	xcdr2	le	wrote	11		06000000020000000180ab
+byte-gate	seq_bitmask	cyclone	xcdr1	be	wrote	7		000000020180ab
+byte-gate	seq_bitmask	cyclone	xcdr2	be	wrote	11		00000006000000020180ab
+byte-gate	seq_bitmask	rti	xcdr1	le	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 1:14 mismatched input 'bitmask' expecting EOF
+byte-gate	seq_bitmask	rti	xcdr2	le	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 1:14 mismatched input 'bitmask' expecting EOF
+byte-gate	seq_bitmask	rti	xcdr1	be	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 1:14 mismatched input 'bitmask' expecting EOF
+byte-gate	seq_bitmask	rti	xcdr2	be	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 1:14 mismatched input 'bitmask' expecting EOF
+byte-gate	seq_bitmask	fastdds	xcdr1	le	wrote	7	0001	020000000180ab
+byte-gate	seq_bitmask	fastdds	xcdr2	le	wrote	7	0007	020000000180ab
+byte-gate	seq_bitmask	fastdds	xcdr1	be	wrote	7	0000	000000020180ab
+byte-gate	seq_bitmask	fastdds	xcdr2	be	wrote	7	0006	000000020180ab
+byte-gate	seq_bitmask	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	seq_bitmask	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	seq_bitmask	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	seq_bitmask	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	seq_enum	cyclone	xcdr1	le	wrote	12		020000000000000002000000
+byte-gate	seq_enum	cyclone	xcdr2	le	wrote	16		0c000000020000000000000002000000
+byte-gate	seq_enum	cyclone	xcdr1	be	wrote	12		000000020000000000000002
+byte-gate	seq_enum	cyclone	xcdr2	be	wrote	16		0000000c000000020000000000000002
+byte-gate	seq_enum	rti	xcdr1	le	wrote	12	0001	020000000000000002000000
+byte-gate	seq_enum	rti	xcdr2	le	wrote	12	0007	020000000000000002000000
+byte-gate	seq_enum	rti	xcdr1	be	wrote	12		000000020000000000000002
+byte-gate	seq_enum	rti	xcdr2	be	wrote	12		000000020000000000000002
+byte-gate	seq_enum	fastdds	xcdr1	le	wrote	12	0001	020000000000000002000000
+byte-gate	seq_enum	fastdds	xcdr2	le	wrote	12	0007	020000000000000002000000
+byte-gate	seq_enum	fastdds	xcdr1	be	wrote	12	0000	000000020000000000000002
+byte-gate	seq_enum	fastdds	xcdr2	be	wrote	12	0006	000000020000000000000002
+byte-gate	seq_enum	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	seq_enum	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	seq_enum	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	seq_enum	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	seq_long	cyclone	xcdr1	le	wrote	16		03000000010000000200000003000000
+byte-gate	seq_long	cyclone	xcdr2	le	wrote	16		03000000010000000200000003000000
+byte-gate	seq_long	cyclone	xcdr1	be	wrote	16		00000003000000010000000200000003
+byte-gate	seq_long	cyclone	xcdr2	be	wrote	16		00000003000000010000000200000003
+byte-gate	seq_long	rti	xcdr1	le	wrote	16	0001	03000000010000000200000003000000
+byte-gate	seq_long	rti	xcdr2	le	wrote	16	0007	03000000010000000200000003000000
+byte-gate	seq_long	rti	xcdr1	be	wrote	16		00000003000000010000000200000003
+byte-gate	seq_long	rti	xcdr2	be	wrote	16		00000003000000010000000200000003
+byte-gate	seq_long	fastdds	xcdr1	le	wrote	16	0001	03000000010000000200000003000000
+byte-gate	seq_long	fastdds	xcdr2	le	wrote	16	0007	03000000010000000200000003000000
+byte-gate	seq_long	fastdds	xcdr1	be	wrote	16	0000	00000003000000010000000200000003
+byte-gate	seq_long	fastdds	xcdr2	be	wrote	16	0006	00000003000000010000000200000003
+byte-gate	seq_long	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	seq_long	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	seq_long	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	seq_long	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	seq_struct	cyclone	xcdr1	le	wrote	20		0200000001000000020000000300000004000000
+byte-gate	seq_struct	cyclone	xcdr2	le	wrote	24		140000000200000001000000020000000300000004000000
+byte-gate	seq_struct	cyclone	xcdr1	be	wrote	20		0000000200000001000000020000000300000004
+byte-gate	seq_struct	cyclone	xcdr2	be	wrote	24		000000140000000200000001000000020000000300000004
+byte-gate	seq_struct	rti	xcdr1	le	wrote	20	0001	0200000001000000020000000300000004000000
+byte-gate	seq_struct	rti	xcdr2	le	wrote	20	0007	0200000001000000020000000300000004000000
+byte-gate	seq_struct	rti	xcdr1	be	wrote	20		0000000200000001000000020000000300000004
+byte-gate	seq_struct	rti	xcdr2	be	wrote	20		0000000200000001000000020000000300000004
+byte-gate	seq_struct	fastdds	xcdr1	le	wrote	20	0001	0200000001000000020000000300000004000000
+byte-gate	seq_struct	fastdds	xcdr2	le	wrote	24	0007	140000000200000001000000020000000300000004000000
+byte-gate	seq_struct	fastdds	xcdr1	be	wrote	20	0000	0000000200000001000000020000000300000004
+byte-gate	seq_struct	fastdds	xcdr2	be	wrote	24	0006	000000140000000200000001000000020000000300000004
+byte-gate	seq_struct	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	seq_struct	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	seq_struct	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	seq_struct	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	seq_wstring	cyclone	xcdr1	le	wrote	21		0200000004000000610062000400000063006400ab
+byte-gate	seq_wstring	cyclone	xcdr2	le	wrote	25		140000000200000004000000610062000400000063006400ab
+byte-gate	seq_wstring	cyclone	xcdr1	be	wrote	21		0000000200000004610062000000000463006400ab
+byte-gate	seq_wstring	cyclone	xcdr2	be	wrote	25		000000140000000200000004610062000000000463006400ab
+byte-gate	seq_wstring	rti	xcdr1	le	wrote	37	0001	020000000300000061000000620000000000000003000000630000006400000000000000ab
+byte-gate	seq_wstring	rti	xcdr2	le	wrote	21	0007	0200000004000000610062000400000063006400ab
+byte-gate	seq_wstring	rti	xcdr1	be	wrote	37		000000020000000300000061000000620000000000000003000000630000006400000000ab
+byte-gate	seq_wstring	rti	xcdr2	be	wrote	21		0000000200000004006100620000000400630064ab
+byte-gate	seq_wstring	fastdds	xcdr1	le	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	seq_wstring	fastdds	xcdr2	le	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	seq_wstring	fastdds	xcdr1	be	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	seq_wstring	fastdds	xcdr2	be	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	seq_wstring	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	seq_wstring	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	seq_wstring	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	seq_wstring	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	string_member	cyclone	xcdr1	le	wrote	12		040000006162630007000000
+byte-gate	string_member	cyclone	xcdr2	le	wrote	12		040000006162630007000000
+byte-gate	string_member	cyclone	xcdr1	be	wrote	12		000000046162630000000007
+byte-gate	string_member	cyclone	xcdr2	be	wrote	12		000000046162630000000007
+byte-gate	string_member	rti	xcdr1	le	wrote	12	0001	040000006162630007000000
+byte-gate	string_member	rti	xcdr2	le	wrote	12	0007	040000006162630007000000
+byte-gate	string_member	rti	xcdr1	be	wrote	12		000000046162630000000007
+byte-gate	string_member	rti	xcdr2	be	wrote	12		000000046162630000000007
+byte-gate	string_member	fastdds	xcdr1	le	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	string_member	fastdds	xcdr2	le	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	string_member	fastdds	xcdr1	be	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	string_member	fastdds	xcdr2	be	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	string_member	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	string_member	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	string_member	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	string_member	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	struct_inherit	cyclone	xcdr1	le	wrote	17		7929edfffeff0000182d4454fb210940ab
+byte-gate	struct_inherit	cyclone	xcdr2	le	wrote	17		7929edfffeff0000182d4454fb210940ab
+byte-gate	struct_inherit	cyclone	xcdr1	be	wrote	17		ffed2979fffe0000400921fb54442d18ab
+byte-gate	struct_inherit	cyclone	xcdr2	be	wrote	17		ffed2979fffe0000400921fb54442d18ab
+byte-gate	struct_inherit	rti	xcdr1	le	wrote	17	0001	7929edfffeff0000182d4454fb210940ab
+byte-gate	struct_inherit	rti	xcdr2	le	wrote	17	0007	7929edfffeff0000182d4454fb210940ab
+byte-gate	struct_inherit	rti	xcdr1	be	wrote	17		ffed2979fffe0000400921fb54442d18ab
+byte-gate	struct_inherit	rti	xcdr2	be	wrote	17		ffed2979fffe0000400921fb54442d18ab
+byte-gate	struct_inherit	fastdds	xcdr1	le	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	struct_inherit	fastdds	xcdr2	le	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	struct_inherit	fastdds	xcdr1	be	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	struct_inherit	fastdds	xcdr2	be	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	struct_inherit	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	struct_inherit	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	struct_inherit	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	struct_inherit	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	struct_inherit_app	cyclone	xcdr1	le	wrote	17		7929edfffeff0000182d4454fb210940ab
+byte-gate	struct_inherit_app	cyclone	xcdr2	le	wrote	21		110000007929edfffeff0000182d4454fb210940ab
+byte-gate	struct_inherit_app	cyclone	xcdr1	be	wrote	17		ffed2979fffe0000400921fb54442d18ab
+byte-gate	struct_inherit_app	cyclone	xcdr2	be	wrote	21		00000011ffed2979fffe0000400921fb54442d18ab
+byte-gate	struct_inherit_app	rti	xcdr1	le	wrote	17	0001	7929edfffeff0000182d4454fb210940ab
+byte-gate	struct_inherit_app	rti	xcdr2	le	wrote	21	0009	110000007929edfffeff4454182d4454fb210940ab
+byte-gate	struct_inherit_app	rti	xcdr1	be	wrote	17		ffed2979fffe0000400921fb54442d18ab
+byte-gate	struct_inherit_app	rti	xcdr2	be	wrote	21		00000011ffed2979fffe0000400921fb54442d18ab
+byte-gate	struct_inherit_app	fastdds	xcdr1	le	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	struct_inherit_app	fastdds	xcdr2	le	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	struct_inherit_app	fastdds	xcdr1	be	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	struct_inherit_app	fastdds	xcdr2	be	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	struct_inherit_app	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	struct_inherit_app	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	struct_inherit_app	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	struct_inherit_app	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	struct_inherit_mut	cyclone	xcdr1	le	wrote	72		017f080000000000040000007929edff017f08000100000004000000feff0000017f08000200000008000000182d4454fb210940017f08000300000004000000ab000000027f0000
+byte-gate	struct_inherit_mut	cyclone	xcdr2	le	wrote	37		21000000000000207929edff01000010feff000002000030182d4454fb21094003000000ab
+byte-gate	struct_inherit_mut	cyclone	xcdr1	be	wrote	72		7f0100080000000000000004ffed29797f0100080000000100000004fffe00007f0100080000000200000008400921fb54442d187f0100080000000300000004ab0000007f020000
+byte-gate	struct_inherit_mut	cyclone	xcdr2	be	wrote	37		0000002120000000ffed297910000001fffe000030000002400921fb54442d1800000003ab
+byte-gate	struct_inherit_mut	rti	xcdr1	le	wrote	40	0003	000004007929edff01000400feff000002000800182d4454fb21094003000400ab000000027f0000
+byte-gate	struct_inherit_mut	rti	xcdr2	le	wrote	37	000b	21000000000000207929edff01000010feff080002000030182d4454fb21094003000000ab
+byte-gate	struct_inherit_mut	rti	xcdr1	be	wrote	40		00000004ffed297900010004fffe000000020008400921fb54442d1800030004ab0000007f020000
+byte-gate	struct_inherit_mut	rti	xcdr2	be	wrote	37		0000002120000000ffed297910000001fffe000030000002400921fb54442d1800000003ab
+byte-gate	struct_inherit_mut	fastdds	xcdr1	le	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	struct_inherit_mut	fastdds	xcdr2	le	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	struct_inherit_mut	fastdds	xcdr1	be	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	struct_inherit_mut	fastdds	xcdr2	be	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	struct_inherit_mut	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	struct_inherit_mut	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	struct_inherit_mut	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	struct_inherit_mut	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	struct_inherit_mut_silent	cyclone	xcdr1	le	wrote	72		017f080000000000040000007929edff017f08000100000004000000feff0000017f08000200000008000000182d4454fb210940017f08000300000004000000ab000000027f0000
+byte-gate	struct_inherit_mut_silent	cyclone	xcdr2	le	wrote	37		21000000000000207929edff01000010feff000002000030182d4454fb21094003000000ab
+byte-gate	struct_inherit_mut_silent	cyclone	xcdr1	be	wrote	72		7f0100080000000000000004ffed29797f0100080000000100000004fffe00007f0100080000000200000008400921fb54442d187f0100080000000300000004ab0000007f020000
+byte-gate	struct_inherit_mut_silent	cyclone	xcdr2	be	wrote	37		0000002120000000ffed297910000001fffe000030000002400921fb54442d1800000003ab
+byte-gate	struct_inherit_mut_silent	rti	xcdr1	le	wrote	40	0003	000004007929edff01000400feff000002000800182d4454fb21094003000400ab000000027f0000
+byte-gate	struct_inherit_mut_silent	rti	xcdr2	le	wrote	37	000b	21000000000000207929edff01000010feff080002000030182d4454fb21094003000000ab
+byte-gate	struct_inherit_mut_silent	rti	xcdr1	be	wrote	40		00000004ffed297900010004fffe000000020008400921fb54442d1800030004ab0000007f020000
+byte-gate	struct_inherit_mut_silent	rti	xcdr2	be	wrote	37		0000002120000000ffed297910000001fffe000030000002400921fb54442d1800000003ab
+byte-gate	struct_inherit_mut_silent	fastdds	xcdr1	le	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	struct_inherit_mut_silent	fastdds	xcdr2	le	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	struct_inherit_mut_silent	fastdds	xcdr1	be	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	struct_inherit_mut_silent	fastdds	xcdr2	be	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	struct_inherit_mut_silent	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	struct_inherit_mut_silent	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	struct_inherit_mut_silent	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	struct_inherit_mut_silent	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	tail_pad	cyclone	xcdr1	le	wrote	6		010000000200
+byte-gate	tail_pad	cyclone	xcdr2	le	wrote	6		010000000200
+byte-gate	tail_pad	cyclone	xcdr1	be	wrote	6		000000010002
+byte-gate	tail_pad	cyclone	xcdr2	be	wrote	6		000000010002
+byte-gate	tail_pad	rti	xcdr1	le	wrote	6	0001	010000000200
+byte-gate	tail_pad	rti	xcdr2	le	wrote	6	0007	010000000200
+byte-gate	tail_pad	rti	xcdr1	be	wrote	6		000000010002
+byte-gate	tail_pad	rti	xcdr2	be	wrote	6		000000010002
+byte-gate	tail_pad	fastdds	xcdr1	le	wrote	6	0001	010000000200
+byte-gate	tail_pad	fastdds	xcdr2	le	wrote	6	0007	010000000200
+byte-gate	tail_pad	fastdds	xcdr1	be	wrote	6	0000	000000010002
+byte-gate	tail_pad	fastdds	xcdr2	be	wrote	6	0006	000000010002
+byte-gate	tail_pad	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	tail_pad	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	tail_pad	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	tail_pad	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	typedef_array	cyclone	xcdr1	le	wrote	28		010000000200000003000000ffffffffffffff7f7929edffffffffff
+byte-gate	typedef_array	cyclone	xcdr2	le	wrote	28		010000000200000003000000ffffffffffffff7f7929edffffffffff
+byte-gate	typedef_array	cyclone	xcdr1	be	wrote	28		000000010000000200000003ffffffff7fffffffffed2979ffffffff
+byte-gate	typedef_array	cyclone	xcdr2	be	wrote	28		000000010000000200000003ffffffff7fffffffffed2979ffffffff
+byte-gate	typedef_array	rti	xcdr1	le	wrote	28	0001	010000000200000003000000ffffffffffffff7f7929edffffffffff
+byte-gate	typedef_array	rti	xcdr2	le	wrote	28	0007	010000000200000003000000ffffffffffffff7f7929edffffffffff
+byte-gate	typedef_array	rti	xcdr1	be	wrote	28		000000010000000200000003ffffffff7fffffffffed2979ffffffff
+byte-gate	typedef_array	rti	xcdr2	be	wrote	28		000000010000000200000003ffffffff7fffffffffed2979ffffffff
+byte-gate	typedef_array	fastdds	xcdr1	le	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	typedef_array	fastdds	xcdr2	le	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	typedef_array	fastdds	xcdr1	be	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	typedef_array	fastdds	xcdr2	be	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	typedef_array	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	typedef_array	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	typedef_array	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	typedef_array	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	union_case	cyclone	xcdr1	le	wrote	8		010000002a000000
+byte-gate	union_case	cyclone	xcdr2	le	wrote	8		010000002a000000
+byte-gate	union_case	cyclone	xcdr1	be	wrote	8		000000010000002a
+byte-gate	union_case	cyclone	xcdr2	be	wrote	8		000000010000002a
+byte-gate	union_case	rti	xcdr1	le	wrote	8	0001	010000002a000000
+byte-gate	union_case	rti	xcdr2	le	wrote	8	0007	010000002a000000
+byte-gate	union_case	rti	xcdr1	be	wrote	8		000000010000002a
+byte-gate	union_case	rti	xcdr2	be	wrote	8		000000010000002a
+byte-gate	union_case	fastdds	xcdr1	le	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	union_case	fastdds	xcdr2	le	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	union_case	fastdds	xcdr1	be	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	union_case	fastdds	xcdr2	be	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	union_case	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	union_case	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	union_case	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	union_case	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	union_disc_bool	cyclone	xcdr1	le	wrote	12		0100000007000000ffffffff
+byte-gate	union_disc_bool	cyclone	xcdr2	le	wrote	12		0100000007000000ffffffff
+byte-gate	union_disc_bool	cyclone	xcdr1	be	wrote	12		0100000000000007ffffffff
+byte-gate	union_disc_bool	cyclone	xcdr2	be	wrote	12		0100000000000007ffffffff
+byte-gate	union_disc_bool	rti	xcdr1	le	wrote	12	0001	0100000007000000ffffffff
+byte-gate	union_disc_bool	rti	xcdr2	le	wrote	12	0007	0100000007000000ffffffff
+byte-gate	union_disc_bool	rti	xcdr1	be	wrote	12		0100000000000007ffffffff
+byte-gate	union_disc_bool	rti	xcdr2	be	wrote	12		0100000000000007ffffffff
+byte-gate	union_disc_bool	fastdds	xcdr1	le	ungenerated			Processing the file gen.idl... gen.idl:1:73: error: boolean switch is malformed. gen.idl:2:19: error: 'UB' was not defined previously 
+byte-gate	union_disc_bool	fastdds	xcdr2	le	ungenerated			Processing the file gen.idl... gen.idl:1:73: error: boolean switch is malformed. gen.idl:2:19: error: 'UB' was not defined previously 
+byte-gate	union_disc_bool	fastdds	xcdr1	be	ungenerated			Processing the file gen.idl... gen.idl:1:73: error: boolean switch is malformed. gen.idl:2:19: error: 'UB' was not defined previously 
+byte-gate	union_disc_bool	fastdds	xcdr2	be	ungenerated			Processing the file gen.idl... gen.idl:1:73: error: boolean switch is malformed. gen.idl:2:19: error: 'UB' was not defined previously 
+byte-gate	union_disc_bool	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	union_disc_bool	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	union_disc_bool	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	union_disc_bool	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	union_disc_bool_default	cyclone	xcdr1	le	wrote	8		0000fdffffffffff
+byte-gate	union_disc_bool_default	cyclone	xcdr2	le	wrote	8		0000fdffffffffff
+byte-gate	union_disc_bool_default	cyclone	xcdr1	be	wrote	8		0000fffdffffffff
+byte-gate	union_disc_bool_default	cyclone	xcdr2	be	wrote	8		0000fffdffffffff
+byte-gate	union_disc_bool_default	rti	xcdr1	le	wrote	8	0001	0000fdffffffffff
+byte-gate	union_disc_bool_default	rti	xcdr2	le	wrote	8	0007	0000fdffffffffff
+byte-gate	union_disc_bool_default	rti	xcdr1	be	wrote	8		0000fffdffffffff
+byte-gate	union_disc_bool_default	rti	xcdr2	be	wrote	8		0000fffdffffffff
+byte-gate	union_disc_bool_default	fastdds	xcdr1	le	ungenerated			Processing the file gen.idl... gen.idl:1:73: error: boolean switch is malformed. gen.idl:2:19: error: 'UB' was not defined previously 
+byte-gate	union_disc_bool_default	fastdds	xcdr2	le	ungenerated			Processing the file gen.idl... gen.idl:1:73: error: boolean switch is malformed. gen.idl:2:19: error: 'UB' was not defined previously 
+byte-gate	union_disc_bool_default	fastdds	xcdr1	be	ungenerated			Processing the file gen.idl... gen.idl:1:73: error: boolean switch is malformed. gen.idl:2:19: error: 'UB' was not defined previously 
+byte-gate	union_disc_bool_default	fastdds	xcdr2	be	ungenerated			Processing the file gen.idl... gen.idl:1:73: error: boolean switch is malformed. gen.idl:2:19: error: 'UB' was not defined previously 
+byte-gate	union_disc_bool_default	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	union_disc_bool_default	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	union_disc_bool_default	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	union_disc_bool_default	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	union_disc_char	cyclone	xcdr1	le	wrote	12		6100000007000000ffffffff
+byte-gate	union_disc_char	cyclone	xcdr2	le	wrote	12		6100000007000000ffffffff
+byte-gate	union_disc_char	cyclone	xcdr1	be	wrote	12		6100000000000007ffffffff
+byte-gate	union_disc_char	cyclone	xcdr2	be	wrote	12		6100000000000007ffffffff
+byte-gate	union_disc_char	rti	xcdr1	le	wrote	12	0001	6100000007000000ffffffff
+byte-gate	union_disc_char	rti	xcdr2	le	wrote	12	0007	6100000007000000ffffffff
+byte-gate	union_disc_char	rti	xcdr1	be	wrote	12		6100000000000007ffffffff
+byte-gate	union_disc_char	rti	xcdr2	be	wrote	12		6100000000000007ffffffff
+byte-gate	union_disc_char	fastdds	xcdr1	le	wrote	12	0001	6100000007000000ffffffff
+byte-gate	union_disc_char	fastdds	xcdr2	le	wrote	12	0007	6100000007000000ffffffff
+byte-gate	union_disc_char	fastdds	xcdr1	be	wrote	12	0000	6100000000000007ffffffff
+byte-gate	union_disc_char	fastdds	xcdr2	be	wrote	12	0006	6100000000000007ffffffff
+byte-gate	union_disc_char	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	union_disc_char	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	union_disc_char	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	union_disc_char	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	union_enum	cyclone	xcdr1	le	wrote	20		0100000000000000182d4454fb210940ffffffff
+byte-gate	union_enum	cyclone	xcdr2	le	wrote	16		01000000182d4454fb210940ffffffff
+byte-gate	union_enum	cyclone	xcdr1	be	wrote	20		0000000100000000400921fb54442d18ffffffff
+byte-gate	union_enum	cyclone	xcdr2	be	wrote	16		00000001400921fb54442d18ffffffff
+byte-gate	union_enum	rti	xcdr1	le	wrote	20	0001	0100000000000000182d4454fb210940ffffffff
+byte-gate	union_enum	rti	xcdr2	le	wrote	20	0007	0c00000001000000182d4454fb210940ffffffff
+byte-gate	union_enum	rti	xcdr1	be	wrote	20		0000000100000000400921fb54442d18ffffffff
+byte-gate	union_enum	rti	xcdr2	be	wrote	20		0000000c00000001400921fb54442d18ffffffff
+byte-gate	union_enum	fastdds	xcdr1	le	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	union_enum	fastdds	xcdr2	le	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	union_enum	fastdds	xcdr1	be	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	union_enum	fastdds	xcdr2	be	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	union_enum	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	union_enum	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	union_enum	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	union_enum	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	union_enum_qual	cyclone	xcdr1	le	uncompiled			fill.inc:1:20: error: 'GREEN' undeclared (first use in this function); did you mean 'm_GREEN'?
+byte-gate	union_enum_qual	cyclone	xcdr2	le	uncompiled			fill.inc:1:20: error: 'GREEN' undeclared (first use in this function); did you mean 'm_GREEN'?
+byte-gate	union_enum_qual	cyclone	xcdr1	be	uncompiled			fill.inc:1:20: error: 'GREEN' undeclared (first use in this function); did you mean 'm_GREEN'?
+byte-gate	union_enum_qual	cyclone	xcdr2	be	uncompiled			fill.inc:1:20: error: 'GREEN' undeclared (first use in this function); did you mean 'm_GREEN'?
+byte-gate	union_enum_qual	rti	xcdr1	le	wrote	20	0001	0100000000000000182d4454fb210940ffffffff
+byte-gate	union_enum_qual	rti	xcdr2	le	wrote	20	0007	0c00000001000000182d4454fb210940ffffffff
+byte-gate	union_enum_qual	rti	xcdr1	be	wrote	20		0000000100000000400921fb54442d18ffffffff
+byte-gate	union_enum_qual	rti	xcdr2	be	wrote	20		0000000c00000001400921fb54442d18ffffffff
+byte-gate	union_enum_qual	fastdds	xcdr1	le	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	union_enum_qual	fastdds	xcdr2	le	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	union_enum_qual	fastdds	xcdr1	be	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	union_enum_qual	fastdds	xcdr2	be	unfilled			no fill.cpp.inc; the C fill assigns to members Fast DDS's C++ mapping reaches through setters
+byte-gate	union_enum_qual	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	union_enum_qual	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	union_enum_qual	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	union_enum_qual	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	wchar_member	cyclone	xcdr1	le	wrote	3		6100ab
+byte-gate	wchar_member	cyclone	xcdr2	le	wrote	3		6100ab
+byte-gate	wchar_member	cyclone	xcdr1	be	wrote	3		0061ab
+byte-gate	wchar_member	cyclone	xcdr2	be	wrote	3		0061ab
+byte-gate	wchar_member	rti	xcdr1	le	wrote	5	0001	61000000ab
+byte-gate	wchar_member	rti	xcdr2	le	wrote	3	0007	6100ab
+byte-gate	wchar_member	rti	xcdr1	be	wrote	5		00000061ab
+byte-gate	wchar_member	rti	xcdr2	be	wrote	3		0061ab
+byte-gate	wchar_member	fastdds	xcdr1	le	wrote	3	0001	6100ab
+byte-gate	wchar_member	fastdds	xcdr2	le	wrote	3	0007	6100ab
+byte-gate	wchar_member	fastdds	xcdr1	be	wrote	3	0000	0061ab
+byte-gate	wchar_member	fastdds	xcdr2	be	wrote	3	0006	0061ab
+byte-gate	wchar_member	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	wchar_member	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	wchar_member	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	wchar_member	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	wstring_member	cyclone	xcdr1	le	wrote	9		0400000061006200ab
+byte-gate	wstring_member	cyclone	xcdr2	le	wrote	9		0400000061006200ab
+byte-gate	wstring_member	cyclone	xcdr1	be	wrote	9		0000000461006200ab
+byte-gate	wstring_member	cyclone	xcdr2	be	wrote	9		0000000461006200ab
+byte-gate	wstring_member	rti	xcdr1	le	wrote	17	0001	03000000610000006200000000000000ab
+byte-gate	wstring_member	rti	xcdr2	le	wrote	9	0007	0400000061006200ab
+byte-gate	wstring_member	rti	xcdr1	be	wrote	17		00000003000000610000006200000000ab
+byte-gate	wstring_member	rti	xcdr2	be	wrote	9		0000000400610062ab
+byte-gate	wstring_member	fastdds	xcdr1	le	wrote	9	0001	0200000061006200ab
+byte-gate	wstring_member	fastdds	xcdr2	le	wrote	9	0007	0200000061006200ab
+byte-gate	wstring_member	fastdds	xcdr1	be	wrote	9	0000	0000000200610062ab
+byte-gate	wstring_member	fastdds	xcdr2	be	wrote	9	0006	0000000200610062ab
+byte-gate	wstring_member	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	wstring_member	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	wstring_member	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	wstring_member	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	wstring_nonbmp	cyclone	xcdr1	le	wrote	9		0400000034d81eddab
+byte-gate	wstring_nonbmp	cyclone	xcdr2	le	wrote	9		0400000034d81eddab
+byte-gate	wstring_nonbmp	cyclone	xcdr1	be	wrote	9		0000000434d81eddab
+byte-gate	wstring_nonbmp	cyclone	xcdr2	be	wrote	9		0000000434d81eddab
+byte-gate	wstring_nonbmp	rti	xcdr1	le	wrote	17	0001	0300000034d800001edd000000000000ab
+byte-gate	wstring_nonbmp	rti	xcdr2	le	wrote	9	0007	0400000034d81eddab
+byte-gate	wstring_nonbmp	rti	xcdr1	be	wrote	17		000000030000d8340000dd1e00000000ab
+byte-gate	wstring_nonbmp	rti	xcdr2	be	wrote	9		00000004d834dd1eab
+byte-gate	wstring_nonbmp	fastdds	xcdr1	le	wrote	7	0001	010000001ed1ab
+byte-gate	wstring_nonbmp	fastdds	xcdr2	le	wrote	7	0007	010000001ed1ab
+byte-gate	wstring_nonbmp	fastdds	xcdr1	be	wrote	7	0000	00000001d11eab
+byte-gate	wstring_nonbmp	fastdds	xcdr2	be	wrote	7	0006	00000001d11eab
+byte-gate	wstring_nonbmp	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	wstring_nonbmp	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	wstring_nonbmp	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+byte-gate	wstring_nonbmp	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+wire-oracle	bitmask_past_bound	cyclone	xcdr1	le	ungenerated			gen.idl:2:46: Position overflow for bit value 'b' (7), bit_bound is 4
+wire-oracle	bitmask_past_bound	cyclone	xcdr2	le	ungenerated			gen.idl:2:46: Position overflow for bit value 'b' (7), bit_bound is 4
+wire-oracle	bitmask_past_bound	cyclone	xcdr1	be	ungenerated			gen.idl:2:46: Position overflow for bit value 'b' (7), bit_bound is 4
+wire-oracle	bitmask_past_bound	cyclone	xcdr2	be	ungenerated			gen.idl:2:46: Position overflow for bit value 'b' (7), bit_bound is 4
+wire-oracle	bitmask_past_bound	rti	xcdr1	le	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 2:0 mismatched input 'bitmask' expecting EOF
+wire-oracle	bitmask_past_bound	rti	xcdr2	le	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 2:0 mismatched input 'bitmask' expecting EOF
+wire-oracle	bitmask_past_bound	rti	xcdr1	be	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 2:0 mismatched input 'bitmask' expecting EOF
+wire-oracle	bitmask_past_bound	rti	xcdr2	be	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 2:0 mismatched input 'bitmask' expecting EOF
+wire-oracle	bitmask_past_bound	fastdds	xcdr1	le	wrote	2	0001	80ab
+wire-oracle	bitmask_past_bound	fastdds	xcdr2	le	wrote	2	0007	80ab
+wire-oracle	bitmask_past_bound	fastdds	xcdr1	be	wrote	2	0000	80ab
+wire-oracle	bitmask_past_bound	fastdds	xcdr2	be	wrote	2	0006	80ab
+wire-oracle	bitmask_past_bound	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+wire-oracle	bitmask_past_bound	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+wire-oracle	bitmask_past_bound	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+wire-oracle	bitmask_past_bound	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+wire-oracle	bitset_chain	cyclone	xcdr1	le	ungenerated			gen.idl:1:1: syntax error
+wire-oracle	bitset_chain	cyclone	xcdr2	le	ungenerated			gen.idl:1:1: syntax error
+wire-oracle	bitset_chain	cyclone	xcdr1	be	ungenerated			gen.idl:1:1: syntax error
+wire-oracle	bitset_chain	cyclone	xcdr2	be	ungenerated			gen.idl:1:1: syntax error
+wire-oracle	bitset_chain	rti	xcdr1	le	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 1:0 mismatched input 'bitset' expecting EOF
+wire-oracle	bitset_chain	rti	xcdr2	le	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 1:0 mismatched input 'bitset' expecting EOF
+wire-oracle	bitset_chain	rti	xcdr1	be	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 1:0 mismatched input 'bitset' expecting EOF
+wire-oracle	bitset_chain	rti	xcdr2	be	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 1:0 mismatched input 'bitset' expecting EOF
+wire-oracle	bitset_chain	fastdds	xcdr1	le	wrote	9	0001	0100000011220300ab
+wire-oracle	bitset_chain	fastdds	xcdr2	le	wrote	9	0007	0100000011220300ab
+wire-oracle	bitset_chain	fastdds	xcdr1	be	wrote	9	0000	0100000000032211ab
+wire-oracle	bitset_chain	fastdds	xcdr2	be	wrote	9	0006	0100000000032211ab
+wire-oracle	bitset_chain	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+wire-oracle	bitset_chain	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+wire-oracle	bitset_chain	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+wire-oracle	bitset_chain	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+wire-oracle	bitset_overwide	cyclone	xcdr1	le	ungenerated			gen.idl:1:1: syntax error
+wire-oracle	bitset_overwide	cyclone	xcdr2	le	ungenerated			gen.idl:1:1: syntax error
+wire-oracle	bitset_overwide	cyclone	xcdr1	be	ungenerated			gen.idl:1:1: syntax error
+wire-oracle	bitset_overwide	cyclone	xcdr2	be	ungenerated			gen.idl:1:1: syntax error
+wire-oracle	bitset_overwide	rti	xcdr1	le	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 1:0 mismatched input 'bitset' expecting EOF
+wire-oracle	bitset_overwide	rti	xcdr2	le	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 1:0 mismatched input 'bitset' expecting EOF
+wire-oracle	bitset_overwide	rti	xcdr1	be	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 1:0 mismatched input 'bitset' expecting EOF
+wire-oracle	bitset_overwide	rti	xcdr2	be	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 1:0 mismatched input 'bitset' expecting EOF
+wire-oracle	bitset_overwide	fastdds	xcdr1	le	wrote	2	0001	00ab
+wire-oracle	bitset_overwide	fastdds	xcdr2	le	wrote	2	0007	00ab
+wire-oracle	bitset_overwide	fastdds	xcdr1	be	wrote	2	0000	00ab
+wire-oracle	bitset_overwide	fastdds	xcdr2	be	wrote	2	0006	00ab
+wire-oracle	bitset_overwide	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+wire-oracle	bitset_overwide	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+wire-oracle	bitset_overwide	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+wire-oracle	bitset_overwide	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+wire-oracle	bitset_wide	cyclone	xcdr1	le	ungenerated			gen.idl:1:1: syntax error
+wire-oracle	bitset_wide	cyclone	xcdr2	le	ungenerated			gen.idl:1:1: syntax error
+wire-oracle	bitset_wide	cyclone	xcdr1	be	ungenerated			gen.idl:1:1: syntax error
+wire-oracle	bitset_wide	cyclone	xcdr2	be	ungenerated			gen.idl:1:1: syntax error
+wire-oracle	bitset_wide	rti	xcdr1	le	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 1:0 mismatched input 'bitset' expecting EOF
+wire-oracle	bitset_wide	rti	xcdr2	le	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 1:0 mismatched input 'bitset' expecting EOF
+wire-oracle	bitset_wide	rti	xcdr1	be	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 1:0 mismatched input 'bitset' expecting EOF
+wire-oracle	bitset_wide	rti	xcdr2	be	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 1:0 mismatched input 'bitset' expecting EOF
+wire-oracle	bitset_wide	fastdds	xcdr1	le	uncompiled			collect2: error: ld returned 1 exit status
+wire-oracle	bitset_wide	fastdds	xcdr2	le	uncompiled			collect2: error: ld returned 1 exit status
+wire-oracle	bitset_wide	fastdds	xcdr1	be	uncompiled			collect2: error: ld returned 1 exit status
+wire-oracle	bitset_wide	fastdds	xcdr2	be	uncompiled			collect2: error: ld returned 1 exit status
+wire-oracle	bitset_wide	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+wire-oracle	bitset_wide	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+wire-oracle	bitset_wide	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+wire-oracle	bitset_wide	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+wire-oracle	fixed_basic	cyclone	xcdr1	le	ungenerated			gen.idl:1:28: syntax error
+wire-oracle	fixed_basic	cyclone	xcdr2	le	ungenerated			gen.idl:1:28: syntax error
+wire-oracle	fixed_basic	cyclone	xcdr1	be	ungenerated			gen.idl:1:28: syntax error
+wire-oracle	fixed_basic	cyclone	xcdr2	be	ungenerated			gen.idl:1:28: syntax error
+wire-oracle	fixed_basic	rti	xcdr1	le	ungenerated			ERROR com.rti.ndds.nddsgen.Nddsgen gen.idl line 1:27 Invalid member type
+wire-oracle	fixed_basic	rti	xcdr2	le	ungenerated			ERROR com.rti.ndds.nddsgen.Nddsgen gen.idl line 1:27 Invalid member type
+wire-oracle	fixed_basic	rti	xcdr1	be	ungenerated			ERROR com.rti.ndds.nddsgen.Nddsgen gen.idl line 1:27 Invalid member type
+wire-oracle	fixed_basic	rti	xcdr2	be	ungenerated			ERROR com.rti.ndds.nddsgen.Nddsgen gen.idl line 1:27 Invalid member type
+wire-oracle	fixed_basic	fastdds	xcdr1	le	ungenerated			 at com.eprosima.fastdds.fastddsgen.process(fastddsgen.java:744)  at com.eprosima.fastdds.fastddsgen.execute(fastddsgen.java:490)  at com.eprosima.fastdds.fastddsgen.main(fastddsgen.java:1735) 
+wire-oracle	fixed_basic	fastdds	xcdr2	le	ungenerated			 at com.eprosima.fastdds.fastddsgen.process(fastddsgen.java:744)  at com.eprosima.fastdds.fastddsgen.execute(fastddsgen.java:490)  at com.eprosima.fastdds.fastddsgen.main(fastddsgen.java:1735) 
+wire-oracle	fixed_basic	fastdds	xcdr1	be	ungenerated			 at com.eprosima.fastdds.fastddsgen.process(fastddsgen.java:744)  at com.eprosima.fastdds.fastddsgen.execute(fastddsgen.java:490)  at com.eprosima.fastdds.fastddsgen.main(fastddsgen.java:1735) 
+wire-oracle	fixed_basic	fastdds	xcdr2	be	ungenerated			 at com.eprosima.fastdds.fastddsgen.process(fastddsgen.java:744)  at com.eprosima.fastdds.fastddsgen.execute(fastddsgen.java:490)  at com.eprosima.fastdds.fastddsgen.main(fastddsgen.java:1735) 
+wire-oracle	fixed_basic	opendds	xcdr1	le	uncompiled			genC.h:95:4: error: 'f' does not name a type
+wire-oracle	fixed_basic	opendds	xcdr2	le	uncompiled			genC.h:95:4: error: 'f' does not name a type
+wire-oracle	fixed_basic	opendds	xcdr1	be	uncompiled			genC.h:95:4: error: 'f' does not name a type
+wire-oracle	fixed_basic	opendds	xcdr2	be	uncompiled			genC.h:95:4: error: 'f' does not name a type
+wire-oracle	map_key_string	cyclone	xcdr1	le	ungenerated			gen.idl:1:27: syntax error
+wire-oracle	map_key_string	cyclone	xcdr2	le	ungenerated			gen.idl:1:27: syntax error
+wire-oracle	map_key_string	cyclone	xcdr1	be	ungenerated			gen.idl:1:27: syntax error
+wire-oracle	map_key_string	cyclone	xcdr2	be	ungenerated			gen.idl:1:27: syntax error
+wire-oracle	map_key_string	rti	xcdr1	le	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 1:29 no viable alternative at input '<' in member declaration
+wire-oracle	map_key_string	rti	xcdr2	le	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 1:29 no viable alternative at input '<' in member declaration
+wire-oracle	map_key_string	rti	xcdr1	be	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 1:29 no viable alternative at input '<' in member declaration
+wire-oracle	map_key_string	rti	xcdr2	be	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 1:29 no viable alternative at input '<' in member declaration
+wire-oracle	map_key_string	fastdds	xcdr1	le	wrote	20	0001	0100000003000000616200000200000007000000
+wire-oracle	map_key_string	fastdds	xcdr2	le	wrote	20	0007	0100000003000000616200000200000007000000
+wire-oracle	map_key_string	fastdds	xcdr1	be	wrote	20	0000	0000000100000003616200000000000200000007
+wire-oracle	map_key_string	fastdds	xcdr2	be	wrote	20	0006	0000000100000003616200000000000200000007
+wire-oracle	map_key_string	opendds	xcdr1	le	uncompiled			/usr/include/c++/14/bits/stl_pair.h:290:11: error: 'std::pair<_T1, _T2>::first' has incomplete type
+wire-oracle	map_key_string	opendds	xcdr2	le	uncompiled			/usr/include/c++/14/bits/stl_pair.h:290:11: error: 'std::pair<_T1, _T2>::first' has incomplete type
+wire-oracle	map_key_string	opendds	xcdr1	be	uncompiled			/usr/include/c++/14/bits/stl_pair.h:290:11: error: 'std::pair<_T1, _T2>::first' has incomplete type
+wire-oracle	map_key_string	opendds	xcdr2	be	uncompiled			/usr/include/c++/14/bits/stl_pair.h:290:11: error: 'std::pair<_T1, _T2>::first' has incomplete type
+wire-oracle	map_prim	cyclone	xcdr1	le	ungenerated			gen.idl:1:25: syntax error
+wire-oracle	map_prim	cyclone	xcdr2	le	ungenerated			gen.idl:1:25: syntax error
+wire-oracle	map_prim	cyclone	xcdr1	be	ungenerated			gen.idl:1:25: syntax error
+wire-oracle	map_prim	cyclone	xcdr2	be	ungenerated			gen.idl:1:25: syntax error
+wire-oracle	map_prim	rti	xcdr1	le	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 1:27 no viable alternative at input '<' in member declaration
+wire-oracle	map_prim	rti	xcdr2	le	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 1:27 no viable alternative at input '<' in member declaration
+wire-oracle	map_prim	rti	xcdr1	be	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 1:27 no viable alternative at input '<' in member declaration
+wire-oracle	map_prim	rti	xcdr2	be	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 1:27 no viable alternative at input '<' in member declaration
+wire-oracle	map_prim	fastdds	xcdr1	le	wrote	24	0001	020000000100000002000000030000000400000007000000
+wire-oracle	map_prim	fastdds	xcdr2	le	wrote	24	0007	020000000100000002000000030000000400000007000000
+wire-oracle	map_prim	fastdds	xcdr1	be	wrote	24	0000	000000020000000100000002000000030000000400000007
+wire-oracle	map_prim	fastdds	xcdr2	be	wrote	24	0006	000000020000000100000002000000030000000400000007
+wire-oracle	map_prim	opendds	xcdr1	le	wrote	24		020000000100000002000000030000000400000007000000
+wire-oracle	map_prim	opendds	xcdr2	le	wrote	24		020000000100000002000000030000000400000007000000
+wire-oracle	map_prim	opendds	xcdr1	be	wrote	24		000000020000000100000002000000030000000400000007
+wire-oracle	map_prim	opendds	xcdr2	be	wrote	24		000000020000000100000002000000030000000400000007
+wire-oracle	map_str_str	cyclone	xcdr1	le	ungenerated			gen.idl:1:27: syntax error
+wire-oracle	map_str_str	cyclone	xcdr2	le	ungenerated			gen.idl:1:27: syntax error
+wire-oracle	map_str_str	cyclone	xcdr1	be	ungenerated			gen.idl:1:27: syntax error
+wire-oracle	map_str_str	cyclone	xcdr2	be	ungenerated			gen.idl:1:27: syntax error
+wire-oracle	map_str_str	rti	xcdr1	le	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 1:29 no viable alternative at input '<' in member declaration
+wire-oracle	map_str_str	rti	xcdr2	le	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 1:29 no viable alternative at input '<' in member declaration
+wire-oracle	map_str_str	rti	xcdr1	be	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 1:29 no viable alternative at input '<' in member declaration
+wire-oracle	map_str_str	rti	xcdr2	be	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 1:29 no viable alternative at input '<' in member declaration
+wire-oracle	map_str_str	fastdds	xcdr1	le	wrote	24	0001	010000000300000061620000040000006364650007000000
+wire-oracle	map_str_str	fastdds	xcdr2	le	wrote	28	0007	14000000010000000300000061620000040000006364650007000000
+wire-oracle	map_str_str	fastdds	xcdr1	be	wrote	24	0000	000000010000000361620000000000046364650000000007
+wire-oracle	map_str_str	fastdds	xcdr2	be	wrote	28	0006	00000014000000010000000361620004000000046364650000000007
+wire-oracle	map_str_str	opendds	xcdr1	le	uncompiled			/usr/include/c++/14/bits/stl_pair.h:290:11: error: 'std::pair<_T1, _T2>::first' has incomplete type
+wire-oracle	map_str_str	opendds	xcdr2	le	uncompiled			/usr/include/c++/14/bits/stl_pair.h:290:11: error: 'std::pair<_T1, _T2>::first' has incomplete type
+wire-oracle	map_str_str	opendds	xcdr1	be	uncompiled			/usr/include/c++/14/bits/stl_pair.h:290:11: error: 'std::pair<_T1, _T2>::first' has incomplete type
+wire-oracle	map_str_str	opendds	xcdr2	be	uncompiled			/usr/include/c++/14/bits/stl_pair.h:290:11: error: 'std::pair<_T1, _T2>::first' has incomplete type
+wire-oracle	map_val_seq	cyclone	xcdr1	le	ungenerated			gen.idl:1:27: syntax error
+wire-oracle	map_val_seq	cyclone	xcdr2	le	ungenerated			gen.idl:1:27: syntax error
+wire-oracle	map_val_seq	cyclone	xcdr1	be	ungenerated			gen.idl:1:27: syntax error
+wire-oracle	map_val_seq	cyclone	xcdr2	be	ungenerated			gen.idl:1:27: syntax error
+wire-oracle	map_val_seq	rti	xcdr1	le	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 1:29 no viable alternative at input '<' in member declaration
+wire-oracle	map_val_seq	rti	xcdr2	le	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 1:29 no viable alternative at input '<' in member declaration
+wire-oracle	map_val_seq	rti	xcdr1	be	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 1:29 no viable alternative at input '<' in member declaration
+wire-oracle	map_val_seq	rti	xcdr2	be	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 1:29 no viable alternative at input '<' in member declaration
+wire-oracle	map_val_seq	fastdds	xcdr1	le	wrote	24	0001	010000000500000002000000010000000200000007000000
+wire-oracle	map_val_seq	fastdds	xcdr2	le	wrote	28	0007	14000000010000000500000002000000010000000200000007000000
+wire-oracle	map_val_seq	fastdds	xcdr1	be	wrote	24	0000	000000010000000500000002000000010000000200000007
+wire-oracle	map_val_seq	fastdds	xcdr2	be	wrote	28	0006	00000014000000010000000500000002000000010000000200000007
+wire-oracle	map_val_seq	opendds	xcdr1	le	uncompiled			genC.h:112:36: error: 'sequence' was not declared in this scope
+wire-oracle	map_val_seq	opendds	xcdr2	le	uncompiled			genC.h:112:36: error: 'sequence' was not declared in this scope
+wire-oracle	map_val_seq	opendds	xcdr1	be	uncompiled			genC.h:112:36: error: 'sequence' was not declared in this scope
+wire-oracle	map_val_seq	opendds	xcdr2	be	uncompiled			genC.h:112:36: error: 'sequence' was not declared in this scope
+wire-oracle	map_val_seq_td	cyclone	xcdr1	le	ungenerated			gen.idl:2:29: syntax error
+wire-oracle	map_val_seq_td	cyclone	xcdr2	le	ungenerated			gen.idl:2:29: syntax error
+wire-oracle	map_val_seq_td	cyclone	xcdr1	be	ungenerated			gen.idl:2:29: syntax error
+wire-oracle	map_val_seq_td	cyclone	xcdr2	be	ungenerated			gen.idl:2:29: syntax error
+wire-oracle	map_val_seq_td	rti	xcdr1	le	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 2:31 no viable alternative at input '<' in member declaration
+wire-oracle	map_val_seq_td	rti	xcdr2	le	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 2:31 no viable alternative at input '<' in member declaration
+wire-oracle	map_val_seq_td	rti	xcdr1	be	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 2:31 no viable alternative at input '<' in member declaration
+wire-oracle	map_val_seq_td	rti	xcdr2	be	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 2:31 no viable alternative at input '<' in member declaration
+wire-oracle	map_val_seq_td	fastdds	xcdr1	le	wrote	24	0001	010000000500000002000000010000000200000007000000
+wire-oracle	map_val_seq_td	fastdds	xcdr2	le	wrote	28	0007	14000000010000000500000002000000010000000200000007000000
+wire-oracle	map_val_seq_td	fastdds	xcdr1	be	wrote	24	0000	000000010000000500000002000000010000000200000007
+wire-oracle	map_val_seq_td	fastdds	xcdr2	be	wrote	28	0006	00000014000000010000000500000002000000010000000200000007
+wire-oracle	map_val_seq_td	opendds	xcdr1	le	wrote	24		010000000500000002000000010000000200000007000000
+wire-oracle	map_val_seq_td	opendds	xcdr2	le	wrote	24		100000000500000002000000010000000200000007000000
+wire-oracle	map_val_seq_td	opendds	xcdr1	be	wrote	24		000000010000000500000002000000010000000200000007
+wire-oracle	map_val_seq_td	opendds	xcdr2	be	wrote	24		000000100000000500000002000000010000000200000007
+wire-oracle	map_val_struct	cyclone	xcdr1	le	ungenerated			gen.idl:2:30: syntax error
+wire-oracle	map_val_struct	cyclone	xcdr2	le	ungenerated			gen.idl:2:30: syntax error
+wire-oracle	map_val_struct	cyclone	xcdr1	be	ungenerated			gen.idl:2:30: syntax error
+wire-oracle	map_val_struct	cyclone	xcdr2	be	ungenerated			gen.idl:2:30: syntax error
+wire-oracle	map_val_struct	rti	xcdr1	le	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 2:32 no viable alternative at input '<' in member declaration
+wire-oracle	map_val_struct	rti	xcdr2	le	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 2:32 no viable alternative at input '<' in member declaration
+wire-oracle	map_val_struct	rti	xcdr1	be	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 2:32 no viable alternative at input '<' in member declaration
+wire-oracle	map_val_struct	rti	xcdr2	be	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 2:32 no viable alternative at input '<' in member declaration
+wire-oracle	map_val_struct	fastdds	xcdr1	le	wrote	20	0001	0100000005000000010000000200000007000000
+wire-oracle	map_val_struct	fastdds	xcdr2	le	wrote	24	0007	100000000100000005000000010000000200000007000000
+wire-oracle	map_val_struct	fastdds	xcdr1	be	wrote	20	0000	0000000100000005000000010000000200000007
+wire-oracle	map_val_struct	fastdds	xcdr2	be	wrote	24	0006	000000100000000100000005000000010000000200000007
+wire-oracle	map_val_struct	opendds	xcdr1	le	wrote	20		0100000005000000010000000200000007000000
+wire-oracle	map_val_struct	opendds	xcdr2	le	wrote	20		0c00000005000000010000000200000007000000
+wire-oracle	map_val_struct	opendds	xcdr1	be	wrote	20		0000000100000005000000010000000200000007
+wire-oracle	map_val_struct	opendds	xcdr2	be	wrote	20		0000000c00000005000000010000000200000007
+wire-oracle	mut_lc_enum	cyclone	xcdr1	le	wrote	64		017f0800000000000c000000020000000100000002000000017f080001000000080000000200000001000800017f0800020000000400000007000000027f0000
+wire-oracle	mut_lc_enum	cyclone	xcdr2	le	wrote	48		2c000000000000500c000000020000000100000002000000010000500800000002000000010008000200002007000000
+wire-oracle	mut_lc_enum	cyclone	xcdr1	be	wrote	64		7f010008000000000000000c0000000200000001000000027f010008000000010000000800000002000100087f0100080000000200000004000000077f020000
+wire-oracle	mut_lc_enum	cyclone	xcdr2	be	wrote	48		0000002c500000000000000c000000020000000100000002500000010000000800000002000100082000000200000007
+wire-oracle	mut_lc_enum	rti	xcdr1	le	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 2:15 mismatched input 'bitmask' expecting EOF
+wire-oracle	mut_lc_enum	rti	xcdr2	le	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 2:15 mismatched input 'bitmask' expecting EOF
+wire-oracle	mut_lc_enum	rti	xcdr1	be	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 2:15 mismatched input 'bitmask' expecting EOF
+wire-oracle	mut_lc_enum	rti	xcdr2	be	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 2:15 mismatched input 'bitmask' expecting EOF
+wire-oracle	mut_lc_enum	fastdds	xcdr1	le	wrote	40	0001	00000c000200000001000000020000000100080002000000010008000200040007000000023f0000
+wire-oracle	mut_lc_enum	fastdds	xcdr2	le	wrote	40	0007	24000000000000600200000001000000020000000100003002000000010008000200002007000000
+wire-oracle	mut_lc_enum	fastdds	xcdr1	be	wrote	40	0000	0000000c00000002000000010000000200010008000000020001000800020004000000073f020000
+wire-oracle	mut_lc_enum	fastdds	xcdr2	be	wrote	40	0006	00000024600000000000000200000001000000023000000100000002000100082000000200000007
+wire-oracle	mut_lc_enum	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+wire-oracle	mut_lc_enum	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+wire-oracle	mut_lc_enum	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+wire-oracle	mut_lc_enum	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+wire-oracle	mut_lc_map	cyclone	xcdr1	le	ungenerated			gen.idl:2:5: syntax error
+wire-oracle	mut_lc_map	cyclone	xcdr2	le	ungenerated			gen.idl:2:5: syntax error
+wire-oracle	mut_lc_map	cyclone	xcdr1	be	ungenerated			gen.idl:2:5: syntax error
+wire-oracle	mut_lc_map	cyclone	xcdr2	be	ungenerated			gen.idl:2:5: syntax error
+wire-oracle	mut_lc_map	rti	xcdr1	le	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 2:7 no viable alternative at input '<' in member declaration
+wire-oracle	mut_lc_map	rti	xcdr2	le	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 2:7 no viable alternative at input '<' in member declaration
+wire-oracle	mut_lc_map	rti	xcdr1	be	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 2:7 no viable alternative at input '<' in member declaration
+wire-oracle	mut_lc_map	rti	xcdr2	be	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 2:7 no viable alternative at input '<' in member declaration
+wire-oracle	mut_lc_map	fastdds	xcdr1	le	wrote	36	0001	0000140002000000010000000200000003000000040000000100040007000000023f0000
+wire-oracle	mut_lc_map	fastdds	xcdr2	le	wrote	40	0007	24000000000000401400000002000000010000000200000003000000040000000100002007000000
+wire-oracle	mut_lc_map	fastdds	xcdr1	be	wrote	36	0000	00000014000000020000000100000002000000030000000400010004000000073f020000
+wire-oracle	mut_lc_map	fastdds	xcdr2	be	wrote	40	0006	00000024400000000000001400000002000000010000000200000003000000042000000100000007
+wire-oracle	mut_lc_map	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+wire-oracle	mut_lc_map	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+wire-oracle	mut_lc_map	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+wire-oracle	mut_lc_map	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+wire-oracle	mut_lc_map2	cyclone	xcdr1	le	ungenerated			gen.idl:3:5: syntax error
+wire-oracle	mut_lc_map2	cyclone	xcdr2	le	ungenerated			gen.idl:3:5: syntax error
+wire-oracle	mut_lc_map2	cyclone	xcdr1	be	ungenerated			gen.idl:3:5: syntax error
+wire-oracle	mut_lc_map2	cyclone	xcdr2	be	ungenerated			gen.idl:3:5: syntax error
+wire-oracle	mut_lc_map2	rti	xcdr1	le	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 3:7 no viable alternative at input '<' in member declaration
+wire-oracle	mut_lc_map2	rti	xcdr2	le	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 3:7 no viable alternative at input '<' in member declaration
+wire-oracle	mut_lc_map2	rti	xcdr1	be	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 3:7 no viable alternative at input '<' in member declaration
+wire-oracle	mut_lc_map2	rti	xcdr2	be	ungenerated			ERROR com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 3:7 no viable alternative at input '<' in member declaration
+wire-oracle	mut_lc_map2	fastdds	xcdr1	le	wrote	56	0001	00001400020000000100000002000000030000000400000001001000010000000500000001000000020000000200040007000000023f0000
+wire-oracle	mut_lc_map2	fastdds	xcdr2	le	wrote	64	0007	3c000000000000401400000002000000010000000200000003000000040000000100005010000000010000000500000001000000020000000200002007000000
+wire-oracle	mut_lc_map2	fastdds	xcdr1	be	wrote	56	0000	000000140000000200000001000000020000000300000004000100100000000100000005000000010000000200020004000000073f020000
+wire-oracle	mut_lc_map2	fastdds	xcdr2	be	wrote	64	0006	0000003c400000000000001400000002000000010000000200000003000000045000000100000010000000010000000500000001000000022000000200000007
+wire-oracle	mut_lc_map2	opendds	xcdr1	le	wrote	56		00c01400020000000100000002000000030000000400000001c010000100000005000000010000000200000002c0040007000000023f0000
+wire-oracle	mut_lc_map2	opendds	xcdr2	le	wrote	64		3c0000000000004014000000020000000100000002000000030000000400000001000040100000000c0000000500000001000000020000000200002007000000
+wire-oracle	mut_lc_map2	opendds	xcdr1	be	wrote	56		c00000140000000200000001000000020000000300000004c001001000000001000000050000000100000002c0020004000000073f020000
+wire-oracle	mut_lc_map2	opendds	xcdr2	be	wrote	64		0000003c4000000000000014000000020000000100000002000000030000000440000001000000100000000c0000000500000001000000022000000200000007
+wire-oracle	mut_lc_nested	cyclone	xcdr1	le	wrote	128		017f080000000000080000000100000002000000017f08000100000024000000017f0800000000000400000003000000017f0800010000000400000004000000027f0000017f080002000000080000000100000002000000017f080003000000080000000500000006000000017f0800040000000400000007000000027f0000
+wire-oracle	mut_lc_nested	cyclone	xcdr2	le	wrote	92		58000000000000400c0000000800000001000000020000000100004014000000100000000000002003000000010000200400000002000050080000000100000002000000030000500800000005000000060000000400002007000000
+wire-oracle	mut_lc_nested	cyclone	xcdr1	be	wrote	128		7f010008000000000000000800000001000000027f01000800000001000000247f0100080000000000000004000000037f0100080000000100000004000000047f0200007f010008000000020000000800000001000000027f010008000000030000000800000005000000067f0100080000000400000004000000077f020000
+wire-oracle	mut_lc_nested	cyclone	xcdr2	be	wrote	92		00000058400000000000000c0000000800000001000000024000000100000014000000102000000000000003200000010000000450000002000000080000000100000002500000030000000800000005000000062000000400000007
+wire-oracle	mut_lc_nested	rti	xcdr1	le	wrote	72	0003	0000080001000000020000000100140000000400030000000100040004000000027f00000200080001000000020000000300080005000000060000000400040007000000027f0000
+wire-oracle	mut_lc_nested	rti	xcdr2	le	wrote	84	000b	500000000000005008000000010000000200000001000050100000000000002003000000010000200400000002000040080000000100000002000000030000400800000005000000060000000400002007000000
+wire-oracle	mut_lc_nested	rti	xcdr1	be	wrote	72		00000008000000010000000200010014000000040000000300010004000000047f02000000020008000000010000000200030008000000050000000600040004000000077f020000
+wire-oracle	mut_lc_nested	rti	xcdr2	be	wrote	84		000000505000000000000008000000010000000250000001000000102000000000000003200000010000000440000002000000080000000100000002400000030000000800000005000000062000000400000007
+wire-oracle	mut_lc_nested	fastdds	xcdr1	le	wrote	72	0001	0000080001000000020000000100140000000400030000000100040004000000023f00000200080001000000020000000300080005000000060000000400040007000000023f0000
+wire-oracle	mut_lc_nested	fastdds	xcdr2	le	wrote	80	0007	4c00000000000050080000000100000002000000010000501000000000000020030000000100002004000000020000300100000002000000030000500800000005000000060000000400002007000000
+wire-oracle	mut_lc_nested	fastdds	xcdr1	be	wrote	72	0000	00000008000000010000000200010014000000040000000300010004000000043f02000000020008000000010000000200030008000000050000000600040004000000073f020000
+wire-oracle	mut_lc_nested	fastdds	xcdr2	be	wrote	80	0006	0000004c50000000000000080000000100000002500000010000001020000000000000032000000100000004300000020000000100000002500000030000000800000005000000062000000400000007
+wire-oracle	mut_lc_nested	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+wire-oracle	mut_lc_nested	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+wire-oracle	mut_lc_nested	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+wire-oracle	mut_lc_nested	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+wire-oracle	mut_lc_strings	cyclone	xcdr1	le	wrote	104		017f0800000000001000000003000000616200000400000063646500017f0800010000000c000000050000006667686900000000017f080002000000140000000200000003000000707100000400000072737400017f0800030000000400000007000000027f0000
+wire-oracle	mut_lc_strings	cyclone	xcdr2	le	wrote	80		4c00000000000050100000000300000061620000040000006364650001000050050000006667686900000000020000501400000002000000030000007071000004000000727374000300002007000000
+wire-oracle	mut_lc_strings	cyclone	xcdr1	be	wrote	104		7f0100080000000000000010000000036162000000000004636465007f010008000000010000000c0000000566676869000000007f010008000000020000001400000002000000037071000000000004727374007f0100080000000300000004000000077f020000
+wire-oracle	mut_lc_strings	cyclone	xcdr2	be	wrote	80		0000004c50000000000000100000000361620000000000046364650050000001000000056667686900000000500000020000001400000002000000037071000000000004727374002000000300000007
+wire-oracle	mut_lc_strings	rti	xcdr1	le	wrote	72	0003	000010000300000061620000040000006364650001000c000500000066676869000000000200140002000000030000007071000004000000727374000300040007000000027f0000
+wire-oracle	mut_lc_strings	rti	xcdr2	le	wrote	80	000b	4c00000000000040100000000300000061620000040000006364650001000050050000006667686900000000020000401400000002000000030000007071000004000000727374000300002007000000
+wire-oracle	mut_lc_strings	rti	xcdr1	be	wrote	72		00000010000000036162000000000004636465000001000c00000005666768690000000000020014000000020000000370710000000000047273740000030004000000077f020000
+wire-oracle	mut_lc_strings	rti	xcdr2	be	wrote	80		0000004c40000000000000100000000361620000000000046364650050000001000000056667686900000000400000020000001400000002000000037071000000000004727374002000000300000007
+wire-oracle	mut_lc_strings	fastdds	xcdr1	le	wrote	72	0001	0000100003000000616200000400000063646500010009000500000066676869000000000200140002000000030000007071000004000000727374000300040007000000023f0000
+wire-oracle	mut_lc_strings	fastdds	xcdr2	le	wrote	80	0007	4c00000000000050100000000300000061620000040000006364650001000050050000006667686900000000020000501400000002000000030000007071000004000000727374000300002007000000
+wire-oracle	mut_lc_strings	fastdds	xcdr1	be	wrote	72	0000	00000010000000036162000000000004636465000001000900000005666768690000000000020014000000020000000370710000000000047273740000030004000000073f020000
+wire-oracle	mut_lc_strings	fastdds	xcdr2	be	wrote	80	0006	0000004c50000000000000100000000361620000000000046364650050000001000000056667686900000002500000020000001400000002000000037071000400000004727374002000000300000007
+wire-oracle	mut_lc_strings	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+wire-oracle	mut_lc_strings	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+wire-oracle	mut_lc_strings	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+wire-oracle	mut_lc_strings	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+wire-oracle	mut_lengthcodes	cyclone	xcdr1	le	wrote	224		017f080000000000080000000400000061626300017f080001000000080000000300000001020300017f0800020000000800000002000000ffff0200017f0800030000000c000000020000000100000002000000017f080004000000100000000100000000000000000000000000f83f017f0800050000000c000000010000000100000002000000017f0800060000001000000003000000040000000500000006000000017f080007000000080000000700000008000000017f08000800000008000000090000000a000000017f080009000000040000000b000000027f0000
+wire-oracle	mut_lengthcodes	cyclone	xcdr2	le	wrote	160		9c000000000000500400000061626300010000500300000001020300020000400800000002000000ffff0200030000600200000001000000020000000400007001000000000000000000f83f050000500c000000010000000100000002000000060000501000000003000000040000000500000006000000070000400800000007000000080000000800004008000000090000000a000000090000200b000000
+wire-oracle	mut_lengthcodes	cyclone	xcdr1	be	wrote	224		7f010008000000000000000800000004616263007f010008000000010000000800000003010203007f010008000000020000000800000002ffff00027f010008000000030000000c0000000200000001000000027f010008000000040000001000000001000000003ff80000000000007f010008000000050000000c0000000100000001000000027f0100080000000600000010000000030000000400000005000000067f010008000000070000000800000007000000087f0100080000000800000008000000090000000a7f01000800000009000000040000000b7f020000
+wire-oracle	mut_lengthcodes	cyclone	xcdr2	be	wrote	160		0000009c500000000000000461626300500000010000000301020300400000020000000800000002ffff00026000000300000002000000010000000270000004000000013ff8000000000000500000050000000c000000010000000100000002500000060000001000000003000000040000000500000006400000070000000800000007000000084000000800000008000000090000000a200000090000000b
+wire-oracle	mut_lengthcodes	rti	xcdr1	le	wrote	144	0003	0000080004000000616263000100080003000000010203000200080002000000ffff020003000c00020000000100000002000000040010000100000000000000000000000000f83f05000c00010000000100000002000000060010000300000004000000050000000600000007000800070000000800000008000800090000000a000000090004000b000000027f0000
+wire-oracle	mut_lengthcodes	rti	xcdr2	le	wrote	160	000b	9c000000000000500400000061626300010000500300000001020300020000400800000002000000ffff0200030000600200000001000000020000000400007001000000000000000000f83f050000400c000000010000000100000002000000060000401000000003000000040000000500000006000000070000400800000007000000080000000800004008000000090000000a000000090000200b000000
+wire-oracle	mut_lengthcodes	rti	xcdr1	be	wrote	144		0000000800000004616263000001000800000003010203000002000800000002ffff00020003000c0000000200000001000000020004001000000001000000003ff80000000000000005000c000000010000000100000002000600100000000300000004000000050000000600070008000000070000000800080008000000090000000a000900040000000b7f020000
+wire-oracle	mut_lengthcodes	rti	xcdr2	be	wrote	160		0000009c500000000000000461626300500000010000000301020300400000020000000800000002ffff00026000000300000002000000010000000270000004000000013ff8000000000000400000050000000c000000010000000100000002400000060000001000000003000000040000000500000006400000070000000800000007000000084000000800000008000000090000000a200000090000000b
+wire-oracle	mut_lengthcodes	fastdds	xcdr1	le	wrote	144	0001	0000080004000000616263000100070003000000010203000200080002000000ffff020003000c00020000000100000002000000040010000100000000000000000000000000f83f05000c00010000000100000002000000060010000300000004000000050000000600000007000800070000000800000008000800090000000a000000090004000b000000023f0000
+wire-oracle	mut_lengthcodes	fastdds	xcdr2	le	wrote	148	0007	900000000000005004000000616263000100005003000000010203000200003002000000ffff0200030000600200000001000000020000000400007001000000000000000000f83f050000500c00000001000000010000000200000006000050100000000300000004000000050000000600000007000030070000000800000008000030090000000a000000090000200b000000
+wire-oracle	mut_lengthcodes	fastdds	xcdr1	be	wrote	144	0000	0000000800000004616263000001000700000003010203000002000800000002ffff00020003000c0000000200000001000000020004001000000001000000003ff80000000000000005000c000000010000000100000002000600100000000300000004000000050000000600070008000000070000000800080008000000090000000a000900040000000b3f020000
+wire-oracle	mut_lengthcodes	fastdds	xcdr2	be	wrote	148	0006	000000905000000000000004616263005000000100000003010203083000000200000002ffff00026000000300000002000000010000000270000004000000013ff8000000000000500000050000000c00000001000000010000000250000006000000100000000300000004000000050000000630000007000000070000000830000008000000090000000a200000090000000b
+wire-oracle	mut_lengthcodes	opendds	xcdr1	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+wire-oracle	mut_lengthcodes	opendds	xcdr2	le	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+wire-oracle	mut_lengthcodes	opendds	xcdr1	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have
+wire-oracle	mut_lengthcodes	opendds	xcdr2	be	unfilled			no fill.odds.inc; the Fast DDS fill calls setters OpenDDS's C++ mapping does not have

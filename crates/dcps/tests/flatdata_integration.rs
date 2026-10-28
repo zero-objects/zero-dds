@@ -42,6 +42,8 @@ unsafe impl FlatStruct for Pose {
 
 impl DdsType for Pose {
     const TYPE_NAME: &'static str = "test::Pose";
+    /// @final with no member that XCDR1 and XCDR2 frame differently: one stream.
+    const XCDR1_MATCHES_XCDR2: bool = true;
     const HAS_KEY: bool = false;
 
     fn encode(&self, out: &mut Vec<u8>) -> Result<(), EncodeError> {

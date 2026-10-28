@@ -1,0 +1,5 @@
+// unbounded `string`, multi-byte UTF-8, unannotated
+struct Sample {
+    string text;
+    long tail;
+};

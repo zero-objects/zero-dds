@@ -2,6 +2,14 @@
 
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- Removed: `encode_secured_submessage_multi`, `decode_secured_submessage_multi`
+  and `MAX_RECEIVER_MACS` (HMAC-SHA256 receiver MACs, no mechanism of the
+  specification, no caller in the runtime).
+
 ## [1.0.0-rc.1] — 2026-05-06
 
 Initial release materialization of the `zerodds-security-rtps` crate.

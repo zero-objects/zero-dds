@@ -321,6 +321,23 @@ pub fn build_grpc_tls_config(
     key_path: std::path::PathBuf,
     client_ca_path: Option<std::path::PathBuf>,
 ) -> Result<Arc<rustls::ServerConfig>, String> {
+    build_grpc_tls_config_with(cert_path, key_path, client_ca_path, true)
+}
+
+/// [`build_grpc_tls_config`] with the choice of Spec §3
+/// `grpc.tls.require_client_cert`: with a client CA and `false`, a client
+/// without a certificate completes the handshake and a presented one is
+/// still verified against the CA.
+///
+/// # Errors
+/// String diagnostic on IO/PEM/rustls errors.
+#[cfg(feature = "std")]
+pub fn build_grpc_tls_config_with(
+    cert_path: std::path::PathBuf,
+    key_path: std::path::PathBuf,
+    client_ca_path: Option<std::path::PathBuf>,
+    require_client_cert: bool,
+) -> Result<Arc<rustls::ServerConfig>, String> {
     use rustls::pki_types::{CertificateDer, PrivateKeyDer};
     use rustls_pemfile::Item;
     use std::fs::File;
@@ -358,8 +375,11 @@ pub fn build_grpc_tls_config(
 
     let certs = read_certs(&cert_path)?;
     let key = read_key(&key_path)?;
-    let provider = rustls::crypto::ring::default_provider();
-    let builder = rustls::ServerConfig::builder_with_provider(Arc::new(provider))
+    // The backend bridge-security was built with: ring, or aws-lc-rs (FIPS),
+    // for the server config and the client-certificate verifier alike — the
+    // implicit process provider is ambiguous when both are linked.
+    let provider = Arc::new(zerodds_bridge_security::tls_provider());
+    let builder = rustls::ServerConfig::builder_with_provider(Arc::clone(&provider))
         .with_safe_default_protocol_versions()
         .map_err(|e| format!("rustls: {e}"))?;
     let mut sc = match &client_ca_path {
@@ -369,7 +389,16 @@ pub fn build_grpc_tls_config(
             for c in ca_certs {
                 roots.add(c).map_err(|e| format!("ca add: {e}"))?;
             }
-            let verifier = rustls::server::WebPkiClientVerifier::builder(Arc::new(roots))
+            let verifier = rustls::server::WebPkiClientVerifier::builder_with_provider(
+                Arc::new(roots),
+                Arc::clone(&provider),
+            );
+            let verifier = if require_client_cert {
+                verifier
+            } else {
+                verifier.allow_unauthenticated()
+            };
+            let verifier = verifier
                 .build()
                 .map_err(|e| format!("client verifier: {e}"))?;
             builder

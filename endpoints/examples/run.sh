@@ -17,7 +17,7 @@ echo "== building hub + endpoints =="
 cargo build -q -p zerodds-xrce-agent-demo
 gcc -O2 $CINC $CSRC "$ROOT/endpoints/c/examples/udp_endpoint.c" -o /tmp/zdw_c_pub
 gcc -O2 $CINC $CSRC "$ROOT/endpoints/c/examples/udp_receiver.c" -o /tmp/zdw_c_recv
-javac -d /tmp/zdw_java "$ROOT/endpoints/java/Zdw.java" "$ROOT/endpoints/java/ZdwEndpoint.java" \
+javac -encoding UTF-8 -d /tmp/zdw_java "$ROOT/endpoints/java/Zdw.java" "$ROOT/endpoints/java/ZdwEndpoint.java" \
     "$ROOT/endpoints/examples/PublishUdp.java" "$ROOT/endpoints/examples/ReceiveUdp.java"
 
 echo ""

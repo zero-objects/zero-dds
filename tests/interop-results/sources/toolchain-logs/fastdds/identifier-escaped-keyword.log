@@ -1,0 +1,1 @@
+fill_1.inc:1:8: error: 'class zd_c1::Sample' has no member named '_long'; did you mean 'int32_t zd_c1::Sample::m_long'? (not accessible from this context)

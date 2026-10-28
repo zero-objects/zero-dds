@@ -1,4 +1,4 @@
-// zerodds_communicator.cpp — Implementierung der Apex.AI-Bridge.
+// zerodds_communicator.cpp — implementation of the Apex.AI bridge.
 
 #include "zerodds_plugin/zerodds_communicator.hpp"
 

@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of recursive-array that fastdds produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	chunk.000.d/b/b/b/build/gen.idl: the layout could not be planned: error [IDL0014] at 473..525: `::zd_c1::m::Node` closes a type cycle with nothing on it that terminates a value —
+plain-cdr1	be	refused	chunk.000.d/b/b/b/build/gen.idl: the layout could not be planned: error [IDL0014] at 473..525: `::zd_c1::m::Node` closes a type cycle with nothing on it that terminates a value —
+pl-cdr1	le	refused	chunk.000.d/b/b/b/build/gen.idl: the layout could not be planned: error [IDL0014] at 473..525: `::zd_c1::m::Node` closes a type cycle with nothing on it that terminates a value —
+pl-cdr1	be	refused	chunk.000.d/b/b/b/build/gen.idl: the layout could not be planned: error [IDL0014] at 473..525: `::zd_c1::m::Node` closes a type cycle with nothing on it that terminates a value —
+plain-cdr2	le	refused	chunk.000.d/b/b/b/build/gen.idl: the layout could not be planned: error [IDL0014] at 473..525: `::zd_c1::m::Node` closes a type cycle with nothing on it that terminates a value —
+plain-cdr2	be	refused	chunk.000.d/b/b/b/build/gen.idl: the layout could not be planned: error [IDL0014] at 473..525: `::zd_c1::m::Node` closes a type cycle with nothing on it that terminates a value —
+delimited-cdr	le	refused	chunk.000.d/b/b/b/build/gen.idl: the layout could not be planned: error [IDL0014] at 473..525: `::zd_c1::m::Node` closes a type cycle with nothing on it that terminates a value —
+delimited-cdr	be	refused	chunk.000.d/b/b/b/build/gen.idl: the layout could not be planned: error [IDL0014] at 473..525: `::zd_c1::m::Node` closes a type cycle with nothing on it that terminates a value —
+pl-cdr2	le	refused	chunk.000.d/b/b/b/build/gen.idl: the layout could not be planned: error [IDL0014] at 473..525: `::zd_c1::m::Node` closes a type cycle with nothing on it that terminates a value —
+pl-cdr2	be	refused	chunk.000.d/b/b/b/build/gen.idl: the layout could not be planned: error [IDL0014] at 473..525: `::zd_c1::m::Node` closes a type cycle with nothing on it that terminates a value —

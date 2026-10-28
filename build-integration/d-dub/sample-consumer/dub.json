@@ -5,8 +5,9 @@
     "license": "Apache-2.0",
     "targetType": "executable",
     "sourcePaths": ["source"],
-    "importPaths": ["source", "source/gen"],
+    "sourceFiles": ["../../../runtime/d/zdwire.d"],
+    "importPaths": ["source", "source/gen", "../../../runtime/d"],
     "preGenerateCommands": [
-        "mkdir -p source/gen && zerodds-idlc generate idl/Robot.idl --d -o source/gen"
+        "mkdir -p source/gen && zerodds-idlc generate --lang d --out source/gen idl/Robot.idl"
     ]
 }

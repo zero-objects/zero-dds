@@ -1,0 +1,10 @@
+// `union` over `unsigned short`, unannotated
+union Choice switch (unsigned short) {
+    case 48879: long whole;
+    case 3: double fraction;
+};
+
+struct Sample {
+    Choice picked;
+    long tail;
+};

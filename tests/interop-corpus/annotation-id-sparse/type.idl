@@ -1,0 +1,7 @@
+// `@id` with gaps and a large value
+@mutable struct Sample {
+    @id(0) long zero;
+    @id(1) long one;
+    @id(16383) long near_limit;
+    @id(268435455) long limit;
+};

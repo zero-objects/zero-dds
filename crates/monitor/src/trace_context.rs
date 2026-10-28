@@ -51,7 +51,7 @@ impl fmt::Display for TraceParent {
     }
 }
 
-/// W3C-tracestate-Header (Version 00, key=value;... pro Vendor).
+/// W3C tracestate header (Version 00, key=value;... per vendor).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct TraceState {
     /// Raw state string (e.g. `"dds=topic:Foo;version:1.0"`).
@@ -65,7 +65,7 @@ impl TraceState {
         Self { raw: raw.into() }
     }
 
-    /// Leer?
+    /// Empty?
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.raw.is_empty()

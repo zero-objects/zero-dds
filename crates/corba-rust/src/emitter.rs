@@ -1,94 +1,68 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Top-level emitter: AST → CORBA Rust code.
+//! Top-level emitter: the common AST → CORBA Rust code.
+//!
+//! The walk is over the model's module tree, which is what
+//! `zerodds-idl-lower` produces. It used to be over
+//! `zerodds_idl::ast::types::Specification` — the parse tree — and the
+//! difference is visible in three places this file no longer has:
+//!
+//! * `collect_exception_repo_ids` walked the tree for `typeprefix`
+//!   directives and rebuilt each identifier from the declaration path.
+//!   The model carries the identifier, with `#pragma prefix`, `#pragma
+//!   version` and `#pragma ID` all applied, and
+//!   `zerodds_corba_codegen::repository_id_of` reads it.
+//! * `collect_interfaces` built a name → definition registry so a stub
+//!   could reach its bases. `InterfaceNode::bases` is a resolved
+//!   reference; the registry was an index of something already indexed.
+//! * three `set_*` calls handed that state to three `thread_local!`s.
+//!   Everything the emitters need arrives as [`Ctx`].
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
-use zerodds_idl::ast::types::{Definition, Export, InterfaceDcl, InterfaceDef, Specification};
+use zerodds_ast::{AnyId, Ast, InterfaceKind, ModuleNode, TypeKind};
+use zerodds_ast_core::Id;
 
-use crate::error::Result;
+use crate::error::{CorbaRustError, Result};
 
-/// Collects scope-resolved exception RepositoryIds (simple name → `IDL:…:1.0`):
-/// accounts for the definition scope (module/interface path) and `typeprefix`
-/// (e.g. `omg.org`), so that `raises(NotFound)` produces byte-exactly the same
-/// RepositoryId as a foreign ORB (`IDL:omg.org/CosNaming/NamingContext/NotFound:1.0`).
-fn collect_exception_repo_ids(spec: &Specification) -> BTreeMap<String, String> {
-    let mut prefixes: BTreeMap<String, String> = BTreeMap::new();
-    collect_prefixes(&spec.definitions, &mut prefixes);
-    let mut out = BTreeMap::new();
-    let mut path: Vec<String> = Vec::new();
-    walk_exceptions(&spec.definitions, &mut path, &prefixes, &mut out);
-    out
-}
-
-/// `typeprefix <target> "<prefix>"` → map (target simple name → prefix).
+/// What every emitter in this crate needs, passed down rather than
+/// stored.
 ///
-/// zerodds-lint: recursion-depth 64 (Module-Hierarchy; bounded by IDL nesting)
-fn collect_prefixes(defs: &[Definition], prefixes: &mut BTreeMap<String, String>) {
-    for d in defs {
-        match d {
-            Definition::TypePrefix(tp) => {
-                if let Some(last) = tp.target.parts.last() {
-                    prefixes.insert(last.text.clone(), tp.prefix.clone());
-                }
-            }
-            Definition::Module(m) => collect_prefixes(&m.definitions, prefixes),
-            _ => {}
+/// The previous generator kept the same three pieces of information in
+/// process-wide state that a caller set before generating. Two
+/// generations in one process shared it; the second one's output
+/// depended on the first one's input, and nothing said so.
+pub struct Ctx<'a> {
+    /// The model.
+    pub ast: &'a Ast,
+    /// Every exception's repository identifier, by simple name.
+    ///
+    /// A `raises` clause names an exception; the identifier that goes
+    /// on the wire has to be the one a foreign ORB writes for the same
+    /// declaration, which is the model's and not one rebuilt from the
+    /// path.
+    pub exception_ids: BTreeMap<String, String>,
+}
+
+impl<'a> Ctx<'a> {
+    /// A context over `ast`.
+    #[must_use]
+    pub fn new(ast: &'a Ast) -> Self {
+        Self {
+            ast,
+            exception_ids: crate::type_map::exception_repository_ids(ast),
         }
     }
-}
 
-fn rid_for(path: &[String], name: &str) -> String {
-    let parts: Vec<&str> = path.iter().map(String::as_str).collect();
-    zerodds_corba_codegen::build_repository_id(&parts, name, 1, 0)
-}
-
-/// zerodds-lint: recursion-depth 64 (Module-Hierarchy; bounded by IDL nesting)
-fn walk_exceptions(
-    defs: &[Definition],
-    path: &mut Vec<String>,
-    prefixes: &BTreeMap<String, String>,
-    out: &mut BTreeMap<String, String>,
-) {
-    for d in defs {
-        match d {
-            Definition::Except(e) => {
-                out.insert(e.name.text.clone(), rid_for(path, &e.name.text));
-            }
-            Definition::Module(m) => {
-                let mut pushed = 0;
-                // typeprefix comes BEFORE the module name (IDL:omg.org/CosNaming/…).
-                if let Some(p) = prefixes.get(&m.name.text) {
-                    for seg in p.split('/').filter(|s| !s.is_empty()) {
-                        path.push(seg.to_string());
-                        pushed += 1;
-                    }
-                }
-                path.push(m.name.text.clone());
-                pushed += 1;
-                walk_exceptions(&m.definitions, path, prefixes, out);
-                for _ in 0..pushed {
-                    path.pop();
-                }
-            }
-            Definition::Interface(InterfaceDcl::Def(i)) => {
-                path.push(i.name.text.clone());
-                for ex in &i.exports {
-                    if let Export::Except(e) = ex {
-                        out.insert(e.name.text.clone(), rid_for(path, &e.name.text));
-                    }
-                }
-                path.pop();
-            }
-            _ => {}
-        }
+    /// The repository identifier of an exception named in a `raises`
+    /// clause.
+    pub(crate) fn exception_repository_id(&self, simple_name: &str) -> String {
+        self.exception_ids
+            .get(simple_name)
+            .cloned()
+            .unwrap_or_else(|| zerodds_corba_codegen::build_repository_id(&[], simple_name, 1, 0))
     }
 }
-
-/// Registry of all interface definitions indexed by simple name.
-/// Built before the actual emit so that stubs can emit `impl Base for
-/// DerivedStub` blocks for all transitive bases.
-pub(crate) type InterfaceRegistry<'a> = HashMap<String, &'a InterfaceDef>;
 
 /// Options for the CORBA codegen.
 #[derive(Debug, Clone, Default)]
@@ -98,21 +72,24 @@ pub struct CorbaRustGenOptions {
     pub header_comment: Option<String>,
 }
 
-/// Produces a single Rust module file from a parsed IDL spec, containing
-/// CORBA service constructs (interface stubs/skeletons + valuetypes).
+/// Produces a single Rust module file from a model, containing the
+/// CORBA service constructs — interface traits, stubs, skeletons,
+/// valuetypes, components and homes.
+///
+/// The data types are the other column's: `zerodds-lang-rules`
+/// materialises `struct`, `union` and `enum` with their `encode` and
+/// `decode`, and this output is written to be concatenated with that
+/// one.
 ///
 /// # Errors
-/// `Unsupported` for IDL constructs outside the service scope.
-pub fn generate_corba_rust_module(
-    spec: &Specification,
-    opts: &CorbaRustGenOptions,
-) -> Result<String> {
-    // IDL `any` in the CORBA path → zerodds_cdr::CorbaAny (not DdsAny).
-    zerodds_idl_rust::type_map::set_any_target_corba(true);
+/// [`CorbaRustError`] for an IDL construct outside the service scope or
+/// a type reference the frontend left unresolved.
+pub fn generate_corba_rust_module(ast: &Ast, opts: &CorbaRustGenOptions) -> Result<String> {
+    let ctx = Ctx::new(ast);
     let mut out = String::new();
     out.push_str("// SPDX-License-Identifier: Apache-2.0\n");
-    if let Some(c) = &opts.header_comment {
-        for line in c.lines() {
+    if let Some(comment) = &opts.header_comment {
+        for line in comment.lines() {
             out.push_str("// ");
             out.push_str(line);
             out.push('\n');
@@ -122,110 +99,106 @@ pub fn generate_corba_rust_module(
     out.push_str("#![allow(clippy::too_many_lines)]\n");
     out.push_str("#![allow(unused_imports, unused_variables)]\n\n");
 
-    let mut registry: InterfaceRegistry<'_> = HashMap::new();
-    collect_interfaces(spec, &mut registry);
-    // Register interface simple names → rust_scoped maps references to them
-    // onto ObjectReference (IOR) instead of the trait itself (avoiding a dyn cycle).
-    zerodds_idl_rust::type_map::set_interface_refs(registry.keys().cloned());
-    // Scope-resolved exception RepositoryIds (#4(3): definition scope +
-    // typeprefix) → correct cross-ORB RepoIds in raises encodings/decodings.
-    crate::interface_emit::set_exception_repo_ids(collect_exception_repo_ids(spec));
-
-    // Register valuetype state layouts (inheritance state flattening, §15.3.4).
-    crate::valuetype_emit::register_value_states(spec)?;
-
-    for def in &spec.definitions {
-        emit_definition(&mut out, def, &registry, &[])?;
-    }
+    let root = ast
+        .modules()
+        .find(|(_, node)| node.is_root())
+        .map(|(id, _)| id)
+        .ok_or(CorbaRustError::StaleHandle {
+            what: "the root module",
+        })?;
+    emit_module_body(&mut out, &ctx, root)?;
     Ok(out)
 }
 
-/// zerodds-lint: recursion-depth 16
-fn collect_interfaces<'a>(spec: &'a Specification, reg: &mut InterfaceRegistry<'a>) {
-    for def in &spec.definitions {
-        collect_from_def(def, reg);
+/// Everything declared directly inside a module, in declaration order.
+///
+/// zerodds-lint: recursion-depth 16 (module nesting; IDL nests no deeper in practice)
+fn emit_module_body(out: &mut String, ctx: &Ctx<'_>, module: Id<ModuleNode>) -> Result<()> {
+    let node = ctx
+        .ast
+        .module(module)
+        .map_err(|_| CorbaRustError::StaleHandle { what: "a module" })?;
+    for child in &node.children {
+        emit_declaration(out, ctx, *child)?;
     }
+    Ok(())
 }
 
-/// zerodds-lint: recursion-depth 16
-fn collect_from_def<'a>(def: &'a Definition, reg: &mut InterfaceRegistry<'a>) {
-    use zerodds_idl::ast::types::InterfaceDcl;
-    match def {
-        Definition::Interface(InterfaceDcl::Def(d)) => {
-            reg.insert(d.name.text.clone(), d);
-        }
-        Definition::Module(m) => {
-            for inner in &m.definitions {
-                collect_from_def(inner, reg);
-            }
-        }
-        _ => {}
-    }
-}
-
-/// zerodds-lint: recursion-depth 16
-/// IDL module nesting — 16 levels suffice for all known
-/// OMG spec IDL files.
-fn emit_definition(
-    out: &mut String,
-    def: &Definition,
-    registry: &InterfaceRegistry<'_>,
-    scope: &[&str],
-) -> Result<()> {
-    match def {
-        Definition::Module(m) => emit_module(out, m, registry, scope)?,
-        Definition::Interface(i_dcl) => {
-            use zerodds_idl::ast::types::InterfaceDcl;
-            match i_dcl {
-                InterfaceDcl::Def(def) => {
-                    crate::interface_emit::emit_interface(out, def, registry)?;
+/// zerodds-lint: recursion-depth 16 (module nesting)
+fn emit_declaration(out: &mut String, ctx: &Ctx<'_>, any: AnyId) -> Result<()> {
+    match any {
+        AnyId::Module(id, _) => emit_module(out, ctx, id)?,
+        AnyId::Interface(id, _) => {
+            let node = ctx
+                .ast
+                .interface(id)
+                .map_err(|_| CorbaRustError::StaleHandle {
+                    what: "an interface",
+                })?;
+            match node.kind {
+                // A `component` and a `home` are interface nodes with a
+                // different keyword, which is where the model puts
+                // them. The previous generator had two more parse-tree
+                // node kinds for the same two declarations.
+                InterfaceKind::Component => {
+                    crate::component_emit::emit_component(out, ctx, id)?;
                     out.push('\n');
                 }
-                InterfaceDcl::Forward(_) => {}
+                InterfaceKind::Home => {
+                    crate::component_emit::emit_home(out, ctx, id)?;
+                    out.push('\n');
+                }
+                InterfaceKind::Interface
+                | InterfaceKind::Local
+                | InterfaceKind::Abstract
+                | InterfaceKind::Connector
+                | InterfaceKind::PortType => {
+                    crate::interface_emit::emit_interface(out, ctx, id)?;
+                    out.push('\n');
+                }
             }
         }
-        Definition::ValueDef(v) => {
-            crate::valuetype_emit::emit_valuetype(out, v, scope)?;
-            out.push('\n');
+        AnyId::Type(id, _) => {
+            let node = ctx
+                .ast
+                .type_(id)
+                .map_err(|_| CorbaRustError::StaleHandle { what: "a type" })?;
+            // Only valuetypes: every other type kind is the data
+            // column's, and emitting one here would declare it twice.
+            if matches!(node.kind, TypeKind::Valuetype { .. }) {
+                crate::valuetype_emit::emit_valuetype(out, ctx, id)?;
+                out.push('\n');
+            }
         }
-        Definition::Component(c) => {
-            crate::component_emit::emit_component(out, c)?;
-            out.push('\n');
-        }
-        Definition::Home(h) => {
-            crate::component_emit::emit_home(out, h)?;
-            out.push('\n');
-        }
-        // ValueBox/ValueForward: phase 2.
-        // Type/Const/Except live in the idl-rust DataType path.
         _ => {}
     }
     Ok(())
 }
 
-/// zerodds-lint: recursion-depth 16
-fn emit_module(
-    out: &mut String,
-    m: &zerodds_idl::ast::types::ModuleDef,
-    registry: &InterfaceRegistry<'_>,
-    scope: &[&str],
-) -> Result<()> {
+/// zerodds-lint: recursion-depth 16 (module nesting)
+fn emit_module(out: &mut String, ctx: &Ctx<'_>, module: Id<ModuleNode>) -> Result<()> {
+    let node = ctx
+        .ast
+        .module(module)
+        .map_err(|_| CorbaRustError::StaleHandle { what: "a module" })?;
+    let mut body = String::new();
+    emit_module_body(&mut body, ctx, module)?;
+    // A module whose whole content is data types produces nothing here,
+    // and an empty `pub mod` that shadows the data column's module of
+    // the same name is worse than no module at all.
+    if body.trim().is_empty() {
+        return Ok(());
+    }
     out.push_str("pub mod ");
-    out.push_str(&m.name.text);
+    out.push_str(&node.name);
     out.push_str(" {\n");
-    let mut child_scope: Vec<&str> = scope.to_vec();
-    child_scope.push(&m.name.text);
-    for inner in &m.definitions {
-        let mut inner_out = String::new();
-        emit_definition(&mut inner_out, inner, registry, &child_scope)?;
-        for line in inner_out.lines() {
-            if line.is_empty() {
-                out.push('\n');
-            } else {
-                out.push_str("    ");
-                out.push_str(line);
-                out.push('\n');
-            }
+    for line in body.lines() {
+        if line.is_empty() {
+            out.push('\n');
+        } else {
+            out.push_str("    ");
+            out.push_str(line);
+            out.push('\n');
         }
     }
     out.push_str("}\n\n");

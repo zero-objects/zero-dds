@@ -1,0 +1,14 @@
+// recursion through an array — the cycle IDL 4.2 §7.4.1.4.4.4.4 does
+// not admit: an array has no length on the wire, so a value of this
+// type never terminates. "An incomplete type can only appear as the
+// element type of a sequence definition." Every implementation must
+// refuse the file; the row records each refusal in the tool's own
+// words. ZeroDDS names the clause instead of tripping a depth limit.
+module m {
+  struct Node;
+
+  @appendable struct Node {
+    long value;
+    Node pair[2];
+  };
+};

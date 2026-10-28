@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of identifier-target-keywords-unannotated that fastdds produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	gen.hpp:365:26: error: invalid use of 'class zd_c1::package::Sample::m_lambda'
+plain-cdr1	be	refused	gen.hpp:365:26: error: invalid use of 'class zd_c1::package::Sample::m_lambda'
+pl-cdr1	le	refused	gen.hpp:365:26: error: invalid use of 'class zd_c1::package::Sample::m_lambda'
+pl-cdr1	be	refused	gen.hpp:365:26: error: invalid use of 'class zd_c1::package::Sample::m_lambda'
+plain-cdr2	le	refused	gen.hpp:365:26: error: invalid use of 'class zd_c1::package::Sample::m_lambda'
+plain-cdr2	be	refused	gen.hpp:365:26: error: invalid use of 'class zd_c1::package::Sample::m_lambda'
+delimited-cdr	le	refused	gen.hpp:365:26: error: invalid use of 'class zd_c1::package::Sample::m_lambda'
+delimited-cdr	be	refused	gen.hpp:365:26: error: invalid use of 'class zd_c1::package::Sample::m_lambda'
+pl-cdr2	le	refused	gen.hpp:365:26: error: invalid use of 'class zd_c1::package::Sample::m_lambda'
+pl-cdr2	be	refused	gen.hpp:365:26: error: invalid use of 'class zd_c1::package::Sample::m_lambda'

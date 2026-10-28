@@ -49,7 +49,7 @@ fn zerodds_publish_received_by_mosquitto_sub() {
         eprintln!("mosquitto not available; skipping");
         return;
     }
-    // 1. Mosquitto-Broker auf Port 21883 starten.
+    // 1. Start the Mosquitto broker on port 21883.
     let mut broker = Command::new("mosquitto")
         .args(["-p", "21883", "-v"])
         .stdout(Stdio::null())

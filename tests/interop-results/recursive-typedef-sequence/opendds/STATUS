@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of recursive-typedef-sequence that opendds produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	Error - tao_idl: illegal use of incomplete type, - ::zd_c6::m::Node
+plain-cdr1	be	refused	Error - tao_idl: illegal use of incomplete type, - ::zd_c6::m::Node
+pl-cdr1	le	refused	Error - tao_idl: illegal use of incomplete type, - ::zd_c6::m::Node
+pl-cdr1	be	refused	Error - tao_idl: illegal use of incomplete type, - ::zd_c6::m::Node
+plain-cdr2	le	refused	Error - tao_idl: illegal use of incomplete type, - ::zd_c6::m::Node
+plain-cdr2	be	refused	Error - tao_idl: illegal use of incomplete type, - ::zd_c6::m::Node
+delimited-cdr	le	refused	Error - tao_idl: illegal use of incomplete type, - ::zd_c6::m::Node
+delimited-cdr	be	refused	Error - tao_idl: illegal use of incomplete type, - ::zd_c6::m::Node
+pl-cdr2	le	refused	Error - tao_idl: illegal use of incomplete type, - ::zd_c6::m::Node
+pl-cdr2	be	refused	Error - tao_idl: illegal use of incomplete type, - ::zd_c6::m::Node

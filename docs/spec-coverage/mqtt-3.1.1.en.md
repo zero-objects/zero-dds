@@ -7,7 +7,7 @@
 blocks** (introduced in 5.0), a 2-byte CONNACK, a UNSUBACK without reason codes,
 an empty DISCONNECT body, and no AUTH packet. ZeroDDS implements 3.1.1 as a
 version-aware path in the same `crates/mqtt-bridge` codec
-(`ProtocolVersion::V311`); the broker (`server.rs`) and client (`net.rs`)
+(`ProtocolVersion::V311`); the broker (`crates/mqtt-bridge/src/server.rs`) and client (`net.rs`)
 negotiate the version per connection from the CONNECT protocol level. Every item
 is backed by a repo path + a test; interop is proven live against Eclipse
 Mosquitto 2.0 (`-V mqttv311`), both directions and both roles (client against a
@@ -16,7 +16,7 @@ Mosquitto broker, real Mosquitto clients against the ZeroDDS broker).
 Implementation:
 
 - `crates/mqtt-bridge/` — version-aware 3.1.1 codec (`ProtocolVersion::V311`)
-  + broker (`server.rs`) + client (`net.rs`); 165 lib tests + 6 broker E2E +
+  + broker (`crates/mqtt-bridge/src/server.rs`) + client (`net.rs`); 165 lib tests + 6 broker E2E +
   5 Mosquitto-live green.
 
 ---
@@ -29,7 +29,7 @@ server accepts/rejects based on the level.
 **Repo:** `crates/mqtt-bridge/src/version.rs::ProtocolVersion` (`V311`/`V5`,
 `level`/`from_level`/`has_properties`/`protocol_name`). The broker reads the
 level from the CONNECT body and replies in the matching dialect
-(`server.rs::handle_connection`).
+(`crates/mqtt-bridge/src/server.rs::handle_connection`).
 
 **Tests:** `version::tests::{level_round_trip, unsupported_levels_rejected,
 only_v5_has_properties}`.
@@ -92,7 +92,7 @@ code, no properties).
 
 **Repo:** `control_packets::{encode_ack_body_v, decode_ack_body}` (`V311` emits
 only the packet identifier; the shared decoder reads the short form). The QoS-2
-flow in the broker: `server.rs` (PUBREC→PUBREL→PUBCOMP).
+flow in the broker: `crates/mqtt-bridge/src/server.rs` (PUBREC→PUBREL→PUBCOMP).
 
 **Tests:** `control_packets::tests::v311_ack_is_packet_id_only`; in-process
 `broker_server_e2e::qos2_exactly_once_delivery`.
@@ -106,7 +106,12 @@ property block.
 
 **Repo:** `control_packets::{encode_subscribe_body_v, decode_subscribe_body_v}`.
 
-**Tests:** `control_packets` round-trip + live `mosquitto_interop_e2e.rs`.
+**Tests:** `crates/mqtt-bridge/src/control_packets.rs::tests::subscribe_body_round_trip_with_two_filters`,
+`::unsubscribe_body_round_trip`;
+`crates/mqtt-bridge/src/topic_filter.rs::tests::validate_simple_filter`,
+`::validate_plus_in_middle`, `::validate_hash_at_end`,
+`::validate_hash_in_middle_rejected`, `::validate_mixed_wildcard_rejected`;
+live `crates/mqtt-bridge/tests/mosquitto_interop_e2e.rs::mosquitto_311_client_receives_from_zerodds`.
 
 **Status:** done
 
@@ -138,9 +143,9 @@ decode_unsubscribe_body_v, encode_unsuback_body_v, decode_unsuback_body_v}`.
 
 **Spec:** §3.12-§3.13 — body-less keep-alive packets. Identical to 5.0.
 
-**Repo:** `server.rs` (PINGREQ → PINGRESP); wire constants in `packet.rs`.
+**Repo:** `crates/mqtt-bridge/src/server.rs` (PINGREQ → PINGRESP, bodyless), `crates/mqtt-bridge/src/net.rs::MqttClient::ping` (sends PINGREQ and checks the reply against §3.13), wire constants in `crates/mqtt-bridge/src/packet.rs::ControlPacketType`, the keep-alive rule in `crates/mqtt-bridge/src/keep_alive.rs::KeepAliveTracker`.
 
-**Tests:** covered by the broker e2e (keep-alive path).
+**Tests:** `crates/mqtt-bridge/tests/broker_server_e2e.rs::pingreq_is_answered_with_a_bodyless_pingresp_within_the_keep_alive` — four PINGREQs per protocol version (3.1.1 and 5.0) with an announced Keep Alive of 1 s; every reply has to be a PINGRESP with an empty body and zero flags, and has to arrive inside the period. The 1.5x expiry rule itself: `crates/mqtt-bridge/src/keep_alive.rs::tests::small_keep_alive_expires_after_1_5x`, `crates/mqtt-bridge/src/keep_alive.rs::tests::record_packet_resets_timer`, `crates/mqtt-bridge/src/keep_alive.rs::tests::keep_alive_zero_is_disabled`.
 
 **Status:** done
 
@@ -161,8 +166,8 @@ fixed-header pair `0xE0 0x00` is the whole packet.
 **Spec:** §4 — session state, subscriptions, QoS flow, retained, will. Identical
 semantics to 5.0; only the wire encoding of the replies is 3.1.1.
 
-**Repo:** `server.rs::MqttBrokerServer` + `net.rs::MqttClient` (both
-version-aware) over the shared `broker.rs` engine.
+**Repo:** `crates/mqtt-bridge/src/server.rs::MqttBrokerServer` + `net.rs::MqttClient` (both
+version-aware) over the shared `crates/mqtt-bridge/src/broker.rs` engine.
 
 **Tests:** in-process `broker_server_e2e::{cross_version_v5_publishes_v311_subscribes,
 cross_version_v311_publishes_v5_subscribes}`; live `mosquitto_interop_e2e::{
@@ -188,8 +193,8 @@ v5.0).
 
 12 done / 0 partial / 0 open / 1 n/a (informative) / 0 n/a (rejected).
 
-Test run: `cargo test -p zerodds-mqtt-bridge --lib` — 165 tests green (incl. the
+Test run: `cargo test -p zerodds-mqtt-bridge --lib` — 166 tests green (incl. the
 `v311_*` codec tests + the `version` module); in-process
-`cargo test -p zerodds-mqtt-bridge --test broker_server_e2e` — 6 green. Live
+`cargo test -p zerodds-mqtt-bridge --test broker_server_e2e` — 7 green. Live
 interop (Linux bench host, Eclipse Mosquitto 2.0): `MQTT_MOSQUITTO=1 cargo test -p
 zerodds-mqtt-bridge --test mosquitto_interop_e2e -- --ignored` — 5 green.

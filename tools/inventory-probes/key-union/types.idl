@@ -1,0 +1,5 @@
+enum CommandKind { START, STOP };
+@final union MyCommand switch (@key CommandKind) {
+  case START: long a;
+  default: short b;
+};

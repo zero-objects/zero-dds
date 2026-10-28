@@ -13,7 +13,7 @@
 //! to be cancelled. Spec §15.4.4: the server MUST cease processing,
 //! but must not retract a reply that has already been sent.
 
-use zerodds_cdr::{BufferReader, BufferWriter};
+use zerodds_wire::{Reader, Writer};
 
 use crate::error::GiopResult;
 
@@ -29,8 +29,8 @@ impl CancelRequest {
     ///
     /// # Errors
     /// Buffer write error.
-    pub fn encode(&self, w: &mut BufferWriter) -> GiopResult<()> {
-        w.write_u32(self.request_id)?;
+    pub fn encode(&self, w: &mut Writer) -> GiopResult<()> {
+        w.write_u32(self.request_id);
         Ok(())
     }
 
@@ -38,7 +38,7 @@ impl CancelRequest {
     ///
     /// # Errors
     /// Buffer read error.
-    pub fn decode(r: &mut BufferReader<'_>) -> GiopResult<Self> {
+    pub fn decode(r: &mut Reader<'_>) -> GiopResult<Self> {
         let request_id = r.read_u32()?;
         Ok(Self { request_id })
     }
@@ -48,16 +48,16 @@ impl CancelRequest {
 #[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
-    use zerodds_cdr::Endianness;
+    use zerodds_wire::Endianness;
 
     #[test]
     fn round_trip() {
         let c = CancelRequest { request_id: 42 };
-        let mut w = BufferWriter::new(Endianness::Big);
+        let mut w = Writer::new(Endianness::Big);
         c.encode(&mut w).unwrap();
-        let bytes = w.into_bytes();
+        let bytes = w.finish();
         assert_eq!(bytes, &[0, 0, 0, 42]);
-        let mut r = BufferReader::new(&bytes, Endianness::Big);
+        let mut r = Reader::new(&bytes, Endianness::Big);
         assert_eq!(CancelRequest::decode(&mut r).unwrap(), c);
     }
 }

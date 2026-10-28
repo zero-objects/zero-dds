@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! `cargo-dag` — emittiert die topologische Publish-Reihenfolge der
+//! `cargo-dag` — emits the topological publish order of the
 //! Workspace-Crates.
 
 #![warn(missing_docs)]
@@ -14,16 +14,16 @@ use zerodds_cargo_dag::{CrateInfo, collect_crates, only_publishable, topo_sort};
 
 fn print_help() {
     println!(
-        "cargo-dag — emittiert die topologische Publish-Reihenfolge
+        "cargo-dag — emits the topological publish order
 
 USAGE:
   cargo-dag [WORKSPACE_ROOT] [--only-publishable] [--format {{flat,verbose,json}}]
 
 OPTIONS:
-  WORKSPACE_ROOT       Pfad zum Repo-Root (default: .)
-  --only-publishable   filtere `publish = false` raus
-  --format flat        Eine Zeile pro Crate (default)
-  --format verbose     Crate + Pfad + Dep-Count pro Zeile
+  WORKSPACE_ROOT       Path to repo root (default: .)
+  --only-publishable   filter out `publish = false`
+  --format flat        One line per crate (default)
+  --format verbose     Crate + path + dep-count per line
   --format json        Array of {{name, path, blocked, deps}}
 "
     );

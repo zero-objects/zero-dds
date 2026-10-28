@@ -9,7 +9,7 @@
 // borrowed, filled, and published; a normal subscription on the same topic must
 // receive the value.
 //
-// Build + run (ROS 2 Humble via RoboStack/micromamba on codepit):
+// Build + run (ROS 2 Humble via RoboStack/micromamba on the Linux test host):
 //   see run_loaned_message_test.sh
 //
 // PASS criterion: `can_loan=1 got=42 PASS`. The test itself is delivery-mode

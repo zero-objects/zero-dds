@@ -8,10 +8,10 @@ count="${COUNT:-20}"
 repo_root="$(cd "$(dirname "$0")/../../.." && pwd)"
 bin="$repo_root/target/release/isolation-smoke"
 
-# Shared cleanup (phase2-0-smells #12): tmp-Dirs + Background-PIDs
-# raeumen auch bei Script-Fehler oder SIGINT. Ohne trap hing `rm -rf`
-# am Happy-Path und lief bei Fehler nicht; Test-Runs unter `set -e`
-# lassen sonst gelecktes `/tmp/tmp.XXXX` + stranded rx/tx-Prozesse zurueck.
+# Shared cleanup (phase2-0-smells #12): clean up tmp dirs + background PIDs
+# also on a script error or SIGINT. Without the trap, `rm -rf` was tied
+# to the happy path and did not run on error; test runs under `set -e`
+# otherwise leave a leaked `/tmp/tmp.XXXX` + stranded rx/tx processes behind.
 _cleanup_pids=()
 _cleanup_dirs=()
 cleanup() {

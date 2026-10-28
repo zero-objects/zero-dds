@@ -67,6 +67,27 @@ impl WireProperty {
     }
 }
 
+/// A binary property entry on the wire (`BinaryProperty_t`, DDS-Security 1.2
+/// §7.3.3.1): a name and an octet sequence.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct WireBinaryProperty {
+    /// Name.
+    pub name: String,
+    /// Value.
+    pub value: Vec<u8>,
+}
+
+impl WireBinaryProperty {
+    /// Constructor.
+    #[must_use]
+    pub fn new(name: impl Into<String>, value: impl Into<Vec<u8>>) -> Self {
+        Self {
+            name: name.into(),
+            value: value.into(),
+        }
+    }
+}
+
 /// PropertyList snapshot for the wire level. The order is
 /// preserved on encode/decode — callers that want to avoid duplicate
 /// names must enforce that themselves.
@@ -74,6 +95,8 @@ impl WireProperty {
 pub struct WirePropertyList {
     /// List of properties in wire order.
     pub entries: Vec<WireProperty>,
+    /// The `binary_value` of the `PropertyQosPolicy`, in wire order.
+    pub binary_entries: Vec<WireBinaryProperty>,
 }
 
 impl WirePropertyList {
@@ -83,10 +106,11 @@ impl WirePropertyList {
         Self::default()
     }
 
-    /// Returns `true` if no property is present.
+    /// Returns `true` if neither a string property nor a binary property is
+    /// present.
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.entries.is_empty()
+        self.entries.is_empty() && self.binary_entries.is_empty()
     }
 
     /// Number of properties.
@@ -108,6 +132,13 @@ impl WirePropertyList {
         self
     }
 
+    /// Appends a binary property.
+    #[must_use]
+    pub fn with_binary(mut self, prop: WireBinaryProperty) -> Self {
+        self.binary_entries.push(prop);
+        self
+    }
+
     /// Returns the value of the last entry with this name (spec
     /// semantics: "last value wins").
     #[must_use]
@@ -120,8 +151,8 @@ impl WirePropertyList {
     }
 
     /// Encodes to the byte sequence used directly as the value of a
-    /// `PID_PROPERTY_LIST` parameter. `BinaryPropertySeq`
-    /// is always appended as `count=0`.
+    /// `PID_PROPERTY_LIST` parameter: `PropertySeq`, then
+    /// `BinaryPropertySeq` (DDS-Security 1.2 §7.3.21).
     ///
     /// # Errors
     /// * `ValueOutOfRange` if the number of properties
@@ -147,13 +178,38 @@ impl WirePropertyList {
             write_cdr_string(&mut out, &p.value, little_endian)?;
             align4(&mut out);
         }
-        // BinaryPropertySeq: count = 0, no entries.
-        write_u32(&mut out, 0, little_endian);
+        if self.binary_entries.len() > MAX_PROPERTIES {
+            return Err(WireError::ValueOutOfRange {
+                message: "PropertyList: exceeds MAX_PROPERTIES (binary)",
+            });
+        }
+        let n_binary =
+            u32::try_from(self.binary_entries.len()).map_err(|_| WireError::ValueOutOfRange {
+                message: "PropertyList: binary entry count exceeds u32",
+            })?;
+        write_u32(&mut out, n_binary, little_endian);
+        for p in &self.binary_entries {
+            check_len(&p.name)?;
+            if p.value.len() > MAX_PROPERTY_STRING_LEN {
+                return Err(WireError::ValueOutOfRange {
+                    message: "PropertyList: binary value exceeds MAX_PROPERTY_STRING_LEN",
+                });
+            }
+            write_cdr_string(&mut out, &p.name, little_endian)?;
+            align4(&mut out);
+            write_u32(&mut out, p.value.len() as u32, little_endian);
+            out.extend_from_slice(&p.value);
+            align4(&mut out);
+        }
         Ok(out)
     }
 
     /// Decodes from the value byte slice of a `PID_PROPERTY_LIST`
-    /// parameter.
+    /// parameter, in either of its two forms: DDSI-RTPS 2.5 §9.6.3.2,
+    /// Table 9.18 has it a `sequence<Property_t>`, DDS-Security 1.2
+    /// §7.5.1.4, Table 10 the whole `PropertyQosPolicy` with
+    /// `binary_value` behind the properties. A list that ends after its
+    /// properties has no binary entries.
     ///
     /// # Errors
     /// * `UnexpectedEof` on truncated input.
@@ -174,18 +230,26 @@ impl WirePropertyList {
             align4_read(&mut pos);
             entries.push(WireProperty { name, value });
         }
-        // Read and discard the BinaryPropertySeq (we currently do not
-        // persist the binary entries — no security use case in
-        // stage 2).
+        // The first form: Connext 7.7.0 sends it for a writer whose
+        // properties are not propagated (four octets, a count of 0), and
+        // reading it as truncated dropped the writer's whole
+        // DCPSPublication (OMG dds-rtps Test_LargeData_0).
+        if pos >= bytes.len() {
+            return Ok(Self {
+                entries,
+                binary_entries: Vec::new(),
+            });
+        }
         let n_binary = read_u32(bytes, &mut pos, little_endian)? as usize;
         if n_binary > MAX_PROPERTIES {
             return Err(WireError::ValueOutOfRange {
                 message: "PropertyList: binary count exceeds MAX_PROPERTIES",
             });
         }
+        let mut binary_entries = Vec::with_capacity(n_binary);
         for _ in 0..n_binary {
             // Binary: string name + sequence<u8> value.
-            let _ = read_cdr_string(bytes, &mut pos, little_endian)?;
+            let name = read_cdr_string(bytes, &mut pos, little_endian)?;
             align4_read(&mut pos);
             let vlen = read_u32(bytes, &mut pos, little_endian)? as usize;
             if vlen > MAX_PROPERTY_STRING_LEN {
@@ -199,10 +263,79 @@ impl WirePropertyList {
                     offset: pos,
                 });
             }
+            let value = bytes[pos..pos + vlen].to_vec();
             pos += vlen;
             align4_read(&mut pos);
+            binary_entries.push(WireBinaryProperty { name, value });
         }
-        Ok(Self { entries })
+        Ok(Self {
+            entries,
+            binary_entries,
+        })
+    }
+}
+
+/// `DataTags` on the wire (`PID_DATA_TAGS` 0x1003, DDS-Security 1.2 §7.3.21,
+/// §7.5.1.7, §7.5.1.8): `TagSeq tags`, a sequence of (name, value) string
+/// pairs.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct WireDataTags {
+    /// The tags in wire order.
+    pub tags: Vec<WireProperty>,
+}
+
+impl WireDataTags {
+    /// `true` without tags.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.tags.is_empty()
+    }
+
+    /// Encodes the value of a `PID_DATA_TAGS` parameter.
+    ///
+    /// # Errors
+    /// `ValueOutOfRange` above [`MAX_PROPERTIES`] tags or for a string above
+    /// [`MAX_PROPERTY_STRING_LEN`] or with an inner null byte.
+    pub fn encode(&self, little_endian: bool) -> Result<Vec<u8>, WireError> {
+        if self.tags.len() > MAX_PROPERTIES {
+            return Err(WireError::ValueOutOfRange {
+                message: "DataTags: exceeds MAX_PROPERTIES",
+            });
+        }
+        let mut out = Vec::new();
+        write_u32(&mut out, self.tags.len() as u32, little_endian);
+        for t in &self.tags {
+            check_len(&t.name)?;
+            check_len(&t.value)?;
+            write_cdr_string(&mut out, &t.name, little_endian)?;
+            align4(&mut out);
+            write_cdr_string(&mut out, &t.value, little_endian)?;
+            align4(&mut out);
+        }
+        Ok(out)
+    }
+
+    /// Decodes the value of a `PID_DATA_TAGS` parameter.
+    ///
+    /// # Errors
+    /// `UnexpectedEof` on truncated input, `ValueOutOfRange` above the caps.
+    pub fn decode(bytes: &[u8], little_endian: bool) -> Result<Self, WireError> {
+        let mut pos = 0usize;
+        let n = read_u32(bytes, &mut pos, little_endian)? as usize;
+        if n > MAX_PROPERTIES {
+            return Err(WireError::ValueOutOfRange {
+                message: "DataTags: count exceeds MAX_PROPERTIES",
+            });
+        }
+        let mut tags = Vec::with_capacity(n);
+        for _ in 0..n {
+            let name = read_cdr_string(bytes, &mut pos, little_endian)?;
+            align4_read(&mut pos);
+            let value = read_cdr_string(bytes, &mut pos, little_endian)?;
+            align4_read(&mut pos);
+            tags.push(WireProperty { name, value });
+        }
+        Ok(Self { tags })
     }
 }
 
@@ -311,6 +444,48 @@ mod tests {
     #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
     use super::*;
 
+    /// DDS-Security 1.2 §7.3.21: the `PropertyQosPolicy` is `value` and
+    /// `binary_value`. The binary entries were written as an empty sequence
+    /// and read and thrown away.
+    #[test]
+    fn binary_properties_cross_the_wire() {
+        let list = WirePropertyList::new()
+            .with(WireProperty::new("dds.sec.x", "v"))
+            .with_binary(WireBinaryProperty::new("ocsp_status", alloc::vec![1, 2, 3]))
+            .with_binary(WireBinaryProperty::new("empty", alloc::vec![]));
+        for le in [true, false] {
+            let bytes = list.encode(le).unwrap();
+            let back = WirePropertyList::decode(&bytes, le).unwrap();
+            assert_eq!(back, list);
+            assert_eq!(back.binary_entries[0].value, alloc::vec![1, 2, 3]);
+        }
+    }
+
+    /// DDS-Security 1.2 §7.3.21: `DataTags` is a `TagSeq` of two strings
+    /// per tag: ulong count, then each CDR string (ulong length with the
+    /// terminating NUL, the octets, padding to 4) — in LE and BE.
+    #[test]
+    fn data_tags_wire_form() {
+        let tags = WireDataTags {
+            tags: alloc::vec![WireProperty::new("a", "b")],
+        };
+        let le = [
+            1, 0, 0, 0, // count
+            2, 0, 0, 0, b'a', 0, 0, 0, // "a"
+            2, 0, 0, 0, b'b', 0, 0, 0, // "b"
+        ];
+        assert_eq!(tags.encode(true).unwrap(), le);
+        assert_eq!(WireDataTags::decode(&le, true).unwrap(), tags);
+        let be = [
+            0, 0, 0, 1, //
+            0, 0, 0, 2, b'a', 0, 0, 0, //
+            0, 0, 0, 2, b'b', 0, 0, 0,
+        ];
+        assert_eq!(tags.encode(false).unwrap(), be);
+        assert_eq!(WireDataTags::decode(&be, false).unwrap(), tags);
+        assert!(WireDataTags::decode(&le[..10], true).is_err());
+    }
+
     #[test]
     fn empty_list_roundtrip_le() {
         let list = WirePropertyList::new();
@@ -324,7 +499,7 @@ mod tests {
     #[test]
     fn single_property_roundtrip_le() {
         let list = WirePropertyList::new().with(WireProperty::new(
-            "dds.sec.auth.plugin_class",
+            "org.zerodds.sec.auth.plugin_class",
             "DDS:Auth:PKI-DH:1.2",
         ));
         let bytes = list.encode(true).unwrap();
@@ -336,19 +511,19 @@ mod tests {
     fn multi_property_roundtrip_le() {
         let list = WirePropertyList::new()
             .with(WireProperty::new(
-                "dds.sec.auth.plugin_class",
+                "org.zerodds.sec.auth.plugin_class",
                 "DDS:Auth:PKI-DH:1.2",
             ))
             .with(WireProperty::new(
-                "dds.sec.crypto.plugin_class",
+                "org.zerodds.sec.crypto.plugin_class",
                 "DDS:Crypto:AES-GCM-GMAC:1.2",
             ))
             .with(WireProperty::new(
-                "zerodds.sec.supported_suites",
-                "AES_128_GCM,AES_256_GCM,HMAC_SHA256",
+                "org.zerodds.sec.supported_suites",
+                "AES_128_GCM,AES_256_GCM,AES_256_GMAC",
             ))
             .with(WireProperty::new(
-                "zerodds.sec.offered_protection",
+                "org.zerodds.sec.offered_protection",
                 "ENCRYPT",
             ));
         let bytes = list.encode(true).unwrap();
@@ -394,6 +569,26 @@ mod tests {
         assert!(list.get("x").is_none());
     }
 
+    /// DDSI-RTPS 2.5 §9.6.3.2, Table 9.18: `PID_PROPERTY_LIST` is a
+    /// `sequence<Property_t>`; without the DDS-Security `binary_value`
+    /// behind it the list has no binary entries. The four octets are what
+    /// Connext 7.7.0 sends for a writer whose properties are not
+    /// propagated.
+    #[test]
+    fn decode_reads_the_rtps_form_without_binary_value() {
+        assert_eq!(
+            WirePropertyList::decode(&[0, 0, 0, 0], true).unwrap(),
+            WirePropertyList::new()
+        );
+        let list = WirePropertyList::new().with(WireProperty::new("a", "bc"));
+        for le in [true, false] {
+            let full = list.encode(le).unwrap();
+            // The properties alone: everything but the trailing count of 0.
+            let rtps_form = &full[..full.len() - 4];
+            assert_eq!(WirePropertyList::decode(rtps_form, le).unwrap(), list);
+        }
+    }
+
     #[test]
     fn decode_rejects_truncated_count() {
         let err = WirePropertyList::decode(&[0, 0], true).unwrap_err();
@@ -422,7 +617,7 @@ mod tests {
 
     #[test]
     fn decode_accepts_nonzero_binary_sequence() {
-        // We do not persist binary, but must consume it.
+        // The binary sequence is kept (§7.3.21 `binary_value`).
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&0u32.to_le_bytes()); // n_props = 0
         bytes.extend_from_slice(&1u32.to_le_bytes()); // n_binary = 1
@@ -431,7 +626,10 @@ mod tests {
         bytes.extend_from_slice(&3u32.to_le_bytes()); // value_len = 3
         bytes.extend_from_slice(&[0xAA, 0xBB, 0xCC, 0x00]); // bytes + pad
         let decoded = WirePropertyList::decode(&bytes, true).unwrap();
-        assert!(decoded.is_empty(), "binary seq is silently consumed");
+        assert!(!decoded.is_empty());
+        assert_eq!(decoded.binary_entries.len(), 1);
+        assert_eq!(decoded.binary_entries[0].name, "bin");
+        assert_eq!(decoded.binary_entries[0].value, [0xAA, 0xBB, 0xCC]);
     }
 
     #[test]
@@ -537,14 +735,14 @@ mod tests {
     #[test]
     fn csv_suites_value_roundtrips() {
         let list = WirePropertyList::new().with(WireProperty::new(
-            "zerodds.sec.supported_suites",
-            "AES_128_GCM,AES_256_GCM,HMAC_SHA256",
+            "org.zerodds.sec.supported_suites",
+            "AES_128_GCM,AES_256_GCM,AES_256_GMAC",
         ));
         let bytes = list.encode(true).unwrap();
         let decoded = WirePropertyList::decode(&bytes, true).unwrap();
         assert_eq!(
-            decoded.get("zerodds.sec.supported_suites"),
-            Some("AES_128_GCM,AES_256_GCM,HMAC_SHA256")
+            decoded.get("org.zerodds.sec.supported_suites"),
+            Some("AES_128_GCM,AES_256_GCM,AES_256_GMAC")
         );
     }
 }

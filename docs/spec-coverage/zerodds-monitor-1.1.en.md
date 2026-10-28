@@ -18,8 +18,9 @@ Implementation:
 
 ## §1.1 Data model — layers
 
-**Spec:** §1.1 — three metric layers (counter/gauge/histogram) over a registry;
-`no_std`-capable core.
+**Spec:** §1.1 — three metric layers (counter/gauge/histogram) over a registry.
+`Histogram`, `Span`, `TraceId`, `SpanId` and `Event` live in `foundation`,
+which builds without `std`; `monitor` itself needs `std`.
 
 **Repo:** `crates/monitor/src/lib.rs`.
 
@@ -220,7 +221,7 @@ label escaping, PID roundtrip, **cross-layer** (dcps-write → render), **policy
 
 ## Audit status
 
-10 done / 0 partial / 0 open / 2 n/a (informative) / 0 n/a (rejected).
+14 done / 0 partial / 0 open / 2 n/a (informative) / 0 n/a (rejected).
 
 Test run: `cargo test -p zerodds-monitor` — 46 tests green, 0 failed; plus
 `cargo test -p zerodds-dcps` (§10 cross-layer test green, metrics feature default).

@@ -4,8 +4,13 @@
 //! elapses and the sample is still in the writer's cache, the sample
 //! is no longer available to any future DataReaders."
 //!
-//! Implemented as a writer-side cache scan every ~20 ms. The reader-
-//! side lifespan filter (on received samples) is the reader-lifespan track.
+//! Implemented as a writer-side cache scan every ~20 ms, plus the reader-side
+//! expiry the same clause demands: "The 'expiration time' of each sample is
+//! computed by adding the duration specified by the LIFESPAN QoS to the source
+//! timestamp... Once the sample expires, the data will be removed from the
+//! DataReader caches." The writer announces its LIFESPAN in `PID_LIFESPAN`
+//! (SEDP); the reader adds it to each sample's source timestamp and drops the
+//! sample from its cache once that instant has passed.
 //!
 //! Test strategy: the writer writes N samples at t=0 with a lifespan
 //! shorter than the wait time, then the reader joins **late**. On correct
@@ -88,7 +93,7 @@ mod linux {
         // Writes 3 samples, waits 1 s (all expire) → a new
         // reader joins → receives nothing.
         let factory = DomainParticipantFactory::instance();
-        let domain = unique_domain(5);
+        let domain = unique_domain();
         let pub_p = factory
             .create_participant_with_config(domain, DomainParticipantQos::default(), fast_cfg())
             .expect("pub participant");
@@ -177,7 +182,7 @@ mod linux {
         // Counter-example: writer writes, waits **less** than lifespan,
         // reader joins → must see samples.
         let factory = DomainParticipantFactory::instance();
-        let domain = unique_domain(5);
+        let domain = unique_domain();
         let pub_p = factory
             .create_participant_with_config(domain, DomainParticipantQos::default(), fast_cfg())
             .expect("pub participant");
@@ -237,6 +242,185 @@ mod linux {
         assert!(
             received.iter().any(|s| s.color == "FRESH"),
             "Lifespan=10s + TL should deliver FRESH, got {received:?}"
+        );
+    }
+
+    /// DDS 1.4 §2.2.3.16 reader side: the sample is already in the reader's
+    /// cache (a non-consuming `read()` has ingested it) when its expiration
+    /// time passes. "Once the sample expires, the data will be removed from
+    /// the DataReader caches" — the later `take()` must come back without it.
+    ///
+    /// This is the OMG `dds-rtps` `Test_Lifespan_0`-`_7` scenario reduced to
+    /// one sample: a writer that keeps sending would otherwise mask a missing
+    /// purge with fresh data.
+    #[test]
+    fn lifespan_removes_expired_samples_from_the_reader_cache() {
+        let factory = DomainParticipantFactory::instance();
+        let domain = unique_domain();
+        let pub_p = factory
+            .create_participant_with_config(domain, DomainParticipantQos::default(), fast_cfg())
+            .expect("pub participant");
+        let sub_p = factory
+            .create_participant_with_config(domain, DomainParticipantQos::default(), fast_cfg())
+            .expect("sub participant");
+
+        let pub_topic = pub_p
+            .create_topic::<ShapeType>("Square", TopicQos::default())
+            .expect("pub topic");
+        let publisher = pub_p.create_publisher(PublisherQos::default());
+        let wqos = DataWriterQos {
+            reliability: zerodds_qos::ReliabilityQosPolicy {
+                kind: zerodds_qos::ReliabilityKind::Reliable,
+                ..Default::default()
+            },
+            lifespan: LifespanQosPolicy {
+                duration: QosDuration::from_millis(250),
+            },
+            ..Default::default()
+        };
+        let writer = publisher
+            .create_datawriter::<ShapeType>(&pub_topic, wqos)
+            .expect("writer");
+
+        let sub_topic = sub_p
+            .create_topic::<ShapeType>("Square", TopicQos::default())
+            .expect("sub topic");
+        let subscriber = sub_p.create_subscriber(SubscriberQos::default());
+        let rqos = DataReaderQos {
+            reliability: zerodds_qos::ReliabilityQosPolicy {
+                kind: zerodds_qos::ReliabilityKind::Reliable,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let reader = subscriber
+            .create_datareader::<ShapeType>(&sub_topic, rqos)
+            .expect("reader");
+
+        writer
+            .wait_for_matched_subscription(1, Duration::from_secs(15))
+            .expect("match");
+        reader
+            .wait_for_matched_publication(1, Duration::from_secs(15))
+            .expect("match");
+
+        writer
+            .write(&ShapeType::new("SHORT", 10, 20, 30))
+            .expect("write");
+
+        // Non-consuming read pulls the sample into the reader cache while it
+        // is still inside its lifespan. Without this the test would only prove
+        // the ingest-time drop, not the cache purge.
+        let mut in_cache = false;
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while std::time::Instant::now() < deadline {
+            if reader
+                .read()
+                .expect("read")
+                .iter()
+                .any(|s| s.color == "SHORT")
+            {
+                in_cache = true;
+                break;
+            }
+            thread::sleep(Duration::from_millis(5));
+        }
+        assert!(
+            in_cache,
+            "sample never reached the reader within its lifespan"
+        );
+
+        // Hold past source timestamp + 250 ms.
+        thread::sleep(Duration::from_millis(600));
+
+        let after = reader.take().expect("take");
+        assert!(
+            !after.iter().any(|s| s.color == "SHORT"),
+            "LIFESPAN=250ms must remove the sample from the DataReader cache, got {after:?}"
+        );
+    }
+
+    /// Counter-example to the test above with the identical timing: the same
+    /// hold, but a LIFESPAN long enough that the expiration time has not been
+    /// reached. The sample must survive — otherwise the purge is not measuring
+    /// the lifespan but simply dropping everything.
+    #[test]
+    fn lifespan_keeps_unexpired_samples_in_the_reader_cache() {
+        let factory = DomainParticipantFactory::instance();
+        let domain = unique_domain();
+        let pub_p = factory
+            .create_participant_with_config(domain, DomainParticipantQos::default(), fast_cfg())
+            .expect("pub participant");
+        let sub_p = factory
+            .create_participant_with_config(domain, DomainParticipantQos::default(), fast_cfg())
+            .expect("sub participant");
+
+        let pub_topic = pub_p
+            .create_topic::<ShapeType>("Square", TopicQos::default())
+            .expect("pub topic");
+        let publisher = pub_p.create_publisher(PublisherQos::default());
+        let wqos = DataWriterQos {
+            reliability: zerodds_qos::ReliabilityQosPolicy {
+                kind: zerodds_qos::ReliabilityKind::Reliable,
+                ..Default::default()
+            },
+            lifespan: LifespanQosPolicy {
+                duration: QosDuration::from_millis(30_000),
+            },
+            ..Default::default()
+        };
+        let writer = publisher
+            .create_datawriter::<ShapeType>(&pub_topic, wqos)
+            .expect("writer");
+
+        let sub_topic = sub_p
+            .create_topic::<ShapeType>("Square", TopicQos::default())
+            .expect("sub topic");
+        let subscriber = sub_p.create_subscriber(SubscriberQos::default());
+        let rqos = DataReaderQos {
+            reliability: zerodds_qos::ReliabilityQosPolicy {
+                kind: zerodds_qos::ReliabilityKind::Reliable,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let reader = subscriber
+            .create_datareader::<ShapeType>(&sub_topic, rqos)
+            .expect("reader");
+
+        writer
+            .wait_for_matched_subscription(1, Duration::from_secs(15))
+            .expect("match");
+        reader
+            .wait_for_matched_publication(1, Duration::from_secs(15))
+            .expect("match");
+
+        writer
+            .write(&ShapeType::new("LONG", 10, 20, 30))
+            .expect("write");
+
+        let mut in_cache = false;
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while std::time::Instant::now() < deadline {
+            if reader
+                .read()
+                .expect("read")
+                .iter()
+                .any(|s| s.color == "LONG")
+            {
+                in_cache = true;
+                break;
+            }
+            thread::sleep(Duration::from_millis(5));
+        }
+        assert!(in_cache, "sample never reached the reader");
+
+        thread::sleep(Duration::from_millis(600));
+
+        let after = reader.take().expect("take");
+        assert!(
+            after.iter().any(|s| s.color == "LONG"),
+            "LIFESPAN=30s must not expire after 600ms, got {after:?}"
         );
     }
 }

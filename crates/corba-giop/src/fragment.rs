@@ -22,7 +22,7 @@
 
 use alloc::vec::Vec;
 
-use zerodds_cdr::{BufferReader, BufferWriter};
+use zerodds_wire::{Reader, Writer};
 
 use crate::error::GiopResult;
 use crate::version::Version;
@@ -41,8 +41,8 @@ impl FragmentHeader {
     ///
     /// # Errors
     /// Buffer write error.
-    pub fn encode(&self, w: &mut BufferWriter) -> GiopResult<()> {
-        w.write_u32(self.request_id)?;
+    pub fn encode(&self, w: &mut Writer) -> GiopResult<()> {
+        w.write_u32(self.request_id);
         Ok(())
     }
 
@@ -50,7 +50,7 @@ impl FragmentHeader {
     ///
     /// # Errors
     /// Buffer read error.
-    pub fn decode(r: &mut BufferReader<'_>) -> GiopResult<Self> {
+    pub fn decode(r: &mut Reader<'_>) -> GiopResult<Self> {
         Ok(Self {
             request_id: r.read_u32()?,
         })
@@ -67,19 +67,19 @@ pub struct Fragment {
 }
 
 impl Fragment {
-    /// CDR encode into a `BufferWriter`. In GIOP 1.2 the
+    /// CDR encode into a `Writer`. In GIOP 1.2 the
     /// `request_id` is encoded first; in GIOP 1.1 only the
     /// body bytes.
     ///
     /// # Errors
     /// Buffer write error.
-    pub fn encode(&self, version: Version, w: &mut BufferWriter) -> GiopResult<()> {
+    pub fn encode(&self, version: Version, w: &mut Writer) -> GiopResult<()> {
         if version.uses_v1_2_request_layout() {
             if let Some(h) = &self.header {
                 h.encode(w)?;
             }
         }
-        w.write_bytes(&self.body)?;
+        w.write_bytes(&self.body);
         Ok(())
     }
 
@@ -87,7 +87,7 @@ impl Fragment {
     ///
     /// # Errors
     /// Buffer read error.
-    pub fn decode(version: Version, r: &mut BufferReader<'_>) -> GiopResult<Self> {
+    pub fn decode(version: Version, r: &mut Reader<'_>) -> GiopResult<Self> {
         let header = if version.uses_v1_2_request_layout() {
             Some(FragmentHeader::decode(r)?)
         } else {
@@ -102,7 +102,7 @@ impl Fragment {
 #[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
-    use zerodds_cdr::Endianness;
+    use zerodds_wire::Endianness;
 
     #[test]
     fn round_trip_giop_1_2_with_header() {
@@ -110,10 +110,10 @@ mod tests {
             header: Some(FragmentHeader { request_id: 42 }),
             body: alloc::vec![1, 2, 3],
         };
-        let mut w = BufferWriter::new(Endianness::Big);
+        let mut w = Writer::new(Endianness::Big);
         f.encode(Version::V1_2, &mut w).unwrap();
-        let bytes = w.into_bytes();
-        let mut r = BufferReader::new(&bytes, Endianness::Big);
+        let bytes = w.finish();
+        let mut r = Reader::new(&bytes, Endianness::Big);
         let decoded = Fragment::decode(Version::V1_2, &mut r).unwrap();
         assert_eq!(decoded, f);
     }
@@ -124,12 +124,12 @@ mod tests {
             header: None,
             body: alloc::vec![0xa, 0xb, 0xc, 0xd],
         };
-        let mut w = BufferWriter::new(Endianness::Little);
+        let mut w = Writer::new(Endianness::Little);
         f.encode(Version::V1_1, &mut w).unwrap();
-        let bytes = w.into_bytes();
+        let bytes = w.finish();
         // GIOP 1.1 — no header, only body bytes.
         assert_eq!(bytes, alloc::vec![0xa, 0xb, 0xc, 0xd]);
-        let mut r = BufferReader::new(&bytes, Endianness::Little);
+        let mut r = Reader::new(&bytes, Endianness::Little);
         let decoded = Fragment::decode(Version::V1_1, &mut r).unwrap();
         assert_eq!(decoded, f);
     }

@@ -83,7 +83,7 @@ impl XmlEmitter {
         Ok(())
     }
 
-    /// Selbstschliessendes Element `<name attr="..." />`.
+    /// Self-closing element `<name attr="..." />`.
     ///
     /// # Errors
     /// `InvalidTagName` if the tag name is invalid.
@@ -112,7 +112,7 @@ impl XmlEmitter {
     /// `<![CDATA[...]]>`. CDATA end sequences `]]>` are split.
     pub fn cdata(&mut self, content: &str) {
         self.buf.push_str("<![CDATA[");
-        // Spec XML 1.0 §2.7: `]]>` in CDATA splitten zu `]]]]><![CDATA[>`
+        // Spec XML 1.0 §2.7: `]]>` in CDATA split to `]]]]><![CDATA[>`
         let safe = content.replace("]]>", "]]]]><![CDATA[>");
         self.buf.push_str(&safe);
         self.buf.push_str("]]>");

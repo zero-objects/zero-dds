@@ -1,0 +1,17 @@
+// one-dimensional array of each primitive kind
+@final struct Sample {
+    boolean flag[3];
+    octet raw_octet[3];
+    uint8 unsigned_byte[3];
+    int8 signed_byte[3];
+    char letter[3];
+    wchar wide_letter[3];
+    short short_signed[3];
+    unsigned short short_unsigned[3];
+    long long_signed[3];
+    unsigned long long_unsigned[3];
+    long long llong_signed[3];
+    unsigned long long llong_unsigned[3];
+    float single_float[3];
+    double double_float[3];
+};

@@ -353,7 +353,7 @@ pub struct DelegationProfile {
   (receivers no longer rely on `not_after`).
 * **Explicit** via a gateway command: the gateway can actively withdraw
   a delegation ID. On the next SPDP beacon the gateway pushes
-  a `zerodds.sec.revoked_delegations` property (a list of
+  a `org.zerodds.sec.revoked_delegations` property (a list of
   `(delegatee_guid, issued_at)` hashes). Receivers add them to a
   local revocation list; samples from these delegatees are
   dropped.
@@ -379,7 +379,7 @@ Delegation is **not specified in OMG DDS-Security 1.1**. The
 entire mechanism runs in the `zerodds:` namespace and is ignored by foreign
 vendors. A Cyclone peer would:
 
-* Silently ignore the `zerodds.sec.delegation_chain` SPDP property
+* Silently ignore the `org.zerodds.sec.delegation_chain` SPDP property
   and perceive the gateway peer only with its own identity.
 * Samples the gateway sends on behalf of edge peers are interpreted as
   written by the gateway itself (from Cyclone's view).

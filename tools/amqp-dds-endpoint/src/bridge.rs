@@ -4,15 +4,15 @@
 //! AMQP↔DDS Bridge-Logic.
 //!
 //! Spec dds-amqp-1.0:
-//! * §2.1 Cl. 3 — Sender-/Receiver-Link translaten zu
-//!   DDS-DataWriter/-Reader-Operations.
-//! * §2.2 Cl. 2/3 — Bridge-Profile analog auf der Outbound-Seite.
+//! * §2.1 Cl. 3 — translate Sender/Receiver links to
+//!   DDS DataWriter/Reader operations.
+//! * §2.2 Cl. 2/3 — bridge profiles analogously on the outbound side.
 //! * §7.5 Discovery Bridging — `$catalog`-Address-Stream.
 //! * §7.7.1/7.7.2 — Instance-Lifecycle-Mapping.
 //!
-//! Diese Modul-Datei enthaelt die reine Bridge-Translation-Logik
-//! (Attach/Transfer/Catalog), die der Connection-Handler aufruft.
-//! Die Verbindung zur konkreten DDS-Wire-Schicht erfolgt ueber
+//! This module file contains the pure bridge translation logic
+//! (Attach/Transfer/Catalog) that the connection handler calls.
+//! The connection to the concrete DDS wire layer happens via
 //! [`crate::dds_host::DdsHost`].
 
 use std::sync::Arc;
@@ -25,38 +25,38 @@ use zerodds_amqp_endpoint::metrics::MetricsHub;
 use crate::dds_host::{DdsHost, DdsHostError, SubscriptionId, TopicId};
 use crate::handler::HandlerError;
 
-/// Spec §2.1 Cl. 3 — Resultat einer Inbound-Attach-Verarbeitung.
+/// Spec §2.1 Cl. 3 — result of processing an inbound attach.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AttachOutcome {
-    /// Attach an einen DDS-Topic-Address akzeptiert. `topic_id`
-    /// ist der DdsHost-Identifier; Caller muss ihn fuer
+    /// attach to a DDS topic address accepted. `topic_id`
+    /// is the DdsHost identifier; the caller must use it for
     /// Transfer-Dispatch merken.
     AttachedTopic {
         /// DdsHost-Topic-Id.
         topic_id: TopicId,
     },
-    /// Attach an `$catalog` akzeptiert. Caller muss die
-    /// Catalog-Entries als Outbound-Transfers schicken.
+    /// attach to `$catalog` accepted. The caller must
+    /// Send catalog entries as outbound transfers.
     AttachedCatalog,
-    /// Attach an `$metrics` akzeptiert.
+    /// Attached to `$metrics`.
     AttachedMetrics,
-    /// Attach an `$audit` akzeptiert.
+    /// Attached to `$audit`.
     AttachedAudit,
-    /// Spec §7.5.1 + §11.2 — Address nicht im Catalog und
-    /// `permit_dynamic_topics = false` → Caller emittiert
+    /// Spec §7.5.1 + §11.2 — address not in the catalog and
+    /// `permit_dynamic_topics = false` → Caller emits
     /// `amqp:not-found`.
     UnknownAddress,
 }
 
-/// Spec §2.1 Cl. 3 — Inbound Attach gegen DdsHost dispatchen.
+/// Spec §2.1 Cl. 3 — dispatch inbound attach against DdsHost.
 ///
-/// `target_address` ist das `target.address`-Feld aus dem
+/// `target_address` is the `target.address` field from the
 /// Attach-Performative (Receiver-Side) bzw. `source.address`
 /// (Sender-Side).
 ///
 /// # Errors
-/// `HandlerError::PerformativeDecode` wenn DdsHost-Lookup
-/// schief geht (sollte nicht passieren mit InMemoryDdsHost).
+/// `HandlerError::PerformativeDecode` if the DdsHost lookup
+/// goes wrong (should not happen with InMemoryDdsHost).
 pub fn dispatch_attach<H: DdsHost + ?Sized>(host: &H, target_address: &str) -> AttachOutcome {
     match classify_address(target_address) {
         AddressKind::Catalog => AttachOutcome::AttachedCatalog,
@@ -69,13 +69,13 @@ pub fn dispatch_attach<H: DdsHost + ?Sized>(host: &H, target_address: &str) -> A
     }
 }
 
-/// Spec §2.1 Cl. 3 — Inbound Transfer auf DDS-Side publishen.
+/// Spec §2.1 Cl. 3 — publish inbound transfer on the DDS side.
 ///
-/// `body` ist der AMQP-Body (XCDR2/JSON/AMQP-Native je nach
+/// `body` is the AMQP body (XCDR2/JSON/AMQP-native depending on
 /// Topic-Mode).
 ///
 /// # Errors
-/// `DdsHostError` aus dem Host (`UnknownTopic`).
+/// `DdsHostError` from the host (`UnknownTopic`).
 pub fn dispatch_transfer<H: DdsHost + ?Sized>(
     host: &H,
     topic_id: TopicId,
@@ -88,15 +88,15 @@ pub fn dispatch_transfer<H: DdsHost + ?Sized>(
 
 /// Spec §7.5 — `$catalog`-Stream produzieren.
 ///
-/// Liefert pro registriertem Topic eine AMQP-Map als Sample-Body,
-/// die der Caller als Outbound-Transfer verschicken soll.
+/// Returns one AMQP map per registered topic as the sample body,
+/// which the caller should send as an outbound transfer.
 #[must_use]
 pub fn produce_catalog_transfers<H: DdsHost + ?Sized>(host: &H) -> Vec<AmqpExtValue> {
     let entries = host.topics();
     entries.into_iter().map(catalog_entry_to_map).collect()
 }
 
-/// Spec §7.5 — Catalog-Entry als AMQP-Map serialisieren.
+/// Spec §7.5 — serialize catalog entry as an AMQP map.
 fn catalog_entry_to_map(e: zerodds_amqp_endpoint::management::CatalogEntry) -> AmqpExtValue {
     use zerodds_amqp_endpoint::management::CatalogTypeId;
     let mut entries: Vec<(AmqpExtValue, AmqpExtValue)> = vec![
@@ -139,27 +139,27 @@ fn catalog_entry_to_map(e: zerodds_amqp_endpoint::management::CatalogEntry) -> A
     AmqpExtValue::Map(entries)
 }
 
-/// Spec §2.1 Cl. 3 + §7.5 — Spec-konformer Wire-Body fuer ein
+/// Spec §2.1 Cl. 3 + §7.5 — spec-compliant wire body for a
 /// `$catalog`-Sample (described composite per Performatives-
-/// Konvention).
+/// convention).
 ///
 /// # Errors
-/// `HandlerError::PerformativeDecode` wenn Encode fehlschlaegt.
+/// `HandlerError::PerformativeDecode` if the encode fails.
 pub fn encode_catalog_sample(entry: AmqpExtValue) -> Result<Vec<u8>, HandlerError> {
-    // Wir nutzen einen ad-hoc-Descriptor fuer Catalog-Samples
-    // (nicht spec-normativ; Spec §7.5 laesst das Format offen,
-    // beschreibt aber Map-Form). Wir wraappen in einen
-    // amqp-value-Section-Performative-Header, sodass der Body
-    // unter §3.2.8-Wire-Form direkt empfangbar ist.
+    // We use an ad-hoc descriptor for catalog samples
+    // (not spec-normative; spec §7.5 leaves the format open,
+    // but describes map form). We wrap it into a
+    // amqp-value section performative header, so that the body
+    // is directly receivable under §3.2.8 wire form.
     let amqp_value_descriptor: u64 = 0x0000_0000_0000_0077;
     performatives::encode_performative(amqp_value_descriptor, &entry)
         .map_err(|e| HandlerError::PerformativeDecode(format!("{e}")))
 }
 
-/// Spec §2.1 Cl. 3 — Subscribe-Helper: registriert einen Outbound-
-/// Listener auf einem Topic.
+/// Spec §2.1 Cl. 3 — subscribe helper: registers an outbound
+/// Listener on a topic.
 ///
-/// Liefert `SubscriptionId` zur spaeteren Aufhebung.
+/// Returns a `SubscriptionId` for later teardown.
 ///
 /// # Errors
 /// `DdsHostError::UnknownTopic`.
@@ -280,7 +280,7 @@ mod tests {
         let h = host_with(&[("AddrA", "TopicA"), ("AddrB", "TopicB")]);
         let samples = produce_catalog_transfers(&h);
         assert_eq!(samples.len(), 2);
-        // Jedes Sample hat amqp-address als Pflichtfeld.
+        // Every sample has amqp-address as a mandatory field.
         for s in samples {
             let entries = match s {
                 AmqpExtValue::Map(v) => v,
@@ -306,7 +306,7 @@ mod tests {
         let h = host_with(&[("X", "T")]);
         let mut samples = produce_catalog_transfers(&h);
         let body = encode_catalog_sample(samples.remove(0)).unwrap();
-        // Erstes Byte ist der described-prefix 0x00.
+        // First byte is the described prefix 0x00.
         assert_eq!(body[0], 0x00);
         assert!(body.len() > 4);
     }

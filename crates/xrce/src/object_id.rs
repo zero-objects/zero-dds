@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! `ObjectId` (Spec §7.2.1).
+//! `ObjectId` (Spec §7.6, Annex A).
 //!
 //! Wire layout: `octet[2]`, i.e. 16 bits.
 //!
@@ -23,10 +23,11 @@
 //! top bit in the 12-bit raw field, but semantically important for
 //! object lookup routing.
 //!
-//! Reserved values:
-//! - `OBJECTID_INVALID = 0xFFFF` (Spec §7.2.1).
-//! - `OBJECTID_AGENT   = 0xFFFD` (kind=0xD `OBJK_AGENT`, raw=0xFFF).
-//! - `OBJECTID_CLIENT  = 0xFFFE` (kind=0xE `OBJK_CLIENT`, raw=0xFFF).
+//! Reserved values (DDS-XRCE 1.0 §7.6, Annex A):
+//! - `OBJECTID_INVALID  = 0x0000` (two reserved bytes).
+//! - `OBJECTID_SESSION  = 0xFFFF` (two reserved bytes).
+//! - `OBJECTID_AGENT    = 0xFFFD` (kind=0xD `OBJK_AGENT`, raw=0xFFF).
+//! - `OBJECTID_CLIENT   = 0xFFFE` (kind=0xE `OBJK_CLIENT`, raw=0xFFF).
 
 use crate::error::XrceError;
 use crate::object_kind::ObjectKind;
@@ -35,11 +36,13 @@ use crate::object_kind::ObjectKind;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
 pub struct ObjectId(pub u16);
 
-/// `OBJECTID_INVALID` (Spec §7.2.1).
-pub const OBJECTID_INVALID: ObjectId = ObjectId(0xFFFF);
-/// `OBJECTID_AGENT` (Spec §7.5.2.1) — singleton on the agent side.
+/// `OBJECTID_INVALID` (DDS-XRCE 1.0 §7.6).
+pub const OBJECTID_INVALID: ObjectId = ObjectId(0x0000);
+/// `OBJECTID_SESSION` (DDS-XRCE 1.0 Annex A).
+pub const OBJECTID_SESSION: ObjectId = ObjectId(0xFFFF);
+/// `OBJECTID_AGENT` (DDS-XRCE 1.0 §7.6, Annex A) — singleton on the agent side.
 pub const OBJECTID_AGENT: ObjectId = ObjectId(0xFFFD);
-/// `OBJECTID_CLIENT` (Spec §7.5.2.1) — singleton on the client side.
+/// `OBJECTID_CLIENT` (DDS-XRCE 1.0 §7.6, Annex A) — singleton on the client side.
 pub const OBJECTID_CLIENT: ObjectId = ObjectId(0xFFFE);
 
 /// Bit position of the kind mask in the 16-bit word. Maps to the
@@ -91,6 +94,23 @@ impl ObjectId {
             word |= 1u16 << KIND_MASK_BIT;
         }
         Ok(Self(word))
+    }
+
+    /// The `ObjectId` of an object a configuration file defines, derived
+    /// from its `REPRESENTATION_BY_REFERENCE` string (DDS-XRCE 1.0 §9.3):
+    /// "the ObjectIdPrefix (see 7.7.6) shall be set to the first 2 bytes of
+    /// the MD5 hash computed on the REPRESENTATION_BY_REFERENCE string. The
+    /// MD5 treats each string character as a byte and does not include the
+    /// NUL terminating character." The prefix is then combined with the
+    /// `ObjectKind` as §7.7.6 says: the 12 bits of the prefix and the kind
+    /// in the low 4 bits (Table 16: the hash bytes `{0x56, 0xcc}` of a
+    /// participant give `{0x56, 0xc1}`).
+    #[must_use]
+    pub fn from_reference(reference: &str, kind: ObjectKind) -> Self {
+        use md5::Digest as _;
+        let hash = md5::Md5::digest(reference.as_bytes());
+        let prefix = u16::from_be_bytes([hash[0], hash[1]]) & 0xFFF0;
+        Self(prefix | u16::from(kind.to_u8()))
     }
 
     /// Raw 16-bit value.
@@ -163,6 +183,57 @@ mod tests {
     #![allow(clippy::expect_used, clippy::unwrap_used)]
     use super::*;
 
+    /// §9.3: the ObjectId of an object of a configuration file comes from the
+    /// MD5 of its REPRESENTATION_BY_REFERENCE string; the strings, prefixes
+    /// and ObjectIds are those of Table 16, and the hash of "MyWriter" is the
+    /// one the clause gives (`0x03e26181adfef529038bf0dce7cab871`, prefix
+    /// `{0x03, 0xe2}`).
+    #[test]
+    fn from_reference_matches_the_examples_of_the_spec() {
+        use md5::Digest as _;
+        assert_eq!(
+            md5::Md5::digest(b"MyWriter")[..],
+            [
+                0x03, 0xe2, 0x61, 0x81, 0xad, 0xfe, 0xf5, 0x29, 0x03, 0x8b, 0xf0, 0xdc, 0xe7, 0xca,
+                0xb8, 0x71
+            ]
+        );
+        assert_eq!(
+            ObjectId::from_reference("MyWriter", ObjectKind::DataWriter).to_bytes(),
+            [0x03, 0xe5]
+        );
+        for (reference, kind, id) in [
+            ("ShapesDemoTypes::ShapeType", ObjectKind::Type, [0x59, 0x5a]),
+            (
+                "MyQosLibrary::MyQosProfile",
+                ObjectKind::QosProfile,
+                [0x3a, 0x3b],
+            ),
+            (
+                "MyApplications::SimpleShapesDemoApplication",
+                ObjectKind::Application,
+                [0x1b, 0xec],
+            ),
+            (
+                "MyApplications::ShapesDemoApp::MyParticipant",
+                ObjectKind::Participant,
+                [0x56, 0xc1],
+            ),
+            ("Square", ObjectKind::Topic, [0xce, 0xb2]),
+            ("Circle", ObjectKind::Topic, [0x30, 0x92]),
+            ("Triangle", ObjectKind::Topic, [0x5e, 0x52]),
+            ("MyPublisher", ObjectKind::Publisher, [0x13, 0xe3]),
+            ("MySubscriber", ObjectKind::Subscriber, [0xae, 0x04]),
+            ("MySquareWriter", ObjectKind::DataWriter, [0x1c, 0xc5]),
+            ("MyCircleWriter", ObjectKind::DataWriter, [0xcf, 0x85]),
+            ("MyTriangleReader", ObjectKind::DataReader, [0xaf, 0x36]),
+        ] {
+            let derived = ObjectId::from_reference(reference, kind);
+            assert_eq!(derived.to_bytes(), id, "{reference}");
+            assert_eq!(derived.kind().unwrap(), kind, "{reference}");
+        }
+    }
+
     #[test]
     fn new_packs_kind_into_lower_4_bits() {
         let id = ObjectId::new(0x123, ObjectKind::DataWriter).unwrap();
@@ -189,9 +260,25 @@ mod tests {
     }
 
     #[test]
-    fn invalid_object_id_is_all_ones() {
+    fn invalid_object_id_is_all_zeros() {
         assert!(OBJECTID_INVALID.is_invalid());
-        assert_eq!(OBJECTID_INVALID.raw(), 0xFFFF);
+        assert_eq!(OBJECTID_INVALID.raw(), 0x0000);
+    }
+
+    #[test]
+    fn session_object_id_is_all_ones() {
+        assert_eq!(OBJECTID_SESSION.raw(), 0xFFFF);
+    }
+
+    #[test]
+    fn reserved_object_ids_per_spec_7_6_and_annex_a() {
+        // DDS-XRCE 1.0 §7.6, Annex A: reserved values are two bytes
+        // OBJECTID_INVALID = {0x00, 0x00}
+        let invalid_bytes = OBJECTID_INVALID.to_bytes();
+        assert_eq!(invalid_bytes, [0x00, 0x00]);
+        // OBJECTID_SESSION = {0xFF, 0xFF}
+        let session_bytes = OBJECTID_SESSION.to_bytes();
+        assert_eq!(session_bytes, [0xFF, 0xFF]);
     }
 
     #[test]

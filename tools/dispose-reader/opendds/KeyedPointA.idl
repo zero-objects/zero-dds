@@ -1,0 +1,12 @@
+// KeyedPointA of ../KeyedPointA.idl for OpenDDS's IDL compiler: `@topic`
+// makes opendds_idl generate the type support, and `@must_understand` on
+// the key is what XTypes 1.3 §7.2.2.4.4.4.8 makes implicit and opendds_idl
+// 3.34 sets only when written (see
+// zerodds-examples/cross-vendor-shapes/opendds/ShapeType.idl), so the two
+// sides' type identifiers agree.
+@topic
+@final
+struct KeyedPointA {
+  @key @must_understand long id;
+  long value;
+};

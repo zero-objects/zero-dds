@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of union-mutable that cyclone produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	Mutable unions are not supported yet
+plain-cdr1	be	refused	Mutable unions are not supported yet
+pl-cdr1	le	refused	Mutable unions are not supported yet
+pl-cdr1	be	refused	Mutable unions are not supported yet
+plain-cdr2	le	refused	Mutable unions are not supported yet
+plain-cdr2	be	refused	Mutable unions are not supported yet
+delimited-cdr	le	refused	Mutable unions are not supported yet
+delimited-cdr	be	refused	Mutable unions are not supported yet
+pl-cdr2	le	refused	Mutable unions are not supported yet
+pl-cdr2	be	refused	Mutable unions are not supported yet

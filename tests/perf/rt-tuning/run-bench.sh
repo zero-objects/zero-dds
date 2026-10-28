@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# run-bench.sh — RT-Bench-Runner fuer roundtrip-1us (D.5b Phase-C).
+# run-bench.sh — RT bench runner for roundtrip-1us (D.5b Phase-C).
 #
 # Workflow:
-#   1) preflight.sh — Host-Config verifizieren.
-#   2) cyclictest-Baseline — Hardware-Floor messen.
-#   3) roundtrip-1us pong+ping mit chrt -f 80 / taskset auf isolierten Cores.
-#   4) Histogram-Persistenz nach /tmp/zerodds-rt-bench.hgrm.
+#   1) preflight.sh — verify the host config.
+#   2) cyclictest baseline — measure the hardware floor.
+#   3) roundtrip-1us pong+ping with chrt -f 80 / taskset on isolated cores.
+#   4) Histogram persisted to /tmp/zerodds-rt-bench.hgrm.
 #
-# Aufruf:
+# Usage:
 #   sudo bash tests/perf/rt-tuning/run-bench.sh \
 #     [--remote 192.0.2.10:7400] [--samples 1000000]
 
@@ -30,7 +30,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 echo "=== Preflight ==="
 bash "$SCRIPT_DIR/preflight.sh"
 
-# ---- 2) cyclictest-Baseline ----
+# ---- 2) cyclictest baseline ----
 echo "=== cyclictest baseline (60s) ==="
 if command -v cyclictest >/dev/null; then
   taskset -c "$PONG_CORE" chrt -f 80 \
@@ -40,11 +40,11 @@ fi
 # ---- 3) Bench ----
 echo "=== roundtrip-1us bench ==="
 if [ ! -x "$ROUNDTRIP_BIN" ]; then
-  echo "FAIL: $ROUNDTRIP_BIN nicht gefunden — vorher 'cargo build -p dds-bench-suite --release'" >&2
+  echo "FAIL: $ROUNDTRIP_BIN not found — run 'cargo build -p dds-bench-suite --release' first" >&2
   exit 1
 fi
 
-# Pong im Hintergrund, isoliert.
+# Pong in the background, isolated.
 taskset -c "$PONG_CORE" chrt -f 80 \
   "$ROUNDTRIP_BIN" --role pong --bind "$BIND_PONG" --max-runtime 600 \
   > /tmp/zerodds-rt-pong.log 2>&1 &
@@ -52,7 +52,7 @@ PONG_PID=$!
 trap 'kill $PONG_PID 2>/dev/null || true' EXIT
 sleep 1
 
-# Ping mit ci-gate.
+# Ping with ci-gate.
 set +e
 taskset -c "$PING_CORE" chrt -f 80 \
   "$ROUNDTRIP_BIN" --role ping \
@@ -73,7 +73,7 @@ tail -10 /tmp/zerodds-rt-pong.log
 
 echo ""
 if [ "$PING_RC" -ne 0 ]; then
-  echo "FAIL: ping ci-gate verletzt (exit=$PING_RC). Histogram in $HGRM"
+  echo "FAIL: ping ci-gate violated (exit=$PING_RC). Histogram in $HGRM"
   exit "$PING_RC"
 fi
-echo "OK: ping ci-gate erfuellt. Histogram in $HGRM"
+echo "OK: ping ci-gate met. Histogram in $HGRM"

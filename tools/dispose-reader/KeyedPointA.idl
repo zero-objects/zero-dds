@@ -1,0 +1,5 @@
+// The type of crates/zerodds-c-api/tests/writer_dispose_sample_vendors.rs.
+@final struct KeyedPointA {
+    @key long id;
+    long value;
+};

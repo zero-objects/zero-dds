@@ -77,7 +77,7 @@ case "$transport" in
              --local-id=41 --peer-id=40 --base-dir="$tmp" --count="$count"
       wait "$rx"
     fi
-    # tmp wird durch cleanup-trap entfernt
+    # tmp is removed by the cleanup trap
     ;;
   uds-abstract)
     # Abstract-namespace sockets are per-network-namespace. Different

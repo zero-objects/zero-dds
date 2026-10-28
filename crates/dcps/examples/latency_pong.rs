@@ -27,6 +27,8 @@ struct LatencyMsg {
 
 impl DdsType for LatencyMsg {
     const TYPE_NAME: &'static str = "zerodds::LatencyMsg";
+    /// @final with no member that XCDR1 and XCDR2 frame differently: one stream.
+    const XCDR1_MATCHES_XCDR2: bool = true;
 
     fn encode(&self, out: &mut Vec<u8>) -> Result<(), EncodeError> {
         out.extend_from_slice(&self.seq.to_le_bytes());

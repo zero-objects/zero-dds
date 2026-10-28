@@ -58,7 +58,7 @@ assert_eq!(samples[0].payload, b"hello rtps");
 | `reliable_writer` / `reliable_reader` | Reliable state machines, tick-driven |
 | `reliable_stateless_writer` | Stateless writer variant for SPDP |
 | `fragment_assembler` | Reader-side reassembly with DoS caps |
-| `participant_security_info` | PID `0x1005` (DDS-Security 1.2 §7.4.1.6) |
+| `participant_security_info` | PID `0x1005` (DDS-Security 1.2 §7.5.1.4 Table 10) |
 | `message_builder` | OutboundDatagram aggregation per send tick |
 
 ## Reliable-Quickstart

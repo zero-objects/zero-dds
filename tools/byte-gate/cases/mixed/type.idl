@@ -1,0 +1,12 @@
+@final struct Mixed {
+    boolean b;
+    octet o;
+    short s;
+    unsigned short us;
+    long l;
+    unsigned long ul;
+    long long ll;
+    unsigned long long ull;
+    float f;
+    double d;
+};

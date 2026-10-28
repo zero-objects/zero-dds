@@ -1,0 +1,18 @@
+typedef fixed<5,2> D5S2;
+typedef fixed<4,2> D4S2;
+typedef fixed<3,3> D3S3;
+typedef fixed<1,0> D1S0;
+typedef fixed<31,0> D31S0;
+typedef fixed<2,0> D2S0;
+struct FixedAll {
+  octet head;
+  D5S2 pos;
+  D5S2 neg;
+  D5S2 zero;
+  D4S2 even;
+  D3S3 allfrac;
+  D1S0 one;
+  D2S0 two;
+  D31S0 big;
+  octet tail;
+};

@@ -1,0 +1,80 @@
+# /etc/zerodds/opcua-bridged.yaml.example
+# Configuration of zerodds-opcua-bridged.
+# Spec: zerodds-opcua-bridge-1.0 §3 (config schema), §11 (deployment).
+#
+# Read by crates/opcua-bridge/src/daemon/config.rs (DaemonConfig::from_config)
+# over the shared layers: this file, opcua-bridged.d/, include:, the
+# environment beneath, --set above. An unknown key inside a known section
+# stops the start with file and line; an unknown top-level key is a WARN
+# line on stderr.
+#
+# The file holds only keys the daemon reads.
+
+domain: 0
+log_level: info
+
+opcua:
+  # IDL files compiled at startup; every dds_type named below must be
+  # declared in one of them.
+  idl:
+    - "/etc/zerodds/opcua/robotics.idl"
+
+  # OMG DDS-OPCUA Gateway 1.0 §10 XML: which DDS topics appear in this
+  # daemon's own opc.tcp AddressSpace, and in which direction.
+  gateway_config: "/etc/zerodds/opcua/gateway.xml"
+
+  server:
+    enabled: true
+    bind: "0.0.0.0:4840"
+    security_policies: ["none"]   # add basic256sha256/aes128_sha256_rsaoaep/aes256_sha256_rsapss (feature `crypto`)
+    # certificate_der:                    "/etc/zerodds/certs/opcua-bridged.der"
+    # private_key_pem:                    "/etc/zerodds/certs/opcua-bridged.key.pem"
+    # trusted_client_certificate_der:      "/etc/zerodds/certs/client.der"
+    # trusted_client_public_key_pem:       "/etc/zerodds/certs/client.pub.pem"
+
+  # Gateway 1.0 §8: this daemon as an OPC-UA client of other servers.
+  client:
+    enabled: false
+    servers:
+      - endpoint_url: "opc.tcp://plc.local:4840"
+        nodes:
+          - node_id:    "ns=2;s=Cmd"
+            dds_topic:  "Commands"
+            dds_type:   "robotics::Command"
+            field_path: "value"
+            keyed:      false
+
+  # Part 14 (UADP) PubSub, both directions, over UDP multicast.
+  pubsub:
+    enabled: false
+    connections:
+      - name: "primary"
+        local_addr:     "0.0.0.0:0"
+        multicast_addr: "224.0.0.22:4840"
+        publisher_id: 1
+        publishers:
+          - dds_topic:          "Telemetry"
+            dds_type:           "robotics::Telemetry"
+            writer_group_id:    1
+            dataset_writer_id:  1
+            dataset_name:       "TelemetryDataSet"
+            publish_interval_ms: 1000
+        subscribers:
+          - dds_topic:    "Commands"
+            dds_type:     "robotics::Command"
+            dataset_name: "CommandDataSet"
+            fields: ["value"]   # the remote Publisher's own field order
+
+# Which DDS topics this daemon exposes/accepts at all (§7.2). The subject
+# dimension is parsed but not enforced per OPC-UA session — see the man
+# page and zerodds-opcua-bridge-1.0.md §6.2.
+acl:
+  default_deny: false
+  rules:
+    - subject: "opc-client-1"
+      allow_read:  ["Telemetry"]
+      allow_write: ["Commands"]
+
+metrics:
+  enabled: false
+  listen: "127.0.0.1:9095"   # GET /metrics

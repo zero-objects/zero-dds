@@ -249,6 +249,46 @@ impl Deref for CStrIn<'_> {
 }
 
 // ============================================================================
+// Class F — copy_list_out: list into a caller buffer
+// ============================================================================
+
+/// Copies a list into a caller buffer under the shared C-API list contract
+/// (`docs/specs/zerodds-c-api-1.0.md` §2.8): `out[0..min(total, cap)]` is
+/// written, `*out_count` is set to the **total** length, and the return value
+/// is `OutOfResources` when the buffer holds fewer than `total` entries so the
+/// caller can retry with `*out_count`. `out` may be NULL exactly when
+/// `cap == 0`, which asks for the length alone.
+///
+/// # Safety
+/// `out_count` is a valid, writeable `usize`. `out` points to `cap`
+/// writeable, correctly aligned `T` slots, or is NULL when `cap == 0`.
+#[inline]
+pub(crate) unsafe fn copy_list_out<T: Copy>(
+    out: *mut T,
+    cap: usize,
+    items: &[T],
+    out_count: *mut usize,
+) -> c_int {
+    if out.is_null() && cap != 0 {
+        return ZeroDdsStatus::BadParameter as c_int;
+    }
+    let total = items.len();
+    let n = total.min(cap);
+    if !out.is_null() && n > 0 {
+        // SAFETY: caller pledge — `out` has `cap >= n` writeable slots.
+        let dst = unsafe { core::slice::from_raw_parts_mut(out, n) };
+        dst.copy_from_slice(&items[..n]);
+    }
+    // SAFETY: caller pledge — `out_count` is a valid writeable `usize`.
+    unsafe { *out_count = total };
+    if total > cap {
+        ZeroDdsStatus::OutOfResources as c_int
+    } else {
+        ZeroDdsStatus::Ok as c_int
+    }
+}
+
+// ============================================================================
 // Status adapter
 // ============================================================================
 
@@ -386,5 +426,48 @@ mod tests {
     fn status_err_returns_negative() {
         let r: Result<(), ZeroDdsStatus> = Err(ZeroDdsStatus::BadHandle);
         assert_eq!(status(r), ZeroDdsStatus::BadHandle as c_int);
+    }
+
+    #[test]
+    fn copy_list_out_reports_the_total_when_the_buffer_is_small() {
+        let items = [10u64, 20, 30];
+        let mut out = [0u64; 2];
+        let mut count = 0usize;
+        // SAFETY: out has cap=2 writeable slots; count is a writeable usize.
+        let rc = unsafe { copy_list_out(out.as_mut_ptr(), out.len(), &items, &mut count) };
+        assert_eq!(rc, ZeroDdsStatus::OutOfResources as c_int);
+        assert_eq!(out, [10, 20]);
+        assert_eq!(count, 3, "the total length is reported, not the copied one");
+    }
+
+    #[test]
+    fn copy_list_out_null_cap_zero_asks_for_the_length() {
+        let items = [10u64, 20, 30];
+        let mut count = 0usize;
+        // SAFETY: NULL with cap=0 is the documented length query.
+        let rc = unsafe { copy_list_out(ptr::null_mut(), 0, &items, &mut count) };
+        assert_eq!(rc, ZeroDdsStatus::OutOfResources as c_int);
+        assert_eq!(count, 3);
+    }
+
+    #[test]
+    fn copy_list_out_fits_returns_ok_with_every_entry() {
+        let items = [10u64, 20, 30];
+        let mut out = [0u64; 4];
+        let mut count = 0usize;
+        // SAFETY: out has cap=4 writeable slots; count is a writeable usize.
+        let rc = unsafe { copy_list_out(out.as_mut_ptr(), out.len(), &items, &mut count) };
+        assert_eq!(rc, ZeroDdsStatus::Ok as c_int);
+        assert_eq!(out, [10, 20, 30, 0]);
+        assert_eq!(count, 3);
+    }
+
+    #[test]
+    fn copy_list_out_null_with_nonzero_cap_is_bad_parameter() {
+        let items = [10u64, 20];
+        let mut count = 0usize;
+        // SAFETY: NULL with cap>0 violates the caller pledge and must be refused.
+        let rc = unsafe { copy_list_out(ptr::null_mut(), 4, &items, &mut count) };
+        assert_eq!(rc, ZeroDdsStatus::BadParameter as c_int);
     }
 }

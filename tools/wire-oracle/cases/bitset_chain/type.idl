@@ -1,0 +1,4 @@
+bitset B1 { bitfield<8> a; };
+bitset B2 : B1 { bitfield<8> b; };
+bitset B3 : B2 { bitfield<4> c; };
+@final struct BitChain { octet head; B3 value; octet tail; };

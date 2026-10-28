@@ -1,0 +1,6 @@
+// IDL 4.2 §7.3, ISO/IEC 14882:2003 §16.1 — `#undef`.
+#define FLAG 1
+#undef FLAG
+#ifndef FLAG
+struct Sa { long m; };
+#endif

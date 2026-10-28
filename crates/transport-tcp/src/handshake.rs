@@ -30,12 +30,13 @@
 //!
 //! # Cross-vendor interop
 //!
-//! Cross-vendor TCP interop (FastDDS, RTI) requires vendor-specific
-//! compatibility modes. Cyclone `ddsi_tcp` compat is already covered via
-//! the "raw RTPS frames" path (the handshake is skippable via
-//! `TcpTransport::without_handshake`). FastDDS/RTI compat are optional
-//! feature-flag extension points; see
-//! `zerodds-tcp-transport-1.0.md §6` for wire-format details.
+//! Cross-vendor TCP interop requires vendor-specific compatibility
+//! modes, and none of them is built. The handshake is mandatory on both
+//! roles: `accept_one` runs `server_handshake` before the first frame,
+//! so a Cyclone `ddsi_tcp` peer sending raw RTPS is rejected with
+//! `HandshakeError::BadMagic`. A handshake-skip mode for Cyclone and
+//! feature-gated FastDDS/RTI formats are open items; see
+//! `docs/spec-coverage/zerodds-tcp-transport-1.0.open.md`.
 //!
 //! # Wire-Layout
 //!
@@ -416,6 +417,82 @@ mod tests {
         assert_eq!(&bytes[..4], b"ZDDS");
         let back = decode_request(&bytes).unwrap();
         assert_eq!(back, req);
+    }
+
+    /// §3.1 layout, byte for byte: magic `ZDDS`, major, minor, vendor id,
+    /// flags (u32 BE), logical port (u32 BE) — 16 bytes, nothing else.
+    #[test]
+    fn request_wire_layout_is_sixteen_bytes_big_endian() {
+        let req = BindConnectionRequest {
+            version_major: 1,
+            version_minor: 0,
+            vendor_id: VENDOR_ID_ZERODDS,
+            flags: 0,
+            logical_port: 7400,
+        };
+        let bytes = encode_request(&req);
+        assert_eq!(bytes.len(), HANDSHAKE_WIRE_SIZE);
+        assert_eq!(
+            bytes,
+            [
+                b'Z', b'D', b'D', b'S', // magic
+                0x01, 0x00, // version 1.0
+                0x01, 0x0F, // vendor id
+                0x00, 0x00, 0x00, 0x00, // flags, reserved
+                0x00, 0x00, 0x1C, 0xE8, // logical port 7400, big-endian
+            ]
+        );
+    }
+
+    /// §3.2 layout, byte for byte, for both statuses. The reject variant
+    /// carries the reason code in the last four bytes, big-endian.
+    #[test]
+    fn response_wire_layout_is_sixteen_bytes_big_endian() {
+        let accept = BindConnectionResponse {
+            status: ResponseStatus::Accept,
+            version_major: 1,
+            version_minor: 0,
+            vendor_id: VENDOR_ID_ZERODDS,
+            flags: 0,
+        };
+        assert_eq!(
+            encode_response(&accept),
+            [
+                b'Z', b'D', b'A', b'+', // magic + accept
+                0x01, 0x00, 0x01, 0x0F, // version + vendor id
+                0x00, 0x00, 0x00, 0x00, // flags
+                0x00, 0x00, 0x00, 0x00, // reason code 0 on accept
+            ]
+        );
+
+        let reject = BindConnectionResponse {
+            status: ResponseStatus::Reject(RejectReason::LogicalPortConflict),
+            ..accept
+        };
+        assert_eq!(
+            encode_response(&reject),
+            [
+                b'Z', b'D', b'A', b'-', // magic + reject
+                0x01, 0x00, 0x01, 0x0F, // version + vendor id
+                0x00, 0x00, 0x00, 0x00, // flags
+                0x00, 0x00, 0x00, 0x03, // reason code 3
+            ]
+        );
+    }
+
+    /// The reserved `flags` word survives encode/decode unchanged. The
+    /// receiver does **not** reject a non-zero value — the spec item for
+    /// §3.1 carries that as its `partial` remainder.
+    #[test]
+    fn nonzero_flags_are_carried_not_rejected() {
+        let req = BindConnectionRequest {
+            flags: 0xDEAD_BEEF,
+            ..sample_request()
+        };
+        let bytes = encode_request(&req);
+        assert_eq!(&bytes[8..12], &0xDEAD_BEEFu32.to_be_bytes());
+        let back = decode_request(&bytes).unwrap();
+        assert_eq!(back.flags, 0xDEAD_BEEF);
     }
 
     #[test]

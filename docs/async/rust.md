@@ -57,7 +57,8 @@ use futures::StreamExt;
 let mut s      = reader.take_stream();                        // Stream<Item = T>
 let mut si     = reader.take_stream_with_info();              // Stream<Item = Sample<T>>
 let mut avail  = reader.data_available_stream();              // Stream<Item = ()>
-let mut matched= reader.publication_matched_stream();         // Stream<Item = SubscriptionMatchedStatus>
+let mut matched= reader.subscription_matched_stream();        // Stream<Item = SubscriptionMatchedStatus>
+let mut pmatch = writer.publication_matched_stream();         // Stream<Item = PublicationMatchedStatus>
 
 while let Some(sample) = s.next().await { /* … */ }
 ```

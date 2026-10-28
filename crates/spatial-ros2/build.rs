@@ -1,49 +1,147 @@
 // SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 ZeroDDS Contributors
 //! Generates the ROS 2 message Rust types from the vendored `ros_msgs.idl`
-//! using ZeroDDS' own IDL->Rust codegen — the same pipeline that produces the
-//! SpatialDDS types, so both sides of the semantic mapping are ZeroDDS-generated
-//! and carry ZeroDDS' XCDR encode/decode.
-// A build script legitimately fails the build by panicking on a bad IDL / env.
-#![allow(clippy::expect_used, clippy::unwrap_used)]
+//! through this tree's `idl-parse` → `idl-lower` → `lang-rules` pipeline —
+//! the same one that produces the SpatialDDS types, so both sides of the
+//! semantic mapping are generated here and carry this tree's XCDR codecs.
+//!
+//! ROS 2 messages are `@final` unless the IDL says otherwise, and the
+//! encoding is taken per type from what the IDL declares rather than
+//! fixed for the file.
+
+// A build script legitimately fails the build by panicking on a bad IDL
+// or a missing environment variable.
+#![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
+
 use std::path::PathBuf;
 
-use zerodds_idl::config::ParserConfig;
-use zerodds_idl_rust::{RustGenOptions, generate_rust_module};
+use zerodds_ast::facet::Extensibility;
+use zerodds_ast::{Ast, TypeKind, TypeNode};
+use zerodds_ast_core::Id;
+use zerodds_ast_layout::key::{Encoding, Endianness, LayoutKey};
+use zerodds_lang_rules::adapter::cst::{nest_by_module, rust_item_pairs};
+use zerodds_lang_rules::encode::{rust_codec, rust_codec_pair};
+use zerodds_lang_rules::rule::rust;
+use zerodds_lang_rules::{ModelGraph, apply};
 
-/// The ROS 2 top-level packages carried by `ros_msgs.idl`. The codegen emits
-/// crate-root-relative paths (`std_msgs::msg::Header`); included into this
-/// crate they must be `crate::`-anchored so edition-2024 path resolution does
-/// not read them as extern crates.
-const ROS_PACKAGES: &[&str] = &[
-    "builtin_interfaces",
-    "std_msgs",
-    "geometry_msgs",
-    "tf2_msgs",
-    "sensor_msgs",
-    "vision_msgs",
-    "geographic_msgs",
-];
+/// The encoding an aggregate is generated for, from what it declares.
+/// XTypes 1.3 §7.4.2, Table 59.
+fn encoding_for(ast: &Ast, id: Id<TypeNode>) -> Encoding {
+    match ast.effective_extensibility(id) {
+        Extensibility::Final => Encoding::PlainCdr2,
+        Extensibility::Appendable => Encoding::DelimitedCdr,
+        Extensibility::Mutable => Encoding::PlCdr2,
+    }
+}
+
+/// The XCDR1 encoding of the same aggregate: version 1 has no DHEADER,
+/// so `@final` and `@appendable` are one plain stream (XTypes 1.3 Tab. 59).
+/// ROS 2 middlewares, `rmw_zerodds_cpp` among them, put ROS messages on the
+/// wire in this form (`CDR_LE`), so a ROS-side peer needs it.
+fn xcdr1_encoding_for(ast: &Ast, id: Id<TypeNode>) -> Encoding {
+    match ast.effective_extensibility(id) {
+        Extensibility::Final | Extensibility::Appendable => Encoding::PlainCdr1,
+        Extensibility::Mutable => Encoding::PlCdr1,
+    }
+}
 
 fn main() {
     println!("cargo:rerun-if-changed=idl/ros_msgs.idl");
+    println!("cargo:rerun-if-changed=build.rs");
+
     let idl = std::fs::read_to_string("idl/ros_msgs.idl").expect("read ros_msgs.idl");
-    let ast = zerodds_idl::parse(&idl, &ParserConfig::default()).expect("parse ROS msg IDL");
-    let opts = RustGenOptions {
-        cdr_only: true,
-        ..RustGenOptions::default()
+    // ROS 2 dialect admits `Pose pose;` style members that differ only in case
+    let dialect = zerodds_idl_parse::Dialect {
+        ros2: true,
+        ..zerodds_idl_parse::Dialect::ALL_VENDORS
     };
-    let rust = generate_rust_module(&ast, &opts).expect("generate Rust");
-    // Strip the crate-level `#![allow(..)]` inner attributes — they cannot sit
-    // after other items once this is `include!`d at the crate root; the
-    // `#[allow]` on the include site covers them.
-    let mut rust: String = rust
-        .lines()
-        .filter(|l| !l.trim_start().starts_with("#!["))
-        .collect::<Vec<_>>()
-        .join("\n");
-    for pkg in ROS_PACKAGES {
-        rust = rust.replace(&format!("{pkg}::"), &format!("crate::{pkg}::"));
+    let parsed = zerodds_idl_parse::parse_with(&idl, dialect);
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "the ROS message IDL must parse: {:?}",
+        parsed.diagnostics()
+    );
+    let lowered = zerodds_idl_lower::lower_with(
+        &parsed.syntax(),
+        "ros_msgs.idl",
+        zerodds_idl_lower::Options {
+            dialect,
+            ..zerodds_idl_lower::Options::default()
+        },
+    );
+    assert!(
+        lowered.diagnostics.iter().all(|d| !d.is_error()),
+        "the ROS message IDL must lower: {:?}",
+        lowered
+            .diagnostics
+            .iter()
+            .filter(|d| d.is_error())
+            .collect::<Vec<_>>()
+    );
+    let mut ast = lowered.ast;
+    let report = ast.resolve_all_by_name().expect("a resolve pass");
+    assert!(
+        report.broken.is_empty(),
+        "every name in the ROS message IDL must resolve: {:?}",
+        report.broken
+    );
+
+    let graph = ModelGraph::of(&ast);
+    let applied = apply(&graph, &rust::catalogue()).expect("apply the Rust rules");
+    // Types and codecs are folded together, in one list: folding them
+    // separately and concatenating declares every shared ancestor twice.
+    let mut pairs = rust_item_pairs(&ast, &applied).expect("materialise the ROS message types");
+
+    for (id, node) in ast.types() {
+        if node.name.is_empty() {
+            continue;
+        }
+        if !matches!(
+            node.kind,
+            TypeKind::Structure { .. }
+                | TypeKind::Union { .. }
+                | TypeKind::Enumeration { .. }
+                | TypeKind::Bitmask { .. }
+                | TypeKind::Bitset { .. }
+        ) {
+            continue;
+        }
+        let key = LayoutKey::data(encoding_for(&ast, id), Endianness::Little);
+        for item in rust_codec(&ast, id, key).expect("a codec for every declared ROS type") {
+            pairs.push((node.module, item));
+        }
+        // `encode_xcdr1`/`decode_xcdr1` beside it.
+        let v1 = LayoutKey::data(xcdr1_encoding_for(&ast, id), Endianness::Little);
+        for item in rust_codec_pair(&ast, id, v1).expect("an XCDR1 codec for every ROS type") {
+            pairs.push((node.module, item));
+        }
     }
-    let out = PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("ros_msgs.rs");
-    std::fs::write(&out, rust).expect("write generated module");
+    let items = nest_by_module(&ast, pairs).expect("a scope for every declaration");
+
+    let file = zerodds_lang_cst::rust::File {
+        inner_attrs: Vec::new(),
+        doc: zerodds_lang_cst::common::Doc::lines(&[
+            "Generated by zerodds-lang-rules from idl/ros_msgs.idl.",
+            "",
+            "Do not edit: the point of this file is that nobody did.",
+        ]),
+        // Included at the crate root; every nested module reaches these
+        // through its own `use super::*`.
+        uses: vec![zerodds_lang_cst::rust::Use {
+            path: zerodds_lang_cst::common::Path::single("zerodds_wire"),
+            names: vec![
+                zerodds_lang_cst::common::Ident::new("Narrowed"),
+                zerodds_lang_cst::common::Ident::new("Reader"),
+                zerodds_lang_cst::common::Ident::new("TryConstruct"),
+                zerodds_lang_cst::common::Ident::new("WireError"),
+                zerodds_lang_cst::common::Ident::new("Writer"),
+            ],
+            visibility: zerodds_lang_cst::common::Visibility::Private,
+        }],
+        items,
+    };
+
+    let out = PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR")).join("ros_msgs.rs");
+    std::fs::write(&out, zerodds_lang_render::rust::file(&file))
+        .expect("write the generated module");
 }

@@ -1,0 +1,30 @@
+[package]
+name = "zerodds-wireprobe-endpoint-gen"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Generates the program each hand-written endpoint SDK under endpoints/ compiles to write one corpus case's octets through its own write surface."
+repository.workspace = true
+homepage.workspace = true
+publish = false
+
+[lib]
+name = "zerodds_wireprobe_endpoint_gen"
+path = "src/lib.rs"
+
+[[bin]]
+name = "wireprobe-endpoint-gen"
+path = "src/main.rs"
+
+[dependencies]
+zerodds-ast = { path = "../../../crates/ast", version = "1.0.0-rc.7" }
+zerodds-ast-core = { path = "../../../crates/ast-core", version = "1.0.0-rc.7" }
+zerodds-ast-layout = { path = "../../../crates/ast-layout", version = "1.0.0-rc.7" }
+zerodds-idl-parse = { path = "../../../crates/idl-parse", version = "1.0.0-rc.7" }
+zerodds-idl-lower = { path = "../../../crates/idl-lower", version = "1.0.0-rc.7" }
+serde_json = "1"
+
+[lints]
+workspace = true

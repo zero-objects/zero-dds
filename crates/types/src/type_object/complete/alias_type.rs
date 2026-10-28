@@ -2,7 +2,7 @@
 // Copyright 2026 ZeroDDS Contributors
 //! CompleteAliasType (XTypes §7.3.4.4).
 
-use zerodds_cdr::{BufferReader, BufferWriter, EncodeError};
+use zerodds_wire::{Reader, WireError, Writer};
 
 use crate::error::TypeCodecError;
 use crate::type_identifier::TypeIdentifier;
@@ -21,7 +21,7 @@ pub struct CompleteAliasHeader {
 /// CompleteAliasBody.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompleteAliasBody {
-    /// Flags auf dem Alias-Target.
+    /// Flags on the alias target.
     pub related_flags: AliasMemberFlag,
     /// Zieltyp.
     pub related_type: TypeIdentifier,
@@ -43,42 +43,31 @@ pub struct CompleteAliasType {
 }
 
 impl CompleteAliasType {
-    pub(super) fn encode_into(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
-        w.write_u16(self.alias_flags.0)?;
+    pub(super) fn encode_into(&self, w: &mut Writer) -> Result<(), WireError> {
+        w.write_u16(self.alias_flags.0);
         // CompleteAliasHeader is @appendable → DHEADER around the detail.
-        zerodds_cdr::struct_enc::encode_appendable(w, |w| self.header.detail.encode_into(w))?;
+        crate::framing::encode_appendable(w, |w| self.header.detail.encode_into(w))?;
         // CompleteAliasBody is @appendable → DHEADER around common + the two
-        // @optional annotation members (ann_builtin collapses to a 1-byte
-        // presence boolean when empty).
-        zerodds_cdr::struct_enc::encode_appendable(w, |w| {
-            w.write_u16(self.body.related_flags.0)?;
+        // @optional annotation members 1 and 2 (ann_builtin is absent when
+        // empty).
+        crate::framing::encode_appendable(w, |w| {
+            w.write_u16(self.body.related_flags.0);
             self.body.related_type.encode_into(w)?;
-            if self.body.ann_builtin.is_empty() {
-                w.write_u8(0)?;
-            } else {
-                w.write_u8(1)?;
-                self.body.ann_builtin.encode_into(w)?;
-            }
-            self.body.ann_custom.encode_into(w)
+            self.body.ann_builtin.encode_as_member(w, 1)?;
+            self.body.ann_custom.encode_as_member(w, 2)
         })
     }
 
-    pub(super) fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, TypeCodecError> {
+    pub(super) fn decode_from(r: &mut Reader<'_>) -> Result<Self, TypeCodecError> {
         let alias_flags = AliasTypeFlag(r.read_u16()?);
-        let detail =
-            zerodds_cdr::struct_enc::decode_appendable(r, CompleteTypeDetail::decode_from)?;
+        let detail = crate::framing::decode_appendable(r, CompleteTypeDetail::decode_from)?;
         let (related_flags, related_type, ann_builtin, ann_custom) =
-            zerodds_cdr::struct_enc::decode_appendable(r, |r| {
+            crate::framing::decode_appendable(r, |r| {
                 let related_flags = AliasMemberFlag(r.read_u16()?);
                 let related_type = TypeIdentifier::decode_from(r)?;
-                let present = r.read_u8()?;
-                let ann_builtin = if present == 0 {
-                    AppliedBuiltinMemberAnnotations::default()
-                } else {
-                    AppliedBuiltinMemberAnnotations::decode_from(r)?
-                };
-                let ann_custom = OptionalAppliedAnnotationSeq::decode_from(r)?;
-                Ok::<_, zerodds_cdr::DecodeError>((
+                let ann_builtin = AppliedBuiltinMemberAnnotations::decode_as_member(r, 1)?;
+                let ann_custom = OptionalAppliedAnnotationSeq::decode_as_member(r, 2)?;
+                Ok::<_, zerodds_wire::WireError>((
                     related_flags,
                     related_type,
                     ann_builtin,

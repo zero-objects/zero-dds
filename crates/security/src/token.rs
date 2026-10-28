@@ -76,15 +76,29 @@ pub struct BinaryProperty {
     pub name: String,
     /// Raw byte value.
     pub value: Vec<u8>,
+    /// `propagate` (DDS-Security 1.2 §7.3.3, Table 2): whether discovery
+    /// carries the property. `@non-serialized` (§7.3.3.1): it is not on the
+    /// wire of the token, and a property read from it has `false`.
+    pub propagate: bool,
 }
 
 impl BinaryProperty {
-    /// Constructor.
+    /// Constructor: for local use only (`propagate` is `false`).
     #[must_use]
     pub fn new(name: impl Into<String>, value: impl Into<Vec<u8>>) -> Self {
         Self {
             name: name.into(),
             value: value.into(),
+            propagate: false,
+        }
+    }
+
+    /// Constructor: propagated by discovery.
+    #[must_use]
+    pub fn propagated(name: impl Into<String>, value: impl Into<Vec<u8>>) -> Self {
+        Self {
+            propagate: true,
+            ..Self::new(name, value)
         }
     }
 }
@@ -154,10 +168,7 @@ impl DataHolder {
         if let Some(existing) = self.binary_properties.iter_mut().find(|p| p.name == n) {
             existing.value = value.into();
         } else {
-            self.binary_properties.push(BinaryProperty {
-                name: n,
-                value: value.into(),
-            });
+            self.binary_properties.push(BinaryProperty::new(n, value));
         }
     }
 
@@ -220,6 +231,22 @@ impl DataHolder {
     pub fn from_cdr_be(bytes: &[u8]) -> SecurityResult<Self> {
         decode(bytes, false)
     }
+
+    /// XCDR1 encoder in the byte order `little_endian` names.
+    #[must_use]
+    pub fn to_cdr(&self, little_endian: bool) -> Vec<u8> {
+        encode(self, little_endian)
+    }
+
+    /// XCDR1 decoder in the byte order `little_endian` names, with the
+    /// number of bytes consumed — the inline `sequence<DataHolder>` of a
+    /// `ParticipantGenericMessage` in either encapsulation.
+    ///
+    /// # Errors
+    /// `BadArgument` on non-spec-conformant bytes.
+    pub fn from_cdr_consumed(bytes: &[u8], little_endian: bool) -> SecurityResult<(Self, usize)> {
+        decode_consumed(bytes, little_endian)
+    }
 }
 
 // ---------------------------------------------------------------------
@@ -265,6 +292,23 @@ pub mod class_id {
     pub const CRYPTO_AES_GCM_GMAC_V12: &str = "DDS:Crypto:AES-GCM-GMAC:1.2";
     /// Permissions credential (§10.4.2 Tab.64).
     pub const ACCESS_PERMISSIONS_CREDENTIAL: &str = "DDS:Access:PermissionsCredential";
+
+    /// Whether the class ids `a` and `b`, each
+    /// `<PluginClassName>:<MajorVersion>.<MinorVersion>` (DDS-Security 1.2
+    /// §9.3.2.1), have the same PluginClassName and MajorVersion: the
+    /// comparison of the local and the remote permissions_token that
+    /// Table 70 puts first in `check_remote_participant`,
+    /// `check_remote_datawriter`, `check_remote_datareader` and
+    /// `check_remote_topic`.
+    #[must_use]
+    pub fn same_class_and_major_version(a: &str, b: &str) -> bool {
+        fn split(id: &str) -> Option<(&str, &str)> {
+            let (name, version) = id.rsplit_once(':')?;
+            let major = version.split_once('.').map_or(version, |(major, _)| major);
+            (!name.is_empty() && !major.is_empty()).then_some((name, major))
+        }
+        matches!((split(a), split(b)), (Some(x), Some(y)) if x == y)
+    }
 }
 
 /// Property names — spec 1.2 (selection).
@@ -395,7 +439,7 @@ fn decode_consumed(bytes: &[u8], le: bool) -> SecurityResult<(DataHolder, usize)
     for _ in 0..bin_count {
         let name = cur.read_string(le)?;
         let value = cur.read_octet_seq(le)?;
-        binary_properties.push(BinaryProperty { name, value });
+        binary_properties.push(BinaryProperty::new(name, value));
     }
     Ok((
         DataHolder {
@@ -639,5 +683,29 @@ mod tests {
         let big = vec![0u8; MAX_TOKEN_BYTES + 1];
         let err = DataHolder::from_cdr_le(&big).unwrap_err();
         assert_eq!(err.kind, SecurityErrorKind::BadArgument);
+    }
+
+    /// Table 70: PluginClassName and MajorVersion decide, the MinorVersion
+    /// does not. Cyclone DDS and Fast DDS announce "...:1.0".
+    #[test]
+    fn class_ids_compare_by_plugin_class_name_and_major_version() {
+        use class_id::{ACCESS_PERMISSIONS_V12, same_class_and_major_version};
+        assert!(same_class_and_major_version(
+            "DDS:Access:Permissions:1.0",
+            ACCESS_PERMISSIONS_V12
+        ));
+        assert!(!same_class_and_major_version(
+            "DDS:Access:Permissions:2.0",
+            ACCESS_PERMISSIONS_V12
+        ));
+        assert!(!same_class_and_major_version(
+            "DDS:Access:PSK:1.2",
+            ACCESS_PERMISSIONS_V12
+        ));
+        assert!(!same_class_and_major_version(
+            "DDS:Access:Permissions:",
+            ACCESS_PERMISSIONS_V12
+        ));
+        assert!(!same_class_and_major_version("", ""));
     }
 }

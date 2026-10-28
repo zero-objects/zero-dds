@@ -34,10 +34,10 @@ impl LoggerStub {
 
 impl Logger for LoggerStub {
     fn log(&self, message: String) -> ::core::result::Result<(), zerodds_corba_rust::CorbaException> {
-        let __e = zerodds_cdr::Endianness::Big;
-        let mut __w = zerodds_cdr::BufferWriter::new(__e);
-        <_ as zerodds_cdr::CdrEncode>::encode(&message, &mut __w).map_err(|_| zerodds_corba_rust::CorbaException::SystemException { minor: 0u32, message: "CORBA MARSHAL: CDR error" })?;
-        self.connection.invoke_oneway(&self.object_ref, "log", __e, &__w.into_bytes()).map_err(|__oe| __oe)?;
+        let __e = zerodds_wire::Endianness::Big;
+        let mut __w = zerodds_wire::Writer::new(__e);
+        __w.write_string(&message);
+        self.connection.invoke_oneway(&self.object_ref, "log", __e, &__w.finish()).map_err(|__oe| __oe)?;
         ::core::result::Result::Ok(())
         }
 }
@@ -45,11 +45,14 @@ impl Logger for LoggerStub {
 /// Server skeleton dispatch for `Logger`.
 /// Decodes the GIOP request body (in `__endianness`), calls the servant,
 /// Encodes return + out/inout into the reply body (same order).
-pub fn dispatch_logger(servant: &dyn Logger, operation: &str, __payload: &[u8], __endianness: zerodds_cdr::Endianness) -> zerodds_corba_rust::SkeletonResult {
+pub fn dispatch_logger(servant: &dyn Logger, operation: &str, __payload: &[u8], __endianness: zerodds_wire::Endianness) -> zerodds_corba_rust::SkeletonResult {
+    if let Some(__r) = zerodds_corba_rust::runtime::dispatch_object_operation(operation, __payload, __endianness, "IDL:Logger:1.0", &[]) {
+        return __r;
+    }
     match operation {
         "log" => {
-            let mut __r = zerodds_cdr::BufferReader::new(__payload, __endianness);
-            let message = match <String as zerodds_cdr::CdrDecode>::decode(&mut __r) { Ok(__v) => __v, Err(_) => return zerodds_corba_rust::SkeletonResult::Exception(zerodds_corba_rust::CorbaException::SystemException { minor: 0u32, message: "CORBA MARSHAL: CDR error" }) };
+            let mut __r = zerodds_wire::Reader::new(__payload, __endianness);
+            let message = match __r.read_string() { Ok(__v) => __v, Err(_) => return zerodds_corba_rust::SkeletonResult::Exception(zerodds_corba_rust::CorbaException::SystemException { minor: 0u32, message: "CORBA MARSHAL: CDR error" }) };
             match servant.log(message) {
                 ::core::result::Result::Ok(__ret) => {
                     let _ = __ret;

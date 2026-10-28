@@ -1,0 +1,8 @@
+// SPDX-License-Identifier: Apache-2.0
+// Reconstructed source for unicode_gen.py. Top-level (no module),
+// matching the fixture's unqualified typename "Uni". Extensibility left
+// at the specification default (appendable).
+struct Uni {
+  string s;
+  wstring w;
+};

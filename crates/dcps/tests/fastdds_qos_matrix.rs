@@ -1,30 +1,6 @@
-//! C5.5 — QoS-Compatibility-Matrix vs. FastDDS.
-//!
-//! **Opt-in only** — marked `#[ignore]`. Invocation:
-//!
-//! ```bash
-//! cargo test -p zerodds-dcps --features live-interop \
-//!     --test fastdds_qos_matrix -- --ignored --nocapture
-//! ```
-//!
-//! # Spec reference
-//!
-//! - DDS 1.4 §2.2.3 — RxO-QoS-Matching (Reliability/Durability)
-//! - DDSI-RTPS 2.5 §8.4.2.2 — Reliable HEARTBEAT/ACKNACK Wire
-//! - DDSI-RTPS 2.5 §8.4.2.4 — Durability TransientLocal Resend
-//!
-//! # Matrix
-//!
-//! | Reliability   | Durability      | Test                                   |
-//! |---------------|-----------------|----------------------------------------|
-//! | BestEffort    | Volatile        | `qos_matrix_besteffort_volatile`       |
-//! | BestEffort    | TransientLocal  | `qos_matrix_besteffort_transient_local`|
-//! | Reliable      | Volatile        | `qos_matrix_reliable_volatile`         |
-//! | Reliable      | TransientLocal  | `qos_matrix_reliable_transient_local`  |
-//!
-//! Each test sends 100 samples FastDDS pub → ZeroDDS sub and
-//! expects >= 50 of them received (BestEffort may drop, Reliable
-//! should receive all).
+//! Live local Fast DDS test using vendor-generated OMG appendable ShapeType.
+//! Enable with INTEROP_REQUIRE=1 and FASTDDS_SHAPES pointing to the built client.
+//! Each child has its own PID/log; missing tools and runtime errors fail.
 
 #![allow(
     clippy::expect_used,
@@ -54,15 +30,15 @@ mod tests {
         DataReaderQos, DomainParticipantFactory, DomainParticipantQos, SubscriberQos, TopicQos,
     };
     use zerodds_qos::{
-        DurabilityKind, DurabilityQosPolicy, Duration as QosDuration, ReliabilityKind,
-        ReliabilityQosPolicy,
+        DurabilityKind, DurabilityQosPolicy, Duration as QosDuration, HistoryKind,
+        HistoryQosPolicy, ReliabilityKind, ReliabilityQosPolicy,
     };
 
     use super::cross_vendor::{
         FastDurability, FastQos, FastReliability, require_or_skip, start_fastdds_pub,
     };
 
-    const FASTDDS_DOMAIN: i32 = 144;
+    const FASTDDS_DOMAIN: i32 = 98;
     const SAMPLES_TARGET: usize = 100;
     const RECEIVE_BUDGET: Duration = Duration::from_secs(20);
     const RECEIVE_MIN_BESTEFFORT: usize = 30;
@@ -101,19 +77,32 @@ mod tests {
                         max_blocking_time: QosDuration::from_millis(100_i32),
                     },
                     durability: DurabilityQosPolicy { kind: zerodds_dur },
+                    // KEEP_ALL: every color here is a single instance, and
+                    // the poll loop below expects a single `take()` to be
+                    // able to harvest more than one sample accumulated
+                    // since the last poll -- the default KEEP_LAST(1)
+                    // would (correctly) cap each poll at 1 sample,
+                    // turning the SAMPLES_TARGET/RECEIVE_BUDGET margin
+                    // into a razor's edge.
+                    history: HistoryQosPolicy {
+                        kind: HistoryKind::KeepAll,
+                        depth: 1,
+                    },
                     ..DataReaderQos::default()
                 },
             )
             .expect("reader");
 
-        let _pub = start_fastdds_pub(topic, FASTDDS_DOMAIN as u32, &fast)
+        let mut fast = start_fastdds_pub(topic, FASTDDS_DOMAIN as u32, &fast)
             .expect("start fastdds shape pub");
 
+        fast.ensure_running().expect("Fast DDS publisher startup");
         let deadline = std::time::Instant::now() + RECEIVE_BUDGET;
         let mut received = 0usize;
         while std::time::Instant::now() < deadline && received < SAMPLES_TARGET {
+            fast.ensure_running().expect("Fast DDS publisher exited");
             let _ = reader.wait_for_data(Duration::from_millis(200));
-            received += reader.take().unwrap_or_default().len();
+            received += reader.take().expect("decode Fast DDS samples").len();
         }
         eprintln!(
             "QoS-Matrix [{topic}] fast={fast:?} zerodds=({zerodds_rel:?},{zerodds_dur:?}) \

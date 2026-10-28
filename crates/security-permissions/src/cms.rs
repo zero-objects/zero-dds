@@ -148,6 +148,13 @@ impl CmsPkcs7Verifier {
         })
     }
 
+    /// The certificates of the CA bundle, DER: the Permissions CA the
+    /// verifier checks against.
+    #[must_use]
+    pub fn ca_certificates_der(&self) -> &[Vec<u8>] {
+        &self.ca_certs_der
+    }
+
     /// Creates a verifier from a `PropertyList` — reads
     /// `dds.sec.access.permissions_ca` as the PEM CA.
     ///
@@ -174,15 +181,20 @@ impl CmsPkcs7Verifier {
     }
 }
 
-impl XmlSignatureVerifier for CmsPkcs7Verifier {
-    fn verify_and_extract(&self, signed_doc: &[u8]) -> Result<Vec<u8>, PermissionsError> {
+impl CmsPkcs7Verifier {
+    /// The DER `ContentInfo` of a signed document and its detached content,
+    /// from the PEM, `multipart/signed` or opaque S/MIME form.
+    fn unwrap_signed(
+        &self,
+        signed_doc: &[u8],
+    ) -> Result<(Vec<u8>, Option<Vec<u8>>), PermissionsError> {
         // Distinguish three input paths:
         //
-        //   1. PEM wrapper "-----BEGIN PKCS7-----" → detached, needs
+        //   1. PEM wrapper "-----BEGIN PKCS7-----" -> detached, needs
         //      `detached_content`.
-        //   2. S/MIME `multipart/signed` → boundary split.
+        //   2. S/MIME `multipart/signed` -> boundary split.
         //   3. S/MIME `application/pkcs7-mime; smime-type=signed-data`
-        //      (opaque) → base64-decode the body, eContent is embedded
+        //      (opaque) -> base64-decode the body, eContent is embedded
         //      in the SignedData.
         let pkcs7_der: Vec<u8>;
         let detached_content_for_verify: Option<Vec<u8>>;
@@ -205,6 +217,35 @@ impl XmlSignatureVerifier for CmsPkcs7Verifier {
                 }
             }
         }
+        Ok((pkcs7_der, detached_content_for_verify))
+    }
+
+    /// The object identifier of the signature algorithm of the first
+    /// SignerInfo of a signed document, in dotted form (DDS-Security 1.2
+    /// §7.3.11: the algorithm of the digitally signed permissions document).
+    ///
+    /// # Errors
+    /// `Malformed` when the document is no SignedData or has no signer.
+    pub fn signature_algorithm_oid(&self, signed_doc: &[u8]) -> Result<String, PermissionsError> {
+        let (pkcs7_der, _) = self.unwrap_signed(signed_doc)?;
+        let ci = ContentInfo::from_der(&pkcs7_der)
+            .map_err(|e| PermissionsError::Malformed(format!("ContentInfo: {e:?}")))?;
+        let sd_der = ci
+            .content
+            .to_der()
+            .map_err(|e| PermissionsError::Malformed(format!("SignedData encode: {e:?}")))?;
+        let sd = SignedData::from_der(&sd_der)
+            .map_err(|e| PermissionsError::Malformed(format!("SignedData parse: {e:?}")))?;
+        let signer = sd.signer_infos.0.iter().next().ok_or_else(|| {
+            PermissionsError::Malformed("SignedData without a signer".to_string())
+        })?;
+        Ok(signer.signature_algorithm.oid.to_string())
+    }
+}
+
+impl XmlSignatureVerifier for CmsPkcs7Verifier {
+    fn verify_and_extract(&self, signed_doc: &[u8]) -> Result<Vec<u8>, PermissionsError> {
+        let (pkcs7_der, detached_content_for_verify) = self.unwrap_signed(signed_doc)?;
 
         verify_cms_signed_xml(
             &pkcs7_der,
@@ -630,7 +671,7 @@ fn verify_cms_signed_xml(
     // 7. Cert chain signer → CA via webpki (intermediates are pulled
     // automatically from the bundle).
     //
-    // Special case "CA directly as signer": DDS-Security 1.2 §9.4.1.4 says
+    // Special case "CA directly as signer": DDS-Security 1.2 §10.4.1.1 says
     // the permissions CA signs governance/permissions. The de-facto
     // real-world pattern (OMG examples, Cyclone, FastDDS, OpenDDS) uses
     // the permissions CA DIRECTLY as the SignerInfo cert (self-signed CA cert
@@ -952,8 +993,12 @@ fn verify_with_ring(
                 msg,
                 sig,
             ),
+            // DDS-Security 1.2 §8.2 Table 25: the salt length is not specified
+            // and "shall [be detected] from the signature"; ring's verifier
+            // takes the length of the hash only.
             oid if oid == OID_RSA_PSS => {
-                verify_with(&signature::RSA_PSS_2048_8192_SHA256, pubkey_bytes, msg, sig)
+                zerodds_security_crypto::rsa_pss::verify_rsassa_pss_sha256(pubkey_bytes, msg, sig)
+                    .is_ok()
             }
             // Bare `rsaEncryption` → derive the digest from
             // signed_info.digest_alg (already verified by the caller via

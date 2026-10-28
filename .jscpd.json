@@ -1,10 +1,11 @@
 {
   "minTokens": 50,
-  "threshold": 8.5,
+  "threshold": 9.75,
   "reporters": ["console", "threshold"],
   "gitignore": true,
   "absolute": false,
   "ignore": [
+    "**/.git/**",
     "**/target/**",
     "**/node_modules/**",
     "**/dist/**",
@@ -25,6 +26,12 @@
     "website/**",
     "man/**",
     "examples/tutorials/**",
-    "tests/compliance/**"
+    "tests/compliance/**",
+    "tests/perf/dds-roundtrip-bench/gen/**",
+    "tests/interop-results/**",
+    "crates/java-omgdds/java/src/main/java/org/zerodds/typelookup/generated/**",
+    "crates/zerodds-c-api/include/zerodds.h",
+    "crates/rmw-zerodds-shim/include/rmw_zerodds.h",
+    "diagrams/LINK-INVENTORY.md"
   ]
 }

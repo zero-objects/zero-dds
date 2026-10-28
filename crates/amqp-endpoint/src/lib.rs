@@ -3,8 +3,7 @@
 
 //! Crate `zerodds-amqp-endpoint`. Safety classification: **STANDARD**.
 //!
-//! DDS-AMQP 1.0 bidirectional endpoint stack — pure-Rust
-//! `no_std + alloc` (with an optional `std` loader layer),
+//! DDS-AMQP 1.0 bidirectional endpoint stack — pure-Rust,
 //! `forbid(unsafe_code)`. Implements the protocol layers
 //! above the wire codec (`zerodds-amqp-bridge`):
 //!
@@ -17,14 +16,14 @@
 //!
 //! Layer 5 — bridges. Sits on
 //! [`zerodds-amqp-bridge`](../zerodds_amqp_bridge/index.html) (wire
-//! codec). The TCP/TLS listener itself lives in the daemon crate
-//! `tools/amqp-dds-endpoint/`; this crate provides the
-//! wire-independent protocol layers.
+//! codec). The daemon `zerodds-amqp-bridged` (`src/bin/`,
+//! `bridge_daemon`) is in this crate; `tools/amqp-dds-endpoint` is a
+//! listener over the same protocol layers without a DDS domain.
 //!
-//! ## Public API (as of 1.0.0-rc.1)
+//! ## Public API
 //!
-//! - [`sasl`] — SASL frame layer (PLAIN / ANONYMOUS / EXTERNAL)
-//!   per spec §10.2.
+//! - [`sasl`] — SASL frame layer (PLAIN / ANONYMOUS / EXTERNAL /
+//!   SCRAM-SHA-256) per spec §10.2.
 //! - [`session`] — connection/session state machine + idle timeout +
 //!   DoS caps per spec §6.1.
 //! - [`link`] — sender/receiver link acceptance + settlement
@@ -76,6 +75,13 @@ pub mod daemon_runtime;
 // DDS-QoS → AMQP-behavior translation (spec §6).
 #[cfg(feature = "std")]
 pub mod client;
+// The long-lived broker connection of the bridge daemon: SASL, TLS, links,
+// flow control, multi-frame transfers. std-only.
+#[cfg(feature = "std")]
+pub mod broker;
+// The bridge daemon: configuration, message form, the DDS↔AMQP pump.
+#[cfg(feature = "std")]
+pub mod bridge_daemon;
 pub mod codegen_helpers;
 pub mod coexistence;
 #[cfg(feature = "std")]

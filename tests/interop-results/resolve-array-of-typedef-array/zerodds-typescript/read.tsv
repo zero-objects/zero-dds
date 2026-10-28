@@ -1,0 +1,14 @@
+# What zerodds-typescript got back when it read the bytes of resolve-array-of-typedef-array, held against
+# tests/interop-corpus/resolve-array-of-typedef-array/values.json and never against another
+# column's reading of the same bytes.
+# encoding	endian	verdict	detail
+plain-cdr1	le	harness-gap	wireprobe-zerodds-typescript: the read direction is not built; emittypescript.rs refuses default_into for want of a default_typescript
+plain-cdr1	be	harness-gap	wireprobe-zerodds-typescript: the read direction is not built; emittypescript.rs refuses default_into for want of a default_typescript
+pl-cdr1	le	harness-gap	wireprobe-zerodds-typescript: the read direction is not built; emittypescript.rs refuses default_into for want of a default_typescript
+pl-cdr1	be	harness-gap	wireprobe-zerodds-typescript: the read direction is not built; emittypescript.rs refuses default_into for want of a default_typescript
+plain-cdr2	le	harness-gap	wireprobe-zerodds-typescript: the read direction is not built; emittypescript.rs refuses default_into for want of a default_typescript
+plain-cdr2	be	harness-gap	wireprobe-zerodds-typescript: the read direction is not built; emittypescript.rs refuses default_into for want of a default_typescript
+delimited-cdr	le	harness-gap	wireprobe-zerodds-typescript: the read direction is not built; emittypescript.rs refuses default_into for want of a default_typescript
+delimited-cdr	be	harness-gap	wireprobe-zerodds-typescript: the read direction is not built; emittypescript.rs refuses default_into for want of a default_typescript
+pl-cdr2	le	harness-gap	wireprobe-zerodds-typescript: the read direction is not built; emittypescript.rs refuses default_into for want of a default_typescript
+pl-cdr2	be	harness-gap	wireprobe-zerodds-typescript: the read direction is not built; emittypescript.rs refuses default_into for want of a default_typescript

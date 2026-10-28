@@ -1,0 +1,281 @@
+// The 25 ShapeTypes of the OMG `dds-xtypes` interoperability test suite —
+// `srcCxx/ShapeType.idl`, pinned suite f6acbe08.
+//
+// THIS IS THE THIRD ShapeType IN THIS DIRECTORY, and it is not a variant
+// of the other two. `omg-dds-rtps.idl` and `shapesdemo.idl` each declare
+// one type named `ShapeType`; this file declares twenty-five types, none
+// of which is named `ShapeType`. Read `README.md` here before you use
+// any of the three.
+//
+// Who speaks this one
+//   The executables of the OMG `dds-xtypes` suite — the RTI Connext and
+//   TwinOaks CoreDX builds of `srcCxx/ShapeType_main.cxx`, which is the
+//   only source the suite ships — and `tools/omg-xtypes-main` on our
+//   side. The topic name is always `XTYPESTestTopic` (suite README);
+//   what varies between two peers is the *type*, never the topic.
+//
+// Why there are 25 types and not one
+//   The suite measures type assignability, not sample delivery. It runs
+//   a publisher of one of these types against a subscriber of another
+//   and asks whether the two match — 25 x 25 = 625 combinations, of
+//   which `compatibility_matrix.xlsx` marks 83 as expected-compatible.
+//   The 25 come from five member layouts crossed with five
+//   extensibility declarations:
+//
+//     Shape1  color, x, y, shapesize                  the base layout
+//     Shape2  Shape1 + a member appended at the end   (`angle`)
+//     Shape3  Shape1 + a member inserted in the middle (`z`)
+//     Shape4  Shape1 with its members reordered
+//     Shape5  inherits Shape1, appending the member Shape2 appends
+//
+//     …Default             no annotation — the IDL default
+//     …Final               @final
+//     …Extensible          @appendable
+//     …Mutable             @mutable, member ids assigned automatically
+//     …MutableExplicitID   @mutable, some member ids given with @id
+//
+//   The four rows below the diagonal are the point: Shape2 vs Shape3 vs
+//   Shape4 vs Shape5 are the four ways one aggregate can differ from
+//   another, and XTypes 1.3 §7.2.4.4.4.4 answers each of them
+//   differently per extensibility kind.
+//
+// Why `…Default` is not a sixth extensibility
+//   It is the absence of an annotation, and what that means is a
+//   choice the reader of the IDL makes. XTypes 1.3 §7.3.1.2.1.9 makes
+//   APPENDABLE the default extensibility, and the suite's own
+//   compatibility matrix treats `…Default` and `…Extensible` as the
+//   same thing throughout (every Default/Extensible cell agrees with
+//   the corresponding Extensible/Extensible cell). Our front end takes
+//   its default from `Config::default_extensibility`, so
+//   `tools/omg-xtypes-main/build.rs` states APPENDABLE there rather
+//   than leaving it to whatever the default happens to be. That is a
+//   build-script setting, not a property of this file — a consumer who
+//   compiles this IDL with a different default gets different types
+//   under the same names.
+//
+// Why `STR_LEN_MAX` is 32 and not 128
+//   Because the suite says 32. `omg-dds-rtps.idl` beside this file
+//   bounds its `color` at `string<128>`; this suite bounds it at
+//   `string<STR_LEN_MAX>` with `STR_LEN_MAX = 32`. The two suites are
+//   unrelated and the numbers do not have to agree — but a bound is on
+//   the wire type (XTypes 1.3 §7.3.1.2.1.4 gives the bound to the
+//   `StringSTypeDefn`), so it reaches assignability: with
+//   `ignore_string_bounds = false` a `string<128>` writer is not
+//   assignable to a `string<32>` reader. Copying the 128 across would
+//   silently answer a different question than the suite asks.
+//
+// What is *not* in this file
+//   The suite ships an equivalent `ShapeType.xml` (the XML type
+//   representation of XTypes 1.3 §7.3.2) declaring the same 25 types.
+//   It is a second spelling of what is here, not additional content,
+//   and our front end reads IDL — so this file is the single copy.
+//
+// What checks it
+//   `tools/omg-xtypes-main/src/shape_type.rs` — the generated types are
+//   what that client publishes and subscribes, and its tests hold every
+//   one of the 25 against the properties this file declares
+//   (extensibility, key, announced TypeObject). The assignability
+//   measurement against the suite's own expectation lives in
+//   `tools/omg-xtypes-main/tests/compatibility_matrix.rs`.
+
+const long STR_LEN_MAX = 32;
+
+/* -------------- Shape1 — the base layout ------------------------- */
+
+struct Shape1Default {
+    @key string<STR_LEN_MAX> color;
+    long x;
+    long y;
+    long shapesize;
+};
+
+@final
+struct Shape1Final {
+    @key string<STR_LEN_MAX> color;
+    long x;
+    long y;
+    long shapesize;
+};
+
+@appendable
+struct Shape1Extensible {
+    @key string<STR_LEN_MAX> color;
+    long x;
+    long y;
+    long shapesize;
+};
+
+@mutable
+struct Shape1Mutable {
+    @key string<STR_LEN_MAX> color;
+    long x;
+    long y;
+    long shapesize;
+};
+
+@mutable
+struct Shape1MutableExplicitID {
+    @key @id(10) string<STR_LEN_MAX> color;
+    @id(20) long x;
+    long y;
+    @id(30) long shapesize;
+};
+
+/* -------------- Shape2 — Shape1 + a member at the end ------------ */
+
+struct Shape2Default {
+    @key string<STR_LEN_MAX> color;
+    long x;
+    long y;
+    long shapesize;
+    float angle;
+};
+
+@final
+struct Shape2Final {
+    @key string<STR_LEN_MAX> color;
+    long x;
+    long y;
+    long shapesize;
+    float angle;
+};
+
+@appendable
+struct Shape2Extensible {
+    @key string<STR_LEN_MAX> color;
+    long x;
+    long y;
+    long shapesize;
+    float angle;
+};
+
+@mutable
+struct Shape2Mutable {
+    @key string<STR_LEN_MAX> color;
+    long x;
+    long y;
+    long shapesize;
+    float angle;
+};
+
+@mutable
+struct Shape2MutableExplicitID {
+    @key @id(10) string<STR_LEN_MAX> color;
+    @id(20) long x;
+    long y;
+    @id(30) long shapesize;
+    @id(40) float angle;
+};
+
+/* -------------- Shape3 — Shape1 + a member in the middle --------- */
+
+struct Shape3Default {
+    @key string<STR_LEN_MAX> color;
+    long x;
+    long y;
+    long z;
+    long shapesize;
+};
+
+@final
+struct Shape3Final {
+    @key string<STR_LEN_MAX> color;
+    long x;
+    long y;
+    long z;
+    long shapesize;
+};
+
+@appendable
+struct Shape3Extensible {
+    @key string<STR_LEN_MAX> color;
+    long x;
+    long y;
+    long z;
+    long shapesize;
+};
+
+@mutable
+struct Shape3Mutable {
+    @key string<STR_LEN_MAX> color;
+    long x;
+    long y;
+    long z;
+    long shapesize;
+};
+
+@mutable
+struct Shape3MutableExplicitID {
+    @key @id(10) string<STR_LEN_MAX> color;
+    @id(20) long x;
+    long y;
+    @id(15) long z;
+    @id(30) long shapesize;
+};
+
+/* -------------- Shape4 — Shape1 with reordered members ----------- */
+
+struct Shape4Default {
+    @key string<STR_LEN_MAX> color;
+    long shapesize;
+    long x;
+    long y;
+};
+
+@final
+struct Shape4Final {
+    @key string<STR_LEN_MAX> color;
+    long shapesize;
+    long x;
+    long y;
+};
+
+@appendable
+struct Shape4Extensible {
+    @key string<STR_LEN_MAX> color;
+    long shapesize;
+    long x;
+    long y;
+};
+
+@mutable
+struct Shape4Mutable {
+    @key string<STR_LEN_MAX> color;
+    long shapesize;
+    long x;
+    long y;
+};
+
+@mutable
+struct Shape4MutableExplicitID {
+    @key @id(10) string<STR_LEN_MAX> color;
+    @id(30) long shapesize;
+    @id(20) long x;
+    long y;
+};
+
+/* -------------- Shape5 — inherits Shape1, appends Shape2's member  */
+
+struct Shape5Default : Shape1Default {
+    float angle;
+};
+
+@final
+struct Shape5Final : Shape1Final {
+    float angle;
+};
+
+@appendable
+struct Shape5Extensible : Shape1Extensible {
+    float angle;
+};
+
+@mutable
+struct Shape5Mutable : Shape1Mutable {
+    float angle;
+};
+
+@mutable
+struct Shape5MutableExplicitID : Shape1MutableExplicitID {
+    @id(40) float angle;
+};

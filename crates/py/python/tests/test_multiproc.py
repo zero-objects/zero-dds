@@ -37,6 +37,14 @@ _PUBLISHER_SCRIPT = textwrap.dedent("""
     for _ in range(5):
         writer.write(payload)
         time.sleep(0.05)
+    # A writer that goes away discards what is not acknowledged (DDS 1.4
+    # §2.2.2.4.1.12). This writer may know the reader before the reader
+    # knows it: the reader's SEDP repair comes heartbeatResponseDelay plus
+    # nackResponseDelay (500 + 200 ms, DDSI-RTPS 2.5 §8.4.10.1, §8.4.7.1)
+    # after a HEARTBEAT, and a sample the reader dropped as coming from an
+    # unknown writer is repaired after that. The process waits for the
+    # reader's acknowledgment rather than ending first.
+    writer.wait_for_acknowledgments(10.0)
 """)
 
 
@@ -49,11 +57,19 @@ _SUBSCRIBER_SCRIPT = textwrap.dedent("""
     factory = zerodds.DomainParticipantFactory.instance()
     p = factory.create_participant_fast(domain)
     topic = p.create_bytes_topic(topic_name)
-    reader = p.create_subscriber().create_bytes_reader(topic)
+    # RELIABLE. The DataReader default is BEST_EFFORT (DDS 1.4 §2.2.3):
+    # a sample written before this reader knows the writer is then lost, and
+    # the writer's wait_for_acknowledgments has no reader to wait for.
+    qos = zerodds.DataReaderQos()
+    qos.set_reliability("Reliable", 0.1)
+    reader = p.create_subscriber().create_bytes_reader_with_qos(topic, qos)
     reader.wait_for_matched_publication(1, 5.0)
     deadline = 5.0
     while deadline > 0:
-        reader.wait_for_data(0.5)
+        try:
+            reader.wait_for_data(0.5)
+        except TimeoutError:
+            pass
         samples = reader.take()
         if expected in samples:
             sys.stdout.write("OK")

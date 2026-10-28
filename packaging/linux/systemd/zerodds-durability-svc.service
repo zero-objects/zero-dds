@@ -1,17 +1,17 @@
 # /usr/lib/systemd/system/zerodds-durability-svc.service
 # ZeroDDS Durability-Service daemon (ADR 0009). One instance per DDS domain;
-# use a templated drop-in or copy per domain. Spec: internal/deployment/durability-service.md
+# use a templated drop-in or copy per domain.
 [Unit]
 Description=ZeroDDS Durability-Service (TRANSIENT/PERSISTENT)
-Documentation=file:///usr/share/doc/zerodds/durability-service.md
+Documentation=man:zerodds-durability-svc(1)
 After=network-online.target
 Wants=network-online.target
 
 [Service]
-# Type=exec: the daemon is ready immediately after exec (it does not sd_notify);
-# systemd considers it started once execve succeeds. Graceful stop via SIGTERM
-# (the daemon installs a ctrlc/termination handler -> joins pumps -> exits 0).
-Type=exec
+# Type=notify: the daemon sends READY=1 once it is serving and STOPPING=1
+# when the shutdown begins (sd_notify(3), zerodds_dcps::cli::notify_service_manager).
+# Graceful stop via SIGTERM (ctrlc/termination handler -> joins pumps -> exits 0).
+Type=notify
 Environment=ZERODDS_DURABILITY_DOMAIN=0
 Environment=ZERODDS_DURABILITY_STORE=sqlite
 Environment=ZERODDS_DURABILITY_PATH=/var/lib/zerodds/durability/dur.db

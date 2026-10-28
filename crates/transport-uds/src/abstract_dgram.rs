@@ -165,6 +165,7 @@ impl UdsAbstractDgramTransport {
             }
         }
         socket.bind(&addr)?;
+        crate::size_buffers(socket2::SockRef::from(&socket), config.recv_buf)?;
         Ok(Self {
             socket,
             local_id,
@@ -189,6 +190,11 @@ impl Drop for UdsAbstractDgramTransport {
 }
 
 impl Transport for UdsAbstractDgramTransport {
+    /// The datagram limit of the socket (`recv_buf`).
+    fn max_message_size(&self) -> usize {
+        self.config.recv_buf
+    }
+
     fn send(&self, dest: &Locator, data: &[u8]) -> Result<(), SendError> {
         if dest.kind != LocatorKind::Uds {
             return Err(SendError::UnsupportedLocator);
@@ -599,6 +605,16 @@ mod tests {
         assert_eq!(
             <UdsAbstractDgramTransport as Transport>::local_locator(&t),
             Locator::uds(id(70))
+        );
+    }
+
+    /// DDSI-RTPS 2.5 §8.4.14.1: the transport states its datagram limit.
+    #[test]
+    fn max_message_size_is_the_receive_buffer() {
+        let t = UdsAbstractDgramTransport::bind(id(71), abs_cfg("zerodds-test-maxmsg")).unwrap();
+        assert_eq!(
+            <UdsAbstractDgramTransport as Transport>::max_message_size(&t),
+            8192
         );
     }
 }

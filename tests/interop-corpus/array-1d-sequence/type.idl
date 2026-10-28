@@ -1,0 +1,7 @@
+// one-dimensional array of `sequence`
+typedef sequence<long> Ids;
+
+@final struct Sample {
+    Ids rows[3];
+    long tail;
+};

@@ -5,8 +5,8 @@
 * Part 2 (Interoperability, 249 pp.) — [`formal/12-11-14`](https://www.omg.org/spec/CORBA/3.3/Interoperability/PDF)
 * Part 3 (Component Model, 380 pp.) — [`formal/12-11-16`](https://www.omg.org/spec/CORBA/3.3/Components/PDF)
 
-**Context.** With the DDS core and the
-`idl-cpp`/`idl-csharp`/`idl-java` codegen family, ZeroDDS fully covers
+**Context.** With the DDS core and the codegen in
+`crates/lang-rules/` and `crates/corba-codegen/`, ZeroDDS fully covers
 the DDS PSM. For migrating legacy CORBA applications in
 the finance industry, ZeroDDS should be able to appear as a **drop-in
 backend**: an existing CORBA client compiles and links against
@@ -16,7 +16,7 @@ ad-hoc infrastructure swaps.
 
 CORBA coexistence is spread across several implementation crates:
 
-- `crates/idl/` — IDL grammar (Part 1 §7 IDL syntax)
+- `crates/idl-parse/` — IDL grammar (Part 1 §7 IDL syntax)
 - `crates/corba-codegen/` — Annex-A.1 codegen (stubs/skeletons, Part 1 §7)
 - `crates/corba-ir/` — Interface Repository (Part 1 §14)
 - `crates/corba-poa/` — Portable Object Adapter (Part 1 §15)
@@ -113,12 +113,17 @@ Object Adapter, IR).
 interface, value, constant, type, exception, operation, attribute,
 repository identity, event, component, home, names & scoping).
 
-**Repo:** `crates/idl/src/grammar/`, `crates/corba-codegen/src/repository_id.rs`,
+**Repo:** `crates/idl-cst/src/lex.rs`, `crates/idl-parse/src/decl.rs`,
+`crates/idl-lower/src/lower.rs`, `crates/corba-codegen/src/repository_id.rs`,
 `crates/corba-codegen/src/special_types.rs`, `crates/corba-codegen/src/skeleton.rs`,
 `crates/corba-codegen/src/stub.rs`.
 
-**Tests:** `crates/idl/src/grammar/` (inline tests, ca. 600+ items via
-`idl-4.2.md`), `crates/corba-codegen/src/repository_id.rs::tests`.
+**Tests:** `crates/idl-parse/tests/parse.rs::{each_declaration_form_is_recognised,
+a_file_using_most_of_the_grammar_parses_cleanly_and_round_trips}`,
+`crates/idl-lower/tests/conformance.rs::{every_fixture_parses_with_no_diagnostics_beyond_the_extensions_it_declares,
+every_fixture_lowers_to_exactly_the_diagnostics_it_should}`,
+`crates/corba-codegen/src/repository_id.rs::{a_nested_module_path,
+splitting_takes_the_last_colon_and_checks_the_version_is_a_version}`.
 
 **Status:** done — IDL 4.2 is a superset of CORBA-IDL §7. Rule-by-rule
 coverage in `docs/spec-coverage/idl-4.2.md` (649 done / 4 partial).
@@ -139,9 +144,17 @@ policy management, TypeCodes, standard exceptions.
 `crates/corba-giop/src/error.rs` + `crates/corba-poa/src/error.rs`
 (standard exceptions as Rust Result).
 
-**Tests:** `crates/corba-ior/src/stringified.rs::tests`,
-`crates/corba-ior/src/url.rs::tests`,
-`crates/corba-ir/src/type_code.rs::tests`.
+**Tests:** `crates/corba-ior/src/stringified.rs::tests`: `round_trip_be`,
+`round_trip_le`, `upper_and_lower_hex_both_decoded`,
+`missing_prefix_is_diagnostic`, `odd_hex_length_is_diagnostic`,
+`non_hex_char_is_diagnostic`, `nil_ior_round_trip`;
+`crates/corba-ior/src/url.rs::tests`: `parse_simple_iiop_corbaloc`,
+`default_port_2809_when_missing`, `rir_endpoint`, `multi_endpoint_failover`,
+`corbaname_with_fragment`;
+`crates/corba-ir/src/type_code.rs::tests`:
+`well_known_tc_kind_values_match_spec`, `primitive_tc_has_no_body`,
+`struct_tc_carries_id_and_members`, `sequence_tc_holds_element`,
+`enum_tc_holds_member_names`.
 
 **Status:** done — string-↔-IOR and URL schemes (§8.2.2, §8.5.2)
 covered; ORB singleton lifecycle (`Orb::init/shutdown/destroy`),
@@ -155,30 +168,48 @@ Rust Result layer.
 **Spec:** Part 1 §9, p. 155 — valuetype marshaling (CDR representation,
 boxed value, custom marshaling, sending-context runtime).
 
-**Repo:** `crates/cdr/` (codec base), `crates/idl-cpp/`/`idl-java/`/
-`idl-csharp/` (valuetype codegen for languages), no dedicated
-custom-marshal hook.
+**Repo:** `crates/wire/src/writer.rs` + `crates/wire/src/reader.rs`
+(codec base), `crates/idl-parse/src/decl.rs` (`parse_valuetype`, value
+box and `custom valuetype`), `crates/lang-rules/src/coverage.rs`
+(valuetype rule per target language), no dedicated custom-marshal hook
+in the codegen.
 
-**Tests:** `crates/idl-cpp/tests/`, `crates/idl-java/tests/`.
+**Tests:** `crates/idl-lower/tests/lowering.rs::{the_other_valuetype_forms_are_unaffected_by_the_box,
+an_abstract_valuetype_parses_as_a_valuetype,
+a_forward_declared_valuetype_is_completed_by_its_definition}`,
+`crates/corba-codegen/tests/orb_agreement.rs::the_valuebase_holder_is_the_omgs_and_jacorbs_names_a_class_that_does_not_exist`.
 
-**Status:** done — valuetype IDL parses and emits into all three
-PSM languages (idl-cpp/-csharp/-java). Custom-marshal streams via
+**Status:** done — valuetype IDL parses, lowers and carries an emission
+rule per target language in `lang-rules`. Custom-marshal streams via
 `crates/corba-ccm/src/orb_core.rs::StreamableValue` trait
 (`marshal/unmarshal/repository_id`); sending-context runtime via
 `SendingContext` with `code_set` + `truncation_codebase`.
+
+**Tests:** `crates/corba-codegen/tests/annex_a1_traits.rs`:
+`table_a8_reads_abstract_and_truncatable_off_the_declaration`,
+`table_a9_gives_a_valuebox_its_boxed_trait`,
+`every_traited_type_renders_in_every_column`.
+
+**Status:** done — a valuetype and a valuebox carry the members Annex
+A.1.1 gives them in all four PSM columns.
 
 ### §10 Abstract Interface Semantics
 
 **Spec:** Part 1 §10, p. 171 — `abstract interface`, marshalling as
 Object or ValueType.
 
-**Repo:** `crates/idl/src/grammar/idl42.rs` (PROD_INTERFACE_DCL alt
-"abstract"), codegen in `crates/idl-cpp/`/`idl-java/`/`idl-csharp/`.
+**Repo:** `crates/idl-parse/src/decl.rs` (`abstract` belongs to two
+productions — the interface header (79) and `<value_abs_def>` (127);
+the fork is in `parse_definition`), codegen corpus row in
+`crates/corba-codegen/tests/orb-corpus/rows/03-abstractbase.idl`.
 
-**Tests:** inline tests in `crates/idl/src/grammar/`.
+**Tests:** `crates/idl-lower/tests/lowering.rs::abstract_still_reaches_the_interface_header_it_also_belongs_to`,
+`crates/idl-lower/tests/interface_as_type.rs::an_interface_used_as_a_type_resolves_in_every_spelling`
+(the "an abstract interface" row).
 
-**Status:** done — parser accepts `abstract interface`, all three
-PSM codegen backends emit the language mapping.
+**Status:** done — the parser accepts `abstract interface`, lowering
+carries it as its own interface kind, and the codegen corpus holds the
+row.
 
 ### §11 Dynamic Invocation Interface (DII)
 
@@ -242,7 +273,7 @@ dyn_any_from_type_code_struct_preserves_bytes_and_id}`.
 **Status:** done — DynAny data model + wire-up `from_type_code(tc, raw)`
 walks a `corba_ir::TypeCode` over CDR `any` bytes; primitive
 types (`Long`/`ULong`/`Short`/`Boolean`/`String`/...) are validated via
-`zerodds_cdr::BufferReader` (decode errors are
+`zerodds_wire::Reader` (decode errors are
 propagated), complex types (Struct/Sequence/Array) preserve the
 raw bytes plus repository ID. `to_cdr()` projects the DynAny
 back.
@@ -258,8 +289,17 @@ component-IR extensions (Part 3); IDL of the IR.
 (IDL/local-format repository IDs), `crates/corba-ir/src/type_code.rs`
 (TypeCode backend), `crates/corba-ir/src/definition_kind.rs` (DK_*).
 
-**Tests:** inline tests in every `corba-ir/src/*.rs` (19 inline
-`#[test]` functions per `grep`).
+**Tests:** `crates/corba-ir/src/repository.rs::tests` (11 tests):
+`scoped_lookup_descends_hierarchy`, `absolute_name_builds_scoped_path`,
+`operation_def_carries_typed_signature`, `interface_def_details`,
+`register_and_lookup_id`, `duplicate_id_yields_error`,
+`lookup_name_at_top_level`, `nested_module_lookup_name_recurses`,
+`describe_contents_filters_by_kind`, `definition_carries_type_code`,
+`remove_deletes_definition`;
+`crates/corba-ir/src/definition_kind.rs::tests::well_known_definition_kinds_match_spec`,
+`::at_least_26_kinds_modeled`;
+`crates/corba-ir/src/repository_id.rs::tests::round_trip_omg_namingcontext`,
+`::missing_idl_prefix_is_invalid`, `::missing_version_is_invalid`.
 
 **Status:** done — IR interface hierarchy + RepositoryIds + TypeCodes
 implemented. Component-IR extensions see Part 3 §12 (CCM
@@ -272,12 +312,29 @@ IdAssignment, IdUniqueness, ServantRetention, RequestProcessing,
 ImplicitActivation, Thread), object activation, servant manager,
 adapter activator, POA hierarchy, IDL for PortableServer.
 
-**Repo:** `crates/corba-poa/` with modules `poa.rs` (hierarchy +
-dispatch), `policies.rs` (all 7 standard policies),
-`active_object_map.rs` (AOM), `servant.rs` + `servant_manager.rs`,
-`object_id.rs`, `poa_manager.rs` (activation lifecycle).
+**Repo:** `crates/corba-poa/src/poa.rs` (hierarchy + dispatch),
+`crates/corba-poa/src/policies.rs` (all 7 standard policies),
+`crates/corba-poa/src/active_object_map.rs` (AOM),
+`crates/corba-poa/src/servant.rs` + `crates/corba-poa/src/servant_manager.rs`,
+`crates/corba-poa/src/object_id.rs`,
+`crates/corba-poa/src/poa_manager.rs` (activation lifecycle).
 
-**Tests:** 36 inline `#[test]` functions in `crates/corba-poa/src/`.
+**Tests:** `crates/corba-poa/src/poa.rs::tests` (12 tests):
+`poa_hierarchy_create_find_destroy`, `default_root_dispatch_via_aom`,
+`user_id_activation_with_explicit_oid`,
+`use_default_servant_falls_back_to_default`,
+`use_servant_manager_with_activator_caches_in_aom`,
+`non_retain_with_locator_calls_pre_post_per_invocation`,
+`dispatch_in_holding_state_is_rejected`,
+`dispatch_in_inactive_state_yields_adapter_inactive`,
+`dispatch_in_discarding_state_returns_obj_adapter`,
+`invalid_policy_combination_is_rejected_at_construction`;
+`crates/corba-poa/src/active_object_map.rs::tests` (6),
+`crates/corba-poa/src/policies.rs::tests` (8),
+`crates/corba-poa/src/poa_manager.rs::tests::full_state_cycle`,
+`crates/corba-poa/src/object_id.rs::tests::system_id_is_8_bytes_big_endian`,
+`crates/corba-poa/src/servant.rs::tests::is_a_checks_repository_ids`,
+`crates/corba-poa/src/servant_manager.rs::tests::locator_preinvoke_returns_servant_and_cookie`.
 
 **Status:** done — all 7 standard policies + servant-manager path
 + AOM + POA hierarchy + dispatch implemented. Adapter activator
@@ -308,7 +365,7 @@ registry is installed.
 picurrent_set_get_slot, client_interception_points_distinct,
 server_interception_points_distinct, registry_walk_client_invokes_all_client_interceptors,
 registry_walk_ior_collects_tags}` +
-`crates/corba-iiop/src/connection.rs::tests::{pipeline_walks_client_send_request,
+`crates/corba-iiop/src/connection.rs::{pipeline_walks_client_send_request,
 pipeline_walks_server_receive_request, ior_interceptor_fires_on_walk_ior}`.
 
 **Status:** done — PI data model + pipeline integration in the
@@ -423,14 +480,21 @@ generic inline bridge is caller-layer.
 CDR transfer syntax, versioning 1.0/1.1/1.2, IIOP mapping, bi-dir
 GIOP.
 
-**Repo:** `crates/corba-giop/` with modules `header.rs`,
-`request.rs`/`reply.rs`, `cancel_request.rs`, `locate_request.rs`/
-`locate_reply.rs`, `close_connection.rs`, `fragment.rs`,
-`service_context.rs`, `target_address.rs`, `flags.rs`, `codec.rs`.
+**Repo:** `crates/corba-giop/src/` with one file per message type plus
+`crates/corba-giop/src/header.rs`, `crates/corba-giop/src/codec.rs`,
+`crates/corba-giop/src/service_context.rs`,
+`crates/corba-giop/src/target_address.rs`,
+`crates/corba-giop/src/flags.rs`, `crates/corba-giop/src/version.rs`.
 
-**Tests:** 69 inline `#[test]` functions in `crates/corba-giop/src/`
-(examples: `round_trip_giop_1_0`, `round_trip_giop_1_2_with_profile_addr`,
-`disposition_values_match_spec`).
+**Tests:** `crates/corba-giop/src/codec.rs::{round_trip_request_giop_1_0_be,
+round_trip_request_giop_1_2_le, giop_1_2_body_is_eight_aligned_from_the_message_start,
+giop_1_0_body_is_not_padded, header_message_size_matches_actual_body,
+message_size_larger_than_the_buffer_is_refused}`,
+`crates/corba-giop/src/header.rs::{magic_bytes_match_spec,
+header_size_is_12_bytes, round_trip_big_endian_request_header,
+round_trip_little_endian_reply_header}`,
+`crates/corba-giop/src/version.rs::{version_constants_match_spec,
+flags_octet_replaces_byte_order_at_1_1, v1_2_request_layout_only_in_1_2_plus}`.
 
 **Status:** done
 
@@ -439,9 +503,16 @@ GIOP.
 **Spec:** §9.3, p. 71 — CDR encoding, endianness marking,
 primitive/construct layout, GIOP 1.2 alignment.
 
-**Repo:** `crates/cdr/` (XCDR1 + XCDR2), re-used by corba-giop-codec.
+**Repo:** `crates/wire/src/writer.rs` + `crates/wire/src/reader.rs`
+(primitives + alignment + encapsulation), re-used by the GIOP codec in
+`crates/corba-giop/src/codec.rs`.
 
-**Tests:** `crates/cdr/tests/`, `crates/cdr/src/` inline tests.
+**Tests:** `crates/corba-giop/src/codec.rs::{giop_1_2_body_is_eight_aligned_from_the_message_start,
+giop_1_2_reply_body_is_eight_aligned_from_the_message_start,
+giop_1_0_body_is_not_padded}`,
+`crates/corba-giop/src/request.rs::tests::giop_1_2_request_body_is_8_aligned`,
+`crates/corba-giop/src/service_context.rs::{round_trip_with_two_entries_be,
+round_trip_le_byte_order}`.
 
 **Status:** done
 
@@ -451,10 +522,36 @@ primitive/construct layout, GIOP 1.2 alignment.
 (Request/Reply/CancelRequest/LocateRequest/LocateReply/
 CloseConnection/MessageError/Fragment).
 
-**Repo:** one file per message type in `crates/corba-giop/src/`.
+**Repo:** one file per message type in `crates/corba-giop/src/` —
+`crates/corba-giop/src/request.rs`, `crates/corba-giop/src/reply.rs`,
+`crates/corba-giop/src/cancel_request.rs`,
+`crates/corba-giop/src/locate_request.rs`,
+`crates/corba-giop/src/locate_reply.rs`,
+`crates/corba-giop/src/close_connection.rs`,
+`crates/corba-giop/src/message_error.rs`,
+`crates/corba-giop/src/fragment.rs`.
 
-**Tests:** round-trip tests per message type in the respective
-modules.
+**Tests:** one octet round trip per message type —
+`crates/corba-giop/src/request.rs::{round_trip_giop_1_0_request,
+round_trip_giop_1_1_request_with_reserved_bytes,
+round_trip_giop_1_2_request_with_target_address}`,
+`crates/corba-giop/src/reply.rs::{round_trip_giop_1_0_no_exception,
+round_trip_giop_1_2_user_exception, round_trip_location_forward_perm_in_1_2}`,
+`crates/corba-giop/src/cancel_request.rs::tests::round_trip`,
+`crates/corba-giop/src/locate_request.rs::{round_trip_giop_1_0,
+round_trip_giop_1_2_with_profile_addr}`,
+`crates/corba-giop/src/locate_reply.rs::{round_trip_giop_1_0_object_here,
+round_trip_giop_1_2_object_forward_perm}`,
+`crates/corba-giop/src/close_connection.rs::tests::body_is_unit`,
+`crates/corba-giop/src/message_error.rs::tests::body_is_unit`,
+`crates/corba-giop/src/fragment.rs::{round_trip_giop_1_2_with_header,
+round_trip_giop_1_1_without_header}`. All eight also through the
+whole-message codec: `crates/corba-giop/src/codec.rs::{round_trip_request_giop_1_0_be,
+round_trip_close_connection, round_trip_message_error,
+round_trip_fragment_with_more_bit, round_trip_cancel_request,
+round_trip_locate_request_giop_1_2, round_trip_locate_reply_object_here}`.
+The type discriminators themselves:
+`crates/corba-giop/src/message_type.rs::tests::message_type_values_match_spec_table_15_1`.
 
 **Status:** done
 
@@ -463,10 +560,18 @@ modules.
 **Spec:** §9.5, p. 107 — transport requirements (ordered, lossless),
 connection management.
 
-**Repo:** `crates/corba-iiop/src/connection.rs`, `acceptor.rs`,
-`connector.rs` for TCP transport.
+**Repo:** `crates/corba-iiop/src/connection.rs`,
+`crates/corba-iiop/src/acceptor.rs`,
+`crates/corba-iiop/src/connector.rs` for TCP transport.
 
-**Tests:** inline tests in `corba-iiop`.
+**Tests:** `crates/corba-iiop/src/acceptor.rs::tests::round_trip_via_acceptor_and_connector`,
+`crates/corba-iiop/src/connection.rs::{round_trip_request_reply,
+shutdown_propagates_eof_to_peer, close_connection_message_round_trip}`,
+`crates/corba-iiop/src/framing.rs::tests::read_back_to_back_messages`
+(message boundaries in the stream),
+`crates/corba-iiop/src/connector.rs::{connect_reuses_pooled_connection,
+invalidated_connection_is_not_returned_to_pool,
+max_connections_per_endpoint_is_enforced}`.
 
 **Status:** done — TCP via IIOP. Other transport bindings (e.g.
 SCTP) not offered.
@@ -476,9 +581,14 @@ SCTP) not offered.
 **Spec:** §9.6, p. 110 — LocateRequest/LocateReply semantics, forward-
 ing.
 
-**Repo:** `crates/corba-giop/src/locate_request.rs`, `locate_reply.rs`.
+**Repo:** `crates/corba-giop/src/locate_request.rs`,
+`crates/corba-giop/src/locate_reply.rs`.
 
-**Tests:** inline tests there (`locate_*`).
+**Tests:** `crates/corba-giop/src/locate_reply.rs::{locate_status_values_match_spec,
+round_trip_giop_1_0_object_here, round_trip_giop_1_2_object_forward_perm,
+forward_perm_in_1_0_is_rejected}`,
+`crates/corba-giop/src/locate_request.rs::{round_trip_giop_1_0,
+round_trip_giop_1_2_with_profile_addr, giop_1_0_rejects_profile_target}`.
 
 **Status:** done
 
@@ -487,10 +597,16 @@ ing.
 **Spec:** §9.7, p. 111 — IIOP as TCP mapping; IIOP::ProfileBody
 (host/port/object key + TaggedComponents).
 
-**Repo:** `crates/corba-iiop/` with `profile_body.rs`, `framing.rs`,
-`acceptor.rs`, `connector.rs`, `connection.rs`.
+**Repo:** `crates/corba-iiop/src/profile_body.rs`,
+`crates/corba-iiop/src/framing.rs`, `crates/corba-iiop/src/acceptor.rs`,
+`crates/corba-iiop/src/connector.rs`, `crates/corba-iiop/src/connection.rs`.
 
-**Tests:** 24 inline `#[test]` functions.
+**Tests:** `crates/corba-iiop/src/profile_body.rs::{iiop_version_constants_match_spec,
+components_only_from_iiop_1_1, round_trip_v1_0_be, round_trip_v1_0_le,
+round_trip_v1_2_with_components, v1_0_does_not_emit_components_field}`,
+`crates/corba-iiop/src/framing.rs::{round_trip_request_through_cursor,
+round_trip_reply_le, outbound_fragmentation_be_le_many_fragments,
+fragment_reassembly_three_fragments, oversized_message_size_is_rejected_cleanly}`.
 
 **Status:** done
 
@@ -515,10 +631,23 @@ bidir_service_context_listen_points}`.
 **Spec:** §9.10, p. 119 — IDL for GIOP module constants + service
 context IDs.
 
-**Repo:** as Rust constants in `crates/corba-giop/src/service_context.rs`,
-`flags.rs`, etc.
+**Repo:** as Rust constants in `crates/corba-giop/src/service_context.rs`
+(`ServiceContextTag`), `crates/corba-giop/src/message_type.rs` (`MessageType`),
+`crates/corba-giop/src/flags.rs` (`Flags`),
+`crates/corba-giop/src/version.rs` (`Version`),
+`crates/corba-giop/src/reply.rs` (`ReplyStatusType`),
+`crates/corba-giop/src/locate_reply.rs` (`LocateStatusType`),
+`crates/corba-giop/src/target_address.rs` (`AddressingDisposition`).
 
-**Tests:** inline consistency tests.
+**Tests:** one value comparison against the IDL per constant group —
+`crates/corba-giop/src/service_context.rs::tests::standard_tag_values_match_spec`,
+`crates/corba-giop/src/message_type.rs::tests::message_type_values_match_spec_table_15_1`,
+`crates/corba-giop/src/flags.rs::{fragment_bit_value_matches_spec,
+byte_order_bit_value_matches_spec}`,
+`crates/corba-giop/src/version.rs::tests::version_constants_match_spec`,
+`crates/corba-giop/src/reply.rs::tests::reply_status_values_match_spec`,
+`crates/corba-giop/src/locate_reply.rs::tests::locate_status_values_match_spec`,
+`crates/corba-giop/src/target_address.rs::tests::disposition_values_match_spec`.
 
 **Status:** done
 
@@ -531,7 +660,19 @@ authorization tokens, IOR components (TAG_CSI_SEC_MECH_LIST).
 **Repo:** `crates/corba-csiv2/` with `sas.rs`, `gssup.rs`, `mech_list.rs`,
 `association_options.rs`; IOR tag codec in `crates/corba-ior/src/component_tags.rs`.
 
-**Tests:** 15 inline `#[test]` functions.
+**Tests:** `crates/corba-csiv2/src/sas.rs::tests` (9 tests):
+`sas_msg_type_values_match_spec`,
+`sas_context_body_roundtrip_all_messages_be_le`,
+`server_eval_decodes_foreign_gss_wrapped_establish_context`,
+`identity_token_discriminator_matches_spec`,
+`establish_context_holds_full_payload`, `complete_context_indicates_stateful`,
+`context_error_carries_gss_status`;
+`crates/corba-csiv2/src/session.rs::tests` (9), among them
+`a_stateful_target_answers_establish_with_a_stateful_complete`,
+`a_full_session_survives_the_wire_in_both_byte_orders`;
+`crates/corba-csiv2/src/gssup.rs::tests::gssup_byte_identical_to_jacorb`,
+`::initial_context_token_tag_is_0x60`,
+`::encapsulation_is_wire_correct_octet_seq_len_at_offset_4`.
 
 **Status:** done
 
@@ -540,9 +681,15 @@ authorization tokens, IOR components (TAG_CSI_SEC_MECH_LIST).
 **Spec:** §10.2, p. 127 — SAS message codec (EstablishContext,
 CompleteEstablishContext, ContextError, MessageInContext).
 
-**Repo:** `crates/corba-csiv2/src/sas.rs`.
+**Repo:** `crates/corba-csiv2/src/sas.rs` (`SasMessage` with
+`encode_encapsulation`/`decode_encapsulation`, `IdentityToken`).
 
-**Tests:** inline.
+**Tests:** `crates/corba-csiv2/src/sas.rs::{sas_msg_type_values_match_spec,
+sas_context_body_roundtrip_all_messages_be_le,
+sas_identity_token_absent_anonymous_roundtrip,
+identity_token_discriminator_matches_spec, establish_context_holds_full_payload,
+complete_context_indicates_stateful, message_in_context_can_request_discard,
+context_error_carries_gss_status}`.
 
 **Status:** done
 
@@ -551,11 +698,28 @@ CompleteEstablishContext, ContextError, MessageInContext).
 **Spec:** §10.3, p. 137 — SAS state machine, stateful/stateless
 contexts.
 
-**Repo:** `crates/corba-csiv2/src/sas.rs`.
+**Repo:** `crates/corba-csiv2/src/session.rs::{SasTarget, SasClient,
+TargetAction, RetainedContext, CONTEXT_ERROR_NO_CONTEXT,
+CONTEXT_ERROR_INVALID_EVIDENCE}` — the target and client halves of the
+state machine over the `SasMessage` types of §10.2. A stateful target
+retains the context under its `ContextId` and the client then sends
+`MessageInContext` instead of fresh credentials, until a
+`discard_context` or a `ContextError` puts it back into the establish
+state.
 
-**Tests:** inline.
+**Tests:** `crates/corba-csiv2/src/session.rs::{a_stateful_target_answers_establish_with_a_stateful_complete,
+a_stateless_target_retains_nothing_and_says_so,
+the_second_request_on_a_stateful_context_is_a_message_in_context,
+a_stateless_client_re_establishes_on_every_request,
+discarding_a_context_makes_the_next_reference_to_it_a_context_error,
+a_message_in_context_for_an_unknown_id_is_refused,
+a_context_error_puts_the_client_back_into_the_establish_state,
+a_target_to_client_message_arriving_at_a_target_is_not_evidence,
+a_full_session_survives_the_wire_in_both_byte_orders}`.
 
-**Status:** done
+**Status:** done — the last test drives the whole session over the
+§10.2 octets: every message crosses `encode_encapsulation` /
+`decode_encapsulation` before the other half sees it.
 
 #### §10.4 Transport Security Mechanisms
 
@@ -567,8 +731,15 @@ CSIv2-→-IIOP-TLS bind via `crates/corba-csiv2::association_options`
 in `crates/corba-ior/src/component_tags.rs`); the glue is bound in the
 acceptor lifecycle.
 
-**Tests:** cross-ref `corba_csiv2::tests::*` +
-`corba_ior::component_tags::tests::*`.
+**Tests:** `crates/corba-csiv2/src/mech_list.rs::tests`:
+`build_mech_list_with_tls_and_gssup`, `empty_list_has_no_mechanisms`,
+`cdr_roundtrip_compound_sec_mech_list`,
+`octet_seq_seq_rejects_oversized_count`,
+`compound_sec_mech_list_rejects_oversized_count`, `cdr_roundtrip_empty_list`;
+`crates/corba-csiv2/src/association_options.rs::tests::flag_values_match_spec_table_24_1`,
+`::has_and_with_round_trip`;
+`crates/corba-ior/src/component_tags.rs::tests::well_known_component_tag_values_match_spec`,
+`::round_trip_all_known_tags`, `::at_least_32_well_known_tags_modelled`.
 
 **Status:** done — TLS stack + CSIv2-IIOP bind via IOR tags live.
 
@@ -577,11 +748,20 @@ acceptor lifecycle.
 **Spec:** §10.5, p. 150 — IOR format with TAG_CSI_SEC_MECH_LIST,
 TAG_NULL_TAG, TAG_TLS_SEC_TRANS.
 
-**Repo:** `crates/corba-ior/src/component_tags.rs`,
-`crates/corba-ior/src/components.rs`,
-`crates/corba-csiv2/src/mech_list.rs`.
+**Repo:** `crates/corba-ior/src/component_tags.rs` (`ComponentId` with
+`CsiSecMechList` = 33, `NullTag` = 34, `TlsSecTrans` = 36),
+`crates/corba-ior/src/components.rs` (`StructuredComponent`),
+`crates/corba-csiv2/src/mech_list.rs` (`CompoundSecMechList`).
 
-**Tests:** inline.
+**Tests:** `crates/corba-ior/src/ior.rs::tests::a_security_ior_carries_mech_list_tls_and_null_tag_through_a_round_trip`
+— a complete IOR carrying the three tags in the IIOP profile's
+component list, through `encode_encapsulation`/`decode_encapsulation`
+and back into the structured form. Tag values and the component bodies
+on their own:
+`crates/corba-ior/src/component_tags.rs::{well_known_component_tag_values_match_spec,
+round_trip_all_known_tags, at_least_32_well_known_tags_modelled}`,
+`crates/corba-ior/src/components.rs::{csi_sec_mech_list_round_trip,
+tls_sec_trans_with_addresses_round_trip, ssl_sec_trans_round_trip}`.
 
 **Status:** done
 
@@ -623,9 +803,22 @@ levels.
 
 **Spec:** §10.9, p. 172 — IDL of the CSI modules.
 
-**Repo:** as Rust representation in `crates/corba-csiv2/src/`.
+**Repo:** as Rust representation in
+`crates/corba-csiv2/src/association_options.rs` (`AssociationOptions`),
+`crates/corba-csiv2/src/mech_list.rs` (`CompoundSecMechList`,
+`CompoundSecMech`, `AsContextSec`, `SasContextSec`),
+`crates/corba-csiv2/src/sas.rs` (`SasMsgType`, `IdentityToken`, the
+`SASContextBody` union as `SasMessage`),
+`crates/corba-csiv2/src/gssup.rs` (`GssupCredentialToken`).
 
-**Tests:** inline.
+**Tests:** one value/layout comparison against the IDL per module —
+`crates/corba-csiv2/src/association_options.rs::tests::flag_values_match_spec_table_24_1`,
+`crates/corba-csiv2/src/sas.rs::{sas_msg_type_values_match_spec,
+identity_token_discriminator_matches_spec}`,
+`crates/corba-csiv2/src/mech_list.rs::{cdr_roundtrip_compound_sec_mech_list,
+build_mech_list_with_tls_and_gssup, cdr_roundtrip_empty_list}`,
+`crates/corba-csiv2/src/gssup.rs::{initial_context_token_tag_is_0x60,
+gssup_oid_starts_with_der_tag, encapsulation_is_wire_correct_octet_seq_len_at_offset_4}`.
 
 **Status:** done
 
@@ -660,7 +853,9 @@ compression policies.
 **Repo:** `crates/corba-ccm/src/orb_extensions.rs::ZiopConfig` +
 `CompressionAlgorithm` (see §18 Compression).
 
-**Tests:** cross-ref §18 Compression tests (`compression_*_round_trip`).
+**Tests:** `crates/corba-ccm/src/orb_extensions.rs::tests::compression_algorithm_round_trip`,
+`::compression_zlib_round_trip`, `::compression_gzip_round_trip`,
+`::compression_deflate_round_trip`.
 
 **Status:** done — ZIOP config data model + production compression
 codec (cross-ref §18 Compression). `ZiopConfig.algorithm` selects the
@@ -687,10 +882,21 @@ terms.
 **Spec:** Part 3 §6, p. 9 — component definition, facets, receptacles,
 events, homes, home finders, configuration, inheritance, conformance.
 
-**Repo:** `crates/corba-ccm/src/component_def.rs`, `home.rs`, `port.rs`,
-`context.rs`.
+**Repo:** `crates/corba-ccm/src/component_def.rs`,
+`crates/corba-ccm/src/home.rs`, `crates/corba-ccm/src/port.rs`,
+`crates/corba-ccm/src/context.rs`, `crates/corba-ccm/src/lifecycle.rs`.
 
-**Tests:** 36 inline `#[test]` functions in `crates/corba-ccm/src/`.
+**Tests:** `crates/corba-ccm/src/component_def.rs::tests` (30 tests), among them
+`trader_has_4_ports`, `keyed_component_detected`,
+`provide_facet_returns_facet_by_name`, `get_all_facets_returns_complete_list`,
+`get_all_publishers_excludes_emit_only_sources`,
+`supports_interface_returns_true_for_listed_iface`,
+`the_base_chain_runs_from_the_derived_component_to_the_root`,
+`flattening_takes_over_every_inherited_feature_bases_first`,
+`a_redefined_port_name_is_refused_rather_than_shadowed`,
+`a_second_primary_key_in_the_chain_is_refused`;
+`crates/corba-ccm/src/cidl.rs::tests::all_four_composition_categories_distinct`;
+the sub-items §6.5-§6.13 name one test per clause each.
 
 **Status:** done
 
@@ -698,7 +904,16 @@ events, homes, home finders, configuration, inheritance, conformance.
 
 **Spec:** §6.5, p. 13 — `provide_facet()`, navigation.
 
-**Repo:** `crates/corba-ccm/src/port.rs`.
+**Repo:** `crates/corba-ccm/src/component_def.rs`
+(`provide_facet`/`get_all_facets`/`get_named_facets` — the navigation
+interface), `crates/corba-ccm/src/lifecycle.rs` (`check_facet_lifetime`
+— facet reference lifetime).
+
+**Tests:** `crates/corba-ccm/src/component_def.rs::{provide_facet_returns_facet_by_name,
+provide_facet_returns_none_for_unknown, get_all_facets_returns_complete_list,
+get_named_facets_filters_by_names}`,
+`crates/corba-ccm/src/lifecycle.rs::{facet_lifetime_passes_when_alive,
+facet_lifetime_rejects_use_after_destroy, facet_lifetime_rejects_orphaned}`.
 
 **Status:** done
 
@@ -707,7 +922,20 @@ events, homes, home finders, configuration, inheritance, conformance.
 **Spec:** §6.6, p. 20 — `connect_*`/`disconnect_*`, multiple
 receptacles.
 
-**Repo:** `crates/corba-ccm/src/port.rs`.
+**Repo:** `crates/corba-ccm/src/port.rs` (`PortRegistry::connect_receptacle`/
+`disconnect_receptacle`/`get_connections`), `crates/corba-ccm/src/lifecycle.rs`
+(`ReceptacleManager` with the simplex/multiplex rule),
+`crates/corba-ccm/src/component_def.rs` (`ReceptacleMultiplicity`,
+`get_all_receptacles`/`get_named_receptacles`).
+
+**Tests:** `crates/corba-ccm/src/port.rs::{connect_and_get_connections,
+disconnect_removes_only_target_id, disconnect_unknown_returns_false}`,
+`crates/corba-ccm/src/lifecycle.rs::{receptacle_simplex_connect_then_disconnect,
+receptacle_simplex_double_connect_rejected,
+receptacle_multiplex_allows_multiple_connects,
+receptacle_disconnect_unknown_id_rejected, receptacle_double_disconnect_rejected}`,
+`crates/corba-ccm/src/component_def.rs::{receptacle_multiplicity_distinct,
+get_all_receptacles_returns_complete_list, get_named_receptacles_filters}`.
 
 **Status:** done
 
@@ -715,7 +943,17 @@ receptacles.
 
 **Spec:** §6.7 — EventSource (publishers/emitters) and EventSink.
 
-**Repo:** `crates/corba-ccm/src/port.rs` (event ports).
+**Repo:** `crates/corba-ccm/src/port.rs` (event ports, `EventStream`),
+`crates/corba-ccm/src/component_def.rs` (`EventSourceDef.emit_only`
+separates `emits` from `publishes`; `EventSinkDef`).
+
+**Tests:** `crates/corba-ccm/src/port.rs::{event_sink_subscription_round_trip,
+list_event_sinks_unknown_source_empty}`,
+`crates/corba-ccm/src/component_def.rs::{event_source_emit_only_default_false,
+get_all_publishers_excludes_emit_only_sources,
+get_all_emitters_includes_only_emit_only_sources,
+get_named_publishers_respects_emit_only_flag,
+get_named_emitters_excludes_publishers}`.
 
 **Status:** done — event-port API live; wire path for emitters goes
 through CosEvent (see `cos-event-service-1.4.md`).
@@ -724,7 +962,15 @@ through CosEvent (see `cos-event-service-1.4.md`).
 
 **Spec:** §6.8/§6.9, pp. 34/42 — home lifecycle, HomeFinder.
 
-**Repo:** `crates/corba-ccm/src/home.rs`.
+**Repo:** `crates/corba-ccm/src/home.rs` (`HomeDef` with an optional
+primary key, `HomeFinder` with `create`/`find_by_primary_key`/`remove`).
+
+**Tests:** `crates/corba-ccm/src/home.rs::{home_def_default_has_no_primary_key,
+keyed_home_has_primary_key, create_with_user_key_uses_key_as_id,
+create_without_key_generates_system_id, find_by_primary_key_round_trip,
+remove_decrements_instance_count, remove_unknown_returns_false,
+home_get_component_def_returns_managed_component_id,
+home_get_home_def_returns_self_repo_id}`.
 
 **Status:** done
 
@@ -732,8 +978,19 @@ through CosEvent (see `cos-event-service-1.4.md`).
 
 **Spec:** §6.10/§6.11 — configurator API, attribute set.
 
-**Repo:** `crates/corba-ccm/src/context.rs`,
-`crates/corba-ccm/src/component_def.rs`.
+**Repo:** `crates/corba-ccm/src/lifecycle.rs` (`Configurator` trait,
+`StandardConfigurator` over the `AttributeDef` set,
+`ConfiguratorRegistry`), `crates/corba-ccm/src/context.rs`
+(`ComponentContext`), `crates/corba-ccm/src/component_def.rs`
+(`AttributeDef` with `readonly`/`set_raises`/`get_raises`).
+
+**Tests:** `crates/corba-ccm/src/lifecycle.rs::{configurator_set_get_roundtrip,
+configurator_rejects_unknown_attribute, configurator_rejects_readonly_attribute,
+configurator_get_unknown_returns_unknown_attribute,
+configurator_registry_register_and_lookup}`,
+`crates/corba-ccm/src/component_def.rs::tests::attribute_readonly_skips_set_raises`,
+`crates/corba-ccm/src/context.rs::{anonymous_context_returns_none,
+principal_context_returns_bytes}`.
 
 **Status:** done
 
@@ -741,8 +998,23 @@ through CosEvent (see `cos-event-service-1.4.md`).
 
 **Spec:** §6.12, p. 49 — inheritance of component definitions.
 
-**Repo:** `crates/corba-ccm/src/component_def.rs` +
-`crates/corba-codegen/src/skeleton.rs`.
+**Repo:** `crates/corba-ccm/src/component_def.rs::{ComponentTypeTable,
+InheritanceError}` — `base_chain` walks the `base_component` links from
+the derived type to the root, `is_equivalent_component_kind` checks a
+repository ID against the whole chain, and `flatten` takes over the
+facets, receptacles, event ports, attributes, `supports` interfaces and
+primary key of the bases while refusing a redefined port or attribute
+name and a second primary key.
+
+**Tests:** `crates/corba-ccm/src/component_def.rs::{the_base_chain_runs_from_the_derived_component_to_the_root,
+a_derived_component_is_also_of_every_kind_it_inherits,
+flattening_takes_over_every_inherited_feature_bases_first,
+an_unknown_base_is_reported_against_the_component_that_names_it,
+an_unregistered_repository_id_is_not_a_component,
+a_cycle_in_the_base_links_stops_the_walk,
+a_redefined_port_name_is_refused_rather_than_shadowed,
+a_second_primary_key_in_the_chain_is_refused,
+a_keyed_base_makes_the_derived_component_keyed}`.
 
 **Status:** done
 
@@ -782,23 +1054,61 @@ conformance live; IDL3+ templates remain optional.
 Language (composition, home/segment executor, persistence,
 facet/feature delegation, proxy home).
 
-**Repo:** `crates/corba-ccm/src/cidl.rs`.
+**Repo:** `crates/corba-ccm/src/cidl.rs::{Composition,
+CompositionCategory, HomeExecutor, StorageType, StorageHome}` — the
+data model of the CIDL constructs plus the category rule (`entity`
+requires a storage home, the other three do not).
 
-**Tests:** inline.
+**Tests:** `crates/corba-ccm/src/cidl.rs::{session_composition_does_not_require_storage,
+entity_composition_without_storage_invalid, entity_composition_with_storage_valid,
+storage_type_can_inherit, home_executor_optional_component_binding,
+all_four_composition_categories_distinct}`.
 
-**Status:** done — CIDL parser + AST + composition/home/segment
-definitions present.
+**Status:** partial — composition, home executor and the persistence
+constructs (`storagetype`/`storagehome`) exist as an AST and are
+checked through the category rule. What is missing: a CIDL parser (the
+module says itself that the language is caller-layer), the segment
+definition (a `segment` executor per facet group), facet/feature
+delegation (`delegatesto`/`abstract storagehome`) and the proxy home.
+The remainder is carried as its own item in `corba-3.3.open.en.md`.
+
+#### §8 OMG CIDL — Remaining Constructs
+
+**Spec:** Part 3 §8, p. 81 — the CIDL grammar itself, the `segment`
+definition (one executor per facet group rather than one per
+component), facet/feature delegation (`delegatesto`,
+`abstract storagehome`) and the proxy home.
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** open — only the data model of §8 above exists in the tree.
+There is no lexer/parser for CIDL source (the module
+`crates/corba-ccm/src/cidl.rs` says itself that the language is
+caller-layer), no `Segment` type, no delegation clause and no proxy
+home. Plan: attach the CIDL productions to the existing IDL front end
+(`crates/idl-cst` + `crates/idl-parse`) and add the four constructs as
+AST nodes; the data model of §8 is the target of the lowering.
 
 ### §9 CCM Implementation Framework (CIF)
 
 **Spec:** Part 3 §9, p. 93 — CIF architecture, language mapping to C++.
 
-**Repo:** `crates/corba-ccm/src/cif.rs`,
+**Repo:** `crates/corba-ccm/src/cif.rs::{ComponentExecutor,
+SessionExecutor, KeyedExecutor, ExecutorLocator, CifError}`,
 `crates/corba-codegen/src/skeleton.rs`,
 `crates/corba-codegen/src/stub.rs`,
 `crates/corba-ccm-lib/src/persistence.rs`.
 
-**Tests:** inline tests in CIF modules.
+**Tests:** `crates/corba-ccm/src/cif.rs::{lifecycle_calls_increment_counters,
+cif_error_carries_diagnostic}` (executor lifecycle
+`ccm_activate`/`ccm_passivate`/`ccm_remove`),
+`crates/corba-codegen/src/skeleton.rs::{cpp_compares_with_strcmp_and_ends_in_bad_operation,
+every_operation_reaches_the_dispatch_in_every_column}` and
+`crates/corba-codegen/src/stub.rs::{a_variable_length_struct_returns_a_pointer_and_a_fixed_one_a_value,
+an_object_reference_argument_is_a_ptr_and_its_out_is_an_out}`
+for the C++ language mapping.
 
 **Status:** done
 
@@ -807,11 +1117,18 @@ definitions present.
 **Spec:** Part 3 §10, p. 135 — server and client programming
 environments, basic/extended component programming interfaces.
 
-**Repo:** `crates/corba-ccm/src/container.rs`, `context.rs`,
-`crates/corba-ccm-lib/` (persistence bridge,
-telemetry, DDS bridge).
+**Repo:** `crates/corba-ccm/src/container.rs`,
+`crates/corba-ccm/src/context.rs`, `crates/corba-ccm-lib/src/`
+(persistence bridge, telemetry, DDS bridge).
 
-**Tests:** inline (40 + 23 = 63 `#[test]`).
+**Tests:** `crates/corba-ccm/src/container.rs::tests`:
+`install_and_full_lifecycle_round_trip`, `passivate_in_configured_state_invalid`,
+`unknown_instance_returns_not_found`, `instance_count_tracks_install_and_remove`;
+`crates/corba-ccm/src/context.rs::tests::anonymous_context_returns_none`,
+`::principal_context_returns_bytes`;
+`crates/corba-ccm-lib/src/dds_bridge.rs::tests` (7),
+`crates/corba-ccm-lib/src/persistence.rs::tests` (8),
+`crates/corba-ccm-lib/src/telemetry.rs::tests` (8).
 
 **Status:** done
 
@@ -823,7 +1140,14 @@ EJB view, EJB bean → CCM view), TX bridging, naming glue.
 **Repo:** `crates/corba-ccm-ejb/` with `connector_bean.rs`,
 `naming_glue.rs`, `stub_gen.rs`, `tx.rs`.
 
-**Tests:** 24 inline `#[test]` functions.
+**Tests:** `crates/corba-ccm-ejb/src/naming_glue.rs::tests` (8 tests):
+`bind_and_lookup_round_trip`, `rebind_replaces_ior`, `unbind_removes_entry`,
+`jndi_global_strips_prefix`, `jndi_comp_env_strips_prefix`,
+`cos_to_jndi_round_trip_no_kind`, `cos_to_jndi_includes_kind`;
+`crates/corba-ccm-ejb/src/tx.rs::tests` (8): `cos_to_jta_round_trip_for_all_states`,
+`begin_then_commit_succeeds`, `rollback_only_then_commit_fails_with_rollback`;
+`crates/corba-ccm-ejb/src/connector_bean.rs::tests` (4),
+`crates/corba-ccm-ejb/src/stub_gen.rs::tests` (5).
 
 **Status:** done
 
@@ -857,7 +1181,10 @@ is tested; metamodel output is serializable as an XMI doc.
 `crates/corba-ccm/src/orb_core.rs::{XmiEmitter, MofElement}`
 for the XMI emitter symmetric to §12.
 
-**Tests:** inline + `orb_core::tests::xmi_emitter_*`.
+**Tests:** `crates/corba-ccm/src/orb_core.rs::tests::xmi_emitter_empty_yields_minimal_doc`,
+`::xmi_emitter_class_with_inheritance`, `::xmi_emitter_property_emits`;
+`crates/corba-ccm/src/cif.rs::tests::lifecycle_calls_increment_counters`,
+`::cif_error_carries_diagnostic`.
 
 **Status:** done — CIF AST (`corba-ccm::cif`) + MOF-XMI emitter
 symmetric to §12 IFR; the repository walker ingests component/
@@ -886,10 +1213,16 @@ statement.
 **Spec:** Part 3 §15, p. 309 — D&C PSM: PIM→PSM transformation,
 PSM→IDL/XML.
 
-**Repo:** `crates/corba-dnc/src/plan.rs`, `node.rs`, `execution.rs`,
-`container_host.rs`, `repository.rs`.
+**Repo:** `crates/corba-dnc/src/plan.rs`, `crates/corba-dnc/src/node.rs`,
+`crates/corba-dnc/src/execution.rs`, `crates/corba-dnc/src/container_host.rs`,
+`crates/corba-dnc/src/repository.rs`.
 
-**Tests:** 30 inline `#[test]` functions.
+**Tests:** `crates/corba-dnc/src/execution.rs::{full_lifecycle_round_trip,
+invalid_plan_rejected_at_prepare, double_start_fails, destroy_before_running_fails}`
+(the PIM→PSM prepare/start/destroy lifecycle),
+`crates/corba-dnc/src/container_host.rs::{install_creates_container_on_demand,
+install_then_activate_reaches_active, full_lifecycle_round_trip,
+entity_and_session_share_host}` (the PSM→container mapping).
 
 **Status:** done
 
@@ -897,9 +1230,26 @@ PSM→IDL/XML.
 
 **Spec:** Part 3 §16, p. 329 — D&C IDL.
 
-**Repo:** as Rust representation in `crates/corba-dnc/src/`.
+**Repo:** as Rust representation in
+`crates/corba-dnc/src/plan.rs` (`DeploymentPlan`,
+`InstanceDeploymentDescription`, `PlanConnection`),
+`crates/corba-dnc/src/repository.rs` (`RepositoryManager`,
+`PackageConfiguration`), `crates/corba-dnc/src/node.rs`
+(`NodeManager`, `NodeApplication`, `NodeApplicationManager`),
+`crates/corba-dnc/src/execution.rs` (`ExecutionManager`,
+`DomainApplicationManager`).
 
-**Tests:** inline.
+**Tests:** one test per IDL interface operation group —
+`crates/corba-dnc/src/plan.rs::{valid_plan_passes_validation,
+instance_with_unknown_impl_fails, connection_with_unknown_instance_fails,
+co_location_with_unknown_instance_fails}`,
+`crates/corba-dnc/src/repository.rs::{install_and_find_round_trip,
+list_packages_returns_all_labels, delete_existing_returns_true,
+delete_unknown_returns_false, install_overwrites_duplicate}`,
+`crates/corba-dnc/src/node.rs::{prepare_plan_then_start_launch,
+destroy_application_clears_active, register_and_unregister_application,
+unregister_unknown_returns_none}`,
+`crates/corba-dnc/src/execution.rs::tests::execution_manager_lists_prepared_plans`.
 
 **Status:** done
 
@@ -909,7 +1259,9 @@ PSM→IDL/XML.
 
 **Repo:** `crates/corba-dnc/src/xml.rs`.
 
-**Tests:** inline tests in `xml.rs`.
+**Tests:** `crates/corba-dnc/src/xml.rs::{parses_minimal_plan,
+parses_multiple_artifacts, validation_fails_on_unknown_impl_reference,
+missing_root_tag_returns_expected_tag, co_locate_with_parsed}`.
 
 **Status:** done
 
@@ -930,7 +1282,16 @@ reference per Part 1 §8.5.2.
 `crates/corba-cosnaming/src/name.rs`,
 `crates/corba-cosnaming/src/stringified.rs`.
 
-**Tests:** 25 inline `#[test]` functions.
+**Tests:** `crates/corba-cosnaming/src/context.rs::tests` (13 tests):
+`bind_and_resolve_simple`, `double_bind_yields_already_bound`,
+`rebind_replaces_existing`, `nested_context_resolve`,
+`resolve_to_context_returns_context`, `resolve_unknown_yields_missing_node`,
+`unbind_removes_entry`, `destroy_with_bindings_yields_not_empty`,
+`destroy_empty_is_ok`, `list_returns_all_bindings_with_correct_type`,
+`resolve_str_via_naming_context_ext`, `to_url_constructs_corbaname`,
+`empty_name_is_invalid`;
+`crates/corba-cosnaming/src/stringified.rs::tests` (9),
+`crates/corba-cosnaming/src/name.rs::tests` (3).
 
 **Status:** done
 
@@ -947,7 +1308,14 @@ for the incremental replacement of CORBA endpoints by DDS wire.
 `crates/corba-dds-bridge/src/servant.rs` (CORBA servant over DDS-RPC),
 `crates/corba-dds-bridge/src/sync.rs`.
 
-**Tests:** 15 inline `#[test]` functions.
+**Tests:** `crates/corba-dds-bridge/src/mapping.rs::tests` (6 tests):
+`add_and_lookup_route`, `lookup_unknown_yields_none`,
+`operation_mapping_by_name`, `add_route_replaces_existing`,
+`all_routes_listing`, `direction_variants_distinct`;
+`crates/corba-dds-bridge/src/locate.rs::tests` (4),
+`crates/corba-dds-bridge/src/notify.rs::tests` (4),
+`crates/corba-dds-bridge/src/csiv2_wire.rs::tests` (4),
+`crates/corba-dds-bridge/src/bridge_security.rs::tests` (5).
 
 **Status:** done — informative; not spec-bound.
 
@@ -955,23 +1323,27 @@ for the incremental replacement of CORBA endpoints by DDS wire.
 
 ## Audit status
 
-51 done / 0 partial / 0 open / 12 n/a (informative) / 0 n/a (rejected).
+50 done / 1 partial / 1 open / 12 n/a (informative) / 0 n/a (rejected).
 
 Test run:
 
-* `cargo test -p zerodds-corba-giop --lib` — 69 tests green.
-* `cargo test -p zerodds-corba-iiop --lib` — 27 tests green.
-* `cargo test -p zerodds-corba-ior --lib` — 44 tests green.
-* `cargo test -p zerodds-corba-poa --lib` — 38 tests green.
+* `cargo test -p zerodds-corba-giop --lib` — 80 tests green.
+* `cargo test -p zerodds-corba-iiop --lib` — 38 tests green.
+* `cargo test -p zerodds-corba-ior --lib` — 53 tests green.
+* `cargo test -p zerodds-corba-poa --lib` — 39 tests green.
 * `cargo test -p zerodds-corba-cosnaming --lib` — 25 tests green.
-* `cargo test -p zerodds-corba-csiv2 --lib` — 17 tests green.
+* `cargo test -p zerodds-corba-csiv2 --lib` — 35 tests green.
 * `cargo test -p zerodds-corba-cos-event --lib` — 23 tests green.
-* `cargo test -p zerodds-corba-ccm --lib` — 170 tests green.
+* `cargo test -p zerodds-corba-ccm --lib` — 181 tests green.
 * `cargo test -p zerodds-corba-ccm-lib --lib` — 23 tests green.
 * `cargo test -p zerodds-corba-ccm-ejb --lib` — 25 tests green.
-* `cargo test -p zerodds-corba-codegen --lib` — 16 tests green.
-* `cargo test -p zerodds-corba-ir --lib` — 19 tests green.
+* `cargo test -p zerodds-corba-ir --lib` — 23 tests green.
 * `cargo test -p zerodds-corba-dnc --lib` — 30 tests green.
-* `cargo test -p zerodds-corba-dds-bridge --lib` — 17 tests green.
+* `cargo test -p zerodds-corba-dds-bridge --lib` — 43 tests green.
+* `cargo test -p zerodds-corba-codegen --tests` — 38 + 15 + 10 tests green.
+* `cargo test -p zerodds-idl-parse --tests` — 36 + 32 tests green.
+* `cargo test -p zerodds-idl-lower --tests` — 5 + 49 + 23 + 12 + 36 + 4 +
+  82 + 3 + 62 tests green.
 
-No open, partial or rejected items.
+Open items and the reason for the `partial` status of Part 3 §8:
+`corba-3.3.open.en.md`.

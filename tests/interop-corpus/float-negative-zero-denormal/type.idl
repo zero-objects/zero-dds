@@ -1,0 +1,10 @@
+// negative zero and the smallest subnormal, in both float widths
+// XTypes 1.3 §7.4.3.4.1: IEEE 754 binary32 and binary64. Negative zero is
+// 0x80000000 and not 0x00000000; the subnormals have a zero exponent.
+@final struct Sample {
+    float negative_zero_single;
+    double negative_zero_double;
+    float subnormal_single;
+    double subnormal_double;
+    long tail;
+};

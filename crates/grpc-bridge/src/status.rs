@@ -3,7 +3,7 @@
 
 //! gRPC `grpc-status` Codes — Spec §"Status".
 
-/// gRPC Status-Codes (kanonische 0..=16).
+/// gRPC status codes (canonical 0..=16).
 ///
 /// Spec: `https://github.com/grpc/grpc/blob/master/doc/statuscodes.md`
 /// + `protocol-http2.md` §"Status".
@@ -158,7 +158,7 @@ mod tests {
 
     #[test]
     fn well_known_codes_match_spec_values() {
-        // Spec — kanonische Tabelle.
+        // Spec — canonical table.
         assert_eq!(Status::Ok.code(), 0);
         assert_eq!(Status::Cancelled.code(), 1);
         assert_eq!(Status::DeadlineExceeded.code(), 4);

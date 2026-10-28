@@ -26,8 +26,10 @@ den übrigen Endpoint-SDKs.
 Session `0x80`, Stream `0x01`); `endpoints/nim/reliable.nim::reliableWriteFrame`
 (reliable, Stream `0x80`) — identische Byte-Struktur, andere Stream-Id.
 
-**Tests:** `endpoints/nim/test.nim` (Byte-Identität des Wire-Cores, CI-Job
-`endpoints-nim`); Frame-Roundtrip live in §2/§3/§4.
+**Tests:** `endpoints/nim/test.nim` — die Marken `"sync loopback: 5 samples OK"`,
+`"async loopback: 5 samples OK"` und `"negative frame vectors: OK"`
+(Byte-Identität des Wire-Cores, CI-Job `endpoints-nim`); der Frame-Roundtrip
+live in §2/§3/§4.
 
 **Status:** done.
 
@@ -40,10 +42,11 @@ liest non-blocking und liefert `Option[seq[byte]]`.
 (monotone `seqNo`, wrap bei `0xffff`).
 
 **Tests:** `nim_endpoint_sync` (`crates/endpoint-e2e/tests/nim.rs`) — Live-Poll-
-Loop gegen den Rust-Peer: eine App aus generierten `idlc`-Typen (`gen.nim`) + dem
+Loop gegen den Rust-Peer: eine App aus generierten `idlc`-Typen (gen.nim) + dem
 Endpoint-SDK tauscht über einen echten UDP-Socket ein typisiertes Sample mit dem
 gemeinsamen Rust-XRCE-Peer aus (`crates/endpoint-e2e/tests/nim.rs::build_nim_endpoint`
-kompiliert `gen.nim` + eine Kopie von `zerodds.nim` + `main.nim`, spawnt die App).
+kompiliert gen.nim + eine Kopie von `endpoints/nim/zerodds.nim` + main.nim,
+spawnt die App).
 
 **Status:** done.
 
@@ -60,7 +63,7 @@ fut.withTimeout(10000)` gegen dieselbe generierte App; `Client.write` sendet in
 beiden Modi (das SDK hat nur einen sync Writer), der async-Pfad prüft allein das
 `AsyncReader`-`Future`.
 
-**Tests (codepit):** `nim_endpoint_sync`, `nim_endpoint_async` — beide grün.
+**Tests:** (Linux) `nim_endpoint_sync`, `nim_endpoint_async` — beide grün.
 
 **Status:** done.
 
@@ -81,7 +84,7 @@ periodisches HEARTBEAT, ACKNACK-Empfang, Retransmit aus `inFlight`).
 `endpoints/nim/reliable_test.nim` (Unit + Byte-Golden); `endpoints/nim/example_reliable.nim`
 (In-Process-Demo, kein Socket).
 
-**Tests (codepit):**
+**Tests:** (Linux)
 
 - `nim_reliable_loss_recovery` (`crates/endpoint-e2e/tests/nim_reliable.rs`) —
   12 Samples, Peer droppt jedes 3. Datagramm; die App retransmittet auf ACKNACK;
@@ -115,29 +118,30 @@ zeigt (`reliable-endpoint` §5 Punkt 4, Latenz-Bench).
 Pfad; `inline`: `sock.send` direkt im Producer-Thread; `decoupled`: `gChan.send`
 in einen von einem Drain-Thread geleerten Channel.
 
-**Tests (codepit):** `nim_reliable_producer_latency` — Enqueue **192 ns** vs.
+**Tests:** (Linux) `nim_reliable_producer_latency` — Enqueue **192 ns** vs.
 inline `sendto` **3926 ns** (~20×).
 
-**Status:** done (Messwert vorhanden); Weiterer Zuwachs via wait-free Ring bleibt
-offen (siehe §4, ehrlich vermerkt — kein separater Tracking-Punkt, da kein
-Spec-Erfordernis).
+**Status:** done — Enqueue 192 ns gegen inline `sendto` 3926 ns, also die
+Entkopplung, die §4 verlangt. Die Spec schreibt die Queue-Implementierung
+nicht vor; ein wait-free Ring wäre eine Optimierung und steht als solche in
+`docs/OPEN-ITEMS.md`.
 
 ---
 
 ## Audit-Status
 
-6 done / 0 partial / 0 open / 0 n/a.
+5 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
 
-Test-Lauf (codepit, verifiziert): `cargo test -p zerodds-endpoint-e2e --test
+Test-Lauf (Linux, verifiziert): `cargo test -p zerodds-endpoint-e2e --test
 nim` → `nim_endpoint_sync` + `nim_endpoint_async` 2/2 grün; `--test
 nim_reliable` → `nim_reliable_loss_recovery`, `nim_reliable_no_loss`,
 `nim_reliable_unit_and_golden`, `nim_reliable_producer_latency` 4/4 grün;
 Latenz-Messwert 192 ns (enqueue) vs. 3926 ns (inline sendto), ~20×. Kein
 GitLab-CI-Job führt `zerodds-endpoint-e2e` aus — die Nachweise sind
-manuelle codepit-Läufe, nicht in CI verdrahtet (`endpoints-nim`-Job deckt nur
+manuelle Linux-Läufe, nicht in CI verdrahtet (`endpoints-nim`-Job deckt nur
 Wire-Core/Beispiele ab, kein reliable/E2E).
 
 Offene Punkte: `zerodds-endpoint-e2e`-Tests (Ping-Pong + reliable) sind nicht
-in die GitLab-CI verdrahtet — laufen nur manuell auf codepit. Ein echter
+in die GitLab-CI verdrahtet — laufen nur manuell auf dem Linux-Testhost. Ein echter
 wait-free SPSC-Ring statt des lock-basierten `Channel` bleibt eine mögliche
 weitere Latenzsenkung (kein offener Spec-Punkt, siehe §4).

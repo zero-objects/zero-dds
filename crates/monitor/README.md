@@ -81,9 +81,8 @@ let decoded = TraceContextPid::decode_inline_qos(&buf).expect("roundtrip");
 
 ## Stability
 
-`1.0.0-rc.1` is the initial release materialization. The public API,
-metric names, label keys, PID-0x0D00 wire format and span names are
-RC1-stable; breaking changes require a major bump.
+`1.0.0-rc.7`, a pre-release. The public API can still change before
+1.0.0; the crate's CHANGELOG lists every change.
 
 ## Tests
 

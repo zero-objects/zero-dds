@@ -17,6 +17,10 @@
 //!   `INITIAL_CONTEXT_TOKEN` wrapping.
 //! - **SAS protocol** (Spec §24.2): EstablishContext /
 //!   CompleteEstablishContext / MessageInContext / ContextError.
+//! - **SAS context state machine** (Spec Part 2 §10.3): the client and
+//!   target halves that decide between a stateful context, named again
+//!   by `MessageInContext`, and a stateless one re-established per
+//!   request — [`SasClient`] / [`SasTarget`].
 //! - **TLS mechanism OID** (Spec §24.2.6.5): `1.3.6.1.5.5.13` for
 //!   `TLS_SEC_TRANS`.
 //!
@@ -24,11 +28,11 @@
 //!
 //! ## Layer position
 //!
-//! Layer 8 — CORBA stack (Tier A). Sits on `zerodds-cdr` (wire
+//! Layer 8 — CORBA stack (Tier A). Sits on `zerodds-wire` (wire
 //! codec). Consumers are GIOP/IIOP servers (Layer 8, Tier B/C) with
 //! security-stack configuration.
 //!
-//! ## Public API (as of 1.0.0-rc.1)
+//! ## Public API
 //!
 //! - [`AssociationOptions`] — §24.2.4 bitmask.
 //! - [`CompoundSecMech`] / [`CompoundSecMechList`] / [`AsContextSec`]
@@ -57,14 +61,26 @@
 extern crate alloc;
 
 pub mod association_options;
+pub mod authenticator;
 pub mod gssup;
+pub mod gssup_store;
 pub mod mech_list;
 pub mod sas;
+pub mod session;
 
 pub use association_options::AssociationOptions;
+pub use authenticator::{
+    IDENTITY_TYPE_ANONYMOUS, IDENTITY_TYPE_DISTINGUISHED_NAME, IDENTITY_TYPE_PRINCIPAL_NAME,
+    IDENTITY_TYPE_X509_CERT_CHAIN, SasOutcome, authenticate_gssup,
+};
 pub use gssup::{GssupCredentialToken, INITIAL_CONTEXT_TOKEN_TAG};
+pub use gssup_store::{GssupStoreError, GssupUserStore};
 pub use mech_list::{AsContextSec, CompoundSecMech, CompoundSecMechList, SasContextSec};
 pub use sas::{
     CompleteEstablishContext, ContextError, EstablishContext, IdentityToken, MessageInContext,
     SasMessage,
+};
+pub use session::{
+    CONTEXT_ERROR_INVALID_EVIDENCE, CONTEXT_ERROR_INVALID_MECHANISM, CONTEXT_ERROR_NO_CONTEXT,
+    RetainedContext, SasClient, SasTarget, TargetAction,
 };

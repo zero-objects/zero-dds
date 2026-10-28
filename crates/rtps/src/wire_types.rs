@@ -85,8 +85,8 @@ impl Default for ProtocolVersion {
 // ============================================================================
 
 /// `VendorId`: 2-byte vendor identifier. ZeroDDS uses `0x01F0` as an
-/// interim value from the OMG developer range, until an official
-/// VendorId is requested.
+/// interim value until the OMG assigns one; the OMG list of vendor IDs
+/// does not hold `0x01F0`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct VendorId(pub [u8; 2]);
 
@@ -97,7 +97,7 @@ impl VendorId {
     /// Sentinel "unknown" (0x00, 0x00) — only for tests/stub.
     pub const UNKNOWN: Self = Self([0, 0]);
 
-    /// ZeroDDS interim VendorId from the OMG developer range.
+    /// ZeroDDS interim VendorId, not on the OMG list until one is assigned.
     pub const ZERODDS: Self = Self([0x01, 0xF0]);
 
     /// OCI OpenDDS (OMG-assigned VendorId).
@@ -108,6 +108,18 @@ impl VendorId {
 
     /// Eclipse Cyclone DDS (OMG-assigned VendorId).
     pub const CYCLONE: Self = Self([0x01, 0x10]);
+
+    /// RTI Connext DDS (OMG-assigned VendorId).
+    pub const RTI_CONNEXT: Self = Self([0x01, 0x01]);
+
+    /// InterCOM DDS (OMG-assigned VendorId).
+    pub const INTERCOM: Self = Self([0x01, 0x05]);
+
+    /// HDDS (OMG-assigned VendorId, the one its participants announce).
+    pub const HDDS: Self = Self([0x01, 0x1A]);
+
+    /// zzdds (the VendorId its participants announce).
+    pub const ZZDDS: Self = Self([0x01, 0x1B]);
 
     /// Bytes unchanged.
     #[must_use]
@@ -150,18 +162,37 @@ impl GuidPrefix {
         Self(bytes)
     }
 
-    /// ZeroDDS convention (Spec `zerodds-zero-copy-1.0` §6 wave 4):
-    /// the first 4 bytes of the GuidPrefix carry a deterministic
-    /// host identifier (hash of the `gethostname` output). Two
-    /// participants with an identical host-id prefix run on the
-    /// same machine and can set up a same-host zero-copy path.
+    /// A ZeroDDS participant's prefix: the vendor id, the host id, and six
+    /// octets the caller makes unique on that host.
     ///
-    /// The RTPS 2.5 spec §9.3.1.5 allows vendor-specific
-    /// structuring of the first 8 bytes (vendor-specific);
-    /// only the comparison semantics of the full 12 bytes is normative.
+    /// DDSI-RTPS 2.5 §9.3.1.5: "To comply with this specification,
+    /// implementations of the RTPS protocol shall set the first two bytes
+    /// of the guidPrefix to match their assigned vendorId", so that
+    /// prefixes stay unique in a domain shared by several
+    /// implementations. The prefix put a host id in those two octets, and
+    /// its comment read the clause as leaving the first eight bytes to
+    /// the vendor; it does not.
+    ///
+    /// The host id follows in octets 2..6 (ZeroDDS convention,
+    /// `zerodds-zero-copy-1.0` §6 wave 4), which is what
+    /// [`Self::host_id`] reads. The clause says the vendor octets "should
+    /// not be relied upon for other purposes", and nothing here does.
+    #[must_use]
+    pub const fn zerodds(host_id: [u8; 4], unique: [u8; 6]) -> Self {
+        let vendor = VendorId::ZERODDS.0;
+        Self([
+            vendor[0], vendor[1], host_id[0], host_id[1], host_id[2], host_id[3], unique[0],
+            unique[1], unique[2], unique[3], unique[4], unique[5],
+        ])
+    }
+
+    /// The host identifier a ZeroDDS prefix carries in octets 2..6 (see
+    /// [`Self::zerodds`]): a hash of the `gethostname` output. Two
+    /// participants with the same one run on the same machine and can
+    /// set up a same-host zero-copy path.
     #[must_use]
     pub fn host_id(self) -> [u8; 4] {
-        [self.0[0], self.0[1], self.0[2], self.0[3]]
+        [self.0[2], self.0[3], self.0[4], self.0[5]]
     }
 
     /// Returns `true` if both participants carry the same host-id
@@ -177,28 +208,55 @@ impl GuidPrefix {
 // ============================================================================
 
 /// `EntityKind`: classification of an endpoint. Spec Table 9.1.
+///
+/// Table 9.1 names fifteen of the 256 values the octet can take and
+/// leaves the rest to the vendor, and vendors use them: RTI Connext 7.7.0
+/// writes `0x82` and `0x87` for two endpoints of every participant it
+/// creates. [`Self::Other`] carries such an octet rather than folding
+/// it away — without it, `0x00020082` and `0x00020087` both decode to
+/// `0x00020000` and two different endpoints of one participant become
+/// one `EntityId`, which is a GUID collision and not a lost detail.
+///
+/// `Other` must never hold a value Table 9.1 names. [`Self::from_byte`]
+/// is the only thing that should construct one, and
+/// `entity_kind_octet_round_trips` checks the pairing over all 256.
+/// The octet each variant stands for is in [`EntityKind::to_byte`] and
+/// nowhere else — a `#[repr(u8)]` discriminant beside it would be a
+/// second statement of the same table, and `Other` cannot have one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-#[repr(u8)]
 #[allow(missing_docs)]
 pub enum EntityKind {
-    Unknown = 0x00,
-    UserWriterNoKey = 0x03,
-    UserWriterWithKey = 0x02,
-    UserReaderNoKey = 0x04,
-    UserReaderWithKey = 0x07,
-    BuiltinWriterNoKey = 0xC3,
-    BuiltinWriterWithKey = 0xC2,
-    BuiltinReaderNoKey = 0xC4,
-    BuiltinReaderWithKey = 0xC7,
-    Participant = 0xC1,
+    Unknown,
+    UserWriterNoKey,
+    UserWriterWithKey,
+    UserReaderNoKey,
+    UserReaderWithKey,
+    BuiltinWriterNoKey,
+    BuiltinWriterWithKey,
+    BuiltinReaderNoKey,
+    BuiltinReaderWithKey,
+    Participant,
+    /// `0xC0`, the built-in unknown kind.
+    BuiltinUnknown,
+    /// `0x08`: a Writer Group, a Publisher.
+    UserWriterGroup,
+    /// `0xC8`: a built-in Writer Group.
+    BuiltinWriterGroup,
+    /// `0x09`: a Reader Group, a Subscriber.
+    UserReaderGroup,
+    /// `0xC9`: a built-in Reader Group.
+    BuiltinReaderGroup,
+    /// An `entityKind` octet Table 9.1 does not name, kept verbatim.
+    Other(u8),
 }
 
 impl EntityKind {
-    /// Converts a byte into an `EntityKind`. Unknown bytes
-    /// are mapped to `Unknown` — this mirrors spec tolerance behaviour.
+    /// Converts a byte into an `EntityKind`. A byte Table 9.1 does not
+    /// name becomes [`Self::Other`] holding that byte.
     #[must_use]
     pub fn from_byte(b: u8) -> Self {
         match b {
+            0x00 => Self::Unknown,
             0x03 => Self::UserWriterNoKey,
             0x02 => Self::UserWriterWithKey,
             0x04 => Self::UserReaderNoKey,
@@ -208,7 +266,97 @@ impl EntityKind {
             0xC4 => Self::BuiltinReaderNoKey,
             0xC7 => Self::BuiltinReaderWithKey,
             0xC1 => Self::Participant,
-            _ => Self::Unknown,
+            0xC0 => Self::BuiltinUnknown,
+            0x08 => Self::UserWriterGroup,
+            0xC8 => Self::BuiltinWriterGroup,
+            0x09 => Self::UserReaderGroup,
+            0xC9 => Self::BuiltinReaderGroup,
+            other => Self::Other(other),
+        }
+    }
+
+    /// The `entityKind` octet as it goes on the wire.
+    #[must_use]
+    pub fn to_byte(self) -> u8 {
+        match self {
+            Self::Unknown => 0x00,
+            Self::UserWriterNoKey => 0x03,
+            Self::UserWriterWithKey => 0x02,
+            Self::UserReaderNoKey => 0x04,
+            Self::UserReaderWithKey => 0x07,
+            Self::BuiltinWriterNoKey => 0xC3,
+            Self::BuiltinWriterWithKey => 0xC2,
+            Self::BuiltinReaderNoKey => 0xC4,
+            Self::BuiltinReaderWithKey => 0xC7,
+            Self::Participant => 0xC1,
+            Self::BuiltinUnknown => 0xC0,
+            Self::UserWriterGroup => 0x08,
+            Self::BuiltinWriterGroup => 0xC8,
+            Self::UserReaderGroup => 0x09,
+            Self::BuiltinReaderGroup => 0xC9,
+            Self::Other(byte) => byte,
+        }
+    }
+
+    /// The [`TopicKind`] this `entityKind` octet stands for, per Table 9.1.
+    ///
+    /// `WITH_KEY` for the writer/reader octets `0x02`/`0x07` and their
+    /// builtin counterparts `0xC2`/`0xC7`, `NO_KEY` for `0x03`/`0x04`
+    /// and `0xC3`/`0xC4`. Participant, group and unnamed octets carry no
+    /// topic and return `None`.
+    #[must_use]
+    pub fn topic_kind(self) -> Option<TopicKind> {
+        match self {
+            Self::UserWriterWithKey
+            | Self::UserReaderWithKey
+            | Self::BuiltinWriterWithKey
+            | Self::BuiltinReaderWithKey => Some(TopicKind::WithKey),
+            Self::UserWriterNoKey
+            | Self::UserReaderNoKey
+            | Self::BuiltinWriterNoKey
+            | Self::BuiltinReaderNoKey => Some(TopicKind::NoKey),
+            _ => None,
+        }
+    }
+}
+
+/// `TopicKind_t` (Spec §8.2.1.2): does the topic define key fields?
+///
+/// The PIM lists the type among the RTPS types with the two reserved
+/// values `NO_KEY` and `WITH_KEY`. The PSM gives it no wire
+/// representation of its own (it is absent from the §9.3.2.1 IDL) —
+/// on the wire the distinction rides in the `entityKind` octet of the
+/// endpoint's [`EntityId`], Table 9.1. [`EntityKind::topic_kind`] is
+/// that mapping, and [`TopicKind::writer_entity_kind`] /
+/// [`TopicKind::reader_entity_kind`] are its inverse.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum TopicKind {
+    /// `NO_KEY` — the topic carries a single instance.
+    NoKey,
+    /// `WITH_KEY` — some fields identify the data instance.
+    WithKey,
+}
+
+impl TopicKind {
+    /// The `entityKind` a writer endpoint of this topic kind carries.
+    #[must_use]
+    pub const fn writer_entity_kind(self, builtin: bool) -> EntityKind {
+        match (self, builtin) {
+            (Self::WithKey, false) => EntityKind::UserWriterWithKey,
+            (Self::WithKey, true) => EntityKind::BuiltinWriterWithKey,
+            (Self::NoKey, false) => EntityKind::UserWriterNoKey,
+            (Self::NoKey, true) => EntityKind::BuiltinWriterNoKey,
+        }
+    }
+
+    /// The `entityKind` a reader endpoint of this topic kind carries.
+    #[must_use]
+    pub const fn reader_entity_kind(self, builtin: bool) -> EntityKind {
+        match (self, builtin) {
+            (Self::WithKey, false) => EntityKind::UserReaderWithKey,
+            (Self::WithKey, true) => EntityKind::BuiltinReaderWithKey,
+            (Self::NoKey, false) => EntityKind::UserReaderNoKey,
+            (Self::NoKey, true) => EntityKind::BuiltinReaderNoKey,
         }
     }
 }
@@ -279,6 +427,36 @@ impl EntityId {
             entity_kind: EntityKind::UserReaderNoKey,
         }
     }
+
+    /// A topic of this participant: the key of its `DiscoveredTopicData`
+    /// (DDSI-RTPS 2.5 Table 9.19 maps `TopicBuiltinTopicData::key` to
+    /// `PID_ENDPOINT_GUID`). Table 9.1 names no kind for a topic, so the
+    /// kind is [`Self::TOPIC_KIND`], in the vendor-specific space §9.3.1.2
+    /// gives the octets whose two top bits are `01`.
+    #[must_use]
+    pub const fn topic(key: [u8; 3]) -> Self {
+        Self {
+            entity_key: key,
+            entity_kind: EntityKind::Other(Self::TOPIC_KIND),
+        }
+    }
+
+    /// The `entityKind` octet of a ZeroDDS topic, see [`Self::topic`].
+    pub const TOPIC_KIND: u8 = 0x4a;
+
+    /// SEDP Builtin Topics Writer, `ENTITYID_SEDP_BUILTIN_TOPICS_ANNOUNCER`
+    /// (Spec §9.3.1.3 Table 9.2: `{{00,00,02},c2}`).
+    pub const SEDP_BUILTIN_TOPICS_WRITER: Self = Self {
+        entity_key: [0, 0x00, 0x02],
+        entity_kind: EntityKind::BuiltinWriterWithKey,
+    };
+
+    /// SEDP Builtin Topics Reader, `ENTITYID_SEDP_BUILTIN_TOPICS_DETECTOR`
+    /// (`{{00,00,02},c7}`).
+    pub const SEDP_BUILTIN_TOPICS_READER: Self = Self {
+        entity_key: [0, 0x00, 0x02],
+        entity_kind: EntityKind::BuiltinReaderWithKey,
+    };
 
     /// SPDP Builtin Participant Writer (Spec §9.3.1.5 Table 9.4).
     /// Multicast beacon sender in the discovery path.
@@ -358,7 +536,7 @@ impl EntityId {
     };
 
     // ----------------------------------------------------------------
-    // DDS-Security 1.2 §7.4.7.1 Tab.7 — 12 secure builtin EntityIds
+    // DDS-Security 1.2 §7.4.7.1 Table 9 — 12 secure builtin EntityIds
     // (C3.8). EntityKey layout per spec; kind = WithKey except for the
     // stateless topics (NoKey, since those topics are keyless).
     // ----------------------------------------------------------------
@@ -435,8 +613,30 @@ impl EntityId {
         entity_kind: EntityKind::BuiltinReaderWithKey,
     };
 
-    /// True if this is one of the 12 secure builtin EntityIds from
-    /// DDS-Security 1.2 §7.4.7.1 Tab.7.
+    /// `TypeLookupServiceRequestSecureWriter` (DDS-Security 1.2 §7.4.7.1
+    /// Table 9, `{ff, 03, 00}, c3`).
+    pub const TL_SVC_REQ_SECURE_WRITER: Self = Self {
+        entity_key: [0xff, 0x03, 0x00],
+        entity_kind: EntityKind::BuiltinWriterNoKey,
+    };
+    /// `TypeLookupServiceRequestSecureReader` (`{ff, 03, 00}, c4`).
+    pub const TL_SVC_REQ_SECURE_READER: Self = Self {
+        entity_key: [0xff, 0x03, 0x00],
+        entity_kind: EntityKind::BuiltinReaderNoKey,
+    };
+    /// `TypeLookupServiceReplySecureWriter` (`{ff, 03, 01}, c3`).
+    pub const TL_SVC_REPLY_SECURE_WRITER: Self = Self {
+        entity_key: [0xff, 0x03, 0x01],
+        entity_kind: EntityKind::BuiltinWriterNoKey,
+    };
+    /// `TypeLookupServiceReplySecureReader` (`{ff, 03, 01}, c4`).
+    pub const TL_SVC_REPLY_SECURE_READER: Self = Self {
+        entity_key: [0xff, 0x03, 0x01],
+        entity_kind: EntityKind::BuiltinReaderNoKey,
+    };
+
+    /// True if this is one of the 16 secure builtin EntityIds from
+    /// DDS-Security 1.2 §7.4.7.1 Table 9.
     #[must_use]
     pub const fn is_secure_builtin(self) -> bool {
         matches!(
@@ -453,6 +653,10 @@ impl EntityId {
                 | Self::BUILTIN_PARTICIPANT_VOLATILE_MESSAGE_SECURE_READER
                 | Self::SPDP_RELIABLE_BUILTIN_PARTICIPANTS_SECURE_WRITER
                 | Self::SPDP_RELIABLE_BUILTIN_PARTICIPANTS_SECURE_READER
+                | Self::TL_SVC_REQ_SECURE_WRITER
+                | Self::TL_SVC_REQ_SECURE_READER
+                | Self::TL_SVC_REPLY_SECURE_WRITER
+                | Self::TL_SVC_REPLY_SECURE_READER
         )
     }
 
@@ -463,7 +667,7 @@ impl EntityId {
             self.entity_key[0],
             self.entity_key[1],
             self.entity_key[2],
-            self.entity_kind as u8,
+            self.entity_kind.to_byte(),
         ]
     }
 
@@ -733,34 +937,61 @@ pub enum LocatorKind {
     Reserved = 0,
     UdpV4 = 1,
     UdpV6 = 2,
-    /// TCPv4 (DDS-TCP-PSM §4 `LOCATOR_KIND_TCPV4`).
-    Tcpv4 = 4,
-    /// TCPv6 (DDS-TCP-PSM §4 `LOCATOR_KIND_TCPV6`).
-    Tcpv6 = 8,
-    /// Shared memory (vendor range, MSB=1 per DDSI-RTPS §9.3.1.2 —
-    /// negative `i32` values are vendor-specific). `0x8100_0000` as the
-    /// ZeroDDS vendor token; Cyclone + Fast-DDS ignore unknown
-    /// kinds.
-    Shm = -2_130_706_432, // 0x8100_0000 as i32
+    /// TCPv4. DDSI-RTPS 2.5 §9.3.2.4 reserves 3 to `0x01ffffff` for
+    /// vendor-specific kinds, so the wire value is ZeroDDS's own,
+    /// `0x01F0_0004`; with [`set_tcp_kinds_fast_dds`] it is 4, the value of
+    /// Fast DDS (also that of the DDS-TCP-PSM). Reading accepts both.
+    Tcpv4 = 0x01F0_0004,
+    /// TCPv6. Wire value `0x01F0_0005`, or 8 with [`set_tcp_kinds_fast_dds`].
+    Tcpv6 = 0x01F0_0005,
+    /// Shared memory. DDSI-RTPS 2.5 §9.3.2.4 reserves `0x00000003` to
+    /// `0x01ffffff` for vendor-specific kinds; ZeroDDS takes
+    /// `0x01F0_0001` (its VendorId `0x01F0` in the upper half). Other
+    /// vendors' shared-memory kinds are `0x01000000` (RTI) and `16` (eProsima).
+    Shm = 0x01F0_0001,
     /// Unix domain socket (vendor range, ZeroDDS extension for
     /// containerized IPC when multicast is blocked or POSIX SHM
-    /// does not work cross-container). `0x8100_0001`. The 16-byte
+    /// does not work cross-container). `0x01F0_0002`. The 16-byte
     /// address field carries an identifier that is resolved into a socket path
     /// under a configurable base directory
     /// (`/tmp/zerodds/uds/<hex>.sock`).
-    Uds = -2_130_706_431, // 0x8100_0001 as i32
+    Uds = 0x01F0_0002,
     /// Time-Sensitive-Networking L2 endpoint (vendor range, ZeroDDS
     /// extension for DDS-TSN 1.0 Annex A — RTPS-over-Ethernet with
-    /// EtherType 0x88B5). `0x8100_0002`. The 16-byte address field
+    /// EtherType 0x88B5). `0x01F0_0003`. The 16-byte address field
     /// carries the destination MAC (bytes 0..6) + optional VLAN VID
     /// (bytes 6..8, big-endian).
-    Tsn = -2_130_706_430, // 0x8100_0002 as i32
+    Tsn = 0x01F0_0003,
+}
+
+/// The TCPv4 `LocatorKind` value of Fast DDS and of the DDS-TCP-PSM.
+pub const TCP_V4_FAST_DDS: i32 = 4;
+/// The TCPv6 `LocatorKind` value of Fast DDS and of the DDS-TCP-PSM.
+pub const TCP_V6_FAST_DDS: i32 = 8;
+
+static TCP_KINDS_FAST_DDS: core::sync::atomic::AtomicBool =
+    core::sync::atomic::AtomicBool::new(false);
+
+/// Makes the TCP locators go out with the kind values of Fast DDS (4 and 8)
+/// instead of ZeroDDS's own in the vendor range of DDSI-RTPS 2.5 §9.3.2.4
+/// (`0x01F0_0004`, `0x01F0_0005`). A process-wide setting, set from
+/// `transport.tcp_locator_kinds: fast-dds` at the start of a runtime; reading
+/// accepts both. Needed for TCP interoperation with Fast DDS.
+pub fn set_tcp_kinds_fast_dds(on: bool) {
+    TCP_KINDS_FAST_DDS.store(on, core::sync::atomic::Ordering::Relaxed);
 }
 
 impl LocatorKind {
     /// Returns the i32 wire value.
     #[must_use]
     pub fn as_i32(self) -> i32 {
+        if TCP_KINDS_FAST_DDS.load(core::sync::atomic::Ordering::Relaxed) {
+            match self {
+                Self::Tcpv4 => return TCP_V4_FAST_DDS,
+                Self::Tcpv6 => return TCP_V6_FAST_DDS,
+                _ => {}
+            }
+        }
         self as i32
     }
 
@@ -774,11 +1005,11 @@ impl LocatorKind {
             0 => Ok(Self::Reserved),
             1 => Ok(Self::UdpV4),
             2 => Ok(Self::UdpV6),
-            4 => Ok(Self::Tcpv4),
-            8 => Ok(Self::Tcpv6),
-            -2_130_706_432 => Ok(Self::Shm),
-            -2_130_706_431 => Ok(Self::Uds),
-            -2_130_706_430 => Ok(Self::Tsn),
+            TCP_V4_FAST_DDS | 0x01F0_0004 => Ok(Self::Tcpv4),
+            TCP_V6_FAST_DDS | 0x01F0_0005 => Ok(Self::Tcpv6),
+            0x01F0_0001 => Ok(Self::Shm),
+            0x01F0_0002 => Ok(Self::Uds),
+            0x01F0_0003 => Ok(Self::Tsn),
             other => Err(WireError::InvalidLocatorKind { kind: other }),
         }
     }
@@ -793,16 +1024,136 @@ pub const SPDP_PORT_BASE: u32 = 7400;
 /// Domain-specific port offset (Spec §9.6.1.4.1, DG).
 pub const SPDP_DOMAIN_GAIN: u32 = 250;
 
+/// Participant-specific port offset (Spec §9.6.1.4.1, PG).
+pub const SPDP_PARTICIPANT_GAIN: u32 = 2;
+
 /// Multicast discovery port offset (Spec §9.6.1.4.1, d0).
 pub const SPDP_DISCOVERY_MULTICAST_OFFSET: u32 = 0;
 
-/// Computes the SPDP multicast discovery port for a domain.
+/// Unicast discovery (metatraffic) port offset (Spec §9.6.1.4.1, d1).
+pub const SPDP_DISCOVERY_UNICAST_OFFSET: u32 = 10;
+
+/// Multicast user-traffic port offset (Spec §9.6.1.4.1, d2).
+pub const USER_TRAFFIC_MULTICAST_OFFSET: u32 = 1;
+
+/// Unicast user-traffic port offset (Spec §9.6.1.4.1, d3).
+pub const USER_TRAFFIC_UNICAST_OFFSET: u32 = 11;
+
+/// The port-mapping parameters of DDSI-RTPS 2.5 §9.6.2.3 (PB, DG, PG,
+/// d0, d1, d2, d3). The defaults are the spec's; the spec requires that an
+/// implementation exposes them: "Implementations must expose these
+/// parameters so they can be customized by the user."
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PortMapping {
+    /// PB: port base.
+    pub port_base: u32,
+    /// DG: domain gain.
+    pub domain_gain: u32,
+    /// PG: participant gain.
+    pub participant_gain: u32,
+    /// d0: multicast discovery (metatraffic) offset.
+    pub d0: u32,
+    /// d1: unicast discovery (metatraffic) offset.
+    pub d1: u32,
+    /// d2: multicast user-traffic offset.
+    pub d2: u32,
+    /// d3: unicast user-traffic offset.
+    pub d3: u32,
+}
+
+impl PortMapping {
+    /// The values of §9.6.2.3: PB 7400, DG 250, PG 2, d0 0, d1 10, d2 1,
+    /// d3 11.
+    pub const SPEC: Self = Self {
+        port_base: SPDP_PORT_BASE,
+        domain_gain: SPDP_DOMAIN_GAIN,
+        participant_gain: SPDP_PARTICIPANT_GAIN,
+        d0: SPDP_DISCOVERY_MULTICAST_OFFSET,
+        d1: SPDP_DISCOVERY_UNICAST_OFFSET,
+        d2: USER_TRAFFIC_MULTICAST_OFFSET,
+        d3: USER_TRAFFIC_UNICAST_OFFSET,
+    };
+
+    fn base(&self, domain_id: u32) -> u32 {
+        self.port_base
+            .saturating_add(self.domain_gain.saturating_mul(domain_id))
+    }
+
+    /// Multicast discovery port: `PB + DG * domain_id + d0`.
+    #[must_use]
+    pub fn spdp_multicast_port(&self, domain_id: u32) -> u32 {
+        self.base(domain_id).saturating_add(self.d0)
+    }
+
+    /// Unicast discovery port of one participant:
+    /// `PB + DG * domain_id + d1 + PG * participant_id`.
+    #[must_use]
+    pub fn spdp_unicast_port(&self, domain_id: u32, participant_id: u32) -> u32 {
+        self.base(domain_id)
+            .saturating_add(self.d1)
+            .saturating_add(self.participant_gain.saturating_mul(participant_id))
+    }
+
+    /// Multicast user-traffic port: `PB + DG * domain_id + d2`.
+    #[must_use]
+    pub fn user_traffic_multicast_port(&self, domain_id: u32) -> u32 {
+        self.base(domain_id).saturating_add(self.d2)
+    }
+
+    /// Unicast user-traffic port of one participant:
+    /// `PB + DG * domain_id + d3 + PG * participant_id`.
+    #[must_use]
+    pub fn user_traffic_unicast_port(&self, domain_id: u32, participant_id: u32) -> u32 {
+        self.base(domain_id)
+            .saturating_add(self.d3)
+            .saturating_add(self.participant_gain.saturating_mul(participant_id))
+    }
+}
+
+impl Default for PortMapping {
+    fn default() -> Self {
+        Self::SPEC
+    }
+}
+
+/// Computes the SPDP multicast discovery port for a domain with the
+/// default [`PortMapping`].
 /// Formula (Spec §9.6.1.4.1):
 ///   port = PB + DG * domain_id + d0
 ///        = 7400 + 250 * domain + 0
 #[must_use]
 pub fn spdp_multicast_port(domain_id: u32) -> u32 {
-    SPDP_PORT_BASE + SPDP_DOMAIN_GAIN * domain_id + SPDP_DISCOVERY_MULTICAST_OFFSET
+    PortMapping::SPEC.spdp_multicast_port(domain_id)
+}
+
+/// Computes the unicast metatraffic (discovery) port of one participant
+/// with the default [`PortMapping`].
+/// Formula (Spec §9.6.1.4.1):
+///   port = PB + DG * domain_id + d1 + PG * participant_id
+///        = 7400 + 250 * domain + 10 + 2 * participant_id
+#[must_use]
+pub fn spdp_unicast_port(domain_id: u32, participant_id: u32) -> u32 {
+    PortMapping::SPEC.spdp_unicast_port(domain_id, participant_id)
+}
+
+/// Computes the multicast user-traffic port for a domain with the default
+/// [`PortMapping`].
+/// Formula (Spec §9.6.1.4.1):
+///   port = PB + DG * domain_id + d2
+///        = 7400 + 250 * domain + 1
+#[must_use]
+pub fn user_traffic_multicast_port(domain_id: u32) -> u32 {
+    PortMapping::SPEC.user_traffic_multicast_port(domain_id)
+}
+
+/// Computes the unicast user-traffic port of one participant with the
+/// default [`PortMapping`].
+/// Formula (Spec §9.6.1.4.1):
+///   port = PB + DG * domain_id + d3 + PG * participant_id
+///        = 7400 + 250 * domain + 11 + 2 * participant_id
+#[must_use]
+pub fn user_traffic_unicast_port(domain_id: u32, participant_id: u32) -> u32 {
+    PortMapping::SPEC.user_traffic_unicast_port(domain_id, participant_id)
 }
 
 /// `Locator`: 24-byte address (kind + port + 16-byte address).
@@ -1055,9 +1406,24 @@ mod tests {
     }
 
     // ---- GuidPrefix ----
+    /// §9.3.2.1: `VENDORID_UNKNOWN: VendorId_t[0] = 0, VendorId_t[1] = 0`
+    /// over the two octets the type occupies.
+    #[test]
+    fn vendor_id_unknown_is_two_zero_octets() {
+        assert_eq!(VendorId::UNKNOWN.to_bytes(), [0u8; 2]);
+        assert_eq!(VendorId::from_bytes([0, 0]), VendorId::UNKNOWN);
+        assert_eq!(VendorId::WIRE_SIZE, 2);
+        assert_ne!(VendorId::ZERODDS, VendorId::UNKNOWN);
+    }
+
+    /// §8.2.1.2: `GuidPrefix_t` must be representable in 12 octets and
+    /// `GUIDPREFIX_UNKNOWN` is all of them zero.
     #[test]
     fn guid_prefix_unknown_is_zero() {
         assert_eq!(GuidPrefix::UNKNOWN.0, [0u8; 12]);
+        assert_eq!(GuidPrefix::UNKNOWN.to_bytes(), [0u8; 12]);
+        assert_eq!(GuidPrefix::WIRE_SIZE, 12);
+        assert_eq!(GuidPrefix::from_bytes([0u8; 12]), GuidPrefix::UNKNOWN);
     }
 
     #[test]
@@ -1067,17 +1433,22 @@ mod tests {
         assert_eq!(p.to_bytes(), bytes);
     }
 
+    /// DDSI-RTPS 2.5 §9.3.1.5 puts the vendor id in octets 0..2, so the
+    /// host id ZeroDDS writes sits in 2..6.
     #[test]
-    fn guid_prefix_host_id_is_first_four_bytes() {
-        let p = GuidPrefix::from_bytes([0xAB, 0xCD, 0x12, 0x34, 0, 0, 0, 0, 0, 0, 0, 0]);
+    fn guid_prefix_host_id_follows_the_vendor_id() {
+        let p = GuidPrefix::from_bytes([0x01, 0xF0, 0xAB, 0xCD, 0x12, 0x34, 0, 0, 0, 0, 0, 0]);
         assert_eq!(p.host_id(), [0xAB, 0xCD, 0x12, 0x34]);
+        let made = GuidPrefix::zerodds([0xAB, 0xCD, 0x12, 0x34], [7; 6]);
+        assert_eq!(&made.to_bytes()[..2], &[0x01, 0xF0], "the vendor id first");
+        assert_eq!(made.host_id(), [0xAB, 0xCD, 0x12, 0x34]);
     }
 
     #[test]
-    fn guid_prefix_same_host_matches_on_first_four_bytes() {
-        let a = GuidPrefix::from_bytes([1, 2, 3, 4, 9, 9, 9, 9, 9, 9, 9, 9]);
-        let b = GuidPrefix::from_bytes([1, 2, 3, 4, 0, 0, 0, 0, 0, 0, 0, 0]);
-        let c = GuidPrefix::from_bytes([1, 2, 3, 5, 9, 9, 9, 9, 9, 9, 9, 9]);
+    fn guid_prefix_same_host_matches_on_the_host_id() {
+        let a = GuidPrefix::zerodds([1, 2, 3, 4], [9; 6]);
+        let b = GuidPrefix::zerodds([1, 2, 3, 4], [0; 6]);
+        let c = GuidPrefix::zerodds([1, 2, 3, 5], [9; 6]);
         assert!(a.is_same_host(b));
         assert!(!a.is_same_host(c));
     }
@@ -1101,15 +1472,146 @@ mod tests {
     }
 
     #[test]
-    fn entity_id_unknown_kind_byte_maps_to_unknown() {
+    fn entity_id_unnamed_kind_byte_is_kept() {
         let id = EntityId::from_bytes([1, 2, 3, 0xEE]);
-        assert_eq!(id.entity_kind, EntityKind::Unknown);
+        assert_eq!(id.entity_kind, EntityKind::Other(0xEE));
+        assert_eq!(id.to_bytes(), [1, 2, 3, 0xEE]);
+    }
+
+    /// Every one of the 256 octets survives the pair, and none of them
+    /// lands on another octet's value. Table 9.1 names ten and vendors
+    /// use the rest: RTI Connext 7.7.0 writes `0x82` and `0x87` for two
+    /// endpoints of every participant, and while the unnamed octets all
+    /// folded into `Unknown` those two `EntityId`s were equal.
+    #[test]
+    fn entity_kind_octet_round_trips() {
+        for byte in 0u8..=0xFF {
+            assert_eq!(
+                EntityKind::from_byte(byte).to_byte(),
+                byte,
+                "entityKind 0x{byte:02x}"
+            );
+        }
+        let mut seen = alloc::collections::BTreeSet::new();
+        for byte in 0u8..=0xFF {
+            assert!(
+                seen.insert(EntityKind::from_byte(byte)),
+                "two octets decode to one EntityKind at 0x{byte:02x}"
+            );
+        }
+        // The RTI pair, spelled out: one participant, two endpoints,
+        // two `EntityId`s.
+        let reader = EntityId::from_bytes([0x00, 0x02, 0x00, 0x87]);
+        let writer = EntityId::from_bytes([0x00, 0x02, 0x00, 0x82]);
+        assert_ne!(reader, writer);
+    }
+
+    #[test]
+    fn every_kind_table_9_1_names_decodes_to_a_named_kind() {
+        // DDSI-RTPS 2.5 Table 9.1, user-defined and built-in columns.
+        for byte in [
+            0x00, 0xC0, 0xC1, 0x02, 0xC2, 0x03, 0xC3, 0x04, 0xC4, 0x07, 0xC7, 0x08, 0xC8, 0x09,
+            0xC9,
+        ] {
+            assert!(
+                !matches!(EntityKind::from_byte(byte), EntityKind::Other(_)),
+                "0x{byte:02x} is named in Table 9.1"
+            );
+        }
+        assert_eq!(EntityKind::from_byte(0x08), EntityKind::UserWriterGroup);
+        assert_eq!(EntityKind::from_byte(0x09), EntityKind::UserReaderGroup);
     }
 
     #[test]
     fn entity_id_roundtrip() {
         let id = EntityId::user_writer_with_key([1, 2, 3]);
         assert_eq!(EntityId::from_bytes(id.to_bytes()), id);
+    }
+
+    /// §9.3.1.2: `ENTITYID_UNKNOWN {{0x00, 0x00, 0x00}, 0x00}` — four
+    /// zero octets, and the four octets are what goes on the wire.
+    #[test]
+    fn entity_id_unknown_is_four_zero_octets() {
+        assert_eq!(EntityId::UNKNOWN.to_bytes(), [0u8; 4]);
+        assert_eq!(EntityId::from_bytes([0u8; 4]), EntityId::UNKNOWN);
+        assert_eq!(EntityId::WIRE_SIZE, 4);
+    }
+
+    // ---- §8.2.1.2 TopicKind_t ----
+
+    /// Table 9.1: the `entityKind` octet decides `NO_KEY` vs `WITH_KEY`.
+    /// `0x02`/`0x07` and the builtin `0xC2`/`0xC7` are WITH_KEY,
+    /// `0x03`/`0x04` and `0xC3`/`0xC4` are NO_KEY. Participant, the
+    /// group octets and every unnamed octet carry no topic at all.
+    #[test]
+    fn topic_kind_follows_entity_kind_octet_of_table_9_1() {
+        for octet in [0x02, 0x07, 0xC2, 0xC7] {
+            assert_eq!(
+                EntityKind::from_byte(octet).topic_kind(),
+                Some(TopicKind::WithKey),
+                "entityKind 0x{octet:02x}"
+            );
+        }
+        for octet in [0x03, 0x04, 0xC3, 0xC4] {
+            assert_eq!(
+                EntityKind::from_byte(octet).topic_kind(),
+                Some(TopicKind::NoKey),
+                "entityKind 0x{octet:02x}"
+            );
+        }
+        for octet in [0x00, 0xC0, 0xC1, 0x08, 0x09, 0xC8, 0xC9, 0x82] {
+            assert_eq!(
+                EntityKind::from_byte(octet).topic_kind(),
+                None,
+                "entityKind 0x{octet:02x}"
+            );
+        }
+    }
+
+    /// The inverse of the same table: a topic kind names the octet its
+    /// endpoints carry, and that octet maps back to the topic kind.
+    #[test]
+    fn topic_kind_entity_kind_pairs_round_trip() {
+        for kind in [TopicKind::NoKey, TopicKind::WithKey] {
+            for builtin in [false, true] {
+                let w = kind.writer_entity_kind(builtin);
+                let r = kind.reader_entity_kind(builtin);
+                assert_eq!(w.topic_kind(), Some(kind));
+                assert_eq!(r.topic_kind(), Some(kind));
+                assert_ne!(w, r, "writer and reader octets must differ");
+            }
+        }
+        assert_eq!(TopicKind::WithKey.writer_entity_kind(false).to_byte(), 0x02);
+        assert_eq!(TopicKind::NoKey.writer_entity_kind(false).to_byte(), 0x03);
+        assert_eq!(TopicKind::NoKey.reader_entity_kind(false).to_byte(), 0x04);
+        assert_eq!(TopicKind::WithKey.reader_entity_kind(false).to_byte(), 0x07);
+    }
+
+    /// The endpoint constructors already in use must agree with the
+    /// table: `user_writer_with_key` is WITH_KEY, the SPDP builtin
+    /// participant writer is WITH_KEY, the stateless secure writer is
+    /// NO_KEY.
+    #[test]
+    fn topic_kind_of_the_predefined_entity_ids() {
+        assert_eq!(
+            EntityId::user_writer_with_key([1, 2, 3])
+                .entity_kind
+                .topic_kind(),
+            Some(TopicKind::WithKey)
+        );
+        assert_eq!(
+            EntityId::SPDP_BUILTIN_PARTICIPANT_WRITER
+                .entity_kind
+                .topic_kind(),
+            Some(TopicKind::WithKey)
+        );
+        assert_eq!(
+            EntityId::BUILTIN_PARTICIPANT_STATELESS_MESSAGE_WRITER
+                .entity_kind
+                .topic_kind(),
+            Some(TopicKind::NoKey)
+        );
+        assert_eq!(EntityId::PARTICIPANT.entity_kind.topic_kind(), None);
     }
 
     // ---- Secure builtin EntityIds (DDS-Security 1.2 §7.4.7.1, C3.8) ----
@@ -1163,6 +1665,85 @@ mod tests {
         for id in ids {
             assert!(id.is_secure_builtin(), "{id:?}");
             assert_eq!(EntityId::from_bytes(id.to_bytes()), id);
+        }
+    }
+
+    /// DDS-Security 1.2 §7.4.7.1 Table 9 (S. 63 to 64): the sixteen EntityIds
+    /// with their octets, entityKey then entityKind. The expected values are the
+    /// table's `{{key}, kind}`, not what the constants hold.
+    #[test]
+    fn table_9_entity_id_octets() {
+        let table: [(EntityId, [u8; 4]); 16] = [
+            // SEDPbuiltinPublicationsSecureWriter / Reader
+            (
+                EntityId::SEDP_BUILTIN_PUBLICATIONS_SECURE_WRITER,
+                [0xff, 0x00, 0x03, 0xc2],
+            ),
+            (
+                EntityId::SEDP_BUILTIN_PUBLICATIONS_SECURE_READER,
+                [0xff, 0x00, 0x03, 0xc7],
+            ),
+            // SEDPbuiltinSubscriptionsSecureWriter / Reader
+            (
+                EntityId::SEDP_BUILTIN_SUBSCRIPTIONS_SECURE_WRITER,
+                [0xff, 0x00, 0x04, 0xc2],
+            ),
+            (
+                EntityId::SEDP_BUILTIN_SUBSCRIPTIONS_SECURE_READER,
+                [0xff, 0x00, 0x04, 0xc7],
+            ),
+            // BuiltinParticipantMessageSecureWriter / Reader
+            (
+                EntityId::BUILTIN_PARTICIPANT_MESSAGE_SECURE_WRITER,
+                [0xff, 0x02, 0x00, 0xc2],
+            ),
+            (
+                EntityId::BUILTIN_PARTICIPANT_MESSAGE_SECURE_READER,
+                [0xff, 0x02, 0x00, 0xc7],
+            ),
+            // BuiltinParticipantStatelessMessageWriter / Reader
+            (
+                EntityId::BUILTIN_PARTICIPANT_STATELESS_MESSAGE_WRITER,
+                [0x00, 0x02, 0x01, 0xc3],
+            ),
+            (
+                EntityId::BUILTIN_PARTICIPANT_STATELESS_MESSAGE_READER,
+                [0x00, 0x02, 0x01, 0xc4],
+            ),
+            // BuiltinParticipantVolatileMessageSecureWriter / Reader
+            (
+                EntityId::BUILTIN_PARTICIPANT_VOLATILE_MESSAGE_SECURE_WRITER,
+                [0xff, 0x02, 0x02, 0xc3],
+            ),
+            (
+                EntityId::BUILTIN_PARTICIPANT_VOLATILE_MESSAGE_SECURE_READER,
+                [0xff, 0x02, 0x02, 0xc4],
+            ),
+            // SPDPbuiltinParticipantsSecureWriter / Reader
+            (
+                EntityId::SPDP_RELIABLE_BUILTIN_PARTICIPANTS_SECURE_WRITER,
+                [0xff, 0x01, 0x01, 0xc2],
+            ),
+            (
+                EntityId::SPDP_RELIABLE_BUILTIN_PARTICIPANTS_SECURE_READER,
+                [0xff, 0x01, 0x01, 0xc7],
+            ),
+            // TypeLookupServiceRequestSecureWriter / Reader, ReplySecureWriter / Reader
+            (EntityId::TL_SVC_REQ_SECURE_WRITER, [0xff, 0x03, 0x00, 0xc3]),
+            (EntityId::TL_SVC_REQ_SECURE_READER, [0xff, 0x03, 0x00, 0xc4]),
+            (
+                EntityId::TL_SVC_REPLY_SECURE_WRITER,
+                [0xff, 0x03, 0x01, 0xc3],
+            ),
+            (
+                EntityId::TL_SVC_REPLY_SECURE_READER,
+                [0xff, 0x03, 0x01, 0xc4],
+            ),
+        ];
+        for (id, octets) in table {
+            assert_eq!(id.to_bytes(), octets, "{id:?}");
+            assert_eq!(EntityId::from_bytes(octets), id, "{octets:02x?}");
+            assert!(id.is_secure_builtin(), "{id:?}");
         }
     }
 
@@ -1288,6 +1869,55 @@ mod tests {
         assert_eq!(l.address, id);
     }
 
+    /// DDSI-RTPS 2.5 §9.3.2.4: "0x00000003 - 0x01ffffff (inclusive) are
+    /// reserved for vendor-specific Locator_t kinds"; the kinds of ZeroDDS
+    /// lie in it, and read back from their `long` value.
+    #[test]
+    fn the_zerodds_locator_kinds_are_in_the_vendor_specific_range() {
+        for (kind, value) in [
+            (LocatorKind::Shm, 0x01F0_0001),
+            (LocatorKind::Uds, 0x01F0_0002),
+            (LocatorKind::Tsn, 0x01F0_0003),
+        ] {
+            assert_eq!(kind.as_i32(), value);
+            assert!((0x0000_0003..=0x01ff_ffff).contains(&kind.as_i32()));
+            assert_eq!(LocatorKind::from_i32(value).unwrap(), kind);
+        }
+        // The values of the former numbering (negative as a `long`) are no
+        // kind.
+        for old in [0x8100_0000u32, 0x8100_0001, 0x8100_0002] {
+            assert!(LocatorKind::from_i32(old as i32).is_err());
+        }
+    }
+
+    /// §9.3.2.4: the TCP kinds are ZeroDDS's own in the vendor range by
+    /// default; with the setting they are 4 and 8 (Fast DDS). Reading takes
+    /// both under either setting. Serial with other users of the switch.
+    #[test]
+    fn the_tcp_kinds_are_vendor_range_by_default_and_fast_dds_by_setting() {
+        static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        set_tcp_kinds_fast_dds(false);
+        assert_eq!(LocatorKind::Tcpv4.as_i32(), 0x01F0_0004);
+        assert_eq!(LocatorKind::Tcpv6.as_i32(), 0x01F0_0005);
+        let l = Locator::tcp_v4([10, 0, 0, 1], 7400);
+        assert_eq!(&l.to_bytes_le()[..4], &0x01F0_0004i32.to_le_bytes());
+        set_tcp_kinds_fast_dds(true);
+        assert_eq!(LocatorKind::Tcpv4.as_i32(), 4);
+        assert_eq!(LocatorKind::Tcpv6.as_i32(), 8);
+        assert_eq!(&l.to_bytes_be()[..4], &4i32.to_be_bytes());
+        for v in [4, 8, 0x01F0_0004, 0x01F0_0005] {
+            let want = if v == 4 || v == 0x01F0_0004 {
+                LocatorKind::Tcpv4
+            } else {
+                LocatorKind::Tcpv6
+            };
+            assert_eq!(LocatorKind::from_i32(v).unwrap(), want);
+        }
+        set_tcp_kinds_fast_dds(false);
+        assert_eq!(Locator::from_bytes_le(l.to_bytes_le()).unwrap(), l);
+    }
+
     #[test]
     fn locator_kind_rejects_unknown() {
         let res = LocatorKind::from_i32(99);
@@ -1352,7 +1982,7 @@ mod tests {
 
     #[test]
     fn locator_shm_any_uses_vendor_kind() {
-        assert!(Locator::SHM_ANY.kind.as_i32() < 0); // vendor range
+        assert!((0x3..=0x01ff_ffff).contains(&Locator::SHM_ANY.kind.as_i32())); // vendor range
     }
 
     #[test]
@@ -1363,7 +1993,7 @@ mod tests {
         assert_eq!(&loc.address[..6], &mac);
         assert_eq!(u16::from_be_bytes([loc.address[6], loc.address[7]]), 42);
         // Vendor range + i32 roundtrip.
-        assert!(loc.kind.as_i32() < 0);
+        assert!((0x3..=0x01ff_ffff).contains(&loc.kind.as_i32()));
         assert_eq!(
             LocatorKind::from_i32(loc.kind.as_i32()).unwrap(),
             LocatorKind::Tsn
@@ -1521,6 +2151,28 @@ mod tests {
         assert_eq!(SPDP_DEFAULT_MULTICAST_ADDRESS, [239, 255, 0, 1]);
     }
 
+    /// §9.6.2.3: the parameters are settable; the formulas use them.
+    #[test]
+    fn the_port_mapping_formulas_use_the_given_parameters() {
+        let m = PortMapping {
+            port_base: 20000,
+            domain_gain: 100,
+            participant_gain: 4,
+            d0: 5,
+            d1: 6,
+            d2: 7,
+            d3: 8,
+        };
+        assert_eq!(m.spdp_multicast_port(3), 20000 + 300 + 5);
+        assert_eq!(m.spdp_unicast_port(3, 2), 20000 + 300 + 6 + 8);
+        assert_eq!(m.user_traffic_multicast_port(3), 20000 + 300 + 7);
+        assert_eq!(m.user_traffic_unicast_port(3, 2), 20000 + 300 + 8 + 8);
+        let d = PortMapping::default();
+        assert_eq!(d.spdp_unicast_port(1, 3), spdp_unicast_port(1, 3));
+        assert_eq!(d.spdp_unicast_port(1, 3), 7400 + 250 + 10 + 6);
+        assert_eq!(d.user_traffic_unicast_port(0, 0), 7411);
+    }
+
     #[test]
     fn spdp_multicast_port_domain_0_is_7400() {
         assert_eq!(spdp_multicast_port(0), 7400);
@@ -1534,6 +2186,73 @@ mod tests {
     #[test]
     fn spdp_multicast_port_domain_5_is_8650() {
         assert_eq!(spdp_multicast_port(5), 8650);
+    }
+
+    #[test]
+    fn port_formula_constants_match_spec() {
+        // Spec §9.6.1.4.1: PB = 7400, DG = 250, PG = 2,
+        // d0 = 0, d1 = 10, d2 = 1, d3 = 11.
+        assert_eq!(SPDP_PORT_BASE, 7400);
+        assert_eq!(SPDP_DOMAIN_GAIN, 250);
+        assert_eq!(SPDP_PARTICIPANT_GAIN, 2);
+        assert_eq!(SPDP_DISCOVERY_MULTICAST_OFFSET, 0);
+        assert_eq!(SPDP_DISCOVERY_UNICAST_OFFSET, 10);
+        assert_eq!(USER_TRAFFIC_MULTICAST_OFFSET, 1);
+        assert_eq!(USER_TRAFFIC_UNICAST_OFFSET, 11);
+    }
+
+    #[test]
+    fn all_four_ports_follow_the_spec_formula() {
+        // port(dN) = PB + DG * domain + dN [+ PG * participant].
+        for domain in [0u32, 1, 5, 232] {
+            for participant in [0u32, 1, 29, 120] {
+                let base = 7400 + 250 * domain;
+                assert_eq!(spdp_multicast_port(domain), base);
+                assert_eq!(
+                    spdp_unicast_port(domain, participant),
+                    base + 10 + 2 * participant
+                );
+                assert_eq!(user_traffic_multicast_port(domain), base + 1);
+                assert_eq!(
+                    user_traffic_unicast_port(domain, participant),
+                    base + 11 + 2 * participant
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn domain_zero_ports_match_the_worked_spec_example() {
+        // Spec §9.6.1.4.1 worked example for domain 0, participant 0.
+        assert_eq!(spdp_multicast_port(0), 7400);
+        assert_eq!(spdp_unicast_port(0, 0), 7410);
+        assert_eq!(user_traffic_multicast_port(0), 7401);
+        assert_eq!(user_traffic_unicast_port(0, 0), 7411);
+        // Participant 1 sits one PG step above participant 0.
+        assert_eq!(spdp_unicast_port(0, 1), 7412);
+        assert_eq!(user_traffic_unicast_port(0, 1), 7413);
+    }
+
+    #[test]
+    fn the_four_ports_of_one_participant_are_distinct() {
+        // d0..d3 must not collide for any participant on a domain —
+        // a collision would bind metatraffic and user traffic to one
+        // socket and silently mix the two receive paths.
+        for domain in [0u32, 3] {
+            for participant in [0u32, 7] {
+                let mut ports = [
+                    spdp_multicast_port(domain),
+                    spdp_unicast_port(domain, participant),
+                    user_traffic_multicast_port(domain),
+                    user_traffic_unicast_port(domain, participant),
+                ];
+                ports.sort_unstable();
+                assert!(
+                    ports.windows(2).all(|w| w[0] != w[1]),
+                    "ports collide: {ports:?}"
+                );
+            }
+        }
     }
 
     #[test]
@@ -1553,5 +2272,73 @@ mod tests {
             [0xff, 0x02, 0x02, 0xc4],
             "VolatileMessageSecure reader must be 0xff0202c4"
         );
+    }
+
+    /// DDSI-RTPS 2.5 §9.3.1.3 Table 9.2: the EntityId_t values fully
+    /// predefined by the protocol, key octets then kind octet.
+    #[test]
+    fn the_entity_ids_of_table_9_2_are_those_of_the_table() {
+        let table: [(&str, EntityId, [u8; 4]); 12] = [
+            (
+                "PARTICIPANT",
+                EntityId::PARTICIPANT,
+                [0x00, 0x00, 0x01, 0xC1],
+            ),
+            (
+                "SEDP_BUILTIN_TOPICS_ANNOUNCER",
+                EntityId::SEDP_BUILTIN_TOPICS_WRITER,
+                [0x00, 0x00, 0x02, 0xC2],
+            ),
+            (
+                "SEDP_BUILTIN_TOPICS_DETECTOR",
+                EntityId::SEDP_BUILTIN_TOPICS_READER,
+                [0x00, 0x00, 0x02, 0xC7],
+            ),
+            (
+                "SEDP_BUILTIN_PUBLICATIONS_ANNOUNCER",
+                EntityId::SEDP_BUILTIN_PUBLICATIONS_WRITER,
+                [0x00, 0x00, 0x03, 0xC2],
+            ),
+            (
+                "SEDP_BUILTIN_PUBLICATIONS_DETECTOR",
+                EntityId::SEDP_BUILTIN_PUBLICATIONS_READER,
+                [0x00, 0x00, 0x03, 0xC7],
+            ),
+            (
+                "SEDP_BUILTIN_SUBSCRIPTIONS_ANNOUNCER",
+                EntityId::SEDP_BUILTIN_SUBSCRIPTIONS_WRITER,
+                [0x00, 0x00, 0x04, 0xC2],
+            ),
+            (
+                "SEDP_BUILTIN_SUBSCRIPTIONS_DETECTOR",
+                EntityId::SEDP_BUILTIN_SUBSCRIPTIONS_READER,
+                [0x00, 0x00, 0x04, 0xC7],
+            ),
+            (
+                "SPDP_BUILTIN_PARTICIPANT_ANNOUNCER",
+                EntityId::SPDP_BUILTIN_PARTICIPANT_WRITER,
+                [0x00, 0x01, 0x00, 0xC2],
+            ),
+            (
+                "SPDP_BUILTIN_PARTICIPANT_DETECTOR",
+                EntityId::SPDP_BUILTIN_PARTICIPANT_READER,
+                [0x00, 0x01, 0x00, 0xC7],
+            ),
+            (
+                "P2P_BUILTIN_PARTICIPANT_MESSAGE_WRITER",
+                EntityId::BUILTIN_PARTICIPANT_MESSAGE_WRITER,
+                [0x00, 0x02, 0x00, 0xC2],
+            ),
+            (
+                "P2P_BUILTIN_PARTICIPANT_MESSAGE_READER",
+                EntityId::BUILTIN_PARTICIPANT_MESSAGE_READER,
+                [0x00, 0x02, 0x00, 0xC7],
+            ),
+            ("UNKNOWN", EntityId::UNKNOWN, [0, 0, 0, 0]),
+        ];
+        for (name, id, octets) in table {
+            assert_eq!(id.to_bytes(), octets, "ENTITYID_{name}");
+            assert_eq!(EntityId::from_bytes(octets), id, "ENTITYID_{name} back");
+        }
     }
 }

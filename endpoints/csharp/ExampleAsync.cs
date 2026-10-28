@@ -47,7 +47,7 @@ namespace ZeroDDS.Examples
         {
             const int total = 5;
             var transport = new MemTransport();
-            var client = new Client(transport);
+            var client = new Client(transport, Xrce.ObjectId(0x001, Xrce.ObjkDataWriter));
 
             for (int i = 0; i < total; i++)
             {

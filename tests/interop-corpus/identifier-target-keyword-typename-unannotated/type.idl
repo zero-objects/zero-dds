@@ -1,0 +1,6 @@
+// a type name that is a keyword of the generated target language, at the
+// outermost scope, where no module path is prefixed to it
+struct static {
+    long value;
+    string label;
+};

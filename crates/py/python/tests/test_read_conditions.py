@@ -22,15 +22,17 @@ pytestmark = pytest.mark.skipif(
 
 
 def test_sample_state_constants():
-    assert zerodds.sample_state.NOT_READ == 1
-    assert zerodds.sample_state.READ == 2
-    assert zerodds.sample_state.ANY == 3
+    # DDS 1.4 §2.3.3: READ = 0x0001 << 0, NOT_READ = 0x0001 << 1,
+    # ANY = 0xffff.
+    assert zerodds.sample_state.READ == 1
+    assert zerodds.sample_state.NOT_READ == 2
+    assert zerodds.sample_state.ANY == 0xFFFF
 
 
 def test_view_state_constants():
     assert zerodds.view_state.NEW == 1
     assert zerodds.view_state.NOT_NEW == 2
-    assert zerodds.view_state.ANY == 3
+    assert zerodds.view_state.ANY == 0xFFFF
 
 
 def test_instance_state_constants():
@@ -38,7 +40,7 @@ def test_instance_state_constants():
     assert zerodds.instance_state.NOT_ALIVE_DISPOSED == 2
     assert zerodds.instance_state.NOT_ALIVE_NO_WRITERS == 4
     assert zerodds.instance_state.NOT_ALIVE == 6
-    assert zerodds.instance_state.ANY == 7
+    assert zerodds.instance_state.ANY == 0xFFFF
 
 
 # ---------------------------------------------------------------------------
@@ -53,8 +55,9 @@ def test_read_condition_constructible():
         zerodds.view_state.ANY,
         zerodds.instance_state.ALIVE,
     )
-    assert rc.get_sample_state_mask() == 3
-    assert rc.get_view_state_mask() == 3
+    # ANY_SAMPLE_STATE and ANY_VIEW_STATE are 0xffff (DDS 1.4 §2.3.3).
+    assert rc.get_sample_state_mask() == 0xFFFF
+    assert rc.get_view_state_mask() == 0xFFFF
     assert rc.get_instance_state_mask() == 1
 
 

@@ -5,8 +5,17 @@ name: publish-deb
 on:
   workflow_call:
     inputs:
+      source_ref:
+        description: "Immutable release source commit selected by the caller"
+        required: false
+        type: string
+        default: ""
       plan:
         description: "cargo-dist plan JSON"
+        required: true
+        type: string
+      version:
+        description: "Release version without the leading v (e.g. 1.0.0-rc.7), derived from the tag by release.yml"
         required: true
         type: string
 
@@ -22,6 +31,8 @@ jobs:
           - aarch64-unknown-linux-gnu
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.source_ref || github.sha }}
       - uses: dtolnay/rust-toolchain@1.88
         with:
           targets: ${{ matrix.target }}
@@ -39,16 +50,22 @@ jobs:
               echo "[target.aarch64-unknown-linux-gnu]"
               echo 'linker = "aarch64-linux-gnu-gcc"'
             } >> ~/.cargo/config.toml
-            echo "CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
-            echo "AR_aarch64_unknown_linux_gnu=aarch64-linux-gnu-ar" >> $GITHUB_ENV
+            {
+              echo "CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc"
+              echo "AR_aarch64_unknown_linux_gnu=aarch64-linux-gnu-ar"
+            } >> "$GITHUB_ENV"
           fi
       - name: cargo build (release)
         run: cargo build --release --workspace --target ${{ matrix.target }}
       - name: Assemble debs (per sub-package)
         run: |
+          # `github.ref_name` is the CALLER's ref: on a tag push that is the
+          # tag, but on a workflow_dispatch re-run it is the branch name and
+          # the .deb would be versioned "main". Take the version release.yml
+          # derived from the tag instead.
           bash packaging/linux/deb/assemble-debs.sh \
                --target ${{ matrix.target }} \
-               --version "$(echo '${{ github.ref_name }}' | sed 's/^v//')" \
+               --version "${{ inputs.version }}" \
                --out dist/
       # The APT repo is built on packages.zerodds.org via pull-deploy
       # (the server host's cron, every 5 min), not pushed from CI. Here we
@@ -58,4 +75,5 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: zerodds-deb-${{ matrix.target }}
+          if-no-files-found: error
           path: dist/*.deb

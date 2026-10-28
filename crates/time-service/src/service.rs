@@ -18,6 +18,8 @@
 
 use core::fmt;
 
+use alloc::sync::Arc;
+
 #[cfg(feature = "std")]
 use crate::time_base::current_time;
 use crate::time_base::{InaccuracyT, IntervalT, TdfT, TimeT, UtcT};
@@ -37,9 +39,17 @@ impl fmt::Display for TimeUnavailable {
 #[cfg(feature = "std")]
 impl std::error::Error for TimeUnavailable {}
 
+/// A pluggable clock source (spec-external: the OMG spec has no `no_std`
+/// embedding hook of its own — this is ZeroDDS's). Returns a [`TimeT`]
+/// (100ns ticks since 1582-10-15, spec §1.3.2.1), the same domain
+/// `std`'s [`current_time`] returns. `0` means "unavailable", the same
+/// contract [`TimeService::universal_time`] already gives the `std`
+/// stub.
+pub type ClockSource = Arc<dyn Fn() -> TimeT + Send + Sync>;
+
 /// `TimeService` object — Spec §2.1. ZeroDDS implementation as a
 /// plain Rust struct (no CORBA object).
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Clone, Default)]
 pub struct TimeService {
     /// Tdf set in the UTOs at `universal_time()`.
     /// Default 0 (Greenwich).
@@ -52,19 +62,71 @@ pub struct TimeService {
     /// "secure" (spec §2.1.2 + appendix A). Otherwise
     /// `secure_universal_time()` throws `TimeUnavailable`.
     pub secure_source: bool,
+    /// Injected clock ([`Self::with_source`]). `None` (the `Default`
+    /// case) reads `std`'s [`current_time`] on `std` builds, or is
+    /// always-unavailable (`0`) under `no_std` — same as before this
+    /// field existed.
+    source: Option<ClockSource>,
+}
+
+impl fmt::Debug for TimeService {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TimeService")
+            .field("default_tdf", &self.default_tdf)
+            .field("default_inaccuracy", &self.default_inaccuracy)
+            .field("secure_source", &self.secure_source)
+            .field("source", &self.source.as_ref().map(|_| "<fn>"))
+            .finish()
+    }
 }
 
 impl TimeService {
+    /// Injects a pluggable clock source. This is the `no_std` embedding
+    /// hook: without it, `no_std`'s [`crate::time_base::current_time`]
+    /// stub always returns `0` and every `universal_time()` call fails
+    /// with [`TimeUnavailable`] — there was previously no way for an
+    /// embedder to supply a real clock (a disciplined RTC, `CLOCK_TAI`,
+    /// a deterministic test clock). `std` embedders may use it too, to
+    /// override the platform `SystemTime` clock.
+    ///
+    /// `source` returning `0` is read as "unavailable", the same
+    /// contract the `std` stub already has.
+    #[must_use]
+    pub fn with_source<F>(source: F) -> Self
+    where
+        F: Fn() -> TimeT + Send + Sync + 'static,
+    {
+        Self {
+            source: Some(Arc::new(source)),
+            ..Self::default()
+        }
+    }
+
+    /// The current tick: the injected [`Self::with_source`] source if
+    /// set, else `std`'s platform clock, else (`no_std`, no source) `0`.
+    fn read_source(&self) -> TimeT {
+        if let Some(f) = &self.source {
+            return f();
+        }
+        #[cfg(feature = "std")]
+        {
+            current_time()
+        }
+        #[cfg(not(feature = "std"))]
+        {
+            0
+        }
+    }
+
     /// Spec §2.1.1 — `universal_time()`. Returns the current time.
     /// Raises `TimeUnavailable` if the time source is not
     /// available.
     ///
     /// # Errors
-    /// `TimeUnavailable` if `current_time()` returns 0
-    /// (e.g. no_std without a real clock).
-    #[cfg(feature = "std")]
+    /// `TimeUnavailable` if the clock source (injected or platform)
+    /// returns 0 (e.g. `no_std` without [`Self::with_source`]).
     pub fn universal_time(&self) -> Result<Uto, TimeUnavailable> {
-        let now = current_time();
+        let now = self.read_source();
         if now == 0 {
             return Err(TimeUnavailable);
         }
@@ -81,7 +143,6 @@ impl TimeService {
     /// # Errors
     /// `TimeUnavailable` if `secure_source = false` or the
     /// time source is not available.
-    #[cfg(feature = "std")]
     pub fn secure_universal_time(&self) -> Result<Uto, TimeUnavailable> {
         if !self.secure_source {
             return Err(TimeUnavailable);
@@ -180,5 +241,51 @@ mod tests {
     fn time_unavailable_display_describes_failure_mode() {
         let s = alloc::format!("{TimeUnavailable}");
         assert!(s.contains("time service unavailable"));
+    }
+
+    #[test]
+    fn with_source_overrides_the_platform_clock() {
+        // The doc-drift this closes: website/docs/time-service.html and
+        // time_base.rs's doc comment promised `TimeService::with_source(...)`
+        // as the no_std embedding hook; it did not exist. It now reads the
+        // injected source instead of the platform clock, on std too.
+        let service = TimeService::with_source(|| 42);
+        let uto = service.universal_time().expect("ok");
+        assert_eq!(uto.time(), 42);
+    }
+
+    #[test]
+    fn with_source_zero_is_time_unavailable() {
+        // Same contract as the no_std stub: 0 means unavailable.
+        let service = TimeService::with_source(|| 0);
+        assert_eq!(service.universal_time(), Err(TimeUnavailable));
+    }
+
+    #[test]
+    fn with_source_keeps_the_other_defaults() {
+        let service = TimeService::with_source(|| 1_000);
+        assert_eq!(service.default_tdf, 0);
+        assert_eq!(service.default_inaccuracy, 0);
+        assert!(!service.secure_source);
+    }
+
+    #[test]
+    fn with_source_reads_live_state_on_every_call() {
+        // A closure capturing shared, mutable state (e.g. a test clock) is
+        // read fresh each call -- the source is not a one-shot snapshot.
+        use core::sync::atomic::{AtomicU64, Ordering};
+        let tick = alloc::sync::Arc::new(AtomicU64::new(10));
+        let for_closure = tick.clone();
+        let service = TimeService::with_source(move || for_closure.load(Ordering::SeqCst));
+        assert_eq!(service.universal_time().expect("ok").time(), 10);
+        tick.store(20, Ordering::SeqCst);
+        assert_eq!(service.universal_time().expect("ok").time(), 20);
+    }
+
+    #[test]
+    fn with_source_debug_does_not_panic() {
+        let service = TimeService::with_source(|| 1);
+        let s = alloc::format!("{service:?}");
+        assert!(s.contains("TimeService"));
     }
 }

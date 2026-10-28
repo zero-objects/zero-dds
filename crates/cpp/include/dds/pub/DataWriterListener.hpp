@@ -1,113 +1,107 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 //
-// dds/pub/DataWriterListener.hpp — DDS-PSM-Cxx 1.0 §7.5.9.5.
+// dds/pub/DataWriterListener.hpp — DataWriterListener<T> (DDS-PSM-Cxx 1.0
+// §7.9).
+//
+//   struct Mine : dds::pub::NoOpDataWriterListener<Track> {
+//       void on_publication_matched(dds::pub::DataWriter<Track>&,
+//                                   const dds::core::status::PublicationMatchedStatus&) ZERODDS_OVERRIDE {}
+//   };
+//   Mine mine;
+//   dw.listener(&mine, dds::core::status::StatusMask::all());
 
 #ifndef ZERODDS_DDS_PUB_DATAWRITERLISTENER_HPP
 #define ZERODDS_DDS_PUB_DATAWRITERLISTENER_HPP
 
-#include "dds/core/Status.hpp"
-#include "dds/pub/Publisher.hpp"
+
+#include "zerodds/psm/cxx.hpp"
+#include "dds/core/detail/borrow.hpp"
+#include "dds/core/status/Status.hpp"
+#include "dds/pub/detail/DataWriterStatus.hpp"
+#include "dds/pub/detail/DataWriterFwd.hpp"
 #include "zerodds.h"
 
 namespace dds {
 namespace pub {
 
-/// `DataWriterListener<T>` (Spec §7.5.9.5).
-///
-/// Derived by user code, overrides the on-XXX methods. Registered via
-/// `dds::pub::DataWriter<T>::set_listener(...)`.
-///
-/// Active wireup to the runtime happens via the C FFI path
-/// `zerodds_poll_listeners()` — the caller polls in the main loop, then
-/// the `on_*` methods fire on the caller thread (see the
-/// vendor spec `docs/specs/zerodds-listener-callbacks-1.0.md` §6.2).
 template <typename T>
 class DataWriterListener {
 public:
-    virtual ~DataWriterListener() = default;
-    /// Liveliness-Lost (Spec §2.2.4.2.5.1).
-    virtual void on_liveliness_lost(DataWriter<T>& /*dw*/,
-                                     const ::dds::core::status::LivelinessLostStatus& /*s*/) {}
-    /// Offered-Deadline-Missed.
+    virtual ~DataWriterListener() {}
+
     virtual void on_offered_deadline_missed(
-        DataWriter<T>& /*dw*/,
-        const ::dds::core::status::OfferedDeadlineMissedStatus& /*s*/) {}
-    /// Offered-Incompatible-QoS.
+        DataWriter<T>& writer, const ::dds::core::status::OfferedDeadlineMissedStatus& status) = 0;
+    // The normative header takes this writer by value, the other callbacks by reference; an
+    // ZERODDS_OVERRIDE written against it has to match.
     virtual void on_offered_incompatible_qos(
-        DataWriter<T>& /*dw*/,
-        const ::dds::core::status::OfferedIncompatibleQosStatus& /*s*/) {}
-    /// Publication-Matched.
+        DataWriter<T> writer, const ::dds::core::status::OfferedIncompatibleQosStatus& status) = 0;
+    virtual void on_liveliness_lost(DataWriter<T>& writer,
+                                    const ::dds::core::status::LivelinessLostStatus& status) = 0;
     virtual void on_publication_matched(
-        DataWriter<T>& /*dw*/,
-        const ::dds::core::status::PublicationMatchedStatus& /*s*/) {}
+        DataWriter<T>& writer, const ::dds::core::status::PublicationMatchedStatus& status) = 0;
 };
 
-/// Internal: an adapter that maps spec listeners onto the C FFI vtable.
-///
-/// Caller code instantiates a concrete `DataWriterListener<T>`
-/// subclass and registers it via:
-///
-/// ```cpp
-/// MyListener<MsgT> mine;
-/// dw.set_listener(mine, dds::core::status::StatusMask::all());
-/// ```
+/// A listener that does nothing; derive and override what you need.
 template <typename T>
-class _DataWriterListenerBridge {
+class NoOpDataWriterListener : public virtual DataWriterListener<T> {
 public:
-    /// Binds a listener subclass to a DataWriter.
-    static void attach(DataWriter<T>& dw, DataWriterListener<T>* listener,
-                       uint32_t status_mask) {
-        if (listener == nullptr) {
-            zerodds_dw_set_listener(dw.native_handle(), nullptr, 0);
-            return;
-        }
-        // Static singleton for the vtable adapter — one instance
-        // per language-binding type. user_data points to the listener
-        // subclass; the C FFI fires the static functions below.
-        thread_local zerodds_ZeroDdsDataWriterListener vt;
+    virtual ~NoOpDataWriterListener() {}
+
+    void on_offered_deadline_missed(
+        DataWriter<T>&, const ::dds::core::status::OfferedDeadlineMissedStatus&) ZERODDS_OVERRIDE {}
+    void on_offered_incompatible_qos(
+        DataWriter<T>, const ::dds::core::status::OfferedIncompatibleQosStatus&) ZERODDS_OVERRIDE {}
+    void on_liveliness_lost(DataWriter<T>&,
+                            const ::dds::core::status::LivelinessLostStatus&) ZERODDS_OVERRIDE {}
+    void on_publication_matched(DataWriter<T>&,
+                                const ::dds::core::status::PublicationMatchedStatus&) ZERODDS_OVERRIDE {}
+};
+
+namespace detail {
+
+/// Binds a DataWriterListener to the C API's listener table. Internal.
+template <typename T>
+struct DataWriterListenerBridge {
+    static zerodds_ZeroDdsDataWriterListener table(DataWriterListener<T>* listener) {
+        zerodds_ZeroDdsDataWriterListener vt = zerodds_ZeroDdsDataWriterListener();
         vt.user_data = static_cast<void*>(listener);
         vt.on_liveliness_lost = &cb_liveliness_lost;
         vt.on_offered_deadline_missed = &cb_offered_deadline_missed;
         vt.on_offered_incompatible_qos = &cb_offered_incompatible_qos;
         vt.on_publication_matched = &cb_publication_matched;
-        zerodds_dw_set_listener(dw.native_handle(), &vt, status_mask);
+        return vt;
     }
 
-private:
-    static DataWriterListener<T>* unwrap(void* user_data) {
-        return static_cast<DataWriterListener<T>*>(user_data);
-    }
-    static void cb_liveliness_lost(void* ud, zerodds_ZeroDdsDataWriter*) {
-        if (auto l = unwrap(ud)) {
-            DataWriter<T> dummy;
-            ::dds::core::status::LivelinessLostStatus s;
-            l->on_liveliness_lost(dummy, s);
+    // The C API hands the callback the raw writer; it is rebuilt as the
+    // writer it names, with the status the writer holds (DDS 1.2 §7.1.2.4.4).
+    static void cb_liveliness_lost(void* ud, zerodds_ZeroDdsDataWriter* raw) {
+        if (DataWriterListener<T>* l = static_cast<DataWriterListener<T>*>(ud)) {
+            DataWriter<T> w = ::dds::core::detail::borrow<DataWriter<T> >(raw);
+            l->on_liveliness_lost(w, liveliness_lost_status_of(raw));
         }
     }
-    static void cb_offered_deadline_missed(void* ud, zerodds_ZeroDdsDataWriter*) {
-        if (auto l = unwrap(ud)) {
-            DataWriter<T> dummy;
-            ::dds::core::status::OfferedDeadlineMissedStatus s;
-            l->on_offered_deadline_missed(dummy, s);
+    static void cb_offered_deadline_missed(void* ud, zerodds_ZeroDdsDataWriter* raw) {
+        if (DataWriterListener<T>* l = static_cast<DataWriterListener<T>*>(ud)) {
+            DataWriter<T> w = ::dds::core::detail::borrow<DataWriter<T> >(raw);
+            l->on_offered_deadline_missed(w, offered_deadline_missed_status_of(raw));
         }
     }
-    static void cb_offered_incompatible_qos(void* ud, zerodds_ZeroDdsDataWriter*) {
-        if (auto l = unwrap(ud)) {
-            DataWriter<T> dummy;
-            ::dds::core::status::OfferedIncompatibleQosStatus s;
-            l->on_offered_incompatible_qos(dummy, s);
+    static void cb_offered_incompatible_qos(void* ud, zerodds_ZeroDdsDataWriter* raw) {
+        if (DataWriterListener<T>* l = static_cast<DataWriterListener<T>*>(ud)) {
+            DataWriter<T> w = ::dds::core::detail::borrow<DataWriter<T> >(raw);
+            l->on_offered_incompatible_qos(w, offered_incompatible_qos_status_of(raw));
         }
     }
-    static void cb_publication_matched(void* ud, zerodds_ZeroDdsDataWriter*) {
-        if (auto l = unwrap(ud)) {
-            DataWriter<T> dummy;
-            ::dds::core::status::PublicationMatchedStatus s;
-            l->on_publication_matched(dummy, s);
+    static void cb_publication_matched(void* ud, zerodds_ZeroDdsDataWriter* raw) {
+        if (DataWriterListener<T>* l = static_cast<DataWriterListener<T>*>(ud)) {
+            DataWriter<T> w = ::dds::core::detail::borrow<DataWriter<T> >(raw);
+            l->on_publication_matched(w, publication_matched_status_of(raw));
         }
     }
 };
 
+} // namespace detail
 } // namespace pub
 } // namespace dds
 

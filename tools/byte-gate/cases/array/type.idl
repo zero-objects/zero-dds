@@ -1,0 +1,1 @@
+@final struct Arr { long a[3]; double d[2]; };

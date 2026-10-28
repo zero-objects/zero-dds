@@ -13,7 +13,7 @@
 //!
 //! Layer 5 (Bridges) — substrate crate for all six bridge daemons.
 //!
-//! ## Public API (as of 1.0.0-rc.1)
+//! ## Public API
 //!
 //! - [`Acl`], [`AclEntry`], [`AclOp`] — topic ACL with wildcard and
 //!   group matching (§7.3).
@@ -72,13 +72,13 @@ pub mod ctx;
 pub mod tls;
 
 pub use acl::{Acl, AclEntry, AclOp};
-pub use auth::{AuthError, AuthMode, AuthSubject};
+pub use auth::{AuthError, AuthMode, AuthSubject, JWT_CLOCK_LEEWAY_SECS, jwt_public_key_from_pem};
 pub use connection::{
     RotatingTlsConfig, build_client_tls_connector, parse_server_name, serve_tls_handshake,
 };
 pub use ctx::{
-    SecurityConfig, SecurityCtx, SecurityError, authenticate, authorize, build_ctx,
-    extract_mtls_subject,
+    JwtSettings, LiveSecurity, SecurityConfig, SecurityCtx, SecurityError, authenticate, authorize,
+    build_ctx, extract_mtls_subject, mtls_subject_from_der,
 };
 pub use tls::{TlsConfigError, load_server_config};
 

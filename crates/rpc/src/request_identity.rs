@@ -4,16 +4,20 @@
 //! Request-Identity-Propagation (Spec §7.8.2.x).
 //!
 //! The service side and client side can query the identity of a request
-//! via `get_request_identity()`. We provide that via the
-//! [`RequestIdentity`] struct, which is filled by the replier/requester
-//! path.
+//! (§7.8.2.1, §7.8.2.2). We provide that via the [`RequestIdentity`]
+//! struct, which is filled by the replier/requester path.
 //!
 //! # Spec mapping
 //!
-//! * **§7.8.2.1** service-side `get_request_identity()` —
-//!   `current_request_identity` (see the replier module) on the replier side.
-//! * **§7.8.2.2** client-side `get_request_identity()` —
-//!   `RequesterEndpoint` path.
+//! * **§7.8.2.1** service side — [`crate::replier::Replier::receive_requests`]
+//!   hands out each request with its [`RequestIdentity`]
+//!   ([`crate::replier::PendingRequest::identity`]), and
+//!   [`crate::replier::AsyncReplierHandler::on_request`] receives it as an
+//!   argument. [`crate::replier::Replier::send_reply`] and
+//!   [`crate::replier::Replier::send_exception`] answer by it.
+//! * **§7.8.2.2** client side — [`crate::requester::Requester::send_request_async`]
+//!   returns the identity of the request it wrote, with which the reply is
+//!   correlated.
 //! * **§7.8.2.3** propagation via inline QoS
 //!   (`PID_RELATED_SAMPLE_IDENTITY`) — see the `zerodds-rtps` wire path.
 

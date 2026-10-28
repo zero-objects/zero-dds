@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Spread-Analyse fuer matrix_runs_raw.csv (N>=2 runs pro Zelle).
+"""Spread analysis for matrix_runs_raw.csv (N>=2 runs per cell).
 
-Pro (ping, pong, payload) berechnet:
-- N runs, alle p50-Werte
-- spread = (max - min) / median * 100   (% Range relativ zur Mitte)
-- cv = stddev / mean * 100              (% Variationskoeffizient)
+Computed per (ping, pong, payload):
+- N runs, all p50 values
+- spread = (max - min) / median * 100   (% range relative to the middle)
+- cv = stddev / mean * 100              (% coefficient of variation)
 
-Ausgabe-Ranking nach spread, plus Aggregate pro Vendor-Combo.
+Output ranked by spread, plus aggregates per vendor combination.
 
-Aufruf: matrix_spread.py <matrix_runs_raw.csv> [--top N] [--vendor=zerodds]
+Usage: matrix_spread.py <matrix_runs_raw.csv> [--top N] [--vendor=zerodds]
 """
 
 import csv
@@ -19,7 +19,7 @@ from pathlib import Path
 
 
 def read_runs(csv_path):
-    """Liest matrix_runs_raw.csv → {(ping, pong, payload): [p50_us, ...]}."""
+    """Reads matrix_runs_raw.csv → {(ping, pong, payload): [p50_us, ...]}."""
     by_cell = defaultdict(list)
     with open(csv_path, newline="") as f:
         reader = csv.DictReader(f)
@@ -69,7 +69,7 @@ def main(argv):
         print("no data")
         sys.exit(1)
 
-    # Filter cells with N>=2 (sonst kein spread)
+    # Filter cells with N>=2 (otherwise no spread)
     rows = []
     for (ping, pong, payload), p50s in by_cell.items():
         if vendor_filter and ping != vendor_filter and pong != vendor_filter:
@@ -83,10 +83,10 @@ def main(argv):
         print("no cells with N>=2")
         sys.exit(1)
 
-    # Aggregate-Stats ueber alle qualifizierten Cells
+    # Aggregate stats over all qualified cells
     all_spreads = [r[7] for r in rows]
     all_cvs = [r[8] for r in rows]
-    print(f"=== Aggregate ueber {len(rows)} Cells (N>=2 runs) ===")
+    print(f"=== Aggregate over {len(rows)} cells (N>=2 runs) ===")
     print(f"Spread (max-min)/median in %:")
     print(f"  median: {statistics.median(all_spreads):5.2f}")
     print(f"  mean:   {statistics.mean(all_spreads):5.2f}")
@@ -99,8 +99,8 @@ def main(argv):
     print(f"  max:    {max(all_cvs):5.2f}")
     print()
 
-    # Per-Vendor (als ping)
-    print("=== Spread pro Vendor (als ping) ===")
+    # Per-vendor (as ping)
+    print("=== Spread per vendor (as ping) ===")
     by_ping = defaultdict(list)
     for r in rows:
         by_ping[r[0]].append(r[7])
@@ -112,8 +112,8 @@ def main(argv):
         print(f"{v:<10} | {len(sp):>5} | {statistics.median(sp):>7.2f} | {statistics.mean(sp):>7.2f} | {p90:>7.2f} | {max(sp):>7.2f}")
     print()
 
-    # Per-Vendor (als pong)
-    print("=== Spread pro Vendor (als pong) ===")
+    # Per-vendor (as pong)
+    print("=== Spread per vendor (as pong) ===")
     by_pong = defaultdict(list)
     for r in rows:
         by_pong[r[1]].append(r[7])
@@ -125,8 +125,8 @@ def main(argv):
         print(f"{v:<10} | {len(sp):>5} | {statistics.median(sp):>7.2f} | {statistics.mean(sp):>7.2f} | {p90:>7.2f} | {max(sp):>7.2f}")
     print()
 
-    # Worst Cells (groesster Spread)
-    print(f"=== Top {top} Worst-Spread-Cells ===")
+    # Worst cells (largest spread)
+    print(f"=== Top {top} worst-spread cells ===")
     rows_by_spread = sorted(rows, key=lambda r: -r[7])
     print(f"{'ping':<8} → {'pong':<8} | {'payload':>5} | {'N':>2} | {'med':>6} | {'min':>6} | {'max':>6} | {'spr %':>5} | {'cv %':>5}")
     print("-" * 80)
@@ -134,8 +134,8 @@ def main(argv):
         print(f"{ping:<8} → {pong:<8} | {payload:>5} | {n:>2} | {med:>6.2f} | {mn:>6.2f} | {mx:>6.2f} | {sp:>5.2f} | {cv:>5.2f}")
     print()
 
-    # Best Cells (kleinster Spread)
-    print(f"=== Top {top} Best-Spread-Cells ===")
+    # Best cells (smallest spread)
+    print(f"=== Top {top} best-spread cells ===")
     print(f"{'ping':<8} → {'pong':<8} | {'payload':>5} | {'N':>2} | {'med':>6} | {'min':>6} | {'max':>6} | {'spr %':>5} | {'cv %':>5}")
     print("-" * 80)
     for ping, pong, payload, n, med, mn, mx, sp, cv in rows_by_spread[-top:][::-1]:

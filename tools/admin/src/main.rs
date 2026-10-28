@@ -17,7 +17,7 @@
 //! The `domain` / `discovery` groups join the domain over RTPS; the `config` /
 //! `qos` groups are fully offline. Every data-bearing command accepts `--json`.
 
-#![allow(clippy::print_stdout, clippy::print_stderr)] // CLI-Tool: stdout/stderr sind die Ausgabe.
+#![allow(clippy::print_stdout, clippy::print_stderr)] // CLI tool: stdout/stderr are the output.
 
 use std::collections::BTreeMap;
 use std::process::ExitCode;
@@ -29,7 +29,9 @@ use zerodds_cli_common::{install_signal_handler, stable_prefix};
 use zerodds_dcps::runtime::{DcpsRuntime, DiscoveredEndpointInfo, RuntimeConfig};
 use zerodds_qos::{ReaderQos, WriterQos, check_compatibility};
 use zerodds_xml::{
-    QosProfileRegistry, XmlError, parse_domain_libraries, parse_domain_participant_libraries,
+    Diagnostic, DiagnosticKind, DomainLibrary, DomainParticipantLibrary, QosLibrary,
+    QosProfileRegistry, ReadOptions, UnknownElements, VendorForms, XmlError, parse_dds_xml_with,
+    parse_domain_libraries_with, parse_domain_participant_libraries_with, parse_qos_libraries_with,
     parser::parse_xml_tree,
 };
 
@@ -54,6 +56,15 @@ OFFLINE (DDS-XML, no network):
 
 OPTIONS:
     --json                     Machine-readable output (data-bearing commands)
+    --skip-unknown             Offline commands: leave out what the DDS-XML schemas do not
+                               define (an RTI file's own elements and attributes) and list
+                               each omission with its path on stderr. Without it the first
+                               such element is an error.
+    --vendor-forms             Offline commands: read the forms other DDS products write
+                               (`<topic_filter>` as element, `qos_profile_ref`, `<participant_qos>`,
+                               IDL type names, ...) and list each with its path on stderr.
+                               Without it the first such form is an error that names the
+                               form DDS-XML 1.0 uses.
     --timeout-ms <T>           Live-probe observation window (default 2000)
     -h, --help                 Show this usage
 
@@ -62,19 +73,36 @@ EXIT CODES:
 
 fn main() -> ExitCode {
     let raw: Vec<String> = std::env::args().skip(1).collect();
+    if raw.iter().any(|a| a == "--version" || a == "-V") {
+        println!("zerodds-admin {}", env!("CARGO_PKG_VERSION"));
+        return ExitCode::SUCCESS;
+    }
     if raw.iter().any(|a| a == "-h" || a == "--help") || raw.is_empty() {
-        println!("{USAGE}");
+        println!("{USAGE}\n\n{}", zerodds_dcps::cli::HELP);
         return ExitCode::SUCCESS;
     }
 
+    let configured = match zerodds_dcps::cli::Configured::from_args(raw) {
+        Ok(c) => c,
+        Err(e) => return bad(&format!("configuration: {e}")),
+    };
+    if let Some(code) = configured.check_config() {
+        return code;
+    }
+    let config = &configured.runtime;
+    let raw = &configured.args;
+
     // Split flags from positionals.
     let mut json = false;
+    let mut options = ReadOptions::default();
     let mut timeout_ms = DEFAULT_PROBE_MS;
     let mut pos: Vec<String> = Vec::new();
     let mut i = 0;
     while i < raw.len() {
         match raw[i].as_str() {
             "--json" => json = true,
+            "--skip-unknown" => options.unknown = UnknownElements::ReportAndSkip,
+            "--vendor-forms" => options.vendor_forms = VendorForms::Accept,
             "--timeout-ms" => {
                 i += 1;
                 match raw.get(i).and_then(|v| v.parse().ok()) {
@@ -94,30 +122,42 @@ fn main() -> ExitCode {
 
     match (group, verb) {
         ("domain", "inspect") => match arg {
-            Some(a) => cmd_domain_inspect(a, timeout_ms, json),
+            Some(a) => cmd_domain_inspect(a, timeout_ms, json, config),
             None => bad("`domain inspect` needs a <domain-id>"),
         },
         ("discovery", "snapshot") => match arg {
-            Some(a) => cmd_discovery_snapshot(a, timeout_ms, json),
+            Some(a) => cmd_discovery_snapshot(a, timeout_ms, json, config),
             None => bad("`discovery snapshot` needs a <domain-id>"),
         },
-        ("config", "inspect") => {
-            offline(arg, "config inspect", |xml| cmd_config_inspect(xml, json))
-        }
-        ("qos", "validate") => offline(arg, "qos validate", cmd_qos_validate),
-        ("qos", "check") => offline(arg, "qos check", |xml| cmd_qos_check(xml, json)),
+        ("config", "inspect") => offline(arg, "config inspect", &options, |xml, opts, d| {
+            cmd_config_inspect(xml, json, opts, d)
+        }),
+        ("qos", "validate") => offline(arg, "qos validate", &options, cmd_qos_validate),
+        ("qos", "check") => offline(arg, "qos check", &options, |xml, opts, d| {
+            cmd_qos_check(xml, json, opts, d)
+        }),
         _ => bad(&format!("unknown command `{group} {verb}`")),
     }
 }
 
 fn bad(msg: &str) -> ExitCode {
-    eprintln!("zerodds-admin: {msg}\n\n{USAGE}");
+    eprintln!(
+        "zerodds-admin: {msg}\n\n{USAGE}\n\n{}",
+        zerodds_dcps::cli::HELP
+    );
     ExitCode::from(2)
 }
 
 /// Driver for offline `<file.xml>` commands. The closure returns the process
-/// exit code (0 ok, 1 validation failure).
-fn offline(arg: Option<&str>, cmd: &str, f: impl Fn(&str) -> Result<u8, XmlError>) -> ExitCode {
+/// exit code (0 ok, 1 validation failure) and collects what the reading left
+/// out ([`ReadOptions`]); each omission is listed on stderr, so stdout stays
+/// the command's own output.
+fn offline(
+    arg: Option<&str>,
+    cmd: &str,
+    options: &ReadOptions,
+    f: impl Fn(&str, &ReadOptions, &mut Vec<Diagnostic>) -> Result<u8, XmlError>,
+) -> ExitCode {
     let Some(path) = arg else {
         return bad(&format!("`{cmd}` needs a <file.xml> argument"));
     };
@@ -128,13 +168,83 @@ fn offline(arg: Option<&str>, cmd: &str, f: impl Fn(&str) -> Result<u8, XmlError
             return ExitCode::FAILURE;
         }
     };
-    match f(&xml) {
+    let mut diagnostics = Vec::new();
+    let result = f(&xml, options, &mut diagnostics);
+    let mut left_out = 0usize;
+    let mut vendor = 0usize;
+    for d in &diagnostics {
+        if d.kind == DiagnosticKind::VendorForm {
+            vendor += 1;
+            eprintln!("zerodds-admin: {path}: vendor form {d}");
+        } else {
+            left_out += 1;
+            eprintln!("zerodds-admin: {path}: skipped {d}");
+        }
+    }
+    if left_out > 0 {
+        eprintln!("zerodds-admin: {path}: {left_out} element(s) or attribute(s) left out");
+    }
+    if vendor > 0 {
+        eprintln!("zerodds-admin: {path}: {vendor} vendor form(s) read as given");
+    }
+    match result {
         Ok(code) => ExitCode::from(code),
         Err(e) => {
             eprintln!("zerodds-admin: {cmd}: {e}");
             ExitCode::FAILURE
         }
     }
+}
+
+/// What the offline commands work on: the QoS, domain and participant
+/// libraries of a document.
+#[derive(Default)]
+struct Loaded {
+    qos: Vec<QosLibrary>,
+    domains: Vec<DomainLibrary>,
+    participants: Vec<DomainParticipantLibrary>,
+}
+
+/// Reads the libraries of `xml`. A `<dds>` root is read as a whole (also its
+/// `<types>` and application libraries, and a child that is no library is
+/// an unknown element); a bare library root is read as that library.
+fn load(
+    xml: &str,
+    options: &ReadOptions,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Result<Loaded, XmlError> {
+    let root = parse_xml_tree(xml)?.root.name;
+    let mut loaded = Loaded::default();
+    match root.as_str() {
+        "dds" => {
+            let parsed = parse_dds_xml_with(xml, options)?;
+            diagnostics.extend(parsed.diagnostics);
+            loaded.qos = parsed.value.qos_libraries;
+            loaded.domains = parsed.value.domain_libraries;
+            loaded.participants = parsed.value.participant_libraries;
+        }
+        "qos_library" => {
+            let parsed = parse_qos_libraries_with(xml, options)?;
+            diagnostics.extend(parsed.diagnostics);
+            loaded.qos = parsed.value;
+        }
+        "domain_library" => {
+            let parsed = parse_domain_libraries_with(xml, options)?;
+            diagnostics.extend(parsed.diagnostics);
+            loaded.domains = parsed.value;
+        }
+        "domain_participant_library" => {
+            let parsed = parse_domain_participant_libraries_with(xml, options)?;
+            diagnostics.extend(parsed.diagnostics);
+            loaded.participants = parsed.value;
+        }
+        other => {
+            return Err(XmlError::InvalidXml(format!(
+                "expected <dds> or a library as root, got <{other}>"
+            )));
+        }
+    }
+    Ok(loaded)
 }
 
 // ============================================================================
@@ -146,6 +256,7 @@ fn offline(arg: Option<&str>, cmd: &str, f: impl Fn(&str) -> Result<u8, XmlError
 fn with_probe(
     domain_arg: &str,
     timeout_ms: u64,
+    config: &RuntimeConfig,
     f: impl FnOnce(&DcpsRuntime) -> ExitCode,
 ) -> ExitCode {
     let domain: i32 = match domain_arg.parse() {
@@ -153,7 +264,7 @@ fn with_probe(
         Err(_) => return bad(&format!("invalid domain-id `{domain_arg}`")),
     };
     let prefix = stable_prefix(MARKER_ADMIN);
-    let runtime = match DcpsRuntime::start(domain, prefix, RuntimeConfig::default()) {
+    let runtime = match DcpsRuntime::start(domain, prefix, config.clone()) {
         Ok(r) => r,
         Err(e) => {
             eprintln!("zerodds-admin: DcpsRuntime::start failed: {e:?}");
@@ -168,6 +279,9 @@ fn with_probe(
         std::thread::sleep(Duration::from_millis(100));
     }
     let code = f(&runtime);
+    // The worker threads hold the runtime: a drop alone neither stops it
+    // nor announces the departure nor closes the same-host channels.
+    runtime.shutdown();
     drop(runtime);
     code
 }
@@ -177,8 +291,13 @@ fn hex_prefix(b: &[u8]) -> String {
 }
 
 /// `domain inspect <id>` — live participants grouped with their endpoints.
-fn cmd_domain_inspect(domain_arg: &str, timeout_ms: u64, json: bool) -> ExitCode {
-    with_probe(domain_arg, timeout_ms, |rt| {
+fn cmd_domain_inspect(
+    domain_arg: &str,
+    timeout_ms: u64,
+    json: bool,
+    config: &RuntimeConfig,
+) -> ExitCode {
+    with_probe(domain_arg, timeout_ms, config, |rt| {
         let participants = rt.discovered_participants();
         let pubs = rt.discovered_publication_endpoints();
         let subs = rt.discovered_subscription_endpoints();
@@ -272,8 +391,13 @@ fn print_eps_json(eps: &[&DiscoveredEndpointInfo]) {
 }
 
 /// `discovery snapshot <id>` — raw SPDP/SEDP participant list + counts.
-fn cmd_discovery_snapshot(domain_arg: &str, timeout_ms: u64, json: bool) -> ExitCode {
-    with_probe(domain_arg, timeout_ms, |rt| {
+fn cmd_discovery_snapshot(
+    domain_arg: &str,
+    timeout_ms: u64,
+    json: bool,
+    config: &RuntimeConfig,
+) -> ExitCode {
+    with_probe(domain_arg, timeout_ms, config, |rt| {
         let participants = rt.discovered_participants();
         let pubs = rt.discovered_publications_count();
         let subs = rt.discovered_subscriptions_count();
@@ -313,25 +437,48 @@ fn cmd_discovery_snapshot(domain_arg: &str, timeout_ms: u64, json: bool) -> Exit
 
 struct Part {
     name: String,
+    /// How this participant named its domain, verbatim: a `domain_ref`,
+    /// a literal `domain_id`, or neither. §7.3.5.4.2 allows all three,
+    /// so the column reports which one the document used rather than
+    /// inventing a reference the document does not contain.
     domain_ref: String,
     writers: Vec<(String, String)>, // (writer/reader name, topic)
     readers: Vec<(String, String)>,
 }
 
-fn cmd_config_inspect(xml: &str, json: bool) -> Result<u8, XmlError> {
+fn cmd_config_inspect(
+    xml: &str,
+    json: bool,
+    options: &ReadOptions,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Result<u8, XmlError> {
+    let loaded = load(xml, options, diagnostics)?;
     let mut by_ref: BTreeMap<String, u32> = BTreeMap::new();
-    for lib in &parse_domain_libraries(xml)? {
+    for lib in &loaded.domains {
         for d in &lib.domains {
-            by_ref.insert(format!("{}::{}", lib.name, d.name), d.domain_id);
-            by_ref.entry(d.name.clone()).or_insert(d.domain_id);
+            // §7.3.4.4.2: `domain_id` is optional and may come from the
+            // `base_name` chain, so the id is the effective one and not
+            // the local attribute. A domain that ends the chain without
+            // an id has none, and a participant pointing at it stays
+            // unresolved rather than being filed under domain 0.
+            let Some(id) = lib.effective_domain_id(d)? else {
+                continue;
+            };
+            by_ref.insert(format!("{}::{}", lib.name, d.name), id);
+            by_ref.entry(d.name.clone()).or_insert(id);
         }
     }
 
     // domain_id (None = unresolved) -> participant rows.
     let mut groups: BTreeMap<Option<u32>, Vec<Part>> = BTreeMap::new();
-    for lib in &parse_domain_participant_libraries(xml)? {
+    for lib in &loaded.participants {
         for p in &lib.participants {
-            let id = by_ref.get(&p.domain_ref).copied();
+            // §7.3.5.4.2: a participant names its domain numerically or
+            // by reference. The literal id wins where both are present —
+            // it needs no lookup and cannot fail to resolve.
+            let id = p
+                .domain_id
+                .or_else(|| p.domain_ref.as_ref().and_then(|r| by_ref.get(r).copied()));
             let writers = p
                 .publishers
                 .iter()
@@ -346,7 +493,11 @@ fn cmd_config_inspect(xml: &str, json: bool) -> Result<u8, XmlError> {
                 .collect();
             groups.entry(id).or_default().push(Part {
                 name: format!("{}::{}", lib.name, p.name),
-                domain_ref: p.domain_ref.clone(),
+                domain_ref: match (&p.domain_ref, p.domain_id) {
+                    (Some(r), _) => r.clone(),
+                    (None, Some(n)) => format!("domain_id {n}"),
+                    (None, None) => "(none)".to_string(),
+                },
                 writers,
                 readers,
             });
@@ -417,18 +568,23 @@ fn print_pairs_json(pairs: &[(String, String)]) {
 // qos validate — DDS-XML well-formedness + library parse (offline)
 // ============================================================================
 
-fn cmd_qos_validate(xml: &str) -> Result<u8, XmlError> {
-    parse_xml_tree(xml)?;
-    let domains = parse_domain_libraries(xml)?;
-    let parts = parse_domain_participant_libraries(xml)?;
-    let registry = QosProfileRegistry::from_xml(xml)?;
-    let n_domains: usize = domains.iter().map(|l| l.domains.len()).sum();
-    let n_parts: usize = parts.iter().map(|l| l.participants.len()).sum();
+fn cmd_qos_validate(
+    xml: &str,
+    options: &ReadOptions,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Result<u8, XmlError> {
+    let loaded = load(xml, options, diagnostics)?;
+    let n_domains: usize = loaded.domains.iter().map(|l| l.domains.len()).sum();
+    let n_parts: usize = loaded
+        .participants
+        .iter()
+        .map(|l| l.participants.len())
+        .sum();
     println!(
         "valid: {} qos-lib, {} domain-lib ({n_domains} domains), {} participant-lib ({n_parts} participants)",
-        registry.library_count(),
-        domains.len(),
-        parts.len(),
+        loaded.qos.len(),
+        loaded.domains.len(),
+        loaded.participants.len(),
     );
     Ok(0)
 }
@@ -444,17 +600,23 @@ struct Mismatch {
     reasons: String,
 }
 
-fn cmd_qos_check(xml: &str, json: bool) -> Result<u8, XmlError> {
-    let registry = QosProfileRegistry::from_xml(xml)?;
+fn cmd_qos_check(
+    xml: &str,
+    json: bool,
+    options: &ReadOptions,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Result<u8, XmlError> {
+    let loaded = load(xml, options, diagnostics)?;
+    let registry = QosProfileRegistry::from_libraries(loaded.qos);
     let mut writers: BTreeMap<String, Vec<(String, WriterQos)>> = BTreeMap::new();
     let mut readers: BTreeMap<String, Vec<(String, ReaderQos)>> = BTreeMap::new();
 
-    for lib in &parse_domain_participant_libraries(xml)? {
+    for lib in &loaded.participants {
         for p in &lib.participants {
             for pubr in &p.publishers {
                 for w in &pubr.data_writers {
                     let q = match (&w.qos, &w.qos_profile_ref) {
-                        (Some(q), _) => q.into_writer_qos(),
+                        (Some(q), _) => registry.writer_qos_for_inline(q, &w.topic_ref)?,
                         (None, Some(r)) => registry.writer_qos(r)?,
                         (None, None) => WriterQos::default(),
                     };
@@ -468,7 +630,7 @@ fn cmd_qos_check(xml: &str, json: bool) -> Result<u8, XmlError> {
             for subr in &p.subscribers {
                 for r in &subr.data_readers {
                     let q = match (&r.qos, &r.qos_profile_ref) {
-                        (Some(q), _) => q.into_reader_qos(),
+                        (Some(q), _) => registry.reader_qos_for_inline(q, &r.topic_ref)?,
                         (None, Some(pref)) => registry.reader_qos(pref)?,
                         (None, None) => ReaderQos::default(),
                     };
@@ -566,18 +728,30 @@ fn json_str(s: &str) -> String {
 mod tests {
     use super::*;
 
+    fn check(xml: &str, json: bool) -> Result<u8, XmlError> {
+        cmd_qos_check(xml, json, &ReadOptions::default(), &mut Vec::new())
+    }
+
+    fn validate(xml: &str) -> Result<u8, XmlError> {
+        cmd_qos_validate(xml, &ReadOptions::default(), &mut Vec::new())
+    }
+
+    fn inspect(xml: &str, json: bool) -> Result<u8, XmlError> {
+        cmd_config_inspect(xml, json, &ReadOptions::default(), &mut Vec::new())
+    }
+
     // Writer BestEffort vs Reader Reliable -> incompatible (Reliability).
     const QOS_BAD: &str = r#"<dds>
         <domain_participant_library name="DPL">
             <domain_participant name="P" domain_ref="d">
                 <publisher name="Pub">
                     <data_writer name="W" topic_ref="T">
-                        <datawriter_qos><reliability><kind>BEST_EFFORT</kind></reliability></datawriter_qos>
+                        <datawriter_qos><reliability><kind>BEST_EFFORT_RELIABILITY_QOS</kind></reliability></datawriter_qos>
                     </data_writer>
                 </publisher>
                 <subscriber name="Sub">
                     <data_reader name="R" topic_ref="T">
-                        <datareader_qos><reliability><kind>RELIABLE</kind></reliability></datareader_qos>
+                        <datareader_qos><reliability><kind>RELIABLE_RELIABILITY_QOS</kind></reliability></datareader_qos>
                     </data_reader>
                 </subscriber>
             </domain_participant>
@@ -606,33 +780,138 @@ mod tests {
 
     #[test]
     fn qos_check_flags_incompatible_reliability() {
-        assert_eq!(cmd_qos_check(QOS_BAD, false).ok(), Some(1u8));
+        assert_eq!(check(QOS_BAD, false).ok(), Some(1u8));
+    }
+
+    /// §7.3.5.4.4: an inline `<datawriter_qos base_name=…>` inherits the
+    /// named profile. Without it the writer would be the Reliable default
+    /// and compatible with the Reliable reader.
+    #[test]
+    fn qos_check_follows_inline_base_name() {
+        let xml = r#"<dds>
+            <qos_library name="L">
+                <qos_profile name="BestEffort">
+                    <datawriter_qos><reliability><kind>BEST_EFFORT_RELIABILITY_QOS</kind></reliability></datawriter_qos>
+                </qos_profile>
+            </qos_library>
+            <domain_participant_library name="DPL">
+                <domain_participant name="P" domain_ref="d">
+                    <publisher name="Pub">
+                        <data_writer name="W" topic_ref="T">
+                            <datawriter_qos base_name="L::BestEffort"/>
+                        </data_writer>
+                    </publisher>
+                    <subscriber name="Sub">
+                        <data_reader name="R" topic_ref="T">
+                            <datareader_qos><reliability><kind>RELIABLE_RELIABILITY_QOS</kind></reliability></datareader_qos>
+                        </data_reader>
+                    </subscriber>
+                </domain_participant>
+            </domain_participant_library>
+        </dds>"#;
+        assert_eq!(check(xml, false).ok(), Some(1u8));
     }
 
     #[test]
     fn qos_check_passes_compatible_defaults() {
-        assert_eq!(cmd_qos_check(QOS_OK, false).ok(), Some(0u8));
-        assert_eq!(cmd_qos_check(QOS_OK, true).ok(), Some(0u8));
+        assert_eq!(check(QOS_OK, false).ok(), Some(0u8));
+        assert_eq!(check(QOS_OK, true).ok(), Some(0u8));
     }
 
     #[test]
     fn qos_validate_accepts_well_formed() {
-        assert_eq!(cmd_qos_validate(DEPLOY).ok(), Some(0u8));
+        assert_eq!(validate(DEPLOY).ok(), Some(0u8));
     }
 
     #[test]
     fn qos_validate_rejects_malformed() {
-        assert!(cmd_qos_validate("<dds><domain_participant_library></dds>").is_err());
+        assert!(validate("<dds><domain_participant_library></dds>").is_err());
     }
 
     #[test]
     fn config_inspect_groups_by_domain_id() {
-        assert_eq!(cmd_config_inspect(DEPLOY, false).ok(), Some(0u8));
-        assert_eq!(cmd_config_inspect(DEPLOY, true).ok(), Some(0u8));
+        assert_eq!(inspect(DEPLOY, false).ok(), Some(0u8));
+        assert_eq!(inspect(DEPLOY, true).ok(), Some(0u8));
     }
 
     #[test]
     fn json_escapes_quotes() {
         assert_eq!(json_str("a\"b"), "\"a\\\"b\"");
+    }
+
+    /// Forms other products write are refused with the specification's
+    /// form, or read with `--vendor-forms` and listed.
+    #[test]
+    fn vendor_forms_are_refused_or_listed() {
+        let xml = r#"<dds><qos_library name="L"><qos_profile name="P">
+            <topic_filter>A*</topic_filter><participant_qos/>
+        </qos_profile></qos_library></dds>"#;
+        let err = validate(xml)
+            .err()
+            .map(|e| e.to_string())
+            .unwrap_or_default();
+        assert!(
+            err.contains("topic_filter") && err.contains("writes"),
+            "{err}"
+        );
+        let mut diagnostics = Vec::new();
+        let options = ReadOptions::accept_vendor_forms();
+        assert_eq!(
+            cmd_qos_validate(xml, &options, &mut diagnostics).ok(),
+            Some(0u8)
+        );
+        assert_eq!(diagnostics.len(), 2);
+        assert!(
+            diagnostics
+                .iter()
+                .all(|d| d.kind == DiagnosticKind::VendorForm)
+        );
+    }
+
+    /// A file with elements of another tool (RTI's `<publish_mode>`, an
+    /// `is_default_qos` attribute) is refused by name, or read with
+    /// `--skip-unknown`, which lists each omission with its path.
+    #[test]
+    fn unknown_elements_are_refused_or_listed() {
+        let rti = r#"<dds>
+            <qos_library name="L">
+                <qos_profile name="P" is_default_qos="true">
+                    <datawriter_qos>
+                        <reliability><kind>RELIABLE_RELIABILITY_QOS</kind></reliability>
+                        <publish_mode><kind>ASYNCHRONOUS_PUBLISH_MODE_QOS</kind></publish_mode>
+                    </datawriter_qos>
+                </qos_profile>
+            </qos_library>
+        </dds>"#;
+        let err = validate(rti)
+            .err()
+            .map(|e| e.to_string())
+            .unwrap_or_default();
+        assert!(err.contains("is_default_qos"), "{err}");
+
+        let mut diagnostics = Vec::new();
+        let code = cmd_qos_validate(rti, &ReadOptions::report_and_skip(), &mut diagnostics);
+        assert_eq!(code.ok(), Some(0u8));
+        let paths: Vec<&str> = diagnostics.iter().map(|d| d.path.as_str()).collect();
+        assert_eq!(
+            paths,
+            [
+                "dds/qos_library[L]/qos_profile[P]@is_default_qos",
+                "dds/qos_library[L]/qos_profile[P]/datawriter_qos/publish_mode",
+            ]
+        );
+        // `qos check` works on the same file when told to skip.
+        let mut diagnostics = Vec::new();
+        assert_eq!(
+            cmd_qos_check(
+                rti,
+                false,
+                &ReadOptions::report_and_skip(),
+                &mut diagnostics
+            )
+            .ok(),
+            Some(0u8)
+        );
+        assert_eq!(diagnostics.len(), 2);
     }
 }

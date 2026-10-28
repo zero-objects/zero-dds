@@ -1,18 +1,30 @@
-# `zerodds-mqtt-bridge` v1.0 — Open + Partial Items
+# zerodds-mqtt-bridge-1.0 — offene Punkte
 
-Aggregat aus `zerodds-mqtt-bridge-1.0.md`. Nicht von Hand pflegen — vor jedem
-Audit-Lauf löschen und aus dem Hauptfile neu generieren.
+Aggregat aus `zerodds-mqtt-bridge-1.0.md`, erzeugt von `website/_tools/gen_open_items.py`.
+Kein eigener Inhalt: jedes Item steht dort mit seinem Beleg.
 
-## Open
+---
 
-— keine. Alle vormals offenen Items im RC1-Cluster-A/B/C-Closeout
-2026-05-07 geschlossen.
+## §8.1 Strukturiertes JSON-Logging
 
-## Partial
+**Status:** `open` — `crates/mqtt-bridge/src/daemon/cli.rs::tests` prüft die Flag-Zerlegung, aber kein Test prüft die JSON-Log-Form oder die Wirkung von `--log-level`.
 
-— keine. Alle vormals partial-Items im RC1-Cluster-A/B/C-Closeout
-2026-05-07 nach `done` migriert.
+## §8.3 OTLP-Spans
 
-## Decision-Records (`n/a (rejected)`)
+**Status:** `partial` — die Konfiguration ist geprüft, der Span-Emit nicht; der fehlende Teil wird als §8.3a `open` geführt.
 
-— keine.
+## §8.3a PUBLISH-Roundtrip-Span
+
+**Status:** `open` — der Emit-Teil von §8.3.
+
+## §10 RTPS-Peer + Mosquitto/EMQX/HiveMQ
+
+**Status:** `partial` — Mosquitto ist gemessen, EMQX und HiveMQ nicht; der fehlende Teil wird als §10a `open` geführt.
+
+## §10a Broker-Matrix EMQX/HiveMQ
+
+**Status:** `open` — der Teil von §10 und §12.3 jenseits Mosquitto. `crates/mqtt-bridge/tests/cross_vendor.rs` kennt nur Mosquitto.
+
+## §12.3 Multi-Vendor cross_vendor.rs
+
+**Status:** `partial` — Mosquitto und die DDS-Seite sind geprüft, die restliche Broker-Matrix nicht.

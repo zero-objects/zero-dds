@@ -70,12 +70,14 @@ Subscribe-direction is symmetric.
 
 ## Generated stubs
 
-`zerodds-idlc Robot.idl --ts -o src/gen` produces TypeScript types
-that work for **both** the Node and WASM environments — same
-source, different runtime. The generated `*.cdr.encode()` /
-`*.cdr.decode()` use `@zerodds/wasm` under the hood when
-available, falling back to a pure-TS encoder otherwise (slower but
-no WASM init step).
+`zerodds-idlc generate --lang typescript --out src/gen Robot.idl` writes
+`src/gen/Robot.ts`: per type an interface in the IDL module's namespace
+(`Robot.Pose`), a constructor (`Robot.newPose()`), a type guard, a
+descriptor (`Robot.PoseType`, registered through `registerType`) and the
+codec functions `zd_enc_Robot_Pose(w, v)` / `zd_dec_Robot_Pose(r, tc)`.
+The codec is TypeScript over `Writer`/`Reader` from `@zerodds/wire`
+(`runtime/typescript`); it does not call `@zerodds/wasm`, so the same file
+runs in Node and in the browser.
 
 ## Without npm — `<script>` tag
 

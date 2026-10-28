@@ -1,0 +1,7 @@
+module probe {
+    interface Special {
+        void in_v(in CORBA::TypeCode v);
+        void out_v(out CORBA::TypeCode v);
+        CORBA::TypeCode ret_v();
+    };
+};

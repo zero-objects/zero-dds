@@ -17,7 +17,7 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use zerodds_cdr::Endianness;
+use zerodds_wire::Endianness;
 
 use crate::error::{IorError, IorResult};
 use crate::ior::Ior;

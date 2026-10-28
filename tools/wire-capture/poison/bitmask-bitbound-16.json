@@ -1,0 +1,11 @@
+{
+  "set_low": [
+    "LOWEST",
+    "SECOND"
+  ],
+  "set_high": [
+    "HIGHEST"
+  ],
+  "empty": [],
+  "tail": 170
+}

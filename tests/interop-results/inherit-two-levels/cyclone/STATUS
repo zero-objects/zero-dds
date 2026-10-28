@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of inherit-two-levels that cyclone produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	Inheriting from appendable structs is unsafe
+plain-cdr1	be	refused	Inheriting from appendable structs is unsafe
+pl-cdr1	le	refused	Inheriting from appendable structs is unsafe
+pl-cdr1	be	refused	Inheriting from appendable structs is unsafe
+plain-cdr2	le	refused	Inheriting from appendable structs is unsafe
+plain-cdr2	be	refused	Inheriting from appendable structs is unsafe
+delimited-cdr	le	refused	Inheriting from appendable structs is unsafe
+delimited-cdr	be	refused	Inheriting from appendable structs is unsafe
+pl-cdr2	le	refused	Inheriting from appendable structs is unsafe
+pl-cdr2	be	refused	Inheriting from appendable structs is unsafe

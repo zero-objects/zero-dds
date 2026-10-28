@@ -1,0 +1,2 @@
+bitset Wide { bitfield<40> lo; bitfield<40> hi; };
+@final struct BitWide { Wide value; octet tail; };

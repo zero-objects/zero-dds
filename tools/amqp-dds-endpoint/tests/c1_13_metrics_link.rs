@@ -7,12 +7,12 @@
 
 //! Annex C C.1.13 — Metrics Link.
 //!
-//! Spec §C.1.13: Receiver-Link auf `$metrics` produziert pro
-//! Mandatory-Metric eine AMQP-Message mit Map-Body
+//! Spec §C.1.13: receiver link on `$metrics` produces one per
+//! mandatory metric an AMQP message with a map body
 //! `{name, value, unit, timestamp}`.
 //!
-//! Wir verifizieren das ohne den vollen Receiver-Wire-Roundtrip
-//! (der ist Daemon-Wiring): wir testen den Producer-Pfad
+//! We verify this without the full receiver wire roundtrip
+//! (that is daemon wiring): we test the producer path
 //! `metrics_snapshot(hub, now_ms)` direkt.
 
 mod common;
@@ -24,7 +24,7 @@ use zerodds_amqp_endpoint::metrics::{MANDATORY_METRIC_NAMES, MetricsHub, names};
 #[test]
 fn c1_13_metrics_snapshot_emits_one_sample_per_mandatory_metric() {
     let hub = MetricsHub::new();
-    // Etwas Traffic erzeugen, sodass Counter > 0 sind.
+    // Generate some traffic so that counters are > 0.
     hub.on_connection_open();
     hub.on_transfer_received();
     hub.on_dropped_loop();
@@ -33,7 +33,7 @@ fn c1_13_metrics_snapshot_emits_one_sample_per_mandatory_metric() {
 
     let samples = metrics_snapshot(&hub, 1_700_000_000_000);
 
-    // Alle 14 Mandatory-Metrics MUESSEN als Sample vorhanden sein.
+    // All 14 mandatory metrics MUST be present as a sample.
     assert_eq!(
         samples.len(),
         MANDATORY_METRIC_NAMES.len(),
@@ -42,7 +42,7 @@ fn c1_13_metrics_snapshot_emits_one_sample_per_mandatory_metric() {
         samples.len()
     );
 
-    // Jedes Sample MUSS Spec-konformes Map-Body-Format haben:
+    // Every sample MUST have a spec-conformant map body format:
     // {name, value, unit, timestamp}.
     let mut found_names = std::collections::HashSet::new();
     for sample in &samples {
@@ -63,7 +63,7 @@ fn c1_13_metrics_snapshot_emits_one_sample_per_mandatory_metric() {
                 "missing key '{required}' in sample"
             );
         }
-        // Name extrahieren und sammeln.
+        // Extract and collect the name.
         let name_value = entries
             .iter()
             .find(|(k, _)| matches!(k, AmqpExtValue::Str(s) if s == "name"))
@@ -105,7 +105,7 @@ fn c1_13_metrics_carry_traffic_counter_values() {
 fn c1_13_metrics_units_are_spec_symbols() {
     let hub = MetricsHub::new();
     let samples = metrics_snapshot(&hub, 0);
-    // transfers.rate hat Unit `per-second`, alle anderen `count`.
+    // transfers.rate has unit `per-second`, all others `count`.
     for sample in samples {
         let entries = match sample {
             AmqpExtValue::Map(v) => v,

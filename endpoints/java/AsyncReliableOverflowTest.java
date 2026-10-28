@@ -86,7 +86,7 @@ public final class AsyncReliableOverflowTest {
         peerThread.start();
 
         AsyncReliableWriter w = new AsyncReliableWriter(
-                InetAddress.getLoopbackAddress(), peerPort, drainDeadlineMs);
+                InetAddress.getLoopbackAddress(), peerPort, 0x0015, drainDeadlineMs);
         w.start();
 
         // Burst 1 at t0.

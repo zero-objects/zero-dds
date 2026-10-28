@@ -15,23 +15,29 @@ workspace = true
 path = "src/lib.rs"
 
 [dependencies]
-zerodds-cdr = { path = "../cdr" }
+# The wire codec. `crates/cdr` was demolished with the IDL transplant
+# (d045e43ea86); `BufferReader`/`BufferWriter` are `Reader`/`Writer` here.
+zerodds-wire = { path = "../wire" }
 zerodds-xrce = { path = "../xrce" }
+# The IDL frontend and the one code generator. The fifteen per-language
+# `crates/idl-<lang>` generators this crate used to name are gone: the
+# same transplant replaced them with the rule layer below, reached
+# through `generate::source(&ast, Language::<L>, key)` — one entry point
+# for every column, the same one `tools/idlc` and
+# `crates/lang-rules/tests/generate_contract.rs` take.
+#
+# A dependency and not a dev-dependency: `gen::source` is what the
+# fourteen language tests call, and one generator bound once beats the
+# same four-step pipeline copied into fourteen test files.
+zerodds-idl-parse = { path = "../idl-parse" }
+zerodds-idl-lower = { path = "../idl-lower" }
+zerodds-ast-layout = { path = "../ast-layout" }
+zerodds-lang-cst = { path = "../lang-cst" }
+zerodds-lang-rules = { path = "../lang-rules" }
 
 [dev-dependencies]
 zerodds-dotnet-build-lock = { path = "../dotnet-build-lock" }
-zerodds-idl = { path = "../idl" }
-zerodds-idl-go = { path = "../idl-go" }
-zerodds-idl-nim = { path = "../idl-nim" }
-zerodds-idl-d = { path = "../idl-d" }
-zerodds-idl-swift = { path = "../idl-swift" }
-zerodds-idl-julia = { path = "../idl-julia" }
-zerodds-idl-lua = { path = "../idl-lua" }
-zerodds-idl-zig = { path = "../idl-zig" }
-zerodds-idl-ocaml = { path = "../idl-ocaml" }
-zerodds-idl-elixir = { path = "../idl-elixir" }
-zerodds-idl-ada = { path = "../idl-ada" }
-zerodds-idl-cpp = { path = "../idl-cpp" }
-zerodds-idl-csharp = { path = "../idl-csharp" }
-zerodds-idl-java = { path = "../idl-java" }
-zerodds-idl-python = { path = "../idl-python" }
+# The Rust endpoint SDK, so `tests/xrce_write_framing.rs` can hand its
+# `WRITE_DATA` frame straight to the `zerodds-xrce` decoder without a
+# subprocess — the Rust column of the same gate every other language takes.
+zerodds-endpoint-rust = { path = "../../endpoints/rust" }

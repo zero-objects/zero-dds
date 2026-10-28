@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of sequence-fixed that opendds produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	genC.h:481:21: error: invalid use of incomplete type 'struct zd_c9::Sample'
+plain-cdr1	be	refused	genC.h:481:21: error: invalid use of incomplete type 'struct zd_c9::Sample'
+pl-cdr1	le	refused	genC.h:481:21: error: invalid use of incomplete type 'struct zd_c9::Sample'
+pl-cdr1	be	refused	genC.h:481:21: error: invalid use of incomplete type 'struct zd_c9::Sample'
+plain-cdr2	le	refused	genC.h:481:21: error: invalid use of incomplete type 'struct zd_c9::Sample'
+plain-cdr2	be	refused	genC.h:481:21: error: invalid use of incomplete type 'struct zd_c9::Sample'
+delimited-cdr	le	refused	genC.h:481:21: error: invalid use of incomplete type 'struct zd_c9::Sample'
+delimited-cdr	be	refused	genC.h:481:21: error: invalid use of incomplete type 'struct zd_c9::Sample'
+pl-cdr2	le	refused	genC.h:481:21: error: invalid use of incomplete type 'struct zd_c9::Sample'
+pl-cdr2	be	refused	genC.h:481:21: error: invalid use of incomplete type 'struct zd_c9::Sample'

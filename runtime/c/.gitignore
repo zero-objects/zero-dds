@@ -1,0 +1,3 @@
+# Build output. The library and the self-test are built on demand;
+# nothing here is a source.
+build/

@@ -41,7 +41,8 @@ fn hmac_sha256(key: &[u8], msg: &[u8]) -> [u8; 32] {
 }
 
 /// `SHA-256(data)`.
-fn sha256(data: &[u8]) -> [u8; 32] {
+#[must_use]
+pub fn sha256(data: &[u8]) -> [u8; 32] {
     let mut h = Sha256::new();
     h.update(data);
     let out = h.finalize();

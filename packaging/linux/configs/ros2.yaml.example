@@ -1,0 +1,45 @@
+# /usr/share/zerodds/configs/ros2.yaml.example
+# The ros2 section of the runtime configuration, as a drop-in: copy it to
+# /etc/zerodds/zerodds.d/50-ros2.yaml. rmw_zerodds_cpp reads it with the rest
+# of the runtime files (zerodds.yaml, zerodds.d/, include:, the environment
+# beneath). Spec: zerodds-ros2-bridge-1.0 §3.
+#
+# `zerodds-ros2-shim --check-config` prints every value with its origin and
+# refuses what the RMW would not read. Settings rcl owns are refused here:
+# the namespace (--ros-args -r __ns:=), the domain (ROS_DOMAIN_ID), logging
+# (--ros-args --log-level). The enclave is security.enclave_dir, discovery is
+# discovery.no_multicast / discovery.peers of the runtime.
+
+ros2:
+  topic_mangling: rmw            # rmw (rt/ prefix, REP-2007) | none | custom
+  # custom_mangling:            # only with topic_mangling: custom
+  #   topic_prefix: "site/"      # then required
+  #   request_prefix: "rq/"      # service requests, default rq/
+  #   response_prefix: "rr/"     # service replies, default rr/
+  qos_profiles:                  # the REP-2009 table; an entry replaces the
+    sensor_data:                 # fields it names, a new name adds a profile
+      depth: 5
+      # reliability: best_effort # reliable | best_effort | system_default
+      # durability: volatile     # volatile | transient_local | system_default
+      # history: keep_last       # keep_last | keep_all | system_default
+      # deadline_ms: 0           # 0 = none
+      # lifespan_ms: 0
+      # liveliness: automatic    # automatic | manual_by_topic | system_default
+      # liveliness_lease_ms: 0
+  topic_overrides:               # per ROS topic, replaces the application's
+    - ros_topic: /scan           # request field by field
+      qos_profile: sensor_data
+    - ros_topic: /map
+      qos:
+        durability: transient_local
+        history: keep_last
+        depth: 1
+  # time_based_filter: "/scan=0.1"  # minimum_separation in seconds, for every
+  #                                 # topic (0.1) or per topic, comma list
+  # spatial_bridge:                # C2(6) opt-in content-translation daemon
+  #   enabled: true                # (zerodds-spatial-dds <-> zerodds-spatial-ros2),
+  #   mappings:                    # its own DomainParticipant, not the RMW's own.
+  #     - message: pose_stamped    # pose_stamped | transform_stamped |
+  #       spatial_topic: sdds/default/FramedPose  # geo_pose_stamped | detection3d |
+  #       ros_topic: /robot1/pose  # detection3d_array | imu (not tf_message)
+  #       direction: both          # dds_to_ros | ros_to_dds | both (default)

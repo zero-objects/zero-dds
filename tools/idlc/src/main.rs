@@ -1,1094 +1,909 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-
-//! IDL4 compiler: 17 backends over the `zerodds-idl-*` codegen crates.
-//!
-//! Alle 17 Backends verdrahtet — `--c`, `--cpp`, `--rust`, `--ts`,
-//! `--csharp`, `--java`, `--python`, `--go`, `--nim`, `--zig`, `--d`,
-//! `--ada`, `--elixir`, `--ocaml`, `--julia`, `--lua`, `--swift`
-//! (`--all` emittiert alle). Jedes Backend ruft `generate_<lang>_module`
-//! seiner Codegen-Crate; identische AST-Quelle, byte-identisch zu den
-//! `zerodds-cdr`-Goldens.
-//!
-//! Preprocessor: `#include`/`#define`/`#ifdef`/`#pragma` werden vor
-//! dem Parsen expandiert (`zerodds-idl::preprocessor`). `-I <dir>`
-//! fuegt Include-Such-Pfade hinzu, `-D NAME[=VALUE]` definiert Macros.
-//!
-//! `--corba` ist ein Modifier-Flag (analog `--rti`) und emittiert
-//! zusaetzlich CORBA-Service-Konstrukte (Interface-Traits, Client-Stubs,
-//! Server-Skeletons). Unterstuetzt fuer `--cpp`, `--csharp`, `--java`
-//! ueber OMG CORBA 3.3 Annex-A.1 (die Codegen-Crates exponieren
-//! `emit_corba_traits`) und fuer `--rust` ueber die Vendor-Spec
-//! `zerodds-corba-rust-1.0` (Two-File-Output `<base>.rs` + `<base>_corba.rs`).
-//! Mit anderen Backends → Exit-Code 3.
-//!
-//! # Usage
+//! `zerodds-idlc` — read OMG IDL 4.2 and say what is in it, or what is
+//! wrong with it, or turn it into a language's source.
 //!
 //! ```text
-//! zerodds-idlc --parse-only <file.idl>             Parse mit OMG IDL 4.2 Base
-//! zerodds-idlc --parse-only --rti <file.idl>       RTI Connext-Grammar-Delta
-//! zerodds-idlc --c      -o <dir> <file.idl>        C-Header in <dir>/<base>.h
-//! zerodds-idlc --cpp    -o <dir> <file.idl>        C++-Header in <dir>/<base>.hpp
-//! zerodds-idlc --rust   -o <dir> <file.idl>        Rust-Code in <dir>/<base>.rs
-//! zerodds-idlc --ts     -o <dir> <file.idl>        TS-Modul in <dir>/<base>.ts
-//! zerodds-idlc --csharp -o <dir> <file.idl>        C#-Code in <dir>/<base>.cs
-//! zerodds-idlc --java   -o <dir> <file.idl>        Java-Files in <dir>/<pkg>/
-//! zerodds-idlc --python -o <dir> <file.idl>        Python-Modul in <dir>/<base>.py
-//! zerodds-idlc --go     -o <dir> <file.idl>        Go-Modul in <dir>/<base>.go
-//! zerodds-idlc --<lang> -o <dir> <file.idl>        nim/zig/d/ada/elixir/ocaml/julia/lua/swift analog
-//! zerodds-idlc --all    -o <dir> <file.idl>        alle 17 Backends
-//! zerodds-idlc --cpp    --corba -o <dir> <file.idl>  C++-Header inkl. CORBA-Traits
-//! zerodds-idlc --csharp --corba -o <dir> <file.idl>  C#-Code inkl. CORBA-Traits
-//! zerodds-idlc --java   --corba -o <dir> <file.idl>  Java-Files inkl. CorbaTraits-Klassen
-//! zerodds-idlc --rust   --corba -o <dir> <file.idl>  Rust-Types + <base>_corba.rs Service-Code
-//! zerodds-idlc --version                           Versions-Info
-//! zerodds-idlc --help                              Hilfe
+//! zerodds-idlc check      FILE...   parse and lower; report every diagnostic
+//! zerodds-idlc lint       FILE...   the rules a valid file can still break
+//! zerodds-idlc format     FILE...   the canonical form, to stdout, --check or --write
+//! zerodds-idlc dump-ast   FILE...   the model, as a tree
+//! zerodds-idlc print-deps FILE...   the types each declaration names
+//! zerodds-idlc generate   --lang L [--out DIR] [-I DIR] [--stamp F --depfile F --output-manifest F] FILE...
+//! zerodds-idlc dlrl       --lang L [--out DIR] [-I DIR] [--stamp F --depfile F --output-manifest F] FILE...
 //! ```
 //!
-//! Exit-Codes:
-//!   0   Erfolg
-//!   1   parse-Fehler (Lex/Recognize/Build)
-//!   2   CLI-Argumente ungueltig oder Datei nicht lesbar
-//!   3   Codegen-Fehler (oder `--corba` mit einem Backend ohne CORBA-Traits)
+//! The first five say what is in a file. `generate` and `dlrl` are the
+//! two that write something back out.
+//!
+//! `generate` is the wire path: it calls `zerodds_lang_rules::generate::source`
+//! for the model — the declarations and the codec, the same walk every
+//! `tools/wireprobe/wireprobe-zerodds-<lang>-gen` runs to build a probe
+//! program, minus the `--dialect`, `--values` and octet comparison a
+//! measurement needs and an application never asks for.
+//!
+//! `dlrl` is not: OMG DDS 1.2 §8's Data Local Reconstruction Layer sits
+//! above DCPS, not on the wire, and its three pragmas —
+//! `DCPS_DATA_TYPE`, `DCPS_DATA_KEY`, `DCPS_DLRL_RELATION` — are read
+//! independently of `generate`'s AST pipeline, by `zerodds_dlrl`'s own
+//! text parser (`mod dlrl`). Two of those three spellings collide with
+//! OpenDDS's key-marking pragmas of the same name, which `idl-lower`
+//! reads for every other command; see that crate's `tests/dialects.rs`
+//! for how the two readings are told apart. `dlrl` covers the four
+//! languages OMG DLRL has no Rust PSM for and this tree does not
+//! otherwise generate for DLRL: C++, C#, Java, TypeScript.
+//!
+//! ## Dialect
+//!
+//! Files are parsed under `Dialect::ALL_VENDORS` unless `--strict` says
+//! otherwise. A tool pointed at a file somebody else wrote should read it
+//! before it judges it — refusing a vendor extension at the lexer means
+//! never reaching the rule that would have been worth reporting.
+//! `--strict` is OMG IDL 4.2 and nothing else, which is the question
+//! "would every vendor accept this". `generate` reads under the same
+//! rule, but what it emits answers a different question: a dialect is
+//! what a measurement reproduces when it stands in for another vendor,
+//! and a generated application has no vendor to reproduce, so its
+//! `--encoding`/`--endian` are always built against the specification's
+//! own reading.
+//!
+//! The two do not reach the output the same way. `--encoding` changes
+//! the emitted bodies: XCDR1 frames an `@appendable` struct without the
+//! `DHEADER` XCDR2 gives it, so the same model is two different codecs
+//! under the two flags. What it selects is the *version*, though, not
+//! the per-type encoding identifier: XTypes 1.3 §7.4.2 makes that a
+//! function of the type's own extensibility — `@final` is PLAIN_CDR2,
+//! `@appendable` DELIMITED_CDR, `@mutable` PL_CDR2 — which is why
+//! `zerodds_ast_layout` reads `Encoding` through `is_v1`/`is_v2` and
+//! `max_alignment` and nothing else, and why `xcdr2`, `delimited-cdr`
+//! and `pl-cdr2` emit one text. `xcdr1` and `pl-cdr1` are the same
+//! pair on the other version. `--endian` changes no character of them, and
+//! that is the design: every wire runtime holds the byte order in its
+//! writer and its reader, so the same `w.WriteI32(v)` writes either
+//! order and the choice is made where the writer is built. What
+//! `--endian` does reach is the preamble, which names the order the file
+//! was generated for as the constant a caller hands that writer.
 
-#![allow(clippy::print_stderr, clippy::print_stdout)] // CLI-Tool: I/O auf stdio zulaessig.
+#![allow(clippy::print_stdout, clippy::print_stderr)]
 
-mod scaffold;
-mod typeobject_emit;
+mod c_support;
+mod csharp_support;
+mod dlrl;
+mod dump;
+mod format;
+mod generate;
+mod java_support;
+mod lint;
+mod python_support;
+mod report;
+mod source;
+mod type_metadata;
+mod typescript_support;
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::ExitCode;
-use typeobject_emit::TypeObjectBlob;
 
-use zerodds_corba_rust::{CorbaRustGenOptions, generate_corba_rust_module};
-use zerodds_idl::config::ParserConfig;
-use zerodds_idl::grammar::deltas::RTI_CONNEXT;
-use zerodds_idl::parser::{parse, parse_with_deltas};
-use zerodds_idl::preprocessor::Preprocessor;
-use zerodds_idl_ada::{AdaGenOptions, generate_ada_module};
-use zerodds_idl_compose::{DefaultExt, FsResolver, default_ext, key_pragmas};
-use zerodds_idl_cpp::{
-    CGenOptions, CppGenOptions, generate_c_header, generate_cpp_header,
-    generate_cpp_header_with_corba_traits,
+use zerodds_ast_layout::{
+    AXES, AxisFlag, Dialect, DialectSettings, Encoding, Endianness, dialect_names,
+    dialect_settings_from_overrides,
 };
-use zerodds_idl_csharp::{CsGenOptions, generate_csharp, generate_csharp_with_corba_traits};
-use zerodds_idl_d::{DGenOptions, generate_d_module};
-use zerodds_idl_elixir::{ElixirGenOptions, generate_elixir_module};
-use zerodds_idl_go::{GoGenOptions, generate_go_module};
-use zerodds_idl_java::{
-    JavaGenOptions, generate_java_files, generate_java_files_with_corba_traits,
-};
-use zerodds_idl_julia::{JuliaGenOptions, generate_julia_module};
-use zerodds_idl_lua::{LuaGenOptions, generate_lua_module};
-use zerodds_idl_nim::{NimGenOptions, generate_nim_module};
-use zerodds_idl_ocaml::{OcamlGenOptions, generate_ocaml_module};
-use zerodds_idl_python::{PythonGenOptions, generate_python_module};
-use zerodds_idl_rust::{RustGenOptions, generate_rust_module};
-use zerodds_idl_swift::{SwiftGenOptions, generate_swift_module};
-use zerodds_idl_ts::generate_ts_source;
-use zerodds_idl_zig::{ZigGenOptions, generate_zig_module};
+use zerodds_lang_cst::Language;
+use zerodds_lang_rules::adapter::interface::ServiceMapping;
 
-const VERSION: &str = env!("CARGO_PKG_VERSION");
+use report::{Form, Tally};
+use source::Unit;
+
+/// What the tool was asked to do.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Command {
+    /// Parse and lower, reporting both stages' diagnostics.
+    Check,
+    /// The rules a file can break while still being valid IDL.
+    Lint,
+    /// The canonical form — to stdout, or `--check`, or `--write`.
+    Format,
+    /// The model as a tree.
+    DumpAst,
+    /// The types each declaration names.
+    PrintDeps,
+    /// One language's source for the model.
+    Generate,
+    /// DDS 1.2 §8 DLRL object and home classes, from the three DLRL
+    /// pragmas.
+    Dlrl,
+}
+
+impl Command {
+    fn parse(token: &str) -> Option<Self> {
+        match token {
+            "check" => Some(Self::Check),
+            "lint" => Some(Self::Lint),
+            "format" => Some(Self::Format),
+            "dump-ast" => Some(Self::DumpAst),
+            "print-deps" => Some(Self::PrintDeps),
+            "generate" => Some(Self::Generate),
+            "dlrl" => Some(Self::Dlrl),
+            _ => None,
+        }
+    }
+}
+
+/// Everything the command line said.
+#[derive(Debug)]
+struct Options {
+    command: Command,
+    files: Vec<String>,
+    form: Form,
+    /// `--strict`: OMG IDL 4.2 and nothing else.
+    ///
+    /// Read through [`Options::dialect`], which every subcommand goes
+    /// through — a flag that only one of six honours makes a promise the
+    /// other five break.
+    strict: bool,
+    /// `--ros2`: admit ROS 2 dialect (unqualified member types that differ
+    /// only in case from the member name, e.g., `Pose pose;`).
+    ros2: bool,
+    /// Report warnings as errors, for a build that wants a clean file.
+    deny_warnings: bool,
+    /// `format --check`: say which files are not canonical, change none.
+    format_check: bool,
+    /// `format --write`: rewrite the files that are not canonical.
+    format_write: bool,
+    /// `--default-extensibility`: what an aggregate whose source said
+    /// nothing is taken to be.
+    ///
+    /// `None` leaves the facet absent and XTypes 1.3 §7.3.1.2.1.8's own
+    /// default applies. The same paragraph provides for the option — "IDL
+    /// compilers may provide configuration options to allow users to
+    /// specify whether types of unspecified extensibility are to be
+    /// considered final, appendable, or mutable" — and it is what lets a
+    /// caller generate for a peer whose compiler reads silence as `@final`.
+    /// What the source *did* say still wins.
+    default_extensibility: Option<zerodds_ast::Extensibility>,
+    /// `-I <DIR>`: where a quoted `#include` is searched after the
+    /// including file's own directory, in the order given.
+    include_dirs: Vec<PathBuf>,
+    /// `generate`'s own flags, filled in exactly when `command` is
+    /// [`Command::Generate`]. `parse_args` refuses a `generate` line
+    /// without `--lang` before this is ever read, so a `None` here for
+    /// `Command::Generate` cannot happen — and where it matters, it is
+    /// treated the way `Command::Format` is treated in `run_one` when
+    /// matched outside its own early return: trusted, not asserted.
+    generate: Option<GenerateRequest>,
+    /// `dlrl`'s own flags, filled in exactly when `command` is
+    /// [`Command::Dlrl`] — the same non-`None`-unless-matching contract
+    /// [`Options::generate`] documents, and for the same reason:
+    /// `parse_args` refuses a `dlrl` line without `--lang` before this is
+    /// ever read.
+    dlrl: Option<DlrlRequest>,
+}
+
+impl Options {
+    /// The dialect this run reads under.
+    ///
+    /// `--strict` is OMG IDL 4.2 and nothing else: every vendor
+    /// construct becomes an error instead of a warning. Without it every
+    /// vendor extension is admitted, because a tool pointed at a file
+    /// somebody else wrote has to read it before it judges it.
+    fn dialect(&self) -> zerodds_idl_parse::Dialect {
+        let mut dialect = if self.strict {
+            zerodds_idl_parse::Dialect::STRICT
+        } else {
+            zerodds_idl_parse::Dialect::ALL_VENDORS
+        };
+        if self.ros2 {
+            dialect.ros2 = true;
+        }
+        dialect
+    }
+}
+
+/// What `generate` was asked for.
+#[derive(Debug)]
+struct GenerateRequest {
+    /// The languages to emit: one, or every one for `--lang all`.
+    languages: Vec<Language>,
+    /// `--stamp FILE`: written once every output of the run is.
+    stamp: Option<PathBuf>,
+    /// `--depfile FILE`: a Make-format dependency file naming the
+    /// target (the stamp, else the manifest) and every IDL file the run
+    /// read, `#include`s included.
+    depfile: Option<PathBuf>,
+    /// `--output-manifest FILE`: JSON with the files read and written.
+    manifest: Option<PathBuf>,
+    /// Where the file goes. The current directory when `--out` is not
+    /// given.
+    out_dir: PathBuf,
+    /// The encoding the codec is built for. Half of the `LayoutKey`
+    /// `generate::source` plans the encoder and the decoder under, so it
+    /// reaches the emitted bodies and not only the header: XCDR1 frames
+    /// an `@appendable` struct without the `DHEADER` XCDR2 gives it.
+    encoding: Encoding,
+    /// The byte order the codec is built for — the other half of that
+    /// `LayoutKey`. Unlike `encoding` it does not change the emitted
+    /// text: every wire runtime holds the byte order in its `Writer` and
+    /// `Reader`, so the same generated body writes either order.
+    endianness: Endianness,
+    /// `--cpp-mapping native|psm|classic`: how the C++ column spells topic types.
+    /// `psm` (the default) is DDS-PSM-Cxx 1.0 §7.4 and §8.1 — classes with
+    /// accessors, `dds::core::optional`, `std::map`, … — over the same
+    /// codec. `native` is the mapping the codec and the endpoint gates are
+    /// built on.
+    cpp_mapping: zerodds_lang_rules::adapter::cpp::CppMapping,
+    /// `--rust-map entries|btree-map`: how the Rust column holds an IDL `map`. `entries` (the
+    /// default) is the sequence of `MapEntry` structures XTypes 1.3 §7.5.1.3.6 binds a map to;
+    /// `btree-map` is the idiomatic container.
+    rust_map: zerodds_lang_rules::adapter::cst::RustMapForm,
+    /// `--dialect <name>`: the preset, one peer's answers to every wire
+    /// question at once. `None` is the default, `specification`.
+    dialect: Option<Dialect>,
+    /// `--<axis> <value>` flags, each overriding one answer of the
+    /// dialect. Applied after the dialect, in declaration order.
+    axis_overrides: Vec<(AxisFlag, String)>,
+    /// `--java-mapping <omg|psm>`: the shape Java types take. `psm`, Clause 9
+    /// of DDS-Java-PSM 1.0, is the default; `omg` is the IDL-to-Java
+    /// mapping. Only `--lang java` reads it.
+    java_mapping: zerodds_lang_rules::adapter::java::JavaMapping,
+    /// `--rpc-mapping <basic|enhanced|enhanced-empty>`: which of the two
+    /// service mappings of DDS-RPC 1.0 §7.5.1 the topic types of an
+    /// `interface` are written for. [`ServiceMapping::Basic`] when not
+    /// given.
+    rpc_mapping: ServiceMapping,
+}
+
+/// What `dlrl` was asked for.
+///
+/// The build-contract fields mirror [`GenerateRequest`]'s exactly, and
+/// [`BuildRecord::write`] takes them the same way for both — DLRL is not
+/// on the wire, so `dlrl` carries neither `encoding`/`endianness` nor a
+/// `dialect`/`axis_overrides`.
+#[derive(Debug)]
+struct DlrlRequest {
+    /// The languages to emit: one, or all four for `--lang all`.
+    languages: Vec<Language>,
+    /// `--stamp FILE`: written once every output of the run is.
+    stamp: Option<PathBuf>,
+    /// `--depfile FILE`: as [`GenerateRequest::depfile`].
+    depfile: Option<PathBuf>,
+    /// `--output-manifest FILE`: as [`GenerateRequest::manifest`].
+    manifest: Option<PathBuf>,
+    /// Where the file goes. The current directory when `--out` is not
+    /// given.
+    out_dir: PathBuf,
+}
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    // Color-Modus fuer die Fehlerausgabe vorab aus den Args ableiten —
-    // run() selbst kennt erst nach dem Parsen den Modus.
-    let color = color_mode_from_args(&args);
-    match run(&args) {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(e) => {
-            if color.enabled() {
-                // ANSI: bold red prefix.
-                eprintln!("\x1b[1;31mzerodds-idlc:\x1b[0m {e}");
-            } else {
-                eprintln!("zerodds-idlc: {e}");
-            }
-            ExitCode::from(e.exit_code())
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        print_help();
+        return ExitCode::SUCCESS;
+    }
+    if args.iter().any(|a| a == "--version" || a == "-V") {
+        println!("zerodds-idlc {}", env!("CARGO_PKG_VERSION"));
+        return ExitCode::SUCCESS;
+    }
+
+    let options = match parse_args(&args) {
+        Ok(options) => options,
+        Err(message) => {
+            eprintln!("error: {message}");
+            print_help();
+            return ExitCode::from(2);
         }
-    }
-}
-
-/// Liest `--color <when>` aus den Roh-Args (vor dem vollen Parse).
-fn color_mode_from_args(args: &[String]) -> ColorMode {
-    let mut it = args.iter();
-    while let Some(a) = it.next() {
-        if a == "--color" {
-            return match it.next().map(String::as_str) {
-                Some("always") => ColorMode::Always,
-                Some("never") => ColorMode::Never,
-                _ => ColorMode::Auto,
-            };
-        }
-    }
-    ColorMode::Auto
-}
-
-#[derive(Debug)]
-enum CliError {
-    Usage(String),
-    Io(String),
-    Parse(String),
-    /// Semantic validation failed (resolver, unresolved type references, or
-    /// a spec-constraint validator). Reported by the `check` and `generate`
-    /// paths; carries one finding per line.
-    Semantic(String),
-    NotImplemented(String),
-}
-
-impl CliError {
-    fn exit_code(&self) -> u8 {
-        match self {
-            Self::Usage(_) | Self::Io(_) => 2,
-            Self::Parse(_) | Self::Semantic(_) => 1,
-            Self::NotImplemented(_) => 3,
-        }
-    }
-}
-
-impl core::fmt::Display for CliError {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Self::Usage(m)
-            | Self::Io(m)
-            | Self::Parse(m)
-            | Self::Semantic(m)
-            | Self::NotImplemented(m) => f.write_str(m),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Backend {
-    C,
-    Cpp,
-    Rust,
-    Ts,
-    CSharp,
-    Java,
-    Python,
-    Go,
-    Ada,
-    Zig,
-    Nim,
-    D,
-    Elixir,
-    OCaml,
-    Julia,
-    Lua,
-    Swift,
-}
-
-/// Sub-Command (Handbook §3.3–3.7). Die flache Flag-Form bleibt
-/// vollwertig erhalten — ein Sub-Command ist nur Zucker, der den
-/// passenden Modus vorbelegt. `generate` ist der Default-Modus
-/// (Codegen), die uebrigen mappen auf einen Dump-/Parse-Modus.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum SubCommand {
-    Generate,
-    Check,
-    DumpAst,
-    DumpTypeObject,
-    PrintDeps,
-}
-
-impl SubCommand {
-    fn parse(token: &str) -> Option<Self> {
-        Some(match token {
-            "generate" => Self::Generate,
-            "check" => Self::Check,
-            "dump-ast" => Self::DumpAst,
-            "dump-typeobject" => Self::DumpTypeObject,
-            "print-deps" => Self::PrintDeps,
-            _ => return None,
-        })
-    }
-}
-
-/// Trennt einen fuehrenden Sub-Command von den restlichen Args.
-///
-/// Der Sub-Command — falls vorhanden — ist das erste Positional-
-/// Argument; globale Flags duerfen davor stehen (`-v generate …`).
-/// Argument-konsumierende Flags (`-o`, `-I`, `-D`, `--color`,
-/// `--output`) werden beruecksichtigt, damit etwa `-o check` die
-/// Ausgabe in den Ordner `check` schreibt statt als Sub-Command
-/// `check` fehlinterpretiert zu werden.
-fn split_subcommand(args: &[String]) -> (Option<SubCommand>, Vec<String>) {
-    let consumes_arg = |f: &str| matches!(f, "-o" | "--output" | "-I" | "-D" | "--color");
-    let mut skip_next = false;
-    for (i, a) in args.iter().enumerate() {
-        if skip_next {
-            skip_next = false;
-            continue;
-        }
-        if consumes_arg(a) {
-            skip_next = true;
-            continue;
-        }
-        if a.starts_with('-') {
-            continue;
-        }
-        // Erstes Positional: Sub-Command-Keyword oder Input-Datei.
-        return match SubCommand::parse(a) {
-            Some(sc) => {
-                let mut rest = args.to_vec();
-                rest.remove(i);
-                (Some(sc), rest)
-            }
-            None => (None, args.to_vec()),
-        };
-    }
-    (None, args.to_vec())
-}
-
-/// Wann ANSI-Farben in Diagnostiken verwendet werden.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-enum ColorMode {
-    /// Farben nur wenn stderr ein TTY ist.
-    #[default]
-    Auto,
-    /// Immer Farben.
-    Always,
-    /// Nie Farben.
-    Never,
-}
-
-impl ColorMode {
-    /// Effektiv aktiv? `Auto` prueft ob stderr ein Terminal ist.
-    fn enabled(self) -> bool {
-        match self {
-            Self::Always => true,
-            Self::Never => false,
-            Self::Auto => std::io::IsTerminal::is_terminal(&std::io::stderr()),
-        }
-    }
-}
-
-#[derive(Default)]
-struct CliOptions {
-    /// Aktiver Sub-Command, falls als erstes Positional angegeben.
-    subcommand: Option<SubCommand>,
-    parse_only: bool,
-    /// `check` sub-command — run the semantic gate, emit no code and dump no
-    /// AST. Distinct from `parse_only` (`dump-ast` / `--parse-only`), which
-    /// stays lenient so a broken AST can still be inspected.
-    check: bool,
-    /// `--dump-deps` — Make-Dependency-Zeile statt Codegen.
-    dump_deps: bool,
-    /// `--dump-typeobject` — XTypes-TypeObject je Struct statt Codegen.
-    dump_typeobject: bool,
-    rti: bool,
-    corba: bool,
-    /// Gewaehlte Backends. Mehrere via wiederholten Flags oder `--all`.
-    backends: Vec<Backend>,
-    output: Option<PathBuf>,
-    /// Per-Backend-Output-Override aus `--out-<lang> <dir>`. Schlaegt
-    /// `-o` fuer das jeweilige Backend. Mehrfach (je Backend) moeglich.
-    out_overrides: Vec<(Backend, PathBuf)>,
-    file: Option<String>,
-    /// Include-Search-Pfade aus `-I <path>` (in Reihenfolge).
-    include_dirs: Vec<PathBuf>,
-    /// Preprocessor-Defines aus `-D <name>[=<value>]`.
-    defines: Vec<String>,
-    /// Verbosity-Level (Anzahl `-v`). 0 = normal.
-    verbose: u8,
-    /// `-q` — nur Fehler, kein Status-Output.
-    quiet: bool,
-    /// `--color` — ANSI-Farb-Modus fuer Diagnostiken.
-    color: ColorMode,
-    /// `--default-extensibility` — Extensibility fuer un-annotierte
-    /// struct/union/enum. `None` = OMG-Default belassen (Emitter-Fallback).
-    default_ext: Option<DefaultExt>,
-    /// `--cyclone` — CycloneDDS-Interop-Intent. Ueber den reinen
-    /// Intent-Marker hinaus setzt es den Default fuer un-annotierte
-    /// Aggregate auf `@final` (Cyclones Generator-Default), damit
-    /// ZeroDDS-Output mit einem un-annotierten Cyclone-Peer auf der Wire
-    /// interoperiert. Explizite IDL-Annotation und explizites
-    /// `--default-extensibility` haben Vorrang (Aufloesung nach dem Parsen,
-    /// argument-order-unabhaengig). `--opendds` bleibt reiner No-op.
-    cyclone: bool,
-    /// `--default-nested true` — un-annotierte Typen als `@nested`
-    /// markieren. `None`/`Some(false)` = OMG-Default belassen.
-    default_nested: Option<bool>,
-    /// `--no-typeobject` — XTypes-TypeObject-Emission unterdruecken.
-    /// Default `false` (Emission an, wie RTI/Fast/Cyclone).
-    no_type_objects: bool,
-    /// `--scaffold` — pro Backend die idiomatische Build-Datei
-    /// (Cargo.toml / CMakeLists.txt / …) mit-emittieren.
-    scaffold: bool,
-    /// `--depfile <path>` — Make-/Ninja-kompatible Depfile schreiben.
-    /// Target = Stamp (falls gesetzt) sonst alle erzeugten Outputs;
-    /// Prerequisites = die IDL + alle transitiv `#include`-ten Dateien
-    /// (kanonische Resolver-Pfade). Teil des Build-Vertrags.
-    depfile: Option<PathBuf>,
-    /// `--output-manifest <path>` (Alias `--manifest`) — JSON mit allen
-    /// tatsaechlich erzeugten Dateien je Backend. Consumer (CMake/Gradle/
-    /// MSBuild/SPM) brauchen keine Endungslogik mehr.
-    manifest: Option<PathBuf>,
-    /// `--stamp <path>` — eine stabile Stamp-Datei als einziger deklarierter
-    /// OUTPUT (touch nach Erfolg), unabhaengig davon wie viele/welche Dateien
-    /// ein Backend erzeugt.
-    stamp: Option<PathBuf>,
-}
-
-impl CliOptions {
-    /// Status-Zeile auf stderr — unterdrueckt bei `-q`, nur ausgegeben
-    /// wenn das aktuelle `verbose`-Level >= `min_level`.
-    fn report(&self, min_level: u8, msg: &str) {
-        if self.quiet || self.verbose < min_level {
-            return;
-        }
-        eprintln!("zerodds-idlc: {msg}");
-    }
-
-    /// Effektives Output-Verzeichnis fuer ein Backend: der per-Backend-
-    /// Override aus `--out-<lang>`, sonst das globale `-o`.
-    fn backend_out_dir(&self, backend: Backend) -> Option<&Path> {
-        self.out_overrides
-            .iter()
-            .find(|(b, _)| *b == backend)
-            .map(|(_, p)| p.as_path())
-            .or(self.output.as_deref())
-    }
-}
-
-/// Flag-Suffix eines Backends fuer `--out-<lang>` und Diagnostiken
-/// (`Backend::Rust` → `"rust"`).
-fn backend_flag_suffix(b: Backend) -> &'static str {
-    match b {
-        Backend::C => "c",
-        Backend::Cpp => "cpp",
-        Backend::Rust => "rust",
-        Backend::Ts => "ts",
-        Backend::CSharp => "csharp",
-        Backend::Java => "java",
-        Backend::Python => "python",
-        Backend::Go => "go",
-        Backend::Ada => "ada",
-        Backend::Zig => "zig",
-        Backend::Nim => "nim",
-        Backend::D => "d",
-        Backend::Elixir => "elixir",
-        Backend::OCaml => "ocaml",
-        Backend::Julia => "julia",
-        Backend::Lua => "lua",
-        Backend::Swift => "swift",
-    }
-}
-
-/// Backend zu einem `--out-<lang>`-Flag, `None` bei unbekanntem Suffix.
-fn out_flag_backend(flag: &str) -> Option<Backend> {
-    let suffix = flag.strip_prefix("--out-")?;
-    ALL_BACKENDS
-        .into_iter()
-        .find(|b| backend_flag_suffix(*b) == suffix)
-}
-
-/// Alle 17 Backends — fuer `--all`.
-const ALL_BACKENDS: [Backend; 17] = [
-    Backend::C,
-    Backend::Cpp,
-    Backend::Rust,
-    Backend::Ts,
-    Backend::CSharp,
-    Backend::Java,
-    Backend::Python,
-    Backend::Go,
-    Backend::Ada,
-    Backend::Zig,
-    Backend::Nim,
-    Backend::D,
-    Backend::Elixir,
-    Backend::OCaml,
-    Backend::Julia,
-    Backend::Lua,
-    Backend::Swift,
-];
-
-/// Fuegt ein Backend hinzu, falls noch nicht in der Liste (idempotent).
-fn push_backend(backends: &mut Vec<Backend>, b: Backend) {
-    if !backends.contains(&b) {
-        backends.push(b);
-    }
-}
-
-fn run(args: &[String]) -> Result<(), CliError> {
-    let (subcommand, args) = split_subcommand(args);
-    let mut opts = CliOptions {
-        subcommand,
-        ..CliOptions::default()
     };
-    // Sub-Command belegt den Modus vor; die restlichen Args parsen
-    // anschliessend ganz normal (ein Sub-Command schliesst keine Flags
-    // aus, er waehlt nur den Default-Modus).
-    match subcommand {
-        Some(SubCommand::Generate) | None => {}
-        Some(SubCommand::Check) => opts.check = true,
-        Some(SubCommand::DumpAst) => opts.parse_only = true,
-        Some(SubCommand::DumpTypeObject) => opts.dump_typeobject = true,
-        Some(SubCommand::PrintDeps) => opts.dump_deps = true,
+
+    let mut tally = Tally::default();
+    let mut read_failed = false;
+    let mut record = BuildRecord::default();
+    for path in &options.files {
+        match Unit::read(path) {
+            Ok(unit) => tally.merge(run_one(&options, &unit, &mut record)),
+            Err(message) => {
+                eprintln!("error: {message}");
+                read_failed = true;
+            }
+        }
     }
+
+    if read_failed {
+        return ExitCode::from(3);
+    }
+    // The build contract: the manifest, the depfile and last the stamp,
+    // only for a run that wrote everything it was asked to — a stamp for a
+    // failed run would tell the build system the outputs are current.
+    if !tally.failed() {
+        let write = if let Some(request) = &options.generate {
+            let languages: Vec<String> = request
+                .languages
+                .iter()
+                .map(|l| l.as_str().to_string())
+                .collect();
+            Some(record.write(
+                request.stamp.as_deref(),
+                request.depfile.as_deref(),
+                request.manifest.as_deref(),
+                &languages,
+            ))
+        } else {
+            options.dlrl.as_ref().map(|request| {
+                let languages: Vec<String> = request
+                    .languages
+                    .iter()
+                    .map(|l| l.as_str().to_string())
+                    .collect();
+                record.write(
+                    request.stamp.as_deref(),
+                    request.depfile.as_deref(),
+                    request.manifest.as_deref(),
+                    &languages,
+                )
+            })
+        };
+        if let Some(Err(message)) = write {
+            eprintln!("error: {message}");
+            tally.errors += 1;
+        }
+    }
+    // A run that produced nothing says so, so an empty output is never
+    // mistaken for a clean file that was never read. `format --check`
+    // gets the same line: a file counted as an error there is one that
+    // is not canonical, or one whose formatting was refused.
+    let summarised = matches!(
+        options.command,
+        Command::Check | Command::Lint | Command::Generate | Command::Dlrl
+    ) || (options.command == Command::Format && options.format_check);
+    if options.form == Form::Text && summarised {
+        println!(
+            "{}: {} file(s), {} error(s), {} warning(s)",
+            match options.command {
+                Command::Lint => "lint",
+                Command::Format => "format",
+                Command::Generate => "generate",
+                Command::Dlrl => "dlrl",
+                _ => "check",
+            },
+            options.files.len(),
+            tally.errors,
+            tally.warnings
+        );
+    }
+    if tally.failed() || (options.deny_warnings && tally.warnings > 0) {
+        return ExitCode::from(1);
+    }
+    ExitCode::SUCCESS
+}
+
+/// Find an axis by its CLI flag name.
+fn find_axis_flag(flag: &str) -> Option<AxisFlag> {
+    AXES.into_iter().find(|axis| axis.flag_name() == flag)
+}
+
+fn parse_args(args: &[String]) -> Result<Options, String> {
     let mut iter = args.iter();
+    let first = iter.next().ok_or("a subcommand is required")?;
+    let command = Command::parse(first)
+        .ok_or_else(|| format!("unknown subcommand `{first}` — see --help"))?;
+
+    let mut options = Options {
+        command,
+        files: Vec::new(),
+        form: Form::Text,
+        strict: false,
+        ros2: false,
+        deny_warnings: false,
+        format_check: false,
+        format_write: false,
+        default_extensibility: None,
+        include_dirs: Vec::new(),
+        generate: None,
+        dlrl: None,
+    };
+    // `generate`'s own flags accumulate here rather than straight into
+    // `options.generate`, because a `GenerateRequest` needs a language
+    // and nothing before the end of the line guarantees `--lang` was
+    // seen: `--out foo --lang rust a.idl` and `--lang rust --out foo
+    // a.idl` are both valid, in either order.
+    let mut generate_lang: Option<Vec<Language>> = None;
+    let mut generate_stamp: Option<PathBuf> = None;
+    let mut generate_depfile: Option<PathBuf> = None;
+    let mut generate_manifest: Option<PathBuf> = None;
+    let mut generate_out = PathBuf::from(".");
+    let mut generate_encoding = Encoding::PlainCdr2;
+    let mut generate_endianness = Endianness::Little;
+    let mut generate_dialect: Option<Dialect> = None;
+    let mut generate_rpc_mapping = ServiceMapping::Basic;
+    let mut generate_cpp_mapping = zerodds_lang_rules::adapter::cpp::CppMapping::default();
+    let mut generate_rust_map = zerodds_lang_rules::adapter::cst::RustMapForm::Entries;
+    let mut generate_axis_overrides: Vec<(AxisFlag, String)> = Vec::new();
+    let mut generate_java_mapping: Option<zerodds_lang_rules::adapter::java::JavaMapping> = None;
+    // `dlrl`'s own flags, the same reason `generate`'s accumulate outside
+    // `options` first.
+    let mut dlrl_lang: Option<Vec<Language>> = None;
+    let mut dlrl_stamp: Option<PathBuf> = None;
+    let mut dlrl_depfile: Option<PathBuf> = None;
+    let mut dlrl_manifest: Option<PathBuf> = None;
+    let mut dlrl_out = PathBuf::from(".");
+
     while let Some(arg) = iter.next() {
         match arg.as_str() {
-            "-h" | "--help" => {
-                print_help();
-                return Ok(());
-            }
-            "-V" | "--version" => {
-                println!("zerodds-idlc {VERSION}");
-                return Ok(());
-            }
-            "--parse-only" => opts.parse_only = true,
-            "--dump-deps" => opts.dump_deps = true,
-            "--dump-typeobject" => opts.dump_typeobject = true,
-            "--dump-ast" => opts.parse_only = true,
-            "--rti" => opts.rti = true,
-            "--corba" => opts.corba = true,
-            // OpenDDS / Cyclone nutzen Standard-OMG-IDL-4.2; ihre
-            // Vendor-Eigenheiten sind #pragma-basiert (keylist,
-            // DCPS_DATA_KEY) und werden ohnehin immer verarbeitet.
-            // Die Flags sind als explizite Intent-Marker akzeptiert.
-            // `--opendds` is a pure intent marker (its vendor pragmas are
-            // processed unconditionally anyway). `--cyclone` additionally
-            // steers the default extensibility to `final` — resolved AFTER
-            // the whole loop so argument order never matters.
-            "--opendds" => {}
-            "--cyclone" => opts.cyclone = true,
-            "-v" | "--verbose" => opts.verbose = opts.verbose.saturating_add(1),
-            // Aggregierte Kurzform `-vv` / `-vvv`.
-            other
-                if other.len() > 1
-                    && other.starts_with('-')
-                    && other[1..].chars().all(|c| c == 'v') =>
-            {
-                let n = u8::try_from(other.len() - 1).unwrap_or(u8::MAX);
-                opts.verbose = opts.verbose.saturating_add(n);
-            }
-            "-q" | "--quiet" => opts.quiet = true,
-            "--color" => {
-                let value = iter.next().ok_or_else(|| {
-                    CliError::Usage("--color requires auto|always|never".to_string())
-                })?;
-                opts.color = match value.as_str() {
-                    "auto" => ColorMode::Auto,
-                    "always" => ColorMode::Always,
-                    "never" => ColorMode::Never,
-                    other => {
-                        return Err(CliError::Usage(format!(
-                            "--color: expected auto|always|never, got '{other}'"
-                        )));
-                    }
-                };
-            }
-            // Default-Extensibility (Fast DDS -de / Cyclone -x).
-            "--default-extensibility" | "-de" => {
-                let value = iter.next().ok_or_else(|| {
-                    CliError::Usage(
-                        "--default-extensibility requires final|appendable|mutable".to_string(),
-                    )
-                })?;
-                opts.default_ext = Some(DefaultExt::parse(value).ok_or_else(|| {
-                    CliError::Usage(format!(
-                        "--default-extensibility: expected final|appendable|mutable, got '{value}'"
-                    ))
-                })?);
-            }
-            // TypeObject-Emission (default an — wie RTI/Fast/Cyclone).
-            "--no-typeobject" => opts.no_type_objects = true,
-            "--with-typeobject" => opts.no_type_objects = false,
-            // Projekt-Scaffolding (opt-in, die „extra Meile").
-            "--scaffold" => opts.scaffold = true,
-            // Build-Vertrag (Schritt 1a): Depfile / Manifest / Stamp.
-            "--depfile" => {
+            "--json" => options.form = Form::Json,
+            "--strict" => options.strict = true,
+            "--ros2" => options.ros2 = true,
+            "--deny-warnings" => options.deny_warnings = true,
+            "--default-extensibility" => {
                 let value = iter
                     .next()
-                    .ok_or_else(|| CliError::Usage("--depfile requires a path".to_string()))?;
-                opts.depfile = Some(PathBuf::from(value));
-            }
-            "--output-manifest" | "--manifest" => {
-                let value = iter
-                    .next()
-                    .ok_or_else(|| CliError::Usage(format!("{arg} requires a path")))?;
-                opts.manifest = Some(PathBuf::from(value));
-            }
-            "--stamp" => {
-                let value = iter
-                    .next()
-                    .ok_or_else(|| CliError::Usage("--stamp requires a path".to_string()))?;
-                opts.stamp = Some(PathBuf::from(value));
-            }
-            // Default-Nested (Cyclone -n).
-            "--default-nested" => {
-                let value = iter.next().ok_or_else(|| {
-                    CliError::Usage("--default-nested requires true|false".to_string())
-                })?;
-                opts.default_nested = Some(match value.as_str() {
-                    "true" => true,
-                    "false" => false,
-                    other => {
-                        return Err(CliError::Usage(format!(
-                            "--default-nested: expected true|false, got '{other}'"
-                        )));
+                    .ok_or("--default-extensibility: the option takes a value")?;
+                options.default_extensibility = Some(match value.to_ascii_lowercase().as_str() {
+                    "final" => zerodds_ast::Extensibility::Final,
+                    "appendable" => zerodds_ast::Extensibility::Appendable,
+                    "mutable" => zerodds_ast::Extensibility::Mutable,
+                    _ => {
+                        return Err(format!(
+                            "--default-extensibility: `{value}` is none of final, appendable, mutable"
+                        ));
                     }
                 });
             }
-            // Backend-Flags — mehrfach kombinierbar. Duplikate werden
-            // still ignoriert (idempotent).
-            "--c" => push_backend(&mut opts.backends, Backend::C),
-            "--rust" => push_backend(&mut opts.backends, Backend::Rust),
-            "--cpp" => push_backend(&mut opts.backends, Backend::Cpp),
-            "--ts" => push_backend(&mut opts.backends, Backend::Ts),
-            "--csharp" => push_backend(&mut opts.backends, Backend::CSharp),
-            "--java" => push_backend(&mut opts.backends, Backend::Java),
-            "--python" => push_backend(&mut opts.backends, Backend::Python),
-            "--go" => push_backend(&mut opts.backends, Backend::Go),
-            "--ada" => push_backend(&mut opts.backends, Backend::Ada),
-            "--zig" => push_backend(&mut opts.backends, Backend::Zig),
-            "--nim" => push_backend(&mut opts.backends, Backend::Nim),
-            "--d" => push_backend(&mut opts.backends, Backend::D),
-            "--elixir" => push_backend(&mut opts.backends, Backend::Elixir),
-            "--ocaml" => push_backend(&mut opts.backends, Backend::OCaml),
-            "--julia" => push_backend(&mut opts.backends, Backend::Julia),
-            "--lua" => push_backend(&mut opts.backends, Backend::Lua),
-            "--swift" => push_backend(&mut opts.backends, Backend::Swift),
-            "--all" => {
-                for b in ALL_BACKENDS {
-                    push_backend(&mut opts.backends, b);
-                }
+            "--check" if command == Command::Format => options.format_check = true,
+            "--write" if command == Command::Format => options.format_write = true,
+            "-I" | "--include" => {
+                let dir = iter.next().ok_or("-I: the option takes a directory")?;
+                options.include_dirs.push(PathBuf::from(dir));
             }
-            "-o" | "--output" => {
+            "--lang" if command == Command::Generate => {
+                let name = iter.next().ok_or("--lang: the option takes a value")?;
+                generate_lang = Some(if name == "all" {
+                    Language::ALL.to_vec()
+                } else {
+                    vec![generate::parse_language(name).ok_or_else(|| {
+                        format!(
+                            "--lang: `{name}` is not a language `generate` knows — one of \
+                             {}, or all",
+                            generate::language_names()
+                        )
+                    })?]
+                });
+            }
+            "--lang" if command == Command::Dlrl => {
+                let name = iter.next().ok_or("--lang: the option takes a value")?;
+                dlrl_lang = Some(if name == "all" {
+                    dlrl::LANGUAGES.to_vec()
+                } else {
+                    vec![dlrl::parse_language(name).ok_or_else(|| {
+                        format!(
+                            "--lang: `{name}` is not a language `dlrl` knows — one of {}, or \
+                             all",
+                            dlrl::language_names()
+                        )
+                    })?]
+                });
+            }
+            name @ ("--stamp" | "--depfile" | "--output-manifest")
+                if command == Command::Generate =>
+            {
                 let value = iter
                     .next()
-                    .ok_or_else(|| CliError::Usage(format!("{arg} requires a directory")))?;
-                opts.output = Some(PathBuf::from(value));
+                    .ok_or_else(|| format!("{name}: the option takes a file"))?;
+                let slot = match name {
+                    "--stamp" => &mut generate_stamp,
+                    "--depfile" => &mut generate_depfile,
+                    _ => &mut generate_manifest,
+                };
+                *slot = Some(PathBuf::from(value));
             }
-            // Per-Backend-Output: --out-rust / --out-c / --out-cpp /
-            // --out-csharp / --out-java / --out-python / --out-ts.
-            other if other.starts_with("--out-") => {
-                let backend = out_flag_backend(other)
-                    .ok_or_else(|| CliError::Usage(format!("unknown flag: {other}")))?;
+            name @ ("--stamp" | "--depfile" | "--output-manifest") if command == Command::Dlrl => {
                 let value = iter
                     .next()
-                    .ok_or_else(|| CliError::Usage(format!("{other} requires a directory")))?;
-                // Letzter Override pro Backend gewinnt.
-                opts.out_overrides.retain(|(b, _)| *b != backend);
-                opts.out_overrides.push((backend, PathBuf::from(value)));
+                    .ok_or_else(|| format!("{name}: the option takes a file"))?;
+                let slot = match name {
+                    "--stamp" => &mut dlrl_stamp,
+                    "--depfile" => &mut dlrl_depfile,
+                    _ => &mut dlrl_manifest,
+                };
+                *slot = Some(PathBuf::from(value));
             }
-            "-I" => {
+            "--out" if command == Command::Generate => {
+                let value = iter.next().ok_or("--out: the option takes a value")?;
+                generate_out = PathBuf::from(value);
+            }
+            "--out" if command == Command::Dlrl => {
+                let value = iter.next().ok_or("--out: the option takes a value")?;
+                dlrl_out = PathBuf::from(value);
+            }
+            "--encoding" if command == Command::Generate => {
+                let value = iter.next().ok_or("--encoding: the option takes a value")?;
+                generate_encoding = match value.as_str() {
+                    "xcdr1" | "plain-cdr1" => Encoding::PlainCdr1,
+                    "xcdr2" | "plain-cdr2" => Encoding::PlainCdr2,
+                    "pl-cdr1" => Encoding::PlCdr1,
+                    "pl-cdr2" => Encoding::PlCdr2,
+                    "delimited-cdr" => Encoding::DelimitedCdr,
+                    other => {
+                        return Err(format!(
+                            "--encoding: `{other}` is not xcdr1, xcdr2, pl-cdr1, pl-cdr2 or \
+                             delimited-cdr"
+                        ));
+                    }
+                };
+            }
+            // `--xcdr-endianness` is the spelling DDS-TS 1.0 §C.3.1
+            // names — "the selected encapsulation kind SHALL be
+            // configured via the codegen flag `--xcdr-endianness=BE|LE`,
+            // defaulting to LE" — and it takes the same two values in
+            // either case. One arm and not two: a second parser for one
+            // option is how two spellings come to mean different things.
+            name @ ("--endian" | "--xcdr-endianness") if command == Command::Generate => {
                 let value = iter
                     .next()
-                    .ok_or_else(|| CliError::Usage("-I requires a directory".to_string()))?;
-                opts.include_dirs.push(PathBuf::from(value));
+                    .ok_or_else(|| format!("{name}: the option takes a value"))?;
+                generate_endianness = match value.to_ascii_lowercase().as_str() {
+                    "le" => Endianness::Little,
+                    "be" => Endianness::Big,
+                    _ => return Err(format!("{name}: `{value}` is not le or be")),
+                };
             }
-            "-D" => {
+            "--java-mapping" if command == Command::Generate => {
                 let value = iter
                     .next()
-                    .ok_or_else(|| CliError::Usage("-D requires NAME[=VALUE]".to_string()))?;
-                opts.defines.push(value.clone());
+                    .ok_or("--java-mapping: the option takes a value")?;
+                generate_java_mapping = Some(
+                    zerodds_lang_rules::adapter::java::JavaMapping::from_name(value).ok_or_else(
+                        || format!("--java-mapping: `{value}` is neither omg nor psm"),
+                    )?,
+                );
             }
-            // -I<path> / -D<name> in zusammengeschriebener Form (C-Konvention).
-            other if other.starts_with("-I") && other.len() > 2 => {
-                opts.include_dirs.push(PathBuf::from(&other[2..]));
+            // DDS-RPC 1.0 §7.2.4 names two mappings and no default; Basic
+            // needs no extension of DDS and is the one written when the flag
+            // is absent. `enhanced-empty` is the Enhanced mapping with an
+            // operation that has nothing to carry as an `@Empty` structure
+            // (§7.5.1.2.1.3) in place of the `dummy` member.
+            "--rpc-mapping" if command == Command::Generate => {
+                let value = iter
+                    .next()
+                    .ok_or("--rpc-mapping: the option takes a value")?;
+                generate_rpc_mapping = match value.as_str() {
+                    "basic" => ServiceMapping::Basic,
+                    "enhanced" => ServiceMapping::Enhanced,
+                    "enhanced-empty" => ServiceMapping::EnhancedEmptyStructures,
+                    other => {
+                        return Err(format!(
+                            "--rpc-mapping: `{other}` is not basic, enhanced or enhanced-empty"
+                        ));
+                    }
+                };
             }
-            other if other.starts_with("-D") && other.len() > 2 => {
-                opts.defines.push(other[2..].to_string());
+            "--cpp-mapping" if command == Command::Generate => {
+                let value = iter
+                    .next()
+                    .ok_or("--cpp-mapping: the option takes a value")?;
+                generate_cpp_mapping = match value.as_str() {
+                    "native" => zerodds_lang_rules::adapter::cpp::CppMapping::Native,
+                    "psm" => zerodds_lang_rules::adapter::cpp::CppMapping::Psm,
+                    "classic" => zerodds_lang_rules::adapter::cpp::CppMapping::Classic,
+                    other => {
+                        return Err(format!(
+                            "--cpp-mapping: `{other}` is not native, psm or classic"
+                        ));
+                    }
+                };
+            }
+            "--rust-map" if command == Command::Generate => {
+                let value = iter.next().ok_or("--rust-map: the option takes a value")?;
+                generate_rust_map = match value.as_str() {
+                    "entries" => zerodds_lang_rules::adapter::cst::RustMapForm::Entries,
+                    "btree-map" => zerodds_lang_rules::adapter::cst::RustMapForm::BTreeMap,
+                    other => {
+                        return Err(format!("--rust-map: `{other}` is not entries or btree-map"));
+                    }
+                };
+            }
+            "--dialect" if command == Command::Generate => {
+                let name = iter.next().ok_or("--dialect: the option takes a value")?;
+                generate_dialect = Some(Dialect::parse(name).ok_or_else(|| {
+                    format!(
+                        "--dialect: `{name}` is not a dialect — one of {}",
+                        dialect_names()
+                    )
+                })?);
+            }
+            // These two are unconditional and placed ahead of the axis-flag
+            // arm below on purpose: under `generate`, `--check`/`--write`
+            // are not axis flags either, and without this ordering the
+            // broader `name if …` guard below would claim them first and
+            // report "unknown option" instead of naming the subcommand
+            // they belong to.
+            other @ ("--check" | "--write") => {
+                return Err(format!("`{other}` belongs to the `format` subcommand"));
+            }
+            // `--lang`, `--out`, `--stamp`, `--depfile` and
+            // `--output-manifest` are the five `dlrl` shares with
+            // `generate`; the other four are wire-only and stay
+            // `generate`'s alone.
+            other @ ("--lang" | "--out" | "--stamp" | "--depfile" | "--output-manifest") => {
+                return Err(format!(
+                    "`{other}` belongs to the `generate` or `dlrl` subcommand"
+                ));
+            }
+            other @ ("--encoding" | "--endian" | "--xcdr-endianness" | "--dialect"
+            | "--rpc-mapping" | "--cpp-mapping" | "--java-mapping" | "--rust-map") => {
+                return Err(format!("`{other}` belongs to the `generate` subcommand"));
+            }
+            // Axis flags under `generate`.  Only `--`-prefixed names are
+            // checked; a bare word that is not a known flag is a file path.
+            // A name that is not an axis flag falls through to "unknown
+            // option", the same answer the non-generate catch-all below
+            // gives a `-`-prefixed name nothing else claimed.
+            name if command == Command::Generate && name.starts_with('-') => {
+                let Some(axis) = find_axis_flag(name) else {
+                    return Err(format!("unknown option `{name}`"));
+                };
+                let value = iter
+                    .next()
+                    .ok_or_else(|| format!("{name}: the option takes a value"))?;
+                // Validated against a throwaway default-dialect settings
+                // value: parsing a flag's own value never depends on which
+                // dialect or which earlier flags came before it, so this
+                // is purely "is `value` one this axis recognises at all" —
+                // the same question `run_generate` asks again, for real,
+                // once the dialect is known.
+                let settings = DialectSettings::in_dialect(
+                    Dialect::default(),
+                    generate_encoding,
+                    generate_endianness,
+                    zerodds_ast_layout::Purpose::Data,
+                );
+                let _ = axis
+                    .parse_and_apply(settings, value)
+                    .map_err(|msg| format!("{name}: {msg}"))?;
+                generate_axis_overrides.push((axis, value.clone()));
             }
             other if other.starts_with('-') => {
-                return Err(CliError::Usage(format!("unknown flag: {other}")));
-            }
-            other => {
-                if opts.file.is_some() {
-                    return Err(CliError::Usage("only one input file supported".to_string()));
+                // Axis flags in non-generate context: reject with a
+                // useful message if the flag would be valid under generate.
+                if find_axis_flag(other).is_some() {
+                    return Err(format!("`{other}` belongs to the `generate` subcommand"));
                 }
-                opts.file = Some(other.to_string());
+                return Err(format!("unknown option `{other}`"));
             }
+            path => options.files.push(path.to_string()),
         }
     }
-
-    // --corba braucht eine konkrete Antwort BEVOR die generischen
-    // backend/parse-only-Checks greifen, sonst bekommt der User die
-    // weniger praezise "no action selected"-Meldung.
-    if opts.corba {
-        if opts.backends.is_empty() {
-            return Err(CliError::Usage(
-                "--corba requires a backend (--cpp, --csharp, --java, or --rust)".to_string(),
-            ));
-        }
-        // CORBA-Code wird nur fuer cpp/csharp/java/rust emittiert.
-        // Andere Backends im Set werden ohne CORBA-Code generiert —
-        // ein hartes Reject waere bei --all unbrauchbar.
-        let corba_capable = opts.backends.iter().any(|b| {
-            matches!(
-                b,
-                Backend::Cpp | Backend::CSharp | Backend::Java | Backend::Rust
+    if options.format_check && options.format_write {
+        return Err(String::from(
+            "`--check` and `--write` contradict each other: one promises not to touch the \
+             files, the other exists to",
+        ));
+    }
+    if command == Command::Generate {
+        let languages = generate_lang.ok_or_else(|| {
+            format!(
+                "generate needs --lang: one of {}, or all",
+                generate::language_names()
             )
-        });
-        if !corba_capable {
-            return Err(CliError::NotImplemented(
-                "--corba is only supported by --cpp, --csharp, --java, --rust".to_string(),
+        })?;
+        if generate_depfile.is_some() && generate_stamp.is_none() && generate_manifest.is_none() {
+            return Err(String::from(
+                "--depfile names the target it describes: give --stamp or --output-manifest",
             ));
         }
-    }
-    // `--cyclone`: adopt CycloneDDS' default extensibility (`final`) for
-    // un-annotated aggregates, so ZeroDDS output matches an un-annotated
-    // Cyclone peer on the wire (this is the concrete #27 interop path).
-    // Precedence, highest first: explicit IDL annotation (applied later, it
-    // only touches un-annotated types) > explicit `--default-extensibility`
-    // > `--cyclone` (final) > the global ZeroDDS default (`appendable`).
-    // Resolved here, after the entire argument loop, so order is irrelevant.
-    if opts.cyclone && opts.default_ext.is_none() {
-        opts.default_ext = Some(DefaultExt::Final);
-        opts.report(
-            1,
-            "--cyclone: un-annotated aggregates default to @final (CycloneDDS-compatible)",
-        );
-    }
-    let dump_action = opts.parse_only || opts.dump_deps || opts.dump_typeobject;
-    // Modes that produce no backend code: the dump/parse actions plus
-    // `check` (semantic gate only).
-    let non_emitting = dump_action || opts.check;
-    if !non_emitting && opts.backends.is_empty() {
-        // Bei `generate` ohne Backend eine praezisere Meldung als beim
-        // flachen Aufruf — der Sub-Command sagt klar, was gewollt war.
-        let msg = if opts.subcommand == Some(SubCommand::Generate) {
-            "generate requires a backend flag (--rust, --cpp, --c, --csharp, \
-             --java, --python, --ts, or --all)"
-        } else {
-            "no action selected; use a sub-command (generate, check, dump-ast, \
-             dump-typeobject, print-deps) or a backend flag (--rust, --all, …)"
-        };
-        return Err(CliError::NotImplemented(msg.to_string()));
-    }
-    if non_emitting && !opts.backends.is_empty() {
-        return Err(CliError::Usage(
-            "the selected mode (check / dump-ast / dump-typeobject / print-deps / \
-             --parse-only) does not emit code — drop the backend flag"
-                .to_string(),
-        ));
-    }
-    // Build-Vertrag (--depfile/--output-manifest/--stamp) beschreibt den
-    // Codegen-Output — in einem nicht-emittierenden Modus gibt es nichts zu
-    // beschreiben.
-    if non_emitting && (opts.depfile.is_some() || opts.manifest.is_some() || opts.stamp.is_some()) {
-        return Err(CliError::Usage(
-            "--depfile / --output-manifest / --stamp require a backend (generate mode); \
-             they describe the generated output"
-                .to_string(),
-        ));
-    }
-    let path = opts
-        .file
-        .as_ref()
-        .ok_or_else(|| CliError::Usage("missing input file (try --help)".to_string()))?;
-    let mut raw = std::fs::read_to_string(path)
-        .map_err(|e| CliError::Io(format!("cannot read {path}: {e}")))?;
-    // Strip a leading UTF-8 BOM (U+FEFF) — not part of the IDL.
-    if raw.starts_with('\u{feff}') {
-        raw.remove(0);
-    }
-
-    // Preprocessor-Lauf: `-D`-Defines werden als synthetische
-    // `#define`-Prelude vorangestellt (gcc-Konvention: `-D NAME` ohne
-    // Wert => `1`). Anschliessend expandiert der Preprocessor alle
-    // `#include`/`#define`/`#ifdef`/`#pragma`-Direktiven.
-    let mut prelude = String::new();
-    for def in &opts.defines {
-        match def.split_once('=') {
-            Some((name, value)) => prelude.push_str(&format!("#define {name} {value}\n")),
-            None => prelude.push_str(&format!("#define {def} 1\n")),
+        if generate_java_mapping.is_some() && !languages.contains(&Language::Java) {
+            return Err(String::from(
+                "--java-mapping applies to --lang java (or all); no Java output was asked for",
+            ));
         }
-    }
-    let pp_input = format!("{prelude}{raw}");
-    let resolver = FsResolver::new(opts.include_dirs.clone());
-    let processed = Preprocessor::new(resolver)
-        .process(path, &pp_input)
-        .map_err(|e| CliError::Parse(format!("preprocessing failed: {e:?}")))?;
-    // --dump-deps: Make-Dependency-Zeile aus den vom Preprocessor
-    // registrierten Quelldateien (Haupt-IDL + alle #include-Ziele).
-    // Format: `<stem>.o: <file1> <file2> …` — direkt fuer Makefiles.
-    if opts.dump_deps {
-        let map = &processed.source_map;
-        let deps: Vec<&str> = (0..map.file_count())
-            .filter_map(|i| {
-                map.file_name(zerodds_idl::preprocessor::FileId(
-                    u32::try_from(i).unwrap_or(0),
-                ))
-            })
-            .collect();
-        let stem = basename_stem(path).unwrap_or_else(|| "output".to_string());
-        println!("{stem}.o: {}", deps.join(" "));
-        return Ok(());
-    }
-
-    let src = &processed.expanded;
-
-    let cfg = ParserConfig::default();
-    let mut ast = if opts.rti {
-        parse_with_deltas(src, &cfg, &[&RTI_CONNEXT])
-    } else {
-        parse(src, &cfg)
-    }
-    .map_err(|e| CliError::Parse(format!("parse failed: {e}")))?;
-
-    opts.report(1, &format!("parsed {path}"));
-
-    // Vendor-Pragmas (#pragma keylist / DCPS_DATA_KEY / cats) auf den
-    // AST anwenden — markiert die genannten Member als @key. Laeuft
-    // immer (Cyclone/OpenDDS-IDL ist so verbreitet, dass die Pragmas
-    // grundsaetzlich respektiert werden — die Migration-Guides
-    // dokumentieren das als garantiertes Verhalten).
-    let key_map =
-        key_pragmas::collect_key_pragmas(&processed.pragma_keylists, &processed.opensplice_pragmas);
-    let patched = key_pragmas::apply_key_pragmas(&mut ast, &key_map);
-    if patched > 0 {
-        opts.report(
-            1,
-            &format!("applied vendor key-pragmas: {patched} member(s) marked @key"),
-        );
-    }
-
-    // Default-Extensibility / Default-Nested: un-annotierte Typen vor
-    // dem Codegen explizit annotieren, damit alle Backends denselben
-    // Default sehen.
-    {
-        // CLI `--default-extensibility` wins; otherwise the compile-time
-        // `ext-default-*` Cargo feature (XTypes 1.3 §7.3.3.1, SX2 §7.3.3.1).
-        let ext = opts.default_ext.unwrap_or_else(DefaultExt::cfg_default);
-        let n = default_ext::apply_default_extensibility(&mut ast, ext);
-        if n > 0 {
-            opts.report(1, &format!("default extensibility applied to {n} type(s)"));
-        }
-    }
-    if let Some(nested) = opts.default_nested {
-        let n = default_ext::apply_default_nested(&mut ast, nested);
-        if n > 0 {
-            opts.report(1, &format!("default @nested applied to {n} type(s)"));
-        }
-    }
-
-    // Semantic gate — the single barrier that `check` and `generate` share.
-    // It runs after parse + default-patches and BEFORE TypeObject lowering,
-    // so `--no-typeobject` cannot bypass it. The lenient inspection modes
-    // (`dump-ast` / `--parse-only` / `dump-typeobject` / `print-deps`) skip
-    // it so a broken AST stays inspectable.
-    if opts.check || !non_emitting {
-        let pragma_prefixes: Vec<(String, usize)> = processed
-            .pragma_prefixes
-            .iter()
-            .map(|p| (p.prefix.clone(), p.line))
-            .collect();
-        zerodds_idl::semantics::resolve_and_validate(&ast, &pragma_prefixes)
-            .map_err(|e| CliError::Semantic(format!("semantic validation failed:\n{e}")))?;
-        opts.report(1, "semantic validation passed");
-    }
-
-    if opts.check {
-        opts.report(0, &format!("{path}: OK"));
-        return Ok(());
-    }
-
-    if opts.parse_only {
-        println!("{ast}");
-        return Ok(());
-    }
-
-    if opts.dump_typeobject {
-        return dump_typeobjects(&ast);
-    }
-
-    let base = basename_stem(path)
-        .ok_or_else(|| CliError::Usage(format!("cannot derive basename from: {path}")))?;
-
-    // XTypes-TypeObjects einmal lowern + serialisieren (default-on).
-    // Schlaegt das Mapping fehl (z.B. rekursiver Typ), wird gewarnt und
-    // ohne TypeObject-Block weitergemacht — der Kern-Codegen (Typen +
-    // CDR) ist davon unberuehrt.
-    let type_objects: Vec<TypeObjectBlob> = if opts.no_type_objects {
-        Vec::new()
-    } else {
-        match typeobject_emit::type_object_blobs(&ast) {
-            Ok(blobs) => {
-                opts.report(1, &format!("lowered {} TypeObject(s)", blobs.len()));
-                blobs
-            }
-            Err(e) => {
-                opts.report(0, &format!("warning: TypeObject emission skipped — {e}"));
-                Vec::new()
-            }
-        }
-    };
-
-    // Jedes gewaehlte Backend erzeugt seinen Output ZUERST vollstaendig im
-    // Speicher (kein `std::fs::write`). Bei --all sind das alle 17; Reihenfolge
-    // = ALL_BACKENDS. Ziel ist der `--out-<lang>`-Override, sonst das globale
-    // `-o`. Jeder Lauf sammelt die erzeugten Dateien fuer den Build-Vertrag —
-    // kein Raten von Endungen, ein Backend ohne Output wird ehrlich mit leerer
-    // Dateiliste abgebildet. Erst wenn ALLE Backends erfolgreich gestaged
-    // haben, werden die Dateien atomar auf die Platte geschrieben: faellt ein
-    // Backend (oder das Semantik-Gate oben) aus, bleibt keine Teil-Ausgabe
-    // eines anderen Backends liegen.
-    let mut manifest_entries: Vec<BackendOutput> = Vec::with_capacity(opts.backends.len());
-    for backend in &opts.backends {
-        let suffix = backend_flag_suffix(*backend);
-        let out_dir = opts.backend_out_dir(*backend).ok_or_else(|| {
-            CliError::Usage(format!(
-                "{} backend: no output directory — pass -o <dir> or --out-{suffix} <dir>",
-                backend_name(*backend)
-            ))
-        })?;
-        let files = emit_backend(*backend, &ast, &opts, out_dir, &base, &type_objects)?;
-        opts.report(
-            1,
-            &format!(
-                "staged {} backend ({} file(s)) → {}",
-                backend_name(*backend),
-                files.len(),
-                out_dir.display()
-            ),
-        );
-        manifest_entries.push(BackendOutput {
-            backend: *backend,
-            out_dir: out_dir.to_path_buf(),
-            files,
+        options.generate = Some(GenerateRequest {
+            languages,
+            stamp: generate_stamp,
+            depfile: generate_depfile,
+            manifest: generate_manifest,
+            out_dir: generate_out,
+            encoding: generate_encoding,
+            endianness: generate_endianness,
+            dialect: generate_dialect,
+            cpp_mapping: generate_cpp_mapping,
+            rust_map: generate_rust_map,
+            axis_overrides: generate_axis_overrides,
+            java_mapping: generate_java_mapping.unwrap_or_default(),
+            rpc_mapping: generate_rpc_mapping,
         });
     }
-
-    // Atomarer Veroeffentlichungs-Punkt: alle gestageten Dateien jetzt — nach
-    // dem Erfolg saemtlicher Backends — auf die Platte schreiben.
-    flush_staged_files(&manifest_entries)?;
-
-    // Build-Vertrag: Depfile + Manifest + Stamp. Werden erst NACH dem
-    // erfolgreichen Codegen aller Backends geschrieben — schlaegt ein
-    // Backend fehl (oder das Semantik-Gate weiter oben), entsteht weder
-    // Stamp noch Manifest noch Depfile.
-    if opts.depfile.is_some() || opts.manifest.is_some() || opts.stamp.is_some() {
-        write_build_contract(path, &processed, &opts, &manifest_entries)?;
+    if command == Command::Dlrl {
+        let languages = dlrl_lang.ok_or_else(|| {
+            format!(
+                "dlrl needs --lang: one of {}, or all",
+                dlrl::language_names()
+            )
+        })?;
+        if dlrl_depfile.is_some() && dlrl_stamp.is_none() && dlrl_manifest.is_none() {
+            return Err(String::from(
+                "--depfile names the target it describes: give --stamp or --output-manifest",
+            ));
+        }
+        options.dlrl = Some(DlrlRequest {
+            languages,
+            stamp: dlrl_stamp,
+            depfile: dlrl_depfile,
+            manifest: dlrl_manifest,
+            out_dir: dlrl_out,
+        });
     }
-    Ok(())
+    if options.files.is_empty() {
+        return Err(String::from("at least one file is required"));
+    }
+    Ok(options)
 }
 
-/// Ein Backend-Eintrag fuer den Build-Vertrag: das Ziel-Verzeichnis und die
-/// Liste der erzeugten Dateien (kann leer sein, wenn ein Backend fuer die
-/// gegebene IDL keinen Output erzeugt). Die Dateien sind bis zum atomaren
-/// Flush im Speicher gehalten ([`StagedFile`]).
-struct BackendOutput {
-    backend: Backend,
-    out_dir: PathBuf,
-    files: Vec<StagedFile>,
+/// Parse and lower one unit, and hand both stages' diagnostics back with
+/// the model.
+///
+/// Lowering runs even when parsing reported errors: the tree is always
+/// there, a bad range becomes an error node, and the rules that hold over
+/// the good part of a file are worth reporting in the same run rather
+/// than in the next one after a fix.
+fn analyse(
+    options: &Options,
+    unit: &Unit,
+) -> (
+    zerodds_ast::Ast,
+    Vec<zerodds_idl_parse::Diagnostic>,
+    Vec<String>,
+) {
+    let loader = zerodds_idl_compose::PathLoader::new(options.include_dirs.clone());
+    let lowering = if let Some(ref generate) = options.generate {
+        let d = generate.dialect.unwrap_or_default();
+        zerodds_ast_layout::DialectLowering::for_dialect(d)
+    } else {
+        zerodds_ast_layout::DialectLowering::for_dialect(zerodds_ast_layout::Dialect::default())
+    };
+    let composed = zerodds_idl_compose::compose_source_with(
+        &unit.path,
+        &unit.text,
+        &loader,
+        zerodds_idl_compose::ComposeOptions {
+            dialect: options.dialect(),
+            // `--default-extensibility` wins when given; absent that,
+            // `--dialect`'s own answer — not `None`, which is where a
+            // dialect whose default reads `@final` (Cyclone, the three
+            // ORBs, both ROS columns) would otherwise leave every
+            // unannotated aggregate composed as the specification's
+            // `@appendable` while `zerodds_lang_rules::generate::source`
+            // plans and frames it `@final` from the same `LayoutKey`
+            // `run_generate` builds below. The two disagreeing is not
+            // cosmetic: the codec's `DHEADER` follows the plan (correct,
+            // `@final`), and `Ast::effective_extensibility` — what the
+            // generated `DdsType::EXTENSIBILITY` constant and the
+            // evolution-tolerant decode pattern both read — would still
+            // answer `@appendable`, so a decoder built from this file
+            // would default a truncated member instead of refusing a
+            // stream `@final` gives no tolerance for. `Some(dialect)`
+            // only when `--dialect` was actually given, so a run with
+            // neither flag stays `None` — the composer's own default,
+            // unchanged.
+            default_extensibility: options.default_extensibility.or_else(|| {
+                options
+                    .generate
+                    .as_ref()
+                    .and_then(|generate| generate.dialect)
+                    .map(zerodds_ast_layout::Dialect::default_extensibility)
+            }),
+            hashed_id_advances_the_counter: if lowering.hashed_id_advances_the_counter {
+                zerodds_idl_lower::HashedIdCounter::Advances
+            } else {
+                zerodds_idl_lower::HashedIdCounter::Skipped
+            },
+            hashed_name_spelling: if lowering.hashid_reads_the_escaped_spelling {
+                zerodds_idl_lower::HashedNameSpelling::AsWritten
+            } else {
+                zerodds_idl_lower::HashedNameSpelling::Stripped
+            },
+            name_of_the_enclosing_scope: if lowering.admits_name_of_enclosing_scope {
+                zerodds_idl_lower::NameOfTheEnclosingScope::Admitted
+            } else {
+                zerodds_idl_lower::NameOfTheEnclosingScope::Refused
+            },
+            ..zerodds_idl_compose::ComposeOptions::default()
+        },
+    );
+    (composed.ast, composed.diagnostics, loader.opened())
 }
 
-/// Schreibt die Build-Vertrag-Artefakte (Depfile / Manifest / Stamp) nach
-/// erfolgreichem Codegen. Reihenfolge: Depfile + Manifest zuerst, Stamp
-/// zuletzt — der Stamp ist der einzige deklarierte OUTPUT und wird als
-/// letztes getoucht, damit seine mtime alle anderen Artefakte dominiert.
-fn write_build_contract(
-    idl_path: &str,
-    processed: &zerodds_idl::preprocessor::ProcessedSource,
-    opts: &CliOptions,
-    entries: &[BackendOutput],
-) -> Result<(), CliError> {
-    // Prerequisites = die IDL + alle transitiv #include-ten Dateien. Der
-    // Resolver liefert die kanonischen Pfade via Resolved{path}; die
-    // source_map fuehrt Datei 0 = Top-IDL, danach die kanonischen Includes.
-    let mut deps: Vec<String> = Vec::new();
-    let map = &processed.source_map;
-    for i in 0..map.file_count() {
-        if let Some(name) = map.file_name(zerodds_idl::preprocessor::FileId(
-            u32::try_from(i).unwrap_or(0),
-        )) {
-            // Die Top-IDL (Index 0) steht als CLI-Pfad drin — fuer eine
-            // einheitliche (kanonische) Depfile wird sie ebenfalls
-            // kanonisiert; Includes sind bereits kanonisch.
-            let canon = std::fs::canonicalize(name)
-                .map(|p| p.to_string_lossy().into_owned())
-                .unwrap_or_else(|_| name.to_string());
-            if !deps.contains(&canon) {
-                deps.push(canon);
-            }
-        }
-    }
+/// What a `generate` run read and wrote, for its build-contract files.
+#[derive(Debug, Default)]
+struct BuildRecord {
+    /// Every IDL file read: each unit and each file it `#include`d.
+    inputs: Vec<String>,
+    /// Every file written.
+    outputs: Vec<String>,
+}
 
-    // Flache, deduplizierte, sortierte Liste aller erzeugten Dateien.
-    let mut all_outputs: Vec<String> = Vec::new();
-    for e in entries {
-        for f in &e.files {
-            let s = f.path.to_string_lossy().into_owned();
-            if !all_outputs.contains(&s) {
-                all_outputs.push(s);
+impl BuildRecord {
+    /// Write the build-contract files `generate` and `dlrl` share:
+    /// the manifest, the depfile and last the stamp.
+    ///
+    /// Generic over what asked for them — a [`GenerateRequest`] and a
+    /// [`DlrlRequest`] have the same three optional paths and both name
+    /// the languages they emitted, and neither carries anything else
+    /// this needs.
+    fn write(
+        &self,
+        stamp: Option<&std::path::Path>,
+        depfile: Option<&std::path::Path>,
+        manifest: Option<&std::path::Path>,
+        languages: &[String],
+    ) -> Result<(), String> {
+        let write = |path: &std::path::Path, text: &str| -> Result<(), String> {
+            if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
+                std::fs::create_dir_all(parent)
+                    .map_err(|error| format!("{}: {error}", parent.display()))?;
             }
-        }
-    }
-    all_outputs.sort();
-
-    if let Some(dep_path) = &opts.depfile {
-        // Depfile-Target: der Stamp (Ninja verlangt genau EIN Target),
-        // sonst alle erzeugten Outputs (Make-Multi-Target-Regel).
-        let targets: Vec<String> = match &opts.stamp {
-            Some(stamp) => vec![stamp.to_string_lossy().into_owned()],
-            None => all_outputs.clone(),
+            std::fs::write(path, text).map_err(|error| format!("{}: {error}", path.display()))
         };
-        let content = render_depfile(&targets, &deps);
-        write_contract_file(dep_path, content.as_bytes())?;
-        opts.report(1, &format!("wrote depfile → {}", dep_path.display()));
+        if let Some(path) = manifest {
+            write(path, &self.manifest_json(languages))?;
+        }
+        if let Some(path) = depfile {
+            // The target is what the build system asks about: the stamp, or
+            // the manifest when there is no stamp (`parse_args` requires one).
+            let target = stamp
+                .or(manifest)
+                .map(|p| p.display().to_string())
+                .unwrap_or_default();
+            let mut text = make_escape(&target);
+            text.push(':');
+            for input in &self.inputs {
+                text.push_str(" \\\n  ");
+                text.push_str(&make_escape(input));
+            }
+            text.push('\n');
+            write(path, &text)?;
+        }
+        if let Some(path) = stamp {
+            write(path, "")?;
+        }
+        Ok(())
     }
 
-    if let Some(man_path) = &opts.manifest {
-        let content = render_manifest(idl_path, opts, &deps, entries, &all_outputs);
-        write_contract_file(man_path, content.as_bytes())?;
-        opts.report(1, &format!("wrote manifest → {}", man_path.display()));
+    fn manifest_json(&self, languages: &[String]) -> String {
+        let list = |items: &[String]| {
+            items
+                .iter()
+                .map(|i| json_string(i))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        format!(
+            "{{\n  \"languages\": [{}],\n  \"inputs\": [{}],\n  \"outputs\": [{}]\n}}\n",
+            list(languages),
+            list(&self.inputs),
+            list(&self.outputs)
+        )
     }
-
-    if let Some(stamp_path) = &opts.stamp {
-        // Stamp zuletzt: leerer Inhalt, mtime = Erfolgs-Zeitpunkt.
-        write_contract_file(stamp_path, b"")?;
-        opts.report(1, &format!("touched stamp → {}", stamp_path.display()));
-    }
-    Ok(())
 }
 
-/// Schreibt eine Build-Vertrag-Datei; legt fehlende Elternverzeichnisse an.
-fn write_contract_file(path: &Path, bytes: &[u8]) -> Result<(), CliError> {
-    if let Some(parent) = path.parent() {
-        if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| CliError::Io(format!("cannot create {}: {e}", parent.display())))?;
+/// A path as a Make rule spells it: spaces, `#` and `$` escaped.
+fn make_escape(path: &str) -> String {
+    let mut out = String::with_capacity(path.len());
+    for c in path.chars() {
+        match c {
+            ' ' | '#' => {
+                out.push('\\');
+                out.push(c);
+            }
+            '$' => out.push_str("$$"),
+            _ => out.push(c),
         }
     }
-    std::fs::write(path, bytes)
-        .map_err(|e| CliError::Io(format!("cannot write {}: {e}", path.display())))
-}
-
-/// Rendert eine Make-/Ninja-kompatible Depfile-Regel:
-/// `<target...>: <prereq...>`. Pfade werden GNU-Make-Style escaped
-/// (Space/`#`/`$`). Eine einzelne Regel — der von Ninja verlangte
-/// gemeinsame Nenner (kein `-MP`-Phony-Block, den Ninja ablehnt).
-fn render_depfile(targets: &[String], deps: &[String]) -> String {
-    let target = targets
-        .iter()
-        .map(|t| escape_make_path(t))
-        .collect::<Vec<_>>()
-        .join(" ");
-    let mut out = String::new();
-    out.push_str(&target);
-    out.push(':');
-    for d in deps {
-        out.push(' ');
-        out.push_str(&escape_make_path(d));
-    }
-    out.push('\n');
     out
 }
 
-/// GNU-Make/Ninja-Depfile-Escaping fuer einen Pfad: Space → `\ `,
-/// `#` → `\#`, `$` → `$$`.
-fn escape_make_path(p: &str) -> String {
-    let mut s = String::with_capacity(p.len());
-    for c in p.chars() {
-        match c {
-            ' ' => s.push_str("\\ "),
-            '#' => s.push_str("\\#"),
-            '$' => s.push_str("$$"),
-            _ => s.push(c),
-        }
-    }
-    s
-}
-
-/// Rendert das Output-Manifest als JSON (ohne serde — die einzige
-/// Datenquelle sind Strings + Backend-Namen). Schema:
-/// `{ idl, compiler_version, stamp, depfile, inputs[], backends[{backend,
-/// output_dir, files[]}], outputs[] }`.
-fn render_manifest(
-    idl_path: &str,
-    opts: &CliOptions,
-    deps: &[String],
-    entries: &[BackendOutput],
-    all_outputs: &[String],
-) -> String {
-    let mut s = String::new();
-    s.push_str("{\n");
-    s.push_str(&format!("  \"idl\": {},\n", json_string(idl_path)));
-    s.push_str(&format!(
-        "  \"compiler_version\": {},\n",
-        json_string(VERSION)
-    ));
-    s.push_str(&format!(
-        "  \"stamp\": {},\n",
-        json_opt_path(opts.stamp.as_deref())
-    ));
-    s.push_str(&format!(
-        "  \"depfile\": {},\n",
-        json_opt_path(opts.depfile.as_deref())
-    ));
-    s.push_str("  \"inputs\": ");
-    s.push_str(&json_string_array(deps));
-    s.push_str(",\n");
-    s.push_str("  \"backends\": [\n");
-    for (idx, e) in entries.iter().enumerate() {
-        let files: Vec<String> = e
-            .files
-            .iter()
-            .map(|f| f.path.to_string_lossy().into_owned())
-            .collect();
-        s.push_str("    {\n");
-        s.push_str(&format!(
-            "      \"backend\": {},\n",
-            json_string(backend_flag_suffix(e.backend))
-        ));
-        s.push_str(&format!(
-            "      \"output_dir\": {},\n",
-            json_string(&e.out_dir.to_string_lossy())
-        ));
-        s.push_str("      \"files\": ");
-        s.push_str(&json_string_array(&files));
-        s.push('\n');
-        s.push_str("    }");
-        if idx + 1 < entries.len() {
-            s.push(',');
-        }
-        s.push('\n');
-    }
-    s.push_str("  ],\n");
-    s.push_str("  \"outputs\": ");
-    s.push_str(&json_string_array(all_outputs));
-    s.push('\n');
-    s.push_str("}\n");
-    s
-}
-
-/// JSON-Array aus Strings, eingerueckt auf einer Zeile.
-fn json_string_array(items: &[String]) -> String {
-    if items.is_empty() {
-        return "[]".to_string();
-    }
-    let inner = items
-        .iter()
-        .map(|s| json_string(s))
-        .collect::<Vec<_>>()
-        .join(", ");
-    format!("[{inner}]")
-}
-
-/// Optionaler Pfad als JSON-String oder `null`.
-fn json_opt_path(p: Option<&Path>) -> String {
-    match p {
-        Some(path) => json_string(&path.to_string_lossy()),
-        None => "null".to_string(),
-    }
-}
-
-/// Minimaler JSON-String-Encoder (Quotes + Standard-Escapes).
-fn json_string(s: &str) -> String {
-    let mut out = String::with_capacity(s.len() + 2);
-    out.push('"');
-    for c in s.chars() {
+/// A JSON string literal.
+fn json_string(text: &str) -> String {
+    let mut out = String::from("\"");
+    for c in text.chars() {
         match c {
             '"' => out.push_str("\\\""),
             '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
             c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
             c => out.push(c),
         }
@@ -1097,2295 +912,1536 @@ fn json_string(s: &str) -> String {
     out
 }
 
-/// `--dump-typeobject`: alle benannten Typen einer Spec ueber den
-/// zweistufigen Registry-Mapper lowern und in topologischer Reihenfolge
-/// (Abhaengigkeiten zuerst) ausgeben. Scoped Cross-Referenzen werden
-/// aufgeloest. Schlaegt das Mapping fehl (z.B. zyklischer Typ), wird die
-/// Mapper-Fehlermeldung ausgegeben.
-/// Dumps every successfully-lowered minimal `TypeObject` to stdout and — this
-/// is the error contract — fails (non-zero exit, message on stderr) when the
-/// mapping was not total. A type that cannot be lowered (a recursive cycle, an
-/// unsupported construct, or a dependent of either) is isolated per SCC by
-/// `build_type_registry`: the lowerable types are still printed, but their
-/// presence must not mask that others were dropped. Previously this printed
-/// `// TypeObject mapping failed` to stdout and returned Ok, so a consumer saw
-/// exit 0 ("success") despite the failure.
-fn dump_typeobjects(spec: &zerodds_idl::ast::Specification) -> Result<(), CliError> {
-    match zerodds_idl::semantics::build_type_registry(spec) {
-        Ok(lowered) => {
-            for (fqn, obj) in lowered.iter() {
-                println!("// TypeObject for {fqn}\n{obj:#?}\n");
+fn run_one(options: &Options, unit: &Unit, record: &mut BuildRecord) -> Tally {
+    // `format` reads the token stream, not the model: the model has no
+    // comments and no directives, and the formatter refuses to print a
+    // form without them.
+    if options.command == Command::Format {
+        return run_format(options, unit);
+    }
+    let (mut ast, diagnostics, opened) = analyse(options, unit);
+    if matches!(options.command, Command::Generate | Command::Dlrl) {
+        for path in core::iter::once(unit.path.clone()).chain(opened.clone()) {
+            if !record.inputs.contains(&path) {
+                record.inputs.push(path);
             }
-            if lowered.skipped.is_empty() {
-                return Ok(());
-            }
-            let detail = lowered
-                .skipped
-                .iter()
-                .map(|(fqn, e)| format!("  {fqn}: {e:?}"))
-                .collect::<Vec<_>>()
-                .join("\n");
-            Err(CliError::NotImplemented(format!(
-                "TypeObject mapping incomplete — {} type(s) could not be lowered:\n{detail}",
-                lowered.skipped.len()
-            )))
-        }
-        Err(e) => Err(CliError::NotImplemented(format!(
-            "TypeObject mapping failed: {e:?}"
-        ))),
-    }
-}
-
-/// Lesbarer Backend-Name fuer Status-Ausgaben.
-fn backend_name(b: Backend) -> &'static str {
-    match b {
-        Backend::C => "C",
-        Backend::Cpp => "C++",
-        Backend::Rust => "Rust",
-        Backend::Ts => "TypeScript",
-        Backend::CSharp => "C#",
-        Backend::Java => "Java",
-        Backend::Python => "Python",
-        Backend::Go => "Go",
-        Backend::Ada => "Ada",
-        Backend::Zig => "Zig",
-        Backend::Nim => "Nim",
-        Backend::D => "D",
-        Backend::Elixir => "Elixir",
-        Backend::OCaml => "OCaml",
-        Backend::Julia => "Julia",
-        Backend::Lua => "Lua",
-        Backend::Swift => "Swift",
-    }
-}
-
-/// Splices the C TypeObject `block` into `header` immediately before the
-/// header's closing include-guard `#endif`, so the block sits inside the
-/// guard. `c_mode.rs` closes the guard with a trailing `#endif` line; appending
-/// the block after that line placed the `static const` arrays outside the
-/// guard, so a double `#include` of the header re-emitted them → clang
-/// redefinition. The insertion point is the last line that is an `#endif`
-/// directive (the guard closer). If `block` is empty the header is returned
-/// unchanged; if no `#endif` is found (never for a well-formed C header) the
-/// block is appended as a safe fallback.
-fn splice_c_typeobject_block(header: &str, block: &str) -> String {
-    if block.is_empty() {
-        return header.to_string();
-    }
-    // Byte offset of the last `#endif` directive line.
-    let mut insert_at: Option<usize> = None;
-    let mut offset = 0usize;
-    for line in header.split_inclusive('\n') {
-        if line.trim_start().starts_with("#endif") {
-            insert_at = Some(offset);
-        }
-        offset += line.len();
-    }
-    match insert_at {
-        Some(idx) => {
-            let mut out = String::with_capacity(header.len() + block.len() + 1);
-            out.push_str(&header[..idx]);
-            out.push_str(block);
-            if !block.ends_with('\n') {
-                out.push('\n');
-            }
-            out.push_str(&header[idx..]);
-            out
-        }
-        None => {
-            let mut out = String::with_capacity(header.len() + block.len());
-            out.push_str(header);
-            out.push_str(block);
-            out
         }
     }
-}
-
-/// Eine im Speicher gehaltene, erzeugte Backend-Datei (Pfad + Inhalt). Nichts
-/// wird auf die Platte geschrieben, bevor ALLE Backends ihren Output erzeugt
-/// haben — der Flush ist der eine atomare Veroeffentlichungs-Punkt. Faellt ein
-/// spaeteres Backend aus (oder das Semantik-Gate), bleibt keine Teil-Ausgabe
-/// eines frueheren Backends liegen.
-struct StagedFile {
-    path: PathBuf,
-    contents: Vec<u8>,
-    /// `false` fuer eine bereits existierende Scaffold-Datei, die unveraendert
-    /// bleibt: im Manifest gefuehrt, aber nicht (neu) geschrieben.
-    write: bool,
-}
-
-/// Staged eine erzeugte Backend-Datei im Speicher (Pfad + Inhalt) und
-/// protokolliert sie im Manifest-Sammler `files`. Der eigentliche Platten-
-/// Schreib passiert gebuendelt in [`flush_staged_files`] NACH dem Erfolg
-/// aller Backends (atomares `--all`). Zentraler Sammel-Pfad, damit jede vom
-/// Codegen erzeugte Datei ohne Endungs-Raten im Build-Vertrag auftaucht.
-fn stage_file(path: &Path, contents: impl AsRef<[u8]>, files: &mut Vec<StagedFile>) {
-    files.push(StagedFile {
-        path: path.to_path_buf(),
-        contents: contents.as_ref().to_vec(),
-        write: true,
-    });
-}
-
-/// Schreibt alle gestageten Dateien auf die Platte — der atomare
-/// Veroeffentlichungs-Punkt. Legt fehlende Elternverzeichnisse an.
-/// Scaffold-Dateien mit `write == false` (bereits vorhanden) werden
-/// uebersprungen.
-fn flush_staged_files(entries: &[BackendOutput]) -> Result<(), CliError> {
-    for entry in entries {
-        for f in &entry.files {
-            if !f.write {
-                continue;
+    match options.command {
+        Command::Check => report::emit(unit, &diagnostics, options.form),
+        Command::Lint => {
+            // The lint rules are about a file that already parses, so a
+            // unit with parse errors reports those and stops: linting a
+            // tree with error nodes in it produces findings about the
+            // recovery and not about the source.
+            let mut tally = report::emit(unit, &diagnostics, options.form);
+            if !tally.failed() {
+                // The rules read node spans, which the composer has put in
+                // the files they were written in.
+                let findings = lint::run(&ast);
+                tally.merge(report::emit(unit, &findings, options.form));
             }
-            if let Some(parent) = f.path.parent() {
-                if !parent.as_os_str().is_empty() {
-                    std::fs::create_dir_all(parent).map_err(|e| {
-                        CliError::Io(format!("cannot create {}: {e}", parent.display()))
-                    })?;
+            tally
+        }
+        Command::DumpAst => {
+            let tally = report::emit(unit, &diagnostics, options.form);
+            print!("{}", dump::tree(&ast));
+            tally
+        }
+        Command::PrintDeps => {
+            let tally = report::emit(unit, &diagnostics, options.form);
+            print!("{}", dump::dependencies(&ast));
+            tally
+        }
+        Command::Generate => run_generate(options, unit, &mut ast, &diagnostics, record),
+        Command::Dlrl => run_dlrl(options, unit, &ast, &diagnostics, &opened, record),
+        // Handled before `analyse`; `run_one` never reaches here with it.
+        Command::Format => Tally::default(),
+    }
+}
+
+/// Write `ast` out as `options.generate`'s language, beside its
+/// diagnostics.
+///
+/// A unit with parse or lowering errors reports those and stops, the
+/// same way `Command::Lint` does: a model with error nodes in it has
+/// nothing a materialiser should be asked to render.
+fn run_generate(
+    options: &Options,
+    unit: &Unit,
+    ast: &mut zerodds_ast::Ast,
+    diagnostics: &[zerodds_idl_parse::Diagnostic],
+    record: &mut BuildRecord,
+) -> Tally {
+    let mut tally = report::emit(unit, diagnostics, options.form);
+    if tally.failed() {
+        return tally;
+    }
+    // See the doc on `Options::generate`: `parse_args` never builds a
+    // `Command::Generate` without this, so a run that reaches here
+    // always has it. A `None` is left alone rather than asserted away.
+    let Some(request) = &options.generate else {
+        return tally;
+    };
+
+    // DDS-XTypes 1.3 §7.3.1.1.1: a construct outside the building blocks
+    // is ignored or warned about, "rather than halting with an error". A
+    // declaration that holds `any`, `ValueBase`, `native` or an object
+    // reference has no type identifier and no wire form, so it is left
+    // out of the generated code and the file's other declarations are
+    // generated.
+    let left_out = match ast.drop_outside_profile(zerodds_ast::Profile::XTypes13) {
+        Ok(left_out) => left_out,
+        Err(error) => {
+            eprintln!("error: {}: {error}", unit.path);
+            tally.errors += 1;
+            return tally;
+        }
+    };
+    let ast = &*ast;
+    if !left_out.is_empty() {
+        let warnings: Vec<zerodds_idl_parse::Diagnostic> = left_out
+            .iter()
+            .map(|dropped| {
+                zerodds_idl_parse::Diagnostic::warning(
+                    zerodds_idl_parse::DiagnosticCode::Unsupported,
+                    zerodds_idl_cst::Span::new(0, 0),
+                    format!(
+                        "{} reaches `{}`, for which DDS-XTypes 1.3 has no type ({}); no code is \
+                         generated for it",
+                        dropped.name, dropped.construct, dropped.detail
+                    ),
+                    dropped.spec_reference,
+                )
+            })
+            .collect();
+        tally.merge(report::emit(unit, &warnings, options.form));
+    }
+
+    let dialect = request.dialect.unwrap_or_default();
+    let overrides: Vec<(AxisFlag, &str)> = request
+        .axis_overrides
+        .iter()
+        .map(|(a, v)| (*a, v.as_str()))
+        .collect();
+    let settings = match dialect_settings_from_overrides(
+        dialect,
+        request.encoding,
+        request.endianness,
+        zerodds_ast_layout::Purpose::Data,
+        &overrides,
+    ) {
+        Ok(settings) => settings,
+        Err(error) => {
+            eprintln!("error: {}: {error}", unit.path);
+            tally.errors += 1;
+            return tally;
+        }
+    };
+    let key = settings.key;
+    let codec_options = zerodds_lang_rules::emit::encode::CodecOptions {
+        map_length_with_delimiter: settings.map_length_with_delimiter,
+    };
+
+    let stem = std::path::Path::new(&unit.path)
+        .file_stem()
+        .and_then(|name| name.to_str())
+        .unwrap_or("generated");
+    // Build a preamble string naming the dialect and each axis flag.
+    let dialect_info = if dialect.is_default() && request.axis_overrides.is_empty() {
+        None
+    } else {
+        let mut info = if dialect.is_default() {
+            String::new()
+        } else {
+            format!("dialect {}", dialect.as_str())
+        };
+        for (axis, value) in &request.axis_overrides {
+            if info.is_empty() {
+                info = format!("{} {}", axis.flag_name(), value);
+            } else {
+                info.push_str(&format!(", {} {}", axis.flag_name(), value));
+            }
+        }
+        Some(info)
+    };
+    let mut generated = Vec::new();
+    // The mapping is a scope on this thread: it decides names in every function that spells a
+    // C++ type path, and `generate::files` is one of them.
+    let _mapping = zerodds_lang_rules::adapter::cpp::CppMappingScope::enter(request.cpp_mapping);
+    let _map_form = zerodds_lang_rules::adapter::cst::RustMapFormScope::enter(request.rust_map);
+    for language in &request.languages {
+        // The Java mapping is in force for this one call: the
+        // materialiser, the codec and the typed companion all read it.
+        let produced =
+            zerodds_lang_rules::adapter::java::with_mapping(request.java_mapping, || {
+                generate::files_with_mapping(
+                    ast,
+                    *language,
+                    &unit.path,
+                    stem,
+                    key,
+                    codec_options,
+                    dialect_info.as_deref(),
+                    request.rpc_mapping,
+                )
+            });
+        match produced {
+            Ok(files) => generated.extend(files),
+            Err(message) => {
+                eprintln!("error: {}: {} — {message}", unit.path, language.as_str());
+                tally.errors += 1;
+                return tally;
+            }
+        }
+    }
+
+    write_generated_files(
+        options,
+        unit,
+        &generated,
+        &request.out_dir,
+        record,
+        &mut tally,
+    );
+    tally
+}
+
+/// Write every one of `generated` under `out_dir`, the way `run_generate`
+/// and `run_dlrl` both do: refuse a name a prior input in this run already
+/// wrote, make the parent directory, write the file, and say so in text
+/// form. Shared rather than duplicated, because the refusal is the one
+/// piece of this either subcommand cannot afford to get out of step with
+/// the other on — a language that writes a fixed file name (Java's
+/// `ZdTypes.java`, or `dlrl`'s own `<Type>.java`) silently overwriting a
+/// prior input's output is the same defect under either subcommand.
+fn write_generated_files(
+    options: &Options,
+    unit: &Unit,
+    generated: &[generate::Generated],
+    out_dir: &std::path::Path,
+    record: &mut BuildRecord,
+    tally: &mut Tally,
+) {
+    for file in generated {
+        let out = out_dir.join(&file.name);
+        // A language that writes fixed file names (Java's ZdTypes.java,
+        // Ada's zd_types.ad[sb]) gives two inputs the same path; writing the
+        // second over the first dropped the first file's types without a
+        // word. Refuse instead.
+        let shown = out.display().to_string();
+        if record.outputs.contains(&shown) {
+            eprintln!(
+                "error: {}: {shown} was already written for an earlier input in this run; \
+                 give each IDL file its own --out, or #include them into one file",
+                unit.path
+            );
+            tally.errors += 1;
+            return;
+        }
+        if let Some(parent) = out.parent() {
+            if let Err(error) = std::fs::create_dir_all(parent) {
+                eprintln!("error: {}: {error}", parent.display());
+                tally.errors += 1;
+                return;
+            }
+        }
+        if let Err(error) = std::fs::write(&out, &file.text) {
+            eprintln!("error: {}: {error}", out.display());
+            tally.errors += 1;
+            return;
+        }
+        if options.form == Form::Text {
+            println!("{}: wrote {}", unit.path, out.display());
+        }
+        record.outputs.push(out.display().to_string());
+    }
+}
+
+/// Write DDS 1.2 §8 DLRL object and home classes for `unit`'s pragmas.
+///
+/// `diagnostics` is `analyse`'s — parse and lowering — reported first and
+/// combined with `unit`'s own [`dlrl::scan`], the same "report, then stop
+/// if it failed" shape `run_generate` follows: a file that does not parse
+/// is not one `zerodds_dlrl::pragma::parse_pragma` should be asked to
+/// scan either, since a byte offset from a broken file is not one a
+/// person can trust to point where it claims to. `opened` — the files
+/// `unit` `#include`d — are scanned too, each against its own text: a
+/// DLRL pragma from an `#include`d file reported against `unit.text`
+/// would point at the wrong line in the wrong file entirely.
+fn run_dlrl(
+    options: &Options,
+    unit: &Unit,
+    ast: &zerodds_ast::Ast,
+    diagnostics: &[zerodds_idl_parse::Diagnostic],
+    opened: &[String],
+    record: &mut BuildRecord,
+) -> Tally {
+    let (mut pragmas, scan_diagnostics) = dlrl::scan(&unit.text);
+    let mut combined = diagnostics.to_vec();
+    combined.extend(scan_diagnostics);
+    let mut tally = report::emit(unit, &combined, options.form);
+
+    for path in opened {
+        match std::fs::read_to_string(path) {
+            Ok(text) => {
+                let (found, file_diagnostics) = dlrl::scan(&text);
+                pragmas.extend(found);
+                if !file_diagnostics.is_empty() {
+                    let included = Unit {
+                        path: path.clone(),
+                        text,
+                    };
+                    tally.merge(report::emit(&included, &file_diagnostics, options.form));
                 }
             }
-            std::fs::write(&f.path, &f.contents)
-                .map_err(|e| CliError::Io(format!("cannot write {}: {e}", f.path.display())))?;
-        }
-    }
-    Ok(())
-}
-
-/// Emittiert ein einzelnes Backend in `out_dir`. `type_objects` ist der
-/// XTypes-TypeObject-Block, der an die generierte Ausgabe angehaengt
-/// wird (leer = `--no-typeobject` oder Mapping fehlgeschlagen). Rueckgabe:
-/// die Liste der wirklich geschriebenen Dateien (fuer den Build-Vertrag) —
-/// kann leer sein, wenn ein Backend fuer die IDL keinen Output erzeugt.
-fn emit_backend(
-    backend: Backend,
-    ast: &zerodds_idl::ast::Specification,
-    opts: &CliOptions,
-    out_dir: &Path,
-    base: &str,
-    type_objects: &[TypeObjectBlob],
-) -> Result<Vec<StagedFile>, CliError> {
-    let mut files: Vec<StagedFile> = Vec::new();
-    match backend {
-        Backend::C => {
-            let code = generate_c_header(ast, &CGenOptions::default())
-                .map_err(|e| CliError::NotImplemented(format!("c codegen failed: {e}")))?;
-            // The C header wraps its body in an include guard (`#ifndef …_H` /
-            // closing `#endif`, emitted by c_mode.rs). The TypeObject block
-            // must live INSIDE that guard: appended after the closing `#endif`
-            // it lands outside the guard, so a second `#include` of the same
-            // header re-emits the `static const` arrays → clang redefinition.
-            // Splice it before the guard's closing `#endif` instead. C++ uses
-            // `#pragma once` and the other single-file backends carry no guard,
-            // so this fix-up is C-only.
-            let block = typeobject_emit::render(backend, ast, base, type_objects);
-            let code = splice_c_typeobject_block(&code, &block);
-            let out_path = out_dir.join(format!("{base}.h"));
-            stage_file(&out_path, code, &mut files);
-        }
-        Backend::Rust => {
-            // DataTypes immer.
-            let mut code = generate_rust_module(ast, &RustGenOptions::default())
-                .map_err(|e| CliError::NotImplemented(format!("rust codegen failed: {e}")))?;
-            code.push_str(&typeobject_emit::render(backend, ast, base, type_objects));
-            let out_path = out_dir.join(format!("{base}.rs"));
-            stage_file(&out_path, code, &mut files);
-            // Mit --corba zusaetzlich Service-Code in zweite Datei. Anders
-            // als bei C++/C#/Java (Single-File-Header) kollidieren die
-            // File-level Inner-Attributes von idl-rust und corba-rust beim
-            // Concat — deshalb Two-File-Output. User bindet via
-            // `mod <base>; mod <base>_corba;`.
-            if opts.corba {
-                let svc = generate_corba_rust_module(ast, &CorbaRustGenOptions::default())
-                    .map_err(|e| {
-                        CliError::NotImplemented(format!("corba-rust codegen failed: {e}"))
-                    })?;
-                let svc_path = out_dir.join(format!("{base}_corba.rs"));
-                stage_file(&svc_path, svc, &mut files);
-            }
-        }
-        Backend::Cpp => {
-            let cpp_opts = CppGenOptions::default();
-            let mut code = if opts.corba {
-                generate_cpp_header_with_corba_traits(ast, &cpp_opts)
-            } else {
-                generate_cpp_header(ast, &cpp_opts)
-            }
-            .map_err(|e| CliError::NotImplemented(format!("cpp codegen failed: {e}")))?;
-            code.push_str(&typeobject_emit::render(backend, ast, base, type_objects));
-            let out_path = out_dir.join(format!("{base}.hpp"));
-            stage_file(&out_path, code, &mut files);
-        }
-        Backend::Ts => {
-            let mut code = generate_ts_source(ast)
-                .map_err(|e| CliError::NotImplemented(format!("ts codegen failed: {e}")))?;
-            code.push_str(&typeobject_emit::render(backend, ast, base, type_objects));
-            let out_path = out_dir.join(format!("{base}.ts"));
-            stage_file(&out_path, code, &mut files);
-        }
-        Backend::CSharp => {
-            let cs_opts = CsGenOptions::default();
-            let mut code = if opts.corba {
-                generate_csharp_with_corba_traits(ast, &cs_opts)
-            } else {
-                generate_csharp(ast, &cs_opts)
-            }
-            .map_err(|e| CliError::NotImplemented(format!("csharp codegen failed: {e}")))?;
-            code.push_str(&typeobject_emit::render(backend, ast, base, type_objects));
-            let out_path = out_dir.join(format!("{base}.cs"));
-            stage_file(&out_path, code, &mut files);
-        }
-        Backend::Java => {
-            let java_opts = JavaGenOptions::default();
-            let java_files = if opts.corba {
-                generate_java_files_with_corba_traits(ast, &java_opts)
-            } else {
-                generate_java_files(ast, &java_opts)
-            }
-            .map_err(|e| CliError::NotImplemented(format!("java codegen failed: {e}")))?;
-            for file in java_files {
-                let pkg_subpath = file.package_path.replace('.', "/");
-                let pkg_dir = if pkg_subpath.is_empty() {
-                    out_dir.to_path_buf()
-                } else {
-                    out_dir.join(&pkg_subpath)
-                };
-                // Das Package-Verzeichnis wird erst beim atomaren Flush
-                // angelegt (flush_staged_files legt Elternverzeichnisse an) —
-                // ein Fehler in einem spaeteren Backend hinterlaesst so keine
-                // leeren Package-Ordner.
-                let class_path = pkg_dir.join(format!("{}.java", file.class_name));
-                stage_file(&class_path, &file.source, &mut files);
-            }
-            // Java ist Multi-File — der TypeObject-Block kommt als
-            // eigenstaendige Compilation-Unit. Klasse + Dateiname sind pro
-            // Basis-IDL eindeutig (`TypeObjects_<base>`), damit mehrere
-            // separat generierte IDLs im selben Package nicht als
-            // Doppel-Klasse kollidieren (Java bindet Dateiname an
-            // public-class-Name).
-            if !type_objects.is_empty() {
-                let class = typeobject_emit::type_objects_class_name(ast, base);
-                let to_path = out_dir.join(format!("{class}.java"));
-                stage_file(
-                    &to_path,
-                    typeobject_emit::render(backend, ast, base, type_objects),
-                    &mut files,
-                );
-            }
-        }
-        Backend::Python => {
-            let mut code = generate_python_module(ast, &PythonGenOptions::default())
-                .map_err(|e| CliError::NotImplemented(format!("python codegen failed: {e}")))?;
-            code.push_str(&typeobject_emit::render(backend, ast, base, type_objects));
-            let out_path = out_dir.join(format!("{base}.py"));
-            stage_file(&out_path, code, &mut files);
-        }
-        Backend::Go => {
-            let code = generate_go_module(ast, &GoGenOptions::default())
-                .map_err(|e| CliError::NotImplemented(format!("go codegen failed: {e}")))?;
-            let out_path = out_dir.join(format!("{base}.go"));
-            stage_file(&out_path, code, &mut files);
-        }
-        Backend::Ada => {
-            // GNAT maps the unit name to lower-case file names; `base` is the
-            // unit name (mixed-case is fine, GNAT is case-insensitive).
-            let opts_ada = AdaGenOptions {
-                package_name: base.to_string(),
-                ..Default::default()
-            };
-            let module = generate_ada_module(ast, &opts_ada)
-                .map_err(|e| CliError::NotImplemented(format!("ada codegen failed: {e}")))?;
-            let lower = base.to_lowercase();
-            for (ext, code) in [("ads", &module.spec), ("adb", &module.body)] {
-                let out_path = out_dir.join(format!("{lower}.{ext}"));
-                stage_file(&out_path, code, &mut files);
-            }
-        }
-        Backend::Zig => {
-            let code = generate_zig_module(ast, &ZigGenOptions::default())
-                .map_err(|e| CliError::NotImplemented(format!("zig codegen failed: {e}")))?;
-            let out_path = out_dir.join(format!("{base}.zig"));
-            stage_file(&out_path, code, &mut files);
-        }
-        Backend::Nim => {
-            let code = generate_nim_module(ast, &NimGenOptions::default())
-                .map_err(|e| CliError::NotImplemented(format!("nim codegen failed: {e}")))?;
-            let out_path = out_dir.join(format!("{base}.nim"));
-            stage_file(&out_path, code, &mut files);
-        }
-        Backend::D => {
-            let code = generate_d_module(ast, &DGenOptions::default())
-                .map_err(|e| CliError::NotImplemented(format!("d codegen failed: {e}")))?;
-            let out_path = out_dir.join(format!("{base}.d"));
-            stage_file(&out_path, code, &mut files);
-        }
-        Backend::Elixir => {
-            let module = base
-                .split(['.', '_', '-'])
-                .filter(|p| !p.is_empty())
-                .map(|p| {
-                    let mut c = p.chars();
-                    match c.next() {
-                        Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
-                        None => String::new(),
-                    }
-                })
-                .collect::<String>();
-            let opts_ex = ElixirGenOptions {
-                module_name: if module.is_empty() {
-                    "Zdgen".to_string()
-                } else {
-                    module
-                },
-            };
-            let code = generate_elixir_module(ast, &opts_ex)
-                .map_err(|e| CliError::NotImplemented(format!("elixir codegen failed: {e}")))?;
-            let out_path = out_dir.join(format!("{base}.ex"));
-            stage_file(&out_path, code, &mut files);
-        }
-        Backend::OCaml => {
-            let code = generate_ocaml_module(ast, &OcamlGenOptions::default())
-                .map_err(|e| CliError::NotImplemented(format!("ocaml codegen failed: {e}")))?;
-            let out_path = out_dir.join(format!("{base}.ml"));
-            stage_file(&out_path, code, &mut files);
-        }
-        Backend::Julia => {
-            let code = generate_julia_module(ast, &JuliaGenOptions::default())
-                .map_err(|e| CliError::NotImplemented(format!("julia codegen failed: {e}")))?;
-            let out_path = out_dir.join(format!("{base}.jl"));
-            stage_file(&out_path, code, &mut files);
-        }
-        Backend::Lua => {
-            let code = generate_lua_module(ast, &LuaGenOptions::default())
-                .map_err(|e| CliError::NotImplemented(format!("lua codegen failed: {e}")))?;
-            let out_path = out_dir.join(format!("{base}.lua"));
-            stage_file(&out_path, code, &mut files);
-        }
-        Backend::Swift => {
-            let code = generate_swift_module(ast, &SwiftGenOptions::default())
-                .map_err(|e| CliError::NotImplemented(format!("swift codegen failed: {e}")))?;
-            let out_path = out_dir.join(format!("{base}.swift"));
-            stage_file(&out_path, code, &mut files);
-        }
-    }
-
-    // --scaffold: idiomatische Build-Datei je Backend. Bereits
-    // vorhandene Build-Dateien werden nicht ueberschrieben (der User
-    // koennte sie angepasst haben).
-    if opts.scaffold {
-        for (name, content) in scaffold::scaffold_files(backend, base) {
-            let path = out_dir.join(&name);
-            if path.exists() {
-                opts.report(1, &format!("scaffold: {name} exists — kept"));
-                // Bereits vorhandene Build-Datei ist trotzdem Teil des
-                // Projekt-Outputs → im Manifest fuehren, aber NICHT
-                // ueberschreiben (write == false).
-                files.push(StagedFile {
-                    path,
-                    contents: Vec::new(),
-                    write: false,
-                });
-            } else {
-                stage_file(&path, content, &mut files);
-                opts.report(1, &format!("scaffold: staged {name}"));
+            Err(error) => {
+                eprintln!("error: {path}: {error}");
+                tally.errors += 1;
             }
         }
     }
-    Ok(files)
-}
+    if tally.failed() {
+        return tally;
+    }
+    // See the doc on `Options::dlrl`: `parse_args` never builds a
+    // `Command::Dlrl` without this, so a run that reaches here always has
+    // it. A `None` is left alone rather than asserted away, the same
+    // standing `run_generate` gives `options.generate`.
+    let Some(request) = &options.dlrl else {
+        return tally;
+    };
 
-/// Filename-Stem ohne Directory + ohne letzte Extension.
-/// `foo/bar/chat.idl` → `Some("chat")`.
-fn basename_stem(path: &str) -> Option<String> {
-    Path::new(path)
+    let mut infos = zerodds_dlrl_codegen::collect_type_infos(&pragmas);
+    let key_errors: Vec<zerodds_idl_parse::Diagnostic> =
+        dlrl::resolve_member_types(ast, &mut infos)
+            .into_iter()
+            .map(|message| {
+                zerodds_idl_parse::Diagnostic::error(
+                    zerodds_idl_parse::DiagnosticCode::Unsupported,
+                    zerodds_idl_cst::Span::new(0, 0),
+                    message,
+                    "OMG DDS 1.2 §8.2.2",
+                )
+            })
+            .collect();
+    if !key_errors.is_empty() {
+        tally.merge(report::emit(unit, &key_errors, options.form));
+        return tally;
+    }
+    if infos.is_empty() {
+        // A run that writes nothing says so, the same reason the summary
+        // line at the very end of `main` counts files rather than
+        // trusting silence: an author who meant to mark a type and
+        // mistyped the pragma tag would otherwise see "0 errors" and a
+        // clean exit for a run that generated nothing at all.
+        let warning = zerodds_idl_parse::Diagnostic::warning(
+            zerodds_idl_parse::DiagnosticCode::Unsupported,
+            zerodds_idl_cst::Span::new(0, 0),
+            "no `#pragma DCPS_DATA_TYPE`, `DCPS_DATA_KEY` or `DCPS_DLRL_RELATION` found; \
+             `dlrl` writes no file for it"
+                .to_string(),
+            "OMG DDS 1.2 §8.2.2",
+        );
+        tally.merge(report::emit(unit, &[warning], options.form));
+        return tally;
+    }
+
+    let stem = std::path::Path::new(&unit.path)
         .file_stem()
-        .and_then(|s| s.to_str())
-        .map(str::to_string)
+        .and_then(|name| name.to_str())
+        .unwrap_or("generated");
+    let mut generated = Vec::new();
+    for language in &request.languages {
+        generated.extend(dlrl::files(&infos, *language, &unit.path, stem));
+    }
+    write_generated_files(
+        options,
+        unit,
+        &generated,
+        &request.out_dir,
+        record,
+        &mut tally,
+    );
+    tally
+}
+
+/// Format one unit, in whichever of the three modes was asked for.
+///
+/// The default prints the canonical form to stdout and changes nothing.
+/// `--check` names each file that is not canonical and counts it as an
+/// error, which is what makes the exit code say so. `--write` rewrites
+/// exactly the files that are not canonical. A refusal — a file that
+/// does not parse, or one whose comments the canonical form could not
+/// carry — is reported like every other diagnostic and no output is
+/// produced for that file in any mode.
+/// Write `unit` out in canonical form, or say why not.
+///
+/// The refusal runs the whole pipeline, not just the parser. `format`
+/// used to refuse only a file that did not *parse*, so a file with a
+/// duplicate case label, a zero array bound, an unresolvable type or —
+/// under `--strict` — a vendor pragma was rewritten without a word,
+/// while the same run's `check` rejected it. Handing the user a
+/// formatted file their tool discards on the next step is worse than
+/// refusing both: 21 of the 356 probes of `tools/idl-4.2-gap-scan` were
+/// in exactly that state, and 12 of the tree's 748 `.idl` files.
+///
+/// Nothing is printed on the success path, because the formatted text
+/// goes to stdout and a warning printed ahead of it would end up in the
+/// file a caller redirected it into.
+fn run_format(options: &Options, unit: &Unit) -> Tally {
+    let (_, diagnostics, _) = analyse(options, unit);
+    let failed = diagnostics
+        .iter()
+        .any(|d| d.severity == zerodds_idl_parse::Severity::Error);
+    if failed {
+        return report::emit(unit, &diagnostics, options.form);
+    }
+    // `analyse` read the file after the preprocessor, under the same
+    // dialect, and found no error: that is the validity the layout needs.
+    match format::canonical_of_checked(&unit.text) {
+        Err(diagnostics) => report::emit(unit, &diagnostics, options.form),
+        Ok(formatted) => {
+            let mut tally = Tally::default();
+            let changed = formatted != unit.text;
+            if options.format_check {
+                if changed {
+                    println!("{}: not in canonical form", unit.path);
+                    tally.errors += 1;
+                }
+            } else if options.format_write {
+                if changed {
+                    if let Err(error) = std::fs::write(&unit.path, &formatted) {
+                        eprintln!("error: {}: {error}", unit.path);
+                        tally.errors += 1;
+                    }
+                }
+            } else {
+                print!("{formatted}");
+            }
+            tally
+        }
+    }
 }
 
 fn print_help() {
     println!(
-        "zerodds-idlc {VERSION}\n\
-         IDL4 compiler (alle 17 Backends)\n\n\
-         USAGE:\n\
-         \x20   zerodds-idlc <COMMAND> <file.idl> [OPTIONS]\n\
-         \x20   zerodds-idlc <file.idl> [BACKEND-FLAGS]            (flache Form)\n\n\
-         COMMANDS:\n\
-         \x20   generate           Codegen — ein/mehrere Backends emittieren\n\
-         \x20   check              Parse + Validierung, kein Codegen\n\
-         \x20   dump-ast           Geparstes AST ausgeben\n\
-         \x20   dump-typeobject    XTypes-TypeObject je Struct ausgeben\n\
-         \x20   print-deps         Make-Dependency-Zeile (Input + #includes)\n\
-         \x20   (ohne Command: flache Form, Backend-Flags direkt am Aufruf)\n\n\
-         OPTIONS:\n\
-         \x20   --parse-only       Parse + print AST (kein Codegen)\n\
-         \x20   --dump-ast         Alias fuer --parse-only\n\
-         \x20   --dump-deps        Make-Dependency-Zeile (Input + #includes)\n\
-         \x20   --dump-typeobject  XTypes-TypeObject je Struct (kein Codegen)\n\
-         \x20   --rti              RTI Connext-Grammar-Delta beim Parse\n\
-         \x20   --opendds          OpenDDS-Intent (Vendor-Pragmas werden\n\
-         \x20                      ohnehin verarbeitet) — Kompat-Flag\n\
-         \x20   --cyclone          CycloneDDS-Interop: un-annotierte Aggregate\n\
-         \x20                      als @final (Cyclone-Default) generieren;\n\
-         \x20                      @-Annotation/--default-extensibility gewinnen\n\
-         \x20   --corba            CORBA-Service-Code zusaetzlich emittieren\n\
-         \x20                      (--cpp/--csharp/--java: Annex-A.1 inline;\n\
-         \x20                       --rust: Two-File-Output via zerodds-corba-rust)\n\
-         \x20   --c                C-Header (C-Mode) ueber zerodds-idl-cpp\n\
-         \x20   --cpp              C++17-Header ueber zerodds-idl-cpp\n\
-         \x20   --rust             Rust-Backend ueber zerodds-idl-rust\n\
-         \x20   --ts               TypeScript-Modul ueber zerodds-idl-ts\n\
-         \x20   --csharp           C#-Code ueber zerodds-idl-csharp\n\
-         \x20   --java             Java-Files (Package-Layout) ueber zerodds-idl-java\n\
-         \x20   --python           Python-Modul (@idl_struct + @dataclass) ueber zerodds-idl-python\n\
-         \x20   --all              Alle 17 Backends in einem Lauf\n\
-         \x20   --default-extensibility KIND  Extensibility fuer un-annotierte\n\
-         \x20                      Typen: final|appendable|mutable (auch -de)\n\
-         \x20   --default-nested true|false   Un-annotierte Typen @nested\n\
-         \x20   --no-typeobject    XTypes-TypeObject-Emission abschalten\n\
-         \x20                      (default an, wie RTI/Fast/Cyclone)\n\
-         \x20   --scaffold         Build-Datei je Backend mit-emittieren\n\
-         \x20                      (Cargo.toml/CMakeLists.txt/pom.xml/…)\n\
-         \x20   --depfile FILE     Make-/Ninja-Depfile schreiben: Target =\n\
-         \x20                      Stamp (falls gesetzt) sonst alle Outputs,\n\
-         \x20                      Prereqs = IDL + alle transitiven #includes\n\
-         \x20   --output-manifest FILE  JSON aller erzeugten Dateien je\n\
-         \x20                      Backend (Alias --manifest); kein Endungs-Raten\n\
-         \x20   --stamp FILE       Stabile Stamp-Datei als einziger OUTPUT\n\
-         \x20                      (touch nach erfolgreichem Codegen)\n\
-         \x20   -o, --output DIR   Ausgabe-Verzeichnis (fuer Backend-Modi)\n\
-         \x20   --out-<lang> DIR   Per-Backend-Output-Override; <lang> =\n\
-         \x20                      rust|c|cpp|csharp|java|python|ts\n\
-         \x20   -I DIR             Include-Search-Pfad (wiederholbar)\n\
-         \x20   -D NAME[=VALUE]    Preprocessor-Macro definieren (wiederholbar)\n\
-         \x20   -v, --verbose      Mehr Status-Ausgabe (wiederholbar: -vv)\n\
-         \x20   -q, --quiet        Nur Fehler ausgeben\n\
-         \x20   --color WHEN       Farb-Modus: auto (default), always, never\n\
-         \x20   -h, --help         Diese Hilfe\n\
-         \x20   -V, --version      Versions-Info\n\n\
-         PREPROCESSOR:\n\
-         \x20   #include, #define, #ifdef/#else/#endif und #pragma werden\n\
-         \x20   vor dem Parsen expandiert. -I fuegt Include-Pfade hinzu,\n\
-         \x20   -D definiert Macros (ohne Wert => 1, gcc-Konvention).\n\n\
-         EXIT-CODES:\n\
-         \x20   0  Erfolg\n\
-         \x20   1  Parse-Fehler\n\
-         \x20   2  CLI/IO-Fehler\n\
-         \x20   3  Backend nicht implementiert oder Codegen-Fehler\n"
+        "zerodds-idlc — read OMG IDL 4.2 and say what is in it\n\
+         \n\
+         USAGE:\n    \
+             zerodds-idlc <SUBCOMMAND> [OPTIONS] FILE...\n\
+         \n\
+         SUBCOMMANDS:\n    \
+             check         parse and lower; report every diagnostic\n    \
+             lint          the rules a valid file can still break\n    \
+             format        the canonical form, to stdout by default\n    \
+             dump-ast      the model, as a tree\n    \
+             print-deps    the types each declaration names\n    \
+             generate      one language's source for the model\n    \
+             dlrl          DDS 1.2 §8 DLRL object and home classes, from the three DLRL \
+             pragmas\n\
+         \n\
+OPTIONS:\n    \
+              --strict           OMG IDL 4.2 only; reject every vendor extension\n    \
+              --ros2             admit ROS 2 dialect (unqualified member types like `Pose pose;`)\n    \
+              --json             machine-readable diagnostics\n    \
+             --deny-warnings    exit non-zero when anything was reported\n    \
+             --default-extensibility <final|appendable|mutable>\n                       what an aggregate whose source said nothing is taken to be (default: the specification's appendable). A source that did say still wins\n    \
+             --check            format only: name each non-canonical file, exit 1\n    \
+             --write            format only: rewrite non-canonical files in place\n    \
+             --lang <NAME>      generate/dlrl only, required: the language to emit, or `all` \
+             — an unknown name lists the valid ones (generate: 21 wire languages; dlrl: cpp, \
+             csharp, java, typescript)\n    \
+             --out <DIR>        generate/dlrl only: where the file goes (default: the \
+             current directory)\n    \
+             -I, --include <DIR>  where a quoted #include is searched after the including \
+             file's directory; repeatable\n    \
+             --stamp <FILE>     generate/dlrl only: written last, and only when the run \
+             succeeded\n    \
+             --depfile <FILE>   generate/dlrl only: Make dependency file (target: the stamp, \
+             else the manifest) listing every IDL file read\n    \
+             --output-manifest <FILE>  generate/dlrl only: JSON of the files read and \
+             written\n    \
+             --encoding <ENC>   generate only: xcdr1, xcdr2 (default), pl-cdr1, pl-cdr2, \
+             delimited-cdr\n    \
+             --endian <le|be>   generate only: the byte order the codec is planned for. It \
+             does not change the emitted text — every wire runtime holds the order in its \
+             writer and reader — but the preamble names it (default: le)\n    \
+             --xcdr-endianness <BE|LE>  generate only: the DDS-TS 1.0 spelling of --endian\n    \
+             --java-mapping <omg|psm>  generate --lang java only: the shape of the Java types. \
+             psm (default) is Clause 9 of DDS-Java-PSM 1.0, final classes with private state and bean \
+             accessors, and java.util.Collection<E> for an unbounded sequence; \
+             omg is the IDL-to-Java mapping, public fields and T[] for every sequence\n    \
+             --rpc-mapping <M>  generate only: the service mapping of DDS-RPC 1.0 §7.5.1 an \
+             `interface` is written for — basic (default), enhanced, or enhanced-empty (the \
+             Enhanced mapping with `@Empty` structures for an operation with nothing to carry)\n    \
+             --cpp-mapping <native|psm|classic>  generate only: how --lang c++ spells topic \
+             types — psm (default; DDS-PSM-Cxx 1.0 §7.4 and §8.1: classes with accessors, \
+             dds::core::optional, std::map, …, over the same codec), native (public \
+             fields, the types the codec reads and writes; what the wire codec gates and the \
+             endpoint SDKs ask for) or classic (the OMG IDL to C++ 1.3 mapping in C++03, \
+             over the same codec)\n    \
+             --rust-map <entries|btree-map>  generate --lang rust only: how an IDL map is \
+             held — entries (default; the MapEntry sequence of XTypes 1.3 §7.5.1.3.6) or \
+             btree-map (a BTreeMap, entries in ascending key order)\n    \
+             --dialect <NAME>   generate only: reproduce one peer's answers to every wire \
+             axis at once, before any axis flag overrides one of them (default: specification, \
+             which is what generate always emitted) — an unknown name lists the valid ones\n    \
+             --<axis> <VALUE>   generate only: override one answer of the dialect, applied \
+             after --dialect in the order given — an unknown value lists the valid ones for \
+             that axis; docs/wire-axis-flags.md has every axis's flag and values\n    \
+             -h, --help         this text\n    \
+             -V, --version      the version\n\
+         \n\
+         EXIT CODES:\n    \
+             0  nothing to report\n    \
+             1  a diagnostic was reported, or --check found a file to reformat\n    \
+             2  the command line was wrong\n    \
+             3  a file could not be read\n"
     );
 }
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
+    #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
     use super::*;
 
+    fn options(args: &[&str]) -> Result<Options, String> {
+        parse_args(&args.iter().map(|a| (*a).to_string()).collect::<Vec<_>>())
+    }
+
+    /// crates.io shows the package description, and it read "check, lint,
+    /// format and inspect OMG IDL 4.2 without generating anything" while
+    /// `generate` was a subcommand the tool parses and `--help` lists.
+    /// Nothing failed from it: the sentence was simply wrong on the
+    /// registry page, where no test looked.
     #[test]
-    fn run_with_no_args_errors_with_usage() {
-        let result = run(&[]);
-        assert!(matches!(result, Err(CliError::NotImplemented(_))));
+    fn the_package_description_denies_no_subcommand_the_tool_parses() {
+        let description = env!("CARGO_PKG_DESCRIPTION").to_ascii_lowercase();
+        for name in [
+            "check",
+            "lint",
+            "format",
+            "dump-ast",
+            "print-deps",
+            "generate",
+            "dlrl",
+        ] {
+            assert!(
+                Command::parse(name).is_some(),
+                "`{name}` is no longer a subcommand — this list has drifted \
+                 away from `Command::parse`"
+            );
+            // The wrong description had the shape "without generating"; the
+            // stem without a trailing `e` covers the -ing and -es forms.
+            let stem = name.trim_end_matches('e');
+            assert!(
+                !description.contains(&format!("without {stem}")),
+                "the description denies `{name}`, which the tool parses: \
+                 {description}"
+            );
+        }
+    }
+
+    /// DDS-RPC 1.0 §7.2.4 names two service mappings and no default; Basic
+    /// is the one written when `--rpc-mapping` is absent.
+    #[test]
+    fn the_rpc_mapping_is_basic_unless_named() {
+        let got = options(&["generate", "--lang", "rust", "a.idl"]).expect("valid");
+        assert_eq!(
+            got.generate.as_ref().unwrap().rpc_mapping,
+            ServiceMapping::Basic
+        );
+        for (name, want) in [
+            ("basic", ServiceMapping::Basic),
+            ("enhanced", ServiceMapping::Enhanced),
+            ("enhanced-empty", ServiceMapping::EnhancedEmptyStructures),
+        ] {
+            let got = options(&["generate", "--lang", "rust", "--rpc-mapping", name, "a.idl"])
+                .expect("valid");
+            assert_eq!(got.generate.as_ref().unwrap().rpc_mapping, want, "{name}");
+        }
     }
 
     #[test]
-    fn run_with_unknown_flag_errors() {
-        let result = run(&["--bogus".to_string()]);
-        assert!(matches!(result, Err(CliError::Usage(_))));
+    fn an_unknown_rpc_mapping_and_a_misplaced_flag_are_refused() {
+        let err = options(&[
+            "generate",
+            "--lang",
+            "rust",
+            "--rpc-mapping",
+            "full",
+            "a.idl",
+        ])
+        .expect_err("`full` is no mapping");
+        assert!(err.contains("full"), "{err}");
+        assert!(options(&["generate", "--rpc-mapping"]).is_err());
+        assert!(options(&["check", "--rpc-mapping", "basic", "a.idl"]).is_err());
     }
 
     #[test]
-    fn run_with_help_succeeds() {
-        let result = run(&["--help".to_string()]);
-        assert!(result.is_ok());
+    fn a_subcommand_and_a_file_are_the_minimum() {
+        let got = options(&["check", "a.idl"]).expect("valid");
+        assert_eq!(got.command, Command::Check);
+        assert_eq!(got.files, vec![String::from("a.idl")]);
+        assert_eq!(got.form, Form::Text);
+
+        options(&["check"]).expect_err("a file is required");
+        options(&[]).expect_err("a subcommand is required");
+    }
+
+    /// An unknown subcommand and an unknown option are both named back,
+    /// because a tool that says "usage:" and nothing else makes the
+    /// caller guess which of their words it did not know.
+    #[test]
+    fn what_was_not_understood_is_named() {
+        let error = options(&["transpile", "a.idl"]).expect_err("not a subcommand");
+        assert!(error.contains("transpile"), "{error}");
+        let error = options(&["check", "--colour", "a.idl"]).expect_err("unknown option");
+        assert!(error.contains("--colour"), "{error}");
     }
 
     #[test]
-    fn run_with_version_succeeds() {
-        let result = run(&["--version".to_string()]);
-        assert!(result.is_ok());
+    fn flags_and_files_may_be_interleaved() {
+        let got = options(&["lint", "a.idl", "--strict", "b.idl", "--json"]).expect("valid");
+        assert_eq!(got.command, Command::Lint);
+        assert_eq!(
+            got.files,
+            vec![String::from("a.idl"), String::from("b.idl")]
+        );
+        assert!(got.strict);
+        assert_eq!(got.form, Form::Json);
     }
 
     #[test]
-    fn run_parse_only_without_file_errors() {
-        let result = run(&["--parse-only".to_string()]);
-        assert!(matches!(result, Err(CliError::Usage(_))));
+    fn every_subcommand_parses_by_its_written_name() {
+        for (token, want) in [
+            ("check", Command::Check),
+            ("lint", Command::Lint),
+            ("format", Command::Format),
+            ("dump-ast", Command::DumpAst),
+            ("print-deps", Command::PrintDeps),
+            ("generate", Command::Generate),
+            ("dlrl", Command::Dlrl),
+        ] {
+            assert_eq!(Command::parse(token), Some(want), "{token}");
+        }
+        assert_eq!(Command::parse("transpile"), None);
     }
 
+    /// `--check` and `--write` belong to `format`: elsewhere they are
+    /// named back, together they are refused, alone they are read.
     #[test]
-    fn run_parse_only_with_missing_file_errors_io() {
-        let result = run(&[
-            "--parse-only".to_string(),
-            "/nonexistent/file.idl".to_string(),
-        ]);
-        assert!(matches!(result, Err(CliError::Io(_))));
-    }
+    fn the_format_flags_are_format_only_and_exclusive() {
+        let got = options(&["format", "--check", "a.idl"]).expect("valid");
+        assert!(got.format_check && !got.format_write);
+        let got = options(&["format", "--write", "a.idl"]).expect("valid");
+        assert!(got.format_write && !got.format_check);
 
-    #[test]
-    fn cli_error_exit_codes_are_distinct() {
-        assert_eq!(CliError::Parse("x".into()).exit_code(), 1);
-        assert_eq!(CliError::Usage("x".into()).exit_code(), 2);
-        assert_eq!(CliError::Io("x".into()).exit_code(), 2);
-        assert_eq!(CliError::NotImplemented("x".into()).exit_code(), 3);
-    }
-
-    /// Eindeutiger Test-Workdir pro Aufruf — vermeidet Race zwischen
-    /// `cargo test`-Threads, die parallel im selben temp_dir landen.
-    fn unique_workdir(label: &str) -> std::path::PathBuf {
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or_default();
-        let pid = std::process::id();
-        let dir = std::env::temp_dir().join(format!("zerodds-idlc-{label}-{pid}-{nanos}"));
-        std::fs::create_dir_all(&dir).expect("create workdir");
-        dir
-    }
-
-    #[test]
-    fn run_c_backend_writes_header_with_typedef() {
-        let work = unique_workdir("c-ok");
-        let idl_path = work.join("chat.idl");
-        std::fs::write(&idl_path, "struct Greeting { long id; };").expect("write idl");
-        let out_dir = work.join("out");
-
-        let result = run(&[
-            "--c".to_string(),
-            "-o".to_string(),
-            out_dir.to_string_lossy().to_string(),
-            idl_path.to_string_lossy().to_string(),
-        ]);
-        assert!(result.is_ok(), "expected Ok, got {result:?}");
-
-        let generated =
-            std::fs::read_to_string(out_dir.join("chat.h")).expect("read generated c header");
+        let error = options(&["lint", "--check", "a.idl"]).expect_err("format only");
         assert!(
-            generated.contains("Greeting"),
-            "c header should declare Greeting symbol, got:\n{generated}"
+            error.contains("--check") && error.contains("format"),
+            "{error}"
+        );
+        let error = options(&["format", "--check", "--write", "a.idl"]).expect_err("exclusive");
+        assert!(
+            error.contains("--check") && error.contains("--write"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn generate_needs_lang_and_names_the_valid_ones_when_missing() {
+        let error = options(&["generate", "a.idl"]).expect_err("--lang is required");
+        assert!(error.contains("--lang"), "{error}");
+        assert!(
+            error.contains("rust") && error.contains("kotlin"),
+            "{error}"
+        );
+    }
+
+    /// The same naming `what_was_not_understood_is_named` checks for a
+    /// subcommand and an option: an unknown `--lang` value says which
+    /// ones would have worked.
+    #[test]
+    fn an_unknown_language_names_the_valid_ones() {
+        let error = options(&["generate", "--lang", "cobol", "a.idl"]).expect_err("unknown");
+        assert!(error.contains("cobol"), "{error}");
+        assert!(error.contains("rust") && error.contains("nim"), "{error}");
+    }
+
+    #[test]
+    fn generate_defaults_to_xcdr2_little_endian_and_the_current_directory() {
+        let got = options(&["generate", "--lang", "rust", "a.idl"]).expect("valid");
+        let request = got.generate.expect("a generate request");
+        assert_eq!(request.languages, vec![Language::Rust]);
+        assert_eq!(request.out_dir, PathBuf::from("."));
+        assert_eq!(request.encoding, Encoding::PlainCdr2);
+        assert_eq!(request.endianness, Endianness::Little);
+    }
+
+    /// `--java-mapping` selects the shape of the Java types: Clause 9 of
+    /// DDS-Java-PSM 1.0 by default, the IDL-to-Java mapping on request,
+    /// and nothing else.
+    #[test]
+    fn the_java_mapping_defaults_to_psm_and_omg_is_selectable() {
+        use zerodds_lang_rules::adapter::java::JavaMapping;
+        let got = options(&["generate", "--lang", "java", "a.idl"]).expect("valid");
+        assert_eq!(
+            got.generate.expect("a generate request").java_mapping,
+            JavaMapping::Psm
+        );
+        let got = options(&[
+            "generate",
+            "--lang",
+            "java",
+            "--java-mapping",
+            "psm",
+            "a.idl",
+        ])
+        .expect("valid");
+        assert_eq!(
+            got.generate.expect("a generate request").java_mapping,
+            JavaMapping::Psm
+        );
+        let got = options(&[
+            "generate",
+            "--lang",
+            "java",
+            "--java-mapping",
+            "omg",
+            "a.idl",
+        ])
+        .expect("valid");
+        assert_eq!(
+            got.generate.expect("a generate request").java_mapping,
+            JavaMapping::Omg
+        );
+        let got = options(&[
+            "generate",
+            "--lang",
+            "all",
+            "--java-mapping",
+            "omg",
+            "a.idl",
+        ])
+        .expect("valid");
+        assert_eq!(
+            got.generate.expect("a generate request").java_mapping,
+            JavaMapping::Omg
+        );
+        let error = options(&[
+            "generate",
+            "--lang",
+            "java",
+            "--java-mapping",
+            "jacorb",
+            "a.idl",
+        ])
+        .expect_err("unknown mapping");
+        assert!(error.contains("jacorb") && error.contains("psm"), "{error}");
+        let error = options(&[
+            "generate",
+            "--lang",
+            "rust",
+            "--java-mapping",
+            "psm",
+            "a.idl",
+        ])
+        .expect_err("no Java output asked for");
+        assert!(error.contains("--lang java"), "{error}");
+        let error =
+            options(&["check", "--java-mapping", "psm", "a.idl"]).expect_err("generate only");
+        assert!(error.contains("generate"), "{error}");
+    }
+
+    #[test]
+    fn generate_reads_out_encoding_and_endian() {
+        let got = options(&[
+            "generate",
+            "--lang",
+            "nim",
+            "--out",
+            "build",
+            "--encoding",
+            "xcdr1",
+            "--endian",
+            "be",
+            "a.idl",
+        ])
+        .expect("valid");
+        let request = got.generate.expect("a generate request");
+        assert_eq!(request.languages, vec![Language::Nim]);
+        assert_eq!(request.out_dir, PathBuf::from("build"));
+        assert_eq!(request.encoding, Encoding::PlainCdr1);
+        assert_eq!(request.endianness, Endianness::Big);
+    }
+
+    /// DDS-TS 1.0 §C.3.1 names the flag `--xcdr-endianness=BE|LE` and
+    /// gives it the default LE. It is the same option under a second
+    /// spelling, in either case, and the default is what a `generate`
+    /// line that names neither already gets.
+    #[test]
+    fn generate_takes_the_dds_ts_spelling_of_the_endianness_flag() {
+        let big = options(&[
+            "generate",
+            "--lang",
+            "typescript",
+            "--xcdr-endianness",
+            "BE",
+            "a.idl",
+        ])
+        .expect("valid")
+        .generate
+        .expect("a generate request");
+        assert_eq!(big.endianness, Endianness::Big);
+
+        let little = options(&[
+            "generate",
+            "--lang",
+            "typescript",
+            "--xcdr-endianness",
+            "LE",
+            "a.idl",
+        ])
+        .expect("valid")
+        .generate
+        .expect("a generate request");
+        assert_eq!(little.endianness, Endianness::Little);
+
+        let unnamed = options(&["generate", "--lang", "typescript", "a.idl"])
+            .expect("valid")
+            .generate
+            .expect("a generate request");
+        assert_eq!(unnamed.endianness, Endianness::Little);
+
+        assert!(
+            options(&[
+                "generate",
+                "--lang",
+                "typescript",
+                "--xcdr-endianness",
+                "middle",
+                "a.idl"
+            ])
+            .is_err(),
+            "a third byte order was accepted"
+        );
+    }
+
+    #[test]
+    fn generate_rejects_a_bad_encoding_or_endian() {
+        let error = options(&[
+            "generate",
+            "--lang",
+            "rust",
+            "--encoding",
+            "ebcdic",
+            "a.idl",
+        ])
+        .expect_err("not an encoding");
+        assert!(
+            error.contains("--encoding") && error.contains("ebcdic"),
+            "{error}"
         );
 
-        std::fs::remove_dir_all(&work).ok();
-    }
-
-    #[test]
-    fn multi_backend_partial_failure_leaves_no_files() {
-        // Atomares `--all` (P1): staged ein Backend erfolgreich und ein
-        // spaeteres Backend faellt aus, darf KEINE Datei des ersten Backends
-        // liegenbleiben. `long double` wird vom TS-Backend akzeptiert, vom
-        // C-Backend abgelehnt (C5.1-a Foundation scope) — Reihenfolge
-        // `--ts --c`: TS staged, C schlaegt fehl, Flush laeuft nie.
-        let work = unique_workdir("atomic-partial");
-        let idl_path = work.join("t.idl");
-        std::fs::write(&idl_path, "struct S { long double d; };").expect("write idl");
-        let out_dir = work.join("out");
-
-        let result = run(&[
-            "--ts".to_string(),
-            "--c".to_string(),
-            "-o".to_string(),
-            out_dir.to_string_lossy().to_string(),
-            idl_path.to_string_lossy().to_string(),
-        ]);
+        let error = options(&["generate", "--lang", "rust", "--endian", "middle", "a.idl"])
+            .expect_err("not le or be");
         assert!(
-            matches!(result, Err(CliError::NotImplemented(_))),
-            "expected the C backend to fail, got {result:?}"
+            error.contains("--endian") && error.contains("middle"),
+            "{error}"
         );
+    }
 
-        // Der TS-Output (t.ts) des zuvor erfolgreich gestageten Backends darf
-        // nicht existieren — und generell keine Datei im Zielverzeichnis.
+    /// `--lang`, `--out`, `--encoding` and `--endian` belong to
+    /// `generate` the way `--check`/`--write` belong to `format`.
+    #[test]
+    fn the_generate_flags_are_generate_only() {
+        let error = options(&["check", "--lang", "rust", "a.idl"]).expect_err("generate only");
         assert!(
-            !out_dir.join("t.ts").exists(),
-            "TS file must not be left behind after the C backend failed"
+            error.contains("--lang") && error.contains("generate"),
+            "{error}"
         );
-        let leftover: Vec<_> = std::fs::read_dir(&out_dir)
-            .map(|rd| rd.filter_map(Result::ok).map(|e| e.path()).collect())
-            .unwrap_or_default();
+        let error = options(&["lint", "--out", "build", "a.idl"]).expect_err("generate only");
         assert!(
-            leftover.is_empty(),
-            "no files may be published on partial failure, found: {leftover:?}"
+            error.contains("--out") && error.contains("generate"),
+            "{error}"
         );
+    }
 
-        std::fs::remove_dir_all(&work).ok();
+    /// `--encoding`, `--endian`, `--xcdr-endianness` and `--dialect` are
+    /// wire questions `dlrl` has none of, so they stay `generate`'s
+    /// alone even though `--lang`/`--out`/`--stamp`/`--depfile`/
+    /// `--output-manifest` are now shared with `dlrl`.
+    #[test]
+    fn the_wire_only_generate_flags_do_not_mention_dlrl() {
+        for (flag, value) in [
+            ("--encoding", "xcdr1"),
+            ("--endian", "le"),
+            ("--xcdr-endianness", "LE"),
+            ("--dialect", "specification"),
+        ] {
+            let error = options(&["dlrl", flag, value, "a.idl"]).expect_err("generate-only flag");
+            assert!(
+                error.contains(flag) && error.contains("generate") && !error.contains("dlrl"),
+                "{error}"
+            );
+        }
     }
 
     #[test]
-    fn multi_backend_all_success_publishes_every_file() {
-        // Gegenprobe: gelingt jedes Backend, werden alle Dateien atomar
-        // veroeffentlicht.
-        let work = unique_workdir("atomic-success");
-        let idl_path = work.join("t.idl");
-        std::fs::write(&idl_path, "struct S { long id; };").expect("write idl");
-        let out_dir = work.join("out");
-
-        let result = run(&[
-            "--ts".to_string(),
-            "--c".to_string(),
-            "-o".to_string(),
-            out_dir.to_string_lossy().to_string(),
-            idl_path.to_string_lossy().to_string(),
-        ]);
-        assert!(result.is_ok(), "expected Ok, got {result:?}");
-        assert!(out_dir.join("t.ts").exists(), "TS file must be published");
-        assert!(out_dir.join("t.h").exists(), "C header must be published");
-
-        std::fs::remove_dir_all(&work).ok();
-    }
-
-    #[test]
-    fn splice_puts_block_before_closing_endif() {
-        let header =
-            "#ifndef FOO_H\n#define FOO_H\nint x;\n#ifdef __cplusplus\n}\n#endif\n#endif\n";
-        let block = "\n/* TO */\nstatic const unsigned char t[] = {0};\n";
-        let spliced = splice_c_typeobject_block(header, block);
-        // Block is present and lies before the final guard-closing `#endif`.
-        let block_pos = spliced
-            .find("static const unsigned char t[]")
-            .expect("block present");
-        let last_endif = spliced.rfind("#endif").expect("guard endif present");
+    fn dlrl_needs_lang_and_names_the_four_languages_when_missing() {
+        let error = options(&["dlrl", "a.idl"]).expect_err("--lang is required");
+        assert!(error.contains("--lang"), "{error}");
         assert!(
-            block_pos < last_endif,
-            "typeobject block must precede the closing #endif:\n{spliced}"
+            error.contains("c++") && error.contains("typescript"),
+            "{error}"
         );
-        // The guard closer survives (still ends the file inside the guard).
-        assert!(spliced.trim_end().ends_with("#endif"));
+        assert!(!error.contains("kotlin"), "{error}");
     }
 
     #[test]
-    fn splice_empty_block_is_identity() {
-        let header = "#ifndef FOO_H\n#define FOO_H\nint x;\n#endif\n";
-        assert_eq!(splice_c_typeobject_block(header, ""), header);
+    fn dlrl_lang_takes_the_same_aliases_generate_does() {
+        for (alias, want) in [
+            ("cpp", Language::Cpp),
+            ("cxx", Language::Cpp),
+            ("csharp", Language::CSharp),
+            ("cs", Language::CSharp),
+            ("java", Language::Java),
+            ("typescript", Language::TypeScript),
+            ("ts", Language::TypeScript),
+        ] {
+            let got = options(&["dlrl", "--lang", alias, "a.idl"]).expect("valid");
+            let request = got.dlrl.expect("a dlrl request");
+            assert_eq!(request.languages, vec![want], "{alias}");
+        }
     }
 
     #[test]
-    fn splice_without_endif_appends() {
-        let header = "int x;\n";
-        let block = "static const unsigned char t[] = {0};\n";
-        let spliced = splice_c_typeobject_block(header, block);
-        assert!(spliced.starts_with("int x;"));
-        assert!(spliced.contains("static const unsigned char t[]"));
+    fn dlrl_lang_all_is_the_four_dlrl_languages_not_every_language() {
+        let got = options(&["dlrl", "--lang", "all", "a.idl"]).expect("valid");
+        let request = got.dlrl.expect("a dlrl request");
+        assert_eq!(request.languages, dlrl::LANGUAGES.to_vec());
+        assert!(!request.languages.contains(&Language::Rust));
+    }
+
+    /// `dlrl --lang rust` is a `generate` question — the CLI names the
+    /// four valid languages, not the twenty-one `generate` takes.
+    #[test]
+    fn dlrl_rejects_a_wire_only_language() {
+        let error = options(&["dlrl", "--lang", "rust", "a.idl"]).expect_err("not a dlrl target");
+        assert!(error.contains("rust"), "{error}");
+        assert!(error.contains("c++") && error.contains("java"), "{error}");
     }
 
     #[test]
-    fn run_c_backend_keeps_typeobject_inside_include_guard() {
-        let work = unique_workdir("c-typeobject-guard");
-        let idl_path = work.join("keyed.idl");
-        // A @key member triggers a TypeObject block in the post-pass.
-        std::fs::write(&idl_path, "@final struct Keyed { @key long id; long v; };")
-            .expect("write idl");
-        let out_dir = work.join("out");
+    fn dlrl_defaults_to_the_current_directory() {
+        let got = options(&["dlrl", "--lang", "cpp", "a.idl"]).expect("valid");
+        let request = got.dlrl.expect("a dlrl request");
+        assert_eq!(request.out_dir, PathBuf::from("."));
+        assert!(request.stamp.is_none());
+        assert!(request.depfile.is_none());
+        assert!(request.manifest.is_none());
+    }
 
-        let result = run(&[
-            "--c".to_string(),
-            "-o".to_string(),
-            out_dir.to_string_lossy().to_string(),
-            idl_path.to_string_lossy().to_string(),
-        ]);
-        assert!(result.is_ok(), "expected Ok, got {result:?}");
+    #[test]
+    fn dlrl_reads_out_stamp_depfile_and_manifest() {
+        let got = options(&[
+            "dlrl",
+            "--lang",
+            "java",
+            "--out",
+            "build",
+            "--stamp",
+            "a.stamp",
+            "--depfile",
+            "a.d",
+            "--output-manifest",
+            "a.json",
+            "a.idl",
+        ])
+        .expect("valid");
+        let request = got.dlrl.expect("a dlrl request");
+        assert_eq!(request.out_dir, PathBuf::from("build"));
+        assert_eq!(request.stamp, Some(PathBuf::from("a.stamp")));
+        assert_eq!(request.depfile, Some(PathBuf::from("a.d")));
+        assert_eq!(request.manifest, Some(PathBuf::from("a.json")));
+    }
 
-        let generated =
-            std::fs::read_to_string(out_dir.join("keyed.h")).expect("read generated c header");
-        let block_pos = generated
-            .find("_type_object[]")
-            .expect("typeobject block should be emitted for a @key type");
-        let last_endif = generated
-            .rfind("#endif")
-            .expect("include-guard #endif present");
+    /// A real IDL file, generated end to end: composed, materialised and
+    /// written, with the extension and the content its language
+    /// promises.
+    #[test]
+    fn generate_writes_a_real_idl_file_as_lua() {
+        let dir = std::env::temp_dir().join(format!(
+            "zerodds-idlc-generate-test-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        std::fs::create_dir_all(&dir).expect("a scratch directory");
+        let idl_path = dir.join("robot.idl");
+        std::fs::write(&idl_path, "struct Pose { double x; double y; };\n")
+            .expect("writing the fixture IDL");
+
+        let options = options(&[
+            "generate",
+            "--lang",
+            "lua",
+            "--out",
+            dir.to_str().expect("a UTF-8 path"),
+            idl_path.to_str().expect("a UTF-8 path"),
+        ])
+        .expect("a valid command line");
+        let unit = Unit::read(idl_path.to_str().expect("a UTF-8 path")).expect("reading it back");
+        let tally = run_one(&options, &unit, &mut BuildRecord::default());
+        assert!(!tally.failed(), "{tally:?}");
+
+        let generated = std::fs::read_to_string(dir.join("robot.lua"))
+            .expect("`generate` writes `<stem>.<extension>` in `--out`");
         assert!(
-            block_pos < last_endif,
-            "typeobject block must sit inside the include guard, got:\n{generated}"
-        );
-
-        std::fs::remove_dir_all(&work).ok();
-    }
-
-    #[test]
-    fn run_rust_backend_writes_file_with_expected_struct() {
-        let work = unique_workdir("rust-ok");
-        let idl_path = work.join("chat.idl");
-        std::fs::write(&idl_path, "struct Greeting { long id; };").expect("write idl");
-        let out_dir = work.join("out");
-
-        let result = run(&[
-            "--rust".to_string(),
-            "-o".to_string(),
-            out_dir.to_string_lossy().to_string(),
-            idl_path.to_string_lossy().to_string(),
-        ]);
-        assert!(result.is_ok(), "expected Ok, got {result:?}");
-
-        let generated =
-            std::fs::read_to_string(out_dir.join("chat.rs")).expect("read generated file");
-        assert!(
-            generated.contains("pub struct Greeting"),
-            "generated module should contain the struct, got:\n{generated}"
-        );
-
-        std::fs::remove_dir_all(&work).ok();
-    }
-
-    #[test]
-    fn run_cpp_backend_writes_header_with_expected_class() {
-        let work = unique_workdir("cpp-ok");
-        let idl_path = work.join("chat.idl");
-        std::fs::write(&idl_path, "struct Greeting { long id; };").expect("write idl");
-        let out_dir = work.join("out");
-
-        let result = run(&[
-            "--cpp".to_string(),
-            "-o".to_string(),
-            out_dir.to_string_lossy().to_string(),
-            idl_path.to_string_lossy().to_string(),
-        ]);
-        assert!(result.is_ok(), "expected Ok, got {result:?}");
-
-        let generated =
-            std::fs::read_to_string(out_dir.join("chat.hpp")).expect("read generated header");
-        assert!(
-            generated.contains("class Greeting"),
-            "cpp header should declare class Greeting, got:\n{generated}"
-        );
-        assert!(
-            generated.contains("#pragma once"),
-            "cpp header should include #pragma once, got:\n{generated}"
-        );
-
-        std::fs::remove_dir_all(&work).ok();
-    }
-
-    #[test]
-    fn run_ts_backend_writes_module_with_expected_symbol() {
-        let work = unique_workdir("ts-ok");
-        let idl_path = work.join("chat.idl");
-        std::fs::write(&idl_path, "struct Greeting { long id; };").expect("write idl");
-        let out_dir = work.join("out");
-
-        let result = run(&[
-            "--ts".to_string(),
-            "-o".to_string(),
-            out_dir.to_string_lossy().to_string(),
-            idl_path.to_string_lossy().to_string(),
-        ]);
-        assert!(result.is_ok(), "expected Ok, got {result:?}");
-
-        let generated =
-            std::fs::read_to_string(out_dir.join("chat.ts")).expect("read generated ts");
-        assert!(
-            generated.contains("Greeting"),
-            "ts module should mention Greeting, got:\n{generated}"
-        );
-
-        std::fs::remove_dir_all(&work).ok();
-    }
-
-    #[test]
-    fn run_csharp_backend_writes_file_with_expected_symbol() {
-        let work = unique_workdir("csharp-ok");
-        let idl_path = work.join("chat.idl");
-        std::fs::write(&idl_path, "struct Greeting { long id; };").expect("write idl");
-        let out_dir = work.join("out");
-
-        let result = run(&[
-            "--csharp".to_string(),
-            "-o".to_string(),
-            out_dir.to_string_lossy().to_string(),
-            idl_path.to_string_lossy().to_string(),
-        ]);
-        assert!(result.is_ok(), "expected Ok, got {result:?}");
-
-        let generated =
-            std::fs::read_to_string(out_dir.join("chat.cs")).expect("read generated cs");
-        assert!(
-            generated.contains("Greeting"),
-            "C# file should mention Greeting, got:\n{generated}"
-        );
-
-        std::fs::remove_dir_all(&work).ok();
-    }
-
-    #[test]
-    fn run_python_backend_writes_module_with_dataclass() {
-        let work = unique_workdir("python-ok");
-        let idl_path = work.join("chat.idl");
-        std::fs::write(&idl_path, "struct Greeting { long id; string text; };").expect("write idl");
-        let out_dir = work.join("out");
-
-        let result = run(&[
-            "--python".to_string(),
-            "-o".to_string(),
-            out_dir.to_string_lossy().to_string(),
-            idl_path.to_string_lossy().to_string(),
-        ]);
-        assert!(result.is_ok(), "expected Ok, got {result:?}");
-
-        let generated =
-            std::fs::read_to_string(out_dir.join("chat.py")).expect("read generated py");
-        assert!(
-            generated.contains("@idl_struct(typename=\"Greeting\""),
+            generated.contains("Generated by `idlc generate`"),
             "{generated}"
         );
-        assert!(generated.contains("@dataclass"), "{generated}");
-        assert!(generated.contains("class Greeting:"), "{generated}");
+        assert!(generated.contains("Pose"), "{generated}");
 
-        std::fs::remove_dir_all(&work).ok();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
-    #[test]
-    fn run_java_backend_writes_class_file_in_package_layout() {
-        let work = unique_workdir("java-ok");
-        let idl_path = work.join("chat.idl");
-        std::fs::write(&idl_path, "struct Greeting { long id; };").expect("write idl");
-        let out_dir = work.join("out");
-
-        let result = run(&[
-            "--java".to_string(),
-            "-o".to_string(),
-            out_dir.to_string_lossy().to_string(),
-            idl_path.to_string_lossy().to_string(),
-        ]);
-        assert!(result.is_ok(), "expected Ok, got {result:?}");
-
-        // Recursive walk: irgendwo unter out_dir muss `Greeting.java` liegen,
-        // dessen Pfad-Tiefe vom Package abhaengt (Default-Package = direkt
-        // in out_dir, sonst in Package-Subdir).
-        let mut found_path: Option<PathBuf> = None;
-        let mut stack = vec![out_dir.clone()];
-        while let Some(dir) = stack.pop() {
-            for entry in std::fs::read_dir(&dir).expect("read out_dir") {
-                let entry = entry.expect("dir entry");
-                let p = entry.path();
-                if p.is_dir() {
-                    stack.push(p);
-                } else if p.file_name().and_then(|s| s.to_str()) == Some("Greeting.java") {
-                    found_path = Some(p);
-                    break;
-                }
-            }
-        }
-        let path = found_path
-            .unwrap_or_else(|| panic!("Greeting.java not found under {}", out_dir.display()));
-        let source = std::fs::read_to_string(&path).expect("read greeting.java");
-        assert!(
-            source.contains("class Greeting"),
-            "Greeting.java should declare class Greeting, got:\n{source}"
-        );
-
-        std::fs::remove_dir_all(&work).ok();
-    }
-
-    /// Multi-File-Compose-Regression: zwei getrennt generierte IDLs, die im
-    /// selben Namespace/Package zusammengefuehrt werden, duerfen keinen
-    /// zweiten TypeObject-Holder gleichen Namens deklarieren
-    /// (C# CS0101 / Java Doppel-Klasse). Der Holder ist pro Basis-IDL
-    /// eindeutig (`TypeObjects_<base>`). Statische Invariante — der echte
-    /// csc/javac-Compose-Compile ist gated auf codepit / lokaler Toolchain.
-    #[test]
-    fn compose_two_idls_yield_unique_typeobject_holders() {
-        let work = unique_workdir("compose-to");
-        let common = work.join("common.idl");
-        let metrics = work.join("metrics.idl");
-        std::fs::write(
-            &common,
-            "module common { struct KeyLabel { @key uint32 id; string label; }; };",
-        )
-        .expect("write common.idl");
-        std::fs::write(
-            &metrics,
-            "module metrics { struct SystemCpuInfo { @key string id; string brand; \
-             string name; float usage; }; };",
-        )
-        .expect("write metrics.idl");
-
-        // C#: beide in DASSELBE Out-Dir (= ein Projekt/Namespace).
-        let cs = work.join("cs");
-        for idl in [&common, &metrics] {
-            let r = run(&[
-                "--csharp".to_string(),
-                "-o".to_string(),
-                cs.to_string_lossy().to_string(),
-                idl.to_string_lossy().to_string(),
-            ]);
-            assert!(r.is_ok(), "csharp gen failed: {r:?}");
-        }
-        let cs_common = std::fs::read_to_string(cs.join("common.cs")).expect("read common.cs");
-        let cs_metrics = std::fs::read_to_string(cs.join("metrics.cs")).expect("read metrics.cs");
-        assert!(cs_common.contains("public static class TypeObjects_common"));
-        assert!(cs_metrics.contains("public static class TypeObjects_metrics"));
-        // Kein bare `class TypeObjects` (ohne per-Base-Suffix) => kein CS0101.
-        assert!(!cs_common.contains("class TypeObjects\n"));
-        assert!(!cs_metrics.contains("class TypeObjects\n"));
-        assert!(!cs_metrics.contains("class TypeObjects_common"));
-
-        // Java: beide ins selbe Out-Dir. Datei + Klasse pro Basis eindeutig.
-        let java = work.join("java");
-        for idl in [&common, &metrics] {
-            let r = run(&[
-                "--java".to_string(),
-                "-o".to_string(),
-                java.to_string_lossy().to_string(),
-                idl.to_string_lossy().to_string(),
-            ]);
-            assert!(r.is_ok(), "java gen failed: {r:?}");
-        }
-        let jc = std::fs::read_to_string(java.join("TypeObjects_common.java"))
-            .expect("TypeObjects_common.java must exist");
-        let jm = std::fs::read_to_string(java.join("TypeObjects_metrics.java"))
-            .expect("TypeObjects_metrics.java must exist");
-        assert!(jc.contains("public final class TypeObjects_common"));
-        assert!(jm.contains("public final class TypeObjects_metrics"));
-        // Die alte feste `TypeObjects.java` darf nicht mehr entstehen.
-        assert!(
-            !java.join("TypeObjects.java").exists(),
-            "fixed-name TypeObjects.java would collide on multi-file compose"
-        );
-
-        // Rust (GH #25): das TypeObject-Modul muss pro Basis eindeutig sein
-        // (`type_objects_common`/`type_objects_metrics`), sonst E0428
-        // "type_objects defined multiple times" beim `include!` beider Dateien
-        // in ein gemeinsames Eltern-Modul. Der frühere Fix f2341dae behob nur
-        // die doppelten `use`-Imports, nicht den `pub mod type_objects`-Wrapper.
-        let rust = work.join("rust");
-        for idl in [&common, &metrics] {
-            let r = run(&[
-                "--rust".to_string(),
-                "-o".to_string(),
-                rust.to_string_lossy().to_string(),
-                idl.to_string_lossy().to_string(),
-            ]);
-            assert!(r.is_ok(), "rust gen failed: {r:?}");
-        }
-        let rc = std::fs::read_to_string(rust.join("common.rs")).expect("read common.rs");
-        let rm = std::fs::read_to_string(rust.join("metrics.rs")).expect("read metrics.rs");
-        assert!(rc.contains("pub mod type_objects_common"));
-        assert!(rm.contains("pub mod type_objects_metrics"));
-        // Kein bare `pub mod type_objects {` (ohne per-Base-Suffix) => kein E0428.
-        assert!(!rc.contains("pub mod type_objects {"));
-        assert!(!rm.contains("pub mod type_objects {"));
-
-        std::fs::remove_dir_all(&work).ok();
-    }
-
-    #[test]
-    fn color_mode_parses_when_values() {
-        assert_eq!(
-            color_mode_from_args(&["--color".into(), "always".into()]),
-            ColorMode::Always
-        );
-        assert_eq!(
-            color_mode_from_args(&["--color".into(), "never".into()]),
-            ColorMode::Never
-        );
-        assert_eq!(color_mode_from_args(&[]), ColorMode::Auto);
-    }
-
-    #[test]
-    fn run_color_rejects_bad_value() {
-        let result = run(&["--color".into(), "rainbow".into()]);
-        assert!(matches!(result, Err(CliError::Usage(_))), "got {result:?}");
-    }
-
-    #[test]
-    fn run_verbose_flag_accepted() {
-        let work = unique_workdir("verbose");
-        let idl = work.join("v.idl");
-        std::fs::write(&idl, "struct V { long a; };").expect("write idl");
-        let out = work.join("out");
-        // -v und -q sind reine Ausgabe-Modifier — duerfen den Codegen
-        // nicht beeinflussen.
-        let result = run(&[
-            "-vv".to_string(),
-            "--rust".to_string(),
-            "-o".to_string(),
-            out.to_string_lossy().to_string(),
-            idl.to_string_lossy().to_string(),
-        ]);
-        assert!(result.is_ok(), "got {result:?}");
-        assert!(out.join("v.rs").exists());
-        std::fs::remove_dir_all(&work).ok();
-    }
-
-    #[test]
-    fn run_duplicate_backend_flag_is_idempotent() {
-        // `--rust --rust` darf kein Fehler sein — push_backend dedupliziert.
-        let work = unique_workdir("dup-flag");
-        let idl = work.join("d.idl");
-        std::fs::write(&idl, "struct D { long a; };").expect("write idl");
-        let out = work.join("out");
-        let result = run(&[
-            "--rust".to_string(),
-            "--rust".to_string(),
-            "-o".to_string(),
-            out.to_string_lossy().to_string(),
-            idl.to_string_lossy().to_string(),
-        ]);
-        assert!(
-            result.is_ok(),
-            "duplicate --rust should be idempotent, got {result:?}"
-        );
-        std::fs::remove_dir_all(&work).ok();
-    }
-
-    #[test]
-    fn run_rust_backend_without_output_errors_usage() {
-        let work = unique_workdir("rust-no-out");
-        let idl_path = work.join("x.idl");
-        std::fs::write(&idl_path, "struct X { long a; };").expect("write idl");
-
-        let result = run(&["--rust".to_string(), idl_path.to_string_lossy().to_string()]);
-        assert!(matches!(result, Err(CliError::Usage(_))));
-
-        std::fs::remove_dir_all(&work).ok();
-    }
-
-    #[test]
-    fn run_parse_only_and_backend_are_mutually_exclusive() {
-        let result = run(&[
-            "--parse-only".to_string(),
-            "--rust".to_string(),
-            "-o".to_string(),
-            "/tmp/x".to_string(),
-            "some.idl".to_string(),
-        ]);
-        assert!(matches!(result, Err(CliError::Usage(_))));
-    }
-
-    #[test]
-    fn run_output_flag_without_value_errors_usage() {
-        let result = run(&["--rust".to_string(), "-o".to_string()]);
-        assert!(matches!(result, Err(CliError::Usage(_))));
-    }
-
-    /// `--corba` ohne Backend: nicht klar was gemeint ist → Usage-Error.
-    #[test]
-    fn run_corba_alone_errors_usage() {
-        let result = run(&[
-            "--corba".to_string(),
-            "-o".to_string(),
-            "/tmp/x".to_string(),
-            "some.idl".to_string(),
-        ]);
-        assert!(matches!(result, Err(CliError::Usage(_))));
-    }
-
-    /// `--corba` mit C/TS/Python: Library hat kein emit_corba_traits.
-    /// Exit-Code 3 (NotImplemented) statt 2, damit CI das von
-    /// „kaputtem User-Input" unterscheiden kann.
-    #[test]
-    fn run_corba_with_c_errors_not_implemented() {
-        let work = unique_workdir("corba-c");
-        let idl_path = work.join("x.idl");
-        std::fs::write(&idl_path, "struct X { long a; };").expect("write idl");
-
-        let result = run(&[
-            "--c".to_string(),
-            "--corba".to_string(),
-            "-o".to_string(),
-            work.join("out").to_string_lossy().to_string(),
-            idl_path.to_string_lossy().to_string(),
-        ]);
-        assert!(
-            matches!(result, Err(CliError::NotImplemented(_))),
-            "got {result:?}"
-        );
-
-        std::fs::remove_dir_all(&work).ok();
-    }
-
-    /// `--rust --corba` emittiert Two-File-Output: <base>.rs (Types)
-    /// + <base>_corba.rs (Service-Code via zerodds-corba-rust).
-    /// Vendor-Spec: zerodds-corba-rust-1.0.
-    #[test]
-    fn run_rust_corba_emits_types_and_service_files() {
-        let work = unique_workdir("rust-corba");
-        let idl_path = work.join("svc.idl");
-        std::fs::write(
-            &idl_path,
-            "interface Calc { long add(in long a, in long b); };",
-        )
-        .expect("write idl");
-        let out_dir = work.join("out");
-
-        let result = run(&[
-            "--rust".to_string(),
-            "--corba".to_string(),
-            "-o".to_string(),
-            out_dir.to_string_lossy().to_string(),
-            idl_path.to_string_lossy().to_string(),
-        ]);
-        assert!(result.is_ok(), "expected Ok, got {result:?}");
-
-        // svc.rs muss existieren (auch leer wenn IDL keine Types hat).
-        let types_path = out_dir.join("svc.rs");
-        assert!(
-            types_path.exists(),
-            "expected {} to exist",
-            types_path.display(),
-        );
-
-        // svc_corba.rs muss den Calc-Trait + Stub enthalten.
-        let svc_path = out_dir.join("svc_corba.rs");
-        let svc = std::fs::read_to_string(&svc_path).expect("read svc_corba.rs");
-        assert!(
-            svc.contains("pub trait Calc"),
-            "expected trait Calc, got:\n{svc}",
-        );
-        assert!(svc.contains("CalcStub"), "expected CalcStub, got:\n{svc}",);
-        assert!(
-            svc.contains("CALC_REPOSITORY_ID"),
-            "expected Repository-ID const, got:\n{svc}",
-        );
-
-        std::fs::remove_dir_all(&work).ok();
-    }
-
-    #[test]
-    fn run_cpp_corba_emits_namespace_corba_block() {
-        let work = unique_workdir("cpp-corba");
-        let idl_path = work.join("chat.idl");
-        std::fs::write(&idl_path, "struct Greeting { long id; };").expect("write idl");
-        let out_dir = work.join("out");
-
-        let result = run(&[
-            "--cpp".to_string(),
-            "--corba".to_string(),
-            "-o".to_string(),
-            out_dir.to_string_lossy().to_string(),
-            idl_path.to_string_lossy().to_string(),
-        ]);
-        assert!(result.is_ok(), "expected Ok, got {result:?}");
-
-        let generated =
-            std::fs::read_to_string(out_dir.join("chat.hpp")).expect("read generated header");
-        assert!(
-            generated.contains("namespace CORBA"),
-            "cpp header with --corba should include 'namespace CORBA', got:\n{generated}"
-        );
-
-        std::fs::remove_dir_all(&work).ok();
-    }
-
-    #[test]
-    fn run_csharp_corba_emits_corba_namespace() {
-        let work = unique_workdir("cs-corba");
-        let idl_path = work.join("chat.idl");
-        std::fs::write(&idl_path, "struct Greeting { long id; };").expect("write idl");
-        let out_dir = work.join("out");
-
-        let result = run(&[
-            "--csharp".to_string(),
-            "--corba".to_string(),
-            "-o".to_string(),
-            out_dir.to_string_lossy().to_string(),
-            idl_path.to_string_lossy().to_string(),
-        ]);
-        assert!(result.is_ok(), "expected Ok, got {result:?}");
-
-        let generated =
-            std::fs::read_to_string(out_dir.join("chat.cs")).expect("read generated cs");
-        assert!(
-            generated.contains("namespace Corba"),
-            "C# with --corba should include 'namespace Corba', got:\n{generated}"
-        );
-
-        std::fs::remove_dir_all(&work).ok();
-    }
-
-    #[test]
-    fn run_java_corba_emits_corba_traits_class() {
-        let work = unique_workdir("java-corba");
-        let idl_path = work.join("chat.idl");
-        std::fs::write(&idl_path, "struct Greeting { long id; };").expect("write idl");
-        let out_dir = work.join("out");
-
-        let result = run(&[
-            "--java".to_string(),
-            "--corba".to_string(),
-            "-o".to_string(),
-            out_dir.to_string_lossy().to_string(),
-            idl_path.to_string_lossy().to_string(),
-        ]);
-        assert!(result.is_ok(), "expected Ok, got {result:?}");
-
-        // Recursive walk fuer eine *CorbaTraits.java-Datei
-        let mut found = false;
-        let mut stack = vec![out_dir.clone()];
-        while let Some(dir) = stack.pop() {
-            for entry in std::fs::read_dir(&dir).expect("read out_dir") {
-                let entry = entry.expect("dir entry");
-                let p = entry.path();
-                if p.is_dir() {
-                    stack.push(p);
-                } else if p
-                    .file_name()
-                    .and_then(|s| s.to_str())
-                    .is_some_and(|n| n.ends_with("CorbaTraits.java"))
-                {
-                    found = true;
-                    break;
-                }
-            }
-            if found {
-                break;
-            }
-        }
-        assert!(
-            found,
-            "java --corba should emit a *CorbaTraits.java file under {}",
-            out_dir.display()
-        );
-
-        std::fs::remove_dir_all(&work).ok();
-    }
-
-    #[test]
-    fn run_resolves_include_directive() {
-        let work = unique_workdir("pp-include");
-        let inc = work.join("inc");
-        std::fs::create_dir_all(&inc).expect("mkdir inc");
-        std::fs::write(inc.join("common.idl"), "struct Vec3 { double x; };").expect("write common");
-        let idl = work.join("robot.idl");
-        std::fs::write(&idl, "#include \"common.idl\"\nstruct Pose { Vec3 p; };")
-            .expect("write robot");
-        let out = work.join("out");
-
-        let result = run(&[
-            "--rust".to_string(),
-            "-I".to_string(),
-            inc.to_string_lossy().to_string(),
-            "-o".to_string(),
-            out.to_string_lossy().to_string(),
-            idl.to_string_lossy().to_string(),
-        ]);
-        assert!(result.is_ok(), "expected Ok, got {result:?}");
-
-        let robot_src = std::fs::read_to_string(out.join("robot.rs")).expect("read gen");
-        assert!(
-            robot_src.contains("Vec3"),
-            "included type Vec3 missing:\n{robot_src}"
-        );
-        assert!(robot_src.contains("Pose"), "Pose missing:\n{robot_src}");
-        std::fs::remove_dir_all(&work).ok();
-    }
-
-    #[test]
-    fn run_define_flag_drives_ifdef() {
-        let work = unique_workdir("pp-define");
-        let idl = work.join("cfg.idl");
-        std::fs::write(
-            &idl,
-            "#ifdef EXTENDED\nstruct Cfg { long a; long b; };\n\
-             #else\nstruct Cfg { long a; };\n#endif",
-        )
-        .expect("write idl");
-
-        // mit -D EXTENDED → beide Felder.
-        let out_on = work.join("on");
-        let r = run(&[
-            "--rust".to_string(),
-            "-D".to_string(),
-            "EXTENDED".to_string(),
-            "-o".to_string(),
-            out_on.to_string_lossy().to_string(),
-            idl.to_string_lossy().to_string(),
-        ]);
-        assert!(r.is_ok(), "expected Ok, got {r:?}");
-        let gen_on = std::fs::read_to_string(out_on.join("cfg.rs")).expect("read on");
-        assert!(gen_on.contains("pub b"), "EXTENDED branch missing field b");
-
-        // ohne -D → nur Feld a (#else-Zweig).
-        let out_off = work.join("off");
-        let r = run(&[
-            "--rust".to_string(),
-            "-o".to_string(),
-            out_off.to_string_lossy().to_string(),
-            idl.to_string_lossy().to_string(),
-        ]);
-        assert!(r.is_ok(), "expected Ok, got {r:?}");
-        let gen_off = std::fs::read_to_string(out_off.join("cfg.rs")).expect("read off");
-        assert!(
-            !gen_off.contains("pub b"),
-            "#else branch should omit field b"
-        );
-        std::fs::remove_dir_all(&work).ok();
-    }
-
-    #[test]
-    fn run_define_with_value_expands_macro() {
-        let work = unique_workdir("pp-macro");
-        let idl = work.join("bound.idl");
-        std::fs::write(&idl, "struct Buf { string<CAP> data; };").expect("write idl");
-        let out = work.join("out");
-
-        let r = run(&[
-            "--rust".to_string(),
-            "-D".to_string(),
-            "CAP=64".to_string(),
-            "-o".to_string(),
-            out.to_string_lossy().to_string(),
-            idl.to_string_lossy().to_string(),
-        ]);
-        assert!(r.is_ok(), "expected Ok, got {r:?}");
-        // CAP wird zu 64 expandiert; ohne Expansion waere `string<CAP>`
-        // ein Parse-Fehler (CAP ist kein numerisches Literal).
-        std::fs::remove_dir_all(&work).ok();
-    }
-
-    #[test]
-    fn run_all_emits_every_backend() {
-        let work = unique_workdir("all-backends");
-        let idl = work.join("types.idl");
-        std::fs::write(&idl, "struct Ping { @key long id; double value; };").expect("write idl");
-        let out = work.join("out");
-
-        let result = run(&[
-            "--all".to_string(),
-            "-o".to_string(),
-            out.to_string_lossy().to_string(),
-            idl.to_string_lossy().to_string(),
-        ]);
-        assert!(result.is_ok(), "expected Ok, got {result:?}");
-
-        // Ein File pro Single-File-Backend.
-        for ext in ["h", "hpp", "rs", "ts", "cs", "py"] {
-            let p = out.join(format!("types.{ext}"));
-            assert!(p.exists(), "--all should emit types.{ext}");
-        }
-        // Java emittiert ein Package-Layout — irgendeine .java muss da sein.
-        let java_found = std::fs::read_dir(&out)
-            .expect("read out")
-            .filter_map(Result::ok)
-            .any(|e| {
-                e.path().extension().and_then(|x| x.to_str()) == Some("java") || e.path().is_dir()
-            });
-        assert!(java_found, "--all should emit Java output");
-        std::fs::remove_dir_all(&work).ok();
-    }
-
-    #[test]
-    fn run_multiple_backend_flags_combine() {
-        let work = unique_workdir("multi-flag");
-        let idl = work.join("t.idl");
-        std::fs::write(&idl, "struct T { long a; };").expect("write idl");
-        let out = work.join("out");
-        let result = run(&[
-            "--rust".to_string(),
-            "--python".to_string(),
-            "-o".to_string(),
-            out.to_string_lossy().to_string(),
-            idl.to_string_lossy().to_string(),
-        ]);
-        assert!(result.is_ok(), "expected Ok, got {result:?}");
-        assert!(out.join("t.rs").exists(), "rust output missing");
-        assert!(out.join("t.py").exists(), "python output missing");
-        assert!(!out.join("t.hpp").exists(), "cpp should NOT be emitted");
-        std::fs::remove_dir_all(&work).ok();
-    }
-
-    #[test]
-    fn run_dump_deps_lists_includes() {
-        let work = unique_workdir("dump-deps");
-        let inc = work.join("inc");
-        std::fs::create_dir_all(&inc).expect("mkdir");
-        std::fs::write(inc.join("base.idl"), "struct B { long x; };").expect("write base");
-        let idl = work.join("top.idl");
-        std::fs::write(&idl, "#include \"base.idl\"\nstruct T { B b; };").expect("write top");
-        let result = run(&[
-            "--dump-deps".to_string(),
-            "-I".to_string(),
-            inc.to_string_lossy().to_string(),
-            idl.to_string_lossy().to_string(),
-        ]);
-        // --dump-deps ist eine Action ohne Backend -> kein Fehler.
-        assert!(result.is_ok(), "got {result:?}");
-        std::fs::remove_dir_all(&work).ok();
-    }
-
-    #[test]
-    fn run_dump_deps_rejects_backend_combo() {
-        let result = run(&[
-            "--dump-deps".to_string(),
-            "--rust".to_string(),
-            "some.idl".to_string(),
-        ]);
-        assert!(matches!(result, Err(CliError::Usage(_))), "got {result:?}");
-    }
-
-    #[test]
-    fn run_dump_typeobject_maps_primitive_struct() {
-        let work = unique_workdir("dump-to");
-        std::fs::create_dir_all(&work).expect("mkdir");
-        let idl = work.join("v.idl");
-        std::fs::write(&idl, "struct V { double x; double y; };").expect("write");
-        let result = run(&[
-            "--dump-typeobject".to_string(),
-            idl.to_string_lossy().to_string(),
-        ]);
-        assert!(result.is_ok(), "got {result:?}");
-        std::fs::remove_dir_all(&work).ok();
-    }
-
-    #[test]
-    fn run_dump_ast_is_parse_only_alias() {
-        let work = unique_workdir("dump-ast");
-        std::fs::create_dir_all(&work).expect("mkdir");
-        let idl = work.join("a.idl");
-        std::fs::write(&idl, "struct A { long n; };").expect("write");
-        let result = run(&["--dump-ast".to_string(), idl.to_string_lossy().to_string()]);
-        assert!(result.is_ok(), "got {result:?}");
-        std::fs::remove_dir_all(&work).ok();
-    }
-
-    #[test]
-    fn run_dump_typeobject_rejects_backend_combo() {
-        let result = run(&[
-            "--dump-typeobject".to_string(),
-            "--java".to_string(),
-            "some.idl".to_string(),
-        ]);
-        assert!(matches!(result, Err(CliError::Usage(_))), "got {result:?}");
-    }
-
-    #[test]
-    fn subcommand_generate_emits_backend() {
-        let work = unique_workdir("sc-generate");
-        std::fs::create_dir_all(&work).expect("mkdir");
-        let idl = work.join("g.idl");
-        std::fs::write(&idl, "struct G { long n; };").expect("write");
-        let out = work.join("out");
-        let result = run(&[
-            "generate".to_string(),
-            idl.to_string_lossy().to_string(),
-            "--rust".to_string(),
-            "-o".to_string(),
-            out.to_string_lossy().to_string(),
-        ]);
-        assert!(result.is_ok(), "got {result:?}");
-        assert!(out.join("g.rs").exists(), "g.rs not emitted");
-        std::fs::remove_dir_all(&work).ok();
-    }
-
-    #[test]
-    fn subcommand_generate_without_backend_errors() {
-        let result = run(&["generate".to_string(), "some.idl".to_string()]);
-        match result {
-            Err(CliError::NotImplemented(m)) => {
-                assert!(m.contains("generate requires"), "msg was: {m}");
-            }
-            other => panic!("expected NotImplemented, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn subcommand_check_parses_without_codegen() {
-        let work = unique_workdir("sc-check");
-        std::fs::create_dir_all(&work).expect("mkdir");
-        let idl = work.join("c.idl");
-        std::fs::write(&idl, "struct C { long n; };").expect("write");
-        let result = run(&["check".to_string(), idl.to_string_lossy().to_string()]);
-        assert!(result.is_ok(), "got {result:?}");
-        std::fs::remove_dir_all(&work).ok();
-    }
-
-    #[test]
-    fn subcommand_check_rejects_backend_flag() {
-        let result = run(&[
-            "check".to_string(),
-            "some.idl".to_string(),
-            "--rust".to_string(),
-        ]);
-        assert!(matches!(result, Err(CliError::Usage(_))), "got {result:?}");
-    }
-
-    #[test]
-    fn subcommand_print_deps_runs() {
-        let work = unique_workdir("sc-deps");
-        std::fs::create_dir_all(&work).expect("mkdir");
-        let idl = work.join("d.idl");
-        std::fs::write(&idl, "struct D { long n; };").expect("write");
-        let result = run(&["print-deps".to_string(), idl.to_string_lossy().to_string()]);
-        assert!(result.is_ok(), "got {result:?}");
-        std::fs::remove_dir_all(&work).ok();
-    }
-
-    #[test]
-    fn split_subcommand_detects_leading_keyword() {
-        let args: Vec<String> = ["check", "foo.idl"].iter().map(|s| s.to_string()).collect();
-        let (sc, rest) = split_subcommand(&args);
-        assert_eq!(sc, Some(SubCommand::Check));
-        assert_eq!(rest, vec!["foo.idl".to_string()]);
-    }
-
-    #[test]
-    fn split_subcommand_allows_leading_global_flags() {
-        let args: Vec<String> = ["-v", "generate", "foo.idl"]
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
-        let (sc, rest) = split_subcommand(&args);
-        assert_eq!(sc, Some(SubCommand::Generate));
-        assert_eq!(rest, vec!["-v".to_string(), "foo.idl".to_string()]);
-    }
-
-    #[test]
-    fn split_subcommand_ignores_keyword_as_output_dir() {
-        // `-o check` => Ausgabe-Ordner "check", KEIN Sub-Command.
-        let args: Vec<String> = ["-o", "check", "foo.idl"]
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
-        let (sc, rest) = split_subcommand(&args);
-        assert_eq!(sc, None);
-        assert_eq!(rest, args);
-    }
-
-    #[test]
-    fn run_out_override_directs_backend_output() {
-        let work = unique_workdir("out-override");
-        std::fs::create_dir_all(&work).expect("mkdir");
-        let idl = work.join("o.idl");
-        std::fs::write(&idl, "struct O { long n; };").expect("write");
-        let global = work.join("global");
-        let rust_dir = work.join("rust-only");
-        let result = run(&[
-            idl.to_string_lossy().to_string(),
-            "--rust".to_string(),
-            "--python".to_string(),
-            "-o".to_string(),
-            global.to_string_lossy().to_string(),
-            "--out-rust".to_string(),
-            rust_dir.to_string_lossy().to_string(),
-        ]);
-        assert!(result.is_ok(), "got {result:?}");
-        // Rust folgt dem Override, Python faellt auf -o zurueck.
-        assert!(rust_dir.join("o.rs").exists(), "rust override ignored");
-        assert!(global.join("o.py").exists(), "python -o fallback failed");
-        assert!(!global.join("o.rs").exists(), "rust leaked into -o");
-        std::fs::remove_dir_all(&work).ok();
-    }
-
-    #[test]
-    fn run_backend_without_any_output_dir_errors() {
-        // Echte Datei — sonst schlaegt der Datei-Lesefehler vor der
-        // Output-Dir-Pruefung zu.
-        let work = unique_workdir("no-outdir");
-        std::fs::create_dir_all(&work).expect("mkdir");
-        let idl = work.join("n.idl");
-        std::fs::write(&idl, "struct N { long n; };").expect("write");
-        let result = run(&[idl.to_string_lossy().to_string(), "--rust".to_string()]);
-        match result {
-            Err(CliError::Usage(m)) => {
-                assert!(m.contains("--out-rust"), "msg was: {m}");
-            }
-            other => panic!("expected Usage, got {other:?}"),
-        }
-        std::fs::remove_dir_all(&work).ok();
-    }
-
-    #[test]
-    fn run_emits_typeobject_block_by_default() {
-        let work = unique_workdir("to-default");
-        std::fs::create_dir_all(&work).expect("mkdir");
-        let idl = work.join("t.idl");
-        std::fs::write(&idl, "struct T { long a; double b; };").expect("write");
-        let out = work.join("gen");
-        let result = run(&[
-            idl.to_string_lossy().to_string(),
-            "--rust".to_string(),
-            "-o".to_string(),
-            out.to_string_lossy().to_string(),
-        ]);
-        assert!(result.is_ok(), "got {result:?}");
-        let code = std::fs::read_to_string(out.join("t.rs")).expect("read");
-        assert!(
-            code.contains("pub mod type_objects"),
-            "TypeObject block missing by default"
-        );
-        assert!(code.contains("pub const T:"), "type T const missing");
-        std::fs::remove_dir_all(&work).ok();
-    }
-
-    #[test]
-    fn run_no_typeobject_omits_block() {
-        let work = unique_workdir("to-off");
-        std::fs::create_dir_all(&work).expect("mkdir");
-        let idl = work.join("t.idl");
-        std::fs::write(&idl, "struct T { long a; };").expect("write");
-        let out = work.join("gen");
-        let result = run(&[
-            idl.to_string_lossy().to_string(),
-            "--rust".to_string(),
-            "--no-typeobject".to_string(),
-            "-o".to_string(),
-            out.to_string_lossy().to_string(),
-        ]);
-        assert!(result.is_ok(), "got {result:?}");
-        let code = std::fs::read_to_string(out.join("t.rs")).expect("read");
-        assert!(
-            !code.contains("type_objects"),
-            "--no-typeobject must omit the block"
-        );
-        std::fs::remove_dir_all(&work).ok();
-    }
-
-    #[test]
-    fn run_recursive_type_skips_typeobject_but_still_generates() {
-        // sequence<Node> erzeugt einen Mapper-Zyklus → TypeObject-
-        // Emission entfaellt, der Kern-Codegen laeuft trotzdem.
-        let work = unique_workdir("to-recursive");
-        std::fs::create_dir_all(&work).expect("mkdir");
-        let idl = work.join("n.idl");
-        std::fs::write(&idl, "struct Node { long id; sequence<Node> kids; };").expect("write");
-        let out = work.join("gen");
-        let result = run(&[
-            idl.to_string_lossy().to_string(),
-            "--rust".to_string(),
-            "-o".to_string(),
-            out.to_string_lossy().to_string(),
-        ]);
-        assert!(
-            result.is_ok(),
-            "codegen must succeed despite TO failure: {result:?}"
-        );
-        let code = std::fs::read_to_string(out.join("n.rs")).expect("read");
-        assert!(code.contains("struct Node"), "type still generated");
-        assert!(!code.contains("type_objects"), "TO block skipped on cycle");
-        std::fs::remove_dir_all(&work).ok();
-    }
-
-    #[test]
-    fn run_scaffold_writes_build_file() {
-        let work = unique_workdir("scaffold");
-        std::fs::create_dir_all(&work).expect("mkdir");
-        let idl = work.join("robot.idl");
-        std::fs::write(&idl, "struct R { long a; };").expect("write");
-        let out = work.join("gen");
-        let result = run(&[
-            idl.to_string_lossy().to_string(),
-            "--rust".to_string(),
-            "--scaffold".to_string(),
-            "-o".to_string(),
-            out.to_string_lossy().to_string(),
-        ]);
-        assert!(result.is_ok(), "got {result:?}");
-        let cargo = std::fs::read_to_string(out.join("Cargo.toml")).expect("Cargo.toml");
-        assert!(cargo.contains("name = \"robot\""));
-        std::fs::remove_dir_all(&work).ok();
-    }
-
-    #[test]
-    fn run_scaffold_keeps_existing_build_file() {
-        let work = unique_workdir("scaffold-keep");
-        let out = work.join("gen");
-        std::fs::create_dir_all(&out).expect("mkdir");
-        let idl = work.join("robot.idl");
-        std::fs::write(&idl, "struct R { long a; };").expect("write");
-        // Vorhandene Cargo.toml darf nicht ueberschrieben werden.
-        std::fs::write(out.join("Cargo.toml"), "# hand-edited\n").expect("seed");
-        let result = run(&[
-            idl.to_string_lossy().to_string(),
-            "--rust".to_string(),
-            "--scaffold".to_string(),
-            "-o".to_string(),
-            out.to_string_lossy().to_string(),
-        ]);
-        assert!(result.is_ok(), "got {result:?}");
-        let cargo = std::fs::read_to_string(out.join("Cargo.toml")).expect("read");
-        assert_eq!(cargo, "# hand-edited\n", "existing build file must be kept");
-        std::fs::remove_dir_all(&work).ok();
-    }
-
-    #[test]
-    fn run_out_override_alone_is_enough() {
-        // Kein globales -o, aber --out-rust deckt das einzige Backend.
-        let work = unique_workdir("out-only");
-        std::fs::create_dir_all(&work).expect("mkdir");
-        let idl = work.join("s.idl");
-        std::fs::write(&idl, "struct S { long n; };").expect("write");
-        let rust_dir = work.join("rs");
-        let result = run(&[
-            idl.to_string_lossy().to_string(),
-            "--rust".to_string(),
-            "--out-rust".to_string(),
-            rust_dir.to_string_lossy().to_string(),
-        ]);
-        assert!(result.is_ok(), "got {result:?}");
-        assert!(rust_dir.join("s.rs").exists());
-        std::fs::remove_dir_all(&work).ok();
-    }
-
-    #[test]
-    fn backend_out_dir_prefers_override_over_global() {
-        let opts = CliOptions {
-            output: Some(PathBuf::from("/global")),
-            out_overrides: vec![(Backend::Java, PathBuf::from("/java-out"))],
-            ..CliOptions::default()
-        };
-        assert_eq!(
-            opts.backend_out_dir(Backend::Java),
-            Some(Path::new("/java-out"))
-        );
-        assert_eq!(
-            opts.backend_out_dir(Backend::Rust),
-            Some(Path::new("/global"))
-        );
-        let empty = CliOptions::default();
-        assert_eq!(empty.backend_out_dir(Backend::Rust), None);
-    }
-
-    #[test]
-    fn run_default_extensibility_flag_accepted() {
-        let work = unique_workdir("def-ext");
-        std::fs::create_dir_all(&work).expect("mkdir");
-        let idl = work.join("e.idl");
-        std::fs::write(&idl, "struct E { long n; };").expect("write");
-        let result = run(&[
-            "check".to_string(),
-            idl.to_string_lossy().to_string(),
-            "--default-extensibility".to_string(),
-            "mutable".to_string(),
-        ]);
-        assert!(result.is_ok(), "got {result:?}");
-        std::fs::remove_dir_all(&work).ok();
-    }
-
-    #[test]
-    fn run_default_extensibility_rejects_bad_value() {
-        let result = run(&[
-            "check".to_string(),
-            "x.idl".to_string(),
-            "--default-extensibility".to_string(),
-            "wobbly".to_string(),
-        ]);
-        assert!(matches!(result, Err(CliError::Usage(_))), "got {result:?}");
-    }
-
-    /// `--cyclone` must make un-annotated aggregates `@final` (CycloneDDS'
-    /// generator default), with the correct precedence and independent of
-    /// argument order. Marker: the Rust emitter uses
-    /// `zerodds_cdr::struct_enc::encode_appendable` only for `@appendable`
-    /// (the DHEADER path); its absence ⇒ `@final`. The default extensibility
-    /// is resolved once in `run()` before backend dispatch, so every selected
-    /// backend sees the same resolved default (checked here via `--rust`).
-    #[test]
-    fn cyclone_flag_sets_final_with_correct_precedence() {
-        let work = unique_workdir("cyc-prec");
-        std::fs::create_dir_all(&work).expect("mkdir");
-        let mut n = 0;
-        let mut emit_rs = |idl_src: &str, extra: &[&str]| -> String {
-            n += 1;
-            let idl = work.join(format!("r{n}.idl"));
-            std::fs::write(&idl, idl_src).expect("write idl");
-            let out = work.join(format!("o{n}"));
-            let mut args = vec!["--rust".to_string()];
-            for e in extra {
-                args.push((*e).to_string());
-            }
-            args.push("-o".to_string());
-            args.push(out.to_string_lossy().to_string());
-            args.push(idl.to_string_lossy().to_string());
-            let r = run(&args);
-            assert!(r.is_ok(), "run failed for {extra:?}: {r:?}");
-            std::fs::read_to_string(out.join(format!("r{n}.rs"))).expect("read gen")
-        };
-        let plain = "struct Robot { unsigned long id; unsigned long label; };";
-        let annotated = "@appendable\nstruct Robot { unsigned long id; unsigned long label; };";
-        let is_final = |src: &str| !src.contains("encode_appendable");
-
-        // 1) --cyclone alone → final.
-        assert!(
-            is_final(&emit_rs(plain, &["--cyclone"])),
-            "--cyclone alone must default un-annotated aggregates to @final"
-        );
-        // 2) no flag → the global ZeroDDS default stays @appendable (proves it
-        //    is --cyclone, not something else, that flips the default).
-        assert!(
-            !is_final(&emit_rs(plain, &[])),
-            "without --cyclone the default must remain @appendable"
-        );
-        // 3) explicit --default-extensibility wins over --cyclone.
-        assert!(
-            !is_final(&emit_rs(
-                plain,
-                &["--cyclone", "--default-extensibility", "appendable"]
-            )),
-            "explicit --default-extensibility must override --cyclone"
-        );
-        // 4) argument order must not matter.
-        assert!(
-            !is_final(&emit_rs(
-                plain,
-                &["--default-extensibility", "appendable", "--cyclone"]
-            )),
-            "argument order must not change the resolved default"
-        );
-        // 5) an explicit @appendable IDL annotation survives --cyclone.
-        assert!(
-            !is_final(&emit_rs(annotated, &["--cyclone"])),
-            "an explicit @appendable annotation must survive --cyclone"
-        );
-        std::fs::remove_dir_all(&work).ok();
-    }
-
-    #[test]
-    fn run_default_nested_rejects_bad_value() {
-        let result = run(&[
-            "check".to_string(),
-            "x.idl".to_string(),
-            "--default-nested".to_string(),
-            "maybe".to_string(),
-        ]);
-        assert!(matches!(result, Err(CliError::Usage(_))), "got {result:?}");
-    }
-
-    #[test]
-    fn split_subcommand_plain_file_has_no_subcommand() {
-        let args: Vec<String> = ["foo.idl", "--rust"]
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
-        let (sc, rest) = split_subcommand(&args);
-        assert_eq!(sc, None);
-        assert_eq!(rest, args);
-    }
-
-    #[test]
-    fn run_pragma_keylist_marks_key() {
-        let work = unique_workdir("pragma-keylist");
-        let idl = work.join("p.idl");
-        std::fs::write(
-            &idl,
-            "struct Pose { string rid; double x; };\n#pragma keylist Pose rid\n",
-        )
-        .expect("write idl");
-        let out = work.join("out");
-        let result = run(&[
-            "--rust".to_string(),
-            "-o".to_string(),
-            out.to_string_lossy().to_string(),
-            idl.to_string_lossy().to_string(),
-        ]);
-        assert!(result.is_ok(), "got {result:?}");
-        let src = std::fs::read_to_string(out.join("p.rs")).expect("read");
-        assert!(
-            src.contains("HAS_KEY: bool = true"),
-            "#pragma keylist should make Pose keyed:\n{src}"
-        );
-        std::fs::remove_dir_all(&work).ok();
-    }
-
-    #[test]
-    fn run_dcps_data_key_marks_key() {
-        let work = unique_workdir("pragma-dcps");
-        let idl = work.join("s.idl");
-        std::fs::write(
-            &idl,
-            "struct Sensor { string sid; long v; };\n\
-             #pragma DCPS_DATA_KEY \"Sensor sid\"\n",
-        )
-        .expect("write idl");
-        let out = work.join("out");
-        let result = run(&[
-            "--rust".to_string(),
-            "--opendds".to_string(),
-            "-o".to_string(),
-            out.to_string_lossy().to_string(),
-            idl.to_string_lossy().to_string(),
-        ]);
-        assert!(result.is_ok(), "got {result:?}");
-        let src = std::fs::read_to_string(out.join("s.rs")).expect("read");
-        assert!(
-            src.contains("HAS_KEY: bool = true"),
-            "#pragma DCPS_DATA_KEY should make Sensor keyed:\n{src}"
-        );
-        std::fs::remove_dir_all(&work).ok();
-    }
-
-    #[test]
-    fn run_missing_include_errors_parse() {
-        let work = unique_workdir("pp-missing");
-        let idl = work.join("broken.idl");
-        std::fs::write(&idl, "#include \"nope.idl\"\nstruct X { long a; };").expect("write idl");
-        let out = work.join("out");
-        let result = run(&[
-            "--rust".to_string(),
-            "-o".to_string(),
-            out.to_string_lossy().to_string(),
-            idl.to_string_lossy().to_string(),
-        ]);
-        assert!(matches!(result, Err(CliError::Parse(_))), "got {result:?}");
-        std::fs::remove_dir_all(&work).ok();
-    }
-
-    // ---- Injective naming regressions (compose-naming-robustness spec §1) ----
-    //
-    // These drive the FULL CLI path (`run`), so the TypeObject post-pass that
-    // appends the const block runs — unlike the emitter-direct W3 gate, which
-    // never sees it. The core bug: `A::B_C` and `A_B::C` both flattened to
-    // `A_B_C`, so the two TypeObject consts collided (Rust E0428, C# CS0102,
-    // TS2451, javac redef; Python silently overwrote the first).
-
-    /// Runs `run` for `backend` on `idl`, returns the single generated file's
-    /// text. `out_name` is the emitted filename (`<base>.<ext>`).
-    fn gen_via_cli(label: &str, idl: &str, backend: &str, base: &str, out_name: &str) -> String {
-        let work = unique_workdir(label);
-        let idl_path = work.join(format!("{base}.idl"));
-        std::fs::write(&idl_path, idl).expect("write idl");
-        let out_dir = work.join("out");
-        let result = run(&[
-            backend.to_string(),
-            "-o".to_string(),
-            out_dir.to_string_lossy().to_string(),
-            idl_path.to_string_lossy().to_string(),
-        ]);
-        assert!(result.is_ok(), "{backend} generate failed: {result:?}");
-        let text = std::fs::read_to_string(out_dir.join(out_name))
-            .unwrap_or_else(|e| panic!("read {out_name}: {e}"));
-        std::fs::remove_dir_all(&work).ok();
+    /// `generate` writes one language's file for `idl` under `encoding`,
+    /// and answers what it wrote.
+    ///
+    /// The whole command line, not `generate::source` directly: what the
+    /// two tests below are about is that a flag a person types reaches
+    /// the emitted body, and the flag is only a flag once `parse_args`
+    /// has read it.
+    fn generated_with(label: &str, language: &str, encoding: &str, idl: &str) -> String {
+        let dir = std::env::temp_dir().join(format!(
+            "zerodds-idlc-codec-{label}-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("a scratch directory");
+        let idl_path = dir.join("sample.idl");
+        std::fs::write(&idl_path, idl).expect("writing the fixture IDL");
+        let path = idl_path.to_str().expect("a UTF-8 path");
+
+        let options = options(&[
+            "generate",
+            "--lang",
+            language,
+            "--encoding",
+            encoding,
+            "--out",
+            dir.to_str().expect("a UTF-8 path"),
+            path,
+        ])
+        .expect("a valid command line");
+        let unit = Unit::read(path).expect("reading it back");
+        let tally = run_one(&options, &unit, &mut BuildRecord::default());
+        assert!(!tally.failed(), "{language}/{encoding}: {tally:?}");
+
+        let text = written(&dir);
+        let _ = std::fs::remove_dir_all(&dir);
         text
     }
 
-    /// `A::B_C` and `A_B::C` in one IDL must yield DISTINCT TypeObject const
-    /// names in every wired post-pass backend (was a hard compile error).
-    #[test]
-    fn scope_vs_underscore_yield_distinct_typeobject_consts() {
-        // `module A { struct B_C {..}; }` and top-level `struct A_B { .. }`
-        // referencing an inner `C` — two FQNs `A::B_C` and `A_B::C`.
-        let idl = "\
-            module A { @final struct B_C { long v; }; }; \
-            module A_B { @final struct C { long w; }; };";
-        // Injective encoding: A::B_C -> A_sB_uC, A_B::C -> A_uB_sC.
-        for (backend, base, out, a, b) in [
-            ("--rust", "n", "n.rs", "A_sB_uC", "A_uB_sC"),
-            ("--cpp", "n", "n.hpp", "A_sB_uC", "A_uB_sC"),
-            ("--c", "n", "n.h", "A_sB_uC", "A_uB_sC"),
-            ("--csharp", "n", "n.cs", "A_sB_uC", "A_uB_sC"),
-            ("--python", "n", "n.py", "A_sB_uC", "A_uB_sC"),
-            ("--ts", "n", "n.ts", "A_sB_uC", "A_uB_sC"),
-        ] {
-            let text = gen_via_cli("scope-vs-us", idl, backend, base, out);
-            assert!(text.contains(a), "{backend}: missing {a} in:\n{text}");
-            assert!(text.contains(b), "{backend}: missing {b} in:\n{text}");
-            assert_ne!(a, b);
-        }
-        // Java writes the holder as its own compilation unit.
-        let java = gen_via_cli("scope-vs-us-java", idl, "--java", "n", "TypeObjects_n.java");
-        assert!(java.contains("A_sB_uC"), "java missing A_sB_uC:\n{java}");
-        assert!(java.contains("A_uB_sC"), "java missing A_uB_sC:\n{java}");
+    /// Everything `generate` wrote into `dir`, in name order, joined.
+    ///
+    /// Not "the one file": Java is two — `ZdTypes.java` and
+    /// `ZdCodec.java` — because a Java file holds one `public` top-level
+    /// type and the materialiser emits two. A helper that took the first
+    /// entry the directory happened to yield would ask its question of
+    /// whichever half the filesystem named first.
+    fn written(dir: &std::path::Path) -> String {
+        let mut paths: Vec<std::path::PathBuf> = std::fs::read_dir(dir)
+            .expect("the output directory")
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .filter(|path| path.file_name().is_some_and(|name| name != "sample.idl"))
+            .collect();
+        assert!(!paths.is_empty(), "`generate` writes a file");
+        paths.sort();
+        paths
+            .iter()
+            .map(|path| std::fs::read_to_string(path).expect("a generated file"))
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
-    /// Two files `a-b.idl` and `a_b.idl` must yield DISTINCT Rust holder
-    /// modules (`type_objects_a_hb` vs `type_objects_a_ub`) so composing both
-    /// via `include!` into one parent module does not raise E0428 (#25).
+    /// Java is written as three compilation units, and each holds one
+    /// `public` top-level type.
+    ///
+    /// The materialiser emits `public final class ZdTypes`,
+    /// `public class ZdCodec` and — since the standard TypeInformation
+    /// companion — `public final class ZdTypeSupports`, and §7.6 of the
+    /// language specification allows one `public` top-level type per
+    /// compilation unit. As one file that is `class ZdCodec is public,
+    /// should be declared in a file named ZdCodec.java` — `javac`
+    /// refuses it whatever the file is called, so the Java column
+    /// produced no compilable output at all. `wireprobe-zerodds-java-gen`
+    /// and `crates/endpoint-e2e/tests/java.rs` both cut the same text at
+    /// the same point by hand.
     #[test]
-    fn hyphen_vs_underscore_basename_yield_distinct_holders() {
-        let idl = "@final struct S { long x; };";
-        let hyphen = gen_via_cli("base-hyphen", idl, "--rust", "a-b", "a-b.rs");
-        let under = gen_via_cli("base-under", idl, "--rust", "a_b", "a_b.rs");
-        assert!(
-            hyphen.contains("pub mod type_objects_a_hb"),
-            "hyphen holder:\n{hyphen}"
-        );
-        assert!(
-            under.contains("pub mod type_objects_a_ub"),
-            "underscore holder:\n{under}"
-        );
-        // The old lossy sanitiser folded both to `type_objects_a_b`.
-        assert!(!hyphen.contains("pub mod type_objects_a_b "));
-        assert!(!under.contains("pub mod type_objects_a_hb"));
-    }
-
-    /// A user symbol equal to the synthetic holder must NOT be overwritten:
-    /// the holder is disambiguated instead.
-    #[test]
-    fn user_symbol_colliding_with_holder_is_not_overwritten() {
-        // Rust: user `module type_objects_input` vs holder for base `input`.
-        let ridl = "\
-            module type_objects_input { @final struct Marker { long x; }; }; \
-            @final struct Payload { long y; };";
-        let rust = gen_via_cli("holder-rust", ridl, "--rust", "input", "input.rs");
-        // The user module survives verbatim …
-        assert!(
-            rust.contains("pub mod type_objects_input"),
-            "user module lost:\n{rust}"
-        );
-        // … and the holder took a disambiguated name (never the user's).
-        assert!(
-            rust.contains("pub mod type_objects_input_x"),
-            "holder not disambiguated:\n{rust}"
-        );
-
-        // Java: user `struct TypeObjects_input` vs holder for base `input`.
-        let jidl = "\
-            @final struct TypeObjects_input { long x; }; \
-            @final struct Payload { long y; };";
-        let work = unique_workdir("holder-java");
-        let idl_path = work.join("input.idl");
-        std::fs::write(&idl_path, jidl).expect("write idl");
-        let out_dir = work.join("out");
-        run(&[
-            "--java".to_string(),
-            "-o".to_string(),
-            out_dir.to_string_lossy().to_string(),
-            idl_path.to_string_lossy().to_string(),
+    fn java_is_written_as_three_compilation_units() {
+        const IDL: &str = "struct Point { long x; long y; };\n";
+        let dir = std::env::temp_dir().join(format!(
+            "zerodds-idlc-java-split-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("a scratch directory");
+        let idl_path = dir.join("sample.idl");
+        std::fs::write(&idl_path, IDL).expect("writing the fixture IDL");
+        let path = idl_path.to_str().expect("a UTF-8 path");
+        let options = options(&[
+            "generate",
+            "--lang",
+            "java",
+            "--out",
+            dir.to_str().expect("a UTF-8 path"),
+            path,
         ])
-        .expect("java generate");
-        // The user class file must exist and be untouched by the holder.
-        let user = std::fs::read_to_string(out_dir.join("TypeObjects_input.java"))
-            .expect("user class file present");
-        assert!(
-            user.contains("class TypeObjects_input"),
-            "user class overwritten:\n{user}"
-        );
-        assert!(
-            !user.contains("Minimal TypeObject"),
-            "holder overwrote user file:\n{user}"
-        );
-        // The holder went to a disambiguated file.
-        let disambig = out_dir.join("TypeObjects_input_x.java");
-        assert!(disambig.exists(), "holder file not disambiguated");
-        std::fs::remove_dir_all(&work).ok();
-    }
+        .expect("a valid command line");
+        let unit = Unit::read(path).expect("reading it back");
+        assert!(!run_one(&options, &unit, &mut BuildRecord::default()).failed());
 
-    // ---- Build-Vertrag: --depfile / --output-manifest / --stamp ----
-
-    /// Sammelt rekursiv alle Dateien unter `dir` (absolute Pfade).
-    fn collect_files_recursive(dir: &Path) -> Vec<PathBuf> {
-        let mut out = Vec::new();
-        let mut stack = vec![dir.to_path_buf()];
-        while let Some(d) = stack.pop() {
-            let Ok(rd) = std::fs::read_dir(&d) else {
-                continue;
-            };
-            for entry in rd.filter_map(Result::ok) {
-                let p = entry.path();
-                if p.is_dir() {
-                    stack.push(p);
-                } else {
-                    out.push(p);
-                }
-            }
-        }
-        out
-    }
-
-    /// Escaping-Einheitstest fuer die Depfile-Pfade.
-    #[test]
-    fn escape_make_path_escapes_space_hash_dollar() {
-        assert_eq!(escape_make_path("a b.idl"), "a\\ b.idl");
-        assert_eq!(escape_make_path("a#b.idl"), "a\\#b.idl");
-        assert_eq!(escape_make_path("a$b.idl"), "a$$b.idl");
-        assert_eq!(escape_make_path("plain.idl"), "plain.idl");
-    }
-
-    /// JSON-Encoder: Quotes/Backslash/Steuerzeichen.
-    #[test]
-    fn json_string_escapes_specials() {
-        assert_eq!(json_string("a\"b"), "\"a\\\"b\"");
-        assert_eq!(json_string("a\\b"), "\"a\\\\b\"");
-        assert_eq!(json_string("a\nb"), "\"a\\nb\"");
-    }
-
-    /// Depfile listet die kanonische `common.idl` als Prerequisite, das
-    /// Manifest die real erzeugten Java-Dateien (mehrere .java +
-    /// TypeObjects_<base>.java, nichts geraten), der Stamp existiert.
-    #[test]
-    fn build_contract_depfile_manifest_stamp_for_include() {
-        let work = unique_workdir("bc-include");
-        let inc = work.join("inc");
-        std::fs::create_dir_all(&inc).expect("mkdir inc");
-        std::fs::write(
-            inc.join("common.idl"),
-            "module common { @final struct Vec3 { @key long id; double x; }; };",
-        )
-        .expect("write common");
-        let idl = work.join("robot.idl");
-        std::fs::write(
-            &idl,
-            "#include \"common.idl\"\n\
-             module robot { @final struct Pose { common::Vec3 p; }; };",
-        )
-        .expect("write robot");
-        let out = work.join("out");
-        let depfile = work.join("robot.d");
-        let manifest = work.join("robot.manifest.json");
-        let stamp = work.join("robot.stamp");
-
-        let result = run(&[
-            "--java".to_string(),
-            "-I".to_string(),
-            inc.to_string_lossy().to_string(),
-            "-o".to_string(),
-            out.to_string_lossy().to_string(),
-            "--depfile".to_string(),
-            depfile.to_string_lossy().to_string(),
-            "--output-manifest".to_string(),
-            manifest.to_string_lossy().to_string(),
-            "--stamp".to_string(),
-            stamp.to_string_lossy().to_string(),
-            idl.to_string_lossy().to_string(),
-        ]);
-        assert!(result.is_ok(), "expected Ok, got {result:?}");
-
-        // Stamp existiert nach Erfolg.
-        assert!(stamp.exists(), "stamp not created");
-
-        // Depfile: Target = Stamp, Prereq = common.idl (kanonisch).
-        let dep = std::fs::read_to_string(&depfile).expect("read depfile");
-        let canon_common = std::fs::canonicalize(inc.join("common.idl"))
-            .expect("canonicalize common")
-            .to_string_lossy()
-            .into_owned();
-        assert!(
-            dep.contains(&escape_make_path(&canon_common)),
-            "depfile must list canonical common.idl as prerequisite:\n{dep}"
-        );
-        let stamp_str = stamp.to_string_lossy().into_owned();
-        assert!(
-            dep.starts_with(&escape_make_path(&stamp_str)),
-            "depfile target must be the stamp:\n{dep}"
+        let mut names: Vec<String> = std::fs::read_dir(&dir)
+            .expect("the output directory")
+            .filter_map(Result::ok)
+            .filter_map(|entry| entry.file_name().into_string().ok())
+            .filter(|name| name != "sample.idl")
+            .collect();
+        names.sort();
+        assert_eq!(
+            names,
+            vec!["ZdCodec.java", "ZdTypeSupports.java", "ZdTypes.java"]
         );
 
-        // Manifest: die real erzeugten Java-Dateien (kein geratenes
-        // Module.java), inkl. TypeObjects_robot.java.
-        let man = std::fs::read_to_string(&manifest).expect("read manifest");
-        assert!(man.contains("\"backend\": \"java\""), "manifest:\n{man}");
-        assert!(
-            man.contains("TypeObjects_robot.java"),
-            "manifest must list the real TypeObjects holder:\n{man}"
-        );
-        // Jede real geschriebene Datei muss im Manifest stehen.
-        let written = collect_files_recursive(&out);
-        assert!(!written.is_empty(), "no java files written");
-        for f in &written {
-            let s = f.to_string_lossy().into_owned();
-            assert!(
-                man.contains(&s),
-                "manifest missing generated file {s}:\n{man}"
+        for name in &names {
+            let text = std::fs::read_to_string(dir.join(name)).expect("a generated file");
+            assert_eq!(
+                text.matches("public class ").count() + text.matches("public final class ").count(),
+                1,
+                "{name} holds more than one public top-level type:\n{text}"
             );
         }
-        // Kein geratener Module.java-Name.
-        assert!(!man.contains("robot/Module.java"), "guessed name leaked");
+        // The runtime import goes with the half that names the runtime,
+        // and the `ZdEndian` holder with it: a package declares a type
+        // once, so it cannot stand in both.
+        let types = std::fs::read_to_string(dir.join("ZdTypes.java")).expect("ZdTypes.java");
+        let codec = std::fs::read_to_string(dir.join("ZdCodec.java")).expect("ZdCodec.java");
+        assert!(!types.contains("import org.zerodds.wire"), "{types}");
+        assert!(!types.contains("ZdEndian"), "{types}");
+        assert!(codec.contains("import org.zerodds.wire.*;"), "{codec}");
+        assert!(codec.contains("class ZdEndian"), "{codec}");
+        // A codec nothing outside the class can call is not one: the
+        // methods were `private static`, which a probe that inlines them
+        // never noticed and a generated application cannot use.
+        assert!(codec.contains("public static void zd_enc_"), "{codec}");
+        assert!(!codec.contains("private static void zd_enc_"), "{codec}");
 
-        std::fs::remove_dir_all(&work).ok();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// Manifest-Inhalt = exakt die geschriebenen Dateien (kein Raten):
-    /// die `outputs`-Liste deckt sich mit `ls` des out-dir.
-    #[test]
-    fn build_contract_manifest_matches_ls_of_outdir() {
-        let work = unique_workdir("bc-exact");
-        let idl = work.join("chat.idl");
-        std::fs::write(&idl, "@final struct Greeting { @key long id; };").expect("write idl");
-        let out = work.join("out");
-        let manifest = work.join("chat.manifest.json");
-
-        let result = run(&[
-            "--rust".to_string(),
-            "-o".to_string(),
-            out.to_string_lossy().to_string(),
-            "--output-manifest".to_string(),
-            manifest.to_string_lossy().to_string(),
-            idl.to_string_lossy().to_string(),
-        ]);
-        assert!(result.is_ok(), "expected Ok, got {result:?}");
-
-        let man = std::fs::read_to_string(&manifest).expect("read manifest");
-        let on_disk = collect_files_recursive(&out);
-        // Rust ist Single-File: genau eine Datei auf Platte.
-        assert_eq!(
-            on_disk.len(),
-            1,
-            "expected exactly chat.rs, got {on_disk:?}"
-        );
-        let path_str = on_disk[0].to_string_lossy().into_owned();
-        // Die outputs-Liste enthaelt genau diese eine Datei.
+    /// `generate` writes `idl` in `language` into a scratch directory
+    /// and answers the directory, for a test that has to look at the
+    /// files themselves rather than at their text joined.
+    fn generated_into(label: &str, language: &str, idl: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "zerodds-idlc-{label}-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("a scratch directory");
+        let idl_path = dir.join("sample.idl");
+        std::fs::write(&idl_path, idl).expect("writing the fixture IDL");
+        let path = idl_path.to_str().expect("a UTF-8 path");
+        let options = options(&[
+            "generate",
+            "--lang",
+            language,
+            "--out",
+            dir.to_str().expect("a UTF-8 path"),
+            path,
+        ])
+        .expect("a valid command line");
+        let unit = Unit::read(path).expect("reading it back");
         assert!(
-            man.contains(&format!("\"outputs\": [{}]", json_string(&path_str))),
-            "outputs array must equal exactly the ls of out-dir:\n{man}"
+            !run_one(&options, &unit, &mut BuildRecord::default()).failed(),
+            "{language}"
         );
-        std::fs::remove_dir_all(&work).ok();
+        dir
     }
 
-    /// Ein Backend ohne Output bildet sich ehrlich mit leerer Dateiliste ab
-    /// (Manifest-Struktur), statt still Exit 0 ohne Spur. Hier ueber ein
-    /// zweites Backend im selben Lauf geprueft: jeder Backend-Eintrag traegt
-    /// seine eigene files-Liste.
-    #[test]
-    fn build_contract_manifest_has_per_backend_file_lists() {
-        let work = unique_workdir("bc-perbackend");
-        let idl = work.join("t.idl");
-        std::fs::write(&idl, "@final struct T { @key long a; };").expect("write idl");
-        let out = work.join("out");
-        let manifest = work.join("t.manifest.json");
-        let result = run(&[
-            "--rust".to_string(),
-            "--python".to_string(),
-            "-o".to_string(),
-            out.to_string_lossy().to_string(),
-            "--output-manifest".to_string(),
-            manifest.to_string_lossy().to_string(),
-            idl.to_string_lossy().to_string(),
-        ]);
-        assert!(result.is_ok(), "got {result:?}");
-        let man = std::fs::read_to_string(&manifest).expect("read manifest");
-        assert!(man.contains("\"backend\": \"rust\""), "{man}");
-        assert!(man.contains("\"backend\": \"python\""), "{man}");
-        assert!(man.contains("t.rs"), "{man}");
-        assert!(man.contains("t.py"), "{man}");
-        std::fs::remove_dir_all(&work).ok();
+    /// Every subprogram `body` holds a body for, by name.
+    ///
+    /// The Ada spelling is `procedure P (…) is` / `function F (…) return
+    /// T is`, one per line at the package body's own indentation, so
+    /// the name is the second word of a line that opens one.
+    fn ada_body_names(body: &str) -> Vec<String> {
+        body.lines()
+            .filter_map(|line| {
+                let text = line.trim_start();
+                let rest = text
+                    .strip_prefix("procedure ")
+                    .or_else(|| text.strip_prefix("function "))?;
+                let name = rest.split_whitespace().next()?;
+                Some(name.split('(').next().unwrap_or(name).to_string())
+            })
+            .collect()
     }
 
-    /// Bei einem semantischen Fehler entsteht weder Stamp noch Manifest noch
-    /// Depfile, und der Exit-Code ist != 0 (Semantic → 1).
-    #[test]
-    fn build_contract_no_artifacts_on_semantic_error() {
-        let work = unique_workdir("bc-semerr");
-        let idl = work.join("bad.idl");
-        // Unaufloesbarer Typ-Verweis → Semantik-Gate schlaegt fehl.
-        std::fs::write(&idl, "@final struct Bad { DoesNotExist m; };").expect("write idl");
-        let out = work.join("out");
-        let depfile = work.join("bad.d");
-        let manifest = work.join("bad.manifest.json");
-        let stamp = work.join("bad.stamp");
+    /// One Ada column is written as a specification and a body, and
+    /// every subprogram the body defines is declared in the
+    /// specification.
+    ///
+    /// Both halves of one defect. RM 7.1 admits only
+    /// `basic_declarative_item`s in the visible part of a package, and
+    /// a `subprogram_body` is not one — as one file the codec's bodies
+    /// stood where the declarations are and `gnatmake` answered
+    /// `max.ads:9:01: error: compilation unit expected`, measured, so
+    /// the column produced no compilable output at all. And a body
+    /// whose profile is in no specification is not declared by the
+    /// package: it compiles, and no caller outside the unit can name
+    /// it — the Ada form of the `private static` the Java column was
+    /// written as.
+    fn ada_column_is_a_specification_and_a_body(
+        language: &str,
+        label: &str,
+        package: &str,
+        spec_name: &str,
+        body_name: &str,
+    ) {
+        // A map, a sequence, an array, an @optional member and a nested
+        // aggregate: the codec emits an encoder, a decoder and a Table 9
+        // defaulter for each, which is what makes the profile question
+        // measurable at more than one subprogram.
+        const IDL: &str = "@appendable struct Inner { long a; double b; };\n@mutable struct \
+                           Point { @key long x; string name; sequence<long> ids; map<long, \
+                           string> table; Inner nested; @optional octet extra; };\n";
+        let dir = generated_into(label, language, IDL);
 
-        let result = run(&[
-            "--rust".to_string(),
-            "-o".to_string(),
-            out.to_string_lossy().to_string(),
-            "--depfile".to_string(),
-            depfile.to_string_lossy().to_string(),
-            "--output-manifest".to_string(),
-            manifest.to_string_lossy().to_string(),
-            "--stamp".to_string(),
-            stamp.to_string_lossy().to_string(),
-            idl.to_string_lossy().to_string(),
-        ]);
+        let mut names: Vec<String> = std::fs::read_dir(&dir)
+            .expect("the output directory")
+            .filter_map(Result::ok)
+            .filter_map(|entry| entry.file_name().into_string().ok())
+            .filter(|name| name != "sample.idl")
+            .collect();
+        names.sort();
+        assert_eq!(names, vec![body_name.to_string(), spec_name.to_string()]);
+
+        let spec = std::fs::read_to_string(dir.join(spec_name)).expect("the specification");
+        let body = std::fs::read_to_string(dir.join(body_name)).expect("the body");
+
+        // The specification is a compilation unit: a context clause,
+        // then one package, and nothing outside it.
+        assert!(spec.contains(&format!("package {package} is")), "{spec}");
+        assert!(spec.contains(&format!("end {package};")), "{spec}");
+        assert!(spec.contains("with Interfaces;"), "{spec}");
+        // `begin` opens the statement sequence of a body, and no body
+        // may stand in the visible part.
+        assert!(!spec.contains("begin"), "{spec}");
+
         assert!(
-            matches!(result, Err(CliError::Semantic(_))),
-            "expected Semantic error, got {result:?}"
+            body.contains(&format!("package body {package} is")),
+            "{body}"
         );
-        assert_eq!(CliError::Semantic("x".into()).exit_code(), 1);
-        assert!(!stamp.exists(), "stamp must not exist on semantic error");
+        assert!(body.contains(&format!("end {package};")), "{body}");
+        assert!(body.contains("begin"), "{body}");
+
+        // Every subprogram the body defines is declared in the
+        // specification, so a caller outside the unit can name it. The
+        // decoders and the Table 9 defaulters are the half that went
+        // missing: only the encoders carried a profile.
+        let declared = ada_body_names(&spec);
+        let defined = ada_body_names(&body);
         assert!(
-            !manifest.exists(),
-            "manifest must not exist on semantic error"
+            defined.iter().any(|name| name.starts_with("zd_dec_")),
+            "the body defines no decoder:\n{body}"
         );
+        let hidden: Vec<&String> = defined
+            .iter()
+            .filter(|name| !declared.contains(name))
+            .collect();
         assert!(
-            !depfile.exists(),
-            "depfile must not exist on semantic error"
+            hidden.is_empty(),
+            "{language}: {hidden:?} have a body and no declaration, so nothing outside the \
+             package can call them"
         );
-        std::fs::remove_dir_all(&work).ok();
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// Build-Vertrag-Flags ohne Backend (nicht-emittierender Modus) → Usage.
     #[test]
-    fn build_contract_flags_require_generate_mode() {
-        let work = unique_workdir("bc-check");
-        let idl = work.join("c.idl");
-        std::fs::write(&idl, "@final struct C { long n; };").expect("write idl");
-        let result = run(&[
-            "check".to_string(),
-            idl.to_string_lossy().to_string(),
-            "--stamp".to_string(),
-            work.join("c.stamp").to_string_lossy().to_string(),
-        ]);
-        assert!(matches!(result, Err(CliError::Usage(_))), "got {result:?}");
-        std::fs::remove_dir_all(&work).ok();
+    fn ada_is_written_as_a_specification_and_a_body() {
+        ada_column_is_a_specification_and_a_body(
+            "ada",
+            "ada-units",
+            "Zd_Types",
+            "zd_types.ads",
+            "zd_types.adb",
+        );
+    }
+
+    #[test]
+    fn ada83_is_written_as_a_specification_and_a_body() {
+        ada_column_is_a_specification_and_a_body(
+            "ada83",
+            "ada83-units",
+            "Zd83_Types",
+            "zd83_types.ads",
+            "zd83_types.adb",
+        );
+    }
+
+    /// The F# file opens on `module rec`, so a declaration may name one
+    /// written below it.
+    ///
+    /// F# resolves names in file order and the materialiser writes the
+    /// model's order, so a `map`'s entry class is declared after the
+    /// aggregate whose member names it: `maponly.fs(7,20): error
+    /// FS0039: the type ZdMapEntry_long_string is not defined`,
+    /// measured with `dotnet fsi` (SDK 9.0.106). `module rec` is what
+    /// `zerodds_lang_cst::fsharp` documents and
+    /// `zerodds_lang_render::fsharp::file` writes for every other
+    /// consumer; this tool assembled the clause itself and left the
+    /// word out.
+    #[test]
+    fn fsharp_is_written_as_a_recursive_module() {
+        const IDL: &str = "struct WithMap { map<long, string> t; };\n";
+        let text = generated_with("fsharp-rec", "f#", "xcdr2", IDL);
+        let clause = text
+            .lines()
+            .nth(1)
+            .expect("a module clause under the header");
+        assert_eq!(clause, "module rec ZdGen", "{text}");
+        // The declaration the clause is there for: it is named above
+        // and declared below, which is what a plain `module` refuses.
+        assert!(text.contains("type ZdMapEntry_long_string()"), "{text}");
+    }
+
+    /// Every module the generated TypeScript imports from is a package
+    /// this tree publishes, and the codec it declares is exported.
+    ///
+    /// Two halves of one file that no consumer could use. The
+    /// descriptor import named `@zerodds/types`, a package that exists
+    /// nowhere — `tsc` answered `error TS2307: Cannot find module
+    /// '@zerodds/types' or its corresponding type declarations`, while
+    /// the wire import in the same file already named the right one.
+    /// And every codec function was module-level and unexported:
+    /// `error TS2459: Module './max.js' declares 'zd_enc_Max' locally,
+    /// but it is not exported`, which is the TypeScript form of the
+    /// `private static` the Java column carried.
+    ///
+    /// The package name is **read out of `runtime/typescript`'s own
+    /// `package.json`** and not spelled here: which package this tree
+    /// publishes the runtime as is that file's answer, and a test
+    /// holding a copy of it would pass while the two disagreed.
+    #[test]
+    fn typescript_imports_a_package_that_exists_and_exports_its_codec() {
+        const IDL: &str = "struct Point { long x; long y; };\n";
+        let text = generated_with("typescript-imports", "typescript", "xcdr2", IDL);
+
+        let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../runtime/typescript/package.json");
+        let json = std::fs::read_to_string(&manifest)
+            .unwrap_or_else(|error| panic!("{}: {error}", manifest.display()));
+        let published = json
+            .split("\"name\"")
+            .nth(1)
+            .and_then(|rest| rest.split('"').nth(1))
+            .expect("runtime/typescript/package.json names the package")
+            .to_string();
+
+        let mut named = 0;
+        for line in text.lines() {
+            let Some(rest) = line.strip_prefix("import ") else {
+                continue;
+            };
+            let module = rest
+                .rsplit_once("from \"")
+                .and_then(|(_, tail)| tail.split('"').next())
+                .unwrap_or_else(|| panic!("an import with no module: {line}"));
+            assert_eq!(
+                module, published,
+                "the generated file imports `{module}`, and the tree publishes `{published}`"
+            );
+            named += 1;
+        }
+        assert!(named >= 2, "no imports in the generated file:\n{text}");
+
+        assert!(text.contains("export function zd_enc_Point"), "{text}");
+        assert!(!text.contains("\nfunction zd_enc_Point"), "{text}");
+        assert!(text.contains("export function zd_dec_Point"), "{text}");
+    }
+
+    /// The declarations were never the whole file: every language
+    /// `--lang` takes emits a codec beside them.
+    ///
+    /// For a while none did. `generate` called
+    /// `zerodds_lang_rules::generate::declarations`, which answers the
+    /// type and nothing else, so `--lang go` wrote `type T_Point struct`
+    /// over an application that then had no way to put it on a wire —
+    /// and reported "0 errors" doing it. The encoder every backend but
+    /// Rust's names through `emit::encode::codec_name` is `zd_enc_`;
+    /// Rust's `encode.rs` names a method instead.
+    ///
+    /// Go's is `Zd_enc_`. Go has no visibility keyword — an identifier
+    /// is exported if and only if its first character is upper case (Go
+    /// specification, "Exported identifiers") — so a codec a Go program
+    /// outside the generated package can call has to be spelled that
+    /// way, and `emit::go::exported_name` raises the first letter and
+    /// only that. Spelled out here rather than asked of that function,
+    /// for the reason `runtime_mention` below gives: a test that asked
+    /// the same function the code asks would pass whatever it answered.
+    #[test]
+    fn every_language_emits_a_codec_beside_its_declarations() {
+        const IDL: &str = "module T { struct Point { long x; long y; }; };\n";
+        for language in generate::language_names().split(", ") {
+            let text = generated_with("all", language, "xcdr2", IDL);
+            let has_codec = match language {
+                "rust" => text.contains("fn encode") && text.contains("fn decode"),
+                "go" => text.contains("Zd_enc_") && text.contains("Zd_dec_"),
+                _ => text.contains("zd_enc_") && text.contains("zd_dec_"),
+            };
+            assert!(has_codec, "{language}: no codec in the output:\n{text}");
+        }
+    }
+
+    /// The runtime name each language's preamble is written under, and
+    /// which its codec always mentions.
+    ///
+    /// The mirror of `generate::runtime_symbol`, spelled out here so a
+    /// change there has to be made twice on purpose. A test that asked
+    /// the same function the code asks would pass whatever that
+    /// function answered.
+    fn runtime_mention(language: &str) -> &'static str {
+        match language {
+            "rust" | "java" | "kotlin" | "python" | "typescript" => "Writer",
+            "julia" | "swift" => "ZdWriter",
+            "c" => "zdw_writer",
+            "c++" => "zerodds",
+            "c#" => "Wire",
+            "elixir" => "ZeroddsWire",
+            "f#" => "ZdWire",
+            "ocaml" => "Zdwire",
+            "ada" => "Zd_Wire",
+            "ada83" => "Zd_Wire83",
+            "lua" => "zdw",
+            _ => "zdwire",
+        }
+    }
+
+    /// `text` without its first line.
+    ///
+    /// Line one is the header comment, and it carries the path the model
+    /// was read from — which is a scratch directory whose name has
+    /// `zerodds` in it. A test looking for `zerodds` in the output would
+    /// find it there and pass over an empty file. The generator itself
+    /// never reads the header: `generate::preamble` is handed the
+    /// materialised body alone.
+    fn below_the_header(text: &str) -> String {
+        text.lines().skip(1).collect::<Vec<_>>().join("\n")
+    }
+
+    /// A model with a codec gets its language's runtime preamble.
+    ///
+    /// The generated file has to compile, and none of the twenty-one
+    /// resolves the runtime on its own: Go's own output was eight
+    /// `undefined: zdwire`, measured, before this. The import is written
+    /// once per file, ahead of the declarations — for Python after them,
+    /// because a `__future__` statement has to come first.
+    #[test]
+    fn a_model_with_a_codec_gets_its_runtime_preamble() {
+        const IDL: &str = "struct Point { long x; long y; };\n";
+        for language in generate::language_names().split(", ") {
+            let text = below_the_header(&generated_with("with", language, "xcdr2", IDL));
+            let mention = runtime_mention(language);
+            assert!(
+                text.contains(mention),
+                "{language}: the codec does not mention {mention}:\n{text}"
+            );
+            // Ada and Ada 83 take a context clause and no constant: see
+            // `generate::preamble`. Every other language names the byte
+            // order it was generated for.
+            let expected = match language {
+                "ada" => "with Zd_Wire;",
+                "ada83" => "with Zd_Wire83;",
+                "rust" => "use zerodds_wire::",
+                "c" => "#include \"zerodds_wire.h\"",
+                "c++" => "#include \"zerodds/wire.hpp\"",
+                "java" => "import org.zerodds.wire.*;",
+                "kotlin" => "import zerodds.wire.*",
+                "python" => "from zerodds_wire import ",
+                "typescript" => "from \"@zerodds/wire\"",
+                "go" => "import \"zdwire\"",
+                "d" | "nim" => "import zdwire",
+                "node" => "require(\"./zdwire.js\")",
+                "zig" => "@import(\"zdwire.zig\")",
+                "swift" => "import ZdWire",
+                "julia" => "using .ZeroddsWire",
+                "lua" => "require(\"zerodds_wire\")",
+                "c#" => "ZeroDds.Wire.Endianness",
+                "elixir" => "defmodule ZdEndian",
+                "ocaml" => "let zd_endianness = Zdwire.",
+                "f#" => "let zdEndianness = ZdWire.",
+                other => panic!("{other} has no expected preamble in this test"),
+            };
+            assert!(
+                text.contains(expected),
+                "{language}: no `{expected}` in the output:\n{text}"
+            );
+        }
+    }
+
+    /// A model with no codec gets no runtime preamble.
+    ///
+    /// The other direction, and the one that costs something to get
+    /// wrong: Go refuses to compile a file with an import nothing uses,
+    /// and Rust's `unused_imports` is an error under the `-D warnings` a
+    /// consumer's crate hands its dependencies. An empty module declares
+    /// no type a codec is built for, so no backend names its runtime and
+    /// no import is written — which is what makes the preamble follow
+    /// the model rather than the flag.
+    #[test]
+    fn a_model_without_a_codec_gets_no_runtime_preamble() {
+        const IDL: &str = "module Empty {\n};\n";
+        for language in generate::language_names().split(", ") {
+            let text = below_the_header(&generated_with("without", language, "xcdr2", IDL));
+            assert!(
+                !text.contains(runtime_mention(language)),
+                "{language}: a model with no codec still names its runtime:\n{text}"
+            );
+        }
+    }
+
+    /// `--encoding` reaches the emitted body, and is not spent on the
+    /// header comment.
+    ///
+    /// XCDR1 has no `DHEADER` and XCDR2's `@appendable` default does, so
+    /// the same struct is two different encoders under the two flags.
+    /// The flag reached only the header line for as long as `generate`
+    /// called `declarations`: both files were byte-identical below it,
+    /// and a person who passed `--encoding xcdr1` got XCDR2 code with an
+    /// XCDR1 comment on top.
+    #[test]
+    fn the_encoding_flag_changes_the_emitted_codec() {
+        const IDL: &str = "module T { struct Point { long x; long y; }; };\n";
+        for language in generate::language_names().split(", ") {
+            // Rust's column refuses nothing in this model, but it is the
+            // one backend whose codec is not the shared walk, so it is
+            // checked by the same difference rather than skipped.
+            let one = generated_with("x1", language, "xcdr1", IDL);
+            let two = generated_with("x2", language, "xcdr2", IDL);
+            let body = |text: &str| text.lines().skip(1).collect::<Vec<_>>().join("\n");
+            assert_ne!(
+                body(&one),
+                body(&two),
+                "{language}: xcdr1 and xcdr2 emit the same body"
+            );
+        }
     }
 }

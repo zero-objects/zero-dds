@@ -1,0 +1,4 @@
+# SwiftPM's build directory. `swift build` inside this package writes the
+# module, the object files and its own database here; all of it belongs to
+# the machine that made it.
+.build/

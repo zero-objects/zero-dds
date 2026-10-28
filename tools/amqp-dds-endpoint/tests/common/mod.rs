@@ -1,8 +1,8 @@
-//! Geteilte Test-Helpers fuer Annex-C E2E-Tests.
+//! Shared test helpers for Annex-C E2E tests.
 //!
-//! Pro Test-File spawnen wir einen synchronen Server in einem
-//! Thread, der genau eine (oder N) Connection(s) bedient. Client
-//! verbindet als `TcpStream` und faehrt die Annex-C-Tests aus.
+//! Per test file we spawn a synchronous server in a
+//! thread that serves exactly one (or N) connection(s). The client
+//! connects as a `TcpStream` and runs the Annex-C tests.
 
 #![allow(dead_code, clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 
@@ -15,7 +15,7 @@ use std::time::Duration;
 use amqp_dds_endpoint::handler::{HandlerConfig, handle_connection};
 use zerodds_amqp_endpoint::MetricsHub;
 
-/// Aufgesetzte Test-Server-Instanz.
+/// Set up test server instance.
 pub struct TestServer {
     pub port: u16,
     pub metrics: Arc<MetricsHub>,
@@ -24,8 +24,8 @@ pub struct TestServer {
 }
 
 impl TestServer {
-    /// Spawn einen Server, der bis zu `max_connections` Verbindungen
-    /// nacheinander bedient (single-threaded je Connection per
+    /// Spawn a server that serves up to `max_connections` connections
+    /// served sequentially (single-threaded per connection per
     /// thread::spawn).
     pub fn spawn(cfg: HandlerConfig) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
@@ -40,10 +40,10 @@ impl TestServer {
             while !shutdown_loop.load(Ordering::Relaxed) {
                 match listener.accept() {
                     Ok((mut sock, _)) => {
-                        // Auf macOS/Linux erbt die accepted Socket die
-                        // nonblocking-Flag vom Listener. Wir muessen
-                        // sie explizit zurueck auf blocking setzen,
-                        // damit `read_exact` funktioniert.
+                        // On macOS/Linux the accepted socket inherits the
+                        // nonblocking flag from the listener. We must
+                        // set it explicitly back to blocking,
+                        // so that `read_exact` works.
                         let _ = sock.set_nonblocking(false);
                         let _ = sock.set_read_timeout(Some(Duration::from_secs(5)));
                         let _ = sock.set_write_timeout(Some(Duration::from_secs(5)));
@@ -62,7 +62,7 @@ impl TestServer {
             }
         });
 
-        // Geben dem Server einen Moment zum Binden.
+        // Give the server a moment to bind.
         thread::sleep(Duration::from_millis(50));
 
         Self {
@@ -77,7 +77,7 @@ impl TestServer {
     pub fn shutdown(mut self) {
         self.shutdown.store(true, Ordering::Relaxed);
         if let Some(h) = self.handle.take() {
-            // Server-Loop pollt alle 20ms; geben wir ihm Zeit.
+            // The server loop polls every 20ms; give it time.
             thread::sleep(Duration::from_millis(50));
             let _ = h.join();
         }
@@ -94,7 +94,7 @@ impl Drop for TestServer {
     }
 }
 
-/// Verbindet einen TcpStream zum Test-Server.
+/// Connects a TcpStream to the test server.
 pub fn connect_client(port: u16) -> TcpStream {
     let s = TcpStream::connect(format!("127.0.0.1:{port}")).expect("connect");
     s.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
@@ -102,13 +102,13 @@ pub fn connect_client(port: u16) -> TcpStream {
     s
 }
 
-/// Frischer HandlerConfig fuer Tests, ohne TLS, mit AllowAll.
+/// Fresh HandlerConfig for tests, without TLS, with AllowAll.
 pub fn test_handler_cfg() -> HandlerConfig {
     HandlerConfig::for_tests(Arc::new(MetricsHub::new()))
 }
 
-/// Frischer HandlerConfig mit TLS-aktiv-Marker (wirkt nur auf
-/// SASL-PLAIN-Akzeptanz; echtes TLS ist out-of-scope dieses
+/// Fresh HandlerConfig with TLS-active marker (only affects
+/// SASL-PLAIN acceptance; real TLS is out of scope for this
 /// Daemon-Builds).
 pub fn test_handler_cfg_with_tls(tls_active: bool) -> HandlerConfig {
     let mut c = HandlerConfig::for_tests(Arc::new(MetricsHub::new()));

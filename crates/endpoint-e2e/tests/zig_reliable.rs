@@ -13,11 +13,7 @@
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
 
-use zerodds_endpoint_e2e::{bind_reliable_peer, reliable_receive};
-
-fn zig_available() -> bool {
-    Command::new("zig").arg("version").output().is_ok()
-}
+use zerodds_endpoint_e2e::{bind_reliable_peer, reliable_receive, zig_ready_or_skip};
 
 fn reliable_zig() -> String {
     format!(
@@ -40,12 +36,20 @@ fn scaffold(main_src: &str) -> std::path::PathBuf {
 const ZIG_RELIABLE_MAIN: &str = r#"const std = @import("std");
 const rel = @import("reliable.zig");
 
+// Zig 0.16 moved sockets out of `std.posix` and into `std.Io.net`:
+// `std.posix.socket`, `bind`, `sendto` and `recvfrom` are gone, and the
+// replacements take the `Io` handle the entry point is now given. The
+// receive timeout comes with them — `receiveTimeout` replaces the
+// `SO_RCVTIMEO` this program used to set by hand.
+const net = std.Io.net;
+
 const SendCtx = struct {
-    fd: std.posix.socket_t,
-    peer: std.net.Address,
+    io: std.Io,
+    sock: net.Socket,
+    peer: net.IpAddress,
     fn send(ctx: *anyopaque, frame: []const u8) void {
         const self: *SendCtx = @ptrCast(@alignCast(ctx));
-        _ = std.posix.sendto(self.fd, frame, 0, &self.peer.any, self.peer.getOsSockLen()) catch {};
+        self.sock.send(self.io, &self.peer, frame) catch {};
     }
     fn recv(ctx: *anyopaque, buf: []u8) ?usize {
         _ = ctx;
@@ -54,56 +58,62 @@ const SendCtx = struct {
     }
 };
 
-fn runBench(alloc: std.mem.Allocator, fd: std.posix.socket_t, peer: std.net.Address, stdout: anytype) !void {
+fn runBench(alloc: std.mem.Allocator, io: std.Io, sock: net.Socket, peer: net.IpAddress, stdout: anytype) !void {
     const M: usize = 4000;
     var pp = [_]u8{ 1, 2, 3, 4 };
     var frame: [16]u8 = undefined;
     const fl = rel.writeDataFrame(&frame, 0, &pp);
 
-    var t1 = try std.time.Timer.start();
+    const t1 = rel.monotonicNs();
     var i: usize = 0;
-    while (i < M) : (i += 1) _ = std.posix.sendto(fd, frame[0..fl], 0, &peer.any, peer.getOsSockLen()) catch 0;
-    const inline_ns = t1.read() / M;
+    while (i < M) : (i += 1) sock.send(io, &peer, frame[0..fl]) catch {};
+    const inline_ns = (rel.monotonicNs() - t1) / M;
 
-    var ctx = SendCtx{ .fd = fd, .peer = peer };
+    var ctx = SendCtx{ .io = io, .sock = sock, .peer = peer };
     var w = rel.AsyncWriter.init(alloc, &ctx, SendCtx.send, &ctx, SendCtx.recv);
     try w.start();
     i = 0;
     while (i < 100) : (i += 1) _ = w.write(&pp); // warmup
     var pushed: usize = 0;
-    var t2 = try std.time.Timer.start();
+    const t2 = rel.monotonicNs();
     i = 0;
     while (i < M) : (i += 1) {
         if (w.write(&pp)) pushed += 1;
     }
-    const dec_ns = t2.read() / M;
+    const dec_ns = (rel.monotonicNs() - t2) / M;
     w.close();
     try stdout.print("BENCH decoupled_ns={d} inline_ns={d} pushed={d}/{d}\n", .{ dec_ns, inline_ns, pushed, M });
 }
 
-pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const alloc = gpa.allocator();
-    const args = try std.process.argsAlloc(alloc);
-    defer std.process.argsFree(alloc, args);
+pub fn main(zd_init: std.process.Init) !void {
+    // Zig 0.16: the entry point takes `std.process.Init`, the arguments
+    // come off it, and stdout is a buffered writer over its `Io`.
+    // `std.process.argsAlloc` and `std.io.getStdOut()` are gone.
+    const alloc = zd_init.arena.allocator();
+    const args = try zd_init.minimal.args.toSlice(alloc);
     const mode = args[1];
     const port = try std.fmt.parseInt(u16, args[2], 10);
-    const stdout = std.io.getStdOut().writer();
+    var stdout_buf: [4096]u8 = undefined;
+    var stdout_file = std.Io.File.stdout().writer(zd_init.io, &stdout_buf);
+    const stdout = &stdout_file.interface;
+    defer stdout.flush() catch {};
 
-    const fd = try std.posix.socket(std.posix.AF.INET, std.posix.SOCK.DGRAM, 0);
-    defer std.posix.close(fd);
-    const bind_addr = try std.net.Address.parseIp4("127.0.0.1", 0);
-    try std.posix.bind(fd, &bind_addr.any, bind_addr.getOsSockLen());
-    const peer = try std.net.Address.parseIp4("127.0.0.1", port);
+    const bind_addr = try net.IpAddress.parseIp4("127.0.0.1", 0);
+    const sock = try net.IpAddress.bind(&bind_addr, zd_init.io, .{ .mode = .dgram });
+    defer sock.close(zd_init.io);
+    const peer = try net.IpAddress.parseIp4("127.0.0.1", port);
 
     if (std.mem.eql(u8, mode, "bench")) {
-        try runBench(alloc, fd, peer, stdout);
+        try runBench(alloc, zd_init.io, sock, peer, stdout);
         return;
     }
 
-    // e2e reliable sender.
-    const tv = std.posix.timeval{ .tv_sec = 0, .tv_usec = 100_000 };
-    try std.posix.setsockopt(fd, std.posix.SOL.SOCKET, std.posix.SO.RCVTIMEO, std.mem.asBytes(&tv));
+    // e2e reliable sender. The 100 ms the socket used to carry as
+    // SO_RCVTIMEO is now the timeout argument of every receive.
+    const recv_timeout: std.Io.Timeout = .{ .duration = .{
+        .raw = .fromMilliseconds(100),
+        .clock = .awake,
+    } };
     const n_count = try std.fmt.parseInt(u32, args[3], 10);
 
     var snd = rel.Sender.init(alloc);
@@ -116,19 +126,19 @@ pub fn main() !void {
         std.mem.writeInt(u32, &p, i, .little);
         const seq = try snd.submit(&p);
         const m = rel.writeDataFrame(&frame, seq, &p);
-        _ = try std.posix.sendto(fd, frame[0..m], 0, &peer.any, peer.getOsSockLen());
+        try sock.send(zd_init.io, &peer, frame[0..m]);
     }
 
-    var timer = try std.time.Timer.start();
+    const started_ns = rel.monotonicNs();
     var rbuf: [2048]u8 = undefined;
     var round: usize = 0;
     while (snd.inFlightCount() > 0 and round < 2000) : (round += 1) {
         while (true) {
-            const rn = std.posix.recvfrom(fd, &rbuf, 0, null, null) catch |e| switch (e) {
-                error.WouldBlock => break,
+            const msg = sock.receiveTimeout(zd_init.io, &rbuf, recv_timeout) catch |e| switch (e) {
+                error.Timeout => break,
                 else => return e,
             };
-            if (rel.parseAckNack(rbuf[0..rn])) |an| snd.recvAckNack(an);
+            if (rel.parseAckNack(msg.data)) |an| snd.recvAckNack(an);
         }
         if (snd.inFlightCount() == 0) break;
         var seqs: [rel.SENDER_WINDOW]u16 = undefined;
@@ -137,15 +147,15 @@ pub fn main() !void {
         while (j < k) : (j += 1) {
             if (snd.getInFlight(seqs[j])) |data| {
                 const m = rel.writeDataFrame(&frame, seqs[j], data);
-                _ = try std.posix.sendto(fd, frame[0..m], 0, &peer.any, peer.getOsSockLen());
+                try sock.send(zd_init.io, &peer, frame[0..m]);
             }
         }
-        const now_ms: i64 = @intCast(timer.read() / std.time.ns_per_ms);
+        const now_ms: i64 = @intCast((rel.monotonicNs() - started_ns) / std.time.ns_per_ms);
         if (snd.pendingHeartbeat(now_ms)) |hb| {
             const m = rel.heartbeatFrame(&frame, hb);
-            _ = try std.posix.sendto(fd, frame[0..m], 0, &peer.any, peer.getOsSockLen());
+            try sock.send(zd_init.io, &peer, frame[0..m]);
         }
-        std.time.sleep(2 * std.time.ns_per_ms);
+        rel.sleepNs(2 * std.time.ns_per_ms);
     }
     try stdout.print("SENT count={d} rounds={d} inflight={d}\n", .{ n_count, round, snd.inFlightCount() });
 }
@@ -171,8 +181,7 @@ fn decode_u32(b: &[u8]) -> u32 {
 }
 
 fn loss_case(drop_every: Option<usize>, label: &str) {
-    if !zig_available() {
-        eprintln!("SKIP {label}: `zig` not on PATH");
+    if !zig_ready_or_skip(label) {
         return;
     }
     const N: u32 = 12;
@@ -203,8 +212,7 @@ fn zig_reliable_no_loss() {
 #[test]
 fn zig_reliable_unit() {
     // Mirror-of-reference unit tests + byte-golden HEARTBEAT/ACKNACK (`zig test`).
-    if !zig_available() {
-        eprintln!("SKIP zig_reliable_unit: `zig` not on PATH");
+    if !zig_ready_or_skip("zig_reliable_unit") {
         return;
     }
     let out = Command::new("zig")
@@ -222,8 +230,7 @@ fn zig_reliable_unit() {
 #[test]
 fn zig_reliable_example() {
     // The runnable in-process loss-recovery demo prints the recovered sequence.
-    if !zig_available() {
-        eprintln!("SKIP zig_reliable_example: `zig` not on PATH");
+    if !zig_ready_or_skip("zig_reliable_example") {
         return;
     }
     let example = format!(
@@ -249,8 +256,7 @@ fn zig_reliable_example() {
 #[test]
 fn zig_reliable_latency_bench() {
     // Async-decoupled writer: wait-free ring push vs inline sendto.
-    if !zig_available() {
-        eprintln!("SKIP zig_reliable_latency_bench: `zig` not on PATH");
+    if !zig_ready_or_skip("zig_reliable_latency_bench") {
         return;
     }
     let child = spawn_app("bench", 9, 0);

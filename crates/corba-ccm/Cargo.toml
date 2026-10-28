@@ -22,8 +22,8 @@ path = "src/lib.rs"
 
 [features]
 default = ["std"]
-std = ["alloc", "dep:flate2"]
-alloc = []
+std = ["alloc", "dep:flate2", "dep:zerodds-corba-rust", "zerodds-corba-ir/std", "zerodds-corba-giop/std"]
+alloc = ["zerodds-corba-ir/alloc", "zerodds-corba-giop/alloc"]
 # `cos-event` pulls in `zerodds-corba-cos-event` as an optional
 # dependency and activates the `EventChannelTimerCallback` adapter
 # (spec OMG Time Service 1.1 §2.2 — a TimerEventHandler is a
@@ -32,17 +32,17 @@ cos-event = ["std", "dep:zerodds-corba-cos-event"]
 
 [dependencies]
 zerodds-corba-cos-event = { version = "1.0.0-rc.7", path = "../corba-cos-event", optional = true }
-zerodds-corba-ir = { version = "1.0.0-rc.7", path = "../corba-ir" }
+zerodds-corba-ir = { version = "1.0.0-rc.7", path = "../corba-ir", default-features = false }
 # Spec §11 DII wire-up — encode_giop_request produces real
 # `corba_giop::Request` wire frames from a DII NVList. no_std + alloc.
-zerodds-corba-giop = { version = "1.0.0-rc.7", path = "../corba-giop" }
+zerodds-corba-giop = { version = "1.0.0-rc.7", path = "../corba-giop", default-features = false }
 # Spec §7 DII live-invoke / §12 DSI server bind — CorbaConnection abstraction +
 # ObjectReference + SkeletonResult. No dependency cycle: corba-rust depends only on
 # corba-codegen, not on corba-ccm/corba-iiop.
-zerodds-corba-rust = { version = "1.0.0-rc.7", path = "../corba-rust" }
+zerodds-corba-rust = { version = "1.0.0-rc.7", path = "../corba-rust", optional = true }
 # Spec §13 DynAny — TypeCode-driven iteration over CDR `any`
-# bytes. Uses `BufferReader`/`Endianness` for primitive walks.
-zerodds-cdr = { version = "1.0.0-rc.7", path = "../cdr" }
+# bytes. Uses `Reader`/`Endianness` for primitive walks.
+zerodds-wire = { version = "1.0.0-rc.7", path = "../wire" }
 # Spec §18 Compression — production codec via flate2 (Zlib/Gzip/
 # Deflate). std-only; gated in code via `#[cfg(feature = "std")]`.
 flate2 = { workspace = true, optional = true }

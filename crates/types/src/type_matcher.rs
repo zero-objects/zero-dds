@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Writer↔Reader Type-Matching (XTypes §7.2.4 + §7.6.3.7).
+//! Writer↔Reader Type-Matching (XTypes §7.2.4 + §7.6.3.4).
 //!
-//! Connects [`assignability::is_assignable`] with the QoS policy
+//! Connects [`assignability::is_assignable`](crate::assignability::is_assignable) with the QoS policy
 //! [`TypeConsistencyEnforcement`]: depending on the TCE flags, individual
 //! assignability rules are relaxed or tightened.
 //!
@@ -63,13 +63,43 @@ impl TypeMatchResult {
 #[derive(Debug, Clone, Copy)]
 pub struct TypeMatcher<'a> {
     tce: &'a TypeConsistencyEnforcement,
+    key_member_bounds: crate::assignability::KeyMemberBounds,
+    strong_assignability: crate::assignability::StrongAssignability,
 }
 
 impl<'a> TypeMatcher<'a> {
     /// Constructor with a TCE policy.
     #[must_use]
     pub const fn new(tce: &'a TypeConsistencyEnforcement) -> Self {
-        Self { tce }
+        Self {
+            tce,
+            key_member_bounds: crate::assignability::KeyMemberBounds::Enforced,
+            strong_assignability: crate::assignability::StrongAssignability::Equivalence,
+        }
+    }
+
+    /// The Table 19 key-member axis this matcher decides under. Not a
+    /// QoS: the policy is announced on the wire and the axis is not, so
+    /// it is the runtime's setting and reaches both sides of a pair the
+    /// same way.
+    #[must_use]
+    pub const fn with_key_member_bounds(
+        mut self,
+        key_member_bounds: crate::assignability::KeyMemberBounds,
+    ) -> Self {
+        self.key_member_bounds = key_member_bounds;
+        self
+    }
+
+    /// The strong-assignability axis this matcher decides under, a
+    /// setting of the runtime like [`Self::with_key_member_bounds`].
+    #[must_use]
+    pub const fn with_strong_assignability(
+        mut self,
+        strong_assignability: crate::assignability::StrongAssignability,
+    ) -> Self {
+        self.strong_assignability = strong_assignability;
+        self
     }
 
     /// Checks writer↔reader type compatibility.
@@ -84,32 +114,49 @@ impl<'a> TypeMatcher<'a> {
         registry: &TypeRegistry,
     ) -> TypeMatchResult {
         let cfg = self.build_config();
+        // §7.6.3.4.2 Step 1: "If the Subscription does not allow type
+        // coercion, then its type must be equivalent to the type of the
+        // Publication." Equivalence is the relation of §7.3.4.7, not the
+        // assignability a coercing subscription asks for.
+        if !matches!(self.tce.kind, TypeConsistencyKind::AllowTypeCoercion) {
+            return if crate::assignability::minimal_equivalent(writer, reader, registry, &cfg) {
+                TypeMatchResult::Matches
+            } else {
+                TypeMatchResult::Incompatible {
+                    reason: "DISALLOW_TYPE_COERCION: the types are not equivalent (XTypes 1.3 §7.6.3.4.2)",
+                }
+            };
+        }
         TypeMatchResult::from_assignable(is_assignable(writer, reader, registry, &cfg))
     }
 
     /// Translates [`TypeConsistencyEnforcement`] into
     /// [`AssignabilityConfig`].
     ///
-    /// Mapping:
-    /// - `kind == AllowTypeCoercion` ∧ ¬`prevent_type_widening`
-    ///   → `allow_type_coercion = true`.
-    /// - `force_type_validation` → `allow_type_coercion = false`
-    ///   (overrides the previous rule, §7.6.3.7.1).
+    /// Mapping (§7.6.3.4.1):
+    /// - `kind == AllowTypeCoercion` → `allow_type_coercion = true`.
+    /// - `prevent_type_widening`, `ignore_sequence_bounds`,
+    ///   `ignore_string_bounds` and `ignore_member_names` "only apply when
+    ///   the type consistency kind is ALLOW_TYPE_COERCION, otherwise the
+    ///   fields are treated as though prevent_type_widening is set to true
+    ///   and the others are set to false."
+    /// - `force_type_validation` is not an assignability option: it makes
+    ///   Step 2 of §7.6.3.4.2 fail when a side has no TypeObject, which the
+    ///   caller decides before any identifier is compared.
     /// - `max_depth` stays at the default (comes from the resolver config).
     fn build_config(&self) -> AssignabilityConfig {
-        let coerce = matches!(self.tce.kind, TypeConsistencyKind::AllowTypeCoercion)
-            && !self.tce.prevent_type_widening;
+        let allow = matches!(self.tce.kind, TypeConsistencyKind::AllowTypeCoercion);
         AssignabilityConfig {
-            allow_type_coercion: if self.tce.force_type_validation {
-                false
-            } else {
-                coerce
-            },
-            ignore_sequence_bounds: self.tce.ignore_sequence_bounds,
-            ignore_string_bounds: self.tce.ignore_string_bounds,
-            ignore_member_names: self.tce.ignore_member_names,
+            allow_type_coercion: allow,
+            ignore_sequence_bounds: allow && self.tce.ignore_sequence_bounds,
+            ignore_string_bounds: allow && self.tce.ignore_string_bounds,
+            ignore_member_names: allow && self.tce.ignore_member_names,
             ignore_literal_names: false,
+            prevent_type_widening: !allow || self.tce.prevent_type_widening,
             max_depth: crate::resolve::DEFAULT_MAX_RESOLVE_DEPTH,
+            key_member_bounds: self.key_member_bounds,
+            appendable_is_delimited: true,
+            strong_assignability: self.strong_assignability,
         }
     }
 }
@@ -137,44 +184,51 @@ mod tests {
         assert_eq!(m.match_types(&w, &w, &reg()), TypeMatchResult::Matches);
     }
 
+    /// XTypes 1.3 §7.2.4.4.4, Table 15, has no widening row, so the
+    /// default TCE (kind=AllowTypeCoercion, prevent_widening=false) does
+    /// not match int16 against int32 either.
     #[test]
-    fn widening_allowed_by_default_tce() {
-        // TCE-Default: kind=AllowTypeCoercion, prevent_widening=false.
+    fn widening_rejected_by_default_tce() {
         let tce = TypeConsistencyEnforcement::default();
         let m = TypeMatcher::new(&tce);
         let w = TypeIdentifier::Primitive(PrimitiveKind::Int16);
         let r = TypeIdentifier::Primitive(PrimitiveKind::Int32);
-        assert!(m.match_types(&w, &r, &reg()).is_match());
-    }
-
-    #[test]
-    fn widening_blocked_by_prevent_type_widening() {
-        let mut tce = TypeConsistencyEnforcement::default();
-        tce.prevent_type_widening = true;
-        let m = TypeMatcher::new(&tce);
-        let w = TypeIdentifier::Primitive(PrimitiveKind::Int16);
-        let r = TypeIdentifier::Primitive(PrimitiveKind::Int32);
         assert!(!m.match_types(&w, &r, &reg()).is_match());
     }
 
+    /// The three ways a `TypeConsistencyEnforcement` can switch coercion
+    /// off — `prevent_type_widening`, `force_type_validation`,
+    /// `DisallowTypeCoercion` — each reject int16 against int32, and so
+    /// does the coercing default: Table 15 leaves them nothing to block
+    /// for a pair of primitives. The three flags keep their other duties
+    /// (`force_type_validation` still fails Step 2 of §7.6.3.4.2 when a
+    /// side announces no TypeObject), only the primitive verdict is no
+    /// longer theirs to change.
     #[test]
-    fn force_type_validation_blocks_coercion() {
-        let mut tce = TypeConsistencyEnforcement::default();
-        tce.force_type_validation = true;
-        let m = TypeMatcher::new(&tce);
+    fn every_non_coercing_tce_agrees_with_the_default_on_primitives() {
         let w = TypeIdentifier::Primitive(PrimitiveKind::Int16);
         let r = TypeIdentifier::Primitive(PrimitiveKind::Int32);
-        assert!(!m.match_types(&w, &r, &reg()).is_match());
-    }
 
-    #[test]
-    fn disallow_type_coercion_blocks_widening() {
-        let mut tce = TypeConsistencyEnforcement::default();
-        tce.kind = TypeConsistencyKind::DisallowTypeCoercion;
-        let m = TypeMatcher::new(&tce);
-        let w = TypeIdentifier::Primitive(PrimitiveKind::Int16);
-        let r = TypeIdentifier::Primitive(PrimitiveKind::Int32);
-        assert!(!m.match_types(&w, &r, &reg()).is_match());
+        let mut prevent_widening = TypeConsistencyEnforcement::default();
+        prevent_widening.prevent_type_widening = true;
+        let mut force_validation = TypeConsistencyEnforcement::default();
+        force_validation.force_type_validation = true;
+        let mut disallow = TypeConsistencyEnforcement::default();
+        disallow.kind = TypeConsistencyKind::DisallowTypeCoercion;
+
+        for tce in [
+            TypeConsistencyEnforcement::default(),
+            prevent_widening,
+            force_validation,
+            disallow,
+        ] {
+            assert!(
+                !TypeMatcher::new(&tce)
+                    .match_types(&w, &r, &reg())
+                    .is_match(),
+                "int16 → int32 must not match under {tce:?}"
+            );
+        }
     }
 
     #[test]
@@ -257,12 +311,15 @@ mod tests {
         );
     }
 
-    /// A widened member (writer i16 → reader i32) matches under the default
-    /// coercing TCE, but `force_type_validation` disables coercion
-    /// (§7.6.3.7.1) → the structural check reports Incompatible. Both
-    /// verdicts go through the populated registry.
+    /// A widened member (writer i16 → reader i32) is Incompatible under
+    /// the default coercing TCE as well as under `force_type_validation`:
+    /// XTypes 1.3 §7.2.4.4.4, Table 15, holds a struct member to the
+    /// identical primitive type, and the member check is the same one
+    /// `primitive_compatible` answers for a bare primitive pair. Both
+    /// verdicts go through the populated registry, so this is the
+    /// structural path and not the identity short-circuit.
     #[test]
-    fn widened_member_incompatible_under_force_validation_via_registry() {
+    fn widened_member_incompatible_via_registry_under_every_tce() {
         let mut reg = TypeRegistry::new();
         // Writer: {a: i16}, @final (exact structural check, no appendable slack).
         let writer = TypeObjectBuilder::struct_type("::w::Widen")
@@ -277,16 +334,17 @@ mod tests {
         let w_id = register(&mut reg, writer);
         let r_id = register(&mut reg, reader);
 
-        // Default TCE coerces the widening i16 → i32 → Matches.
+        // The coercing default rejects the i16 → i32 member: Table 15 has
+        // no widening row for a member type either.
         let coerce = TypeConsistencyEnforcement::default();
         assert!(
-            TypeMatcher::new(&coerce)
+            !TypeMatcher::new(&coerce)
                 .match_types(&w_id, &r_id, &reg)
                 .is_match(),
-            "default TCE must coerce the i16→i32 widening"
+            "default TCE must reject the i16→i32 widened member"
         );
 
-        // force_type_validation disables coercion → Incompatible.
+        // force_type_validation reaches the same verdict.
         let mut strict = TypeConsistencyEnforcement::default();
         strict.force_type_validation = true;
         assert!(
@@ -294,6 +352,140 @@ mod tests {
                 .match_types(&w_id, &r_id, &reg)
                 .is_match(),
             "force_type_validation must reject the widened member"
+        );
+    }
+
+    /// §7.6.3.4.2 Step 1: a subscription that does not allow type
+    /// coercion needs a type equivalent to the publication's. The pair of
+    /// `appendable_trailing_optional_member_matches_via_registry` is
+    /// assignable and not equivalent: it matches under ALLOW_TYPE_COERCION
+    /// and not under DISALLOW_TYPE_COERCION, and a type matches itself
+    /// under both.
+    #[test]
+    fn disallow_type_coercion_needs_equivalent_types() {
+        let mut reg = TypeRegistry::new();
+        let reader = TypeObjectBuilder::struct_type("::evo::V1")
+            .extensibility(Extensibility::Appendable)
+            .member("a", TypeIdentifier::Primitive(PrimitiveKind::Int32), |m| m)
+            .build_minimal();
+        let writer = TypeObjectBuilder::struct_type("::evo::V1")
+            .extensibility(Extensibility::Appendable)
+            .member("a", TypeIdentifier::Primitive(PrimitiveKind::Int32), |m| m)
+            .member("c", TypeIdentifier::Primitive(PrimitiveKind::Int32), |m| {
+                m.optional()
+            })
+            .build_minimal();
+        let w_id = register(&mut reg, writer);
+        let r_id = register(&mut reg, reader);
+
+        let allow = TypeConsistencyEnforcement::default();
+        assert!(
+            TypeMatcher::new(&allow)
+                .match_types(&w_id, &r_id, &reg)
+                .is_match()
+        );
+
+        let mut disallow = TypeConsistencyEnforcement::default();
+        disallow.kind = TypeConsistencyKind::DisallowTypeCoercion;
+        let matcher = TypeMatcher::new(&disallow);
+        assert!(!matcher.match_types(&w_id, &r_id, &reg).is_match());
+        assert!(matcher.match_types(&r_id, &r_id, &reg).is_match());
+    }
+    /// §7.6.3.4.1: the four flags "only apply when the type consistency
+    /// kind is ALLOW_TYPE_COERCION, otherwise the fields are treated as
+    /// though prevent_type_widening is set to true and the others are set to
+    /// false". The flags are set the other way round than that reading, so
+    /// a config that passed them on would show.
+    #[test]
+    fn the_flags_apply_only_under_allow_type_coercion() {
+        let mut tce = TypeConsistencyEnforcement::default();
+        tce.prevent_type_widening = false;
+        tce.ignore_sequence_bounds = true;
+        tce.ignore_string_bounds = true;
+        tce.ignore_member_names = true;
+
+        tce.kind = TypeConsistencyKind::DisallowTypeCoercion;
+        let cfg = TypeMatcher::new(&tce).build_config();
+        assert!(cfg.prevent_type_widening);
+        assert!(!cfg.ignore_sequence_bounds);
+        assert!(!cfg.ignore_string_bounds);
+        assert!(!cfg.ignore_member_names);
+        assert!(!cfg.allow_type_coercion);
+
+        tce.kind = TypeConsistencyKind::AllowTypeCoercion;
+        let cfg = TypeMatcher::new(&tce).build_config();
+        assert!(!cfg.prevent_type_widening);
+        assert!(cfg.ignore_sequence_bounds);
+        assert!(cfg.ignore_string_bounds);
+        assert!(cfg.ignore_member_names);
+        assert!(cfg.allow_type_coercion);
+
+        tce.prevent_type_widening = true;
+        tce.ignore_sequence_bounds = false;
+        tce.ignore_string_bounds = false;
+        tce.ignore_member_names = false;
+        let cfg = TypeMatcher::new(&tce).build_config();
+        assert!(cfg.prevent_type_widening);
+        assert!(!cfg.ignore_sequence_bounds);
+        assert!(!cfg.ignore_string_bounds);
+        assert!(!cfg.ignore_member_names);
+    }
+
+    /// §7.6.3.4.2 Step 1: "If the subscription allows type coercion and the
+    /// ignore_member_names flag is true [...] assignability checking shall
+    /// ignore the member names in both Subscription and Publication types.
+    /// That is, only member IDs will impact assignability." The name `x1`
+    /// sits at id 1 in the publication and at id 2 in the subscription
+    /// (§7.2.4.4.4.5: one name at two ids is refused), `x5` at id 5 on both.
+    #[test]
+    fn ignore_member_names_lets_only_the_member_ids_decide() {
+        let mut reg = TypeRegistry::new();
+        let writer = TypeObjectBuilder::struct_type("::X")
+            .extensibility(Extensibility::Mutable)
+            .member("x1", TypeIdentifier::Primitive(PrimitiveKind::Int32), |m| {
+                m.id(1)
+            })
+            .member("x5", TypeIdentifier::Primitive(PrimitiveKind::Int32), |m| {
+                m.id(5)
+            })
+            .build_minimal();
+        let reader = TypeObjectBuilder::struct_type("::X")
+            .extensibility(Extensibility::Mutable)
+            .member("x1", TypeIdentifier::Primitive(PrimitiveKind::Int32), |m| {
+                m.id(2)
+            })
+            .member("x5", TypeIdentifier::Primitive(PrimitiveKind::Int32), |m| {
+                m.id(5)
+            })
+            .build_minimal();
+        let w_id = register(&mut reg, writer);
+        let r_id = register(&mut reg, reader);
+
+        let mut names_count = TypeConsistencyEnforcement::default();
+        names_count.ignore_member_names = false;
+        assert!(
+            !TypeMatcher::new(&names_count)
+                .match_types(&w_id, &r_id, &reg)
+                .is_match(),
+            "a name at two ids is refused while names count"
+        );
+
+        let mut names_ignored = TypeConsistencyEnforcement::default();
+        names_ignored.ignore_member_names = true;
+        assert!(
+            TypeMatcher::new(&names_ignored)
+                .match_types(&w_id, &r_id, &reg)
+                .is_match(),
+            "with ignore_member_names only the ids impact assignability"
+        );
+
+        // The flag belongs to ALLOW_TYPE_COERCION; DISALLOW needs
+        // equivalent types and does not read it.
+        names_ignored.kind = TypeConsistencyKind::DisallowTypeCoercion;
+        assert!(
+            !TypeMatcher::new(&names_ignored)
+                .match_types(&w_id, &r_id, &reg)
+                .is_match()
         );
     }
 }

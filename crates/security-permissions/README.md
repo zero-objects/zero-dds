@@ -3,7 +3,7 @@
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![docs.rs](https://docs.rs/zerodds-security-permissions/badge.svg)](https://docs.rs/zerodds-security-permissions)
 
-DDS-Security 1.1 §9.4 ("Builtin Access Control Plugin") for the
+DDS-Security 1.2 §10.4 ("Builtin Access Control: DDS:Access:Permissions") for the
 [ZeroDDS](https://zerodds.org) stack: permissions/governance XML parser
 + S/MIME-CMS signature verifier + topic wildcard match + delegation
 chain + PSK profile. Safety classification: **SAFE**.
@@ -12,7 +12,7 @@ chain + PSK profile. Safety classification: **SAFE**.
 
 | Spec | Section |
 |------|-----------|
-| OMG DDS-Security 1.1 | §9.4 (builtin access control), §10.4.1 (XML format) |
+| OMG DDS-Security 1.2 | §10.4 (builtin access control), §10.4.1 (governance and permissions documents) |
 | OMG DDS-Security 1.2 | §10.4.1.1 (S/MIME-CMS), §10.8 (PSK profile) |
 | RFC 5751/5652/5280 | S/MIME / CMS / X.509 |
 
@@ -42,7 +42,8 @@ let plugin = PermissionsAccessControl::new(NoOpVerifier);
 
 ## Stability
 
-`1.0.0-rc.1`. Public API + XML schema + CMS wire format RC1-stable.
+`1.0.0-rc.7`, a pre-release. The public API can still change before
+1.0.0; the crate's CHANGELOG lists every change.
 
 ## Tests
 

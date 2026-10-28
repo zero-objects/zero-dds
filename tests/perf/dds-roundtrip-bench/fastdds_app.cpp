@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// FastDDS C++ Roundtrip-Bench-App. Apples-to-apples mit Cyclone+RTI+ZeroDDS
+// FastDDS C++ roundtrip bench app. Apples-to-apples with Cyclone+RTI+ZeroDDS
 // via custom IDL.
 //
 // IDL: roundtrip.idl  →  RoundtripBench::Roundtrip  (via fastddsgen)
+// With BENCH_RICH defined (target fastdds-roundtrip-rich) the sample type is
+// the codec-heavy roundtrip_rich.idl → RoundtripBench::RoundtripRich, on the
+// topics RoundtripRichBench_* of the other rich builds.
 //
 // Pipeline-Schichten:
 //   App-Code (C++)                  -- typed RoundtripBench::Roundtrip
@@ -21,8 +24,14 @@
 //       -o fastdds-app fastdds_app.cpp roundtrip.cxx roundtripPubSubTypes.cxx \
 //       -lfastrtps -lfastcdr -lpthread
 
+#ifdef BENCH_RICH
+#include "roundtrip_rich.hpp"
+#include "roundtrip_richPubSubTypes.hpp"
+#else
 #include "roundtrip.hpp"
 #include "roundtripPubSubTypes.hpp"
+#endif
+#include "bench_common.hpp"
 
 #include <fastdds/dds/domain/DomainParticipant.hpp>
 #include <fastdds/dds/domain/DomainParticipantFactory.hpp>
@@ -40,10 +49,8 @@
 #include <fastdds/rtps/transport/shared_mem/SharedMemTransportDescriptor.hpp>
 #include <fastdds/rtps/transport/TCPv4TransportDescriptor.hpp>
 
-#include <algorithm>
-#include <atomic>
+#include <array>
 #include <chrono>
-#include <condition_variable>
 #include <cstdint>
 #include <cstdlib>
 #include <iostream>
@@ -56,24 +63,64 @@ using namespace eprosima::fastdds::dds;
 
 namespace {
 
-// Domain via ZERODDS_BENCH_DOMAIN env-var ueberschreibbar (Default 200).
-static uint32_t resolve_domain() {
-    const char* s = std::getenv("ZERODDS_BENCH_DOMAIN");
-    if (s) { try { return static_cast<uint32_t>(std::stoul(s)); } catch (...) {} }
-    return 200;
+using bench::now_ns;
+using bench::PingState;
+using bench::print_quantiles;
+
+static DataRepresentationId_t bench_repr() {
+    return bench::xcdr1_requested() ? XCDR_DATA_REPRESENTATION : XCDR2_DATA_REPRESENTATION;
 }
+static uint32_t resolve_domain() {
+    return static_cast<uint32_t>(bench::env_domain());
+}
+
+#ifdef BENCH_RICH
+using Sample = RoundtripBench::RoundtripRich;
+using SamplePubSubType = RoundtripBench::RoundtripRichPubSubType;
+constexpr const char* kProgram   = "fastdds-app-rich";
+constexpr const char* kReqTopic  = "RoundtripRichBench_Request";
+constexpr const char* kEchoTopic = "RoundtripRichBench_Echo";
+constexpr size_t kNumWaypoints = 8;
+
+void populate(Sample& m, size_t payload_size) {
+    using RoundtripBench::Vec3;
+    using RoundtripBench::Waypoint;
+    m.name(std::string("fastdds-rich-roundtrip-bench"));
+    std::array<double, 16> tr{};
+    for (size_t i = 0; i < 16; ++i) tr[i] = static_cast<double>(i) * 1.5 + 0.25;
+    m.transform(tr);
+    std::vector<Waypoint> wps;
+    wps.reserve(kNumWaypoints);
+    for (size_t i = 0; i < kNumWaypoints; ++i) {
+        Waypoint w;
+        w.id(static_cast<uint32_t>(i));
+        Vec3 pos; pos.x(1.0 * i); pos.y(2.0 * i); pos.z(3.0 * i);
+        Vec3 vel; vel.x(0.1 * i); vel.y(0.2 * i); vel.z(0.3 * i);
+        w.position(pos);
+        w.velocity(vel);
+        w.label(std::string("wp-") + std::to_string(i));
+        w.weight(0.5 * static_cast<double>(i) + 1.0);
+        wps.push_back(w);
+    }
+    m.waypoints(wps);
+    m.payload(std::vector<uint8_t>(payload_size, 0xAB));
+}
+#else
+using Sample = RoundtripBench::Roundtrip;
+using SamplePubSubType = RoundtripBench::RoundtripPubSubType;
+constexpr const char* kProgram   = "fastdds-app";
 constexpr const char* kReqTopic  = "RoundtripBench_Request";
 constexpr const char* kEchoTopic = "RoundtripBench_Echo";
 
-uint64_t now_ns() {
-    auto t = std::chrono::steady_clock::now().time_since_epoch();
-    return std::chrono::duration_cast<std::chrono::nanoseconds>(t).count();
+void populate(Sample& m, size_t payload_size) {
+    m.payload(std::vector<uint8_t>(payload_size, 0xAB));
 }
+#endif
 
 // Transport-Selection via env-var ZERODDS_BENCH_TRANSPORT:
 //   UDPv4 (default), UDPv6, SHM, TCPv4.
-// FastDDS nutzt per Default SHM + UDP. Wir setzen genau einen
-// transport-instance pro Run damit der Bench transport-rein ist.
+// FastDDS uses SHM + UDP by default. We set exactly one
+// transport instance per run so that the bench is transport-pure.
 enum class BenchTransport { UDPv4, UDPv6, SHM, TCPv4 };
 BenchTransport resolve_transport() {
     const char* s = std::getenv("ZERODDS_BENCH_TRANSPORT");
@@ -109,8 +156,8 @@ void apply_transport(DomainParticipantQos& pqos) {
     case BenchTransport::TCPv4: {
         auto t = std::make_shared<
             eprosima::fastdds::rtps::TCPv4TransportDescriptor>();
-        // TCPv4-Server-Side: listening port; ping connectet als client.
-        // Default 0 = ephemeral; explizit 5100 für deterministische Tests.
+        // TCPv4 server side: listening port; ping connects as client.
+        // Default 0 = ephemeral; explicitly 5100 for deterministic tests.
         t->add_listener_port(0);
         pqos.transport().user_transports.push_back(t);
         break;
@@ -119,9 +166,9 @@ void apply_transport(DomainParticipantQos& pqos) {
 }
 
 // DDS-Security 1.2 Property-QoS Setup via env-var ZERODDS_BENCH_SECURITY.
-// Wenn gesetzt: lädt PKI-DH-Auth + AccessControl + AES-GCM-Crypto-Plugins
-// mit Pfaden aus ZERODDS_BENCH_SEC_DIR (default /tmp/dds-bench-security/).
-// ZERODDS_BENCH_SEC_NAME = "ping" oder "pong" → wählt identity-cert+permissions.
+// If set: loads PKI-DH auth + AccessControl + AES-GCM crypto plugins
+// with paths from ZERODDS_BENCH_SEC_DIR (default /tmp/dds-bench-security/).
+// ZERODDS_BENCH_SEC_NAME = "ping" or "pong" → selects identity cert + permissions.
 void apply_security(DomainParticipantQos& pqos) {
     const char* sec = std::getenv("ZERODDS_BENCH_SECURITY");
     if (!sec || std::string(sec) != "1") return;
@@ -148,6 +195,14 @@ void apply_security(DomainParticipantQos& pqos) {
     add("dds.sec.access.builtin.Access-Permissions.permissions",
         std::string("file://") + sec_dir + "/permissions_" + who + ".p7s");
     add("dds.sec.crypto.plugin", "builtin.AES-GCM-GMAC");
+    // ZERODDS_BENCH_SEC_LOG=<file>: Fast DDS writes why it refuses a
+    // handshake or a message only through its security logging plugin.
+    const char* log_file = std::getenv("ZERODDS_BENCH_SEC_LOG");
+    if (log_file && *log_file) {
+        add("dds.sec.log.plugin", "builtin.DDS_LogTopic");
+        add("dds.sec.log.builtin.DDS_LogTopic.logging_level", "DEBUG_LEVEL");
+        add("dds.sec.log.builtin.DDS_LogTopic.log_file", log_file);
+    }
 }
 
 // --- Pong: receive request, echo via listener-direct write ---
@@ -157,7 +212,7 @@ public:
     explicit PongListener(DataWriter* writer) : writer_(writer) {}
 
     void on_data_available(DataReader* reader) override {
-        RoundtripBench::Roundtrip msg;
+        Sample msg;
         SampleInfo info;
         while (reader->take_next_sample(&msg, &info) == RETCODE_OK) {
             if (info.valid_data) {
@@ -177,7 +232,7 @@ int run_pong(uint64_t max_runtime_s) {
     auto* dp = DomainParticipantFactory::get_instance()->create_participant(resolve_domain(), pqos);
     if (!dp) { std::cerr << "dp create failed\n"; return 1; }
 
-    TypeSupport type_support(new RoundtripBench::RoundtripPubSubType());
+    TypeSupport type_support(new SamplePubSubType());
     type_support.register_type(dp);
 
     auto* topic_req  = dp->create_topic(kReqTopic,  type_support.get_type_name(), TOPIC_QOS_DEFAULT);
@@ -190,11 +245,11 @@ int run_pong(uint64_t max_runtime_s) {
     dw_qos.reliability().kind = RELIABLE_RELIABILITY_QOS;
     dw_qos.history().kind = KEEP_LAST_HISTORY_QOS;
     dw_qos.history().depth = 64;
-    // XCDR2-only: RTI ist strict, akzeptiert keinen Writer der
-    // "XCDR1, XCDR2" advertised. Alle apps auf XCDR2-only zwingen
-    // damit RTI <-> alle anderen Vendoren matchen.
+    // XCDR2-only: RTI is strict, accepts no writer that
+    // advertises "XCDR1, XCDR2". Force all apps to XCDR2-only
+    // so that RTI <-> all other vendors match.
     dw_qos.representation().m_value.clear();
-    dw_qos.representation().m_value.push_back(XCDR2_DATA_REPRESENTATION);
+    dw_qos.representation().m_value.push_back(bench_repr());
     auto* writer = publisher->create_datawriter(topic_echo, dw_qos);
 
     DataReaderQos dr_qos;
@@ -202,7 +257,7 @@ int run_pong(uint64_t max_runtime_s) {
     dr_qos.history().kind = KEEP_LAST_HISTORY_QOS;
     dr_qos.history().depth = 64;
     dr_qos.representation().m_value.clear();
-    dr_qos.representation().m_value.push_back(XCDR2_DATA_REPRESENTATION);
+    dr_qos.representation().m_value.push_back(bench_repr());
     PongListener listener(writer);
     auto* reader = subscriber->create_datareader(topic_req, dr_qos, &listener);
 
@@ -221,56 +276,22 @@ int run_pong(uint64_t max_runtime_s) {
 
 // --- Ping: send + listener captures RTT ---
 
-struct PingState {
-    std::mutex                  mu;
-    std::condition_variable     cv;
-    uint64_t                    received    = 0;
-    uint64_t                    warmup      = 0;
-    std::vector<uint64_t>       rtts;
-};
-
 class PingListener : public DataReaderListener {
 public:
     explicit PingListener(PingState& st) : st_(st) {}
 
     void on_data_available(DataReader* reader) override {
-        RoundtripBench::Roundtrip msg;
+        Sample msg;
         SampleInfo info;
         while (reader->take_next_sample(&msg, &info) == RETCODE_OK) {
             if (!info.valid_data) continue;
-            uint64_t now = now_ns();
-            uint64_t rtt = now > msg.t_send_ns() ? now - msg.t_send_ns() : 1;
-            {
-                std::lock_guard<std::mutex> lk(st_.mu);
-                if (st_.received >= st_.warmup) st_.rtts.push_back(rtt);
-                st_.received++;
-            }
-            st_.cv.notify_all();
+            st_.record(msg.t_send_ns());
         }
     }
 
 private:
     PingState& st_;
 };
-
-void print_quantiles(std::vector<uint64_t>& rtts, size_t payload_size) {
-    if (rtts.empty()) { std::cout << "no samples\n"; return; }
-    std::sort(rtts.begin(), rtts.end());
-    auto pct = [&](double p) {
-        size_t idx = std::min(rtts.size() - 1,
-                              static_cast<size_t>(p * (double)(rtts.size() - 1)));
-        return rtts[idx];
-    };
-    std::cout
-        << "payload=" << payload_size
-        << "  n=" << rtts.size()
-        << "  min=" << rtts.front()/1000.0 << "us"
-        << "  p50=" << pct(0.50)/1000.0 << "us"
-        << "  p90=" << pct(0.90)/1000.0 << "us"
-        << "  p99=" << pct(0.99)/1000.0 << "us"
-        << "  p999=" << pct(0.999)/1000.0 << "us"
-        << "  max=" << rtts.back()/1000.0 << "us\n";
-}
 
 int run_ping(size_t payload_size, uint64_t warmup, uint64_t samples) {
     DomainParticipantQos pqos;
@@ -279,7 +300,7 @@ int run_ping(size_t payload_size, uint64_t warmup, uint64_t samples) {
     auto* dp = DomainParticipantFactory::get_instance()->create_participant(resolve_domain(), pqos);
     if (!dp) { std::cerr << "dp create failed\n"; return 1; }
 
-    TypeSupport type_support(new RoundtripBench::RoundtripPubSubType());
+    TypeSupport type_support(new SamplePubSubType());
     type_support.register_type(dp);
 
     auto* topic_req  = dp->create_topic(kReqTopic,  type_support.get_type_name(), TOPIC_QOS_DEFAULT);
@@ -293,7 +314,7 @@ int run_ping(size_t payload_size, uint64_t warmup, uint64_t samples) {
     dw_qos.history().kind = KEEP_LAST_HISTORY_QOS;
     dw_qos.history().depth = 64;
     dw_qos.representation().m_value.clear();
-    dw_qos.representation().m_value.push_back(XCDR2_DATA_REPRESENTATION);
+    dw_qos.representation().m_value.push_back(bench_repr());
     auto* writer = publisher->create_datawriter(topic_req, dw_qos);
 
     DataReaderQos dr_qos;
@@ -301,7 +322,7 @@ int run_ping(size_t payload_size, uint64_t warmup, uint64_t samples) {
     dr_qos.history().kind = KEEP_LAST_HISTORY_QOS;
     dr_qos.history().depth = 64;
     dr_qos.representation().m_value.clear();
-    dr_qos.representation().m_value.push_back(XCDR2_DATA_REPRESENTATION);
+    dr_qos.representation().m_value.push_back(bench_repr());
     PingState st;
     st.warmup = warmup;
     st.rtts.reserve(samples);
@@ -309,8 +330,8 @@ int run_ping(size_t payload_size, uint64_t warmup, uint64_t samples) {
     auto* reader = subscriber->create_datareader(topic_echo, dr_qos, &listener);
 
     // Auf echtes Endpoint-Matching warten statt sleep(500ms). Mit
-    // Volatile-Durability (Default) gehen Samples vor dem Match
-    // verloren → der Roundtrip-Partner sieht seq 0..N nicht.
+    // With volatile durability (default), samples before the match
+    // are lost → the roundtrip partner does not see seq 0..N.
     // get_publication_matched_status / get_subscription_matched_status
     // liefern current_count.
     {
@@ -326,9 +347,8 @@ int run_ping(size_t payload_size, uint64_t warmup, uint64_t samples) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
-    RoundtripBench::Roundtrip msg;
-    std::vector<uint8_t> payload(payload_size, 0xAB);
-    msg.payload(payload);
+    Sample msg;
+    populate(msg, payload_size);
 
     uint64_t total = warmup + samples;
     for (uint64_t seq = 0; seq < total; ++seq) {
@@ -359,8 +379,8 @@ int main(int argc, char** argv) {
     if (argc < 2) {
         std::cerr <<
             "Usage:\n"
-            "  fastdds-app pong [max_runtime_s]\n"
-            "  fastdds-app ping --payload N [--samples N] [--warmup N]\n";
+            "  " << kProgram << " pong [max_runtime_s]\n"
+            "  " << kProgram << " ping --payload N [--samples N] [--warmup N]\n";
         return 2;
     }
     std::string mode = argv[1];
@@ -368,17 +388,8 @@ int main(int argc, char** argv) {
         uint64_t rt_s = (argc > 2) ? std::stoull(argv[2]) : 30;
         return run_pong(rt_s);
     } else if (mode == "ping") {
-        size_t   payload = 64;
-        uint64_t warmup  = 200;
-        uint64_t samples = 5000;
-        for (int i = 2; i + 1 < argc; i += 2) {
-            std::string flag = argv[i];
-            uint64_t   v    = std::stoull(argv[i+1]);
-            if      (flag == "--payload") payload = static_cast<size_t>(v);
-            else if (flag == "--samples") samples = v;
-            else if (flag == "--warmup")  warmup  = v;
-        }
-        return run_ping(payload, warmup, samples);
+        bench::PingArgs a = bench::parse_ping_args(argc, argv, 2);
+        return run_ping(a.payload, a.warmup, a.samples);
     }
     std::cerr << "unknown mode: " << mode << "\n";
     return 2;

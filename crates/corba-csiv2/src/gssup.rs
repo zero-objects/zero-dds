@@ -22,7 +22,7 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use zerodds_cdr::{BufferReader, BufferWriter, Endianness};
+use zerodds_wire::{Endianness, Reader, Writer};
 
 /// `INITIAL_CONTEXT_TOKEN` tag (Spec §24.7.1: GSS-API OID tag).
 pub const INITIAL_CONTEXT_TOKEN_TAG: u8 = 0x60;
@@ -64,25 +64,24 @@ impl GssupCredentialToken {
 
     /// Encodes as a **wire-correct** CDR encapsulation: byte-order octet,
     /// then the fields with alignment relative to the encapsulation start
-    /// (ONE `BufferWriter`, auto-align — the `string` length u32 thus lands
+    /// (ONE `Writer`, auto-align — the `string` length u32 thus lands
     /// at offset 4, as omniORB/TAO expect; NOT the separate-writer style,
     /// which misaligns it to offset 1).
     ///
     /// # Errors
     /// Buffer write error.
     pub fn encode_encapsulation(&self, endianness: Endianness) -> Result<Vec<u8>, GssupError> {
-        let mut w = BufferWriter::new(endianness);
+        let mut w = Writer::new(endianness);
         w.write_u8(match endianness {
             Endianness::Big => 0,
             Endianness::Little => 1,
-        })
-        .map_err(cdr)?; // byte-order octet, offset 0
+        }); // byte-order octet, offset 0
         // GSSUP fields are `sequence<octet>` (CSIv2 §16.2.3 InitialContextToken):
         // length + bytes, NO string null terminator (byte-identical to JacORB).
         write_octets(&mut w, self.username.as_bytes())?;
         write_octets(&mut w, self.password.as_bytes())?;
         write_octets(&mut w, &self.target_name)?;
-        Ok(w.into_bytes())
+        Ok(w.finish())
     }
 
     /// Decodes a CDR encapsulation (counterpart to
@@ -98,7 +97,7 @@ impl GssupCredentialToken {
             Some(1) => Endianness::Little,
             _ => return Err(GssupError::Cdr("invalid/empty encapsulation".into())),
         };
-        let mut r = BufferReader::new(bytes, endianness);
+        let mut r = Reader::new(bytes, endianness);
         r.read_u8().map_err(cdr)?; // byte-order octet
         // sequence<octet> (no string null terminator).
         let username =
@@ -166,15 +165,15 @@ fn cdr_msg(msg: &str) -> GssupError {
 }
 
 /// Writes a `sequence<octet>` (CDR: u32 length + bytes, NO null terminator).
-fn write_octets(w: &mut BufferWriter, data: &[u8]) -> Result<(), GssupError> {
+fn write_octets(w: &mut Writer, data: &[u8]) -> Result<(), GssupError> {
     let n = u32::try_from(data.len()).map_err(|_| GssupError::Overflow)?;
-    w.write_u32(n).map_err(cdr)?;
-    w.write_bytes(data).map_err(cdr)?;
+    w.write_u32(n);
+    w.write_bytes(data);
     Ok(())
 }
 
 /// Reads a `sequence<octet>`.
-fn read_octets(r: &mut BufferReader<'_>) -> Result<Vec<u8>, GssupError> {
+fn read_octets(r: &mut Reader<'_>) -> Result<Vec<u8>, GssupError> {
     let n = r.read_u32().map_err(cdr)? as usize;
     Ok(r.read_bytes(n).map_err(cdr)?.to_vec())
 }

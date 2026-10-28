@@ -166,12 +166,133 @@ impl CoapOption {
     pub const fn size2(size: u64) -> Self {
         Self::new(numbers::SIZE2, OptionValue::Uint(size))
     }
+
+    /// Spec §5.4.6 — Critical property of this option.
+    #[must_use]
+    pub const fn is_critical(&self) -> bool {
+        is_critical(self.number)
+    }
+
+    /// Spec §5.4.6 — Unsafe-to-Forward property of this option.
+    #[must_use]
+    pub const fn is_unsafe(&self) -> bool {
+        is_unsafe(self.number)
+    }
+
+    /// Spec §5.4.6 — `NoCacheKey` property of this option.
+    #[must_use]
+    pub const fn is_nocachekey(&self) -> bool {
+        is_nocachekey(self.number)
+    }
+}
+
+/// Spec §5.4.6, "Option Numbers" — an option is Critical when the
+/// least significant bit of its option number is set:
+/// "Critical = (onum & 1);".
+#[must_use]
+pub const fn is_critical(number: OptionNumber) -> bool {
+    number & 1 != 0
+}
+
+/// Spec §5.4.6 — an option is Unsafe-to-Forward when bit 1 of its
+/// option number is set: "UnSafe = (onum & 2);".
+#[must_use]
+pub const fn is_unsafe(number: OptionNumber) -> bool {
+    number & 2 != 0
+}
+
+/// Spec §5.4.6 — "NoCacheKey = ((onum & 0x1e) == 0x1c);". Only
+/// meaningful for Safe-to-Forward options.
+#[must_use]
+pub const fn is_nocachekey(number: OptionNumber) -> bool {
+    number & 0x1e == 0x1c
+}
+
+/// Spec §5.4.5 — the options that may occur more than once in a
+/// single message.
+#[must_use]
+pub const fn is_repeatable(number: OptionNumber) -> bool {
+    matches!(
+        number,
+        numbers::IF_MATCH
+            | numbers::ETAG
+            | numbers::LOCATION_PATH
+            | numbers::URI_PATH
+            | numbers::URI_QUERY
+            | numbers::LOCATION_QUERY
+    )
 }
 
 #[cfg(test)]
 #[allow(clippy::expect_used)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn critical_unsafe_nocachekey_bits_per_spec_5_4_6() {
+        // RFC 7252 §5.4.6: "Critical = (onum & 1); UnSafe = (onum &
+        // 2); NoCacheKey = ((onum & 0x1e) == 0x1c);". The expected
+        // column values are Table 4 of §5.10 (C / U / N per option).
+        // (number, critical, unsafe, nocachekey)
+        let table: [(u16, bool, bool, bool); 16] = [
+            (numbers::IF_MATCH, true, false, false),
+            (numbers::URI_HOST, true, true, false),
+            (numbers::ETAG, false, false, false),
+            (numbers::IF_NONE_MATCH, true, false, false),
+            (numbers::OBSERVE, false, true, false),
+            (numbers::URI_PORT, true, true, false),
+            (numbers::LOCATION_PATH, false, false, false),
+            (numbers::URI_PATH, true, true, false),
+            (numbers::CONTENT_FORMAT, false, false, false),
+            (numbers::MAX_AGE, false, true, false),
+            (numbers::URI_QUERY, true, true, false),
+            (numbers::ACCEPT, true, false, false),
+            (numbers::LOCATION_QUERY, false, false, false),
+            (numbers::PROXY_URI, true, true, false),
+            (numbers::PROXY_SCHEME, true, true, false),
+            (numbers::SIZE1, false, false, true),
+        ];
+        for (number, critical, unsafe_fwd, nocachekey) in table {
+            assert_eq!(is_critical(number), critical, "C bit of option {number}");
+            assert_eq!(is_unsafe(number), unsafe_fwd, "U bit of option {number}");
+            assert_eq!(
+                is_nocachekey(number),
+                nocachekey,
+                "N bit of option {number}"
+            );
+        }
+        // The per-option accessors agree with the free functions.
+        let proxy = CoapOption::new(numbers::PROXY_URI, OptionValue::Empty);
+        assert!(proxy.is_critical() && proxy.is_unsafe() && !proxy.is_nocachekey());
+    }
+
+    #[test]
+    fn repeatable_options_match_spec_table_4() {
+        // RFC 7252 §5.10, Table 4, column "R".
+        for number in [
+            numbers::IF_MATCH,
+            numbers::ETAG,
+            numbers::LOCATION_PATH,
+            numbers::URI_PATH,
+            numbers::URI_QUERY,
+            numbers::LOCATION_QUERY,
+        ] {
+            assert!(is_repeatable(number), "option {number} is repeatable");
+        }
+        for number in [
+            numbers::URI_HOST,
+            numbers::IF_NONE_MATCH,
+            numbers::URI_PORT,
+            numbers::CONTENT_FORMAT,
+            numbers::MAX_AGE,
+            numbers::ACCEPT,
+            numbers::PROXY_URI,
+            numbers::PROXY_SCHEME,
+            numbers::SIZE1,
+        ] {
+            assert!(!is_repeatable(number), "option {number} is not repeatable");
+        }
+    }
 
     #[test]
     fn uint_zero_is_empty_byte_sequence() {

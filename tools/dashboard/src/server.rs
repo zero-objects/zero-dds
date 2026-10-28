@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Mini-HTTP-Server fuer das Dashboard. Pure-Rust, keine externen
-//! Crates. Reicht fuer Localhost-Tools — kein production-grade
-//! HTTP/1.1, kein chunked, kein keep-alive.
+//! Mini HTTP server for the dashboard. Pure Rust, no external
+//! crates. Sufficient for localhost tools — not production-grade
+//! HTTP/1.1, no chunked, no keep-alive.
 
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
@@ -13,10 +13,10 @@ use std::time::Duration;
 use crate::state::{DashboardState, RecordingStatus};
 use crate::web::INDEX_HTML;
 
-/// Server-Fehler.
+/// Server error.
 #[derive(Debug)]
 pub enum ServerError {
-    /// Bind/Accept/IO-Fehler.
+    /// Bind/Accept/IO error.
     Io(std::io::Error),
 }
 
@@ -30,7 +30,7 @@ impl std::fmt::Display for ServerError {
 
 impl std::error::Error for ServerError {}
 
-/// Wie [`route`] aber mit Body fuer POST-Inject.
+/// Like [`route`] but with a body for POST inject.
 pub fn route_with_body(
     method: &str,
     path: &str,
@@ -58,7 +58,7 @@ pub fn route_with_body(
     }
 }
 
-/// Routet eine HTTP-Request-Line. Returnt `(status, content_type, body)`.
+/// Routes an HTTP request line. Returns `(status, content_type, body)`.
 pub fn route(method: &str, path: &str, state: &DashboardState) -> (u16, &'static str, String) {
     match (method, path) {
         ("GET", "/") | ("GET", "/index.html") => {
@@ -70,8 +70,8 @@ pub fn route(method: &str, path: &str, state: &DashboardState) -> (u16, &'static
         ("GET", "/api/graph") => (200, "application/json", state.graph_json()),
         ("GET", "/api/recording") => (200, "application/json", state.recording_json()),
         ("POST", "/api/recording/toggle") => {
-            // Phase-A: toggle nur in-state. Phase-B: Hook zum
-            // zerodds-recorder, der live in eine zddsrec-Datei schreibt.
+            // Phase A: toggle only in-state. Phase B: hook to
+            // zerodds-recorder that writes live into a zddsrec file.
             let cur_json = state.recording_json();
             let was_active = cur_json.contains(r#""active":true"#);
             state.set_recording(RecordingStatus {
@@ -89,7 +89,7 @@ pub fn route(method: &str, path: &str, state: &DashboardState) -> (u16, &'static
     }
 }
 
-/// Formatiert eine HTTP-Response.
+/// Formats an HTTP response.
 fn format_response(status: u16, content_type: &str, body: &str) -> String {
     let reason = match status {
         200 => "OK",
@@ -108,7 +108,7 @@ fn format_response(status: u16, content_type: &str, body: &str) -> String {
     )
 }
 
-/// Parsed die Request-Line aus dem Request-Header.
+/// Parses the request line from the request header.
 fn parse_request_line(buf: &str) -> Option<(String, String)> {
     let line = buf.lines().next()?;
     let parts: Vec<&str> = line.split_whitespace().collect();
@@ -131,18 +131,18 @@ fn handle_connection(mut stream: TcpStream, state: Arc<DashboardState>) {
         Some(p) => p,
         None => return,
     };
-    // Body extrahieren (alles nach \r\n\r\n).
+    // Extract the body (everything after \r\n\r\n).
     let body = req.find("\r\n\r\n").map(|i| &req[i + 4..]).unwrap_or("");
     let (status, ctype, body) = route_with_body(&method, &path, body, &state);
     let resp = format_response(status, ctype, &body);
     let _ = stream.write_all(resp.as_bytes());
 }
 
-/// Blockierender Server-Loop. Akzeptiert Connections und beantwortet
-/// jede in einem eigenen Thread (kein Async-Runtime, einfach).
+/// Blocking server loop. Accepts connections and answers
+/// each in its own thread (no async runtime, simple).
 ///
 /// # Errors
-/// IO-Fehler beim TCP-Bind/Accept.
+/// IO error on TCP bind/accept.
 pub fn run_blocking(addr: SocketAddr, state: Arc<DashboardState>) -> Result<(), ServerError> {
     let listener = TcpListener::bind(addr).map_err(ServerError::Io)?;
     println!("zerodds-dashboard: listening on http://{addr}/");
@@ -158,7 +158,7 @@ pub fn run_blocking(addr: SocketAddr, state: Arc<DashboardState>) -> Result<(), 
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)] // tests duerfen unwrap nutzen.
+#[allow(clippy::unwrap_used)] // tests may use unwrap.
 mod tests {
     use super::*;
     use crate::state::TopicInfo;
@@ -234,7 +234,7 @@ mod tests {
         let (code, _, resp) = route_with_body("POST", "/api/inject/topics", body, &s);
         assert_eq!(code, 200);
         assert!(resp.contains(r#""injected":1"#));
-        // Datei laesst sich nun via GET wieder lesen.
+        // The file can now be read back via GET.
         let (_, _, get_body) = route("GET", "/api/topics", &s);
         assert!(get_body.contains(r#""name":"/x""#));
     }

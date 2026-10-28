@@ -1,0 +1,2 @@
+Error - /opt/opendds/bin/tao_idl: gen.idl:10: Missing '{' or illegal syntax following struct identifier
+Error - /opt/opendds/bin/tao_idl: gen.idl:11: Missing '{' or illegal syntax following struct identifier

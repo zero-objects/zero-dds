@@ -7,7 +7,7 @@
 //! ## Spec
 //!
 //! - **DDSI-RTPS 2.5 §9.4** — locator kind `LOCATOR_KIND_UDS`
-//!   (vendor-reserved value `0x81000001`, in
+//!   (vendor-reserved value `0x01F00002`, in
 //!   `crates/rtps/src/wire_types.rs`).
 //! - **ZeroDDS-UDS-Transport 1.0** — vendor-specific transport spec
 //!   (filesystem path resolution, abstract namespace, SOCK_DGRAM
@@ -139,6 +139,7 @@ impl UdsTransport {
         if let Some(t) = config.recv_timeout {
             socket.set_read_timeout(Some(t))?;
         }
+        size_buffers(socket2::SockRef::from(&socket), config.max_datagram)?;
         Ok(Self {
             socket,
             local_id,
@@ -156,6 +157,26 @@ impl Drop for UdsTransport {
         let path = socket_path(&self.config.base_dir, self.local_id);
         let _ = fs::remove_file(path);
     }
+}
+
+/// Sizes the socket buffers for datagrams of `max_datagram` bytes.
+///
+/// The kernel refuses a unix datagram larger than the sender's send
+/// buffer. macOS starts that buffer at `net.local.dgram.maxdgram` (2048)
+/// and the receive buffer at `net.local.dgram.recvspace` (4096), so a
+/// datagram above 2 KiB failed with `EMSGSIZE` there (measured on a Mac,
+/// 2026-10-02) and the receiver held about one at a time. Linux starts at
+/// `wmem_default`/`rmem_default` and caps a request at `wmem_max`/`rmem_max`.
+pub(crate) fn size_buffers(sock: socket2::SockRef<'_>, max_datagram: usize) -> io::Result<()> {
+    let send = max_datagram.saturating_mul(2);
+    let recv = max_datagram.saturating_mul(8);
+    if sock.send_buffer_size()? < send {
+        sock.set_send_buffer_size(send)?;
+    }
+    if sock.recv_buffer_size()? < recv {
+        sock.set_recv_buffer_size(recv)?;
+    }
+    Ok(())
 }
 
 fn ensure_base_dir(path: &Path) -> io::Result<()> {
@@ -213,6 +234,11 @@ fn ensure_base_dir(path: &Path) -> io::Result<()> {
 }
 
 impl Transport for UdsTransport {
+    /// The datagram limit of the socket (`max_datagram`).
+    fn max_message_size(&self) -> usize {
+        self.config.max_datagram
+    }
+
     fn send(&self, dest: &Locator, data: &[u8]) -> Result<(), SendError> {
         if dest.kind != LocatorKind::Uds {
             return Err(SendError::UnsupportedLocator);
@@ -275,6 +301,15 @@ fn classify_send_error(e: &io::Error) -> SendError {
         },
         io::ErrorKind::ConnectionRefused => SendError::Io {
             message: "uds: peer socket exists but refused (ECONNREFUSED)",
+        },
+        // EMSGSIZE has no named `io::ErrorKind` on every platform, so it
+        // used to land in the catch-all and read as a transient failure.
+        // It is not: the kernel's per-message cap for unix datagrams can
+        // sit far below `DEFAULT_MAX_DATAGRAM` (macOS
+        // `net.local.dgram.maxdgram` defaults to 2048), and the caller
+        // must be able to tell that apart from a full buffer.
+        _ if e.raw_os_error() == Some(libc::EMSGSIZE) => SendError::Io {
+            message: "uds: datagram exceeds the kernel per-message limit (EMSGSIZE)",
         },
         _ => SendError::Io {
             message: "uds: send failed",
@@ -515,6 +550,130 @@ mod tests {
         let missing = tmp.path().join("created");
         ensure_base_dir(&missing).unwrap();
         assert!(missing.is_dir());
+    }
+
+    /// DDSI-RTPS 2.5 §9.3.2.4 reserves `0x00000003` to `0x01ffffff` for
+    /// vendor-specific kinds.
+    /// ZeroDDS takes `0x01F0_0002` for UDS; the transport binds that
+    /// value, so a renumbering has to break here.
+    #[test]
+    fn locator_kind_is_the_vendor_reserved_uds_value() {
+        let loc = Locator::uds(id_for(90));
+        assert_eq!(loc.kind.as_i32(), 0x01F0_0002);
+        assert!(
+            (0x0000_0003..=0x01ff_ffff).contains(&loc.kind.as_i32()),
+            "inside the vendor-specific range of §9.3.2.4"
+        );
+        assert_eq!(loc.port, 0, "the port field is unused for UDS");
+        assert_eq!(loc.address, id_for(90));
+    }
+
+    /// §2.1: a base directory we create ourselves is user-private —
+    /// mode `0700`, no group or other bits.
+    #[cfg(unix)]
+    #[test]
+    fn ensure_base_dir_creates_dir_with_mode_0700() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().unwrap();
+        let created = tmp.path().join("private");
+        ensure_base_dir(&created).unwrap();
+        let mode = fs::metadata(&created).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o700, "base dir must be user-private, got {mode:o}");
+    }
+
+    /// §3: `SOCK_DGRAM` keeps message boundaries. Two sends must arrive
+    /// as two receives with the original lengths — no coalescing, no
+    /// framing layer needed on top.
+    #[test]
+    fn preserves_message_boundaries_two_datagrams() {
+        let tmp = tempfile::tempdir().unwrap();
+        let rx = UdsTransport::bind(id_for(70), cfg_with_tmp(tmp.path())).unwrap();
+        let tx = UdsTransport::bind(id_for(71), cfg_with_tmp(tmp.path())).unwrap();
+
+        tx.send(&Locator::uds(id_for(70)), b"first").unwrap();
+        tx.send(&Locator::uds(id_for(70)), b"second-and-longer")
+            .unwrap();
+
+        let a = rx.recv().expect("first datagram");
+        let b = rx.recv().expect("second datagram");
+        assert_eq!(&a.data[..], b"first");
+        assert_eq!(&b.data[..], b"second-and-longer");
+    }
+
+    /// §3: a datagram of nearly `max_datagram` arrives whole on every
+    /// platform. On macOS the send buffer started at 2048 bytes, and
+    /// anything larger failed with `EMSGSIZE`.
+    #[test]
+    fn a_datagram_near_the_configured_limit_arrives_whole() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cfg = cfg_with_tmp(tmp.path());
+        let rx = UdsTransport::bind(id_for(82), cfg.clone()).unwrap();
+        let tx = UdsTransport::bind(id_for(83), cfg.clone()).unwrap();
+        let big = vec![0x3Cu8; cfg.max_datagram - 512];
+        for _ in 0..4 {
+            tx.send(&Locator::uds(id_for(82)), &big).unwrap();
+        }
+        for _ in 0..4 {
+            assert_eq!(&rx.recv().expect("datagram").data[..], big.as_slice());
+        }
+    }
+
+    /// §3: a datagram the kernel accepts arrives byte-for-byte; one it
+    /// refuses fails loudly with the EMSGSIZE classification. Never a
+    /// truncated delivery — the receive buffer is `max_datagram`, so a
+    /// silently clipped message would be indistinguishable from a short
+    /// one at the RTPS layer.
+    ///
+    /// The kernel's per-message cap for unix datagrams is platform
+    /// policy, not ours: Linux follows `wmem_max` (212992 by default),
+    /// macOS `net.local.dgram.maxdgram` (2048 by default). The
+    /// configured `max_datagram` is therefore an upper bound we enforce,
+    /// not a guarantee the OS honours — see the `partial` remainder of
+    /// the §3 spec item.
+    #[test]
+    fn oversized_for_the_kernel_fails_loudly_and_never_truncates() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cfg = cfg_with_tmp(tmp.path());
+        let limit = cfg.max_datagram;
+        let rx = UdsTransport::bind(id_for(80), cfg.clone()).unwrap();
+        let tx = UdsTransport::bind(id_for(81), cfg).unwrap();
+
+        // 1 KiB is below every platform's default cap.
+        let small = vec![0xA5u8; 1024];
+        tx.send(&Locator::uds(id_for(80)), &small).unwrap();
+        let got = rx.recv().expect("1 KiB datagram");
+        assert_eq!(&got.data[..], small.as_slice(), "no truncation");
+
+        // At the configured limit the kernel may or may not accept it.
+        // Either it arrives whole, or the send reports EMSGSIZE — the
+        // one outcome that must not happen is a short delivery.
+        let big = vec![0x5Au8; limit];
+        match tx.send(&Locator::uds(id_for(80)), &big) {
+            Ok(()) => {
+                let got = rx.recv().expect("max-sized datagram");
+                assert_eq!(&got.data[..], big.as_slice(), "no truncation at the limit");
+            }
+            Err(SendError::Io { message }) => {
+                assert!(
+                    message.contains("EMSGSIZE"),
+                    "kernel refusal must name its cause, got {message:?}"
+                );
+                assert_eq!(
+                    rx.recv(),
+                    Err(RecvError::Timeout),
+                    "nothing partial arrived"
+                );
+            }
+            other => panic!("unexpected send result: {other:?}"),
+        }
+    }
+
+    /// DDSI-RTPS 2.5 §8.4.14.1: the transport states its datagram limit.
+    #[test]
+    fn max_message_size_is_the_datagram_limit() {
+        let tmp = tempfile::tempdir().unwrap();
+        let t = UdsTransport::bind(id_for(7), cfg_with_tmp(tmp.path())).unwrap();
+        assert_eq!(Transport::max_message_size(&t), 8192);
     }
 }
 

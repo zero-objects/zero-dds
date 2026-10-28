@@ -1,0 +1,5 @@
+// bounded `map`
+@final struct Sample {
+    map<long, long, 4> entries;
+    long tail;
+};

@@ -88,7 +88,7 @@ mod linux_e2e {
         };
 
         let factory = DomainParticipantFactory::instance();
-        let domain = unique_domain(9);
+        let domain = unique_domain();
         let pub_p = factory
             .create_participant_with_config(domain, DomainParticipantQos::default(), cfg.clone())
             .expect("pub participant");

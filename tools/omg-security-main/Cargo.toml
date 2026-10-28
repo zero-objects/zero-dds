@@ -1,0 +1,55 @@
+[package]
+name = "zerodds-omg-security-main"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "OMG dds-security interoperability-test-suite ShapeType_main reference client for ZeroDDS (github.com/omg-dds/dds-security). BUILD + LOCAL-VALIDATE artifact — not yet submitted upstream."
+homepage = "https://zerodds.org"
+readme = "README.md"
+keywords = ["dds", "dds-security", "interop", "shapes", "omg"]
+categories = ["command-line-utilities", "network-programming"]
+# Not published to crates.io — this is an OMG dds-security interop-suite
+# reference client, not a ZeroDDS product artifact. The eventual public
+# name/version for the upstream submission is undecided (Sandra's call).
+publish = false
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "shapetype_main"
+path = "src/main.rs"
+
+[build-dependencies]
+# The suite's `ShapeType` is generated from
+# `interop/shapes/omg-dds-security.idl` rather than written beside this
+# crate by hand: a suite run has to measure what this project generates.
+# See build.rs.
+zerodds-build = { version = "1.0.0-rc.7", path = "../../crates/zerodds-build" }
+
+[dependencies]
+# `security` is not a default feature of zerodds-dcps — without it the
+# runtime runs plaintext RTPS, which is the one thing this suite does
+# not test.
+zerodds-dcps = { version = "1.0.0-rc.7", path = "../../crates/dcps", features = ["security"] }
+zerodds-qos  = { version = "1.0.0-rc.7", path = "../../crates/qos" }
+# Named by the generated `ShapeType`: the codec writes through
+# `zerodds-wire` and the `DdsType` impl's `type_object()` through
+# `zerodds-types`.
+zerodds-wire = { version = "1.0.0-rc.7", path = "../../crates/wire" }
+zerodds-types = { version = "1.0.0-rc.7", path = "../../crates/types" }
+# The `dds.sec.*` property names (DDS-Security 1.2 §10.3.1 Table 50,
+# §10.4.1 Table 63) this client writes onto the participant QoS, and the
+# logger-only `SecurityBundle` that carries the §8.6 sink `-logging` sets.
+# Everything that *reads* the property list lives in `crates/dcps`; this
+# crate names the constants so the two spellings cannot drift.
+zerodds-security-runtime = { version = "1.0.0-rc.7", path = "../../crates/security-runtime" }
+# The options, enable and listener of the logging plugin interface
+# (DDS-Security 1.2 §9.6.2.2, Table 46) come from the shared `LogControl`.
+zerodds-security = { version = "1.0.0-rc.7", path = "../../crates/security" }
+zerodds-security-logging = { version = "1.0.0-rc.7", path = "../../crates/security-logging" }
+clap  = { version = "4", features = ["derive"] }
+ctrlc = { workspace = true }

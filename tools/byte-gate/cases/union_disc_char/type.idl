@@ -1,0 +1,2 @@
+@final union UC switch (char) { case 'a': long x; default: short y; };
+@final struct SC { UC u; long tail; };

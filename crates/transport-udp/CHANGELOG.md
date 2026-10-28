@@ -5,6 +5,10 @@ SemVer per [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `UdpTransportConfig::max_message_size` (default 1472, `DEFAULT_MAX_MESSAGE_SIZE`), reported by `Transport::max_message_size` up to `MAX_DATAGRAM_SIZE`. The struct has a new field: a struct literal without `..Default::default()` needs it.
+
 ## [1.0.0-rc.1] — 2026-05-05
 
 ### RC1 audit

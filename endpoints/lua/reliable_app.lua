@@ -31,7 +31,7 @@ local function runReliable(port, n)
   udp:settimeout(0.02) -- 20ms poll for ACKNACKs
 
   local sender = rel.Sender.new()
-  local writer = rel.AsyncWriter.new(sender, function(frame) udp:send(frame) end)
+  local writer = rel.AsyncWriter.new(sender, function(frame) udp:send(frame) end, 0x0015)
 
   -- Producer step: enqueue all N samples up front (decoupled from the
   -- socket -- see the AsyncWriter doc comment for the honest caveat).
@@ -74,7 +74,7 @@ local function runReliable(port, n)
     -- 6. retransmit whatever is still in-flight (peer marked it missing).
     if sender:inFlightCount() > 0 then
       for seq, payload in sender:inFlightPairs() do
-        udp:send(rel.writeDataFrame(seq, payload))
+        udp:send(rel.writeDataFrame(seq, 0x0015, payload))
       end
     end
   end
@@ -90,7 +90,7 @@ end
 local function runBench(port)
   local iters = 20000
   local sample = string.pack("<I4", 0)
-  local frame = rel.writeDataFrame(0, sample)
+  local frame = rel.writeDataFrame(0, 0x0015, sample)
 
   local udp = assert(socket.udp())
   assert(udp:setpeername("127.0.0.1", port))

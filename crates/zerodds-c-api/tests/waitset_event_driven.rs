@@ -46,7 +46,15 @@ const ANY_STATE: u32 = 0;
 /// timeout, and not a fixed poll interval.
 #[test]
 fn waitset_readcondition_wakes_on_write_event_driven() {
-    let domain: u32 = 70 + (std::process::id() % 40);
+    // A fixed number, not `base + pid % N`: the domain is the UDP port
+    // (RTPS 9.6.1.4.1, `7400 + 250*domain`), and spreading it by PID walked
+    // it into the kernel's ephemeral port range
+    // (`net.ipv4.ip_local_port_range`, `32768 60999` on the bench host),
+    // where the SPDP multicast bind fails with `EADDRINUSE` and
+    // `zerodds_runtime_create` returns NULL. Every domain in this workspace
+    // is listed in `crates/dcps/tests/common/mod.rs::RESERVED_DOMAINS` so
+    // that the domain lease there never hands out the same one.
+    let domain: u32 = 26;
     let topic_name = CString::new("WsEventTopic").unwrap();
     let type_name = CString::new("RawBytes").unwrap();
 

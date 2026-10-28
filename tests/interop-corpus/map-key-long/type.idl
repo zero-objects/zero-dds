@@ -1,0 +1,5 @@
+// `map` keyed by `long`
+@final struct Sample {
+    map<long, long> entries;
+    long tail;
+};

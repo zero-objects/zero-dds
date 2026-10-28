@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Bench-A2 — C-FFI Read-Pfad: `take` vs `loan/_return` (Linux-only).
+//! Bench-A2 — C-FFI read path: `take` vs `loan/_return` (Linux-only).
 
 #![allow(
     clippy::expect_used,
@@ -38,8 +38,8 @@ mod inner {
         *mut zerodds::ZeroDdsWriter,
         *mut zerodds::ZeroDdsReader,
     ) {
-        // Domain max ~232 wegen RTPS spdp_port = 7400 + 250*domain
-        // (u16-Cap, Spec §9.6.1.4.1). Disjunkt zu dcps_roundtrip.
+        // Domain max ~232 because RTPS spdp_port = 7400 + 250*domain
+        // (u16-Cap, Spec §9.6.1.4.1). Disjoint from dcps_roundtrip.
         let domain: u32 = 150 + (std::process::id() % 50);
         let topic = CString::new("BenchA2TakeVsLoan").unwrap();
         let typ = CString::new("RawBytes").unwrap();
@@ -54,9 +54,9 @@ mod inner {
                 zerodds::zerodds_writer_wait_for_matched(writer, 1, 5_000),
                 0
             );
-            // Symmetrisch warten — Bug-2 (2026-05-19): writer-side
-            // matched zuerst, reader-side asynchron danach. Ohne
-            // Reader-Wait sendet write an leere reader_proxy-Liste.
+            // Symmetric wait — Bug-2 (2026-05-19): writer-side
+            // matched first, reader-side asynchronously afterwards. Without
+            // Reader wait sends a write to an empty reader_proxy list.
             assert_eq!(
                 zerodds::zerodds_reader_wait_for_matched(reader, 1, 5_000),
                 0

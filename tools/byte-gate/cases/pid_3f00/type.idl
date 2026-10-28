@@ -1,0 +1,1 @@
+@mutable struct PidEdge { @id(16127) long a; @id(16128) long b; };

@@ -1,0 +1,14 @@
+// `bitmask` at bit bound 32, unannotated
+@bit_bound(32)
+bitmask Flags {
+    @position(0) LOWEST,
+    @position(1) SECOND,
+    @position(31) HIGHEST
+};
+
+struct Sample {
+    Flags set_low;
+    Flags set_high;
+    Flags empty;
+    octet tail;
+};

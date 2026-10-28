@@ -1,0 +1,5 @@
+// `map` keyed by `char`
+@final struct Sample {
+    map<char, octet> entries;
+    long tail;
+};

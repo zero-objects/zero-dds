@@ -1,0 +1,28 @@
+#!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 ZeroDDS Contributors
+#
+# wireprobe-endpoint-julia — one IDL type and one JSON sample, through
+# the hand-written endpoint SDK in endpoints/julia/zerodds.jl.
+#
+# The same command line as every other column's probe, so a case runs
+# through any of them by substituting the program name:
+#
+#   wireprobe-endpoint-julia --idl robot.idl --type common::Robot \
+#       --values robot.json --encoding plain-cdr2 --endian le \
+#       --out robot.endpoint-julia.plain-cdr2.le.bin
+#
+# The generated program puts its writes inside a function, so Julia
+# compiles them rather than lowering one at a time at top level: a case
+# with a few thousand writes is otherwise minutes.
+#
+# The write direction only. This column measures what the SDK puts on
+# the wire.
+#
+# The body is tools/wireprobe/endpoint-common.sh; the fifteen differ only
+# in which compiler runs and which SDK is linked, and fifteen copies of
+# the caching and the exit codes would be fifteen places for them to
+# drift apart.
+set -uo pipefail
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/endpoint-common.sh"
+endpoint_probe julia "$@"

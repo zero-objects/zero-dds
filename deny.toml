@@ -1,15 +1,18 @@
-# cargo-deny Konfiguration.
-# Durchgesetzt in CI gemaess 04_safety_by_architecture.md §3.2.
+# cargo-deny configuration.
+# Enforced in CI as per 04_safety_by_architecture.md §3.2.
 
 [graph]
 all-features = false
 no-default-features = false
 # Opt-in-only backends/transports that a default build never pulls. They carry
 # licenses/deps we deliberately keep out of the public default scan (see the GPL
-# policy in licenses below, §2.3). Newer cargo-deny (the public GitHub mirror
-# runs a newer version than GitLab's pinned 0.19.4) traverses the optional graph
-# even with `all-features = false`, so exclude them explicitly — version-robust
-# and policy-preserving (we do NOT allow GPL; we scope the opt-in crate out).
+# policy in licenses below, §2.3). These crates DO enter the graph despite
+# `all-features = false` — not because of a cargo-deny version difference (0.19.4
+# and 0.19.9 behave identically here, measured), but because the public GitHub
+# mirror runs EmbarkStudios/cargo-deny-action@v2, whose `arguments` input
+# defaults to `--all-features`; that CLI flag overrides the setting above. So
+# exclude them explicitly — feature-set-robust and policy-preserving (we do NOT
+# allow GPL; we scope the opt-in crate out).
 #   * wolfCrypt backend (GPL-3.0 OR wolfSSL-commercial) — feature `wolfcrypt`,
 #     needs libwolfssl / WOLFSSL_SRC; opt-in for users with a wolfSSL licence.
 #   * quinn / quinn-proto (QUIC transport) — pulls RUSTSEC-2026-0185 and a
@@ -25,49 +28,127 @@ exclude = [
 [advisories]
 version = 2
 yanked = "deny"
+# --- Which feature set does each entry belong to? -------------------------
+# There is ONE `[graph]` here, so ONE scan sees ONE feature set — an ignore
+# whose crate lives behind an opt-in feature cannot match in a scan that does
+# not enable that feature. Two CI jobs run two different feature sets:
+#   * GitLab (.gitlab-ci.yml, `deny`): `cargo deny check` — DEFAULT features.
+#   * GitHub (.github/workflows/ci.yml, `deny`): EmbarkStudios/cargo-deny-
+#     action@v2, whose `arguments` input defaults to `--all-features`. The CLI
+#     flag overrides `[graph] all-features = false` below.
+# Consequence, measured on 0.19.4 (the CI pin) and 0.19.9 alike: the default
+# scan emits `warning[advisory-not-detected]` for the three opt-in entries.
+# That is a WARNING, not an error — it does not fail the run, and neither
+# version treats it as one. Do not delete an entry to silence the warning; it
+# is scoped, not stale. Whether the public scan should cover the opt-in
+# features at all is the policy in the `[licenses]`/§2.3 note below — see
+# `[graph] all-features` if that policy ever changes.
+#
+# Group 1 — visible in EVERY feature set (default build included).
 ignore = [
-    # RUSTSEC-2025-0134 (rustls-pemfile v2.2.0): deprecated; PEM-API
-    # ist nach `rustls-pki-types::pem::PemObject` migriert. Begruendung:
-    # rustls-pemfile-Verwendung in unseren Bridges ist read-only PEM-
-    # Parsing fuer X.509-Cert-Loading aus dem Filesystem, kein Untrust-
-    # Input-Path. Migrations-Aufwand ist Folge-Aufgabe ueber alle
-    # bridge-Crates (amqp/grpc/corba/bridge-security). Wiedervorlage
-    # wenn rustls 0.24 mit voll-PemObject API gemerged ist.
-    "RUSTSEC-2025-0134",
+    # RUSTSEC-2025-0134 (rustls-pemfile v2.2.0): deprecated; the PEM API
+    # has moved to `rustls-pki-types::pem::PemObject`. Reason:
+    # rustls-pemfile use in our bridges is read-only PEM
+    # parsing for X.509 cert loading from the filesystem, not an untrusted
+    # input path. The migration is a follow-up task across all
+    # bridge crates (amqp/grpc/corba/bridge-security). Revisit
+    # when rustls 0.24 with the full PemObject API is merged.
+    # Path measured with `cargo tree --workspace -i rustls-pemfile`: direct
+    # parents are zerodds-bridge-security, zerodds-corba-iiop and
+    # zerodds-grpc-bridge — all default-feature crates.
+    { id = "RUSTSEC-2025-0134", reason = "default features; read-only PEM parsing in the bridges" },
+    # RUSTSEC-2023-0071 (rsa 0.9.10): the Marvin attack — a timing side
+    # channel on **private key** operations. There is no safe upgrade:
+    # https://github.com/RustCrypto/RSA/issues/626.
+    #
+    # Where it actually sits, measured with `cargo tree --workspace -i rsa`
+    # on default features: `cms 0.2.3` is the only direct parent, reached
+    # through `zerodds-security-permissions` and `tools/secure-permissions`
+    # -> `zerodds-security-runtime` -> `zerodds-dcps`. Under
+    # `--all-features`, `zenoh-transport` and `zerodds-opcua-uacp` come in
+    # as two further parents. This is the **default** DDS-Security path,
+    # not an opt-in bridge.
+    #
+    # Why it is carried anyway, on that path: the runtime only *verifies*.
+    # `crates/security-permissions` exposes `CmsPkcs7Verifier` and
+    # `verify_and_extract` and holds no private key — its single `sign`
+    # call is in `#[cfg(test)]` and uses ECDSA P-256. Verification is a
+    # public-key operation, which the Marvin attack does not reach.
+    #
+    # The private key appears in exactly one place: `tools/secure-permissions
+    # sign`, the operator CLI that signs a permissions document with the
+    # Permissions CA key. That runs offline, on the operator's own machine,
+    # against input the operator wrote. An attacker who could time it
+    # already holds the key file.
+    #
+    # Follow-up if that changes: a runtime that ever *signs* with RSA — or
+    # decrypts — moves this out of the verify-only reading and needs a real
+    # answer, not this one.
+    { id = "RUSTSEC-2023-0071", reason = "default DDS-Security path via cms; the runtime verifies only, the private key lives in the offline signing CLI" },
+    # RUSTSEC-2024-0449 (unsafe-libyaml 0.2.11): unmaintained, the repository
+    # is archived; no safe upgrade exists. Measured with `cargo tree
+    # --workspace -i unsafe-libyaml`: the only parent is serde_yaml
+    # 0.9.34+deprecated <- zenoh-config 1.10 <- zenoh 1.10 <-
+    # zerodds-zenoh-bridge, default through its `daemon` feature. Every
+    # published zenoh-config, 1.10.1 included, depends on serde_yaml ^0.9.34,
+    # so there is no zenoh to move to. It parses the bridge's zenoh
+    # configuration file, which the operator supplies.
+    { id = "RUSTSEC-2024-0449", reason = "default features; unsafe-libyaml via serde_yaml <- zenoh-config, no zenoh without it" },
+
+    # Group 2 — visible ONLY when an opt-in feature is enabled. In a default-
+    # feature scan each of these raises `warning[advisory-not-detected]`; that
+    # is the scoping working, not a stale entry. The feature that carries each
+    # one is named below and was measured with
+    # `cargo tree --workspace --all-features -i <crate>`.
+
     # RUSTSEC-2026-0041 (Decompressing invalid data leaks uninit memory):
-    # transitive via Compression-Crate-Welle (rc.2). Workaround: nicht
-    # uninitialized buffer fuer decompression nutzen. In unseren Bridges
-    # nutzen wir die Decompression nur fuer trusted-input (wire-format
-    # frames mit Length-Prefix). RC3-Folge-Audit fuer end-to-end-Pfade.
-    "RUSTSEC-2026-0041",
-    # RUSTSEC-2024-0436 (paste): unmaintained — `paste` crate ist no
-    # longer maintained. Transitiv via mehrere proc-macro-deps. Kein
-    # safety-bug, nur Maintenance-Warning. RC3-Pickup: alternative
-    # zu paste-Macro suchen (z.B. `pastey`, ein Fork).
-    "RUSTSEC-2024-0436",
-    # RUSTSEC-2023-0071 (rsa 0.9.10): Marvin-Attack — timing-Sidechannel
-    # auf private-key. Transitiv via zenoh-transport -> zerodds-zenoh-
-    # bridge. Begruendung: KEIN safe upgrade verfuegbar (siehe
-    # https://github.com/RustCrypto/RSA/issues/626). Workaround: nicht
-    # benutzen wo Angreifer Timing-Info beobachten koennen (lokale Use-
-    # Cases ok). RC3-Pickup: zenoh-bridge optional + warning im
-    # /bindings/zenoh/ Page bei aktivierter RSA-Authentication.
-    "RUSTSEC-2023-0071",
-    # RUSTSEC-2025-0141 (bincode 1.3.3): unmaintained — das bincode-Team
-    # hat die Entwicklung dauerhaft eingestellt (kein Safety-Bug; 1.3.3
-    # gilt als vollstaendig). Transitiv via webrtc-dtls 0.12.0 (neueste
-    # Version) -> coap-bridge + xrce. Kein direkter Hebel; webrtc-dtls
-    # pinnt bincode 1.x. Wiedervorlage wenn webrtc-dtls auf bincode 2.x
-    # oder einen Maintained-Fork migriert.
-    "RUSTSEC-2025-0141",
+    # transitive via the compression crate wave (rc.2). Workaround: do not
+    # use an uninitialized buffer for decompression. In our bridges
+    # we use decompression only for trusted input (wire-format
+    # frames with a length prefix). RC3 follow-up audit for end-to-end paths.
+    # FEATURE: `zerodds-zenoh-bridge/zenoh-runtime`. Chain: lz4_flex 0.10.0 <-
+    # zenoh-transport 1.10 <- zenoh 1.10 <- zerodds-zenoh-bridge. The decision
+    # to keep zenoh's default features (compression included) instead of
+    # unilaterally disabling `transport_compression` is recorded at the `zenoh`
+    # dependency in crates/zenoh-bridge/Cargo.toml.
+    { id = "RUSTSEC-2026-0041", reason = "only under zerodds-zenoh-bridge/zenoh-runtime; lz4_flex via zenoh-transport" },
+    # RUSTSEC-2024-0436 (paste): unmaintained — the `paste` crate is no
+    # longer maintained. Transitive via several proc-macro deps. Not a
+    # safety bug, only a maintenance warning. RC3 pickup: look for an
+    # alternative to the paste macro (e.g. `pastey`, a fork).
+    # FEATURE: `zerodds-zenoh-bridge/zenoh-runtime`. The "several proc-macro
+    # deps" reading is wider than the graph: the only parent is token-cell
+    # 2.1.1 <- zenoh-keyexpr 1.10 <- zenoh 1.10 <- zerodds-zenoh-bridge.
+    { id = "RUSTSEC-2024-0436", reason = "only under zerodds-zenoh-bridge/zenoh-runtime; paste via token-cell/zenoh-keyexpr" },
+    # RUSTSEC-2025-0141 (bincode 1.3.3): unmaintained — the bincode team
+    # has stopped development permanently (not a safety bug; 1.3.3
+    # is considered complete). Transitive via webrtc-dtls 0.12.0 (newest
+    # version) -> coap-bridge + xrce. No direct lever; webrtc-dtls
+    # pins bincode 1.x. Revisit when webrtc-dtls migrates to bincode 2.x
+    # or to a maintained fork.
+    # FEATURE: `zerodds-coap-bridge/dtls` and `zerodds-xrce/dtls` — webrtc-dtls
+    # is `optional = true` in both and is not in either `default`.
+    { id = "RUSTSEC-2025-0141", reason = "only under zerodds-coap-bridge/dtls or zerodds-xrce/dtls; bincode via webrtc-dtls" },
+    # RUSTSEC-2026-0387 (crypto-bigint 0.5.5): operations meant to be
+    # constant-time (subtraction, division, Montgomery multiplication) could
+    # branch on secret values; fixed only in 0.7.6. The default build no
+    # longer has 0.5.5: zerodds-security-crypto and -keyexchange are on 0.7.9,
+    # and tools/secure-permissions signs with ring instead of p256 0.13.
+    # FEATURE: `zerodds-coap-bridge/dtls` and `zerodds-xrce/dtls`. Chain:
+    # crypto-bigint 0.5.5 <- elliptic-curve 0.13.8 <- p256 0.13.2 / p384
+    # 0.13.1 <- webrtc-dtls 0.12.0, the newest webrtc-dtls. The exposure is
+    # real there: the DTLS handshake runs ECDHE and ECDSA with secret keys
+    # against a network peer. No upgrade path until webrtc-dtls moves to
+    # elliptic-curve 0.14; until then the `dtls` features carry it.
+    { id = "RUSTSEC-2026-0387", reason = "only under zerodds-coap-bridge/dtls or zerodds-xrce/dtls; crypto-bigint 0.5.5 via p256/p384 0.13 <- webrtc-dtls 0.12, no fixed webrtc-dtls" },
 ]
 
 [licenses]
 version = 2
-# Erlaubte Lizenzen fuer Dependencies.
-# Inkompatibel: GPL (ausschliesst embedded Integration per 07_risks_and_strategy.md §2.3).
-# Eintraege bleiben im Allow-Set, auch wenn sie aktuell nicht von einer
-# Dependency verwendet werden (Vorrats-Allowlist fuer kuenftige Crates).
+# Allowed licenses for dependencies.
+# Incompatible: GPL (rules out embedded integration per 07_risks_and_strategy.md §2.3).
+# Entries stay in the allow set even if no dependency currently
+# uses them (allowlist kept in advance for future crates).
 allow = [
     "Apache-2.0",
     "Apache-2.0 WITH LLVM-exception",
@@ -84,49 +165,52 @@ allow = [
 ]
 confidence-threshold = 0.9
 unused-allowed-license = "allow"
-# Per-Crate-Ausnahmen. MPL-2.0 ist file-level Copyleft und damit fuer
-# Build-only / Dev-Deps unkritisch (kein Linking gegen unsere Binaries),
-# aber wir wollen es nicht global oeffnen.
+# Per-crate exceptions. MPL-2.0 is file-level copyleft and therefore
+# uncritical for build-only / dev deps (no linking against our binaries),
+# but we do not want to open it globally.
 exceptions = [
-    # cbindgen: build-dep von dds-c-api zur C-Header-Generierung.
-    # Laeuft nur im Build-Schritt, keine Runtime-Linkage.
+    # cbindgen: build dep of dds-c-api for C header generation.
+    # Runs only in the build step, no runtime linkage.
     { allow = ["MPL-2.0"], crate = "cbindgen" },
-    # option-ext: transitive dep via dirs (config-loader). MPL-2.0 ist
-    # file-level Copyleft — option-ext exports 1 trait, kein eigener
-    # source kommt zu uns rueber. Acceptable.
+    # option-ext: transitive dep via dirs (config-loader). MPL-2.0 is
+    # file-level copyleft — option-ext exports 1 trait, none of its own
+    # source comes over to us. Acceptable.
     { allow = ["MPL-2.0"], crate = "option-ext" },
 ]
 
 [bans]
-# Hochgestuft auf `deny` (war `warn`): mehrfach-Versionen einer Crate
-# brechen die Pipeline. Bekannte transitive Windows-Shim-Duplikate
-# sind in der `skip`-Liste explizit gewhitelistet — neue Duplikate
-# (z.B. wenn ein Dep eine zweite `serde`/`tokio`-Version zieht)
-# muessen damit aktiv geloest oder bewusst gewhitelistet werden,
-# statt unbemerkt durchzuwandern.
+# Raised to `deny` (was `warn`): multiple versions of a crate
+# break the pipeline. Known transitive Windows shim duplicates
+# are explicitly whitelisted in the `skip` list — new duplicates
+# (e.g. when a dep pulls a second `serde`/`tokio` version)
+# must therefore be resolved actively or whitelisted deliberately,
+# instead of passing through unnoticed.
 multiple-versions = "deny"
 wildcards = "deny"
-# Workspace-interne path-Deps haben keine `version = "..."` und wuerden
-# sonst als Wildcard zaehlen — das ist die uebliche Cargo-Praxis fuer
-# unveroeffentlichte Sub-Crates.
+# Workspace-internal path deps have no `version = "..."` and would
+# otherwise count as wildcards — this is the usual Cargo practice for
+# unpublished sub-crates.
 allow-wildcard-paths = true
-# Transitive Duplikate, die wir nicht aufloesen koennen, aber auch nicht
-# materialisieren (Windows-Shims sind `#[cfg(windows)]` gated und werden
-# auf unserem Linux-Build-Target nicht kompiliert). Jeder Eintrag mit
-# Begruendung.
+# Transitive duplicates that we cannot resolve but also do not
+# materialize (Windows shims are `#[cfg(windows)]` gated and are
+# not compiled on our Linux build target). Each entry with
+# a reason.
 skip = [
-    # windows-sys: 0.45 via jni 0.21 (in dds-java-jni), 0.52 via
-    # ring/rustix/socket2/walkdir, 0.61 via clap-Stack.
+    # shlex: 1.3.0 via bindgen 0.72, 2.0.1 via cc 1.4 — both pure
+    # build-time deps. Clean up once bindgen moves to shlex 2.x.
+    { crate = "shlex" },
+    # windows-sys: 0.45 via jni (rustls-platform-verifier), 0.52 via
+    # ring/rustix/socket2/walkdir, 0.61 via the clap stack.
     { crate = "windows-sys" },
-    # windows-targets: 0.42 via jni 0.21 (windows-sys 0.45),
+    # windows-targets: 0.42 via jni (windows-sys 0.45),
     # 0.52 via ring + socket2.
     { crate = "windows-targets" },
-    # windows_* target-shims: 0.42 (transitiv via jni → windows-sys 0.45)
+    # windows_* target shims: 0.42 (transitive via jni → windows-sys 0.45)
     # vs. 0.52 (via ring + socket2 → windows-sys 0.52) vs. 0.34 (via
-    # shared_memory in dds-transport-shm). Alle `#[cfg(windows)]`
-    # gated, auf Linux/macOS nicht kompiliert — daher akzeptabel.
-    # Aufraeumen wenn `jni` 0.22+ und `shared_memory` modernisiert
-    # werden (Backlog).
+    # shared_memory in dds-transport-shm). All `#[cfg(windows)]`
+    # gated, not compiled on Linux/macOS — therefore acceptable.
+    # Clean up when `jni` 0.22+ and `shared_memory` are
+    # modernized (backlog).
     { crate = "windows_aarch64_gnullvm" },
     { crate = "windows_aarch64_msvc" },
     { crate = "windows_i686_gnu" },
@@ -134,34 +218,34 @@ skip = [
     { crate = "windows_x86_64_gnu" },
     { crate = "windows_x86_64_gnullvm" },
     { crate = "windows_x86_64_msvc" },
-    # bitflags 1.3.2 transitiv via shared_memory 0.12.4 -> nix 0.23.2
-    # (nur dds-transport-shm). Rest des Workspaces ist auf bitflags 2.x.
-    # Aufraeumen sobald shared_memory modernisiert wird (Backlog).
+    # bitflags 1.3.2 transitive via shared_memory 0.12.4 -> nix 0.23.2
+    # (only dds-transport-shm). The rest of the workspace is on bitflags 2.x.
+    # Clean up once shared_memory is modernized (backlog).
     { crate = "bitflags" },
-    # getrandom 0.2.x via rand 0.8 (shared_memory) und ring; 0.3.x via
+    # getrandom 0.2.x via rand 0.8 (shared_memory) and ring; 0.3.x via
     # rand 0.9 (proptest); 0.4.x via tempfile (cbindgen build-dep).
-    # Drei Major-Versionen zugleich, alles transitiv ohne direkten
-    # Hebel im Workspace. Aufraeumen wenn rand/proptest/tempfile-Stack
-    # konsolidiert sind.
+    # Three major versions at once, all transitive without a direct
+    # lever in the workspace. Clean up when the rand/proptest/tempfile stack
+    # is consolidated.
     { crate = "getrandom" },
-    # winnow 0.7 vs 1.0 transitiv via cbindgen -> toml + toml_parser
-    # (build-dep). Faellt weg sobald cbindgen seinen toml-Stack auf
-    # einheitliches winnow zieht.
+    # winnow 0.7 vs 1.0 transitive via cbindgen -> toml + toml_parser
+    # (build-dep). Goes away once cbindgen moves its toml stack to
+    # a single winnow.
     { crate = "winnow" },
-    # wit-bindgen 0.51 (wasip3 rc) vs 0.57 (wasip2) — gezogen durch
-    # getrandom-Backends fuer WASI-Targets. Transitive Folge der
-    # getrandom-Version-Spreizung.
+    # wit-bindgen 0.51 (wasip3 rc) vs 0.57 (wasip2) — pulled in by
+    # getrandom backends for WASI targets. Transitive consequence of the
+    # getrandom version spread.
     { crate = "wit-bindgen" },
 
-    # ----- rc.2 transitive-Welle (alle 15 aus rc.2 neuen Crates) -----
-    # Aus zenoh + rdkafka + neuen idl-Crates gezogen. Alle transitiv,
-    # kein direkter Hebel im Workspace. Aufraeumen wenn upstreams
-    # konvergieren. RC3-Followup: dep-konsolidierung-Welle.
+    # ----- rc.2 transitive wave (all 15 crates new in rc.2) -----
+    # Pulled in from zenoh + rdkafka + new idl crates. All transitive,
+    # no direct lever in the workspace. Clean up when upstreams
+    # converge. RC3 follow-up: dep consolidation wave.
 
-    # foldhash 0.1 (hashbrown 0.16) vs 0.2 (alternativ via indexmap).
+    # foldhash 0.1 (hashbrown 0.16) vs 0.2 (alternatively via indexmap).
     { crate = "foldhash" },
     # hashbrown 0.14 (jni 0.21) + 0.15 (indexmap 2.7) + 0.16 (std-internal)
-    # + 0.17 (zenoh) — 4 Versionen parallel.
+    # + 0.17 (zenoh) — 4 versions in parallel.
     { crate = "hashbrown" },
     # itertools 0.13 (rdkafka) vs 0.14 (zenoh).
     { crate = "itertools" },
@@ -170,47 +254,47 @@ skip = [
     # nix 0.23 (shared_memory) vs 0.30 (zenoh).
     { crate = "nix" },
     # r-efi 4.5 (getrandom 0.2 backends) vs 5.0 (getrandom 0.3 backends).
-    # Reine UEFI-Target-Shims, auf Linux/macOS nicht kompiliert.
+    # Pure UEFI target shims, not compiled on Linux/macOS.
     { crate = "r-efi" },
-    # rand 0.8 (shared_memory + älterer Stack) vs 0.9 (proptest, zenoh).
+    # rand 0.8 (shared_memory + older stack) vs 0.9 (proptest, zenoh).
     { crate = "rand" },
     { crate = "rand_chacha" },
     { crate = "rand_core" },
     # socket2 0.5 (transport-udp direct) vs 0.6 (zenoh).
     { crate = "socket2" },
-    # spin 0.9 (ring) vs 0.10 (lazy_static-modern). Standard-transitiv-Skew.
+    # spin 0.9 (ring) vs 0.10 (lazy_static-modern). Standard transitive skew.
     { crate = "spin" },
-    # syn 1.x (proc-macro2-Generation 1) vs 2.x (modern proc-macros).
-    # syn 1 wird nur in build-deps + Macros gebraucht (nicht im
-    # Runtime-Pfad). Akzeptabel bis alle proc-macro-Deps auf syn 2 sind.
+    # syn 1.x (proc-macro2 generation 1) vs 2.x (modern proc-macros).
+    # syn 1 is needed only in build deps + macros (not in the
+    # runtime path). Acceptable until all proc-macro deps are on syn 2.
     { crate = "syn" },
-    # thiserror 1.x (älterer Stack — rdkafka, einige bridges) vs 2.x
-    # (workspace-modern). Konsolidierungs-Welle siehe RC3 followup.
+    # thiserror 1.x (older stack — rdkafka, some bridges) vs 2.x
+    # (workspace-modern). Consolidation wave: see RC3 follow-up.
     { crate = "thiserror" },
     { crate = "thiserror-impl" },
-    # toml_datetime 0.6 (cbindgen build-dep) vs 0.7 (modern toml-Stack).
+    # toml_datetime 0.6 (cbindgen build-dep) vs 0.7 (modern toml stack).
     { crate = "toml_datetime" },
-    # hashlink 0.9 vs 0.10 — transitiv via rusqlite/lru-Stacks
-    # (durability-store-sqlite). Kein direkter Hebel im Workspace.
+    # hashlink 0.9 vs 0.10 — transitive via rusqlite/lru stacks
+    # (durability-store-sqlite). No direct lever in the workspace.
     { crate = "hashlink" },
-    # rustix 0.38 (älterer Stack) vs 1.x (moderne tempfile/io-Stacks),
-    # mit linux-raw-sys 0.4 (rustix 0.38) vs 0.9 (rustix 1.x). Beide
-    # transitiv ohne direkten Hebel.
+    # rustix 0.38 (older stack) vs 1.x (modern tempfile/io stacks),
+    # with linux-raw-sys 0.4 (rustix 0.38) vs 0.9 (rustix 1.x). Both
+    # transitive without a direct lever.
     { crate = "rustix" },
     { crate = "linux-raw-sys" },
 
-    # ----- rc.3 transitive-Welle: zwei inkompatible x509-Dep-Baeume -----
-    # Die x509-parser-Familie wird in ZWEI Generationen gezogen, je aus
-    # einer Fremd-Crate, die ihre Version hart pinnt — kein direkter Hebel
-    # im Workspace:
-    #   * ALT (0.16-Familie): webrtc-dtls 0.12.0 (neueste Version!) ->
-    #     coap-bridge + xrce. Pinnt x509-parser 0.16 / asn1-rs 0.6 /
+    # ----- rc.3 transitive wave: two incompatible x509 dep trees -----
+    # The x509-parser family is pulled in TWO generations, each from
+    # a third-party crate that pins its version hard — no direct lever
+    # in the workspace:
+    #   * OLD (0.16 family): webrtc-dtls 0.12.0 (newest version!) ->
+    #     coap-bridge + xrce. Pins x509-parser 0.16 / asn1-rs 0.6 /
     #     der-parser 9 / oid-registry 0.7 + rcgen 0.13.
-    #   * NEU (0.18-Familie): zenoh-link-tls/-commons 1.9 -> zenoh-bridge.
-    #     Pinnt x509-parser 0.18 / asn1-rs 0.7 / der-parser 10 /
+    #   * NEW (0.18 family): zenoh-link-tls/-commons 1.9 -> zenoh-bridge.
+    #     Pins x509-parser 0.18 / asn1-rs 0.7 / der-parser 10 /
     #     oid-registry 0.8 + rcgen 0.14.
-    # Aufloesbar erst wenn webrtc-dtls eine x509-parser-0.18-Linie
-    # veroeffentlicht (Upstream-Backlog), bis dahin gewhitelistet.
+    # Resolvable only when webrtc-dtls publishes an x509-parser 0.18 line
+    # (upstream backlog); whitelisted until then.
     { crate = "asn1-rs" },
     { crate = "asn1-rs-derive" },
     { crate = "der-parser" },
@@ -245,9 +329,9 @@ skip = [
     # wasi 0.11 vs 0.14 — getrandom backend split (parallels the getrandom skew).
     { crate = "wasi" },
 ]
-# Verbotene Crates. Ergaenzt durch Clippy disallowed-types in Safe-Crates.
+# Forbidden crates. Complemented by Clippy disallowed-types in safe crates.
 deny = [
-    # Keine global-allocator-Hijacks ohne explizite Freigabe.
+    # No global allocator hijacks without explicit approval.
 ]
 
 [sources]

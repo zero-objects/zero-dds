@@ -13,43 +13,62 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 #[cfg(feature = "std")]
+use core::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+#[cfg(feature = "std")]
 use std::sync::{Condvar, Mutex};
 
 use crate::slot::{ReaderMask, SLOT_HEADER_SIZE, SlotHeader};
 
 /// Event-driven notify for the in-memory backend (Spec §4.2). A monotonic
-/// generation counter behind a `Condvar`: bumped on every state change a waiter
+/// generation counter with a `Condvar`: bumped on every state change a waiter
 /// could care about (sample committed → wakes blocked readers; slot freed →
 /// wakes blocked writers). Waiters re-check their own condition after waking
 /// (Condvar discipline), so a single counter serves both directions without
 /// busy-polling.
+///
+/// A bump with nobody in [`Self::wait_change`] is one atomic add. The lock and
+/// `notify_all` (on Linux a `futex` wake syscall on every call, std's
+/// `sys/sync/condvar/futex.rs`) are taken only when `waiters` says someone
+/// waits. A write and the read that frees its slot bump once each.
 #[cfg(feature = "std")]
 #[derive(Debug, Default)]
 struct ChangeNotify {
-    generation: Mutex<u64>,
+    generation: AtomicU64,
+    /// Threads inside `wait_change`.
+    waiters: AtomicUsize,
+    lock: Mutex<()>,
     cvar: Condvar,
 }
 
 #[cfg(feature = "std")]
 impl ChangeNotify {
     fn current(&self) -> u64 {
-        self.generation.lock().map(|g| *g).unwrap_or(0)
+        self.generation.load(Ordering::SeqCst)
     }
 
     fn bump(&self) {
-        if let Ok(mut g) = self.generation.lock() {
-            *g = g.wrapping_add(1);
+        // SeqCst on both sides: either this load sees the waiter's increment,
+        // or the waiter's later look at the generation sees this add.
+        self.generation.fetch_add(1, Ordering::SeqCst);
+        if self.waiters.load(Ordering::SeqCst) > 0 {
+            // A waiter checks the generation under the lock and gives the lock
+            // up only by parking, so after taking it the wake reaches it.
+            let _guard = self.lock.lock();
             self.cvar.notify_all();
         }
     }
 
     /// Blocks until the generation differs from `last` or `timeout` elapses.
     fn wait_change(&self, last: u64, timeout: core::time::Duration) {
-        if let Ok(g) = self.generation.lock() {
+        self.waiters.fetch_add(1, Ordering::SeqCst);
+        if let Ok(guard) = self.lock.lock() {
             // `wait_timeout_while` re-checks the predicate, absorbing spurious
             // wakeups; it returns when gen != last or the deadline passes.
-            let _ = self.cvar.wait_timeout_while(g, timeout, |g| *g == last);
+            let _ = self.cvar.wait_timeout_while(guard, timeout, |_| {
+                self.generation.load(Ordering::SeqCst) == last
+            });
         }
+        self.waiters.fetch_sub(1, Ordering::SeqCst);
     }
 }
 
@@ -504,6 +523,41 @@ impl InMemorySlotAllocator {
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::*;
+
+    /// Spec §7.2 — a slot index outside `[0, slot_count)` is refused on
+    /// every path that dereferences a slot, rather than reading past the
+    /// segment. `slot_count` comes from the discovery sample, so a peer
+    /// can name any index it likes.
+    #[test]
+    fn slot_index_out_of_bounds_is_rejected() {
+        let alloc = InMemorySlotAllocator::new(0, 2, 64);
+        let beyond = SlotHandle {
+            segment_id: 0,
+            slot_index: 2,
+        };
+        let far = SlotHandle {
+            segment_id: 0,
+            slot_index: u32::MAX,
+        };
+        for handle in [beyond, far] {
+            assert_eq!(alloc.read_slot(handle), Err(SlotError::OutOfBounds));
+            assert_eq!(alloc.mark_read(handle, 0), Err(SlotError::OutOfBounds));
+            assert_eq!(alloc.commit_slot(handle, &[1]), Err(SlotError::OutOfBounds));
+            assert_eq!(
+                alloc.commit_in_place(handle, 1),
+                Err(SlotError::OutOfBounds)
+            );
+            assert_eq!(alloc.discard_slot(handle), Err(SlotError::OutOfBounds));
+            assert_eq!(alloc.slot_data_ptr(handle), Err(SlotError::OutOfBounds));
+            assert_eq!(alloc.slot_read_ptr(handle), Err(SlotError::OutOfBounds));
+        }
+        // The last in-range index still works — the bound is exclusive.
+        let last = SlotHandle {
+            segment_id: 0,
+            slot_index: 1,
+        };
+        assert!(alloc.read_slot(last).is_ok());
+    }
 
     #[test]
     fn reserve_returns_first_free_slot() {

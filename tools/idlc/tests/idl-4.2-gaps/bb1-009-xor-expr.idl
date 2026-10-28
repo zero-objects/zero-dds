@@ -1,0 +1,2 @@
+// IDL 4.2 Annex A production 9 — exclusive or in a constant expression.
+const long K = 3 ^ 1;

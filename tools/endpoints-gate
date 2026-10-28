@@ -1,0 +1,712 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 ZeroDDS Contributors
+#
+# endpoints-gate — builds and runs the committed test suite of every binding
+# under `endpoints/`, in one command.
+#
+#   tools/endpoints-gate
+#   tools/endpoints-gate --langs go,zig,swift
+#   tools/endpoints-gate --list
+#
+# ## Why
+#
+# `grep -rln "endpoints/" ci/ .github/` answered nothing, and
+# docs/OPEN-ITEMS.md recorded what that cost: nineteen jobs checked the
+# byte-identity of the native endpoint SDKs and none of them survived the
+# rebuild. Twelve of the twenty-one bindings — c, ada, ada-83, ada-native,
+# kotlin, node, fsharp, swift, julia, lua, ocaml, elixir — carried a committed
+# test suite that had never been run anywhere, and the only recorded run
+# (/root/sdk_tests.log, three languages) ended non-zero on an example that did
+# not compile. A suite nothing runs is documentation.
+#
+# ## The discipline, from tools/wireprobe/endpoint-mutation-gate
+#
+# A binding that reached nothing is reported as having said nothing, and that
+# is a failure — never a pass. A missing toolchain is a SKIP, printed with the
+# command that was absent and counted in the summary, and it is a failure when
+# the binding is on the required list (--require / ZERODDS_ENDPOINTS_REQUIRE),
+# which is how a CI job that promises to cover a column notices the column
+# quietly leaving.
+#
+# ## Where it builds
+#
+# `endpoints/` is copied to `target/endpoints-gate/tree/endpoints` and every
+# build happens there. Six of these toolchains write their objects beside the
+# source they are given — ocamlopt its `.cmx`, gdc and nim their binaries,
+# gprbuild its `build/` — so building in place would leave the working tree
+# dirty and let two runs race over the same files. The copy also means the gate
+# measures the committed sources and not a stale artefact next to them.
+#
+# ## The compiler flags are not this script's
+#
+# Every binding is built the way tools/wireprobe/endpoint-common.sh's
+# `endpoint_build` builds it, or by the binding's own Makefile / project file,
+# which now carries the same switches. Warnings are errors wherever the front
+# end can say so; Nim has no such flag, so its output is read and a `Warning:`
+# line fails the build, which is `endpoint_build`'s rule by a different route.
+set -uo pipefail
+
+# `declare -A` below. macOS ships bash 3.2 as /bin/bash; failing here
+# with the version in hand beats "declare: -A: invalid option" at line
+# 559 after ten toolchain probes.
+if [ "${BASH_VERSINFO[0]}" -lt 4 ]; then
+    echo "endpoints-gate: bash ${BASH_VERSION} cannot run this; it uses" \
+         "associative arrays, which are bash 4's" >&2
+    exit 2
+fi
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$root" || exit 2
+
+# The twenty-one bindings: the fifteen hand-written columns of
+# docs/specs/zerodds-interop-suite-1.0.md §3a plus the six that came first.
+ALL_LANGS="ada ada-83 ada-native c cpp csharp d elixir fsharp go java julia kotlin lua nim node ocaml python rust swift zig"
+# Not a binding: the IDL-driven codec generator's C byte oracle
+# (endpoints/codegen/test/test_*.c), which was built by nothing at all, the
+# proof that the corpus sweep can report a divergence, and what each binding
+# does with a number its writer cannot hold.
+EXTRA="codegen mutation numbers"
+
+langs="$ALL_LANGS $EXTRA"
+require="${ZERODDS_ENDPOINTS_REQUIRE:-}"
+goldens=""
+list_only=0
+
+usage() {
+    sed -n '5,50p' "${BASH_SOURCE[0]}"
+    printf '\nbindings: %s\nextras:   %s\n' "$ALL_LANGS" "$EXTRA"
+}
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --langs) langs="$(printf '%s' "$2" | tr ',' ' ')"; shift 2 ;;
+        --require) require="$(printf '%s' "$2" | tr ',' ' ')"; shift 2 ;;
+        --goldens) goldens="$2"; shift 2 ;;
+        --list) list_only=1; shift ;;
+        --help|-h) usage; exit 0 ;;
+        *) echo "endpoints-gate: \`$1\` is not an option" >&2; exit 2 ;;
+    esac
+done
+
+if [ "$list_only" = 1 ]; then
+    printf '%s\n' $ALL_LANGS $EXTRA
+    exit 0
+fi
+
+work="$root/target/endpoints-gate"
+logs="$work/logs"
+rm -rf "$work/tree" "$logs"
+mkdir -p "$work/tree" "$logs" || exit 2
+cp -R endpoints "$work/tree/endpoints" || exit 2
+# The artefact directories of a previous in-place build are pruned from the
+# copy. They are untracked and they carry the absolute path they were made at:
+# SwiftPM refuses a module cache whose recorded path is not the one it is being
+# read from ("PCH was compiled with module cache path ..., but the path is
+# currently ..."), which fails the build for a reason that has nothing to do
+# with the binding.
+find "$work/tree/endpoints" -type d \
+    \( -name .build -o -name build -o -name zig-out -o -name .zig-cache \
+       -o -name nimcache -o -name beam -o -name obj -o -name node_modules \) \
+    -prune -exec rm -rf {} + 2>/dev/null
+tree="$work/tree/endpoints"
+
+# The goldens every byte-identity assertion in every binding compares against.
+# They come out of the Rust core through `zerodds-endpoint-golden`, so a
+# difference is a difference from the core and not from a test's opinion.
+if [ -z "$goldens" ]; then
+    goldens="$work/goldens"
+    # Emptied and generated in every run: a golden of an earlier run (made by
+    # an earlier version of the core) must not survive and be compared with.
+    rm -rf "$goldens"
+    mkdir -p "$goldens"
+    if ! cargo run -q -p zerodds-endpoint-golden -- "$goldens" > "$logs/goldens.log" 2>&1; then
+        echo "endpoints-gate: the golden generator did not run" >&2
+        tail -20 "$logs/goldens.log" >&2
+        exit 2
+    fi
+fi
+export GOLDEN_DIR="$goldens"
+
+# --- toolchain presence ------------------------------------------------------
+#
+# 77 is the skip code, chosen because no compiler in this tree returns it. A
+# runner that cannot start says so here and nowhere else, so a missing
+# toolchain can never reach the summary as a pass.
+SKIP=77
+missing=""
+
+# The same override variables tools/wireprobe/endpoint-common.sh takes, and the
+# same defaults. A distribution that ships the interpreter under a versioned
+# name — Debian's Lua is `lua5.4`, not `lua` — is then one assignment away
+# rather than a patch to this file, and the two drivers cannot disagree about
+# which binary a column was measured through.
+ZIG="${ZIG:-zig}";               NIM="${NIM:-nim}"
+GDC="${GDC:-gdc}";               KOTLINC="${KOTLINC:-kotlinc}"
+JAVA="${JAVA:-java}";            JAVAC="${JAVAC:-javac}"
+NODE="${NODE:-node}";            DOTNET="${DOTNET:-dotnet}"
+SWIFTC="${SWIFTC:-swiftc}";      SWIFT="${SWIFT:-swift}"
+GO="${GO:-go}";                  JULIA="${JULIA:-julia}"
+LUA="${LUA:-lua}";               LUAC="${LUAC:-luac}"
+OCAMLFIND="${OCAMLFIND:-ocamlfind}"
+ELIXIR="${ELIXIR:-elixir}";      ELIXIRC="${ELIXIRC:-elixirc}"
+GPRBUILD="${GPRBUILD:-gprbuild}";  PYTHON="${PYTHON:-python3}"
+export GPRBUILD
+need() {
+    missing=""
+    local c
+    for c in "$@"; do
+        command -v "$c" >/dev/null 2>&1 || missing="$missing $c"
+    done
+    [ -z "$missing" ]
+}
+
+# --- assertion accounting ----------------------------------------------------
+#
+# `checks <lang> <log>` counts the properties a binding's own output reports as
+# verified. Five of these toolchains print their own tally — `go test -v` a
+# `--- PASS:` per case, `node --test` a `# pass N`, XCTest an `Executed N
+# tests`, cargo a `test result: ok. N passed`, `zig build --summary all` an
+# `N/M tests passed` — and where there is one, it is the count, because the
+# harness counted the cases and a grep over its prose would not. The rest print
+# a line per verified property, and those lines are the markers below: `ALL OK`
+# closes a program, `ok <name>` closes a case in the reliable suites, and
+# `byte-identical` is what every golden comparison says when it holds.
+#
+# Zero is not a pass. A binding whose suite printed nothing verifiable either
+# did not run or ran without asserting, and both are the failure this gate
+# exists to stop reporting as green.
+checks() {
+    local lang="$1" log="$2"
+    [ -f "$log" ] || { echo 0; return; }
+    case "$lang" in
+        go)    awk '/--- PASS:/{n++} END{print n+0}' "$log"; return ;;
+        node)  awk '/^# pass /{s+=$3} /^ℹ pass /{s+=$3} END{print s+0}' "$log"; return ;;
+        swift) awk '/Executed [0-9]+ tests?,/{ \
+                     n=$0; sub(/.*Executed /,"",n); sub(/ tests?,.*/,"",n); \
+                     if (n+0>m) m=n+0 } END{print m+0}' "$log"; return ;;
+        rust)  awk '/^test result: ok\./{s+=$4} END{print s+0}' "$log"; return ;;
+        # One line per language that reported the planted defect. Counting the
+        # gate's closing `GATE OK` instead would report 1 for fifteen columns
+        # and read the same whether one of them or all of them answered.
+        mutation) awk '/cells report the planted defect/{n++} END{print n+0}' "$log"; return ;;
+        # One line per (question, binding) the probe answered. A binding that
+        # fails the probe's control gets no row and exits the probe 3.
+        numbers) awk '/^(over-u16|negative-u16|negative-u32|past-2-63) /{n++} END{print n+0}' "$log"; return ;;
+        zig)   awk '/[0-9]+\/[0-9]+ tests passed/{ \
+                     n=$0; sub(/\/[0-9]+ tests passed.*/,"",n); \
+                     sub(/.*[^0-9]/,"",n); s+=n+0 } END{print s+0}' "$log"; return ;;
+    esac
+    awk '/(^|[[:space:]])(ALL OK|UNIT OK|RELIABLE OK|GATE OK)$/ ||
+         /^ok +[A-Za-z_]/ || /^ok [0-9]+ -/ || /byte-identical/ ||
+         /: ok$/ || /: OK$/ || /: ALL OK$/ {n++} END{print n+0}' "$log"
+}
+
+# --- the twenty-one runners --------------------------------------------------
+#
+# Each is invoked with its output redirected to $logs/<lang>.log and returns 0,
+# $SKIP, or a failure code. Nothing here decides a wire question; every
+# expectation is the binding's own.
+
+run_c() {
+    need cc make || return $SKIP
+    ( cd "$tree/c" && make -s test GOLDEN_DIR="$goldens" && make -s examples ) || return 1
+}
+
+run_cpp() {
+    need c++ cc make || return $SKIP
+    ( cd "$tree/cpp" && make -s test GOLDEN_DIR="$goldens" && make -s examples ) || return 1
+}
+
+# gprbuild and not gnatmake for the three Ada columns: the project files name
+# the mains, the source dirs and the switches, and driving gnatmake by hand
+# here would be a second, drifting copy of all three.
+run_ada() {
+    need "$GPRBUILD" gcc || return $SKIP
+    ( cd "$tree/ada" \
+      && "$GPRBUILD" -q -p -P zerodds_ada.gpr \
+      && build/test_ada_surface \
+      && build/test_byte_identity "$goldens/golden_le.bin" "$goldens/golden_be.bin" \
+      && build/test_udp_loopback \
+      && build/test_reliable_unit "$goldens" \
+      && build/test_xrce_client \
+      && build/example_sync \
+      && build/example_async ) || return 1
+}
+
+run_ada_83() {
+    need "$GPRBUILD" || return $SKIP
+    # The goldens go into build/ and the tests run from the project directory:
+    # Ada 83 has no Ada.Command_Line, so test_ada83_identity can only read a
+    # path it was compiled with.
+    ( cd "$tree/ada-83" \
+      && "$GPRBUILD" -q -p -P zerodds_ada83.gpr \
+      && cp "$goldens"/*.bin build/ \
+      && build/test_ada83_surface \
+      && build/test_ada83_identity \
+      && build/test_ada83_async \
+      && build/test_ada83_reliable \
+      && build/test_ada83_xrce_client ) || return 1
+}
+
+run_ada_native() {
+    need "$GPRBUILD" || return $SKIP
+    ( cd "$tree/ada-native" \
+      && "$GPRBUILD" -q -p -P zerodds_ada_native.gpr \
+      && build/test_native_surface \
+      && build/test_native_identity "$goldens" \
+      && build/test_native_roundtrip \
+      && build/test_native_framing "$goldens" \
+      && build/test_native_reflect "$goldens" \
+      && build/test_oop_endpoint \
+      && build/test_native_reliable_unit "$goldens" ) || return 1
+}
+
+run_csharp() {
+    need "$DOTNET" || return $SKIP
+    export DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1
+    # Both golden paths are passed. ByteIdentity prints "goldens skipped" and
+    # exits 0 when it is given fewer, which is a green run that compared
+    # nothing — the gate hands it what it needs so the skip branch is
+    # unreachable here.
+    ( cd "$tree/csharp" \
+      && "$DOTNET" run -c Release --project ByteIdentity.csproj -- \
+             "$goldens/golden_le.bin" "$goldens/golden_be.bin" \
+      && "$DOTNET" run -c Release --project ReliableTests.csproj \
+      && "$DOTNET" run -c Release --project XrceClientTest.csproj \
+      && "$DOTNET" build -c Release ExampleSync.csproj \
+      && "$DOTNET" build -c Release ExampleAsync.csproj \
+      && "$DOTNET" build -c Release ExampleReliable.csproj ) || return 1
+}
+
+run_d() {
+    need "$GDC" make || return $SKIP
+    # No `make surface`: surface_test.d exports `surfaceTests()` and has no
+    # main of its own — `make test` links and runs it, which the Makefile
+    # states. The 87 surface checks are inside the `test` line's output.
+    # DC="$GDC" on every make line: the override has to reach the
+    # invocation as well as the presence check (the run_lua rule).
+    ( cd "$tree/d" \
+      && make -s DC="$GDC" test GOLDEN_DIR="$goldens" \
+      && make -s DC="$GDC" reliable_test GOLDEN_DIR="$goldens" \
+      && make -s DC="$GDC" example && make -s DC="$GDC" example_sync \
+      && make -s DC="$GDC" example_async \
+      && make -s DC="$GDC" example_reliable \
+      && make -s DC="$GDC" reliable_app && make -s DC="$GDC" reliable_bench ) || return 1
+}
+
+run_elixir() {
+    need "$ELIXIR" "$ELIXIRC" || return $SKIP
+    # --warnings-as-errors is this toolchain's -Werror, and it is pointed at
+    # the SDK as well as at the suites: a warning in lib/zerodds.ex is a
+    # finding about the SDK and this is the only run that would see it.
+    ( cd "$tree/elixir" \
+      && mkdir -p beam \
+      && "$ELIXIRC" --warnings-as-errors -o beam lib/zerodds.ex lib/reliable.ex \
+             lib/xrce_client.ex \
+      && "$ELIXIR" --erl "-noshell" -pa beam test.exs \
+      && "$ELIXIR" --erl "-noshell" -pa beam xrce_client_test.exs \
+      && "$ELIXIR" --erl "-noshell" -pa beam surface_test.exs \
+      && "$ELIXIR" --erl "-noshell" -pa beam reliable_test.exs "$goldens" \
+      && "$ELIXIR" --erl "-noshell" -pa beam example.exs \
+      && "$ELIXIR" --erl "-noshell" -pa beam example_sync.exs \
+      && "$ELIXIR" --erl "-noshell" -pa beam example_async.exs \
+      && "$ELIXIR" --erl "-noshell" -pa beam example_reliable.exs ) || return 1
+}
+
+run_fsharp() {
+    need "$DOTNET" || return $SKIP
+    export DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1
+    # `dotnet fsi --warnaserror+` for the scripts, a project for the two files
+    # that carry an [<EntryPoint>] — fsi refuses those, which is why
+    # ReliableTests.fs had never been compiled anywhere.
+    # No surface_test.fsx: the F# surface suite lives inside test.fsx (its
+    # "the wire surface, against octets this project did not write" half),
+    # which the first line runs.
+    ( cd "$tree/fsharp" \
+      && "$DOTNET" fsi --nologo --warnaserror+ test.fsx \
+      && "$DOTNET" fsi --nologo --warnaserror+ xrce_client_test.fsx \
+      && "$DOTNET" fsi --nologo --warnaserror+ example.fsx \
+      && "$DOTNET" fsi --nologo --warnaserror+ example_sync.fsx \
+      && "$DOTNET" fsi --nologo --warnaserror+ example_async.fsx \
+      && "$DOTNET" run -c Release --project ReliableTests.fsproj -- \
+             "$goldens/golden_heartbeat_le.bin" "$goldens/golden_acknack_le.bin" \
+      && "$DOTNET" build -c Release ExampleReliable.fsproj ) || return 1
+}
+
+run_go() {
+    need "$GO" || return $SKIP
+    export GOFLAGS="-mod=mod" GOTOOLCHAIN=local CGO_ENABLED=0
+    export GOCACHE="${ZERODDS_GO_CACHE:-$work/go-cache}"
+    # `go vet` is this toolchain's warning level: the compiler has errors and
+    # no warnings, and vet is where everything that would be a warning
+    # elsewhere is reported.
+    ( cd "$tree/go" && "$GO" vet ./... && "$GO" build ./... && "$GO" test ./... -v ) || return 1
+}
+
+run_java() {
+    need "$JAVAC" "$JAVA" || return $SKIP
+    ( cd "$tree/java" \
+      && mkdir -p classes \
+      && "$JAVAC" -Xlint:all -Werror -encoding UTF-8 -d classes \
+           *.java org/zerodds/endpoint/*.java \
+      && cd classes \
+      && java SurfaceTest \
+      && java ByteIdentityTest "$goldens/golden_le.bin" "$goldens/golden_be.bin" \
+      && java EndpointTest "$goldens" \
+      && java MutableTest "$goldens/golden_mutable_le.bin" "$goldens/golden_mutable_be.bin" \
+      && java NestedTest "$goldens/golden_nested_le.bin" "$goldens/golden_nested_be.bin" \
+      && java ReliableSelfTest \
+      && java AsyncReliableOverflowTest \
+      && java XrceClientTest ) || return 1
+}
+
+# --depwarn=error is this toolchain's -Werror: the deprecation warning is
+# Julia's one promotable diagnostic. --startup-file=no --history-file=no
+# because a column whose octets depended on the operator's ~/.julia/config
+# would be measuring the operator.
+julia_run() { "$JULIA" --startup-file=no --history-file=no --color=no --depwarn=error "$@"; }
+
+run_julia() {
+    need "$JULIA" || return $SKIP
+    ( cd "$tree/julia" \
+      && julia_run test.jl \
+      && julia_run surface_test.jl \
+      && julia_run reliable_test.jl "$goldens" \
+      && julia_run xrce_client_test.jl \
+      && julia_run example.jl \
+      && julia_run example_sync.jl \
+      && julia_run example_async.jl \
+      && julia_run example_reliable.jl ) || return 1
+}
+
+run_kotlin() {
+    need "$KOTLINC" "$JAVA" || return $SKIP
+    # The stdlib the compiled program needs at run time, derived from the
+    # compiler's own location: a program running against a different stdlib
+    # from the one it compiled against would be measuring two Kotlins.
+    local stdlib
+    stdlib="${KOTLIN_STDLIB:-$(dirname "$(dirname "$(readlink -f "$(command -v "$KOTLINC")")")")/lib/kotlin-stdlib.jar}"
+    if [ ! -f "$stdlib" ]; then
+        echo "no kotlin-stdlib.jar beside kotlinc; set KOTLIN_STDLIB"
+        missing=" kotlin-stdlib.jar"
+        return $SKIP
+    fi
+    # No src/SurfaceTest.kt: the Kotlin surface suite is the `surface()`
+    # half of src/Test.kt, which the first pair compiles and runs.
+    ( cd "$tree/kotlin" \
+      && "$KOTLINC" -Werror -d out/test src/Zerodds.kt src/Test.kt \
+      && "$KOTLINC" -Werror -d out/reliable src/Reliable.kt ReliableSelfTest.kt \
+      && "$KOTLINC" -Werror -d out/example src/Zerodds.kt example/Example.kt \
+      && "$KOTLINC" -Werror -d out/example_sync src/Zerodds.kt example_sync/Example.kt \
+      && "$KOTLINC" -Werror -d out/example_async src/Zerodds.kt example_async/Example.kt \
+      && "$KOTLINC" -Werror -d out/pingpong src/Zerodds.kt PingPong.kt \
+      && "$KOTLINC" -Werror -d out/relex src/Reliable.kt ReliableExample.kt \
+      && "$KOTLINC" -Werror -d out/xrce src/Zerodds.kt src/XrceClient.kt XrceClientTest.kt \
+      && java -cp "out/test:$stdlib" TestKt \
+      && java -cp "out/reliable:$stdlib" ReliableSelfTestKt \
+      && java -cp "out/xrce:$stdlib" XrceClientTestKt ) || return 1
+}
+
+run_lua() {
+    need "$LUA" || return $SKIP
+    # Every interpreter call is "$LUA" and none of them is a bare `lua`.
+    # Debian and Ubuntu ship no unversioned `lua`, which is why the CI job
+    # assigns LUA=lua5.4 in its `env:` block; seven of these lines said `lua`
+    # anyway, and the first run of that job on ubuntu-24.04 answered
+    # `tools/endpoints-gate: line 391: lua: command not found` and reported the
+    # column red. The override has to reach the invocation as well as the
+    # presence check, or it only decides whether the column is skipped.
+    #
+    # string.pack appeared in 5.3. A 5.1 or 5.2 interpreter fails inside the
+    # SDK with "attempt to call a nil value", which reads as a defect of the
+    # SDK; it is the interpreter, and it is said so here.
+    "$LUA" -e 'assert(string.pack, "this Lua has no string.pack (5.3+ required)")' || return 1
+    ( cd "$tree/lua" \
+      && { command -v "$LUAC" >/dev/null 2>&1 \
+           && "$LUAC" -p zerodds.lua reliable.lua test.lua surface_test.lua \
+                   reliable_test.lua example.lua example_sync.lua \
+                   example_async.lua example_reliable.lua reliable_app.lua \
+           || true ; } \
+      && "$LUA" test.lua \
+      && "$LUA" surface_test.lua \
+      && "$LUA" reliable_test.lua "$goldens" \
+      && "$LUA" example_sync.lua && "$LUA" example_async.lua \
+      && "$LUA" example.lua && "$LUA" example_reliable.lua ) || return 1
+}
+
+# Nim has no flag that covers every warning at once, so the output is read and
+# a `Warning:` line fails the build — endpoint_build's rule by another route.
+nim_run() {
+    local f="$1"; shift
+    local out
+    # Arguments after the file reach the compiled program: reliable_test.nim
+    # takes the golden directory and prints `skip byte-golden` without it,
+    # which is a green run that compared nothing (the csharp rule).
+    out="$("$NIM" c --hints:off --colors:off --nimcache:"$work/nimcache" -r "$f" "$@" 2>&1)"
+    local code=$?
+    printf '%s\n' "$out"
+    [ "$code" = 0 ] || return 1
+    if printf '%s' "$out" | grep -q "Warning:"; then
+        echo "endpoints-gate: nim reported a warning building $f"
+        return 1
+    fi
+}
+
+run_nim() {
+    need "$NIM" || return $SKIP
+    ( cd "$tree/nim" \
+      && nim_run test.nim \
+      && nim_run surface_test.nim \
+      && nim_run reliable_test.nim "$goldens" \
+      && nim_run spsc_ring_test.nim \
+      && nim_run xrce_client_test.nim \
+      && nim_run example.nim \
+      && nim_run example_sync.nim \
+      && nim_run example_async.nim \
+      && nim_run example_reliable.nim ) || return 1
+    # reliable_app.nim takes a live peer, so it is compiled and not run.
+    ( cd "$tree/nim" && "$NIM" c --hints:off --colors:off \
+        --nimcache:"$work/nimcache" -o:reliable_app_bin reliable_app.nim ) || return 1
+}
+
+run_node() {
+    need "$NODE" || return $SKIP
+    # The reporter is named: `node --test` picks `spec` or `tap` by node version
+    # and terminal, and only the `tap` summary carries the `# pass N` that
+    # `checks` counts (a `spec` run ends in `ℹ pass N` and counted as 0).
+    # `node --check` is the parse this toolchain has in place of -Werror, and
+    # `--throw-deprecation` turns a deprecation notice into a thrown error
+    # rather than a line on standard error that nothing would read.
+    ( cd "$tree/node" \
+      && node --test --test-reporter=tap \
+      && node --throw-deprecation reliable_selftest.js \
+      && for f in example.js example_sync.js example_async.js \
+                  example_reliable.js example_ping_pong.js; do
+             node --check "$f" || exit 1
+         done ) || return 1
+}
+
+run_ocaml() {
+    need "$OCAMLFIND" || return $SKIP
+    ( cd "$tree/ocaml" \
+      && make -s test GOLDEN_DIR="$goldens" \
+      && make -s surface_test \
+      && make -s xrce_client_test \
+      && make -s example && make -s example_sync && make -s example_async \
+      && "$OCAMLFIND" ocamlopt -thread -package threads.posix -linkpkg \
+             -w +a-4-9-40-41-42-44-45-70 -warn-error +a \
+             reliable.ml reliable_test.ml -o reliable_test_bin \
+      && ./reliable_test_bin \
+      && "$OCAMLFIND" ocamlopt -thread -package threads.posix -linkpkg \
+             -w +a-4-9-40-41-42-44-45-70 -warn-error +a \
+             zerodds.ml reliable.ml example_reliable.ml -o example_reliable_bin \
+      && ./example_reliable_bin ) || return 1
+}
+
+run_python() {
+    need "$PYTHON" || return $SKIP
+    # "$PYTHON" and not a bare `python3`, for the reason run_lua gives:
+    # the override has to reach the invocation as well as the presence
+    # check, or it only decides whether the column is skipped.
+    ( cd "$tree/python" \
+      && "$PYTHON" surface_test.py \
+      && "$PYTHON" test_byte_identity.py "$goldens/golden_le.bin" "$goldens/golden_be.bin" \
+      && "$PYTHON" test_nested.py "$goldens/golden_nested_le.bin" "$goldens/golden_nested_be.bin" \
+      && "$PYTHON" test_mutable.py "$goldens/golden_mutable_le.bin" "$goldens/golden_mutable_be.bin" \
+      && "$PYTHON" test_endpoint.py "$goldens" \
+      && "$PYTHON" reliable_test.py "$goldens" \
+      && "$PYTHON" test_xrce_client.py ) || return 1
+}
+
+run_rust() {
+    need cargo || return $SKIP
+    # From the repository root and not the copy: this column is a workspace
+    # member and cargo resolves it against the real Cargo.lock.
+    cargo test -p zerodds-endpoint-rust || return 1
+    cargo build -q -p zerodds-endpoint-rust --examples || return 1
+}
+
+run_swift() {
+    need "$SWIFTC" "$SWIFT" || return $SKIP
+    ( cd "$tree/swift" && "$SWIFT" build && "$SWIFT" test ) || return 1
+    # Reliable.swift, reliable_tests.swift and example_reliable.swift sit
+    # outside Sources/ and so are outside the package: swiftc compiles them
+    # directly, which is what their own header says. -parse-as-library because
+    # a top-level file otherwise gets a `main` and the link finds two.
+    ( cd "$tree/swift" \
+      && mkdir -p out \
+      && "$SWIFTC" -warnings-as-errors -swift-version 5 -parse-as-library \
+             -module-name ZeroddsReliable -emit-module \
+             -emit-module-path out/ZeroddsReliable.swiftmodule \
+             -emit-object -o out/ZeroddsReliable.o Reliable.swift \
+      && "$SWIFTC" -warnings-as-errors -swift-version 5 -I out \
+             reliable_tests.swift out/ZeroddsReliable.o -o out/reliable_tests \
+      && "$SWIFTC" -warnings-as-errors -swift-version 5 -I out \
+             example_reliable.swift out/ZeroddsReliable.o -o out/example_reliable \
+      && ./out/reliable_tests \
+      && ./out/example_reliable ) || return 1
+}
+
+run_zig() {
+    need "$ZIG" || return $SKIP
+    export ZIG_GLOBAL_CACHE_DIR="${ZIG_GLOBAL_CACHE_DIR:-$work/zig-cache}"
+    # Through a pipe and not straight into the log: Zig 0.16 writes to a
+    # regular file at explicit offsets from 0, so each of the six `zig`
+    # processes overwrote what the one before had written, and the log
+    # held the last example's output without the test summary this
+    # script counts (measured: the suite passed, 72/72, and was reported
+    # SILENT). `pipefail` keeps the chain's exit status.
+    ( cd "$tree/zig" \
+      && mkdir -p build && cp "$goldens"/*.bin build/ \
+      && "$ZIG" build test --summary all \
+      && "$ZIG" build \
+      && "$ZIG" build run \
+      && "$ZIG" build run-example_sync \
+      && "$ZIG" build run-example_async \
+      && "$ZIG" build run-example_reliable ) 2>&1 | cat || return 1
+}
+
+# --- the two extras ----------------------------------------------------------
+
+# endpoints/codegen's C byte oracle. `endpoints/codegen/src/` belongs to
+# another strand and is not touched here; the three test programs under
+# `endpoints/codegen/test/` are compiled against the generator's own output and
+# run, which nothing in the tree did before. Each fixture is built against its
+# own emitted codec and not all three at once, so a defect in one emitter does
+# not hide the other two behind a link error.
+run_codegen() {
+    need cc cargo || return $SKIP
+    cargo build -q -p zerodds-endpoint-codegen || return 1
+    # CARGO_TARGET_DIR moves cargo's output; a host that sets it — the
+    # shared-target discipline on the Linux test host — has no
+    # target/debug at the root at all.
+    local cg="${CARGO_TARGET_DIR:-$root/target}/debug/zerodds-endpoint-codegen"
+    local out="$work/codegen" rc=0
+    rm -rf "$out"; mkdir -p "$out"
+    local fixture prog le be
+    for fixture in sensor:test_gen:golden_le.bin:golden_be.bin \
+                   nested:test_nested_gen:golden_nested_le.bin:golden_nested_be.bin \
+                   mutable:test_mutable_gen:golden_mutable_le.bin:golden_mutable_be.bin; do
+        IFS=: read -r fixture prog le be <<<"$fixture"
+        echo "----- $fixture"
+        "$cg" "$tree/codegen/idl/$fixture.idl" "$out" c || { rc=1; continue; }
+        # The flags endpoints/c/Makefile gives the wire-core this codec calls.
+        cc -std=c89 -pedantic -Wall -Wextra -Werror -O2 \
+           -I"$out" -I"$tree/c/include" \
+           "$tree/codegen/test/$prog.c" "$out/${fixture}_gen.c" \
+           "$tree/c/src/zerodds_wire.c" -o "$out/$prog" || { rc=1; continue; }
+        "$out/$prog" "$goldens/$le" "$goldens/$be" || rc=1
+    done
+    return "$rc"
+}
+
+# The corpus sweep's own gate: a defect is planted in each binding's copy of
+# put_string and the sweep must report it. A green sweep that cannot fail says
+# nothing, which tools/wireprobe/diagnostics.sh records an afternoon lost to.
+#
+# ZERODDS_ENDPOINTS_MUTATION_LANGS restricts which columns the planted defect
+# is swept through — for a host that carries some of the seventeen toolchains
+# and not all of them, like the CI image. An explicit subset, never a
+# weakening: every named column must still report the defect, and the gate's
+# per-language accounting is unchanged.
+run_mutation() {
+    need bash "$PYTHON" cargo || return $SKIP
+    if [ -n "${ZERODDS_ENDPOINTS_MUTATION_LANGS:-}" ]; then
+        tools/wireprobe/endpoint-mutation-gate \
+            --langs "$ZERODDS_ENDPOINTS_MUTATION_LANGS" || return 1
+    else
+        tools/wireprobe/endpoint-mutation-gate || return 1
+    fi
+}
+
+# tools/wireprobe/endpoint-number-surface: the exported writes asked for a
+# value that does not fit them. It exits 8 when a binding answers 70000 in
+# put_u16 with octets — the low half of the number, written without a word —
+# and 3 when a binding does not answer the control put_u16(1), which is the
+# probe's own program failing to build and not a measurement of the binding.
+# The probe ran in no gate; constructors grew an argument under it and six of
+# its seventeen columns reported a compiler message as a refusal.
+#
+# ZERODDS_ENDPOINTS_NUMBER_LANGS restricts the columns the way
+# ZERODDS_ENDPOINTS_MUTATION_LANGS does, for a host with some of the
+# toolchains.
+run_numbers() {
+    need bash "$PYTHON" || return $SKIP
+    if [ -n "${ZERODDS_ENDPOINTS_NUMBER_LANGS:-}" ]; then
+        tools/wireprobe/endpoint-number-surface \
+            --langs "$ZERODDS_ENDPOINTS_NUMBER_LANGS" || return 1
+    else
+        tools/wireprobe/endpoint-number-surface || return 1
+    fi
+}
+
+# --- run ---------------------------------------------------------------------
+
+declare -A STATUS COUNT REASON
+status=0
+ran=0 skipped=0 failed=0
+
+for lang in $langs; do
+    fn="run_${lang//-/_}"
+    if ! declare -F "$fn" >/dev/null; then
+        echo "endpoints-gate: no runner for \`$lang\`" >&2
+        exit 2
+    fi
+    log="$logs/$lang.log"
+    printf '===== %s\n' "$lang"
+    "$fn" > "$log" 2>&1
+    code=$?
+    n=$(checks "$lang" "$log")
+    COUNT[$lang]=$n
+    if [ "$code" = "$SKIP" ]; then
+        STATUS[$lang]=SKIP
+        REASON[$lang]="toolchain absent:${missing:- unknown}"
+        skipped=$((skipped + 1))
+        echo "  SKIP — no${missing:- toolchain} in PATH"
+    elif [ "$code" != 0 ]; then
+        STATUS[$lang]=FAIL
+        REASON[$lang]="exit $code"
+        failed=$((failed + 1))
+        echo "  FAIL — exit $code, $n checks reached"
+        tail -25 "$log" | sed 's/^/  | /'
+    elif [ "$n" -eq 0 ]; then
+        # The mutation-gate rule: a run that reached nothing is not a pass.
+        STATUS[$lang]=SILENT
+        REASON[$lang]="the suite asserted nothing"
+        failed=$((failed + 1))
+        echo "  FAIL — the suite ran and asserted nothing; the gate says nothing about $lang"
+        tail -15 "$log" | sed 's/^/  | /'
+    else
+        STATUS[$lang]=PASS
+        ran=$((ran + 1))
+        echo "  ok — $n checks"
+    fi
+done
+
+echo
+echo "===== summary"
+printf '%-12s %-7s %8s  %s\n' binding verdict checks note
+for lang in $langs; do
+    printf '%-12s %-7s %8s  %s\n' \
+        "$lang" "${STATUS[$lang]}" "${COUNT[$lang]}" "${REASON[$lang]:-}"
+done
+echo
+echo "$ran passed, $failed failed, $skipped skipped (log: $logs)"
+
+# A required binding that skipped is a failure. Without this a CI job whose
+# image lost a compiler would go on reporting green over a column it stopped
+# covering, which is the same silence this gate was built to end.
+for lang in $require; do
+    case "${STATUS[$lang]:-absent}" in
+        PASS) ;;
+        absent) echo "endpoints-gate: $lang is required and was not run" >&2; failed=$((failed+1)) ;;
+        SKIP) echo "endpoints-gate: $lang is required and its toolchain is absent (${REASON[$lang]})" >&2
+              failed=$((failed + 1)) ;;
+        *) ;;  # already counted
+    esac
+done
+
+[ "$failed" -eq 0 ] || status=1
+[ "$status" = 0 ] && echo "GATE OK"
+exit "$status"

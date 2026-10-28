@@ -18,7 +18,7 @@ ZeroDDS defines its own variant explicitly as
 [`docs/spec-coverage/zerodds-uds-transport-1.0.md`](../../docs/spec-coverage/zerodds-uds-transport-1.0.md).
 
 DDSI-RTPS conformance: the locator kind is the DDSI-RTPS 2.5 §9.4 vendor-
-reserved value `0x81000001` (in `crates/rtps/src/wire_types.rs`).
+reserved value `0x01F00002` (in `crates/rtps/src/wire_types.rs`).
 
 ## What this crate provides
 

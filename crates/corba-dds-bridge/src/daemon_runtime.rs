@@ -44,6 +44,9 @@ pub struct BridgeMetrics {
     pub dds_samples_out_total: Arc<Counter>,
     /// Wire errors.
     pub errors_total: Arc<Counter>,
+    /// The registry the families of spec §8.2 go into once the mappings are
+    /// known (`bridge_daemon::run`); `None` from [`Self::register`].
+    pub registry: Option<Arc<Registry>>,
 }
 
 impl BridgeMetrics {
@@ -79,6 +82,17 @@ impl BridgeMetrics {
             dds_samples_out_total: registry
                 .counter("zerodds_corba_dds_samples_out_total", Labels::new()),
             errors_total: registry.counter("zerodds_corba_errors_total", Labels::new()),
+            registry: None,
+        }
+    }
+
+    /// [`Self::register`], keeping the registry for the families of spec
+    /// §8.2 (`zerodds_corba_bridge_*`), which `bridge_daemon::run` registers
+    /// per mapping.
+    pub fn register_shared(registry: &Arc<Registry>) -> Self {
+        Self {
+            registry: Some(Arc::clone(registry)),
+            ..Self::register(registry)
         }
     }
 }

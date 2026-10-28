@@ -1,230 +1,243 @@
-# `zerodds-xcdr2-java` 1.0 -- Spec-Coverage
+# `zerodds-xcdr2-java` 1.0 — Spec-Coverage
 
-**Quelle:** `docs/specs/zerodds-xcdr2-java-1.0.md` (195 Zeilen) -- ZeroDDS Java TypeSupport-Codegen-Spec.
+**Quelle:** `internal/standards/cache/omg/dds-xtypes-1.3.pdf` (§7.2, §7.4) und `internal/standards/cache/omg/idl-4.2.pdf` (§7) — was die Java-Spalte beantwortet.
 
-Implementation:
+Der Mechanismus, den diese Spalte mit den zwanzig anderen teilt — die beiden Walks, die Rahmung, Table 9, der KeyHash und der Treiber —, steht in `zerodds-xcdr2-bindings-conformance-1.0.md`. Dieses Dokument führt nur, was die Java-Spalte selbst entscheidet, und ihre eigenen Nachweise.
 
-- `crates/java-omgdds/` — Java XCDR2-TypeSupport-Codegen.
+## §7.5.1 Die Teile der Spalte
 
-## §1 Motivation
+### §7.5.1 Der konkrete Syntaxbaum und seine Textform
 
-### §1 OMG-DDS-Java-PSM Marker-Interface ohne Methoden
+**Spec:** §7.5.1 — Plain Language Binding — die Abbildung auf die Zielsprache ist PSM-eigen. Die Deklarationen dieser Spalte werden als Baum gebaut und erst danach als Text geschrieben; kein Emitter setzt Quelltext zusammen.
 
-**Spec:** §1 -- "OMG DDS-Java-PSM 1.0 definiert `org.omg.dds.topic.TopicTypeSupport<T>` als Marker-Interface ohne konkrete Methoden -- das Marshalling bleibt User-Implementor oder Codegen-Output."
+**Repo:** `crates/lang-cst/src/java/`, `crates/lang-render/src/java.rs`
 
-**Repo:** Motivations-Text der Vendor-Spec.
-
-**Tests:** --
-
-**Status:** n/a (informative)
-
-## §2 TypeSupport-Pattern
-
-### §2 `org.zerodds.cdr.TopicTypeSupport<T>` extends OMG-Marker
-
-**Spec:** §2 -- Java-Interface mit `getTypeName`, `isKeyed`, `getExtensibility`, `encode(T)`, `encode(T, EndianMode)`, `decode(byte[])`, `decode(byte[], int, int)`, `keyHash(T)`. Plus enums `ExtensibilityKind {FINAL, APPENDABLE, MUTABLE}` und `EndianMode {LITTLE_ENDIAN, BIG_ENDIAN}`.
-
-**Repo:** `crates/java-omgdds/java/src/main/java/org/zerodds/cdr/TopicTypeSupport.java` (Interface mit allen Methoden, extends OMG-PSM Marker), `ExtensibilityKind.java`, `EndianMode.java`.
-
-**Tests:** `crates/java-omgdds/java/src/test/java/org/zerodds/cdr/Xcdr2WireVectorsTest.java` (16 V-Tests + weitere in `Xcdr2CodecTest`, `CoreTypesTest`).
+**Tests:** `crates/lang-render/tests/rendering.rs`: `a_java_class_renders_its_modifiers_annotations_and_members`, `a_java_enum_ends_its_constants_with_a_semicolon_only_when_members_follow`, `a_java_generic_type_renders_its_arguments_with_dots_in_the_path`, `a_java_file_writes_its_package_and_imports`;
+querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_output_with_exactly_one_newline`, `crates/lang-render/tests/rendering.rs::no_rendered_line_carries_trailing_whitespace`.
 
 **Status:** done
 
-## §3 Required API-Surface
+### §7.5.1 Der Regelkatalog
 
-### §3 `*TypeSupport` Singleton mit INSTANCE + 8 Members
+**Spec:** §7.5.1 — Plain Language Binding — die Abbildung auf die Zielsprache ist PSM-eigen. Was aus welchem Modellknoten wird, steht als Regelmenge und nicht als Sonderfall im Walk.
 
-**Spec:** §3 -- "MyTypeTypeSupport implements TopicTypeSupport<MyType> { INSTANCE, getTypeName, isKeyed, getExtensibility, encode/decode/keyHash }."
+**Repo:** `crates/lang-rules/src/rule/java.rs`
 
-**Repo:** `crates/idl-java/src/typesupport.rs::emit_struct_typesupport_class` emittiert exakt diese Form mit `public static final INSTANCE`.
-
-**Tests:** `crates/idl-java/tests/snapshot_codegen.rs` (11 tests), `crates/idl-java/tests/spec_conformance.rs` (29 tests).
-
-**Status:** done
-
-## §4 Codegen-Pflicht (idl-java)
-
-### §4 POJO + TypeSupport + Topic-Hook (Reflection oder ServiceLoader)
-
-**Spec:** §4 -- "Pro IDL-`struct` MUSS idl-java emittieren: 1) POJO MyType (existiert), 2) NEU: MyTypeTypeSupport implements TopicTypeSupport<MyType>, 3) NEU: Topic<MyType> resolved MyTypeTypeSupport.INSTANCE über Reflection ODER ServiceLoader-SPI in `META-INF/services/org.zerodds.cdr.TopicTypeSupport`."
-
-**Repo:** `crates/idl-java/src/typesupport.rs`. Topic-Hook via Reflection in `crates/java-omgdds/java/src/main/java/org/omg/dds/topic/Topic.java`.
-
-**Tests:** `crates/idl-java/tests/cluster_e.rs` (35 tests), `crates/idl-java/tests/rpc_codegen.rs` (35 tests).
+**Tests:** `crates/lang-rules/tests/apply.rs::every_language_catalogue_fires_on_the_same_model`,
+`crates/lang-rules/tests/apply.rs::every_catalogue_serialises_and_reads_back_the_same`
 
 **Status:** done
 
-### §4 Package = IDL-Modul-Pfad lowercase
+### §7.5.1 Der Materialisierer
 
-**Spec:** §4 -- "Generierter Code lebt im Package das dem IDL-Modul-Pfad entspricht."
+**Spec:** §7.5.1 — Plain Language Binding — die Abbildung auf die Zielsprache ist PSM-eigen. Der Materialisierer trägt die Eigenheiten der Sprache: Namens- und Schlüsselwortbehandlung, Kollisionen und das, was die Sprache gar nicht ausdrücken kann.
 
-**Repo:** `crates/idl-java/src/emitter.rs` Package-Path-Mapping.
+**Repo:** `crates/lang-rules/src/adapter/java.rs`
 
-**Tests:** V-7 Nested Modules Test in `Xcdr2WireVectorsTest.java`.
-
-**Status:** done
-
-## §5 Wire-Type-Mapping
-
-### §5 IDL-zu-Java-Typen + Wire-Layout
-
-**Spec:** §5, Tabelle 17 IDL-Typen → Java → XCDR2 LE. "Java hat keine `unsigned`-Typen -- Codegen nutzt nächst-größeren signed Type oder Helpers."
-
-**Repo:** `crates/idl-java/src/type_map.rs`, `crates/java-omgdds/java/src/main/java/org/zerodds/cdr/Xcdr2Writer.java`, `Xcdr2Reader.java`.
-
-**Tests:** V-3 Mixed Primitives + V-4 String + V-5/V-6 Sequences in `Xcdr2WireVectorsTest.java`; `crates/idl-java/tests/edge_cases.rs` (20 tests).
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_every_wired_language`
 
 **Status:** done
 
-## §6 Extensibility
+### §7.5.1 Das Codec-Backend
 
-### §6 Final / Appendable / Mutable Helpers
+**Spec:** §7.5.1 — Plain Language Binding — die Abbildung auf die Zielsprache ist PSM-eigen. Das Backend liefert die Schreibweise, in der die geteilte Kodierungsentscheidung in dieser Sprache steht — Empfänger, Methodenname, Argumentform.
 
-**Spec:** §6 -- "`Xcdr2Writer.beginAppendable()` / `beginMutable()` / `writeEmHeader(int id, int lc)` sind Helper-Methoden."
+**Repo:** `crates/lang-rules/src/emit/java.rs`
 
-**Repo:** `Xcdr2Writer.java` hält beginAppendable, beginMutable, writeEmHeader.
-
-**Tests:** V-9, V-10, V-11 in `Xcdr2WireVectorsTest.java`.
-
-**Status:** done
-
-## §7 Key-Extraction
-
-### §7 Md5 über MessageDigest + BE-Holder
-
-**Spec:** §7 -- "`org.zerodds.cdr.Md5` nutzt `java.security.MessageDigest.getInstance(MD5)`."
-
-**Repo:** `crates/java-omgdds/java/src/main/java/org/zerodds/cdr/Md5.java` wrapper. KeyHash-Codegen in `typesupport.rs`.
-
-**Tests:** V-8 in `Xcdr2WireVectorsTest.java`.
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_a_full_codec_in_every_wired_language`,
+`crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`
 
 **Status:** done
 
-## §8 Helper-Library `org.zerodds.cdr`
+### §7.5.1 Der Table-9-Defaulter
 
-### §8 TopicTypeSupport + Xcdr2Writer/Reader + enums + Md5 + XcdrException
+**Spec:** §7.5.1 — Plain Language Binding — die Abbildung auf die Zielsprache ist PSM-eigen. Ein Leser ohne Tab.9-Antwort hat an fünf Stellen keinen definierten Wert; diese Datei ist die Antwort dieser Spalte.
 
-**Spec:** §8, Tabelle 6 Klassen.
+**Repo:** `crates/lang-rules/src/default_java.rs`
 
-**Repo:** `crates/java-omgdds/java/src/main/java/org/zerodds/cdr/`: `TopicTypeSupport.java`, `Xcdr2Writer.java`, `Xcdr2Reader.java`, `ExtensibilityKind.java`, `EndianMode.java`, `Md5.java`, `XcdrException.java` -- 7 Files.
-
-**Tests:** `mvn test` -- 34 Tests grün über Pakete `org.zerodds.cdr`, `org.omg.dds`.
+**Tests:** `crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`
 
 **Status:** done
 
-### §8 JVM 17+ + Maven-Coordinates
+### §7.5.1 Die Wire-Laufzeit
 
-**Spec:** §8 -- "JVM 17+. Maven-Coordinates: `org.zerodds:cdr:1.0.0`."
+**Spec:** §7.5.1 — Plain Language Binding — die Abbildung auf die Zielsprache ist PSM-eigen. Die Laufzeit liest §7.4 eigenständig aus dem Klauseltext und ruft keine andere Spalte; dort liegt die Unabhängigkeit dieser Spalte.
 
-**Repo:** `pom.xml` source/target=17. Artifact-ID `cdr`-equivalent in zerodds-Group.
+**Repo:** `runtime/java`, Endpoint-SDK `endpoints/java`
 
-**Tests:** `mvn test` runtime auf JVM 17+.
-
-**Status:** done
-
-## §9 Conformance
-
-### §9 L1 Wire (V-1..V-12 byte-genau)
-
-**Spec:** §9 -- "L1 (Wire): `crates/java-omgdds/java/src/test/java/org/zerodds/cdr/Xcdr2WireVectorsTest.java` prüft V-1..V-12 byte-genau (`mvn test`)."
-
-**Repo:** `Xcdr2WireVectorsTest.java` mit 16 @Test-Methoden.
-
-**Tests:** `mvn test` -- alle grün.
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_runtime`,
+`crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_an_endpoint_sdk`
 
 **Status:** done
 
-### §9 L2 Codegen Snapshots
+## §7.2.2 Was diese Spalte selbst entscheidet
 
-**Spec:** §9 -- "L2 (Codegen): `crates/idl-java/tests/snapshots/` mit generierten *TypeSupport.java-Files."
+### §7.2.2.2 Jedes IDL-Primitiv erreicht den Java-Typ, der es hält
 
-**Repo:** `crates/idl-java/tests/snapshots/` + Treiber `snapshot_codegen.rs` (11 tests).
+**Spec:** §7.2.2.2 — Primitive Types — BOOLEAN, BYTE, INT8..UINT64, FLOAT32, FLOAT64, FLOAT128, CHAR8, CHAR16; jede Breite ist festgelegt.
 
-**Tests:** dito.
+**Repo:** `crates/lang-rules/src/adapter/java.rs`
 
-**Status:** done
-
-### §9 L3 Cross-Lang Runner
-
-**Spec:** §9 -- "L3 (Cross-Lang): `crates/conformance/tests/cross_language_xcdr2.rs` ruft `mvn -pl conformance-runner exec:exec`."
-
-**Repo:** `crates/conformance/tests/cross_language_xcdr2.rs::l3_5_java_binding` ruft `mvn test` der java-omgdds Wire-Vector-Suite per Subprocess gegen identische V-1..V-12-Hex-Fixtures.
-
-**Tests:** `crates/conformance/tests/cross_language_xcdr2.rs::l3_5_java_binding`.
+**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::every_idl_primitive_reaches_the_java_type_that_holds_it`
 
 **Status:** done
 
-### §9 L4 Cross-Vendor
+### IDL 4.2 §7.4.13 `fixed` wird ein `BigDecimal`
 
-**Spec:** §9 -- "L4 (Cross-Vendor): Java-encoded XCDR2-Bytes werden vom Cyclone-Subscriber dekodiert; Wire-Form-Compliance prüfbar via byte-identische Fixtures."
 
-**Repo:** Alle 12 Vektoren wurden live gegen Cyclone DDS 0.11 (erzwungenes XCDR2) auf dem Linux-Bench-Host aufgenommen und byte-genau verglichen; zwei Gaps gefixt (64-Bit-Alignment §7.4.1.1.1, Sequence-DHEADER §7.4.3.5 für nicht-primitive Elemente). Der Java-Encoder ist byte-verifiziert: `Xcdr2WireVectorsTest.java` (`mvn test`, 16/16) prüft V-1..V-12 byte-genau inkl. V-6 `sequence<string>`-DHEADER (`beginAppendable`/`endDelimited`/`readDHeader`). V-10/V-11a konforme LC-Divergenz.
+**Spec:** IDL 4.2 §7.4.13 — `fixed<P,S>` — eine Dezimalzahl mit deklarierter Stellenzahl und Skalierung.
 
-**Tests:** `crates/java-omgdds/java/.../Xcdr2WireVectorsTest.java` (mvn, 16/16) + `crates/cdr/tests/xcdr2_cross_vendor_fixtures.rs` (15 Tests).
+**Repo:** `crates/lang-rules/src/adapter/java.rs`
 
-**Status:** done -- Java-Encoder byte-genau gegen Cyclone DDS 0.11 (V-1..V-9/V-11b, mvn-ausgeführt), mutable V-10/V-11a konforme LC-Divergenz.
-
-## §10 Examples
-
-### §10 TopicTypedSmoke.java
-
-**Spec:** §10 -- "`crates/java-omgdds/java/examples/TopicTypedSmoke.java` ist Referenz-Smoke (generierter PointTypeSupport + Pub/Sub-Loop)."
-
-**Repo:** `crates/java-omgdds/java/examples/TopicTypedSmoke.java`. Compile via `javac -cp target/omgdds-0.0.0.jar examples/TopicTypedSmoke.java` und Lauf via `java -cp ...:omgdds.jar examples.TopicTypedSmoke` -> Encode/Decode-Roundtrip OK.
-
-**Tests:** Manueller Run wie oben dokumentiert; Pub/Sub-Loop-Coverage zusätzlich durch `PubSubLoopbackTest.java`.
+**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::a_fixed_is_a_bigdecimal`, `crates/lang-rules/tests/java_runtime_selftest.rs`
 
 **Status:** done
 
-### §10 sync + async Deep-Examples + Quickstart
+### §7.2.2.4.3 Sequenz und Array sind beide Java-Arrays
 
-**Spec:** §10 -- lauffähige sync/async Deep-Examples (Sensor-Telemetrie `Reading{id,value,label}`).
+**Spec:** §7.2.2.4.3 — Sequence — eindimensional, Schranke optional.
 
-**Repo:** `endpoints/java/ExampleSync.java` (Poll-Loop), `endpoints/java/ExampleAsync.java` (Reader-Thread + `BlockingQueue`), `endpoints/java/QUICKSTART.md`.
+**Repo:** `crates/lang-rules/src/adapter/java.rs`
 
-**Tests:** CI-Job `endpoints-java` (neu) → `javac *.java` + `java ExampleSync|ExampleAsync`; codepit-verifiziert (JDK 21, 5/5 Feld-Decode, byte-identisch via `Zdw`).
-
-**Status:** done
-
-## §11 Errata + Open-Questions
-
-### §11.1 Java byte ist signed
-
-**Spec:** §11.1 -- "Wire-Bytes sind uint8-semantisch. Helper-Methoden bieten `writeUInt8(int v)` / `readUInt8(): int` mit Range-Checks."
-
-**Repo:** `Xcdr2Writer.java` hält writeUInt8/readUInt8 mit Range-Check.
-
-**Tests:** Wire-Vector-Tests verwenden uint8-Pfad.
+**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::a_sequence_and_an_array_are_both_java_arrays`
 
 **Status:** done
 
-### §11.2 Auto-boxing in Sequences
+### §7.2.2.4.3 Eine `map` wird eine Klasse über `java.util.LinkedHashMap`; zwei IDL-Formen bleiben zwei Klassen
 
-**Spec:** §11.2 -- "List<Integer> boxes; für Performance bietet Helper auch `int[]`-Encoding-Path (`writeInt32Array(int[])`)."
 
-**Repo:** `Xcdr2Writer.java::writeInt32Array(int[])`.
+**Spec:** §7.2.2.4.3 — Map — Key/Value-Paare; §7.4.3.5.3 Regeln 11-16 legen Reihenfolge und Rahmung fest.
 
-**Tests:** V-5 Test nutzt `writeInt32Array`.
+**Repo:** `crates/lang-rules/src/adapter/java.rs`
 
-**Status:** done
-
-### §11.3 Optional ist nicht serializable
-
-**Spec:** §11.3 -- "Generierter `Optional<T>`-Member nutzt nullable-Field intern; Encoder testet `Objects.nonNull` statt `Optional.isPresent()`."
-
-**Repo:** `crates/idl-java/src/typesupport.rs` emit nullable-field-Pattern.
-
-**Tests:** V-11 (Optional Mutable) in `Xcdr2WireVectorsTest.java`.
+**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::a_map_is_a_java_util_map_over_a_generated_entry_class`,
+`crates/lang-rules/src/adapter/java.rs::tests::two_maps_of_one_shape_are_one_entry_class`,
+`crates/lang-rules/src/adapter/java.rs::tests::two_maps_of_one_java_shape_and_two_idl_shapes_are_two_entry_classes`
 
 **Status:** done
 
-### §11.4 Records vs POJOs
+### §7.2.2.4.4.4.7 Ein optionales Member wird geboxt, auch ein primitives
 
-**Spec:** §11.4 -- "IDL-`struct` → Java `record` ist optional via `@RecordClass`-Annotation; default ist POJO mit Getter/Setter (DDS-Java-PSM-Konvention)."
+**Spec:** §7.2.2.4.4.4.7 — Ein Struct-Member darf optional sein; ein Union-Member nie.
 
-**Repo:** `crates/idl-java/src/emitter.rs` POJO-Default; `@RecordClass`-Pfad als alternative Form.
+**Repo:** `crates/lang-rules/src/adapter/java.rs`
 
-**Tests:** Snapshot-Tests für beide Formen in `snapshot_codegen.rs`.
+**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::an_optional_member_is_boxed_and_a_primitive_one_too`
+
+**Status:** done
+
+### §7.2.2.4.1.1 Eine Enumeration wird eine Klasse mit `int`-Konstanten; ein Member davon ist eine Instanz
+
+
+**Spec:** §7.2.2.4.1.1 — Enumeration — Int32-Literale, geordnet, `bit_bound` 1..32.
+
+**Repo:** `crates/lang-rules/src/adapter/java.rs`
+
+**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::an_enumeration_is_a_class_of_instances_and_a_member_of_it_is_one`,
+`crates/lang-rules/src/adapter/java.rs::tests::an_explicit_enumerator_value_is_written_out`
+
+**Status:** done
+
+### IDL 4.2 §7.5.2 `module` wird eine geschachtelte Klasse; ein wiedereröffnetes Modul bleibt eine Klasse
+
+**Spec:** IDL 4.2 §7.5.2 — `module` ist ein Naming-Scope; ein Identifier ist je Scope einmalig.
+
+**Repo:** `crates/lang-rules/src/adapter/java.rs`
+
+**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::a_module_is_a_nested_class_and_two_modules_do_not_collide`,
+`crates/lang-rules/src/adapter/java.rs::tests::a_module_reopened_beside_a_nested_one_is_one_class`,
+`crates/lang-rules/src/adapter/java.rs::tests::a_declaration_named_after_the_outer_class_is_refused`
+
+**Status:** done
+
+### IDL 4.2 §7.2.3 Ein Java-Keyword wird entschärft; ein Name, der die qualifizierten Verweise fangen würde, wird abgelehnt
+
+**Spec:** IDL 4.2 §7.2.3 — Identifier sind ASCII und beim Vergleich case-insensitiv; eine Kollision muss gemeldet werden.
+
+**Repo:** `crates/lang-rules/src/adapter/java.rs`
+
+**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::an_identifier_that_is_a_java_keyword_is_escaped`,
+`crates/lang-rules/src/adapter/java.rs::tests::a_name_that_would_capture_the_qualified_references_is_refused`
+
+**Status:** done
+
+### §7.4.3 Der Java-Backend buchstabiert die Formen, die der Materialisierer deklariert; ein unsigned Local ist breit genug
+
+**Spec:** §7.4.3 — XCDR Version 2 — Plain CDR2, Delimited CDR2 und PL_CDR2.
+
+**Repo:** `crates/lang-rules/src/emit/java.rs`
+
+**Tests:** `crates/lang-rules/tests/one_walk_two_targets.rs::the_java_backend_spells_the_shapes_the_materialiser_declares`,
+`crates/lang-rules/tests/one_walk_two_targets.rs::an_unsigned_local_is_wide_enough_in_java`
+
+**Status:** done
+
+### IDL 4.2 §7.4.3 `interface` bindet dieselben Entities wie C++, mit `Future` und Out-Typen
+
+**Spec:** IDL 4.2 §7.4.3 — `interface` — Operationen mit `in`/`out`/`inout`-Parametern.
+
+**Repo:** `crates/lang-rules/src/adapter/interface.rs`
+
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::java_declares_the_same_entities_as_cpp`,
+`crates/lang-rules/tests/interface_bindings.rs::java_returns_a_future_of_the_boxed_result`,
+`crates/lang-rules/tests/interface_bindings.rs::java_returns_the_out_type_where_cpp_takes_a_reference`,
+`crates/lang-rules/tests/interface_bindings.rs::java_carries_the_topic_names_as_constants`
+
+**Status:** done
+
+## §7.3.1 Woran die Spalte gehalten wird
+
+### §7.3.1 Jeder Korpusfall rendert oder benennt die Schicht, die ihn abgelehnt hat
+
+**Spec:** §7.3.1 — Jeder Korpusfall rendert oder benennt die Schicht, die ihn abgelehnt hat. Ein Fall, der zu rendern aufhört, würde sonst erst von der nächsten Messung gefunden — ein Build-Verzeichnis vom Konstrukt entfernt, das ihn verursacht hat.
+
+**Repo:** `crates/lang-rules/src/emit/java.rs`, `crates/lang-rules/src/adapter/java.rs`
+
+**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::every_corpus_case_renders_or_names_its_failure`
+
+**Status:** done
+
+### §7.4 Ein Konstrukt ohne Datenform in dieser Sprache wird benannt und nicht ausgelassen
+
+**Spec:** §7.4 — Ein Konstrukt ohne Datenform in dieser Sprache wird benannt und nicht ausgelassen. Ein stillschweigend ausgelassenes Konstrukt ist die schlimmste Fehlerklasse: der Empfänger sieht keinen Fehler, sondern falsche Daten.
+
+**Repo:** `crates/lang-rules/src/emit/java.rs`, `crates/lang-rules/src/adapter/java.rs`
+
+**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::a_construct_with_no_java_data_form_is_named_and_not_left_out`
+
+**Status:** done
+
+### §7.2.2.4.8 `@verbatim` landet an den Stellen, die die Klausel für diese Sprache nennt
+
+**Spec:** §7.2.2.4.8 — `@verbatim` landet an den Stellen, die die Klausel für diese Sprache nennt.
+
+**Repo:** `crates/lang-rules/src/emit/java.rs`, `crates/lang-rules/src/adapter/java.rs`
+
+**Tests:** `crates/lang-rules/tests/verbatim_end_to_end.rs::java_wraps_the_file_and_fills_the_class_body`
+
+**Status:** done
+
+## §7.3.1 Treiber und Messung
+
+### §7.3.1 `idlc generate --lang java`
+
+**Spec:** §7.3.1 — die IDL-Type-Representation ist die Eingabe der Erzeugung; die Ausgabe ist die Quelle dieser Spalte.
+
+**Repo:** `tools/idlc/src/generate.rs`, `tools/idlc/src/main.rs`
+
+**Tests:** `tools/idlc/src/generate.rs::tests::every_language_round_trips_through_its_own_name`,
+`tools/idlc/src/generate.rs::tests::language_names_lists_every_language_once`
+
+**Status:** done
+
+### §7.4 Der Messaufbau dieser Spalte
+
+**Spec:** §7.4 — die Oktette einer Spalte werden gegen aufgezeichnete Oktette verglichen und nicht in ihren eigenen Tests behauptet.
+
+**Repo:** `tools/wireprobe/wireprobe-zerodds-java-gen/`, `tools/wireprobe/wireprobe-zerodds-java`, `tools/wireprobe/wireprobe-java-corpus`
+
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_cell_generator`,
+`crates/lang-rules/tests/every_language_has_its_parts.rs::every_cell_generator_guards_against_a_missing_toolchain`
 
 **Status:** done
 
@@ -232,6 +245,8 @@ Implementation:
 
 ## Audit-Status
 
-18 done / 0 partial / 0 open / 1 n/a (informative) / 0 n/a (rejected).
+21 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
 
-Test-Lauf: `cargo test -p zerodds-idl-java` -- 9 Test-Binaries grün (106 unit + 35+12+20+14+35+11+29 integration); `mvn test` -- 34 Tests grün; `cargo test -p zerodds-conformance --test cross_language_xcdr2 l3_5_java_binding` -- 1 Test grün; `cargo test -p zerodds-cdr --test xcdr2_cross_vendor_fixtures` -- 15 Tests grün; `javac+java crates/java-omgdds/java/examples/TopicTypedSmoke.java` -- OK.
+Test-Lauf: `cargo test -p zerodds-lang-rules` — 1024 Tests grün, 0 failed (20 ignoriert: die Vollkorpus-Compile-Läufe, die `--include-ignored` verlangen).
+
+Offene Punkte: keine. Decision-Records: keine.

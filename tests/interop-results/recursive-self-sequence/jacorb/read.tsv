@@ -1,0 +1,14 @@
+# What jacorb got back when it read the bytes of recursive-self-sequence, held against
+# tests/interop-corpus/recursive-self-sequence/values.json and never against another
+# column's reading of the same bytes.
+# encoding	endian	verdict	detail
+plain-cdr1	le	no-form	m::Node.children: a recursive type, which CORBA CDR frames its own way
+plain-cdr1	be	no-form	m::Node.children: a recursive type, which CORBA CDR frames its own way
+pl-cdr1	le	no-form	m::Node.children: a recursive type, which CORBA CDR frames its own way
+pl-cdr1	be	no-form	m::Node.children: a recursive type, which CORBA CDR frames its own way
+plain-cdr2	le	no-form	m::Node.children: a recursive type, which CORBA CDR frames its own way
+plain-cdr2	be	no-form	m::Node.children: a recursive type, which CORBA CDR frames its own way
+delimited-cdr	le	no-form	m::Node.children: a recursive type, which CORBA CDR frames its own way
+delimited-cdr	be	no-form	m::Node.children: a recursive type, which CORBA CDR frames its own way
+pl-cdr2	le	no-form	m::Node.children: a recursive type, which CORBA CDR frames its own way
+pl-cdr2	be	no-form	m::Node.children: a recursive type, which CORBA CDR frames its own way

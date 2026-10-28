@@ -894,6 +894,62 @@ mod tests {
         roundtrip(AmqpExtValue::Char('🎉'));
     }
 
+    /// Spec `dds-amqp-1.0` §7.1.4.2: an IDL `wchar` maps to the AMQP
+    /// `char`, "a 4-octet UCS-4 code point" on the wire. The format code
+    /// plus exactly four big-endian octets of the code point — measured,
+    /// not round-tripped, because a round trip would also pass on a
+    /// little-endian pair of encoder and decoder.
+    #[test]
+    fn char_is_four_octet_ucs4_big_endian() {
+        for c in ['A', 'ä', '🎉', '\u{10FFFF}'] {
+            let bytes = AmqpExtValue::Char(c).encode().expect("encode");
+            assert_eq!(bytes.len(), 5, "1 format code + 4 octets for {c:?}");
+            assert_eq!(bytes[0], codes::CHAR);
+            assert_eq!(&bytes[1..], &u32::from(c).to_be_bytes(), "{c:?}");
+        }
+        // 'A' spelled out: U+0041 as UCS-4, high octets first.
+        assert_eq!(
+            AmqpExtValue::Char('A').encode().expect("encode"),
+            alloc::vec![codes::CHAR, 0x00, 0x00, 0x00, 0x41]
+        );
+    }
+
+    /// Spec `dds-amqp-1.0` §7.1.3: "all AMQP multi-byte values are
+    /// big-endian", while the XCDR2 source data is little-endian. Every
+    /// multi-octet primitive, checked against `to_be_bytes` of its own
+    /// value rather than against a round trip.
+    #[test]
+    fn every_multi_octet_primitive_is_big_endian_on_the_wire() {
+        let ushort = AmqpExtValue::Ushort(0x1234).encode().expect("encode");
+        assert_eq!(&ushort[1..], &0x1234_u16.to_be_bytes());
+
+        let uint = AmqpExtValue::Uint(0x1122_3344).encode().expect("encode");
+        assert_eq!(&uint[1..], &0x1122_3344_u32.to_be_bytes());
+
+        let short = AmqpExtValue::Short(-2).encode().expect("encode");
+        assert_eq!(&short[1..], &(-2_i16).to_be_bytes());
+
+        let int = AmqpExtValue::Int(i32::MIN).encode().expect("encode");
+        assert_eq!(&int[1..], &i32::MIN.to_be_bytes());
+
+        let float = AmqpExtValue::Float(-1.5).encode().expect("encode");
+        assert_eq!(&float[1..], &(-1.5_f32).to_be_bytes());
+
+        let double = AmqpExtValue::Double(-1.5).encode().expect("encode");
+        assert_eq!(&double[1..], &(-1.5_f64).to_be_bytes());
+
+        let ts = AmqpExtValue::Timestamp(0x0102_0304_0506_0708)
+            .encode()
+            .expect("encode");
+        assert_eq!(&ts[1..], &0x0102_0304_0506_0708_i64.to_be_bytes());
+
+        // The high octet leads in every one of them — a little-endian
+        // encoder would put 0x34 first here.
+        assert_eq!(ushort[1], 0x12);
+        assert_eq!(uint[1], 0x11);
+        assert_eq!(ts[1], 0x01);
+    }
+
     #[test]
     fn timestamp_round_trips_negative() {
         roundtrip(AmqpExtValue::Timestamp(-1));

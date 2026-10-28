@@ -18,7 +18,7 @@
 //!      (the original bug — guarded so it can't silently come back).
 //!
 //! Linux-only: macOS multicast loopback is unreliable for SPDP (see
-//! `same_host_e2e.rs`). Run on codepit.
+//! `same_host_e2e.rs`). Run on the Linux test host.
 
 #![cfg(all(target_os = "linux", feature = "std"))]
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
@@ -28,9 +28,6 @@ use std::time::{Duration, Instant};
 
 use zerodds_dcps::runtime::{
     DcpsRuntime, RuntimeConfig, UserReaderConfig, UserSample, UserWriterConfig,
-};
-use zerodds_qos::{
-    DeadlineQosPolicy, DurabilityKind, LifespanQosPolicy, LivelinessQosPolicy, OwnershipKind,
 };
 use zerodds_rtps::wire_types::{EntityId, GuidPrefix};
 
@@ -42,22 +39,7 @@ fn writer_config(topic: &str, type_name: &str) -> UserWriterConfig {
     UserWriterConfig {
         topic_name: topic.into(),
         type_name: type_name.into(),
-        reliable: true,
-        durability: DurabilityKind::Volatile,
-        deadline: DeadlineQosPolicy::default(),
-        latency_budget: Default::default(),
-        destination_order: Default::default(),
-        lifespan: LifespanQosPolicy::default(),
-        liveliness: LivelinessQosPolicy::default(),
-        ownership: OwnershipKind::Shared,
-        ownership_strength: 0,
-        presentation: Default::default(),
-        partition: vec![],
-        user_data: vec![],
-        topic_data: vec![],
-        group_data: vec![],
-        type_identifier: zerodds_types::TypeIdentifier::None,
-        data_representation_offer: None,
+        ..Default::default()
     }
 }
 
@@ -67,21 +49,7 @@ fn reader_config(topic: &str, type_name: &str) -> UserReaderConfig {
     UserReaderConfig {
         topic_name: topic.into(),
         type_name: type_name.into(),
-        reliable: true,
-        durability: DurabilityKind::Volatile,
-        deadline: DeadlineQosPolicy::default(),
-        latency_budget: Default::default(),
-        destination_order: Default::default(),
-        liveliness: LivelinessQosPolicy::default(),
-        ownership: OwnershipKind::Shared,
-        presentation: Default::default(),
-        partition: vec![],
-        user_data: vec![],
-        topic_data: vec![],
-        group_data: vec![],
-        type_identifier: zerodds_types::TypeIdentifier::None,
-        type_consistency: zerodds_types::qos::TypeConsistencyEnforcement::default(),
-        data_representation_offer: None,
+        ..Default::default()
     }
 }
 
@@ -136,7 +104,7 @@ fn two_runtimes(domain: i32) -> (Arc<DcpsRuntime>, Arc<DcpsRuntime>) {
     let prefix_a = GuidPrefix::from_bytes([0xA1; 12]);
     let prefix_b = {
         let mut p = [0xB2; 12];
-        p[..4].copy_from_slice(&prefix_a.to_bytes()[..4]); // same host-id
+        p[..6].copy_from_slice(&prefix_a.to_bytes()[..6]); // same vendor and host id
         GuidPrefix::from_bytes(p)
     };
     let rt_a = DcpsRuntime::start(domain, prefix_a, RuntimeConfig::default()).expect("rt_a");
@@ -155,7 +123,7 @@ fn two_runtimes(domain: i32) -> (Arc<DcpsRuntime>, Arc<DcpsRuntime>) {
 /// The fix: a reader announcing the writer's real type follows it end-to-end.
 #[test]
 fn type_following_reader_matches_typed_writer() {
-    let (rt_a, rt_b) = two_runtimes(141);
+    let (rt_a, rt_b) = two_runtimes(common::unique_domain());
 
     let writer_eid = rt_a
         .register_user_writer(writer_config(TOPIC, TYPED))
@@ -201,7 +169,7 @@ fn type_following_reader_matches_typed_writer() {
 /// The original bug, guarded: a RawBytes reader must NOT match a typed writer.
 #[test]
 fn rawbytes_reader_does_not_match_typed_writer() {
-    let (rt_a, rt_b) = two_runtimes(142);
+    let (rt_a, rt_b) = two_runtimes(common::unique_domain());
 
     let _writer_eid = rt_a
         .register_user_writer(writer_config(TOPIC, TYPED))
@@ -222,3 +190,8 @@ fn rawbytes_reader_does_not_match_typed_writer() {
         "REGRESSION: a RawBytes reader matched a cuas::Track writer — type-name gate is broken"
     );
 }
+
+/// Leases a DDS domain no other process on this host holds — the
+/// domain number is the UDP port number, so it is a host-wide resource.
+#[path = "common/mod.rs"]
+mod common;

@@ -57,7 +57,7 @@
 //! behavior of atomic operations across process boundaries when both
 //! processes map the same address.
 
-#![cfg_attr(not(feature = "std"), no_std)]
+// Needs `std`: shared memory is an operating-system service (shared_memory, libc).
 #![warn(missing_docs)]
 
 #[cfg(feature = "alloc")]
@@ -68,3 +68,10 @@ pub mod posix;
 
 #[cfg(feature = "std")]
 pub use posix::{PosixShmError, PosixShmTransport, ShmConfig, ShmRole};
+
+#[cfg(feature = "std")]
+pub mod bell;
+mod mapping;
+
+#[cfg(feature = "std")]
+pub use bell::ShmDoorbell;

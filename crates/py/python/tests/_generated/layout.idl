@@ -1,0 +1,41 @@
+// SPDX-License-Identifier: Apache-2.0
+// XCDR2 canonical-layout regression (Bug XW cross-PSM convergence): the
+// exact bytes pin the spec framing so the runtime cannot regress.
+// Cross-vendor-validated golden: internal/idl-codegen/xcdr2-canonical-layout.md.
+module x {
+  @final
+  struct AlignProbe {
+    octet a;
+    unsigned long b;
+    double c;
+  };
+
+  @appendable
+  struct App {
+    long a;
+    long b;
+  };
+
+  @final
+  struct Fin {
+    long a;
+  };
+
+  @final
+  struct Pair {
+    long seq;
+    double value;
+  };
+
+  @appendable
+  struct Holder {
+    sequence<Pair> hist;
+    long win[3];
+  };
+
+  @final
+  struct Opt {
+    octet tag;
+    @optional double cal;
+  };
+};

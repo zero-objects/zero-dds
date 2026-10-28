@@ -1,0 +1,40 @@
+[package]
+name = "zerodds-wire-codec"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Executes an ast-layout plan against a value, in both directions, over any value representation"
+homepage = "https://zerodds.org"
+keywords = ["dds", "xcdr", "cdr", "serialization", "codec"]
+categories = ["encoding", "network-programming"]
+
+[lib]
+name = "zerodds_wire_codec"
+path = "src/lib.rs"
+
+[lints]
+workspace = true
+
+[features]
+default = ["serde-json"]
+# The `serde_json::Value` implementation of the two traits. It belongs
+# with `zerodds-wire-probe`, which is the crate that reads value files;
+# the orphan rule puts it here, so it is a feature rather than a
+# dependency every caller takes.
+serde-json = ["dep:serde_json"]
+
+[dependencies]
+zerodds-float128 = { path = "../float128", version = "1.0.0-rc.7" }
+zerodds-ast = { path = "../ast", version = "1.0.0-rc.7" }
+zerodds-ast-core = { path = "../ast-core", version = "1.0.0-rc.7" }
+zerodds-ast-layout = { path = "../ast-layout", version = "1.0.0-rc.7" }
+zerodds-wire = { path = "../wire", version = "1.0.0-rc.7" }
+serde_json = { version = "1.0", optional = true }
+
+[dev-dependencies]
+# The tests build a value and read one back; the crate's own
+# `serde-json` feature supplies the `Source`/`Sink` pair they use.
+serde_json = "1.0"

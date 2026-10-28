@@ -1,66 +1,79 @@
-// SPDX-License-Identifier: Apache-2.0
+/* Copyright 2010, Object Management Group, Inc.
+ * Copyright 2010, PrismTech, Inc.
+ * Copyright 2010, Real-Time Innovations, Inc.
+ * All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.omg.dds.core;
 
-import java.util.Arrays;
-import java.util.Objects;
+import java.io.Serializable;
+
 
 /**
- * OMG DDS Java-PSM InstanceHandle_t — Spec §7.2.5.
- *
- * <p>Opaque 16-byte instance handle.
+ * An opaque handle that can be used to refer to a local or remote entity.
  */
-public final class InstanceHandle {
-    public static final InstanceHandle NIL = new InstanceHandle(new byte[16]);
+public abstract class InstanceHandle
+implements Comparable<InstanceHandle>, Serializable, DDSObject
+{
+    // -----------------------------------------------------------------------
+    // Private Constants
+    // -----------------------------------------------------------------------
 
-    private final byte[] bytes;
+    private static final long serialVersionUID = 4987266126475078295L;
 
-    private InstanceHandle(byte[] bytes) {
-        if (bytes.length != 16) {
-            throw new IllegalArgumentException("InstanceHandle must be 16 bytes, got " + bytes.length);
-        }
-        this.bytes = bytes.clone();
+
+
+    // -----------------------------------------------------------------------
+    // Factory Methods
+    // -----------------------------------------------------------------------
+
+    /**
+     * @param env       Identifies the Service instance to which the new
+     *                  object will belong.
+     */
+    public static ModifiableInstanceHandle newInstanceHandle(
+            ServiceEnvironment env)
+    {
+        return env.getSPI().newInstanceHandle();
     }
 
-    public static InstanceHandle from(byte[] bytes) {
-        return new InstanceHandle(bytes);
+
+    /**
+     * @param env       Identifies the Service instance to which the
+     *                  object will belong.
+     * 
+     * @return  An unmodifiable nil instance handle.
+     */
+    public static InstanceHandle nilHandle(ServiceEnvironment env)
+    {
+        return env.getSPI().nilHandle();
     }
 
-    public byte[] bytes() {
-        return bytes.clone();
-    }
 
-    public boolean isNil() {
-        for (byte b : bytes) {
-            if (b != 0) return false;
-        }
-        return true;
-    }
 
-    @Override
-    public boolean equals(Object o) {
-        if (this == o) return true;
-        if (!(o instanceof InstanceHandle)) return false;
-        InstanceHandle other = (InstanceHandle) o;
-        return Arrays.equals(bytes, other.bytes);
-    }
+    // -----------------------------------------------------------------------
+    // Instance Methods
+    // -----------------------------------------------------------------------
 
-    @Override
-    public int hashCode() {
-        return Objects.hash((Object[]) toBoxed(bytes));
-    }
+    public abstract boolean isNil();
 
-    private static Byte[] toBoxed(byte[] arr) {
-        Byte[] out = new Byte[arr.length];
-        for (int i = 0; i < arr.length; i++) out[i] = arr[i];
-        return out;
-    }
 
-    @Override
-    public String toString() {
-        StringBuilder sb = new StringBuilder("InstanceHandle(");
-        for (byte b : bytes) {
-            sb.append(String.format("%02X", b));
-        }
-        return sb.append(')').toString();
-    }
+    // --- Modification: -----------------------------------------------------
+
+    /**
+     * @return  a modifiable copy of this object's state.
+     */
+    public abstract ModifiableInstanceHandle modifiableCopy();
 }

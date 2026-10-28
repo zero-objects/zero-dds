@@ -202,6 +202,25 @@ export class QosScope {
 }
 
 const EMPTY_BYTES = { value: null, value_len: 0 };
+// DDS-XTypes 1.3 Annex D: the policies are left at their defaults.
+const DEFAULT_DATA_REPRESENTATION = { is_set: 0, count: 0, ids: new Array<number>(8).fill(0) };
+const DEFAULT_TYPE_CONSISTENCY = {
+  is_set: 0,
+  kind: 0,
+  ignore_sequence_bounds: 0,
+  ignore_string_bounds: 0,
+  ignore_member_names: 0,
+  prevent_type_widening: 0,
+  force_type_validation: 0,
+};
+// DDS-Security 1.2 §7.3.21: no property entries and no tags.
+const EMPTY_PROPERTY = {
+  entries: null,
+  entries_len: 0,
+  binary_entries: null,
+  binary_entries_len: 0,
+};
+const EMPTY_DATA_TAGS = { tags: null, tags_len: 0 };
 const DEFAULT_LATENCY = { duration: DURATION_ZERO };
 const DEFAULT_PRESENTATION = { access_scope: 0, coherent_access: false, ordered_access: false };
 const DEFAULT_RESOURCE_LIMITS = {
@@ -255,6 +274,9 @@ export function buildDataWriterQosBuffer(
     user_data: EMPTY_BYTES,
     topic_data: EMPTY_BYTES,
     group_data: EMPTY_BYTES,
+    data_representation: DEFAULT_DATA_REPRESENTATION,
+    property: EMPTY_PROPERTY,
+    data_tags: EMPTY_DATA_TAGS,
   });
   return buf;
 }
@@ -289,6 +311,10 @@ export function buildDataReaderQosBuffer(
     user_data: EMPTY_BYTES,
     topic_data: EMPTY_BYTES,
     group_data: EMPTY_BYTES,
+    data_representation: DEFAULT_DATA_REPRESENTATION,
+    type_consistency: DEFAULT_TYPE_CONSISTENCY,
+    property: EMPTY_PROPERTY,
+    data_tags: EMPTY_DATA_TAGS,
   });
   return buf;
 }
@@ -324,6 +350,7 @@ export function buildTopicQosBuffer(q: TopicQos, scope: QosScope): Buffer {
     lifespan: { duration: DURATION_INFINITE },
     ownership: { kind: q.ownership.kind >>> 0 },
     topic_data: EMPTY_BYTES,
+    data_representation: DEFAULT_DATA_REPRESENTATION,
   });
   return buf;
 }

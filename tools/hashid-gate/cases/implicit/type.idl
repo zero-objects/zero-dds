@@ -1,0 +1,5 @@
+@mutable struct Sample {
+    @hashid long alpha;
+    @hashid long beta;
+    long plain;
+};

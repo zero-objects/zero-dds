@@ -1,0 +1,1 @@
+module m { @appendable struct Base { long a; }; @appendable struct Mid : Base { long b; }; @appendable struct Leaf : Mid { long c; }; };

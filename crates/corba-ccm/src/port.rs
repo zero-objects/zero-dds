@@ -6,11 +6,15 @@
 //! Spec §8.1.4: each component instance has a connection table
 //! that binds ports to concrete object references or event streams.
 
+#[cfg(feature = "std")]
 use alloc::collections::BTreeMap;
 use alloc::string::String;
+#[cfg(feature = "std")]
 use alloc::vec::Vec;
+#[cfg(feature = "std")]
 use core::sync::atomic::{AtomicU64, Ordering};
 
+#[cfg(feature = "std")]
 use std::sync::Mutex;
 
 /// Connection ID — assigned by the container (spec §8.1.4.5).
@@ -26,6 +30,7 @@ pub struct EventStream {
     pub connection_id: ConnectionId,
 }
 
+#[cfg(feature = "std")]
 #[derive(Debug, Default)]
 struct PortRegistryInner {
     receptacle_connections: BTreeMap<(String, String), Vec<ConnectionId>>,
@@ -34,12 +39,14 @@ struct PortRegistryInner {
 }
 
 /// Port registry per component instance.
+#[cfg(feature = "std")]
 #[derive(Debug, Default)]
 pub struct PortRegistry {
     inner: Mutex<PortRegistryInner>,
     seq: AtomicU64,
 }
 
+#[cfg(feature = "std")]
 impl PortRegistry {
     /// Constructor.
     #[must_use]

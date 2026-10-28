@@ -128,6 +128,17 @@ let cfg = UserWriterConfig {
         kind: LivelinessKind::Automatic,
         lease_duration: Duration::from_secs(2),
     },
+    latency_budget: LatencyBudgetQosPolicy {
+        duration: Duration::from_millis(10),
+    },
+    destination_order: DestinationOrderQosPolicy {
+        kind: DestinationOrderKind::BySourceTimestamp,
+    },
+    presentation: PresentationQosPolicy {
+        access_scope: PresentationAccessScope::Topic,
+        coherent_access: true,
+        ordered_access: true,
+    },
     ownership: OwnershipKind::Exclusive,
     ownership_strength: 100,
     partition: vec!["sensor.*".into()],
@@ -139,7 +150,7 @@ let cfg = UserWriterConfig {
 };
 ```
 
-> ▶ Runnable example: [`qos-policies-full-writer`](https://github.com/zero-objects/zero-dds-snippets/tree/master/qos-policies-full-writer)
+> ▶ Runnable example: [`qos-policies-full-writer`](https://github.com/zero-objects/zero-dds-snippets/tree/main/qos-policies-full-writer)
 > (registers this exact config against a live `DcpsRuntime`).
 
 ## Reading further

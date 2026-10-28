@@ -1,23 +1,18 @@
-# `zerodds-py` v1.0 — Open Items
+# zerodds-py-1.0 — offene Punkte
 
-Aggregat aus `zerodds-py-1.0.md` Hauptfile. Vor jedem Audit-Lauf
-gelöscht und neu generiert (keine Drift).
+Aggregat aus `zerodds-py-1.0.md`, erzeugt von `website/_tools/gen_open_items.py`.
+Kein eigener Inhalt: jedes Item steht dort mit seinem Beleg.
 
-**Stand:** 41 done / 1 partial / 0 open / 5 n/a (informative) / 0 n/a (rejected).
+---
 
-## §6.4 ROS-2-pytest-Integration
+## §3.1 Mapping
 
-**Status:** `partial` — `crates/py/python/tests/ros2/{conftest.py,
-test_rmw_zerodds_interop.py}` ist als Skeleton geschrieben; skippt
-ohne `ROS_DISTRO + rclpy + RMW_IMPLEMENTATION=rmw_zerodds_shim`.
-Lokal (macOS) und auf dem Bench-Host `llvm@llvm` (Debian 12) ist
-weder ROS-2 installiert noch das `rmw_zerodds_shim` als
-RMW-Implementation registriert; die zwei Tests skippen daher in
-allen aktuellen Audit-Laeufen.
+**Status:** `partial` — die Elementzahl eines festen Arrays prüft der Encoder nicht: zu viele Elemente werden gekürzt, zu wenige werfen `IndexError` (`test_fixed_array_count_is_refused_on_encode`, `xfail(strict=True)`).
 
-Plan-Hinweis: Eigener CI-Job auf ROS-2-Humble/Iron-Image, gebauter
-`rmw_zerodds_shim` (siehe `crates/rmw-zerodds-shim/`) als RMW;
-dann laufen die zwei Tests (`test_rclpy_init_succeeds_with_zerodds_rmw`,
-`test_rclpy_publish_subscribe_string_roundtrip`). Dieses Setup
-gehoert in den Workstream des `rmw-zerodds-shim`-Owners und nicht
-in das `zerodds-py`-Audit selbst.
+## §5.3 Cross-Vendor Python ↔ andere Sprachen
+
+**Status:** `partial` — die Byte-Identität Python ↔ Rust ist im Baum gemessen. Für C++, Java und C# gibt es keine Messung im Repo: die Interop-Matrix, die diese Spalten trägt, liegt auf dem Bench-Host und ist nicht Teil dieses Baums. Rest als §5.3b geführt.
+
+## §5.3b Byte-Identität Python ↔ C++/Java/C# im Baum
+
+**Status:** `open` — es gibt keinen Testfall im Repo, der die vom Python-Codec geschriebenen ShapeType-Oktetten gegen die der C++-, Java- oder C#-Bindung hält. `shape_reference_octets` liefert diese Referenz bisher nur für Rust. Plan: einen Golden-Vektor je Bindung wie in `endpoints/python/test_byte_identity.py` (dort für `SensorReading`) auch für `ShapeType` erzeugen und die vier Codecs gegen denselben Vektor halten.

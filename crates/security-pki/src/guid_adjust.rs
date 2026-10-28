@@ -30,6 +30,28 @@ pub fn adjust_participant_guid_prefix(
     cert_der: &[u8],
 ) -> Result<[u8; 12], PkiError> {
     use crate::backend::digest::{SHA256, digest};
+
+    // SHA256 over the 16-byte candidate GUID (OpenDDS hashes `&src,
+    // sizeof(GUID_t)`).
+    let h2 = digest(&SHA256, candidate_guid);
+    let h2 = h2.as_ref();
+
+    let mut prefix = [0u8; 12];
+    prefix[..6].copy_from_slice(&identity_prefix_head(cert_der)?);
+    prefix[6..12].copy_from_slice(&h2[0..6]);
+    Ok(prefix)
+}
+
+/// The first 48 bits of a participant GUID prefix that the identity in
+/// `cert_der` allows (DDS-Security 1.2 §10.3.3 Table 59): bit 0 set to 1,
+/// bits 1 to 47 the first 47 bits of the SHA-256 hash of the ASN.1 DER
+/// encoding of the certificate's SubjectName. Cyclone compares the same six
+/// bytes (`validate_pdata`).
+///
+/// # Errors
+/// `PkiError::InvalidPem` on cert parse / subject encode errors.
+pub fn identity_prefix_head(cert_der: &[u8]) -> Result<[u8; 6], PkiError> {
+    use crate::backend::digest::{SHA256, digest};
     use x509_cert::Certificate;
     use x509_cert::der::{Decode, Encode};
 
@@ -44,18 +66,12 @@ pub fn adjust_participant_guid_prefix(
         .map_err(|e| PkiError::InvalidPem(format!("adjust_guid: subject der: {e}")))?;
     let h1 = digest(&SHA256, &subject_der);
     let h1 = h1.as_ref();
-    // SHA256 over the 16-byte candidate GUID (OpenDDS hashes `&src,
-    // sizeof(GUID_t)`).
-    let h2 = digest(&SHA256, candidate_guid);
-    let h2 = h2.as_ref();
-
-    let mut prefix = [0u8; 12];
-    for (i, p) in prefix.iter_mut().take(6).enumerate() {
+    let mut head = [0u8; 6];
+    for (i, p) in head.iter_mut().enumerate() {
         *p = offset_1bit(h1, i);
     }
-    prefix[0] |= 0x80;
-    prefix[6..12].copy_from_slice(&h2[0..6]);
-    Ok(prefix)
+    head[0] |= 0x80;
+    Ok(head)
 }
 
 /// 1-bit right shift of the byte array (OpenDDS `offset_1bit`):

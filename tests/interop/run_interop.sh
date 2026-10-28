@@ -1,27 +1,27 @@
 #!/usr/bin/env bash
 # tests/interop/run_interop.sh
 #
-# End-to-End-Interop-Runner.
+# End-to-end interop runner.
 #
-# Startet Vendor-Container, laesst ZeroDDS-spdp_demo gegen sie laufen
-# und schreibt Ergebnis-Report nach $REPORT.
+# Starts vendor containers, runs the ZeroDDS spdp_demo against them
+# and writes a result report to $REPORT.
 #
-# Verwendung:
+# Usage:
 #
 #   ./tests/interop/run_interop.sh [vendor]
 #
 #     vendor: cyclone | fastdds | both (default: both)
 #
-# Voraussetzungen:
-#   - docker compose verfuegbar
-#   - Linux mit funktionierendem IP-Multicast (macOS Docker Desktop
-#     tunnels Multicast NICHT zwischen Container und Host).
-#   - cargo build verfuegbar
+# Prerequisites:
+#   - docker compose available
+#   - Linux with working IP multicast (macOS Docker Desktop
+#     does NOT tunnel multicast between container and host).
+#   - cargo build available
 #
-# Exit-Codes:
-#   0  mind. ein Vendor wurde discovered
-#   1  kein Vendor discovered (Discovery-Failure)
-#   2  Setup-Fehler (Docker / cargo)
+# Exit codes:
+#   0  at least one vendor was discovered
+#   1  no vendor discovered (discovery failure)
+#   2  setup error (Docker / cargo)
 
 set -euo pipefail
 
@@ -32,12 +32,12 @@ COMPOSE_FILE="$(dirname "$0")/docker-compose.yml"
 LOG_DIR="$(mktemp -d)"
 trap 'rm -rf "$LOG_DIR"' EXIT
 
-# ---- Plattform-Check ----
+# ---- Platform check ----
 case "$(uname -s)" in
   Darwin)
-    echo "WARN: macOS detected. Docker Desktop blockiert Multicast zwischen" >&2
-    echo "      Container und Host. Test wird wahrscheinlich nichts entdecken." >&2
-    echo "      Empfohlen: auf Linux laufen lassen." >&2
+    echo "WARN: macOS detected. Docker Desktop blocks multicast between" >&2
+    echo "      container and host. The test will probably discover nothing." >&2
+    echo "      Recommended: run it on Linux." >&2
     ;;
   Linux) : ;;
   *)
@@ -46,7 +46,7 @@ case "$(uname -s)" in
     ;;
 esac
 
-# ---- Vendor-Selection ----
+# ---- Vendor selection ----
 SERVICES=()
 case "$VENDOR" in
   cyclone) SERVICES=(cyclone-pub) ;;
@@ -58,13 +58,13 @@ case "$VENDOR" in
     ;;
 esac
 
-echo "=== ZeroDDS Interop-Runner ==="
+echo "=== ZeroDDS Interop Runner ==="
 echo "Vendors: ${SERVICES[*]}"
-echo "Demo-Runtime: ${DEMO_RUNTIME_SECS}s"
+echo "Demo runtime: ${DEMO_RUNTIME_SECS}s"
 echo "Report: $REPORT"
 echo ""
 
-# ---- Container starten ----
+# ---- Start containers ----
 echo ">> Starting vendor containers..."
 if ! docker compose -f "$COMPOSE_FILE" up -d "${SERVICES[@]}"; then
   echo "ERROR: docker compose up failed" >&2
@@ -75,7 +75,7 @@ trap 'docker compose -f "'"$COMPOSE_FILE"'" down --timeout 5 >/dev/null 2>&1; rm
 echo ">> Waiting 5s for containers to start emitting beacons..."
 sleep 5
 
-# ---- ZeroDDS-Demo bauen ----
+# ---- Build the ZeroDDS demo ----
 echo ">> Building spdp_demo..."
 if ! cargo build --example spdp_demo -p dds-discovery 2>"$LOG_DIR/build.log"; then
   echo "ERROR: cargo build failed; see $LOG_DIR/build.log" >&2
@@ -83,48 +83,48 @@ if ! cargo build --example spdp_demo -p dds-discovery 2>"$LOG_DIR/build.log"; th
   exit 2
 fi
 
-# ---- Demo gegen die Container laufen lassen ----
+# ---- Run the demo against the containers ----
 echo ">> Running spdp_demo for ${DEMO_RUNTIME_SECS}s..."
 DEMO_OUT="$LOG_DIR/demo.out"
 DEMO_BIN="$(cargo build --example spdp_demo -p dds-discovery --message-format=short 2>/dev/null;
             ls target/debug/examples/spdp_demo)"
 
-# Demo wird intern nach 30s beenden; wir killen falls laenger.
+# The demo ends internally after 30s; we kill it if it runs longer.
 "$DEMO_BIN" >"$DEMO_OUT" 2>&1 &
 DEMO_PID=$!
 sleep "$DEMO_RUNTIME_SECS"
 kill "$DEMO_PID" 2>/dev/null || true
 wait "$DEMO_PID" 2>/dev/null || true
 
-# ---- Discovery-Ergebnisse extrahieren ----
+# ---- Extract discovery results ----
 DISCOVERED=$(grep -c '✓ DISCOVERED' "$DEMO_OUT" || true)
 FOREIGN_DISCOVERED=$(grep '✓ DISCOVERED' "$DEMO_OUT" |
                     grep -v 'vendor=VendorId(\[1, 240\])' || true)
 FOREIGN_COUNT=$(echo "$FOREIGN_DISCOVERED" | grep -c '✓ DISCOVERED' || true)
 
-# ---- Report schreiben ----
+# ---- Write the report ----
 {
-  echo "# ZeroDDS Interop-Run Report"
+  echo "# ZeroDDS Interop Run Report"
   echo ""
-  echo "**Datum**: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  echo "**Plattform**: $(uname -srm)"
-  echo "**Vendors getestet**: ${SERVICES[*]}"
-  echo "**Demo-Runtime**: ${DEMO_RUNTIME_SECS}s"
+  echo "**Date**: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  echo "**Platform**: $(uname -srm)"
+  echo "**Vendors tested**: ${SERVICES[*]}"
+  echo "**Demo runtime**: ${DEMO_RUNTIME_SECS}s"
   echo ""
-  echo "## Discovery-Ergebnisse"
+  echo "## Discovery results"
   echo ""
-  echo "- Total entdeckte Participants: $DISCOVERED"
-  echo "- Davon nicht-ZeroDDS (Vendor != 0x01F0): $FOREIGN_COUNT"
+  echo "- Total participants discovered: $DISCOVERED"
+  echo "- Of these non-ZeroDDS (vendor != 0x01F0): $FOREIGN_COUNT"
   echo ""
   if [[ "$FOREIGN_COUNT" -gt 0 ]]; then
-    echo "### Vendor-Participants"
+    echo "### Vendor participants"
     echo ""
     echo '```'
     echo "$FOREIGN_DISCOVERED"
     echo '```'
   fi
   echo ""
-  echo "## Demo-Output (gekuerzt)"
+  echo "## Demo output (truncated)"
   echo ""
   echo '```'
   head -40 "$DEMO_OUT"

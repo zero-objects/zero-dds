@@ -14,6 +14,7 @@
 
 import zerodds.AsyncReader
 import zerodds.Client
+import zerodds.Encoding
 import zerodds.Endian
 import zerodds.Reader
 import zerodds.UdpTransport
@@ -26,11 +27,11 @@ fun main(args: Array<String>) {
     val port = args[1].toInt()
     val host = InetAddress.getByName("127.0.0.1")
     val transport = UdpTransport(host, port)
-    val client = Client(transport)
+    val client = Client(transport, zerodds.xrceObjectId(0x001, zerodds.OBJK_DATAWRITER))
 
     // Marshal the Ping (XCDR2 little-endian, @final => no DHEADER): u32 seq=1,
     // then the UTF-8 byte-count string "hello from app".
-    val w = Writer(Endian.LITTLE)
+    val w = Writer(Endian.LITTLE, Encoding.XCDR2)
     w.putU32(1)
     w.putString("hello from app")
     client.write(w.bytes())
@@ -49,7 +50,7 @@ fun main(args: Array<String>) {
         b ?: error("sync: no pong")
     }
 
-    val r = Reader(body, Endian.LITTLE)
+    val r = Reader(body, Endian.LITTLE, Encoding.XCDR2)
     val seq = r.getU32()
     val reply = r.getString()
     println("PONG seq=$seq reply=$reply")

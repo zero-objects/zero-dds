@@ -1,0 +1,10 @@
+// `@key` inside a nested structure, unannotated
+struct Inner {
+    @key long k;
+    long v;
+};
+
+struct Sample {
+    @key Inner nested;
+    long other;
+};

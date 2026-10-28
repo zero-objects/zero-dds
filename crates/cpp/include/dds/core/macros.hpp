@@ -1,0 +1,28 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 ZeroDDS Contributors
+//
+// dds/core/macros.hpp — DDS-PSM-Cxx 1.0 §7.2: the macros the normative
+// headers use.
+
+#ifndef ZERODDS_DDS_CORE_MACROS_HPP
+#define ZERODDS_DDS_CORE_MACROS_HPP
+
+#include "dds/core/detail/macros.hpp"
+
+#define OMG_DDS_STATIC_ASSERT OMG_DDS_STATIC_ASSERT_DETAIL
+
+#define OMG_DDS_LOG(kind, msg) OMG_DDS_LOG_DETAIL(kind, msg)
+
+#define OMG_DDS_DEFAULT_STATE_BIT_COUNT OMG_DDS_DEFAULT_STATE_BIT_COUNT_DETAIL
+#define OMG_DDS_DEFAULT_STATUS_COUNT OMG_DDS_DEFAULT_STATUS_COUNT_DETAIL
+
+#ifndef OMG_DDS_STATE_BIT_COUNT
+#define OMG_DDS_STATE_BIT_COUNT OMG_DDS_DEFAULT_STATE_BIT_COUNT
+#endif
+#ifndef OMG_DDS_STATUS_COUNT
+#define OMG_DDS_STATUS_COUNT OMG_DDS_DEFAULT_STATUS_COUNT
+#endif
+
+#define OMG_DDS_API OMG_DDS_API_DETAIL
+
+#endif // ZERODDS_DDS_CORE_MACROS_HPP

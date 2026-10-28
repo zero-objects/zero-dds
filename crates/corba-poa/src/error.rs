@@ -40,4 +40,10 @@ pub enum PoaError {
     NoServant,
     /// `OBJ_ADAPTER` system exception (transport/adapter level).
     ObjAdapter(String),
+    /// A `CORBA::Object` pseudo-operation's argument did not decode
+    /// (CORBA 3.3 Part 2 §15.4.2's `_is_a`) — `CORBA::MARSHAL`.
+    Marshal,
+    /// `_interface` (`get_interface`) with no Interface Repository
+    /// behind this POA — `CORBA::INTF_REPOS`.
+    InterfaceRepositoryUnavailable,
 }

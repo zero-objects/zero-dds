@@ -65,6 +65,7 @@ pub unsafe extern "C" fn zerodds_dpf_create_participant(
             default_publisher_qos: Mutex::new(PublisherQos::default()),
             default_subscriber_qos: Mutex::new(SubscriberQos::default()),
             topics: Mutex::new(alloc::vec::Vec::new()),
+            content_filtered_topics: Mutex::new(alloc::vec::Vec::new()),
             publishers: Mutex::new(alloc::vec::Vec::new()),
             subscribers: Mutex::new(alloc::vec::Vec::new()),
             default_pub_partition_out: Mutex::new(Default::default()),
@@ -225,6 +226,11 @@ pub unsafe extern "C" fn zerodds_dpf_set_qos(
         } else {
             dpf_qos_from_c(qos)
         };
+        // The Rust factory decides whether a participant is created
+        // enabled (DDS 1.4 §2.2.3.20), so it gets the QoS too.
+        if DcpsFactory::instance().set_qos(new_qos).is_err() {
+            return crate::ZeroDdsStatus::PreconditionNotMet as c_int;
+        }
         if let Ok(mut g) = factory.factory_qos.lock() {
             *g = new_qos;
         }

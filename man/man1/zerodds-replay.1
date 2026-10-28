@@ -1,7 +1,13 @@
-.TH ZERODDS-REPLAY 1 "June 2026" "ZeroDDS 1.0.0-rc.4" "User Commands"
+.TH ZERODDS-REPLAY 1 "" "ZeroDDS" "User Commands"
 .SH NAME
 zerodds-replay \- replay recorded ZeroDDS captures to stdout or a live domain
 .SH SYNOPSIS
+.B zerodds-replay inspect
+.I FILE
+.br
+.B zerodds-replay dump
+.I FILE
+.br
 .B zerodds-replay replay
 .I FILE
 [\fB\-\-time\-scale\fR \fIF\fR]
@@ -22,6 +28,8 @@ format is auto-detected from its extension:
 .B .json
 (decoded NDJSON), or
 .B .db
+/
+.B .sqlite
 (decoded SQLite). The NDJSON and SQLite forms carry the original
 .B raw_cdr
 bytes, so a sample captured once replays byte-identically from whichever
@@ -33,6 +41,24 @@ With
 .B \-\-inject
 each frame is re-published into a live DDS domain through a cached per-topic
 writer, re-stamping the recorded wire payload.
+.SH COMMANDS
+.TP
+.B inspect
+A
+.B .zddsrec
+capture's header: format version, time base, participants with their
+GUIDs, topics with their types, and the number of frames, payload bytes
+and time span.
+.TP
+.B dump
+One line per frame of a
+.B .zddsrec
+capture: time offset, participant, topic, kind, payload length.
+.TP
+.B replay
+Re-emit the frames with their recorded timing, to stdout or, with
+.BR \-\-inject ,
+into a live domain.
 .SH OPTIONS FOR replay
 .TP
 .BR \-\-time\-scale " " \fIF\fR
@@ -65,11 +91,12 @@ Print version and exit.
 .B 0
 Success.
 .TP
-.B 2
-CLI parse error.
+.B 1
+The capture could not be read, or the replay failed.
 .TP
-.B 3
-DDS or I/O error.
+.B 2
+The command line was wrong (no or an unknown command, a missing file, a
+bad option).
 .SH SEE ALSO
 .BR zerodds-record (1),
 .BR zerodds-spy (1)

@@ -19,6 +19,8 @@ all:
 test: all
 	build/test_byte_identity $(GOLDEN_DIR)/golden_le.bin $(GOLDEN_DIR)/golden_be.bin
 	build/test_udp_loopback
+	build/test_ada_surface
+	build/test_xrce_client
 
 examples: all
 	build/example_sync

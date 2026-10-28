@@ -7,10 +7,10 @@
 //! DDSI-RTPS 2.5, which appends optional header
 //! fields to an RTPS message:
 //!
-//! - **`messageLength`**: u32 — total length of the RTPS message from the
-//!   first submessage header. Allows reader pre-allocation and is a
-//!   mandatory hint for non-UDP transports without an implicit datagram
-//!   boundary.
+//! - **`messageLength`**: u32 — "the length of the complete RTPS Message,
+//!   starting from the beginning of the RTPS Header" (§8.3.3.2). Allows
+//!   reader pre-allocation and is a mandatory hint for non-UDP transports
+//!   without an implicit datagram boundary.
 //! - **`rtpsSendTimestamp`**: 8 bytes (Time_t) — sender wallclock at the
 //!   time of the `send()` call. Feeds `clockSkewDetected` in the
 //!   receiver state (§8.3.7.4).
@@ -26,19 +26,19 @@
 //!
 //! # SubmessageId and flag layout (commissioned specification)
 //!
-//! - `SubmessageId = 0x80` — HE marker. Outside the "classic"
-//!   submessage range (≤ 0x7F) and thus forwards-compatible with pre-2.5
-//!   implementations that use `octets_to_next_header` to skip.
+//! - `SubmessageId = 0x00` — `RTPS_HE` (§9.4.5.1.1). A pre-2.5
+//!   implementation takes it for an unknown submessage and skips it by
+//!   `octets_to_next_header` (§8.3.3.2).
 //!
-//! Flag-Bits im Submessage-Header:
+//! Flag bits in submessage header:
 //!
 //! | Bit | Symbol | Meaning |
 //! |-----|--------|-----------|
 //! | 0 | E | Endianness (1 = LE) |
 //! | 1 | L | `messageLength` present |
-//! | 2 | W | `rtpsSendTimestamp` present |
+//! | 2 | T | `rtpsSendTimestamp` present |
 //! | 3 | U | `uextension4` present |
-//! | 4 | V | `wextension8` present |
+//! | 4 | W | `wextension8` present |
 //! | 5+6 | C | checksum variant (0=none, 1=CRC-32C, 2=CRC-64, 3=MD5) |
 //! | 7 | P | `parameters` (ParameterList) present |
 //!
@@ -46,11 +46,11 @@
 //!
 //! On receipt of an HE the receiver updates:
 //!
-//! - `Receiver.messageLength` from the L field (if present) →
-//!   cross-check against the actual remaining datagram length. Mismatch =
-//!   `WireError::ValueOutOfRange`.
-//! - `Receiver.haveTimestamp = true`, `Receiver.timestamp = …` from the
-//!   T field (if present).
+//! - `Receiver.messageLength` from the L field (if present). A value too
+//!   small to fit the RTPS Header and the HeaderExtension makes the
+//!   HeaderExtension invalid (§8.3.7.3).
+//! - `Receiver.rtpsSendTimestamp = …` from the T field (if present); not
+//!   `haveTimestamp`/`timestamp`, which only an InfoTimestamp sets.
 //! - `Receiver.messageChecksum = …` from the C field (if variant ≠ 0).
 //! - `Receiver.parameters = …` from the P field (if present).
 //! - `clockSkewDetected` heuristic: if `|Receiver.timestamp - now|` >
@@ -69,8 +69,11 @@ use alloc::vec::Vec;
 use crate::error::WireError;
 use crate::parameter_list::ParameterList;
 
-/// SubmessageId for HeaderExtension (DDSI-RTPS 2.5).
-pub const SUBMESSAGE_ID_HEADER_EXTENSION: u8 = 0x80;
+/// SubmessageId for HeaderExtension: DDSI-RTPS 2.5 §9.4.5.1.1,
+/// "`@value(0x00) RTPS_HE, /* HeaderExtension */`". 0x80 and above are
+/// vendor-specific ("Submessages with ID's 0x80 to 0xff (inclusive) are
+/// vendor-specific").
+pub const SUBMESSAGE_ID_HEADER_EXTENSION: u8 = 0x00;
 
 /// Hard cap for the HE body length (DoS protection).
 pub const MAX_HE_LENGTH: usize = 16 * 1024;
@@ -81,12 +84,14 @@ pub const MAX_HE_LENGTH: usize = 16 * 1024;
 pub const HE_FLAG_E: u8 = 1 << 0;
 /// L flag (bit 1) — `messageLength` present.
 pub const HE_FLAG_L: u8 = 1 << 1;
-/// W flag (bit 2) — `rtpsSendTimestamp` present.
-pub const HE_FLAG_W: u8 = 1 << 2;
+/// T flag (bit 2, TimestampFlag, DDSI-RTPS 2.5 §9.4.5.2) —
+/// `rtpsSendTimestamp` present.
+pub const HE_FLAG_T: u8 = 1 << 2;
 /// U flag (bit 3) — `uextension4` present.
 pub const HE_FLAG_U: u8 = 1 << 3;
-/// V flag (bit 4) — `wextension8` present.
-pub const HE_FLAG_V: u8 = 1 << 4;
+/// W flag (bit 4, WExtension8Flag, DDSI-RTPS 2.5 §9.4.5.2) — `wextension8`
+/// present.
+pub const HE_FLAG_W: u8 = 1 << 4;
 /// Lower bit of the C mask (bit 5).
 pub const HE_FLAG_C0: u8 = 1 << 5;
 /// Higher bit of the C mask (bit 6).
@@ -178,13 +183,12 @@ impl ChecksumValue {
         }
     }
 
-    /// Computes the `messageChecksum` over `payload` with the
-    /// desired algorithm (DDSI-RTPS 2.5 §9.4.2.15.2).
+    /// Computes the checksum of `payload` with the desired algorithm
+    /// (DDSI-RTPS 2.5 Table 9.8).
     ///
-    /// `payload` is the range over which the checksum is computed.
-    /// Per spec these are the submessages **after** the
-    /// HeaderExtension submessage; the caller ensures this via
-    /// an appropriate slice cut.
+    /// The `messageChecksum` of a message is the checksum of the whole RTPS
+    /// message with the checksum field set to zero (§8.3.7.4, §9.4.2.15):
+    /// [`HeaderExtension::message_checksum`] does that.
     ///
     /// Implemented via [`zerodds_foundation::crc32c`],
     /// [`zerodds_foundation::crc64_xz`] and [`zerodds_foundation::md5`] —
@@ -215,15 +219,42 @@ impl ChecksumValue {
     }
 }
 
-/// 8-byte sender timestamp (Time_t = i32 sec + u32 nanosec, big-endian
-/// in the RTPS wire sense — written in the HE body in submessage
-/// endianness).
+/// `MESSAGE_LENGTH_INVALID` (DDSI-RTPS 2.5 §9.3.2.7): the value of a
+/// `MessageLength_t` that names no length, 0. It is the initial
+/// `messageLength` of the receiver (Table 8.17; [`crate::receiver_state::ReceiverState::message_length`]
+/// is `None` for it), and a HeaderExtension that announces it is invalid,
+/// as any `messageLength` below the RTPS header and the HeaderExtension
+/// itself is (§8.3.7.3).
+pub const MESSAGE_LENGTH_INVALID: u32 = 0;
+
+/// The RTPS `Time_t` (DDSI-RTPS 2.5 §9.3.2.1): an unsigned 32-bit second
+/// count and a fraction in units of 2⁻³² s, each written in the byte order
+/// of its submessage. Octet for octet the same as the signed `long seconds`
+/// of the wire diagram of §9.4.2.9; read as unsigned, as the IDL of
+/// §9.3.2.1 types it, the seconds reach the year 2106 and the reserved
+/// values are the plain {0xffffffff, ...}.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct HeTimestamp {
     /// Seconds since the Unix epoch.
-    pub seconds: i32,
-    /// Nanoseconds within the current second tick.
+    pub seconds: u32,
+    /// Fraction of a second in units of 2⁻³² s (DDSI-RTPS 2.5 §9.3.2.2:
+    /// `time = seconds + fraction / 2^32`).
     pub fraction: u32,
+}
+
+impl HeTimestamp {
+    /// `TIME_INVALID` of DDSI-RTPS 2.5 §9.3.2.1 ({0xffffffff, 0xffffffff}),
+    /// the initial `timestamp` of the receiver (Table 8.17).
+    pub const TIME_INVALID: Self = Self {
+        seconds: 0xFFFF_FFFF,
+        fraction: 0xFFFF_FFFF,
+    };
+
+    /// `TIME_INFINITE` of DDSI-RTPS 2.5 §9.3.2.1 ({0xffffffff, 0xfffffffe}).
+    pub const TIME_INFINITE: Self = Self {
+        seconds: 0xFFFF_FFFF,
+        fraction: 0xFFFF_FFFE,
+    };
 }
 
 /// Parsed HeaderExtension submessage.
@@ -233,11 +264,11 @@ pub struct HeaderExtension {
     pub little_endian: bool,
     /// If the L flag is set: remaining length of the message.
     pub message_length: Option<u32>,
-    /// If the W flag is set: sender timestamp.
+    /// If the T flag is set: sender timestamp.
     pub timestamp: Option<HeTimestamp>,
     /// If the U flag is set: 4-byte vendor-specific value.
     pub uextension4: Option<[u8; 4]>,
-    /// If the V flag is set: 16-byte vendor-specific value.
+    /// If the W flag is set: 8-octet `wExtension8`.
     pub wextension8: Option<[u8; 8]>,
     /// If the C flag != 0: checksum value.
     pub checksum: ChecksumValue,
@@ -264,13 +295,13 @@ impl HeaderExtension {
             f |= HE_FLAG_L;
         }
         if self.timestamp.is_some() {
-            f |= HE_FLAG_W;
+            f |= HE_FLAG_T;
         }
         if self.uextension4.is_some() {
             f |= HE_FLAG_U;
         }
         if self.wextension8.is_some() {
-            f |= HE_FLAG_V;
+            f |= HE_FLAG_W;
         }
         f |= self.checksum.kind().to_flag_bits();
         if self.parameters.is_some() {
@@ -295,7 +326,7 @@ impl HeaderExtension {
             write_u32(&mut body, len, le);
         }
         if let Some(ts) = self.timestamp {
-            write_i32(&mut body, ts.seconds, le);
+            write_u32(&mut body, ts.seconds, le);
             write_u32(&mut body, ts.fraction, le);
         }
         if let Some(u) = self.uextension4 {
@@ -306,8 +337,10 @@ impl HeaderExtension {
         }
         match self.checksum {
             ChecksumValue::None => {}
-            ChecksumValue::Crc32c(c) => write_u32(&mut body, c, le),
-            ChecksumValue::Crc64(c) => write_u64(&mut body, c, le),
+            // Table 9.8: the result "shall be serialized … using CDR big
+            // endian encoding", whatever the byte order of the submessage.
+            ChecksumValue::Crc32c(c) => body.extend_from_slice(&c.to_be_bytes()),
+            ChecksumValue::Crc64(c) => body.extend_from_slice(&c.to_be_bytes()),
             ChecksumValue::Md5(m) => body.extend_from_slice(&m),
         }
         if let Some(pl) = &self.parameters {
@@ -379,9 +412,9 @@ impl HeaderExtension {
         } else {
             None
         };
-        let timestamp = if (flags & HE_FLAG_W) != 0 {
+        let timestamp = if (flags & HE_FLAG_T) != 0 {
             need(8, pos)?;
-            let s = read_i32(&body[pos..pos + 4], le);
+            let s = read_u32(&body[pos..pos + 4], le);
             let f = read_u32(&body[pos + 4..pos + 8], le);
             pos += 8;
             Some(HeTimestamp {
@@ -400,7 +433,7 @@ impl HeaderExtension {
         } else {
             None
         };
-        let wextension8 = if (flags & HE_FLAG_V) != 0 {
+        let wextension8 = if (flags & HE_FLAG_W) != 0 {
             need(8, pos)?;
             let mut v = [0u8; 8];
             v.copy_from_slice(&body[pos..pos + 8]);
@@ -415,13 +448,13 @@ impl HeaderExtension {
             ChecksumKind::None => ChecksumValue::None,
             ChecksumKind::Crc32c => {
                 need(4, pos)?;
-                let v = read_u32(&body[pos..pos + 4], le);
+                let v = read_u32(&body[pos..pos + 4], false);
                 pos += 4;
                 ChecksumValue::Crc32c(v)
             }
             ChecksumKind::Crc64 => {
                 need(8, pos)?;
-                let v = read_u64(&body[pos..pos + 8], le);
+                let v = read_u64(&body[pos..pos + 8], false);
                 pos += 8;
                 ChecksumValue::Crc64(v)
             }
@@ -434,28 +467,17 @@ impl HeaderExtension {
             }
         };
 
+        // The ParameterList takes the rest of the body and need not end in
+        // a PID_SENTINEL (§9.4.2.11). Without one, what follows the known
+        // fields is skipped: "Additional fields can be added to the end of
+        // a Submessage … An implementation should skip over additional
+        // fields using the submessageLength field" (§8.6.1).
         let parameters = if (flags & HE_FLAG_P) != 0 {
-            // The ParameterList occupies the remaining body.
-            let pl = ParameterList::from_bytes(&body[pos..], le)?;
-            // Set pos to the end — the ParameterList ends at the sentinel
-            // and may be followed by trailing bytes, which we treat here as
-            // an error indicator (the spec forbids trailing garbage
-            // in the HE body).
-            //
-            // Concretely: the encoder writes the sentinel + 0 at the end; a
-            // clean body ends with it. If `from_bytes` already
-            // returns successfully, it read everything up to the sentinel
-            // — we do not validate trailing bytes (the RFC says
-            // the ParameterList takes the rest; defensive rejection would
-            // break legal vendor padding).
-            Some(pl)
+            Some(ParameterList::from_bytes_sentinel_optional(
+                &body[pos..],
+                le,
+            )?)
         } else {
-            // No P flag: trailing bytes are unexpected.
-            if pos != body.len() {
-                return Err(WireError::ValueOutOfRange {
-                    message: "HE trailing bytes without P-flag",
-                });
-            }
             None
         };
 
@@ -468,6 +490,180 @@ impl HeaderExtension {
             checksum,
             parameters,
         })
+    }
+
+    /// Where the `messageChecksum` of the message `message` sits, and its
+    /// kind: the HeaderExtension must follow the RTPS Header at once
+    /// (§8.3.7.3); the checksum comes after `messageLength`, the timestamp
+    /// and the extensions that the flags announce.
+    ///
+    /// # Errors
+    /// `ValueOutOfRange` if no HeaderExtension follows the header or its
+    /// fields do not fit the submessage; `UnexpectedEof` if the message is
+    /// too short.
+    fn checksum_field(message: &[u8]) -> Result<(usize, ChecksumKind), WireError> {
+        const HE_AT: usize = crate::header::RtpsHeader::WIRE_SIZE;
+        if message.len() < HE_AT + 4 {
+            return Err(WireError::UnexpectedEof {
+                needed: HE_AT + 4,
+                offset: message.len(),
+            });
+        }
+        if message[HE_AT] != SUBMESSAGE_ID_HEADER_EXTENSION {
+            return Err(WireError::ValueOutOfRange {
+                message: "no HeaderExtension after the RTPS header",
+            });
+        }
+        let flags = message[HE_AT + 1];
+        let kind = ChecksumKind::from_flags(flags);
+        let mut at = HE_AT + 4;
+        for (flag, len) in [
+            (HE_FLAG_L, 4),
+            (HE_FLAG_T, 8),
+            (HE_FLAG_U, 4),
+            (HE_FLAG_W, 8),
+        ] {
+            if flags & flag != 0 {
+                at += len;
+            }
+        }
+        if message.len() < at + kind.wire_size() {
+            return Err(WireError::UnexpectedEof {
+                needed: at + kind.wire_size() - message.len(),
+                offset: at,
+            });
+        }
+        Ok((at, kind))
+    }
+
+    /// The `messageChecksum` that `message` should carry (DDSI-RTPS 2.5
+    /// §8.3.7.4): the checksum "computed over the entire RTPS Message", the
+    /// bytes of the `messageChecksum` field "set to zero". `ChecksumValue::None`
+    /// where the HeaderExtension announces none.
+    ///
+    /// # Errors
+    /// As for the location of the field: no HeaderExtension after the header,
+    /// or a message too short for it.
+    pub fn message_checksum(message: &[u8]) -> Result<ChecksumValue, WireError> {
+        let (at, kind) = Self::checksum_field(message)?;
+        if kind == ChecksumKind::None {
+            return Ok(ChecksumValue::None);
+        }
+        let mut zeroed = message.to_vec();
+        zeroed[at..at + kind.wire_size()].fill(0);
+        Ok(ChecksumValue::compute(kind, &zeroed))
+    }
+
+    /// Writes the checksum of `message` into its `messageChecksum` field, in
+    /// the big-endian form of Table 9.8.
+    ///
+    /// # Errors
+    /// As [`Self::message_checksum`].
+    pub fn seal_message(message: &mut [u8]) -> Result<(), WireError> {
+        let (at, _) = Self::checksum_field(message)?;
+        let value = Self::message_checksum(message)?;
+        match value {
+            ChecksumValue::None => {}
+            ChecksumValue::Crc32c(c) => message[at..at + 4].copy_from_slice(&c.to_be_bytes()),
+            ChecksumValue::Crc64(c) => message[at..at + 8].copy_from_slice(&c.to_be_bytes()),
+            ChecksumValue::Md5(m) => message[at..at + 16].copy_from_slice(&m),
+        }
+        Ok(())
+    }
+
+    /// Whether the `messageChecksum` in `message` is the one its content
+    /// gives. `true` where the HeaderExtension announces none.
+    ///
+    /// # Errors
+    /// As [`Self::message_checksum`].
+    pub fn verify_message(message: &[u8]) -> Result<bool, WireError> {
+        let (at, kind) = Self::checksum_field(message)?;
+        let carried = match kind {
+            ChecksumKind::None => return Ok(true),
+            ChecksumKind::Crc32c => ChecksumValue::Crc32c(u32::from_be_bytes(
+                message[at..at + 4].try_into().unwrap_or([0; 4]),
+            )),
+            ChecksumKind::Crc64 => ChecksumValue::Crc64(u64::from_be_bytes(
+                message[at..at + 8].try_into().unwrap_or([0; 8]),
+            )),
+            ChecksumKind::Md5 => {
+                let mut m = [0u8; 16];
+                m.copy_from_slice(&message[at..at + 16]);
+                ChecksumValue::Md5(m)
+            }
+        };
+        Ok(Self::message_checksum(message)? == carried)
+    }
+
+    /// The HeaderExtension of a message that a receiver rebuilt from the
+    /// message it received, `received`, for instance after it opened the
+    /// protected submessages (DDS-Security 1.2 §7.3.6.3): `rebuilt` starts
+    /// with the same RTPS header and HeaderExtension. The extension's
+    /// messageLength is "the length of the complete RTPS Message" (§8.3.3.2)
+    /// and its messageChecksum is "computed over the entire RTPS Message"
+    /// (§8.3.7.4), both of the received message. They are checked here
+    /// against `received`; `rebuilt` gets the extension with the
+    /// messageLength of its own length and without the checksum, which its
+    /// content no longer gives. A message without the extension, or one
+    /// whose extension carries neither field, is left as it is.
+    ///
+    /// # Errors
+    /// `ValueOutOfRange` when `received` fails its messageLength or its
+    /// checksum, `UnexpectedEof` when `rebuilt` is shorter than its
+    /// extension; `rebuilt` is then left as it is.
+    pub fn restate_for_rebuilt_message(
+        received: &[u8],
+        rebuilt: &mut Vec<u8>,
+    ) -> Result<(), WireError> {
+        const HEADER: usize = 20;
+        let carries = |m: &[u8]| {
+            m.len() >= HEADER + 4
+                && m[HEADER] == SUBMESSAGE_ID_HEADER_EXTENSION
+                && (m[4], m[5]) >= (2, 5)
+        };
+        if !carries(received) || !carries(rebuilt) {
+            return Ok(());
+        }
+        let he = Self::decode(&received[HEADER..])?;
+        if he.message_length.is_none() && he.checksum.kind() == ChecksumKind::None {
+            return Ok(());
+        }
+        he.validate_message_length(u32::try_from(received.len()).unwrap_or(u32::MAX))?;
+        if !Self::verify_message(received)? {
+            return Err(WireError::ValueOutOfRange {
+                message: "HeaderExtension messageChecksum does not match the message",
+            });
+        }
+        let le = rebuilt[HEADER + 1] & HE_FLAG_E != 0;
+        let len_bytes = [rebuilt[HEADER + 2], rebuilt[HEADER + 3]];
+        let octets = if le {
+            u16::from_le_bytes(len_bytes)
+        } else {
+            u16::from_be_bytes(len_bytes)
+        } as usize;
+        let old_end = HEADER + 4 + octets;
+        if rebuilt.len() < old_end {
+            return Err(WireError::UnexpectedEof {
+                needed: old_end,
+                offset: 0,
+            });
+        }
+        let mut restated = he;
+        restated.checksum = ChecksumValue::None;
+        if restated.message_length.is_some() {
+            // The encoded size does not depend on the value.
+            let size = restated.encode()?.len();
+            let total = rebuilt.len() - (old_end - HEADER) + size;
+            restated.message_length =
+                Some(
+                    u32::try_from(total).map_err(|_| WireError::ValueOutOfRange {
+                        message: "rebuilt message longer than u32::MAX",
+                    })?,
+                );
+        }
+        let encoded = restated.encode()?;
+        rebuilt.splice(HEADER..old_end, encoded);
+        Ok(())
     }
 
     /// Decodes a complete HE submessage (header + body) from
@@ -503,13 +699,9 @@ impl HeaderExtension {
         Self::decode_body(&bytes[4..4 + octets], flags)
     }
 
-    /// Cross-check: if `message_length` is set, it MUST equal the
-    /// actual remaining length of the RTPS message from the first
-    /// submessage header (i.e. from byte 20 = after the RtpsHeader) up to the
-    /// end of the datagram (Spec §8.3.7.4).
-    ///
-    /// `actual_message_length` is the remaining length measured by the
-    /// receiver.
+    /// Cross-check: if `message_length` is set, it equals
+    /// `actual_message_length`, the length of the whole RTPS message from
+    /// the beginning of its header (§8.3.3.2), as the receiver measured it.
     ///
     /// # Errors
     /// `ValueOutOfRange` on mismatch.
@@ -560,16 +752,6 @@ fn write_u32(out: &mut Vec<u8>, v: u32, le: bool) {
     out.extend_from_slice(&bytes);
 }
 
-fn write_i32(out: &mut Vec<u8>, v: i32, le: bool) {
-    let bytes = if le { v.to_le_bytes() } else { v.to_be_bytes() };
-    out.extend_from_slice(&bytes);
-}
-
-fn write_u64(out: &mut Vec<u8>, v: u64, le: bool) {
-    let bytes = if le { v.to_le_bytes() } else { v.to_be_bytes() };
-    out.extend_from_slice(&bytes);
-}
-
 fn read_u32(bytes: &[u8], le: bool) -> u32 {
     let mut buf = [0u8; 4];
     buf.copy_from_slice(&bytes[..4]);
@@ -577,16 +759,6 @@ fn read_u32(bytes: &[u8], le: bool) -> u32 {
         u32::from_le_bytes(buf)
     } else {
         u32::from_be_bytes(buf)
-    }
-}
-
-fn read_i32(bytes: &[u8], le: bool) -> i32 {
-    let mut buf = [0u8; 4];
-    buf.copy_from_slice(&bytes[..4]);
-    if le {
-        i32::from_le_bytes(buf)
-    } else {
-        i32::from_be_bytes(buf)
     }
 }
 
@@ -669,9 +841,9 @@ mod tests {
             f,
             HE_FLAG_E
                 | HE_FLAG_L
-                | HE_FLAG_W
+                | HE_FLAG_T
                 | HE_FLAG_U
-                | HE_FLAG_V
+                | HE_FLAG_W
                 | HE_FLAG_P
                 | ChecksumKind::Md5.to_flag_bits()
         );
@@ -818,7 +990,7 @@ mod tests {
     fn decode_rejects_truncated_wextension8_body() {
         // Spec §8.3.7.3: V flag announced, body shorter than 8 bytes.
         let body: [u8; 4] = [0; 4];
-        let flags = HE_FLAG_E | HE_FLAG_V;
+        let flags = HE_FLAG_E | HE_FLAG_W;
         let r = HeaderExtension::decode_body(&body, flags);
         assert!(matches!(r, Err(WireError::UnexpectedEof { .. })));
     }
@@ -849,9 +1021,9 @@ mod tests {
         let f = he.flag_byte();
         assert!(f & HE_FLAG_E != 0, "E");
         assert!(f & HE_FLAG_L != 0, "L");
-        assert!(f & HE_FLAG_W != 0, "W");
+        assert!(f & HE_FLAG_T != 0, "T");
         assert!(f & HE_FLAG_U != 0, "U");
-        assert!(f & HE_FLAG_V != 0, "V");
+        assert!(f & HE_FLAG_W != 0, "W");
         assert!(f & HE_FLAG_C_MASK != 0, "C");
         assert!(f & HE_FLAG_P != 0, "P");
     }
@@ -877,13 +1049,13 @@ mod tests {
 
     #[test]
     fn roundtrip_all_fields_set_be() {
-        let mut pl = ParameterList::new();
+        let mut pl = ParameterList::with_byte_order(false);
         pl.push(Parameter::new(0x0050, vec![0xAA; 16]));
         let he = HeaderExtension {
             little_endian: false,
             message_length: Some(99),
             timestamp: Some(HeTimestamp {
-                seconds: -3,
+                seconds: 0xFFFF_FFFD,
                 fraction: 9,
             }),
             uextension4: Some([0; 4]),
@@ -938,11 +1110,30 @@ mod tests {
     }
 
     #[test]
-    fn decode_rejects_trailing_bytes_without_p_flag() {
-        // Body has 4 trailing bytes but no P flag.
+    fn decode_skips_trailing_bytes_without_p_flag() {
+        // §8.6.1: additional fields at the end are skipped.
         let body = vec![0xAA, 0xBB, 0xCC, 0xDD];
-        let res = HeaderExtension::decode_body(&body, HE_FLAG_E);
-        assert!(matches!(res, Err(WireError::ValueOutOfRange { .. })));
+        let he = HeaderExtension::decode_body(&body, HE_FLAG_E).unwrap();
+        assert_eq!(
+            he,
+            HeaderExtension {
+                little_endian: true,
+                ..HeaderExtension::default()
+            }
+        );
+    }
+
+    /// §9.4.2.11: "The presence of the PID_SENTINEL is not required in the
+    /// ParameterList that appears in the HeaderExtension."
+    #[test]
+    fn decode_takes_a_parameter_list_without_sentinel() {
+        // PID 0x0042, length 4, value 1 2 3 4 — and the body ends.
+        let body = vec![0x42, 0x00, 0x04, 0x00, 1, 2, 3, 4];
+        let he = HeaderExtension::decode_body(&body, HE_FLAG_E | HE_FLAG_P).unwrap();
+        let pl = he.parameters.unwrap();
+        assert_eq!(pl.parameters.len(), 1);
+        assert_eq!(pl.parameters[0].id, 0x0042);
+        assert_eq!(pl.parameters[0].value, [1, 2, 3, 4]);
     }
 
     #[test]
@@ -978,6 +1169,106 @@ mod tests {
         assert_eq!(ChecksumValue::Crc32c(1).kind(), ChecksumKind::Crc32c);
         assert_eq!(ChecksumValue::Crc64(1).kind(), ChecksumKind::Crc64);
         assert_eq!(ChecksumValue::Md5([0; 16]).kind(), ChecksumKind::Md5);
+    }
+
+    /// DDSI-RTPS 2.5 Table 9.10: CRC-32C of the input bytes and the
+    /// Checksum32_t bytes it is serialized to (big endian); Table 9.12 for
+    /// CRC-64/XZ.
+    #[test]
+    fn the_checksums_of_tables_9_10_and_9_12() {
+        let crc32 = |input: &[u8]| match ChecksumValue::compute(ChecksumKind::Crc32c, input) {
+            ChecksumValue::Crc32c(c) => c,
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(crc32(&[0, 0, 0, 0]), 0x4867_4BC7);
+        assert_eq!(crc32(&[0xFF; 4]), 0xFFFF_FFFF);
+        assert_eq!(
+            crc32(&[0x33, 0x22, 0x55, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF]),
+            0xB59C_A09B
+        );
+        assert_eq!(
+            ChecksumValue::compute(ChecksumKind::Crc64, &[0, 0, 0, 0]),
+            ChecksumValue::Crc64(0xF4A5_8635_1E1B_9F4B)
+        );
+        assert_eq!(
+            ChecksumValue::compute(ChecksumKind::Crc64, &[0xFF; 4]),
+            ChecksumValue::Crc64(0xFFFF_FFFF_0000_0000)
+        );
+        assert_eq!(
+            ChecksumValue::compute(
+                ChecksumKind::Crc64,
+                &[0x33, 0x22, 0x55, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF]
+            ),
+            ChecksumValue::Crc64(0x701E_CEB2_19A8_E5D5)
+        );
+    }
+
+    /// Table 9.8: the checksum "shall be serialized … using CDR big endian
+    /// encoding", also in a little-endian HeaderExtension.
+    #[test]
+    fn the_checksum_is_big_endian_in_a_little_endian_header_extension() {
+        let he = HeaderExtension {
+            little_endian: true,
+            checksum: ChecksumValue::Crc32c(0x4867_4BC7),
+            ..HeaderExtension::default()
+        };
+        assert_eq!(he.encode_body().unwrap(), vec![0x48, 0x67, 0x4B, 0xC7]);
+        let he64 = HeaderExtension {
+            little_endian: true,
+            checksum: ChecksumValue::Crc64(0xF4A5_8635_1E1B_9F4B),
+            ..HeaderExtension::default()
+        };
+        assert_eq!(
+            he64.encode_body().unwrap(),
+            vec![0xF4, 0xA5, 0x86, 0x35, 0x1E, 0x1B, 0x9F, 0x4B]
+        );
+        let back =
+            HeaderExtension::decode_body(&he64.encode_body().unwrap(), he64.flag_byte()).unwrap();
+        assert_eq!(back, he64);
+    }
+
+    /// §8.3.7.4: "computed over the entire RTPS Message", the field "set to
+    /// zero" for the computation. A sealed message verifies; one octet of it
+    /// changed does not.
+    #[test]
+    fn a_sealed_message_verifies_and_a_changed_one_does_not() {
+        for (kind, placeholder) in [
+            (ChecksumKind::Crc32c, ChecksumValue::Crc32c(0)),
+            (ChecksumKind::Crc64, ChecksumValue::Crc64(0)),
+            (ChecksumKind::Md5, ChecksumValue::Md5([0; 16])),
+        ] {
+            let he = HeaderExtension {
+                little_endian: true,
+                message_length: Some(64),
+                timestamp: Some(HeTimestamp {
+                    seconds: 5,
+                    fraction: 6,
+                }),
+                checksum: placeholder,
+                ..HeaderExtension::default()
+            };
+            let mut message = vec![b'R', b'T', b'P', b'S', 2, 5, 1, 0xF0];
+            message.extend_from_slice(&[7u8; 12]);
+            message.extend_from_slice(&he.encode().unwrap());
+            // An INFO_TS after it, so that the checksum covers more than the
+            // HeaderExtension.
+            message.extend_from_slice(&[0x09, 0x01, 8, 0, 1, 0, 0, 0, 2, 0, 0, 0]);
+            assert!(
+                !HeaderExtension::verify_message(&message).unwrap(),
+                "{kind:?}: zero"
+            );
+            HeaderExtension::seal_message(&mut message).unwrap();
+            assert!(
+                HeaderExtension::verify_message(&message).unwrap(),
+                "{kind:?}"
+            );
+            let last = message.len() - 1;
+            message[last] ^= 0x01;
+            assert!(
+                !HeaderExtension::verify_message(&message).unwrap(),
+                "{kind:?}: changed"
+            );
+        }
     }
 
     #[test]

@@ -15,6 +15,9 @@
 
 extern crate alloc;
 
+/// Nanoseconds in a second; DDS 1.4 §2.3.2 bounds `nanosec` below it.
+const NANOS_PER_SEC: u32 = 1_000_000_000;
+
 /// `Time_t` — wall-clock timestamp since the Unix epoch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
 pub struct Time {
@@ -47,10 +50,29 @@ impl Time {
         self.sec == 0 && self.nanosec == 0
     }
 
-    /// Constructor.
+    /// Constructor. DDS 1.4 §2.3.2: "the nanosec field must verify
+    /// 0 <= nanosec < 1000000000", so a `nanosec` of a second or more
+    /// carries into `sec` (saturating); the reserved [`Self::INVALID`] and
+    /// [`Self::INFINITE`] values are kept as they are.
     #[must_use]
     pub const fn new(sec: i32, nanosec: u32) -> Self {
-        Self { sec, nanosec }
+        let reserved =
+            (sec == -1 && nanosec == 0xFFFF_FFFF) || (sec == 0x7FFF_FFFF && nanosec == 0xFFFF_FFFE);
+        if reserved || nanosec < NANOS_PER_SEC {
+            return Self { sec, nanosec };
+        }
+        Self {
+            sec: sec.saturating_add((nanosec / NANOS_PER_SEC) as i32),
+            nanosec: nanosec % NANOS_PER_SEC,
+        }
+    }
+
+    /// `true` if `nanosec` is in `[0, 1000000000)` (DDS 1.4 §2.3.2) or the
+    /// value is the reserved [`Self::INVALID`] or [`Self::INFINITE`]. The
+    /// fields are public, so a value built by hand may not be.
+    #[must_use]
+    pub const fn is_normalized(&self) -> bool {
+        self.nanosec < NANOS_PER_SEC || self.is_invalid() || self.is_infinite()
     }
 
     /// `true` if the value equals the [`Self::INVALID`] sentinel.
@@ -92,8 +114,10 @@ impl Time {
     /// Spec §7.5.6.3 — Time from a millisecond integer.
     #[must_use]
     pub const fn from_millis(ms: i64) -> Self {
-        let sec = (ms / 1000) as i32;
-        let nanosec = ((ms % 1000) * 1_000_000) as u32;
+        // Floor division: a negative `ms` keeps nanosec in [0, 1e9)
+        // (DDS 1.4 §2.3.2) and the value is `sec + nanosec / 1e9`.
+        let sec = ms.div_euclid(1000) as i32;
+        let nanosec = (ms.rem_euclid(1000) * 1_000_000) as u32;
         Self { sec, nanosec }
     }
 
@@ -114,26 +138,67 @@ pub struct Duration {
     pub nanosec: u32,
 }
 
+/// DDS 1.4 §2.3.2: the durations of the QoS policies are
+/// [`zerodds_qos::Duration`], the form of the RTPS announcement (`seconds`
+/// and a `fraction` of 2^-32 s); `Duration_t` of the specification has `sec`
+/// and `nanosec`. `DURATION_INFINITE` maps to `DURATION_INFINITE` (§2.3.3).
+impl From<zerodds_qos::Duration> for Duration {
+    fn from(d: zerodds_qos::Duration) -> Self {
+        if d.is_infinite() {
+            return Self::INFINITE;
+        }
+        let (sec, nanosec) = d.to_sec_nanosec();
+        Self { sec, nanosec }
+    }
+}
+
+/// The inverse of `From<zerodds_qos::Duration>`.
+impl From<Duration> for zerodds_qos::Duration {
+    fn from(d: Duration) -> Self {
+        if d.is_infinite() {
+            return Self::INFINITE;
+        }
+        Self::from_sec_nanosec(d.sec, d.nanosec)
+    }
+}
+
 impl Duration {
     /// `DURATION_ZERO` (spec): 0 seconds.
     pub const ZERO: Self = Self { sec: 0, nanosec: 0 };
 
-    /// `DURATION_INFINITE` (spec): symbolic maximum.
+    /// `DURATION_INFINITE` (DDS 1.4 §2.3.3: `DURATION_INFINITE_SEC` and
+    /// `DURATION_INFINITE_NSEC`, both `0x7fffffff`): symbolic maximum.
     pub const INFINITE: Self = Self {
         sec: 0x7FFF_FFFF,
-        nanosec: 0xFFFF_FFFF,
+        nanosec: 0x7FFF_FFFF,
     };
 
-    /// Constructor.
+    /// Constructor. DDS 1.4 §2.3.2: "the nanosec field must verify
+    /// 0 <= nanosec < 1000000000", so a `nanosec` of a second or more
+    /// carries into `sec` (saturating); [`Self::INFINITE`] is kept as it is.
     #[must_use]
     pub const fn new(sec: i32, nanosec: u32) -> Self {
-        Self { sec, nanosec }
+        if (sec == 0x7FFF_FFFF && nanosec == 0x7FFF_FFFF) || nanosec < NANOS_PER_SEC {
+            return Self { sec, nanosec };
+        }
+        Self {
+            sec: sec.saturating_add((nanosec / NANOS_PER_SEC) as i32),
+            nanosec: nanosec % NANOS_PER_SEC,
+        }
+    }
+
+    /// `true` if `nanosec` is in `[0, 1000000000)` (DDS 1.4 §2.3.2) or the
+    /// value is [`Self::INFINITE`]. The fields are public, so a value built
+    /// by hand may not be.
+    #[must_use]
+    pub const fn is_normalized(&self) -> bool {
+        self.nanosec < NANOS_PER_SEC || self.is_infinite()
     }
 
     /// `true` if the value is [`Self::INFINITE`].
     #[must_use]
     pub const fn is_infinite(&self) -> bool {
-        self.sec == 0x7FFF_FFFF && self.nanosec == 0xFFFF_FFFF
+        self.sec == 0x7FFF_FFFF && self.nanosec == 0x7FFF_FFFF
     }
 
     /// `true` if the value is [`Self::ZERO`].
@@ -194,8 +259,10 @@ impl Duration {
     /// Spec §7.5.6.5 — Duration from a millisecond integer.
     #[must_use]
     pub const fn from_millis(ms: i64) -> Self {
-        let sec = (ms / 1000) as i32;
-        let nanosec = ((ms % 1000) * 1_000_000) as u32;
+        // Floor division: a negative `ms` keeps nanosec in [0, 1e9)
+        // (DDS 1.4 §2.3.2) and the value is `sec + nanosec / 1e9`.
+        let sec = ms.div_euclid(1000) as i32;
+        let nanosec = (ms.rem_euclid(1000) * 1_000_000) as u32;
         Self { sec, nanosec }
     }
 
@@ -239,11 +306,23 @@ pub fn get_current_time() -> Time {
 /// interoperable with Cyclone / FastDDS / RTI.
 #[must_use]
 pub fn time_to_he_timestamp(t: Time) -> zerodds_rtps::header_extension::HeTimestamp {
-    // fraction = round(nanosec * 2^32 / 1e9)
-    let fraction = ((u64::from(t.nanosec) << 32) / 1_000_000_000) as u32;
+    // DDSI-RTPS 2.5 §9.3.2.1: TIME_INVALID is {0xffffffff, 0xffffffff} and
+    // TIME_INFINITE {0xffffffff, 0xfffffffe}.
+    if t.is_invalid() {
+        return zerodds_rtps::header_extension::HeTimestamp::TIME_INVALID;
+    }
+    if t.is_infinite() {
+        return zerodds_rtps::header_extension::HeTimestamp::TIME_INFINITE;
+    }
+    // fraction = round(nanosec * 2^32 / 1e9); it was cut, and a written
+    // timestamp came back one nanosecond early.
+    let d = zerodds_qos::Duration::from_sec_nanosec(t.sec, t.nanosec);
+    // The DCPS `Time` counts seconds as a `long`; the octets are the same.
     zerodds_rtps::header_extension::HeTimestamp {
-        seconds: t.sec,
-        fraction,
+        // The seconds are a `u32` on the wire, a `long` in `Duration`: the
+        // same 32 bits.
+        seconds: u32::from_ne_bytes(d.seconds.to_ne_bytes()),
+        fraction: d.fraction,
     }
 }
 
@@ -251,18 +330,49 @@ pub fn time_to_he_timestamp(t: Time) -> zerodds_rtps::header_extension::HeTimest
 /// INFO_TS back into a DCPS [`Time`] for `SampleInfo.source_timestamp`.
 #[must_use]
 pub fn he_timestamp_to_time(ts: zerodds_rtps::header_extension::HeTimestamp) -> Time {
-    // nanosec = round(fraction * 1e9 / 2^32)
-    let nanosec = ((u64::from(ts.fraction) * 1_000_000_000) >> 32) as u32;
-    Time {
-        sec: ts.seconds,
-        nanosec: nanosec.min(999_999_999),
+    // §9.3.2.1: the two reserved values of `Time_t` are no point in time.
+    if ts == zerodds_rtps::header_extension::HeTimestamp::TIME_INVALID {
+        return Time::INVALID;
     }
+    if ts == zerodds_rtps::header_extension::HeTimestamp::TIME_INFINITE {
+        return Time::INFINITE;
+    }
+    // nanosec = round(fraction * 1e9 / 2^32), a whole second carrying.
+    let (sec, nanosec) = zerodds_qos::Duration {
+        seconds: i32::from_ne_bytes(ts.seconds.to_ne_bytes()),
+        fraction: ts.fraction,
+    }
+    .to_sec_nanosec();
+    Time { sec, nanosec }
 }
 
 #[cfg(test)]
 #[allow(clippy::expect_used)]
 mod tests {
     use super::*;
+
+    /// DDSI-RTPS 2.5 §9.3.2.1: "TIME_INVALID: seconds = 0xffffffff, fraction =
+    /// 0xffffffff; TIME_INFINITE: seconds = 0xffffffff, fraction =
+    /// 0xfffffffe". The two sentinels cross the wire as those octets and come
+    /// back as the sentinels.
+    #[test]
+    fn the_reserved_time_t_values_cross_the_wire_as_the_spec_gives_them() {
+        let invalid = time_to_he_timestamp(Time::INVALID);
+        assert_eq!(
+            (invalid.seconds, invalid.fraction),
+            (0xFFFF_FFFF, 0xFFFF_FFFF)
+        );
+        let infinite = time_to_he_timestamp(Time::INFINITE);
+        assert_eq!(
+            (infinite.seconds, infinite.fraction),
+            (0xFFFF_FFFF, 0xFFFF_FFFE)
+        );
+        assert_eq!(he_timestamp_to_time(invalid), Time::INVALID);
+        assert_eq!(he_timestamp_to_time(infinite), Time::INFINITE);
+        // An ordinary time is not touched.
+        let t = Time::new(1_700_000_000, 500_000_000);
+        assert_eq!(he_timestamp_to_time(time_to_he_timestamp(t)), t);
+    }
 
     #[test]
     fn time_zero_sentinel() {
@@ -376,6 +486,111 @@ mod tests {
         let inc = d.add_duration(Duration::new(1, 600_000_000));
         assert_eq!(inc.seconds(), 7);
         assert_eq!(inc.nanoseconds(), 300_000_000);
+    }
+
+    /// DDS 1.4 §2.3.2: "the nanosec field must verify
+    /// 0 <= nanosec < 1000000000" — 1 500 000 000 ns is 1 s and 500 000 000 ns.
+    #[test]
+    fn the_constructors_keep_nanosec_below_a_second() {
+        let t = Time::new(10, 1_500_000_000);
+        assert_eq!((t.sec, t.nanosec), (11, 500_000_000));
+        assert!(t.is_normalized());
+        let d = Duration::new(3, 2_000_000_000);
+        assert_eq!((d.sec, d.nanosec), (5, 0));
+        assert!(d.is_normalized());
+        // 0xFFFFFFFF ns is 4 s and 294 967 295 ns.
+        let big = Duration::new(0, 0xFFFF_FFFF);
+        assert_eq!((big.sec, big.nanosec), (4, 294_967_295));
+        // The seconds saturate instead of wrapping.
+        assert_eq!(Time::new(i32::MAX - 1, 3_000_000_000).sec, i32::MAX);
+    }
+
+    /// §2.3.2: a QoS duration is a `Duration_t` of `sec` and `nanosec` by the
+    /// conversions, and the infinite one stays infinite.
+    #[test]
+    fn a_qos_duration_converts_to_sec_and_nanosec_and_back() {
+        let q = zerodds_qos::Duration::from_millis(1_250);
+        let d = Duration::from(q);
+        assert_eq!((d.sec, d.nanosec), (1, 250_000_000));
+        assert_eq!(zerodds_qos::Duration::from(d), q);
+        assert_eq!(
+            Duration::from(zerodds_qos::Duration::INFINITE),
+            Duration::INFINITE
+        );
+        assert_eq!(
+            zerodds_qos::Duration::from(Duration::INFINITE),
+            zerodds_qos::Duration::INFINITE
+        );
+        assert_eq!(Duration::from(zerodds_qos::Duration::ZERO), Duration::ZERO);
+    }
+
+    /// DDS 1.4 §2.3.3: `DURATION_INFINITE_SEC` and `DURATION_INFINITE_NSEC`
+    /// are `0x7fffffff`, `TIME_INVALID_SEC` is -1 and `TIME_INVALID_NSEC`
+    /// `0xffffffff`.
+    #[test]
+    fn the_reserved_values_are_those_of_the_idl() {
+        assert_eq!(
+            (Duration::INFINITE.sec, Duration::INFINITE.nanosec),
+            (0x7fff_ffff, 0x7fff_ffff)
+        );
+        assert_eq!(
+            (Time::INVALID.sec, Time::INVALID.nanosec),
+            (-1, 0xffff_ffff)
+        );
+        assert_eq!((Duration::ZERO.sec, Duration::ZERO.nanosec), (0, 0));
+        assert!(Time::INVALID.is_invalid());
+        assert!(!Time::new(0, 0).is_invalid());
+    }
+
+    /// The reserved values of §2.3.3 carry a `nanosec` above a second by
+    /// definition and are not carried.
+    #[test]
+    fn the_reserved_values_are_kept() {
+        assert_eq!(Time::new(-1, 0xFFFF_FFFF), Time::INVALID);
+        assert_eq!(Time::new(0x7FFF_FFFF, 0xFFFF_FFFE), Time::INFINITE);
+        assert_eq!(Duration::new(0x7FFF_FFFF, 0x7FFF_FFFF), Duration::INFINITE);
+        assert!(Time::INVALID.is_normalized());
+        assert!(Time::INFINITE.is_normalized());
+        assert!(Duration::INFINITE.is_normalized());
+    }
+
+    /// A value built through the public fields can be out of range; it is
+    /// reported as not normalized.
+    #[test]
+    fn a_hand_built_value_can_be_checked() {
+        assert!(
+            !Time {
+                sec: 1,
+                nanosec: 1_000_000_000
+            }
+            .is_normalized()
+        );
+        assert!(
+            Time {
+                sec: 1,
+                nanosec: 999_999_999
+            }
+            .is_normalized()
+        );
+        assert!(
+            !Duration {
+                sec: 1,
+                nanosec: 1_000_000_000
+            }
+            .is_normalized()
+        );
+    }
+
+    /// 1 ms before the epoch is -1 s and 999 000 000 ns (§2.3.2), not a
+    /// `nanosec` of -1 000 000 read as unsigned.
+    #[test]
+    fn from_millis_of_a_negative_value_is_normalized() {
+        let t = Time::from_millis(-1);
+        assert_eq!((t.sec, t.nanosec), (-1, 999_000_000));
+        assert_eq!(t.as_millis(), -1);
+        let d = Duration::from_millis(-1_500);
+        assert_eq!((d.sec, d.nanosec), (-2, 500_000_000));
+        assert_eq!(d.as_millis(), -1_500);
     }
 
     #[test]

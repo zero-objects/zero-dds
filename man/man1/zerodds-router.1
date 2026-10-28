@@ -1,13 +1,20 @@
-.TH ZERODDS-ROUTER 1 "2026-06-27" "1.0.0-rc.4" "ZeroDDS Manual"
+.TH ZERODDS-ROUTER 1 "" "ZeroDDS" "ZeroDDS Manual"
 .SH NAME
 zerodds-router \- DDS routing-service daemon
 .SH SYNOPSIS
 .B zerodds-router run
-\fB\-\-config\fR \fIFILE\fR
+\fB\-\-routes\fR \fIFILE\fR
 [\fB\-\-types\fR \fISHAPES.json\fR]
+[\fB\-\-config\fR \fIYAML\fR]
+[\fB\-\-set\fR \fIPATH\fR=\fIVALUE\fR]...
 .br
 .B zerodds-router validate
-\fB\-\-config\fR \fIFILE\fR
+\fB\-\-routes\fR \fIFILE\fR
+.br
+.B zerodds-router
+[\fB\-\-config\fR \fIYAML\fR]
+[\fB\-\-set\fR \fIPATH\fR=\fIVALUE\fR]...
+\fB\-\-check\-config\fR
 .SH DESCRIPTION
 .B zerodds-router
 is a DDS-to-DDS forwarding daemon: it copies samples between DDS endpoints
@@ -36,10 +43,14 @@ Parse and validate the config, print the resolved routes, and exit without
 joining any domain.
 .SH OPTIONS
 .TP
-.BR \-\-config " \fIFILE\fR"
+.BR \-\-routes " \fIFILE\fR"
 Route configuration. The format is chosen by extension: a
 .I .xml
 path is parsed as XML, anything else as JSON. Required.
+An element, attribute or key the router does not read is refused with its
+name (XML also with its line); in JSON, keys beginning with
+.B _
+are comments.
 .TP
 .BR \-\-types " \fISHAPES.json\fR"
 A JSON array of type shapes describing each route's
@@ -51,6 +62,22 @@ or
 .IR transform ,
 which must understand the sample's fields. Plain raw-byte forwards
 (\fItype_name\fR \fBzerodds::RawBytes\fR) need no shapes.
+.TP
+.BR \-\-config " \fIYAML\fR"
+The DDS runtime configuration: base file, with drop-ins in its sibling
+\fIYAML\fR.d directory. Without it, the system configuration directory
+(\fI/etc/zerodds\fR on Linux) is read. A \fI.json\fR or \fI.xml\fR path
+is refused with a pointer to \fB\-\-routes\fR.
+.TP
+.BR \-\-set " \fIPATH\fR=\fIVALUE\fR"
+One runtime setting above every file, repeatable.
+.TP
+.B \-\-check\-config
+Validate and print the effective runtime configuration with the origin of
+every value, then exit (0 valid, 1 invalid).
+.TP
+.BR \-V ", " \-\-version
+Print version and exit.
 .SH CONFIGURATION
 The config has a top-level
 .I name
@@ -81,16 +108,26 @@ There is no SIGHUP reload \(em edit the config and restart the service.
 .TP
 .I /etc/zerodds/router.json
 Default configuration read by the
-.BR zerodds-router.service (8)
+.I /usr/lib/systemd/system/zerodds-router.service
 systemd unit.
 .TP
 .I /usr/share/zerodds/configs/router.json.example
 Shipped example configuration.
 .SH EXIT STATUS
+.TP
 .B 0
-on a clean validate or a clean shutdown,
+A clean validate, a clean shutdown, or
+.B \-\-check\-config
+found the configuration valid.
+.TP
 .B 1
-on a usage error or a config / startup failure.
+An invalid route file or configuration value, or a startup failure.
+.TP
+.B 2
+The command line was wrong (no or an unknown command, a route file
+given with
+.BR \-\-config ),
+or a configuration file could not be read or does not parse.
 .SH SEE ALSO
 .BR zerodds-admin (1),
 .BR zerodds-spy (1)

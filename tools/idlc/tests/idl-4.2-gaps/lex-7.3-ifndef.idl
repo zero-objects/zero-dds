@@ -1,0 +1,4 @@
+// IDL 4.2 §7.3, ISO/IEC 14882:2003 §16.1 — `#ifndef`.
+#ifndef FLAG
+struct Sa { long m; };
+#endif

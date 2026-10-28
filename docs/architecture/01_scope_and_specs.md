@@ -110,7 +110,7 @@ The following OMG specs and related standards are deliberately **not** implement
 
 ## 7 Spec-to-code traceability
 
-Every OMG spec section is mapped to concrete code modules. The traceability matrix is maintained continuously (Claude-Teams-supported from git history and code annotations).
+Every OMG spec section is mapped to concrete code modules. The traceability matrix is maintained continuously (from git history and code annotations).
 
 Format of the annotation in code:
 

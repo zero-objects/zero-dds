@@ -26,6 +26,10 @@ public final class Guid {
     public static final byte[] SEDP_PUB_READER = {0, 0x00, 0x03, (byte) 0xC7};
     public static final byte[] SEDP_SUB_WRITER = {0, 0x00, 0x04, (byte) 0xC2};
     public static final byte[] SEDP_SUB_READER = {0, 0x00, 0x04, (byte) 0xC7};
+    public static final byte[] TL_REQ_WRITER = {0, 3, 0, (byte) 0xC3};
+    public static final byte[] TL_REQ_READER = {0, 3, 0, (byte) 0xC4};
+    public static final byte[] TL_REPLY_WRITER = {0, 3, 1, (byte) 0xC3};
+    public static final byte[] TL_REPLY_READER = {0, 3, 1, (byte) 0xC4};
 
     public final byte[] value; // 16 bytes
 

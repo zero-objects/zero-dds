@@ -1,0 +1,9 @@
+# The (encoding, byte order) slots of typedef-chain-primitive-unannotated that fastdds produced no
+# bytes for, and why. The rest are the .bin files beside this one.
+# encoding	endian	status	detail
+pl-cdr1	le	version-alias	plain-cdr1
+pl-cdr1	be	version-alias	plain-cdr1
+delimited-cdr	le	version-alias	plain-cdr2
+delimited-cdr	be	version-alias	plain-cdr2
+pl-cdr2	le	version-alias	plain-cdr2
+pl-cdr2	be	version-alias	plain-cdr2

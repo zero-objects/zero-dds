@@ -4,7 +4,7 @@
 # ZeroDDS DCPS stack — RTPS DATA_FRAG + selective reassembly. Verifies
 # integrity (pattern data[i]=(i%251)). Shows that the reassembly cap
 # is now ROS-realistic (previously a 1-MiB silent drop). Runs on a single
-# host (codepit). Optionally multicast-free via ZERODDS_NO_MULTICAST+PEERS.
+# host (Linux test host). Optionally multicast-free via ZERODDS_NO_MULTICAST+PEERS.
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../../.." && pwd)"

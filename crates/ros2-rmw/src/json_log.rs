@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! rcutils-kompatibles JSON-Logging.
+//! rcutils-compatible JSON logging.
 //!
 //! Spec: `zerodds-ros2-bridge-1.0.md` §8.1 (= rcutils logging API).
 //!

@@ -1,0 +1,226 @@
+#!/bin/bash
+# wireprobe-fastdds — one IDL type and one JSON value, through eProsima
+# Fast DDS's own serialiser.
+#
+# The same command line as `wireprobe-zerodds`, so a case runs through
+# both by substituting the program name. See
+# `docs/specs/zerodds-interop-suite-1.0.md`.
+#
+#   wireprobe-fastdds --idl robot.idl --type common::Robot \
+#                     --values robot.json --encoding xcdr2 --endian le \
+#                     --out robot.fastdds.xcdr2.le.bin
+#
+# `fastddsgen` generates the type support; `wireprobe-fill` supplies the
+# statements that put the JSON sample into it; the template runs the
+# generated `<T>PubSubType::serialize` and then Fast CDR. Nothing here
+# decides any wire question.
+#
+# The read direction is the same command line with `--in` instead of
+# `--values`: `wireprobe-dump` supplies the statements that print the
+# sample and the template runs the generated
+# `<T>PubSubType::deserialize`.
+#
+#   wireprobe-fastdds --idl robot.idl --type common::Robot \
+#                     --in robot.rti.xcdr2.le.bin --encoding xcdr2 \
+#                     --endian le --values-out robot.read.json
+set -euo pipefail
+
+FASTDDS="${FASTDDS_HOME:-/opt/fastdds}"
+FASTDDSGEN="${FASTDDSGEN:-/root/vendors/fastddsgen/scripts/fastddsgen}"
+FILL="${WIREPROBE_FILL:-wireprobe-fill}"
+DUMP="${WIREPROBE_DUMP:-wireprobe-dump}"
+TOOLS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TEMPLATE="$TOOLS/fastdds-template.cpp"
+DECODE_TEMPLATE="$TOOLS/fastdds-decode-template.cpp"
+# shellcheck source=probe-cache.sh
+. "$TOOLS/probe-cache.sh"
+# shellcheck source=bounded.sh
+. "$TOOLS/bounded.sh"
+# shellcheck source=diagnostics.sh
+. "$TOOLS/diagnostics.sh"
+
+idl=""; type_name=""; values=""; encoding="xcdr2"; endian="le"; emit="payload"
+out=""; input=""; values_out=""; matrix=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+        # Every combination out of the one build, as
+        # `<version>\t<endian>\t<hex>` rows. What a corpus sweep asks
+        # for: `fastddsgen` is the slowest generator of the five and
+        # four processes over one case ran it four times.
+        --matrix) matrix=1; shift ;;
+        --idl) idl="$2"; shift 2 ;;
+        --type) type_name="$2"; shift 2 ;;
+        --values) values="$2"; shift 2 ;;
+        --in) input="$2"; shift 2 ;;
+        --values-out) values_out="$2"; shift 2 ;;
+        --encoding) encoding="$2"; shift 2 ;;
+        --endian) endian="$2"; shift 2 ;;
+        --emit) emit="$2"; shift 2 ;;
+        --out) out="$2"; shift 2 ;;
+        # `--dialect` names which implementation's answers to give, and
+        # this probe can only give Fast DDS's. Accepting another and
+        # producing these bytes anyway would report a divergence the run
+        # never measured, so it is refused the way `--emit` is.
+        --dialect)
+            if [ "$2" != "fastdds" ]; then
+                echo "wireprobe-fastdds: --dialect $2 is not this probe's; it writes what Fast DDS writes" >&2
+                exit 3
+            fi
+            shift 2 ;;
+        # Accepted and ignored: these select between shapes this project
+        # can produce, and Fast DDS has exactly one of each. Ignoring
+        # them lets the same command line drive all four probes.
+        --length-codes|--collection-delimiters|--map-length|--wstring-length) shift 2 ;;
+        --pl-cdr1-headers|--default-extensibility|--key-holder) shift 2 ;;
+        --help|-h) sed -n '2,26p' "${BASH_SOURCE[0]}"; exit 0 ;;
+        *) echo "wireprobe-fastdds: \`$1\` is not an option" >&2; exit 2 ;;
+    esac
+done
+[ -n "$idl" ] || { echo "wireprobe-fastdds: --idl is required" >&2; exit 2; }
+[ -n "$type_name" ] || { echo "wireprobe-fastdds: --type is required" >&2; exit 2; }
+if [ -n "$input" ] && [ -n "$values" ]; then
+    echo "wireprobe-fastdds: --in reads bytes and --values writes them; pick one" >&2; exit 2
+fi
+if [ -z "$input" ] && [ -z "$values" ]; then
+    echo "wireprobe-fastdds: --values is required, or --in to read bytes back" >&2; exit 2
+fi
+
+case "$encoding" in
+    xcdr1|plain-cdr1|pl-cdr1) version_word=1 ;;
+    xcdr2|plain-cdr2|delimited-cdr|pl-cdr2) version_word=2 ;;
+    *) echo "wireprobe-fastdds: \`$encoding\` is not an encoding" >&2; exit 2 ;;
+esac
+case "$endian" in
+    le|little) endian_word=le ;;
+    be|big) endian_word=be ;;
+    *) echo "wireprobe-fastdds: \`$endian\` is not a byte order" >&2; exit 2 ;;
+esac
+case "$emit" in
+    payload) ;;
+    *) echo "wireprobe-fastdds: --emit $emit is not implemented here yet" >&2; exit 3 ;;
+esac
+
+work="$(mktemp -d)"
+# Kept before the removal and on every exit path, including a
+# refusal: the generated source of a case a front end could not carry
+# is the one a reader most wants to see.
+trap 'probe_keep_generated "$work" "fastdds" "$idl"; rm -rf "$work"' EXIT
+
+cp "$idl" "$work/gen.idl"
+cpp_name="$("$FILL" --vendor fastdds --idl "$idl" --type "$type_name" --print-c-name)"
+
+if [ -n "$input" ]; then
+    "$DUMP" --vendor fastdds --idl "$idl" --type "$type_name" --out "$work/dump.inc"
+    # The decode template fills a sample and serialises it once, only to
+    # read the encapsulation flag `fastddsgen` chose for this type. It
+    # has to, because an `@external` member of a default-constructed C++
+    # sample is a null `eprosima::fastcdr::external` that Fast DDS
+    # refuses to serialise — and the refusal used to take the whole read
+    # direction with it.
+    #
+    # The values do not matter and do not survive: the sample is reset
+    # before it becomes the deserialisation target. `--defaults` rather
+    # than `--values` because the read direction is not given a values
+    # file — the caller passes a payload, not a sample.
+    #
+    # Missing this line cost 1044 rows per encoding in the pairwise run:
+    # every case Fast DDS was asked to read came back `unread` with
+    # `probe.cpp:72:10: fatal error: fill.inc: No such file or directory`,
+    # which reads like a wire disagreement in the counts and is not one.
+    "$FILL" --vendor fastdds --idl "$idl" --type "$type_name" --defaults \
+            --out "$work/fill.inc"
+    # As above, for the read direction. `fill.inc` is in the key because
+    # the compiled binary carries it.
+    key="$(probe_cache_key fastdds decode "$cpp_name" -- "$idl" "$work/dump.inc" \
+        "$work/fill.inc" "$DECODE_TEMPLATE" "$TOOLS/vendor_crash.h")"
+    cached="$(probe_cache_dir "$key")"
+    if [ -z "$cached" ] || [ ! -x "$cached/probe" ]; then
+        (
+            cd "$work"
+            bounded_run fastddsgen "$FASTDDSGEN" -t . -replace gen.idl > gen.log 2>&1 \
+                || { echo "wireprobe-fastdds: fastddsgen failed" >&2; tail -5 gen.log >&2; exit 4; }
+            sed -e "s/@TYPE@/$cpp_name/g" "$DECODE_TEMPLATE" > probe.cpp
+            g++ -std=c++17 -o probe probe.cpp genPubSubTypes.cxx genTypeObjectSupport.cxx \
+                -I. -I"$TOOLS" -I"$FASTDDS/include" -L"$FASTDDS/lib" -lfastcdr -lfastdds \
+                -Wl,-rpath,"$FASTDDS/lib" > cc.log 2>&1 \
+                || { echo "wireprobe-fastdds: the decode probe did not compile" >&2; \
+                     grep -m10 "error:" cc.log >&2; exit 5; }
+        )
+        probe_diagnostics_after fastdds "$work" "$idl" $?
+        if [ -n "$cached" ]; then
+            build="$(mktemp -d "$WIREPROBE_CACHE/build.XXXXXX")"
+            cp "$work/probe" "$build/probe"
+            probe_diagnostics_publish "$work" "$build"
+            probe_generated_publish "$work" "$build"
+            probe_cache_publish "$build" "$cached"
+        fi
+    else
+        # A cache hit does not compile, so the build said nothing
+        # this run. What it said when it was built is replayed,
+        # or a re-record would be silent for every case it did
+        # not rebuild.
+        probe_diagnostics_cached fastdds "$cached" "$idl"
+        probe_generated_cached "$cached" "$work"
+    fi
+    if [ -n "$cached" ] && [ -x "$cached/probe" ]; then binary="$cached/probe"; else binary="$work/probe"; fi
+    bounded_run_native "the fast dds read probe" "$binary" "$endian_word" "$version_word" \
+        < "$input" > "$work/values.json"
+    if [ -n "$values_out" ]; then cp "$work/values.json" "$values_out"; else cat "$work/values.json"; fi
+    exit 0
+fi
+
+"$FILL" --vendor fastdds --idl "$idl" --type "$type_name" --values "$values" \
+        --out "$work/fill.inc"
+
+# None of the three settings is in the key: the template takes the
+# representation, the version and the byte order on its command line, so
+# one binary answers all four combinations and the cache holds one build
+# per case rather than four compiles of identical generated code.
+key="$(probe_cache_key fastdds encode "$cpp_name" -- "$idl" "$work/fill.inc" "$TEMPLATE" \
+    "$TOOLS/vendor_crash.h")"
+cached="$(probe_cache_dir "$key")"
+if [ -z "$cached" ] || [ ! -x "$cached/probe" ]; then
+    (
+        cd "$work"
+        # `-t .` keeps the preprocessor's intermediate inside this run's
+        # directory. Without it `fastddsgen` writes it to a fixed path
+        # derived from the IDL's name, and two probes over two cases — every
+        # one of which is copied in as `gen.idl` — overwrite each other's.
+        bounded_run fastddsgen "$FASTDDSGEN" -t . -replace gen.idl > gen.log 2>&1 \
+            || { echo "wireprobe-fastdds: fastddsgen failed" >&2; tail -5 gen.log >&2; exit 4; }
+        sed -e "s/@TYPE@/$cpp_name/g" "$TEMPLATE" > probe.cpp
+        g++ -std=c++17 -o probe probe.cpp genPubSubTypes.cxx genTypeObjectSupport.cxx \
+            -I. -I"$TOOLS" -I"$FASTDDS/include" -L"$FASTDDS/lib" -lfastcdr -lfastdds \
+            -Wl,-rpath,"$FASTDDS/lib" > cc.log 2>&1 \
+            || { echo "wireprobe-fastdds: the probe did not compile" >&2; \
+                 grep -m10 "error:" cc.log >&2; exit 5; }
+    )
+    probe_diagnostics_after fastdds "$work" "$idl" $?
+    if [ -n "$cached" ]; then
+        build="$(mktemp -d "$WIREPROBE_CACHE/build.XXXXXX")"
+        cp "$work/probe" "$build/probe"
+        probe_diagnostics_publish "$work" "$build"
+        probe_generated_publish "$work" "$build"
+        probe_cache_publish "$build" "$cached"
+    fi
+else
+    # A cache hit does not compile, so the build said nothing
+    # this run. What it said when it was built is replayed,
+    # or a re-record would be silent for every case it did
+    # not rebuild.
+    probe_diagnostics_cached fastdds "$cached" "$idl"
+    probe_generated_cached "$cached" "$work"
+fi
+if [ -n "$cached" ] && [ -x "$cached/probe" ]; then binary="$cached/probe"; else binary="$work/probe"; fi
+if [ "$matrix" = 1 ]; then
+    bounded_run_native "the fast dds probe" "$binary" --matrix
+    exit 0
+fi
+bounded_run_native "the fast dds probe" "$binary" "$endian_word" "$version_word" \
+    > "$work/bytes.bin"
+
+if [ -n "$out" ]; then
+    cp "$work/bytes.bin" "$out"
+else
+    od -An -tx1 -v "$work/bytes.bin" | tr -d ' \n'; echo
+fi

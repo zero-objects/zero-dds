@@ -1,0 +1,1 @@
+@final struct MapValSeq { map<long, sequence<long> > entries; long tail; };

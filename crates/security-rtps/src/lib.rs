@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Crate `zerodds-security-rtps`. Safety classification: **SAFE** (a pure wire-format adapter; the actual crypto delegates to a [`CryptographicPlugin`]).
+//! Crate `zerodds-security-rtps`. Safety classification: **SAFE** (a pure wire-format adapter; the actual crypto delegates to a [`CryptographicPlugin`](zerodds_security::CryptographicPlugin)).
 //!
-//! Secure submessage wrapper (OMG DDS-Security 1.1 §7.3.6) +
+//! Secure submessage wrapper (OMG DDS-Security 1.2 §7.4.6, wire form §7.4.7) +
 //! RTPS header AAD codec (§9.5).
 //!
 //! ## Layer position
@@ -12,7 +12,7 @@
 //! `zerodds-rtps` (RTPS submessage layout). Used by the DCPS runtime via
 //! `Box<dyn CryptographicPlugin>` and the inbound/outbound datapath.
 //!
-//! ## Public API (as of 1.0.0-rc.1)
+//! ## Public API
 //!
 //! Takes one or more plain RTPS submessages (as opaque bytes)
 //! and wraps them into:
@@ -30,9 +30,6 @@
 //!   `&mut dyn CryptographicPlugin` callback — so AES-GCM, HMAC,
 //!   or future backends are interchangeable.
 //! - SRTPS wrap (§9.5 RTPS message protection): `SRTPS_PREFIX` + `SRTPS_POSTFIX` codec.
-//! - Receiver-specific MAC list in the POSTFIX (`MAX_RECEIVER_MACS`): one
-//!   16-byte MAC per remote reader; single-receiver paths leave the
-//!   list empty (spec §7.3.6.3 allows that).
 //! - Little-endian submessage header (`0x01` flag).
 //!
 //! ## Non-goals
@@ -51,9 +48,8 @@ pub mod header_aad;
 mod srtps;
 
 pub use codec::{
-    MAX_RECEIVER_MACS, SEC_BODY, SEC_POSTFIX, SEC_PREFIX, SRTPS_POSTFIX, SRTPS_PREFIX,
-    SecurityRtpsError, decode_secured_submessage, decode_secured_submessage_multi,
-    encode_secured_submessage, encode_secured_submessage_multi,
+    SEC_BODY, SEC_POSTFIX, SEC_PREFIX, SRTPS_POSTFIX, SRTPS_PREFIX, SecurityRtpsError,
+    decode_secured_submessage, encode_secured_submessage,
 };
 pub use header_aad::{build_rtps_header_aad, build_submessage_aad};
 pub use srtps::{

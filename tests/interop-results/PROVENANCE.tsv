@@ -1,0 +1,16 @@
+# What each toolchain reports about itself, on this host.
+# Produced by tools/interop-results/toolchain-provenance.sh
+# host=<test-host> date=2026-08-16T17:05:26Z tree=4038312a9
+system	probed	version	detail	source
+cyclone	yes	idlc (Eclipse Cyclone DDS) 11.0.1 / libddsc 11.0.1	/opt/cyclone	idlc -v + lib soname
+rti	yes	RTI Connext DDS 7.7.0, rtiddsgen version 4.7.0	/opt/rti.com/rti_connext_dds-7.7.0	install dir + rtiddsgen -version
+fastdds	yes	fastddsgen version 4.3.0 / libfastdds 3.6.1.0 / Fast CDR 2.3.5	/opt/fastdds	fastddsgen -version + lib sonames
+opendds	yes	OpenDDS 3.34.0 / ACE 6.5.24	/opt/opendds	include/dds/Version.h
+omniorb	yes	omniORB 4.3.3+ds1-1	/usr/bin/omniidl	dpkg libomniorb4-dev
+tao	no		unset	not installed
+jacorb	yes	3.9	/opt/jacorb	jar name
+ros	no			not sourced
+hdds	yes	hddsgen 1.2.0	/root/hdds-probe/hdds_gen_src/target/release/hddsgen	hddsgen --version
+opensplice	no		unset	not probed — this snapshot predates the column; toolchain-provenance.sh has no opensplice block yet
+zerodds	yes	v1.0.0-rc.6-1102-g4038312a9	4038312a9	git
+rustc	yes	rustc 1.88.0 (6b00bc388 2025-06-23)		rustc --version

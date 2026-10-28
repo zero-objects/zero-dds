@@ -1,0 +1,9 @@
+// `typedef` chain over a primitive
+typedef long Metres;
+typedef Metres Distance;
+typedef Distance Range;
+
+@final struct Sample {
+    Range far;
+    long near;
+};

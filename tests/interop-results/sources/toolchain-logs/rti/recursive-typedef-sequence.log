@@ -1,0 +1,11 @@
+## wireprobe-rti, exit 5
+### stderr
+wireprobe-rti: the probe did not compile
+gen.h:46:13: error: unknown type name 'm_Node'
+gen.h:46:13: error: unknown type name 'm_Node'
+gen.c:178:9: error: passing argument 1 of 'm_Node_initialize_w_params' from incompatible pointer type [-Wincompatible-pointer-types]
+gen.c:248:9: error: passing argument 1 of 'm_Node_finalize_w_params' from incompatible pointer type [-Wincompatible-pointer-types]
+gen.c:277:9: error: passing argument 1 of 'm_Node_copy' from incompatible pointer type [-Wincompatible-pointer-types]
+gen.c:400:71: error: implicit declaration of function 'm_NodeRef_get_typecode_with_node'; did you mean 'm_Node_get_typecode_with_node'? [-Wimplicit-function-declaration]
+gen.h:46:13: error: unknown type name 'm_Node'
+gen.h:46:13: error: unknown type name 'm_Node'

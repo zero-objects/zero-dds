@@ -1,0 +1,6 @@
+// two explicitly numbered members of a mutable type, so a hand-built
+// parameter list can carry a header beside a member with the same id
+@mutable struct Sample {
+    @id(1) long a;
+    @id(2) long b;
+};

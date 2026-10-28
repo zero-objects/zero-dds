@@ -115,8 +115,10 @@ conformance correction, not a vendor workaround:
 
 **Confirmed limitation (universal, not ZeroDDS-specific):** a single writer
 emits one representation per sample, so one writer cannot serve XCDR1-only *and*
-XCDR2-only readers simultaneously — true of all four vendors. ZeroDDS's writer
-defaults to XCDR2 and is configurable to XCDR1 (`DataWriterQos.data_representation`).
+XCDR2-only readers simultaneously — true of all four vendors. A ZeroDDS writer
+emits the first representation it offers: by default XCDR1, the first of
+`wire.data_representation_offer` (`[XCDR1, XCDR2]`); per writer
+`DataWriterQos.data_representation`, participant-wide that setting.
 
 ---
 
@@ -247,8 +249,7 @@ Every claim above has a runnable project in the example repository:
 ## Test inventory (Cyclone + Fast DDS live QoS/discovery)
 
 > The per-test inventory below predates the multi-vendor matrices above and is
-> kept as the detailed live-test backing for the Cyclone + Fast DDS rows. (EN
-> translation of this section is pending the spec-coverage language sweep.)
+> kept as the detailed live-test backing for the Cyclone + Fast DDS rows.
 
 ### CV-1 fastdds_discovery_server_spdp_handshake
 
@@ -259,7 +260,7 @@ Protocol.
 
 **Tests:** `fastdds_discovery_server_spdp_handshake`.
 
-**Status:** done — Live-Test gegen FastDDS-Discovery-Server (TCP).
+**Status:** done — live test against the FastDDS Discovery Server (TCP).
 
 ### CV-2 fastdds_default_discovery_via_shape_pub_visible
 
@@ -274,7 +275,7 @@ Protocol.
 ### CV-3 fastdds_pub_besteffort_volatile_square
 
 **Spec:** `dds-xtypes-1.3.md::§7.4.3` (XCDR2) +
-`ddsi-rtps-2.5.md::§8.5.2` (SEDP-Match).
+`ddsi-rtps-2.5.md::§8.5.2` (SEDP match).
 
 **Repo:** `crates/dcps/tests/fastdds_live_pub.rs`.
 
@@ -305,7 +306,7 @@ Protocol.
 
 ### CV-6 fastdds_pub_besteffort_transient_local_square
 
-**Spec:** `zerodds-dcps-1.4.md::§2.2.3` — RxO-Compatibility-Check.
+**Spec:** `zerodds-dcps-1.4.md::§2.2.3` — RxO compatibility check.
 
 **Repo:** `crates/dcps/tests/fastdds_live_pub.rs`.
 
@@ -315,7 +316,7 @@ Protocol.
 
 ### CV-7 fastdds_sub_besteffort_volatile_square
 
-**Spec:** `ddsi-rtps-2.5.md::§8.4.2.3` (Reader Behavior) + DATA-Outbound.
+**Spec:** `ddsi-rtps-2.5.md::§8.4.2.3` (Reader Behavior) + DATA outbound.
 
 **Repo:** `crates/dcps/tests/fastdds_live_sub.rs`.
 
@@ -355,18 +356,26 @@ Protocol.
 
 ### CV-11 fastdds_qos_matrix_*
 
-**Spec:** `zerodds-dcps-1.4.md::§2.2.3` (QoS-Compatibility) +
+**Spec:** `zerodds-dcps-1.4.md::§2.2.3` (QoS compatibility) +
 `ddsi-rtps-2.5.md::§8.4` (Reliable).
 
 **Repo:** `crates/dcps/tests/fastdds_qos_matrix.rs`.
 
-**Tests:** 4 `qos_matrix_*`-Varianten.
+**Tests:** `crates/dcps/tests/fastdds_qos_matrix.rs::qos_matrix_besteffort_volatile`,
+`crates/dcps/tests/fastdds_qos_matrix.rs::qos_matrix_besteffort_transient_local`,
+`crates/dcps/tests/fastdds_qos_matrix.rs::qos_matrix_reliable_volatile`,
+`crates/dcps/tests/fastdds_qos_matrix.rs::qos_matrix_reliable_transient_local`
+(all four behind cfg target_os = linux + feature live-interop + ignore;
+default run: 0 cases, on macOS the loud stub
+fastdds_qos_matrix_macos_stub runs instead, also ignore. Lab invocation: cargo test
+-p zerodds-dcps --features live-interop --test fastdds_qos_matrix --
+--ignored).
 
 **Status:** done
 
 ### CV-12 cyclone_live_wlp_manual_by_participant_pulse
 
-**Spec:** `ddsi-rtps-2.5.md::§8.7.2` (LIVELINESS Wire-Mapping) +
+**Spec:** `ddsi-rtps-2.5.md::§8.7.2` (LIVELINESS wire mapping) +
 `zerodds-dcps-1.4.md::§2.2.3.11` (LIVELINESS QoS).
 
 **Repo:** `crates/dcps/tests/cyclone_live_wlp_manual.rs`.
@@ -387,7 +396,7 @@ Protocol.
 
 ### CV-14 typelookup_responder_builds_cyclone_compatible_reply
 
-**Spec:** `dds-xtypes-1.3.md::§7.6.3.3` — TypeLookup-Responder.
+**Spec:** `dds-xtypes-1.3.md::§7.6.3.3` — TypeLookup responder.
 
 **Repo:** `crates/discovery/tests/cyclone_typelookup_responder.rs`.
 
@@ -405,42 +414,77 @@ Protocol.
 
 **Status:** done
 
-### CV-16 cyclone_compliance (Wire-Compliance)
+### CV-16 cyclone_compliance (wire compliance)
 
 **Spec:** `ddsi-rtps-2.5.md::§8.3` (Messages) + §8.4 (Behavior).
 
 **Repo:** `crates/rtps/tests/cyclone_compliance.rs`.
 
-**Tests:** Multiple `cyclone_compliance_*`-Tests.
+**Tests:** `crates/rtps/tests/cyclone_compliance.rs::cyclone_data_empty_payload_decodes`,
+`crates/rtps/tests/cyclone_compliance.rs::cyclone_data_cdr2_payload_decodes_and_carries_payload`,
+`crates/rtps/tests/cyclone_compliance.rs::cyclone_heartbeat_decodes`,
+`crates/rtps/tests/cyclone_compliance.rs::cyclone_frames_have_rtps_magic`,
+`crates/rtps/tests/cyclone_compliance.rs::cyclone_frames_use_rtps_2_5_or_compatible`,
+`crates/rtps/tests/cyclone_compliance.rs::zerodds_writer_produces_compatible_data_layout`,
+`crates/rtps/tests/cyclone_compliance.rs::zerodds_writer_produces_compatible_data_with_payload`,
+`crates/rtps/tests/cyclone_compliance.rs::cyclone_data_empty_roundtrip_bit_identical`,
+`crates/rtps/tests/cyclone_compliance.rs::cyclone_data_cdr2_roundtrip_bit_identical`,
+`crates/rtps/tests/cyclone_compliance.rs::cyclone_sedp_publication_datagram_decodes`,
+`crates/rtps/tests/cyclone_compliance.rs::cyclone_sedp_publication_parameter_list_parses`,
+`crates/rtps/tests/cyclone_compliance.rs::cyclone_sedp_publication_all_four_topics_parse`
+(no gate; the default run executes all twelve).
 
 **Status:** done
 
 ### CV-17 cyclone_he_must_understand
 
-**Spec:** `ddsi-rtps-2.5.md::§9.4.2.11.2` — Must-Understand-Bit.
+**Spec:** `ddsi-rtps-2.5.md::§9.4.2.11.2` — Must-Understand bit.
 
 **Repo:** `crates/rtps/tests/cyclone_he_must_understand.rs` +
 `crates/rtps/src/parameter_list.rs::Parameter::with_must_understand`
-(Sender-Side-Helper) + `validate_must_understand` (Decoder).
+(sender-side helper) + `validate_must_understand` (decoder).
 
-**Tests:** Header-Extension Must-Understand-Tests +
+**Tests:** header extension Must-Understand tests +
 `parameter_with_must_understand_helper_sets_bit`.
 
-**Status:** done — beide Pfade live: Sender setzt `MUST_UNDERSTAND_BIT`
-explizit via `with_must_understand`, Decoder rejected unbekannte
-MU-PIDs. Live-Test gegen Cyclone DDS bleibt `#[ignore]` bis
-Lab-Setup in CI verfügbar.
+**Status:** done — both paths live: the sender sets `MUST_UNDERSTAND_BIT`
+explicitly via `with_must_understand`, the decoder rejects unknown
+MU PIDs. The live test against Cyclone DDS stays `#[ignore]` until a
+lab setup is available in CI.
 
-### CV-18 cyclone_full_interop
+### CV-18 representation_and_type_information
 
-**Spec:** `ddsi-rtps-2.5.md::§8` (gesamt) +
+**Spec:** `ddsi-rtps-2.5.md::§8` (entire) +
 `dds-xtypes-1.3.md::§7.6.3` (TypeLookup).
 
-**Repo:** `crates/discovery/tests/cyclone_full_interop.rs`.
+**Repo:** `crates/discovery/tests/representation_and_type_information.rs`.
 
-**Tests:** End-to-End-Interop-Test mit SPDP+SEDP+TypeLookup+Data-Pfad.
+**Tests:** `crates/discovery/tests/representation_and_type_information.rs::negotiation_takes_xcdr2_when_both_offer_both_versions`,
+`crates/discovery/tests/representation_and_type_information.rs::type_information_is_built_from_a_keyed_appendable_struct`,
+`crates/discovery/tests/representation_and_type_information.rs::negotiation_matches_xcdr2_when_both_support`,
+`crates/discovery/tests/representation_and_type_information.rs::typeinfo_for_cyclone_chatter_has_nonzero_sizes`
+(no gate, all four run in the default run).
 
-**Status:** done
+**Status:** done — the two preconditions without a peer:
+representation negotiation to XCDR2 and a `TypeInformation` from the
+type objects. The file was called `cyclone_full_interop.rs` and carried an
+`#[ignore]` placeholder for the data path; its local part is the
+first test, the data path itself is CV-18b.
+
+### CV-18b Live data path ZeroDDS writer -> Cyclone reader
+
+**Spec:** `ddsi-rtps-2.5.md::§8.4` (writer/reader behavior) +
+`dds-xtypes-1.3.md::§7.6.3` (TypeLookup over the wire).
+
+**Repo:** `tests/interop/ci/run_vendor.sh`.
+
+**Tests:** `tests/interop/ci/run_vendor.sh` — the cell
+`ZeroDDS@appendable -> Cyclone` and the `forward` cells Cyclone writer ->
+ZeroDDS reader, in the CI job `interop-cyclone` (mandatory job).
+
+**Status:** done — samples flow in both directions against Cyclone, the
+incompatible pairs are rejected. Green in the nightly of 04.10. (pipeline
+6606).
 
 ### CV-19 cyclone_sedp_replay
 
@@ -448,7 +492,10 @@ Lab-Setup in CI verfügbar.
 
 **Repo:** `crates/discovery/tests/cyclone_sedp_replay.rs`.
 
-**Tests:** SEDP-Wire-Replay gegen Cyclone-Captures.
+**Tests:** `crates/discovery/tests/cyclone_sedp_replay.rs::cyclone_sedp_publication_fixture_flows_through_stack`,
+`crates/discovery/tests/cyclone_sedp_replay.rs::cyclone_fixture_without_discovery_is_dropped_as_unknown_src`,
+`crates/discovery/tests/cyclone_sedp_replay.rs::replay_after_participant_lost_stops_accepting_publications`
+(no gate; the default run executes all three).
 
 **Status:** done
 
@@ -458,27 +505,56 @@ Lab-Setup in CI verfügbar.
 
 **Repo:** `crates/discovery/tests/cyclone_live_sedp.rs`.
 
-**Tests:** Live-SEDP-Match gegen Cyclone-Stack.
+**Tests:** `crates/discovery/tests/cyclone_live_sedp.rs::cyclone_live_sedp_discovery`
+(`#[ignore]`, needs a local Cyclone `ddsperf`; default run: 0
+cases. Runs in the CI job `interop-cyclone` with `--ignored`).
 
 **Status:** done
 
-### CV-21 cyclone_live_typelookup
+### CV-21 type_lookup_requests
 
-**Spec:** `dds-xtypes-1.3.md::§7.6.3` — Type-Lookup-Service.
+**Spec:** `dds-xtypes-1.3.md::§7.6.3` — Type Lookup Service.
 
-**Repo:** `crates/discovery/tests/cyclone_live_typelookup.rs`.
+**Repo:** `crates/discovery/tests/type_lookup_requests.rs`.
 
-**Tests:** Live-TypeLookup-Roundtrip.
+**Tests:** `crates/discovery/tests/type_lookup_requests.rs::get_types_request_carries_the_mutable_framing_of_the_clause`,
+`crates/discovery/tests/type_lookup_requests.rs::a_get_types_request_and_its_reply_round_trip_between_two_stacks`
+(no gate, both run in the default run).
 
-**Status:** done
+**Status:** done — what the evidence covers is the wire format of the GetTypes request per
+XTypes 1.3 §7.6.3.3.3: `@mutable` DHEADER, EMHEADER with the `@hashid` of
+`type_ids` and length code 5, then the sequence (count, EK_MINIMAL
+identifier); the length of the member against the byte oracle from Cyclone 11.0.1
+(`crates/types/tests/type_lookup_vendor_envelope.rs`). The second test
+carries request and reply between two stacks in the same process; the file
+was called `cyclone_live_typelookup.rs`, and the test was an
+`#[ignore]` placeholder. The roundtrip against Cyclone is CV-21b.
+
+### CV-21b Live TypeLookup roundtrip against Cyclone
+
+**Spec:** `dds-xtypes-1.3.md::§7.6.3` — Type Lookup Service over the
+reliable TL request/TL reply endpoints.
+
+**Repo:** `tests/interop/ci/run_vendor.sh`.
+
+**Tests:** `tests/interop/ci/run_vendor.sh` — the two cells
+`(TypeLookup)` in the case `cyclone`, in the CI job `interop-cyclone`.
+
+**Status:** done — ZeroDDS fetches the type of a Cyclone writer with
+`getTypes` and decides based on the received object: an appended
+member delivers (§7.2.4.4.8), a `label` retyped to `string` is
+rejected. Without the lookup both cells ended the same way.
 
 ### CV-22 cyclone_live_security_caps
 
-**Spec:** `zerodds-security-1.2.md::§14` — Security-Discovery-Capabilities.
+**Spec:** `zerodds-security-1.2.md::§14` — security discovery capabilities.
 
 **Repo:** `crates/security-runtime/tests/cyclone_live_security_caps.rs`.
 
-**Tests:** Capability-Negotiation gegen Cyclone-Security-Stack.
+**Tests:** `crates/security-runtime/tests/cyclone_live_security_caps.rs::cyclone_accepts_beacon_with_security_caps`
+(`#[ignore]`, needs SSH access to the lab host and `ddsperf` there;
+default run: 0 cases. Lab invocation: cargo test -p zerodds-security-runtime
+--test cyclone_live_security_caps -- --ignored --nocapture).
 
 **Status:** done
 
@@ -489,48 +565,51 @@ Lab-Setup in CI verfügbar.
 
 **Repo:** `crates/dcps/tests/cyclone_live_wlp.rs`.
 
-**Tests:** AUTOMATIC-Liveliness gegen Cyclone.
+**Tests:** `crates/dcps/tests/cyclone_live_wlp.rs::cyclone_live_wlp_handshake`
+(`#[ignore]`, needs a running `ddsperf -i 42 sub` on the lab host
+and multicast reachability; default run: 0 cases. Lab invocation: cargo test
+-p zerodds-dcps --test cyclone_live_wlp -- --ignored --nocapture).
 
 **Status:** done
 
 ---
 
-## Run-Anleitung
+## Run instructions
 
-### Lokal ohne Lab
+### Locally without a lab
 
-Alle Live-Tests skippen sich automatisch wenn `LLVM_HOST_AVAILABLE`
-nicht gesetzt ist UND `sshpass` nicht installiert ist:
+All live tests skip themselves automatically if `LLVM_HOST_AVAILABLE`
+is not set AND `sshpass` is not installed:
 
 ```bash
 cargo test -p zerodds-discovery -p zerodds-dcps
-# 0 failed, alle Live-Tests "ignored"
+# 0 failed, all live tests "ignored"
 ```
 
-Die deterministischen Cyclone-Lueckenfueller laufen auch ohne Lab:
+The deterministic Cyclone gap fillers also run without a lab:
 
 ```bash
 cargo test -p zerodds-dcps --test cyclone_live_wlp_manual -- --ignored
 cargo test -p zerodds-discovery --test cyclone_typelookup_responder
 ```
 
-### Lab-Run auf dem Linux-Bench-Host
+### Lab run on the Linux bench host
 
-Voraussetzungen:
+Prerequisites:
 
-- SSH-Zugriff auf den Bench-Host (Lab-Konvention)
-- `sshpass` installiert
-- Multicast-Setup auf dem Virtualisierungs-Host aktiv
-- Auf dem Bench-Host: `ip link set enp6s18 allmulticast on`
+- SSH access to the bench host (lab convention)
+- `sshpass` installed
+- multicast setup active on the virtualization host
+- On the bench host: `ip link set enp6s18 allmulticast on`
 
-Aufruf:
+Invocation:
 
 ```bash
 LLVM_HOST_AVAILABLE=1 cargo test -p zerodds-dcps -p zerodds-discovery \
     --features live-interop -- --ignored --nocapture
 ```
 
-Pro Test-File einzeln:
+Per test file, individually:
 
 ```bash
 cargo test -p zerodds-dcps --features live-interop \
@@ -539,95 +618,95 @@ cargo test -p zerodds-dcps --features live-interop \
 
 ---
 
-## Bekannte Edge-Cases
+## Known edge cases
 
-1. **Topic-Naming**: `fastdds shape` nutzt exakt `Square`/`Triangle`/
+1. **Topic naming**: `fastdds shape` uses exactly `Square`/`Triangle`/
    `Circle` (case-sensitive). ZeroDDS `create_topic::<ShapeType>(name)`
-   akzeptiert beliebige Strings — Test setzt Default-Konvention.
+   accepts arbitrary strings — the test sets the default convention.
 
-2. **FastDDS-Discovery-Server-TCP**: `fastdds discovery -i 0` hört
-   nur auf TCP, nicht auf SPDP-Multicast. `fastdds_live_spdp.rs`
-   testet daher zwei Pfade: (a) Server-TCP-Mode, (b) regulärer
-   `fastdds shape publisher` als SPDP-Sender.
+2. **FastDDS Discovery Server TCP**: `fastdds discovery -i 0` listens
+   only on TCP, not on SPDP multicast. `fastdds_live_spdp.rs`
+   therefore tests two paths: (a) server TCP mode, (b) a regular
+   `fastdds shape publisher` as SPDP sender.
 
-3. **VM-Host-Multicast**: VM-Kernel droppt Multicast ohne
-   `allmulticast on` auf dem virtio-Interface. Ohne diesen Workaround
-   sehen die Tests keine Cyclone/FastDDS-Beacons. Die Bridge-Konfig des
-   Virtualisierungs-Hosts ist separat dokumentiert.
+3. **VM host multicast**: the VM kernel drops multicast without
+   `allmulticast on` on the virtio interface. Without this workaround
+   the tests see no Cyclone/FastDDS beacons. The bridge config of the
+   virtualization host is documented separately.
 
-4. **`ddsperf`-Flag-Falle**: `-D` ist Duration in Sekunden, `-i` ist
-   Domain-ID. Verwechseln führt zu schwer debug-baren Match-Fehlern.
-   Helper `start_cyclone_ddsperf_*` in `cross_vendor.rs` setzt das
-   richtig.
+4. **`ddsperf` flag trap**: `-D` is the duration in seconds, `-i` is the
+   domain ID. Mixing them up leads to match errors that are hard to debug.
+   The helper `start_cyclone_ddsperf_*` in `cross_vendor.rs` sets this
+   correctly.
 
-5. **Multi-Host-Stretch-Goal**: ein zweiter Bench-Host ist hardware-mäßig
-   verfügbar, SSH-Auth ist aber nicht setup. Multi-Host-Tests
-   bleiben Phase-7-Bench-Suite-Scope.
-
----
-
-## Nicht-Ziele
-
-- **RTI Connext** (commercial, nicht installierbar)
-- **Multi-Host-Discovery** (Zweit-Host-Auth nicht setup)
-- **FastDDS-Compile-from-Source** (Binary-Tools reichen)
-- **Performance-Benchmarks** (Phase-7-Bench-Suite)
+5. **Multi-host stretch goal**: a second bench host is available in terms of
+   hardware, but SSH auth is not set up. Multi-host tests
+   remain in the scope of the phase 7 bench suite.
 
 ---
 
-## Ergebnis
+## Non-goals
 
-**23 Test-Cluster** mappen zu konkreten Spec-Sections in DDS 1.4 +
-RTPS 2.5 + XTypes 1.3 + DDS-Security 1.2; alle Compile-/Lint-clean,
-im macOS-Dev-Setup ohne Lab grün ignored, mit
-`LLVM_HOST_AVAILABLE=1 + --features live-interop` aktivierbar.
+- **RTI Connext** (commercial, not installable)
+- **Multi-host discovery** (auth for the second host not set up)
+- **FastDDS compile from source** (the binary tools suffice)
+- **Performance benchmarks** (phase 7 bench suite)
 
-Cross-Vendor-Coverage spannt:
+---
+
+## Result
+
+**23 test clusters** map to concrete spec sections in DDS 1.4 +
+RTPS 2.5 + XTypes 1.3 + DDS-Security 1.2; all compile/lint clean,
+green as ignored in the macOS dev setup without a lab, can be activated with
+`LLVM_HOST_AVAILABLE=1 + --features live-interop`.
+
+Cross-vendor coverage spans:
 - **SPDP+SEDP+TypeLookup** (Discovery) — ddsi-rtps-2.5 §8.5
 - **Reliable+Best-Effort Behavior** — ddsi-rtps-2.5 §8.4
 - **WLP Liveliness AUTOMATIC + MANUAL_BY_PARTICIPANT/TOPIC** —
   ddsi-rtps-2.5 §8.4.13 + zerodds-dcps-1.4 §2.2.3.11
-- **XCDR2 Wire-Compliance** — dds-xtypes-1.3 §7.4.3
+- **XCDR2 wire compliance** — dds-xtypes-1.3 §7.4.3
 - **HeaderExtension Must-Understand** — ddsi-rtps-2.5 §9.4.2.11.2
-- **Security Capability-Negotiation** — zerodds-security-1.2 §14
+- **Security capability negotiation** — zerodds-security-1.2 §14
 
 ---
 
-## Audit-Status
+## Audit status
 
-**K13 = 100% Cross-Vendor-Coverage.** 23 done / 0 partial / 0 open.
-Alle Cross-Vendor-Validation-Items haben dedizierte Tests; Sender-
-Side Must-Understand-Bit-Generierung wurde durch
-`Parameter::with_must_understand`-Helper + Test abgeschlossen.
+**K13 = 100% cross-vendor coverage.** 23 done / 0 partial / 0 open.
+All cross-vendor validation items have dedicated tests; sender-side
+Must-Understand bit generation was completed by the
+`Parameter::with_must_understand` helper + test.
 
 `cargo test -p zerodds-rtps --test cyclone_he_must_understand`: 3 passed,
-1 ignored (Live-Cyclone-Test bleibt für CI-Lab-Setup reserviert).
+1 ignored (the live Cyclone test stays reserved for the CI lab setup).
 fmt + clippy + zerodds-lint clean.
 
-K13 abgeschlossen — K14 (dds-psm-cxx-1.0) kann beginnen.
+K13 completed — K14 (dds-psm-cxx-1.0) can begin.
 
 ---
 
-## Addendum 2026-06-08 — ROS-2-Wire Live-Interop (C5 Cross-Vendor)
+## Addendum 2026-06-08 — ROS 2 wire live interop (C5 cross-vendor)
 
-Ergänzend zu den 23 K13-Clustern: **Live-Interop auf dem ROS-2-Wire**
-ZeroDDS ↔ CycloneDDS (= `rmw_cyclonedds` = echtes ROS 2), Topic
-`rt/chatter`, Typ `std_msgs::msg::dds_::String_`. **Bidirektional 20/20
-Samples** (Linux bench host, CycloneDDS 11.0.1).
+In addition to the 23 K13 clusters: **live interop on the ROS 2 wire**
+ZeroDDS ↔ CycloneDDS (= `rmw_cyclonedds` = real ROS 2), topic
+`rt/chatter`, type `std_msgs::msg::dds_::String_`. **Bidirectional 20/20
+samples** (Linux bench host, CycloneDDS 11.0.1).
 
-| Richtung / Messung | Ergebnis |
+| Direction / measurement | Result |
 |---|---|
-| Cyclone-Talker → ZeroDDS-Sub | 20/20 Samples |
-| ZeroDDS-Pub → Cyclone-Listener | 20/20 Samples |
-| ZeroDDS ↔ ZeroDDS (Regression) | grün |
-| ZeroDDS↔Cyclone multicast-frei (`run_multicast_free_xvendor.sh`) | matched=1, 20/20 |
-| C3 Real-WiFi Large-Data (arm→x86 cross-host, 2/4 MB) | byte-perfekt; Throughput **10,8 MiB/s** |
-| C3 Latenz RTT (Loopback, 256 B) | **p50=40 µs / p99=83 µs** |
-| C3 Latenz RTT (Cross-Machine WiFi) \* | **p50=4342 µs** (wired host ↔ Wi-Fi host, 256 B, 0 lost, voller Discovery); Root-Cause der `participants=0`-Saga A/B-bewiesen = **802.11-Power-Save am WiFi-Client** (mit `tcpdump`/Promiscuous → läuft, ohne → Timeout), **kein ZeroDDS-Limit** |
+| Cyclone talker → ZeroDDS sub | 20/20 samples |
+| ZeroDDS pub → Cyclone listener | 20/20 samples |
+| ZeroDDS ↔ ZeroDDS (regression) | green |
+| ZeroDDS↔Cyclone multicast-free (`run_multicast_free_xvendor.sh`) | matched=1, 20/20 |
+| C3 real WiFi large data (arm→x86 cross-host, 2/4 MB) | byte-perfect; throughput **10.8 MiB/s** |
+| C3 latency RTT (loopback, 256 B) | **p50=40 µs / p99=83 µs** |
+| C3 latency RTT (cross-machine WiFi) \* | **p50=4342 µs** (wired host ↔ Wi-Fi host, 256 B, 0 lost, full discovery); root cause of the `participants=0` saga proven by A/B = **802.11 power save on the WiFi client** (with `tcpdump`/promiscuous → runs, without → timeout), **not a ZeroDDS limit** |
 
-\* Auf einer anderen Host-Kombination gemessen als der übrige Stack
-(ein wired Host ↔ ein Wi-Fi Host) und mit wachgehaltener WiFi-NIC
-(Promiscuous), da Idle-WiFi-Power-Save sonst die Discovery-Unicasts verwirft.
+\* Measured on a different host combination than the rest of the stack
+(a wired host ↔ a Wi-Fi host) and with the WiFi NIC kept awake
+(promiscuous), because idle WiFi power save otherwise discards the discovery unicasts.
 
 **Repo:** `crates/ros2-rmw/interop/` (`run_interop.sh`, `GROUND_TRUTH.md`,
 `cyclone_ros_{talker,listener}.c`) + `crates/dcps/examples/
@@ -636,7 +715,7 @@ ros2_chatter_{publisher,subscriber}.rs`.
 **Spec:** ddsi-rtps-2.5 §9.3.1.2 (entityKind keyed/no-key),
 dds-xtypes-1.3 §7.6.3 (DataRepresentation-Match).
 
-**Befund (gefixt):** keyless Typen erzeugten WithKey-Entityids →
-Cross-Vendor-Match-Reject. Fix: entityKind aus `DdsType::HAS_KEY`. Belegt
-direkt die C5-These „interoperiert dort, wo Fast↔Cyclone praktisch bricht"
-am realen ROS-2-Wire.
+**Finding (fixed):** keyless types produced WithKey entity IDs →
+cross-vendor match reject. Fix: entityKind from `DdsType::HAS_KEY`. This directly
+supports the C5 thesis "interoperates where Fast↔Cyclone practically breaks"
+on the real ROS 2 wire.

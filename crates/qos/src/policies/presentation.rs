@@ -5,7 +5,7 @@
 //! Wire-Format: u32 access_scope + bool coherent + bool ordered =
 //! 4 + 1 + 1 + padding = 8 byte (4-byte aligned).
 
-use zerodds_cdr::{BufferReader, BufferWriter, DecodeError, EncodeError};
+use zerodds_wire::{Reader, WireError, Writer};
 
 /// Presentation-Access-Scope.
 ///
@@ -19,12 +19,12 @@ pub enum PresentationAccessScope {
     Instance = 0,
     /// Topic-Scope.
     Topic = 1,
-    /// Group-Scope (Publisher/Subscriber-weit).
+    /// Group-scope (Publisher/Subscriber-wide).
     Group = 2,
 }
 
 impl PresentationAccessScope {
-    /// Strikter Mapper.
+    /// Strict mapper.
     #[must_use]
     pub const fn try_from_u32(v: u32) -> Option<Self> {
         match v {
@@ -59,29 +59,28 @@ pub struct PresentationQosPolicy {
 
 impl PresentationQosPolicy {
     /// Wire-Encoding.
-    ///
-    /// # Errors
-    /// Buffer-Overflow.
-    pub fn encode_into(self, w: &mut BufferWriter) -> Result<(), EncodeError> {
-        w.write_u32(self.access_scope as u32)?;
-        w.write_u8(u8::from(self.coherent_access))?;
-        w.write_u8(u8::from(self.ordered_access))?;
-        // 2 byte padding auf 4-byte-Alignment.
-        w.write_u8(0)?;
-        w.write_u8(0)
+    pub fn encode_into(self, w: &mut Writer) {
+        w.write_u32(self.access_scope as u32);
+        w.write_u8(u8::from(self.coherent_access));
+        w.write_u8(u8::from(self.ordered_access));
+        // 2 byte padding to 4-byte alignment.
+        w.write_u8(0);
+        w.write_u8(0);
     }
 
     /// Wire-Decoding (strict).
     ///
     /// # Errors
     /// Buffer underflow or unknown AccessScope value.
-    pub fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
+    pub fn decode_from(r: &mut Reader<'_>) -> Result<Self, WireError> {
+        let at = r.position();
         let v = r.read_u32()?;
-        let access_scope =
-            PresentationAccessScope::try_from_u32(v).ok_or(DecodeError::InvalidEnum {
-                kind: "PresentationAccessScope",
-                value: v,
-            })?;
+        let access_scope = PresentationAccessScope::try_from_u32(v).ok_or_else(|| {
+            WireError::refused(
+                at,
+                &alloc::format!("a PresentationAccessScope enumerator, not {v}"),
+            )
+        })?;
         let coherent_access = r.read_u8()? != 0;
         let ordered_access = r.read_u8()? != 0;
         let _pad1 = r.read_u8()?;
@@ -98,7 +97,7 @@ impl PresentationQosPolicy {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use zerodds_cdr::Endianness;
+    use zerodds_wire::Endianness;
 
     #[test]
     fn default_instance_no_flags() {
@@ -143,10 +142,10 @@ mod tests {
     #[test]
     fn roundtrip_instance_no_flags() {
         let p = PresentationQosPolicy::default();
-        let mut w = BufferWriter::new(Endianness::Little);
-        p.encode_into(&mut w).unwrap();
-        let bytes = w.into_bytes();
-        let mut r = BufferReader::new(&bytes, Endianness::Little);
+        let mut w = Writer::new(Endianness::Little);
+        p.encode_into(&mut w);
+        let bytes = w.finish();
+        let mut r = Reader::new(&bytes, Endianness::Little);
         assert_eq!(PresentationQosPolicy::decode_from(&mut r).unwrap(), p);
     }
 
@@ -157,11 +156,11 @@ mod tests {
             coherent_access: true,
             ordered_access: true,
         };
-        let mut w = BufferWriter::new(Endianness::Little);
-        p.encode_into(&mut w).unwrap();
-        let bytes = w.into_bytes();
+        let mut w = Writer::new(Endianness::Little);
+        p.encode_into(&mut w);
+        let bytes = w.finish();
         assert_eq!(bytes.len(), 8);
-        let mut r = BufferReader::new(&bytes, Endianness::Little);
+        let mut r = Reader::new(&bytes, Endianness::Little);
         assert_eq!(PresentationQosPolicy::decode_from(&mut r).unwrap(), p);
     }
 }

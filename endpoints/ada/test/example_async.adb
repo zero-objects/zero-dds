@@ -24,7 +24,7 @@ begin
          R.Id    := Interfaces.C.unsigned_long (16#2000# + I);
          R.Value := Interfaces.C.C_float (100.0 - Float (I));
          Set_Label (R, "sensor-" & Digit2 (I));
-         Transport.Deliver (Frame (Interfaces.Unsigned_16 (I + 1), Marshal (R)));
+         Transport.Deliver (Frame (Interfaces.Unsigned_16 (I + 1), 16#0015#, Marshal (R)));
       end;
    end loop;
 

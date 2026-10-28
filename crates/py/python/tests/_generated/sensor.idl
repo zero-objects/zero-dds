@@ -1,0 +1,13 @@
+// SPDX-License-Identifier: Apache-2.0
+// A mixed-primitive struct (boolean, float, string, sequence<octet>),
+// @final. Replaces the hand-written `@idl_struct(typename="zerodds::Sensor")`
+// dataclass now that `zerodds.idl` is removed.
+module zerodds {
+  @final
+  struct Sensor {
+    boolean active;
+    float reading;
+    string label;
+    sequence<octet> raw;
+  };
+};

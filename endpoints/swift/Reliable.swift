@@ -46,6 +46,16 @@ public enum ReliableError: Error, Equatable {
     case bufferFull
 }
 
+/// Encoding of the DDS-XRCE 1.0 Annex A types without `@extensibility`
+/// (APPENDABLE by DDS-XTypes 1.3 7.3.1.2.1.8). `.appendable` (default): a
+/// DHEADER in front of the members. `.final`: the form of the reference
+/// implementation (eProsima), no DHEADER. This SDK writes one such type:
+/// ACKNACK_Payload. HEARTBEAT_Payload is FINAL in both modes.
+public enum UnannotatedTypes: Equatable {
+    case appendable
+    case `final`
+}
+
 public struct Heartbeat: Equatable {
     public var firstUnacked: UInt16
     public var lastUnacked: UInt16
@@ -78,26 +88,46 @@ public struct AckNack: Equatable {
 // 0x80, stream NONE 0x00, msg-seq=1) — `golden_heartbeat_le.bin` /
 // `golden_acknack_le.bin`; every peer's parser ignores the header stream/seq
 // bytes and only checks the submessage id at offset 4, so this is wire-safe.
+// ACKNACK_Payload has no @extensibility, so it is APPENDABLE (DDS-XTypes 1.3
+// 7.3.1.2.1.8) and carries a DHEADER in XCDR2: with `UnannotatedTypes.appendable`
+// (default) the ACKNACK body is 9 octets (DHEADER u32 LE = 5, then the 5-octet
+// payload); with `UnannotatedTypes.final` it is the 5-octet payload alone
+// (reference implementation). The parser accepts both forms.
 // ------------------------------------------------------------------
 
-/// Reliable WRITE_DATA frame; the 2-byte stream-header seq carries the sample seq.
-public func writeDataFrame(seq: UInt16, sample: [UInt8]) -> [UInt8] {
-    let n = UInt16(sample.count)
+/// Wire size of the BaseObjectRequest that precedes the sample (7.7.8).
+public let reliableBaseSize = 4
+
+/// Reliable WRITE_DATA frame; the 2-byte stream-header seq carries the sample
+/// seq, and the submessage body is the BaseObjectRequest (7.7.8: request_id
+/// then object_id, each two octets most significant first) followed by the
+/// sample. `objectId` names the target DataWriter; the request_id is the
+/// sample's own sequence number.
+public func writeDataFrame(seq: UInt16, objectId: UInt16, sample: [UInt8]) -> [UInt8] {
+    let n = UInt16(reliableBaseSize + sample.count)
     var out: [UInt8] = [
         0x80, reliableStreamId,
         UInt8(seq & 0xff), UInt8(seq >> 8),
-        0x07, 0x03,
+        // E flag (little-endian body) + DataFormat FORMAT_DATA (0b000) in bits
+        // 1..3 -- DDS-XRCE 1.0 8.3.5.8.
+        0x07, 0x01,
         UInt8(n & 0xff), UInt8(n >> 8),
+        UInt8(seq >> 8), UInt8(seq & 0xff),
+        UInt8(objectId >> 8), UInt8(objectId & 0xff),
     ]
     out.append(contentsOf: sample)
     return out
 }
 
-/// Parses a reliable WRITE_DATA frame into `(seq, sample)`.
+/// Parses a reliable WRITE_DATA frame into `(seq, sample)`. The sample starts
+/// after the BaseObjectRequest; a body too short to hold one is refused rather
+/// than handed back truncated.
 public func parseWriteData(_ frame: [UInt8]) -> (seq: UInt16, sample: [UInt8])? {
-    guard frame.count >= 8, frame[4] == 0x07 else { return nil }
+    guard frame.count >= 8 + reliableBaseSize, frame[4] == 0x07 else { return nil }
+    let smLen = Int(frame[6]) | (Int(frame[7]) << 8)
+    guard smLen >= reliableBaseSize, 8 + smLen <= frame.count else { return nil }
     let seq = UInt16(frame[2]) | (UInt16(frame[3]) << 8)
-    return (seq, Array(frame[8...]))
+    return (seq, Array(frame[(8 + reliableBaseSize) ..< 8 + smLen]))
 }
 
 /// HEARTBEAT frame (golden layout, 13 bytes).
@@ -121,25 +151,49 @@ public func parseHeartbeat(_ frame: [UInt8]) -> Heartbeat? {
     )
 }
 
-/// ACKNACK frame (golden layout, 13 bytes).
-public func acknackFrame(_ an: AckNack) -> [UInt8] {
-    [
-        0x80, 0x00, 0x01, 0x00,
-        0x0A, 0x01, 0x05, 0x00,
+/// ACKNACK frame. `.appendable` (default): golden layout, 17 bytes (8-byte
+/// header, DHEADER u32 LE = 5, 5-octet payload; submessage length field 9).
+/// `.final`: 13 bytes (8-byte header, 5-octet payload; length field 5).
+public func acknackFrame(
+    _ an: AckNack, unannotatedTypes: UnannotatedTypes = .appendable
+) -> [UInt8] {
+    let payload: [UInt8] = [
         UInt8(an.firstUnacked & 0xff), UInt8(an.firstUnacked >> 8),
         UInt8(an.nackBitmap & 0xff), UInt8(an.nackBitmap >> 8),
         an.streamId,
     ]
+    switch unannotatedTypes {
+    case .appendable:
+        return [0x80, 0x00, 0x01, 0x00, 0x0A, 0x01, 0x09, 0x00, 0x05, 0x00, 0x00, 0x00] + payload
+    case .final:
+        return [0x80, 0x00, 0x01, 0x00, 0x0A, 0x01, 0x05, 0x00] + payload
+    }
 }
 
 /// Parses an ACKNACK frame. Ignores header stream/seq — matches every peer.
+/// Accepts body length 9 (4-octet DHEADER, then the 5-octet payload) and the
+/// FINAL form with body length 5 (no DHEADER), whatever the writer's
+/// `UnannotatedTypes` setting.
 public func parseAckNack(_ frame: [UInt8]) -> AckNack? {
     guard frame.count >= 13, frame[4] == 0x0A else { return nil }
+    let bodyLen = Int(frame[6]) | (Int(frame[7]) << 8)
+    let o: Int
+    if bodyLen == 9 && frame.count >= 17 {
+        o = 12
+    } else if bodyLen == 5 {
+        o = 8
+    } else {
+        return nil
+    }
     return AckNack(
-        firstUnacked: UInt16(frame[8]) | (UInt16(frame[9]) << 8),
-        nackBitmap: UInt16(frame[10]) | (UInt16(frame[11]) << 8),
-        streamId: frame[12]
+        firstUnacked: UInt16(frame[o]) | (UInt16(frame[o + 1]) << 8),
+        nackBitmap: UInt16(frame[o + 2]) | (UInt16(frame[o + 3]) << 8),
+        streamId: frame[o + 4]
     )
+}
+
+private func encodeAckNackFrame(_ an: AckNack, _ mode: UnannotatedTypes) -> [UInt8] {
+    acknackFrame(an, unannotatedTypes: mode)
 }
 
 // ------------------------------------------------------------------
@@ -224,7 +278,12 @@ public final class ReliableReceiver {
     private var expectedSeqStore: UInt16 = 0
     private var received: [UInt16: [UInt8]] = [:]
 
-    public init() {}
+    /// Encoding of the ACKNACK_Payload this receiver writes (`acknackFrame`).
+    public let unannotatedTypes: UnannotatedTypes
+
+    public init(unannotatedTypes: UnannotatedTypes = .appendable) {
+        self.unannotatedTypes = unannotatedTypes
+    }
 
     public var expectedSeq: UInt16 { expectedSeqStore }
     public var outOfOrderCount: Int { received.count }
@@ -261,6 +320,11 @@ public final class ReliableReceiver {
         return AckNack(firstUnacked: base, nackBitmap: bitmap, streamId: reliableStreamId)
     }
 
+    /// ACKNACK frame for the current window, encoded per `unannotatedTypes`.
+    public func acknackFrame(hintLastSeen: UInt16?) -> [UInt8] {
+        encodeAckNackFrame(pendingAckNack(hintLastSeen: hintLastSeen), unannotatedTypes)
+    }
+
     public func reset() {
         expectedSeqStore = 0
         received.removeAll()
@@ -287,13 +351,19 @@ public final class AsyncWriter {
     private let sendFn: ([UInt8]) -> Void
     private let recvFn: () -> [UInt8]?
     private let clock = Date()
+    private let objectId: UInt16
 
     /// `sendFn` transmits one frame (e.g. `sendto` on a UDP socket); `recvFn`
     /// returns the next available received frame (e.g. non-blocking
     /// `recvfrom`), or `nil` when nothing is pending.
-    public init(sendFn: @escaping ([UInt8]) -> Void, recvFn: @escaping () -> [UInt8]?) {
+    /// `objectId` names the target DataWriter in every frame's
+    /// BaseObjectRequest (7.7.8).
+    public init(
+        sendFn: @escaping ([UInt8]) -> Void, recvFn: @escaping () -> [UInt8]?, objectId: UInt16
+    ) {
         self.sendFn = sendFn
         self.recvFn = recvFn
+        self.objectId = objectId
     }
 
     /// Starts the drain thread. Call once before `write`.
@@ -341,7 +411,7 @@ public final class AsyncWriter {
                     // Accepted into the window: only now remove it from the queue.
                     dropFirst()
                     idle = false
-                    sendFn(writeDataFrame(seq: seq, sample: sample))
+                    sendFn(writeDataFrame(seq: seq, objectId: objectId, sample: sample))
                 } catch ReliableError.windowFull {
                     // Window full: leave the sample queued (do NOT drop it) so it
                     // is retried once an ACKNACK frees a slot below. Dropping here
@@ -371,7 +441,7 @@ public final class AsyncWriter {
             sender.recvAckNack(an)
             for seq in sender.inFlightSeqs() {
                 if let data = sender.getInFlight(seq) {
-                    sendFn(writeDataFrame(seq: seq, sample: data))
+                    sendFn(writeDataFrame(seq: seq, objectId: objectId, sample: data))
                 }
             }
             any = true

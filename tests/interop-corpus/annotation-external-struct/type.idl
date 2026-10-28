@@ -1,0 +1,10 @@
+// `@external` on an aggregate member
+@appendable struct Inner {
+    long a;
+    short b;
+};
+
+@final struct Sample {
+    @external Inner nested;
+    long tail;
+};

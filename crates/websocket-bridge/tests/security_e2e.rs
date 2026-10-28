@@ -401,3 +401,156 @@ fn sighup_cert_reload_keeps_daemon_running_with_new_cert() {
 
     drop(h);
 }
+
+/// §9.2 SIGHUP with a configuration loader: the reloaded ACL decides the
+/// next handshake — alice is refused `/topics/forbidden` (403) until the
+/// reloaded configuration grants it (101).
+#[test]
+fn sighup_applies_the_reloaded_acl() {
+    use std::sync::atomic::Ordering;
+    let (cert, key) = gen_self_signed_for("localhost");
+    let cfg = make_secure_cfg(&cert, &key, true);
+    let mut granted = cfg.clone();
+    granted.topic_acl.insert(
+        "Forbidden".into(),
+        (vec!["alice".into()], vec!["alice".into()]),
+    );
+    let next = Arc::new(std::sync::Mutex::new(granted));
+    let n = Arc::clone(&next);
+    let h = server::start_with_reload(
+        cfg,
+        zerodds_dcps::runtime::RuntimeConfig::default(),
+        Some(Box::new(move || Ok(n.lock().unwrap().clone()))),
+    )
+    .expect("start daemon");
+    let addr = h.local_addr.clone();
+    let handshake = || {
+        let mut s = TlsTestStream::connect(build_test_client_config(&cert), &addr);
+        s.write_all(
+            ws_handshake_request("localhost", "/topics/forbidden", Some("Bearer secret-tk"))
+                .as_bytes(),
+        )
+        .unwrap();
+        read_until_double_crlf(&mut s)
+    };
+    assert!(handshake().contains("403"), "before the reload");
+    h.reload_flag.store(true, Ordering::SeqCst);
+    std::thread::sleep(std::time::Duration::from_millis(400));
+    let resp = handshake();
+    assert!(resp.contains("101"), "after the reload: {resp}");
+    drop(h);
+}
+
+/// An RSA key from `openssl genpkey`: PKCS#8 DER and the SPKI PEM.
+fn rsa_key() -> (Vec<u8>, String) {
+    let key = write_temp("jwt.key", b"");
+    let k = key.to_str().unwrap();
+    let run = |args: &[&str]| {
+        let out = std::process::Command::new("openssl")
+            .args(args)
+            .output()
+            .expect("openssl on PATH: the JWT test needs a real RSA key");
+        assert!(out.status.success(), "openssl {args:?}: {out:?}");
+        out.stdout
+    };
+    run(&[
+        "genpkey",
+        "-algorithm",
+        "RSA",
+        "-pkeyopt",
+        "rsa_keygen_bits:2048",
+        "-out",
+        k,
+    ]);
+    let der = run(&["pkcs8", "-topk8", "-nocrypt", "-outform", "DER", "-in", k]);
+    let pem = run(&["pkey", "-pubout", "-in", k]);
+    (der, String::from_utf8(pem).unwrap())
+}
+
+fn jwt(pkcs8: &[u8], payload: &str) -> String {
+    use base64::Engine as _;
+    let b64 = |b: &[u8]| base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(b);
+    let signed = format!(
+        "{}.{}",
+        b64(br#"{"alg":"RS256","typ":"JWT"}"#),
+        b64(payload.as_bytes())
+    );
+    let pair = ring::signature::RsaKeyPair::from_pkcs8(pkcs8).unwrap();
+    let mut sig = vec![0u8; pair.public().modulus_len()];
+    pair.sign(
+        &ring::signature::RSA_PKCS1_SHA256,
+        &ring::rand::SystemRandom::new(),
+        signed.as_bytes(),
+        &mut sig,
+    )
+    .unwrap();
+    format!("Bearer {signed}.{}", b64(&sig))
+}
+
+/// §7.2 `jwt` with Spec §3's `auth.jwt` block: the `sub` claim is the ACL
+/// subject; an expired token or a missing scope is 401. `auth.mode: jwt`
+/// could be chosen before but had no key setting, and the start failed.
+#[test]
+fn a_jwt_is_checked_and_its_subject_meets_the_acl() {
+    let (cert, key) = gen_self_signed_for("localhost");
+    let (pkcs8, pem) = rsa_key();
+    let pub_path = write_temp("jwt.pub", pem.as_bytes());
+    let mut cfg = make_secure_cfg(&cert, &key, true);
+    cfg.auth_mode = "jwt".into();
+    cfg.auth_jwt = zerodds_bridge_security::JwtSettings {
+        public_key: pub_path.to_string_lossy().into(),
+        issuer: None,
+        audience: Some("zerodds-ws".into()),
+        required_claim: Some("scope=dds.read".into()),
+    };
+    let h = server::start_with_reload(cfg, zerodds_dcps::runtime::RuntimeConfig::default(), None)
+        .expect("start daemon");
+    let addr = h.local_addr.clone();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let token = |exp: u64, scope: &str| {
+        jwt(
+            &pkcs8,
+            &format!(r#"{{"sub":"alice","aud":"zerodds-ws","scope":"{scope}","exp":{exp}}}"#),
+        )
+    };
+    let status = |path: &str, auth: &str| {
+        let mut s = TlsTestStream::connect(build_test_client_config(&cert), &addr);
+        s.write_all(ws_handshake_request("localhost", path, Some(auth)).as_bytes())
+            .unwrap();
+        let resp = read_until_double_crlf(&mut s);
+        resp.split(' ').nth(1).unwrap_or("").to_string()
+    };
+    let good = token(now + 600, "dds.read");
+    assert_eq!(status("/topics/allowed", &good), "101");
+    assert_eq!(status("/topics/forbidden", &good), "403");
+    assert_eq!(
+        status("/topics/allowed", &token(now - 3600, "dds.read")),
+        "401"
+    );
+    assert_eq!(
+        status("/topics/allowed", &token(now + 600, "dds.write")),
+        "401"
+    );
+    drop(h);
+}
+
+/// A mode that cannot be served stops the start as a configuration error
+/// (Spec §2 exit 1), not as a bind error.
+#[test]
+fn jwt_without_a_key_and_mtls_without_a_client_ca_are_config_errors() {
+    let (cert, key) = gen_self_signed_for("localhost");
+    for mode in ["jwt", "mtls"] {
+        let mut cfg = make_secure_cfg(&cert, &key, false);
+        cfg.auth_mode = mode.into();
+        let r =
+            server::start_with_reload(cfg, zerodds_dcps::runtime::RuntimeConfig::default(), None);
+        match r {
+            Err(server::ServerError::Config(_)) => {}
+            Err(e) => panic!("{mode}: {e}"),
+            Ok(_) => panic!("{mode}: started"),
+        }
+    }
+}

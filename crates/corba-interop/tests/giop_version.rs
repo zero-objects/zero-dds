@@ -6,7 +6,6 @@
 //! not necessarily 1.2 — so that GIOP 1.0/1.1 clients get a parseable
 //! reply.
 
-use zerodds_cdr::Endianness;
 use zerodds_corba_giop::{
     Message, Request, ResponseFlags, ServiceContextList, TargetAddress, Version,
 };
@@ -14,6 +13,7 @@ use zerodds_corba_iiop::{Connector, ConnectorConfig, IiopProfileBody, IiopVersio
 use zerodds_corba_interop::runtime::{CorbaServer, IiopCorbaConnection};
 use zerodds_corba_interop::{decode_string_body, encode_string_body};
 use zerodds_corba_rust::{CorbaConnection, ObjectReference, SkeletonResult};
+use zerodds_wire::Endianness;
 
 /// Starts an Echo server (verbatim body echo for `ping`) and sends a
 /// request in `req_version`; returns the version of the received reply.

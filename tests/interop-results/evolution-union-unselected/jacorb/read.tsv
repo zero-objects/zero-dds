@@ -1,0 +1,14 @@
+# What jacorb got back when it read the bytes of evolution-union-unselected, held against
+# tests/interop-corpus/evolution-union-unselected/values.json and never against another
+# column's reading of the same bytes.
+# encoding	endian	verdict	detail
+plain-cdr1	le	no-form	Evo.picked: a @mutable union, whose per-member headers are XTypes' and not CORBA's
+plain-cdr1	be	no-form	Evo.picked: a @mutable union, whose per-member headers are XTypes' and not CORBA's
+pl-cdr1	le	no-form	Evo.picked: a @mutable union, whose per-member headers are XTypes' and not CORBA's
+pl-cdr1	be	no-form	Evo.picked: a @mutable union, whose per-member headers are XTypes' and not CORBA's
+plain-cdr2	le	no-form	Evo.picked: a @mutable union, whose per-member headers are XTypes' and not CORBA's
+plain-cdr2	be	no-form	Evo.picked: a @mutable union, whose per-member headers are XTypes' and not CORBA's
+delimited-cdr	le	no-form	Evo.picked: a @mutable union, whose per-member headers are XTypes' and not CORBA's
+delimited-cdr	be	no-form	Evo.picked: a @mutable union, whose per-member headers are XTypes' and not CORBA's
+pl-cdr2	le	no-form	Evo.picked: a @mutable union, whose per-member headers are XTypes' and not CORBA's
+pl-cdr2	be	no-form	Evo.picked: a @mutable union, whose per-member headers are XTypes' and not CORBA's

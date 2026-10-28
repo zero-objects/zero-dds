@@ -1,0 +1,13 @@
+// a module reopened
+module common {
+    @final struct First {
+        long a;
+    };
+};
+
+module common {
+    @final struct Sample {
+        ::common::First head;
+        double b;
+    };
+};

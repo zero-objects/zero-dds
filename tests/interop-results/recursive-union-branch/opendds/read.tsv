@@ -1,0 +1,14 @@
+# What opendds got back when it read the bytes of recursive-union-branch, held against
+# tests/interop-corpus/recursive-union-branch/values.json and never against another
+# column's reading of the same bytes.
+# encoding	endian	verdict	detail
+plain-cdr1	le	refused	— the octets carry the sample: they read back as it under `--dialect opendds`, so this peer's writer and its own reader disagree
+plain-cdr1	be	refused	— the octets carry the sample: they read back as it under `--dialect opendds`, so this peer's writer and its own reader disagree
+pl-cdr1	le	version-alias	plain-cdr1
+pl-cdr1	be	version-alias	plain-cdr1
+plain-cdr2	le	refused	— the octets carry the sample: they read back as it under `--dialect opendds`, so this peer's writer and its own reader disagree
+plain-cdr2	be	refused	— the octets carry the sample: they read back as it under `--dialect opendds`, so this peer's writer and its own reader disagree
+delimited-cdr	le	version-alias	plain-cdr2
+delimited-cdr	be	version-alias	plain-cdr2
+pl-cdr2	le	version-alias	plain-cdr2
+pl-cdr2	be	version-alias	plain-cdr2

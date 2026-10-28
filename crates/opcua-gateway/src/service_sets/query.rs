@@ -179,7 +179,7 @@ mod tests {
 
     #[test]
     fn query_first_carries_content_filter_inputs() {
-        // Spec §8.3.3.2 IDL — query_first hat `in ContentFilter filter`
+        // Spec §8.3.3.2 IDL — query_first has `in ContentFilter filter`
         // + `in sequence<NodeTypeDescription> node_types`.
         let qf = SERVICE_SET
             .methods
@@ -196,7 +196,7 @@ mod tests {
 
     #[test]
     fn query_next_uses_release_continuation_flag() {
-        // Spec §8.3.3.2 IDL — query_next hat `in boolean release_continuation_point`.
+        // Spec §8.3.3.2 IDL — query_next has `in boolean release_continuation_point`.
         let qn = SERVICE_SET
             .methods
             .iter()

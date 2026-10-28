@@ -14,6 +14,7 @@ import java.util.List;
 import org.zerodds.endpoint.ReliableReceiver;
 import org.zerodds.endpoint.ReliableSender;
 import org.zerodds.endpoint.ReliableWire;
+import org.zerodds.endpoint.UnannotatedTypes;
 
 public final class ReliableSelfTest {
 
@@ -218,9 +219,39 @@ public final class ReliableSelfTest {
 
         byte[] ak = ReliableWire.acknackFrame(new ReliableWire.AckNack(1, 0, 0, 0x80));
         byte[] akExpect = new byte[] {
+            (byte) 0x80, 0x00, 0x01, 0x00, 0x0a, 0x01, 0x09, 0x00,
+            0x05, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, (byte) 0x80
+        };
+        check(ak.length == 17, "acknack frame is 17 octets");
+        check(Arrays.equals(ak, akExpect), "acknack byte-golden (hardcoded)");
+
+        // legacy FINAL form (body-len 5, no DHEADER) is still parsed
+        byte[] legacy = new byte[] {
+            (byte) 0x80, 0x00, 0x01, 0x00, 0x0a, 0x01, 0x05, 0x00, 0x07, 0x00, 0x03, 0x00, (byte) 0x80
+        };
+        ReliableWire.AckNack lg = ReliableWire.parseAckNack(legacy);
+        check(lg != null && lg.firstUnacked == 7 && lg.nackLo == 3 && lg.nackHi == 0 && lg.stream == 0x80,
+              "legacy 5-octet acknack parsed");
+        ReliableWire.AckNack cur = ReliableWire.parseAckNack(akExpect);
+        check(cur != null && cur.firstUnacked == 1 && cur.stream == 0x80, "17-octet acknack parsed");
+        check(ReliableWire.parseAckNack(Arrays.copyOf(legacy, 12)) == null, "short acknack rejected");
+
+        // unannotated types: FINAL form (eProsima), 13 octets
+        byte[] akFinal = ReliableWire.acknackFrame(new ReliableWire.AckNack(1, 0, 0, 0x80), UnannotatedTypes.FINAL);
+        byte[] akFinalExpect = new byte[] {
             (byte) 0x80, 0x00, 0x01, 0x00, 0x0a, 0x01, 0x05, 0x00, 0x01, 0x00, 0x00, 0x00, (byte) 0x80
         };
-        check(Arrays.equals(ak, akExpect), "acknack byte-golden (hardcoded)");
+        check(akFinal.length == 13, "FINAL acknack frame is 13 octets");
+        check(Arrays.equals(akFinal, akFinalExpect), "FINAL acknack byte-golden (hardcoded)");
+        check(Arrays.equals(ReliableWire.acknackFrame(new ReliableWire.AckNack(1, 0, 0, 0x80), UnannotatedTypes.APPENDABLE), akExpect),
+              "APPENDABLE acknack equals the default form");
+        ReliableWire.AckNack pf = ReliableWire.parseAckNack(akFinalExpect);
+        check(pf != null && pf.firstUnacked == 1 && pf.stream == 0x80, "parser accepts the FINAL form");
+        ReliableWire.AckNack pa = ReliableWire.parseAckNack(akExpect);
+        check(pa != null && pa.firstUnacked == 1 && pa.stream == 0x80, "parser accepts the APPENDABLE form");
+        ReliableReceiver rf = new ReliableReceiver(UnannotatedTypes.FINAL);
+        check(rf.pendingAcknackFrame(0).length == 13, "receiver with FINAL builds 13-octet acknack");
+        check(new ReliableReceiver().pendingAcknackFrame(0).length == 17, "receiver default builds 17-octet acknack");
 
         if (args.length >= 2) {
             byte[] gHb = Files.readAllBytes(Paths.get(args[0]));

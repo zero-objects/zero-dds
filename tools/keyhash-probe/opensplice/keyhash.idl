@@ -1,0 +1,22 @@
+// The mixed-width key types of ../keyhash.idl in the IDL 3.5 OpenSplice's
+// idlpp reads: keys through #pragma keylist, no annotations. The path
+// `nested.b x` is the form OpenSplice has for a key inside a nested struct.
+struct PadKey { octet a; long b; long v; };
+#pragma keylist PadKey a b
+
+struct WideKey { short s; long long ll; long v; };
+#pragma keylist WideKey s ll
+
+struct CharKey { octet o; short s; long v; };
+#pragma keylist CharKey o s
+
+struct StrKey { string name; long id; long v; };
+#pragma keylist StrKey name id
+
+struct PathLeaf { long a; octet b; };
+struct PathKey { PathLeaf nested; long x; long v; };
+#pragma keylist PathKey nested.b x
+
+// Twenty octets of key and no padding in either reading: the control.
+struct BigKey { long long a; long long b; long c; long v; };
+#pragma keylist BigKey a b c

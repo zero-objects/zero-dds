@@ -1,0 +1,8 @@
+module probe {
+    valuetype Value { public long x; };
+    interface Special {
+        void in_v(in ValueBase v);
+        void out_v(out ValueBase v);
+        ValueBase ret_v();
+    };
+};

@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "DDS-Security 1.1 plugin SPI for ZeroDDS: Authentication / AccessControl / Cryptographic / Logging / DataTagging trait definitions + generic-message topics + token data model."
+description = "DDS-Security 1.2 (§9) plugin SPI for ZeroDDS: Authentication / AccessControl / Cryptographic / Logging / DataTagging trait definitions + generic-message topics + token data model."
 homepage = "https://zerodds.org"
 documentation = "https://docs.rs/zerodds-security"
 readme = "README.md"
@@ -29,3 +29,4 @@ safety = []
 [dependencies]
 
 [dev-dependencies]
+zerodds-idl-parse = { version = "1.0.0-rc.7", path = "../idl-parse" }

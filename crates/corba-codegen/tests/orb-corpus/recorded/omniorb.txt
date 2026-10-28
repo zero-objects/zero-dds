@@ -1,0 +1,93 @@
+# omniidl — omniidl version 1.0
+# Recorded by crates/corba-codegen/tests/orb-corpus/record.sh.
+# Each block is one row of rows/, the compiler log, then every
+# generated line naming a probe operation, verbatim.
+
+=== 01-object
+virtual void in_v(::CORBA::Object_ptr v) = 0;
+virtual void out_v(::CORBA::Object_out v) = 0;
+virtual void inout_v(::CORBA::Object_ptr& v) = 0;
+virtual ::CORBA::Object_ptr ret_v() = 0;
+
+=== 02-valuebase
+virtual void in_v(::CORBA::ValueBase* v) = 0;
+virtual void out_v(::CORBA::ValueBase_out v) = 0;
+virtual ::CORBA::ValueBase* ret_v() = 0;
+
+=== 03-abstractbase
+virtual void in_v(::probe::Abstracted_ptr v) = 0;
+virtual void out_v(::probe::Abstracted_out v) = 0;
+virtual Abstracted_ptr ret_v() = 0;
+
+=== 04-native
+log: omniidl: Fatal error in C++ backend
+log: omniidl: 
+log: omniidl: Unsupported IDL construct found in input (native)
+log: omniidl: 
+log: omniidl: 
+log: 
+log: For more information (mailing list archives, bug reports etc.) please visit
+log: the webpage:
+log: 
+log:   http://omniorb.sourceforge.net/
+log: 
+log: (no header generated)
+
+=== 05-typecode
+virtual void in_v(::CORBA::TypeCode_ptr v) = 0;
+virtual void out_v(::CORBA::TypeCode_OUT_arg v) = 0;
+virtual ::CORBA::TypeCode_ptr ret_v() = 0;
+
+=== 06-any
+virtual void in_v(const ::CORBA::Any& v) = 0;
+virtual void out_v(::CORBA::Any_OUT_arg v) = 0;
+virtual void inout_v(::CORBA::Any& v) = 0;
+virtual ::CORBA::Any* ret_v() = 0;
+
+=== 07-anyseq
+virtual void in_v(const ::probe::AnySeq& v) = 0;
+virtual void out_v(::probe::AnySeq_out v) = 0;
+virtual AnySeq* ret_v() = 0;
+
+=== 08-string
+virtual void in_v(const char* v) = 0;
+virtual void out_v(::CORBA::String_out v) = 0;
+virtual void inout_v(char*& v) = 0;
+virtual char* ret_v() = 0;
+
+=== 09-wstring
+virtual void in_v(const ::CORBA::WChar* v) = 0;
+virtual void out_v(::CORBA::WString_out v) = 0;
+virtual void inout_v(::CORBA::WChar*& v) = 0;
+virtual ::CORBA::WChar* ret_v() = 0;
+
+=== 10-time
+virtual void in_v(::TimeBase::TimeT v) = 0;
+virtual void out_v(::TimeBase::TimeT& v) = 0;
+virtual TimeBase::TimeT ret_v() = 0;
+
+=== 11-fixed
+virtual void in_v(const ::probe::Money& v) = 0;
+virtual void out_v(::probe::Money& v) = 0;
+virtual Money ret_v() = 0;
+
+=== 12-ulonglong
+virtual void in_v(::CORBA::ULongLong v) = 0;
+virtual void out_v(::CORBA::ULongLong& v) = 0;
+virtual ::CORBA::ULongLong ret_v() = 0;
+
+=== 13-longdouble
+virtual void in_v(::CORBA::LongDouble v) = 0;
+virtual void out_v(::CORBA::LongDouble& v) = 0;
+virtual ::CORBA::LongDouble ret_v() = 0;
+
+=== 14-shape
+virtual void out_variable(::probe::WithString_out v) = 0;
+virtual void out_fixed(::probe::TwoLongs& v) = 0;
+virtual WithString* ret_variable() = 0;
+virtual TwoLongs ret_fixed() = 0;
+
+=== 15-typedefs
+virtual void in_v(const char* p1, const ::probe::AnyAlias& p2, ::probe::DoubleAlias p3, const ::probe::StructAlias& p4, const ::probe::LongsAlias& p5) = 0;
+virtual void out_v(::probe::NameAlias_out p1, ::CORBA::Any_OUT_arg p2, ::probe::DoubleAlias& p3, ::probe::StructAlias_out p4, ::probe::LongsAlias_out p5) = 0;
+virtual char* ret_v() = 0;

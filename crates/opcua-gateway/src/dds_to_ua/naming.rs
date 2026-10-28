@@ -34,7 +34,7 @@ pub fn variable_type_name(dds_type_name: &str) -> String {
 
 /// Spec Tab 9.27 — element BrowseName for the `<index>`-th element
 /// of an array/sequence of structures/unions. Multi-dim indices
-/// are separated with `_` (e.g. position [1][2][3] → `_1_2_3`).
+/// are separated with `_` (e.g. position `[1][2][3]` → `_1_2_3`).
 ///
 /// `indices` is the position per dimension (outer-first).
 #[must_use]

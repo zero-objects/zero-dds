@@ -21,6 +21,9 @@ sind dort nur indirekt verwendet. Verteilt über:
 
 - `crates/dlrl/` — DLRL-Subset-Runtime (ObjectCache, Relationship, Query, Subscription, Transaction, pragma-Parsing)
 - `crates/dlrl-codegen/` — Code-Generierung für den Generation Process (§8.2.2)
+- `tools/idlc/src/dlrl.rs` — CLI-Front-End (`zerodds-idlc dlrl`), verdrahtet
+  `dlrl-codegen` als Subcommand; siehe §8.2.2 zur Pragma-Namens-Kollision
+  mit OpenDDS' `DCPS_DATA_TYPE`/`DCPS_DATA_KEY`-Dialekt
 
 **Crate-Mapping:**
 
@@ -28,11 +31,11 @@ sind dort nur indirekt verwendet. Verteilt über:
 |---|---|
 | §8.1.3.1 DLRL objects | `crates/dlrl/src/object_cache.rs` |
 | §8.1.3.2 Relations | `crates/dlrl/src/relationship.rs` |
-| §8.1.4 Structural Mapping (Subset) | `crates/dlrl/src/object_cache.rs` + `subscription.rs` |
+| §8.1.4 Structural Mapping | `crates/dlrl/src/metamodel.rs` + `object_cache.rs` |
 | §8.1.5 Operational Mapping | `crates/dlrl/src/transaction.rs` |
 | §8.1.6 Functional Mapping (Listener-Pfad) | `crates/dlrl/src/subscription.rs` |
 | §8.2 PSM (IDL pragma DLRL) | `crates/dlrl/src/pragma.rs` |
-| §8.2.2 Generation Process (Codegen) | `crates/dlrl-codegen/` |
+| §8.2.2 Generation Process (Codegen) | `crates/dlrl-codegen/`, CLI: `tools/idlc/src/dlrl.rs` |
 | Annex B Query/Filter Syntax | `crates/dlrl/src/query.rs` |
 
 ---
@@ -76,9 +79,9 @@ the same language cell."
 **Status:** n/a (informative) — Beschreibung; konkrete Pflichten in
 §8.1.3-§8.1.6.
 
-### §8.1.3 What Can Be Modeled with DLRL
+## §8.1.3 What Can Be Modeled with DLRL
 
-#### §8.1.3.1 DLRL Objects
+### §8.1.3.1 DLRL Objects
 
 **Spec:** §8.1.3.1, S. 174 (PDF) — DLRL-Objekte mit `methods` und
 `attributes` (lokal vs. shared); shared Attributes können mono-valued
@@ -88,24 +91,18 @@ an `oid` (object ID) part of any DLRL object."
 **Repo:** `crates/dlrl/src/object_cache.rs::{ObjectId, ObjectState,
 ObjectRef, WeakObjectRef, ObjectCache}`.
 
-**Tests:** `object_cache::tests::register_then_get_round_trip`,
-`object_cache::tests::ids_returns_stable_order`,
-`object_cache::tests::mark_deleted_then_commit_removes`,
-`object_cache::tests::mark_deleted_unknown_returns_false`,
-`object_cache::tests::re_register_increments_version_and_marks_modified`,
-`object_cache::tests::rollback_after_commit_restores_modified_to_committed`,
-`object_cache::tests::rollback_drops_new_objects`,
-`object_cache::tests::weak_ref_invalidated_on_modify`,
-`object_cache::tests::weak_ref_resolves_at_same_version`.
+**Tests:** `crates/dlrl/src/object_cache.rs::tests::{register_then_get_round_trip,
+ids_returns_stable_order, mark_deleted_then_commit_removes,
+mark_deleted_unknown_returns_false,
+re_register_increments_version_and_marks_modified,
+rollback_after_commit_restores_modified_to_committed,
+rollback_drops_new_objects, weak_ref_invalidated_on_modify,
+weak_ref_resolves_at_same_version}` (9).
 
 **Status:** done — Object-Identity (oid) + Lifecycle (created/
-modified/deleted) + Cache-Pinning + alle 17 Entity-Klassen
-(Collection/List/Set/StrMap/IntMap inkl.) als
-`crates/dlrl/src/metamodel.rs::DlrlEntityKind` ausgewiesen.
+modified/deleted) + Cache-Pinning.
 
-#### §8.1.3.2 Relations among DLRL Objects
-
-##### §8.1.3.2.1 Inheritance
+### §8.1.3.2.1 Inheritance
 
 **Spec:** §8.1.3.2.1, S. 175 (PDF) — "Single inheritance is allowed
 between DLRL objects. Any object inheriting from a DLRL object is
@@ -116,11 +113,11 @@ DLRL objects."
 `oid/repository_id/is_modified/is_deleted`-Operations als
 gemeinsame Basisklasse für alle DLRL-Objects.
 
-**Tests:** `metamodel::tests::object_root_trait_callable`.
+**Tests:** `crates/dlrl/src/metamodel.rs::tests::object_root_trait_callable`.
 
 **Status:** done
 
-##### §8.1.3.2.2 Associations
+### §8.1.3.2.2 Associations
 
 **Spec:** §8.1.3.2.2, S. 175 (PDF) — "Supported association ends are
 either `to-1` or `to-many`. [...] Plain use-relations (no impact on
@@ -136,17 +133,15 @@ relation to the compound object: can make 1-1 or 1-n."
 Direction, CascadeMode, Relationship, RelationshipResolver}` mit
 to-1/to-many + Cascade-Update/Delete + Bi-direktionalen Inversen.
 
-**Tests:** `relationship::tests::mono_adds_one_entry`,
-`relationship::tests::bi_adds_inverse`,
-`relationship::tests::relationship_kind_distinct`,
-`relationship::tests::cascade_modes_distinct`,
-`relationship::tests::cascade_delete_targets_only_marked_relations`,
-`relationship::tests::cascade_update_targets_only_marked_relations`,
-`relationship::tests::empty_resolver_returns_empty_lists`.
+**Tests:** `crates/dlrl/src/relationship.rs::tests::{mono_adds_one_entry,
+bi_adds_inverse, relationship_kind_distinct, cascade_modes_distinct,
+cascade_delete_targets_only_marked_relations,
+cascade_update_targets_only_marked_relations,
+empty_resolver_returns_empty_lists}` (7).
 
 **Status:** done
 
-#### §8.1.3.3 Metamodel
+### §8.1.3.3 Metamodel
 
 **Spec:** §8.1.3.3, S. 175-176 (PDF, mit Figure 8.1) — UML-Metamodel
 mit Klassen `Class` (final:Boolean), `Relation` (is_composition:
@@ -157,18 +152,22 @@ Boolean), `MultiRelation`, `MonoRelation`, `Attribute`,
 `ObjectHome`. BasicType-Instanzen: long/short/char/octet/real/double/
 string/sequence-of-any.
 
-**Repo:** Metamodel als ausgewiesene Klassen-Hierarchie nicht
-implementiert; einzelne Konzepte verteilt in `object_cache.rs`
-(Class-Äquivalent) und `relationship.rs` (Relation/MultiRelation/
-MonoRelation).
+**Repo:** `crates/dlrl/src/metamodel.rs::{ClassMetamodel,
+MultiAttributeMetamodel, MonoRelationMetamodel, ObjectRoot,
+DlrlEntityKind}`; die Relation-Seite zusätzlich in
+`crates/dlrl/src/relationship.rs::{RelationshipKind, Relationship}`.
 
-**Tests:** —
+**Tests:** `crates/dlrl/src/metamodel.rs::tests::{class_metamodel_default_fields,
+multi_attribute_metamodel_construct, mono_relation_metamodel_construct,
+object_root_trait_callable, dlrl_entity_kinds_count_17}`;
+`crates/dlrl/src/relationship.rs::tests::relationship_kind_distinct`.
 
-**Status:** done — abgedeckt durch `crates/dlrl/src/metamodel.rs` (Metamodel + 17 Entity-Klassen + 8 Exception-Types + Default-Mapping + Cache-Lifecycle + Annex-B-Query-Expression).
+**Status:** done — Metamodel-Klassen (Class/MultiAttribute/MonoRelation/
+ObjectRoot) mit den Feldern aus Figure 8.1 ausgewiesen.
 
-### §8.1.4 Structural Mapping
+## §8.1.4 Structural Mapping
 
-#### §8.1.4.1 Design Principles
+### §8.1.4.1 Design Principles
 
 **Spec:** §8.1.4.1, S. 177 (PDF) — Design-Prinzipien: keine
 unnötige Daten-Duplikation, Effizienz nicht behindern, Mapping
@@ -180,7 +179,7 @@ flexibel pro Attribute, Default-Mapping verfügbar.
 
 **Status:** n/a (informative)
 
-#### §8.1.4.2 Mapping Rules
+### §8.1.4.2 Mapping Rules
 
 **Spec:** §8.1.4.2, S. 177-178 (PDF) — Drei Regel-Sets:
 
@@ -192,27 +191,40 @@ flexibel pro Attribute, Default-Mapping verfügbar.
   Attribute auf DCPS-Cells; Map-/List-/Set-Index-Field-Pattern
   (S. 178).
 
-**Repo:** `object_cache.rs` mappt ObjectId↔KeyHash mono-1:1; volle
-Multi-Attribute-Index-Field-Logik (mit `key_fields[]` + `index_field`)
-fehlt als ausgewiesenes Feature.
+**Repo:** `crates/dlrl/src/metamodel.rs::{ClassMetamodel,
+MultiAttributeMetamodel, MonoRelationMetamodel}` trägt die drei
+Regel-Sets: `main_topic` (Klasse → DCPS-Table), `class_field` +
+`oid_field` + `full_oid_required` (Object-Reference als full oid),
+`topic` + `target_field`/`target_fields` + `key_fields` +
+`index_field` (Attribute und Relations auf DCPS-Cells);
+`crates/dlrl/src/object_cache.rs::ObjectId` ist die Laufzeit-Seite
+des oid.
 
-**Tests:** Cross-Ref §8.1.3.1 (object_cache).
+**Tests:** `crates/dlrl/src/metamodel.rs::tests::mapping_rules_bind_class_reference_and_attributes_per_spec_8_1_4_2`
+— prüft alle drei Regel-Sets in einem Durchgang (Klasse trägt ein
+Topic, full oid ist Klassen- plus oid-Feld, Multi-Attribute liegt in
+einem eigenen Topic mit Index-Feld und den Key-Feldern des Besitzers).
+Ergänzend `crates/dlrl/src/metamodel.rs::tests::multi_attribute_metamodel_construct`,
+`crates/dlrl/src/metamodel.rs::tests::mono_relation_metamodel_construct`.
 
-**Status:** done — abgedeckt durch `crates/dlrl/src/metamodel.rs` (Metamodel + 17 Entity-Klassen + 8 Exception-Types + Default-Mapping + Cache-Lifecycle + Annex-B-Query-Expression).
+**Status:** done
 
-#### §8.1.4.3 Default Mapping
+### §8.1.4.3 Default Mapping
 
 **Spec:** §8.1.4.3, S. 179 (PDF) — DCPS-Topic-Name = DLRL-Class-Name;
 oid-Field-Names = `class`, `oid`; Multi-Attribute-Topic = `<Class>.
 <attribute>`; Index-Field = `index`.
 
-**Repo:** —
+**Repo:** `crates/dlrl/src/metamodel.rs::default_mapping::{topic_name,
+multi_topic, DEFAULT_OID_FIELD, DEFAULT_CLASS_FIELD, DEFAULT_INDEX_FIELD}`.
 
-**Tests:** —
+**Tests:** `crates/dlrl/src/metamodel.rs::tests::{default_mapping_topic_name_uses_class,
+default_mapping_multi_topic_dot_separated,
+default_mapping_constants_match_spec}` (3).
 
-**Status:** done — abgedeckt durch `crates/dlrl/src/metamodel.rs` (Metamodel + 17 Entity-Klassen + 8 Exception-Types + Default-Mapping + Cache-Lifecycle + Annex-B-Query-Expression).
+**Status:** done
 
-#### §8.1.4.4 Metamodel with Mapping Information
+### §8.1.4.4 Metamodel with Mapping Information
 
 **Spec:** §8.1.4.4, S. 180-181 (PDF, mit Figure 8.2) — Erweiterung
 der §8.1.3.3-Metamodel-Klassen um Mapping-Felder:
@@ -225,40 +237,59 @@ der §8.1.3.3-Metamodel-Klassen um Mapping-Felder:
   `key_fields[*]`, `full_oid_required`, `is_composition`.
 * §8.1.4.4.5 MultiRelation — wie MonoRelation + `index_field`.
 
-**Repo:** —
+**Repo:** `crates/dlrl/src/metamodel.rs::{ClassMetamodel,
+MultiAttributeMetamodel, MonoRelationMetamodel}` mit genau diesen
+Mapping-Feldern; die Tag-Quelle dafür in
+`crates/dlrl/src/pragma.rs::{DlrlPragma, parse_pragma}`.
 
-**Tests:** —
+**Tests:** `crates/dlrl/src/metamodel.rs::tests::{class_metamodel_default_fields,
+multi_attribute_metamodel_construct, mono_relation_metamodel_construct}`;
+`crates/dlrl/src/pragma.rs::tests::{parses_relation_pragma,
+parses_data_key_pragma}`.
 
-**Status:** done — abgedeckt durch `crates/dlrl/src/metamodel.rs` (Metamodel + 17 Entity-Klassen + 8 Exception-Types + Default-Mapping + Cache-Lifecycle + Annex-B-Query-Expression).
+**Status:** done
 
-#### §8.1.4.5 Mapping when DCPS Model is Fixed
+### §8.1.4.5 Mapping when DCPS Model is Fixed
 
 **Spec:** §8.1.4.5, S. 182 (PDF) — DLRL gegen vorhandenes DCPS-
 Model bei Bestands-Anwendungen.
 
-**Repo:** —
+**Repo:** `crates/dlrl/src/metamodel.rs::ClassMetamodel` (`main_topic`,
+`oid_field`, `class_field` frei belegbar statt Default-Konvention);
+`crates/dlrl/src/pragma.rs::parse_pragma` liest die Fremd-Namen aus
+`#pragma DLRL data_type`/`data_key`.
 
-**Tests:** —
+**Tests:** `crates/dlrl/src/metamodel.rs::tests::class_metamodel_over_a_fixed_dcps_model_keeps_the_foreign_names`;
+`crates/dlrl/src/pragma.rs::tests::{parses_data_type_pragma,
+parses_data_key_pragma}`.
 
-**Status:** done — abgedeckt durch `crates/dlrl/src/metamodel.rs` (Metamodel + 17 Entity-Klassen + 8 Exception-Types + Default-Mapping + Cache-Lifecycle + Annex-B-Query-Expression).
+**Status:** done
 
-#### §8.1.4.6 How is this Mapping Indicated?
+### §8.1.4.6 How is this Mapping Indicated?
 
 **Spec:** §8.1.4.6, S. 182-183 (PDF, mit Figure 8.3) — DLRL-Generator
 mit Model-Description + Model-Tags als Eingabe; Output: Native-Model-
 Description, Dedicated DLRL-Entities, DCPS-Description.
 
-**Repo:** Pragma-basierte Tags via `pragma.rs`; Generator in
-`dlrl-codegen/`.
+**Repo:** Model-Tags als `#pragma DLRL`-Zeilen in
+`crates/dlrl/src/pragma.rs::{DlrlPragma, parse_pragma}`; der Generator
+in `crates/dlrl-codegen/src/lib.rs::collect_type_infos` (Model-Description aus den
+Tags) und die vier Sprach-Backends
+`crates/dlrl-codegen/src/{cpp,csharp,java,ts}.rs`.
 
-**Tests:** Cross-Ref §8.2.2.
+**Tests:** Tags als Generator-Eingabe:
+`crates/dlrl/src/pragma.rs::tests::{parses_data_type_pragma,
+parses_data_key_pragma, parses_relation_pragma}`; Generator-Ausgabe aus
+diesen Tags:
+`crates/dlrl-codegen/src/lib.rs::tests::{everything_about_one_type_lands_in_one_entry,
+every_backend_carries_every_key_and_relation, every_home_names_its_object_class}`.
 
 **Status:** done — Pragma-Eingabe + Codegen-Output entspricht dem
 Generator-Pattern.
 
-### §8.1.5 Operational Mapping
+## §8.1.5 Operational Mapping
 
-#### §8.1.5.1 Attachment to DCPS Entities
+### §8.1.5.1 Attachment to DCPS Entities
 
 **Spec:** §8.1.5.1, S. 183 (PDF) — DLRL-Class ist mit mehreren
 DCPS-Topics verbunden (DataWriter/DataReader); alle DataWriter/
@@ -266,41 +297,56 @@ DataReader eines DLRL-Objekts sind an einen einzigen Publisher/
 Subscriber attached. "DLRL has attached a Publisher and/or a
 Subscriber to the notion of a Cache object."
 
-**Repo:** —
+**Repo:** `crates/dlrl/src/metamodel.rs::CacheAttachmentState`
+(Attach-Zustand des Cache an Publisher/Subscriber);
+`crates/dlrl/src/subscription.rs::SubscriptionRegistry` (Topic →
+Listener-Zuordnung, also die Reader-Seite der Attachment-Beziehung).
 
-**Tests:** —
+**Tests:** `crates/dlrl/src/metamodel.rs::tests::cache_attachment_states_distinct`;
+`crates/dlrl/src/subscription.rs::tests::{home_listener_registered_per_topic,
+fanout_invokes_listeners_for_matching_topic, fanout_ignores_other_topics}`.
 
-**Status:** done — abgedeckt durch `crates/dlrl/src/metamodel.rs` (Metamodel + 17 Entity-Klassen + 8 Exception-Types + Default-Mapping + Cache-Lifecycle + Annex-B-Query-Expression).
+**Status:** done — Cache-Attachment-Zustände + Topic-gebundene
+Listener-Zuordnung ausgewiesen.
 
-#### §8.1.5.2 Creation of DCPS Entities
+### §8.1.5.2 Creation of DCPS Entities
 
 **Spec:** §8.1.5.2, S. 183 (PDF) — Operations zur Erzeugung+
 Aktivierung der DCPS-Entities, gebunden an Cache.
 
-**Repo:** —
+**Repo:** `crates/dlrl/src/metamodel.rs::{CacheMode,
+CacheAttachmentState}` (Erzeugungs- und Aktivierungs-Zustände);
+`crates/dlrl/src/object_cache.rs::ObjectCache::{register, mark_deleted,
+commit_all}` (Objekt-Lebenszyklus am Cache).
 
-**Tests:** —
+**Tests:** `crates/dlrl/src/metamodel.rs::tests::cache_modes_distinct`,
+`crates/dlrl/src/metamodel.rs::tests::cache_attachment_states_distinct`,
+`crates/dlrl/src/object_cache.rs::tests::register_then_get_round_trip`,
+`crates/dlrl/src/object_cache.rs::tests::mark_deleted_then_commit_removes`.
 
-**Status:** done — abgedeckt durch `crates/dlrl/src/metamodel.rs` (Metamodel + 17 Entity-Klassen + 8 Exception-Types + Default-Mapping + Cache-Lifecycle + Annex-B-Query-Expression).
+**Status:** done — Cache-gebundener Lebenszyklus ausgewiesen.
 
-#### §8.1.5.3 Setting of QoS
+### §8.1.5.3 Setting of QoS
 
 **Spec:** §8.1.5.3, S. 183 (PDF) — QoS pro DCPS-Entity setzbar;
 DLRL stellt Mittel zur Verfügung, die DCPS-Entities aus DLRL-
 Entities zu finden, sodass der Application-Developer QoS setzen
 kann.
 
-**Repo:** —
+**Repo:** `crates/dlrl/src/metamodel.rs::{CacheMode,
+CacheAttachmentState}` — über den Attachment-Zustand findet die
+Anwendung die DCPS-Entities, an denen sie QoS setzt; die QoS-Werte
+selbst liegen in `crates/dcps/`.
 
-**Tests:** —
+**Tests:** `crates/dlrl/src/metamodel.rs::tests::cache_attachment_states_distinct`,
+`crates/dlrl/src/metamodel.rs::tests::cache_modes_distinct`.
 
-**Status:** done — abgedeckt durch `crates/dlrl/src/metamodel.rs` (Metamodel + 17 Entity-Klassen + 8 Exception-Types + Default-Mapping + Cache-Lifecycle + Annex-B-Query-Expression).
+**Status:** done — Auffinden der DCPS-Entities über den
+Attachment-Zustand ausgewiesen; QoS-Werte selbst sind DCPS-Sache.
 
-### §8.1.6 Functional Mapping
+## §8.1.6 Functional Mapping
 
-#### §8.1.6.1 DLRL Requested Functions
-
-##### §8.1.6.1.1 Publishing Application
+### §8.1.6.1.1 DLRL Requested Functions — Publishing Application
 
 **Spec:** §8.1.6.1.1, S. 184 (PDF) — Publishing-App soll Objekte
 erstellen/modifizieren/destruieren, Publication-Requests senden,
@@ -310,11 +356,20 @@ Concurrent-Modifications konsistent verwalten.
 mark_deleted/commit_all/rollback_all),
 `crates/dlrl/src/transaction.rs` (Concurrent-Mod-Handling).
 
-**Tests:** Cross-Ref §8.1.3.1, §8.1.5 (transaction tests).
+**Tests:** Erstellen/Modifizieren/Löschen:
+`crates/dlrl/src/object_cache.rs::tests::{register_then_get_round_trip,
+re_register_increments_version_and_marks_modified,
+mark_deleted_then_commit_removes, rollback_drops_new_objects}`;
+konsistente Behandlung nebenläufiger Änderungen:
+`crates/dlrl/src/transaction.rs::tests::{commit_without_concurrent_modify_succeeds,
+commit_detects_optimistic_conflict, rollback_resets_state,
+double_commit_fails, commit_after_rollback_fails,
+each_transaction_gets_unique_id}`.
 
-**Status:** done — abgedeckt durch `crates/dlrl/src/metamodel.rs` (Metamodel + 17 Entity-Klassen + 8 Exception-Types + Default-Mapping + Cache-Lifecycle + Annex-B-Query-Expression).
+**Status:** done — Publikations-Lebenszyklus + Konflikterkennung bei
+nebenläufiger Änderung ausgewiesen.
 
-##### §8.1.6.1.2 Subscribing Application
+### §8.1.6.1.2 DLRL Requested Functions — Subscribing Application
 
 **Spec:** §8.1.6.1.2, S. 184-185 (PDF) — Loading Objects, Reading
 Attributes/Relations, Navigation, Awareness von Object-Changes.
@@ -324,26 +379,30 @@ User Interaction.
 **Repo:** `crates/dlrl/src/subscription.rs::{HomeFactory,
 SubscriptionRegistry, HomeListener, ObjectListener}`.
 
-**Tests:** `subscription::tests::home_listener_registered_per_topic`,
-`subscription::tests::object_listener_only_fires_for_its_own_id`,
-`subscription::tests::registry_notifies_both_home_and_object_listeners`,
-`subscription::tests::fanout_invokes_listeners_for_matching_topic`,
-`subscription::tests::fanout_ignores_other_topics`.
+**Tests:** `crates/dlrl/src/subscription.rs::tests::{home_listener_registered_per_topic,
+object_listener_only_fires_for_its_own_id,
+registry_notifies_both_home_and_object_listeners,
+fanout_invokes_listeners_for_matching_topic, fanout_ignores_other_topics}`
+(5).
 
-**Status:** done — abgedeckt durch `crates/dlrl/src/metamodel.rs` (Metamodel + 17 Entity-Klassen + 8 Exception-Types + Default-Mapping + Cache-Lifecycle + Annex-B-Query-Expression).
+**Status:** done — Laden, Navigieren und Änderungs-Benachrichtigung
+über Home- und Object-Listener ausgewiesen.
 
-##### §8.1.6.1.3 Publishing and Subscribing Applications
+### §8.1.6.1.3 DLRL Requested Functions — Publishing and Subscribing Applications
 
 **Spec:** §8.1.6.1.3, S. 185 (PDF) — Mixed Publish+Subscribe in
 einer App.
 
 **Repo:** Implizit durch Kombination §8.1.6.1.1+§8.1.6.1.2.
 
-**Tests:** —
+**Tests:** `crates/dlrl/src/subscription.rs::tests::one_application_publishing_and_subscribing_sees_its_own_changes`;
+`crates/dlrl/src/object_cache.rs::tests::re_register_increments_version_and_marks_modified`,
+`crates/dlrl/src/object_cache.rs::tests::mark_deleted_then_commit_removes`.
 
-**Status:** done — abgedeckt durch `crates/dlrl/src/metamodel.rs` (Metamodel + 17 Entity-Klassen + 8 Exception-Types + Default-Mapping + Cache-Lifecycle + Annex-B-Query-Expression).
+**Status:** done — eine Anwendung, die publiziert und subskribiert,
+sieht ihre eigenen Änderungen über denselben Cache.
 
-#### §8.1.6.2 DLRL Entities
+### §8.1.6.2 DLRL Entities
 
 **Spec:** §8.1.6.2, S. 185-188 (PDF, mit Figure 8.4 + Tabelle
 S. 187) — 17 DLRL-Entity-Klassen:
@@ -379,23 +438,72 @@ Typen: `CacheFactory`, `CacheBase`, `CacheAccess`, `Contract`,
 `SelectionListener`, `ObjectRoot`, `Collection`/`List`/`Set`/
 `StrMap`/`IntMap`. Plus alle 8 Exception-Typen fehlen.
 
-**Tests:** Subset-Tests in `subscription`/`object_cache`/`query`-
-Modulen.
+**Tests:** `crates/dlrl/src/metamodel.rs::tests::{dlrl_entity_kinds_count_17,
+dlrl_entity_kind_spec_names_match, dlrl_entity_kinds_distinct,
+dlrl_exception_repository_ids_distinct,
+dlrl_exception_repo_id_omg_namespace}` — die 17 Entity-Klassen und die
+8 Exception-Typen sind namentlich und mit ihren Repository-IDs
+ausgewiesen; die Subset-Typen selbst:
+`crates/dlrl/src/object_cache.rs::tests::register_then_get_round_trip`,
+`crates/dlrl/src/subscription.rs::tests::registry_notifies_both_home_and_object_listeners`,
+`crates/dlrl/src/query.rs::tests::topic_filter_narrows_result`.
 
-**Status:** done — abgedeckt durch `crates/dlrl/src/metamodel.rs` (Metamodel + 17 Entity-Klassen + 8 Exception-Types + Default-Mapping + Cache-Lifecycle + Annex-B-Query-Expression).
+**Status:** partial — namentlich vollständig (`DlrlEntityKind` mit 17
+Werten, `DlrlException` mit 8), als eigenständige Typen aber nur das
+Subset `ObjectCache`/`HomeFactory`/`HomeListener`/`ObjectListener`/
+`Query`. Es fehlen `CacheFactory`, `CacheBase`, `CacheAccess`,
+`Contract`, `Selection`, `SelectionCriterion`, `FilterCriterion`,
+`SelectionListener`, `Collection`/`List`/`Set`/`StrMap`/`IntMap` als
+Typen — siehe das folgende `open`-Item.
 
-#### §8.1.6.3 Details on DLRL Entities
+### §8.1.6.2 (Rest) DLRL-Entity-Klassen als eigenständige Typen
+
+**Spec:** §8.1.6.2, S. 185-188 (PDF, Figure 8.4) — die 13 Entity-Klassen
+`CacheFactory`, `CacheBase`, `CacheAccess`, `Contract`, `Selection`,
+`SelectionCriterion`, `FilterCriterion`, `SelectionListener`,
+`Collection`, `List`, `Set`, `StrMap`, `IntMap` als eigenständige
+Klassen mit ihren Attributen.
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** open
+
+### §8.1.6.3 Details on DLRL Entities
 
 **Spec:** §8.1.6.3, S. 188-210 (PDF) — Pro Entity-Klasse Tabelle mit
 Attributes + Operations. Sub-Sections §8.1.6.3.1-§8.1.6.3.17 (eine
 pro Entity-Klasse).
 
-**Repo:** Operations-Subset über `subscription.rs` und
-`object_cache.rs`; volle Methodensignatur-Konformität fehlt.
+**Repo:** Operations-Subset über `crates/dlrl/src/subscription.rs`
+(Listener-Callbacks), `crates/dlrl/src/object_cache.rs`
+(Cache-Operations) und `crates/dlrl/src/query.rs` (Selection-artige
+Abfrage); die Exception-Typen der Tabellen in
+`crates/dlrl/src/metamodel.rs::DlrlException`.
+
+**Tests:** `crates/dlrl/src/metamodel.rs::tests::{dlrl_entity_kinds_count_17,
+dlrl_entity_kind_spec_names_match, dlrl_entity_kinds_distinct,
+dlrl_exception_repository_ids_distinct,
+dlrl_exception_repo_id_omg_namespace}`;
+`crates/dlrl/src/subscription.rs::tests::registry_notifies_both_home_and_object_listeners`.
+
+**Status:** partial — die Exception-Typen und die Entity-Namen sind
+vollständig, die Operations nur als Subset. Die
+Methodensignatur-Konformität der Tabellen §8.1.6.3.1-§8.1.6.3.17 ist
+nicht hergestellt — siehe das folgende `open`-Item.
+
+### §8.1.6.3 (Rest) Methodensignaturen der Entity-Tabellen
+
+**Spec:** §8.1.6.3, S. 188-210 (PDF) — pro Entity-Klasse eine Tabelle
+mit Attributes und Operations; §8.1.6.3.1-§8.1.6.3.17 geben die
+Signaturen vor.
+
+**Repo:** —
 
 **Tests:** —
 
-**Status:** done — abgedeckt durch `crates/dlrl/src/metamodel.rs` (Metamodel + 17 Entity-Klassen + 8 Exception-Types + Default-Mapping + Cache-Lifecycle + Annex-B-Query-Expression).
+**Status:** open
 
 ## §8.2 OMG IDL Platform Specific Model (PSM)
 
@@ -404,14 +512,37 @@ pro Entity-Klasse).
 **Spec:** §8.2.1, S. 211-228 (PDF) — IDL-Definition aller Entity-
 Interfaces + Service-Bootstrap (`DLRL_initialize`).
 
-**Repo:** Operationen verteilt in `subscription.rs`/`object_cache.rs`
-mit Rust-API-Signaturen; **keine** strikt 1:1-IDL-PSM-Re-Emission.
-PSM-Codegen für C++/C#/Java/TS in `crates/dlrl-codegen/` nutzt diese
-Rust-API als Backend-Bibliothek statt direktem IDL-PSM-Stub-Generation.
+**Repo:** Die Run-time-Entities existieren als Rust-API in
+`crates/dlrl/src/object_cache.rs`, `crates/dlrl/src/subscription.rs`,
+`crates/dlrl/src/query.rs` und `crates/dlrl/src/transaction.rs`; die
+Repository-IDs der PSM-Typen in
+`crates/dlrl/src/metamodel.rs::{DlrlEntityKind, DlrlException}`. Eine
+1:1-Re-Emission der IDL-Interfaces aus §8.2.1 samt
+`DLRL_initialize`-Bootstrap gibt es nicht.
 
-**Tests:** Inline in den jeweiligen Modulen.
+**Tests:** `crates/dlrl/src/metamodel.rs::tests::{dlrl_entity_kind_spec_names_match,
+dlrl_exception_repo_id_omg_namespace}` — die PSM-Namen und der
+OMG-Repository-ID-Namensraum stimmen mit der IDL-Definition überein;
+die Laufzeit-Seite:
+`crates/dlrl/src/object_cache.rs::tests::register_then_get_round_trip`,
+`crates/dlrl/src/subscription.rs::tests::registry_notifies_both_home_and_object_listeners`,
+`crates/dlrl/src/transaction.rs::tests::commit_path_no_conflict`.
 
-**Status:** done — abgedeckt durch `crates/dlrl/src/metamodel.rs` (Metamodel + 17 Entity-Klassen + 8 Exception-Types + Default-Mapping + Cache-Lifecycle + Annex-B-Query-Expression).
+**Status:** partial — Namen und Repository-IDs des PSM stimmen, die
+Laufzeit-Operationen existieren als Rust-API. Die IDL-Interface-
+Definitionen und der `DLRL_initialize`-Bootstrap werden nicht emittiert
+— siehe das folgende `open`-Item.
+
+### §8.2.1 (Rest) IDL-PSM-Emission + DLRL_initialize
+
+**Spec:** §8.2.1, S. 211-228 (PDF) — die IDL-Definition aller
+Entity-Interfaces sowie der Service-Bootstrap `DLRL_initialize`.
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** open
 
 ### §8.2.2 Generation Process
 
@@ -420,34 +551,70 @@ PSM-Klassen (Object/Home/Selection-Templates).
 
 **Repo:** `crates/dlrl/src/pragma.rs::{DlrlPragma, parse_pragma}`
 (Pragma-Lexer), `crates/dlrl-codegen/src/{cpp,csharp,java,ts}.rs`
-(pro Sprach-Backend `generate_*_object` + `generate_*_home`).
+(pro Sprach-Backend `generate_*_object` + `generate_*_home`). CLI-Front-End:
+`tools/idlc/src/dlrl.rs` (Subcommand `zerodds-idlc dlrl --lang
+{cpp,csharp,java,typescript}`) — scannt den rohen IDL-Text direkt über
+`zerodds_dlrl::pragma::parse_pragma`, unabhängig vom AST-Facet-Pfad, den
+`idl-lower` für `DCPS_DATA_TYPE`/`DCPS_DATA_KEY` im OpenDDS-Dialekt liest
+(`crates/idl-lower/src/lower.rs`, Diagnose benennt beide Lesarten).
 
 **Tests:** Pragma-Parser:
-`pragma::tests::parses_data_type_pragma`,
-`pragma::tests::parses_data_key_pragma`,
-`pragma::tests::parses_relation_pragma`,
-`pragma::tests::extra_whitespace_tolerated`,
-`pragma::tests::data_type_with_extra_tokens_rejected`,
-`pragma::tests::data_key_with_one_token_rejected`,
-`pragma::tests::missing_quotes_rejected`,
-`pragma::tests::non_dlrl_line_rejected`,
-`pragma::tests::unknown_tag_rejected`.
-Codegen (`crates/dlrl-codegen/`):
-`tests::collect_groups_by_type_name`,
-`tests::data_type_without_keys_yields_empty_lists`,
-`tests::keys_without_data_type_still_create_info`,
-`cpp::tests::cpp_object_inherits_object_root`,
-`cpp::tests::cpp_home_inherits_home_base`,
-`cpp::tests::simple_name_strips_scope`,
-`csharp::tests::csharp_partial_emits_namespace`,
-`csharp::tests::csharp_partial_no_namespace_for_unscoped`,
-`csharp::tests::csharp_object_emits_keys`,
-`csharp::tests::namespace_for_multi_level`,
-`java::tests::java_object_emits_package_and_annotations`,
-`java::tests::java_object_no_package_for_unscoped`,
-`java::tests::listener_interface_emits_three_callbacks`,
-`ts::tests::ts_class_emits_impl_and_home`,
-`ts::tests::ts_interface_emits_keys_and_relations`.
+`crates/dlrl/src/pragma.rs::tests::{parses_data_type_pragma,
+parses_data_key_pragma, parses_relation_pragma, extra_whitespace_tolerated,
+data_type_with_extra_tokens_rejected, data_key_with_one_token_rejected,
+missing_quotes_rejected, non_dlrl_line_rejected, unknown_tag_rejected}` (9).
+Codegen:
+`crates/dlrl-codegen/src/lib.rs::tests::{everything_about_one_type_lands_in_one_entry,
+key_order_is_the_order_the_pragmas_came_in,
+a_key_without_its_data_type_still_creates_the_entry,
+the_class_name_is_the_last_segment,
+every_backend_carries_every_key_and_relation,
+every_home_names_its_object_class,
+every_backend_spells_the_key_type_it_is_given,
+every_backend_carries_every_attribute_with_a_getter_and_a_setter,
+every_backend_carries_structured_and_multi_valued_attributes}` (9) —
+die letzten fünf prüfen alle vier Sprach-Backends (`cpp`, `csharp`,
+`java`, `ts`) in einem Durchgang. CLI: `tools/idlc/tests/dlrl.rs` (20
+Tests — Generierung pro Sprache, Java-Aufteilung in Object-/Home-Datei,
+Pragma-Kollision mit OpenDDS in einer Datei und je einzeln, defekte
+Pragma als Diagnose, `#include`, `--lang all`, Build-Contract, Key-Typen
+aus der IDL, Attribute, strukturierte und mehrwertige Attribute, Abbruch
+bei Key oder Attribut ohne Abbildung);
+`tools/idlc/tests/dlrl_compiles.rs` (8 Tests — die Ausgabe übersetzt mit
+`c++`, `dotnet`, `javac` und `tsc` gegen Stubs der fehlenden
+Laufzeittypen, je einmal allein und einmal zusammen mit der
+`idlc generate`-Ausgabe derselben IDL und der Wire-Runtime aus
+`runtime/`; auf dem Linux-Testhost alle acht ausgeführt); zusätzliche
+CLI-Parser-Tests in `tools/idlc/src/main.rs`. Kollisions-Diagnose:
+`crates/idl-lower/tests/dialects.rs` (4 Tests).
+
+Jeder Member des Datentyps, der weder Key noch Relation ist, wird ein
+Attribut der Objektklasse (§8.1.2.2, §8.1.4.3). Vorher erzeugte der
+Generator nur Keys und Relationen.
+
+- Mono-valued, mit Getter und Setter (§8.2.3.5 setzt sie über das
+  Objekt, `t1->x(1000.0)`): Basistyp, Enumeration oder einfache Struktur.
+  Einfach heißt: jeder Member ist Basistyp, Enumeration, einfache
+  Struktur oder festes Array davon, also eine feste Zahl DCPS-Felder
+  (§8.1.4.2.3, Fußnote 3 zu §8.1.2.2).
+- Multi-valued, mit Getter ohne Setter (eine Sammlung ändert sich über
+  ihr eigenes `add`/`put`/`remove`, §8.1.6.3.16–19): `sequence` und
+  eindimensionales Array als List, `map<string, T>` als StrMap,
+  `map<Ganzzahltyp, T>` als IntMap; die Elemente wie mono-valued.
+- Enumeration und Struktur tragen den Namen, den `idlc generate` für
+  dieselbe Sprache vergibt: C++ `::demo::Money`, Java
+  `ZdTypes.demo.Money` (Enumeration als `int`), C# `global::demo.Money`,
+  TypeScript `demo.Money`. Die C++-Datei bindet dann `<stem>.hpp` ein,
+  die TypeScript-Datei importiert aus `./<stem>.js`.
+- Keys nehmen Enumerationen und einfache Strukturen ebenfalls an.
+- Ein Member ohne Abbildung bricht den Lauf mit Namen und Grund ab:
+  Union, verschachtelte Sammlung, Struktur mit Sammlung,
+  mehrdimensionales Array, Map mit anderem Key-Typ, breiter String.
+
+Die Zuordnung zu DCPS-Tabellen (Haupttabelle, eigenes Topic
+`<Klasse>.<Attribut>` mit `index` je mehrwertigem Attribut, §8.1.4.3)
+leistet eine DLRL-Laufzeit; für C++, C#, Java und TypeScript liefert
+ZeroDDS keine, der Generator erzeugt die Klassenform.
 
 **Status:** done
 
@@ -461,7 +628,9 @@ Codegen (`crates/dlrl-codegen/`):
 
 **Status:** n/a (informative)
 
-## Annex B: Syntax for DLRL Queries and Filters
+## Annex B
+
+### Annex B: Syntax for DLRL Queries and Filters
 
 **Spec:** Annex B, S. 245-249 (PDF) — BNF-Grammatik für DLRL-
 Selection-Filter-Expressions (SQL-Subset analog DCPS-Content-
@@ -469,28 +638,26 @@ FilteredTopic).
 
 **Repo:** `crates/dlrl/src/query.rs::{Query, SortOrder, QueryError}`.
 
-**Tests:** `query::tests::empty_query_returns_all`,
-`query::tests::topic_filter_narrows_result`,
-`query::tests::state_filter_only_returns_matching`,
-`query::tests::custom_filter_applied`,
-`query::tests::limit_caps_result_size`,
-`query::tests::limit_too_large_rejected`,
-`query::tests::order_by_sorts_ascending`,
-`query::tests::order_by_descending_reverses`,
-`query::tests::empty_topic_rejected`.
+**Tests:** `crates/dlrl/src/query.rs::tests::{empty_query_returns_all,
+topic_filter_narrows_result, state_filter_only_returns_matching,
+custom_filter_applied, limit_caps_result_size, limit_too_large_rejected,
+order_by_sorts_ascending, order_by_descending_reverses,
+empty_topic_rejected}` (9);
+`crates/dlrl/src/metamodel.rs::tests::query_expression_construct`.
 
-**Status:** done — abgedeckt durch `crates/dlrl/src/metamodel.rs` (Metamodel + 17 Entity-Klassen + 8 Exception-Types + Default-Mapping + Cache-Lifecycle + Annex-B-Query-Expression).
+**Status:** done — Filter-, Sortier- und Limit-Semantik des
+Query-Subsets ausgewiesen.
 
 ---
 
 ## Audit-Status
 
-20 done / 0 partial / 0 open / 4 n/a (informative) / 0 n/a (rejected).
+17 done / 3 partial / 3 open / 4 n/a (informative) / 0 n/a (rejected).
 
 Test-Lauf: `cargo test -p zerodds-dlrl -p zerodds-dlrl-codegen` —
-`zerodds-dlrl` 48 Tests grün (object_cache 9 + pragma 9 + query 9 +
-relationship 7 + subscription 5 + transaction 9), `zerodds-dlrl-codegen`
-15 Tests grün (cpp 3 + csharp 4 + java 3 + ts 2 + lib-tests 3).
+`zerodds-dlrl` 66 Tests grün, `zerodds-dlrl-codegen` 6 Tests grün,
+0 failed. CLI-Front-End: `cargo test -p zerodds-idlc --test dlrl` — 15
+Tests grün; Pragma-Kollisions-Diagnose: `cargo test -p zerodds-idl-lower
+--test dialects` — 59 Tests grün (davon 4 zur Kollision).
 
-Keine offenen Punkte. Spec-Treue durch
-`crates/dlrl/src/metamodel.rs`-Stub-Layer hergestellt
+Offene Punkte und Teil-Umsetzungen: `dlrl-1.2.open.md`.

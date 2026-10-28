@@ -1,0 +1,7 @@
+wireprobe-omniorb: omniidl failed
+gen.idl:1: Error in look-up of 'map': 'map' not found
+gen.idl:1: Syntax error in definition
+gen.idl:1: Syntax error in abstract valuetype
+gen.idl:2: Error in look-up of 'Table': 'Table' not found
+omniidl: 4 errors.
+wireprobe: omniidl ran under a 4194304K ceiling and a 300s clock

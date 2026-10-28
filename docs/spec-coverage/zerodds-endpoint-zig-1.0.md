@@ -2,9 +2,8 @@
 
 **Quelle:** `docs/specs/zerodds-endpoint-zig-1.0.md` — ZeroDDS Zig Endpoint-SDK-Spec
 (XRCE-Framing, sync `Client`, async `Reader`/`Writer`, reliable Stream via
-[`reliable-endpoint-1.0`](../specs/reliable-endpoint-1.0.md)). Ergänzt die
-Codegen-Coverage `zerodds-xcdr2-zig` (`docs/spec-coverage/zerodds-xcdr2-zig-1.0.md`) —
-dort das Marshalling, hier der Transport.
+[`reliable-endpoint-1.0`](../specs/reliable-endpoint-1.0.md)). Das Marshalling kommt aus `crates/lang-rules`, Spalte `Language::Zig`;
+hier steht der Transport.
 
 Implementation:
 
@@ -28,8 +27,16 @@ flags, len LE) + Body, byte-identisch zu `crates/xrce` + `endpoints/c`.
 Konstanten `XRCE_SESSION_NOKEY` (`0x80`) und `XRCE_STREAM_BEST_EFFORT` (`0x01`);
 `Transport` als Funktionszeiger-Vtable (`deliver`/`receive`, kein Heap).
 
-**Tests:** In-File-Test `byte identity vs Rust goldens` in `zerodds.zig`
-(`Writer` LE+BE gegen `build/golden_le.bin`/`golden_be.bin`).
+**Tests:** `crates/endpoint-e2e/tests/xrce_write_framing.rs::zig_endpoint_frames_conformant_write_data`
+baut den Frame mit `zig run` über die SDK-Datei im Baum und gibt ihn an
+`zerodds_xrce::WriteDataPayload::try_from_submessage` — dieselbe Prüfung, die jede
+andere Sprachspalte des Gatters durchläuft; sie deckt Submessage-Id, Flag-Byte
+(`0x01`), `BaseObjectRequest` und Sample ab. Dazu die In-File-Tests
+`"byte identity vs Rust goldens"` in `endpoints/zig/src/zerodds.zig` (`Writer` LE+BE
+gegen `build/golden_le.bin`/`build/golden_be.bin`),
+`"a WRITE_DATA frame carries the BaseObjectRequest under FORMAT_DATA flags"`,
+`"read frame bounds body to declared length, ignoring appended submessage"`
+und `"read frame rejects over-long length and truncation, writer refuses >0xFFFF"`.
 
 **Status:** done.
 
@@ -40,9 +47,11 @@ XRCE-Framing über einen echten Kanal roundtrippt — die Grundlage, auf der das
 aufsetzt.
 
 **Repo:** `crates/endpoint-e2e/tests/zig.rs::ZIG_RAW_MAIN` — rohes UDP, kein
-XRCE-Frame, nutzt nur `gen.zig` (den generierten `Ping`/`Pong`-Codec).
+XRCE-Frame, nutzt nur den generierten `Ping`/`Pong`-Codec aus
+`crates/endpoint-e2e/tests/zig.rs::gen_module` (zur Testlaufzeit als gen.zig
+ins Build-Verzeichnis geschrieben).
 
-**Tests (codepit):** `zig_raw_udp` — generierter `Ping`/`Pong`-Codec direkt über einen
+**Tests:** (Linux) `zig_raw_udp` — generierter `Ping`/`Pong`-Codec direkt über einen
 rohen UDP-Socket, ohne XRCE-Framing. Grün.
 
 **Status:** done.
@@ -61,7 +70,7 @@ feste `txbuf`/`rxbuf`, kein Heap).
 roundtrip); Live-E2E `crates/endpoint-e2e/tests/zig.rs::ZIG_ENDPOINT_MAIN` (Modus
 `sync`) über `UdpTransport` + `zerodds.zig`.
 
-**Tests (codepit):** `zig_endpoint_sync` — voller Stack über `Client.write`/`poll`
+**Tests:** (Linux) `zig_endpoint_sync` — voller Stack über `Client.write`/`poll`
 gegen den geteilten Rust-XRCE-Peer. Grün.
 
 **Status:** done.
@@ -83,7 +92,7 @@ nichts mehr bereit ist).
 `crates/endpoint-e2e/tests/zig.rs::ZIG_ENDPOINT_MAIN` (Modus `async`) über
 `UdpTransport` + `zerodds.zig`.
 
-**Tests (codepit):** `zig_endpoint_async` — voller Stack über `AsyncReader.run`
+**Tests:** (Linux) `zig_endpoint_async` — voller Stack über `AsyncReader.run`
 gegen den geteilten Rust-XRCE-Peer. Grün.
 
 **Status:** done.
@@ -94,7 +103,7 @@ reliable `AsyncWriter` (§4) abgedeckt (Spec §3, `docs/specs/zerodds-endpoint-z
 Kein offener Punkt, sondern eine bewusste Spec-Entscheidung.
 
 **Ping-Pong-E2E-Summe (§1/§2/§3):** `zig_raw_udp`/`zig_endpoint_sync`/`zig_endpoint_async`
-— 3/3 grün (codepit).
+— 3/3 grün (Linux).
 
 ## §4 reliable Stream
 
@@ -111,7 +120,11 @@ Volle Kontraktdetails in [`reliable-endpoint-1.0`](../specs/reliable-endpoint-1.
 **Repo:** `endpoints/zig/src/reliable.zig` — `writeDataFrame`/`parseWriteData`,
 `heartbeatFrame`/`parseHeartbeat`, `acknackFrame`/`parseAckNack`; `Sender`, `Receiver`.
 
-**Tests (codepit):** `zig_reliable_unit` — `zig test` auf `reliable.zig`: die
+**Tests:** `crates/endpoint-e2e/tests/xrce_write_framing.rs::zig_reliable_frames_conformant_write_data`
+— `writeDataFrame` hat eine eigene Spalte im Framing-Gatter, weil `reliable.zig` ein
+eigenes Framing mit eigenen Konstanten ist und `zerodds.zig` nicht importiert; der
+Frame geht durch `zerodds_xrce::WriteDataPayload::try_from_submessage`. Dazu (Linux)
+`zig_reliable_unit` — `zig test` auf `reliable.zig`: die
 Mirror-of-Reference-Unit-Suite (monotone seq, Payload-zu-groß, Window-full, Heartbeat
 first/silence/leer, ACKNACK Teil-/Voll-Clear, Receiver Reorder/Dedup/Buffer-full,
 Pending-ACKNACK-Bitmap, Reset, In-Process-End-to-End-Loss-Recovery) plus die
@@ -135,14 +148,14 @@ Rust-Peer mit injiziertem Loss.
 `drainAckNacks`/`close`); `endpoints/zig/example_reliable.zig` (lauffähige
 In-Process-Demo, kein Socket).
 
-**Tests (codepit):**
+**Tests:** (Linux)
 - `zig_reliable_loss_recovery` — Peer dropt jedes 3. Sample einmalig; die App
   retransmittet auf ACKNACK; alle 12 Samples lückenlos in Reihenfolge geliefert.
 - `zig_reliable_no_loss` — lossless Baseline; 12/12.
 - `zig_reliable_example` — `example_reliable.zig` läuft und meldet
   `sequence 0..11 verified in order`.
 
-3/3 grün (codepit) — zusammen mit `zig_reliable_unit` (§4 oben) 4/5 des reliable-Tests;
+3/3 grün (Linux) — zusammen mit `zig_reliable_unit` (§4 oben) 4/5 des reliable-Tests;
 Latenz-Bench ist §5.
 
 **Anmerkung (ehrlich):** Beim Aufbau von `AsyncWriter.close()` wurde ein
@@ -165,7 +178,7 @@ nicht das Warten auf ACKNACK.
 Modus `bench`): 4000 Iterationen inline `sendto` vs. 4000 Iterationen
 `AsyncWriter.write` nach 100 Warmup-Pushes.
 
-**Tests (codepit):** `zig_reliable_latency_bench` — Producer-Push (wait-free
+**Tests:** (Linux) `zig_reliable_latency_bench` — Producer-Push (wait-free
 Ring) **14 ns** vs. inline `sendto` **7950 ns** (~568×), Assert
 `decoupled_ns < inline_ns`. Grün.
 
@@ -175,9 +188,9 @@ Ring) **14 ns** vs. inline `sendto` **7950 ns** (~568×), Assert
 
 ## Audit-Status
 
-7 done / 0 partial / 0 open / 0 n/a (informativ) / 0 n/a (rejected).
+7 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
 
-Test-run (codepit, verifiziert): `cargo test -p zerodds-endpoint-e2e --test zig`
+Test-run (Linux, verifiziert): `cargo test -p zerodds-endpoint-e2e --test zig`
 3/3 (Ping-Pong: `zig_raw_udp`/`zig_endpoint_sync`/`zig_endpoint_async`);
 `--test zig_reliable` 5/5 (`zig_reliable_unit` inkl. Byte-Golden,
 `zig_reliable_loss_recovery`, `zig_reliable_no_loss`, `zig_reliable_example`,

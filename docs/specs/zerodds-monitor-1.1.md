@@ -1,78 +1,78 @@
-# `zerodds-monitor` v1.1 — Observability-Substrate-Spec
+# `zerodds-monitor` v1.1 — observability substrate spec
 
-ZeroDDS Vendor-Spec. In `crates/monitor` (`zerodds-monitor`) implementiert.
-Löst `zerodds-monitor-1.0` ab (wire-kompatibler Minor-Bump: identische Metriken,
-identische PID `0x0D00`, identisches Prometheus-Text-Format; neu sind eine
-dyn-freie Redaction-/Kardinalitäts-Policy-API, präzisierte Zählungen und eine
-geschärfte Test-Pflicht).
+ZeroDDS vendor spec. Implemented in `crates/monitor` (`zerodds-monitor`).
+Supersedes `zerodds-monitor-1.0` (wire-compatible minor bump: identical metrics,
+identical PID `0x0D00`, identical Prometheus text format; new are a
+dyn-free redaction/cardinality policy API, more precise counts and a
+stricter test requirement).
 
 ## Motivation
 
-Es gibt keine OMG-Spec für DDS-Monitoring. RTI-Connext-Monitoring und
-Cyclone-Statistics sind Vendor-spezifisch und nicht interoperabel. ZeroDDS wählt
-einen orthogonalen Pfad: **Industrie-Standards** — Prometheus-Text-Format,
-OpenMetrics, OpenTelemetry-Semantic-Conventions, W3C-Trace-Context — statt eines
-proprietären Topic-Schemas.
+There is no OMG spec for DDS monitoring. RTI Connext Monitoring and
+Cyclone Statistics are vendor-specific and not interoperable. ZeroDDS chooses
+an orthogonal path: **industry standards** — Prometheus text format,
+OpenMetrics, OpenTelemetry semantic conventions, W3C Trace Context — instead of a
+proprietary topic schema.
 
-Diese Spec definiert das **Telemetry-Substrate** zwischen dem ZeroDDS-Runtime und
-einem Konsumenten-Stack (Grafana, Tempo, Datadog, Honeycomb).
+This spec defines the **telemetry substrate** between the ZeroDDS runtime and
+a consumer stack (Grafana, Tempo, Datadog, Honeycomb).
 
-## Änderungen gegenüber 1.0
+## Changes compared with 1.0
 
 | # | 1.0 | 1.1 |
 |---|---|---|
-| 1 | §9-Hooks als `Option<Box<dyn Fn(...)>>` | **dyn-freie Enum-Policies** (`TopicLabelPolicy`, `GuidLabelPolicy`) in `MonitorConfig` — konform mit `forbid(unsafe)`/`no_dyn_in_safe` und `MonitorConfig: Clone` |
-| 2 | §9 nennt `MonitorConfig::guid_obfuscator`, §6.2-Struct listet es nicht | §6.2-`MonitorConfig` und §9 **vereinheitlicht** — die Policy-Felder stehen in der Struct |
-| 3 | §2: „23 Counter, 4 Gauge, 4 Histogram" | korrigiert: **25 Counter, 3 Gauge, 3 Histogram** (Summe 31) |
-| 4 | §1.4/§3.1: „11 Buckets" vs 11+`+Inf` | präzisiert: **11 endliche Buckets + `+Inf`** |
-| 5 | §4.1: PID-Range-Begründung fragwürdig | **ehrliche PID-Note** (Standard-Range-Caveat, Wire-Stabilität, Vendor-Range als 2.0-Option) |
-| 6 | §7 normativ, ohne Test-Bindung | §7 bleibt normativ und ist per **§10-Cross-Layer-Test** zu belegen |
+| 1 | §9 hooks as `Option<Box<dyn Fn(...)>>` | **dyn-free enum policies** (`TopicLabelPolicy`, `GuidLabelPolicy`) in `MonitorConfig` — conformant with `forbid(unsafe)`/`no_dyn_in_safe` and `MonitorConfig: Clone` |
+| 2 | §9 names `MonitorConfig::guid_obfuscator`, the §6.2 struct does not list it | §6.2 `MonitorConfig` and §9 **unified** — the policy fields are in the struct |
+| 3 | §2: "23 counters, 4 gauges, 4 histograms" | corrected: **25 counters, 3 gauges, 3 histograms** (sum 31) |
+| 4 | §1.4/§3.1: "11 buckets" vs 11+`+Inf` | made precise: **11 finite buckets + `+Inf`** |
+| 5 | §4.1: questionable reasoning for the PID range | **honest PID note** (standard range caveat, wire stability, vendor range as a 2.0 option) |
+| 6 | §7 normative, without a test binding | §7 stays normative and must be proven by the **§10 cross-layer test** |
 
-Wire-Verträglichkeit: Default aller neuen Policies ist `Full` (= Verhalten von
-1.0). Ein 1.0-Konfigurat verhält sich unter 1.1 unverändert.
+Wire compatibility: the default of all new policies is `Full` (= behaviour of
+1.0). A 1.0 configuration behaves unchanged under 1.1.
 
-## Ziele
+## Goals
 
-- **Industrie-Standard-Output**: Prometheus-Text-Format (§3) + OpenTelemetry-Spans
-  (siehe `zerodds-observability-otlp-1.0.md`).
-- **Allocation-light Hot-Path**: Counter/Gauge sind atomare Integer; Histogramme
-  nutzen die fixen log10-Buckets aus `foundation::tracing::Histogram`.
-- **Cross-Process via DDS**: W3C-Trace-Context als RTPS-Vendor-PID
-  `PID_VENDOR_TRACE_CONTEXT` (0x0D00) inline-QoS-propagiert.
-- **Zero-Config-Sane-Default**: ohne Konsumenten-Wire-up bleibt das System silent.
-- **Datenschutz per Policy (neu in 1.1)**: Topic-Kardinalität und GUID-Exposition
-  sind über deklarative, dyn-freie Policies steuerbar — ohne Closures im
-  Konfigurat.
+- **Industry-standard output**: Prometheus text format (§3) + OpenTelemetry spans
+  (see `zerodds-observability-otlp-1.0.md`).
+- **Allocation-light hot path**: counters/gauges are atomic integers; histograms
+  use the fixed log10 buckets from `foundation::tracing::Histogram`.
+- **Cross-process via DDS**: W3C Trace Context as RTPS vendor PID
+  `PID_VENDOR_TRACE_CONTEXT` (0x0D00), propagated as inline QoS.
+- **Zero-config sane default**: without consumer wiring the system stays silent.
+- **Data protection by policy (new in 1.1)**: topic cardinality and GUID exposure
+  can be controlled via declarative, dyn-free policies — without closures in the
+  configuration.
 
-## Nicht-Ziele
+## Non-goals
 
-- Eigener Storage-Layer (Prometheus / Tempo / Loki übernehmen das).
-- Vollständige OTel-SDK-Reimpl — nur die Datenmodell-Schicht; OTLP-Export macht
+- Our own storage layer (Prometheus / Tempo / Loki take care of that).
+- Complete OTel SDK reimplementation — only the data model layer; OTLP export is done by
   `zerodds-observability-otlp`.
-- Topic-basiertes Monitoring (à la RTI `rti/dds/monitoring/...`) — explizit
-  verworfen, weil es OMG-inkompatible Wire-Pfade einführt.
-- **Closure-/dyn-basierte Hooks** — bewusst verworfen (Architektur:
-  `forbid(unsafe_code)`, `no_dyn_in_safe`); Steuerung erfolgt deklarativ (§9).
+- Topic-based monitoring (like RTI `rti/dds/monitoring/...`) — explicitly
+  rejected, because it introduces OMG-incompatible wire paths.
+- **Closure/dyn-based hooks** — deliberately rejected (architecture:
+  `forbid(unsafe_code)`, `no_dyn_in_safe`); control is declarative (§9).
 
-## §1 Datenmodell
+## §1 Data model
 
-### §1.1 Schichten
+### §1.1 Layers
 
 ```
 +-----------------------------------------+
 |  zerodds-observability-otlp             |  (OTLP/HTTP/JSON)
-|  zerodds-monitor::prometheus            |  (Prometheus-Text)
+|  zerodds-monitor::prometheus            |  (Prometheus text)
 +-----------------------------------------+
 |  zerodds-monitor::Registry              |  (Counter / Gauge / Histogram)
 +-----------------------------------------+
 |  foundation::tracing                    |  (Histogram + Span + TraceId/SpanId)
-|  foundation::observability              |  (Event + Sink-Trait)
+|  foundation::observability              |  (Event + Sink trait)
 +-----------------------------------------+
 ```
 
-`Histogram`, `Span`, `TraceId`, `SpanId`, `Event` leben in **`foundation`**
-(Layer 0); `Counter`, `Gauge`, `Registry`, Prometheus-Exporter und
-Trace-Context-PID-Codec in **`monitor`** (Layer 4).
+`Histogram`, `Span`, `TraceId`, `SpanId`, `Event` live in **`foundation`**
+(layer 0); `Counter`, `Gauge`, `Registry`, the Prometheus exporter and the
+trace context PID codec in **`monitor`** (layer 4).
 
 ### §1.2 Counter
 
@@ -81,8 +81,8 @@ pub struct Counter { name: &'static str, labels: Labels, value: AtomicU64 }
 impl Counter { pub fn inc(&self); pub fn add(&self, n: u64); pub fn get(&self) -> u64; }
 ```
 
-- **Monoton**, `AtomicU64`/`Relaxed`.
-- **Identität** = `(name, labels)`; Doppel-Registrierung liefert dieselbe Instance (§1.6).
+- **Monotonic**, `AtomicU64`/`Relaxed`.
+- **Identity** = `(name, labels)`; double registration returns the same instance (§1.6).
 
 ### §1.3 Gauge
 
@@ -91,12 +91,12 @@ pub struct Gauge { name: &'static str, labels: Labels, value: AtomicI64 }
 impl Gauge { pub fn set(&self, v: i64); pub fn inc(&self); pub fn dec(&self); pub fn add(&self, n: i64); pub fn get(&self) -> i64; }
 ```
 
-- **Bidirektional**, `AtomicI64`/`Relaxed`.
+- **Bidirectional**, `AtomicI64`/`Relaxed`.
 
 ### §1.4 Histogram
 
-`zerodds_foundation::tracing::Histogram` wird as-is re-exportiert. Bucket-Layout
-ist fix log10: **11 endliche Buckets** (`1e-9 s` … `10 s`) **plus `+Inf`** (siehe
+`zerodds_foundation::tracing::Histogram` is re-exported as-is. The bucket layout
+is fixed log10: **11 finite buckets** (`1e-9 s` … `10 s`) **plus `+Inf`** (see
 §3.1).
 
 ```rust
@@ -108,18 +108,18 @@ pub struct LabeledHistogram { pub name: &'static str, pub labels: Labels, pub hi
 ### §1.5 Labels
 
 ```rust
-pub struct Labels { pairs: Vec<(&'static str, String)> }  // sortiert nach Key
+pub struct Labels { pairs: Vec<(&'static str, String)> }  // sorted by key
 ```
 
-- **Key** = `&'static str`; **Value** = `String` (`topic`, `transport`, `error_kind`, `policy_id`, …).
-- **Sortierung** alphabetisch nach Key (deterministische Prometheus-Ausgabe).
-- **Kardinalität**: in 1.0 reine Caller-Verantwortung; in 1.1 zusätzlich über
-  `TopicLabelPolicy` (§9) deklarativ begrenzbar.
+- **Key** = `&'static str`; **value** = `String` (`topic`, `transport`, `error_kind`, `policy_id`, …).
+- **Sorting** alphabetically by key (deterministic Prometheus output).
+- **Cardinality**: in 1.0 purely the caller's responsibility; in 1.1 it can additionally
+  be limited declaratively via `TopicLabelPolicy` (§9).
 
 ### §1.6 Registry
 
 ```rust
-pub struct Registry { /* Mutex<HashMap<MetricKey, Arc<…>>> je Kind */ }
+pub struct Registry { /* Mutex<HashMap<MetricKey, Arc<…>>> per kind */ }
 impl Registry {
     pub fn counter(&self, name: &'static str, labels: Labels) -> Arc<Counter>;
     pub fn gauge(&self, name: &'static str, labels: Labels) -> Arc<Gauge>;
@@ -129,19 +129,19 @@ impl Registry {
 }
 ```
 
-- **Single-Source-of-Truth** pro Process; **idempotenter Lookup**; **Default-Registry**
-  als globaler `OnceLock<Arc<Registry>>` über `default_registry()`.
+- **Single source of truth** per process; **idempotent lookup**; **default registry**
+  as a global `OnceLock<Arc<Registry>>` via `default_registry()`.
 
-## §2 Standard-Metric-Naming
+## §2 Standard metric naming
 
 ```
 dds_<domain>_<thing>[_<unit>][_total]
 ```
 
 - `<domain>` ∈ `transport`, `rtps`, `dcps`, `discovery`, `security`.
-- `<unit>` ∈ `seconds`, `bytes`, ggf. weglassbar; `_total`-Suffix für monotone Counter.
+- `<unit>` ∈ `seconds`, `bytes`, may be omitted where appropriate; `_total` suffix for monotonic counters.
 
-### §2.1 Transport-Domain (6)
+### §2.1 Transport domain (6)
 
 | Metric | Kind | Labels |
 |---|---|---|
@@ -152,7 +152,7 @@ dds_<domain>_<thing>[_<unit>][_total]
 | `dds_transport_send_errors_total` | Counter | `transport`, `error_kind` |
 | `dds_transport_socket_buffer_bytes` | Gauge | `transport`, `direction` |
 
-### §2.2 RTPS-Domain (6)
+### §2.2 RTPS domain (6)
 
 | Metric | Kind | Labels |
 |---|---|---|
@@ -163,7 +163,7 @@ dds_<domain>_<thing>[_<unit>][_total]
 | `dds_rtps_fragmented_samples_total` | Counter | `writer_kind` |
 | `dds_rtps_unknown_submessages_total` | Counter | `vendor_id` |
 
-### §2.3 DCPS-Domain (10)
+### §2.3 DCPS domain (10)
 
 | Metric | Kind | Labels |
 |---|---|---|
@@ -178,9 +178,9 @@ dds_<domain>_<thing>[_<unit>][_total]
 | `dds_dcps_sample_latency_seconds` | Histogram | `topic` |
 | `dds_dcps_sample_size_bytes` | Histogram | `topic` |
 
-Das `topic`-Label dieser Domain unterliegt der `TopicLabelPolicy` (§9).
+The `topic` label of this domain is subject to the `TopicLabelPolicy` (§9).
 
-### §2.4 Discovery-Domain (5)
+### §2.4 Discovery domain (5)
 
 | Metric | Kind | Labels |
 |---|---|---|
@@ -190,7 +190,7 @@ Das `topic`-Label dieser Domain unterliegt der `TopicLabelPolicy` (§9).
 | `dds_discovery_sedp_updates_total` | Counter | `domain_id`, `kind` |
 | `dds_discovery_type_lookups_total` | Counter | `domain_id` |
 
-### §2.5 Security-Domain (4)
+### §2.5 Security domain (4)
 
 | Metric | Kind | Labels |
 |---|---|---|
@@ -199,56 +199,56 @@ Das `topic`-Label dieser Domain unterliegt der `TopicLabelPolicy` (§9).
 | `dds_security_crypto_operations_total` | Counter | `operation` |
 | `dds_security_crypto_latency_seconds` | Histogram | `operation` |
 
-**Summe: 31 Metriken = 25 Counter, 3 Gauge, 3 Histogram.**
+**Total: 31 metrics = 25 counters, 3 gauges, 3 histograms.**
 
-## §3 Prometheus-Text-Format-Encoding
+## §3 Prometheus text format encoding
 
-Per Prometheus-Exposition-Format v0.0.4 (`text/plain; version=0.0.4; charset=utf-8`).
-Render-Output mit deterministisch sortierten Metric-Names und Labels;
-leere Registry → leerer String.
+Per Prometheus exposition format v0.0.4 (`text/plain; version=0.0.4; charset=utf-8`).
+Render output with deterministically sorted metric names and labels;
+empty registry → empty string.
 
-### §3.1 Bucket-Konvention
+### §3.1 Bucket convention
 
-Histogramme werden in **Sekunden** exportiert (foundation zählt in Nanosekunden,
-der Exporter konvertiert). Cumulative Buckets, `+Inf` als letzter Bucket — **11
-endliche `le`-Werte plus `+Inf`**:
+Histograms are exported in **seconds** (foundation counts in nanoseconds,
+the exporter converts). Cumulative buckets, `+Inf` as the last bucket — **11
+finite `le` values plus `+Inf`**:
 
 ```
 1e-09, 1e-08, 1e-07, 1e-06, 1e-05, 1e-04, 1e-03, 1e-02, 1e-01, 1, 10, +Inf
 ```
 
-### §3.2 Label-Escaping
+### §3.2 Label escaping
 
-`\\` → `\\\\`, `"` → `\\"`, `\n` → `\\n` (Prometheus-Spec).
+`\\` → `\\\\`, `"` → `\\"`, `\n` → `\\n` (Prometheus spec).
 
-### §3.3 Render-Output
+### §3.3 Render output
 
-`Registry::render_prometheus(&self) -> String` — volle Exposition, sortiert.
+`Registry::render_prometheus(&self) -> String` — full exposition, sorted.
 
-## §4 W3C-Trace-Context als RTPS-Vendor-PID
+## §4 W3C Trace Context as RTPS vendor PID
 
-### §4.1 PID-Allocation
+### §4.1 PID allocation
 
 ```
-PID_VENDOR_TRACE_CONTEXT = 0x0D00  (OctetsToInlineQos-relevant)
+PID_VENDOR_TRACE_CONTEXT = 0x0D00  (relevant for OctetsToInlineQos)
 ```
 
-> **Ehrliche Note (1.1):** `0x0D00` liegt im **Standard-PID-Range**
-> (< `0x8000`), nicht im Vendor-Range. Das ist eine bewusste 1.0-Entscheidung,
-> birgt aber das Risiko einer künftigen OMG-Standard-PID-Kollision. Empfänger,
-> die den PID nicht verstehen, ignorieren ihn (RTPS 2.5 §9.6.3.2 —
-> `IGNORE`-Pfad für unbekannte PIDs), daher ist er für Fremd-Vendoren (Cyclone,
-> RTI, Fast-DDS) transparent. Der PID + sein Wire-Format bleiben in 1.1
-> **wire-stabil**; ein Wechsel in den Vendor-Range (`0x8000+`) ist als
-> **2.0-Major** vorgemerkt (wäre RTPS-wire-breaking).
+> **Honest note (1.1):** `0x0D00` lies in the **standard PID range**
+> (< `0x8000`), not in the vendor range. This is a deliberate 1.0 decision,
+> but carries the risk of a future collision with an OMG standard PID. Receivers
+> that do not understand the PID ignore it (RTPS 2.5 §9.6.3.2 —
+> `IGNORE` path for unknown PIDs), so it is transparent to other vendors (Cyclone,
+> RTI, Fast-DDS). The PID + its wire format stay
+> **wire-stable** in 1.1; a move into the vendor range (`0x8000+`) is earmarked as
+> a **2.0 major** (it would be RTPS-wire-breaking).
 
-### §4.2 Wire-Format
+### §4.2 Wire format
 
-ParameterList-Element-Payload mit zwei CDR-Strings: `traceparent` (W3C-Trace-
+ParameterList element payload with two CDR strings: `traceparent` (W3C Trace
 Context 1.0, `00-{trace-id}-{parent-id}-{flags}`) + optional `tracestate`
-(§3.3 W3C, vendor-Key-Values). Unverändert gegenüber 1.0.
+(§3.3 W3C, vendor key values). Unchanged compared with 1.0.
 
-### §4.3 Encoding/Decoding
+### §4.3 Encoding/decoding
 
 ```rust
 pub struct TraceContextPid { pub traceparent: TraceParent, pub tracestate: Option<TraceState> }
@@ -262,34 +262,34 @@ impl TraceContextPid {
 
 ### §4.4 Lifecycle
 
-- **Publisher**: `DataWriter::write` liest den aktuellen Span und encodet den PID
-  als InlineQoS gemäß `emit_trace_context` (`always | sampled | never`,
-  Default `sampled`).
-- **Subscriber**: `DataReader` extrahiert den PID und erzeugt einen
-  `dds.sample.receive`-Span mit `parent = traceparent`, gemäß
-  `accept_trace_context` (Default `true`).
-- ZeroDDS respektiert die Caller-OTel-Sampler-Decision (keine eigene erzwungen).
+- **Publisher**: `DataWriter::write` reads the current span and encodes the PID
+  as inline QoS according to `emit_trace_context` (`always | sampled | never`,
+  default `sampled`).
+- **Subscriber**: `DataReader` extracts the PID and creates a
+  `dds.sample.receive` span with `parent = traceparent`, according to
+  `accept_trace_context` (default `true`).
+- ZeroDDS respects the caller's OTel sampler decision (does not enforce its own).
 
-## §5 Span-Schema
+## §5 Span schema
 
-Spans nutzen `zerodds_foundation::tracing::Span` und folgen den OTel-Semantic-
-Conventions plus `dds.`-Namespace. Span-Typen + Attribute unverändert gegenüber
+Spans use `zerodds_foundation::tracing::Span` and follow the OTel semantic
+conventions plus the `dds.` namespace. Span types + attributes unchanged compared with
 1.0 (`dds.publish`, `dds.sample.*`, `dds.rtps.reliable.nack`,
 `dds.discovery.match`, `dds.security.authenticate`).
 
-> **Datenschutz-Bezug:** mehrere Span-Attribute tragen GUIDs (`dds.writer_guid`,
-> `dds.reader_guid`, `dds.remote_guid`, `dds.source_guid`). Deren Exposition
-> beim OTLP-Export wird über `GuidLabelPolicy` (§9) gesteuert.
+> **Data protection relevance:** several span attributes carry GUIDs (`dds.writer_guid`,
+> `dds.reader_guid`, `dds.remote_guid`, `dds.source_guid`). Their exposure
+> during OTLP export is controlled via `GuidLabelPolicy` (§9).
 
-## §6 Lifecycle und Konfiguration
+## §6 Lifecycle and configuration
 
-### §6.1 Default-Registry
+### §6.1 Default registry
 
 ```rust
 pub fn default_registry() -> Arc<Registry>;   // OnceLock, lazy
 ```
 
-### §6.2 Konfiguration (1.1 — erweitert)
+### §6.2 Configuration (1.1 — extended)
 
 ```rust
 #[derive(Clone, Debug)]
@@ -297,100 +297,100 @@ pub struct MonitorConfig {
     pub emit_trace_context: TraceContextEmission,   // always | sampled | never
     pub accept_trace_context: bool,
     pub enable_metrics: bool,
-    pub topic_label_policy: TopicLabelPolicy,        // NEU 1.1, Default Full
-    pub guid_label_policy: GuidLabelPolicy,          // NEU 1.1, Default Full
+    pub topic_label_policy: TopicLabelPolicy,        // NEW 1.1, default Full
+    pub guid_label_policy: GuidLabelPolicy,          // NEW 1.1, default Full
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum TraceContextEmission { Always, Sampled, Never }   // Default Sampled
+pub enum TraceContextEmission { Always, Sampled, Never }   // default Sampled
 ```
 
-Alle Felder sind `Clone + Debug`; **keine `dyn`/Closures**.
+All fields are `Clone + Debug`; **no `dyn`/closures**.
 
-### §6.3 Prometheus-Server (optional)
+### §6.3 Prometheus server (optional)
 
 ```rust
 pub fn serve_prometheus(addr: SocketAddr, registry: Arc<Registry>) -> Result<JoinHandle<()>, ServeError>;
 ```
 
-Mini-HTTP-Server (TcpListener, kein hyper-Dep); `GET /metrics` → Prometheus-Text,
-unbekannte Pfade → 404.
+Mini HTTP server (TcpListener, no hyper dependency); `GET /metrics` → Prometheus text,
+unknown paths → 404.
 
-## §7 Hook-Point-Tabelle (normativ)
+## §7 Hook point table (normative)
 
-Welche Crate emittiert welche Metric/Span? Diese Tabelle ist **normativ** — jeder
-Hook-Point ist im Coverage-Audit als Cross-Layer-Finding nachweisbar und durch
-den §10-Cross-Layer-Test gegen die Default-Registry zu belegen.
+Which crate emits which metric/span? This table is **normative** — every
+hook point is traceable in the coverage audit as a cross-layer finding and must be proven by
+the §10 cross-layer test against the default registry.
 
-| Crate | Metric/Span | Wire-Up |
+| Crate | Metric/span | Wiring |
 |---|---|---|
 | `transport-udp/-tcp/-shm/-uds` | `dds_transport_*` | `Transport::send`/`recv` |
 | `rtps` | `dds_rtps_*` | `WriterCache`/`ReaderCache`/`fragment_assembler` |
 | `discovery` | `dds_discovery_*` | `SpdpStack`/`SedpStack`/`TypeLookupService` |
-| `dcps` | alle 10 DCPS-Metriken + Spans `dds.publish`, `dds.sample.deliver` | `DataWriter::write`/`DataReader::take`/`Subscriber::deliver` |
-| `security`/`security-crypto` | `dds_security_*`, Span `dds.security.authenticate` | `AuthHandshake`/`CryptoPlugin::*` |
+| `dcps` | all 10 DCPS metrics + spans `dds.publish`, `dds.sample.deliver` | `DataWriter::write`/`DataReader::take`/`Subscriber::deliver` |
+| `security`/`security-crypto` | `dds_security_*`, span `dds.security.authenticate` | `AuthHandshake`/`CryptoPlugin::*` |
 
-## §8 Stabilität
+## §8 Stability
 
-- **Public-API** (`Counter`, `Gauge`, `Histogram`, `Registry`, `Labels`,
-  `MonitorConfig`, `TopicLabelPolicy`, `GuidLabelPolicy`): stabil; Major-Bump bei
-  Breaking-Changes. Die 1.1-Policy-Felder sind **additiv** (neue Felder mit
-  `Default`, daher kein Bruch für `MonitorConfig { .. }`-Konstruktion via
+- **Public API** (`Counter`, `Gauge`, `Histogram`, `Registry`, `Labels`,
+  `MonitorConfig`, `TopicLabelPolicy`, `GuidLabelPolicy`): stable; major bump on
+  breaking changes. The 1.1 policy fields are **additive** (new fields with
+  `Default`, hence no break for `MonitorConfig { .. }` construction via
   `..Default::default()`).
-- **Metric-Namen + Label-Keys**: stabil; nur additive Erweiterung.
-- **PID 0x0D00 + Wire-Format**: stabil (Vendor-Range-Wechsel = 2.0, §4.1).
-- **Span-Namen + Attr-Keys**: folgen OTel-Semconv.
+- **Metric names + label keys**: stable; only additive extension.
+- **PID 0x0D00 + wire format**: stable (move to vendor range = 2.0, §4.1).
+- **Span names + attribute keys**: follow OTel semconv.
 
-## §9 Sicherheit (1.1 — deklarative Policies)
+## §9 Security (1.1 — declarative policies)
 
-- **Payload-Redaction**: Counter/Gauge/Histogram speichern keinen Sample-Content
-  (nur Zahlen). Span-Attribute tragen Größen (`dds.sample_size`), keinen Content.
-- **GUID-Exposition** über `GuidLabelPolicy` (ersetzt den 1.0-`dyn`-Hook):
+- **Payload redaction**: counters/gauges/histograms store no sample content
+  (only numbers). Span attributes carry sizes (`dds.sample_size`), no content.
+- **GUID exposure** via `GuidLabelPolicy` (replaces the 1.0 `dyn` hook):
 
   ```rust
   #[derive(Clone, Copy, Debug, PartialEq, Eq)]
   pub enum GuidLabelPolicy {
-      Full,    // GUID als Hex (Default; sinnvoll in Trusted-Netzen)
-      Hashed,  // stabiler Kurz-Hash der GUID in Span-Attributen
-      Omit,    // GUID-Attribute weglassen
+      Full,    // GUID as hex (default; sensible in trusted networks)
+      Hashed,  // stable short hash of the GUID in span attributes
+      Omit,    // omit GUID attributes
   }
   ```
-  Wirkt auf die GUID-tragenden §5-Span-Attribute beim Export.
+  Applies to the GUID-carrying §5 span attributes during export.
 
-- **Kardinalitäts-Begrenzung** über `TopicLabelPolicy` (ersetzt den 1.0-`topic_label_filter`):
+- **Cardinality limiting** via `TopicLabelPolicy` (replaces the 1.0 `topic_label_filter`):
 
   ```rust
   #[derive(Clone, Debug, PartialEq, Eq)]
   pub enum TopicLabelPolicy {
-      Full,            // Topic-Name unverändert (Default)
-      Truncate(usize), // Topic-Label auf N Zeichen kürzen
-      Hashed,          // stabiler Kurz-Hash statt Klartext
-      Drop,            // topic-Label ganz weglassen (max. Kardinalitäts-Schutz)
+      Full,            // topic name unchanged (default)
+      Truncate(usize), // truncate the topic label to N characters
+      Hashed,          // stable short hash instead of plain text
+      Drop,            // omit the topic label entirely (max. cardinality protection)
   }
   ```
-  Wirkt auf das `topic`-Label der DCPS-Metriken (§2.3) bei der Label-Erzeugung.
+  Applies to the `topic` label of the DCPS metrics (§2.3) when the label is created.
 
-Beide Policies sind dyn-frei (Enum statt `Box<dyn Fn>`), `Clone`, deterministisch
-und damit testbar; Default `Full` = 1.0-Verhalten.
+Both policies are dyn-free (enum instead of `Box<dyn Fn>`), `Clone`, deterministic
+and therefore testable; default `Full` = 1.0 behaviour.
 
-## §10 Test-Pflicht
+## §10 Test requirement
 
-- Counter/Gauge: atomare Inkrement-Konsistenz unter parallelen Threads.
-- Histogram-Re-Export: Cross-Validation mit `foundation::tracing::Histogram`
-  (gleiche Bucket-Werte).
-- Prometheus-Text: Golden-Vector-Test gegen handvalidierten String; Bucket-/
-  `_sum`/`_count`-Layout.
-- Label-Escaping: alle drei Escape-Pfade (`\\`, `"`, `\n`).
-- PID 0x0D00 Encode/Decode-Roundtrip mit drei `traceparent`-Beispielen.
-- **Cross-Layer (normativ, §7):** `dcps::DataWriter::write` inkrementiert
-  `dds_dcps_samples_written_total`, danach enthält
-  `default_registry().render_prometheus()` das Increment.
-- **Policy (neu 1.1):** `TopicLabelPolicy::{Truncate,Hashed,Drop}` und
-  `GuidLabelPolicy::{Hashed,Omit}` verändern die gerenderte Ausgabe deterministisch;
-  `Full` ist Identität (1.0-Verhalten).
+- Counter/gauge: atomic increment consistency under parallel threads.
+- Histogram re-export: cross-validation with `foundation::tracing::Histogram`
+  (same bucket values).
+- Prometheus text: golden vector test against a hand-validated string; bucket/
+  `_sum`/`_count` layout.
+- Label escaping: all three escape paths (`\\`, `"`, `\n`).
+- PID 0x0D00 encode/decode round trip with three `traceparent` examples.
+- **Cross-layer (normative, §7):** `dcps::DataWriter::write` increments
+  `dds_dcps_samples_written_total`; afterwards
+  `default_registry().render_prometheus()` contains the increment.
+- **Policy (new in 1.1):** `TopicLabelPolicy::{Truncate,Hashed,Drop}` and
+  `GuidLabelPolicy::{Hashed,Omit}` change the rendered output deterministically;
+  `Full` is the identity (1.0 behaviour).
 
-## §11 Coverage-Doc
+## §11 Coverage document
 
-`docs/spec-coverage/zerodds-monitor-1.1.md` trägt das Sektion-pro-Sektion-Mapping
-mit Repo + Tests + Status. Akzeptanz: alle §-Sektionen `done`; partial/open ist
-Release-Blocker.
+`docs/spec-coverage/zerodds-monitor-1.1.md` carries the section-by-section mapping
+with repo + tests + status. Acceptance: all § sections `done`; partial/open is a
+release blocker.

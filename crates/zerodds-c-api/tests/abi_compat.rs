@@ -100,6 +100,46 @@ fn abi_snapshot_matches() {
     }
 }
 
+/// `zerodds-ffi-loader-1.0` §7: a loader compares the compile-time
+/// `ZERODDS_ABI_REVISION` of the header it was built against with the
+/// run-time `zerodds_abi_revision()` of the library it loaded, and fails
+/// fast on a mismatch. That comparison is only meaningful while the two
+/// carry the same number, so the header macro and the exported function
+/// are checked against each other here.
+#[test]
+fn the_header_macro_and_the_exported_revision_agree() {
+    let header = fs::read_to_string(crate_root().join(HEADER_REL)).expect("zerodds.h present");
+    let line = header
+        .lines()
+        .find(|l| l.trim_start().starts_with("#define ZERODDS_ABI_REVISION"))
+        .expect("the header defines ZERODDS_ABI_REVISION");
+    let declared: u32 = line
+        .split_whitespace()
+        .nth(2)
+        .expect("the macro carries a value")
+        .parse()
+        .expect("the revision is an unsigned integer");
+
+    assert_eq!(
+        declared,
+        zerodds::ZERODDS_ABI_REVISION,
+        "the header macro and the Rust constant disagree"
+    );
+    assert_eq!(
+        declared,
+        zerodds::zerodds_abi_revision(),
+        "the exported function returns a different revision than the header promises"
+    );
+
+    // §7: the revision is a major-version marker, so it must be present
+    // in the symbol surface a loader can resolve.
+    let symbols = extract_symbols(&header);
+    assert!(
+        symbols.contains("zerodds_abi_revision"),
+        "zerodds_abi_revision is not an exported symbol"
+    );
+}
+
 #[test]
 fn extract_symbols_finds_known_functions() {
     let header = "\

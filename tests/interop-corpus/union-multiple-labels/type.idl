@@ -1,0 +1,14 @@
+// `union` with several labels on one case
+union Choice switch (long) {
+    case 1:
+    case 2:
+    case 3: long whole;
+    case 10:
+    case 20: double fraction;
+    default: short small;
+};
+
+@final struct Sample {
+    Choice picked;
+    long tail;
+};

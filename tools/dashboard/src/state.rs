@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Daten-Modell des Dashboards. Konsumenten fuellen es aus DcpsRuntime,
-//! der Server serialisiert es zu JSON.
+//! Data model of the dashboard. Consumers fill it from DcpsRuntime,
+//! the server serializes it to JSON.
 
 use std::sync::Mutex;
 
-/// Live-State des Dashboards. Mutex-geschuetzt, der Server liest
-/// und Konsumenten schreiben.
+/// Live state of the dashboard. Mutex-protected, the server reads
+/// and consumers write.
 pub struct DashboardState {
     inner: Mutex<Inner>,
 }
@@ -21,65 +21,65 @@ struct Inner {
     recording: RecordingStatus,
 }
 
-/// Eintrag in der Topic-Liste.
+/// Entry in the topic list.
 #[derive(Clone, Debug, PartialEq)]
 pub struct TopicInfo {
-    /// Topic-Name (DDS-Wire-Form, ggf. mit `rt/`-Prefix).
+    /// Topic name (DDS wire form, possibly with `rt/` prefix).
     pub name: String,
     /// Type-Name.
     pub type_name: String,
-    /// Anzahl matched Publisher.
+    /// Number of matched publishers.
     pub publishers: u32,
-    /// Anzahl matched Subscriber.
+    /// Number of matched subscribers.
     pub subscribers: u32,
-    /// Letzte gemessene Sample-Rate (samples/s, EMA).
+    /// Last measured sample rate (samples/s, EMA).
     pub sample_rate_hz: f64,
 }
 
 /// Participant-Info.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ParticipantInfo {
-    /// 16-Byte GUID-Prefix als Hex.
+    /// 16-byte GUID prefix as hex.
     pub guid_prefix_hex: String,
-    /// Logischer Name.
+    /// Logical name.
     pub name: String,
     /// Domain-ID.
     pub domain_id: u32,
-    /// Vendor-ID-Hex (z.B. "01.0F" fuer ZeroDDS).
+    /// Vendor ID hex (e.g. "01.0F" for ZeroDDS).
     pub vendor_id_hex: String,
 }
 
-/// Histogram-Snapshot fuer das Dashboard.
+/// Histogram snapshot for the dashboard.
 #[derive(Clone, Debug)]
 pub struct HistogramSnapshot {
-    /// Logischer Name.
+    /// Logical name.
     pub name: String,
-    /// Anzahl aller Records.
+    /// Count of all records.
     pub count: u64,
-    /// Mittelwert (ns).
+    /// Mean (ns).
     pub mean_ns: u64,
     /// Min/Max.
     pub min_ns: u64,
-    /// Max-Wert (ns).
+    /// Max value (ns).
     pub max_ns: u64,
-    /// p50/p99 — Aufrufer berechnet (z.B. aus hdrhistogram).
+    /// p50/p99 — computed by the caller (e.g. from hdrhistogram).
     pub p50_ns: u64,
-    /// p99 als ns.
+    /// p99 in ns.
     pub p99_ns: u64,
 }
 
-/// Edge im Discovery-Graph: Pub→Sub-Match auf einem Topic.
+/// Edge in the discovery graph: pub→sub match on a topic.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DiscoveryEdge {
-    /// GUID-Hex des Pub-Endpoints.
+    /// GUID hex of the pub endpoint.
     pub from_guid: String,
-    /// GUID-Hex des Sub-Endpoints.
+    /// GUID hex of the sub endpoint.
     pub to_guid: String,
     /// Topic-Name.
     pub topic: String,
 }
 
-/// Knoten im Discovery-Graph (Endpoint).
+/// Node in discovery graph (endpoint).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DiscoveryNode {
     /// GUID-Hex.
@@ -93,16 +93,16 @@ pub struct DiscoveryNode {
 /// Recording-Status.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct RecordingStatus {
-    /// `true` wenn aktuell aufgezeichnet wird.
+    /// `true` if recording is currently active.
     pub active: bool,
-    /// Pfad der Output-Datei (wenn aktiv).
+    /// Path of the output file (when active).
     pub output_path: Option<String>,
-    /// Anzahl bisher geschriebener Frames.
+    /// Number of frames written so far.
     pub frames: u64,
 }
 
 impl DashboardState {
-    /// Leerer State.
+    /// Empty state.
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -110,43 +110,43 @@ impl DashboardState {
         }
     }
 
-    /// Setzt die komplette Topic-Liste (ueberschreibt).
+    /// Sets the complete topic list (overwrites).
     pub fn set_topics(&self, topics: Vec<TopicInfo>) {
         if let Ok(mut g) = self.inner.lock() {
             g.topics = topics;
         }
     }
 
-    /// Setzt die Participant-Liste.
+    /// Sets the participant list.
     pub fn set_participants(&self, ps: Vec<ParticipantInfo>) {
         if let Ok(mut g) = self.inner.lock() {
             g.participants = ps;
         }
     }
 
-    /// Setzt die Histogramme.
+    /// Sets the histograms.
     pub fn set_histograms(&self, hs: Vec<HistogramSnapshot>) {
         if let Ok(mut g) = self.inner.lock() {
             g.histograms = hs;
         }
     }
 
-    /// Setzt die Discovery-Edges.
+    /// Sets the discovery edges.
     pub fn set_edges(&self, e: Vec<DiscoveryEdge>) {
         if let Ok(mut g) = self.inner.lock() {
             g.edges = e;
         }
     }
 
-    /// Setzt den Recording-Status.
+    /// Sets the recording status.
     pub fn set_recording(&self, r: RecordingStatus) {
         if let Ok(mut g) = self.inner.lock() {
             g.recording = r;
         }
     }
 
-    /// Phase-B: Inject ueber JSON-Body (POST /api/inject/topics).
-    /// Erwartet das gleiche Schema wie die GET-Antwort.
+    /// Phase-B: inject via JSON body (POST /api/inject/topics).
+    /// Expects the same schema as the GET response.
     pub fn inject_topics_json(&self, body: &str) -> Result<usize, String> {
         let v = parse_json(body)?;
         let arr = v.as_array().ok_or("topics must be array")?;
@@ -165,7 +165,7 @@ impl DashboardState {
         Ok(n)
     }
 
-    /// Phase-B: Inject von Participants.
+    /// Phase-B: inject of participants.
     pub fn inject_participants_json(&self, body: &str) -> Result<usize, String> {
         let v = parse_json(body)?;
         let arr = v.as_array().ok_or("participants must be array")?;
@@ -183,7 +183,7 @@ impl DashboardState {
         Ok(n)
     }
 
-    /// Phase-B: Inject von Histograms.
+    /// Phase-B: inject of histograms.
     pub fn inject_histograms_json(&self, body: &str) -> Result<usize, String> {
         let v = parse_json(body)?;
         let arr = v.as_array().ok_or("histograms must be array")?;
@@ -204,7 +204,7 @@ impl DashboardState {
         Ok(n)
     }
 
-    /// Liest topics-JSON.
+    /// Reads topics JSON.
     #[must_use]
     pub fn topics_json(&self) -> String {
         let Ok(g) = self.inner.lock() else {
@@ -228,7 +228,7 @@ impl DashboardState {
         out
     }
 
-    /// Liest participants-JSON.
+    /// Reads participants JSON.
     #[must_use]
     pub fn participants_json(&self) -> String {
         let Ok(g) = self.inner.lock() else {
@@ -251,7 +251,7 @@ impl DashboardState {
         out
     }
 
-    /// Liest histograms-JSON.
+    /// Reads histograms JSON.
     #[must_use]
     pub fn histograms_json(&self) -> String {
         let Ok(g) = self.inner.lock() else {
@@ -273,13 +273,13 @@ impl DashboardState {
         out
     }
 
-    /// Liest discovery-graph-JSON.
+    /// Reads discovery-graph JSON.
     #[must_use]
     pub fn graph_json(&self) -> String {
         let Ok(g) = self.inner.lock() else {
             return r#"{"nodes":[],"edges":[]}"#.into();
         };
-        // Nodes ergeben sich aus Participants (immer).
+        // Nodes derive from participants (always).
         let mut nodes = String::from(r#"{"nodes":["#);
         for (i, p) in g.participants.iter().enumerate() {
             if i > 0 {
@@ -308,7 +308,7 @@ impl DashboardState {
         nodes
     }
 
-    /// Liest recording-JSON.
+    /// Reads recording JSON.
     #[must_use]
     pub fn recording_json(&self) -> String {
         let Ok(g) = self.inner.lock() else {
@@ -331,14 +331,14 @@ impl Default for DashboardState {
     }
 }
 
-// ---- Mini-JSON-Parser (kein serde-Dep) ----
+// ---- Mini JSON parser (no serde dep) ----
 //
-// Reicht fuer das Inject-Schema: Array of Objects mit String/Num-
-// Feldern. Identisch zur Logik in tools/interop-matrix/src/parser.rs,
-// hier inline weil wir einen separaten Top-Level-Use-Case haben.
+// Sufficient for the inject schema: array of objects with string/num
+// fields. Identical to the logic in tools/interop-matrix/src/parser.rs,
+// inline here because we have a separate top-level use case.
 
 #[derive(Clone, Debug)]
-#[allow(dead_code)] // Bool/Null werden parsed aber nicht weiter inspiziert.
+#[allow(dead_code)] // Bool/Null are parsed but not inspected further.
 enum Val {
     Str(String),
     Num(String),
@@ -576,7 +576,7 @@ fn escape_value(s: &str) -> String {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)] // tests duerfen unwrap nutzen.
+#[allow(clippy::unwrap_used)] // tests may use unwrap.
 mod tests {
     use super::*;
 

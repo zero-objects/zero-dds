@@ -1,0 +1,5 @@
+@autoid(HASH) @mutable struct Sample {
+    long color;
+    @id(10) long a;
+    long size;
+};

@@ -4,7 +4,7 @@ Proves the ZeroDDS durability service ingests a **real foreign-vendor**
 (CycloneDDS) `TRANSIENT_LOCAL` writer over the wire — the cross-vendor side of
 the [`external_cyclone_ingest`](../external_cyclone.rs) test.
 
-Verified on codepit (CycloneDDS 0.11, domain 140): `matched=1`, sample ingested.
+Verified on the Linux test host (CycloneDDS 0.11, domain 140): `matched=1`, sample ingested.
 
 ## What it exercises
 
@@ -14,7 +14,7 @@ surfaced the interop fix: the ZeroDDS ingest reader must offer both XCDR1 and
 XCDR2 (`data_representation_offer = [0, 2]` in `user_reader_cfg`), otherwise the
 reader is RxO-incompatible and never matches.
 
-## Build + run (one host, e.g. codepit)
+## Build + run (one host, e.g. The Linux test host)
 
 ```sh
 # 1. Build the Cyclone publisher (needs CycloneDDS: idlc + libddsc)

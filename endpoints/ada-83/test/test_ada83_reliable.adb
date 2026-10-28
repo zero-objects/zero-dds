@@ -14,7 +14,30 @@ with Zerodds_Ada83_Reliable;  use Zerodds_Ada83_Reliable;
 
 procedure Test_Ada83_Reliable is
 
+   Checks_Failed : exception;
+
    Failures : Natural := 0;
+
+   --  Ada 83 requires every declaration before the first subprogram body, so
+   --  the goldens and locals are declared up here, ahead of Check/Payload/Equals.
+   --  Reference goldens (byte-for-byte the zerodds-endpoint-golden output,
+   --  verified against crates/xrce + endpoints/c; identical to the constants the
+   --  Rust ada83_reliable e2e test carries).
+   Golden_Heartbeat : constant Byte_Array (0 .. 12) :=
+     (16#80#, 16#00#, 16#01#, 16#00#, 16#0B#, 16#01#, 16#05#, 16#00#,
+      16#01#, 16#00#, 16#03#, 16#00#, 16#80#);
+   Golden_Acknack : constant Byte_Array (0 .. 16) :=
+     (16#80#, 16#00#, 16#01#, 16#00#, 16#0A#, 16#01#, 16#09#, 16#00#,
+      16#05#, 16#00#, 16#00#, 16#00#, 16#01#, 16#00#, 16#00#, 16#00#,
+      16#80#);
+
+   --  FINAL form of the ACKNACK (unannotated types = Final), 13 octets.
+   Golden_Acknack_Final : constant Byte_Array (0 .. 12) :=
+     (16#80#, 16#00#, 16#01#, 16#00#, 16#0A#, 16#01#, 16#05#, 16#00#,
+      16#01#, 16#00#, 16#00#, 16#00#, 16#80#);
+
+   Seq : Seq_Type;
+   Ok  : Boolean;
 
    procedure Check (Cond : Boolean; Name : String) is
    begin
@@ -46,19 +69,6 @@ procedure Test_Ada83_Reliable is
       end loop;
       return True;
    end Equals;
-
-   --  Reference goldens (byte-for-byte the zerodds-endpoint-golden output,
-   --  verified against crates/xrce + endpoints/c; identical to the constants the
-   --  Rust ada83_reliable e2e test carries).
-   Golden_Heartbeat : constant Byte_Array (0 .. 12) :=
-     (16#80#, 16#00#, 16#01#, 16#00#, 16#0B#, 16#01#, 16#05#, 16#00#,
-      16#01#, 16#00#, 16#03#, 16#00#, 16#80#);
-   Golden_Acknack : constant Byte_Array (0 .. 12) :=
-     (16#80#, 16#00#, 16#01#, 16#00#, 16#0A#, 16#01#, 16#05#, 16#00#,
-      16#01#, 16#00#, 16#00#, 16#00#, 16#80#);
-
-   Seq : Seq_Type;
-   Ok  : Boolean;
 
 begin
    --  1) submit assigns monotonic seqnrs
@@ -263,15 +273,72 @@ begin
       Body_FS.Data (0) := 16#DE#;
       Body_FS.Data (1) := 16#AD#;
       Body_FS.Len := 2;
-      Read_Frame (Write_Frame (7, Body_FS), RSeq, Out_FS);
+      Read_Frame (Write_Frame (7, 16#0015#, Body_FS), RSeq, Out_FS);
       Check (RSeq = 7 and Out_FS.Len = 2
              and Out_FS.Data (0) = 16#DE# and Out_FS.Data (1) = 16#AD#,
              "write_frame_roundtrip");
+   end;
+
+   --  12) legacy FINAL ACKNACK (5-octet body, no DHEADER) is still parsed
+   declare
+      L      : Frame_Store;
+      First  : Seq_Type;
+      Bm     : Bitmap_Type;
+      Parsed : Boolean;
+   begin
+      L.Data (0) := 16#80#;
+      L.Data (1) := 16#00#;
+      L.Data (2) := 1;
+      L.Data (3) := 0;
+      L.Data (4) := 16#0A#;
+      L.Data (5) := 1;
+      L.Data (6) := 5;
+      L.Data (7) := 0;
+      L.Data (8) := 7;
+      L.Data (9) := 0;
+      L.Data (10) := 16#02#;
+      L.Data (11) := 16#01#;
+      L.Data (12) := 16#80#;
+      L.Len := 13;
+      Parse_Acknack (L, Parsed, First, Bm);
+      Check (Parsed and First = 7 and Bm = 16#0102#, "acknack_legacy_5_octet_parsed");
+      Parse_Acknack (Acknack_Frame (7, 16#0102#), Parsed, First, Bm);
+      Check (Parsed and First = 7 and Bm = 16#0102#, "acknack_new_form_parsed");
+      L.Data (6) := 4;
+      Parse_Acknack (L, Parsed, First, Bm);
+      Check (not Parsed, "acknack_short_body_rejected");
+   end;
+
+   --  13) unannotated types setting: Final = 13-octet FINAL golden, default
+   --      = 17-octet appendable form; the parser accepts both
+   declare
+      R      : Receiver_State;
+      First  : Seq_Type;
+      Bm     : Bitmap_Type;
+      Parsed : Boolean;
+   begin
+      Check (Equals (Acknack_Frame (1, 0, Mode => Final), Golden_Acknack_Final),
+             "acknack_final_golden_13_octets");
+      Check (Equals (Acknack_Frame (1, 0), Golden_Acknack),
+             "acknack_default_17_octets");
+      Check (Equals (Acknack_Frame (1, 0, Mode => Appendable), Golden_Acknack),
+             "acknack_default_is_appendable");
+      Parse_Acknack (Acknack_Frame (1, 0, Mode => Final), Parsed, First, Bm);
+      Check (Parsed and First = 1 and Bm = 0, "acknack_final_parsed");
+      Parse_Acknack (Acknack_Frame (1, 0), Parsed, First, Bm);
+      Check (Parsed and First = 1 and Bm = 0, "acknack_appendable_parsed");
+      R.Mode := Final;
+      Check (Receiver_Acknack (R).Len = 13, "receiver_final_acknack_13_octets");
+      R.Mode := Appendable;
+      Check (Receiver_Acknack (R).Len = 17, "receiver_appendable_acknack_17_octets");
    end;
 
    if Failures = 0 then
       Text_IO.Put_Line ("ALL OK");
    else
       Text_IO.Put_Line ("FAILURES:" & Natural'Image (Failures));
+      --  See test_ada83_identity: printing a failure and exiting 0 makes
+      --  the check invisible to `make test`.
+      raise Checks_Failed;
    end if;
 end Test_Ada83_Reliable;

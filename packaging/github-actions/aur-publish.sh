@@ -10,11 +10,11 @@
 #
 # Strategy:
 # - zerodds-bin: extracts zerodds-cli .deb (cli bundle) + bridge .debs
-#   from GH Release. Cargo-dist baut keine monolithische tarball; die
-#   .debs sind unsere zentrale binary-distribution.
+#   from GH Release. Cargo-dist builds no monolithic tarball; the
+#   .debs are our central binary distribution.
 # - zerodds: builds from source-tarball (github auto-archive).
 #
-# AUR-pkgver darf nur [a-zA-Z0-9._] enthalten — kein '-'.
+# AUR pkgver may only contain [a-zA-Z0-9._] — no '-'.
 # v1.0.0           → 1.0.0
 # v1.0.0-rc.7      → 1.0.0_rc.7
 # v1.0.0-beta.5    → 1.0.0_beta.5
@@ -28,14 +28,14 @@ if [ -z "$TAG" ]; then
     exit 1
 fi
 
-# Robust pkgver-konvertierung: strip leading v, replace alle '-' mit '_',
-# und alle '+' mit '.'. Damit ist jede semver-tag-form AUR-konform.
+# Robust pkgver conversion: strip leading v, replace all '-' with '_',
+# and all '+' with '.'. This makes every semver tag form AUR-conformant.
 PKGVER=$(echo "$TAG" | sed -e 's/^v//' -e 's/-/_/g' -e 's/+/./g')
 TAG_NO_V="${TAG#v}"
 
-# Cargo-dist Layout: jeder bin als .tar.xz pro target plus .deb/.rpm
-# pro logischem package (zerodds-cli, zerodds-ws-bridge, ...).
-# Wir bauen AUR-bin aus den .debs weil das die zentrale binary-bundle-form ist.
+# Cargo-dist layout: each bin as .tar.xz per target plus .deb/.rpm
+# per logical package (zerodds-cli, zerodds-ws-bridge, ...).
+# We build the AUR bin package from the .debs because that is the central binary bundle form.
 DEB_BASE="https://github.com/zero-objects/zero-dds/releases/download/${TAG}"
 
 WORK=$(mktemp -d -t aur.XXXXX)
@@ -49,7 +49,7 @@ git clone ssh://aur@aur.archlinux.org/zerodds-bin.git
 cd zerodds-bin
 
 cat > PKGBUILD <<EOF
-# Maintainer: Sandra Keßler <mail@sandra-kessler.net>
+# Maintainer: ZeroDDS Contributors <admin@zerodds.org>
 pkgname=zerodds-bin
 _pkgname=zerodds
 pkgver=${PKGVER}
@@ -63,9 +63,9 @@ conflicts=('zerodds')
 depends=('glibc' 'gcc-libs')
 makedepends=('binutils')
 
-# .deb-bundles aus dem GH-release. Jedes .deb enthaelt die fertig
-# kompilierten binaries für seine Komponente. Wir extrahieren die
-# data.tar.* aus jedem .deb und bauen daraus den pacman-package-tree.
+# .deb bundles from the GH release. Each .deb contains the fully
+# compiled binaries for its component. We extract the
+# data.tar.* from each .deb and build the pacman package tree from it.
 source_x86_64=(
   "${DEB_BASE}/zerodds-cli_${TAG_NO_V}_amd64.deb"
   "${DEB_BASE}/zerodds-ws-bridge_${TAG_NO_V}_amd64.deb"
@@ -95,14 +95,14 @@ sha256sums_aarch64=('SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKI
 
 package() {
     cd "\${srcdir}"
-    # Jedes .deb extrahieren: control.tar.* + data.tar.*
+    # Extract each .deb: control.tar.* + data.tar.*
     for deb in *.deb; do
         ar x "\$deb" data.tar.xz 2>/dev/null || ar x "\$deb" data.tar.zst 2>/dev/null || ar x "\$deb" data.tar.gz
         if [ -f data.tar.xz ];  then tar -xJf data.tar.xz -C "\${pkgdir}"; rm data.tar.xz;  fi
         if [ -f data.tar.zst ]; then tar --zstd -xf data.tar.zst -C "\${pkgdir}"; rm data.tar.zst; fi
         if [ -f data.tar.gz ];  then tar -xzf data.tar.gz -C "\${pkgdir}"; rm data.tar.gz;  fi
     done
-    # LICENSE einmal zentral installieren
+    # Install LICENSE once, centrally
     install -dm755 "\${pkgdir}/usr/share/licenses/\${_pkgname}"
     if [ -f "\${pkgdir}/usr/share/doc/zerodds-cli/LICENSE" ]; then
         cp "\${pkgdir}/usr/share/doc/zerodds-cli/LICENSE" "\${pkgdir}/usr/share/licenses/\${_pkgname}/LICENSE"
@@ -110,7 +110,7 @@ package() {
 }
 EOF
 
-# .SRCINFO — von Hand assembliert (mksrcinfo verlangt makepkg in PATH).
+# .SRCINFO — assembled by hand (mksrcinfo requires makepkg in PATH).
 {
     printf 'pkgbase = zerodds-bin\n'
     printf '\tpkgdesc = Pure-Rust OMG Data Distribution Service implementation (precompiled binaries)\n'
@@ -138,7 +138,7 @@ EOF
 } > .SRCINFO
 
 git add PKGBUILD .SRCINFO
-git -c user.email=mail@sandra-kessler.net -c user.name="zerodds-release-bot" \
+git -c user.email=admin@zerodds.org -c user.name="zerodds-release-bot" \
     commit -m "Update to ${TAG}" || echo "(no changes for zerodds-bin)"
 git push origin master
 
@@ -154,7 +154,7 @@ cd zerodds
 SOURCE_DIR="zero-dds-${TAG_NO_V}"
 
 cat > PKGBUILD <<EOF
-# Maintainer: Sandra Keßler <mail@sandra-kessler.net>
+# Maintainer: ZeroDDS Contributors <admin@zerodds.org>
 pkgname=zerodds
 pkgver=${PKGVER}
 pkgrel=1
@@ -175,7 +175,7 @@ prepare() {
 
 build() {
     cd "${SOURCE_DIR}"
-    cargo build --frozen --release --workspace --exclude zerodds-durability-store-lakehouse --exclude zerodds-durability-service-bin --exclude zerodds-endpoint-codegen --exclude zerodds-endpoint-golden --exclude zerodds-xrce-agent-demo
+    cargo build --frozen --release --workspace --exclude zerodds-durability-store-lakehouse --exclude zerodds-endpoint-codegen --exclude zerodds-endpoint-golden --exclude zerodds-xrce-agent-demo
 }
 
 package() {
@@ -223,7 +223,7 @@ EOF
 } > .SRCINFO
 
 git add PKGBUILD .SRCINFO
-git -c user.email=mail@sandra-kessler.net -c user.name="zerodds-release-bot" \
+git -c user.email=admin@zerodds.org -c user.name="zerodds-release-bot" \
     commit -m "Update to ${TAG}" || echo "(no changes for zerodds)"
 git push origin master
 

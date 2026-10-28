@@ -258,6 +258,7 @@ mod tests {
             keyed: false,
             partition: vec![],
             qos: QosSpec::default(),
+            type_file: String::new(),
         };
         Route {
             name: "r".into(),
@@ -272,6 +273,7 @@ mod tests {
             preserve_source_timestamp: false,
             max_samples_per_second: None,
             tenant: None,
+            relay: false,
         }
     }
 

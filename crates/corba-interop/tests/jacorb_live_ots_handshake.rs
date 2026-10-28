@@ -13,7 +13,7 @@
 // captured bytes; here the bytes actually traverse a live GIOP connection from
 // JacORB's interceptor to the ZeroDDS server.
 //
-// Gated: needs JDK8 + JacORB on the host (codepit). The harness
+// Gated: needs JDK8 + JacORB on the host (Linux test host). The harness
 // `competitors/jacorb/ots/run_ots_client.sh` compiles + runs the JacORB client
 // against the IOR the test exports. Ignored by default; run with
 // `--ignored` on a host where `JACORB_OTS=1` is set.
@@ -37,7 +37,7 @@ use zerodds_corba_interop::runtime::{CorbaServer, stringify_object_ref};
 use zerodds_corba_rust::SkeletonResult;
 
 #[test]
-#[ignore = "needs live JDK8 + JacORB (codepit); set JACORB_OTS=1"]
+#[ignore = "needs live JDK8 + JacORB (Linux test host); set JACORB_OTS=1"]
 fn jacorb_transactional_client_propagates_ots_context_to_zerodds() {
     if std::env::var("JACORB_OTS").is_err() {
         eprintln!("JACORB_OTS not set — skipping live OTS handshake");

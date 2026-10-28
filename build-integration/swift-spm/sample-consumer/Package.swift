@@ -6,11 +6,14 @@ import PackageDescription
 let package = Package(
     name: "zerodds-idlc-plugin-sample",
     dependencies: [
-        .package(path: "../")
+        .package(path: "../"),
+        // The wire runtime the generated code imports (`import ZdWire`).
+        .package(path: "../../../runtime/swift")
     ],
     targets: [
         .executableTarget(
             name: "RobotDemo",
+            dependencies: [.product(name: "ZdWire", package: "swift")],
             plugins: [
                 // SwiftPM resolves a local (`path:`) dependency's identity
                 // from its directory name, not the `name:` in its

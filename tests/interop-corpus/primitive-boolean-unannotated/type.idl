@@ -1,0 +1,5 @@
+// primitive `boolean`, unannotated
+struct Sample {
+    boolean flag_a;
+    boolean flag_b;
+};

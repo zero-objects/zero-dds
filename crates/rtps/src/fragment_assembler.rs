@@ -42,10 +42,22 @@ pub const DEFAULT_MAX_FRAGMENT_SIZE: u16 = u16::MAX;
 /// A fully reassembled sample.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompletedSample {
+    /// Known instance key carried by any fragment's inline QoS.
+    pub key_hash: Option<[u8; 16]>,
+    /// The in-line QoS of the sample: the first fragment's, or, if that
+    /// carried none, the first that did. DDSI-RTPS 2.5 puts a sample's
+    /// in-line parameters on its first DATA_FRAG (§8.7.6: "the same
+    /// approach is followed for DataFrag Submessages"; §9.6.4.3, §9.6.4.4:
+    /// "the first DataFrag submessage").
+    pub inline_qos: Option<crate::parameter_list::ParameterList>,
     /// Writer sequence number.
     pub sequence_number: SequenceNumber,
     /// Reassembled payload (total sample bytes in original order).
     pub payload: Vec<u8>,
+    /// The fragments carried the serialized key, not the data (the K flag
+    /// of DATA_FRAG, DDSI-RTPS 2.5 §9.4.5.5): the change of a dispose or
+    /// unregister whose key needed fragmenting.
+    pub key_flag: bool,
 }
 
 /// Configuration for the assembler.
@@ -74,6 +86,9 @@ impl Default for AssemblerCaps {
 /// Per-SN ring buffer for incoming fragments.
 #[derive(Debug, Clone)]
 struct FragmentBuffer {
+    key_hash: Option<[u8; 16]>,
+    inline_qos: Option<crate::parameter_list::ParameterList>,
+    key_flag: bool,
     sample_size: u32,
     fragment_size: u16,
     total_fragments: u32,
@@ -90,6 +105,9 @@ impl FragmentBuffer {
         };
         Self {
             sample_size,
+            key_hash: None,
+            inline_qos: None,
+            key_flag: false,
             fragment_size,
             total_fragments: total,
             received: BTreeSet::new(),
@@ -366,6 +384,23 @@ impl FragmentAssembler {
             return None;
         }
 
+        if let Some(key) = df
+            .inline_qos
+            .as_ref()
+            .and_then(crate::inline_qos::find_key_hash)
+        {
+            if buffer.key_hash.is_some_and(|previous| previous != key) {
+                self.record_drop(DropReason::InconsistentWithBuffered);
+                return None;
+            }
+            buffer.key_hash = Some(key);
+        }
+        if let Some(qos) = &df.inline_qos {
+            if df.fragment_starting_num.0 == 1 || buffer.inline_qos.is_none() {
+                buffer.inline_qos = Some(qos.clone());
+            }
+        }
+        buffer.key_flag |= df.key_flag;
         // Write — only the `expected_len` sample bytes (trailing padding of
         // the last fragment is discarded).
         let data_end = byte_start + expected_len;
@@ -384,8 +419,11 @@ impl FragmentAssembler {
             // Take the buffer and return a CompletedSample.
             let buf = self.buffers.remove(&df.writer_sn)?;
             return Some(CompletedSample {
+                key_hash: buf.key_hash,
+                inline_qos: buf.inline_qos,
                 sequence_number: df.writer_sn,
                 payload: buf.data,
+                key_flag: buf.key_flag,
             });
         }
         None
@@ -419,6 +457,7 @@ mod tests {
         payload: Vec<u8>,
     ) -> DataFragSubmessage {
         DataFragSubmessage {
+            inline_qos: None,
             extra_flags: 0,
             reader_id: rid(),
             writer_id: wid(),
@@ -429,7 +468,6 @@ mod tests {
             sample_size,
             serialized_payload: alloc::sync::Arc::from(payload),
             inline_qos_flag: false,
-            hash_key_flag: false,
             key_flag: false,
             non_standard_flag: false,
         }
@@ -445,6 +483,78 @@ mod tests {
         assert_eq!(s.sequence_number, SequenceNumber(1));
         assert_eq!(s.payload, vec![1, 2, 3, 4]);
         assert_eq!(a.len(), 0);
+    }
+
+    #[test]
+    fn out_of_order_fragments_preserve_known_zero_key() {
+        let mut a = FragmentAssembler::default();
+        let mut last = df(1, 2, 1, 4, 8, vec![5, 6, 7, 8]);
+        let mut qos = crate::parameter_list::ParameterList::new();
+        qos.push(crate::parameter_list::Parameter::new(
+            crate::parameter_list::pid::KEY_HASH,
+            vec![0; 16],
+        ));
+        last.inline_qos = Some(qos);
+        assert!(a.insert(&last).is_none());
+        let complete = a.insert(&df(1, 1, 1, 4, 8, vec![1, 2, 3, 4])).unwrap();
+        assert_eq!(complete.key_hash, Some([0; 16]));
+        assert_eq!(complete.payload, vec![1, 2, 3, 4, 5, 6, 7, 8]);
+        let legacy = a.insert(&df(2, 1, 1, 4, 4, vec![1, 2, 3, 4])).unwrap();
+        assert_eq!(legacy.key_hash, None);
+    }
+
+    #[test]
+    fn conflicting_fragment_keys_are_refused() {
+        let mut a = FragmentAssembler::default();
+        let mut first = df(1, 1, 1, 4, 8, vec![1, 2, 3, 4]);
+        let mut last = df(1, 2, 1, 4, 8, vec![5, 6, 7, 8]);
+        for (fragment, key) in [(&mut first, [0; 16]), (&mut last, [1; 16])] {
+            let mut qos = crate::parameter_list::ParameterList::new();
+            qos.push(crate::parameter_list::Parameter::new(
+                crate::parameter_list::pid::KEY_HASH,
+                key.to_vec(),
+            ));
+            fragment.inline_qos = Some(qos);
+        }
+        assert!(a.insert(&first).is_none());
+        assert!(a.insert(&last).is_none());
+        assert_eq!(a.len(), 1);
+        last.inline_qos = first.inline_qos;
+        assert_eq!(a.insert(&last).unwrap().key_hash, Some([0; 16]));
+    }
+
+    #[test]
+    fn the_first_fragments_inline_qos_reaches_the_completed_sample() {
+        // DDSI-RTPS 2.5 §8.7.6, §9.6.4.4: a coherent-set member of a
+        // GROUP-scope writer carries PID_GROUP_SEQ_NUM, PID_COHERENT_SET
+        // and PID_GROUP_COHERENT_SET on its first DATA_FRAG.
+        let mut a = FragmentAssembler::default();
+        let mut first = df(4, 1, 1, 4, 8, vec![1, 2, 3, 4]);
+        let mut qos = crate::parameter_list::ParameterList::new();
+        qos.push(crate::inline_qos::group_seq_num_param(13, true));
+        qos.push(crate::inline_qos::coherent_set_param(4, true));
+        qos.push(crate::inline_qos::group_coherent_set_param(11, true));
+        first.inline_qos = Some(qos.clone());
+        // The last fragment, sent first, carries a different list; the
+        // first fragment's wins.
+        let mut last = df(4, 2, 1, 4, 8, vec![5, 6, 7, 8]);
+        let mut other = crate::parameter_list::ParameterList::new();
+        other.push(crate::inline_qos::coherent_set_param(99, true));
+        last.inline_qos = Some(other);
+        assert!(a.insert(&last).is_none());
+        let complete = a.insert(&first).unwrap();
+        assert_eq!(complete.inline_qos, Some(qos));
+    }
+
+    #[test]
+    fn a_later_fragments_inline_qos_is_kept_when_the_first_has_none() {
+        let mut a = FragmentAssembler::default();
+        let mut last = df(1, 2, 1, 4, 8, vec![5, 6, 7, 8]);
+        let mut qos = crate::parameter_list::ParameterList::new();
+        qos.push(crate::inline_qos::coherent_set_param(1, true));
+        last.inline_qos = Some(qos.clone());
+        assert!(a.insert(&df(1, 1, 1, 4, 8, vec![1, 2, 3, 4])).is_none());
+        assert_eq!(a.insert(&last).unwrap().inline_qos, Some(qos));
     }
 
     #[test]

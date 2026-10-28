@@ -1,0 +1,7 @@
+# What rti's front end said about annotation-scoped-name. Not why a slot carries no
+# bytes — that is STATUS beside this file — but what the front end printed
+# while it did take the case. tests/interop-results/WARNINGS.md says what
+# each of these means and which of them changes a verdict.
+# program	warning
+rtiddsgen	gen.idl line L:C no viable alternative at character ':'
+rtiddsgen	WARN com.rti.ndds.nddsgen.antlr.auto.IdlParser gen.idl line 3 Custom annotation mark will be ignored.

@@ -116,7 +116,7 @@ fn transaction_context_propagates_over_wire() {
     // Client side: serialize the context into the ServiceContext bytes.
     let ctx = coord.get_txcontext();
     let wire = ctx
-        .to_service_context_data(zerodds_cdr::Endianness::Big)
+        .to_service_context_data(zerodds_wire::Endianness::Big)
         .unwrap();
 
     // Server side: parse the bytes, identify the transaction.

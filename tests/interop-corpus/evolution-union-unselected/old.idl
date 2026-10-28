@@ -1,0 +1,10 @@
+@mutable
+union Choice switch (long) {
+    case 1: long a;
+};
+
+@final
+struct Evo {
+    Choice picked;
+    long tail;
+};

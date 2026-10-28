@@ -1,0 +1,178 @@
+// Types for the KeyHash probe.
+// Foo is DDS-XTypes 1.3 section 7.6.8 "Example 1".
+@final struct Foo {
+  @key long id;
+  long x;
+  long y;
+};
+
+@final struct NoKeyFinal {
+  long a;
+  long b;
+};
+
+@mutable struct NoKeyMutable {
+  long a;
+  long b;
+};
+
+// Same key, same members, three extensibilities. Step 1 of XTypes 1.3
+// section 7.6.8 forces the key holder to FINAL, so all three must give
+// the same 16 bytes as Foo.
+@appendable struct FooApp {
+  @key long id;
+  long x;
+  long y;
+};
+
+@mutable struct FooMut {
+  @key long id;
+  long x;
+  long y;
+};
+
+// ---------------------------------------------------------------------
+// A @key member whose nested type declares no @key of its own.
+// XTypes 1.3 section 7.6.8 Step 1: "If there are any key members, then
+// remove the non-key members from FooKeyHolder. Otherwise do not remove
+// any members." Step 3 applies that to nested AggregatedTypes, so the
+// holder of OuterKeylessNested should carry both of NestedNoKey's
+// members and neither of the outer type's non-key ones.
+@final struct NestedNoKey {
+  long a;
+  long b;
+};
+
+@final struct OuterKeylessNested {
+  @key NestedNoKey inner;
+  long tail;
+};
+
+// The neighbouring case: the nested type declares some keys, so only
+// those travel.
+@final struct NestedSomeKey {
+  @key long a;
+  long b;
+};
+
+@final struct OuterKeyedNested {
+  @key NestedSomeKey inner;
+  long tail;
+};
+
+// Three levels, to settle whether Step 3's recursion is depth-unlimited.
+// DeepMid is keyless (keep all), DeepLeaf below it is keyed (keep p
+// only). A depth-unlimited reading gives p+r; a reading that recurses
+// one level only gives p+q+r.
+@final struct DeepLeaf {
+  @key long p;
+  long q;
+};
+
+@final struct DeepMid {
+  DeepLeaf leaf;
+  long r;
+};
+
+@final struct DeepOuter {
+  @key DeepMid mid;
+  long tail;
+};
+
+// Distinguishes "recursion stops one level down" from "recursion stops
+// at the first keyless aggregate": here every level is keyed, so a
+// depth-limited reading gives p+q and an unlimited one gives p only.
+@final struct ChainLeaf {
+  @key long p;
+  long q;
+};
+
+@final struct ChainMid {
+  @key ChainLeaf inner;
+  long r;
+};
+
+@final struct ChainOuter {
+  @key ChainMid mid;
+  long tail;
+};
+
+// The shape of tests/interop-corpus/combined-everything, cut down to
+// the key path: a @key member of a keyless aggregate that holds a keyed
+// aggregate and a sequence. Settles both the nesting rule and whether a
+// sequence of non-primitives carries a DHEADER inside the holder.
+@final struct CombLeaf {
+  @key long k;
+  short v;
+};
+
+@appendable struct CombMiddle {
+  CombLeaf leaf;
+  sequence<string> names;
+};
+
+@mutable struct CombSample {
+  @key CombMiddle middle;
+  long tail;
+};
+
+// tests/interop-corpus/annotation-key-whole-struct, exactly.
+@final struct WholeInner {
+  long a;
+  short b;
+};
+
+@final struct WholeOuter {
+  @key WholeInner inner;
+  long other;
+};
+
+// Keys of different widths, in member-id order, so that a narrower key
+// stands in front of a wider one: whether the key holder is padded between
+// them. OpenSplice 6.9 writes them back to back
+// (tools/keyhash-probe/opensplice, the same shapes through #pragma keylist).
+@final struct PadKey {
+  @key octet a;
+  @key long b;
+  long v;
+};
+
+@final struct WideKey {
+  @key short s;
+  @key long long ll;
+  long v;
+};
+
+@final struct CharKey {
+  @key octet o;
+  @key short s;
+  long v;
+};
+
+@final struct StrKey {
+  @key string name;
+  @key long id;
+  long v;
+};
+
+// The path `nested.b x` of the OpenSplice probe, as XTypes 1.3 §7.6.8
+// builds it: `nested` a key, and `b` the key of its type.
+@final struct PathLeaf {
+  long a;
+  @key octet b;
+};
+
+@final struct PathKey {
+  @key PathLeaf nested;
+  @key long x;
+  long v;
+};
+
+// Twenty octets of key and no padding in any reading: the control of the
+// OpenSplice column (opensplice/keyhash.idl). No other probe prints it.
+@final struct BigKey {
+  @key long long a;
+  @key long long b;
+  @key long c;
+  long v;
+};

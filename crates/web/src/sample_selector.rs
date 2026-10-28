@@ -19,7 +19,7 @@
 //! ```
 //!
 //! The parser returns an AST [`SampleSelector`] that the caller can
-//! translate into a DDS [`QueryCondition`]
+//! translate into a DDS `QueryCondition`
 //! (`crates/dcps/src/query_condition.rs`).
 
 use alloc::string::{String, ToString};

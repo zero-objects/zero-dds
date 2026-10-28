@@ -54,8 +54,8 @@ let _supplier_admin = channel.for_suppliers();
 
 ## Stability
 
-`1.0.0-rc.1`. Public API + trait surfaces are RC1-stable; spec
-changes require a major bump.
+`1.0.0-rc.7`, a pre-release. The public API can still change before
+1.0.0; the crate's CHANGELOG lists every change.
 
 ## Tests
 

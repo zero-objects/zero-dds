@@ -1,0 +1,2 @@
+wireprobe-tao: the probe did not compile
+genC.cpp:51:31: error: '_tc__tao_map_CORBA_Long_CORBA_STRING_' is not a member of 'Sample'

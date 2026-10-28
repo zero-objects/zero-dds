@@ -22,7 +22,7 @@
 
 use alloc::vec::Vec;
 
-use zerodds_cdr::{BufferReader, BufferWriter};
+use zerodds_wire::{Reader, Writer};
 
 use crate::error::{GiopError, GiopResult};
 use crate::version::Version;
@@ -95,7 +95,7 @@ impl LocateReply {
     ///
     /// # Errors
     /// Buffer write error.
-    pub fn encode(&self, version: Version, w: &mut BufferWriter) -> GiopResult<()> {
+    pub fn encode(&self, version: Version, w: &mut Writer) -> GiopResult<()> {
         // Status version validation.
         match self.locate_status {
             LocateStatusType::ObjectForwardPerm
@@ -110,17 +110,17 @@ impl LocateReply {
             }
             _ => {}
         }
-        w.write_u32(self.request_id)?;
-        w.write_u32(self.locate_status.as_u32())?;
+        w.write_u32(self.request_id);
+        w.write_u32(self.locate_status.as_u32());
         // Body (IOR for OBJECT_FORWARD*) only if present. For ObjectHere/
         // UnknownObject it is empty → do NOT emit 8-byte align padding,
         // otherwise trailing padding hangs after the last field and foreign ORBs
         // (omniORB giopImpl12.cc) report "Garbage left at end of input message".
         if !self.body.is_empty() {
             if version.uses_v1_2_request_layout() {
-                w.align(8);
+                w.align_to(8);
             }
-            w.write_bytes(&self.body)?;
+            w.write_bytes(&self.body);
         }
         Ok(())
     }
@@ -129,7 +129,7 @@ impl LocateReply {
     ///
     /// # Errors
     /// Buffer read error.
-    pub fn decode(version: Version, r: &mut BufferReader<'_>) -> GiopResult<Self> {
+    pub fn decode(version: Version, r: &mut Reader<'_>) -> GiopResult<Self> {
         let request_id = r.read_u32()?;
         let status_raw = r.read_u32()?;
         let locate_status = LocateStatusType::from_u32(status_raw, version)?;
@@ -137,7 +137,7 @@ impl LocateReply {
         // UnknownObject have no body and no trailing padding).
         let body = if r.remaining() > 0 {
             if version.uses_v1_2_request_layout() {
-                r.align(8)?;
+                r.align_to(8)?;
             }
             r.read_bytes(r.remaining())?.to_vec()
         } else {
@@ -155,7 +155,7 @@ impl LocateReply {
 #[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
-    use zerodds_cdr::Endianness;
+    use zerodds_wire::Endianness;
 
     #[test]
     fn locate_status_values_match_spec() {
@@ -174,10 +174,10 @@ mod tests {
             locate_status: LocateStatusType::ObjectHere,
             body: alloc::vec::Vec::new(),
         };
-        let mut w = BufferWriter::new(Endianness::Big);
+        let mut w = Writer::new(Endianness::Big);
         l.encode(Version::V1_0, &mut w).unwrap();
-        let bytes = w.into_bytes();
-        let mut r = BufferReader::new(&bytes, Endianness::Big);
+        let bytes = w.finish();
+        let mut r = Reader::new(&bytes, Endianness::Big);
         let decoded = LocateReply::decode(Version::V1_0, &mut r).unwrap();
         assert_eq!(decoded, l);
     }
@@ -189,10 +189,10 @@ mod tests {
             locate_status: LocateStatusType::ObjectForwardPerm,
             body: alloc::vec![0xff; 4],
         };
-        let mut w = BufferWriter::new(Endianness::Little);
+        let mut w = Writer::new(Endianness::Little);
         l.encode(Version::V1_2, &mut w).unwrap();
-        let bytes = w.into_bytes();
-        let mut r = BufferReader::new(&bytes, Endianness::Little);
+        let bytes = w.finish();
+        let mut r = Reader::new(&bytes, Endianness::Little);
         let decoded = LocateReply::decode(Version::V1_2, &mut r).unwrap();
         assert_eq!(decoded, l);
     }
@@ -204,7 +204,7 @@ mod tests {
             locate_status: LocateStatusType::ObjectForwardPerm,
             body: alloc::vec::Vec::new(),
         };
-        let mut w = BufferWriter::new(Endianness::Big);
+        let mut w = Writer::new(Endianness::Big);
         let err = l.encode(Version::V1_0, &mut w).unwrap_err();
         assert!(matches!(err, GiopError::Malformed(_)));
     }

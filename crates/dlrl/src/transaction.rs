@@ -13,7 +13,7 @@
 //! * `rollback()` discards all changes.
 
 use alloc::collections::BTreeMap;
-use core::sync::atomic::{AtomicU64, Ordering};
+use portable_atomic::{AtomicU64, Ordering};
 
 use crate::object_cache::{ObjectCache, ObjectId};
 
@@ -140,7 +140,7 @@ impl Transaction {
     /// `OptimisticConflict` and sets state → `Aborted`.
     ///
     /// # Errors
-    /// Siehe [`TransactionError`].
+    /// See [`TransactionError`].
     pub fn commit(&mut self, cache: &mut ObjectCache) -> Result<(), TransactionError> {
         if self.state != TransactionState::Active {
             return Err(TransactionError::NotActive(self.state));

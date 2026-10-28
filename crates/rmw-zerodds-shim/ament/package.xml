@@ -1,20 +1,37 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>rmw_zerodds</name>
+  <name>rmw_zerodds_cpp</name>
   <version>0.0.0</version>
   <description>
     ROS 2 RMW implementation backed by ZeroDDS. Pure-Rust DDS stack
-    exposed via dds-c-api/rmw_zerodds-shim. Spec target: REP-2007.
-    Distro coverage: Humble, Iron, Jazzy.
+    exposed via dds-c-api/rmw_zerodds-shim. Spec targets: REP-2007
+    (type adaptation, rmw-layer custom type support), REP-2008
+    (hardware acceleration, kernel levels 2 and 3), REP-2009.
+    Built and loaded on Humble (run_ament_package_test.sh).
   </description>
   <maintainer email="contributors@zerodds.org">ZeroDDS Contributors</maintainer>
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
+  <depend>rcutils</depend>
   <depend>rmw</depend>
+  <depend>rmw_dds_common</depend>
+  <depend>rosidl_runtime_c</depend>
+  <depend>rosidl_typesupport_introspection_c</depend>
+  <depend>rosidl_typesupport_introspection_cpp</depend>
   <depend>rmw_implementation_cmake</depend>
+  <!-- REP-2008 Pillar I. Optional: the package configures unchanged in a
+       workspace without an accelerator, and picks up ROS_ACCELERATION /
+       ROS_VITIS when one is selected via a colcon mixin. -->
+  <build_depend condition="$ROS_ACCELERATION != ''">ament_hardware_acceleration</build_depend>
+  <!-- ROS 2 Jazzy's dynamic-type-support package (rmw_zerodds_dynamic.cpp).
+       Not on Humble at all, hence the ROS_DISTRO condition rather than a
+       plain depend — an unconditional one would fail rosdep resolution
+       there. CMakeLists.txt's own find_package(... QUIET) is the second
+       half of the same gate, at configure time. -->
+  <depend condition="$ROS_DISTRO != 'humble'">rosidl_dynamic_typesupport</depend>
 
   <member_of_group>rmw_implementation</member_of_group>
 

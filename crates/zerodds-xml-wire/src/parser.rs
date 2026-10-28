@@ -32,13 +32,13 @@ pub enum Event {
 /// Parser error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParseError {
-    /// Unerwartetes EOF.
+    /// Unexpected EOF.
     UnexpectedEof,
     /// Tag mismatch (closing tag does not match the opening).
     TagMismatch {
         /// Expected (opening-stack-top) tag.
         expected: String,
-        /// Erhaltener Closing-Tag.
+        /// Received closing tag.
         got: String,
     },
     /// Malformed tag (e.g. `<tag attr=value>` without quotes).

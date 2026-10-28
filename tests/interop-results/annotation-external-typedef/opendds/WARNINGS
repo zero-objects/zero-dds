@@ -1,0 +1,9 @@
+# What opendds's front end said about annotation-external-typedef. Not why a slot carries no
+# bytes — that is STATUS beside this file — but what the front end printed
+# while it did take the case. tests/interop-results/WARNINGS.md says what
+# each of these means and which of them changes a verdict.
+# program	warning
+tao_idl	Warning - /opt/opendds/bin/tao_idl: "gen.idl", line 13: error in lookup of symbol: final
+tao_idl	Warning - /opt/opendds/bin/tao_idl: "gen.idl", line 14: error in lookup of symbol: external
+tao_idl	Warning - /opt/opendds/bin/tao_idl: "gen.idl", line 29: error in lookup of symbol: appendable
+tao_idl	Warning - /opt/opendds/bin/tao_idl: "gen.idl", line 6: error in lookup of symbol: appendable

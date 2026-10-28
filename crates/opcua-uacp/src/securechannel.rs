@@ -9,7 +9,7 @@
 //! `[MessageHeader][SecureChannelId:u32][SecurityHeader][SequenceHeader][body]`
 //! — for `OPN` the security header is the
 //! [`AsymmetricAlgorithmSecurityHeader`], for `MSG`/`CLO` it is the
-//! [`SymmetricAlgorithmSecurityHeader`] (just a `TokenId`). With
+//! `SymmetricAlgorithmSecurityHeader` (just a `TokenId`). With
 //! `SecurityMode::None` (this stage) there is no padding/signature/encryption;
 //! the secured policies (feature `crypto`) layer on top.
 //!
@@ -55,9 +55,14 @@ pub mod node_ids {
     /// `FindServersResponse_Encoding_DefaultBinary`.
     pub const FIND_SERVERS_RESPONSE: NodeId = NodeId::numeric(0, 425);
     /// `GetEndpointsRequest_Encoding_DefaultBinary`.
-    pub const GET_ENDPOINTS_REQUEST: NodeId = NodeId::numeric(0, 426);
+    ///
+    /// 426 and 429 are the `GetEndpointsRequest`/`GetEndpointsResponse`
+    /// **DataType** nodes; the wire carries the DefaultBinary encoding node,
+    /// two higher. Every other id in this table was already the encoding node,
+    /// so nothing but a foreign server could tell the two apart.
+    pub const GET_ENDPOINTS_REQUEST: NodeId = NodeId::numeric(0, 428);
     /// `GetEndpointsResponse_Encoding_DefaultBinary`.
-    pub const GET_ENDPOINTS_RESPONSE: NodeId = NodeId::numeric(0, 429);
+    pub const GET_ENDPOINTS_RESPONSE: NodeId = NodeId::numeric(0, 431);
     /// `ReadRequest_Encoding_DefaultBinary`.
     pub const READ_REQUEST: NodeId = NodeId::numeric(0, 631);
     /// `ReadResponse_Encoding_DefaultBinary`.
@@ -70,6 +75,10 @@ pub mod node_ids {
     pub const BROWSE_REQUEST: NodeId = NodeId::numeric(0, 527);
     /// `BrowseResponse_Encoding_DefaultBinary`.
     pub const BROWSE_RESPONSE: NodeId = NodeId::numeric(0, 530);
+    /// `BrowseNextRequest_Encoding_DefaultBinary`.
+    pub const BROWSE_NEXT_REQUEST: NodeId = NodeId::numeric(0, 533);
+    /// `BrowseNextResponse_Encoding_DefaultBinary`.
+    pub const BROWSE_NEXT_RESPONSE: NodeId = NodeId::numeric(0, 536);
     /// `CallRequest_Encoding_DefaultBinary`.
     pub const CALL_REQUEST: NodeId = NodeId::numeric(0, 712);
     /// `CallResponse_Encoding_DefaultBinary`.
@@ -86,6 +95,36 @@ pub mod node_ids {
     pub const CREATE_MONITORED_ITEMS_REQUEST: NodeId = NodeId::numeric(0, 751);
     /// `CreateMonitoredItemsResponse_Encoding_DefaultBinary`.
     pub const CREATE_MONITORED_ITEMS_RESPONSE: NodeId = NodeId::numeric(0, 754);
+    /// `ModifyMonitoredItemsRequest_Encoding_DefaultBinary`.
+    pub const MODIFY_MONITORED_ITEMS_REQUEST: NodeId = NodeId::numeric(0, 763);
+    /// `ModifyMonitoredItemsResponse_Encoding_DefaultBinary`.
+    pub const MODIFY_MONITORED_ITEMS_RESPONSE: NodeId = NodeId::numeric(0, 766);
+    /// `SetMonitoringModeRequest_Encoding_DefaultBinary`.
+    pub const SET_MONITORING_MODE_REQUEST: NodeId = NodeId::numeric(0, 769);
+    /// `SetMonitoringModeResponse_Encoding_DefaultBinary`.
+    pub const SET_MONITORING_MODE_RESPONSE: NodeId = NodeId::numeric(0, 772);
+    /// `SetTriggeringRequest_Encoding_DefaultBinary`.
+    pub const SET_TRIGGERING_REQUEST: NodeId = NodeId::numeric(0, 775);
+    /// `SetTriggeringResponse_Encoding_DefaultBinary`.
+    pub const SET_TRIGGERING_RESPONSE: NodeId = NodeId::numeric(0, 778);
+    /// `DeleteMonitoredItemsRequest_Encoding_DefaultBinary`.
+    pub const DELETE_MONITORED_ITEMS_REQUEST: NodeId = NodeId::numeric(0, 781);
+    /// `DeleteMonitoredItemsResponse_Encoding_DefaultBinary`.
+    pub const DELETE_MONITORED_ITEMS_RESPONSE: NodeId = NodeId::numeric(0, 784);
+    /// `ModifySubscriptionRequest_Encoding_DefaultBinary`.
+    pub const MODIFY_SUBSCRIPTION_REQUEST: NodeId = NodeId::numeric(0, 793);
+    /// `ModifySubscriptionResponse_Encoding_DefaultBinary`.
+    pub const MODIFY_SUBSCRIPTION_RESPONSE: NodeId = NodeId::numeric(0, 796);
+    /// `StatusChangeNotification_Encoding_DefaultBinary`.
+    pub const STATUS_CHANGE_NOTIFICATION: NodeId = NodeId::numeric(0, 820);
+    /// `RepublishRequest_Encoding_DefaultBinary`.
+    pub const REPUBLISH_REQUEST: NodeId = NodeId::numeric(0, 832);
+    /// `RepublishResponse_Encoding_DefaultBinary`.
+    pub const REPUBLISH_RESPONSE: NodeId = NodeId::numeric(0, 835);
+    /// `TransferSubscriptionsRequest_Encoding_DefaultBinary`.
+    pub const TRANSFER_SUBSCRIPTIONS_REQUEST: NodeId = NodeId::numeric(0, 841);
+    /// `TransferSubscriptionsResponse_Encoding_DefaultBinary`.
+    pub const TRANSFER_SUBSCRIPTIONS_RESPONSE: NodeId = NodeId::numeric(0, 844);
     /// `PublishRequest_Encoding_DefaultBinary`.
     pub const PUBLISH_REQUEST: NodeId = NodeId::numeric(0, 826);
     /// `PublishResponse_Encoding_DefaultBinary`.
@@ -98,6 +137,20 @@ pub mod node_ids {
     pub const DATA_CHANGE_NOTIFICATION: NodeId = NodeId::numeric(0, 811);
     /// `ServiceFault_Encoding_DefaultBinary`.
     pub const SERVICE_FAULT: NodeId = NodeId::numeric(0, 397);
+    /// `HistoryReadRequest_Encoding_DefaultBinary` (Part 4 §5.10.3).
+    pub const HISTORY_READ_REQUEST: NodeId = NodeId::numeric(0, 664);
+    /// `HistoryReadResponse_Encoding_DefaultBinary`.
+    pub const HISTORY_READ_RESPONSE: NodeId = NodeId::numeric(0, 667);
+    /// `ReadRawModifiedDetails_Encoding_DefaultBinary` (Part 11 §6.4.3) —
+    /// the `HistoryReadDetails` a raw/time-range HistoryRead carries.
+    pub const READ_RAW_MODIFIED_DETAILS: NodeId = NodeId::numeric(0, 649);
+    /// `ReadAtTimeDetails_Encoding_DefaultBinary` (Part 11 §6.4.4).
+    pub const READ_AT_TIME_DETAILS: NodeId = NodeId::numeric(0, 655);
+    /// `HistoryData_Encoding_DefaultBinary` (Part 11 §6.6.2) — the
+    /// `HistoryReadResult.historyData` extensible parameter for a
+    /// HistoricalDataNode (as opposed to `HistoryEvent`, which DDS has no
+    /// counterpart for and this crate does not implement).
+    pub const HISTORY_DATA: NodeId = NodeId::numeric(0, 658);
 }
 
 /// SecurityPolicy URI for no message security.
@@ -230,8 +283,18 @@ pub struct RequestHeader {
     pub additional_header: ExtensionObject,
 }
 
+/// The OPC-UA `DateTime` epoch is 1601-01-01T00:00:00Z; this is the number of
+/// 100 ns ticks between it and the Unix epoch (Part 6 §5.2.2.5).
+pub const DATETIME_TICKS_AT_UNIX_EPOCH: i64 = 116_444_736_000_000_000;
+
 impl RequestHeader {
     /// A minimal header with the given authentication token and handle.
+    ///
+    /// The timestamp is left at zero — call
+    /// [`with_timestamp`](Self::with_timestamp) before sending. Part 4 §7.33
+    /// specifies it as the time the client sent the request, and a server that
+    /// verifies it (open62541 does, by default) answers a zero with
+    /// `Bad_InvalidTimestamp`.
     #[must_use]
     pub fn new(authentication_token: NodeId, request_handle: u32) -> Self {
         Self {
@@ -243,6 +306,13 @@ impl RequestHeader {
             timeout_hint: 0,
             additional_header: null_extension_object(),
         }
+    }
+
+    /// Sets the client send time (Part 4 §7.33), in `DateTime` ticks.
+    #[must_use]
+    pub const fn with_timestamp(mut self, timestamp: i64) -> Self {
+        self.timestamp = timestamp;
+        self
     }
 
     fn encode(&self, w: &mut UaWriter) -> Result<(), EncodeError> {
@@ -579,7 +649,7 @@ pub struct SecuritySession {
 }
 
 /// A SecureChannel endpoint: frames service message bodies into `OPN`/`MSG`/
-/// `CLO` chunks and parses them back. With a [`SecuritySession`] installed
+/// `CLO` chunks and parses them back. With a `SecuritySession` installed
 /// (feature `crypto`) the symmetric chunks are signed/encrypted; otherwise
 /// they are plaintext (SecurityMode `None`).
 #[derive(Debug, Clone)]
@@ -587,9 +657,55 @@ pub struct SecureChannel {
     channel_id: u32,
     token_id: u32,
     send_sequence_number: u32,
+    recv_sequence_number: Option<u32>,
+    /// The peer's `ReceiveBufferSize` from Hello/Acknowledge (Part 6 §7.1.2.3):
+    /// the largest MessageChunk we may send it.
+    send_buffer_size: u32,
+    /// The bodies of the `C` chunks received so far for the Message currently
+    /// being reassembled (Part 6 §6.7.1).
+    reassembly: Vec<u8>,
     #[cfg(feature = "crypto")]
     security: Option<SecuritySession>,
 }
+
+/// What one received MessageChunk yielded (Part 6 §6.7.2.2 `IsFinal`).
+#[derive(Debug, Clone, PartialEq)]
+pub enum ChunkOutcome {
+    /// An intermediate (`C`) chunk: the Message is not complete yet.
+    Incomplete,
+    /// A final (`F`) chunk: the reassembled Message.
+    Complete(ParsedChunk),
+    /// An abort (`A`) chunk (Part 6 §6.7.3). The partial Message has been
+    /// discarded; the SecureChannel stays open.
+    Abort {
+        /// The numeric error code the sender reported.
+        error: u32,
+        /// The sender's description of the error.
+        reason: alloc::string::String,
+    },
+}
+
+/// Part 6 §6.7.1 requires a TransportProtocol buffer of at least 8192 bytes for
+/// RSA-based asymmetric cryptography; that is the floor a chunk size may take.
+pub const MIN_SEND_BUFFER_SIZE: u32 = 8192;
+
+/// The largest Message a receiver will reassemble from `C` chunks before it
+/// gives up. Without it a peer could stream intermediate chunks forever and
+/// grow the reassembly buffer without bound.
+const MAX_REASSEMBLED_MESSAGE: usize = 16 * 1024 * 1024;
+
+/// Bytes a symmetric (`MSG`/`CLO`) chunk spends on framing before the body:
+/// MessageHeader (8) + SecureChannelId (4) + TokenId (4) + SequenceHeader (8).
+const SYMMETRIC_CHUNK_OVERHEAD: usize = 24;
+
+/// Additional bytes the secured layouts spend per chunk: the HMAC-SHA256
+/// signature plus, for `SignAndEncrypt`, up to one AES block of padding.
+#[cfg(feature = "crypto")]
+const SECURED_CHUNK_OVERHEAD: usize = crate::crypto::HMAC_SHA256_LEN + crate::crypto::CBC_BLOCK + 1;
+
+/// Part 6 §6.7.2.3 — above this value the SequenceNumber rolls over and the
+/// next one is in `1..=1023` instead of `previous + 1`.
+const SEQUENCE_ROLLOVER_THRESHOLD: u32 = 4_294_966_271;
 
 impl SecureChannel {
     /// Creates a SecureChannel with the given ids (token `0` until issued).
@@ -599,9 +715,55 @@ impl SecureChannel {
             channel_id,
             token_id,
             send_sequence_number: 0,
+            recv_sequence_number: None,
+            send_buffer_size: MIN_SEND_BUFFER_SIZE,
+            reassembly: Vec::new(),
             #[cfg(feature = "crypto")]
             security: None,
         }
+    }
+
+    /// Sets the peer's `ReceiveBufferSize` (Part 6 §7.1.2.3) — the largest
+    /// MessageChunk this endpoint may send. Values below
+    /// [`MIN_SEND_BUFFER_SIZE`] are raised to it, as §6.7.1 requires.
+    pub fn set_send_buffer_size(&mut self, size: u32) {
+        self.send_buffer_size = size.max(MIN_SEND_BUFFER_SIZE);
+    }
+
+    /// The negotiated chunk size.
+    #[must_use]
+    pub const fn send_buffer_size(&self) -> u32 {
+        self.send_buffer_size
+    }
+
+    /// Restarts both SequenceNumber counters and drops any partial Message.
+    /// Part 6 §6.7.2.3 counts per SecureChannel, so a channel that is opened
+    /// (not renewed) starts over.
+    pub fn reset_sequences(&mut self) {
+        self.send_sequence_number = 0;
+        self.recv_sequence_number = None;
+        self.reassembly.clear();
+    }
+
+    /// The number of body bytes one `MSG`/`CLO` chunk can carry.
+    fn max_body_per_chunk(&self) -> usize {
+        // The signature and padding a secured chunk carries, which only
+        // exist when the crypto backend is compiled in. Written as a
+        // conditional binding rather than a `mut` the `#[cfg]` block
+        // adds to: without the feature nothing assigns to it again, and
+        // `unused_mut` is denied — the build under a feature set nobody
+        // runs locally is exactly where that goes unnoticed.
+        #[cfg(feature = "crypto")]
+        let overhead = if self.security.is_some() {
+            SYMMETRIC_CHUNK_OVERHEAD + SECURED_CHUNK_OVERHEAD
+        } else {
+            SYMMETRIC_CHUNK_OVERHEAD
+        };
+        #[cfg(not(feature = "crypto"))]
+        let overhead = SYMMETRIC_CHUNK_OVERHEAD;
+        (self.send_buffer_size as usize)
+            .saturating_sub(overhead)
+            .max(1)
     }
 
     /// Installs the negotiated symmetric security; subsequent `MSG`/`CLO` chunks
@@ -628,9 +790,51 @@ impl SecureChannel {
         self.token_id = token_id;
     }
 
+    /// Adopts the ids the peer issued in its OpenSecureChannelResponse without
+    /// disturbing the sequence counters.
+    ///
+    /// Part 6 §6.7.2.3 counts SequenceNumbers per channel across `OPN` and
+    /// `MSG`/`CLO` alike, so the `OPN` that opened the channel has already
+    /// consumed number 1. Replacing the whole `SecureChannel` with a fresh
+    /// [`new`](Self::new) at that point restarts the counter and makes the
+    /// first `MSG` repeat a number the peer has already seen.
+    pub fn adopt_token(&mut self, channel_id: u32, token_id: u32) {
+        self.channel_id = channel_id;
+        self.token_id = token_id;
+    }
+
     fn next_sequence(&mut self) -> u32 {
         self.send_sequence_number = self.send_sequence_number.wrapping_add(1);
         self.send_sequence_number
+    }
+
+    /// Records the SequenceNumber of a chunk that was parsed outside
+    /// [`open_incoming`](Self::open_incoming) — the asymmetric `OPN`, which
+    /// carries no symmetric security header — so that the `MSG` chunks that
+    /// follow are checked against a continuous counter.
+    ///
+    /// # Errors
+    /// [`DecodeError`] if the number does not continue the peer's sequence.
+    pub fn note_incoming_sequence(&mut self, sequence_number: u32) -> Result<(), DecodeError> {
+        self.accept_sequence(sequence_number)
+    }
+
+    /// Part 6 §6.7.2.3: the peer increments the SequenceNumber by exactly one
+    /// per MessageChunk. The first chunk observed on the channel sets the
+    /// baseline; every later one has to continue it, with the rollover from
+    /// [`SEQUENCE_ROLLOVER_THRESHOLD`] into `1..=1023`.
+    fn accept_sequence(&mut self, sequence_number: u32) -> Result<(), DecodeError> {
+        if let Some(previous) = self.recv_sequence_number {
+            let continues = sequence_number == previous.wrapping_add(1)
+                || (previous >= SEQUENCE_ROLLOVER_THRESHOLD && sequence_number < 1024);
+            if !continues {
+                return Err(DecodeError::MalformedMessage {
+                    message: "SecureChannel SequenceNumber does not continue the peer's sequence",
+                });
+            }
+        }
+        self.recv_sequence_number = Some(sequence_number);
+        Ok(())
     }
 
     /// Frames an `OPN` chunk around the OpenSecureChannel body (SecurityPolicy
@@ -646,16 +850,37 @@ impl SecureChannel {
         inner.write_u32(seq);
         inner.write_u32(request_id);
         inner.write_bytes(body);
-        frame_chunk(MessageType::OpenSecureChannel, &inner.into_vec())
+        frame_chunk(
+            MessageType::OpenSecureChannel,
+            ChunkType::Final,
+            &inner.into_vec(),
+        )
     }
 
-    /// Frames a `MSG` chunk around a service message body (SecurityMode
-    /// `None`).
+    /// Frames a service message body into `MSG` chunks, splitting it across as
+    /// many MessageChunks as the negotiated buffer needs (Part 6 §6.7.1: "OPC
+    /// UA Secure Conversation will break OPC UA Messages into several pieces
+    /// (called 'MessageChunks') that are smaller than the buffer size allowed
+    /// by the TransportProtocol"). The chunks are returned in send order; all
+    /// but the last carry `IsFinal` = `C`.
     ///
     /// # Errors
-    /// [`EncodeError`] on an oversized message.
+    /// [`EncodeError`] on an oversized chunk.
+    pub fn message_chunks(
+        &mut self,
+        request_id: u32,
+        body: &[u8],
+    ) -> Result<Vec<Vec<u8>>, EncodeError> {
+        self.symmetric_chunks(MessageType::Message, request_id, body)
+    }
+
+    /// [`message_chunks`](Self::message_chunks) concatenated into the byte
+    /// stream to write to the transport.
+    ///
+    /// # Errors
+    /// [`EncodeError`] on an oversized chunk.
     pub fn message_chunk(&mut self, request_id: u32, body: &[u8]) -> Result<Vec<u8>, EncodeError> {
-        self.symmetric_chunk(MessageType::Message, request_id, body)
+        Ok(self.message_chunks(request_id, body)?.concat())
     }
 
     /// Frames a `CLO` chunk (CloseSecureChannel).
@@ -663,22 +888,89 @@ impl SecureChannel {
     /// # Errors
     /// [`EncodeError`] on an oversized message.
     pub fn close_chunk(&mut self, request_id: u32, body: &[u8]) -> Result<Vec<u8>, EncodeError> {
-        self.symmetric_chunk(MessageType::CloseSecureChannel, request_id, body)
+        Ok(self
+            .symmetric_chunks(MessageType::CloseSecureChannel, request_id, body)?
+            .concat())
     }
 
-    fn symmetric_chunk(
+    /// Builds the abort (`A`) chunk of Part 6 §6.7.3: it tells the receiver
+    /// that an error occurred and that it should discard the previous chunks.
+    ///
+    /// # Errors
+    /// [`EncodeError`] if the reason string is oversized.
+    pub fn abort_chunk(
+        &mut self,
+        request_id: u32,
+        error: u32,
+        reason: &str,
+    ) -> Result<Vec<u8>, EncodeError> {
+        // §6.7.3 Table 63: "This string shall not be more than 4096 bytes."
+        let mut cut = reason.len().min(4096);
+        while cut > 0 && !reason.is_char_boundary(cut) {
+            cut -= 1;
+        }
+        let clipped = &reason[..cut];
+        let mut body = UaWriter::new();
+        body.write_u32(error);
+        write_string(&mut body, clipped)?;
+        self.one_symmetric_chunk(
+            MessageType::Message,
+            ChunkType::Abort,
+            request_id,
+            &body.into_vec(),
+        )
+    }
+
+    fn symmetric_chunks(
         &mut self,
         message_type: MessageType,
+        request_id: u32,
+        body: &[u8],
+    ) -> Result<Vec<Vec<u8>>, EncodeError> {
+        let limit = self.max_body_per_chunk();
+        if body.len() <= limit {
+            return Ok(alloc::vec![self.one_symmetric_chunk(
+                message_type,
+                ChunkType::Final,
+                request_id,
+                body
+            )?]);
+        }
+        let mut out = Vec::new();
+        let mut offset = 0;
+        while offset < body.len() {
+            let end = (offset + limit).min(body.len());
+            let chunk_type = if end == body.len() {
+                ChunkType::Final
+            } else {
+                ChunkType::Intermediate
+            };
+            out.push(self.one_symmetric_chunk(
+                message_type,
+                chunk_type,
+                request_id,
+                &body[offset..end],
+            )?);
+            offset = end;
+        }
+        Ok(out)
+    }
+
+    fn one_symmetric_chunk(
+        &mut self,
+        message_type: MessageType,
+        chunk_type: ChunkType,
         request_id: u32,
         body: &[u8],
     ) -> Result<Vec<u8>, EncodeError> {
         let seq = self.next_sequence();
         #[cfg(feature = "crypto")]
         if let Some(sess) = &self.security {
-            return crate::crypto::build_symmetric_chunk(
+            return crate::crypto::build_symmetric_chunk_typed(
                 sess.mode,
                 &sess.send_keys,
                 message_type,
+                chunk_type,
                 self.channel_id,
                 self.token_id,
                 seq,
@@ -695,36 +987,135 @@ impl SecureChannel {
         inner.write_u32(seq);
         inner.write_u32(request_id);
         inner.write_bytes(body);
-        frame_chunk(message_type, &inner.into_vec())
+        frame_chunk(message_type, chunk_type, &inner.into_vec())
     }
 
-    /// Parses an incoming `MSG`/`CLO` chunk, transparently verifying and
-    /// decrypting it when a [`SecuritySession`] is installed. Returns the same
-    /// [`ParsedChunk`] shape as [`parse_chunk`] either way.
+    /// Parses one incoming `MSG`/`CLO` MessageChunk, transparently verifying
+    /// and decrypting it when a `SecuritySession` is installed, checking its
+    /// SequenceNumber against the peer's sequence (Part 6 §6.7.2.3) and
+    /// reassembling the Message across `C` chunks (§6.7.1).
     ///
     /// # Errors
-    /// [`DecodeError`] on truncation, a bad signature, or bad padding.
-    pub fn open_incoming(&self, bytes: &[u8]) -> Result<ParsedChunk, DecodeError> {
+    /// [`DecodeError`] on truncation, a bad signature, bad padding, a
+    /// SequenceNumber that does not continue the peer's sequence, or a Message
+    /// that grows past the reassembly cap.
+    pub fn open_incoming(&mut self, bytes: &[u8]) -> Result<ChunkOutcome, DecodeError> {
         #[cfg(feature = "crypto")]
-        if let Some(sess) = &self.security {
-            let opened = crate::crypto::open_symmetric_chunk(sess.mode, &sess.recv_keys, bytes)
-                .map_err(|_| DecodeError::MalformedMessage {
-                    message: "secured chunk verification/decryption failed",
-                })?;
-            return Ok(ParsedChunk {
-                message_type: opened.message_type,
-                channel_id: opened.channel_id,
-                asymmetric_header: None,
-                token_id: opened.token_id,
-                sequence_header: SequenceHeader {
-                    sequence_number: opened.sequence_number,
-                    request_id: opened.request_id,
+        if self.security.is_some() {
+            let opened = {
+                let Some(sess) = &self.security else {
+                    return Err(DecodeError::MalformedMessage {
+                        message: "no SecuritySession installed",
+                    });
+                };
+                crate::crypto::open_symmetric_chunk(sess.mode, &sess.recv_keys, bytes).map_err(
+                    |_| DecodeError::MalformedMessage {
+                        message: "secured chunk verification/decryption failed",
+                    },
+                )?
+            };
+            self.accept_sequence(opened.sequence_number)?;
+            return self.reassemble(
+                opened.chunk_type,
+                ParsedChunk {
+                    message_type: opened.message_type,
+                    channel_id: opened.channel_id,
+                    asymmetric_header: None,
+                    token_id: opened.token_id,
+                    sequence_header: SequenceHeader {
+                        sequence_number: opened.sequence_number,
+                        request_id: opened.request_id,
+                    },
+                    body: opened.body,
                 },
-                body: opened.body,
+            );
+        }
+        let chunk_type = {
+            let mut r = UaReader::new(bytes);
+            MessageHeader::decode(&mut r)?.chunk_type
+        };
+        let parsed = parse_chunk(bytes)?;
+        self.accept_sequence(parsed.sequence_header.sequence_number)?;
+        self.reassemble(chunk_type, parsed)
+    }
+
+    /// Folds one chunk into the Message under reassembly (Part 6 §6.7.1 /
+    /// §6.7.3).
+    fn reassemble(
+        &mut self,
+        chunk_type: ChunkType,
+        chunk: ParsedChunk,
+    ) -> Result<ChunkOutcome, DecodeError> {
+        match chunk_type {
+            ChunkType::Abort => {
+                // §6.7.3: "the receiver shall ignore the Message but shall not
+                // close the SecureChannel."
+                self.reassembly.clear();
+                let mut r = UaReader::new(&chunk.body);
+                let error = r.read_u32()?;
+                let reason = read_string(&mut r)?;
+                Ok(ChunkOutcome::Abort { error, reason })
+            }
+            ChunkType::Intermediate => {
+                if self.reassembly.len() + chunk.body.len() > MAX_REASSEMBLED_MESSAGE {
+                    self.reassembly.clear();
+                    return Err(DecodeError::MalformedMessage {
+                        message: "reassembled Message exceeds MAX_REASSEMBLED_MESSAGE",
+                    });
+                }
+                self.reassembly.extend_from_slice(&chunk.body);
+                Ok(ChunkOutcome::Incomplete)
+            }
+            ChunkType::Final => {
+                if self.reassembly.is_empty() {
+                    return Ok(ChunkOutcome::Complete(chunk));
+                }
+                if self.reassembly.len() + chunk.body.len() > MAX_REASSEMBLED_MESSAGE {
+                    self.reassembly.clear();
+                    return Err(DecodeError::MalformedMessage {
+                        message: "reassembled Message exceeds MAX_REASSEMBLED_MESSAGE",
+                    });
+                }
+                let mut body = core::mem::take(&mut self.reassembly);
+                body.extend_from_slice(&chunk.body);
+                Ok(ChunkOutcome::Complete(ParsedChunk { body, ..chunk }))
+            }
+        }
+    }
+}
+
+/// Splits a byte stream that holds one or more consecutive UACP messages into
+/// the individual messages, using each `MessageSize` header field (Part 6
+/// §7.1.2.2). A caller that received a chunked Message in one read gets the
+/// chunks back one by one.
+///
+/// # Errors
+/// [`DecodeError`] if a `MessageSize` is below the 8-byte header or runs past
+/// the end of the buffer.
+pub fn split_messages(bytes: &[u8]) -> Result<Vec<&[u8]>, DecodeError> {
+    let mut out = Vec::new();
+    let mut offset = 0;
+    while offset < bytes.len() {
+        if bytes.len() - offset < 8 {
+            return Err(DecodeError::MalformedMessage {
+                message: "UACP message shorter than its 8-byte header",
             });
         }
-        parse_chunk(bytes)
+        let size = u32::from_le_bytes([
+            bytes[offset + 4],
+            bytes[offset + 5],
+            bytes[offset + 6],
+            bytes[offset + 7],
+        ]) as usize;
+        if size < 8 || offset + size > bytes.len() {
+            return Err(DecodeError::MalformedMessage {
+                message: "UACP MessageSize does not fit the buffer",
+            });
+        }
+        out.push(&bytes[offset..offset + size]);
+        offset += size;
     }
+    Ok(out)
 }
 
 /// Parses one SecureChannel chunk (SecurityMode `None`).
@@ -763,7 +1154,11 @@ pub fn parse_chunk(bytes: &[u8]) -> Result<ParsedChunk, DecodeError> {
     })
 }
 
-fn frame_chunk(message_type: MessageType, inner: &[u8]) -> Result<Vec<u8>, EncodeError> {
+fn frame_chunk(
+    message_type: MessageType,
+    chunk_type: ChunkType,
+    inner: &[u8],
+) -> Result<Vec<u8>, EncodeError> {
     const HEADER_LEN: usize = 8;
     let total = HEADER_LEN + inner.len();
     let message_size = u32::try_from(total).map_err(|_| EncodeError::LengthOverflow {
@@ -773,7 +1168,7 @@ fn frame_chunk(message_type: MessageType, inner: &[u8]) -> Result<Vec<u8>, Encod
     let mut w = UaWriter::with_capacity(total);
     MessageHeader {
         message_type,
-        chunk_type: ChunkType::Final,
+        chunk_type,
         message_size,
     }
     .encode(&mut w);
@@ -855,6 +1250,103 @@ mod tests {
         assert_eq!(parsed.token_id, Some(7));
         assert_eq!(parsed.sequence_header.request_id, 5);
         assert_eq!(parsed.body, alloc::vec![0xAA, 0xBB]);
+    }
+
+    #[test]
+    fn chunked_message_round_trips_across_c_and_f() {
+        // Part 6 §6.7.1: a Message larger than the negotiated buffer is broken
+        // into MessageChunks; §6.7.2.2 Table 57 marks all but the last `C`.
+        let mut sender = SecureChannel::new(42, 7);
+        sender.set_send_buffer_size(MIN_SEND_BUFFER_SIZE);
+        let body: Vec<u8> = (0..30_000u32).map(|i| (i % 251) as u8).collect();
+        let chunks = sender.message_chunks(5, &body).expect("chunks");
+        assert!(
+            chunks.len() > 1,
+            "expected several chunks, got {}",
+            chunks.len()
+        );
+        for (i, c) in chunks.iter().enumerate() {
+            let last = i + 1 == chunks.len();
+            assert_eq!(c[3], if last { b'F' } else { b'C' }, "chunk {i} IsFinal");
+            assert!(
+                c.len() <= MIN_SEND_BUFFER_SIZE as usize,
+                "chunk {i} is {} bytes, above the negotiated buffer",
+                c.len()
+            );
+        }
+
+        let mut receiver = SecureChannel::new(42, 7);
+        let mut done = None;
+        for c in &chunks {
+            match receiver.open_incoming(c).expect("open") {
+                ChunkOutcome::Incomplete => {}
+                ChunkOutcome::Complete(chunk) => done = Some(chunk),
+                ChunkOutcome::Abort { .. } => panic!("unexpected abort"),
+            }
+        }
+        let reassembled = done.expect("final chunk");
+        assert_eq!(reassembled.body, body);
+        assert_eq!(reassembled.sequence_header.request_id, 5);
+
+        // A body that fits stays one final chunk.
+        let mut small = SecureChannel::new(1, 1);
+        assert_eq!(small.message_chunks(1, &[1, 2, 3]).expect("one").len(), 1);
+    }
+
+    #[test]
+    fn abort_chunk_reports_the_error_and_keeps_the_channel() {
+        // Part 6 §6.7.3 Table 63 — the abort body is `Error` + `Reason`.
+        let mut sender = SecureChannel::new(9, 3);
+        let mut receiver = SecureChannel::new(9, 3);
+        let first = sender
+            .message_chunks(11, &alloc::vec![0u8; 20_000])
+            .expect("chunks");
+        assert!(matches!(
+            receiver.open_incoming(&first[0]).expect("open"),
+            ChunkOutcome::Incomplete
+        ));
+        // A real sender aborts *instead of* emitting the remaining chunks, so
+        // the abort carries the SequenceNumber that would have followed the one
+        // intermediate chunk the receiver saw. `sender` has already numbered
+        // all three chunks, so the abort is framed from a channel positioned
+        // where the sender would have been when it gave up.
+        let mut aborting = SecureChannel::new(9, 3);
+        aborting.next_send_sequence();
+        let abort = aborting
+            .abort_chunk(11, 0x8086_0000, "encoder ran out of buffer")
+            .expect("abort");
+        assert_eq!(abort[3], b'A');
+        match receiver.open_incoming(&abort).expect("open abort") {
+            ChunkOutcome::Abort { error, reason } => {
+                assert_eq!(error, 0x8086_0000);
+                assert_eq!(reason, "encoder ran out of buffer");
+            }
+            other => panic!("expected an abort, got {other:?}"),
+        }
+        // "the receiver shall ignore the Message but shall not close the
+        // SecureChannel" — the next Message still reassembles cleanly.
+        let next = aborting.message_chunks(12, &[7, 8, 9]).expect("chunks");
+        match receiver.open_incoming(&next[0]).expect("open") {
+            ChunkOutcome::Complete(c) => assert_eq!(c.body, alloc::vec![7, 8, 9]),
+            other => panic!("expected a complete Message, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn split_messages_splits_by_message_size() {
+        let mut ch = SecureChannel::new(1, 1);
+        let a = ch.message_chunk(1, &[0xAA]).expect("a");
+        let b = ch.message_chunk(2, &[0xBB, 0xCC]).expect("b");
+        let mut stream = a.clone();
+        stream.extend_from_slice(&b);
+        let parts = split_messages(&stream).expect("split");
+        assert_eq!(parts.len(), 2);
+        assert_eq!(parts[0], a.as_slice());
+        assert_eq!(parts[1], b.as_slice());
+        // A MessageSize that runs past the buffer is rejected, not truncated.
+        let mut broken = a.clone();
+        broken[4] = 0xFF;
+        assert!(split_messages(&broken).is_err());
     }
 
     #[test]

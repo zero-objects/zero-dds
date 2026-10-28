@@ -1,0 +1,7 @@
+@mutable struct M {
+    @id(1) string s;
+    @id(2) sequence<octet> b;
+    @id(3) sequence<long> l;
+    @id(4) sequence<double> d;
+    @id(5) sequence<short> h;
+};

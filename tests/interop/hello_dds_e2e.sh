@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
 # tests/interop/hello_dds_e2e.sh — WP 2.1 Phase C3
 #
-# Cross-process Smoke-Test fuer die DCPS-Public-API: startet den
-# Hello-World-Subscriber im Hintergrund, dann den Publisher, laesst
-# sie 10 s miteinander reden und prueft, ob der Subscriber
-# mindestens 3 "hello #"-Zeilen erhalten hat.
+# Cross-process smoke test for the DCPS public API: starts the
+# hello-world subscriber in the background, then the publisher, lets
+# them talk to each other for 10 s and checks whether the subscriber
+# received at least 3 "hello #" lines.
 #
-# Plattform: Linux (Multicast-Loopback). Auf macOS kann das je nach
-# OS-Version instabil sein — nutze dort den in-process Integration-
-# Test in crates/dcps/tests/e2e_dcps_api.rs.
+# Platform: Linux (multicast loopback). On macOS this can be unstable
+# depending on the OS version — use the in-process integration
+# test in crates/dcps/tests/e2e_dcps_api.rs there.
 #
-# Verwendung:
+# Usage:
 #   ./tests/interop/hello_dds_e2e.sh
 #
-# Exit-Codes:
-#   0  mind. 3 Samples empfangen
-#   1  Discovery- oder Delivery-Failure
-#   2  Build-Fehler
+# Exit codes:
+#   0  at least 3 samples received
+#   1  discovery or delivery failure
+#   2  build error
 
 set -euo pipefail
 
@@ -51,7 +51,7 @@ echo "[hello-e2e] starting subscriber (background)"
 SUB_PID=$!
 trap 'kill "$SUB_PID" 2>/dev/null || true; kill "$PUB_PID" 2>/dev/null || true' EXIT
 
-# Dem Subscriber einen Moment geben, SPDP-Beacon-Slot zu erwischen.
+# Give the subscriber a moment to catch an SPDP beacon slot.
 sleep 1
 
 echo "[hello-e2e] starting publisher (background, ${RUNTIME_SECS}s)"

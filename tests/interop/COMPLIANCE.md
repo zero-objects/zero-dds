@@ -1,125 +1,125 @@
-# ZeroDDS ↔ Cyclone-DDS Interop-Compliance-Bericht
+# ZeroDDS ↔ Cyclone DDS interop compliance report
 
-**Status: WP 0.6 abgeschlossen, 2026-04-18.**
+**Status: WP 0.6 completed, 2026-04-18.**
 
-Dieser Bericht dokumentiert den Stand der Wire-Format-Compliance
-zwischen ZeroDDS (Phase 0) und Eclipse Cyclone DDS.
+This report documents the state of wire format compliance
+between ZeroDDS (phase 0) and Eclipse Cyclone DDS.
 
 ---
 
-## Was geprueft ist (Phase 0)
+## What is checked (phase 0)
 
-### ✅ Wire-Format-Compliance ueber Reference-Frames
+### ✅ Wire format compliance via reference frames
 
-`crates/rtps/tests/cyclone_compliance.rs` (11 Tests):
+`crates/rtps/tests/cyclone_compliance.rs` (11 tests):
 
-| Test-Bereich | Status | Beleg |
+| Test area | Status | Evidence |
 |---|---|---|
-| ZeroDDS-Reader parst Cyclone-DATA mit leerem Payload | ✅ | `cyclone_data_empty_payload_decodes` |
-| ZeroDDS-Reader parst Cyclone-DATA mit CDR2-LE-Payload | ✅ | `cyclone_data_cdr2_payload_decodes_and_carries_payload` |
-| ZeroDDS-Reader parst Cyclone-HEARTBEAT | ✅ | `cyclone_heartbeat_decodes` |
-| Alle Frames haben "RTPS"-Magic-Bytes | ✅ | `cyclone_frames_have_rtps_magic` |
-| Alle Frames sind RTPS 2.x | ✅ | `cyclone_frames_use_rtps_2_5_or_compatible` |
-| ZeroDDS-Writer-Output ist byte-identisch zu Cyclone-Layout (DATA empty) | ✅ | `zerodds_writer_produces_compatible_data_layout` |
-| ZeroDDS-Writer-Output ist byte-identisch zu Cyclone-Layout (DATA mit CDR2) | ✅ | `zerodds_writer_produces_compatible_data_with_payload` |
-| Cyclone → Decode → Encode → bit-identisch | ✅ | `cyclone_data_*_roundtrip_bit_identical` |
+| ZeroDDS reader parses Cyclone DATA with empty payload | ✅ | `cyclone_data_empty_payload_decodes` |
+| ZeroDDS reader parses Cyclone DATA with CDR2-LE payload | ✅ | `cyclone_data_cdr2_payload_decodes_and_carries_payload` |
+| ZeroDDS reader parses Cyclone HEARTBEAT | ✅ | `cyclone_heartbeat_decodes` |
+| All frames have "RTPS" magic bytes | ✅ | `cyclone_frames_have_rtps_magic` |
+| All frames are RTPS 2.x | ✅ | `cyclone_frames_use_rtps_2_5_or_compatible` |
+| ZeroDDS writer output is byte-identical to the Cyclone layout (DATA empty) | ✅ | `zerodds_writer_produces_compatible_data_layout` |
+| ZeroDDS writer output is byte-identical to the Cyclone layout (DATA with CDR2) | ✅ | `zerodds_writer_produces_compatible_data_with_payload` |
+| Cyclone → decode → encode → bit-identical | ✅ | `cyclone_data_*_roundtrip_bit_identical` |
 
-**Wichtige Einschraenkung**: Die Reference-Frames sind **nicht** aus
-einer echten Cyclone-DDS-Capture extrahiert, sondern handgepflegt
-nach DDSI-RTPS-2.5-Spec mit Cyclone-typischen Parametern (VendorId
-0x0110, Version 2.5). Phase 1 wird das durch echte tshark-Captures
-ergaenzen — siehe `capture.sh` und `docker-compose.yml`.
+**Important limitation**: the reference frames are **not**
+extracted from a real Cyclone DDS capture, but maintained by hand
+according to the DDSI-RTPS 2.5 spec with Cyclone-typical parameters (VendorId
+0x0110, version 2.5). Phase 1 will supplement this with real tshark captures
+— see `capture.sh` and `docker-compose.yml`.
 
-### ✅ Docker-compose Test-Harness
+### ✅ Docker Compose test harness
 
-`tests/interop/docker-compose.yml` startet zwei Cyclone-DDS-Container
-(Publisher + Subscriber) auf der Loopback-Schnittstelle. `capture.sh`
-nutzt tshark zum Extrahieren von Frames.
+`tests/interop/docker-compose.yml` starts two Cyclone DDS containers
+(publisher + subscriber) on the loopback interface. `capture.sh`
+uses tshark to extract frames.
 
-Dieser Harness laeuft **nicht** im CI (Container + sudo-tshark), aber
-ermoeglicht Entwicklern, neue Reference-Frames zu kapturieren und in
-`crates/rtps/tests/fixtures/cyclone/` einzufuegen.
+This harness does **not** run in CI (containers + sudo tshark), but
+enables developers to capture new reference frames and insert them into
+`crates/rtps/tests/fixtures/cyclone/`.
 
 ---
 
-## Was nicht geprueft ist (Phase 1+)
+## What is not checked (phase 1+)
 
-### ❌ Live-Interop
+### ❌ Live interop
 
-ZeroDDS und Cyclone-DDS koennen sich noch nicht gegenseitig
-"sehen" — der Knackpunkt:
+ZeroDDS and Cyclone DDS cannot yet "see" each other
+— the crux:
 
 1. **SPDP** (Simple Participant Discovery Protocol):
-   - Cyclone sendet periodisch Multicast-Beacons mit
-     ParticipantBuiltinTopic-Daten
-   - ZeroDDS implementiert Multicast-Reception noch nicht
+   - Cyclone periodically sends multicast beacons with
+     ParticipantBuiltinTopic data
+   - ZeroDDS does not implement multicast reception yet
    - **Phase 1: WP-Phase-1-XXX (Discovery)**
 
 2. **SEDP** (Simple Endpoint Discovery Protocol):
-   - Reliable-Pfad fuer Subscription-/Publication-Builtin-Topics
-   - ZeroDDS hat noch keinen Reliable-Writer mit AckNack-Loop
+   - Reliable path for the subscription/publication builtin topics
+   - ZeroDDS has no reliable writer with an AckNack loop yet
    - **Phase 1**
 
-3. **Endpoint-Matching**:
-   - Topic-Name + Type-Name + QoS muessen kompatibel sein
-   - Erfordert dds-types (TypeObject, TypeIdentifier)
+3. **Endpoint matching**:
+   - Topic name + type name + QoS must be compatible
+   - Requires dds-types (TypeObject, TypeIdentifier)
    - **Phase 1: WP-Phase-1-YYY (Type-System)**
 
-4. **Reliable-Reliability**:
-   - AckNack-Loop, Heartbeat-Timer, History-Cache mit Resend
+4. **Reliable reliability**:
+   - AckNack loop, heartbeat timer, history cache with resend
    - **Phase 1: WP-Phase-1-ZZZ (Reliable-Writer)**
 
-### ❌ Multi-Vendor-Tests
+### ❌ Multi-vendor tests
 
-- RTI Connext: VendorId 0x0103, eigene Quirks (z.B. KeyHash-Pflicht
-  in DATA-Submessage)
+- RTI Connext: VendorId 0x0103, own quirks (e.g. KeyHash mandatory
+  in the DATA submessage)
 - Fast-DDS: VendorId 0x010F (eProsima)
 - OpenDDS: VendorId 0x0103 (legacy)
 - **Phase 1+: WP-Phase-2 Multi-Vendor**
 
 ---
 
-## Phase-1-Hand-off
+## Phase 1 hand-off
 
-**Naechste Schritte fuer echtes Interop**:
+**Next steps for real interop**:
 
-1. **WP 0.7+** Discovery-Crate (`dds-discovery`):
-   - SPDP-Beacon-Sender + -Receiver
-   - SEDP-Reliable-Writer + -Reader
-   - ParticipantBuiltinTopic + Sub/PubBuiltinTopic-Schemas
-2. **WP 0.7+** Reliable-Writer in `dds-rtps`:
-   - History-Cache mit Sequence-Tracking
-   - AckNack-Loop + Heartbeat-Timer
-   - GAP-Encoding bei Resend-Lecks
+1. **WP 0.7+** Discovery crate (`dds-discovery`):
+   - SPDP beacon sender + receiver
+   - SEDP reliable writer + reader
+   - ParticipantBuiltinTopic + Sub/PubBuiltinTopic schemas
+2. **WP 0.7+** Reliable writer in `dds-rtps`:
+   - History cache with sequence tracking
+   - AckNack loop + heartbeat timer
+   - GAP encoding for resend leaks
 3. **WP-Phase-1** dds-types:
    - TypeObject / TypeIdentifier
-   - Type-Compatibility-Matrix
-4. **WP-Phase-1** Live-Smoke-Test:
-   - ZeroDDS-Container in `tests/interop/docker-compose.yml`
+   - Type compatibility matrix
+4. **WP-Phase-1** Live smoke test:
+   - ZeroDDS container in `tests/interop/docker-compose.yml`
    - Topic "ZeroDDS_Compat_Test"
-   - Cyclone-DDS-Subscriber → empfaengt ZeroDDS-Writer-Daten
-   - Beide Reihenfolge umgekehrt
+   - Cyclone DDS subscriber → receives ZeroDDS writer data
+   - Both, order reversed
 
 ---
 
-## Capture-Procedure (fuer manuelle Tests)
+## Capture procedure (for manual tests)
 
 ```bash
-# 1. Cyclone-DDS-Container starten
+# 1. Start the Cyclone DDS containers
 cd tests/interop
 docker compose up -d
 
-# 2. RTPS-Frames kapturieren (sudo wegen libpcap)
+# 2. Capture RTPS frames (sudo because of libpcap)
 ./capture.sh 100 cyclone_dump.pcap
 # → cyclone_dump.pcap + cyclone_dump.hex
 
-# 3. Hex-Inspektion eines Frames (z.B. erstes DATA)
+# 3. Hex inspection of a frame (e.g. the first DATA)
 head -1 cyclone_dump.hex | xxd -r -p | xxd
 
-# 4. Frame als Fixture einfuegen:
+# 4. Insert the frame as a fixture:
 #    crates/rtps/tests/fixtures/cyclone/<topic_name>.hex
-#    → Header-Bytes mit '#' kommentieren
-#    → Test in cyclone_compliance.rs ergaenzen
+#    → comment the header bytes with '#'
+#    → add a test in cyclone_compliance.rs
 
 # 5. Stop
 docker compose down
@@ -127,12 +127,34 @@ docker compose down
 
 ---
 
-## Sales-Punkt
+## Sales point
 
-> **ZeroDDS produziert byte-identische RTPS-DATA-Submessages wie
-> Eclipse Cyclone DDS** (verifiziert ueber Reference-Frame-Roundtrip).
-> Wire-Format-Inkompatibilitaeten sind ausgeschlossen — der einzige
-> Schritt zu Live-Interop ist Discovery + Reliable, nicht
-> Wire-Format-Bugs.
+> **ZeroDDS produces byte-identical RTPS DATA submessages like
+> Eclipse Cyclone DDS** (verified via reference frame roundtrip).
+> Wire format incompatibilities are ruled out — the only
+> step to live interop is discovery + reliable, not
+> wire format bugs.
 
-Das ist die kritischste Eigenschaft fuer Migrations-Versprechen.
+This is the most critical property for migration promises.
+
+## Empty ACKNACK of the vendors
+
+Fast DDS (and, as recorded, OpenDDS and RTI Connext) send the ACKNACK of a reader that
+holds nothing with `bitmapBase` 0 and `numBits` 0, which DDSI-RTPS 2.5 §8.3.5.5 makes
+invalid. ZeroDDS by default drops the rest of such a datagram (§8.3.4.1 rule 6), and with
+it the SEDP data that follows in it (measured on the Linux test host, sec-diag16/17: every red
+zerodds->fastdds cell had rejections with `left_out` > 0, every green cell none; with the
+setting all 24 cells green and no rejection). The cross-vendor runners in this directory (`ci/run_vendor.sh`, `run_bridge_cross_vendor.sh`, `shapes_cyclone_interop.sh`, `xv_pub_sub_roundtrip.sh`) and `tools/dcps-shapes-interop.sh` sets
+`ZERODDS_WIRE_ACCEPT_EMPTY_ACKNACK_BASE_ZERO=1` (setting
+`wire.accept_empty_acknack_base_zero`) for the ZeroDDS processes of the vendor pairs, in
+one place (one commented block per runner). The default of ZeroDDS stays the reading of the spec.
+
+## PL_CDR1 parameters with the rounded length
+
+Cyclone DDS (extended header) and RTI Connext (short header) write the length of a PL_CDR1
+parameter rounded up to four, the form of DDSI-RTPS 2.5 §9.4.2.11 (recorded rows;
+`ast-layout` `Dialect::Cyclone` and `Dialect::Rti`, `pads_declared_length`). XTypes 1.3
+§7.4.1.2.2 has the exact length, and the default reader of ZeroDDS refuses the other form.
+These runners sets `ZERODDS_WIRE_PL_CDR1_READING=tolerant` (setting `wire.pl_cdr1_reading`) for the ZeroDDS readers of the pairs with a Cyclone DDS or RTI writer (a runner that meets every vendor sets it for all pairs),
+in the same place as the empty-ACKNACK setting. Fast DDS and OpenDDS write the exact
+length. The default of ZeroDDS stays the reading of the spec.

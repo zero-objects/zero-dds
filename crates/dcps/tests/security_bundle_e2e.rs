@@ -20,6 +20,23 @@ struct CapturingLogger {
 }
 
 impl LoggingPlugin for CapturingLogger {
+    // Test double: it records `log` calls only; the Table 46 operations
+    // have nothing to configure.
+    fn set_log_options(
+        &self,
+        _options: zerodds_security::logging::LogOptions,
+    ) -> Result<(), zerodds_security::error::SecurityError> {
+        Ok(())
+    }
+    fn enable_logging(&self) -> Result<(), zerodds_security::error::SecurityError> {
+        Ok(())
+    }
+    fn set_listener(
+        &self,
+        _listener: Option<std::sync::Arc<dyn zerodds_security::logging::LoggerListener>>,
+    ) -> Result<(), zerodds_security::error::SecurityError> {
+        Ok(())
+    }
     fn log(&self, _level: LogLevel, _participant: [u8; 16], category: &str, _message: &str) {
         self.count.fetch_add(1, Ordering::SeqCst);
         *self.last_category.lock().unwrap() = category.to_string();
@@ -75,6 +92,23 @@ fn empty_bundle_leaves_runtime_config_logger_unset() {
 /// boxed-into-bundle logger and the assertion handle.
 struct LoggerHandle(Arc<CapturingLogger>);
 impl LoggingPlugin for LoggerHandle {
+    // Test double: it records `log` calls only; the Table 46 operations
+    // have nothing to configure.
+    fn set_log_options(
+        &self,
+        _options: zerodds_security::logging::LogOptions,
+    ) -> Result<(), zerodds_security::error::SecurityError> {
+        Ok(())
+    }
+    fn enable_logging(&self) -> Result<(), zerodds_security::error::SecurityError> {
+        Ok(())
+    }
+    fn set_listener(
+        &self,
+        _listener: Option<std::sync::Arc<dyn zerodds_security::logging::LoggerListener>>,
+    ) -> Result<(), zerodds_security::error::SecurityError> {
+        Ok(())
+    }
     fn log(&self, level: LogLevel, participant: [u8; 16], category: &str, message: &str) {
         self.0.log(level, participant, category, message);
     }

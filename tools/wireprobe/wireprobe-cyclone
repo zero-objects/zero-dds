@@ -1,0 +1,200 @@
+#!/bin/bash
+# wireprobe-cyclone — one IDL type and one JSON value, through Cyclone
+# DDS's own serialiser.
+#
+# The same command line as `wireprobe-zerodds`, so a case runs through
+# both by substituting the program name. See
+# `docs/specs/zerodds-interop-suite-1.0.md`.
+#
+#   wireprobe-cyclone --idl robot.idl --type common::Robot \
+#                     --values robot.json --encoding xcdr2 --endian le \
+#                     --out robot.cyclone.xcdr2.le.bin
+#
+# Cyclone's `idlc` generates the type support; `wireprobe-fill` supplies
+# the statements that put the JSON sample into it; the template calls
+# `dds_stream_write_sample`. Nothing here decides any wire question.
+#
+# The read direction is the same command line with `--in` instead of
+# `--values`, and it is what the pairwise run of the interop suite's P2
+# needs: `wireprobe-dump` supplies the statements that print the sample
+# and the template calls `dds_stream_read_sample`.
+#
+#   wireprobe-cyclone --idl robot.idl --type common::Robot \
+#                     --in robot.rti.xcdr2.le.bin --encoding xcdr2 \
+#                     --endian le --values-out robot.read.json
+set -euo pipefail
+
+CYCLONE="${CYCLONE_HOME:-/opt/cyclone}"
+FILL="${WIREPROBE_FILL:-wireprobe-fill}"
+DUMP="${WIREPROBE_DUMP:-wireprobe-dump}"
+TOOLS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TEMPLATE="$TOOLS/cyclone-template.c"
+DECODE_TEMPLATE="$TOOLS/cyclone-decode-template.c"
+# shellcheck source=probe-cache.sh
+. "$TOOLS/probe-cache.sh"
+# shellcheck source=bounded.sh
+. "$TOOLS/bounded.sh"
+# shellcheck source=diagnostics.sh
+. "$TOOLS/diagnostics.sh"
+
+idl=""; type_name=""; values=""; encoding="xcdr2"; endian="le"; emit="payload"
+out=""; input=""; values_out=""; matrix=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+        # Every combination out of the one build, as
+        # `<version>\t<endian>\t<hex>` rows, a refusal as `!` and a
+        # sentence. What a corpus sweep asks for: the alternative is
+        # four processes that each re-derive the same binary's identity
+        # to find it in the cache.
+        --matrix) matrix=1; shift ;;
+        --idl) idl="$2"; shift 2 ;;
+        --type) type_name="$2"; shift 2 ;;
+        --values) values="$2"; shift 2 ;;
+        --in) input="$2"; shift 2 ;;
+        --values-out) values_out="$2"; shift 2 ;;
+        --encoding) encoding="$2"; shift 2 ;;
+        --endian) endian="$2"; shift 2 ;;
+        --emit) emit="$2"; shift 2 ;;
+        --out) out="$2"; shift 2 ;;
+        # `--dialect` names which implementation's answers to give, and
+        # this probe can only give Cyclone's. Accepting another and
+        # producing these bytes anyway would report a divergence the run
+        # never measured, so it is refused the way `--emit` is.
+        --dialect)
+            if [ "$2" != "cyclone" ]; then
+                echo "wireprobe-cyclone: --dialect $2 is not this probe's; it writes what Cyclone writes" >&2
+                exit 3
+            fi
+            shift 2 ;;
+        # Accepted and ignored: these select between shapes this project
+        # can produce, and Cyclone has exactly one of each. Ignoring
+        # them lets the same command line drive all four probes.
+        --length-codes|--collection-delimiters|--map-length|--wstring-length) shift 2 ;;
+        --pl-cdr1-headers|--default-extensibility|--key-holder) shift 2 ;;
+        --help|-h) sed -n '2,27p' "${BASH_SOURCE[0]}"; exit 0 ;;
+        *) echo "wireprobe-cyclone: \`$1\` is not an option" >&2; exit 2 ;;
+    esac
+done
+[ -n "$idl" ] || { echo "wireprobe-cyclone: --idl is required" >&2; exit 2; }
+[ -n "$type_name" ] || { echo "wireprobe-cyclone: --type is required" >&2; exit 2; }
+if [ -n "$input" ] && [ -n "$values" ]; then
+    echo "wireprobe-cyclone: --in reads bytes and --values writes them; pick one" >&2; exit 2
+fi
+if [ -z "$input" ] && [ -z "$values" ]; then
+    echo "wireprobe-cyclone: --values is required, or --in to read bytes back" >&2; exit 2
+fi
+
+case "$encoding" in
+    xcdr1|plain-cdr1|pl-cdr1) version_word=1 ;;
+    xcdr2|plain-cdr2|delimited-cdr|pl-cdr2) version_word=2 ;;
+    *) echo "wireprobe-cyclone: \`$encoding\` is not an encoding" >&2; exit 2 ;;
+esac
+case "$endian" in
+    le|little) endian_word=le ;;
+    be|big) endian_word=be ;;
+    *) echo "wireprobe-cyclone: \`$endian\` is not a byte order" >&2; exit 2 ;;
+esac
+case "$emit" in
+    payload) ;;
+    *) echo "wireprobe-cyclone: --emit $emit is not implemented here yet" >&2; exit 3 ;;
+esac
+
+work="$(mktemp -d)"
+# Kept before the removal and on every exit path, including a
+# refusal: the generated source of a case a front end could not carry
+# is the one a reader most wants to see.
+trap 'probe_keep_generated "$work" "cyclone" "$idl"; rm -rf "$work"' EXIT
+
+cp "$idl" "$work/gen.idl"
+c_name="$("$FILL" --vendor cyclone --idl "$idl" --type "$type_name" --print-c-name)"
+
+if [ -n "$input" ]; then
+    "$DUMP" --vendor cyclone --idl "$idl" --type "$type_name" --out "$work/dump.inc"
+    # As above: one decode build per case, asked for a combination.
+    key="$(probe_cache_key cyclone decode "$c_name" -- "$idl" "$work/dump.inc" "$DECODE_TEMPLATE" \
+        "$TOOLS/vendor_crash.h")"
+    cached="$(probe_cache_dir "$key")"
+    if [ -z "$cached" ] || [ ! -x "$cached/probe" ]; then
+        cp "$work/dump.inc" "$work/dump.inc.keep"
+        (
+            cd "$work"
+            bounded_run_native idlc "$CYCLONE/bin/idlc" gen.idl > idlc.log 2>&1 \
+                || { echo "wireprobe-cyclone: idlc failed" >&2; sed -n 1,10p idlc.log >&2; exit 4; }
+            sed -e "s/@TYPE@/$c_name/g" "$DECODE_TEMPLATE" > probe.c
+            gcc -o probe probe.c gen.c -I. -I"$TOOLS" -I"$CYCLONE/include" \
+                -L"$CYCLONE/lib" -lddsc -Wl,-rpath,"$CYCLONE/lib" > cc.log 2>&1 \
+                || { echo "wireprobe-cyclone: the decode probe did not compile" >&2; \
+                     grep -m10 "error:" cc.log >&2; exit 5; }
+        )
+        probe_diagnostics_after cyclone "$work" "$idl" $?
+        if [ -n "$cached" ]; then
+            build="$(mktemp -d "$WIREPROBE_CACHE/build.XXXXXX")"
+            cp "$work/probe" "$build/probe"
+            probe_diagnostics_publish "$work" "$build"
+            probe_generated_publish "$work" "$build"
+            probe_cache_publish "$build" "$cached"
+        fi
+    else
+        # A cache hit does not compile, so the build said nothing
+        # this run. What it said when it was built is replayed,
+        # or a re-record would be silent for every case it did
+        # not rebuild.
+        probe_diagnostics_cached cyclone "$cached" "$idl"
+        probe_generated_cached "$cached" "$work"
+    fi
+    if [ -n "$cached" ] && [ -x "$cached/probe" ]; then binary="$cached/probe"; else binary="$work/probe"; fi
+    bounded_run_native "the cyclone read probe" "$binary" "$endian_word" "$version_word" \
+        < "$input" > "$work/values.json"
+    if [ -n "$values_out" ]; then cp "$work/values.json" "$values_out"; else cat "$work/values.json"; fi
+    exit 0
+fi
+
+"$FILL" --vendor cyclone --idl "$idl" --type "$type_name" --values "$values" \
+        --out "$work/fill.inc"
+# Neither the encoding version nor the byte order is in the key: the
+# template takes both on its command line, so one binary answers all
+# four combinations and the cache holds one build per case rather than
+# four identical compiles of the same generated code.
+key="$(probe_cache_key cyclone encode "$c_name" -- "$idl" "$work/fill.inc" "$TEMPLATE" \
+    "$TOOLS/vendor_crash.h")"
+cached="$(probe_cache_dir "$key")"
+if [ -z "$cached" ] || [ ! -x "$cached/probe" ]; then
+    (
+        cd "$work"
+        bounded_run_native idlc "$CYCLONE/bin/idlc" gen.idl > idlc.log 2>&1 \
+            || { echo "wireprobe-cyclone: idlc failed" >&2; sed -n 1,10p idlc.log >&2; exit 4; }
+        sed -e "s/@TYPE@/$c_name/g" "$TEMPLATE" > probe.c
+        gcc -o probe probe.c gen.c -I. -I"$TOOLS" -I"$CYCLONE/include" -L"$CYCLONE/lib" -lddsc \
+            -Wl,-rpath,"$CYCLONE/lib" > cc.log 2>&1 \
+            || { echo "wireprobe-cyclone: the probe did not compile" >&2; \
+                 grep -m10 "error:" cc.log >&2; exit 5; }
+    )
+    probe_diagnostics_after cyclone "$work" "$idl" $?
+    if [ -n "$cached" ]; then
+        build="$(mktemp -d "$WIREPROBE_CACHE/build.XXXXXX")"
+        cp "$work/probe" "$build/probe"
+        probe_diagnostics_publish "$work" "$build"
+        probe_generated_publish "$work" "$build"
+        probe_cache_publish "$build" "$cached"
+    fi
+else
+    # A cache hit does not compile, so the build said nothing
+    # this run. What it said when it was built is replayed,
+    # or a re-record would be silent for every case it did
+    # not rebuild.
+    probe_diagnostics_cached cyclone "$cached" "$idl"
+    probe_generated_cached "$cached" "$work"
+fi
+if [ -n "$cached" ] && [ -x "$cached/probe" ]; then binary="$cached/probe"; else binary="$work/probe"; fi
+if [ "$matrix" = 1 ]; then
+    bounded_run_native "the cyclone probe" "$binary" --matrix
+    exit 0
+fi
+bounded_run_native "the cyclone probe" "$binary" "$endian_word" "$version_word" \
+    > "$work/bytes.bin"
+
+if [ -n "$out" ]; then
+    cp "$work/bytes.bin" "$out"
+else
+    od -An -tx1 -v "$work/bytes.bin" | tr -d ' \n'; echo
+fi

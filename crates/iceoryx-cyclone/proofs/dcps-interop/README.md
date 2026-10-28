@@ -44,7 +44,7 @@ PSMX **and** SPDP-multicast discovery on domain 0.
 
 ## Run
 
-Linux host with iceoryx POSH + iox-roudi + Cyclone-iox (e.g. codepit):
+Linux host with iceoryx POSH + iox-roudi + Cyclone-iox (e.g. The Linux test host):
 
 ```sh
 ./run.sh   # builds the proof + a Cyclone publisher + an iceoryx consumer,

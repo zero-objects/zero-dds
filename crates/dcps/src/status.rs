@@ -282,6 +282,203 @@ pub struct DataAvailableStatus;
 pub struct DataOnReadersStatus;
 
 // ============================================================================
+// Reading a status
+// ============================================================================
+
+/// What reading a status, or handing it to a listener, does to it. DDS 1.4
+/// §2.2.4.1 counts the change fields "since the last time the listener was
+/// called or the status was read": a read takes the changes it reports off
+/// the status, and what changed after it was taken stays.
+pub trait StatusRecord: Clone {
+    /// Takes the change fields of `reported` off `self`.
+    fn acknowledge(&mut self, reported: &Self);
+
+    /// Whether a change field is not zero: a change nobody read or was
+    /// handed yet.
+    fn has_changes(&self) -> bool;
+}
+
+impl StatusRecord for InconsistentTopicStatus {
+    fn acknowledge(&mut self, reported: &Self) {
+        self.total_count_change -= reported.total_count_change;
+    }
+
+    fn has_changes(&self) -> bool {
+        self.total_count_change != 0
+    }
+}
+
+impl StatusRecord for SampleLostStatus {
+    fn acknowledge(&mut self, reported: &Self) {
+        self.total_count_change -= reported.total_count_change;
+    }
+
+    fn has_changes(&self) -> bool {
+        self.total_count_change != 0
+    }
+}
+
+impl StatusRecord for LivelinessLostStatus {
+    fn acknowledge(&mut self, reported: &Self) {
+        self.total_count_change -= reported.total_count_change;
+    }
+
+    fn has_changes(&self) -> bool {
+        self.total_count_change != 0
+    }
+}
+
+impl StatusRecord for OfferedDeadlineMissedStatus {
+    fn acknowledge(&mut self, reported: &Self) {
+        self.total_count_change -= reported.total_count_change;
+    }
+
+    fn has_changes(&self) -> bool {
+        self.total_count_change != 0
+    }
+}
+
+impl StatusRecord for RequestedDeadlineMissedStatus {
+    fn acknowledge(&mut self, reported: &Self) {
+        self.total_count_change -= reported.total_count_change;
+    }
+
+    fn has_changes(&self) -> bool {
+        self.total_count_change != 0
+    }
+}
+
+impl StatusRecord for SampleRejectedStatus {
+    fn acknowledge(&mut self, reported: &Self) {
+        self.total_count_change -= reported.total_count_change;
+    }
+
+    fn has_changes(&self) -> bool {
+        self.total_count_change != 0
+    }
+}
+
+impl StatusRecord for LivelinessChangedStatus {
+    fn acknowledge(&mut self, reported: &Self) {
+        self.alive_count_change -= reported.alive_count_change;
+        self.not_alive_count_change -= reported.not_alive_count_change;
+    }
+
+    fn has_changes(&self) -> bool {
+        self.alive_count_change != 0 || self.not_alive_count_change != 0
+    }
+}
+
+impl StatusRecord for PublicationMatchedStatus {
+    fn acknowledge(&mut self, reported: &Self) {
+        self.total_count_change -= reported.total_count_change;
+        self.current_count_change -= reported.current_count_change;
+    }
+
+    fn has_changes(&self) -> bool {
+        self.total_count_change != 0 || self.current_count_change != 0
+    }
+}
+
+impl StatusRecord for SubscriptionMatchedStatus {
+    fn acknowledge(&mut self, reported: &Self) {
+        self.total_count_change -= reported.total_count_change;
+        self.current_count_change -= reported.current_count_change;
+    }
+
+    fn has_changes(&self) -> bool {
+        self.total_count_change != 0 || self.current_count_change != 0
+    }
+}
+
+impl StatusRecord for OfferedIncompatibleQosStatus {
+    fn acknowledge(&mut self, reported: &Self) {
+        self.total_count_change -= reported.total_count_change;
+    }
+
+    fn has_changes(&self) -> bool {
+        self.total_count_change != 0
+    }
+}
+
+impl StatusRecord for RequestedIncompatibleQosStatus {
+    fn acknowledge(&mut self, reported: &Self) {
+        self.total_count_change -= reported.total_count_change;
+    }
+
+    fn has_changes(&self) -> bool {
+        self.total_count_change != 0
+    }
+}
+
+/// A status as an entity keeps it: the record, its change fields counting
+/// since it was last read or handed to a listener (§2.2.4.1).
+///
+/// The StatusChangedFlag is read off the change fields, not kept beside
+/// them. A flag of its own was reset by an acknowledgement of what a
+/// listener had been handed even when the status had changed again since
+/// the listener's look, and that change then reached no listener. Every
+/// change of the statuses kept here moves a change field — a match counts
+/// in `total_count_change`, an unmatch in `current_count_change` — so a
+/// record whose change fields are all zero has nothing unread.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct StatusLedger<S> {
+    record: S,
+    /// How many times a `get_*_status` read the record; see
+    /// [`Self::acknowledge`].
+    reads: u64,
+}
+
+impl<S: StatusRecord> StatusLedger<S> {
+    /// The record as it stands, change fields included.
+    #[must_use]
+    pub fn record(&self) -> S {
+        self.record.clone()
+    }
+
+    /// The StatusChangedFlag: the status changed since it was last read
+    /// or handed to a listener.
+    #[must_use]
+    pub fn unread(&self) -> bool {
+        self.record.has_changes()
+    }
+
+    /// Changes the record. The change fields it moves are its flag.
+    pub fn update(&mut self, change: impl FnOnce(&mut S)) {
+        change(&mut self.record);
+    }
+
+    /// The StatusChangedFlag, the record and how many times a
+    /// `get_*_status` read it, taken together for a listener's look. The
+    /// count goes back with [`Self::acknowledge`].
+    #[must_use]
+    pub fn observe(&self) -> (bool, S, u64) {
+        (self.unread(), self.record(), self.reads)
+    }
+
+    /// The record, resetting its change fields and its flag: what
+    /// `get_*_status` does.
+    pub fn take(&mut self) -> S {
+        let record = self.record.clone();
+        self.record.acknowledge(&record);
+        self.reads = self.reads.wrapping_add(1);
+        record
+    }
+
+    /// `reported` was handed to a listener by a look that found the record
+    /// read `reads` times: its changes are no longer pending. A change
+    /// after the look stays. A `get_*_status` since the look has reset the
+    /// reported changes already; taking them off a second time left a
+    /// negative change, which reads as a new one and called the listener
+    /// again.
+    pub fn acknowledge(&mut self, reported: &S, reads: u64) {
+        if self.reads == reads {
+            self.record.acknowledge(reported);
+        }
+    }
+}
+
+// ============================================================================
 // Helper functions
 // ============================================================================
 
@@ -456,5 +653,233 @@ mod tests {
         // Marker structs have size 0 (compact).
         assert_eq!(core::mem::size_of::<DataAvailableStatus>(), 0);
         assert_eq!(core::mem::size_of::<DataOnReadersStatus>(), 0);
+    }
+
+    fn lost(ledger: &mut StatusLedger<SampleLostStatus>, n: i32) {
+        ledger.update(|s| {
+            s.total_count += n;
+            s.total_count_change += n;
+        });
+    }
+
+    /// DDS 1.4 §2.2.4.1: a read takes the changes it reports; the total
+    /// stays, and a change after the read is the next read's.
+    #[test]
+    fn a_read_takes_the_changes_and_keeps_the_total() {
+        let mut ledger = StatusLedger::<SampleLostStatus>::default();
+        lost(&mut ledger, 2);
+        let first = ledger.take();
+        assert_eq!((first.total_count, first.total_count_change), (2, 2));
+        let second = ledger.take();
+        assert_eq!((second.total_count, second.total_count_change), (2, 0));
+        lost(&mut ledger, 1);
+        assert!(ledger.unread());
+        assert_eq!(ledger.take().total_count_change, 1);
+        assert!(!ledger.unread());
+    }
+
+    /// A `get_*_status` between a listener's look and its acknowledgement
+    /// has reset what the look reported; the acknowledgement takes nothing
+    /// off after it. Subtracting again left `total_count_change` at -1,
+    /// which is unread and handed the listener a second, negative change.
+    #[test]
+    fn a_read_between_the_look_and_the_acknowledgement_is_not_taken_off_twice() {
+        let mut ledger = StatusLedger::<SampleLostStatus>::default();
+        lost(&mut ledger, 1);
+        let (unread, handed, reads) = ledger.observe();
+        assert!(unread);
+        assert_eq!(ledger.take().total_count_change, 1);
+        ledger.acknowledge(&handed, reads);
+        assert!(!ledger.unread());
+        assert_eq!(ledger.record().total_count_change, 0);
+        // A change after the read still reaches the next look.
+        lost(&mut ledger, 1);
+        let (unread, handed, reads) = ledger.observe();
+        assert!(unread);
+        ledger.acknowledge(&handed, reads);
+        assert!(!ledger.unread());
+    }
+
+    /// A change between a listener's look and its acknowledgement stays
+    /// unread: the acknowledgement takes off what the listener was handed
+    /// and nothing more.
+    #[test]
+    fn a_change_after_the_look_survives_the_acknowledgement() {
+        let mut ledger = StatusLedger::<SampleLostStatus>::default();
+        lost(&mut ledger, 1);
+        let (_, handed, reads) = ledger.observe();
+        lost(&mut ledger, 1);
+        ledger.acknowledge(&handed, reads);
+        assert!(ledger.unread());
+        assert_eq!(ledger.take().total_count_change, 1);
+        assert!(!ledger.unread());
+    }
+
+    /// What a listener was handed is acknowledged; what changed after it
+    /// was taken stays for the next read.
+    #[test]
+    fn an_acknowledgement_keeps_what_came_after_the_report() {
+        let mut ledger = StatusLedger::<PublicationMatchedStatus>::default();
+        ledger.update(|s| {
+            s.total_count = 1;
+            s.total_count_change = 1;
+            s.current_count = 1;
+            s.current_count_change = 1;
+        });
+        let (_, handed, reads) = ledger.observe();
+        ledger.update(|s| {
+            s.current_count = 0;
+            s.current_count_change -= 1;
+        });
+        ledger.acknowledge(&handed, reads);
+        let rest = ledger.take();
+        assert_eq!(
+            (
+                rest.total_count,
+                rest.total_count_change,
+                rest.current_count,
+                rest.current_count_change
+            ),
+            (1, 0, 0, -1)
+        );
+    }
+
+    #[test]
+    fn liveliness_changed_acknowledges_both_changes() {
+        let mut reported = LivelinessChangedStatus {
+            alive_count: 1,
+            not_alive_count: 1,
+            alive_count_change: 1,
+            not_alive_count_change: 1,
+            last_publication_handle: InstanceHandle::from_raw(7),
+        };
+        let mut now = reported;
+        now.alive_count_change = 2;
+        now.acknowledge(&reported);
+        assert_eq!((now.alive_count_change, now.not_alive_count_change), (1, 0));
+        reported.acknowledge(&reported.clone());
+        assert_eq!(reported.alive_count_change, 0);
+    }
+
+    /// DDS 1.4 §2.2.4.1 `RequestedDeadlineMissedStatus`: the
+    /// `total_count_change` is what was missed since the last read; a read
+    /// reports it and sets it back, the total stays.
+    #[test]
+    fn requested_deadline_missed_total_count_change_is_read_and_reset() {
+        let mut ledger = StatusLedger::<RequestedDeadlineMissedStatus>::default();
+        ledger.update(|s| {
+            s.total_count += 2;
+            s.total_count_change += 2;
+            s.last_instance_handle = InstanceHandle::from_raw(5);
+        });
+        assert!(ledger.unread());
+        let first = ledger.take();
+        assert_eq!((first.total_count, first.total_count_change), (2, 2));
+        assert_eq!(first.last_instance_handle.as_raw(), 5);
+        let second = ledger.take();
+        assert_eq!((second.total_count, second.total_count_change), (2, 0));
+        assert!(!ledger.unread());
+        ledger.update(|s| {
+            s.total_count += 1;
+            s.total_count_change += 1;
+        });
+        assert!(ledger.unread());
+        assert_eq!(ledger.take().total_count_change, 1);
+    }
+
+    /// §2.2.4.1 `LivelinessLostStatus.total_count_change`, as above.
+    #[test]
+    fn liveliness_lost_total_count_change_is_read_and_reset() {
+        let mut ledger = StatusLedger::<LivelinessLostStatus>::default();
+        ledger.update(|s| {
+            s.total_count += 1;
+            s.total_count_change += 1;
+        });
+        assert!(ledger.unread());
+        let first = ledger.take();
+        assert_eq!((first.total_count, first.total_count_change), (1, 1));
+        let second = ledger.take();
+        assert_eq!((second.total_count, second.total_count_change), (1, 0));
+        assert!(!ledger.unread());
+        ledger.update(|s| {
+            s.total_count += 3;
+            s.total_count_change += 3;
+        });
+        assert_eq!(ledger.take().total_count_change, 3);
+    }
+
+    /// §2.2.4.1 `OfferedDeadlineMissedStatus.total_count_change`, as above.
+    #[test]
+    fn offered_deadline_missed_total_count_change_is_read_and_reset() {
+        let mut ledger = StatusLedger::<OfferedDeadlineMissedStatus>::default();
+        ledger.update(|s| {
+            s.total_count += 4;
+            s.total_count_change += 4;
+            s.last_instance_handle = InstanceHandle::from_raw(9);
+        });
+        let first = ledger.take();
+        assert_eq!((first.total_count, first.total_count_change), (4, 4));
+        assert_eq!(first.last_instance_handle.as_raw(), 9);
+        let second = ledger.take();
+        assert_eq!((second.total_count, second.total_count_change), (4, 0));
+        assert!(!ledger.unread());
+    }
+
+    /// §2.2.4.1 `SubscriptionMatchedStatus.current_count_change`: a match
+    /// adds one, an unmatch takes one off, and both changes count since the
+    /// last read: a match and its unmatch before a read leave a change of
+    /// zero and a total of one; an unmatch after a read is a change of -1.
+    #[test]
+    fn subscription_matched_current_count_change_is_read_and_reset() {
+        let mut ledger = StatusLedger::<SubscriptionMatchedStatus>::default();
+        let matched = |s: &mut SubscriptionMatchedStatus| {
+            s.total_count += 1;
+            s.total_count_change += 1;
+            s.current_count += 1;
+            s.current_count_change += 1;
+            s.last_publication_handle = InstanceHandle::from_raw(3);
+        };
+        let unmatched = |s: &mut SubscriptionMatchedStatus| {
+            s.current_count -= 1;
+            s.current_count_change -= 1;
+        };
+        ledger.update(matched);
+        let first = ledger.take();
+        assert_eq!(
+            (
+                first.total_count,
+                first.total_count_change,
+                first.current_count,
+                first.current_count_change
+            ),
+            (1, 1, 1, 1)
+        );
+        ledger.update(unmatched);
+        assert!(ledger.unread());
+        let second = ledger.take();
+        assert_eq!(
+            (
+                second.total_count,
+                second.total_count_change,
+                second.current_count,
+                second.current_count_change
+            ),
+            (1, 0, 0, -1)
+        );
+        assert!(!ledger.unread());
+        let third = ledger.take();
+        assert_eq!((third.current_count, third.current_count_change), (0, 0));
+        ledger.update(matched);
+        ledger.update(unmatched);
+        let fourth = ledger.take();
+        assert_eq!(
+            (
+                fourth.total_count,
+                fourth.total_count_change,
+                fourth.current_count,
+                fourth.current_count_change
+            ),
+            (2, 1, 0, 0)
+        );
     }
 }

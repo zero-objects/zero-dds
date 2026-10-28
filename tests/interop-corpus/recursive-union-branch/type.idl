@@ -1,0 +1,16 @@
+// recursion that closes through a union branch
+// XTypes 1.3 §7.2.2.4.3: the sequence in the branch is what makes the
+// cycle finite; the union is what a planner has to descend to find it.
+module m {
+  struct Node;
+
+  @appendable union Branch switch (long) {
+    case 0: long leaf;
+    default: sequence<Node> nodes;
+  };
+
+  @appendable struct Node {
+    long value;
+    Branch link;
+  };
+};

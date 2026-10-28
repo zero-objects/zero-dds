@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of annotation-optional-present that opendds produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	genTypeSupportImpl.cpp:27146:45: error: request for member 'value' in 'value.zd_c31::Sample::b', which is of non-class type 'const CORBA::Long' {aka 'const int'}
+plain-cdr1	be	refused	genTypeSupportImpl.cpp:27146:45: error: request for member 'value' in 'value.zd_c31::Sample::b', which is of non-class type 'const CORBA::Long' {aka 'const int'}
+pl-cdr1	le	refused	genTypeSupportImpl.cpp:27146:45: error: request for member 'value' in 'value.zd_c31::Sample::b', which is of non-class type 'const CORBA::Long' {aka 'const int'}
+pl-cdr1	be	refused	genTypeSupportImpl.cpp:27146:45: error: request for member 'value' in 'value.zd_c31::Sample::b', which is of non-class type 'const CORBA::Long' {aka 'const int'}
+plain-cdr2	le	refused	genTypeSupportImpl.cpp:27146:45: error: request for member 'value' in 'value.zd_c31::Sample::b', which is of non-class type 'const CORBA::Long' {aka 'const int'}
+plain-cdr2	be	refused	genTypeSupportImpl.cpp:27146:45: error: request for member 'value' in 'value.zd_c31::Sample::b', which is of non-class type 'const CORBA::Long' {aka 'const int'}
+delimited-cdr	le	refused	genTypeSupportImpl.cpp:27146:45: error: request for member 'value' in 'value.zd_c31::Sample::b', which is of non-class type 'const CORBA::Long' {aka 'const int'}
+delimited-cdr	be	refused	genTypeSupportImpl.cpp:27146:45: error: request for member 'value' in 'value.zd_c31::Sample::b', which is of non-class type 'const CORBA::Long' {aka 'const int'}
+pl-cdr2	le	refused	genTypeSupportImpl.cpp:27146:45: error: request for member 'value' in 'value.zd_c31::Sample::b', which is of non-class type 'const CORBA::Long' {aka 'const int'}
+pl-cdr2	be	refused	genTypeSupportImpl.cpp:27146:45: error: request for member 'value' in 'value.zd_c31::Sample::b', which is of non-class type 'const CORBA::Long' {aka 'const int'}

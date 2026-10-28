@@ -65,7 +65,7 @@ impl std::error::Error for ParseError {}
 /// `<instance>*` → `<connection>*`. Whitespace is ignored.
 ///
 /// # Errors
-/// Siehe [`ParseError`].
+/// See [`ParseError`].
 pub fn parse_plan_xml(input: &str) -> Result<DeploymentPlan, ParseError> {
     let body = inner_text(input, "deploymentPlan")?;
     let label = inner_text(&body, "label").unwrap_or_default();

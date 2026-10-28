@@ -1,0 +1,8 @@
+// SPDX-License-Identifier: Apache-2.0
+module bridge {
+  @final struct Empty {};
+  @final struct Point { @key long id; unsigned short reading; };
+  @final struct Named { @key string<32> name; long value; };
+  @final struct ShortName { @key string<8> name; long value; };
+  @appendable struct Extended { @key long id; @optional double calibration; };
+};

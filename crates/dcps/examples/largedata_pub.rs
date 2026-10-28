@@ -25,6 +25,8 @@ struct LargeMsg {
 
 impl DdsType for LargeMsg {
     const TYPE_NAME: &'static str = "zerodds::LargeMsg";
+    /// @final with no member that XCDR1 and XCDR2 frame differently: one stream.
+    const XCDR1_MATCHES_XCDR2: bool = true;
 
     fn encode(&self, out: &mut Vec<u8>) -> Result<(), EncodeError> {
         out.extend_from_slice(&(self.data.len() as u32).to_le_bytes());

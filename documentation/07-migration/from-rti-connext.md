@@ -1,168 +1,110 @@
 # Migration from RTI Connext DDS
 
-[RTI Connext DDS Pro][rti] is the commercial reference DDS
-implementation. The most common migration drivers to ZeroDDS:
-licence cost, vendor lock-in, supply-chain audit, or memory-safety
-mandate.
+What changes when an application moves from [RTI Connext][rti] to ZeroDDS,
+and what stays. General points for every vendor are in the
+[station README](README.md).
 
-## TL;DR
+## Summary
 
-| Step | Effort |
+| Area | Effort |
 |---|---|
-| IDL files port — most pragmas accepted, some rewrite needed | low |
-| Wire is byte-identical | none |
-| Replace `dds/dds.hpp` (Modern C++ PSM) — close but not identical | medium |
-| QoS profile XMLs → OMG-DDS-XML 1.0 (subset) | scriptable |
-| RTI Connext extensions (Connext-only QoS, RTI-Distributed-Logger, …) | code rewrite |
-| `rtiddsgen` → `zerodds-idlc` | mechanical |
+| IDL | unchanged; `@RTI_*` annotations are ignored |
+| Modern C++ (`dds::…`, `<dds/dds.hpp>`) | same include from `crates/cpp`; `rti::…` extensions have no counterpart |
+| C (`DDS_*`), legacy C++ (`DDSDomainParticipantFactory`) | rewritten onto `zerodds.h` or `<dds/dds.hpp>` |
+| Java (`com.rti.dds.*`) | rewritten onto `org.omg.dds.*` (`crates/java-omgdds`) |
+| `USER_QOS_PROFILES.xml` | read in Rust; RTI extensions are listed with `--skip-unknown`, RTI's own spellings with `--vendor-forms` |
+| Discovery and transport in `<participant_qos>` | carried over by hand into `zerodds.yaml` |
+| Mixed deployment | UDPv4 on the RTI side, see below |
 
 ## IDL
 
-RTI's IDL grammar is OMG-spec-superset with a handful of
-extensions:
+`keylist`, `//@key`, `@key`, `@nested`, `@topic` and `@default_nested` are
+read. `@RTI_*` and `@allowed_data_representation` are ignored; a data
+representation fixed by annotation is set in ZeroDDS through
+`DataWriterQos.data_representation` or `wire.data_representation_offer`.
 
-- `@RTI_*` annotations — vendor-specific, ignored by `zerodds-idlc`.
-- `valuetype` (CORBA-IDL bridge) — supported by `zerodds-idlc`
-  via the CORBA-coexistence path.
-- Bitfield syntax `: N` — supported.
+Under XCDR1, RTI counts `wstring` and `wchar` in characters, writes a
+terminator and uses 4-octet units (`docs/wire-axis-flags.md`); ZeroDDS writes
+the specification's form and has no setting for RTI's. Avoid those members, or
+use XCDR2, where both sides must encode identically.
 
-Test fixture: `crates/idl/tests/fixtures/rti/`. If your IDL uses
-RTI-specific annotations and you need them honoured, file an
-issue — most are silently dropped today.
+## C++ API
 
-## C++ API — Modern C++ PSM
-
-RTI's "Modern C++ PSM" (`dds/dds.hpp`) is the OMG-spec-defined
-header layout. ZeroDDS' C++ wrapper does **not yet** ship this
-exact PSM — it's on the roadmap, but the current API is
-`zerodds/zerodds.hpp` (RAII over the C-FFI).
+RTI Modern C++ and ZeroDDS both implement DDS-PSM-Cxx 1.0 under
+`#include <dds/dds.hpp>`:
 
 ```cpp
-// RTI Connext Modern C++ PSM:
 dds::domain::DomainParticipant participant(0);
-dds::topic::Topic<HelloWorld> topic(participant, "HelloTopic");
-dds::pub::Publisher pub(participant);
-dds::pub::DataWriter<HelloWorld> writer(pub, topic);
-HelloWorld sample("hello");
-writer.write(sample);
-
-// ZeroDDS today:
-auto rt = zerodds::Runtime::create(0);
-auto w  = rt->create_typed_writer<HelloWorld>("HelloTopic");
-w->write(HelloWorld{"hello"});
+dds::topic::Topic<Robot::Pose> topic(participant, "Telemetry");
+dds::pub::Publisher publisher(participant);
+dds::pub::DataWriter<Robot::Pose> writer(publisher, topic);
+writer.write(pose);
 ```
 
-The modern C++ PSM layer is on track; until shipped, the
-migration costs ~30 lines of API translation per typical
-application.
+Differences: `rti::…` namespaces have no counterpart; there are no separate
+headers `dds/pub/DataWriter.hpp` or `dds/sub/DataReader.hpp`, and no
+`dds::core::QosProvider`. Generate the types with `zerodds-idlc generate
+--lang c++` instead of `rtiddsgen`.
 
-## C API
+## QoS (`USER_QOS_PROFILES.xml`)
 
-RTI's C API is `DDS_*`-prefixed (similar to legacy OpenDDS).
-Mapping to ZeroDDS' `zerodds_*` is mechanical — see the table
-in [from-cyclonedds.md](from-cyclonedds.md) which is largely
-identical.
+The file has the OMG DDS-XML form and is read by
+`zerodds_xml::QosProfileRegistry::from_file` in Rust. `is_default_qos` is not
+evaluated, and RTI extensions (`<transport_builtin>`, `<protocol>`,
+participant-level `<resource_limits>`, `<representation>`) are not modelled:
+the load ends with an error that names the element (for example
+`participant_qos/resource_limits`). Remove the element from the file, or read it with
+`zerodds-admin --skip-unknown qos check <file.xml>` /
+`QosProfileRegistry::from_file_with(path, &ReadOptions::report_and_skip())`:
+each element left out is listed with its path (`qos_profile[P]/datawriter_qos/publish_mode`).
+Carry those policies over by hand.
+The container `<participant_qos>` is RTI's spelling; DDS-XML 1.0 names it
+`domain_participant_qos`, and the default reading refuses it with that
+name. `zerodds-admin --vendor-forms …` /
+`ReadOptions::accept_vendor_forms()` reads it and reports it with its path
+(other vendor forms as well: `<topic_filter>` as an element, `qos_profile_ref`,
+IDL type names such as `long`).
+Enumeration values are the IDL literals of the DCPS IDL
+(`RELIABLE_RELIABILITY_QOS`, `KEEP_LAST_HISTORY_QOS`); the short forms
+(`RELIABLE`, `KEEP_LAST`) are refused. `NDDS_QOS_PROFILES` is not read.
 
-## QoS XML
+## Configuration
 
-RTI ships extensive QoS XML support (`USER_QOS_PROFILES.xml`).
-The schema is OMG-DDS-1.0 (the older version) plus RTI
-extensions.
-
-ZeroDDS will accept OMG-DDS-XML 1.0 schema files
-(`crates/zerodds-xml-wire/`) — converter from RTI XML is planned via
-`scripts/rti_xml_to_dds_xml.py` (TODO). Manual translation tips:
-
-| RTI element | OMG/ZeroDDS equivalent |
+| RTI | `zerodds.yaml` |
 |---|---|
-| `<qos_profile name="X" base_name="Y">` | OMG `<qos_profile name="X">` (no base_name; flatten manually) |
-| `<datawriter_qos>` | `<datawriter_qos>` |
-| `<reliability><kind>RELIABLE…</kind></reliability>` | same |
-| `<protocol><rtps_reliable_writer><heartbeat_period>` | `ReliableWriterConfig.heartbeat_period` (in code) |
-| `<resource_limits><max_samples>` | `ResourceLimitsQosPolicy.max_samples` |
-| `<zerodds_security>...` | governance.xml + permissions.xml in OMG-format (different schema!) |
+| `<discovery><initial_peers>`, `NDDS_DISCOVERY_PEERS` | `discovery.peers` |
+| `<transport_builtin><mask>` | `transport.user_transport` / `transport.user_transports` |
+| `<discovery><multicast_receive_addresses>` | `discovery.spdp_multicast_group` |
+| `<participant_liveliness_lease_duration>` | `discovery.participant_lease_duration_ms` |
+| Security plugins via `<property>` | `security.enclave_dir`, or the security API |
 
-## Vendor-specific QoS extensions
+## Mixed deployment
 
-RTI Connext Pro has many policies not in OMG-DDS-1.4:
-
-| RTI policy | ZeroDDS strategy |
-|---|---|
-| `transport_priority` (DSCP-marking) | manual via `setsockopt` on the user_unicast socket; planned `RuntimeConfig.transport_priority` |
-| `multi_channel` | not implemented; achieve same via per-topic-domain split |
-| `availability` | not implemented; use `Durability.TransientLocal` for the same effect |
-| `database` (in-memory persistence) | not implemented |
-| `discovery_config.builtin_discovery_plugins` | only SPDP+SEDP today; static-peer-list planned |
-| `topic_query` | not in OMG spec; not implemented |
-
-If your code depends on these extensions, the migration is
-non-trivial — file an issue with your specific extension list.
-
-## Security
-
-RTI's Security plugins (Pro edition, separate licence) implement
-DDS-Security 1.1. ZeroDDS implements full DDS-Security 1.2 with
-no extra licence.
-
-Cert reuse:
-
-- Identity CA + Permissions CA → reuse unchanged.
-- Identity certs → reuse unchanged.
-- Governance + Permissions XML → reuse the OMG-spec format
-  unchanged. RTI uses the same OMG schema since 5.3.x.
-
-The only delta is plugin loading:
-
-```xml
-<!-- RTI: -->
-<participant_qos>
-    <property>
-        <value>
-            <element>
-                <name>com.rti.serv.load_plugin</name>
-                <value>com.rti.serv.secure</value>
-            </element>
-        </value>
-    </property>
-</participant_qos>
-
-<!-- ZeroDDS: enable feature in Cargo + inject SharedSecurityGate in code. -->
-```
-
-## Routing & Cloud
-
-RTI Connext Cloud Discovery Service / Routing Service have no
-direct ZeroDDS equivalent in 0.0.0. Workarounds:
-
-- Cloud-Discovery-Service equivalent: planned static-peer-list
-  config + future `zerodds-discovery-server` tool.
-- Routing-Service equivalent: write a small bridge using two
-  DcpsRuntime instances on different domains, plus
-  topic-name remapping in user code.
+- On one host RTI prefers shared memory; a participant of another stack then
+  sees it, matches and receives no sample. Set `transport_builtin` to `UDPv4`
+  on the RTI side.
+- An RTI reader accepts XCDR1 by default, which is what a ZeroDDS writer
+  writes. A ZeroDDS writer set to `[XCDR2]` needs `XCDR2_DATA_REPRESENTATION`
+  on the RTI reader.
+- GROUP-scope coherent sets from ZeroDDS to Connext 7.7.0 do not pass the OMG
+  suite's `Test_CoherentSets_12` (`_21` passes).
+- RTI needs `NDDSHOME` to start a participant.
 
 ## Tooling
 
-| RTI tool | ZeroDDS equivalent |
+| RTI | ZeroDDS |
 |---|---|
 | `rtiddsgen` | `zerodds-idlc` |
-| `rtiddsspy` | `zerodds-admin --listen` |
-| `rtiddsperf` | `zerodds-perf` + `roundtrip-1us` |
-| RTI Admin Console | `tools/dashboard` (Tauri, in progress) |
-| RTI System Designer | not yet; use RTI System Designer to design, export OMG-DDS-XML, then load into ZeroDDS |
-
-## Licensing
-
-| Aspect | RTI | ZeroDDS |
-|---|---|---|
-| Per-seat dev | yes (Connext Pro) | none — Apache 2.0 |
-| Per-deployment runtime | yes | none |
-| Source available | partial | full |
-| Audit-ready supply-chain | depends | full Cargo dep tree, all Apache 2.0 |
+| `rtiddsspy` | `zerodds-spy` |
+| `rtiddsperf` | `zerodds-perf` |
+| Routing Service, Persistence Service | `zerodds-router`, `zerodds-durability-svc` (own configuration formats) |
+| Security credential tooling | `zerodds-secure-permissions` |
 
 ## Reading further
 
-- [RTI Connext DDS docs][rti]
-- [`crates/idl/tests/fixtures/rti/`](../../crates/idl/tests/fixtures/rti/)
-  — IDL-parser regression corpus.
+- [`crates/idl-parse/tests/fixtures/rti/`](../../crates/idl-parse/tests/fixtures/rti/)
+  — RTI IDL the parser is tested with.
+- [`docs/wire-axis-flags.md`](../../docs/wire-axis-flags.md) — where RTI's
+  wire form differs from the specification.
 
 [rti]: https://www.rti.com/products/connext-dds-professional

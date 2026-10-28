@@ -3,7 +3,7 @@
 //! **Opt-in only** — marked `#[ignore]`. Invocation:
 //!
 //! ```bash
-//! cargo test -p zerodds-discovery --features live-interop \
+//! cargo test -p zerodds-discovery \
 //!     --test fastdds_live_spdp -- --ignored --nocapture
 //! ```
 //!
@@ -27,8 +27,8 @@
 //!
 //! - FastDDS 2.9+ with the `fastdds` CLI on the bench host
 //! - `sshpass` locally
-//! - virtualization-host multicast setup active
-//!   (`reference_pve_multicast_setup`)
+//! - multicast between this host and the bench host (an IGMP querier on
+//!   the bridge between them)
 //!
 //! # Known edge case
 //!
@@ -106,6 +106,7 @@ fn build_local_participant(local_ip: Ipv4Addr, unicast_port: u16) -> Participant
             u32::from(SPDP_MULTICAST_PORT),
         )],
         domain_id: Some(FASTDDS_DOMAIN),
+        domain_tag: Default::default(),
         builtin_endpoint_set: flags,
         lease_duration: DdsDuration::from_secs(30),
         user_data: Vec::new(),
@@ -117,11 +118,16 @@ fn build_local_participant(local_ip: Ipv4Addr, unicast_port: u16) -> Participant
         sig_algo_info: None,
         kx_algo_info: None,
         sym_cipher_algo_info: None,
+        available_builtin_endpoints_ext: 0,
+        expects_inline_qos: false,
+        manual_liveliness_count: None,
+        builtin_endpoint_qos: None,
+        entity_name: None,
     }
 }
 
 #[test]
-#[ignore = "live FastDDS interop — opt-in via --ignored + --features live-interop"]
+#[ignore = "live FastDDS interop — opt-in via --ignored; tools/interop-gate runs it"]
 fn fastdds_discovery_server_spdp_handshake() {
     if !live_host_available() {
         eprintln!("LLVM_HOST_AVAILABLE not set + sshpass missing — skipping");
@@ -220,7 +226,7 @@ fn fastdds_discovery_server_spdp_handshake() {
 }
 
 #[test]
-#[ignore = "live FastDDS interop — opt-in via --ignored + --features live-interop"]
+#[ignore = "live FastDDS interop — opt-in via --ignored; tools/interop-gate runs it"]
 fn fastdds_default_discovery_via_shape_pub_visible() {
     // Complementary path: standard SPDP via a regular participant
     // (without discovery-server mode). `fastdds shape publisher` starts

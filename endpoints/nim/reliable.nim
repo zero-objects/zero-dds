@@ -11,7 +11,13 @@
 #   [4]=submessage id [5]=flags [6..8]=body-len LE [8..]=body
 #   WRITE_DATA id=0x07 flags=0x03 body=sample; header seq = RFC-1982 sample seq
 #   HEARTBEAT  id=0x0B flags=0x01 body(5)= first i16 LE, last i16 LE, stream
-#   ACKNACK    id=0x0A flags=0x01 body(5)= first_unacked i16 LE, nack[0], nack[1], stream
+#   ACKNACK    id=0x0A flags=0x01 body(9)= DHEADER u32 LE (=5), first_unacked i16 LE,
+#              nack[0], nack[1], stream. ACKNACK_Payload has no @extensibility, so it is
+#              APPENDABLE (DDS-XTypes 1.3 7.3.1.2.1.8) and carries a DHEADER in XCDR2
+#              (`UnannotatedTypes.Appendable`, the default). With
+#              `UnannotatedTypes.Final` the body is the 5-octet FINAL form of the
+#              reference implementation (no DHEADER, length field 5).
+#              The parser accepts both forms.
 
 import std/[tables, options]
 
@@ -26,10 +32,21 @@ const
   SmWriteData = 0x07'u8
   SmAckNack = 0x0A'u8
   SmHeartbeat = 0x0B'u8
-  FlagWrite = 0x03'u8
+  ## E flag (little-endian body) + DataFormat FORMAT_DATA (0b000) in bits 1..3
+  ## -- DDS-XRCE 1.0 8.3.5.8.
+  FlagWrite = 0x01'u8
+  ## Wire size of the BaseObjectRequest that precedes the sample (7.7.8).
+  BaseSize* = 4
   FlagELe = 0x01'u8
 
 type
+  UnannotatedTypes* {.pure.} = enum
+    ## Encoding of the DDS-XRCE 1.0 Annex A types without `@extensibility`
+    ## (APPENDABLE by DDS-XTypes 1.3 7.3.1.2.1.8). `Appendable` (default): a
+    ## DHEADER in front of the members. `Final`: the form of the reference
+    ## implementation (eProsima), no DHEADER. This SDK writes one such type:
+    ## ACKNACK_Payload.
+    Appendable, Final
   HeartbeatBody* = object
     first*, last*: uint16
     streamId*: uint8
@@ -52,13 +69,18 @@ proc seqGt*(a, b: uint16): bool =
 
 # --- frame codec ---
 
-proc reliableWriteFrame*(seqNo: uint16, sample: seq[byte]): seq[byte] =
-  ## Reliable WRITE_DATA — identical bytes to `writeFrame(0x80, 0x80, seq, sample)`.
-  let n = sample.len
+proc reliableWriteFrame*(seqNo: uint16, objectId: uint16, sample: seq[byte]): seq[byte] =
+  ## Reliable WRITE_DATA — identical bytes to
+  ## `writeFrame(0x80, 0x80, seq, objectId, sample)`: the submessage body is the
+  ## BaseObjectRequest (7.7.8: request_id = the sample's own seq, object_id =
+  ## the target DataWriter) followed by the sample.
+  let n = BaseSize + sample.len
   result = @[SessionNoKey, ReliableStreamId,
              byte(seqNo and 0xff'u16), byte((seqNo shr 8) and 0xff'u16),
              SmWriteData, FlagWrite,
-             byte(n and 0xff), byte((n shr 8) and 0xff)]
+             byte(n and 0xff), byte((n shr 8) and 0xff),
+             byte((seqNo shr 8) and 0xff'u16), byte(seqNo and 0xff'u16),
+             byte((objectId shr 8) and 0xff'u16), byte(objectId and 0xff'u16)]
   for x in sample:
     result.add(x)
 
@@ -70,12 +92,22 @@ proc heartbeatFrame*(session, streamHdr: uint8, msgSeq: int, hb: HeartbeatBody):
     byte(hb.last and 0xff'u16), byte((hb.last shr 8) and 0xff'u16),
     hb.streamId]
 
-proc acknackFrame*(session, streamHdr: uint8, msgSeq: int, ack: AckNackBody): seq[byte] =
+proc acknackFrame*(session, streamHdr: uint8, msgSeq: int, ack: AckNackBody,
+                   mode: UnannotatedTypes = UnannotatedTypes.Appendable): seq[byte] =
+  ## `Appendable` (default): 17-octet frame, length field 9, DHEADER = 5;
   ## byte-identical to `golden_acknack_le.bin` for (0x80, 0x00, 1, {1,0,0,0x80}).
-  @[session, streamHdr, byte(msgSeq and 0xff), byte((msgSeq shr 8) and 0xff),
-    SmAckNack, FlagELe, 5'u8, 0'u8,
-    byte(ack.firstUnacked and 0xff'u16), byte((ack.firstUnacked shr 8) and 0xff'u16),
-    ack.nackLo, ack.nackHi, ack.streamId]
+  ## `Final`: 13-octet frame, length field 5, no DHEADER (reference implementation).
+  let payload = @[byte(ack.firstUnacked and 0xff'u16), byte((ack.firstUnacked shr 8) and 0xff'u16),
+                  ack.nackLo, ack.nackHi, ack.streamId]
+  case mode
+  of UnannotatedTypes.Appendable:
+    result = @[session, streamHdr, byte(msgSeq and 0xff), byte((msgSeq shr 8) and 0xff),
+               SmAckNack, FlagELe, 9'u8, 0'u8,
+               5'u8, 0'u8, 0'u8, 0'u8]
+  of UnannotatedTypes.Final:
+    result = @[session, streamHdr, byte(msgSeq and 0xff), byte((msgSeq shr 8) and 0xff),
+               SmAckNack, FlagELe, 5'u8, 0'u8]
+  result.add(payload)
 
 proc parseHeartbeat*(frame: seq[byte]): Option[HeartbeatBody] =
   if frame.len < 13 or frame[4] != SmHeartbeat:
@@ -86,11 +118,20 @@ proc parseHeartbeat*(frame: seq[byte]): Option[HeartbeatBody] =
     streamId: frame[12]))
 
 proc parseAcknack*(frame: seq[byte]): Option[AckNackBody] =
+  ## Accepts body length 9 (4-octet DHEADER, then the 5-octet payload) and the
+  ## legacy FINAL form with body length 5.
   if frame.len < 13 or frame[4] != SmAckNack:
     return none(AckNackBody)
+  var o = 8
+  if frame[6] == 9'u8 and frame[7] == 0'u8:
+    if frame.len < 17:
+      return none(AckNackBody)
+    o = 12
+  elif not (frame[6] == 5'u8 and frame[7] == 0'u8):
+    return none(AckNackBody)
   some(AckNackBody(
-    firstUnacked: uint16(frame[8]) or (uint16(frame[9]) shl 8),
-    nackLo: frame[10], nackHi: frame[11], streamId: frame[12]))
+    firstUnacked: uint16(frame[o]) or (uint16(frame[o + 1]) shl 8),
+    nackLo: frame[o + 2], nackHi: frame[o + 3], streamId: frame[o + 4]))
 
 # --- sender ---
 
@@ -170,9 +211,15 @@ proc recvAcknack*(s: var Sender, a: AckNackBody) =
 type Receiver* = object
   expected: uint16
   received: Table[uint16, seq[byte]]
+  unannotated: UnannotatedTypes
 
-proc newReceiver*(): Receiver =
-  Receiver(expected: 0'u16, received: initTable[uint16, seq[byte]]())
+proc newReceiver*(unannotatedTypes: UnannotatedTypes = UnannotatedTypes.Appendable): Receiver =
+  ## `unannotatedTypes` selects the encoding of the ACKNACK_Payload this
+  ## receiver puts on the wire (see `UnannotatedTypes`).
+  Receiver(expected: 0'u16, received: initTable[uint16, seq[byte]](),
+           unannotated: unannotatedTypes)
+
+proc unannotatedTypes*(r: Receiver): UnannotatedTypes = r.unannotated
 
 proc expected*(r: Receiver): uint16 = r.expected
 proc outOfOrderCount*(r: Receiver): int = r.received.len
@@ -212,6 +259,12 @@ proc pendingAcknack*(r: Receiver, hintLastSeen: Option[uint16]): AckNackBody =
               nackLo: byte(bitmap and 0xff'u16),
               nackHi: byte((bitmap shr 8) and 0xff'u16),
               streamId: ReliableStreamId)
+
+proc acknackFrame*(r: Receiver, session, streamHdr: uint8, msgSeq: int,
+                   hintLastSeen: Option[uint16]): seq[byte] =
+  ## ACKNACK frame for the current window, encoded per the receiver's
+  ## `unannotatedTypes`.
+  acknackFrame(session, streamHdr, msgSeq, r.pendingAcknack(hintLastSeen), r.unannotated)
 
 proc reset*(s: var Sender) =
   s.nextSeq = 0'u16

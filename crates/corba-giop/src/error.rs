@@ -5,7 +5,7 @@
 
 use alloc::string::String;
 
-use zerodds_cdr::{DecodeError, EncodeError};
+use zerodds_wire::WireError;
 
 /// Result alias.
 pub type GiopResult<T> = Result<T, GiopError>;
@@ -47,22 +47,20 @@ pub enum GiopError {
         /// Header limit.
         message_size_field: u32,
     },
-    /// CDR decode error.
-    Decode(DecodeError),
-    /// CDR encode error.
-    Encode(EncodeError),
+    /// The CDR layer refused.
+    ///
+    /// One variant where there used to be two, `Decode` and `Encode`.
+    /// `zerodds-wire` has a single [`WireError`] because the two halves
+    /// answer the same questions — a length that cannot be true and a
+    /// value a type cannot hold are the same refusal read either way —
+    /// and a caller that had to match on both wrote the arm twice.
+    Wire(WireError),
     /// General wire-format error with a diagnostic string.
     Malformed(String),
 }
 
-impl From<DecodeError> for GiopError {
-    fn from(e: DecodeError) -> Self {
-        Self::Decode(e)
-    }
-}
-
-impl From<EncodeError> for GiopError {
-    fn from(e: EncodeError) -> Self {
-        Self::Encode(e)
+impl From<WireError> for GiopError {
+    fn from(e: WireError) -> Self {
+        Self::Wire(e)
     }
 }

@@ -1,0 +1,231 @@
+#!/bin/bash
+# wireprobe-pairwise — every ordered pair, over the whole corpus.
+#
+# A writes the bytes, B reads them, and B's values are compared against
+# the case's own sample. Not against A's reading of A's bytes: two
+# implementations wrong in the same way agree with each other and
+# disagree with the sample, and only the second comparison shows it.
+# `docs/specs/zerodds-interop-suite-1.0.md` §4, phase P2.
+#
+#   wireprobe-pairwise --out report.tsv
+#   wireprobe-pairwise --impls zerodds,cyclone --encodings xcdr2 \
+#                      --endians le --cases point,primitive-mixed
+#
+#   --corpus <dir>        default tests/interop-corpus
+#   --impls <list>        default zerodds,cyclone,rti,fastdds. `ros`
+#                         names a ROS 2 type support, which is not a
+#                         DDS vendor and is off by default because a
+#                         host without ROS installed has no column
+#   --encodings <list>    default xcdr2,xcdr1
+#   --endians <list>      default le,be
+#   --cases <list>        default every case in the corpus
+#   --policies <list>     the writer settings to try in turn, comma
+#                         separated. `cyclone`, `rti`, `fastdds` and
+#                         `specification` each name one peer's answers to
+#                         every wire question; the rest name one answer.
+#                         Default `cyclone`, which is the probe's own.
+#                         `none` passes no `--dialect` at all, which is
+#                         the only policy a run mixing implementations
+#                         can use: every foreign probe refuses a dialect
+#                         that is not its own, so naming one makes every
+#                         other column report `unread` for every case.
+#   --jobs <n>            cases in parallel, default the core count
+#   --out <file>          the report, as TSV; default stdout
+#
+# The `detail` column is cut to 200 and then run through `iconv -c`.
+# GNU `cut -c` counts bytes, so the cut lands inside a multi-byte character
+# whenever one crosses the boundary and leaves its first byte behind — one
+# `\xe2` at the end of `terminates a value —` made every one of the four
+# reports undecodable, and the run that read them stopped there. `iconv -c`
+# drops the incomplete sequence and keeps the rest.
+#
+# One row per (case, encoding, endian, policy, writer, reader):
+#
+#   case  encoding  endian  policy  writer  reader  verdict  detail
+#
+# The verdicts are kept apart on purpose. `different` is a value that
+# came back changed and is the finding; `unread` is a payload the reader
+# refused, which is a second and lesser one; `unwritten` is a case the
+# writer could not produce at all and says nothing about the reader.
+set -uo pipefail
+
+TOOLS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$TOOLS/../.." && pwd)"
+TARGET="${WIREPROBE_TARGET:-${CARGO_TARGET_DIR:-$ROOT/target}/debug}"
+COMPARE="${WIREPROBE_COMPARE:-$TARGET/wireprobe-compare}"
+ZERODDS="${WIREPROBE_ZERODDS:-$TARGET/wireprobe-zerodds}"
+export WIREPROBE_FILL="${WIREPROBE_FILL:-$TARGET/wireprobe-fill}"
+export WIREPROBE_DUMP="${WIREPROBE_DUMP:-$TARGET/wireprobe-dump}"
+export WIREPROBE_CACHE="${WIREPROBE_CACHE:-${TMPDIR:-/tmp}/wireprobe-cache}"
+
+corpus="$ROOT/tests/interop-corpus"
+impls="zerodds,cyclone,rti,fastdds"
+encodings="xcdr2,xcdr1"
+endians="le,be"
+cases=""
+policies="cyclone"
+jobs="$(nproc 2>/dev/null || echo 4)"
+out=""
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --corpus) corpus="$2"; shift 2 ;;
+        --impls) impls="$2"; shift 2 ;;
+        --encodings) encodings="$2"; shift 2 ;;
+        --endians) endians="$2"; shift 2 ;;
+        --cases) cases="$2"; shift 2 ;;
+        --policies) policies="$2"; shift 2 ;;
+        --jobs) jobs="$2"; shift 2 ;;
+        --out) out="$2"; shift 2 ;;
+        --help|-h) sed -n '2,34p' "${BASH_SOURCE[0]}"; exit 0 ;;
+        *) echo "wireprobe-pairwise: \`$1\` is not an option" >&2; exit 2 ;;
+    esac
+done
+
+# The program that speaks for one implementation. Every one takes the
+# same command line, which is the whole reason the matrix is writable.
+probe_for() {
+    case "$1" in
+        zerodds) printf '%s' "$ZERODDS" ;;
+        cyclone|rti|fastdds|ros) printf '%s/wireprobe-%s' "$TOOLS" "$1" ;;
+        *) echo "wireprobe-pairwise: \`$1\` is not an implementation" >&2; exit 2 ;;
+    esac
+}
+
+# The writer flags a named policy stands for. Only the ZeroDDS probe can
+# be told; each vendor has one shape and ignores the flags, which is what
+# makes a policy row meaningful — it says which of this project's
+# settings reproduces that peer.
+#
+# The four dialect names are the ones that answer the question a user
+# actually has: which setting do I need in order to talk to this peer.
+# The single-policy names below them isolate one wire question at a time,
+# which is what a divergence is diagnosed with.
+policy_flags() {
+    case "$1" in
+        # No flag: each probe answers with its own defaults, which is
+        # what a run comparing implementations against each other wants.
+        none) printf '' ;;
+        cyclone|rti|fastdds|specification) printf -- '--dialect %s' "$1" ;;
+        enum-is-primitive) printf -- '--collection-delimiters enum-is-primitive' ;;
+        no-collection-delimiters) printf -- '--collection-delimiters never' ;;
+        universal-nextint) printf -- '--length-codes universal-nextint' ;;
+        rule-15-omits) printf -- '--map-length rule-15-omits' ;;
+        *) echo "wireprobe-pairwise: \`$1\` is not a policy" >&2; exit 2 ;;
+    esac
+}
+
+if [ -z "$cases" ]; then
+    cases="$(cd "$corpus" && for d in */; do [ -f "$d/type" ] && basename "$d"; done | sort | paste -sd, -)"
+fi
+
+# A missing executable, killed worker or supervisor failure is not a vendor
+# refusal. Keep its original diagnostic and stop the enclosing measurement.
+measurement_failure() {
+    local status="$1" diagnostic="$2" what="$3"
+    if [ "$status" -ge 125 ] || grep -q 'infrastructure failure' "$diagnostic"; then
+        cat "$diagnostic" >&2
+        echo "wireprobe-pairwise: infrastructure failure (exit $status) in $what" >&2
+        return 125
+    fi
+}
+
+one_case() {
+    local case_name="$1"
+    local dir="$corpus/$case_name"
+    local type_name; type_name="$(cat "$dir/type")" || return 125
+    local work; work="$(mktemp -d)"
+    trap 'rm -rf "$work"' RETURN
+
+    # The sample in canonical form, once. Every reader is compared
+    # against this and never against another reader.
+    local status
+    "$ZERODDS" --idl "$dir/type.idl" --type "$type_name" \
+            --values "$dir/values.json" --values-out "$work/expected.json" \
+            > /dev/null 2>"$work/err"
+    status=$?
+    if [ "$status" -ne 0 ]; then
+        measurement_failure "$status" "$work/err" "$case_name, canonical sample" || return 125
+        printf '%s\t-\t-\t-\t-\t-\tuncanonical\t%s\n' \
+            "$case_name" "$(tr '\t\n' ' ' < "$work/err" | cut -c1-200 | iconv -f utf-8 -t utf-8 -c)"
+        return
+    fi
+
+    local encoding endian policy writer reader
+    for encoding in ${encodings//,/ }; do
+      for endian in ${endians//,/ }; do
+        for policy in ${policies//,/ }; do
+          local flags; flags="$(policy_flags "$policy")"
+
+          # Every writer once. A payload is produced for each and then
+          # handed to every reader, so a vendor's code generator runs
+          # once per writer rather than once per pair.
+          for writer in ${impls//,/ }; do
+            local bytes="$work/$writer.bin"
+            # shellcheck disable=SC2086
+            "$(probe_for "$writer")" --idl "$dir/type.idl" --type "$type_name" \
+                    --values "$dir/values.json" --encoding "$encoding" --endian "$endian" \
+                    $flags --out "$bytes" > /dev/null 2>"$work/err"
+            status=$?
+            if [ "$status" -ne 0 ]; then
+                measurement_failure "$status" "$work/err" \
+                    "$case_name $encoding $endian $policy, $writer writing" || return 125
+                for reader in ${impls//,/ }; do
+                    printf '%s\t%s\t%s\t%s\t%s\t%s\tunwritten\t%s\n' \
+                        "$case_name" "$encoding" "$endian" "$policy" "$writer" "$reader" \
+                        "$(tr '\t\n' ' ' < "$work/err" | cut -c1-200 | iconv -f utf-8 -t utf-8 -c)"
+                done
+                rm -f "$bytes"
+            fi
+          done
+
+          for writer in ${impls//,/ }; do
+            local bytes="$work/$writer.bin"
+            [ -f "$bytes" ] || continue
+            for reader in ${impls//,/ }; do
+              local got="$work/$writer-$reader.json"
+              # shellcheck disable=SC2086
+              "$(probe_for "$reader")" --idl "$dir/type.idl" --type "$type_name" \
+                      --in "$bytes" --encoding "$encoding" --endian "$endian" \
+                      $flags --values-out "$got" > /dev/null 2>"$work/err"
+              status=$?
+              if [ "$status" -ne 0 ]; then
+                  measurement_failure "$status" "$work/err" \
+                      "$case_name $encoding $endian $policy, $reader reading $writer" || return 125
+                  printf '%s\t%s\t%s\t%s\t%s\t%s\tunread\t%s\n' \
+                      "$case_name" "$encoding" "$endian" "$policy" "$writer" "$reader" \
+                      "$(tr '\t\n' ' ' < "$work/err" | cut -c1-200 | iconv -f utf-8 -t utf-8 -c)"
+                  continue
+              fi
+              local verdict detail
+              detail="$("$COMPARE" --idl "$dir/type.idl" --type "$type_name" \
+                  --expected "$work/expected.json" --found "$got" --quiet 2>&1)"
+              status=$?
+              printf '%s\n' "$detail" > "$work/err"
+              measurement_failure "$status" "$work/err" \
+                  "$case_name $encoding $endian $policy, comparing $reader reading $writer" || return 125
+              case "$status" in
+                  0) verdict=same; detail="" ;;
+                  1) verdict=different ;;
+                  *) verdict=uncomparable ;;
+              esac
+              printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+                  "$case_name" "$encoding" "$endian" "$policy" "$writer" "$reader" \
+                  "$verdict" "$(printf '%s' "$detail" | tr '\t\n' ' ' | cut -c1-200 | iconv -f utf-8 -t utf-8 -c)"
+            done
+          done
+        done
+      done
+    done
+}
+
+export -f one_case probe_for policy_flags measurement_failure
+export corpus encodings endians policies impls ZERODDS COMPARE TOOLS
+
+emit() {
+    printf 'case\tencoding\tendian\tpolicy\twriter\treader\tverdict\tdetail\n'
+    printf '%s\n' "${cases//,/$'\n'}" \
+        | xargs -P "$jobs" -I{} bash -c 'one_case "$@"' _ {}
+}
+
+if [ -n "$out" ]; then emit > "$out"; else emit; fi

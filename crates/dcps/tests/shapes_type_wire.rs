@@ -5,6 +5,35 @@
 //! put on the wire. The expected byte sequences are derived by hand
 //! from OMG XCDR2 §7.4 and match the values seen in pcap captures of
 //! ShapesDemo traffic.
+//!
+//! # The bytes below are hand-derived, and so is the type
+//!
+//! Every literal in this file was worked out on paper from the spec
+//! clause, and the type it checks — `crates/dcps/src/interop.rs` — was
+//! written by hand as well. That makes this file a check of one hand
+//! against another: it cannot fail because of a defect in this
+//! project's IDL front end, because no part of that front end is in the
+//! path.
+//!
+//! The independent counter-check is
+//! `crates/dcps/tests/shapes_type_idl_agreement.rs`. It encodes the
+//! same values through `interop/shapes/omg-dds-rtps.idl` — parsed,
+//! lowered and planned by the front end, then walked by the reflective
+//! `zerodds-wire-codec` serialiser — and compares the octets in all
+//! four modes the interop matrix carries (`xcdr1-le`, `xcdr1-be`,
+//! `xcdr2-le`, `xcdr2-be`). That file also repeats the `"RED"`
+//! reference literal below, so the two cannot drift apart while both
+//! stay green.
+//!
+//! It has already earned its keep: the `xcdr2-be` column disagreed.
+//! `ShapeType` had no `encode_be`/`decode_be` override, so the trait
+//! default shipped little-endian octets behind a `D_CDR2_BE`
+//! encapsulation identifier. Nothing here could have seen it — this
+//! file only ever asks for little-endian.
+//!
+//! There are also two `ShapeType`s under one name, and this file checks
+//! one of them (the OMG five-member `@appendable` form).
+//! `interop/shapes/README.md` says which peer speaks which.
 
 #![allow(
     clippy::expect_used,
@@ -24,21 +53,26 @@
 use zerodds_dcps::DdsType;
 use zerodds_dcps::interop::ShapeType;
 
-/// Reference sample for the "RED" ShapeType. Calculated by hand:
+/// Reference sample for the "RED" ShapeType (OMG `@appendable` shape.idl).
+/// Calculated by hand:
 ///
 /// ```text
-/// offset  0..3   : color.length = 4 (incl. null-terminator)  -> 04 00 00 00
-/// offset  4..7   : "RED\0"                                    -> 52 45 44 00
-/// offset  8..11  : x = 42                                     -> 2a 00 00 00
-/// offset 12..15  : y = 77                                     -> 4d 00 00 00
-/// offset 16..19  : shapesize = 30                             -> 1e 00 00 00
+/// offset  0..3   : DHEADER = 24 (byte length of the members)  -> 18 00 00 00
+/// offset  4..7   : color.length = 4 (incl. null-terminator)   -> 04 00 00 00
+/// offset  8..11  : "RED\0"                                     -> 52 45 44 00
+/// offset 12..15  : x = 42                                      -> 2a 00 00 00
+/// offset 16..19  : y = 77                                      -> 4d 00 00 00
+/// offset 20..23  : shapesize = 30                              -> 1e 00 00 00
+/// offset 24..27  : additional_payload_size.length = 0          -> 00 00 00 00
 /// ```
 const EXPECTED_RED_42_77_30: &[u8] = &[
+    0x18, 0x00, 0x00, 0x00, // DHEADER = 24
     0x04, 0x00, 0x00, 0x00, // color.length
     0x52, 0x45, 0x44, 0x00, // "RED\0"
     0x2a, 0x00, 0x00, 0x00, // x = 42
     0x4d, 0x00, 0x00, 0x00, // y = 77
     0x1e, 0x00, 0x00, 0x00, // shapesize = 30
+    0x00, 0x00, 0x00, 0x00, // additional_payload_size.length = 0
 ];
 
 #[test]
@@ -94,12 +128,14 @@ fn shape_type_padding_after_short_color_aligns_x_to_4_bytes() {
     let mut buf = Vec::new();
     sample.encode(&mut buf).expect("encode");
     let expected: &[u8] = &[
+        0x18, 0x00, 0x00, 0x00, // DHEADER = 24
         0x03, 0x00, 0x00, 0x00, // color.length = 3
         0x41, 0x42, 0x00, // "AB\0"
         0x00, // padding to 4-byte alignment
         0x01, 0x00, 0x00, 0x00, // x = 1
         0x02, 0x00, 0x00, 0x00, // y = 2
         0x03, 0x00, 0x00, 0x00, // shapesize = 3
+        0x00, 0x00, 0x00, 0x00, // additional_payload_size.length = 0
     ];
     assert_eq!(
         buf.as_slice(),
@@ -119,8 +155,8 @@ fn shape_type_type_name_matches_interop_convention() {
 
 #[test]
 fn shape_type_decode_truncated_fails_cleanly() {
-    // 10 bytes is too few for a complete ShapeType — the decoder must
-    // return an error, not panic.
+    // A DHEADER of 4 bounds the body to 4 bytes, too few for even the color
+    // string — the decoder must return an error, not panic.
     let result = ShapeType::decode(&[0x04, 0x00, 0x00, 0x00, 0x52, 0x45, 0x44, 0x00, 0x00, 0x00]);
     assert!(result.is_err(), "Truncated decode must fail");
 }

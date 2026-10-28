@@ -25,7 +25,7 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use zerodds_cdr::{BufferReader, BufferWriter};
+use zerodds_wire::{Reader, Writer};
 
 use crate::profile_body::CdrError;
 
@@ -50,16 +50,16 @@ pub struct BiDirIiopServiceContext {
 }
 
 impl BiDirIiopServiceContext {
-    /// CDR-encodes into a `BufferWriter`.
+    /// CDR-encodes into a `Writer`.
     ///
     /// # Errors
     /// Buffer write error or length overflow.
-    pub fn encode(&self, w: &mut BufferWriter) -> Result<(), CdrError> {
+    pub fn encode(&self, w: &mut Writer) -> Result<(), CdrError> {
         let n = u32::try_from(self.listen_points.len()).map_err(|_| CdrError::Overflow)?;
-        w.write_u32(n)?;
+        w.write_u32(n);
         for lp in &self.listen_points {
-            w.write_string(&lp.host)?;
-            w.write_u16(lp.port)?;
+            w.write_string(&lp.host);
+            w.write_u16(lp.port);
         }
         Ok(())
     }
@@ -68,7 +68,7 @@ impl BiDirIiopServiceContext {
     ///
     /// # Errors
     /// Buffer read error.
-    pub fn decode(r: &mut BufferReader<'_>) -> Result<Self, CdrError> {
+    pub fn decode(r: &mut Reader<'_>) -> Result<Self, CdrError> {
         let n = r.read_u32()? as usize;
         let mut listen_points = Vec::with_capacity(n.min(32));
         for _ in 0..n {
@@ -84,7 +84,7 @@ impl BiDirIiopServiceContext {
 #[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
-    use zerodds_cdr::Endianness;
+    use zerodds_wire::Endianness;
 
     #[test]
     fn bidir_tag_value_matches_spec() {
@@ -95,10 +95,10 @@ mod tests {
     #[test]
     fn empty_context_round_trip() {
         let c = BiDirIiopServiceContext::default();
-        let mut w = BufferWriter::new(Endianness::Big);
+        let mut w = Writer::new(Endianness::Big);
         c.encode(&mut w).unwrap();
-        let bytes = w.into_bytes();
-        let mut r = BufferReader::new(&bytes, Endianness::Big);
+        let bytes = w.finish();
+        let mut r = Reader::new(&bytes, Endianness::Big);
         assert_eq!(BiDirIiopServiceContext::decode(&mut r).unwrap(), c);
     }
 
@@ -116,10 +116,10 @@ mod tests {
                 },
             ],
         };
-        let mut w = BufferWriter::new(Endianness::Little);
+        let mut w = Writer::new(Endianness::Little);
         c.encode(&mut w).unwrap();
-        let bytes = w.into_bytes();
-        let mut r = BufferReader::new(&bytes, Endianness::Little);
+        let bytes = w.finish();
+        let mut r = Reader::new(&bytes, Endianness::Little);
         let decoded = BiDirIiopServiceContext::decode(&mut r).unwrap();
         assert_eq!(decoded, c);
     }
@@ -137,11 +137,11 @@ mod tests {
             }],
         };
         // ServiceContext encapsulation = byte-order octet (1=LE) + struct body.
-        let mut w = BufferWriter::new(Endianness::Little);
-        w.write_u8(1).unwrap();
+        let mut w = Writer::new(Endianness::Little);
+        w.write_u8(1);
         c.encode(&mut w).unwrap();
         let hex: alloc::string::String = w
-            .into_bytes()
+            .finish()
             .iter()
             .map(|b| alloc::format!("{b:02x}"))
             .collect();

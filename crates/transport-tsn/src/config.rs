@@ -150,6 +150,8 @@ pub struct ListenerEntry {
 /// # Errors
 /// Returns [`ConfigError`] on malformed XML.
 pub fn parse_xml_config(src: &str) -> Result<TsnConfiguration, ConfigError> {
+    zerodds_foundation::check_nesting(src, zerodds_foundation::XML_NESTING_LIMIT)
+        .map_err(|e| ConfigError::Parse(e.to_string()))?;
     let doc = Document::parse(src).map_err(|e| ConfigError::Parse(e.to_string()))?;
     let root = doc.root_element();
     if root.tag_name().name() != "dds_tsn" {
@@ -538,5 +540,22 @@ mod tests {
         push_json_string("a\"b\\c\nd\x01e", &mut s);
         // RFC 8259 §7: control chars (< 0x20) MUST be \u-escaped.
         assert_eq!(s, "\"a\\\"b\\\\c\\nd\\u0001e\"");
+    }
+}
+
+#[cfg(test)]
+mod nesting_tests {
+    use super::*;
+
+    /// `roxmltree` recurses once per open element; a TSN configuration from outside
+    /// with a long run of unclosed start tags is refused before it reaches
+    /// the parser, instead of overflowing the stack.
+    #[test]
+    fn a_deeply_nested_text_is_refused_before_the_parser() {
+        let text = "<a>".repeat(100_000);
+        assert!(matches!(
+            parse_xml_config(&text),
+            Err(ConfigError::Parse(_))
+        ));
     }
 }

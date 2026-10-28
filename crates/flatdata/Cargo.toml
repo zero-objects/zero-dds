@@ -45,8 +45,6 @@ libc = { version = "0.2", optional = true }
 [dev-dependencies]
 criterion = "0.5"
 zerodds-flatdata-derive = { path = "../flatdata-derive" }
-# §11.3 — heap-allocation profiling test (0 allocs in the write hot path).
-dhat = "0.3"
 
 [[bench]]
 name = "loopback"

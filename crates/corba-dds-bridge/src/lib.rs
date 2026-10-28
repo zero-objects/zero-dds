@@ -47,16 +47,27 @@ pub mod bridge_security;
 pub mod csiv2_wire;
 #[cfg(feature = "std")]
 pub mod daemon_runtime;
+// The bridge daemon: configuration, IIOP/SSLIOP server, the DDS side.
+#[cfg(feature = "std")]
+pub mod bridge_daemon;
 pub mod locate;
 pub mod mapping;
+#[cfg(feature = "std")]
+pub mod naming_client;
 pub mod notify;
 #[cfg(feature = "std")]
 pub mod qos_translation;
+// The servant and the lifecycle sync hold shared state behind a
+// `std::sync::Mutex`. std-only.
+#[cfg(feature = "std")]
 pub mod servant;
+#[cfg(feature = "std")]
 pub mod sync;
 pub mod wire;
 
 pub use mapping::{BridgeMapping, BridgeRoute, Direction, OperationMapping, TopicQosRef};
+#[cfg(feature = "std")]
 pub use servant::BridgeServant;
+#[cfg(feature = "std")]
 pub use sync::{LifecycleEvent, LifecycleSync};
 pub use wire::{RequestSummary, decode_giop_request_bytes, object_key_from_ior};

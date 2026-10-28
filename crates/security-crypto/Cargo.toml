@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "AES-GCM / HMAC `CryptographicPlugin` for DDS-Security 1.1 §8.5: AES-128-GCM + AES-256-GCM + HMAC-SHA256 + receiver-specific MACs + HW capabilities detection."
+description = "AES-GCM / HMAC `CryptographicPlugin` for DDS-Security 1.2 §9.5/§10.5: AES-128-GCM + AES-256-GCM + HMAC-SHA256 + receiver-specific MACs + HW capabilities detection."
 homepage = "https://zerodds.org"
 documentation = "https://docs.rs/zerodds-security-crypto"
 readme = "README.md"
@@ -42,6 +42,12 @@ wolfcrypt = ["dep:wolfcrypt-compat", "std"]
 
 [dependencies]
 zerodds-security = { version = "1.0.0-rc.7", path = "../security" }
+# CRC-32C, CRC-64/XZ and MD5 of the messageChecksum of a HeaderExtension
+# (DDSI-RTPS 2.5 §9.4.2.15).
+zerodds-foundation = { version = "1.0.0-rc.7", path = "../foundation", default-features = false }
+# RSASSA-PSS verification with the salt length read from the signature
+# (DDS-Security 1.2 §8.2 Table 25): the exponentiation in Montgomery form.
+crypto-bigint = { version = "0.7.9", default-features = false }
 # AEAD + HMAC primitives. ISC. Already pulled transitively by
 # `zerodds-security-pki` (rustls-webpki) — no additional footprint.
 # Optional: the default `ring-backend` feature selects it; `aws-lc` swaps it out.

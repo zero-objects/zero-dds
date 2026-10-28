@@ -1,0 +1,10 @@
+// `union` with a sequence branch
+union Choice switch (short) {
+    case -1: sequence<long> ids;
+    default: string text;
+};
+
+@final struct Sample {
+    Choice picked;
+    long tail;
+};

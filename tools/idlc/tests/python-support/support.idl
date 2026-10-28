@@ -1,0 +1,14 @@
+module bridge {
+  @final struct Empty {};
+  @final struct Point { @key long id; unsigned short reading; };
+  @final struct ShortName { @key string<8> name; long value; };
+  @final struct LongName { @key string<32> name; long value; };
+  @appendable struct Extended { @key long id; @optional double calibration; };
+  @mutable struct OrderedKeys {
+    @id(4) @key long first;
+    @id(1) @key long second;
+    @default(17) long value;
+  };
+  @nested struct KeyParts { @key long id; long other; };
+  @final struct NestedKey { @key KeyParts parts; long value; };
+};

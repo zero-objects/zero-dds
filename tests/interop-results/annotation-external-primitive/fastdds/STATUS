@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of annotation-external-primitive that fastdds produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	gen.hpp:963:34: note: candidate: 'void zd_c5::Sample::a(const eprosima::fastcdr::external<int>&)' (near match)
+plain-cdr1	be	refused	gen.hpp:963:34: note: candidate: 'void zd_c5::Sample::a(const eprosima::fastcdr::external<int>&)' (near match)
+pl-cdr1	le	refused	gen.hpp:963:34: note: candidate: 'void zd_c5::Sample::a(const eprosima::fastcdr::external<int>&)' (near match)
+pl-cdr1	be	refused	gen.hpp:963:34: note: candidate: 'void zd_c5::Sample::a(const eprosima::fastcdr::external<int>&)' (near match)
+plain-cdr2	le	refused	gen.hpp:963:34: note: candidate: 'void zd_c5::Sample::a(const eprosima::fastcdr::external<int>&)' (near match)
+plain-cdr2	be	refused	gen.hpp:963:34: note: candidate: 'void zd_c5::Sample::a(const eprosima::fastcdr::external<int>&)' (near match)
+delimited-cdr	le	refused	gen.hpp:963:34: note: candidate: 'void zd_c5::Sample::a(const eprosima::fastcdr::external<int>&)' (near match)
+delimited-cdr	be	refused	gen.hpp:963:34: note: candidate: 'void zd_c5::Sample::a(const eprosima::fastcdr::external<int>&)' (near match)
+pl-cdr2	le	refused	gen.hpp:963:34: note: candidate: 'void zd_c5::Sample::a(const eprosima::fastcdr::external<int>&)' (near match)
+pl-cdr2	be	refused	gen.hpp:963:34: note: candidate: 'void zd_c5::Sample::a(const eprosima::fastcdr::external<int>&)' (near match)

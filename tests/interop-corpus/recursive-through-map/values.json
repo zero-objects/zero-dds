@@ -1,0 +1,12 @@
+{
+  "value": 7,
+  "children": [
+    [
+      1,
+      {
+        "value": 8,
+        "children": []
+      }
+    ]
+  ]
+}

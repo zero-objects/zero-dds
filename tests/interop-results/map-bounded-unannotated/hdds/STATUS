@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of map-bounded-unannotated that hdds produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	wireprobe-fill: entries: a map, whose hddsgen shape is unmeasured
+plain-cdr1	be	one-order-only	
+pl-cdr1	le	refused	wireprobe-fill: entries: a map, whose hddsgen shape is unmeasured
+pl-cdr1	be	one-order-only	
+plain-cdr2	le	refused	wireprobe-fill: entries: a map, whose hddsgen shape is unmeasured
+plain-cdr2	be	one-order-only	
+delimited-cdr	le	refused	wireprobe-fill: entries: a map, whose hddsgen shape is unmeasured
+delimited-cdr	be	one-order-only	
+pl-cdr2	le	refused	wireprobe-fill: entries: a map, whose hddsgen shape is unmeasured
+pl-cdr2	be	one-order-only	

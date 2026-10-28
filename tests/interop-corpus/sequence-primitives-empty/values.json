@@ -1,0 +1,17 @@
+{
+  "flag_none": [],
+  "raw_octet_none": [],
+  "unsigned_byte_none": [],
+  "signed_byte_none": [],
+  "letter_none": [],
+  "wide_letter_none": [],
+  "short_signed_none": [],
+  "short_unsigned_none": [],
+  "long_signed_none": [],
+  "long_unsigned_none": [],
+  "llong_signed_none": [],
+  "llong_unsigned_none": [],
+  "single_float_none": [],
+  "double_float_none": [],
+  "tail": -1
+}

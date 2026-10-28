@@ -1,72 +1,70 @@
-// SPDX-License-Identifier: Apache-2.0
+/* Copyright 2010, Object Management Group, Inc.
+ * Copyright 2010, PrismTech, Inc.
+ * Copyright 2010, Real-Time Innovations, Inc.
+ * All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.omg.dds.topic;
 
-import org.omg.dds.core.Entity;
-import org.omg.dds.core.InstanceHandle;
-import org.omg.dds.core.ReturnCode;
+import org.omg.dds.core.DomainEntity;
+import org.omg.dds.core.StatusCondition;
+import org.omg.dds.core.status.InconsistentTopicStatus;
+import org.omg.dds.domain.DomainParticipant;
 
-import java.util.UUID;
 
 /**
- * OMG DDS Java-PSM Topic — Spec §7.2.4.
+ * Topic is the most basic description of the data to be published and
+ * subscribed.
+ * 
+ * A Topic is identified by its name, which must be unique in the whole
+ * Domain.
+ * 
+ * Topic is the only {@link org.omg.dds.topic.TopicDescription} that can be used for
+ * publications and therefore associated to a {@link org.omg.dds.pub.DataWriter}. All
+ * operations except for the inherited operations
+ * {@link #setQos(org.omg.dds.core.EntityQos)},
+ * {@link #getQos()}, {@link #setListener(java.util.EventListener)},
+ * {@link #getListener()}, {@link #enable()}, {@link #getStatusCondition()},
+ * and {@link #close()} may fail with the exception
+ * {@link org.omg.dds.core.NotEnabledException}.
  *
- * <p>Generic over the topic data type {@code T}.
+ * @param <TYPE>    The concrete type of the data that will be published and/
+ *                  or subscribed by the readers and writers that use this
+ *                  topic.
  */
-public final class Topic<T> implements Entity {
-    private final String name;
-    private final Class<T> type;
-    private final InstanceHandle handle;
-    private boolean closed = false;
-    private boolean enabled = false;
+public interface Topic<TYPE>
+extends TopicDescription<TYPE>, DomainEntity<TopicListener<TYPE>, TopicQos>
+{
+    /**
+     * This method allows the application to retrieve the
+     * {@link org.omg.dds.core.status.InconsistentTopicStatus} of the Topic.
+     * 
+     * Each {@link org.omg.dds.core.DomainEntity} has a set of relevant communication
+     * statuses. A change of status causes the corresponding Listener to be
+     * invoked and can also be monitored by means of the associated
+     * {@link org.omg.dds.core.StatusCondition}.
+     * 
+     * @see     TopicListener
+     * @see     StatusCondition
+     */
+    public InconsistentTopicStatus getInconsistentTopicStatus();
 
-    public Topic(String name, Class<T> type) {
-        this.name = name;
-        this.type = type;
-        byte[] uuid = uuidBytes();
-        this.handle = InstanceHandle.from(uuid);
-    }
 
-    public String getName() {
-        return name;
-    }
+    // --- From Entity: ------------------------------------------------------
 
-    public Class<T> getType() {
-        return type;
-    }
+    public StatusCondition<Topic<TYPE>> getStatusCondition();
 
-    @Override
-    public InstanceHandle getInstanceHandle() {
-        return handle;
-    }
-
-    @Override
-    public ReturnCode enable() {
-        if (closed) return ReturnCode.ALREADY_DELETED;
-        enabled = true;
-        return ReturnCode.OK;
-    }
-
-    @Override
-    public void close() {
-        closed = true;
-    }
-
-    @Override
-    public boolean isClosed() {
-        return closed;
-    }
-
-    public boolean isEnabled() {
-        return enabled;
-    }
-
-    private static byte[] uuidBytes() {
-        UUID id = UUID.randomUUID();
-        byte[] out = new byte[16];
-        long msb = id.getMostSignificantBits();
-        long lsb = id.getLeastSignificantBits();
-        for (int i = 0; i < 8; i++) out[i] = (byte) (msb >>> (56 - 8 * i));
-        for (int i = 0; i < 8; i++) out[8 + i] = (byte) (lsb >>> (56 - 8 * i));
-        return out;
-    }
+    public DomainParticipant getParent();
 }

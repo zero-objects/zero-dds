@@ -1,0 +1,4 @@
+@final struct NoKeyFinal {
+  long a;
+  long b;
+};

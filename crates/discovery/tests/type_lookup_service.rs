@@ -20,7 +20,6 @@
 
 use std::sync::{Arc, Mutex};
 
-use zerodds_cdr::{BufferReader, BufferWriter, Endianness};
 use zerodds_discovery::type_lookup::{
     RequestId, TypeLookupClient, TypeLookupEndpoints, TypeLookupReply, TypeLookupServer,
     format_service_instance_name, hashes_to_minimal_ids, request_dependencies_payload,
@@ -30,9 +29,11 @@ use zerodds_rtps::wire_types::GuidPrefix;
 use zerodds_types::builder::TypeObjectBuilder;
 use zerodds_types::type_lookup::{
     ContinuationPoint, GetTypeDependenciesReply, GetTypeDependenciesRequest, GetTypesReply,
-    GetTypesRequest, ReplyTypeObject,
+    GetTypesRequest, TypeIdentifierTypeObjectPair,
 };
+use zerodds_types::type_object::TypeObject;
 use zerodds_types::{EquivalenceHash, MinimalTypeObject, PrimitiveKind, TypeIdentifier};
+use zerodds_wire::{Endianness, Reader, Writer};
 
 fn sample_struct(name: &str) -> MinimalTypeObject {
     MinimalTypeObject::Struct(
@@ -54,7 +55,12 @@ fn server_handle_get_types_happy_path_one_type() {
     };
     let reply = server.handle_get_types(&req);
     assert_eq!(reply.types.len(), 1);
-    assert!(matches!(reply.types[0], ReplyTypeObject::Minimal(_)));
+    assert!(matches!(reply.types[0].type_object, TypeObject::Minimal(_)));
+    // §7.6.3.3.3: the identifier travels with the object.
+    assert_eq!(
+        reply.types[0].type_identifier,
+        TypeIdentifier::EquivalenceHashMinimal(h)
+    );
 }
 
 #[test]
@@ -73,8 +79,19 @@ fn server_handle_get_types_unknown_returns_empty_no_error() {
 fn server_handle_get_types_with_100_types_no_pagination() {
     let mut server = TypeLookupServer::new();
     let mut hashes = Vec::new();
+    // A minimal object carries no type name, so 100 copies of one shape
+    // under 100 names are one hash; the member name is what tells them
+    // apart. A reply lists every identifier asked for once.
     for i in 0..100u8 {
-        let m = sample_struct(&format!("::T{i}"));
+        let m = MinimalTypeObject::Struct(
+            TypeObjectBuilder::struct_type(format!("::T{i}"))
+                .member(
+                    format!("m{i}"),
+                    TypeIdentifier::Primitive(PrimitiveKind::Int64),
+                    |m| m,
+                )
+                .build_minimal(),
+        );
         let h = zerodds_types::compute_minimal_hash(&m).unwrap();
         server.registry.insert_minimal(h, m);
         hashes.push(h);
@@ -157,6 +174,61 @@ fn server_continuation_point_paginates_200_dependencies() {
 }
 
 #[test]
+fn the_requested_object_is_found_by_identifier_not_by_position() {
+    // §7.6.3.3.4.1: a getTypes reply may carry more than what was asked —
+    // handle_get_types puts the transitive closure of dependencies first
+    // and the requested objects after them (see
+    // server_handle_get_types_with_100_types_no_pagination and the
+    // closure test in src/type_lookup/server.rs). A consumer that reads
+    // types[0] as "the object I asked for" is wrong whenever a
+    // dependency rides along; it must look the pair up by identifier.
+    let mut server = TypeLookupServer::new();
+    let inner = sample_struct("::tl::Inner");
+    let inner_hash = zerodds_types::compute_minimal_hash(&inner).unwrap();
+    server.registry.insert_minimal(inner_hash, inner);
+
+    let outer = MinimalTypeObject::Struct(
+        TypeObjectBuilder::struct_type("::tl::Outer")
+            .member(
+                "inner",
+                TypeIdentifier::EquivalenceHashMinimal(inner_hash),
+                |m| m,
+            )
+            .build_minimal(),
+    );
+    let outer_hash = zerodds_types::compute_minimal_hash(&outer).unwrap();
+    server.registry.insert_minimal(outer_hash, outer.clone());
+
+    let outer_id = TypeIdentifier::EquivalenceHashMinimal(outer_hash);
+    let reply = server.handle_get_types(&GetTypesRequest {
+        type_ids: vec![outer_id.clone()],
+    });
+
+    // (a) the reply carries more than the one pair asked for.
+    assert!(
+        reply.types.len() > 1,
+        "expected the dependency to ride along: {:?}",
+        reply
+            .types
+            .iter()
+            .map(|t| &t.type_identifier)
+            .collect::<Vec<_>>()
+    );
+    // (b) types[0] is the dependency, not the requested object.
+    assert_ne!(
+        reply.types[0].type_identifier, outer_id,
+        "dependencies come first; types[0] must not be the requested object"
+    );
+    // (c) the requested identifier is present, and carries the expected object.
+    let requested = reply
+        .types
+        .iter()
+        .find(|t| t.type_identifier == outer_id)
+        .expect("requested identifier present in reply");
+    assert_eq!(requested.type_object, TypeObject::Minimal(outer));
+}
+
+#[test]
 fn server_handle_get_types_empty_request() {
     let server = TypeLookupServer::new();
     let reply = server.handle_get_types(&GetTypesRequest::default());
@@ -188,8 +260,14 @@ fn client_handle_reply_invokes_correct_callback() {
     );
     *last_id.lock().unwrap() = Some(id);
 
+    let sample = sample_struct("::X");
+    let sample_hash = zerodds_types::compute_minimal_hash(&sample).unwrap();
     let reply = TypeLookupReply::Types(GetTypesReply {
-        types: vec![ReplyTypeObject::Minimal(sample_struct("::X"))],
+        types: vec![TypeIdentifierTypeObjectPair {
+            type_identifier: TypeIdentifier::EquivalenceHashMinimal(sample_hash),
+            type_object: TypeObject::Minimal(sample),
+        }],
+        complete_to_minimal: vec![],
     });
     let consumed = client.handle_reply(id, reply);
     assert!(consumed);
@@ -214,7 +292,9 @@ fn service_instance_name_format_matches_spec() {
     let name = format_service_instance_name(&prefix);
     assert!(name.starts_with("dds.builtin.TOS."));
     let suffix = name.trim_start_matches("dds.builtin.TOS.");
-    assert_eq!(suffix.len(), 24);
+    // Cyclone ddsi_typelookup.c addresses the participant's full GUID, not
+    // only its 12-byte prefix. ENTITYID_PARTICIPANT contributes 000001c1.
+    assert_eq!(suffix, "123456789abcdef011223344000001c1");
     assert!(suffix.chars().all(|c| c.is_ascii_hexdigit()));
 }
 
@@ -258,15 +338,15 @@ fn cross_plugin_server_emits_reply_client_parses_typeobject() {
 
     // Wire roundtrip: request bytes → server.
     let req_bytes = request_types_payload(&[TypeIdentifier::EquivalenceHashMinimal(h)]).unwrap();
-    let mut r = BufferReader::new(&req_bytes, Endianness::Little);
+    let mut r = Reader::new(&req_bytes, Endianness::Little);
     let req = GetTypesRequest::decode_from(&mut r).unwrap();
     let reply = server.handle_get_types(&req);
 
     // Wire roundtrip: reply bytes → client.
-    let mut w = BufferWriter::new(Endianness::Little);
+    let mut w = Writer::new(Endianness::Little);
     reply.encode_into(&mut w).unwrap();
-    let reply_bytes = w.into_bytes();
-    let mut r = BufferReader::new(&reply_bytes, Endianness::Little);
+    let reply_bytes = w.finish();
+    let mut r = Reader::new(&reply_bytes, Endianness::Little);
     let decoded_reply = GetTypesReply::decode_from(&mut r).unwrap();
 
     // Callback fires.
@@ -289,7 +369,12 @@ fn typeidentifier_with_minimal_hash_yields_complete_to_minimal_pair() {
     };
     let reply = server.handle_get_types(&req_min);
     assert_eq!(reply.types.len(), 1);
-    assert!(matches!(reply.types[0], ReplyTypeObject::Minimal(_)));
+    assert!(matches!(reply.types[0].type_object, TypeObject::Minimal(_)));
+    // §7.6.3.3.3: the identifier travels with the object.
+    assert_eq!(
+        reply.types[0].type_identifier,
+        TypeIdentifier::EquivalenceHashMinimal(h_min)
+    );
 
     // Complete hash NOT in registry → empty reply.
     let req_complete = GetTypesRequest {
@@ -311,7 +396,7 @@ fn dependencies_payload_carries_continuation_point() {
         cp.clone(),
     )
     .unwrap();
-    let mut r = BufferReader::new(&bytes, Endianness::Little);
+    let mut r = Reader::new(&bytes, Endianness::Little);
     let decoded = GetTypeDependenciesRequest::decode_from(&mut r).unwrap();
     assert_eq!(decoded.continuation_point, cp);
 }

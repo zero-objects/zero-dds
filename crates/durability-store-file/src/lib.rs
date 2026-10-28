@@ -18,8 +18,11 @@
 //! full fidelity — that is exactly the `PERSISTENT` guarantee.
 //!
 //! Retention follows the topic [`Contract`] (set via
-//! [`DurabilityStore::set_contract`]); contracts live in memory and are
-//! re-registered by the daemon on startup.
+//! [`DurabilityStore::set_contract`], or persisted along with the topic's
+//! type name/keyedness via [`DurabilityStore::set_topic_meta`] — a `.meta`
+//! sidecar file per topic directory, so the daemon does not need to
+//! re-register it on every restart, only on a topic it serves for the very
+//! first time).
 
 #![forbid(unsafe_code)]
 
@@ -30,7 +33,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use zerodds_durability_store::{
     Contract, Cursor, DurabilitySample, DurabilityStore, Page, Result, Selector, StoreError,
-    StoreStats,
+    StoreStats, TopicMeta,
 };
 use zerodds_qos::policies::history::HistoryKind;
 
@@ -41,6 +44,13 @@ use zerodds_qos::policies::history::HistoryKind;
 // from 10 to 34 bytes; pre-P5 files are not read back (pre-1.0 format break).
 const HEADER_LEN: usize = 34;
 const DEFAULT_PAGE: usize = 1024;
+
+/// The name of the per-topic metadata sidecar file (module docs,
+/// "restart-survival of served topics"). Additive: an existing topic
+/// directory from before this file existed has none, and
+/// [`FileStore::topic_meta`] returns `Ok(None)` for it — the old on-disk
+/// format still opens.
+const META_FILE: &str = ".meta";
 
 /// File-per-sample durability store rooted at a directory.
 pub struct FileStore {
@@ -88,6 +98,74 @@ fn time_of(nanos: u64) -> SystemTime {
     UNIX_EPOCH + Duration::from_nanos(nanos)
 }
 
+/// `.meta` sidecar wire format: `[4B type_name_len LE][type_name bytes]
+/// [1B keyed][4B history_kind LE][4B history_depth LE][4B max_samples LE]
+/// [4B max_instances LE][4B max_samples_per_instance LE]
+/// [8B cleanup_delay_secs LE][4B cleanup_delay_subsec_nanos LE]`.
+fn encode_topic_meta(meta: &TopicMeta) -> Vec<u8> {
+    let (
+        history_kind,
+        history_depth,
+        max_samples,
+        max_instances,
+        max_samples_per_instance,
+        secs,
+        nanos,
+    ) = meta.contract.to_row();
+    let name = meta.type_name.as_bytes();
+    let mut buf = Vec::with_capacity(4 + name.len() + 34);
+    buf.extend_from_slice(&(name.len() as u32).to_le_bytes());
+    buf.extend_from_slice(name);
+    buf.push(u8::from(meta.keyed));
+    buf.extend_from_slice(&history_kind.to_le_bytes());
+    buf.extend_from_slice(&history_depth.to_le_bytes());
+    buf.extend_from_slice(&max_samples.to_le_bytes());
+    buf.extend_from_slice(&max_instances.to_le_bytes());
+    buf.extend_from_slice(&max_samples_per_instance.to_le_bytes());
+    buf.extend_from_slice(&secs.to_le_bytes());
+    buf.extend_from_slice(&nanos.to_le_bytes());
+    buf
+}
+
+/// Inverse of [`encode_topic_meta`]. `None` on a short buffer, invalid UTF-8
+/// type name, or an unknown `history_kind` discriminator — the caller (
+/// [`FileStore::read_meta`]) turns that into a loud `Err`, never a silent
+/// `None`.
+fn decode_topic_meta(raw: &[u8]) -> Option<TopicMeta> {
+    let name_len = u32::from_le_bytes(raw.get(0..4)?.try_into().ok()?) as usize;
+    let mut pos = 4usize.checked_add(name_len)?;
+    let type_name = String::from_utf8(raw.get(4..pos)?.to_vec()).ok()?;
+    let keyed = *raw.get(pos)? != 0;
+    pos += 1;
+    let history_kind = u32::from_le_bytes(raw.get(pos..pos + 4)?.try_into().ok()?);
+    pos += 4;
+    let history_depth = i32::from_le_bytes(raw.get(pos..pos + 4)?.try_into().ok()?);
+    pos += 4;
+    let max_samples = i32::from_le_bytes(raw.get(pos..pos + 4)?.try_into().ok()?);
+    pos += 4;
+    let max_instances = i32::from_le_bytes(raw.get(pos..pos + 4)?.try_into().ok()?);
+    pos += 4;
+    let max_samples_per_instance = i32::from_le_bytes(raw.get(pos..pos + 4)?.try_into().ok()?);
+    pos += 4;
+    let secs = u64::from_le_bytes(raw.get(pos..pos + 8)?.try_into().ok()?);
+    pos += 8;
+    let nanos = u32::from_le_bytes(raw.get(pos..pos + 4)?.try_into().ok()?);
+    let contract = Contract::from_row(
+        history_kind,
+        history_depth,
+        max_samples,
+        max_instances,
+        max_samples_per_instance,
+        secs,
+        nanos,
+    )?;
+    Some(TopicMeta {
+        type_name,
+        keyed,
+        contract,
+    })
+}
+
 impl FileStore {
     /// Opens (creating if absent) a file store at `root`, with `default_contract`
     /// for topics that have no explicit contract.
@@ -104,7 +182,13 @@ impl FileStore {
         })
     }
 
+    /// The persisted [`TopicMeta`]'s contract wins over a plain
+    /// `set_contract` for the same topic (it is the more recent, more
+    /// complete registration — see [`DurabilityStore::set_contract`]'s doc).
     fn contract_for(&self, topic: &str) -> Result<Contract> {
+        if let Some(meta) = self.read_meta(topic)? {
+            return Ok(meta.contract);
+        }
         Ok(self
             .contracts
             .lock()
@@ -116,6 +200,50 @@ impl FileStore {
 
     fn topic_dir(&self, topic: &str) -> PathBuf {
         self.root.join(hex(topic.as_bytes()))
+    }
+
+    fn meta_path(&self, topic: &str) -> PathBuf {
+        self.topic_dir(topic).join(META_FILE)
+    }
+
+    /// Reads `topic`'s persisted [`TopicMeta`] sidecar, if any. `Ok(None)`
+    /// when the file is absent (a topic that never called
+    /// [`DurabilityStore::set_topic_meta`], or an on-disk store from before
+    /// this file existed — the old format still opens). A PRESENT but
+    /// unparseable file is a loud `Err`, never a silent `None` (a corrupt
+    /// sidecar must not be indistinguishable from "never served").
+    fn read_meta(&self, topic: &str) -> Result<Option<TopicMeta>> {
+        let path = self.meta_path(topic);
+        let raw = match std::fs::read(&path) {
+            Ok(b) => b,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(e) => return Err(backend("read topic meta", e)),
+        };
+        decode_topic_meta(&raw).map(Some).ok_or_else(|| {
+            StoreError::Backend(format!(
+                "file store: corrupt topic meta sidecar: {}",
+                path.display()
+            ))
+        })
+    }
+
+    /// Writes `topic`'s [`TopicMeta`] sidecar atomically (write to a
+    /// process/thread-unique temp file, then `rename` — POSIX rename is
+    /// atomic within one filesystem), so a `kill -9` mid-write leaves either
+    /// the old content or the new one, never a half-written file a later
+    /// [`Self::read_meta`] would have to reject.
+    fn write_meta(&self, topic: &str, meta: &TopicMeta) -> Result<()> {
+        let dir = self.topic_dir(topic);
+        std::fs::create_dir_all(&dir).map_err(|e| backend("mkdir topic", e))?;
+        let buf = encode_topic_meta(meta);
+        let tmp = dir.join(format!(
+            ".meta.tmp-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        std::fs::write(&tmp, &buf).map_err(|e| backend("write topic meta tmp", e))?;
+        std::fs::rename(&tmp, dir.join(META_FILE)).map_err(|e| backend("rename topic meta", e))?;
+        Ok(())
     }
 
     fn instance_dir(&self, topic: &str, key: &[u8; 16]) -> PathBuf {
@@ -194,6 +322,14 @@ impl DurabilityStore for FileStore {
             .map_err(|_| StoreError::Poisoned("file store contracts"))?
             .insert(topic.to_string(), contract);
         Ok(())
+    }
+
+    fn set_topic_meta(&self, topic: &str, meta: TopicMeta) -> Result<()> {
+        self.write_meta(topic, &meta)
+    }
+
+    fn topic_meta(&self, topic: &str) -> Result<Option<TopicMeta>> {
+        self.read_meta(topic)
     }
 
     fn store(&self, sample: DurabilitySample) -> Result<()> {

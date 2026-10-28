@@ -1,0 +1,10 @@
+// `map` with a structure value, unannotated
+struct Cell {
+    long a;
+    short b;
+};
+
+struct Sample {
+    map<long, Cell> entries;
+    long tail;
+};

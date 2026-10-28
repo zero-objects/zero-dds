@@ -9,7 +9,7 @@ alias ZeroDDS.{Wire, Client, MemTransport}
 
 # Reading mirrors an IDL `@final struct Reading { uint32 id; float value; string label; }`.
 marshal = fn r, endian ->
-  Wire.writer(endian)
+  Wire.writer(endian, :xcdr2)
   |> Wire.put_u32(r.id)
   |> Wire.put_f32(r.value)
   |> Wire.put_string(r.label)
@@ -17,7 +17,7 @@ marshal = fn r, endian ->
 end
 
 decode = fn body ->
-  r = Wire.reader(body, :little)
+  r = Wire.reader(body, :little, :xcdr2)
   {id, r} = Wire.get_u32(r)
   {value, r} = Wire.get_f32(r)
   {label, _r} = Wire.get_string(r)
@@ -26,7 +26,7 @@ end
 
 total = 5
 t = MemTransport.new()
-c = Client.new(t)
+c = Client.new(t, ZeroDDS.Endpoint.object_id(0x001, ZeroDDS.Endpoint.objk_datawriter()))
 
 # Publisher: frame + deliver 5 typed readings with varying values.
 c =

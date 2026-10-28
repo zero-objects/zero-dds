@@ -42,13 +42,21 @@
 
 extern crate alloc;
 
-use core::ffi::{c_char, c_int, c_void};
+use core::ffi::{c_char, c_void};
 use core::ptr;
 use std::ffi::CStr;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 use zerodds_ros2_rmw::ffi_api::RMW_IMPLEMENTATION_IDENTIFIER;
+
+mod dynamic;
+mod events;
+pub mod qos;
+pub mod ros2_config;
+pub mod services;
+pub mod spatial_bridge;
+pub use qos::RmwZerodsQos;
 // The `zerodds` crate (= `zerodds-c-api` per `[lib] name = "zerodds"`)
 // is used below directly via `zerodds::ZeroDdsRuntime` / `zerodds::zerodds_*`.
 // The explicit `use zerodds as _;` marker is dropped — the
@@ -84,11 +92,11 @@ pub const RMW_RET_INCORRECT_RMW_IMPLEMENTATION: i32 = 12;
 ///
 /// A subscription registers a data callback on its ZeroDDS reader
 /// ([`zerodds::zerodds_reader_set_data_callback`]); that callback fires in the
-/// receive thread the instant a sample lands and calls [`WaitNotify::notify`],
+/// receive thread the instant a sample lands and calls `WaitNotify::notify`,
 /// which bumps a generation counter and wakes the condvar. `rmw_wait` blocks on
-/// the condvar via [`WaitNotify::wait_until`] and re-evaluates readiness on each
+/// the condvar via `WaitNotify::wait_until` and re-evaluates readiness on each
 /// wake — no spin loop and no fixed-tick poll (the readiness *truth* is the
-/// non-destructive [`subscription_has_data`] peek; this type only supplies the
+/// non-destructive `subscription_has_data` peek; this type only supplies the
 /// blocking-until-something-changed edge).
 pub struct WaitNotify {
     generation: Mutex<u64>,
@@ -149,7 +157,21 @@ impl WaitNotify {
 /// wakes the context condvar; `take` / `has_data` drain this queue.
 /// One parked sample awaiting `take`: `(CDR body, representation byte,
 /// big_endian flag)` from the encapsulation header (RTPS 2.5 §10.5).
-type InboxEntry = (alloc::boxed::Box<[u8]>, u8, u8);
+type InboxEntry = (alloc::boxed::Box<[u8]>, u8, u8, RmwZerodsSampleOrigin);
+
+/// Where a taken sample came from, for `rmw_message_info_t`: the writer's
+/// GUID (the publisher GID), its source timestamp in nanoseconds (`-1`
+/// unknown) and its RTPS sequence number (`-1` unknown).
+#[repr(C)]
+#[derive(Debug, Default, Clone, Copy)]
+pub struct RmwZerodsSampleOrigin {
+    /// The writer's GUID.
+    pub writer_guid: [u8; 16],
+    /// Source timestamp, nanoseconds since the Unix epoch, `-1` unknown.
+    pub source_timestamp_ns: i64,
+    /// The writer's sequence number of the sample, `-1` unknown.
+    pub sequence_number: i64,
+}
 
 struct SubInbox {
     // (CDR body, representation, big_endian). `representation`/`big_endian` are
@@ -162,6 +184,9 @@ struct SubInbox {
     /// Optional rmw event callback (EventsExecutor `on_new_message/request/
     /// response`), fired on each arrival with `number_of_events = 1`.
     event: Mutex<Option<InboxEvent>>,
+    /// KEEP_LAST depth of the subscription (DDS 1.4 §2.2.3.18): an arrival
+    /// past it drops the oldest queued sample. `None` = KEEP_ALL.
+    keep_last: Option<usize>,
 }
 
 /// rmw event callback: `(user_data, number_of_events)` — `rmw_event_callback_t`.
@@ -207,6 +232,7 @@ extern "C" fn subscription_on_data(
     len: usize,
     repr: u8,
     big_endian: u8,
+    origin: *const zerodds::ZeroDdsSampleOrigin,
 ) {
     if ud.is_null() || (len != 0 && payload.is_null()) {
         return;
@@ -223,8 +249,28 @@ extern "C" fn subscription_on_data(
         // SAFETY: validity upheld by the surrounding contract (NULL/bounds checked where applicable).
         unsafe { core::slice::from_raw_parts(payload, len) }.into()
     };
+    let origin = if origin.is_null() {
+        RmwZerodsSampleOrigin {
+            source_timestamp_ns: -1,
+            sequence_number: -1,
+            ..RmwZerodsSampleOrigin::default()
+        }
+    } else {
+        // SAFETY: valid for the call per the callback contract.
+        let o = unsafe { &*origin };
+        RmwZerodsSampleOrigin {
+            writer_guid: o.writer_guid,
+            source_timestamp_ns: o.source_timestamp_ns,
+            sequence_number: o.sequence_number,
+        }
+    };
     if let Ok(mut q) = inbox.queue.lock() {
-        q.push_back((bytes, repr, big_endian));
+        q.push_back((bytes, repr, big_endian, origin));
+        if let Some(depth) = inbox.keep_last {
+            while q.len() > depth.max(1) {
+                q.pop_front();
+            }
+        }
     }
     inbox.notify.notify();
     // Fire the rmw EventsExecutor callback (snapshot it, then call outside the
@@ -232,91 +278,6 @@ extern "C" fn subscription_on_data(
     let ev = inbox.event.lock().ok().and_then(|g| *g);
     if let Some(ev) = ev {
         (ev.cb)(ev.ud as *const c_void, 1);
-    }
-}
-
-/// Attaches a listener-fed inbox to a ZeroDDS reader: registers
-/// [`subscription_on_data`] so the reader delivers into the returned inbox and
-/// wakes `notify`. Returns the inbox plus the `Arc<SubInbox>` raw pointer handed
-/// to the callback as `user_data` — reclaim it with `Arc::from_raw` AFTER the
-/// reader is destroyed. `None` if the listener could not be registered.
-///
-/// # Safety
-/// `reader` must come from `zerodds_reader_create*`.
-unsafe fn attach_inbox(
-    reader: *mut zerodds::ZeroDdsReader,
-    notify: Arc<WaitNotify>,
-) -> Option<(Arc<SubInbox>, *const SubInbox)> {
-    let inbox = Arc::new(SubInbox {
-        queue: Mutex::new(alloc::collections::VecDeque::new()),
-        notify,
-        event: Mutex::new(None),
-    });
-    let ud = Arc::into_raw(inbox.clone());
-    // SAFETY: reader valid; callback + user_data outlive the reader (the caller
-    // reclaims `ud` after destroying the reader).
-    let set = unsafe {
-        zerodds::zerodds_reader_set_data_callback(
-            reader,
-            Some(subscription_on_data),
-            ud as *mut c_void,
-        )
-    };
-    if set == 0 {
-        Some((inbox, ud))
-    } else {
-        // SAFETY: reclaim the extra ref we just leaked.
-        drop(unsafe { Arc::from_raw(ud) });
-        None
-    }
-}
-
-/// Pops one sample from `inbox` into a freshly heap-allocated buffer the caller
-/// frees via `zerodds_buffer_free`; writes a NULL buffer when the inbox is
-/// empty. Always returns `RMW_RET_OK` (empty is not an error).
-///
-/// # Safety
-/// `out_buf` / `out_len` must be valid out pointers.
-unsafe fn inbox_take(
-    inbox: &SubInbox,
-    out_buf: *mut *mut u8,
-    out_len: *mut usize,
-    out_big_endian: *mut u8,
-) -> i32 {
-    let popped = inbox.queue.lock().ok().and_then(|mut q| q.pop_front());
-    match popped {
-        Some((bytes, _repr, be)) if !bytes.is_empty() => {
-            let len = bytes.len();
-            let ptr = alloc::boxed::Box::into_raw(bytes).cast::<u8>();
-            // SAFETY: out pointers valid per caller contract.
-            unsafe {
-                *out_buf = ptr;
-                *out_len = len;
-                if !out_big_endian.is_null() {
-                    *out_big_endian = be;
-                }
-            }
-            RMW_RET_OK
-        }
-        _ => {
-            // SAFETY: out pointers valid per caller contract.
-            unsafe {
-                *out_buf = ptr::null_mut();
-                *out_len = 0;
-                if !out_big_endian.is_null() {
-                    *out_big_endian = 0;
-                }
-            }
-            RMW_RET_OK
-        }
-    }
-}
-
-/// `1` if `inbox` has a sample ready, `0` if empty, `RMW_RET_ERROR` if poisoned.
-fn inbox_has_data(inbox: &SubInbox) -> i32 {
-    match inbox.queue.lock() {
-        Ok(q) => i32::from(!q.is_empty()),
-        Err(_) => RMW_RET_ERROR,
     }
 }
 
@@ -523,10 +484,10 @@ extern "C" fn discovery_on_data(
     ud: *mut c_void,
     payload: *const u8,
     len: usize,
-    _repr: u8,
-    _big_endian: u8,
+    repr: u8,
+    big_endian: u8,
 ) {
-    if ud.is_null() || payload.is_null() || len < 4 {
+    if ud.is_null() || payload.is_null() || len == 0 {
         return;
     }
     // SAFETY: `ud` is a live `Arc<NodeGraph>` raw pointer (reclaimed only after
@@ -534,7 +495,12 @@ extern "C" fn discovery_on_data(
     let graph = unsafe { &*(ud as *const NodeGraph) };
     // SAFETY: validity upheld by the surrounding contract (NULL/bounds checked where applicable).
     let body = unsafe { core::slice::from_raw_parts(payload, len) };
-    if let Some((gid, nodes, eps)) = decode_participant_info(body) {
+    // The runtime delivers the body; the decoder reads a CDR stream with its
+    // encapsulation header, the form the encoder builds.
+    let mut stream = Vec::with_capacity(len + 4);
+    stream.extend_from_slice(&encapsulation_header(repr, big_endian));
+    stream.extend_from_slice(body);
+    if let Some((gid, nodes, eps)) = decode_participant_info(&stream) {
         if gid == graph.gid {
             return; // ignore our own announcement echoed back
         }
@@ -571,10 +537,12 @@ fn graph_publish(graph: &NodeGraph) {
             .collect(),
         Err(_) => alloc::vec::Vec::new(),
     };
-    let body = encode_participant_info(&graph.gid, &nodes, &eps);
+    let stream = encode_participant_info(&graph.gid, &nodes, &eps);
+    // The writer stamps its own encapsulation header over the body.
+    let body = &stream[4..];
     if let Ok(w) = graph.writer.lock() {
         if !w.is_null() {
-            // SAFETY: writer from zerodds_writer_create; body lives for the call.
+            // SAFETY: writer from zerodds_writer_create_qos; body lives for the call.
             unsafe { zerodds::zerodds_writer_write(*w, body.as_ptr(), body.len()) };
         }
     }
@@ -632,7 +600,7 @@ pub extern "C" fn rmw_zerodds_get_serialization_format() -> *const c_char {
 // ============================================================================
 
 /// Opaque handle: rmw_zerodds context (1:1 to a domain-participant
-/// init). Hardcoded domain 0 in current distros; later from init_options.
+/// init). The domain is `rmw_init`'s `options->domain_id`.
 pub struct RmwZerodsContext {
     domain_id: u32,
     runtime: *mut c_void, // ZeroDdsRuntime from zerodds.h
@@ -644,10 +612,28 @@ pub struct RmwZerodsContext {
     discovery_reader: *mut zerodds::ZeroDdsReader,
     /// `Arc<NodeGraph>` raw pointer handed to the discovery reader callback.
     discovery_cb_ud: *const NodeGraph,
+    /// The `ros2.*` settings of the runtime configuration: topic mangling,
+    /// QoS profiles, per-topic overrides.
+    ros2: ros2_config::Ros2Config,
+    /// `Arc<WaitNotify>` raw pointer handed to the runtime's status callback,
+    /// so a QoS event wakes `rmw_wait`; reclaimed after the runtime is gone.
+    status_cb_ud: *const WaitNotify,
+    /// Calls the QoS event callbacks (`rmw_event_set_callback`).
+    events: Arc<events::EventDispatcher>,
+    /// C2(6) — the opt-in `ros2.spatial_bridge` content-translation mode
+    /// (`spatial_bridge.rs`). `None` when not configured/enabled, or when
+    /// it failed to start (logged at init, never a silent partial daemon).
+    spatial_bridge: Option<spatial_bridge::SpatialBridge>,
 }
 
 impl Drop for RmwZerodsContext {
     fn drop(&mut self) {
+        // The spatial bridge is its own participant + threads; drop it
+        // before the runtime it shares the domain with is torn down.
+        self.spatial_bridge = None;
+        // The event thread reads endpoint status; it stops before anything
+        // it could read goes.
+        self.events.shutdown();
         // Destroy the discovery reader FIRST (stops its listener), then the
         // writer, then reclaim the callback's Arc<NodeGraph> ref.
         if !self.discovery_reader.is_null() {
@@ -673,7 +659,22 @@ impl Drop for RmwZerodsContext {
             }
             self.runtime = ptr::null_mut();
         }
+        if !self.status_cb_ud.is_null() {
+            // SAFETY: the Arc::into_raw pointer from init; the runtime that
+            // called it is destroyed above.
+            drop(unsafe { Arc::from_raw(self.status_cb_ud) });
+            self.status_cb_ud = ptr::null();
+        }
     }
+}
+
+/// The runtime's status callback: a QoS status of some endpoint moved, so a
+/// waiting `rmw_wait` re-reads its events.
+extern "C" fn status_on_change(user_data: *mut c_void) {
+    // SAFETY: `user_data` is the `Arc<WaitNotify>` pointer registered in init,
+    // alive until the context is dropped after the runtime.
+    let notify = unsafe { &*(user_data as *const WaitNotify) };
+    notify.notify();
 }
 
 /// Builds a synthetic, process-unique 24-byte participant gid.
@@ -703,28 +704,128 @@ fn make_participant_gid(rt: *mut zerodds::ZeroDdsRuntime) -> [u8; 24] {
 /// otherwise leak.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rmw_zerodds_init(domain_id: u32) -> *mut RmwZerodsContext {
-    // C7 "secure by default": with the `security` feature, if the SROS2
-    // enclave env `ZERODDS_SECURITY_DIR` is set, create a DDS-Security
-    // participant from the enclave; otherwise (or without the feature) the
-    // plain participant. A set-but-failed enclave is a hard error (NULL) —
-    // security was requested and must not silently downgrade.
-    #[cfg(feature = "security")]
-    let rt = if std::env::var_os("ZERODDS_SECURITY_DIR").is_some() {
-        // SAFETY: no pointer args; NULL on missing/invalid enclave.
-        unsafe { zerodds::security_ffi::zerodds_runtime_create_secure_from_env(domain_id) }
+    // SAFETY: NULL root path is the "no rcl security" case.
+    unsafe { rmw_zerodds_init_with_security(domain_id, ptr::null(), 0) }
+}
+
+/// `rmw_init` with the security options rcl resolved
+/// (`rmw_security_options_t`): `security_root_path` is the enclave directory
+/// rcl found under `ROS_SECURITY_KEYSTORE` for the node's enclave (NULL
+/// without `ROS_SECURITY_ENABLE=true`), `enforce` is
+/// `ROS_SECURITY_STRATEGY=Enforce`. The RMW used to ignore both: a node
+/// started with ROS security switched on ran plaintext unless
+/// `security.enclave_dir` was also set.
+///
+/// # Safety
+/// `security_root_path` is NULL or a NUL-terminated string; the caller
+/// calls `rmw_zerodds_shutdown` with the returned handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rmw_zerodds_init_with_security(
+    domain_id: u32,
+    security_root_path: *const core::ffi::c_char,
+    enforce: core::ffi::c_int,
+) -> *mut RmwZerodsContext {
+    let rcl_enclave = if security_root_path.is_null() {
+        None
     } else {
-        // A2/A5: ROS-2 out-of-the-box profile — the reader offers XCDR1+XCDR2 so
-        // it matches rmw_cyclonedds/rmw_fastrtps XCDR1 writers config-free.
-        // SAFETY: NULL-tolerant + heap-allocated.
-        unsafe { zerodds::zerodds_runtime_create_ros_defaults(domain_id) }
+        // SAFETY: non-NULL and NUL-terminated by the caller's contract.
+        let s = unsafe { core::ffi::CStr::from_ptr(security_root_path) };
+        Some(std::path::PathBuf::from(s.to_string_lossy().into_owned()))
     };
+    // The layers of this process: environment, files (`--config` on the
+    // node's command line, else the system directory), `--set`. The runtime,
+    // the enclave and `ros2.*` all come from them; a refused setting is a
+    // failed init, as an invalid runtime setting is.
+    let loaded = ros2_config::process_source().and_then(|source| {
+        let ros2 =
+            ros2_config::Ros2Config::from_config(source.tree()).map_err(|e| e.to_string())?;
+        let spatial_bridge_cfg = spatial_bridge::SpatialBridgeConfig::from_config(source.tree())
+            .map_err(|e| e.to_string())?;
+        Ok((source, ros2, spatial_bridge_cfg))
+    });
+    let (source, ros2, spatial_bridge_cfg) = match loaded {
+        Ok(c) => c,
+        Err(e) => {
+            #[allow(clippy::print_stderr)]
+            {
+                eprintln!("rmw_zerodds_init: invalid configuration: {e}");
+            }
+            return ptr::null_mut();
+        }
+    };
+    // C7 "secure by default": with the `security` feature, if the runtime
+    // configuration names an SROS2 enclave (`security.enclave_dir`, env
+    // `ZERODDS_SECURITY_DIR`, a file or `--set`), a DDS-Security participant
+    // from it; otherwise (or without the feature) the plain participant with
+    // the ROS 2 profile (the reader offers XCDR1+XCDR2 so it matches
+    // rmw_cyclonedds/rmw_fastrtps XCDR1 writers). A named enclave that fails
+    // is a hard error (NULL): security was requested and must not silently
+    // downgrade.
+    #[cfg(feature = "security")]
+    let secured = zerodds::security_ffi::runtime_create_secure_ros_from_source(
+        domain_id,
+        &source,
+        rcl_enclave.as_deref(),
+    )
+    .and_then(|rt| match rt {
+        // ROS_SECURITY_STRATEGY=Enforce needs security; rcl already refuses
+        // an enforced node without an enclave, this keeps the RMW from
+        // being the place where it is lost.
+        None if enforce != 0 => Err(String::from(
+            "ROS_SECURITY_STRATEGY=Enforce, but no enclave: neither rcl's \
+             security_root_path nor security.enclave_dir",
+        )),
+        other => Ok(other),
+    });
     #[cfg(not(feature = "security"))]
-    // A2/A5: ROS-2 out-of-the-box profile (XCDR1+XCDR2 offer), config-free interop.
-    // SAFETY: NULL-tolerant + heap-allocated.
-    let rt = unsafe { zerodds::zerodds_runtime_create_ros_defaults(domain_id) };
+    let secured: Result<Option<*mut zerodds::ZeroDdsRuntime>, String> =
+        if rcl_enclave.is_some() || enforce != 0 {
+            Err(String::from(
+                "ROS security is enabled (rcl passed an enclave or Enforce), but this RMW is \
+                 built without the `security` feature",
+            ))
+        } else {
+            Ok(None)
+        };
+    let rt = match secured.and_then(|rt| match rt {
+        Some(rt) => Ok(rt),
+        None => zerodds::runtime_create_ros_from_source(domain_id, &source),
+    }) {
+        Ok(rt) => rt,
+        Err(e) => {
+            #[allow(clippy::print_stderr)]
+            {
+                eprintln!("rmw_zerodds_init: {e}");
+            }
+            return ptr::null_mut();
+        }
+    };
     if rt.is_null() {
         return ptr::null_mut();
     }
+    // C2(6) — the opt-in ros2.spatial_bridge content-translation mode: its
+    // own participant on the same domain. A malformed mapping already
+    // failed init above (the same `loaded` chain that validates `ros2.*`);
+    // a runtime failure to start it here (e.g. the extra participant's
+    // sockets do not bind) degrades the same way a discovery-hookup
+    // failure below does — logged loudly, the node still starts without it,
+    // never a silent no-op.
+    let spatial_bridge = if spatial_bridge_cfg.enabled {
+        let sink = zerodds_dcps::runtime::observability_sink_from_source(&source);
+        #[allow(clippy::cast_possible_wrap)]
+        match spatial_bridge::SpatialBridge::start(domain_id as i32, &spatial_bridge_cfg, sink) {
+            Ok(bridge) => bridge,
+            Err(e) => {
+                #[allow(clippy::print_stderr)]
+                {
+                    eprintln!("rmw_zerodds_init: ros2.spatial_bridge failed to start: {e}");
+                }
+                None
+            }
+        }
+    } else {
+        None
+    };
     // Node-graph discovery: a ros_discovery_info writer + reader on this runtime.
     // The reader's listener decodes remote ParticipantEntitiesInfo into the graph.
     let graph = Arc::new(NodeGraph {
@@ -737,19 +838,35 @@ pub unsafe extern "C" fn rmw_zerodds_init(domain_id: u32) -> *mut RmwZerodsConte
     });
     let topic_c = std::ffi::CString::new(DISCOVERY_TOPIC).unwrap_or_default();
     let type_c = std::ffi::CString::new(DISCOVERY_TYPE).unwrap_or_default();
-    // SAFETY: runtime valid; NUL-terminated strings.
-    let dwriter =
-        // SAFETY: validity upheld by the surrounding contract (NULL/bounds checked where applicable).
-        unsafe { zerodds::zerodds_writer_create(rt, topic_c.as_ptr(), type_c.as_ptr(), 1) };
+    // `ros_discovery_info` as rmw_dds_common has every middleware create it:
+    // NoKey, RELIABLE, TRANSIENT_LOCAL, KEEP_LAST(1). A VOLATILE WithKey
+    // writer matched no other middleware's reader, so their graphs showed
+    // this RMW's endpoints under `_CREATED_BY_BARE_DDS_APP_`.
+    let discovery_qos = zerodds::ZeroDdsEndpointQos {
+        reliable: 1,
+        transient_local: 1,
+        history_keep_all: 0,
+        history_depth: 1,
+        ..zerodds::zerodds_endpoint_qos_default()
+    };
+    // SAFETY: runtime valid; NUL-terminated strings; the QoS lives across the call.
+    let dwriter = unsafe {
+        zerodds::zerodds_writer_create_qos(rt, topic_c.as_ptr(), type_c.as_ptr(), 0, &discovery_qos)
+    };
     if !dwriter.is_null() {
         if let Ok(mut w) = graph.writer.lock() {
             *w = dwriter;
         }
     }
-    // SAFETY: runtime valid; NUL-terminated strings.
-    let dreader =
-        // SAFETY: validity upheld by the surrounding contract (NULL/bounds checked where applicable).
-        unsafe { zerodds::zerodds_reader_create(rt, topic_c.as_ptr(), type_c.as_ptr(), 1) };
+    // KEEP_ALL on the reader: the data callback sees every announcement.
+    let reader_qos = zerodds::ZeroDdsEndpointQos {
+        history_keep_all: 1,
+        ..discovery_qos
+    };
+    // SAFETY: runtime valid; NUL-terminated strings; the QoS lives across the call.
+    let dreader = unsafe {
+        zerodds::zerodds_reader_create_qos(rt, topic_c.as_ptr(), type_c.as_ptr(), 0, &reader_qos)
+    };
     let discovery_cb_ud = if dreader.is_null() {
         ptr::null()
     } else {
@@ -771,13 +888,36 @@ pub unsafe extern "C" fn rmw_zerodds_init(domain_id: u32) -> *mut RmwZerodsConte
             ptr::null()
         }
     };
+    let notify = WaitNotify::new();
+    let status_cb_ud = Arc::into_raw(notify.clone());
+    // SAFETY: rt valid; the callback and its user_data outlive the runtime
+    // (drop destroys the runtime before reclaiming the Arc).
+    let registered = unsafe {
+        zerodds::zerodds_runtime_add_status_callback(
+            rt,
+            Some(status_on_change),
+            status_cb_ud as *mut c_void,
+        )
+    };
+    let status_cb_ud = if registered == 0 {
+        status_cb_ud
+    } else {
+        // SAFETY: reclaim the ref the runtime did not take.
+        drop(unsafe { Arc::from_raw(status_cb_ud) });
+        ptr::null()
+    };
+    let events = events::EventDispatcher::new(notify.clone());
     Box::into_raw(Box::new(RmwZerodsContext {
         domain_id,
         runtime: rt as *mut c_void,
-        notify: WaitNotify::new(),
+        notify,
+        events,
         graph,
         discovery_reader: dreader,
         discovery_cb_ud,
+        ros2,
+        status_cb_ud,
+        spatial_bridge,
     }))
 }
 
@@ -956,7 +1096,7 @@ pub unsafe extern "C" fn rmw_zerodds_create_node(
         Ok(s) => s.to_string(),
         Err(_) => return ptr::null_mut(),
     };
-    // SAFETY: NUL-terminierter C-String, NULL-checked oben.
+    // SAFETY: NUL-terminated C-string, NULL-checked above.
     let ns = match unsafe { CStr::from_ptr(namespace_) }.to_str() {
         Ok(s) => s.to_string(),
         Err(_) => return ptr::null_mut(),
@@ -1019,6 +1159,8 @@ pub struct RmwZerodsPublisher {
     ctx: *mut RmwZerodsContext,
     /// This writer's 16-byte endpoint GUID (for graph endpoint tracking).
     gid: Gid16,
+    /// Its QoS event callbacks.
+    events: Arc<events::EndpointEvents>,
 }
 
 /// Background "doorbell" for the raw delivery modes (RawSameHost/Iceoryx): a
@@ -1058,22 +1200,144 @@ pub struct RmwZerodsSubscription {
     ctx: *mut RmwZerodsContext,
     /// This reader's 16-byte endpoint GUID (for graph endpoint tracking).
     gid: Gid16,
+    /// Its QoS event callbacks.
+    events: Arc<events::EndpointEvents>,
+    /// The content filter of `rmw_subscription_set_content_filter`.
+    filter: Mutex<Option<SubscriptionFilter>>,
 }
 
-/// `rmw_create_publisher(node, type_name, topic_name, reliable)`.
+/// A subscription's content filter: the parsed expression and its
+/// parameters, read as DDS 1.4 Annex B literals.
+struct SubscriptionFilter {
+    expr: zerodds_sql_filter::Expr,
+    params: Vec<zerodds_sql_filter::Value>,
+}
+
+/// One field of a ROS message as the C side reads it for a filter: `kind`
+/// 0 none (no such field, or one a filter cannot compare), 1 bool (`b`),
+/// 2 integer (`i`), 3 floating point (`f`), 4 string (`s`, `slen` bytes,
+/// valid for the call).
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct RmwZerodsFilterValue {
+    /// Which member holds the value.
+    pub kind: u32,
+    /// Boolean.
+    pub b: u8,
+    /// Integer.
+    pub i: i64,
+    /// Floating point.
+    pub f: f64,
+    /// String bytes.
+    pub s: *const c_char,
+    /// String length.
+    pub slen: usize,
+}
+
+/// Reads the field named by the NUL-terminated `path` (`a.b` for nested
+/// members) of the message behind `ctx` into `out`.
+pub type RmwZerodsFieldGetter =
+    extern "C" fn(ctx: *const c_void, path: *const c_char, out: *mut RmwZerodsFilterValue) -> i32;
+
+struct CallbackRow {
+    ctx: *const c_void,
+    getter: RmwZerodsFieldGetter,
+}
+
+impl zerodds_sql_filter::RowAccess for CallbackRow {
+    fn get(&self, path: &str) -> Option<zerodds_sql_filter::Value> {
+        use zerodds_sql_filter::Value;
+        let path = alloc::ffi::CString::new(path).ok()?;
+        let mut v = RmwZerodsFilterValue {
+            kind: 0,
+            b: 0,
+            i: 0,
+            f: 0.0,
+            s: ptr::null(),
+            slen: 0,
+        };
+        if (self.getter)(self.ctx, path.as_ptr(), &mut v) == 0 {
+            return None;
+        }
+        match v.kind {
+            1 => Some(Value::Bool(v.b != 0)),
+            2 => Some(Value::Int(v.i)),
+            3 => Some(Value::Float(v.f)),
+            4 if !v.s.is_null() => {
+                // SAFETY: `s[0..slen]` valid for the call, per the getter.
+                let bytes = unsafe { core::slice::from_raw_parts(v.s.cast::<u8>(), v.slen) };
+                Some(Value::String(
+                    alloc::string::String::from_utf8_lossy(bytes).into_owned(),
+                ))
+            }
+            _ => None,
+        }
+    }
+}
+
+/// `rmw_create_publisher(node, type_name, topic_name, qos)`. The endpoint is
+/// created with the resolved [`RmwZerodsQos`] (see [`qos::resolve`]), which
+/// is also written to `actual` for `rmw_publisher_get_actual_qos`.
 ///
 /// # Safety
-/// Pointer validity as always; strings NUL-terminated.
+/// Pointer validity as always; strings NUL-terminated; `qos` points at an
+/// [`RmwZerodsQos`]; `actual` is NULL or writable.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rmw_zerodds_create_publisher(
     node: *mut RmwZerodsNode,
     type_name: *const c_char,
     topic_name: *const c_char,
-    reliable: c_int,
+    qos: *const RmwZerodsQos,
+    actual: *mut RmwZerodsQos,
 ) -> *mut RmwZerodsPublisher {
-    if node.is_null() || type_name.is_null() || topic_name.is_null() {
+    // SAFETY: the caller's contract, passed on; no type hash.
+    unsafe {
+        rmw_zerodds_create_publisher_hashed(node, type_name, topic_name, qos, actual, ptr::null())
+    }
+}
+
+/// The USER_DATA a ROS 2 endpoint announces its type hash in:
+/// `typehash=RIHS01_<64 hex digits>;`, the form `rmw_dds_common` writes and
+/// reads (`encode_type_hash_for_user_data_qos`). `type_hash` is the hash as
+/// `rosidl_stringify_type_hash` writes it, NUL-terminated, or NULL for
+/// none (a distribution before Iron has no type hashes). `None` for a hash
+/// that is not UTF-8.
+///
+/// # Safety
+/// `type_hash` NULL or NUL-terminated.
+pub(crate) unsafe fn type_hash_user_data(type_hash: *const c_char) -> Option<Vec<u8>> {
+    if type_hash.is_null() {
+        return Some(Vec::new());
+    }
+    // SAFETY: non-NULL and NUL-terminated by the caller's contract.
+    let hash = unsafe { CStr::from_ptr(type_hash) }.to_str().ok()?;
+    Some(format!("typehash={hash};").into_bytes())
+}
+
+/// [`rmw_zerodds_create_publisher`] that announces the type hash in
+/// USER_DATA (`type_hash_user_data`), as every RMW from Iron on does;
+/// `ros2 topic info -v` and `rmw_get_publishers_info_by_topic` of any RMW
+/// read it from there.
+///
+/// # Safety
+/// As [`rmw_zerodds_create_publisher`]; `type_hash` NULL or NUL-terminated.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rmw_zerodds_create_publisher_hashed(
+    node: *mut RmwZerodsNode,
+    type_name: *const c_char,
+    topic_name: *const c_char,
+    qos: *const RmwZerodsQos,
+    actual: *mut RmwZerodsQos,
+    type_hash: *const c_char,
+) -> *mut RmwZerodsPublisher {
+    if node.is_null() || type_name.is_null() || topic_name.is_null() || qos.is_null() {
         return ptr::null_mut();
     }
+    // SAFETY: the caller's contract.
+    let Some(user_data) = (unsafe { type_hash_user_data(type_hash) }) else {
+        return ptr::null_mut();
+    };
+
     // SAFETY: node NULL-checked above.
     let n = unsafe { &*node };
     // SAFETY: n.ctx must be initialized by rmw_zerodds_init
@@ -1092,11 +1356,21 @@ pub unsafe extern "C" fn rmw_zerodds_create_publisher(
         Err(_) => return ptr::null_mut(),
     };
     // ROS-2 topic mangling: rt/<topic> for regular topics.
-    let topic_dds = zerodds_ros2_rmw::topic_mangling::mangle_topic_name(
-        &topic_ros,
-        zerodds_ros2_rmw::topic_mangling::RosKind::Topic,
-    )
-    .unwrap_or_else(|_| topic_ros.clone());
+    // The topic's `ros2.topic_overrides` entry replaces what it names of the
+    // request, then the request resolves as in qos::resolve.
+    // SAFETY: non-null by the check above, readable by the caller's contract.
+    let requested = ctx.ros2.effective_qos(&topic_ros, unsafe { &*qos });
+    let resolved = match qos::resolve(&requested, qos::Side::Publisher) {
+        Ok(r) => r,
+        Err(_) => return ptr::null_mut(),
+    };
+    if !actual.is_null() {
+        // SAFETY: non-null and writable by the caller's contract.
+        unsafe { *actual = resolved.actual() };
+    }
+    let topic_dds = ctx
+        .ros2
+        .dds_topic(&topic_ros, resolved.avoid_ros_namespace_conventions);
     let dds_topic_c = match std::ffi::CString::new(topic_dds.clone()) {
         Ok(s) => s,
         Err(_) => return ptr::null_mut(),
@@ -1105,18 +1379,52 @@ pub unsafe extern "C" fn rmw_zerodds_create_publisher(
         Ok(s) => s,
         Err(_) => return ptr::null_mut(),
     };
-    // SAFETY: writer_create NULL-tolerant.
+    let endpoint_qos = resolved.endpoint();
+    // NoKey (RTPS §9.3.1.2 Table 9.1, entity kind 0x03/0x04): ROS 2 messages
+    // carry no key, and every other ROS middleware creates NoKey endpoints.
+    // The untyped create this replaced made WithKey writers (0x02), whose
+    // DATA a NoKey Cyclone or Fast DDS reader does not accept.
+    // SAFETY: writer_create_qos NULL-tolerant; the QoS lives across the call.
     let writer = unsafe {
-        zerodds::zerodds_writer_create(
+        zerodds::zerodds_writer_create_qos_user_data(
             ctx.runtime as *mut zerodds::ZeroDdsRuntime,
             dds_topic_c.as_ptr(),
             typ_c.as_ptr(),
-            reliable,
+            0,
+            &endpoint_qos,
+            user_data.as_ptr(),
+            user_data.len(),
         )
     };
     if writer.is_null() {
         return ptr::null_mut();
     }
+    // Say FINAL rather than leave the ABI's fallback to speak for us.
+    //
+    // The rmw entry point takes a type *name*; the layer above resolves a
+    // `rosidl_typesupport_introspection_c__MessageMembers`, and that struct
+    // carries no extensibility — the C side reads `member_count_`, `size_of_`,
+    // `members_`, `type_id_` and `offset_`, and there is no sixth field to
+    // read. So there is no value in this path to pass on, and the question is
+    // what ROS types actually are.
+    //
+    // Measured 2026-09-05 against the ROS 2 Humble environment used for the
+    // interop runs (`ROS_PREFIX`, 224 generated `.idl` files): **not one**
+    // carries `@appendable`, `@mutable` or `@final`, and `rosidl` emits no
+    // extensibility at all — the only matches for the word in that tree are
+    // Fast DDS's own headers. Every ROS type on that path is therefore plain
+    // CDR, which is what FINAL frames.
+    //
+    // Saying it beats inheriting it: under XCDR1 the ABI fallback framed an
+    // `@appendable` body with a `CDR_LE` identifier, and OpenDDS then read the
+    // DHEADER as the first member — 24 samples delivered with shifted values
+    // rather than refused. A stated FINAL cannot drift that way.
+    //
+    // `tools/ros-extensibility-scan.sh` repeats the measurement. If a ROS
+    // package ever ships hand-written IDL with a non-final type, that scan is
+    // where it shows up, and this line is what has to change.
+    // SAFETY: writer is non-null (checked above) and came from writer_create.
+    let _ = unsafe { zerodds::zerodds_writer_set_wire_extensibility(writer, 0) };
     // Capture the writer GUID + register the endpoint with its owning node so
     // ros_discovery_info carries the endpoint→node link (endpoint-info).
     let mut gid = [0u8; 16];
@@ -1131,7 +1439,112 @@ pub unsafe extern "C" fn rmw_zerodds_create_publisher(
         type_name: typ,
         ctx: n.ctx,
         gid,
+        events: events::EndpointEvents::new(events::Probe::Writer(writer)),
     }))
+}
+
+/// The publisher's GID: its DDS writer GUID, the value graph queries
+/// (`rmw_get_publishers_info_by_topic`) report for it (16 bytes into `out`).
+///
+/// # Safety
+/// `pub_` from `rmw_zerodds_create_publisher` or NULL; `out` writable for
+/// 16 bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rmw_zerodds_publisher_gid(
+    pub_: *mut RmwZerodsPublisher,
+    out: *mut u8,
+) -> i32 {
+    if pub_.is_null() || out.is_null() {
+        return RMW_RET_INVALID_ARGUMENT;
+    }
+    // SAFETY: both NULL-checked; `out` holds 16 bytes per the caller.
+    unsafe { core::ptr::copy_nonoverlapping((*pub_).gid.as_ptr(), out, 16) };
+    RMW_RET_OK
+}
+
+/// A unicast locator of an endpoint, for `rmw_*_get_network_flow_endpoints`:
+/// `kind` 1 UDPv4, 2 UDPv6, 4 TCPv4, 8 TCPv6, others not IP.
+#[repr(C)]
+#[derive(Debug, Default, Clone, Copy)]
+pub struct RmwZerodsLocator {
+    /// DDSI-RTPS locator kind.
+    pub kind: i32,
+    /// Port.
+    pub port: u32,
+    /// Address bytes; IPv4 in the last four.
+    pub address: [u8; 16],
+}
+
+fn copy_locators(raw: &[zerodds::ZeroDdsLocator], out: *mut RmwZerodsLocator, capacity: usize) {
+    if out.is_null() {
+        return;
+    }
+    for (i, l) in raw.iter().take(capacity).enumerate() {
+        // SAFETY: `out` holds `capacity` elements per the caller; i < capacity.
+        unsafe {
+            *out.add(i) = RmwZerodsLocator {
+                kind: l.kind,
+                port: l.port,
+                address: l.address,
+            };
+        }
+    }
+}
+
+/// The unicast locators of a publisher's writer; returns the count, copies
+/// at most `capacity` into `out` (NULL to ask for the count).
+///
+/// # Safety
+/// `pub_` from `rmw_zerodds_create_publisher` or NULL; `out` writable for
+/// `capacity` elements or NULL.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rmw_zerodds_publisher_unicast_locators(
+    pub_: *mut RmwZerodsPublisher,
+    out: *mut RmwZerodsLocator,
+    capacity: usize,
+) -> usize {
+    if pub_.is_null() {
+        return 0;
+    }
+    // SAFETY: NULL-checked; caller pledge on its origin.
+    let p = unsafe { &*pub_ };
+    let Ok(w) = p.inner.lock() else {
+        return 0;
+    };
+    // SAFETY: writer from zerodds_writer_create; NULL `out` asks for the count.
+    let n = unsafe { zerodds::zerodds_writer_unicast_locators(*w, ptr::null_mut(), 0) };
+    let mut raw = alloc::vec![zerodds::ZeroDdsLocator::default(); n];
+    // SAFETY: `raw` holds `n` elements.
+    unsafe { zerodds::zerodds_writer_unicast_locators(*w, raw.as_mut_ptr(), n) };
+    copy_locators(&raw, out, capacity);
+    n
+}
+
+/// [`rmw_zerodds_publisher_unicast_locators`] for a subscription's reader.
+///
+/// # Safety
+/// As [`rmw_zerodds_publisher_unicast_locators`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rmw_zerodds_subscription_unicast_locators(
+    sub: *mut RmwZerodsSubscription,
+    out: *mut RmwZerodsLocator,
+    capacity: usize,
+) -> usize {
+    if sub.is_null() {
+        return 0;
+    }
+    // SAFETY: NULL-checked; caller pledge on its origin.
+    let s = unsafe { &*sub };
+    let Ok(r) = s.inner.lock() else {
+        return 0;
+    };
+    // SAFETY: reader from zerodds_reader_create; NULL `out` asks for the count.
+    let n = unsafe { zerodds::zerodds_reader_unicast_locators(*r, ptr::null_mut(), 0) };
+    let mut raw = alloc::vec![zerodds::ZeroDdsLocator::default(); n];
+    // SAFETY: `raw` holds `n` elements.
+    unsafe { zerodds::zerodds_reader_unicast_locators(*r, raw.as_mut_ptr(), n) };
+    copy_locators(&raw, out, capacity);
+    n
 }
 
 /// Number of remote subscriptions currently matched to this publisher — the
@@ -1154,6 +1567,124 @@ pub unsafe extern "C" fn rmw_zerodds_publisher_matched_count(
     };
     // SAFETY: writer from zerodds_writer_create; NULL-tolerant.
     unsafe { zerodds::zerodds_writer_matched_count(*w) }
+}
+
+/// A publisher's communication status, cumulative since it was created
+/// (DDS 1.4 §2.2.4.1). `rmw_take_event` reports the change to the values it
+/// read last.
+#[repr(C)]
+#[derive(Debug, Default, Clone, Copy)]
+pub struct RmwZerodsPublisherStatus {
+    /// OFFERED_DEADLINE_MISSED `total_count`.
+    pub offered_deadline_missed_total: u64,
+    /// LIVELINESS_LOST `total_count`.
+    pub liveliness_lost_total: u64,
+    /// OFFERED_INCOMPATIBLE_QOS `total_count`.
+    pub offered_incompatible_qos_total: u64,
+    /// The DDS QosPolicyId of the last incompatible policy, 0 for none.
+    pub offered_incompatible_qos_last_policy_id: u32,
+    /// Subscriptions matched now.
+    pub matched_current: u64,
+    /// Readers of an incompatible type refused on the topic.
+    pub incompatible_type_total: u64,
+}
+
+/// A subscription's communication status, cumulative since it was created.
+#[repr(C)]
+#[derive(Debug, Default, Clone, Copy)]
+pub struct RmwZerodsSubscriptionStatus {
+    /// REQUESTED_DEADLINE_MISSED `total_count`.
+    pub requested_deadline_missed_total: u64,
+    /// Writers seen becoming alive.
+    pub liveliness_alive: u64,
+    /// Writers seen becoming not alive.
+    pub liveliness_not_alive: u64,
+    /// REQUESTED_INCOMPATIBLE_QOS `total_count`.
+    pub requested_incompatible_qos_total: u64,
+    /// The DDS QosPolicyId of the last incompatible policy, 0 for none.
+    pub requested_incompatible_qos_last_policy_id: u32,
+    /// SAMPLE_LOST `total_count`.
+    pub sample_lost_total: u64,
+    /// Publishers matched now.
+    pub matched_current: u64,
+    /// Writers of an incompatible type refused on the topic.
+    pub incompatible_type_total: u64,
+}
+
+/// The communication status of a publisher's writer, cumulative; the C side
+/// turns it into the change `rmw_take_event` reports.
+///
+/// # Safety
+/// `pub_` from `rmw_zerodds_create_publisher` or NULL; `out` writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rmw_zerodds_publisher_get_status(
+    pub_: *mut RmwZerodsPublisher,
+    out: *mut RmwZerodsPublisherStatus,
+) -> i32 {
+    if pub_.is_null() || out.is_null() {
+        return RMW_RET_INVALID_ARGUMENT;
+    }
+    // SAFETY: pub_ NULL-checked; caller pledge it came from create_publisher.
+    let p = unsafe { &*pub_ };
+    let Ok(w) = p.inner.lock() else {
+        return RMW_RET_ERROR;
+    };
+    let mut st = zerodds::ZeroDdsWriterStatus::default();
+    // SAFETY: writer from zerodds_writer_create; `st` is a local.
+    if unsafe { zerodds::zerodds_writer_get_status(*w, &mut st) } != 0 {
+        return RMW_RET_ERROR;
+    }
+    // SAFETY: out NULL-checked, writable per the caller.
+    unsafe {
+        *out = RmwZerodsPublisherStatus {
+            offered_deadline_missed_total: st.offered_deadline_missed_total,
+            liveliness_lost_total: st.liveliness_lost_total,
+            offered_incompatible_qos_total: st.offered_incompatible_qos_total,
+            offered_incompatible_qos_last_policy_id: st.offered_incompatible_qos_last_policy_id,
+            matched_current: st.matched_current,
+            incompatible_type_total: st.incompatible_type_total,
+        };
+    }
+    RMW_RET_OK
+}
+
+/// The communication status of a subscription's reader, cumulative; the C
+/// side turns it into the change `rmw_take_event` reports.
+///
+/// # Safety
+/// `sub` from `rmw_zerodds_create_subscription` or NULL; `out` writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rmw_zerodds_subscription_get_status(
+    sub: *mut RmwZerodsSubscription,
+    out: *mut RmwZerodsSubscriptionStatus,
+) -> i32 {
+    if sub.is_null() || out.is_null() {
+        return RMW_RET_INVALID_ARGUMENT;
+    }
+    // SAFETY: sub NULL-checked; caller pledge it came from create_subscription.
+    let s = unsafe { &*sub };
+    let Ok(r) = s.inner.lock() else {
+        return RMW_RET_ERROR;
+    };
+    let mut st = zerodds::ZeroDdsReaderStatus::default();
+    // SAFETY: reader from zerodds_reader_create; `st` is a local.
+    if unsafe { zerodds::zerodds_reader_get_status(*r, &mut st) } != 0 {
+        return RMW_RET_ERROR;
+    }
+    // SAFETY: out NULL-checked, writable per the caller.
+    unsafe {
+        *out = RmwZerodsSubscriptionStatus {
+            requested_deadline_missed_total: st.requested_deadline_missed_total,
+            liveliness_alive: st.liveliness_alive,
+            liveliness_not_alive: st.liveliness_not_alive,
+            requested_incompatible_qos_total: st.requested_incompatible_qos_total,
+            requested_incompatible_qos_last_policy_id: st.requested_incompatible_qos_last_policy_id,
+            sample_lost_total: st.sample_lost_total,
+            matched_current: st.matched_current,
+            incompatible_type_total: st.incompatible_type_total,
+        };
+    }
+    RMW_RET_OK
 }
 
 /// Number of remote publishers currently matched to this subscription — the
@@ -1194,6 +1725,8 @@ pub unsafe extern "C" fn rmw_zerodds_destroy_publisher(pub_: *mut RmwZerodsPubli
         // SAFETY: ctx set at create, valid for the publisher's lifetime.
         graph_unregister_endpoint(&unsafe { &*p.ctx }.graph, &p.gid);
     }
+    // The event thread stops reading this writer before it goes.
+    p.events.close();
     if let Ok(g) = p.inner.lock() {
         // SAFETY: writer comes from zerodds_writer_create + Box owns.
         unsafe { zerodds::zerodds_writer_destroy(*g) };
@@ -1201,7 +1734,7 @@ pub unsafe extern "C" fn rmw_zerodds_destroy_publisher(pub_: *mut RmwZerodsPubli
     RMW_RET_OK
 }
 
-/// `rmw_publish(pub, payload, len)` — schreibt CDR-encoded bytes.
+/// `rmw_publish(pub, payload, len)` — writes CDR-encoded bytes.
 ///
 /// # Safety
 /// `pub_` valid; `payload` of `len` bytes lives during the call.
@@ -1220,91 +1753,202 @@ pub unsafe extern "C" fn rmw_zerodds_publish(
         Ok(g) => *g,
         Err(_) => return RMW_RET_ERROR,
     };
-    // SAFETY: payload + len contract via FFI; writer from create.
-    let rc = unsafe { zerodds::zerodds_writer_write(writer, payload, len) };
+    // The C layer hands a CDR stream with its encapsulation header (the
+    // form ROS serialized messages have); the writer stamps its own header
+    // over the body, so the stream's is taken off here. It used to go out as
+    // body bytes: a second header, which ZeroDDS readers skipped and every
+    // other middleware decoded as data (an Int32 5 arrived as 256).
+    if payload.is_null() || len < 4 {
+        return RMW_RET_INVALID_ARGUMENT;
+    }
+    // SAFETY: payload non-null, `len` bytes readable by the caller's contract.
+    let stream = unsafe { core::slice::from_raw_parts(payload, len) };
+    // CDR_LE (0x0001) is what the introspection serializer and a
+    // little-endian ROS serialized message carry; another header would be
+    // restamped as CDR_LE over a body it does not describe.
+    if stream[0..2] != [0x00, 0x01] {
+        return RMW_RET_ERROR;
+    }
+    let body = &stream[4..];
+    // SAFETY: body within the caller's buffer; writer from create.
+    let rc = unsafe { zerodds::zerodds_writer_write(writer, body.as_ptr(), body.len()) };
     if rc == 0 { RMW_RET_OK } else { RMW_RET_ERROR }
 }
 
-/// A2 — resolve the TIME_BASED_FILTER `minimum_separation` (nanoseconds) for a
-/// ROS topic from the `ZERODDS_TIME_BASED_FILTER` env. ROS 2 has no
-/// `rmw_qos_profile_t` field for TIME_BASED_FILTER, so this is the
-/// vendor-idiomatic config seam (cf. `CYCLONEDDS_URI` / Fast DDS XML).
-///
-/// Value = comma-separated entries; each is either `<seconds>` (a bare number =
-/// global default for every subscription) or `<topic>=<seconds>` (per-topic
-/// override, where `<topic>` is the ROS topic name, e.g. `/scan`). A per-topic
-/// entry wins over the global default. `Some(0)`/absent/unparseable → no filter.
-///
-/// Examples: `ZERODDS_TIME_BASED_FILTER=0.1` (10 Hz cap on all subs);
-/// `ZERODDS_TIME_BASED_FILTER=/scan=0.2,/image=0.5` (per-topic).
-fn tbf_min_separation_nanos_for(topic_ros: &str) -> Option<u64> {
-    let raw = std::env::var("ZERODDS_TIME_BASED_FILTER").ok()?;
-    parse_tbf_env(&raw, topic_ros)
-}
-
-/// Pure parser for [`tbf_min_separation_nanos_for`] (no env access, unit-testable).
-fn parse_tbf_env(raw: &str, topic_ros: &str) -> Option<u64> {
-    let to_ns = |secs: f64| -> Option<u64> {
-        if secs.is_finite() && secs > 0.0 {
-            Some((secs * 1_000_000_000.0) as u64)
-        } else {
-            None
-        }
-    };
-    let mut global: Option<u64> = None;
-    for entry in raw.split(',').map(str::trim).filter(|s| !s.is_empty()) {
-        match entry.split_once('=') {
-            Some((topic, secs)) => {
-                if topic.trim() == topic_ros {
-                    // Per-topic override takes precedence; return immediately.
-                    return secs.trim().parse::<f64>().ok().and_then(to_ns);
-                }
-            }
-            None => {
-                if let Ok(secs) = entry.parse::<f64>() {
-                    global = to_ns(secs);
-                }
-            }
-        }
+/// The encapsulation header (RTPS 2.5 §10.5) of a body the runtime delivered
+/// without one: XCDR1 `CDR_LE`/`CDR_BE`, XCDR2 `PLAIN_CDR2_LE`/`_BE`.
+fn encapsulation_header(repr: u8, big_endian: u8) -> [u8; 4] {
+    match (repr, big_endian) {
+        (0, 0) => [0x00, 0x01, 0x00, 0x00],
+        (0, _) => [0x00, 0x00, 0x00, 0x00],
+        (_, 0) => [0x00, 0x07, 0x00, 0x00],
+        (_, _) => [0x00, 0x06, 0x00, 0x00],
     }
-    global
 }
 
-/// `rmw_create_subscription(node, type, topic, reliable)`.
+/// A2 — the TIME_BASED_FILTER `minimum_separation` (nanoseconds) for a ROS
+/// topic, from the runtime's `ros2.time_based_filter` (env
+/// `ZERODDS_TIME_BASED_FILTER`, or a file). ROS 2 has no `rmw_qos_profile_t`
+/// field for TIME_BASED_FILTER, so this is the vendor-idiomatic config seam
+/// (cf. `CYCLONEDDS_URI` / Fast DDS XML). A misspelled value refuses runtime
+/// creation instead of silently not filtering.
+fn tbf_min_separation_nanos_for(runtime: *mut c_void, topic_ros: &str) -> Option<u64> {
+    // SAFETY: the context's runtime, alive for the context's lifetime.
+    let config = unsafe { zerodds::runtime_config(runtime as *const zerodds::ZeroDdsRuntime) }?;
+    config
+        .time_based_filter_for(topic_ros)
+        .map(|d| u64::try_from(d.as_nanos()).unwrap_or(u64::MAX))
+}
+
+/// The delivery mode the RMW's C layer selects for new publishers and
+/// subscriptions: the runtime's `delivery.mode` (env `ZERODDS_DELIVERY_MODE`).
+/// 0 Portable, 1 RawSameHost, 2 Iceoryx; 0 for a NULL context.
 ///
 /// # Safety
-/// Wie create_publisher.
+/// `ctx` must be NULL or come from `rmw_zerodds_init` and still be alive.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rmw_zerodds_delivery_mode(ctx: *const RmwZerodsContext) -> i32 {
+    if ctx.is_null() {
+        return 0;
+    }
+    // SAFETY: non-null and live by the caller's contract.
+    let runtime = unsafe { (*ctx).runtime };
+    // SAFETY: the context's runtime, alive for the context's lifetime.
+    unsafe { zerodds::runtime_config(runtime as *const zerodds::ZeroDdsRuntime) }
+        .map_or(0, |config| config.delivery_mode.as_c())
+}
+
+/// `rmw_publisher_assert_liveliness`: a MANUAL_BY_TOPIC liveliness assertion
+/// (DDS 1.4 §2.2.3.11). The C layer returned OK without asserting.
+///
+/// # Safety
+/// `pub_` from `rmw_zerodds_create_publisher` or NULL.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rmw_zerodds_publisher_assert_liveliness(
+    pub_: *mut RmwZerodsPublisher,
+) -> i32 {
+    if pub_.is_null() {
+        return RMW_RET_INVALID_ARGUMENT;
+    }
+    // SAFETY: non-null by the check above.
+    let p = unsafe { &*pub_ };
+    let Ok(writer) = p.inner.lock().map(|g| *g) else {
+        return RMW_RET_ERROR;
+    };
+    // SAFETY: writer from writer_create_qos, alive while the publisher is.
+    match unsafe { zerodds::zerodds_writer_assert_liveliness(writer) } {
+        0 => RMW_RET_OK,
+        _ => RMW_RET_ERROR,
+    }
+}
+
+/// `rmw_publisher_wait_for_all_acked`: blocks until every matched
+/// subscription acknowledged every sample, or `timeout_ns` elapses
+/// (`RMW_RET_TIMEOUT`). The C layer returned OK without waiting.
+///
+/// # Safety
+/// As [`rmw_zerodds_publisher_assert_liveliness`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rmw_zerodds_publisher_wait_for_all_acked(
+    pub_: *mut RmwZerodsPublisher,
+    timeout_ns: u64,
+) -> i32 {
+    if pub_.is_null() {
+        return RMW_RET_INVALID_ARGUMENT;
+    }
+    // SAFETY: non-null by the check above.
+    let p = unsafe { &*pub_ };
+    let Ok(writer) = p.inner.lock().map(|g| *g) else {
+        return RMW_RET_ERROR;
+    };
+    // SAFETY: writer from writer_create_qos, alive while the publisher is.
+    match unsafe { zerodds::zerodds_writer_wait_for_acknowledgments(writer, timeout_ns) } {
+        0 => RMW_RET_OK,
+        1 => RMW_RET_TIMEOUT,
+        _ => RMW_RET_ERROR,
+    }
+}
+
+/// `rmw_create_subscription(node, type, topic, qos)`; the QoS as for
+/// [`rmw_zerodds_create_publisher`], KEEP_LAST bounding the inbox.
+///
+/// # Safety
+/// Like create_publisher.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rmw_zerodds_create_subscription(
     node: *mut RmwZerodsNode,
     type_name: *const c_char,
     topic_name: *const c_char,
-    reliable: c_int,
+    qos: *const RmwZerodsQos,
+    actual: *mut RmwZerodsQos,
 ) -> *mut RmwZerodsSubscription {
-    if node.is_null() || type_name.is_null() || topic_name.is_null() {
+    // SAFETY: the caller's contract, passed on; no type hash.
+    unsafe {
+        rmw_zerodds_create_subscription_hashed(
+            node,
+            type_name,
+            topic_name,
+            qos,
+            actual,
+            ptr::null(),
+        )
+    }
+}
+
+/// [`rmw_zerodds_create_subscription`] that announces the type hash in
+/// USER_DATA, as [`rmw_zerodds_create_publisher_hashed`].
+///
+/// # Safety
+/// As [`rmw_zerodds_create_subscription`]; `type_hash` NULL or
+/// NUL-terminated.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rmw_zerodds_create_subscription_hashed(
+    node: *mut RmwZerodsNode,
+    type_name: *const c_char,
+    topic_name: *const c_char,
+    qos: *const RmwZerodsQos,
+    actual: *mut RmwZerodsQos,
+    type_hash: *const c_char,
+) -> *mut RmwZerodsSubscription {
+    if node.is_null() || type_name.is_null() || topic_name.is_null() || qos.is_null() {
         return ptr::null_mut();
     }
-    // SAFETY: node NULL-checked oben.
+    // SAFETY: the caller's contract.
+    let Some(user_data) = (unsafe { type_hash_user_data(type_hash) }) else {
+        return ptr::null_mut();
+    };
+
+    // SAFETY: node NULL-checked above.
     let n = unsafe { &*node };
     // SAFETY: n.ctx must be initialized by rmw_zerodds_init.
     let ctx = unsafe { &*n.ctx };
-    // SAFETY: topic_name NULL-checked oben; caller-Kontrakt: NUL-
+    // SAFETY: topic_name NULL-checked above; caller contract: NUL-
     // terminierter C-String.
     let topic_ros = match unsafe { CStr::from_ptr(topic_name) }.to_str() {
         Ok(s) => s.to_string(),
         Err(_) => return ptr::null_mut(),
     };
-    // SAFETY: type_name NULL-checked oben; caller-Kontrakt: NUL-
+    // SAFETY: type_name NULL-checked above; caller contract: NUL-
     // terminierter C-String.
     let typ = match unsafe { CStr::from_ptr(type_name) }.to_str() {
         Ok(s) => s.to_string(),
         Err(_) => return ptr::null_mut(),
     };
-    let topic_dds = zerodds_ros2_rmw::topic_mangling::mangle_topic_name(
-        &topic_ros,
-        zerodds_ros2_rmw::topic_mangling::RosKind::Topic,
-    )
-    .unwrap_or_else(|_| topic_ros.clone());
+    // The topic's `ros2.topic_overrides` entry replaces what it names of the
+    // request, then the request resolves as in qos::resolve.
+    // SAFETY: non-null by the check above, readable by the caller's contract.
+    let requested = ctx.ros2.effective_qos(&topic_ros, unsafe { &*qos });
+    let resolved = match qos::resolve(&requested, qos::Side::Subscription) {
+        Ok(r) => r,
+        Err(_) => return ptr::null_mut(),
+    };
+    if !actual.is_null() {
+        // SAFETY: non-null and writable by the caller's contract.
+        unsafe { *actual = resolved.actual() };
+    }
+    let topic_dds = ctx
+        .ros2
+        .dds_topic(&topic_ros, resolved.avoid_ros_namespace_conventions);
     let dds_topic_c = match std::ffi::CString::new(topic_dds.clone()) {
         Ok(s) => s,
         Err(_) => return ptr::null_mut(),
@@ -1313,13 +1957,18 @@ pub unsafe extern "C" fn rmw_zerodds_create_subscription(
         Ok(s) => s,
         Err(_) => return ptr::null_mut(),
     };
-    // SAFETY: reader_create NULL-tolerant.
+    let endpoint_qos = resolved.endpoint();
+    // NoKey, as for the publisher.
+    // SAFETY: reader_create_qos NULL-tolerant; the QoS lives across the call.
     let reader = unsafe {
-        zerodds::zerodds_reader_create(
+        zerodds::zerodds_reader_create_qos_user_data(
             ctx.runtime as *mut zerodds::ZeroDdsRuntime,
             dds_topic_c.as_ptr(),
             typ_c.as_ptr(),
-            reliable,
+            0,
+            &endpoint_qos,
+            user_data.as_ptr(),
+            user_data.len(),
         )
     };
     if reader.is_null() {
@@ -1333,11 +1982,12 @@ pub unsafe extern "C" fn rmw_zerodds_create_subscription(
         queue: Mutex::new(alloc::collections::VecDeque::new()),
         notify: ctx.notify.clone(),
         event: Mutex::new(None),
+        keep_last: resolved.keep_last.map(|d| d as usize),
     });
     let cb_userdata = Arc::into_raw(inbox.clone());
     // SAFETY: reader from reader_create; callback + user_data outlive the reader.
     let set = unsafe {
-        zerodds::zerodds_reader_set_data_callback(
+        zerodds::zerodds_reader_set_data_callback_ex(
             reader,
             Some(subscription_on_data),
             cb_userdata as *mut c_void,
@@ -1353,8 +2003,8 @@ pub unsafe extern "C" fn rmw_zerodds_create_subscription(
         return ptr::null_mut();
     }
     // A2 — TIME_BASED_FILTER: ROS 2's `rmw_qos_profile_t` has no field for it, so
-    // the subscription rate-limit is set per-topic via `ZERODDS_TIME_BASED_FILTER`.
-    if let Some(ns) = tbf_min_separation_nanos_for(&topic_ros) {
+    // the subscription rate-limit is set per-topic via `ros2.time_based_filter`.
+    if let Some(ns) = tbf_min_separation_nanos_for(ctx.runtime, &topic_ros) {
         // SAFETY: reader valid (created above + callback set); NULL-tolerant.
         unsafe { zerodds::zerodds_reader_set_time_based_filter_ns(reader, ns) };
     }
@@ -1374,6 +2024,8 @@ pub unsafe extern "C" fn rmw_zerodds_create_subscription(
         doorbell: Mutex::new(None),
         ctx: n.ctx,
         gid,
+        events: events::EndpointEvents::new(events::Probe::Reader(reader)),
+        filter: Mutex::new(None),
     }))
 }
 
@@ -1403,11 +2055,13 @@ pub unsafe extern "C" fn rmw_zerodds_destroy_subscription(sub: *mut RmwZerodsSub
             }
         }
     }
+    // The event thread stops reading this reader before it goes.
+    s.events.close();
     if let Ok(g) = s.inner.lock() {
         // Destroy the reader (after the doorbell is gone) — this also stops the
         // receive thread from firing the data callback, so the callback's
         // `user_data` Arc can be reclaimed race-free below.
-        // SAFETY: reader kommt aus zerodds_reader_create.
+        // SAFETY: reader comes from zerodds_reader_create.
         unsafe { zerodds::zerodds_reader_destroy(*g) };
     }
     // Reclaim the data-callback's extra Arc<SubInbox> ref (no callback can fire
@@ -1798,17 +2452,34 @@ pub unsafe extern "C" fn rmw_zerodds_subscription_enable_iceoryx(
     }
 }
 
-/// `rmw_take(sub, *mut buf, *mut len)` — versucht ein Sample zu lesen.
-/// Caller MUSS `rmw_zerodds_buffer_free(buf, len)` aufrufen.
+/// `rmw_take(sub, *mut buf, *mut len)` — tries to read a sample.
+/// Caller MUST call `rmw_zerodds_buffer_free(buf, len)`.
 ///
 /// # Safety
-/// Pointer-Validitaet; out_buf/out_len NULL-checked unten.
+/// Pointer validity; out_buf/out_len NULL-checked below.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rmw_zerodds_take(
     sub: *mut RmwZerodsSubscription,
     out_buf: *mut *mut u8,
     out_len: *mut usize,
     out_big_endian: *mut u8,
+) -> i32 {
+    // SAFETY: forwarded unchanged; a NULL origin is not written.
+    unsafe { rmw_zerodds_take_with_origin(sub, out_buf, out_len, out_big_endian, ptr::null_mut()) }
+}
+
+/// [`rmw_zerodds_take`] that also reports where the sample came from into
+/// `out_origin` (NULL: not reported).
+///
+/// # Safety
+/// As [`rmw_zerodds_take`]; `out_origin` writable or NULL.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rmw_zerodds_take_with_origin(
+    sub: *mut RmwZerodsSubscription,
+    out_buf: *mut *mut u8,
+    out_len: *mut usize,
+    out_big_endian: *mut u8,
+    out_origin: *mut RmwZerodsSampleOrigin,
 ) -> i32 {
     if sub.is_null() || out_buf.is_null() || out_len.is_null() {
         return RMW_RET_INVALID_ARGUMENT;
@@ -1817,7 +2488,17 @@ pub unsafe extern "C" fn rmw_zerodds_take(
     let s = unsafe { &*sub };
     let popped = s.inbox.queue.lock().ok().and_then(|mut q| q.pop_front());
     match popped {
-        Some((bytes, _repr, be)) if !bytes.is_empty() => {
+        Some((body, repr, be, origin)) if !body.is_empty() => {
+            if !out_origin.is_null() {
+                // SAFETY: writable per the caller.
+                unsafe { *out_origin = origin };
+            }
+            // A CDR stream with its encapsulation header, as the C layer and
+            // ROS serialized messages read it; the runtime delivers the body.
+            let mut stream = Vec::with_capacity(body.len() + 4);
+            stream.extend_from_slice(&encapsulation_header(repr, be));
+            stream.extend_from_slice(&body);
+            let bytes = stream.into_boxed_slice();
             let len = bytes.len();
             let ptr = alloc::boxed::Box::into_raw(bytes).cast::<u8>();
             // SAFETY: out_buf/out_len NULL-checked above; caller frees the
@@ -1929,7 +2610,7 @@ pub unsafe extern "C" fn rmw_zerodds_context_notify(ctx: *mut RmwZerodsContext) 
 /// CDR bytes from rmw_zerodds_take.
 ///
 /// # Safety
-/// Wie zerodds_buffer_free.
+/// Like zerodds_buffer_free.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rmw_zerodds_buffer_free(buf: *mut u8, len: usize) {
     // SAFETY: Pass-through.
@@ -1940,436 +2621,7 @@ pub unsafe extern "C" fn rmw_zerodds_buffer_free(buf: *mut u8, len: usize) {
 // Phase-B: Service-Layer + Wait-Sets + Loaning + REP-2009 Type-Hash
 // ============================================================================
 
-/// Opaque-Handle: rmw_zerodds Client (request-Pub + reply-Sub auf
-/// `<service>_Request` / `<service>_Reply`).
-pub struct RmwZerodsClient {
-    /// Underlying writer auf `<service>_Request`.
-    request_writer: Mutex<*mut zerodds::ZeroDdsWriter>,
-    /// Underlying reader auf `<service>_Reply`.
-    reply_reader: Mutex<*mut zerodds::ZeroDdsReader>,
-    /// Listener-fed inbox for replies (event-driven `has_data` + wait wake).
-    reply_inbox: Arc<SubInbox>,
-    /// `Arc<SubInbox>` raw pointer handed to the reply reader's data callback.
-    reply_cb_ud: *const SubInbox,
-    /// Service name (before topic mangling).
-    pub service_name: alloc::string::String,
-}
-
-/// Opaque-Handle: rmw_zerodds Service (request-Sub + reply-Pub).
-pub struct RmwZerodsService {
-    /// Underlying reader auf `<service>_Request`.
-    request_reader: Mutex<*mut zerodds::ZeroDdsReader>,
-    /// Underlying writer auf `<service>_Reply`.
-    reply_writer: Mutex<*mut zerodds::ZeroDdsWriter>,
-    /// Listener-fed inbox for requests (event-driven `has_data` + wait wake).
-    request_inbox: Arc<SubInbox>,
-    /// `Arc<SubInbox>` raw pointer handed to the request reader's data callback.
-    request_cb_ud: *const SubInbox,
-    /// Service name (before topic mangling).
-    pub service_name: alloc::string::String,
-}
-
-/// `rmw_create_client(node, service, type_name)`.
-///
-/// # Safety
-/// Pointer-Validitaet wie Publisher/Subscription-create.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rmw_zerodds_create_client(
-    node: *mut RmwZerodsNode,
-    service_name: *const c_char,
-    type_name: *const c_char,
-) -> *mut RmwZerodsClient {
-    if node.is_null() || service_name.is_null() || type_name.is_null() {
-        return ptr::null_mut();
-    }
-    // SAFETY: node NULL-checked.
-    let n = unsafe { &*node };
-    // SAFETY: ctx pointer from the RmwZerodsNode construct + lives
-    // as long as node lives.
-    let ctx = unsafe { &*n.ctx };
-    // SAFETY: NUL-terminierter C-String, NULL-checked oben.
-    let service = match unsafe { CStr::from_ptr(service_name) }.to_str() {
-        Ok(s) => s.to_string(),
-        Err(_) => return ptr::null_mut(),
-    };
-    // SAFETY: NUL-terminierter C-String, NULL-checked oben.
-    let typ = match unsafe { CStr::from_ptr(type_name) }.to_str() {
-        Ok(s) => s.to_string(),
-        Err(_) => return ptr::null_mut(),
-    };
-    if zerodds_rpc::topic_naming::validate_service_name(&service).is_err() {
-        return ptr::null_mut();
-    }
-    let req_topic = match zerodds_rpc::topic_naming::request_topic_name(&service) {
-        Ok(t) => t,
-        Err(_) => return ptr::null_mut(),
-    };
-    let rep_topic = match zerodds_rpc::topic_naming::reply_topic_name(&service) {
-        Ok(t) => t,
-        Err(_) => return ptr::null_mut(),
-    };
-    let req_topic_c = match std::ffi::CString::new(req_topic) {
-        Ok(s) => s,
-        Err(_) => return ptr::null_mut(),
-    };
-    let rep_topic_c = match std::ffi::CString::new(rep_topic) {
-        Ok(s) => s,
-        Err(_) => return ptr::null_mut(),
-    };
-    let typ_c = match std::ffi::CString::new(typ) {
-        Ok(s) => s,
-        Err(_) => return ptr::null_mut(),
-    };
-    // SAFETY: NULL-tolerant FFI calls; cleanup on the error path.
-    let writer = unsafe {
-        zerodds::zerodds_writer_create(
-            ctx.runtime as *mut zerodds::ZeroDdsRuntime,
-            req_topic_c.as_ptr(),
-            typ_c.as_ptr(),
-            1, // services are reliable
-        )
-    };
-    // SAFETY: NULL-tolerant FFI; cleanup path below.
-    let reader = unsafe {
-        zerodds::zerodds_reader_create(
-            ctx.runtime as *mut zerodds::ZeroDdsRuntime,
-            rep_topic_c.as_ptr(),
-            typ_c.as_ptr(),
-            1,
-        )
-    };
-    if writer.is_null() || reader.is_null() {
-        if !writer.is_null() {
-            // SAFETY: writer from writer_create.
-            unsafe { zerodds::zerodds_writer_destroy(writer) };
-        }
-        if !reader.is_null() {
-            // SAFETY: reader aus reader_create.
-            unsafe { zerodds::zerodds_reader_destroy(reader) };
-        }
-        return ptr::null_mut();
-    }
-    // Event-driven replies: route the reply reader through a listener inbox so
-    // the client's reply is observable via has_data + wakes the executor wait.
-    // SAFETY: reader from reader_create.
-    let (reply_inbox, reply_cb_ud) = match unsafe { attach_inbox(reader, ctx.notify.clone()) } {
-        Some(v) => v,
-        None => {
-            // SAFETY: tear both endpoints down on listener-registration failure.
-            unsafe {
-                zerodds::zerodds_writer_destroy(writer);
-                zerodds::zerodds_reader_destroy(reader);
-            }
-            return ptr::null_mut();
-        }
-    };
-    Box::into_raw(Box::new(RmwZerodsClient {
-        request_writer: Mutex::new(writer),
-        reply_reader: Mutex::new(reader),
-        reply_inbox,
-        reply_cb_ud,
-        service_name: service,
-    }))
-}
-
-/// `rmw_destroy_client(*mut Client)`.
-///
-/// # Safety
-/// `client` from `rmw_zerodds_create_client` or NULL.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rmw_zerodds_destroy_client(client: *mut RmwZerodsClient) -> i32 {
-    if client.is_null() {
-        return RMW_RET_INVALID_ARGUMENT;
-    }
-    // SAFETY: Box pointer from above.
-    let c = unsafe { Box::from_raw(client) };
-    // Destroy the reply reader FIRST (stops its listener) before reclaiming the
-    // inbox callback ref.
-    if let Ok(g) = c.reply_reader.lock() {
-        // SAFETY: reader aus create_client.
-        unsafe { zerodds::zerodds_reader_destroy(*g) };
-    }
-    if !c.reply_cb_ud.is_null() {
-        // SAFETY: reply_cb_ud is the Arc::into_raw pointer from attach_inbox.
-        drop(unsafe { Arc::from_raw(c.reply_cb_ud) });
-    }
-    if let Ok(g) = c.request_writer.lock() {
-        // SAFETY: writer from create_client.
-        unsafe { zerodds::zerodds_writer_destroy(*g) };
-    }
-    RMW_RET_OK
-}
-
-/// `rmw_send_request(client, payload, len)`.
-///
-/// # Safety
-/// `client` valid; payload + len lives during the call.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rmw_zerodds_send_request(
-    client: *mut RmwZerodsClient,
-    payload: *const u8,
-    len: usize,
-) -> i32 {
-    if client.is_null() {
-        return RMW_RET_INVALID_ARGUMENT;
-    }
-    // SAFETY: NULL-checked.
-    let c = unsafe { &*client };
-    let writer = match c.request_writer.lock() {
-        Ok(g) => *g,
-        Err(_) => return RMW_RET_ERROR,
-    };
-    // SAFETY: writer from create_client.
-    let rc = unsafe { zerodds::zerodds_writer_write(writer, payload, len) };
-    if rc == 0 { RMW_RET_OK } else { RMW_RET_ERROR }
-}
-
-/// `rmw_take_response(client, *mut buf, *mut len)`.
-///
-/// # Safety
-/// Wie rmw_zerodds_take.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rmw_zerodds_take_response(
-    client: *mut RmwZerodsClient,
-    out_buf: *mut *mut u8,
-    out_len: *mut usize,
-    out_big_endian: *mut u8,
-) -> i32 {
-    if client.is_null() || out_buf.is_null() || out_len.is_null() {
-        return RMW_RET_INVALID_ARGUMENT;
-    }
-    // SAFETY: NULL-checked; out pointers validated above.
-    let c = unsafe { &*client };
-    // SAFETY: validity upheld by the surrounding contract (NULL/bounds checked where applicable).
-    unsafe { inbox_take(&c.reply_inbox, out_buf, out_len, out_big_endian) }
-}
-
-/// `1` if a reply is queued for `client`, `0` if none, negative on a bad handle.
-///
-/// # Safety
-/// `client` must come from `rmw_zerodds_create_client` or be NULL.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rmw_zerodds_client_has_data(client: *mut RmwZerodsClient) -> i32 {
-    if client.is_null() {
-        return RMW_RET_INVALID_ARGUMENT;
-    }
-    // SAFETY: NULL-checked.
-    inbox_has_data(&unsafe { &*client }.reply_inbox)
-}
-
-/// `1` if the matching service server is available (the client's request writer
-/// has a matched reader AND its reply reader has a matched writer), else `0`.
-/// Non-blocking (uses a zero-timeout matched check).
-///
-/// # Safety
-/// `client` must come from `rmw_zerodds_create_client` or be NULL.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rmw_zerodds_client_server_available(client: *mut RmwZerodsClient) -> i32 {
-    if client.is_null() {
-        return RMW_RET_INVALID_ARGUMENT;
-    }
-    // SAFETY: NULL-checked.
-    let c = unsafe { &*client };
-    let w = match c.request_writer.lock() {
-        Ok(g) => *g,
-        Err(_) => return 0,
-    };
-    let r = match c.reply_reader.lock() {
-        Ok(g) => *g,
-        Err(_) => return 0,
-    };
-    // SAFETY: writer/reader from create_client; zero timeout = non-blocking peek.
-    let w_ok = unsafe { zerodds::zerodds_writer_wait_for_matched(w, 1, 0) } == 0;
-    // SAFETY: validity upheld by the surrounding contract (NULL/bounds checked where applicable).
-    let r_ok = unsafe { zerodds::zerodds_reader_wait_for_matched(r, 1, 0) } == 0;
-    i32::from(w_ok && r_ok)
-}
-
-/// `rmw_create_service(node, service, type_name)` — Server-side.
-///
-/// # Safety
-/// Wie rmw_zerodds_create_client.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rmw_zerodds_create_service(
-    node: *mut RmwZerodsNode,
-    service_name: *const c_char,
-    type_name: *const c_char,
-) -> *mut RmwZerodsService {
-    if node.is_null() || service_name.is_null() || type_name.is_null() {
-        return ptr::null_mut();
-    }
-    // SAFETY: node NULL-checked.
-    let n = unsafe { &*node };
-    // SAFETY: ctx pointer from the RmwZerodsNode construct.
-    let ctx = unsafe { &*n.ctx };
-    // SAFETY: NUL-terminierter C-String.
-    let service = match unsafe { CStr::from_ptr(service_name) }.to_str() {
-        Ok(s) => s.to_string(),
-        Err(_) => return ptr::null_mut(),
-    };
-    // SAFETY: NUL-terminierter C-String.
-    let typ = match unsafe { CStr::from_ptr(type_name) }.to_str() {
-        Ok(s) => s.to_string(),
-        Err(_) => return ptr::null_mut(),
-    };
-    if zerodds_rpc::topic_naming::validate_service_name(&service).is_err() {
-        return ptr::null_mut();
-    }
-    let req_topic = match zerodds_rpc::topic_naming::request_topic_name(&service) {
-        Ok(t) => t,
-        Err(_) => return ptr::null_mut(),
-    };
-    let rep_topic = match zerodds_rpc::topic_naming::reply_topic_name(&service) {
-        Ok(t) => t,
-        Err(_) => return ptr::null_mut(),
-    };
-    let req_topic_c = match std::ffi::CString::new(req_topic) {
-        Ok(s) => s,
-        Err(_) => return ptr::null_mut(),
-    };
-    let rep_topic_c = match std::ffi::CString::new(rep_topic) {
-        Ok(s) => s,
-        Err(_) => return ptr::null_mut(),
-    };
-    let typ_c = match std::ffi::CString::new(typ) {
-        Ok(s) => s,
-        Err(_) => return ptr::null_mut(),
-    };
-    // SAFETY: NULL-tolerant FFI calls.
-    let reader = unsafe {
-        zerodds::zerodds_reader_create(
-            ctx.runtime as *mut zerodds::ZeroDdsRuntime,
-            req_topic_c.as_ptr(),
-            typ_c.as_ptr(),
-            1,
-        )
-    };
-    // SAFETY: NULL-tolerant FFI calls.
-    let writer = unsafe {
-        zerodds::zerodds_writer_create(
-            ctx.runtime as *mut zerodds::ZeroDdsRuntime,
-            rep_topic_c.as_ptr(),
-            typ_c.as_ptr(),
-            1,
-        )
-    };
-    if writer.is_null() || reader.is_null() {
-        if !writer.is_null() {
-            // SAFETY: writer from writer_create.
-            unsafe { zerodds::zerodds_writer_destroy(writer) };
-        }
-        if !reader.is_null() {
-            // SAFETY: reader aus reader_create.
-            unsafe { zerodds::zerodds_reader_destroy(reader) };
-        }
-        return ptr::null_mut();
-    }
-    // Event-driven requests: route the request reader through a listener inbox.
-    // SAFETY: reader from reader_create.
-    let (request_inbox, request_cb_ud) = match unsafe { attach_inbox(reader, ctx.notify.clone()) } {
-        Some(v) => v,
-        None => {
-            // SAFETY: tear both endpoints down on listener-registration failure.
-            unsafe {
-                zerodds::zerodds_writer_destroy(writer);
-                zerodds::zerodds_reader_destroy(reader);
-            }
-            return ptr::null_mut();
-        }
-    };
-    Box::into_raw(Box::new(RmwZerodsService {
-        request_reader: Mutex::new(reader),
-        reply_writer: Mutex::new(writer),
-        request_inbox,
-        request_cb_ud,
-        service_name: service,
-    }))
-}
-
-/// `rmw_destroy_service(*mut Service)`.
-///
-/// # Safety
-/// `service` from `rmw_zerodds_create_service` or NULL.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rmw_zerodds_destroy_service(service: *mut RmwZerodsService) -> i32 {
-    if service.is_null() {
-        return RMW_RET_INVALID_ARGUMENT;
-    }
-    // SAFETY: Box-Pointer.
-    let s = unsafe { Box::from_raw(service) };
-    // Destroy the request reader FIRST (stops its listener), then reclaim the
-    // inbox callback ref.
-    if let Ok(g) = s.request_reader.lock() {
-        // SAFETY: reader aus create_service.
-        unsafe { zerodds::zerodds_reader_destroy(*g) };
-    }
-    if !s.request_cb_ud.is_null() {
-        // SAFETY: request_cb_ud is the Arc::into_raw pointer from attach_inbox.
-        drop(unsafe { Arc::from_raw(s.request_cb_ud) });
-    }
-    if let Ok(g) = s.reply_writer.lock() {
-        // SAFETY: writer from create_service.
-        unsafe { zerodds::zerodds_writer_destroy(*g) };
-    }
-    RMW_RET_OK
-}
-
-/// `rmw_take_request(service, *mut buf, *mut len)`.
-///
-/// # Safety
-/// Pointer-Validitaet wie rmw_zerodds_take.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rmw_zerodds_take_request(
-    service: *mut RmwZerodsService,
-    out_buf: *mut *mut u8,
-    out_len: *mut usize,
-    out_big_endian: *mut u8,
-) -> i32 {
-    if service.is_null() || out_buf.is_null() || out_len.is_null() {
-        return RMW_RET_INVALID_ARGUMENT;
-    }
-    // SAFETY: NULL-checked; out pointers validated above.
-    let s = unsafe { &*service };
-    // SAFETY: validity upheld by the surrounding contract (NULL/bounds checked where applicable).
-    unsafe { inbox_take(&s.request_inbox, out_buf, out_len, out_big_endian) }
-}
-
-/// `1` if a request is queued for `service`, `0` if none, negative on bad handle.
-///
-/// # Safety
-/// `service` must come from `rmw_zerodds_create_service` or be NULL.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rmw_zerodds_service_has_data(service: *mut RmwZerodsService) -> i32 {
-    if service.is_null() {
-        return RMW_RET_INVALID_ARGUMENT;
-    }
-    // SAFETY: NULL-checked.
-    inbox_has_data(&unsafe { &*service }.request_inbox)
-}
-
-/// `rmw_send_response(service, payload, len)`.
-///
-/// # Safety
-/// Wie rmw_zerodds_publish.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rmw_zerodds_send_response(
-    service: *mut RmwZerodsService,
-    payload: *const u8,
-    len: usize,
-) -> i32 {
-    if service.is_null() {
-        return RMW_RET_INVALID_ARGUMENT;
-    }
-    // SAFETY: NULL-checked.
-    let s = unsafe { &*service };
-    let writer = match s.reply_writer.lock() {
-        Ok(g) => *g,
-        Err(_) => return RMW_RET_ERROR,
-    };
-    // SAFETY: writer from create_service.
-    let rc = unsafe { zerodds::zerodds_writer_write(writer, payload, len) };
-    if rc == 0 { RMW_RET_OK } else { RMW_RET_ERROR }
-}
+// Services and clients: `services.rs`.
 
 // ----- Wait-Set (Phase-B): poll-based ---------------------------------------
 
@@ -2410,7 +2662,7 @@ pub unsafe extern "C" fn rmw_zerodds_destroy_wait_set(ws: *mut RmwZerodsWaitSet)
 /// Adds a subscription to the wait set.
 ///
 /// # Safety
-/// `ws` + `sub` muessen valid sein.
+/// `ws` + `sub` must be valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rmw_zerodds_wait_set_add_subscription(
     ws: *mut RmwZerodsWaitSet,
@@ -2436,7 +2688,7 @@ pub unsafe extern "C" fn rmw_zerodds_wait_set_add_subscription(
 ///
 /// Readiness is the non-destructive [`rmw_zerodds_subscription_has_data`] peek;
 /// the blocking is parked on the context's shared condvar via
-/// [`WaitNotify::wait_until`] — no spin loop, no fixed-tick poll. The generation
+/// `WaitNotify::wait_until` — no spin loop, no fixed-tick poll. The generation
 /// is snapshotted before the readiness check so a sample arriving in between
 /// wakes the very next block instead of being missed.
 ///
@@ -2519,7 +2771,7 @@ pub unsafe extern "C" fn rmw_zerodds_borrow_loaned_message(
 /// frees it.
 ///
 /// # Safety
-/// `pub_` valid; `ptr`/`len` aus rmw_zerodds_borrow_loaned_message.
+/// `pub_` valid; `ptr`/`len` from rmw_zerodds_borrow_loaned_message.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rmw_zerodds_publish_loaned_message(
     pub_: *mut RmwZerodsPublisher,
@@ -2543,7 +2795,7 @@ pub unsafe extern "C" fn rmw_zerodds_publish_loaned_message(
 /// Discards a loan without publishing it.
 ///
 /// # Safety
-/// Wie rmw_zerodds_publish_loaned_message.
+/// Like rmw_zerodds_publish_loaned_message.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rmw_zerodds_return_loaned_message(
     pub_: *mut RmwZerodsPublisher,
@@ -2580,7 +2832,7 @@ pub unsafe extern "C" fn rmw_zerodds_compute_type_hash(
     if type_str.is_null() || out_hash.is_null() {
         return RMW_RET_INVALID_ARGUMENT;
     }
-    // SAFETY: NUL-terminierter C-String.
+    // SAFETY: NUL-terminated C-string.
     let s = match unsafe { CStr::from_ptr(type_str) }.to_bytes_with_nul() {
         b if b.len() > 1 => &b[..b.len() - 1],
         _ => return RMW_RET_INVALID_ARGUMENT,
@@ -2589,7 +2841,7 @@ pub unsafe extern "C" fn rmw_zerodds_compute_type_hash(
     let mut h = Sha256::new();
     h.update(s);
     let result = h.finalize();
-    // SAFETY: out_hash NULL-checked; Caller-Kontrakt: 32-byte-Buffer.
+    // SAFETY: out_hash NULL-checked; caller contract: 32-byte buffer.
     unsafe {
         core::ptr::copy_nonoverlapping(result.as_ptr(), out_hash, 32);
     }
@@ -2774,39 +3026,194 @@ pub unsafe extern "C" fn rmw_zerodds_subscription_set_event_callback(
     RMW_RET_OK
 }
 
-/// Sets the rmw `on_new_request` callback on a service (request inbox).
+/// Sets a subscription's content filter (`rmw_subscription_set_content_filter`),
+/// or clears it with an empty `expression`; the filter is announced in the
+/// reader's SEDP subscription. `RMW_RET_INVALID_ARGUMENT` for an expression
+/// that does not parse or names a parameter beyond `count`.
 ///
 /// # Safety
-/// `service` must come from `rmw_zerodds_create_service` or be NULL.
+/// `sub` from `rmw_zerodds_create_subscription` or NULL; the strings
+/// NUL-terminated; `params[0..count]` valid or `count == 0`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn rmw_zerodds_service_set_event_callback(
-    service: *mut RmwZerodsService,
-    cb: Option<RmwEventCallback>,
-    user_data: *const c_void,
+pub unsafe extern "C" fn rmw_zerodds_subscription_set_filter(
+    sub: *mut RmwZerodsSubscription,
+    expression: *const c_char,
+    params: *const *const c_char,
+    count: usize,
 ) -> i32 {
-    if service.is_null() {
+    if sub.is_null() || expression.is_null() || (count > 0 && params.is_null()) {
         return RMW_RET_INVALID_ARGUMENT;
     }
-    // SAFETY: NULL-checked.
-    inbox_set_event(&unsafe { &*service }.request_inbox, cb, user_data);
+    // SAFETY: NULL-checked; caller pledge on its origin.
+    let s = unsafe { &*sub };
+    // SAFETY: NUL-terminated per the caller.
+    let Ok(text) = unsafe { CStr::from_ptr(expression) }.to_str() else {
+        return RMW_RET_INVALID_ARGUMENT;
+    };
+    let Ok(reader) = s.inner.lock() else {
+        return RMW_RET_ERROR;
+    };
+    if text.trim().is_empty() {
+        if let Ok(mut f) = s.filter.lock() {
+            *f = None;
+        }
+        // SAFETY: reader from zerodds_reader_create; NULL withdraws.
+        unsafe {
+            zerodds::zerodds_reader_set_content_filter(
+                *reader,
+                ptr::null(),
+                ptr::null(),
+                ptr::null(),
+                ptr::null(),
+                0,
+            )
+        };
+        return RMW_RET_OK;
+    }
+    let Ok(expr) = zerodds_sql_filter::parse(text) else {
+        return RMW_RET_INVALID_ARGUMENT;
+    };
+    let mut raw: Vec<&str> = Vec::with_capacity(count);
+    for i in 0..count {
+        // SAFETY: `params[0..count]` readable, each NUL-terminated.
+        let p = unsafe { *params.add(i) };
+        if p.is_null() {
+            return RMW_RET_INVALID_ARGUMENT;
+        }
+        // SAFETY: NUL-terminated per the caller.
+        let Ok(p) = unsafe { CStr::from_ptr(p) }.to_str() else {
+            return RMW_RET_INVALID_ARGUMENT;
+        };
+        raw.push(p);
+    }
+    if expr
+        .collect_param_indices()
+        .iter()
+        .any(|&i| i as usize >= raw.len())
+    {
+        return RMW_RET_INVALID_ARGUMENT;
+    }
+    let values = raw
+        .iter()
+        .map(|p| zerodds_sql_filter::Value::from_parameter(p))
+        .collect();
+    let Ok(name) = alloc::ffi::CString::new(alloc::format!("{}_filtered", s.dds_topic)) else {
+        return RMW_RET_ERROR;
+    };
+    let Ok(related) = alloc::ffi::CString::new(s.dds_topic.clone()) else {
+        return RMW_RET_ERROR;
+    };
+    // SAFETY: reader valid; strings and `params[0..count]` valid for the call.
+    let announced = unsafe {
+        zerodds::zerodds_reader_set_content_filter(
+            *reader,
+            name.as_ptr(),
+            related.as_ptr(),
+            expression,
+            params,
+            count,
+        )
+    };
+    if announced != 0 {
+        return RMW_RET_ERROR;
+    }
+    if let Ok(mut f) = s.filter.lock() {
+        *f = Some(SubscriptionFilter {
+            expr,
+            params: values,
+        });
+    }
     RMW_RET_OK
 }
 
-/// Sets the rmw `on_new_response` callback on a client (reply inbox).
+/// Whether the message behind `ctx` passes the subscription's content filter
+/// (1) or not (0); 1 without a filter. A message the expression cannot be
+/// evaluated against (a field the getter does not answer, a type mismatch)
+/// does not pass (DDS 1.4 §2.2.2.3.3).
 ///
 /// # Safety
-/// `client` must come from `rmw_zerodds_create_client` or be NULL.
+/// `sub` from `rmw_zerodds_create_subscription` or NULL; `getter` callable
+/// with `ctx` for the duration of the call.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn rmw_zerodds_client_set_event_callback(
-    client: *mut RmwZerodsClient,
+pub unsafe extern "C" fn rmw_zerodds_subscription_filter_accepts(
+    sub: *mut RmwZerodsSubscription,
+    ctx: *const c_void,
+    getter: Option<RmwZerodsFieldGetter>,
+) -> i32 {
+    if sub.is_null() {
+        return 1;
+    }
+    // SAFETY: NULL-checked; caller pledge on its origin.
+    let s = unsafe { &*sub };
+    let Ok(filter) = s.filter.lock() else {
+        return 0;
+    };
+    let Some(filter) = filter.as_ref() else {
+        return 1;
+    };
+    let Some(getter) = getter else {
+        return 0;
+    };
+    let row = CallbackRow { ctx, getter };
+    i32::from(filter.expr.evaluate(&row, &filter.params).unwrap_or(false))
+}
+
+/// Sets (or with NULL clears) the callback of a publisher QoS event —
+/// `rmw_event_set_callback` for an event of `rmw_publisher_event_init`.
+/// `kind` is the shim's number for the event (`events::EventKind`); the
+/// callback gets `user_data` and the number of new events.
+///
+/// # Safety
+/// `pub_` from `rmw_zerodds_create_publisher` or NULL; `user_data` valid
+/// until the callback is cleared.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rmw_zerodds_publisher_set_status_callback(
+    pub_: *mut RmwZerodsPublisher,
+    kind: u32,
     cb: Option<RmwEventCallback>,
     user_data: *const c_void,
 ) -> i32 {
-    if client.is_null() {
+    let Some(kind) = events::EventKind::from_u32(kind).filter(|k| k.is_publisher()) else {
+        return RMW_RET_UNSUPPORTED;
+    };
+    if pub_.is_null() {
         return RMW_RET_INVALID_ARGUMENT;
     }
-    // SAFETY: NULL-checked.
-    inbox_set_event(&unsafe { &*client }.reply_inbox, cb, user_data);
+    // SAFETY: NULL-checked; caller pledge on its origin.
+    let p = unsafe { &*pub_ };
+    p.events.set(kind, cb, user_data);
+    if cb.is_some() && !p.ctx.is_null() {
+        // SAFETY: ctx set at create, valid for the publisher's lifetime.
+        unsafe { &*p.ctx }.events.watch(&p.events);
+    }
+    RMW_RET_OK
+}
+
+/// [`rmw_zerodds_publisher_set_status_callback`] for a subscription event.
+///
+/// # Safety
+/// `sub` from `rmw_zerodds_create_subscription` or NULL; `user_data` valid
+/// until the callback is cleared.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rmw_zerodds_subscription_set_status_callback(
+    sub: *mut RmwZerodsSubscription,
+    kind: u32,
+    cb: Option<RmwEventCallback>,
+    user_data: *const c_void,
+) -> i32 {
+    let Some(kind) = events::EventKind::from_u32(kind).filter(|k| !k.is_publisher()) else {
+        return RMW_RET_UNSUPPORTED;
+    };
+    if sub.is_null() {
+        return RMW_RET_INVALID_ARGUMENT;
+    }
+    // SAFETY: NULL-checked; caller pledge on its origin.
+    let s = unsafe { &*sub };
+    s.events.set(kind, cb, user_data);
+    if cb.is_some() && !s.ctx.is_null() {
+        // SAFETY: ctx set at create, valid for the subscription's lifetime.
+        unsafe { &*s.ctx }.events.watch(&s.events);
+    }
     RMW_RET_OK
 }
 
@@ -2815,30 +3222,15 @@ pub unsafe extern "C" fn rmw_zerodds_client_set_event_callback(
 mod tests {
     use super::*;
 
-    #[test]
-    fn tbf_env_parse_global_and_per_topic() {
-        // Bare number = global default for every topic.
-        assert_eq!(parse_tbf_env("0.1", "/scan"), Some(100_000_000));
-        assert_eq!(parse_tbf_env("0.1", "/anything"), Some(100_000_000));
-        // Per-topic override wins over the global default.
-        assert_eq!(
-            parse_tbf_env("0.1,/scan=0.5", "/scan"),
-            Some(500_000_000),
-            "per-topic must override global"
-        );
-        assert_eq!(
-            parse_tbf_env("0.1,/scan=0.5", "/image"),
-            Some(100_000_000),
-            "non-matching topic falls back to global"
-        );
-        // No global, only a per-topic entry → other topics get nothing.
-        assert_eq!(parse_tbf_env("/scan=0.2", "/scan"), Some(200_000_000));
-        assert_eq!(parse_tbf_env("/scan=0.2", "/image"), None);
-        // Zero / negative / junk = disabled.
-        assert_eq!(parse_tbf_env("0", "/x"), None);
-        assert_eq!(parse_tbf_env("-1", "/x"), None);
-        assert_eq!(parse_tbf_env("nonsense", "/x"), None);
-        assert_eq!(parse_tbf_env("", "/x"), None);
+    /// RELIABLE, VOLATILE, KEEP_ALL: what the untyped endpoints these tests
+    /// were written against delivered.
+    fn test_qos() -> RmwZerodsQos {
+        RmwZerodsQos {
+            history: 2,
+            reliability: 1,
+            durability: 2,
+            ..RmwZerodsQos::default()
+        }
     }
 
     #[test]
@@ -2984,14 +3376,14 @@ mod tests {
     #[test]
     fn destroy_client_null_returns_invalid_argument() {
         // SAFETY: NULL-tolerant.
-        let r = unsafe { rmw_zerodds_destroy_client(ptr::null_mut()) };
+        let r = unsafe { services::rmw_zerodds_destroy_client(ptr::null_mut()) };
         assert_eq!(r, RMW_RET_INVALID_ARGUMENT);
     }
 
     #[test]
     fn destroy_service_null_returns_invalid_argument() {
         // SAFETY: NULL-tolerant.
-        let r = unsafe { rmw_zerodds_destroy_service(ptr::null_mut()) };
+        let r = unsafe { services::rmw_zerodds_destroy_service(ptr::null_mut()) };
         assert_eq!(r, RMW_RET_INVALID_ARGUMENT);
     }
 
@@ -3132,11 +3524,11 @@ mod tests {
         assert!(!node_pub.is_null() && !node_sub.is_null());
         let publ =
             // SAFETY: validity upheld by the surrounding contract (NULL/bounds checked where applicable).
-            unsafe { rmw_zerodds_create_publisher(node_pub, typ.as_ptr(), topic.as_ptr(), 1) };
+            unsafe { rmw_zerodds_create_publisher(node_pub, typ.as_ptr(), topic.as_ptr(), &test_qos(), ptr::null_mut()) };
         assert!(!publ.is_null());
         let sub =
             // SAFETY: validity upheld by the surrounding contract (NULL/bounds checked where applicable).
-            unsafe { rmw_zerodds_create_subscription(node_sub, typ.as_ptr(), topic.as_ptr(), 1) };
+            unsafe { rmw_zerodds_create_subscription(node_sub, typ.as_ptr(), topic.as_ptr(), &test_qos(), ptr::null_mut()) };
         assert!(!sub.is_null());
 
         let ws = rmw_zerodds_create_wait_set();
@@ -3210,108 +3602,241 @@ mod tests {
         }
     }
 
-    /// In-process service round-trip at the bridge byte level: client
-    /// `send_request` → service inbox (`service_has_data`) → `take_request` →
-    /// `send_response` → client inbox (`client_has_data`) → `take_response`.
-    /// Verifies the event-driven service delivery path (listener inboxes).
+    /// Service qos of REP-2009 (`rmw_qos_profile_services_default`).
+    fn services_qos() -> RmwZerodsQos {
+        RmwZerodsQos {
+            history: 1,
+            depth: 10,
+            reliability: 1,
+            durability: 2,
+            liveliness: 1,
+            ..RmwZerodsQos::default()
+        }
+    }
+
+    /// Sends `body` until the service has a request, takes it, answers
+    /// `answer` and returns what the client takes: the reply body and the
+    /// sequence id, next to the one `send_request` gave.
+    ///
+    /// # Safety
+    /// Handles valid.
+    unsafe fn round_trip(
+        client: *mut services::RmwZerodsClient,
+        service: *mut services::RmwZerodsService,
+        body: &[u8],
+        answer: &[u8],
+    ) -> (Vec<u8>, Vec<u8>, i64, i64) {
+        let stream = |b: &[u8]| {
+            let mut v = alloc::vec![0x00, 0x01, 0x00, 0x00];
+            v.extend_from_slice(b);
+            v
+        };
+        let req = stream(body);
+        let mut sent_seq = 0i64;
+        let mut got = false;
+        for _ in 0..50 {
+            // SAFETY: handles valid by the caller.
+            unsafe {
+                assert_eq!(
+                    services::rmw_zerodds_send_request(
+                        client,
+                        req.as_ptr(),
+                        req.len(),
+                        &mut sent_seq
+                    ),
+                    RMW_RET_OK
+                );
+                if services::rmw_zerodds_service_has_data(service) == 1 {
+                    got = true;
+                    break;
+                }
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        assert!(got, "the service receives a request");
+        let (mut buf, mut len, mut guid, mut seq) = (ptr::null_mut(), 0usize, [0u8; 16], 0i64);
+        // SAFETY: valid out pointers.
+        unsafe {
+            assert_eq!(
+                services::rmw_zerodds_take_request(
+                    service,
+                    &mut buf,
+                    &mut len,
+                    ptr::null_mut(),
+                    guid.as_mut_ptr(),
+                    &mut seq,
+                ),
+                RMW_RET_OK
+            );
+        }
+        assert!(!buf.is_null());
+        // SAFETY: from take.
+        let request = unsafe { core::slice::from_raw_parts(buf, len) }.to_vec();
+        // SAFETY: from take.
+        unsafe { rmw_zerodds_buffer_free(buf, len) };
+        let rep = stream(answer);
+        // SAFETY: handles valid.
+        assert_eq!(
+            unsafe {
+                services::rmw_zerodds_send_response(
+                    service,
+                    guid.as_ptr(),
+                    seq,
+                    rep.as_ptr(),
+                    rep.len(),
+                )
+            },
+            RMW_RET_OK
+        );
+        let mut reply = Vec::new();
+        let mut reply_seq = -1i64;
+        for _ in 0..50 {
+            let (mut pbuf, mut plen) = (ptr::null_mut(), 0usize);
+            // SAFETY: valid out pointers.
+            unsafe {
+                services::rmw_zerodds_take_response(
+                    client,
+                    &mut pbuf,
+                    &mut plen,
+                    ptr::null_mut(),
+                    &mut reply_seq,
+                );
+            }
+            if !pbuf.is_null() {
+                // SAFETY: from take.
+                reply = unsafe { core::slice::from_raw_parts(pbuf, plen) }.to_vec();
+                // SAFETY: from take.
+                unsafe { rmw_zerodds_buffer_free(pbuf, plen) };
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        (request, reply, sent_seq, reply_seq)
+    }
+
+    /// Two runtimes: the request reaches the service with its
+    /// encapsulation, the reply the client with the sequence id of the last
+    /// request it sent, and the service topics are the `rq`/`rr` names.
     #[test]
-    fn service_request_reply_roundtrip_inprocess() {
-        let svc = std::ffi::CString::new("rmw_srv_it").unwrap();
-        let typ = std::ffi::CString::new("test::Srv").unwrap();
+    fn a_service_call_between_two_runtimes_correlates_by_the_related_identity() {
+        let svc = std::ffi::CString::new("/rmw_srv_it").unwrap();
+        let req_t = std::ffi::CString::new("test::srv::dds_::Srv_Request_").unwrap();
+        let rep_t = std::ffi::CString::new("test::srv::dds_::Srv_Response_").unwrap();
         let name = std::ffi::CString::new("n").unwrap();
         let ns = std::ffi::CString::new("/").unwrap();
-
+        let q = services_qos();
         // SAFETY: FFI bring-up on a private domain with valid C strings.
-        let ctx_cli = unsafe { rmw_zerodds_init(92) };
-        // SAFETY: validity upheld by the surrounding contract (NULL/bounds checked where applicable).
-        let ctx_srv = unsafe { rmw_zerodds_init(92) };
-        assert!(!ctx_cli.is_null() && !ctx_srv.is_null());
-        // SAFETY: discovery before endpoints.
         unsafe {
+            let ctx_cli = rmw_zerodds_init(92);
+            let ctx_srv = rmw_zerodds_init(92);
+            assert!(!ctx_cli.is_null() && !ctx_srv.is_null());
             let rc = (*ctx_cli).runtime as *mut zerodds::ZeroDdsRuntime;
             let rs = (*ctx_srv).runtime as *mut zerodds::ZeroDdsRuntime;
             assert_eq!(zerodds::zerodds_runtime_wait_for_peers(rc, 1, 5_000), 0);
             assert_eq!(zerodds::zerodds_runtime_wait_for_peers(rs, 1, 5_000), 0);
-        }
-        // SAFETY: validity upheld by the surrounding contract (NULL/bounds checked where applicable).
-        let node_cli = unsafe { rmw_zerodds_create_node(ctx_cli, name.as_ptr(), ns.as_ptr()) };
-        // SAFETY: validity upheld by the surrounding contract (NULL/bounds checked where applicable).
-        let node_srv = unsafe { rmw_zerodds_create_node(ctx_srv, name.as_ptr(), ns.as_ptr()) };
-        // SAFETY: validity upheld by the surrounding contract (NULL/bounds checked where applicable).
-        let client = unsafe { rmw_zerodds_create_client(node_cli, svc.as_ptr(), typ.as_ptr()) };
-        // SAFETY: validity upheld by the surrounding contract (NULL/bounds checked where applicable).
-        let service = unsafe { rmw_zerodds_create_service(node_srv, svc.as_ptr(), typ.as_ptr()) };
-        assert!(!client.is_null(), "client create");
-        assert!(!service.is_null(), "service create");
-
-        // Send requests until the service inbox sees one (discovery + match).
-        let req: [u8; 6] = [1, 2, 3, 4, 5, 6];
-        let mut got_req = false;
-        for _ in 0..50 {
-            // SAFETY: client valid; req lives across the call.
-            let _ = unsafe { rmw_zerodds_send_request(client, req.as_ptr(), req.len()) };
-            // SAFETY: service valid.
-            if unsafe { rmw_zerodds_service_has_data(service) } == 1 {
-                got_req = true;
-                break;
-            }
-            std::thread::sleep(Duration::from_millis(100));
-        }
-        assert!(
-            got_req,
-            "service must receive the request (event-driven inbox)"
-        );
-
-        let mut rbuf: *mut u8 = ptr::null_mut();
-        let mut rlen: usize = 0;
-        // SAFETY: valid out pointers; service valid.
-        assert_eq!(
-            unsafe { rmw_zerodds_take_request(service, &mut rbuf, &mut rlen, &mut 0u8) },
-            RMW_RET_OK
-        );
-        assert!(!rbuf.is_null() && rlen >= 1, "request bytes delivered");
-        // SAFETY: from take.
-        unsafe { rmw_zerodds_buffer_free(rbuf, rlen) };
-
-        // Server replies until the client inbox sees it.
-        let rep: [u8; 3] = [9, 8, 7];
-        let mut got_rep = false;
-        for _ in 0..50 {
-            // SAFETY: service valid; rep lives across the call.
-            let _ = unsafe { rmw_zerodds_send_response(service, rep.as_ptr(), rep.len()) };
-            // SAFETY: client valid.
-            if unsafe { rmw_zerodds_client_has_data(client) } == 1 {
-                got_rep = true;
-                break;
-            }
-            std::thread::sleep(Duration::from_millis(100));
-        }
-        assert!(
-            got_rep,
-            "client must receive the reply (event-driven inbox)"
-        );
-
-        let mut pbuf: *mut u8 = ptr::null_mut();
-        let mut plen: usize = 0;
-        // SAFETY: valid out pointers; client valid.
-        assert_eq!(
-            unsafe { rmw_zerodds_take_response(client, &mut pbuf, &mut plen, &mut 0u8) },
-            RMW_RET_OK
-        );
-        assert!(!pbuf.is_null() && plen >= 1, "reply bytes delivered");
-        // SAFETY: from take.
-        unsafe { rmw_zerodds_buffer_free(pbuf, plen) };
-
-        // SAFETY: all handles valid + owned.
-        unsafe {
-            let _ = rmw_zerodds_destroy_client(client);
-            let _ = rmw_zerodds_destroy_service(service);
+            let node_cli = rmw_zerodds_create_node(ctx_cli, name.as_ptr(), ns.as_ptr());
+            let node_srv = rmw_zerodds_create_node(ctx_srv, name.as_ptr(), ns.as_ptr());
+            let client = services::rmw_zerodds_create_client(
+                node_cli,
+                svc.as_ptr(),
+                req_t.as_ptr(),
+                rep_t.as_ptr(),
+                &q,
+                ptr::null_mut(),
+            );
+            let service = services::rmw_zerodds_create_service(
+                node_srv,
+                svc.as_ptr(),
+                req_t.as_ptr(),
+                rep_t.as_ptr(),
+                &q,
+                ptr::null_mut(),
+            );
+            assert!(!client.is_null() && !service.is_null());
+            let topics = zerodds::runtime_arc(rs)
+                .unwrap()
+                .discovered_subscription_topics();
+            assert!(
+                topics
+                    .iter()
+                    .any(|(t, ty)| t == "rq/rmw_srv_itRequest"
+                        && ty == "test::srv::dds_::Srv_Request_")
+                    || zerodds::runtime_arc(rc)
+                        .unwrap()
+                        .discovered_subscription_topics()
+                        .iter()
+                        .any(|(t, _)| t == "rq/rmw_srv_itRequest"),
+                "request topic: {topics:?}"
+            );
+            let (request, reply, sent, got) = round_trip(client, service, &[1, 2, 3, 4], &[9, 8]);
+            assert_eq!(request, [0, 1, 0, 0, 1, 2, 3, 4]);
+            assert_eq!(reply, [0, 1, 0, 0, 9, 8]);
+            // The client may have sent several requests until the service
+            // matched; the service answered the one it took first.
+            assert!(got >= 1 && got <= sent, "reply to {got}, sent up to {sent}");
+            let _ = services::rmw_zerodds_destroy_client(client);
+            let _ = services::rmw_zerodds_destroy_service(service);
             let _ = rmw_zerodds_destroy_node(node_cli);
             let _ = rmw_zerodds_destroy_node(node_srv);
             let _ = rmw_zerodds_shutdown(ctx_cli);
             let _ = rmw_zerodds_shutdown(ctx_srv);
             let _ = rmw_zerodds_context_fini(ctx_cli);
             let _ = rmw_zerodds_context_fini(ctx_srv);
+        }
+    }
+
+    /// One runtime, two clients of one service: each takes only the reply to
+    /// its own request (the same-runtime path carries the sequence number and
+    /// the related identity as the wire does).
+    #[test]
+    fn two_clients_in_one_runtime_each_get_their_own_reply() {
+        let svc = std::ffi::CString::new("/rmw_srv_same").unwrap();
+        let req_t = std::ffi::CString::new("test::srv::dds_::Srv_Request_").unwrap();
+        let rep_t = std::ffi::CString::new("test::srv::dds_::Srv_Response_").unwrap();
+        let name = std::ffi::CString::new("n").unwrap();
+        let ns = std::ffi::CString::new("/").unwrap();
+        let q = services_qos();
+        // SAFETY: FFI bring-up with valid C strings.
+        unsafe {
+            let ctx = rmw_zerodds_init(93);
+            assert!(!ctx.is_null());
+            let node = rmw_zerodds_create_node(ctx, name.as_ptr(), ns.as_ptr());
+            let mk_client = || {
+                services::rmw_zerodds_create_client(
+                    node,
+                    svc.as_ptr(),
+                    req_t.as_ptr(),
+                    rep_t.as_ptr(),
+                    &q,
+                    ptr::null_mut(),
+                )
+            };
+            let a = mk_client();
+            let b = mk_client();
+            let service = services::rmw_zerodds_create_service(
+                node,
+                svc.as_ptr(),
+                req_t.as_ptr(),
+                rep_t.as_ptr(),
+                &q,
+                ptr::null_mut(),
+            );
+            assert!(!a.is_null() && !b.is_null() && !service.is_null());
+            let (_, reply_a, _, _) = round_trip(a, service, &[0xA], &[0xAA]);
+            assert_eq!(reply_a, [0, 1, 0, 0, 0xAA]);
+            // B saw A's reply on the shared reply topic and skips it.
+            let (mut pbuf, mut plen, mut seq) = (ptr::null_mut(), 0usize, 0i64);
+            services::rmw_zerodds_take_response(b, &mut pbuf, &mut plen, ptr::null_mut(), &mut seq);
+            assert!(pbuf.is_null(), "B takes nothing of A's");
+            let (_, reply_b, sent_b, got_b) = round_trip(b, service, &[0xB], &[0xBB]);
+            assert_eq!(reply_b, [0, 1, 0, 0, 0xBB]);
+            assert_eq!(got_b, sent_b);
+            let _ = services::rmw_zerodds_destroy_client(a);
+            let _ = services::rmw_zerodds_destroy_client(b);
+            let _ = services::rmw_zerodds_destroy_service(service);
+            let _ = rmw_zerodds_destroy_node(node);
+            let _ = rmw_zerodds_shutdown(ctx);
+            let _ = rmw_zerodds_context_fini(ctx);
         }
     }
 
@@ -3349,10 +3874,10 @@ mod tests {
         let node_sub = unsafe { rmw_zerodds_create_node(ctx_sub, name.as_ptr(), ns.as_ptr()) };
         let publ =
             // SAFETY: validity upheld by the surrounding contract (NULL/bounds checked where applicable).
-            unsafe { rmw_zerodds_create_publisher(node_pub, typ.as_ptr(), topic.as_ptr(), 1) };
+            unsafe { rmw_zerodds_create_publisher(node_pub, typ.as_ptr(), topic.as_ptr(), &test_qos(), ptr::null_mut()) };
         let sub =
             // SAFETY: validity upheld by the surrounding contract (NULL/bounds checked where applicable).
-            unsafe { rmw_zerodds_create_subscription(node_sub, typ.as_ptr(), topic.as_ptr(), 1) };
+            unsafe { rmw_zerodds_create_subscription(node_sub, typ.as_ptr(), topic.as_ptr(), &test_qos(), ptr::null_mut()) };
         assert!(!publ.is_null() && !sub.is_null());
 
         // SAFETY: counter outlives the subscription (dropped after destroy below).

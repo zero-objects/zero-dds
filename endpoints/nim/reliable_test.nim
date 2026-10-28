@@ -230,10 +230,46 @@ if paramCount() >= 1:
     check(phb.isSome and phb.get.first == 1'u16 and phb.get.last == 3'u16, "golden_heartbeat_parse")
     let pan = parseAcknack(goldAn)
     check(pan.isSome and pan.get.firstUnacked == 1'u16, "golden_acknack_parse")
+    check(goldAn.len == 17, "golden_acknack_size_17")
   else:
     echo "skip byte-golden: goldens not found in ", dir
 else:
   echo "skip byte-golden: no golden dir arg"
+
+# legacy FINAL form (body length 5, no DHEADER), as sent by eProsima clients
+block:
+  let legacy = @[0x80'u8, 0x00, 1, 0, 0x0A, 0x01, 5, 0, 1, 0, 0, 0, 0x80]
+  let pl = parseAcknack(legacy)
+  check(pl.isSome and pl.get.firstUnacked == 1'u16 and pl.get.streamId == 0x80'u8,
+        "acknack_legacy_final_parse")
+  let nw = acknackFrame(0x80'u8, StreamNone, 1,
+                        AckNackBody(firstUnacked: 1'u16, nackLo: 0, nackHi: 0, streamId: 0x80'u8))
+  check(nw.len == 17 and nw[6] == 9'u8 and nw[8] == 5'u8 and nw[9] == 0'u8, "acknack_dheader_layout")
+  check(parseAcknack(nw).isSome, "acknack_new_roundtrip")
+  check(parseAcknack(legacy[0 ..< 10]).isNone, "acknack_short_rejected")
+  check(parseAcknack(nw[0 ..< 16]).isNone, "acknack_truncated_dheader_form_rejected")
+
+# UnannotatedTypes: Final writes the 13-octet FINAL golden of the reference implementation
+block:
+  let finalGolden = @[0x80'u8, 0x00, 0x01, 0x00, 0x0a, 0x01, 0x05, 0x00, 0x01, 0x00, 0x00, 0x00, 0x80]
+  let ack = AckNackBody(firstUnacked: 1'u16, nackLo: 0, nackHi: 0, streamId: 0x80'u8)
+  let fin = acknackFrame(0x80'u8, StreamNone, 1, ack, UnannotatedTypes.Final)
+  check(fin == finalGolden, "acknack_final_matches_13_octet_golden")
+  let app = acknackFrame(0x80'u8, StreamNone, 1, ack, UnannotatedTypes.Appendable)
+  check(app.len == 17 and app == acknackFrame(0x80'u8, StreamNone, 1, ack),
+        "acknack_appendable_is_default_17_octets")
+  check(parseAcknack(fin).isSome and parseAcknack(app).isSome, "acknack_parser_accepts_both_forms")
+  var rf = newReceiver(UnannotatedTypes.Final)
+  var ra = newReceiver()
+  discard rf.recvData(0'u16, @[1'u8])
+  discard ra.recvData(0'u16, @[1'u8])
+  discard rf.drainInOrder()
+  discard ra.drainInOrder()
+  check(rf.unannotatedTypes == UnannotatedTypes.Final and ra.unannotatedTypes == UnannotatedTypes.Appendable,
+        "receiver_carries_unannotated_types")
+  check(rf.acknackFrame(0x80'u8, StreamNone, 1, some(0'u16)) == finalGolden and
+        ra.acknackFrame(0x80'u8, StreamNone, 1, some(0'u16)) == app,
+        "receiver_acknack_follows_unannotated_types")
 
 if failed == 0:
   echo "ALL OK"

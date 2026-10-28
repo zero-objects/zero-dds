@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! MessageError-Message — Spec §15.4.8.
+//! The MessageError message — spec §15.4.8.
 //!
 //! Body-free. Sent when a message with an unknown magic / version /
 //! type is received, or when the header is malformed. The caller then

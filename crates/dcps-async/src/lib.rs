@@ -31,7 +31,7 @@
 //!
 //! Spec: `docs/specs/zerodds-async-1.0.md`.
 
-#![cfg_attr(not(feature = "std"), no_std)]
+// Needs `std`: built on zerodds-dcps, which needs it.
 #![warn(missing_docs)]
 #![forbid(unsafe_code)]
 
@@ -48,13 +48,13 @@ pub use factory::AsyncDomainParticipantFactory;
 pub use participant::AsyncDomainParticipant;
 pub use publisher::AsyncPublisher;
 pub use reader::{
-    AsyncDataReader, DataAvailableStream, PublicationMatchedStream, SampleInfoStream, SampleStream,
+    AsyncDataReader, DataAvailableStream, SampleInfoStream, SampleStream, SubscriptionMatchedStream,
 };
 pub use subscriber::AsyncSubscriber;
-pub use writer::AsyncDataWriter;
+pub use writer::{AsyncDataWriter, PublicationMatchedStream};
 
 // Re-exports of the sync types the caller still needs.
-pub use zerodds_dcps::status::SubscriptionMatchedStatus;
+pub use zerodds_dcps::status::{PublicationMatchedStatus, SubscriptionMatchedStatus};
 pub use zerodds_dcps::{
     DataReaderQos, DataWriterQos, DdsError, DdsType, DomainParticipantQos, InstanceHandle,
     PublisherQos, Result, SubscriberQos, Topic, TopicQos,

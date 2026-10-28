@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 # ZeroDDS — IDL → D codegen backend
 
-`zerodds-idlc --d` emits **native D** from OMG IDL: a self-contained source file
+`zerodds-idlc generate --lang d` emits **native D** from OMG IDL: a self-contained source file
 with a shared XCDR2 `Writer` (byte-identical to the `endpoints/d` core) and, per
 IDL `struct`, a D struct plus a `ubyte[] marshalXCDR(Endian endian)` method whose
 wire output matches the Rust goldens exactly.
@@ -12,7 +12,7 @@ Crate: [`crates/idl-d`](../crates/idl-d) · registered in `tools/idlc`
 ## Usage
 
 ```sh
-zerodds-idlc types.idl --d      # emits types.d
+zerodds-idlc generate --lang d types.idl   # emits types.d
 ```
 
 ## Mapping

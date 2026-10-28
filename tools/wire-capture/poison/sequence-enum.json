@@ -1,0 +1,7 @@
+{
+  "none": [ "BLUE", "BLUE" ],
+  "one": [ "BLUE", "BLUE", "BLUE" ],
+  "many": [ "BLUE", "BLUE", "BLUE", "BLUE", "BLUE", "BLUE" ],
+  "bounded": [ "BLUE", "BLUE", "BLUE", "BLUE", "BLUE", "BLUE", "BLUE", "BLUE" ],
+  "tail": -1431655766
+}

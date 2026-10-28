@@ -25,7 +25,7 @@ use alloc::string::{String, ToString};
 use crate::data_value::Variant;
 use crate::types::BuiltinTypeKind;
 
-/// Form-Kategorie aus §8.4.3.3.
+/// Form category from §8.4.3.3.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArrayShape {
     /// Scalar (`array_dimensions` empty).
@@ -251,7 +251,7 @@ mod tests {
 
     #[test]
     fn matrix_returns_named_struct() {
-        // Spec Tab 8.16 — Multi-Dim ist `<Type>Matrix`-Struct.
+        // Spec Tab 8.16 — multi-dim is a `<Type>Matrix` struct.
         assert_eq!(
             map_variant_to_dds(BuiltinTypeKind::Int32, ArrayShape::Matrix).idl_type,
             "Int32Matrix"

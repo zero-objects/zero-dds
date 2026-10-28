@@ -1,0 +1,965 @@
+.TH ZERODDS.YAML 5 "" "ZeroDDS" "ZeroDDS Manual"
+.SH NAME
+zerodds.yaml \- the ZeroDDS runtime configuration
+.SH SYNOPSIS
+.I /etc/zerodds/zerodds.yaml
+.br
+.I /etc/zerodds/zerodds.d/*.yaml
+.br
+.I /run/zerodds/zerodds.d/*.yaml
+.SH DESCRIPTION
+Every ZeroDDS program reads the settings of its DDS runtime from four
+layers; a later layer wins:
+.IP 1. 4
+the built-in defaults;
+.IP 2. 4
+the environment, under the
+.B ZERODDS_*
+name of each key (below);
+.IP 3. 4
+the files: without
+.B \-\-config
+the system directory
+.RI ( /etc/zerodds
+on Linux,
+.I /usr/local/etc/zerodds
+on macOS,
+.I %PROGRAMDATA%\eZeroDDS
+on Windows) with
+.IR zerodds.yaml ,
+then the files of
+.I zerodds.d/
+in name order, on Linux last those of
+.IR /run/zerodds/zerodds.d ;
+with
+.B \-\-config
+.I FILE
+that file, which must exist, and the directory
+.IR FILE.d/ ;
+.IP 4. 4
+.B \-\-set
+.IR path = value
+on the command line, repeatable, in the given order;
+.B \-\-set
+.RI + path = value
+appends to a list.
+.PP
+A bridge daemon reads its own file
+.RI ( ws\-bridged.yaml
+and so on) instead of
+.IR zerodds.yaml ;
+these keys may stand in that file and configure the daemon's DDS side.
+A missing implicit file is not an
+error. An invalid value, an unreadable file or a failed include stops the
+program; the message names the layer (file and line,
+.BR $VARIABLE ,
+or the
+.BR \-\-set ).
+An unknown key in a file is a warning at start and an error under
+.BR \-\-check\-config ,
+which prints every value with its origin and exits 0 (valid), 1 (invalid
+value or unknown key) or 2 (unreadable file, syntax error, include cycle).
+.PP
+The reader is
+.I RuntimeConfig::from_source
+in
+.IR crates/dcps/src/runtime.rs ;
+the table
+.I SETTINGS
+there pairs every key with its environment variable.
+.SH SYNTAX
+A subset of YAML: maps, block lists
+.RI ( "\- a" ),
+flat inline lists of scalars
+.RI ( "[a, \(dqb\(dq]" ),
+scalars, comments. Inline maps and nested inline lists are refused.
+.PP
+.BI include: " PATH"
+or a list of paths loads further files or directories, relative to the
+including file, before the file's own values; nesting is allowed up to 16
+levels, a cycle is refused.
+.PP
+Maps merge across files; a list replaces the list below it, a key
+.BI + name
+appends to it. A list from the environment is a comma list.
+.PP
+.BI ${VAR} " and " ${VAR:-default}
+are substituted from the environment before a document is parsed.
+.PP
+Booleans are
+.BR true / false
+or
+.BR 1 / 0 .
+.SH KEYS
+Each entry names the default and, in brackets, the environment variable.
+.SS runtime
+.TP
+.B runtime.tick_period_ms
+Period of the runtime tick (heartbeats, timers), ms, > 0. Default 5.
+.RB [ ZERODDS_TICK_PERIOD_MS ]
+.TP
+.B runtime.scheduler_tick
+The event-driven deadline scheduler;
+.B false
+runs a fixed tick loop. Default true.
+.RB [ ZERODDS_SCHEDULER_TICK ]
+.SS transport
+.TP
+.B transport.tcp_locator_kinds
+.BR vendor " or " fast-dds :
+the LocatorKind values of TCP locators. vendor sends ZeroDDS's own kinds in the
+vendor range of DDSI-RTPS 2.5 \(sc9.3.2.4 (0x01F0_0004, 0x01F0_0005); fast-dds sends 4 and 8, the
+values of Fast DDS, for TCP interoperation with it. Reading accepts both. Default vendor.
+.RB [ ZERODDS_TCP_LOCATOR_KINDS ]
+.TP
+.B transport.max_message_size
+Largest RTPS message sent, bytes, at least the MTU. Default 14720.
+.RB [ ZERODDS_MAX_MESSAGE_SIZE ]
+.TP
+.B transport.shm_max_datagram
+Datagram limit of the same-host SHM transport, bytes, > 0. Default 65536.
+.RB [ ZERODDS_SHM_MAX_DATAGRAM ]
+.TP
+.B transport.same_host_shm
+Whether a writer and a reader on the same host exchange user samples through
+a shared-memory segment;
+.B false
+sends every such pair over the user transport. Default true in a build
+with the same-host SHM feature and false without it;
+.B true
+in a build without it makes the runtime refuse to start.
+.RB [ ZERODDS_SAME_HOST_SHM ]
+.TP
+.B transport.user_multicast
+Join the SPDP multicast group on the user-traffic multicast port of DDSI-RTPS
+2.5 \(sc9.6.2.3 (PB + DG * domainId + d2), receive user traffic there and
+announce the locator as the participant's default multicast locator. A peer may
+then send user samples by multicast. ZeroDDS writers send to the unicast
+locators of a peer only. A refused join is logged and the participant runs
+without it. Set false for a host without multicast. Default true.
+.RB [ ZERODDS_USER_MULTICAST ]
+.TP
+.B transport.recv_batch
+Datagrams per batched receive call, > 0;
+.B 1
+is one
+.BR recv ()
+per datagram. Default 32.
+.RB [ ZERODDS_RECV_BATCH ]
+.TP
+.B transport.batch_at_zero_budget
+Batch also at a latency budget of 0. Default false.
+.RB [ ZERODDS_BATCH_AT_ZERO_BUDGET ]
+.TP
+.B transport.interface
+IPv4 address of the interface to announce and bind; unset, a route probe
+chooses. Default unset.
+.RB [ ZERODDS_INTERFACE ]
+.TP
+.B transport.user_transport
+Transport of the user data:
+.BR UDPv4 ", " UDPv6 ", " TCPv4 ", " TCPv6 ;
+.BR SHM ", " UDS ", " TSN
+in a build with the matching feature. Discovery stays on UDPv4. Default
+UDPv4.
+.RB [ ZERODDS_USER_TRANSPORT ]
+.TP
+.B transport.user_transports
+List of the same values, the first preferred; a non-empty list replaces
+.BR transport.user_transport .
+Default empty.
+.RB [ ZERODDS_USER_TRANSPORTS ]
+.TP
+.B transport.udp.connected_cache
+Keep a connected send socket per destination;
+.B false
+sends with
+.BR sendto ().
+Default true.
+.RB [ ZERODDS_UDP_CACHE_ENABLE ]
+.TP
+.B transport.udp.cache_max_entries
+Entries of that cache, > 0, oldest evicted first. Default 16.
+.RB [ ZERODDS_UDP_CACHE_MAX ]
+.TP
+.B transport.udp.cache_sndbuf
+.B SO_SNDBUF
+of the cached sockets, bytes; 0 keeps the kernel default. Default 262144.
+.RB [ ZERODDS_UDP_CACHE_SNDBUF ]
+.TP
+.B transport.udp.recv_buffer
+.B SO_RCVBUF
+of every bound UDP socket, bytes; 0 keeps the kernel default. Default
+1048576.
+.RB [ ZERODDS_UDP_RCVBUF ]
+.TP
+.B transport.udp.dont_route
+.BR SO_DONTROUTE ;
+only for peers on the local subnet. Default false.
+.RB [ ZERODDS_UDP_DONTROUTE ]
+.TP
+.B transport.udp.max_message_size
+Largest RTPS message the UDP transport sends in one datagram, bytes, 20 to
+65507. The fragment size of a writer follows the smallest such size of its
+transports (DDSI-RTPS 2.5 \(sc8.4.14.1): size less 128 octets, so 1344 at
+the default. Default 1472, a UDP datagram that fits an Ethernet frame.
+.RB [ ZERODDS_UDP_MAX_MESSAGE_SIZE ]
+.TP
+.B transport.interface_bindings
+File only, a list of maps with
+.B name
+and
+.B bind
+.RI ( ip " or " ip:port ),
+.B kind
+.RB ( loopback ", " localhost ", " wan ", " subnet ", "
+.BI named: class\fR),
+.B subnet
+(CIDR) and optionally
+.BR default ;
+the interfaces that
+.I NetInterface
+rules of DDS Security bind to. Needs a build with the
+.B security
+feature. Default empty.
+.SS reader
+.TP
+.B reader.max_samples_per_proxy
+Samples a reader buffers per remote writer across a gap, > 0. Default 65536.
+.RB [ ZERODDS_MAX_SAMPLES_PER_PROXY ]
+.TP
+.B reader.max_reassembly_sample_bytes
+Largest sample reassembled from fragments, bytes, > 0. Default 16777216.
+.RB [ ZERODDS_MAX_SAMPLE_BYTES ]
+.TP
+.B reader.time_based_filter_clock
+The clock a reader's TIME_BASED_FILTER measures minimum_separation on; DDS
+1.4 \(sc2.2.3.12 leaves it open.
+.B sender
+takes the source timestamp of the change (INFO_TS), the reception time for a
+sample without one;
+.B receiver
+takes the reception time. Default sender.
+.RB [ ZERODDS_READER_TIME_BASED_FILTER_CLOCK ]
+.TP
+.B reader.heartbeat_response_delay_ms
+How long a reliable reader waits after a HEARTBEAT before it answers, ms,
+>= 0 (DDSI-RTPS 2.5 \(sc8.4.10.1 heartbeatResponseDelay). Default 500, the
+specification's; 0 answers on the next tick.
+.RB [ ZERODDS_READER_HEARTBEAT_RESPONSE_DELAY_MS ]
+.TP
+.B reader.heartbeat_suppression_duration_ms
+A HEARTBEAT that reaches a reliable reader less than this long after the
+previous one of its writer is ignored, ms, >= 0 (DDSI-RTPS 2.5 \(sc8.4.10.1
+heartbeatSuppressionDuration). Default 0, the specification's value.
+.RB [ ZERODDS_READER_HEARTBEAT_SUPPRESSION_DURATION_MS ]
+.TP
+.B reader.honor_data_max_size_serialized
+Whether a reader refuses a SerializedPayload larger than the
+dataMaxSizeSerialized the matched writer announced (DDSI-RTPS 2.5
+\(sc8.4.10.4, Table 8.72).
+.B false
+takes it, for a writer that exceeds its own announcement (Fast DDS 3.6.1:
+160 octets announced, 100 036 sent, OMG dds-rtps Test_LargeData_0). Default
+true.
+.RB [ ZERODDS_READER_HONOR_DATA_MAX_SIZE_SERIALIZED ]
+.TP
+.B reader.dispose_with_unregister
+Whether a reader takes a lifecycle marker with the DisposedFlag and the
+UnregisteredFlag of PID_STATUS_INFO (DDSI-RTPS 2.5 \(sc9.6.3.9) as a dispose
+and an unregister.
+.B false
+takes it as an unregister only: the instance goes to NOT_ALIVE_NO_WRITERS
+once its last writer is gone (OMG dds-rtps Test_FinalInstanceState_2 with a
+publisher that disposes and unregisters in one marker when its writer is
+deleted, measured OpenDDS 3.35.0-dev). Default true.
+.RB [ ZERODDS_READER_DISPOSE_WITH_UNREGISTER ]
+.SS dcps
+.TP
+.B dcps.presentation_instance_coherence
+How a coherent set is presented under PRESENTATION access_scope INSTANCE. DDS
+1.4 words it twice: the table in \(sc2.2.3.6 (p. 106) says "order and coherent
+changes apply to each instance separately", the text below it (p. 115) says
+that begin_coherent_change and end_coherent_change have "no effect on how the
+subscriber can access the data". They differ for a coherent set within one
+instance.
+.B per_instance
+follows the table: the changes of a set to one instance are presented together
+once the set is closed (what the OMG dds-rtps cases Test_CoherentSets_10 and
+_19 check);
+.B none
+follows the text: the samples are presented as they arrive. Default per_instance.
+.RB [ ZERODDS_PRESENTATION_INSTANCE_COHERENCE ]
+.SS writer
+.TP
+.B writer.nack_response_delay_ms
+How long a reliable writer waits after a NACK before it repairs, ms,
+>= 0 (DDSI-RTPS 2.5 \(sc8.4.7.1 nackResponseDelay). Default 200, the
+specification's; 0 answers on the next tick.
+.RB [ ZERODDS_NACK_RESPONSE_DELAY_MS ]
+.TP
+.B writer.heartbeat_period_ms
+How often a reliable writer announces its history to a reader that has not
+acknowledged it, ms, > 0 (DDSI-RTPS 2.5 \(sc8.4.7.1 heartbeatPeriod). Default
+100.
+.RB [ ZERODDS_WRITER_HEARTBEAT_PERIOD_MS ]
+.TP
+.B writer.nack_suppression_duration_ms
+A NACK for a change sent less than this long ago is ignored, ms, >= 0
+(DDSI-RTPS 2.5 \(sc8.4.7.1 nackSuppressionDuration). Default 0.
+.RB [ ZERODDS_NACK_SUPPRESSION_DURATION_MS ]
+.TP
+.B writer.unacked_window_bytes
+Flow control of a writer with reliable readers: how many bytes of
+payload may be written and not yet acknowledged by all of them, >= 0.
+Beyond it a write waits for acknowledgements up to the RELIABILITY
+max_blocking_time, then goes out past it; TIMEOUT comes only from the
+RESOURCE_LIMITS. 0 sets no window. Default 524288.
+.RB [ ZERODDS_WRITER_UNACKED_WINDOW ]
+.TP
+.B writer.unregister_on_delete
+Whether deleting a DataWriter unregisters its instances on the wire and,
+with WRITER_DATA_LIFECYCLE autodispose_unregistered_instances, disposes
+them (DDS 1.4 \(sc2.2.2.4.1.6, \(sc2.2.3.21).
+.B false
+sends neither: readers take the instances to NOT_ALIVE_NO_WRITERS when the
+publication's SEDP dispose arrives, as with Connext, Fast DDS, CoreDX and
+HDDS as the publisher (OMG dds-rtps Test_FinalInstanceState_2). Default
+true.
+.RB [ ZERODDS_WRITER_UNREGISTER_ON_DELETE ]
+.TP
+.B writer.linger_ms
+How long deleting a reliable DataWriter waits for its reliable readers to
+acknowledge what it sent, the unregister and dispose markers of
+DDS 1.4 \(sc2.2.2.4.1.6 among it, before the writer goes and its SEDP
+dispose is sent. A writer whose readers have acknowledged everything goes at
+once. Milliseconds, an integer >= 0;
+.B 0
+removes the writer at once. Default 1000.
+.RB [ ZERODDS_WRITER_LINGER_MS ]
+.TP
+.B writer.group_coherent_set_pid
+Whether a writer of a publisher with PRESENTATION access_scope GROUP puts
+PID_GROUP_COHERENT_SET on the DATA of a group coherent set, as DDSI-RTPS 2.5
+\(sc8.7.6 requires.
+.B false
+leaves it out for every reader: HDDS and Connext read group coherent sets
+right only without it (OMG dds-rtps Test_CoherentSets_12, _18, _21), and a
+ZeroDDS subscriber then no longer knows a set's members. Default true.
+.RB [ ZERODDS_WRITER_GROUP_COHERENT_SET_PID ]
+.TP
+.B writer.group_info_on_wire
+Whether a writer of a publisher with PRESENTATION access_scope GROUP sends the
+group information of DDSI-RTPS 2.5 \(sc8.7.5 and \(sc8.7.6: PID_GROUP_SEQ_NUM,
+PID_WRITER_GROUP_INFO, PID_GROUP_COHERENT_SET and the GroupInfoFlag of
+HEARTBEAT and GAP.
+.B false
+sends each writer's coherent set as under TOPIC, the form HDDS and zzdds send
+and Connext, HDDS and zzdds read (OMG dds-rtps Test_CoherentSets_12, _18, _21);
+a ZeroDDS subscriber then orders by writer instead of by group. Default true.
+.RB [ ZERODDS_WRITER_GROUP_INFO_ON_WIRE ]
+.TP
+.B writer.keyless_lifecycle_on_wire
+Send the dispose and unregister of a writer of a topic without a key on the
+wire. DDSI-RTPS 2.5 \(sc8.2.10.1 gives both "no effect if the topicKind==NO_KEY":
+by default the writer's own instance state changes (DDS 1.4 \(sc2.2.1.2.2, one
+instance) and no marker is sent, and
+.B DcpsRuntime::keyless_lifecycle_not_sent
+counts it.
+.B true
+sends the marker (status bits only) for a peer that expects it. Default false.
+.RB [ ZERODDS_WRITER_KEYLESS_LIFECYCLE_ON_WIRE ]
+.SS discovery
+.TP
+.B discovery.spdp_multicast_group
+SPDP multicast group. Default 239.255.0.1.
+.RB [ ZERODDS_SPDP_MC_GROUP ]
+.TP
+.B discovery.spdp_period_ms
+SPDP announce period, ms, > 0 (DDSI-RTPS 2.5 \(sc9.6.2.4). Default 30000, the
+specification's; a lease shorter than 90 s lowers the default to a third of it.
+.RB [ ZERODDS_SPDP_PERIOD_MS ]
+.TP
+.B discovery.initial_announce_count
+Announcements at start, and directed responses to a newly discovered
+participant, at the interval below; 0 turns the announcements off and leaves
+one response. Default 10.
+.RB [ ZERODDS_INITIAL_ANNOUNCE_COUNT ]
+.TP
+.B discovery.initial_announce_period_ms
+Interval of those announcements and responses, ms, > 0. Default 200.
+.RB [ ZERODDS_INITIAL_ANNOUNCE_PERIOD_MS ]
+.TP
+.B discovery.participant_lease_duration_ms
+Announced participant lease, ms, > 0. Default 100000.
+.RB [ ZERODDS_PARTICIPANT_LEASE_MS ]
+.TP
+.B discovery.wlp_period_ms
+WLP period, ms; 0 is a third of the lease. Default 0.
+.RB [ ZERODDS_WLP_PERIOD_MS ]
+.TP
+.B discovery.spdp_new_sequence_per_period
+Whether every SPDP announcement carries a new sequence number. DDSI-RTPS 2.5
+\(sc8.5.3.1 has the SPDP writer resend one data-object each period, so by
+default the number changes only with the participant data. Cyclone DDS and
+OpenDDS send a new number each period;
+.B true
+does the same. Default false.
+.RB [ ZERODDS_SPDP_NEW_SEQUENCE_PER_PERIOD ]
+.TP
+.B discovery.peers
+List of unicast peers,
+.IR ipv4 " or " ipv4:port ;
+without a port the ports of the domain are expanded. Default empty.
+.RB [ ZERODDS_PEERS ]
+.TP
+.B discovery.participant_name
+The name the participant announces as PID_ENTITY_NAME (EntityName_t,
+DDSI-RTPS 2.5 Table 9.18). A non-empty string. Default
+.B zerodds:
+and the GUID prefix in hex. The endpoints of the participant announce a name
+built from kind, topic and entity id.
+.RB [ ZERODDS_PARTICIPANT_NAME ]
+.TP
+.B discovery.max_peer_participants
+Participant ids per peer in that expansion, 1..=120. Default 10.
+.RB [ ZERODDS_MAX_PEER_PARTICIPANTS ]
+.TP
+.B discovery.no_multicast
+Send no SPDP multicast; discovery by
+.B discovery.peers
+only. Default false.
+.RB [ ZERODDS_NO_MULTICAST ]
+.TP
+.B discovery.type_object_v1
+Announce the type also as the TypeObjectV1 (type) and the TypeIdV1 (type_id) of
+XTypes 1.1 Annex B, the optional members of the built-in topic data of XTypes
+1.3 Annex D. Default false.
+.RB [ ZERODDS_TYPE_OBJECT_V1 ]
+.TP
+.B discovery.multicast_allowlist
+List of the multicast groups allowed; empty allows every group. Default
+empty.
+.RB [ ZERODDS_MULTICAST_ALLOWLIST ]
+.TP
+.B discovery.server
+The participant relays SPDP for others. Default false.
+.RB [ ZERODDS_DISCOVERY_SERVER ]
+.TP
+.B discovery.domain_tag
+The domain tag (DDSI-RTPS 2.5 \(sc8.5.3.2): sent in SPDP when not empty; a
+participant whose tag differs, the untagged one included, is not
+discovered. Cyclone DDS sets it with
+.IR Discovery/Tag .
+Default empty.
+.RB [ ZERODDS_DOMAIN_TAG ]
+.SS ports
+The port-mapping parameters of DDSI-RTPS 2.5 section 9.6.2.3, which an
+implementation must expose.
+SPDP multicast port = PB + DG * domainId + d0;
+SPDP unicast port = PB + DG * domainId + d1 + PG * participantId;
+user-traffic multicast port = PB + DG * domainId + d2;
+user-traffic unicast port = PB + DG * domainId + d3 + PG * participantId.
+Each value is an integer in 0..=65535.
+The runtime binds the discovery ports from them and, with
+.BR transport.user_multicast ,
+the user-traffic multicast port; its user-traffic unicast sockets take an
+ephemeral port, which the participant announces, so d3 is carried in the
+mapping without being bound.
+Peers that use other values have to be told the same values.
+.TP
+.B ports.port_base
+PB. Default 7400.
+.RB [ ZERODDS_PORT_BASE ]
+.TP
+.B ports.domain_gain
+DG. Default 250.
+.RB [ ZERODDS_PORT_DOMAIN_GAIN ]
+.TP
+.B ports.participant_gain
+PG. Default 2.
+.RB [ ZERODDS_PORT_PARTICIPANT_GAIN ]
+.TP
+.B ports.d0
+Default 0.
+.RB [ ZERODDS_PORT_D0 ]
+.TP
+.B ports.d1
+Default 10.
+.RB [ ZERODDS_PORT_D1 ]
+.TP
+.B ports.d2
+Default 1.
+.RB [ ZERODDS_PORT_D2 ]
+.TP
+.B ports.d3
+Default 11.
+.RB [ ZERODDS_PORT_D3 ]
+.SS security
+.TP
+.B security.secure_spdp
+The reliable secure SPDP channel (entity 0xff0101), which a secured
+participant announces and Fast DDS waits for before it matches secure
+endpoints. Runs on a secured participant. Default true.
+.RB [ ZERODDS_SECURE_SPDP ]
+.TP
+.B security.enclave_dir
+SROS2 enclave directory
+.RI ( identity_ca.cert.pem ,
+.IR cert.pem ,
+.IR key.pem ,
+.IR permissions_ca.cert.pem ,
+.IR governance.p7s ,
+.IR permissions.p7s );
+set, every participant is secured from it, and a directory that does not
+load is an error. Default unset.
+.RB [ ZERODDS_SECURITY_DIR ]
+.PP
+The following five keys are the named settings of the security plugins for the
+forms in which a peer writes or reads the wire differently from DDS\-Security
+1.2. Each default is the value of the specification; the other values are for
+one named peer. Participants created from the participant's
+.B dds.sec.*
+properties may name the same setting as a property
+.RB ( org.zerodds.sec.* ),
+which wins over the key. A value outside the list stops the participant at
+start \(em never a silent default.
+.TP
+.B security.kx_key_fallback
+.BR spec " or " accept :
+whether a submessage or payload that no key of its sender opens is also tried
+with the key exchange (Kx) key of the volatile channel. DDS\-Security 1.2
+10.5.2.1.2 gives that key to the volatile channel only, so spec is the default;
+accept is for a peer that protects discovery or user data with it. No vendor
+is named: the form is not measured against one. Default spec.
+.RB [ ZERODDS_SEC_KX_KEY_FALLBACK ]
+.TP
+.B security.compatibility_check
+.BR spec " or " ignore :
+whether participants and endpoints whose announced security masks and
+algorithm infos are not compatible are kept apart (DDS\-Security 1.2 7.3.10 to
+7.3.24). ignore is for a peer whose announced masks differ from what it
+enforces. Default spec.
+.RB [ ZERODDS_SEC_COMPATIBILITY_CHECK ]
+.TP
+.B security.algo_name_nul
+.BR spec ", " omit ", " mirror " or " by_vendor :
+how the algorithm names c.dsign_algo and c.kagree_algo of the handshake
+token are written. DDS\-Security 1.2 7.3.3.1 counts the terminating NUL in the
+length (spec). Fast DDS 3.6 writes and compares the names without it: omit
+never writes it; mirror writes it as an initiator and answers in the form of the
+request. OpenDDS requires the NUL. by_vendor writes it for an OpenDDS peer only
+(the form ZeroDDS had before spec was the default). Fast DDS and OpenDDS
+behaviour is from the sources read. Default spec.
+.RB [ ZERODDS_SEC_ALGO_NAME_NUL ]
+.TP
+.B security.algorithm_names
+.BR auto ", " 1.2 " or " 1.1 :
+the spelling of the algorithm names the initiator sends. DDS\-Security 1.2
+Tables 25 and 26 name ECDSA+P256+SHA256, ECDHE\-CEUM+P256 and
+DHE+MODP\-2048\-256 and mark the names of 1.1 (ECDSA\-SHA256,
+ECDH+prime256v1\-CEUM, DH+MODP\-2048\-256) "deprecated in v 1.2"; 1.2 is the
+default. Cyclone DDS, Fast DDS and OpenDDS announce DDS:Auth:PKI\-DH:1.0 and
+compare with the names of 1.1 (sources read, not measured), so 1.1 is for these
+three. auto sends the names of 1.2 to a peer whose IdentityToken names 1.2 and
+those of 1.1 to a peer of 1.0. Both spellings are accepted when received.
+Default 1.2.
+.RB [ ZERODDS_SEC_ALGORITHM_NAMES ]
+.TP
+.B security.subject_name_form
+.BR rfc4514 ", " x509_name_oneline " or " xn_flag_oneline :
+the form of the subject names in dds.cert.sn and dds.ca.sn of the IdentityToken
+and dds.perm_ca.sn of the PermissionsToken. DDS\-Security 1.2 9.4.1.2.3 gives
+RFC 4514 (CN=y,O=x,C=DE), the default. x509_name_oneline is the OpenSSL
+X509_NAME_oneline form (/C=DE/O=x/CN=y): Fast DDS 3.6 compares a received
+dds.perm_ca.sn with it, and Cyclone DDS writes it. xn_flag_oneline is the
+OpenSSL XN_FLAG_ONELINE form (C = DE, O = x, CN = y): OpenDDS compares a
+received dds.ca.sn with it. The comparisons are from the sources read; ZeroDDS
+compares no received subject name. Default rfc4514.
+.RB [ ZERODDS_SEC_SUBJECT_NAME_FORM ]
+.TP
+.B security.origin_authentication_fallback
+.BR spec " or " accept :
+what a participant whose governance asks for origin authentication
+(rtps_protection_kind or metadata_protection_kind
+SIGN_WITH_ORIGIN_AUTHENTICATION or ENCRYPT_WITH_ORIGIN_AUTHENTICATION) does
+with an RTPS message or submessage under a key without a receiver\-specific
+key. spec refuses it, as DDS\-Security 1.2 10.5.3.3 Table 80
+decode_rtps_message asks; accept verifies it with the common MAC alone, as
+Table 80 does for a key whose receiver_specific_key_id is zero. A key that
+carries a receiver\-specific key is held to it under either value. OpenDDS 3.34
+makes no receiver\-specific keys although its governance asks for them
+(CryptoBuiltInImpl.cpp: "origin auth is not implemented"). Default spec.
+.RB [ ZERODDS_SEC_ORIGIN_AUTHENTICATION_FALLBACK ]
+.SS tsn
+Read when
+.B transport.user_transport
+is
+.BR TSN .
+.TP
+.B tsn.interface
+Network interface. Default unset.
+.RB [ ZERODDS_TSN_IFACE ]
+.TP
+.B tsn.vlan
+VLAN id, 0..=4094. Default 0.
+.RB [ ZERODDS_TSN_VLAN ]
+.TP
+.B tsn.pcp
+Priority code point, 0..=7. Default 0.
+.RB [ ZERODDS_TSN_PCP ]
+.SS threads
+Real-time scheduling and CPU affinity for the receive threads (SPDP
+multicast, metatraffic, user data, the extra receive workers) as one group
+and the tick thread as another. Applied through
+.IR zerodds\-rt\-linux ,
+Linux
+.BR sched_setattr (2)/
+.BR sched_setaffinity (2);
+needs a build with the
+.B rt
+feature. Without that feature, or on a non-Linux target, any of these keys
+other than the absent key stops the program at start \(em never a silent
+run on the default scheduler. A CPU index that is not one of the host's own
+CPUs is the same kind of error, never silently dropped from the mask.
+.TP
+.B threads.recv_policy
+Scheduler class of the receive threads:
+.BR other ", " fifo ", " rr ", "
+or
+.BR deadline .
+Unset with
+.B threads.recv_priority
+set keeps the pre-C2(2) meaning,
+.BR fifo .
+Unset with nothing else in this group set either: no real-time scheduling
+and no affinity, exactly as before this key existed. A priority set with
+.B other
+or
+.BR deadline ,
+a
+.B threads.recv_deadline
+set with anything but
+.BR deadline ,
+.B fifo
+or
+.B rr
+without a priority, and
+.B deadline
+without
+.B threads.recv_deadline
+are each a startup error naming the key at fault. Default unset.
+.RB [ ZERODDS_RECV_THREAD_POLICY ]
+.TP
+.B threads.tick_policy
+Like
+.BR threads.recv_policy ,
+for the tick thread.
+.RB [ ZERODDS_TICK_THREAD_POLICY ]
+.TP
+.B threads.recv_priority
+.B sched_priority
+of the receive threads under
+.B fifo
+or
+.BR rr ,
+1..=99; needs
+.B CAP_SYS_NICE
+or
+.BR RLIMIT_RTPRIO .
+Default unset.
+.RB [ ZERODDS_RECV_THREAD_PRIORITY ]
+.TP
+.B threads.tick_priority
+Like
+.BR threads.recv_priority ,
+for the tick thread.
+.RB [ ZERODDS_TICK_THREAD_PRIORITY ]
+.TP
+.B threads.recv_deadline
+.BR SCHED_DEADLINE " (" threads.recv_policy = deadline )
+reservation of the receive threads, as
+.IR runtime , deadline , period
+in nanoseconds,
+.IR runtime " <= " deadline " <= " period .
+Always needs
+.BR CAP_SYS_NICE ;
+a reservation that exceeds the kernel's global bandwidth limit fails with
+.BR EBUSY .
+Default unset.
+.RB [ ZERODDS_RECV_THREAD_DEADLINE ]
+.TP
+.B threads.tick_deadline
+Like
+.BR threads.recv_deadline ,
+for the tick thread.
+.RB [ ZERODDS_TICK_THREAD_DEADLINE ]
+.TP
+.B threads.recv_cpus
+List of CPU indices the receive threads run on. Default unset.
+.RB [ ZERODDS_RECV_THREAD_CPUS ]
+.TP
+.B threads.tick_cpus
+List of CPU indices the tick thread runs on. Default unset.
+.RB [ ZERODDS_TICK_THREAD_CPUS ]
+.TP
+.B threads.extra_recv
+Additional receive workers, 0..=64. Default 0.
+.RB [ ZERODDS_EXTRA_RECV_THREADS ]
+.SS wire
+.TP
+.B wire.rtps_dialect
+Behaviour table for vendor differences:
+.BR cyclone ", " fastdds ", " opendds ", " maximally\-interoperable .
+Default maximally-interoperable.
+.RB [ ZERODDS_RTPS_DIALECT ]
+.TP
+.B wire.codec_dialect
+CDR dialect of the reflective codecs: the body check and key derivation for
+the language bindings, the webdds bridge, the ROS 2 dynamic type support, and
+the default of \fBzerodds\-spy\fR and \fBzerodds\-record \-\-dialect\fR.
+The names \fBzerodds\-idlc generate \-\-dialect\fR takes:
+.BR specification ", " cyclone ", " rti ", " fastdds ", " opendds ", " omniorb ,
+.BR tao ", " jacorb ", " ros\-fastrtps ", " ros\-cyclone ", " opensplice .
+Set it to the dialect the types were generated in. Default specification.
+.RB [ ZERODDS_CODEC_DIALECT ]
+.TP
+.B wire.encapsulation_ids
+Identifiers of the encapsulation header of a user sample.
+.B table\-60
+(default) sends those of DDS\-XTypes 1.3 Table 60 (\(sc7.6.3.1.2): 0x0006 to 0x000b for
+XCDR2 and 0x0004 for XML, which Cyclone DDS, Fast DDS, OpenDDS and RTI Connext send.
+.B table\-39
+sends those of Table 39 (\(sc7.4.3.4): 0x0010 (PLAIN_CDR2 big endian) to 0x0015
+(DELIMIT_CDR little endian) and {0x01, 0x00} for XML. The XCDR2 identifiers are those of
+DDSI\-RTPS 2.5 Table 10.3. Both tables are read. XCDR1 identifiers do not change.
+.RB [ ZERODDS_WIRE_ENCAPSULATION_IDS ]
+.TP
+.B wire.pl_cdr1_headers
+PL_CDR1 header policy of the reflective codecs, in place of the one of
+.BR wire.codec_dialect .
+.B dialect
+(default) keeps the dialect's. The names:
+.BR specification ", " short\-rounded\-length ", " always\-extended ", " short\-true\-length ,
+.BR extended\-for\-constructed ", " extended\-for\-constructed\-in\-large\-samples .
+\fBspecification\fR writes and expects the exact parameter length of the member (DDS\-XTypes 1.3
+\(sc7.4.1.2); \fBshort\-rounded\-length\fR the length rounded up to four (DDSI\-RTPS 2.5
+\(sc9.4.2.11). The setting holds for the whole process.
+.RB [ ZERODDS_WIRE_PL_CDR1_HEADERS ]
+.TP
+.B wire.pl_cdr1_reading
+.B strict
+(default): the reflective PL_CDR1 reader takes the framing it is configured for and reports the
+flags, header form and length convention of another framing. \fBtolerant\fR: it accepts any
+flags on PID_EXTENDED and PID_LIST_END, the short and the extended header and a length that is
+the member's own or rounded up to four (DDS\-XTypes 1.3 \(sc7.4.1.2.1, \(sc7.4.1.2.2). The
+setting holds for the whole process.
+.RB [ ZERODDS_WIRE_PL_CDR1_READING ]
+.TP
+.B wire.type_lookup_encoding
+The encoding of the requests and replies of the TypeLookup service.
+.B xcdr2
+(default): CDR2_LE {0x00,0x07} with the encoding version 2. DDS\-XTypes 1.4 Beta 1
+\(sc7.6.3.3.3 makes it the data representation of these endpoints (OMG issue DDSXTY14\-29).
+Cyclone DDS 11.0.1, Fast DDS 3.6.1, OpenDDS 3.34.0, RTI Connext 7.7.0 and InterCom DDS 4.3.1
+write CDR2_LE.
+.B xcdr1
+writes CDR_LE {0x00,0x01} with the encoding version 1, the reading of DDS\-XTypes 1.3, which
+names no data representation for these endpoints (\(sc7.6.3.1.1, Table 60), and of DDSI\-RTPS
+2.5 \(sc10.4 Table 10.2. Cyclone DDS, OpenDDS and RTI Connext refuse a CDR_LE request and
+reply, Fast DDS answers a CDR_LE request (measured).
+A received sample is read in the encoding its identifier names, in either setting.
+.RB [ ZERODDS_WIRE_TYPE_LOOKUP_ENCODING ]
+.TP
+.B wire.data_representation_offer
+List of the offered data representations,
+.BR XCDR1 " (also " XCDR ", " 1 )
+and
+.BR XCDR2 " (also " 2 );
+the first is the encoding of the writers. Default XCDR1 (XTypes 1.3 7.6.3.1.1).
+A reader requests XCDR2 and XCDR beside it (XTypes 1.3 7.6.3.1.1, readers from XTYPES 1.2 on).
+.RB [ ZERODDS_DATA_REPR_OFFER ]
+.TP
+.B wire.data_representation_match
+.BR strict " or " tolerant
+matching of the data representation: strict, the clause (XTypes 1.3 7.6.3.1.1),
+requires the writer's offered representation in the reader's list; tolerant matches on
+any overlap, as Cyclone DDS and Fast DDS do. Default strict.
+.RB [ ZERODDS_DATA_REPR_MATCH ]
+.TP
+.B wire.big_endian
+Writers encode big endian. Default false.
+.RB [ ZERODDS_WIRE_BIG_ENDIAN ]
+.TP
+.B wire.accept_empty_acknack_base_zero
+Accept an ACKNACK whose readerSNState is empty (numBits 0) with bitmapBase 0.
+DDSI-RTPS 2.5 \(sc9.4.2.6 requires bitmapBase >= 1, so by default such an
+ACKNACK is invalid and the rest of its message with it. OpenDDS 3.34.0 and
+RTI Connext 7.7.0 send it as the ACKNACK of a reader that holds nothing. The
+setting holds for the whole process: one runtime in a process that turns it
+on turns it on for every runtime in that process, and it is never turned off
+again. Default false.
+.RB [ ZERODDS_WIRE_ACCEPT_EMPTY_ACKNACK_BASE_ZERO ]
+.TP
+.B wire.clock_skew_threshold_s
+CLOCK_SKEW_DETECTED of DDSI-RTPS 2.5 \(sc8.3.7.4: the largest difference in
+seconds between the time a message is received and the rtpsSendTimestamp of its
+HeaderExtension. A message beyond it sets clockSkewDetected in the receiver
+state, and the InfoTimestamp after it is moved by the difference
+(\(sc8.3.8.11). The spec gives no threshold, so the detection is off by
+default: 0 is off.
+.RB [ ZERODDS_WIRE_CLOCK_SKEW_THRESHOLD_S ]
+.TP
+.B wire.omit_heartbeat_group_digests
+Leave writerSet and secureWriterSet out of the HEARTBEAT that carries group
+information (GroupInfoFlag set). DDSI-RTPS 2.5 Table 8.44 and the reader rule of
+\(sc8.7.5 ask for both, and \(sc9.4.2.19 and \(sc9.3.2.5 give their form (four
+octets each, the first four octets of the MD5 of the EntityIdSet_t, zero for the
+empty group). The figure of \(sc9.4.5.7 ends the HEARTBEAT after lastGSN. With
+this setting a writer sends that form. A reader accepts both. Default false.
+.RB [ ZERODDS_WIRE_OMIT_HEARTBEAT_GROUP_DIGESTS ]
+.TP
+.SS time
+.TP
+.B time.source
+The wall clock behind SOURCE_TIMESTAMP, DESTINATION_ORDER=BY_SOURCE_TIMESTAMP,
+.I write_w_timestamp
+defaults and the reader's LIFESPAN/BY_RECEPTION_TIMESTAMP reception clock
+.RI ( crates/dcps/src/time_source.rs ).
+.BR system " (default, the platform clock) or " tai
+(Linux only,
+.IR CLOCK_TAI ;
+refused on a build/host that cannot honour it, not a silent fallback to
+.IR system ).
+A programmatic source
+.RI ( TimeServiceClock ", an OMG Time Service 1.1 " zerodds\-time\-service
+adapter carrying its inaccuracy/tdf; a deterministic
+.I TestClock
+for tests; any other
+.IR Arc<dyn\ TimeSource> )
+is set on
+.I RuntimeConfig::time_source
+directly — it has no file spelling.
+.RB [ ZERODDS_TIME_SOURCE ]
+.SS xtypes, durability, delivery
+.TP
+.B xtypes.key_member_bounds
+.BR enforced " or " ignored :
+the key-member rules of XTypes 1.3 table 19 in assignability. Default
+enforced.
+.RB [ ZERODDS_KEY_MEMBER_BOUNDS ]
+.TP
+.B xtypes.strong_assignability
+.BR equivalence " or " names_ignored :
+what strong assignability (XTypes 1.3 \(sc7.2.4.3) asks of an element or
+member type that is not delimited: equivalence under the MINIMAL relation,
+member names included, or, with names_ignored, assignability in both
+directions without member names. Default equivalence.
+.RB [ ZERODDS_STRONG_ASSIGNABILITY ]
+.TP
+.B xtypes.type_consistency_absent
+.BR disallow " or " allow :
+what a remote reader that announces no TypeConsistencyEnforcement (PID 0x0074)
+requests. disallow is the clause (XTypes 1.3 7.6.3.4.1); allow takes the
+policy's default, ALLOW_TYPE_COERCION, for a peer such as Cyclone DDS that does
+not write the PID. Default disallow.
+.RB [ ZERODDS_TYPE_CONSISTENCY_ABSENT ]
+.TP
+.B xtypes.annotation_parameter_order
+.BR member\-index " or " name :
+the order of the parameters of a CompleteAnnotationType: member\-index, the
+declaration order (XTypes 1.3 7.3.4.5), or name, the comment in Annex B. The
+order is in the object and so in the hash of annotation_typeid; the setting holds
+for the whole process. Default member\-index.
+.RB [ ZERODDS_ANNOTATION_PARAMETER_ORDER ]
+.TP
+.B durability.dir
+Root of the store of PERSISTENT writers. Default
+.IR <temp\ dir>/zerodds\-durability .
+.RB [ ZERODDS_DURABILITY_DIR ]
+.TP
+.B delivery.mode
+.BR portable ", " raw\-same\-host " or " iceoryx :
+the delivery path of loaning writers (C API, RMW publishers of loanable
+types); where a mode does not apply, a warning names the reason. Default
+portable.
+.RB [ ZERODDS_DELIVERY_MODE ]
+.SS diagnostics
+.TP
+.B diagnostics.observability
+Event sink:
+.BR off " (also " none ", " 0 ", " false ", empty), " stderr ,
+.BR stderr\-json " (also " json ", " 1 ", " on ", " true ).
+Default off.
+.RB [ ZERODDS_OBSERVABILITY ]
+.TP
+.B diagnostics.trace_send_errors
+Failed sends on stderr. Default false.
+.RB [ ZERODDS_TRACE_SEND_ERR ]
+.TP
+.B diagnostics.phase_timing
+Latency counters per phase. Default false.
+.RB [ ZERODDS_PHASE_TIMING ]
+.TP
+.B diagnostics.phase_dump
+Print those counters when the runtime is dropped. Default false.
+.RB [ ZERODDS_PHASE_DUMP ]
+.SS ros2
+.B ros2.*
+is the section of
+.IR rmw_zerodds_cpp ,
+described in
+.BR zerodds\-ros2.yaml (5);
+other programs leave it to the RMW.
+.B ros2.time_based_filter
+.RB [ ZERODDS_TIME_BASED_FILTER ]
+is read by both.
+.SH FILES
+.TP
+.I /etc/zerodds/zerodds.yaml
+The base file on Linux.
+.TP
+.I /etc/zerodds/zerodds.d/
+Drop-ins, read in name order after the base.
+.TP
+.I /run/zerodds/zerodds.d/
+Runtime drop-ins, read last (Linux).
+.TP
+.I /usr/share/zerodds/configs/zerodds.yaml.example
+Every key at its default.
+.SH EXAMPLES
+.nf
+discovery:
+  no_multicast: true
+  peers:
+    \- 192.0.2.20
+    \- 192.0.2.21:7410
+transport:
+  user_transports: [SHM, UDPv4]
+.fi
+.PP
+.nf
+zerodds\-spy \-\-set discovery.no_multicast=true \-\-check\-config
+.fi
+.PP
+.nf
+threads:
+  recv_policy: fifo
+  recv_priority: 80
+  recv_cpus: [2, 3]
+  tick_policy: deadline
+  tick_deadline: "1000000,5000000,10000000"
+.fi
+.SH SEE ALSO
+.BR zerodds\-ros2.yaml (5),
+.BR zerodds\-spy (1),
+.BR zerodds\-ros2\-shim (1),
+.BR sched (7),
+.BR sched_setattr (2),
+.BR sched_setaffinity (2)
+.SH STANDARDS
+zerodds-deployment-1.0 \(sc2.1. OMG Time Service 1.1
+(formal/2002-05-07) \(sc2.1
+.RI ( time.source ).
+.SH AUTHOR
+ZeroDDS Contributors

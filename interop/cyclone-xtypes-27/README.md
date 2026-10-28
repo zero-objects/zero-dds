@@ -24,7 +24,11 @@ QoS), but every sample fails to decode. Crucially the decode error is *not*
 silent — the ZeroDDS reader's `take()` returns `WireError`; the counters here
 report `errors > 0`. Case 4 shows the fix: generating the ZeroDDS reader type
 with `zerodds-idlc --cyclone` (which defaults un-annotated aggregates to
-`@final`) makes the same Cyclone writer interoperate.
+`@final`) makes the same Cyclone writer interoperate. **That flag no longer
+exists**: rc.7 dropped the dialect switches (`--cyclone`, `--rti`) and has no
+replacement for them — see docs/OPEN-ITEMS.md, "The dialect switches went away
+without a successor". The case below therefore describes a fix that cannot
+currently be applied from the command line.
 
 ## Requirements & running
 

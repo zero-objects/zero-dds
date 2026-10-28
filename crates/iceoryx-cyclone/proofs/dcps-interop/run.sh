@@ -15,7 +15,7 @@
 # multicast) so the iceoryx chunk's metadata GUID (= the writer's real RTPS GUID)
 # matches a writer Cyclone discovered — no ALLOW_NONDISCOVERED_WRITERS shortcut.
 #
-# Linux host with iceoryx POSH + iox-roudi + Cyclone-iox (e.g. codepit).
+# Linux host with iceoryx POSH + iox-roudi + Cyclone-iox (e.g. The Linux test host).
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 : "${CYCLONE:=/opt/cyclone}"

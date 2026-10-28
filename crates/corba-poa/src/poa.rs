@@ -21,6 +21,9 @@ use core::sync::atomic::{AtomicU64, Ordering};
 
 use std::sync::Mutex;
 
+use zerodds_corba_giop::object_ops::{self, ObjectOpReply};
+use zerodds_wire::Endianness;
+
 use crate::active_object_map::{ActiveObjectMap, ServantId};
 use crate::error::{PoaError, PoaResult};
 use crate::object_id::ObjectId;
@@ -174,6 +177,38 @@ impl Poa {
         }
     }
 
+    /// Whether `oid` would currently be answered `OBJECT_HERE` by a
+    /// GIOP `LocateRequest` (spec §15.4.5/§15.4.6) — a `corbaloc:`
+    /// client sends one before its first real invocation. This runs
+    /// none of a real dispatch's side effects (a `ServantActivator`'s
+    /// `incarnate`, a `ServantLocator`'s `preinvoke`/`postinvoke`): with
+    /// USE_SERVANT_MANAGER a manager being configured at all is the
+    /// answer, since only actually invoking would tell whether it
+    /// incarnates or refuses this particular `oid`.
+    #[must_use]
+    pub fn locate(&self, oid: &ObjectId) -> zerodds_corba_giop::LocateStatusType {
+        use zerodds_corba_giop::LocateStatusType;
+        if self
+            .aom
+            .lock()
+            .map(|aom| aom.get(oid).is_some())
+            .unwrap_or(false)
+        {
+            return LocateStatusType::ObjectHere;
+        }
+        match self.config.policies.request_processing {
+            RequestProcessingPolicy::UseActiveObjectMapOnly => LocateStatusType::UnknownObject,
+            RequestProcessingPolicy::UseDefaultServant => match self.default_servant.lock() {
+                Ok(g) if g.is_some() => LocateStatusType::ObjectHere,
+                _ => LocateStatusType::UnknownObject,
+            },
+            RequestProcessingPolicy::UseServantManager => match self.servant_manager.lock() {
+                Ok(g) if g.is_some() => LocateStatusType::ObjectHere,
+                _ => LocateStatusType::UnknownObject,
+            },
+        }
+    }
+
     /// `activate_object` — Spec §11.3.5.20. Requires SYSTEM_ID + RETAIN.
     ///
     /// # Errors
@@ -247,6 +282,7 @@ impl Poa {
         oid: &ObjectId,
         operation: &str,
         request_body: &[u8],
+        endianness: Endianness,
     ) -> PoaResult<Vec<u8>> {
         // Spec §11.3.5: with an INACTIVE manager the request is
         // rejected with OBJ_ADAPTER.
@@ -275,19 +311,19 @@ impl Poa {
 
         match (retention, processing) {
             (ServantRetentionPolicy::Retain, RequestProcessingPolicy::UseActiveObjectMapOnly) => {
-                self.dispatch_aom_only(oid, operation, request_body)
+                self.dispatch_aom_only(oid, operation, request_body, endianness)
             }
             (ServantRetentionPolicy::Retain, RequestProcessingPolicy::UseDefaultServant) => {
-                self.dispatch_aom_or_default(oid, operation, request_body)
+                self.dispatch_aom_or_default(oid, operation, request_body, endianness)
             }
             (ServantRetentionPolicy::Retain, RequestProcessingPolicy::UseServantManager) => {
-                self.dispatch_aom_or_activator(oid, operation, request_body)
+                self.dispatch_aom_or_activator(oid, operation, request_body, endianness)
             }
             (ServantRetentionPolicy::NonRetain, RequestProcessingPolicy::UseDefaultServant) => {
-                self.dispatch_default_only(operation, request_body)
+                self.dispatch_default_only(operation, request_body, endianness)
             }
             (ServantRetentionPolicy::NonRetain, RequestProcessingPolicy::UseServantManager) => {
-                self.dispatch_via_locator(oid, operation, request_body)
+                self.dispatch_via_locator(oid, operation, request_body, endianness)
             }
             // NonRetain + UseAomOnly is already excluded by
             // validate(), but we are defensive here.
@@ -300,15 +336,52 @@ impl Poa {
         }
     }
 
+    /// Answers a resolved servant's request: the six `CORBA::Object`
+    /// operations (CORBA 3.3 Part 2 §15.4.2) first, [`Servant::invoke`]
+    /// otherwise.
+    fn invoke_servant(
+        s: &dyn Servant,
+        operation: &str,
+        request_body: &[u8],
+        endianness: Endianness,
+    ) -> PoaResult<Vec<u8>> {
+        match s.dispatch_object_operation(operation, request_body, endianness) {
+            Some(ObjectOpReply::Ok(body)) => Ok(body),
+            Some(ObjectOpReply::Marshal) => Err(PoaError::Marshal),
+            Some(ObjectOpReply::InterfaceRepositoryUnavailable) => {
+                Err(PoaError::InterfaceRepositoryUnavailable)
+            }
+            None => Ok(s.invoke(operation, request_body)),
+        }
+    }
+
+    /// The fallback for a request against an `oid` no servant could be
+    /// resolved for: `_non_existent`/`_not_existent` answers `true`
+    /// (CORBA 3.3 Part 1 §8.3 — see `object_ops::unknown_object_reply`'s
+    /// own doc) instead of `no_servant`/`not_active`.
+    fn unknown_object(
+        operation: &str,
+        endianness: Endianness,
+        no_servant: PoaError,
+    ) -> PoaResult<Vec<u8>> {
+        match object_ops::unknown_object_reply(operation, endianness) {
+            Some(body) => Ok(body),
+            None => Err(no_servant),
+        }
+    }
+
     fn dispatch_aom_only(
         &self,
         oid: &ObjectId,
         operation: &str,
         request_body: &[u8],
+        endianness: Endianness,
     ) -> PoaResult<Vec<u8>> {
         let aom = self.aom_lock()?;
-        let s = aom.get(oid).ok_or(PoaError::ObjectNotActive)?;
-        Ok(s.invoke(operation, request_body))
+        let Some(s) = aom.get(oid) else {
+            return Self::unknown_object(operation, endianness, PoaError::ObjectNotActive);
+        };
+        Self::invoke_servant(s, operation, request_body, endianness)
     }
 
     fn dispatch_aom_or_default(
@@ -316,19 +389,22 @@ impl Poa {
         oid: &ObjectId,
         operation: &str,
         request_body: &[u8],
+        endianness: Endianness,
     ) -> PoaResult<Vec<u8>> {
         {
             let aom = self.aom_lock()?;
             if let Some(s) = aom.get(oid) {
-                return Ok(s.invoke(operation, request_body));
+                return Self::invoke_servant(s, operation, request_body, endianness);
             }
         }
         let default = self
             .default_servant
             .lock()
             .map_err(|_| PoaError::BadInvocationOrder("default_servant mutex poisoned".into()))?;
-        let s = default.as_ref().ok_or(PoaError::NoServant)?;
-        Ok(s.invoke(operation, request_body))
+        let Some(s) = default.as_ref() else {
+            return Self::unknown_object(operation, endianness, PoaError::NoServant);
+        };
+        Self::invoke_servant(s.as_ref(), operation, request_body, endianness)
     }
 
     fn dispatch_aom_or_activator(
@@ -336,12 +412,13 @@ impl Poa {
         oid: &ObjectId,
         operation: &str,
         request_body: &[u8],
+        endianness: Endianness,
     ) -> PoaResult<Vec<u8>> {
         // 1. AOM lookup.
         {
             let aom = self.aom_lock()?;
             if let Some(s) = aom.get(oid) {
-                return Ok(s.invoke(operation, request_body));
+                return Self::invoke_servant(s, operation, request_body, endianness);
             }
         }
         // 2. Servant activator.
@@ -356,23 +433,30 @@ impl Poa {
                         "RETAIN POA needs ServantActivator, not Locator".into(),
                     ));
                 }
-                None => return Err(PoaError::NoServant),
+                None => return Self::unknown_object(operation, endianness, PoaError::NoServant),
             }
         };
         let servant = act.incarnate(oid, &self.config.adapter_name)?;
         // Store the servant in the AOM.
-        let body = servant.invoke(operation, request_body);
+        let body = Self::invoke_servant(servant.as_ref(), operation, request_body, endianness)?;
         self.aom_lock()?.activate(oid.clone(), servant)?;
         Ok(body)
     }
 
-    fn dispatch_default_only(&self, operation: &str, request_body: &[u8]) -> PoaResult<Vec<u8>> {
+    fn dispatch_default_only(
+        &self,
+        operation: &str,
+        request_body: &[u8],
+        endianness: Endianness,
+    ) -> PoaResult<Vec<u8>> {
         let default = self
             .default_servant
             .lock()
             .map_err(|_| PoaError::BadInvocationOrder("default_servant mutex poisoned".into()))?;
-        let s = default.as_ref().ok_or(PoaError::NoServant)?;
-        Ok(s.invoke(operation, request_body))
+        let Some(s) = default.as_ref() else {
+            return Self::unknown_object(operation, endianness, PoaError::NoServant);
+        };
+        Self::invoke_servant(s.as_ref(), operation, request_body, endianness)
     }
 
     fn dispatch_via_locator(
@@ -380,6 +464,7 @@ impl Poa {
         oid: &ObjectId,
         operation: &str,
         request_body: &[u8],
+        endianness: Endianness,
     ) -> PoaResult<Vec<u8>> {
         let loc = {
             let g = self.servant_manager.lock().map_err(|_| {
@@ -392,11 +477,13 @@ impl Poa {
                         "NON_RETAIN POA needs ServantLocator, not Activator".into(),
                     ));
                 }
-                None => return Err(PoaError::NoServant),
+                None => return Self::unknown_object(operation, endianness, PoaError::NoServant),
             }
         };
         let (servant, cookie) = loc.preinvoke(oid, &self.config.adapter_name, operation)?;
-        let reply = servant.invoke(operation, request_body);
+        let result = Self::invoke_servant(servant.as_ref(), operation, request_body, endianness);
+        // `postinvoke` runs whether the invocation succeeded or not —
+        // it is the locator's cleanup hook, not a success callback.
         loc.postinvoke(
             oid,
             &self.config.adapter_name,
@@ -404,7 +491,7 @@ impl Poa {
             &cookie,
             servant.as_ref(),
         );
-        Ok(reply)
+        result
     }
 
     fn aom_lock(&self) -> PoaResult<std::sync::MutexGuard<'_, ActiveObjectMap>> {
@@ -462,7 +549,9 @@ mod tests {
         // The child is a fully functional POA (own AOM + dispatch).
         let oid = child.activate_object(echo_servant()).unwrap();
         assert_eq!(
-            child.dispatch(&oid, "ping", &[7, 8]).unwrap(),
+            child
+                .dispatch(&oid, "ping", &[7, 8], Endianness::Big)
+                .unwrap(),
             alloc::vec![7, 8]
         );
 
@@ -483,8 +572,68 @@ mod tests {
     fn default_root_dispatch_via_aom() {
         let poa = Poa::new(root_config(PolicySet::default())).unwrap();
         let oid = poa.activate_object(echo_servant()).unwrap();
-        let reply = poa.dispatch(&oid, "ping", &[1, 2]).unwrap();
+        let reply = poa
+            .dispatch(&oid, "ping", &[1, 2], Endianness::Big)
+            .unwrap();
         assert_eq!(reply, alloc::vec![1, 2]);
+    }
+
+    fn encode_is_a_body(id: &str, e: Endianness) -> Vec<u8> {
+        let mut w = zerodds_wire::Writer::new(e);
+        w.write_string(id);
+        w.finish()
+    }
+
+    fn decode_bool(body: &[u8], e: Endianness) -> bool {
+        let mut r = zerodds_wire::Reader::new(body, e);
+        r.read_bool().unwrap()
+    }
+
+    /// `_is_a`/`_non_existent`/`_repository_id` (CORBA 3.3 Part 2
+    /// §15.4.2) reach an activated servant through `Poa::dispatch`
+    /// itself, ahead of `Servant::invoke` — the exact path a real GIOP
+    /// server built on this crate would answer them through.
+    #[test]
+    fn dispatch_answers_corba_object_operations_for_an_active_object() {
+        let poa = Poa::new(root_config(PolicySet::default())).unwrap();
+        let oid = poa.activate_object(echo_servant()).unwrap();
+        let e = Endianness::Big;
+
+        let body = encode_is_a_body("IDL:demo/Echo:1.0", e);
+        let reply = poa.dispatch(&oid, "_is_a", &body, e).unwrap();
+        assert!(decode_bool(&reply, e));
+
+        let body = encode_is_a_body("IDL:omg.org/CORBA/Object:1.0", e);
+        let reply = poa.dispatch(&oid, "_is_a", &body, e).unwrap();
+        assert!(decode_bool(&reply, e));
+
+        let body = encode_is_a_body("IDL:demo/Nope:1.0", e);
+        let reply = poa.dispatch(&oid, "_is_a", &body, e).unwrap();
+        assert!(!decode_bool(&reply, e));
+
+        let reply = poa.dispatch(&oid, "_non_existent", &[], e).unwrap();
+        assert!(!decode_bool(&reply, e));
+
+        let reply = poa.dispatch(&oid, "_repository_id", &[], e).unwrap();
+        let mut r = zerodds_wire::Reader::new(&reply, e);
+        assert_eq!(r.read_string().unwrap(), "IDL:demo/Echo:1.0");
+    }
+
+    /// `_non_existent` on an `ObjectId` the AOM never activated answers
+    /// `true` instead of `ObjectNotActive` (CORBA 3.3 Part 1 §8.3 — see
+    /// `zerodds_corba_giop::object_ops::unknown_object_reply`'s doc);
+    /// every other operation on that same id still gets the usual error.
+    #[test]
+    fn dispatch_non_existent_is_true_for_an_id_never_activated() {
+        let poa = Poa::new(root_config(PolicySet::default())).unwrap();
+        let oid = ObjectId::system_id(9999);
+        let e = Endianness::Big;
+
+        let reply = poa.dispatch(&oid, "_non_existent", &[], e).unwrap();
+        assert!(decode_bool(&reply, e));
+
+        let err = poa.dispatch(&oid, "ping", &[], e).unwrap_err();
+        assert_eq!(err, PoaError::ObjectNotActive);
     }
 
     #[test]
@@ -497,7 +646,9 @@ mod tests {
         let my_id: ObjectId = b"my-oid".as_slice().into();
         poa.activate_object_with_id(my_id.clone(), echo_servant())
             .unwrap();
-        let reply = poa.dispatch(&my_id, "echo", &[42]).unwrap();
+        let reply = poa
+            .dispatch(&my_id, "echo", &[42], Endianness::Big)
+            .unwrap();
         assert_eq!(reply, alloc::vec![42]);
     }
 
@@ -511,7 +662,7 @@ mod tests {
         .unwrap();
         poa.set_default_servant(echo_servant());
         let oid: ObjectId = b"unknown".as_slice().into();
-        let reply = poa.dispatch(&oid, "ping", &[7]).unwrap();
+        let reply = poa.dispatch(&oid, "ping", &[7], Endianness::Big).unwrap();
         assert_eq!(reply, alloc::vec![7]);
     }
 
@@ -524,7 +675,7 @@ mod tests {
         }))
         .unwrap();
         let err = poa
-            .dispatch(&ObjectId::system_id(1), "ping", &[])
+            .dispatch(&ObjectId::system_id(1), "ping", &[], Endianness::Big)
             .unwrap_err();
         assert_eq!(err, PoaError::NoServant);
     }
@@ -547,10 +698,10 @@ mod tests {
         .unwrap();
         poa.set_servant_manager(ServantManager::Activator(Arc::new(FixedActivator)));
         let oid: ObjectId = b"x".as_slice().into();
-        let reply = poa.dispatch(&oid, "ping", &[1]).unwrap();
+        let reply = poa.dispatch(&oid, "ping", &[1], Endianness::Big).unwrap();
         assert_eq!(reply, alloc::vec![1]);
         // The second dispatch should come from the AOM.
-        let reply2 = poa.dispatch(&oid, "ping", &[2]).unwrap();
+        let reply2 = poa.dispatch(&oid, "ping", &[2], Endianness::Big).unwrap();
         assert_eq!(reply2, alloc::vec![2]);
     }
 
@@ -605,7 +756,7 @@ mod tests {
         })));
         for _ in 0..3 {
             let oid: ObjectId = b"any".as_slice().into();
-            poa.dispatch(&oid, "ping", &[]).unwrap();
+            poa.dispatch(&oid, "ping", &[], Endianness::Big).unwrap();
         }
         assert_eq!(pre.load(Ordering::Relaxed), 3);
         assert_eq!(post.load(Ordering::Relaxed), 3);
@@ -625,7 +776,9 @@ mod tests {
         // but activate_object itself works without a state check.
         poa.activate_object_with_id(oid.clone(), echo_servant())
             .unwrap();
-        let err = poa.dispatch(&oid, "ping", &[]).unwrap_err();
+        let err = poa
+            .dispatch(&oid, "ping", &[], Endianness::Big)
+            .unwrap_err();
         assert!(matches!(err, PoaError::BadInvocationOrder(_)));
     }
 
@@ -640,7 +793,7 @@ mod tests {
         };
         let poa = Poa::new(cfg).unwrap();
         let err = poa
-            .dispatch(&ObjectId::system_id(1), "ping", &[])
+            .dispatch(&ObjectId::system_id(1), "ping", &[], Endianness::Big)
             .unwrap_err();
         assert_eq!(err, PoaError::AdapterInactive);
     }
@@ -657,7 +810,7 @@ mod tests {
         };
         let poa = Poa::new(cfg).unwrap();
         let err = poa
-            .dispatch(&ObjectId::system_id(1), "ping", &[])
+            .dispatch(&ObjectId::system_id(1), "ping", &[], Endianness::Big)
             .unwrap_err();
         assert!(matches!(err, PoaError::ObjAdapter(_)));
     }

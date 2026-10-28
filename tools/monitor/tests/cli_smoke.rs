@@ -81,7 +81,7 @@ fn snapshot_prometheus_format_terminates() {
 #[test]
 fn serve_short_duration_terminates() {
     let start = Instant::now();
-    // Random ephemeral port damit parallel runs nicht kollidieren.
+    // Random ephemeral port so that parallel runs do not collide.
     let port = 19000 + (std::process::id() % 1000);
     let out = Command::new(bin())
         .args([

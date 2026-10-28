@@ -1,0 +1,8 @@
+// `sequence` of a typedef chain, unannotated
+typedef long Metres;
+typedef Metres Distance;
+
+struct Sample {
+    sequence<Distance> hops;
+    long tail;
+};

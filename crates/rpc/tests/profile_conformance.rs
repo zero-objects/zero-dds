@@ -44,8 +44,10 @@ use zerodds_rpc::{LoweredRpc, RpcError};
 fn basic_conformance_has_request_reply_topic_pair() {
     // Spec §2.1: Basic mapping requires a 1+1 topic pair per service.
     let names = ServiceTopicNames::new("Calculator").expect("topic-names");
-    assert_eq!(names.request.as_str(), "Calculator_Request");
-    assert_eq!(names.reply.as_str(), "Calculator_Reply");
+    // §7.4.1: `<interface_name> "_" <service_name> "_" ["Request"|"Reply"]`,
+    // with `<service_name>` at its `"Service"` default.
+    assert_eq!(names.request.as_str(), "Calculator_Service_Request");
+    assert_eq!(names.reply.as_str(), "Calculator_Service_Reply");
     assert!(names.request.as_str().ends_with(REQUEST_SUFFIX));
     assert!(names.reply.as_str().ends_with(REPLY_SUFFIX));
 }
@@ -57,7 +59,10 @@ fn basic_conformance_supports_function_call_style() {
     s.add_operation("op1", false, alloc::vec![], alloc::vec!["result".into()])
         .expect("op1");
     assert_eq!(s.operations.len(), 1);
-    assert_eq!(s.operations[0].opcode, 0);
+    assert_eq!(
+        s.operations[0].opcode,
+        zerodds_rpc::rpc_hash::rpc_member_hash("op1")
+    );
 }
 
 // ============================================================================
@@ -67,13 +72,13 @@ fn basic_conformance_supports_function_call_style() {
 #[test]
 fn enhanced_conformance_uses_same_topic_pair_via_codegen() {
     // Spec §2.2: the enhanced mapping uses a 1+1 topic via X-Types
-    // discovery aliases. The codegen layer (`build_enhanced_pair`) is
-    // live; the discovery extensions come with K9-C.
+    // discovery aliases. The codegen layer (`build_enhanced_service`) is
+    // live, and the discovery extensions are in `crates/rpc/src/discovery_ext.rs`.
     let names = ServiceTopicNames::new("Calculator").expect("topic-names");
     // The enhanced mapping uses the same topic-pair scheme; aliasing
     // happens on the discovery layer.
-    assert_eq!(names.request.as_str(), "Calculator_Request");
-    assert_eq!(names.reply.as_str(), "Calculator_Reply");
+    assert_eq!(names.request.as_str(), "Calculator_Service_Request");
+    assert_eq!(names.reply.as_str(), "Calculator_Service_Reply");
 }
 
 // ============================================================================
@@ -82,21 +87,19 @@ fn enhanced_conformance_uses_same_topic_pair_via_codegen() {
 
 #[test]
 fn reply_filter_uses_related_request_id_correlation() {
-    // Spec §7.2.1.2: "a content-based filter is used by the reader at
-    // the client-side". ZeroDDS implements this via app-code
-    // correlation in `requester::tick`. The ContentFilteredTopic variant
-    // is a stretch goal (see the §7.2.1.2 audit item).
-    //
-    // Here we verify that the spec requirement (filter per
-    // request) is fulfilled via `RequestHeader.request_id` as the
-    // correlation key.
-    use zerodds_rpc::common_types::RequestHeader;
-    let h1 = RequestHeader::default();
-    let h2 = RequestHeader::default();
-    // request_id must be unique per request — two default
-    // headers are equal (fresh default), but in a real run
-    // Requester::send_request_async increments monotonically.
-    assert_eq!(h1.request_id, h2.request_id);
+    // Spec §7.2.3: the reader of the client takes only the replies that
+    // answer a request of this client. The filter is the identity of the
+    // request: a reply is for the request whose identity it names, and for
+    // no request of another writer or of another sequence number.
+    use zerodds_rpc::common_types::{ReplyHeader, RequestHeader, SampleIdentity};
+    let mine = SampleIdentity::new([1; 16], 7);
+    let sibling = SampleIdentity::new([1; 16], 8);
+    let foreign = SampleIdentity::new([2; 16], 7);
+    let request = RequestHeader::new(mine, "");
+    let answer = ReplyHeader::new(mine, zerodds_rpc::common_types::RemoteExceptionCode::Ok);
+    assert_eq!(request.request_id, answer.related_request_id);
+    assert_ne!(sibling, answer.related_request_id);
+    assert_ne!(foreign, answer.related_request_id);
 }
 
 // ============================================================================
@@ -155,7 +158,6 @@ fn explicit_request_id_propagation_via_request_header() {
 #[test]
 fn basic_mapping_uses_two_topics_per_service() {
     // Spec §7.2.4.1: basic mapping = 2 topics per service.
-    // (N-inheritance scaling comes with K9-C §7.5.1.2.6.)
     let s1 = ServiceTopicNames::new("S1").expect("S1");
     let s2 = ServiceTopicNames::new("S2").expect("S2");
     assert_ne!(s1.request.as_str(), s2.request.as_str());
@@ -169,11 +171,11 @@ fn basic_mapping_uses_two_topics_per_service() {
 #[test]
 fn enhanced_mapping_uses_two_topics_with_xtypes_aliasing() {
     // Spec §7.2.4.2: enhanced mapping = 1+1 topics + discovery alias
-    // per hierarchy level. The codegen layer (build_enhanced_pair) is
-    // live; aliasing discovery comes with K9-C.
+    // per hierarchy level. The codegen layer (build_enhanced_service) is
+    // live, and the aliases are announced (`topic_naming::ServiceTopicNames::aliases`).
     let s = ServiceTopicNames::new("S").expect("S");
-    assert_eq!(s.request.as_str(), "S_Request");
-    assert_eq!(s.reply.as_str(), "S_Reply");
+    assert_eq!(s.request.as_str(), "S_Service_Request");
+    assert_eq!(s.reply.as_str(), "S_Service_Reply");
 }
 
 // ============================================================================
@@ -200,8 +202,12 @@ fn function_call_processing_dispatches_to_correct_operation() {
         alloc::vec!["result".into()],
     )
     .expect("subtract");
-    let result =
-        dispatch_request(&s, 1, |op| Ok::<String, RpcError>(op.name.clone())).expect("dispatch");
+    let result = dispatch_request(
+        &s,
+        zerodds_rpc::rpc_hash::rpc_member_hash("subtract"),
+        |op| Ok::<String, RpcError>(op.name.clone()),
+    )
+    .expect("dispatch");
     assert_eq!(result, "subtract");
 }
 

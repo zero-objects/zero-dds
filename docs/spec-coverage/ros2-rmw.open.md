@@ -1,53 +1,18 @@
-# ROS 2 RMW — Open + Partial Items
+# ros2-rmw — offene Punkte
 
-Aggregat aus `ros2-rmw.md`. Nicht von Hand pflegen — vor jedem Audit-
-Lauf löschen und aus dem Hauptfile neu generieren.
+Aggregat aus `ros2-rmw.md`, erzeugt von `website/_tools/gen_open_items.py`.
+Kein eigener Inhalt: jedes Item steht dort mit seinem Beleg.
 
-## Open
+---
 
-— keine.
+## `rmw_get_serialized_message_size`
 
-## Partial
+**Status:** `partial` — der Walk ist implementiert und strukturell geprüft. Was fehlt, ist die Verhaltensprüfung „der zurückgegebene Wert ist tatsächlich ≥ der Länge, die `rmw_serialize` schreibt"; die braucht die rosidl-Introspection-Typesupports und damit einen ROS-2-Host. Rest als eigenes Item unten geführt.
 
-— keine.
+## `rmw_get_serialized_message_size` — Schranken-Nachweis auf einem ROS-2-Host
 
-## Decision-Records (out of rmw scope)
+**Status:** `open` — es gibt keinen Testfall, der für eine reale Nachricht `rmw_get_serialized_message_size` gegen die von `rmw_serialize` geschriebene Länge hält. Voraussetzung ist ein ROS-2-Host; der Fall gehört neben die vorhandenen rclcpp-e2e-Tests in `crates/rmw-zerodds-shim/rmw_c/`.
 
-### REP-2007 Type Adaptation Feature — `n/a (keine rmw-Fläche)`
+## RMW-Integration (`rmw_serialization_support_init`, `rmw_take_dynamic_message[_with_info]`)
 
-**Begründung:** Andere Architektur-Schicht. REP-2007 ist ein Compile-
-Time-C++-Feature in `rclcpp` (Sprach-Binding-Layer); ZeroDDS dockt via
-`rmw_zerodds`-C-FFI an die RMW-Schicht darunter an. ROS-2-Anwender
-bekommen Type Adaptation durch das ROS-2-Projekt selbst (`rclcpp`),
-unabhängig davon welcher DDS-Vendor unter RMW arbeitet. Schichten-
-Trennung:
-
-```
-Application
-    ↓
-rclcpp / rclpy            ← REP-2007, REP-2009 leben hier
-    ↓
-rcl                       ← C-Layer
-    ↓
-rmw                       ← rmw_zerodds-C-FFI dockt hier an
-    ↓
-DDS-Vendor                ← crates/dcps + crates/rtps
-```
-
-Im Gegensatz zu CORBA-Coexistence (`corba-3.3.md`) und CCM
-(`omg-ccm-4.0.md`), wo ZeroDDS die ganze Schicht ersetzt, ist die
-RMW-Trennung sauber definiert und das ROS-2-Ökosystem **integrabel**.
-
-### REP-2008 Hardware Acceleration — `n/a (out of rmw scope)`
-
-**Begründung:** Driver-/Vendor-Konvention für GPU/FPGA-Beschleunigung
-(CUDA/ROCm/Vitis). Lebt in der Acceleration-Hardware-Vendor-Schicht
-und wird durch ROS-2-Anwender direkt orchestriert, nicht durch
-DDS-Vendor. Andock-Punkt für ZeroDDS ist RMW (Pub/Sub-Wire), nicht
-Driver-Layer.
-
-### REP-2009 Type Negotiation Feature — rmw-Seite `done`, rclcpp-Teil out-of-scope
-
-**Begründung:** Out of rmw scope ist nur die Negotiation-State-Machine selbst —
-ein Runtime-Feature in `rclcpp`, verfügbar über jeden RMW; keine rmw-Fläche. Der
-rmw-seitige Teil (RIHS-Type-Hash + Endpoint-Info) ist `done` — siehe `ros2-rmw.md`.
+**Status:** `partial` — Interface-Tabelle und RMW-Wiring laufen (`run_dynamic_typesupport_test.sh` gegen ROS 2 Jazzy; zuletzt gemessen 17/17 grün, vor den oben genannten Checks). Zwei benannte, bewusste Lücken, keine davon verdeckt: (1) `dynamic_data_serialize` kennt keine verhandelte `DataRepresentation`-QoS — die Schnittstelle gibt der Funktion keinen Writer/QoS-Kontext — und schreibt deshalb immer `@final`, Little-Endian, XCDR1 (PLAIN_CDR1), identisch zur Framing-Wahl des statischen Introspection-Codecs in `rmw_zerodds.c`. (2) `long double`/`float128` wird nur für die x86-64-80-Bit-Extended- und die aarch64-binäre128-Speicherform gebrückt (`Float128:: {to,from}_x87_padded_bytes`/`{to,from}_le_bytes`); 32-Bit-ARM und PowerPCs Double-Double-`long double` werden mit RCUTILS_RET_UNSUPPORTED abgelehnt statt geraten.

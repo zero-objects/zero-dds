@@ -4,7 +4,7 @@
 // Cross-ORB OTS conformance: ZeroDDS decodes a **live JacORB 3.9
 // PropagationContext** captured from a real transaction.
 //
-// Provenance (codepit, JDK8, JacORB /opt/jacorb): a JacORB
+// Provenance (Linux test host, JDK8, JacORB /opt/jacorb): a JacORB
 // `org.jacorb.transaction.TransactionService` (the runnable OTS) created a
 // transaction via `TransactionFactory.create(0)`; the live `Control` yielded a
 // real `Coordinator` + `Terminator`; the `PropagationContext` was built exactly
@@ -26,8 +26,8 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 //! Cross-ORB OTS: ZeroDDS decodes a live JacORB 3.9 PropagationContext.
 
-use zerodds_cdr::{BufferReader, Endianness};
 use zerodds_corba_cos_transactions::PropagationContext;
+use zerodds_wire::{Endianness, Reader};
 
 /// Live JacORB 3.9 PropagationContext (big-endian, 628 bytes) — captured from a
 /// real TransactionService coordinator. Full coordinator + terminator IORs.
@@ -42,7 +42,7 @@ fn hex_to_bytes(s: &str) -> Vec<u8> {
 #[test]
 fn decodes_live_jacorb_propagation_context_with_real_iors() {
     let bytes = hex_to_bytes(JACORB_LIVE_PROPCTX);
-    let mut r = BufferReader::new(&bytes, Endianness::Big);
+    let mut r = Reader::new(&bytes, Endianness::Big);
     let ctx = PropagationContext::decode(&mut r).expect("decode live JacORB PropagationContext");
 
     // timeout 0, flat transaction (no parents).
@@ -85,13 +85,13 @@ fn live_context_re_encodes_and_round_trips() {
     // Decode the live JacORB context, re-encode, decode again → structurally
     // stable (the IOR bytes are re-serialized canonically, otid + refs preserved).
     let bytes = hex_to_bytes(JACORB_LIVE_PROPCTX);
-    let mut r = BufferReader::new(&bytes, Endianness::Big);
+    let mut r = Reader::new(&bytes, Endianness::Big);
     let ctx = PropagationContext::decode(&mut r).expect("decode");
 
-    let mut w = zerodds_cdr::BufferWriter::new(Endianness::Big);
+    let mut w = zerodds_wire::Writer::new(Endianness::Big);
     ctx.encode(&mut w).expect("re-encode");
-    let re = w.into_bytes();
-    let mut r2 = BufferReader::new(&re, Endianness::Big);
+    let re = w.finish();
+    let mut r2 = Reader::new(&re, Endianness::Big);
     let ctx2 = PropagationContext::decode(&mut r2).expect("decode round-trip");
 
     assert_eq!(

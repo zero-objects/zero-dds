@@ -1,0 +1,1 @@
+fill_6.inc:2:10: error: assignment to 'int32_t *' {aka 'int *'} from 'int' makes pointer from integer without a cast [-Wint-conversion]

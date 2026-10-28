@@ -10,8 +10,23 @@ use alloc::vec::Vec;
 pub const ZDDSREC_MAGIC: [u8; 4] = *b"ZDDS";
 /// Frame marker within the stream.
 pub const FRAME_MAGIC: u8 = b'F';
+
+/// Marks a topic added to the index after the header was written.
+///
+/// The header states the topic list once and the frames index into it,
+/// so a topic that appears mid-run has nowhere to go. That is a real
+/// case and not a rare one: a recorder asked for a topic whose writer
+/// has not started yet cannot know its type name, and a run that waits
+/// for it is exactly what an operator expects. Version 1 answered this
+/// with "one file per settled set"; this frame answers it in the file.
+///
+/// The layout is the header's topic entry, after the magic: `TypeLen`
+/// u32 LE, `TypeName` UTF-8, `NameLen` u32 LE, `Name` UTF-8. Its index
+/// is its position — one past the last topic known so far — so nothing
+/// in a `Frame` changes.
+pub const TOPIC_ADD_MAGIC: u8 = b'T';
 /// Format version. Incompatible changes bump the value.
-pub const ZDDSREC_VERSION: u32 = 1;
+pub const ZDDSREC_VERSION: u32 = 2;
 
 /// Sample kind per DDS spec §2.2.4.4.5.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -98,6 +113,22 @@ impl Header {
             write_string(out, &t.type_name);
             write_string(out, &t.name);
         }
+    }
+}
+
+/// A topic added to the index after the header.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TopicAdd {
+    /// The topic entry, spelled as in the header.
+    pub topic: TopicEntry,
+}
+
+impl TopicAdd {
+    /// Serialises the frame including its magic.
+    pub fn write(&self, out: &mut Vec<u8>) {
+        out.push(TOPIC_ADD_MAGIC);
+        write_string(out, &self.topic.type_name);
+        write_string(out, &self.topic.name);
     }
 }
 

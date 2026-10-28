@@ -4,7 +4,7 @@
 //! XML Object-Representation Tags — Spec §8.3.4 Tab 6.
 
 /// Spec §8.3.5 — Content-Type for all WebDDS REST bodies.
-pub const CONTENT_TYPE_DDS_WEB_XML: &str = "application/zerodds-web+xml";
+pub const CONTENT_TYPE_DDS_WEB_XML: &str = "application/dds-web+xml";
 
 /// Spec §8.3.4 Tab 6 — object-representation categories.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -84,7 +84,7 @@ mod tests {
     #[test]
     fn content_type_constant() {
         // Spec §8.3.5 Tab 7+8.
-        assert_eq!(CONTENT_TYPE_DDS_WEB_XML, "application/zerodds-web+xml");
+        assert_eq!(CONTENT_TYPE_DDS_WEB_XML, "application/dds-web+xml");
     }
 
     #[test]

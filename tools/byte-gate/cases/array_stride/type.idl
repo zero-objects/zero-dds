@@ -1,0 +1,2 @@
+@final struct Odd { long a; short b; };
+@final struct ArrOdd { Odd items[2]; octet tail; };

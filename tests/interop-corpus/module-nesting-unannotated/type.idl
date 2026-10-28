@@ -1,0 +1,9 @@
+// modules nested two deep, unannotated
+module outer {
+    module inner {
+        struct Sample {
+            long a;
+            double b;
+        };
+    };
+};

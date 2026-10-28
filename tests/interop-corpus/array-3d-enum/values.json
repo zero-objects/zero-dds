@@ -1,0 +1,25 @@
+{
+  "cube": [
+    [
+      [
+        "BLUE",
+        "RED"
+      ],
+      [
+        "GREEN",
+        "BLUE"
+      ]
+    ],
+    [
+      [
+        "RED",
+        "GREEN"
+      ],
+      [
+        "BLUE",
+        "RED"
+      ]
+    ]
+  ],
+  "tail": 171
+}

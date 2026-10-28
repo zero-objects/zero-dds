@@ -1,36 +1,36 @@
-# RT-Tuning Host-Config-Checkliste — D.5b Phase-C
+# RT tuning host config checklist — D.5b phase C
 
-Voraussetzung fuer das Erreichen der `roundtrip-1us` CI-Gates:
+Prerequisite for reaching the `roundtrip-1us` CI gates:
 * p99 < 5 µs
 * p999 < 20 µs
 * p9999 < 100 µs
 
-Fuer 64-Byte-Payloads auf einer dedizierten 1-GbE-Direktverbindung
-zwischen `llvm` und einem Peer.
+For 64-byte payloads on a dedicated 1 GbE direct connection
+between `llvm` and a peer.
 
 ## 1. Kernel: PREEMPT_RT
 
-Linux 6.x ab Mainline 6.12 hat `PREEMPT_RT` integriert. Vorher:
-[Linux-RT-Wiki](https://wiki.linuxfoundation.org/realtime/start)
-Patchset.
+Linux 6.x has `PREEMPT_RT` integrated from mainline 6.12. Before that:
+[Linux RT wiki](https://wiki.linuxfoundation.org/realtime/start)
+patch set.
 
-**Verifikation:**
+**Verification:**
 
 ```bash
 uname -v | grep -i 'PREEMPT_RT'
-cat /sys/kernel/realtime    # erwartet: 1
+cat /sys/kernel/realtime    # expected: 1
 ```
 
-Auf llvm aktuell **nicht** RT. Voraussetzung fuer Phase-C:
+On llvm currently **not** RT. Prerequisite for phase C:
 
 ```bash
-sudo apt install linux-image-rt-amd64    # Debian-RT-Kernel-Variant
+sudo apt install linux-image-rt-amd64    # Debian RT kernel variant
 sudo reboot
 ```
 
-## 2. Boot-Parameter
+## 2. Boot parameters
 
-`/etc/default/grub` ergaenzen um `GRUB_CMDLINE_LINUX_DEFAULT`:
+Extend `GRUB_CMDLINE_LINUX_DEFAULT` in `/etc/default/grub` with:
 
 ```
 isolcpus=2-7 nohz_full=2-7 rcu_nocbs=2-7 \
@@ -38,27 +38,27 @@ processor.max_cstate=1 intel_idle.max_cstate=0 \
 mce=off audit=0 noht
 ```
 
-Effekt:
-* `isolcpus=2-7` — CPUs 2 bis 7 aus dem Scheduler-Pool. Kein
-  Userspace-Process landet dort, ausser explizit per `taskset`.
-* `nohz_full=2-7` — Ticks auf isolierten Cores ausschalten →
-  kein Timer-Interrupt-Jitter.
-* `rcu_nocbs=2-7` — RCU-Callbacks auf andere Cores delegieren.
-* `processor.max_cstate=1` + `intel_idle.max_cstate=0` — keine
-  Deep-Sleeps, sonst sind die ersten paar Wake-Up-µs verloren.
-* `mce=off` — Machine-Check-Exceptions abschalten (sporadische
-  100µs+ Interrupts).
-* `noht` — Hyper-Threading aus (Cache-Sharing zwischen Geschwister-
-  Threads ist Latenz-Killer).
+Effect:
+* `isolcpus=2-7` — CPUs 2 to 7 out of the scheduler pool. No
+  userspace process lands there, except explicitly via `taskset`.
+* `nohz_full=2-7` — switch off ticks on isolated cores →
+  no timer interrupt jitter.
+* `rcu_nocbs=2-7` — delegate RCU callbacks to other cores.
+* `processor.max_cstate=1` + `intel_idle.max_cstate=0` — no
+  deep sleeps, otherwise the first few wake-up µs are lost.
+* `mce=off` — switch off machine check exceptions (sporadic
+  100µs+ interrupts).
+* `noht` — hyper-threading off (cache sharing between sibling
+  threads is a latency killer).
 
 ```bash
 sudo update-grub
 sudo reboot
 ```
 
-## 3. cyclictest-Baseline
+## 3. cyclictest baseline
 
-**Vor** dem ZeroDDS-Bench: erst die Hardware-Latenz messen.
+**Before** the ZeroDDS bench: measure the hardware latency first.
 
 ```bash
 sudo apt install rt-tests
@@ -66,53 +66,53 @@ sudo taskset -c 2 chrt -f 80 cyclictest \
     -p 80 -t 1 -n -m -i 200 -l 1000000 -q
 ```
 
-Erwartung auf einer korrekt getunten Maschine:
+Expectation on a correctly tuned machine:
 * min < 1 µs
 * avg < 3 µs
-* max < 30 µs (nach 1M Iterationen)
+* max < 30 µs (after 1M iterations)
 
-Bei p99 > 50 µs in cyclictest erübrigt sich der ZeroDDS-Bench —
-die Hardware/Kernel-Setup hat das Floor schon nicht erreicht.
+With p99 > 50 µs in cyclictest the ZeroDDS bench is pointless —
+the hardware/kernel setup has already failed to reach the floor.
 
-## 4. CPU-Governor + IRQ-Affinity
+## 4. CPU governor + IRQ affinity
 
 ```bash
-# Performance-Governor (kein DVFS-Frequency-Hopping):
+# performance governor (no DVFS frequency hopping):
 for c in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do
     echo performance | sudo tee "$c"
 done
 
-# IRQs vom isolierten Cores wegrouten (NUR Core 0+1):
+# route IRQs away from the isolated cores (ONLY core 0+1):
 for irq in /proc/irq/*/smp_affinity; do
     echo 3 | sudo tee "$irq"   # 0b11 = Core 0+1
 done
 ```
 
-Pruefung:
+Check:
 ```bash
 cat /proc/interrupts | head
 ```
 
-Spalten 2-7 (Core-2..Core-7) sollten alle ~0 zeigen.
+Columns 2-7 (core 2..core 7) should all show ~0.
 
-## 5. NIC-Tuning
+## 5. NIC tuning
 
 ```bash
-# RX-Coalescing aus (sonst Interrupt-Bursts → ms-spikes):
+# RX coalescing off (otherwise interrupt bursts → ms spikes):
 sudo ethtool -C eth0 rx-usecs 0 rx-frames 1
 
 # Increase tx-queue:
 sudo ip link set eth0 txqueuelen 10000
 
-# busy_poll: NAPI-Polling statt Interrupts (kostet CPU, druckt
-# Latenz-Tail).
+# busy_poll: NAPI polling instead of interrupts (costs CPU, pushes down
+# the latency tail).
 echo 50 | sudo tee /proc/sys/net/core/busy_poll
 echo 50 | sudo tee /proc/sys/net/core/busy_read
 ```
 
-## 6. Roundtrip-1us Aufruf-Kommando
+## 6. roundtrip-1us invocation command
 
-Pong (Echo-Endpoint) auf isoliertem Core 2:
+Pong (echo endpoint) on isolated core 2:
 
 ```bash
 sudo taskset -c 2 chrt -f 80 \
@@ -120,7 +120,7 @@ sudo taskset -c 2 chrt -f 80 \
     --role pong --bind 0.0.0.0:7400 --max-runtime 600
 ```
 
-Ping (Mess-Endpoint) auf isoliertem Core 3:
+Ping (measuring endpoint) on isolated core 3:
 
 ```bash
 sudo taskset -c 3 chrt -f 80 \
@@ -132,18 +132,18 @@ sudo taskset -c 3 chrt -f 80 \
     --ci-gate
 ```
 
-`--ci-gate` exit 1 wenn p99 ≥ 5µs / p999 ≥ 20µs / p9999 ≥ 100µs.
+`--ci-gate` exits 1 if p99 ≥ 5µs / p999 ≥ 20µs / p9999 ≥ 100µs.
 
-## 7. CI-Pipeline
+## 7. CI pipeline
 
-`ci/jobs/rt-bench.yml` (D.5b-Phase-C-Plan):
+`ci/jobs/rt-bench.yml` (D.5b phase C plan):
 
 ```yaml
 rt-bench:
   stage: bench
   rules:
     - if: '$CI_PIPELINE_SOURCE == "schedule" && $SCHEDULE_NAME == "rt-nightly"'
-  tags: [rt-host]   # nur Runner mit PREEMPT_RT-Kernel
+  tags: [rt-host]   # only runners with a PREEMPT_RT kernel
   before_script:
     - bash tests/perf/rt-tuning/preflight.sh
   script:
@@ -153,5 +153,5 @@ rt-bench:
       - /tmp/zerodds-rt-bench.hgrm
 ```
 
-Der `preflight.sh`-Check verifiziert PREEMPT_RT + isolcpus +
-performance-Governor und exit'd 1 bei nicht-getuntem Host.
+The `preflight.sh` check verifies PREEMPT_RT + isolcpus +
+performance governor and exits 1 on an untuned host.

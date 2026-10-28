@@ -1,0 +1,15 @@
+// an array bound and a sequence bound from a constant expression
+// IDL 4.2 §7.4.1.4.4.6 (the operators) and §7.2.6 (hexadecimal and octal
+// literals). SHIFTED is 4, MASKED is 6, OCTAL is 8, BOUND is 6 + 2 = 8.
+module m {
+  const long SHIFTED = 1 << 2;
+  const long MASKED = 0x0F & 0x06;
+  const long OCTAL = 010;
+  const long BOUND = (SHIFTED | MASKED) + OCTAL % 3;
+
+  @appendable struct S {
+    long block[SHIFTED];
+    sequence<long, BOUND> xs;
+    long tail;
+  };
+};

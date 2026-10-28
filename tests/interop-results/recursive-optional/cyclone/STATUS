@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of recursive-optional that cyclone produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	idlc failed and named no case
+plain-cdr1	be	refused	idlc failed and named no case
+pl-cdr1	le	refused	idlc failed and named no case
+pl-cdr1	be	refused	idlc failed and named no case
+plain-cdr2	le	refused	idlc failed and named no case
+plain-cdr2	be	refused	idlc failed and named no case
+delimited-cdr	le	refused	idlc failed and named no case
+delimited-cdr	be	refused	idlc failed and named no case
+pl-cdr2	le	refused	idlc failed and named no case
+pl-cdr2	be	refused	idlc failed and named no case

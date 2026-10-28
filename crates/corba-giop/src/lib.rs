@@ -10,7 +10,8 @@
 //! # Scope
 //!
 //! Full GIOP wire codec — all 8 message types for GIOP 1.0, 1.1
-//! and 1.2 (including bidirectional GIOP). Reuses CDR-1 from `crates/cdr/`.
+//! and 1.2 (including bidirectional GIOP). CDR-1 marshalling comes from
+//! `crates/wire/`.
 //!
 //! Implemented message types (spec §15.4.1-15.4.9):
 //!
@@ -41,8 +42,11 @@
 //!
 //! * **Transport** — TCP/UDS delivery in `crates/corba-iiop/`.
 //! * **IOR format** — object-reference marshalling in `crates/corba-ior/`.
-//! * **POA** — servant dispatch in `crates/corba-poa/`.
-//! * **Codeset conversion** — `crates/cdr/` handles UTF-8/UTF-16 natively;
+//! * **POA** — servant *routing* (which servant answers an object key)
+//!   in `crates/corba-poa/`. The six `CORBA::Object` pseudo-operations
+//!   §15.4.2 names ([`object_ops`]) are answered here instead, ahead of
+//!   that routing — see the module's own doc for why.
+//! * **Codeset conversion** — `crates/wire/` handles UTF-8/UTF-16 natively;
 //!   ISO-Latin conversion is a caller-layer concern (rare in modern
 //!   CORBA deployments).
 //!
@@ -74,6 +78,7 @@ pub mod locate_reply;
 pub mod locate_request;
 pub mod message_error;
 pub mod message_type;
+pub mod object_ops;
 pub mod reply;
 pub mod request;
 pub mod service_context;
@@ -83,11 +88,14 @@ pub mod version;
 pub use cancel_request::CancelRequest;
 pub use close_connection::CloseConnection;
 pub use code_set::{CodeSetContext, well_known as code_set_ids};
-pub use codec::{Message, decode_message, decode_message_ctx, encode_message};
+pub use codec::{
+    Message, MessageWithPadding, decode_message, decode_message_ctx, encode_message,
+    encode_message_with_padding,
+};
 pub use error::{GiopError, GiopResult};
 pub use flags::Flags;
 pub use fragment::{Fragment, FragmentHeader};
-pub use header::{MAGIC, MAGIC_BYTES, MessageHeader};
+pub use header::{HEADER_SIZE, MAGIC, MAGIC_BYTES, MessageHeader};
 pub use locate_reply::{LocateReply, LocateStatusType};
 pub use locate_request::LocateRequest;
 pub use message_error::MessageError;

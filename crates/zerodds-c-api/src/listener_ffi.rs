@@ -263,7 +263,10 @@ struct ReaderCounters {
     sample_lost: u64,
     requested_deadline_missed: u64,
     requested_incompatible_qos_total: i32,
-    /// `alive_count + not_alive_count` — a delta means liveliness changed.
+    /// The runtime's count of liveliness changes at the reader — a delta
+    /// means liveliness changed. The counts themselves can return to where
+    /// they were (one writer lost, another gained), and a writer moving from
+    /// alive to not alive leaves their sum unchanged.
     liveliness_change: u64,
     sample_rejected_total: i32,
     /// Monotonic delivered-sample count — a delta means data available.
@@ -302,6 +305,12 @@ struct ListenerRegistry {
     dw_counters: Mutex<BTreeMap<usize, WriterCounters>>,
     /// Per DR pointer: last-seen counters.
     dr_counters: Mutex<BTreeMap<usize, ReaderCounters>>,
+    /// Per DataReader the `samples_delivered` count up to which its
+    /// `on_data_available` was called, by the poll or by
+    /// [`notify_datareaders`]: DATA_AVAILABLE "becomes FALSE when ... the
+    /// corresponding listener operation (on_data_available) is called"
+    /// (DDS 1.4 §2.2.4.2.2), so neither calls it twice for the same data.
+    data_covered: Mutex<BTreeMap<usize, u64>>,
     /// Per topic/DP observer pointer: last-seen `inconsistent_topic_count`
     /// of the associated runtime (a delta is an inconsistent-topic event).
     ic_counters: Mutex<HashMap<usize, u64>>,
@@ -323,6 +332,7 @@ fn registry() -> &'static ListenerRegistry {
         dr: Mutex::new(HashMap::new()),
         dw_counters: Mutex::new(BTreeMap::new()),
         dr_counters: Mutex::new(BTreeMap::new()),
+        data_covered: Mutex::new(BTreeMap::new()),
         ic_counters: Mutex::new(HashMap::new()),
     })
 }
@@ -331,7 +341,10 @@ fn registry() -> &'static ListenerRegistry {
 // `*_set_listener` / `*_get_listener` API
 // ============================================================================
 
-/// `dp_set_listener`. NULL = clear.
+/// `dp_set_listener`. NULL with an empty mask clears; NULL with a mask is the
+/// 'nil' listener (DDS 1.4 §2.2.2.1.1.3): the statuses of the mask are handled
+/// by doing nothing, and the level above does not hear them from this entity
+/// (§2.2.4.3.1). The other `*_set_listener` take NULL the same way.
 ///
 /// # Safety
 /// `p` valide; `l` darf NULL sein.
@@ -346,7 +359,9 @@ pub unsafe extern "C" fn zerodds_dp_set_listener(
     }
     let key = p as usize;
     if let Ok(mut g) = registry().dp.lock() {
-        if l.is_null() {
+        // NULL with an empty mask clears; NULL with a mask is the 'nil'
+        // listener (DDS 1.4 §2.2.2.1.1.3), kept as an entry without callbacks.
+        if l.is_null() && status_mask == 0 {
             g.remove(&key);
         } else {
             g.insert(key, (l, status_mask));
@@ -370,7 +385,9 @@ pub unsafe extern "C" fn zerodds_pub_set_listener(
     }
     let key = pub_ as usize;
     if let Ok(mut g) = registry().pub_.lock() {
-        if l.is_null() {
+        // NULL with an empty mask clears; NULL with a mask is the 'nil'
+        // listener (DDS 1.4 §2.2.2.1.1.3), kept as an entry without callbacks.
+        if l.is_null() && status_mask == 0 {
             g.remove(&key);
         } else {
             g.insert(key, (l, status_mask));
@@ -394,7 +411,9 @@ pub unsafe extern "C" fn zerodds_sub_set_listener(
     }
     let key = sub as usize;
     if let Ok(mut g) = registry().sub.lock() {
-        if l.is_null() {
+        // NULL with an empty mask clears; NULL with a mask is the 'nil'
+        // listener (DDS 1.4 §2.2.2.1.1.3), kept as an entry without callbacks.
+        if l.is_null() && status_mask == 0 {
             g.remove(&key);
         } else {
             g.insert(key, (l, status_mask));
@@ -418,7 +437,9 @@ pub unsafe extern "C" fn zerodds_topic_set_listener(
     }
     let key = t as usize;
     if let Ok(mut g) = registry().topic.lock() {
-        if l.is_null() {
+        // NULL with an empty mask clears; NULL with a mask is the 'nil'
+        // listener (DDS 1.4 §2.2.2.1.1.3), kept as an entry without callbacks.
+        if l.is_null() && status_mask == 0 {
             g.remove(&key);
         } else {
             g.insert(key, (l, status_mask));
@@ -442,9 +463,11 @@ pub unsafe extern "C" fn zerodds_dw_set_listener(
     }
     let key = dw as usize;
     if let Ok(mut g) = registry().dw.lock() {
-        if l.is_null() {
+        // NULL with an empty mask clears; NULL with a mask is the 'nil'
+        // listener (DDS 1.4 §2.2.2.1.1.3), kept as an entry without callbacks.
+        if l.is_null() && status_mask == 0 {
             g.remove(&key);
-            // Counter-Cache auch aufraeumen
+            // Also clean up the counter cache
             if let Ok(mut c) = registry().dw_counters.lock() {
                 c.remove(&key);
             }
@@ -470,9 +493,14 @@ pub unsafe extern "C" fn zerodds_dr_set_listener(
     }
     let key = dr as usize;
     if let Ok(mut g) = registry().dr.lock() {
-        if l.is_null() {
+        // NULL with an empty mask clears; NULL with a mask is the 'nil'
+        // listener (DDS 1.4 §2.2.2.1.1.3), kept as an entry without callbacks.
+        if l.is_null() && status_mask == 0 {
             g.remove(&key);
             if let Ok(mut c) = registry().dr_counters.lock() {
+                c.remove(&key);
+            }
+            if let Ok(mut c) = registry().data_covered.lock() {
                 c.remove(&key);
             }
         } else {
@@ -503,6 +531,63 @@ pub unsafe extern "C" fn zerodds_dp_get_listener(
         .lock()
         .ok()
         .and_then(|g| g.get(&(p as usize)).map(|(ptr, _)| *ptr))
+        .unwrap_or(core::ptr::null())
+}
+
+/// `pub_get_listener`: the table `zerodds_pub_set_listener` registered, or NULL.
+///
+/// # Safety
+/// `pub_` valid.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn zerodds_pub_get_listener(
+    pub_: *mut ZeroDdsPublisher,
+) -> *const ZeroDdsPublisherListener {
+    if pub_.is_null() {
+        return core::ptr::null();
+    }
+    registry()
+        .pub_
+        .lock()
+        .ok()
+        .and_then(|g| g.get(&(pub_ as usize)).map(|(ptr, _)| *ptr))
+        .unwrap_or(core::ptr::null())
+}
+
+/// `sub_get_listener`: the table `zerodds_sub_set_listener` registered, or NULL.
+///
+/// # Safety
+/// `sub` valid.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn zerodds_sub_get_listener(
+    sub: *mut ZeroDdsSubscriber,
+) -> *const ZeroDdsSubscriberListener {
+    if sub.is_null() {
+        return core::ptr::null();
+    }
+    registry()
+        .sub
+        .lock()
+        .ok()
+        .and_then(|g| g.get(&(sub as usize)).map(|(ptr, _)| *ptr))
+        .unwrap_or(core::ptr::null())
+}
+
+/// `topic_get_listener`: the table `zerodds_topic_set_listener` registered, or NULL.
+///
+/// # Safety
+/// `t` valid.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn zerodds_topic_get_listener(
+    t: *mut ZeroDdsTopic,
+) -> *const ZeroDdsTopicListener {
+    if t.is_null() {
+        return core::ptr::null();
+    }
+    registry()
+        .topic
+        .lock()
+        .ok()
+        .and_then(|g| g.get(&(t as usize)).map(|(ptr, _)| *ptr))
         .unwrap_or(core::ptr::null())
 }
 
@@ -598,7 +683,6 @@ unsafe fn read_writer_counters(dw_ptr: *mut ZeroDdsDataWriter) -> WriterCounters
 unsafe fn read_reader_counters(dr_ptr: *mut ZeroDdsDataReader) -> ReaderCounters {
     // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
     let drr = unsafe { &*dr_ptr };
-    let (_, alive, not_alive) = drr.rt.user_reader_liveliness_status(drr.eid);
     ReaderCounters {
         matched_count: drr.rt.user_reader_matched_count(drr.eid),
         sample_lost: drr.rt.user_reader_sample_lost(drr.eid),
@@ -607,7 +691,7 @@ unsafe fn read_reader_counters(dr_ptr: *mut ZeroDdsDataReader) -> ReaderCounters
             .rt
             .user_reader_requested_incompatible_qos(drr.eid)
             .total_count,
-        liveliness_change: alive.saturating_add(not_alive),
+        liveliness_change: drr.rt.user_reader_liveliness_changes(drr.eid),
         sample_rejected_total: drr.rt.user_reader_sample_rejected(drr.eid).total_count,
         samples_delivered: drr.rt.user_reader_samples_delivered(drr.eid),
     }
@@ -741,11 +825,104 @@ fn fire_reader_vtable(
     }
     if d.data && (mask & STATUS_DATA_AVAILABLE) != 0 {
         if let Some(cb) = on_data_available {
+            let _scope = DataListenerScope::enter();
             cb(user_data, dr_ptr);
             n += 1;
         }
     }
     n
+}
+
+std::thread_local! {
+    static IN_DATA_LISTENER: core::cell::Cell<bool> = const { core::cell::Cell::new(false) };
+}
+
+/// Marks the thread as calling a data listener (`on_data_available`,
+/// `on_data_on_readers`) for as long as it lives.
+struct DataListenerScope {
+    outer: bool,
+}
+
+impl DataListenerScope {
+    fn enter() -> Self {
+        Self {
+            outer: IN_DATA_LISTENER.with(|flag| flag.replace(true)),
+        }
+    }
+}
+
+impl Drop for DataListenerScope {
+    fn drop(&mut self) {
+        IN_DATA_LISTENER.with(|flag| flag.set(self.outer));
+    }
+}
+
+/// Whether this thread is calling a data listener: a read or take from it
+/// needs no `begin_access` under GROUP access scope, as in the typed API.
+pub(crate) fn in_data_listener() -> bool {
+    IN_DATA_LISTENER.with(core::cell::Cell::get)
+}
+
+/// Whether the DataReader `key`, with `delivered` samples delivered, has
+/// data its `on_data_available` was not called for; when `fires`, that
+/// call is about to happen and covers them.
+fn cover_data(key: usize, delivered: u64, fires: bool) -> bool {
+    let Ok(mut covered) = registry().data_covered.lock() else {
+        return true;
+    };
+    let seen = covered.get(&key).copied().unwrap_or(0);
+    if delivered <= seen {
+        return false;
+    }
+    if fires {
+        covered.insert(key, delivered);
+    }
+    true
+}
+
+/// DDS 1.4 §2.2.2.5.2.14 `notify_datareaders`: "invokes the operation
+/// on_data_available on the DataReaderListener objects attached to
+/// contained DataReader entities with a DATA_AVAILABLE status that is
+/// considered changed as described in 2.2.4.2.2" — a reader with samples
+/// delivered since the poll or a listener call last covered them. The
+/// count of calls.
+///
+/// # Safety
+/// `sub` is a valid Subscriber.
+pub(crate) unsafe fn notify_datareaders(sub: *mut ZeroDdsSubscriber) -> usize {
+    // SAFETY: see fn # Safety doc.
+    let readers = unsafe { collect_subscriber_readers(sub as usize) };
+    let listeners: Vec<(usize, *const ZeroDdsDataReaderListener, u32)> = registry()
+        .dr
+        .lock()
+        .map(|g| {
+            readers
+                .iter()
+                .filter_map(|k| g.get(k).map(|(l, m)| (*k, *l, *m)))
+                .collect()
+        })
+        .unwrap_or_default();
+    let mut fired = 0;
+    for (key, listener, mask) in listeners {
+        if listener.is_null() || mask & STATUS_DATA_AVAILABLE == 0 {
+            continue;
+        }
+        // SAFETY: a registered listener stays valid while registered.
+        let l = unsafe { &*listener };
+        let Some(cb) = l.on_data_available else {
+            continue;
+        };
+        let dr = key as *mut ZeroDdsDataReader;
+        // SAFETY: the subscriber's readers are valid while it lists them.
+        let delivered = unsafe { (*dr).rt.user_reader_samples_delivered((*dr).eid) };
+        if !cover_data(key, delivered, true) {
+            continue;
+        }
+        let _scope = DataListenerScope::enter();
+        cb(l.user_data, dr);
+        fired += 1;
+    }
+    fired
 }
 
 /// Snapshots the child DataWriter pointers of a publisher (lock released
@@ -875,6 +1052,21 @@ pub unsafe extern "C" fn zerodds_poll_listeners() -> usize {
         .map(|g| g.iter().map(|(k, (l, m))| (*k, *l, *m)).collect())
         .unwrap_or_default();
 
+    // ---- 'nil' listeners (DDS 1.4 §2.2.4.3.1) ----
+    // A 'nil' listener with a status in its mask handles it by doing nothing:
+    // the level above does not hear that status for that entity.
+    fn nil_masks<L>(listeners: &[(usize, *const L, u32)]) -> BTreeMap<usize, u32> {
+        listeners
+            .iter()
+            .filter(|(_, l, m)| l.is_null() && *m != 0)
+            .map(|(k, _, m)| (*k, *m))
+            .collect()
+    }
+    let dw_nil = nil_masks(&dw_listeners);
+    let dr_nil = nil_masks(&dr_listeners);
+    let sub_nil = nil_masks(&sub_listeners);
+    let topic_nil = nil_masks(&topic_listeners);
+
     // ---- Child pointer snapshots for the aggregator levels ----
     // SAFETY: pointers come from the registry; caller contract (see doc).
     let pub_children: Vec<Vec<usize>> = pub_listeners
@@ -997,7 +1189,7 @@ pub unsafe extern "C" fn zerodds_poll_listeners() -> usize {
                 l.on_offered_deadline_missed,
                 l.on_offered_incompatible_qos,
                 l.user_data,
-                *mask,
+                *mask & !dw_nil.get(dwk).copied().unwrap_or(0),
                 *d,
                 *dwk as *mut ZeroDdsDataWriter,
             );
@@ -1012,6 +1204,15 @@ pub unsafe extern "C" fn zerodds_poll_listeners() -> usize {
         let Some(d) = rdelta.get(key) else { continue };
         // SAFETY: caller contract.
         let l = unsafe { &**listener };
+        let mut d = *d;
+        if d.data {
+            let delivered = rnow.get(key).map_or(0, |c| c.samples_delivered);
+            d.data = cover_data(
+                *key,
+                delivered,
+                l.on_data_available.is_some() && *mask & STATUS_DATA_AVAILABLE != 0,
+            );
+        }
         fired += fire_reader_vtable(
             l.on_subscription_matched,
             l.on_sample_lost,
@@ -1022,7 +1223,7 @@ pub unsafe extern "C" fn zerodds_poll_listeners() -> usize {
             l.on_data_available,
             l.user_data,
             *mask,
-            *d,
+            d,
             *key as *mut ZeroDdsDataReader,
         );
     }
@@ -1046,7 +1247,7 @@ pub unsafe extern "C" fn zerodds_poll_listeners() -> usize {
                 l.on_sample_rejected,
                 l.on_data_available,
                 l.user_data,
-                *mask,
+                *mask & !dr_nil.get(drk).copied().unwrap_or(0),
                 *d,
                 *drk as *mut ZeroDdsDataReader,
             );
@@ -1056,6 +1257,7 @@ pub unsafe extern "C" fn zerodds_poll_listeners() -> usize {
         }
         if any_data && (*mask & STATUS_DATA_ON_READERS) != 0 {
             if let Some(cb) = l.on_data_on_readers {
+                let _scope = DataListenerScope::enter();
                 cb(l.user_data, *sk as *mut ZeroDdsSubscriber);
                 fired += 1;
             }
@@ -1074,8 +1276,13 @@ pub unsafe extern "C" fn zerodds_poll_listeners() -> usize {
             let any = drs
                 .iter()
                 .any(|drk| rdelta.get(drk).map(|d| d.data).unwrap_or(false));
-            if any && (*mask & STATUS_DATA_ON_READERS) != 0 {
+            let sub_nil_mask = sub_nil.get(subk).copied().unwrap_or(0);
+            if any
+                && (*mask & STATUS_DATA_ON_READERS) != 0
+                && sub_nil_mask & STATUS_DATA_ON_READERS == 0
+            {
                 if let Some(cb) = l.on_data_on_readers {
+                    let _scope = DataListenerScope::enter();
                     cb(l.user_data, *subk as *mut ZeroDdsSubscriber);
                     fired += 1;
                 }
@@ -1102,8 +1309,14 @@ pub unsafe extern "C" fn zerodds_poll_listeners() -> usize {
                         .and_then(|g| g.first().copied())
                         .unwrap_or(core::ptr::null_mut())
                 };
-                cb(l.user_data, tptr);
-                fired += 1;
+                // A 'nil' listener of the topic handles it.
+                let handled_by_nil = topic_nil
+                    .get(&(tptr as usize))
+                    .is_some_and(|m| m & STATUS_INCONSISTENT_TOPIC != 0);
+                if !handled_by_nil {
+                    cb(l.user_data, tptr);
+                    fired += 1;
+                }
             }
         }
         if let Ok(mut m) = reg.ic_counters.lock() {
@@ -1231,6 +1444,57 @@ mod tests {
     }
 
     #[test]
+    fn pub_sub_topic_set_get_listener_roundtrip() {
+        let f = zerodds_dpf_get_instance();
+        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+        let p = unsafe { zerodds_dpf_create_participant(f, 82, ptr::null()) };
+        let nm = c"GetListenerTopic";
+        let tn = c"GetListenerType";
+        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+        let t = unsafe { zerodds_dp_create_topic(p, nm.as_ptr(), tn.as_ptr(), ptr::null()) };
+        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+        let pubh = unsafe { zerodds_dp_create_publisher(p, ptr::null()) };
+        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+        let subh = unsafe { zerodds_dp_create_subscriber(p, ptr::null()) };
+        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+        unsafe {
+            assert!(zerodds_pub_get_listener(pubh).is_null());
+            assert!(zerodds_sub_get_listener(subh).is_null());
+            assert!(zerodds_topic_get_listener(t).is_null());
+            assert!(zerodds_pub_get_listener(ptr::null_mut()).is_null());
+        }
+        let pl = ZeroDdsPublisherListener::default();
+        let sl = ZeroDdsSubscriberListener::default();
+        let tl = ZeroDdsTopicListener::default();
+        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+        unsafe {
+            assert_eq!(
+                zerodds_pub_set_listener(pubh, &pl, 0xFFFF),
+                ZeroDdsStatus::Ok as c_int
+            );
+            assert_eq!(
+                zerodds_sub_set_listener(subh, &sl, 0xFFFF),
+                ZeroDdsStatus::Ok as c_int
+            );
+            assert_eq!(
+                zerodds_topic_set_listener(t, &tl, 0xFFFF),
+                ZeroDdsStatus::Ok as c_int
+            );
+            assert_eq!(zerodds_pub_get_listener(pubh), &pl as *const _);
+            assert_eq!(zerodds_sub_get_listener(subh), &sl as *const _);
+            assert_eq!(zerodds_topic_get_listener(t), &tl as *const _);
+            let _ = zerodds_pub_set_listener(pubh, ptr::null(), 0);
+            let _ = zerodds_sub_set_listener(subh, ptr::null(), 0);
+            let _ = zerodds_topic_set_listener(t, ptr::null(), 0);
+            assert!(zerodds_pub_get_listener(pubh).is_null());
+            assert!(zerodds_sub_get_listener(subh).is_null());
+            assert!(zerodds_topic_get_listener(t).is_null());
+            zerodds_dp_delete_contained_entities(p);
+            zerodds_dpf_delete_participant(f, p);
+        }
+    }
+
+    #[test]
     fn poll_listeners_returns_count_and_clears_state() {
         let _guard = poll_guard();
         let f = zerodds_dpf_get_instance();
@@ -1335,6 +1599,115 @@ mod tests {
         unsafe { zerodds_dpf_delete_participant(f, p) };
     }
 
+    static SUB_LEVEL_DATA_AVAILABLE_FIRED: AtomicUsize = AtomicUsize::new(0);
+    static DP_LEVEL_DATA_ON_READERS_FIRED: AtomicUsize = AtomicUsize::new(0);
+
+    extern "C" fn cb_sub_level_data_available(
+        _u: *mut core::ffi::c_void,
+        _dr: *mut ZeroDdsDataReader,
+    ) {
+        SUB_LEVEL_DATA_AVAILABLE_FIRED.fetch_add(1, AtomicOrdering::Relaxed);
+    }
+    extern "C" fn cb_dp_level_data_on_readers(
+        _u: *mut core::ffi::c_void,
+        _s: *mut ZeroDdsSubscriber,
+    ) {
+        DP_LEVEL_DATA_ON_READERS_FIRED.fetch_add(1, AtomicOrdering::Relaxed);
+    }
+
+    /// DDS 1.4 §2.2.4.3.1: "the operation will be considered handled by a
+    /// NO-OP operation" for a 'nil' listener. A reader whose listener is NULL
+    /// with DATA_AVAILABLE in its mask keeps the subscriber's
+    /// on_data_available from firing for it, and a subscriber that is nil for
+    /// DATA_ON_READERS keeps the participant's on_data_on_readers silent.
+    #[test]
+    fn poll_a_nil_listener_stops_the_level_above() {
+        let _guard = poll_guard();
+        let f = zerodds_dpf_get_instance();
+        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+        let p = unsafe { zerodds_dpf_create_participant(f, 95, ptr::null()) };
+        let tn = c"NilTopic";
+        let ty = c"NilType";
+        // SAFETY: as above.
+        let t = unsafe { zerodds_dp_create_topic(p, tn.as_ptr(), ty.as_ptr(), ptr::null()) };
+        // SAFETY: as above.
+        let sub = unsafe { zerodds_dp_create_subscriber(p, ptr::null()) };
+        // SAFETY: as above.
+        let dr = unsafe { zerodds_sub_create_datareader(sub, t, ptr::null()) };
+
+        let sub_listener = ZeroDdsSubscriberListener {
+            on_data_available: Some(cb_sub_level_data_available),
+            ..Default::default()
+        };
+        let dp_listener = ZeroDdsDomainParticipantListener {
+            on_data_on_readers: Some(cb_dp_level_data_on_readers),
+            ..Default::default()
+        };
+        // SAFETY: as above; the listeners outlive the calls below and are
+        // cleared before the end.
+        unsafe {
+            let _ = zerodds_sub_set_listener(sub, &sub_listener, STATUS_DATA_AVAILABLE);
+            let _ = zerodds_dp_set_listener(p, &dp_listener, STATUS_DATA_ON_READERS);
+            // The reader and the subscriber are nil for those statuses.
+            let _ = zerodds_dr_set_listener(dr, ptr::null(), STATUS_DATA_AVAILABLE);
+            let _ = zerodds_poll_listeners();
+        }
+        assert!(
+            // SAFETY: as above.
+            unsafe { zerodds_dr_get_listener(dr) }.is_null(),
+            "the nil listener reads back as NULL"
+        );
+
+        let sub_before = SUB_LEVEL_DATA_AVAILABLE_FIRED.load(AtomicOrdering::Relaxed);
+        let dp_before = DP_LEVEL_DATA_ON_READERS_FIRED.load(AtomicOrdering::Relaxed);
+        // SAFETY: dr is a live handle from create_datareader.
+        let injected = unsafe {
+            let drr = &*dr;
+            drr.rt
+                .test_inject_user_alive(drr.eid, alloc::vec::Vec::from([1u8, 2, 3]))
+        };
+        assert!(injected);
+        // SAFETY: as above.
+        let _ = unsafe { zerodds_poll_listeners() };
+        assert_eq!(
+            SUB_LEVEL_DATA_AVAILABLE_FIRED.load(AtomicOrdering::Relaxed),
+            sub_before,
+            "the reader's nil listener handled DATA_AVAILABLE"
+        );
+        // The participant hears DATA_ON_READERS: the subscriber is not nil.
+        assert!(DP_LEVEL_DATA_ON_READERS_FIRED.load(AtomicOrdering::Relaxed) > dp_before);
+
+        // Now the subscriber is nil for DATA_ON_READERS too.
+        // SAFETY: as above.
+        unsafe {
+            let _ = zerodds_sub_set_listener(sub, ptr::null(), STATUS_DATA_ON_READERS);
+        }
+        let dp_before = DP_LEVEL_DATA_ON_READERS_FIRED.load(AtomicOrdering::Relaxed);
+        // SAFETY: as above.
+        let injected = unsafe {
+            let drr = &*dr;
+            drr.rt
+                .test_inject_user_alive(drr.eid, alloc::vec::Vec::from([4u8, 5, 6]))
+        };
+        assert!(injected);
+        // SAFETY: as above.
+        let _ = unsafe { zerodds_poll_listeners() };
+        assert_eq!(
+            DP_LEVEL_DATA_ON_READERS_FIRED.load(AtomicOrdering::Relaxed),
+            dp_before,
+            "the subscriber's nil listener handled DATA_ON_READERS"
+        );
+
+        // SAFETY: as above.
+        unsafe {
+            let _ = zerodds_dr_set_listener(dr, ptr::null(), 0);
+            let _ = zerodds_sub_set_listener(sub, ptr::null(), 0);
+            let _ = zerodds_dp_set_listener(p, ptr::null(), 0);
+            zerodds_dp_delete_contained_entities(p);
+            zerodds_dpf_delete_participant(f, p);
+        }
+    }
+
     #[test]
     fn poll_fires_inconsistent_topic_for_topic_and_participant() {
         let _guard = poll_guard();
@@ -1426,5 +1799,79 @@ mod tests {
         unsafe { zerodds_dp_delete_contained_entities(p) };
         // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
         unsafe { zerodds_dpf_delete_participant(f, p) };
+    }
+
+    static NOTIFIED: AtomicUsize = AtomicUsize::new(0);
+
+    extern "C" fn cb_notified(_u: *mut core::ffi::c_void, _dr: *mut ZeroDdsDataReader) {
+        NOTIFIED.fetch_add(1, AtomicOrdering::Relaxed);
+    }
+
+    /// DDS 1.4 §2.2.2.5.2.14 `notify_datareaders` calls `on_data_available`
+    /// of a reader whose DATA_AVAILABLE changed, once per change: a second
+    /// call and the next poll leave it alone (§2.2.4.2.2). It did nothing.
+    #[test]
+    fn notify_datareaders_calls_on_data_available_once_per_change() {
+        let _guard = poll_guard();
+        let f = zerodds_dpf_get_instance();
+        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
+        let p = unsafe { zerodds_dpf_create_participant(f, 95, ptr::null()) };
+        let tn = c"NotifyTopic";
+        let ty = c"NotifyType";
+        // SAFETY: as above.
+        let t = unsafe { zerodds_dp_create_topic(p, tn.as_ptr(), ty.as_ptr(), ptr::null()) };
+        // SAFETY: as above.
+        let sub = unsafe { zerodds_dp_create_subscriber(p, ptr::null()) };
+        // SAFETY: as above.
+        let dr = unsafe { zerodds_sub_create_datareader(sub, t, ptr::null()) };
+        let listener = ZeroDdsDataReaderListener {
+            on_data_available: Some(cb_notified),
+            ..Default::default()
+        };
+        // SAFETY: as above.
+        let _ = unsafe { zerodds_dr_set_listener(dr, &listener, 0xFFFF_FFFF) };
+        // SAFETY: as above.
+        let _ = unsafe { zerodds_poll_listeners() };
+        let before = NOTIFIED.load(AtomicOrdering::Relaxed);
+
+        let inject = |payload: u8| {
+            // SAFETY: dr is a live handle from create_datareader.
+            let injected = unsafe {
+                let drr = &*dr;
+                drr.rt
+                    .test_inject_user_alive(drr.eid, alloc::vec::Vec::from([payload]))
+            };
+            assert!(injected, "sample injection must hit the reader slot");
+        };
+        inject(1);
+        // SAFETY: sub is live.
+        unsafe {
+            assert_eq!(
+                crate::subscriber_ffi::zerodds_sub_notify_datareaders(sub),
+                0
+            );
+            assert_eq!(NOTIFIED.load(AtomicOrdering::Relaxed), before + 1);
+            assert_eq!(
+                crate::subscriber_ffi::zerodds_sub_notify_datareaders(sub),
+                0
+            );
+            let _ = zerodds_poll_listeners();
+        }
+        assert_eq!(
+            NOTIFIED.load(AtomicOrdering::Relaxed),
+            before + 1,
+            "the same data again"
+        );
+        inject(2);
+        // SAFETY: as above.
+        let _ = unsafe { zerodds_poll_listeners() };
+        assert_eq!(NOTIFIED.load(AtomicOrdering::Relaxed), before + 2);
+
+        // SAFETY: as above.
+        unsafe {
+            let _ = zerodds_dr_set_listener(dr, ptr::null(), 0);
+            zerodds_dp_delete_contained_entities(p);
+            zerodds_dpf_delete_participant(f, p);
+        }
     }
 }

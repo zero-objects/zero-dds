@@ -74,17 +74,25 @@ public sealed class WaitSet : IDisposable
     {
         var buf = new IntPtr[64];
         UIntPtr count;
-        unsafe
+        int rc;
+        for (;;)
         {
-            fixed (IntPtr* p = buf)
+            unsafe
             {
-                int rc = Native.WaitSetWait(_ws, (IntPtr)p, (UIntPtr)buf.Length,
-                    out count, timeout.Sec, timeout.Nanosec);
-                if (rc == Native.Timeout)
-                    throw new ZeroDDS.Core.TimeoutException("WaitSet::Wait");
-                StatusCheck.Check(rc, "WaitSet::Wait");
+                fixed (IntPtr* p = buf)
+                {
+                    rc = Native.WaitSetWait(_ws, (IntPtr)p, (UIntPtr)buf.Length,
+                        out count, timeout.Sec, timeout.Nanosec);
+                }
             }
+            if (rc != Native.OutOfResources) break;
+            // The buffer held fewer conditions than are active: `count` is the
+            // total, so grow to it and retry.
+            Array.Resize(ref buf, (int)(uint)count);
         }
+        if (rc == Native.Timeout)
+            throw new ZeroDDS.Core.TimeoutException("WaitSet::Wait");
+        StatusCheck.Check(rc, "WaitSet::Wait");
         var result = new List<Condition>();
         var n = (int)(uint)count;
         for (int i = 0; i < n; ++i)

@@ -1,0 +1,12 @@
+// `typedef` of a union
+union Choice switch (long) {
+    case 1: long whole;
+    default: double fraction;
+};
+
+typedef Choice Selection;
+
+@final struct Sample {
+    Selection picked;
+    long tail;
+};

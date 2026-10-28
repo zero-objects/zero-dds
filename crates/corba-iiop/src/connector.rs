@@ -145,17 +145,34 @@ impl Connector {
     /// `Io` on connect failure, `PoolExhausted` when `max_connections_
     /// per_endpoint` has been reached.
     pub fn connect(&self, host: &str, port: u16) -> Result<PooledConnection, IiopError> {
-        let endpoint = (host, port).to_socket_addrs()?.next().ok_or_else(|| {
+        // Resolve every candidate address, not just the first one. A
+        // hostname such as "localhost" commonly resolves to both an
+        // IPv6 and an IPv4 loopback address; a peer listening on only
+        // one family must still be reachable by name — connecting only
+        // to whichever address the resolver happened to list first
+        // silently refused every other, reachable candidate.
+        let addrs: Vec<SocketAddr> = (host, port).to_socket_addrs()?.collect();
+        let key_addr = *addrs.first().ok_or_else(|| {
             IiopError::Other(alloc::format!("no address resolved for {host}:{port}"))
         })?;
         let cfg = self.config.clone();
-        self.acquire(PoolKey::Tcp(endpoint), || {
-            let stream = if let Some(t) = cfg.connect_timeout {
-                TcpStream::connect_timeout(&endpoint, t)?
-            } else {
-                TcpStream::connect(endpoint)?
-            };
-            Connection::from_stream(stream)
+        self.acquire(PoolKey::Tcp(key_addr), move || {
+            let mut last_err = None;
+            for addr in &addrs {
+                let attempt = if let Some(t) = cfg.connect_timeout {
+                    TcpStream::connect_timeout(addr, t)
+                } else {
+                    TcpStream::connect(addr)
+                };
+                match attempt {
+                    Ok(stream) => return Connection::from_stream(stream),
+                    Err(e) => last_err = Some(e),
+                }
+            }
+            Err(last_err.map_or_else(
+                || IiopError::Other(alloc::format!("no address resolved for {host}:{port}")),
+                IiopError::from,
+            ))
         })
     }
 
@@ -429,6 +446,24 @@ mod tests {
             Err(IiopError::PoolExhausted) => {}
             Err(other) => panic!("expected PoolExhausted, got {other}"),
         }
+    }
+
+    #[test]
+    fn connect_falls_back_to_a_reachable_address_when_the_first_resolved_one_refuses() {
+        // Regression: "localhost" resolves to both ::1 and 127.0.0.1 on
+        // a dual-stack host. A listener bound to 127.0.0.1 only must
+        // still be reachable via `connect("localhost", port)` — the
+        // prior implementation connected to whichever address
+        // `to_socket_addrs()` listed first (commonly ::1) and gave up
+        // on `ConnectionRefused` without trying the rest.
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        thread::spawn(move || echo_server(listener));
+
+        let connector = Connector::new(ConnectorConfig::default());
+        connector
+            .connect("localhost", port)
+            .expect("must fall back past an unreachable resolved address");
     }
 
     #[cfg(unix)]

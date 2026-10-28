@@ -1,0 +1,21 @@
+#!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 ZeroDDS Contributors
+#
+# wireprobe-endpoint-python — one IDL type and one JSON sample, through the
+# hand-written endpoint SDK in endpoints/python/zerodds_wire.py.
+#
+# The same command line as every other column's probe, so a case runs
+# through any of them by substituting the program name:
+#
+#   wireprobe-endpoint-python --idl robot.idl --type common::Robot \
+#       --values robot.json --encoding plain-cdr2 --endian le \
+#       --out robot.endpoint-python.plain-cdr2.le.bin
+#
+# The body is tools/wireprobe/endpoint-common.sh; it is shared because
+# the columns differ only in which compiler runs and which SDK is linked,
+# and one copy of the caching and the exit codes per column would be as
+# many places for them to drift apart.
+set -uo pipefail
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/endpoint-common.sh"
+endpoint_probe python "$@"

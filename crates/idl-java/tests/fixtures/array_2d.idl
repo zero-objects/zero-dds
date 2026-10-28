@@ -1,4 +1,0 @@
-// Fixture: zweidimensionales Array → Java int[][].
-struct Matrix {
-    long cells[4][3];
-};

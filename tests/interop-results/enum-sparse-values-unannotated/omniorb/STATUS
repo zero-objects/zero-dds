@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of enum-sparse-values-unannotated that omniorb produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	no-form	Sample.a: an enumerator with an explicit @value, where CORBA's is its ordinal position
+plain-cdr1	be	no-form	Sample.a: an enumerator with an explicit @value, where CORBA's is its ordinal position
+pl-cdr1	le	no-form	Sample.a: an enumerator with an explicit @value, where CORBA's is its ordinal position
+pl-cdr1	be	no-form	Sample.a: an enumerator with an explicit @value, where CORBA's is its ordinal position
+plain-cdr2	le	no-form	Sample.a: an enumerator with an explicit @value, where CORBA's is its ordinal position
+plain-cdr2	be	no-form	Sample.a: an enumerator with an explicit @value, where CORBA's is its ordinal position
+delimited-cdr	le	no-form	Sample.a: an enumerator with an explicit @value, where CORBA's is its ordinal position
+delimited-cdr	be	no-form	Sample.a: an enumerator with an explicit @value, where CORBA's is its ordinal position
+pl-cdr2	le	no-form	Sample.a: an enumerator with an explicit @value, where CORBA's is its ordinal position
+pl-cdr2	be	no-form	Sample.a: an enumerator with an explicit @value, where CORBA's is its ordinal position

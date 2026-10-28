@@ -1,0 +1,13 @@
+// a module reopened, unannotated
+module common {
+    struct First {
+        long a;
+    };
+};
+
+module common {
+    struct Sample {
+        ::common::First head;
+        double b;
+    };
+};

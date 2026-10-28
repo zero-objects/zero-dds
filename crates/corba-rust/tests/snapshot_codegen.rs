@@ -18,17 +18,41 @@
 )]
 
 use zerodds_corba_rust::{CorbaRustGenOptions, generate_corba_rust_module};
-use zerodds_idl::config::ParserConfig;
-use zerodds_idl::features::IdlFeatures;
+
+/// Parses, lowers and resolves — the three steps every consumer of the
+/// rebuilt frontend takes.
+///
+/// The resolve pass is the caller's: `zerodds-idl-lower` leaves a name
+/// it could not bind on the spot pending, and a model handed to a
+/// generator without it has an unresolved type for every forward
+/// reference. Asserted rather than assumed, because a generator over a
+/// half-resolved model emits signatures that resolve to nothing and
+/// says nothing about it.
+fn model(idl: &str) -> zerodds_ast::Ast {
+    let parsed = zerodds_idl_parse::parse(idl);
+    assert!(
+        parsed.diagnostics().iter().all(|d| !d.is_error()),
+        "the IDL must parse: {:?}",
+        parsed.diagnostics()
+    );
+    let lowered = zerodds_idl_lower::lower(&parsed.syntax(), "snapshot.idl");
+    assert!(
+        lowered.diagnostics.iter().all(|d| !d.is_error()),
+        "the IDL must lower: {:?}",
+        lowered.diagnostics
+    );
+    let mut ast = lowered.ast;
+    let report = ast.resolve_all_by_name().expect("a resolve pass");
+    assert!(
+        report.broken.is_empty(),
+        "every name must resolve: {:?}",
+        report.broken
+    );
+    ast
+}
 
 fn run(idl: &str) -> String {
-    // CORBA full profile — enables oneway ops, valuetypes,
-    // private state members.
-    let cfg = ParserConfig {
-        features: IdlFeatures::corba_full(),
-        ..ParserConfig::default()
-    };
-    let ast = zerodds_idl::parse(idl, &cfg).expect("parse");
+    let ast = model(idl);
     generate_corba_rust_module(&ast, &CorbaRustGenOptions::default()).expect("gen")
 }
 
@@ -255,4 +279,31 @@ fn snapshot_module_with_interface() {
         };
     "#;
     insta::assert_snapshot!(run(idl));
+}
+
+/// CCM 4.0 §6.9.1 (p. 43) — "The `configuration_complete` operation
+/// (inherited from `Components::CCMObject`) is invoked by the agent
+/// effecting the configuration to signal the completion of the
+/// configuration phase." The emitted component trait has to carry that
+/// operation, or a generated component has no way of being told the
+/// configuration phase is over.
+#[test]
+fn a_component_trait_carries_the_configuration_complete_lifecycle_operation() {
+    let out = run("component Trader { attribute long limit; };");
+    assert!(
+        out.contains("pub trait Trader"),
+        "no component trait was emitted:\n{out}"
+    );
+    assert!(
+        out.contains("fn configuration_complete("),
+        "§6.9 configuration_complete is missing:\n{out}"
+    );
+    assert!(
+        out.contains("fn ccm_remove("),
+        "the removal counterpart is missing:\n{out}"
+    );
+    assert!(
+        out.contains("TRADER_REPOSITORY_ID"),
+        "the component keeps no repository identifier:\n{out}"
+    );
 }

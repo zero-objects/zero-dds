@@ -1,0 +1,4 @@
+// P5 — a bitset as a key member. §7.6.8 Step 4 serialises the holder,
+// and the holder's serialisation of a bitset is P1's integer.
+bitset B { bitfield<3> a; bitfield<5> b; };
+struct Sample { @key B k; octet tail; };

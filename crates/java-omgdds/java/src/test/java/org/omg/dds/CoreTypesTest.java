@@ -2,87 +2,108 @@
 package org.omg.dds;
 
 import org.junit.jupiter.api.Test;
-import org.omg.dds.core.Duration;
-import org.omg.dds.core.InstanceHandle;
-import org.omg.dds.core.ReturnCode;
-import org.omg.dds.core.Time;
+import org.omg.dds.core.ServiceEnvironment;
 import org.omg.dds.core.policy.Durability;
 import org.omg.dds.core.policy.History;
-import org.omg.dds.core.policy.QosProfile;
+import org.omg.dds.core.policy.PolicyFactory;
 import org.omg.dds.core.policy.Reliability;
+import org.omg.dds.sub.DataReaderQos;
+import org.omg.dds.pub.DataWriterQos;
+import org.omg.dds.topic.TopicQos;
+import org.zerodds.core.Values;
+import org.zerodds.core.policy.PolicyFactoryImpl;
+import org.zerodds.core.qos.DataReaderQosImpl;
+import org.zerodds.core.qos.DataWriterQosImpl;
+import org.zerodds.core.qos.QosCompatibility;
+import org.zerodds.core.qos.TopicQosImpl;
+import org.zerodds.ServiceEnvironmentImpl;
+
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 class CoreTypesTest {
-    @Test
-    void returnCodeOkHasNumericValue0() {
-        assertEquals(0, ReturnCode.OK.code());
-        assertTrue(ReturnCode.OK.isOk());
-    }
 
-    @Test
-    void returnCodeRoundTripViaCode() {
-        for (ReturnCode rc : ReturnCode.values()) {
-            assertEquals(rc, ReturnCode.fromCode(rc.code()));
-        }
-    }
+    private static final ServiceEnvironment ENV = ServiceEnvironmentImpl.getDefaultEnvironment();
 
-    @Test
-    void returnCodeFromUnknownCodeThrows() {
-        assertThrows(IllegalArgumentException.class, () -> ReturnCode.fromCode(99));
+    private static PolicyFactory policyFactory() {
+        return ENV.getSPI().getPolicyFactory();
     }
 
     @Test
     void timeFromMillisRoundTrip() {
-        Time t = Time.fromMillis(1234);
-        assertEquals(1, t.sec());
-        assertEquals(234_000_000L, t.nanosec());
-        assertEquals(1234, t.toMillis());
+        org.omg.dds.core.Time t = Values.ofMillis(1234);
+        assertEquals(1, t.getTime(TimeUnit.SECONDS));
+        assertEquals(234_000_000L, t.getRemainder(TimeUnit.SECONDS, TimeUnit.NANOSECONDS));
+        assertEquals(1234, t.getTime(TimeUnit.MILLISECONDS));
     }
 
     @Test
     void durationInfiniteRecognized() {
-        assertTrue(Duration.INFINITE.isInfinite());
-        assertFalse(Duration.fromMillis(100).isInfinite());
+        // DDS-Java-PSM 1.0 §7.3.4: a magnitude of Long.MAX_VALUE is infinite.
+        assertTrue(Values.infiniteDuration().isInfinite());
+        assertEquals(Long.MAX_VALUE, Values.infiniteDuration().getDuration(TimeUnit.SECONDS));
+        assertFalse(Values.durationOfMillis(100).isInfinite());
+        assertTrue(Values.durationOfMillis(0).isZero());
     }
 
     @Test
     void instanceHandleNilDetected() {
-        assertTrue(InstanceHandle.NIL.isNil());
+        assertTrue(Values.nil().isNil());
         byte[] nonZero = new byte[16];
         nonZero[5] = 1;
-        assertFalse(InstanceHandle.from(nonZero).isNil());
+        assertFalse(Values.of(nonZero).isNil());
     }
 
     @Test
     void instanceHandleRejectsWrongLength() {
         assertThrows(IllegalArgumentException.class,
-                () -> InstanceHandle.from(new byte[8]));
+                () -> Values.of(new byte[8]));
     }
 
     @Test
     void reliabilityAndHistoryQosDefaults() {
-        assertEquals(Reliability.Kind.RELIABLE, QosProfile.DEFAULT.reliability().kind());
-        assertEquals(Durability.VOLATILE, QosProfile.DEFAULT.durability());
-        assertEquals(History.Kind.KEEP_LAST, QosProfile.DEFAULT.history().kind());
-        assertEquals(10, QosProfile.DEFAULT.history().depth());
+        // DDS 1.2 §7.1.3: BEST_EFFORT is the reader/topic default; HISTORY
+        // defaults to KEEP_LAST with depth 1.
+        DataReaderQos reader = DataReaderQosImpl.defaults(ENV);
+        TopicQos topic = TopicQosImpl.defaults(ENV);
+        assertEquals(Reliability.Kind.BEST_EFFORT, reader.get(Reliability.class).getKind());
+        assertEquals(Reliability.Kind.BEST_EFFORT, topic.getReliability().getKind());
+        assertEquals(Durability.Kind.VOLATILE, topic.getDurability().getKind());
+        assertEquals(History.Kind.KEEP_LAST, reader.getHistory().getKind());
+        assertEquals(1, reader.getHistory().getDepth());
+        // The DataWriter default is RELIABLE.
+        DataWriterQos writer = DataWriterQosImpl.defaults(ENV);
+        assertEquals(Reliability.Kind.RELIABLE, writer.getReliability().getKind());
     }
 
     @Test
     void qosCompatibilityReliableReaderRequiresReliableWriter() {
-        QosProfile reliableReader = new QosProfile(
-                Reliability.RELIABLE_DEFAULT, Durability.VOLATILE, History.KEEP_LAST_10);
-        QosProfile bestEffortWriter = new QosProfile(
-                Reliability.BEST_EFFORT_DEFAULT, Durability.VOLATILE, History.KEEP_LAST_10);
-        QosProfile reliableWriter = new QosProfile(
-                Reliability.RELIABLE_DEFAULT, Durability.VOLATILE, History.KEEP_LAST_10);
-        assertFalse(reliableReader.isCompatibleWith(bestEffortWriter));
-        assertTrue(reliableReader.isCompatibleWith(reliableWriter));
+        // DDS 1.2 §7.1.3.6: the offered RELIABILITY must be at least the
+        // requested one.
+        PolicyFactoryImpl pf = (PolicyFactoryImpl) policyFactory();
+        DataReaderQos reliableReader = DataReaderQosImpl.defaults(ENV).withPolicy(
+                pf.DataReaderReliability().withReliable());
+        DataWriterQos bestEffortWriter = DataWriterQosImpl.defaults(ENV).withPolicy(
+                pf.DataWriterReliability().withBestEffort());
+        DataWriterQos reliableWriter = DataWriterQosImpl.defaults(ENV).withPolicy(
+                pf.DataWriterReliability().withReliable());
+        assertFalse(QosCompatibility.isCompatible(
+                QosCompatibility.policiesOf(reliableReader),
+                QosCompatibility.policiesOf(bestEffortWriter)));
+        assertTrue(QosCompatibility.isCompatible(
+                QosCompatibility.policiesOf(reliableReader),
+                QosCompatibility.policiesOf(reliableWriter)));
+        // §7.1.4.1: the status names the refusing policy.
+        assertEquals(Reliability.class, QosCompatibility.incompatiblePolicyWith(
+                QosCompatibility.policiesOf(reliableReader),
+                QosCompatibility.policiesOf(bestEffortWriter)));
     }
 
     @Test
     void historyDepthMustBeNonNegative() {
+        PolicyFactoryImpl pf = (PolicyFactoryImpl) policyFactory();
         assertThrows(IllegalArgumentException.class,
-                () -> new History(History.Kind.KEEP_LAST, -1));
+                () -> pf.History().withDepth(-1));
     }
 }

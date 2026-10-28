@@ -1,0 +1,8 @@
+// `@autoid(HASH)` — every member's id from its name, not its position
+// XTypes 1.3 §7.3.1.2.1.1. Under `@mutable` the ids are the EMHEADERs.
+@autoid(HASH)
+@mutable struct Sample {
+    long alpha;
+    double beta;
+    short gamma;
+};

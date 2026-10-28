@@ -11,7 +11,7 @@ Caller-Aufgabe, ebenso TLS (`wss://`) und Extension-Negotiation.
 
 Implementation:
 
-- `crates/websocket-bridge/` — Base Framing Protocol (§5.2 + §5.3) als pure-Rust no_std+alloc Library, 3 Module, 32 Tests grün.
+- `crates/websocket-bridge/` — Base Framing Protocol (§5.2 + §5.3), Handshake (§4), Message-Layer (§6), Close-State-Machine (§7) und Extension-Negotiation (§9) als pure-Rust no_std+alloc Library.
 
 ---
 
@@ -57,13 +57,13 @@ explizit rejected (Spec §3); Query-String wird abgespalten;
 IPv4-Hostnames + DNS-Names; IPv6-Literale [::1] sind
 Caller-Layer (RFC 6874).
 
-**Tests:** `uri::tests::*` (13 Tests) inkl. parses_basic_ws_uri,
+**Tests:** `crates/websocket-bridge/src/uri.rs::tests::{parses_basic_ws_uri,
 parses_basic_wss_uri, parses_explicit_port, parses_query_string,
 parses_default_path_when_missing, rejects_unknown_scheme,
 rejects_missing_host, rejects_missing_host_before_port,
 rejects_invalid_port, rejects_fragment, default_port_returns_443_for_wss,
 resource_name_combines_path_and_query, resource_name_without_query_is_path,
-is_local_loopback_recognizes_localhost.
+is_local_loopback_recognizes_localhost}` (14).
 
 **Status:** done — URI-Scheme-Parser live.
 
@@ -81,7 +81,16 @@ Sec-WebSocket-Accept = SHA-1(key + MAGIC) base64, etc.).
 parse_client_request, build_server_response,
 render_server_response}`.
 
-**Tests:** Inline.
+**Tests:** `crates/websocket-bridge/src/handshake.rs::tests::{rfc6455_section_1_3_accept_test_vector,
+parses_minimal_client_handshake, parses_protocols_and_extensions,
+rejects_missing_upgrade, rejects_wrong_version, rejects_missing_key,
+server_response_includes_accept,
+server_agrees_to_no_extension_it_cannot_perform,
+server_selects_no_subprotocol_it_does_not_support,
+render_server_response_format, base64_round_trip_known_vectors,
+sha1_known_vector_abc, connection_header_with_keep_alive_still_detects_upgrade}`
+— `rfc6455_section_1_3_accept_test_vector` prüft den Sec-WebSocket-Accept-
+Testvektor der Spec (SHA-1 aus Key + GUID, base64).
 
 **Status:** done
 
@@ -91,11 +100,19 @@ render_server_response}`.
 
 ### §5.1 Overview
 
-**Spec:** §5.1, S. 27 — Bidirektionale Frames.
+**Spec:** §5.1, S. 27 — „The client MUST mask all frames that it sends
+to the server. […] The server MUST close the connection upon receiving
+a frame that is not masked. […] A server MUST NOT mask any frames that
+it sends to the client. A client MUST close a connection if it detects
+a masked frame."
 
-**Repo:** Cross-Ref §5.2.
+**Repo:** `crates/websocket-bridge/src/masking.rs::{Role,
+MaskingViolation, validate_masking}` — prüft ein empfangenes Frame
+gegen die Richtungsregel und liefert für den Verstoß den Close-Code
+1002 (`MaskingViolation::close_code`).
 
-**Tests:** —
+**Tests:** `crates/websocket-bridge/src/masking.rs::tests::client_masks_and_server_does_not_per_spec_5_1`,
+`crates/websocket-bridge/src/masking.rs::tests::masking_violation_fails_the_connection_with_1002`.
 
 **Status:** done
 
@@ -237,20 +254,29 @@ Ping frame being replied to."
 **Repo:** `crates/websocket-bridge/src/frame.rs::Frame::pong`
 (opcode 0xA).
 
-**Tests:** Cross-Ref §5.5.2 (`codec::tests::ping_frame_round_trip`
-deckt beide Opcodes); zusätzlich `codec::tests::pong_frame_round_trip`
-falls vorhanden.
+**Tests:** `crates/websocket-bridge/src/codec.rs::tests::pong_frame_round_trip`,
+`crates/websocket-bridge/src/codec.rs::tests::pong_carries_the_application_data_of_the_ping_it_answers`.
 
-**Status:** done — Wire-Format korrekt; Pong-Payload-Identitäts-
-Pflicht ist Caller-Layer (Connection-Logic).
+**Status:** done — Wire-Format + Payload-Identität Ping→Pong belegt;
+wann ein Pong gesendet wird, entscheidet die Connection-State-Machine
+des Callers.
 
 ### §5.6 Data Frames
 
-**Spec:** §5.6, S. 38 — Text (UTF-8) + Binary.
+**Spec:** §5.6, S. 38 — „Data frames (e.g., non-control frames) are
+identified by opcodes where the most significant bit of the opcode is
+0." Text-Frame (0x1): Payload ist UTF-8-Text; Binary-Frame (0x2):
+Payload ist beliebige Binärdaten.
 
-**Repo:** `Frame::text` + `Frame::binary`.
+**Repo:** `crates/websocket-bridge/src/frame.rs::{Frame, Opcode}` —
+`Frame::text`/`Frame::binary`; `Opcode::is_control` trennt Daten- von
+Control-Frames über das MSB.
 
-**Tests:** Cross-Ref alle Round-Trip-Tests.
+**Tests:** `crates/websocket-bridge/src/frame.rs::tests::{data_frame_opcodes_have_msb_zero_per_spec_5_6,
+text_and_binary_data_frames_carry_their_payload_unchanged,
+text_frame_constructor_sets_fin_and_opcode}`;
+`crates/websocket-bridge/src/codec.rs::tests::{round_trip_unmasked_text,
+round_trip_medium_and_large_payloads}`.
 
 **Status:** done — UTF-8-Validierung von Text-Frames ist
 Caller-Aufgabe (Codec-API ist `Vec<u8>`-basiert, keine UTF-8-Pflicht).
@@ -327,7 +353,7 @@ fragment_send_then_reassemble_round_trip}`.
 [...] After receiving such a frame, the other endpoint sends a Close
 frame in response, if it hasn't already sent one."
 
-**Repo:** Close-Frame-Codec via `frame.rs::Frame::close` +
+**Repo:** Close-Frame-Codec via `crates/websocket-bridge/src/frame.rs::Frame::close` +
 `close.rs::{CloseHandshake, CloseState}` State-Machine mit Open →
 ClosingInitiator/ClosingResponder → Closed/Failed Transitions.
 Operations: `initiator_send_close`, `recv_close_response`,
@@ -362,8 +388,8 @@ Failed` mit `failure_reason`-Tracking.
 **Repo:** `close.rs::CloseState::Closed` als Final-State; `is_closed()`
 unterscheidet Closed vs. Failed.
 
-**Tests:** `close::tests::{initiator_recv_close_response_transitions_to_closed,
-responder_send_close_response_completes_normally}`.
+**Tests:** `crates/websocket-bridge/src/close.rs::tests::initiator_recv_close_response_transitions_to_closed`,
+`crates/websocket-bridge/src/close.rs::tests::responder_send_close_response_completes_normally`.
 
 **Status:** done — Normal-Closure-State-Tracking ausgewiesen.
 
@@ -411,14 +437,20 @@ Codepoints (U+D800..=U+DFFF), Overlong-Encoding, Codepoints
 4-Byte-Puffer für fragmentierte Text-Frames (Spec §6.2 — FIN=0
 Continuation-Frames).
 
-**Tests:** `utf8::tests::*` (16 Tests) inkl. valid_2/3/4_byte_codepoint,
-rejects_overlong_2_byte_for_ascii, rejects_unexpected_continuation_byte,
-rejects_invalid_lead_byte, rejects_truncated_*, rejects_invalid_continuation,
-rejects_surrogate_codepoint, rejects_codepoint_above_max,
-streaming_handles_split_codepoint, streaming_finalize_with_pending_is_truncated,
-streaming_complete_codepoint_in_one_chunk.
+**Tests:** `crates/websocket-bridge/src/utf8.rs::tests::{empty_is_valid,
+ascii_is_valid, valid_2_byte_codepoint, valid_3_byte_codepoint,
+valid_4_byte_codepoint, rejects_overlong_2_byte_for_ascii,
+rejects_unexpected_continuation_byte, rejects_invalid_lead_byte,
+rejects_truncated_2_byte, rejects_truncated_3_byte,
+rejects_invalid_continuation, rejects_surrogate_codepoint,
+rejects_codepoint_above_max, streaming_handles_split_codepoint,
+streaming_finalize_with_pending_is_truncated,
+streaming_complete_codepoint_in_one_chunk}` (16); der Fail-the-Connection-
+Pfad mit Close-Code 1007:
+`crates/websocket-bridge/src/message.rs::tests::client_fails_connection_with_1007_on_malformed_utf8_from_server`.
 
-**Status:** done — Strict-UTF-8-Validation + Streaming-Variante live.
+**Status:** done — Strict-UTF-8-Validation + Streaming-Variante +
+Close-Code-1007-Pfad live.
 
 ### §8.2 Handling Errors in UTF-8 from the Client
 
@@ -426,13 +458,19 @@ streaming_complete_codepoint_in_one_chunk.
 the client that contains malformed UTF-8 data [...] the server MUST
 fail the WebSocket Connection."
 
-**Repo:** Symmetrisch zu §8.1 — gleicher Validator
-`crates/websocket-bridge/src/utf8.rs::validate`. Server- und Client-
-Pfad nutzen denselben Codec.
+**Repo:** Derselbe Validator `crates/websocket-bridge/src/utf8.rs::validate`
+für beide Richtungen; das Fail-the-Connection-Verhalten in
+`crates/websocket-bridge/src/message.rs::ReceiveError::{close_code,
+close_frame}` bildet den UTF-8-Fehler auf Close-Code 1007
+(`CloseCode::InvalidPayloadData`, Spec §7.4.1) ab.
 
-**Tests:** Cross-Ref §8.1.
+**Tests:** `crates/websocket-bridge/src/message.rs::tests::{server_fails_connection_with_1007_on_malformed_utf8_from_client,
+malformed_utf8_split_across_continuation_frames_still_yields_1007,
+receive_error_close_codes_match_spec_7_4_1}`.
 
-**Status:** done — symmetrisch zu §8.1.
+**Status:** done — maskiertes Client-Text-Frame mit defektem UTF-8
+schließt die Verbindung mit 1007, auch über Continuation-Frames
+hinweg.
 
 ### §9 Extensibility
 
@@ -448,15 +486,28 @@ parse_extensions, parse_subprotocols, select_subprotocol,
 SUBPROTOCOL_HEADER, EXTENSIONS_HEADER}` (generic Extension- +
 Subprotocol-Negotiation-Framework).
 
-**Tests:** `negotiation::tests::*` (12 Tests) + Inline-Tests in
-`permessage_deflate.rs`.
+**Tests:** `crates/websocket-bridge/src/negotiation.rs::tests::{parse_extensions_single,
+parse_extensions_with_param, parse_extensions_with_value_param,
+parse_extensions_strips_quoted_value, parse_extensions_multiple_offers,
+parse_extensions_empty_returns_empty, parse_subprotocols_basic,
+parse_subprotocols_empty_returns_empty, select_subprotocol_picks_first_match,
+select_subprotocol_returns_none_when_no_match,
+select_subprotocol_is_case_insensitive, header_constants_match_spec}` (12);
+`crates/websocket-bridge/src/permessage_deflate.rs::tests::{parse_no_params_yields_defaults,
+parse_no_takeover_flags, parse_window_bits, rejects_invalid_window_bits,
+rejects_unknown_param, rejects_boolean_with_value,
+render_default_is_bare_extension_name, render_includes_params,
+tail_round_trip, strip_tail_no_op_when_absent,
+parameterless_client_max_window_bits_accepted}` (11).
 
 **Status:** done — permessage-deflate + generic Extension-Listen-
 Parser + Subprotocol-Negotiation live.
 
 ---
 
-## §10 Security Considerations + §11 IANA + §12-§14 Misc
+## §10-§14 Security + IANA + Misc
+
+### §10 Security Considerations + §11 IANA + §12-§14 Misc
 
 **Spec:** §10-§14, S. 49-71 — Security-Hinweise, IANA-Tables,
 Acknowledgements.
@@ -473,7 +524,8 @@ Acknowledgements.
 
 23 done / 0 partial / 0 open / 3 n/a (informative) / 0 n/a (rejected).
 
-Test-Lauf: `cargo test -p zerodds-websocket-bridge` — 74 lib-Inline +
-4 Integration = 78 Tests grün, 0 failed. Module mit Tests: `close`,
-`codec`, `dds_bridge`, `frame`, `handshake`, `masking`,
-`permessage_deflate`.
+Test-Lauf: `cargo test -p zerodds-websocket-bridge` — 213 lib-Inline +
+29 Integration = 242 Tests grün, 0 failed, 2 ignored (Interop-Tests gegen
+externe `websockets`-Python-Binaries). Module mit Tests: `close`, `codec`,
+`daemon`, `dds_bridge`, `frame`, `handshake`, `masking`, `message`,
+`negotiation`, `permessage_deflate`, `uri`, `utf8`.

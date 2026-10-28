@@ -101,6 +101,35 @@ impl<W: std::io::Write> RecordWriter<W> {
     /// Returns [`WriteError::HeaderMissing`] if `write_header`
     /// has not been called yet, or [`WriteError::OutOfRangeIdx`] if
     /// `participant_idx`/`topic_idx` fall outside the header range.
+    /// Adds a topic to the index and records that it was added.
+    ///
+    /// Answers the new topic's index. Frames may use it from here on;
+    /// a reader replays the additions in order and arrives at the same
+    /// index for the same topic.
+    ///
+    /// # Errors
+    /// [`WriteError::HeaderMissing`] before `write_header`, because the
+    /// addition is relative to a list that has to exist first.
+    pub fn add_topic(&mut self, topic: &crate::format::TopicEntry) -> Result<u32, WriteError> {
+        if !self.header_written {
+            return Err(WriteError::HeaderMissing);
+        }
+        let mut buf = Vec::new();
+        crate::format::TopicAdd {
+            topic: topic.clone(),
+        }
+        .write(&mut buf);
+        self.sink.write_all(&buf)?;
+        self.bytes_written += buf.len() as u64;
+        let index = self.topics_count;
+        self.topics_count += 1;
+        Ok(index)
+    }
+
+    /// Writes one sample frame.
+    ///
+    /// # Errors
+    /// See the description above.
     pub fn write_frame(&mut self, frame: &Frame) -> Result<(), WriteError> {
         if !self.header_written {
             return Err(WriteError::HeaderMissing);

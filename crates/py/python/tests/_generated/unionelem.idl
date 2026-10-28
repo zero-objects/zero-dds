@@ -1,0 +1,60 @@
+// SPDX-License-Identifier: Apache-2.0
+// Adversarial edge sweep: a union used AS a sequence element and AS a map
+// value, an enum used as a sequence element, a union with no `default:`
+// (pins the actual generated-codec behaviour for an unmatched
+// discriminator — it writes the discriminator alone and nothing after
+// it; the removed `zerodds.idl` decorator raised `ValueError` there
+// instead, a stricter check that has no equivalent in the generated
+// codec), and an aggregate of only empty/default-length collections.
+module u {
+  @final
+  union Elem switch (long) {
+    case 0: long n;
+    case 1: string s;
+    case 2: sequence<long> seq;
+    default: double f;
+  };
+
+  @final
+  union MapVal switch (long) {
+    case 0: long n;
+    case 1: string s;
+    default: double f;
+  };
+
+  @final
+  union Strict switch (long) {
+    case 0: long n;
+  };
+};
+
+module e {
+  enum Color {
+    RED,
+    GREEN,
+    BLUE
+  };
+
+  @final
+  struct UnionSeq {
+    sequence<u::Elem> items;
+  };
+
+  @final
+  struct UnionMap {
+    map<string, u::MapVal> m;
+  };
+
+  @final
+  struct EnumSeq {
+    sequence<Color> cs;
+  };
+
+  @final
+  struct Empties {
+    sequence<long> seq;
+    string s;
+    wstring ws;
+    map<string, long> m;
+  };
+};

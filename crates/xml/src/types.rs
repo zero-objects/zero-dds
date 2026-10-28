@@ -4,7 +4,7 @@
 //!
 //! Element value parsers for boolean, hex/decimal long, Duration_t,
 //! and the symbol constants `LENGTH_UNLIMITED`, `DURATION_INFINITE_SEC`
-//! and `DURATION_INFINITE_NSEC` from §7.2.2.
+//! and `DURATION_INFINITE_NSEC` from §7.2.2.1.
 //!
 //! All helpers are pure string -> typed-value conversions without
 //! allocation, where possible.
@@ -13,31 +13,31 @@ use crate::errors::XmlError;
 use alloc::format;
 use alloc::string::ToString;
 
-/// Spec §7.2.2: `LENGTH_UNLIMITED` as a signed long, value `-1`.
+/// Spec §7.2.2.1: `LENGTH_UNLIMITED` as a signed long, value `-1`.
 ///
 /// Used in QoS policies (e.g. `<resource_limits><max_samples>`) as a
 /// "no limit" sentinel.
 pub const LENGTH_UNLIMITED: i32 = -1;
 
-/// Spec §7.2.2: `DURATION_INFINITE_SEC` = `0x7FFFFFFF` (max signed long).
+/// Spec §7.2.2.1: `DURATION_INFINITE_SEC` = `0x7FFFFFFF` (max signed long).
 pub const DURATION_INFINITE_SEC: i32 = 0x7FFF_FFFF;
 
-/// Spec §7.2.2: `DURATION_INFINITE_NSEC` = `0x7FFFFFFF`.
+/// Spec §7.2.2.1: `DURATION_INFINITE_NSEC` = `0x7FFFFFFF`.
 pub const DURATION_INFINITE_NSEC: u32 = 0x7FFF_FFFF;
 
-/// Spec §7.2.2: `DURATION_ZERO_SEC` = `0`.
+/// Spec §7.2.2.1: `DURATION_ZERO_SEC` = `0`.
 pub const DURATION_ZERO_SEC: i32 = 0;
 
-/// Spec §7.2.2: `DURATION_ZERO_NSEC` = `0`.
+/// Spec §7.2.2.1: `DURATION_ZERO_NSEC` = `0`.
 pub const DURATION_ZERO_NSEC: u32 = 0;
 
-/// Spec §7.2.2.6: `TIME_INVALID_SEC = -1`.
+/// Spec §7.2.2.1: `TIME_INVALID_SEC = -1`.
 ///
 /// Sentinel value for an "invalid" `Time_t.sec`. Used only for
 /// XML sample encoding (DDS timestamps in XML form).
 pub const TIME_INVALID_SEC: i32 = -1;
 
-/// Spec §7.2.2.7: `TIME_INVALID_NSEC = 0xFFFFFFFF`.
+/// Spec §7.2.2.1: `TIME_INVALID_NSEC = 0xFFFFFFFF`.
 pub const TIME_INVALID_NSEC: u32 = 0xFFFF_FFFF;
 
 /// `Duration_t` per DDS 1.4 §2.2.1.2 + DDS-XML 1.0 §7.2.6.
@@ -85,29 +85,25 @@ impl Duration {
     }
 }
 
-/// Boolean parser per Spec §7.1.4 Tab.7.1.
+/// Boolean parser per Spec §7.1.4 Table 7.1.
 ///
-/// Accepted values (all case-sensitive in the spec, we additionally
-/// accept the common uppercase spelling — Cyclone
-/// and FastDDS are tolerant here too):
-///
-/// * `true`, `TRUE`, `1` -> `true`
-/// * `false`, `FALSE`, `0` -> `false`
+/// "Yes: 1 or true. No: 0 or false. Values are case sensitive." The four
+/// spellings are the whole set; `TRUE` and `True` are not legal values.
 ///
 /// # Errors
 /// [`XmlError::ValueOutOfRange`] for any other string.
 pub fn parse_bool(s: &str) -> Result<bool, XmlError> {
     let t = s.trim();
     match t {
-        "1" | "true" | "TRUE" => Ok(true),
-        "0" | "false" | "FALSE" => Ok(false),
+        "1" | "true" => Ok(true),
+        "0" | "false" => Ok(false),
         _ => Err(XmlError::ValueOutOfRange(format!(
-            "boolean expected (true/false/1/0), got `{t}`"
+            "boolean expected (true/false/1/0, case-sensitive), got `{t}`"
         ))),
     }
 }
 
-/// Long parser (signed 32-bit) per Spec §7.1.4 Tab.7.1.
+/// Long parser (signed 32-bit) per Spec §7.1.4 Table 7.1.
 ///
 /// Accepts:
 /// * Decimal: `-2147483648..=2147483647`
@@ -126,7 +122,7 @@ pub fn parse_long(s: &str) -> Result<i32, XmlError> {
     if let Some(hex) = t.strip_prefix("0x").or_else(|| t.strip_prefix("0X")) {
         let v = u32::from_str_radix(hex, 16)
             .map_err(|e| XmlError::ValueOutOfRange(format!("hex long `{t}`: {e}")))?;
-        // Bit-pattern reinterpret: §7.1.4 Tab.7.1 allows
+        // Bit-pattern reinterpret: §7.1.4 Table 7.1 allows
         // 0x80000000..0xFFFFFFFF as a negative i32 (signed).
         return Ok(i32::from_ne_bytes(v.to_ne_bytes()));
     }
@@ -134,7 +130,7 @@ pub fn parse_long(s: &str) -> Result<i32, XmlError> {
         .map_err(|e| XmlError::ValueOutOfRange(format!("long `{t}`: {e}")))
 }
 
-/// Unsigned long parser (32-bit) per Spec §7.1.4 Tab.7.1.
+/// Unsigned long parser (32-bit) per Spec §7.1.4 Table 7.1.
 ///
 /// Accepts decimal `0..=4294967295` and hex `0x0..=0xFFFFFFFF`.
 ///
@@ -150,20 +146,25 @@ pub fn parse_ulong(s: &str) -> Result<u32, XmlError> {
         .map_err(|e| XmlError::ValueOutOfRange(format!("ulong `{t}`: {e}")))
 }
 
-/// Seconds value for `Duration_t.sec` per Spec §7.2.2 +
-/// the `nonNegativeInteger_Duration_SEC` pattern.
+/// Seconds value for `Duration_t.sec` per Spec §7.2.2.1.
 ///
-/// Accepts:
-/// * Decimal `0..=0x7FFFFFFF`.
-/// * Symbols `DURATION_INFINITY` and `DURATION_INFINITE_SEC` -> sentinel
+/// §7.2.2: a constant "can be used ... either given as a number or as the
+/// name of the constant". Accepts:
+/// * Decimal `0..=0x7FFFFFFF` (the `unsigned long` range of the field).
+/// * `DURATION_INFINITY` and `DURATION_INFINITE_SEC` -> sentinel
 ///   [`DURATION_INFINITE_SEC`].
+/// * `DURATION_ZERO_SEC` -> [`DURATION_ZERO_SEC`].
+/// * `TIME_INVALID_SEC` -> [`TIME_INVALID_SEC`].
 ///
 /// # Errors
 /// [`XmlError::ValueOutOfRange`] on negative values or overflow.
 pub fn parse_duration_sec(s: &str) -> Result<i32, XmlError> {
     let t = s.trim();
-    if t == "DURATION_INFINITY" || t == "DURATION_INFINITE_SEC" {
-        return Ok(DURATION_INFINITE_SEC);
+    match t {
+        "DURATION_INFINITY" | "DURATION_INFINITE_SEC" => return Ok(DURATION_INFINITE_SEC),
+        "DURATION_ZERO_SEC" => return Ok(DURATION_ZERO_SEC),
+        "TIME_INVALID_SEC" => return Ok(TIME_INVALID_SEC),
+        _ => {}
     }
     let v = t
         .parse::<i64>()
@@ -177,36 +178,33 @@ pub fn parse_duration_sec(s: &str) -> Result<i32, XmlError> {
     Ok(i32::try_from(v).unwrap_or(0))
 }
 
-/// Nanoseconds value for `Duration_t.nanosec` per Spec §7.2.2 +
-/// the `nonNegativeInteger_Duration_NSEC` pattern.
+/// Nanoseconds value for `Duration_t.nanosec` per Spec §7.2.2.1.
 ///
-/// Accepts:
-/// * Decimal `0..=999_999_999` (regular sub-second range).
-/// * Symbols `DURATION_INFINITY` and `DURATION_INFINITE_NSEC` -> sentinel
-///   [`DURATION_INFINITE_NSEC`].
+/// The pattern of §7.2.2.1 (`nonNegativeInteger_Duration_NSEC`) is
+/// `(DURATION_INFINITY|DURATION_INFINITE_NSEC|([0-9])*)?`, so the numeric
+/// form is any decimal up to the `unsigned long` field width. Accepts:
+/// * Decimal `0..=0xFFFFFFFF`.
+/// * `DURATION_INFINITY` and `DURATION_INFINITE_NSEC` -> sentinel
+///   [`DURATION_INFINITE_NSEC`] (= `0x7FFFFFFF`, which is also a legal
+///   plain value and reads identically).
+/// * `DURATION_ZERO_NSEC` -> [`DURATION_ZERO_NSEC`].
+/// * `TIME_INVALID_NSEC` -> [`TIME_INVALID_NSEC`].
 ///
 /// # Errors
-/// [`XmlError::ValueOutOfRange`] on a value > 999_999_999 (unless it is a
-/// sentinel).
+/// [`XmlError::ValueOutOfRange`] on a value that does not fit `u32`.
 pub fn parse_duration_nsec(s: &str) -> Result<u32, XmlError> {
     let t = s.trim();
-    if t == "DURATION_INFINITY" || t == "DURATION_INFINITE_NSEC" {
-        return Ok(DURATION_INFINITE_NSEC);
+    match t {
+        "DURATION_INFINITY" | "DURATION_INFINITE_NSEC" => return Ok(DURATION_INFINITE_NSEC),
+        "DURATION_ZERO_NSEC" => return Ok(DURATION_ZERO_NSEC),
+        "TIME_INVALID_NSEC" => return Ok(TIME_INVALID_NSEC),
+        _ => {}
     }
-    let v = t
-        .parse::<u32>()
-        .map_err(|e| XmlError::ValueOutOfRange(format!("duration_nsec `{t}`: {e}")))?;
-    // Spec range for regular values: 0..=999_999_999.
-    // Values above that are only allowed via the sentinel.
-    if v > 999_999_999 {
-        return Err(XmlError::ValueOutOfRange(format!(
-            "duration_nsec `{t}` exceeds 999_999_999"
-        )));
-    }
-    Ok(v)
+    t.parse::<u32>()
+        .map_err(|e| XmlError::ValueOutOfRange(format!("duration_nsec `{t}`: {e}")))
 }
 
-/// `positiveInteger_UNLIMITED` parser per Spec §7.2.2.9.
+/// `positiveInteger_UNLIMITED` parser per Spec §7.2.2.1.
 ///
 /// Pattern from the OMG spec: `(LENGTH_UNLIMITED|[1-9]([0-9])*)?`.
 /// Unlike [`parse_long`] / [`parse_ulong`], `0` is
@@ -306,7 +304,7 @@ pub fn parse_octet_sequence(s: &str) -> Result<alloc::vec::Vec<u8>, XmlError> {
     Ok(out)
 }
 
-/// Enum whitelist check per Spec §7.1.4 Tab.7.1 (enum values are
+/// Enum whitelist check per Spec §7.1.4 Table 7.1 (enum values are
 /// string literals from DCPS-IDL, *not* numeric).
 ///
 /// # Errors
@@ -349,16 +347,19 @@ mod tests {
     #[test]
     fn bool_true_variants() {
         assert!(parse_bool("true").expect("true"));
-        assert!(parse_bool("TRUE").expect("TRUE"));
         assert!(parse_bool("1").expect("1"));
         assert!(parse_bool("  true  ").expect("trim"));
+        // §7.1.4 Table 7.1: values are case sensitive.
+        assert!(parse_bool("TRUE").is_err());
+        assert!(parse_bool("True").is_err());
     }
 
     #[test]
     fn bool_false_variants() {
         assert!(!parse_bool("false").expect("false"));
-        assert!(!parse_bool("FALSE").expect("FALSE"));
         assert!(!parse_bool("0").expect("0"));
+        assert!(parse_bool("FALSE").is_err());
+        assert!(parse_bool("False").is_err());
     }
 
     #[test]
@@ -434,7 +435,7 @@ mod tests {
 
     #[test]
     fn duration_sec_overflow() {
-        // 0x80000000 ueberschreitet 0x7FFFFFFF.
+        // 0x80000000 exceeds 0x7FFFFFFF.
         let err = parse_duration_sec("2147483648").expect_err("overflow");
         assert!(matches!(err, XmlError::ValueOutOfRange(_)));
     }
@@ -461,9 +462,36 @@ mod tests {
     }
 
     #[test]
-    fn duration_nsec_out_of_range() {
-        let err = parse_duration_nsec("1000000000").expect_err("oor");
-        assert!(matches!(err, XmlError::ValueOutOfRange(_)));
+    fn duration_nsec_accepts_the_full_unsigned_long_range() {
+        // §7.2.2.1: nonNegativeInteger_Duration_NSEC accepts any decimal.
+        assert_eq!(
+            parse_duration_nsec("1000000000").expect("1e9"),
+            1_000_000_000
+        );
+        assert_eq!(
+            parse_duration_nsec("2147483647").expect("infinite nsec value"),
+            DURATION_INFINITE_NSEC
+        );
+        assert_eq!(
+            parse_duration_nsec("4294967295").expect("max u32"),
+            u32::MAX
+        );
+        assert!(matches!(
+            parse_duration_nsec("4294967296"),
+            Err(XmlError::ValueOutOfRange(_))
+        ));
+    }
+
+    #[test]
+    fn duration_accepts_the_named_constants() {
+        // §7.2.2.1 names the constants; each of them is a legal value.
+        assert_eq!(parse_duration_sec("DURATION_ZERO_SEC").expect("zero"), 0);
+        assert_eq!(parse_duration_sec("TIME_INVALID_SEC").expect("invalid"), -1);
+        assert_eq!(parse_duration_nsec("DURATION_ZERO_NSEC").expect("zero"), 0);
+        assert_eq!(
+            parse_duration_nsec("TIME_INVALID_NSEC").expect("invalid"),
+            u32::MAX
+        );
     }
 
     #[test]
@@ -517,7 +545,7 @@ mod tests {
 
     #[test]
     fn time_invalid_constants() {
-        // Spec §7.2.2.6 + §7.2.2.7.
+        // Spec §7.2.2.1.
         assert_eq!(TIME_INVALID_SEC, -1);
         assert_eq!(TIME_INVALID_NSEC, 0xFFFF_FFFF);
         // TIME_INVALID must be distinguishable from DURATION_INFINITE and
@@ -527,7 +555,7 @@ mod tests {
         assert_ne!(TIME_INVALID_SEC, DURATION_ZERO_SEC);
     }
 
-    // ---- §7.2.2.9 positiveInteger_UNLIMITED --------------------------
+    // ---- §7.2.2.1 positiveInteger_UNLIMITED --------------------------
 
     #[test]
     fn positive_unlimited_symbol_passes() {
@@ -602,7 +630,7 @@ mod tests {
 
     #[test]
     fn octet_sequence_mixed_decimal_and_hex() {
-        // Spec: "decimal or hexadecimal" — pro Element entscheidbar.
+        // Spec: "decimal or hexadecimal" — decidable per element.
         let bytes = parse_octet_sequence("1,0x02,3,0x04").expect("mixed");
         assert_eq!(bytes, alloc::vec![1, 2, 3, 4]);
     }

@@ -31,16 +31,28 @@ package body Deep_Reading is
       return Result (1 .. N);
    end Label_Str;
 
+   --  Read the wire core's answer instead of dropping it.
+   --
+   --  ZDW_OK is 0 and every other value is a refusal the core made
+   --  deliberately -- ZDW_E_OVERrun when the buffer had no room,
+   --  ZDW_E_INVALID for malformed input. A binding that assigns them to
+   --  an unread variable turns each one into a short frame.
+   procedure Must (Code : Interfaces.C.int) is
+   begin
+      if Code /= 0 then
+         raise Wire_Error;
+      end if;
+   end Must;
+
    function Marshal (R : Reading) return Frame_Store is
       FS  : Frame_Store;
       W   : aliased Zdw_Writer;
       Lbl : aliased Interfaces.C.char_array := R.Label;
-      Ign : Interfaces.C.int;
    begin
       Writer_Init (W'Access, FS.Data'Address, FS.Data'Length, ZDW_LE);
-      Ign := Put_U32 (W'Access, R.Id);
-      Ign := Put_F32 (W'Access, R.Value);
-      Ign := Put_String (W'Access, Lbl'Address);
+      Must (Put_U32 (W'Access, R.Id));
+      Must (Put_F32 (W'Access, R.Value));
+      Must (Put_String (W'Access, Lbl'Address));
       FS.Len := Natural (W.Len);
       return FS;
    end Marshal;
@@ -51,32 +63,43 @@ package body Deep_Reading is
       R    : Reading;
       VId  : aliased Interfaces.C.unsigned_long;
       VVal : aliased Interfaces.C.C_float;
-      Ign  : Interfaces.C.int;
    begin
       Reader_Init (Rd'Access, D'Address, Interfaces.C.size_t (D'Length), ZDW_LE);
-      Ign := Get_U32 (Rd'Access, VId'Access);
+      Must (Get_U32 (Rd'Access, VId'Access));
       R.Id := VId;
-      Ign := Get_F32 (Rd'Access, VVal'Access);
+      Must (Get_F32 (Rd'Access, VVal'Access));
       R.Value := VVal;
-      Ign := Get_String (Rd'Access, R.Label'Address, Label_Cap);
+      Must (Get_String (Rd'Access, R.Label'Address, Label_Cap));
       return R;
    end Unmarshal;
 
-   function Frame (Seq : Interfaces.Unsigned_16; Body_FS : Frame_Store)
-                   return Frame_Store is
+   function Frame (Seq : Interfaces.Unsigned_16;
+                   Object_Id : Interfaces.Unsigned_16;
+                   Body_FS : Frame_Store) return Frame_Store is
       FS : Frame_Store;
-      N  : constant Natural := Body_FS.Len;
+      N  : constant Natural := Base_Size + Body_FS.Len;
    begin
+      if N > Max_Frame - 8 then
+         raise Body_Too_Large;
+      end if;
       FS.Data (0) := 16#80#;  -- session: no-key
       FS.Data (1) := 16#01#;  -- stream: best-effort
       FS.Data (2) := Byte (Seq and 16#FF#);
       FS.Data (3) := Byte (Shift_Right (Seq, 8) and 16#FF#);
       FS.Data (4) := 16#07#;  -- submessage: WRITE_DATA
-      FS.Data (5) := 16#03#;
+      --  E flag (little-endian body) + DataFormat FORMAT_DATA (0b000) in bits
+      --  1..3 -- DDS-XRCE 1.0 8.3.5.8.
+      FS.Data (5) := 16#01#;
       FS.Data (6) := Byte (Unsigned_16 (N) and 16#FF#);
       FS.Data (7) := Byte (Shift_Right (Unsigned_16 (N), 8) and 16#FF#);
-      for I in 0 .. N - 1 loop
-         FS.Data (8 + I) := Body_FS.Data (I);
+      --  BaseObjectRequest (7.7.8): RequestId then ObjectId, most significant
+      --  octet first.
+      FS.Data (8)  := Byte (Shift_Right (Seq, 8) and 16#FF#);
+      FS.Data (9)  := Byte (Seq and 16#FF#);
+      FS.Data (10) := Byte (Shift_Right (Object_Id, 8) and 16#FF#);
+      FS.Data (11) := Byte (Object_Id and 16#FF#);
+      for I in 0 .. Body_FS.Len - 1 loop
+         FS.Data (8 + Base_Size + I) := Body_FS.Data (I);
       end loop;
       FS.Len := 8 + N;
       return FS;
@@ -98,15 +121,15 @@ package body Deep_Reading is
       Sm_Len : Natural;
    begin
       FS.Len := 0;
-      if F.Len >= 8
+      if F.Len >= 8 + Base_Size
         and then (F.Data (4) = 16#07# or else F.Data (4) = 16#09#)
       then
          Sm_Len := Natural (F.Data (6)) + Natural (F.Data (7)) * 256;
-         if 8 + Sm_Len <= F.Len then
-            for I in 0 .. Sm_Len - 1 loop
-               FS.Data (I) := F.Data (8 + I);
+         if Sm_Len >= Base_Size and then 8 + Sm_Len <= F.Len then
+            for I in 0 .. Sm_Len - Base_Size - 1 loop
+               FS.Data (I) := F.Data (8 + Base_Size + I);
             end loop;
-            FS.Len := Sm_Len;
+            FS.Len := Sm_Len - Base_Size;
          end if;
       end if;
       return FS;

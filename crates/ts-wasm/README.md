@@ -1,9 +1,15 @@
 # @zerodds/wasm — ZeroDDS WASM bindings
 
-WASM bindings over `zerodds-cdr` (XCDR1/XCDR2 codec) to JS/TS via
-`wasm-bindgen`, plus a TypeScript DCPS-over-WebSocket runtime, for browser and
-Node WASM environments. Published as the `@zerodds/wasm` npm package
-(`dist/index.js` combines the wasm codec glue with the DCPS layer).
+WASM bindings over `zerodds-wire` (the Rust reference XCDR1/XCDR2 codec,
+`crates/wire`) to JS/TS via `wasm-bindgen`, plus a TypeScript
+DCPS-over-WebSocket runtime, for browser and Node WASM environments.
+`CdrEncoder`/`CdrDecoder` are `zerodds-wire`'s `Writer`/`Reader` — the same
+runtime the generated Rust encoders call — and not a second, hand-written
+codec (an earlier `src/cdr/` TypeScript copy of one was removed; it had
+drifted from the spec — XTypes 1.3 §7.4.3.4.2's EMHEADER length code 3 with a
+NEXTINT for a variable-length `@mutable` member, which desyncs a conformant
+reader). Published as the `@zerodds/wasm` npm package (`dist/index.js`
+combines the wasm codec glue with the DCPS layer).
 
 ## Scope
 
@@ -12,7 +18,6 @@ Node WASM environments. Published as the `@zerodds/wasm` npm package
 - `CdrDecoder` — reads primitives, strings
 - LE/BE endianness via 0/1 constants
 - alignment for XCDR1-conform padding
-- KeyHash computation (XTypes 1.3 §7.6.8)
 - DDS-TS 1.0 vendor-spec-conform TS PSM (see
   `documentation/specs/dds-ts-1.0/`)
 - **DDS-TS 1.0 Annex C WASM-Bindings Profile** — a browser DCPS runtime
@@ -30,6 +35,9 @@ Node WASM environments. Published as the `@zerodds/wasm` npm package
   layer here is the browser-side client of that bridge.
 - RTPS wire decode in the browser — theoretically possible, but without
   a UDP path rarely useful.
+- KeyHash computation (XTypes 1.3 §7.6.8) — the removed `src/cdr/` carried
+  one; `zerodds-wire` has none to wrap, so this is an open gap rather than a
+  reintroduced local copy of the removed codec.
 
 ## Build
 

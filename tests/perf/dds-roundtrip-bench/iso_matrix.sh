@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# Isolated Cross-Vendor-Matrix mit Process+Domain-Isolation pro Cell.
+# Isolated cross-vendor matrix with process+domain isolation per cell.
 #
-# Architektur (inspiriert von Apex.AI performance_test):
-# - Pro Cell ein FRISCHER bash-Sub-Prozess via `( ... )` Sub-Shell
-# - Pro Cell eigene Domain-ID (unique pro Cell, kein Discovery-Leak)
-# - Raw-CSV pro Cell mit allen Samples (Quantile offline)
-# - 8s settle nach jedem Cell (TIME_WAIT-Cleanup)
-# - Pre-Cell-Verify: keine $vendor-roundtrip Prozesse mehr offen
+# Architecture (inspired by Apex.AI performance_test):
+# - Per cell a FRESH bash subprocess via a `( ... )` subshell
+# - Per cell its own domain ID (unique per cell, no discovery leak)
+# - Raw CSV per cell with all samples (quantiles offline)
+# - 8s settle after each cell (TIME_WAIT cleanup)
+# - Pre-cell verify: no $vendor-roundtrip processes left open
 #
-# Erwartet: <5% timeout-Rate, <5% CV im steady-state.
+# Expected: <5% timeout rate, <5% CV in the steady state.
 #
-# Aufruf:
+# Usage:
 #   iso_matrix.sh <out_dir> [N=3] [PAYLOADS="0 1638 4096 8192"] [VENDORS="zerodds cyclone fastdds rti"]
 set -u
 
@@ -27,10 +27,10 @@ read -r -a VENDORS <<<"$VENDORS_STR"
 SAMPLES=2000
 WARMUP=200
 SETTLE_BETWEEN_CELLS=8
-# Domain wird mod 100 vergeben (Range 100-199). RTPS port-mapping
-# limitiert domain_id auf <232. 192 cells passt in 100 wenn wir
-# modulo nehmen — Discovery-Isolation reicht trotzdem weil je
-# 100 cells dazwischen liegen und Settle die alten sockets cleant.
+# The domain is assigned mod 100 (range 100-199). RTPS port mapping
+# limits domain_id to <232. 192 cells fit into 100 if we
+# take the modulo — discovery isolation is still sufficient because
+# 100 cells lie in between each time and the settle cleans up the old sockets.
 DOMAIN_BASE=100
 DOMAIN_RANGE=100
 
@@ -38,7 +38,7 @@ mkdir -p "$OUT_DIR"
 CSV="$OUT_DIR/iso_matrix.csv"
 echo "ping,pong,payload,run,domain,p50,p99,p999,max,status" > "$CSV"
 
-# ------ Env-Setup ------
+# ------ Env setup ------
 : "${NDDSHOME:=$HOME/y/rti_connext_dds-7.7.0}"
 [ -d "$NDDSHOME" ] || NDDSHOME=/opt/rti.com/rti_connext_dds-7.7.0
 : "${RTI_LICENSE_FILE:=$NDDSHOME/rti_license.dat}"
@@ -51,24 +51,47 @@ elif [ "$(uname)" = Darwin ]; then
     export DYLD_LIBRARY_PATH
 fi
 
-cd "$BUILD_DIR" || { echo "build dir fehlt: $BUILD_DIR" >&2; exit 1; }
+cd "$BUILD_DIR" || { echo "build dir missing: $BUILD_DIR" >&2; exit 1; }
 for v in "${VENDORS[@]}"; do
-    [ -x "./${v}-roundtrip" ] || { echo "Binary fehlt: ${v}-roundtrip" >&2; exit 1; }
+    [ -x "./${v}-roundtrip" ] || { echo "Binary missing: ${v}-roundtrip" >&2; exit 1; }
 done
 
-# Cleanup ALLEN vendor-binaries vor jedem cell + Verify (max 5s wait)
+# Count running instances of one vendor's roundtrip binary.
+#
+# NOT `pgrep -x`: that matches against `comm`, which the kernel truncates
+# to 15 characters (TASK_COMM_LEN - 1). `zerodds-roundtrip`,
+# `cyclone-roundtrip`, `fastdds-roundtrip` and `opendds-roundtrip` are all
+# 17, so `-x` matched none of them, ever — `verify_clean` reported a clean
+# host while a previous cell's processes were still competing for the CPU
+# it was about to measure, and the `pkill -x` beside it killed nothing
+# either. Only `rti-roundtrip` (13) was ever seen.
+#
+# The fix uses the very property that caused the bug: match against `comm`
+# as `-x` does, but with the name already truncated the way the kernel
+# truncates it. `-f` was the obvious alternative and is worse here — it
+# matches the full command line, so any shell whose arguments happen to
+# contain the pattern counts as a hit, including the one asking. This
+# form cannot find its own caller.
+COMM_MAX=15
+count_roundtrip() {
+    local name="$1-roundtrip"
+    pgrep -x "${name:0:$COMM_MAX}" 2>/dev/null | wc -l | tr -d ' '
+}
+
+# Clean up ALL vendor binaries before each cell + verify (max 5s wait)
 verify_clean() {
     local tries=0
     while [ $tries -lt 10 ]; do
         local count=0
         for bin in "${VENDORS[@]}"; do
             local c
-            c=$(pgrep -x "${bin}-roundtrip" 2>/dev/null | wc -l | tr -d ' ')
+            c=$(count_roundtrip "$bin")
             count=$((count + c))
         done
         if [ "$count" -eq 0 ]; then return 0; fi
         for bin in "${VENDORS[@]}"; do
-            pkill -9 -x "${bin}-roundtrip" 2>/dev/null
+            local name="${bin}-roundtrip"
+            pkill -9 -x "${name:0:$COMM_MAX}" 2>/dev/null
         done
         sleep 0.5
         tries=$((tries + 1))
@@ -77,7 +100,7 @@ verify_clean() {
     return 1
 }
 
-# Pro Cell: fresh sub-shell + eigene Domain + complete process tree teardown.
+# Per cell: fresh subshell + own domain + complete process tree teardown.
 run_cell() {
     local ping=$1 pong=$2 payload=$3 run=$4 cell_idx=$5
     local domain=$((DOMAIN_BASE + (cell_idx % DOMAIN_RANGE)))
@@ -88,7 +111,7 @@ run_cell() {
 
     verify_clean || true
 
-    # Vendor-spezifische CLI-Args (OpenDDS braucht -DCPSConfigFile).
+    # Vendor-specific CLI args (OpenDDS needs -DCPSConfigFile).
     local pong_args=""
     local ping_args=""
     if [ "$pong" = "opendds" ]; then
@@ -98,22 +121,22 @@ run_cell() {
         ping_args="-DCPSConfigFile $BENCH_DIR/opendds_rtps.ini"
     fi
 
-    # === Sub-Shell: alles passiert in eigenem Sub-Process ===
+    # === Subshell: everything happens in its own subprocess ===
     (
         export ZERODDS_BENCH_DOMAIN="$domain"
         # shellcheck disable=SC2086
         ./"${pong}-roundtrip" pong 60 $pong_args >"$pong_log" 2>&1 &
         local pp=$!
-        # Vendor-spezifische discovery delays — pong-side
+        # Vendor-specific discovery delays — pong side
         case "$pong" in
             fastdds) sleep 8 ;;
             opendds) sleep 10 ;;
             rti)     sleep 6 ;;
             *)       sleep 4 ;;
         esac
-        # Vendor-spezifischer ping timeout. RTI-Init braucht auf arm-host
-        # ~10-15s + Discovery vom pong; mit 90s total reicht das knapp
-        # nicht. OpenDDS auch. Andere bleiben bei 90s.
+        # Vendor-specific ping timeout. RTI init needs ~10-15s on arm-host
+        # + discovery from the pong; with 90s in total that is just
+        # not enough. OpenDDS too. Others stay at 90s.
         local ping_timeout=90
         case "$ping" in
             rti)     ping_timeout=120 ;;
@@ -132,7 +155,7 @@ run_cell() {
     local LINE
     LINE=$(grep "payload=" "$ping_log" 2>/dev/null | head -1)
 
-    # Post-cell: warten bis Sockets cleaned
+    # Post-cell: wait until sockets are cleaned up
     sleep "$SETTLE_BETWEEN_CELLS"
 
     if [ -z "$LINE" ]; then
@@ -145,7 +168,7 @@ run_cell() {
     p99=$(echo "$LINE" | grep -oE 'p99=[0-9.]+' | cut -d= -f2)
     p999=$(echo "$LINE" | grep -oE 'p999=[0-9.]+' | cut -d= -f2)
     mx=$(echo "$LINE" | grep -oE 'max=[0-9.]+' | cut -d= -f2)
-    # Ghost-Filter: p50 < 5 µs = bench-race-artifact (Loopback-Floor ist ~25µs)
+    # Ghost filter: p50 < 5 µs = bench race artifact (loopback floor is ~25µs)
     if awk "BEGIN{exit !(${p50:-0} < 5)}"; then
         echo "[cell $cell_idx $ping → $pong p=$payload run=$run dom=$domain] GHOST (p50=$p50)"
         echo "$ping,$pong,$payload,$run,$domain,0,,,,ghost" >> "$CSV"
@@ -170,6 +193,6 @@ for payload in "${PAYLOADS[@]}"; do
 done
 elapsed=$(( $(date +%s) - started ))
 echo
-echo "ISO-Matrix fertig in $((elapsed/60)) min $((elapsed%60)) s, $cell_idx cells."
+echo "ISO matrix done in $((elapsed/60)) min $((elapsed%60)) s, $cell_idx cells."
 echo "CSV: $CSV"
-echo "Per-Cell-Logs: $OUT_DIR/cells/"
+echo "Per-cell logs: $OUT_DIR/cells/"

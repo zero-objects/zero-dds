@@ -67,6 +67,13 @@ pub mod plugin_attrs {
     pub const IS_SUBMESSAGE_ORIGIN_AUTHENTICATED: u32 = 0x0000_0004;
 }
 
+/// Compares two security masks (DDS-Security 1.2 §7.3.23, §7.3.24): equal,
+/// unless the `valid` bit is zero in either, then not compared.
+#[must_use]
+pub(crate) const fn masks_compatible(local: u32, remote: u32, valid: u32) -> bool {
+    (local & valid) == 0 || (remote & valid) == 0 || local == remote
+}
+
 // ============================================================================
 // EndpointSecurityInfo-Struct
 // ============================================================================
@@ -96,6 +103,27 @@ impl EndpointSecurityInfo {
     pub const fn is_valid(&self) -> bool {
         (self.endpoint_security_attributes & attrs::IS_VALID) != 0
             && (self.plugin_endpoint_security_attributes & plugin_attrs::IS_VALID) != 0
+    }
+
+    /// Whether two endpoints have a compatible configuration (DDS-Security
+    /// 1.2 §7.3.24): the same value for both masks, except that a mask whose
+    /// `IS_VALID` bit is zero on either side is not compared. Without the
+    /// parameter (`None`, the default `{0, 0}` has `IS_VALID` zero) nothing is
+    /// compared.
+    #[must_use]
+    pub fn is_compatible_with(&self, other: Option<&Self>) -> bool {
+        let Some(other) = other else {
+            return true;
+        };
+        masks_compatible(
+            self.endpoint_security_attributes,
+            other.endpoint_security_attributes,
+            attrs::IS_VALID,
+        ) && masks_compatible(
+            self.plugin_endpoint_security_attributes,
+            other.plugin_endpoint_security_attributes,
+            plugin_attrs::IS_VALID,
+        )
     }
 
     /// Builder for a "plain legacy" endpoint (all bits 0 except
@@ -198,6 +226,31 @@ impl EndpointSecurityInfo {
 mod tests {
     #![allow(clippy::expect_used, clippy::unwrap_used)]
     use super::*;
+
+    /// DDS-Security 1.2 §7.3.24: compatible means the same value of both
+    /// masks; a mask without `IS_VALID` on either side is not compared.
+    #[test]
+    fn endpoint_compatibility_is_equality_of_the_valid_masks() {
+        let a = EndpointSecurityInfo {
+            endpoint_security_attributes: attrs::IS_VALID | attrs::IS_SUBMESSAGE_PROTECTED,
+            plugin_endpoint_security_attributes: plugin_attrs::IS_VALID
+                | plugin_attrs::IS_SUBMESSAGE_ENCRYPTED,
+        };
+        assert!(a.is_compatible_with(Some(&a)));
+        let mut payload_too = a;
+        payload_too.endpoint_security_attributes |= attrs::IS_PAYLOAD_PROTECTED;
+        assert!(!a.is_compatible_with(Some(&payload_too)));
+        let mut sign_only = a;
+        sign_only.plugin_endpoint_security_attributes &= !plugin_attrs::IS_SUBMESSAGE_ENCRYPTED;
+        assert!(!a.is_compatible_with(Some(&sign_only)));
+        // The default and a missing info are not compared.
+        assert!(a.is_compatible_with(Some(&EndpointSecurityInfo::default())));
+        assert!(a.is_compatible_with(None));
+        // The valid bit itself differing is no difference.
+        let mut invalid_plugin = sign_only;
+        invalid_plugin.plugin_endpoint_security_attributes = 0;
+        assert!(a.is_compatible_with(Some(&invalid_plugin)));
+    }
 
     #[test]
     fn plain_is_valid_with_no_protection_bits() {

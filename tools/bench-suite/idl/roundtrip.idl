@@ -1,0 +1,74 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Cross-vendor roundtrip bench — shared IDL.
+//
+// Definition for the DDS roundtrip tests against Cyclone DDS, FastDDS
+// and ZeroDDS. All three stacks generate their native
+// (C / C++ / Java / Python / TypeScript / Rust) data types from
+// this one IDL — so the bench measures the *complete*
+// DCPS API pipeline through all layers:
+//
+//   App code (C++)                  -- typed write/take
+//   ↓ vendor codegen (idlc / fastddsgen / idl-cpp)
+//   CDR encoder/decoder             -- XCDR2 LE
+//   ↓
+//   DCPS API (DataWriter/DataReader)-- HistoryCache, QoS
+//   ↓
+//   RTPS wire protocol              -- DDSI-RTPS 2.5
+//   ↓
+//   Transport (UDP/SHM)             -- loopback in this bench
+//
+// The earlier `roundtrip-1us` bench calls `zerodds_writer_write()` with
+// pre-encoded raw bytes and so skips the CDR layer.
+// Cyclone `ddsperf` and FastDDS `LatencyTest` call their typed
+// `write()` and run a CDR encode per sample. Apples-to-apples
+// needs one app per stack, generated from this file.
+
+module RoundtripBench {
+
+    /// A single roundtrip sample.
+    ///
+    /// Layout notes:
+    /// * `@final` -- no extensibility, the most compact wire form (no
+    ///   DHEADER, no PID stream).
+    /// * No `@key` -- the roundtrip is one logical single-instance stream.
+    ///   With `@key sequence_id` every sample creates a new DDS instance,
+    ///   which immediately exceeds FastDDS' default `max_instances=10`. Cyclone
+    ///   and RTI use unlimited instances and were not affected;
+    ///   FastDDS silently rejected after sample 10. A single-instance
+    ///   stream is semantically more correct for ping-pong.
+    /// * `t_send_ns` -- monotonic clock ns at send time; the
+    ///   echo sender copies the value unchanged into the echo, the
+    ///   receiver computes `now - t_send_ns`.
+    /// * `payload` -- variable-size `sequence<octet>` for the sweep over
+    ///   sizes (0 … 8192 bytes in 10% steps).
+    // @topic — marks the struct as a DDS topic type. OpenDDS'
+    // opendds_idl generates the TypeSupport (DataWriter/DataReader/
+    // TypeSupportImpl) ONLY for @topic-annotated structs. Cyclone
+    // idlc, fastddsgen and rtiddsgen treat every struct as
+    // topic-capable anyway — the annotation is vendor-neutral
+    // (XTypes 1.3 §7.3.1.2.1.5).
+    // @autoid(SEQUENTIAL) + an explicit @id per member: enforces
+    // identical member IDs in the TypeObject across ALL vendor codegens
+    // (rtiddsgen / idlc / fastddsgen / opendds_idl / idl-cpp). Without it,
+    // the codegens derive the same wire layout for a @final struct,
+    // but partly different TypeObject member IDs — RTI Connext enforces
+    // type consistency strictly and rejects a TypeObject with foreign
+    // member IDs/hash (discovery fails, no match). With a pinned
+    // @id the TypeObject is byte-identical across all stacks
+    // (XTypes 1.3 §7.3.1.2.1.1 "Member ID assignment").
+    @topic
+    @final
+    @autoid(SEQUENTIAL)
+    struct Roundtrip {
+        @id(0) unsigned long           sequence_id;
+        @id(1) unsigned long long      t_send_ns;
+        // Bounded sequence — 8192 is larger than our maximum
+        // sweep payload size. An explicit bound, so that RTI/FastDDS/
+        // Cyclone do not take different defaults (RTI default
+        // 100, FastDDS unbounded). With the same bound all of them generate
+        // the same wire layout.
+        @id(2) sequence<octet, 8192>   payload;
+    };
+
+};

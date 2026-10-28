@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of sequence-nested-unannotated that cyclone produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	the fill: error: type defaults to 'int' in declaration of 'zd_seq_1' [-Wimplicit-int]
+plain-cdr1	be	refused	the fill: error: type defaults to 'int' in declaration of 'zd_seq_1' [-Wimplicit-int]
+pl-cdr1	le	refused	the fill: error: type defaults to 'int' in declaration of 'zd_seq_1' [-Wimplicit-int]
+pl-cdr1	be	refused	the fill: error: type defaults to 'int' in declaration of 'zd_seq_1' [-Wimplicit-int]
+plain-cdr2	le	refused	the fill: error: type defaults to 'int' in declaration of 'zd_seq_1' [-Wimplicit-int]
+plain-cdr2	be	refused	the fill: error: type defaults to 'int' in declaration of 'zd_seq_1' [-Wimplicit-int]
+delimited-cdr	le	refused	the fill: error: type defaults to 'int' in declaration of 'zd_seq_1' [-Wimplicit-int]
+delimited-cdr	be	refused	the fill: error: type defaults to 'int' in declaration of 'zd_seq_1' [-Wimplicit-int]
+pl-cdr2	le	refused	the fill: error: type defaults to 'int' in declaration of 'zd_seq_1' [-Wimplicit-int]
+pl-cdr2	be	refused	the fill: error: type defaults to 'int' in declaration of 'zd_seq_1' [-Wimplicit-int]

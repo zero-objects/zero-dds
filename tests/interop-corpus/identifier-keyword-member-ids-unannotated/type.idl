@@ -1,0 +1,7 @@
+// member ids and the KeyHash taken from the IDL spelling of a keyword name, unannotated
+struct Sample {
+    @key @hashid long class;
+    @hashid double operator;
+    @hashid short template;
+    long plain;
+};

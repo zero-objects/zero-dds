@@ -1,0 +1,14 @@
+# What tao got back when it read the bytes of bitset-basic, held against
+# tests/interop-corpus/bitset-basic/values.json and never against another
+# column's reading of the same bytes.
+# encoding	endian	verdict	detail
+plain-cdr1	le	no-form	Sample.value: a bitset, which is XTypes 1.3 §7.3.1.2.1.3 and not CORBA IDL
+plain-cdr1	be	no-form	Sample.value: a bitset, which is XTypes 1.3 §7.3.1.2.1.3 and not CORBA IDL
+pl-cdr1	le	no-form	Sample.value: a bitset, which is XTypes 1.3 §7.3.1.2.1.3 and not CORBA IDL
+pl-cdr1	be	no-form	Sample.value: a bitset, which is XTypes 1.3 §7.3.1.2.1.3 and not CORBA IDL
+plain-cdr2	le	no-form	Sample.value: a bitset, which is XTypes 1.3 §7.3.1.2.1.3 and not CORBA IDL
+plain-cdr2	be	no-form	Sample.value: a bitset, which is XTypes 1.3 §7.3.1.2.1.3 and not CORBA IDL
+delimited-cdr	le	no-form	Sample.value: a bitset, which is XTypes 1.3 §7.3.1.2.1.3 and not CORBA IDL
+delimited-cdr	be	no-form	Sample.value: a bitset, which is XTypes 1.3 §7.3.1.2.1.3 and not CORBA IDL
+pl-cdr2	le	no-form	Sample.value: a bitset, which is XTypes 1.3 §7.3.1.2.1.3 and not CORBA IDL
+pl-cdr2	be	no-form	Sample.value: a bitset, which is XTypes 1.3 §7.3.1.2.1.3 and not CORBA IDL

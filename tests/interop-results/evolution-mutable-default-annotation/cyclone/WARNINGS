@@ -1,0 +1,6 @@
+# What cyclone's front end said about evolution-mutable-default-annotation. Not why a slot carries no
+# bytes — that is STATUS beside this file — but what the front end printed
+# while it did take the case. tests/interop-results/WARNINGS.md says what
+# each of these means and which of them changes a verdict.
+# program	warning
+idlc	gen.idl:L:C: Explicit defaults are not supported yet in the C generator, the value from the @default annotation will not be used

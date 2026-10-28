@@ -1,0 +1,10 @@
+// `union` with a `default` branch, default selected, unannotated
+union Choice switch (long) {
+    case 1: long whole;
+    default: double fraction;
+};
+
+struct Sample {
+    Choice picked;
+    long tail;
+};

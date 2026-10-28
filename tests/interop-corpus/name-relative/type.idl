@@ -1,0 +1,14 @@
+// a member typed by a name relative to the enclosing scope
+module outer {
+    module inner {
+        @final struct Point {
+            long x;
+            long y;
+        };
+    };
+
+    @final struct Sample {
+        inner::Point point;
+        double b;
+    };
+};

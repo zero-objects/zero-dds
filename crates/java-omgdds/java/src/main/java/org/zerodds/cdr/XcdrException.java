@@ -7,7 +7,7 @@ package org.zerodds.cdr;
  * <p>Thrown on bounds violations, invalid wire data,
  * decoder stream underflow and encoder range violations. Extends
  * {@link RuntimeException} because the DDS Java PSM does not use checked exceptions
- * an den Sample-API-Pfaden vorsieht.
+ * provides at the sample API paths.
  */
 public final class XcdrException extends RuntimeException {
 

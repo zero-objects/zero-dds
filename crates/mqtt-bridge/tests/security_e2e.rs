@@ -119,6 +119,8 @@ struct MqttConnect {
     username: Option<String>,
     password: Option<Vec<u8>>,
     client_id: String,
+    /// The ALPN protocol the TLS handshake agreed on; `None` on plain TCP.
+    alpn: Option<Vec<u8>>,
 }
 
 impl MockBroker {
@@ -144,7 +146,8 @@ impl MockBroker {
                 };
                 let mut tls = StreamOwned::new(conn, sock);
                 let _ = tls.sock.set_read_timeout(Some(Duration::from_secs(3)));
-                if let Some(connect) = read_mqtt_connect(&mut tls) {
+                if let Some(mut connect) = read_mqtt_connect(&mut tls) {
+                    connect.alpn = tls.conn.alpn_protocol().map(<[u8]>::to_vec);
                     let _ = tx.send(connect);
                     // CONNACK with reason 0x00: 0x20 0x03 flags=0 reason=0 props_len=0
                     let connack = [0x20u8, 0x03, 0x00, 0x00, 0x00];
@@ -282,6 +285,7 @@ fn read_mqtt_connect<R: Read>(r: &mut R) -> Option<MqttConnect> {
         username,
         password,
         client_id,
+        alpn: None,
     })
 }
 
@@ -325,6 +329,47 @@ fn tls_connect_to_broker_succeeds_with_valid_cert() {
         .recv_timeout(Duration::from_secs(3))
         .unwrap();
     assert_eq!(captured.client_id, "test-cli");
+    broker.shutdown();
+}
+
+/// Spec §7.1: `mqtts://` offers the ALPN protocol `mqtt` (RFC 7301). A
+/// broker that speaks ALPN agrees on it; the mock broker reads back what
+/// the handshake agreed on.
+#[test]
+fn tls_connect_offers_the_mqtt_alpn_protocol() {
+    use zerodds_mqtt_bridge::daemon::client::MqttClient;
+    let (cert, key) = gen_self_signed_for("localhost");
+    let mut server_cfg = (*server_tls_cfg(&cert, &key)).clone();
+    server_cfg.alpn_protocols = vec![b"mqtt".to_vec()];
+    let broker = MockBroker::start_tls(Arc::new(server_cfg));
+    let (host, port) = broker.addr.rsplit_once(':').unwrap();
+    let port: u16 = port.parse().unwrap();
+    let mut cfg = DaemonConfig::default_for_dev();
+    cfg.client_id = "alpn-cli".into();
+    cfg.broker_tls_server_name = "localhost".into();
+    let _client =
+        MqttClient::connect_secure(host, port, &cfg, Some(build_test_client_config(&cert)))
+            .expect("tls connect");
+    let captured = broker
+        .captured
+        .recv_timeout(Duration::from_secs(3))
+        .unwrap();
+    assert_eq!(captured.alpn.as_deref(), Some(&b"mqtt"[..]));
+    broker.shutdown();
+
+    // Gegenprobe: a broker that allows only another protocol refuses the
+    // handshake, so the offer is on the wire.
+    let mut other_cfg = (*server_tls_cfg(&cert, &key)).clone();
+    other_cfg.alpn_protocols = vec![b"x-other".to_vec()];
+    let broker = MockBroker::start_tls(Arc::new(other_cfg));
+    let (host, port) = broker.addr.rsplit_once(':').unwrap();
+    let port: u16 = port.parse().unwrap();
+    let refused =
+        MqttClient::connect_secure(host, port, &cfg, Some(build_test_client_config(&cert)));
+    assert!(
+        refused.is_err(),
+        "a broker without mqtt in its ALPN list accepted"
+    );
     broker.shutdown();
 }
 

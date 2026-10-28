@@ -3,227 +3,238 @@
 //! IDL `valuetype` → Rust trait + marshalling.
 //!
 //! Mapping (CORBA 3.3 §7.4.5.4):
-//! - `valuetype V { ... };` → `pub trait V: ValueBase + ...` plus
-//!   ValueBase marshalling.
-//! - State members (`public T x;`/`private T x;`) → trait method
-//!   for read access (public state); encode/decode copies state.
-//! - `init` constructors → free function `<v>_init_<name>(...)`.
-//! - Inheritance — mapped via a trait bound in `bases`.
+//! - `valuetype V { ... };` → `pub trait V: ValueBase + ...` plus the
+//!   `ValueBase` marshalling.
+//! - state members (`public T x;` / `private T x;`) → a trait method
+//!   for read access; the wire carries all of them either way.
+//! - `factory` initialisers → a free `<v>_init_<name>(...)`.
+//! - inheritance → a trait bound, and state flattened base-first.
 //!
-//! **Scope**: trait definition (polymorphic interface) + public-state
-//! accessors, plus a concrete `<Name>Value` struct as a wire-marshallable
-//! state carrier (`ValueBase` + `ValueMarshal`, §15.3.4) including factory
-//! registration. Chunked/truncation/custom marshalling are follow-up features.
+//! ## The registry that is gone
+//!
+//! The state layout used to be collected into a `thread_local!` before
+//! the first `emit_valuetype`, keyed by simple name, and read back
+//! during the emit. Two valuetypes with the same simple name in
+//! different modules collided in it silently; a caller that forgot the
+//! registration step got an empty state and a struct with no fields,
+//! also silently.
+//!
+//! `TypeKind::Valuetype` carries `bases` as resolved references and
+//! `state` as member handles, so the flattening walks the model. There
+//! is nothing to register and nothing to forget.
 
-use zerodds_idl::ast::types::{
-    Declarator, Export, InitDcl, StateVisibility, ValueDef, ValueElement,
-};
+use std::collections::BTreeSet;
 
-use crate::error::Result;
+use zerodds_ast::{AnyId, StateVisibility, TypeKind, TypeNode, ValuetypeKind};
+use zerodds_ast_core::Id;
 
-/// A marshallable state member: field name + Rust type (in declaration order).
-#[derive(Clone)]
+use crate::emitter::Ctx;
+use crate::error::{CorbaRustError, Result};
+use crate::type_map::{read_of, rust_type_for, write_of};
+
+/// A marshallable state member: its field name and its Rust type.
 struct ValueField {
     name: String,
     rust_type: String,
+    /// The declared type, for the marshalling expressions.
+    type_id: Id<TypeNode>,
 }
 
-/// Stored valuetype state (own fields + base simple names) for the
-/// inheritance state flattening (§15.3.4: base state is marshalled BEFORE the
-/// derived state).
-struct StoredValue {
-    fields: Vec<ValueField>,
-    bases: Vec<String>,
+/// The type node behind a handle.
+fn type_of<'a>(ctx: &Ctx<'a>, id: Id<TypeNode>) -> Result<&'a TypeNode> {
+    ctx.ast
+        .type_(id)
+        .map_err(|_| CorbaRustError::StaleHandle { what: "a type" })
 }
 
-thread_local! {
-    /// Value-state registry (simple name → own state + bases), filled by the
-    /// emitter before codegen. Thread-local (per codegen run) so parallel runs
-    /// stay isolated. Same pattern as `set_exception_repo_ids`.
-    static VALUE_STATES: core::cell::RefCell<std::collections::BTreeMap<String, StoredValue>> =
-        const { core::cell::RefCell::new(std::collections::BTreeMap::new()) };
-}
-
-/// Registers the state layouts of all valuetypes in a spec (for inheritance
-/// flattening). Called by the emitter before the first `emit_valuetype`.
+/// The state of a valuetype, base state first. §15.3.4.
 ///
-/// # Errors
-/// Type-mapping error of a state member.
-pub fn register_value_states(spec: &zerodds_idl::ast::types::Specification) -> Result<()> {
-    let mut map = std::collections::BTreeMap::new();
-    collect_value_states(&spec.definitions, &mut map)?;
-    VALUE_STATES.with(|r| *r.borrow_mut() = map);
-    Ok(())
-}
-
-/// zerodds-lint: recursion-depth 64 (Valuetype-Inheritance; bounded by IDL nesting)
-fn collect_value_states(
-    defs: &[zerodds_idl::ast::types::Definition],
-    map: &mut std::collections::BTreeMap<String, StoredValue>,
+/// zerodds-lint: recursion-depth 16 (valuetype inheritance; cycle-guarded)
+fn flatten_fields(
+    ctx: &Ctx<'_>,
+    id: Id<TypeNode>,
+    seen: &mut BTreeSet<String>,
+    out: &mut Vec<ValueField>,
 ) -> Result<()> {
-    use zerodds_idl::ast::types::Definition;
-    for def in defs {
-        match def {
-            Definition::Module(m) => collect_value_states(&m.definitions, map)?,
-            Definition::ValueDef(v) => {
-                let bases = v
-                    .inheritance
-                    .as_ref()
-                    .map(|inh| {
-                        inh.bases
-                            .iter()
-                            .filter_map(|b| b.parts.last().map(|p| p.text.clone()))
-                            .collect::<Vec<_>>()
-                    })
-                    .unwrap_or_default();
-                map.insert(
-                    v.name.text.clone(),
-                    StoredValue {
-                        fields: collect_state_fields(v)?,
-                        bases,
-                    },
-                );
-            }
-            _ => {}
-        }
+    let node = type_of(ctx, id)?;
+    let TypeKind::Valuetype { bases, state, .. } = &node.kind else {
+        return Ok(());
+    };
+    // A diamond through abstract bases would otherwise write one base's
+    // state twice.
+    if !seen.insert(node.name.clone()) {
+        return Ok(());
+    }
+    let bases: Vec<Id<TypeNode>> = bases
+        .iter()
+        .filter_map(zerodds_ast_core::Ref::resolved)
+        .collect();
+    let state = state.clone();
+    for base in bases {
+        flatten_fields(ctx, base, seen, out)?;
+    }
+    for member in state {
+        let member = ctx
+            .ast
+            .member(member)
+            .map_err(|_| CorbaRustError::StaleHandle {
+                what: "a state member",
+            })?;
+        let type_id = member
+            .type_
+            .resolved()
+            .ok_or_else(|| CorbaRustError::UnresolvedType {
+                scoped: member.name.clone(),
+            })?;
+        out.push(ValueField {
+            name: member.name.clone(),
+            rust_type: rust_type_for(ctx.ast, &member.type_)?,
+            type_id,
+        });
     }
     Ok(())
 }
 
-/// Collects the transitive base RepositoryIds of a valuetype (most-derived's
-/// bases first, then their bases) for the chunked/truncatable RepositoryId list.
-/// Uses the [`VALUE_STATES`] registry (base simple names) + `scope` for the RepoIds.
-fn collect_base_repo_ids(simple_name: &str, scope: &[&str]) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut seen = std::collections::BTreeSet::new();
-    collect_base_ids_inner(simple_name, scope, &mut seen, &mut out);
-    out
-}
-
-/// zerodds-lint: recursion-depth 16
-fn collect_base_ids_inner(
-    simple_name: &str,
-    scope: &[&str],
-    seen: &mut std::collections::BTreeSet<String>,
+/// The repository identifiers of a valuetype's transitive bases,
+/// most-derived's bases first, for the chunked/truncatable list.
+///
+/// zerodds-lint: recursion-depth 16 (valuetype inheritance; cycle-guarded)
+fn base_repository_ids(
+    ctx: &Ctx<'_>,
+    id: Id<TypeNode>,
+    seen: &mut BTreeSet<String>,
     out: &mut Vec<String>,
-) {
-    let Some(bases) = VALUE_STATES.with(|r| r.borrow().get(simple_name).map(|sv| sv.bases.clone()))
+) -> Result<()> {
+    let node = type_of(ctx, id)?;
+    let TypeKind::Valuetype { bases, .. } = &node.kind else {
+        return Ok(());
+    };
+    let bases: Vec<Id<TypeNode>> = bases
+        .iter()
+        .filter_map(zerodds_ast_core::Ref::resolved)
+        .collect();
+    for base in bases {
+        let base_node = type_of(ctx, base)?;
+        if !seen.insert(base_node.name.clone()) {
+            continue;
+        }
+        out.push(repository_id_of(ctx, base));
+        base_repository_ids(ctx, base, seen, out)?;
+    }
+    Ok(())
+}
+
+/// The repository identifier the model holds for a type.
+///
+/// zerodds-lint: recursion-depth 1 — this does not recurse. The callee
+/// is `zerodds_corba_codegen::repository_id_of`, a different function
+/// in another crate; `dds_bounded_recursion` compares only the last
+/// segment of a call path, so the delegation reads as a self-call.
+fn repository_id_of(ctx: &Ctx<'_>, id: Id<TypeNode>) -> String {
+    let Ok(node) = ctx.ast.type_(id) else {
+        return String::new();
+    };
+    zerodds_corba_codegen::repository_id_of(ctx.ast, AnyId::Type(id, node.node_id))
+        .map(|resolved| resolved.id)
+        .unwrap_or_else(|| zerodds_corba_codegen::build_repository_id(&[], &node.name, 1, 0))
+}
+
+/// Emits one valuetype as a Rust trait plus a wire-marshallable state
+/// carrier.
+pub fn emit_valuetype(out: &mut String, ctx: &Ctx<'_>, id: Id<TypeNode>) -> Result<()> {
+    let node = type_of(ctx, id)?;
+    let TypeKind::Valuetype {
+        kind,
+        bases,
+        state,
+        initializers,
+        ..
+    } = &node.kind
     else {
-        return;
+        return Ok(());
     };
-    for base in &bases {
-        if seen.insert(base.clone()) {
-            out.push(zerodds_corba_codegen::build_repository_id(
-                scope, base, 1, 0,
-            ));
-            collect_base_ids_inner(base, scope, seen, out);
-        }
-    }
-}
+    let name = node.name.clone();
+    let kind = kind.to_owned();
+    let initializers = initializers.clone();
+    let state = state.clone();
+    let node_any = AnyId::Type(id, node.node_id);
+    // Every operation whose parent is this valuetype and which is not
+    // one of its initialisers.
+    let exported: Vec<Id<zerodds_ast::OperationNode>> = ctx
+        .ast
+        .operations()
+        .filter(|(op_id, op)| op.parent == node_any && !initializers.contains(op_id))
+        .map(|(op_id, _)| op_id)
+        .collect();
+    let base_ids: Vec<Id<TypeNode>> = bases
+        .iter()
+        .filter_map(zerodds_ast_core::Ref::resolved)
+        .collect();
 
-/// Flattens the state of a valuetype across the base chain: base state first
-/// (recursively, in declaration order of the bases), then own state (§15.3.4).
-/// Uses the [`VALUE_STATES`] registry. Unknown/abstract bases contribute nothing.
-fn flatten_fields(simple_name: &str) -> Vec<ValueField> {
-    let mut seen = std::collections::BTreeSet::new();
-    flatten_fields_inner(simple_name, &mut seen)
-}
-
-/// zerodds-lint: recursion-depth 16
-fn flatten_fields_inner(
-    simple_name: &str,
-    seen: &mut std::collections::BTreeSet<String>,
-) -> Vec<ValueField> {
-    let mut out = Vec::new();
-    if !seen.insert(simple_name.to_string()) {
-        return out; // cycle guard (diamond via abstract bases).
-    }
-    let Some((bases, own)) = VALUE_STATES.with(|r| {
-        r.borrow()
-            .get(simple_name)
-            .map(|sv| (sv.bases.clone(), sv.fields.clone()))
-    }) else {
-        return out;
-    };
-    for base in &bases {
-        out.extend(flatten_fields_inner(base, seen));
-    }
-    out.extend(own);
-    out
-}
-
-/// Collects all state members (public + private) in declaration order.
-/// On the wire (§15.3.4) ALL state members are marshalled — visibility is
-/// purely a language access question, not a wire question.
-fn collect_state_fields(v: &ValueDef) -> Result<Vec<ValueField>> {
-    let mut fields = Vec::new();
-    for element in &v.elements {
-        if let ValueElement::State(sm) = element {
-            let rust_type = zerodds_idl_rust::type_map::rust_type_for(&sm.type_spec)?;
-            for declarator in &sm.declarators {
-                let name = match declarator {
-                    Declarator::Simple(n) => n.text.clone(),
-                    Declarator::Array(a) => a.name.text.clone(),
-                };
-                fields.push(ValueField {
-                    name,
-                    rust_type: rust_type.clone(),
-                });
-            }
-        }
-    }
-    Ok(fields)
-}
-
-/// Emits an IDL valuetype definition as a Rust trait + wire-marshallable struct.
-pub fn emit_valuetype(out: &mut String, v: &ValueDef, scope: &[&str]) -> Result<()> {
-    let name = &v.name.text;
     out.push_str("/// Generated by `zerodds-corba-rust` from IDL valuetype.\n");
 
-    // §4.2 Inheritance: trait bounds from inheritance.bases.
+    // §4.2 inheritance as trait bounds.
     let mut bounds =
         String::from("zerodds_corba_rust::ValueBase + ::core::marker::Send + ::core::marker::Sync");
-    if let Some(inh) = &v.inheritance {
-        for base in &inh.bases {
-            let path = base
-                .parts
-                .iter()
-                .map(|p| p.text.as_str())
-                .collect::<Vec<_>>()
-                .join("::");
-            bounds.push_str(&format!(" + {path}"));
-        }
+    for base in &base_ids {
+        bounds.push_str(&format!(" + {}", type_of(ctx, *base)?.name));
     }
 
-    // §6.1 Repository ID as a free pub const (dyn compatibility) —
-    // via `zerodds-corba-codegen::build_repository_id` (CORBA 3.3
-    // §10.7.3.1 format), scope-correct (module path).
-    let repo_id = zerodds_corba_codegen::build_repository_id(scope, name, 1, 0);
+    let repo_id = repository_id_of(ctx, id);
     let repo_const = name.to_ascii_uppercase();
     out.push_str(&format!(
         "/// CORBA Repository-ID for valuetype `{name}` (spec §10.7.3.1).\npub const {repo_const}_REPOSITORY_ID: &str = \"{repo_id}\";\n"
     ));
     out.push_str(&format!("pub trait {name}: {bounds} {{\n"));
 
-    for element in &v.elements {
-        emit_value_element(out, name, element)?;
+    // State accessors. Visibility is a language question; the wire
+    // carries every state member either way (§15.3.4).
+    for member in &state {
+        let member = ctx
+            .ast
+            .member(*member)
+            .map_err(|_| CorbaRustError::StaleHandle {
+                what: "a state member",
+            })?;
+        let type_ = rust_type_for(ctx.ast, &member.type_)?;
+        let public = member
+            .facets
+            .corba
+            .as_ref()
+            .and_then(|corba| corba.state_visibility)
+            .is_none_or(|visibility| visibility == StateVisibility::Public);
+        let prefix = if public { "" } else { "_priv_" };
+        let member_name = &member.name;
+        out.push_str(&format!(
+            "    /// State-member `{member_name}` (public={public}).\n"
+        ));
+        out.push_str(&format!(
+            "    fn {prefix}{member_name}(&self) -> {type_};\n"
+        ));
+    }
+
+    // Exported operations — rule (105) puts them in a valuetype body
+    // beside the state, and they are `OperationNode`s the same as an
+    // interface's, told apart from the initialisers by not being in
+    // that list.
+    for op_id in &exported {
+        crate::interface_emit::emit_op_trait_method(out, ctx, &name, *op_id)?;
     }
 
     out.push_str("}\n\n");
 
-    // Wire-marshallable state carrier (§15.3.4) — state flattened across the
-    // base chain (base state first).
-    let fields = flatten_fields(name);
-    emit_value_struct(out, name, &repo_const, &fields);
+    // The wire-marshallable state carrier (§15.3.4), state flattened
+    // across the base chain.
+    let mut fields = Vec::new();
+    flatten_fields(ctx, id, &mut BTreeSet::new(), &mut fields)?;
+    emit_value_struct(out, ctx, &name, &repo_const, &fields)?;
 
-    // Truncatable/custom (§15.3.4.3): base RepositoryId list for the chunked wire.
-    // `valuetype D : truncatable B` or `custom valuetype` → a foreign ORB can
-    // truncate to a base; for that the list of base RepoIds must be known.
-    let truncatable = v.inheritance.as_ref().is_some_and(|inh| inh.truncatable);
-    let custom = matches!(v.kind, zerodds_idl::ast::types::ValueKind::Custom);
-    if truncatable || custom {
-        let base_ids = collect_base_repo_ids(name, scope);
-        let list = base_ids
+    // §15.3.4.3: a `truncatable` or `custom` valuetype needs its base
+    // identifiers on the wire so a foreign ORB can truncate to a base.
+    if matches!(kind, ValuetypeKind::Truncatable | ValuetypeKind::Custom) {
+        let mut ids = Vec::new();
+        base_repository_ids(ctx, id, &mut BTreeSet::new(), &mut ids)?;
+        let list = ids
             .iter()
             .map(|id| format!("\"{id}\""))
             .collect::<Vec<_>>()
@@ -233,34 +244,36 @@ pub fn emit_valuetype(out: &mut String, v: &ValueDef, scope: &[&str]) -> Result<
         ));
     }
 
-    // §4.3 Init constructors as free functions.
-    for element in &v.elements {
-        if let ValueElement::Init(init) = element {
-            emit_init_function(out, name, init)?;
-        }
+    // §4.3 initialisers as free functions.
+    for init in &initializers {
+        emit_init_function(out, ctx, &name, *init)?;
     }
 
     Ok(())
 }
 
-/// Emits the concrete `<Name>Value` struct + `ValueBase` + `ValueMarshal` +
-/// factory registration (§15.3.4 state marshalling).
-fn emit_value_struct(out: &mut String, name: &str, repo_const: &str, fields: &[ValueField]) {
+/// The concrete `<Name>Value` struct, its `ValueBase`, its
+/// `ValueMarshal` and its factory registration. §15.3.4.
+fn emit_value_struct(
+    out: &mut String,
+    ctx: &Ctx<'_>,
+    name: &str,
+    repo_const: &str,
+    fields: &[ValueField],
+) -> Result<()> {
     let struct_name = format!("{name}Value");
 
-    // Struct with all state members as pub fields.
     out.push_str(&format!(
         "/// Concrete, wire-marshallable state carrier for valuetype `{name}` (§15.3.4).\n"
     ));
     out.push_str("#[derive(Debug, Clone, PartialEq)]\n");
     out.push_str(&format!("pub struct {struct_name} {{\n"));
-    for f in fields {
-        out.push_str(&format!("    /// State-member `{}`.\n", f.name));
-        out.push_str(&format!("    pub {}: {},\n", f.name, f.rust_type));
+    for field in fields {
+        out.push_str(&format!("    /// State-member `{}`.\n", field.name));
+        out.push_str(&format!("    pub {}: {},\n", field.name, field.rust_type));
     }
     out.push_str("}\n\n");
 
-    // ValueBase: RepositoryId.
     out.push_str(&format!(
         "impl zerodds_corba_rust::ValueBase for {struct_name} {{\n"
     ));
@@ -268,21 +281,18 @@ fn emit_value_struct(out: &mut String, name: &str, repo_const: &str, fields: &[V
     out.push_str(&format!("        {repo_const}_REPOSITORY_ID\n"));
     out.push_str("    }\n}\n\n");
 
-    // ValueMarshal: state in declaration order (§15.3.4).
     out.push_str(&format!(
         "impl zerodds_corba_rust::value_wire::ValueMarshal for {struct_name} {{\n"
     ));
-    out.push_str("    fn marshal_state(&self, w: &mut zerodds_cdr::BufferWriter) -> ::core::result::Result<(), zerodds_cdr::EncodeError> {\n");
-    for f in fields {
-        out.push_str(&format!(
-            "        zerodds_cdr::CdrEncode::encode(&self.{}, w)?;\n",
-            f.name
-        ));
+    out.push_str("    fn marshal_state(&self, w: &mut zerodds_wire::Writer) -> ::core::result::Result<(), zerodds_wire::WireError> {\n");
+    for field in fields {
+        let reference = zerodds_ast_core::Ref::Resolved(field.type_id);
+        let write = write_of(ctx.ast, &reference, "w", &format!("self.{}", field.name))?;
+        out.push_str(&format!("        {}\n", write.statement_propagating()));
     }
     out.push_str("        ::core::result::Result::Ok(())\n");
     out.push_str("    }\n}\n\n");
 
-    // Factory: reads state, registers itself in a ValueRegistry.
     out.push_str(&format!(
         "/// Registers the ValueFactory for `{name}` in a `ValueRegistry` (§15.3.4 decode).\n"
     ));
@@ -290,89 +300,74 @@ fn emit_value_struct(out: &mut String, name: &str, repo_const: &str, fields: &[V
         "pub fn register_{}_value(reg: &mut zerodds_corba_rust::value_wire::ValueRegistry) {{\n",
         name.to_lowercase()
     ));
-    out.push_str(&format!("    reg.register({repo_const}_REPOSITORY_ID, ::std::boxed::Box::new(|r: &mut zerodds_cdr::BufferReader<'_>| {{\n"));
-    for f in fields {
-        out.push_str(&format!(
-            "        let {0} = <{1} as zerodds_cdr::CdrDecode>::decode(r)?;\n",
-            f.name, f.rust_type
-        ));
+    out.push_str(&format!(
+        "    reg.register({repo_const}_REPOSITORY_ID, ::std::boxed::Box::new(|r: &mut zerodds_wire::Reader<'_>| {{\n"
+    ));
+    for field in fields {
+        let reference = zerodds_ast_core::Ref::Resolved(field.type_id);
+        let read = read_of(ctx.ast, &reference, "r")?;
+        out.push_str(&format!("        let {} = {read}?;\n", field.name));
     }
     out.push_str(&format!(
         "        ::core::result::Result::Ok(::std::rc::Rc::new({struct_name} {{\n"
     ));
-    for f in fields {
-        out.push_str(&format!("            {},\n", f.name));
+    for field in fields {
+        out.push_str(&format!("            {},\n", field.name));
     }
     out.push_str("        }) as ::std::rc::Rc<dyn ::core::any::Any>)\n");
     out.push_str("    }));\n");
     out.push_str("}\n\n");
+    Ok(())
 }
 
-fn emit_init_function(out: &mut String, value_name: &str, init: &InitDcl) -> Result<()> {
-    let init_name = &init.name.text;
+fn emit_init_function(
+    out: &mut String,
+    ctx: &Ctx<'_>,
+    value_name: &str,
+    init: Id<zerodds_ast::OperationNode>,
+) -> Result<()> {
+    let node = ctx
+        .ast
+        .operation(init)
+        .map_err(|_| CorbaRustError::StaleHandle {
+            what: "a valuetype initialiser",
+        })?;
+    let init_name = &node.name;
     let fn_name = format!("{}_init_{}", value_name.to_lowercase(), init_name);
     let mut params = String::new();
-    for (idx, p) in init.params.iter().enumerate() {
-        if idx > 0 {
+    let mut names = Vec::new();
+    for (index, param) in node.params.iter().enumerate() {
+        let param = ctx
+            .ast
+            .param(*param)
+            .map_err(|_| CorbaRustError::StaleHandle {
+                what: "a parameter",
+            })?;
+        if index > 0 {
             params.push_str(", ");
         }
-        let ty = zerodds_idl_rust::type_map::rust_type_for(&p.type_spec)?;
-        params.push_str(&format!("{}: {ty}", p.name.text));
+        let type_ = rust_type_for(ctx.ast, &param.type_)?;
+        params.push_str(&format!("{}: {type_}", param.name));
+        names.push(param.name.clone());
     }
     out.push_str(&format!(
         "/// IDL `factory {init_name}` constructor for valuetype `{value_name}`.\n"
     ));
     out.push_str(
-        "/// Phase 2 wires this to the ValueFactory registry; phase 1 is a placeholder.\n",
+        "/// The ValueFactory registry is wired by `register_<v>_value`; this\n/// constructor is not, and says so rather than returning a value it did\n/// not build.\n",
     );
     out.push_str(&format!(
         "pub fn {fn_name}({params}) -> ::core::result::Result<::std::boxed::Box<dyn {value_name}>, zerodds_corba_rust::CorbaException> {{\n"
     ));
-    // Use of params (silence unused warnings)
-    for p in &init.params {
-        out.push_str(&format!("    let _ = {};\n", p.name.text));
+    for name in &names {
+        out.push_str(&format!("    let _ = {name};\n"));
     }
     out.push_str(
         "    ::core::result::Result::Err(zerodds_corba_rust::CorbaException::SystemException {\n",
     );
     out.push_str("        minor: 0,\n");
-    out.push_str("        message: \"corba-rust: ValueFactory init not yet wired (Phase-2)\",\n");
+    out.push_str("        message: \"corba-rust: ValueFactory init not wired\",\n");
     out.push_str("    })\n");
     out.push_str("}\n\n");
-    Ok(())
-}
-
-fn emit_value_element(out: &mut String, owner: &str, element: &ValueElement) -> Result<()> {
-    match element {
-        ValueElement::State(sm) => {
-            let ty = zerodds_idl_rust::type_map::rust_type_for(&sm.type_spec)?;
-            let public = matches!(sm.visibility, StateVisibility::Public);
-            for declarator in &sm.declarators {
-                let name = match declarator {
-                    Declarator::Simple(n) => &n.text,
-                    Declarator::Array(a) => &a.name.text,
-                };
-                let prefix = if public { "" } else { "_priv_" };
-                out.push_str(&format!(
-                    "    /// State-member `{name}` (public={public}).\n"
-                ));
-                out.push_str(&format!("    fn {prefix}{name}(&self) -> {ty};\n"));
-            }
-        }
-        ValueElement::Init(_) => {
-            // Init constructors are emitted as free functions
-            // `<valuetype>_init_<name>(...)` (phase 2).
-        }
-        ValueElement::Export(Export::Op(op)) => {
-            crate::interface_emit::emit_op_trait_method_pub(out, owner, op)?;
-        }
-        ValueElement::Export(Export::Attr(attr)) => {
-            crate::interface_emit::emit_attr_trait_method_pub(out, attr)?;
-        }
-        ValueElement::Export(_) => {
-            // Type/Const/Except exports are emitted in the idl-rust DataType
-            // path.
-        }
-    }
     Ok(())
 }

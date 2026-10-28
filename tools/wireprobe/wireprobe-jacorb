@@ -1,0 +1,210 @@
+#!/bin/bash
+# wireprobe-jacorb — one IDL type and one JSON value, through JacORB
+# 3.9's own `CDROutputStream`.
+#
+# The same command line as `wireprobe-zerodds`. See
+# `docs/specs/zerodds-interop-suite-1.0.md` and `docs/corba-column.md`.
+#
+#   wireprobe-jacorb --idl robot.idl --type common::Robot \
+#                    --values robot.json --encoding xcdr1 --endian be \
+#                    --out robot.jacorb.xcdr1.be.bin
+#
+# `wireprobe-corba-idl` prints the type as CORBA IDL, `jacorb idl`
+# generates the Java, `wireprobe-fill` supplies the statements that put
+# the JSON sample into it, and the template calls the generated
+# `Helper.write`.
+#
+# JacORB is the third witness and the only one of the three that is not
+# C++: where omniORB and TAO could share a mistake through the OMG
+# IDL-to-C++ mapping, a Java implementation cannot.
+#
+# ## The one thing JacORB cannot be asked for
+#
+# `--endian le` in the **write** direction.
+# `org.jacorb.orb.CDROutputStream` has no `setLittleEndian` — measured
+# 2026-08-10 with `javap` against jacorb-3.9.jar, where only
+# `CDRInputStream` has one — so it writes big endian, which is Java's
+# own order and CDR's default. The **read** direction takes both. It is
+# the mirror image of TAO, which can only write little; between the two
+# both orders are covered in both directions, and omniORB covers all
+# four alone.
+set -euo pipefail
+
+FILL="${WIREPROBE_FILL:-wireprobe-fill}"
+DUMP="${WIREPROBE_DUMP:-wireprobe-dump}"
+CORBA_IDL="${WIREPROBE_CORBA_IDL:-wireprobe-corba-idl}"
+JACORB="${JACORB_HOME:-/opt/jacorb}"
+TOOLS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TEMPLATE="$TOOLS/jacorb-template.java"
+DECODE_TEMPLATE="$TOOLS/jacorb-decode-template.java"
+# shellcheck source=probe-cache.sh
+. "$TOOLS/probe-cache.sh"
+# shellcheck source=bounded.sh
+. "$TOOLS/bounded.sh"
+# shellcheck source=diagnostics.sh
+. "$TOOLS/diagnostics.sh"
+# shellcheck source=corba-common.sh
+. "$TOOLS/corba-common.sh"
+
+corba_parse_arguments jacorb "$@"
+
+if [ -z "$input" ] && [ "$big" = 0 ] && [ "$matrix" = 0 ]; then
+    echo "wireprobe-jacorb: org.jacorb.orb.CDROutputStream has no setLittleEndian, so JacORB writes big endian only; the read direction takes both" >&2
+    exit 3
+fi
+
+CLASSPATH_JARS="$JACORB/lib/jacorb-3.9.jar:$JACORB/lib/jacorb-omgapi-3.9.jar:$JACORB/lib/slf4j-api-1.7.14.jar"
+# The JVM writes its own warnings to stdout unless told otherwise, and
+# stdout is the sample here. Measured in the matrix refresh of 2026-10-01
+# in the ZeroDDS Java column: `[0.022s][warning][perf,memops] Cannot use
+# file /tmp/hsperfdata_root/... because it is locked by another process`
+# became the first 133 octets of a sample. -XX:-UsePerfData drops the
+# hsperfdata file that warning is about; -Xlog:disable
+# -Xlog:all=warning:stderr sends any other JVM warning to stderr.
+JVM_FLAGS=(-XX:-UsePerfData -Xlog:disable -Xlog:all=warning:stderr)
+
+work="$(mktemp -d)"
+# Kept before the removal and on every exit path, including a
+# refusal: the generated source of a case a front end could not carry
+# is the one a reader most wants to see.
+trap 'probe_keep_generated "$work" "jacorb" "$idl"; rm -rf "$work"' EXIT
+
+# `$?` is read before the `if`, not inside it: after `if ! cmd` bash has
+# already replaced the command's status with the negation's, so `$?` in
+# the branch is 0 and `exit "$status"` exits 0. Measured on 2026-08-10:
+# a missing `wireprobe-ros-package` made `wireprobe-ros` print nothing
+# and exit 0, and a corpus sweep recorded 648 empty payloads as bytes.
+# `|| status=$?` and not a bare call: `set -e` ends the script *at* a
+# failing command, so a bare call's `status=$?` never runs and neither
+# does the reporting under it. The comment above was written against
+# `if !` and does not reach this; a command in an `||` list is exempt.
+status=0
+"$CORBA_IDL" --idl "$idl" --type "$type_name" --out "$work/gen.idl" || status=$?
+if [ "$status" -ne 0 ]; then
+    [ "$status" = 3 ] && exit 3
+    echo "wireprobe-jacorb: the CORBA IDL could not be printed" >&2
+    exit "$status"
+fi
+java_name="$("$FILL" --vendor jacorb --idl "$idl" --type "$type_name" --print-c-name)"
+helper="${java_name}Helper"
+
+# `Probe.java` is assembled by substitution rather than by `#include`,
+# because Java has no preprocessor: the fill and dump statements are
+# spliced at the `#FILL#` and `#DUMP#` markers.
+splice() {
+    python3 - "$1" "$2" "$3" "$4" "$5" <<'PY'
+import sys
+template, marker, block, java_name, helper = sys.argv[1:6]
+text = open(template).read()
+statements = open(block).read() if block != "-" else ""
+text = text.replace(marker, statements)
+text = text.replace("@TYPE@", java_name).replace("@HELPER@", helper)
+sys.stdout.write(text)
+PY
+}
+
+jacorb_generate() {
+    bounded_run "jacorb idl" "$JACORB/bin/idl" -d . gen.idl > idl.log 2>&1 || true
+    if grep -qiE "severe|giving up" idl.log; then
+        echo "wireprobe-jacorb: the JacORB IDL compiler refused the IDL" >&2
+        grep -iE "severe|giving up" idl.log | head -5 >&2
+        exit 4
+    fi
+}
+
+if [ -n "$input" ]; then
+    "$DUMP" --vendor jacorb --idl "$idl" --type "$type_name" --out "$work/dump.inc"
+    # The byte order is not in the key: the decode probe takes it as an
+    # argument, so one build per case answers both orders.
+    key="$(probe_cache_key jacorb decode "$java_name" -- "$work/gen.idl" "$work/dump.inc" "$DECODE_TEMPLATE")"
+    cached="$(probe_cache_dir "$key")"
+    if [ -z "$cached" ] || [ ! -d "$cached/classes" ]; then
+        (
+            cd "$work"
+            jacorb_generate
+            splice "$DECODE_TEMPLATE" "#DUMP#" dump.inc "$java_name" "$helper" > Probe.java
+            cp "$TOOLS/Zdj.java" .
+            mkdir -p classes
+            # `-nowarn` was here and is not any more: a warning javac
+            # prints about JacORB's generated Java is a statement about
+            # the case, and this was the one place it could not reach.
+            javac -cp "$CLASSPATH_JARS" -d classes \
+                $(find . -name '*.java') > javac.log 2>&1 \
+                || { echo "wireprobe-jacorb: the decode probe did not compile" >&2; \
+                     grep -m10 "error:" javac.log >&2; exit 5; }
+        )
+        probe_diagnostics_after jacorb "$work" "$idl" $?
+        if [ -n "$cached" ]; then
+            build="$(mktemp -d "$WIREPROBE_CACHE/build.XXXXXX")"
+            cp -r "$work/classes" "$build/classes"
+            probe_diagnostics_publish "$work" "$build"
+            probe_generated_publish "$work" "$build"
+            probe_cache_publish "$build" "$cached"
+        fi
+    else
+        # A cache hit does not compile, so the build said nothing
+        # this run. What it said when it was built is replayed,
+        # or a re-record would be silent for every case it did
+        # not rebuild.
+        probe_diagnostics_cached jacorb "$cached" "$idl"
+        probe_generated_cached "$cached" "$work"
+    fi
+    if [ -n "$cached" ] && [ -d "$cached/classes" ]; then classes="$cached/classes"; else classes="$work/classes"; fi
+    java "${JVM_FLAGS[@]}" -cp "$CLASSPATH_JARS:$classes" Probe "$endian_word" < "$input" > "$work/values.json"
+    if [ -n "$values_out" ]; then cp "$work/values.json" "$values_out"; else cat "$work/values.json"; fi
+    exit 0
+fi
+
+"$FILL" --vendor jacorb --idl "$idl" --type "$type_name" --values "$values" \
+        --out "$work/fill.inc"
+key="$(probe_cache_key jacorb encode "$java_name" -- "$work/gen.idl" "$work/fill.inc" "$TEMPLATE")"
+cached="$(probe_cache_dir "$key")"
+if [ -z "$cached" ] || [ ! -d "$cached/classes" ]; then
+    (
+        cd "$work"
+        jacorb_generate
+        splice "$TEMPLATE" "#FILL#" fill.inc "$java_name" "$helper" > Probe.java
+        cp "$TOOLS/Zdj.java" .
+        mkdir -p classes
+        javac -cp "$CLASSPATH_JARS" -d classes \
+            $(find . -name '*.java') > javac.log 2>&1 \
+            || { echo "wireprobe-jacorb: the probe did not compile" >&2; \
+                 grep -m10 "error:" javac.log >&2; exit 5; }
+    )
+    probe_diagnostics_after jacorb "$work" "$idl" $?
+    if [ -n "$cached" ]; then
+        build="$(mktemp -d "$WIREPROBE_CACHE/build.XXXXXX")"
+        cp -r "$work/classes" "$build/classes"
+        probe_diagnostics_publish "$work" "$build"
+        probe_generated_publish "$work" "$build"
+        probe_cache_publish "$build" "$cached"
+    fi
+else
+    # A cache hit does not compile, so the build said nothing
+    # this run. What it said when it was built is replayed,
+    # or a re-record would be silent for every case it did
+    # not rebuild.
+    probe_diagnostics_cached jacorb "$cached" "$idl"
+    probe_generated_cached "$cached" "$work"
+fi
+if [ -n "$cached" ] && [ -d "$cached/classes" ]; then classes="$cached/classes"; else classes="$work/classes"; fi
+if [ "$matrix" = 1 ]; then
+    # JacORB writes big endian only, so the other order is a row that
+    # says so rather than an absent line.
+    if hex=$(java "${JVM_FLAGS[@]}" -cp "$CLASSPATH_JARS:$classes" Probe 2>"$work/err" \
+             | od -An -tx1 -v | tr -d ' \n') && [ -n "$hex" ]; then
+        printf 'xcdr1\tbe\t%s\n' "$hex"
+    else
+        printf 'xcdr1\tbe\t!%s\n' "$(head -1 "$work/err" | tr '\t' ' ' | cut -c1-200)"
+    fi
+    printf 'xcdr1\tle\t!%s\n' \
+        "org.jacorb.orb.CDROutputStream has no setLittleEndian, so JacORB writes big endian only"
+    exit 0
+fi
+java "${JVM_FLAGS[@]}" -cp "$CLASSPATH_JARS:$classes" Probe > "$work/bytes.bin"
+
+if [ -n "$out" ]; then
+    cp "$work/bytes.bin" "$out"
+else
+    od -An -tx1 -v "$work/bytes.bin" | tr -d ' \n'; echo
+fi

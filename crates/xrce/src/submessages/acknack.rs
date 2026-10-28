@@ -25,7 +25,8 @@ use crate::encoding::{Endianness, read_i16, write_i16};
 use crate::error::XrceError;
 use crate::submessages::{FLAG_E_LITTLE_ENDIAN, Submessage, SubmessageId};
 
-/// Body wire size: 5 bytes.
+/// Size of the members: 5 bytes (a DHEADER of 4 comes in front unless
+/// `UnannotatedTypes::Final` is set).
 pub const ACKNACK_BODY_SIZE: usize = 5;
 
 /// `ACKNACK_Payload`, structured.
@@ -45,31 +46,33 @@ impl AckNackPayload {
     /// # Errors
     /// None expected (the buffer is allocated internally).
     pub fn encode_body(self, e: Endianness) -> Result<Vec<u8>, XrceError> {
-        let mut out = alloc::vec![0u8; ACKNACK_BODY_SIZE];
-        write_i16(&mut out[0..2], self.first_unacked_seq_num, e)?;
-        out[2] = self.nack_bitmap[0];
-        out[3] = self.nack_bitmap[1];
-        out[4] = self.stream_id;
+        // ACKNACK_Payload carries no @extensibility (Annex A): APPENDABLE,
+        // a DHEADER in front, unless the setting is `Final`.
+        let mut out = Vec::new();
+        let members = crate::encoding::begin_unannotated(&mut out);
+        let at = out.len();
+        out.resize(at + ACKNACK_BODY_SIZE, 0);
+        write_i16(&mut out[at..at + 2], self.first_unacked_seq_num, e)?;
+        out[at + 2] = self.nack_bitmap[0];
+        out[at + 3] = self.nack_bitmap[1];
+        out[at + 4] = self.stream_id;
+        crate::encoding::end_unannotated(&mut out, members, e);
         Ok(out)
     }
 
-    /// Decodes from body bytes.
+    /// Decodes from body bytes (either form, the one of the setting first).
     ///
     /// # Errors
-    /// `UnexpectedEof` if fewer than 5 bytes.
+    /// `UnexpectedEof` if the bytes hold neither form.
     pub fn decode_body(bytes: &[u8], e: Endianness) -> Result<Self, XrceError> {
-        if bytes.len() < ACKNACK_BODY_SIZE {
-            return Err(XrceError::UnexpectedEof {
-                needed: ACKNACK_BODY_SIZE,
-                offset: bytes.len(),
-            });
-        }
-        let first = read_i16(&bytes[0..2], e)?;
-        Ok(Self {
-            first_unacked_seq_num: first,
-            nack_bitmap: [bytes[2], bytes[3]],
-            stream_id: bytes[4],
+        crate::encoding::decode_unannotated(bytes, 0, e, ACKNACK_BODY_SIZE, |m| {
+            Ok(Self {
+                first_unacked_seq_num: read_i16(&m[0..2], e)?,
+                nack_bitmap: [m[2], m[3]],
+                stream_id: m[4],
+            })
         })
+        .map(|(payload, _)| payload)
     }
 
     /// Packs into a `Submessage` with an LE body.
@@ -100,6 +103,8 @@ mod tests {
     #![allow(clippy::expect_used, clippy::unwrap_used)]
     use super::*;
 
+    /// Annex A gives ACKNACK_Payload no @extensibility: APPENDABLE, a DHEADER
+    /// of 5 (the members) in front, in the byte order of the E flag.
     #[test]
     fn acknack_le_roundtrip() {
         let p = AckNackPayload {
@@ -108,13 +113,24 @@ mod tests {
             stream_id: 0x80,
         };
         let body = p.encode_body(Endianness::Little).unwrap();
-        assert_eq!(body[0], 0x34); // LE
-        assert_eq!(body[1], 0x12);
-        assert_eq!(body[2], 0xAA);
-        assert_eq!(body[3], 0x55);
-        assert_eq!(body[4], 0x80);
+        assert_eq!(body, [5, 0, 0, 0, 0x34, 0x12, 0xAA, 0x55, 0x80]);
         let p2 = AckNackPayload::decode_body(&body, Endianness::Little).unwrap();
         assert_eq!(p2, p);
+        // The form of the reference implementation: the five octets.
+        crate::encoding::with_unannotated_types(crate::encoding::UnannotatedTypes::Final, || {
+            let body = p.encode_body(Endianness::Little).unwrap();
+            assert_eq!(body, [0x34, 0x12, 0xAA, 0x55, 0x80]);
+            assert_eq!(
+                AckNackPayload::decode_body(&body, Endianness::Little).unwrap(),
+                p
+            );
+        });
+        // Either form is read whatever the setting is.
+        assert_eq!(
+            AckNackPayload::decode_body(&[0x34, 0x12, 0xAA, 0x55, 0x80], Endianness::Little)
+                .unwrap(),
+            p
+        );
     }
 
     #[test]
@@ -125,8 +141,7 @@ mod tests {
             stream_id: 1,
         };
         let body = p.encode_body(Endianness::Big).unwrap();
-        assert_eq!(body[0], 0x01);
-        assert_eq!(body[1], 0x02);
+        assert_eq!(body, [0, 0, 0, 5, 0x01, 0x02, 0xFF, 0x00, 1]);
         let p2 = AckNackPayload::decode_body(&body, Endianness::Big).unwrap();
         assert_eq!(p2, p);
     }

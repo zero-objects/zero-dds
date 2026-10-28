@@ -1,0 +1,20 @@
+module mt {
+    @final
+    struct Order {
+        @key long id;
+        double amount;
+    };
+
+    @final
+    struct Customer {
+        @key long id;
+        string<16> country;
+    };
+
+    @final
+    struct Sale {
+        @key long id;
+        double amount;
+        string<16> country;
+    };
+};

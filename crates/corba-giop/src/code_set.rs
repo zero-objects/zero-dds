@@ -17,13 +17,13 @@
 //! `context_id = IOP::CodeSets (1)`; `context_data` is a CDR
 //! encapsulation (byte-order octet + `char_data` + `wchar_data`). The
 //! `CodeSetId` values are determined from the target IOR via
-//! [`CodeSetComponentInfo`] negotiation (see `zerodds_corba_ior`). The defaults
+//! `CodeSetComponentInfo` negotiation (see `zerodds_corba_ior`). The defaults
 //! are UTF-8 for `char` and UTF-16 for `wchar` — the latter keeps the WString BOM
 //! (§15.3.1.6) interoperable with omniORB/TAO/JacORB.
 
 use alloc::vec::Vec;
 
-use zerodds_cdr::{BufferReader, BufferWriter, Endianness};
+use zerodds_wire::{Endianness, Reader, Writer};
 
 use crate::error::{GiopError, GiopResult};
 use crate::service_context::{ServiceContext, ServiceContextList, ServiceContextTag};
@@ -84,14 +84,14 @@ impl CodeSetContext {
     pub fn encode_encapsulation(&self, endianness: Endianness) -> GiopResult<Vec<u8>> {
         // Byte-order octet + body in ONE buffer → natural CDR alignment
         // from offset 0 (the uint32 lands automatically at offset 4).
-        let mut w = BufferWriter::new(endianness);
+        let mut w = Writer::new(endianness);
         w.write_u8(match endianness {
             Endianness::Big => 0,
             Endianness::Little => 1,
-        })?;
-        w.write_u32(self.char_data)?;
-        w.write_u32(self.wchar_data)?;
-        Ok(w.into_bytes())
+        });
+        w.write_u32(self.char_data);
+        w.write_u32(self.wchar_data);
+        Ok(w.finish())
     }
 
     /// Decodes a `CodeSetContext` encapsulation (byte-order octet + body).
@@ -116,7 +116,7 @@ impl CodeSetContext {
         // Reader over the WHOLE encapsulation (origin = byte-order octet), so
         // the uint32 alignment at offset 4 is correct; the byte-order octet
         // itself is skipped.
-        let mut r = BufferReader::new(encap, endianness);
+        let mut r = Reader::new(encap, endianness);
         let _bo = r.read_u8()?;
         let char_data = r.read_u32()?;
         let wchar_data = r.read_u32()?;

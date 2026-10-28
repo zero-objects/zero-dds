@@ -1,0 +1,13 @@
+// SPDX-License-Identifier: Apache-2.0
+// Reconstructed source for bounds_gen.py. Extensibility left at the
+// specification default (appendable).
+module b {
+  struct Bounded {
+    sequence<long, 3> nums;
+    string<5> name;
+    wstring<3> wname;
+    map<string, long, 2> counters;
+    sequence<long> unbounded;
+    string fullstr;
+  };
+};

@@ -1,13 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Stderr-Backend.
+//! Stderr backend.
+//!
+//! zerodds-lint: allow no_dyn_in_safe
+//! (The listener of `set_listener` (DDS-Security 1.2 §9.6.2.2.4) is a `dyn LoggerListener`.)
 
 use alloc::string::String;
 use std::io::{self, Write};
 use std::sync::Mutex;
 
-use zerodds_security::logging::{LogLevel, LoggingPlugin};
+use alloc::sync::Arc;
+use zerodds_security::error::SecurityError;
+use zerodds_security::logging::{LogLevel, LogOptions, LoggerListener, LoggingPlugin};
+
+use crate::control::LogControl;
 
 /// Logs security events to `stderr` as human-readable text.
 ///
@@ -21,7 +28,7 @@ use zerodds_security::logging::{LogLevel, LoggingPlugin};
 /// **only** when it goes to the terminal; in a pipeline it is
 /// fully buffered, or atomic per write(2) only up to PIPE_BUF bytes).
 pub struct StderrLoggingPlugin {
-    min_level: LogLevel,
+    control: LogControl,
     serializer: Mutex<()>,
 }
 
@@ -32,17 +39,17 @@ impl Default for StderrLoggingPlugin {
 }
 
 impl StderrLoggingPlugin {
-    /// Constructor with default level `Warning`.
+    /// Constructor with [`crate::DEFAULT_LOG_LEVEL`].
     #[must_use]
     pub fn new() -> Self {
-        Self::with_level(LogLevel::Warning)
+        Self::with_level(crate::DEFAULT_LOG_LEVEL)
     }
 
-    /// Mit explizitem Min-Level.
+    /// With explicit min level.
     #[must_use]
     pub fn with_level(min_level: LogLevel) -> Self {
         Self {
-            min_level,
+            control: LogControl::enabled_at(min_level, false),
             serializer: Mutex::new(()),
         }
     }
@@ -58,6 +65,7 @@ fn level_label(l: LogLevel) -> &'static str {
         LogLevel::Notice => "NOTICE",
         LogLevel::Informational => "INFO",
         LogLevel::Debug => "DEBUG",
+        _ => "TRACE",
     }
 }
 
@@ -70,9 +78,17 @@ fn hex16(bytes: [u8; 16]) -> String {
 }
 
 impl LoggingPlugin for StderrLoggingPlugin {
+    // The sink writes to stderr only; it has no DataWriter to distribute.
+    sink_control_operations!();
+
     fn log(&self, level: LogLevel, participant: [u8; 16], category: &str, message: &str) {
-        // `level <= min_level` because LogLevel 0=Emergency and 7=Debug.
-        if level > self.min_level {
+        // Not enabled, or above the saved level (LogLevel 0=Emergency is the
+        // lowest): nothing to do (DDS-Security 1.2 §10.6.1).
+        if self
+            .control
+            .admit(level, participant, category, message)
+            .is_none()
+        {
             return;
         }
         let _guard = self.serializer.lock().ok();
@@ -102,6 +118,19 @@ mod tests {
         assert_eq!(
             StderrLoggingPlugin::new().plugin_class_id(),
             "DDS:Logging:stderr"
+        );
+    }
+
+    /// The constructor and the property path without `org.zerodds.sec.log.level`
+    /// start at the same level.
+    #[test]
+    fn new_logs_from_the_default_level() {
+        assert_eq!(
+            StderrLoggingPlugin::new()
+                .control
+                .options()
+                .map(|o| o.log_level),
+            Some(crate::DEFAULT_LOG_LEVEL)
         );
     }
 

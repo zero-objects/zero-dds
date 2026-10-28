@@ -1,0 +1,4 @@
+// G15 — and the half §7.4.3.5.3's own comment says is "not allowed,
+// treated as APPENDABLE".
+@mutable typedef sequence<long> LS;
+struct Sample { LS v; octet tail; };

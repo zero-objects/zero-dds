@@ -47,7 +47,7 @@ impl MqttBehavior {
     }
 }
 
-/// Hauptfunktion.
+/// Main function.
 #[must_use]
 pub fn dds_qos_to_mqtt_behavior(writer: &WriterQos, reader: &ReaderQos) -> MqttBehavior {
     let mqtt_qos = mqtt_qos_for(

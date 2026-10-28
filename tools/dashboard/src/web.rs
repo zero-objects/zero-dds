@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Eingebettetes Single-Page-Dashboard (HTML + vanilla JS + d3).
+//! Embedded Single-Page Dashboard (HTML + vanilla JS + d3).
 //!
-//! Wird vom Server als `GET /` ausgeliefert. d3.js wird vom CDN
-//! geladen — kein npm-Tooling, keine bundler-Pipeline.
+//! Served by the server as `GET /`. d3.js is loaded from the CDN
+//! — no npm tooling, no bundler pipeline.
 
-/// Die HTML-Seite mit eingebettetem JS.
+/// The HTML page with embedded JS.
 pub const INDEX_HTML: &str = r#"<!doctype html>
 <html lang="de">
 <head>
@@ -164,7 +164,7 @@ function renderGraph(g) {
       node.attr('cx', d => d.x).attr('cy', d => d.y);
       labels.attr('x', d => d.x).attr('y', d => d.y);
     });
-  // Edge-Source/Target sind im JSON GUIDs — d3.forceLink mapped sie via id().
+  // Edge source/target are GUIDs in the JSON — d3.forceLink maps them via id().
   g.edges.forEach(e => { e.source = e.from_guid; e.target = e.to_guid; });
 }
 function esc(s) { return String(s).replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c])); }

@@ -5,6 +5,11 @@
 // endpoint SDK. Self-contained: state machine + HEARTBEAT/ACKNACK/WRITE_DATA
 // wire codec + a lock-free SPSC ring with a drain thread (the async-decoupled
 // writer). Byte-identical to endpoints/c + crates/xrce.
+//
+// Setting UnannotatedTypes (appendable, default; final): the form of the
+// Annex A types without @extensibility. ACKNACK_Payload is the only one this
+// SDK writes. Selected per Receiver (field `unannotatedTypes`) or per call
+// (`acknackFrame` second parameter). Parsers accept both forms.
 module reliable;
 
 import core.time : Duration, MonoTime, dur;
@@ -22,7 +27,11 @@ enum ubyte STREAM_NONE = 0x00;     // control-frame stream in golden layout
 enum ubyte SM_WRITE = 0x07;
 enum ubyte SM_ACKNACK = 0x0A;
 enum ubyte SM_HEARTBEAT = 0x0B;
-enum ubyte FLAGS_WRITE = 0x03;
+// E flag (little-endian body) + DataFormat FORMAT_DATA (0b000) in bits 1..3 --
+// DDS-XRCE 1.0 section 8.3.5.8.
+enum ubyte FLAGS_WRITE = 0x01;
+// Wire size of the BaseObjectRequest that precedes the sample (section 7.7.8).
+enum size_t BASE_SIZE = 4;
 enum ubyte FLAGS_CTRL = 0x01;
 
 /// RFC-1982 16-bit "a < b" (wrapping).
@@ -44,6 +53,15 @@ struct Heartbeat
     ubyte stream;
 }
 
+/// Annex A types without @extensibility: APPENDABLE with a DHEADER by
+/// DDS-XTypes 1.3 7.3.1.2.1.8 (default), or FINAL without DHEADER (the form of
+/// the reference implementation).
+enum UnannotatedTypes
+{
+    appendable,
+    final_,
+}
+
 struct AckNack
 {
     short firstUnacked;
@@ -62,24 +80,28 @@ enum SubmitStatus
 // Wire codec (little-endian; byte-identical to golden_*.bin)
 // ---------------------------------------------------------------------------
 
-/// Reliable WRITE_DATA frame: header seq carries the RFC-1982 sample seq.
-ubyte[] reliableWriteFrame(ushort seq, const(ubyte)[] sample)
+/// Reliable WRITE_DATA frame: header seq carries the RFC-1982 sample seq, and
+/// the submessage body is the BaseObjectRequest (section 7.7.8: request_id =
+/// the sample's own seq, object_id = the target DataWriter) then the sample.
+ubyte[] reliableWriteFrame(ushort seq, ushort objectId, const(ubyte)[] sample)
 {
-    auto n = cast(ushort) sample.length;
+    auto n = cast(ushort)(BASE_SIZE + sample.length);
     ubyte[] f = [
         SESSION, STREAM_RELIABLE,
         cast(ubyte)(seq & 0xFF), cast(ubyte)(seq >> 8),
         SM_WRITE, FLAGS_WRITE,
         cast(ubyte)(n & 0xFF), cast(ubyte)(n >> 8),
+        cast(ubyte)(seq >> 8), cast(ubyte)(seq & 0xFF),
+        cast(ubyte)(objectId >> 8), cast(ubyte)(objectId & 0xFF),
     ];
     f ~= sample;
     return f;
 }
 
-private ubyte[] ctrlHeader(ubyte submsg)
+private ubyte[] ctrlHeader(ubyte submsg, ubyte bodyLen = 0x05)
 {
-    // golden layout: session, stream=NONE, msg-seq = 1, submsg, flags, len=5
-    return [SESSION, STREAM_NONE, 0x01, 0x00, submsg, FLAGS_CTRL, 0x05, 0x00];
+    // golden layout: session, stream=NONE, msg-seq = 1, submsg, flags, len
+    return [SESSION, STREAM_NONE, 0x01, 0x00, submsg, FLAGS_CTRL, bodyLen, 0x00];
 }
 
 ubyte[] heartbeatFrame(Heartbeat h)
@@ -93,9 +115,17 @@ ubyte[] heartbeatFrame(Heartbeat h)
     return f;
 }
 
-ubyte[] acknackFrame(AckNack a)
+/// ACKNACK_Payload has no @extensibility in DDS-XRCE 1.0 Annex A, so it is
+/// APPENDABLE (DDS-XTypes 1.3 7.3.1.2.1.8): by default the body is a 4-octet
+/// DHEADER (u32 LE = 5) followed by the 5 octets, 9 in total (frame = 17
+/// octets). With UnannotatedTypes.final_ the DHEADER is left out (body 5,
+/// frame 13 octets).
+ubyte[] acknackFrame(AckNack a, UnannotatedTypes mode = UnannotatedTypes.appendable)
 {
-    auto f = ctrlHeader(SM_ACKNACK);
+    immutable appendable = mode == UnannotatedTypes.appendable;
+    auto f = ctrlHeader(SM_ACKNACK, appendable ? 0x09 : 0x05);
+    if (appendable)
+        f ~= [cast(ubyte) 0x05, 0x00, 0x00, 0x00]; // DHEADER
     f ~= cast(ubyte)(a.firstUnacked & 0xFF);
     f ~= cast(ubyte)((a.firstUnacked >> 8) & 0xFF);
     f ~= a.nack[0];
@@ -104,15 +134,27 @@ ubyte[] acknackFrame(AckNack a)
     return f;
 }
 
-/// Parse a control frame's submessage id (byte 4), body at offset 8.
+/// Parse an ACKNACK. Accepts body length 9 (DHEADER + 5) and the legacy FINAL
+/// body length 5 (FINAL form, as sent by eProsima clients), in either
+/// UnannotatedTypes setting; anything shorter is rejected.
 bool parseAckNack(const(ubyte)[] f, ref AckNack a) @safe pure nothrow @nogc
 {
     if (f.length < 13 || f[4] != SM_ACKNACK)
         return false;
-    a.firstUnacked = cast(short)(f[8] | (f[9] << 8));
-    a.nack[0] = f[10];
-    a.nack[1] = f[11];
-    a.stream = f[12];
+    immutable bodyLen = f[6] | (f[7] << 8);
+    size_t off;
+    if (bodyLen >= 9)
+        off = 12; // skip the 4-octet DHEADER
+    else if (bodyLen == 5)
+        off = 8;
+    else
+        return false;
+    if (f.length < off + 5)
+        return false;
+    a.firstUnacked = cast(short)(f[off] | (f[off + 1] << 8));
+    a.nack[0] = f[off + 2];
+    a.nack[1] = f[off + 3];
+    a.stream = f[off + 4];
     return true;
 }
 
@@ -129,10 +171,13 @@ bool parseHeartbeat(const(ubyte)[] f, ref Heartbeat h) @safe pure nothrow @nogc
 /// Extract (seq, sample) from a reliable WRITE_DATA frame.
 bool parseWrite(const(ubyte)[] f, ref ushort seq, ref const(ubyte)[] sample) @safe pure nothrow @nogc
 {
-    if (f.length < 8 || f[4] != SM_WRITE)
+    if (f.length < 8 + BASE_SIZE || f[4] != SM_WRITE)
+        return false;
+    const size_t smLen = cast(size_t) f[6] | (cast(size_t) f[7] << 8);
+    if (smLen < BASE_SIZE || 8 + smLen > f.length)
         return false;
     seq = cast(ushort)(f[2] | (f[3] << 8));
-    sample = f[8 .. $];
+    sample = f[8 + BASE_SIZE .. 8 + smLen];
     return true;
 }
 
@@ -247,6 +292,8 @@ struct Receiver
     private ushort expectedSeq = 0;
     private ubyte[][ushort] received;
     ubyte stream = STREAM_RELIABLE;
+    /// Form of the ACKNACK frames from pendingAcknackFrame.
+    UnannotatedTypes unannotatedTypes = UnannotatedTypes.appendable;
 
     enum RecvStatus
     {
@@ -310,6 +357,12 @@ struct Receiver
         a.nack[1] = cast(ubyte)(bitmap >> 8);
         a.stream = stream;
         return a;
+    }
+
+    /// The pending ACKNACK as a frame in this receiver's UnannotatedTypes form.
+    ubyte[] pendingAcknackFrame(bool hasHint, ushort hint)
+    {
+        return acknackFrame(pendingAcknack(hasHint, hint), unannotatedTypes);
     }
 
     void reset()

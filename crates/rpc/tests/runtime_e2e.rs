@@ -34,7 +34,10 @@ use zerodds_rpc::common_types::RemoteExceptionCode;
 use zerodds_rpc::error::RpcError;
 use zerodds_rpc::qos_profile::RpcQos;
 use zerodds_rpc::replier::{FnHandler, Replier, ReplierHandler};
+use zerodds_rpc::request_identity::RequestIdentity;
 use zerodds_rpc::requester::Requester;
+use zerodds_rpc::topic_naming::{AnnotatedTopics, TopicNameOverrides};
+use zerodds_rpc::wire_codec::decode_reply_frame;
 
 fn participant(domain: i32) -> DomainParticipant {
     DomainParticipantFactory::instance()
@@ -182,6 +185,26 @@ fn e2e_handler_error_surfaces_as_remote_exception_at_caller() {
     assert_eq!(replier.error_count(), 1);
 }
 
+/// §7.5.2 REMOTE_EX_OUT_OF_RESOURCES: the code a service reports reaches
+/// the caller as that code, and the replier counts the error.
+#[test]
+fn e2e_out_of_resources_surfaces_as_remote_exception_at_caller() {
+    let p = participant(1013);
+    let q = RpcQos::default_basic();
+    let handler = Arc::new(FnHandler::new(|_: RawBytes| {
+        Err::<RawBytes, _>(RemoteExceptionCode::OutOfResources)
+    }));
+    let replier = Replier::<RawBytes, RawBytes>::new(&p, "ResSvc", &q, handler).unwrap();
+    let requester = Requester::<RawBytes, RawBytes>::new(&p, "ResSvc", &q).unwrap();
+    let (_id, rx) = requester
+        .send_request_async(&RawBytes::new(vec![1]))
+        .unwrap();
+    pump(&requester, &replier);
+    let res = rx.try_recv().expect("reply");
+    assert_eq!(res, Err(RemoteExceptionCode::OutOfResources));
+    assert_eq!(replier.error_count(), 1);
+}
+
 #[test]
 fn e2e_send_request_blocking_succeeds_with_pumping_thread() {
     // Blocking variant with a background thread that does the pumping.
@@ -326,4 +349,163 @@ fn e2e_qos_profile_from_xml_drives_history_depth() {
     // The QoS was passed through to the writer — DataWriter::qos() returns a
     // copy with depth=17.
     drop(r);
+}
+
+#[test]
+fn e2e_set_qos_changes_the_mutable_policies_at_run_time() {
+    // §7.10.2: "The users may modify the mutable QoS policies at
+    // run-time." A mutable policy (DEADLINE) reaches the endpoint; an
+    // immutable one (RELIABILITY) is refused and the endpoint keeps its
+    // QoS.
+    let p = participant(1011);
+    let q = RpcQos::default_basic();
+    let handler: Arc<dyn ReplierHandler<RawBytes, RawBytes>> =
+        Arc::new(FnHandler::new(|req: RawBytes| {
+            Ok::<_, RemoteExceptionCode>(req)
+        }));
+    let replier = Replier::<RawBytes, RawBytes>::new(&p, "Qos", &q, handler).unwrap();
+    let requester = Requester::<RawBytes, RawBytes>::new(&p, "Qos", &q).unwrap();
+
+    let mut changed = q.clone();
+    changed.deadline = zerodds_dcps::qos::DeadlineQosPolicy {
+        period: zerodds_qos::Duration::from_secs(1),
+    };
+    requester.set_qos(&changed).unwrap();
+    replier.set_qos(&changed).unwrap();
+    assert_eq!(requester.__request_writer_qos().deadline, changed.deadline);
+    assert_eq!(replier.__request_reader_qos().deadline, changed.deadline);
+
+    let mut illegal = q.clone();
+    illegal.reliability.kind = zerodds_dcps::qos::ReliabilityKind::BestEffort;
+    assert!(requester.set_qos(&illegal).is_err());
+    assert_eq!(requester.__request_writer_qos().deadline, changed.deadline);
+}
+
+#[test]
+fn e2e_client_side_request_identity_is_the_one_the_reply_relates_to() {
+    // §7.8.2.2 (p. 54): the client side can ask for the identity of the
+    // request it issued. `send_request_async` hands that identity back;
+    // `RequestIdentity::from_header` is the spec-level wrapper for it.
+    // The reply the replier produces has to name exactly that identity in
+    // `related_request_id` — otherwise a client could not correlate.
+    let p = participant(1010);
+    let q = RpcQos::default_basic();
+    let handler: Arc<dyn ReplierHandler<RawBytes, RawBytes>> =
+        Arc::new(FnHandler::new(|req: RawBytes| {
+            Ok::<_, RemoteExceptionCode>(req)
+        }));
+    let replier = Replier::<RawBytes, RawBytes>::new(&p, "Ident", &q, handler).unwrap();
+    let requester = Requester::<RawBytes, RawBytes>::new(&p, "Ident", &q).unwrap();
+
+    let (id, rx) = requester
+        .send_request_async(&RawBytes::new(vec![7, 8, 9]))
+        .unwrap();
+    let identity = RequestIdentity::from_header(id);
+    assert!(
+        !identity.via_inline_qos,
+        "the header path is the explicit propagation of §7.8.2.1"
+    );
+    assert_eq!(identity.sample_identity, id);
+
+    for frame in requester.__drain_request_writer() {
+        replier.__push_request_raw(frame).unwrap();
+    }
+    let _ = replier.tick();
+
+    // Look at the reply frame before it reaches the requester.
+    let frames = replier.__drain_reply_writer();
+    assert_eq!(frames.len(), 1, "one request, one reply");
+    let (reply_header, _payload) = decode_reply_frame(&frames[0]).expect("reply decodes");
+    assert_eq!(
+        reply_header.related_request_id, identity.sample_identity,
+        "the reply relates to the identity the client side can query"
+    );
+
+    for frame in frames {
+        requester.__push_reply_raw(frame).unwrap();
+    }
+    requester.tick();
+    assert!(rx.try_recv().expect("reply present").is_ok());
+}
+
+#[test]
+fn e2e_annotated_service_name_picks_the_topic_pair_dds_rpc_1_0_section_7_4_names() {
+    // §7.4.2.2's `@service(name = "…")` and `@DDSRequestTopic`/
+    // `@DDSReplyTopic` are the interface's own inputs to §7.4.1's
+    // grammar; §7.9/§7.10 define `Requester`/`Replier` over exactly
+    // these, not just the default `<interface>_Service_Request`/
+    // `_Reply`. `AnnotatedTopics` carries them from wherever a caller
+    // (a generated binding, or here, the test itself) read them off the
+    // IDL's facets, through to the topic pair actually created.
+    let p = participant(1011);
+    let q = RpcQos::default_basic();
+    let topics = AnnotatedTopics {
+        service_name: Some("Calc".to_string()),
+        request_topic: None,
+        reply_topic: None,
+        overrides: TopicNameOverrides::none(),
+    };
+    let handler: Arc<dyn ReplierHandler<RawBytes, RawBytes>> =
+        Arc::new(FnHandler::new(|req: RawBytes| {
+            Ok::<_, RemoteExceptionCode>(req)
+        }));
+    let replier =
+        Replier::<RawBytes, RawBytes>::with_topics(&p, "Calculator", "", &q, &topics, handler)
+            .unwrap();
+    let requester =
+        Requester::<RawBytes, RawBytes>::with_topics(&p, "Calculator", "", &q, &topics).unwrap();
+
+    // §7.4.1's composition with `<service_name>` = "Calc": neither
+    // `Calculator_Service_Request` (the default) nor the bare
+    // `Calculator` the caller passed as `<interface_name>`.
+    assert_eq!(requester.request_topic_name(), "Calculator_Calc_Request");
+    assert_eq!(requester.reply_topic_name(), "Calculator_Calc_Reply");
+    assert_eq!(replier.request_topic_name(), "Calculator_Calc_Request");
+    assert_eq!(replier.reply_topic_name(), "Calculator_Calc_Reply");
+
+    // The pair still interoperates — reading the annotation is not a
+    // second, disconnected topic scheme.
+    let (_id, rx) = requester
+        .send_request_async(&RawBytes::new(vec![1, 2, 3]))
+        .unwrap();
+    for frame in requester.__drain_request_writer() {
+        replier.__push_request_raw(frame).unwrap();
+    }
+    let _ = replier.tick();
+    for frame in replier.__drain_reply_writer() {
+        requester.__push_reply_raw(frame).unwrap();
+    }
+    requester.tick();
+    let bytes = rx.try_recv().expect("reply present").expect("ok reply");
+    assert_eq!(bytes, vec![1, 2, 3]);
+}
+
+#[test]
+fn e2e_annotated_whole_topic_name_replaces_the_default_dds_rpc_1_0_section_7_4_2_2() {
+    // `@DDSRequestTopic("MyRequests")` / `@DDSReplyTopic("MyReplies")` —
+    // §7.4.2.2's whole-name form, §7.4.1's second `<topic_name>`
+    // alternative. No `<service_name>` and no interface segment appear
+    // in either.
+    let p = participant(1012);
+    let q = RpcQos::default_basic();
+    let topics = AnnotatedTopics {
+        service_name: None,
+        request_topic: Some("MyRequests".to_string()),
+        reply_topic: Some("MyReplies".to_string()),
+        overrides: TopicNameOverrides::none(),
+    };
+    let handler: Arc<dyn ReplierHandler<RawBytes, RawBytes>> =
+        Arc::new(FnHandler::new(|req: RawBytes| {
+            Ok::<_, RemoteExceptionCode>(req)
+        }));
+    let replier =
+        Replier::<RawBytes, RawBytes>::with_topics(&p, "Calculator", "", &q, &topics, handler)
+            .unwrap();
+    let requester =
+        Requester::<RawBytes, RawBytes>::with_topics(&p, "Calculator", "", &q, &topics).unwrap();
+
+    assert_eq!(requester.request_topic_name(), "MyRequests");
+    assert_eq!(requester.reply_topic_name(), "MyReplies");
+    assert_eq!(replier.request_topic_name(), "MyRequests");
+    assert_eq!(replier.reply_topic_name(), "MyReplies");
 }

@@ -1,267 +1,269 @@
 # `zerodds-xcdr2-zig` 1.0 — Spec Coverage
 
-**Source:** `docs/specs/zerodds-xcdr2-zig-1.0.md` — ZeroDDS Zig XCDR2 TypeSupport codegen spec.
+**Source:** `internal/standards/cache/omg/dds-xtypes-1.3.pdf` (§7.2, §7.4) and `internal/standards/cache/omg/idl-4.2.pdf` (§7) — what the Zig column answers.
 
-Implementation:
+The mechanism this column shares with the other twenty — the two walks, the framing, Table 9, the key hash and the driver — is in `zerodds-xcdr2-bindings-conformance-1.0.md`. This document carries only what the Zig column decides for itself, and its own evidence.
 
-- `crates/idl-zig/` — IDL → Zig codegen (`marshalXCDR`, self-contained writer).
-- `endpoints/zig/` — pure-Zig XCDR2 wire core (writer/reader) + sync/async SDK.
+## §7.5.1 The parts of the column
 
-## §1 Motivation
+### §7.5.1 The concrete syntax tree and its text form
 
-### §1 No OMG-IDL-to-Zig wire mapping
+**Spec:** §7.5.1 — Plain language binding — the mapping onto the target language is the PSM's own. This column's declarations are built as a tree and only then written as text; no emitter concatenates source.
 
-**Spec:** §1 — ZeroDDS defines the Zig XCDR2 wire mapping.
+**Repo:** `crates/lang-cst/src/zig/`, `crates/lang-render/src/zig.rs`
 
-**Repo:** motivation text of the vendor spec.
-
-**Tests:** —
-
-**Status:** n/a (informative)
-
-## §2 Marshal pattern
-
-### §2 struct + `marshalXCDR(endian, allocator) ![]u8`
-
-**Spec:** §2 — one Zig `struct` + `marshalXCDR` method per IDL `@final struct`.
-
-**Repo:** `crates/idl-zig/src/emitter.rs::emit_struct`.
-
-**Tests:** `crates/idl-zig/tests/golden.rs::final_struct_emits_type_and_marshal`
+**Tests:** `crates/lang-render/src/zig.rs::tests` (10 tests), among them `a_struct_declaration_indents_by_four_and_ends_every_field_in_a_comma`, `an_empty_struct_stays_on_one_line`, `a_type_reads_left_to_right_with_no_declarator_to_split`, `a_function_pointer_carries_its_parameter_names`, `an_optional_field_writes_its_absence_as_the_default`;
+across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_output_with_exactly_one_newline`, `crates/lang-render/tests/rendering.rs::no_rendered_line_carries_trailing_whitespace`.
 
 **Status:** done
 
-## §3 Required API surface
+### §7.5.1 The rule catalogue
 
-### §3 Writer/Reader primitives + generated marshalXCDR
+**Spec:** §7.5.1 — Plain language binding — the mapping onto the target language is the PSM's own. What becomes of which model node is a rule set and not a special case inside the walk.
 
-**Spec:** §3 — Writer (putU8..putSeqU8, bytes), Reader (getU8/getU16/getU32/getU64/getF32/getString/getSeqU8), generated `marshalXCDR`.
+**Repo:** `crates/lang-rules/src/rule/zig.rs`
 
-**Repo:** `endpoints/zig/src/zerodds.zig` (Writer, Reader incl. getU8/getU16/getU64/getF32/getString/getSeqU8 — byte-exact inverse); `crates/idl-zig/src/emitter.rs` (marshalXCDR).
-
-**Tests:** `endpoints/zig/src/zerodds.zig` in-file tests (byte identity + sync + async), `endpoints/zig/example_sync|async.zig` (full field decode), `crates/idl-zig/tests/golden.rs`.
-
-**Status:** done
-
-### §3.a Generated `unmarshalXCDR` (decode codegen)
-
-**Spec:** §3/§11 — bidirectional binding: generated `unmarshalXCDR` as the exact inverse of `marshalXCDR`.
-
-**Repo:** `map_get` (inverse of `map_type`) + allocator-carrying `Reader` in the prelude + `readFrom`/`unmarshalXCDR` per struct+union (`crates/idl-zig/src/emitter.rs`).
-
-**Tests:** `crates/idl-zig/tests/golden.rs` — 8 `decode_roundtrip_*` (final/nested/array/union/map/mutable/wide/longdouble), `marshal(unmarshal(golden)) == golden` LE+BE (codepit, `/opt/zig` 0.13).
+**Tests:** `crates/lang-rules/tests/apply.rs::every_language_catalogue_fires_on_the_same_model`,
+`crates/lang-rules/tests/apply.rs::every_catalogue_serialises_and_reads_back_the_same`
 
 **Status:** done
 
-**Decision record:** decode codegen covers every field type (prim/string/seq/enum/typedef/nested/array/union/map/@mutable/wchar/wstring/long double). `var v: T = undefined` filled in place; strings/seqs/maps allocate via the Reader allocator (reads use `try`). @final = inline, @appendable = DHEADER skip, @mutable = DHEADER + per-member EMHEADER+NEXTINT skip.
+### §7.5.1 The materialiser
 
-## §4 Codegen requirement (`idl-zig`)
+**Spec:** §7.5.1 — Plain language binding — the mapping onto the target language is the PSM's own. The materialiser carries the language's own rules: names and keywords, collisions, and what the language cannot express at all.
 
-### §4 struct + marshalXCDR + embedded writer
+**Repo:** `crates/lang-rules/src/adapter/zig.rs`
 
-**Spec:** §4 — per struct: Zig struct, `marshalXCDR`, self-contained writer.
-
-**Repo:** `crates/idl-zig/src/emitter.rs`; `tools/idlc` `Backend::Zig`, `--zig`.
-
-**Tests:** `crates/idl-zig/tests/golden.rs`.
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_every_wired_language`
 
 **Status:** done
 
-## §5 Wire type mapping
+### §7.5.1 The codec backend
 
-### §5 IDL → Zig → XCDR2 (alignment cap 4)
+**Spec:** §7.5.1 — Plain language binding — the mapping onto the target language is the PSM's own. The backend supplies the spelling the shared encoding decision takes in this language — receiver, method name, argument form.
 
-**Spec:** §5 — bool/octet/char/short..long long/float/double/string/sequence<octet> with exact wire layout; signed via @bitCast.
+**Repo:** `crates/lang-rules/src/emit/zig.rs`
 
-**Repo:** `crates/idl-zig/src/emitter.rs::map_type/map_primitive/map_integer/map_sequence`; `endpoints/zig/src/zerodds.zig` (Put*/getLE align cap 4).
-
-**Tests:** `crates/idl-zig/tests/golden.rs::byte_identity_vs_rust_goldens` (@final LE+BE).
-
-**Status:** done
-
-### §5.a enum
-
-**Spec:** §5 — IDL `enum` (32-bit signed integer on the wire, XTypes 1.3 §7.4.5.1).
-
-**Repo:** `crates/idl-zig/src/emitter.rs::emit_enum` + `map_type` (Scoped→enum→`putU32(@bitCast(@intFromEnum(...)))`).
-
-**Tests:** `crates/idl-zig/tests/golden.rs::enum_emits_i32_enum_and_member_marshals` + `enum_member_is_byte_identical_i32` (`zig`, LE `02000000efbeadde`).
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_a_full_codec_in_every_wired_language`,
+`crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`
 
 **Status:** done
 
-### §5.b nested struct member + sequence<struct>
+### §7.5.1 The Table 9 defaulter
 
-**Spec:** §5 — nested struct member + `sequence<struct>` (collection DHEADER, XTypes 1.3 §7.4.3.5.3).
+**Spec:** §7.5.1 — Plain language binding — the mapping onto the target language is the PSM's own. A reader with no Table 9 answer has no defined value at five positions; this file is this column's answer.
 
-**Repo:** `crates/idl-zig/src/emitter.rs`: `marshalInto(self, w: *Writer)` per struct + `map_type` Scoped struct + `map_sequence` struct element (block: collection DHEADER + count + per-element marshalInto).
+**Repo:** `crates/lang-rules/src/default_zig.rs`
 
-**Tests:** `crates/idl-zig/tests/golden.rs::nested_struct_emits_marshal_into` + `nested_is_byte_identical_vs_rust_golden` (`zig run`, byte-identical against `golden_nested_le/be.bin`).
-
-**Status:** done
-
-### §5.c typedef
-
-**Spec:** §5 — `typedef` (wire-transparent alias; a member of its alias type marshals byte-identical to the underlying type).
-
-**Repo:** `crates/idl-zig/src/emitter.rs::collect_typedefs`/`resolve_typedef` — the alias chain (incl. `sequence` elements) is resolved to the underlying type before `map_type`.
-
-**Tests:** `crates/idl-zig/tests/golden.rs::typedef_resolves_to_underlying_type` + `typedef_is_byte_identical_vs_rust_golden` (byte-identical against `golden_typedef_le/be.bin`).
+**Tests:** `crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`
 
 **Status:** done
 
-### §5.d array
+### §7.5.1 The wire runtime
 
-**Spec:** §5 — fixed arrays (XCDR2 §7.4.3.5.3: elements inline, row-major, multi-dim; no length prefix for primitive elements).
+**Spec:** §7.5.1 — Plain language binding — the mapping onto the target language is the PSM's own. The runtime reads §7.4 from the clause text on its own and calls no other column; that is where this column's independence lives.
 
-**Repo:** `crates/idl-zig/src/emitter.rs`: `Declarator::Array` branch — `array_size` evaluates the bound, `build_array_put` nests the element put in row-major loops; the field type becomes the language-native array.
+**Repo:** `runtime/zig`, endpoint SDK `endpoints/zig`
 
-**Tests:** `crates/idl-zig/tests/golden.rs::array_*` (byte-identical against `golden_array_le/be.bin`: `long xs[3]` + `short m[2][2]` + `octet bs[4]`).
-
-**Status:** done
-
-### §5.e union
-
-**Spec:** §5 — `union switch(...)` (XCDR2 §7.4.3.5.4: discriminator inline, then the selected member; no DHEADER for @final).
-
-**Repo:** `crates/idl-zig/src/emitter.rs::emit_union` — holder with a discriminator + one field per case member; `marshalInto` puts the discriminator, then dispatches a `switch`/`case`/`match` on the selected member. Integer-family discriminator + integer labels.
-
-**Tests:** `crates/idl-zig/tests/golden.rs::union_*` (byte-identical against `golden_union_le/be.bin`: disc=2 selects `unsigned short b` — checks non-first-case dispatch).
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_runtime`,
+`crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_an_endpoint_sdk`
 
 **Status:** done
 
-### §5.f map
+## §7.2.2 What this column decides for itself
 
-**Spec:** §5 — `map<K, V>` (XCDR2 §7.4.3.5: entries sorted ascending by key, `u32 count` + key/value pairs; no DHEADER for a primitive key/value pair, otherwise DHEADER-framed).
+### §7.2.2.2 Every IDL primitive reaches a Zig type and none has a target-dependent width
 
-**Repo:** `crates/idl-zig/src/emitter.rs` — map member in the native associative idiom + key sorting before marshalling; primitive-pair rule for the collection DHEADER.
+**Spec:** §7.2.2.2 — Primitive types — BOOLEAN, BYTE, INT8..UINT64, FLOAT32, FLOAT64, FLOAT128, CHAR8, CHAR16; every width is fixed.
 
-**Tests:** `crates/idl-zig/tests/golden.rs::map_*` (byte-identical against `golden_map_le/be.bin`: `map<long, unsigned long>` {1,2}).
+**Repo:** `crates/lang-rules/src/adapter/zig.rs`
 
-**Status:** done
-
-### §5.g wchar / wstring
-
-**Spec:** §5 — `wchar` (wchar32, UTF-32 code point) + `wstring` (u32 octet length + UTF-16 code units, no BOM).
-
-**Repo:** `crates/idl-zig/src/emitter.rs` — `putWString`/`put_wstring` (manual UTF-16 with surrogate pairs) + `wchar`→`putU32`. Wire core in the prelude.
-
-**Tests:** `crates/idl-zig/tests/golden.rs::wide_is_byte_identical_vs_rust_golden` (byte-identical against `golden_wide_le/be.bin`: c=U+03A9, s="wπ").
+**Tests:** `crates/lang-rules/tests/zig_end_to_end.rs::every_idl_primitive_reaches_a_zig_type`,
+`crates/lang-rules/tests/zig_end_to_end.rs::no_generated_type_has_a_target_dependent_width`
 
 **Status:** done
 
-### §5.h long double
+### §7.2.2.2 `long double` becomes an `f128` because Zig has one; the constant is a number and not text
 
-**Spec:** §5 — `long double` (IEEE binary128, 16 bytes).
+**Spec:** §7.2.2.2 — FLOAT128 is an IEEE 754 binary128 value of sixteen octets.
 
-**Repo:** `crates/idl-zig/src/emitter.rs` — `putLongDouble`/`put_long_double`: binary128 via exact widening of the `float64` value (sign + 15-bit exponent + 112-bit mantissa), endian-correct.
+**Repo:** `crates/lang-rules/src/adapter/zig.rs`
 
-**Tests:** `crates/idl-zig/tests/golden.rs::longdouble_is_byte_identical_vs_rust_golden` (byte-identical against `golden_longdouble_le/be.bin`: d=1.1).
-
-**Status:** done
-
-**Note (honest):** input precision = `float64` (resp. the language's native float), exactly widened to binary128 — covers all float64-representable values. The Rust reference (`idl-rust` + `zerodds-cdr`) remains blocked on native `f128` (no stable Rust f128, ~2027); the goldens are hardcoded from the float64 bits, without f128.
-
-
-## §6 Extensibility
-
-### §6 @final (compact) + @appendable (DHEADER)
-
-**Spec:** §6 — @final without DHEADER, @appendable with uint32 body length + body.
-
-**Repo:** `crates/idl-zig/src/emitter.rs::emit_struct` (Final/Appendable).
-
-**Tests:** `crates/idl-zig/tests/golden.rs::final_struct_...` + `appendable_struct_frames_a_dheader`.
+**Tests:** `crates/lang-rules/tests/zig_end_to_end.rs::a_long_double_is_an_f128_because_zig_has_one`,
+`crates/lang-rules/tests/zig_end_to_end.rs::a_long_double_constant_is_written_as_a_number_and_not_as_text`
 
 **Status:** done
 
-### §6.a @mutable (EMHEADER)
+### §7.2.2.4.4.4.7 An optional member becomes a question mark and defaults to null
 
-**Spec:** §6 — @mutable EMHEADER framing.
+**Spec:** §7.2.2.4.4.4.7 — A structure member may be optional; a union member never is.
 
-**Repo:** `crates/idl-zig/src/emitter.rs` — @mutable `marshalInto`: DHEADER-framed member list, per member an EMHEADER (LC4 = `0x40000000 | member-id`) + NEXTINT (body length) + body (serialized into a sub-writer). Member ids from `@id(n)` or sequential.
+**Repo:** `crates/lang-rules/src/adapter/zig.rs`
 
-**Tests:** `crates/idl-zig/tests/golden.rs::mutable_*` (byte-identical against `golden_mutable_le/be.bin`).
-
-**Status:** done
-## §7 Key extraction
-
-### §7 Non-keyed 16-zero-byte key
-
-**Spec:** §7 — non-keyed → 16 zero bytes; keyed → MD5 (XCDR2-BE), runtime.
-
-**Repo:** `endpoints/zig/src/zerodds.zig` (writer in big mode produces the BE serialization).
-
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/zig_end_to_end.rs::an_optional_member_becomes_a_question_mark_and_defaults_to_null`
 
 **Status:** done
 
-### §7.a Per-struct generated `keyHash` from `@key`
+### §7.2.2.4.9 An `@external` member becomes a pointer and the optional goes outside it
 
-**Spec:** §7 / XTypes §7.6.8 — codegen of a `keyHash` method from `@key` members.
+**Spec:** §7.2.2.4.9 — `@external` — the member is held by reference; self-reference is admitted.
 
-**Repo:** `crates/idl-zig/src/emitter.rs` — structs with `@key` members get a `keyHash`/`Key_Hash` method: the `@key` members are serialized PLAIN_CDR2-BE (member-id order), a ≤16-byte key holder is zero-padded to 16 bytes, larger (or dynamically sized) ones go via MD5(bytes)[0..16]. The static max-key-size analysis lives in the shared `zerodds_idl::keyhash`.
+**Repo:** `crates/lang-rules/src/adapter/zig.rs`
 
-**Tests:** `crates/idl-zig/tests/golden.rs::keyhash_is_byte_identical_vs_rust_golden` (byte-identical against `golden_keyhash.bin` via `zerodds_cdr::compute_key_hash`).
-
-**Status:** done
-
-**Note:** both branches are implemented (XTypes §7.6.8.4 step 5): static max-key-size analysis (`zerodds_idl::keyhash`) decides ≤16 bytes → zero-pad, otherwise MD5(bytes)[0..16]. Byte-verified against `golden_keyhash_md5.bin` (5×@key long = 20 bytes).
-
-
-## §8 Wire core
-
-### §8 `endpoints/zig` as reference writer/reader
-
-**Spec:** §8 — reference wire core, byte-identical to `zerodds-cdr`.
-
-**Repo:** `endpoints/zig/src/zerodds.zig`.
-
-**Tests:** in-file tests, CI job `endpoints-zig`.
+**Tests:** `crates/lang-rules/tests/zig_end_to_end.rs::an_external_member_becomes_a_pointer_and_the_optional_goes_outside_it`,
+`crates/lang-rules/tests/zig_end_to_end.rs::an_external_union_branch_becomes_a_pointer`
 
 **Status:** done
 
-## §9 Conformance
+### §7.2.2.3 A `string` becomes a const slice of octets; a `fixed` holds its decimal as text
 
-### §9 Golden byte identity @final LE+BE
+**Spec:** §7.2.2.3 — STRING8 over Char8 and STRING16 over Char16, bounded or unbounded.
 
-**Spec:** §9 — encoding == golden_le.bin / golden_be.bin byte-for-byte.
+**Repo:** `crates/lang-rules/src/adapter/zig.rs`
 
-**Repo:** `crates/idl-zig`, `endpoints/zig`.
-
-**Tests:** `crates/idl-zig/tests/golden.rs::byte_identity_vs_rust_goldens` (CI `idl-zig`); `endpoints/zig` in-file tests (CI `endpoints-zig`).
-
-**Status:** done
-
-## §10 Examples
-
-### §10 sync + async deep examples + quickstart
-
-**Spec:** §10 — working sync/async examples.
-
-**Repo:** `endpoints/zig/example_sync.zig`, `endpoints/zig/example_async.zig`, `endpoints/zig/QUICKSTART.md`.
-
-**Tests:** CI job `endpoints-zig` runs both (`zig build run-example_sync` + `run-example_async`).
+**Tests:** `crates/lang-rules/tests/zig_end_to_end.rs::a_sequence_becomes_a_slice_and_a_string_a_const_slice_of_octets`,
+`crates/lang-rules/tests/zig_end_to_end.rs::a_fixed_holds_its_decimal_as_text`
 
 **Status:** done
 
-## §11 Errata + open questions
+### §7.2.2.4.3 A `map` becomes a slice of entries and never a hash map
 
-### §11 Honest non-goals
+**Spec:** §7.2.2.4.3 — Map — key/value pairs; §7.4.3.5.3 rules 11-16 fix the order and the framing.
 
-**Spec:** §11 — former non-goals have been built: decode codegen, keyHash codegen, @mutable, wchar/wstring/map/array/nested/union/long double. Full IDL4 byte-verified.
+**Repo:** `crates/lang-rules/src/adapter/zig.rs`
 
-**Repo:** see §3.a/§5.a/§6.a/§7.a (each `done` with a decision record).
+**Tests:** `crates/lang-rules/tests/zig_end_to_end.rs::a_map_becomes_a_slice_of_entries_and_never_a_hash_map`
 
-**Tests:** —
+**Status:** done
 
-**Status:** n/a (informative)
+### IDL 4.2 §7.2.3 A Zig keyword is escaped; so is a declaration named after a primitive
+
+**Spec:** IDL 4.2 §7.2.3 — Identifiers are ASCII and case-insensitive on comparison; a collision has to be reported.
+
+**Repo:** `crates/lang-rules/src/adapter/zig.rs`
+
+**Tests:** `crates/lang-rules/tests/zig_end_to_end.rs::a_member_named_after_a_zig_keyword_is_escaped_and_keeps_its_idl_name`,
+`crates/lang-rules/tests/zig_end_to_end.rs::a_declaration_named_after_a_primitive_is_escaped_because_zig_refuses_it`,
+`crates/lang-rules/tests/zig_end_to_end.rs::two_members_that_would_reach_one_zig_name_are_refused_by_name`
+
+**Status:** done
+
+### IDL 4.2 §7.5.2 `module` flattens onto the name because a Zig file does not nest
+
+**Spec:** IDL 4.2 §7.5.2 — `module` is a naming scope; an identifier is unique per scope.
+
+**Repo:** `crates/lang-rules/src/adapter/zig.rs`
+
+**Tests:** `crates/lang-rules/tests/zig_end_to_end.rs::a_module_flattens_onto_the_name_because_a_zig_file_does_not_nest`,
+`crates/lang-rules/tests/zig_end_to_end.rs::every_declaration_is_pub_because_a_types_file_exists_to_be_imported`
+
+**Status:** done
+
+### §7.5.1 The file ends in the block that forces Zig to analyse it
+
+**Spec:** §7.5.1 — Plain language binding — the mapping onto the target language is the PSM's own.
+
+**Repo:** `crates/lang-rules/src/adapter/zig.rs`
+
+**Tests:** `crates/lang-rules/tests/zig_end_to_end.rs::the_file_ends_in_the_block_that_forces_zig_to_analyse_it`,
+`crates/lang-rules/tests/zig_end_to_end.rs::the_zig_check_catches_what_build_obj_misses`
+
+**Status:** done
+
+## §7.3.1 How the column is held to it
+
+### §7.3.1 Every corpus case renders or names the layer that refused it
+
+**Spec:** §7.3.1 — Every corpus case renders or names the layer that refused it. A case that stopped rendering would otherwise be found by whichever probe ran next, a build directory away from the construct that caused it.
+
+**Repo:** `crates/lang-rules/src/emit/zig.rs`, `crates/lang-rules/src/adapter/zig.rs`
+
+**Tests:** `crates/lang-rules/tests/zig_end_to_end.rs::every_corpus_case_renders_or_names_its_failure`
+
+**Status:** done
+
+### §7.3.1 The generated source compiles under the language's own compiler
+
+**Spec:** §7.3.1 — The generated source compiles under the language's own compiler. A snapshot says the emitter produced the text it produced last time; it does not say the text is the language. Where the compiler is absent the test says so on standard error.
+
+**Repo:** `crates/lang-rules/src/emit/zig.rs`, `crates/lang-rules/src/adapter/zig.rs`
+
+**Tests:** `crates/lang-rules/tests/zig_end_to_end.rs::the_generated_zig_compiles`
+
+**Status:** done
+
+### §7.3.1 The generated source is already in the language's canonical form
+
+**Spec:** §7.3.1 — The generated source is already in the language's canonical form. A formatter that still changes the output is a difference a user sees in their own diff.
+
+**Repo:** `crates/lang-rules/src/emit/zig.rs`, `crates/lang-rules/src/adapter/zig.rs`
+
+**Tests:** `crates/lang-rules/tests/zig_end_to_end.rs::the_generated_zig_is_already_formatted`
+
+**Status:** done
+
+### §7.3.1 Two runs over one source produce the same text
+
+**Spec:** §7.3.1 — Two runs over one source produce the same text. Without it every diff of a generated tree is unreadable.
+
+**Repo:** `crates/lang-rules/src/emit/zig.rs`, `crates/lang-rules/src/adapter/zig.rs`
+
+**Tests:** `crates/lang-rules/tests/zig_end_to_end.rs::two_runs_over_one_source_produce_the_same_text`
+
+**Status:** done
+
+### §7.2.2.4 Every construct the completeness table claims for this column also produces output
+
+**Spec:** §7.2.2.4 — Every construct the completeness table claims for this column also produces output. The table in `crates/lang-rules/src/coverage.rs` is the claim; this test is what checks it.
+
+**Repo:** `crates/lang-rules/src/emit/zig.rs`, `crates/lang-rules/src/adapter/zig.rs`
+
+**Tests:** `crates/lang-rules/tests/zig_end_to_end.rs::every_construct_the_catalogue_covers_produces_output`
+
+**Status:** done
+
+### §7.2.2.4.8 `@verbatim` lands at the placements the clause names for this language
+
+**Spec:** §7.2.2.4.8 — `@verbatim` lands at the placements the clause names for this language.
+
+**Repo:** `crates/lang-rules/src/adapter/zig.rs`, `crates/lang-rules/src/verbatim.rs`
+
+**Tests:** `crates/lang-rules/tests/verbatim_every_column.rs::every_column_places_the_six_slots_in_its_declarations`,
+`crates/lang-rules/tests/verbatim_every_column.rs::every_column_ends_its_source_file_with_the_end_file_text`,
+`crates/lang-rules/tests/verbatim_every_column.rs::a_directive_reaches_its_own_column_and_no_other`
+
+**Status:** done
+
+## §7.3.1 Driver and measurement
+
+### §7.3.1 `idlc generate --lang zig`
+
+**Spec:** §7.3.1 — the IDL type representation is the input of generation; the output is this column's source.
+
+**Repo:** `tools/idlc/src/generate.rs`, `tools/idlc/src/main.rs`
+
+**Tests:** `tools/idlc/src/generate.rs::tests::every_language_round_trips_through_its_own_name`,
+`tools/idlc/src/generate.rs::tests::language_names_lists_every_language_once`
+
+**Status:** done
+
+### §7.4 The measurement harness of this column
+
+**Spec:** §7.4 — a column's octets are compared against recorded octets rather than asserted in its own tests.
+
+**Repo:** `tools/wireprobe/wireprobe-zerodds-zig-gen/`, `tools/wireprobe/wireprobe-zerodds-zig`, `tools/wireprobe/wireprobe-zig-corpus`
+
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_cell_generator`,
+`crates/lang-rules/tests/every_language_has_its_parts.rs::every_cell_generator_guards_against_a_missing_toolchain`
+
+**Status:** done
 
 ---
 
-## Audit status
+## Audit Status
 
-20 done / 0 partial / 0 open / 2 n/a (informative) / 0 n/a (rejected).
+23 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
 
-Test run: `GOLDEN_DIR=<gold> cargo test -p zerodds-idl-zig` — 29 tests green, 0 failed (codepit, toolchain `zig`).
+Test run: `cargo test -p zerodds-lang-rules` — 1024 tests green, 0 failed (20 ignored: the whole-corpus compile runs, which need `--include-ignored`).
 
 Open items: none. Decision records: none.

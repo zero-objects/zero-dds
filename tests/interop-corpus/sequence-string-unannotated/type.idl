@@ -1,0 +1,8 @@
+// `sequence<string>`, unannotated
+struct Sample {
+    sequence<string> none;
+    sequence<string> one;
+    sequence<string> many;
+    sequence<string, 8> bounded;
+    long tail;
+};

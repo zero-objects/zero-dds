@@ -8,9 +8,9 @@
 //! Annex C C.1.15 — Loop-Prevention.
 //!
 //! Spec §C.1.15: zwei Sub-Tests:
-//! (a) Sample mit eigener bridge_id wird gedroppt,
+//! (a) a sample with its own bridge_id is dropped,
 //!     `transfers.dropped.loop` inkrementiert.
-//! (b) Sample mit `dds:bridge-hop` > cap wird gedroppt,
+//! (b) a sample with `dds:bridge-hop` > cap is dropped,
 //!     `transfers.dropped.hop-cap` inkrementiert.
 
 mod common;
@@ -33,8 +33,8 @@ fn props(entries: Vec<(&str, AmqpExtValue)>) -> AmqpExtValue {
 
 #[test]
 fn c1_15a_sample_with_own_bridge_id_is_dropped() {
-    // Spec §C.1.15 (a): Sample, dessen `dds:bridge-id` die eigene
-    // bridge_id enthaelt, MUSS gedroppt werden.
+    // Spec §C.1.15 (a): sample whose `dds:bridge-id` matches its own
+    // contains bridge_id MUST be dropped.
     let cfg = CoexistenceConfig::new("self-bridge-uuid".to_string());
     let metrics = MetricsHub::new();
 
@@ -55,7 +55,7 @@ fn c1_15a_sample_with_own_bridge_id_is_dropped() {
 
 #[test]
 fn c1_15a_sample_with_other_bridge_id_in_list_is_dropped() {
-    // Self-Tag in einer Liste anderer IDs wird auch erkannt.
+    // A self-tag in a list of other IDs is also detected.
     let cfg = CoexistenceConfig::new("self-uuid".to_string());
     let sample_props = props(vec![(
         app_keys::BRIDGE_ID,
@@ -79,7 +79,7 @@ fn c1_15b_sample_with_hop_above_cap_is_dropped() {
     cfg.hop_cap = 8;
     let metrics = MetricsHub::new();
 
-    // Sample mit hop=9 > cap=8.
+    // Sample with hop=9 > cap=8.
     let sample_props = props(vec![(app_keys::BRIDGE_HOP, AmqpExtValue::Uint(9))]);
     let decision = inspect_inbound(&cfg, &sample_props);
     assert_eq!(decision, InboundDecision::DropHopCap);
@@ -93,7 +93,7 @@ fn c1_15b_sample_with_hop_above_cap_is_dropped() {
 
 #[test]
 fn c1_15b_sample_at_exact_cap_is_forwarded() {
-    // Edge-case: hop=cap ist noch erlaubt; nur >cap droppt.
+    // Edge case: hop=cap is still allowed; only >cap drops.
     let mut cfg = CoexistenceConfig::new("self".to_string());
     cfg.hop_cap = 8;
     let sample_props = props(vec![(app_keys::BRIDGE_HOP, AmqpExtValue::Uint(8))]);
@@ -106,8 +106,8 @@ fn c1_15b_sample_at_exact_cap_is_forwarded() {
 #[test]
 fn c1_15_round_trip_stamp_then_inspect_self_drops() {
     // Spec §7.11.2 Outbound-Stamp → §7.11.3 Self-Tag-Drop.
-    // Wir stampen ein outbound-Sample und inspizieren es dann
-    // selbst — muss DropLoop liefern.
+    // We stamp an outbound sample and then inspect it
+    // ourselves — must return DropLoop.
     let cfg = CoexistenceConfig::new("loop-uuid".to_string());
     let mut p = AmqpExtValue::Map(Vec::new());
     stamp_outbound(&cfg, &mut p);
@@ -116,7 +116,7 @@ fn c1_15_round_trip_stamp_then_inspect_self_drops() {
 
 #[test]
 fn c1_15_outbound_stamp_increments_hop_counter() {
-    // Spec §7.11.2: bei jedem Outbound-Stamp wird der Hop-Counter
+    // Spec §7.11.2: on every outbound stamp the hop counter
     // um 1 erhoeht.
     let cfg = CoexistenceConfig::new("first-bridge".to_string());
     let mut p = AmqpExtValue::Map(Vec::new());
@@ -133,7 +133,7 @@ fn c1_15_outbound_stamp_increments_hop_counter() {
         .unwrap();
     assert_eq!(hop, AmqpExtValue::Uint(1));
 
-    // Zweite Stamp (im Pfad eines Multi-Hop-Bridge-Forwards):
+    // Second stamp (in the path of a multi-hop bridge forward):
     // hop=2.
     let cfg2 = CoexistenceConfig::new("second-bridge".to_string());
     stamp_outbound(&cfg2, &mut p);
@@ -151,7 +151,7 @@ fn c1_15_outbound_stamp_increments_hop_counter() {
 
 #[test]
 fn c1_15_clean_sample_passes_through() {
-    // Sample ohne Bridge-Metadaten wird forwarded.
+    // A sample without bridge metadata is forwarded.
     let cfg = CoexistenceConfig::new("self".to_string());
     let p = props(vec![]);
     assert_eq!(inspect_inbound(&cfg, &p), InboundDecision::Forward);

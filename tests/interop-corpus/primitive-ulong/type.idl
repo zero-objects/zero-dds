@@ -1,0 +1,5 @@
+// primitive `unsigned long`
+@final struct Sample {
+    unsigned long long_unsigned_a;
+    unsigned long long_unsigned_b;
+};

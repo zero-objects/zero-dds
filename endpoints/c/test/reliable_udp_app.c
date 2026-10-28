@@ -9,7 +9,13 @@
  * POSIX sockets (compiled with the default gcc std, not the strict-C89 Makefile).
  * usage: reliable_udp_app <port> [count]
  */
+/* `_POSIX_C_SOURCE` alone is not enough: `INADDR_LOOPBACK` is a BSD socket
+ * extension rather than a POSIX constant, and Apple's libc hides it behind
+ * `_DARWIN_C_SOURCE` when a strict POSIX level is requested — glibc exposes it
+ * either way. Declaring both keeps the POSIX level and puts the constant back,
+ * so this file builds on both libcs. */
 #define _POSIX_C_SOURCE 200809L
+#define _DARWIN_C_SOURCE 1
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -69,7 +75,8 @@ int main(int argc, char **argv)
         if (zdw_reliable_submit(&snd, sample, 4, &seq) != ZDW_REL_OK) {
             fprintf(stderr, "submit %d failed\n", i); return 1;
         }
-        flen = zdw_xrce_write_frame(tx, sizeof(tx), 0x80, 0x80, seq, sample, 4);
+        flen = zdw_xrce_write_frame(tx, sizeof(tx), 0x80, 0x80, seq,
+                                    ZDW_XRCE_OBJECT_ID(0x001, ZDW_OBJK_DATAWRITER), sample, 4);
         if (flen == 0 || send(fd, tx, flen, 0) < 0) { perror("send"); return 1; }
     }
 
@@ -101,7 +108,8 @@ int main(int argc, char **argv)
                 const unsigned char *pl = zdw_reliable_get_in_flight(&snd, seq, &l);
                 if (pl != 0) {
                     size_t flen = zdw_xrce_write_frame(tx, sizeof(tx), 0x80, 0x80,
-                                                       seq, pl, l);
+                                                       seq, ZDW_XRCE_OBJECT_ID(0x001, ZDW_OBJK_DATAWRITER),
+                                                       pl, l);
                     if (flen > 0) { (void)send(fd, tx, flen, 0); }
                 }
             }

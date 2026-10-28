@@ -1,0 +1,24 @@
+enum Colour { RED, GREEN, BLUE };
+
+@appendable
+struct Inner {
+    long n;
+    string t;
+};
+
+@mutable
+struct Evo {
+    @id(1) long anchor;
+    @id(2) octet by;
+    @id(3) boolean bo;
+    @id(4) short i16;
+    @id(5) long long i64;
+    @id(6) float f32;
+    @id(7) double f64;
+    @id(8) char c8;
+    @id(9) string s;
+    @id(10) Colour e;
+    @id(11) sequence<long> sq;
+    @id(12) long arr[3];
+    @id(13) Inner nested;
+};

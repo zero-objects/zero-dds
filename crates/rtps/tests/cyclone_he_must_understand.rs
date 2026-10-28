@@ -67,7 +67,6 @@ fn build_he_with_unknown_must_understand_pid() -> Vec<u8> {
     pl.push(Parameter::new(MUST_UNDERSTAND_BIT | 0x8042, vec![0; 4]));
     let he = HeaderExtension {
         little_endian: true,
-        message_length: Some(0),
         parameters: Some(pl),
         ..HeaderExtension::default()
     };
@@ -80,8 +79,9 @@ fn build_he_with_unknown_must_understand_pid() -> Vec<u8> {
 #[test]
 fn local_encoder_produces_must_understand_bit() {
     let bytes = build_he_with_unknown_must_understand_pid();
-    // Sanity: HE submessage ID 0x80 is after the 20-byte RTPS header.
-    assert_eq!(bytes[20], 0x80);
+    // Sanity: HE submessage ID 0x00 (DDSI-RTPS 2.5 §9.4.5.1.1) is after
+    // the 20-byte RTPS header.
+    assert_eq!(bytes[20], 0x00);
     // P flag (bit 7) set in the flag byte.
     assert_eq!(bytes[21] & 0x80, 0x80);
     // E flag (bit 0) set in the flag byte.
@@ -106,20 +106,30 @@ fn parameter_with_must_understand_helper_sets_bit() {
     assert_eq!(p.id & 0x3FFF, 0x0042, "original PID is preserved");
 }
 
+/// Table 9.6: an unrecognized must-understand ParameterId in the
+/// HeaderExtension — "ignore the entire RTPS message". The decoder is the one
+/// layer that refuses it: `decode_datagram` returns the error, counted in
+/// `refused_messages`. The list-level check stays available for a receiver
+/// with its own set of known PIDs (`validate_must_understand`).
 #[test]
-fn local_decoder_rejects_via_validate_must_understand() {
-    use zerodds_rtps::datagram::ParsedSubmessage;
-    use zerodds_rtps::datagram::decode_datagram;
+fn the_decoder_refuses_a_header_extension_with_an_unknown_must_understand_pid() {
+    use zerodds_rtps::datagram::{decode_datagram, refused_messages};
 
     let bytes = build_he_with_unknown_must_understand_pid();
-    let parsed = decode_datagram(&bytes).expect("HE decode may succeed");
-    let he = match &parsed.submessages[0] {
-        ParsedSubmessage::HeaderExtension(he) => he,
-        other => panic!("expected HE, got {other:?}"),
-    };
-    let pl = he.parameters.as_ref().expect("PL must be present");
-    // Receiver kennt nur PID 0x0015 — der Must-Understand-PID 0x0042
-    // is unknown → reject.
+    let before = refused_messages();
+    let res = decode_datagram(&bytes);
+    assert!(
+        matches!(
+            res,
+            Err(zerodds_rtps::error::WireError::ValueOutOfRange { .. })
+        ),
+        "{res:?}"
+    );
+    assert!(refused_messages() > before, "the refusal is counted");
+
+    // A receiver that knows only PID 0x0015 refuses the same list itself.
+    let mut pl = ParameterList::new();
+    pl.push(Parameter::new(MUST_UNDERSTAND_BIT | 0x8042, vec![0; 4]));
     let res = pl.validate_must_understand(|pid| pid == 0x0015);
     assert!(res.is_err(), "whole-message reject required (§9.4.2.11.2)");
 }

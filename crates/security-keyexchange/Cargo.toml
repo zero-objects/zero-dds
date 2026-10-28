@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "Ephemeral Diffie-Hellman key agreement (X25519 + P-256 ECDH) for the DDS-Security 1.1 authentication handshake (spec §8.3.2)."
+description = "Ephemeral Diffie-Hellman key agreement (X25519 + P-256 ECDH) for the DDS-Security 1.2 authentication handshake (spec §10.3.4, key establishment §8.3)."
 homepage = "https://zerodds.org"
 documentation = "https://docs.rs/zerodds-security-keyexchange"
 readme = "README.md"
@@ -34,6 +34,8 @@ wolfcrypt = ["dep:wolfcrypt-compat", "std"]
 
 [dependencies]
 zerodds-security = { version = "1.0.0-rc.7", path = "../security" }
+crypto-bigint = { version = "0.7.9", default-features = false, features = ["zeroize"] }
+zeroize = { version = "1", default-features = false }
 ring = { workspace = true, optional = true }
 aws-lc-rs = { version = "1", optional = true }
 # wolfCrypt backend — its `[lib] name` is `ring`, so it MUST be renamed here to

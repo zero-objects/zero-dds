@@ -88,7 +88,7 @@ pub fn encode_web_trailers(trailers: &[u8]) -> Result<Vec<u8>, FrameError> {
 /// `(compressed_flag, message_bytes, consumed_bytes)`.
 ///
 /// # Errors
-/// Siehe [`FrameError`].
+/// See [`FrameError`].
 pub fn decode_message(bytes: &[u8]) -> Result<(u8, Vec<u8>, usize), FrameError> {
     if bytes.len() < HEADER_LEN {
         return Err(FrameError::HeaderTooShort);

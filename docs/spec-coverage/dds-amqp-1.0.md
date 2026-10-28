@@ -21,9 +21,22 @@ specified in §sec:pim-type-mapping."
 **Repo:** `crates/amqp-bridge/src/types.rs::AmqpValue`,
 `crates/amqp-bridge/src/extended_types.rs::AmqpExtValue`.
 
-**Tests:** `crates/amqp-bridge/src/types.rs::tests` (15 Tests,
-Roundtrips für alle Primitive),
-`crates/amqp-bridge/src/extended_types.rs::tests` (16 Tests).
+**Tests:** `crates/amqp-bridge/src/types.rs::tests` (18 Tests):
+`null_encodes_to_single_byte_0x40`, `boolean_uses_compact_format_codes`,
+`ulong_zero_uses_ulong0_format`, `ulong_small_uses_smallulong_format`,
+`ulong_large_uses_full_8_byte_format`, `long_small_uses_smalllong_format`,
+`long_large_uses_full_8_byte_format`, `binary_short_uses_vbin8_format`,
+`binary_long_uses_vbin32_format`, `string_short_uses_str8_format`,
+`string_unicode_round_trip`, `symbol_rejects_non_ascii`,
+`symbol_short_uses_sym8_format`, `round_trip_all_primitive_values`,
+`format_code_categorizes_correctly` sowie die drei Fehlerfälle
+`unsupported_format_code_yields_error`, `truncated_inputs_yield_error`,
+`invalid_utf8_in_str_yields_error`.
+`crates/amqp-bridge/src/extended_types.rs::tests` (35 Tests) deckt die
+erweiterten Codes ab, darunter `char_is_four_octet_ucs4_big_endian`,
+`every_multi_octet_primitive_is_big_endian_on_the_wire`,
+`decimal32_64_128_have_correct_lengths`, `timestamp_round_trips_negative`,
+`uuid_round_trips`.
 
 **Status:** done
 
@@ -104,8 +117,11 @@ encoding mode of §psm-json."
 **Repo:** `crates/amqp-endpoint/src/mapping.rs::BodyEncodingMode`
 + `encode_dds_to_amqp_body` + `parse_amqp_body`.
 
-**Tests:** `mapping::tests` (3 Tests: passthrough_round_trip,
-json_round_trip_via_hex_field, amqp_native_uses_correct_content_type).
+**Tests:** `crates/amqp-endpoint/src/mapping.rs::tests`:
+`passthrough_round_trip_preserves_bytes`, `json_round_trip_via_hex_field`,
+`amqp_native_uses_correct_content_type`,
+`unknown_content_type_falls_back_to_pass_through`,
+`default_mode_is_pass_through`.
 
 **Status:** done — Pass-Through voll, JSON als Hex-Fallback
 spec-konform (volle Type-Reflection-JSON ist Codegen-Layer).
@@ -119,9 +135,25 @@ EXTERNAL mechanisms as specified in §security-sasl."
 {Plain, Anonymous, External} + `SaslState::new`/`step` State-
 Machine.
 
-**Tests:** `sasl::tests` (8 Tests: plain_authenticates,
-plain_fails_on_wrong_credentials, anonymous, external_with_subject,
-plain_offered_only_when_tls_active, etc.).
+**Tests:** `crates/amqp-endpoint/src/sasl.rs::tests`:
+`plain_authenticates_on_correct_credentials`,
+`plain_fails_on_wrong_credentials`, `plain_without_tls_yields_auth_failed`,
+`plain_offered_only_when_tls_active`,
+`anonymous_authenticates_without_credentials`,
+`external_uses_transport_subject`, `select_outbound_prefers_external`,
+`select_outbound_falls_back_to_plain_with_tls`,
+`select_outbound_skips_plain_without_tls`,
+`select_outbound_no_acceptable_mechanism`;
+das Endpoint-Programm (`tools/amqp-dds-endpoint/src/auth.rs`,
+`handler.rs::do_sasl_phase`, Credential-Store im RFC-5803-Format):
+`tools/amqp-dds-endpoint/tests/sasl_server_checks.rs::{plain_on_tls_checks_the_password_against_the_store,
+scram_sha_256_authenticates_and_proves_the_server,
+an_init_with_a_mechanism_not_offered_is_auth,
+skipping_sasl_is_refused_when_anonymous_is_not_enabled}`,
+`tools/amqp-dds-endpoint/src/auth.rs::tests::the_policy_refuses_what_cannot_work_and_offers_per_connection`.
+`tools/amqp-dds-endpoint/tests/tls_sasl_e2e.rs::an_mtls_client_authenticates_with_external`
+(mTLS mit CA-signiertem Client-Zertifikat, Subject `mtls:<SHA-256>`).
+Das Programm nahm vorher jede `sasl-init` mit Outcome `ok` an.
 
 **Status:** done
 
@@ -148,7 +180,11 @@ neuer `SaslCode`-Enum mit `Ok/Auth/Sys/SysPerm/SysTemp` (Codes
 `sasl_code_from_u8_round_trip`,
 `sasl_code_unknown_value_rejected`,
 `outcome_authenticated_wire_code_is_ok`,
-`outcome_auth_failed_helper_uses_auth_code`.
+`outcome_auth_failed_helper_uses_auth_code`;
+am Endpoint-Programm auf dem Draht:
+`tools/amqp-dds-endpoint/tests/sasl_server_checks.rs::a_plain_init_on_plaintext_is_auth_and_the_connection_closes`
+(PLAIN nicht angeboten; eine PLAIN-Init auf Klartext bekommt Outcome 1,
+dann EOF).
 
 **Status:** done — Filter-Logik + Spec-konforme Outcome-Codes
 nach OASIS AMQP 1.0 §5.3.3.6.
@@ -214,10 +250,17 @@ enumerated in Annex C, §C.1."
 
 **Repo:** keine Annex-C-Test-Suite im Repo.
 
-**Tests:** —
-
-**Repo:** `tools/amqp-dds-endpoint/tests/c1_*.rs` Suite mit
-13 Test-Files (C.1.1-15) decken alle Annex-C-§C.1-Items ab.
+**Tests:** `tools/amqp-dds-endpoint/tests/c1_1_connection_open.rs::c1_1_connection_open_with_tls_active_advertises_plain`,
+`tools/amqp-dds-endpoint/tests/c1_2_sasl_plain_rejection.rs`,
+`tools/amqp-dds-endpoint/tests/c1_3_4_8_bridge_dispatch.rs`,
+`tools/amqp-dds-endpoint/tests/c1_5_settlement_reliable.rs`,
+`tools/amqp-dds-endpoint/tests/c1_6_settlement_best_effort.rs`,
+`tools/amqp-dds-endpoint/tests/c1_7_address_resolution_wildcard.rs`,
+`tools/amqp-dds-endpoint/tests/c1_9_idle_timeout.rs`,
+`tools/amqp-dds-endpoint/tests/c1_10_concurrent_connections.rs`,
+`tools/amqp-dds-endpoint/tests/c1_13_metrics_link.rs`,
+`tools/amqp-dds-endpoint/tests/c1_14_audit_link.rs`,
+`tools/amqp-dds-endpoint/tests/c1_15_loop_prevention.rs`.
 
 **Status:** done
 
@@ -226,6 +269,12 @@ enumerated in Annex C, §C.1."
 **Spec:** §2.2, S. 8 (PDF) — siehe Endpoint Cl. 1.
 
 **Repo:** identisch zu Endpoint (geteilte Codec-Crate).
+
+**Tests:** `crates/amqp-bridge/tests/type_mapping.rs::every_row_of_the_primitive_table_takes_the_code_it_names`,
+`crates/amqp-bridge/tests/type_mapping.rs::an_octet_sequence_is_binary_and_a_long_sequence_is_a_list`,
+`crates/amqp-bridge/tests/type_mapping.rs::a_type_outside_the_mapping_is_named_rather_than_encoded_as_something_else`,
+`crates/amqp-bridge/src/types.rs::round_trip_all_primitive_values`,
+`crates/amqp-bridge/src/extended_types.rs::every_multi_octet_primitive_is_big_endian_on_the_wire`.
 
 **Status:** done
 
@@ -254,7 +303,16 @@ Matching.
 (geteilt mit Endpoint Cl. 4); Bridge-Aufrufer in
 `crates/amqp-endpoint/src/client.rs`.
 
-**Tests:** `routing::tests` (7 Tests).
+**Tests:** `crates/amqp-endpoint/src/routing.rs::tests` (12 Tests):
+`bare_address_resolves_to_default_domain`, `domain_url_parses_id_and_topic`,
+`domain_url_with_single_partition_parses`,
+`domain_url_with_multi_partition_parses`,
+`domain_url_with_percent_encoded_partition`,
+`static_alias_overrides_implicit_resolution`, `wildcard_alias_matches`,
+`malformed_domain_url_yields_error`, `empty_address_yields_no_route`,
+`conflict_resolution_uri_wins_when_both_present`,
+`conflict_resolution_property_used_when_uri_empty`,
+`conflict_resolution_both_empty`.
 
 **Status:** done
 
@@ -328,6 +386,13 @@ shutdown-Atomic. `next_backoff_ms(attempt)` cap-correct.
 
 **Repo:** identisch.
 
+**Tests:** `crates/amqp-bridge/tests/type_mapping.rs::the_body_form_follows_the_types_extensibility`,
+`crates/amqp-bridge/tests/type_mapping.rs::a_mutable_body_is_keyed_by_the_declared_member_ids`,
+`crates/amqp-bridge/tests/type_mapping.rs::a_union_plans_its_discriminator_and_then_its_branches`,
+`crates/amqp-bridge/src/sections.rs::amqp_value_section_round_trips`,
+`crates/amqp-bridge/src/sections.rs::canonical_order_passes_validator`,
+`crates/amqp-endpoint/src/mapping.rs::amqp_native_uses_correct_content_type`.
+
 **Status:** done
 
 ### §2.2 Bridge Profile — Clause 9 (Management Surface + Audit)
@@ -339,6 +404,13 @@ of the bridge."
 **Repo:** identisch zu Endpoint Cl. 9 (geteiltes
 `management`-Modul).
 
+**Tests:** `crates/amqp-endpoint/src/management.rs::classify_address_recognises_reserved`,
+`crates/amqp-endpoint/src/management.rs::catalog_snapshot_emits_map_per_entry`,
+`crates/amqp-endpoint/src/management.rs::metrics_snapshot_emits_one_sample_per_mandatory_metric`,
+`crates/amqp-endpoint/src/management.rs::audit_event_types_are_spec_symbols`,
+`tools/amqp-dds-endpoint/tests/c1_13_metrics_link.rs::c1_13_metrics_units_are_spec_symbols`,
+`tools/amqp-dds-endpoint/tests/c1_14_audit_link.rs::c1_14_audit_producer_streams_events_in_order`.
+
 **Status:** done
 
 ### §2.2 Bridge Profile — Clause 10 (Bridge-Coexistence)
@@ -346,6 +418,13 @@ of the bridge."
 **Spec:** §2.2 — siehe Endpoint Cl. 10.
 
 **Repo:** identisch (geteiltes `coexistence`-Modul).
+
+**Tests:** `crates/amqp-endpoint/src/coexistence.rs::drop_loop_on_self_tag_string`,
+`crates/amqp-endpoint/src/coexistence.rs::drop_loop_on_self_tag_list`,
+`crates/amqp-endpoint/src/coexistence.rs::drop_hop_cap_when_exceeded`,
+`crates/amqp-endpoint/src/coexistence.rs::round_trip_stamp_then_inspect_drops_loop`,
+`crates/amqp-endpoint/src/coexistence.rs::other_bridges_tag_does_not_drop`,
+`tools/amqp-dds-endpoint/tests/c2_7_loop_prevention_bridge.rs`.
 
 **Status:** done
 
@@ -356,9 +435,10 @@ enumerated in Annex C, §C.2."
 
 **Repo:** —
 
-**Repo:** `tools/amqp-dds-endpoint/tests/c2_*.rs` Suite +
-`c1_3_4_8_bridge_dispatch.rs` (das auch C.2.2/C.2.3 abdeckt)
-decken alle Annex-C-§C.2-Items ab.
+**Tests:** `tools/amqp-dds-endpoint/tests/c2_4_reconnect_on_loss.rs`,
+`tools/amqp-dds-endpoint/tests/c2_7_loop_prevention_bridge.rs`,
+`tools/amqp-dds-endpoint/tests/c1_3_4_8_bridge_dispatch.rs::c2_2_bridge_outbound_publish_flows_to_dds`,
+`tools/amqp-dds-endpoint/tests/c1_3_4_8_bridge_dispatch.rs::c2_3_bridge_inbound_from_broker_flows_to_dds`.
 
 **Status:** done
 
@@ -367,10 +447,16 @@ decken alle Annex-C-§C.2-Items ab.
 **Spec:** §2.3, S. 9 — Type-System, Performatives, Sections-Codec
 ohne Connection-Lifecycle.
 
-**Repo:** `crates/amqp-bridge/` voll: `types.rs`, `extended_types.rs`,
-`frame.rs`, `performatives.rs`, `sections.rs`.
+**Repo:** `crates/amqp-bridge/` voll: `crates/amqp-bridge/src/types.rs`, `crates/amqp-bridge/src/extended_types.rs`,
+`crates/amqp-bridge/src/frame.rs`, `performatives.rs`, `sections.rs`.
 
-**Tests:** `cargo test -p zerodds-amqp-bridge --lib`: 70 Tests grün.
+**Tests:** `crates/amqp-bridge/src/codec_profile.rs::tests`:
+`active_profile_full_by_default`, `primitives_are_codec_lite`,
+`list_map_array_are_not_codec_lite`, `data_section_is_codec_lite`,
+`other_sections_are_not_codec_lite`; dazu die Typ-Roundtrips aus
+`crates/amqp-bridge/src/types.rs::tests` und
+`crates/amqp-bridge/src/extended_types.rs::tests`. `cargo test -p
+zerodds-amqp-bridge --lib` — 70 Tests grün.
 
 **Status:** done
 
@@ -402,6 +488,11 @@ nur das Lite-Subset benutzt. `cargo test -p zerodds-amqp-bridge
 **Repo:** Cargo-Dependency: beide Crates hängen von
 `amqp-bridge` ab; jede Endpoint-Operation nutzt den Codec.
 
+**Tests:** `crates/amqp-bridge/src/codec_profile.rs::active_profile_full_by_default`,
+`crates/amqp-bridge/src/codec_profile.rs::primitives_are_codec_lite`,
+`crates/amqp-endpoint/src/mapping.rs::amqp_native_uses_correct_content_type`,
+`crates/amqp-endpoint/src/properties.rs::application_properties_truncated_type_id_present`.
+
 **Status:** done — strukturell durch Crate-Abhängigkeit
 erzwungen.
 
@@ -412,6 +503,11 @@ gleichzeitig.
 
 **Repo:** keine harte Trennung zwischen Endpoint- und Bridge-
 Pfaden; Module sind shared.
+
+**Tests:** `crates/amqp-endpoint/src/coexistence.rs::config_defaults_match_spec`,
+`crates/amqp-endpoint/src/management.rs::classify_address_recognises_reserved`,
+`tools/amqp-dds-endpoint/tests/c1_3_4_8_bridge_dispatch.rs::c1_3_amqp_producer_publishes_to_dds_via_bridge`,
+`tools/amqp-dds-endpoint/tests/c1_3_4_8_bridge_dispatch.rs::c2_2_bridge_outbound_publish_flows_to_dds`.
 
 **Status:** done
 
@@ -426,10 +522,13 @@ AMQP-§1.6-Primitive (boolean, int8/16/32/64, uint8/16/32/64,
 float, double, char, wchar, string, wstring, octet).
 
 **Repo:** `crates/amqp-bridge/src/types.rs` (15 Encoder/Decoder)
-+ `extended_types.rs::AmqpExtValue` (16 weitere für Compound +
++ `crates/amqp-bridge/src/extended_types.rs::AmqpExtValue` (16 weitere für Compound +
 described).
 
-**Tests:** `types.rs::tests`, `extended_types.rs::tests`.
+**Tests:** `crates/amqp-bridge/src/types.rs::tests::round_trip_all_primitive_values`,
+`crates/amqp-bridge/src/extended_types.rs::tests::every_multi_octet_primitive_is_big_endian_on_the_wire`,
+`crates/amqp-bridge/src/extended_types.rs::tests::char_is_four_octet_ucs4_big_endian`,
+`crates/amqp-bridge/src/extended_types.rs::tests::decimal32_64_128_have_correct_lengths`.
 
 **Status:** done
 
@@ -451,8 +550,12 @@ binary128-Typ, der Codegen liefert bereits f64.
 **Spec:** §7.1.3, S. 20 — alle AMQP-Multi-Byte-Werte sind
 big-endian; XCDR2-Quelldaten sind little-endian.
 
-**Repo:** `types.rs` und `extended_types.rs` schreiben
+**Repo:** `crates/amqp-bridge/src/types.rs` und `crates/amqp-bridge/src/extended_types.rs` schreiben
 ausnahmslos `to_be_bytes()`/lesen `from_be_bytes()`.
+
+**Tests:** `crates/amqp-bridge/src/extended_types.rs::every_multi_octet_primitive_is_big_endian_on_the_wire`,
+`crates/amqp-bridge/src/types.rs::ulong_large_uses_full_8_byte_format`,
+`crates/amqp-bridge/src/extended_types.rs::char_is_four_octet_ucs4_big_endian`.
 
 **Status:** done
 
@@ -461,7 +564,7 @@ ausnahmslos `to_be_bytes()`/lesen `from_be_bytes()`.
 **Spec:** §7.1.4.1, S. 21 — IDL-`char` ist auf UTF-8-ASCII-
 Subset beschränkt; Source-Bytes > 0x7F → `decode-error`.
 
-**Repo:** `extended_types.rs::encode_char` (4-Byte BE) +
+**Repo:** `crates/amqp-bridge/src/extended_types.rs::encode_char` (4-Byte BE) +
 `codegen_helpers::validate_char_ascii(byte) -> Result<u8, u8>`
 für Codegen-Pre-Encode-Check. Codegen-Templates rufen
 `validate_char_ascii` und propagieren `Err` als
@@ -477,8 +580,11 @@ für Codegen-Pre-Encode-Check. Codegen-Templates rufen
 **Spec:** §7.1.4.2, S. 22 — IDL-`wchar` als 4-Octet UCS-4 wire,
 runtime platform-defined.
 
-**Repo:** `extended_types.rs::encode_char` produziert exakt
+**Repo:** `crates/amqp-bridge/src/extended_types.rs::encode_char` produziert exakt
 4-Byte-BE-Codepoint.
+
+**Tests:** `crates/amqp-bridge/src/extended_types.rs::char_is_four_octet_ucs4_big_endian`,
+`crates/amqp-bridge/src/extended_types.rs::char_round_trips_ascii_and_unicode`.
 
 **Status:** done
 
@@ -487,10 +593,12 @@ runtime platform-defined.
 **Spec:** §7.1.4.3, S. 23 — DDS `string` ↔ AMQP `str8/str32`
 verbatim; `wstring` zu UTF-8 transkodiert.
 
-**Repo:** `types.rs::encode_string` (str8/str32),
-`types.rs::encode_symbol` (sym8/sym32), Length-Prefix-Validation.
+**Repo:** `crates/amqp-bridge/src/types.rs::encode_string` (str8/str32),
+`crates/amqp-bridge/src/types.rs::encode_symbol` (sym8/sym32), Length-Prefix-Validation.
 
-**Tests:** `types.rs::tests::string_round_trip_short_long`.
+**Tests:** `crates/amqp-bridge/src/types.rs::tests::string_short_uses_str8_format`,
+`crates/amqp-bridge/src/types.rs::tests::string_unicode_round_trip`,
+`crates/amqp-bridge/src/types.rs::tests::symbol_short_uses_sym8_format`.
 
 **Status:** done
 
@@ -500,11 +608,11 @@ verbatim; `wstring` zu UTF-8 transkodiert.
 `timestamp` (8-Byte BE ms-since-epoch). Sub-Millisekunden via
 `dds:nsec` Application-Property.
 
-**Repo:** `extended_types.rs::encode_timestamp`/`decode_timestamp`
+**Repo:** `crates/amqp-bridge/src/extended_types.rs::encode_timestamp`/`decode_timestamp`
 (Wire) + `properties::produce_application_properties` (App-
 Property `dds:nsec` aus `SampleHeader.source_nsec_remainder`).
 
-**Tests:** `extended_types.rs::tests::timestamp_round_trip`,
+**Tests:** `crates/amqp-bridge/src/extended_types.rs::tests::timestamp_round_trips_negative`,
 `properties::tests::application_properties_nsec_set_when_nonzero`.
 
 **Status:** done
@@ -532,11 +640,11 @@ routet automatisch auf `Uuid` oder `Binary`.
 `list` (0xC0/0xD0) oder `array` (0xE0/0xF0); leere Sequenz als
 `list0` (0x45).
 
-**Repo:** `extended_types.rs::AmqpExtValue::List` + `Array` mit
+**Repo:** `crates/amqp-bridge/src/extended_types.rs::AmqpExtValue::List` + `Array` mit
 list8/list32/array8/array32-Encoding; `list0`-Constant in
 `codes::LIST0`.
 
-**Tests:** `extended_types.rs::tests::list_round_trip_*`.
+**Tests:** `crates/amqp-bridge/src/extended_types.rs::tests::{small_list_round_trips, nested_list_round_trips, array_round_trips_homogeneous_short, list_map_array_roundtrip_concrete_values}`.
 
 **Status:** done
 
@@ -545,9 +653,9 @@ list8/list32/array8/array32-Encoding; `list0`-Constant in
 **Spec:** §7.1.8, S. 28 — DDS-Map (TK_MAP) ↔ AMQP `map` (0xC1/
 0xD1).
 
-**Repo:** `extended_types.rs::AmqpExtValue::Map`.
+**Repo:** `crates/amqp-bridge/src/extended_types.rs::AmqpExtValue::Map`.
 
-**Tests:** `extended_types.rs::tests::map_round_trip_*`.
+**Tests:** `crates/amqp-bridge/src/extended_types.rs::tests::{map_round_trips_with_string_keys, list_map_array_within_bound_still_round_trip, list_map_array_roundtrip_concrete_values}`.
 
 **Status:** done
 
@@ -608,8 +716,14 @@ mappt Mismatch auf `amqp:decode-error`.
 **Spec:** §7.2.2, S. 32 — Body als AMQP `list` (Constructor
 0xC0/0xD0) der Field-Werte in IDL-Order.
 
-**Repo:** `extended_types.rs::AmqpExtValue::List` + Section-
+**Repo:** `crates/amqp-bridge/src/extended_types.rs::AmqpExtValue::List` + Section-
 Producer.
+
+**Tests:** `crates/amqp-bridge/src/extended_types.rs::empty_list_uses_list0`,
+`crates/amqp-bridge/src/extended_types.rs::small_list_round_trips`,
+`crates/amqp-bridge/src/extended_types.rs::nested_list_round_trips`,
+`crates/amqp-bridge/tests/type_mapping.rs::the_body_form_follows_the_types_extensibility`,
+`crates/amqp-bridge/tests/type_mapping.rs::a_nested_composite_carries_its_own_descriptor`.
 
 **Status:** done
 
@@ -636,7 +750,16 @@ active_value: Option<_>)` baut die `AmqpExtValue::List` mit
 mit `resolve()`, statischem Alias-Set, `domain://`-URL-Parser,
 Wildcard-Matching.
 
-**Tests:** `routing::tests` (7 Tests).
+**Tests:** `crates/amqp-endpoint/src/routing.rs::tests` (12 Tests):
+`bare_address_resolves_to_default_domain`, `domain_url_parses_id_and_topic`,
+`domain_url_with_single_partition_parses`,
+`domain_url_with_multi_partition_parses`,
+`domain_url_with_percent_encoded_partition`,
+`static_alias_overrides_implicit_resolution`, `wildcard_alias_matches`,
+`malformed_domain_url_yields_error`, `empty_address_yields_no_route`,
+`conflict_resolution_uri_wins_when_both_present`,
+`conflict_resolution_property_used_when_uri_empty`,
+`conflict_resolution_both_empty`.
 
 **Status:** done
 
@@ -648,8 +771,15 @@ Wildcard-Matching.
 **Repo:** `link.rs::SettlementMode::{Settled, Unsettled}` +
 `LinkSession::deliver()` mit Pending-Settlement-Tracking.
 
-**Tests:** `link::tests::reliable_unsettled_round_trip`,
-`link::tests::best_effort_settled_pre_settles`.
+**Tests:** `crates/amqp-endpoint/src/link.rs::tests::unsettled_deliver_increments_pending`,
+`crates/amqp-endpoint/src/link.rs::tests::settle_decrements_pending`,
+`crates/amqp-endpoint/src/link.rs::tests::settle_with_mapper_calls_apply_and_decrements_pending`
+(RELIABLE → `Unsettled` mit Pending-Tracking),
+`crates/amqp-endpoint/src/link.rs::tests::deliver_consumes_credit_and_increments_delivered`,
+`crates/amqp-endpoint/src/link.rs::tests::settle_at_zero_does_not_underflow`
+(BEST_EFFORT → `Settled`, kein Pending-Eintrag). E2E:
+`tools/amqp-dds-endpoint/tests/c1_5_settlement_reliable.rs::c1_5_reliable_unsettled_increments_pending_until_disposition`,
+`tools/amqp-dds-endpoint/tests/c1_6_settlement_best_effort.rs::c1_6_best_effort_settled_does_not_track_pending`.
 
 **Status:** done
 
@@ -676,6 +806,8 @@ emittiert.
 
 **Repo:** kein expliziter HISTORY-Mapper nötig.
 
+**Tests:** `crates/amqp-endpoint/src/qos_translation.rs::the_dds_side_policies_leave_no_trace_on_the_amqp_boundary`.
+
 **Status:** done — strukturell durch Decoupling erfüllt.
 
 ### §7.4.4 DEADLINE
@@ -690,8 +822,10 @@ verbindet `DataReader::on_requested_deadline_missed` mit
 `AuditProducer::push(AuditEvent::Unauthorized {...})` oder
 einem ergänzten `DeadlineMissed`-Event-Typ.
 
-**Tests:** `management::tests::audit_producer_*`,
-`bridge::tests::produce_catalog_transfers_*`.
+**Tests:** `crates/amqp-endpoint/src/management.rs::tests::audit_producer_ringbuffer_evicts_oldest`,
+`crates/amqp-endpoint/src/management.rs::tests::audit_producer_drain_empties_queue`,
+`tools/amqp-dds-endpoint/src/bridge.rs::tests::produce_catalog_transfers_returns_one_per_topic`,
+`tools/amqp-dds-endpoint/src/bridge.rs::tests::produce_catalog_transfers_empty_for_empty_host`.
 
 **Status:** done
 
@@ -699,12 +833,20 @@ einem ergänzten `DeadlineMissed`-Event-Typ.
 
 **Spec:** §7.4.5, S. 43 — transparent zur AMQP-Boundary.
 
+**Repo:** `crates/amqp-endpoint/src/qos_translation.rs` (`dds_qos_to_amqp_behavior` — LATENCY_BUDGET geht in kein Feld von `AmqpBehavior` ein).
+
+**Tests:** `crates/amqp-endpoint/src/qos_translation.rs::the_dds_side_policies_leave_no_trace_on_the_amqp_boundary`.
+
 **Status:** done — strukturell.
 
 ### §7.4.6 OWNERSHIP
 
 **Spec:** §7.4.6, S. 44 — DDS-side Owner-Selection; AMQP
 boundary unbeeinflusst.
+
+**Repo:** `crates/amqp-endpoint/src/qos_translation.rs` (`dds_qos_to_amqp_behavior` — OWNERSHIP geht in kein Feld von `AmqpBehavior` ein).
+
+**Tests:** `crates/amqp-endpoint/src/qos_translation.rs::the_dds_side_policies_leave_no_trace_on_the_amqp_boundary`.
 
 **Status:** done — strukturell.
 
@@ -745,6 +887,11 @@ WRITER_DATA_LIFECYCLE, READER_DATA_LIFECYCLE, USER_DATA,
 TOPIC_DATA, GROUP_DATA, PRESENTATION,
 TYPE_CONSISTENCY_ENFORCEMENT — alle DDS-side; `dds:`-Prefix
 reserviert.
+
+**Repo:** `crates/amqp-endpoint/src/qos_translation.rs` (`dds_qos_to_amqp_behavior` liest von diesen Policies keine).
+
+**Tests:** `crates/amqp-endpoint/src/qos_translation.rs::the_dds_side_policies_leave_no_trace_on_the_amqp_boundary`,
+`crates/amqp-endpoint/src/qos_translation.rs::default_for_topic_is_unsettled_no_durable`.
 
 **Status:** done — strukturell durch Pass-Through-Semantik.
 
@@ -800,6 +947,12 @@ ruft `group_id` aus `SampleHeader.keyhash` auf.
 
 **Spec:** §7.6.2, S. 51 — Hash ist one-way; Subscriber
 SHALL NOT versuchen Key-Felder aus group-id zu rekonstruieren.
+
+**Repo:** `crates/amqp-endpoint/src/keyhash.rs` (`group_id` — SHA-256-Präfix, kein Rückweg).
+
+**Tests:** `crates/amqp-endpoint/src/keyhash.rs::group_id_carries_no_recoverable_trace_of_the_key`,
+`crates/amqp-endpoint/src/keyhash.rs::keyhash_length_always_64_lowercase_hex`,
+`crates/amqp-endpoint/src/keyhash.rs::distinct_keyhash_yields_distinct_group_id`.
 
 **Status:** done — strukturell (kein Reverse-Mapping zu
 implementieren).
@@ -892,7 +1045,14 @@ pro Eintrag eine `AmqpExtValue::Map` mit
 `amqp-address`/`dds-topic`/`dds-type-name`/`type-id` (ulong oder
 symbol je nach DescriptorForm)/`direction`/`partitions`.
 
-**Tests:** siehe §7.5.
+**Tests:** `crates/amqp-endpoint/src/management.rs::tests::catalog_snapshot_emits_map_per_entry`,
+`crates/amqp-endpoint/src/management.rs::tests::catalog_type_id_truncated_is_amqp_ulong`,
+`crates/amqp-endpoint/src/management.rs::tests::catalog_type_id_full_is_amqp_symbol`,
+`crates/amqp-endpoint/src/management.rs::tests::catalog_partitions_emitted_when_set`,
+`crates/amqp-endpoint/src/management.rs::tests::catalog_direction_symbols_match_spec`,
+`crates/amqp-endpoint/src/management.rs::tests::catalog_add_remove_balances_topics_exposed`,
+`crates/amqp-endpoint/src/management.rs::tests::classify_address_recognises_reserved`
+(`$catalog` als reservierte Adresse).
 
 **Status:** done
 
@@ -907,8 +1067,16 @@ Stream von AMQP-Messages mit `map`-Body
 liefert pro Mandatory-Metric eine `AmqpExtValue::Map` mit
 `name`/`value`/`unit`/`timestamp`-Feldern.
 
-**Tests:** `management::tests::metrics_snapshot_*` (2 Tests),
-`metrics::tests` (10 Tests).
+**Tests:** `crates/amqp-endpoint/src/management.rs::tests::metrics_snapshot_emits_one_sample_per_mandatory_metric`,
+`crates/amqp-endpoint/src/management.rs::tests::metrics_snapshot_carries_value`;
+`crates/amqp-endpoint/src/metrics.rs::tests` (11 Tests):
+`mandatory_metric_count_is_14`, `fresh_hub_all_zero`,
+`unknown_metric_yields_none`, `connection_open_close_balances`,
+`transfer_unsettled_tracking`,
+`pre_settled_transfer_does_not_count_unsettled`,
+`loop_and_hop_cap_drops_count_separately`,
+`rpc_failure_counters_independent`, `unit_of_known_metrics`,
+`topics_added_removed_balances`, `reconnect_overflow_counter`.
 
 **Status:** done
 
@@ -939,6 +1107,12 @@ korrekte Unit-Strings gemäß Spec-Tabelle.
 `$audit` als security; volles AMQP-Management-1.0 explizit
 out-of-scope.
 
+**Repo:** `crates/amqp-endpoint/src/management.rs` (`classify_address`, `AddressKind`).
+
+**Tests:** `crates/amqp-endpoint/src/management.rs::classify_address_recognises_reserved`,
+`crates/amqp-endpoint/src/management.rs::catalog_direction_symbols_match_spec`,
+`crates/amqp-endpoint/src/management.rs::audit_event_types_are_spec_symbols`.
+
 **Status:** done — Spec-Klassifikation; keine Implementation
 zu erbringen.
 
@@ -952,7 +1126,7 @@ Size, Max-Connections, Catalog-Entries-Cap, Idle-Timeout.
 mit `max_frame_size`, `max_connections`, `idle_timeout_ms`,
 `max_compound_nesting`.
 
-**Tests:** `limits::tests` (3 Tests).
+**Tests:** `crates/amqp-endpoint/src/limits.rs::tests::defaults_match_spec_implementation_note`.
 
 **Status:** done
 
@@ -967,7 +1141,14 @@ bridge_id + hop_cap; `DEFAULT_HOP_CAP=8`, `MAX_HOP_CAP=16`),
 `inspect_inbound`, `stamp_outbound`. Properties-App-Keys
 `dds:bridge-id`/`dds:bridge-hop` in `properties::app_keys`.
 
-**Tests:** `coexistence::tests` (11 Tests).
+**Tests:** `crates/amqp-endpoint/src/coexistence.rs::tests` (11 Tests):
+`forward_when_no_bridge_metadata`, `drop_loop_on_self_tag_string`,
+`drop_loop_on_self_tag_list`, `drop_hop_cap_when_exceeded`,
+`forward_at_hop_cap_limit`, `stamp_outbound_creates_initial_entries`,
+`stamp_outbound_appends_to_existing_string_list`,
+`stamp_outbound_appends_to_list_form`,
+`round_trip_stamp_then_inspect_drops_loop`,
+`other_bridges_tag_does_not_drop`, `config_defaults_match_spec`.
 
 **Status:** done
 
@@ -993,49 +1174,74 @@ liefert `("application/vnd.dds.xcdr2", bytes_verbatim)`.
 IDL-zu-JSON-Mapping-Regeln (Time_t, octet sequences als Base64,
 union, sequence, map, 16-Byte-Identifier als Hex).
 
-**Repo:** `mapping.rs::encode_dds_to_amqp_body(.., Json)`
-(Hex-Fallback `{"_xcdr2": "<hex>"}`);
-`crates/idl-cpp/src/amqp.rs::emit_amqp_helpers`
-(`to_json_string(const T&)` pro Top-Level-Type);
-`crates/idl-java/src/amqp.rs::emit_amqp_codec_files`
-(`<TypeName>AmqpCodec.toJsonString`);
-`crates/idl-ts/src/amqp.rs::append_amqp_helpers`
-(`toJsonString_<TypeName>`).
+**Repo:** `crates/amqp-bridge/src/codegen/encode.rs::json_document` —
+die Regeln der Klausel je Zeile: Base64 für Octet-Sequenzen, der
+symbolische Name für ein `enum`, `{"sec": n, "nanosec": m}` für
+`Time_t`, `{"discriminator": .., "value": ..}` für eine `union` mit
+weggelassenem `value` bei leerem Branch, ausgelassene abwesende
+`@optional`-Member, und `NaN` und die Unendlichkeiten als Fehler statt
+als Ausgabe. Die Typinformation, die die Klausel verlangt, liefert
+`crates/amqp-bridge/src/codegen/plan.rs::plan_of` aus dem Modell.
+Die Helfer je IDL-Typ erzeugt
+`crates/amqp-bridge/src/codegen/emit.rs::helpers_for`
+(`toJsonString_<Typname>`) für C++, Java und TypeScript gegen die
+Laufzeiten in `crates/amqp-bridge/runtime/`.
+`crates/amqp-endpoint/src/mapping.rs::encode_dds_to_amqp_body(.., Json)`
+bleibt der typlose Weg und schreibt weiter das Hex-Feld.
 
-**Tests:** `mapping::tests::json_round_trip_via_hex_field`,
-`zerodds_idl_cpp::amqp::tests::struct_emits_to_json_wrapper`,
-`json_wrapper_for_union_too`,
-`zerodds_idl_java::amqp::tests::struct_emits_to_json_helper`,
-`json_helper_for_union_too`,
-`zerodds_idl_ts::amqp::tests::struct_emits_to_json_wrapper`,
-`json_helper_for_union_too`.
+**Tests:** `crates/amqp-bridge/src/codegen/encode.rs::tests`
+(`an_octet_sequence_is_base64_in_json_and_binary_on_the_wire`,
+`an_enumeration_is_its_symbolic_name_in_both_modes`,
+`a_nan_and_an_infinity_are_refused_rather_than_written`,
+`a_time_is_milliseconds_on_the_wire_and_two_keys_in_json`,
+`the_json_escapes_are_rfc_8259s`,
+`base64_matches_rfc_4648_test_vectors`);
+`crates/amqp-bridge/tests/cross_language_agreement.rs` compiliert und
+startet den erzeugten C++-, Java- und TypeScript-Code und vergleicht
+dessen JSON zeichengleich mit dem der Rust-Referenz.
 
-**Status:** done
+**Status:** done — die IDL-zu-JSON-Regeln stehen typgetrieben und in
+vier Spalten, die miteinander verglichen werden.
 
 ### §8.1.3 AMQP-Native Typed Mapping Mode
 
 **Spec:** §8.1.3, S. 71 — Body als single `amqp-value`-Section
 mit described composite per §7.2.
 
-**Repo:** `mapping.rs::encode_dds_to_amqp_body(.., AmqpNative)`
-(content-type `application/vnd.dds.amqp-native`);
-`crates/idl-cpp/src/amqp.rs::emit_amqp_helpers` (`to_amqp_value`,
-Union-Switch via `make_union_body`);
-`crates/idl-java/src/amqp.rs::emit_amqp_codec_files`
-(`<TypeName>AmqpCodec.toAmqpValue`);
-`crates/idl-ts/src/amqp.rs::append_amqp_helpers`
-(`toAmqpValue_<TypeName>`); zentraler Union-Helper
-`crates/amqp-endpoint/src/codegen_helpers.rs::make_union_body`.
+**Repo:** `crates/amqp-bridge/src/codegen/encode.rs::described_composite`
+— der Descriptor nach §7.2.1 in beiden Formen, der Body nach §7.2.2 als
+Liste, als Map nach Member-ID für einen `@mutable`-Typ und als
+Zwei-Element-Liste für eine `union` nach §7.2.3, ein `null` am Platz
+eines abwesenden `@optional`-Members und die verschachtelte Komposite
+mit eigenem Descriptor nach §7.2.2.4.
+`crates/amqp-bridge/src/codegen/plan.rs` liest die Zuordnung je Zeile
+von §7.1 aus dem Modell. Die Helfer je IDL-Typ erzeugt
+`crates/amqp-bridge/src/codegen/emit.rs::helpers_for`
+(`toAmqpValue_<Typname>`) für C++, Java und TypeScript gegen die
+Laufzeiten in `crates/amqp-bridge/runtime/`.
+`crates/amqp-endpoint/src/mapping.rs::encode_dds_to_amqp_body(..,
+AmqpNative)` setzt den content-type.
 
-**Tests:** `mapping::tests::amqp_native_uses_correct_content_type`,
-`zerodds_idl_cpp::amqp::tests::struct_emits_to_amqp_value_function`,
-`union_emits_make_union_body_call`,
-`zerodds_idl_java::amqp::tests::struct_emits_amqp_codec_file`,
-`union_emits_codec_with_make_union_body_calls`,
-`zerodds_idl_ts::amqp::tests::struct_emits_to_amqp_value_function`,
-`union_emits_make_union_body_calls`.
+**Tests:** `crates/amqp-bridge/tests/type_mapping.rs` (10 Tests):
+`every_row_of_the_primitive_table_takes_the_code_it_names`,
+`an_octet_sequence_is_binary_and_a_long_sequence_is_a_list`,
+`the_body_form_follows_the_types_extensibility`,
+`a_mutable_body_is_keyed_by_the_declared_member_ids`,
+`a_union_plans_its_discriminator_and_then_its_branches`,
+`a_type_outside_the_mapping_is_named_rather_than_encoded_as_something_else`,
+`a_plan_of_something_that_is_not_a_composite_is_refused`,
+`the_two_descriptor_forms_come_from_the_same_identifier`,
+`a_sample_nested_past_the_bound_is_refused_by_name`,
+`a_nested_composite_carries_its_own_descriptor` — aus dem
+gesenkten Modell: die Primitiv-Tabelle Zeile für Zeile, die Body-Form je
+Extensibility, die Member-ID-Map, die Union, die beiden
+Descriptor-Formen, die verschachtelte Komposite und die Ablehnung eines
+nicht abgebildeten Typs); `crates/amqp-bridge/tests/cross_language_agreement.rs`
+compiliert und startet den erzeugten C++-, Java- und TypeScript-Code und
+vergleicht dessen Oktette byte-gleich mit denen der Rust-Referenz.
 
-**Status:** done
+**Status:** done — die described composite steht typgetrieben und in
+vier Spalten, die auf dieselben Oktette kommen.
 
 ### §8.2 Properties-Section message-id
 
@@ -1066,7 +1272,9 @@ spec-mandatorischen Felder (`message_id`, `creation_time_ms`,
 Felder (`subject`, `reply-to`, `correlation-id`, `user-id`)
 bleiben Caller-Belegung.
 
-**Tests:** `properties::tests::produce_properties_*` (3 Tests).
+**Tests:** `crates/amqp-endpoint/src/properties.rs::tests::produce_properties_keyhash_yields_group_id`,
+`crates/amqp-endpoint/src/properties.rs::tests::produce_properties_unkeyed_omits_group_id`,
+`crates/amqp-endpoint/src/properties.rs::tests::produce_properties_lifespan_sets_expiry`.
 
 **Status:** done — spec-mandatorische Felder belegt.
 
@@ -1086,9 +1294,13 @@ Konstanten; `produce_application_properties` baut die
 `dds:lifespan-ms`, `dds:operation` (wenn != Write),
 `dds:instance-handle`).
 
-**Tests:** `properties::tests::application_properties_*` (6
-Tests inkl. multi-partition list, single-partition string,
-register-Operation, type-id-Präsenz).
+**Tests:** `crates/amqp-endpoint/src/properties.rs::tests`:
+`application_properties_default_minimal_set`,
+`application_properties_register_sets_operation`,
+`application_properties_truncated_type_id_present`,
+`application_properties_multi_partition_uses_list`,
+`application_properties_single_partition_uses_string`,
+`application_properties_nsec_set_when_nonzero`.
 
 **Status:** done
 
@@ -1111,12 +1323,16 @@ ResourceLimits, DynamicTopicConfig, AmqpEndpointConfig,
 AmqpBridgeConfig) mit Spec-konformen Defaults. IDL-Symbol-
 Round-Trip (`as_idl`/`parse`) abgebildet.
 
-**Tests:** `annex_a::tests` (10 Tests inkl. round-trip,
-defaults, AMQP-wire-aliases).
+**Tests:** `crates/amqp-endpoint/src/annex_a.rs::tests` (10 Tests):
+`sasl_mechanism_idl_round_trip`, `sasl_mechanism_accepts_amqp_wire_aliases`,
+`body_encoding_mode_idl_round_trip`, `descriptor_form_default_is_truncated`,
+`time_mapping_default_is_standard`, `link_direction_default_is_both`,
+`topic_mapping_defaults_match_spec`, `endpoint_config_default_is_empty`,
+`resource_limits_default_has_dos_caps`, `link_direction_amqp_aliases`.
 
-**Status:** done — handgepflegte Mirror-Struktur. IDL-Codegen-
-Pipeline bleibt als Folge-Aufgabe (idl-rust-Generator), aber
-das Datenmodell ist spec-konform und in der Crate verfügbar.
+**Status:** done — das Datenmodell ist spec-konform und in der Crate
+verfügbar; der Symbol-Round-Trip gegen die IDL-Schreibweise ist je Enum
+und je Struct getestet.
 
 ### §9.2 XML Configuration
 
@@ -1137,7 +1353,10 @@ bridge, tls, sasl, topics, dynamic, limits.
 `missing_amqp_address_yields_error`,
 `invalid_body_mode_yields_error`,
 `malformed_xml_yields_parse_error`,
-`unknown_elements_are_ignored`).
+`unknown_elements_and_attributes_are_refused_with_their_line`);
+`tools/amqp-dds-endpoint/tests/readme_config.rs::the_readme_configuration_reads_as_it_says`.
+Unbekannte Elemente und Attribute werden mit Zeile abgelehnt (vorher still
+ignoriert; der Namespace trägt die Version).
 
 **Status:** done
 
@@ -1167,8 +1386,12 @@ gereicht.
 `tls_handshake_round_trip_with_self_signed_cert` mit echtem
 TLS-Handshake gegen rcgen-generiertes self-signed Cert).
 
-**Status:** done — voller TLS-Stack via rustls als Cargo-Feature
-`tls` opt-in.
+`tools/amqp-dds-endpoint/tests/tls_sasl_e2e.rs::a_tls_client_is_offered_plain_and_authenticated_against_the_store`
+(über `run_server`: TLS-Handshake, PLAIN angeboten, gegen den Store
+geprüft). `tools/amqp-dds-endpoint/src/server.rs::serve_one` wendete TLS vorher auf keine Verbindung an,
+obwohl `tls.enabled` den Handler auf „TLS aktiv“ stellte.
+
+**Status:** done — rustls, Feature `tls` (Default) im Endpoint-Programm.
 
 ### §10.2 SASL Mechanisms — Mandatory Set
 
@@ -1177,7 +1400,12 @@ ANONYMOUS, EXTERNAL.
 
 **Repo:** `sasl.rs::SaslMechanism::{Plain, Anonymous, External}`.
 
-**Tests:** `sasl::tests` (8 Tests).
+**Tests:** `crates/amqp-endpoint/src/sasl.rs::tests::select_outbound_prefers_external`,
+`crates/amqp-endpoint/src/sasl.rs::tests::select_outbound_falls_back_to_plain_with_tls`,
+`crates/amqp-endpoint/src/sasl.rs::tests::select_outbound_skips_plain_without_tls`,
+`crates/amqp-endpoint/src/sasl.rs::tests::select_outbound_anonymous_only`,
+`crates/amqp-endpoint/src/sasl.rs::tests::select_outbound_no_acceptable_mechanism`,
+`crates/amqp-endpoint/src/sasl.rs::tests::sasl_code_wire_values_match_spec`.
 
 **Status:** done
 
@@ -1192,8 +1420,9 @@ mit Wire-Symbol `"SCRAM-SHA-256"` + Round-Trip-Parse-Support +
 (HMAC-SHA-256 + PBKDF2 + Channel-Binding) ist Caller-Layer
 (Reuse `crates/security-crypto`).
 
-**Tests:** Inline-Tests im `sasl`-Modul (`name_round_trips`,
-`unknown_name_yields_none`).
+**Tests:** `crates/amqp-endpoint/src/sasl.rs::tests::name_round_trips`,
+`crates/amqp-endpoint/src/sasl.rs::tests::unknown_name_yields_none`,
+`crates/amqp-endpoint/src/security.rs::tests::scram_yields_scram_sha256_class_id`.
 
 **Status:** done — Optional SCRAM-SHA-256-Mechanism als Wire-
 Marker-Enum-Variant ausgewiesen.
@@ -1216,6 +1445,12 @@ in `client::do_outbound_sasl` mit
 
 **Spec:** §10.3.1, S. 88 — DDS-Security-Plugins können aktiv
 sein; Outbound-Signing ist DDS-side.
+
+**Repo:** `crates/amqp-endpoint/src/security.rs` (`DualIdentity`).
+
+**Tests:** `crates/amqp-endpoint/src/security.rs::dual_identity_for_dds_does_not_carry_broker_credential`,
+`crates/amqp-endpoint/src/security.rs::external_yields_pki_dh_class_id_with_cert`,
+`crates/amqp-endpoint/src/security.rs::class_id_strings_match_spec_table`.
 
 **Status:** done — strukturell (DDS-Security-Plugins parallel
 zum AMQP-Layer aktiv).
@@ -1314,6 +1549,13 @@ prefix*, *suffix, *), `enable_discovery`, `enable_liveliness`,
 **Spec:** §10.5, S. 97 — Endpoint und Bridge auf demselben Host
 teilen keine Identity automatisch.
 
+**Repo:** `crates/amqp-endpoint/src/security.rs` (`DualIdentity`, getrennte `IdentityToken`- und Broker-Credential-Felder).
+
+**Tests:** `crates/amqp-endpoint/src/security.rs::dual_identity_keeps_broker_and_dds_separate`,
+`crates/amqp-endpoint/src/security.rs::dual_identity_for_dds_does_not_carry_broker_credential`,
+`crates/amqp-endpoint/src/bridge_security.rs::amqp_acl_address_check`,
+`crates/amqp-endpoint/src/bridge_security.rs::amqp_sasl_plain_rejects_unknown_user`.
+
 **Status:** done — strukturell (separate Konfigurations-Strukturen).
 
 ### §10.6 Bridge-Profile Dual Identity
@@ -1359,7 +1601,13 @@ mit Default-Pacing (1s init, 2x mult, 60s cap) gemäß Spec.
 `MetricsHub::on_reconnect_overflow` für KEEP_LAST-Eviction-
 Counter.
 
-**Tests:** siehe §2.2 Cl. 7.
+**Tests:** `tools/amqp-dds-endpoint/src/client.rs::tests::backoff_starts_at_initial`,
+`tools/amqp-dds-endpoint/src/client.rs::tests::backoff_doubles_until_cap`,
+`tools/amqp-dds-endpoint/tests/c2_4_reconnect_on_loss.rs::c2_4_reconnect_loop_pacing_follows_spec_defaults`
+(1 s init, Faktor 2, 60 s Cap),
+`tools/amqp-dds-endpoint/tests/c2_4_reconnect_on_loss.rs::c2_4_reconnect_succeeds_on_first_retry_after_intermittent_failure`,
+`tools/amqp-dds-endpoint/tests/c2_4_reconnect_on_loss.rs::c2_4_reconnect_aborts_on_max_attempts`,
+`tools/amqp-dds-endpoint/tests/c2_4_reconnect_on_loss.rs::c2_4_reconnect_after_server_restart_eventually_succeeds`.
 
 **Status:** done
 
@@ -1458,7 +1706,11 @@ Spec-konforme Descriptions mit `§-Ref`-Präfix.
 `bridge_id`/`bridge_hop_cap` an Endpoint+Bridge-Konfig.
 IDL-Symbol-Round-Trip via `as_idl`/`parse`.
 
-**Tests:** `annex_a::tests` (10 Tests).
+**Tests:** `crates/amqp-endpoint/src/annex_a.rs::tests::sasl_mechanism_idl_round_trip`,
+`crates/amqp-endpoint/src/annex_a.rs::tests::body_encoding_mode_idl_round_trip`,
+`crates/amqp-endpoint/src/annex_a.rs::tests::topic_mapping_defaults_match_spec`,
+`crates/amqp-endpoint/src/annex_a.rs::tests::endpoint_config_default_is_empty`,
+`crates/amqp-endpoint/src/annex_a.rs::tests::resource_limits_default_has_dos_caps`.
 
 **Status:** done — siehe §9.1.
 
@@ -1471,7 +1723,14 @@ IDL-Symbol-Round-Trip via `as_idl`/`parse`.
 **Spec:** Annex B, S. 119 — drei Beispiele: Edge-Sensor,
 Cloud-Subscriber via Broker, Multi-Vendor-Federation.
 
-**Status:** n/a (informative)
+**Repo:** —
+
+**Tests:** —
+
+**Status:** n/a (informative) — Beispiel-Deployments ohne normative
+Anforderung; die Mechanismen, die sie zusammensetzen, sind in §7.3
+(Address-Resolution), §7.11 (Bridge-Coexistence) und §10.1 (TLS) als
+eigene Items geführt.
 
 ---
 
@@ -1502,7 +1761,9 @@ SASL-init mit PLAIN → SASL-Outcome `auth`-fail + Connection-Close.
 `tools/amqp-dds-endpoint/tests/c1_2_sasl_plain_rejection.rs`
 mit echter TCP-Verbindung gegen lokal-laufenden Daemon.
 
-**Tests:** `sasl::tests::plain_without_tls_yields_unsupported`,
+**Tests:** `crates/amqp-endpoint/src/sasl.rs::tests::plain_without_tls_yields_auth_failed`,
+`crates/amqp-endpoint/src/sasl.rs::tests::select_outbound_skips_plain_without_tls`,
+`crates/amqp-endpoint/src/sasl.rs::tests::plain_offered_only_when_tls_active`,
 `c1_2_no_tls_server_does_not_advertise_plain`,
 `c1_2_client_with_only_plain_credentials_fails_without_tls`,
 `c1_2_client_error_plainrejectednotls_strs_correctly`.
@@ -1652,21 +1913,24 @@ plus Bridge-Dispatch in
 **Spec:** Annex C §C.1.12, S. 127 — Sample mit MODE_JSON ist
 gültiges RFC-8259-JSON.
 
-**Repo:** `mapping.rs::encode_dds_to_amqp_body(.., Json)`
-(Hex-Fallback); per-Type JSON-Wrapper aus
-`crates/idl-cpp/src/amqp.rs`,
-`crates/idl-java/src/amqp.rs`,
-`crates/idl-ts/src/amqp.rs` (siehe §8.1.2).
+**Repo:** `crates/amqp-bridge/src/codegen/encode.rs::json_document`
+schreibt das Dokument; die Escapes von RFC 8259 §7 stehen in
+`json_string` derselben Datei, und die Zahl wird als die kürzeste
+Darstellung geschrieben, die zurückliest. Die erzeugten
+`toJsonString_<Typname>`-Helfer aus
+`crates/amqp-bridge/src/codegen/emit.rs` schreiben dasselbe Dokument in
+C++, Java und TypeScript (siehe §8.1.2).
 
-**Tests:** `mapping::tests::json_round_trip_via_hex_field`,
-`zerodds_idl_cpp::amqp::tests::struct_emits_to_json_wrapper`,
-`json_wrapper_for_union_too`,
-`zerodds_idl_java::amqp::tests::struct_emits_to_json_helper`,
-`json_helper_for_union_too`,
-`zerodds_idl_ts::amqp::tests::struct_emits_to_json_wrapper`,
-`json_helper_for_union_too`.
+**Tests:** `crates/amqp-bridge/tests/cross_language_agreement.rs::the_reference_json_is_a_valid_rfc_8259_document`
+prüft Klammer-Balance außerhalb von Strings, kein nachlaufendes Komma
+und die Anführungszeichen um jeden Schlüssel;
+`the_emitted_cpp_writes_the_same_octets_and_the_same_json` und die
+beiden Geschwister-Tests prüfen, dass die drei erzeugten Spalten
+zeichengleich dasselbe Dokument schreiben;
+`crates/amqp-bridge/src/codegen/encode.rs::tests::the_json_escapes_are_rfc_8259s`.
 
-**Status:** done
+**Status:** done — ein Sample in MODE_JSON ist gültiges RFC-8259-JSON,
+in allen vier Spalten geprüft.
 
 ### Annex C C.1.13 Metrics Link
 
@@ -1854,10 +2118,16 @@ Bridge-Code.
 Roundtrips für alle Primitives, Composites, Sections.
 
 **Repo:** `crates/amqp-bridge/src/types.rs::tests`,
-`extended_types.rs::tests`, `frame.rs::tests`,
+`crates/amqp-bridge/src/extended_types.rs::tests`, `crates/amqp-bridge/src/frame.rs::tests`,
 `performatives.rs::tests`, `sections.rs::tests`.
 
-**Tests:** `cargo test -p zerodds-amqp-bridge --lib`: 70 Tests grün.
+**Tests:** `crates/amqp-bridge/src/codec_profile.rs::tests`:
+`active_profile_full_by_default`, `primitives_are_codec_lite`,
+`list_map_array_are_not_codec_lite`, `data_section_is_codec_lite`,
+`other_sections_are_not_codec_lite`; dazu die Typ-Roundtrips aus
+`crates/amqp-bridge/src/types.rs::tests` und
+`crates/amqp-bridge/src/extended_types.rs::tests`. `cargo test -p
+zerodds-amqp-bridge --lib` — 70 Tests grün.
 
 **Status:** done
 
@@ -1881,6 +2151,16 @@ unter `--features codec-lite`).
 
 **Spec:** Annex C §C.5, S. 136 — vendor-neutrales Wording;
 Implementer SHOULD veröffentlicht harness-source.
+
+**Repo:** `tools/amqp-dds-endpoint/tests/common`.
+
+**Tests:** `tools/amqp-dds-endpoint/tests/common`,
+`tools/amqp-dds-endpoint/tests/c1_1_connection_open.rs::c1_1_connection_open_with_tls_active_advertises_plain`,
+`tools/amqp-dds-endpoint/tests/c2_4_reconnect_on_loss.rs::c2_4_reconnect_succeeds_on_first_retry_after_intermittent_failure`,
+`tools/amqp-dds-endpoint/tests/c2_4_reconnect_on_loss.rs::c2_4_reconnect_loop_pacing_follows_spec_defaults`,
+`tools/amqp-dds-endpoint/tests/c2_4_reconnect_on_loss.rs::c2_4_reconnect_aborts_on_max_attempts`,
+`tools/amqp-dds-endpoint/tests/c2_4_reconnect_on_loss.rs::c2_4_reconnect_after_server_restart_eventually_succeeds`,
+`tools/amqp-dds-endpoint/tests/c2_4_reconnect_on_loss.rs::c2_4_single_connect_attempt_works_for_normal_path`.
 
 **Status:** done — strukturell (Harness-Wahl ist
 implementation-defined).
@@ -1925,6 +2205,12 @@ nur wenn `rpc_aware = true` aktiviert wird.
 nur Property-Mapping; volles RPC-over-AMQP ist
 spätere Spec.
 
+**Repo:** `crates/amqp-endpoint/src/rpc_correlation.rs` (`RpcConfig`, `DEFAULT_RPC_TIMEOUT_MS`, `DEFAULT_MAX_OUTSTANDING_CALLS`).
+
+**Tests:** `crates/amqp-endpoint/src/rpc_correlation.rs::defaults_match_spec`,
+`crates/amqp-endpoint/src/rpc_correlation.rs::validate_reply_rejects_missing_correlation_id`,
+`crates/amqp-endpoint/src/properties.rs::dds_operation_round_trips_via_str`.
+
 **Status:** done — Spec-Inhalts-Klassifikation.
 
 ### Annex D D.4 Reply Validation
@@ -1964,18 +2250,25 @@ liefert `OutOfResources` bei voller Tabelle. Wires gegen
 
 Test-Lauf:
 
-* `cargo test -p zerodds-amqp-bridge --lib` — 82 Tests grün.
-* `cargo test -p zerodds-amqp-bridge --features codec-lite --lib` — 82 Tests grün.
-* `cargo test -p zerodds-amqp-endpoint --lib` — 198 Tests grün.
-* `cargo test -p zerodds-amqp-endpoint --test annex_a_idl_roundtrip` — 17 Tests grün.
+* `cargo test -p zerodds-amqp-bridge --lib` — 113 Tests grün.
+* `cargo test -p zerodds-amqp-bridge --features codec-lite --lib` — 113 Tests grün.
+* `cargo test -p zerodds-amqp-bridge --test type_mapping` — 9 Tests grün.
+* `cargo test -p zerodds-amqp-bridge --test cross_language_agreement` — 5 Tests grün
+  (compiliert und startet den erzeugten C++-, Java- und TypeScript-Code;
+  fehlt ein Compiler, nennt der Test die Spalte und überspringt sie).
+* `cargo test -p zerodds-amqp-bridge --test boundary_decoders` — 90 Tests grün.
+* `cargo test -p zerodds-amqp-bridge --test fuzz_smoke` — 8 Tests grün.
+* `cargo test -p zerodds-amqp-bridge --test proptest_roundtrip` — 8 Tests grün.
+* `cargo test -p zerodds-amqp-endpoint --lib` — 234 Tests grün.
+* `cargo test -p zerodds-amqp-endpoint --test annex_a_idl_roundtrip` — 18 Tests grün.
 * `cargo test -p zerodds-amqp-endpoint --test e2e_multi_bridge_hop` — 6 Tests grün.
 * `cargo test -p zerodds-amqp-endpoint --test fuzz_smoke` — 4 Tests grün.
 * `cargo test -p zerodds-amqp-endpoint --test proptest_state_machine` — 6 Tests grün.
-* `cargo test -p amqp-dds-endpoint` — 54 Tests grün (ohne tls-Feature).
-* `cargo test -p amqp-dds-endpoint --features tls` — 60 Tests grün.
-* `cargo test -p zerodds-idl-cpp` (`amqp::tests::*`) — 18 Tests grün.
-* `cargo test -p zerodds-idl-java` (`amqp::tests::*`) — 13 Tests grün.
-* `cargo test -p zerodds-idl-ts` (`amqp::tests::*`) — 16 Tests grün.
+* `cargo test -p amqp-dds-endpoint` — 98 Tests grün (ohne tls-Feature).
+* `cargo test -p amqp-dds-endpoint --features tls` — 104 Tests grün.
 
-Cross-Crate Test-Volumen: 313 + Lang-Codegen-AMQP-Sub-Tests gegen
-die DDS-AMQP-1.0-Spec.
+Cross-Crate Test-Volumen: 605 verschiedene Tests gegen die
+DDS-AMQP-1.0-Spec; die beiden Wiederholungsläufe (`codec-lite`, `tls`)
+sind darin nicht doppelt gezählt.
+
+Offene Punkte: keine. Decision-Records: keine.

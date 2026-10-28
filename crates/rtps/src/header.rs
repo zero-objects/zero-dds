@@ -32,7 +32,7 @@ pub const RTPS_MAGIC: [u8; 4] = [b'R', b'T', b'P', b'S'];
 /// RTPS-Header (20 Byte fix).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct RtpsHeader {
-    /// Protokoll-Version (default: 2.5).
+    /// Protocol version (default: 2.5).
     pub protocol_version: ProtocolVersion,
     /// Vendor-Identifier.
     pub vendor_id: VendorId,
@@ -159,7 +159,7 @@ mod tests {
 
     #[test]
     fn header_decode_rejects_truncated_input() {
-        let bytes = [b'R', b'T', b'P', b'S', 2, 5, 0, 0]; // nur 8 Byte
+        let bytes = [b'R', b'T', b'P', b'S', 2, 5, 0, 0]; // only 8 bytes
         let res = RtpsHeader::from_bytes(&bytes);
         assert!(matches!(
             res,

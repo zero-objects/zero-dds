@@ -1,0 +1,1 @@
+@final struct Ext { long a; double b; short c; };

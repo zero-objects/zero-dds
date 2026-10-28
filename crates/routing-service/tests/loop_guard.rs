@@ -24,29 +24,43 @@ use std::time::Duration;
 use common::{Pub, Sub};
 use zerodds_routing_service::{Router, RouterConfig};
 
-const CONFIG: &str = r#"{
+/// The two ends of the bridge, on domains leased for this run.
+///
+/// Leased and not fixed: the domain number is the UDP port
+/// (RTPS 9.6.1.4.1), so a number written into this file is shared with
+/// every other test binary that wrote the same one. A second process
+/// publishing on the input domain looks exactly like the runaway this
+/// test exists to catch — measured on the bench host: 8606 deliveries
+/// for 3 samples, with no loop in the router at all.
+fn config(input: i32, output: i32) -> String {
+    format!(
+        r#"{{
   "name": "e2e-bidir",
   "routes": [
-    {
+    {{
       "name": "fwd",
-      "input":  { "domain": 50, "topic": "Bi", "type_name": "zerodds::RawBytes" },
-      "output": { "domain": 51, "topic": "Bi", "type_name": "zerodds::RawBytes" }
-    },
-    {
+      "input":  {{ "domain": {input}, "topic": "Bi", "type_name": "zerodds::RawBytes" }},
+      "output": {{ "domain": {output}, "topic": "Bi", "type_name": "zerodds::RawBytes" }}
+    }},
+    {{
       "name": "back",
-      "input":  { "domain": 51, "topic": "Bi", "type_name": "zerodds::RawBytes" },
-      "output": { "domain": 50, "topic": "Bi", "type_name": "zerodds::RawBytes" }
-    }
+      "input":  {{ "domain": {output}, "topic": "Bi", "type_name": "zerodds::RawBytes" }},
+      "output": {{ "domain": {input}, "topic": "Bi", "type_name": "zerodds::RawBytes" }}
+    }}
   ]
-}"#;
+}}"#
+    )
+}
 
 #[test]
 fn bidirectional_bridge_does_not_loop() {
-    let cfg = RouterConfig::from_json(CONFIG).unwrap();
+    let input = zerodds_test_domains::unique_domain();
+    let output = zerodds_test_domains::unique_domain();
+    let cfg = RouterConfig::from_json(&config(input, output)).unwrap();
     let router = Router::start(&cfg).unwrap();
 
-    let sub = Sub::new(51, "Bi");
-    let publisher = Pub::new(50, "Bi");
+    let sub = Sub::new(output, "Bi");
+    let publisher = Pub::new(input, "Bi");
     publisher.wait_matched(1, Duration::from_secs(15));
 
     let payloads: Vec<Vec<u8>> = (0u8..3).map(|i| vec![i, 0x55]).collect();

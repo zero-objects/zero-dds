@@ -30,7 +30,7 @@
 
 use alloc::vec::Vec;
 
-use zerodds_cdr::{BufferReader, BufferWriter, DecodeError, EncodeError, Endianness};
+use zerodds_wire::{Endianness, Reader, WireError, Writer};
 
 use crate::otid::Otid;
 
@@ -63,15 +63,15 @@ impl TransIdentity {
         }
     }
 
-    fn encode(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
+    fn encode(&self, w: &mut Writer) -> Result<(), WireError> {
         // Coordinator/Terminator are object references (IOR). Empty → nil ref
         // (type_id "" + 0 profiles); otherwise the raw IOR bytes (advanced).
-        write_object_ref(w, &self.coord_ior)?;
-        write_object_ref(w, &self.term_ior)?;
+        write_object_ref(w, &self.coord_ior);
+        write_object_ref(w, &self.term_ior);
         self.otid.encode(w)
     }
 
-    fn decode(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
+    fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
         let coord_ior = read_object_ref(r)?;
         let term_ior = read_object_ref(r)?;
         let otid = Otid::decode(r)?;
@@ -85,41 +85,36 @@ impl TransIdentity {
 
 /// Writes an object reference: empty bytes → **nil ref** (CDR `IOR` =
 /// type_id `""` + 0 profiles, like JacORB); otherwise the raw IOR bytes verbatim.
-fn write_object_ref(w: &mut BufferWriter, ior_bytes: &[u8]) -> Result<(), EncodeError> {
+fn write_object_ref(w: &mut Writer, ior_bytes: &[u8]) {
     if ior_bytes.is_empty() {
-        w.write_string("")?; // type_id "" (CDR length 1 + NUL)
-        w.write_u32(0)?; // 0 TaggedProfiles
+        w.write_string(""); // type_id "" (CDR length 1 + NUL)
+        w.write_u32(0); // 0 TaggedProfiles
     } else {
-        w.write_bytes(ior_bytes)?;
+        w.write_bytes(ior_bytes);
     }
-    Ok(())
 }
 
 /// Reads an object reference (IOR: type_id string + TaggedProfile sequence).
 /// A nil ref (`""` + 0 profiles) → empty bytes; otherwise the fields are
 /// canonically re-serialized.
-fn read_object_ref(r: &mut BufferReader<'_>) -> Result<Vec<u8>, DecodeError> {
+fn read_object_ref(r: &mut Reader<'_>) -> Result<Vec<u8>, WireError> {
     let type_id = r.read_string()?;
     let nprof = r.read_u32()?;
     if type_id.is_empty() && nprof == 0 {
         return Ok(Vec::new()); // nil ref
     }
-    let mut tmp = BufferWriter::new(r.endianness());
-    tmp.write_string(&type_id)
-        .map_err(|_| DecodeError::InvalidEnum {
-            kind: "ior re-encode",
-            value: 0,
-        })?;
-    let _ = tmp.write_u32(nprof);
+    let mut tmp = Writer::new(r.endianness());
+    tmp.write_string(&type_id);
+    tmp.write_u32(nprof);
     for _ in 0..nprof {
         let tag = r.read_u32()?;
-        let plen = r.read_u32()? as usize;
-        let pdata = r.read_bytes(plen)?.to_vec();
-        let _ = tmp.write_u32(tag);
-        let _ = tmp.write_u32(plen as u32);
-        let _ = tmp.write_bytes(&pdata);
+        let plen_word = r.read_u32()?;
+        let pdata = r.read_bytes(plen_word as usize)?.to_vec();
+        tmp.write_u32(tag);
+        tmp.write_u32(plen_word);
+        tmp.write_bytes(&pdata);
     }
-    Ok(tmp.into_bytes())
+    Ok(tmp.finish())
 }
 
 /// `PropagationContext` (OMG OTS §10.4.6) — the transaction context propagated over GIOP.
@@ -148,26 +143,31 @@ impl PropagationContext {
     ///
     /// # Errors
     /// Buffer write error / length overflow.
-    pub fn encode(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
-        w.write_u32(self.timeout)?;
+    pub fn encode(&self, w: &mut Writer) -> Result<(), WireError> {
+        w.write_u32(self.timeout);
         self.current.encode(w)?;
-        let n = u32::try_from(self.parents.len()).map_err(|_| EncodeError::ValueOutOfRange {
-            message: "propagation parents length overflow",
+        let n = u32::try_from(self.parents.len()).map_err(|_| WireError::OutOfRange {
+            at: w.position(),
+            expected: alloc::format!(
+                "at most u32::MAX parent transactions, not {}",
+                self.parents.len()
+            ),
         })?;
-        w.write_u32(n)?;
+        w.write_u32(n);
         for p in &self.parents {
             p.encode(w)?;
         }
         // implementation_specific_data: empty `any` = tk_null TypeCode (1 word),
         // byte-identical to JacORB PropagationContextHelper.
-        w.write_u32(TK_NULL)
+        w.write_u32(TK_NULL);
+        Ok(())
     }
 
     /// CDR decode of the body.
     ///
     /// # Errors
     /// Buffer read error.
-    pub fn decode(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
+    pub fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
         let timeout = r.read_u32()?;
         let current = TransIdentity::decode(r)?;
         let count = r.read_u32()? as usize;
@@ -189,14 +189,14 @@ impl PropagationContext {
     ///
     /// # Errors
     /// Buffer write error.
-    pub fn to_service_context_data(&self, endianness: Endianness) -> Result<Vec<u8>, EncodeError> {
-        let mut w = BufferWriter::new(endianness);
+    pub fn to_service_context_data(&self, endianness: Endianness) -> Result<Vec<u8>, WireError> {
+        let mut w = Writer::new(endianness);
         w.write_u8(match endianness {
             Endianness::Big => 0,
             Endianness::Little => 1,
-        })?;
+        });
         self.encode(&mut w)?;
-        Ok(w.into_bytes())
+        Ok(w.finish())
     }
 
     /// Parses a `PropagationContext` from `ServiceContext.context_data`
@@ -212,10 +212,11 @@ impl PropagationContext {
     ///
     /// # Errors
     /// Buffer read error / empty data.
-    pub fn from_service_context_data(data: &[u8]) -> Result<Self, DecodeError> {
-        let bo = *data.first().ok_or(DecodeError::UnexpectedEof {
+    pub fn from_service_context_data(data: &[u8]) -> Result<Self, WireError> {
+        let bo = *data.first().ok_or(WireError::Truncated {
+            at: 0,
             needed: 1,
-            offset: 0,
+            available: 0,
         })?;
         let e = if bo == 0 {
             Endianness::Big
@@ -227,12 +228,13 @@ impl PropagationContext {
         // the spec form it is `timeout`. When it is 15, try the any form first
         // (skip the TypeCode); fall back to the bare struct (covers the rare
         // spec context whose timeout happens to be 15).
-        let mut probe = BufferReader::new(data, e);
+        let mut probe = Reader::new(data, e);
         probe.read_u8()?;
-        let looks_any = probe.read_u32().ok() == Some(zerodds_cdr::type_code::tckind::TK_STRUCT);
+        let looks_any =
+            probe.read_u32().ok() == Some(zerodds_corba_rt::type_code::tckind::TK_STRUCT);
 
         if looks_any {
-            let mut r = BufferReader::new(data, e);
+            let mut r = Reader::new(data, e);
             r.read_u8()?;
             if skip_type_code(&mut r).is_ok() {
                 if let Ok(ctx) = Self::decode(&mut r) {
@@ -241,7 +243,7 @@ impl PropagationContext {
             }
         }
         // Spec form (§10.4.6): bare CDR encapsulation of the struct.
-        let mut r = BufferReader::new(data, e);
+        let mut r = Reader::new(data, e);
         r.read_u8()?; // byte-order octet
         Self::decode(&mut r)
     }
@@ -253,7 +255,7 @@ impl PropagationContext {
 /// encapsulation (skipped wholesale, so arbitrary nested complexity is handled);
 /// `tk_string`/`tk_wstring` carry a single bound; `tk_fixed` two `ushort`s;
 /// indirection a single offset; everything else is parameterless.
-fn skip_type_code(r: &mut BufferReader<'_>) -> Result<(), DecodeError> {
+fn skip_type_code(r: &mut Reader<'_>) -> Result<(), WireError> {
     let kind = r.read_u32()?;
     match kind {
         // Complex kinds: tk_objref, tk_struct, tk_union, tk_enum, tk_sequence,
@@ -310,10 +312,10 @@ mod tests {
         // timeout=30, current={nil coord, nil term, otid(0,4,[0,0,0,1])}, parents=[],
         // implementation_specific_data = empty any (tk_null) — big-endian.
         let pc = PropagationContext::flat(30, Otid::new(0, alloc::vec![0, 0, 0, 1]));
-        let mut w = BufferWriter::new(Endianness::Big);
+        let mut w = Writer::new(Endianness::Big);
         pc.encode(&mut w).unwrap();
         let hex: alloc::string::String = w
-            .into_bytes()
+            .finish()
             .iter()
             .map(|b| alloc::format!("{b:02x}"))
             .collect();
@@ -346,10 +348,10 @@ mod tests {
         // nil Coordinator/Terminator (object-reference form) + otid.
         let ti = TransIdentity::from_otid(Otid::new(7, alloc::vec![5]));
         for e in [Endianness::Big, Endianness::Little] {
-            let mut w = BufferWriter::new(e);
+            let mut w = Writer::new(e);
             ti.encode(&mut w).unwrap();
-            let bytes = w.into_bytes();
-            let mut r = BufferReader::new(&bytes, e);
+            let bytes = w.finish();
+            let mut r = Reader::new(&bytes, e);
             let decoded = TransIdentity::decode(&mut r).unwrap();
             assert!(decoded.coord_ior.is_empty() && decoded.term_ior.is_empty());
             assert_eq!(decoded.otid, ti.otid);

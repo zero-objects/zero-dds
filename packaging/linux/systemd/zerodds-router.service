@@ -12,7 +12,7 @@ Wants=network-online.target
 # starts its routes, and blocks until SIGINT/SIGTERM (ctrlc handler). exec
 # considers the unit started once the binary successfully execs.
 Type=exec
-ExecStart=/usr/bin/zerodds-router run --config /etc/zerodds/router.json
+ExecStart=/usr/bin/zerodds-router run --routes /etc/zerodds/router.json
 # No ExecReload: the daemon has no SIGHUP config-reload path. Edit the config
 # and restart the unit to apply route changes.
 KillMode=mixed

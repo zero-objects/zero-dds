@@ -2,19 +2,22 @@
 # Copyright 2026 ZeroDDS Contributors
 #
 # Reliable sender app for the live E2E test. The producer enqueues samples into
-# a Channel (the decoupled path — it never touches the socket); a drain Thread
-# owns the reliable Sender state + the UDP socket, sends WRITE_DATA, emits
-# HEARTBEAT, and retransmits on ACKNACK until the send window drains.
+# a single-producer single-consumer ring (`spsc_ring.nim`; the decoupled path —
+# it never touches the socket); a drain Thread owns the reliable Sender state +
+# the UDP socket, sends WRITE_DATA, emits HEARTBEAT, and retransmits on ACKNACK
+# until the send window drains.
 #
 # argv: <peer-port> <N> [run|bench]
 #
-# Nim's stdlib `Channel` uses a lock (not a wait-free ring), so the enqueue
-# still pays a lock+copy; it does keep the producer off the send syscall, which
-# is what the latency bench measures. A true wait-free ring would improve the
-# enqueue figure further — reported honestly.
+# The ring takes no lock and allocates nothing of its own: an enqueue is two
+# atomic loads, a move and an atomic store. It replaced the stdlib `Channel`,
+# which takes a lock and copies on every send. The bench prints the enqueue
+# time beside an inline `sendto`, and how often the producer found the ring
+# full and waited.
 
 import std/[net, nativesockets, options, os, strutils, times]
 import ./reliable
+import ./spsc_ring
 
 proc toStr(b: seq[byte]): string =
   result = newString(b.len)
@@ -28,27 +31,30 @@ proc toBytes(s: string, n: int): seq[byte] =
 
 proc nowMs(): int = int(epochTime() * 1000.0)
 
-# Producer → drain channel; empty seq = "no more samples" sentinel.
-var gChan: Channel[seq[byte]]
+# Producer → drain ring; empty seq = "no more samples" sentinel.
+const QueueSlots = 4096
+type
+  Queue = SpscRing[QueueSlots]
+  DrainArgs = tuple[port: int, queue: ptr Queue]
 
-proc drain(port: int) {.thread.} =
+proc drain(args: DrainArgs) {.thread.} =
+  let queue = args.queue
   var sock = newSocket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)
-  sock.connect("127.0.0.1", Port(port))
+  sock.connect("127.0.0.1", Port(args.port))
   var sender = newSender()
   var msgSeq = 1
   var closed = false
   let startMs = nowMs()
   while true:
     # 1. pull enqueued samples: submit + send WRITE_DATA
-    while true:
-      let tr = gChan.tryRecv()
-      if not tr.dataAvailable: break
-      if tr.msg.len == 0:
+    var msg: seq[byte]
+    while queue[].tryPop(msg):
+      if msg.len == 0:
         closed = true
       else:
-        let sub = sender.submit(tr.msg)
+        let sub = sender.submit(msg)
         if sub.status == srOk:
-          sock.send(toStr(reliableWriteFrame(sub.seq, tr.msg)))
+          sock.send(toStr(reliableWriteFrame(sub.seq, 0x0015'u16, msg)))
     # 2. done when closed and the window has drained
     if closed and sender.inFlightCount == 0:
       break
@@ -82,28 +88,26 @@ proc drain(port: int) {.thread.} =
       for pr in sender.inFlightPairs:
         pending.add(pr)
       for pr in pending:
-        sock.send(toStr(reliableWriteFrame(pr.seq, pr.payload)))
+        sock.send(toStr(reliableWriteFrame(pr.seq, 0x0015'u16, pr.payload)))
   sock.close()
 
 proc runReliable(port, n: int) =
-  gChan.open()
-  var t: Thread[int]
-  createThread(t, drain, port)
+  let queue = createShared(Queue)
+  var t: Thread[DrainArgs]
+  createThread(t, drain, (port, queue))
   for i in 0 ..< n:
     let v = uint32(i)
-    gChan.send(@[byte(v and 0xff), byte((v shr 8) and 0xff),
-                 byte((v shr 16) and 0xff), byte((v shr 24) and 0xff)])
-  gChan.send(@[]) # sentinel
+    discard queue[].push(@[byte(v and 0xff), byte((v shr 8) and 0xff),
+                           byte((v shr 16) and 0xff), byte((v shr 24) and 0xff)])
+  discard queue[].push(@[]) # sentinel
   joinThread(t)
-  gChan.close()
+  freeShared(queue)
   echo "SENT ", n
 
-var gSinkStop: bool
-
-proc sink(unused: int) {.thread.} =
+proc sink(queue: ptr Queue) {.thread.} =
+  var msg: seq[byte]
   while true:
-    let tr = gChan.tryRecv()
-    if tr.dataAvailable and tr.msg.len == 0:
+    if queue[].tryPop(msg) and msg.len == 0:
       break
 
 proc runBench(port, n: int) =
@@ -114,21 +118,23 @@ proc runBench(port, n: int) =
   sock.connect("127.0.0.1", Port(port))
   var t0 = epochTime()
   for i in 0 ..< iters:
-    sock.send(toStr(reliableWriteFrame(uint16(i and 0xffff), sample)))
+    sock.send(toStr(reliableWriteFrame(uint16(i and 0xffff), 0x0015'u16, sample)))
   let inlineNs = (epochTime() - t0) * 1e9 / float(iters)
   sock.close()
   # decoupled: producer only enqueues (a drain thread would do the I/O)
-  gChan.open()
-  var t: Thread[int]
-  createThread(t, sink, 0)
+  let queue = createShared(Queue)
+  var t: Thread[ptr Queue]
+  createThread(t, sink, queue)
+  var fullWaits = 0
   t0 = epochTime()
   for i in 0 ..< iters:
-    gChan.send(sample)
+    fullWaits += queue[].push(sample)
   let enqueueNs = (epochTime() - t0) * 1e9 / float(iters)
-  gChan.send(@[])
+  discard queue[].push(@[])
   joinThread(t)
-  gChan.close()
-  echo "BENCH enqueue_ns=", enqueueNs.int, " inline_send_ns=", inlineNs.int
+  freeShared(queue)
+  echo "BENCH enqueue_ns=", enqueueNs.int, " inline_send_ns=", inlineNs.int,
+    " full_waits=", fullWaits
 
 proc main() =
   if paramCount() < 2:

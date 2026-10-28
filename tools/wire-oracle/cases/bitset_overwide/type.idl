@@ -1,0 +1,2 @@
+bitset Narrow { bitfield<3> v; };
+@final struct BitOver { Narrow value; octet tail; };

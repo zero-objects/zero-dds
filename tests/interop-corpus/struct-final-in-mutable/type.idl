@@ -1,0 +1,10 @@
+// `@final` inside `@mutable`
+@final struct Inner {
+    long a;
+    short b;
+};
+
+@mutable struct Sample {
+    Inner nested;
+    long tail;
+};

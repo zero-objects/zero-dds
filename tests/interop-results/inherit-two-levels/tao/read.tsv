@@ -1,0 +1,14 @@
+# What tao got back when it read the bytes of inherit-two-levels, held against
+# tests/interop-corpus/inherit-two-levels/values.json and never against another
+# column's reading of the same bytes.
+# encoding	endian	verdict	detail
+plain-cdr1	le	no-form	m::Leaf: a structure with a base, which CORBA IDL has no syntax for
+plain-cdr1	be	no-form	m::Leaf: a structure with a base, which CORBA IDL has no syntax for
+pl-cdr1	le	no-form	m::Leaf: a structure with a base, which CORBA IDL has no syntax for
+pl-cdr1	be	no-form	m::Leaf: a structure with a base, which CORBA IDL has no syntax for
+plain-cdr2	le	no-form	m::Leaf: a structure with a base, which CORBA IDL has no syntax for
+plain-cdr2	be	no-form	m::Leaf: a structure with a base, which CORBA IDL has no syntax for
+delimited-cdr	le	no-form	m::Leaf: a structure with a base, which CORBA IDL has no syntax for
+delimited-cdr	be	no-form	m::Leaf: a structure with a base, which CORBA IDL has no syntax for
+pl-cdr2	le	no-form	m::Leaf: a structure with a base, which CORBA IDL has no syntax for
+pl-cdr2	be	no-form	m::Leaf: a structure with a base, which CORBA IDL has no syntax for

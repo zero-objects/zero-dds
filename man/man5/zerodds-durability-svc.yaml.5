@@ -1,0 +1,170 @@
+.TH ZERODDS-DURABILITY-SVC.YAML 5 "" "ZeroDDS" "ZeroDDS Manual"
+.SH NAME
+zerodds-durability-svc.yaml \- configuration file for zerodds-durability-svc(1)
+.SH SYNOPSIS
+.I /etc/zerodds/durability-svc.yaml
+.SH DESCRIPTION
+YAML document configuring the standalone ZeroDDS Durability-Service daemon
+(ADR 0009). The parser that reads it is
+.IR crates/durability-service-bin/src/config.rs::DaemonConfig::from_config .
+.PP
+Every CLI flag of
+.BR zerodds-durability-svc (1)
+is a
+.B --set
+of the key it names below \(em
+.B --domain\ N
+is
+.BR --set\ domain=N ,
+.B --topic\ NAME
+is
+.BR "--set +durability.topics=NAME" .
+Precedence, lowest first: compiled-in defaults, environment, this file (+ its
+.I durability-svc.d/
+drop-in directory), then
+.BR --set .
+.PP
+Top-level keys:
+.BR domain ", " store ", " path ", " auto ", " durability .
+An unknown top-level key is a WARN line on stderr at start, and an error under
+.BR --check-config ;
+an unknown key
+.I inside
+.B durability.topics[]
+stops the start (file and line).
+.SH KEYS
+.SS Top level
+.TP
+.B domain
+Integer DDS domain ID. Required from some source (this file, the
+environment, or
+.BR --domain ).
+.TP
+.B store
+.IR sqlite " (default) | " file " | " lakehouse " | " postgres .
+.I lakehouse
+and
+.I postgres
+need a binary built with the cargo feature of the same name.
+.TP
+.B path
+Store location; meaning depends on
+.BR store :
+.IR sqlite / lakehouse ,
+a database file (omitted: in-memory, lost on restart);
+.IR file ,
+a directory (required);
+.IR postgres ,
+a libpq connection string (required).
+.TP
+.B auto
+Boolean. Auto-serve every topic whose writers declare TRANSIENT or
+PERSISTENT durability \(em no application-side code needed. At least one of
+.B auto
+and a
+.B durability.topics
+entry is required (from any source, once every layer is merged).
+.SS durability
+.TP
+.B topics
+A list. Each entry is either a bare topic-name string, or a map:
+.RS
+.TP
+.B name
+Topic name. Required.
+.TP
+.B type
+Explicit application type name. Without it, the type (and keyedness) come
+from whichever writer of the topic is discovered first \(em exactly like
+.B auto
+does, but for a topic named explicitly and regardless of that writer's
+durability kind \(em UNLESS the store already holds type/keyedness/contract
+for this topic from an earlier run, in which case it resumes immediately
+with no writer/reader discovered first (see
+.I zerodds-durability-service
+crate docs, "Resuming a served topic after a restart").
+.TP
+.B keyed
+Boolean. Only meaningful together with
+.BR type ;
+without a
+.BR type ,
+keyedness comes from discovery (the writer's RTPS entityKind, DDSI-RTPS 2.5
+\(sc9.3.1.2). With a
+.B type
+and no
+.BR keyed ,
+defaults to
+.IR false .
+.TP
+.B contract
+Sub-map pinning the retention contract regardless of what a discovered
+writer's own
+.B DurabilityServiceQosPolicy
+(DDS 1.4 \(sc2.2.3.5) announces. Fields:
+.BR history_kind " (" keep_last " | " keep_all "), " history_depth ,
+.BR max_samples ", " max_instances ", " max_samples_per_instance
+(integers, \-1 = unlimited), and
+.B cleanup_delay_secs
+(integer seconds \(em the grace period after an instance is
+disposed/unregistered before its samples are purged). A field left out keeps
+.BR keep_all 's
+unlimited value for it, not the DDS policy default of
+.IR KEEP_LAST(1) .
+.RE
+.SH WHICH CONTRACT WINS
+Per topic, in order: this file's
+.B contract
+override; else what the store already has persisted for this topic from an
+earlier run (see
+.B type ,
+above); else the discovered writer's own
+.B DurabilityServiceQosPolicy
+(whenever it differs from the DDS default, which is indistinguishable on the
+wire from "never touched"); else this daemon's own default
+(.BR KEEP_ALL ,
+passed to
+.B enable_auto_discovery
+/
+.B serve_discovered
+internally).
+.PP
+Two writers of one topic that announce
+.I different
+.B DurabilityServiceQosPolicy
+values: the daemon applies the
+.I first
+discovered writer's contract for the topic's lifetime and reports the
+disagreement (never silently switches retention policy on a store that
+already holds data under the old one) \(em see the
+.I zerodds-durability-service
+crate docs, "Two writers, one topic". The same rule covers a writer whose
+announced type name or keyedness disagrees with what the topic is already
+served under (from stored metadata or an earlier writer): reported, not
+applied.
+.SH EXAMPLE
+.nf
+domain: 0
+store: sqlite
+auto: true
+durability:
+  topics:
+    - Sensors
+    - name: Commands
+      type: demo::Command
+      keyed: true
+      contract:
+        history_kind: keep_last
+        history_depth: 5
+        max_instances: 1000
+        cleanup_delay_secs: 300
+.fi
+.SH FILES
+.I /etc/zerodds/durability-svc.yaml.example
+Shipped, commented example \(em loaded back by a unit test
+(.IR crates/durability-service-bin/src/config.rs ),
+so it never drifts from what the parser accepts.
+.SH SEE ALSO
+.BR zerodds-durability-svc (1)
+.SH AUTHOR
+ZeroDDS Contributors

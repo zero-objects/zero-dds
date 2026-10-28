@@ -1,0 +1,12 @@
+// `typedef` of a structure
+@appendable struct Cell {
+    long a;
+    short b;
+};
+
+typedef Cell Element;
+
+@final struct Sample {
+    Element first;
+    Element second;
+};

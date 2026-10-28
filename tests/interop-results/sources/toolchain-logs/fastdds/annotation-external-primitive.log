@@ -1,0 +1,1 @@
+gen.hpp:158:34: note: candidate: 'void zd_c1::Sample::a(const eprosima::fastcdr::external<int>&)' (near match)

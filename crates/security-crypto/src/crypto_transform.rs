@@ -68,7 +68,7 @@ impl CryptoTransformKind {
     }
 
     /// Spec §10.5.2.1 — Authentication-Tag-Length.
-    /// Alle GCM/GMAC-Varianten verwenden 16 Byte Tag.
+    /// All GCM/GMAC variants use 16-byte tag.
     #[must_use]
     pub const fn tag_size(self) -> usize {
         match self {
@@ -77,7 +77,7 @@ impl CryptoTransformKind {
         }
     }
 
-    /// Key-Material-Size (Bytes) je Algorithmus.
+    /// Key-material size (bytes) per algorithm.
     #[must_use]
     pub const fn key_size(self) -> usize {
         match self {
@@ -97,8 +97,11 @@ impl CryptoTransformKind {
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CryptoTransformIdentifier {
-    /// 4-byte wire form.
+    /// The algorithm: the last octet of the `transformation_kind`.
     pub kind: CryptoTransformKind,
+    /// `transformation_key_revision` (DDS-Security 1.2 §7.3.17, §7.3.18): the
+    /// first three octets of the `transformation_kind`, zero for no revision.
+    pub key_revision: [u8; 3],
     /// 4-byte key identifier (assigned by the plugin).
     pub key_id: [u8; 4],
 }
@@ -107,14 +110,27 @@ impl CryptoTransformIdentifier {
     /// Constructor.
     #[must_use]
     pub fn new(kind: CryptoTransformKind, key_id: [u8; 4]) -> Self {
-        Self { kind, key_id }
+        Self {
+            kind,
+            key_revision: [0; 3],
+            key_id,
+        }
     }
 
-    /// Encode zu 8 Bytes (Spec Wire-Form).
+    /// The identifier of key material with a key revision (§7.3.17).
+    #[must_use]
+    pub fn with_revision(mut self, key_revision: [u8; 3]) -> Self {
+        self.key_revision = key_revision;
+        self
+    }
+
+    /// Encode to 8 bytes (spec wire form): `transformation_kind` (the
+    /// revision, then the algorithm id) and `transformation_key_id`.
     #[must_use]
     pub fn to_bytes(&self) -> [u8; 8] {
         let mut out = [0u8; 8];
-        out[0..4].copy_from_slice(&self.kind.to_be_bytes());
+        out[0..3].copy_from_slice(&self.key_revision);
+        out[3] = self.kind as u8;
         out[4..8].copy_from_slice(&self.key_id);
         out
     }
@@ -128,12 +144,17 @@ impl CryptoTransformIdentifier {
         if bytes.len() != 8 {
             return Err("CryptoTransformIdentifier needs 8 bytes");
         }
-        let mut k = [0u8; 4];
-        k.copy_from_slice(&bytes[0..4]);
-        let kind = CryptoTransformKind::from_be_bytes(k)?;
+        // The first three octets of the kind are the key revision (§7.3.18);
+        // they are not part of the algorithm.
+        let kind = CryptoTransformKind::from_be_bytes([0, 0, 0, bytes[3]])?;
+        let key_revision = [bytes[0], bytes[1], bytes[2]];
         let mut key_id = [0u8; 4];
         key_id.copy_from_slice(&bytes[4..8]);
-        Ok(Self { kind, key_id })
+        Ok(Self {
+            kind,
+            key_revision,
+            key_id,
+        })
     }
 }
 
@@ -457,5 +478,23 @@ mod tests {
     fn builtin_plugin_id_matches_spec() {
         // Spec §10.3.2.1 + §7.3.20.
         assert_eq!(BUILTIN_CRYPTO_PLUGIN, "DDS:Crypto:AES_GCM_GMAC");
+    }
+
+    /// DDS-Security 1.2 §7.3.18: the `transformation_kind` is the key
+    /// revision (three octets) and the algorithm id; both ways of reading it
+    /// agree, and a revision is not an unknown algorithm.
+    #[test]
+    fn the_key_revision_is_part_of_the_kind() {
+        let id = CryptoTransformIdentifier::new(CryptoTransformKind::Aes256Gcm, [1, 2, 3, 4])
+            .with_revision([0, 0, 22]);
+        assert_eq!(id.to_bytes(), [0, 0, 22, 4, 1, 2, 3, 4]);
+        assert_eq!(
+            CryptoTransformIdentifier::from_bytes(&id.to_bytes()),
+            Ok(id)
+        );
+        let plain = CryptoTransformIdentifier::new(CryptoTransformKind::Aes128Gmac, [9; 4]);
+        assert_eq!(plain.key_revision, [0; 3]);
+        assert_eq!(plain.to_bytes()[..4], [0, 0, 0, 1]);
+        assert!(CryptoTransformIdentifier::from_bytes(&[0, 0, 22, 99, 0, 0, 0, 0]).is_err());
     }
 }

@@ -1,45 +1,45 @@
-# `zerodds-observability-otlp` v1.0 — OTLP/HTTP/JSON-Exporter-Spec
+# `zerodds-observability-otlp` v1.0 — OTLP/HTTP/JSON exporter spec
 
-ZeroDDS Vendor-Spec. In `crates/observability-otlp` (`zerodds-observability-otlp`) implementiert.
+ZeroDDS vendor spec. Implemented in `crates/observability-otlp` (`zerodds-observability-otlp`).
 
 ## Motivation
 
-[`zerodds-monitor`](./zerodds-monitor-1.1.md) liefert die Registry +
-Prometheus-Text-Exposition. Fuer Konsumenten, die OpenTelemetry-Stack
-(Tempo / Jaeger / DataDog / Honeycomb) statt Prometheus nutzen, ist
-ein OTLP-Exporter notwendig.
+[`zerodds-monitor`](./zerodds-monitor-1.1.md) provides the registry +
+Prometheus text exposition. For consumers that use an OpenTelemetry stack
+(Tempo / Jaeger / DataDog / Honeycomb) instead of Prometheus,
+an OTLP exporter is necessary.
 
-Diese Spec definiert den **OTLP/HTTP/JSON**-Exporter. JSON statt
-Protobuf, weil:
+This spec defines the **OTLP/HTTP/JSON** exporter. JSON instead of
+Protobuf, because:
 
-1. Pure-Rust ohne `prost`/`tonic`-Codegen-Pipeline.
-2. JSON ist ein offiziell unterstuetzter OTLP-Encoding (OTel-Spec
+1. Pure Rust without a `prost`/`tonic` codegen pipeline.
+2. JSON is an officially supported OTLP encoding (OTel spec
    v1.4 §"OTLP/HTTP/JSON").
-3. Local-Stacks (Jaeger-Compose, Grafana-Tempo) akzeptieren beide
-   Encodings — wir verlieren kein Konsumenten-Spektrum.
+3. Local stacks (Jaeger Compose, Grafana Tempo) accept both
+   encodings — we lose no part of the consumer spectrum.
 
-## Ziele
+## Goals
 
-- **Drei OTLP-Endpoints**: `/v1/traces`, `/v1/metrics`, `/v1/logs`.
-- **Resource-Attributes**: `service.name`, `service.version`, optional
-  weitere via Caller-Config.
-- **Buffered Flush**: Spans/Histogramme/Events werden gesammelt und in
-  einem Batch-POST verschickt.
-- **Pure-Rust HTTP/1.1**: kein `hyper`/`reqwest`/`prost`/`tonic`-Dep.
-- **Zero-Side-Effects ohne Use**: ohne `flush()` werden keine
-  HTTP-Requests gemacht.
+- **Three OTLP endpoints**: `/v1/traces`, `/v1/metrics`, `/v1/logs`.
+- **Resource attributes**: `service.name`, `service.version`, optionally
+  more via caller config.
+- **Buffered flush**: spans/histograms/events are collected and sent in
+  one batch POST.
+- **Pure-Rust HTTP/1.1**: no `hyper`/`reqwest`/`prost`/`tonic` dependency.
+- **Zero side effects without use**: without `flush()` no
+  HTTP requests are made.
 
-## Nicht-Ziele
+## Non-goals
 
-- Vollstaendige OTel-SDK-Reimpl (Sampler, Processor, Resource-Detection,
-  Context-Propagation als generic API).
-- gRPC-Encoding (OTLP/gRPC) — bewusst weggelassen, weil das eine
-  Protobuf-Codegen-Pipeline noetig macht. Add-on `zerodds-observability-otlp-grpc`
-  ist künftig moeglich, aber nicht in diesem Spec-Scope.
-- Direkte Integration mit dem `Sink`-Trait — der Caller fuettert
-  `OtlpExporter::add_span/add_histogram/add_event` aus eigenen Loops.
+- Complete OTel SDK reimplementation (sampler, processor, resource detection,
+  context propagation as a generic API).
+- gRPC encoding (OTLP/gRPC) — deliberately left out, because it requires a
+  Protobuf codegen pipeline. An add-on `zerodds-observability-otlp-grpc`
+  is possible in future, but not within the scope of this spec.
+- Direct integration with the `Sink` trait — the caller feeds
+  `OtlpExporter::add_span/add_histogram/add_event` from its own loops.
 
-## §1 Architektur
+## §1 Architecture
 
 ```
 +-------------------------+         +------------------+
@@ -65,7 +65,7 @@ Protobuf, weil:
 
 ### §2.1 `/v1/traces`
 
-Body: OTLP-`ExportTraceServiceRequest` als JSON.
+Body: OTLP `ExportTraceServiceRequest` as JSON.
 
 ```json
 {
@@ -96,29 +96,29 @@ Body: OTLP-`ExportTraceServiceRequest` als JSON.
 }
 ```
 
-`SpanKind`-Mapping: `Internal=1`, `Server=2`, `Client=3`. `SpanStatus::Ok=1`, `Error=2`, `Unset=0`.
+`SpanKind` mapping: `Internal=1`, `Server=2`, `Client=3`. `SpanStatus::Ok=1`, `Error=2`, `Unset=0`.
 
 ### §2.2 `/v1/metrics`
 
-Body: OTLP-`ExportMetricsServiceRequest` mit Histogramm-Daten aus
+Body: OTLP `ExportMetricsServiceRequest` with histogram data from
 `foundation::tracing::Histogram`.
 
-Bucket-Bounds in Sekunden — gleicher Wert wie in `zerodds-monitor` §3.1:
+Bucket bounds in seconds — the same value as in `zerodds-monitor` §3.1:
 ```
 1e-09, 1e-08, 1e-07, 1e-06, 1e-05, 1e-04, 1e-03, 1e-02, 1e-01, 1, 10
 ```
 
 ### §2.3 `/v1/logs`
 
-Body: OTLP-`ExportLogsServiceRequest`. `Event` aus
-`foundation::observability::Event` mappt auf einen `LogRecord`:
+Body: OTLP `ExportLogsServiceRequest`. `Event` from
+`foundation::observability::Event` maps to a `LogRecord`:
 
-- `severity_number` aus `Level` (`Trace=1`, `Debug=5`, `Info=9`, `Warn=13`, `Error=17`).
-- `severity_text` aus `Level::as_str()`.
-- `body.string_value` aus `Event::name`.
-- `attributes` aus `Event::attrs`.
+- `severity_number` from `Level` (`Trace=1`, `Debug=5`, `Info=9`, `Warn=13`, `Error=17`).
+- `severity_text` from `Level::as_str()`.
+- `body.string_value` from `Event::name`.
+- `attributes` from `Event::attrs`.
 
-## §3 Konfiguration
+## §3 Configuration
 
 ```rust
 pub struct OtlpConfig {
@@ -134,53 +134,53 @@ pub struct OtlpConfig {
 
 ```rust
 let exporter = OtlpExporter::new(OtlpConfig::default());
-// Im Hot-Path:
+// In the hot path:
 exporter.add_span(span);
 exporter.add_histogram(histogram_snapshot);
 exporter.add_event(event);
-// Periodisch (z.B. alle 5s aus einem Background-Thread):
+// Periodically (e.g. every 5s from a background thread):
 exporter.flush()?;
 ```
 
 `flush()`:
-1. Drain der Buffer-Mutex.
-2. POST auf jeden non-empty Endpoint.
-3. Bei IO-/HTTP-Fehler: Buffers bleiben gedraint (no resend) — Fehler an Caller weitergegeben.
+1. Drain of the buffer mutex.
+2. POST to every non-empty endpoint.
+3. On an IO/HTTP error: the buffers stay drained (no resend) — the error is passed on to the caller.
 
-## §5 Bridge zu `zerodds-monitor::Registry`
+## §5 Bridge to `zerodds-monitor::Registry`
 
-Der Caller kann periodisch via `Registry::snapshot()` alle Counter/
-Gauge/Histogram exportieren. Der OTLP-Exporter akzeptiert
-`Histogram`-Instanzen direkt (Counter/Gauge werden aktuell
-nicht ueber OTLP exportiert — sie laufen nur ueber Prometheus).
+The caller can periodically export all counters/
+gauges/histograms via `Registry::snapshot()`. The OTLP exporter accepts
+`Histogram` instances directly (counters/gauges are currently
+not exported via OTLP — they only go through Prometheus).
 
-> **Designentscheidung:** Counter/Gauge sind Prometheus-native und
-> werden vom OTel-Collector ohnehin ueber das `prometheus`-Receiver-Modul
-> ingestiert. OTLP-Metric-Doppel-Export ist im aktuellen Scope nicht
-> sinnvoll — Konsumenten konfigurieren entweder Prometheus-Scrape oder
-> OTLP-Push, nicht beides.
+> **Design decision:** Counters/gauges are Prometheus-native and
+> are ingested by the OTel Collector anyway via the `prometheus` receiver module.
+> A double OTLP metric export does not make sense in the current scope
+> — consumers configure either a Prometheus scrape or
+> an OTLP push, not both.
 
-## §6 Sicherheit
+## §6 Security
 
-- TLS: out-of-scope fuer den built-in HTTP/1.1-Stub. Caller setzen
-  einen lokalen OTel-Collector als Sidecar mit TLS-Frontend (wie bei
-  Prometheus-Scrape).
-- Authentication-Headers: aktuell nicht unterstuetzt; Add via Header-
-  Map ist Major-additive Erweiterung.
+- TLS: out of scope for the built-in HTTP/1.1 stub. Callers put
+  a local OTel Collector as a sidecar with a TLS front end (as with the
+  Prometheus scrape).
+- Authentication headers: currently not supported; adding them via a header
+  map is a major-additive extension.
 
-## §7 Stabilitaet
+## §7 Stability
 
-- Public-API (`OtlpConfig`, `OtlpExporter`, `ExportError`, `add_*`,
-  `flush`): stabil.
-- Wire-Format: an OTel-Spec v1.4 angelehnt; JSON-Schema-Aenderung
-  durch upstream-OTel-Spec ist Major-Bump.
+- Public API (`OtlpConfig`, `OtlpExporter`, `ExportError`, `add_*`,
+  `flush`): stable.
+- Wire format: based on OTel spec v1.4; a JSON schema change
+  by the upstream OTel spec is a major bump.
 
-## §8 Test-Pflicht
+## §8 Test obligation
 
-- Roundtrip: `OtlpConfig` → JSON-Build → Parsing-Smoketest (Schema-
-  Sanity, kein vollstaendiger Decoder).
-- HTTP-Fehler-Handling: Mock-TCP-Server der `500 Internal Server
-  Error` antwortet; Exporter muss `ExportError::HttpStatus`
-  liefern.
-- Connect-Refused: `flush()` muss `ExportError::Io` liefern, nicht
-  panicen.
+- Roundtrip: `OtlpConfig` → JSON build → parsing smoke test (schema
+  sanity, not a complete decoder).
+- HTTP error handling: a mock TCP server that answers `500 Internal Server
+  Error`; the exporter must return
+  `ExportError::HttpStatus`.
+- Connect refused: `flush()` must return `ExportError::Io`, not
+  panic.

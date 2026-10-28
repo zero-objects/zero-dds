@@ -42,7 +42,10 @@
 //! ```
 //!
 //! Typed `DdsType` bindings (dataclass mapping via the IDL generator)
-//! follow from `crates/idl-rust` through the Python bindings generator.
+//! come from the Python backend of `crates/lang-rules`, the same shared
+//! codec walk the C#, Java, C, C++ and TypeScript columns are built on;
+//! `tools/idlc/src/python_support.rs` is the TypeSupport companion
+//! `idlc generate --lang python` appends.
 
 #![warn(unsafe_code)]
 #![warn(missing_docs)]
@@ -62,7 +65,7 @@ mod tests {
     #[test]
     fn dcps_re_export_compiles() {
         // Minimal smoke test: zerodds-dcps is reachable as a dependency.
-        // Die echten PyO3-Tests laufen aus Python heraus (pytest).
+        // The real PyO3 tests run from Python (pytest).
         use zerodds_dcps::DomainParticipantFactory;
         let _f: &DomainParticipantFactory = DomainParticipantFactory::instance();
     }

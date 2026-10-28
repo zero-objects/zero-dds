@@ -1,0 +1,15 @@
+// every EMHEADER length code a `@mutable` member can take
+@final struct Cell { long a; long b; };
+
+@mutable struct Sample {
+    string s;
+    sequence<octet> bytes;
+    sequence<short> shorts;
+    sequence<long> longs;
+    sequence<double> doubles;
+    sequence<Cell> cells;
+    Cell pair[2];
+    long plain[2];
+    Cell nested;
+    long tail;
+};

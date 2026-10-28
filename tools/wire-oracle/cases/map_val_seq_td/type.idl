@@ -1,0 +1,2 @@
+typedef sequence<long> LongSeq;
+@final struct MapValSeqTd { map<long, LongSeq> entries; long tail; };

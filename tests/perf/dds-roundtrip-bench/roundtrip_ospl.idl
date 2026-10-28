@@ -1,0 +1,13 @@
+// RoundtripBench::Roundtrip of roundtrip.idl for OpenSplice 6.9's idlpp,
+// which takes no annotations and reads keys only through `#pragma keylist`
+// (here none: the roundtrip is one keyless stream, as in roundtrip.idl).
+// The members, their order and the sequence bound are those of roundtrip.idl;
+// its XCDR1 bytes are those of the @final original.
+module RoundtripBench {
+  struct Roundtrip {
+    unsigned long sequence_id;
+    unsigned long long t_send_ns;
+    sequence<octet, 8192> payload;
+  };
+#pragma keylist Roundtrip
+};

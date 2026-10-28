@@ -1,0 +1,13 @@
+// SPDX-License-Identifier: Apache-2.0
+// Reconstructed source for keyed_gen.py. Top-level (no module). `id` is
+// `@key`: the fixture's TYPE_OBJECT gives member "id" a member-flags word
+// of 0x0021 against 0x0001 for "label"/"payload" -- the one extra bit
+// (0x0020) is IS_KEY (XTypes 1.3 Table 38); nothing else in the fixture
+// distinguishes it, since the current `zerodds.idl` Python decorator this
+// fixture predates has no `@key` concept of its own to have preserved one
+// explicitly.
+struct Keyed {
+  @key long id;
+  string label;
+  long payload;
+};

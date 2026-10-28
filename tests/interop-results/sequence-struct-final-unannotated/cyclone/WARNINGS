@@ -1,0 +1,6 @@
+# What cyclone's front end said about sequence-struct-final-unannotated. Not why a slot carries no
+# bytes — that is STATUS beside this file — but what the front end printed
+# while it did take the case. tests/interop-results/WARNINGS.md says what
+# each of these means and which of them changes a verdict.
+# program	warning
+idlc	No default extensibility provided. For one or more of the aggregated types in the IDL the extensibility is not explicitly set. Currently the default extensibility for these types is 'final', but this may change to 'appendable' in a future release because that is the default in the DDS XTypes specification.

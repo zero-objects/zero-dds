@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of sequence-nested-struct that opendds produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	genTypeSupportImpl.cpp:25791:20: error: no matching function for call to 'serialized_size(const OpenDDS::DCPS::Encoding&, size_t&, const TAO::unbounded_value_sequence<zd_c27::Sample::_tao_seq_zd_c27_C
+plain-cdr1	be	refused	genTypeSupportImpl.cpp:25791:20: error: no matching function for call to 'serialized_size(const OpenDDS::DCPS::Encoding&, size_t&, const TAO::unbounded_value_sequence<zd_c27::Sample::_tao_seq_zd_c27_C
+pl-cdr1	le	refused	genTypeSupportImpl.cpp:25791:20: error: no matching function for call to 'serialized_size(const OpenDDS::DCPS::Encoding&, size_t&, const TAO::unbounded_value_sequence<zd_c27::Sample::_tao_seq_zd_c27_C
+pl-cdr1	be	refused	genTypeSupportImpl.cpp:25791:20: error: no matching function for call to 'serialized_size(const OpenDDS::DCPS::Encoding&, size_t&, const TAO::unbounded_value_sequence<zd_c27::Sample::_tao_seq_zd_c27_C
+plain-cdr2	le	refused	genTypeSupportImpl.cpp:25791:20: error: no matching function for call to 'serialized_size(const OpenDDS::DCPS::Encoding&, size_t&, const TAO::unbounded_value_sequence<zd_c27::Sample::_tao_seq_zd_c27_C
+plain-cdr2	be	refused	genTypeSupportImpl.cpp:25791:20: error: no matching function for call to 'serialized_size(const OpenDDS::DCPS::Encoding&, size_t&, const TAO::unbounded_value_sequence<zd_c27::Sample::_tao_seq_zd_c27_C
+delimited-cdr	le	refused	genTypeSupportImpl.cpp:25791:20: error: no matching function for call to 'serialized_size(const OpenDDS::DCPS::Encoding&, size_t&, const TAO::unbounded_value_sequence<zd_c27::Sample::_tao_seq_zd_c27_C
+delimited-cdr	be	refused	genTypeSupportImpl.cpp:25791:20: error: no matching function for call to 'serialized_size(const OpenDDS::DCPS::Encoding&, size_t&, const TAO::unbounded_value_sequence<zd_c27::Sample::_tao_seq_zd_c27_C
+pl-cdr2	le	refused	genTypeSupportImpl.cpp:25791:20: error: no matching function for call to 'serialized_size(const OpenDDS::DCPS::Encoding&, size_t&, const TAO::unbounded_value_sequence<zd_c27::Sample::_tao_seq_zd_c27_C
+pl-cdr2	be	refused	genTypeSupportImpl.cpp:25791:20: error: no matching function for call to 'serialized_size(const OpenDDS::DCPS::Encoding&, size_t&, const TAO::unbounded_value_sequence<zd_c27::Sample::_tao_seq_zd_c27_C

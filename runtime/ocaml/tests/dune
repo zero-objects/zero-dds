@@ -1,0 +1,5 @@
+; The runtime's own self-test, one function per HDDS axis. `dune test`
+; builds it against the library beside it and runs it.
+(test
+ (name zdwire_selftest)
+ (libraries zdwire))

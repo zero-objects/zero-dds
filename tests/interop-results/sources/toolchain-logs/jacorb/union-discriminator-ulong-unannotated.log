@@ -1,0 +1,6 @@
+wireprobe-jacorb: the JacORB IDL compiler refused the IDL
+SEVERE org.jacorb.idl.lexer emit_error gen.idl, line: 11(1): Illegal case label <3735928559> for integral switch type int
+SEVERE: gen.idl, line: 11(1): Illegal case label <3735928559> for integral switch type int
+SEVERE org.jacorb.idl.lexer emit_error gen.idl, line: 11(1): 1 error(s).
+SEVERE: gen.idl, line: 11(1): 1 error(s).
+SEVERE org.jacorb.idl.lexer emit_error Parse error : Lexer errors

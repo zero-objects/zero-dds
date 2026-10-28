@@ -1,0 +1,15 @@
+// SPDX-License-Identifier: Apache-2.0
+// Reconstructed source for arrays_gen.py (originally produced by the
+// removed `idl-python` tool; the .idl was never committed). Extensibility
+// left at the specification default (appendable), matching every member
+// header observed in the fixture's TYPE_OBJECT bytes.
+module conf {
+  struct Point {
+    long x;
+    long y;
+  };
+  struct Arrays {
+    long grid[2][2];
+    Point shape[2];
+  };
+};

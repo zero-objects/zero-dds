@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! HTML-Renderer der Interop-Matrix.
+//! HTML renderer of the interop matrix.
 
 use crate::model::{Matrix, Status};
 
-/// Rendert die Matrix als statische HTML-Seite.
+/// Renders the matrix as a static HTML page.
 #[must_use]
 pub fn render_html(m: &Matrix) -> String {
     let mut out = String::with_capacity(8192);
@@ -49,7 +49,7 @@ td.cell-unknown{background:#5a3a10;color:#ffd9a8}
     let fails = m.fail_count();
     if fails > 0 {
         out.push_str(&format!(
-            r#"<div class="fail-banner">⚠ {fails} red cell{} — siehe Matrix unten.</div>"#,
+            r#"<div class="fail-banner">⚠ {fails} red cell{} — see matrix below.</div>"#,
             if fails == 1 { "" } else { "s" }
         ));
         out.push('\n');
@@ -125,7 +125,7 @@ fn html_escape(s: &str) -> String {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)] // tests duerfen unwrap nutzen.
+#[allow(clippy::unwrap_used)] // tests may use unwrap.
 mod tests {
     use super::*;
     use crate::model::{Cell, VendorRow};
@@ -197,9 +197,9 @@ mod tests {
 
     #[test]
     fn render_renders_missing_cell_as_unknown() {
-        // RTI hat keinen xtypes_struct-Eintrag
+        // RTI has no xtypes_struct entry
         let h = render_html(&sample());
-        // Suche nach "?" als Label fuer das fehlende Feld
+        // Search for "?" as the label for the missing field
         assert!(h.matches("cell-unknown").count() >= 1);
     }
 
@@ -216,8 +216,8 @@ mod tests {
         let mut m = sample();
         m.vendors[1].results[0].1.status = Status::Pass;
         let h = render_html(&m);
-        // Das CSS hat den ".fail-banner"-Selektor immer; wir checken
-        // dass das gerenderte Banner-DIV NICHT da ist.
+        // The CSS always has the ".fail-banner" selector; we check
+        // that the rendered banner DIV is NOT present.
         assert!(!h.contains(r#"<div class="fail-banner""#));
     }
 }

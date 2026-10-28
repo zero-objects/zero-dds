@@ -21,7 +21,7 @@ class Reading(object):
         self.label = label
 
     def marshal(self, endian):
-        w = zw.Writer(endian)
+        w = zw.Writer(endian, zw.XCDR2)
         w.put_u32(self.id)
         w.put_f32(self.value)
         w.put_string(self.label)
@@ -29,14 +29,14 @@ class Reading(object):
 
     @staticmethod
     def decode(body):
-        r = zw.Reader(body, zw.LE)
+        r = zw.Reader(body, zw.LE, zw.XCDR2)
         return Reading(r.get_u32(), r.get_f32(), r.get_string())
 
 
 def main():
     total = 5
     transport = ze.MemTransport()
-    client = ze.Client(transport)
+    client = ze.Client(transport, ze.xrce_object_id(0x001, ze.OBJK_DATAWRITER))
     for i in range(total):
         r = Reading(0x1000 + i, 20.0 + i * 0.5, "bay-%02d" % i)
         client.write(r.marshal(zw.LE))

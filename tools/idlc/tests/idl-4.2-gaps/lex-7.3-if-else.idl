@@ -1,0 +1,6 @@
+// IDL 4.2 §7.3, ISO/IEC 14882:2003 §16.1 — `#else`.
+#if 1
+struct Sa { long m; };
+#else
+struct Sb { long m; };
+#endif

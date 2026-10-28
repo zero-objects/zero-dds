@@ -38,7 +38,12 @@ let stream_none = 0x00
 let sm_write = 0x07
 let sm_acknack = 0x0A
 let sm_heartbeat = 0x0B
-let flags_write = 0x03
+(* E flag (little-endian body) + DataFormat FORMAT_DATA (0b000) in bits 1..3 --
+   DDS-XRCE 1.0 8.3.5.8. *)
+let flags_write = 0x01
+
+(* Wire size of the BaseObjectRequest that precedes the sample (7.7.8). *)
+let base_size = 4
 let flags_ctrl = 0x01
 
 (* ------------------------------------------------------------------- *)
@@ -60,6 +65,13 @@ let u16_wrap (v : int) : int = v land 0xffff
 (* Control-message payloads                                             *)
 (* ------------------------------------------------------------------- *)
 
+(** Encoding of the DDS-XRCE 1.0 Annex A types without [@extensibility]
+    (APPENDABLE by DDS-XTypes 1.3 7.3.1.2.1.8). [Appendable] (default): a
+    DHEADER in front of the members. [Final]: the form of the reference
+    implementation (eProsima), no DHEADER. This SDK writes one such type:
+    ACKNACK_Payload. HEARTBEAT_Payload is FINAL in both modes. *)
+type unannotated_types = Appendable | Final
+
 type heartbeat = { hb_first : int; hb_last : int; hb_stream : int }
 
 (** [ak_nack] is the little-endian 16-bit bitmap as its two bytes
@@ -73,12 +85,17 @@ type acknack = { ak_first_unacked : int; ak_nack : int * int; ak_stream : int }
 
 let u16_le (v : int) : int * int = (v land 0xff, (v lsr 8) land 0xff)
 
-(** Reliable WRITE_DATA frame: header seq carries the RFC-1982 sample seq. *)
-let reliable_write_frame (seq : int) (sample : bytes) : bytes =
-  let n = Bytes.length sample in
-  let s_lo, s_hi = u16_le (u16_wrap seq) in
+(** Reliable WRITE_DATA frame: header seq carries the RFC-1982 sample seq, and
+    the submessage body is the BaseObjectRequest (7.7.8: request_id then
+    object_id, each two octets most significant first) followed by the sample.
+    [obj_id] names the target DataWriter; the request_id is the sample's own
+    sequence number. *)
+let reliable_write_frame (seq : int) (obj_id : int) (sample : bytes) : bytes =
+  let seq = u16_wrap seq in
+  let n = base_size + Bytes.length sample in
+  let s_lo, s_hi = u16_le seq in
   let n_lo, n_hi = u16_le n in
-  let hdr = Bytes.create 8 in
+  let hdr = Bytes.create 12 in
   Bytes.set hdr 0 (Char.chr session);
   Bytes.set hdr 1 (Char.chr stream_reliable);
   Bytes.set hdr 2 (Char.chr s_lo);
@@ -87,19 +104,29 @@ let reliable_write_frame (seq : int) (sample : bytes) : bytes =
   Bytes.set hdr 5 (Char.chr flags_write);
   Bytes.set hdr 6 (Char.chr n_lo);
   Bytes.set hdr 7 (Char.chr n_hi);
+  Bytes.set hdr 8 (Char.chr ((seq lsr 8) land 0xff));
+  Bytes.set hdr 9 (Char.chr (seq land 0xff));
+  Bytes.set hdr 10 (Char.chr ((obj_id lsr 8) land 0xff));
+  Bytes.set hdr 11 (Char.chr (obj_id land 0xff));
   Bytes.cat hdr sample
 
-(** [(seq, sample)] from a reliable WRITE_DATA frame. *)
+(** [(seq, sample)] from a reliable WRITE_DATA frame. The sample starts after
+    the BaseObjectRequest; a body too short to hold one is refused rather than
+    handed back truncated. *)
 let parse_write_frame (frame : bytes) : (int * bytes) option =
-  if Bytes.length frame < 8 || Char.code (Bytes.get frame 4) <> sm_write then None
+  if Bytes.length frame < 8 + base_size || Char.code (Bytes.get frame 4) <> sm_write then None
   else
-    let seq = Char.code (Bytes.get frame 2) lor (Char.code (Bytes.get frame 3) lsl 8) in
-    let sample = Bytes.sub frame 8 (Bytes.length frame - 8) in
-    Some (seq, sample)
+    let sm_len = Char.code (Bytes.get frame 6) lor (Char.code (Bytes.get frame 7) lsl 8) in
+    if sm_len < base_size || 8 + sm_len > Bytes.length frame then None
+    else
+      let seq = Char.code (Bytes.get frame 2) lor (Char.code (Bytes.get frame 3) lsl 8) in
+      let sample = Bytes.sub frame (8 + base_size) (sm_len - base_size) in
+      Some (seq, sample)
 
 (** Golden control-frame header: session, stream=NONE, msg-seq=1, submsg,
-    flags, body-len=5 (LE). *)
-let ctrl_header (submsg : int) : bytes =
+    flags, body-len (LE): 5 for HEARTBEAT, 9 for ACKNACK (Appendable) or 5
+    (Final). *)
+let ctrl_header (submsg : int) (body_len : int) : bytes =
   let hdr = Bytes.create 8 in
   Bytes.set hdr 0 (Char.chr session);
   Bytes.set hdr 1 (Char.chr stream_none);
@@ -107,7 +134,7 @@ let ctrl_header (submsg : int) : bytes =
   Bytes.set hdr 3 '\000';
   Bytes.set hdr 4 (Char.chr submsg);
   Bytes.set hdr 5 (Char.chr flags_ctrl);
-  Bytes.set hdr 6 '\005';
+  Bytes.set hdr 6 (Char.chr body_len);
   Bytes.set hdr 7 '\000';
   hdr
 
@@ -120,27 +147,52 @@ let heartbeat_frame (hb : heartbeat) : bytes =
   Bytes.set body 2 (Char.chr l_lo);
   Bytes.set body 3 (Char.chr l_hi);
   Bytes.set body 4 (Char.chr hb.hb_stream);
-  Bytes.cat (ctrl_header sm_heartbeat) body
+  Bytes.cat (ctrl_header sm_heartbeat 5) body
 
-let acknack_frame (ak : acknack) : bytes =
+(** ACKNACK frame. ACKNACK_Payload has no @extensibility, so it is APPENDABLE
+    (DDS-XTypes 1.3 7.3.1.2.1.8) and carries a DHEADER in XCDR2.
+    [~unannotated_types:Appendable] (default): 17 octets, body = DHEADER u32 LE
+    (= 5) + the 5-octet payload, body-len = 9.
+    [~unannotated_types:Final]: 13 octets, body = the 5-octet payload,
+    body-len = 5 (form of the reference implementation). *)
+let acknack_frame ?(unannotated_types = Appendable) (ak : acknack) : bytes =
   let f_lo, f_hi = u16_le (u16_wrap ak.ak_first_unacked) in
   let n0, n1 = ak.ak_nack in
-  let body = Bytes.create 5 in
-  Bytes.set body 0 (Char.chr f_lo);
-  Bytes.set body 1 (Char.chr f_hi);
-  Bytes.set body 2 (Char.chr (n0 land 0xff));
-  Bytes.set body 3 (Char.chr (n1 land 0xff));
-  Bytes.set body 4 (Char.chr ak.ak_stream);
-  Bytes.cat (ctrl_header sm_acknack) body
+  let payload = Bytes.create 5 in
+  Bytes.set payload 0 (Char.chr f_lo);
+  Bytes.set payload 1 (Char.chr f_hi);
+  Bytes.set payload 2 (Char.chr (n0 land 0xff));
+  Bytes.set payload 3 (Char.chr (n1 land 0xff));
+  Bytes.set payload 4 (Char.chr ak.ak_stream);
+  match unannotated_types with
+  | Appendable ->
+      let dheader = Bytes.make 4 '\000' in
+      Bytes.set dheader 0 '\005';
+      Bytes.cat (ctrl_header sm_acknack 9) (Bytes.cat dheader payload)
+  | Final -> Bytes.cat (ctrl_header sm_acknack 5) payload
 
+(** Accepts body length 9 (4-octet DHEADER, then the 5-octet payload) and the
+    FINAL form with body length 5 (no DHEADER), whatever the writer's
+    [unannotated_types] setting. *)
 let parse_acknack (frame : bytes) : acknack option =
   if Bytes.length frame < 13 || Char.code (Bytes.get frame 4) <> sm_acknack then None
   else
-    let first = Char.code (Bytes.get frame 8) lor (Char.code (Bytes.get frame 9) lsl 8) in
-    let n0 = Char.code (Bytes.get frame 10) in
-    let n1 = Char.code (Bytes.get frame 11) in
-    let stream = Char.code (Bytes.get frame 12) in
-    Some { ak_first_unacked = first; ak_nack = (n0, n1); ak_stream = stream }
+    let blen = Char.code (Bytes.get frame 6) lor (Char.code (Bytes.get frame 7) lsl 8) in
+    let o =
+      if blen = 9 && Bytes.length frame >= 17 then Some 12
+      else if blen = 5 then Some 8
+      else None
+    in
+    match o with
+    | None -> None
+    | Some o ->
+        let first =
+          Char.code (Bytes.get frame o) lor (Char.code (Bytes.get frame (o + 1)) lsl 8)
+        in
+        let n0 = Char.code (Bytes.get frame (o + 2)) in
+        let n1 = Char.code (Bytes.get frame (o + 3)) in
+        let stream = Char.code (Bytes.get frame (o + 4)) in
+        Some { ak_first_unacked = first; ak_nack = (n0, n1); ak_stream = stream }
 
 let parse_heartbeat (frame : bytes) : heartbeat option =
   if Bytes.length frame < 13 || Char.code (Bytes.get frame 4) <> sm_heartbeat then None
@@ -247,9 +299,17 @@ end
 (* ------------------------------------------------------------------- *)
 
 module Receiver = struct
-  type t = { mutable expected_seq : int; received : (int, bytes) Hashtbl.t; stream : int }
+  type t = {
+    mutable expected_seq : int;
+    received : (int, bytes) Hashtbl.t;
+    stream : int;
+    unannotated_types : unannotated_types;
+  }
 
-  let create () : t = { expected_seq = 0; received = Hashtbl.create 32; stream = stream_reliable }
+  (** [?unannotated_types] (default [Appendable]) selects the encoding of the
+      ACKNACK_Payload this receiver writes, see {!acknack_frame}. *)
+  let create ?(unannotated_types = Appendable) () : t =
+    { expected_seq = 0; received = Hashtbl.create 32; stream = stream_reliable; unannotated_types }
 
   let expected (r : t) : int = r.expected_seq
   let out_of_order_count (r : t) : int = Hashtbl.length r.received
@@ -293,6 +353,11 @@ module Receiver = struct
       ak_nack = (!bitmap land 0xff, (!bitmap lsr 8) land 0xff);
       ak_stream = r.stream;
     }
+
+  (** ACKNACK frame for the current window, encoded per the receiver's
+      [unannotated_types]. *)
+  let acknack_frame (r : t) (hint : int option) : bytes =
+    acknack_frame ~unannotated_types:r.unannotated_types (pending_acknack r hint)
 
   let reset (r : t) : unit =
     r.expected_seq <- 0;
@@ -348,6 +413,8 @@ module Writer = struct
   type t = {
     sock : Unix.file_descr;
     peer_addr : Unix.sockaddr;
+    (* ObjectId of the target DataWriter (7.7.8 BaseObjectRequest). *)
+    object_id : int;
     sender : Sender.t;
     mailbox : bytes Mailbox.t;
     mutable running : bool;
@@ -365,7 +432,7 @@ module Writer = struct
       if (bitmap lsr i) land 1 = 1 then begin
         let seq = u16_wrap (base + i) in
         match Sender.get_in_flight w.sender seq with
-        | Some payload -> send_frame w (reliable_write_frame seq payload)
+        | Some payload -> send_frame w (reliable_write_frame seq w.object_id payload)
         | None -> ()
       end
     done
@@ -378,7 +445,7 @@ module Writer = struct
     List.iter
       (fun payload ->
         match Sender.submit w.sender payload with
-        | Ok seq -> send_frame w (reliable_write_frame seq payload)
+        | Ok seq -> send_frame w (reliable_write_frame seq w.object_id payload)
         | Error `WindowFull ->
             (* Window full: requeue for a later tick, once ACKNACKs free room. *)
             Mailbox.put w.mailbox payload
@@ -411,11 +478,12 @@ module Writer = struct
     done
 
   (** Spawns the drain thread and returns the writer handle. *)
-  let create (sock : Unix.file_descr) (peer_addr : Unix.sockaddr) : t =
+  let create (sock : Unix.file_descr) (peer_addr : Unix.sockaddr) (object_id : int) : t =
     let w =
       {
         sock;
         peer_addr;
+        object_id;
         sender = Sender.create ();
         mailbox = Mailbox.create ();
         running = true;

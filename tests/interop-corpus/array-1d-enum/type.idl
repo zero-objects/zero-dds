@@ -1,0 +1,7 @@
+// one-dimensional array of `enum`
+enum Colour { RED, GREEN, BLUE };
+
+@final struct Sample {
+    Colour items[3];
+    long tail;
+};

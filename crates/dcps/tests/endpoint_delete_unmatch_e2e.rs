@@ -62,7 +62,7 @@ mod linux_e2e {
     fn dropping_a_writer_unmatches_the_remote_reader() {
         let cfg = isolated_cfg();
         let factory = DomainParticipantFactory::instance();
-        let domain = unique_domain(11);
+        let domain = unique_domain();
 
         let pub_p = factory
             .create_participant_with_config(domain, DomainParticipantQos::default(), cfg.clone())
@@ -118,7 +118,7 @@ mod linux_e2e {
     fn dropping_a_reader_unmatches_the_remote_writer() {
         let cfg = isolated_cfg();
         let factory = DomainParticipantFactory::instance();
-        let domain = unique_domain(12);
+        let domain = unique_domain();
 
         let pub_p = factory
             .create_participant_with_config(domain, DomainParticipantQos::default(), cfg.clone())

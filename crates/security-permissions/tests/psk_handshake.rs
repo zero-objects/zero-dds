@@ -30,34 +30,37 @@
 use std::sync::Arc;
 
 use zerodds_security::authentication::{
-    AuthenticationPlugin, HandshakeStepOutcome, IdentityHandle, SharedSecretProvider,
+    AuthenticationExtensions, AuthenticationPlugin, HandshakeStepOutcome, IdentityHandle,
+    SharedSecretProvider,
 };
 use zerodds_security::crypto::CryptographicPlugin;
 use zerodds_security_crypto::{AesGcmCryptoPlugin, Suite};
-use zerodds_security_pki::PskAuthenticationPlugin;
+use zerodds_security_pki::PskHandshakeAuthenticationPlugin;
 
 fn run_handshake(
-    alice: &mut PskAuthenticationPlugin,
-    bob: &mut PskAuthenticationPlugin,
+    alice: &mut PskHandshakeAuthenticationPlugin,
+    bob: &mut PskHandshakeAuthenticationPlugin,
     alice_h: IdentityHandle,
     bob_h: IdentityHandle,
 ) -> (
     zerodds_security::authentication::HandshakeHandle,
     zerodds_security::authentication::HandshakeHandle,
 ) {
-    let (alice_hs, out1) = alice.begin_handshake_request(alice_h, bob_h).unwrap();
+    let (alice_hs, out1) = alice.begin_handshake_request(alice_h, bob_h, &[]).unwrap();
     let req = match out1 {
         HandshakeStepOutcome::SendMessage { token } => token,
         _ => panic!("expected request token"),
     };
-    let (bob_hs, out2) = bob.begin_handshake_reply(bob_h, alice_h, &req).unwrap();
+    let (bob_hs, out2) = bob
+        .begin_handshake_reply(bob_h, alice_h, &req, &[])
+        .unwrap();
     let reply = match out2 {
         HandshakeStepOutcome::SendMessage { token } => token,
         _ => panic!("expected reply token"),
     };
     let out3 = alice.process_handshake(alice_hs, &reply).unwrap();
     let final_tok = match out3 {
-        HandshakeStepOutcome::SendMessage { token } => token,
+        HandshakeStepOutcome::SendFinalMessage { token } => token,
         _ => panic!("expected final token"),
     };
     let out4 = bob.process_handshake(bob_hs, &final_tok).unwrap();
@@ -86,8 +89,8 @@ impl SharedSecretProvider for ArcWrapper {
 fn psk_handshake_then_aes_gcm_roundtrip_uses_shared_secret() {
     // 1) Both sides have the same PSK.
     let psk = vec![0x55u8; 32];
-    let mut alice_auth = PskAuthenticationPlugin::new();
-    let mut bob_auth = PskAuthenticationPlugin::new();
+    let mut alice_auth = PskHandshakeAuthenticationPlugin::new();
+    let mut bob_auth = PskHandshakeAuthenticationPlugin::new();
     alice_auth.register_psk("ab".into(), psk.clone()).unwrap();
     bob_auth.register_psk("ab".into(), psk).unwrap();
     let alice_id = alice_auth.validate_local_psk_identity("ab").unwrap();
@@ -188,53 +191,52 @@ fn psk_profile_bundle_factory_assembles_three_plugins() {
     use zerodds_security_permissions::PskProfile;
 
     let permissions_xml = r#"
-<permissions>
-  <grant><subject_name>node-1</subject_name>
-    <allow_rule>
-      <publish><topic>Sensors</topic></publish>
-      <subscribe><topic>Commands</topic></subscribe>
+<dds><permissions>
+  <grant><subject_name>node-1</subject_name><validity><not_before>1970-01-01T00:00:00</not_before><not_after>2100-01-01T00:00:00</not_after></validity>
+    <allow_rule><domains><id_range><min>0</min></id_range></domains>
+      <publish><topics><topic>Sensors</topic></topics></publish>
+      <subscribe><topics><topic>Commands</topic></topics></subscribe>
     </allow_rule>
     <default>DENY</default>
   </grant>
-</permissions>
+</permissions></dds>
 "#;
     let bundle =
         PskProfile::with_pre_shared_key("node-1", vec![0xCD; 32], None, permissions_xml).unwrap();
 
-    assert_eq!(bundle.auth.plugin_class_id(), "DDS:Auth:PSK:1.2");
+    assert_eq!(
+        bundle.auth.plugin_class_id(),
+        "org.zerodds.auth.psk-handshake:1.0"
+    );
     assert_eq!(
         bundle.access_control.plugin_class_id(),
-        "DDS:Access:PSK:Permissions:1.2"
+        "DDS:Access:PSK:1.2"
     );
     assert_eq!(
         bundle.crypto.plugin_class_id(),
-        "DDS:Crypto:PSK:AES-GCM-GMAC:1.2"
+        "ZeroDDS:Crypto:PSK-Derived:1.0"
     );
 
-    // Permission test directly on the bundle.
-    use zerodds_security::access_control::PermissionsHandle;
+    // DDS-Security 1.2 §10.8.3 Table 85: every check of DDS:Access:PSK
+    // returns TRUE, a topic outside the grant too.
+    use zerodds_security::access_control::{EndpointRequest, PermissionsHandle};
     // The permissions were already registered in the constructor (handle 1).
     let h = PermissionsHandle(1);
-    assert_eq!(
-        bundle
-            .access_control
-            .check_create_datawriter(h, "Sensors")
-            .unwrap(),
-        AccessDecision::Permit
-    );
-    assert_eq!(
-        bundle
-            .access_control
-            .check_create_datawriter(h, "OtherTopic")
-            .unwrap(),
-        AccessDecision::Deny
-    );
+    for topic in ["Sensors", "OtherTopic"] {
+        assert_eq!(
+            bundle
+                .access_control
+                .check_create_datawriter(h, &EndpointRequest::new(0, topic))
+                .unwrap(),
+            AccessDecision::Permit
+        );
+    }
 }
 
 #[test]
 fn psk_handshake_with_completely_different_psks_fails() {
-    let mut alice_auth = PskAuthenticationPlugin::new();
-    let mut bob_auth = PskAuthenticationPlugin::new();
+    let mut alice_auth = PskHandshakeAuthenticationPlugin::new();
+    let mut bob_auth = PskHandshakeAuthenticationPlugin::new();
     alice_auth
         .register_psk("ab".into(), vec![0xAAu8; 32])
         .unwrap();
@@ -245,14 +247,14 @@ fn psk_handshake_with_completely_different_psks_fails() {
     let bob_id = bob_auth.validate_local_psk_identity("ab").unwrap();
 
     let (alice_hs, out1) = alice_auth
-        .begin_handshake_request(alice_id, bob_id)
+        .begin_handshake_request(alice_id, bob_id, &[])
         .unwrap();
     let req = match out1 {
         HandshakeStepOutcome::SendMessage { token } => token,
         _ => panic!(),
     };
     let (_, out2) = bob_auth
-        .begin_handshake_reply(bob_id, alice_id, &req)
+        .begin_handshake_reply(bob_id, alice_id, &req, &[])
         .unwrap();
     let reply = match out2 {
         HandshakeStepOutcome::SendMessage { token } => token,

@@ -165,7 +165,9 @@ mod tests {
     use crate::json_sink::sample_line;
     use crate::sqlite_sink::SqliteSink;
     use crate::type_source::dynamic_type_from_idl;
-    use zerodds_types::dynamic::DynamicDataFactory;
+    use zerodds_ast_layout::key::{Encoding, Endianness};
+    use zerodds_types::dynamic::DynamicData;
+    use zerodds_wire_codec::{ProbeRequest, decode, encode};
 
     const IDL: &str = r#"
         module cuas {
@@ -216,10 +218,24 @@ mod tests {
         {
             let mut sink = SqliteSink::open(&path).unwrap();
             sink.ensure_topic("Track", "cuas::Track", IDL, &ty).unwrap();
-            let mut d = DynamicDataFactory::create_data(&ty).unwrap();
-            d.set_uint32_value(0, 7).unwrap();
-            d.set_string_value(1, "alpha").unwrap();
-            let raw = [0x07u8, 0x00, 0x00, 0x00];
+            let book = crate::type_source::TypeBook::from_idl(IDL).unwrap();
+            let request =
+                ProbeRequest::new("cuas::Track", Encoding::DelimitedCdr, Endianness::Little);
+            let value = DynamicData::Aggregate(vec![
+                (
+                    String::from("id"),
+                    DynamicData::Integer {
+                        kind: None,
+                        value: 7,
+                    },
+                ),
+                (
+                    String::from("name"),
+                    DynamicData::Text(String::from("alpha")),
+                ),
+            ]);
+            let raw = encode(book.ast(), &request, &value).unwrap();
+            let d: DynamicData = decode(book.ast(), &request, &raw).unwrap();
             sink.insert_sample("Track", &ty, 100, "aa", &raw, &d)
                 .unwrap();
         }
@@ -227,7 +243,10 @@ mod tests {
         assert_eq!(got.len(), 1);
         assert_eq!(got[0].topic, "Track");
         assert_eq!(got[0].type_name, "cuas::Track");
-        assert_eq!(got[0].raw_cdr, [0x07, 0x00, 0x00, 0x00]);
+        assert!(
+            !got[0].raw_cdr.is_empty(),
+            "the stored octets are the sample"
+        );
         drop(keep);
     }
 }

@@ -1,5 +1,6 @@
 #![no_main]
-//! Fuzz-Target: top-level `decode_datagram`. Coverage-guided Panic-Jagd.
+//! Fuzz target: the top-level `decode_datagram`, hunting panics under
+//! coverage guidance.
 
 use libfuzzer_sys::fuzz_target;
 

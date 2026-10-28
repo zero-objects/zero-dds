@@ -1,36 +1,36 @@
 # tests/interop/docker-compose.yml
 #
-# Multi-Vendor SPDP-Discovery Test-Harness (WP 0.7-A.1).
+# Multi-vendor SPDP discovery test harness (WP 0.7-A.1).
 #
-# Startet Cyclone DDS und Fast-DDS Container, die periodisch SPDP-
-# Beacons auf der Default-Multicast-Group (239.255.0.1:7400) senden.
-# Ein laufender ZeroDDS `spdp_demo` (siehe `crates/discovery/examples/`)
-# auf dem Host empfaengt diese Beacons und discovered die Vendor-
-# Participants.
+# Starts Cyclone DDS and Fast-DDS containers that periodically send SPDP
+# beacons on the default multicast group (239.255.0.1:7400).
+# A running ZeroDDS `spdp_demo` (see `crates/discovery/examples/`)
+# on the host receives these beacons and discovers the vendor
+# participants.
 #
-# Verwendung:
+# Usage:
 #
 #   cd tests/interop
-#   docker compose up -d cyclone-pub        # nur Cyclone
-#   docker compose up -d fastdds-pub        # nur Fast-DDS
-#   docker compose up -d                    # beide
+#   docker compose up -d cyclone-pub        # Cyclone only
+#   docker compose up -d fastdds-pub        # Fast-DDS only
+#   docker compose up -d                    # both
 #
-#   # Aus dem Repo-Root:
+#   # From the repo root:
 #   cargo run --example spdp_demo -p dds-discovery
 #
 #   docker compose down
 #
-# Wichtig — macOS-Limitation: Docker Desktop auf macOS routet IP-
-# Multicast nicht zwischen VM und Host. Live-Discovery funktioniert
-# nur auf Linux mit `network_mode: host`. Auf macOS sind Container
-# nur untereinander discoverable (intra-bridge), nicht zum Host-
-# Prozess. Workaround: Test auf Linux-VM oder Linux-Server laufen
-# lassen.
+# Important — macOS limitation: Docker Desktop on macOS does not route IP
+# multicast between the VM and the host. Live discovery works
+# only on Linux with `network_mode: host`. On macOS, containers are
+# discoverable only among each other (intra-bridge), not to the host
+# process. Workaround: run the test on a Linux VM or a Linux
+# server.
 
 services:
-  # ---- Cyclone-Python ShapesDemo (WP 2.1 Stufe 1) ----
-  # Pub/Sub via cyclonedds-python auf Topic "Square" mit Type "ShapeType".
-  # Gegenstueck: unser cargo --example shapes_demo_subscriber / _publisher.
+  # ---- Cyclone Python ShapesDemo (WP 2.1 stage 1) ----
+  # Pub/sub via cyclonedds-python on topic "Square" with type "ShapeType".
+  # Counterpart: our cargo --example shapes_demo_subscriber / _publisher.
   cyclone-shapes-pub:
     build:
       context: .
@@ -47,7 +47,7 @@ services:
     network_mode: host
     command: ["cyclone_shapes_sub.py", "Square", "0"]
 
-  # ---- ddsperf-Services (WP 0.7 Discovery-Harness) ----
+  # ---- ddsperf services (WP 0.7 discovery harness) ----
   cyclone-pub:
     image: ghcr.io/eclipse-cyclonedds/cyclonedds:latest
     container_name: zerodds-interop-cyclone-pub

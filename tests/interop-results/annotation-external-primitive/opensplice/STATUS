@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of annotation-external-primitive that opensplice produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	opensplice-idl: OpenSplice 6.9 has no @external members
+plain-cdr1	be	one-order-only	
+pl-cdr1	le	refused	opensplice-idl: OpenSplice 6.9 has no @external members
+pl-cdr1	be	one-order-only	
+plain-cdr2	le	no-version-2	
+plain-cdr2	be	no-version-2	
+delimited-cdr	le	no-version-2	
+delimited-cdr	be	no-version-2	
+pl-cdr2	le	no-version-2	
+pl-cdr2	be	no-version-2	

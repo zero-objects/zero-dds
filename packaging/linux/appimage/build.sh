@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
 # Spec: docs/specs/zerodds-deployment-1.0.md §2.2.4 —
-# AppImage Static-Build pro Daemon.
+# AppImage static build per daemon.
 #
-# Baut pro Daemon ein selbsttragendes AppImage (musl-static), benoetigt
-# - cargo (mit `x86_64-unknown-linux-musl` Target)
+# Builds a self-contained AppImage (musl-static) per daemon; requires
+# - cargo (with the `x86_64-unknown-linux-musl` target)
 # - appimagetool (https://appimage.github.io/appimagetool/)
 #
 # Usage:
-#   ./build.sh                      # alle 7 Daemons + 17 CLIs
-#   ./build.sh zerodds-ws-bridged   # nur einen
+#   ./build.sh                      # all 9 daemons + 17 CLIs
+#   ./build.sh zerodds-ws-bridged   # only one
 #
 # Output: ./out/<bin>-<arch>.AppImage
 
@@ -28,7 +28,11 @@ DAEMONS=(
     zerodds-amqp-bridged
     zerodds-grpc-bridged
     zerodds-corba-bridged
+    zerodds-zenoh-bridged
+    zerodds-opcua-bridged
+    zerodds-webdds-bridged
     zerodds-ros2-shim
+    zerodds-xrce-agentd
 )
 
 CLIS=(
@@ -85,7 +89,7 @@ exec "\$HERE/usr/bin/${bin}" "\$@"
 APPRUN
     chmod +x "$appdir/AppRun"
 
-    # Desktop-Entry (AppImage minimal requirement).
+    # Desktop entry (AppImage minimal requirement).
     cat > "$appdir/${bin}.desktop" << DESK
 [Desktop Entry]
 Name=${bin}
@@ -96,7 +100,7 @@ Categories=Utility;Network;
 Terminal=true
 DESK
 
-    # Stub-Icon (1x1 PNG) — appimagetool requires *some* icon file.
+    # Stub icon (1x1 PNG) — appimagetool requires *some* icon file.
     if [[ ! -f "$appdir/${bin}.png" ]]; then
         printf '\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\rIDATx\x9cc\xf8\xff\xff?\x03\x00\x05\xfe\x02\xfe\xa3X\xc0\x9d\x00\x00\x00\x00IEND\xaeB`\x82' > "$appdir/${bin}.png"
     fi

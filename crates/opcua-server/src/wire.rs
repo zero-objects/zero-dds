@@ -122,6 +122,45 @@ pub fn read_u32_array(r: &mut UaReader<'_>) -> Result<Vec<u32>, DecodeError> {
     Ok(out)
 }
 
+/// Writes an `Int32`-length-prefixed `i64`/`DateTime` array — e.g.
+/// `ReadAtTimeDetails.req_times` (Part 11 §6.4.4).
+pub fn write_i64_array(w: &mut UaWriter, items: &[i64]) -> Result<(), EncodeError> {
+    let len = i32::try_from(items.len()).map_err(|_| EncodeError::LengthOverflow {
+        what: "Int64 array",
+        len: items.len(),
+    })?;
+    w.write_i32(len);
+    for x in items {
+        w.write_i64(*x);
+    }
+    Ok(())
+}
+
+/// Reads an `Int32`-length-prefixed `i64`/`DateTime` array (`-1` = null → empty).
+pub fn read_i64_array(r: &mut UaReader<'_>) -> Result<Vec<i64>, DecodeError> {
+    let len = r.read_i32()?;
+    if len < 0 {
+        return Ok(Vec::new());
+    }
+    let len = len as usize;
+    check_array_len(r, len, 8, "Int64 array length exceeds remaining bytes")?;
+    let mut out = Vec::with_capacity(len);
+    for _ in 0..len {
+        out.push(r.read_i64()?);
+    }
+    Ok(out)
+}
+
+/// Writes a `Boolean` (Part 6 §5.2.2: a single byte, `0` = false).
+pub fn write_bool(w: &mut UaWriter, v: bool) {
+    w.write_u8(u8::from(v));
+}
+
+/// Reads a `Boolean`.
+pub fn read_bool(r: &mut UaReader<'_>) -> Result<bool, DecodeError> {
+    Ok(r.read_u8()? != 0)
+}
+
 /// Writes an `Int32`-length-prefixed string array.
 pub fn write_string_array(w: &mut UaWriter, items: &[String]) -> Result<(), EncodeError> {
     let len = i32::try_from(items.len()).map_err(|_| EncodeError::LengthOverflow {

@@ -39,7 +39,7 @@ impl RosNamespace {
     }
 }
 
-/// ROS-2-Type-Reference (z.B. `geometry_msgs/msg/Twist`).
+/// ROS-2-Type-Reference (e.g. `geometry_msgs/msg/Twist`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RosTypeRef {
     /// ROS-Package-Name.

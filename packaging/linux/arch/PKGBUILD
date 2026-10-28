@@ -1,4 +1,4 @@
-# Maintainer: ZeroDDS Contributors <admin@ifyna.de>
+# Maintainer: ZeroDDS Contributors <admin@zerodds.org>
 # SPDX-License-Identifier: Apache-2.0
 # Spec: docs/specs/zerodds-deployment-1.0.md §2.2.3 — Arch Linux Package.
 
@@ -18,7 +18,7 @@ optdepends=(
 source=("$pkgname-$pkgver.tar.gz::https://github.com/zero-objects/zerodds/archive/v$pkgver.tar.gz")
 sha512sums=('SKIP') # populated by `cargo dist plan`.
 
-# Spec §1.1 — sieben Daemons.
+# Spec §1.1 — neun Daemons.
 _daemons=(
     zerodds-ws-bridged
     zerodds-mqtt-bridged
@@ -26,8 +26,14 @@ _daemons=(
     zerodds-amqp-bridged
     zerodds-grpc-bridged
     zerodds-corba-bridged
+    zerodds-zenoh-bridged
+    zerodds-opcua-bridged
+    zerodds-webdds-bridged
     zerodds-ros2-shim
     zerodds-router
+    zerodds-durability-svc
+    zerodds-naming-svc
+    zerodds-xrce-agentd
 )
 
 # Spec §1.3 — siebzehn CLI-Tools.
@@ -53,12 +59,12 @@ _clis=(
 
 build() {
     cd "$pkgname-$pkgver"
-    cargo build --release --locked --workspace --exclude zerodds-durability-store-lakehouse --exclude zerodds-durability-service-bin --exclude zerodds-endpoint-codegen --exclude zerodds-endpoint-golden --exclude zerodds-xrce-agent-demo --bins
+    cargo build --release --locked --workspace --exclude zerodds-durability-store-lakehouse --exclude zerodds-endpoint-codegen --exclude zerodds-endpoint-golden --exclude zerodds-xrce-agent-demo --bins
 }
 
 check() {
     cd "$pkgname-$pkgver"
-    cargo test --release --locked --workspace --exclude zerodds-durability-store-lakehouse --exclude zerodds-durability-service-bin --exclude zerodds-endpoint-codegen --exclude zerodds-endpoint-golden --exclude zerodds-xrce-agent-demo --bins --no-run
+    cargo test --release --locked --workspace --exclude zerodds-durability-store-lakehouse --exclude zerodds-endpoint-codegen --exclude zerodds-endpoint-golden --exclude zerodds-xrce-agent-demo --bins --no-run
 }
 
 package() {

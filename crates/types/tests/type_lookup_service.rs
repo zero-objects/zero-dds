@@ -22,7 +22,7 @@
 
 use zerodds_types::builder::TypeObjectBuilder;
 use zerodds_types::resolve::TypeRegistry;
-use zerodds_types::type_lookup::{GetTypesReply, ReplyTypeObject};
+use zerodds_types::type_lookup::{GetTypesReply, TypeIdentifierTypeObjectPair};
 use zerodds_types::type_object::TypeObject;
 use zerodds_types::{EquivalenceHash, MinimalTypeObject, PrimitiveKind, TypeIdentifier};
 
@@ -129,15 +129,25 @@ fn reply_typeobject_minimal_decodes_back_into_registry() {
     let h2 = zerodds_types::compute_minimal_hash(&m2).unwrap();
 
     let reply = GetTypesReply {
-        types: alloc::vec![ReplyTypeObject::Minimal(m1), ReplyTypeObject::Minimal(m2)],
+        types: alloc::vec![
+            TypeIdentifierTypeObjectPair {
+                type_identifier: TypeIdentifier::EquivalenceHashMinimal(h1),
+                type_object: TypeObject::Minimal(m1),
+            },
+            TypeIdentifierTypeObjectPair {
+                type_identifier: TypeIdentifier::EquivalenceHashMinimal(h2),
+                type_object: TypeObject::Minimal(m2),
+            },
+        ],
+        complete_to_minimal: alloc::vec![],
     };
 
-    // Wire-Roundtrip.
-    use zerodds_cdr::{BufferReader, BufferWriter, Endianness};
-    let mut w = BufferWriter::new(Endianness::Little);
+    // A wire round trip, at the alignment the production path uses.
+    // `zerodds_types::framing` names it; `Writer::new` is XCDR1's eight.
+    let mut w = zerodds_types::framing::xcdr2_writer();
     reply.encode_into(&mut w).unwrap();
-    let bytes = w.into_bytes();
-    let mut r = BufferReader::new(&bytes, Endianness::Little);
+    let bytes = w.finish();
+    let mut r = zerodds_types::framing::xcdr2_reader(&bytes);
     let decoded = GetTypesReply::decode_from(&mut r).unwrap();
     assert_eq!(decoded.types.len(), 2);
 
@@ -145,16 +155,14 @@ fn reply_typeobject_minimal_decodes_back_into_registry() {
     // are consistent.
     let mut reg = TypeRegistry::new();
     for it in decoded.types {
-        match it {
-            ReplyTypeObject::Minimal(m) => {
-                let h = zerodds_types::compute_hash(&TypeObject::Minimal(m.clone())).unwrap();
-                reg.insert_minimal(h, m);
-            }
-            ReplyTypeObject::Complete(c) => {
-                let h = zerodds_types::compute_hash(&TypeObject::Complete(c.clone())).unwrap();
-                reg.insert_complete(h, c);
-            }
-        }
+        // The identifier the reply carried is the peer's claim; the
+        // registry is keyed by the hash of the object it actually got.
+        let stored = reg.insert_object(it.type_object).unwrap();
+        assert_eq!(
+            TypeIdentifier::EquivalenceHashMinimal(stored),
+            it.type_identifier,
+            "the identifier beside the object has to be the object's own"
+        );
     }
     assert!(reg.get_minimal(&h1).is_some());
     assert!(reg.get_minimal(&h2).is_some());

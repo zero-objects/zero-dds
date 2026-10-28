@@ -1,0 +1,11 @@
+// SPDX-License-Identifier: Apache-2.0
+// `fixed<P,S>` (CORBA/GIOP SS9.3.2.7 packed BCD) as a struct member,
+// @appendable. Replaces the hand-written `@idl_struct(typename="m::S",
+// extensibility="appendable")` dataclass with a `Fixed[5, 2]` member.
+module m {
+  @appendable
+  struct S {
+    long id;
+    fixed<5,2> price;
+  };
+};

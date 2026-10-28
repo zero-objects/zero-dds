@@ -1,0 +1,12 @@
+// a `@mutable` member of a `@final` structure
+// XTypes 1.3 §7.4.3.5.3: the inner writes its delimiter and its member
+// headers inside an outer that writes neither.
+@mutable struct Inner {
+    long a;
+    short b;
+};
+
+@final struct Sample {
+    Inner nested;
+    long tail;
+};

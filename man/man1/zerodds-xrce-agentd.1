@@ -1,0 +1,93 @@
+.TH ZERODDS-XRCE-AGENTD 1 "" "ZeroDDS" "ZeroDDS Manual"
+.SH NAME
+zerodds-xrce-agentd \- DDS-XRCE agent daemon
+.SH SYNOPSIS
+.B zerodds-xrce-agentd
+[\fB\-\-config\fR \fIFILE\fR]
+[\fB\-\-listen\fR \fIudp|tcp\fR:\fIADDR\fR]...
+[\fB\-\-log\-level\fR \fILEVEL\fR]
+[\fB\-\-set\fR \fIPATH\fR=\fIVALUE\fR]...
+[\fB\-\-check\-config\fR]
+[\fB\-V\fR | \fB\-h\fR]
+.SH DESCRIPTION
+.B zerodds-xrce-agentd
+is the Agent side of OMG DDS-XRCE 1.0: it represents one or more
+eProsima-compatible Micro Clients (UDP, TCP or serial) in the DDS data
+space, running the CREATE_CLIENT/STATUS_AGENT handshake, reliable streams
+with HEARTBEAT/ACKNACK, FRAGMENT reassembly, and mapping CREATE/DELETE/
+WRITE_DATA/READ_DATA onto real DDS participants, topics, publishers,
+subscribers, data writers and data readers. A participant joins the DDS
+domain its CREATE carries.
+Implements
+.IR docs/specs/dds-xrce-1.0.md .
+.SH OPTIONS
+.TP
+.BR \-\-config =\fIFILE\fR
+Path to the config file (YAML). See
+.BR zerodds-xrce-agentd.yaml (5).
+.TP
+.BR \-\-listen =\fIudp|tcp\fR:\fIADDR\fR
+Add a listener (repeatable). Default, if none is given anywhere: one UDP
+listener on
+.IR 0.0.0.0:2018 ,
+eProsima's own default agent port.
+.TP
+.BR \-\-log\-level =\fILEVEL\fR
+One of
+.IR trace ", " debug ", " info ", " warn ", " error .
+.TP
+.BR \-\-set " \fIPATH\fR=\fIVALUE\fR"
+One setting above every file, repeatable;
+.BI + PATH = VALUE
+appends to a list.
+.TP
+.B \-\-check\-config
+Validate and print the effective configuration with the origin of every
+value, then exit: 0 valid, 1 invalid value or unknown key, 2 unreadable
+file, syntax error or include cycle.
+.TP
+.BR \-V ", " \-\-version
+Version info.
+.TP
+.BR \-h ", " \-\-help
+Show the option synopsis.
+.SH SIGNALS
+SIGTERM stops the daemon.
+SIGHUP reloads what can be reloaded without a restart:
+.BR log_level ", "
+.BR limits.* ", "
+.BR session_timeout_secs " and "
+.BR discovery.enabled
+(the discovery responder thread is stopped or started to match). A changed
+.BR listeners: ", "
+.BR type_files: " or "
+.B xml_profile_files:
+entry is logged and ignored until restart — live-rebinding a listening
+socket or swapping the TypeObject set under in-flight sessions would risk
+silently orphaning them. A configuration that does not load changes
+nothing; the daemon keeps running on the last good configuration and logs
+why the reload was refused.
+.SH ENVIRONMENT
+.TP
+.B OTEL_EXPORTER_OTLP_ENDPOINT
+Optional OTLP endpoint, such as http://localhost:4318.
+.SH EXIT STATUS
+.TP
+.B 0
+Normal shutdown.
+.TP
+.B 1
+Configuration error.
+.TP
+.B 2
+Bind error \(em a listener's port already in use.
+.TP
+.B 3
+DDS discovery or runtime error.
+.SH FILES
+.I /etc/zerodds/xrce-agentd.yaml .
+.SH SEE ALSO
+.BR zerodds-xrce-agentd.yaml (5),
+DDS-XRCE 1.0 (OMG formal/2023-03-01).
+.SH AUTHORS
+ZeroDDS Contributors.

@@ -2,6 +2,54 @@
 // SpatialDDS 1.6 — vendored from OpenArCloud/SpatialDDS-spec (idl/v1.6),
 // types.idl + core.idl + discovery.idl combined (#includes resolved inline).
 // Upstream: https://github.com/OpenArCloud/SpatialDDS-spec
+//
+// FIVE DEVIATIONS FROM UPSTREAM. Four of them change member names that
+// are on the wire.
+//
+// The upstream file does not compile. IDL 4.2 §7.2.3.1 compares
+// identifiers case-insensitively inside one scope, and an unqualified
+// type name used in the same declaration that introduces the member
+// name is in that scope.
+//
+// Both front ends were run over both texts on the measurement host.
+// `tao_idl --idl-version 4` (ACE/TAO under /root/vendors/opendds) exits
+// 11 with ten errors on the upstream text and 0 with none on this one.
+// CycloneDDS' `idlc` (/opt/cyclone) exits 0 on **both** and says
+// nothing about either class. This project's pre-rebuild front end
+// accepted the upstream text too — that was the defect, not the
+// tolerance.
+//
+//   upstream  here           collides with  struct
+//   --------  -------------  -------------  ------------------------------------
+//   geopose   geo_pose       GeoPose        spatial::anchors::AnchorEntry
+//   geopose   geo_pose       GeoPose        spatial::argeo::NodeGeo
+//   health    health_state   Health         spatial::sensing::common::FrameQuality
+//   roi       requested_roi  ROI            spatial::sensing::common::ROIRequest
+//   codec     codec_kind     Codec          spatial::sensing::lidar::LidarMeta
+//   codec     codec_kind     Codec          spatial::sensing::lidar::LidarFrame
+//   codec     codec_kind     Codec          spatial::sensing::rad::RadTensorMeta
+//   codec     codec_kind     Codec          spatial::sensing::rad::RadTensorFrame
+//
+// A member name is in the COMPLETE TypeObject and it is what a
+// @mutable member id is derived from when no @id is written, so a peer
+// built from the upstream text and one built from this one are not the
+// same type. `has_geopose` in `NodeGeo` is a different member, does not
+// collide, and is left as upstream spells it — the pair therefore reads
+// `has_geopose` / `geo_pose`.
+//
+// The fifth deviation costs nothing on the wire: `RadTensorLayout`'s
+// last enumerator is spelled `_CUSTOM` here. `custom` is an IDL
+// keyword, an identifier that differs from a keyword only in case is
+// refused (§7.2.3.1), and the leading underscore is the escape the same
+// clause defines — it is not part of the name. tao_idl emits `CUSTOM`,
+// as upstream intends.
+//
+// The alternative, measured and not taken: writing the type qualified
+// (`spatial::core::GeoPose geo_pose;`) also satisfies tao_idl and would
+// have left every member name as upstream has it. It was not taken
+// because the deviation is then invisible in the member list, and this
+// file is read by people who are matching it against a peer.
+// docs/peer-defects.md carries the reproduction.
 
 module builtin {
   @extensibility(APPENDABLE) struct Time {
@@ -240,7 +288,7 @@ module spatial {
     @extensibility(APPENDABLE) struct AnchorEntry {
       @key string anchor_id;
       string name;
-      GeoPose geopose;
+      GeoPose geo_pose;
       double confidence;
       sequence<string,8> tags;
       Time stamp;
@@ -337,10 +385,10 @@ module spatial {
       enum Health { @value(0) OK, @value(1) DEGRADED, @value(2) ERROR };
 
       @extensibility(APPENDABLE) struct FrameQuality {
-        boolean has_snr_db; float snr_db; float percent_valid; Health health; string note;
+        boolean has_snr_db; float snr_db; float percent_valid; Health health_state; string note;
       };
       @extensibility(APPENDABLE) struct ROIRequest {
-        @key string stream_id; uint64 request_id; Time t_start; Time t_end; ROI roi;
+        @key string stream_id; uint64 request_id; Time t_start; Time t_end; ROI requested_roi;
         boolean wants_payload_kind; PayloadKind desired_payload_kind;
         boolean wants_codec; Codec desired_codec;
         boolean wants_sample_type; SampleType desired_sample_type; int32 max_bytes;
@@ -454,7 +502,7 @@ module spatial {
     
         // Default payload for frames (clouds ride as blobs)
         CloudEncoding encoding;           // PCD/PLY/LAS/LAZ/etc.
-        Codec         codec;              // ZSTD/LZ4/DRACO/…
+        Codec         codec_kind;              // ZSTD/LZ4/DRACO/…
         PointLayout   layout;             // expected fields when decoded
         string schema_version;            // MUST be "spatial.sensing.lidar/1.5"
       };
@@ -466,7 +514,7 @@ module spatial {
     
         FrameHeader  hdr;                 // t_start/t_end, optional sensor_pose, blobs[]
         CloudEncoding encoding;           // may override meta
-        Codec         codec;              // may override meta
+        Codec         codec_kind;              // may override meta
         PointLayout   layout;             // may override meta
         boolean       has_per_point_timestamps; // true when blob contains per-point t
     
@@ -663,7 +711,7 @@ module spatial {
         @value(1)   R_AZ_EL_D,        // [range, azimuth, elevation, doppler]
         @value(2)   CH_FAST_SLOW,     // [channel/Rx, fast_time, slow_time] - raw FMCW
         @value(3)   CH_R_D,           // [channel, range, doppler] - post range-doppler FFT
-        @value(255) CUSTOM            // axes[] defines the order explicitly
+        @value(255) _CUSTOM            // axes[] defines the order explicitly
       };
     
       // Static tensor description - RELIABLE + TRANSIENT_LOCAL
@@ -697,7 +745,7 @@ module spatial {
     
         // Default payload settings for frames
         PayloadKind payload_kind;              // DENSE_TILES, SPARSE_COO, or LATENT
-        Codec       codec;                     // LZ4, ZSTD, CODEC_NONE, etc.
+        Codec       codec_kind;                     // LZ4, ZSTD, CODEC_NONE, etc.
         boolean     has_quant_scale;
         float       quant_scale;               // valid when has_quant_scale == true
         uint32      tile_size[4];              // for DENSE_TILES; unused dims = 1
@@ -715,7 +763,7 @@ module spatial {
     
         // Per-frame overrides (may differ from RadTensorMeta defaults)
         PayloadKind payload_kind;
-        Codec       codec;
+        Codec       codec_kind;
         SampleType  voxel_type_after_decode;   // post-decode type (e.g., CF32 -> MAG_F16)
         boolean     has_quant_scale;
         float       quant_scale;               // valid when has_quant_scale == true
@@ -1012,7 +1060,7 @@ module spatial {
         @key string node_id;      // same id as core::Node
         sequence<FramedPose, 8> poses;
         boolean has_geopose;
-        GeoPose geopose;          // corresponding global pose (WGS84/ECEF/ENU/NED)
+        GeoPose geo_pose;          // corresponding global pose (WGS84/ECEF/ENU/NED)
         string  source_id;
         uint64  seq;
         uint64  graph_epoch;

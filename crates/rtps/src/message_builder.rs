@@ -28,7 +28,7 @@
 //! it on the wire once per locator.
 
 extern crate alloc;
-use alloc::rc::Rc;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use crate::header::RtpsHeader;
@@ -40,15 +40,16 @@ pub const DEFAULT_MTU: usize = 1472;
 
 /// A fully aggregated datagram with targets.
 ///
-/// `targets` is shared as `Rc<Vec<Locator>>` to avoid allocation overhead
-/// in multi-reader tick loops — the same proxy
-/// locator set is reused across all submessages of a proxy.
+/// `targets` is shared as `Arc<Vec<Locator>>`: a writer keeps one per
+/// matched reader and every datagram to that reader holds it, so a write
+/// does not copy the locator list. `Arc` and not `Rc`, because the writer
+/// that keeps it moves between threads.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OutboundDatagram {
     /// Wire bytes (RTPS header + N submessages).
     pub bytes: Vec<u8>,
     /// Target locators. The transport layer sends to all.
-    pub targets: Rc<Vec<Locator>>,
+    pub targets: Arc<Vec<Locator>>,
 }
 
 impl OutboundDatagram {
@@ -79,6 +80,11 @@ pub enum AddError {
     },
     /// Submessage body > u16::MAX (wire field `octetsToNextHeader`).
     BodyTooLarge,
+    /// The datagram does not end on a 32-bit boundary: the last submessage's
+    /// length is not a multiple of four, which only the last submessage of a
+    /// message may be (DDSI-RTPS 2.5 §9.4.1, §9.4.5.1.3). The next
+    /// submessage belongs in a new datagram.
+    Unaligned,
 }
 
 /// Submessage aggregator.
@@ -89,9 +95,28 @@ pub enum AddError {
 #[derive(Debug)]
 pub struct MessageBuilder {
     bytes: Vec<u8>,
-    targets: Rc<Vec<Locator>>,
+    targets: Arc<Vec<Locator>>,
     mtu: usize,
     submsg_count: usize,
+    content_count: usize,
+}
+
+/// True for the submessages that only set receiver state and carry no
+/// information of their own (RTPS 2.5 §8.3.8.8 `InfoDestination`, §8.3.8.11
+/// `InfoTimestamp`, §8.3.8.10 `InfoSource`, §8.3.8.9 `InfoReply`, §8.3.8.13
+/// `Pad`). A message built from these alone is a no-op at the receiver: it
+/// updates the receiver state, which is then discarded at the end of the
+/// message because no submessage ever consumed it.
+fn is_framing_only(id: SubmessageId) -> bool {
+    matches!(
+        id,
+        SubmessageId::Pad
+            | SubmessageId::InfoTs
+            | SubmessageId::InfoSrc
+            | SubmessageId::InfoReplyIp4
+            | SubmessageId::InfoDst
+            | SubmessageId::InfoReply
+    )
 }
 
 impl MessageBuilder {
@@ -100,18 +125,25 @@ impl MessageBuilder {
     ///
     /// Panics: if `mtu` is smaller than the RTPS header (20 bytes).
     #[must_use]
-    pub fn open(header: RtpsHeader, targets: Rc<Vec<Locator>>, mtu: usize) -> Self {
+    pub fn open(header: RtpsHeader, targets: Arc<Vec<Locator>>, mtu: usize) -> Self {
         assert!(
             mtu >= 20,
             "MTU must accommodate at least the 20-byte RTPS header"
         );
-        let mut bytes = Vec::with_capacity(mtu);
+        // Reserved up to an Ethernet datagram, not up to `mtu`: a writer
+        // whose readers are all on this host opens every message with the
+        // 64 000-octet loopback MTU, and reserving that per message was a
+        // 64 kB allocation and release per sample (measured on the Linux
+        // test host). A larger message grows its buffer once, when the
+        // submessage that needs it is appended.
+        let mut bytes = Vec::with_capacity(mtu.min(DEFAULT_MTU));
         bytes.extend_from_slice(&header.to_bytes());
         Self {
             bytes,
             targets,
             mtu,
             submsg_count: 0,
+            content_count: 0,
         }
     }
 
@@ -125,6 +157,15 @@ impl MessageBuilder {
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.submsg_count == 0
+    }
+
+    /// True once at least one submessage was appended that is not pure
+    /// framing (`is_framing_only`) — i.e. once the message would actually
+    /// tell the receiver something. [`Self::finish`] produces a datagram only
+    /// in that case.
+    #[must_use]
+    pub fn has_content(&self) -> bool {
+        self.content_count > 0
     }
 
     /// Current total byte count (header + already appended
@@ -151,6 +192,8 @@ impl MessageBuilder {
     /// # Errors
     /// - [`AddError::WouldExceedMtu`] on size overflow.
     /// - [`AddError::BodyTooLarge`] if `body.len() > u16::MAX`.
+    /// - [`AddError::Unaligned`] after a submessage whose length is not a
+    ///   multiple of four.
     pub fn try_add_submessage(
         &mut self,
         id: SubmessageId,
@@ -163,11 +206,14 @@ impl MessageBuilder {
         // submessage starts aligned. The builder deliberately does NOT pad:
         // a pad counted in `octetsToNextHeader` would bleed through as
         // serializedData slack into the user payload (the receiver
-        // derives the payload length from `octetsToNextHeader`). Whoever
-        // co-frames multiple submessages checks the alignment themselves —
-        // see `ReliableWriter::write_with_heartbeat`: it appends a
-        // piggyback HEARTBEAT only to a DATA that already ends 4-aligned
-        // and otherwise puts it into its own datagram.
+        // derives the payload length from `octetsToNextHeader`). A body
+        // that is not a multiple of four is therefore the last submessage
+        // of its datagram, and the builder refuses to append after it.
+        // It used to leave that check to the callers, and the reliable
+        // writer's resend path put a HEARTBEAT behind a TypeLookup request
+        // of 123 octets: Cyclone DDS dropped the message as malformed and
+        // never answered the request.
+        self.check_aligned()?;
         let body_len = u16::try_from(body.len()).map_err(|_| AddError::BodyTooLarge)?;
         let needed = SubmessageHeader::WIRE_SIZE + body.len();
         if self.bytes.len() + needed > self.mtu {
@@ -184,7 +230,20 @@ impl MessageBuilder {
         self.bytes.extend_from_slice(&sh.to_bytes());
         self.bytes.extend_from_slice(body);
         self.submsg_count += 1;
+        if !is_framing_only(id) {
+            self.content_count += 1;
+        }
         Ok(())
+    }
+
+    /// [`AddError::Unaligned`] when the datagram so far does not end on a
+    /// 32-bit boundary — its last submessage has to stay the last.
+    fn check_aligned(&self) -> Result<(), AddError> {
+        if self.bytes.len() % 4 == 0 {
+            Ok(())
+        } else {
+            Err(AddError::Unaligned)
+        }
     }
 
     /// Like [`Self::try_add_submessage`], but the body in two slices —
@@ -206,6 +265,7 @@ impl MessageBuilder {
         header_body: &[u8],
         payload_tail: &[u8],
     ) -> Result<(), AddError> {
+        self.check_aligned()?;
         let total_body = header_body.len() + payload_tail.len();
         let body_len = u16::try_from(total_body).map_err(|_| AddError::BodyTooLarge)?;
         let needed = SubmessageHeader::WIRE_SIZE + total_body;
@@ -224,18 +284,32 @@ impl MessageBuilder {
         self.bytes.extend_from_slice(header_body);
         self.bytes.extend_from_slice(payload_tail);
         self.submsg_count += 1;
+        if !is_framing_only(id) {
+            self.content_count += 1;
+        }
         Ok(())
     }
 
     /// Converts into a finished [`OutboundDatagram`].
     ///
-    /// Returns `None` for an empty builder (only the RTPS header without
-    /// submessages) — this lets callers simply discard unused builders
-    /// without having to check `is_empty()`
-    /// first.
+    /// Returns `None` for a builder that carries no content — either nothing
+    /// at all (just the RTPS header), or nothing but framing submessages
+    /// (`is_framing_only`). This lets callers simply discard unused builders
+    /// without having to check [`Self::has_content`] first.
+    ///
+    /// The framing case is not hypothetical. `ReliableWriter::tick` opens its
+    /// per-proxy builder through `open_builder`, which prepends INFO_DST
+    /// straight away; when the tick then finds no resend to serve and no
+    /// HEARTBEAT due, the builder still held one submessage. Every such tick
+    /// put a 36-byte header+INFO_DST datagram on the wire, per reader proxy
+    /// and per announced locator, that told the receiver nothing. Because a
+    /// received user datagram raises a tick wake, the SEDP writers ran this at
+    /// the sample rate, and the two participants kept each other awake with
+    /// them: measured on the Linux test host, a 1 kB best-effort stream cost four `sendto`
+    /// per sample, of which two carried no information.
     #[must_use]
     pub fn finish(self) -> Option<OutboundDatagram> {
-        if self.submsg_count == 0 {
+        if self.content_count == 0 {
             return None;
         }
         Some(OutboundDatagram {
@@ -243,6 +317,59 @@ impl MessageBuilder {
             targets: self.targets,
         })
     }
+}
+
+/// Length of the RTPS message header (DDSI-RTPS 2.5 §8.3.3): protocol id,
+/// version, vendor id, GUID prefix.
+pub const RTPS_HEADER_LEN: usize = 20;
+
+/// Appends the submessages of the finished message `next` to the already
+/// finished message `pending`, so both travel in a single datagram.
+///
+/// DDSI-RTPS 2.5 §8.3.3 defines a Message as one Header followed by a
+/// sequence of Submessages, and §8.3.7 gives every Submessage its own
+/// self-delimiting header — so a receiver walks the submessages of a message
+/// one after the other and does not care how many arrived together. Two
+/// messages that carry the **same** header therefore concatenate into one
+/// legal message by dropping the second header, and the receiver processes
+/// exactly the same submessage sequence it would have seen in two datagrams.
+///
+/// This is the merge step behind writer-side batching: a `write()` produces a
+/// finished per-proxy datagram, and the batch keeps merging the next one into
+/// it until `max_message_size` is reached.
+///
+/// Returns `false` and leaves `pending` untouched when the merge is not
+/// allowed:
+///
+/// * either side is shorter than a header,
+/// * the two headers differ — a different GUID prefix, vendor or protocol
+///   version is a different message, and folding it in would relabel its
+///   submessages as someone else's,
+/// * or the result would exceed `max_message_size`.
+///
+/// The receiver state a merged message carries is the concatenation of both:
+/// an INFO_DST or INFO_TS in the second part still precedes the submessages
+/// it belongs to, and one in the first part still applies to the second — the
+/// same reading order §8.3.4 prescribes for submessages of one message.
+#[must_use]
+pub fn try_merge_message(pending: &mut Vec<u8>, next: &[u8], max_message_size: usize) -> bool {
+    if pending.len() < RTPS_HEADER_LEN || next.len() < RTPS_HEADER_LEN {
+        return false;
+    }
+    if pending[..RTPS_HEADER_LEN] != next[..RTPS_HEADER_LEN] {
+        return false;
+    }
+    let body = &next[RTPS_HEADER_LEN..];
+    if body.is_empty() {
+        // A header with nothing behind it adds no submessage; merging it in
+        // would silently claim a sample went out that carries nothing.
+        return false;
+    }
+    if pending.len() + body.len() > max_message_size {
+        return false;
+    }
+    pending.extend_from_slice(body);
+    true
 }
 
 #[cfg(test)]
@@ -264,14 +391,97 @@ mod tests {
             writer_id: EntityId::user_writer_with_key([0x10, 0x20, 0x30]),
             writer_sn: SequenceNumber(sn),
             inline_qos: None,
+            data_flag: true,
             key_flag: false,
             non_standard_flag: false,
-            serialized_payload: alloc::sync::Arc::from(alloc::vec![0xAB; payload_len]),
+            serialized_payload: crate::payload::Payload::from(alloc::vec![0xAB; payload_len]),
         }
     }
 
-    fn targets() -> Rc<Vec<Locator>> {
-        Rc::new(alloc::vec![Locator::udp_v4([127, 0, 0, 1], 7400)])
+    fn targets() -> Arc<Vec<Locator>> {
+        Arc::new(alloc::vec![Locator::udp_v4([127, 0, 0, 1], 7400)])
+    }
+
+    /// A submessage whose length is not a multiple of four ends its
+    /// datagram (DDSI-RTPS 2.5 §9.4.1): the builder refuses to append after
+    /// it, and appends again once it is aligned.
+    #[test]
+    fn nothing_is_appended_after_an_unaligned_submessage() {
+        let mut b = MessageBuilder::open(sample_header(), targets(), DEFAULT_MTU);
+        b.try_add_submessage(SubmessageId::Data, 0, &[0u8; 23])
+            .unwrap();
+        assert_eq!(
+            b.try_add_submessage(SubmessageId::Heartbeat, 0, &[0u8; 28]),
+            Err(AddError::Unaligned)
+        );
+        assert_eq!(
+            b.try_add_submessage_split(SubmessageId::Data, 0, &[0u8; 20], &[1, 2, 3]),
+            Err(AddError::Unaligned)
+        );
+        let mut b = MessageBuilder::open(sample_header(), targets(), DEFAULT_MTU);
+        b.try_add_submessage(SubmessageId::Data, 0, &[0u8; 24])
+            .unwrap();
+        b.try_add_submessage(SubmessageId::Heartbeat, 0, &[0u8; 28])
+            .unwrap();
+    }
+
+    /// RTPS 2.5 §8.3.8.8: a message whose only submessage is INFO_DST sets the
+    /// receiver's destination prefix and then ends, so the receiver discards
+    /// the state again without ever having used it. `finish` must not hand
+    /// such a message to the send path.
+    ///
+    /// This is the shape `ReliableWriter::tick` produces on an idle proxy:
+    /// `open_builder` prepends INFO_DST, and when nothing else is due the
+    /// builder is finished as-is.
+    #[test]
+    fn framing_only_builder_produces_no_datagram() {
+        let mut b = MessageBuilder::open(sample_header(), targets(), DEFAULT_MTU);
+        b.try_add_submessage(SubmessageId::InfoDst, 0, &[7u8; 12])
+            .unwrap();
+        assert_eq!(b.submsg_count(), 1, "INFO_DST is on the wire buffer");
+        assert!(!b.has_content(), "but it is not content");
+        assert!(
+            b.finish().is_none(),
+            "a header+INFO_DST datagram tells the receiver nothing"
+        );
+    }
+
+    /// The same builder must still produce a datagram once real content lands
+    /// behind the framing — INFO_DST + HEARTBEAT is the normal idle-writer
+    /// message and must keep going out unchanged.
+    #[test]
+    fn framing_plus_content_still_produces_a_datagram() {
+        let mut b = MessageBuilder::open(sample_header(), targets(), DEFAULT_MTU);
+        b.try_add_submessage(SubmessageId::InfoDst, 0, &[7u8; 12])
+            .unwrap();
+        let hb = HeartbeatSubmessage {
+            reader_id: EntityId::user_reader_with_key([0xA0, 0xB0, 0xC0]),
+            writer_id: EntityId::user_writer_with_key([0x10, 0x20, 0x30]),
+            first_sn: SequenceNumber(1),
+            last_sn: SequenceNumber(3),
+            count: 1,
+            final_flag: false,
+            liveliness_flag: false,
+            group_info: None,
+        };
+        let (body, flags) = hb.write_body(true);
+        b.try_add_submessage(SubmessageId::Heartbeat, flags, &body)
+            .unwrap();
+        assert!(b.has_content());
+        let dg = b.finish().expect("INFO_DST + HEARTBEAT must go out");
+        let parsed = decode_datagram(&dg.bytes).unwrap();
+        assert_eq!(parsed.submessages.len(), 2, "framing is preserved");
+    }
+
+    /// INFO_TS is framing too: an INFO_TS that never got its DATA is the same
+    /// no-op message, and `append_info_ts` runs before the DATA is known to
+    /// fit.
+    #[test]
+    fn info_ts_alone_produces_no_datagram() {
+        let mut b = MessageBuilder::open(sample_header(), targets(), DEFAULT_MTU);
+        b.try_add_submessage(SubmessageId::InfoTs, 0, &[0u8; 8])
+            .unwrap();
+        assert!(b.finish().is_none());
     }
 
     #[test]
@@ -314,14 +524,18 @@ mod tests {
         assert_eq!(dg.targets.len(), 1);
         let parsed = decode_datagram(&dg.bytes).unwrap();
         assert_eq!(parsed.submessages.len(), 1);
-        assert!(matches!(&parsed.submessages[0], ParsedSubmessage::Data(_)));
+        assert!(matches!(
+            &parsed.submessages[0].submessage,
+            ParsedSubmessage::Data(_)
+        ));
     }
 
     #[test]
     fn four_small_datas_aggregate_into_one_datagram() {
         let mut b = MessageBuilder::open(sample_header(), targets(), DEFAULT_MTU);
+        // Twelve octets each: an aligned DATA, which another may follow.
         for sn in 1..=4i64 {
-            let (body, flags) = sample_data(sn, 10).write_body(true);
+            let (body, flags) = sample_data(sn, 12).write_body(true);
             b.try_add_submessage(SubmessageId::Data, flags, &body)
                 .unwrap();
         }
@@ -329,8 +543,7 @@ mod tests {
         let parsed = decode_datagram(&dg.bytes).unwrap();
         // 4 DATA submessages in one datagram
         let data_count = parsed
-            .submessages
-            .iter()
+            .contents()
             .filter(|s| matches!(s, ParsedSubmessage::Data(_)))
             .count();
         assert_eq!(data_count, 4);
@@ -340,12 +553,12 @@ mod tests {
     fn overflow_rejects_with_would_exceed_mtu() {
         let mtu = 100; // very small
         let mut b = MessageBuilder::open(sample_header(), targets(), mtu);
-        // 1 DATA with a 50-byte payload fits (20 hdr + 4 sub_hdr + 20 body + 50 payload = 94)
-        let (body, flags) = sample_data(1, 50).write_body(true);
+        // 1 DATA with a 48-byte payload fits (20 hdr + 4 sub_hdr + 20 body + 48 payload = 92)
+        let (body, flags) = sample_data(1, 48).write_body(true);
         b.try_add_submessage(SubmessageId::Data, flags, &body)
             .unwrap();
         // 2nd DATA would overflow
-        let (body2, flags2) = sample_data(2, 50).write_body(true);
+        let (body2, flags2) = sample_data(2, 48).write_body(true);
         let res = b.try_add_submessage(SubmessageId::Data, flags2, &body2);
         assert!(matches!(res, Err(AddError::WouldExceedMtu { .. })));
         assert_eq!(b.submsg_count(), 1, "first add must still be counted");
@@ -387,7 +600,7 @@ mod tests {
     #[test]
     fn piggyback_heartbeat_after_data_aggregates() {
         let mut b = MessageBuilder::open(sample_header(), targets(), DEFAULT_MTU);
-        let (body, flags) = sample_data(1, 10).write_body(true);
+        let (body, flags) = sample_data(1, 12).write_body(true);
         b.try_add_submessage(SubmessageId::Data, flags, &body)
             .unwrap();
         let hb = HeartbeatSubmessage {
@@ -406,9 +619,12 @@ mod tests {
         let dg = b.finish().unwrap();
         let parsed = decode_datagram(&dg.bytes).unwrap();
         assert_eq!(parsed.submessages.len(), 2);
-        assert!(matches!(&parsed.submessages[0], ParsedSubmessage::Data(_)));
         assert!(matches!(
-            &parsed.submessages[1],
+            &parsed.submessages[0].submessage,
+            ParsedSubmessage::Data(_)
+        ));
+        assert!(matches!(
+            &parsed.submessages[1].submessage,
             ParsedSubmessage::Heartbeat(h) if h.final_flag
         ));
     }
@@ -428,6 +644,72 @@ mod tests {
             sub_header_flags & FLAG_E_LITTLE_ENDIAN,
             FLAG_E_LITTLE_ENDIAN
         );
+    }
+
+    #[test]
+    fn merge_folds_a_second_message_into_the_first() {
+        // Two finished single-DATA messages with the same header merge into
+        // one message carrying both DATAs — what the receiver walks per
+        // §8.3.4 is the same submessage sequence, in the same order.
+        let mut a = MessageBuilder::open(sample_header(), targets(), DEFAULT_MTU);
+        let (body_a, flags_a) = sample_data(1, 10).write_body(true);
+        a.try_add_submessage(SubmessageId::Data, flags_a, &body_a)
+            .unwrap();
+        let mut merged = a.finish().unwrap().bytes;
+
+        let mut b = MessageBuilder::open(sample_header(), targets(), DEFAULT_MTU);
+        let (body_b, flags_b) = sample_data(2, 10).write_body(true);
+        b.try_add_submessage(SubmessageId::Data, flags_b, &body_b)
+            .unwrap();
+        let second = b.finish().unwrap().bytes;
+
+        assert!(try_merge_message(&mut merged, &second, 14_720));
+        let parsed = decode_datagram(&merged).expect("merged message decodes");
+        assert_eq!(parsed.submessages.len(), 2);
+        for (i, want_sn) in [1i64, 2].iter().enumerate() {
+            match &parsed.submessages[i].submessage {
+                ParsedSubmessage::Data(d) => assert_eq!(d.writer_sn.0, *want_sn),
+                other => panic!("submessage {i} is not a DATA: {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn merge_refuses_a_foreign_header() {
+        // A different GUID prefix is a different sender. Folding it in would
+        // hand its submessages to the receiver under our prefix.
+        let mut a = MessageBuilder::open(sample_header(), targets(), DEFAULT_MTU);
+        let (body_a, flags_a) = sample_data(1, 10).write_body(true);
+        a.try_add_submessage(SubmessageId::Data, flags_a, &body_a)
+            .unwrap();
+        let mut merged = a.finish().unwrap().bytes;
+        let before = merged.clone();
+
+        let foreign = RtpsHeader::new(VendorId::ZERODDS, GuidPrefix::from_bytes([9u8; 12]));
+        let mut b = MessageBuilder::open(foreign, targets(), DEFAULT_MTU);
+        let (body_b, flags_b) = sample_data(2, 10).write_body(true);
+        b.try_add_submessage(SubmessageId::Data, flags_b, &body_b)
+            .unwrap();
+        let second = b.finish().unwrap().bytes;
+
+        assert!(!try_merge_message(&mut merged, &second, 14_720));
+        assert_eq!(merged, before, "a refused merge leaves the batch untouched");
+    }
+
+    #[test]
+    fn merge_refuses_to_exceed_the_message_size() {
+        let mut a = MessageBuilder::open(sample_header(), targets(), DEFAULT_MTU);
+        let (body_a, flags_a) = sample_data(1, 400).write_body(true);
+        a.try_add_submessage(SubmessageId::Data, flags_a, &body_a)
+            .unwrap();
+        let mut merged = a.finish().unwrap().bytes;
+        let second = merged.clone();
+        let cap = merged.len() + 1;
+        assert!(
+            !try_merge_message(&mut merged, &second, cap),
+            "a merge that would pass the cap is refused"
+        );
+        assert!(try_merge_message(&mut merged, &second, 14_720));
     }
 
     #[test]

@@ -8,7 +8,7 @@
 // sample sequence in the 2-byte header field; HEARTBEAT/ACKNACK use the golden
 // control-frame layout (session 0x80, stream NONE, msg-seq 1) that
 // endpoints/golden-gen emits. The peer inspects only byte[4] (submessage id)
-// and the body at offset 8.
+// and the body at offset 8 (HEARTBEAT) or offset 12 behind the DHEADER (ACKNACK).
 //
 // Frame = 8-byte header + body, little-endian:
 //   [0]=session [1]=stream [2..4)=seq LE [4]=submsg id [5]=flags
@@ -36,7 +36,11 @@ const STREAM_NONE = 0x00; // control-frame stream in the golden layout
 const SM_WRITE_DATA = 0x07;
 const SM_ACKNACK = 0x0a;
 const SM_HEARTBEAT = 0x0b;
-const FLAGS_WRITE = 0x03; // E-flag LE + data-present
+// E flag (little-endian body) + DataFormat FORMAT_DATA (0b000) in bits 1..3 —
+// DDS-XRCE 1.0 §8.3.5.8.
+const FLAGS_WRITE = 0x01;
+// Wire size of the BaseObjectRequest that precedes the sample (§7.7.8).
+const BASE_SIZE = 4;
 const FLAGS_CTRL = 0x01; // E-flag LE only
 
 const WINDOW = 16; // sender in-flight cap (matches the 16-bit ACKNACK bitmap)
@@ -59,18 +63,27 @@ function seqGt(a, b) {
 // --- frame builders (byte-identical to the golden control-frame layout) ---
 
 // Reliable WRITE_DATA frame: the 2-byte header seq carries the RFC-1982 sample
-// sequence. `sample` is a Buffer/Uint8Array.
-function writeFrame(seq, sample) {
-  const out = Buffer.alloc(8 + sample.length);
+// sequence, and the submessage body is the BaseObjectRequest (§7.7.8:
+// request_id then object_id, each two octets most significant first) followed
+// by the sample. `objectId` names the target DataWriter; the request_id is the
+// sample's own sequence number, unique per stream as §7.7.8 requires.
+// `sample` is a Buffer/Uint8Array.
+function writeFrame(seq, objectId, sample) {
+  const bodyLen = BASE_SIZE + sample.length;
+  const out = Buffer.alloc(8 + bodyLen);
   out[0] = SESSION_NOKEY;
   out[1] = STREAM_RELIABLE;
   out[2] = seq & 0xff;
   out[3] = (seq >>> 8) & 0xff;
   out[4] = SM_WRITE_DATA;
   out[5] = FLAGS_WRITE;
-  out[6] = sample.length & 0xff;
-  out[7] = (sample.length >>> 8) & 0xff;
-  Buffer.from(sample).copy(out, 8);
+  out[6] = bodyLen & 0xff;
+  out[7] = (bodyLen >>> 8) & 0xff;
+  out[8] = (seq >>> 8) & 0xff;
+  out[9] = seq & 0xff;
+  out[10] = (objectId >>> 8) & 0xff;
+  out[11] = objectId & 0xff;
+  Buffer.from(sample).copy(out, 8 + BASE_SIZE);
   return out;
 }
 
@@ -93,14 +106,38 @@ function heartbeatFrame(hb) {
   );
 }
 
-// ACKNACK frame: body = first_unacked i16 LE, nackLo, nackHi, stream.
-function acknackFrame(ack) {
-  return ctrlFrame(
-    SM_ACKNACK,
+// Unannotated types (DDS-XRCE 1.0 Annex A types without @extensibility):
+// 'appendable' (default) is what DDS-XTypes 1.3 section 7.3.1.2.1.8 says and
+// carries a DHEADER; 'final' is the form of the reference implementation
+// (eProsima) without one. This SDK writes one such type, ACKNACK_Payload.
+// HEARTBEAT_Payload is FINAL in Annex A and is the same in both settings.
+const UNANNOTATED_APPENDABLE = 'appendable';
+const UNANNOTATED_FINAL = 'final';
+
+function checkUnannotatedTypes(mode) {
+  if (mode !== UNANNOTATED_APPENDABLE && mode !== UNANNOTATED_FINAL) {
+    throw new RangeError(`unannotatedTypes must be 'appendable' or 'final', got ${String(mode)}`);
+  }
+  return mode;
+}
+
+// ACKNACK frame. 'appendable' (default): body(9) = DHEADER u32 LE (=5),
+// first_unacked i16 LE, nackLo, nackHi, stream; 17-octet frame, length field
+// 9. 'final': body(5) = first_unacked i16 LE, nackLo, nackHi, stream; 13-octet
+// frame, length field 5.
+function acknackFrame(ack, unannotatedTypes = UNANNOTATED_APPENDABLE) {
+  const fin = checkUnannotatedTypes(unannotatedTypes) === UNANNOTATED_FINAL;
+  const body = [
     ack.firstUnacked & 0xff, (ack.firstUnacked >>> 8) & 0xff,
     ack.nackLo & 0xff, ack.nackHi & 0xff,
     ack.stream & 0xff,
-  );
+  ];
+  return Buffer.from([
+    SESSION_NOKEY, STREAM_NONE, 0x01, 0x00,
+    SM_ACKNACK, FLAGS_CTRL, fin ? 0x05 : 0x09, 0x00,
+    ...(fin ? [] : [0x05, 0x00, 0x00, 0x00]),
+    ...body,
+  ]);
 }
 
 // --- frame parsers (peer contract: byte[4]=submsg-id, body at offset 8) ---
@@ -110,8 +147,13 @@ function i16(b, off) {
 }
 
 function parseWrite(f) {
-  if (f.length < 8 || f[4] !== SM_WRITE_DATA) return null;
-  return { seq: i16(f, 2), sample: Buffer.from(f.subarray(8)) };
+  if (f.length < 8 + BASE_SIZE || f[4] !== SM_WRITE_DATA) return null;
+  const smLen = i16(f, 6);
+  if (smLen < BASE_SIZE || 8 + smLen > f.length) return null;
+  return {
+    seq: i16(f, 2),
+    sample: Buffer.from(f.subarray(8 + BASE_SIZE, 8 + smLen)),
+  };
 }
 
 function parseHeartbeat(f) {
@@ -119,13 +161,19 @@ function parseHeartbeat(f) {
   return { first: i16(f, 8), last: i16(f, 10), stream: f[12] & 0xff };
 }
 
+// Accepts body length 9 (DHEADER + 5 octets) and the FINAL form (5).
 function parseAckNack(f) {
   if (f.length < 13 || f[4] !== SM_ACKNACK) return null;
+  let o = 8;
+  if (i16(f, 6) >= 9) {
+    if (f.length < 17) return null;
+    o = 12; // skip the 4-octet DHEADER
+  }
   return {
-    firstUnacked: i16(f, 8),
-    nackLo: f[10] & 0xff,
-    nackHi: f[11] & 0xff,
-    stream: f[12] & 0xff,
+    firstUnacked: i16(f, o),
+    nackLo: f[o + 2] & 0xff,
+    nackHi: f[o + 3] & 0xff,
+    stream: f[o + 4] & 0xff,
     bitmap() {
       return (this.nackLo & 0xff) | ((this.nackHi & 0xff) << 8);
     },
@@ -221,8 +269,11 @@ const RECV_OK = 'OK';
 const RECV_BUFFER_FULL = 'BUFFER_FULL';
 
 class ReliableReceiver {
-  constructor(stream = STREAM_RELIABLE) {
+  // options.unannotatedTypes: 'appendable' (default) | 'final', the form of
+  // the ACKNACK frames acknackFrame() writes.
+  constructor(stream = STREAM_RELIABLE, options = {}) {
     this.stream = stream & 0xff;
+    this.unannotatedTypes = checkUnannotatedTypes(options.unannotatedTypes ?? UNANNOTATED_APPENDABLE);
     this.expectedSeq = 0;
     this.received = new Map(); // seq -> Buffer
   }
@@ -279,6 +330,12 @@ class ReliableReceiver {
     };
   }
 
+  // The ACKNACK frame for pendingAcknack(hint), in the form of this
+  // receiver's unannotatedTypes.
+  acknackFrame(hint) {
+    return acknackFrame(this.pendingAcknack(hint), this.unannotatedTypes);
+  }
+
   reset() {
     this.expectedSeq = 0;
     this.received.clear();
@@ -292,9 +349,11 @@ const SOCKET_POLL_MS = 5; // event-loop yield between drain iterations
 const DRAIN_DEADLINE_MS = 20000;
 
 class AsyncReliableWriter {
-  constructor(peerHost, peerPort, drainDeadlineMs = DRAIN_DEADLINE_MS) {
+  constructor(peerHost, peerPort, objectId, drainDeadlineMs = DRAIN_DEADLINE_MS) {
     this.peerHost = peerHost;
     this.peerPort = peerPort;
+    // ObjectId of the target DataWriter (§7.7.8 BaseObjectRequest).
+    this.objectId = objectId;
     this.drainDeadlineMs = drainDeadlineMs;
     this.sender = new ReliableSender();
     this._queue = []; // producer -> drain
@@ -371,7 +430,7 @@ class AsyncReliableWriter {
           this._wakeSpace();
           const r = this.sender.submit(payload);
           if (r.status !== SENDER_OK) break; // payload too large -> drop, don't wedge
-          this._send(writeFrame(r.seq, payload));
+          this._send(writeFrame(r.seq, this.objectId, payload));
           this._deliveredCount += 1;
         }
 
@@ -419,7 +478,7 @@ class AsyncReliableWriter {
       if (((bitmap >> i) & 1) === 0) continue; // acknowledged / never sent
       const seq = (base + i) & 0xffff;
       const payload = this.sender.getInFlight(seq);
-      if (payload) this._send(writeFrame(seq, payload));
+      if (payload) this._send(writeFrame(seq, this.objectId, payload));
     }
   }
 
@@ -442,11 +501,12 @@ class AsyncReliableWriter {
 module.exports = {
   // constants
   SESSION_NOKEY, STREAM_RELIABLE, STREAM_NONE,
-  SM_WRITE_DATA, SM_ACKNACK, SM_HEARTBEAT, FLAGS_WRITE, FLAGS_CTRL,
+  SM_WRITE_DATA, SM_ACKNACK, SM_HEARTBEAT, FLAGS_WRITE, FLAGS_CTRL, BASE_SIZE,
   WINDOW, RECV_BUF, MAX_PAYLOAD, HEARTBEAT_PERIOD_MS,
   // rfc-1982
   seqLt, seqGt,
   // wire
+  UNANNOTATED_APPENDABLE, UNANNOTATED_FINAL,
   writeFrame, heartbeatFrame, acknackFrame,
   parseWrite, parseHeartbeat, parseAckNack,
   // state machine

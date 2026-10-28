@@ -3,240 +3,124 @@
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.88%2B-orange.svg)](https://www.rust-lang.org/)
 [![Edition](https://img.shields.io/badge/edition-2024-success.svg)](https://doc.rust-lang.org/edition-guide/)
-[![OMG Vendor-ID](https://img.shields.io/badge/OMG%20Vendor--ID-pending-yellow.svg)](#omg-vendor-id-status)
 
-> ⚠️ **OMG Vendor-ID pending.** ZeroDDS does **not yet have an official
-> OMG-assigned Vendor-ID**. Until the OMG registers the Vendor-ID,
-> Discovery packets (SPDP/SEDP `vendor_id` field in the
-> `ProtocolHeader`) carry a **provisional marker** and are therefore
-> **not cleared for production cross-vendor deployments**. Wire
-> compatibility against Cyclone DDS / RTI Connext / eProsima Fast DDS
-> is byte-identical; the `vendor_id` field is the sole deviation. The
-> application has been filed with the OMG; this README will be updated
-> once the Vendor-ID is assigned.
+ZeroDDS is a Rust implementation of OMG DDS, with language bindings,
+code generation and protocol bridges in one source workspace.
 
-Production-grade pure-Rust implementation of the **OMG Data Distribution
-Service** with bindings for C, C++, C#, Java, Python, TypeScript and
-Flutter, plus seven protocol bridges and a complete CORBA/CCM stack.
+> **Source status: RC7 preparation.** This checkout is not release approval
+> or a statement that RC7 crates, installers and container images are published.
+> The instructions below follow this source revision. External channels can
+> still describe an earlier release.
 
-> **Status:** `1.0.0-rc.6` Release Candidate. 125 crates published on
-> crates.io, all bridge layers conformance-verified against Cyclone DDS,
-> RabbitMQ, mosquitto, omniORB and gRPC reflection.
+## Evidence and scope
 
-## Why ZeroDDS
+Interop is evaluated per case, representation, direction and toolchain.
+A successful case is not a promise that all constructs or configurations
+interoperate, and successful round trips do not imply identical bytes.
 
-- **Zero dependencies** in the safe core — no transitive cargo bloat in
-  the foundation crates.
-- **Zero unsafe** wherever structurally possible, every `unsafe` block
-  carries a `// SAFETY:` justification verified by `dds-lint`.
-- **Zero panic** in the hot path, contractual `Result`-everywhere.
-- **Zero copy** on the shared-memory transport (iceoryx2-compatible).
-- **Zero vendor lock-in** — native OMG-DDSI-RTPS-2.5 wire, interoperable
-  with Cyclone DDS, OpenDDS and RTI Connext (see Vendor-ID note above).
+The [interop ledger](website/interop-ledger.html) presents the measurements.
+The [recorded results](tests/interop-results/ledger.tsv) and
+[specification coverage sources](docs/spec-coverage/) retain their own
+scope and revision. Historical checklist totals are not a whole-product
+RC7 conformance certificate. See the case evidence before extrapolating a
+result to a deployment.
 
-## Spec Coverage
+The repository still documents its Vendor-ID as provisional. The
+[RTPS source](crates/rtps/src/wire_types.rs) is the authority for the emitted
+identifier, not an inferred OMG registration. This README does not assert
+that a Vendor-ID is the only possible cross-vendor difference.
 
-ZeroDDS implements the full OMG DDS family plus modern bridging:
+## Quickstart from this checkout
 
-| Spec | Version | Status |
-|---|---|---|
-| OMG DDS DCPS | 1.4 | 100/100 + 2 n/a |
-| OMG DDSI-RTPS | 2.5 | 121/121 + 3 n/a |
-| OMG DDS-XTypes | 1.3 | 82/82 + 1 n/a |
-| OMG DDS-Security | 1.2 | 50/50 + 3 n/a |
-| OMG DDS-XML | 1.0 | 73/73 + 15 n/a |
-| OMG DDS-XRCE | 1.0 | 82/82 + 13 n/a |
-| OMG DDS-RPC | 1.0 | 94/94 + 10 n/a |
-| OMG DDS-PSM C++ | 1.0 | 103/103 + 19 n/a |
-| OMG DDS-Java-PSM | 1.0 | 156/156 + 15 n/a |
-| OMG DDS4CCM | 1.1 | 24/24 + 10 n/a |
-| OMG IDL | 4.2 | 649/649 + 24 n/a |
-| OMG CORBA | 3.3 | 51/51 + 12 n/a |
-
-Plus seven ZeroDDS-published Vendor Specifications:
-**DDS-AMQP**, **DDS-TS**, **DDS-WebSocket-Bridge**, **DDS-MQTT-Bridge**,
-**DDS-CoAP-Bridge**, **DDS-gRPC-Bridge**, **DDS-CORBA-Bridge** plus
-**ZeroDDS-FFI-Loader** and **ZeroDDS-Deployment** specs. Full coverage
-matrix in [`docs/spec-coverage/`](docs/spec-coverage/).
-
-## Quickstart
+Use Rust 1.88 or newer and a native linker. From the checkout root:
 
 ```bash
-# Library, via Cargo — zerodds-dcps pulls in discovery + rtps transitively
-cargo add zerodds-dcps
-
-# Or the CLI tools as pre-built packages
-brew install zero-objects/zerodds/zerodds   # macOS (Homebrew tap)
-sudo apt install zerodds-cli                 # Debian/Ubuntu (.deb)
-sudo dnf install zerodds-cli                 # RHEL/Fedora (.rpm)
-
-# Or via Docker (one image per tool/bridge)
-docker pull ghcr.io/zero-objects/zerodds-cli:1.0.0-rc.6
+cargo build --locked -j 1 -p zerodds-dcps \
+  --example hello_dds_publisher --example hello_dds_subscriber
+# Terminal 1
+./target/debug/examples/hello_dds_subscriber
+# Terminal 2
+./target/debug/examples/hello_dds_publisher
 ```
 
-Hello world publisher (compiles + runs against the published `1.0.0-rc.6`
-crate — see [`examples/`](https://github.com/zero-objects/zerodds-examples)):
+Use the corresponding .exe paths on Windows. The maintained
+[publisher](crates/dcps/examples/hello_dds_publisher.rs) and
+[subscriber](crates/dcps/examples/hello_dds_subscriber.rs) use domain 0 and
+topic Chatter. They demonstrate opaque RawBytes payloads, not generated-type
+or cross-vendor conformance. Confirm matching output in the subscriber.
+Both run until interrupted.
 
-```rust
-use zerodds_dcps::*;
+See [setup and configuration](documentation/01-getting-started/installation.md)
+and the [complete walkthrough](documentation/01-getting-started/first-publisher.md).
+For generated types, see [zerodds-build](crates/zerodds-build/README.md).
 
-fn main() {
-    let factory = DomainParticipantFactory::instance();
-    let participant = factory.create_participant_offline(0, DomainParticipantQos::default());
-    let topic = participant
-        .create_topic::<RawBytes>("Greetings", TopicQos::default())
-        .expect("create_topic");
-    let writer = participant
-        .create_publisher(PublisherQos::default())
-        .create_datawriter::<RawBytes>(&topic, DataWriterQos::default())
-        .expect("create_datawriter");
+## Source map
 
-    writer.write(&RawBytes::new(b"Hello, DDS!".to_vec())).expect("write");
-}
-```
+The [workspace manifest](Cargo.toml) identifies current crates and versions.
+Do not infer the current architecture from old crate counts.
 
-A full publish→subscribe roundtrip (two participants over UDP) and 14 further
-chapters in [`examples/tutorials/dds-chat/`](examples/tutorials/dds-chat/).
+- [DCPS](crates/dcps/README.md): participants, topics, readers and writers.
+- [IDL compiler](tools/idlc/README.md) and [build integration](crates/zerodds-build/README.md):
+  the current generation entrypoints.
+- [Configuration loader](crates/config/README.md): base files, sorted drop-ins,
+  explicit includes and provenance. Runtime selection is a separate consumer
+  contract described in the getting-started guide.
+- [Architecture documentation](docs/architecture/): design references whose
+  dates and source links must be considered alongside the current manifest.
 
-## Architecture
+## Language entrypoints
 
-Nine layers, ~95 crates, single Cargo workspace:
+These links identify implementations in the checkout, not availability of
+new packages in public registries. Generated codecs and native DDS endpoints
+are distinct layers.
 
-```
-Layer 8  CORBA + CCM (17 crates)            corba-ior, corba-iiop, ami4ccm, ...
-Layer 7  Bridging Services (11 crates)      ros2-rmw, dlrl, opcua-gateway, xrce, ...
-Layer 6  Language Bindings (11 crates)      cpp, cs, java, py, ts-node, ts-wasm, c-api
-Layer 5  Protocol Bridges (10 crates)       ws, mqtt, coap, amqp, grpc, corba-dds, bridge-security
-Layer 4  Schema (8 crates)                  cdr, idl, idl-{cpp,csharp,java,rust,ts}
-Layer 3  Core Services (12 crates)          dcps, qos, security, types, sql-filter, ...
-Layer 2  Wire Protocol (6 crates)           rtps, discovery, builtin-topics, ...
-Layer 1  Transport (5 crates)               transport-{udp,tcp,shm,tsn}, flatdata
-Layer 0  Foundation (8 crates)              foundation, monitor, observability, time, ...
-```
+| Language | Current source entrypoint |
+|---|---|
+| Rust | [zerodds-dcps](crates/dcps/README.md), [Rust facade](crates/rs/README.md) |
+| C | [C API](crates/zerodds-c-api/README.md) |
+| C++ | [C++ binding](crates/cpp/README.md) |
+| C# | [Native binding](crates/cs/README.md), with separate CDR/wire runtime dependencies |
+| Java | [Native Java DDS PSM](crates/java-omgdds/README.md), not an assumed JNI implementation |
+| Python | [PyO3 binding](crates/py/README.md), Python 3.9+, exact zerodds-wire dependency in [pyproject.toml](crates/py/pyproject.toml) |
+| TypeScript / Node | [koffi-based native binding](crates/ts-node/README.md); generated codecs use the separate @zerodds/wire package |
+| TypeScript / browser | [Browser binding](crates/ts-wasm/README.md) |
 
-Per-layer details in [`docs/architecture/`](docs/architecture/).
+The presence of a language entrypoint does not establish equal API coverage,
+transport support or wire representations across all bindings. Follow its
+current source and measured examples.
 
-## Bindings + Bridges
+## Packaging and deployment
 
-**Language Bindings** (Layer 6):
+[Packaging sources](packaging/) describe platform-specific build inputs.
+Their presence does not mean that every package repository, installer,
+architecture or container image is available or verified for RC7.
 
-| Language | Crate | Wire |
-|---|---|---|
-| Rust | `dds-dcps` (native) | XCDR2 |
-| C | `zerodds-c-api` (cdylib + staticlib) | XCDR2 |
-| C++17 | `zerodds-cpp` (header + ABI) | XCDR2 |
-| C# / .NET 8 | `zerodds-cs` (P/Invoke) | XCDR2 |
-| Java 21 | `zerodds-java-jni` (JNI) | XCDR2 |
-| Python 3.10+ | `zerodds-py` (PyO3) | XCDR2 |
-| TypeScript Node | `zerodds-ts-node` (NAPI) | XCDR2 |
-| TypeScript Browser | `zerodds-ts-wasm` (WASM) | XCDR2 |
-| Flutter / Dart | `zerodds-flutter` (`dart:ffi`) | XCDR2 |
+Start with the scoped source build above. Full-workspace builds include
+optional bridges, native bindings and system-library integrations and require
+their platform dependencies. For example, the durability lakehouse adapter
+requires libduckdb. Do not assume every other crate is dependency-free.
 
-**Protocol Bridges** (Layer 5) — daemons under `target/release/zerodds-*-bridged`:
-
-| Bridge | Spec | Wire |
-|---|---|---|
-| WebSocket | RFC 6455 + RFC 7692 | DDS-WebSocket-Bridge 1.0 |
-| MQTT | OASIS MQTT 5.0 | DDS-MQTT-Bridge 1.0 |
-| CoAP | RFC 7252 + 7641 + 7959 | DDS-CoAP-Bridge 1.0 |
-| AMQP | OASIS AMQP 1.0 | DDS-AMQP 1.0 |
-| gRPC | gRPC Protocol + gRPC-Web | DDS-gRPC-Bridge 1.0 |
-| CORBA | OMG CORBA 3.3 GIOP/IIOP | DDS-CORBA-Bridge 1.0 |
-| ROS-2 | REP-2007/2008/2009 | DDS-ROS2-Bridge 1.0 |
-
-All bridges share `bridge-security`: TLS 1.3 (rustls 0.23), bearer/JWT-RS256/
-mTLS/SASL-PLAIN auth modes, ACL with wildcard and group matching, SIGHUP
-cert rotation.
-
-## Linux / macOS / Windows
-
-Tier-1 platforms with native installers:
-
-| Platform | Build | Install |
-|---|---|---|
-| Linux | `cargo build --release` | `apt install zerodds` (`.deb`), `dnf install` (`.rpm`), `pacman -S` (Arch PKGBUILD), AppImage |
-| macOS | `cargo build --release` | `brew install zerodds`, launchd plists |
-| Windows | `cargo build --release` | MSI (WiX 4) registers as Windows service, Scoop, Chocolatey |
-| Docker | n/a | Multi-arch `linux/amd64` + `linux/arm64`, ready-made `docker-compose.yml` |
-
-Packaging artifacts under [`packaging/`](packaging/), production deployment
-spec in [`docs/specs/zerodds-deployment-1.0.md`](docs/specs/zerodds-deployment-1.0.md).
+The [toolchain file](rust-toolchain.toml) pins Rust 1.88.0.
+The [deployment specification](docs/specs/zerodds-deployment-1.0.md) describes
+configuration and layout contracts, not a release-channel availability check.
 
 ## Documentation
 
-- **[Documentation Trail](documentation/README.md)** — six-station guided
-  tour for users (English): Install → Architecture → Configuration → IDL →
-  Per-Language Integration → Operations.
-- **[Spec Coverage](docs/spec-coverage/)** — per-spec audit docs, every
-  normative section traced to source + tests.
-- **[ADRs](docs/adr/)** — Architecture Decision Records.
-- **[Examples](examples/)** — `dds-chat` 15-chapter tutorial, `dds-warehouse`
-  10-station industrial-IoT demo, `otel` observability sample.
-- **[Vendor Specs](docs/specs/)** — published in OMG-DDS-stylistic format
-  with conformance profiles.
+- [Documentation Trail](documentation/README.md): the guided entrypoint.
+- [Specification coverage](docs/spec-coverage/): scoped audit records.
+- [ADRs](docs/adr/): architectural decisions and their history.
+- [Examples](examples/): source recipes and demonstrations.
+- [Vendor specifications](docs/specs/): specification and design documents.
 
-## Building
+These links do not collectively approve every historical guide or claim.
+Release coordination, infrastructure notes and unfinished investigations belong
+in internal/, separate from product-facing instructions.
 
-```bash
-# Full workspace build
-cargo build --workspace --release
+## Contributing and security
 
-# Tests
-cargo test --workspace
-
-# Clippy
-cargo clippy --workspace --all-targets -- -D warnings
-
-# Docs
-cargo doc --workspace --no-deps
-```
-
-> **Note:** the `durability-store-lakehouse` adapter links the system
-> **libduckdb** (v1.5.3). Either install it (`DUCKDB_LIB_DIR`/`DUCKDB_INCLUDE_DIR`,
-> see `ci/Dockerfile.rust`) or exclude the two crates that need it:
-> `cargo build --workspace --exclude zerodds-durability-store-lakehouse --exclude zerodds-durability-service-bin`.
-> Every other crate builds with no system dependencies.
-
-`rust-toolchain.toml` pins to **1.88.0** (MSRV).
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the public contribution flow,
-DCO sign-off, PR conventions, and per-layer review expectations.
-Code of Conduct: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
-
-Security issues: [SECURITY.md](SECURITY.md). Do **not** open public issues
-for security vulnerabilities.
-
-## OMG Vendor-ID Status
-
-The OMG assigns each DDS implementation a **2-byte Vendor-ID** carried
-in the `vendor_id` field of every DDSI-RTPS header (see DDSI-RTPS 2.5
-§8.3.3.1 Table 8.1). Known Vendor-IDs include:
-
-| Vendor | ID |
-| --- | --- |
-| RTI Connext | 0x0101 |
-| eProsima Fast DDS | 0x010F |
-| Eclipse Cyclone DDS | 0x0110 |
-| OpenDDS | 0x0103 |
-
-**ZeroDDS has not yet been assigned a Vendor-ID.** Until the OMG
-processes the application, ZeroDDS runs with a provisional marker.
-Implications:
-
-- **Wire format**: Discovery packets are byte-identical to Cyclone /
-  RTI / Fast DDS — only the `vendor_id` field differs.
-- **Cross-vendor discovery**: other vendors do not yet recognise
-  ZeroDDS Participants in their Vendor-ID list and treat them as
-  "unknown vendor". Byte-accurate interop is nevertheless validated
-  in the cross-vendor conformance suite.
-- **Production deployments**: cross-vendor setups using ZeroDDS should
-  be regarded as **experimental until the Vendor-ID has been
-  assigned**.
-
-This section will be updated as soon as the OMG registers the
-Vendor-ID. See <https://zerodds.org> for the latest status.
+See [CONTRIBUTING.md](CONTRIBUTING.md), [Code of Conduct](CODE_OF_CONDUCT.md)
+and [SECURITY.md](SECURITY.md). Do not post vulnerability details in public
+issues.
 
 ## License
 

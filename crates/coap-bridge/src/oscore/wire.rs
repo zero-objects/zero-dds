@@ -92,24 +92,47 @@ impl OscoreOption {
 }
 
 /// Anti-replay window (RFC 8613 §3.2.2): a sliding window over the highest
-/// received Partial IV (interpreted as a big-endian integer). A 64-bit window
+/// received Partial IV (interpreted as a big-endian integer). A bitmap window
 /// behind the high-water mark; values at/above the mark advance it, values
 /// within the window are accepted once, anything older is rejected.
-#[derive(Clone, Debug, Default)]
+///
+/// The width defaults to 32 (the RFC 8613 §3.2.2 default; bridge spec §7.2)
+/// and is capped at [`ReplayWindow::MAX_WIDTH`] (the bitmap word).
+#[derive(Clone, Debug)]
 pub struct ReplayWindow {
     high: u64,
     seen: u64, // bitmap of the `width` values strictly below `high`
     primed: bool,
+    width: u64,
+}
+
+impl Default for ReplayWindow {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ReplayWindow {
-    /// Window width (number of out-of-order values tracked below the high mark).
-    pub const WIDTH: u64 = 64;
+    /// Default window width (RFC 8613 §3.2.2).
+    pub const DEFAULT_WIDTH: u64 = 32;
+    /// Maximum window width (one bitmap word).
+    pub const MAX_WIDTH: u64 = 64;
 
-    /// New empty window.
+    /// New empty window with the default width (32).
     #[must_use]
     pub fn new() -> Self {
-        Self::default()
+        Self::with_width(Self::DEFAULT_WIDTH)
+    }
+
+    /// New empty window with the given width, clamped to `1..=MAX_WIDTH`.
+    #[must_use]
+    pub fn with_width(width: u64) -> Self {
+        Self {
+            high: 0,
+            seen: 0,
+            primed: false,
+            width: width.clamp(1, Self::MAX_WIDTH),
+        }
     }
 
     /// Parse a (big-endian, ≤8-byte) Partial IV into an integer.
@@ -122,20 +145,40 @@ impl ReplayWindow {
         v
     }
 
-    /// Check + record a received Partial IV. Returns `true` if it is fresh
-    /// (accept) and `false` if it is a replay (reject). On accept, the window
-    /// state is updated.
-    pub fn check_and_update(&mut self, piv: &[u8]) -> bool {
+    /// Non-mutating check: `true` when the Partial IV would be accepted as
+    /// fresh. Callers verify the AEAD tag before [`ReplayWindow::record`]ing,
+    /// so an unauthenticated Partial IV never moves the window.
+    #[must_use]
+    pub fn is_fresh(&self, piv: &[u8]) -> bool {
+        let seq = Self::piv_to_u64(piv);
+        if !self.primed {
+            return true;
+        }
+        if seq > self.high {
+            return true;
+        }
+        if seq == self.high {
+            return false;
+        }
+        let diff = self.high - seq;
+        if diff > self.width {
+            return false;
+        }
+        self.seen & (1u64 << (diff - 1)) == 0
+    }
+
+    /// Record an accepted (AEAD-verified) Partial IV, advancing the window.
+    pub fn record(&mut self, piv: &[u8]) {
         let seq = Self::piv_to_u64(piv);
         if !self.primed {
             self.primed = true;
             self.high = seq;
             self.seen = 0;
-            return true;
+            return;
         }
         if seq > self.high {
             let shift = seq - self.high;
-            if shift >= Self::WIDTH {
+            if shift >= self.width {
                 self.seen = 0;
             } else {
                 // mark the old high as seen, then shift the window up.
@@ -143,21 +186,23 @@ impl ReplayWindow {
                 self.seen <<= (shift - 1) as u32;
             }
             self.high = seq;
-            true
-        } else if seq == self.high {
-            false // exact replay of the high-water value
-        } else {
+        } else if seq < self.high {
             let diff = self.high - seq; // 1..
-            if diff > Self::WIDTH {
-                return false; // too old
+            if diff <= self.width {
+                self.seen |= 1u64 << (diff - 1);
             }
-            let bit = 1u64 << (diff - 1);
-            if self.seen & bit != 0 {
-                false // already seen
-            } else {
-                self.seen |= bit;
-                true
-            }
+        }
+    }
+
+    /// Check + record a received Partial IV. Returns `true` if it is fresh
+    /// (accept) and `false` if it is a replay (reject). On accept, the window
+    /// state is updated.
+    pub fn check_and_update(&mut self, piv: &[u8]) -> bool {
+        if self.is_fresh(piv) {
+            self.record(piv);
+            true
+        } else {
+            false
         }
     }
 }
@@ -241,6 +286,25 @@ mod tests {
         // jump far ahead resets the window; very old is rejected.
         assert!(w.check_and_update(&[0x01, 0x00])); // 256
         assert!(!w.check_and_update(&[0x06])); // 6 is now far below -> reject
+    }
+
+    #[test]
+    fn replay_window_width_bounds_acceptance() {
+        // Width 4: after priming at 10, seq 6 is the oldest acceptable (diff 4);
+        // seq 5 (diff 5) is outside the window.
+        let mut w = ReplayWindow::with_width(4);
+        assert!(w.check_and_update(&[0x0a]));
+        assert!(w.check_and_update(&[0x06]));
+        assert!(!w.check_and_update(&[0x05]));
+    }
+
+    #[test]
+    fn replay_window_peek_does_not_move_the_window() {
+        let mut w = ReplayWindow::new();
+        assert!(w.is_fresh(&[0x05]));
+        assert!(w.is_fresh(&[0x05])); // peek is side-effect free
+        w.record(&[0x05]);
+        assert!(!w.is_fresh(&[0x05]));
     }
 
     #[test]

@@ -27,7 +27,7 @@
 //!   gRPC-over-HTTP/2 + gRPC-Web length-prefixed message codec
 //!   (header block via [`zerodds-hpack`](../zerodds_hpack/index.html)).
 //!
-//! ## Public API (as of 1.0.0-rc.1)
+//! ## Public API
 //!
 //! - [`Frame`] / [`FrameHeader`] / [`FrameType`] / [`Flags`] /
 //!   [`encode_frame`] / [`decode_frame`] — frame-layer codec (§4 +

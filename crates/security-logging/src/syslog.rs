@@ -18,21 +18,29 @@
 //! * TCP transport (RFC 5425) — follows on demand.
 //! * Structured-data blocks `[sd-id@...]` — we use `-` (nil).
 //! * TLS — most syslog deployments run in a trusted segment.
+//!
+//! zerodds-lint: allow no_dyn_in_safe
+//! (The listener of `set_listener` (DDS-Security 1.2 §9.6.2.2.4) is a `dyn LoggerListener`.)
 
 use alloc::string::String;
 use alloc::vec::Vec;
 use std::net::{SocketAddr, UdpSocket};
 use std::sync::Mutex;
 
-use zerodds_security::logging::{LogLevel, LoggingPlugin};
+use alloc::sync::Arc;
+use zerodds_security::error::SecurityError;
+use zerodds_security::logging::{LogLevel, LogOptions, LoggerListener, LoggingPlugin};
+
+use crate::control::LogControl;
 
 /// Facility code per RFC 5424 §6.2.1. We fix it to `LOCAL0` (16) —
 /// conventional for application security logs.
 const FACILITY_LOCAL0: u8 = 16;
 
 fn severity_code(l: LogLevel) -> u8 {
-    // RFC 5424 §6.2.1: the same numbers 0..7 as LogLevel.
-    l as u8
+    // RFC 5424 §6.2.1: the same numbers 0..7 as LogLevel; syslog has no
+    // level finer than Debug (7), which stands for Trace.
+    (l as u8).min(7)
 }
 
 fn priority(level: LogLevel) -> u8 {
@@ -41,7 +49,7 @@ fn priority(level: LogLevel) -> u8 {
 
 /// UDP-based syslog client.
 pub struct SyslogLoggingPlugin {
-    min_level: LogLevel,
+    control: LogControl,
     socket: Mutex<UdpSocket>,
     target: SocketAddr,
     app_name: String,
@@ -64,7 +72,7 @@ impl SyslogLoggingPlugin {
         // 0.0.0.0:0 = the kernel picks an ephemeral port.
         let socket = UdpSocket::bind("0.0.0.0:0")?;
         Ok(Self {
-            min_level,
+            control: LogControl::enabled_at(min_level, false),
             socket: Mutex::new(socket),
             target,
             app_name: app_name.into(),
@@ -113,8 +121,16 @@ fn build_line(
 }
 
 impl LoggingPlugin for SyslogLoggingPlugin {
+    // The sink sends syslog datagrams only; it has no DataWriter to
+    // distribute.
+    sink_control_operations!();
+
     fn log(&self, level: LogLevel, participant: [u8; 16], category: &str, message: &str) {
-        if level > self.min_level {
+        if self
+            .control
+            .admit(level, participant, category, message)
+            .is_none()
+        {
             return;
         }
         let line = build_line(

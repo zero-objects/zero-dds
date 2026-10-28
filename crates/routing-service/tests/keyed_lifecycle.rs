@@ -32,6 +32,8 @@ struct KeyedRecord {
 
 impl DdsType for KeyedRecord {
     const TYPE_NAME: &'static str = "test::KeyedRecord";
+    /// @final with no member that XCDR1 and XCDR2 frame differently: one stream.
+    const XCDR1_MATCHES_XCDR2: bool = true;
     const HAS_KEY: bool = true;
     const KEY_HOLDER_MAX_SIZE: Option<usize> = Some(4);
 
@@ -59,18 +61,47 @@ impl DdsType for KeyedRecord {
     fn encode_key_holder_be(&self, holder: &mut PlainCdr2BeKeyHolder) {
         holder.write_u32(self.id);
     }
+
+    /// The inverse of the holder above. DDS 1.4 §2.2.2.5.1.13 declares the
+    /// key fields valid on a dispose/unregister sample; the holder is a
+    /// PLAIN_CDR2-BE `uint32` and nothing else, so it is read as those four
+    /// octets rather than through `Self::decode`, which reads the type's
+    /// own stream.
+    fn decode_key_holder_be(bytes: &[u8]) -> Result<Self, DecodeError> {
+        let head: [u8; 4] =
+            bytes
+                .get(..4)
+                .and_then(|b| b.try_into().ok())
+                .ok_or(DecodeError::Invalid {
+                    what: "truncated KeyedRecord key holder",
+                })?;
+        Ok(Self {
+            id: u32::from_be_bytes(head),
+            ..Self::default()
+        })
+    }
 }
 
-const CONFIG: &str = r#"{
+/// The bridge config, on domains leased for this run.
+///
+/// Leased and not fixed: the domain number is the UDP port
+/// (RTPS 9.6.1.4.1), so a number written into this file is shared with
+/// every other test binary that wrote the same one, and the samples of
+/// both arrive at this reader.
+fn config(input: i32, output: i32) -> String {
+    format!(
+        r#"{{
   "name": "e2e-keyed",
   "routes": [
-    {
+    {{
       "name": "keyed",
-      "input":  { "domain": 30, "topic": "Inst", "type_name": "test::KeyedRecord", "keyed": true },
-      "output": { "domain": 31, "topic": "Inst", "type_name": "test::KeyedRecord", "keyed": true }
-    }
+      "input":  {{ "domain": {input}, "topic": "Inst", "type_name": "test::KeyedRecord", "keyed": true }},
+      "output": {{ "domain": {output}, "topic": "Inst", "type_name": "test::KeyedRecord", "keyed": true }}
+    }}
   ]
-}"#;
+}}"#
+    )
+}
 
 fn writer_qos() -> DataWriterQos {
     let mut q = DataWriterQos::default();
@@ -90,14 +121,16 @@ fn reader_qos() -> DataReaderQos {
 
 #[test]
 fn dispose_lifecycle_forwards_across_domains() {
-    let cfg = RouterConfig::from_json(CONFIG).unwrap();
+    let input = zerodds_test_domains::unique_domain();
+    let output = zerodds_test_domains::unique_domain();
+    let cfg = RouterConfig::from_json(&config(input, output)).unwrap();
     let router = Router::start(&cfg).unwrap();
 
     let factory = DomainParticipantFactory::instance();
 
     // Downstream (output) reader on domain 31.
     let pr = factory
-        .create_participant(31, DomainParticipantQos::default())
+        .create_participant(output, DomainParticipantQos::default())
         .unwrap();
     let sub = pr.create_subscriber(SubscriberQos::default());
     let rtopic = pr
@@ -109,7 +142,7 @@ fn dispose_lifecycle_forwards_across_domains() {
 
     // Application writer on domain 30.
     let pw = factory
-        .create_participant(30, DomainParticipantQos::default())
+        .create_participant(input, DomainParticipantQos::default())
         .unwrap();
     let publisher = pw.create_publisher(PublisherQos::default());
     let wtopic = pw

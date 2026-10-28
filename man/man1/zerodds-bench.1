@@ -1,4 +1,4 @@
-.TH ZERODDS-BENCH 1 "May 2026" "ZeroDDS 1.0.0-rc.1" "User Commands"
+.TH ZERODDS-BENCH 1 "" "ZeroDDS" "User Commands"
 .SH NAME
 zerodds-bench \- end-to-end latency and throughput benchmarking on the ZeroDDS DCPS pipeline
 .SH SYNOPSIS
@@ -49,6 +49,25 @@ Payload size in bytes. Default: 64.
 .TP
 .BR \-\-duration " " \fIDUR\fR
 Run duration: \fI5\fR, \fI30s\fR, \fI2m\fR, \fI1h\fR. Default: 5s.
+.TP
+.BR \-\-config " " \fIPATH\fR
+The base configuration file; its sibling
+.IR PATH .d/
+holds drop-ins. Default: the system configuration directory
+.RI ( /etc/zerodds
+on Linux,
+.I /usr/local/etc/zerodds
+on macOS).
+.TP
+.BR \-\-set " \fIPATH\fR=\fIVALUE\fR"
+One setting above every file, repeatable;
+.BI + PATH = VALUE
+appends to a list.
+.TP
+.B \-\-check\-config
+Validate and print the effective configuration with the origin of every
+value, then exit: 0 valid, 1 invalid value or unknown key, 2 unreadable
+file, syntax error or include cycle.
 .SH GLOBAL OPTIONS
 .TP
 .BR \-h ", " \-\-help

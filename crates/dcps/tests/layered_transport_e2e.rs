@@ -31,8 +31,9 @@ fn layered_cfg() -> RuntimeConfig {
 #[test]
 fn two_layered_participants_exchange_a_sample() {
     let factory = DomainParticipantFactory::instance();
-    // Unique domain to avoid colliding with other concurrent tests.
-    let domain = 41;
+    // Leased: the domain number is the UDP port number, so it has to be
+    // exclusive across every test binary of the run, not just this one.
+    let domain = common::unique_domain();
 
     let pub_p = factory
         .create_participant_with_config(domain, DomainParticipantQos::default(), layered_cfg())
@@ -75,3 +76,8 @@ fn two_layered_participants_exchange_a_sample() {
     assert_eq!(samples.len(), 1);
     assert_eq!(samples[0].data, b"layered-hello");
 }
+
+/// Leases a DDS domain no other process on this host holds — the
+/// domain number is the UDP port number, so it is a host-wide resource.
+#[path = "common/mod.rs"]
+mod common;

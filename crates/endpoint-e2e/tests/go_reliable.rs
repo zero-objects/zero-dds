@@ -16,8 +16,21 @@ use std::process::{Child, Command, Stdio};
 
 use zerodds_endpoint_e2e::{bind_reliable_peer, reliable_receive};
 
+/// A `go` command with cgo off.
+///
+/// `net` links the system resolver through cgo by default on macOS, and a
+/// cgo-linked Go binary aborts before `main` on this host (`dyld: missing
+/// LC_UUID load command`). Nothing here needs cgo — the apps resolve numeric
+/// loopback addresses — so the pure-Go resolver is both sufficient and the
+/// portable choice. `tests/go.rs` sets the same variable for the same reason.
+fn go_command() -> Command {
+    let mut cmd = Command::new("go");
+    cmd.env("CGO_ENABLED", "0");
+    cmd
+}
+
 fn go_available() -> bool {
-    Command::new("go").arg("version").output().is_ok()
+    go_command().arg("version").output().is_ok()
 }
 
 fn endpoints_go() -> PathBuf {
@@ -31,7 +44,7 @@ fn go_build(pkg: &str, tag: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("zd_go_reliable_{tag}_{}", std::process::id()));
     std::fs::create_dir_all(&dir).expect("mkdir");
     let bin = dir.join(pkg.trim_start_matches("./"));
-    let out = Command::new("go")
+    let out = go_command()
         .arg("build")
         .arg("-o")
         .arg(&bin)
@@ -118,7 +131,7 @@ fn go_reliable_unit_and_golden() {
     // `zerodds` package also holds pre-existing tests (`wire_test.go`'s
     // TestByteIdentity, `async_test.go`, `sync_test.go`) with their own,
     // separately-maintained fixture setup that is out of scope here.
-    let mut cmd = Command::new("go");
+    let mut cmd = go_command();
     cmd.arg("test")
         .arg("-run")
         .arg("^Test(Submit|PendingHeartbeat|PendingAcknack|RecvAcknack|RecvData|Reset|EndToEnd|Config|SeqLtGt|ByteGolden|FrameRoundTrip|ReliableAsyncWriter)")
@@ -157,7 +170,7 @@ fn go_reliable_example() {
         eprintln!("SKIP go_reliable_example: `go` not on PATH");
         return;
     }
-    let out = Command::new("go")
+    let out = go_command()
         .arg("run")
         .arg("./example_reliable")
         .current_dir(endpoints_go())

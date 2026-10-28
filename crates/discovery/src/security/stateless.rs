@@ -8,10 +8,10 @@
 //! - Durability:  Volatile.
 //! - Topic type:  `ParticipantGenericMessage` (Spec §7.5.5), encoded with
 //!   a 4-byte CDR-LE encapsulation header + XCDR1 body via
-//!   [`security_runtime::builtin_topics::encode_generic_message`].
+//!   `zerodds_security_runtime::builtin_topics::encode_generic_message`.
 //! - EntityIds:   `BUILTIN_PARTICIPANT_STATELESS_MESSAGE_{WRITER,READER}`.
 //!
-//! We do **not** use [`zerodds_rtps::ReliableWriter`], because stateless
+//! We do **not** use [`ReliableWriter`](zerodds_rtps::reliable_writer::ReliableWriter), because stateless
 //! has no receive status, no HEARTBEATs and no AckNack loop per spec.
 //! Instead: a simple multi-reader fan-out list; each `write()` produces
 //! one DATA datagram per [`ReaderProxy`].
@@ -23,7 +23,7 @@
 
 extern crate alloc;
 
-use alloc::rc::Rc;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use zerodds_rtps::datagram::{ParsedSubmessage, decode_datagram, encode_data_datagram};
@@ -53,6 +53,10 @@ pub struct StatelessMessageWriter {
     guid: Guid,
     vendor_id: VendorId,
     next_sn: i64,
+    /// Sequence number of the next `message_identity` (§7.5.3.3): one per
+    /// different message, not per RTPS sample (a repeated message keeps its
+    /// identity).
+    next_message_sn: i64,
     reader_proxies: Vec<ReaderProxy>,
 }
 
@@ -67,7 +71,21 @@ impl StatelessMessageWriter {
             ),
             vendor_id,
             next_sn: 1,
+            next_message_sn: 1,
             reader_proxies: Vec::new(),
+        }
+    }
+
+    /// The `message_identity` of the next different message this writer
+    /// sends. DDS-Security 1.2 §7.5.3.3: `source_guid` is the GUID of the
+    /// BuiltinParticipantStatelessMessageWriter, `sequence_number` starts
+    /// at one and is incremented for each different message.
+    pub fn next_message_identity(&mut self) -> zerodds_security::generic_message::MessageIdentity {
+        let sequence_number = self.next_message_sn;
+        self.next_message_sn = self.next_message_sn.saturating_add(1);
+        zerodds_security::generic_message::MessageIdentity {
+            source_guid: self.guid.to_bytes(),
+            sequence_number,
         }
     }
 
@@ -135,14 +153,25 @@ impl StatelessMessageWriter {
                 message: "stateless writer sequence overflow",
             })?;
 
+        // The message goes to the participant the
+        // `destination_participant_key` names; a message without a
+        // destination (all zero) goes to every known reader.
+        let destination = msg.destination_participant_key;
+        let addressed = destination != [0u8; 16];
         let mut out = Vec::with_capacity(self.reader_proxies.len());
         for proxy in &self.reader_proxies {
+            if addressed && proxy.remote_reader_guid.prefix.to_bytes()[..] != destination[..12] {
+                continue;
+            }
             let data = DataSubmessage {
                 extra_flags: 0,
                 reader_id: proxy.remote_reader_guid.entity_id,
                 writer_id: self.guid.entity_id,
                 writer_sn: sn,
                 inline_qos: None,
+                // The handshake message is a whole sample: D=1, K=0
+                // (§8.3.7.2.5).
+                data_flag: true,
                 key_flag: false,
                 non_standard_flag: false,
                 serialized_payload: payload.clone().into(),
@@ -151,7 +180,7 @@ impl StatelessMessageWriter {
             let bytes = encode_data_datagram(header, &[data])?;
             // Target = unicast locators of the proxy (we ignore multicast
             // for stateless: the auth handshake is always point-to-point).
-            let targets = Rc::new(proxy.unicast_locators.clone());
+            let targets = Arc::new(proxy.unicast_locators.clone());
             out.push(OutboundDatagram { bytes, targets });
         }
         Ok(out)
@@ -286,10 +315,16 @@ impl StatelessMessageReader {
         })?;
         let mut out = Vec::new();
         for sub in parsed.submessages {
-            if let ParsedSubmessage::Data(d) = sub {
+            if let ParsedSubmessage::Data(d) = sub.submessage {
                 if d.reader_id == self.guid.entity_id
                     || d.writer_id == EntityId::BUILTIN_PARTICIPANT_STATELESS_MESSAGE_WRITER
                 {
+                    // D=0 carries no `ParticipantGenericMessage`. Decoding
+                    // the key holder as one produced a handshake message
+                    // built from whatever the key bytes were.
+                    if !d.data_flag {
+                        continue;
+                    }
                     out.push(decode_generic_message(&d.serialized_payload)?);
                 }
             }
@@ -318,7 +353,7 @@ mod tests {
                 sequence_number: seq,
             },
             related_message_identity: MessageIdentity::default(),
-            destination_participant_key: [0xBB; 16],
+            destination_participant_key: [0; 16],
             destination_endpoint_key: [0; 16],
             source_endpoint_key: [0xCC; 16],
             message_class_id: class_id::AUTH_REQUEST.into(),
@@ -447,6 +482,59 @@ mod tests {
         assert!(w.remove_reader_proxy(remote).is_none());
     }
 
+    /// DDS-Security 1.2 §7.5.3.3: `source_guid` of a message identity is the
+    /// GUID of the BuiltinParticipantStatelessMessageWriter, and
+    /// `sequence_number` starts at one and rises for each different message,
+    /// across all peers.
+    #[test]
+    fn message_identities_are_the_writers_and_rise_by_one() {
+        let mut w = StatelessMessageWriter::new(GuidPrefix::from_bytes([7; 12]), VendorId::ZERODDS);
+        let a = w.next_message_identity();
+        let b = w.next_message_identity();
+        assert_eq!(a.source_guid, w.guid().to_bytes());
+        assert_eq!(
+            w.guid().entity_id,
+            EntityId::BUILTIN_PARTICIPANT_STATELESS_MESSAGE_WRITER
+        );
+        assert_eq!((a.sequence_number, b.sequence_number), (1, 2));
+    }
+
+    /// DDS-Security 1.2 §7.5.12: "RTPS Bootstrapping messages shall not
+    /// contain submessages for any other (non-bootstrapping) builtin topic or
+    /// application-defined topic": a datagram of the stateless writer holds
+    /// submessages of that writer only.
+    #[test]
+    fn a_stateless_datagram_holds_the_submessages_of_its_writer_only() {
+        use zerodds_rtps::datagram::{ParsedSubmessage, decode_datagram};
+        let mut w = StatelessMessageWriter::new(local_prefix(), VendorId::ZERODDS);
+        w.add_reader_proxy(ReaderProxy::new(
+            Guid::new(
+                remote_prefix(),
+                EntityId::BUILTIN_PARTICIPANT_STATELESS_MESSAGE_READER,
+            ),
+            alloc::vec![Locator::udp_v4([127, 0, 0, 1], 7411)],
+            alloc::vec![],
+            false,
+        ));
+        for dg in w.write(&sample_msg(1)).unwrap() {
+            let mut writers = 0;
+            for sm in decode_datagram(&dg.bytes).unwrap().submessages {
+                match sm.submessage {
+                    ParsedSubmessage::Data(d) => {
+                        writers += 1;
+                        assert_eq!(
+                            d.writer_id,
+                            EntityId::BUILTIN_PARTICIPANT_STATELESS_MESSAGE_WRITER
+                        );
+                    }
+                    ParsedSubmessage::InfoDestination(_) | ParsedSubmessage::InfoTimestamp(_) => {}
+                    other => panic!("a submessage of another topic: {other:?}"),
+                }
+            }
+            assert_eq!(writers, 1);
+        }
+    }
+
     #[test]
     fn write_increments_sequence_number() {
         let mut w = StatelessMessageWriter::new(local_prefix(), VendorId::ZERODDS);
@@ -465,11 +553,11 @@ mod tests {
         // Decode the SN from the wire bytes
         let p1 = decode_datagram(&dg1.bytes).unwrap();
         let p2 = decode_datagram(&dg2.bytes).unwrap();
-        let sn1 = match &p1.submessages[0] {
+        let sn1 = match &p1.submessages[0].submessage {
             ParsedSubmessage::Data(d) => d.writer_sn,
             _ => unreachable!(),
         };
-        let sn2 = match &p2.submessages[0] {
+        let sn2 = match &p2.submessages[0].submessage {
             ParsedSubmessage::Data(d) => d.writer_sn,
             _ => unreachable!(),
         };
@@ -492,7 +580,7 @@ mod tests {
         ));
         let dgs = w.write(&sample_msg(1)).unwrap();
         let parsed = decode_datagram(&dgs[0].bytes).unwrap();
-        match &parsed.submessages[0] {
+        match &parsed.submessages[0].submessage {
             ParsedSubmessage::Data(d) => {
                 assert_eq!(
                     d.writer_id,
@@ -518,6 +606,7 @@ mod tests {
             writer_id: EntityId::BUILTIN_PARTICIPANT_STATELESS_MESSAGE_WRITER,
             writer_sn: SequenceNumber(1),
             inline_qos: None,
+            data_flag: true,
             key_flag: false,
             non_standard_flag: false,
             serialized_payload: payload.into(),
@@ -535,6 +624,7 @@ mod tests {
             writer_id: EntityId::BUILTIN_PARTICIPANT_STATELESS_MESSAGE_WRITER,
             writer_sn: SequenceNumber(1),
             inline_qos: None,
+            data_flag: true,
             key_flag: false,
             non_standard_flag: false,
             serialized_payload: alloc::vec![0x00, 0x99, 0, 0].into(),
@@ -595,5 +685,27 @@ mod tests {
         let mut r = StatelessMessageReader::new(local_prefix(), VendorId::ZERODDS);
         let err = r.handle_datagram(&[0u8; 24]).unwrap_err();
         assert_eq!(err.kind, SecurityErrorKind::BadArgument);
+    }
+
+    #[test]
+    fn a_message_with_a_destination_goes_to_that_participant_only() {
+        let mut w = StatelessMessageWriter::new(local_prefix(), VendorId::ZERODDS);
+        for n in [2u8, 3] {
+            w.add_reader_proxy(ReaderProxy::new(
+                Guid::new(
+                    GuidPrefix::from_bytes([n; 12]),
+                    EntityId::BUILTIN_PARTICIPANT_STATELESS_MESSAGE_READER,
+                ),
+                alloc::vec![Locator::udp_v4([127, 0, 0, 1], 7400 + u32::from(n))],
+                alloc::vec![],
+                false,
+            ));
+        }
+        let mut msg = sample_msg(1);
+        msg.destination_participant_key =
+            Guid::new(GuidPrefix::from_bytes([3; 12]), EntityId::PARTICIPANT).to_bytes();
+        let dgs = w.write(&msg).unwrap();
+        assert_eq!(dgs.len(), 1);
+        assert_eq!(dgs[0].targets[0], Locator::udp_v4([127, 0, 0, 1], 7403));
     }
 }

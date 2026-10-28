@@ -1,0 +1,9 @@
+// recursion through a `map` value
+// XTypes 1.3 §7.2.2.4.3: the cycle is legal because it passes through a
+// collection, whose length terminates the sample.
+module m {
+  @appendable struct Node {
+    long value;
+    map<long, Node> children;
+  };
+};

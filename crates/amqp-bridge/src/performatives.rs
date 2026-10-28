@@ -186,6 +186,121 @@ pub fn attach_to(
     encode_performative(descriptor::ATTACH, &body)
 }
 
+/// A sender link whose deliveries the receiver settles (Spec §2.7.3 with
+/// `snd-settle-mode` = `unsettled` (0, §2.8.2) and `rcv-settle-mode` =
+/// `first` (0, §2.8.3)): the broker answers each transfer with a
+/// disposition carrying its outcome, which is what a sender that has to
+/// know the broker holds the message waits for. Otherwise as
+/// [`attach_to`] for a sender.
+///
+/// # Errors
+/// see [`TypeError`].
+pub fn attach_sender_unsettled(
+    name: &str,
+    handle: u32,
+    address: &str,
+) -> Result<Vec<u8>, TypeError> {
+    use alloc::boxed::Box;
+    let target = AmqpExtValue::Described {
+        descriptor: 0x0000_0000_0000_0029,
+        value: Box::new(AmqpExtValue::List(alloc::vec![AmqpExtValue::Str(
+            address.into()
+        )])),
+    };
+    let body = AmqpExtValue::List(alloc::vec![
+        AmqpExtValue::Str(name.into()),
+        AmqpExtValue::Uint(handle),
+        AmqpExtValue::Boolean(false), // role: sender
+        AmqpExtValue::Ubyte(0),       // snd-settle-mode: unsettled
+        AmqpExtValue::Ubyte(0),       // rcv-settle-mode: first
+        AmqpExtValue::Null,           // source
+        target,
+        AmqpExtValue::Null,           // unsettled
+        AmqpExtValue::Boolean(false), // incomplete-unsettled
+        AmqpExtValue::Uint(0),        // initial-delivery-count
+    ]);
+    encode_performative(descriptor::ATTACH, &body)
+}
+
+/// The delivery-state descriptors of Spec Part 3 §3.4.
+pub mod delivery_state {
+    /// `received` (§3.4.1) — not an outcome; the delivery is still open.
+    pub const RECEIVED: u64 = 0x0000_0000_0000_0023;
+    /// `accepted` (§3.4.2).
+    pub const ACCEPTED: u64 = 0x0000_0000_0000_0024;
+    /// `rejected` (§3.4.3).
+    pub const REJECTED: u64 = 0x0000_0000_0000_0025;
+    /// `released` (§3.4.4).
+    pub const RELEASED: u64 = 0x0000_0000_0000_0026;
+    /// `modified` (§3.4.5).
+    pub const MODIFIED: u64 = 0x0000_0000_0000_0027;
+}
+
+/// The fields of a decoded **disposition** (Spec §2.7.6) a sender waits on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DispositionView {
+    /// `role`: `true` when the receiver of the link sent it.
+    pub from_receiver: bool,
+    /// `first` delivery-id the disposition covers.
+    pub first: u32,
+    /// `last` delivery-id; `None` means `first` alone.
+    pub last: Option<u32>,
+    /// `settled`.
+    pub settled: bool,
+    /// The descriptor of `state`, one of [`delivery_state`], or `None`
+    /// when the field is absent.
+    pub state: Option<u64>,
+}
+
+impl DispositionView {
+    /// Whether the disposition covers `delivery_id`.
+    #[must_use]
+    pub fn covers(&self, delivery_id: u32) -> bool {
+        let last = self.last.unwrap_or(self.first);
+        self.first <= delivery_id && delivery_id <= last
+    }
+}
+
+/// Reads the fields of a disposition from its decoded performative body.
+/// `None` when `role` or `first` — the two mandatory fields — are missing
+/// or mistyped, or another field has a type the clause does not allow.
+#[must_use]
+pub fn disposition_from_body(body: &AmqpExtValue) -> Option<DispositionView> {
+    let AmqpExtValue::List(fields) = body else {
+        return None;
+    };
+    let from_receiver = match fields.first()? {
+        AmqpExtValue::Boolean(role) => *role,
+        _ => return None,
+    };
+    let first = match fields.get(1)? {
+        AmqpExtValue::Uint(first) => *first,
+        _ => return None,
+    };
+    let last = match fields.get(2) {
+        None | Some(AmqpExtValue::Null) => None,
+        Some(AmqpExtValue::Uint(last)) => Some(*last),
+        Some(_) => return None,
+    };
+    let settled = match fields.get(3) {
+        None | Some(AmqpExtValue::Null) => false,
+        Some(AmqpExtValue::Boolean(settled)) => *settled,
+        Some(_) => return None,
+    };
+    let state = match fields.get(4) {
+        None | Some(AmqpExtValue::Null) => None,
+        Some(AmqpExtValue::Described { descriptor, .. }) => Some(*descriptor),
+        Some(_) => return None,
+    };
+    Some(DispositionView {
+        from_receiver,
+        first,
+        last,
+        settled,
+        state,
+    })
+}
+
 /// Spec §2.7.4 Flow. Required: incoming-window, next-outgoing-id, outgoing-window.
 pub fn flow(
     incoming_window: u32,
@@ -630,5 +745,62 @@ mod tests {
         assert_eq!(sasl_outcome_code(&ok), Some(0));
         let auth = AmqpExtValue::List(alloc::vec![AmqpExtValue::Ubyte(1)]);
         assert_eq!(sasl_outcome_code(&auth), Some(1));
+    }
+
+    /// Spec §2.7.3, §2.8.2, §2.8.3: a sender attach whose receiver settles —
+    /// `snd-settle-mode` unsettled (0), `rcv-settle-mode` first (0).
+    #[test]
+    fn an_unsettled_sender_attach_says_so() {
+        let bytes = attach_sender_unsettled("L", 3, "/queues/q").expect("encode");
+        let (desc, body, _) = decode_performative(&bytes).expect("decode");
+        assert_eq!(desc, descriptor::ATTACH);
+        let AmqpExtValue::List(fields) = body else {
+            panic!("no list body");
+        };
+        assert_eq!(fields[1], AmqpExtValue::Uint(3));
+        assert_eq!(fields[2], AmqpExtValue::Boolean(false), "role sender");
+        assert_eq!(fields[3], AmqpExtValue::Ubyte(0), "snd-settle-mode");
+        assert_eq!(fields[4], AmqpExtValue::Ubyte(0), "rcv-settle-mode");
+        assert!(
+            matches!(
+                &fields[6],
+                AmqpExtValue::Described {
+                    descriptor: 0x29,
+                    ..
+                }
+            ),
+            "target"
+        );
+    }
+
+    /// Spec §2.7.6: the fields a sender waits on, read back from what
+    /// `disposition_accept` writes, and a range that covers its ends only.
+    #[test]
+    fn a_disposition_reads_back() {
+        let bytes = disposition_accept(4, Some(6)).expect("encode");
+        let (_, body, _) = decode_performative(&bytes).expect("decode");
+        let view = disposition_from_body(&body).expect("view");
+        assert_eq!(
+            view,
+            DispositionView {
+                from_receiver: true,
+                first: 4,
+                last: Some(6),
+                settled: true,
+                state: Some(delivery_state::ACCEPTED),
+            }
+        );
+        assert!(view.covers(4) && view.covers(6));
+        assert!(!view.covers(3) && !view.covers(7));
+        let bare = disposition(false, 9, None, false).expect("encode");
+        let (_, body, _) = decode_performative(&bare).expect("decode");
+        let view = disposition_from_body(&body).expect("view");
+        assert_eq!(view.state, None);
+        assert!(view.covers(9) && !view.covers(10));
+        assert_eq!(
+            disposition_from_body(&AmqpExtValue::List(alloc::vec![AmqpExtValue::Uint(1)])),
+            None,
+            "a disposition without role"
+        );
     }
 }

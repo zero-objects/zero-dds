@@ -1,188 +1,209 @@
 # `zerodds-xcdr2-node` 1.0 — Spec-Coverage
 
-**Quelle:** `docs/specs/zerodds-xcdr2-node-1.0.md` — ZeroDDS Node XCDR2 TypeSupport-Codegen-Spec.
+**Quelle:** `internal/standards/cache/omg/dds-xtypes-1.3.pdf` (§7.2, §7.4) und `internal/standards/cache/omg/idl-4.2.pdf` (§7) — was die Node-Spalte beantwortet.
 
-Implementation:
+Der Mechanismus, den diese Spalte mit den zwanzig anderen teilt — die beiden Walks, die Rahmung, Table 9, der KeyHash und der Treiber —, steht in `zerodds-xcdr2-bindings-conformance-1.0.md`. Dieses Dokument führt nur, was die Node-Spalte selbst entscheidet, und ihre eigenen Nachweise.
 
-- `crates/idl-ts/` — IDL → Node Codegen (`marshalXCDR`, self-contained Writer).
-- `endpoints/node/` — pure-Kotlin/JVM XCDR2 Wire-Core (Writer/Reader) + sync/async SDK.
+Node ist die einzige Spalte ohne `crates/lang-rules/src/rule/node.rs`: Struct, Union, Bitset, Valuetype, Exception und Interface sind hier überall Objektliterale und nie eine benannte Deklaration, weshalb `crates/lang-rules/src/rule/mod.rs` für `Language::Node` eine leere Regeldatei liefert statt einer Datei aus Regeln ohne Inhalt.
 
-## §1 Motivation
+## §7.5.1 Die Teile der Spalte
 
-### §1 Kein OMG-IDL-to-D-Wire-Mapping
+### §7.5.1 Der konkrete Syntaxbaum und seine Textform
 
-**Spec:** §1 — ZeroDDS definiert das D-XCDR2-Wire-Mapping.
+**Spec:** §7.5.1 — Plain Language Binding — die Abbildung auf die Zielsprache ist PSM-eigen. Die Deklarationen dieser Spalte werden als Baum gebaut und erst danach als Text geschrieben; kein Emitter setzt Quelltext zusammen.
 
-**Repo:** Motivations-Text der Vendor-Spec.
+**Repo:** `crates/lang-cst/src/node/`, `crates/lang-render/src/node.rs`
 
-**Tests:** —
-
-**Status:** n/a (informative)
-
-## §2 Marshal-Pattern
-
-### §2 struct + `marshalXCDR(endian, allocator) ![]u8`
-
-**Spec:** §2 — pro IDL-`@final struct` ein D-`struct` + `marshalXCDR`-Methode.
-
-**Repo:** `crates/idl-ts/src/emitter.rs::emit_struct`.
-
-**Tests:** `crates/idl-ts/tests/golden.rs::final_struct_emits_type_and_marshal`
+**Tests:** `crates/lang-render/src/node.rs::tests` (8 Tests), darunter `a_const_declaration_ends_in_a_semicolon`, `an_object_literal_writes_every_key_bare`, `a_for_loop_counts_from_zero_with_no_off_by_one_correction`, `a_function_declaration_has_no_type_annotation_anywhere`, `a_nul_is_written_as_the_named_escape_because_javascript_has_one`;
+querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_output_with_exactly_one_newline`, `crates/lang-render/tests/rendering.rs::no_rendered_line_carries_trailing_whitespace`.
 
 **Status:** done
 
-## §3 Required API-Surface
+### §7.5.1 Der Materialisierer
 
-### §3 Writer/Reader-Primitiven + generierte marshalXCDR
+**Spec:** §7.5.1 — Plain Language Binding — die Abbildung auf die Zielsprache ist PSM-eigen. Der Materialisierer trägt die Eigenheiten der Sprache: Namens- und Schlüsselwortbehandlung, Kollisionen und das, was die Sprache gar nicht ausdrücken kann.
 
-**Spec:** §3 — Writer (putU8..putSeqU8, bytes), Reader (getU8/getU16/getU32/getU64/getF32/getString/getSeqU8), generierte `marshalXCDR`.
+**Repo:** `crates/lang-rules/src/adapter/node.rs`
 
-**Repo:** `endpoints/node/zerodds.js` (Writer, Reader inkl. getU8/getU16/getU64/getF32/getString/getSeqU8 (byte-exakter Inverse)); `crates/idl-ts/src/emitter.rs` (marshalXCDR).
-
-**Tests:** `endpoints/node/zerodds.js` test.js (byte identity + sync + async), `endpoints/node/example_sync|async.js` (voller Feld-Decode), `crates/idl-ts/tests/golden.rs`.
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_every_wired_language`
 
 **Status:** done
 
-### §3.a Generierte `unmarshalXCDR` (decode-codegen)
+### §7.5.1 Das Codec-Backend
 
-**Spec:** §3/§11 — Decode über `Reader` gelaufen; generiertes `unmarshalXCDR` fehlt.
+**Spec:** §7.5.1 — Plain Language Binding — die Abbildung auf die Zielsprache ist PSM-eigen. Das Backend liefert die Schreibweise, in der die geteilte Kodierungsentscheidung in dieser Sprache steht — Empfänger, Methodenname, Argumentform.
 
-**Repo:** — (Decode über `Reader`; siehe Examples.)
+**Repo:** `crates/lang-rules/src/emit/node.rs`
 
-**Tests:** `endpoints/node/example_sync|async.js`.
-
-**Status:** n/a (rejected)
-
-**Decision-Record:** Encode-Codegen (`marshalXCDR`) + vollständiger `Reader` für Decode; generiertes Decode ist über alle 17 idlc-Backends bewusst nicht Teil dieser Binding-Spec (der `Reader` deckt jeden Feldtyp byte-identisch ab), gehört zum optionalen Full-TypeSupport-Codegen (roadmap).
-
-## §4 Codegen-Pflicht (`idl-ts`)
-
-### §4 struct + marshalXCDR + eingebetteter Writer
-
-**Spec:** §4 — pro struct: D-struct, `marshalXCDR`, self-contained Writer.
-
-**Repo:** `crates/idl-ts/src/emitter.rs`; `tools/idlc` `Backend::D`, `--ts` (TypeScript).
-
-**Tests:** `crates/idl-ts/tests/golden.rs`.
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_a_full_codec_in_every_wired_language`,
+`crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`
 
 **Status:** done
 
-## §5 Wire-Type-Mapping
+### §7.5.1 Der Table-9-Defaulter
 
-### §5 IDL → Node → XCDR2 (Alignment cap 4)
+**Spec:** §7.5.1 — Plain Language Binding — die Abbildung auf die Zielsprache ist PSM-eigen. Ein Leser ohne Tab.9-Antwort hat an fünf Stellen keinen definierten Wert; diese Datei ist die Antwort dieser Spalte.
 
-**Spec:** §5 — bool/octet/char/short..long long/float/double/string/sequence<octet> mit exaktem Wire-Layout; signed via Buffer.writeFloatLE.
+**Repo:** `crates/lang-rules/src/default_node.rs`
 
-**Repo:** `crates/idl-ts/src/emitter.rs::map_type/map_primitive/map_integer/map_sequence`; `endpoints/node/zerodds.js` (Put*/getLE align cap 4).
-
-**Tests:** `crates/idl-ts/tests/golden.rs::byte_identity_vs_rust_goldens` (@final LE+BE).
+**Tests:** `crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`
 
 **Status:** done
 
-### §5.a wchar / wstring / long double / map / array / nested / union
+### §7.5.1 Die Wire-Laufzeit
 
-**Spec:** §5/§11 — weitere IDL-Konstrukte.
+**Spec:** §7.5.1 — Plain Language Binding — die Abbildung auf die Zielsprache ist PSM-eigen. Die Laufzeit liest §7.4 eigenständig aus dem Klauseltext und ruft keine andere Spalte; dort liegt die Unabhängigkeit dieser Spalte.
 
-**Repo:** `crates/idl-ts/src/` (union-, `map<>`-, Array-, Nested-Struct-, `wchar`/`wstring`/`long double`-Emit-Arme).
+**Repo:** `runtime/node`, Endpoint-SDK `endpoints/node`
 
-**Tests:** —
-
-**Status:** done
-
-**Decision-Record:** Das `idl-ts`-Codegen emittiert diese Konstrukte (Unions, `map<>`, Arrays, Nested-Struct-Member, `wchar`, `wstring`, `long double`). Nur `@mutable`-Unions bleiben zurückgestellt (siehe §6.a).
-
-## §6 Extensibility
-
-### §6 @final (compact) + @appendable (DHEADER)
-
-**Spec:** §6 — @final ohne DHEADER, @appendable mit uint32-Body-Length + Body.
-
-**Repo:** `crates/idl-ts/src/emitter.rs::emit_struct` (Final/Appendable).
-
-**Tests:** `crates/idl-ts/tests/golden.rs::final_struct_...` + `appendable_struct_frames_a_dheader`.
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_runtime`,
+`crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_an_endpoint_sdk`
 
 **Status:** done
 
-### §6.a @mutable (EMHEADER)
+## §7.2.2 Was diese Spalte selbst entscheidet
 
-**Spec:** §6 — @mutable-EMHEADER-Framing.
+### §7.2.2.4.1.1 Eine Enumeration wird ein eingefrorenes Objekt ihrer Namen
 
-**Repo:** `crates/idl-ts/src/` (`@mutable` PL_CDR2-EMHEADER- / PL_CDR1-Pfade).
+**Spec:** §7.2.2.4.1.1 — Enumeration — Int32-Literale, geordnet, `bit_bound` 1..32.
 
-**Tests:** —
+**Repo:** `crates/lang-rules/src/adapter/node.rs`
 
-**Status:** done (Structs); `@mutable`-Unions zurückgestellt
-
-**Decision-Record:** `@mutable`-Structs werden emittiert — PL_CDR2-EMHEADER-Framing unter XCDR2, PL_CDR1 unter XCDR1. Nur `@mutable`-Unions werden noch nicht emittiert → `Unsupported`.
-
-## §7 Key-Extraction
-
-### §7 Non-keyed 16-Zero-Byte-Key
-
-**Spec:** §7 — non-keyed → 16 Nullbytes; keyed → MD5 (XCDR2-BE), Runtime.
-
-**Repo:** `endpoints/node/zerodds.js` (Writer im Big-Mode liefert die BE-Serialisierung).
-
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/node_end_to_end.rs::an_enumeration_is_a_frozen_object_of_its_names`
 
 **Status:** done
 
-### §7.a Per-struct generierte `keyHash` aus `@key`
+### §7.2.2.4.1.2 Eine Bitmask deklariert eine Konstante je Bit und keinen eigenen Typ; breite Bits werden BigInt
 
-**Spec:** §7 — Codegen einer `keyHash`-Methode aus `@key`.
+**Spec:** §7.2.2.4.1.2 — Bitmask — Schranke 1..64, benannte Bits.
 
-**Repo:** —
+**Repo:** `crates/lang-rules/src/adapter/node.rs`
 
-**Tests:** —
-
-**Status:** n/a (rejected)
-
-**Decision-Record:** Key-Hash-Codegen gehört zum Full-DCPS-TypeSupport, nicht zum XCDR2-Wire-Binding v1.0; die DCPS-Runtime berechnet Key-Hashes. Über alle 17 Backends einheitlich zurückgestellt.
-
-## §8 Wire-Core
-
-### §8 `endpoints/node` als Referenz-Writer/Reader
-
-**Spec:** §8 — Referenz-Wire-Core, byte-identisch zu `zerodds-cdr`.
-
-**Repo:** `endpoints/node/zerodds.js`.
-
-**Tests:** test.js, CI-Job `endpoints-node`.
+**Tests:** `crates/lang-rules/tests/node_end_to_end.rs::a_bitmask_declares_one_constant_per_bit_and_no_type_of_its_own`,
+`crates/lang-rules/tests/node_end_to_end.rs::a_wide_bitmask_writes_its_bits_as_bigint_literals`
 
 **Status:** done
 
-## §9 Conformance
+### §7.5.1 Struct, Union und Bitset deklarieren nichts: sie sind überall Objektliterale
 
-### §9 Golden-Byte-Identität @final LE+BE
+**Spec:** §7.5.1 — Plain Language Binding — die Abbildung auf die Zielsprache ist PSM-eigen.
 
-**Spec:** §9 — Encoding == golden_le.bin / golden_be.bin byte-für-byte.
+**Repo:** `crates/lang-rules/src/adapter/node.rs`
 
-**Repo:** `crates/idl-ts`, `endpoints/node`.
-
-**Tests:** `crates/idl-ts/tests/golden.rs::byte_identity_vs_rust_goldens` (CI `idl-ts`); `endpoints/node` test.js (CI `endpoints-node`).
-
-**Status:** done
-
-## §10 Examples
-
-### §10 sync + async Deep-Examples + Quickstart
-
-**Spec:** §10 — lauffähige sync/async-Beispiele.
-
-**Repo:** `endpoints/node/example_sync.js`, `endpoints/node/example_async.js`, `endpoints/node/QUICKSTART.md`.
-
-**Tests:** CI-Job `endpoints-node` führt beide aus (node example_sync.js + example_async.js).
+**Tests:** `crates/lang-rules/tests/node_end_to_end.rs::a_struct_a_union_and_a_bitset_declare_nothing`,
+`crates/lang-rules/src/adapter/node.rs::tests::a_member_name_never_moves`,
+`crates/lang-rules/src/adapter/node.rs::tests::a_map_entry_has_no_declared_name`
 
 **Status:** done
 
-## §11 Errata + Open-Questions
+### IDL 4.2 §7.4.1.4 Eine 64-Bit-Konstante trägt das BigInt-Suffix; ein String-Literal bleibt eines
 
-### §11 Ehrliche Nicht-Ziele
+**Spec:** IDL 4.2 §7.4.1.4 — `const` — ein zur Übersetzungszeit ausgewerteter Wert seines deklarierten Typs.
 
-**Spec:** §11 — decode-codegen, keyHash-codegen, `@mutable`-Unions.
+**Repo:** `crates/lang-rules/src/adapter/node.rs`
 
-**Repo:** siehe §3.a und §7.a (je `n/a (rejected)` mit Decision-Record); §5.a und §6.a sind jetzt `done`.
+**Tests:** `crates/lang-rules/tests/node_end_to_end.rs::a_sixty_four_bit_constant_carries_the_bigint_suffix`,
+`crates/lang-rules/tests/node_end_to_end.rs::a_string_constant_is_a_plain_string_literal`,
+`crates/lang-rules/tests/node_end_to_end.rs::a_boolean_constant_writes_the_literal`
 
-**Tests:** —
+**Status:** done
 
-**Status:** n/a (informative)
+### IDL 4.2 §7.2.3 Ein reserviertes Wort in Top-Level-Position wird entschärft; ein einfacher Name wird nie verschoben
+
+**Spec:** IDL 4.2 §7.2.3 — Identifier sind ASCII und beim Vergleich case-insensitiv; eine Kollision muss gemeldet werden.
+
+**Repo:** `crates/lang-rules/src/adapter/node.rs`
+
+**Tests:** `crates/lang-rules/tests/node_end_to_end.rs::a_reserved_word_used_as_a_top_level_declaration_is_escaped`,
+`crates/lang-rules/tests/node_end_to_end.rs::no_predefined_type_name_is_reserved_here`,
+`crates/lang-rules/tests/node_end_to_end.rs::escape_decl_never_moves_a_plain_name`
+
+**Status:** done
+
+### IDL 4.2 §7.5.2 `module` flacht auf die Bindung der Enumeration ab
+
+**Spec:** IDL 4.2 §7.5.2 — `module` ist ein Naming-Scope; ein Identifier ist je Scope einmalig.
+
+**Repo:** `crates/lang-rules/src/adapter/node.rs`
+
+**Tests:** `crates/lang-rules/tests/node_end_to_end.rs::a_module_flattens_onto_the_enumerations_binding`
+
+**Status:** done
+
+## §7.3.1 Woran die Spalte gehalten wird
+
+### §7.3.1 Jeder Korpusfall rendert oder benennt die Schicht, die ihn abgelehnt hat
+
+**Spec:** §7.3.1 — Jeder Korpusfall rendert oder benennt die Schicht, die ihn abgelehnt hat. Ein Fall, der zu rendern aufhört, würde sonst erst von der nächsten Messung gefunden — ein Build-Verzeichnis vom Konstrukt entfernt, das ihn verursacht hat.
+
+**Repo:** `crates/lang-rules/src/emit/node.rs`, `crates/lang-rules/src/adapter/node.rs`
+
+**Tests:** `crates/lang-rules/tests/node_end_to_end.rs::every_corpus_case_reaches_the_materialiser_or_names_its_failure`
+
+**Status:** done
+
+### §7.3.1 Die erzeugte Quelle übersetzt unter dem Übersetzer der Sprache
+
+**Spec:** §7.3.1 — Die erzeugte Quelle übersetzt unter dem Übersetzer der Sprache. Ein Snapshot sagt, dass der Emitter den Text erzeugt hat, den er letztes Mal erzeugt hat; er sagt nicht, dass der Text die Sprache ist. Fehlt der Übersetzer, sagt der Test das auf Standardfehler.
+
+**Repo:** `crates/lang-rules/src/emit/node.rs`, `crates/lang-rules/src/adapter/node.rs`
+
+**Tests:** `crates/lang-rules/tests/node_end_to_end.rs::the_generated_node_passes_node_check`
+
+**Status:** done
+
+### §7.3.1 Zwei Läufe über eine Quelle erzeugen denselben Text
+
+**Spec:** §7.3.1 — Zwei Läufe über eine Quelle erzeugen denselben Text. Ohne diese Eigenschaft ist jeder Diff eines erzeugten Baums unlesbar.
+
+**Repo:** `crates/lang-rules/src/emit/node.rs`, `crates/lang-rules/src/adapter/node.rs`
+
+**Tests:** `crates/lang-rules/tests/node_end_to_end.rs::two_runs_over_one_source_produce_the_same_text`
+
+**Status:** done
+
+### §7.2.2.4.8 `@verbatim` landet an den Stellen, die die Klausel für diese Sprache nennt
+
+**Spec:** §7.2.2.4.8 — `@verbatim` landet an den Stellen, die die Klausel für diese Sprache nennt.
+
+**Repo:** `crates/lang-rules/src/adapter/node.rs`, `crates/lang-rules/src/verbatim.rs`
+
+**Tests:** `crates/lang-rules/tests/verbatim_every_column.rs::every_column_places_the_six_slots_in_its_declarations`,
+`crates/lang-rules/tests/verbatim_every_column.rs::every_column_ends_its_source_file_with_the_end_file_text`,
+`crates/lang-rules/tests/verbatim_every_column.rs::a_directive_reaches_its_own_column_and_no_other`
+
+**Status:** done
+
+## §7.3.1 Treiber und Messung
+
+### §7.3.1 `idlc generate --lang node`
+
+**Spec:** §7.3.1 — die IDL-Type-Representation ist die Eingabe der Erzeugung; die Ausgabe ist die Quelle dieser Spalte.
+
+**Repo:** `tools/idlc/src/generate.rs`, `tools/idlc/src/main.rs`
+
+**Tests:** `tools/idlc/src/generate.rs::tests::every_language_round_trips_through_its_own_name`,
+`tools/idlc/src/generate.rs::tests::language_names_lists_every_language_once`
+
+**Status:** done
+
+### §7.4 Der Messaufbau dieser Spalte
+
+**Spec:** §7.4 — die Oktette einer Spalte werden gegen aufgezeichnete Oktette verglichen und nicht in ihren eigenen Tests behauptet.
+
+**Repo:** `tools/wireprobe/wireprobe-zerodds-node-gen/`, `tools/wireprobe/wireprobe-zerodds-node`
+
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_cell_generator`,
+`crates/lang-rules/tests/every_language_has_its_parts.rs::every_cell_generator_guards_against_a_missing_toolchain`
+
+**Status:** done
+
+---
+
+## Audit-Status
+
+17 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
+
+Test-Lauf: `cargo test -p zerodds-lang-rules` — 1024 Tests grün, 0 failed (20 ignoriert: die Vollkorpus-Compile-Läufe, die `--include-ignored` verlangen).
+
+Offene Punkte: keine. Decision-Records: keine.

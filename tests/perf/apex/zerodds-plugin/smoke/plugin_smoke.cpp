@@ -1,10 +1,10 @@
-// plugin_smoke.cpp — Pub-Sub-Smoke ueber das ZeroDDS-Plugin.
+// plugin_smoke.cpp — pub-sub smoke over the ZeroDDS plugin.
 //
-// Zwei separate Communicators (= zwei DDS-Participants auf gleicher
-// Domain) reden ueber UDP-Loopback miteinander. Vor Endpoint-Erstellung
-// MUSS jeder Communicator via wait_for_peers() abwarten bis SPDP den
-// Peer entdeckt hat — sonst wiren die Endpoints mit leerer Locator-
-// Liste und Daten gehen ins Leere (siehe README, Section "Race").
+// Two separate communicators (= two DDS participants on the same
+// domain) talk to each other over UDP loopback. Before endpoint creation
+// each communicator MUST wait via wait_for_peers() until SPDP has
+// discovered the peer — otherwise the endpoints wire up with an empty locator
+// list and data goes nowhere (see README, section "Race").
 
 #include <atomic>
 #include <chrono>

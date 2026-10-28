@@ -1,0 +1,2 @@
+// IDL 4.2 §7.2.6.2 — an octal escape in a character literal.
+const char K = '\101';

@@ -1,0 +1,1 @@
+fill_15.inc:1:8: error: 'struct zd_c15::Sample' has no member named 'amount'

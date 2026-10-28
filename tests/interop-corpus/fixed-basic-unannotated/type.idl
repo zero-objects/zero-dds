@@ -1,0 +1,8 @@
+// `fixed<9,3>`, unannotated
+typedef fixed<9,3> Money;
+
+struct Sample {
+    Money amount;
+    Money debt;
+    octet tail;
+};

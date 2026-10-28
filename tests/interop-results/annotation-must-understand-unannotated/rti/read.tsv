@@ -1,0 +1,14 @@
+# What rti got back when it read the bytes of annotation-must-understand-unannotated, held against
+# tests/interop-corpus/annotation-must-understand-unannotated/values.json and never against another
+# column's reading of the same bytes.
+# encoding	endian	verdict	detail
+plain-cdr1	le	refused	wireprobe-rti: the decode probe did not compile — the octets carry the sample: they read back as it under `--dialect rti`, so this peer's writer and its own reader disagree
+plain-cdr1	be	refused	wireprobe-rti: the decode probe did not compile — the octets carry the sample: they read back as it under `--dialect rti`, so this peer's writer and its own reader disagree
+pl-cdr1	le	version-alias	plain-cdr1
+pl-cdr1	be	version-alias	plain-cdr1
+plain-cdr2	le	refused	wireprobe-rti: the decode probe did not compile — the octets carry the sample: they read back as it under `--dialect rti`, so this peer's writer and its own reader disagree
+plain-cdr2	be	refused	wireprobe-rti: the decode probe did not compile — the octets carry the sample: they read back as it under `--dialect rti`, so this peer's writer and its own reader disagree
+delimited-cdr	le	version-alias	plain-cdr2
+delimited-cdr	be	version-alias	plain-cdr2
+pl-cdr2	le	version-alias	plain-cdr2
+pl-cdr2	be	version-alias	plain-cdr2

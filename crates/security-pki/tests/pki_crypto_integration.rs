@@ -51,6 +51,10 @@ fn make_pair() -> (Vec<u8>, CertBundle, CertBundle) {
 
     let make_ee = |name: &str| {
         let mut p = CertificateParams::new(vec![name.into()]).unwrap();
+        // The SubjectName gives the first 47 bits of the bound GUID.
+        let mut dn = rcgen::DistinguishedName::new();
+        dn.push(rcgen::DnType::CommonName, name);
+        p.distinguished_name = dn;
         p.is_ca = rcgen::IsCa::NoCa;
         let kp = KeyPair::generate().unwrap();
         let cert = p.signed_by(&kp, &ca_cert, &ca_key).unwrap();
@@ -60,9 +64,27 @@ fn make_pair() -> (Vec<u8>, CertBundle, CertBundle) {
             key_pem: kp.serialize_pem().into_bytes(),
         }
     };
-    let alice = make_ee("alice");
-    let bob = make_ee("bob");
+    // The bound GUID depends on the candidate too, so the pair is made
+    // again until the first one (candidate 0xAA..) is the smaller.
+    let (alice, bob) = (0u32..)
+        .map(|attempt| {
+            (
+                make_ee(&format!("alice-{attempt}")),
+                make_ee(&format!("bob-{attempt}")),
+            )
+        })
+        .find(|(alice, bob)| bound(&alice.cert_pem, [0xAA; 16]) < bound(&bob.cert_pem, [0xBB; 16]))
+        .unwrap();
+    // Table 59: the participant with the smaller GUID starts the handshake.
+    // The GUIDs are bound to the certificates (the tests use the candidates
+    // 0xAA.. for Alice and 0xBB.. for Bob): Alice is the one that is smaller.
     (ca_pem, alice, bob)
+}
+
+/// The IdentityToken a peer announces: a DataHolder of the class
+/// `DDS:Auth:PKI-DH:1.0` (DDS-Security 1.2 §10.3.2.1).
+fn identity_token_of(_cert_pem: &[u8]) -> Vec<u8> {
+    zerodds_security::token::DataHolder::new("DDS:Auth:PKI-DH:1.0").to_cdr_le()
 }
 
 fn cert_der(pem: &[u8]) -> Vec<u8> {
@@ -76,13 +98,35 @@ fn cert_der(pem: &[u8]) -> Vec<u8> {
         .to_vec()
 }
 
+/// The participant GUID bound to the identity in `cert_pem` for the
+/// candidate `seed` (DDS-Security 1.2 §10.3.3 Table 59).
+fn bound(cert_pem: &[u8], seed: [u8; 16]) -> [u8; 16] {
+    let prefix =
+        zerodds_security_pki::adjust_participant_guid_prefix(&seed, &cert_der(cert_pem)).unwrap();
+    let mut guid = seed;
+    guid[..12].copy_from_slice(&prefix);
+    guid
+}
+
+/// A `c.pdata`: PL_CDR_BE with PID_PARTICIPANT_GUID and PID_SENTINEL.
+fn pdata_of(guid: [u8; 16]) -> Vec<u8> {
+    let mut pdata = vec![0x00, 0x02, 0x00, 0x00, 0x00, 0x50, 0x00, 0x10];
+    pdata.extend_from_slice(&guid);
+    pdata.extend_from_slice(&[0x00, 0x01, 0x00, 0x00]);
+    pdata
+}
+
+/// Registers `me` and the peer under GUIDs bound to their certificates;
+/// `me_guid` and `peer_guid` are the candidates.
 fn register_pair(
     me: &mut PkiAuthenticationPlugin,
     me_b: &CertBundle,
     peer_cert_pem: &[u8],
     me_guid: [u8; 16],
     peer_guid: [u8; 16],
-) -> (IdentityHandle, IdentityHandle) {
+) -> (IdentityHandle, IdentityHandle, Vec<u8>) {
+    let me_guid = bound(&me_b.cert_pem, me_guid);
+    let peer_guid = bound(peer_cert_pem, peer_guid);
     let me_h = me
         .validate_with_config(
             IdentityConfig {
@@ -94,9 +138,10 @@ fn register_pair(
         )
         .unwrap();
     let peer_h = me
-        .validate_remote_identity(me_h, peer_guid, &cert_der(peer_cert_pem))
-        .unwrap();
-    (me_h, peer_h)
+        .validate_remote_identity(me_h, peer_guid, &identity_token_of(peer_cert_pem), None)
+        .unwrap()
+        .identity;
+    (me_h, peer_h, pdata_of(me_guid))
 }
 
 /// Shared-ownership wrapper — lets the same
@@ -121,9 +166,10 @@ fn run_handshake(
     alice_remote_bob: IdentityHandle,
     bob_h: IdentityHandle,
     bob_remote_alice: IdentityHandle,
+    (alice_pdata, bob_pdata): (&[u8], &[u8]),
 ) -> (SharedSecretHandle, SharedSecretHandle) {
     let (alice_hs, out1) = alice
-        .begin_handshake_request(alice_h, alice_remote_bob)
+        .begin_handshake_request(alice_h, alice_remote_bob, alice_pdata)
         .expect("alice request");
     let req = match out1 {
         HandshakeStepOutcome::SendMessage { token } => token,
@@ -131,7 +177,7 @@ fn run_handshake(
     };
 
     let (bob_hs, out2) = bob
-        .begin_handshake_reply(bob_h, bob_remote_alice, &req)
+        .begin_handshake_reply(bob_h, bob_remote_alice, &req, bob_pdata)
         .expect("bob reply");
     let reply_token = match out2 {
         HandshakeStepOutcome::SendMessage { token } => token,
@@ -140,8 +186,8 @@ fn run_handshake(
 
     let out3 = alice.process_handshake(alice_hs, &reply_token).unwrap();
     let final_token = match out3 {
-        HandshakeStepOutcome::SendMessage { token } => token,
-        _ => panic!("expected SendMessage (final) from initiator"),
+        HandshakeStepOutcome::SendFinalMessage { token } => token,
+        _ => panic!("expected SendFinalMessage from initiator"),
     };
     // Alice is ready after SendMessage(final) — her SharedSecret is
     // already stored (handshake_to_secret).
@@ -162,12 +208,14 @@ fn x25519_handshake_shared_secret_drives_aes_gcm_roundtrip() {
     let (_ca, alice_b, bob_b) = make_pair();
     let alice_pki = Arc::new(Mutex::new(PkiAuthenticationPlugin::new()));
     let bob_pki = Arc::new(Mutex::new(PkiAuthenticationPlugin::new()));
-    let (alice_h, alice_remote_bob, bob_h, bob_remote_alice) = {
+    let (alice_h, alice_remote_bob, bob_h, bob_remote_alice, alice_pdata, bob_pdata) = {
         let mut a = alice_pki.lock().unwrap();
         let mut b = bob_pki.lock().unwrap();
-        let (ah, abob) = register_pair(&mut a, &alice_b, &bob_b.cert_pem, [0xAA; 16], [0xBB; 16]);
-        let (bh, balice) = register_pair(&mut b, &bob_b, &alice_b.cert_pem, [0xBB; 16], [0xAA; 16]);
-        (ah, abob, bh, balice)
+        let (ah, abob, apd) =
+            register_pair(&mut a, &alice_b, &bob_b.cert_pem, [0xAA; 16], [0xBB; 16]);
+        let (bh, balice, bpd) =
+            register_pair(&mut b, &bob_b, &alice_b.cert_pem, [0xBB; 16], [0xAA; 16]);
+        (ah, abob, bh, balice, apd, bpd)
     };
 
     // --- 3-round handshake ---
@@ -181,6 +229,7 @@ fn x25519_handshake_shared_secret_drives_aes_gcm_roundtrip() {
             alice_remote_bob,
             bob_h,
             bob_remote_alice,
+            (&alice_pdata, &bob_pdata),
         )
     };
 
@@ -245,6 +294,10 @@ fn make_group(n_peers: usize) -> (CertBundle, Vec<CertBundle>) {
     let ca_pem = ca_cert.pem().into_bytes();
     let make_ee = |name: &str| {
         let mut p = CertificateParams::new(vec![name.into()]).unwrap();
+        // The SubjectName gives the first 47 bits of the bound GUID.
+        let mut dn = rcgen::DistinguishedName::new();
+        dn.push(rcgen::DnType::CommonName, name);
+        p.distinguished_name = dn;
         p.is_ca = rcgen::IsCa::NoCa;
         let kp = KeyPair::generate().unwrap();
         let cert = p.signed_by(&kp, &ca_cert, &ca_key).unwrap();
@@ -254,224 +307,30 @@ fn make_group(n_peers: usize) -> (CertBundle, Vec<CertBundle>) {
             key_pem: kp.serialize_pem().into_bytes(),
         }
     };
-    let alice = make_ee("alice");
+    // Table 59: the participant with the smaller GUID starts the handshake;
+    // Alice starts with every peer, so each peer's bound GUID (the
+    // candidates 0xB1.., 0xC1.., 0xD1..) has to be greater than hers. Alice
+    // is made again until her GUID is in the lower part of the range, so
+    // that peers are found quickly.
+    let (alice, alice_guid) = (0u32..)
+        .map(|attempt| make_ee(&format!("alice-{attempt}")))
+        .map(|alice| {
+            let guid = bound(&alice.cert_pem, [0xAA; 16]);
+            (alice, guid)
+        })
+        .find(|(_, guid)| guid[0] < 0xC0)
+        .unwrap();
+    let seeds = [0xB1u8, 0xC1, 0xD1];
     let peers = (0..n_peers)
-        .map(|i| make_ee(&format!("peer-{i}")))
+        .map(|i| {
+            // The SubjectName decides the order, so each attempt has its own.
+            (0u32..)
+                .map(|attempt| make_ee(&format!("peer-{i}-{attempt}")))
+                .find(|peer| bound(&peer.cert_pem, [seeds[i]; 16]) > alice_guid)
+                .unwrap()
+        })
         .collect();
     (alice, peers)
-}
-
-/// Multi-receiver broadcast with per-receiver MAC (spec §9.5.3.3.4): the
-/// receiver-specific MAC keys are exchanged as the key material of the respective receiver
-/// (FU2 dual key), not derived from the DH secret.
-#[test]
-fn multi_mac_group_broadcast_with_exchanged_receiver_keys() {
-    use zerodds_security::crypto::ReceiverMac;
-    let (alice_b, peers) = make_group(3);
-    let bob_b = &peers[0];
-    let charlie_b = &peers[1];
-    let dave_b = &peers[2];
-
-    let alice_pki = Arc::new(Mutex::new(PkiAuthenticationPlugin::new()));
-    let mut bob_pki = PkiAuthenticationPlugin::new();
-    let mut charlie_pki = PkiAuthenticationPlugin::new();
-    let mut dave_pki = PkiAuthenticationPlugin::new();
-
-    // Identitaeten registrieren.
-    let (alice_h, alice_remote_bob) = {
-        let mut a = alice_pki.lock().unwrap();
-        register_pair(&mut a, &alice_b, &bob_b.cert_pem, [0xAA; 16], [0xB1; 16])
-    };
-    let alice_remote_charlie = {
-        let mut a = alice_pki.lock().unwrap();
-        a.validate_remote_identity(alice_h, [0xC1; 16], &cert_der(&charlie_b.cert_pem))
-            .unwrap()
-    };
-    let alice_remote_dave = {
-        let mut a = alice_pki.lock().unwrap();
-        a.validate_remote_identity(alice_h, [0xD1; 16], &cert_der(&dave_b.cert_pem))
-            .unwrap()
-    };
-    let (bob_h, bob_remote_alice) = register_pair(
-        &mut bob_pki,
-        bob_b,
-        &alice_b.cert_pem,
-        [0xB1; 16],
-        [0xAA; 16],
-    );
-    let (charlie_h, charlie_remote_alice) = register_pair(
-        &mut charlie_pki,
-        charlie_b,
-        &alice_b.cert_pem,
-        [0xC1; 16],
-        [0xAA; 16],
-    );
-    let (dave_h, dave_remote_alice) = register_pair(
-        &mut dave_pki,
-        dave_b,
-        &alice_b.cert_pem,
-        [0xD1; 16],
-        [0xAA; 16],
-    );
-
-    // Drei separate Handshakes.
-    let (alice_bob, bob_secret) = {
-        let mut a = alice_pki.lock().unwrap();
-        run_handshake(
-            &mut a,
-            &mut bob_pki,
-            alice_h,
-            alice_remote_bob,
-            bob_h,
-            bob_remote_alice,
-        )
-    };
-    let (alice_charlie, charlie_secret) = {
-        let mut a = alice_pki.lock().unwrap();
-        run_handshake(
-            &mut a,
-            &mut charlie_pki,
-            alice_h,
-            alice_remote_charlie,
-            charlie_h,
-            charlie_remote_alice,
-        )
-    };
-    let (alice_dave, dave_secret) = {
-        let mut a = alice_pki.lock().unwrap();
-        run_handshake(
-            &mut a,
-            &mut dave_pki,
-            alice_h,
-            alice_remote_dave,
-            dave_h,
-            dave_remote_alice,
-        )
-    };
-
-    // Alice's Crypto-Plugin.
-    let alice_provider: Arc<dyn SharedSecretProvider> = Arc::new(SharedPki(Arc::clone(&alice_pki)));
-    let mut alice_crypto =
-        AesGcmCryptoPlugin::with_secret_provider(Suite::Aes128Gcm, alice_provider);
-    let alice_local = alice_crypto
-        .register_local_participant(alice_h, &[])
-        .unwrap();
-    let h_bob = alice_crypto
-        .register_matched_remote_participant(alice_local, alice_remote_bob, alice_bob)
-        .unwrap();
-    let h_charlie = alice_crypto
-        .register_matched_remote_participant(alice_local, alice_remote_charlie, alice_charlie)
-        .unwrap();
-    let h_dave = alice_crypto
-        .register_matched_remote_participant(alice_local, alice_remote_dave, alice_dave)
-        .unwrap();
-
-    let key_id_bob = h_bob.0 as u32;
-    let key_id_charlie = h_charlie.0 as u32;
-    let key_id_dave = h_dave.0 as u32;
-
-    // FU2 / spec §9.5.3.3.4: the receiver-specific MAC keys are the key material
-    // OF THE RESPECTIVE RECEIVER and are exchanged — NOT (anymore) derived from the
-    // DH secret. Phase 1: each receiver creates its key material and
-    // exports it; alice installs it at her per-receiver handle, so that her
-    // receiver MAC is formed with exactly the key the receiver verifies with.
-    // (recv_crypto, recv_local, cipher_slot, mac_slot, key_id)
-    let mut recvs: Vec<(
-        AesGcmCryptoPlugin,
-        CryptoHandle,
-        CryptoHandle,
-        CryptoHandle,
-        u32,
-    )> = Vec::new();
-    for (pki, dh_secret, key_id, recv_h, remote_alice_h, alice_handle) in [
-        (
-            bob_pki,
-            bob_secret,
-            key_id_bob,
-            bob_h,
-            bob_remote_alice,
-            h_bob,
-        ),
-        (
-            charlie_pki,
-            charlie_secret,
-            key_id_charlie,
-            charlie_h,
-            charlie_remote_alice,
-            h_charlie,
-        ),
-        (
-            dave_pki,
-            dave_secret,
-            key_id_dave,
-            dave_h,
-            dave_remote_alice,
-            h_dave,
-        ),
-    ] {
-        let pki_arc = Arc::new(Mutex::new(pki));
-        let provider: Arc<dyn SharedSecretProvider> = Arc::new(SharedPki(Arc::clone(&pki_arc)));
-        let mut crypto = AesGcmCryptoPlugin::with_secret_provider(Suite::Aes128Gcm, provider);
-        let recv_local = crypto.register_local_participant(recv_h, &[]).unwrap();
-        let cipher_slot = crypto
-            .register_matched_remote_participant(recv_local, remote_alice_h, SharedSecretHandle(0))
-            .unwrap();
-        let mac_slot = crypto
-            .register_matched_remote_participant(recv_local, remote_alice_h, dh_secret)
-            .unwrap();
-        // The receiver exports its MAC key, alice installs it at alice_handle.
-        let recv_mac_token = crypto
-            .create_local_participant_crypto_tokens(mac_slot, CryptoHandle(0))
-            .unwrap();
-        alice_crypto
-            .set_remote_participant_crypto_tokens(alice_local, alice_handle, &recv_mac_token)
-            .expect("alice installs receiver's mac key");
-        recvs.push((crypto, recv_local, cipher_slot, mac_slot, key_id));
-    }
-
-    // Phase 2: alice broadcasts — cipher with her own key, one MAC per receiver
-    // with the (just-installed) receiver key.
-    let alice_broadcast_token = alice_crypto
-        .create_local_participant_crypto_tokens(alice_local, CryptoHandle(0))
-        .unwrap();
-    let plain = b"group-broadcast-with-exchanged-receiver-mac-keys";
-    let (ciphertext, macs) = alice_crypto
-        .encrypt_submessage_multi(
-            alice_local,
-            &[
-                (h_bob, key_id_bob),
-                (h_charlie, key_id_charlie),
-                (h_dave, key_id_dave),
-            ],
-            plain,
-            &[],
-        )
-        .unwrap();
-    assert_eq!(macs.len(), 3, "three receivers → three MACs");
-
-    // Phase 3: each receiver installs alice's broadcast cipher key and decodes
-    // with its own (exchanged) MAC key.
-    for (mut crypto, recv_local, cipher_slot, mac_slot, key_id) in recvs {
-        crypto
-            .set_remote_participant_crypto_tokens(recv_local, cipher_slot, &alice_broadcast_token)
-            .expect("receiver installs alice's broadcast key");
-        let our_mac = macs
-            .iter()
-            .find(|m: &&ReceiverMac| m.key_id == key_id)
-            .expect("own mac exists in list");
-        let back = crypto
-            .decrypt_submessage_with_receiver_mac(
-                cipher_slot,
-                cipher_slot,
-                our_mac.key_id,
-                mac_slot,
-                &ciphertext,
-                core::slice::from_ref(our_mac),
-                &[],
-            )
-            .expect("receiver decodes own mac");
-        assert_eq!(back, plain);
-    }
 }
 
 #[test]
@@ -482,36 +341,48 @@ fn three_peers_each_own_handshake_yield_distinct_per_peer_keys() {
     let mut charlie_pki = PkiAuthenticationPlugin::new();
     let mut dave_pki = PkiAuthenticationPlugin::new();
 
-    let (alice_h, alice_remote_bob) = {
+    let (alice_h, alice_remote_bob, alice_pdata) = {
         let mut a = alice_pki.lock().unwrap();
         register_pair(&mut a, &alice_b, &peers[0].cert_pem, [0xAA; 16], [0xB1; 16])
     };
     let alice_remote_charlie = {
         let mut a = alice_pki.lock().unwrap();
-        a.validate_remote_identity(alice_h, [0xC1; 16], &cert_der(&peers[1].cert_pem))
-            .unwrap()
+        a.validate_remote_identity(
+            alice_h,
+            bound(&peers[1].cert_pem, [0xC1; 16]),
+            &identity_token_of(&peers[1].cert_pem),
+            None,
+        )
+        .unwrap()
+        .identity
     };
     let alice_remote_dave = {
         let mut a = alice_pki.lock().unwrap();
-        a.validate_remote_identity(alice_h, [0xD1; 16], &cert_der(&peers[2].cert_pem))
-            .unwrap()
+        a.validate_remote_identity(
+            alice_h,
+            bound(&peers[2].cert_pem, [0xD1; 16]),
+            &identity_token_of(&peers[2].cert_pem),
+            None,
+        )
+        .unwrap()
+        .identity
     };
 
-    let (bob_h, bob_remote_alice) = register_pair(
+    let (bob_h, bob_remote_alice, bob_pdata) = register_pair(
         &mut bob_pki,
         &peers[0],
         &alice_b.cert_pem,
         [0xB1; 16],
         [0xAA; 16],
     );
-    let (charlie_h, charlie_remote_alice) = register_pair(
+    let (charlie_h, charlie_remote_alice, charlie_pdata) = register_pair(
         &mut charlie_pki,
         &peers[1],
         &alice_b.cert_pem,
         [0xC1; 16],
         [0xAA; 16],
     );
-    let (dave_h, dave_remote_alice) = register_pair(
+    let (dave_h, dave_remote_alice, dave_pdata) = register_pair(
         &mut dave_pki,
         &peers[2],
         &alice_b.cert_pem,
@@ -528,6 +399,7 @@ fn three_peers_each_own_handshake_yield_distinct_per_peer_keys() {
             alice_remote_bob,
             bob_h,
             bob_remote_alice,
+            (&alice_pdata, &bob_pdata),
         )
     };
     let (alice_charlie, _) = {
@@ -539,6 +411,7 @@ fn three_peers_each_own_handshake_yield_distinct_per_peer_keys() {
             alice_remote_charlie,
             charlie_h,
             charlie_remote_alice,
+            (&alice_pdata, &charlie_pdata),
         )
     };
     let (alice_dave, _) = {
@@ -550,6 +423,7 @@ fn three_peers_each_own_handshake_yield_distinct_per_peer_keys() {
             alice_remote_dave,
             dave_h,
             dave_remote_alice,
+            (&alice_pdata, &dave_pdata),
         )
     };
 

@@ -11,7 +11,7 @@ pub const REQUEST_API_KEY: &str = "OMG-DDS-API-Key";
 /// Spec §8.3.5 Tab 7 — Request-Header-Set.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RequestHeaders {
-    /// `Accept` header — Spec requires `application/zerodds-web+xml`.
+    /// `Accept` header — Spec requires `application/dds-web+xml`.
     pub accept: Option<String>,
     /// `Content-Type` header (only POST/PUT).
     pub content_type: Option<String>,
@@ -47,13 +47,13 @@ impl RequestHeaders {
 /// Spec §8.3.5 Tab 8 — Response-Header-Set.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ResponseHeaders {
-    /// `Authentication-Info` (auf Response-zu-Login Required).
+    /// `Authentication-Info` (on response to Login Required).
     pub authentication_info: Option<String>,
     /// `Cache-Control` (Required).
     pub cache_control: Option<String>,
     /// `Content-Length` (Required).
     pub content_length: Option<u64>,
-    /// `Content-Type` (Required) — `application/zerodds-web+xml`.
+    /// `Content-Type` (Required) — `application/dds-web+xml`.
     pub content_type: Option<String>,
     /// `Date` (Optional).
     pub date: Option<String>,
@@ -101,7 +101,7 @@ mod tests {
     #[test]
     fn validate_required_passes_with_all_three_headers() {
         let h = RequestHeaders {
-            accept: Some(String::from("application/zerodds-web+xml")),
+            accept: Some(String::from("application/dds-web+xml")),
             cache_control: Some(String::from("no-cache")),
             api_key: Some(String::from("secret-key-1234")),
             ..Default::default()
@@ -112,7 +112,7 @@ mod tests {
     #[test]
     fn missing_api_key_rejected() {
         let h = RequestHeaders {
-            accept: Some(String::from("application/zerodds-web+xml")),
+            accept: Some(String::from("application/dds-web+xml")),
             cache_control: Some(String::from("no-cache")),
             ..Default::default()
         };
@@ -132,7 +132,7 @@ mod tests {
     #[test]
     fn missing_cache_control_rejected() {
         let h = RequestHeaders {
-            accept: Some(String::from("application/zerodds-web+xml")),
+            accept: Some(String::from("application/dds-web+xml")),
             api_key: Some(String::from("k")),
             ..Default::default()
         };

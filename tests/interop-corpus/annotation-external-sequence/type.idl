@@ -1,0 +1,8 @@
+// `@external` on a sequence and on a string
+// XTypes 1.3 Table 21: the indirection is the language mapping's and
+// changes no octet.
+@final struct Sample {
+    @external sequence<long> ids;
+    @external string text;
+    long tail;
+};

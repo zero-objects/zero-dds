@@ -1,0 +1,280 @@
+#!/bin/bash
+# wireprobe-zerodds-typescript — one IDL type and one JSON value, through
+# the ZeroDDS TypeScript binding.
+#
+# The same command line as `wireprobe-zerodds`, minus the flags this
+# column does not answer yet, so a case runs through both by
+# substituting the program name. See
+# `docs/specs/zerodds-interop-suite-1.0.md` §3a.
+#
+#   wireprobe-zerodds-typescript --idl robot.idl --type common::Robot \
+#                                --values robot.json --encoding xcdr2 \
+#                                --endian le --out robot.zerodds-ts.xcdr2.le.bin
+#
+#   wireprobe-zerodds-typescript --idl robot.idl --type common::Robot \
+#                                --in robot.cyclone.xcdr2.le.bin --encoding xcdr2 \
+#                                --endian le --values-out robot.read.json
+#
+# `wireprobe-zerodds-typescript-gen` writes the TypeScript — the
+# declarations, the codec and either the sample or the statements that
+# print one — and this compiles it against `runtime/typescript` and runs
+# it under node. The bytes and the values come out of the TypeScript
+# runtime; nothing in this script decides a wire question, and nothing in
+# the compiled program calls the Rust one.
+#
+# ## The exit codes
+#
+# `docs/specs/zerodds-verdicts-1.0.md`, and structural rather than read
+# out of a message:
+#
+#   0  it carried the case
+#   1  the command line — this script's own options, or the generator's,
+#      or a sample the compiled probe refused as outside its type
+#   3  no-form — TypeScript has no form for the construct, which is the
+#      materialiser's answer and nobody else's, or the probe discarded
+#      the sample under §7.2.2.7
+#   6  harness-gap — a tool of ours has not written it: the walk
+#      stopped, `runtime/typescript` did not compile, a toolchain is not
+#      installed, or the program did not run
+#   7  generator-defect — the generator accepted the case and the
+#      TypeScript it produced does not compile
+#
+# 8 (`mapping-divergence`) is not produced here. It is a verdict about a
+# *foreign* mapping rule making the octets differ — CORBA's `long double`
+# is the recorded case — and this column has no such rule: where its
+# reading of §7.4 differs from the Rust column's the answer is a byte
+# difference the ledger shows, not an exit code.
+#
+# ## The read direction
+#
+# `--in` hands the payload to the compiled probe on standard input and
+# the values come back as the canonical JSON of
+# `crates/wire-probe/src/canonical.rs`, printed through
+# `tools/wireprobe/zdj.ts` — the TypeScript counterpart of `Zdj.cs`,
+# `Zdj.java` and `dumpjson.h`, copied beside the probe so the JSON
+# dialect exists once. This column refused `--in` as exit 6 while
+# `emit/typescript.rs` had no `default_typescript` behind
+# `CodecTarget::default_into`; `default_typescript.rs` supplies Table 9
+# now.
+set -euo pipefail
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+root="$(cd "$here/../.." && pwd)"
+source "$here/runtime-cache.sh"
+runtime="${ZERODDS_TYPESCRIPT_RUNTIME:-$root/runtime/typescript}"
+NODE="${NODE:-node}"
+# An installed `tsc`, and never `npx tsc`: without a local TypeScript,
+# `npx` resolves the name from the npm registry and runs whatever answers
+# to it. On a host with node and no compiler that is `tsc@2.0.4`, an
+# unrelated package whose "This is not the tsc command you are looking
+# for" then reads here as a failed compile and leaves as exit 7,
+# `generator-defect`, for a file no compiler ever opened. `TSC`
+# overrides; the runtime's own `node_modules/.bin` comes first so a
+# pinned TypeScript beats whatever the host happens to carry.
+if [ -z "${TSC:-}" ]; then
+    if [ -n "${ZERODDS_TSC:-}" ]; then
+        # The same name the Rust gates read
+        # (`crates/lang-rules/tests/typescript_*.rs`), so one host setting
+        # points every TypeScript check at the same compiler.
+        TSC="$ZERODDS_TSC"
+    elif [ -x "$runtime/node_modules/.bin/tsc" ]; then
+        TSC="$runtime/node_modules/.bin/tsc"
+    else
+        TSC="tsc"
+    fi
+fi
+# The settings `runtime/typescript/tsconfig.json` compiles under, spelled
+# out because the generated file is not inside that project. `strict`
+# with `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes`: a
+# generated file that only compiles under looser settings is one a
+# consumer of this codegen cannot use, and the point of compiling it at
+# all is to find that out.
+TSCFLAGS="${TSCFLAGS:---ignoreConfig --target ES2022 --module NodeNext \
+--moduleResolution NodeNext --strict --noUncheckedIndexedAccess \
+--exactOptionalPropertyTypes --skipLibCheck}"
+
+gen="${WIREPROBE_TYPESCRIPT_GEN:-}"
+if [ -z "$gen" ]; then
+    gen="${CARGO_TARGET_DIR:-$root/target}/debug/wireprobe-zerodds-typescript-gen"
+    # Built when it is missing *or stale*: a generator older than the
+    # sources it came from measures the previous build, and says nothing
+    # about it.
+    . "$here/generator.sh"
+    probe_generator zerodds-wireprobe-typescript-gen "$gen" "$root" || exit 6
+fi
+
+out=""
+input=""
+values_out=""
+argv=()
+idl=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --out) out="$2"; shift 2 ;;
+        --in) input="$2"; shift 2 ;;
+        --values-out) values_out="$2"; shift 2 ;;
+        # Every LayoutKey axis the stem parses, not the seven this
+        # wrapper used to name. The C and Python wrappers forwarded all
+        # sixteen and these four forwarded none, so a sweep over any axis
+        # answered `--length-codes is not an option` with exit 1 for four
+        # of the six columns and measured only the other two.
+        --idl|--type|--values|--encoding|--endian|--emit|--dialect|\
+        --length-codes|--collection-delimiters|--wstring-length|--map-length|\
+        --wchar-framing|--wchar-width|--map-delimiter|--wstring-units|--pid-flags|\
+        --enum-holder|--union-labels|\
+        --map-entries|--fixed-digits|--enumerator-value|--union-framing|--short-pid-range)
+            if [ "$1" = --idl ]; then idl="$2"; fi
+            argv+=("$1" "$2"); shift 2 ;;
+        --help|-h) sed -n '2,58p' "${BASH_SOURCE[0]}"; exit 0 ;;
+        *) echo "wireprobe-zerodds-typescript: \`$1\` is not an option" >&2; exit 1 ;;
+    esac
+done
+
+. "$here/diagnostics.sh"
+
+# One direction or the other, never both: a run that both wrote bytes and
+# read some in would report one of the two and the caller could not tell
+# which.
+if [ -n "$input" ]; then
+    for flag in "${argv[@]}"; do
+        if [ "$flag" = "--values" ]; then
+            echo "wireprobe-zerodds-typescript: --in reads bytes and --values writes them; pick one" >&2
+            exit 1
+        fi
+    done
+    argv+=(--read)
+fi
+
+# A toolchain that is not installed is `harness-gap` and never
+# `generator-defect`. Measured on the Linux test host, which has `node` and no
+# compiler: `$TSC` failed to start, the compile "failed", and the wrapper
+# reported exit 7 — "the generator accepted the case and the TypeScript
+# it produced does not compile" — for a file no compiler had read.
+# `docs/specs/zerodds-verdicts-1.0.md`: a verdict names its evidence,
+# and there was none.
+for tool in ${TSC%% *} "$NODE"; do
+    if ! command -v "$tool" > /dev/null 2>&1; then
+        echo "wireprobe-zerodds-typescript: no \`$tool\` on PATH; set TSC or NODE" >&2
+        exit 9
+    fi
+done
+
+stage=""
+work="$(mktemp -d)"
+trap '[ -z "$stage" ] || rm -rf "${stage:?}"; probe_keep_generated "$work" "zerodds-typescript" "$idl" probe.ts; rm -rf "${work:?}"' EXIT
+trap 'exit 6' HUP INT TERM
+
+# The generator's own code passes straight through: 3 is "TypeScript has
+# no form for it" and 6 is "a tool of ours stopped", and folding the two
+# into one here would lose the distinction the ledger turns on.
+code=0
+"$gen" "${argv[@]}" --out-dir "$work" || code=$?
+[ "$code" = 0 ] || exit "$code"
+
+# The runtime is compiled once and kept, keyed on the contents of its
+# sources. A corpus sweep is one probe per case per configuration —
+# hundreds of tsc invocations — and `tsc` over the runtime is most of the
+# cost of each. The key is a hash of the sources and not a timestamp, so
+# a runtime that moves invalidates the cache and one that only got
+# touched does not.
+runtime_sources=$(find "$runtime/src" -name '*.ts' | sort)
+# shellcheck disable=SC2086
+key=$(cat $runtime_sources | shasum | cut -c1-16)
+cache="${ZERODDS_TYPESCRIPT_CACHE:-${TMPDIR:-/tmp}/zd-typescript-runtime}/$key"
+runtime_outputs=()
+for runtime_source in $runtime_sources; do
+    runtime_output="${runtime_source#"$runtime/src/"}"
+    runtime_outputs+=("${runtime_output%.ts}.js" "${runtime_output%.ts}.d.ts")
+done
+if ! runtime_cache_ready "$cache" -s "${runtime_outputs[@]}"; then
+    mkdir -p "$(dirname "$cache")"
+    stage=$(mktemp -d "$cache.tmp.XXXXXX")
+    # `--declaration`: the probe is compiled against the runtime's `.d.ts`
+    # and imports its `.js`, so the runtime is type-checked once and the
+    # per-case compile reads a declaration file instead of re-checking
+    # seven hundred lines of writer.
+    # shellcheck disable=SC2086
+    if ! $TSC $TSCFLAGS --declaration --rootDir "$runtime/src" \
+            --outDir "${stage:?}" $runtime_sources \
+            > "$work/tsc-runtime.log" 2>&1; then
+        echo "wireprobe-zerodds-typescript: runtime/typescript did not compile" >&2
+        grep -m10 -E "error|warning" "$work/tsc-runtime.log" >&2 || true
+        rm -rf "${stage:?}"
+        exit 6
+    fi
+    if ! runtime_cache_publish "$stage" "$cache" -s "${runtime_outputs[@]}"; then
+        rm -rf "${stage:?}"
+        exit 6
+    fi
+    rm -rf "${stage:?}"
+fi
+
+cp -R "$cache" "$work/wire"
+# `"type": "module"` is what makes node read the emitted `.js` as ESM.
+# Without it the `import` lines are a syntax error at run time and the
+# probe reports nothing about the octets.
+printf '{ "type": "module" }\n' > "$work/package.json"
+
+if [ -n "$input" ]; then
+    # The canonical-JSON helpers, the same contract `Zdj.cs`, `Zdj.java`
+    # and `dumpjson.h` carry: the JSON dialect is shared and not a wire
+    # rule, and two backends holding two copies of it is how they come
+    # to disagree about what a sample is. `tsc` follows the probe's
+    # relative import and compiles it alongside.
+    cp "$here/zdj.ts" "$work/"
+fi
+
+# shellcheck disable=SC2086
+if ! $TSC $TSCFLAGS --rootDir "$work" --outDir "$work" "$work/probe.ts" \
+        > "$work/tsc.log" 2>&1; then
+    echo "wireprobe-zerodds-typescript: the generated TypeScript did not compile" >&2
+    grep -m10 -E "error|warning" "$work/tsc.log" >&2 || true
+    probe_diagnostics_after "zerodds-typescript" "$work" "$idl" 7
+    exit 7
+fi
+probe_diagnostics_after "zerodds-typescript" "$work" "$idl" 0
+
+if [ -n "$input" ]; then
+    # 3 is the probe's "the sample is discarded" and is passed through
+    # rather than folded into 6. DDS-XTypes 1.3 §7.2.2.7: the receiver
+    # drops the object and carries on, which is a different thing from a
+    # reader that could not read, and a harness has to be able to tell
+    # them apart. The Rust, C, Java and C# probes use the same code.
+    code=0
+    "$NODE" "$work/probe.js" < "$input" > "$work/values.json" \
+        2> "$work/run.log" || code=$?
+    if [ "$code" != 0 ]; then
+        head -5 "$work/run.log" >&2 || true
+        [ "$code" = 3 ] && exit 3
+        exit 6
+    fi
+    if [ -n "$values_out" ]; then
+        cp "$work/values.json" "$values_out"
+    else
+        cat "$work/values.json"
+    fi
+    exit 0
+fi
+
+# 1 is the probe's "this sample is outside the type" and is passed
+# through rather than folded into 6. `primitive-char-above-latin1` is a
+# `char` holding U+0161 and §7.2.2.2.1.2.2 says a CHAR_8_TYPE "shall be
+# representable using 8 bits"; the Rust probe answers 1 for the same
+# sample, and a column that answered `harness-gap` for it would be
+# claiming a tool of ours is missing. Anything else the program does is
+# 6, because then it really is this harness that could not carry the
+# case.
+code=0
+"$NODE" "$work/probe.js" > "$work/bytes.bin" 2> "$work/run.log" || code=$?
+if [ "$code" != 0 ]; then
+    head -5 "$work/run.log" >&2 || true
+    [ "$code" = 1 ] && exit 1
+    echo "wireprobe-zerodds-typescript: the probe did not run" >&2
+    exit 6
+fi
+
+if [ -n "$out" ]; then
+    cp "$work/bytes.bin" "$out"
+else
+    od -An -tx1 -v "$work/bytes.bin" | tr -d ' \n'; echo
+fi

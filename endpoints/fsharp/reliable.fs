@@ -18,8 +18,15 @@
 // [session, stream, seq_lo, seq_hi, submsg, flags, len_lo, len_hi] then body.
 // WRITE_DATA id=0x07 flags=0x03 on stream 0x80 (header seq = the sample's
 // RFC-1982 seqnr). HEARTBEAT id=0x0B / ACKNACK id=0x0A, flags=0x01, on stream
-// 0x00 (control); body is 5 bytes, the target reliable stream id travels in the
-// body's last byte.
+// 0x00 (control); the HEARTBEAT body is 5 bytes, the target reliable stream id
+// travels in the body's last byte.
+//
+// ACKNACK_Payload has no @extensibility. With UnannotatedTypes.Appendable
+// (default; DDS-XTypes 1.3 7.3.1.2.1.8) the body is a 4-octet DHEADER (= 5)
+// followed by the 5 payload octets (first_unacked i16, nack_bitmap[2],
+// stream_id), body-len 9, frame 17 octets. With UnannotatedTypes.Final (the
+// eProsima form) there is no DHEADER: body-len 5, frame 13 octets. The parser
+// accepts both forms in either setting. HEARTBEAT_Payload is FINAL in both.
 
 // Named `ZeroDDSReliable` (a single-identifier module) rather than
 // `ZeroDDS.Reliable`: zerodds.fs already declares a top-level `module ZeroDDS`,
@@ -63,6 +70,14 @@ type RecvStatus =
     | RecvOk
     | BufferFull
 
+/// Extensibility assumed for the DDS-XRCE 1.0 Annex A types without
+/// `@extensibility` (here: ACKNACK_Payload). `Appendable` (default) writes the
+/// DHEADER of DDS-XTypes 1.3 7.3.1.2.1.8; `Final` writes the eProsima form
+/// without DHEADER. Readers accept both.
+type UnannotatedTypes =
+    | Appendable
+    | Final
+
 // --- Wire constants and the frame codec ---
 
 module Wire =
@@ -84,8 +99,14 @@ module Wire =
     [<Literal>]
     let SmHeartbeat = 0x0Buy
 
+    /// E flag (little-endian body) + DataFormat FORMAT_DATA (0b000) in bits
+    /// 1..3 -- DDS-XRCE 1.0 Sec 8.3.5.8.
     [<Literal>]
-    let WriteFlags = 0x03uy
+    let WriteFlags = 0x01uy
+
+    /// Wire size of the BaseObjectRequest that precedes the sample (Sec 7.7.8).
+    [<Literal>]
+    let BaseSize = 4
 
     [<Literal>]
     let CtrlFlags = 0x01uy
@@ -113,39 +134,54 @@ module Wire =
     let seqGt (a: uint16) (b: uint16) = int16 (a - b) > 0s
 
     /// Builds a reliable WRITE_DATA frame; the header seq carries the sample's
-    /// RFC-1982 seqnr.
-    let writeFrame (seq: uint16) (sample: byte[]) =
-        let o = Array.zeroCreate<byte> (8 + sample.Length)
+    /// RFC-1982 seqnr, and the submessage body is the BaseObjectRequest
+    /// (Sec 7.7.8: request_id then object_id, each two octets most significant
+    /// first) followed by the sample. `objectId` names the target DataWriter;
+    /// the request_id is the sample's own sequence number.
+    let writeFrame (seq: uint16) (objectId: uint16) (sample: byte[]) =
+        let n = uint16 (BaseSize + sample.Length)
+        let o = Array.zeroCreate<byte> (8 + int n)
         o.[0] <- Session
         o.[1] <- StreamReliable
         o.[2] <- byte (seq &&& 0xFFus)
         o.[3] <- byte (seq >>> 8)
         o.[4] <- SmWriteData
         o.[5] <- WriteFlags
-        let n = uint16 sample.Length
         o.[6] <- byte (n &&& 0xFFus)
         o.[7] <- byte (n >>> 8)
-        Array.blit sample 0 o 8 sample.Length
+        o.[8] <- byte (seq >>> 8)
+        o.[9] <- byte (seq &&& 0xFFus)
+        o.[10] <- byte (objectId >>> 8)
+        o.[11] <- byte (objectId &&& 0xFFus)
+        Array.blit sample 0 o (8 + BaseSize) sample.Length
         o
 
     /// Parses a reliable WRITE_DATA frame into Some(seq, sample); None on a short
-    /// header or wrong submessage id.
+    /// header, a wrong submessage id, or a body too short to hold the
+    /// BaseObjectRequest. The sample starts after that base class.
     let tryUnframeWrite (frame: byte[]) =
-        if frame.Length < 8 || frame.[4] <> SmWriteData then
+        if frame.Length < 8 + BaseSize || frame.[4] <> SmWriteData then
             None
         else
-            let seq = uint16 frame.[2] ||| (uint16 frame.[3] <<< 8)
-            Some(seq, frame.[8..])
+            let smLen = int frame.[6] ||| (int frame.[7] <<< 8)
 
-    let private ctrlHeader (submsg: byte) (msgSeq: uint16) =
+            if smLen < BaseSize || 8 + smLen > frame.Length then
+                None
+            else
+                let seq = uint16 frame.[2] ||| (uint16 frame.[3] <<< 8)
+                Some(seq, frame.[(8 + BaseSize) .. (8 + smLen - 1)])
+
+    let private ctrlHeaderLen (submsg: byte) (msgSeq: uint16) (bodyLen: byte) =
         [| Session
            StreamNone
            byte (msgSeq &&& 0xFFus)
            byte (msgSeq >>> 8)
            submsg
            CtrlFlags
-           5uy
+           bodyLen
            0uy |]
+
+    let private ctrlHeader (submsg: byte) (msgSeq: uint16) = ctrlHeaderLen submsg msgSeq 5uy
 
     /// Builds a HEARTBEAT control frame. Byte-identical to golden_heartbeat_le.bin
     /// when hb = { First = 1; Last = 3; StreamId = 0x80 } and msgSeq = 1.
@@ -168,28 +204,45 @@ module Wire =
                   Last = int16 (uint16 frame.[10] ||| (uint16 frame.[11] <<< 8))
                   StreamId = frame.[12] }
 
-    /// Builds an ACKNACK control frame. Byte-identical to golden_acknack_le.bin
-    /// when ack = { FirstUnacked = 1; NackLo = 0; NackHi = 0; StreamId = 0x80 }
-    /// and msgSeq = 1.
-    let ackNackFrame (ack: AckNack) (msgSeq: uint16) =
-        Array.append
-            (ctrlHeader SmAckNack msgSeq)
+    /// Builds an ACKNACK control frame in the given unannotated-types form.
+    /// `Appendable`: DHEADER = 5 (u32 LE), body-len 9, 17 octets (DDS-XTypes 1.3
+    /// 7.3.1.2.1.8). `Final`: no DHEADER, body-len 5, 13 octets. Byte-identical to
+    /// golden_acknack_le.bin when ack = { FirstUnacked = 1; NackLo = 0; NackHi = 0;
+    /// StreamId = 0x80 }, msgSeq = 1 and mode = `Final`.
+    let ackNackFrameWith (mode: UnannotatedTypes) (ack: AckNack) (msgSeq: uint16) =
+        let payload =
             [| byte (ack.FirstUnacked &&& 0xFFs)
                byte ((ack.FirstUnacked >>> 8) &&& 0xFFs)
                ack.NackLo
                ack.NackHi
                ack.StreamId |]
 
-    /// Parses an ACKNACK frame (keys on the submessage id; header otherwise ignored).
+        match mode with
+        | Appendable -> Array.concat [ ctrlHeaderLen SmAckNack msgSeq 9uy; [| 5uy; 0uy; 0uy; 0uy |]; payload ]
+        | Final -> Array.append (ctrlHeaderLen SmAckNack msgSeq 5uy) payload
+
+    /// ACKNACK control frame in the `Appendable` form (17 octets); see `ackNackFrameWith`.
+    let ackNackFrame (ack: AckNack) (msgSeq: uint16) = ackNackFrameWith Appendable ack msgSeq
+
+    /// Parses an ACKNACK frame (keys on the submessage id). Body-len 9: 4-octet
+    /// DHEADER, payload at offset 12. FINAL body-len 5: payload at offset 8.
+    /// Shorter frames are rejected.
     let tryParseAckNack (frame: byte[]) =
         if frame.Length < 13 || frame.[4] <> SmAckNack then
             None
         else
-            Some
-                { FirstUnacked = int16 (uint16 frame.[8] ||| (uint16 frame.[9] <<< 8))
-                  NackLo = frame.[10]
-                  NackHi = frame.[11]
-                  StreamId = frame.[12] }
+            let withDheader = (int frame.[6] ||| (int frame.[7] <<< 8)) >= 9
+
+            if withDheader && frame.Length < 17 then
+                None
+            else
+                let off = if withDheader then 12 else 8
+
+                Some
+                    { FirstUnacked = int16 (uint16 frame.[off] ||| (uint16 frame.[off + 1] <<< 8))
+                      NackLo = frame.[off + 2]
+                      NackHi = frame.[off + 3]
+                      StreamId = frame.[off + 4] }
 
 // --- Reliable sender ---
 
@@ -283,9 +336,14 @@ type ReliableSender() =
 
 /// Reliable receiver: buffers out-of-order samples, delivers them contiguously,
 /// and reports the missing slots via ACKNACK.
-type ReliableReceiver() =
+type ReliableReceiver(?unannotatedTypes: UnannotatedTypes) =
+    let mode = defaultArg unannotatedTypes Appendable
     let mutable expected = 0us
     let received = SortedDictionary<uint16, byte[]>()
+
+    /// Extensibility of the unannotated Annex A types this receiver writes
+    /// (ACKNACK_Payload). Default `Appendable`.
+    member _.UnannotatedTypes = mode
 
     /// Next expected incoming seqnr.
     member _.Expected = expected
@@ -336,6 +394,10 @@ type ReliableReceiver() =
           NackHi = byte (bitmap >>> 8)
           StreamId = Wire.StreamReliable }
 
+    /// The ACKNACK of `PendingAckNack` as a frame in this receiver's `UnannotatedTypes` form.
+    member this.PendingAckNackFrame(msgSeq: uint16, ?hint: uint16) : byte[] =
+        Wire.ackNackFrameWith mode (this.PendingAckNack(?hint = hint)) msgSeq
+
     /// Clears all receiver state.
     member _.Reset() =
         expected <- 0us
@@ -373,7 +435,7 @@ type ReliableWriterHandle internal (writer: ChannelWriter<byte[]>, state: Writer
 /// ReliableSender and the UDP socket. Mirrors
 /// endpoints/rust/src/reliable.rs::AsyncReliableWriter and
 /// endpoints/csharp/Reliable.cs::AsyncReliableWriter.
-type AsyncReliableWriter private (sock: System.Net.Sockets.Socket, capacity: int) =
+type AsyncReliableWriter private (sock: System.Net.Sockets.Socket, capacity: int, objectId: uint16) =
     let closeState = WriterCloseState()
 
     let channel =
@@ -416,7 +478,7 @@ type AsyncReliableWriter private (sock: System.Net.Sockets.Socket, capacity: int
                 match channel.Reader.TryRead() with
                 | true, sample ->
                     match sender.Submit(sample) with
-                    | Ok, seq -> trySend (Wire.writeFrame seq sample)
+                    | Ok, seq -> trySend (Wire.writeFrame seq objectId sample)
                     | _ -> ()
                 | _ -> more <- false
 
@@ -443,7 +505,7 @@ type AsyncReliableWriter private (sock: System.Net.Sockets.Socket, capacity: int
                             if ((bitmap >>> i) &&& 1us) = 1us then
                                 let seq = baseSeq + uint16 i
                                 match sender.GetInFlight(seq) with
-                                | Some p -> trySend (Wire.writeFrame seq p)
+                                | Some p -> trySend (Wire.writeFrame seq objectId p)
                                 | None -> ()
                     | None -> ()
 
@@ -476,8 +538,10 @@ type AsyncReliableWriter private (sock: System.Net.Sockets.Socket, capacity: int
 
     /// Spawns the drain thread. `sock` must already target the peer (connected UDP
     /// socket); the drain thread owns it exclusively from here on.
-    static member Start(sock: System.Net.Sockets.Socket, ?capacity: int) =
-        new AsyncReliableWriter(sock, defaultArg capacity 1024)
+    /// `objectId` names the target DataWriter in every frame's
+    /// BaseObjectRequest (Sec 7.7.8).
+    static member Start(sock: System.Net.Sockets.Socket, objectId: uint16, ?capacity: int) =
+        new AsyncReliableWriter(sock, defaultArg capacity 1024, objectId)
 
     /// Closes the writer and blocks until the drain thread finishes (the window
     /// has drained, or the best-effort deadline elapsed). Idempotent.

@@ -1,0 +1,186 @@
+# The denominator of docs/spec-coverage/dds-xtypes-1.3.gaps.md.
+# Written by tools/xtypes-1.3-gap-scan/roster.py from the OMG PDF.
+#axis	item	refs	note
+typekind	TK_NONE	7.3.4.2, Annex B	0x00
+typekind	TK_BOOLEAN	7.3.4.2, Annex B	0x01
+typekind	TK_BYTE	7.3.4.2, Annex B	0x02
+typekind	TK_INT16	7.3.4.2, Annex B	0x03
+typekind	TK_INT32	7.3.4.2, Annex B	0x04
+typekind	TK_INT64	7.3.4.2, Annex B	0x05
+typekind	TK_UINT16	7.3.4.2, Annex B	0x06
+typekind	TK_UINT32	7.3.4.2, Annex B	0x07
+typekind	TK_UINT64	7.3.4.2, Annex B	0x08
+typekind	TK_FLOAT32	7.3.4.2, Annex B	0x09
+typekind	TK_FLOAT64	7.3.4.2, Annex B	0x0a
+typekind	TK_FLOAT128	7.3.4.2, Annex B	0x0b
+typekind	TK_INT8	7.3.4.2, Annex B	0x0c
+typekind	TK_UINT8	7.3.4.2, Annex B	0x0d
+typekind	TK_CHAR8	7.3.4.2, Annex B	0x10
+typekind	TK_CHAR16	7.3.4.2, Annex B	0x11
+typekind	TK_STRING8	7.3.4.2, Annex B	0x20
+typekind	TK_STRING16	7.3.4.2, Annex B	0x21
+typekind	TK_ALIAS	7.3.4.2, Annex B	0x30
+typekind	TK_ENUM	7.3.4.2, Annex B	0x40
+typekind	TK_BITMASK	7.3.4.2, Annex B	0x41
+typekind	TK_ANNOTATION	7.3.4.2, Annex B	0x50
+typekind	TK_STRUCTURE	7.3.4.2, Annex B	0x51
+typekind	TK_UNION	7.3.4.2, Annex B	0x52
+typekind	TK_BITSET	7.3.4.2, Annex B	0x53
+typekind	TK_SEQUENCE	7.3.4.2, Annex B	0x60
+typekind	TK_ARRAY	7.3.4.2, Annex B	0x61
+typekind	TK_MAP	7.3.4.2, Annex B	0x62
+typeid	TK_NONE	7.3.4.2, Table 29	0x00
+typeid	TK_BOOLEAN	7.3.4.2, Table 29	0x01
+typeid	TK_BYTE	7.3.4.2, Table 29	0x02
+typeid	TK_INT16	7.3.4.2, Table 29	0x03
+typeid	TK_INT32	7.3.4.2, Table 29	0x04
+typeid	TK_INT64	7.3.4.2, Table 29	0x05
+typeid	TK_UINT16	7.3.4.2, Table 29	0x06
+typeid	TK_UINT32	7.3.4.2, Table 29	0x07
+typeid	TK_UINT64	7.3.4.2, Table 29	0x08
+typeid	TK_FLOAT32	7.3.4.2, Table 29	0x09
+typeid	TK_FLOAT64	7.3.4.2, Table 29	0x0a
+typeid	TK_FLOAT128	7.3.4.2, Table 29	0x0b
+typeid	TK_INT8	7.3.4.2, Table 29	0x0c
+typeid	TK_UINT8	7.3.4.2, Table 29	0x0d
+typeid	TK_CHAR8	7.3.4.2, Table 29	0x10
+typeid	TK_CHAR16	7.3.4.2, Table 29	0x11
+typeid	TI_STRING8_SMALL	7.3.4.2, Table 29	0x70
+typeid	TI_STRING8_LARGE	7.3.4.2, Table 29	0x71
+typeid	TI_STRING16_SMALL	7.3.4.2, Table 29	0x72
+typeid	TI_STRING16_LARGE	7.3.4.2, Table 29	0x73
+typeid	TI_PLAIN_SEQUENCE_SMALL	7.3.4.2, Table 29	0x80
+typeid	TI_PLAIN_SEQUENCE_LARGE	7.3.4.2, Table 29	0x81
+typeid	TI_PLAIN_ARRAY_SMALL	7.3.4.2, Table 29	0x90
+typeid	TI_PLAIN_ARRAY_LARGE	7.3.4.2, Table 29	0x91
+typeid	TI_PLAIN_MAP_SMALL	7.3.4.2, Table 29	0xa0
+typeid	TI_PLAIN_MAP_LARGE	7.3.4.2, Table 29	0xa1
+typeid	TI_STRONGLY_CONNECTED_COMPONENT	7.3.4.2, Table 29	0xb0
+typeid	EK_COMPLETE	7.3.4.2, Table 29	0xf2
+typeid	EK_MINIMAL	7.3.4.2, Table 29	0xf1
+typeid	TK_ANNOTATION	7.3.4.2, Table 29	0x50
+typeid	TI_EXTENDED	7.3.4.2, Table 29	default
+annotation	@optional	7.3.1.2.1, Table 21	Table 21
+annotation	@must_understand	7.3.1.2.1, Table 21	Table 21
+annotation	@non_serialized	7.3.1.2.1, Table 21	Table 21
+annotation	@id	7.3.1.2.1, Table 21	Table 21
+annotation	@hashid	7.3.1.2.1, Table 21	Table 21
+annotation	@external	7.3.1.2.1, Table 21	Table 21
+annotation	@try_construct	7.3.1.2.1, Table 21	Table 21
+annotation	@key	7.3.1.2.1, Table 21	Table 21
+annotation	@bit_bound	7.3.1.2.1, Table 21	Table 21
+annotation	@extensibility	7.3.1.2.1, Table 21	Table 21
+annotation	@mutable	7.3.1.2.1, Table 21	Table 21
+annotation	@appendable	7.3.1.2.1, Table 21	Table 21
+annotation	@final	7.3.1.2.1, Table 21	Table 21
+annotation	@nested	7.3.1.2.1, Table 21	Table 21
+annotation	@default_literal	7.3.1.2.1, Table 21	Table 21
+annotation	@value	7.3.1.2.1, Table 21	Table 21
+annotation	@position	7.3.1.2.1, Table 21	Table 21
+annotation	@autoid	7.3.1.2.1, Table 21	Table 21
+annotation	@verbatim	7.3.1.2.1, Table 21	Table 21
+annotation	@default_nested	7.3.1.2.1	subclause only
+annotation	@ignore_literal_names	7.3.1.2.1	subclause only
+annotation	@data_representation	7.3.1.2.1	subclause only
+annotation	@topic	7.3.1.2.1	subclause only
+annotation	@default	7.3.1.2.1	subclause only
+assign	as-equiv	7.2.4.4.1	Assignability of Equivalent Types
+assign	as-nonser	7.2.4.4.2	Members that are marked as non-serialized
+assign	as-delimited	7.2.4.2	Concept of Delimited Types
+assign	as-strong	7.2.4.3	alternatively if T1 is assignable-from T2 and T2 is a delimited type
+assign	as-alias-1	7.2.4.4.3, Table 14	T2 if and only if T1.base_type
+assign	as-alias-2	7.2.4.4.3, Table 14	ALIAS_TYPE T2 if and only if T1
+assign	as-alias-3	7.2.4.4.3, Table 14	ALIAS_TYPE ALIAS_TYPE if and only if
+assign	as-alias-resolve	7.2.4.4.3	fully resolved to their ultimate base types
+assign	as-prim-same	7.2.4.4.4, Table 15	Any Primitive Type The same Primitive Type
+assign	as-prim-u8-bm	7.2.4.4.4, Table 15	UINT8_TYPE BITMASK_TYPE if and only if
+assign	as-prim-u16-bm	7.2.4.4.4, Table 15	UINT16_TYPE BITMASK_TYPE if and only if
+assign	as-prim-u32-bm	7.2.4.4.4, Table 15	UINT32_TYPE BITMASK_TYPE if and only if
+assign	as-prim-u64-bm	7.2.4.4.4, Table 15	UINT64_TYPE BITMASK_TYPE if and only if
+assign	as-str-1	7.2.4.4.5, Table 16	STRING_TYPE STRING_TYPE if and only if
+assign	as-str-len	7.2.4.4.5, Table 16	O2.length <= T1.length
+assign	as-str-narrow-wide	7.2.4.4.5.1	from string types of wide characters, because of the possibility
+assign	as-arr-bounds	7.2.4.4.6, Table 17	T1.bounds[] ==
+assign	as-arr-elem	7.2.4.4.6, Table 17	ARRAY_TYPE ARRAY_TYPE if and only if
+assign	as-seq-elem	7.2.4.4.6, Table 17	SEQUENCE_TYPE SEQUENCE_TYPE if and only if
+assign	as-seq-len	7.2.4.4.6, Table 17	O1.length is set to O2.length.
+assign	as-map-key	7.2.4.4.6, Table 17	T1.key_element_type is
+assign	as-map-val	7.2.4.4.6, Table 17	T2.key_element_type
+assign	as-coll-discard	7.2.4.4.6, Table 17	If DISCARD, O2 cannot
+assign	as-coll-usedefault	7.2.4.4.6, Table 17	If USE_DEFAULT or TRIM,
+assign	as-bm-bound	7.2.4.4.7, Table 18	BITMASK_TYPE BITMASK_TYPE if and only if T1.bound ==
+assign	as-bm-u32	7.2.4.4.7, Table 18	UINT_32_TYPE if and only if T1.bound is
+assign	as-bm-u16	7.2.4.4.7, Table 18	UINT_16_TYPE if and only if T1.bound is
+assign	as-bm-u64	7.2.4.4.7, Table 18	UINT_64_TYPE if and only if T1.bound is
+assign	as-bm-u8	7.2.4.4.7, Table 18	UINT_8_TYPE if and only if T1.bound is
+assign	as-enum-ext	7.2.4.4.7, Table 18	T1.extensibility == T2.extensibility
+assign	as-enum-names	7.2.4.4.7, Table 18	value in T1 and T2 also have the same
+assign	as-enum-ignore-names	7.2.4.4.7, Table 18	with the @ignore_literal_names
+assign	as-enum-final	7.2.4.4.7, Table 18	If extensibility is final T1 and T2 have
+assign	as-union-ext	7.2.4.4.8, Table 19	T1.extensibility ==
+assign	as-union-disc-strong	7.2.4.4.8, Table 19	T1.discriminator.type is-
+assign	as-union-disc-key	7.2.4.4.8, Table 19	Either the discriminators of both
+assign	as-union-name-id	7.2.4.4.8, Table 19	Any members in T1 and T2 that
+assign	as-union-label-t2	7.2.4.4.8, Table 19	For all non-default labels in T2
+assign	as-union-label-t1	7.2.4.4.8, Table 19	If any non-default labels in T1
+assign	as-union-both-default	7.2.4.4.8, Table 19	If T1 and T2 both have default
+assign	as-union-final-labels	7.2.4.4.8, Table 19	extensibility is final then the set
+assign	as-struct-ext	7.2.4.4.8, Table 19	T1 and T2 have the same
+assign	as-struct-name-id	7.2.4.4.8, Table 19	same ID also have the same name.
+assign	as-struct-one-common	7.2.4.4.8, Table 19	of T1 and one corresponding
+assign	as-struct-keyerased	7.2.4.4.8, Table 19	KeyErased(m1.type) is-assignable-
+assign	as-struct-mustunderstand	7.2.4.4.8, Table 19	Members for which both optional is
+assign	as-struct-key-present	7.2.4.4.8, Table 19	Members marked as key in either T1
+assign	as-struct-key-string	7.2.4.4.8, Table 19	For any string key member m2 in
+assign	as-struct-key-enum	7.2.4.4.8, Table 19	For any enumerated key member m2
+assign	as-struct-key-seqmap	7.2.4.4.8, Table 19	For any sequence or map key
+assign	as-struct-key-aggr	7.2.4.4.8, Table 19	For any structure or union key
+assign	as-struct-key-union	7.2.4.4.8, Table 19	For any union key member m2 in
+assign	as-struct-appendable	7.2.4.4.8, Table 19	AND if T1 is appendable, then
+assign	as-struct-final	7.2.4.4.8, Table 19	AND if T1 is final, then they meet the
+assign	as-struct-inherit	7.2.4.4.8, Table 19	conditions, members belonging to base
+typeobject	TK_ALIAS	7.3.4.3, 7.3.4.4, Annex B	Minimal+Complete
+typeobject	TK_ANNOTATION	7.3.4.3, 7.3.4.4, Annex B	Minimal+Complete
+typeobject	TK_ARRAY	7.3.4.3, 7.3.4.4, Annex B	Minimal+Complete
+typeobject	TK_BITMASK	7.3.4.3, 7.3.4.4, Annex B	Minimal+Complete
+typeobject	TK_BITSET	7.3.4.3, 7.3.4.4, Annex B	Minimal+Complete
+typeobject	TK_ENUM	7.3.4.3, 7.3.4.4, Annex B	Minimal+Complete
+typeobject	TK_MAP	7.3.4.3, 7.3.4.4, Annex B	Minimal+Complete
+typeobject	TK_SEQUENCE	7.3.4.3, 7.3.4.4, Annex B	Minimal+Complete
+typeobject	TK_STRUCTURE	7.3.4.3, 7.3.4.4, Annex B	Minimal+Complete
+typeobject	TK_UNION	7.3.4.3, 7.3.4.4, Annex B	Minimal+Complete
+typeobject	EXTENDED	7.3.4.3, 7.3.4.4	default arm
+typeobject	EK_MINIMAL	7.3.4.5	TypeObject discriminator
+typeobject	EK_COMPLETE	7.3.4.5	TypeObject discriminator
+typelookup	TypeLookup_getTypes_In	7.6.3.3.3	IDL
+typelookup	TypeLookup_getTypes_Out	7.6.3.3.3	IDL
+typelookup	TypeLookup_getTypes_Result	7.6.3.3.3	IDL
+typelookup	TypeLookup_getTypeDependencies_In	7.6.3.3.3	IDL
+typelookup	TypeLookup_getTypeDependencies_Out	7.6.3.3.3	IDL
+typelookup	TypeLookup_getTypeDependencies_Result	7.6.3.3.3	IDL
+typelookup	TypeLookup_Call	7.6.3.3.3	IDL
+typelookup	TypeLookup_Request	7.6.3.3.3	IDL
+typelookup	TypeLookup_Return	7.6.3.3.3	IDL
+typelookup	TypeLookup_Reply	7.6.3.3.3	IDL
+typelookup	getTypeDependencies	7.6.3.3.4	operation
+typelookup	getTypes	7.6.3.3.4	operation
+typelookup	TypeLookupServiceRequestWriter	7.6.3.3.3, Table 61	built-in endpoint
+typelookup	TypeLookupServiceRequestReader	7.6.3.3.3, Table 61	built-in endpoint
+typelookup	TypeLookupServiceReplyWriter	7.6.3.3.3, Table 61	built-in endpoint
+typelookup	TypeLookupServiceReplyReader	7.6.3.3.3, Table 61	built-in endpoint
+datarep	offered=XCDR requested=XCDR	7.6.3.1, Table 59	Compatible
+datarep	offered=XCDR requested=XCDR+XCDR2	7.6.3.1, Table 59	Compatible
+datarep	offered=XCDR2 requested=XCDR	7.6.3.1, Table 59	Not Compatible
+datarep	offered=XCDR2 requested=XCDR+XCDR2	7.6.3.1, Table 59	Compatible
+datarep	CDR_BE=0x00	7.6.3.1.2, Table 60	FINAL v1 Big Endian
+datarep	CDR_LE=0x01	7.6.3.1.2, Table 60	FINAL v1 Little Endian
+datarep	CDR_BE=0x00	7.6.3.1.2, Table 60	APPENDABLE v1 Big Endian
+datarep	CDR_LE=0x01	7.6.3.1.2, Table 60	APPENDABLE v1 Little Endian
+datarep	PL_CDR_BE=0x02	7.6.3.1.2, Table 60	MUTABLE v1 Big Endian
+datarep	PL_CDR_LE=0x03	7.6.3.1.2, Table 60	MUTABLE v1 Little Endian
+datarep	CDR2_BE=0x06	7.6.3.1.2, Table 60	FINAL v2 Big Endian
+datarep	CDR2_LE=0x07	7.6.3.1.2, Table 60	FINAL v2 Little Endian
+datarep	D_CDR2_BE=0x08	7.6.3.1.2, Table 60	APPENDABLE v2 Big Endian
+datarep	D_CDR2_LE=0x09	7.6.3.1.2, Table 60	APPENDABLE v2 Little Endian
+datarep	PL_CDR2_BE=0x0a	7.6.3.1.2, Table 60	MUTABLE v2 Big Endian
+datarep	PL_CDR_LE=0x0b	7.6.3.1.2, Table 60	MUTABLE v2 Little Endian

@@ -21,7 +21,7 @@ pub struct HistoricalSample {
     /// `SourceTimestamp` as Windows FILETIME ticks (i64).
     pub source_timestamp: i64,
     /// `DataValue` (incl. Variant + StatusCode) — Spec Tab 8.6
-    /// HistoryReadResult.history_data has sequence<DataValue>.
+    /// HistoryReadResult.history_data has `sequence<DataValue>`.
     pub value: DataValue,
 }
 
@@ -117,10 +117,46 @@ impl InMemoryHistoryCache {
             .insert(sample.source_timestamp, sample);
     }
 
+    /// As [`Self::push`], then evicts the oldest sample(s) of this stream
+    /// until it holds at most `max_depth` — the retention bound Spec
+    /// §9.3.4.4's own text leaves to the implementer ("their HISTORY QoS
+    /// Policy shall be configured... with a HISTORY_DEPTH big enough"; see
+    /// [`super::qos::HistoryQosValidator`]). `push` itself stays unbounded:
+    /// a caller that wants no eviction (e.g. `KEEP_ALL`, resource limits
+    /// permitting) keeps using it.
+    pub fn push_bounded(
+        &mut self,
+        instance_handle: alloc::string::String,
+        sample: HistoricalSample,
+        max_depth: usize,
+    ) {
+        let stream = self.streams.entry(instance_handle).or_default();
+        stream.insert(sample.source_timestamp, sample);
+        while stream.len() > max_depth {
+            // `BTreeMap` orders by key (`source_timestamp`), so the first
+            // entry is the oldest — evicting it, not an arbitrary one, is
+            // what "retention bound" means for a time series.
+            let Some(&oldest) = stream.keys().next() else {
+                break;
+            };
+            stream.remove(&oldest);
+        }
+    }
+
     /// Number of samples per instance — for tests.
     #[must_use]
     pub fn len(&self, instance_handle: &str) -> usize {
         self.streams.get(instance_handle).map_or(0, BTreeMap::len)
+    }
+
+    /// Ensures `instance_handle` has a (possibly empty) stream, so a later
+    /// [`Self::read_history`] on it answers with an empty result instead of
+    /// [`HistoryReadError::UnknownInstance`] — the caller marked the
+    /// instance historizing; it not having a sample *yet* is not the same
+    /// fact as it never having been declared historizing at all, and the
+    /// two must not collapse onto the same error.
+    pub fn ensure_stream(&mut self, instance_handle: alloc::string::String) {
+        self.streams.entry(instance_handle).or_default();
     }
 }
 
@@ -309,6 +345,34 @@ mod tests {
     }
 
     #[test]
+    fn push_bounded_evicts_the_oldest_sample_past_max_depth() {
+        let mut cache = InMemoryHistoryCache::new();
+        for i in 0..5i64 {
+            cache.push_bounded("inst".into(), make_sample(i, i as i32), 3);
+        }
+        assert_eq!(cache.len("inst"), 3);
+        let res = cache
+            .read_history(
+                "inst",
+                &ReadHistoryQuery::Raw {
+                    start_time: 0,
+                    end_time: 100,
+                    num_values_per_node: 0,
+                    return_bounds: false,
+                },
+            )
+            .unwrap();
+        // The two oldest (ts 0, 1) were evicted; 2, 3, 4 remain.
+        assert_eq!(
+            res.samples
+                .iter()
+                .map(|s| s.source_timestamp)
+                .collect::<Vec<_>>(),
+            alloc::vec![2, 3, 4]
+        );
+    }
+
+    #[test]
     fn unknown_instance_errors() {
         let cache = InMemoryHistoryCache::new();
         let err = cache
@@ -323,5 +387,24 @@ mod tests {
             )
             .unwrap_err();
         assert_eq!(err, HistoryReadError::UnknownInstance);
+    }
+
+    #[test]
+    fn ensure_stream_makes_an_empty_read_ok_not_unknown_instance() {
+        let mut cache = InMemoryHistoryCache::new();
+        cache.ensure_stream(alloc::string::String::from("historizing-but-empty"));
+        let result = cache
+            .read_history(
+                "historizing-but-empty",
+                &ReadHistoryQuery::Raw {
+                    start_time: 0,
+                    end_time: 100,
+                    num_values_per_node: 0,
+                    return_bounds: false,
+                },
+            )
+            .expect("a stream declared via ensure_stream is known, not unknown");
+        assert!(result.samples.is_empty());
+        assert!(!result.more_available);
     }
 }

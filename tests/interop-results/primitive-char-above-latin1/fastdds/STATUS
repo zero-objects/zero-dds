@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of primitive-char-above-latin1 that fastdds produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	zd_c5::Sample.too_wide: expected a character below U+0100, found U+0161
+plain-cdr1	be	refused	zd_c5::Sample.too_wide: expected a character below U+0100, found U+0161
+pl-cdr1	le	refused	zd_c5::Sample.too_wide: expected a character below U+0100, found U+0161
+pl-cdr1	be	refused	zd_c5::Sample.too_wide: expected a character below U+0100, found U+0161
+plain-cdr2	le	refused	zd_c5::Sample.too_wide: expected a character below U+0100, found U+0161
+plain-cdr2	be	refused	zd_c5::Sample.too_wide: expected a character below U+0100, found U+0161
+delimited-cdr	le	refused	zd_c5::Sample.too_wide: expected a character below U+0100, found U+0161
+delimited-cdr	be	refused	zd_c5::Sample.too_wide: expected a character below U+0100, found U+0161
+pl-cdr2	le	refused	zd_c5::Sample.too_wide: expected a character below U+0100, found U+0161
+pl-cdr2	be	refused	zd_c5::Sample.too_wide: expected a character below U+0100, found U+0161

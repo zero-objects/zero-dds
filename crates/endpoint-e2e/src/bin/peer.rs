@@ -8,9 +8,12 @@
 //! XRCE frames with the genuine `zerodds-cdr` / `zerodds-xrce` codecs.
 //!
 //! Usage:
-//!   peer pingpong <port>                  # one Ping -> Pong exchange
-//!   peer reliable <port> <drop_every> [n] # reliable receiver, injects loss,
-//!                                          # asserts n gap-free (default 12)
+//!
+//! ```text
+//! peer pingpong <port>                  # one Ping -> Pong exchange
+//! peer reliable <port> <drop_every> [n] # reliable receiver, injects loss,
+//!                                       # asserts n gap-free (default 12)
+//! ```
 
 #![allow(clippy::print_stdout, clippy::print_stderr, clippy::expect_used)]
 

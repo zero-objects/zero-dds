@@ -27,7 +27,7 @@ SAMPLE = {
 
 
 def encode(endian):
-    w = zw.Writer(endian)
+    w = zw.Writer(endian, zw.XCDR2)
     w.put_u32(SAMPLE["id"])
     w.put_u16(SAMPLE["kind"])
     w.put_u8(SAMPLE["flags"])
@@ -39,7 +39,7 @@ def encode(endian):
 
 
 def decode(data, endian):
-    r = zw.Reader(data, endian)
+    r = zw.Reader(data, endian, zw.XCDR2)
     return {
         "id": r.get_u32(),
         "kind": r.get_u16(),

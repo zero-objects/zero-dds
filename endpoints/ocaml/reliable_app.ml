@@ -26,7 +26,7 @@ let () =
   Unix.bind sock (Unix.ADDR_INET (Unix.inet_addr_loopback, 0));
   let peer_addr = Unix.ADDR_INET (Unix.inet_addr_loopback, port) in
 
-  let writer = Reliable.Writer.create sock peer_addr in
+  let writer = Reliable.Writer.create sock peer_addr 0x0015 in
   for i = 0 to n - 1 do
     Reliable.Writer.enqueue writer (sample_of i)
   done;

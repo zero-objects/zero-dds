@@ -1,0 +1,8 @@
+// `sequence<long, 1>` full and empty
+// IDL 4.2 §7.4.1.4.4.3 admits the bound; XTypes 1.3 §7.4.3.4.4 writes the
+// length regardless of it.
+@final struct Sample {
+    sequence<long, 1> full;
+    sequence<long, 1> none;
+    long tail;
+};

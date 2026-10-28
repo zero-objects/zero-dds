@@ -10,16 +10,19 @@ import os
 import sys
 
 from zerodds_reliable import (
+    BASE_SIZE,
     MAX_PAYLOAD,
     RECEIVER_BUFFER,
     RELIABLE_STREAM_ID,
     SENDER_WINDOW,
     ReliableReceiver,
     ReliableSender,
+    UNANNOTATED_FINAL,
     acknack_frame,
     heartbeat_frame,
     parse_acknack,
     parse_heartbeat,
+    reliable_write_frame,
 )
 
 _failed = [0]
@@ -49,6 +52,22 @@ def test_submit_rejects_payload_too_large():
     s = ReliableSender()
     status, _ = s.submit(bytes(MAX_PAYLOAD + 1))
     check(status == "too_large", "submit_rejects_payload_too_large")
+
+
+def test_write_frame_refuses_body_above_16_bit_length():
+    # The bound is the body's (BaseObjectRequest + sample): exactly 0xFFFF
+    # frames, one octet more is refused rather than truncating the field.
+    maximal = reliable_write_frame(1, 0x0015, bytes(MAX_PAYLOAD))
+    check(
+        len(maximal) == 8 + 0xFFFF and maximal[6] | (maximal[7] << 8) == 0xFFFF,
+        "write_frame_maximal_body_framed",
+    )
+    check(MAX_PAYLOAD == 0xFFFF - BASE_SIZE, "max_payload_is_body_budget")
+    try:
+        reliable_write_frame(1, 0x0015, bytes(MAX_PAYLOAD + 1))
+        check(False, "write_frame_refuses_body_above_16_bit_length")
+    except ValueError:
+        check(True, "write_frame_refuses_body_above_16_bit_length")
 
 
 def test_submit_rejects_when_window_full():
@@ -202,6 +221,36 @@ def test_end_to_end_sender_receiver_with_loss_recovery():
 # --- byte-golden ----------------------------------------------------------
 
 
+def test_acknack_dheader_and_legacy():
+    an = acknack_frame(1, 1, 0, 0x80)
+    check(len(an) == 17 and an[6] == 9 and an[8:12] == b"\x05\x00\x00\x00",
+          "acknack_17_octets_with_dheader")
+    check(parse_acknack(an) == (1, 0, 0x80), "acknack_parse_dheader_form")
+    legacy = an[:6] + b"\x05\x00" + an[12:]
+    check(len(legacy) == 13 and parse_acknack(legacy) == (1, 0, 0x80),
+          "acknack_parse_legacy_5_octet")
+
+
+def test_acknack_unannotated_types():
+    final_golden = bytes(bytearray([0x80, 0x00, 0x01, 0x00, 0x0A, 0x01, 0x05, 0x00,
+                                    0x01, 0x00, 0x00, 0x00, 0x80]))
+    fin = acknack_frame(1, 1, 0, 0x80, unannotated_types="final")
+    check(fin == final_golden, "acknack_final_13_octet_golden")
+    app = acknack_frame(1, 1, 0, 0x80)
+    check(len(app) == 17 and app == acknack_frame(1, 1, 0, 0x80, unannotated_types="appendable"),
+          "acknack_default_is_appendable_17_octets")
+    check(parse_acknack(fin) == (1, 0, 0x80) and parse_acknack(app) == (1, 0, 0x80),
+          "acknack_parse_both_forms")
+    check(len(ReliableReceiver(unannotated_types=UNANNOTATED_FINAL).acknack_frame()) == 13,
+          "receiver_final_writes_13_octets")
+    check(len(ReliableReceiver().acknack_frame()) == 17, "receiver_default_writes_17_octets")
+    try:
+        acknack_frame(1, 1, 0, 0x80, unannotated_types="mutable")
+        check(False, "acknack_unknown_mode_refused")
+    except ValueError:
+        check(True, "acknack_unknown_mode_refused")
+
+
 def test_byte_golden(gold_dir):
     hb_path = os.path.join(gold_dir, "golden_heartbeat_le.bin")
     an_path = os.path.join(gold_dir, "golden_acknack_le.bin")
@@ -230,6 +279,7 @@ def test_byte_golden(gold_dir):
 def main():
     test_submit_assigns_monotonic_seqnrs()
     test_submit_rejects_payload_too_large()
+    test_write_frame_refuses_body_above_16_bit_length()
     test_submit_rejects_when_window_full()
     test_pending_heartbeat()
     test_recv_acknack_clears_acked_keeps_missing()
@@ -239,6 +289,8 @@ def main():
     test_recv_data_drops_duplicates()
     test_recv_data_rejects_when_buffer_full()
     test_pending_acknack_marks_missing_slots()
+    test_acknack_dheader_and_legacy()
+    test_acknack_unannotated_types()
     test_reset_clears_state()
     test_end_to_end_sender_receiver_with_loss_recovery()
 

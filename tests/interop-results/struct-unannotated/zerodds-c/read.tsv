@@ -1,0 +1,14 @@
+# What zerodds-c got back when it read the bytes of struct-unannotated, held against
+# tests/interop-corpus/struct-unannotated/values.json and never against another
+# column's reading of the same bytes.
+# encoding	endian	verdict	detail
+plain-cdr1	le	same	
+plain-cdr1	be	same	
+pl-cdr1	le	same	
+pl-cdr1	be	same	
+plain-cdr2	le	same	
+plain-cdr2	be	same	
+delimited-cdr	le	same	
+delimited-cdr	be	same	
+pl-cdr2	le	same	
+pl-cdr2	be	same	

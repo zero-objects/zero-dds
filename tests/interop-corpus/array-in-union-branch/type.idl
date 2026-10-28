@@ -1,0 +1,12 @@
+// a union branch that is an array
+// IDL 4.2 §7.4.1.4.4.2.4: the branch declares an anonymous array, whose
+// element count is in the type and not on the wire.
+union Choice switch (long) {
+    case 1: long block[3];
+    default: double fraction;
+};
+
+@final struct Sample {
+    Choice picked;
+    long tail;
+};

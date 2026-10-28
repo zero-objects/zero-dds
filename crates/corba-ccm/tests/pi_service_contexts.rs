@@ -8,13 +8,13 @@
 
 use std::sync::{Arc, Mutex};
 
-use zerodds_cdr::Endianness;
 use zerodds_corba_ccm::orb_extensions::{
     ClientInterceptionPoint, ClientRequestInterceptor, InterceptorRegistry, RequestInfo,
     ServerInterceptionPoint, ServerRequestInterceptor, ServiceContextInjector,
 };
 use zerodds_corba_cos_transactions::{Otid, PropagationContext, TRANSACTION_SERVICE_CONTEXT_ID};
 use zerodds_corba_csiv2::gssup::GssupCredentialToken;
+use zerodds_wire::Endianness;
 
 const SAS_ID: u32 = 15; // SecurityAttributeService
 

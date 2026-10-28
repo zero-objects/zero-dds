@@ -11,11 +11,12 @@
 //!
 //! ## Layer position
 //!
-//! Layer 4 — Core Services. Built on Layer 1
-//! (foundation/cdr/qos/types/time-service), Layer 2
-//! (rtps/discovery/transport-*), Layer 3 (idl/idl-rust/xml).
+//! Layer 4 — Core Services. Built on `foundation`, `qos`, `types`,
+//! `config`, `sql-filter`; `rtps`, `discovery`, `transport-udp`/`-tcp` and,
+//! by feature, `transport-shm`/`-uds`/`-tsn`; the codec layer `wire`,
+//! `wire-codec`, `ast`; and, by feature, the `security*` crates.
 //!
-//! ## Public API (as of 1.0.0-rc.1)
+//! ## Public API
 //!
 //! - [`DomainParticipantFactory`] — singleton factory;
 //!   `create_participant` spawns a live runtime with UDP/SPDP/SEDP/WLP,
@@ -60,18 +61,29 @@
 //! writer.write(&RawBytes::new(vec![1, 2, 3])).expect("write");
 //! ```
 
-#![cfg_attr(not(feature = "std"), no_std)]
+// Needs `std`: the runtime runs on threads and sockets; `alloc` implies `std` in Cargo.toml.
 #![deny(unsafe_code)]
 #![warn(missing_docs)]
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
+#[cfg(all(feature = "std", feature = "security"))]
+mod access_request;
 pub mod builtin_subscriber;
 pub mod builtin_topics;
+#[cfg(feature = "alloc")]
+pub mod builtin_type_set;
+#[cfg(feature = "std")]
+pub mod builtin_types;
+#[cfg(feature = "std")]
+pub mod cli;
 pub mod coherent_set;
 #[cfg(feature = "std")]
 pub mod condition;
+/// The endpoints a Publisher or Subscriber holds.
+#[cfg(feature = "std")]
+mod contained;
 /// Cross-vendor same-host zero-copy with Cyclone over iceoryx C++ (POSH).
 #[cfg(all(feature = "std", feature = "cyclone-iox", target_os = "linux"))]
 pub mod cyclone_iox_integration;
@@ -84,6 +96,8 @@ pub mod factory;
 /// ADR-0005: opt-in flatdata integration.
 #[cfg(all(feature = "std", feature = "flatdata-integration"))]
 pub mod flatdata_integration;
+#[cfg(feature = "std")]
+pub(crate) mod group_order;
 /// In-process discovery fastpath (same-process, same-domain).
 #[cfg(feature = "std")]
 mod inproc;
@@ -92,31 +106,37 @@ pub mod instance_handle;
 pub mod instance_tracker;
 #[cfg(feature = "alloc")]
 pub mod interop;
-/// Preference-ordered multi-transport for user traffic (SHM + UDP fallback).
+#[cfg(feature = "alloc")]
+pub mod key_hash;
 #[cfg(feature = "std")]
 pub mod layered_transport;
 pub mod listener;
 #[cfg(feature = "std")]
 pub mod listener_dispatch;
+/// Status listeners run on a change, not on a poll (DDS 1.4 §2.2.4.1).
+#[cfg(feature = "std")]
+pub(crate) mod listener_dispatcher;
+/// Per-writer liveliness at a DataReader — `LIVELINESS_CHANGED` (DDS 1.4 §2.2.4.1).
+#[cfg(feature = "std")]
+pub mod liveliness_tracker;
 #[cfg(feature = "metrics")]
 pub mod metrics;
+#[cfg(feature = "std")]
+pub(crate) mod multitopic;
 pub mod participant;
+#[cfg(feature = "std")]
+pub mod presentation;
 pub mod psm_constants;
 pub mod publisher;
 pub mod qos;
 #[cfg(feature = "std")]
 pub mod runtime;
-pub mod same_host;
-/// Wave 4b.3: feature-gated bridge between the `same_host` tracker and
-/// `zerodds-transport-shm::PosixShmTransport`. Only compiled when the
-/// `same-host-shm` feature is active.
+#[cfg(all(feature = "std", feature = "same-host-shm"))]
+pub mod same_host_channel;
+/// Segment configuration and orphan sweep of the same-host SHM channels.
+/// Only compiled when the `same-host-shm` feature is active.
 #[cfg(all(feature = "std", feature = "same-host-shm"))]
 pub mod same_host_shm;
-/// 4b.5: alternative UDS datagram backend for same-host paths. Not true
-/// zero-copy but container-friendly. Only compiled when the
-/// `same-host-uds` feature is active.
-#[cfg(all(feature = "std", feature = "same-host-uds"))]
-pub mod same_host_uds;
 pub mod sample;
 pub mod sample_bytes;
 pub mod sample_info;
@@ -124,6 +144,10 @@ pub mod sample_info;
 /// fixed-period tick poll). Std-only (mpsc channel + Instant park).
 #[cfg(feature = "std")]
 pub mod scheduler;
+#[cfg(all(feature = "std", feature = "security"))]
+pub mod security_log_topic;
+#[cfg(feature = "std")]
+pub mod serialized_type;
 /// Multi-peer SHM adapter for `user_unicast` transport selection. Wraps
 /// multiple `PosixShmTransport` pairs behind the transport trait.
 /// Feature-gated via `same-host-shm` because zerodds-transport-shm is
@@ -133,9 +157,23 @@ pub mod shm_user;
 pub mod status;
 pub mod subscriber;
 pub mod time;
+pub mod time_source;
 pub mod topic;
 #[cfg(feature = "std")]
+mod type_lookup_transport;
+pub mod type_support;
+#[cfg(feature = "std")]
 pub mod wlp;
+/// The XML Data Representation of a sample (DDS-XTypes 1.3 §7.4.4).
+#[cfg(feature = "std")]
+pub mod xml_data;
+
+/// A Cryptographic plugin that records the calls made to it, shared with
+/// the integration tests (`tests/common`).
+#[cfg(all(test, feature = "security"))]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#[path = "../tests/common/recording_crypto.rs"]
+mod recording_crypto;
 
 // Flat re-exports for the typical import line.
 pub use builtin_subscriber::{BuiltinSinks, BuiltinSubscriber, BuiltinTopic, builtin_reader_qos};
@@ -151,37 +189,53 @@ pub use dds_type::{
 };
 pub use entity::{Entity, EntityState, StatusCondition, StatusMask, immutable_if_enabled};
 /// The SQL-filter field value type ([`DdsType::field_value`] / content-filtered
-/// topics). Re-exported so `#[derive(DdsType)]` can emit `field_value` without
-/// the user crate depending on `zerodds-sql-filter` directly.
+/// topics). Re-exported so the `DdsType` impl `zerodds-build` generates can
+/// emit `field_value` without the user crate depending on `zerodds-sql-filter`
+/// directly.
 pub use zerodds_sql_filter::Value as FilterValue;
 
 pub use coherent_set::{CoherentScope, CoherentSetMarker, GroupAccessScope};
 #[cfg(feature = "std")]
-pub use condition::{Condition, GuardCondition, QueryCondition, ReadCondition, WaitSet};
+pub use condition::{
+    Condition, GuardCondition, QueryCondition, ReadCondition, ReadConditionArg, WaitSet,
+};
 pub use error::{DdsError, Result};
 pub use factory::DomainParticipantFactory;
+#[cfg(feature = "std")]
+pub use factory::THE_PARTICIPANT_FACTORY;
 pub use instance_handle::{HANDLE_NIL, InstanceHandle, InstanceHandleAllocator};
 #[cfg(feature = "std")]
 pub use instance_tracker::{InstanceState, InstanceTracker, KeyHash};
 #[cfg(feature = "std")]
 pub use participant::IgnoreFilter;
 pub use participant::{DomainId, DomainParticipant};
+pub use psm_constants::{
+    DATAREADER_QOS_DEFAULT, DATAREADER_QOS_USE_TOPIC_QOS, DATAWRITER_QOS_DEFAULT,
+    DATAWRITER_QOS_USE_TOPIC_QOS, PARTICIPANT_QOS_DEFAULT, PUBLISHER_QOS_DEFAULT,
+    SUBSCRIBER_QOS_DEFAULT, TOPIC_QOS_DEFAULT,
+};
 pub use publisher::{DataWriter, Publisher};
 pub use qos::{
-    DataReaderQos, DataWriterQos, DomainParticipantQos, PublisherQos, SubscriberQos, TopicQos,
+    DataReaderQos, DataWriterQos, DomainParticipantQos, EndpointQosArg, PublisherQos, QosArg,
+    SubscriberQos, TopicQos,
 };
 pub use sample::Sample;
 pub use sample_info::{
     InstanceStateKind, SampleInfo, SampleStateKind, ViewStateKind, instance_state_mask,
     sample_state_mask, view_state_mask,
 };
-pub use subscriber::{DataReader, Subscriber};
+#[cfg(all(feature = "std", feature = "security"))]
+pub use security_log_topic::{LogTopicDataWriterPublisher, log_topic_publisher_for_participant};
+#[cfg(feature = "std")]
+pub use subscriber::AnyDataReader;
+pub use subscriber::{DataReader, ReadSelection, Subscriber};
 pub use time::{Duration, Time, get_current_time};
 #[cfg(feature = "std")]
-pub use topic::hash_join_two;
 pub use topic::{
-    ContentFilteredTopic, JoinedRow, MultiTopic, Topic, TopicDescription, TopicDescriptionHandle,
+    ContentFilter, ContentFilteredTopic, MultiTopic, Topic, TopicDescription,
+    TopicDescriptionHandle, TopicDescriptionKind, TopicTypeInformation, TopicUserCounts,
 };
+pub use type_support::TypeSupport;
 
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used)]
@@ -206,8 +260,20 @@ mod tests {
             .unwrap();
 
         let sub = p.create_subscriber(SubscriberQos::default());
+        // KEEP_ALL: two samples land on this (keyless, single-instance)
+        // topic and both must survive — the default KEEP_LAST(1) would
+        // (correctly) evict the first once the second is admitted.
         let r = sub
-            .create_datareader::<RawBytes>(&topic, DataReaderQos::default())
+            .create_datareader::<RawBytes>(
+                &topic,
+                DataReaderQos {
+                    history: crate::qos::HistoryQosPolicy {
+                        kind: crate::qos::HistoryKind::KeepAll,
+                        depth: 1,
+                    },
+                    ..DataReaderQos::default()
+                },
+            )
             .unwrap();
 
         w.write(&RawBytes::new(vec![1, 2, 3])).unwrap();

@@ -1,0 +1,5 @@
+// `@external` on a primitive member
+@final struct Sample {
+    @external long a;
+    long b;
+};

@@ -3,7 +3,7 @@
 
 //! Crate `zerodds-amqp-bridge`. Safety classification: **STANDARD**.
 //!
-//! AMQP 1.0 (OASIS Standard) wire codec — pure Rust no_std + alloc,
+//! AMQP 1.0 (OASIS Standard) wire codec — pure Rust,
 //! `forbid(unsafe_code)`. Implements the full AMQP 1.0
 //! type system, frame format, all 9 performatives and all 7
 //! message sections, plus the DDS-AMQP-1.0 codec/codec-lite profile
@@ -24,7 +24,7 @@
 //! - [`zerodds-amqp-endpoint`](../zerodds_amqp_endpoint/index.html) —
 //!   DDS-AMQP-1.0 endpoint layer with direct-embed topology.
 //!
-//! ## Public API (as of 1.0.0-rc.1)
+//! ## Public API
 //!
 //! **Type system (`types` module):**
 //!
@@ -62,6 +62,17 @@
 //! - [`validate_section_sequence`] — order check per
 //!   AMQP-1.0 Messaging §3.2.
 //!
+//! **Type mapping and body encodings (`codegen` module):**
+//!
+//! - [`codegen::plan_of`] — DDS-AMQP 1.0 §7 read off the common AST:
+//!   the descriptor of §7.2.1, the body form of §7.2.2 and the AMQP
+//!   code each IDL type takes under §7.1.
+//! - [`codegen::described_composite`] / [`codegen::json_document`] —
+//!   §8.1.3 and §8.1.2, applied to a sample.
+//! - [`codegen::helpers_for`] / [`codegen::runtime_source`] — the
+//!   `toAmqpValue<T>` and `toJsonString<T>` helpers per IDL type, for
+//!   C++, Java and TypeScript, and the runtimes they call.
+//!
 //! **Codec profile (`codec_profile` module):**
 //!
 //! - `CodecProfile::{Full, Lite}`.
@@ -87,6 +98,7 @@
 extern crate alloc;
 
 pub mod codec_profile;
+pub mod codegen;
 pub mod extended_types;
 pub mod frame;
 pub mod performatives;
@@ -102,10 +114,11 @@ pub use extended_types::{
 };
 pub use frame::{FrameError, FrameHeader, FrameType, decode_frame_header, encode_frame_header};
 pub use performatives::{
-    attach, attach_to, begin, close, data_payload_from_transfer, decode_performative, descriptor,
-    detach, disposition, disposition_accept, encode_performative, end, flow, flow_link_credit,
-    open, sasl_init, sasl_mechanisms_from_body, sasl_outcome_code, sasl_plain_response,
-    sasl_response, transfer, transfer_message,
+    DispositionView, attach, attach_sender_unsettled, attach_to, begin, close,
+    data_payload_from_transfer, decode_performative, delivery_state, descriptor, detach,
+    disposition, disposition_accept, disposition_from_body, encode_performative, end, flow,
+    flow_link_credit, open, sasl_init, sasl_mechanisms_from_body, sasl_outcome_code,
+    sasl_plain_response, sasl_response, transfer, transfer_message,
 };
 pub use sections::{MessageSection, validate_section_sequence};
 pub use types::{

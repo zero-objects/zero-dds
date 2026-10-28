@@ -5,7 +5,7 @@
 //! Wire-Format (DDSI-RTPS §9.6.3.2): u32 kind + Duration max_blocking_time
 //! = 4 + 8 = 12 byte.
 
-use zerodds_cdr::{BufferReader, BufferWriter, DecodeError, EncodeError};
+use zerodds_wire::{Reader, WireError, Writer};
 
 use crate::duration::Duration;
 
@@ -13,6 +13,11 @@ use crate::duration::Duration;
 ///
 /// Order per §2.2.3 Table "QoS compatibility":
 /// `BestEffort < Reliable`. `offered.kind >= requested.kind`.
+///
+/// The discriminants are the values of `ReliabilityKind_t` in DDSI-RTPS 2.5
+/// (§9.6.3.2: BEST_EFFORT 1, RELIABLE 2), which the wire format carries.
+/// The IDL PSM of DDS 1.4 (§2.3.3, `ReliabilityQosPolicyKind`) numbers the
+/// two 0 and 1; [`Self::idl_ordinal`] and [`Self::from_idl_ordinal`] convert.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u32)]
 pub enum ReliabilityKind {
@@ -38,6 +43,28 @@ impl ReliabilityKind {
         match v {
             1 => Some(Self::BestEffort),
             2 => Some(Self::Reliable),
+            _ => None,
+        }
+    }
+
+    /// The ordinal of the IDL enumeration `ReliabilityQosPolicyKind` of DDS
+    /// 1.4 §2.3.3: `BEST_EFFORT_RELIABILITY_QOS` 0, `RELIABLE_RELIABILITY_QOS`
+    /// 1.
+    #[must_use]
+    pub const fn idl_ordinal(self) -> u32 {
+        match self {
+            Self::BestEffort => 0,
+            Self::Reliable => 1,
+        }
+    }
+
+    /// The kind of an ordinal of the IDL enumeration (§2.3.3); `None` for
+    /// any other.
+    #[must_use]
+    pub const fn from_idl_ordinal(v: u32) -> Option<Self> {
+        match v {
+            0 => Some(Self::BestEffort),
+            1 => Some(Self::Reliable),
             _ => None,
         }
     }
@@ -77,23 +104,20 @@ impl Default for ReliabilityQosPolicy {
 
 impl ReliabilityQosPolicy {
     /// Wire encoding: u32 kind + i32 seconds + u32 fraction = 12 bytes.
-    ///
-    /// # Errors
-    /// Buffer overflow.
-    pub fn encode_into(self, w: &mut BufferWriter) -> Result<(), EncodeError> {
-        w.write_u32(self.kind as u32)?;
-        self.max_blocking_time.encode_into(w)
+    pub fn encode_into(self, w: &mut Writer) {
+        w.write_u32(self.kind as u32);
+        self.max_blocking_time.encode_into(w);
     }
 
     /// Wire decoding (strict). Unknown discriminator → `InvalidEnum`.
     ///
     /// # Errors
     /// Buffer underflow or unknown kind value.
-    pub fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
+    pub fn decode_from(r: &mut Reader<'_>) -> Result<Self, WireError> {
+        let at = r.position();
         let v = r.read_u32()?;
-        let kind = ReliabilityKind::try_from_u32(v).ok_or(DecodeError::InvalidEnum {
-            kind: "ReliabilityKind",
-            value: v,
+        let kind = ReliabilityKind::try_from_u32(v).ok_or_else(|| {
+            WireError::refused(at, &alloc::format!("a ReliabilityKind enumerator, not {v}"))
         })?;
         let max_blocking_time = Duration::decode_from(r)?;
         Ok(Self {
@@ -107,7 +131,32 @@ impl ReliabilityQosPolicy {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use zerodds_cdr::Endianness;
+    use zerodds_wire::Endianness;
+
+    /// §2.3.3: the IDL ordinals are 0 and 1, the wire values (DDSI-RTPS 2.5)
+    /// 1 and 2; the conversions keep them apart.
+    #[test]
+    fn the_idl_ordinals_are_not_the_wire_values() {
+        assert_eq!(ReliabilityKind::BestEffort.idl_ordinal(), 0);
+        assert_eq!(ReliabilityKind::Reliable.idl_ordinal(), 1);
+        assert_eq!(ReliabilityKind::BestEffort as u32, 1);
+        assert_eq!(ReliabilityKind::Reliable as u32, 2);
+        assert_eq!(
+            ReliabilityKind::from_idl_ordinal(0),
+            Some(ReliabilityKind::BestEffort)
+        );
+        assert_eq!(
+            ReliabilityKind::from_idl_ordinal(1),
+            Some(ReliabilityKind::Reliable)
+        );
+        assert_eq!(ReliabilityKind::from_idl_ordinal(2), None);
+        for kind in [ReliabilityKind::BestEffort, ReliabilityKind::Reliable] {
+            assert_eq!(
+                ReliabilityKind::from_idl_ordinal(kind.idl_ordinal()),
+                Some(kind)
+            );
+        }
+    }
 
     #[test]
     fn best_effort_lt_reliable() {
@@ -134,11 +183,11 @@ mod tests {
             kind: ReliabilityKind::Reliable,
             max_blocking_time: Duration::from_millis(250),
         };
-        let mut w = BufferWriter::new(Endianness::Little);
-        p.encode_into(&mut w).unwrap();
-        let bytes = w.into_bytes();
+        let mut w = Writer::new(Endianness::Little);
+        p.encode_into(&mut w);
+        let bytes = w.finish();
         assert_eq!(bytes.len(), 12);
-        let mut r = BufferReader::new(&bytes, Endianness::Little);
+        let mut r = Reader::new(&bytes, Endianness::Little);
         assert_eq!(ReliabilityQosPolicy::decode_from(&mut r).unwrap(), p);
     }
 
@@ -168,13 +217,13 @@ mod tests {
             kind: ReliabilityKind::BestEffort,
             max_blocking_time: Duration::from_millis(2500),
         };
-        let mut w = BufferWriter::new(Endianness::Little);
-        p.encode_into(&mut w).unwrap();
-        let bytes = w.into_bytes();
+        let mut w = Writer::new(Endianness::Little);
+        p.encode_into(&mut w);
+        let bytes = w.finish();
         assert_eq!(bytes.len(), 12);
         // Wire-format spec check: first u32 is kind=1 (little-endian).
         assert_eq!(&bytes[0..4], &[1u8, 0, 0, 0]);
-        let mut r = BufferReader::new(&bytes, Endianness::Little);
+        let mut r = Reader::new(&bytes, Endianness::Little);
         assert_eq!(ReliabilityQosPolicy::decode_from(&mut r).unwrap(), p);
     }
 
@@ -195,18 +244,16 @@ mod tests {
     /// Decode with an unknown kind discriminator → `InvalidEnum` error.
     #[test]
     fn decode_unknown_kind_errors() {
-        let mut w = BufferWriter::new(Endianness::Little);
-        w.write_u32(5).unwrap();
-        Duration::ZERO.encode_into(&mut w).unwrap();
-        let bytes = w.into_bytes();
-        let mut r = BufferReader::new(&bytes, Endianness::Little);
+        let mut w = Writer::new(Endianness::Little);
+        w.write_u32(5);
+        Duration::ZERO.encode_into(&mut w);
+        let bytes = w.finish();
+        let mut r = Reader::new(&bytes, Endianness::Little);
         let err = ReliabilityQosPolicy::decode_from(&mut r).unwrap_err();
         assert!(matches!(
             err,
-            zerodds_cdr::DecodeError::InvalidEnum {
-                kind: "ReliabilityKind",
-                value: 5
-            }
+            zerodds_wire::WireError::OutOfRange { expected, .. }
+                    if expected.contains("ReliabilityKind") && expected.contains("5")
         ));
     }
 
@@ -214,10 +261,10 @@ mod tests {
     /// short-read error on the duration decode.
     #[test]
     fn decode_short_buffer_no_duration_errors() {
-        let mut w = BufferWriter::new(Endianness::Little);
-        w.write_u32(2).unwrap(); // kind=Reliable
-        let bytes = w.into_bytes();
-        let mut r = BufferReader::new(&bytes, Endianness::Little);
+        let mut w = Writer::new(Endianness::Little);
+        w.write_u32(2); // kind=Reliable
+        let bytes = w.finish();
+        let mut r = Reader::new(&bytes, Endianness::Little);
         assert!(ReliabilityQosPolicy::decode_from(&mut r).is_err());
     }
 

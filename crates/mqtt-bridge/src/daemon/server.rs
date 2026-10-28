@@ -26,7 +26,7 @@ use zerodds_dcps::runtime::{
     DcpsRuntime, RuntimeConfig, UserReaderConfig, UserSample, UserWriterConfig,
 };
 #[cfg(feature = "daemon")]
-use zerodds_rtps::wire_types::{EntityId, GuidPrefix};
+use zerodds_rtps::wire_types::EntityId;
 
 use super::client::{InboundEvent, MqttClient};
 use super::config::{DaemonConfig, TopicConfig, parse_broker_url};
@@ -41,6 +41,10 @@ use super::security::{AclOp, AuthSubject, authorize, ctx_from_daemon_config};
 use zerodds_monitor::Registry;
 #[cfg(feature = "daemon")]
 use zerodds_observability_otlp::OtlpExporter;
+
+/// Admin endpoint address when `metrics.enabled` is set without
+/// `metrics.listen`; one port per bridge daemon, see man5.
+pub const DEFAULT_METRICS_LISTEN: &str = "127.0.0.1:9092";
 
 /// Daemon top-level error (maps to Spec §2 exit codes).
 #[derive(Debug)]
@@ -71,9 +75,20 @@ impl core::fmt::Display for ServerError {
 
 impl std::error::Error for ServerError {}
 
-/// Daemon-Handle. Drop initiiert Shutdown.
+/// Daemon-Handle. Drop initiates shutdown.
 pub struct DaemonHandle {
     stop: Arc<AtomicBool>,
+    /// §9.2 drain: the pumps stop first (no new DDS samples go out) ...
+    #[cfg(feature = "daemon")]
+    pump_stop: Arc<AtomicBool>,
+    /// ... the inbound loop keeps reading the broker's acks until then.
+    #[cfg(feature = "daemon")]
+    inbound_stop: Arc<AtomicBool>,
+    #[cfg(feature = "daemon")]
+    client: Option<Arc<Mutex<MqttClient>>>,
+    /// `mqtt.drain_timeout_secs`.
+    #[cfg(feature = "daemon")]
+    drain_timeout: Duration,
     inbound_thread: Option<JoinHandle<()>>,
     pump_threads: Vec<JoinHandle<()>>,
     #[cfg(feature = "daemon")]
@@ -111,8 +126,20 @@ pub struct DaemonHandle {
 }
 
 impl DaemonHandle {
-    /// Sets the stop flag and joins the workers.
+    /// Whether SIGTERM/SIGINT (or [`Self::shutdown`]) asked the daemon to
+    /// stop. The binary waits for it and then runs the shutdown.
+    #[must_use]
+    pub fn stop_requested(&self) -> bool {
+        self.stop.load(Ordering::SeqCst)
+    }
+
+    /// Spec §9.2: stop taking DDS samples, wait for the broker's acks of
+    /// what was published with QoS 1/2 (at most `mqtt.drain_timeout_secs`),
+    /// send DISCONNECT 0x00, then join the workers and stop the DDS
+    /// participant.
     pub fn shutdown(&mut self) {
+        #[cfg(feature = "daemon")]
+        self.drain();
         self.stop.store(true, Ordering::SeqCst);
         #[cfg(feature = "daemon")]
         {
@@ -137,7 +164,48 @@ impl DaemonHandle {
             if let Some(j) = self.otlp_thread.take() {
                 let _ = j.join();
             }
+            // Last, so no pump writes to a stopped runtime. Dropping the
+            // handle alone would not stop it — the runtime's worker threads
+            // hold `Arc`s of their own — and a daemon stopped in a process
+            // that keeps running would leave its participant on the domain.
+            self.runtime.shutdown();
         }
+    }
+}
+
+#[cfg(feature = "daemon")]
+impl DaemonHandle {
+    fn drain(&mut self) {
+        let Some(client) = self.client.take() else {
+            return;
+        };
+        self.pump_stop.store(true, Ordering::SeqCst);
+        for j in self.pump_threads.drain(..) {
+            let _ = j.join();
+        }
+        let deadline = std::time::Instant::now() + self.drain_timeout;
+        let pending = || client.lock().map(|c| c.pending_acks()).unwrap_or(0);
+        while pending() > 0
+            && std::time::Instant::now() < deadline
+            && self
+                .inbound_thread
+                .as_ref()
+                .is_some_and(|j| !j.is_finished())
+        {
+            thread::sleep(Duration::from_millis(20));
+        }
+        let left = pending();
+        if left > 0 {
+            eprintln!("[{SERVICE_NAME}] drain ended with {left} QoS 1/2 message(s) unacknowledged");
+        }
+        self.inbound_stop.store(true, Ordering::SeqCst);
+        if let Some(j) = self.inbound_thread.take() {
+            let _ = j.join();
+        }
+        if let Ok(mut c) = client.lock() {
+            c.disconnect();
+        }
+        eprintln!("[{SERVICE_NAME}] disconnected (reason 0x00)");
     }
 }
 
@@ -152,8 +220,45 @@ impl Drop for DaemonHandle {
 /// # Errors
 /// `BrokerConnect` (Spec Exit-Code 2), `Dds` (3), `Tls` (4), `Auth` (5).
 #[cfg(feature = "daemon")]
-#[allow(clippy::too_many_lines)]
 pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
+    let runtime = RuntimeConfig::from_standard_paths()
+        .map_err(|e| ServerError::Dds(format!("runtime configuration: {e}")))?;
+    start_with_runtime(cfg, runtime)
+}
+
+/// [`start`] with the DDS runtime configuration a command line loaded
+/// (`zerodds_dcps::cli::Configured`), which `start` reads from the standard
+/// layers instead.
+///
+/// # Errors
+/// As [`start`].
+#[cfg(feature = "daemon")]
+pub fn start_with_runtime(
+    cfg: DaemonConfig,
+    runtime_config: RuntimeConfig,
+) -> Result<DaemonHandle, ServerError> {
+    start_with_reload(cfg, runtime_config, None)
+}
+
+/// Reads and validates the configuration again, for a SIGHUP reload.
+pub type ConfigLoader = Box<dyn Fn() -> Result<DaemonConfig, String> + Send + Sync>;
+
+/// [`start_with_runtime`], reloading on SIGHUP with `load` (§9.2): the ACL
+/// applies at once (a withdrawn right stops the topic's samples in both
+/// directions); a granted read right, changed topics, broker, broker TLS,
+/// auth or domain need a restart — the subscriptions and the connection are
+/// made at start — and are logged. A configuration that does not load
+/// changes nothing.
+///
+/// # Errors
+/// As [`start`].
+#[cfg(feature = "daemon")]
+#[allow(clippy::too_many_lines)]
+pub fn start_with_reload(
+    cfg: DaemonConfig,
+    runtime_config: RuntimeConfig,
+    load: Option<ConfigLoader>,
+) -> Result<DaemonHandle, ServerError> {
     eprintln!(
         "[zerodds-mqtt-bridged] starting domain={} broker={} topics={}",
         cfg.domain,
@@ -170,7 +275,7 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
     // 0b. Bridge-Security: Security-Ctx + TLS-Client-Config (§7.1/§7.2/§7.3).
     let (security_ctx, tls_client_cfg) =
         ctx_from_daemon_config(&cfg).map_err(|e| ServerError::Tls(format!("security: {e}")))?;
-    let security_ctx = Arc::new(security_ctx);
+    let security_ctx = Arc::new(zerodds_bridge_security::LiveSecurity::new(security_ctx));
     eprintln!(
         "[zerodds-mqtt-bridged] auth-mode={} acl-entries={} broker-tls={}",
         cfg.auth_mode,
@@ -179,18 +284,26 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
     );
 
     // 1. Broker-URL parsen.
-    let (host, port, tls) = parse_broker_url(&cfg.broker_url)
+    let broker = parse_broker_url(&cfg.broker_url)
         .map_err(|e| ServerError::BrokerConnect(format!("{e}")))?;
-    if tls && tls_client_cfg.is_none() {
-        // mqtts:// without tls setup → strict reject (spec §7.1).
+    if broker.tls && tls_client_cfg.is_none() {
+        // mqtts:// or wss:// without tls setup → strict reject (spec §7.1).
         return Err(ServerError::Tls(
-            "mqtts:// scheme requires mqtt.tls.enabled=true and ca_file (Spec §7.1)".to_string(),
+            "mqtts:// and wss:// require mqtt.tls.enabled=true and ca_file (Spec §7.1)".to_string(),
         ));
+    }
+    if !broker.tls && tls_client_cfg.is_some() {
+        // The URL says plain, the TLS section says encrypted: which one the
+        // operator meant is not ours to guess.
+        return Err(ServerError::Tls(format!(
+            "mqtt.tls.enabled=true with the plain URL {}; use mqtts:// or wss://",
+            cfg.broker_url
+        )));
     }
 
     // 2. DCPS-Runtime.
-    let prefix = stable_prefix_for(&cfg.client_id);
-    let runtime = DcpsRuntime::start(cfg.domain, prefix, RuntimeConfig::default())
+    let prefix = zerodds_dcps::participant::bridge_guid_prefix(&cfg.client_id);
+    let runtime = DcpsRuntime::start(cfg.domain, prefix, runtime_config)
         .map_err(|e| ServerError::Dds(format!("{e:?}")))?;
 
     // 3. Pro Topic Reader+Writer.
@@ -217,8 +330,8 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
 
     // 4. Connect the MQTT client — with an optional TLS wrap (§7.1).
     metrics.connections_total.inc();
-    let mut client = MqttClient::connect_secure(&host, port, &cfg, tls_client_cfg.clone())
-        .map_err(|e| {
+    let mut client =
+        MqttClient::connect_url(&broker, &cfg, tls_client_cfg.clone()).map_err(|e| {
             metrics.errors_total.inc();
             map_client_err(e)
         })?;
@@ -237,7 +350,7 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
     for topic in &cfg.topics {
         if matches!(topic.direction.as_str(), "in" | "bidir") {
             if !authorize(
-                &security_ctx.acl,
+                &security_ctx.current().acl,
                 &bridge_subject,
                 AclOp::Read,
                 &topic.dds_name,
@@ -264,6 +377,8 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
     );
 
     let stop = Arc::new(AtomicBool::new(false));
+    let pump_stop = Arc::new(AtomicBool::new(false));
+    let inbound_stop = Arc::new(AtomicBool::new(false));
 
     // We share the client over a mutex between the inbound
     // (next_event) and outbound pump (publish). That is sync enough
@@ -276,7 +391,7 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
     let mut pump_threads = Vec::new();
     let cfg_topics = Arc::new(cfg.topics.clone());
     for (dds_topic_name, mqtt_topic, rx, mqtt_qos, retain) in readers {
-        let stop_c = Arc::clone(&stop);
+        let stop_c = Arc::clone(&pump_stop);
         let client_c = Arc::clone(&client);
         let dds_topic_c = dds_topic_name.clone();
         let mqtt_topic_c = mqtt_topic.clone();
@@ -293,7 +408,7 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
                         // Spec §7.3 — ACL read check per sample that we
                         // hand out to MQTT.
                         if !authorize(
-                            &security_pump.acl,
+                            &security_pump.current().acl,
                             &bridge_subject_pump,
                             AclOp::Read,
                             &dds_topic_c,
@@ -319,6 +434,9 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
                         // Lifecycle → could be sent as a zerodds_op=dispose user
                         // property. L1-L4: no lifecycle wire.
                     }
+                    // The end-of-coherent-set marker (DDSI-RTPS 2.5 §8.7.6)
+                    // carries no user data — nothing to forward.
+                    Ok(UserSample::CoherentSetEnd { .. }) => {}
                     Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
                     Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
                 }
@@ -328,7 +446,7 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
     }
 
     // 7. Inbound-Loop (MQTT → DDS).
-    let stop_inbound = Arc::clone(&stop);
+    let stop_inbound = Arc::clone(&inbound_stop);
     let client_in = Arc::clone(&client);
     let runtime_in = Arc::clone(&runtime_arc);
     // Export a snapshot of the writer map before the inbound loop moves it
@@ -342,8 +460,43 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
     let conns_active = Arc::clone(&metrics.connections_active);
     let security_inbound = Arc::clone(&security_ctx);
     let bridge_subject_inbound = bridge_subject.clone();
+    // The inbound loop waits for input on a duplicate of the socket, without
+    // the client's lock, and takes the lock only once there is something to
+    // read. It used to block in `next_event` under the lock for the whole
+    // read timeout (5 s), and every publish of the pump threads waited for
+    // it: a DDS sample took 4.5 s to reach the broker (measured,
+    // `a_reload_that_withdraws_the_read_right_stops_the_samples`).
+    let wait_socket = client.lock().ok().and_then(|c| c.socket_clone().ok());
+    // The wait polls: a stop or the §9.2 drain is seen within 200 ms, not
+    // after the 5 s read timeout of the connect (the clone shares the
+    // socket, so the client's reads use it too and return `TimedOut`).
+    if let Some(sock) = &wait_socket {
+        let _ = sock.set_read_timeout(Some(Duration::from_millis(200)));
+    }
     let inbound_thread = thread::spawn(move || {
         while !stop_inbound.load(Ordering::SeqCst) {
+            let buffered = client_in
+                .lock()
+                .map(|mut c| c.has_buffered_input())
+                .unwrap_or(false);
+            if !buffered {
+                if let Some(sock) = &wait_socket {
+                    let mut one = [0u8; 1];
+                    match sock.peek(&mut one) {
+                        Ok(_) => {}
+                        Err(e)
+                            if matches!(
+                                e.kind(),
+                                std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                            ) =>
+                        {
+                            continue;
+                        }
+                        // A closed or failed socket: `next_event` reports it.
+                        Err(_) => {}
+                    }
+                }
+            }
             let event = {
                 let mut c = match client_in.lock() {
                     Ok(c) => c,
@@ -375,7 +528,7 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
                     // Spec §7.3 — ACL write check per sample that we
                     // feed into DDS.
                     if !authorize(
-                        &security_inbound.acl,
+                        &security_inbound.current().acl,
                         &bridge_subject_inbound,
                         AclOp::Write,
                         &dds_topic,
@@ -417,7 +570,7 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
     let mut admin_addr: Option<String> = None;
     if cfg.metrics_enabled || !cfg.metrics_addr.is_empty() {
         let bind_str = if cfg.metrics_addr.is_empty() {
-            "127.0.0.1:9090".to_string()
+            DEFAULT_METRICS_LISTEN.to_string()
         } else {
             cfg.metrics_addr.clone()
         };
@@ -449,6 +602,25 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
     if let Err(e) = install_signal_watcher(Arc::clone(&stop), Arc::clone(&reload_flag)) {
         eprintln!("[{SERVICE_NAME}] signal watcher init failed: {e}");
     }
+    // 9b. SIGHUP reload (§9.2).
+    if let Some(load) = load {
+        let (stop_r, flag_r, live, started) = (
+            Arc::clone(&stop),
+            Arc::clone(&reload_flag),
+            Arc::clone(&security_ctx),
+            cfg.clone(),
+        );
+        let _ = thread::Builder::new()
+            .name("zerodds-mqtt-reload".into())
+            .spawn(move || {
+                while !stop_r.load(Ordering::SeqCst) {
+                    thread::sleep(Duration::from_millis(100));
+                    if flag_r.swap(false, Ordering::SeqCst) {
+                        reload(&live, &started, load());
+                    }
+                }
+            });
+    }
 
     // 10. OTLP-Exporter (§8.3).
     let otlp_thread = if let Some(otlp_cfg) = otlp_config_from_env(SERVICE_NAME) {
@@ -466,6 +638,10 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
 
     Ok(DaemonHandle {
         stop,
+        pump_stop,
+        inbound_stop,
+        client: Some(client),
+        drain_timeout: Duration::from_secs(cfg.drain_timeout_secs),
         inbound_thread: Some(inbound_thread),
         pump_threads,
         admin_thread,
@@ -478,6 +654,59 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
         user_writers: writers_export,
         user_readers: reader_eids,
     })
+}
+
+/// One SIGHUP reload: the new ACL goes into `live`; what needs a restart is
+/// named.
+#[cfg(feature = "daemon")]
+fn reload(
+    live: &zerodds_bridge_security::LiveSecurity,
+    started: &DaemonConfig,
+    new: Result<DaemonConfig, String>,
+) {
+    let new = match new {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("[{SERVICE_NAME}] reload refused: {e}");
+            return;
+        }
+    };
+    let (ctx, _client_tls) = match ctx_from_daemon_config(&new) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("[{SERVICE_NAME}] reload refused: {e}");
+            return;
+        }
+    };
+    let mut restart: Vec<&str> = Vec::new();
+    if new.topics != started.topics {
+        restart.push("topics");
+    }
+    if new.broker_url != started.broker_url || new.client_id != started.client_id {
+        restart.push("mqtt.broker_url/client_id");
+    }
+    if new.broker_tls_enabled != started.broker_tls_enabled
+        || new.broker_tls_ca_file != started.broker_tls_ca_file
+        || new.broker_tls_client_cert_file != started.broker_tls_client_cert_file
+        || new.broker_tls_client_key_file != started.broker_tls_client_key_file
+    {
+        restart.push("mqtt.tls (the connection is made at start)");
+    }
+    if new.auth_mode != started.auth_mode || new.auth_bearer_subject != started.auth_bearer_subject
+    {
+        restart.push("auth");
+    }
+    if new.domain != started.domain {
+        restart.push("domain");
+    }
+    live.replace(ctx);
+    eprintln!("[{SERVICE_NAME}] reloaded: acl");
+    if !restart.is_empty() {
+        eprintln!(
+            "[{SERVICE_NAME}] reload needs a restart for: {}",
+            restart.join(", ")
+        );
+    }
 }
 
 /// Spec §5.1 — fallback DDS topic name when an incoming MQTT
@@ -520,9 +749,7 @@ fn register_topic(
         bool,
     )>,
 ) -> Result<(), ServerError> {
-    use zerodds_qos::{
-        DeadlineQosPolicy, DurabilityKind, LifespanQosPolicy, LivelinessQosPolicy, OwnershipKind,
-    };
+    use zerodds_qos::DurabilityKind;
 
     let durability = match topic.durability.as_str() {
         "transient_local" => DurabilityKind::TransientLocal,
@@ -542,19 +769,7 @@ fn register_topic(
                 type_name: topic.dds_type.clone(),
                 reliable,
                 durability,
-                deadline: DeadlineQosPolicy::default(),
-                latency_budget: Default::default(),
-                destination_order: Default::default(),
-                liveliness: LivelinessQosPolicy::default(),
-                ownership: OwnershipKind::Shared,
-                presentation: Default::default(),
-                partition: Vec::new(),
-                user_data: Vec::new(),
-                topic_data: Vec::new(),
-                group_data: Vec::new(),
-                type_identifier: zerodds_types::TypeIdentifier::None,
-                type_consistency: zerodds_types::qos::TypeConsistencyEnforcement::default(),
-                data_representation_offer: None,
+                ..Default::default()
             })
             .map_err(|e| ServerError::Dds(format!("reader: {e:?}")))?;
         // QoS-Auto-Derive (Spec §6).
@@ -583,20 +798,7 @@ fn register_topic(
                 type_name: topic.dds_type.clone(),
                 reliable,
                 durability,
-                deadline: DeadlineQosPolicy::default(),
-                latency_budget: Default::default(),
-                destination_order: Default::default(),
-                lifespan: LifespanQosPolicy::default(),
-                liveliness: LivelinessQosPolicy::default(),
-                ownership: OwnershipKind::Shared,
-                ownership_strength: 0,
-                presentation: Default::default(),
-                partition: Vec::new(),
-                user_data: Vec::new(),
-                topic_data: Vec::new(),
-                group_data: Vec::new(),
-                type_identifier: zerodds_types::TypeIdentifier::None,
-                data_representation_offer: None,
+                ..Default::default()
             })
             .map_err(|e| ServerError::Dds(format!("writer: {e:?}")))?;
         writers.insert(topic.dds_name.clone(), eid);
@@ -614,19 +816,11 @@ fn map_client_err(e: super::client::ClientError) -> ServerError {
             ServerError::BrokerConnect(format!("connack reason 0x{reason:02x}"))
         }
         super::client::ClientError::Io(m) => ServerError::BrokerConnect(m),
+        super::client::ClientError::TimedOut => {
+            ServerError::BrokerConnect("the broker did not answer in time".to_string())
+        }
         super::client::ClientError::Codec(m) => ServerError::BrokerConnect(format!("codec: {m}")),
     }
-}
-
-#[cfg(feature = "daemon")]
-fn stable_prefix_for(seed: &str) -> GuidPrefix {
-    let mut bytes = [0u8; 12];
-    let src = seed.as_bytes();
-    for (i, b) in src.iter().take(12).enumerate() {
-        bytes[i] = *b;
-    }
-    bytes[0] ^= 0x37;
-    GuidPrefix::from_bytes(bytes)
 }
 
 #[cfg(test)]
@@ -670,5 +864,28 @@ mod tests {
     fn map_connack_other_to_broker_connect() {
         let e = map_client_err(super::super::client::ClientError::ConnAck { reason: 0x80 });
         assert!(matches!(e, ServerError::BrokerConnect(_)));
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::panic)]
+mod metrics_default_tests {
+    use super::DEFAULT_METRICS_LISTEN;
+
+    /// Each bridge daemon has its own admin port, so that several with
+    /// `metrics.enabled: true` and no `metrics.listen` run on one host;
+    /// man5 names it as the default.
+    #[test]
+    fn the_metrics_default_is_the_one_man5_names() {
+        let page = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../man/man5/zerodds-mqtt-bridged.yaml.5"
+        ))
+        .unwrap_or_else(|e| panic!("man5 page: {e}"));
+        let named = format!("Default\n.IR \"{DEFAULT_METRICS_LISTEN}\"\nwhen");
+        assert!(
+            page.contains(&named),
+            "man5 does not name {DEFAULT_METRICS_LISTEN}"
+        );
     }
 }

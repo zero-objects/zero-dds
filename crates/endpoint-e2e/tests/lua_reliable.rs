@@ -16,20 +16,41 @@ use std::process::{Child, Command, Stdio};
 
 use zerodds_endpoint_e2e::{bind_reliable_peer, reliable_receive};
 
-/// `lua5.4` on PATH.
-fn lua_available() -> bool {
-    Command::new("lua5.4").arg("-v").output().is_ok()
+/// The Lua interpreter, by the names a distribution installs it under.
+///
+/// This mirrors `tests/lua.rs::lua_binary`. Binding only to `lua5.4` made
+/// every case here skip on a host whose Lua is Homebrew's plain `lua`,
+/// while the ping-pong cases next door ran — the same runtime, reported as
+/// covered in one file and unmeasured in the other. `string.pack` and the
+/// coroutine semantics these scripts use are unchanged since 5.3.
+fn lua_binary() -> Option<&'static str> {
+    ["lua5.4", "lua", "lua5.3"]
+        .into_iter()
+        .find(|l| Command::new(l).arg("-v").output().is_ok())
 }
 
-/// luasocket (the `socket` module) loadable by this `lua5.4` -- the app
+/// luasocket (the `socket` module) loadable by this interpreter -- the app
 /// needs real UDP; stock Lua has none. Loud skip if missing (no false green).
-fn luasocket_available() -> bool {
-    Command::new("lua5.4")
+fn luasocket_available(lua: &str) -> bool {
+    Command::new(lua)
         .arg("-e")
         .arg("require('socket')")
         .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+        .is_ok_and(|o| o.status.success())
+}
+
+/// The gate every case takes. Prints the reason and returns `None` when the
+/// interpreter or luasocket is missing.
+fn lua_ready(case: &str) -> Option<&'static str> {
+    let Some(lua) = lua_binary() else {
+        eprintln!("SKIP {case}: no Lua interpreter on PATH (tried lua5.4, lua, lua5.3)");
+        return None;
+    };
+    if !luasocket_available(lua) {
+        eprintln!("SKIP {case}: luasocket (`socket` module) not installed for `{lua}`");
+        return None;
+    }
+    Some(lua)
 }
 
 fn endpoints_lua() -> PathBuf {
@@ -41,8 +62,8 @@ fn endpoints_lua() -> PathBuf {
 
 /// Runs a script in place under `endpoints/lua` (so its own
 /// `package.path = "./?.lua;" .. package.path` resolves `require("reliable")`).
-fn run_lua(script: &str, args: &[String]) -> Child {
-    let mut cmd = Command::new("lua5.4");
+fn run_lua(lua: &str, script: &str, args: &[String]) -> Child {
+    let mut cmd = Command::new(lua);
     cmd.arg(script);
     for a in args {
         cmd.arg(a);
@@ -51,21 +72,17 @@ fn run_lua(script: &str, args: &[String]) -> Child {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .unwrap_or_else(|e| panic!("spawn lua5.4 {script}: {e}"))
+        .unwrap_or_else(|e| panic!("spawn {lua} {script}: {e}"))
 }
 
 fn run_loss(drop_every: Option<usize>, label: &str) {
-    if !lua_available() {
-        eprintln!("SKIP {label}: `lua5.4` not on PATH");
+    let Some(lua) = lua_ready(label) else {
         return;
-    }
-    if !luasocket_available() {
-        eprintln!("SKIP {label}: luasocket (`socket` module) not installed");
-        return;
-    }
+    };
     let n = 12usize;
     let peer = bind_reliable_peer(drop_every).expect("bind reliable peer");
     let child = run_lua(
+        lua,
         "reliable_app.lua",
         &[peer.port.to_string(), n.to_string(), "run".to_string()],
     );
@@ -132,15 +149,14 @@ fn write_goldens(dir: &Path) {
 
 #[test]
 fn lua_reliable_unit_and_golden() {
-    if !lua_available() {
-        eprintln!("SKIP lua_reliable_unit_and_golden: `lua5.4` not on PATH");
+    let Some(lua) = lua_ready("lua_reliable_unit_and_golden") else {
         return;
-    }
+    };
     let dir = std::env::temp_dir().join(format!("rel_lua_gold_{}", std::process::id()));
     std::fs::create_dir_all(&dir).expect("mkdir");
     write_goldens(&dir);
     let dir_str = dir.to_string_lossy().to_string();
-    let out = Command::new("lua5.4")
+    let out = Command::new(lua)
         .arg("reliable_test.lua")
         .arg(&dir_str)
         .current_dir(endpoints_lua())
@@ -161,11 +177,10 @@ fn lua_reliable_unit_and_golden() {
 
 #[test]
 fn lua_reliable_example() {
-    if !lua_available() {
-        eprintln!("SKIP lua_reliable_example: `lua5.4` not on PATH");
+    let Some(lua) = lua_ready("lua_reliable_example") else {
         return;
-    }
-    let out = Command::new("lua5.4")
+    };
+    let out = Command::new(lua)
         .arg("example_reliable.lua")
         .current_dir(endpoints_lua())
         .output()
@@ -180,16 +195,12 @@ fn lua_reliable_example() {
 
 #[test]
 fn lua_reliable_producer_latency() {
-    if !lua_available() {
-        eprintln!("SKIP lua_reliable_producer_latency: `lua5.4` not on PATH");
+    let Some(lua) = lua_ready("lua_reliable_producer_latency") else {
         return;
-    }
-    if !luasocket_available() {
-        eprintln!("SKIP lua_reliable_producer_latency: luasocket not installed");
-        return;
-    }
+    };
     let peer = bind_reliable_peer(None).expect("bind reliable peer");
     let child = run_lua(
+        lua,
         "reliable_app.lua",
         &[peer.port.to_string(), "0".to_string(), "bench".to_string()],
     );

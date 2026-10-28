@@ -15,14 +15,17 @@
 //! * **L2 — DDS**: `DcpsRuntime` on the domain ID from the config.
 //! * **L3 — Bridging**: POST/PUT → DDS write; observe GET → notify
 //!   stream on the reader sample.
-//! * **L4 — Config**: own mini-parser for a YAML subset.
+//! * **L4 — Config**: the shared layered loader `zerodds-config`.
+//! * **L5 — Auth**: bearer auth (§7.2) + topic ACL (§7.3); DTLS
+//!   (§7.1, feature `dtls`, ADR 0011) and OSCORE (§7.2, feature
+//!   `oscore`, ADR 0010) as opt-in features.
 //!
-//! L5 (DTLS/OSCORE) and L6 (multi-tenant) are stubs.
+//! L6 (multi-tenant) is a stub.
 
 pub mod cli;
 pub mod config;
+pub mod oscore_gateway;
 pub mod qos_translation;
 pub mod runtime_common;
 pub mod security;
 pub mod server;
-pub mod yaml;

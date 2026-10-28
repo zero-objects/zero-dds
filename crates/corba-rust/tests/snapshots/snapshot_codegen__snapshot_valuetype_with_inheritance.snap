@@ -30,16 +30,16 @@ impl zerodds_corba_rust::ValueBase for BaseValue {
 }
 
 impl zerodds_corba_rust::value_wire::ValueMarshal for BaseValue {
-    fn marshal_state(&self, w: &mut zerodds_cdr::BufferWriter) -> ::core::result::Result<(), zerodds_cdr::EncodeError> {
-        zerodds_cdr::CdrEncode::encode(&self.version, w)?;
+    fn marshal_state(&self, w: &mut zerodds_wire::Writer) -> ::core::result::Result<(), zerodds_wire::WireError> {
+        w.write_i32(self.version);
         ::core::result::Result::Ok(())
     }
 }
 
 /// Registers the ValueFactory for `Base` in a `ValueRegistry` (§15.3.4 decode).
 pub fn register_base_value(reg: &mut zerodds_corba_rust::value_wire::ValueRegistry) {
-    reg.register(BASE_REPOSITORY_ID, ::std::boxed::Box::new(|r: &mut zerodds_cdr::BufferReader<'_>| {
-        let version = <i32 as zerodds_cdr::CdrDecode>::decode(r)?;
+    reg.register(BASE_REPOSITORY_ID, ::std::boxed::Box::new(|r: &mut zerodds_wire::Reader<'_>| {
+        let version = r.read_i32()?;
         ::core::result::Result::Ok(::std::rc::Rc::new(BaseValue {
             version,
         }) as ::std::rc::Rc<dyn ::core::any::Any>)
@@ -71,18 +71,18 @@ impl zerodds_corba_rust::ValueBase for ExtendedValue {
 }
 
 impl zerodds_corba_rust::value_wire::ValueMarshal for ExtendedValue {
-    fn marshal_state(&self, w: &mut zerodds_cdr::BufferWriter) -> ::core::result::Result<(), zerodds_cdr::EncodeError> {
-        zerodds_cdr::CdrEncode::encode(&self.version, w)?;
-        zerodds_cdr::CdrEncode::encode(&self.name, w)?;
+    fn marshal_state(&self, w: &mut zerodds_wire::Writer) -> ::core::result::Result<(), zerodds_wire::WireError> {
+        w.write_i32(self.version);
+        w.write_string(&self.name);
         ::core::result::Result::Ok(())
     }
 }
 
 /// Registers the ValueFactory for `Extended` in a `ValueRegistry` (§15.3.4 decode).
 pub fn register_extended_value(reg: &mut zerodds_corba_rust::value_wire::ValueRegistry) {
-    reg.register(EXTENDED_REPOSITORY_ID, ::std::boxed::Box::new(|r: &mut zerodds_cdr::BufferReader<'_>| {
-        let version = <i32 as zerodds_cdr::CdrDecode>::decode(r)?;
-        let name = <String as zerodds_cdr::CdrDecode>::decode(r)?;
+    reg.register(EXTENDED_REPOSITORY_ID, ::std::boxed::Box::new(|r: &mut zerodds_wire::Reader<'_>| {
+        let version = r.read_i32()?;
+        let name = r.read_string()?;
         ::core::result::Result::Ok(::std::rc::Rc::new(ExtendedValue {
             version,
             name,

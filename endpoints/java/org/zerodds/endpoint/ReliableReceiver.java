@@ -20,6 +20,7 @@ public final class ReliableReceiver {
     }
 
     private final int stream;
+    private final UnannotatedTypes unannotatedTypes;
     private int expectedSeq;
     private final TreeMap<Integer, byte[]> received = new TreeMap<Integer, byte[]>();
 
@@ -28,7 +29,24 @@ public final class ReliableReceiver {
     }
 
     public ReliableReceiver(int stream) {
+        this(stream, UnannotatedTypes.APPENDABLE);
+    }
+
+    /**
+     * @param unannotatedTypes extensibility of the unannotated Annex A types
+     *     the receiver writes (ACKNACK_Payload): APPENDABLE (default) or FINAL.
+     */
+    public ReliableReceiver(int stream, UnannotatedTypes unannotatedTypes) {
         this.stream = stream & 0xFF;
+        this.unannotatedTypes = unannotatedTypes;
+    }
+
+    public ReliableReceiver(UnannotatedTypes unannotatedTypes) {
+        this(ReliableWire.STREAM_RELIABLE, unannotatedTypes);
+    }
+
+    public UnannotatedTypes unannotatedTypes() {
+        return unannotatedTypes;
     }
 
     /** A sample with {@code seq + payload} arrived: buffer it (dup < expected dropped). */
@@ -85,6 +103,11 @@ public final class ReliableReceiver {
             }
         }
         return new ReliableWire.AckNack(expectedSeq, bitmap & 0xFF, (bitmap >> 8) & 0xFF, stream);
+    }
+
+    /** The ACKNACK of {@link #pendingAcknack} as a frame in this receiver's unannotated-types form. */
+    public byte[] pendingAcknackFrame(Integer hint) {
+        return ReliableWire.acknackFrame(pendingAcknack(hint), unannotatedTypes);
     }
 
     public void reset() {

@@ -6,7 +6,13 @@
  * ns per op for both -- the gap is the latency a tight aggregator loop avoids.
  * Sends to a bound-but-unread loopback socket so the syscall cost is real.
  */
+/* `_POSIX_C_SOURCE` alone is not enough: `INADDR_LOOPBACK` is a BSD socket
+ * extension rather than a POSIX constant, and Apple's libc hides it behind
+ * `_DARWIN_C_SOURCE` when a strict POSIX level is requested — glibc exposes it
+ * either way. Declaring both keeps the POSIX level and puts the constant back,
+ * so this file builds on both libcs. */
 #define _POSIX_C_SOURCE 200809L
+#define _DARWIN_C_SOURCE 1
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -89,8 +95,11 @@ int main(void)
     t0 = now_ns();
     for (i = 0; i < ITERS; i++) {
         size_t flen = zdw_xrce_write_frame(frame, sizeof(frame), 0x80, 0x80,
-                                           (unsigned)(i & 0xffff), sample, 4);
-        (void)send(s_fd, frame, flen, 0);
+                                           (unsigned)(i & 0xffff),
+                                           ZDW_XRCE_OBJECT_ID(0x001, ZDW_OBJK_DATAWRITER),
+                                           sample, 4);
+        /* A refused frame (0) is not a frame: never hand it to the socket. */
+        if (flen > 0) { (void)send(s_fd, frame, flen, 0); }
     }
     inline_ns = (now_ns() - t0) / (unsigned long long)ITERS;
 
@@ -112,7 +121,8 @@ int main(void)
         bctx.fd = s_fd;
         bctx.peer_expected = 0;
         bctx.last_acked = 0;
-        if (zdw_async_ring_start(&ring, 0x80, deliver_udp, poll_ack, &bctx) != 0) {
+        if (zdw_async_ring_start(&ring, 0x80, ZDW_XRCE_OBJECT_ID(0x001, ZDW_OBJK_DATAWRITER),
+                                 deliver_udp, poll_ack, &bctx) != 0) {
             fprintf(stderr, "ring start failed\n"); return 1;
         }
     }

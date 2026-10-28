@@ -7,7 +7,7 @@
 golden_dir = System.get_env("GOLDEN_DIR") || "build"
 
 fixture = fn endian ->
-  ZeroDDS.Wire.writer(endian)
+  ZeroDDS.Wire.writer(endian, :xcdr2)
   |> ZeroDDS.Wire.put_u32(0xA1B2C3D4)
   |> ZeroDDS.Wire.put_u16(0x1234)
   |> ZeroDDS.Wire.put_u8(0x5A)
@@ -19,7 +19,7 @@ fixture = fn endian ->
 end
 
 sample_body = fn id ->
-  ZeroDDS.Wire.writer(:little)
+  ZeroDDS.Wire.writer(:little, :xcdr2)
   |> ZeroDDS.Wire.put_u32(id)
   |> ZeroDDS.Wire.put_u16(0)
   |> ZeroDDS.Wire.put_u8(0)
@@ -40,12 +40,12 @@ end
 
 # --- sync loopback (receive with a timeout underneath) ---
 t = ZeroDDS.MemTransport.new()
-c = ZeroDDS.Client.new(t)
+c = ZeroDDS.Client.new(t, ZeroDDS.Endpoint.object_id(0x001, ZeroDDS.Endpoint.objk_datawriter()))
 c = Enum.reduce(0..4, c, fn i, c -> ZeroDDS.Client.write(c, sample_body.(0x3000 + i)) end)
 
 for i <- 0..4 do
   body = ZeroDDS.Client.poll(c)
-  {id, _} = ZeroDDS.Wire.reader(body, :little) |> ZeroDDS.Wire.get_u32()
+  {id, _} = ZeroDDS.Wire.reader(body, :little, :xcdr2) |> ZeroDDS.Wire.get_u32()
   if id != 0x3000 + i, do: raise("sync: got 0x#{Integer.to_string(id, 16)} want 0x#{Integer.to_string(0x3000 + i, 16)}")
 end
 
@@ -53,7 +53,7 @@ IO.puts("sync loopback: 5 samples OK")
 
 # --- async loopback (process/mailbox) ---
 t2 = ZeroDDS.MemTransport.new()
-w = ZeroDDS.Client.new(t2)
+w = ZeroDDS.Client.new(t2, ZeroDDS.Endpoint.object_id(0x001, ZeroDDS.Endpoint.objk_datawriter()))
 Enum.reduce(0..4, w, fn i, w -> ZeroDDS.Client.write(w, sample_body.(0x1000 + i)) end)
 
 reader = ZeroDDS.AsyncReader.start(t2, self())
@@ -61,7 +61,7 @@ reader = ZeroDDS.AsyncReader.start(t2, self())
 for i <- 0..4 do
   receive do
     {:zerodds_sample, body} ->
-      {id, _} = ZeroDDS.Wire.reader(body, :little) |> ZeroDDS.Wire.get_u32()
+      {id, _} = ZeroDDS.Wire.reader(body, :little, :xcdr2) |> ZeroDDS.Wire.get_u32()
       if id != 0x1000 + i, do: raise("async: got 0x#{Integer.to_string(id, 16)} want 0x#{Integer.to_string(0x1000 + i, 16)}")
   after
     2000 -> raise("async: timeout waiting for sample #{i}")
@@ -72,8 +72,9 @@ ZeroDDS.AsyncReader.stop(reader)
 IO.puts("async loopback: 5 samples OK")
 
 # --- negative frame vectors: length bounding + malformed reject ---
-first = ZeroDDS.Endpoint.write_frame(0x80, 0x01, 1, <<0xAA, 0xBB, 0xCC>>)
-second = ZeroDDS.Endpoint.write_frame(0x80, 0x01, 2, <<0xDD, 0xEE>>)
+writer_id = ZeroDDS.Endpoint.object_id(0x001, ZeroDDS.Endpoint.objk_datawriter())
+first = ZeroDDS.Endpoint.write_frame(0x80, 0x01, 1, writer_id, <<0xAA, 0xBB, 0xCC>>)
+second = ZeroDDS.Endpoint.write_frame(0x80, 0x01, 2, writer_id, <<0xDD, 0xEE>>)
 
 case ZeroDDS.Endpoint.read_frame(first <> second) do
   {:ok, <<0xAA, 0xBB, 0xCC>>} -> :ok
@@ -83,11 +84,12 @@ end
 <<h::binary-size(6), _::16, tail::binary>> = first
 overlong = h <> <<0xFF, 0xFF>> <> tail
 if ZeroDDS.Endpoint.read_frame(overlong) != :error, do: raise("over-long length must reject")
-if ZeroDDS.Endpoint.read_frame(<<0x80, 0x01, 0x00, 0x00, 0x07>>) != :error, do: raise("truncated header must reject")
+if ZeroDDS.Endpoint.read_frame(<<0x80, 0x01, 0x00, 0x00, 0x07, 0x01, 0x04, 0x00>>) != :error,
+  do: raise("truncated header must reject")
 
 refused =
   try do
-    ZeroDDS.Endpoint.write_frame(0x80, 0x01, 1, :binary.copy(<<0>>, 0x10000))
+    ZeroDDS.Endpoint.write_frame(0x80, 0x01, 1, writer_id, :binary.copy(<<0>>, 0x10000))
     false
   rescue
     ArgumentError -> true

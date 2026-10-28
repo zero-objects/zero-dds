@@ -30,8 +30,9 @@ pub use zerodds_bridge_security::{
 };
 
 /// Translates a [`super::config::DaemonConfig`] into a
-/// [`SecurityCtx`]. CoAP-specific: TLS stays rejected (DTLS in next
-/// phase), but auth + ACL are fully wired.
+/// [`SecurityCtx`]: auth and ACL. DTLS is the transport's
+/// (`coap.dtls.*`, `dtls_transport`); with it, `auth.mode: mtls` takes the
+/// subject from the handshake.
 ///
 /// # Errors
 /// [`SecurityError`] on auth-mode config error.
@@ -40,6 +41,17 @@ pub fn ctx_from_daemon_config(
 ) -> Result<SecurityCtx, SecurityError> {
     let mut sc = SecurityConfig::default();
     sc.auth_mode = cfg.auth_mode.clone();
+    match cfg.auth_mode.as_str() {
+        "jwt" => sc.apply_jwt(&cfg.auth_jwt)?,
+        // The identity comes from the DTLS handshake, so plain CoAP cannot
+        // serve it and every request would be 4.01.
+        "mtls" if !cfg.dtls_enabled => {
+            return Err(SecurityError::Config(
+                "auth.mode: mtls needs coap.dtls.enabled".into(),
+            ));
+        }
+        _ => {}
+    }
     if let (Some(tok), Some(subj)) = (
         cfg.auth_bearer_token.as_ref(),
         cfg.auth_bearer_subject.as_ref(),
@@ -57,7 +69,19 @@ pub fn ctx_from_daemon_config(
             },
         );
     }
-    forbid_tls_until_dtls_lib(&sc)?;
+    // Spec §7.3 `acl.default_deny`: `false` opens every resource that no
+    // rule names; `true` (the default) leaves the ACL fail-closed.
+    if !cfg.acl_default_deny {
+        sc.topic_acl_default = Some(AclEntry::allow_all());
+    } else if cfg.acl_default_deny_set {
+        // An explicit `default_deny: true`: a default entry that names no
+        // subject denies the unnamed rest, and keeps `build_ctx` from its open
+        // fallback for an ACL nobody configured.
+        sc.topic_acl_default = Some(AclEntry {
+            read: Vec::new(),
+            write: Vec::new(),
+        });
+    }
     build_ctx(&sc)
 }
 
@@ -77,6 +101,7 @@ pub const COAP_OPTION_AUTH_TOKEN: u16 = 65000;
 pub fn authenticate_coap(
     auth: &AuthMode,
     auth_token_option: Option<&[u8]>,
+    dtls_peer: Option<&AuthSubject>,
 ) -> Result<AuthSubject, AuthError> {
     let header_str = match auth_token_option {
         Some(b) => Some(
@@ -85,25 +110,7 @@ pub fn authenticate_coap(
         ),
         None => None,
     };
-    zerodds_bridge_security::authenticate(auth, header_str, None, None)
-}
-
-/// Throws a clear error when TLS cert paths are set but the CoAP
-/// daemon does not yet have a DTLS library.
-///
-/// # Errors
-/// [`SecurityError::Tls`] with a "DTLS in next phase" hint.
-pub fn forbid_tls_until_dtls_lib(cfg: &SecurityConfig) -> Result<(), SecurityError> {
-    if cfg.tls_cert.is_some() || cfg.tls_key.is_some() {
-        return Err(SecurityError::Tls(
-            zerodds_bridge_security::TlsConfigError::Rustls(
-                "CoAP §7.1: DTLS server not yet wired; rustls 0.23 is TCP-TLS only. \
-                 Track: \"DTLS in next phase\"."
-                    .into(),
-            ),
-        ));
-    }
-    Ok(())
+    zerodds_bridge_security::authenticate(auth, header_str, None, dtls_peer.cloned())
 }
 
 #[cfg(test)]
@@ -117,7 +124,7 @@ mod tests {
         let mut tokens = HashMap::new();
         tokens.insert("tok".into(), AuthSubject::new("alice"));
         let auth = AuthMode::Bearer { tokens };
-        let s = authenticate_coap(&auth, Some(b"Bearer tok")).unwrap();
+        let s = authenticate_coap(&auth, Some(b"Bearer tok"), None).unwrap();
         assert_eq!(s.name, "alice");
     }
 
@@ -126,30 +133,14 @@ mod tests {
         let auth = AuthMode::Bearer {
             tokens: HashMap::new(),
         };
-        let err = authenticate_coap(&auth, None).unwrap_err();
+        let err = authenticate_coap(&auth, None, None).unwrap_err();
         assert!(matches!(err, AuthError::MissingCredentials));
     }
 
     #[test]
     fn coap_none_auth_yields_anonymous() {
-        let s = authenticate_coap(&AuthMode::None, None).unwrap();
+        let s = authenticate_coap(&AuthMode::None, None, None).unwrap();
         assert_eq!(s.name, "anonymous");
-    }
-
-    #[test]
-    fn coap_dtls_phase_marker_blocks_tls_cli() {
-        let cfg = SecurityConfig {
-            tls_cert: Some("/x".into()),
-            tls_key: Some("/y".into()),
-            ..Default::default()
-        };
-        let err = forbid_tls_until_dtls_lib(&cfg).unwrap_err();
-        assert!(matches!(err, SecurityError::Tls(_)));
-    }
-
-    #[test]
-    fn coap_no_tls_args_passes_phase_check() {
-        forbid_tls_until_dtls_lib(&SecurityConfig::default()).unwrap();
     }
 
     #[test]
@@ -166,5 +157,18 @@ mod tests {
         let bob = AuthSubject::new("bob");
         assert!(authorize(&ctx.acl, &bob, AclOp::Read, "rd/temp"));
         assert!(!authorize(&ctx.acl, &bob, AclOp::Write, "rd/temp"));
+    }
+
+    /// `auth.mode: jwt` reads `auth.jwt.public_key`; without it the setting
+    /// cannot be served and the context is refused as a configuration error.
+    #[test]
+    fn jwt_without_a_public_key_is_a_config_error() {
+        let mut cfg = crate::daemon::config::DaemonConfig::default_for_dev();
+        cfg.auth_mode = "jwt".into();
+        let err = ctx_from_daemon_config(&cfg).unwrap_err();
+        assert!(
+            matches!(&err, SecurityError::Config(m) if m.contains("auth.jwt.public_key")),
+            "{err}"
+        );
     }
 }

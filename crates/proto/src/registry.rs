@@ -7,7 +7,7 @@
 //!
 //! Messages are indexed by their fully-qualified name (`package.Outer.Inner`).
 //! Leaf fields (scalars, `string`, `bytes`, `repeated` of those) reuse
-//! [`crate::mapper::field_descriptor`]. Singular message and enum fields recurse
+//! `crate::mapper::field_descriptor`. Singular message and enum fields recurse
 //! into resolved nested structs / enums; `repeated` message and enum fields
 //! become `sequence<struct>` / `sequence<enum>`; a proto `map<K,V>` (encoded by
 //! `protoc` as a `repeated` synthetic `*Entry` message) becomes an XTypes
@@ -18,23 +18,33 @@ use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::format;
 use alloc::string::{String, ToString};
 
-use zerodds_types::dynamic::collection::{map_of, sequence_named};
+use alloc::sync::Arc;
+
+use zerodds_ast::{Ast, TypeNode};
+use zerodds_ast_core::Id;
 use zerodds_types::dynamic::{
-    DynamicType, DynamicTypeBuilderFactory, ExtensibilityKind, MemberDescriptor, TypeDescriptor,
-    TypeKind,
+    DynamicType, DynamicTypeBuilder, ExtensibilityKind, NewMember, TypeKind,
 };
 
 use crate::ProtoFieldType;
 use crate::descriptor::{Enum, Field, FileDescriptorSet, Label, Message};
-use crate::mapper::{MapError, element_descriptor, field_descriptor};
+use crate::mapper::{MapError, build_error, element_type, field_type};
 
 /// Resolves message and enum types by fully-qualified name into XTypes
-/// `DynamicType`s.
+/// types.
+///
+/// Every type goes into **one** model, which is what lets a message field
+/// name another message: a `DynamicType` is a view on a
+/// [`zerodds_ast::Ast`], and two types built into two models cannot refer
+/// to each other. So [`Registry::build`] answers a handle, and
+/// [`Registry::finish`] hands over the finished model at the end —
+/// [`Registry::into_type`] does both for a caller that wants one type.
 pub struct Registry {
     messages: BTreeMap<String, Message>,
     enums: BTreeMap<String, Enum>,
     extensibility: ExtensibilityKind,
-    cache: BTreeMap<String, DynamicType>,
+    builder: DynamicTypeBuilder,
+    cache: BTreeMap<String, Id<TypeNode>>,
 }
 
 fn join_fqn(prefix: &str, name: &str) -> String {
@@ -84,8 +94,36 @@ impl Registry {
             messages,
             enums,
             extensibility,
+            builder: DynamicTypeBuilder::new(),
             cache: BTreeMap::new(),
         }
+    }
+
+    /// The finished model, holding every type built so far.
+    #[must_use]
+    pub fn finish(self) -> Arc<Ast> {
+        self.builder.finish()
+    }
+
+    /// The finished model and a view on one of its types.
+    ///
+    /// # Errors
+    /// [`MapError::Build`] where the handle is not this registry's.
+    pub fn into_type(self, type_: Id<TypeNode>) -> Result<DynamicType, MapError> {
+        self.builder.finish_as(type_).map_err(|e| build_error(&e))
+    }
+
+    /// Build a message and hand back the finished model with a view on it.
+    ///
+    /// The one-type convenience over [`Registry::build`] and
+    /// [`Registry::into_type`]; a caller that needs several types calls
+    /// those two.
+    ///
+    /// # Errors
+    /// As [`Registry::build`].
+    pub fn build_type(mut self, fqn: &str) -> Result<DynamicType, MapError> {
+        let id = self.build(fqn)?;
+        self.into_type(id)
     }
 
     /// Build the `DynamicType` for the message with the given fully-qualified
@@ -94,7 +132,7 @@ impl Registry {
     /// # Errors
     /// [`MapError`] if the name is unknown, the message graph is recursive, a
     /// field type is unsupported, or the builder rejects a member.
-    pub fn build(&mut self, fqn: &str) -> Result<DynamicType, MapError> {
+    pub fn build(&mut self, fqn: &str) -> Result<Id<TypeNode>, MapError> {
         let mut building = BTreeSet::new();
         self.build_in(fqn, &mut building)
     }
@@ -104,9 +142,9 @@ impl Registry {
         &mut self,
         fqn: &str,
         building: &mut BTreeSet<String>,
-    ) -> Result<DynamicType, MapError> {
-        if let Some(dt) = self.cache.get(fqn) {
-            return Ok(dt.clone());
+    ) -> Result<Id<TypeNode>, MapError> {
+        if let Some(id) = self.cache.get(fqn) {
+            return Ok(*id);
         }
         if !building.insert(fqn.to_string()) {
             return Err(MapError::Cyclic(fqn.to_string()));
@@ -117,10 +155,10 @@ impl Registry {
             .ok_or_else(|| MapError::UnknownType(fqn.to_string()))?
             .clone();
 
-        let mut td = TypeDescriptor::structure(msg.name.clone());
-        td.extensibility_kind = self.extensibility;
-        let mut builder = DynamicTypeBuilderFactory::create_type(td)
-            .map_err(|e| MapError::Build(format_err(&e)))?;
+        let structure = self
+            .builder
+            .structure(&msg.name, self.extensibility)
+            .map_err(|e| build_error(&e))?;
 
         let mut emitted_oneofs: BTreeSet<usize> = BTreeSet::new();
         for field in &msg.fields {
@@ -148,10 +186,12 @@ impl Registry {
                         field: name.clone(),
                         reason: "oneof group has no representable field number",
                     })?;
-                let md = MemberDescriptor::new(name, member_id, union_ty.descriptor().clone());
-                builder
-                    .add_member_resolved(md, union_ty)
-                    .map_err(|e| MapError::Build(format_err(&e)))?;
+                self.builder
+                    .add_member(
+                        structure,
+                        &NewMember::new(&name, union_ty).with_id(member_id),
+                    )
+                    .map_err(|e| build_error(&e))?;
                 continue;
             }
 
@@ -161,80 +201,64 @@ impl Registry {
             })?;
 
             let singular = field.label != Label::Repeated;
-            match (field.ty, singular) {
+            let member_type = match (field.ty, singular) {
                 (Some(ProtoFieldType::Message | ProtoFieldType::Group), true) => {
                     let target = field.type_name.trim_start_matches('.');
-                    let nested = self.build_in(target, building)?;
-                    let md =
-                        MemberDescriptor::new(field.name.clone(), id, nested.descriptor().clone());
-                    builder
-                        .add_member_resolved(md, nested)
-                        .map_err(|e| MapError::Build(format_err(&e)))?;
+                    self.build_in(target, building)?
                 }
                 (Some(ProtoFieldType::Enum), true) => {
                     let target = field.type_name.trim_start_matches('.');
-                    let en = self.build_enum(target)?;
-                    let md = MemberDescriptor::new(field.name.clone(), id, en.descriptor().clone());
-                    builder
-                        .add_member_resolved(md, en)
-                        .map_err(|e| MapError::Build(format_err(&e)))?;
+                    self.build_enum(target)?
                 }
                 (Some(ProtoFieldType::Message | ProtoFieldType::Group), false) => {
                     // A `repeated` message is either a real `sequence<struct>` or
                     // the synthetic `*Entry` of a proto `map<K,V>`.
                     let target = field.type_name.trim_start_matches('.');
                     let entry = self.messages.get(target).filter(|m| m.map_entry).cloned();
-                    let member_ty = if let Some(entry) = entry {
+                    if let Some(entry) = entry {
                         self.build_map(&entry, building)?
                     } else {
                         let elem = self.build_in(target, building)?;
-                        let name = format!("sequence<{}>", elem.descriptor().name);
-                        sequence_named(&name, elem, 0)
-                    };
-                    let md = MemberDescriptor::new(
-                        field.name.clone(),
-                        id,
-                        member_ty.descriptor().clone(),
-                    );
-                    builder
-                        .add_member_resolved(md, member_ty)
-                        .map_err(|e| MapError::Build(format_err(&e)))?;
+                        self.builder
+                            .sequence(elem, None)
+                            .map_err(|e| build_error(&e))?
+                    }
                 }
                 (Some(ProtoFieldType::Enum), false) => {
                     let target = field.type_name.trim_start_matches('.');
                     let elem = self.build_enum(target)?;
-                    let name = format!("sequence<{}>", elem.descriptor().name);
-                    let seq = sequence_named(&name, elem, 0);
-                    let md =
-                        MemberDescriptor::new(field.name.clone(), id, seq.descriptor().clone());
-                    builder
-                        .add_member_resolved(md, seq)
-                        .map_err(|e| MapError::Build(format_err(&e)))?;
+                    self.builder
+                        .sequence(elem, None)
+                        .map_err(|e| build_error(&e))?
                 }
-                _ => {
-                    let member =
-                        MemberDescriptor::new(field.name.clone(), id, field_descriptor(field)?);
-                    builder
-                        .add_member(member)
-                        .map_err(|e| MapError::Build(format_err(&e)))?;
-                }
-            }
+                _ => field_type(&mut self.builder, field)?,
+            };
+            self.builder
+                .add_member(
+                    structure,
+                    &NewMember::new(&field.name, member_type).with_id(id),
+                )
+                .map_err(|e| build_error(&e))?;
         }
 
-        let dt = builder
-            .build()
-            .map_err(|e| MapError::Build(format_err(&e)))?;
         building.remove(fqn);
-        self.cache.insert(fqn.to_string(), dt.clone());
-        Ok(dt)
+        self.cache.insert(fqn.to_string(), structure);
+        Ok(structure)
     }
 
-    /// Build the enum `DynamicType` for the given fully-qualified name. Each
-    /// enumerator becomes a member whose id is its numeric value; the value-0
-    /// enumerator is the default label (proto3 requires it first).
-    fn build_enum(&mut self, fqn: &str) -> Result<DynamicType, MapError> {
-        if let Some(dt) = self.cache.get(fqn) {
-            return Ok(dt.clone());
+    /// Build the enum type for the given fully-qualified name.
+    ///
+    /// Each protobuf enumerator becomes an XTypes enumerator carrying an
+    /// explicit `@value(n)` — a proto enum states its numbers and they are
+    /// not always consecutive, so a positional enumerator would renumber
+    /// them. The value-0 enumerator is `@default_literal`, which proto3
+    /// requires to be present and treats as the zero value.
+    ///
+    /// The `@bit_bound` is 32: `descriptor.proto` numbers enumerators with
+    /// an `int32`.
+    fn build_enum(&mut self, fqn: &str) -> Result<Id<TypeNode>, MapError> {
+        if let Some(id) = self.cache.get(fqn) {
+            return Ok(*id);
         }
         let en = self
             .enums
@@ -242,32 +266,19 @@ impl Registry {
             .ok_or_else(|| MapError::UnknownType(fqn.to_string()))?
             .clone();
 
-        let mut desc = TypeDescriptor::enumeration(en.name.clone());
-        desc.bound = alloc::vec![32]; // proto enums are 32-bit
-        let mut builder = DynamicTypeBuilderFactory::create_type(desc)
-            .map_err(|e| MapError::Build(format_err(&e)))?;
+        let enumeration = self
+            .builder
+            .enumeration(&en.name, Some(32))
+            .map_err(|e| build_error(&e))?;
 
         for (lit_name, value) in &en.values {
-            let id = u32::try_from(*value).map_err(|_| MapError::UnsupportedField {
-                field: lit_name.clone(),
-                reason: "negative enum value not representable as an XTypes member id",
-            })?;
-            let mut md = MemberDescriptor::new(
-                lit_name.clone(),
-                id,
-                TypeDescriptor::primitive(TypeKind::Int32, "int32"),
-            );
-            md.is_default_label = *value == 0;
-            builder
-                .add_member(md)
-                .map_err(|e| MapError::Build(format_err(&e)))?;
+            self.builder
+                .add_enumerator(enumeration, lit_name, Some(*value), *value == 0)
+                .map_err(|e| build_error(&e))?;
         }
 
-        let dt = builder
-            .build()
-            .map_err(|e| MapError::Build(format_err(&e)))?;
-        self.cache.insert(fqn.to_string(), dt.clone());
-        Ok(dt)
+        self.cache.insert(fqn.to_string(), enumeration);
+        Ok(enumeration)
     }
 
     /// Build an XTypes `map<K,V>` from a synthetic protobuf `*Entry` message
@@ -280,7 +291,7 @@ impl Registry {
         &mut self,
         entry: &Message,
         building: &mut BTreeSet<String>,
-    ) -> Result<DynamicType, MapError> {
+    ) -> Result<Id<TypeNode>, MapError> {
         let key_field = entry.fields.iter().find(|f| f.number == 1).ok_or_else(|| {
             MapError::UnsupportedField {
                 field: entry.name.clone(),
@@ -295,12 +306,9 @@ impl Registry {
         })?;
         let key_ty = self.resolve_element_type(key_field, building)?;
         let val_ty = self.resolve_element_type(val_field, building)?;
-        let name = format!(
-            "map<{}, {}>",
-            key_ty.descriptor().name,
-            val_ty.descriptor().name
-        );
-        Ok(map_of(key_ty, val_ty, 0, &name))
+        self.builder
+            .map(key_ty, val_ty, None)
+            .map_err(|e| build_error(&e))
     }
 
     /// Resolve a field's **element** type (its `repeated`/`map` wrapping
@@ -313,18 +321,13 @@ impl Registry {
         &mut self,
         field: &Field,
         building: &mut BTreeSet<String>,
-    ) -> Result<DynamicType, MapError> {
+    ) -> Result<Id<TypeNode>, MapError> {
         match field.ty {
             Some(ProtoFieldType::Message | ProtoFieldType::Group) => {
                 self.build_in(field.type_name.trim_start_matches('.'), building)
             }
             Some(ProtoFieldType::Enum) => self.build_enum(field.type_name.trim_start_matches('.')),
-            _ => {
-                let td = element_descriptor(field)?;
-                DynamicTypeBuilderFactory::create_type(td)
-                    .and_then(|b| b.build())
-                    .map_err(|e| MapError::Build(format_err(&e)))
-            }
+            _ => element_type(&mut self.builder, field),
         }
     }
 
@@ -339,44 +342,49 @@ impl Registry {
         msg: &Message,
         oneof_index: i32,
         building: &mut BTreeSet<String>,
-    ) -> Result<DynamicType, MapError> {
+    ) -> Result<Id<TypeNode>, MapError> {
         let name = msg
             .oneofs
             .get(usize::try_from(oneof_index).unwrap_or(usize::MAX))
             .cloned()
             .unwrap_or_else(|| format!("oneof_{oneof_index}"));
-        let disc = TypeDescriptor::primitive(TypeKind::Int32, "int32");
-        let mut builder =
-            DynamicTypeBuilderFactory::create_union(format!("{}.{name}", msg.name), disc)
-                .map_err(|e| MapError::Build(format_err(&e)))?;
+        let disc = self
+            .builder
+            .primitive(TypeKind::Int32)
+            .map_err(|e| build_error(&e))?;
+        // The union takes the message's extensibility, as the message
+        // does: a `oneof` inside a `@mutable` message whose branches were
+        // `@final` would stop evolving where the message it sits in does
+        // not.
+        let union = self
+            .builder
+            .union(&format!("{}.{name}", msg.name), disc, self.extensibility)
+            .map_err(|e| build_error(&e))?;
 
         for field in msg
             .fields
             .iter()
             .filter(|f| f.oneof_index == Some(oneof_index))
+            .cloned()
+            .collect::<alloc::vec::Vec<_>>()
         {
             let id = u32::try_from(field.number).map_err(|_| MapError::UnsupportedField {
                 field: field.name.clone(),
                 reason: "oneof field number out of range",
             })?;
-            let case_ty = self.resolve_element_type(field, building)?;
-            let mut md =
-                MemberDescriptor::new(field.name.clone(), id, case_ty.descriptor().clone());
-            md.label = alloc::vec![i64::from(field.number)];
-            builder
-                .add_member_resolved(md, case_ty)
-                .map_err(|e| MapError::Build(format_err(&e)))?;
+            let case_ty = self.resolve_element_type(&field, building)?;
+            self.builder
+                .add_case(
+                    union,
+                    &[i64::from(field.number)],
+                    false,
+                    &NewMember::new(&field.name, case_ty).with_id(id),
+                )
+                .map_err(|e| build_error(&e))?;
         }
 
-        builder.build().map_err(|e| MapError::Build(format_err(&e)))
+        Ok(union)
     }
-}
-
-fn format_err(e: &zerodds_types::dynamic::DynamicError) -> String {
-    use core::fmt::Write as _;
-    let mut s = String::new();
-    let _ = write!(s, "{e:?}");
-    s
 }
 
 #[cfg(test)]
@@ -437,14 +445,14 @@ mod tests {
             }],
         };
 
-        let mut reg = Registry::from_set(&set, ExtensibilityKind::Appendable);
-        let outer_dt = reg.build("pkg.Outer").unwrap();
+        let reg = Registry::from_set(&set, ExtensibilityKind::Appendable);
+        let outer_dt = reg.build_type("pkg.Outer").unwrap();
         assert_eq!(outer_dt.member_count(), 2);
 
         // the nested member is itself a struct carrying Inner's members
         let inner_member = outer_dt.member_by_name("inner").unwrap();
         assert_eq!(inner_member.id(), 2);
-        let inner_ty = inner_member.dynamic_type();
+        let inner_ty = inner_member.dynamic_type().unwrap();
         assert_eq!(inner_ty.member_by_name("x").unwrap().id(), 1);
     }
 
@@ -498,8 +506,6 @@ mod tests {
 
     #[test]
     fn maps_a_scalar_valued_map_field() {
-        use zerodds_types::dynamic::collection::{resolved_map_key, resolved_map_value};
-
         let entry = map_entry(
             "PriceEntry",
             scalar_field("key", 1, ProtoFieldType::String),
@@ -521,20 +527,18 @@ mod tests {
             }],
         };
 
-        let mut reg = Registry::from_set(&set, ExtensibilityKind::Appendable);
-        let dt = reg.build("pkg.Order").unwrap();
+        let reg = Registry::from_set(&set, ExtensibilityKind::Appendable);
+        let dt = reg.build_type("pkg.Order").unwrap();
         let prices = dt.member_by_name("prices").unwrap();
         assert_eq!(prices.id(), 3);
-        let map_ty = prices.dynamic_type();
+        let map_ty = prices.dynamic_type().unwrap();
         assert_eq!(map_ty.kind(), TypeKind::Map);
-        assert_eq!(resolved_map_key(map_ty).unwrap().kind(), TypeKind::String8);
-        assert_eq!(resolved_map_value(map_ty).unwrap().kind(), TypeKind::Int32);
+        assert_eq!(map_ty.key_element_type().unwrap().kind(), TypeKind::String8);
+        assert_eq!(map_ty.element_type().unwrap().kind(), TypeKind::Int32);
     }
 
     #[test]
     fn maps_a_message_valued_map_field() {
-        use zerodds_types::dynamic::collection::resolved_map_value;
-
         let point = Message {
             name: "Point".to_string(),
             fields: vec![
@@ -567,20 +571,22 @@ mod tests {
             }],
         };
 
-        let mut reg = Registry::from_set(&set, ExtensibilityKind::Appendable);
-        let dt = reg.build("pkg.Mesh").unwrap();
-        let map_ty = dt.member_by_name("vertices").unwrap().dynamic_type();
+        let reg = Registry::from_set(&set, ExtensibilityKind::Appendable);
+        let dt = reg.build_type("pkg.Mesh").unwrap();
+        let map_ty = dt
+            .member_by_name("vertices")
+            .unwrap()
+            .dynamic_type()
+            .unwrap();
         assert_eq!(map_ty.kind(), TypeKind::Map);
         // value keeps the full nested struct (its members survive)
-        let val = resolved_map_value(map_ty).unwrap();
+        let val = map_ty.element_type().unwrap();
         assert_eq!(val.kind(), TypeKind::Structure);
         assert_eq!(val.member_by_name("y").unwrap().id(), 2);
     }
 
     #[test]
     fn maps_a_repeated_message_to_sequence_of_struct() {
-        use zerodds_types::dynamic::collection::resolved_element;
-
         let item = Message {
             name: "Item".to_string(),
             fields: vec![scalar_field("sku", 1, ProtoFieldType::Int64)],
@@ -605,19 +611,17 @@ mod tests {
             }],
         };
 
-        let mut reg = Registry::from_set(&set, ExtensibilityKind::Appendable);
-        let dt = reg.build("pkg.Cart").unwrap();
-        let seq_ty = dt.member_by_name("items").unwrap().dynamic_type();
+        let reg = Registry::from_set(&set, ExtensibilityKind::Appendable);
+        let dt = reg.build_type("pkg.Cart").unwrap();
+        let seq_ty = dt.member_by_name("items").unwrap().dynamic_type().unwrap();
         assert_eq!(seq_ty.kind(), TypeKind::Sequence);
-        let elem = resolved_element(seq_ty).unwrap();
+        let elem = seq_ty.element_type().unwrap();
         assert_eq!(elem.kind(), TypeKind::Structure);
         assert_eq!(elem.member_by_name("sku").unwrap().id(), 1);
     }
 
     #[test]
     fn maps_a_repeated_enum_to_sequence_of_enum() {
-        use zerodds_types::dynamic::collection::resolved_element;
-
         let color = Enum {
             name: "Color".to_string(),
             values: vec![("RED".to_string(), 0), ("GREEN".to_string(), 1)],
@@ -645,14 +649,11 @@ mod tests {
             }],
         };
 
-        let mut reg = Registry::from_set(&set, ExtensibilityKind::Appendable);
-        let dt = reg.build("pkg.Palette").unwrap();
-        let seq_ty = dt.member_by_name("colors").unwrap().dynamic_type();
+        let reg = Registry::from_set(&set, ExtensibilityKind::Appendable);
+        let dt = reg.build_type("pkg.Palette").unwrap();
+        let seq_ty = dt.member_by_name("colors").unwrap().dynamic_type().unwrap();
         assert_eq!(seq_ty.kind(), TypeKind::Sequence);
-        assert_eq!(
-            resolved_element(seq_ty).unwrap().kind(),
-            TypeKind::Enumeration
-        );
+        assert_eq!(seq_ty.element_type().unwrap().kind(), TypeKind::Enumeration);
     }
 
     fn oneof_field(name: &str, number: i32, ty: ProtoFieldType, oneof: i32) -> Field {
@@ -689,8 +690,8 @@ mod tests {
             }],
         };
 
-        let mut reg = Registry::from_set(&set, ExtensibilityKind::Appendable);
-        let dt = reg.build("pkg.Value").unwrap();
+        let reg = Registry::from_set(&set, ExtensibilityKind::Appendable);
+        let dt = reg.build_type("pkg.Value").unwrap();
         // regular field + one union member for the whole oneof group
         assert_eq!(dt.member_count(), 2);
         assert_eq!(dt.member_by_name("id").unwrap().id(), 1);
@@ -698,13 +699,18 @@ mod tests {
         let union_member = dt.member_by_name("body").unwrap();
         // union member id = lowest field number in the group
         assert_eq!(union_member.id(), 2);
-        let union_ty = union_member.dynamic_type();
+        let union_ty = union_member.dynamic_type().unwrap();
         assert_eq!(union_ty.kind(), TypeKind::Union);
         // one case per oneof field, keyed by field number
         assert_eq!(union_ty.member_by_name("i").unwrap().id(), 2);
         assert_eq!(union_ty.member_by_name("s").unwrap().id(), 3);
         assert_eq!(
-            union_ty.member_by_name("s").unwrap().descriptor().label,
+            union_ty
+                .member_by_name("s")
+                .unwrap()
+                .descriptor()
+                .unwrap()
+                .label,
             alloc::vec![3_i64]
         );
     }
@@ -742,12 +748,21 @@ mod tests {
             }],
         };
 
-        let mut reg = Registry::from_set(&set, ExtensibilityKind::Appendable);
-        let dt = reg.build("pkg.Pixel").unwrap();
-        let color_ty = dt.member_by_name("color").unwrap().dynamic_type();
+        let reg = Registry::from_set(&set, ExtensibilityKind::Appendable);
+        let dt = reg.build_type("pkg.Pixel").unwrap();
+        let color_ty = dt.member_by_name("color").unwrap().dynamic_type().unwrap();
         assert_eq!(color_ty.kind(), TypeKind::Enumeration);
-        // enumerator value becomes the member id
-        assert_eq!(color_ty.member_by_name("GREEN").unwrap().id(), 1);
-        assert_eq!(color_ty.member_by_id(2).unwrap().name(), "BLUE");
+        // The enumerator value is the literal's value; an enumerator has
+        // no member id (XTypes 1.3 §7.5.2.7.5).
+        assert_eq!(
+            color_ty.member_by_name("GREEN").unwrap().literal_value(),
+            Some(1)
+        );
+        let blue = color_ty
+            .members()
+            .into_iter()
+            .find(|member| member.literal_value() == Some(2))
+            .unwrap();
+        assert_eq!(blue.name(), "BLUE");
     }
 }

@@ -1,0 +1,14 @@
+# What jacorb got back when it read the bytes of annotation-must-understand-unannotated, held against
+# tests/interop-corpus/annotation-must-understand-unannotated/values.json and never against another
+# column's reading of the same bytes.
+# encoding	endian	verdict	detail
+plain-cdr1	le	no-form	Sample.note: an @optional member, whose presence marker is XTypes' and not CORBA's
+plain-cdr1	be	no-form	Sample.note: an @optional member, whose presence marker is XTypes' and not CORBA's
+pl-cdr1	le	no-form	Sample.note: an @optional member, whose presence marker is XTypes' and not CORBA's
+pl-cdr1	be	no-form	Sample.note: an @optional member, whose presence marker is XTypes' and not CORBA's
+plain-cdr2	le	no-form	Sample.note: an @optional member, whose presence marker is XTypes' and not CORBA's
+plain-cdr2	be	no-form	Sample.note: an @optional member, whose presence marker is XTypes' and not CORBA's
+delimited-cdr	le	no-form	Sample.note: an @optional member, whose presence marker is XTypes' and not CORBA's
+delimited-cdr	be	no-form	Sample.note: an @optional member, whose presence marker is XTypes' and not CORBA's
+pl-cdr2	le	no-form	Sample.note: an @optional member, whose presence marker is XTypes' and not CORBA's
+pl-cdr2	be	no-form	Sample.note: an @optional member, whose presence marker is XTypes' and not CORBA's

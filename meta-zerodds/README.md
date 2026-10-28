@@ -1,91 +1,91 @@
-# meta-zerodds — Yocto-Layer fuer ZeroDDS
+# meta-zerodds — Yocto layer for ZeroDDS
 
-WP 5.E.4. Liefert das `meta-zerodds`-OE-Layer das ZeroDDS in Yocto-
-Builds einklinkt.
+WP 5.E.4. Provides the `meta-zerodds` OE layer that hooks ZeroDDS into Yocto
+builds.
 
-## Layer-Aktivierung
+## Layer activation
 
 ```bash
 cd ~/poky/build
 bitbake-layers add-layer ../../meta-zerodds
 ```
 
-Oder per Hand in `conf/bblayers.conf`:
+Or by hand in `conf/bblayers.conf`:
 
 ```
 BBLAYERS += "${TOPDIR}/../meta-zerodds"
 ```
 
-## Layer-Kompatibilitaet
+## Layer compatibility
 
-Yocto-Releases:
+Yocto releases:
 
-* **scarthgap** (5.0 LTS, April 2024) — primaeres Target
+* **scarthgap** (5.0 LTS, April 2024) — primary target
 * **nanbield** (4.3, October 2023)
 * **kirkstone** (4.0 LTS, April 2022)
 
 ## Dependencies
 
-* `meta-rust` (https://github.com/meta-rust/meta-rust) — fuer
-  `cargo_bin.bbclass` und Cross-Compile-Toolchain.
-* `core` — Yocto-Standard.
+* `meta-rust` (https://github.com/meta-rust/meta-rust) — for
+  `cargo_bin.bbclass` and the cross-compile toolchain.
+* `core` — Yocto standard.
 
 ## Recipe
 
-`recipes-zerodds/zerodds/zerodds_0.0.0.bb` — baut den
-ZeroDDS-Workspace mit `cargo build -p dds-c-api --release` und
-installiert `libzerodds.so` + `zerodds.h` ins Yocto-Image.
+`recipes-zerodds/zerodds/zerodds_0.0.0.bb` — builds the
+ZeroDDS workspace with `cargo build -p dds-c-api --release` and
+installs `libzerodds.so` + `zerodds.h` into the Yocto image.
 
-## PACKAGECONFIG-Knobs
+## PACKAGECONFIG knobs
 
-| Knob | Beschreibung |
+| Knob | Description |
 | ---- | ------------ |
-| `rtps-only` | Slim-Build ohne Security/Bridges/CCM/CORBA |
-| `security` | + DDS-Security 1.2 (default an) |
-| `bridges` | + CoAP/MQTT/WebSocket/gRPC/AMQP-Bridges |
-| `tools` | + Tool-Binaries (dds-replay, dds-chaos, dds-dashboard) |
+| `rtps-only` | Slim build without security/bridges/CCM/CORBA |
+| `security` | + DDS-Security 1.2 (on by default) |
+| `bridges` | + CoAP/MQTT/WebSocket/gRPC/AMQP bridges |
+| `tools` | + tool binaries (dds-replay, dds-chaos, dds-dashboard) |
 
-Default: `security`. Beispiel-Override in `local.conf`:
+Default: `security`. Example override in `local.conf`:
 
 ```
 PACKAGECONFIG:pn-zerodds = "security bridges tools"
 ```
 
-## Image-Targets
+## Image targets
 
-ZeroDDS in ein Image bringen:
+Bringing ZeroDDS into an image:
 
 ```
 IMAGE_INSTALL:append = " zerodds"
 ```
 
-Plus das Tools-Bundle:
+Plus the tools bundle:
 
 ```
 IMAGE_INSTALL:append = " zerodds zerodds-tools zerodds-dev"
 ```
 
-## Cross-Compile-Targets
+## Cross-compile targets
 
 * `aarch64-poky-linux` (Raspberry Pi 4/5, NXP iMX8, Apex.OS)
-* `aarch64-poky-linux-musl` (embedded ohne glibc)
+* `aarch64-poky-linux-musl` (embedded without glibc)
 * `armv7vehf-poky-linux-gnueabi` (Raspberry Pi 2/3, Cortex-A7/A9)
-* `x86_64-poky-linux` (qemu-x86-64 fuer CI)
+* `x86_64-poky-linux` (qemu-x86-64 for CI)
 
-## QEMU-Smoketest
+## QEMU smoke test
 
 ```bash
 bitbake core-image-minimal
 runqemu qemuarm64 nographic
-# innerhalb des emulierten Targets:
+# inside the emulated target:
 ldd /usr/lib/libzerodds.so
 ls /usr/include/zerodds/zerodds.h
 ```
 
-## Phase-A vs Phase-B
+## Phase A vs phase B
 
-* **Phase-A** (jetzt): Recipe-Skelett + Layer-Conf + README. Recipe
-  laeuft auf einem Yocto-Build-Host der `meta-rust` integriert hat;
-  Live-Build noch nicht in CI.
-* **Phase-B**: GitLab-CI-Job `ci/jobs/yocto-image.yml` baut nightly
-  ein qemu-aarch64-Image mit ZeroDDS, runqemu-Smoketest in CI-Runner.
+* **Phase A** (now): recipe skeleton + layer conf + README. The recipe
+  runs on a Yocto build host that has integrated `meta-rust`;
+  live build not yet in CI.
+* **Phase B**: the GitLab CI job `ci/jobs/yocto-image.yml` builds a
+  qemu-aarch64 image with ZeroDDS nightly, runqemu smoke test in the CI runner.

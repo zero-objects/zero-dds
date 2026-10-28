@@ -1,0 +1,1 @@
+Error - /opt/opendds/bin/tao_idl: gen.idl:14: illegal recursive use of type:  - ::zd_c1::m::Node

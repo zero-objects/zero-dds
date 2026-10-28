@@ -1,0 +1,5 @@
+// one-dimensional array of `wstring`, unannotated
+struct Sample {
+    wstring items[3];
+    long tail;
+};

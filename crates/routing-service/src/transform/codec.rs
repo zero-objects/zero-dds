@@ -5,15 +5,27 @@
 //! `@appendable`).
 //!
 //! Operates on the CDR **body** (without the encapsulation header) exactly as
-//! the runtime user byte-path delivers it, mirroring the `zerodds-cdr` body
+//! the runtime user byte-path delivers it, mirroring the `zerodds-wire` body
 //! layout (align origin 0; max alignment 8 for XCDR1, 4 for XCDR2;
 //! Cyclone/FastDDS byte-compatible). The encapsulation header is stripped on
 //! receive, so the source endianness is not recoverable from the body — the
 //! codec assumes **little-endian** (the universal DDS default on LE hosts) and
 //! re-encodes little-endian. Byte pass-through routes (no filter/transform)
 //! never decode and so are endianness-agnostic.
+//!
+//! The XCDR2 alignment cap is the reader's and the writer's own
+//! `max_align`, set at construction; `zerodds-wire` has no `.xcdr2()`
+//! toggle because the cap is the only thing the two encodings differ in
+//! here. The writer cannot fail — every `write_*` returns `()` — so the
+//! encode path carries error returns only for the value/kind mismatch it
+//! detects itself.
 
-use zerodds_cdr::{BufferReader, BufferWriter, Endianness};
+use zerodds_wire::{Endianness, Reader, Writer};
+
+/// XCDR1 caps alignment at 8, XCDR2 at 4 — XTypes 1.3 §7.4.2.
+const XCDR1_MAX_ALIGN: usize = 8;
+/// See [`XCDR1_MAX_ALIGN`].
+const XCDR2_MAX_ALIGN: usize = 4;
 
 use super::shape::{ScalarKind, TypeShape};
 use crate::error::RoutingError;
@@ -79,34 +91,32 @@ pub fn decode(
     representation: u8,
 ) -> crate::error::Result<Vec<DynValue>> {
     let xcdr2 = representation != 0;
-    let mut r = BufferReader::new(body, Endianness::Little);
-    if xcdr2 {
-        r = r.xcdr2();
-        if shape.appendable {
-            // DHEADER (object size) — read and discard; members follow.
-            r.read_u32().map_err(|_| dec_err("dheader"))?;
-        }
+    let max_align = if xcdr2 {
+        XCDR2_MAX_ALIGN
+    } else {
+        XCDR1_MAX_ALIGN
+    };
+    let mut r = Reader::with_max_align(body, Endianness::Little, max_align);
+    if xcdr2 && shape.appendable {
+        // DHEADER (object size) — read and discard; members follow.
+        r.read_u32().map_err(|_| dec_err("dheader"))?;
     }
     let mut out = Vec::with_capacity(shape.members.len());
     for m in &shape.members {
         let a = align_for(m.kind, xcdr2);
-        r.align(a).map_err(|_| dec_err("align"))?;
+        r.align_to(a).map_err(|_| dec_err("align"))?;
         let v = match m.kind {
             ScalarKind::Bool => DynValue::Bool(r.read_u8().map_err(|_| dec_err("bool"))? != 0),
             ScalarKind::U8 => DynValue::U8(r.read_u8().map_err(|_| dec_err("u8"))?),
-            ScalarKind::I8 => DynValue::I8(r.read_u8().map_err(|_| dec_err("i8"))? as i8),
+            ScalarKind::I8 => DynValue::I8(r.read_i8().map_err(|_| dec_err("i8"))?),
             ScalarKind::U16 => DynValue::U16(r.read_u16().map_err(|_| dec_err("u16"))?),
-            ScalarKind::I16 => DynValue::I16(r.read_u16().map_err(|_| dec_err("i16"))? as i16),
+            ScalarKind::I16 => DynValue::I16(r.read_i16().map_err(|_| dec_err("i16"))?),
             ScalarKind::U32 => DynValue::U32(r.read_u32().map_err(|_| dec_err("u32"))?),
-            ScalarKind::I32 => DynValue::I32(r.read_u32().map_err(|_| dec_err("i32"))? as i32),
+            ScalarKind::I32 => DynValue::I32(r.read_i32().map_err(|_| dec_err("i32"))?),
             ScalarKind::U64 => DynValue::U64(r.read_u64().map_err(|_| dec_err("u64"))?),
-            ScalarKind::I64 => DynValue::I64(r.read_u64().map_err(|_| dec_err("i64"))? as i64),
-            ScalarKind::F32 => {
-                DynValue::F32(f32::from_bits(r.read_u32().map_err(|_| dec_err("f32"))?))
-            }
-            ScalarKind::F64 => {
-                DynValue::F64(f64::from_bits(r.read_u64().map_err(|_| dec_err("f64"))?))
-            }
+            ScalarKind::I64 => DynValue::I64(r.read_i64().map_err(|_| dec_err("i64"))?),
+            ScalarKind::F32 => DynValue::F32(r.read_f32().map_err(|_| dec_err("f32"))?),
+            ScalarKind::F64 => DynValue::F64(r.read_f64().map_err(|_| dec_err("f64"))?),
             ScalarKind::String => DynValue::Str(r.read_string().map_err(|_| dec_err("string"))?),
         };
         out.push(v);
@@ -127,64 +137,42 @@ pub fn encode(
         return Err(enc_err("value/member count mismatch"));
     }
     let xcdr2 = representation != 0;
-    let mut w = if xcdr2 {
-        BufferWriter::new(Endianness::Little).xcdr2()
+    let max_align = if xcdr2 {
+        XCDR2_MAX_ALIGN
     } else {
-        BufferWriter::new(Endianness::Little)
+        XCDR1_MAX_ALIGN
     };
-    // Appendable XCDR2: reserve a DHEADER, fill members, then patch the size.
-    let dheader_at = if xcdr2 && shape.appendable {
-        w.align(4);
-        let at = w.position();
-        w.write_u32(0).map_err(|_| enc_err("dheader placeholder"))?;
-        Some(at)
-    } else {
-        None
-    };
+    let mut w = Writer::with_max_align(Endianness::Little, max_align);
+    // Appendable XCDR2: reserve a DHEADER, fill members, then patch the
+    // size. `write_dheader` aligns to 4, reserves the four bytes and hands
+    // back the handle `finish_dheader` patches — XTypes 1.3 §7.4.3.4.2 —
+    // so the offset arithmetic is the writer's, not this file's.
+    let dheader = (xcdr2 && shape.appendable).then(|| w.write_dheader());
 
     for (m, v) in shape.members.iter().zip(values) {
         let a = align_for(m.kind, xcdr2);
-        w.align(a);
+        w.align_to(a);
         match (m.kind, v) {
-            (ScalarKind::Bool, DynValue::Bool(b)) => {
-                w.write_u8(u8::from(*b)).map_err(|_| enc_err("bool"))?;
-            }
-            (ScalarKind::U8, DynValue::U8(x)) => w.write_u8(*x).map_err(|_| enc_err("u8"))?,
-            (ScalarKind::I8, DynValue::I8(x)) => {
-                w.write_u8(*x as u8).map_err(|_| enc_err("i8"))?;
-            }
-            (ScalarKind::U16, DynValue::U16(x)) => w.write_u16(*x).map_err(|_| enc_err("u16"))?,
-            (ScalarKind::I16, DynValue::I16(x)) => {
-                w.write_u16(*x as u16).map_err(|_| enc_err("i16"))?;
-            }
-            (ScalarKind::U32, DynValue::U32(x)) => w.write_u32(*x).map_err(|_| enc_err("u32"))?,
-            (ScalarKind::I32, DynValue::I32(x)) => {
-                w.write_u32(*x as u32).map_err(|_| enc_err("i32"))?;
-            }
-            (ScalarKind::U64, DynValue::U64(x)) => w.write_u64(*x).map_err(|_| enc_err("u64"))?,
-            (ScalarKind::I64, DynValue::I64(x)) => {
-                w.write_u64(*x as u64).map_err(|_| enc_err("i64"))?;
-            }
-            (ScalarKind::F32, DynValue::F32(x)) => {
-                w.write_u32(x.to_bits()).map_err(|_| enc_err("f32"))?;
-            }
-            (ScalarKind::F64, DynValue::F64(x)) => {
-                w.write_u64(x.to_bits()).map_err(|_| enc_err("f64"))?;
-            }
-            (ScalarKind::String, DynValue::Str(s)) => {
-                w.write_string(s).map_err(|_| enc_err("string"))?;
-            }
+            (ScalarKind::Bool, DynValue::Bool(b)) => w.write_bool(*b),
+            (ScalarKind::U8, DynValue::U8(x)) => w.write_u8(*x),
+            (ScalarKind::I8, DynValue::I8(x)) => w.write_i8(*x),
+            (ScalarKind::U16, DynValue::U16(x)) => w.write_u16(*x),
+            (ScalarKind::I16, DynValue::I16(x)) => w.write_i16(*x),
+            (ScalarKind::U32, DynValue::U32(x)) => w.write_u32(*x),
+            (ScalarKind::I32, DynValue::I32(x)) => w.write_i32(*x),
+            (ScalarKind::U64, DynValue::U64(x)) => w.write_u64(*x),
+            (ScalarKind::I64, DynValue::I64(x)) => w.write_i64(*x),
+            (ScalarKind::F32, DynValue::F32(x)) => w.write_f32(*x),
+            (ScalarKind::F64, DynValue::F64(x)) => w.write_f64(*x),
+            (ScalarKind::String, DynValue::Str(s)) => w.write_string(s),
             _ => return Err(enc_err("value/kind mismatch")),
         }
     }
 
-    let mut bytes = w.into_bytes();
-    if let Some(at) = dheader_at {
-        // DHEADER value = bytes after the DHEADER (object size), XTypes §7.4.3.4.2.
-        let size = (bytes.len() - at - 4) as u32;
-        bytes[at..at + 4].copy_from_slice(&size.to_le_bytes());
+    if let Some(header) = dheader {
+        w.finish_dheader(header);
     }
-    Ok(bytes)
+    Ok(w.finish())
 }
 
 #[cfg(test)]

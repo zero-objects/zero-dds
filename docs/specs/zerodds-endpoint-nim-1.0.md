@@ -1,65 +1,79 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
-# `zerodds-endpoint-nim` v1.0 — Nim Endpoint-SDK: XRCE-Framing, Sync/Async, Reliable Stream
+# `zerodds-endpoint-nim` v1.0 — Nim endpoint SDK: XRCE framing, sync/async, reliable stream
 
 **Status:** normative.
 
-ZeroDDS Vendor-Spec. Implementiert in `endpoints/nim/`. Ergänzt
-[`zerodds-xcdr2-nim`](zerodds-xcdr2-nim-1.0.md) (IDL-Codegen/Marshalling) um die
-Transport-/Delivery-Schicht: XRCE-Framing, den sync `Client`, den async
-`AsyncReader` und — für Reliable Delivery — den Vertrag aus
+ZeroDDS vendor spec. Implemented in `endpoints/nim/`. Extends
+[`zerodds-xcdr2-nim`](zerodds-xcdr2-nim-1.0.md) (IDL codegen/marshalling) with the
+transport/delivery layer: XRCE framing, the sync `Client`, the async
+`AsyncReader` and — for reliable delivery — the contract from
 [`reliable-endpoint`](reliable-endpoint-1.0.md).
 
-## §1 XRCE-Framing
+## §1 XRCE framing
 
-`endpoints/nim/zerodds.nim` MUSS `writeFrame`/`readFrame` als DDS-XRCE-1.0-
-WRITE_DATA-Submessage bereitstellen (§8.3.2 MessageHeader, §8.3.4
-SubmessageHeader, §8.3.5 WRITE_DATA, Submessage-Id `0x07`): ein 8-Byte-Header —
-Session (`0x80` no-key), Stream (`0x01` best-effort; `≥ 0x80` reliable, §8.3.2
-Bit 7), Sequenznummer LE, Submessage-Id, Flags, Länge LE — gefolgt vom
-XCDR2-Sample-Body. Byte-identisch zu `crates/xrce` und jedem anderen
-Endpoint-SDK. `readFrame` ist die exakte Inverse: Header parsen, Body auf die
-in Länge angegebene Größe begrenzt zurückgeben.
+`endpoints/nim/zerodds.nim` MUST provide `writeFrame`/`readFrame` as a DDS-XRCE 1.0
+WRITE_DATA submessage (§8.3.2 MessageHeader, §8.3.4
+SubmessageHeader, §8.3.5 WRITE_DATA, submessage id `0x07`): an 8-byte header —
+session (`0x80` no-key), stream (`0x01` best-effort; `≥ 0x80` reliable, §8.3.2
+bit 7), sequence number LE, submessage id, flags, length LE — followed by the
+XCDR2 sample body. Byte-identical to `crates/xrce` and every other
+endpoint SDK. `readFrame` is the exact inverse: parse the header, return the body
+limited to the size given in the length field.
 
-## §2 Sync-Client
+The submessage body is the `BaseObjectRequest` (DDS-XRCE 1.0 §7.7.8:
+`request_id` then `object_id`, two octets each, most significant first),
+followed by the sample. The flag byte is `0x01` — E flag (little-endian body)
+plus `DataFormat` `FORMAT_DATA` (`0b000`) in bits 1..3 (§8.3.5.8);
+`FORMAT_SAMPLE` (`0b001`, flag byte `0x03`) additionally requires a
+`SampleInfo`, which this profile does not carry. The `request_id` is the
+`sequence_nr` of the same message (§7.7.8 only requires uniqueness per
+stream), the `object_id` names the target DataWriter — without it no
+XRCE agent can assign the frame. The read path returns the sample after these
+four octets and rejects a body that is too short for them.
+Measured by `crates/endpoint-e2e/tests/xrce_write_framing.rs`.
 
-`Client`/`newClient` MUSS einen nicht-blockierenden Poll-Client über einen
-UDP-Socket bereitstellen: `write(sample: seq[byte])` framet den Body via §1
-und sendet ihn; `poll(): Option[seq[byte]]` liest nicht-blockierend und
-liefert `some(body)` bei einem vollständigen Frame, sonst `none`. Die
-Sequenznummer ist ein monotoner `uint16`-Zähler, der bei `0xffff` umläuft
-(kein Fehler, kein Reset).
+## §2 Sync client
 
-## §3 Async-Reader
+`Client`/`newClient` MUST provide a non-blocking poll client over a
+UDP socket: `write(sample: seq[byte])` frames the body via §1
+and sends it; `poll(): Option[seq[byte]]` reads non-blocking and
+returns `some(body)` for a complete frame, otherwise `none`. The
+sequence number is a monotonic `uint16` counter that wraps around at `0xffff`
+(no error, no reset).
 
-`AsyncReader`/`newAsyncReader` MUSS den idiomatischen Nim-`async`/`await`-Pfad
-bereitstellen: `recv(): Future[seq[byte]]` ist eine `{.async.}`-Prozedur, die
-erst resolved, sobald ein vollständiges Frame empfangen und entrahmt wurde.
-Intern MUSS das Polling über `sleepAsync` erfolgen (kooperatives Yielding via
-`asyncdispatch`), nicht über einen dem Aufrufer sichtbaren Busy-Spin.
+## §3 Async reader
 
-## §4 Reliable Stream
+`AsyncReader`/`newAsyncReader` MUST provide the idiomatic Nim `async`/`await` path:
+`recv(): Future[seq[byte]]` is an `{.async.}` procedure that
+only resolves once a complete frame has been received and deframed.
+Internally, polling MUST happen via `sleepAsync` (cooperative yielding via
+`asyncdispatch`), not via a busy spin visible to the caller.
 
-Reliable Delivery MUSS dem Vertrag aus [`reliable-endpoint` v1.0](reliable-endpoint-1.0.md)
-folgen:
+## §4 Reliable stream
 
-- **State-Machine (§3):** Sender `submit`/`pendingHeartbeat`/`recvAcknack`/
-  `getInFlight`; Receiver `recvData`/`drainInOrder`/`pendingAcknack`/`reset`
-  — idiomatische Nim-Namen, identische Semantik zur Referenz
+Reliable delivery MUST follow the contract from [`reliable-endpoint` v1.0](reliable-endpoint-1.0.md):
+
+- **State machine (§3):** sender `submit`/`pendingHeartbeat`/`recvAcknack`/
+  `getInFlight`; receiver `recvData`/`drainInOrder`/`pendingAcknack`/`reset`
+  — idiomatic Nim names, semantics identical to the reference
   `crates/xrce/src/reliable.rs`.
-- **Konstanten (§3.1):** `SENDER_WINDOW = 16`, `RECEIVER_BUFFER = 64`,
-  `HEARTBEAT_PERIOD = 500ms`, `MAX_PAYLOAD = 65535`, RFC-1982-16-Bit-
-  Sequenznummern, reliable Stream-Id `≥ 128` (Bit 7 gesetzt).
-- **Wire (§4):** HEARTBEAT (`0x0B`) und ACKNACK (`0x0A`) byte-identisch zu den
-  Referenz-Goldens (`golden_heartbeat_le.bin`/`golden_acknack_le.bin`).
-- **Async-Entkopplung (§2/§5):** der Producer MUSS nie in den Kernel — er
-  enqueued wait-free oder lock-basiert in eine Queue; ein dedizierter
-  Drain-Thread besitzt den Socket und den Sender-State (WRITE_DATA senden,
-  periodisches HEARTBEAT, ACKNACK-Empfang, Retransmit aus der History). Die
-  konkrete Queue-Implementierung (wait-free Ring vs. lock-basiertes
-  stdlib-`Channel`) ist nicht vorgeschrieben; ein Latenz-Messwert
-  (`enqueue` vs. inline `sendto`), der die Entkopplung zeigt, ist Pflicht
-  (§5 Punkt 4 der Referenz-Spec).
-- **Test-/Beleg-Pflicht (§5):** Unit (State-Machine-Spiegel), Byte-Golden
-  (HEARTBEAT/ACKNACK), E2E Loss-Recovery live gegen den geteilten Rust-Peer
-  mit injiziertem Drop, Latenz-Bench, ein lauffähiges
-  `example_reliable_*` — alle fünf gelten unverändert für `endpoints/nim`.
+- **Constants (§3.1):** `SENDER_WINDOW = 16`, `RECEIVER_BUFFER = 64`,
+  `HEARTBEAT_PERIOD = 500ms`, `MAX_PAYLOAD = 65535`, RFC-1982 16-bit
+  sequence numbers, reliable stream id `≥ 128` (bit 7 set).
+- **Wire (§4):** HEARTBEAT (`0x0B`) and ACKNACK (`0x0A`) byte-identical to the
+  reference goldens (`golden_heartbeat_le.bin`/`golden_acknack_le.bin`).
+- **Async decoupling (§2/§5):** the producer MUST never enter the kernel — it
+  enqueues wait-free or lock-based into a queue; a dedicated
+  drain thread owns the socket and the sender state (send WRITE_DATA,
+  periodic HEARTBEAT, ACKNACK reception, retransmit from the history). The
+  concrete queue implementation (wait-free ring vs. lock-based
+  stdlib `Channel`) is not prescribed; a latency measurement
+  (`enqueue` vs. inline `sendto`) that shows the decoupling is mandatory
+  (§5 item 4 of the reference spec). `endpoints/nim` uses a
+  single-producer-single-consumer ring without a lock (`spsc_ring.nim`,
+  checked by `spsc_ring_test.nim`); when it is full, the producer waits for
+  the drain thread.
+- **Test/evidence obligation (§5):** unit (state machine mirror), byte-golden
+  (HEARTBEAT/ACKNACK), E2E loss recovery live against the shared Rust peer
+  with injected drop, latency bench, a runnable
+  `example_reliable_*` — all five apply unchanged to `endpoints/nim`.

@@ -8,7 +8,7 @@ import zerodds;
 import std.stdio;
 
 ubyte[] sample(uint id, string label) {
-    auto w = Writer(Endian.LE);
+    auto w = Writer(Endian.LE, Encoding.XCDR2);
     w.putU32(id);
     w.putString(label);
     return w.bytes();
@@ -17,21 +17,21 @@ ubyte[] sample(uint id, string label) {
 void main() {
     // sync
     auto t = memTransport();
-    auto c = new Client(t);
+    auto c = new Client(t, xrceObjectId(0x001, ObjkDataWriter));
     c.write(sample(0x42, "sync-hello"));
     auto body = c.poll();
     if (body !is null) {
-        auto rd = Reader(body, Endian.LE);
+        auto rd = Reader(body, Endian.LE, Encoding.XCDR2);
         writefln("sync: received id=0x%x", rd.getU32());
     }
 
     // async
     auto r = new AsyncReader();
     foreach (i; 0 .. 3)
-        r.feed(writeFrame(SessionNoKey, StreamBestEffort, i + 1, sample(0x100 + i, "async")));
+        r.feed(writeFrame(SessionNoKey, StreamBestEffort, i + 1, xrceObjectId(0x001, ObjkDataWriter), sample(0x100 + i, "async")));
     foreach (i; 0 .. 3) {
         auto b = r.recv();
-        auto rd = Reader(b, Endian.LE);
+        auto rd = Reader(b, Endian.LE, Encoding.XCDR2);
         writefln("async: received id=0x%x", rd.getU32());
     }
     r.stop();

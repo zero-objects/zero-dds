@@ -1,0 +1,160 @@
+#!/bin/bash
+# wireprobe-zerodds-elixir — one IDL type and one JSON value, through the
+# ZeroDDS Elixir binding built by the shared codec walk.
+#
+# The same command line as `wireprobe-zerodds-python`, so a case runs
+# through both by substituting the program name. See
+# `docs/specs/zerodds-interop-suite-1.0.md` §3a.
+#
+#   wireprobe-zerodds-elixir --idl robot.idl --type common::Robot \
+#                            --values robot.json --encoding xcdr2 \
+#                            --endian le --out robot.zerodds-elixir.bin
+#
+#   wireprobe-zerodds-elixir --idl robot.idl --type common::Robot \
+#                            --in robot.cyclone.xcdr2.le.bin \
+#                            --encoding xcdr2 --endian le \
+#                            --values-out robot.read.json
+#
+# ## What is shared with the Rust probe and what is not
+#
+# Shared: the frontend, the common AST and the layout plan. Which
+# members are written, in what order, with which header and which length
+# code is `zerodds-ast-layout`'s answer, and a second answer would be a
+# second place for the wire format to live.
+#
+# Not shared: the serialiser. The generated script runs against
+# `runtime/elixir`, which implements DDS-XTypes 1.3 §7.4 a further time
+# in Elixir. Nothing here reaches the Rust runtime through NIF or FFI:
+# a probe that did would be byte-identical by construction and would
+# prove nothing about whether the two read the specification the same
+# way.
+#
+# The runtime's modules are compiled once into a cache keyed by their
+# own bytes, so a corpus run pays `elixirc` once and each case only the
+# VM start.
+#
+# ## The exit codes
+#
+# `docs/specs/zerodds-verdicts-1.0.md`, structural rather than read out
+# of a message:
+#
+#   0  it carried the case
+#   1  the sample is outside the type, or the stream is outside the
+#      sample — the runtime's refusal, at run time
+#   2  the command line
+#   3  no-form (`adapter/elixir.rs`'s answer), or a discarded sample
+#      (§7.2.2.7) — the generator's exit 3 and the probe's are the same
+#      verdict class, as they are for every column
+#   6  harness-gap — a tool of ours has not written it: the generator
+#      did not build, the walk stopped, or `elixir` is missing
+#   7  generator-defect — the generator accepted the case and the
+#      Elixir it produced does not compile
+set -euo pipefail
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+root="$(cd "$here/../.." && pwd)"
+runtime="${ZERODDS_ELIXIR_RUNTIME:-$root/runtime/elixir}"
+
+if ! command -v elixir >/dev/null 2>&1; then
+    echo "wireprobe-zerodds-elixir: \`elixir\` is not on the path; the Elixir column is unmeasured here" >&2
+    exit 9
+fi
+
+gen="${WIREPROBE_ELIXIR_GEN:-}"
+if [ -z "$gen" ]; then
+    gen="${CARGO_TARGET_DIR:-$root/target}/debug/wireprobe-zerodds-elixir-gen"
+    # Built when it is missing *or stale*: a generator older than the
+    # sources it came from measures the previous build.
+    . "$here/generator.sh"
+    probe_generator zerodds-wireprobe-elixir-gen "$gen" "$root" || exit 6
+fi
+
+out=""
+values_out=""
+argv=()
+idl=""
+reading=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --out) out="$2"; shift 2 ;;
+        --values-out) values_out="$2"; argv+=("$1" "$2"); shift 2 ;;
+        --in) reading=1; argv+=("$1" "$2"); shift 2 ;;
+        --idl|--type|--values|--encoding|--endian|--emit|--dialect|\
+        --length-codes|--collection-delimiters|--wstring-length|--wchar-framing|\
+        --wchar-width|--map-delimiter|--wstring-units|--pl-cdr1-headers|--pid-flags|\
+        --enum-holder|--union-labels|--map-entries|--enumerator-value|--union-framing|\
+        --short-pid-range|--fixed-digits|--map-length)
+            if [ "$1" = --idl ]; then idl="$2"; fi
+            argv+=("$1" "$2"); shift 2 ;;
+        --help|-h) sed -n '2,50p' "${BASH_SOURCE[0]}"; exit 0 ;;
+        *) echo "wireprobe-zerodds-elixir: \`$1\` is not an option" >&2; exit 2 ;;
+    esac
+done
+
+# The runtime, compiled once per content. `elixirc` writes one .beam
+# per module; the key is the sources' own bytes, so an edited runtime
+# is a new cache entry and never a stale hit.
+cachebase="${ZERODDS_ELIXIR_CACHE:-${CARGO_TARGET_DIR:-$root/target}/wireprobe-elixir}"
+sources=("$runtime"/lib/zerodds_wire.ex "$runtime"/lib/zerodds_wire/*.ex)
+digest="$(cat "${sources[@]}" | shasum -a 256 | cut -c1-32)"
+ebin="$cachebase/runtime-$digest"
+if [ ! -d "$ebin" ]; then
+    mkdir -p "$ebin.tmp.$$"
+    if ! elixirc --ignore-module-conflict -o "$ebin.tmp.$$" "${sources[@]}" 2> "$ebin.tmp.$$.log"; then
+        echo "wireprobe-zerodds-elixir: the wire runtime does not compile" >&2
+        head -20 "$ebin.tmp.$$.log" >&2 || true
+        rm -rf "$ebin.tmp.$$" "$ebin.tmp.$$.log"
+        exit 6
+    fi
+    rm -f "$ebin.tmp.$$.log"
+    # Two probes racing settle on whichever rename lands first; the
+    # contents are identical by construction.
+    mv "$ebin.tmp.$$" "$ebin" 2>/dev/null || rm -rf "$ebin.tmp.$$"
+fi
+
+. "$here/diagnostics.sh"
+
+work="$(mktemp -d)"
+trap 'probe_keep_generated "$work" "zerodds-elixir" "$idl" main.exs; rm -rf "$work"' EXIT
+
+# The generator's own code passes straight through: 3 is "Elixir has no
+# form for it" and 6 is "a tool of ours stopped".
+code=0
+"$gen" "${argv[@]}" --out-dir "$work" || code=$?
+[ "$code" = 0 ] || exit "$code"
+
+# One process runs compile and script alike, so the exit code is the
+# probe's own; a compile failure is told apart by the diagnostic class
+# on standard error, which is how `elixir` reports one.
+code=0
+elixir -pa "$ebin" "$work/main.exs" > "$work/bytes.bin" 2> "$work/run.log" || code=$?
+if [ "$code" != 0 ]; then
+    if grep -qE "(CompileError|SyntaxError|TokenMissingError|MismatchedDelimiterError|UndefinedFunctionError)" "$work/run.log"; then
+        echo "wireprobe-zerodds-elixir: the generated Elixir does not compile" >&2
+        head -20 "$work/run.log" >&2 || true
+        probe_diagnostics_after "zerodds-elixir" "$work" "$idl" 7
+        exit 7
+    fi
+    head -5 "$work/run.log" >&2 || true
+    [ "$code" = 1 ] && exit 1
+    [ "$code" = 3 ] && exit 3
+    echo "wireprobe-zerodds-elixir: the probe did not run" >&2
+    exit 6
+fi
+probe_diagnostics_after "zerodds-elixir" "$work" "$idl" 0
+
+# The read direction writes its JSON where `--values-out` said and puts
+# nothing on stdout, so there are no octets to hand back.
+if [ "$reading" = 1 ]; then
+    [ -n "$values_out" ] || {
+        echo "wireprobe-zerodds-elixir: --in without --values-out" >&2
+        exit 2
+    }
+    exit 0
+fi
+
+if [ -n "$out" ]; then
+    cp "$work/bytes.bin" "$out"
+else
+    od -An -tx1 -v "$work/bytes.bin" | tr -d ' \n'; echo
+fi

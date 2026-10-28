@@ -1,0 +1,31 @@
+#!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 ZeroDDS Contributors
+#
+# wireprobe-endpoint-go — one IDL type and one JSON sample, through the
+# hand-written endpoint SDK in endpoints/go/wire.go.
+#
+# The same command line as every other column's probe, so a case runs
+# through any of them by substituting the program name:
+#
+#   wireprobe-endpoint-go --idl robot.idl --type common::Robot \
+#       --values robot.json --encoding plain-cdr2 --endian le \
+#       --out robot.endpoint-go.plain-cdr2.le.bin
+#
+# Eight writes and no header of any kind: PutU8 through PutU64, PutF32,
+# PutBytes, PutString, PutSeqU8, with `align` capped at four by the
+# `xcdr2MaxAlign` constant.
+#
+# The write direction only. `endpoints/go` has a Reader with one
+# accessor, GetU32, and no decode for a string, a sequence or a 64-bit
+# value, so there is no read direction to drive; a probe that took `--in`
+# and answered from four of the eight widths would report a reader this
+# SDK has not got.
+#
+# The body is tools/wireprobe/endpoint-common.sh; the fifteen differ only
+# in which compiler runs and which SDK is linked, and fifteen copies of
+# the caching and the exit codes would be fifteen places for them to
+# drift apart.
+set -uo pipefail
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/endpoint-common.sh"
+endpoint_probe go "$@"

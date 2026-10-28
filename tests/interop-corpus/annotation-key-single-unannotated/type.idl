@@ -1,0 +1,5 @@
+// `@key` on one member, unannotated
+struct Sample {
+    @key long id;
+    long payload;
+};

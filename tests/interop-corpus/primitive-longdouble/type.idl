@@ -1,0 +1,9 @@
+// primitive `long double`
+@final struct Sample {
+    long double fits_a_double;
+    long double needs_sixty_four_bits;
+    long double needs_all_of_them;
+    long double smallest_normal;
+    long double largest_subnormal;
+    long double largest_finite;
+};

@@ -1,0 +1,8 @@
+module probe {
+    interface Special {
+        void in_v(in Object v);
+        void out_v(out Object v);
+        void inout_v(inout Object v);
+        Object ret_v();
+    };
+};

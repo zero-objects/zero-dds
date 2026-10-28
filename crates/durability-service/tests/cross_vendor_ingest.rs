@@ -7,7 +7,7 @@
 //! writer presents on the wire exactly as a runtime-level writer with a custom
 //! type-name does under `use_xtypes=no` (match keyed on topic + type-name), so
 //! this in-process scenario proves the cross-vendor INGEST capability without a
-//! foreign binary. The real-vendor wire confirmation runs on codepit
+//! foreign binary. The real-vendor wire confirmation runs on the Linux test host
 //! (internal/interop/durability-cross-vendor-ingest-followup.md).
 //!
 //! Own test binary = isolated process (process-global DDS state).
@@ -25,9 +25,7 @@ use zerodds_durability_store_sqlite::SqliteStore;
 use zerodds_qos::policies::durability::DurabilityKind;
 use zerodds_qos::policies::history::HistoryKind;
 use zerodds_qos::policies::resource_limits::LENGTH_UNLIMITED;
-use zerodds_qos::{
-    DeadlineQosPolicy, LifespanQosPolicy, LivelinessKind, LivelinessQosPolicy, OwnershipKind,
-};
+use zerodds_qos::{LivelinessKind, LivelinessQosPolicy};
 
 const FOREIGN_TYPE: &str = "Foreign::Sensor";
 
@@ -48,25 +46,12 @@ fn foreign_writer_cfg(topic: &str) -> UserWriterConfig {
     UserWriterConfig {
         topic_name: topic.to_string(),
         type_name: FOREIGN_TYPE.to_string(),
-        reliable: true,
         durability: DurabilityKind::TransientLocal,
-        deadline: DeadlineQosPolicy::default(),
-        latency_budget: Default::default(),
-        destination_order: Default::default(),
-        lifespan: LifespanQosPolicy::default(),
         liveliness: LivelinessQosPolicy {
             kind: LivelinessKind::Automatic,
             ..Default::default()
         },
-        ownership: OwnershipKind::Shared,
-        ownership_strength: 0,
-        presentation: Default::default(),
-        partition: Vec::new(),
-        user_data: Vec::new(),
-        topic_data: Vec::new(),
-        group_data: Vec::new(),
-        type_identifier: zerodds_types::TypeIdentifier::None,
-        data_representation_offer: None,
+        ..Default::default()
     }
 }
 
@@ -76,30 +61,23 @@ fn foreign_reader_cfg(topic: &str) -> UserReaderConfig {
     UserReaderConfig {
         topic_name: topic.to_string(),
         type_name: FOREIGN_TYPE.to_string(),
-        reliable: true,
         durability: DurabilityKind::TransientLocal,
-        deadline: DeadlineQosPolicy::default(),
-        latency_budget: Default::default(),
-        destination_order: Default::default(),
         liveliness: LivelinessQosPolicy {
             kind: LivelinessKind::Automatic,
             ..Default::default()
         },
-        ownership: OwnershipKind::Shared,
-        presentation: Default::default(),
-        partition: Vec::new(),
-        user_data: Vec::new(),
-        topic_data: Vec::new(),
-        group_data: Vec::new(),
-        type_identifier: zerodds_types::TypeIdentifier::None,
-        type_consistency: zerodds_types::qos::TypeConsistencyEnforcement::default(),
-        data_representation_offer: None,
+        ..Default::default()
     }
 }
 
 #[test]
 fn daemon_ingests_foreign_type_name_and_replays() {
-    let domain = 73;
+    // Leased, not fixed: the domain number is the UDP port (RTPS 9.6.1.4.1),
+    // so it is a resource of the whole host. A fixed number here met a
+    // daemon of another checkout's run on the same number — measured: two
+    // `zerodds-durability-svc --domain 81` alive for forty minutes, and this
+    // test counted 159 samples on its topic where its writer had sent 20.
+    let domain = zerodds_test_domains::unique_domain();
     let topic = "ForeignVendorTopic";
     let store: Arc<dyn DurabilityStore> =
         Arc::new(SqliteStore::open_in_memory(keep_all()).unwrap());
@@ -192,7 +170,7 @@ fn late_joiner_collect_foreign(
     while out.len() < expect && Instant::now() < deadline {
         match rx.recv_timeout(Duration::from_millis(200)) {
             Ok(UserSample::Alive { payload, .. }) => out.push(payload.to_vec()),
-            Ok(UserSample::Lifecycle { .. }) => {}
+            Ok(UserSample::Lifecycle { .. }) | Ok(UserSample::CoherentSetEnd { .. }) => {}
             Err(_) => {}
         }
     }

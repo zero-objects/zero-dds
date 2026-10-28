@@ -8,53 +8,57 @@
 //! CDR encapsulation (byte-order octet + `short`). The server reads it and runs
 //! the request at that priority.
 
+use alloc::format;
 use alloc::vec::Vec;
 
-use zerodds_cdr::{BufferReader, BufferWriter, DecodeError, EncodeError, Endianness};
+use zerodds_wire::{Endianness, Reader, WireError, Writer};
 
 use crate::priority::Priority;
 
 /// IOP ServiceContext id `RTCorbaPriority` (RT-CORBA §5.4.2) = 10.
 pub const RT_CORBA_PRIORITY_SC_ID: u32 = 10;
 
-/// Builds the `RTCorbaPriority` ServiceContext data (encapsulation: byte-order
-/// octet + `short` priority).
+/// Builds the `RTCorbaPriority` ServiceContext data: an encapsulation, so
+/// a byte-order octet and a `short` priority.
 ///
 /// # Errors
-/// CDR buffer error.
+/// Never, at present — the signature is the one every context builder
+/// here has, and a future bounded form would use it.
 pub fn encode_priority_context(
     priority: Priority,
     endianness: Endianness,
-) -> Result<Vec<u8>, EncodeError> {
-    let mut w = BufferWriter::new(endianness);
+) -> Result<Vec<u8>, WireError> {
+    let mut w = Writer::new(endianness);
     w.write_u8(match endianness {
         Endianness::Big => 0,
         Endianness::Little => 1,
-    })?;
-    w.write_u16(priority.value() as u16)?;
-    Ok(w.into_bytes())
+    });
+    w.write_i16(priority.value());
+    Ok(w.finish())
 }
 
-/// Parses the client priority from `RTCorbaPriority` ServiceContext data.
+/// Reads the client priority out of `RTCorbaPriority` ServiceContext data.
 ///
 /// # Errors
-/// Empty/invalid data or a priority outside `0..=32767`.
-pub fn decode_priority_context(data: &[u8]) -> Result<Priority, DecodeError> {
-    let bo = *data.first().ok_or(DecodeError::UnexpectedEof {
+/// [`WireError::Truncated`] for empty or short data, and
+/// [`WireError::OutOfRange`] for a priority outside `0..=32767`.
+pub fn decode_priority_context(data: &[u8]) -> Result<Priority, WireError> {
+    let bo = *data.first().ok_or(WireError::Truncated {
+        at: 0,
         needed: 1,
-        offset: 0,
+        available: 0,
     })?;
     let e = if bo == 0 {
         Endianness::Big
     } else {
         Endianness::Little
     };
-    let mut r = BufferReader::new(data, e);
-    r.read_u8()?; // byte-order octet (position → 1)
-    let raw = r.read_u16()? as i16;
-    Priority::new(raw).ok_or(DecodeError::InvalidEnum {
-        kind: "RTCorbaPriority out of range",
-        value: u32::from(raw as u16),
+    let mut r = Reader::new(data, e);
+    r.read_u8()?; // the byte-order octet, so the position is now 1
+    let raw = r.read_i16()?;
+    Priority::new(raw).ok_or_else(|| WireError::OutOfRange {
+        at: 2,
+        expected: format!("an RTCorbaPriority in 0..=32767, not {raw}"),
     })
 }
 

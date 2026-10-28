@@ -30,12 +30,37 @@ OUT="${OUT:-$HERE/librmw_zerodds_cpp.so}"
 INC=""
 for d in "$ROS_PREFIX"/include/*/; do INC="$INC -idirafter $d"; done
 
-cc -shared -fPIC -o "$OUT" "$HERE/rmw_zerodds.c" \
+# rmw_zerodds_cxx.cpp holds the std::string / std::u16string half of the
+# introspection codec: rosidl's C++ introspection typesupport (what rclcpp
+# resolves to) describes std::string members, which a C translation unit cannot
+# touch. Compiled separately and linked in; -lstdc++ for its runtime.
+CXX_OBJ="$(mktemp -d)/rmw_zerodds_cxx.o"
+trap 'rm -rf "$(dirname "$CXX_OBJ")"' EXIT
+c++ -c -fPIC -o "$CXX_OBJ" "$HERE/rmw_zerodds_cxx.cpp"
+# rmw_zerodds_qos.cpp: rmw_qos_profile_check_compatible through rmw_dds_common,
+# as the other RMWs check it.
+QOS_OBJ="$(dirname "$CXX_OBJ")/rmw_zerodds_qos.o"
+c++ -c -fPIC -std=c++17 -o "$QOS_OBJ" "$HERE/rmw_zerodds_qos.cpp" \
+  $INC -idirafter "$ROS_PREFIX/include"
+
+# rmw_zerodds_dynamic.cpp: ROS 2 Jazzy's dynamic-type-support backend
+# (rosidl_dynamic_typesupport_serialization_support_interface_t +
+# rmw_serialization_support_init/rmw_take_dynamic_message[_with_info]).
+# Guarded on `__has_include(<rosidl_dynamic_typesupport/types.h>)`, which
+# Humble does not have — this compiles to an empty translation unit
+# there, so building it unconditionally here costs nothing on Humble and
+# needs nothing extra on Jazzy beyond the include path this script
+# already builds from $ROS_PREFIX.
+DYNAMIC_OBJ="$(dirname "$CXX_OBJ")/rmw_zerodds_dynamic.o"
+c++ -c -fPIC -std=c++17 -o "$DYNAMIC_OBJ" "$HERE/rmw_zerodds_dynamic.cpp" \
+  $INC -idirafter "$ROS_PREFIX/include"
+
+cc -shared -fPIC -o "$OUT" "$HERE/rmw_zerodds.c" "$CXX_OBJ" "$QOS_OBJ" "$DYNAMIC_OBJ" \
   $INC -idirafter "$ROS_PREFIX/include" \
   -L"$ZERODDS_TARGET" -L"$ROS_PREFIX/lib" \
   -Wl,-rpath,"$ZERODDS_TARGET" -Wl,-rpath,"$ROS_PREFIX/lib" \
-  -lrmw_zerodds -lzerodds -lrmw -lrcutils \
-  -lrosidl_typesupport_introspection_c -lrosidl_runtime_c
+  -lrmw_zerodds -lzerodds -lrmw -lrmw_dds_common -lrcutils \
+  -lrosidl_typesupport_introspection_c -lrosidl_runtime_c -lstdc++
 
 echo "built $OUT"
 echo "register: cp '$OUT' '$ROS_PREFIX/lib/' && \\"

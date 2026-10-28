@@ -1,0 +1,10 @@
+// `union` over `wchar`
+union Choice switch (wchar) {
+    case L'\u00e4': long whole;
+    case L'Z': double fraction;
+};
+
+@final struct Sample {
+    Choice picked;
+    long tail;
+};

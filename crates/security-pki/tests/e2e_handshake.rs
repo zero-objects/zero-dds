@@ -57,6 +57,7 @@ const OCSP_STATUS: &[u8] = b"";
 fn full_three_stage_handshake() {
     // Stage 1: A -> B (Request)
     let req_bytes = build_request_token(&RequestBuildInput {
+        version: Default::default(),
         cert_der: A_CERT,
         permissions: A_PERM,
         pdata: A_PDATA,
@@ -75,6 +76,7 @@ fn full_three_stage_handshake() {
 
     // Stage 2: B -> A (Reply, echoing hash_c1/dh1/ch1 from request)
     let reply_bytes = build_reply_token(&ReplyBuildInput {
+        version: Default::default(),
         cert_der: B_CERT,
         permissions: B_PERM,
         pdata: B_PDATA,
@@ -94,13 +96,14 @@ fn full_three_stage_handshake() {
     assert_eq!(reply_view.cert_der, B_CERT);
     assert_eq!(reply_view.dh2, B_DH2);
     assert_eq!(reply_view.challenge2, B_CHALLENGE);
-    // Echo verifizieren
+    // Verify echo
     assert_eq!(reply_view.hash_c1, Some(req_view.hash_c1));
     assert_eq!(reply_view.dh1.as_deref(), Some(A_DH1));
     assert_eq!(reply_view.challenge1, A_CHALLENGE);
 
     // Stage 3: A -> B (Final, echoing all)
     let final_bytes = build_final_token(&FinalBuildInput {
+        version: Default::default(),
         hash_c1: &req_view.hash_c1,
         hash_c2: &reply_view.hash_c2,
         dh1: A_DH1,
@@ -113,8 +116,8 @@ fn full_three_stage_handshake() {
     .unwrap();
 
     let final_view = parse_final_token(&final_bytes).expect("B must accept A's final");
-    assert_eq!(final_view.hash_c1, req_view.hash_c1);
-    assert_eq!(final_view.hash_c2, reply_view.hash_c2);
+    assert_eq!(final_view.hash_c1, Some(req_view.hash_c1));
+    assert_eq!(final_view.hash_c2, Some(reply_view.hash_c2));
     assert_eq!(final_view.challenge1, A_CHALLENGE);
     assert_eq!(final_view.challenge2, B_CHALLENGE);
 }
@@ -122,6 +125,7 @@ fn full_three_stage_handshake() {
 #[test]
 fn tampered_request_token_fails_hash_check() {
     let mut req_bytes = build_request_token(&RequestBuildInput {
+        version: Default::default(),
         cert_der: A_CERT,
         permissions: A_PERM,
         pdata: A_PDATA,
@@ -149,6 +153,7 @@ fn replay_attack_with_swapped_challenges_detected() {
     // checked against own values in the downstream final token.
     // At this stage: only verify the hash check.
     let req_bytes = build_request_token(&RequestBuildInput {
+        version: Default::default(),
         cert_der: A_CERT,
         permissions: A_PERM,
         pdata: A_PDATA,
@@ -162,6 +167,7 @@ fn replay_attack_with_swapped_challenges_detected() {
     let req_view = parse_request_token(&req_bytes).unwrap();
 
     let reply_bytes = build_reply_token(&ReplyBuildInput {
+        version: Default::default(),
         cert_der: B_CERT,
         permissions: B_PERM,
         pdata: B_PDATA,
@@ -195,6 +201,7 @@ fn empty_certs_rejected_by_dos_cap() {
     // A cert DER larger than MAX_CERT_DER (16 KiB) is rejected.
     let huge_cert = vec![0u8; 17 * 1024];
     let res = build_request_token(&RequestBuildInput {
+        version: Default::default(),
         cert_der: &huge_cert,
         permissions: A_PERM,
         pdata: A_PDATA,
@@ -217,6 +224,7 @@ fn handshake_with_different_cert_dh_combos() {
         let challenge = [seed; 32];
 
         let req = build_request_token(&RequestBuildInput {
+            version: Default::default(),
             cert_der: &cert,
             permissions: A_PERM,
             pdata: A_PDATA,

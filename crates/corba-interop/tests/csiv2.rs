@@ -6,10 +6,10 @@
 //! (GSSUP username/password) as service context id 15 to every request. Correct
 //! credentials → the call goes through; wrong/missing → `NO_PERMISSION`.
 
-use zerodds_cdr::Endianness;
 use zerodds_corba_interop::runtime::{CorbaServer, IiopCorbaConnection, object_reference};
 use zerodds_corba_interop::{decode_string_body, encode_string_body};
 use zerodds_corba_rust::{CorbaConnection, SkeletonResult};
+use zerodds_wire::Endianness;
 
 #[test]
 fn csiv2_gssup_authenticates_and_rejects() {

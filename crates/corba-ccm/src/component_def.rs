@@ -15,7 +15,8 @@
 //! * Attributes with optional `setraises`/`getraises`.
 //! * Optional: primary key (spec §6.7.2 for keyed components).
 
-use alloc::string::String;
+use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
 /// Receptacle multiplicity — spec §6.6.5.
@@ -257,6 +258,204 @@ impl ComponentDef {
     pub fn supported_interface_repo_ids(&self) -> &[String] {
         &self.supported_interfaces
     }
+
+    /// Every port name the definition declares itself, in declaration
+    /// order — facets, receptacles, event sources, event sinks.
+    fn port_names(&self) -> Vec<&str> {
+        self.facets
+            .iter()
+            .map(|f| f.name.as_str())
+            .chain(self.receptacles.iter().map(|r| r.name.as_str()))
+            .chain(self.event_sources.iter().map(|s| s.name.as_str()))
+            .chain(self.event_sinks.iter().map(|s| s.name.as_str()))
+            .collect()
+    }
+}
+
+// -------------------------------------------------------------------
+// §6.12 Component Inheritance
+// -------------------------------------------------------------------
+
+/// What a component-type table refuses — spec §6.12.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InheritanceError {
+    /// No definition is registered under this repository ID.
+    UnknownComponent(String),
+    /// A definition names a base that is not registered.
+    UnknownBase {
+        /// The derived component.
+        component: String,
+        /// The base it names.
+        base: String,
+    },
+    /// The `base_component` links close a cycle. Spec §6.12 admits a
+    /// chain, not a graph, so the walk stops rather than looping.
+    Cycle(String),
+    /// A derived component redefines a name it already inherits.
+    /// Spec §6.12 takes the inherited feature set over as-is; a name
+    /// that means two things has no unambiguous navigation result.
+    RedefinedPort {
+        /// The derived component.
+        component: String,
+        /// The name it redefines.
+        port: String,
+    },
+    /// A derived component declares a primary key while a base already
+    /// declares one — spec §6.12 with §6.7.2: the key of a keyed
+    /// component is the base's, and a second one would name a second
+    /// identity for the same instance.
+    RedefinedPrimaryKey {
+        /// The derived component.
+        component: String,
+    },
+}
+
+/// The component types one system knows, keyed by repository ID —
+/// spec §6.12.
+///
+/// A `ComponentDef` carries only the name of its base, so inheritance
+/// is a question about a set of definitions and not about one of them.
+/// This table answers the three the spec asks: what the chain is, what
+/// the derived component's full feature set is, and whether a
+/// repository ID names the component or one of its bases.
+#[derive(Debug, Clone, Default)]
+pub struct ComponentTypeTable {
+    by_repo_id: BTreeMap<String, ComponentDef>,
+}
+
+impl ComponentTypeTable {
+    /// An empty table.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Registers a definition under its repository ID, replacing any
+    /// definition already registered under it.
+    pub fn insert(&mut self, def: ComponentDef) {
+        self.by_repo_id.insert(def.repository_id.clone(), def);
+    }
+
+    /// The definition registered under `repo_id`.
+    #[must_use]
+    pub fn get(&self, repo_id: &str) -> Option<&ComponentDef> {
+        self.by_repo_id.get(repo_id)
+    }
+
+    /// The inheritance chain of `repo_id`, derived component first and
+    /// the root base last — spec §6.12.
+    ///
+    /// # Errors
+    /// [`InheritanceError::UnknownComponent`] if `repo_id` is not
+    /// registered, [`InheritanceError::UnknownBase`] if a link in the
+    /// chain is missing, [`InheritanceError::Cycle`] if the links loop.
+    pub fn base_chain(&self, repo_id: &str) -> Result<Vec<&ComponentDef>, InheritanceError> {
+        let mut current = self
+            .by_repo_id
+            .get(repo_id)
+            .ok_or_else(|| InheritanceError::UnknownComponent(repo_id.to_string()))?;
+        let mut chain = Vec::new();
+        let mut seen = BTreeSet::new();
+        loop {
+            if !seen.insert(current.repository_id.as_str()) {
+                return Err(InheritanceError::Cycle(current.repository_id.clone()));
+            }
+            chain.push(current);
+            let Some(base) = current.base_component.as_deref() else {
+                return Ok(chain);
+            };
+            current = self
+                .by_repo_id
+                .get(base)
+                .ok_or_else(|| InheritanceError::UnknownBase {
+                    component: current.repository_id.clone(),
+                    base: base.to_string(),
+                })?;
+        }
+    }
+
+    /// Spec §6.1.4 with §6.12 — `is_equivalent_component_kind` over the
+    /// inheritance chain: a derived component is also of every kind it
+    /// inherits from.
+    ///
+    /// # Errors
+    /// As [`base_chain`](Self::base_chain).
+    pub fn is_equivalent_component_kind(
+        &self,
+        repo_id: &str,
+        candidate: &str,
+    ) -> Result<bool, InheritanceError> {
+        Ok(self
+            .base_chain(repo_id)?
+            .iter()
+            .any(|d| d.repository_id == candidate))
+    }
+
+    /// The full feature set of `repo_id` — spec §6.12.
+    ///
+    /// The result carries every facet, receptacle, event source, event
+    /// sink, attribute and supported interface of the chain, bases
+    /// first so an inherited port keeps the position it had, and no
+    /// `base_component` because there is nothing left to resolve. The
+    /// primary key is the one the chain declares, wherever it declares
+    /// it.
+    ///
+    /// # Errors
+    /// As [`base_chain`](Self::base_chain), plus
+    /// [`InheritanceError::RedefinedPort`] and
+    /// [`InheritanceError::RedefinedPrimaryKey`] for a derived
+    /// component that redefines what it inherits.
+    pub fn flatten(&self, repo_id: &str) -> Result<ComponentDef, InheritanceError> {
+        let chain = self.base_chain(repo_id)?;
+        let derived = chain[0];
+        let mut out = ComponentDef {
+            name: derived.name.clone(),
+            repository_id: derived.repository_id.clone(),
+            base_component: None,
+            ..ComponentDef::default()
+        };
+        let mut port_names: BTreeSet<&str> = BTreeSet::new();
+        let mut attribute_names: BTreeSet<&str> = BTreeSet::new();
+        // Root base first, so an inherited feature precedes the ones
+        // declared beside it.
+        for def in chain.iter().rev() {
+            for name in def.port_names() {
+                if !port_names.insert(name) {
+                    return Err(InheritanceError::RedefinedPort {
+                        component: def.repository_id.clone(),
+                        port: name.to_string(),
+                    });
+                }
+            }
+            for attribute in &def.attributes {
+                if !attribute_names.insert(attribute.name.as_str()) {
+                    return Err(InheritanceError::RedefinedPort {
+                        component: def.repository_id.clone(),
+                        port: attribute.name.clone(),
+                    });
+                }
+            }
+            if !def.primary_key.is_empty() {
+                if !out.primary_key.is_empty() {
+                    return Err(InheritanceError::RedefinedPrimaryKey {
+                        component: def.repository_id.clone(),
+                    });
+                }
+                out.primary_key.clone_from(&def.primary_key);
+            }
+            out.facets.extend(def.facets.iter().cloned());
+            out.receptacles.extend(def.receptacles.iter().cloned());
+            out.event_sources.extend(def.event_sources.iter().cloned());
+            out.event_sinks.extend(def.event_sinks.iter().cloned());
+            out.attributes.extend(def.attributes.iter().cloned());
+            for interface in &def.supported_interfaces {
+                if !out.supported_interfaces.contains(interface) {
+                    out.supported_interfaces.push(interface.clone());
+                }
+            }
+        }
+        Ok(out)
+    }
 }
 
 #[cfg(test)]
@@ -471,6 +670,179 @@ mod tests {
         assert_eq!(
             t.supported_interface_repo_ids(),
             &["A".to_string(), "B".to_string()]
+        );
+    }
+
+    // ---------------------------------------------------------------
+    // §6.12 Component Inheritance
+    // ---------------------------------------------------------------
+
+    fn base() -> ComponentDef {
+        ComponentDef {
+            name: "Desk".into(),
+            repository_id: "IDL:demo/Desk:1.0".into(),
+            supported_interfaces: alloc::vec!["IDL:demo/Named:1.0".into()],
+            facets: alloc::vec![FacetDef {
+                name: "admin".into(),
+                interface_id: "IDL:demo/Admin:1.0".into(),
+            }],
+            attributes: alloc::vec![AttributeDef {
+                name: "desk_id".into(),
+                type_spec: "string".into(),
+                readonly: true,
+                set_raises: alloc::vec![],
+                get_raises: alloc::vec![],
+            }],
+            ..ComponentDef::default()
+        }
+    }
+
+    fn derived() -> ComponentDef {
+        ComponentDef {
+            base_component: Some("IDL:demo/Desk:1.0".into()),
+            ..trader()
+        }
+    }
+
+    fn table() -> ComponentTypeTable {
+        let mut t = ComponentTypeTable::new();
+        t.insert(base());
+        t.insert(derived());
+        t
+    }
+
+    #[test]
+    fn the_base_chain_runs_from_the_derived_component_to_the_root() {
+        let t = table();
+        let chain = t.base_chain("IDL:demo/Trader:1.0").unwrap();
+        let ids: Vec<&str> = chain.iter().map(|d| d.repository_id.as_str()).collect();
+        assert_eq!(ids, alloc::vec!["IDL:demo/Trader:1.0", "IDL:demo/Desk:1.0"]);
+    }
+
+    #[test]
+    fn a_derived_component_is_also_of_every_kind_it_inherits() {
+        let t = table();
+        assert!(
+            t.is_equivalent_component_kind("IDL:demo/Trader:1.0", "IDL:demo/Desk:1.0")
+                .unwrap()
+        );
+        assert!(
+            t.is_equivalent_component_kind("IDL:demo/Trader:1.0", "IDL:demo/Trader:1.0")
+                .unwrap()
+        );
+        // Inheritance runs one way: the base is not of the derived kind.
+        assert!(
+            !t.is_equivalent_component_kind("IDL:demo/Desk:1.0", "IDL:demo/Trader:1.0")
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn flattening_takes_over_every_inherited_feature_bases_first() {
+        let t = table();
+        let flat = t.flatten("IDL:demo/Trader:1.0").unwrap();
+        assert_eq!(flat.repository_id, "IDL:demo/Trader:1.0");
+        assert_eq!(flat.base_component, None);
+        let facets: Vec<&str> = flat.facets.iter().map(|f| f.name.as_str()).collect();
+        assert_eq!(facets, alloc::vec!["admin", "control"]);
+        let attributes: Vec<&str> = flat.attributes.iter().map(|a| a.name.as_str()).collect();
+        assert_eq!(attributes, alloc::vec!["desk_id", "max_volume"]);
+        assert_eq!(
+            flat.supported_interface_repo_ids(),
+            &["IDL:demo/Named:1.0".to_string()]
+        );
+        // The derived component's own ports are still there.
+        assert_eq!(flat.port_count(), 5);
+        assert!(flat.provide_facet("admin").is_some());
+    }
+
+    #[test]
+    fn an_unknown_base_is_reported_against_the_component_that_names_it() {
+        let mut t = ComponentTypeTable::new();
+        t.insert(derived());
+        assert_eq!(
+            t.base_chain("IDL:demo/Trader:1.0").unwrap_err(),
+            InheritanceError::UnknownBase {
+                component: "IDL:demo/Trader:1.0".into(),
+                base: "IDL:demo/Desk:1.0".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn an_unregistered_repository_id_is_not_a_component() {
+        let t = table();
+        assert_eq!(
+            t.base_chain("IDL:demo/Nowhere:1.0").unwrap_err(),
+            InheritanceError::UnknownComponent("IDL:demo/Nowhere:1.0".into())
+        );
+    }
+
+    #[test]
+    fn a_cycle_in_the_base_links_stops_the_walk() {
+        let mut t = ComponentTypeTable::new();
+        t.insert(ComponentDef {
+            base_component: Some("IDL:demo/Trader:1.0".into()),
+            ..base()
+        });
+        t.insert(derived());
+        assert_eq!(
+            t.base_chain("IDL:demo/Trader:1.0").unwrap_err(),
+            InheritanceError::Cycle("IDL:demo/Trader:1.0".into())
+        );
+    }
+
+    #[test]
+    fn a_redefined_port_name_is_refused_rather_than_shadowed() {
+        let mut t = ComponentTypeTable::new();
+        t.insert(base());
+        let mut d = derived();
+        d.facets.push(FacetDef {
+            name: "admin".into(),
+            interface_id: "IDL:demo/OtherAdmin:1.0".into(),
+        });
+        t.insert(d);
+        assert_eq!(
+            t.flatten("IDL:demo/Trader:1.0").unwrap_err(),
+            InheritanceError::RedefinedPort {
+                component: "IDL:demo/Trader:1.0".into(),
+                port: "admin".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn a_second_primary_key_in_the_chain_is_refused() {
+        let mut t = ComponentTypeTable::new();
+        t.insert(ComponentDef {
+            primary_key: alloc::vec!["IDL:demo/DeskKey:1.0".into()],
+            ..base()
+        });
+        t.insert(ComponentDef {
+            primary_key: alloc::vec!["IDL:demo/TraderKey:1.0".into()],
+            ..derived()
+        });
+        assert_eq!(
+            t.flatten("IDL:demo/Trader:1.0").unwrap_err(),
+            InheritanceError::RedefinedPrimaryKey {
+                component: "IDL:demo/Trader:1.0".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn a_keyed_base_makes_the_derived_component_keyed() {
+        let mut t = ComponentTypeTable::new();
+        t.insert(ComponentDef {
+            primary_key: alloc::vec!["IDL:demo/DeskKey:1.0".into()],
+            ..base()
+        });
+        t.insert(derived());
+        let flat = t.flatten("IDL:demo/Trader:1.0").unwrap();
+        assert!(flat.is_keyed());
+        assert_eq!(
+            flat.primary_key,
+            alloc::vec!["IDL:demo/DeskKey:1.0".to_string()]
         );
     }
 }

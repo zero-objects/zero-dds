@@ -4,7 +4,7 @@
 //! `zerodds-mq` library — argument parsing.
 //!
 //! Crate `zerodds-mq`. Safety classification: **COMFORT**.
-//! User-facing cross-domain Bridge; nur CLI-Frontend.
+//! User-facing cross-domain bridge; CLI frontend only.
 
 #![allow(clippy::module_name_repetitions)]
 
@@ -15,27 +15,27 @@ pub const DEFAULT_SRC_DOMAIN: u32 = 0;
 /// Default Destination-Domain.
 pub const DEFAULT_DST_DOMAIN: u32 = 1;
 
-/// Sub-command des MQ-CLIs.
+/// Sub-command of the MQ CLI.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
-    /// `bridge` — leitet ein Topic von Source-Domain in Destination-Domain.
+    /// `bridge` — routes a topic from source domain into destination domain.
     Bridge(BridgeArgs),
 }
 
-/// Argumente für `bridge`.
+/// Arguments for `bridge`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BridgeArgs {
     /// Source-Domain.
     pub src_domain: u32,
     /// Destination-Domain.
     pub dst_domain: u32,
-    /// Topic auf Source-Seite.
+    /// Topic on the source side.
     pub src_topic: String,
-    /// Topic auf Destination-Seite (default == src_topic).
+    /// Topic on the destination side (default == src_topic).
     pub dst_topic: String,
-    /// Maximale Lebensdauer; `None` = bis SIGINT.
+    /// Maximum lifetime; `None` = until SIGINT.
     pub duration: Option<Duration>,
-    /// Bidirektional (sub<->pub auf beiden Seiten).
+    /// Bidirectional (sub<->pub on both sides).
     pub bidirectional: bool,
 }
 
@@ -52,20 +52,20 @@ impl Default for BridgeArgs {
     }
 }
 
-/// Parse-Fehler.
+/// Parse error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParseError {
-    /// Kein subcommand.
+    /// No subcommand.
     Missing,
-    /// Unbekanntes subcommand.
+    /// Unknown subcommand.
     Unknown(String),
-    /// Required-arg fehlt.
+    /// Missing required arg.
     MissingArg(&'static str),
-    /// Wert nicht parse-bar.
+    /// Value not parseable.
     BadValue {
-        /// Welche flag.
+        /// Which flag.
         flag: &'static str,
-        /// Was eingegeben war.
+        /// What was entered.
         got: String,
     },
 }
@@ -83,11 +83,11 @@ impl std::fmt::Display for ParseError {
 
 impl std::error::Error for ParseError {}
 
-/// Parst `args` zu einem [`Command`]. `bridge` ist implizit wenn das
-/// erste Token mit `-` anfängt.
+/// Parses `args` into a [`Command`]. `bridge` is implicit when the
+/// first token starts with `-`.
 ///
 /// # Errors
-/// Siehe [`ParseError`].
+/// See [`ParseError`].
 pub fn parse_args(args: &[String]) -> Result<Command, ParseError> {
     let first = args.first().ok_or(ParseError::Missing)?;
     let (sub, rest) = if first.starts_with('-') {

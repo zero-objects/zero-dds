@@ -1,168 +1,67 @@
 # First publisher and subscriber
 
-This chapter wires a publisher and subscriber together using the
-Rust API directly. For non-Rust languages, jump to
-[Integration](../README.md) and pick yours.
+Run the maintained source examples directly instead of copying a second
+implementation into this chapter:
 
-## Setup
+- [hello_dds_publisher.rs](../../crates/dcps/examples/hello_dds_publisher.rs)
+- [hello_dds_subscriber.rs](../../crates/dcps/examples/hello_dds_subscriber.rs)
 
-In a fresh directory:
+They use DomainParticipantFactory, a topic, and typed writer/reader handles
+over RawBytes. RawBytes is an opaque payload demonstration, not proof of
+an IDL-generated application type or cross-vendor interoperability. For
+generated types, continue with the [build.rs integration](../../crates/zerodds-build/README.md)
+and its [example companion](../../website/docs/examples/zerodds-build-sample.html).
 
-```bash
-cargo new --bin hello-zerodds
-cd hello-zerodds
-```
+## Build
 
-Edit `Cargo.toml`:
-
-```toml
-[dependencies]
-zerodds-dcps = { git = "https://github.com/zero-objects/zero-dds.git" }
-zerodds-rtps = { git = "https://github.com/zero-objects/zero-dds.git" }
-zerodds-qos  = { git = "https://github.com/zero-objects/zero-dds.git" }
-zerodds-types = { git = "https://github.com/zero-objects/zero-dds.git" }
-```
-
-(For now we depend on the lower-level crates directly; the
-high-level `zerodds` re-export crate is in progress.)
-
-## Publisher
-
-`src/bin/pub.rs`:
-
-```rust
-use std::thread::sleep;
-use std::time::Duration;
-
-use zerodds_dcps::runtime::{DcpsRuntime, RuntimeConfig, UserWriterConfig};
-use zerodds_qos::{
-    DeadlineQosPolicy, DurabilityKind, LifespanQosPolicy, LivelinessQosPolicy, OwnershipKind,
-};
-use zerodds_rtps::wire_types::GuidPrefix;
-use zerodds_types::{PrimitiveKind, TypeIdentifier};
-
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let domain_id = 1;
-    let prefix = GuidPrefix::from_bytes([0x01; 12]);
-    let rt = DcpsRuntime::start(domain_id, prefix, RuntimeConfig::default())?;
-
-    let writer_eid = rt.register_user_writer(UserWriterConfig {
-        topic_name: "HelloTopic".into(),
-        type_name: "RawBytes".into(),
-        reliable: true,
-        durability: DurabilityKind::Volatile,
-        deadline: DeadlineQosPolicy::default(),
-        lifespan: LifespanQosPolicy::default(),
-        liveliness: LivelinessQosPolicy::default(),
-        ownership: OwnershipKind::Shared,
-        ownership_strength: 0,
-        partition: vec![],
-        user_data: vec![],
-        topic_data: vec![],
-        group_data: vec![],
-        type_identifier: TypeIdentifier::Primitive(PrimitiveKind::UInt8),
-        data_representation_offer: None,
-    })?;
-
-    for i in 0u32..10 {
-        let payload = format!("hello {i}").into_bytes();
-        rt.write_user_sample(writer_eid, payload)?;
-        println!("pub: sent {i}");
-        sleep(Duration::from_millis(500));
-    }
-    rt.shutdown();
-    Ok(())
-}
-```
-
-## Subscriber
-
-`src/bin/sub.rs`:
-
-```rust
-use std::time::Duration;
-
-use zerodds_dcps::runtime::{DcpsRuntime, RuntimeConfig, UserReaderConfig, UserSample};
-use zerodds_qos::{DeadlineQosPolicy, DurabilityKind, LivelinessQosPolicy, OwnershipKind};
-use zerodds_rtps::wire_types::GuidPrefix;
-use zerodds_types::{PrimitiveKind, TypeIdentifier, qos::TypeConsistencyEnforcement};
-
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let domain_id = 1;
-    let prefix = GuidPrefix::from_bytes([0x02; 12]);
-    let rt = DcpsRuntime::start(domain_id, prefix, RuntimeConfig::default())?;
-
-    let (_eid, rx) = rt.register_user_reader(UserReaderConfig {
-        topic_name: "HelloTopic".into(),
-        type_name: "RawBytes".into(),
-        reliable: true,
-        durability: DurabilityKind::Volatile,
-        deadline: DeadlineQosPolicy::default(),
-        liveliness: LivelinessQosPolicy::default(),
-        ownership: OwnershipKind::Shared,
-        partition: vec![],
-        user_data: vec![],
-        topic_data: vec![],
-        group_data: vec![],
-        type_identifier: TypeIdentifier::Primitive(PrimitiveKind::UInt8),
-        type_consistency: TypeConsistencyEnforcement::default(),
-        data_representation_offer: None,
-    })?;
-
-    let deadline = std::time::Instant::now() + Duration::from_secs(15);
-    while std::time::Instant::now() < deadline {
-        match rx.recv_timeout(Duration::from_millis(500)) {
-            Ok(UserSample::Alive { payload, .. }) => {
-                println!("sub: got {}", String::from_utf8_lossy(payload.as_ref()));
-            }
-
-            Ok(UserSample::Lifecycle { key_hash, kind }) => {
-                println!("lifecycle: {:?} {:?}", kind, key_hash);
-            }
-
-            Err(_) => {}
-        }
-    }
-    rt.shutdown();
-    Ok(())
-}
-```
-
-> ▶ Runnable example: [`getting-started-first-publisher`](https://github.com/zero-objects/zero-dds-snippets/tree/master/getting-started-first-publisher)
-> (both `pub.rs` and `sub.rs` above, verbatim — compiles and runs as shown).
-
-## Run it
-
-In two terminals:
+Follow [Installation](installation.md), from the same checkout root:
 
 ```bash
-# Terminal 1
-cargo run --bin sub
-
-# Terminal 2 (start ~1 second later so subscriber is listening)
-cargo run --bin pub
+cargo build --locked -j 1 -p zerodds-dcps \
+  --example hello_dds_publisher --example hello_dds_subscriber
 ```
 
-Expected output:
+## Run in two terminals
 
-```text
-sub: got hello 0
-sub: got hello 1
-sub: got hello 2
-...
+Start the reader first:
+
+```bash
+./target/debug/examples/hello_dds_subscriber
 ```
 
-## Cross-host
+Then start the publisher in another terminal:
 
-The same code works across hosts on the same Layer-2 broadcast
-domain — DDS discovery uses UDP multicast `239.255.0.1` on port
-`7400 + 250×domain_id`. If multicast is filtered (cloud, VLAN
-without IGMP), set `RuntimeConfig.spdp_multicast_group` to a
-unicast address you advertise via static peer-list (planned
-config option).
+```bash
+./target/debug/examples/hello_dds_publisher
+```
 
-## What now
+On Windows, use the corresponding .exe paths. Both processes use domain 0
+and topic Chatter. The publisher writes hello # followed by an increasing
+counter once per second. The subscriber prints received UTF-8 payloads.
+Both continue until Ctrl-C. A one-second reader timeout is an idle tick,
+not an application failure.
 
-- Define your own typed topic — see [04 IDL Reference](../04-idl/README.md).
-- Pick a non-Rust binding — see [Integration](../README.md).
-- Tune QoS for production — see [03 Configuration](../03-configuration/README.md).
+The publisher's console output means it attempted a write. Confirm the
+matching payload on the subscriber before considering the round trip
+successful. Initial samples can precede discovery.
+
+## Discovery and configuration
+
+Use two processes on the same host for this introduction. The participant
+factory selects the standard runtime files described in
+[Installation](installation.md#configuration-before-running).
+Default UDP discovery needs multicast connectivity. If the machine's
+configuration disables multicast, provide reachable discovery.peers in
+the runtime files instead of changing the multicast group to a unicast
+address. Do not assume that two console windows alone prove discovery.
+
+The source examples create participants through the factory rather than
+embedding fixed GUID prefixes. Errors are propagated by the examples.
+These commands are source-aligned instructions, not a replacement for a
+recorded release-gate result.
+
+## Related
+
+[Website companion](../../website/docs/examples/getting-started-first-publisher.html) ·
+[Integration](../README.md#integration-per-language) ·
+[Runtime layering source](../../crates/dcps/tests/runtime_config_layering.rs)

@@ -38,7 +38,7 @@ use postgres::types::ToSql;
 use postgres::{Client, NoTls};
 use zerodds_durability_store::{
     Contract, Cursor, DurabilitySample, DurabilityStore, Page, Result, Selector, StoreError,
-    StoreStats,
+    StoreStats, TopicMeta,
 };
 use zerodds_qos::policies::history::HistoryKind;
 
@@ -64,6 +64,18 @@ CREATE TABLE IF NOT EXISTS unregistered (
     instance  BYTEA  NOT NULL,
     at_nanos  BIGINT NOT NULL,
     PRIMARY KEY (topic, instance)
+);
+CREATE TABLE IF NOT EXISTS topic_meta (
+    topic                    TEXT     PRIMARY KEY,
+    type_name                TEXT     NOT NULL,
+    keyed                    BOOLEAN  NOT NULL,
+    history_kind             INTEGER  NOT NULL,
+    history_depth            INTEGER  NOT NULL,
+    max_samples              INTEGER  NOT NULL,
+    max_instances            INTEGER  NOT NULL,
+    max_samples_per_instance INTEGER  NOT NULL,
+    cleanup_delay_secs       BIGINT   NOT NULL,
+    cleanup_delay_nanos      INTEGER  NOT NULL
 );
 ";
 
@@ -93,6 +105,18 @@ CREATE TABLE IF NOT EXISTS unregistered (
     instance  BYTEA  NOT NULL,
     at_nanos  BIGINT NOT NULL,
     PRIMARY KEY (topic, instance)
+);
+CREATE TABLE IF NOT EXISTS topic_meta (
+    topic                    TEXT     PRIMARY KEY,
+    type_name                TEXT     NOT NULL,
+    keyed                    BOOLEAN  NOT NULL,
+    history_kind             INTEGER  NOT NULL,
+    history_depth            INTEGER  NOT NULL,
+    max_samples              INTEGER  NOT NULL,
+    max_instances            INTEGER  NOT NULL,
+    max_samples_per_instance INTEGER  NOT NULL,
+    cleanup_delay_secs       BIGINT   NOT NULL,
+    cleanup_delay_nanos      INTEGER  NOT NULL
 );
 ";
 
@@ -168,7 +192,19 @@ impl PostgresStore {
             .map_err(|_| StoreError::Poisoned("postgres client"))
     }
 
-    fn contract_for(&self, topic: &str) -> Result<Contract> {
+    /// The persisted `topic_meta` row's contract wins over a plain
+    /// `set_contract` for the same topic (it is the more recent, more
+    /// complete registration — see [`DurabilityStore::set_contract`]'s doc).
+    ///
+    /// Takes an already-locked `client` (never locks `self.client` itself)
+    /// so a caller that already holds the client guard (e.g.
+    /// [`cleanup`](DurabilityStore::cleanup), iterating rows of an earlier
+    /// query on the same connection) can call it without re-entering
+    /// `self.client`'s mutex, which is not reentrant.
+    fn contract_for_conn(&self, client: &mut Client, topic: &str) -> Result<Contract> {
+        if let Some(meta) = Self::topic_meta_row_conn(client, topic)? {
+            return Ok(meta.contract);
+        }
         Ok(self
             .contracts
             .lock()
@@ -182,6 +218,50 @@ impl PostgresStore {
         let row = client.query_one(sql, p).map_err(|e| backend("count", e))?;
         Ok(row.get::<_, i64>(0))
     }
+
+    /// Reads `topic`'s `topic_meta` row off an already-locked `client`, if
+    /// any. A row with an unknown `history_kind` discriminator
+    /// (corrupt/foreign data) is a loud `Err`, never a silent `None`.
+    fn topic_meta_row_conn(client: &mut Client, topic: &str) -> Result<Option<TopicMeta>> {
+        let rows = client
+            .query(
+                "SELECT type_name, keyed, history_kind, history_depth, max_samples, \
+                 max_instances, max_samples_per_instance, cleanup_delay_secs, \
+                 cleanup_delay_nanos FROM topic_meta WHERE topic=$1",
+                &[&topic],
+            )
+            .map_err(|e| backend("topic_meta select", e))?;
+        let Some(r) = rows.first() else {
+            return Ok(None);
+        };
+        let type_name: String = r.get(0);
+        let keyed: bool = r.get(1);
+        let hk: i32 = r.get(2);
+        let hd: i32 = r.get(3);
+        let ms: i32 = r.get(4);
+        let mi: i32 = r.get(5);
+        let mspi: i32 = r.get(6);
+        let secs: i64 = r.get(7);
+        let nanos: i32 = r.get(8);
+        let contract = Contract::from_row(hk as u32, hd, ms, mi, mspi, secs as u64, nanos as u32)
+            .ok_or_else(|| {
+            StoreError::Backend(format!(
+                "postgres store: topic_meta row for {topic:?} has an unknown history_kind {hk}"
+            ))
+        })?;
+        Ok(Some(TopicMeta {
+            type_name,
+            keyed,
+            contract,
+        }))
+    }
+
+    /// [`Self::topic_meta_row_conn`] for a caller that does not already hold
+    /// the client guard.
+    fn topic_meta_row(&self, topic: &str) -> Result<Option<TopicMeta>> {
+        let mut client = self.lock_client()?;
+        Self::topic_meta_row_conn(&mut client, topic)
+    }
 }
 
 impl DurabilityStore for PostgresStore {
@@ -193,9 +273,45 @@ impl DurabilityStore for PostgresStore {
         Ok(())
     }
 
-    fn store(&self, sample: DurabilitySample) -> Result<()> {
-        let contract = self.contract_for(&sample.topic)?;
+    fn set_topic_meta(&self, topic: &str, meta: TopicMeta) -> Result<()> {
         let mut client = self.lock_client()?;
+        let (hk, hd, ms, mi, mspi, secs, nanos) = meta.contract.to_row();
+        client
+            .execute(
+                "INSERT INTO topic_meta(topic, type_name, keyed, history_kind, history_depth, \
+                 max_samples, max_instances, max_samples_per_instance, cleanup_delay_secs, \
+                 cleanup_delay_nanos) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) \
+                 ON CONFLICT (topic) DO UPDATE SET \
+                 type_name=EXCLUDED.type_name, keyed=EXCLUDED.keyed, \
+                 history_kind=EXCLUDED.history_kind, history_depth=EXCLUDED.history_depth, \
+                 max_samples=EXCLUDED.max_samples, max_instances=EXCLUDED.max_instances, \
+                 max_samples_per_instance=EXCLUDED.max_samples_per_instance, \
+                 cleanup_delay_secs=EXCLUDED.cleanup_delay_secs, \
+                 cleanup_delay_nanos=EXCLUDED.cleanup_delay_nanos",
+                &[
+                    &topic,
+                    &meta.type_name,
+                    &meta.keyed,
+                    &(hk as i32),
+                    &hd,
+                    &ms,
+                    &mi,
+                    &mspi,
+                    &(secs as i64),
+                    &(nanos as i32),
+                ],
+            )
+            .map_err(|e| backend("topic_meta upsert", e))?;
+        Ok(())
+    }
+
+    fn topic_meta(&self, topic: &str) -> Result<Option<TopicMeta>> {
+        self.topic_meta_row(topic)
+    }
+
+    fn store(&self, sample: DurabilitySample) -> Result<()> {
+        let mut client = self.lock_client()?;
+        let contract = self.contract_for_conn(&mut client, &sample.topic)?;
         let inst = &sample.instance_key[..];
         let seq = sample.sequence as i64;
 
@@ -409,7 +525,10 @@ impl DurabilityStore for PostgresStore {
                 let topic: String = r.get(0);
                 let inst: Vec<u8> = r.get(1);
                 let at: i64 = r.get(2);
-                let delay = self.contract_for(&topic).ok()?.cleanup_delay;
+                let delay = self
+                    .contract_for_conn(&mut client, &topic)
+                    .ok()?
+                    .cleanup_delay;
                 let deadline = time_of(at).checked_add(delay)?;
                 (now >= deadline).then_some((topic, inst))
             })

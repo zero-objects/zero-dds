@@ -1,0 +1,5 @@
+module m {
+  struct Later;
+  @appendable struct Holder { sequence<Later> items; };
+  @appendable struct Later { long a; };
+};

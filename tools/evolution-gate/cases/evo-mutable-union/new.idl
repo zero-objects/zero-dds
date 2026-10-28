@@ -1,0 +1,11 @@
+@final
+union Choice switch (long) {
+    case 1: long whole;
+    default: double frac;
+};
+
+@mutable
+struct Evo {
+    @id(1) long anchor;
+    @id(2) Choice picked;
+};

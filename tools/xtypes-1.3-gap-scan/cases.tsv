@@ -1,0 +1,222 @@
+# The probe corpus of the DDS-XTypes 1.3 negative list.
+#
+# One probe per line. `expect` is what the specification says, never what this
+# tree does — a probe whose `expect` was read off the tree measures nothing.
+# The scan does not compare against `expect`; it compares against
+# `expected.tsv`, so that the specification's answer lives in one place
+# (`docs/spec-coverage/dds-xtypes-1.3.gaps.md`) and the recorded state of the
+# gap in another.
+#
+# `witness` is an ERE searched over the committed test, fixture and corpus
+# files of this tree; `-` where no text pattern isolates the construct.
+#
+# `arg` depends on `op`:
+#   ti       hex octets of a serialized TypeIdentifier, XCDR2 little-endian
+#   to       hex octets of a serialized TypeObject
+#   idl      TypeName;;<IDL>, `<NL>` for a newline
+#   assign   T1;;T2;;<IDL> — is T1 (the reader) assignable from T2 (the writer)
+#   datarep  <offered>;;<requested>, comma-separated representation ids
+#   encaps   <representation>;;<extensibility>
+#   tl       <TypeLookup type>;;<hex>
+#id	axis	refs	expect	op	witness	arg
+ti-prim-none	typeid	7.3.4.2, Table 29	reject	ti	TypeIdentifier::None	00
+ti-prim-boolean	typeid	7.3.4.2, Table 29	accept	ti	PrimitiveKind::Boolean	01
+ti-prim-byte	typeid	7.3.4.2, Table 29	accept	ti	PrimitiveKind::Byte	02
+ti-prim-int16	typeid	7.3.4.2, Table 29	accept	ti	PrimitiveKind::Int16	03
+ti-prim-int32	typeid	7.3.4.2, Table 29	accept	ti	PrimitiveKind::Int32	04
+ti-prim-int64	typeid	7.3.4.2, Table 29	accept	ti	PrimitiveKind::Int64	05
+ti-prim-uint16	typeid	7.3.4.2, Table 29	accept	ti	PrimitiveKind::UInt16	06
+ti-prim-uint32	typeid	7.3.4.2, Table 29	accept	ti	PrimitiveKind::UInt32	07
+ti-prim-uint64	typeid	7.3.4.2, Table 29	accept	ti	PrimitiveKind::UInt64	08
+ti-prim-float32	typeid	7.3.4.2, Table 29	accept	ti	PrimitiveKind::Float32	09
+ti-prim-float64	typeid	7.3.4.2, Table 29	accept	ti	PrimitiveKind::Float64	0A
+ti-prim-float128	typeid	7.3.4.2, Table 29	accept	ti	PrimitiveKind::Float128	0B
+ti-prim-int8	typeid	7.3.4.2, Table 29	accept	ti	PrimitiveKind::Int8	0C
+ti-prim-uint8	typeid	7.3.4.2, Table 29	accept	ti	PrimitiveKind::UInt8	0D
+ti-prim-char8	typeid	7.3.4.2, Table 29	accept	ti	PrimitiveKind::Char8	10
+ti-prim-char16	typeid	7.3.4.2, Table 29	accept	ti	PrimitiveKind::Char16	11
+ti-string8-small	typeid	7.3.4.2, Table 29	accept	ti	String8Small	7020
+ti-string8-small-max	typeid	7.3.4.2, Table 29	accept	ti	String8Small	70FF
+ti-string8-small-unbounded	typeid	7.3.4.2, Table 29	accept	ti	String8Small	7000
+ti-string8-large	typeid	7.3.4.2, Table 29	accept	ti	String8Large	7100000000010000
+ti-string8-large-small-bound	typeid	7.3.4.2, Table 29	accept	ti	String8Large	7100000020000000
+ti-string16-small	typeid	7.3.4.2, Table 29	accept	ti	String16Small	7220
+ti-string16-large	typeid	7.3.4.2, Table 29	accept	ti	String16Large	7300000000010000
+ti-plain-seq-small	typeid	7.3.4.2, Table 29	accept	ti	PlainSequenceSmall	80F300002004
+ti-plain-seq-large	typeid	7.3.4.2, Table 29	accept	ti	PlainSequenceLarge	81F300000001000004
+ti-plain-array-small	typeid	7.3.4.2, Table 29	accept	ti	PlainArraySmall	90F30000010000000A04
+ti-plain-array-large	typeid	7.3.4.2, Table 29	accept	ti	PlainArrayLarge	91F30000010000000001000004
+ti-plain-map-small	typeid	7.3.4.2, Table 29	accept	ti	PlainMapSmall	A0F300002004000004
+ti-plain-map-large	typeid	7.3.4.2, Table 29	accept	ti	PlainMapLarge	A1F30000000100000400000004
+ti-plain-seq-of-hash	typeid	7.3.4.6	accept	ti	PlainSequenceSmall	80F1000020F1000102030405060708090A0B0C0D
+ti-scc-spec-form	typeid	7.3.4.9, Annex B	accept	ti	StronglyConnectedComponentId	B000000018000000F1000102030405060708090A0B0C0D000200000001000000
+ti-scc-tree-form	typeid	7.3.4.9, Annex B	reject	ti	StronglyConnectedComponentId	B0000102030405060708090A0B0C0D000200000001000000
+ti-ek-minimal	typeid	7.3.4.2, Table 29	accept	ti	EquivalenceHashMinimal	F1000102030405060708090A0B0C0D
+ti-ek-complete	typeid	7.3.4.2, Table 29	accept	ti	EquivalenceHashComplete	F2000102030405060708090A0B0C0D
+ti-ek-both	typeid	7.3.4.2, Annex B	reject	ti	EK_BOTH	F3000102030405060708090A0B0C0D
+ti-extended	typeid	7.3.4.2, Annex B	accept	ti	TypeIdentifier::Extended	C000000000000000
+ti-truncated	typeid	7.3.4.2, Annex B	reject	ti	-	70
+tk-alias	typekind	7.3.4.2, Annex B	accept	idl	MinimalAliasType	A;;typedef long A;
+tk-string8	typekind	7.3.4.2, Annex B	accept	idl	String8Small	S;;typedef string<32> S;
+tk-string16	typekind	7.3.4.2, Annex B	accept	idl	String16Small	S;;typedef wstring<32> S;
+tk-enum	typekind	7.3.4.2, Annex B	accept	idl	MinimalEnumeratedType	E;;enum E { RED, GREEN };
+tk-bitmask	typekind	7.3.4.2, Annex B	accept	idl	MinimalBitmaskType	B;;@bit_bound(8) bitmask B { @position(0) F0 };
+tk-annotation	typekind	7.3.4.2, Annex B	accept	idl	MinimalAnnotationType	A;;@annotation A { long v; };
+tk-structure	typekind	7.3.4.2, Annex B	accept	idl	MinimalStructType	S;;@final struct S { long a; };
+tk-union	typekind	7.3.4.2, Annex B	accept	idl	MinimalUnionType	U;;@final union U switch (long) { case 1: long a; default: long b; };
+tk-bitset	typekind	7.3.4.2, Annex B	accept	idl	MinimalBitsetType	B;;bitset B { bitfield<3> a; };
+tk-sequence	typekind	7.3.4.2, Annex B	accept	idl	MinimalSequenceType	S;;typedef sequence<long> S;
+tk-array	typekind	7.3.4.2, Annex B	accept	idl	MinimalArrayType	S;;typedef long S[3];
+tk-map	typekind	7.3.4.2, Annex B	accept	idl	MinimalMapType	S;;typedef map<long,long> S;
+tk-prim-boolean	typekind	7.3.1.4, Table 25	accept	idl	-	S;;@final struct S { boolean m; };
+tk-prim-byte	typekind	7.3.1.4, Table 25	accept	idl	-	S;;@final struct S { octet m; };
+tk-prim-int16	typekind	7.3.1.4, Table 25	accept	idl	-	S;;@final struct S { short m; };
+tk-prim-int32	typekind	7.3.1.4, Table 25	accept	idl	-	S;;@final struct S { long m; };
+tk-prim-int64	typekind	7.3.1.4, Table 25	accept	idl	-	S;;@final struct S { long long m; };
+tk-prim-uint16	typekind	7.3.1.4, Table 25	accept	idl	-	S;;@final struct S { unsigned short m; };
+tk-prim-uint32	typekind	7.3.1.4, Table 25	accept	idl	-	S;;@final struct S { unsigned long m; };
+tk-prim-uint64	typekind	7.3.1.4, Table 25	accept	idl	-	S;;@final struct S { unsigned long long m; };
+tk-prim-float32	typekind	7.3.1.4, Table 25	accept	idl	-	S;;@final struct S { float m; };
+tk-prim-float64	typekind	7.3.1.4, Table 25	accept	idl	-	S;;@final struct S { double m; };
+tk-prim-float128	typekind	7.3.1.4, Table 25	accept	idl	-	S;;@final struct S { long double m; };
+tk-prim-int8	typekind	7.3.1.4, Table 25	accept	idl	-	S;;@final struct S { int8 m; };
+tk-prim-uint8	typekind	7.3.1.4, Table 25	accept	idl	-	S;;@final struct S { uint8 m; };
+tk-prim-char8	typekind	7.3.1.4, Table 25	accept	idl	-	S;;@final struct S { char m; };
+tk-prim-char16	typekind	7.3.1.4, Table 25	accept	idl	-	S;;@final struct S { wchar m; };
+to-unknown-equivalence-kind	typeobject	7.3.4.5, Annex B	reject	to	-	02000000F051
+to-ek-both	typeobject	7.3.4.5, Annex B	reject	to	-	02000000F351
+to-extended-arm	typeobject	7.3.4.3, Annex B	accept	to	MinimalExtendedType	08000000F1C0000000000000
+to-truncated	typeobject	7.3.4.5, Annex B	reject	to	-	01000000F1
+to-dheader-minimal-struct	typeobject	7.3.4.5, 7.4.2	accept	todh	-	S;;@final struct S { long a; };
+tl-gettypes-in	typelookup	7.6.3.3.3	accept	tl	GetTypesRequest	getTypes_In;;0c0000006560534c0400000000000000
+tl-gettypes-out	typelookup	7.6.3.3.3	accept	tl	GetTypesReply	getTypes_Out;;18000000d14a8042040000000000000077658e4b0400000000000000
+tl-gettypedependencies-in	typelookup	7.6.3.3.3	accept	tl	GetTypeDependenciesRequest	getTypeDependencies_In;;180000006560534c0400000000000000d2e308450400000000000000
+tl-gettypedependencies-out	typelookup	7.6.3.3.3	accept	tl	GetTypeDependenciesReply	getTypeDependencies_Out;;18000000c9dfa44b0400000000000000d2e308450400000000000000
+tl-gettypes_result	typelookup	7.6.3.3.3	accept	tl	TypeLookup_getTypes_Result	getTypes_Result;;200000000000000018000000d14a8042040000000000000077658e4b0400000000000000
+tl-gettypedependencies_result	typelookup	7.6.3.3.3	accept	tl	TypeLookup_getTypeDependencies_Result	getTypeDependencies_Result;;200000000000000018000000c9dfa44b0400000000000000d2e308450400000000000000
+tl-call	typelookup	7.6.3.3.3	accept	tl	TypeLookup_Call	Call;;14000000d35282010c0000006560534c0400000000000000
+tl-return	typelookup	7.6.3.3.3	accept	tl	TypeLookup_Return	Return;;28000000d3528201200000000000000018000000d14a8042040000000000000077658e4b0400000000000000
+tl-request	typelookup	7.6.3.3.3	accept	tl	TypeLookup_Request	Request;;380000005a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a2a00000000000000010000000000000014000000d35282010c0000006560534c0400000000000000
+tl-reply	typelookup	7.6.3.3.3	accept	tl	TypeLookup_Reply	Reply;;4c0000005a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a2a00000000000000010000000000000028000000d3528201200000000000000018000000d14a8042040000000000000077658e4b0400000000000000
+dr-xcdr-xcdr	datarep	7.6.3.1, Table 59	compatible	datarep	-	0;;0
+dr-xcdr-both	datarep	7.6.3.1, Table 59	compatible	datarep	-	0;;0,2
+dr-xcdr2-xcdr	datarep	7.6.3.1, Table 59	incompatible	datarep	-	2;;0
+dr-xcdr2-both	datarep	7.6.3.1, Table 59	compatible	datarep	-	2;;0,2
+dr-empty-offer	datarep	7.6.3.1	compatible	datarep	-	;;0
+dr-empty-request	datarep	7.6.3.1	compatible	datarep	-	0;;
+dr-xml	datarep	7.6.3.1	compatible	datarep	-	1;;1
+enc-xcdr-final	datarep	7.6.3.1.2, Table 60	compatible	encaps	-	XCDR;;FINAL
+enc-xcdr-appendable	datarep	7.6.3.1.2, Table 60	compatible	encaps	-	XCDR;;APPENDABLE
+enc-xcdr-mutable	datarep	7.6.3.1.2, Table 60	compatible	encaps	-	XCDR;;MUTABLE
+enc-xcdr2-final	datarep	7.6.3.1.2, Table 60	compatible	encaps	-	XCDR2;;FINAL
+enc-xcdr2-appendable	datarep	7.6.3.1.2, Table 60	compatible	encaps	-	XCDR2;;APPENDABLE
+enc-xcdr2-mutable	datarep	7.6.3.1.2, Table 60	compatible	encaps	-	XCDR2;;MUTABLE
+an-optional	annotation	7.3.1.2.1.2	accept	idl	@optional	S;;@final struct S { @optional long a; };
+an-must_understand	annotation	7.3.1.2.1.9	accept	idl	@must_understand	S;;@mutable struct S { @must_understand long a; };
+an-non_serialized	annotation	7.3.1.2.1.14	accept	idl	@non_serialized	S;;@final struct S { @non_serialized long a; };
+an-id	annotation	7.3.1.2.1.1	accept	idl	@id	S;;@mutable struct S { @id(7) long a; };
+an-hashid	annotation	7.3.1.2.1.1	accept	idl	@hashid	S;;@mutable struct S { @hashid long a; };
+an-hashid-string	annotation	7.3.1.2.1.1	accept	idl	@hashid	S;;@mutable struct S { @hashid("other") long a; };
+an-external	annotation	7.3.1.2.1.4	accept	idl	@external	S;;@final struct S { @external long a; };
+an-try_construct	annotation	7.3.1.2.1.12	accept	idl	@try_construct	S;;@final struct S { @try_construct(USE_DEFAULT) long a; };
+an-try_construct-discard	annotation	7.3.1.2.1.12	accept	idl	@try_construct	S;;@final struct S { @try_construct(DISCARD) long a; };
+an-try_construct-trim	annotation	7.3.1.2.1.12	accept	idl	@try_construct	S;;@final struct S { @try_construct(TRIM) string<8> a; };
+an-key	annotation	7.3.1.2.1.3	accept	idl	@key	S;;@final struct S { @key long a; };
+an-bit_bound	annotation	7.3.1.2.1.6	accept	idl	@bit_bound	B;;@bit_bound(16) bitmask B { @position(0) F0 };
+an-bit_bound-enum	annotation	7.3.1.2.1.6	accept	idl	@bit_bound	E;;@bit_bound(16) enum E { A, B };
+an-extensibility	annotation	7.3.1.2.1.8	accept	idl	@extensibility	S;;@extensibility(MUTABLE) struct S { long a; };
+an-mutable	annotation	7.3.1.2.1.8	accept	idl	@mutable	S;;@mutable struct S { long a; };
+an-appendable	annotation	7.3.1.2.1.8	accept	idl	@appendable	S;;@appendable struct S { long a; };
+an-final	annotation	7.3.1.2.1.8	accept	idl	@final	S;;@final struct S { long a; };
+an-nested	annotation	7.3.1.2.1.7	accept	idl	@nested	S;;@nested @final struct S { long a; };
+an-default_literal	annotation	7.3.1.2.1.10	accept	idl	@default_literal	E;;enum E { A, @default_literal B };
+an-value	annotation	7.3.1.2.1.5	accept	idl	@value	E;;enum E { @value(5) A, B };
+an-position	annotation	7.3.1.2.1.6	accept	idl	@position	B;;@bit_bound(8) bitmask B { @position(3) F3 };
+an-autoid	annotation	7.3.1.2.1.1	accept	idl	@autoid	S;;@autoid(HASH) @mutable struct S { long a; };
+an-autoid-sequential	annotation	7.3.1.2.1.1	accept	idl	@autoid	S;;@autoid(SEQUENTIAL) @mutable struct S { long a; };
+an-verbatim	annotation	7.3.1.2.1.13	accept	idl	@verbatim	S;;@verbatim(language="c", placement="begin-file", text="x") @final struct S { long a; };
+an-default_nested	annotation	7.3.1.2.1.7	accept	idl	@default_nested	S;;@default_nested(TRUE) module M { @final struct S { long a; }; };
+an-ignore_literal_names	annotation	7.3.1.2.1.11	accept	idl	@ignore_literal_names	E;;@ignore_literal_names enum E { A, B };
+an-data_representation	annotation	7.3.1.2.1.15	accept	idl	@data_representation	S;;@data_representation(XCDR2) @final struct S { long a; };
+an-topic	annotation	7.3.1.2.1.16	accept	idl	@topic	S;;@topic @final struct S { long a; };
+an-default	annotation	7.3.1.2.1	accept	idl	@default	S;;@final struct S { @default(3) @optional long a; };
+an-range	annotation	7.3.1.2.1	accept	idl	@range	S;;@final struct S { @range(min=0, max=9) long a; };
+an-unit	annotation	7.3.1.2.1	accept	idl	@unit	S;;@final struct S { @unit("m/s") long a; };
+an-min	annotation	7.3.1.2.1	accept	idl	@min	S;;@final struct S { @min(0) long a; };
+an-max	annotation	7.3.1.2.1	accept	idl	@max	S;;@final struct S { @max(9) long a; };
+an-external-no-effect	annotation	7.3.4.2 MemberFlagMinimalMask	assignable	assign	@external	R;;W;;@final struct R { @external long a; };<NL>@final struct W { long a; };
+an-key-effect	annotation	7.2.4.4.8, Table 19	assignable	assign	@key	R;;W;;@final struct R { @key long a; };<NL>@final struct W { long a; };
+an-must-understand-effect	annotation	7.2.4.4.8, Table 19	not-assignable	assign	@must_understand	R;;W;;@mutable struct R { @id(1) long a; };<NL>@mutable struct W { @id(1) long a; @id(2) @must_understand long b; };
+an-non-serialized-effect	annotation	7.2.4.4.2	assignable	assign	@non_serialized	R;;W;;@final struct R { long a; };<NL>@final struct W { long a; @non_serialized long b; };
+an-extensibility-effect	annotation	7.2.4.4.8, Table 19	not-assignable	assign	-	R;;W;;@final struct R { long a; };<NL>@appendable struct W { long a; };
+an-id-effect	annotation	7.2.4.4.8, Table 19	not-assignable	assign	@id	R;;W;;@mutable struct R { @id(1) long a; };<NL>@mutable struct W { @id(2) long a; };
+an-ignore-literal-names-effect	annotation	7.2.4.4.7, Table 18	assignable	assign	@ignore_literal_names	R;;W;;@ignore_literal_names enum R { A, B };<NL>@ignore_literal_names enum W { X, Y };
+as-equiv	assign	7.2.4.4.1	assignable	assign	-	R;;W;;@final struct R { long a; };<NL>@final struct W { long a; };
+as-nonser	assign	7.2.4.4.2	assignable	assign	@non_serialized	R;;W;;@final struct R { long a; };<NL>@final struct W { long a; @non_serialized long b; };
+as-delimited	assign	7.2.4.2	assignable	assign	-	R;;W;;@appendable struct R { long a; };<NL>@appendable struct W { long a; long b; };
+as-strong	assign	7.2.4.3	assignable	assign	-	R;;W;;@appendable struct Inner { long a; };<NL>@appendable struct Inner2 { long a; long b; };<NL>@final struct R { Inner m[2]; };<NL>@final struct W { Inner2 m[2]; };
+as-alias-1	assign	7.2.4.4.3, Table 14	assignable	assign	-	R;;W;;typedef long R;<NL>@final struct Hold { R r; };<NL>typedef long W;
+as-alias-2	assign	7.2.4.4.3, Table 14	assignable	assign	-	R;;W;;@final struct Base { long a; };<NL>typedef Base W;<NL>@final struct R { long a; };
+as-alias-3	assign	7.2.4.4.3, Table 14	assignable	assign	-	R;;W;;@final struct Base { long a; };<NL>typedef Base R;<NL>typedef Base W;
+as-alias-resolve	assign	7.2.4.4.3	assignable	assign	-	R;;W;;typedef long L1;<NL>typedef L1 L2;<NL>typedef L2 R;<NL>typedef long W;
+as-prim-same	assign	7.2.4.4.4, Table 15	assignable	assign	-	R;;W;;typedef long R;<NL>typedef long W;
+as-prim-different	assign	7.2.4.4.4, Table 15	not-assignable	assign	-	R;;W;;typedef long R;<NL>typedef short W;
+as-prim-u8-bm	assign	7.2.4.4.4, Table 15	assignable	assign	-	R;;W;;typedef uint8 R;<NL>@bit_bound(8) bitmask W { @position(0) F0 };
+as-prim-u16-bm	assign	7.2.4.4.4, Table 15	assignable	assign	-	R;;W;;typedef uint16 R;<NL>@bit_bound(16) bitmask W { @position(0) F0 };
+as-prim-u32-bm	assign	7.2.4.4.4, Table 15	assignable	assign	-	R;;W;;typedef unsigned long R;<NL>@bit_bound(32) bitmask W { @position(0) F0 };
+as-prim-u64-bm	assign	7.2.4.4.4, Table 15	assignable	assign	-	R;;W;;typedef unsigned long long R;<NL>@bit_bound(64) bitmask W { @position(0) F0 };
+as-prim-u8-bm-out-of-range	assign	7.2.4.4.4, Table 15	not-assignable	assign	-	R;;W;;typedef uint8 R;<NL>@bit_bound(16) bitmask W { @position(0) F0 };
+as-str-1	assign	7.2.4.4.5, Table 16	assignable	assign	-	R;;W;;typedef string<20> R;<NL>typedef string<10> W;
+as-str-len	assign	7.2.4.4.5, Table 16	assignable	assign	-	R;;W;;typedef string<10> R;<NL>typedef string<20> W;
+as-str-narrow-wide	assign	7.2.4.4.5.1	not-assignable	assign	-	R;;W;;typedef string<10> R;<NL>typedef wstring<10> W;
+as-arr-bounds	assign	7.2.4.4.6, Table 17	not-assignable	assign	-	R;;W;;typedef long R[3];<NL>typedef long W[4];
+as-arr-elem	assign	7.2.4.4.6, Table 17	not-assignable	assign	-	R;;W;;typedef long R[3];<NL>typedef short W[3];
+as-seq-elem	assign	7.2.4.4.6, Table 17	not-assignable	assign	-	R;;W;;typedef sequence<long> R;<NL>typedef sequence<short> W;
+as-seq-len	assign	7.2.4.4.6, Table 17	assignable	assign	-	R;;W;;typedef sequence<long,10> R;<NL>typedef sequence<long,20> W;
+as-map-key	assign	7.2.4.4.6, Table 17	not-assignable	assign	-	R;;W;;typedef map<long,long> R;<NL>typedef map<short,long> W;
+as-map-val	assign	7.2.4.4.6, Table 17	not-assignable	assign	-	R;;W;;typedef map<long,long> R;<NL>typedef map<long,short> W;
+as-coll-discard	assign	7.2.4.4.6, Table 17	assignable	assign	@try_construct	R;;W;;@final struct R { @try_construct(DISCARD) sequence<long,10> m; };<NL>@final struct W { sequence<long,20> m; };
+as-coll-usedefault	assign	7.2.4.4.6, Table 17	assignable	assign	@try_construct	R;;W;;@final struct R { @try_construct(USE_DEFAULT) sequence<long,10> m; };<NL>@final struct W { sequence<long,20> m; };
+as-bm-bound	assign	7.2.4.4.7, Table 18	not-assignable	assign	-	R;;W;;@bit_bound(8) bitmask R { @position(0) F0 };<NL>@bit_bound(16) bitmask W { @position(0) F0 };
+as-bm-same-bound	assign	7.2.4.4.7, Table 18	assignable	assign	-	R;;W;;@bit_bound(8) bitmask R { @position(0) F0 };<NL>@bit_bound(8) bitmask W { @position(1) F1 };
+as-bm-u32	assign	7.2.4.4.7, Table 18	assignable	assign	-	R;;W;;@bit_bound(32) bitmask R { @position(0) F0 };<NL>typedef unsigned long W;
+as-bm-u16	assign	7.2.4.4.7, Table 18	assignable	assign	-	R;;W;;@bit_bound(16) bitmask R { @position(0) F0 };<NL>typedef uint16 W;
+as-bm-u64	assign	7.2.4.4.7, Table 18	assignable	assign	-	R;;W;;@bit_bound(64) bitmask R { @position(0) F0 };<NL>typedef unsigned long long W;
+as-bm-u8	assign	7.2.4.4.7, Table 18	assignable	assign	-	R;;W;;@bit_bound(8) bitmask R { @position(0) F0 };<NL>typedef uint8 W;
+as-enum-ext	assign	7.2.4.4.7, Table 18	not-assignable	assign	-	R;;W;;@final enum R { A, B };<NL>@appendable enum W { A, B };
+as-enum-names	assign	7.2.4.4.7, Table 18	not-assignable	assign	-	R;;W;;@appendable enum R { A, B };<NL>@appendable enum W { A, @value(0) B };
+as-enum-ignore-names	assign	7.2.4.4.7, Table 18	assignable	assign	@ignore_literal_names	R;;W;;@ignore_literal_names @appendable enum R { A, B };<NL>@ignore_literal_names @appendable enum W { X, Y };
+as-enum-final	assign	7.2.4.4.7, Table 18	not-assignable	assign	-	R;;W;;@final enum R { A, B };<NL>@final enum W { A, B, C };
+as-union-ext	assign	7.2.4.4.8, Table 19	not-assignable	assign	-	R;;W;;@final union R switch (long) { case 1: long a; };<NL>@appendable union W switch (long) { case 1: long a; };
+as-union-disc-strong	assign	7.2.4.4.8, Table 19	not-assignable	assign	-	R;;W;;@final union R switch (long) { case 1: long a; };<NL>@final union W switch (short) { case 1: long a; };
+as-union-disc-key	assign	7.2.4.4.8, Table 19	not-assignable	assign	@key	R;;W;;@final union R switch (@key long) { case 1: long a; };<NL>@final union W switch (long) { case 1: long a; };
+as-union-name-id	assign	7.2.4.4.8, Table 19	not-assignable	assign	-	R;;W;;@mutable union R switch (long) { case 1: @id(1) long a; };<NL>@mutable union W switch (long) { case 1: @id(2) long a; };
+as-union-label-t2	assign	7.2.4.4.8, Table 19	not-assignable	assign	-	R;;W;;@appendable union R switch (long) { case 1: long a; case 2: long b; };<NL>@appendable union W switch (long) { case 1: long a; case 2: short b; };
+as-union-label-t1	assign	7.2.4.4.8, Table 19	not-assignable	assign	-	R;;W;;@appendable union R switch (long) { case 1: long a; case 2: long b; };<NL>@appendable union W switch (long) { case 1: long a; default: short b; };
+as-union-both-default	assign	7.2.4.4.8, Table 19	not-assignable	assign	-	R;;W;;@appendable union R switch (long) { case 1: long a; default: long d; };<NL>@appendable union W switch (long) { case 1: long a; default: short d; };
+as-union-final-labels	assign	7.2.4.4.8, Table 19	not-assignable	assign	-	R;;W;;@final union R switch (long) { case 1: long a; };<NL>@final union W switch (long) { case 1: long a; case 2: long b; };
+as-union-appendable-common-label	assign	7.2.4.4.8, Table 19	assignable	assign	-	R;;W;;@appendable union R switch (long) { case 1: long a; };<NL>@appendable union W switch (long) { case 1: long a; case 2: long b; };
+as-struct-ext	assign	7.2.4.4.8, Table 19	not-assignable	assign	-	R;;W;;@final struct R { long a; };<NL>@mutable struct W { long a; };
+as-struct-name-id	assign	7.2.4.4.8, Table 19	not-assignable	assign	-	R;;W;;@mutable struct R { @id(1) long a; @id(2) long b; };<NL>@mutable struct W { @id(2) long a; @id(1) long b; };
+as-struct-one-common	assign	7.2.4.4.8, Table 19	not-assignable	assign	-	R;;W;;@mutable struct R { @id(1) long a; };<NL>@mutable struct W { @id(9) long z; };
+as-struct-keyerased	assign	7.2.4.4.8, Table 19	not-assignable	assign	-	R;;W;;@mutable struct R { @id(1) long a; };<NL>@mutable struct W { @id(1) short a; };
+as-struct-mustunderstand	assign	7.2.4.4.8, Table 19	not-assignable	assign	@must_understand	R;;W;;@mutable struct R { @id(1) long a; };<NL>@mutable struct W { @id(1) long a; @id(2) @must_understand long b; };
+as-struct-key-present	assign	7.2.4.4.8, Table 19	not-assignable	assign	@key	R;;W;;@mutable struct R { @id(1) long a; @id(2) @key long k; };<NL>@mutable struct W { @id(1) long a; };
+as-struct-key-string	assign	7.2.4.4.8, Table 19	not-assignable	assign	-	R;;W;;@mutable struct R { @id(1) @key string<8> k; };<NL>@mutable struct W { @id(1) @key string<16> k; };
+as-struct-key-enum	assign	7.2.4.4.8, Table 19	not-assignable	assign	-	R;;W;;@appendable enum E1 { A };<NL>@appendable enum E2 { A, B };<NL>@mutable struct R { @id(1) @key E1 k; };<NL>@mutable struct W { @id(1) @key E2 k; };
+as-struct-key-seqmap	assign	7.2.4.4.8, Table 19	not-assignable	assign	-	R;;W;;@mutable struct R { @id(1) @key sequence<long,4> k; };<NL>@mutable struct W { @id(1) @key sequence<long,8> k; };
+as-struct-key-aggr	assign	7.2.4.4.8, Table 19	not-assignable	assign	-	R;;W;;@final struct K1 { long a; };<NL>@final struct K2 { short a; };<NL>@mutable struct R { @id(1) @key K1 k; };<NL>@mutable struct W { @id(1) @key K2 k; };
+as-struct-key-union	assign	7.2.4.4.8, Table 19	not-assignable	assign	-	R;;W;;@final union U1 switch (long) { case 1: long a; };<NL>@final union U2 switch (long) { case 1: short a; };<NL>@mutable struct R { @id(1) @key U1 k; };<NL>@mutable struct W { @id(1) @key U2 k; };
+as-struct-appendable	assign	7.2.4.4.8, Table 19	not-assignable	assign	-	R;;W;;@appendable struct R { @id(1) long a; @id(2) long b; };<NL>@appendable struct W { @id(2) long b; @id(1) long a; };
+as-struct-final	assign	7.2.4.4.8, Table 19	not-assignable	assign	-	R;;W;;@final struct R { long a; };<NL>@final struct W { long a; long b; };
+as-struct-inherit	assign	7.2.4.4.8, Table 19	assignable	assign	-	R;;W;;@appendable struct Base { long a; };<NL>@appendable struct R : Base { long b; };<NL>@appendable struct W { long a; long b; };
+as-struct-truncation	assign	7.2.4.4.8.1	assignable	assign	-	R;;W;;@appendable struct R { long a; };<NL>@appendable struct W { long a; long b; };
+as-struct-optional-absent	assign	7.2.4.4.8, Table 19	assignable	assign	@optional	R;;W;;@mutable struct R { @id(1) long a; @id(2) @optional long b; };<NL>@mutable struct W { @id(1) long a; };
+to-dheader-complete-struct	typeobject	7.3.4.5, 7.4.2	accept	todh	-	S;;@mutable struct S { @id(1) long a; };
+tl-mutable-framing	typelookup	7.6.3.3.3, 7.4.2	reject	tl	-	getTypes_In;;0400000000000000
+as-union-disc-key-both	assign	7.2.4.4.8, Table 19	assignable	assign	-	R;;W;;@final union R switch (@key long) { case 1: long a; };<NL>@final union W switch (@key long) { case 1: long a; };
+as-enum-appendable-superset	assign	7.2.4.4.7, Table 18	assignable	assign	-	R;;W;;@appendable enum R { A, B };<NL>@appendable enum W { A, B, C };
+as-bm-writer-extra-flag	assign	7.2.4.4.7, Table 18	assignable	assign	-	R;;W;;@bit_bound(8) bitmask R { @position(0) F0 };<NL>@bit_bound(8) bitmask W { @position(0) F0, @position(1) F1 };
+ti-annotation-hash	typeid	7.3.4.2, Table 29	accept	ti	TypeIdentifier::Extended	50000102030405060708090A0B0C0D
+tl-getTypes_in-extra-member	typelookup	7.6.3.3.3	accept	tl	-	getTypes_In;;18000000f896c24304000000ffffffff6560534c0400000000000000
+tl-call-unknown-operation	typelookup	7.6.3.3.3	reject	tl	-	Call;;040000000df0ad0b

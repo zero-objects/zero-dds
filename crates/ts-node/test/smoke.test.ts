@@ -2,6 +2,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
+import { uniqueDomain } from "./support/test-domains.js";
 import {
   Reader, Runtime, Writer,
   DomainParticipantFactory, Topic, Publisher, DataWriter, Subscriber, DataReader,
@@ -10,13 +11,18 @@ import {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// One domain of the band of `crates/test-domains` for every test of this file,
+// leased for the life of the process (`support/test-domains.ts`). Each test
+// keeps to its own topic.
+const DOMAIN = uniqueDomain();
+
 // NOTE: previously skipped on darwin — that skip masked the koffi `_Out_` bug in
 // Reader.take() (it never ran on the dev machine). The roundtrip MUST exercise
 // take() on every platform, otherwise the binding regresses silently.
 test("ts pub-sub roundtrip", async () => {
   console.log("zerodds version:", Runtime.version());
 
-  const domain = 100 + (process.pid % 50);
+  const domain = DOMAIN;
   const topic = "TsSmokeTopic";
   const typeName = "RawBytes";
 
@@ -60,16 +66,16 @@ test("ts version string is non-empty", () => {
 });
 
 test("dds-psm-cxx api: participant lifecycle", () => {
-  const dp = DomainParticipantFactory.createParticipant(0);
+  const dp = DomainParticipantFactory.createParticipant(DOMAIN);
   try {
-    assert.equal(dp.domainId(), 0, "domain id roundtrip");
+    assert.equal(dp.domainId(), DOMAIN, "domain id roundtrip");
   } finally {
     dp.destroy();
   }
 });
 
 test("dds-psm-cxx api: topic + writer/reader lifecycle", () => {
-  const dp = DomainParticipantFactory.createParticipant(1);
+  const dp = DomainParticipantFactory.createParticipant(DOMAIN);
   try {
     const t = Topic.create(dp, "TsTopic", ByteSeqTraits);
     const pub = Publisher.create(dp);
@@ -91,7 +97,7 @@ test("dds-psm-cxx api: topic + writer/reader lifecycle", () => {
 // publisher.createBytesWriter / subscriber.createBytesReader, async match waits,
 // waitForData + iterable take().
 test("fluent facade: bytes pub/sub roundtrip", async () => {
-  const participant = DomainParticipantFactory.instance().createParticipant(7);
+  const participant = DomainParticipantFactory.instance().createParticipant(DOMAIN);
   try {
     const topic = participant.createBytesTopic("FacadeChatter");
     const writer = participant.createPublisher().createBytesWriter(topic);
@@ -114,7 +120,7 @@ test("fluent facade: bytes pub/sub roundtrip", async () => {
 // Async layer: writeAsync (Promise), takeAsync (Promise<Sample[]>),
 // streamSamples (AsyncIterable).
 test("async layer: writeAsync / takeAsync / streamSamples", async () => {
-  const participant = DomainParticipantFactory.instance().createParticipant(8);
+  const participant = DomainParticipantFactory.instance().createParticipant(DOMAIN);
   try {
     const topic = participant.createBytesTopic("AsyncChatter");
     const writer = participant.createPublisher().createBytesWriter(topic);
@@ -159,7 +165,7 @@ test("typed facade: createTypedTopic + createTypedWriter roundtrip", async () =>
       return { celsius, sensor_id };
     },
   };
-  const participant = DomainParticipantFactory.instance().createParticipant(9);
+  const participant = DomainParticipantFactory.instance().createParticipant(DOMAIN);
   try {
     const topic = participant.createTypedTopic("Temp", TemperatureTypeSupport);
     const writer = participant.createPublisher().createTypedWriter(topic);

@@ -1,36 +1,36 @@
-# `zerodds-c-api` v1.0 — Cross-Language C-FFI-Spec
+# `zerodds-c-api` v1.0 — cross-language C FFI spec
 
-ZeroDDS Vendor-Spec. In `crates/zerodds-c-api` implementiert; C-Header
-`include/zerodds.h` ist das normative Vertragsdokument.
+ZeroDDS vendor spec. Implemented in `crates/zerodds-c-api`; the C header
+`include/zerodds.h` is the normative contract document.
 
 ## Motivation
 
-Es gibt keine OMG-DDS-C-PSM-Spec. RTI Connext, Cyclone und FastDDS
-haben jeweils eigene C-APIs ohne Standard-Kompatibilitaet. ZeroDDS
-spezifiziert hier eine **vollstaendige spec-conforme C-FFI** als
-Foundation fuer die Tier-1-Sprach-Bindings (C++, C#) sowie Embedded-C
-und ROS-2-RMW.
+There is no OMG DDS C PSM spec. RTI Connext, Cyclone and FastDDS
+each have their own C APIs without standard compatibility. ZeroDDS
+specifies here a **complete spec-conformant C FFI** as the
+foundation for the tier-1 language bindings (C++, C#) as well as embedded C
+and the ROS-2 RMW.
 
-## Ziele
+## Goals
 
-- **Vollstaendigkeit:** Jede DDS-Spec-§2.2.2-Operation hat eine C-FFI-
-  Entsprechung. Keine Auslassungen, keine Abkuerzungen.
-- **Cross-Language-Hub:** C++ (`crates/cpp/`), C# (`crates/cs/`),
-  embedded-C, ROS-2-RMW konsumieren ausschliesslich diesen Header.
-- **Stabile Wire-Form:** ABI-stabile Strukturen fuer QoS, SampleInfo,
-  Status; opaque Handles fuer Entity-Lifecycle.
-- **Memory-Ownership explizit:** Caller paart `*_create` mit `*_destroy`,
-  `*_take` mit `*_buffer_free` etc.
+- **Completeness:** every DDS spec §2.2.2 operation has a C FFI
+  counterpart. No omissions, no shortcuts.
+- **Cross-language hub:** C++ (`crates/cpp/`), C# (`crates/cs/`),
+  embedded C, ROS-2 RMW consume exclusively this header.
+- **Stable wire form:** ABI-stable structures for QoS, SampleInfo,
+  status; opaque handles for the entity lifecycle.
+- **Explicit memory ownership:** the caller pairs `*_create` with `*_destroy`,
+  `*_take` with `*_buffer_free` etc.
 
-## Nicht-Ziele
+## Non-goals
 
-- Java + Python: eigene Bruecken (`grpc-bridge`-basiert / `pyo3`),
-  nicht ueber dieses Header.
-- Generic-Type-Akrobatik durch FFI: das C-FFI ist byte-orientiert.
-- QoS-Builder mit komplexer Default-Logik: das C-FFI bietet flach
-  alle Felder via Get/Set-Pairs.
+- Java + Python: their own bridges (`grpc-bridge`-based / `pyo3`),
+  not via this header.
+- Generic type acrobatics through the FFI: the C FFI is byte-oriented.
+- QoS builder with complex default logic: the C FFI offers
+  all fields flat via get/set pairs.
 
-## §1 Architektur
+## §1 Architecture
 
 ```
                     ┌─────────────────┐
@@ -51,10 +51,10 @@ und ROS-2-RMW.
                        └──────────┘     └─────────┘
 ```
 
-Jede Entity ist ein opaque Handle (`zerodds_*`). Lifetime per
-`*_create`/`*_destroy`-Pair.
+Every entity is an opaque handle (`zerodds_*`). Lifetime via a
+`*_create`/`*_destroy` pair.
 
-## §2 Entity-Hierarchie
+## §2 Entity hierarchy
 
 ### §2.1 DomainParticipantFactory (Singleton)
 
@@ -156,7 +156,8 @@ zerodds_DataReader* zerodds_sub_lookup_datareader(zerodds_Subscriber* sub, const
 int zerodds_sub_begin_access(zerodds_Subscriber* sub);
 int zerodds_sub_end_access(zerodds_Subscriber* sub);
 int zerodds_sub_get_datareaders(
-    zerodds_Subscriber* sub, zerodds_DataReader** out, uintptr_t* out_count, uintptr_t cap);
+    zerodds_Subscriber* sub, zerodds_DataReader** out, uintptr_t* out_count, uintptr_t cap,
+    uint32_t sample_states, uint32_t view_states, uint32_t instance_states);
 int zerodds_sub_notify_datareaders(zerodds_Subscriber* sub);
 int zerodds_sub_get_qos(zerodds_Subscriber* sub, zerodds_SubscriberQos* out);
 int zerodds_sub_set_qos(zerodds_Subscriber* sub, const zerodds_SubscriberQos* qos);
@@ -214,6 +215,16 @@ int zerodds_dw_discard_loan(zerodds_DataWriter* dw, uint8_t* ptr, uintptr_t len)
 int zerodds_dw_wait_for_matched(zerodds_DataWriter* dw, int min, uint64_t timeout_ms);
 ```
 
+`zerodds_dw_set_qos` and `zerodds_dr_set_qos` follow the column
+"Changeable" of DDS 1.4 §2.2.3: a change to an immutable
+policy (DURABILITY, RELIABILITY, HISTORY, RESOURCE_LIMITS, OWNERSHIP,
+LIVELINESS, DESTINATION_ORDER, PRESENTATION, DURABILITY_SERVICE,
+DATA_REPRESENTATION, for the reader TYPE_CONSISTENCY_ENFORCEMENT) returns
+`ZERODDS_IMMUTABLE_POLICY` and leaves the QoS as it was; a
+changeable policy reaches the runtime and is announced again.
+TRANSPORT_PRIORITY sets the IPv4 TOS octet or the IPv6
+traffic class of the writer's datagrams (1 to 255; 0 is none).
+
 ### §2.7 DataReader
 
 ```c
@@ -259,10 +270,32 @@ int zerodds_dr_set_qos(zerodds_DataReader* dr, const zerodds_DataReaderQos* qos)
 int zerodds_dr_wait_for_matched(zerodds_DataReader* dr, int min, uint64_t timeout_ms);
 ```
 
-## §3 QoS-Strukturen (alle 22)
+## §2.8 List calls
 
-Alle QoS-Strukturen sind als `#[repr(C)]`-`struct` exponiert mit
-exakten Field-Layouts. Caller fuellt sie direkt aus, keine Builder.
+`zerodds_dp_get_discovered_participants`, `zerodds_dp_get_discovered_topics`,
+`zerodds_dw_get_matched_subscriptions`, `zerodds_dr_get_matched_publications`,
+`zerodds_sub_get_datareaders`, `zerodds_waitset_get_conditions` and the list
+of active conditions from `zerodds_waitset_wait` copy a list into a
+caller buffer with `cap` slots. The same contract applies to all seven:
+
+- The first `min(len, cap)` entries are written into `out` (`len` is
+  the total length of the list). `*out_count` always receives `len`, not the number
+  of copied entries.
+- The return value is `ZERODDS_OUT_OF_RESOURCES` if `len > cap`; otherwise
+  `ZERODDS_OK`. A caller that receives `ZERODDS_OUT_OF_RESOURCES` reads the
+  total length from `*out_count` and repeats the call with a buffer
+  of that size until it sees `ZERODDS_OK`. `zerodds_waitset_wait` instead
+  returns `ZERODDS_TIMEOUT` if no condition has triggered within the
+  deadline.
+- `cap == 0` with `out == NULL` is the length query: the call writes
+  nothing, sets `*out_count` to `len` and returns `ZERODDS_OUT_OF_RESOURCES`
+  if `len > 0`, otherwise `ZERODDS_OK`. `out` may be NULL exactly when
+  `cap == 0`; a NULL `out` with `cap > 0` is `ZERODDS_BAD_PARAMETER`.
+
+## §3 QoS structures (all 22)
+
+All QoS structures are exposed as `#[repr(C)]` `struct` with
+exact field layouts. The caller fills them in directly, no builders.
 
 ```c
 typedef struct { int32_t sec; uint32_t nanosec; } zerodds_Time;
@@ -299,6 +332,12 @@ typedef enum { ZERODDS_PRESENTATION_INSTANCE, ZERODDS_PRESENTATION_TOPIC, ZERODD
 typedef struct { zerodds_PresentationAccessScope access_scope; bool coherent_access; bool ordered_access; } zerodds_PresentationQosPolicy;
 
 typedef struct { const char** names; uintptr_t count; } zerodds_PartitionQosPolicy;
+typedef struct { const char* name; const char* value; uint8_t propagate; } zerodds_PropertyEntry;
+typedef struct { const char* name; const uint8_t* value; uintptr_t value_len; uint8_t propagate; } zerodds_BinaryPropertyEntry;
+typedef struct { const zerodds_PropertyEntry* entries; uintptr_t entries_len;
+                 const zerodds_BinaryPropertyEntry* binary_entries; uintptr_t binary_entries_len; } zerodds_PropertyQosPolicy;
+typedef struct { const char* name; const char* value; } zerodds_Tag;
+typedef struct { const zerodds_Tag* tags; uintptr_t tags_len; } zerodds_DataTagQosPolicy;
 typedef struct { const uint8_t* data; uintptr_t len; } zerodds_UserDataQosPolicy;
 typedef struct { const uint8_t* data; uintptr_t len; } zerodds_TopicDataQosPolicy;
 typedef struct { const uint8_t* data; uintptr_t len; } zerodds_GroupDataQosPolicy;
@@ -323,7 +362,7 @@ typedef struct { uint8_t kind; bool ignore_sequence_bounds; bool ignore_string_b
                  bool force_type_validation; } zerodds_TypeConsistencyEnforcementQosPolicy;
 ```
 
-Composite-Strukturen (alle `#[repr(C)]`):
+Composite structures (all `#[repr(C)]`):
 
 ```c
 typedef struct { zerodds_UserDataQosPolicy user_data; zerodds_EntityFactoryQosPolicy entity_factory; } zerodds_DomainParticipantQos;
@@ -351,6 +390,7 @@ typedef struct {
     zerodds_OwnershipStrengthQosPolicy ownership_strength; zerodds_WriterDataLifecycleQosPolicy writer_data_lifecycle;
     zerodds_LifespanQosPolicy lifespan; zerodds_DataRepresentationQosPolicy data_representation;
     zerodds_TypeConsistencyEnforcementQosPolicy type_consistency;
+    zerodds_PropertyQosPolicy property; zerodds_DataTagQosPolicy data_tags;
 } zerodds_DataWriterQos;
 typedef struct {
     zerodds_DurabilityQosPolicy durability; zerodds_DeadlineQosPolicy deadline;
@@ -361,10 +401,11 @@ typedef struct {
     zerodds_OwnershipQosPolicy ownership; zerodds_TimeBasedFilterQosPolicy time_based_filter;
     zerodds_ReaderDataLifecycleQosPolicy reader_data_lifecycle;
     zerodds_DataRepresentationQosPolicy data_representation; zerodds_TypeConsistencyEnforcementQosPolicy type_consistency;
+    zerodds_PropertyQosPolicy property; zerodds_DataTagQosPolicy data_tags;
 } zerodds_DataReaderQos;
 ```
 
-## §4 Status-Strukturen
+## §4 Status structures
 
 ```c
 typedef struct { int32_t total_count; int32_t total_count_change; uint64_t last_instance_handle; } zerodds_InconsistentTopicStatus;
@@ -385,7 +426,15 @@ typedef struct { int32_t total_count; int32_t total_count_change; int32_t curren
                  uint64_t last_subscription_handle; } zerodds_PublicationMatchedStatus;
 ```
 
-## §5 Sample-API
+The `zerodds_*_get_*_status` functions read the status as in DDS 1.4
+§2.2.4.1: `total_count` is cumulative, `current_count` is the current state,
+the `*_change` fields count since the last read or the last
+hand-over to a listener, and a read resets them. The
+matched statuses name in the last handle the endpoint that most recently
+joined or left, the deadline statuses the instance whose deadline
+was most recently missed: the deadline is monitored per instance.
+
+## §5 Sample API
 
 ```c
 typedef struct {
@@ -404,11 +453,11 @@ typedef struct {
 } zerodds_SampleInfo;
 
 typedef struct {
-    uint8_t** buffers;     // payload pro sample (CDR-Bytes)
-    uintptr_t* lengths;    // pro sample
+    uint8_t** buffers;     // payload per sample (CDR bytes)
+    uintptr_t* lengths;    // per sample
     zerodds_SampleInfo* infos;
     uintptr_t count;
-    void* loan_token;      // intern; via zerodds_dr_return_loan freigegeben
+    void* loan_token;      // internal; released via zerodds_dr_return_loan
 } zerodds_SampleArray;
 ```
 
@@ -440,44 +489,100 @@ int zerodds_waitset_get_conditions(zerodds_WaitSet* w, void** out, uintptr_t cap
 ```c
 typedef struct {
     uint8_t  guid[16];
-    zerodds_UserDataQosPolicy user_data;
-} zerodds_ParticipantBuiltinTopicData;
+    const uint8_t* user_data;      // release with zerodds_builtin_userdata_free
+    uintptr_t user_data_len;
+} zerodds_ZeroDdsParticipantBuiltinTopicData;
 
 typedef struct {
-    uint8_t  key[16];
-    const char* name;
-    const char* type_name;
-    zerodds_DurabilityQosPolicy durability; // ... (subset relevanter Topic-QoS)
-    zerodds_DeadlineQosPolicy deadline;
-    zerodds_LatencyBudgetQosPolicy latency_budget;
-    zerodds_LivelinessQosPolicy liveliness;
-    zerodds_ReliabilityQosPolicy reliability;
-    zerodds_DestinationOrderQosPolicy destination_order;
-    zerodds_HistoryQosPolicy history;
-    zerodds_ResourceLimitsQosPolicy resource_limits;
-    zerodds_OwnershipQosPolicy ownership;
-    zerodds_LifespanQosPolicy lifespan;
-    zerodds_TopicDataQosPolicy topic_data;
-} zerodds_TopicBuiltinTopicData;
-
-typedef struct {
-    uint8_t  key[16];
-    uint8_t  participant_key[16];
-    const char* topic_name;
-    const char* type_name;
-    // ... DataWriter-relevanter QoS-Subset (siehe Spec §2.2.5.5.5).
-} zerodds_PublicationBuiltinTopicData;
+    uint8_t  key[16];              // synthesized from topic and type name
+    char*    name;
+    char*    type_name;
+    zerodds_ZeroDdsDurabilityQosPolicy        durability;
+    zerodds_ZeroDdsDurabilityServiceQosPolicy durability_service;
+    zerodds_ZeroDdsDeadlineQosPolicy          deadline;
+    zerodds_ZeroDdsLatencyBudgetQosPolicy     latency_budget;
+    zerodds_ZeroDdsLivelinessQosPolicy        liveliness;
+    zerodds_ZeroDdsReliabilityQosPolicy       reliability;
+    zerodds_ZeroDdsTransportPriorityQosPolicy transport_priority;
+    zerodds_ZeroDdsLifespanQosPolicy          lifespan;
+    zerodds_ZeroDdsDestinationOrderQosPolicy  destination_order;
+    zerodds_ZeroDdsHistoryQosPolicy           history;
+    zerodds_ZeroDdsResourceLimitsQosPolicy    resource_limits;
+    zerodds_ZeroDdsOwnershipQosPolicy         ownership;
+    zerodds_ZeroDdsTopicDataQosPolicy         topic_data;
+} zerodds_ZeroDdsTopicBuiltinTopicData;
 
 typedef struct {
     uint8_t  key[16];
     uint8_t  participant_key[16];
-    const char* topic_name;
-    const char* type_name;
-    // ... DataReader-relevanter QoS-Subset (siehe Spec §2.2.5.5.7).
-} zerodds_SubscriptionBuiltinTopicData;
+    char*    topic_name;
+    char*    type_name;
+    zerodds_ZeroDdsDurabilityQosPolicy        durability;
+    zerodds_ZeroDdsDurabilityServiceQosPolicy durability_service;
+    zerodds_ZeroDdsDeadlineQosPolicy          deadline;
+    zerodds_ZeroDdsLatencyBudgetQosPolicy     latency_budget;
+    zerodds_ZeroDdsLivelinessQosPolicy        liveliness;
+    zerodds_ZeroDdsReliabilityQosPolicy       reliability;
+    zerodds_ZeroDdsLifespanQosPolicy          lifespan;
+    zerodds_ZeroDdsUserDataQosPolicy          user_data;
+    zerodds_ZeroDdsOwnershipQosPolicy         ownership;
+    zerodds_ZeroDdsOwnershipStrengthQosPolicy ownership_strength;
+    zerodds_ZeroDdsDestinationOrderQosPolicy  destination_order;
+    zerodds_ZeroDdsPresentationQosPolicy      presentation;
+    zerodds_ZeroDdsPartitionQosPolicy         partition;
+    zerodds_ZeroDdsTopicDataQosPolicy         topic_data;
+    zerodds_ZeroDdsGroupDataQosPolicy         group_data;
+} zerodds_ZeroDdsPublicationBuiltinTopicData;
+
+typedef struct {
+    uint8_t  key[16];
+    uint8_t  participant_key[16];
+    char*    topic_name;
+    char*    type_name;
+    zerodds_ZeroDdsDurabilityQosPolicy        durability;
+    zerodds_ZeroDdsDeadlineQosPolicy          deadline;
+    zerodds_ZeroDdsLatencyBudgetQosPolicy     latency_budget;
+    zerodds_ZeroDdsLivelinessQosPolicy        liveliness;
+    zerodds_ZeroDdsReliabilityQosPolicy       reliability;
+    zerodds_ZeroDdsOwnershipQosPolicy         ownership;
+    zerodds_ZeroDdsDestinationOrderQosPolicy  destination_order;
+    zerodds_ZeroDdsUserDataQosPolicy          user_data;
+    zerodds_ZeroDdsTimeBasedFilterQosPolicy   time_based_filter;
+    zerodds_ZeroDdsPresentationQosPolicy      presentation;
+    zerodds_ZeroDdsPartitionQosPolicy         partition;
+    zerodds_ZeroDdsTopicDataQosPolicy         topic_data;
+    zerodds_ZeroDdsGroupDataQosPolicy         group_data;
+} zerodds_ZeroDdsSubscriptionBuiltinTopicData;
+
+void zerodds_topic_builtin_topic_data_free(zerodds_ZeroDdsTopicBuiltinTopicData* data);
+void zerodds_publication_builtin_topic_data_free(zerodds_ZeroDdsPublicationBuiltinTopicData* data);
+void zerodds_subscription_builtin_topic_data_free(zerodds_ZeroDdsSubscriptionBuiltinTopicData* data);
 ```
 
-## §8 Status-Codes
+Topic, publication and subscription carry every member that DDS 1.4
+§2.2.5 names for TopicBuiltinTopicData, PublicationBuiltinTopicData and
+SubscriptionBuiltinTopicData, as a policy structure; a duration is given
+in seconds and nanoseconds. `zerodds_dp_get_discovered_topic_data`,
+`zerodds_dr_get_matched_publication_data` and
+`zerodds_dw_get_matched_subscription_data` fill in the names, the
+octet sequences and the partition names as copies that belong to the caller
+until it passes the structure to the matching `*_free` function. The
+release sets the pointers to NULL; a second call frees nothing
+more. A name with a NUL character has no C string: the call
+returns `ZERODDS_INVALID_UTF8` and fills in nothing.
+
+Both functions answer for every handle that
+`zerodds_dr_get_matched_publications` or
+`zerodds_dw_get_matched_subscriptions` returns, also for an endpoint
+of the same participant. A handle that does not denote a matched endpoint
+returns `ZERODDS_BAD_PARAMETER` (DDS 1.4 §2.2.2.4.2,
+§2.2.2.5.3) and fills in nothing.
+
+`zerodds_dp_get_discovered_topic_data` returns, for a handle that
+`zerodds_dp_get_discovered_topics` has not returned,
+`ZERODDS_BAD_PARAMETER` and fills in nothing.
+
+## §8 Status codes
 
 ```c
 #define ZERODDS_OK                              0
@@ -497,80 +602,82 @@ typedef struct {
 #define ZERODDS_ILLEGAL_OPERATION             -14
 ```
 
-## §9 Memory-Ownership-Vertrag
+## §9 Memory ownership contract
 
 | Operation | Owner |
 |-----------|-------|
 | `*_create()` returns ptr | Caller (must `*_destroy`) |
 | `dpf_get_instance()` | Singleton (no destroy) |
 | `dr_take()`-payloads | Caller (must `return_loan`) |
-| `*_get_qos()` reads existing strings | Static lifetime (kein free) |
-| `*_set_qos()` strings | borrowed; copy intern |
+| `*_get_qos()` reads existing strings | Static lifetime (no free) |
+| `*_set_qos()` strings | borrowed; internal copy |
 | `topic_get_name()` returns `const char*` | Static; not freed |
 | `version()` returns `const char*` | Static; not freed |
+| `*_get_matched_publication_data` / `*_get_matched_subscription_data` | Caller (must `zerodds_publication_builtin_topic_data_free` / `zerodds_subscription_builtin_topic_data_free`) |
+| `dp_get_discovered_topic_data` | Caller (must `zerodds_topic_builtin_topic_data_free`) |
 
-## §10 Stabilitaet
+## §10 Stability
 
-- Public-Header-Form (`include/zerodds.h`) ist **ABI-stable** ab `1.0.0-rc.1`.
-- Struct-Layouts sind `#[repr(C)]` und Major-Bump bei Breaking-Layout-Aenderungen.
-- Status-Codes sind stabil; neue Codes werden additiv mit hoeherem absoluten Wert hinzugefuegt.
-- Funktion-Signaturen sind stabil; neue Funktionen sind additiv erlaubt.
+- The public header form (`include/zerodds.h`) is **ABI-stable** from `1.0.0-rc.1`.
+- Struct layouts are `#[repr(C)]`, with a major bump on breaking layout changes.
+- Status codes are stable; new codes are added additively with a higher absolute value.
+- Function signatures are stable; new functions are allowed additively.
 
-## §11 Test-Pflicht
+## §11 Test obligation
 
-- Pro Funktion mindestens ein Round-Trip-Test gegen ein zwei-Participant-Setup.
-- Cross-Vendor-Wire-Compat ist nicht direkt testbar (Wire-Format kommt aus rtps + cdr); Kontrollen erfolgen ueber die existierenden Cyclone/FastDDS-Live-Tests in dcps.
-- Header-Compile-Test mit `gcc -Wall -Werror -pedantic` + `clang -Weverything`.
-- C++-Compile-Test gegen `-std=c++17`.
+- Per function at least one round-trip test against a two-participant setup.
+- Cross-vendor wire compat is not directly testable (the wire format comes from rtps + cdr); checks are done via the existing Cyclone/FastDDS live tests in dcps.
+- Header compile test with `gcc -Wall -Werror -pedantic` + `clang -Weverything`.
+- C++ compile test against `-std=c++17`.
 
-## §12 Cross-Reference auf zugehoerige Vendor-Specs
+## §12 Cross-reference to related vendor specs
 
-Diese C-FFI-Spec bildet die Foundation. Folgende Vendor-Specs detailieren
-spezifische Teilbereiche oder dokumentieren nachgelagerte Schichten:
+This C FFI spec forms the foundation. The following vendor specs detail
+specific sub-areas or document downstream layers:
 
-- **`zerodds-listener-callbacks-1.1.md`** — Listener-Callback-Pattern fuer
-  alle 6 Entity-Typen (DP/Pub/Sub/DW/DR/Topic). Spec §2.2.4 hat fuer C
-  keinen normativen Mapping-Pfad; diese Vendor-Spec definiert das
-  vtable+user_data-Pattern.
-- **`zerodds-async-1.0.md`** — Async-DDS-API (Rust-Pendant zur Sync-DCPS),
-  benutzt aber nicht das C-FFI; lebt parallel.
-- **`zerodds-java-omgdds-1.0.md`** — Pure-Java-Pfad ohne JNI; benutzt
-  nicht das C-FFI, sondern InProcessBus + (v1.1) gRPC-Bridge.
+- **`zerodds-listener-callbacks-1.1.md`** — listener callback pattern for
+  all 6 entity types (DP/Pub/Sub/DW/DR/Topic). Spec §2.2.4 has no
+  normative mapping path for C; this vendor spec defines the
+  vtable+user_data pattern.
+- **`zerodds-async-1.0.md`** — async DDS API (Rust counterpart to the sync DCPS),
+  but does not use the C FFI; lives in parallel.
+- **`zerodds-java-omgdds-1.0.md`** — pure Java path without JNI; does not use
+  the C FFI, but InProcessBus + (v1.1) gRPC bridge.
 
-## §13 FFI-Surface-Status
+## §13 FFI surface status
 
-Den authoritativen Item-Status führt das Coverage-Audit
+The authoritative item status is kept in the coverage audit
 `docs/spec-coverage/zerodds-c-api-1.0.md`.
 
-### Exponierte Surface (v1.0)
+### Exposed surface (v1.0)
 
-- DomainParticipantFactory: 7 Funktionen (vollstaendig) ✅
-- DomainParticipant: 21 Funktionen (16 init + 5 erweiterung) ✅
-- Topic: 7 Funktionen ✅
-- Publisher + DataWriter: 24 Funktionen (8 Pub + 16 DW) ✅
-- Subscriber + DataReader: 24 Funktionen (8 Sub + 16 DR) ✅
-- QoS: 22 Strukturen + 7 Konvertierungs-Funktionen ✅
-- Conditions + WaitSet: 12 Funktionen ✅
-- Built-in Topics: 5 Funktionen ✅
-- Listener: 6 Strukturen + 12 Set/Get-Funktionen, **nur API-Surface, kein Active-Wireup** ⚠️
-- Instance-Operations (register_instance/unregister/lookup/get_key_value): 7 Funktionen, **Vendor-Variante mit Raw-Key-Bytes** ✅
-- Loan-API (loan_message/commit_loan/discard_loan): 3 Funktionen, **`Unsupported`-Stub** ⚠️
-- Matched-Pubs/Subs-Listings: 4 Funktionen, **leere Liste / `Unsupported`** ⚠️
+- DomainParticipantFactory: 7 functions (complete) ✅
+- DomainParticipant: 21 functions (16 init + 5 extension) ✅
+- Topic: 7 functions ✅
+- Publisher + DataWriter: 24 functions (8 Pub + 16 DW) ✅
+- Subscriber + DataReader: 24 functions (8 Sub + 16 DR) ✅
+- QoS: 22 structures + 7 conversion functions ✅
+- Conditions + WaitSet: 12 functions ✅
+- Built-in Topics: 5 functions ✅
+- Listener: 6 structures + 12 set/get functions, **API surface only, no active wireup** ⚠️
+- Instance operations (register_instance/unregister/lookup/get_key_value): 7 functions, **vendor variant with raw key bytes** ✅
+- Loan API (loan_message/commit_loan/discard_loan): 3 functions, **`Unsupported` stub** ⚠️
+- Matched pubs/subs listings: 4 functions, **empty list / `Unsupported`** ⚠️
 
-**Total: ~130 FFI-Funktionen exponiert.**
+**Total: ~130 FFI functions exposed.**
 
-### Geplante Erweiterungen (v1.1)
+### Planned extensions (v1.1)
 
-- **Listener-Active-Wireup**: Runtime-Worker-Thread feuert die Callbacks
-  bei Status-Counter-Increments. Status-Mask-Filter aktiv.
-- **Loan-API live**: Zero-Copy-Pfad an iceoryx-Backend wired.
-- **Matched-Pubs/Subs-Listings**: Runtime exposed `matched_subscription_handles`
-  pro Writer-EID; FFI bridges die Liste.
-- **`read` vs. `take`**: lokale Read-State-Map pro Reader; aktuell aliased.
-- **`wait_for_historical_data`**: TransientLocal-Reader bind an Durability-Service.
+- **Listener active wireup**: a runtime worker thread fires the callbacks
+  on status counter increments. Status mask filter active.
+- **Loan API live**: zero-copy path wired to the iceoryx backend.
+- **Matched pubs/subs listings**: the runtime exposes `matched_subscription_handles`
+  per writer EID; the FFI bridges the list.
+- **`read` vs. `take`**: local read state map per reader; currently aliased.
+- **`wait_for_historical_data`**: TransientLocal reader binds to the durability service.
 
-### Optionale Erweiterungen
+### Optional extensions
 
-- **TypeLookup-Service-Wireup** in C-FFI (in v1.0 nicht exponiert).
-- **DDS-Security-Plugin-FFI** fuer C/C++-Plugin-Anwender.
-- **DCPSPSM-Cxx-AnyXxx** type-erased Wrappers in C-Headern.
+- **TypeLookup service wireup** in the C FFI (not exposed in v1.0).
+- **DDS-Security plugin FFI** for C/C++ plugin users.
+- **DCPSPSM-Cxx-AnyXxx** type-erased wrappers in C headers.

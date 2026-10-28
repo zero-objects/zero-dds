@@ -15,7 +15,7 @@ public final class Rtps {
     public static final byte[] MAGIC = {'R', 'T', 'P', 'S'};
     public static final int VERSION_MAJOR = 2;
     public static final int VERSION_MINOR = 5;
-    /** ZeroDDS interim VendorId (OMG developer range). */
+    /** ZeroDDS interim VendorId, not on the OMG list until one is assigned. */
     public static final byte[] VENDOR_ID = {(byte) 0x01, (byte) 0xF0};
 
     // Submessage ids (§8.3.4, Table 8.13)
@@ -41,6 +41,8 @@ public final class Rtps {
     // HEARTBEAT flags (§8.3.7.5)
     public static final int HB_FLAG_FINAL = 0x02;
     public static final int HB_FLAG_LIVELINESS = 0x04;
+    /** DDSI-RTPS 2.5 9.4.5.7: the GroupInfoFlag, currentGSN, firstGSN and lastGSN follow the count. */
+    public static final int HB_FLAG_GROUP_INFO = 0x08;
 
     // ACKNACK flags (§8.3.7.1)
     public static final int ACKNACK_FLAG_FINAL = 0x02;
@@ -83,6 +85,22 @@ public final class Rtps {
     public static final int PID_STATUS_INFO = 0x0071;
     public static final int PID_DATA_REPRESENTATION = 0x0073;
     public static final int PID_TYPE_INFORMATION = 0x0075;
+    /** DDS-RPC 1.0 §7.6.2.1.2: {@code service_instance_name}, a CDR string. */
+    public static final int PID_SERVICE_INSTANCE_NAME = 0x0080;
+    /** DDS-RPC 1.0 §7.6.2.1.2: {@code related_datawriter_key} / {@code related_datareader_key}, a GUID. */
+    public static final int PID_RELATED_ENTITY_GUID = 0x0081;
+    /** DDS-RPC 1.0 §7.6.2.1.2: {@code topic_aliases}, a {@code sequence<string>}. */
+    public static final int PID_TOPIC_ALIASES = 0x0082;
+    /** DDS-RPC 1.0 §7.8.2: the identity of the sample a reply or request relates to. */
+    public static final int PID_RELATED_SAMPLE_IDENTITY = 0x0083;
+    /** DDSI-RTPS 2.5 Table 9.14: the SequenceNumber_t of the first sample of the coherent set. */
+    public static final int PID_COHERENT_SET = 0x0056;
+    /** DDSI-RTPS 2.5 Table 9.14: the group sequence number of the first sample of the group coherent set. */
+    public static final int PID_GROUP_COHERENT_SET = 0x0063;
+    /** DDSI-RTPS 2.5 Table 9.14: the group sequence number of the sample. */
+    public static final int PID_GROUP_SEQ_NUM = 0x0064;
+    /** DDSI-RTPS 2.5 Table 9.14: the digest of the writers of the Publisher (GroupDigest_t, 16 octets). */
+    public static final int PID_WRITER_GROUP_INFO = 0x0065;
     /** ZeroDDS vendor PID carrying the cross-binding TypeIdentifier hash. */
     public static final int PID_ZERODDS_TYPE_ID = 0x8002;
 
@@ -105,6 +123,12 @@ public final class Rtps {
     public static final long EP_PUBLICATIONS_DETECTOR = 1L << 3;
     public static final long EP_SUBSCRIPTIONS_ANNOUNCER = 1L << 4;
     public static final long EP_SUBSCRIPTIONS_DETECTOR = 1L << 5;
+    public static final long EP_TYPELOOKUP_REQUEST_WRITER = 1L << 12;
+    public static final long EP_TYPELOOKUP_REQUEST_READER = 1L << 13;
+    public static final long EP_TYPELOOKUP_REPLY_WRITER = 1L << 14;
+    public static final long EP_TYPELOOKUP_REPLY_READER = 1L << 15;
+    public static final long EP_TYPELOOKUP_ALL = EP_TYPELOOKUP_REQUEST_WRITER | EP_TYPELOOKUP_REQUEST_READER
+            | EP_TYPELOOKUP_REPLY_WRITER | EP_TYPELOOKUP_REPLY_READER;
     /** Default non-secure announced set (bits 0-5). */
     public static final long EP_ALL_BASIC = EP_PARTICIPANT_ANNOUNCER | EP_PARTICIPANT_DETECTOR
             | EP_PUBLICATIONS_ANNOUNCER | EP_PUBLICATIONS_DETECTOR

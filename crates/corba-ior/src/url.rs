@@ -21,7 +21,7 @@
 //! Extends `corbaloc:` with a NamingContext lookup specification
 //! in the fragment part.
 
-use alloc::string::String;
+use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
 use zerodds_corba_iiop::IiopVersion;

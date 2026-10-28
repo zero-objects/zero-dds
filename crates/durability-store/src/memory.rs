@@ -16,6 +16,7 @@ use crate::contract::Contract;
 use crate::error::{Result, StoreError};
 use crate::model::{Cursor, DurabilitySample, Page, Selector, StoreStats};
 use crate::store::{DEFAULT_PAGE, DurabilityStore};
+use crate::topic_meta::TopicMeta;
 
 /// `(topic, instance_key)` map key. Ranging over a topic prefix yields all of
 /// its instances in `O(log n + k)`.
@@ -33,11 +34,18 @@ struct Slot {
 struct Inner {
     default_contract: Contract,
     contracts: BTreeMap<String, Contract>,
+    topic_meta: BTreeMap<String, TopicMeta>,
     by_key: BTreeMap<Key, Slot>,
 }
 
 impl Inner {
+    /// The persisted [`TopicMeta`]'s contract wins over a plain
+    /// `set_contract` for the same topic (it is the more recent, more
+    /// complete registration — see [`DurabilityStore::set_contract`]'s doc).
     fn contract_for(&self, topic: &str) -> Contract {
+        if let Some(meta) = self.topic_meta.get(topic) {
+            return meta.contract;
+        }
         self.contracts
             .get(topic)
             .copied()
@@ -141,6 +149,15 @@ impl DurabilityStore for InMemoryStore {
     fn set_contract(&self, topic: &str, contract: Contract) -> Result<()> {
         self.lock()?.contracts.insert(topic.to_string(), contract);
         Ok(())
+    }
+
+    fn set_topic_meta(&self, topic: &str, meta: TopicMeta) -> Result<()> {
+        self.lock()?.topic_meta.insert(topic.to_string(), meta);
+        Ok(())
+    }
+
+    fn topic_meta(&self, topic: &str) -> Result<Option<TopicMeta>> {
+        Ok(self.lock()?.topic_meta.get(topic).cloned())
     }
 
     fn store(&self, sample: DurabilitySample) -> Result<()> {

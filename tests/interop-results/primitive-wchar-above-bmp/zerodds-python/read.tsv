@@ -1,0 +1,14 @@
+# What zerodds-python got back when it read the bytes of primitive-wchar-above-bmp, held against
+# tests/interop-corpus/primitive-wchar-above-bmp/values.json and never against another
+# column's reading of the same bytes.
+# encoding	endian	verdict	detail
+plain-cdr1	le	unwritten	
+plain-cdr1	be	unwritten	
+pl-cdr1	le	unwritten	
+pl-cdr1	be	unwritten	
+plain-cdr2	le	unwritten	
+plain-cdr2	be	unwritten	
+delimited-cdr	le	unwritten	
+delimited-cdr	be	unwritten	
+pl-cdr2	le	unwritten	
+pl-cdr2	be	unwritten	

@@ -1,0 +1,17 @@
+[package]
+name = "zerodds-config"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Layered configuration for ZeroDDS: a typed base file, sorted drop-in directories, nested includes with cycle detection, and the origin of every value."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-config"
+keywords = ["dds", "configuration", "yaml", "layered", "drop-in"]
+categories = ["config", "network-programming"]
+publish = true
+
+[lints]
+workspace = true

@@ -1,0 +1,14 @@
+// SPDX-License-Identifier: Apache-2.0
+// The roundtrip bench's type (tests/perf/dds-roundtrip-bench/roundtrip.idl)
+// under its own name and member ids, @appendable where the bench's is @final:
+// the TypeObjects hash differently, so each side asks the other for its type.
+module RoundtripBench {
+    @topic
+    @appendable
+    @autoid(SEQUENTIAL)
+    struct Roundtrip {
+        @id(0) unsigned long           sequence_id;
+        @id(1) unsigned long long      t_send_ns;
+        @id(2) sequence<octet, 8192>   payload;
+    };
+};

@@ -1,0 +1,8 @@
+// three-dimensional array of `enum`
+@bit_bound(16)
+enum Colour { RED, GREEN, BLUE };
+
+@final struct Sample {
+    Colour cube[2][2][2];
+    octet tail;
+};

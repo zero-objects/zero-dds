@@ -1,0 +1,12 @@
+// The interfaces the omniORB side of `tests/omniorb_e2e.rs` speaks.
+module zerodds_test {
+  typedef sequence<octet> Bytes;
+  interface Calc {
+    long long add(in long long a, in long long b);
+    long long never(in long long a);
+    Bytes echo(in Bytes data);
+  };
+  interface Listener {
+    oneway void on_value(in long long v);
+  };
+};

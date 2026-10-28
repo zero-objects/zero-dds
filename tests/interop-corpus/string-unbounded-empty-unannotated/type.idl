@@ -1,0 +1,5 @@
+// unbounded `string`, empty, unannotated
+struct Sample {
+    string text;
+    long tail;
+};

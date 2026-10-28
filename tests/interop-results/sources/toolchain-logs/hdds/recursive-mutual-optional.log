@@ -1,0 +1,8 @@
+## wireprobe-hdds, exit 4
+### stderr
+wireprobe-hdds: the probe did not compile
+error[E0072]: recursive types `A` and `B` have infinite size
+error[E0599]: no method named `encode_xcdr1_le` found for reference `&A` in the current scope
+error[E0599]: no function or associated item named `decode_xcdr1_le` found for struct `A` in the current scope
+error[E0599]: no method named `encode_xcdr1_le` found for reference `&B` in the current scope
+error[E0599]: no function or associated item named `decode_xcdr1_le` found for struct `B` in the current scope

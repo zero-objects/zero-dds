@@ -1,0 +1,1 @@
+module m { @final union U switch (@key long) { case 1: long a; case 2: short b; }; };

@@ -1,0 +1,1 @@
+@appendable struct S { long a; @try_construct(TRIM) string<5> m; long b; };

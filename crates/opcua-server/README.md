@@ -33,4 +33,13 @@ secured SecurityPolicies (`crypto` feature → `zerodds-opcua-uacp/crypto`:
 to end through the OpenSecureChannel handshake and protect `MSG`/`CLO`; the peer
 trust (certificates + public keys) and the CSPRNG are caller-supplied.
 
+## Interop proof
+
+`proofs/open62541.sh` runs the `Client` over a real `opc.tcp` socket against
+open62541's `tutorial_server_variable`: GetEndpoints, CreateSession,
+ActivateSession, Read, Write and Browse, asserted against values the foreign
+server chose. It first runs open62541's own client against the same server —
+if that fails, the counterpart is dead and the rest means nothing — and exits
+77 when no open62541 build is present, rather than passing.
+
 See `docs/spec-coverage/opcua-client-server-1.05.md` for the full spec coverage.

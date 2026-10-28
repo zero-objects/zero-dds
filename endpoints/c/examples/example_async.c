@@ -116,7 +116,8 @@ int main(void)
 
     zdw_async_reader_init(&reader, &t, rxbuf, sizeof(rxbuf), on_sample, &col);
     zdw_async_writer_init(&writer, &t, txbuf, sizeof(txbuf),
-                          ZDW_XRCE_SESSION_NOKEY, ZDW_XRCE_STREAM_BEST_EFFORT);
+                          ZDW_XRCE_SESSION_NOKEY, ZDW_XRCE_STREAM_BEST_EFFORT,
+                          ZDW_XRCE_OBJECT_ID(0x001, ZDW_OBJK_DATAWRITER));
 
     for (i = 0; i < TOTAL; i++) {
         reading rd;

@@ -1,0 +1,11 @@
+// `bitset` wider than one word, unannotated
+bitset Wide {
+    bitfield<20> first;
+    bitfield<20> second;
+    bitfield<24> third;
+};
+
+struct Sample {
+    Wide value;
+    octet tail;
+};

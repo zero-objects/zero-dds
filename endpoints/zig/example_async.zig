@@ -13,12 +13,14 @@ const Reading = struct {
     value: f32,
     label: []const u8,
     fn marshal(self: Reading, alloc: std.mem.Allocator, endian: zerodds.Endian) ![]u8 {
-        var w = zerodds.Writer.init(alloc, endian);
+        var w = zerodds.Writer.init(alloc, endian, .xcdr2);
         errdefer w.deinit();
         try w.putU32(self.id);
         try w.putF32(self.value);
         try w.putString(self.label);
-        return w.buf.toOwnedSlice();
+        // Zig 0.16's `std.ArrayList` is the unmanaged one: `toOwnedSlice`
+        // takes the allocator, which the writer keeps in `alloc`.
+        return w.buf.toOwnedSlice(w.alloc);
     }
 };
 
@@ -48,21 +50,24 @@ const Fifo = struct {
 // The async consumer: decode every field in the callback and count.
 const Collector = struct {
     count: usize = 0,
+    /// Where the callback prints. Zig 0.16 replaced `std.io.getStdOut` with
+    /// `std.Io.File.stdout().writer(io, buf)`, which needs the `Io` the
+    /// entry point receives — and `on_sample` takes only `ctx` and `body`.
+    /// The reactor's context is where the writer travels.
+    out: *std.Io.Writer,
     fn onSample(ctx: *anyopaque, body: []const u8) void {
         const self: *Collector = @ptrCast(@alignCast(ctx));
-        var r = zerodds.Reader.init(body, .little);
+        var r = zerodds.Reader.init(body, .little, .xcdr2);
         const id = r.getU32();
         const value = r.getF32();
         const label = r.getString();
-        const stdout = std.io.getStdOut().writer();
-        stdout.print("async reading {d}: id=0x{x} value={d:.1} label=\"{s}\"\n", .{ self.count, id, value, label }) catch {};
+        self.out.print("async reading {d}: id=0x{x} value={d:.1} label=\"{s}\"\n", .{ self.count, id, value, label }) catch {};
         self.count += 1;
     }
 };
 
-pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const alloc = gpa.allocator();
+pub fn main(zd_init: std.process.Init) !void {
+    const alloc = zd_init.arena.allocator();
     const total: usize = 5;
 
     var fifo = Fifo{};
@@ -77,15 +82,18 @@ pub fn main() !void {
         const r = Reading{ .id = @intCast(0x2000 + i), .value = 100.0 - @as(f32, @floatFromInt(i)), .label = label };
         const body = try r.marshal(alloc, .little);
         defer alloc.free(body);
-        _ = client.write(body);
+        _ = try client.write(body);
     }
 
     // Subscriber: the callback reactor drains up to `total` frames.
-    var col = Collector{};
+    var stdout_buf: [4096]u8 = undefined;
+    var stdout_file = std.Io.File.stdout().writer(zd_init.io, &stdout_buf);
+    const stdout = &stdout_file.interface;
+    defer stdout.flush() catch {};
+    var col = Collector{ .out = stdout };
     var reader = zerodds.AsyncReader{ .transport = &t, .on_sample = Collector.onSample, .ctx = &col };
     _ = reader.run(total);
 
-    const stdout = std.io.getStdOut().writer();
     if (col.count != total) return error.Incomplete;
     try stdout.print("ALL OK\n", .{});
 }

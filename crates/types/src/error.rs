@@ -4,19 +4,23 @@
 
 use core::fmt;
 
-use zerodds_cdr::{DecodeError, EncodeError};
+use zerodds_wire::WireError;
 
-/// Error while encoding/decoding TypeObject / TypeIdentifier.
+/// Error while encoding or decoding a `TypeObject` or a
+/// `TypeIdentifier`.
+///
+/// One wire variant rather than the two the `cdr` era carried. `cdr` had
+/// a `DecodeError` and an `EncodeError`; `wire` has one `WireError`, and
+/// two wrappers around one type would have differed only in the word
+/// this crate happened to put in front of it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum TypeCodecError {
-    /// Wire encode error from the CDR layer.
-    Encode(EncodeError),
-    /// Wire decode error.
-    Decode(DecodeError),
-    /// Unknown TypeKind discriminator on decode.
+    /// A read or a write the byte runtime refused.
+    Wire(WireError),
+    /// Unknown `TypeKind` discriminator on decode.
     UnknownTypeKind {
-        /// Actually read byte value.
+        /// The byte that was actually read.
         kind: u8,
     },
 }
@@ -24,8 +28,7 @@ pub enum TypeCodecError {
 impl fmt::Display for TypeCodecError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Encode(e) => write!(f, "type codec encode error: {e}"),
-            Self::Decode(e) => write!(f, "type codec decode error: {e}"),
+            Self::Wire(e) => write!(f, "type codec wire error: {e}"),
             Self::UnknownTypeKind { kind } => {
                 write!(f, "unknown TypeKind discriminator 0x{kind:02x}")
             }
@@ -39,22 +42,39 @@ extern crate std;
 #[cfg(feature = "std")]
 impl std::error::Error for TypeCodecError {}
 
-impl From<EncodeError> for TypeCodecError {
-    fn from(e: EncodeError) -> Self {
-        Self::Encode(e)
+impl From<WireError> for TypeCodecError {
+    fn from(e: WireError) -> Self {
+        Self::Wire(e)
     }
 }
 
-impl From<DecodeError> for TypeCodecError {
-    fn from(e: DecodeError) -> Self {
-        Self::Decode(e)
+impl TypeCodecError {
+    /// The failure as the byte runtime would have reported it, for a
+    /// caller whose own signature can only return a [`WireError`].
+    ///
+    /// An element function handed to a sequence decoder is the case:
+    /// the element may be a whole `TypeObject`, so it can stop on a
+    /// discriminator the specification does not define, and that is not
+    /// a truncation. The bytes were there and said something
+    /// impossible, which is [`WireError::OutOfRange`] at `at`.
+    #[must_use]
+    pub fn into_wire(self, at: usize) -> WireError {
+        match self {
+            Self::Wire(e) => e,
+            Self::UnknownTypeKind { kind } => WireError::OutOfRange {
+                at,
+                expected: alloc::format!(
+                    "a TypeKind the specification defines, and 0x{kind:02x} is not one"
+                ),
+            },
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloc::string::ToString;
+    use alloc::string::{String, ToString};
 
     #[test]
     fn display_unknown_type_kind_hex_formatted() {
@@ -64,25 +84,31 @@ mod tests {
     }
 
     #[test]
-    fn from_encode_and_decode_error() {
-        let enc = EncodeError::ValueOutOfRange { message: "test" };
-        let e1 = TypeCodecError::from(enc);
-        assert!(matches!(e1, TypeCodecError::Encode(_)));
-
-        let dec = DecodeError::UnexpectedEof {
+    fn a_wire_error_converts_and_keeps_its_own_text() {
+        let wire = WireError::Truncated {
+            at: 8,
             needed: 4,
-            offset: 0,
+            available: 0,
         };
-        let e2 = TypeCodecError::from(dec);
-        assert!(matches!(e2, TypeCodecError::Decode(_)));
+        let converted = TypeCodecError::from(wire.clone());
+        assert!(matches!(converted, TypeCodecError::Wire(_)));
+        assert!(
+            converted.to_string().contains(&wire.to_string()),
+            "the wrapper must not lose what the runtime said: {converted}"
+        );
     }
 
     #[test]
-    fn display_encode_decode_variants_dont_panic() {
-        let _ = TypeCodecError::Encode(EncodeError::ValueOutOfRange { message: "x" }).to_string();
-        let _ = TypeCodecError::Decode(DecodeError::UnexpectedEof {
-            needed: 1,
-            offset: 2,
+    fn display_variants_do_not_panic() {
+        let _ = TypeCodecError::Wire(WireError::OutOfRange {
+            at: 0,
+            expected: String::from("x"),
+        })
+        .to_string();
+        let _ = TypeCodecError::Wire(WireError::ImpossibleLength {
+            at: 4,
+            claimed: 1 << 30,
+            available: 12,
         })
         .to_string();
     }

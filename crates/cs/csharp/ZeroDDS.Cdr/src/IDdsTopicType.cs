@@ -11,8 +11,10 @@ namespace ZeroDDS.Cdr;
 
 /// <summary>
 /// Generic TypeSupport interface per zerodds-xcdr2-csharp-1.0 §2.
-/// For each IDL `struct`, `idl-csharp` emits a `*TypeSupport` singleton
-/// that implements this interface.
+/// For each IDL `struct`/`union`, `zerodds-idlc --lang 'c#'` emits a
+/// `*TypeSupport` singleton (`tools/idlc/src/csharp_support.rs`) that
+/// implements this interface and calls into the `ZeroDds.Wire` runtime
+/// (`runtime/csharp`) for the actual XCDR2 encoding.
 /// </summary>
 /// <typeparam name="T">Concrete DDS sample type (reference or value type, MUST be non-null).</typeparam>
 public interface IDdsTopicType<T> where T : notnull
@@ -63,7 +65,7 @@ public interface IDdsTopicType<T> where T : notnull
     /// <summary>
     /// Decodes `bytes` and returns a newly constructed sample.
     /// </summary>
-    /// <exception cref="XcdrException">On wire-format errors.</exception>
+    /// <exception cref="global::ZeroDds.Wire.WireException">On wire-format errors.</exception>
     T Decode(ReadOnlySpan<byte> bytes);
 
     /// <summary>
@@ -74,7 +76,7 @@ public interface IDdsTopicType<T> where T : notnull
     /// little-endian <see cref="Decode(ReadOnlySpan{byte})"/> — generated
     /// TypeSupports override it to honor the byte order.
     /// </summary>
-    /// <exception cref="XcdrException">On wire-format errors.</exception>
+    /// <exception cref="global::ZeroDds.Wire.WireException">On wire-format errors.</exception>
     T Decode(ReadOnlySpan<byte> bytes, EndianMode endian) => Decode(bytes);
 
     /// <summary>
@@ -84,7 +86,7 @@ public interface IDdsTopicType<T> where T : notnull
     /// ignores the representation (assumes XCDR2) — generated TypeSupports
     /// override it to read the classic-CDR / PL_CDR1 wire.
     /// </summary>
-    /// <exception cref="XcdrException">On wire-format errors.</exception>
+    /// <exception cref="global::ZeroDds.Wire.WireException">On wire-format errors.</exception>
     T Decode(ReadOnlySpan<byte> bytes, EndianMode endian, int representation) => Decode(bytes, endian);
 
     /// <summary>

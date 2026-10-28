@@ -1,0 +1,5 @@
+struct S {
+    long a;
+    string<5> m;
+    long b;
+};

@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of sequence-nested-struct-unannotated that cyclone produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	the fill: error: assignment to 'dds_sequence_zd_c6_Cell *' from incompatible pointer type 'int *' [-Wincompatible-pointer-types]
+plain-cdr1	be	refused	the fill: error: assignment to 'dds_sequence_zd_c6_Cell *' from incompatible pointer type 'int *' [-Wincompatible-pointer-types]
+pl-cdr1	le	refused	the fill: error: assignment to 'dds_sequence_zd_c6_Cell *' from incompatible pointer type 'int *' [-Wincompatible-pointer-types]
+pl-cdr1	be	refused	the fill: error: assignment to 'dds_sequence_zd_c6_Cell *' from incompatible pointer type 'int *' [-Wincompatible-pointer-types]
+plain-cdr2	le	refused	the fill: error: assignment to 'dds_sequence_zd_c6_Cell *' from incompatible pointer type 'int *' [-Wincompatible-pointer-types]
+plain-cdr2	be	refused	the fill: error: assignment to 'dds_sequence_zd_c6_Cell *' from incompatible pointer type 'int *' [-Wincompatible-pointer-types]
+delimited-cdr	le	refused	the fill: error: assignment to 'dds_sequence_zd_c6_Cell *' from incompatible pointer type 'int *' [-Wincompatible-pointer-types]
+delimited-cdr	be	refused	the fill: error: assignment to 'dds_sequence_zd_c6_Cell *' from incompatible pointer type 'int *' [-Wincompatible-pointer-types]
+pl-cdr2	le	refused	the fill: error: assignment to 'dds_sequence_zd_c6_Cell *' from incompatible pointer type 'int *' [-Wincompatible-pointer-types]
+pl-cdr2	be	refused	the fill: error: assignment to 'dds_sequence_zd_c6_Cell *' from incompatible pointer type 'int *' [-Wincompatible-pointer-types]

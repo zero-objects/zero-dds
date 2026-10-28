@@ -8,9 +8,9 @@ DIST_DIR="${1:-target/distrib}"
 if [ -z "${MINISIGN_KEY:-}" ]; then
     echo "MINISIGN_KEY not provided — skipping minisign step." >&2
 else
-    # Auto-install minisign auf Ubuntu runners. Ab 24.04 in apt; auf
-    # 22.04 (cargo-dist default) nicht im offiziellen archive →
-    # prebuilt binary von github releases ziehen.
+    # Auto-install minisign on Ubuntu runners. In apt from 24.04 on; on
+    # 22.04 (cargo-dist default) not in the official archive →
+    # fetch the prebuilt binary from github releases.
     if ! command -v minisign >/dev/null 2>&1; then
         if sudo apt-get install -y -qq minisign 2>/dev/null; then
             echo "installed minisign via apt" >&2
@@ -20,7 +20,7 @@ else
             curl -fsSL "https://github.com/jedisct1/minisign/releases/download/${MS_VER}/minisign-${MS_VER}-linux.tar.gz" -o /tmp/minisign.tar.gz
             sudo tar -xzf /tmp/minisign.tar.gz -C /tmp
             sudo install -m755 "/tmp/minisign-linux/x86_64/minisign" /usr/local/bin/minisign
-            # Cleanup mit sudo weil tar-extract als root extrahiert hat.
+            # Cleanup with sudo because the tar extraction ran as root.
             sudo rm -rf /tmp/minisign.tar.gz /tmp/minisign-linux
         fi
     fi
@@ -43,9 +43,9 @@ if command -v cosign >/dev/null 2>&1; then
     done
 fi
 
-# SHA-512 manifest. Nur regulaere Files; cargo-dist legt parallel
-# zu den .tar.{gz,xz}-Archiven auch ihre extrahierten Verzeichnisse
-# in `distrib/` ab — `sha512sum` auf einem Dir failt mit "Is a directory".
+# SHA-512 manifest. Only regular files; next to the .tar.{gz,xz} archives
+# cargo-dist also places their extracted directories
+# in `distrib/` — `sha512sum` on a dir fails with "Is a directory".
 (
     cd "$DIST_DIR"
     # shellcheck disable=SC2035

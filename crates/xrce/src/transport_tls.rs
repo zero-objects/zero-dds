@@ -117,10 +117,74 @@ mod rustls_impl {
         XrceError::ValueOutOfRange { message }
     }
 
+    /// The server side of a TLS connection.
+    pub type RustlsServerStream = RustlsTlsStream<ServerConnection>;
+
+    /// The client side of a TLS connection.
+    pub type RustlsClientStream = RustlsTlsStream<ClientConnection>;
+
+    /// A credential file (certificate chain, private key, trust anchors)
+    /// that cannot be read or is not usable.
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub struct TlsConfigError {
+        /// What is wrong, naming the file.
+        pub reason: std::string::String,
+    }
+
+    impl core::fmt::Display for TlsConfigError {
+        fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            write!(f, "tls credentials: {}", self.reason)
+        }
+    }
+
+    impl std::error::Error for TlsConfigError {}
+
+    fn config_err(reason: std::string::String) -> TlsConfigError {
+        TlsConfigError { reason }
+    }
+
+    /// The certificate chain of a PEM file, leaf first.
+    fn load_chain(cert_file: &str) -> Result<Vec<CertificateDer<'static>>, TlsConfigError> {
+        use rustls_pki_types::pem::PemObject;
+        let chain: Vec<CertificateDer<'static>> = CertificateDer::pem_file_iter(cert_file)
+            .map_err(|e| config_err(std::format!("cert_file {cert_file}: {e}")))?
+            .collect::<Result<_, _>>()
+            .map_err(|e| config_err(std::format!("cert_file {cert_file}: {e}")))?;
+        if chain.is_empty() {
+            return Err(config_err(std::format!(
+                "cert_file {cert_file}: no `CERTIFICATE` block"
+            )));
+        }
+        Ok(chain)
+    }
+
+    /// The private key of a PEM file (PKCS#8, PKCS#1 or SEC1).
+    fn load_key(key_file: &str) -> Result<PrivateKeyDer<'static>, TlsConfigError> {
+        use rustls_pki_types::pem::PemObject;
+        PrivateKeyDer::from_pem_file(key_file)
+            .map_err(|e| config_err(std::format!("key_file {key_file}: {e}")))
+    }
+
+    /// The trust anchors of a PEM file.
+    fn load_roots(ca_file: &str) -> Result<rustls::RootCertStore, TlsConfigError> {
+        let mut roots = rustls::RootCertStore::empty();
+        for cert in load_chain(ca_file)
+            .map_err(|e| config_err(e.reason.replacen("cert_file", "ca_file", 1)))?
+        {
+            roots
+                .add(cert)
+                .map_err(|e| config_err(std::format!("ca_file {ca_file}: {e}")))?;
+        }
+        Ok(roots)
+    }
+
     /// A TLS-secured XRCE stream over a `rustls::StreamOwned`. `C` is either a
     /// `ClientConnection` or a `ServerConnection`.
     pub struct RustlsTlsStream<C> {
         stream: StreamOwned<C, TcpStream>,
+        /// Bytes read from the stream that do not yet make a whole frame
+        /// ([`Self::poll_message`]).
+        pending: Vec<u8>,
     }
 
     impl<C> RustlsTlsStream<C>
@@ -138,6 +202,54 @@ mod rustls_impl {
                 .map_err(|_| err("tls write body"))?;
             self.stream.flush().map_err(|_| err("tls flush"))?;
             Ok(())
+        }
+
+        /// Limits how long a read waits, for [`Self::poll_message`].
+        ///
+        /// # Errors
+        /// [`XrceError::ValueOutOfRange`] on a socket error.
+        pub fn set_read_timeout(
+            &self,
+            timeout: Option<std::time::Duration>,
+        ) -> Result<(), XrceError> {
+            self.stream
+                .sock
+                .set_read_timeout(timeout)
+                .map_err(|_| err("tls set_read_timeout"))
+        }
+
+        /// Reads the next message if one arrives within the read timeout set
+        /// with [`Self::set_read_timeout`]; `Ok(None)` when none did. Bytes
+        /// of a frame that is not complete yet are kept for the next call, so
+        /// a timeout in the middle of a frame loses nothing.
+        ///
+        /// # Errors
+        /// [`XrceError`] when the connection is closed or fails, or the
+        /// frame is not an XRCE message.
+        pub fn poll_message(&mut self) -> Result<Option<Message>, XrceError> {
+            loop {
+                if self.pending.len() >= 2 {
+                    let len = usize::from(u16::from_le_bytes([self.pending[0], self.pending[1]]));
+                    if self.pending.len() >= 2 + len {
+                        let frame: Vec<u8> = self.pending.drain(..2 + len).skip(2).collect();
+                        return Message::decode(&frame).map(Some);
+                    }
+                }
+                let mut chunk = [0u8; 4096];
+                match self.stream.read(&mut chunk) {
+                    Ok(0) => return Err(err("tls connection closed")),
+                    Ok(n) => self.pending.extend_from_slice(&chunk[..n]),
+                    Err(e)
+                        if matches!(
+                            e.kind(),
+                            std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                        ) =>
+                    {
+                        return Ok(None);
+                    }
+                    Err(_) => return Err(err("tls read")),
+                }
+            }
         }
 
         fn read_message(&mut self) -> Result<Message, XrceError> {
@@ -244,7 +356,95 @@ mod rustls_impl {
                 .map_err(|_| err("tls server connection"))?;
             Ok(RustlsTlsStream {
                 stream: StreamOwned::new(conn, tcp),
+                pending: Vec::new(),
             })
+        }
+
+        /// Binds on `addr` with the certificate chain and private key of PEM
+        /// files, so a client can authenticate the agent (DDS-XRCE 1.0
+        /// §11.1 (5), §11.3). With `client_ca_file`, a client must present a
+        /// certificate that chains to one of its trust anchors.
+        ///
+        /// # Errors
+        /// [`TlsConfigError`] for an unusable file or a certificate that does
+        /// not match the key, or a port that cannot be bound.
+        pub fn bind_with_certificate(
+            addr: SocketAddr,
+            cert_file: &str,
+            key_file: &str,
+            client_ca_file: Option<&str>,
+        ) -> Result<Self, TlsConfigError> {
+            let chain = load_chain(cert_file)?;
+            let key = load_key(key_file)?;
+            let cert_der = chain[0].as_ref().to_vec();
+            let provider = Arc::new(rustls::crypto::ring::default_provider());
+            let builder = ServerConfig::builder_with_provider(Arc::clone(&provider))
+                .with_safe_default_protocol_versions()
+                .map_err(|e| config_err(std::format!("protocol versions: {e}")))?;
+            let builder = match client_ca_file {
+                Some(ca) => {
+                    let verifier = rustls::server::WebPkiClientVerifier::builder_with_provider(
+                        Arc::new(load_roots(ca)?),
+                        provider,
+                    )
+                    .build()
+                    .map_err(|e| config_err(std::format!("ca_file {ca}: {e}")))?;
+                    builder.with_client_cert_verifier(verifier)
+                }
+                None => builder.with_no_client_auth(),
+            };
+            let cfg = builder.with_single_cert(chain, key).map_err(|e| {
+                config_err(std::format!(
+                    "cert_file {cert_file} / key_file {key_file}: {e}"
+                ))
+            })?;
+            let listener = TcpListener::bind(addr)
+                .map_err(|e| config_err(std::format!("bind {addr}: {e}")))?;
+            Ok(Self {
+                listener,
+                cfg: Arc::new(cfg),
+                cert_der,
+            })
+        }
+
+        /// Makes [`Self::accept`] non-blocking (it then fails with
+        /// `ValueOutOfRange` when no connection waits; use
+        /// [`Self::try_accept`]).
+        ///
+        /// # Errors
+        /// [`XrceError::ValueOutOfRange`] on a socket error.
+        pub fn set_nonblocking(&self, nonblocking: bool) -> Result<(), XrceError> {
+            self.listener
+                .set_nonblocking(nonblocking)
+                .map_err(|_| err("tls set_nonblocking"))
+        }
+
+        /// Accepts a waiting connection, `Ok(None)` if none waits; the
+        /// listener has to be non-blocking ([`Self::set_nonblocking`]). The
+        /// handshake completes on the first read or write of the stream, with
+        /// its read timeout ([`RustlsTlsStream::set_read_timeout`]).
+        ///
+        /// # Errors
+        /// [`XrceError::ValueOutOfRange`] on accept or TLS failure.
+        pub fn try_accept(
+            &self,
+        ) -> Result<Option<(RustlsTlsStream<ServerConnection>, SocketAddr)>, XrceError> {
+            let (tcp, peer) = match self.listener.accept() {
+                Ok(v) => v,
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => return Ok(None),
+                Err(_) => return Err(err("tls accept")),
+            };
+            tcp.set_nonblocking(false)
+                .map_err(|_| err("tls accepted socket"))?;
+            let conn = ServerConnection::new(Arc::clone(&self.cfg))
+                .map_err(|_| err("tls server connection"))?;
+            Ok(Some((
+                RustlsTlsStream {
+                    stream: StreamOwned::new(conn, tcp),
+                    pending: Vec::new(),
+                },
+                peer,
+            )))
         }
     }
 
@@ -281,13 +481,55 @@ mod rustls_impl {
             let tcp = TcpStream::connect(server).map_err(|_| err("tls tcp connect"))?;
             Ok(RustlsTlsStream {
                 stream: StreamOwned::new(conn, tcp),
+                pending: Vec::new(),
+            })
+        }
+
+        /// Dials `server` and authenticates it: its certificate has to chain
+        /// to the trust anchors of `ca_file` and name `server_name`. With
+        /// `client_certificate` (certificate file, key file) the client
+        /// presents its own, for an agent that asks for one. The handshake
+        /// completes lazily on the first message.
+        ///
+        /// # Errors
+        /// [`TlsConfigError`] for an unusable file or a failed connect.
+        pub fn connect_verified(
+            server: SocketAddr,
+            server_name: &str,
+            ca_file: &str,
+            client_certificate: Option<(&str, &str)>,
+        ) -> Result<RustlsTlsStream<ClientConnection>, TlsConfigError> {
+            let builder = ClientConfig::builder_with_provider(Arc::new(
+                rustls::crypto::ring::default_provider(),
+            ))
+            .with_safe_default_protocol_versions()
+            .map_err(|e| config_err(std::format!("protocol versions: {e}")))?
+            .with_root_certificates(load_roots(ca_file)?);
+            let cfg = match client_certificate {
+                Some((cert, key)) => builder
+                    .with_client_auth_cert(load_chain(cert)?, load_key(key)?)
+                    .map_err(|e| config_err(std::format!("client certificate: {e}")))?,
+                None => builder.with_no_client_auth(),
+            };
+            let name = ServerName::try_from(server_name.to_string())
+                .map_err(|_| config_err(std::format!("invalid server name {server_name}")))?;
+            let conn = ClientConnection::new(Arc::new(cfg), name)
+                .map_err(|e| config_err(std::format!("client connection: {e}")))?;
+            let tcp = TcpStream::connect(server)
+                .map_err(|e| config_err(std::format!("connect {server}: {e}")))?;
+            Ok(RustlsTlsStream {
+                stream: StreamOwned::new(conn, tcp),
+                pending: Vec::new(),
             })
         }
     }
 }
 
 #[cfg(feature = "tls")]
-pub use rustls_impl::{RustlsTlsClient, RustlsTlsServer, RustlsTlsStream};
+pub use rustls_impl::{
+    RustlsClientStream, RustlsServerStream, RustlsTlsClient, RustlsTlsServer, RustlsTlsStream,
+    TlsConfigError,
+};
 
 #[cfg(test)]
 mod tests {

@@ -1,0 +1,5 @@
+// P5 — a bitset as a collection element. §7.4.3.5.1's match criteria
+// have no bitset entry, so the primitive-element criterion cannot be
+// satisfied and rule (12) delimits.
+bitset B { bitfield<3> a; bitfield<5> b; };
+struct Sample { sequence<B> v; octet tail; };

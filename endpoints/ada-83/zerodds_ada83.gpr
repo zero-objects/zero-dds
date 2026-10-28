@@ -11,7 +11,9 @@ project Zerodds_Ada83 is
    for Object_Dir use "build";
    for Exec_Dir use "build";
    for Main use ("test_ada83_identity.adb", "test_ada83_async.adb",
-                 "test_ada83_reliable.adb", "example_ada83_reliable.adb");
+                 "test_ada83_reliable.adb", "test_ada83_surface.adb",
+                 "test_ada83_xrce_client.adb",
+                 "example_ada83_reliable.adb");
 
    package Compiler is
       for Default_Switches ("Ada") use ("-gnat83", "-g", "-O2");

@@ -1,0 +1,5 @@
+// IDL 4.2 §7.3, ISO/IEC 14882:2003 §16.1 — the `defined` operator.
+#define FLAG 1
+#if defined(FLAG)
+struct Sa { long m; };
+#endif

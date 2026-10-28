@@ -18,6 +18,57 @@
 
 const std = @import("std");
 
+/// Sleep, without an `Io`.
+///
+/// Zig 0.16 removed `std.time.sleep`; every replacement in `std.Io`
+/// takes an `Io` handle, and this module has none — it is a library
+/// that `zig test` builds on its own and that an embedded caller links
+/// without an event loop. `std.Io.Threaded` reaches the same syscall.
+pub fn sleepNs(ns: u64) void {
+    const req = std.posix.timespec{
+        .sec = @intCast(ns / std.time.ns_per_s),
+        .nsec = @intCast(ns % std.time.ns_per_s),
+    };
+    _ = std.posix.system.nanosleep(&req, null);
+}
+
+/// Monotonic nanoseconds, without an `Io`.
+///
+/// The counterpart of `sleepNs`: Zig 0.16 removed `std.time.Timer` for
+/// the same reason, and `std.Io`'s clocks take an `Io` this module does
+/// not have. `CLOCK.MONOTONIC` is what `Timer` read.
+pub fn monotonicNs() u64 {
+    var ts: std.posix.timespec = undefined;
+    _ = std.posix.system.clock_gettime(.MONOTONIC, &ts);
+    const sec: u64 = @intCast(ts.sec);
+    const nsec: u64 = @intCast(ts.nsec);
+    return sec * std.time.ns_per_s + nsec;
+}
+
+/// A mutex that needs no `Io`.
+///
+/// Zig 0.16 made `std.Thread.Mutex` an alias of `std.Io.Mutex`, whose
+/// `lock`/`unlock` take an `Io` handle so a blocked waiter can be
+/// scheduled and cancelled. This module has no `Io` — `zig test` builds
+/// it alone, and an embedded caller links it without an event loop —
+/// and the critical sections it guards are a handful of instructions in
+/// a two-thread hand-off, which is the case a spin lock is for. It is
+/// not a general replacement: a critical section that can block wants
+/// the real one.
+pub const SpinMutex = struct {
+    state: std.atomic.Value(bool) = .init(false),
+
+    pub fn lock(m: *SpinMutex) void {
+        while (m.state.cmpxchgWeak(false, true, .acquire, .monotonic) != null) {
+            std.atomic.spinLoopHint();
+        }
+    }
+
+    pub fn unlock(m: *SpinMutex) void {
+        m.state.store(false, .release);
+    }
+};
+
 pub const SENDER_WINDOW: usize = 16;
 pub const RECEIVER_BUFFER: usize = 64;
 pub const MAX_PAYLOAD: usize = 65535;
@@ -39,6 +90,13 @@ pub fn seqGt(a: u16, b: u16) bool {
 pub const Heartbeat = struct { first_unacked: u16, last_unacked: u16, stream_id: u8 };
 pub const AckNack = struct { first_unacked: u16, nack_bitmap: u16, stream_id: u8 };
 
+/// Encoding of the DDS-XRCE 1.0 Annex A types without `@extensibility`
+/// (APPENDABLE by DDS-XTypes 1.3 7.3.1.2.1.8). `.appendable` (default): a
+/// DHEADER in front of the members. `.final`: the form of the reference
+/// implementation (eProsima), no DHEADER. This SDK writes one such type:
+/// ACKNACK_Payload. HEARTBEAT_Payload is FINAL in both modes.
+pub const UnannotatedTypes = enum { appendable, final };
+
 pub const Error = error{ PayloadTooLarge, WindowFull, BufferFull };
 
 // ------------------------------------------------------------------
@@ -50,24 +108,70 @@ pub const Error = error{ PayloadTooLarge, WindowFull, BufferFull };
 // ------------------------------------------------------------------
 
 /// Reliable WRITE_DATA frame; the 2-byte stream-header seq carries the sample seq.
+/// Wire size of the `BaseObjectRequest` that precedes the sample in a
+/// `WRITE_DATA` body (DDS-XRCE 1.0 §7.7.8: `request_id[2]` + `object_id[2]`).
+pub const XRCE_BASE_SIZE: usize = 4;
+
+/// `ObjectId` of the endpoint app's DataWriter: raw id `0x001` in the low
+/// twelve bits, `OBJK_DATAWRITER` (0x05) in the low four (§7.2.1). The
+/// endpoint profile has no CREATE handshake, so this is the fixture both
+/// ends agree on — `zerodds_endpoint_e2e::endpoint_writer_id`, and the
+/// same value the C, Go and Rust SDKs put on the wire.
+pub const ENDPOINT_WRITER_OBJECT_ID: u16 = (0x001 << 4) | 0x05;
+
+/// The `E_LITTLE_ENDIAN` flag alone. §8.3.5.8 puts the data format in bits
+/// 1..3, and `FORMAT_DATA` is `0b000` — the profile carries no
+/// `SampleInfo`, so `FORMAT_SAMPLE` (0b001, which is what `0x03` says)
+/// would announce a body this frame does not contain.
+const WRITE_FLAGS: u8 = 0x01;
+
+/// A reliable `WRITE_DATA` frame: the four-octet message header, the
+/// four-octet submessage header, the `BaseObjectRequest` and the sample.
+///
+/// The `BaseObjectRequest` is not optional. §7.7.8 makes it the only thing
+/// in the message that names the DataWriter, so a body without it cannot
+/// be routed by any XRCE agent, and `crates/xrce`'s `WriteDataPayload` —
+/// which is what `zerodds-endpoint-e2e`'s peer decodes with — refuses a
+/// body shorter than four octets. This wrote the bare sample under flags
+/// `0x03`, which is why the Zig `e2e` cells delivered 0 of 12 samples
+/// while the frames were on the wire and countable: the peer received
+/// every one and could decode none. The layout here is
+/// `endpoints/c/src/zerodds_endpoint.c`'s `zdw_xrce_write_frame`, octet
+/// for octet.
 pub fn writeDataFrame(out: []u8, seq: u16, sample: []const u8) usize {
-    const n: u16 = @intCast(sample.len);
+    const body_len: u16 = @intCast(XRCE_BASE_SIZE + sample.len);
     out[0] = 0x80;
     out[1] = RELIABLE_STREAM_ID;
-    out[2] = @truncate(seq);
+    out[2] = @truncate(seq); // sequence_nr, little-endian
     out[3] = @truncate(seq >> 8);
     out[4] = 0x07; // WRITE_DATA
-    out[5] = 0x03; // flags
-    out[6] = @truncate(n);
-    out[7] = @truncate(n >> 8);
-    std.mem.copyForwards(u8, out[8 .. 8 + sample.len], sample);
-    return 8 + sample.len;
+    out[5] = WRITE_FLAGS;
+    out[6] = @truncate(body_len); // submessage_length, little-endian
+    out[7] = @truncate(body_len >> 8);
+    // BaseObjectRequest: RequestId(2) then ObjectId(2), most significant
+    // octet first (§7.7.8 / §7.2.1). The request id is the message's own
+    // sequence number, which is all §7.7.8 asks of it.
+    out[8] = @truncate(seq >> 8);
+    out[9] = @truncate(seq);
+    out[10] = @truncate(ENDPOINT_WRITER_OBJECT_ID >> 8);
+    out[11] = @truncate(ENDPOINT_WRITER_OBJECT_ID);
+    std.mem.copyForwards(u8, out[12 .. 12 + sample.len], sample);
+    return 12 + sample.len;
 }
 
 /// Parses a reliable WRITE_DATA frame into `(seq, sample)`.
+///
+/// A body too short to hold the `BaseObjectRequest` is refused rather
+/// than handed back as a truncated sample — the same refusal
+/// `zdw_xrce_locate_body` makes.
 pub fn parseWriteData(frame: []const u8) ?struct { seq: u16, sample: []const u8 } {
-    if (frame.len < 8 or frame[4] != 0x07) return null;
-    return .{ .seq = @as(u16, frame[2]) | @as(u16, frame[3]) << 8, .sample = frame[8..] };
+    if (frame.len < 8 + XRCE_BASE_SIZE or frame[4] != 0x07) return null;
+    const declared: usize = @as(usize, frame[6]) | @as(usize, frame[7]) << 8;
+    if (declared < XRCE_BASE_SIZE or 8 + declared > frame.len) return null;
+    return .{
+        .seq = @as(u16, frame[2]) | @as(u16, frame[3]) << 8,
+        .sample = frame[8 + XRCE_BASE_SIZE .. 8 + declared],
+    };
 }
 
 /// HEARTBEAT frame (golden layout, 13 bytes).
@@ -98,31 +202,64 @@ pub fn parseHeartbeat(frame: []const u8) ?Heartbeat {
     };
 }
 
-/// ACKNACK frame (golden layout, 13 bytes).
+/// ACKNACK frame, `UnannotatedTypes.appendable` form (golden layout, 17 bytes).
+/// ACKNACK_Payload has no @extensibility, so it is APPENDABLE (DDS-XTypes 1.3
+/// 7.3.1.2.1.8) and carries a DHEADER in XCDR2: body = DHEADER u32 LE (= 5) +
+/// the 5-octet payload, so the submessage length field is 9.
 pub fn acknackFrame(out: []u8, an: AckNack) usize {
+    return acknackFrameWith(out, an, .appendable);
+}
+
+/// ACKNACK frame in the given `UnannotatedTypes` form. `.appendable`: 17 octets,
+/// length field 9, DHEADER = 5. `.final`: 13 octets, length field 5, no DHEADER
+/// (reference implementation). Returns the number of octets written.
+pub fn acknackFrameWith(out: []u8, an: AckNack, mode: UnannotatedTypes) usize {
     out[0] = 0x80;
     out[1] = 0x00;
     out[2] = 0x01;
     out[3] = 0x00;
     out[4] = 0x0A; // ACKNACK
     out[5] = 0x01; // flags (E-flag LE)
-    out[6] = 0x05;
-    out[7] = 0x00;
-    out[8] = @truncate(an.first_unacked);
-    out[9] = @truncate(an.first_unacked >> 8);
-    out[10] = @truncate(an.nack_bitmap);
-    out[11] = @truncate(an.nack_bitmap >> 8);
-    out[12] = an.stream_id;
-    return 13;
+    var o: usize = 8;
+    switch (mode) {
+        .appendable => {
+            out[6] = 0x09;
+            out[7] = 0x00;
+            out[8] = 0x05; // DHEADER = 5 (u32 LE)
+            out[9] = 0x00;
+            out[10] = 0x00;
+            out[11] = 0x00;
+            o = 12;
+        },
+        .final => {
+            out[6] = 0x05;
+            out[7] = 0x00;
+        },
+    }
+    out[o] = @truncate(an.first_unacked);
+    out[o + 1] = @truncate(an.first_unacked >> 8);
+    out[o + 2] = @truncate(an.nack_bitmap);
+    out[o + 3] = @truncate(an.nack_bitmap >> 8);
+    out[o + 4] = an.stream_id;
+    return o + 5;
 }
 
-/// Parses an ACKNACK frame.
+/// Parses an ACKNACK frame. Accepts body length 9 (4-octet DHEADER, then the
+/// 5-octet payload) and the FINAL form with body length 5 (no DHEADER),
+/// whatever the writer's `UnannotatedTypes` setting.
 pub fn parseAckNack(frame: []const u8) ?AckNack {
     if (frame.len < 13 or frame[4] != 0x0A) return null;
+    var o: usize = 8;
+    if (frame[6] == 9 and frame[7] == 0) {
+        if (frame.len < 17) return null;
+        o = 12;
+    } else if (!(frame[6] == 5 and frame[7] == 0)) {
+        return null;
+    }
     return .{
-        .first_unacked = @as(u16, frame[8]) | @as(u16, frame[9]) << 8,
-        .nack_bitmap = @as(u16, frame[10]) | @as(u16, frame[11]) << 8,
-        .stream_id = frame[12],
+        .first_unacked = @as(u16, frame[o]) | @as(u16, frame[o + 1]) << 8,
+        .nack_bitmap = @as(u16, frame[o + 2]) | @as(u16, frame[o + 3]) << 8,
+        .stream_id = frame[o + 4],
     };
 }
 
@@ -263,9 +400,15 @@ pub const Receiver = struct {
     expected_seq: u16 = 0,
     slots: [RECEIVER_BUFFER]Slot = [_]Slot{.{}} ** RECEIVER_BUFFER,
     count: usize = 0,
+    /// Encoding of the ACKNACK_Payload this receiver writes (`acknackFrame`).
+    unannotated_types: UnannotatedTypes = .appendable,
 
     pub fn init(alloc: std.mem.Allocator) Receiver {
         return .{ .alloc = alloc };
+    }
+    /// Receiver whose ACKNACK frames use the given `UnannotatedTypes` form.
+    pub fn initWith(alloc: std.mem.Allocator, unannotated_types: UnannotatedTypes) Receiver {
+        return .{ .alloc = alloc, .unannotated_types = unannotated_types };
     }
     pub fn deinit(self: *Receiver) void {
         for (&self.slots) |*s| {
@@ -308,12 +451,16 @@ pub const Receiver = struct {
 
     /// Delivers all contiguous samples from `expected_seq`, appending owned
     /// payload copies into `out`, and advances `expected_seq`.
-    pub fn drainInto(self: *Receiver, out: *std.ArrayList([]u8)) !void {
+    pub fn drainInto(
+        self: *Receiver,
+        heap: std.mem.Allocator,
+        out: *std.ArrayList([]u8),
+    ) !void {
         while (true) {
             var found = false;
             for (&self.slots) |*s| {
                 if (s.used and s.seq == self.expected_seq) {
-                    try out.append(s.data);
+                    try out.append(heap, s.data);
                     s.* = .{}; // ownership moves to `out`
                     self.count -= 1;
                     self.expected_seq +%= 1;
@@ -338,6 +485,12 @@ pub const Receiver = struct {
             if (!self.contains(seq)) bitmap |= (@as(u16, 1) << @intCast(i));
         }
         return .{ .first_unacked = base, .nack_bitmap = bitmap, .stream_id = RELIABLE_STREAM_ID };
+    }
+
+    /// ACKNACK frame for the current window, encoded per `unannotated_types`.
+    /// Returns the number of octets written to `out` (17 or 13).
+    pub fn acknackFrame(self: *const Receiver, out: []u8, hint_last_seen: ?u16) usize {
+        return acknackFrameWith(out, self.pendingAckNack(hint_last_seen), self.unannotated_types);
     }
 
     pub fn reset(self: *Receiver) void {
@@ -427,7 +580,7 @@ pub const AsyncWriter = struct {
         var frame: [SLOT_CAP + 16]u8 = undefined;
         var sbuf: [SLOT_CAP]u8 = undefined;
         var rbuf: [2048]u8 = undefined;
-        var timer = std.time.Timer.start() catch return;
+        const started_ns = monotonicNs();
         // Stop when signalled — the producer owns lifecycle; a lingering window
         // must not wedge `close()` (e.g. a bench with no ACKNACKs to drain it).
         while (self.running.load(.acquire)) {
@@ -441,7 +594,7 @@ pub const AsyncWriter = struct {
                         // was consumed yet never sent). Free a slot via ACKNACKs
                         // and retry next tick; back off if none arrived.
                         error.WindowFull => if (!self.drainAckNacks(&rbuf))
-                            std.time.sleep(200 * std.time.ns_per_us),
+                            sleepNs(200 * std.time.ns_per_us),
                         // Non-retryable (too large): drop so it cannot wedge the
                         // ring head forever.
                         else => {
@@ -460,12 +613,12 @@ pub const AsyncWriter = struct {
             // 2) process ACKNACKs → prune + retransmit.
             if (self.drainAckNacks(&rbuf)) idle = false;
             // 3) periodic heartbeat.
-            const now_ms: i64 = @intCast(timer.read() / std.time.ns_per_ms);
+            const now_ms: i64 = @intCast((monotonicNs() - started_ns) / std.time.ns_per_ms);
             if (self.sender.pendingHeartbeat(now_ms)) |hb| {
                 const n = heartbeatFrame(&frame, hb);
                 self.send_fn(self.send_ctx, frame[0..n]);
             }
-            if (idle) std.time.sleep(200 * std.time.ns_per_us);
+            if (idle) sleepNs(200 * std.time.ns_per_us);
         }
     }
 
@@ -581,12 +734,12 @@ test "recv data buffers in order" {
     defer r.deinit();
     try r.recvData(0, &[_]u8{10});
     try r.recvData(1, &[_]u8{11});
-    var out = std.ArrayList([]u8).init(testing.allocator);
+    var out = std.ArrayList([]u8).empty;
     defer {
         for (out.items) |p| testing.allocator.free(p);
-        out.deinit();
+        out.deinit(testing.allocator);
     }
-    try r.drainInto(&out);
+    try r.drainInto(testing.allocator, &out);
     try testing.expectEqual(@as(usize, 2), out.items.len);
     try testing.expectEqual(@as(u16, 2), r.expected());
 }
@@ -596,15 +749,15 @@ test "recv data reorders out of order" {
     defer r.deinit();
     try r.recvData(2, &[_]u8{22});
     try r.recvData(0, &[_]u8{20});
-    var out = std.ArrayList([]u8).init(testing.allocator);
+    var out = std.ArrayList([]u8).empty;
     defer {
         for (out.items) |p| testing.allocator.free(p);
-        out.deinit();
+        out.deinit(testing.allocator);
     }
-    try r.drainInto(&out);
+    try r.drainInto(testing.allocator, &out);
     try testing.expectEqual(@as(usize, 1), out.items.len); // only seq 0
     try r.recvData(1, &[_]u8{21});
-    try r.drainInto(&out);
+    try r.drainInto(testing.allocator, &out);
     try testing.expectEqual(@as(usize, 3), out.items.len); // 0,1,2
 }
 
@@ -612,12 +765,12 @@ test "recv data drops duplicates" {
     var r = Receiver.init(testing.allocator);
     defer r.deinit();
     try r.recvData(0, &[_]u8{1});
-    var out = std.ArrayList([]u8).init(testing.allocator);
+    var out = std.ArrayList([]u8).empty;
     defer {
         for (out.items) |p| testing.allocator.free(p);
-        out.deinit();
+        out.deinit(testing.allocator);
     }
-    try r.drainInto(&out);
+    try r.drainInto(testing.allocator, &out);
     try r.recvData(0, &[_]u8{99}); // already delivered → dropped
     try testing.expectEqual(@as(usize, 0), r.outOfOrderCount());
 }
@@ -653,11 +806,66 @@ test "reset clears state" {
 
 test "byte-golden heartbeat + acknack" {
     // Byte-identical to golden_heartbeat_le.bin / golden_acknack_le.bin.
-    var buf: [13]u8 = undefined;
-    _ = heartbeatFrame(&buf, .{ .first_unacked = 1, .last_unacked = 3, .stream_id = 0x80 });
-    try testing.expectEqualSlices(u8, &[_]u8{ 0x80, 0x00, 0x01, 0x00, 0x0b, 0x01, 0x05, 0x00, 0x01, 0x00, 0x03, 0x00, 0x80 }, &buf);
-    _ = acknackFrame(&buf, .{ .first_unacked = 1, .nack_bitmap = 0, .stream_id = 0x80 });
-    try testing.expectEqualSlices(u8, &[_]u8{ 0x80, 0x00, 0x01, 0x00, 0x0a, 0x01, 0x05, 0x00, 0x01, 0x00, 0x00, 0x00, 0x80 }, &buf);
+    var buf: [17]u8 = undefined;
+    const hn = heartbeatFrame(&buf, .{ .first_unacked = 1, .last_unacked = 3, .stream_id = 0x80 });
+    try testing.expectEqual(@as(usize, 13), hn);
+    try testing.expectEqualSlices(u8, &[_]u8{ 0x80, 0x00, 0x01, 0x00, 0x0b, 0x01, 0x05, 0x00, 0x01, 0x00, 0x03, 0x00, 0x80 }, buf[0..hn]);
+    const an = acknackFrame(&buf, .{ .first_unacked = 1, .nack_bitmap = 0, .stream_id = 0x80 });
+    try testing.expectEqual(@as(usize, 17), an);
+    try testing.expectEqualSlices(u8, &[_]u8{ 0x80, 0x00, 0x01, 0x00, 0x0a, 0x01, 0x09, 0x00, 0x05, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x80 }, buf[0..an]);
+    const p = parseAckNack(buf[0..an]).?;
+    try testing.expectEqual(@as(u16, 1), p.first_unacked);
+    try testing.expectEqual(@as(u8, 0x80), p.stream_id);
+}
+
+test "parse legacy FINAL acknack (body length 5)" {
+    const legacy = [_]u8{ 0x80, 0x00, 0x01, 0x00, 0x0a, 0x01, 0x05, 0x00, 0x03, 0x00, 0x01, 0x00, 0x80 };
+    const p = parseAckNack(&legacy).?;
+    try testing.expectEqual(@as(u16, 3), p.first_unacked);
+    try testing.expectEqual(@as(u16, 1), p.nack_bitmap);
+    try testing.expectEqual(@as(u8, 0x80), p.stream_id);
+    try testing.expect(parseAckNack(legacy[0..12]) == null);
+    var buf: [17]u8 = undefined;
+    const n = acknackFrame(&buf, .{ .first_unacked = 1, .nack_bitmap = 0, .stream_id = 0x80 });
+    try testing.expect(parseAckNack(buf[0 .. n - 1]) == null);
+}
+
+test "acknack unannotated types: final is the 13-octet FINAL golden" {
+    const an: AckNack = .{ .first_unacked = 1, .nack_bitmap = 0, .stream_id = 0x80 };
+    const final_golden = [_]u8{ 0x80, 0x00, 0x01, 0x00, 0x0a, 0x01, 0x05, 0x00, 0x01, 0x00, 0x00, 0x00, 0x80 };
+    var buf: [17]u8 = undefined;
+    const nf = acknackFrameWith(&buf, an, .final);
+    try testing.expectEqualSlices(u8, &final_golden, buf[0..nf]);
+    // default (appendable): 17 octets, same bytes as acknackFrame
+    var buf2: [17]u8 = undefined;
+    const na = acknackFrameWith(&buf2, an, .appendable);
+    const nd = acknackFrame(&buf, an);
+    try testing.expectEqual(@as(usize, 17), na);
+    try testing.expectEqualSlices(u8, buf[0..nd], buf2[0..na]);
+    // the parser accepts both forms
+    var fin: [17]u8 = undefined;
+    const nfin = acknackFrameWith(&fin, an, .final);
+    try testing.expectEqual(an, parseAckNack(fin[0..nfin]).?);
+    try testing.expectEqual(an, parseAckNack(buf2[0..na]).?);
+    // the receiver carries the mode
+    var rf = Receiver.initWith(testing.allocator, .final);
+    defer rf.deinit();
+    var ra = Receiver.init(testing.allocator);
+    defer ra.deinit();
+    try rf.recvData(0, &[_]u8{1});
+    try ra.recvData(0, &[_]u8{1});
+    var tmp = std.ArrayList([]u8).empty;
+    defer tmp.deinit(testing.allocator);
+    try rf.drainInto(testing.allocator, &tmp);
+    for (tmp.items) |p| testing.allocator.free(p);
+    tmp.clearRetainingCapacity();
+    try ra.drainInto(testing.allocator, &tmp);
+    for (tmp.items) |p| testing.allocator.free(p);
+    var rb: [17]u8 = undefined;
+    const nrf = rf.acknackFrame(&rb, 0);
+    try testing.expectEqualSlices(u8, &final_golden, rb[0..nrf]);
+    const nra = ra.acknackFrame(&rb, 0);
+    try testing.expectEqualSlices(u8, buf2[0..na], rb[0..nra]);
 }
 
 test "end-to-end loss recovery in-process" {
@@ -665,10 +873,10 @@ test "end-to-end loss recovery in-process" {
     defer snd.deinit();
     var rcv = Receiver.init(testing.allocator);
     defer rcv.deinit();
-    var out = std.ArrayList([]u8).init(testing.allocator);
+    var out = std.ArrayList([]u8).empty;
     defer {
         for (out.items) |p| testing.allocator.free(p);
-        out.deinit();
+        out.deinit(testing.allocator);
     }
     // submit 5, receiver sees 0,2,4 (1 + 3 lost).
     var i: u8 = 0;
@@ -676,7 +884,7 @@ test "end-to-end loss recovery in-process" {
     try rcv.recvData(0, &[_]u8{0});
     try rcv.recvData(2, &[_]u8{2});
     try rcv.recvData(4, &[_]u8{4});
-    try rcv.drainInto(&out);
+    try rcv.drainInto(testing.allocator, &out);
     try testing.expectEqual(@as(usize, 1), out.items.len); // only 0
     // receiver ACKNACKs, sender prunes + retransmits the missing.
     const an = rcv.pendingAckNack(4);
@@ -685,7 +893,7 @@ test "end-to-end loss recovery in-process" {
     try testing.expect(snd.getInFlight(3) != null);
     try rcv.recvData(1, snd.getInFlight(1).?);
     try rcv.recvData(3, snd.getInFlight(3).?);
-    try rcv.drainInto(&out);
+    try rcv.drainInto(testing.allocator, &out);
     try testing.expectEqual(@as(usize, 5), out.items.len); // all recovered
 }
 
@@ -713,10 +921,10 @@ test "acknack retransmit of lost sample across wrap" {
     defer snd.deinit();
     var rcv = Receiver.init(testing.allocator);
     defer rcv.deinit();
-    var out = std.ArrayList([]u8).init(testing.allocator);
+    var out = std.ArrayList([]u8).empty;
     defer {
         for (out.items) |p| testing.allocator.free(p);
-        out.deinit();
+        out.deinit(testing.allocator);
     }
     snd.next_seq = 0xFFFE;
     rcv.expected_seq = 0xFFFE;
@@ -729,7 +937,7 @@ test "acknack retransmit of lost sample across wrap" {
     try rcv.recvData(q0, &[_]u8{10});
     try rcv.recvData(q2, &[_]u8{12});
     try rcv.recvData(q3, &[_]u8{13});
-    try rcv.drainInto(&out);
+    try rcv.drainInto(testing.allocator, &out);
     try testing.expectEqual(@as(usize, 1), out.items.len); // only 0xFFFE
     try testing.expectEqual(@as(u16, 0xFFFF), rcv.expected());
 
@@ -744,7 +952,7 @@ test "acknack retransmit of lost sample across wrap" {
     try testing.expectEqual(@as(usize, 1), snd.inFlightCount());
 
     try rcv.recvData(q1, snd.getInFlight(q1).?);
-    try rcv.drainInto(&out);
+    try rcv.drainInto(testing.allocator, &out);
     try testing.expectEqual(@as(usize, 4), out.items.len); // 0xFFFE + 0xFFFF,0x0000,0x0001
 }
 
@@ -752,7 +960,7 @@ test "acknack retransmit of lost sample across wrap" {
 // on the writer's drain thread; the main test thread reads counters + flips the
 // gate, so all shared state is mutex-guarded.
 const OverflowPeer = struct {
-    mutex: std.Thread.Mutex = .{},
+    mutex: SpinMutex = .{},
     rcv: Receiver,
     delivered: std.ArrayList(u8),
     acks: std.ArrayList(AckNack),
@@ -768,13 +976,13 @@ const OverflowPeer = struct {
         defer self.mutex.unlock();
         if (seqLt(wd.seq, self.rcv.expected())) return; // retransmit of delivered → ignore
         self.rcv.recvData(wd.seq, wd.sample) catch return;
-        self.rcv.drainInto(&self.tmp) catch return;
+        self.rcv.drainInto(self.alloc, &self.tmp) catch return;
         while (self.tmp.items.len > 0) {
             const p = self.tmp.orderedRemove(0);
-            self.delivered.append(p[0]) catch {};
+            self.delivered.append(self.alloc, p[0]) catch {};
             self.alloc.free(p);
         }
-        self.acks.append(self.rcv.pendingAckNack(wd.seq)) catch {};
+        self.acks.append(self.alloc, self.rcv.pendingAckNack(wd.seq)) catch {};
         self.write_data_seen += 1;
     }
 
@@ -794,17 +1002,17 @@ test "async writer window overflow delivers every sample (no drop, no hang)" {
 
     var peer = OverflowPeer{
         .rcv = Receiver.init(alloc),
-        .delivered = std.ArrayList(u8).init(alloc),
-        .acks = std.ArrayList(AckNack).init(alloc),
-        .tmp = std.ArrayList([]u8).init(alloc),
+        .delivered = std.ArrayList(u8).empty,
+        .acks = std.ArrayList(AckNack).empty,
+        .tmp = std.ArrayList([]u8).empty,
         .alloc = alloc,
     };
     defer {
         peer.rcv.deinit();
-        peer.delivered.deinit();
-        peer.acks.deinit();
+        peer.delivered.deinit(alloc);
+        peer.acks.deinit(alloc);
         for (peer.tmp.items) |p| alloc.free(p);
-        peer.tmp.deinit();
+        peer.tmp.deinit(alloc);
     }
 
     const w = try alloc.create(AsyncWriter);
@@ -823,9 +1031,9 @@ test "async writer window overflow delivers every sample (no drop, no hang)" {
         const seen = peer.write_data_seen;
         peer.mutex.unlock();
         if (seen >= SENDER_WINDOW) break;
-        std.time.sleep(std.time.ns_per_ms);
+        sleepNs(std.time.ns_per_ms);
     }
-    std.time.sleep(50 * std.time.ns_per_ms);
+    sleepNs(50 * std.time.ns_per_ms);
 
     peer.mutex.lock();
     peer.gate = true;
@@ -838,7 +1046,7 @@ test "async writer window overflow delivers every sample (no drop, no hang)" {
         const d = peer.delivered.items.len;
         peer.mutex.unlock();
         if (d >= n) break;
-        std.time.sleep(std.time.ns_per_ms);
+        sleepNs(std.time.ns_per_ms);
     }
 
     w.close();

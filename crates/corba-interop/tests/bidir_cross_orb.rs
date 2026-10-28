@@ -20,22 +20,22 @@
 use std::net::TcpStream;
 use std::sync::{Arc, Mutex};
 
-use zerodds_cdr::{BufferReader, BufferWriter, Endianness};
 use zerodds_corba_iiop::{Connection, IiopProfileBody};
 use zerodds_corba_interop::runtime::{BiDirEndpoint, object_reference_from_ior};
 use zerodds_corba_ior::{Ior, TaggedProfile};
 use zerodds_corba_rust::SkeletonResult;
+use zerodds_wire::{Endianness, Reader, Writer};
 
 const CLIENT_CB_TYPE: &str = "IDL:org/jacorb/demo/bidir/ClientCallback:1.0";
 
 fn cdr_string(s: &str) -> Vec<u8> {
-    let mut w = BufferWriter::new(Endianness::Big);
-    w.write_string(s).unwrap();
-    w.into_bytes()
+    let mut w = Writer::new(Endianness::Big);
+    w.write_string(s);
+    w.finish()
 }
 
 #[test]
-#[ignore = "needs live JacORB bidir Server via BIDIR_SERVER_IOR env (codepit)"]
+#[ignore = "needs live JacORB bidir Server via BIDIR_SERVER_IOR env (Linux test host)"]
 fn jacorb_server_callbacks_zerodds_over_shared_connection() {
     let ior = std::env::var("BIDIR_SERVER_IOR").expect("BIDIR_SERVER_IOR env");
     let oref = object_reference_from_ior(ior.trim()).expect("parse IOR");
@@ -63,7 +63,7 @@ fn jacorb_server_callbacks_zerodds_over_shared_connection() {
     let sink = Arc::clone(&got);
     ep.register(b"ZeroCB", move |op, body, e| {
         if op == "hello" {
-            let mut r = BufferReader::new(body, e);
+            let mut r = Reader::new(body, e);
             *sink.lock().unwrap() = Some(r.read_string().unwrap());
             SkeletonResult::Reply(Vec::new()) // void
         } else {
@@ -82,9 +82,9 @@ fn jacorb_server_callbacks_zerodds_over_shared_connection() {
         type_id: CLIENT_CB_TYPE.into(),
         profiles: vec![TaggedProfile::iiop(&cb_profile, Endianness::Big).unwrap()],
     };
-    let mut iw = BufferWriter::new(Endianness::Big);
+    let mut iw = Writer::new(Endianness::Big);
     cb_ior.encode(&mut iw).unwrap();
-    let cb_ior_bytes = iw.into_bytes();
+    let cb_ior_bytes = iw.finish();
 
     let server_key = &prof.object_key;
 

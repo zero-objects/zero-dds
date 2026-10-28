@@ -5,6 +5,10 @@ SemVer per [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `Transport::max_message_size` is the datagram limit of the socket (DDSI-RTPS 2.5 §8.4.14.1).
+
 ## [1.0.0-rc.1] — 2026-05-06
 
 ### RC1 audit

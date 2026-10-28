@@ -5,6 +5,8 @@
  * See zerodds_wire.h. No malloc, no C99, byte-by-byte, host-endian-safe.
  */
 
+#include <limits.h>
+
 #include "zerodds_wire.h"
 
 /* ------------------------------------------------------------------ */
@@ -130,9 +132,42 @@ int zdw_put_u8(zdw_writer *w, unsigned char v)
     return zdw_put_bytes(w, &v, 1);
 }
 
+/* A value past the wire width it names is refused, never truncated. The
+ * argument types are C's and wider than the wire on most hosts (`unsigned
+ * int` is 32 bits where u16 is 16; `unsigned long` is 64 where u32 is 32),
+ * so the compiler cannot enforce the width and this check is the only one
+ * there is. Sticky like every other writer error. */
+static int w_range(zdw_writer *w, int in_range)
+{
+    if (w->error != ZDW_OK) {
+        return w->error;
+    }
+    if (!in_range) {
+        w->error = ZDW_E_RANGE;
+        return ZDW_E_RANGE;
+    }
+    return ZDW_OK;
+}
+
+/* Whether an `unsigned long` fits 32 wire bits. Guarded on ULONG_MAX rather
+ * than compared unconditionally: on an ILP32 host the comparison is always
+ * true and -Wtype-limits (in -Wextra) would say so at every call. */
+static int ul_fits_u32(unsigned long v)
+{
+#if ULONG_MAX > 0xFFFFFFFFUL
+    return v <= 0xffffffffuL;
+#else
+    (void)v;
+    return 1;
+#endif
+}
+
 int zdw_put_u16(zdw_writer *w, unsigned int v)
 {
     unsigned char le[2];
+    if (w_range(w, v <= 0xffffu) != ZDW_OK) {
+        return w->error;
+    }
     le[0] = (unsigned char)(v & 0xffu);
     le[1] = (unsigned char)((v >> 8) & 0xffu);
     return w_put_uint(w, 2, le, 2);
@@ -141,6 +176,9 @@ int zdw_put_u16(zdw_writer *w, unsigned int v)
 int zdw_put_u32(zdw_writer *w, unsigned long v)
 {
     unsigned char le[4];
+    if (w_range(w, ul_fits_u32(v)) != ZDW_OK) {
+        return w->error;
+    }
     le[0] = (unsigned char)(v & 0xffu);
     le[1] = (unsigned char)((v >> 8) & 0xffu);
     le[2] = (unsigned char)((v >> 16) & 0xffu);
@@ -151,6 +189,9 @@ int zdw_put_u32(zdw_writer *w, unsigned long v)
 int zdw_put_u64(zdw_writer *w, zdw_u64_t v)
 {
     unsigned char le[8];
+    if (w_range(w, ul_fits_u32(v.hi) && ul_fits_u32(v.lo)) != ZDW_OK) {
+        return w->error;
+    }
     le[0] = (unsigned char)(v.lo & 0xffu);
     le[1] = (unsigned char)((v.lo >> 8) & 0xffu);
     le[2] = (unsigned char)((v.lo >> 16) & 0xffu);
@@ -248,10 +289,15 @@ int zdw_dheader_read(zdw_reader *r, unsigned long *len)
 size_t zdw_emheader_begin(zdw_writer *w, unsigned long member_id,
                           int must_understand)
 {
-    /* EMHEADER = (M << 31) + (LC4 << 28) + member_id (28-bit). */
-    unsigned long em = (must_understand ? 0x80000000uL : 0uL)
-                     + (4uL << 28)
-                     + (member_id & 0x0FFFFFFFuL);
+    /* EMHEADER = (M << 31) + (LC4 << 28) + member_id (28-bit). A wider id is
+     * refused, not masked: the masked value is a DIFFERENT member's id. */
+    unsigned long em;
+    if (w_range(w, member_id <= 0x0FFFFFFFuL) != ZDW_OK) {
+        return w->len;
+    }
+    em = (must_understand ? 0x80000000uL : 0uL)
+       + (4uL << 28)
+       + member_id;
     if (zdw_put_u32(w, em) != ZDW_OK) {
         return w->len;
     }

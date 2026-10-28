@@ -24,3 +24,9 @@ path = "src/lib.rs"
 default = ["std"]
 std = ["alloc"]
 alloc = []
+
+[dependencies]
+# The object cache's sequence counter and the transaction ids are 64-bit
+# atomics; thumbv7em has none. portable-atomic passes through to
+# core::sync::atomic where the target has them.
+portable-atomic = { version = "1.7", default-features = false, features = ["fallback"] }

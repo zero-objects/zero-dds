@@ -9,7 +9,7 @@
 //! the language's endpoint SDK — connects over a real UDP socket, sends a typed
 //! `Ping`, and prints the `Pong` it gets back. This crate is the **Rust peer**:
 //! it binds UDP, waits for the app's XRCE `WRITE_DATA` frame, decodes the sample
-//! with the real ZeroDDS CDR codec ([`zerodds_cdr`]), and replies a `Pong`.
+//! with the real ZeroDDS wire codec ([`zerodds_wire`]), and replies a `Pong`.
 //!
 //! The peer is **language-agnostic** — every endpoint language reuses it; only
 //! the per-language app + build/run differs (in the `tests/`). Boundary (honest):
@@ -18,17 +18,45 @@
 
 #![allow(clippy::expect_used, clippy::panic, clippy::print_stderr)]
 
+pub mod codegen;
+
 use std::collections::HashSet;
 use std::net::{SocketAddr, UdpSocket};
-use std::process::Child;
+use std::process::{Child, Command};
 use std::time::{Duration, Instant};
 
-use zerodds_cdr::{BufferReader, BufferWriter, Endianness};
-use zerodds_xrce::submessages::{AckNackPayload, HeartbeatPayload};
+use zerodds_wire::{Endianness, Reader, Writer};
+use zerodds_xrce::header::{MessageHeader, SessionId};
+use zerodds_xrce::object_id::ObjectId;
+use zerodds_xrce::object_info::BaseObjectRequest;
+use zerodds_xrce::object_kind::ObjectKind;
+use zerodds_xrce::submessages::{
+    AckNackPayload, DataPayload, HeartbeatPayload, Message, SubmessageId, WriteDataPayload,
+};
 
 // Re-export the reliable reference types so tests + language harnesses have a
 // single import surface (`zerodds_endpoint_e2e::…`).
 pub use zerodds_xrce::{ReliableConfig, ReliableStreamState, SerialNumber16, StreamId};
+
+/// An XCDR2 writer: alignment capped at four (XTypes 1.3 §7.4.2.5.4).
+///
+/// The demolished `zerodds_cdr` spelled this `BufferWriter::new(e).xcdr2()`.
+/// `Writer::new` caps at eight, so the bound is passed here rather than
+/// assumed — the same correction `endpoints/golden-gen` carries, and the
+/// reason the `Ping`/`Pong` bodies stay byte-identical across the move.
+///
+/// Public: the language tests decode the same bodies and must construct
+/// their reader and writer the same way, from one place.
+#[must_use]
+pub fn xcdr2_writer() -> Writer {
+    Writer::with_max_align(Endianness::Little, 4)
+}
+
+/// An XCDR2 reader over `bytes`, the counterpart to [`xcdr2_writer`].
+#[must_use]
+pub fn xcdr2_reader(bytes: &[u8]) -> Reader<'_> {
+    Reader::with_max_align(bytes, Endianness::Little, 4)
+}
 
 /// The shared topic types every app uses. `@final` = inline XCDR2, no DHEADER.
 pub const IDL: &str = "\
@@ -40,8 +68,12 @@ pub const PING_SEQ: u32 = 1;
 /// The exact `Ping.msg` every app sends.
 pub const PING_MSG: &str = "hello from app";
 
-// XRCE framing — byte-identical to every endpoint SDK's `writeFrame`
-// (session, stream, seq LE) + (submessage id, flags, length LE) + sample.
+// XRCE framing. Every frame here is built and parsed by `zerodds-xrce`'s own
+// codecs ([`WriteDataPayload`] / [`DataPayload`]) — never by hand. That is the
+// whole point: this peer is the reference an endpoint SDK is measured against,
+// so it must not be able to speak a dialect the crate cannot read. A
+// hand-rolled copy of the layout here is what let the endpoint ports drift to
+// `flags = 0x03` with no `BaseObjectRequest` and still pass every test.
 //
 // Direction (DDS-XRCE spec §8.3.5): the two data-carrying submessages are
 // direction-specific and MUST NOT be swapped:
@@ -51,57 +83,108 @@ pub const PING_MSG: &str = "hello from app";
 //   * DATA       (id 0x09): hub (agent) -> endpoint (client). This peer,
 //     standing in for the hub, BUILDS it ([`xrce_data_frame`]); the endpoint
 //     SDK reader parses it.
-const XRCE_SM_WRITE_DATA: u8 = 0x07;
-/// XRCE `DATA` submessage id — hub (agent) -> endpoint (client) direction.
-const XRCE_SM_DATA: u8 = 0x09;
+
+/// Raw id (12 bits) of the DataWriter/DataReader every endpoint app addresses.
+/// The endpoint profile has no CREATE handshake, so the id is a fixture both
+/// sides agree on — it still has to be on the wire, or no XRCE agent could
+/// route the sample (§7.7.8).
+pub const ENDPOINT_RAW_ID: u16 = 0x001;
+
+/// `ObjectId` of the endpoint app's DataWriter (`ENDPOINT_RAW_ID` +
+/// `OBJK_DATAWRITER`). This is the value every endpoint SDK must put in its
+/// `WRITE_DATA` `BaseObjectRequest`.
+#[must_use]
+pub fn endpoint_writer_id() -> ObjectId {
+    ObjectId::new(ENDPOINT_RAW_ID, ObjectKind::DataWriter).expect("raw id fits 12 bits")
+}
+
+/// `ObjectId` of the peer's DataReader, used in the `DATA` frames it pushes.
+#[must_use]
+pub fn endpoint_reader_id() -> ObjectId {
+    ObjectId::new(ENDPOINT_RAW_ID, ObjectKind::DataReader).expect("raw id fits 12 bits")
+}
+
+/// The `BaseObjectRequest` (§7.7.8) for `seq`: the `request_id` is the message
+/// sequence number — unique per stream, which is all §7.7.8 asks — and the
+/// `object_id` is the endpoint's DataWriter/DataReader.
+fn base_for(seq: u16, object_id: ObjectId) -> BaseObjectRequest {
+    BaseObjectRequest {
+        request_id: seq.to_be_bytes(),
+        object_id,
+    }
+}
+
+/// The XRCE message header every endpoint frame carries: no client key,
+/// best-effort built-in stream, `sequence_nr = seq`.
+fn best_effort_header(seq: u16) -> MessageHeader {
+    MessageHeader::without_client_key(
+        SessionId(0x80),
+        StreamId::BUILTIN_BEST_EFFORT,
+        SerialNumber16(seq),
+    )
+    .expect("best-effort header")
+}
 
 /// Wraps a sample in an XRCE `WRITE_DATA` frame — the endpoint->hub direction
 /// (what an endpoint app sends). Kept for the send side of the wire contract.
+///
+/// # Panics
+/// Panics if `sample` exceeds the 16-bit `submessage_length`.
 #[must_use]
 pub fn xrce_frame(seq: u16, sample: &[u8]) -> Vec<u8> {
-    frame_with_id(XRCE_SM_WRITE_DATA, seq, sample)
+    let sm = WriteDataPayload {
+        base: base_for(seq, endpoint_writer_id()),
+        serialized_data: sample.to_vec(),
+    }
+    .into_submessage()
+    .expect("WRITE_DATA submessage");
+    Message::new(best_effort_header(seq), vec![sm])
+        .expect("message")
+        .encode()
+        .expect("encode")
 }
 
 /// Wraps a sample in an XRCE `DATA` frame — the hub->endpoint direction. This is
 /// what the peer replies (it stands in for the hub/agent); a real XRCE agent
 /// pushes samples to a client with `DATA` (id 0x09), never `WRITE_DATA`.
+///
+/// # Panics
+/// Panics if `sample` exceeds the 16-bit `submessage_length`.
 #[must_use]
 pub fn xrce_data_frame(seq: u16, sample: &[u8]) -> Vec<u8> {
-    frame_with_id(XRCE_SM_DATA, seq, sample)
+    let sm = DataPayload {
+        base: base_for(seq, endpoint_reader_id()),
+        serialized_data: sample.to_vec(),
+    }
+    .into_submessage()
+    .expect("DATA submessage");
+    Message::new(best_effort_header(seq), vec![sm])
+        .expect("message")
+        .encode()
+        .expect("encode")
 }
 
-/// Shared framing for both directions (only the submessage id differs).
-fn frame_with_id(submessage_id: u8, seq: u16, sample: &[u8]) -> Vec<u8> {
-    let n = sample.len() as u16;
-    let mut out = vec![
-        0x80,
-        0x01,
-        seq as u8,
-        (seq >> 8) as u8,
-        submessage_id,
-        0x03,
-        n as u8,
-        (n >> 8) as u8,
-    ];
-    out.extend_from_slice(sample);
-    out
-}
-
-/// The sample body inside a `WRITE_DATA` frame received FROM an endpoint (the
-/// hub/peer side). Rejects — returns `None`, never panics — a frame that is
-/// shorter than the 8-byte header, does not carry `WRITE_DATA` (id 0x07; a
-/// `DATA`/0x09 frame is the wrong direction here and is refused), or whose
-/// declared body length runs past the datagram (truncated / wrong length).
+/// The `WRITE_DATA` payload of a frame received FROM an endpoint (the hub/peer
+/// side), decoded by `zerodds-xrce` itself. Rejects — returns `None`, never
+/// panics — anything the crate's own decoder rejects: a malformed message, a
+/// submessage that is not `WRITE_DATA` (a `DATA`/0x09 frame is the wrong
+/// direction here), a `DataFormat` other than `FORMAT_DATA`, or a body too
+/// short to hold the `BaseObjectRequest`.
 #[must_use]
-pub fn xrce_unframe(frame: &[u8]) -> Option<&[u8]> {
-    if frame.len() < 8 || frame[4] != XRCE_SM_WRITE_DATA {
+pub fn xrce_unframe_payload(frame: &[u8]) -> Option<WriteDataPayload> {
+    let message = Message::decode(frame).ok()?;
+    let sm = message.submessages.first()?;
+    if sm.header.submessage_id != SubmessageId::WriteData {
         return None;
     }
-    let sm_len = u16::from_le_bytes([frame[6], frame[7]]) as usize;
-    if 8 + sm_len > frame.len() {
-        return None;
-    }
-    Some(&frame[8..8 + sm_len])
+    WriteDataPayload::try_from_submessage(sm).ok()
+}
+
+/// The sample body inside a `WRITE_DATA` frame received from an endpoint, i.e.
+/// [`xrce_unframe_payload`]'s `serialized_data`.
+#[must_use]
+pub fn xrce_unframe(frame: &[u8]) -> Option<Vec<u8>> {
+    xrce_unframe_payload(frame).map(|p| p.serialized_data)
 }
 
 /// The bound Rust peer: hands the app its UDP port, runs the ping-pong.
@@ -157,11 +240,31 @@ pub fn ping_pong_with_timeout(peer: &Peer, child: Child, label: &str, timeout: D
         .set_read_timeout(Some(timeout))
         .expect("set timeout");
     let mut buf = [0u8; 4096];
-    let (n, app_addr) = peer.sock.recv_from(&mut buf).expect("recv ping frame");
+    // An app that never sent a ping usually never started: it failed to
+    // compile, or its runtime refused it. That diagnosis is on the child's
+    // stderr, and the child is still holding a piped stderr nobody has read
+    // — so reaping it here is the difference between naming the cause and
+    // reporting a timeout. `go_endpoint_sync` and `go_endpoint_async` sat as
+    // "cause unknown" for weeks behind this line, while the child had been
+    // saying `not enough arguments in call to zerodds.NewAsyncWriter` all
+    // along. `reliable_collect_from` already reaps on a non-zero exit; this
+    // is the same courtesy on the timeout path.
+    let (n, app_addr) = match peer.sock.recv_from(&mut buf) {
+        Ok(received) => received,
+        Err(error) => {
+            let out = child.wait_with_output().expect("app wait");
+            panic!(
+                "{label}: no ping frame arrived ({error}).\n                 app exit: {}\napp stdout: {}\napp stderr: {}",
+                out.status,
+                String::from_utf8_lossy(&out.stdout),
+                String::from_utf8_lossy(&out.stderr),
+            );
+        }
+    };
     let sample = xrce_unframe(&buf[..n]).unwrap_or_else(|| panic!("{label}: not an XRCE frame"));
 
     // Decode the Ping with the real ZeroDDS CDR codec.
-    let mut r = BufferReader::new(sample, Endianness::Little).xcdr2();
+    let mut r = xcdr2_reader(&sample);
     let seq = r.read_u32().expect("ping seq");
     let msg = r.read_string().expect("ping msg");
     assert_eq!(seq, PING_SEQ, "{label}: ping seq");
@@ -171,11 +274,11 @@ pub fn ping_pong_with_timeout(peer: &Peer, child: Child, label: &str, timeout: D
     // frame: the peer stands in for the hub/agent, and the hub->endpoint
     // direction is `DATA` (id 0x09), never `WRITE_DATA` (id 0x07). The endpoint
     // SDK reader must accept `DATA` for this to arrive.
-    let mut w = BufferWriter::new(Endianness::Little).xcdr2();
-    w.write_u32(seq).expect("pong seq");
-    w.write_string(&format!("pong:{msg}")).expect("pong reply");
+    let mut w = xcdr2_writer();
+    w.write_u32(seq);
+    w.write_string(&format!("pong:{msg}"));
     peer.sock
-        .send_to(&xrce_data_frame(1, &w.into_bytes()), app_addr)
+        .send_to(&xrce_data_frame(1, &w.finish()), app_addr)
         .expect("send pong frame");
 
     let out = child.wait_with_output().expect("app wait");
@@ -209,7 +312,7 @@ pub fn serve_ping_pong(peer: &Peer, timeout: Duration) -> Result<(u32, String), 
         .recv_from(&mut buf)
         .map_err(|e| format!("recv ping frame: {e}"))?;
     let sample = xrce_unframe(&buf[..n]).ok_or_else(|| "not an XRCE frame".to_string())?;
-    let mut r = BufferReader::new(sample, Endianness::Little).xcdr2();
+    let mut r = xcdr2_reader(&sample);
     let seq = r.read_u32().map_err(|e| format!("ping seq: {e}"))?;
     let msg = r.read_string().map_err(|e| format!("ping msg: {e}"))?;
     if seq != PING_SEQ {
@@ -218,12 +321,11 @@ pub fn serve_ping_pong(peer: &Peer, timeout: Duration) -> Result<(u32, String), 
     if msg != PING_MSG {
         return Err(format!("ping msg {msg:?} != {PING_MSG:?}"));
     }
-    let mut w = BufferWriter::new(Endianness::Little).xcdr2();
-    w.write_u32(seq).map_err(|e| format!("pong seq: {e}"))?;
-    w.write_string(&format!("pong:{msg}"))
-        .map_err(|e| format!("pong reply: {e}"))?;
+    let mut w = xcdr2_writer();
+    w.write_u32(seq);
+    w.write_string(&format!("pong:{msg}"));
     peer.sock
-        .send_to(&xrce_data_frame(1, &w.into_bytes()), app_addr)
+        .send_to(&xrce_data_frame(1, &w.finish()), app_addr)
         .map_err(|e| format!("send pong frame: {e}"))?;
     Ok((seq, msg))
 }
@@ -242,8 +344,13 @@ pub fn serve_ping_pong(peer: &Peer, timeout: Duration) -> Result<(u32, String), 
 // Frame layout (8-byte header + body), all little-endian:
 //   [0] session (0x80), [1] stream (reliable id, 0x80),
 //   [2..4] sequence LE, [4] submessage id, [5] flags, [6..8] body-len LE, [8..] body
-//   WRITE_DATA id=0x07 flags=0x03 body=sample; header seq = the sample's RFC-1982 seq
-//   ACKNACK   id=0x0A flags=0x01 body(5)= first_unacked i16 LE, nack[0], nack[1], stream
+//   WRITE_DATA id=0x07 flags=0x01 (E-flag LE + FORMAT_DATA) body = BaseObjectRequest
+//              (§7.7.8: request_id[2] + object_id[2]) followed by the sample;
+//              header seq = the sample's RFC-1982 seq
+//   ACKNACK   id=0x0A flags=0x01 body(9)= DHEADER u32 LE (5; ACKNACK_Payload has no
+//              @extensibility, so it is APPENDABLE, DDS-XTypes 1.3 §7.3.1.2.1.8),
+//              first_unacked i16 LE, nack[0], nack[1], stream (a body of 5 without
+//              the DHEADER is read as well)
 //   HEARTBEAT id=0x0B flags=0x01 body(5)= first i16 LE, last i16 LE, stream
 
 /// XRCE session id (no client key).
@@ -252,38 +359,49 @@ const XRCE_SESSION_NOKEY: u8 = 0x80;
 pub const RELIABLE_STREAM_ID: u8 = 0x80;
 const XRCE_SM_ACKNACK: u8 = 0x0A;
 const XRCE_SM_HEARTBEAT: u8 = 0x0B;
-/// WRITE_DATA flags (E-flag little-endian + data-present), matches the C SDK.
-const XRCE_WRITE_FLAGS: u8 = 0x03;
 /// Control-message flags: E-flag little-endian only, matches `zdw_xrce_acknack_frame`.
 const XRCE_FLAG_E_LE: u8 = 0x01;
 
-/// Builds a reliable `WRITE_DATA` frame. The 2-byte stream-header sequence
-/// carries the RFC-1982 sample sequence number.
+/// Builds a reliable `WRITE_DATA` frame with `zerodds-xrce`'s own codec. The
+/// 2-byte stream-header sequence carries the RFC-1982 sample sequence number,
+/// and the submessage body opens with the `BaseObjectRequest` (§7.7.8).
+///
+/// # Panics
+/// Panics if `sample` exceeds the 16-bit `submessage_length`.
 #[must_use]
 pub fn reliable_write_frame(seq: u16, sample: &[u8]) -> Vec<u8> {
-    let s = seq.to_le_bytes();
-    let n = (sample.len() as u16).to_le_bytes();
-    let mut out = vec![
-        XRCE_SESSION_NOKEY,
-        RELIABLE_STREAM_ID,
-        s[0],
-        s[1],
-        XRCE_SM_WRITE_DATA,
-        XRCE_WRITE_FLAGS,
-        n[0],
-        n[1],
-    ];
-    out.extend_from_slice(sample);
-    out
+    let header = MessageHeader::without_client_key(
+        SessionId(XRCE_SESSION_NOKEY),
+        StreamId(RELIABLE_STREAM_ID),
+        SerialNumber16(seq),
+    )
+    .expect("reliable header");
+    let sm = WriteDataPayload {
+        base: base_for(seq, endpoint_writer_id()),
+        serialized_data: sample.to_vec(),
+    }
+    .into_submessage()
+    .expect("WRITE_DATA submessage");
+    Message::new(header, vec![sm])
+        .expect("message")
+        .encode()
+        .expect("encode")
 }
 
-/// Parses a reliable `WRITE_DATA` frame into `(seq, sample)`.
+/// Parses a reliable `WRITE_DATA` frame into `(seq, sample)` with the crate's
+/// own decoder. `None` for anything it rejects — a wrong submessage, a
+/// `DataFormat` other than `FORMAT_DATA`, or a body too short for the
+/// `BaseObjectRequest`.
 #[must_use]
-pub fn reliable_unframe(frame: &[u8]) -> Option<(u16, &[u8])> {
-    if frame.len() < 8 || frame[4] != XRCE_SM_WRITE_DATA {
+pub fn reliable_unframe(frame: &[u8]) -> Option<(u16, Vec<u8>)> {
+    let message = Message::decode(frame).ok()?;
+    let sm = message.submessages.first()?;
+    if sm.header.submessage_id != SubmessageId::WriteData {
         return None;
     }
-    Some((u16::from_le_bytes([frame[2], frame[3]]), &frame[8..]))
+    let payload = WriteDataPayload::try_from_submessage(sm).ok()?;
+    let seq = message.header.sequence_nr.0;
+    Some((seq, payload.serialized_data))
 }
 
 /// Builds an `ACKNACK` frame (byte-identical to `zdw_xrce_acknack_frame`).
@@ -297,7 +415,11 @@ pub fn acknack_frame(ack: AckNackPayload) -> Vec<u8> {
         0,
         XRCE_SM_ACKNACK,
         XRCE_FLAG_E_LE,
+        9,
+        0,
         5,
+        0,
+        0,
         0,
         f[0],
         f[1],
@@ -313,10 +435,19 @@ pub fn parse_acknack(frame: &[u8]) -> Option<AckNackPayload> {
     if frame.len() < 13 || frame[4] != XRCE_SM_ACKNACK {
         return None;
     }
+    // 9 octets with the DHEADER (APPENDABLE), 5 without.
+    let at = if u16::from_le_bytes([frame[6], frame[7]]) >= 9 {
+        if frame.len() < 17 {
+            return None;
+        }
+        12
+    } else {
+        8
+    };
     Some(AckNackPayload {
-        first_unacked_seq_num: i16::from_le_bytes([frame[8], frame[9]]),
-        nack_bitmap: [frame[10], frame[11]],
-        stream_id: frame[12],
+        first_unacked_seq_num: i16::from_le_bytes([frame[at], frame[at + 1]]),
+        nack_bitmap: [frame[at + 2], frame[at + 3]],
+        stream_id: frame[at + 4],
     })
 }
 
@@ -494,18 +625,12 @@ pub fn reliable_receive(
 // Conformant DDS-XRCE data submessages (§8.3.5.8/.9/.10)
 // =====================================================================
 //
-// The frames above (`xrce_frame` / `xrce_data_frame`) are the *ZeroDDS Endpoint
-// Profile*: the submessage body is the bare sample, with no object identity.
-// A conformant DDS-XRCE WRITE_DATA/DATA instead prefixes a `BaseObjectRequest`
-// (`request_id` + `object_id`, §7.7.8), so a foreign agent can map the frame to
-// the target DataWriter/DataReader before reading the payload. The helpers
-// below build and parse the conformant form with the real `crates/xrce` codec;
-// the `conformant_*_roundtrip_client_agent` test drives a full client<->agent
-// exchange over two UDP sockets with genuine XRCE frames.
-
-use zerodds_xrce::header::{MessageHeader, SessionId};
-use zerodds_xrce::submessages::{DataPayload, Message, SubmessageId, WriteDataPayload};
-use zerodds_xrce::{BaseObjectRequest, ObjectId};
+// `xrce_frame` / `xrce_data_frame` above fix the identity of both ends to the
+// endpoint fixture (`endpoint_writer_id` / `endpoint_reader_id`). The helpers
+// below take an arbitrary `request_id` + `object_id`, which is what a real
+// client<->agent session needs once CREATE has assigned the ids; the
+// `conformant_*_roundtrip_client_agent` test drives a full exchange over two
+// UDP sockets with them.
 
 /// Builds a conformant DDS-XRCE `WRITE_DATA` message (client -> agent): a
 /// best-effort `MessageHeader` plus one `WRITE_DATA` submessage whose body is
@@ -596,6 +721,124 @@ pub fn parse_conformant_data(frame: &[u8]) -> Option<(BaseObjectRequest, Vec<u8>
     Some((d.base, d.serialized_data))
 }
 
+/// Whether `zig` on this host can actually produce a runnable binary.
+///
+/// `zig version` succeeding proves only that the binary is on `PATH`. On a
+/// host whose Zig predates the installed macOS SDK, every link fails with
+/// `undefined symbol: __availability_version_check`, `_sigaction`,
+/// `_nanosleep` and the rest of libc — a trivial `std.debug.print` program
+/// fails exactly the same way, so it is the toolchain that cannot link
+/// here, not the code under test. Reporting that as a failing ZeroDDS test
+/// says something untrue about ZeroDDS.
+///
+/// So the gate is a capability probe, not a presence check: compile and run
+/// a program that uses nothing but the standard library. It runs once per
+/// test binary and is cached.
+///
+/// The probe deliberately stays narrow. It skips only when the *toolchain*
+/// cannot link a hello-world; anything that compiles here and then fails on
+/// the real sources is a genuine failure and stays red.
+pub fn zig_can_link() -> bool {
+    use std::sync::OnceLock;
+    static PROBE: OnceLock<bool> = OnceLock::new();
+    *PROBE.get_or_init(|| {
+        if Command::new("zig").arg("version").output().is_err() {
+            return false;
+        }
+        let dir = std::env::temp_dir().join(format!("zig_probe_{}", std::process::id()));
+        if std::fs::create_dir_all(&dir).is_err() {
+            return false;
+        }
+        let src = dir.join("probe.zig");
+        let program = "const std = @import(\"std\");\n\
+                       pub fn main() !void {\n\
+                       \x20   std.debug.print(\"probe ok\\n\", .{});\n\
+                       }\n";
+        if std::fs::write(&src, program).is_err() {
+            return false;
+        }
+        let ok = Command::new("zig")
+            .arg("run")
+            .arg(&src)
+            .current_dir(&dir)
+            .output()
+            .is_ok_and(|o| o.status.success());
+        let _ = std::fs::remove_dir_all(&dir);
+        ok
+    })
+}
+
+/// Loud skip helper for the Zig cases: prints why and returns `false` when
+/// the toolchain cannot build here. Never silently passes.
+#[must_use]
+pub fn zig_ready_or_skip(case: &str) -> bool {
+    if Command::new("zig").arg("version").output().is_err() {
+        eprintln!("SKIP {case}: `zig` not on PATH");
+        return false;
+    }
+    if !zig_can_link() {
+        eprintln!(
+            "SKIP {case}: `zig` is on PATH but cannot link a hello-world on this host \
+             (toolchain/SDK mismatch, not a ZeroDDS defect) — run this case on a host \
+             whose Zig matches its platform SDK"
+        );
+        return false;
+    }
+    true
+}
+
+/// Builds one .NET assembly from source files copied into `dir`, and
+/// returns the path of the produced dll.
+///
+/// The C# and F# reliable harnesses had this function twice, character
+/// for character apart from three values: which directory the sources
+/// come from, what the project file is called, and what is in it. The
+/// duplication-gate counted it as one block over its ratchet, which is
+/// what the ratchet is for — two copies drift, and the first thing that
+/// drifts in a build helper is the diagnostic on failure.
+///
+/// `project` is `(file name, contents)`. The caller writes it because
+/// `.csproj` and `.fsproj` differ in more than a name: an `.fsproj`
+/// lists its `Compile` items in **order**, since F# resolves top to
+/// bottom, and a `.csproj` does not.
+///
+/// # Panics
+/// On a failed copy, write, spawn or build — with the build log, because
+/// a test that says only "build failed" costs a second run to learn
+/// anything.
+pub fn build_dotnet_assembly(
+    dir: &std::path::Path,
+    dotnet: &str,
+    src: &std::path::Path,
+    files: &[&str],
+    asm: &str,
+    project: (&str, String),
+    envs: impl FnOnce(&mut std::process::Command),
+) -> std::path::PathBuf {
+    std::fs::create_dir_all(dir).expect("mkdir");
+    for f in files {
+        std::fs::copy(src.join(f), dir.join(f)).unwrap_or_else(|e| panic!("copy {f}: {e}"));
+    }
+    let (project_file, contents) = project;
+    std::fs::write(dir.join(project_file), contents)
+        .unwrap_or_else(|e| panic!("write {project_file}: {e}"));
+
+    let out = dir.join("out");
+    let mut c = std::process::Command::new(dotnet);
+    c.args(["build", "-c", "Release", "--nologo", "-v", "quiet", "-o"])
+        .arg(&out)
+        .current_dir(dir);
+    envs(&mut c);
+    let build = c.output().expect("dotnet build spawn");
+    assert!(
+        build.status.success(),
+        "dotnet build FAILED ({files:?}):\n--- stdout ---\n{}\n--- stderr ---\n{}",
+        String::from_utf8_lossy(&build.stdout),
+        String::from_utf8_lossy(&build.stderr),
+    );
+    out.join(format!("{asm}.dll"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -621,7 +864,7 @@ mod tests {
     fn unframe_roundtrips_write_data() {
         let sample = [0x01, 0x02, 0x03, 0x04];
         let f = xrce_frame(7, &sample);
-        assert_eq!(xrce_unframe(&f), Some(&sample[..]));
+        assert_eq!(xrce_unframe(&f), Some(sample.to_vec()));
     }
 
     // ---- negative frame vectors (hub-side reader rejects, never panics) ----
@@ -660,12 +903,36 @@ mod tests {
     }
 
     #[test]
-    fn unframe_ignores_bytes_past_declared_length() {
-        // Declared body is 2 bytes; a trailing appended byte is not part of the
-        // sample and must not leak into the returned body.
+    fn unframe_ignores_alignment_padding_past_the_body() {
+        // §8.3.3 aligns submessage offsets to four, so up to three bytes after
+        // a body are padding. They are consumed as padding, never appended to
+        // the sample. Four or more would start a second submessage header and
+        // be parsed as one.
         let mut f = xrce_frame(1, &[0xAA, 0xBB]);
-        f.push(0xCC); // extra trailing byte (e.g. a second submessage)
-        assert_eq!(xrce_unframe(&f), Some(&[0xAA, 0xBB][..]));
+        f.push(0xCC); // one padding byte (body ends at offset 14 of 16)
+        assert_eq!(xrce_unframe(&f), Some(vec![0xAA, 0xBB]));
+    }
+
+    #[test]
+    fn write_data_frame_carries_the_writer_object_id() {
+        // The whole point of the conformant body: an agent can route the frame.
+        let payload = xrce_unframe_payload(&xrce_frame(9, &[0xAA])).expect("parse");
+        assert_eq!(payload.base.object_id, endpoint_writer_id());
+        assert_eq!(payload.base.request_id, 9u16.to_be_bytes());
+    }
+
+    /// The pre-conformance endpoint frame — `flags = 0x03` (FORMAT_SAMPLE) and
+    /// a body that is the bare sample — must be REJECTED here. This is the
+    /// counter-proof for the gate: if a port regresses to that dialect, the
+    /// peer stops accepting it instead of quietly decoding it.
+    #[test]
+    fn unframe_rejects_the_pre_conformance_endpoint_frame() {
+        let legacy = vec![
+            0x80, 0x01, 0x01, 0x00, // session, stream, seq LE
+            0x07, 0x03, 0x02, 0x00, // WRITE_DATA, FORMAT_SAMPLE + E, len 2
+            0xAA, 0xBB, // the bare sample, no BaseObjectRequest
+        ];
+        assert_eq!(xrce_unframe(&legacy), None);
     }
 
     // ---- conformant DDS-XRCE (BaseObjectRequest before the sample) ----
@@ -678,9 +945,9 @@ mod tests {
         assert_eq!(base.request_id, [0x00, 0x2A]);
         assert_eq!(base.object_id, writer);
         assert_eq!(sample, vec![0xDE, 0xAD]);
-        // The legacy profile parser must NOT accept the conformant frame: its
-        // body is longer and starts with the BaseObjectRequest, not the sample.
-        assert_ne!(xrce_unframe(&frame), Some(&[0xDE, 0xAD][..]));
+        // The peer's own reader and this helper now describe the same wire
+        // form, so it reads the identical sample out of the identical frame.
+        assert_eq!(xrce_unframe(&frame), Some(vec![0xDE, 0xAD]));
     }
 
     /// Full client<->agent exchange with real DDS-XRCE frames over two UDP
@@ -705,10 +972,10 @@ mod tests {
         let request_id = [0x00, 0x2A];
 
         // client -> agent: WRITE_DATA(Ping)
-        let mut w = BufferWriter::new(Endianness::Little).xcdr2();
-        w.write_u32(PING_SEQ).expect("ping seq");
-        w.write_string(PING_MSG).expect("ping msg");
-        let ping = w.into_bytes();
+        let mut w = xcdr2_writer();
+        w.write_u32(PING_SEQ);
+        w.write_string(PING_MSG);
+        let ping = w.finish();
         client
             .send_to(
                 &conformant_write_data_frame(request_id, writer, &ping),
@@ -723,16 +990,15 @@ mod tests {
             parse_conformant_write_data(&buf[..n]).expect("agent parse write_data");
         assert_eq!(base.object_id, writer, "agent maps frame to the DataWriter");
         assert_eq!(base.request_id, request_id);
-        let mut r = BufferReader::new(&sample, Endianness::Little).xcdr2();
+        let mut r = xcdr2_reader(&sample);
         assert_eq!(r.read_u32().expect("seq"), PING_SEQ);
         assert_eq!(r.read_string().expect("msg"), PING_MSG);
 
         // agent -> client: DATA(Pong), echoing request_id, reader object id
-        let mut w2 = BufferWriter::new(Endianness::Little).xcdr2();
-        w2.write_u32(PING_SEQ).expect("pong seq");
-        w2.write_string(&format!("pong:{PING_MSG}"))
-            .expect("pong reply");
-        let pong = w2.into_bytes();
+        let mut w2 = xcdr2_writer();
+        w2.write_u32(PING_SEQ);
+        w2.write_string(&format!("pong:{PING_MSG}"));
+        let pong = w2.finish();
         agent
             .send_to(&conformant_data_frame(base.request_id, reader, &pong), from)
             .expect("send data");
@@ -742,7 +1008,7 @@ mod tests {
         let (rbase, rsample) = parse_conformant_data(&buf[..n2]).expect("client parse data");
         assert_eq!(rbase.request_id, request_id, "DATA echoes the request_id");
         assert_eq!(rbase.object_id, reader, "DATA carries the DataReader id");
-        let mut r2 = BufferReader::new(&rsample, Endianness::Little).xcdr2();
+        let mut r2 = xcdr2_reader(&rsample);
         assert_eq!(r2.read_u32().expect("pong seq"), PING_SEQ);
         assert_eq!(
             r2.read_string().expect("pong reply"),

@@ -2,6 +2,34 @@
 
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- `parse_topic_expression` and `TopicExpression`, `Select`, `SubjectField`:
+  the `SELECT … FROM … NATURAL JOIN … WHERE …` of DDS 1.4 Annex B.2 (the
+  three spellings of the join, parenthesized join items, `AS` and the
+  juxtaposed alias, quoted topic names, an optional closing `;`). Anything
+  else is a `ParseError`.
+- `parse_query_expression` and `QueryExpression`: a condition and `ORDER BY`
+  with FIELDNAMEs (Annex B.2).
+- Integers take a plus sign and the form `0x1F` (Annex B.2 INTEGERVALUE); a
+  malformed hexadecimal is an error.
+- Subscripts on a field reference (DDS-XTypes 1.3 §7.6.7.1): `a[0]` for an
+  array or sequence element, `a['key']` for a map value or a bitmask flag.
+  `RowAccess::get` receives the reference as written; `split_path` and
+  `PathStep` take it apart.
+- The `null` literal and `Value::Null` (§7.6.7.2, §7.6.7.3): an optional
+  member without a value equals `null`, a member with a value does not, and
+  no ordering comparison with `null` is true.
+- A bitmask flag compares with `TRUE`, `FALSE`, `1` and `0` (§7.6.7.1).
+
+### Fixed
+
+- A string literal is read by characters: a character outside ASCII was
+  taken byte by byte, so `'ü'` was two characters and matched no string. A
+  new-line in a string is refused (Annex B.2 STRING).
+
 ## [1.0.0-rc.1] — 2026-05-06
 
 Initial release materialization of the `zerodds-sql-filter` crate.

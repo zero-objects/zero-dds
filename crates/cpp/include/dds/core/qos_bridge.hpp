@@ -1,217 +1,261 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 //
-// dds/core/qos_bridge.hpp — Konvertierung dds::core::*Qos → C-FFI
-// ZeroDds*Qos. Internal, for Topic<T>/Publisher/DataWriter<T>/etc.
-// Konstruktoren.
+// dds/core/qos_bridge.hpp — conversion of the QoS classes (DDS-PSM-Cxx 1.0
+// §7.6) to the C API's ZeroDds*Qos structs and back. Internal, for the
+// entity constructors and the `qos()` operations.
 
 #ifndef ZERODDS_DDS_CORE_QOS_BRIDGE_HPP
 #define ZERODDS_DDS_CORE_QOS_BRIDGE_HPP
 
+#include <stdint.h>
+
+#include "zerodds/psm/check_status.hpp"
+#include <string>
 #include <vector>
 
-#include "dds/core/qos.hpp"
+#include "dds/core/Exception.hpp"
+#include "dds/core/detail/policy_bridge.hpp"
+#include "dds/domain/qos/DomainParticipantQos.hpp"
+#include "dds/pub/qos/DataWriterQos.hpp"
+#include "dds/pub/qos/PublisherQos.hpp"
+#include "dds/sub/qos/DataReaderQos.hpp"
+#include "dds/sub/qos/SubscriberQos.hpp"
+#include "dds/topic/qos/TopicQos.hpp"
 #include "zerodds.h"
 
 namespace dds {
 namespace core {
 namespace detail {
 
-// ---------------------------------------------------------------------------
-// PartitionPtrs — keeps the `const char*` array referenced by
-// ZeroDdsPartitionQosPolicy{names,names_len} alive for the duration of the
-// create_* call. The C-FFI partition policy is caller-owned (Spec
-// §2.2.3.4 PARTITION): the strings live in the source QoS's
-// std::vector<std::string>, which outlives the by-value native struct, so we
-// only need to materialise a stable array of pointers into them.
-// ---------------------------------------------------------------------------
-struct PartitionPtrs {
-    std::vector<const char*> ptrs;
+// ---- To the C API ------------------------------------------------------
 
-    // Fills `pol.names/names_len` to point at this holder's pointer array.
-    // `src` must outlive both this holder and the create_* call.
-    void bind(zerodds_ZeroDdsPartitionQosPolicy& pol,
-              const std::vector<std::string>& src) {
-        ptrs.clear();
-        ptrs.reserve(src.size());
-        for (const auto& s : src) {
-            ptrs.push_back(s.c_str());
-        }
-        pol.names = ptrs.empty() ? nullptr : ptrs.data();
-        pol.names_len = ptrs.size();
+inline zerodds_ZeroDdsTopicQos to_native(const ::dds::topic::qos::TopicQos& q) {
+    zerodds_ZeroDdsTopicQos out = zerodds_ZeroDdsTopicQos();
+    fill(out.durability, q.policy<p::Durability>());
+    fill(out.durability_service, q.policy<p::DurabilityService>());
+    fill(out.deadline, q.policy<p::Deadline>());
+    fill(out.latency_budget, q.policy<p::LatencyBudget>());
+    fill(out.liveliness, q.policy<p::Liveliness>());
+    fill(out.reliability, q.policy<p::Reliability>());
+    fill(out.destination_order, q.policy<p::DestinationOrder>());
+    fill(out.history, q.policy<p::History>());
+    fill(out.resource_limits, q.policy<p::ResourceLimits>());
+    fill(out.transport_priority, q.policy<p::TransportPriority>());
+    fill(out.lifespan, q.policy<p::Lifespan>());
+    fill(out.ownership, q.policy<p::Ownership>());
+    fill(out.topic_data, q.policy<p::TopicData>());
+    fill(out.data_representation, q.policy<p::DataRepresentation>());
+    return out;
+}
+
+/// `q` and `holder` must outlive the create_* call the native struct is
+/// passed to: the PARTITION names are referenced, not copied.
+inline zerodds_ZeroDdsPublisherQos to_native(const ::dds::pub::qos::PublisherQos& q,
+                                             PartitionPtrs& holder) {
+    zerodds_ZeroDdsPublisherQos out = zerodds_ZeroDdsPublisherQos();
+    fill(out.presentation, q.policy<p::Presentation>());
+    fill(out.entity_factory, q.policy<p::EntityFactory>());
+    fill(out.group_data, q.policy<p::GroupData>());
+    holder.bind(out.partition, q.policy<p::Partition>().name());
+    return out;
+}
+
+inline zerodds_ZeroDdsSubscriberQos to_native(const ::dds::sub::qos::SubscriberQos& q,
+                                              PartitionPtrs& holder) {
+    zerodds_ZeroDdsSubscriberQos out = zerodds_ZeroDdsSubscriberQos();
+    fill(out.presentation, q.policy<p::Presentation>());
+    fill(out.entity_factory, q.policy<p::EntityFactory>());
+    fill(out.group_data, q.policy<p::GroupData>());
+    holder.bind(out.partition, q.policy<p::Partition>().name());
+    return out;
+}
+
+/// PARTITION, PRESENTATION and GROUP_DATA are the Publisher's and
+/// TOPIC_DATA the Topic's (DDS 1.4 §2.2.3); the writer's own members of the
+/// C struct stay empty, which makes the writer take the Publisher's and the
+/// Topic's.
+inline zerodds_ZeroDdsDataWriterQos to_native(const ::dds::pub::qos::DataWriterQos& q) {
+    zerodds_ZeroDdsDataWriterQos out = zerodds_ZeroDdsDataWriterQos();
+    fill(out.reliability, q.policy<p::Reliability>());
+    fill(out.durability, q.policy<p::Durability>());
+    fill(out.durability_service, q.policy<p::DurabilityService>());
+    fill(out.deadline, q.policy<p::Deadline>());
+    fill(out.latency_budget, q.policy<p::LatencyBudget>());
+    fill(out.liveliness, q.policy<p::Liveliness>());
+    fill(out.destination_order, q.policy<p::DestinationOrder>());
+    fill(out.lifespan, q.policy<p::Lifespan>());
+    fill(out.ownership, q.policy<p::Ownership>());
+    fill(out.ownership_strength, q.policy<p::OwnershipStrength>());
+    fill(out.history, q.policy<p::History>());
+    fill(out.resource_limits, q.policy<p::ResourceLimits>());
+    fill(out.transport_priority, q.policy<p::TransportPriority>());
+    fill(out.writer_data_lifecycle, q.policy<p::WriterDataLifecycle>());
+    fill(out.user_data, q.policy<p::UserData>());
+    fill(out.data_representation, q.policy<p::DataRepresentation>());
+    return out;
+}
+
+inline zerodds_ZeroDdsDataReaderQos to_native(const ::dds::sub::qos::DataReaderQos& q) {
+    zerodds_ZeroDdsDataReaderQos out = zerodds_ZeroDdsDataReaderQos();
+    fill(out.reliability, q.policy<p::Reliability>());
+    fill(out.durability, q.policy<p::Durability>());
+    fill(out.deadline, q.policy<p::Deadline>());
+    fill(out.latency_budget, q.policy<p::LatencyBudget>());
+    fill(out.liveliness, q.policy<p::Liveliness>());
+    fill(out.destination_order, q.policy<p::DestinationOrder>());
+    fill(out.ownership, q.policy<p::Ownership>());
+    fill(out.history, q.policy<p::History>());
+    fill(out.resource_limits, q.policy<p::ResourceLimits>());
+    fill(out.time_based_filter, q.policy<p::TimeBasedFilter>());
+    fill(out.reader_data_lifecycle, q.policy<p::ReaderDataLifecycle>());
+    fill(out.user_data, q.policy<p::UserData>());
+    fill(out.data_representation, q.policy<p::DataRepresentation>());
+    fill(out.type_consistency, q.policy<p::TypeConsistencyEnforcement>());
+    return out;
+}
+
+inline zerodds_ZeroDdsDomainParticipantQos to_native(
+    const ::dds::domain::qos::DomainParticipantQos& q) {
+    zerodds_ZeroDdsDomainParticipantQos out = zerodds_ZeroDdsDomainParticipantQos();
+    fill(out.entity_factory, q.policy<p::EntityFactory>());
+    fill(out.user_data, q.policy<p::UserData>());
+    return out;
+}
+
+// ---- From the C API ----------------------------------------------------
+
+/// Calls a C API QoS getter and converts the result. The octet sequences of
+/// a QoS (USER_DATA, TOPIC_DATA, GROUP_DATA) are copied into buffers the
+/// caller provides; a getter that finds a buffer too small answers
+/// OUT_OF_RESOURCES with the length it needs, and is called again with
+/// buffers of that length. `octets` names the members of `Native` that are
+/// such buffers.
+/// The members of `Native` that are octet-buffer policies, in the order they are listed:
+/// `OctetMembers<N>()(&N::user_data)(&N::topic_data)`.
+template <typename Native>
+class OctetMembers {
+public:
+    typedef zerodds_ZeroDdsUserDataQosPolicy Native::*Member;
+
+    OctetMembers& operator()(Member member) {
+        members_.push_back(member);
+        return *this;
     }
+    std::size_t size() const { return members_.size(); }
+    Member operator[](std::size_t i) const { return members_[i]; }
+
+private:
+    std::vector<Member> members_;
 };
 
-inline zerodds_ZeroDdsDuration to_native(const Duration& d) {
-    zerodds_ZeroDdsDuration out;
-    out.sec = d.sec();
-    out.nanosec = d.nanosec();
-    return out;
+/// The argument of `fetch_qos` for a C API getter `int fn(Handle, Native*)` called with `handle`.
+template <typename Native, typename Handle>
+class QosGetter1 {
+public:
+    typedef int (*Fn)(Handle, Native*);
+    QosGetter1(Fn fn, Handle handle) : fn_(fn), handle_(handle) {}
+    int operator()(Native* n) const { return fn_(handle_, n); }
+
+private:
+    Fn fn_;
+    Handle handle_;
+};
+
+template <typename T>
+struct QosIdentity {
+    typedef T type;
+};
+
+template <typename Native, typename Handle>
+inline QosGetter1<Native, Handle> make_qos_getter(int (*fn)(Handle, Native*),
+                                                  typename QosIdentity<Handle>::type handle) {
+    return QosGetter1<Native, Handle>(fn, handle);
 }
 
-inline zerodds_ZeroDdsTopicQos to_native(const TopicQos& q) {
-    zerodds_ZeroDdsTopicQos out{};
-    out.durability.kind = static_cast<uint32_t>(q.durability.kind());
-    out.durability_service.service_cleanup_delay = to_native(q.durability_service.service_cleanup_delay());
-    out.durability_service.history_kind = static_cast<uint32_t>(q.durability_service.history_kind());
-    out.durability_service.history_depth = q.durability_service.history_depth();
-    out.durability_service.max_samples = q.durability_service.max_samples();
-    out.durability_service.max_instances = q.durability_service.max_instances();
-    out.durability_service.max_samples_per_instance = q.durability_service.max_samples_per_instance();
-    out.deadline.period = to_native(q.deadline.period());
-    out.latency_budget.duration = to_native(q.latency_budget.duration());
-    out.liveliness.kind = static_cast<uint32_t>(q.liveliness.kind());
-    out.liveliness.lease_duration = to_native(q.liveliness.lease_duration());
-    out.reliability.kind = static_cast<uint32_t>(q.reliability.kind());
-    out.reliability.max_blocking_time = to_native(q.reliability.max_blocking_time());
-    out.destination_order.kind = static_cast<uint32_t>(q.destination_order.kind());
-    out.history.kind = static_cast<uint32_t>(q.history.kind());
-    out.history.depth = q.history.depth();
-    out.resource_limits.max_samples = q.resource_limits.max_samples();
-    out.resource_limits.max_instances = q.resource_limits.max_instances();
-    out.resource_limits.max_samples_per_instance = q.resource_limits.max_samples_per_instance();
-    out.transport_priority.value = q.transport_priority.value();
-    out.lifespan.duration = to_native(q.lifespan.duration());
-    out.ownership.kind = static_cast<uint32_t>(q.ownership.kind());
-    out.topic_data.value = q.topic_data.value().empty() ? nullptr : q.topic_data.value().data();
-    out.topic_data.value_len = q.topic_data.value().size();
-    return out;
+/// Calls a C API QoS getter and converts the result. The octet sequences of
+/// a QoS (USER_DATA, TOPIC_DATA, GROUP_DATA) are copied into buffers the
+/// caller provides; a getter that finds a buffer too small answers
+/// OUT_OF_RESOURCES with the length it needs, and is called again with
+/// buffers of that length. `octets` names the members of `Native` that are
+/// such buffers. `get` is a function object that takes a `Native*` and answers the status code
+/// (`make_qos_getter` makes one from a C function and its handle); `convert` makes the QoS of
+/// the native struct.
+template <typename Native, typename Result, typename Get>
+inline Result fetch_qos(Get get, Result (*convert)(const Native&), const char* what,
+                        const OctetMembers<Native>& octets = OctetMembers<Native>()) {
+    Native n = Native();
+    std::vector<std::vector<uint8_t> > bufs(octets.size());
+    for (std::size_t attempt = 0; attempt <= octets.size() + 1; ++attempt) {
+        const int rc = get(&n);
+        if (rc == 0) {
+            return convert(n);
+        }
+        const int out_of_resources = -8;
+        if (rc != out_of_resources) {
+            ::zerodds::psm::check_status(rc, what);
+        }
+        for (std::size_t i = 0; i < octets.size(); ++i) {
+            zerodds_ZeroDdsUserDataQosPolicy& policy = n.*(octets[i]);
+            if (policy.value_len > bufs[i].size()) {
+                bufs[i].resize(policy.value_len);
+            }
+            policy.value = bufs[i].empty() ? static_cast<const uint8_t*>(0) : &bufs[i][0];
+            policy.value_len = bufs[i].size();
+        }
+    }
+    throw ::dds::core::Error(std::string(what) + ": the QoS did not fit its buffers");
 }
 
-inline zerodds_ZeroDdsPublisherQos to_native(const PublisherQos& q) {
-    zerodds_ZeroDdsPublisherQos out{};
-    out.presentation.access_scope = static_cast<uint32_t>(q.presentation.access_scope());
-    out.presentation.coherent_access = q.presentation.coherent_access();
-    out.presentation.ordered_access = q.presentation.ordered_access();
-    out.entity_factory.autoenable_created_entities = q.entity_factory.autoenable_created_entities();
-    out.group_data.value = q.group_data.value().empty() ? nullptr : q.group_data.value().data();
-    out.group_data.value_len = q.group_data.value().size();
-    out.partition.names = nullptr;
-    out.partition.names_len = 0;
-    return out;
+inline ::dds::topic::qos::TopicQos topic_qos_of(const zerodds_ZeroDdsTopicQos& n) {
+    ::dds::topic::qos::TopicQos q;
+    q << read(n.durability) << read(n.durability_service) << read(n.deadline)
+      << read(n.latency_budget) << read(n.liveliness) << read(n.reliability)
+      << read(n.destination_order) << read(n.history) << read(n.resource_limits)
+      << read(n.transport_priority) << read(n.lifespan) << read(n.ownership)
+      << read_topic_data(n.topic_data) << read(n.data_representation);
+    return q;
 }
 
-// Overload that also wires the PARTITION policy (Spec §2.2.3.4). `q` and
-// `holder` must outlive the create_* call the native struct is passed to.
-inline zerodds_ZeroDdsPublisherQos to_native(const PublisherQos& q, PartitionPtrs& holder) {
-    zerodds_ZeroDdsPublisherQos out = to_native(q);
-    holder.bind(out.partition, q.partition.name());
-    return out;
+inline ::dds::pub::qos::PublisherQos publisher_qos_of(const zerodds_ZeroDdsPublisherQos& n) {
+    ::dds::pub::qos::PublisherQos q;
+    q << read(n.presentation) << read(n.partition) << read_group_data(n.group_data)
+      << read(n.entity_factory);
+    return q;
 }
 
-inline zerodds_ZeroDdsSubscriberQos to_native(const SubscriberQos& q) {
-    zerodds_ZeroDdsSubscriberQos out{};
-    out.presentation.access_scope = static_cast<uint32_t>(q.presentation.access_scope());
-    out.presentation.coherent_access = q.presentation.coherent_access();
-    out.presentation.ordered_access = q.presentation.ordered_access();
-    out.entity_factory.autoenable_created_entities = q.entity_factory.autoenable_created_entities();
-    out.group_data.value = q.group_data.value().empty() ? nullptr : q.group_data.value().data();
-    out.group_data.value_len = q.group_data.value().size();
-    out.partition.names = nullptr;
-    out.partition.names_len = 0;
-    return out;
+inline ::dds::sub::qos::SubscriberQos subscriber_qos_of(const zerodds_ZeroDdsSubscriberQos& n) {
+    ::dds::sub::qos::SubscriberQos q;
+    q << read(n.presentation) << read(n.partition) << read_group_data(n.group_data)
+      << read(n.entity_factory);
+    return q;
 }
 
-inline zerodds_ZeroDdsSubscriberQos to_native(const SubscriberQos& q, PartitionPtrs& holder) {
-    zerodds_ZeroDdsSubscriberQos out = to_native(q);
-    holder.bind(out.partition, q.partition.name());
-    return out;
+inline ::dds::pub::qos::DataWriterQos datawriter_qos_of(const zerodds_ZeroDdsDataWriterQos& n) {
+    ::dds::pub::qos::DataWriterQos q;
+    q << read(n.reliability) << read(n.durability) << read(n.durability_service)
+      << read(n.deadline) << read(n.latency_budget) << read(n.liveliness)
+      << read(n.destination_order) << read(n.lifespan) << read(n.ownership)
+      << read(n.ownership_strength) << read(n.history) << read(n.resource_limits)
+      << read(n.transport_priority) << read(n.writer_data_lifecycle) << read_user_data(n.user_data)
+      << read(n.data_representation);
+    return q;
 }
 
-inline zerodds_ZeroDdsDataWriterQos to_native(const DataWriterQos& q) {
-    zerodds_ZeroDdsDataWriterQos out{};
-    out.reliability.kind = static_cast<uint32_t>(q.reliability.kind());
-    out.reliability.max_blocking_time = to_native(q.reliability.max_blocking_time());
-    out.durability.kind = static_cast<uint32_t>(q.durability.kind());
-    out.durability_service.service_cleanup_delay = to_native(q.durability_service.service_cleanup_delay());
-    out.durability_service.history_kind = static_cast<uint32_t>(q.durability_service.history_kind());
-    out.durability_service.history_depth = q.durability_service.history_depth();
-    out.durability_service.max_samples = q.durability_service.max_samples();
-    out.durability_service.max_instances = q.durability_service.max_instances();
-    out.durability_service.max_samples_per_instance = q.durability_service.max_samples_per_instance();
-    out.deadline.period = to_native(q.deadline.period());
-    out.latency_budget.duration = to_native(q.latency_budget.duration());
-    out.liveliness.kind = static_cast<uint32_t>(q.liveliness.kind());
-    out.liveliness.lease_duration = to_native(q.liveliness.lease_duration());
-    out.destination_order.kind = static_cast<uint32_t>(q.destination_order.kind());
-    out.lifespan.duration = to_native(q.lifespan.duration());
-    out.ownership.kind = static_cast<uint32_t>(q.ownership.kind());
-    out.ownership_strength.value = q.ownership_strength.value();
-    out.presentation.access_scope = static_cast<uint32_t>(q.presentation.access_scope());
-    out.presentation.coherent_access = q.presentation.coherent_access();
-    out.presentation.ordered_access = q.presentation.ordered_access();
-    out.history.kind = static_cast<uint32_t>(q.history.kind());
-    out.history.depth = q.history.depth();
-    out.resource_limits.max_samples = q.resource_limits.max_samples();
-    out.resource_limits.max_instances = q.resource_limits.max_instances();
-    out.resource_limits.max_samples_per_instance = q.resource_limits.max_samples_per_instance();
-    out.transport_priority.value = q.transport_priority.value();
-    out.writer_data_lifecycle.autodispose_unregistered_instances =
-        q.writer_data_lifecycle.autodispose_unregistered_instances();
-    out.user_data.value = q.user_data.value().empty() ? nullptr : q.user_data.value().data();
-    out.user_data.value_len = q.user_data.value().size();
-    out.topic_data.value = q.topic_data.value().empty() ? nullptr : q.topic_data.value().data();
-    out.topic_data.value_len = q.topic_data.value().size();
-    out.group_data.value = q.group_data.value().empty() ? nullptr : q.group_data.value().data();
-    out.group_data.value_len = q.group_data.value().size();
-    out.partition.names = nullptr;
-    out.partition.names_len = 0;
-    return out;
+inline ::dds::sub::qos::DataReaderQos datareader_qos_of(const zerodds_ZeroDdsDataReaderQos& n) {
+    ::dds::sub::qos::DataReaderQos q;
+    q << read(n.reliability) << read(n.durability) << read(n.deadline) << read(n.latency_budget)
+      << read(n.liveliness) << read(n.destination_order) << read(n.ownership) << read(n.history)
+      << read(n.resource_limits) << read(n.time_based_filter) << read(n.reader_data_lifecycle)
+      << read_user_data(n.user_data) << read(n.data_representation) << read(n.type_consistency);
+    return q;
 }
 
-inline zerodds_ZeroDdsDataWriterQos to_native(const DataWriterQos& q, PartitionPtrs& holder) {
-    zerodds_ZeroDdsDataWriterQos out = to_native(q);
-    holder.bind(out.partition, q.partition.name());
-    return out;
-}
-
-inline zerodds_ZeroDdsDataReaderQos to_native(const DataReaderQos& q) {
-    zerodds_ZeroDdsDataReaderQos out{};
-    out.reliability.kind = static_cast<uint32_t>(q.reliability.kind());
-    out.reliability.max_blocking_time = to_native(q.reliability.max_blocking_time());
-    out.durability.kind = static_cast<uint32_t>(q.durability.kind());
-    out.deadline.period = to_native(q.deadline.period());
-    out.latency_budget.duration = to_native(q.latency_budget.duration());
-    out.liveliness.kind = static_cast<uint32_t>(q.liveliness.kind());
-    out.liveliness.lease_duration = to_native(q.liveliness.lease_duration());
-    out.destination_order.kind = static_cast<uint32_t>(q.destination_order.kind());
-    out.ownership.kind = static_cast<uint32_t>(q.ownership.kind());
-    out.presentation.access_scope = static_cast<uint32_t>(q.presentation.access_scope());
-    out.presentation.coherent_access = q.presentation.coherent_access();
-    out.presentation.ordered_access = q.presentation.ordered_access();
-    out.history.kind = static_cast<uint32_t>(q.history.kind());
-    out.history.depth = q.history.depth();
-    out.resource_limits.max_samples = q.resource_limits.max_samples();
-    out.resource_limits.max_instances = q.resource_limits.max_instances();
-    out.resource_limits.max_samples_per_instance = q.resource_limits.max_samples_per_instance();
-    out.time_based_filter.minimum_separation = to_native(q.time_based_filter.minimum_separation());
-    out.reader_data_lifecycle.autopurge_nowriter_samples_delay =
-        to_native(q.reader_data_lifecycle.autopurge_nowriter_samples_delay());
-    out.reader_data_lifecycle.autopurge_disposed_samples_delay =
-        to_native(q.reader_data_lifecycle.autopurge_disposed_samples_delay());
-    out.user_data.value = q.user_data.value().empty() ? nullptr : q.user_data.value().data();
-    out.user_data.value_len = q.user_data.value().size();
-    out.topic_data.value = q.topic_data.value().empty() ? nullptr : q.topic_data.value().data();
-    out.topic_data.value_len = q.topic_data.value().size();
-    out.group_data.value = q.group_data.value().empty() ? nullptr : q.group_data.value().data();
-    out.group_data.value_len = q.group_data.value().size();
-    out.partition.names = nullptr;
-    out.partition.names_len = 0;
-    return out;
-}
-
-inline zerodds_ZeroDdsDataReaderQos to_native(const DataReaderQos& q, PartitionPtrs& holder) {
-    zerodds_ZeroDdsDataReaderQos out = to_native(q);
-    holder.bind(out.partition, q.partition.name());
-    return out;
-}
-
-inline zerodds_ZeroDdsDomainParticipantQos to_native(const DomainParticipantQos& q) {
-    zerodds_ZeroDdsDomainParticipantQos out{};
-    out.entity_factory.autoenable_created_entities = q.entity_factory().autoenable_created_entities();
-    out.user_data.value = q.user_data().value().empty() ? nullptr : q.user_data().value().data();
-    out.user_data.value_len = q.user_data().value().size();
-    return out;
+inline ::dds::domain::qos::DomainParticipantQos participant_qos_of(
+    const zerodds_ZeroDdsDomainParticipantQos& n) {
+    ::dds::domain::qos::DomainParticipantQos q;
+    q << read(n.entity_factory) << read_user_data(n.user_data);
+    return q;
 }
 
 } // namespace detail

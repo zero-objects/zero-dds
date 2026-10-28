@@ -1,72 +1,74 @@
 # 0010 — CoAP-OSCORE (RFC 8613) — accepted, implemented (supersedes 0007)
 
 - **Status:** accepted (supersedes [0007](0007-coap-oscore-rejected-rc1.md))
-- **Datum:** 2026-06-11
-- **Kontext:** `crates/coap-bridge`, Spec `zerodds-coap-bridge-1.0` §7.2,
-  Spec-Completeness-Programm (Gruppe F2 — „extra Meile")
+- **Date:** 2026-06-11
+- **Context:** `crates/coap-bridge`, spec `zerodds-coap-bridge-1.0` §7.2,
+  spec completeness program (group F2 — "extra mile")
 
-## Kontext
+## Context
 
-ADR 0007 klassifizierte OSCORE für RC1 als `rejected/n/a` — begründet rein
-mit fehlendem Markt-Pull (DTLS deckt 100% der adressierten Produktions-Cases).
-Das war eine **RC1-Scoping-Entscheidung**, keine technische Unmöglichkeit.
+ADR 0007 classified OSCORE for RC1 as `rejected/n/a` — justified solely
+by missing market pull (DTLS covers 100% of the addressed production cases).
+That was an **RC1 scoping decision**, not a technical impossibility.
 
-Das Spec-Completeness-Programm überschreibt diese Scoping-Entscheidung
-explizit: optionale Spec-Profile (hier §7.2 OSCORE) sind ein
-**Differenzierungs-Feature**, kein Reject-Grund („andere Vendoren haben das
-nicht" zählt nicht). Damit gilt für OSCORE wie für jeden Spec-Mechanismus:
-**voll implementieren, kein Stub, kein versteckter TODO** — die in ADR 0007
-verworfene Alternative 1 ist jetzt die gewählte.
+The spec completeness program explicitly overrides this scoping decision:
+optional spec profiles (here §7.2 OSCORE) are a
+**differentiating feature**, not a reason to reject ("other vendors do not have
+it" does not count). So for OSCORE, as for every spec mechanism:
+**implement fully, no stub, no hidden TODO** — alternative 1, rejected in ADR 0007,
+is now the chosen one.
 
-## Entscheidung
+## Decision
 
-OSCORE wird **voll implementiert**, beginnend mit der Security-Context-
-Key-Derivation und aufbauend zur AEAD-Protect/Unprotect-Schicht. Korrektheit
-wird gegen die **RFC 8613 Appendix-C-Testvektoren** byte-exakt verankert (die
-maßgebliche Ground-Truth, analog zur Cross-Vendor-Capture-Methodik im
-DDS-Security- und XCDR2-Stack).
+OSCORE is **implemented fully**, starting with the security context
+key derivation and building up to the AEAD protect/unprotect layer. Correctness
+is anchored byte-exactly against the **RFC 8613 Appendix C test vectors** (the
+authoritative ground truth, analogous to the cross-vendor capture methodology in the
+DDS Security and XCDR2 stack).
 
-## Architektur
+## Architecture
 
 `crates/coap-bridge/src/oscore/` (feature `oscore`, `no_std + alloc`):
 
-| Schicht | Status | Verifikation |
+| Layer | Status | Verification |
 |---|---|---|
-| **HKDF-SHA-256** (RFC 5869) | ✅ done | RFC 5869 A.1 (PRK + OKM byte-exakt) |
-| **Security Context Key Derivation** (§3.2: Sender/Recipient-Key + Common IV, CBOR-`info`) | ✅ done | RFC 8613 **C.1.1** (leere Sender-ID, `f0910ed7…`), **C.1.2** (Mirror), **C.2.1** (ID-Context-Pfad, `e39a0c7c`/`2ca58fb8`) |
-| **AEAD AES-CCM-16-64-128** (COSE alg 10) | ✅ done | `ccm`-Crate; **RFC 3610 PV#1** byte-exakt |
-| **Nonce (§5.2) + AAD/Enc_structure (§5.4) + protect/unprotect** | ✅ done | spec-deterministische Nonce/AAD-Vektoren + protect→unprotect-Roundtrip |
-| **OSCORE-Option (9) Codec (§6.1)** | ✅ done | RFC 8613 §6.3 Option-Vektoren (encode/decode-Roundtrip) |
-| **Message Protect/Unprotect (§8)** + Option-Klassen-Split (§4.1.2) | ✅ done | `oscore/message.rs`; protect→unprotect-Roundtrip (GET + Payload + Tamper-Reject) |
-| **Replay-Window** (§3.2.2) | ✅ done | sliding-window unit-tests (in-window/out-of-order/replay) |
+| **HKDF-SHA-256** (RFC 5869) | ✅ done | RFC 5869 A.1 (PRK + OKM byte-exact) |
+| **Security Context Key Derivation** (§3.2: sender/recipient key + Common IV, CBOR `info`) | ✅ done | RFC 8613 **C.1.1** (empty sender ID, `f0910ed7…`), **C.1.2** (mirror), **C.2.1** (ID context path, `e39a0c7c`/`2ca58fb8`) |
+| **AEAD AES-CCM-16-64-128** (COSE alg 10) | ✅ done | `ccm` crate; **RFC 3610 PV#1** byte-exact |
+| **Nonce (§5.2) + AAD/Enc_structure (§5.4) + protect/unprotect** | ✅ done | spec-deterministic nonce/AAD vectors + protect→unprotect roundtrip |
+| **OSCORE option (9) codec (§6.1)** | ✅ done | RFC 8613 §6.3 option vectors (encode/decode roundtrip) |
+| **Message Protect/Unprotect (§8)** + option class split (§4.1.2) | ✅ done | `oscore/message.rs`; protect→unprotect roundtrip (GET + payload + tamper reject) |
+| **Replay window** (§3.2.2) | ✅ done | sliding-window unit tests (in-window/out-of-order/replay) |
 
-Krypto-Bausteine im Workspace vorhanden: `hmac`/`sha2` (HKDF, genutzt),
-`aes`/`cipher` (AES-CCM-Substrat), `ciborium` (falls serde-CBOR nötig — die
-kleinen festen `info`/`Enc_structure`-Strukturen werden derzeit deterministisch
-hand-encodiert). Die einzige neue externe Abhängigkeit ist `ccm` (AES-CCM-Mode),
-die `ring`/`security-crypto` (AES-GCM) NICHT abdecken; ihre Aufnahme läuft über
+Crypto building blocks present in the workspace: `hmac`/`sha2` (HKDF, used),
+`aes`/`cipher` (AES-CCM substrate), `ciborium` (in case serde CBOR is needed — the
+small fixed `info`/`Enc_structure` structures are currently hand-encoded
+deterministically). The only new external dependency is `ccm` (AES-CCM mode),
+which `ring`/`security-crypto` (AES-GCM) do NOT cover; its inclusion goes through
 cargo-deny.
 
-## Alternativen
+## Alternatives
 
-1. **Bei ADR 0007 (rejected) bleiben** — verworfen: widerspricht dem
-   Spec-Completeness-Mandat (optionale Profile sind Features).
-2. **OSCORE als Stub** — verworfen (wie in 0007): keine echte Sicherheit.
-3. **Voll implementieren, RFC-Testvektor-verankert** — gewählt.
+1. **Stay with ADR 0007 (rejected)** — rejected: contradicts the
+   spec completeness mandate (optional profiles are features).
+2. **OSCORE as a stub** — rejected (as in 0007): no real security.
+3. **Implement fully, anchored in RFC test vectors** — chosen.
 
-## Konsequenzen
+## Consequences
 
-Positiv:
-- §7.2 wird von `rejected` zu `implemented` — saubere Spec-Lage.
-- Key-Derivation ist sofort konformitäts-bewiesen (RFC-C.1/C.2-Vektoren).
-- OSCORE ist proxy-tauglich (Object-Security überlebt CoAP-Proxies, anders als
-  hop-by-hop DTLS) — echtes Differenzierungs-Feature für LwM2M/Constrained-IoT.
+Positive:
+- §7.2 goes from `rejected` to `implemented` — clean spec status.
+- Key derivation is proven conformant right away (RFC C.1/C.2 vectors).
+- OSCORE works through proxies (object security survives CoAP proxies, unlike
+  hop-by-hop DTLS) — a real differentiating feature for LwM2M/constrained IoT.
 
-**Vollständig** (2026-06-12): Key-Derivation + AEAD + Nonce/AAD + protect/unprotect + Option-9-Codec + Replay-Window + §8-Message-Pipeline — 20 oscore-Tests grün, RFC-verankert (RFC 5869 A.1, RFC 8613 C.1/C.2, RFC 3610 PV#1). Offen nur die Daemon-Request-Handler-**Verdrahtung** (die fertigen `protect_request_message`/`unprotect_request_message` in den CoAP-Daemon-Pfad einhängen) + DTLS (eigenes Dossier).
+**Complete** (2026-06-12): key derivation + AEAD + nonce/AAD + protect/unprotect + option 9 codec + replay window + §8 message pipeline — anchored in RFCs (RFC 5869 A.1, RFC 8613 C.1/C.2, RFC 3610 PV#1). DTLS: separate dossier (ADR 0011).
 
-## Referenzen
+**Daemon wiring closed**: response protection §8.3/§8.4 in `oscore/message.rs`, `daemon/oscore_gateway.rs` (per-`kid` contexts + replay window + notification PIV sequence), `dispatch` integration in `daemon/server.rs` (unprotected → `4.01`, replay → `4.01`, verify error → `4.00`, responses + Observe notifications protected), `oscore:` config block per spec §3/§7.2, fail-closed without the feature. Correctness: RFC 8613 Appendix C.4-C.8 as full-message vectors byte-exact (`tests/oscore_rfc8613_vectors.rs`) + daemon e2e over UDP (`tests/daemon_oscore_e2e.rs`).
 
-- RFC 8613 — OSCORE (insb. §3.2 Key Derivation, Appendix C Testvektoren)
+## References
+
+- RFC 8613 — OSCORE (in particular §3.2 Key Derivation, Appendix C test vectors)
 - RFC 5869 — HKDF; RFC 8152 — COSE; RFC 8949 — CBOR
-- `crates/coap-bridge/src/oscore/mod.rs` — Implementierung + Testvektoren
-- [0007](0007-coap-oscore-rejected-rc1.md) — vorherige (superseded) Entscheidung
+- `crates/coap-bridge/src/oscore/mod.rs` — implementation + test vectors
+- [0007](0007-coap-oscore-rejected-rc1.md) — previous (superseded) decision

@@ -18,13 +18,14 @@ CSRC_WIRE   = ../c/src/zerodds_wire.c
 CSRC_EP     = ../c/src/zerodds_endpoint.c
 CSRC_REFL   = ../c/src/zerodds_reflect.c
 CSRC_ASYNC  = ../c/src/zerodds_async.c
+CSRC_XRCE   = ../c/src/zerodds_xrce_client.c
 
 .PHONY: all test examples clean
 
 all: $(BUILD)/test_byte_identity $(BUILD)/test_endpoint $(BUILD)/test_mutable \
      $(BUILD)/test_nested $(BUILD)/test_reflect \
      $(BUILD)/test_async_loopback $(BUILD)/test_async_udp \
-     $(BUILD)/test_reliable_async_overflow
+     $(BUILD)/test_reliable_async_overflow $(BUILD)/test_xrce_client
 
 # --- deep examples (sync: C++98 poll; async: C++17 reactor) ---
 $(BUILD)/example_sync: example_sync.cpp include/zerodds_wire.hpp
@@ -74,6 +75,12 @@ $(BUILD)/test_reliable_async_overflow: test/test_reliable_async_overflow.cpp inc
 	@mkdir -p $(BUILD)
 	$(CXX) $(CXXFLAGS17) $(INCLUDE) test/test_reliable_async_overflow.cpp -pthread -o $@
 
+# XRCE session client (zerodds_xrce_client.hpp) -- a facade over the C89
+# zdwc_* wire-core (../c), checked against endpoints/testdata/xrce-client/.
+$(BUILD)/test_xrce_client: test/test_xrce_client.cpp include/zerodds_xrce_client.hpp
+	@mkdir -p $(BUILD)
+	$(CXX) $(CXXFLAGS98) $(INCLUDE) test/test_xrce_client.cpp $(CSRC_XRCE) -o $@
+
 test: all
 	$(RUNNER) $(BUILD)/test_byte_identity $(GOLDEN_DIR)/golden_le.bin $(GOLDEN_DIR)/golden_be.bin
 	$(RUNNER) $(BUILD)/test_endpoint $(GOLDEN_DIR)/golden_xrce_le.bin $(GOLDEN_DIR)/golden_serial_le.bin
@@ -83,6 +90,7 @@ test: all
 	$(RUNNER) $(BUILD)/test_async_loopback
 	$(RUNNER) $(BUILD)/test_async_udp
 	$(RUNNER) $(BUILD)/test_reliable_async_overflow
+	$(RUNNER) $(BUILD)/test_xrce_client
 
 clean:
 	rm -rf $(BUILD)

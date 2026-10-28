@@ -5,14 +5,14 @@
 
 PKI/X.509 backend for the DDS-Security
 [ZeroDDS](https://zerodds.org) `AuthenticationPlugin` per OMG
-DDS-Security 1.1 §8.3. Wrapper around `rustls-webpki` + `ring` — no
+DDS-Security 1.2 §9.3 and §10.3. Wrapper around `rustls-webpki` + `ring` — no
 own raw-crypto code. Safety classification: **SAFE**.
 
 ## Spec mapping
 
 | Spec | Section |
 |------|-----------|
-| OMG DDS-Security 1.1 | §8.3, §9.3, §10.3 |
+| OMG DDS-Security 1.2 | §9.3 (Authentication Plugin), §10.3 (DDS:Auth:PKI-DH) |
 | OMG DDS-Security 1.2 | §10.7 + §10.8 (PSK profile) |
 | RFC 5280 | X.509 cert chain |
 | RFC 6960 | OCSP |
@@ -47,7 +47,8 @@ let local = plugin.validate_with_config(cfg, [0xAA; 16])?;
 
 ## Stability
 
-`1.0.0-rc.1`. Public API + wire format RC1-stable; cross-vendor with Cyclone/FastDDS.
+`1.0.0-rc.7`, a pre-release. The public API can still change before
+1.0.0; the crate's CHANGELOG lists every change.
 
 ## Tests
 

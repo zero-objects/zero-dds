@@ -1,120 +1,144 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-
-//! Java codegen — DDS 1.4 §B.4 Annex Java PSM.
+//! The Java PSM — DDS 1.4 §B.8.
 
 use alloc::format;
-use alloc::string::String;
+use alloc::string::{String, ToString};
 
-use crate::DlrlTypeInfo;
+use crate::{DlrlAttributeType, DlrlCollection, DlrlFieldType, DlrlMonoType, DlrlTypeInfo};
 
-/// Generates Java class source for a DLRL object type.
-/// Spec §B.6 Java PSM: extends `ObjectRoot`.
-#[allow(clippy::format_collect)]
+/// A basic type's Java type in the IDL-to-Java mapping (unsigned types
+/// map to the signed type of the same width), and its boxed form for a
+/// collection's type argument.
+fn java_basic(ty: DlrlFieldType) -> (&'static str, &'static str) {
+    match ty {
+        DlrlFieldType::Boolean => ("boolean", "Boolean"),
+        DlrlFieldType::Char => ("char", "Character"),
+        DlrlFieldType::Octet | DlrlFieldType::Int8 | DlrlFieldType::UInt8 => ("byte", "Byte"),
+        DlrlFieldType::Short | DlrlFieldType::UShort => ("short", "Short"),
+        DlrlFieldType::Long | DlrlFieldType::ULong => ("int", "Integer"),
+        DlrlFieldType::LongLong | DlrlFieldType::ULongLong => ("long", "Long"),
+        DlrlFieldType::Float => ("float", "Float"),
+        DlrlFieldType::Double => ("double", "Double"),
+        DlrlFieldType::String => ("String", "String"),
+    }
+}
+
+/// A mono-valued type in the mapping `idlc generate --lang java` uses for
+/// the same IDL: an enumeration is an `int` (its generated class holds
+/// the enumerators as `int` constants), a structure the class nested in
+/// `ZdTypes` by module. The second element is the boxed form. An
+/// unresolved key names a class that does not exist.
+fn java_mono(ty: Option<&DlrlMonoType>) -> (String, String) {
+    match ty {
+        Some(DlrlMonoType::Basic(basic)) => {
+            let (plain, boxed) = java_basic(*basic);
+            (plain.to_string(), boxed.to_string())
+        }
+        Some(DlrlMonoType::Enum { .. }) => ("int".to_string(), "Integer".to_string()),
+        Some(DlrlMonoType::Struct { name }) => {
+            let class = format!("ZdTypes.{}", name.replace("::", "."));
+            (class.clone(), class)
+        }
+        None => (
+            "UnresolvedDlrlFieldType".to_string(),
+            "UnresolvedDlrlFieldType".to_string(),
+        ),
+    }
+}
+
+/// A multi-valued attribute's field type and initial value: a
+/// `java.util.List` for a list, a `java.util.Map` in insertion order for
+/// either map.
+fn java_collection(basis: &DlrlCollection, item: &DlrlMonoType) -> (String, &'static str) {
+    let (_, item) = java_mono(Some(item));
+    match basis {
+        DlrlCollection::List => (
+            format!("java.util.List<{item}>"),
+            "new java.util.ArrayList<>()",
+        ),
+        DlrlCollection::StrMap => (
+            format!("java.util.Map<String, {item}>"),
+            "new java.util.LinkedHashMap<>()",
+        ),
+        DlrlCollection::IntMap(key) => (
+            format!("java.util.Map<{}, {item}>", java_basic(*key).1),
+            "new java.util.LinkedHashMap<>()",
+        ),
+    }
+}
+
+/// The object class. Java has no multiple inheritance, so §B.8 puts the
+/// object behaviour in a base class and nothing else needs a mix-in.
 #[must_use]
 pub fn generate_java_object(info: &DlrlTypeInfo) -> String {
-    let cls = simple_name(&info.name);
-    let pkg = package(&info.name);
-    let key_lines: String = info
-        .keys
-        .iter()
-        .map(|k| format!("    @DlrlKey\n    public long {k};\n"))
-        .collect();
-    let rel_lines: String = info
-        .relations
-        .iter()
-        .map(|(rel, target)| {
-            let t = simple_name(target);
-            format!(
-                "    @DlrlRelation(target = {t}.class)\n    public RefList<{t}> {rel} = new RefList<>();\n"
-            )
-        })
-        .collect();
-    let header = if pkg.is_empty() {
-        String::new()
-    } else {
-        format!("package {pkg};\n\n")
-    };
-    format!(
-        "{header}// Generated DLRL Object — Spec §B.6 Java-PSM\n\
-@DlrlObject\npublic class {cls} extends ObjectRoot {{\n{key_lines}{rel_lines}}}\n"
-    )
-}
-
-/// Generates an `ObjectListener<T>` interface stub. Spec §B.6.7.
-#[must_use]
-pub fn generate_java_object_listener(info: &DlrlTypeInfo) -> String {
-    let cls = simple_name(&info.name);
-    let pkg = package(&info.name);
-    let header = if pkg.is_empty() {
-        String::new()
-    } else {
-        format!("package {pkg};\n\n")
-    };
-    format!(
-        "{header}// Generated DLRL ObjectListener — Spec §B.6.7\n\
-public interface {cls}Listener extends ObjectListener<{cls}> {{\n\
-    void on{cls}Created({cls} obj);\n\
-    void on{cls}Modified({cls} obj);\n\
-    void on{cls}Deleted({cls} obj);\n\
-}}\n"
-    )
-}
-
-fn simple_name(scoped: &str) -> &str {
-    scoped.rsplit("::").next().unwrap_or(scoped)
-}
-
-fn package(scoped: &str) -> String {
-    let parts: alloc::vec::Vec<&str> = scoped.split("::").collect();
-    if parts.len() <= 1 {
-        return String::new();
+    let class = info.simple_name();
+    let mut out = format!(
+        "// Generated DLRL object — DDS 1.4 §B.8\n\
+         public class {class} extends org.omg.dds.dlrl.ObjectRoot {{\n"
+    );
+    for key in &info.keys {
+        let (ty, _) = java_mono(info.key_type(key));
+        out.push_str(&format!("    private {ty} {key};\n"));
+        out.push_str(&format!(
+            "    public {ty} get{}() {{ return {key}; }}\n",
+            capitalise(key)
+        ));
     }
-    parts[..parts.len() - 1].join(".")
-}
-
-#[cfg(test)]
-#[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
-mod tests {
-    use super::*;
-
-    fn trade_info() -> DlrlTypeInfo {
-        DlrlTypeInfo {
-            name: "demo::Trade".into(),
-            keys: alloc::vec!["symbol".into()],
-            relations: alloc::vec![("quotes".into(), "demo::Quote".into())],
+    for (attribute, ty) in &info.attributes {
+        let name = capitalise(attribute);
+        match ty {
+            DlrlAttributeType::Mono(mono) => {
+                let (ty, _) = java_mono(Some(mono));
+                out.push_str(&format!("    private {ty} {attribute};\n"));
+                out.push_str(&format!(
+                    "    public {ty} get{name}() {{ return {attribute}; }}\n"
+                ));
+                out.push_str(&format!(
+                    "    public void set{name}({ty} v) {{ {attribute} = v; }}\n"
+                ));
+            }
+            DlrlAttributeType::Multi { basis, item } => {
+                let (ty, initial) = java_collection(basis, item);
+                out.push_str(&format!(
+                    "    private final {ty} {attribute} = {initial};\n"
+                ));
+                out.push_str(&format!(
+                    "    public {ty} get{name}() {{ return {attribute}; }}\n"
+                ));
+            }
         }
     }
-
-    #[test]
-    fn java_object_emits_package_and_annotations() {
-        let s = generate_java_object(&trade_info());
-        assert!(s.contains("package demo;"));
-        assert!(s.contains("@DlrlObject"));
-        assert!(s.contains("class Trade extends ObjectRoot"));
-        assert!(s.contains("@DlrlKey"));
-        assert!(s.contains("public long symbol;"));
-        assert!(s.contains("@DlrlRelation(target = Quote.class)"));
-        assert!(s.contains("RefList<Quote> quotes"));
+    for (relation, target) in &info.relations {
+        let target_class = crate::simple_name(target);
+        out.push_str(&format!(
+            "    private java.util.List<{target_class}> {relation} = new java.util.ArrayList<>();\n"
+        ));
+        out.push_str(&format!(
+            "    public java.util.List<{target_class}> get{}() {{ return {relation}; }}\n",
+            capitalise(relation)
+        ));
     }
+    out.push_str("}\n");
+    out
+}
 
-    #[test]
-    fn java_object_no_package_for_unscoped() {
-        let info = DlrlTypeInfo {
-            name: "Foo".into(),
-            ..DlrlTypeInfo::default()
-        };
-        let s = generate_java_object(&info);
-        assert!(!s.contains("package "));
-        assert!(s.contains("class Foo extends ObjectRoot"));
-    }
+/// The home class — §B.7.
+#[must_use]
+pub fn generate_java_home(info: &DlrlTypeInfo) -> String {
+    let class = info.simple_name();
+    format!(
+        "// Generated DLRL home — DDS 1.4 §B.7\n\
+         public class {class}Home extends org.omg.dds.dlrl.ObjectHome {{\n    \
+             public {class} createObject() {{ return new {class}(); }}\n\
+         }}\n"
+    )
+}
 
-    #[test]
-    fn listener_interface_emits_three_callbacks() {
-        let s = generate_java_object_listener(&trade_info());
-        assert!(s.contains("interface TradeListener extends ObjectListener<Trade>"));
-        assert!(s.contains("void onTradeCreated(Trade obj);"));
-        assert!(s.contains("void onTradeModified(Trade obj);"));
-        assert!(s.contains("void onTradeDeleted(Trade obj);"));
-    }
+/// `venue` becomes `getVenue`, which is what a Java caller writes.
+fn capitalise(name: &str) -> String {
+    let mut chars = name.chars();
+    chars.next().map_or_else(String::new, |first| {
+        first.to_uppercase().collect::<String>() + chars.as_str()
+    })
 }

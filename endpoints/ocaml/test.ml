@@ -8,7 +8,7 @@ let golden_dir = try Sys.getenv "GOLDEN_DIR" with Not_found -> "build"
 
 let fixture endian =
   let open Zerodds.Wire in
-  let w = writer endian in
+  let w = writer endian XCDR2 in
   put_u32 w 0xA1B2C3D4;
   put_u16 w 0x1234;
   put_u8 w 0x5A;
@@ -28,7 +28,7 @@ let read_file path =
 
 let sample_body id =
   let open Zerodds.Wire in
-  let w = writer LE in
+  let w = writer LE XCDR2 in
   put_u32 w id;
   put_u16 w 0;
   put_u8 w 0;
@@ -49,14 +49,14 @@ let () =
 
   (* sync loopback *)
   let t = Zerodds.MemTransport.create () in
-  let c = Zerodds.Client.create t in
+  let c = Zerodds.Client.create t (Zerodds.Endpoint.object_id 0x001 Zerodds.Endpoint.objk_datawriter) in
   for i = 0 to 4 do
     Zerodds.Client.write c (sample_body (0x3000 + i))
   done;
   for i = 0 to 4 do
     match Zerodds.Client.poll c with
     | Some body ->
-        let id = Zerodds.Wire.get_u32 (Zerodds.Wire.reader body Zerodds.Wire.LE) in
+        let id = Zerodds.Wire.get_u32 (Zerodds.Wire.reader body Zerodds.Wire.LE Zerodds.Wire.XCDR2) in
         if id <> 0x3000 + i then failwith "sync: id mismatch"
     | None -> failwith "sync: no sample"
   done;
@@ -64,22 +64,27 @@ let () =
 
   (* async loopback (Thread + mailbox) *)
   let t2 = Zerodds.MemTransport.create () in
-  let w = Zerodds.Client.create t2 in
+  let w = Zerodds.Client.create t2 (Zerodds.Endpoint.object_id 0x001 Zerodds.Endpoint.objk_datawriter) in
   for i = 0 to 4 do
     Zerodds.Client.write w (sample_body (0x1000 + i))
   done;
   let r = Zerodds.AsyncReader.start t2 in
   for i = 0 to 4 do
     let body = Zerodds.AsyncReader.recv r in
-    let id = Zerodds.Wire.get_u32 (Zerodds.Wire.reader body Zerodds.Wire.LE) in
+    let id = Zerodds.Wire.get_u32 (Zerodds.Wire.reader body Zerodds.Wire.LE Zerodds.Wire.XCDR2) in
     if id <> 0x1000 + i then failwith "async: id mismatch"
   done;
   Zerodds.AsyncReader.stop r;
   print_string "async loopback: 5 samples OK\n";
 
   (* negative frame vectors: length bounding + malformed reject *)
-  let first = Zerodds.Endpoint.write_frame 0x80 0x01 1 (Bytes.of_string "\xAA\xBB\xCC") in
-  let second = Zerodds.Endpoint.write_frame 0x80 0x01 2 (Bytes.of_string "\xDD\xEE") in
+  let writer_id = Zerodds.Endpoint.object_id 0x001 Zerodds.Endpoint.objk_datawriter in
+  let first =
+    Zerodds.Endpoint.write_frame 0x80 0x01 1 writer_id (Bytes.of_string "\xAA\xBB\xCC")
+  in
+  let second =
+    Zerodds.Endpoint.write_frame 0x80 0x01 2 writer_id (Bytes.of_string "\xDD\xEE")
+  in
   (match Zerodds.Endpoint.read_frame (Bytes.cat first second) with
    | Some b when Bytes.to_string b = "\xAA\xBB\xCC" -> ()
    | _ -> failwith "appended submessage must not leak into sample");
@@ -88,9 +93,19 @@ let () =
   Bytes.set overlong 7 '\xFF';
   (match Zerodds.Endpoint.read_frame overlong with
    | None -> () | Some _ -> failwith "over-long length must reject");
-  (match Zerodds.Endpoint.read_frame (Bytes.of_string "\x80\x01\x00\x00\x07") with
+  (match Zerodds.Endpoint.read_frame (Bytes.of_string "\x80\x01\x00\x00\x07\x01\x04\x00") with
    | None -> () | Some _ -> failwith "truncated header must reject");
-  if Bytes.length (Zerodds.Endpoint.write_frame 0x80 0x01 1 (Bytes.create 0x10000)) <> 0 then
-    failwith "sample > 0xFFFF must be refused";
+  (* A refusal and no longer empty bytes: `Client.write` handed the empty ones
+     to `deliver` and an empty datagram went out with nothing said. *)
+  (match Zerodds.Endpoint.write_frame 0x80 0x01 1 writer_id (Bytes.create 0x10000) with
+   | exception Invalid_argument _ -> ()
+   | _ -> failwith "sample > 0xFFFF must be refused");
+  (* The bound is the field's and not one off it. *)
+  if
+    Bytes.length
+      (Zerodds.Endpoint.write_frame 0x80 0x01 1 writer_id
+         (Bytes.create (0xFFFF - Zerodds.Endpoint.base_size)))
+    <> 8 + 0xFFFF
+  then failwith "a maximal body must still frame";
   print_string "negative frame vectors: OK\n";
   print_string "ALL OK\n"

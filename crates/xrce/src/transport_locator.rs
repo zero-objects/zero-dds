@@ -1,37 +1,52 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! `TransportLocator`-Wire-Encoding (Spec §7.7.4).
-//!
-//! A `TransportLocator` variant identifies a reachable
-//! transport address through which an agent (or client) can be reached.
-//! The spec defines three size classes:
+//! `TransportLocator` wire encoding (DDS-XRCE 1.0 Annex A, §11.2.1, §11.3.1).
 //!
 //! ```text
-//!   +----+ ----+
-//!   |fmt |     |   fmt = 0x00 → Small  (4 address + 2 port = 6 bytes)
-//!   +----+     |         0x01 → Medium (4 address + 4 port = 8 bytes)
-//!   |  payload |         0x02 → Large  (16 address + 4 port = 20 bytes)
-//!   ~          ~         0x03 → String (UTF-8)
-//!   +----------+
+//! @bit_bound(8) enum TransportLocatorFormat {
+//!      ADDRESS_FORMAT_SMALL, ADDRESS_FORMAT_MEDIUM,
+//!      ADDRESS_FORMAT_LARGE, ADDRESS_FORMAT_STRING };
+//! struct TransportLocatorSmall  { octet address[2];  octet locator_port; };
+//! struct TransportLocatorMedium { octet address[4];  unsigned short locator_port; };
+//! struct TransportLocatorLarge  { octet address[16]; unsigned long locator_port; };
+//! struct TransportLocatorString { string value; };
+//! union TransportLocator switch (TransportLocatorFormat) { ... };
+//! typedef sequence<TransportLocator> TransportLocatorSeq;
 //! ```
 //!
-//! `Small` is intended for "classic IPv4+UDP port". `Medium`
-//! allows a 32-bit port identifier (e.g. for L4 multipath IDs).
-//! `Large` is IPv6+port or any 16-byte address space (e.g. UUID).
+//! The union is a one-octet discriminator and the member. Scalars are
+//! aligned to their size, at most 4 (XCDR2), counted from the start of the
+//! payload they are part of, and written in the byte order of the
+//! submessage's E flag (§8.3.4.2). So a `Medium` locator that starts at
+//! offset 0 is the discriminator, four address octets, one padding octet,
+//! and the port as a 16-bit number; a `Large` locator the discriminator, 16
+//! address octets, three padding octets and the port as a 32-bit number.
 //!
-//! This file encapsulates only the wire format (endianness follows the caller,
-//! analogous to other XCDR2 structures). Resolving string locators to an
-//! actual `SocketAddr` is the task of the transport layer.
+//! UDP v4 and TCP v4 use `Medium` (§11.2.1, §11.3.1), UDP v6 and TCP v6
+//! `Large`, with the IPv6 address in `address` and the port number in the
+//! port. `Small` is the format Annex A gives (two address octets and a
+//! one-octet port) and no transport mapping selects.
+//!
+//! [`TransportLocator::encode_into`] and [`TransportLocator::decode_at`] take
+//! the position of the locator in its payload, because the padding depends
+//! on it; [`TransportLocator::encode`] and [`TransportLocator::decode`] are
+//! the forms for a locator that starts a payload.
+//!
+//! This file encapsulates only the wire format. Resolving a string locator to
+//! a `SocketAddr` is the task of the transport layer.
 
 extern crate alloc;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use crate::encoding::{Endianness, read_u32, write_u32};
+use crate::encoding::{
+    Endianness, UnannotatedTypes, begin_unannotated, end_unannotated, read_dheader,
+    unannotated_types,
+};
 use crate::error::XrceError;
 
-/// Format-Discriminator (Spec §7.7.4).
+/// `TransportLocatorFormat` (Annex A).
 pub mod fmt_disc {
     /// `ADDRESS_FORMAT_SMALL`.
     pub const SMALL: u8 = 0x00;
@@ -41,84 +56,100 @@ pub mod fmt_disc {
     pub const LARGE: u8 = 0x02;
     /// `ADDRESS_FORMAT_STRING` (e.g. `"udpv4://192.168.0.5:7400"`).
     pub const STRING: u8 = 0x03;
-    /// TCP locator (C6.2.D, Spec §11.3.1) — IPv4 + 2-byte port.
-    pub const TCP: u8 = 0x04;
-    /// Serial locator (C6.2.D, Spec Annex C) — device string + baud rate.
-    pub const SERIAL: u8 = 0x05;
 }
 
-/// `ADDRESS_FORMAT_SMALL` (UDPv4 4-byte address + 2-byte port).
+/// `TransportLocatorSmall { octet address[2]; octet locator_port; }`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct TransportLocatorSmall {
-    /// 4 address bytes (e.g. IPv4).
-    pub address: [u8; 4],
-    /// 2 port bytes (big-endian, as in the network standard).
-    pub port: [u8; 2],
+    /// The two address octets.
+    pub address: [u8; 2],
+    /// The one-octet port.
+    pub port: u8,
 }
 
-/// `ADDRESS_FORMAT_MEDIUM` (4-byte address + 4-byte port identifier).
+/// `TransportLocatorMedium { octet address[4]; unsigned short locator_port; }`
+/// — the locator of UDP v4 (§11.2.1) and TCP v4 (§11.3.1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct TransportLocatorMedium {
-    /// 4 address bytes.
+    /// The IPv4 address.
     pub address: [u8; 4],
-    /// 4 port bytes (BE).
-    pub port: [u8; 4],
+    /// The port number.
+    pub port: u16,
 }
 
-/// `ADDRESS_FORMAT_LARGE` (16-byte address + 4-byte port).
+/// `TransportLocatorLarge { octet address[16]; unsigned long locator_port; }`
+/// — the locator of UDP v6 (§11.2.1) and TCP v6 (§11.3.1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct TransportLocatorLarge {
-    /// 16 address bytes (IPv6 or UUID).
+    /// The IPv6 address.
     pub address: [u8; 16],
-    /// 4 port bytes (BE).
-    pub port: [u8; 4],
+    /// The port number.
+    pub port: u32,
 }
 
-/// Cap for string locators (avoids OOM on a malicious length header).
-pub const TRANSPORT_LOCATOR_STRING_MAX: usize = 256;
+/// Cap for the string of a string locator, against a malicious length: the
+/// most a submessage can hold (`submessageLength` is 16 bit, §8.3.4.3).
+pub const TRANSPORT_LOCATOR_STRING_MAX: usize = 65_535;
 
-/// Cap for serial device strings (e.g. `"/dev/ttyUSB0"`).
-pub const TRANSPORT_LOCATOR_SERIAL_DEVICE_MAX: usize = 64;
+/// Cap for the number of locators in a `TransportLocatorSeq` on decode.
+pub const TRANSPORT_LOCATOR_SEQ_MAX: usize = 1024;
 
-/// TCP locator (Spec §11.3.1) — analogous to UDPv4 Medium but marked as
-/// its own variant, so that sender/receiver can choose the matching
-/// transport stack.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub struct TransportLocatorTcp {
-    /// 4 address bytes (IPv4).
-    pub address: [u8; 4],
-    /// 2 port bytes (big-endian).
-    pub port: [u8; 2],
-}
-
-/// Serial locator (Spec Annex C) — device string + baud rate.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TransportLocatorSerial {
-    /// Device path (e.g. `"/dev/ttyUSB0"` or `"COM3"`).
-    pub device: String,
-    /// Baud rate (e.g. 115200).
-    pub baud_rate: u32,
-}
-
-/// `TransportLocator` variant.
+/// `TransportLocator` (Annex A).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TransportLocator {
-    /// 4-byte address + 2-byte port.
+    /// `ADDRESS_FORMAT_SMALL`.
     Small(TransportLocatorSmall),
-    /// 4-byte address + 4-byte port.
+    /// `ADDRESS_FORMAT_MEDIUM`.
     Medium(TransportLocatorMedium),
-    /// 16-byte address + 4-byte port.
+    /// `ADDRESS_FORMAT_LARGE`.
     Large(TransportLocatorLarge),
-    /// String form (UTF-8).
+    /// `ADDRESS_FORMAT_STRING`.
     String(String),
-    /// TCP locator (C6.2.D).
-    Tcp(TransportLocatorTcp),
-    /// Serial locator (C6.2.D).
-    Serial(TransportLocatorSerial),
+}
+
+fn align_out(out: &mut Vec<u8>, n: usize) {
+    while out.len() % n != 0 {
+        out.push(0);
+    }
+}
+
+fn align_pos(pos: usize, n: usize) -> usize {
+    pos.div_ceil(n) * n
+}
+
+fn eof(needed: usize, have: usize) -> XrceError {
+    XrceError::UnexpectedEof {
+        needed,
+        offset: have,
+    }
+}
+
+fn put_u16(out: &mut Vec<u8>, v: u16, e: Endianness) {
+    out.extend_from_slice(&match e {
+        Endianness::Little => v.to_le_bytes(),
+        Endianness::Big => v.to_be_bytes(),
+    });
+}
+
+fn put_u32(out: &mut Vec<u8>, v: u32, e: Endianness) {
+    out.extend_from_slice(&match e {
+        Endianness::Little => v.to_le_bytes(),
+        Endianness::Big => v.to_be_bytes(),
+    });
+}
+
+fn take(bytes: &[u8], pos: usize, n: usize) -> Result<&[u8], XrceError> {
+    bytes
+        .get(
+            pos..pos
+                .checked_add(n)
+                .ok_or_else(|| eof(usize::MAX, bytes.len()))?,
+        )
+        .ok_or_else(|| eof(pos.saturating_add(n), bytes.len()))
 }
 
 impl TransportLocator {
-    /// Discriminator byte.
+    /// The `TransportLocatorFormat` discriminator.
     #[must_use]
     pub fn discriminator(&self) -> u8 {
         match self {
@@ -126,32 +157,42 @@ impl TransportLocator {
             Self::Medium(_) => fmt_disc::MEDIUM,
             Self::Large(_) => fmt_disc::LARGE,
             Self::String(_) => fmt_disc::STRING,
-            Self::Tcp(_) => fmt_disc::TCP,
-            Self::Serial(_) => fmt_disc::SERIAL,
         }
     }
 
-    /// Encodes. `e` only governs the `u32` length fields (string and
-    /// Medium/Large port-length values follow `e`).
+    /// Appends the locator to `out`, which starts the payload: the padding
+    /// is counted from `out[0]`.
     ///
     /// # Errors
-    /// `PayloadTooLarge` if a string is longer than
-    /// `TRANSPORT_LOCATOR_STRING_MAX`.
-    pub fn encode(&self, e: Endianness) -> Result<Vec<u8>, XrceError> {
-        let mut out = Vec::new();
+    /// `PayloadTooLarge` for a string longer than
+    /// [`TRANSPORT_LOCATOR_STRING_MAX`].
+    pub fn encode_into(&self, out: &mut Vec<u8>, e: Endianness) -> Result<(), XrceError> {
+        // The union and the struct of its case carry no @extensibility (Annex
+        // A): APPENDABLE, each with a DHEADER, unless the setting is `Final`.
+        let union_members = begin_unannotated(out);
         out.push(self.discriminator());
+        let case_members = begin_unannotated(out);
+        self.encode_member(out, e)?;
+        end_unannotated(out, case_members, e);
+        end_unannotated(out, union_members, e);
+        Ok(())
+    }
+
+    fn encode_member(&self, out: &mut Vec<u8>, e: Endianness) -> Result<(), XrceError> {
         match self {
             Self::Small(s) => {
                 out.extend_from_slice(&s.address);
-                out.extend_from_slice(&s.port);
+                out.push(s.port);
             }
             Self::Medium(m) => {
                 out.extend_from_slice(&m.address);
-                out.extend_from_slice(&m.port);
+                align_out(out, 2);
+                put_u16(out, m.port, e);
             }
             Self::Large(l) => {
                 out.extend_from_slice(&l.address);
-                out.extend_from_slice(&l.port);
+                align_out(out, 4);
+                put_u32(out, l.port, e);
             }
             Self::String(s) => {
                 if s.len() > TRANSPORT_LOCATOR_STRING_MAX {
@@ -160,345 +201,477 @@ impl TransportLocator {
                         actual: s.len(),
                     });
                 }
-                let mut len_buf = [0u8; 4];
-                let len_u32 =
-                    u32::try_from(s.len() + 1).map_err(|_| XrceError::ValueOutOfRange {
-                        message: "TransportLocator string too long",
-                    })?;
-                write_u32(&mut len_buf, len_u32, e)?;
-                out.extend_from_slice(&len_buf);
+                let len = u32::try_from(s.len() + 1).map_err(|_| XrceError::ValueOutOfRange {
+                    message: "TransportLocator string too long",
+                })?;
+                align_out(out, 4);
+                put_u32(out, len, e);
                 out.extend_from_slice(s.as_bytes());
-                out.push(0u8); // NUL-Terminator (XCDR2 string<>)
-            }
-            Self::Tcp(t) => {
-                out.extend_from_slice(&t.address);
-                out.extend_from_slice(&t.port);
-            }
-            Self::Serial(s) => {
-                if s.device.len() > TRANSPORT_LOCATOR_SERIAL_DEVICE_MAX {
-                    return Err(XrceError::PayloadTooLarge {
-                        limit: TRANSPORT_LOCATOR_SERIAL_DEVICE_MAX,
-                        actual: s.device.len(),
-                    });
-                }
-                let mut len_buf = [0u8; 4];
-                let len_u32 =
-                    u32::try_from(s.device.len() + 1).map_err(|_| XrceError::ValueOutOfRange {
-                        message: "TransportLocator serial device too long",
-                    })?;
-                write_u32(&mut len_buf, len_u32, e)?;
-                out.extend_from_slice(&len_buf);
-                out.extend_from_slice(s.device.as_bytes());
-                out.push(0u8); // NUL-Terminator
-                let mut baud_buf = [0u8; 4];
-                write_u32(&mut baud_buf, s.baud_rate, e)?;
-                out.extend_from_slice(&baud_buf);
+                out.push(0);
             }
         }
+        Ok(())
+    }
+
+    /// Encodes a locator that starts its payload.
+    ///
+    /// # Errors
+    /// As [`Self::encode_into`].
+    pub fn encode(&self, e: Endianness) -> Result<Vec<u8>, XrceError> {
+        let mut out = Vec::new();
+        self.encode_into(&mut out, e)?;
         Ok(out)
     }
 
-    /// Decodes. Returns `(locator, bytes_consumed)`.
+    /// Reads the locator that starts at `pos` of `bytes`, which starts the
+    /// payload. Returns the locator and the position after it.
     ///
     /// # Errors
-    /// `UnexpectedEof`, `ValueOutOfRange`, `PayloadTooLarge`.
-    pub fn decode(bytes: &[u8], e: Endianness) -> Result<(Self, usize), XrceError> {
-        if bytes.is_empty() {
-            return Err(XrceError::UnexpectedEof {
-                needed: 1,
-                offset: 0,
-            });
+    /// `UnexpectedEof`, `ValueOutOfRange` (an unknown format, a string that is
+    /// not UTF-8 or lacks its NUL), `PayloadTooLarge`.
+    pub fn decode_at(bytes: &[u8], pos: usize, e: Endianness) -> Result<(Self, usize), XrceError> {
+        let appendable = || -> Result<(Self, usize), XrceError> {
+            let (start, end) =
+                read_dheader(bytes, pos, e).ok_or_else(|| eof(pos + 8, bytes.len()))?;
+            let disc = *bytes
+                .get(start)
+                .ok_or_else(|| eof(start + 1, bytes.len()))?;
+            let (case_start, case_end) =
+                read_dheader(bytes, start + 1, e).ok_or_else(|| eof(start + 5, bytes.len()))?;
+            let (locator, next) = Self::decode_member(disc, bytes, case_start, e)?;
+            if next != case_end || case_end != end {
+                return Err(XrceError::ValueOutOfRange {
+                    message: "TransportLocator: the DHEADERs do not match the case",
+                });
+            }
+            Ok((locator, end))
+        };
+        let direct = || -> Result<(Self, usize), XrceError> {
+            let disc = *bytes.get(pos).ok_or_else(|| eof(pos + 1, bytes.len()))?;
+            Self::decode_member(disc, bytes, pos + 1, e)
+        };
+        match unannotated_types() {
+            UnannotatedTypes::Appendable => appendable().or_else(|_| direct()),
+            UnannotatedTypes::Final => direct().or_else(|_| appendable()),
         }
-        let disc = bytes[0];
-        let body = &bytes[1..];
+    }
+
+    /// The member of the case `disc`, which starts at `at`.
+    fn decode_member(
+        disc: u8,
+        bytes: &[u8],
+        at: usize,
+        e: Endianness,
+    ) -> Result<(Self, usize), XrceError> {
+        let mut at = at;
         match disc {
             fmt_disc::SMALL => {
-                if body.len() < 6 {
-                    return Err(XrceError::UnexpectedEof {
-                        needed: 7,
-                        offset: bytes.len(),
-                    });
-                }
-                let mut s = TransportLocatorSmall::default();
-                s.address.copy_from_slice(&body[0..4]);
-                s.port.copy_from_slice(&body[4..6]);
-                Ok((Self::Small(s), 7))
+                let b = take(bytes, at, 3)?;
+                Ok((
+                    Self::Small(TransportLocatorSmall {
+                        address: [b[0], b[1]],
+                        port: b[2],
+                    }),
+                    at + 3,
+                ))
             }
             fmt_disc::MEDIUM => {
-                if body.len() < 8 {
-                    return Err(XrceError::UnexpectedEof {
-                        needed: 9,
-                        offset: bytes.len(),
-                    });
-                }
-                let mut m = TransportLocatorMedium::default();
-                m.address.copy_from_slice(&body[0..4]);
-                m.port.copy_from_slice(&body[4..8]);
-                Ok((Self::Medium(m), 9))
+                let mut address = [0u8; 4];
+                address.copy_from_slice(take(bytes, at, 4)?);
+                at = align_pos(at + 4, 2);
+                let b = take(bytes, at, 2)?;
+                let port = match e {
+                    Endianness::Little => u16::from_le_bytes([b[0], b[1]]),
+                    Endianness::Big => u16::from_be_bytes([b[0], b[1]]),
+                };
+                Ok((
+                    Self::Medium(TransportLocatorMedium { address, port }),
+                    at + 2,
+                ))
             }
             fmt_disc::LARGE => {
-                if body.len() < 20 {
-                    return Err(XrceError::UnexpectedEof {
-                        needed: 21,
-                        offset: bytes.len(),
-                    });
-                }
-                let mut l = TransportLocatorLarge::default();
-                l.address.copy_from_slice(&body[0..16]);
-                l.port.copy_from_slice(&body[16..20]);
-                Ok((Self::Large(l), 21))
+                let mut address = [0u8; 16];
+                address.copy_from_slice(take(bytes, at, 16)?);
+                at = align_pos(at + 16, 4);
+                let b = take(bytes, at, 4)?;
+                let raw = [b[0], b[1], b[2], b[3]];
+                let port = match e {
+                    Endianness::Little => u32::from_le_bytes(raw),
+                    Endianness::Big => u32::from_be_bytes(raw),
+                };
+                Ok((Self::Large(TransportLocatorLarge { address, port }), at + 4))
             }
             fmt_disc::STRING => {
-                if body.len() < 4 {
-                    return Err(XrceError::UnexpectedEof {
-                        needed: 5,
-                        offset: bytes.len(),
-                    });
-                }
-                let len = read_u32(&body[0..4], e)? as usize;
-                if len > TRANSPORT_LOCATOR_STRING_MAX + 1 {
+                at = align_pos(at, 4);
+                let b = take(bytes, at, 4)?;
+                let raw = [b[0], b[1], b[2], b[3]];
+                let len = match e {
+                    Endianness::Little => u32::from_le_bytes(raw),
+                    Endianness::Big => u32::from_be_bytes(raw),
+                } as usize;
+                at += 4;
+                if len == 0 || len > TRANSPORT_LOCATOR_STRING_MAX + 1 {
                     return Err(XrceError::PayloadTooLarge {
                         limit: TRANSPORT_LOCATOR_STRING_MAX,
                         actual: len,
                     });
                 }
-                if body.len() < 4 + len {
-                    return Err(XrceError::UnexpectedEof {
-                        needed: 5 + len,
-                        offset: bytes.len(),
+                let raw = take(bytes, at, len)?;
+                let Some((&0, text)) = raw.split_last() else {
+                    return Err(XrceError::ValueOutOfRange {
+                        message: "TransportLocator string lacks its NUL terminator",
                     });
-                }
-                let raw = &body[4..4 + len];
-                // NUL-Terminator trimmen
-                let trimmed = if let Some((&last, rest)) = raw.split_last() {
-                    if last == 0 { rest } else { raw }
-                } else {
-                    raw
                 };
-                let s = core::str::from_utf8(trimmed)
+                let s = core::str::from_utf8(text)
                     .map(alloc::string::ToString::to_string)
                     .map_err(|_| XrceError::ValueOutOfRange {
                         message: "TransportLocator string is not valid utf-8",
                     })?;
-                Ok((Self::String(s), 1 + 4 + len))
-            }
-            fmt_disc::TCP => {
-                if body.len() < 6 {
-                    return Err(XrceError::UnexpectedEof {
-                        needed: 7,
-                        offset: bytes.len(),
-                    });
-                }
-                let mut t = TransportLocatorTcp::default();
-                t.address.copy_from_slice(&body[0..4]);
-                t.port.copy_from_slice(&body[4..6]);
-                Ok((Self::Tcp(t), 7))
-            }
-            fmt_disc::SERIAL => {
-                if body.len() < 4 {
-                    return Err(XrceError::UnexpectedEof {
-                        needed: 5,
-                        offset: bytes.len(),
-                    });
-                }
-                let dev_len = read_u32(&body[0..4], e)? as usize;
-                if dev_len > TRANSPORT_LOCATOR_SERIAL_DEVICE_MAX + 1 {
-                    return Err(XrceError::PayloadTooLarge {
-                        limit: TRANSPORT_LOCATOR_SERIAL_DEVICE_MAX,
-                        actual: dev_len,
-                    });
-                }
-                if body.len() < 4 + dev_len + 4 {
-                    return Err(XrceError::UnexpectedEof {
-                        needed: 1 + 4 + dev_len + 4,
-                        offset: bytes.len(),
-                    });
-                }
-                let raw = &body[4..4 + dev_len];
-                let trimmed = if let Some((&last, rest)) = raw.split_last() {
-                    if last == 0 { rest } else { raw }
-                } else {
-                    raw
-                };
-                let device = core::str::from_utf8(trimmed)
-                    .map(alloc::string::ToString::to_string)
-                    .map_err(|_| XrceError::ValueOutOfRange {
-                        message: "TransportLocator serial device is not valid utf-8",
-                    })?;
-                let baud_rate = read_u32(&body[4 + dev_len..4 + dev_len + 4], e)?;
-                Ok((
-                    Self::Serial(TransportLocatorSerial { device, baud_rate }),
-                    1 + 4 + dev_len + 4,
-                ))
+                Ok((Self::String(s), at + len))
             }
             _ => Err(XrceError::ValueOutOfRange {
                 message: "unknown TransportLocator discriminator",
             }),
         }
     }
+
+    /// Decodes a locator that starts its payload. Returns the locator and
+    /// the bytes consumed.
+    ///
+    /// # Errors
+    /// As [`Self::decode_at`].
+    pub fn decode(bytes: &[u8], e: Endianness) -> Result<(Self, usize), XrceError> {
+        Self::decode_at(bytes, 0, e)
+    }
+}
+
+/// Appends a `TransportLocatorSeq` to `out`, which starts the payload: the
+/// element count as an `unsigned long`, then the locators.
+///
+/// # Errors
+/// As [`TransportLocator::encode_into`].
+pub fn encode_locator_seq(
+    locators: &[TransportLocator],
+    out: &mut Vec<u8>,
+    e: Endianness,
+) -> Result<(), XrceError> {
+    let count = u32::try_from(locators.len()).map_err(|_| XrceError::ValueOutOfRange {
+        message: "TransportLocatorSeq length exceeds u32",
+    })?;
+    align_out(out, 4);
+    put_u32(out, count, e);
+    for l in locators {
+        l.encode_into(out, e)?;
+    }
+    Ok(())
+}
+
+/// Reads a `TransportLocatorSeq` that starts at `pos` of `bytes`, which
+/// starts the payload. Returns the locators and the position after them.
+///
+/// # Errors
+/// As [`TransportLocator::decode_at`]; `PayloadTooLarge` for more than
+/// [`TRANSPORT_LOCATOR_SEQ_MAX`] locators or a count the bytes cannot hold.
+pub fn decode_locator_seq(
+    bytes: &[u8],
+    pos: usize,
+    e: Endianness,
+) -> Result<(Vec<TransportLocator>, usize), XrceError> {
+    let at = align_pos(pos, 4);
+    let b = take(bytes, at, 4)?;
+    let raw = [b[0], b[1], b[2], b[3]];
+    let count = match e {
+        Endianness::Little => u32::from_le_bytes(raw),
+        Endianness::Big => u32::from_be_bytes(raw),
+    } as usize;
+    // A locator takes at least four octets.
+    if count > TRANSPORT_LOCATOR_SEQ_MAX || count > bytes.len().saturating_sub(at + 4) / 4 + 1 {
+        return Err(XrceError::PayloadTooLarge {
+            limit: TRANSPORT_LOCATOR_SEQ_MAX,
+            actual: count,
+        });
+    }
+    let mut at = at + 4;
+    let mut out = Vec::with_capacity(count);
+    for _ in 0..count {
+        let (l, next) = TransportLocator::decode_at(bytes, at, e)?;
+        out.push(l);
+        at = next;
+    }
+    Ok((out, at))
 }
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::expect_used, clippy::unwrap_used)]
+    #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
     use super::*;
 
-    #[test]
-    fn small_roundtrip() {
-        let l = TransportLocator::Small(TransportLocatorSmall {
-            address: [192, 168, 1, 5],
-            port: [0x1C, 0xE8], // 7400
-        });
-        let enc = l.encode(Endianness::Little).unwrap();
-        let (back, n) = TransportLocator::decode(&enc, Endianness::Little).unwrap();
-        assert_eq!(back, l);
-        assert_eq!(n, 7);
+    /// The form of the reference implementation: no DHEADER.
+    fn final_form<R>(f: impl FnOnce() -> R) -> R {
+        crate::encoding::with_unannotated_types(crate::encoding::UnannotatedTypes::Final, f)
     }
 
+    /// The union and the struct of its case carry no @extensibility (Annex
+    /// A): APPENDABLE, a DHEADER each (DDS-XTypes 1.3 §7.3.1.2.1.8).
     #[test]
-    fn medium_roundtrip() {
-        let l = TransportLocator::Medium(TransportLocatorMedium {
-            address: [10, 0, 0, 1],
-            port: [0, 0, 0x1C, 0xE8],
+    fn by_default_the_union_and_its_case_have_a_dheader() {
+        let le = medium(7400).encode(Endianness::Little).unwrap();
+        assert_eq!(
+            le,
+            alloc::vec![
+                14, 0, 0, 0, 1, 0, 0, 0, 6, 0, 0, 0, 192, 168, 0, 5, 0xE8, 0x1C
+            ]
+        );
+        let (back, n) = TransportLocator::decode(&le, Endianness::Little).unwrap();
+        assert_eq!(back, medium(7400));
+        assert_eq!(n, le.len());
+        let small = TransportLocator::Small(TransportLocatorSmall {
+            address: [10, 1],
+            port: 77,
         });
-        let enc = l.encode(Endianness::Little).unwrap();
-        let (back, n) = TransportLocator::decode(&enc, Endianness::Little).unwrap();
-        assert_eq!(back, l);
-        assert_eq!(n, 9);
+        let enc = small.encode(Endianness::Big).unwrap();
+        assert_eq!(
+            enc,
+            alloc::vec![0, 0, 0, 11, 0, 0, 0, 0, 0, 0, 0, 3, 10, 1, 77]
+        );
+        assert_eq!(
+            TransportLocator::decode(&enc, Endianness::Big).unwrap().0,
+            small
+        );
+        // Both forms are read in either setting.
+        let direct = final_form(|| medium(7400).encode(Endianness::Little).unwrap());
+        assert_eq!(direct, alloc::vec![1, 192, 168, 0, 5, 0, 0xE8, 0x1C]);
+        assert_eq!(
+            TransportLocator::decode(&direct, Endianness::Little)
+                .unwrap()
+                .0,
+            medium(7400)
+        );
+        final_form(|| {
+            assert_eq!(
+                TransportLocator::decode(&le, Endianness::Little).unwrap().0,
+                medium(7400)
+            );
+        });
     }
 
+    fn medium(port: u16) -> TransportLocator {
+        TransportLocator::Medium(TransportLocatorMedium {
+            address: [192, 168, 0, 5],
+            port,
+        })
+    }
+
+    /// Annex A: `struct TransportLocatorMedium { octet address[4]; unsigned
+    /// short locator_port; }` as the member of a union with a one-octet
+    /// discriminator. The `unsigned short` is aligned to 2: one padding octet
+    /// after the address, then the port in the byte order of the E flag.
     #[test]
-    fn large_roundtrip() {
-        let l = TransportLocator::Large(TransportLocatorLarge {
-            address: [
+    fn medium_has_a_padding_octet_and_a_port_in_the_byte_order_of_the_flag() {
+        final_form(|| {
+            let le = medium(7400).encode(Endianness::Little).unwrap();
+            assert_eq!(le, alloc::vec![1, 192, 168, 0, 5, 0, 0xE8, 0x1C]);
+            let be = medium(7400).encode(Endianness::Big).unwrap();
+            assert_eq!(be, alloc::vec![1, 192, 168, 0, 5, 0, 0x1C, 0xE8]);
+            for (bytes, e) in [(le, Endianness::Little), (be, Endianness::Big)] {
+                let (back, n) = TransportLocator::decode(&bytes, e).unwrap();
+                assert_eq!(back, medium(7400));
+                assert_eq!(n, 8);
+            }
+        });
+    }
+
+    /// `TransportLocatorLarge { octet address[16]; unsigned long
+    /// locator_port; }`: the `unsigned long` is aligned to 4, three padding
+    /// octets after the 16 address octets.
+    #[test]
+    fn large_has_three_padding_octets_and_a_32_bit_port() {
+        final_form(|| {
+            let address = [
                 0xFE, 0x80, 0, 0, 0, 0, 0, 0, 0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0,
-            ],
-            port: [0, 0, 0x1C, 0xE8],
+            ];
+            let l = TransportLocator::Large(TransportLocatorLarge {
+                address,
+                port: 7400,
+            });
+            let le = l.encode(Endianness::Little).unwrap();
+            assert_eq!(le.len(), 1 + 16 + 3 + 4);
+            assert_eq!(le[0], 2);
+            assert_eq!(&le[1..17], &address);
+            assert_eq!(&le[17..20], &[0, 0, 0]);
+            assert_eq!(&le[20..], &[0xE8, 0x1C, 0, 0]);
+            let be = l.encode(Endianness::Big).unwrap();
+            assert_eq!(&be[20..], &[0, 0, 0x1C, 0xE8]);
+            assert_eq!(
+                TransportLocator::decode(&le, Endianness::Little).unwrap(),
+                (l.clone(), 24)
+            );
+            assert_eq!(
+                TransportLocator::decode(&be, Endianness::Big).unwrap(),
+                (l, 24)
+            );
         });
-        let enc = l.encode(Endianness::Big).unwrap();
-        let (back, n) = TransportLocator::decode(&enc, Endianness::Big).unwrap();
-        assert_eq!(back, l);
-        assert_eq!(n, 21);
+    }
+
+    /// Annex A: `TransportLocatorSmall { octet address[2]; octet
+    /// locator_port; }` — three octets after the discriminator, nothing
+    /// aligned.
+    #[test]
+    fn small_is_two_address_octets_and_a_one_octet_port() {
+        final_form(|| {
+            let l = TransportLocator::Small(TransportLocatorSmall {
+                address: [10, 1],
+                port: 77,
+            });
+            let enc = l.encode(Endianness::Little).unwrap();
+            assert_eq!(enc, alloc::vec![0, 10, 1, 77]);
+            assert_eq!(
+                TransportLocator::decode(&enc, Endianness::Big).unwrap(),
+                (l, 4)
+            );
+        });
+    }
+
+    /// A `string` is an `unsigned long` length (aligned to 4, so three
+    /// padding octets after the discriminator), the characters and a NUL.
+    #[test]
+    fn string_length_is_aligned_to_four() {
+        final_form(|| {
+            let l = TransportLocator::String("udpv4://1.2.3.4:5".into());
+            let enc = l.encode(Endianness::Little).unwrap();
+            assert_eq!(enc[0], 3);
+            assert_eq!(&enc[1..4], &[0, 0, 0]);
+            assert_eq!(&enc[4..8], &18u32.to_le_bytes());
+            assert_eq!(&enc[8..25], b"udpv4://1.2.3.4:5");
+            assert_eq!(enc[25], 0);
+            assert_eq!(
+                TransportLocator::decode(&enc, Endianness::Little).unwrap(),
+                (l.clone(), enc.len())
+            );
+            let be = l.encode(Endianness::Big).unwrap();
+            assert_eq!(&be[4..8], &18u32.to_be_bytes());
+            assert_eq!(TransportLocator::decode(&be, Endianness::Big).unwrap().0, l);
+        });
+    }
+
+    /// The spec puts no cap of 256 on the string; only the size of a
+    /// submessage limits it.
+    #[test]
+    fn a_long_string_locator_is_not_cut_at_256() {
+        let l = TransportLocator::String("a".repeat(1000));
+        let enc = l.encode(Endianness::Little).unwrap();
+        assert_eq!(
+            TransportLocator::decode(&enc, Endianness::Little)
+                .unwrap()
+                .0,
+            l
+        );
+        let too_long = TransportLocator::String("a".repeat(TRANSPORT_LOCATOR_STRING_MAX + 1));
+        assert!(matches!(
+            too_long.encode(Endianness::Little),
+            Err(XrceError::PayloadTooLarge { .. })
+        ));
+    }
+
+    /// The padding depends on where the locator sits in its payload: after a
+    /// one-octet prefix the same Medium locator needs no padding before its
+    /// port (the port then starts at offset 6).
+    #[test]
+    fn padding_is_counted_from_the_start_of_the_payload() {
+        final_form(|| {
+            let mut out = alloc::vec![0xAAu8];
+            medium(7400)
+                .encode_into(&mut out, Endianness::Little)
+                .unwrap();
+            assert_eq!(out, alloc::vec![0xAA, 1, 192, 168, 0, 5, 0xE8, 0x1C]);
+            let (back, end) = TransportLocator::decode_at(&out, 1, Endianness::Little).unwrap();
+            assert_eq!(back, medium(7400));
+            assert_eq!(end, out.len());
+        });
     }
 
     #[test]
-    fn string_roundtrip() {
-        let l = TransportLocator::String("udpv4://192.168.0.5:7400".into());
-        let enc = l.encode(Endianness::Little).unwrap();
-        let (back, _) = TransportLocator::decode(&enc, Endianness::Little).unwrap();
-        assert_eq!(back, l);
+    fn a_locator_sequence_is_a_count_and_aligned_locators() {
+        let locators = alloc::vec![
+            medium(2018),
+            TransportLocator::Large(TransportLocatorLarge {
+                address: [1; 16],
+                port: 2019,
+            }),
+            TransportLocator::String("tcpv4://h:1".into()),
+        ];
+        for e in [Endianness::Little, Endianness::Big] {
+            let mut out = Vec::new();
+            encode_locator_seq(&locators, &mut out, e).unwrap();
+            assert_eq!(
+                &out[..4],
+                &match e {
+                    Endianness::Little => 3u32.to_le_bytes(),
+                    Endianness::Big => 3u32.to_be_bytes(),
+                }
+            );
+            let (back, end) = decode_locator_seq(&out, 0, e).unwrap();
+            assert_eq!(back, locators);
+            assert_eq!(end, out.len());
+        }
+        // An empty sequence is the count alone.
+        let mut out = Vec::new();
+        encode_locator_seq(&[], &mut out, Endianness::Little).unwrap();
+        assert_eq!(out, alloc::vec![0, 0, 0, 0]);
+        // A count the bytes cannot hold is refused.
+        assert!(decode_locator_seq(&[0xFF, 0xFF, 0, 0], 0, Endianness::Little).is_err());
     }
 
     #[test]
     fn unknown_discriminator_rejected() {
         let res = TransportLocator::decode(&[0x99, 0, 0, 0, 0, 0, 0], Endianness::Little);
         assert!(matches!(res, Err(XrceError::ValueOutOfRange { .. })));
+        // 0x04 and 0x05 are no TransportLocatorFormat.
+        for d in [4u8, 5] {
+            assert!(
+                TransportLocator::decode(&[d, 0, 0, 0, 0, 0, 0, 0], Endianness::Little).is_err()
+            );
+        }
     }
 
     #[test]
-    fn small_truncated_returns_eof() {
-        let res = TransportLocator::decode(&[fmt_disc::SMALL, 1, 2, 3], Endianness::Little);
-        assert!(matches!(res, Err(XrceError::UnexpectedEof { .. })));
+    fn truncated_locators_return_eof() {
+        for bytes in [
+            alloc::vec![fmt_disc::SMALL, 1, 2],
+            alloc::vec![fmt_disc::MEDIUM, 1, 2, 3, 4, 0],
+            alloc::vec![fmt_disc::LARGE, 1, 2, 3],
+            alloc::vec![fmt_disc::STRING, 0, 0, 0, 9, 0, 0, 0, b'a'],
+        ] {
+            let res = TransportLocator::decode(&bytes, Endianness::Little);
+            assert!(
+                matches!(res, Err(XrceError::UnexpectedEof { .. })),
+                "{bytes:?}"
+            );
+        }
     }
 
     #[test]
-    fn string_too_long_rejected_on_encode() {
-        let s: alloc::string::String = (0..TRANSPORT_LOCATOR_STRING_MAX + 1).map(|_| 'a').collect();
-        let l = TransportLocator::String(s);
-        let res = l.encode(Endianness::Little);
-        assert!(matches!(res, Err(XrceError::PayloadTooLarge { .. })));
+    fn a_string_without_its_nul_is_refused() {
+        let bytes = alloc::vec![fmt_disc::STRING, 0, 0, 0, 2, 0, 0, 0, b'a', b'b'];
+        assert!(matches!(
+            TransportLocator::decode(&bytes, Endianness::Little),
+            Err(XrceError::ValueOutOfRange { .. })
+        ));
     }
 
+    /// §11.2.1: the UDP locator of an agent carries the agent's port as a
+    /// number, whatever the byte order of the message.
     #[test]
-    fn string_oversized_length_rejected_on_decode() {
-        let mut bad = alloc::vec![fmt_disc::STRING];
-        let huge_len = (TRANSPORT_LOCATOR_STRING_MAX as u32) + 100;
-        bad.extend_from_slice(&huge_len.to_le_bytes());
-        let res = TransportLocator::decode(&bad, Endianness::Little);
-        assert!(matches!(res, Err(XrceError::PayloadTooLarge { .. })));
-    }
-
-    #[test]
-    fn tcp_roundtrip_le() {
-        let l = TransportLocator::Tcp(TransportLocatorTcp {
-            address: [192, 168, 1, 5],
-            port: [0x1C, 0xE8],
-        });
-        let enc = l.encode(Endianness::Little).unwrap();
-        let (back, n) = TransportLocator::decode(&enc, Endianness::Little).unwrap();
-        assert_eq!(back, l);
-        assert_eq!(n, 7);
-        assert_eq!(enc[0], fmt_disc::TCP);
-    }
-
-    #[test]
-    fn tcp_roundtrip_be() {
-        let l = TransportLocator::Tcp(TransportLocatorTcp {
-            address: [10, 0, 0, 1],
-            port: [0x00, 0x50],
-        });
-        let enc = l.encode(Endianness::Big).unwrap();
-        let (back, _) = TransportLocator::decode(&enc, Endianness::Big).unwrap();
-        assert_eq!(back, l);
-    }
-
-    #[test]
-    fn tcp_truncated_returns_eof() {
-        let res = TransportLocator::decode(&[fmt_disc::TCP, 1, 2, 3], Endianness::Little);
-        assert!(matches!(res, Err(XrceError::UnexpectedEof { .. })));
-    }
-
-    #[test]
-    fn serial_roundtrip_typical_device() {
-        let l = TransportLocator::Serial(TransportLocatorSerial {
-            device: "/dev/ttyUSB0".into(),
-            baud_rate: 115200,
-        });
-        let enc = l.encode(Endianness::Little).unwrap();
-        let (back, _) = TransportLocator::decode(&enc, Endianness::Little).unwrap();
-        assert_eq!(back, l);
-    }
-
-    #[test]
-    fn serial_roundtrip_windows_com_port() {
-        let l = TransportLocator::Serial(TransportLocatorSerial {
-            device: "COM3".into(),
-            baud_rate: 9600,
-        });
-        let enc = l.encode(Endianness::Big).unwrap();
-        let (back, _) = TransportLocator::decode(&enc, Endianness::Big).unwrap();
-        assert_eq!(back, l);
-    }
-
-    #[test]
-    fn serial_too_long_device_rejected_on_encode() {
-        let dev: alloc::string::String = (0..TRANSPORT_LOCATOR_SERIAL_DEVICE_MAX + 1)
-            .map(|_| 'a')
-            .collect();
-        let l = TransportLocator::Serial(TransportLocatorSerial {
-            device: dev,
-            baud_rate: 9600,
-        });
-        let res = l.encode(Endianness::Little);
-        assert!(matches!(res, Err(XrceError::PayloadTooLarge { .. })));
-    }
-
-    #[test]
-    fn serial_oversized_length_rejected_on_decode() {
-        let mut bad = alloc::vec![fmt_disc::SERIAL];
-        let huge: u32 = (TRANSPORT_LOCATOR_SERIAL_DEVICE_MAX as u32) + 200;
-        bad.extend_from_slice(&huge.to_le_bytes());
-        let res = TransportLocator::decode(&bad, Endianness::Little);
-        assert!(matches!(res, Err(XrceError::PayloadTooLarge { .. })));
-    }
-
-    #[test]
-    fn serial_truncated_baud_rate_returns_eof() {
-        // 4 Byte len-Header (=5 → 4 device + NUL), 4 device + NUL, KEINE Baud-Bytes.
-        let mut bad = alloc::vec![fmt_disc::SERIAL];
-        bad.extend_from_slice(&5u32.to_le_bytes());
-        bad.extend_from_slice(b"COM1\0");
-        let res = TransportLocator::decode(&bad, Endianness::Little);
-        assert!(matches!(res, Err(XrceError::UnexpectedEof { .. })));
+    fn a_udp_locator_carries_the_default_agent_port() {
+        for domain in [0u16, 1, 5] {
+            let port = crate::transport_udp::agent_default_port(domain);
+            for e in [Endianness::Little, Endianness::Big] {
+                let enc = medium(port).encode(e).unwrap();
+                match TransportLocator::decode(&enc, e).unwrap().0 {
+                    TransportLocator::Medium(m) => assert_eq!(m.port, 7400 + 4 * domain),
+                    other => panic!("not a Medium locator: {other:?}"),
+                }
+            }
+        }
     }
 }

@@ -1,51 +1,67 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Internes Cross-Process-DCPS-Roundtrip-Regressions-Gate — laeuft in CI,
-//! braucht KEINE externen Hosts (Ersatz fuer die alten host-gebundenen
-//! bench-llvm/soak-pivot, die nur pve-VMs ohne Stabilitaetsgewinn ueber glr1
-//! waren).
+//! Internal cross-process DCPS roundtrip regression gate — runs in CI,
+//! needs NO external hosts (a replacement for the old host-bound bench
+//! and soak jobs, which ran on separate VMs without a stability gain over
+//! the CI runner).
 //!
-//! ## Warum zwei Prozesse
-//! Zwei `DomainParticipant`s im SELBEN Prozess liefern User-Daten ueber den
-//! synchronen In-Process-Fastpath (`inproc` + `handle_user_datagram`) zu —
-//! transport-AGNOSTISCH. Ein Single-Process-Bench misst also fuer JEDEN
-//! `ZERODDS_USER_TRANSPORT`-Wert denselben In-Process-Pfad (~1us, alle
-//! Transporte identisch) und ist als Transport-Regressionsgate WERTLOS.
-//! Darum orchestriert dieses Gate die bewaehrte `roundtrip-1us`-Bin als zwei
-//! getrennte Prozesse (pong=Echo, ping=Messer): getrennte Prozesse haben
-//! keine `inproc`-Peers -> Daten laufen ueber den ECHTEN Wire-Transport.
+//! ## Why two processes
+//! Two `DomainParticipant`s in the SAME process deliver user data over the
+//! synchronous in-process fast path (`inproc` + `handle_user_datagram`) to —
+//! transport-AGNOSTIC. A single-process bench thus measures, for EVERY
+//! selected user-transport value the same in-process path (~1us, all
+//! transports identical) and is WORTHLESS as a transport regression gate.
+//! So this gate orchestrates the proven `roundtrip-1us` bin as two
+//! separate processes (pong=echo, ping=measurer): separate processes have
+//! no `inproc` peers -> data goes over the REAL wire transport.
 //!
-//! ## Was gemessen + gegated wird
-//! Pro Zelle (Transport × Payload) RTT-Roundtrips (Listener-Variante = RTT
-//! direkt im Recv-Thread, ohne User-Polling-Latenz). Gegated wird auf den
-//! **p50**: auf den geteilten, belasteten CI-Hosts (glr1/codepit, kein
-//! dedizierter Bench-Host) ist der absolute `min` ein 1-aus-N-Glueckssample
-//! und schwankt run-to-run ~3x — als Gate-Metrik unbrauchbar. Der p50 ist
-//! dagegen empirisch sehr stabil (±0.5% ueber Laeufe bei 50k Samples), also
-//! ist ein +20%-Gate praktisch false-red-frei und faengt jede reale
-//! ≥20%-Median-Regression. `min`/`p90` werden als Info-Spalten BERICHTET
-//! (Floor-/Tail-Trend sichtbar), aber NICHT gegated.
+//! ## What is measured + gated
+//! Per cell (Transport × Payload) RTT roundtrips (listener variant = RTT
+//! directly in the recv thread, without user-polling latency). Gating is on the
+//! **p50**: on the shared, loaded CI hosts (the CI runner and the Linux test host, no
+//! dedicated bench host) the absolute `min` is a 1-of-N lucky sample
+//! and varies run-to-run ~3x — unusable as a gate metric. The p50 is
+//! empirically very stable by contrast (±0.5% across runs at 50k samples), so
+//! a +20% gate is practically free of false reds and catches every real
+//! a ≥20% median regression. `min`/`p90` are REPORTED as info columns
+//! (floor/tail trend visible), but NOT gated.
 //!
-//! Baselines sind host-spezifisch (p50 ~ Host-Scheduling) — sie werden auf dem
-//! CI-Runner per `--update` geseedet, NICHT auf einer Dev-Maschine.
+//! Baselines are host-specific (p50 ~ host scheduling) — they are, on the
+//! CI runner via `--update`, NOT on a dev machine.
 //!
-//! ## Transport-Achse
-//! Nur die ueber die c-api-FFI ERREICHBAREN, genuin distinkten Loopback-
-//! Transporte: UDPv4, TCPv4, SHM (`same-host-shm` ist c-api-default). UDS ist
-//! KEIN c-api-Feature (`ZERODDS_USER_TRANSPORT=UDS` faellt still auf UDPv4
-//! zurueck) und TSN braucht ein echtes Interface — beide bewusst ausgelassen
-//! (explizit geloggt, kein stiller Cap).
+//! ## Transport axis
+//! Only the genuinely distinct loopback transports REACHABLE via the c-api FFI
+//! Transports: UDPv4, TCPv4, SHM (`same-host-shm` is c-api default). UDS is
+//! NOT a c-api feature in this build and TSN needs a real interface — both deliberately omitted
+//! (explicitly logged, no silent cap).
+//!
+//! ## The same-host channel is its own cell
+//! Two ZeroDDS participants on one host open a same-host channel when SPDP
+//! reports each other (`crates/dcps/src/same_host_channel.rs`, spec
+//! `zerodds-zero-copy-1.0` §6), and it carries every datagram to a peer's
+//! **UDP** locator; TCP and SHM user transports keep their own path
+//! (`SameHostChannels::add_peer` routes UDP locators only). With the
+//! channel on, the `UDPv4` cell measures the channel and not UDP. Until
+//! `6bbed212a93` the older per-pair same-host path carried user DATA for
+//! every user transport, so all three cells measured that path; measured
+//! on the Linux test host at `39a5a0e1c5d`, TCPv4/64 p50 17.5 µs with it and 50.8 µs
+//! without (`ZERODDS_SAME_HOST_SHM=0`).
+//!
+//! So the transport cells run with the channel off
+//! (`ZERODDS_SAME_HOST_SHM=0` in both processes) and measure the transport
+//! they name, and `SameHost` runs UDPv4 with the channel on and measures
+//! the channel.
 //!
 //! ## Baselines
 //! `tests/perf/internal-bench/baselines.txt` (committed, `<zelle> <min_us>
-//! <p50_us>` pro Zeile). `--update` schreibt sie neu (bewusstes Re-Baseline
-//! bei akzeptierter Aenderung). Ohne `--update`: exit≠0 (rot) wenn eine Zelle
-//! den Baseline-Floor um > TOLERANCE ueberschreitet oder das absolute Sanity-
-//! Ceiling reisst.
+//! <p50_us>` per line). `--update` rewrites them (conscious re-baseline
+//! on an accepted change). Without `--update`: exit≠0 (red) if a cell
+//! exceeds the baseline floor by > TOLERANCE or the absolute sanity
+//! Ceiling breaks.
 //!
-//! Stage 2 (Haken): Security-Profil-Achse (none/data-enc/all-enc via
-//! `roundtrip-1us`-Security-Env) als zusaetzliche Spalte — selber Orchestrator.
+//! Stage 2 (hook): security profile axis (none/data-enc/all-enc via
+//! `roundtrip-1us` security env) as an additional column — same orchestrator.
 
 #![allow(
     clippy::expect_used,
@@ -74,41 +90,41 @@ mod inner {
     use std::thread;
     use std::time::Duration;
 
-    /// Transport-Achse (Werte fuer `ZERODDS_USER_TRANSPORT`). Nur FFI-
-    /// erreichbar + genuin distinkt: UDPv4, TCPv4, SHM. Siehe Modul-Doc.
-    const TRANSPORTS: &[&str] = &["UDPv4", "TCPv4", "SHM"];
-    /// Bewusst NICHT in der Matrix (kein stiller Cap — hier dokumentiert/geloggt).
+    /// Transport axis (explicit `--dcps-transport` arguments). Only FFI-
+    /// reachable + genuinely distinct: UDPv4, TCPv4, SHM. See module doc.
+    /// `(cell name, --dcps-transport, same-host channel on)`.
+    const CELLS: &[(&str, &str, bool)] = &[
+        ("UDPv4", "UDPv4", false),
+        ("TCPv4", "TCPv4", false),
+        ("SHM", "SHM", false),
+        ("SameHost", "UDPv4", true),
+    ];
+    /// Deliberately NOT in the matrix (no silent cap — documented/logged here).
     const EXCLUDED: &[(&str, &str)] = &[
-        (
-            "UDS",
-            "kein c-api-Feature (same-host-uds) -> stiller UDPv4-Fallback",
-        ),
-        (
-            "TSN",
-            "braucht echtes Interface (ZERODDS_TSN_IFACE), kein Loopback",
-        ),
+        ("UDS", "no c-api feature (same-host-uds)"),
+        ("TSN", "needs a real interface (tsn.interface), no loopback"),
         (
             "UDPv6/TCPv6",
-            "redundant zu v4 fuer Floor-Latenz auf Loopback",
+            "redundant with v4 for floor latency on loopback",
         ),
     ];
-    /// Payload-Achse (Bytes). Klein = wakeup-dominiert, mittel = mit Copy-Anteil.
+    /// Payload axis (bytes). Small = wakeup-dominated, medium = with copy fraction.
     const PAYLOADS: &[usize] = &[64, 4096];
 
     const WARMUP: u64 = 3_000;
     const SAMPLES: u64 = 30_000;
-    /// +20% auf den p50 = rot.
+    /// +20% on the p50 = red.
     const TOLERANCE: f64 = 1.20;
-    /// Absolutes Sanity-Ceiling (us) auf den p50: faengt grobe Kaputtheit auch
-    /// ohne Baseline. Cross-Process-Loopback-p50 liegt real bei ~30-70us; 5ms
-    /// ist grosszuegig (nur ~70-150x-Regressionen reissen es).
+    /// Absolute sanity ceiling (us) on the p50: catches gross breakage even
+    /// without a baseline. Cross-process loopback p50 is really ~30-70us; 5ms
+    /// is generous (only ~70-150x regressions trip it).
     const CEILING_US: f64 = 5_000.0;
     /// Wallclock-Notbremse pro `roundtrip-1us`-Prozess (CI-Safety-Net).
     const MAX_RUNTIME_SECS: u64 = 30;
-    /// Wiederholungen pro Zelle; gegated wird der MEDIAN-p50. Auf den geteilten
-    /// CI-Hosts trifft ab und zu eine ~3s-Contention-Spitze EINE Zelle (z.B.
-    /// TCPv4/64 72->137us bei sonst stabilen ~80us). Der Median ueber 3 zeitlich
-    /// verteilte Reps ignoriert einen einzelnen Spike -> robustes +20%-Gate.
+    /// Repetitions per cell; the MEDIAN p50 is gated. On the shared
+    /// CI hosts occasionally hit a ~3s contention spike on ONE cell (e.g.
+    /// TCPv4/64 72->137us with otherwise stable ~80us). The median over 3 temporally
+    /// distributed reps ignore a single spike -> robust +20% gate.
     const REPS: usize = 3;
 
     const BASELINE_PATH: &str = "tests/perf/internal-bench/baselines.txt";
@@ -121,13 +137,13 @@ mod inner {
         ok: bool,
     }
 
-    /// Pfad zur `roundtrip-1us`-Bin neben der eigenen Bin (gleiches target-Dir).
+    /// Path to the `roundtrip-1us` bin next to our own bin (same target dir).
     fn bench_bin() -> PathBuf {
         let exe = std::env::current_exe().expect("current_exe");
         exe.parent().expect("exe dir").join("roundtrip-1us")
     }
 
-    /// Parst eine `report()`-Zeile der Form `min        = 17920 ns`.
+    /// Parses a `report()` line of the form `min        = 17920 ns`.
     fn parse_field(txt: &str, key: &str) -> Option<f64> {
         for line in txt.lines() {
             let l = line.trim();
@@ -148,28 +164,27 @@ mod inner {
         None
     }
 
-    /// Eine Zelle messen: pong-Echo-Prozess spawnen, ping-Messer laufen lassen,
-    /// dessen `min`/`p50`/`p90` (ns) parsen -> (min_us, p50_us, p90_us). `None`
-    /// bei jedem Fehler (no-match, Bin fehlt, Parse-Fail) -> SETUP_FAIL (laut).
+    /// Measure one cell: spawn pong echo process, run ping measurer,
+    /// parse its `min`/`p50`/`p90` (ns) -> (min_us, p50_us, p90_us). `None`
+    /// on any error (no-match, bin missing, parse fail) -> SETUP_FAIL (loud).
     fn measure(
         bin: &Path,
         transport: &str,
+        same_host: bool,
         payload: usize,
         domain: u32,
     ) -> Option<(f64, f64, f64)> {
         if !bin.exists() {
-            eprintln!(
-                "regression: roundtrip-1us nicht gefunden: {}",
-                bin.display()
-            );
+            eprintln!("regression: roundtrip-1us not found: {}", bin.display());
             return None;
         }
         let topic = format!("bench-reg-{transport}-{payload}");
         let dom = domain.to_string();
         let pl = payload.to_string();
         let mr = MAX_RUNTIME_SECS.to_string();
+        let same_host = if same_host { "1" } else { "0" };
 
-        // pong (Echo) als Kind-Prozess.
+        // pong (echo) as child process.
         let mut pong = Command::new(bin)
             .args([
                 "--role",
@@ -184,18 +199,19 @@ mod inner {
                 "--max-runtime",
                 &mr,
             ])
-            .env("ZERODDS_USER_TRANSPORT", transport)
+            .args(["--dcps-transport", transport])
+            .env("ZERODDS_SAME_HOST_SHM", same_host)
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()
             .ok()?;
 
-        // Pong muss erst Discovery/Endpoints hochfahren, sonst verpasst ping
-        // die ersten Samples (Sekunden-RTT-Artefakt).
+        // Pong must bring up discovery/endpoints first, otherwise ping misses
+        // the first samples (second-RTT artifact).
         thread::sleep(Duration::from_secs(2));
 
-        // ping (Messer, Listener-RTT) — blockiert bis samples voll oder
-        // max-runtime; sammelt stdout fuer den min/p50-Parse.
+        // ping (measurer, listener RTT) — blocks until samples full or
+        // max runtime; collects stdout for the min/p50 parse.
         let warmup = WARMUP.to_string();
         let samples = SAMPLES.to_string();
         let out = Command::new(bin)
@@ -217,7 +233,8 @@ mod inner {
                 "--max-runtime",
                 &mr,
             ])
-            .env("ZERODDS_USER_TRANSPORT", transport)
+            .args(["--dcps-transport", transport])
+            .env("ZERODDS_SAME_HOST_SHM", same_host)
             .stderr(Stdio::null())
             .output()
             .ok();
@@ -236,21 +253,22 @@ mod inner {
         Some((min_ns / 1000.0, p50_ns / 1000.0, p90_ns / 1000.0))
     }
 
-    /// Median eines nicht-leeren f64-Slices (sortiert intern; bei gerader
-    /// Laenge der untere der beiden Mittelwerte — konservativ).
+    /// Median of a non-empty f64 slice (sorted internally; for an even
+    /// length the lower of the two means — conservative).
     fn median(v: &mut [f64]) -> f64 {
         v.sort_by(|a, b| a.partial_cmp(b).unwrap_or(core::cmp::Ordering::Equal));
         v[(v.len() - 1) / 2]
     }
 
-    /// Eine Zelle ueber `REPS` zeitlich verteilte Reps messen und aggregieren:
-    /// MEDIAN-p50 (Spike-robust), MIN der mins (bester Floor), MEDIAN-p90.
-    /// `base_domain` + Rep-Index liefern pro Rep eine disjunkte Domain (kein
-    /// TIME_WAIT/Discovery-Bleed zwischen Back-to-Back-Reps). `None` wenn die
-    /// Mehrheit der Reps scheitert (Setup kaputt) -> Zelle = SETUP_FAIL.
+    /// Measure a cell over `REPS` temporally spread reps and aggregate:
+    /// MEDIAN p50 (spike-robust), MIN of the mins (best floor), MEDIAN p90.
+    /// `base_domain` + rep index yield a disjoint domain per rep (no
+    /// TIME_WAIT/discovery bleed between back-to-back reps). `None` if the
+    /// majority of reps fails (setup broken) -> cell = SETUP_FAIL.
     fn measure_cell(
         bin: &Path,
         transport: &str,
+        same_host: bool,
         payload: usize,
         base_domain: u32,
     ) -> Option<(f64, f64, f64)> {
@@ -258,16 +276,16 @@ mod inner {
         let mut p50s = Vec::new();
         let mut p90s = Vec::new();
         for rep in 0..REPS {
-            // Disjunkte Domain pro Rep (Cap < 232).
+            // Disjoint domain per rep (cap < 232).
             let domain = 140 + ((base_domain - 140 + rep as u32 * 7) % 80);
-            if let Some((mn, p50, p90)) = measure(bin, transport, payload, domain) {
+            if let Some((mn, p50, p90)) = measure(bin, transport, same_host, payload, domain) {
                 mins.push(mn);
                 p50s.push(p50);
                 p90s.push(p90);
             }
             thread::sleep(Duration::from_millis(300));
         }
-        // Mehrheit muss erfolgreich sein, sonst ist das Setup kaputt.
+        // The majority must succeed, otherwise the setup is broken.
         if p50s.len() <= REPS / 2 {
             return None;
         }
@@ -277,8 +295,8 @@ mod inner {
         Some((min_us, p50_us, p90_us))
     }
 
-    /// Baseline-Zeile: `<key> <p50_us> <min_us> <p90_us>`. Gegated wird p50
-    /// (erste Spalte); min/p90 sind Info. Fehlende Info-Spalten = 0.0.
+    /// Baseline line: `<key> <p50_us> <min_us> <p90_us>`. p50 is gated
+    /// (first column); min/p90 are info. Missing info columns = 0.0.
     fn load_baselines(path: &Path) -> BTreeMap<String, (f64, f64, f64)> {
         let mut m = BTreeMap::new();
         if let Ok(txt) = std::fs::read_to_string(path) {
@@ -311,7 +329,7 @@ mod inner {
             ((TOLERANCE - 1.0) * 100.0) as i32
         );
         for (t, why) in EXCLUDED {
-            println!("   (ausgelassen: {t} — {why})");
+            println!("   (skipped: {t} — {why})");
         }
         println!(
             "{:<16} {:>9} {:>9} {:>9} {:>10} {:>16}",
@@ -320,50 +338,51 @@ mod inner {
 
         let mut cells: Vec<Cell> = Vec::new();
         let mut idx: u32 = 0;
-        for &t in TRANSPORTS {
+        for &(cell, t, same_host) in CELLS {
             for &pl in PAYLOADS {
-                let key = format!("{t}/{pl}");
-                // Disjunkte Basis-Domain pro Zelle (kein Discovery-Bleed). Die
-                // Reps f*chern davon ab. Cap < 232.
+                let key = format!("{cell}/{pl}");
+                // Disjoint base domain per cell (no discovery bleed). The
+                // Reps derive from it. Cap < 232.
                 let domain = 140 + ((idx * REPS as u32) % 60);
                 idx += 1;
-                // Baseline = p50 (erste Spalte der Baseline-Zeile).
+                // Baseline = p50 (first column of the baseline line).
                 let base_p50 = baselines.get(&key).map(|&(p50, ..)| p50);
-                let (min_us, p50_us, p90_us, status, ok) = match measure_cell(&bin, t, pl, domain) {
-                    Some((min_us, p50_us, p90_us)) => {
-                        if p50_us > CEILING_US {
-                            (
-                                min_us,
-                                p50_us,
-                                p90_us,
-                                format!("CEILING(>{CEILING_US:.0})"),
-                                false,
-                            )
-                        } else if let Some(bp50) = base_p50 {
-                            if p50_us > bp50 * TOLERANCE {
-                                let pct = (p50_us / bp50 - 1.0) * 100.0;
+                let (min_us, p50_us, p90_us, status, ok) =
+                    match measure_cell(&bin, t, same_host, pl, domain) {
+                        Some((min_us, p50_us, p90_us)) => {
+                            if p50_us > CEILING_US {
                                 (
                                     min_us,
                                     p50_us,
                                     p90_us,
-                                    format!("REGRESSED(+{pct:.0}%)"),
+                                    format!("CEILING(>{CEILING_US:.0})"),
                                     false,
                                 )
+                            } else if let Some(bp50) = base_p50 {
+                                if p50_us > bp50 * TOLERANCE {
+                                    let pct = (p50_us / bp50 - 1.0) * 100.0;
+                                    (
+                                        min_us,
+                                        p50_us,
+                                        p90_us,
+                                        format!("REGRESSED(+{pct:.0}%)"),
+                                        false,
+                                    )
+                                } else {
+                                    (min_us, p50_us, p90_us, "OK".to_string(), true)
+                                }
                             } else {
-                                (min_us, p50_us, p90_us, "OK".to_string(), true)
+                                (min_us, p50_us, p90_us, "NEW".to_string(), true)
                             }
-                        } else {
-                            (min_us, p50_us, p90_us, "NEW".to_string(), true)
                         }
-                    }
-                    None => (
-                        f64::NAN,
-                        f64::NAN,
-                        f64::NAN,
-                        "SETUP_FAIL".to_string(),
-                        false,
-                    ),
-                };
+                        None => (
+                            f64::NAN,
+                            f64::NAN,
+                            f64::NAN,
+                            "SETUP_FAIL".to_string(),
+                            false,
+                        ),
+                    };
                 let base = base_p50
                     .map(|p| format!("{p:.2}"))
                     .unwrap_or_else(|| "-".into());
@@ -377,7 +396,7 @@ mod inner {
                     p90_us,
                     ok,
                 });
-                // Settle (TIME_WAIT / Discovery-Cleanup zwischen Zellen).
+                // Settle (TIME_WAIT / discovery cleanup between cells).
                 thread::sleep(Duration::from_millis(500));
             }
         }
@@ -385,10 +404,10 @@ mod inner {
         if update {
             let mut out = String::from(
                 "# Internal-Bench-Baselines (committed). Spalten: <transport/payload> <p50_us> <min_us> <p90_us>\n\
-                 # Metrik: Cross-Process-DCPS-Roundtrip-RTT (Listener). Gegated wird p50.\n\
-                 # HOST-SPEZIFISCH: auf dem CI-Runner per --update geseedet, nicht auf Dev-Maschinen.\n\
+                 # Metric: cross-process DCPS roundtrip RTT (listener). p50 is gated.\n\
+                 # HOST-SPECIFIC: seeded on the CI runner via --update, not on dev machines.\n\
                  # Regeneriert via: cargo run -p zerodds-bench-suite --bin regression --release -- --update\n\
-                 # Gate (ohne --update): p50 > base_p50 * 1.20 ODER > 5000us => rot.\n",
+                 # Gate (without --update): p50 > base_p50 * 1.20 OR > 5000us => red.\n",
             );
             for c in &cells {
                 if c.p50_us.is_finite() {
@@ -402,14 +421,11 @@ mod inner {
                 let _ = std::fs::create_dir_all(parent);
             }
             std::fs::write(baseline_path, out).expect("write baselines");
-            println!(
-                "\n== baselines aktualisiert: {} ==",
-                baseline_path.display()
-            );
-            // Bei --update trotzdem rot, wenn eine Zelle gar nicht messbar war
-            // (eine NAN-Baseline waere wertlos).
+            println!("\n== baselines updated: {} ==", baseline_path.display());
+            // Still red under --update if a cell was not measurable at all
+            // (a NaN baseline would be worthless).
             return if cells.iter().any(|c| !c.p50_us.is_finite()) {
-                eprintln!("WARN: Zelle(n) nicht messbar — Baseline unvollstaendig");
+                eprintln!("WARN: cell(s) not measurable — baseline incomplete");
                 1
             } else {
                 0
@@ -418,10 +434,10 @@ mod inner {
 
         let failed: Vec<&Cell> = cells.iter().filter(|c| !c.ok).collect();
         if failed.is_empty() {
-            println!("\n== alle {} Zellen OK ==", cells.len());
+            println!("\n== all {} cells OK ==", cells.len());
             0
         } else {
-            println!("\n== {} Zelle(n) ROT ==", failed.len());
+            println!("\n== {} cell(s) RED ==", failed.len());
             for c in &failed {
                 println!("   {}", c.key);
             }

@@ -1,7 +1,7 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: zerodds
 Upstream-Contact: ZeroDDS Maintainers <maintainers@zerodds.io>
-Source: https://gitlab.sandra-kessler.eu/fishermen21/zerodds
+Source: https://github.com/zero-objects/zero-dds
 
 Files: *
 Copyright: 2026 ZeroDDS Contributors

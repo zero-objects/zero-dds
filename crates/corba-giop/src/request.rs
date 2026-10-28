@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Request-Message — Spec §15.4.2.
+//! The Request message — Spec §15.4.2.
 //!
 //! GIOP 1.0 (`§15.4.2.1`):
 //! ```text
@@ -34,7 +34,7 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use zerodds_cdr::{BufferReader, BufferWriter};
+use zerodds_wire::{Reader, Writer};
 
 use crate::error::{GiopError, GiopResult};
 use crate::service_context::ServiceContextList;
@@ -128,38 +128,49 @@ impl Request {
         }
     }
 
-    /// CDR-encode into a `BufferWriter`. Body alignment to 8 bytes
+    /// CDR-encode into a `Writer`. Body alignment to 8 bytes
     /// from the header start (= 8 bytes from the buffer start in
     /// GIOP 1.2, Spec §15.4, normative).
     ///
     /// # Errors
     /// Buffer write error or length overflow.
-    pub fn encode(&self, version: Version, w: &mut BufferWriter) -> GiopResult<()> {
+    pub fn encode(&self, version: Version, w: &mut Writer) -> GiopResult<()> {
         if version.uses_v1_2_request_layout() {
             // GIOP 1.2 — request_id first.
-            w.write_u32(self.request_id)?;
-            w.write_u8(self.response_flags.0)?;
+            w.write_u32(self.request_id);
+            w.write_u8(self.response_flags.0);
             // 3 reserved bytes.
-            w.write_u8(0)?;
-            w.write_u8(0)?;
-            w.write_u8(0)?;
+            w.write_u8(0);
+            w.write_u8(0);
+            w.write_u8(0);
             // TargetAddress union.
             self.target.encode(w)?;
-            write_string(w, &self.operation)?;
+            w.write_string(&self.operation);
             self.service_context.encode(w)?;
-            // Body 8-byte aligned (Spec §15.4, normative from GIOP 1.2).
-            w.align(8);
+            // The body is 8-aligned from the message header (§15.4,
+            // normative from GIOP 1.2) — and only when there is one.
+            // omniORB, JacORB and TAO all end the message at the service
+            // context list when the operation takes no arguments, and
+            // omniORB's `giopImpl12.cc` answers a message with padding
+            // hanging behind the last field with "Garbage left at end of
+            // input message". `LocateReply` already knew this; `Request`
+            // and `Reply` did not, and the round-trip against our own
+            // encoder could not tell, because it wrote the same four
+            // octets it then demanded.
+            if !self.body.is_empty() {
+                w.align_to(8);
+            }
         } else {
             // GIOP 1.0 / 1.1 — service_context first.
             self.service_context.encode(w)?;
-            w.write_u32(self.request_id)?;
+            w.write_u32(self.request_id);
             // boolean response_expected.
-            w.write_u8(u8::from(self.response_flags.response_expected()))?;
+            w.write_u8(u8::from(self.response_flags.response_expected()));
             if version >= Version::V1_1 {
                 // GIOP 1.1: 3 reserved bytes.
-                w.write_u8(0)?;
-                w.write_u8(0)?;
-                w.write_u8(0)?;
+                w.write_u8(0);
+                w.write_u8(0);
+                w.write_u8(0);
             }
             // object_key sequence<octet> — TargetAddress must be in
             // KeyAddr form.
@@ -173,26 +184,26 @@ impl Request {
             };
             let n = u32::try_from(key.len())
                 .map_err(|_| GiopError::Malformed("object_key too long".into()))?;
-            w.write_u32(n)?;
-            w.write_bytes(key)?;
-            write_string(w, &self.operation)?;
+            w.write_u32(n);
+            w.write_bytes(key);
+            w.write_string(&self.operation);
             // requesting_principal sequence<octet>.
             let p = self.requesting_principal.as_deref().unwrap_or(&[]);
             let pn = u32::try_from(p.len())
                 .map_err(|_| GiopError::Malformed("principal too long".into()))?;
-            w.write_u32(pn)?;
-            w.write_bytes(p)?;
+            w.write_u32(pn);
+            w.write_bytes(p);
         }
-        // Body-Bytes.
-        w.write_bytes(&self.body)?;
+        // The body.
+        w.write_bytes(&self.body);
         Ok(())
     }
 
-    /// CDR-decode from a `BufferReader`.
+    /// CDR-decode from a `Reader`.
     ///
     /// # Errors
     /// Buffer read error.
-    pub fn decode(version: Version, r: &mut BufferReader<'_>) -> GiopResult<Self> {
+    pub fn decode(version: Version, r: &mut Reader<'_>) -> GiopResult<Self> {
         if version.uses_v1_2_request_layout() {
             let request_id = r.read_u32()?;
             let response_flags = ResponseFlags(r.read_u8()?);
@@ -201,11 +212,16 @@ impl Request {
             let _ = r.read_u8()?;
             let _ = r.read_u8()?;
             let target = TargetAddress::decode(r)?;
-            let operation = read_string(r)?;
+            let operation = r.read_string()?;
             let service_context = ServiceContextList::decode(r)?;
-            // Body alignment to 8 from the buffer start.
-            r.align(8)?;
-            let body = r.read_bytes(r.remaining())?.to_vec();
+            // The alignment gap exists only when a body follows it. See
+            // `Request::encode`: three ORBs end the message here.
+            let body = if r.remaining() > 0 {
+                r.align_to(8)?;
+                r.read_bytes(r.remaining())?.to_vec()
+            } else {
+                Vec::new()
+            };
             Ok(Self {
                 request_id,
                 response_flags,
@@ -228,7 +244,7 @@ impl Request {
             let key_len = r.read_u32()? as usize;
             let key_bytes = r.read_bytes(key_len)?;
             let target = TargetAddress::Key(key_bytes.to_vec());
-            let operation = read_string(r)?;
+            let operation = r.read_string()?;
             let pn = r.read_u32()? as usize;
             let principal = r.read_bytes(pn)?.to_vec();
             let body = r.read_bytes(r.remaining())?.to_vec();
@@ -245,22 +261,11 @@ impl Request {
     }
 }
 
-/// CDR-`string`-Encoder (length-prefix + bytes + NUL-terminator).
-fn write_string(w: &mut BufferWriter, s: &str) -> GiopResult<()> {
-    w.write_string(s)?;
-    Ok(())
-}
-
-/// CDR-`string`-Decoder.
-fn read_string(r: &mut BufferReader<'_>) -> GiopResult<String> {
-    Ok(r.read_string()?)
-}
-
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
-    use zerodds_cdr::Endianness;
+    use zerodds_wire::Endianness;
 
     #[test]
     fn response_flags_sync_levels_match_spec() {
@@ -294,10 +299,10 @@ mod tests {
     #[test]
     fn round_trip_giop_1_0_request() {
         let req = sample_request(TargetAddress::Key(alloc::vec![0xab, 0xcd]));
-        let mut w = BufferWriter::new(Endianness::Big);
+        let mut w = Writer::new(Endianness::Big);
         req.encode(Version::V1_0, &mut w).unwrap();
-        let bytes = w.into_bytes();
-        let mut r = BufferReader::new(&bytes, Endianness::Big);
+        let bytes = w.finish();
+        let mut r = Reader::new(&bytes, Endianness::Big);
         let decoded = Request::decode(Version::V1_0, &mut r).unwrap();
         assert_eq!(decoded, req);
     }
@@ -305,10 +310,10 @@ mod tests {
     #[test]
     fn round_trip_giop_1_1_request_with_reserved_bytes() {
         let req = sample_request(TargetAddress::Key(alloc::vec![0x10, 0x20, 0x30]));
-        let mut w = BufferWriter::new(Endianness::Little);
+        let mut w = Writer::new(Endianness::Little);
         req.encode(Version::V1_1, &mut w).unwrap();
-        let bytes = w.into_bytes();
-        let mut r = BufferReader::new(&bytes, Endianness::Little);
+        let bytes = w.finish();
+        let mut r = Reader::new(&bytes, Endianness::Little);
         let decoded = Request::decode(Version::V1_1, &mut r).unwrap();
         assert_eq!(decoded, req);
     }
@@ -318,10 +323,10 @@ mod tests {
         let mut req = sample_request(TargetAddress::Key(alloc::vec![0x11, 0x22]));
         // GIOP 1.2 — no requesting_principal.
         req.requesting_principal = None;
-        let mut w = BufferWriter::new(Endianness::Big);
+        let mut w = Writer::new(Endianness::Big);
         req.encode(Version::V1_2, &mut w).unwrap();
-        let bytes = w.into_bytes();
-        let mut r = BufferReader::new(&bytes, Endianness::Big);
+        let bytes = w.finish();
+        let mut r = Reader::new(&bytes, Endianness::Big);
         let decoded = Request::decode(Version::V1_2, &mut r).unwrap();
         assert_eq!(decoded, req);
     }
@@ -329,7 +334,7 @@ mod tests {
     #[test]
     fn giop_1_0_rejects_profile_target_address() {
         let req = sample_request(TargetAddress::Profile(alloc::vec![1, 2]));
-        let mut w = BufferWriter::new(Endianness::Big);
+        let mut w = Writer::new(Endianness::Big);
         let err = req.encode(Version::V1_0, &mut w).unwrap_err();
         assert!(matches!(err, GiopError::Malformed(_)));
     }
@@ -348,9 +353,9 @@ mod tests {
             service_context: ServiceContextList::default(),
             body: alloc::vec![0xff],
         };
-        let mut w = BufferWriter::new(Endianness::Big);
+        let mut w = Writer::new(Endianness::Big);
         req.encode(Version::V1_2, &mut w).unwrap();
-        let bytes = w.into_bytes();
+        let bytes = w.finish();
         // Search backwards for the last body byte.
         let body_pos = bytes.iter().rposition(|b| *b == 0xff).unwrap();
         assert_eq!(

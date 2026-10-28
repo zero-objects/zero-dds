@@ -3,7 +3,7 @@
 import Foundation
 import PackagePlugin
 
-/// Runs `zerodds-idlc generate <idl> --swift -o <dir>` as a Swift Package
+/// Runs `zerodds-idlc generate --lang swift --out <dir> <idl>` as a Swift Package
 /// Manager pre-build command, once per `.idl` file found under the
 /// consuming target's `idl/` directory. Emits one `BuildCommand` per
 /// `.idl` with explicit `inputFiles`/`outputFiles`, giving SPM's own
@@ -39,12 +39,13 @@ struct ZeroddsIdlcPlugin: BuildToolPlugin {
             let outputPath = outputDir.appending("\(stem).swift")
 
             return .buildCommand(
-                displayName: "zerodds-idlc generate \(fileName) --swift",
+                displayName: "zerodds-idlc generate --lang swift \(fileName)",
                 executable: executable,
                 arguments: [
-                    "generate", idlPath.string,
-                    "--swift",
-                    "-o", outputDir.string,
+                    "generate",
+                    "--lang", "swift",
+                    "--out", outputDir.string,
+                    idlPath.string,
                 ],
                 inputFiles: [idlPath],
                 outputFiles: [outputPath]

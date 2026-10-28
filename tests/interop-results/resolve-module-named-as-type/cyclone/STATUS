@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of resolve-module-named-as-type that cyclone produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	Declaration 'common' collides with an earlier declaration of 'common'
+plain-cdr1	be	refused	Declaration 'common' collides with an earlier declaration of 'common'
+pl-cdr1	le	refused	Declaration 'common' collides with an earlier declaration of 'common'
+pl-cdr1	be	refused	Declaration 'common' collides with an earlier declaration of 'common'
+plain-cdr2	le	refused	Declaration 'common' collides with an earlier declaration of 'common'
+plain-cdr2	be	refused	Declaration 'common' collides with an earlier declaration of 'common'
+delimited-cdr	le	refused	Declaration 'common' collides with an earlier declaration of 'common'
+delimited-cdr	be	refused	Declaration 'common' collides with an earlier declaration of 'common'
+pl-cdr2	le	refused	Declaration 'common' collides with an earlier declaration of 'common'
+pl-cdr2	be	refused	Declaration 'common' collides with an earlier declaration of 'common'

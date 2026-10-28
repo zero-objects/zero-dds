@@ -33,6 +33,28 @@ impl StatusAgentPayload {
         )
     }
 
+    /// The `ResultStatus` the payload carries and the position of the
+    /// `AGENT_Representation` behind it. Annex A (§8.3.5.5.2 IDL) has the
+    /// `AGENT_Representation` alone, which starts with the cookie `"XRCE"` and
+    /// is a success; the text of §8.3.5.5.2 and the capture of eProsima put a
+    /// `ResultStatus` in front. Either is read, in either setting of the
+    /// writer.
+    ///
+    /// # Errors
+    /// The `ResultStatus` does not decode.
+    pub fn result_and_position(
+        &self,
+        e: crate::encoding::Endianness,
+    ) -> Result<(crate::object_info::ResultStatus, usize), XrceError> {
+        if self
+            .representation
+            .starts_with(&crate::handshake::XRCE_COOKIE)
+        {
+            return Ok((crate::object_info::ResultStatus::ok(), 0));
+        }
+        crate::object_info::ResultStatus::decode_with(&self.representation, e)
+    }
+
     /// Extracts from a `Submessage`.
     ///
     /// # Errors

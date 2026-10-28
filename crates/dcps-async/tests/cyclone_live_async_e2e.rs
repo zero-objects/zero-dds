@@ -9,12 +9,11 @@
 //! # Prerequisites
 //!
 //! - `LLVM_HOST_AVAILABLE=1` env or `sshpass` installed locally
-//! - SSH access `llvm@llvm` with password `llvm` (lab setup; see
-//!   memory `reference_bench_hosts`)
+//! - SSH access to the lab host: `ZERODDS_LAB_SSH=user@host` and
+//!   `ZERODDS_LAB_SSH_PASSWORD`
 //! - Cyclone DDS on the Linux bench host with the `ddsperf` binary
 //! - `/tmp/cyc.xml` on the Linux bench host pins Cyclone to `enp6s18`
-//! - PVE multicast querier setup (see memory
-//!   `reference_pve_multicast_setup`)
+//! - a multicast querier on the LAN between this host and the lab host
 //!
 //! # Test flow
 //!
@@ -64,9 +63,16 @@ use std::time::Duration;
 use zerodds_dcps::RawBytes;
 use zerodds_dcps_async::{AsyncDomainParticipantFactory, DataReaderQos, SubscriberQos, TopicQos};
 
-const SSH_USER: &str = "llvm";
-const SSH_PASS: &str = "llvm";
-const SSH_HOST: &str = "llvm";
+/// `user@host` of the lab host this test reaches over ssh:
+/// `ZERODDS_LAB_SSH`.
+fn lab_ssh_target() -> String {
+    std::env::var("ZERODDS_LAB_SSH").expect("ZERODDS_LAB_SSH=user@host of the lab host")
+}
+
+/// The password `sshpass` hands ssh: `ZERODDS_LAB_SSH_PASSWORD`.
+fn lab_ssh_password() -> String {
+    std::env::var("ZERODDS_LAB_SSH_PASSWORD").expect("ZERODDS_LAB_SSH_PASSWORD for sshpass")
+}
 const CYCLONE_DOMAIN: u32 = 42;
 
 /// Checks whether the live host is reachable; otherwise skip without error.
@@ -97,8 +103,10 @@ impl DdsperfPub {
             duration_secs,
         );
         let child = Command::new("sshpass")
-            .args(["-p", SSH_PASS, "ssh", "-o", "StrictHostKeyChecking=no"])
-            .arg(format!("{SSH_USER}@{SSH_HOST}"))
+            .arg("-p")
+            .arg(lab_ssh_password())
+            .args(["ssh", "-o", "StrictHostKeyChecking=no"])
+            .arg(lab_ssh_target())
             .arg(&cmd)
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -110,8 +118,10 @@ impl DdsperfPub {
 impl Drop for DdsperfPub {
     fn drop(&mut self) {
         let _ = Command::new("sshpass")
-            .args(["-p", SSH_PASS, "ssh", "-o", "StrictHostKeyChecking=no"])
-            .arg(format!("{SSH_USER}@{SSH_HOST}"))
+            .arg("-p")
+            .arg(lab_ssh_password())
+            .args(["ssh", "-o", "StrictHostKeyChecking=no"])
+            .arg(lab_ssh_target())
             .arg(format!("pkill -f 'ddsperf -i {CYCLONE_DOMAIN}' || true"))
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -121,7 +131,7 @@ impl Drop for DdsperfPub {
     }
 }
 
-#[ignore = "requires Cyclone-DDS Lab access (llvm@llvm, sshpass, multicast)"]
+#[ignore = "requires the Cyclone DDS lab host (ZERODDS_LAB_SSH, sshpass, multicast)"]
 #[tokio::test(flavor = "multi_thread")]
 async fn async_reader_does_not_panic_against_live_cyclone_pub() {
     if !live_host_available() {

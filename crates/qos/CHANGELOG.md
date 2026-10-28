@@ -2,6 +2,32 @@
 
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added (DDS-Security 1.2 §9.7.2)
+
+- `DataTagQosPolicy::{encode_into, decode_from}`.
+
+
+### Added (DDS-Security 1.2, §7 package)
+
+- `PropertyQosPolicy` holds binary properties and a `propagate` flag per entry;
+  `DataTagQosPolicy` (§7.3.21).
+
+
+### Added
+
+- `PropertyQosPolicy` carries `binary_value` and a `propagate` flag per entry
+  (DDS-Security 1.2 §7.3.21, §7.3.3): `set_propagated`, `with_propagated`,
+  `set_binary`, `get_binary`, `iter_binary`, `propagated`,
+  `propagated_binary`. `is_empty` is `true` only without string and binary
+  entries.
+### Added
+
+- `QosPolicy` with `NAME` and `name()` for the 22 policies, and the name constants of the IDL PSM in
+  `policy_name` (DDS 1.4 §2.2.2.1.3, §2.3.3). `ReliabilityKind::idl_ordinal` and `from_idl_ordinal`: the
+  discriminants stay the RTPS values 1 and 2 of the wire, the IDL numbers the kinds 0 and 1.
+
 ## [1.0.0-rc.1]
 
 Initial release materialization of the `zerodds-qos` crate.

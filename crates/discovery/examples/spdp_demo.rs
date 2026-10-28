@@ -9,7 +9,7 @@
 //! Usage:
 //!
 //! ```bash
-//! # Terminal 1: Cyclone-Container starten
+//! # Terminal 1: start Cyclone container
 //! cd tests/interop
 //! docker compose up -d
 //!
@@ -51,7 +51,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let port = spdp_multicast_port(DOMAIN_ID);
     let group = Ipv4Addr::from(SPDP_DEFAULT_MULTICAST_ADDRESS);
 
-    // Interface selection via env var (e.g. INTERFACE_IP=192.168.178.60).
+    // Interface selection via env var (e.g. INTERFACE_IP=192.0.2.60).
     // Default: 0.0.0.0 (all interfaces, in practice often only loopback).
     let interface_ip: Ipv4Addr = std::env::var("INTERFACE_IP")
         .ok()
@@ -96,6 +96,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         metatraffic_unicast_locators: Vec::new(),
         metatraffic_multicast_locators: Vec::new(),
         domain_id: None,
+        domain_tag: Default::default(),
         builtin_endpoint_set: endpoint_flag::PARTICIPANT_ANNOUNCER
             | endpoint_flag::PARTICIPANT_DETECTOR,
         lease_duration: RtpsDuration::from_secs(100),
@@ -107,6 +108,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         sig_algo_info: None,
         kx_algo_info: None,
         sym_cipher_algo_info: None,
+        available_builtin_endpoints_ext: 0,
+        expects_inline_qos: false,
+        manual_liveliness_count: None,
+        builtin_endpoint_qos: None,
+        entity_name: None,
     };
     let mut beacon = SpdpBeacon::new(our_data);
     let reader = SpdpReader::new();

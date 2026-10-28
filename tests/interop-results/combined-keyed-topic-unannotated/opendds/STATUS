@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of combined-keyed-topic-unannotated that opendds produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	genTypeSupportImpl.cpp: In function 'bool OpenDDS::DCPS::vwrite(ValueWriter&, const zd_c20::robotics::Telemetry&)':
+plain-cdr1	be	refused	genTypeSupportImpl.cpp: In function 'bool OpenDDS::DCPS::vwrite(ValueWriter&, const zd_c20::robotics::Telemetry&)':
+pl-cdr1	le	refused	genTypeSupportImpl.cpp: In function 'bool OpenDDS::DCPS::vwrite(ValueWriter&, const zd_c20::robotics::Telemetry&)':
+pl-cdr1	be	refused	genTypeSupportImpl.cpp: In function 'bool OpenDDS::DCPS::vwrite(ValueWriter&, const zd_c20::robotics::Telemetry&)':
+plain-cdr2	le	refused	genTypeSupportImpl.cpp: In function 'bool OpenDDS::DCPS::vwrite(ValueWriter&, const zd_c20::robotics::Telemetry&)':
+plain-cdr2	be	refused	genTypeSupportImpl.cpp: In function 'bool OpenDDS::DCPS::vwrite(ValueWriter&, const zd_c20::robotics::Telemetry&)':
+delimited-cdr	le	refused	genTypeSupportImpl.cpp: In function 'bool OpenDDS::DCPS::vwrite(ValueWriter&, const zd_c20::robotics::Telemetry&)':
+delimited-cdr	be	refused	genTypeSupportImpl.cpp: In function 'bool OpenDDS::DCPS::vwrite(ValueWriter&, const zd_c20::robotics::Telemetry&)':
+pl-cdr2	le	refused	genTypeSupportImpl.cpp: In function 'bool OpenDDS::DCPS::vwrite(ValueWriter&, const zd_c20::robotics::Telemetry&)':
+pl-cdr2	be	refused	genTypeSupportImpl.cpp: In function 'bool OpenDDS::DCPS::vwrite(ValueWriter&, const zd_c20::robotics::Telemetry&)':

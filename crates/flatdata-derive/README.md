@@ -58,10 +58,8 @@ None. The crate is a pure `proc-macro` lib.
 
 ## Stability
 
-`1.0.0-rc.1` is the initial release materialization. All public macro
-paths are RC1-stable; the layout signature format is considered
-wire-stable — a change would invalidate all generated `TYPE_HASH`
-values and is therefore major-breaking.
+`1.0.0-rc.7`, a pre-release. The public API can still change before
+1.0.0; the crate's CHANGELOG lists every change.
 
 ## Build & Test
 

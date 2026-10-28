@@ -78,9 +78,8 @@ assert_eq!(decoded.code, CoapCode::GET);
 
 ## Stability
 
-`1.0.0-rc.1` is the initial release materialization. The public API,
-wire format (RFC 7252), and error discriminants are RC1-stable;
-breaking changes require a major bump.
+`1.0.0-rc.7`, a pre-release. The public API can still change before
+1.0.0; the crate's CHANGELOG lists every change.
 
 ## Tests
 

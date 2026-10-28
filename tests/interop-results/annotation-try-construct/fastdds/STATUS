@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of annotation-try-construct that fastdds produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	fastddsgen failed: ERROR: context [/struct_type /content_for_struct_type /_sub25 /struct_member /try_construct] 3:9 no such property or can't access: com.eprosima.idl.parser.typecode.Member.annotation
+plain-cdr1	be	refused	fastddsgen failed: ERROR: context [/struct_type /content_for_struct_type /_sub25 /struct_member /try_construct] 3:9 no such property or can't access: com.eprosima.idl.parser.typecode.Member.annotation
+pl-cdr1	le	refused	fastddsgen failed: ERROR: context [/struct_type /content_for_struct_type /_sub25 /struct_member /try_construct] 3:9 no such property or can't access: com.eprosima.idl.parser.typecode.Member.annotation
+pl-cdr1	be	refused	fastddsgen failed: ERROR: context [/struct_type /content_for_struct_type /_sub25 /struct_member /try_construct] 3:9 no such property or can't access: com.eprosima.idl.parser.typecode.Member.annotation
+plain-cdr2	le	refused	fastddsgen failed: ERROR: context [/struct_type /content_for_struct_type /_sub25 /struct_member /try_construct] 3:9 no such property or can't access: com.eprosima.idl.parser.typecode.Member.annotation
+plain-cdr2	be	refused	fastddsgen failed: ERROR: context [/struct_type /content_for_struct_type /_sub25 /struct_member /try_construct] 3:9 no such property or can't access: com.eprosima.idl.parser.typecode.Member.annotation
+delimited-cdr	le	refused	fastddsgen failed: ERROR: context [/struct_type /content_for_struct_type /_sub25 /struct_member /try_construct] 3:9 no such property or can't access: com.eprosima.idl.parser.typecode.Member.annotation
+delimited-cdr	be	refused	fastddsgen failed: ERROR: context [/struct_type /content_for_struct_type /_sub25 /struct_member /try_construct] 3:9 no such property or can't access: com.eprosima.idl.parser.typecode.Member.annotation
+pl-cdr2	le	refused	fastddsgen failed: ERROR: context [/struct_type /content_for_struct_type /_sub25 /struct_member /try_construct] 3:9 no such property or can't access: com.eprosima.idl.parser.typecode.Member.annotation
+pl-cdr2	be	refused	fastddsgen failed: ERROR: context [/struct_type /content_for_struct_type /_sub25 /struct_member /try_construct] 3:9 no such property or can't access: com.eprosima.idl.parser.typecode.Member.annotation

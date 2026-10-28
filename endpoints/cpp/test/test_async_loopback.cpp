@@ -78,7 +78,8 @@ int main() {
 
     unsigned char txbuf[kFrame];
     zerodds::AsyncWriter writer(&t, txbuf, sizeof txbuf,
-                                ZDW_XRCE_SESSION_NOKEY, ZDW_XRCE_STREAM_BEST_EFFORT);
+                                ZDW_XRCE_SESSION_NOKEY, ZDW_XRCE_STREAM_BEST_EFFORT,
+                                ZDW_XRCE_OBJECT_ID(0x001, ZDW_OBJK_DATAWRITER));
 
     for (int i = 0; i < kN; i++) {
         unsigned char body[128];

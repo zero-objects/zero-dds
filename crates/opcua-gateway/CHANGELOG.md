@@ -3,6 +3,14 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- `parse_gateway_config` refuses a text that nests deeper than
+  `zerodds_foundation::XML_NESTING_LIMIT` before the parser sees it; a
+  long run of unclosed start tags overflowed the stack.
+
 ## [1.0.0-rc.1] — 2026-05-07
 
 Initial release materialization of the **`zerodds-opcua-gateway`** crate as a layer-7 profile.

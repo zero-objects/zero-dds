@@ -1,0 +1,5 @@
+@final struct Foo {
+  @key long id;
+  long x;
+  long y;
+};

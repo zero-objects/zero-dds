@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! `zerodds-mq` — leitet Samples zwischen zwei DDS-Domains durch.
+//! `zerodds-mq` — routes samples between two DDS domains.
 
 #![allow(clippy::print_stdout, clippy::print_stderr)]
 
@@ -29,7 +29,19 @@ fn main() -> ExitCode {
         println!("zerodds-mq {}", env!("CARGO_PKG_VERSION"));
         return ExitCode::SUCCESS;
     }
-    let cmd = match parse_args(&args) {
+    let configured = match zerodds_dcps::cli::Configured::from_args(args) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("error: configuration: {e}");
+            return ExitCode::from(2);
+        }
+    };
+    if let Some(code) = configured.check_config() {
+        return code;
+    }
+    let config = &configured.runtime;
+
+    let cmd = match parse_args(&configured.args) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("error: {e}");
@@ -38,11 +50,11 @@ fn main() -> ExitCode {
         }
     };
     match cmd {
-        Command::Bridge(b) => run_bridge(&b),
+        Command::Bridge(b) => run_bridge(&b, config),
     }
 }
 
-fn run_bridge(b: &BridgeArgs) -> ExitCode {
+fn run_bridge(b: &BridgeArgs, config: &RuntimeConfig) -> ExitCode {
     if b.src_topic.is_empty() {
         eprintln!("error: --topic is required");
         return ExitCode::from(2);
@@ -66,22 +78,14 @@ fn run_bridge(b: &BridgeArgs) -> ExitCode {
         }
     };
 
-    let src_rt = match DcpsRuntime::start(
-        src_id,
-        stable_prefix(MARKER_MQ_SRC),
-        RuntimeConfig::default(),
-    ) {
+    let src_rt = match DcpsRuntime::start(src_id, stable_prefix(MARKER_MQ_SRC), config.clone()) {
         Ok(r) => r,
         Err(e) => {
             eprintln!("error: src DcpsRuntime start: {e:?}");
             return ExitCode::from(3);
         }
     };
-    let dst_rt = match DcpsRuntime::start(
-        dst_id,
-        stable_prefix(MARKER_MQ_DST),
-        RuntimeConfig::default(),
-    ) {
+    let dst_rt = match DcpsRuntime::start(dst_id, stable_prefix(MARKER_MQ_DST), config.clone()) {
         Ok(r) => r,
         Err(e) => {
             eprintln!("error: dst DcpsRuntime start: {e:?}");
@@ -222,26 +226,7 @@ fn run_bridge(b: &BridgeArgs) -> ExitCode {
 }
 
 fn writer_cfg(topic: &str) -> UserWriterConfig {
-    UserWriterConfig {
-        topic_name: topic.to_string(),
-        type_name: TYPE_NAME.to_string(),
-        reliable: true,
-        durability: zerodds_qos::DurabilityKind::Volatile,
-        deadline: zerodds_qos::DeadlineQosPolicy::default(),
-        latency_budget: Default::default(),
-        destination_order: Default::default(),
-        lifespan: zerodds_qos::LifespanQosPolicy::default(),
-        liveliness: zerodds_qos::LivelinessQosPolicy::default(),
-        ownership: zerodds_qos::OwnershipKind::Shared,
-        ownership_strength: 0,
-        presentation: Default::default(),
-        partition: Vec::new(),
-        user_data: Vec::new(),
-        topic_data: Vec::new(),
-        group_data: Vec::new(),
-        type_identifier: zerodds_types::TypeIdentifier::None,
-        data_representation_offer: None,
-    }
+    zerodds_cli_common::reliable_raw_writer_config(topic, TYPE_NAME)
 }
 
 fn print_help() {
@@ -271,4 +256,5 @@ fn print_help() {
            2    CLI parse error\n  \
            3    DDS / I/O error\n"
     );
+    println!("\n{}", zerodds_dcps::cli::HELP);
 }

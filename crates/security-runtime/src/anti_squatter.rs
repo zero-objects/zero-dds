@@ -3,7 +3,7 @@
 
 //! GUID-to-identity bindings cache (C3.8).
 //!
-//! Spec DDS-Security 1.2 §7.4.3 (identity-cert bind), §9.3.1 + §10.3.4:
+//! Spec DDS-Security 1.2 §7.4.3 (identity-cert bind), §10.3.1 + §10.3.4:
 //! a malicious peer can attempt to maliciously "squat" a foreign GUID
 //! by sending SPDP beacons with the same `GuidPrefix` but a
 //! differing IdentityToken. Without bindings tracking the

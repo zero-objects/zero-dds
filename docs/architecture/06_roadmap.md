@@ -7,7 +7,6 @@
 
 - **Execution model:** bootstrap before expansion. Internal proof first, external partnerships afterwards.
 - **Core team (bootstrap era):** 2–4 senior engineers internal.
-- **Claude-Teams augmentation:** throughout, realistically a 4–8× throughput multiplier depending on the work area.
 - **External partnership (Ferrous Systems):** only in the expansion era, after internal proof and once external funds are mobilized.
 - **OMG membership, patent clearance, community building:** also expansion era.
 - **Total horizon to internal proof:** 10–14 calendar months.
@@ -17,8 +16,8 @@
 
 | Era | Duration | Team | Goal |
 |---|---|---|---|
-| **Bootstrap era** (Phases 0–2) | 10–14 months | 2–4 internal + Claude Teams | Internal MVP, the stack carries the internal target application |
-| **Proof era** (Phases 3–4) | 6–10 months | 3–5 internal + Claude Teams | Benchmarks against eProsima/Cyclone passed, external readiness |
+| **Bootstrap era** (Phases 0–2) | 10–14 months | 2–4 internal | Internal MVP, the stack carries the internal target application |
+| **Proof era** (Phases 3–4) | 6–10 months | 3–5 internal | Benchmarks against eProsima/Cyclone passed, external readiness |
 | **Expansion era** (Phases 5+) | depending on funds | 5+ internal + partners | OMG, Ferrous, cert, community |
 
 ## 3 Phase 0: Foundation (months 1–2) · bootstrap era
@@ -46,7 +45,7 @@
 
 ### Work packages
 
-| Package | Responsibility | Claude-Teams use |
+| Package | Responsibility | Scope and status |
 |---|---|---|
 | WP 0.1: Architecture review cycle | Team internal, moderated by the tech lead | Document coherence checks |
 | WP 0.2: Workspace skeleton + CI | Platform | Template generation, CI config |
@@ -57,19 +56,18 @@
 | WP 0.7-A: SPDP live discovery (pulled forward from Phase 1) | Protocol | Multicast UDP + ParameterList + ParticipantBuiltinTopicData + SpdpBeacon/Reader + cache + demo. **Status 2026-04-18: COMPLETE** (3-week spike + 1-day polish; pulled forward from Phase 1, because live interop tests are otherwise impossible; 9 SPDP + 24 new zerodds-rtps tests; spdp_demo verifies E2E loopback discovery; **LIVE MULTI-VENDOR INTEROP VERIFIED**: ZeroDDS discovers Eclipse Cyclone DDS (vendor 0x0110) and eProsima Fast-DDS (vendor 0x010F) on Debian 12 — see `tests/interop/INTEROP_REPORT.md`. SEDP + reliable stay in Phase 1) |
 | WP 0.7: `zerodds-lint` plugin (safety rules) | Quality | Lint rules from the safety spec. **Status 2026-04-18: COMPLETE** (Phase-0 variant: AST-based on stable Rust, no nightly/dylint. 6 lints implemented: `dds_require_safety_comment`, `dds_no_dyn_in_safe`, `dds_safety_classification_present`, `dds_no_panic_in_safe`, `dds_no_alloc_in_hot_path`, `dds_bounded_recursion`. CI job `zerodds-lint` active. Existing code sweep-clean after 22 recursion markers in `crates/idl`. Real clippy-plugin variant with type info → Phase 1) |
 
-An interim provisional vendor ID from the OMG developer range is used until a formal application is filed in the expansion era.
+An interim vendor ID (`0x01F0`, not on the OMG list) is used until the OMG assigns one.
 
 ### Risks in Phase 0
 
 - **Spec interpretation dispute:** OMG specs are ambiguous in some places. Mitigation: reference Cyclone DDS and Fast DDS as an "existence proof" and document deviations.
 - **Scope creep from a small team:** with 2–4 FTE, hard priorities must be set. Mitigation: strict phase-gate discipline, no pulling forward of expansion-era features.
-- **Claude-Teams dependency real:** with a very small internal team, Claude augmentation becomes the critical path. Mitigation: pair-programming pattern instead of solo-agent generation; human review on all protocol decisions.
 
 ## 4 Phase 1: Protocol core (months 3–8) · bootstrap era
 
 **Goal:** RTPS reliable protocol complete, discovery works, XTypes core implemented. Focus on correctness and interop with Cyclone DDS.
 
-**Team:** 2–3 internal engineers + Claude Teams.
+**Team:** 2–3 internal engineers.
 
 ### Results
 
@@ -88,7 +86,7 @@ An interim provisional vendor ID from the OMG developer range is used until a fo
 
 ### Work packages
 
-| Package | Weeks | Claude-Teams leverage |
+| Package | Weeks | Scaffolding leverage |
 |---|---|---|
 | WP 1.1: Reliable protocol | 8 | High for boilerplate, low for correctness details |
 | WP 1.2: Fragmentation | 3 | Medium |
@@ -113,7 +111,7 @@ An interim provisional vendor ID from the OMG developer range is used until a fo
 
 **Goal:** the stack carries the internal target application. DCPS API in production, DDS-Security functional, C/C++ bindings complete. Further bindings deferred to the proof era.
 
-**Team:** 3–4 internal engineers + Claude Teams.
+**Team:** 3–4 internal engineers.
 
 ### Results
 
@@ -133,7 +131,7 @@ An interim provisional vendor ID from the OMG developer range is used until a fo
 
 ### Work packages
 
-| Package | Weeks | Claude-Teams leverage |
+| Package | Weeks | Scaffolding leverage |
 |---|---|---|
 | WP 2.1: DCPS public API | 6 | High |
 | WP 2.2: DDS-Security auth plugin (standard suite) | 5 | Medium — crypto details need reviews |
@@ -155,7 +153,7 @@ An interim provisional vendor ID from the OMG developer range is used until a fo
 
 **Goal:** ZeroDDS hardened in the internal application, tooling and observability at a production level for our own operational purposes.
 
-**Team:** 3–4 internal engineers + Claude Teams.
+**Team:** 3–4 internal engineers.
 
 ### Results
 
@@ -170,7 +168,7 @@ An interim provisional vendor ID from the OMG developer range is used until a fo
 
 ### Work packages
 
-| Package | Weeks | Claude-Teams leverage |
+| Package | Weeks | Scaffolding leverage |
 |---|---|---|
 | WP 3.1: Chaos test suite | 4 | High |
 | WP 3.2: Recording format + recorder | 4 | High |
@@ -192,7 +190,7 @@ An interim provisional vendor ID from the OMG developer range is used until a fo
 
 **Goal:** the stack is ready for external visibility. Further bindings, XRCE, PlatformIO, performance parity against eProsima.
 
-**Team:** 4–5 internal engineers + Claude Teams. External expertise selectively (performance consulting, cross-compile support).
+**Team:** 4–5 internal engineers. External expertise selectively (performance consulting, cross-compile support).
 
 ### Results
 
@@ -306,7 +304,7 @@ After the initial certification, the following further developments are planned:
 | 18–20 | 4–5 | 4 — proof | Further bindings, XRCE, PlatformIO |
 | 21–22 | 4–5 | 4 — proof | Performance parity, docs, v1.0-rc |
 
-**Cumulative internal staffing to the end of the proof era:** approx. 75–85 person-months = ~6–7 person-years. A Claude-Teams multiplier of ~4–6× corresponds to a classic effort of 25–40 person-years.
+**Cumulative internal staffing to the end of the proof era:** approx. 75–85 person-months = ~6–7 person-years.
 
 **The expansion era** is not included in this table, because ramp and timeframe depend on track decisions and external fund availability.
 

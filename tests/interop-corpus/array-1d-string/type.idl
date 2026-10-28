@@ -1,0 +1,5 @@
+// one-dimensional array of `string`
+@final struct Sample {
+    string items[3];
+    long tail;
+};

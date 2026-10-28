@@ -10,7 +10,7 @@ use crate::lifecycle::{ExecutionKind, LifeCycleState};
 use crate::object::{ExecutionContextHandle, LightweightRtObject};
 use crate::return_code::ReturnCode;
 
-/// `ExecutionContext` Trait — Spec §5.2.2.5 (S. 22-23).
+/// `ExecutionContext` Trait — Spec §5.2.2.5 (p. 22-23).
 ///
 /// "An ExecutionContext allows the business logic of an RTC to be
 /// decoupled from the thread of control in which it is executed."
@@ -75,7 +75,7 @@ pub trait ExecutionContextOperations {
     fn get_kind(&self) -> ExecutionKind;
 }
 
-/// Konkrete `ExecutionContext`-Implementation — Spec §5.2.2.5
+/// Concrete `ExecutionContext`-Implementation — Spec §5.2.2.5
 /// (local-PSM variant).
 ///
 /// Manages:

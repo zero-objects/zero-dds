@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of primitive-longdouble that opendds produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	wireprobe-fill: zd_c39::Sample.fits_a_double: a long double, whose C++ mapping is x87 extended and not §9.3.1.3's binary128
+plain-cdr1	be	refused	wireprobe-fill: zd_c39::Sample.fits_a_double: a long double, whose C++ mapping is x87 extended and not §9.3.1.3's binary128
+pl-cdr1	le	refused	wireprobe-fill: zd_c39::Sample.fits_a_double: a long double, whose C++ mapping is x87 extended and not §9.3.1.3's binary128
+pl-cdr1	be	refused	wireprobe-fill: zd_c39::Sample.fits_a_double: a long double, whose C++ mapping is x87 extended and not §9.3.1.3's binary128
+plain-cdr2	le	refused	wireprobe-fill: zd_c39::Sample.fits_a_double: a long double, whose C++ mapping is x87 extended and not §9.3.1.3's binary128
+plain-cdr2	be	refused	wireprobe-fill: zd_c39::Sample.fits_a_double: a long double, whose C++ mapping is x87 extended and not §9.3.1.3's binary128
+delimited-cdr	le	refused	wireprobe-fill: zd_c39::Sample.fits_a_double: a long double, whose C++ mapping is x87 extended and not §9.3.1.3's binary128
+delimited-cdr	be	refused	wireprobe-fill: zd_c39::Sample.fits_a_double: a long double, whose C++ mapping is x87 extended and not §9.3.1.3's binary128
+pl-cdr2	le	refused	wireprobe-fill: zd_c39::Sample.fits_a_double: a long double, whose C++ mapping is x87 extended and not §9.3.1.3's binary128
+pl-cdr2	be	refused	wireprobe-fill: zd_c39::Sample.fits_a_double: a long double, whose C++ mapping is x87 extended and not §9.3.1.3's binary128

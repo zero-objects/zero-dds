@@ -1,0 +1,20 @@
+// SPDX-License-Identifier: Apache-2.0
+// Reconstructed source for extremes_gen.py. Top-level (no module).
+// Ambiguity: `i16`/`u16` could equally have been declared `short`/
+// `unsigned short` (IDL4's `int16`/`uint16` are wire-identical aliases of
+// the classic keywords, and the Python side has one name, Int16/UInt16,
+// for either spelling) -- written here as `short`/`unsigned short` since
+// those are the pre-IDL4 spellings. `i8`/`u8` have no classic-IDL
+// equivalent and are written as the IDL4 extended types they must be.
+struct Extremes {
+  int8 i8;
+  uint8 u8;
+  short i16;
+  unsigned short u16;
+  long i32;
+  unsigned long u32;
+  long long i64;
+  unsigned long long u64;
+  float f;
+  double dbl;
+};

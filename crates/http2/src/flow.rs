@@ -62,7 +62,7 @@ impl FlowControl {
     ///
     /// # Errors
     /// `Protocol(FlowControlError)` if the window
-    /// 2^31-1 ueberschreitet.
+    /// exceeds 2^31-1.
     pub fn apply_window_update(&mut self, increment: u32) -> Result<(), Http2Error> {
         use crate::error::ErrorCode;
         if increment == 0 {

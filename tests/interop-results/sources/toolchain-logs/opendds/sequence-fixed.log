@@ -1,0 +1,2 @@
+Error - /opt/opendds/bin/tao_idl: gen.idl:273: fixed data types are not supported
+genC.h:481:21: error: invalid use of incomplete type 'struct zd_c9::Sample'

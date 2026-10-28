@@ -25,7 +25,7 @@ def encode_inner(w, a, b):
 
 
 def encode(endian):
-    w = zw.Writer(endian)
+    w = zw.Writer(endian, zw.XCDR2)
     bs = w.dheader_begin()               # outer @appendable
     w.put_u32(0xCAFEBABE)
     encode_inner(w, 0x1111, 0x22223333)  # nested
@@ -47,7 +47,7 @@ def decode_inner(r):
 
 
 def decode(data, endian):
-    r = zw.Reader(data, endian)
+    r = zw.Reader(data, endian, zw.XCDR2)
     r.dheader_read()
     d = {"id": r.get_u32(), "one": decode_inner(r)}
     r.dheader_read()

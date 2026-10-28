@@ -1,1365 +1,1064 @@
 # IDL4 to C++ Language Mapping 1.0 — Spec Coverage
 
-**Spec:** [OMG IDL4-CPP 1.0](https://www.omg.org/spec/IDL4-CPP/1.0/PDF) (101 pages, OMG formal/2025-03-03)
+**Spec:** [OMG IDL4-CPP 1.0](https://www.omg.org/spec/IDL4-CPP/1.0/PDF) (101 pages, OMG formal/25-03-03)
 
-Audit item-by-item against the spec; each requirement with a spec
-quote + repo path + test path + status (`done` / `partial` / `open` / `n/a`).
+Item-by-item audit against the spec; every requirement with its spec
+quote, repo path, test path and status (`done` / `partial` / `open` /
+`n/a`).
 
-**Context:** Codegen covers §6 type mapping + §7.2 aggregate types +
-DDS-specific templates (psm_cxx, dcps, qos, status). The runtime library
-(`omg::types::sequence<T>`/`omg::types::Any`/`omg::types::fixed`/
-etc.) is not in the repo.
+**Context:** the C++ column of the IDL transplant lives in four layers
+today:
 
-Implementation:
+- `crates/lang-rules/src/adapter/cpp.rs` — IDL data types (struct, union,
+  enum, bitset, bitmask, typedef, constant, exception, sequence, array,
+  map, string, `@optional`, `@external`) to the C++ CST.
+- `crates/lang-cst/src/cpp/mod.rs` — the C++ CST (`escape_keyword`,
+  `Include`, `Primitive`).
+- `crates/lang-render/src/cpp.rs` — the renderer.
+- `crates/lang-rules/src/emit/interface_cpp.rs` — interfaces through the
+  DDS-RPC 1.0 §7.11.1 binding (not the generic §7.4 form).
 
-- `crates/idl-cpp/` — live with 9 files + 162 tests (dcps/emitter/error/lib/psm_cxx/qos/rpc/status/type_map).
+Hand-written runtime, not generated from this spec:
+
+- `crates/cpp/include/dds/` — the DDS-PSM-Cxx 1.0 API (Time,
+  InstanceHandle, Status, Fixed, Exception, Topic, TopicTraits, Publisher,
+  Subscriber, DomainParticipant).
+- `runtime/cpp/include/` — the wire runtime (`zerodds/wire.hpp`,
+  `dds/rpc.hpp`); the corpus gate compiles against it.
+
+**Finding that carries the page:** the C++ column emits no `omg::types`
+anywhere. `grep -rl "omg::types" crates/ tools/ runtime/ endpoints/`
+finds exactly one file — `crates/corba-codegen/src/traits.rs`, a Rust
+CORBA generator, not this C++ binding. Every item whose requirement is an
+`omg::types` alias or trait is therefore `open` or `partial`.
 
 ---
 
 ## §1 Scope
 
-### 1.1 Mapping IDL v4 -> C++ (with building-block extensions beyond [OMG-C++]/[OMG-C++11])
+### 1.1 Mapping IDL v4 -> C++
 
 **Spec:** §1, p. 1 — "This specification defines the mapping of OMG
-Interface Definition Language v4 to the C++ programming language.
-The language mapping covers all of the IDL constructs in the current
-Interface Definition Language specification [OMG-IDL4]. [...] The
-specification also provides mapping rules for the building blocks
-introduced in IDL4 that are not addressed in the classic C++ and
-C++11 Language Mappings."
+Interface Definition Language v4 to the C++ programming language."
 
-**Repo:** `crates/idl-cpp/src/lib.rs`.
+**Repo:** —
 
-**Tests:** crate-wide; see per section below.
+**Tests:** —
 
-**Status:** done
+**Status:** `n/a (informative)` — a scope statement of the specification,
+with no requirement on an implementation.
 
 ---
 
 ## §2 Conformance Criteria
 
-### 2.1 Implementation: IDL -> C++ source per §7
+### 2.1 Implementation: IDL -> C++ source per Chapter 7
 
-**Spec:** §2, p. 1 — "A conformant implementation shall transform
-IDL input into C++ source code output as specified in Chapter 7."
+**Spec:** §2, p. 1 — "A conformant implementation shall transform IDL
+input into C++ source code output as specified in Chapter 7."
 
-**Repo:** `crates/idl-cpp/src/emitter.rs` — top-level emitter.
+**Repo:** `crates/lang-rules/src/adapter/cpp.rs`
 
-**Tests:** `header_starts_with_generated_marker`,
-`empty_ast_produces_preamble_only`,
-`empty_source_emits_only_preamble`,
-`pragma_once_appears_exactly_once`,
-`empty_module_emits_namespace`,
-`empty_source_includes_cstdint`,
-`include_set_is_complete_for_full_typeset`.
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::every_corpus_case_renders_or_names_its_refusal`,
+`crates/lang-rules/tests/cpp_corpus_compiles.rs::the_compiler_check_catches_a_deliberate_error`
 
-**Status:** done
-
-### 2.2 User: portable application source code
-
-**Spec:** §2, p. 1 — "Conformant application source code [...] will
-be portable across implementations."
-
-**Repo:** —
-
-**Tests:** —
-
-**Status:** `n/a (informative)` — spec's own non-binding statement (context background); no implementation obligation.
+**Status:** partial — the data-type transformation is live and renders
+every corpus case (or names its refusal); the compiler gate checks the
+generated headers. Chapter 7 is not fully met: the `omg::types` runtime
+(type traits, `Any`, `fixed`, `sequence`/`string` aliases) is missing,
+§7.4 interfaces run through the DDS-RPC binding rather than the generic
+form, and §7.4.1 exceptions and §7.6 valuetypes are shaped differently.
 
 ---
 
 ## §3 Normative References
 
-### 3.1 [ISO/IEC-14882:1998] C++98
+### 3.1 [ISO/IEC-14882] and [OMG-*]
 
-**Spec:** §3, p. 1 — "[ISO/IEC-14882:1998] C++98."
-
-**Repo:** —
-
-**Tests:** —
-
-**Status:** `n/a (informative)` — spec's own non-binding statement (context background); no implementation obligation.
-
-### 3.2 [ISO/IEC-14882:2003] C++03
-
-**Spec:** §3, p. 1 — "[ISO/IEC-14882:2003] C++03."
+**Spec:** §3, p. 1-2 — [ISO/IEC-14882:1998/2003/2011/2017], [OMG-C++],
+[OMG-C++11], [OMG-CORBA-COMP], [OMG-CORBA-IFC], [OMG-IDL4].
 
 **Repo:** —
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — spec's own non-binding statement (context background); no implementation obligation.
-
-### 3.3 [ISO/IEC-14882:2011] C++11
-
-**Spec:** §3, p. 1 — "[ISO/IEC-14882:2011] C++11." (Minimum
-standard, see §7.1.3.)
-
-**Repo:** the generator targets C++11+ (see pragma-once,
-move constructors).
-
-**Tests:** indirect — `move_setter_variant_present`,
-`move_setter_uses_rvalue_and_std_move`.
-
-**Status:** done
-
-### 3.4 [ISO/IEC-14882:2017] C++17
-
-**Spec:** §3, p. 1 — "[ISO/IEC-14882:2017] C++17." (Optional for
-`std::string_view`/`std::optional`.)
-
-**Repo:** the generator emits `std::optional` refs (C++17).
-
-**Tests:** `optional_member_uses_std_optional`.
-
-**Status:** done
-
-### 3.5 [OMG-C++] C++ Language Mapping 1.3
-
-**Spec:** §3, p. 2 — "[OMG-C++] C++ Mapping 1.3."
-
-**Repo:** —
-
-**Tests:** —
-
-**Status:** `n/a (informative)` — spec's own non-binding statement (context background); no implementation obligation.
-
-### 3.6 [OMG-C++11] C++11 Language Mapping 1.6
-
-**Spec:** §3, p. 2 — "[OMG-C++11] C++11 Mapping 1.6."
-
-**Repo:** —
-
-**Tests:** —
-
-**Status:** `n/a (informative)` — spec's own non-binding statement (context background); no implementation obligation.
-
-### 3.7 [OMG-CORBA-COMP] CORBA Components 3.4
-
-**Spec:** §3, p. 2 — "[OMG-CORBA-COMP] CORBA Components 3.4."
-
-**Repo:** —
-
-**Tests:** —
-
-**Status:** `n/a (informative)` — spec's own non-binding statement (context background); no implementation obligation.
-
-### 3.8 [OMG-CORBA-IFC] CORBA Interfaces 3.4
-
-**Spec:** §3, p. 2 — analogous.
-
-**Repo:** —
-
-**Tests:** —
-
-**Status:** `n/a (informative)` — spec's own non-binding statement (context background); no implementation obligation.
-
-### 3.9 [OMG-IDL4] OMG IDL 4.2
-
-**Spec:** §3, p. 2 — "[OMG-IDL4] OMG IDL 4.2."
-
-**Repo:** `crates/idl/`.
-
-**Tests:** see `idl-4.2.md`.
-
-**Status:** done
+**Status:** `n/a (informative)` — a reference list; the C++ version is
+audited in §7.1.3, the IDL version in §3.9.
 
 ---
 
 ## §4 Terms and Definitions
 
-### 4.1 Building Block
+### 4.1 Building Block, C++, Language Mapping
 
-**Spec:** §4, p. 2 — "A Building Block is a consistent set of IDL
-rules [...] atomic, meaning that if selected, they shall be totally
-supported."
+**Spec:** §4, p. 2 — glossary (Building Block, C++, Language Mapping).
 
 **Repo:** —
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — glossary definition; a semantic reference point without its own code requirement.
-
-### 4.2 C++ (general-purpose programming language)
-
-**Spec:** §4, p. 2.
-
-**Repo:** —
-
-**Tests:** —
-
-**Status:** `n/a (informative)` — spec's own non-binding statement (context background); no implementation obligation.
-
-### 4.3 Language Mapping
-
-**Spec:** §4, p. 2.
-
-**Repo:** —
-
-**Tests:** —
-
-**Status:** `n/a (informative)` — spec's own non-binding statement (context background); no implementation obligation.
+**Status:** `n/a (informative)` — definitions without a code requirement.
 
 ---
 
-## §5 Symbols (Tab.5.1)
+## §5 Symbols
 
-### 5.1 Acronyms: CCM/CORBA/DDS/IDL
+### 5.1 Acronyms (Tab.5.1)
 
-**Spec:** §5 Tab.5.1, pp. 2-3.
+**Spec:** §5 Tab.5.1, p. 2-3 — CCM/CORBA/DDS/IDL.
 
 **Repo:** —
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — spec's own non-binding statement (context background); no implementation obligation.
+**Status:** `n/a (informative)`
 
 ---
 
 ## §6 Additional Information
 
-### 6.1 No changes to OMG specs
+### 6.1-6.3 Changes, Acknowledgments, Intellectual Property Rights
 
-**Spec:** §6.1, p. 3.
-
-**Repo:** —
-
-**Tests:** —
-
-**Status:** `n/a (informative)` — spec's own non-binding statement (context background); no implementation obligation.
-
-### 6.2 Acknowledgments
-
-**Spec:** §6.2, p. 3 — RTI/ZettaScale/OIS/MicroFocus.
+**Spec:** §6.1-6.3, p. 3.
 
 **Repo:** —
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — spec's own non-binding statement (context background); no implementation obligation.
-
-### 6.3 Intellectual Property Rights (OMG copyright + non-assertion covenant)
-
-**Spec:** §6.3, p. 3.
-
-**Repo:** —
-
-**Tests:** —
-
-**Status:** `n/a (informative)` — spec's own non-binding statement (context background); no implementation obligation.
+**Status:** `n/a (informative)`
 
 ---
 
 ## §7.1 General
 
-### 7.1.1 IDL names -> C++ names without change
+### 7.1.1 Names
 
-**Spec:** §7.1.1, p. 5 — "IDL member names and type identifiers
-shall map to equivalent C++ names and type identifiers with no
-change."
+**Spec:** §7.1.1, p. 5 — "IDL member names and type identifiers shall
+map to equivalent C++ names and type identifiers with no change."
 
-**Repo:** default path — no case transformation.
+**Repo:** `crates/lang-rules/src/adapter/cpp.rs`
 
-**Tests:** indirect via all generator tests.
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::tests::a_sequence_is_a_vector_and_a_map_is_a_class_over_a_vector_of_pairs` — `crates/lang-rules/src/adapter/cpp.rs:2752: assert!(text.contains("std::vector<std::int32_t> items;"), "{text}");`
 
-**Status:** done
+**Status:** done — the member name `items` stays unchanged. The only name
+change is the reserved-name escaping of §7.1.2.
 
-### 7.1.2 Reserved Names: all C++ keywords (~95 entries) + underscore prefix on collision
+### 7.1.2 Reserved Names
 
-**Spec:** §7.1.2, pp. 5-6 — long list of C++ keywords incl. C++20
-extensions (alignas/concept/consteval/co_await/co_return/co_yield/
-constexpr/constinit/decltype/...). "The use of any of these names
-for a user-defined IDL type or interface (assuming it is also a
-legal IDL name) shall result in the mapped name having an underscore
-('_') prepended." The spec text (`internal/standards/cache/omg/idl4-cpp-1.0.pdf`,
-§7.1.2, verified 2026-07-28) contains no alternative-conformance
-clause — no "or shall be rejected" licensing wording exists anywhere
-in that paragraph or section. The previous entry here cited such a
-clause; that citation does not exist in the spec and was incorrect
-(github-triage 2026-07-28 #14).
+**Spec:** §7.1.2, p. 5-6 — "The use of any of these names for a
+user-defined IDL type or interface (assuming it is also a legal IDL name)
+shall result in the mapped name having an underscore ('_') prepended."
 
-**Repo:** reserved-word list (`CPP_RESERVED`, 84 entries) + `is_reserved`/
-`check_identifier` in `crates/idl-cpp/src/type_map.rs` (not
-`error.rs` — `error.rs` only defines the `CppGenError::InvalidName`
-variant `check_identifier` returns). `check_identifier` is called at
-23 sites across `crates/idl-cpp/src/emitter.rs` and **hard-rejects**
-(`Err(InvalidName)`) any IDL identifier colliding with a C++ keyword —
-it does not implement the spec-mandated underscore-prepend escape.
+**Repo:** `crates/lang-cst/src/cpp/mod.rs` (`escape_keyword`)
 
-**Tests:** `reserved_class_is_rejected`,
-`reserved_field_name_is_rejected`,
-`reserved_int_is_rejected`,
-`struct_with_reserved_field_name_is_rejected`,
-`idl_exception_with_reserved_name_is_rejected`,
-`non_reserved_identifier_passes`,
-`check_returns_invalidname_with_reason`.
+**Tests:** `crates/lang-cst/src/cpp/mod.rs::a_keyword_escapes_with_a_trailing_underscore` — `crates/lang-cst/src/cpp/mod.rs:924: assert_eq!(escape_keyword("class"), "class_");`
 
-**Status:** partial — collision *detection* is complete and correct
-(the 84-entry table + all 23 emission call sites), but the mapping
-applied on collision (hard reject) is not what §7.1.2 mandates
-(underscore-prepend escape). This makes an otherwise-legal IDL type or
-member name (e.g. `long register;`, `struct class { ... };`)
-uncompilable through the full-C++ path even though the spec requires
-it to compile as `_register`/`_class`. Contrast: the sibling `--c-mode`
-path (`crates/idl-cpp/src/c_mode.rs`, vendor spec `zerodds-xcdr2-c-1.0`
-§9.5) was fixed in the same pass (github-triage #14) to escape via a
-trailing-underscore suffix instead of rejecting — the full-C++ path's
-reject-instead-of-escape gap is tracked as an **open** follow-on
-(rewiring 23 `check_identifier` call sites from an early-return gate
-into a name-substitution pass, plus updating the 7 reject-oriented
-tests above to assert escaping instead, is out of scope for the #14
-pass that covered C-mode + the 12 backends with zero prior
-keyword-handling; deliberately not done under a bandaid here).
+**Status:** partial — collisions with C++ keywords are detected and
+rewritten, but with a **trailing** underscore (`class` -> `class_`), not
+with the **leading** underscore §7.1.2 mandates (`_class`). Detection is
+complete; the applied mapping deviates.
 
-### 7.1.3 C++11 as minimum standard; C++98/03 via Annex C
+### 7.1.3 C++ Language Version Requirements
 
-**Spec:** §7.1.3, p. 6 — "C++11 [...] as the minimum C++ standard
-version. Implementers [...] may need to comply with C++98 or C++03
-shall follow the Compatibility Rules for C++98 and C++03 defined in
-Annex C."
+**Spec:** §7.1.3, p. 6 — "The language mappings defined in this
+specification require C++11 [ISO/IEC-14882:2011] as the minimum C++
+standard version."
 
-**Repo:** the generator targets C++11+ (move semantics, std::optional via
-C++17, std::variant). Annex C (C++98/03 compat path) is legacy-only
-out of scope — modern compilers are mandatory.
+**Repo:** `crates/lang-rules/tests/cpp_corpus_compiles.rs`
 
-**Tests:** `move_setter_uses_rvalue_and_std_move`,
-`move_setter_variant_present`, `optional_member_uses_std_optional`.
+**Tests:** `crates/lang-rules/tests/cpp_corpus_compiles.rs::every_corpus_case_that_renders_also_compiles` — `crates/lang-rules/tests/cpp_corpus_compiles.rs:159: .args(["-std=c++20", "-fsyntax-only", "-Wall", "-Wextra", "-Werror"])`
 
-**Status:** done
+**Status:** done — the corpus is syntax-checked under `-std=c++20`; that
+meets the C++11 minimum and covers the C++17 constructs actually used
+(`std::optional`, `inline constexpr`). The corpus test is `#[ignore]` and
+runs with `--include-ignored`.
 
-### 7.1.4 IDL Type Traits (`omg::types::value_type<T>`/`in_type<T>`/`out_type<T>`/`inout_type<T>` + `_t`/`_v` aliases)
+### 7.1.4 IDL Type Traits (Tab.7.1 and Tab.7.4-7.12)
 
-**Spec:** §7.1.4 Tab.7.1, pp. 6-7 — "Type traits shall be available
-under the omg::types namespace: value_type, in_type, out_type,
-inout_type. Each trait struct with a type or a value member shall
-have an alias ending in _t or _v."
+**Spec:** §7.1.4 Tab.7.1, p. 6-7 — "Type traits shall be available under
+the omg::types namespace" (`value_type`, `in_type`, `out_type`,
+`inout_type`, `_t`/`_v` aliases); plus the specialisations Tab.7.4
+(sequences), Tab.7.5 (strings), Tab.7.6 (wstrings), Tab.7.7 (`digits`,
+`scale`), Tab.7.8 (`bit_bound`, `underlying_type`), Tab.7.9
+(`dimensions`), Tab.7.10/7.11 (`is_bounded`, `bound`, `key`, `elements`)
+and Tab.7.12 (`bit_bound`, `underlying_type`).
 
-**Repo:** generator path in `crates/idl-cpp/src/qos.rs::block_g_*`
-emits type traits via `omg::types::value_type<T>` etc. The
-runtime library `omg::types::*` is intended as an external C++ header
-lib (no Rust crate code path); codegen is spec-conformant.
+**Repo:** —
 
-**Tests:** `block_g_traits_provide_value_in_out_inout`,
-`type_traits_namespace_emitted`,
-`type_traits_in_type_is_const_ref`,
-`type_traits_out_and_inout_are_ref`,
-`type_traits_value_type_is_t_by_value`,
-`type_trait_aliases_with_t_suffix`.
+**Tests:** —
 
-**Status:** done — the generator emits spec-conformant trait templates.
+**Status:** open — no `omg::types` namespace. `grep -rl "omg::types"
+crates/ tools/ runtime/ endpoints/` finds only
+`crates/corba-codegen/src/traits.rs` (a Rust CORBA generator). The C++
+column writes `std::` types directly; no trait of Tables 7.1 and 7.4-7.12
+is emitted.
 
 ---
 
 ## §7.2 Core Data Types
 
-### 7.2.1 IDL Specification (no direct mapping)
+### 7.2.1 IDL Specification
 
-**Spec:** §7.2.1, p. 7.
+**Spec:** §7.2.1, p. 7 — "There is no direct mapping of the IDL
+Specification itself."
 
 **Repo:** —
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — spec's own non-binding statement (context background); no implementation obligation.
+**Status:** `n/a (informative)`
 
-### 7.2.2 IDL module -> C++ namespace
+### 7.2.2 Modules
 
-**Spec:** §7.2.2, p. 7 — "IDL modules shall be mapped to C++
-namespaces of the same name. [...] IDL declarations not enclosed in
-any module shall be mapped into the global scope."
+**Spec:** §7.2.2, p. 7 — "IDL modules shall be mapped to C++ namespaces
+of the same name. [...] IDL declarations not enclosed in any module shall
+be mapped into the global scope."
 
-**Repo:** `emitter.rs` with namespace hierarchy.
+**Repo:** `crates/lang-rules/src/adapter/cpp.rs`
 
-**Tests:** `empty_module_emits_namespace`,
-`namespace_three_level_hierarchy_emits_open_close_pairs`,
-`three_level_modules_nest`,
-`namespace_prefix_option_wraps_output`,
-`double_quoted_namespace_prefix_appears_outermost`,
-`single_module_with_constant_does_not_emit_unwanted_includes`.
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::a_module_is_a_namespace_and_not_a_prefix` — `crates/lang-rules/src/adapter/cpp.rs:1987: assert!(text.contains("namespace a {"), "{text}");`
 
-**Status:** done
+**Status:** done — modules become `namespace` blocks, references are
+written from the root scope (`::a::P`), no `a_b_P` prefix.
 
-### 7.2.3 IDL Constants (numeric/boolean -> constexpr; string -> constexpr omg::types::string_view; wstring -> constexpr omg::types::wstring_view; L prefix on wide)
+### 7.2.3 Constants
 
-**Spec:** §7.2.3, pp. 7-8 — "IDL constants of numeric and boolean
-types shall be mapped to C++ constexpr declarations [...] IDL
-constants of string type shall be mapped to a constexpr declaration
-of omg::types::string_view type [...] IDL constants of wstring
-[...] of omg::types::wstring_view type [...] The constant value of
-wide character and wide string constants shall be preceded by L."
+**Spec:** §7.2.3, p. 7-8 — "IDL constants of numeric and boolean types
+shall be mapped to C++ constexpr declarations [...] IDL constants of
+string type shall be mapped to a constexpr declaration of
+omg::types::string_view type [...] of wstring type [...] omg::types::wstring_view
+[...] The constant value of wide character and wide string constants
+shall be preceded by L."
 
-**Repo:** `emitter.rs::const_decl_emits_constexpr` path. String
-constants emit `constexpr` with a `string_view`-equivalent
-(std::string_view in C++17 or an OMG type alias).
+**Repo:** `crates/lang-rules/src/adapter/cpp.rs` (constant loop,
+`cpp_constant`)
 
-**Tests:** `const_decl_emits_constexpr`, `const_decl_is_emitted` +
-`spec_conformance::string_constant_emits_constexpr_string_view`,
-`numeric_constant_emits_constexpr_with_value`.
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::every_corpus_case_renders_or_names_its_refusal`
 
-**Status:** done
+**Status:** partial — numeric and boolean constants are emitted as
+`inline constexpr`. String, wstring and fixed constants are emitted as
+`const char *`, not as `constexpr omg::types::string_view` or
+`std::string_view`; the `L` prefix for wide literals is missing because
+`wstring` is held as UTF-8. No assertion covers the constant form
+directly.
 
 ---
 
 ## §7.2.4 Data Types
 
-### 7.2.4.1.1 Integer Types Mapping (Tab.7.2)
+### 7.2.4.1 Basic Types (Tab.7.2/7.3)
 
-**Spec:** §7.2.4.1.1 Tab.7.2, p. 8 — "short -> int16_t; unsigned
-short -> uint16_t; long -> int32_t; unsigned long -> uint32_t;
-long long -> int64_t; unsigned long long -> uint64_t. Default
-value: 0."
+**Spec:** §7.2.4.1.1-§7.2.4.1.6, p. 8-9 — integers (Tab.7.2), floating
+point (Tab.7.3), char, wchar, boolean, octet.
 
-**Repo:** `crates/idl-cpp/src/type_map.rs`.
+**Repo:** `crates/lang-rules/src/adapter/cpp.rs` (`cpp_primitive`)
 
-**Tests:** `integer_short_signed_unsigned`,
-`integer_long_signed_unsigned`,
-`integer_long_long_signed_unsigned`,
-`integer_explicit_widths`,
-`integer_str_short_long`,
-`primitive_str_covers_all_branches`.
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::the_tag_keeps_apart_what_the_cpp_spelling_collapses`,
+`crates/lang-rules/src/adapter/cpp.rs::an_array_nests_with_the_outer_dimension_outermost`
 
-**Status:** done
+**Status:** partial — `long -> std::int32_t` is asserted (array,
+interface and verbatim tests), and `octet`/`uint8` as well as `wchar`/
+`unsigned short` collapse onto one type (tag test). The remaining table
+widths (`short -> int16_t`, `long long -> int64_t`, `char`, `wchar`,
+`boolean`, `octet`, `float`) have no assertion of their own. `long double`
+is deliberately mapped to `zerodds::wire::Float128` instead of the
+platform-dependent C++ `long double` (§7.2.4.1.2). `cpp_primitive` is
+exhaustive, so a missing primitive is a compile error.
 
-### 7.2.4.1.2 Floating-Point Mapping (Tab.7.3): float->float, double->double, long double->long double
+### 7.2.4.2.1 Sequences -> std::vector<T>
 
-**Spec:** §7.2.4.1.2 Tab.7.3, p. 8 — "float -> float; double ->
-double; long double -> long double. Default 0."
+**Spec:** §7.2.4.2.1, p. 9 — "IDL sequences shall be mapped to a C++
+std::vector<T>, or to a type named omg::types::sequence<T> [...]."
 
-**Repo:** `type_map.rs::float_to_cpp`.
+**Repo:** `crates/lang-rules/src/adapter/cpp.rs` (`value_type`, sequence
+arm)
 
-**Tests:** `floating_float_double`.
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::tests::a_sequence_is_a_vector_and_a_map_is_a_class_over_a_vector_of_pairs` — `crates/lang-rules/src/adapter/cpp.rs:2752: assert!(text.contains("std::vector<std::int32_t> items;"), "{text}");`
 
-**Status:** done
+**Status:** done — `std::vector<T>` is one of the forms §7.2.4.2.1 allows
+(the `omg::types::sequence` alternative is audited in §7.1.4).
 
-### 7.2.4.1.3 IDL char -> C++ char (default 0)
+### 7.2.4.2.1 omg::types::sequence/bounded_sequence
 
-**Spec:** §7.2.4.1.3, p. 8.
-
-**Repo:** `type_map.rs`.
-
-**Tests:** `primitive_char`.
-
-**Status:** done
-
-### 7.2.4.1.4 IDL wchar -> C++ wchar_t (default 0)
-
-**Spec:** §7.2.4.1.4, p. 8.
-
-**Repo:** `type_map.rs`.
-
-**Tests:** `primitive_wchar`.
-
-**Status:** done
-
-### 7.2.4.1.5 IDL boolean + TRUE/FALSE -> C++ bool + true/false (default false)
-
-**Spec:** §7.2.4.1.5, p. 9.
-
-**Repo:** `type_map.rs`.
-
-**Tests:** `primitive_boolean`.
-
-**Status:** done
-
-### 7.2.4.1.6 IDL octet -> C++ uint8_t (default 0)
-
-**Spec:** §7.2.4.1.6, p. 9.
-
-**Repo:** `type_map.rs`.
-
-**Tests:** `primitive_octet`.
-
-**Status:** done
-
-### 7.2.4.2.1 IDL Sequence -> std::vector<T> or omg::types::sequence<T>; bounded_sequence<T,N>
-
-**Spec:** §7.2.4.2.1, p. 9 — "IDL sequences shall be mapped to a
-C++ std::vector<T>, or to a type named omg::types::sequence<T>
-that delivers std::vector<T> semantics. [...] Bounded sequences
-shall be mapped to a C++ std::vector<T>, or to a type named
-omg::types::bounded_sequence<T, N>."
-
-**Repo:** `emitter.rs::sequence_member_uses_vector` — the spec allows
-`std::vector<T>` OR `omg::types::sequence<T>` (implementation
-choice). ZeroDDS chooses `std::vector<T>` as the standard-
-library path.
-
-**Tests:** `sequence_member_uses_vector` +
-`spec_conformance::bounded_sequence_struct_emits_vector_with_size_marker`.
-
-**Status:** done
-
-### 7.2.4.2.1 Type Trait Specializations (Tab.7.4): is_bounded, bound
-
-**Spec:** §7.2.4.2.1 Tab.7.4, p. 9 — "is_bounded inherits
-std::true_type if bounded; bound inherits
-std::integral_constant<size_t, b>."
-
-**Repo:** the type-traits emitter in `crates/idl-cpp/src/qos.rs::block_g_*`
-generates `is_bounded`/`bound` specializations per sequence type.
-
-**Tests:** `block_g_traits_provide_value_in_out_inout` +
-`spec_conformance::bounded_sequence_struct_emits_vector_with_size_marker`.
-
-**Status:** done
-
-### 7.2.4.2.2 IDL string -> std::string or omg::types::string; bounded -> omg::types::bounded_string<N>
-
-**Spec:** §7.2.4.2.2, p. 10 — "IDL strings shall be mapped to C++
-std::string, or to a type named omg::types::string."
-
-**Repo:** `emitter.rs::string_member_requires_string_include`.
-
-**Tests:** `string_member_requires_string_include`,
-`idl_typespec_string_wide_vs_narrow`.
-
-**Status:** done
-
-### 7.2.4.2.2 Type Trait Specializations (Tab.7.5): is_bounded, bound (strings)
-
-**Spec:** §7.2.4.2.2 Tab.7.5, p. 10 — analogous to sequences.
-
-**Repo:** the generator emits `std::string` as the default path
-(unbounded). A bounded string would be emitted via `omg::types::bounded_string<N>`;
-the `is_bounded`/`bound` trait specialization follows the
-same pattern as sequences (see §7.2.4.2.1 Tab.7.4).
-
-**Tests:** `string_member_requires_string_include`,
-`spec_conformance::string_member_uses_std_string`.
-
-**Status:** done
-
-### 7.2.4.2.3 IDL wstring -> std::wstring or omg::types::wstring; bounded -> omg::types::bounded_wstring<N>
-
-**Spec:** §7.2.4.2.3, p. 11 — analogous to strings.
-
-**Repo:** `type_map.rs`.
-
-**Tests:** `idl_typespec_string_wide_vs_narrow`.
-
-**Status:** done
-
-### 7.2.4.2.3 Type Trait Specializations (Tab.7.6): is_bounded, bound (wstrings)
-
-**Spec:** §7.2.4.2.3 Tab.7.6, p. 11 — analogous.
-
-**Repo:** the generator emits `std::wstring` (analogous to §7.2.4.2.2);
-the `is_bounded`/`bound` trait pattern is identical to strings.
-
-**Tests:** `idl_typespec_string_wide_vs_narrow` +
-`spec_conformance::wstring_member_uses_std_wstring`.
-
-**Status:** done
-
-### 7.2.4.2.4 IDL fixed -> omg::types::fixed class with ~30 methods + operators + free functions; type traits digits/scale (Tab.7.7)
-
-**Spec:** §7.2.4.2.4, pp. 11-12 — "The IDL fixed type shall map to a
-C++ class named fixed [...] under the omg::types namespace [...]
-[~30 constructor/conversion/operator/member functions]. Plus free
-functions + ~13 operator overloads + type traits."
-
-**Repo:** `crates/idl-cpp/src/emitter.rs::typespec_to_cpp` maps
-`fixed<digits, scale>` to a `::dds::core::Fixed<D, S>` template
-call (spec-equivalent form, runtime implementation in the
-`dds-core` crate as a TODO). Forward declaration via the
-`<cstdint>` include is declared.
-
-**Tests:** `spec_conformance::fixed_member_emits_dds_core_fixed_template`,
-`edge_cases::fixed_type_emits_dds_core_template`.
-
-**Status:** done — codegen mapping live; the runtime decimal library in
-`dds-core` is a TODO (implementation layer, not spec codegen).
-
-### 7.2.4.3.1 IDL struct -> C++ struct with default constructor + copy/move constructor + assignment operators + comparison + destructor + swap()
-
-**Spec:** §7.2.4.3.1, p. 13 — "An IDL struct shall be mapped to a
-C++ struct [...] default constructor [initializes built-ins to 0,
-enumerators to the first value, the rest to the default constructor];
-copy constructor (deep); move constructor; copy assignment (deep); move
-assignment; comparison operators (at least == and !=); destructor.
-[...] swap function."
-
-**Repo:** `emitter.rs` — struct emitter with default members + swap.
-
-**Tests:** `struct_has_default_constructor`,
-`struct_has_setter`,
-`struct_has_mutable_and_const_getter`,
-`primitive_struct_member_uses_correct_cpp_types`,
-`equality_operator_compares_fields`,
-`copy_and_move_special_members_defaulted`,
-`mutable_getter_returns_mutable_ref`,
-`const_getter_returns_const_ref`,
-`move_setter_uses_rvalue_and_std_move`,
-`move_setter_variant_present`,
-`keyed_struct_marker_appears`,
-`forward_declared_struct_is_emitted_as_class_decl`.
-
-**Status:** done
-
-### 7.2.4.3.2 IDL union -> C++ class with constructors + _d() discriminator + member accessors + modifier + _default()
-
-**Spec:** §7.2.4.3.2, pp. 14-15 — long spec with detailed
-method signatures. _d() getter/setter; member-accessor method;
-typedef-resolved built-in/enum -> by value, otherwise const ref;
-modifier with discriminator param for multi-label; _default() method
-if implicit default.
-
-**Repo:** `emitter.rs::union_uses_std_variant` path. The generator uses
-`std::variant` (C++17 idiom). The spec form with `_d()` and member
-accessors is a pre-C++17 convention; `std::variant` is
-semantically equivalent (discriminator via `index()`, accessor via
-`std::get<T>()` / `std::get<I>()`) and is the idiomatic C++17+
-representation of a discriminated union.
-
-**Tests:** `union_uses_std_variant` +
-`spec_conformance::union_with_octet_discriminator_emits_variant`.
-
-**Status:** done — `std::variant` is spec-conformant-equivalent to the
-class-with-_d() form (both fulfill the discriminated-union
-semantics).
-
-### 7.2.4.3.3 IDL enum -> C++ scoped `enum class` (type traits bit_bound + underlying_type, Tab.7.8)
-
-**Spec:** §7.2.4.3.3, p. 16 — "An IDL enum shall be mapped to a C++
-scoped enum class with the same name. Type Traits: bit_bound +
-underlying_type."
-
-**Repo:** `emitter.rs::enum_emits_enum_class_int32_t` path.
-
-**Tests:** `enum_emits_enum_class_int32_t`.
-
-**Status:** done
-
-### 7.2.4.3.4 Constructed Recursive Types
-
-**Spec:** §7.2.4.3.4, p. 16 — analogous to idl4-java.
-
-**Repo:** the generator supports typedef-based self-references
-(`emitter.rs::typedef_emits_using_alias` + sequence member via
-typedef). A direct self-reference in the struct body (e.g.
-`struct Node { Node next; }`) is caught by the inheritance-cycle detector
-(see `inheritance_self_loop_is_rejected`).
-
-**Tests:** `typedef_emits_using_alias`,
-`spec_conformance::typedef_can_be_used_in_struct_member`,
-`inheritance_self_loop_is_rejected`.
-
-**Status:** done
-
-### 7.2.4.4 IDL Array -> std::array or omg::types::array (with `dimensions` type trait Tab.7.9)
-
-**Spec:** §7.2.4.4, p. 17 — "An IDL array shall be mapped to a C++
-std::array of the mapped element type, or to a type named
-omg::types::array. Multidimensional arrays nesting std::array."
-
-**Repo:** `emitter.rs::array_member_uses_std_array` path.
-
-**Tests:** `array_member_uses_std_array`.
-
-**Status:** done
-
-### 7.2.4.5 IDL native: no defined mapping
-
-**Spec:** §7.2.4.5, p. 17 — "This language mapping specification
-does not define any native types."
+**Spec:** §7.2.4.2.1 Tab.7.4, p. 9 — "implementers shall always define
+omg::types::sequence<T> [...] omg::types::bounded_sequence<T,N> [...] is_bounded
+[...] bound."
 
 **Repo:** —
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — spec's own non-binding statement (context background); no implementation obligation.
+**Status:** open — neither `omg::types::sequence<T>` nor
+`omg::types::bounded_sequence<T,N>` nor the `is_bounded`/`bound`
+specialisations exist.
 
-### 7.2.4.6 IDL typedef -> C++ type alias
+### 7.2.4.2.2 Strings -> std::string
 
-**Spec:** §7.2.4.6, p. 17 — "IDL typedefs shall be mapped to type
-alias declarations."
+**Spec:** §7.2.4.2.2, p. 10 — "IDL strings shall be mapped to C++
+std::string, or to a type named omg::types::string."
 
-**Repo:** `emitter.rs::typedef_emits_using_alias` path.
+**Repo:** `crates/lang-rules/src/adapter/cpp.rs` (`value_type`, string
+arm)
 
-**Tests:** `typedef_emits_using_alias`.
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::the_tag_keeps_apart_what_the_cpp_spelling_collapses`
 
-**Status:** done
+**Status:** partial — `string` is held as `std::string` (an allowed
+form). There is no direct assertion for the data member (only the tag
+test shows that `string` and `wstring` fall onto the same C++ type);
+`omg::types::string` is missing.
+
+### 7.2.4.2.2 omg::types::string/bounded_string
+
+**Spec:** §7.2.4.2.2 Tab.7.5, p. 10 — "implementers shall always define
+omg::types::string [...] omg::types::bounded_string<N> [...] is_bounded
+[...] bound."
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** open — no `omg::types::string`/`bounded_string<N>` aliases,
+no `is_bounded`/`bound` traits.
+
+### 7.2.4.2.3 Wstrings
+
+**Spec:** §7.2.4.2.3, p. 11 — "IDL wstrings shall be mapped to C++
+std::wstrings, or to a type named omg::types::wstring [...]."
+
+**Repo:** `crates/lang-rules/src/adapter/cpp.rs` (`value_type`)
+
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::the_tag_keeps_apart_what_the_cpp_spelling_collapses`
+
+**Status:** partial — `wstring` is held as `std::string` with UTF-8, not
+as `std::wstring` and not as `omg::types::wstring`; the spec form is not
+met. No direct assertion.
+
+### 7.2.4.2.3 omg::types::wstring/bounded_wstring
+
+**Spec:** §7.2.4.2.3 Tab.7.6, p. 11 — "omg::types::wstring [...]
+omg::types::bounded_wstring<N> [...] is_bounded [...] bound."
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** open — no `omg::types::wstring`/`bounded_wstring<N>`, no
+traits.
+
+### 7.2.4.2.4 Fixed Type
+
+**Spec:** §7.2.4.2.4, p. 11-12 — "The IDL fixed type shall map to a C++
+class named fixed [...] under the omg::types namespace" (about 30 methods
+plus free functions and the `digits`/`scale` traits Tab.7.7).
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** open — the data-type column maps `fixed<P,S>` to `std::string`
+in `crates/lang-rules/src/adapter/cpp.rs`. The hand-written
+`dds::core::Fixed<P,S>` in `crates/cpp/include/dds/core/Fixed.hpp` is the
+DDS-PSM-Cxx runtime (a different spec) and offers only BCD round-trip plus
+string conversion, not the ~30 spec methods; `omg::types::fixed` and the
+`digits`/`scale` traits are missing.
+
+### 7.2.4.3.1 Structures
+
+
+**Spec:** §7.2.4.3.1, p. 13 — "An IDL struct shall be mapped to a C++
+struct [...] default constructor [...] copy constructor [...] move
+constructor [...] copy assignment [...] move assignment [...] comparison
+operators, including at least 'equal to' and 'not equal to' [...]
+destructor [...] swap function in the namespace."
+
+**Repo:** `crates/lang-rules/src/adapter/cpp_psm.rs` (class with accessors, `==`, `!=`, `swap`), `crates/lang-rules/src/adapter/cpp.rs` (structure branch)
+
+**Tests:** `crates/cpp/tests/generated_type_via_cargo.rs::a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader` (`crates/cpp/tests/generated_psm_roundtrip.cpp`: constructors, copy, move, `swap`, equality)
+
+**Status:** done — the default mapping (`--cpp-mapping psm`) writes a class with the accessors, the constructor over all members, `==`, `!=` and `swap` in the namespace (§7.12); copy and move are the implicit functions. The option `native` writes the structure of the codecs with public members, `swap` and, for pointer members, the generated copy and move functions, but no `==`. Log: `.agent/REPORT.md`.
+
+### 7.2.4.3.1 Default initialization
+
+**Spec:** §7.2.4.3.1, p. 13 — "A default constructor that initializes all
+built-in data types to their default value [...] enumerators to their
+first value, and the rest of members using their default constructor."
+
+**Repo:** `crates/lang-rules/src/adapter/cpp.rs` (`member_default`)
+
+**Tests:** `tools/idlc/tests/cpp_headers_together.rs::two_generated_headers_share_a_translation_unit_and_their_structs_start_at_their_defaults` — `tools/idlc/tests/cpp_headers_together.rs:126: status.success(),`
+
+**Status:** done — the test compiles and runs default-constructed
+structs; the exit code is non-zero if a built-in is not 0, `bool` is not
+`false`, `double` is not 0.0, the enum is not its first literal, or an
+array/sequence is not empty.
+
+### 7.2.4.3.2 Unions
+
+**Spec:** §7.2.4.3.2, p. 14-15 — class with `_d() const`/`void _d(T)`,
+member accessor/modifier per branch, multi-label modifier with a
+discriminator parameter, and `_default()`.
+
+**Repo:** `crates/lang-rules/src/adapter/cpp.rs` (union arm)
+
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::a_union_is_a_class_with_a_discriminator_and_one_field_per_case`
+
+**Status:** partial — the union is emitted as a class with a `_d` field
+and one field per branch (asserted: `struct U {`, `std::int32_t _d;`).
+The required accessor/modifier methods, the multi-label variant and
+`_default()` are missing; the branches are public fields.
+
+### 7.2.4.3.3 Enumerations
+
+**Spec:** §7.2.4.3.3, p. 16 — "An IDL enum shall be mapped to a C++
+scoped enum class with the same name as the IDL enum type."
+
+**Repo:** `crates/lang-rules/src/adapter/cpp.rs` (enumeration arm)
+
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::an_enumeration_takes_an_underlying_type_from_its_bit_bound` — `crates/lang-rules/src/adapter/cpp.rs:2050: assert!(narrow.contains("enum class E : std::uint8_t {"), "{narrow}");`
+
+**Status:** done — a scoped `enum class` with the same name; the
+underlying type is chosen from `@bit_bound` and the enumerator values.
+
+### 7.2.4.3.3 Enumeration Type Traits
+
+**Spec:** §7.2.4.3.3 Tab.7.8, p. 17 — "bit_bound [...] underlying_type."
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** open — the `bit_bound`/`underlying_type` specialisations are
+not emitted (see §7.1.4).
+
+### 7.2.4.3.4 Constructed Recursive Types
+
+**Spec:** §7.2.4.3.4, p. 16 — "Constructed recursive types are supported
+by mapping the involved types directly to C++."
+
+**Repo:** `crates/lang-rules/src/adapter/cpp.rs` (forward declarations,
+sequence/`shared_ptr` arms)
+
+**Tests:** `crates/lang-rules/tests/external_is_an_indirection.rs::a_recursive_external_member_is_a_shared_pointer_and_not_a_value`
+
+**Status:** partial — forward declarations for aggregates and
+`std::vector<T>`/`std::shared_ptr<T>` allow self-reference; only the
+`@external` recursion case is evidenced (`std::shared_ptr<::m::Node>
+next;`). The general case (self-reference through `sequence<Node>` without
+`@external`) has no assertion of its own.
+
+### 7.2.4.4 Arrays
+
+**Spec:** §7.2.4.4, p. 17 — "An IDL array shall be mapped to a C++
+std::array of the mapped element type, or to a type named
+omg::types::array [...] Multidimensional arrays shall be constructed
+nesting std::array."
+
+**Repo:** `crates/lang-rules/src/adapter/cpp.rs` (array arm)
+
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::an_array_nests_with_the_outer_dimension_outermost` — `crates/lang-rules/src/adapter/cpp.rs:2023: assert!(text.contains("std::array<std::array<std::int32_t, 3>, 2> a = {};"), "{text}");`
+
+**Status:** done — `std::array`, multidimensional, nested
+outermost-first; one of the forms §7.2.4.4 allows.
+
+### 7.2.4.4 omg::types::array and dimensions
+
+**Spec:** §7.2.4.4 Tab.7.9, p. 17 — "omg::types::array [...] dimensions."
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** open — `omg::types::array` and the `dimensions` trait are
+missing.
+
+### 7.2.4.5 Native Types
+
+**Spec:** §7.2.4.5, p. 17 — "This language mapping specification does not
+define any native types, but compliant implementations may provide the
+necessary mechanisms."
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** `n/a (informative)` — the spec defines no native types; the
+adapter optionally maps `native` to `void *` or a facet name.
+
+### 7.2.4.6 Naming Data Types
+
+**Spec:** §7.2.4.6, p. 17 — "IDL typedefs shall be mapped to type alias
+declarations."
+
+**Repo:** `crates/lang-rules/src/adapter/cpp.rs` (alias arm)
+
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::every_corpus_case_renders_or_names_its_refusal`
+
+**Status:** partial — `typedef` is emitted as a `cpp::Alias` (C++ `using`);
+no assertion checks the alias declaration directly, and the corpus
+compile does not distinguish an alias form from a macro form.
 
 ---
 
 ## §7.3 Any
 
-### 7.3 IDL any -> omg::types::Any
+### 7.3 Any -> omg::types::Any
 
 **Spec:** §7.3, p. 18 — "The IDL any type shall be mapped to a C++
 omg::types::Any type."
 
-**Repo:** `crates/idl-cpp/src/emitter.rs::typespec_to_cpp` maps
-`any` to the `::dds::core::Any` class (spec-equivalent form;
-omg::types::Any counterpart). The runtime implementation in the `dds-core` crate
-is an implementation step.
+**Repo:** —
 
-**Tests:** `spec_conformance::any_member_emits_dds_core_any`,
-`edge_cases::any_type_emits_dds_core_any`.
+**Tests:** —
 
-**Status:** done — codegen mapping live; the runtime reflective container
-in `dds-core` as an implementation TODO.
+**Status:** open — `any` is refused in
+`crates/lang-rules/src/adapter/cpp.rs` (`cpp_value_type`,
+`TypeKind::Any`) with `NoLanguageForm` (test
+`an_any_member_is_refused_by_name_at_any_depth`, also for
+`sequence<any>`). No `omg::types::Any`.
 
 ---
 
 ## §7.4 Interfaces – Basic
 
-### 7.4 IDL interface -> C++ class with pure-virtual method per operation/attribute; out/inout -> ref; in -> by value or const ref; interface param T -> std::shared_ptr<T> or omg::types::ref_type<T>
+### 7.4 Interfaces -> C++ classes
 
-**Spec:** §7.4, pp. 18-19 — "Each IDL interface shall be mapped to a
-C++ class [...] pure virtual methods. [...] in arguments shall be
-passed by value if built-in/enum, otherwise const ref. out/inout
-shall be passed by reference. Parameters of interface type T shall
-be mapped to std::shared_ptr<T>, or to omg::types::ref_type<T>.
-Plus omg::types::weak_ref_type<T>."
+**Spec:** §7.4, p. 18-19 — "Each IDL interface shall be mapped to a C++
+class [...] Each attribute [...] pair of pure virtual methods [...] Each
+operation [...] pure virtual method [...] IDL out and inout arguments
+shall be passed by reference [...] in arguments [...] by value [...] and
+as a reference to const otherwise. Parameters of interface type T shall
+be mapped to std::shared_ptr<T>, or to omg::types::ref_type<T>. [...]
+weak_ref_type<T>."
 
-**Repo:** `@service` interfaces via RPC codegen (`crates/idl-cpp/
-src/rpc.rs`); non-service IDL `interface` via
-`emitter.rs::emit_interface_stub` (CORBA migration path: pure-
-virtual class with `virtual ~Foo() = default;` dtor, virtual
-methods with `= 0;`, virtual property getter/setter, public-virtual
-inheritance for multi-base).
+**Repo:** `crates/lang-rules/src/emit/interface_cpp.rs`
 
-**Tests:** RPC path: `service_interface_contains_class_and_async`,
-`service_interface_methods_count_matches_signatures`,
-`service_interface_one_method_snapshot`,
-`service_interface_sequence_param_emits_vector`,
-`empty_service_emits_minimal_interface_and_traits`,
-`in_param_emits_const_reference`,
-`out_only_param_emits_nonconst_reference`,
-`inout_params_emit_nonconst_reference`,
-`doxygen_param_directions_documented`.
-Non-service path: `spec_conformance::{non_service_interface_emits_pure_virtual_class,
-interface_with_in_param_uses_const_reference,
-interface_with_out_param_uses_reference}`,
-`edge_cases::interface_emits_pure_virtual_class`.
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_synchronous_operations_of_rule_six`,
+`crates/lang-rules/tests/interface_bindings.rs::cpp_names_an_attribute_accessor_after_the_attribute`
 
-**Status:** done
+**Status:** partial — interfaces are emitted through the DDS-RPC 1.0
+§7.11.1 binding as classes with pure-virtual operations and attribute
+accessors (asserted: `in` by value/const ref, `out`/`inout` by reference,
+accessor named after the attribute). The binding follows DDS-RPC 1.0 and
+adds `IAsync`/`Requester`/`Replier`/`Client`/`Service`, which §7.4 does
+not know; `omg::types::ref_type<T>`/`weak_ref_type<T>` for interface
+parameters are missing.
 
-### 7.4.1 IDL exception -> C++ class : std::exception (with copy/move/assignment/destructor + what() method + ctor with member+`const char*` param)
+### 7.4.1 Exceptions
 
-**Spec:** §7.4.1, pp. 19-20 — "An IDL exception shall be mapped to a
-C++ class with the same name as the IDL exception. The mapped class
-shall extend the std::exception class. [...] copy/move/assignment/
-destructor + what() impl + explicit ctor with one parameter for
-each exception member + const char* for explanatory info."
+**Spec:** §7.4.1, p. 19-20 — "An IDL exception shall be mapped to a C++
+class [...] shall extend the std::exception class [...] copy constructor,
+move constructor, assignment operator, move operator, and destructor
+[...] what() method [...] explicit constructor with one parameter for
+each exception member [...] and a parameter of type const char *."
 
-**Repo:** `emitter.rs::exception_inherits_std_exception` path.
+**Repo:** `crates/lang-rules/src/adapter/cpp.rs` (exception loop)
 
-**Tests:** `exception_inherits_std_exception`,
-`empty_idl_exception_still_inherits_remote_exception`,
-`idl_exception_emits_remote_exception_subclass`,
-`runtime_header_exposes_remote_exception_subclasses`,
-`remote_exception_member_getters_and_setters`.
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::every_corpus_case_renders_or_names_its_refusal`
 
-**Status:** done
+**Status:** partial — an IDL exception is emitted as a `struct` with its
+members. The required `class X : public std::exception` derivation,
+`what()`, copy/move constructor, assignment operators and the explicit
+`(member..., const char* what)` constructor are entirely missing.
 
-### 7.4.2 IDL interface forward declaration -> C++ partial forward declaration (`class Foo;`)
+### 7.4.2 Interface Forward Declaration
 
-**Spec:** §7.4.2, p. 20 — "An IDL interface forward declaration
-shall be mapped to a partial forward declaration in C++."
+**Spec:** §7.4.2, p. 20 — "An IDL interface forward declaration shall be
+mapped to a partial forward declaration in C++."
 
-**Repo:** forward declaration in `emitter.rs`. A struct forward decl
-emits `class <Name>;` (see spec-conformant path). The interface
-forward decl follows the same pattern (non-service interfaces are
-unsupported, so no dedicated codegen path).
+**Repo:** —
 
-**Tests:** `forward_declared_struct_is_emitted_as_class_decl` +
-`spec_conformance::struct_forward_declaration_emits_class_or_struct_decl`.
+**Tests:** —
 
-**Status:** done
+**Status:** open — interface forward declarations are not emitted; the
+data-type adapter writes `Forward` only for `Structure`, `Union` and
+`Valuetype`. `interface Foo;` without a definition is refused by
+`crates/lang-rules/src/adapter/interface.rs` as `ForwardWithoutDefinition`
+(test
+`crates/lang-rules/tests/interface_bindings.rs::a_forward_declaration_without_a_definition_is_e002`).
 
 ---
 
 ## §7.5 Interfaces – Full
 
-### 7.5 Embedded type/const/exception decls as nested decls inside a C++ class; constants as `static constexpr`
+### 7.5 Embedded declarations and static constexpr
 
-**Spec:** §7.5, p. 20 — "Interfaces – Full shall follow the mapping
-rules for Interfaces – Basic, adding to the mapped class the
-declaration every type, exception, or constant declaration in the
-IDL interface body. [...] In the case of constants, constexpr
-declarations shall be marked as static."
+**Spec:** §7.5, p. 20 — "adding to mapped class the declaration every
+type, exception, or constant declaration in the IDL interface body. [...]
+constexpr declarations shall be marked as static."
 
-**Repo:** non-service IDL interfaces are unsupported (see §7.4),
-so embedded type/const/exception decls fall out of scope.
-DDS-RPC `@service` interfaces use the spec §10 mapping
-(separate codegen templates for service classes), not the
-generic §7.5 form.
+**Repo:** —
 
-**Tests:** cross-ref `spec_conformance::non_service_interface_returns_unsupported_error`.
+**Tests:** —
 
-**Status:** done — spec-conformant reject (implementations are not
-required to support a generic `interface`).
+**Status:** open — the DDS-RPC binding in
+`crates/lang-rules/src/emit/interface_cpp.rs` emits topic types and
+operation classes, but no nested type/exception/constant declarations
+inside the interface body and no `static constexpr` inside the class.
 
 ---
 
 ## §7.6 Value Types
 
-### 7.6 IDL valuetype -> C++ class with pure-virtual public/protected accessor/modifier; factory operations -> <ValueTypeName>_factory class; supports interface -> all operations as pure virtual
+### 7.6 Valuetype -> abstract class
 
-**Spec:** §7.6, p. 21 — "An IDL valuetype shall be mapped to a C++
-class [...]. Public state members shall be mapped to public pure
-virtual accessor and modifier methods. Private state members shall
-be mapped to protected pure virtual accessor and modifier methods.
-[...] factory operations [...] declare a class named
-<ValueTypeName>_factory. [...] Inheritance via public virtual.
-Supports interface: all operations as pure virtual."
+**Spec:** §7.6, p. 21 — public/private state members -> public/protected
+pure-virtual accessor and modifier methods; factory operations ->
+`<ValueTypeName>_factory`; inheritance via public virtual; supports
+interface -> all operations as pure virtual.
 
-**Repo:** `crates/idl-cpp/src/emitter.rs::emit_value_type` renders
-`class Name [: public virtual Base]+ { virtual ~Name() = default;
-public-state pure-virtual accessors; protected-state pure-virtual
-accessors; supports/methods }` plus an optional
-`Name_factory` class. Inheritance + supports both via public virtual
-(diamond pattern).
+**Repo:** `crates/lang-rules/src/adapter/cpp.rs` (valuetype arm)
 
-**Tests:** `spec_conformance::{valuetype_is_feature_gated_or_emits_class_with_accessors,
-valuetype_with_factory_emits_factory_class,
-valuetype_private_state_emits_protected_accessor}`.
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::every_corpus_case_renders_or_names_its_refusal`
 
-**Status:** done
+**Status:** partial — `valuetype` is treated like a `struct`: its members
+become fields. The required public/protected pure-virtual accessor/modifier
+methods, the `<ValueTypeName>_factory` class, the public-virtual
+inheritance and the operations of a supported interface are missing.
 
 ---
 
-## §7.7-§7.13 CORBA + Components + Templates
+## §7.7-§7.13 CORBA, Components and Template Modules
 
-### 7.7 CORBA-Specific Interfaces -> Annex A.1
+### 7.7/7.8 CORBA-Specific Interfaces and Value Types
 
-**Spec:** §7.7, p. 22 — out of scope.
-
-**Repo:** —
-
-**Tests:** —
-
-**Status:** `n/a (informative)` — spec's own non-binding statement (context background); no implementation obligation.
-
-### 7.8 CORBA-Specific Value Types -> Annex A.1
-
-**Spec:** §7.8, p. 22.
+**Spec:** §7.7-7.8, p. 22 — refers to Annex A.1.
 
 **Repo:** —
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — spec's own non-binding statement (context background); no implementation obligation.
+**Status:** `n/a (informative)` — the clause itself defines no mapping;
+Annex A.1 is audited separately.
 
-### 7.9 Components – Basic -> intermediate IDL via [OMG-CORBA-COMP]
+### 7.9/7.10 Components – Basic and Homes
 
-**Spec:** §7.9, p. 22.
-
-**Repo:** CCM/Components is legacy CORBA and not in the DDS use case
-— the spec refers to `[OMG-CORBA-COMP]` as an out-of-scope
-intermediate-IDL path. The ZeroDDS IDL parser does not accept the `component`
-keyword.
-
-**Tests:** cross-ref `idl-4.2.md` Annex B (component keyword as a
-reservation, no productive path).
-
-**Status:** done — the out-of-scope reject is spec-conformant (the spec
-itself says "via intermediate IDL", which would be a build-tooling
-conversion).
-
-### 7.10 Components – Homes
-
-**Spec:** §7.10, p. 22 — analogous to §7.9.
-
-**Repo:** identical to §7.9 — CCM homes are legacy CORBA, not a
-DDS use case.
-
-**Tests:** as §7.9.
-
-**Status:** done
-
-### 7.11 CCM-Specific -> Annex A.1
-
-**Spec:** §7.11, p. 22.
+**Spec:** §7.9-7.10, p. 22 — "mapped to equivalent IDL, as specified in
+[OMG-CORBA-COMP]."
 
 **Repo:** —
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — spec's own non-binding statement (context background); no implementation obligation.
+**Status:** `n/a (informative)` — no direct C++ mapping; the path is
+intermediate-IDL tooling, not codegen.
 
-### 7.12 Components – Ports/Connectors -> intermediate IDL
+### 7.11 CCM-Specific
 
-**Spec:** §7.12, p. 22.
+**Spec:** §7.11, p. 22 — refers to Annex A.1.
 
-**Repo:** identical to §7.9/§7.10 — legacy CORBA ports,
-out of scope.
+**Repo:** —
 
-**Tests:** as §7.9.
+**Tests:** —
 
-**Status:** done
+**Status:** `n/a (informative)`
 
-### 7.13 Template Modules -> intermediate IDL
+### 7.12/7.13 Components – Ports/Connectors and Template Modules
 
-**Spec:** §7.13, p. 22.
+**Spec:** §7.12-7.13, p. 22 — "mapped to intermediate IDL, as specified
+in [OMG-IDL4]."
 
-**Repo:** template modules are an IDL building block for generic
-programming. The ZeroDDS IDL parser does not accept template-module syntax
-(see `idl-4.2.md` §7.4.13 audit). DDS use cases use
-direct type mapping.
+**Repo:** —
 
-**Tests:** cross-ref `idl-4.2.md` template-module status.
+**Tests:** —
 
-**Status:** done — the out-of-scope reject is spec-conformant (the spec
-refers to an "intermediate IDL" tooling path, not direct
-codegen).
+**Status:** `n/a (informative)` — intermediate-IDL path with no direct
+C++ mapping.
 
 ---
 
 ## §7.14 Extended Data Types
 
-### 7.14.1 Struct with single inheritance -> C++ struct with `: public Base`; swap() with inherited members
+### 7.14.1 Structures with Single Inheritance
 
-**Spec:** §7.14.1, p. 23 — "An IDL struct that inherits from a base
-IDL struct shall be mapped to a C++ struct [...] using public
-inheritance. [...] swap method ensures that all inherited members
-are swapped."
+**Spec:** §7.14.1, p. 23 — "shall inherit from the mapped base struct
+using public inheritance. [...] swap method [...] which shall ensure that
+all inherited members are swapped."
 
-**Repo:** `emitter.rs::inheritance_emits_public_base` path.
+**Repo:** `crates/lang-rules/src/adapter/cpp.rs` (`all_members_of`)
 
-**Tests:** `inheritance_emits_public_base`,
-`inheritance_self_loop_is_rejected`,
-`inheritance_cycle_display`.
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::every_corpus_case_renders_or_names_its_refusal`
 
-**Status:** done
+**Status:** partial — base members are copied flat into the derived
+struct (`all_members_of`), not as `struct Child : Base` with public
+inheritance; the `swap` function for inherited members is missing. The
+flat form is deliberate so the member order matches the wire plan.
 
-### 7.14.2 Union discriminator extensions (wchar/octet + 8-bit ints)
+### 7.14.2 Union Discriminators
 
-**Spec:** §7.14.2, p. 23 — "This building block adds the wchar, and
-octet IDL types to the set of valid types for a discriminator. [...]
-int8/uint8 are valid union discriminators."
+**Spec:** §7.14.2, p. 23 — "adds the wchar, and octet IDL types to the set
+of valid types for a discriminator. [...] int8 and uint8 are valid union
+discriminators."
 
-**Repo:** the generator path via `std::variant` (see §7.2.4.3.2)
-supports any integral type as a discriminator
-(short/long/octet/wchar/int8/uint8). See
-`type_map.rs` for the 8-bit integer mapping.
+**Repo:** `crates/lang-rules/src/adapter/cpp.rs` (union arm)
 
-**Tests:** `integer_explicit_widths` (8-bit types) +
-`spec_conformance::union_with_octet_discriminator_emits_variant`.
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::a_union_is_a_class_with_a_discriminator_and_one_field_per_case`
 
-**Status:** done
+**Status:** partial — the discriminator runs through `cpp_value_type` and
+accepts any integral type; only `switch (long)` is asserted. `wchar`,
+`octet`, `int8` and `uint8` as discriminators have no assertion of their
+own.
 
-### 7.14.3.1 IDL Map -> std::map<Key,T> or omg::types::map<Key,T>; bounded -> omg::types::bounded_map<Key,T,N>; type traits is_bounded/bound/key/elements
+### 7.14.3.1 Maps
 
-**Spec:** §7.14.3.1, pp. 23-24 — map mapping + Tab.7.10 type-trait
-specializations + Tab.7.11 additional type traits.
 
-**Repo:** IDL `map<K,V>` is an Extended-Data-Types building block.
-The ZeroDDS IDL parser does not accept the `map` keyword in the default
-profile (see idl-4.2.md Annex B, gated behind the
-`idl4_extended_types` feature). When the feature is enabled,
-the generator would emit `std::map<K,V>` (analogous to
-`std::vector<T>` for sequence).
+**Spec:** §7.14.3.1, p. 23-24 — "IDL maps shall be mapped to a C++
+std::map<Key,T> [...] or to a type named omg::types::map<Key,T> [...]
+omg::types::bounded_map<Key, T, N>."
 
-**Tests:** cross-ref idl-4.2.md (map-keyword feature gate).
+**Repo:** `crates/lang-rules/src/adapter/cpp_psm.rs` (map branch)
 
-**Status:** done — feature-gated, out-of-default-profile reject
-is spec-conformant (extended building block).
+**Tests:** `crates/cpp/tests/generated_type_via_cargo.rs::a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`
 
-### 7.14.3.2 IDL bitset -> C++ struct with bit fields (incl. anonymous); inheritance via public
+**Status:** done — in the default mapping (`psm`) `map<K,V>` is `std::map<K,V>`; `--cpp-mapping native` and `classic` are named options (`zerodds::Map`, the order of the entries as an axis of the codec). There is no `omg::types::map` or `bounded_map`; the spec admits `std::map` alone. Log: `.agent/REPORT.md`.
 
-**Spec:** §7.14.3.2, pp. 24-25 — "IDL bitset types shall be mapped
-to C++ structs [...]. The only members of these structs are bit
-fields. [...] Inheritance public."
+### 7.14.3.1 Map Type Traits
 
-**Repo:** `crates/idl-cpp/src/bitset.rs::emit_bitset` renders
-`struct Name { uint64_t value; ... };` with getter/setter per
-named bitfield (mask + shift inline). Anonymous padding bitfields
-only advance the bit cursor. Total width > 64 → hard error.
-
-**Tests:** `spec_conformance::{bitset_emits_struct_with_value_field,
-bitset_total_width_over_64_returns_error}`,
-`edge_cases::bitset_emits_struct_with_bitfields`.
-
-**Status:** done
-
-### 7.14.3.3 IDL bitmask -> C++ struct with unscoped enum `_flags` + `_value` member + operators + type traits bit_bound/underlying_type (Tab.7.12)
-
-**Spec:** §7.14.3.3, pp. 25-26 — "IDL bitmask declarations shall be
-mapped to a C++ struct type containing: An unscoped enum named
-_flags; A private member named _value; default+copy constructor;
-implementation of !=, &=, ^= operators; function call operator
-returning _value."
-
-**Repo:** `crates/idl-cpp/src/bitset.rs::emit_bitmask` renders
-`enum class Name : uintN_t { ... };` with bitwise operator overloads
-(`|`, `&`, `^`, `~`). The underlying type follows the `@bit_bound(N)` spec
-(8/16/32/64 bit). Spec-equivalent to the spec form `struct + unscoped
-enum`, but type-safe (C++11+ enum class).
-
-**Tests:** `spec_conformance::{bitmask_emits_enum_class_with_bitwise_operators,
-bitmask_explicit_position_overrides_auto}`.
-
-**Status:** done — spec-equivalent C++11 form.
-Extended building block.
-
-### 7.14.4 8-bit Integer Types (Tab.7.13): int8 -> int8_t; uint8 -> uint8_t (default 0)
-
-**Spec:** §7.14.4, p. 26 Tab.7.13 — "int8 -> int8_t; uint8 ->
-uint8_t."
-
-**Repo:** `type_map.rs`.
-
-**Tests:** `integer_explicit_widths`.
-
-**Status:** done
-
-### 7.14.5 Explicitly-Named Integer Types (Tab.7.14): int16/uint16/int32/uint32/int64/uint64 -> int16_t/uint16_t/int32_t/uint32_t/int64_t/uint64_t
-
-**Spec:** §7.14.5, pp. 26-27 Tab.7.14.
-
-**Repo:** `type_map.rs`.
-
-**Tests:** `integer_explicit_widths`.
-
-**Status:** done
-
----
-
-## §7.15 Anonymous Types
-
-### 7.15 Anonymous Types: no impact on C++ mapping
-
-**Spec:** §7.15, p. 27.
+**Spec:** §7.14.3.1 Tab.7.10/7.11, p. 24 — "is_bounded [...] bound [...]
+key [...] elements."
 
 **Repo:** —
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — spec's own non-binding statement (context background); no implementation obligation.
+**Status:** open — no `omg::types::map`/`bounded_map` and none of the
+four traits.
+
+### 7.14.3.2 Bitsets
+
+**Spec:** §7.14.3.2, p. 24-25 — "IDL bitset types shall be mapped to C++
+structs that meet the C++ requirements for aggregate initialization. The
+only members of these structs are bit fields. [...] shall derive (using
+public inheritance) from the struct resulting from mapping the base
+type."
+
+**Repo:** `crates/lang-rules/src/adapter/cpp.rs` (bitset arm)
+
+**Tests:** `crates/lang-rules/tests/cpp_reader_generates.rs::every_kind_table_9_answers_for_gets_a_defaulter`
+
+**Status:** partial — bitsets are emitted as a struct with separate
+integer members, packed in the codec, not as C++ bit-fields; base
+bit-fields are folded in flat, not through public inheritance. The spec
+requires bit-fields as the only members.
+
+### 7.14.3.3 Bitmask Type
+
+**Spec:** §7.14.3.3, p. 25-26 — "struct type containing [...] unscoped
+enum named _flags [...] private member named _value [...] default
+constructor and a copy constructor [...] !=, &=, and ^= bitwise operators
+[...] function call operator that returns _value."
+
+**Repo:** `crates/lang-rules/src/adapter/cpp.rs` (bitmask arm)
+
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::every_corpus_case_renders_or_names_its_refusal`
+
+**Status:** partial — a bitmask is emitted as an integer alias
+(uint8/16/32/64) plus `inline constexpr` bit constants, not as a `struct`
+with an unscoped `_flags` enum, a private `_value`, constructors,
+`!=`/`&=`/`^=` operators and a call operator. The
+`bit_bound`/`underlying_type` traits are missing.
+
+### 7.14.4 8-bit Integer Types (Tab.7.13)
+
+**Spec:** §7.14.4 Tab.7.13, p. 26 — "int8 -> int8_t; uint8 -> uint8_t."
+
+**Repo:** `crates/lang-rules/src/adapter/cpp.rs` (`cpp_primitive`)
+
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::the_tag_keeps_apart_what_the_cpp_spelling_collapses`
+
+**Status:** partial — `octet`/`uint8` fall onto the same `std::uint8_t`
+(tag test). `int8 -> std::int8_t` has no assertion of its own.
+
+### 7.14.5 Explicitly-Named Integer Types (Tab.7.14)
+
+**Spec:** §7.14.5 Tab.7.14, p. 26-27 — "int16/uint16/int32/uint32/int64/uint64
+-> int16_t/uint16_t/int32_t/uint32_t/int64_t/uint64_t."
+
+**Repo:** `crates/lang-rules/src/adapter/cpp.rs` (`cpp_primitive`)
+
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::the_tag_keeps_apart_what_the_cpp_spelling_collapses`
+
+**Status:** partial — the explicit widths are mapped in `cpp_primitive`,
+but no assertion names `int16`/`uint16`/`int32`/`uint32`/`int64`/`uint64`
+individually.
+
+---
+
+## §7.15 Anonymous Types
+
+### 7.15 Anonymous Types
+
+**Spec:** §7.15, p. 27 — "No impact to the C++ language mapping."
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** `n/a (informative)` — no mapping impact.
 
 ---
 
 ## §7.16 User-Defined Annotations
 
-### 7.16 User-Defined Annotations: NOT propagated to generated C++ code
+### 7.16 User-Defined Annotations
 
-**Spec:** §7.16, p. 27 — "User-defined annotations are not
-propagated to the generated C++ code."
+**Spec:** §7.16, p. 27 — "User-defined annotations are not propagated to
+the generated C++ code."
 
-**Repo:** n/a — the spec constraint is a no-op.
+**Repo:** —
 
-**Tests:** n/a
+**Tests:** —
 
-**Status:** done
+**Status:** `n/a (informative)` — the C++ column carries no user
+annotations into its output; the clause imposes no emission requirement.
 
 ---
 
 ## §7.17 Standardized Annotations
 
-### 7.17.1 General Purpose (Tab.7.15): @id, @autoid, @optional, @position, @value, @extensibility/@final/@mutable/@appendable
+### 7.17.1 General Purpose: @optional
 
-**Spec:** §7.17.1 Tab.7.15, pp. 27-28 — mapping impact:
-- @id/@autoid: no impact
-- @optional: std::optional<T> (C++17) or omg::types::optional<T>
-- @position: bitmask (see §7.14.3.3)
-- @value: enum value (see §7.2.4.3.3)
-- @extensibility/@final/@mutable/@appendable: no impact
 
-**Repo:**
-- `@optional`: `optional_member_uses_std_optional` path.
-- `@value`: enum value via `enum_emits_enum_class_int32_t`.
-- `@position`: bitmask-specific; bitmask is supported (see §7.14.3.3) →
-  `@position` is consistently supported via `bitmask_explicit_position_overrides_auto`.
-- `@id`/`@autoid`/`@extensibility`/`@final`/`@mutable`/`@appendable`:
-  no impact (the spec says explicitly "no impact").
+**Spec:** §7.17.1 Tab.7.15, p. 27 — "IDL elements annotated with
+@optional of type T shall map to std::optional<T> in implementations of
+this specification supporting C++17 and above."
 
-**Tests:** `optional_member_uses_std_optional`,
-`enum_emits_enum_class_int32_t` +
-`spec_conformance::optional_member_emits_std_optional`.
+**Repo:** —
 
-**Status:** done
+**Tests:** —
 
-### 7.17.2 Data Modeling (Tab.7.16): @key, @must_understand, @default_literal
+**Status:** `open` — no mapping writes `std::optional<T>`: the default mapping (`psm`) writes `dds::core::optional<T>` (DDS-PSM-Cxx), the option `native` a pointer `T *` (DDS-XTypes 1.3 §7.5.1.2.4.2), the option `classic` `zerodds::classic::Optional<T>`. The form of IDL4 to C++ 1.0 §7.17.1 is missing as a named option. Evidence of the forms that exist: `crates/lang-rules/src/adapter/cpp_psm.rs` (`dds::core::optional<T>`), `crates/lang-rules/src/adapter/cpp.rs` (`T *`), `crates/lang-rules/src/adapter/cpp_classic.rs` (`zerodds::classic::Optional<T>`); tests `crates/lang-rules/src/adapter/cpp.rs::tests::an_optional_member_is_a_plain_pointer_and_not_a_second_field`, `crates/cpp/tests/generated_psm_roundtrip.cpp`.
 
-**Spec:** §7.17.2 Tab.7.16, p. 28 — "@key/@must_understand: no
-impact. @default_literal: C++ element initialized to indicated value."
+### 7.17.1 General Purpose: @value, @position, @id, @autoid, @extensibility
 
-**Repo:** `@key` via the `keyed_struct_marker_appears` path (marker
-for DDS topic identity — the spec says "no impact" on the C++ codegen
-itself, ZeroDDS additionally emits a marker for DCPS topic
-generation). `@must_understand`: no impact (spec-conformant
-no-op). `@default_literal`: the enum default is the first variant, the
-spec pattern is covered indirectly by `enum_emits_enum_class_int32_t` and
-the default-construct test.
+**Spec:** §7.17.1 Tab.7.15, p. 27-28 — `@value` provides the enumerator
+value; `@position` affects the bitmask; `@id`, `@autoid`,
+`@extensibility`, `@final`, `@mutable`, `@appendable` have no impact.
 
-**Tests:** `keyed_struct_marker_appears`,
-`enum_emits_enum_class_int32_t` +
-`spec_conformance::key_annotation_emits_marker_comment_or_attribute`.
+**Repo:** `crates/lang-rules/src/adapter/cpp.rs`
 
-**Status:** done
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::an_enumeration_takes_an_underlying_type_from_its_bit_bound`
 
-### 7.17.3 Units and Ranges (Tab.7.17): @default, @range -> omg::types::ranged<T,min,max>, @min, @max, @unit
+**Status:** partial — `@value` reaches the enumerator value (the adapter
+writes every value out) but is not asserted directly; `@position` hangs
+on the bitmask, which is itself partial (§7.14.3.3); `@id`, `@autoid`,
+`@extensibility`, `@final`, `@mutable` and `@appendable` are, as the spec
+intends, not carried into the C++.
 
-**Spec:** §7.17.3 Tab.7.17, pp. 28-29 — "@default: init in default
-constructor. @range(min,max): omg::types::ranged<T,min,max> elements
-with std::out_of_range on violation. @min/@max: setter throws
-std::out_of_range on violation. @unit: no impact."
+### 7.17.2 Data Modeling: @key, @must_understand, @default_literal
 
-**Repo:** `@unit` is a no-op (spec-conformant). `@default`/`@range`/
-`@min`/`@max` are validation annotations — ZeroDDS codegen
-emits the default initialization in the default constructor; full
-range validation via `std::out_of_range` is runtime-library
-behavior of the `omg::types::ranged<>` template (external C++ lib).
-The codegen path is prepared spec-conformantly.
+**Spec:** §7.17.2 Tab.7.16, p. 28 — `@key`/`@must_understand` have no
+impact; "The C++ element declared as result of the mappings [...] shall
+be initialized to the element indicated by [@default_literal]."
 
-**Tests:** cross-ref `struct_has_default_constructor`.
+**Repo:** `crates/lang-rules/src/adapter/cpp.rs` (`member_default`)
 
-**Status:** done — annotation paths as no-op/default-init spec-
-conformant; full runtime validation is a library subject (analogous to
-omg::types).
+**Tests:** `tools/idlc/tests/cpp_headers_together.rs::two_generated_headers_share_a_translation_unit_and_their_structs_start_at_their_defaults`
 
-### 7.17.4 Data Implementation (Tab.7.18): @bit_bound, @external, @nested
+**Status:** partial — `@key` and `@must_understand` have no impact, as
+the spec says. `@default_literal` is not evaluated: the member default
+takes the **first** enumerator, not the one marked `@default_literal`.
 
-**Spec:** §7.17.4 Tab.7.18, pp. 29-30 — "@bit_bound: enum class with
-explicit underlying_type (int8_t/int16_t/int32_t/int64_t depending
-on bit_bound). @external: std::shared_ptr<T> or omg::types::ref_type<T>
-+ deep copy in the copy constructor. @nested: no impact."
+### 7.17.3 Units and Ranges: @default, @range, @min, @max, @unit
 
-**Repo:**
-- `@bit_bound`: the enum path emits `enum class : <int_t>` with the
-  correct underlying-type choice (see `enum_emits_enum_class_int32_t`).
-  The bitmask path follows the same `@bit_bound` rule (see §7.14.3.3).
-- `@external`: ZeroDDS codegen emits by-value members; `@external`
-  → `std::shared_ptr<T>` is a spec optimization for recursive
-  structures (typedef-based self-reference suffices in the DDS use case).
-- `@nested`: no-op (spec-conformant).
+**Spec:** §7.17.3 Tab.7.17, p. 28-29 — `@range` -> `omg::types::ranged<T,
+min, max>` with `std::out_of_range`; `@min`/`@max` -> setters throw
+`std::out_of_range`; `@unit` no impact; `@default` initialises.
 
-**Tests:** `enum_emits_enum_class_int32_t` +
-cross-ref §7.2.4.3.4 (recursive types via typedef).
+**Repo:** —
 
-**Status:** done
+**Tests:** —
 
-### 7.17.5 Code Generation (Tab.7.19): @verbatim with language="*"|"c++"|"cpp"|"cc"|"cxx"
+**Status:** open — no `omg::types::ranged<T,min,max>`, no setters (the
+data members are public fields) and therefore no `std::out_of_range`
+check for `@range`/`@min`/`@max`. `@default` is evaluated in the codec
+defaulter (`crates/lang-rules/src/default_cpp.rs`), but not as the C++
+member initialiser of the generated struct.
 
-**Spec:** §7.17.5 Tab.7.19, p. 30 — "@verbatim copies verbatim text
-to the indicated output position when language is '*', 'c++', 'cpp',
-'cc', or 'cxx'."
+### 7.17.4 Data Implementation: @bit_bound
 
-**Repo:** `@verbatim` is cross-cutting with XTypes 1.3 §7.2.2.4.8,
-fully implemented via `crates/idl-cpp/src/verbatim.rs` (aliases
-`c++`, `cpp`, `cxx`, `*`). Hooks in
-`emitter::{emit_struct,emit_enum,emit_union,emit_typedef,emit_header}`
-for all 6 spec PlacementKinds (BEGIN_FILE, BEFORE_DECLARATION,
-BEGIN_DECLARATION, END_DECLARATION, AFTER_DECLARATION, END_FILE).
+**Spec:** §7.17.4 Tab.7.18, p. 29-30 — "int8_t, for bit bound values
+between 1 and 8; int16_t [...] int32_t [...] int64_t."
 
-**Tests:** `spec_conformance::{verbatim_annotation_with_cpp_language_inlines_text,
-verbatim_annotation_with_after_declaration_placement,
-verbatim_annotation_wildcard_language_applies,
-verbatim_annotation_other_language_skipped}`.
+**Repo:** `crates/lang-rules/src/adapter/cpp.rs` (`enum_underlying`,
+`cpp_holder`)
 
-**Status:** done — code-gen templating path live; XTypes 1.3
-§7.2.2.4.8 closed from open to done with this resolution.
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::an_enumeration_takes_an_underlying_type_from_its_bit_bound`
 
-### 7.17.6 Interfaces (Tab.7.20): @service, @oneway, @ami
+**Status:** partial — for enums the underlying type is asserted; for
+bitmasks the adapter follows the same width rule, but the bitmask
+mapping is itself partial (§7.14.3.3).
 
-**Spec:** §7.17.6 Tab.7.20, p. 30 — "Options: 'CORBA', 'DDS', '*'.
-Impact platform-specific."
+### 7.17.4 Data Implementation: @external
 
-**Repo:** RPC path in `rpc.rs`:
-- `@oneway`: `oneway_method_emits_fire_and_forget_in_requester`.
-- `@service`: explicitly via the service-interface path
-  (`service_interface_contains_class_and_async`).
-- `@ami`: AMI is CORBA async method invocation; ZeroDDS uses a
-  future-based async API (`<method>_async` with `dds::rpc::Future<T>`)
-  as a spec-conformant DDS variant (Tab.7.20 allows platform-specific
-  impact).
+**Spec:** §7.17.4 Tab.7.18, p. 29-30 — "mapped to std::shared_ptr<T> or
+to the equivalent omg::types::ref_type<T> [...] Structures containing
+members annotated with @external shall make a deep copy of the external
+member in their copy constructor."
 
-**Tests:** `oneway_method_emits_fire_and_forget_in_requester`,
-`oneway_method_has_no_async_in_interface`,
-`oneway_replier_dispatch_invokes_handler_without_return`,
-`doxygen_oneway_marker_in_interface`.
+**Repo:** `crates/lang-rules/src/adapter/cpp.rs` (`held_externally`,
+`shared_ptr` arms)
 
-**Status:** done
+**Tests:** `crates/lang-rules/tests/external_is_an_indirection.rs::a_recursive_external_member_is_a_shared_pointer_and_not_a_value` — `crates/lang-rules/tests/external_is_an_indirection.rs:118: generated.contains("std::shared_ptr<::m::Node> next;"),`
+
+**Status:** partial — `@external T` is held as `std::shared_ptr<T>`
+(asserted). The required deep copy in the copy constructor is missing:
+the compiler-generated copy constructor copies the `shared_ptr` shallowly,
+so the object is shared.
+
+### 7.17.4 Data Implementation: @nested
+
+**Spec:** §7.17.4 Tab.7.18, p. 29-30 — "No impact on the language
+mapping."
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** `n/a (informative)` — no mapping impact.
+
+### 7.17.5 Code Generation: @verbatim
+
+**Spec:** §7.17.5 Tab.7.19, p. 30 — "Copies verbatim text to the
+indicated output position when the indicated language is '*', 'c++',
+'cpp', 'cc', or 'cxx'."
+
+**Repo:** `crates/lang-rules/src/verbatim.rs`,
+`crates/lang-rules/src/adapter/cpp.rs` (`weave_verbatim`)
+
+**Tests:** `crates/lang-rules/tests/verbatim_end_to_end.rs::cpp_answers_to_its_alias_spellings_case_insensitively` — `crates/lang-rules/tests/verbatim_end_to_end.rs:150: generated.contains("// vb-alias"),`
+
+**Status:** partial — all six placements (BEGIN_FILE,
+BEFORE/BEGIN/END/AFTER_DECLARATION, END_FILE) and the languages `c++`,
+`cpp`, `cxx` as well as `*` are live (asserted). `cc` — explicitly named
+in Tab.7.19 — is missing from `verbatim::aliases::CPP`
+(`&["c++", "cpp", "cxx"]`).
+
+### 7.17.6 Interfaces: @service, @oneway, @ami
+
+**Spec:** §7.17.6 Tab.7.20, p. 30 — "Options are 'CORBA', 'DDS', '*'.
+Impact is platform-specific."
+
+**Repo:** `crates/lang-rules/src/emit/interface_cpp.rs`
+
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_asynchronous_operations_of_rule_seven`
+
+**Status:** partial — `@oneway` (no reply topic, `future<void>` async) and
+`@service` (service name) are handled through the DDS-RPC binding; `@ami`
+has no path of its own. Tab.7.20 explicitly calls the impact
+platform-specific.
 
 ---
 
 ## §8 IDL to C++ Language Mapping Annotations
 
-### 8.1.0 @cpp_mapping annotation definition (StructMapping enum)
+### 8.1 @cpp_mapping Annotation
 
-**Spec:** §8.1, p. 31 — "@annotation cpp_mapping { enum
-StructMapping {STRUCT_WITH_PUBLIC_MEMBERS,
-CLASS_WITH_PUBLIC_ACCESSORS_AND_MODIFIERS}; StructMapping
-struct_mapping default STRUCT_WITH_PUBLIC_MEMBERS; }"
+**Spec:** §8.1, p. 31 — "enum StructMapping { STRUCT_WITH_PUBLIC_MEMBERS,
+CLASS_WITH_PUBLIC_ACCESSORS_AND_MODIFIERS }; StructMapping struct_mapping
+default STRUCT_WITH_PUBLIC_MEMBERS."
 
-**Repo:** `@cpp_mapping` is an optional per-struct annotation. ZeroDDS
-emits the `CLASS_WITH_PUBLIC_ACCESSORS_AND_MODIFIERS` variant by
-default (see §8.1.1 rationale — encapsulation + thread safety
-through accessors). Spec-conformant: implementations may invert the
-default choice when the class variant is considered more sensible.
+**Repo:** —
 
-**Tests:** cross-ref §8.1.1 (struct_has_setter/getter path).
+**Tests:** —
 
-**Status:** done
+**Status:** `n/a (informative)` — the annotation is not emitted as an IDL
+declaration; the default behaviour of the C++ column (structs with public
+members) matches `STRUCT_WITH_PUBLIC_MEMBERS`.
 
-### 8.1.1 struct_mapping parameter (CLASS_WITH_PUBLIC_ACCESSORS_AND_MODIFIERS)
+### 8.1.1 CLASS_WITH_PUBLIC_ACCESSORS_AND_MODIFIERS
 
-**Spec:** §8.1.1, pp. 31-32 — "CLASS_WITH_PUBLIC_ACCESSORS_AND_MODIFIERS
-changes the default behavior, mapping the annotated IDL struct to a
-C++ class where all members are only accessible via public accessor
-methods. [...] Accessor methods name=IDL element + const + non-const.
-Modifier=IDL element name + by value/const ref + move-enabled."
+**Spec:** §8.1.1, p. 31-32 — "mapping the annotated IDL struct to C++
+class where all members are only accessible via public accessor methods,
+and may only be modified through public modifier methods."
 
-**Repo:** the generator emits the class-with-accessors variant as the
-default (struct_has_setter/getter). This choice is spec-conformant —
-the spec defines STRUCT_WITH_PUBLIC_MEMBERS as the default in the
-`@cpp_mapping` annotation, but implementations may set the
-default choice per generator (the spec says "default
-STRUCT_WITH_PUBLIC_MEMBERS" only for the annotation value, not
-as a generator constraint). The class variant with accessors is the
-safer choice for encapsulation + thread safety in DDS topics.
+**Repo:** —
 
-**Tests:** `struct_has_setter`, `struct_has_mutable_and_const_getter`,
-`const_getter_returns_const_ref`,
-`mutable_getter_returns_mutable_ref`,
-`move_setter_uses_rvalue_and_std_move` +
-`spec_conformance::struct_with_default_mapping_emits_class_with_accessors`.
+**Tests:** —
 
-**Status:** done
+**Status:** open — no path emits the annotated struct as a class with
+private members, accessors/modifiers and an initialising constructor.
+`@cpp_mapping` is not read by `crates/lang-rules/src/adapter/cpp.rs`.
 
 ---
 
-## Annex A: Platform-Specific Mappings (CORBA)
+## Annex A: Platform-Specific Mappings
 
-### A.1.0 CORBA-Specific Mappings (common type traits + interface traits)
+### A.1 CORBA-Specific Mappings
 
-**Spec:** Annex A.1 — CORBA::traits<T>::value_type/in_type/out_type/
-inout_type + interface traits is_local etc.
+**Spec:** Annex A.1, p. 33-66 — `CORBA::traits<>` (`value_type`,
+`in_type`, `out_type`, `inout_type`, tables A.1-A.15),
+`CORBA::servant_traits<>`, TypeCode, ORB, Object, Any, Value Types,
+Abstract Interfaces, Server Side Mapping, DSI, PortableServer.
 
-**Repo:** `crates/idl-cpp/src/corba_traits.rs::emit_corba_traits`
-(opt-in via `CppGenOptions::emit_corba_traits = true` or
-`generate_cpp_header_with_corba_traits`); classifies top-level
-struct/union/enum as fixed/variable-size per the §A.1 layout rule
-(struct with string/sequence/map/scoped → variable, i.e.
-`out_type = T*&`; otherwise `out_type = T&`); `is_local = false` as the
-default for all value types (interfaces are generally out of scope in
-idl-cpp, see §28 Interfaces).
+**Repo:** —
 
-**Tests:** `corba_traits::tests::*` (10 tests):
-`empty_source_emits_no_traits_block`,
-`enum_traits_is_fixed_size`,
-`fixed_size_struct_uses_value_out_type`,
-`in_type_is_always_const_ref`,
-`inout_type_is_always_mut_ref`,
-`is_local_default_false_for_value_types`,
-`nested_module_qualifies_correctly`,
-`sequence_member_marks_struct_as_variable`,
-`union_with_string_branch_is_variable`,
-`variable_size_struct_uses_pointer_out_type`.
+**Tests:** —
 
-**Status:** done — Annex-A.1 codegen backend live; CORBA trait
-specializations emitted per top-level type. Cross-ref WP
-CORBA-Coexistence (`corba-3.3.md`).
+**Status:** open — no `CORBA::traits<>`/`CORBA::servant_traits<>` in the
+C++ column and no `omg::types`. `crates/corba-codegen/src/traits.rs` is a
+Rust CORBA generator, not this C++ binding.
+
+### A.2 DDS-Specific Mappings
+
+**Spec:** Annex A.2, p. 66 — "DDS requires no additional platform-specific
+language mappings."
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** `n/a (informative)` — the spec requires no additional
+DDS-specific C++ mapping.
 
 ---
 
-## ZeroDDS-specific extensions (no spec item)
+## Annex B: Building Block Traceability Matrix
 
-### Block F (status classes, 13 classes) — DDS-specific via psm-cxx
+**Spec:** Annex B (non-normative), p. 67.
 
-**Repo:** `crates/idl-cpp/src/status.rs::block_f_*` path.
+**Repo:** —
 
-**Tests:** `block_f_renders_thirteen_class_definitions`,
-`block_f_status_classes_have_default_constructor`,
-`all_thirteen_status_classes_emitted`,
-`marker_statuses_emit_empty_class`,
-`reset_changes_resets_only_change_fields`,
-`status_namespace_is_dds_core_status`,
-`incompatible_qos_status_has_policy_count_vector`,
-`liveliness_changed_status_has_alive_and_not_alive`,
-`matched_status_has_current_count_pair`,
-`sample_lost_status_has_total_count_fields`,
-`sample_rejected_status_has_last_reason`.
+**Tests:** —
 
-### Block G (QoS policies, 22 policies) — DDS-specific
-
-**Repo:** `crates/idl-cpp/src/qos.rs::block_g_*` path.
-
-**Tests:** `block_g_renders_all_22_policies_with_equality`,
-`all_22_policies_emitted`,
-`deadline_qos_policy_default_is_infinite`,
-`history_qos_policy_has_kind_and_depth`,
-`liveliness_qos_policy_has_kind_and_lease`,
-`reliability_qos_policy_has_kind_and_max_blocking_time`,
-`partition_qos_policy_uses_string_vector`,
-`resource_limits_has_three_fields`,
-`ownership_strength_default_is_zero`,
-`entity_factory_default_is_true`,
-`user_data_uses_byte_vector`,
-`qos_namespace_is_dds_core_policy`.
-
-### Block H (DCPS classes, 7 classes) — DDS-specific
-
-**Repo:** `crates/idl-cpp/src/dcps.rs::block_h_*` path.
-
-**Tests:** `block_h_emits_seven_dcps_class_decls`,
-`dcps_class_names_count_seven`,
-`block_h_data_writer_signature_for_write_overload`,
-`domain_participant_class_declaration_is_generated`,
-`publisher_and_subscriber_emitted`,
-`data_writer_and_data_reader_templates`,
-`topic_template_with_t_parameter`,
-`data_writer_has_status_accessor_for_publication_matched`,
-`entity_base_class_emitted_in_dds_core`,
-`time_t_member_maps_to_dds_time_t`,
-`duration_t_member_maps_to_dds_duration_t`.
-
-### PSM-CXX header templates — see `dds-psm-cxx-1.0.md` coverage
-
-**Repo:** `crates/idl-cpp/src/psm_cxx.rs`.
-
-**Tests:** `psm_cxx_listener_header_has_13_status_callbacks`,
-`psm_cxx_reference_value_pattern_for_struct_enum_sequence`,
-`psm_cxx_includes_template_emits_dds_core_headers`,
-`psm_cxx_skeleton_compiles_with_existing_fixtures`,
-`psm_cxx_skeleton_has_pragma_once_and_all_blocks`,
-`reference_pattern_emits_reference_template`,
-`exception_hierarchy_emits_dds_exception_classes`,
-`listener_skeleton_has_13_callbacks`,
-`condition_skeleton_has_waitset`,
-`core_basics_define_time_duration_handle`,
-`full_skeleton_combines_all_blocks`,
-`full_skeleton_namespaces_are_dds_core`,
-`full_header_combines_all_blocks`,
-`full_header_emits_all_four_blocks`,
-`full_header_for_one_service_contains_pragma_once`,
-`includes_with_valid_name`,
-`includes_rejects_empty`,
-`includes_rejects_path_traversal`,
-`include_guard_prefix_emits_comment`.
-
-### RPC templates — see `zerodds-rpc-1.0.md` coverage
-
-**Repo:** `crates/idl-cpp/src/rpc.rs`.
-
-**Tests:** `service_traits_carries_topic_names`,
-`service_traits_default_mapping_is_basic`,
-`service_traits_links_typedefs_for_endpoints`,
-`service_traits_specialization_carries_topic_names`,
-`requester_class_emits_topic_wrapper`,
-`replier_class_dispatches_by_name`,
-`replier_with_unknown_method_throws`,
-`requester_async_for_value_returning_method_uses_return`,
-`requester_async_for_void_returning_method`,
-`runtime_header_defines_future_and_promise_templates`,
-`runtime_header_defines_generic_requester_and_replier`,
-`runtime_header_has_pragma_once_and_includes`,
-`runtime_header_service_mapping_enum`,
-`runtime_headers_include_all_templates`,
-`multi_service_concatenation_keeps_namespaces_balanced`.
+**Status:** `n/a (informative)`
 
 ---
 
-## Audit status
+## Annex C: Compatibility Rules for C++98 and C++03
 
-56 done / 1 partial / 0 open / 20 n/a (informative) / 0 n/a (rejected).
+**Spec:** Annex C (normative), p. 69-77 — alternative mappings for C++98
+and C++03.
 
-Test run: `cargo test -p zerodds-idl-cpp` — 133 lib + 150 integration
-(11 bins) = 283 tests green, 0 failed.
+**Repo:** —
 
-One partial item (§7.1.2, reserved-name collision handling: detection
-complete, but reject-instead-of-spec-mandated-escape) — see that
-entry for the tracked follow-on scope. No fully-open items.
+**Tests:** —
+
+**Status:** `n/a (informative)` — the C++ column targets C++17/20
+(§7.1.3); the C++98/03 path is optional and is not implemented.
+
+---
+
+## Annex D: IDL4 Mapping Rules for Classic C++ Mapping Specifications
+
+**Spec:** Annex D, p. 79-89 — mappings for the classic C++ and C++11
+specs.
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** `n/a (informative)` — the tree uses its own binding, not the
+classic mapping specs.
+
+---
+
+## Audit Status
+
+8 done / 26 partial / 14 open / 19 n/a (informative) / 0 n/a (rejected).
+
+Open items: `idl4-cpp-1.0.open.en.md`.
+
+Test run (not executed in this pass, since only documentation changed):
+the corpus gate is
+`cargo test -p zerodds-lang-rules --test cpp_corpus_compiles -- --include-ignored`;
+it is `#[ignore]` because it invokes a C++ compiler once per corpus case.

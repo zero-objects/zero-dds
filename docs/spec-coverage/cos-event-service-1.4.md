@@ -23,7 +23,8 @@ Implementation:
 - §2.1 CosEventComm — `crates/corba-cos-event/src/comm.rs`
 - §2.3 CosEventChannelAdmin — `crates/corba-cos-event/src/channel.rs`
 - §2.5/§2.7 Typed Event — `crates/corba-cos-event/src/typed.rs`
-- §3 Lightweight Event Service — *(open)*
+- §3 Lightweight Event Service — `crates/corba-cos-event/src/typed.rs` (`lightweight`)
+- CosEvent → DDS-Topic-Bridge (kein OMG-Item) — `crates/corba-cos-event/src/dds_bridge.rs`
 
 ---
 
@@ -74,7 +75,12 @@ Interfaces.
 Helper-Typ `AnyEvent` als payload-agnostischer Container; Error
 `Disconnected` und `ConnectError`).
 
-**Tests:** Inline-Tests in `crates/corba-cos-event/src/comm.rs`.
+**Tests:** `crates/corba-cos-event/src/comm.rs::tests`:
+`push_increments_counter_until_disconnect`,
+`push_supplier_disconnect_terminates_the_connection`,
+`pull_supplier_try_pull_returns_the_has_event_flag`,
+`pull_consumer_disconnect_terminates_the_connection`,
+`any_event_round_trip`, `connect_error_variants_distinct`.
 
 **Status:** done
 
@@ -83,10 +89,14 @@ Helper-Typ `AnyEvent` als payload-agnostischer Container; Error
 **Spec:** §2.1.1 — `interface PushConsumer { void push(in any data)
 raises (Disconnected); void disconnect_push_consumer(); };`.
 
-**Repo:** `comm.rs` Trait `PushConsumer` mit `push(&AnyEvent) ->
-Result<(), Disconnected>` + `disconnect()`.
+**Repo:** `crates/corba-cos-event/src/comm.rs` Trait `PushConsumer` mit
+`push(&self, event: AnyEvent) -> Result<(), Disconnected>` +
+`disconnect_push_consumer(&self)`.
 
-**Tests:** Inline.
+**Tests:** `crates/corba-cos-event/src/comm.rs::tests::push_increments_counter_until_disconnect`
+(`push` zählt bis zum Disconnect, danach `Disconnected`);
+`crates/corba-cos-event/src/channel.rs::tests::proxy_push_consumer_push_before_connect_raises_disconnected`
+(`push` vor `connect` liefert `Disconnected`).
 
 **Status:** done
 
@@ -95,19 +105,34 @@ Result<(), Disconnected>` + `disconnect()`.
 **Spec:** §2.1.2 — `interface PushSupplier { void
 disconnect_push_supplier(); };`.
 
-**Repo:** `comm.rs` Trait `PushSupplier`.
+**Repo:** `crates/corba-cos-event/src/comm.rs` Trait `PushSupplier`; Channel-seitige
+Implementation `crates/corba-cos-event/src/channel.rs::ProxyPushSupplier`
+(`impl PushSupplier for ProxyPushSupplier`) — der Disconnect meldet den
+Consumer beim Channel ab und ruft dessen
+`disconnect_push_consumer`.
 
-**Tests:** Inline.
+**Tests:** `crates/corba-cos-event/src/comm.rs::tests::push_supplier_disconnect_terminates_the_connection`;
+`crates/corba-cos-event/src/channel.rs::tests::proxy_push_supplier_disconnect_stops_event_delivery`
+(nach dem Disconnect erreicht kein weiteres Event den Consumer).
 
 **Status:** done
 
 #### §2.1.3 The PullSupplier Interface
 
-**Spec:** §2.1.3 — `pull()`/`try_pull()`/`disconnect_pull_supplier()`.
+**Spec:** §2.1.3 — `pull()`/`try_pull()`/`disconnect_pull_supplier()`;
+`pull` blockiert bis ein Event vorliegt, `try_pull` liefert zusätzlich
+das `has_event`-Flag.
 
-**Repo:** `comm.rs` Trait `PullSupplier`.
+**Repo:** `crates/corba-cos-event/src/comm.rs` Trait `PullSupplier` mit
+`pull() -> Result<AnyEvent, Disconnected>`,
+`try_pull() -> Result<(AnyEvent, bool), Disconnected>`,
+`disconnect_pull_supplier()`.
 
-**Tests:** Inline.
+**Tests:** `crates/corba-cos-event/src/comm.rs::tests`:
+`pull_supplier_try_pull_returns_the_has_event_flag` (Flag `true` mit
+Event, `false` mit leerem `any`),
+`pull_supplier_pull_returns_the_queued_event`,
+`pull_supplier_disconnect_raises_disconnected_on_both_operations`.
 
 **Status:** done
 
@@ -115,9 +140,12 @@ disconnect_push_supplier(); };`.
 
 **Spec:** §2.1.4 — `disconnect_pull_consumer()`.
 
-**Repo:** `comm.rs` Trait `PullConsumer`.
+**Repo:** `crates/corba-cos-event/src/comm.rs` Trait `PullConsumer`; Channel-seitige
+Implementation `crates/corba-cos-event/src/channel.rs::ProxyPullConsumer`
+(`impl PullConsumer for ProxyPullConsumer`).
 
-**Tests:** Inline.
+**Tests:** `crates/corba-cos-event/src/comm.rs::tests::pull_consumer_disconnect_terminates_the_connection`;
+`crates/corba-cos-event/src/channel.rs::tests::proxy_pull_consumer_connect_and_disconnect_lifecycle`.
 
 **Status:** done
 
@@ -126,10 +154,15 @@ disconnect_push_supplier(); };`.
 **Spec:** §2.1.5 — Disconnection-Lifecycle, `Disconnected`-Exception
 beim Aufruf nach disconnect.
 
-**Repo:** `comm.rs` Error-Typ `Disconnected` + Disconnect-Pfade in den
-Proxy-Implementations (`channel.rs`).
+**Repo:** `crates/corba-cos-event/src/comm.rs` Error-Typ `Disconnected` + Disconnect-Pfade in den
+Proxy-Implementations (`crates/corba-cos-event/src/channel.rs`).
 
-**Tests:** Inline.
+**Tests:** `crates/corba-cos-event/src/comm.rs::tests::disconnection_is_terminal_for_every_operation`
+(Disconnect ist terminal und idempotent, jede Operation meldet
+danach `Disconnected`);
+`crates/corba-cos-event/src/channel.rs::tests::push_unregisters_a_consumer_that_reports_disconnected`
+(ein Consumer, der `Disconnected` meldet, wird abgemeldet statt still
+übergangen); `crates/corba-cos-event/src/channel.rs::tests::destroy_wakes_blocked_pull_with_disconnected`.
 
 **Status:** done
 
@@ -152,80 +185,120 @@ und Admin-/Proxy-Interfaces.
 **Repo:** `crates/corba-cos-event/src/channel.rs` (siehe
 Sub-Items).
 
-**Tests:** Inline-Tests in `channel.rs` (12 inline `#[test]`).
+**Tests:** `crates/corba-cos-event/src/channel.rs::tests`:
+`event_channel_admins_share_one_channel_state`,
+`consumer_admin_returns_a_fresh_proxy_per_call`,
+`supplier_admin_returns_a_fresh_proxy_per_call`,
+`push_fan_out_to_multiple_consumers`,
+`proxy_pull_consumer_forwards_pulled_events_into_the_channel`.
 
 **Status:** done
 
 #### §2.3.1 The EventChannel Interface
 
 **Spec:** §2.3.1 — `interface EventChannel { ConsumerAdmin
-for_consumers(); SupplierAdmin for_suppliers(); void destroy(); };`.
+for_consumers(); SupplierAdmin for_suppliers(); void destroy(); };`;
+`destroy` gibt den Channel frei und löst die verbundenen Endpunkte.
 
-**Repo:** `channel.rs` `EventChannel` mit `for_consumers`,
-`for_suppliers`, `destroy`.
+**Repo:** `crates/corba-cos-event/src/channel.rs` `EventChannel` mit `for_consumers`,
+`for_suppliers`, `destroy`, `is_destroyed`.
 
-**Tests:** Inline.
+**Tests:** `crates/corba-cos-event/src/channel.rs::tests`:
+`event_channel_admins_share_one_channel_state` (beide Admin-Sichten
+adressieren denselben Channel-State),
+`destroy_disconnects_registered_consumers` (`destroy` ruft
+`disconnect_push_consumer` auf jedem registrierten Consumer),
+`destroy_disconnects_proxies`,
+`destroy_wakes_blocked_pull_with_disconnected`.
 
 **Status:** done
 
 #### §2.3.2 The ConsumerAdmin Interface
 
-**Spec:** §2.3.2 — `obtain_push_supplier()`, `obtain_pull_supplier()`.
+**Spec:** §2.3.2 — `obtain_push_supplier()`, `obtain_pull_supplier()`;
+jeder Aufruf liefert einen eigenen Proxy.
 
-**Repo:** `channel.rs` `ConsumerAdmin`.
+**Repo:** `crates/corba-cos-event/src/channel.rs` `ConsumerAdmin`.
 
-**Tests:** Inline.
+**Tests:** `crates/corba-cos-event/src/channel.rs::tests::consumer_admin_returns_a_fresh_proxy_per_call`
+(zwei Aufrufe liefern verschiedene Proxies; der zweite ist unverbunden
+und nimmt seinen eigenen Consumer an).
 
 **Status:** done
 
 #### §2.3.3 The SupplierAdmin Interface
 
-**Spec:** §2.3.3 — `obtain_push_consumer()`, `obtain_pull_consumer()`.
+**Spec:** §2.3.3 — `obtain_push_consumer()`, `obtain_pull_consumer()`;
+jeder Aufruf liefert einen eigenen Proxy.
 
-**Repo:** `channel.rs` `SupplierAdmin`.
+**Repo:** `crates/corba-cos-event/src/channel.rs` `SupplierAdmin`.
 
-**Tests:** Inline.
+**Tests:** `crates/corba-cos-event/src/channel.rs::tests::supplier_admin_returns_a_fresh_proxy_per_call`.
 
 **Status:** done
 
 #### §2.3.4 The ProxyPushConsumer Interface
 
-**Spec:** §2.3.4 — `connect_push_supplier()`.
+**Spec:** §2.3.4 — `connect_push_supplier()` raises
+`AlreadyConnected`; `push` vor dem Connect ist `Disconnected`.
 
-**Repo:** `channel.rs` `ProxyPushConsumer`.
+**Repo:** `crates/corba-cos-event/src/channel.rs` `ProxyPushConsumer` (`connect_push_supplier`,
+`impl PushConsumer`).
 
-**Tests:** Inline.
+**Tests:** `crates/corba-cos-event/src/channel.rs::tests`:
+`proxy_push_consumer_push_before_connect_raises_disconnected`,
+`double_connect_yields_already_connected`,
+`push_fan_out_to_multiple_consumers`.
 
 **Status:** done
 
 #### §2.3.5 The ProxyPullSupplier Interface
 
-**Spec:** §2.3.5 — `connect_pull_consumer()`.
+**Spec:** §2.3.5 — `connect_pull_consumer()` raises
+`AlreadyConnected`; `pull` blockiert bis ein Event vorliegt,
+`try_pull` liefert das `has_event`-Flag.
 
-**Repo:** `channel.rs` `ProxyPullSupplier`.
+**Repo:** `crates/corba-cos-event/src/channel.rs` `ProxyPullSupplier` (`connect_pull_consumer`,
+`impl PullSupplier`; das blockierende `pull` wartet auf der
+`Condvar` `ChannelInner::ready`, nicht in einer Poll-Schleife).
 
-**Tests:** Inline.
+**Tests:** `crates/corba-cos-event/src/channel.rs::tests`:
+`proxy_pull_supplier_try_pull_reports_has_event_flag`,
+`proxy_pull_supplier_pull_blocks_until_an_event_arrives` (der Aufruf
+kehrt erst zurück, nachdem ein Supplier gepusht hat),
+`proxy_pull_supplier_double_connect_yields_already_connected`,
+`pull_supplier_dequeues_events`, `pull_supplier_disconnect_propagates`.
 
 **Status:** done
 
 #### §2.3.6 The ProxyPullConsumer Interface
 
-**Spec:** §2.3.6 — `connect_pull_supplier()`.
+**Spec:** §2.3.6 — `connect_pull_supplier()` raises
+`AlreadyConnected`; geerbtes `disconnect_pull_consumer()`.
 
-**Repo:** `channel.rs` `ProxyPullConsumer` mit `forward_event` als
-Push-Pfad in den Channel.
+**Repo:** `crates/corba-cos-event/src/channel.rs` `ProxyPullConsumer` mit `connect_pull_supplier`,
+`forward_event` als Push-Pfad in den Channel und
+`impl PullConsumer` für den Disconnect.
 
-**Tests:** Inline.
+**Tests:** `crates/corba-cos-event/src/channel.rs::tests`:
+`proxy_pull_consumer_forwards_pulled_events_into_the_channel` (die vom
+Supplier gezogenen Events erscheinen auf der Consumer-Seite des
+Channels), `proxy_pull_consumer_connect_and_disconnect_lifecycle`.
 
 **Status:** done
 
 #### §2.3.7 The ProxyPushSupplier Interface
 
-**Spec:** §2.3.7 — `connect_push_consumer()` + `disconnect`.
+**Spec:** §2.3.7 — `connect_push_consumer()` raises
+`AlreadyConnected`; `disconnect_push_supplier()` beendet die
+Verbindung.
 
-**Repo:** `channel.rs` `ProxyPushSupplier`.
+**Repo:** `crates/corba-cos-event/src/channel.rs` `ProxyPushSupplier` mit `connect_push_consumer`,
+`is_connected` und `impl PushSupplier` (`disconnect_push_supplier`).
 
-**Tests:** Inline.
+**Tests:** `crates/corba-cos-event/src/channel.rs::tests`:
+`proxy_push_supplier_double_connect_yields_already_connected`,
+`proxy_push_supplier_disconnect_stops_event_delivery`.
 
 **Status:** done
 
@@ -249,19 +322,28 @@ Push-Pfad in den Channel.
 `TypedPushSupplier`, `TypedPullSupplier`-Traits und Helper-Typ
 `TypedInvocation`).
 
-**Tests:** Inline.
+**Tests:** `crates/corba-cos-event/src/typed.rs::tests`:
+`typed_push_consumer_invoke_carries_operation_and_args`,
+`typed_push_supplier_disconnect_terminates_the_connection`,
+`pull_supplier_try_pull_returns_queued_event`.
 
 **Status:** done — alle drei Subscription-Patterns ausgewiesen.
 
 #### §2.5.1 The TypedPushConsumer Interface
 
 **Spec:** §2.5.1 — `TypedPushConsumer : PushConsumer { Object
-get_typed_consumer(); };`.
+get_typed_consumer(); };`; im Typed-Modus ruft der Channel die
+IDL-Operation statt `push(any)`.
 
 **Repo:** `typed.rs` Trait `TypedPushConsumer` (mit
 `get_typed_consumer`-Pendant via `TypedInvocation`-Dispatch).
 
-**Tests:** Inline.
+**Tests:** `crates/corba-cos-event/src/typed.rs::tests`:
+`typed_push_consumer_invoke_carries_operation_and_args`
+(Operations-Name und kodierte Argumente erreichen den Consumer, die
+Antwort geht zurück),
+`typed_push_consumer_disconnect_raises_disconnected`,
+`dispatch_reaches_registered_consumers`.
 
 **Status:** done
 
@@ -299,7 +381,12 @@ TypedConsumerAdmin/TypedSupplierAdmin + Typed-Proxies.
 und `TypedSupplierAdmin` Strukturen + `TypedPullSupplier`-Trait
 für den Pull-Proxy-Pfad.
 
-**Tests:** Inline (siehe Sub-Sections).
+**Tests:** `crates/corba-cos-event/src/typed.rs::tests`:
+`typed_event_channel_for_consumers_returns_admin`,
+`typed_event_channel_for_suppliers_returns_admin`,
+`typed_consumer_admin_register_count_roundtrip`,
+`typed_supplier_admin_try_pull_returns_first_available`,
+`destroy_disables_dispatch`.
 
 **Status:** done — Channel + Admin-Splits + Proxies live.
 
@@ -390,14 +477,19 @@ lightweight_is_lightweight_recognizes_both_profiles}`.
 
 #### §3.1.3 The CosLightweightEventChannel Package
 
-**Spec:** §3.1.3 — Lightweight-Variante von §2.3.
+**Spec:** §3.1.3 — Lightweight-Variante von §2.3: der Channel-
+Lifecycle ist der einzige Teardown, das Profil kennt keine
+Endpunkt-Disconnect-Operation.
 
 **Repo:** `crates/corba-cos-event/src/typed.rs::lightweight::
 CHANNEL_PROFILE_NAME` Marker; Channel-Lifecycle über
 `TypedEventChannel::destroy()` ohne separates
 ConsumerAdmin/SupplierAdmin-Sub-Profil (Profile-Subset von §2.7.1).
 
-**Tests:** Cross-Ref §3.1.2.
+**Tests:** `crates/corba-cos-event/src/typed.rs::tests::lightweight_channel_destroy_is_the_only_teardown`
+(ein Consumer ohne eigenen Disconnect erhält nach `destroy()` keine
+Dispatches mehr);
+`crates/corba-cos-event/src/typed.rs::tests::lightweight_profile_names_match_spec`.
 
 **Status:** done
 
@@ -417,9 +509,17 @@ ConsumerAdmin/SupplierAdmin-Sub-Profil (Profile-Subset von §2.7.1).
 
 **Spec:** §3.2.2 — IDL-PSM, identisch zu §2.3.
 
-**Repo:** identisch §2.3 (`channel.rs`).
+**Repo:** identisch §2.3 (`crates/corba-cos-event/src/channel.rs`).
 
-**Tests:** Inline.
+**Tests:** identisch §2.3 —
+`crates/corba-cos-event/src/channel.rs::tests`:
+`event_channel_admins_share_one_channel_state`,
+`consumer_admin_returns_a_fresh_proxy_per_call`,
+`supplier_admin_returns_a_fresh_proxy_per_call`,
+`proxy_push_consumer_push_before_connect_raises_disconnected`,
+`proxy_pull_supplier_try_pull_reports_has_event_flag`,
+`proxy_pull_consumer_forwards_pulled_events_into_the_channel`,
+`proxy_push_supplier_disconnect_stops_event_delivery`.
 
 **Status:** done — siehe §2.3.
 
@@ -427,9 +527,16 @@ ConsumerAdmin/SupplierAdmin-Sub-Profil (Profile-Subset von §2.7.1).
 
 **Spec:** §3.2.3 — IDL-PSM, identisch zu §2.1.
 
-**Repo:** identisch §2.1 (`comm.rs`).
+**Repo:** identisch §2.1 (`crates/corba-cos-event/src/comm.rs`).
 
-**Tests:** Inline.
+**Tests:** identisch §2.1 —
+`crates/corba-cos-event/src/comm.rs::tests`:
+`push_increments_counter_until_disconnect`,
+`push_supplier_disconnect_terminates_the_connection`,
+`pull_supplier_try_pull_returns_the_has_event_flag`,
+`pull_supplier_pull_returns_the_queued_event`,
+`pull_consumer_disconnect_terminates_the_connection`,
+`disconnection_is_terminal_for_every_operation`.
 
 **Status:** done — siehe §2.1.
 
@@ -442,10 +549,24 @@ ConsumerAdmin/SupplierAdmin-Sub-Profil (Profile-Subset von §2.7.1).
 **Spec:** kein OMG-Spec-Item; ZeroDDS-spezifische Migrations-Schicht,
 die EventChannel-Push-Events in DDS-DCPS-Topics übersetzt.
 
-**Repo:** `crates/corba-cos-event/src/channel.rs` mit DDS-Hook
-(per `forward_event` über `corba-dds-bridge`).
+**Repo:** `crates/corba-cos-event/src/dds_bridge.rs`
+(`TopicBridge` als `PushConsumer` am EventChannel; `TopicMap` als
+Repository-ID ⇒ Topic-Tabelle mit `derive_topic_name` als Ableitung
+für nicht eingetragene Typen; `TopicSink` als Übergabepunkt an den
+DataWriter der aufrufenden Schicht — dadurch bleibt das Crate frei von
+einer DCPS-Abhängigkeit). Ein nicht auflösbarer Repository-ID und ein
+ablehnender Sink erzeugen einen Fehler und zählen in
+`TopicBridge::rejected`, kein stiller Drop.
 
-**Tests:** Inline.
+**Tests:** `crates/corba-cos-event/src/dds_bridge.rs::tests`:
+`derives_topic_name_from_repository_id`,
+`explicit_mapping_wins_over_derivation`,
+`push_writes_the_payload_onto_the_resolved_topic`,
+`unresolvable_repository_id_is_reported_not_dropped`,
+`sink_failure_is_reported_not_swallowed`,
+`disconnect_stops_forwarding`,
+`event_channel_fan_out_reaches_the_dds_topic` (Push in den
+EventChannel erreicht den DDS-Topic-Write).
 
 **Status:** done — informativ; nicht spec-pflichtig.
 
@@ -455,15 +576,7 @@ die EventChannel-Push-Events in DDS-DCPS-Topics übersetzt.
 
 25 done / 0 partial / 0 open / 10 n/a (informative) / 0 n/a (rejected).
 
-Test-Lauf: `cargo test -p zerodds-corba-cos-event` — 23 Tests grün, 0
-failed:
-* `channel::tests::push_fan_out_to_multiple_consumers`,
-  `destroy_disconnects_proxies`, `double_connect_yields_already_connected`,
-  `pull_supplier_dequeues_events`, `pull_supplier_disconnect_propagates`.
-* `comm::tests::any_event_round_trip`,
-  `connect_error_variants_distinct`,
-  `push_increments_counter_until_disconnect`.
-* `typed::tests::consumer_count_reflects_registrations`,
-  `dispatch_reaches_registered_consumers`,
-  `disconnected_consumers_are_skipped_in_count`,
-  `unknown_repo_id_dispatches_to_zero`.
+Offene Punkte: keine. Decision-Records: keine.
+
+Test-Lauf: `cargo test -p zerodds-corba-cos-event` — 54 Lib-Tests +
+1 Doc-Test grün, 0 failed.

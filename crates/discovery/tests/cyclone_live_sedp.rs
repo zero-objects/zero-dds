@@ -1,52 +1,38 @@
 //! WP 1.4 T6b — live-interop test against a real Cyclone DDS instance.
 //!
-//! **Opt-in only** — marked `#[ignore]`. Invocation:
+//! **Opt-in** — marked `#[ignore]`, and without `INTEROP_REQUIRE=1` (or
+//! `INTEROP_HOST_AVAILABLE=1`) it reports a skip instead of running. The
+//! interop CI job sets it and has Cyclone's `ddsperf` on the path:
 //!
 //! ```bash
-//! cargo test -p zerodds-discovery --test cyclone_live_sedp -- --ignored --nocapture
+//! INTEROP_REQUIRE=1 cargo test -p zerodds-discovery --test cyclone_live_sedp -- --ignored --nocapture
 //! ```
 //!
-//! # Prerequisites
-//!
-//! - SSH access to `llvm@llvm` with password `llvm` (lab setup)
-//! - `sshpass` installed locally
-//! - Cyclone DDS 0.10.2 (`ddsperf` binary) on the bench host
-//! - `/tmp/cyc.xml` on the bench host pins Cyclone to `enp6s18`
-//! - Local host on the same LAN as the bench host
-//! - **Multicast pass-through between the virtualized host's VM and the
-//!   client.** The virtualization host has a 2-level bridge hierarchy
-//!   (`vmbr0` + `fwbr113i0`). Both need `multicast_querier=1` +
-//!   `multicast_snooping=0`, otherwise the bridge filters multicast.
-//!   Details in memory `reference_pve_multicast_setup`.
+//! `DDSPERF` names the binary when it is not `ddsperf` on the path.
 //!
 //! # Test flow
 //!
 //! 1. Locally: bind a unicast socket (for SEDP replies) + a multicast
-//!    socket (for SPDP beacons) + a sender socket for our beacon.
+//!    socket (for SPDP beacons) + a sender socket for our beacon, all on
+//!    the interface a UDP connect probe picks.
 //! 2. SpdpBeacon sender thread: every 500ms send our own SPDP datagram
 //!    with all SEDP endpoint flags to 239.255.0.1:17900. This way
 //!    Cyclone sees us as a matched peer and sends SEDP publications via
 //!    unicast to our `default_unicast_locator`.
-//! 3. SSH subprocess starts `ddsperf -D 42 pub 1Hz` on the bench host
-//!    → Cyclone sends SPDP beacons + SEDP publications.
+//! 3. Start `ddsperf -i 42 -D 18 pub 1Hz` on this host → Cyclone sends
+//!    SPDP beacons + SEDP publications.
 //! 4. Locally poll-loop both sockets (multicast + unicast). SPDP →
 //!    `SedpStack::on_participant_discovered`; SEDP → `handle_datagram`
 //!    → publications land in the cache.
-//! 5. Assert: Cyclone SPDP discovery + beacon outbound verified.
-//!    Publications are optionally logged along the way.
-//! 6. Teardown: SSH pkill on `ddsperf`, stop the sender thread.
+//! 5. Assert: Cyclone SPDP discovery, its unicast reply, and at least one
+//!    SEDP publication after the preemptive AckNack.
+//! 6. Teardown: the child is killed on drop.
 //!
-//! # VM kernel multicast fix (required on the bench host, 2026-04-19)
+//! Before, the test ran `ddsperf` over SSH on a lab host, with its host
+//! name and password in this file, and found the local address through
+//! macOS' `ipconfig`; it could only run from a Mac on that LAN.
 //!
-//! On the VM, `ip link set dev enp6s18 allmulticast on` must be set
-//! (or persistently via `/etc/systemd/network/...`). Reason: the
-//! virtio-net MC hash filter drops frames at L2 before
-//! `IP_ADD_MEMBERSHIP` takes effect. Without allmulti the VM sees
-//! `tcpdump -p` 0 packets, with promisc all of them, yet the kernel
-//! counter still increments — a known virtio sync issue. Details in
-//! memory `reference_pve_multicast_setup`.
-//!
-//! # Reliable SEDP AckNack loop (working)
+//! # Reliable SEDP AckNack loop
 //!
 //! The test ticks the SedpStack periodically. `add_writer_proxy`
 //! schedules a preemptive AckNack with `final=false`, signaling to the
@@ -57,12 +43,6 @@
 //! DATA. Heartbeat dispatch in the SedpStack also accepts
 //! reader_id=UNKNOWN, since Cyclone often sets it that way and does the
 //! addressing via INFO_DST.
-//!
-//! # Why "#[ignore]"?
-//!
-//! - Cyclone binary not in CI
-//! - SSH access + password are maintenance-heavy
-//! - network dependency (LAN setup)
 //!
 //! The deterministic part is in `cyclone_sedp_replay.rs` without
 //! `#[ignore]`.
@@ -97,9 +77,6 @@ use zerodds_rtps::participant_data::{
 };
 use zerodds_rtps::wire_types::{EntityId, Guid, GuidPrefix, Locator, ProtocolVersion, VendorId};
 
-const SSH_USER: &str = "llvm";
-const SSH_PASS: &str = "llvm";
-const SSH_HOST: &str = "llvm";
 const CYCLONE_DOMAIN: u32 = 42;
 /// Multicast port for domain 42: 7400 + 250 * 42 = 17900.
 const SPDP_MULTICAST_PORT: u16 = 17900;
@@ -118,26 +95,13 @@ struct CycloneSubprocess {
 }
 
 impl CycloneSubprocess {
-    /// Starts `ddsperf -D <domain> pub 1Hz` over SSH on the remote
-    /// host. Holds the subprocess handle so `Drop` kills the remote
-    /// ddsperf.
+    /// Starts `ddsperf -i <domain> -D 18 pub 1Hz` on this host (`-i` is
+    /// the domain, `-D` the duration in seconds). `DDSPERF` names the
+    /// binary when it is not `ddsperf` on the path.
     fn start() -> std::io::Result<Self> {
-        // CYCLONEDDS_URI pins Cyclone to enp6s18 (the VM LAN interface).
-        // Without it, Cyclone picks some arbitrary interface (possibly
-        // loopback) and multicast never reaches the macOS host.
-        let remote_cmd = format!(
-            "CYCLONEDDS_URI=file:///tmp/cyc.xml timeout 18 ddsperf -D {CYCLONE_DOMAIN} pub 1Hz > /tmp/cyclone_live.log 2>&1"
-        );
-        let child = Command::new("sshpass")
-            .arg("-p")
-            .arg(SSH_PASS)
-            .arg("ssh")
-            .arg("-o")
-            .arg("StrictHostKeyChecking=no")
-            .arg("-o")
-            .arg("ConnectTimeout=5")
-            .arg(format!("{SSH_USER}@{SSH_HOST}"))
-            .arg(&remote_cmd)
+        let binary = std::env::var_os("DDSPERF").unwrap_or_else(|| "ddsperf".into());
+        let child = Command::new(binary)
+            .args(["-i", &CYCLONE_DOMAIN.to_string(), "-D", "18", "pub", "1Hz"])
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()?;
@@ -147,34 +111,26 @@ impl CycloneSubprocess {
 
 impl Drop for CycloneSubprocess {
     fn drop(&mut self) {
-        // Best-effort: pkill remote ddsperf, then detach the local
-        // child.
-        let _ = Command::new("sshpass")
-            .arg("-p")
-            .arg(SSH_PASS)
-            .arg("ssh")
-            .arg("-o")
-            .arg("StrictHostKeyChecking=no")
-            .arg(format!("{SSH_USER}@{SSH_HOST}"))
-            .arg("pkill -f 'ddsperf.*-D 42' || true")
-            .output();
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
 }
 
-/// Reads `ipconfig getifaddr en0` on macOS to determine the local LAN
-/// IP. The test needs a real IP (not UNSPECIFIED), because Cyclone
-/// sends SEDP to the unicast locator announced in the beacon.
+/// The local address a packet to another network would leave from: a UDP
+/// connect sends nothing and only asks the routing table. Cyclone sends
+/// SEDP to the unicast locator our beacon announces, so it has to be a
+/// real address, not UNSPECIFIED.
 fn detect_local_interface() -> Ipv4Addr {
-    if let Ok(out) = Command::new("ipconfig").args(["getifaddr", "en0"]).output() {
-        if let Ok(s) = core::str::from_utf8(&out.stdout) {
-            if let Ok(ip) = s.trim().parse::<Ipv4Addr>() {
-                return ip;
-            }
-        }
+    let probe = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0))
+        .and_then(|s| {
+            s.connect(SocketAddrV4::new(Ipv4Addr::new(10, 255, 255, 255), 9))
+                .map(|()| s)
+        })
+        .and_then(|s| s.local_addr());
+    match probe {
+        Ok(std::net::SocketAddr::V4(addr)) => *addr.ip(),
+        _ => Ipv4Addr::UNSPECIFIED,
     }
-    Ipv4Addr::UNSPECIFIED
 }
 
 /// Builds our ParticipantBuiltinTopicData with all SEDP flags.
@@ -208,6 +164,7 @@ fn build_local_participant(local_ip: Ipv4Addr, unicast_port: u16) -> Participant
         // Domain 42 matching Cyclone's `-D 42`. Without DOMAIN_ID,
         // Cyclone counts the beacon as domain 0 → no match.
         domain_id: Some(CYCLONE_DOMAIN),
+        domain_tag: Default::default(),
         builtin_endpoint_set: flags,
         lease_duration: DdsDuration::from_secs(30),
         user_data: Vec::new(),
@@ -219,26 +176,47 @@ fn build_local_participant(local_ip: Ipv4Addr, unicast_port: u16) -> Participant
         sig_algo_info: None,
         kx_algo_info: None,
         sym_cipher_algo_info: None,
+        available_builtin_endpoints_ext: 0,
+        expects_inline_qos: false,
+        manual_liveliness_count: None,
+        builtin_endpoint_qos: None,
+        entity_name: None,
     }
 }
 
 #[test]
-#[ignore = "requires SSH access to llvm@llvm + Cyclone DDS 0.10.2"]
+#[ignore = "needs Cyclone DDS ddsperf on this host; the interop CI job runs it"]
 fn cyclone_live_sedp_discovery() {
+    if std::env::var("INTEROP_REQUIRE").as_deref() != Ok("1")
+        && std::env::var("INTEROP_HOST_AVAILABLE").as_deref() != Ok("1")
+    {
+        eprintln!("INTEROP-SKIP[cyclone_live_sedp]: opt in with INTEROP_REQUIRE=1 and ddsperf");
+        return;
+    }
     let interface = detect_local_interface();
     assert!(
         !interface.is_unspecified(),
-        "could not detect local LAN IP (ipconfig getifaddr en0 failed); \
-         test needs a real IP for Cyclone to send SEDP unicast back"
+        "could not detect a local IPv4 address; the test needs a real one \
+         for Cyclone to send SEDP unicast back"
     );
     eprintln!("local interface: {interface}");
 
-    // Multicast recv socket for SPDP beacons from Cyclone.
-    let spdp_sock = UdpSocket::bind(SocketAddrV4::new(
-        Ipv4Addr::UNSPECIFIED,
-        SPDP_MULTICAST_PORT,
-    ))
-    .expect("bind spdp multicast port");
+    // Multicast recv socket for SPDP beacons from Cyclone. Shared with the
+    // Cyclone on this host, which binds the same port: without
+    // SO_REUSEADDR on both, the second bind fails and ddsperf exits
+    // ("failed to bind to ANY:17900: address in use").
+    let spdp_sock: UdpSocket = {
+        let s = socket2::Socket::new(
+            socket2::Domain::IPV4,
+            socket2::Type::DGRAM,
+            Some(socket2::Protocol::UDP),
+        )
+        .expect("spdp socket");
+        s.set_reuse_address(true).expect("SO_REUSEADDR");
+        s.bind(&SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, SPDP_MULTICAST_PORT).into())
+            .expect("bind spdp multicast port");
+        s.into()
+    };
     spdp_sock
         .set_read_timeout(Some(Duration::from_millis(100)))
         .unwrap();
@@ -297,9 +275,8 @@ fn cyclone_live_sedp_discovery() {
         }
     });
 
-    // Start ddsperf on the bench host.
-    let _cyclone = CycloneSubprocess::start().expect("start ddsperf over ssh");
-    eprintln!("started remote ddsperf");
+    let _cyclone = CycloneSubprocess::start().expect("start ddsperf");
+    eprintln!("started ddsperf");
 
     // Main loop: poll both sockets.
     let spdp = SpdpReader::new();
@@ -415,8 +392,7 @@ fn cyclone_live_sedp_discovery() {
         }
     }
 
-    // Stop the sender thread before the assertion so the remote ddsperf
-    // doesn't keep running forever.
+    // Stop the sender thread before the assertions.
     stop.store(true, Ordering::Relaxed);
     let _ = send_handle.join();
 
@@ -432,8 +408,7 @@ fn cyclone_live_sedp_discovery() {
 
     // Acceptance:
     // 1. Cyclone SPDP discovery (Cyclone beacon parsed byte-exact).
-    // 2. Our beacon was sent out (tcpdump confirms the correct
-    //    multicast frame on enp6s18).
+    // 2. Our beacon was sent out.
     // 3. Cyclone replies on our unicast port — proof that Cyclone
     //    accepted us as a matched peer with the new METATRAFFIC_*_LOCATOR
     //    + DOMAIN_ID PIDs. Without the new PIDs, Cyclone does not see us.
@@ -450,7 +425,7 @@ fn cyclone_live_sedp_discovery() {
     );
     assert!(
         cyclone_unicast_inbound >= 1,
-        "expected Cyclone to unicast-reply to our metatraffic_unicast_locator, got {cyclone_unicast_inbound} packets (set `ip link set enp6s18 allmulticast on` on llvm if needed)"
+        "expected Cyclone to unicast-reply to our metatraffic_unicast_locator, got {cyclone_unicast_inbound} packets"
     );
     assert!(
         publications_seen >= 1,

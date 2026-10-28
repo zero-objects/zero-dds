@@ -1,0 +1,4 @@
+// structure with one member
+@final struct Sample {
+    octet only;
+};

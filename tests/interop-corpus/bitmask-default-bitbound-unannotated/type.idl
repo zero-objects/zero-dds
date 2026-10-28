@@ -1,0 +1,10 @@
+// `bitmask` with no `@bit_bound`, unannotated
+bitmask Flags {
+    @position(0) LOWEST,
+    @position(31) HIGHEST
+};
+
+struct Sample {
+    Flags value;
+    octet tail;
+};

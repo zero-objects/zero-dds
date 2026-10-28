@@ -1,0 +1,46 @@
+# /etc/zerodds/durability-svc.yaml.example
+# Configuration of zerodds-durability-svc (ADR 0009).
+#
+# Read by crates/durability-service-bin/src/config.rs (DaemonConfig::from_config)
+# over the shared layers: this file, durability-svc.d/, include:, the
+# environment beneath, --set above. Every CLI flag is a --set of its key
+# here (--domain N == --set domain=N, --topic X == --set +durability.topics=X),
+# so the file and the flags never disagree about which value won: whichever
+# was applied last, files-then-flags.
+#
+# An unknown key in a known section, or a value of the wrong type, stops the
+# start with file and line; --check-config reports the same without starting.
+
+domain: 0
+store: sqlite            # sqlite (default) | file | lakehouse | postgres
+# path: /var/lib/zerodds/durability/dur.db   # omitted: in-memory, NOT durable
+auto: true                # auto-serve every TRANSIENT/PERSISTENT topic
+
+# Explicitly served topics, beyond (or instead of) `auto`. A bare name
+# resolves its type, keyedness and retention contract from whichever writer
+# of it is discovered first — exactly like `auto`, but regardless of that
+# writer's durability kind (the operator named the topic on purpose).
+#
+# A map entry can override any of that:
+#   - `type`    names the application type outright — needed for a topic no
+#     writer has announced yet, or to skip the wait for one; `keyed` then
+#     defaults to `false` (unkeyed) unless set.
+#   - `contract` pins the retention policy regardless of what a writer's own
+#     DurabilityServiceQosPolicy announces. Any field left out keeps
+#     KEEP_ALL's unlimited value for it, not the DDS policy default of
+#     KEEP_LAST(1).
+#
+# Precedence per topic: this file's `contract`/`type`/`keyed` > the
+# discovered writer's own DurabilityServiceQosPolicy > this daemon's
+# KEEP_ALL default.
+durability:
+  topics:
+    - Sensors
+    - name: Commands
+      type: demo::Command
+      keyed: true
+      contract:
+        history_kind: keep_last
+        history_depth: 5
+        max_instances: 1000
+        cleanup_delay_secs: 300

@@ -32,7 +32,7 @@ use alloc::rc::Rc;
 use alloc::string::String;
 use core::any::Any;
 
-use zerodds_cdr::{BufferReader, BufferWriter, DecodeError, EncodeError};
+use zerodds_wire::{Reader, WireError, Writer};
 
 use crate::runtime::ValueBase;
 
@@ -52,11 +52,19 @@ const VALUE_NULL: u32 = 0x0000_0000;
 /// Indirection marker.
 const VALUE_INDIRECTION: u32 = 0xffff_ffff;
 
-fn enc_err(message: &'static str) -> EncodeError {
-    EncodeError::ValueOutOfRange { message }
-}
-fn dec_err(kind: &'static str) -> DecodeError {
-    DecodeError::InvalidEnum { kind, value: 0 }
+/// A refusal from the value layer, at the offset it was decided.
+///
+/// `zerodds-cdr` had `EncodeError::ValueOutOfRange` and
+/// `DecodeError::InvalidEnum` with a value of zero standing in for
+/// everything this file can refuse; `zerodds-wire` has one error type
+/// and every variant of it names an offset. So both take one.
+///
+/// zerodds-lint: recursion-depth 1 — this does not recurse. The callee
+/// is `WireError::refused`, an inherent constructor on another type;
+/// `dds_bounded_recursion` compares only the last segment of a call
+/// path, so the delegation reads as a self-call.
+fn refused(at: usize, what: &'static str) -> WireError {
+    WireError::refused(at, what)
 }
 
 /// A concrete valuetype that marshals over the §15.3.4 wire. Generated
@@ -66,7 +74,7 @@ pub trait ValueMarshal: ValueBase {
     ///
     /// # Errors
     /// CDR encode error.
-    fn marshal_state(&self, w: &mut BufferWriter) -> Result<(), EncodeError>;
+    fn marshal_state(&self, w: &mut Writer) -> Result<(), WireError>;
 }
 
 /// Writes valuetype instances with **value sharing**: the same `Rc` instance is
@@ -91,28 +99,29 @@ impl ValueWriter {
     /// CDR encode error / offset overflow.
     pub fn write(
         &mut self,
-        w: &mut BufferWriter,
+        w: &mut Writer,
         value: Option<&Rc<dyn ValueMarshal>>,
-    ) -> Result<(), EncodeError> {
+    ) -> Result<(), WireError> {
         let Some(v) = value else {
-            w.write_u32(VALUE_NULL)?;
+            w.write_u32(VALUE_NULL);
             return Ok(());
         };
-        w.align(4);
+        w.align_to(4);
         let tag_pos = w.position();
         let id = Rc::as_ptr(v).cast::<()>() as usize;
         if let Some(&prior) = self.seen.get(&id) {
             // Value sharing: indirection backwards to the first value_tag.
-            w.write_u32(VALUE_INDIRECTION)?;
+            w.write_u32(VALUE_INDIRECTION);
             // Offset relative to the position of the offset field (now = tag_pos + 4).
-            let offset = i32::try_from(prior as i64 - w.position() as i64)
-                .map_err(|_| enc_err("value indirection offset overflow"))?;
-            w.write_u32(offset as u32)?;
+            let offset = i32::try_from(prior as i64 - w.position() as i64).map_err(|_| {
+                refused(w.position(), "a value indirection offset that fits a long")
+            })?;
+            w.write_u32(offset as u32);
             return Ok(());
         }
         self.seen.insert(id, tag_pos);
-        w.write_u32(VALUE_TAG_BASE | VT_REPO_SINGLE)?; // 0x7fffff02
-        w.write_string(v.repository_id())?;
+        w.write_u32(VALUE_TAG_BASE | VT_REPO_SINGLE); // 0x7fffff02
+        w.write_string(v.repository_id());
         v.marshal_state(w)
     }
 
@@ -125,28 +134,29 @@ impl ValueWriter {
     /// CDR encode error / offset overflow.
     pub fn write_with_codebase(
         &mut self,
-        w: &mut BufferWriter,
+        w: &mut Writer,
         value: Option<&Rc<dyn ValueMarshal>>,
         codebase: &str,
-    ) -> Result<(), EncodeError> {
+    ) -> Result<(), WireError> {
         let Some(v) = value else {
-            w.write_u32(VALUE_NULL)?;
+            w.write_u32(VALUE_NULL);
             return Ok(());
         };
-        w.align(4);
+        w.align_to(4);
         let tag_pos = w.position();
         let id = Rc::as_ptr(v).cast::<()>() as usize;
         if let Some(&prior) = self.seen.get(&id) {
-            w.write_u32(VALUE_INDIRECTION)?;
-            let offset = i32::try_from(prior as i64 - w.position() as i64)
-                .map_err(|_| enc_err("value indirection offset overflow"))?;
-            w.write_u32(offset as u32)?;
+            w.write_u32(VALUE_INDIRECTION);
+            let offset = i32::try_from(prior as i64 - w.position() as i64).map_err(|_| {
+                refused(w.position(), "a value indirection offset that fits a long")
+            })?;
+            w.write_u32(offset as u32);
             return Ok(());
         }
         self.seen.insert(id, tag_pos);
-        w.write_u32(VALUE_TAG_BASE | VT_FLAG_CODEBASE | VT_REPO_SINGLE)?; // 0x7fffff03
-        w.write_string(codebase)?;
-        w.write_string(v.repository_id())?;
+        w.write_u32(VALUE_TAG_BASE | VT_FLAG_CODEBASE | VT_REPO_SINGLE); // 0x7fffff03
+        w.write_string(codebase);
+        w.write_string(v.repository_id());
         v.marshal_state(w)
     }
 
@@ -160,50 +170,58 @@ impl ValueWriter {
     /// CDR encode error / offset or length overflow.
     pub fn write_chunked(
         &mut self,
-        w: &mut BufferWriter,
+        w: &mut Writer,
         value: Option<&Rc<dyn ValueMarshal>>,
         base_ids: &[&str],
-    ) -> Result<(), EncodeError> {
+    ) -> Result<(), WireError> {
         let Some(v) = value else {
-            w.write_u32(VALUE_NULL)?;
+            w.write_u32(VALUE_NULL);
             return Ok(());
         };
-        w.align(4);
+        w.align_to(4);
         let tag_pos = w.position();
         let id = Rc::as_ptr(v).cast::<()>() as usize;
         if let Some(&prior) = self.seen.get(&id) {
-            w.write_u32(VALUE_INDIRECTION)?;
-            let offset = i32::try_from(prior as i64 - w.position() as i64)
-                .map_err(|_| enc_err("value indirection offset overflow"))?;
-            w.write_u32(offset as u32)?;
+            w.write_u32(VALUE_INDIRECTION);
+            let offset = i32::try_from(prior as i64 - w.position() as i64).map_err(|_| {
+                refused(w.position(), "a value indirection offset that fits a long")
+            })?;
+            w.write_u32(offset as u32);
             return Ok(());
         }
         self.seen.insert(id, tag_pos);
 
         // value_tag: chunked + RepositoryId list (0x7fffff0e).
-        w.write_u32(VALUE_TAG_BASE | VT_FLAG_CHUNKED | VT_REPO_LIST)?;
-        let count = u32::try_from(1 + base_ids.len())
-            .map_err(|_| enc_err("value RepositoryId list too long"))?;
-        w.write_u32(count)?;
-        w.write_string(v.repository_id())?;
+        w.write_u32(VALUE_TAG_BASE | VT_FLAG_CHUNKED | VT_REPO_LIST);
+        let count = u32::try_from(1 + base_ids.len()).map_err(|_| {
+            refused(
+                w.position(),
+                "a repository id list shorter than 2^32 entries",
+            )
+        })?;
+        w.write_u32(count);
+        w.write_string(v.repository_id());
         for b in base_ids {
-            w.write_string(b)?;
+            w.write_string(b);
         }
 
-        // Chunk: determine the size up front in an align-origin temp buffer, so that
-        // the CDR alignment of the state (including 8-byte) exactly matches the stream offset.
-        w.align(4);
-        let state_offset = w.position() + 4; // the chunk_size long occupies 4 bytes
-        let mut tmp = BufferWriter::new(w.endianness()).with_align_origin(state_offset);
-        v.marshal_state(&mut tmp)?;
-        let state = tmp.into_bytes();
-        let size = i32::try_from(state.len()).map_err(|_| enc_err("chunk size overflow"))?;
-        w.write_u32(size as u32)?;
-        w.write_bytes(&state)?;
+        // The chunk's size is a placeholder patched once the state is
+        // written, and the state goes into `w` — not into a second
+        // buffer told that its byte 0 is byte `state_offset`. That is
+        // what this did, and an alignment counted from a coordinate a
+        // buffer was given rather than one it has is a coordinate that
+        // can be given wrongly. `write_dheader` reserves the same four
+        // octets after the same `align_to(4)`, `finish_dheader` writes
+        // the same length, and every alignment inside `marshal_state`
+        // is counted from the offset the octets actually have.
+        let chunk = w.write_dheader();
+        v.marshal_state(w)?;
+        w.finish_dheader(chunk);
 
         // End-tag -1 (outermost value).
-        w.align(4);
-        w.write_u32((-1i32) as u32)
+        w.align_to(4);
+        w.write_u32((-1i32) as u32);
+        Ok(())
     }
 
     /// Writes a **multi-chunk** valuetype tree (§15.3.4.3): a chunked value
@@ -220,9 +238,9 @@ impl ValueWriter {
     /// CDR encode error / offset or length overflow.
     pub fn write_chunked_tree(
         &mut self,
-        w: &mut BufferWriter,
+        w: &mut Writer,
         node: &ChunkedNode<'_>,
-    ) -> Result<(), EncodeError> {
+    ) -> Result<(), WireError> {
         self.write_chunked_node(w, node, 1)
     }
 
@@ -232,41 +250,42 @@ impl ValueWriter {
     /// zerodds-lint: recursion-depth 64 (Valuetype-Chunk-Nesting; bounded by GIOP value chunking)
     fn write_chunked_node(
         &mut self,
-        w: &mut BufferWriter,
+        w: &mut Writer,
         node: &ChunkedNode<'_>,
         level: u32,
-    ) -> Result<(), EncodeError> {
-        w.align(4);
+    ) -> Result<(), WireError> {
+        w.align_to(4);
         let tag_pos = w.position();
         let id = Rc::as_ptr(node.value).cast::<()>() as usize;
         if let Some(&prior) = self.seen.get(&id) {
-            w.write_u32(VALUE_INDIRECTION)?;
-            let offset = i32::try_from(prior as i64 - w.position() as i64)
-                .map_err(|_| enc_err("value indirection offset overflow"))?;
-            w.write_u32(offset as u32)?;
+            w.write_u32(VALUE_INDIRECTION);
+            let offset = i32::try_from(prior as i64 - w.position() as i64).map_err(|_| {
+                refused(w.position(), "a value indirection offset that fits a long")
+            })?;
+            w.write_u32(offset as u32);
             return Ok(());
         }
         self.seen.insert(id, tag_pos);
 
         // value_tag: chunked + RepositoryId list.
-        w.write_u32(VALUE_TAG_BASE | VT_FLAG_CHUNKED | VT_REPO_LIST)?;
-        let count = u32::try_from(1 + node.base_ids.len())
-            .map_err(|_| enc_err("value RepositoryId list too long"))?;
-        w.write_u32(count)?;
-        w.write_string(node.value.repository_id())?;
+        w.write_u32(VALUE_TAG_BASE | VT_FLAG_CHUNKED | VT_REPO_LIST);
+        let count = u32::try_from(1 + node.base_ids.len()).map_err(|_| {
+            refused(
+                w.position(),
+                "a repository id list shorter than 2^32 entries",
+            )
+        })?;
+        w.write_u32(count);
+        w.write_string(node.value.repository_id());
         for b in node.base_ids {
-            w.write_string(b)?;
+            w.write_string(b);
         }
 
-        // Leading data chunk: the node's own state.
-        w.align(4);
-        let state_offset = w.position() + 4;
-        let mut tmp = BufferWriter::new(w.endianness()).with_align_origin(state_offset);
-        node.value.marshal_state(&mut tmp)?;
-        let state = tmp.into_bytes();
-        let size = i32::try_from(state.len()).map_err(|_| enc_err("chunk size overflow"))?;
-        w.write_u32(size as u32)?;
-        w.write_bytes(&state)?;
+        // Leading data chunk: the node's own state, written into the
+        // stream and sized afterwards. See `write_chunked`.
+        let chunk = w.write_dheader();
+        node.value.marshal_state(w)?;
+        w.finish_dheader(chunk);
 
         // Nested chunked values follow at chunk boundaries (derived tail),
         // each self-delimited by its own end-tag at the deeper level.
@@ -275,8 +294,9 @@ impl ValueWriter {
         }
 
         // This value's own end-tag (-level).
-        w.align(4);
-        w.write_u32((-(level as i32)) as u32)
+        w.align_to(4);
+        w.write_u32((-(level as i32)) as u32);
+        Ok(())
     }
 }
 
@@ -297,7 +317,7 @@ pub struct ChunkedNode<'a> {
 
 /// Factory closure: reads the state members of a valuetype and returns a
 /// typed instance as `Rc<dyn Any>` (the caller downcasts to the concrete type).
-pub type ValueCtor = Box<dyn Fn(&mut BufferReader<'_>) -> Result<Rc<dyn Any>, DecodeError>>;
+pub type ValueCtor = Box<dyn Fn(&mut Reader<'_>) -> Result<Rc<dyn Any>, WireError>>;
 
 /// Codebase resolver: returns — based on the codebase URL carried over the
 /// wire (§15.3.4.1, value_tag bit 0) and the RepositoryId — a
@@ -314,7 +334,7 @@ enum CtorRef<'a> {
 }
 
 impl CtorRef<'_> {
-    fn call(&self, r: &mut BufferReader<'_>) -> Result<Rc<dyn Any>, DecodeError> {
+    fn call(&self, r: &mut Reader<'_>) -> Result<Rc<dyn Any>, WireError> {
         match self {
             CtorRef::Borrowed(c) => c(r),
             CtorRef::Owned(c) => c(r),
@@ -387,11 +407,11 @@ impl ValueReader {
     /// (yet) unsupported chunked encoding, CDR decode error.
     pub fn read(
         &mut self,
-        r: &mut BufferReader<'_>,
+        r: &mut Reader<'_>,
         base: usize,
         reg: &ValueRegistry,
-    ) -> Result<Option<Rc<dyn Any>>, DecodeError> {
-        r.align(4)?;
+    ) -> Result<Option<Rc<dyn Any>>, WireError> {
+        r.align_to(4)?;
         let tag_pos = base + r.position();
         let tag = r.read_u32()?;
 
@@ -402,19 +422,22 @@ impl ValueReader {
             let off_field = base + r.position();
             let offset = r.read_u32()? as i32;
             if offset >= 0 {
-                return Err(dec_err("value indirection: offset must be negative"));
+                return Err(refused(off_field, "a negative value indirection offset"));
             }
             let target = usize::try_from(off_field as i64 + i64::from(offset))
-                .map_err(|_| dec_err("value indirection: target before stream start"))?;
+                .map_err(|_| refused(off_field, "an indirection target inside the stream"))?;
             return self
                 .cache
                 .get(&target)
                 .cloned()
                 .map(Some)
-                .ok_or_else(|| dec_err("value indirection: unresolved target"));
+                .ok_or_else(|| refused(off_field, "an indirection target already read"));
         }
         if tag < VALUE_TAG_BASE {
-            return Err(dec_err("invalid value_tag"));
+            return Err(refused(
+                tag_pos,
+                "a value tag of 0, 0xffffffff or 0x7fffff00 and above",
+            ));
         }
         let chunked = tag & VT_FLAG_CHUNKED != 0;
         // codebase URL (bit 0): read it in + remember it for factory resolution.
@@ -434,12 +457,12 @@ impl ValueReader {
                     ids.push(r.read_string()?);
                 }
                 if ids.is_empty() {
-                    return Err(dec_err("empty value RepositoryId list"));
+                    return Err(refused(base + r.position(), "at least one repository id"));
                 }
                 ids
             }
-            VT_REPO_NONE => return Err(dec_err("value without type info unsupported")),
-            _ => return Err(dec_err("invalid value_tag repo-id flags")),
+            VT_REPO_NONE => return Err(refused(tag_pos, "a value tag carrying type information")),
+            _ => return Err(refused(tag_pos, "repository id flags of 0x02 or 0x06")),
         };
 
         let v = if chunked {
@@ -448,9 +471,9 @@ impl ValueReader {
             // Non-chunked: the most-derived type (ids[0]) must be known
             // (without chunk sizes no truncation is possible) — possibly resolved
             // via the codebase URL.
-            let ctor = reg
-                .ctor_for(&ids[0], codebase.as_deref())
-                .ok_or_else(|| dec_err("no ValueFactory for RepositoryId"))?;
+            let ctor = reg.ctor_for(&ids[0], codebase.as_deref()).ok_or_else(|| {
+                refused(tag_pos, "a registered value factory for the repository id")
+            })?;
             ctor.call(r)?
         };
         self.cache.insert(tag_pos, Rc::clone(&v));
@@ -467,19 +490,24 @@ impl ValueReader {
 /// recursively, **multi-level end-tags** (one end-tag `-k` with
 /// `k ≤ 1` also closes this value), and **indirections** in the chunk stream.
 fn read_chunked_state(
-    r: &mut BufferReader<'_>,
+    r: &mut Reader<'_>,
     ids: &[String],
     reg: &ValueRegistry,
     codebase: Option<&str>,
-) -> Result<Rc<dyn Any>, DecodeError> {
+) -> Result<Rc<dyn Any>, WireError> {
     let ctor = ids
         .iter()
         .find_map(|id| reg.ctor_for(id, codebase))
-        .ok_or_else(|| dec_err("no ValueFactory for any RepositoryId in chunked value"))?;
+        .ok_or_else(|| {
+            refused(
+                r.position(),
+                "a registered value factory for one of the repository ids",
+            )
+        })?;
 
     let mut value: Option<Rc<dyn Any>> = None;
     loop {
-        r.align(4)?;
+        r.align_to(4)?;
         let marker = r.read_u32()? as i32;
         if marker < 0 {
             break; // end-tag (-nesting_level) → end of this (level-1) value
@@ -506,7 +534,10 @@ fn read_chunked_state(
             let v = ctor.call(r)?;
             let consumed = r.position() - pos_before;
             if consumed > chunk_size {
-                return Err(dec_err("chunked value: ctor over-read the chunk"));
+                return Err(refused(
+                    r.position(),
+                    "a value factory that stays inside its chunk",
+                ));
             }
             if consumed < chunk_size {
                 // Truncation: skip the derived state remainder of this chunk.
@@ -518,7 +549,7 @@ fn read_chunked_state(
             let _ = r.read_bytes(chunk_size)?;
         }
     }
-    value.ok_or_else(|| dec_err("chunked value produced no state"))
+    value.ok_or_else(|| refused(r.position(), "at least one data chunk in a chunked value"))
 }
 
 /// Consumes (skips) a nested value whose `value_tag`
@@ -530,7 +561,7 @@ fn read_chunked_state(
 /// the `k..depth-1` enclosing values (shared end-tag, §15.3.4.3).
 ///
 /// zerodds-lint: recursion-depth 64 (Valuetype-Chunk-Nesting; bounded by GIOP value chunking)
-fn skip_value_from_tag(r: &mut BufferReader<'_>, depth: u32, tag: u32) -> Result<u32, DecodeError> {
+fn skip_value_from_tag(r: &mut Reader<'_>, depth: u32, tag: u32) -> Result<u32, WireError> {
     if tag & VT_FLAG_CODEBASE != 0 {
         let _ = r.read_string()?;
     }
@@ -544,12 +575,20 @@ fn skip_value_from_tag(r: &mut BufferReader<'_>, depth: u32, tag: u32) -> Result
                 let _ = r.read_string()?;
             }
         }
-        _ => return Err(dec_err("nested value without type info")),
+        _ => {
+            return Err(refused(
+                r.position(),
+                "a nested value tag carrying type information",
+            ));
+        }
     }
     if tag & VT_FLAG_CHUNKED == 0 {
         // Non-chunked nested values carry no lengths → not skippable without a
         // factory (does not occur in the chunked context per spec).
-        return Err(dec_err("non-chunked nested value cannot be skipped"));
+        return Err(refused(
+            r.position(),
+            "a chunked nested value, which is the only skippable form",
+        ));
     }
     skip_chunked_body(r, depth)
 }
@@ -559,9 +598,9 @@ fn skip_value_from_tag(r: &mut BufferReader<'_>, depth: u32, tag: u32) -> Result
 /// the end-tag level that closed it (see [`skip_value_from_tag`]).
 ///
 /// zerodds-lint: recursion-depth 64 (Valuetype-Chunk-Nesting; bounded by GIOP value chunking)
-fn skip_chunked_body(r: &mut BufferReader<'_>, depth: u32) -> Result<u32, DecodeError> {
+fn skip_chunked_body(r: &mut Reader<'_>, depth: u32) -> Result<u32, WireError> {
     loop {
-        r.align(4)?;
+        r.align_to(4)?;
         let marker = r.read_u32()? as i32;
         if marker < 0 {
             return Ok((-marker) as u32);
@@ -587,7 +626,7 @@ fn skip_chunked_body(r: &mut BufferReader<'_>, depth: u32) -> Result<u32, Decode
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
-    use zerodds_cdr::{CdrDecode, CdrEncode, Endianness};
+    use zerodds_wire::Endianness;
 
     // Test valuetype: `valuetype Point { public long x; public long y; };`
     #[derive(Debug, PartialEq, Eq)]
@@ -601,18 +640,19 @@ mod tests {
         }
     }
     impl ValueMarshal for Point {
-        fn marshal_state(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
-            self.x.encode(w)?;
-            self.y.encode(w)
+        fn marshal_state(&self, w: &mut Writer) -> Result<(), WireError> {
+            w.write_i32(self.x);
+            w.write_i32(self.y);
+            Ok(())
         }
     }
     fn point_registry() -> ValueRegistry {
         let mut reg = ValueRegistry::new();
         reg.register(
             "IDL:Geo/Point:1.0",
-            Box::new(|r: &mut BufferReader<'_>| {
-                let x = i32::decode(r)?;
-                let y = i32::decode(r)?;
+            Box::new(|r: &mut Reader<'_>| {
+                let x = r.read_i32()?;
+                let y = r.read_i32()?;
                 Ok(Rc::new(Point { x, y }) as Rc<dyn Any>)
             }),
         );
@@ -631,9 +671,10 @@ mod tests {
         }
     }
     impl ValueMarshal for JPoint {
-        fn marshal_state(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
-            self.x.encode(w)?;
-            self.y.encode(w)
+        fn marshal_state(&self, w: &mut Writer) -> Result<(), WireError> {
+            w.write_i32(self.x);
+            w.write_i32(self.y);
+            Ok(())
         }
     }
 
@@ -644,11 +685,11 @@ mod tests {
     /// + align(4) pad + long(42) + long(-7).
     #[test]
     fn jacorb_capture_byte_identical() {
-        let mut w = BufferWriter::new(Endianness::Big);
+        let mut w = Writer::new(Endianness::Big);
         let mut vw = ValueWriter::new();
         let p: Rc<dyn ValueMarshal> = Rc::new(JPoint { x: 42, y: -7 });
         vw.write(&mut w, Some(&p)).unwrap();
-        let bytes = w.into_bytes();
+        let bytes = w.finish();
         let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
         assert_eq!(
             hex, "7fffff020000000e49444c3a506f696e743a312e300000000000002afffffff9",
@@ -668,8 +709,9 @@ mod tests {
         }
     }
     impl ValueMarshal for Base {
-        fn marshal_state(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
-            self.id.encode(w)
+        fn marshal_state(&self, w: &mut Writer) -> Result<(), WireError> {
+            w.write_i32(self.id);
+            Ok(())
         }
     }
     #[derive(Debug, PartialEq, Eq)]
@@ -683,27 +725,24 @@ mod tests {
         }
     }
     impl ValueMarshal for Derived {
-        fn marshal_state(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
-            self.id.encode(w)?; // base state first (§15.3.4.3)
-            self.extra.encode(w)
+        fn marshal_state(&self, w: &mut Writer) -> Result<(), WireError> {
+            w.write_i32(self.id); // base state first (§15.3.4.3)
+            w.write_string(&self.extra);
+            Ok(())
         }
     }
     fn base_ctor(reg: &mut ValueRegistry) {
         reg.register(
             "IDL:Base:1.0",
-            Box::new(|r: &mut BufferReader<'_>| {
-                Ok(Rc::new(Base {
-                    id: i32::decode(r)?,
-                }) as Rc<dyn Any>)
-            }),
+            Box::new(|r: &mut Reader<'_>| Ok(Rc::new(Base { id: r.read_i32()? }) as Rc<dyn Any>)),
         );
     }
     fn derived_ctor(reg: &mut ValueRegistry) {
         reg.register(
             "IDL:Derived:1.0",
-            Box::new(|r: &mut BufferReader<'_>| {
-                let id = i32::decode(r)?;
-                let extra = alloc::string::String::decode(r)?;
+            Box::new(|r: &mut Reader<'_>| {
+                let id = r.read_i32()?;
+                let extra = r.read_string()?;
                 Ok(Rc::new(Derived { id, extra }) as Rc<dyn Any>)
             }),
         );
@@ -715,7 +754,7 @@ mod tests {
 
     #[test]
     fn chunked_encode_byte_identical_to_jacorb() {
-        let mut w = BufferWriter::new(Endianness::Big);
+        let mut w = Writer::new(Endianness::Big);
         let mut vw = ValueWriter::new();
         let d: Rc<dyn ValueMarshal> = Rc::new(Derived {
             id: 42,
@@ -724,7 +763,7 @@ mod tests {
         vw.write_chunked(&mut w, Some(&d), &["IDL:Base:1.0"])
             .unwrap();
         let hex: alloc::string::String = w
-            .into_bytes()
+            .finish()
             .iter()
             .map(|b| alloc::format!("{b:02x}"))
             .collect();
@@ -746,7 +785,7 @@ mod tests {
         let mut reg = ValueRegistry::new();
         derived_ctor(&mut reg);
         base_ctor(&mut reg);
-        let mut r = BufferReader::new(&bytes, Endianness::Big);
+        let mut r = Reader::new(&bytes, Endianness::Big);
         let v = ValueReader::new().read(&mut r, 0, &reg).unwrap().unwrap();
         assert_eq!(
             *v.downcast_ref::<Derived>().unwrap(),
@@ -763,7 +802,7 @@ mod tests {
         let bytes = jacorb_chunked_bytes();
         let mut reg = ValueRegistry::new();
         base_ctor(&mut reg);
-        let mut r = BufferReader::new(&bytes, Endianness::Big);
+        let mut r = Reader::new(&bytes, Endianness::Big);
         let v = ValueReader::new().read(&mut r, 0, &reg).unwrap().unwrap();
         assert_eq!(*v.downcast_ref::<Base>().unwrap(), Base { id: 42 });
     }
@@ -771,7 +810,7 @@ mod tests {
     #[test]
     fn chunked_roundtrip_zerodds_to_zerodds() {
         for e in [Endianness::Big, Endianness::Little] {
-            let mut w = BufferWriter::new(e);
+            let mut w = Writer::new(e);
             let d: Rc<dyn ValueMarshal> = Rc::new(Derived {
                 id: 7,
                 extra: "xyz".into(),
@@ -779,11 +818,11 @@ mod tests {
             ValueWriter::new()
                 .write_chunked(&mut w, Some(&d), &["IDL:Base:1.0"])
                 .unwrap();
-            let bytes = w.into_bytes();
+            let bytes = w.finish();
             let mut reg = ValueRegistry::new();
             derived_ctor(&mut reg);
             base_ctor(&mut reg);
-            let mut r = BufferReader::new(&bytes, e);
+            let mut r = Reader::new(&bytes, e);
             let v = ValueReader::new().read(&mut r, 0, &reg).unwrap().unwrap();
             assert_eq!(
                 *v.downcast_ref::<Derived>().unwrap(),
@@ -798,14 +837,14 @@ mod tests {
     #[test]
     fn single_value_and_null_roundtrip() {
         for e in [Endianness::Big, Endianness::Little] {
-            let mut w = BufferWriter::new(e);
+            let mut w = Writer::new(e);
             let mut vw = ValueWriter::new();
             let p: Rc<dyn ValueMarshal> = Rc::new(Point { x: 3, y: 7 });
             vw.write(&mut w, Some(&p)).unwrap();
             vw.write(&mut w, None).unwrap(); // null
-            let bytes = w.into_bytes();
+            let bytes = w.finish();
             // value_tag = 0x7fffff02 (single repo-id).
-            let mut r = BufferReader::new(&bytes, e);
+            let mut r = Reader::new(&bytes, e);
             let mut vr = ValueReader::new();
             let reg = point_registry();
             let v = vr.read(&mut r, 0, &reg).unwrap().expect("non-null");
@@ -821,13 +860,13 @@ mod tests {
         // On reading, both must resolve to the SAME Rc instance.
         for e in [Endianness::Big, Endianness::Little] {
             let p: Rc<dyn ValueMarshal> = Rc::new(Point { x: 1, y: 2 });
-            let mut w = BufferWriter::new(e);
+            let mut w = Writer::new(e);
             let mut vw = ValueWriter::new();
             vw.write(&mut w, Some(&p)).unwrap();
             vw.write(&mut w, Some(&p)).unwrap(); // same instance → indirection
-            let bytes = w.into_bytes();
+            let bytes = w.finish();
 
-            let mut r = BufferReader::new(&bytes, e);
+            let mut r = Reader::new(&bytes, e);
             let mut vr = ValueReader::new();
             let reg = point_registry();
             let a = vr.read(&mut r, 0, &reg).unwrap().unwrap();
@@ -844,12 +883,12 @@ mod tests {
     fn distinct_values_are_not_shared() {
         let p1: Rc<dyn ValueMarshal> = Rc::new(Point { x: 1, y: 1 });
         let p2: Rc<dyn ValueMarshal> = Rc::new(Point { x: 2, y: 2 });
-        let mut w = BufferWriter::new(Endianness::Big);
+        let mut w = Writer::new(Endianness::Big);
         let mut vw = ValueWriter::new();
         vw.write(&mut w, Some(&p1)).unwrap();
         vw.write(&mut w, Some(&p2)).unwrap();
-        let bytes = w.into_bytes();
-        let mut r = BufferReader::new(&bytes, Endianness::Big);
+        let bytes = w.finish();
+        let mut r = Reader::new(&bytes, Endianness::Big);
         let mut vr = ValueReader::new();
         let reg = point_registry();
         let a = vr.read(&mut r, 0, &reg).unwrap().unwrap();
@@ -862,20 +901,20 @@ mod tests {
     #[test]
     fn value_tag_is_single_repo_id_on_wire() {
         let p: Rc<dyn ValueMarshal> = Rc::new(Point { x: 0, y: 0 });
-        let mut w = BufferWriter::new(Endianness::Big);
+        let mut w = Writer::new(Endianness::Big);
         ValueWriter::new().write(&mut w, Some(&p)).unwrap();
-        let bytes = w.into_bytes();
-        // Erste 4 Byte = value_tag 0x7fffff02 (BE).
+        let bytes = w.finish();
+        // First 4 bytes = value_tag 0x7fffff02 (BE).
         assert_eq!(&bytes[0..4], &[0x7f, 0xff, 0xff, 0x02]);
     }
 
     #[test]
     fn forward_indirection_rejected() {
-        let mut w = BufferWriter::new(Endianness::Big);
-        w.write_u32(VALUE_INDIRECTION).unwrap();
-        w.write_u32(4).unwrap(); // positive offset
-        let bytes = w.into_bytes();
-        let mut r = BufferReader::new(&bytes, Endianness::Big);
+        let mut w = Writer::new(Endianness::Big);
+        w.write_u32(VALUE_INDIRECTION);
+        w.write_u32(4); // positive offset
+        let bytes = w.finish();
+        let mut r = Reader::new(&bytes, Endianness::Big);
         assert!(
             ValueReader::new()
                 .read(&mut r, 0, &ValueRegistry::new())
@@ -887,16 +926,16 @@ mod tests {
 
     #[test]
     fn codebase_value_tag_and_roundtrip() {
-        let mut w = BufferWriter::new(Endianness::Big);
+        let mut w = Writer::new(Endianness::Big);
         let p: Rc<dyn ValueMarshal> = Rc::new(Point { x: 5, y: 9 });
         ValueWriter::new()
             .write_with_codebase(&mut w, Some(&p), "file:///stubs.jar")
             .unwrap();
-        let bytes = w.into_bytes();
+        let bytes = w.finish();
         // value_tag 0x7fffff03 (single repo-id + codebase flag).
         assert_eq!(&bytes[0..4], &[0x7f, 0xff, 0xff, 0x03]);
         // Reads back correctly with a normal registry (RepositoryId known).
-        let mut r = BufferReader::new(&bytes, Endianness::Big);
+        let mut r = Reader::new(&bytes, Endianness::Big);
         let reg = point_registry();
         let v = ValueReader::new().read(&mut r, 0, &reg).unwrap().unwrap();
         assert_eq!(*v.downcast_ref::<Point>().unwrap(), Point { x: 5, y: 9 });
@@ -904,21 +943,21 @@ mod tests {
 
     #[test]
     fn codebase_resolver_supplies_missing_factory() {
-        let mut w = BufferWriter::new(Endianness::Big);
+        let mut w = Writer::new(Endianness::Big);
         let p: Rc<dyn ValueMarshal> = Rc::new(Point { x: 1, y: 2 });
         ValueWriter::new()
             .write_with_codebase(&mut w, Some(&p), "ior://factory-host/Point")
             .unwrap();
-        let bytes = w.into_bytes();
+        let bytes = w.finish();
 
         // Registry WITHOUT a Point factory, but WITH a codebase resolver that
         // supplies it based on the codebase URL.
         let mut reg = ValueRegistry::new();
         reg.set_codebase_resolver(Box::new(|codebase: &str, repo_id: &str| {
             if codebase.contains("factory-host") && repo_id == "IDL:Geo/Point:1.0" {
-                Some(Box::new(|r: &mut BufferReader<'_>| {
-                    let x = i32::decode(r)?;
-                    let y = i32::decode(r)?;
+                Some(Box::new(|r: &mut Reader<'_>| {
+                    let x = r.read_i32()?;
+                    let y = r.read_i32()?;
                     Ok(Rc::new(Point { x, y }) as Rc<dyn Any>)
                 }) as ValueCtor)
             } else {
@@ -926,12 +965,12 @@ mod tests {
             }
         }));
 
-        let mut r = BufferReader::new(&bytes, Endianness::Big);
+        let mut r = Reader::new(&bytes, Endianness::Big);
         let v = ValueReader::new().read(&mut r, 0, &reg).unwrap().unwrap();
         assert_eq!(*v.downcast_ref::<Point>().unwrap(), Point { x: 1, y: 2 });
 
         // Without a resolver: the same bytes → error (no factory).
-        let mut r2 = BufferReader::new(&bytes, Endianness::Big);
+        let mut r2 = Reader::new(&bytes, Endianness::Big);
         assert!(
             ValueReader::new()
                 .read(&mut r2, 0, &ValueRegistry::new())
@@ -945,30 +984,28 @@ mod tests {
     /// derived tail contains a **nested chunked value** (`IDL:Inner:1.0`),
     /// terminated with its own end-tag (-2), then the outer end-tag (-1).
     fn chunked_with_nested_tail(e: Endianness) -> alloc::vec::Vec<u8> {
-        let mut w = BufferWriter::new(e);
-        w.write_u32(VALUE_TAG_BASE | VT_FLAG_CHUNKED | VT_REPO_LIST)
-            .unwrap(); // 0x7fffff0e
-        w.write_u32(2).unwrap();
-        w.write_string("IDL:Derived:1.0").unwrap();
-        w.write_string("IDL:Base:1.0").unwrap();
+        let mut w = Writer::new(e);
+        w.write_u32(VALUE_TAG_BASE | VT_FLAG_CHUNKED | VT_REPO_LIST); // 0x7fffff0e
+        w.write_u32(2);
+        w.write_string("IDL:Derived:1.0");
+        w.write_string("IDL:Base:1.0");
         // Data chunk 1: Base state (long id = 42).
-        w.align(4);
-        w.write_u32(4).unwrap();
-        w.write_u32(42).unwrap();
+        w.align_to(4);
+        w.write_u32(4);
+        w.write_u32(42);
         // Nested chunked value in the derived tail.
-        w.write_u32(VALUE_TAG_BASE | VT_FLAG_CHUNKED | VT_REPO_LIST)
-            .unwrap();
-        w.write_u32(1).unwrap();
-        w.write_string("IDL:Inner:1.0").unwrap();
-        w.align(4);
-        w.write_u32(4).unwrap(); // nested chunk size
-        w.write_u32(0x0bad_cafe).unwrap(); // nested state
-        w.align(4);
-        w.write_u32((-2i32) as u32).unwrap(); // nested end-tag (depth 2)
+        w.write_u32(VALUE_TAG_BASE | VT_FLAG_CHUNKED | VT_REPO_LIST);
+        w.write_u32(1);
+        w.write_string("IDL:Inner:1.0");
+        w.align_to(4);
+        w.write_u32(4); // nested chunk size
+        w.write_u32(0x0bad_cafe); // nested state
+        w.align_to(4);
+        w.write_u32((-2i32) as u32); // nested end-tag (depth 2)
         // Outer end-tag (depth 1).
-        w.align(4);
-        w.write_u32((-1i32) as u32).unwrap();
-        w.into_bytes()
+        w.align_to(4);
+        w.write_u32((-1i32) as u32);
+        w.finish()
     }
 
     #[test]
@@ -979,7 +1016,7 @@ mod tests {
             // tail must be consumed correctly (no error).
             let mut reg = ValueRegistry::new();
             base_ctor(&mut reg);
-            let mut r = BufferReader::new(&bytes, e);
+            let mut r = Reader::new(&bytes, e);
             let v = ValueReader::new().read(&mut r, 0, &reg).unwrap().unwrap();
             assert_eq!(*v.downcast_ref::<Base>().unwrap(), Base { id: 42 });
             // Entire value stream consumed (position at the end).
@@ -992,31 +1029,29 @@ mod tests {
         // Multi-level end-tag: ONE end-tag -1 closes the nested value
         // (depth 2) AND the outer one (depth 1) together (§15.3.4.3).
         let e = Endianness::Big;
-        let mut w = BufferWriter::new(e);
-        w.write_u32(VALUE_TAG_BASE | VT_FLAG_CHUNKED | VT_REPO_LIST)
-            .unwrap();
-        w.write_u32(2).unwrap();
-        w.write_string("IDL:Derived:1.0").unwrap();
-        w.write_string("IDL:Base:1.0").unwrap();
-        w.align(4);
-        w.write_u32(4).unwrap();
-        w.write_u32(42).unwrap(); // Base.id
+        let mut w = Writer::new(e);
+        w.write_u32(VALUE_TAG_BASE | VT_FLAG_CHUNKED | VT_REPO_LIST);
+        w.write_u32(2);
+        w.write_string("IDL:Derived:1.0");
+        w.write_string("IDL:Base:1.0");
+        w.align_to(4);
+        w.write_u32(4);
+        w.write_u32(42); // Base.id
         // Nested value …
-        w.write_u32(VALUE_TAG_BASE | VT_FLAG_CHUNKED | VT_REPO_LIST)
-            .unwrap();
-        w.write_u32(1).unwrap();
-        w.write_string("IDL:Inner:1.0").unwrap();
-        w.align(4);
-        w.write_u32(4).unwrap();
-        w.write_u32(0x0bad_cafe).unwrap();
+        w.write_u32(VALUE_TAG_BASE | VT_FLAG_CHUNKED | VT_REPO_LIST);
+        w.write_u32(1);
+        w.write_string("IDL:Inner:1.0");
+        w.align_to(4);
+        w.write_u32(4);
+        w.write_u32(0x0bad_cafe);
         // … shared end-tag -1 closes nested (2) AND outer (1).
-        w.align(4);
-        w.write_u32((-1i32) as u32).unwrap();
-        let bytes = w.into_bytes();
+        w.align_to(4);
+        w.write_u32((-1i32) as u32);
+        let bytes = w.finish();
 
         let mut reg = ValueRegistry::new();
         base_ctor(&mut reg);
-        let mut r = BufferReader::new(&bytes, e);
+        let mut r = Reader::new(&bytes, e);
         let v = ValueReader::new().read(&mut r, 0, &reg).unwrap().unwrap();
         assert_eq!(*v.downcast_ref::<Base>().unwrap(), Base { id: 42 });
         assert_eq!(r.position(), bytes.len());
@@ -1037,8 +1072,9 @@ mod tests {
         }
     }
     impl ValueMarshal for OuterBaseState {
-        fn marshal_state(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
-            self.id.encode(w)
+        fn marshal_state(&self, w: &mut Writer) -> Result<(), WireError> {
+            w.write_i32(self.id);
+            Ok(())
         }
     }
 
@@ -1053,8 +1089,9 @@ mod tests {
         }
     }
     impl ValueMarshal for InnerVal {
-        fn marshal_state(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
-            w.write_u32(self.word)
+        fn marshal_state(&self, w: &mut Writer) -> Result<(), WireError> {
+            w.write_u32(self.word);
+            Ok(())
         }
     }
 
@@ -1068,12 +1105,12 @@ mod tests {
                 extra: "hi".into(),
             });
 
-            let mut w1 = BufferWriter::new(e);
+            let mut w1 = Writer::new(e);
             ValueWriter::new()
                 .write_chunked(&mut w1, Some(&d), &["IDL:Base:1.0"])
                 .unwrap();
 
-            let mut w2 = BufferWriter::new(e);
+            let mut w2 = Writer::new(e);
             let node = ChunkedNode {
                 value: &d,
                 base_ids: &["IDL:Base:1.0"],
@@ -1083,11 +1120,7 @@ mod tests {
                 .write_chunked_tree(&mut w2, &node)
                 .unwrap();
 
-            assert_eq!(
-                w1.into_bytes(),
-                w2.into_bytes(),
-                "leaf tree != write_chunked"
-            );
+            assert_eq!(w1.finish(), w2.finish(), "leaf tree != write_chunked");
         }
     }
 
@@ -1110,12 +1143,12 @@ mod tests {
                 base_ids: &["IDL:Base:1.0"],
                 nested: core::slice::from_ref(&inner_node),
             };
-            let mut w = BufferWriter::new(e);
+            let mut w = Writer::new(e);
             ValueWriter::new()
                 .write_chunked_tree(&mut w, &outer_node)
                 .unwrap();
             assert_eq!(
-                w.into_bytes(),
+                w.finish(),
                 chunked_with_nested_tail(e),
                 "multi-chunk encode != hand-built nested-tail wire"
             );
@@ -1139,15 +1172,15 @@ mod tests {
                 base_ids: &["IDL:Base:1.0"],
                 nested: core::slice::from_ref(&inner_node),
             };
-            let mut w = BufferWriter::new(e);
+            let mut w = Writer::new(e);
             ValueWriter::new()
                 .write_chunked_tree(&mut w, &outer_node)
                 .unwrap();
-            let bytes = w.into_bytes();
+            let bytes = w.finish();
 
             let mut reg = ValueRegistry::new();
             base_ctor(&mut reg);
-            let mut r = BufferReader::new(&bytes, e);
+            let mut r = Reader::new(&bytes, e);
             let v = ValueReader::new().read(&mut r, 0, &reg).unwrap().unwrap();
             assert_eq!(*v.downcast_ref::<Base>().unwrap(), Base { id: 99 });
             assert_eq!(r.position(), bytes.len(), "nested tail not fully consumed");

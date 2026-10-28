@@ -15,6 +15,7 @@ BUILD    = build
 GOLDEN_DIR ?= .
 
 SRC_FINAL   = src/zerodds_wire.c test/sample_sensor.c test/test_byte_identity.c
+SRC_RANGE   = src/zerodds_wire.c test/test_range_edge.c
 SRC_NESTED  = src/zerodds_wire.c test/sample_nested.c test/test_nested.c
 SRC_MUTABLE = src/zerodds_wire.c test/sample_mutable.c test/test_mutable.c
 SRC_LOOP    = src/zerodds_wire.c src/zerodds_endpoint.c test/sample_sensor.c test/test_endpoint_loopback.c
@@ -26,6 +27,10 @@ SRC_REL_SM  = src/zerodds_endpoint.c test/test_reliable_sm.c
 SRC_EX_REL  = src/zerodds_endpoint.c examples/example_reliable.c
 SRC_REFL    = src/zerodds_wire.c src/zerodds_reflect.c test/test_reflect.c
 SRC_REFN    = src/zerodds_wire.c src/zerodds_reflect.c test/test_reflect_nested.c
+# XRCE session client (CREATE_CLIENT/CREATE/DELETE/WRITE_DATA/READ_DATA) --
+# self-contained, embeds its own byte-golden fixtures.
+SRC_XRCE_CLIENT = src/zerodds_xrce_client.c test/test_xrce_client.c
+BIN_XRCE_CLIENT = $(BUILD)/test_xrce_client
 # Modern (C11) async reactor add-on — additive, compiled with -std=c11.
 SRC_ASYNC   = src/zerodds_wire.c src/zerodds_endpoint.c src/zerodds_async.c test/sample_sensor.c test/test_async_loopback.c
 SRC_ASYNC_UDP = src/zerodds_wire.c src/zerodds_endpoint.c src/zerodds_async.c test/sample_sensor.c test/test_async_udp.c
@@ -41,6 +46,7 @@ BIN_EX_REL  = $(BUILD)/example_reliable
 BIN_BENCH_REL = $(BUILD)/bench_reliable_async
 BIN_REL_OVF = $(BUILD)/test_reliable_async_overflow
 BIN_FINAL   = $(BUILD)/test_byte_identity
+BIN_RANGE   = $(BUILD)/test_range_edge
 BIN_NESTED  = $(BUILD)/test_nested
 BIN_MUTABLE = $(BUILD)/test_mutable
 BIN_LOOP    = $(BUILD)/test_endpoint_loopback
@@ -59,7 +65,7 @@ SRC_EX_ASYNC = src/zerodds_wire.c src/zerodds_endpoint.c src/zerodds_async.c exa
 BIN_EX_SYNC  = $(BUILD)/example_sync
 BIN_EX_ASYNC = $(BUILD)/example_async
 
-all: $(BIN_FINAL) $(BIN_NESTED) $(BIN_MUTABLE) $(BIN_LOOP) $(BIN_XRCE) $(BIN_SERIAL) $(BIN_RECV) $(BIN_REL) $(BIN_REL_SM) $(BIN_EX_REL) $(BIN_BENCH_REL) $(BIN_REL_OVF) $(BIN_REFL) $(BIN_REFN) $(BIN_ASYNC) $(BIN_ASYNC_UDP)
+all: $(BIN_FINAL) $(BIN_RANGE) $(BIN_NESTED) $(BIN_MUTABLE) $(BIN_LOOP) $(BIN_XRCE) $(BIN_SERIAL) $(BIN_RECV) $(BIN_REL) $(BIN_REL_SM) $(BIN_EX_REL) $(BIN_BENCH_REL) $(BIN_REL_OVF) $(BIN_REFL) $(BIN_REFN) $(BIN_ASYNC) $(BIN_ASYNC_UDP) $(BIN_XRCE_CLIENT)
 
 $(BIN_EX_SYNC): $(SRC_EX_SYNC) include/zerodds_wire.h include/zerodds_endpoint.h
 	@mkdir -p $(BUILD)
@@ -126,9 +132,17 @@ $(BIN_REFN): $(SRC_REFN) include/zerodds_reflect.h
 	@mkdir -p $(BUILD)
 	$(CC) $(CFLAGS) $(INCLUDE) $(SRC_REFN) -o $(BIN_REFN)
 
+$(BIN_XRCE_CLIENT): $(SRC_XRCE_CLIENT) include/zerodds_xrce_client.h
+	@mkdir -p $(BUILD)
+	$(CC) $(CFLAGS) $(INCLUDE) $(SRC_XRCE_CLIENT) -o $(BIN_XRCE_CLIENT)
+
 $(BIN_FINAL): $(SRC_FINAL) include/zerodds_wire.h test/sample_sensor.h
 	@mkdir -p $(BUILD)
 	$(CC) $(CFLAGS) $(INCLUDE) $(SRC_FINAL) -o $(BIN_FINAL)
+
+$(BIN_RANGE): $(SRC_RANGE) include/zerodds_wire.h
+	@mkdir -p $(BUILD)
+	$(CC) $(CFLAGS) $(INCLUDE) $(SRC_RANGE) -o $(BIN_RANGE)
 
 $(BIN_NESTED): $(SRC_NESTED) include/zerodds_wire.h test/sample_nested.h
 	@mkdir -p $(BUILD)
@@ -140,6 +154,7 @@ $(BIN_MUTABLE): $(SRC_MUTABLE) include/zerodds_wire.h test/sample_mutable.h
 
 test: all
 	$(RUNNER) $(BIN_FINAL) $(GOLDEN_DIR)/golden_le.bin $(GOLDEN_DIR)/golden_be.bin
+	$(RUNNER) $(BIN_RANGE)
 	$(RUNNER) $(BIN_NESTED) $(GOLDEN_DIR)/golden_nested_le.bin $(GOLDEN_DIR)/golden_nested_be.bin
 	$(RUNNER) $(BIN_MUTABLE) $(GOLDEN_DIR)/golden_mutable_le.bin $(GOLDEN_DIR)/golden_mutable_be.bin
 	$(RUNNER) $(BIN_LOOP)
@@ -155,6 +170,7 @@ test: all
 	$(RUNNER) $(BIN_REFN) $(GOLDEN_DIR)/golden_nested_le.bin $(GOLDEN_DIR)/golden_nested_be.bin
 	$(RUNNER) $(BIN_ASYNC)
 	$(RUNNER) $(BIN_ASYNC_UDP)
+	$(RUNNER) $(BIN_XRCE_CLIENT)
 
 clean:
 	rm -rf $(BUILD)

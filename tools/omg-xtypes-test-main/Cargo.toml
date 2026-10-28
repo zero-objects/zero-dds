@@ -1,0 +1,44 @@
+[package]
+name = "zerodds-omg-xtypes-test-main"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "OMG dds-xtypes v2 interoperability-test-suite reference client for ZeroDDS (github.com/omg-dds/dds-xtypes, branch feature/xml-driver-enhanced)."
+homepage = "https://zerodds.org"
+readme = "README.md"
+keywords = ["dds", "xtypes", "interop", "omg"]
+categories = ["command-line-utilities", "network-programming"]
+# Not published to crates.io — an OMG interop-suite reference client, not
+# a ZeroDDS product artifact.
+publish = false
+
+[lints]
+workspace = true
+
+[lib]
+name = "zerodds_omg_xtypes_test_main"
+path = "src/lib.rs"
+
+[[bin]]
+name = "zerodds_test_main"
+path = "src/main.rs"
+
+[dependencies]
+zerodds-dcps = { version = "1.0.0-rc.7", path = "../../crates/dcps" }
+zerodds-types = { version = "1.0.0-rc.7", path = "../../crates/types" }
+zerodds-ast = { version = "1.0.0-rc.7", path = "../../crates/ast" }
+zerodds-ast-core = { version = "1.0.0-rc.7", path = "../../crates/ast-core" }
+zerodds-ast-layout = { version = "1.0.0-rc.7", path = "../../crates/ast-layout" }
+zerodds-wire-codec = { version = "1.0.0-rc.7", path = "../../crates/wire-codec" }
+zerodds-idl-compose = { version = "1.0.0-rc.7", path = "../../crates/idl-compose" }
+zerodds-xml-compose = { version = "1.0.0-rc.7", path = "../../crates/xml-compose" }
+# The suite's data files exist twice, and the JSON half has a hole:
+# `data/xml/union_bitmask.xml` ships with no `data/json` twin. Reading
+# the XML the suite's own C client reads closes it. Read-only use of
+# `parse_xml_tree` / `XmlElement`.
+zerodds-xml = { version = "1.0.0-rc.7", path = "../../crates/xml" }
+serde_json = "1"
+ctrlc = { workspace = true }

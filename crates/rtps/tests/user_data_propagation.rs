@@ -35,6 +35,7 @@ use zerodds_rtps::wire_types::{EntityId, Guid, GuidPrefix, ProtocolVersion, Vend
 #[test]
 fn publication_user_data_roundtrip() {
     let orig = PublicationBuiltinTopicData {
+        vendor_id: Some(zerodds_rtps::wire_types::VendorId::ZERODDS),
         key: Guid::new(
             GuidPrefix::from_bytes([1; 12]),
             EntityId::user_writer_with_key([0xAA; 3]),
@@ -43,6 +44,7 @@ fn publication_user_data_roundtrip() {
         topic_name: "T".into(),
         type_name: "X".into(),
         durability: DurabilityKind::Volatile,
+        durability_service: zerodds_qos::DurabilityServiceQosPolicy::default(),
         reliability: ReliabilityQos {
             kind: ReliabilityKind::Reliable,
             max_blocking_time: RtpsDuration::from_secs(1),
@@ -60,14 +62,22 @@ fn publication_user_data_roundtrip() {
         topic_data: vec![0xAA, 0xBB, 0xCC, 0xDD, 0xEE],
         group_data: vec![0x10],
         type_information: None,
+        type_id_v1: None,
+        type_object_v1: None,
         data_representation: vec![],
         security_info: None,
+        sym_cipher_algo_info: None,
+        data_tags: Default::default(),
+        properties: Default::default(),
         service_instance_name: None,
         related_entity_guid: None,
         topic_aliases: None,
         type_identifier: zerodds_types::TypeIdentifier::None,
         unicast_locators: vec![],
         multicast_locators: vec![],
+        group_guid: None,
+        data_max_size_serialized: None,
+        entity_name: None,
     };
 
     let bytes = orig.to_pl_cdr_le().expect("encode");
@@ -82,6 +92,7 @@ fn publication_empty_user_data_omits_pid() {
     // The default (empty Vec) is NOT written as a parameter — if
     // we leave everything empty, the decoder should see the same defaults.
     let orig = PublicationBuiltinTopicData {
+        vendor_id: Some(zerodds_rtps::wire_types::VendorId::ZERODDS),
         key: Guid::new(
             GuidPrefix::from_bytes([2; 12]),
             EntityId::user_writer_with_key([0xBB; 3]),
@@ -90,6 +101,7 @@ fn publication_empty_user_data_omits_pid() {
         topic_name: "T".into(),
         type_name: "X".into(),
         durability: DurabilityKind::Volatile,
+        durability_service: zerodds_qos::DurabilityServiceQosPolicy::default(),
         reliability: ReliabilityQos::default(),
         ownership: zerodds_qos::OwnershipKind::Shared,
         ownership_strength: 0,
@@ -104,14 +116,22 @@ fn publication_empty_user_data_omits_pid() {
         topic_data: vec![],
         group_data: vec![],
         type_information: None,
+        type_id_v1: None,
+        type_object_v1: None,
         data_representation: vec![],
         security_info: None,
+        sym_cipher_algo_info: None,
+        data_tags: Default::default(),
+        properties: Default::default(),
         service_instance_name: None,
         related_entity_guid: None,
         topic_aliases: None,
         type_identifier: zerodds_types::TypeIdentifier::None,
         unicast_locators: vec![],
         multicast_locators: vec![],
+        group_guid: None,
+        data_max_size_serialized: None,
+        entity_name: None,
     };
 
     let bytes = orig.to_pl_cdr_le().expect("encode");
@@ -124,6 +144,8 @@ fn publication_empty_user_data_omits_pid() {
 #[test]
 fn subscription_user_data_roundtrip() {
     let orig = SubscriptionBuiltinTopicData {
+        content_filter_unreadable: false,
+        vendor_id: Some(zerodds_rtps::wire_types::VendorId::ZERODDS),
         key: Guid::new(
             GuidPrefix::from_bytes([3; 12]),
             EntityId::user_reader_with_key([0xCC; 3]),
@@ -136,6 +158,7 @@ fn subscription_user_data_roundtrip() {
         ownership: zerodds_qos::OwnershipKind::Shared,
         liveliness: zerodds_qos::LivelinessQosPolicy::default(),
         deadline: zerodds_qos::DeadlineQosPolicy::default(),
+        time_based_filter: zerodds_qos::TimeBasedFilterQosPolicy::default(),
         latency_budget: zerodds_qos::LatencyBudgetQosPolicy::default(),
         destination_order: zerodds_qos::DestinationOrderQosPolicy::default(),
         presentation: zerodds_qos::PresentationQosPolicy::default(),
@@ -143,16 +166,26 @@ fn subscription_user_data_roundtrip() {
         user_data: vec![0xDE, 0xAD, 0xBE, 0xEF],
         topic_data: vec![0xCA, 0xFE],
         group_data: vec![0xBA, 0xBE],
+        type_consistency: zerodds_types::qos::TypeConsistencyEnforcement::default(),
         type_information: None,
+        type_id_v1: None,
+        type_object_v1: None,
         data_representation: vec![],
         content_filter: None,
         security_info: None,
+        sym_cipher_algo_info: None,
+        data_tags: Default::default(),
+        properties: Default::default(),
         service_instance_name: None,
         related_entity_guid: None,
         topic_aliases: None,
         type_identifier: zerodds_types::TypeIdentifier::None,
         unicast_locators: vec![],
         multicast_locators: vec![],
+        expects_inline_qos: false,
+        group_guid: None,
+        type_consistency_announced: true,
+        entity_name: None,
     };
 
     let bytes = orig.to_pl_cdr_le().expect("encode");
@@ -174,6 +207,7 @@ fn participant_user_data_roundtrip() {
         metatraffic_unicast_locators: Vec::new(),
         metatraffic_multicast_locators: Vec::new(),
         domain_id: Some(7),
+        domain_tag: Default::default(),
         builtin_endpoint_set: endpoint_flag::PARTICIPANT_ANNOUNCER,
         lease_duration: RtpsDuration::from_secs(100),
         user_data: vec![0x42, 0x43, 0x44],
@@ -184,6 +218,11 @@ fn participant_user_data_roundtrip() {
         sig_algo_info: None,
         kx_algo_info: None,
         sym_cipher_algo_info: None,
+        available_builtin_endpoints_ext: 0,
+        expects_inline_qos: false,
+        manual_liveliness_count: None,
+        builtin_endpoint_qos: None,
+        entity_name: None,
     };
 
     let bytes = orig.to_pl_cdr_le();
@@ -194,7 +233,7 @@ fn participant_user_data_roundtrip() {
 #[test]
 fn user_data_large_payload_32kib() {
     // 32 KiB payload — stays under the u16 PID-length limit (wire
-    // Parameter-Length ist u16 = max 64 KiB inkl. Header).
+    // Parameter length is u16 = max 64 KiB incl. header).
     let payload: Vec<u8> = (0..32 * 1024).map(|i| (i & 0xFF) as u8).collect();
     let orig = ParticipantBuiltinTopicData {
         guid: Guid::new(GuidPrefix::from_bytes([5; 12]), EntityId::PARTICIPANT),
@@ -206,6 +245,7 @@ fn user_data_large_payload_32kib() {
         metatraffic_unicast_locators: Vec::new(),
         metatraffic_multicast_locators: Vec::new(),
         domain_id: Some(7),
+        domain_tag: Default::default(),
         builtin_endpoint_set: 0,
         lease_duration: RtpsDuration::from_secs(100),
         user_data: payload.clone(),
@@ -216,6 +256,11 @@ fn user_data_large_payload_32kib() {
         sig_algo_info: None,
         kx_algo_info: None,
         sym_cipher_algo_info: None,
+        available_builtin_endpoints_ext: 0,
+        expects_inline_qos: false,
+        manual_liveliness_count: None,
+        builtin_endpoint_qos: None,
+        entity_name: None,
     };
 
     let bytes = orig.to_pl_cdr_le();

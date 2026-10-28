@@ -1,0 +1,10 @@
+// array of an odd-sized structure
+@final struct Odd {
+    long a;
+    short b;
+};
+
+@final struct Sample {
+    Odd items[2];
+    octet tail;
+};

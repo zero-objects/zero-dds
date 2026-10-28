@@ -5,6 +5,7 @@
 
 use alloc::boxed::Box;
 use alloc::string::ToString;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::ffi::c_int;
 use core::ptr;
@@ -13,7 +14,9 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use zerodds_dcps::qos::{DataWriterQos, DurabilityKind, ReliabilityKind};
-use zerodds_dcps::runtime::UserWriterConfig;
+use zerodds_dcps::runtime::{DcpsRuntime, UserWriterConfig};
+use zerodds_rtps::wire_types::EntityId;
+use zerodds_rtps::writer_group::WriterGroup;
 
 use crate::ZeroDdsStatus;
 use crate::entities::{
@@ -40,67 +43,229 @@ pub unsafe extern "C" fn zerodds_pub_get_participant(
     unsafe { (*pub_).participant }
 }
 
-/// Suspend publications (Spec §2.2.2.4.1.10). Sets a flag — the
-/// hot path queues writes instead of sending them, until `resume_publications`.
+/// Suspend publications (DDS 1.4 §2.2.2.4.1.8), a hint. Each call wants
+/// its own `resume_publications`.
 ///
 /// # Safety
 /// `pub_` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_pub_suspend_publications(pub_: *mut ZeroDdsPublisher) -> c_int {
+    // SAFETY: a non-null `pub_` is a live publisher handle (DDS 1.4 §2.2.2.1.1.7).
+    if let Some(rc) = unsafe { crate::entity_ffi::not_enabled(pub_) } {
+        return rc;
+    }
     if pub_.is_null() {
         return ZeroDdsStatus::BadHandle as c_int;
     }
     // SAFETY: see fn # Safety doc — pub_ NULL-checked above.
-    unsafe {
-        if let Ok(mut g) = (*pub_).suspended.lock() {
-            *g = true;
-        }
-    }
+    let Ok(mut g) = (unsafe { &*pub_ }).suspended.lock() else {
+        return ZeroDdsStatus::PreconditionNotMet as c_int;
+    };
+    *g = g.saturating_add(1);
     ZeroDdsStatus::Ok as c_int
 }
 
-/// Resume publications.
+/// Resume publications (DDS 1.4 §2.2.2.4.1.9): "The call to
+/// resume_publications must match a previous call to suspend_publications.
+/// Otherwise the operation will return the error PRECONDITION_NOT_MET." It
+/// returned OK.
 ///
 /// # Safety
 /// `pub_` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_pub_resume_publications(pub_: *mut ZeroDdsPublisher) -> c_int {
+    // SAFETY: a non-null `pub_` is a live publisher handle (DDS 1.4 §2.2.2.1.1.7).
+    if let Some(rc) = unsafe { crate::entity_ffi::not_enabled(pub_) } {
+        return rc;
+    }
     if pub_.is_null() {
         return ZeroDdsStatus::BadHandle as c_int;
     }
     // SAFETY: see fn # Safety doc — pub_ NULL-checked above.
-    unsafe {
-        if let Ok(mut g) = (*pub_).suspended.lock() {
-            *g = false;
+    let Ok(mut g) = (unsafe { &*pub_ }).suspended.lock() else {
+        return ZeroDdsStatus::PreconditionNotMet as c_int;
+    };
+    match g.checked_sub(1) {
+        Some(n) => {
+            *g = n;
+            ZeroDdsStatus::Ok as c_int
         }
+        None => ZeroDdsStatus::PreconditionNotMet as c_int,
     }
-    ZeroDdsStatus::Ok as c_int
 }
 
-/// begin_coherent_changes (Spec §2.2.2.4.1.12). In RC1 a no-bracket
-/// marker — a spec-conformant tracker at the publisher level; the coherent-set
-/// result wire frames live at the writer level and take effect independently.
+/// `begin_coherent_changes` (DDS 1.4 §2.2.2.4.1.10): opens a coherent set
+/// on every DataWriter of the publisher; their changes carry
+/// `PID_COHERENT_SET` until the matching `end_coherent_changes`
+/// (DDSI-RTPS 2.5 §8.7.6). The calls nest. A writer created while the set is
+/// open joins it. Under PRESENTATION `access_scope` GROUP the set spans the
+/// writers and its changes carry `PID_GROUP_COHERENT_SET` (§8.7.5).
 ///
 /// # Safety
 /// `pub_` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_pub_begin_coherent_changes(pub_: *mut ZeroDdsPublisher) -> c_int {
+    // SAFETY: a non-null `pub_` is a live publisher handle (DDS 1.4 §2.2.2.1.1.7).
+    if let Some(rc) = unsafe { crate::entity_ffi::not_enabled(pub_) } {
+        return rc;
+    }
     if pub_.is_null() {
         return ZeroDdsStatus::BadHandle as c_int;
+    }
+    // SAFETY: see fn # Safety doc — pub_ NULL-checked above; the writers come
+    // from pub_create_datawriter (Box::into_raw).
+    unsafe {
+        let pp = &*pub_;
+        let Ok(mut depth) = pp.coherent_depth.lock() else {
+            return ZeroDdsStatus::Error as c_int;
+        };
+        *depth += 1;
+        if *depth > 1 {
+            return ZeroDdsStatus::Ok as c_int;
+        }
+        if let Some(group) = writer_group(pp) {
+            group.begin_coherent_set();
+        }
+        for dw in writers_of(pp) {
+            if (*dw).rt.begin_user_writer_coherent_set((*dw).eid).is_err() {
+                *depth -= 1;
+                return ZeroDdsStatus::Error as c_int;
+            }
+        }
     }
     ZeroDdsStatus::Ok as c_int
 }
 
-/// end_coherent_changes.
+/// `end_coherent_changes` (DDS 1.4 §2.2.2.4.1.9): the last of the nested
+/// calls closes the set on every writer and sends the end-of-coherent-set
+/// marker (DDSI-RTPS 2.5 §8.7.6); a writer that wrote nothing in the set
+/// sends none. Without an open set `ZERODDS_PRECONDITION_NOT_MET`.
 ///
 /// # Safety
 /// `pub_` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_pub_end_coherent_changes(pub_: *mut ZeroDdsPublisher) -> c_int {
+    // SAFETY: a non-null `pub_` is a live publisher handle (DDS 1.4 §2.2.2.1.1.7).
+    if let Some(rc) = unsafe { crate::entity_ffi::not_enabled(pub_) } {
+        return rc;
+    }
     if pub_.is_null() {
         return ZeroDdsStatus::BadHandle as c_int;
     }
-    ZeroDdsStatus::Ok as c_int
+    // SAFETY: see fn # Safety doc — pub_ NULL-checked above; the writers come
+    // from pub_create_datawriter (Box::into_raw).
+    unsafe {
+        let pp = &*pub_;
+        let Ok(mut depth) = pp.coherent_depth.lock() else {
+            return ZeroDdsStatus::Error as c_int;
+        };
+        if *depth == 0 {
+            return ZeroDdsStatus::PreconditionNotMet as c_int;
+        }
+        *depth -= 1;
+        if *depth > 0 {
+            return ZeroDdsStatus::Ok as c_int;
+        }
+        // GROUP scope: the set spans the writers, and each of them sends an
+        // end-of-coherent-set DATA at the same group sequence number
+        // (DDSI-RTPS 2.5 §8.7.6). A set that holds no change ends without.
+        let group_end = existing_writer_group(pp).and_then(|group| group.end_coherent_set());
+        let mut status = ZeroDdsStatus::Ok;
+        for dw in writers_of(pp) {
+            let ended = match group_end {
+                Some(end) => (*dw).rt.end_user_writer_group_coherent_set((*dw).eid, end),
+                None => (*dw).rt.end_user_writer_coherent_set((*dw).eid),
+            };
+            if ended.is_err() {
+                status = ZeroDdsStatus::Error;
+            }
+        }
+        status as c_int
+    }
+}
+
+/// The publisher's PRESENTATION has `access_scope` GROUP.
+fn group_scope(pp: &ZeroDdsPublisher) -> bool {
+    pp.qos.lock().is_ok_and(|q| {
+        matches!(
+            q.presentation.access_scope,
+            zerodds_qos::PresentationAccessScope::Group
+        )
+    })
+}
+
+/// A copy of the publisher's writer list.
+fn writers_of(pp: &ZeroDdsPublisher) -> Vec<*mut ZeroDdsDataWriter> {
+    pp.datawriters
+        .lock()
+        .map(|list| list.clone())
+        .unwrap_or_default()
+}
+
+/// The group of a GROUP-scope publisher, created on first use; `None` for
+/// INSTANCE and TOPIC scope.
+fn writer_group(pp: &ZeroDdsPublisher) -> Option<Arc<WriterGroup>> {
+    if !group_scope(pp) {
+        return None;
+    }
+    let mut group = pp.group.lock().ok()?;
+    Some(Arc::clone(
+        group.get_or_insert_with(|| Arc::new(WriterGroup::new())),
+    ))
+}
+
+/// The group if one was created.
+fn existing_writer_group(pp: &ZeroDdsPublisher) -> Option<Arc<WriterGroup>> {
+    pp.group.lock().ok()?.as_ref().map(Arc::clone)
+}
+
+/// DDSI-RTPS 2.5 §8.7.6: "Writers are not allowed to be added or removed
+/// from a Publisher from the time that a coherent set begins until after
+/// it ends" — for a GROUP-scope publisher, whose set spans its writers.
+fn writers_may_change(pp: &ZeroDdsPublisher) -> bool {
+    !(group_scope(pp) && pp.coherent_depth.lock().is_ok_and(|d| *d > 0))
+}
+
+/// Records the publisher's writers in its group, if it has one.
+///
+/// # Safety
+/// The writers of `pp` are valid.
+unsafe fn update_group_writers(pp: &ZeroDdsPublisher) {
+    if let Some(group) = existing_writer_group(pp) {
+        let ids: Vec<EntityId> = writers_of(pp)
+            .into_iter()
+            // A writer not registered with the runtime yet has no part in a
+            // coherent set; it joins when it is enabled.
+            // SAFETY: see fn # Safety doc.
+            .filter(|dw| unsafe { (**dw).lifecycle.is_registered() })
+            .map(|dw| {
+                // SAFETY: see fn # Safety doc.
+                unsafe { (*dw).eid }
+            })
+            .collect();
+        group.set_writers(&ids);
+    }
+}
+
+/// What a new writer takes from its publisher (as the Rust API's
+/// `create_datawriter` does): under GROUP scope the group, from which it
+/// draws its group sequence numbers, and the writer set its changes name;
+/// inside an open coherent set the set.
+///
+/// # Safety
+/// The writers of `pp` are valid; `dw` is in its list.
+unsafe fn join_publisher(pp: &ZeroDdsPublisher, rt: &DcpsRuntime, eid: EntityId) -> bool {
+    if let Some(group) = writer_group(pp) {
+        // SAFETY: see fn # Safety doc.
+        unsafe { update_group_writers(pp) };
+        if rt.set_user_writer_group(eid, Some(group)).is_err() {
+            return false;
+        }
+    }
+    if pp.coherent_depth.lock().is_ok_and(|d| *d > 0) {
+        let _ = rt.begin_user_writer_coherent_set(eid);
+    }
+    true
 }
 
 /// wait_for_acknowledgments(timeout_ms) — waits until all DWs are
@@ -113,6 +278,10 @@ pub unsafe extern "C" fn zerodds_pub_wait_for_acknowledgments(
     pub_: *mut ZeroDdsPublisher,
     timeout_ms: u64,
 ) -> c_int {
+    // SAFETY: a non-null `pub_` is a live publisher handle (DDS 1.4 §2.2.2.1.1.7).
+    if let Some(rc) = unsafe { crate::entity_ffi::not_enabled(pub_) } {
+        return rc;
+    }
     if pub_.is_null() {
         return ZeroDdsStatus::BadHandle as c_int;
     }
@@ -165,7 +334,6 @@ pub unsafe extern "C" fn zerodds_pub_create_datawriter(
     // from dp_create_publisher; qos NULL-tolerant.
     unsafe {
         let pp = &*pub_;
-        let tt = &*topic;
 
         // The participant is required to reach the runtime.
         let dp_handle = pp.participant;
@@ -187,59 +355,16 @@ pub unsafe extern "C" fn zerodds_pub_create_datawriter(
             dw_qos_from_c(qos)
         };
 
-        let cfg = UserWriterConfig {
-            topic_name: tt.name.to_string(),
-            type_name: tt.type_name.to_string(),
-            reliable: matches!(qos.reliability.kind, ReliabilityKind::Reliable),
-            durability: qos.durability.kind,
-            deadline: qos.deadline.clone(),
-            latency_budget: Default::default(),
-            destination_order: Default::default(),
-            lifespan: qos.lifespan.clone(),
-            liveliness: qos.liveliness.clone(),
-            ownership: qos.ownership.kind,
-            ownership_strength: qos.ownership_strength.value,
-            // QB-cluster: plumb PARTITION from the Publisher/writer QoS onto the
-            // endpoint config so `partitions_overlap` (DDS 1.4 §2.2.3.10) gates
-            // matching. Previously hardcoded empty → every writer landed in the
-            // default partition regardless of the requested names.
-            presentation: Default::default(),
-            partition: qos.partition.names.clone(),
-            user_data: qos.user_data.value.clone(),
-            topic_data: qos.topic_data.value.clone(),
-            group_data: qos.group_data.value.clone(),
-            type_identifier: zerodds_types::TypeIdentifier::default(),
-            data_representation_offer: qos.data_representation.clone(),
-        };
-        let eid = match rt.register_user_writer(cfg) {
-            Ok(e) => e,
-            Err(_) => return ptr::null_mut(),
-        };
-        // QB-cluster: wire HISTORY keep-last DEPTH onto the runtime writer slot
-        // (DDS 1.4 §2.2.3.18) so the TransientLocal retain path caps per-instance
-        // retained samples. KeepAll → unbounded.
-        {
-            use zerodds_qos::HistoryKind;
-            let depth = match qos.history.kind {
-                HistoryKind::KeepLast => qos.history.depth.max(1) as usize,
-                HistoryKind::KeepAll => usize::MAX,
-            };
-            let _ = rt.set_user_writer_history_depth(eid, depth);
-        }
-
-        let dw = Box::new(ZeroDdsDataWriter {
-            publisher: pub_,
+        // SAFETY: `pub_` and `topic` are the non-null handles checked above.
+        new_datawriter(
+            pub_,
             topic,
             rt,
-            eid,
-            qos: Mutex::new(qos),
-            partition_out: Mutex::new(Default::default()),
-        });
-        let dw_ptr = Box::into_raw(dw);
-        if let Ok(mut list) = pp.datawriters.lock() {
-            list.push(dw_ptr);
-        }
-        dw_ptr
+            qos,
+            zerodds_types::TypeIdentifier::default(),
+            None,
+            true,
+        )
     }
 }
 
@@ -252,7 +377,7 @@ pub unsafe extern "C" fn zerodds_pub_create_datawriter(
 /// [`zerodds_pub_create_datawriter`] — which advertises
 /// `TypeIdentifier::default()` (== None) — it deserializes `type_object_bytes`,
 /// registers the object into the shared TypeLookup registry via
-/// [`crate::register_type_object_from_bytes`], derives the strongly-hashed
+/// `crate::register_type_object_from_bytes`, derives the strongly-hashed
 /// `TypeIdentifier` and sets the writer slot's `type_identifier` from it
 /// **before the endpoint is published** (via `register_user_writer`). There is
 /// therefore no discovery window in which the endpoint is matchable while still
@@ -274,15 +399,79 @@ pub unsafe extern "C" fn zerodds_pub_create_datawriter_typed(
     type_object_bytes: *const u8,
     len: usize,
 ) -> *mut ZeroDdsDataWriter {
+    // SAFETY: the unchanged public entry point forwards its caller contract.
+    unsafe { create_datawriter_typed(pub_, topic, qos, type_object_bytes, len, None) }
+}
+
+/// Creates a typed writer with an explicit generated-code wire contract.
+/// `is_keyed` is 0 or 1, `extensibility` is 0 (final), 1 (appendable), or
+/// 2 (mutable), and `representation` is 0 (XCDR1) or 2 (XCDR2).
+/// The caller must supply little-endian payload bodies in that representation.
+/// The offer is fixed before discovery and cannot subsequently be changed.
+/// Invalid enum values return NULL, without creating an endpoint.
+///
+/// # Safety
+/// Same pointer/lifetime requirements as [`zerodds_pub_create_datawriter_typed`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn zerodds_pub_create_datawriter_typed_wire(
+    pub_: *mut ZeroDdsPublisher,
+    topic: *mut ZeroDdsTopic,
+    qos: *const ZeroDdsDataWriterQos,
+    type_object_bytes: *const u8,
+    len: usize,
+    is_keyed: c_int,
+    extensibility: c_int,
+    representation: c_int,
+) -> *mut ZeroDdsDataWriter {
+    use zerodds_types::qos::ExtensibilityForRepr;
+    let ext = match extensibility {
+        0 => ExtensibilityForRepr::Final,
+        1 => ExtensibilityForRepr::Appendable,
+        2 => ExtensibilityForRepr::Mutable,
+        _ => return ptr::null_mut(),
+    };
+    let repr = match representation {
+        0 => 0_i16,
+        2 => 2_i16,
+        _ => return ptr::null_mut(),
+    };
+    if !matches!(is_keyed, 0 | 1) {
+        return ptr::null_mut();
+    }
+    // SAFETY: forwards the documented pointer contract after enum validation.
+    unsafe {
+        create_datawriter_typed(
+            pub_,
+            topic,
+            qos,
+            type_object_bytes,
+            len,
+            Some((is_keyed == 1, ext, repr)),
+        )
+    }
+}
+
+// SAFETY: `pub_` and `topic` must each be null or point to a valid
+// ZeroDdsPublisher/ZeroDdsTopic; `qos` must be null or readable for
+// size_of::<ZeroDdsDataWriterQos>(); `type_object_bytes` must point to `len`
+// readable bytes for the caller's registration pledge; `wire` carries an
+// extensibility/representation pair the caller already validated. Nulls and
+// the missing runtime are refused below before any dereference.
+unsafe fn create_datawriter_typed(
+    pub_: *mut ZeroDdsPublisher,
+    topic: *mut ZeroDdsTopic,
+    qos: *const ZeroDdsDataWriterQos,
+    type_object_bytes: *const u8,
+    len: usize,
+    wire: Option<(bool, zerodds_types::qos::ExtensibilityForRepr, i16)>,
+) -> *mut ZeroDdsDataWriter {
     if pub_.is_null() || topic.is_null() || type_object_bytes.is_null() || len == 0 {
         return ptr::null_mut();
     }
-    // SAFETY: see fn # Safety doc — pub_+topic+type_object_bytes NULL-checked
-    // above; participant from dp_create_publisher; qos NULL-tolerant;
-    // type_object_bytes points to `len` readable bytes (caller pledge).
+    // SAFETY: the contract above holds; every pointer was null-checked
+    // before this block and the participant handle is re-checked below.
     unsafe {
         let pp = &*pub_;
-        let tt = &*topic;
 
         let dp_handle = pp.participant;
         if dp_handle.is_null() {
@@ -301,7 +490,7 @@ pub unsafe extern "C" fn zerodds_pub_create_datawriter_typed(
             None => return ptr::null_mut(),
         };
 
-        let qos: DataWriterQos = if qos.is_null() {
+        let mut qos: DataWriterQos = if qos.is_null() {
             pp.default_dw_qos
                 .lock()
                 .map(|g| g.clone())
@@ -310,54 +499,182 @@ pub unsafe extern "C" fn zerodds_pub_create_datawriter_typed(
             dw_qos_from_c(qos)
         };
 
-        let cfg = UserWriterConfig {
-            topic_name: tt.name.to_string(),
-            type_name: tt.type_name.to_string(),
-            reliable: matches!(qos.reliability.kind, ReliabilityKind::Reliable),
-            durability: qos.durability.kind,
-            deadline: qos.deadline.clone(),
-            latency_budget: Default::default(),
-            destination_order: Default::default(),
-            lifespan: qos.lifespan.clone(),
-            liveliness: qos.liveliness.clone(),
-            ownership: qos.ownership.kind,
-            ownership_strength: qos.ownership_strength.value,
-            presentation: Default::default(),
-            partition: qos.partition.names.clone(),
-            user_data: qos.user_data.value.clone(),
-            topic_data: qos.topic_data.value.clone(),
-            group_data: qos.group_data.value.clone(),
-            // F-TYPES-3 / #24: derived from the registered TypeObject (not None).
-            type_identifier,
-            data_representation_offer: qos.data_representation.clone(),
-        };
-        let eid = match rt.register_user_writer(cfg) {
-            Ok(e) => e,
-            Err(_) => return ptr::null_mut(),
-        };
-        {
-            use zerodds_qos::HistoryKind;
-            let depth = match qos.history.kind {
-                HistoryKind::KeepLast => qos.history.depth.max(1) as usize,
-                HistoryKind::KeepAll => usize::MAX,
-            };
-            let _ = rt.set_user_writer_history_depth(eid, depth);
+        if let Some((_, _, repr)) = wire {
+            qos.data_representation = Some(alloc::vec![repr]);
         }
 
+        // SAFETY: `pub_` and `topic` are the non-null handles checked above.
+        let keyed = crate::type_object_keyed_from_bytes(&rt, bytes);
+        new_datawriter(pub_, topic, rt, qos, type_identifier, wire, keyed)
+    }
+}
+
+/// What both writer constructors share once the QoS and the type's identity
+/// are decided: the handle with the id the runtime will know the writer by,
+/// noted with its publisher. The writer is registered with the runtime —
+/// announced and matched — when it is enabled: at once if its publisher
+/// enables what it creates, at `zerodds_dw_enable` otherwise (DDS 1.4
+/// §2.2.2.1.1.7, §2.2.3.20).
+///
+/// # Safety
+/// `pub_` and `topic` are non-null, live handles.
+unsafe fn new_datawriter(
+    pub_: *mut ZeroDdsPublisher,
+    topic: *mut ZeroDdsTopic,
+    rt: Arc<DcpsRuntime>,
+    qos: DataWriterQos,
+    type_identifier: zerodds_types::TypeIdentifier,
+    wire: Option<(bool, zerodds_types::qos::ExtensibilityForRepr, i16)>,
+    keyed: bool,
+) -> *mut ZeroDdsDataWriter {
+    // SAFETY: the caller's contract.
+    unsafe {
+        let pp = &*pub_;
+        if !writers_may_change(pp) {
+            return ptr::null_mut();
+        }
+        let eid = rt.reserve_user_writer_id(wire.map_or(keyed, |w| w.0));
         let dw = Box::new(ZeroDdsDataWriter {
+            instances: zerodds_dcps::instance_tracker::InstanceTracker::new(),
             publisher: pub_,
             topic,
             rt,
             eid,
             qos: Mutex::new(qos),
             partition_out: Mutex::new(Default::default()),
+            lifecycle: crate::entity_ffi::Lifecycle::new(false),
         });
         let dw_ptr = Box::into_raw(dw);
+        crate::entities::note_status_entity(dw_ptr, crate::entities::StatusEntityKind::DataWriter);
+        (*dw_ptr).lifecycle.set_registration(
+            writer_registration(dw_ptr as usize, type_identifier, wire),
+            None,
+        );
         if let Ok(mut list) = pp.datawriters.lock() {
             list.push(dw_ptr);
         }
+        if crate::entity_ffi::publisher_autoenables(pp) && (*dw_ptr).lifecycle.enable().is_err() {
+            if let Ok(mut list) = pp.datawriters.lock() {
+                list.retain(|x| *x != dw_ptr);
+            }
+            update_group_writers(pp);
+            drop(Box::from_raw(dw_ptr));
+            return ptr::null_mut();
+        }
         dw_ptr
     }
+}
+
+/// The registration of the writer at `dw`: the runtime gets the writer under
+/// its reserved id with the QoS the writer has when it is enabled, then the
+/// slot takes what it takes beside the announcement.
+fn writer_registration(
+    dw: usize,
+    type_identifier: zerodds_types::TypeIdentifier,
+    wire: Option<(bool, zerodds_types::qos::ExtensibilityForRepr, i16)>,
+) -> crate::entity_ffi::Registration {
+    Box::new(move |_| {
+        // SAFETY: the registration runs from the handle's own lifecycle, so
+        // the handle at `dw` is alive; its publisher and topic outlive it.
+        let (dwr, pp, tt) = unsafe {
+            let dwr = &*(dw as *const ZeroDdsDataWriter);
+            (dwr, &*dwr.publisher, &*dwr.topic)
+        };
+        let rt = &dwr.rt;
+        let eid = dwr.eid;
+        let mut qos: DataWriterQos = dwr
+            .qos
+            .lock()
+            .map(|g| g.clone())
+            .map_err(|_| ZeroDdsStatus::PreconditionNotMet)?;
+        if let Some((_, _, repr)) = wire {
+            qos.data_representation = Some(alloc::vec![repr]);
+        }
+        let scoped = publisher_scoped(pp, &qos);
+        let cfg = UserWriterConfig {
+            topic_name: tt.name.to_string(),
+            type_name: tt.type_name.to_string(),
+            reliable: matches!(qos.reliability.kind, ReliabilityKind::Reliable),
+            durability: qos.durability.kind,
+            durability_service: qos.durability_service,
+            deadline: qos.deadline.clone(),
+            // The application's, as every other policy here: both were
+            // left at their defaults, and DESTINATION_ORDER decides a match
+            // (DDS 1.4 §2.2.3.17).
+            latency_budget: qos.latency_budget,
+            destination_order: qos.destination_order,
+            lifespan: qos.lifespan.clone(),
+            liveliness: qos.liveliness.clone(),
+            ownership: qos.ownership.kind,
+            ownership_strength: qos.ownership_strength.value,
+            transport_priority: qos.transport_priority.value,
+            // PARTITION, PRESENTATION and GROUP_DATA are the Publisher's
+            // (DDS 1.4 §2.2.3.13, §2.2.3.6, §2.2.3.3); `publisher_scoped`
+            // says which of the two QoS each comes from.
+            presentation: scoped.presentation,
+            partition: scoped.partition,
+            user_data: qos.user_data.value.clone(),
+            // TOPIC_DATA is the Topic's (DDS 1.4 §2.2.3.2, §2.2.5): the endpoint announces the
+            // Topic's value unless its own QoS carries one.
+            topic_data: if qos.topic_data.value.is_empty() {
+                tt.qos
+                    .lock()
+                    .map(|topic_qos| topic_qos.topic_data.value.clone())
+                    .unwrap_or_default()
+            } else {
+                qos.topic_data.value.clone()
+            },
+            group_data: scoped.group_data,
+            type_identifier: type_identifier.clone(),
+            data_representation_offer: qos.data_representation.clone(),
+            group_entity_id: pp.entity_id,
+            property: qos.property.clone(),
+            data_tags: qos.data_tags.clone(),
+            data_max_size_serialized: None,
+            entity_name: None,
+        };
+        rt.register_user_writer_as(eid, cfg, zerodds_dcps::runtime::GroupTopicQos::default())
+            .map_err(|_| ZeroDdsStatus::Error)?;
+        let undo = |status| {
+            rt.remove_user_writer(eid);
+            status
+        };
+        if let Some((_, ext, _)) = wire {
+            if rt.set_user_writer_wire_extensibility(eid, ext).is_err()
+                || rt.lock_user_writer_representation(eid).is_err()
+            {
+                return Err(undo(ZeroDdsStatus::Error));
+            }
+        }
+        {
+            use zerodds_qos::HistoryKind;
+            // QB-cluster: wire HISTORY keep-last DEPTH onto the runtime writer slot
+            // (DDS 1.4 §2.2.3.18) so the TransientLocal retain path caps per-instance
+            // retained samples. KeepAll → unbounded.
+            let depth = match qos.history.kind {
+                HistoryKind::KeepLast => qos.history.depth.max(1) as usize,
+                HistoryKind::KeepAll => usize::MAX,
+            };
+            let _ = rt.set_user_writer_history_depth(eid, depth);
+        }
+        // DDS 1.4 §2.2.3.19 with §2.2.2.4.2.11: a write that finds no room
+        // waits for an acknowledgement up to max_blocking_time.
+        if rt
+            .set_user_writer_resource_limits(
+                eid,
+                qos.resource_limits,
+                qos.reliability.max_blocking_time,
+            )
+            .is_err()
+        {
+            return Err(undo(ZeroDdsStatus::Error));
+        }
+        // SAFETY: `pp` is the writer's live publisher; its writers are valid.
+        if !unsafe { join_publisher(pp, rt, eid) } {
+            return Err(undo(ZeroDdsStatus::Error));
+        }
+        Ok(())
+    })
 }
 
 /// Deletes a DataWriter.
@@ -378,6 +695,9 @@ pub unsafe extern "C" fn zerodds_pub_delete_datawriter(
             return ZeroDdsStatus::PreconditionNotMet as c_int;
         }
         let pp = &*pub_;
+        if !writers_may_change(pp) {
+            return ZeroDdsStatus::PreconditionNotMet as c_int;
+        }
         if let Ok(mut list) = pp.datawriters.lock() {
             let n = list.len();
             list.retain(|x| *x != dw);
@@ -385,6 +705,7 @@ pub unsafe extern "C" fn zerodds_pub_delete_datawriter(
                 return ZeroDdsStatus::BadHandle as c_int;
             }
         }
+        update_group_writers(pp);
         // Drop any zero-copy SHM loan state keyed by this writer's (runtime, eid).
         #[cfg(feature = "flatdata-loan")]
         {
@@ -446,6 +767,9 @@ pub unsafe extern "C" fn zerodds_pub_delete_contained_entities(
     // SAFETY: see fn # Safety doc — pub_ NULL-checked above; datawriters from
     // pub_create_datawriter (Box::into_raw).
     unsafe {
+        if !writers_may_change(&*pub_) {
+            return ZeroDdsStatus::PreconditionNotMet as c_int;
+        }
         let dws: Vec<*mut ZeroDdsDataWriter> = (*pub_)
             .datawriters
             .lock()
@@ -496,38 +820,235 @@ pub unsafe extern "C" fn zerodds_dw_get_publisher(
 /// idl codegen or DynamicData). The encap header prefix is added by the
 /// runtime.
 ///
+/// Takes no key hash. For a keyed writer whose type is registered (the
+/// `*_typed`/`*_typed_wire` creates) the runtime derives the sample's
+/// KeyHash from `payload` through that type, as
+/// [`zerodds_dw_write_keyed`] would carry it. Any other writer's sample
+/// goes out under the all-zero key (the topic's single instance, for a
+/// keyless type, or an unkeyed default identity for a keyed type with no
+/// registered type), and such a writer records no canonical key holder
+/// for it — a later
+/// [`zerodds_dw_dispose`]/[`crate::extra_ffi::zerodds_dw_unregister_instance`]
+/// for it falls straight to the `PID_KEY_HASH`-only marker form (see that
+/// function's own doc comment).
+///
 /// # Safety
-/// `dw`, `payload[0..len]` valid. `handle` is a spec-mandatory param that
-/// identifies the instance — `0` = HANDLE_NIL = "writer computes it".
+/// `dw`, `payload[0..len]` valid. `handle` is `0` (HANDLE_NIL: the instance
+/// comes from the key) or the handle `zerodds_dw_register_instance` returned
+/// for the key of the sample; the handle of another existing instance is
+/// `PreconditionNotMet`, one that names no instance `BadParameter` (DDS 1.4
+/// §2.2.2.4.2.11).
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dw_write(
     dw: *mut ZeroDdsDataWriter,
     payload: *const u8,
     len: usize,
-    _handle: u64,
+    handle: u64,
 ) -> c_int {
+    // SAFETY: a non-null `dw` is a live DataWriter handle (DDS 1.4 §2.2.2.1.1.7).
+    if let Some(rc) = unsafe { crate::entity_ffi::not_enabled(dw) } {
+        return rc;
+    }
     if dw.is_null() || (payload.is_null() && len > 0) {
         return ZeroDdsStatus::BadParameter as c_int;
     }
     // SAFETY: see fn # Safety doc — dw+payload NULL-checked above; payload[0..len]
     // valid if len > 0 (caller pledge).
-    let (rt, eid, buf) = unsafe {
-        let dwr = &*dw;
-        let buf = if len == 0 {
-            Vec::new()
+    let (dwr, bytes) = unsafe {
+        let bytes: &[u8] = if len == 0 {
+            &[]
         } else {
-            slice::from_raw_parts(payload, len).to_vec()
+            slice::from_raw_parts(payload, len)
         };
-        (dwr.rt.clone(), dwr.eid, buf)
+        (&*dw, bytes)
     };
-    match rt.write_user_sample(eid, buf) {
-        Ok(()) => ZeroDdsStatus::Ok as c_int,
-        Err(_) => ZeroDdsStatus::Error as c_int,
+    let key = match derived_key_hash(dwr, bytes) {
+        Err(status) => return status,
+        Ok(key) => key,
+    };
+    if let Some(rc) = write_handle_refused(dwr, key, handle) {
+        return rc;
+    }
+    match key {
+        Some(key) => write_keyed(dwr, bytes, key, None),
+        None => match dwr.rt.write_user_sample_borrowed(dwr.eid, bytes) {
+            Ok(()) => ZeroDdsStatus::Ok as c_int,
+            Err(e) => crate::write_status(&e),
+        },
     }
 }
 
-/// Writes with a source timestamp. RC1 surface: forwards to `write`
-/// — the source timestamp lands in the future inline-QoS implementation.
+/// DDS 1.4 §2.2.2.4.2.11: `handle` of a write is HANDLE_NIL (0), or "must
+/// correspond to the value returned by register_instance when the instance
+/// (identified by its key) was registered". `key` is the KeyHash of the
+/// sample, `None` for the one instance of a topic without a key.
+/// `PreconditionNotMet` for the handle of another existing instance,
+/// `BadParameter` for one that names no instance.
+fn write_handle_refused(
+    dwr: &ZeroDdsDataWriter,
+    key: Option<[u8; 16]>,
+    handle: u64,
+) -> Option<c_int> {
+    if handle == 0 {
+        return None;
+    }
+    let handle = zerodds_dcps::instance_handle::InstanceHandle::from_raw(handle);
+    if dwr.instances.lookup(&key.unwrap_or([0u8; 16])) == Some(handle) {
+        return None;
+    }
+    Some(if dwr.instances.get_by_handle(handle).is_some() {
+        ZeroDdsStatus::PreconditionNotMet as c_int
+    } else {
+        ZeroDdsStatus::BadParameter as c_int
+    })
+}
+
+/// The KeyHash `dwr`'s registered keyed type yields from `bytes`, the
+/// sample's encoded body — `Ok(None)` for a writer whose type is unkeyed or
+/// not registered, and `BadParameter` for a keyed, registered type the body
+/// does not decode as.
+fn derived_key_hash(dwr: &ZeroDdsDataWriter, bytes: &[u8]) -> Result<Option<[u8; 16]>, c_int> {
+    if dwr.eid.entity_kind.topic_kind() != Some(zerodds_rtps::wire_types::TopicKind::WithKey) {
+        return Ok(None);
+    }
+    match dwr.rt.writer_sample_key_material(dwr.eid, bytes) {
+        Ok((key, _holder)) => Ok(Some(key)),
+        Err(zerodds_dcps::DdsError::WireError { .. }) => Err(ZeroDdsStatus::BadParameter as c_int),
+        Err(_) => Ok(None),
+    }
+}
+
+/// A sample under its KeyHash, through this writer's instance registry —
+/// the path [`zerodds_dw_write_keyed`] takes, and the one
+/// [`zerodds_dw_write`] takes once it has derived the key.
+fn write_keyed(
+    dwr: &ZeroDdsDataWriter,
+    bytes: &[u8],
+    key: [u8; 16],
+    source_ts: Option<zerodds_rtps::header_extension::HeTimestamp>,
+) -> c_int {
+    let limit = match dwr.qos.lock() {
+        Ok(qos) => qos.resource_limits.max_instances,
+        Err(_) => return ZeroDdsStatus::Error as c_int,
+    };
+    if dwr
+        .instances
+        .ensure_registered_limited(key, limit)
+        .is_none()
+    {
+        return ZeroDdsStatus::OutOfResources as c_int;
+    }
+    match dwr
+        .rt
+        .write_user_sample_keyed(dwr.eid, bytes, key, source_ts)
+    {
+        Ok(()) => ZeroDdsStatus::Ok as c_int,
+        Err(e) => crate::write_status(&e),
+    }
+}
+
+/// The 16-byte DDS KeyHash `dw`'s registered keyed type yields from the
+/// encoded sample `payload[0..len]` — the key [`zerodds_dw_write`] writes
+/// the same bytes under — into `out_key_hash[0..16]`.
+///
+/// For a binding that holds the sample but no key function of its own:
+/// the C++ PSM's `DataWriter<T>::dispose_instance`, `register_instance`,
+/// `lookup_instance` and `unregister_instance` encode the sample and ask
+/// this, so the lifecycle call names the instance the write did.
+///
+/// `PreconditionNotMet` when the writer's type is not registered as a keyed
+/// `CompleteTypeObject`; `BadParameter` when the body does not decode as it.
+///
+/// # Safety
+/// `dw` valid; `payload[0..len]` readable when `len > 0`;
+/// `out_key_hash[0..16]` writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn zerodds_dw_sample_key_hash(
+    dw: *mut ZeroDdsDataWriter,
+    payload: *const u8,
+    len: usize,
+    out_key_hash: *mut u8,
+) -> c_int {
+    if dw.is_null() || out_key_hash.is_null() || (payload.is_null() && len > 0) {
+        return ZeroDdsStatus::BadParameter as c_int;
+    }
+    // SAFETY: pointers checked above; the caller pledges a live writer and
+    // `len` readable bytes.
+    let (dwr, bytes) = unsafe {
+        let bytes: &[u8] = if len == 0 {
+            &[]
+        } else {
+            slice::from_raw_parts(payload, len)
+        };
+        (&*dw, bytes)
+    };
+    match dwr.rt.writer_sample_key_material(dwr.eid, bytes) {
+        Ok((key, _holder)) => {
+            // SAFETY: `out_key_hash` is 16 writable bytes per the caller pledge.
+            unsafe { ptr::copy_nonoverlapping(key.as_ptr(), out_key_hash, 16) };
+            ZeroDdsStatus::Ok as c_int
+        }
+        Err(zerodds_dcps::DdsError::WireError { .. }) => ZeroDdsStatus::BadParameter as c_int,
+        Err(_) => ZeroDdsStatus::PreconditionNotMet as c_int,
+    }
+}
+
+/// Writes a pre-serialized sample with its actual 16-byte DDS KeyHash.
+/// No key is inferred from the complete payload or a truncated instance handle.
+/// The runtime receives the key for keyed history and sample delivery.
+///
+/// This is the only C-FFI write function that takes an explicit key hash
+/// (`zerodds_dw_write`/`zerodds_dw_write_w_timestamp`/
+/// [`crate::zerodds_writer_write`] derive it from the body for a keyed
+/// writer whose type is registered, and write under the all-zero key
+/// otherwise). The runtime also uses this call to remember the instance's
+/// canonical key holder from `payload`'s body (`UserWriterSlot::
+/// instance_key_holders`, once per key hash, decoded through the
+/// TypeLookup registry if this writer's type resolves there) — see
+/// [`zerodds_dw_dispose`] for what that buys a later dispose/unregister of
+/// the same instance.
+///
+/// # Safety
+/// `dw` must be valid, `payload[0..len]` readable when `len > 0`, and
+/// `key_hash[0..key_len]` readable. A null payload is allowed only for zero bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn zerodds_dw_write_keyed(
+    dw: *mut ZeroDdsDataWriter,
+    payload: *const u8,
+    len: usize,
+    key_hash: *const u8,
+    key_len: usize,
+) -> c_int {
+    // SAFETY: a non-null `dw` is a live DataWriter handle (DDS 1.4 §2.2.2.1.1.7).
+    if let Some(rc) = unsafe { crate::entity_ffi::not_enabled(dw) } {
+        return rc;
+    }
+    if dw.is_null() || (payload.is_null() && len > 0) || key_hash.is_null() || key_len != 16 {
+        return ZeroDdsStatus::BadParameter as c_int;
+    }
+    // SAFETY: pointers and lengths were checked above; the caller pledges
+    // readable storage for each nonempty slice and a live writer handle.
+    let (dwr, bytes, key) = unsafe {
+        let bytes = if len == 0 {
+            &[]
+        } else {
+            slice::from_raw_parts(payload, len)
+        };
+        let mut key = [0u8; 16];
+        key.copy_from_slice(slice::from_raw_parts(key_hash, 16));
+        (&*dw, bytes, key)
+    };
+    write_keyed(dwr, bytes, key, None)
+}
+
+/// Writes with an explicit source timestamp (Spec §2.2.2.4.2.16
+/// `write_w_timestamp`), otherwise identical to [`zerodds_dw_write`] --
+/// `handle` follows the rule of that function, and the key is derived from
+/// the body the same way. `ts_sec`/
+/// `ts_nanosec` become the sample's actual SOURCE_TIMESTAMP on the wire
+/// INFO_TS and the same-runtime intra-process dispatch, not just local
+/// bookkeeping: this used to forward straight to `zerodds_dw_write`,
+/// silently discarding both.
 ///
 /// # Safety
 /// Like `zerodds_dw_write`.
@@ -537,14 +1058,63 @@ pub unsafe extern "C" fn zerodds_dw_write_w_timestamp(
     payload: *const u8,
     len: usize,
     handle: u64,
-    _ts_sec: i32,
-    _ts_nanosec: u32,
+    ts_sec: i32,
+    ts_nanosec: u32,
 ) -> c_int {
-    // SAFETY: see fn # Safety doc — delegation to zerodds_dw_write with an identical contract.
-    unsafe { zerodds_dw_write(dw, payload, len, handle) }
+    // SAFETY: a non-null `dw` is a live DataWriter handle (DDS 1.4 §2.2.2.1.1.7).
+    if let Some(rc) = unsafe { crate::entity_ffi::not_enabled(dw) } {
+        return rc;
+    }
+    // A nanosecond field of one second or more is not a time (DDS 1.4
+    // §2.2.2.4.2.16 answers BAD_PARAMETER for an invalid timestamp).
+    if dw.is_null() || (payload.is_null() && len > 0) || ts_nanosec >= 1_000_000_000 {
+        return ZeroDdsStatus::BadParameter as c_int;
+    }
+    // SAFETY: see fn # Safety doc — dw+payload NULL-checked above; payload[0..len]
+    // valid if len > 0 (caller pledge).
+    let (dwr, bytes) = unsafe {
+        let bytes: &[u8] = if len == 0 {
+            &[]
+        } else {
+            slice::from_raw_parts(payload, len)
+        };
+        (&*dw, bytes)
+    };
+    let ts = zerodds_dcps::time::time_to_he_timestamp(zerodds_dcps::Time::new(ts_sec, ts_nanosec));
+    let key = match derived_key_hash(dwr, bytes) {
+        Err(status) => return status,
+        Ok(key) => key,
+    };
+    if let Some(rc) = write_handle_refused(dwr, key, handle) {
+        return rc;
+    }
+    match key {
+        Some(key) => write_keyed(dwr, bytes, key, Some(ts)),
+        None => match dwr.rt.write_user_sample_stamped(dwr.eid, bytes, ts) {
+            Ok(()) => ZeroDdsStatus::Ok as c_int,
+            Err(e) => crate::write_status(&e),
+        },
+    }
 }
 
 /// Dispose: emits a DISPOSED lifecycle marker for the instance.
+///
+/// This call itself hands the runtime only `key_hash`, no key value — but
+/// unlike [`crate::zerodds_writer_dispose`] (which truly never has one),
+/// `write_user_lifecycle` (`crates/dcps/src/runtime.rs`) falls back to the
+/// key holder THIS writer remembered from `key_hash`'s first
+/// [`zerodds_dw_write_keyed`] call, if any, and this writer's type resolves
+/// as a `CompleteTypeObject` in the TypeLookup registry: the DISPOSED
+/// marker then goes out with the full `serializedKey` (RTPS 2.5 §9.4.2.11
+/// K flag set), the only dispose form Eclipse Cyclone 11.0.1, Fast DDS
+/// 3.6.1 and OpenDDS 3.35 were all measured to act on
+/// (`Test_FinalInstanceState_1`). An instance this writer never wrote via
+/// `zerodds_dw_write_keyed` (only `zerodds_dw_write`/
+/// `zerodds_dw_write_w_timestamp`, or `zerodds_dw_write_keyed` under a
+/// different key hash), or whose type does not resolve there, still gets
+/// the `PID_KEY_HASH`-only marker instead — RTI Connext 7.7.0 and CoreDX
+/// 6.15.3 accept that form too, so this is a strictly wider compatibility
+/// set than the marker used to be, never narrower.
 ///
 /// # Safety
 /// `dw` valid; `key_hash[0..16]` readable. `handle` informational.
@@ -552,7 +1122,37 @@ pub unsafe extern "C" fn zerodds_dw_write_w_timestamp(
 pub unsafe extern "C" fn zerodds_dw_dispose(
     dw: *mut ZeroDdsDataWriter,
     key_hash: *const u8,
+    handle: u64,
+) -> c_int {
+    // SAFETY: a non-null `dw` is a live DataWriter handle (DDS 1.4 §2.2.2.1.1.7).
+    if let Some(rc) = unsafe { crate::entity_ffi::not_enabled(dw) } {
+        return rc;
+    }
+    // SAFETY: the caller's contract.
+    unsafe { dispose_at(dw, key_hash, handle, None) }
+}
+
+/// The key a writer tracks an instance under. DDS 1.4 §2.2.1.2.2: a topic
+/// without a key has one instance, so a writer of such a topic (entityKind
+/// `NO_KEY`) names it by the all-zero key whatever key the caller passes.
+pub(crate) fn instance_key_of(eid: EntityId, key: [u8; 16]) -> [u8; 16] {
+    if eid.entity_kind == zerodds_rtps::wire_types::EntityKind::UserWriterNoKey {
+        [0u8; 16]
+    } else {
+        key
+    }
+}
+
+/// [`zerodds_dw_dispose`] with the marker's source timestamp (DDS 1.4
+/// §2.2.2.4.2.11 `dispose_w_timestamp`).
+///
+/// # Safety
+/// As `zerodds_dw_dispose`.
+pub(crate) unsafe fn dispose_at(
+    dw: *mut ZeroDdsDataWriter,
+    key_hash: *const u8,
     _handle: u64,
+    source_timestamp: Option<zerodds_rtps::header_extension::HeTimestamp>,
 ) -> c_int {
     if dw.is_null() || key_hash.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
@@ -564,13 +1164,13 @@ pub unsafe extern "C" fn zerodds_dw_dispose(
         let raw = slice::from_raw_parts(key_hash, 16);
         let mut k = [0u8; 16];
         k.copy_from_slice(raw);
-        (dwr.rt.clone(), dwr.eid, k)
+        (dwr.rt.clone(), dwr.eid, instance_key_of(dwr.eid, k))
     };
     // Status bits: DISPOSED per RTPS inline-QoS status info §9.6.4.10.
     const STATUS_DISPOSED: u32 = 0x0000_0001;
-    match rt.write_user_lifecycle(eid, k, STATUS_DISPOSED) {
+    match rt.write_user_lifecycle(eid, k, None, STATUS_DISPOSED, source_timestamp) {
         Ok(()) => ZeroDdsStatus::Ok as c_int,
-        Err(_) => ZeroDdsStatus::Error as c_int,
+        Err(e) => crate::write_status(&e),
     }
 }
 
@@ -583,6 +1183,10 @@ pub unsafe extern "C" fn zerodds_dw_wait_for_acknowledgments(
     dw: *mut ZeroDdsDataWriter,
     timeout_ms: u64,
 ) -> c_int {
+    // SAFETY: a non-null `dw` is a live DataWriter handle (DDS 1.4 §2.2.2.1.1.7).
+    if let Some(rc) = unsafe { crate::entity_ffi::not_enabled(dw) } {
+        return rc;
+    }
     if dw.is_null() {
         return ZeroDdsStatus::BadHandle as c_int;
     }
@@ -606,6 +1210,10 @@ pub unsafe extern "C" fn zerodds_dw_wait_for_acknowledgments(
 /// `dw` valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zerodds_dw_assert_liveliness(dw: *mut ZeroDdsDataWriter) -> c_int {
+    // SAFETY: a non-null `dw` is a live DataWriter handle (DDS 1.4 §2.2.2.1.1.7).
+    if let Some(rc) = unsafe { crate::entity_ffi::not_enabled(dw) } {
+        return rc;
+    }
     if dw.is_null() {
         return ZeroDdsStatus::BadHandle as c_int;
     }
@@ -624,6 +1232,10 @@ pub unsafe extern "C" fn zerodds_dw_wait_for_matched(
     min: i32,
     timeout_ms: u64,
 ) -> c_int {
+    // SAFETY: a non-null `dw` is a live DataWriter handle (DDS 1.4 §2.2.2.1.1.7).
+    if let Some(rc) = unsafe { crate::entity_ffi::not_enabled(dw) } {
+        return rc;
+    }
     if dw.is_null() {
         return ZeroDdsStatus::BadHandle as c_int;
     }
@@ -684,7 +1296,8 @@ pub struct ZeroDdsOfferedIncompatibleQosStatus {
     pub last_policy_id: u32,
 }
 
-/// `LIVELINESS_LOST_STATUS` (Spec §2.2.2.4.2.x).
+/// `get_liveliness_lost_status` (DDS 1.4 §2.2.2.4.2). Reading resets the
+/// change field (§2.2.4.1).
 ///
 /// # Safety
 /// `dw` and `out` valid.
@@ -693,22 +1306,31 @@ pub unsafe extern "C" fn zerodds_dw_get_liveliness_lost_status(
     dw: *mut ZeroDdsDataWriter,
     out: *mut ZeroDdsLivelinessLostStatus,
 ) -> c_int {
+    // SAFETY: a non-null `dw` is a live DataWriter handle; the status of a disabled
+    // entity is untriggered (DDS 1.4 §2.2.2.1.1.7).
+    if unsafe { crate::entity_ffi::untriggered_if_disabled(dw, out) } {
+        return ZeroDdsStatus::Ok as c_int;
+    }
     if dw.is_null() || out.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
     // SAFETY: see fn # Safety doc — dw+out NULL-checked above.
     unsafe {
         let dwr = &*dw;
-        let lost = dwr.rt.user_writer_liveliness_lost(dwr.eid);
+        let st = dwr
+            .rt
+            .take_user_writer_liveliness_lost_status(dwr.eid)
+            .unwrap_or_default();
         *out = ZeroDdsLivelinessLostStatus {
-            total_count: lost as i32,
-            total_count_change: 0,
+            total_count: st.total_count,
+            total_count_change: st.total_count_change,
         };
     }
     ZeroDdsStatus::Ok as c_int
 }
 
-/// `OFFERED_DEADLINE_MISSED_STATUS`.
+/// `get_offered_deadline_missed_status` (DDS 1.4 §2.2.2.4.2). Reading
+/// resets the change field.
 ///
 /// # Safety
 /// `dw` and `out` valid.
@@ -717,23 +1339,39 @@ pub unsafe extern "C" fn zerodds_dw_get_offered_deadline_missed_status(
     dw: *mut ZeroDdsDataWriter,
     out: *mut ZeroDdsOfferedDeadlineMissedStatus,
 ) -> c_int {
+    // SAFETY: a non-null `dw` is a live DataWriter handle; the status of a disabled
+    // entity is untriggered (DDS 1.4 §2.2.2.1.1.7).
+    if unsafe { crate::entity_ffi::untriggered_if_disabled(dw, out) } {
+        return ZeroDdsStatus::Ok as c_int;
+    }
     if dw.is_null() || out.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
     // SAFETY: see fn # Safety doc — dw+out NULL-checked above.
     unsafe {
         let dwr = &*dw;
-        let n = dwr.rt.user_writer_offered_deadline_missed(dwr.eid);
+        let st = dwr
+            .rt
+            .take_user_writer_offered_deadline_missed_status(dwr.eid)
+            .unwrap_or_default();
         *out = ZeroDdsOfferedDeadlineMissedStatus {
-            total_count: n as i32,
-            total_count_change: 0,
-            last_instance_handle: 0,
+            total_count: st.total_count,
+            total_count_change: st.total_count_change,
+            // The runtime knows the instance by key hash; the writer's
+            // tracker holds its handle.
+            last_instance_handle: dwr
+                .rt
+                .user_writer_missed_deadline_instance(dwr.eid)
+                .and_then(|key| dwr.instances.lookup(&key))
+                .unwrap_or(st.last_instance_handle)
+                .as_raw(),
         };
     }
     ZeroDdsStatus::Ok as c_int
 }
 
-/// `OFFERED_INCOMPATIBLE_QOS_STATUS`.
+/// `get_offered_incompatible_qos_status` (DDS 1.4 §2.2.2.4.2). Reading
+/// resets the change field.
 ///
 /// # Safety
 /// `dw` and `out` valid.
@@ -742,13 +1380,21 @@ pub unsafe extern "C" fn zerodds_dw_get_offered_incompatible_qos_status(
     dw: *mut ZeroDdsDataWriter,
     out: *mut ZeroDdsOfferedIncompatibleQosStatus,
 ) -> c_int {
+    // SAFETY: a non-null `dw` is a live DataWriter handle; the status of a disabled
+    // entity is untriggered (DDS 1.4 §2.2.2.1.1.7).
+    if unsafe { crate::entity_ffi::untriggered_if_disabled(dw, out) } {
+        return ZeroDdsStatus::Ok as c_int;
+    }
     if dw.is_null() || out.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
     // SAFETY: see fn # Safety doc — dw+out NULL-checked above.
     unsafe {
         let dwr = &*dw;
-        let st = dwr.rt.user_writer_offered_incompatible_qos(dwr.eid);
+        let st = dwr
+            .rt
+            .take_user_writer_offered_incompatible_qos_status(dwr.eid)
+            .unwrap_or_default();
         *out = ZeroDdsOfferedIncompatibleQosStatus {
             total_count: st.total_count,
             total_count_change: st.total_count_change,
@@ -758,7 +1404,11 @@ pub unsafe extern "C" fn zerodds_dw_get_offered_incompatible_qos_status(
     ZeroDdsStatus::Ok as c_int
 }
 
-/// `PUBLICATION_MATCHED_STATUS`.
+/// `get_publication_matched_status` (DDS 1.4 §2.2.2.4.2): `total_count`
+/// counts every reader that ever matched, `current_count` those matched
+/// now, and the last handle is the reader that last joined or left.
+/// Reading resets the change fields. It wrote the matched count into both
+/// counts, 0 into both changes and HANDLE_NIL into the handle.
 ///
 /// # Safety
 /// `dw` and `out` valid.
@@ -767,19 +1417,27 @@ pub unsafe extern "C" fn zerodds_dw_get_publication_matched_status(
     dw: *mut ZeroDdsDataWriter,
     out: *mut ZeroDdsPublicationMatchedStatus,
 ) -> c_int {
+    // SAFETY: a non-null `dw` is a live DataWriter handle; the status of a disabled
+    // entity is untriggered (DDS 1.4 §2.2.2.1.1.7).
+    if unsafe { crate::entity_ffi::untriggered_if_disabled(dw, out) } {
+        return ZeroDdsStatus::Ok as c_int;
+    }
     if dw.is_null() || out.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
     // SAFETY: see fn # Safety doc — dw+out NULL-checked above.
     unsafe {
         let dwr = &*dw;
-        let n = dwr.rt.user_writer_matched_count(dwr.eid) as i32;
+        let st = dwr
+            .rt
+            .take_user_writer_publication_matched_status(dwr.eid)
+            .unwrap_or_default();
         *out = ZeroDdsPublicationMatchedStatus {
-            total_count: n,
-            total_count_change: 0,
-            current_count: n,
-            current_count_change: 0,
-            last_subscription_handle: 0,
+            total_count: st.total_count,
+            total_count_change: st.total_count_change,
+            current_count: st.current_count,
+            current_count_change: st.current_count_change,
+            last_subscription_handle: st.last_subscription_handle.as_raw(),
         };
     }
     ZeroDdsStatus::Ok as c_int
@@ -789,6 +1447,40 @@ pub unsafe extern "C" fn zerodds_dw_get_publication_matched_status(
 #[allow(dead_code)]
 fn _suppress_durability_warning() -> DurabilityKind {
     DurabilityKind::default()
+}
+
+/// A writer's PARTITION, PRESENTATION and GROUP_DATA — the three policies
+/// DDS 1.4 places on the Publisher (§2.2.3.13, §2.2.3.6, §2.2.3.3) and not
+/// on the DataWriter.
+pub(crate) struct PublisherScoped {
+    pub(crate) partition: Vec<String>,
+    pub(crate) presentation: zerodds_qos::PresentationQosPolicy,
+    pub(crate) group_data: Vec<u8>,
+}
+
+/// The Publisher's PARTITION, PRESENTATION and GROUP_DATA for a writer it
+/// creates. The C ABI's `ZeroDdsDataWriterQos` carries a partition and a
+/// group data of its own; where the caller filled one in, that one is used,
+/// so a caller that already copied the publisher's onto the writer — the
+/// TypeScript binding does — gets what it asked for. The endpoint used to
+/// take only the writer's, so a partition set where DDS puts it, on the
+/// Publisher, gated nothing: `A` on the publisher matched `B` on the
+/// subscriber (measured in zerodds-examples idl-conformance/_qos/cpp).
+pub(crate) fn publisher_scoped(pp: &ZeroDdsPublisher, qos: &DataWriterQos) -> PublisherScoped {
+    let publisher = pp.qos.lock().map(|g| g.clone()).unwrap_or_default();
+    PublisherScoped {
+        partition: if qos.partition.names.is_empty() {
+            publisher.partition.names
+        } else {
+            qos.partition.names.clone()
+        },
+        presentation: publisher.presentation,
+        group_data: if qos.group_data.value.is_empty() {
+            publisher.group_data.value
+        } else {
+            qos.group_data.value.clone()
+        },
+    }
 }
 
 #[cfg(test)]
@@ -801,6 +1493,17 @@ mod tests {
     use crate::participant_ffi::{
         zerodds_dp_create_publisher, zerodds_dp_create_topic, zerodds_dp_delete_contained_entities,
     };
+
+    /// DDS 1.4 §2.2.1.2.2: a writer of a topic without a key (entityKind
+    /// `NO_KEY`) names its one instance by the all-zero key, whatever key the
+    /// caller passes; a keyed writer keeps the key.
+    #[test]
+    fn a_keyless_writer_names_its_one_instance_by_the_zero_key() {
+        let keyless = EntityId::user_writer_no_key([1, 2, 3]);
+        let keyed = EntityId::user_writer_with_key([1, 2, 3]);
+        assert_eq!(instance_key_of(keyless, [7u8; 16]), [0u8; 16]);
+        assert_eq!(instance_key_of(keyed, [7u8; 16]), [7u8; 16]);
+    }
 
     fn mk_pub_topic(
         domain: u32,
@@ -828,6 +1531,103 @@ mod tests {
             zerodds_dp_delete_contained_entities(p);
             zerodds_dpf_delete_participant(f, p);
         }
+    }
+
+    /// DDS 1.4 §2.2.4.1 through C: `total_count` counts every reader that
+    /// ever matched, `current_count` follows an unmatch, a read takes the
+    /// changes, and the last handle names the reader. It wrote the match
+    /// count into both counts and 0 into the changes and the handle.
+    #[test]
+    fn publication_matched_through_c_is_cumulative_and_read_once() {
+        use crate::participant_ffi::zerodds_dp_create_subscriber;
+        use crate::subscriber_ffi::{zerodds_sub_create_datareader, zerodds_sub_delete_datareader};
+        let (participant, publisher, topic) = mk_pub_topic(38);
+        let ok = ZeroDdsStatus::Ok as c_int;
+        let mut st = ZeroDdsPublicationMatchedStatus::default();
+        // SAFETY: every handle comes from a create call on `participant`.
+        unsafe {
+            let writer = zerodds_pub_create_datawriter(publisher, topic, ptr::null());
+            let subscriber = zerodds_dp_create_subscriber(participant, ptr::null());
+            let first = zerodds_sub_create_datareader(subscriber, topic, ptr::null());
+            assert_eq!(
+                zerodds_dw_get_publication_matched_status(writer, &mut st),
+                ok
+            );
+            assert_eq!(
+                (
+                    st.total_count,
+                    st.total_count_change,
+                    st.current_count,
+                    st.current_count_change
+                ),
+                (1, 1, 1, 1)
+            );
+            assert_ne!(st.last_subscription_handle, 0);
+            let first_handle = st.last_subscription_handle;
+            assert_eq!(
+                zerodds_dw_get_publication_matched_status(writer, &mut st),
+                ok
+            );
+            assert_eq!((st.total_count_change, st.current_count_change), (0, 0));
+
+            assert_eq!(zerodds_sub_delete_datareader(subscriber, first), ok);
+            assert_eq!(
+                zerodds_dw_get_publication_matched_status(writer, &mut st),
+                ok
+            );
+            assert_eq!(
+                (st.total_count, st.current_count, st.current_count_change),
+                (1, 0, -1)
+            );
+            assert_eq!(st.last_subscription_handle, first_handle);
+
+            let _second = zerodds_sub_create_datareader(subscriber, topic, ptr::null());
+            assert_eq!(
+                zerodds_dw_get_publication_matched_status(writer, &mut st),
+                ok
+            );
+            assert_eq!(
+                (st.total_count, st.total_count_change, st.current_count),
+                (2, 1, 1)
+            );
+            assert_ne!(st.last_subscription_handle, first_handle);
+        }
+        cleanup(participant);
+    }
+
+    #[test]
+    fn keyed_write_refuses_invalid_key_lengths_and_null_storage() {
+        let (participant, publisher, topic) = mk_pub_topic(50);
+        // SAFETY: handles from mk_pub_topic and slices below are live. Invalid
+        // lengths/null combinations must be rejected before dereferencing.
+        unsafe {
+            let writer = zerodds_pub_create_datawriter(publisher, topic, ptr::null());
+            assert!(!writer.is_null());
+            let key = [7u8; 17];
+            for length in [0, 15, 17] {
+                assert_eq!(
+                    zerodds_dw_write_keyed(writer, ptr::null(), 0, key.as_ptr(), length),
+                    ZeroDdsStatus::BadParameter as c_int,
+                );
+            }
+            assert_eq!(
+                zerodds_dw_write_keyed(writer, ptr::null(), 0, ptr::null(), 16),
+                ZeroDdsStatus::BadParameter as c_int,
+            );
+            assert_eq!(
+                zerodds_dw_write_keyed(writer, ptr::null(), 1, key.as_ptr(), 16),
+                ZeroDdsStatus::BadParameter as c_int,
+            );
+            assert_eq!(
+                zerodds_dw_write_keyed(ptr::null_mut(), ptr::null(), 0, key.as_ptr(), 16),
+                ZeroDdsStatus::BadParameter as c_int,
+            );
+            assert_eq!(
+                zerodds_pub_delete_datawriter(publisher, writer),
+                ZeroDdsStatus::Ok as c_int
+            );
+        }
+        cleanup(participant);
     }
 
     #[test]
@@ -1028,6 +1828,103 @@ mod tests {
                 zerodds_dw_get_publication_matched_status(dw, &mut matched),
                 ok
             );
+        }
+        cleanup(p);
+    }
+
+    #[test]
+    fn typed_wire_creation_pins_representation_and_endpoint_kind() {
+        use zerodds_rtps::wire_types::TopicKind;
+        use zerodds_types::builder::{Extensibility, TypeObjectBuilder};
+        use zerodds_types::type_object::{CompleteTypeObject, TypeObject};
+
+        let object = TypeObject::Complete(CompleteTypeObject::Struct(
+            TypeObjectBuilder::struct_type("PubType")
+                .extensibility(Extensibility::Appendable)
+                .build_complete(),
+        ));
+        let bytes = object.to_bytes_le().unwrap();
+        let (p, pubh, topic) = mk_pub_topic(49);
+        // SAFETY: all entity pointers and bytes remain live until cleanup.
+        unsafe {
+            let sub = crate::participant_ffi::zerodds_dp_create_subscriber(p, ptr::null());
+            for representation in [0, 2] {
+                let writer = zerodds_pub_create_datawriter_typed_wire(
+                    pubh,
+                    topic,
+                    ptr::null(),
+                    bytes.as_ptr(),
+                    bytes.len(),
+                    0,
+                    1,
+                    representation,
+                );
+                assert!(!writer.is_null());
+                let writer = &*writer;
+                assert_eq!(writer.eid.entity_kind.topic_kind(), Some(TopicKind::NoKey));
+                assert_eq!(
+                    writer.rt.user_writer_offer_first(writer.eid),
+                    Some(representation as i16)
+                );
+                assert_eq!(
+                    writer.qos.lock().unwrap().data_representation,
+                    Some(alloc::vec![representation as i16])
+                );
+                assert!(
+                    writer
+                        .rt
+                        .set_user_writer_data_rep_override(writer.eid, Some(alloc::vec![2]))
+                        .is_err()
+                );
+                let reader = crate::subscriber_ffi::zerodds_sub_create_datareader_typed_wire(
+                    sub,
+                    topic,
+                    ptr::null(),
+                    bytes.as_ptr(),
+                    bytes.len(),
+                    0,
+                    representation,
+                );
+                assert!(!reader.is_null());
+                assert_eq!(
+                    (*reader).eid.entity_kind.topic_kind(),
+                    Some(TopicKind::NoKey)
+                );
+                assert_eq!(
+                    (*reader).qos.lock().unwrap().data_representation,
+                    Some(alloc::vec![representation as i16])
+                );
+            }
+            // In particular, the managed sample-info tag 1 is NOT native XCDR2.
+            for (keyed, ext, repr) in [(0, 1, 1), (2, 1, 2), (0, 3, 2), (0, 1, -1)] {
+                assert!(
+                    zerodds_pub_create_datawriter_typed_wire(
+                        pubh,
+                        topic,
+                        ptr::null(),
+                        bytes.as_ptr(),
+                        bytes.len(),
+                        keyed,
+                        ext,
+                        repr,
+                    )
+                    .is_null()
+                );
+            }
+            for (keyed, repr) in [(0, 1), (2, 2), (0, -1)] {
+                assert!(
+                    crate::subscriber_ffi::zerodds_sub_create_datareader_typed_wire(
+                        sub,
+                        topic,
+                        ptr::null(),
+                        bytes.as_ptr(),
+                        bytes.len(),
+                        keyed,
+                        repr,
+                    )
+                    .is_null()
+                );
+            }
         }
         cleanup(p);
     }

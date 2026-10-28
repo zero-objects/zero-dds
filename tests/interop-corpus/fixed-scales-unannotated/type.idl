@@ -1,0 +1,11 @@
+// `fixed` at several precisions and scales, unannotated
+typedef fixed<1,0> Digit;
+typedef fixed<5,2> Price;
+typedef fixed<31,10> Huge;
+
+struct Sample {
+    Digit d;
+    Price p;
+    Huge h;
+    octet tail;
+};

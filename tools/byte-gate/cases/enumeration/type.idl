@@ -1,0 +1,2 @@
+enum Colour { RED, GREEN, BLUE };
+@final struct Enu { Colour c; long x; };

@@ -1,0 +1,11 @@
+// SPDX-License-Identifier: Apache-2.0
+// Reconstructed source for optionals_gen.py. Extensibility left at the
+// specification default (appendable). See consts.idl for the "conf"
+// module-identity ambiguity shared with arrays.idl/consts.idl.
+module conf {
+  struct Optionals {
+    long required;
+    @optional long maybe;
+    @optional string note;
+  };
+};

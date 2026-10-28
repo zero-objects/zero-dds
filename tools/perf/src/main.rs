@@ -7,7 +7,7 @@
 //!
 //! Phase-5 D.2 Sub-Commands:
 //!
-//! * `zerodds-perf hw-info` — druckt HW-Crypto-Capabilities (CPU-Features
+//! * `zerodds-perf hw-info` — prints HW-Crypto-Capabilities (CPU-Features
 //!   + Backend-Label).
 //! * `zerodds-perf aes-gcm [--bytes N] [--block N] [--suite 128|256]` —
 //!   AES-GCM Throughput-Bench. Default: 100 MiB Total, 1 KiB Block,
@@ -42,15 +42,15 @@ fn main() {
 }
 
 fn cmd_monitor() -> i32 {
-    // Triggert ein paar Counter/Histogramm-Updates ueber den
-    // Crypto-Hot-Path und druckt anschliessend die Prometheus-
+    // Triggers a few counter/histogram updates via the
+    // Crypto hot path and then prints the Prometheus
     // Exposition (zerodds-monitor-1.0 §3).
     use zerodds_monitor::{Labels, default_registry, metric_names};
 
     let reg = default_registry();
     reg.set_help(
         metric_names::DDS_DCPS_SAMPLES_WRITTEN_TOTAL,
-        "Synthetisch durch zerodds-perf monitor",
+        "synthetic via zerodds-perf monitor",
     );
     reg.counter(
         metric_names::DDS_DCPS_SAMPLES_WRITTEN_TOTAL,
@@ -79,9 +79,9 @@ fn print_help() {
     println!("            [--suite 128|256]");
     println!("    monitor                              zerodds-monitor::Registry-Snapshot");
     println!(
-        "                                         als Prometheus-Text (zerodds-monitor-1.0 §3)"
+        "                                         as Prometheus text (zerodds-monitor-1.0 §3)"
     );
-    println!("    help                                 Diese Hilfe");
+    println!("    help                                 This help");
 }
 
 fn cmd_hw_info() -> i32 {
@@ -167,7 +167,7 @@ fn run_aes_gcm_bench(total_bytes: u64, block_size: usize, suite: AesSuite) -> i3
         caps.backend_label()
     );
 
-    // Master-Key + Buffer pre-allokieren (out of timing).
+    // Master-Key + Buffer pre-allocate (out of timing).
     let mut key_bytes = vec![0u8; suite.key_len()];
     for (i, b) in key_bytes.iter_mut().enumerate() {
         *b = (i & 0xFF) as u8;
@@ -193,7 +193,7 @@ fn run_aes_gcm_bench(total_bytes: u64, block_size: usize, suite: AesSuite) -> i3
         return 2;
     }
 
-    // ENCRYPT-Pfad.
+    // ENCRYPT path.
     let mut nonce_counter: u64 = 0;
     let aad = b"zerodds-perf";
     let start = Instant::now();
@@ -216,7 +216,7 @@ fn run_aes_gcm_bench(total_bytes: u64, block_size: usize, suite: AesSuite) -> i3
     let mb_per_s_enc = (total_bytes as f64) / (1024.0 * 1024.0) / elapsed_enc.as_secs_f64();
     println!("  encrypt: {mb_per_s_enc:>8.2} MiB/s   ({iters} blocks, {elapsed_enc:?})");
 
-    // DECRYPT-Pfad.
+    // DECRYPT path.
     let last_ct = buf.clone();
     let mut nonce_bytes = [0u8; 12];
     nonce_bytes[4..].copy_from_slice(&nonce_counter.to_be_bytes());

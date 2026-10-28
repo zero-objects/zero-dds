@@ -220,9 +220,47 @@ void main(string[] args)
     check(hb == hbExpect, "heartbeat byte-golden (hardcoded)");
     auto ak = acknackFrame(AckNack(1, [0, 0], 0x80));
     immutable ubyte[] akExpect = [
-        0x80, 0x00, 0x01, 0x00, 0x0a, 0x01, 0x05, 0x00, 0x01, 0x00, 0x00, 0x00, 0x80
+        0x80, 0x00, 0x01, 0x00, 0x0a, 0x01, 0x09, 0x00, 0x05, 0x00, 0x00, 0x00,
+        0x01, 0x00, 0x00, 0x00, 0x80
     ];
     check(ak == akExpect, "acknack byte-golden (hardcoded)");
+    check(ak.length == 17, "acknack frame is 17 octets");
+    {
+        AckNack p;
+        check(parseAckNack(ak, p) && p.firstUnacked == 1 && p.nack == [0, 0]
+              && p.stream == 0x80, "acknack with DHEADER parsed");
+        // legacy FINAL form: body length 5, no DHEADER
+        immutable ubyte[] legacy = [
+            0x80, 0x00, 0x01, 0x00, 0x0a, 0x01, 0x05, 0x00, 0x01, 0x00, 0x00, 0x00, 0x80
+        ];
+        AckNack l;
+        check(parseAckNack(legacy, l) && l.firstUnacked == 1 && l.nack == [0, 0]
+              && l.stream == 0x80, "legacy 5-octet acknack parsed");
+        immutable ubyte[] shortBody = [
+            0x80, 0x00, 0x01, 0x00, 0x0a, 0x01, 0x04, 0x00, 0x01, 0x00, 0x00, 0x00, 0x80
+        ];
+        check(!parseAckNack(shortBody, l), "acknack body length 4 rejected");
+    }
+
+    // --- UnannotatedTypes: final_ = 13-octet golden, default = 17 octets ---
+    {
+        immutable ubyte[] finalGolden = [
+            0x80, 0x00, 0x01, 0x00, 0x0a, 0x01, 0x05, 0x00, 0x01, 0x00, 0x00, 0x00, 0x80
+        ];
+        auto fin = acknackFrame(AckNack(1, [0, 0], 0x80), UnannotatedTypes.final_);
+        check(fin == finalGolden, "final_ acknack is the 13-octet golden");
+        AckNack pf;
+        check(parseAckNack(fin, pf) && pf.firstUnacked == 1 && pf.nack == [0, 0]
+              && pf.stream == 0x80, "final_ acknack parsed");
+        check(acknackFrame(AckNack(1, [0, 0], 0x80), UnannotatedTypes.appendable) == ak,
+              "appendable equals the default (17 octets)");
+        // The receiver carries the mode.
+        Receiver rf;
+        rf.unannotatedTypes = UnannotatedTypes.final_;
+        check(rf.pendingAcknackFrame(false, 0).length == 13, "receiver final_ acknack is 13 octets");
+        Receiver rd;
+        check(rd.pendingAcknackFrame(false, 0).length == 17, "receiver default acknack is 17 octets");
+    }
 
     if (args.length >= 3)
     {

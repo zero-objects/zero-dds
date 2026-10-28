@@ -290,9 +290,9 @@ fn push_raw_fires_on_data_on_readers_at_subscriber() {
 
     r.__push_raw(vec![1, 2, 3]).unwrap();
     assert_eq!(sc.on_readers.load(Ordering::Relaxed), 1);
-    // data_available bubbles up too — the reader has no listener,
-    // the subscriber has the ANY mask, so sub.on_data_available fires too.
-    assert_eq!(sc.avail.load(Ordering::Relaxed), 1);
+    // DDS 1.4 §2.2.4.4: "if on_data_on_readers is called, then the
+    // middleware will not try to call on_data_available".
+    assert_eq!(sc.avail.load(Ordering::Relaxed), 0);
 }
 
 #[test]
@@ -306,7 +306,8 @@ fn push_raw_bubbles_to_participant_when_others_have_no_listener() {
 
     r.__push_raw(vec![1]).unwrap();
     assert_eq!(pc.on_readers.load(Ordering::Relaxed), 1);
-    assert_eq!(pc.avail.load(Ordering::Relaxed), 1);
+    // §2.2.4.4: on_data_on_readers took the arrival.
+    assert_eq!(pc.avail.load(Ordering::Relaxed), 0);
 }
 
 #[test]
@@ -318,12 +319,14 @@ fn push_raw_with_zero_mask_at_reader_bubbles_to_subscriber() {
     let rc = Arc::new(ReaderCounters::default());
     let sc = Arc::new(SubscriberCounters::default());
     r.set_listener(Some(rc.clone()), 0); // Mask 0 → no bit consumed.
-    subr.set_listener(Some(sc.clone()), bits::ANY);
+    // DATA_AVAILABLE only: a subscriber listening for DATA_ON_READERS
+    // would take the arrival before on_data_available (§2.2.4.4).
+    subr.set_listener(Some(sc.clone()), bits::DATA_AVAILABLE);
 
     r.__push_raw(vec![1]).unwrap();
     assert_eq!(rc.avail.load(Ordering::Relaxed), 0);
     assert_eq!(sc.avail.load(Ordering::Relaxed), 1);
-    assert_eq!(sc.on_readers.load(Ordering::Relaxed), 1);
+    assert_eq!(sc.on_readers.load(Ordering::Relaxed), 0);
 }
 
 #[test]
@@ -367,15 +370,15 @@ fn multi_push_increments_listener_counter() {
 }
 
 // ============================================================================
-// data_on_readers consumes the subscriber stage; data_available bubbles
-// up to the reader stage anyway (separate bits).
+// DDS 1.4 §2.2.4.4: on_data_on_readers first; on_data_available only if
+// no listener takes DATA_ON_READERS.
 // ============================================================================
 
 #[test]
-fn data_available_independent_from_data_on_readers() {
+fn on_data_on_readers_takes_the_arrival_from_on_data_available() {
     // The reader has ONLY data_on_readers in its mask (which would be
-    // nonsensical, since that is a subscriber status) — then data_available
-    // bubbles up to the subscriber.
+    // nonsensical, since that is a subscriber status); the subscriber
+    // listens for everything and takes the arrival as DATA_ON_READERS.
     let (_, t, _, subr) = mk_setup();
     let r = subr
         .create_datareader::<RawBytes>(&t, DataReaderQos::default())
@@ -386,10 +389,9 @@ fn data_available_independent_from_data_on_readers() {
     subr.set_listener(Some(sc.clone()), bits::ANY);
 
     r.__push_raw(vec![1]).unwrap();
-    // The reader did not have the DATA_AVAILABLE bit → the subscriber
-    // receives it.
+    assert_eq!(sc.on_readers.load(Ordering::Relaxed), 1);
     assert_eq!(rc.avail.load(Ordering::Relaxed), 0);
-    assert_eq!(sc.avail.load(Ordering::Relaxed), 1);
+    assert_eq!(sc.avail.load(Ordering::Relaxed), 0);
 }
 
 // ============================================================================
@@ -436,18 +438,18 @@ fn data_available_consumed_at_reader_does_not_bubble() {
     let rc = Arc::new(ReaderCounters::default());
     let sc = Arc::new(SubscriberCounters::default());
     let pc = Arc::new(ParticipantCounters::default());
+    // DATA_AVAILABLE only above the reader: a listener for
+    // DATA_ON_READERS would take the arrival first (§2.2.4.4).
     r.set_listener(Some(rc.clone()), bits::ANY);
-    subr.set_listener(Some(sc.clone()), bits::ANY);
-    p.set_listener(Some(pc.clone()), bits::ANY);
+    subr.set_listener(Some(sc.clone()), bits::DATA_AVAILABLE);
+    p.set_listener(Some(pc.clone()), bits::DATA_AVAILABLE);
 
     r.__push_raw(vec![1]).unwrap();
     assert_eq!(rc.avail.load(Ordering::Relaxed), 1);
     // data_available was consumed at the reader, does not bubble up.
     assert_eq!(sc.avail.load(Ordering::Relaxed), 0);
     assert_eq!(pc.avail.load(Ordering::Relaxed), 0);
-    // BUT: data_on_readers is subscriber-only, has no reader
-    // stage — it is consumed at the subscriber.
-    assert_eq!(sc.on_readers.load(Ordering::Relaxed), 1);
+    assert_eq!(sc.on_readers.load(Ordering::Relaxed), 0);
     assert_eq!(pc.on_readers.load(Ordering::Relaxed), 0);
 }
 
@@ -526,12 +528,19 @@ fn three_stage_chain_each_gets_their_bit() {
     p.set_listener(Some(pc.clone()), bits::ANY);
 
     r.__push_raw(vec![1]).unwrap();
-    assert_eq!(rc.avail.load(Ordering::Relaxed), 1);
+    // §2.2.4.4: the subscriber's on_data_on_readers takes the arrival, the
+    // reader's on_data_available is not called for it, and the participant
+    // sees nothing.
     assert_eq!(sc.on_readers.load(Ordering::Relaxed), 1);
-    // Both events were consumed at the narrower stages; the
-    // participant must not have seen anything.
+    assert_eq!(rc.avail.load(Ordering::Relaxed), 0);
     assert_eq!(pc.avail.load(Ordering::Relaxed), 0);
     assert_eq!(pc.on_readers.load(Ordering::Relaxed), 0);
+    // §2.2.2.5.2.11: notify_datareaders hands it to the reader's listener,
+    // once.
+    subr.notify_datareaders().unwrap();
+    assert_eq!(rc.avail.load(Ordering::Relaxed), 1);
+    subr.notify_datareaders().unwrap();
+    assert_eq!(rc.avail.load(Ordering::Relaxed), 1);
 }
 
 // ============================================================================
@@ -557,4 +566,122 @@ fn panicking_listener_does_not_break_push() {
     // successfully before the listener threw.
     let n = r.take().unwrap().len();
     assert_eq!(n, 1);
+}
+
+/// §2.2.2.1.1.3 and §2.2.4.3.1: set_listener with 'nil' and a mask installs
+/// the 'nil' listener for those statuses: "the operation will be considered
+/// handled by a NO-OP operation", so the status does not bubble up to the
+/// listener of the entity above.
+#[test]
+fn a_nil_listener_with_a_mask_handles_the_status_by_doing_nothing() {
+    let (_, t, _, subr) = mk_setup();
+    let r = subr
+        .create_datareader::<RawBytes>(&t, DataReaderQos::default())
+        .unwrap();
+    let sc = Arc::new(SubscriberCounters::default());
+    subr.set_listener(Some(sc.clone()), bits::DATA_AVAILABLE);
+
+    r.set_listener(None, bits::DATA_AVAILABLE);
+    assert!(
+        r.get_listener().is_none(),
+        "the nil listener reads back as none"
+    );
+    r.__push_raw(vec![1]).unwrap();
+    assert_eq!(sc.avail.load(Ordering::Relaxed), 0, "no bubble-up");
+}
+
+/// With an empty mask there is no listener at all: the status bubbles up.
+#[test]
+fn a_nil_listener_with_an_empty_mask_is_no_listener() {
+    let (_, t, _, subr) = mk_setup();
+    let r = subr
+        .create_datareader::<RawBytes>(&t, DataReaderQos::default())
+        .unwrap();
+    let sc = Arc::new(SubscriberCounters::default());
+    subr.set_listener(Some(sc.clone()), bits::DATA_AVAILABLE);
+
+    r.set_listener(None, 0);
+    r.__push_raw(vec![1]).unwrap();
+    assert_eq!(sc.avail.load(Ordering::Relaxed), 1);
+}
+
+/// §2.2.4.4: DATA_ON_READERS is handled first; handled by a 'nil' listener
+/// it is a NO-OP, and on_data_available is not called after it.
+#[test]
+fn a_nil_listener_for_data_on_readers_leaves_on_data_available_uncalled() {
+    let (_, t, _, subr) = mk_setup();
+    let r = subr
+        .create_datareader::<RawBytes>(&t, DataReaderQos::default())
+        .unwrap();
+    let rc = Arc::new(ReaderCounters::default());
+    r.set_listener(Some(rc.clone()), bits::DATA_AVAILABLE);
+    subr.set_listener(None, bits::DATA_ON_READERS);
+
+    r.__push_raw(vec![1]).unwrap();
+    assert_eq!(rc.avail.load(Ordering::Relaxed), 0);
+}
+
+/// DDS 1.4 §2.2.2.2.1.1, §2.2.2.2.1.3, §2.2.2.2.1.5, §2.2.2.4.1.5 and
+/// §2.2.2.5.2.5: every `create_<entity>` has the listener and the mask as
+/// parameters.
+#[test]
+fn every_create_has_a_listener_and_a_mask() {
+    let p = DomainParticipantFactory::instance()
+        .create_participant_offline(0, DomainParticipantQos::default());
+    let topic_listener = Arc::new(TopicCounters::default());
+    let topic = p
+        .create_topic_with_listener::<RawBytes>(
+            "WithListener",
+            TopicQos::default(),
+            Some(topic_listener),
+            bits::INCONSISTENT_TOPIC,
+        )
+        .unwrap();
+    assert!(topic.get_listener().is_some());
+
+    let publisher = p.create_publisher_with_listener(
+        PublisherQos::default(),
+        Some(Arc::new(PublisherCounters::default())),
+        bits::PUBLICATION_MATCHED,
+    );
+    assert!(publisher.get_listener().is_some());
+    let writer = publisher
+        .create_datawriter_with_listener(
+            &topic,
+            DataWriterQos::default(),
+            Some(Arc::new(WriterCounters::default())),
+            bits::PUBLICATION_MATCHED,
+        )
+        .unwrap();
+    assert!(writer.get_listener().is_some());
+
+    let subscriber = p.create_subscriber_with_listener(
+        SubscriberQos::default(),
+        Some(Arc::new(SubscriberCounters::default())),
+        bits::SAMPLE_LOST,
+    );
+    assert!(subscriber.get_listener().is_some());
+    let counters = Arc::new(ReaderCounters::default());
+    let reader = subscriber
+        .create_datareader_with_listener(
+            &topic,
+            DataReaderQos::default(),
+            Some(counters.clone()),
+            bits::DATA_AVAILABLE,
+        )
+        .unwrap();
+    // The reader's listener hears the data.
+    reader.__push_raw(vec![1]).unwrap();
+    assert_eq!(counters.avail.load(Ordering::Relaxed), 1);
+
+    // None with a mask is the nil listener.
+    let nil = subscriber
+        .create_datareader_with_listener(
+            &topic,
+            DataReaderQos::default(),
+            None,
+            bits::DATA_AVAILABLE,
+        )
+        .unwrap();
+    assert!(nil.get_listener().is_none());
 }

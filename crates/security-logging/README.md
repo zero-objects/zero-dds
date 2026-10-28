@@ -12,7 +12,7 @@ for stderr, JSON lines, syslog and FanOut. Safety classification:
 
 | Spec | Section |
 |------|-----------|
-| OMG DDS-Security 1.1 | §8.6 (LoggingPlugin) |
+| OMG DDS-Security 1.2 | §9.6 (Logging Plugin), §10.6 (builtin logging) |
 | RFC 5424 | Syslog (UDP) |
 
 ## What's inside
@@ -34,7 +34,7 @@ Layer 4. Consumes `zerodds-security` (LoggingPlugin trait + LogLevel + SecurityE
 use zerodds_security_logging::{StderrLoggingPlugin, FanOutLoggingPlugin, JsonLinesLoggingPlugin};
 use zerodds_security::{LoggingPlugin, LogLevel};
 
-let stderr = StderrLoggingPlugin::new(LogLevel::Warning);
+let stderr = StderrLoggingPlugin::with_level(LogLevel::Warning);
 let json = JsonLinesLoggingPlugin::open("/var/log/zerodds/security.jsonl", LogLevel::Informational)
     .expect("open");
 let fanout: Box<dyn LoggingPlugin> = Box::new(FanOutLoggingPlugin::new(vec![
@@ -51,7 +51,8 @@ let fanout: Box<dyn LoggingPlugin> = Box::new(FanOutLoggingPlugin::new(vec![
 
 ## Stability
 
-`1.0.0-rc.1`. Public API + JSON-lines format + RFC-5424 encoding RC1-stable.
+`1.0.0-rc.7`, a pre-release. The public API can still change before
+1.0.0; the crate's CHANGELOG lists every change.
 
 ## Tests
 

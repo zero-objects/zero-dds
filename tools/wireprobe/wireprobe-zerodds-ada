@@ -1,0 +1,220 @@
+#!/bin/bash
+# wireprobe-zerodds-ada — one IDL type and one JSON value, through the
+# ZeroDDS Ada binding built by the shared codec walk.
+#
+# The same command line as `wireprobe-zerodds`, so a case runs through
+# both by substituting the program name. See
+# `docs/specs/zerodds-interop-suite-1.0.md` §3a.
+#
+#   wireprobe-zerodds-ada --idl robot.idl --type common::Robot \
+#                         --values robot.json --encoding xcdr2 \
+#                         --endian le --out robot.zerodds-ada.xcdr2.le.bin
+#
+#   wireprobe-zerodds-ada --idl robot.idl --type common::Robot \
+#                         --in robot.cyclone.xcdr2.le.bin \
+#                         --encoding xcdr2 --endian le \
+#                         --values-out robot.read.json
+#
+# ## What is shared with the Rust probe and what is not
+#
+# Shared: the frontend, the common AST and the layout plan. Which
+# members are written, in what order, with which header and which length
+# code is `zerodds-ast-layout`'s answer, and a second answer would be a
+# second place for the wire format to live.
+#
+# Not shared: the serialiser. The generated program is compiled together
+# with `runtime/ada/src/zd_wire.adb`, which implements DDS-XTypes 1.3
+# §7.4 a further time in Ada. Nothing here reaches the Rust runtime
+# through FFI: a probe that did would be byte-identical by construction
+# and would prove nothing about whether the two read the specification
+# the same way.
+#
+# ## The toolchain
+#
+# GNAT, through `gnatmake` (preferred) or `gprbuild`; `alr` counts only
+# as a way to put one of the two on the path. Ada 2012 (`-gnat2012`).
+# Warnings stay GNAT's default set on purpose — the shared walk declares
+# locals a dialect may leave unread — and errors alone fail the build.
+#
+# ## The runtime is compiled once, not once per case
+#
+# `runtime/ada/src/zd_wire.adb` is 2115 lines and takes 10.5 s of the
+# 13.3 s a probe run measured here; the generated `zd_probe.adb` takes
+# the remaining 1.2 s. Compiling the runtime again for every case spends
+# four fifths of a corpus sweep — 8400 invocations — recompiling a file
+# that did not change.
+#
+# So the runtime's objects go in a directory named after the **content**
+# of its two sources and the switches they are compiled with, and
+# `gnatmake -aO` finds them there. A key from the content and not from a
+# timestamp is what makes a stale hit impossible: edit a byte of
+# `zd_wire.adb` and the key is a different one, so the entry from before
+# the edit is not looked at — the failure `generator.sh` exists to
+# prevent, answered by construction rather than by a check.
+#
+# `ZERODDS_ADA_OBJ` names the directory that holds those entries;
+# unset, it is `$TMPDIR/zd-ada-runtime`. `ZERODDS_ADA_NO_OBJ_CACHE=1`
+# turns it off and every build compiles the runtime for itself.
+#
+# ## The exit codes
+#
+# `docs/specs/zerodds-verdicts-1.0.md`, and structural rather than read
+# out of a message:
+#
+#   0  it carried the case
+#   1  the sample is outside the type — the refusal happens at run time,
+#      in `Zd_Wire.Checked_Char` and kin, so it is the runtime's and not
+#      a gap. An IDL `long double` also answers here: binary128 rests
+#      with the f128 arc and `Zd_Wire.Write_F128` refuses it by name.
+#   2  the command line
+#   3  no-form — Ada has no form for the construct, which is
+#      `adapter/ada.rs`'s answer and nobody else's
+#   6  harness-gap — a tool of ours has not written it: the generator
+#      did not build, the walk stopped, or the toolchain is missing
+#   7  generator-defect — the generator accepted the case and the Ada it
+#      produced does not compile
+set -euo pipefail
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+root="$(cd "$here/../.." && pwd)"
+runtime="${ZERODDS_ADA_RUNTIME:-$root/runtime/ada}"
+
+switches=(-gnat2012 -O1)
+
+# The directory holding the runtime's objects for these sources and
+# these switches, built if it is not there yet. Prints the path, or
+# nothing when the cache is off or the runtime does not compile — the
+# caller then builds it in place, which is what happened before.
+runtime_objects() {
+    [ -z "${ZERODDS_ADA_NO_OBJ_CACHE:-}" ] || return 0
+    command -v sha256sum >/dev/null 2>&1 || return 0
+    local key store dir build
+    key=$({
+        printf '%s\0' "${switches[@]}"
+        cat "$runtime/src/zd_wire.ads" "$runtime/src/zd_wire.adb"
+    } | sha256sum | cut -c1-40) || return 0
+    store="${ZERODDS_ADA_OBJ:-${TMPDIR:-/tmp}/zd-ada-runtime}"
+    dir="$store/$key"
+    [ -f "$dir/zd_wire.ali" ] && { printf '%s' "$dir"; return 0; }
+    mkdir -p "$store" || return 0
+    build="$(mktemp -d "$store/build.XXXXXX")" || return 0
+    if gnatmake -q -c "${switches[@]}" -D "$build" -I"$runtime/src" \
+            "$runtime/src/zd_wire.adb" >/dev/null 2>&1; then
+        # Losing the race is not an error: the other builder compiled the
+        # same two files with the same switches, which is what the key
+        # says. `mv` onto an existing directory would nest one inside the
+        # other, so the loser's build is discarded instead.
+        mv "$build" "$dir" 2>/dev/null || rm -rf "$build"
+        [ -f "$dir/zd_wire.ali" ] && printf '%s' "$dir"
+    else
+        rm -rf "$build"
+    fi
+    return 0
+}
+
+if command -v gnatmake >/dev/null 2>&1; then
+    objects="$(runtime_objects)"
+    build_probe() {
+        local reuse=()
+        [ -n "$objects" ] && reuse=(-aO"$objects")
+        (cd "$1" && gnatmake -q "${switches[@]}" "${reuse[@]}" \
+             -I"$runtime/src" zd_probe.adb -o probe)
+    }
+elif command -v gprbuild >/dev/null 2>&1; then
+    build_probe() {
+        cat > "$1/zd_probe.gpr" <<EOF
+project Zd_Probe is
+   for Source_Dirs use (".", "$runtime/src");
+   for Object_Dir use ".";
+   for Main use ("zd_probe.adb");
+   package Compiler is
+      for Default_Switches ("Ada") use ("-gnat2012", "-O1");
+   end Compiler;
+   package Builder is
+      for Executable ("zd_probe.adb") use "probe";
+   end Builder;
+end Zd_Probe;
+EOF
+        (cd "$1" && gprbuild -q -P zd_probe.gpr)
+    }
+else
+    echo "wireprobe-zerodds-ada: neither \`gnatmake\` nor \`gprbuild\` is on the path; the Ada column is unmeasured here" >&2
+    exit 9
+fi
+
+gen="${WIREPROBE_ADA_GEN:-}"
+if [ -z "$gen" ]; then
+    gen="${CARGO_TARGET_DIR:-$root/target}/debug/wireprobe-zerodds-ada-gen"
+    # Built when it is missing *or stale*: a generator older than the
+    # sources it came from measures the previous build.
+    . "$here/generator.sh"
+    probe_generator zerodds-wireprobe-ada-gen "$gen" "$root" || exit 6
+fi
+
+out=""
+values_out=""
+argv=()
+idl=""
+reading=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --out) out="$2"; shift 2 ;;
+        --values-out) values_out="$2"; argv+=("$1" "$2"); shift 2 ;;
+        --in) reading=1; argv+=("$1" "$2"); shift 2 ;;
+        --idl|--type|--values|--encoding|--endian|--emit|--dialect)
+            if [ "$1" = --idl ]; then idl="$2"; fi
+            argv+=("$1" "$2"); shift 2 ;;
+        --help|-h) sed -n '2,56p' "${BASH_SOURCE[0]}"; exit 0 ;;
+        *) echo "wireprobe-zerodds-ada: \`$1\` is not an option" >&2; exit 2 ;;
+    esac
+done
+
+. "$here/diagnostics.sh"
+
+work="$(mktemp -d)"
+trap 'probe_keep_generated "$work" "zerodds-ada" "$idl" zd_probe.adb; rm -rf "$work"' EXIT
+
+# The generator's own code passes straight through: 3 is "Ada has no
+# form for it" and 6 is "a tool of ours stopped", and folding the two
+# into one here would lose the distinction the ledger turns on.
+code=0
+"$gen" "${argv[@]}" --out-dir "$work" || code=$?
+[ "$code" = 0 ] || exit "$code"
+
+# GNAT is the syntax and type check in one: a generated file that is
+# not Ada is the generator's defect, exit 7, which every compiled
+# column reports the same way. The runtime is compiled beside the probe
+# rather than linked from anywhere.
+if ! build_probe "$work" > "$work/build.log" 2>&1; then
+    echo "wireprobe-zerodds-ada: the generated Ada does not compile" >&2
+    head -20 "$work/build.log" >&2 || true
+    probe_diagnostics_after "zerodds-ada" "$work" "$idl" 7
+    exit 7
+fi
+probe_diagnostics_after "zerodds-ada" "$work" "$idl" 0
+
+code=0
+"$work/probe" > "$work/bytes.bin" 2> "$work/run.log" || code=$?
+if [ "$code" != 0 ]; then
+    head -5 "$work/run.log" >&2 || true
+    [ "$code" = 1 ] && exit 1
+    [ "$code" = 3 ] && exit 3
+    echo "wireprobe-zerodds-ada: the probe did not run" >&2
+    exit 6
+fi
+
+# The read direction writes its JSON where `--values-out` said and puts
+# nothing on stdout, so there are no octets to hand back.
+if [ "$reading" = 1 ]; then
+    [ -n "$values_out" ] || {
+        echo "wireprobe-zerodds-ada: --in without --values-out" >&2
+        exit 2
+    }
+    exit 0
+fi
+
+if [ -n "$out" ]; then
+    cp "$work/bytes.bin" "$out"
+else
+    od -An -tx1 -v "$work/bytes.bin" | tr -d ' \n'; echo
+fi

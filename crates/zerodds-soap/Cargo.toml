@@ -22,8 +22,8 @@ path = "src/lib.rs"
 
 [features]
 default = ["std"]
-std = ["alloc"]
-alloc = []
+std = ["alloc", "zerodds-xml-wire/std"]
+alloc = ["zerodds-xml-wire/alloc"]
 
 [dependencies]
-zerodds-xml-wire = { version = "1.0.0-rc.7", path = "../zerodds-xml-wire" }
+zerodds-xml-wire = { version = "1.0.0-rc.7", path = "../zerodds-xml-wire", default-features = false }

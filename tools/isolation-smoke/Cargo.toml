@@ -22,7 +22,7 @@ zerodds-transport = { version = "1.0.0-rc.7", path = "../../crates/transport" }
 zerodds-transport-udp = { version = "1.0.0-rc.7", path = "../../crates/transport-udp" }
 zerodds-transport-shm = { version = "1.0.0-rc.7", path = "../../crates/transport-shm" }
 
-# UDS-Transport ist POSIX-only; auf Windows nicht in den Build aufnehmen.
+# UDS transport is POSIX-only; do not include in the build on Windows.
 [target.'cfg(unix)'.dependencies]
 zerodds-transport-uds = { version = "1.0.0-rc.7", path = "../../crates/transport-uds" }
 

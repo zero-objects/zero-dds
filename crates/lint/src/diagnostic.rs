@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Diagnostic-Datentyp + textueller Reporter.
+//! Diagnostic data type + textual reporter.
 //!
 //! Format: `path:line:col [lint_name] message`.
 
@@ -32,9 +32,9 @@ pub struct Diagnostic {
     pub file: PathBuf,
     /// Line (1-based) in the source text.
     pub line: usize,
-    /// Spalte (1-basiert).
+    /// Column (1-based).
     pub column: usize,
-    /// Lint-Name (z.B. `dds_require_safety_comment`).
+    /// Lint name (e.g. `dds_require_safety_comment`).
     pub lint: &'static str,
     /// Severity.
     pub severity: Severity,

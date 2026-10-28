@@ -1,0 +1,1 @@
+fill_1.inc:2:12: error: no matching function for call to 'zd_c1::Sample::text(const char [6])'

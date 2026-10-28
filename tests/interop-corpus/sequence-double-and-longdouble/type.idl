@@ -1,0 +1,7 @@
+// `sequence<double>` and `sequence<long double>` in one aggregate
+@final struct Sample {
+    sequence<double> narrow;
+    sequence<long double> wide;
+    sequence<double, 4> bounded;
+    long tail;
+};

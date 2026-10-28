@@ -30,7 +30,7 @@
 //!       <member …/></case>         | UnionCase
 //! <typedef name=… type=… …>        | TypeDef::Typedef(TypedefType)
 //! <bitmask name=… bitBound=…>      | TypeDef::Bitmask(BitmaskType)
-//! <bit_value name=… position=…>    | BitValue
+//! <flag name=… position=…>    | BitValue
 //! <bitset name=…>                  | TypeDef::Bitset(BitsetType)
 //! <bitfield name=… type=… mask=…>  | BitField
 //! ```
@@ -89,6 +89,85 @@ pub enum TypeDef {
     /// `<const>` — constant definition (XTypes 1.3 §7.3.2 / IDL 4.2
     /// §7.4.1.4.4). Value as a string; the caller converts.
     Const(ConstEntry),
+    /// `<annotation>` — declaration of an annotation type (Annex A
+    /// `annotationTypeDecl`).
+    Annotation(AnnotationTypeDef),
+}
+
+/// The use of an annotation, `<annotate name="…">` with its `<member>`
+/// values (Annex A `annotationDecl`).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Annotation {
+    /// Name of the annotation type.
+    pub name: String,
+    /// The `<member name="…" value="…"/>` children, in document order.
+    pub members: Vec<AnnotationValue>,
+}
+
+/// One `<member>` of an [`Annotation`] (Annex A `annotationMemberValueDecl`).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AnnotationValue {
+    /// Member name.
+    pub name: String,
+    /// The `value` attribute; the expression as written.
+    pub value: Option<String>,
+}
+
+/// A `<verbatim>` child (Annex A `verbatimDecl`): text for a target
+/// language.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Verbatim {
+    /// `language` attribute, `*` (every language) when absent.
+    pub language: String,
+    /// `placement` attribute, `before-declaration` when absent.
+    pub placement: String,
+    /// The `<text>` child.
+    pub text: String,
+}
+
+/// The declaration of an annotation type, `<annotation name="…">` (Annex A
+/// `annotationTypeDecl`).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AnnotationTypeDef {
+    /// Annotation name.
+    pub name: String,
+    /// `baseType` attribute.
+    pub base_type: Option<String>,
+    /// The members the annotation takes.
+    pub members: Vec<AnnotationMemberDecl>,
+}
+
+/// A `<member>` of an [`AnnotationTypeDef`] (Annex A `simpleMemberDecl`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AnnotationMemberDecl {
+    /// Member name.
+    pub name: String,
+    /// Member type.
+    pub type_ref: TypeRef,
+    /// The default value as written. The XML Type Representation has none
+    /// (Annex A `simpleMemberDecl`); the XSD one has (`default` of an
+    /// `xsd:attribute`, §7.3.3.1.1).
+    pub default_value: Option<String>,
+}
+
+/// `tryConstruct` of a member (Annex A `tryConstructKind`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TryConstruct {
+    /// `discard`.
+    Discard,
+    /// `use_default`.
+    UseDefault,
+    /// `trim`.
+    Trim,
+}
+
+/// `autoid` of a type or module (Annex A `autoIdKind`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AutoId {
+    /// `hash`.
+    Hash,
+    /// `sequencial` (the spelling of the schema).
+    Sequential,
 }
 
 /// `<include file="..."/>` — XML composition.
@@ -98,7 +177,7 @@ pub struct IncludeEntry {
     pub file: String,
 }
 
-/// `<forward_dcl name="T" kind="STRUCT|UNION"/>`.
+/// `<forward_dcl name="T" kind="enum|struct|union|bitmask"/>`.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ForwardDeclEntry {
     /// Type name.
@@ -116,6 +195,8 @@ pub struct ConstEntry {
     pub type_name: String,
     /// Raw value as a string.
     pub value: String,
+    /// The `stringMaxLength` attribute of a string constant.
+    pub string_max_length: Option<String>,
 }
 
 impl TypeDef {
@@ -133,6 +214,7 @@ impl TypeDef {
             Self::Include(i) => &i.file,
             Self::ForwardDcl(f) => &f.name,
             Self::Const(c) => &c.name,
+            Self::Annotation(a) => &a.name,
         }
     }
 }
@@ -144,6 +226,8 @@ pub struct ModuleEntry {
     pub name: String,
     /// Nested type definitions.
     pub types: Vec<TypeDef>,
+    /// `autoid` attribute.
+    pub auto_id: Option<AutoId>,
 }
 
 /// Extensibility-Annotation (`@final`, `@appendable`, `@mutable`) — Spec
@@ -172,8 +256,12 @@ impl Default for Extensibility {
 pub enum PrimitiveType {
     /// IDL `boolean`.
     Boolean,
-    /// IDL `octet` (unsigned 8-bit).
+    /// IDL `octet` (unsigned 8-bit); XTypes `byte`.
     Octet,
+    /// XTypes `int8` (signed 8-bit integer).
+    Int8,
+    /// XTypes `uint8` (unsigned 8-bit integer).
+    UInt8,
     /// IDL `char` (8-bit).
     Char,
     /// IDL `wchar` (16-bit).
@@ -210,8 +298,10 @@ impl PrimitiveType {
         match s {
             "boolean" => Some(Self::Boolean),
             "octet" | "byte" => Some(Self::Octet),
-            "char" => Some(Self::Char),
-            "wchar" => Some(Self::WChar),
+            "int8" => Some(Self::Int8),
+            "uint8" => Some(Self::UInt8),
+            "char" | "char8" => Some(Self::Char),
+            "wchar" | "char16" => Some(Self::WChar),
             "short" | "int16" => Some(Self::Short),
             "ushort" | "uint16" => Some(Self::UShort),
             "long" | "int32" => Some(Self::Long),
@@ -233,6 +323,8 @@ impl PrimitiveType {
         match self {
             Self::Boolean => "boolean",
             Self::Octet => "octet",
+            Self::Int8 => "int8",
+            Self::UInt8 => "uint8",
             Self::Char => "char",
             Self::WChar => "wchar",
             Self::Short => "short",
@@ -272,6 +364,16 @@ pub struct StructType {
     pub base_type: Option<String>,
     /// Members in document order.
     pub members: Vec<StructMember>,
+    /// `nested` attribute.
+    pub nested: Option<bool>,
+    /// `autoid` attribute.
+    pub auto_id: Option<AutoId>,
+    /// `<annotate>` children of the struct.
+    pub annotations: Vec<Annotation>,
+    /// `<verbatim>` children of the struct.
+    pub verbatims: Vec<Verbatim>,
+    /// `<const>` children of the struct, scoped to it (`Struct::NAME`).
+    pub constants: Vec<ConstEntry>,
 }
 
 /// A single struct member (`<member …/>` — Spec §7.3.3.4.4.1).
@@ -291,11 +393,39 @@ pub struct StructMember {
     pub id: Option<u32>,
     /// `stringMaxLength` attribute (bounded string/WString limit).
     pub string_max_length: Option<u32>,
-    /// `sequenceMaxLength` attribute (bounded sequence limit).
+    /// `sequenceMaxLength` attribute: `Some` marks a sequence, `Some(0)`
+    /// is the unbounded sequence (`-1` in the document), `None` a member
+    /// that is no sequence.
     pub sequence_max_length: Option<u32>,
+    /// `mapMaxLength` attribute (XTypes 1.3 §7.3.2.4.3): the bound of the
+    /// map, `None` for the unbounded map (`-1` in the document). Whether
+    /// the member is a map at all is [`Self::is_map`].
+    pub map_max_length: Option<u32>,
+    /// `mapKeyType`/`mapKeyNonBasicTypeName`: the map key's type.
+    /// `Some` exactly when the member is a map.
+    pub map_key: Option<TypeRef>,
+    /// `mapKeyStringMaxLength`: the bound of a string key, if any.
+    pub map_key_string_max_length: Option<u32>,
     /// `arrayDimensions` attribute, parsed from `"3,4"` -> `vec![3,4]`.
     /// Empty if not an array.
     pub array_dimensions: Vec<u32>,
+    /// `external` attribute.
+    pub external: Option<bool>,
+    /// `tryConstruct` attribute.
+    pub try_construct: Option<TryConstruct>,
+    /// `nonSerialized` attribute.
+    pub non_serialized: Option<bool>,
+    /// `<annotate>` children of the member.
+    pub annotations: Vec<Annotation>,
+}
+
+impl StructMember {
+    /// `true` if the member is a map (XTypes 1.3 §7.3.2.4.3: the
+    /// `mapKeyType` attribute is required for every map).
+    #[must_use]
+    pub fn is_map(&self) -> bool {
+        self.map_key.is_some()
+    }
 }
 
 impl Default for StructMember {
@@ -309,7 +439,14 @@ impl Default for StructMember {
             id: None,
             string_max_length: None,
             sequence_max_length: None,
+            map_max_length: None,
+            map_key: None,
+            map_key_string_max_length: None,
             array_dimensions: Vec::new(),
+            external: None,
+            try_construct: None,
+            non_serialized: None,
+            annotations: Vec::new(),
         }
     }
 }
@@ -321,8 +458,15 @@ pub struct EnumType {
     pub name: String,
     /// Optionales `bitBound`-Attribut (default 32).
     pub bit_bound: Option<u32>,
+    /// Optional `extensibility` attribute (`final` or `appendable`;
+    /// default `appendable`).
+    pub extensibility: Option<Extensibility>,
     /// Enumerator entries.
     pub enumerators: Vec<EnumLiteral>,
+    /// `<annotate>` children of the enum.
+    pub annotations: Vec<Annotation>,
+    /// `<verbatim>` children of the enum.
+    pub verbatims: Vec<Verbatim>,
 }
 
 /// Single `<enumerator>` entry.
@@ -333,6 +477,10 @@ pub struct EnumLiteral {
     /// Numeric value; `None` means implicit auto-numbering
     /// (previous + 1, starting at 0).
     pub value: Option<i32>,
+    /// `defaultLiteral` attribute.
+    pub default_literal: Option<bool>,
+    /// `<annotate>` children of the enumerator.
+    pub annotations: Vec<Annotation>,
 }
 
 /// `<union>`-Definition (Spec §7.3.3.4.6).
@@ -344,6 +492,20 @@ pub struct UnionType {
     pub discriminator: TypeRef,
     /// Cases in document order.
     pub cases: Vec<UnionCase>,
+    /// `extensibility` attribute.
+    pub extensibility: Option<Extensibility>,
+    /// `nested` attribute.
+    pub nested: Option<bool>,
+    /// `autoid` attribute.
+    pub auto_id: Option<AutoId>,
+    /// `key` attribute of the `<discriminator>`.
+    pub discriminator_key: bool,
+    /// `<annotate>` children of the `<discriminator>`.
+    pub discriminator_annotations: Vec<Annotation>,
+    /// `<annotate>` children of the union.
+    pub annotations: Vec<Annotation>,
+    /// `<verbatim>` children of the union.
+    pub verbatims: Vec<Verbatim>,
 }
 
 impl Default for UnionType {
@@ -352,6 +514,13 @@ impl Default for UnionType {
             name: String::new(),
             discriminator: TypeRef::Primitive(PrimitiveType::Long),
             cases: Vec::new(),
+            extensibility: None,
+            nested: None,
+            auto_id: None,
+            discriminator_key: false,
+            discriminator_annotations: Vec::new(),
+            annotations: Vec::new(),
+            verbatims: Vec::new(),
         }
     }
 }
@@ -384,10 +553,28 @@ pub struct TypedefType {
     pub type_ref: TypeRef,
     /// `arrayDimensions` (empty if not an array).
     pub array_dimensions: Vec<u32>,
-    /// `sequenceMaxLength` if it is a sequence alias.
+    /// `sequenceMaxLength` if it is a sequence alias (`Some(0)`: unbounded).
     pub sequence_max_length: Option<u32>,
     /// `stringMaxLength` if it is a bounded string.
     pub string_max_length: Option<u32>,
+    /// `mapMaxLength` of a map alias (`None`: unbounded, `-1` in the
+    /// document). Whether the alias is a map is [`Self::is_map`].
+    pub map_max_length: Option<u32>,
+    /// `mapKeyType`/`mapKeyNonBasicTypeName` of a map alias.
+    pub map_key: Option<TypeRef>,
+    /// `mapKeyStringMaxLength`: the bound of a string key, if any.
+    pub map_key_string_max_length: Option<u32>,
+    /// `external` attribute.
+    pub external: Option<bool>,
+}
+
+impl TypedefType {
+    /// `true` if the alias is a map (XTypes 1.3 §7.3.2.4.3: `mapKeyType`
+    /// is required for every map).
+    #[must_use]
+    pub fn is_map(&self) -> bool {
+        self.map_key.is_some()
+    }
 }
 
 impl Default for TypedefType {
@@ -398,6 +585,10 @@ impl Default for TypedefType {
             array_dimensions: Vec::new(),
             sequence_max_length: None,
             string_max_length: None,
+            map_max_length: None,
+            map_key: None,
+            map_key_string_max_length: None,
+            external: None,
         }
     }
 }
@@ -409,17 +600,21 @@ pub struct BitmaskType {
     pub name: String,
     /// `bitBound`-Attribut (default 32).
     pub bit_bound: Option<u32>,
-    /// `<bit_value>` entries.
+    /// `<flag>` entries.
     pub bit_values: Vec<BitValue>,
+    /// `<annotate>` children of the bitmask.
+    pub annotations: Vec<Annotation>,
 }
 
-/// Single `<bit_value>` entry.
+/// Single `<flag>` entry.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct BitValue {
     /// Symbolischer Name.
     pub name: String,
     /// Bit position (0-based). `None` -> implicit (previous + 1).
     pub position: Option<u32>,
+    /// `<annotate>` children of the flag.
+    pub annotations: Vec<Annotation>,
 }
 
 /// `<bitset>`-Definition (Spec §7.3.3.4.9).

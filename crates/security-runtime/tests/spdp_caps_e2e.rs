@@ -7,7 +7,7 @@
 //!
 //! This covers the DoD point "participant A announces, participant B
 //! sees the caps in the PeerCache". Cyclone live interop
-//! follows separately on `ssh llvm@llvm`.
+//! follows separately on the lab host (`cyclone_live_security_caps.rs`).
 
 #![allow(
     clippy::expect_used,
@@ -42,6 +42,7 @@ fn baseline_participant(prefix: u8) -> ParticipantBuiltinTopicData {
         metatraffic_unicast_locators: Vec::new(),
         metatraffic_multicast_locators: Vec::new(),
         domain_id: Some(0),
+        domain_tag: Default::default(),
         builtin_endpoint_set: endpoint_flag::PARTICIPANT_ANNOUNCER
             | endpoint_flag::PARTICIPANT_DETECTOR,
         lease_duration: Duration::from_secs(100),
@@ -54,6 +55,11 @@ fn baseline_participant(prefix: u8) -> ParticipantBuiltinTopicData {
         sig_algo_info: None,
         kx_algo_info: None,
         sym_cipher_algo_info: None,
+        available_builtin_endpoints_ext: 0,
+        expects_inline_qos: false,
+        manual_liveliness_count: None,
+        builtin_endpoint_qos: None,
+        entity_name: None,
     }
 }
 
@@ -193,14 +199,14 @@ fn peer_cache_upgrade_path_via_update_partial() {
 
 #[test]
 fn extra_zerodds_properties_are_ignored_by_vendor_agnostic_parse() {
-    // When a ZeroDDS peer sends us unknown zerodds.sec.* properties,
+    // When a ZeroDDS peer sends us unknown org.zerodds.sec.* properties,
     // parse_peer_caps must not crash/drop —
     // forward compat for later protocol extensions.
     let mut data = baseline_participant(0x22);
     advertise_security_caps(&mut data.properties, &secure_caps());
     data.properties
         .push(zerodds_rtps::property_list::WireProperty::new(
-            "zerodds.sec.future_extension",
+            "org.zerodds.sec.future_extension",
             "some-opaque-value",
         ));
 
@@ -331,7 +337,7 @@ fn malformed_delegation_chain_property_treated_as_none() {
     advertise_security_caps(&mut data.properties, &secure_caps());
     data.properties
         .push(zerodds_rtps::property_list::WireProperty::new(
-            "zerodds.sec.delegation_chain",
+            "org.zerodds.sec.delegation_chain",
             "this-is-not-base64-or-valid-chain",
         ));
     let mut beacon = SpdpBeacon::new(data);

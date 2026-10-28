@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of wstring-bounded-utf8 that cyclone produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	the fill: error: assignment to expression with array type
+plain-cdr1	be	refused	the fill: error: assignment to expression with array type
+pl-cdr1	le	refused	the fill: error: assignment to expression with array type
+pl-cdr1	be	refused	the fill: error: assignment to expression with array type
+plain-cdr2	le	refused	the fill: error: assignment to expression with array type
+plain-cdr2	be	refused	the fill: error: assignment to expression with array type
+delimited-cdr	le	refused	the fill: error: assignment to expression with array type
+delimited-cdr	be	refused	the fill: error: assignment to expression with array type
+pl-cdr2	le	refused	the fill: error: assignment to expression with array type
+pl-cdr2	be	refused	the fill: error: assignment to expression with array type

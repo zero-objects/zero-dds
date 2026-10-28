@@ -25,23 +25,14 @@ pub const TYPELOOKUP_TOPIC_PREFIX: &str = "dds.builtin.TOS";
 /// Builds the service instance name `dds.builtin.TOS.<HEX>` from
 /// a `GuidPrefix` (§7.6.3.3.4 c).
 ///
-/// The hex part is **24 hex chars** (12 bytes GuidPrefix). The
-/// spec talks about "16-hex" which refers to the 8-byte RPC
-/// service-instance-identifier part; in our implementation
-/// we use the full 12-byte GuidPrefix as a unique
-/// participant identifier — compatible with Cyclone DDS' choice.
+/// The hex part is the full participant GUID: 24 hex prefix characters
+/// followed by participant EntityId 000001c1, as in Cyclone's service client.
 #[must_use]
 pub fn format_service_instance_name(prefix: &GuidPrefix) -> String {
-    let mut hex = String::with_capacity(24);
-    for b in prefix.0.iter() {
-        hex.push_str(&format!("{b:02x}"));
-    }
-    format!("{TYPELOOKUP_TOPIC_PREFIX}.{hex}")
+    zerodds_types::type_lookup::service_instance_name(&prefix.0)
 }
 
-/// Strictly spec-faithful variant: only the first 8 bytes of the prefix
-/// are encoded as hex (16 hex chars). Used by some
-/// implementations as the "service instance identifier".
+/// Historical shortened variant. Not the standard TypeLookup service name.
 #[must_use]
 pub fn format_service_instance_name_short(prefix: &GuidPrefix) -> String {
     let mut hex = String::with_capacity(16);
@@ -123,7 +114,7 @@ mod tests {
             0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c,
         ]);
         let name = format_service_instance_name(&prefix);
-        assert_eq!(name, "dds.builtin.TOS.0102030405060708090a0b0c");
+        assert_eq!(name, "dds.builtin.TOS.0102030405060708090a0b0c000001c1");
         assert!(name.starts_with(TYPELOOKUP_TOPIC_PREFIX));
     }
 

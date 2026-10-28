@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! `dds_no_dyn_in_safe` — `dyn Trait` in [`SafetyClass::Safe`]-Crates nur
+//! `dds_no_dyn_in_safe` — `dyn Trait` in [`SafetyClass::Safe`] crates is only
 //! permitted with an explicit `#[allow(dds_no_dyn_in_safe)]` marker.
 //!
 //! Spec: `docs/architecture/04_safety_by_architecture.md §3.4`.
@@ -8,7 +8,7 @@
 //! Pragmatic file-level allow: if the source contains the marker
 //! `zerodds-lint: allow no_dyn_in_safe` (in a comment somewhere),
 //! the file is exempt from the lint. This lets e.g. `examples/spdp_demo.rs`
-//! `Box<dyn std::error::Error>` weiter verwenden.
+//! Continue using `Box<dyn std::error::Error>`.
 //!
 //! [`SafetyClass::Safe`]: crate::classification::SafetyClass::Safe
 
@@ -64,8 +64,8 @@ impl<'ast> Visit<'ast> for Visitor<'_> {
             line,
             col,
             NAME,
-            "`dyn Trait` in a SAFE crate; use concrete generics or \
-             markiere Datei mit `zerodds-lint: allow no_dyn_in_safe`",
+            "`dyn Trait` in a SAFE crate; use concrete generics, or \
+             mark the file with `zerodds-lint: allow no_dyn_in_safe`",
         ));
         visit::visit_type_trait_object(self, node);
     }

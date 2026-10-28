@@ -23,9 +23,23 @@ workspace = true
 name = "shape_main"
 path = "src/main.rs"
 
+[build-dependencies]
+# The suite's `ShapeType` is generated from `interop/shapes/omg-dds-rtps.idl`
+# rather than taken from `zerodds_dcps::interop`: a suite run has to measure
+# what this project generates, not what someone wrote beside it. See build.rs.
+zerodds-build = { version = "1.0.0-rc.7", path = "../../crates/zerodds-build" }
+
 [dependencies]
 zerodds-dcps = { version = "1.0.0-rc.7", path = "../../crates/dcps" }
+# `PlCdr1Reading` of the setting `wire.pl_cdr1_reading` (`suite_settings`).
+zerodds-ast-layout = { version = "1.0.0-rc.7", path = "../../crates/ast-layout" }
+# `GroupWireForm` and the `VendorId`s it is set for (`group_wire_forms`).
+zerodds-rtps = { version = "1.0.0-rc.7", path = "../../crates/rtps" }
 zerodds-qos  = { version = "1.0.0-rc.7", path = "../../crates/qos" }
 zerodds-sql-filter = { version = "1.0.0-rc.7", path = "../../crates/sql-filter" }
+# Named by the generated `ShapeType`: the codec writes through `zerodds-wire`
+# and the `DdsType` impl's `type_object()` through `zerodds-types`.
+zerodds-wire = { version = "1.0.0-rc.7", path = "../../crates/wire" }
+zerodds-types = { version = "1.0.0-rc.7", path = "../../crates/types" }
 clap  = { version = "4", features = ["derive"] }
 ctrlc = { workspace = true }

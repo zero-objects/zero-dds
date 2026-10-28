@@ -11,13 +11,24 @@
 //! This step covers scalars, `string`, `bytes` (-> `sequence<byte>`) and
 //! `repeated` (-> `sequence<T>`). Nested-message, enum and `map<K,V>` fields are
 //! resolved by the type registry in the follow-up step.
+//!
+//! ## A type is built, not described
+//!
+//! A `DynamicType` is a view on a [`zerodds_ast::Ast`], so a mapping step
+//! produces a **node in a model** rather than a descriptor that is later
+//! turned into one. Every function here therefore takes the
+//! [`DynamicTypeBuilder`] the type is being built in and answers a handle
+//! into it. Two fields of one message that both map to `sequence<octet>`
+//! get two nodes and not one; the model does not intern them, and nothing
+//! on the wire can tell the difference.
 
 use alloc::format;
 use alloc::string::String;
 
+use zerodds_ast::TypeNode;
+use zerodds_ast_core::Id;
 use zerodds_types::dynamic::{
-    DynamicType, DynamicTypeBuilderFactory, ExtensibilityKind, MemberDescriptor, TypeDescriptor,
-    TypeKind,
+    DynamicError, DynamicType, DynamicTypeBuilder, ExtensibilityKind, NewMember, TypeKind,
 };
 
 use crate::ProtoFieldType;
@@ -42,39 +53,42 @@ pub enum MapError {
     Cyclic(String),
 }
 
-fn canonical_name(kind: TypeKind) -> &'static str {
-    match kind {
-        TypeKind::Boolean => "boolean",
-        TypeKind::Float32 => "float",
-        TypeKind::Float64 => "double",
-        TypeKind::Int32 => "int32",
-        TypeKind::Int64 => "int64",
-        TypeKind::UInt32 => "uint32",
-        TypeKind::UInt64 => "uint64",
-        _ => "prim",
-    }
+/// A `DynamicError` as the string [`MapError::Build`] carries.
+pub(crate) fn build_error(error: &DynamicError) -> MapError {
+    MapError::Build(format!("{error}"))
 }
 
-/// The element `TypeDescriptor` for a field (before any `repeated` wrapping).
-/// Only scalar / `string` / `bytes` map here; message / enum / group elements
-/// are resolved by the [`crate::registry`] (they need the full type graph).
-pub(crate) fn element_descriptor(field: &Field) -> Result<TypeDescriptor, MapError> {
+/// The element type of a field, before any `repeated` wrapping.
+///
+/// Only scalar / `string` / `bytes` map here; message / enum / group
+/// elements are resolved by the [`crate::registry`], which has the full
+/// type graph.
+pub(crate) fn element_type(
+    builder: &mut DynamicTypeBuilder,
+    field: &Field,
+) -> Result<Id<TypeNode>, MapError> {
     let ty = field.ty.ok_or_else(|| MapError::UnsupportedField {
         field: field.name.clone(),
         reason: "unknown field type code",
     })?;
-    Ok(match ty {
-        ProtoFieldType::String => TypeDescriptor::string8(0),
-        ProtoFieldType::Bytes => TypeDescriptor::sequence(
-            "sequence<octet>",
-            TypeDescriptor::primitive(TypeKind::Byte, "byte"),
-            0,
-        ),
+    match ty {
+        // proto `string` is UTF-8 and unbounded; XTypes `string` is the
+        // narrow-character one, so `string8`.
+        ProtoFieldType::String => builder.string(false, None).map_err(|e| build_error(&e)),
+        // proto `bytes` is an unbounded octet string, which XTypes writes
+        // as `sequence<octet>` — §7.2.2.2.1.2 gives `BYTE_TYPE` eight bits
+        // with no arithmetic interpretation, which is what a byte is.
+        ProtoFieldType::Bytes => {
+            let octet = builder
+                .primitive(TypeKind::Byte)
+                .map_err(|e| build_error(&e))?;
+            builder.sequence(octet, None).map_err(|e| build_error(&e))
+        }
         ProtoFieldType::Message | ProtoFieldType::Group | ProtoFieldType::Enum => {
-            return Err(MapError::UnsupportedField {
+            Err(MapError::UnsupportedField {
                 field: field.name.clone(),
                 reason: "nested message / enum needs the type registry (next step)",
-            });
+            })
         }
         scalar => {
             let kind = scalar
@@ -83,22 +97,22 @@ pub(crate) fn element_descriptor(field: &Field) -> Result<TypeDescriptor, MapErr
                     field: field.name.clone(),
                     reason: "no primitive kind",
                 })?;
-            TypeDescriptor::primitive(kind, canonical_name(kind))
+            builder.primitive(kind).map_err(|e| build_error(&e))
         }
-    })
+    }
 }
 
-/// The full member `TypeDescriptor` for a field, wrapping the element in an
-/// unbounded `sequence<T>` when the field is `repeated`.
-pub(crate) fn field_descriptor(field: &Field) -> Result<TypeDescriptor, MapError> {
-    let element = element_descriptor(field)?;
-    Ok(match field.label {
-        Label::Repeated => {
-            let name = format!("sequence<{}>", element.name);
-            TypeDescriptor::sequence(name, element, 0)
-        }
-        Label::Optional | Label::Required => element,
-    })
+/// The member type of a field: its element, wrapped in an unbounded
+/// `sequence<T>` where the field is `repeated`.
+pub(crate) fn field_type(
+    builder: &mut DynamicTypeBuilder,
+    field: &Field,
+) -> Result<Id<TypeNode>, MapError> {
+    let element = element_type(builder, field)?;
+    match field.label {
+        Label::Repeated => builder.sequence(element, None).map_err(|e| build_error(&e)),
+        Label::Optional | Label::Required => Ok(element),
+    }
 }
 
 /// Map a protobuf message to an XTypes `DynamicType` with the given
@@ -111,25 +125,26 @@ pub fn message_to_type(
     message: &Message,
     extensibility: ExtensibilityKind,
 ) -> Result<DynamicType, MapError> {
-    let mut td = TypeDescriptor::structure(message.name.clone());
-    td.extensibility_kind = extensibility;
-    let mut builder = DynamicTypeBuilderFactory::create_type(td)
-        .map_err(|e| MapError::Build(format!("{e:?}")))?;
+    let mut builder = DynamicTypeBuilder::new();
+    let structure = builder
+        .structure(&message.name, extensibility)
+        .map_err(|e| build_error(&e))?;
 
     for field in &message.fields {
         let id = u32::try_from(field.number).map_err(|_| MapError::UnsupportedField {
             field: field.name.clone(),
             reason: "field number out of range",
         })?;
-        let member = MemberDescriptor::new(field.name.clone(), id, field_descriptor(field)?);
+        let member_type = field_type(&mut builder, field)?;
         builder
-            .add_member(member)
-            .map_err(|e| MapError::Build(format!("{e:?}")))?;
+            .add_member(
+                structure,
+                &NewMember::new(&field.name, member_type).with_id(id),
+            )
+            .map_err(|e| build_error(&e))?;
     }
 
-    builder
-        .build()
-        .map_err(|e| MapError::Build(format!("{e:?}")))
+    builder.finish_as(structure).map_err(|e| build_error(&e))
 }
 
 #[cfg(test)]

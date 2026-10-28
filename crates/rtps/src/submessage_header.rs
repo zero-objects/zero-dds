@@ -20,8 +20,17 @@
 
 use crate::error::WireError;
 
-/// Submessage IDs supported in phase 0. Values from
-/// Spec-Tabelle 8.13.
+/// Submessage kinds. The octets are the ones of DDSI-RTPS 2.5
+/// §8.3.2 table 8.13 / PSM §9.4.5.1.1.
+///
+/// `InfoSrc` is `0x0C` and `InfoReplyIp4` is `0x0D`. The RTPS 1.x
+/// values (`INFO_SRC = 0x0A`, `INFO_DST = 0x0C`) were kept here for a
+/// while, which made a peer's INFO_SRC decode as `InfoReplyIp4` — an
+/// id without a decoder, so the submessage was skipped as `Unknown`
+/// and the receiver never took over the announced source version,
+/// vendor id and GuidPrefix. `crates/security-crypto/src/plugin.rs`
+/// writes `0x0C` for its cross-vendor INFO_SRC marker and is the
+/// second reading of the same table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
 #[allow(missing_docs)]
@@ -31,8 +40,8 @@ pub enum SubmessageId {
     Heartbeat = 0x07,
     Gap = 0x08,
     InfoTs = 0x09,
-    InfoSrc = 0x0A,
-    InfoReplyIp4 = 0x0C,
+    InfoSrc = 0x0C,
+    InfoReplyIp4 = 0x0D,
     InfoDst = 0x0E,
     InfoReply = 0x0F,
     NackFrag = 0x12,
@@ -62,8 +71,8 @@ impl SubmessageId {
             0x07 => Ok(Self::Heartbeat),
             0x08 => Ok(Self::Gap),
             0x09 => Ok(Self::InfoTs),
-            0x0A => Ok(Self::InfoSrc),
-            0x0C => Ok(Self::InfoReplyIp4),
+            0x0C => Ok(Self::InfoSrc),
+            0x0D => Ok(Self::InfoReplyIp4),
             0x0E => Ok(Self::InfoDst),
             0x0F => Ok(Self::InfoReply),
             0x12 => Ok(Self::NackFrag),
@@ -75,7 +84,7 @@ impl SubmessageId {
     }
 }
 
-/// E-Flag-Bit-Position im Flag-Byte.
+/// E-Flag bit position in flag byte.
 pub const FLAG_E_LITTLE_ENDIAN: u8 = 0x01;
 
 /// Submessage-Header.
@@ -170,6 +179,34 @@ mod tests {
     #[test]
     fn submessage_id_gap_is_0x08() {
         assert_eq!(SubmessageId::Gap.as_u8(), 0x08);
+    }
+
+    #[test]
+    fn submessage_id_octets_match_spec_table_8_13() {
+        // DDSI-RTPS 2.5 §8.3.2 table 8.13 / PSM §9.4.5.1.1. Every
+        // kind this crate names, with the octet the spec assigns it.
+        for (id, octet) in [
+            (SubmessageId::Pad, 0x01u8),
+            (SubmessageId::AckNack, 0x06),
+            (SubmessageId::Heartbeat, 0x07),
+            (SubmessageId::Gap, 0x08),
+            (SubmessageId::InfoTs, 0x09),
+            (SubmessageId::InfoSrc, 0x0C),
+            (SubmessageId::InfoReplyIp4, 0x0D),
+            (SubmessageId::InfoDst, 0x0E),
+            (SubmessageId::InfoReply, 0x0F),
+            (SubmessageId::NackFrag, 0x12),
+            (SubmessageId::HeartbeatFrag, 0x13),
+            (SubmessageId::Data, 0x15),
+            (SubmessageId::DataFrag, 0x16),
+        ] {
+            assert_eq!(id.as_u8(), octet, "wire octet of {id:?}");
+            assert_eq!(SubmessageId::from_u8(octet).unwrap(), id);
+        }
+        // 0x0A and 0x0B are the RTPS 1.x INFO_SRC / INFO_REPLY and are
+        // unassigned in 2.5: they must not decode to a known kind.
+        assert!(SubmessageId::from_u8(0x0A).is_err());
+        assert!(SubmessageId::from_u8(0x0B).is_err());
     }
 
     #[test]
@@ -272,7 +309,7 @@ mod tests {
 
     #[test]
     fn submessage_header_decode_rejects_truncated() {
-        let bytes = [0x15u8, 0x01]; // nur 2 Byte
+        let bytes = [0x15u8, 0x01]; // only 2 bytes
         let res = SubmessageHeader::from_bytes(&bytes);
         assert!(matches!(
             res,

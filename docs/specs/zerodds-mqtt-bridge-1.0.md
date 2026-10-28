@@ -1,68 +1,83 @@
-# `zerodds-mqtt-bridge` v1.0 — DDS↔MQTT-5-Bridge-Daemon
+# `zerodds-mqtt-bridge` v1.0 — DDS↔MQTT 5 bridge daemon
 
-ZeroDDS Vendor-Spec. Spezifiziert das Verhalten eines konfigurierbaren
-Daemons, der DDS-Topics mit MQTT-5-Brokern koppelt.
+ZeroDDS vendor spec. Specifies the behavior of a configurable
+daemon that couples DDS topics with MQTT 5 brokers.
 
 ## Motivation
 
-Der MQTT-5-Standard (OASIS, 2019) ist die Lingua-Franca der IoT-
-Gerätewelt: Mosquitto, EMQX, HiveMQ, AWS-IoT-Core, Azure-IoT-Hub —
-alle sprechen MQTT-5. ZeroDDS hingegen ist die Backbone-Technologie
-hinter Real-Time-Industriedaten (Robotik, Sensorfusion, Steuerungs-
-systeme). Der `zerodds-mqtt-bridged`-Daemon koppelt beide Welten:
-DDS-Topics werden in MQTT-Topics übersetzt und umgekehrt, byte-genau,
-mit voller QoS-Translation.
+The MQTT 5 standard (OASIS, 2019) is the lingua franca of the IoT
+device world: Mosquitto, EMQX, HiveMQ, AWS IoT Core, Azure IoT Hub —
+all speak MQTT 5. ZeroDDS, on the other hand, is the backbone technology
+behind real-time industrial data (robotics, sensor fusion, control
+systems). The `zerodds-mqtt-bridged` daemon couples both worlds:
+DDS topics are translated into MQTT topics and vice versa, byte-exact,
+with full QoS translation.
 
-Komplementär zur Library `crates/mqtt-bridge/` (MQTT-5-Codec +
-DDS-Bridge-Logik) — die Library ist Building-Block, dieser Daemon ist
-das ausführbare Produkt.
+Complementary to the library `crates/mqtt-bridge/` (MQTT 5 codec +
+DDS bridge logic) — the library is the building block, this daemon is
+the executable product.
 
-## §1 Conformance-Levels
+## §1 Conformance levels
 
-| Level | Anforderung |
+| Level | Requirement |
 |-------|-------------|
-| **L1 — Wire** | Daemon spricht MQTT-5 (OASIS Standard 2019) inkl. CONNECT/PUBLISH/SUBSCRIBE/Properties; MQTT-3.1.1 als Compat-Mode. |
-| **L2 — DDS** | Daemon ist gültiger DDS-DomainParticipant (SPDP/SEDP, Discovery, Liveliness). |
-| **L3 — Bridging** | Bidirektional: MQTT→DDS-Publish + DDS→MQTT-Push für alle gemappten Topics. |
-| **L4 — Config** | Topic-Map per YAML-Config; Hot-Reload via SIGHUP optional. |
-| **L5 — Auth** | TLS (`mqtts://`) + Username/Password + Client-Cert + JWT-via-AUTH-Property. |
-| **L6 — Multi-Tenant** | Mehrere DomainParticipants pro Daemon; pro MQTT-Client-Id eine Tenant-Bindung. |
+| **L1 — Wire** | The daemon speaks MQTT 5 (OASIS Standard 2019) including CONNECT/PUBLISH/SUBSCRIBE/Properties; MQTT 3.1.1 as compat mode. |
+| **L2 — DDS** | The daemon is a valid DDS DomainParticipant (SPDP/SEDP, discovery, liveliness). |
+| **L3 — Bridging** | Bidirectional: MQTT→DDS publish + DDS→MQTT push for all mapped topics. |
+| **L4 — Config** | Topic map via YAML config; hot reload via SIGHUP optional. |
+| **L5 — Auth** | TLS (`mqtts://`) + username/password + client cert + JWT via AUTH property. |
+| **L6 — Multi-Tenant** | Several DomainParticipants per daemon; one tenant binding per MQTT client ID. |
 
-L1-L4 sind Pflicht. L5-L6 sind optional (Pflicht für Production).
+L1-L4 are mandatory. L5-L6 are optional (mandatory for production).
 
-## §2 CLI-Surface
+## §2 CLI surface
 
 ```
 zerodds-mqtt-bridged [OPTIONS]
 
 Options:
-  --config <FILE>              Path zur Config-File (YAML/JSON/TOML)
-  --broker <URL>               MQTT-Broker-URL (mqtt://, mqtts://, ws://, wss://)
-  --client-id <ID>             MQTT-Client-Id (Default: "zerodds-bridge-<host>")
-  --domain <ID>                DDS-Domain-ID (Default 0)
-  --username <USER>            MQTT-Username
-  --password <PASS>            MQTT-Password (oder ENV $MQTT_PASSWORD)
-  --tls-ca <FILE>              CA-Cert für Broker-Verification
-  --tls-cert <FILE>            Client-Cert (PEM)
-  --tls-key <FILE>             Client-Key (PEM)
-  --topic <DDS:MQTT>           Single-Topic-Override (mehrfach erlaubt)
-  --log-level <LEVEL>          trace/debug/info/warn/error (Default info)
-  --metrics <ADDR>             Prometheus-Scrape-Endpoint (Default off)
-  --version                    Versions-Info
-  --help                       Hilfe
+  --config <FILE>              Base file (YAML subset of zerodds-config),
+                               plus FILE.d/; without it: mqtt-bridged.yaml and mqtt-bridged.d/
+                               in the system directory
+  --set <PATH=VALUE>           one value above all files, repeatable
+  --check-config               check the configuration, print every value with its
+                               origin, exit (0 valid, 1 invalid)
+  --broker <URL>               MQTT broker URL (mqtt://, mqtts://, ws://, wss://)
+  --client-id <ID>             MQTT client ID (default: "zerodds-bridge-<host>")
+  --domain <ID>                DDS domain ID (default 0)
+  --username <USER>            MQTT username
+  --password <PASS>            MQTT password (or ENV $MQTT_PASSWORD)
+  --tls-ca <FILE>              CA cert for broker verification
+  --tls-cert <FILE>            client cert (PEM)
+  --tls-key <FILE>             client key (PEM)
+  --topic <DDS:MQTT>           single-topic override (allowed several times)
+  --log-level <LEVEL>          trace/debug/info/warn/error (default info)
+  --metrics <ADDR>             Prometheus scrape endpoint (default off)
+  --version                    version info
+  --help                       help
 
-Exit-Codes:
-  0   normaler Shutdown (SIGTERM/SIGINT)
-  1   Config-Fehler
-  2   Broker-Connect-Fehler
-  3   DDS-Discovery-Fehler
-  4   TLS-Fehler
-  5   Auth-Fehler (CONNACK reason 0x86/0x87)
+Exit codes:
+  0   normal shutdown (SIGTERM/SIGINT)
+  1   config error
+  2   broker connect error
+  3   DDS discovery error
+  4   TLS error
+  5   auth error (CONNACK reason 0x86/0x87)
 ```
 
-## §3 Config-File-Format
+Precedence (lowest first): built-in defaults, environment, files,
+flags. `--broker`, `--client-id`, `--domain`, `--username`, `--password`, `--tls-ca`, `--tls-cert`, `--tls-key`, `--topic <DDS[:MQTT]>`, `--log-level` and `--metrics` are short forms for `--set` of their file key
+and therefore win over the files. The same file may carry the keys of the
+DDS runtime (`transport.*`, `discovery.*`, …), see
+`zerodds-deployment-1.0.md` §2.1.
 
-YAML-Schema (auch JSON/TOML akzeptiert):
+## §3 Config file format
+
+YAML subset of `zerodds-config` (block lists, flat inline lists of
+scalars, `include:`, drop-ins, `${VAR}`). An unknown key in
+a known section and a value of the wrong type prevent the start,
+with file and line; an unknown key at the top level produces
+a warning, and under `--check-config` an error.
 
 ```yaml
 # zerodds-mqtt-bridged.yaml
@@ -75,6 +90,7 @@ mqtt:
   username: "${MQTT_USER}"
   password: "${MQTT_PASSWORD}"
   keep_alive_secs: 60
+  drain_timeout_secs: 30                   # §9.2: wait for QoS 1/2 acks at shutdown
   clean_start: false
   session_expiry_interval_secs: 86400
   max_packet_size: 1048576
@@ -131,42 +147,42 @@ acl:
 
 metrics:
   enabled: true
-  listen: "127.0.0.1:9091"
+  listen: "127.0.0.1:9092"
   path: "/metrics"
 ```
 
-ENV-Substitution: `${VAR}` und `${VAR:-default}` werden vor Config-
-Parse aufgelöst.
+ENV substitution: `${VAR}` and `${VAR:-default}` are resolved before the config
+parse.
 
-## §4 MQTT-Wire-Protocol
+## §4 MQTT wire protocol
 
 ### §4.1 Handshake (CONNECT)
 
-Der Daemon ist MQTT-5-Client gegenüber dem Broker. CONNECT-Properties:
+The daemon is an MQTT 5 client towards the broker. CONNECT properties:
 
-| Property | Wert |
+| Property | Value |
 |----------|------|
-| `Session Expiry Interval` | aus Config (`session_expiry_interval_secs`) |
-| `Receive Maximum` | aus Config (`receive_maximum`) |
-| `Maximum Packet Size` | aus Config (`max_packet_size`) |
+| `Session Expiry Interval` | from config (`session_expiry_interval_secs`) |
+| `Receive Maximum` | from config (`receive_maximum`) |
+| `Maximum Packet Size` | from config (`max_packet_size`) |
 | `Topic Alias Maximum` | 100 (default) |
 | `Request Response Information` | 0 |
 | `Request Problem Information` | 1 |
 | `User Property[zerodds_version]` | `"1.0"` |
 | `User Property[zerodds_role]` | `"bridge"` |
-| `Authentication Method` | optional (z.B. `"SCRAM-SHA-256"`, `"OAUTHBEARER"`) |
+| `Authentication Method` | optional (e.g. `"SCRAM-SHA-256"`, `"OAUTHBEARER"`) |
 | `Authentication Data` | optional |
 
-CONNACK-Reason-Codes 0x80+ → Daemon-Exit mit Code 5.
+CONNACK reason codes 0x80+ → daemon exit with code 5.
 
-### §4.2 Publish-Frame
+### §4.2 Publish frame
 
-DDS→MQTT: Daemon sendet PUBLISH mit der CDR-Payload als `payload`-
-Field:
+DDS→MQTT: the daemon sends PUBLISH with the CDR payload as the `payload`
+field:
 
 ```
 PUBLISH
-  Topic Name:       <mqtt_topic aus config>
+  Topic Name:       <mqtt_topic from config>
   Packet Identifier: <auto>
   Properties:
     Payload Format Indicator: 0     (binary)
@@ -176,61 +192,61 @@ PUBLISH
     User Property:            ("zerodds_flags", "<hex-flags>")  # dispose-bit etc.
     User Property:            ("zerodds_key_hash", "<32-hex>")
     User Property:            ("zerodds_source_ts_ns", "<u64>")
-    Message Expiry Interval:  <abgeleitet aus Lifespan-QoS>
+    Message Expiry Interval:  <derived from the Lifespan QoS>
   Payload:
-    [0x00, 0x07, 0x00, 0x00]        # XCDR2-LE Encap-Header
-    <CDR-Bytes>                     # gemäß zerodds-xcdr2-bindings-conformance-1.0 §3
+    [0x00, 0x07, 0x00, 0x00]        # XCDR2-LE encap header
+    <CDR-Bytes>                     # per zerodds-xcdr2-bindings-conformance-1.0 §3
 ```
 
-MQTT→DDS: PUBLISH-Empfang dekodiert die Payload als CDR (XCDR2-LE
-default; XCDR2-BE wenn Encap-Header `[0x00, 0x06, 0x00, 0x00]`),
-schreibt als DDS-Sample.
+MQTT→DDS: receiving a PUBLISH decodes the payload as CDR (XCDR2-LE
+default; XCDR2-BE if the encap header is `[0x00, 0x06, 0x00, 0x00]`),
+writes it as a DDS sample.
 
 ### §4.3 Subscribe
 
-Pro `direction=in|bidir` Topic im Config sendet Daemon SUBSCRIBE mit:
+For each `direction=in|bidir` topic in the config the daemon sends SUBSCRIBE with:
 ```
 SUBSCRIBE
   Filter:                      "<mqtt_topic>"
-  Subscription Identifier:     <pro-Topic counter>
+  Subscription Identifier:     <per-topic counter>
   QoS:                         <derived: RELIABLE→QoS-2, BEST_EFFORT→QoS-0>
   No Local:                    1
   Retain As Published:         0
   Retain Handling:             0 (send retained on subscribe)
 ```
 
-### §4.4 Control-Properties
+### §4.4 Control properties
 
-`User Property[zerodds_op]` Werte:
-- `"sample"` (default) — normales DATA
-- `"dispose"` — Instance-Dispose (DDS sendet als WriteOp::Dispose)
-- `"unregister"` — Instance-Unregister
-- `"register"` — Instance-Register (selten ueber Wire)
+`User Property[zerodds_op]` values:
+- `"sample"` (default) — normal DATA
+- `"dispose"` — instance dispose (DDS sends as WriteOp::Dispose)
+- `"unregister"` — instance unregister
+- `"register"` — instance register (rarely over the wire)
 
-Fehlt das Property, wird `"sample"` angenommen.
+If the property is missing, `"sample"` is assumed.
 
-## §5 Topic-Mapping
+## §5 Topic mapping
 
-### §5.1 Slug-Algorithmus
+### §5.1 Slug algorithm
 
-Topic-Name `Chat::Message` → MQTT-Topic-Default-Slug:
+Topic name `Chat::Message` → default MQTT topic slug:
 1. Lowercase: `chat::message`
 2. `::` → `/`: `chat/message`
-3. Andere non-`[a-z0-9/_-]` → `_`
+3. Other non-`[a-z0-9/_-]` → `_`
 4. Result: `chat/message`
 
-Override per `mqtt_topic`-Feld im Config.
+Override via the `mqtt_topic` field in the config.
 
-Beispiele:
-| DDS-Topic | MQTT-Default |
+Examples:
+| DDS topic | MQTT default |
 |-----------|--------------|
 | `Chat::Message` | `chat/message` |
-| `Sensor::Reading` | `sensors/reading` (mit explizitem override) |
+| `Sensor::Reading` | `sensors/reading` (with explicit override) |
 | `RoboticArm::Joint::Position` | `roboticarm/joint/position` |
 
-### §5.2 Type-Discovery
+### §5.2 Type discovery
 
-Beim Connect veröffentlicht Daemon ein Catalog-Retain auf
+On connect the daemon publishes a retained catalog on
 `$zerodds/<client_id>/catalog`:
 ```json
 {
@@ -246,45 +262,52 @@ Beim Connect veröffentlicht Daemon ein Catalog-Retain auf
 }
 ```
 
-## §6 QoS-Translation
+## §6 QoS translation
 
-| DDS-QoS | MQTT-Verhalten |
+| DDS QoS | MQTT behavior |
 |---------|----------------|
-| Reliability `RELIABLE` | MQTT-QoS 1 oder 2 (Config-Override; Default 1) |
-| Reliability `BEST_EFFORT` | MQTT-QoS 0 |
+| Reliability `RELIABLE` | MQTT QoS 1 or 2 (config override; default 1) |
+| Reliability `BEST_EFFORT` | MQTT QoS 0 |
 | Durability `VOLATILE` | retain=false |
-| Durability `TRANSIENT_LOCAL` | retain=true (letzter Sample wird auf Broker gehalten) |
-| Durability `TRANSIENT/PERSISTENT` | retain=true + Daemon-eigener Replay-Buffer beim Cold-Start |
-| History `KEEP_LAST(N)` | Daemon-internal Buffer N |
-| History `KEEP_ALL` | Daemon-Backpressure (kein Drop) |
-| Lifespan | MQTT-Property `Message Expiry Interval` (Sekunden, gerundet) |
-| Deadline | beobachtet, Daemon emittiert `$zerodds/.../deadline_missed` retain |
-| Liveliness | MQTT-Will-Message bei `liveliness_lost` |
-| Partition | Filter im Daemon vor MQTT-Publish |
+| Durability `TRANSIENT_LOCAL` | retain=true (the last sample is held on the broker) |
+| Durability `TRANSIENT/PERSISTENT` | retain=true + the daemon's own replay buffer on cold start |
+| History `KEEP_LAST(N)` | daemon-internal buffer N |
+| History `KEEP_ALL` | daemon backpressure (no drop) |
+| Lifespan | MQTT property `Message Expiry Interval` (seconds, rounded) |
+| Deadline | observed, the daemon emits `$zerodds/.../deadline_missed` retain |
+| Liveliness | MQTT will message on `liveliness_lost` |
+| Partition | filter in the daemon before the MQTT publish |
 
-QoS-Auto-Derivation: Wenn `mqtt_qos` im Config nicht gesetzt, wird er
-aus `qos.reliability` abgeleitet (RELIABLE→1, BEST_EFFORT→0). Wenn
-`retain` nicht gesetzt, aus `qos.durability` abgeleitet
-(TRANSIENT_LOCAL→true, sonst false).
+QoS auto-derivation: if `mqtt_qos` is not set in the config, it is
+derived from `qos.reliability` (RELIABLE→1, BEST_EFFORT→0). If
+`retain` is not set, it is derived from `qos.durability`
+(TRANSIENT_LOCAL→true, otherwise false).
 
 ## §7 Security
 
 ### §7.1 TLS
 
-`mqtts://`-Mode aktiviert über `mqtt.tls.enabled: true`. ALPN-Liste
-`["mqtt"]` per RFC-7301 wenn Broker es unterstützt.
+`mqtts://` mode is enabled via `mqtt.tls.enabled: true`. ALPN list
+`["mqtt"]` per RFC 7301 if the broker supports it. Under `wss://`
+the TLS handshake offers `["http/1.1"]`: the channel first carries the
+HTTP/1.1 upgrade (RFC 6455 §4). `mqtt.tls.enabled: true` with an
+`mqtt://` or `ws://` URL is rejected.
 
-Cert-Rotation via SIGHUP (Daemon liest cert/key neu, Connection bleibt
-bis natürlicher Reconnect).
+`ws://` and `wss://` (MQTT 5.0 §6): MQTT in WebSocket binary frames,
+subprotocol `mqtt`, path from the URL, otherwise `/mqtt`; default ports 80
+and 443.
 
-### §7.2 Auth-Modes
+Cert rotation via SIGHUP (the daemon re-reads cert/key, the connection stays
+until the natural reconnect).
 
-- `none`: anonyme CONNECT (Dev-Mode, nur erlaubt wenn Broker-URL `127.0.0.1`)
-- `password`: CONNECT mit `Username` + `Password`
-- `mtls`: Client-Cert-Auth, kein User/Pass im CONNECT
-- `enhanced` (MQTT-5): `Authentication Method` + `Authentication Data` Properties (z.B. SCRAM, OAUTHBEARER, JWT-Bearer)
+### §7.2 Auth modes
 
-### §7.3 ACL (Daemon-Side, vor MQTT)
+- `none`: anonymous CONNECT (dev mode, only allowed if the broker URL is `127.0.0.1`)
+- `password`: CONNECT with `Username` + `Password`
+- `mtls`: client cert auth, no user/pass in the CONNECT
+- `enhanced` (MQTT 5): `Authentication Method` + `Authentication Data` properties (e.g. SCRAM, OAUTHBEARER, JWT bearer)
+
+### §7.3 ACL (daemon side, before MQTT)
 
 ```yaml
 acl:
@@ -297,20 +320,20 @@ acl:
       allow_publish: ["chat/+"]
 ```
 
-Subject-Resolution: aus TLS-Cert-DN, MQTT-Username, oder JWT-`sub`-
-Claim (in dieser Reihenfolge).
+Subject resolution: from the TLS cert DN, MQTT username, or JWT `sub`
+claim (in this order).
 
-## §8 Operations + Observability
+## §8 Operations + observability
 
 ### §8.1 Logging
 
-Strukturiertes JSON-Log auf stdout (per `--log-level`). Felder:
+Structured JSON log on stdout (per `--log-level`). Fields:
 `timestamp`, `level`, `event`, `mqtt_topic`, `dds_topic`, `bytes`,
 `mqtt_qos`, `latency_us`, `connect_state`.
 
-### §8.2 Prometheus-Metrics
+### §8.2 Prometheus metrics
 
-Wenn `metrics.enabled: true`:
+If `metrics.enabled: true`:
 ```
 zerodds_mqtt_bridge_connect_attempts_total      counter
 zerodds_mqtt_bridge_connect_successes_total     counter
@@ -325,97 +348,97 @@ zerodds_mqtt_bridge_acl_denials_total           counter{reason}
 zerodds_mqtt_bridge_broker_disconnects_total    counter{reason_code}
 ```
 
-### §8.3 OTLP-Spans (optional)
+### §8.3 OTLP spans (optional)
 
-Wenn `OTEL_EXPORTER_OTLP_ENDPOINT`-ENV gesetzt: Daemon emittiert
-`zerodds-observability-otlp` Spans pro PUBLISH-Roundtrip
-(`mqtt.publish` + `dds.write` als Child-Spans).
+If the `OTEL_EXPORTER_OTLP_ENDPOINT` ENV is set: the daemon emits
+`zerodds-observability-otlp` spans per PUBLISH roundtrip
+(`mqtt.publish` + `dds.write` as child spans).
 
 ## §9 Lifecycle
 
 ### §9.1 Startup
 
-1. Config-Parse + Validation (fail-fast bei fehlerhafter YAML).
-2. TLS-Cert-Load wenn aktiviert.
-3. DCPS-DomainParticipant init auf `domain`.
-4. Pro Topic: Reader+Writer registrieren (gemäß `direction`).
-5. MQTT-Client-Connect mit Reconnect-Backoff.
-6. Pro `direction=in|bidir` Topic: SUBSCRIBE.
-7. SIGHUP/SIGTERM/SIGINT-Handler installieren.
+1. Config parse + validation (fail-fast on faulty YAML).
+2. TLS cert load if enabled.
+3. DCPS DomainParticipant init on `domain`.
+4. Per topic: register reader+writer (according to `direction`: `in` = broker → DDS, one DataWriter; `out` = DDS → broker, one DataReader; `bidir` = both).
+5. MQTT client connect with reconnect backoff.
+6. Per `direction=in|bidir` topic: SUBSCRIBE.
+7. Install SIGHUP/SIGTERM/SIGINT handlers.
 
 ### §9.2 Shutdown
 
-SIGTERM/SIGINT → graceful drain (max 30s, konfigurierbar):
-- Stop accepting new DDS-Samples.
-- Drain pending MQTT-PUBLISH-Acks (QoS 1/2).
-- Send DISCONNECT mit Reason-Code 0x00.
-- Cleanup DDS-Entities.
+SIGTERM/SIGINT → graceful drain (max 30s, configurable):
+- Stop accepting new DDS samples.
+- Drain pending MQTT PUBLISH acks (QoS 1/2).
+- Send DISCONNECT with reason code 0x00.
+- Cleanup DDS entities.
 - Exit 0.
 
-SIGHUP → Config-Reload (TLS-Cert + ACL hot-update; topic-map-Änderungen
-brauchen Restart).
+SIGHUP → config reload (TLS cert + ACL hot update; topic map changes
+need a restart).
 
 ### §9.3 Reconnect
 
-Broker-Disconnect → Exponential-Backoff (`reconnect.initial_delay_ms`
-bis `reconnect.max_delay_ms`). Session-State (Subscriptions,
-Inflight-Queue) wird wiederhergestellt sofern `clean_start=false`.
+Broker disconnect → exponential backoff (`reconnect.initial_delay_ms`
+up to `reconnect.max_delay_ms`). The session state (subscriptions,
+inflight queue) is restored if `clean_start=false`.
 
-## §10 Cross-Vendor
+## §10 Cross-vendor
 
-Daemon ist ein normaler RTPS-Peer auf der DDS-Seite — Cyclone/RTI/
-Fast-DDS-Subscriber empfangen Samples, die ein MQTT-Client published,
-und vice versa. Auf der MQTT-Seite ist der Daemon ein normaler
-MQTT-5-Client — getestet gegen Mosquitto, EMQX, HiveMQ.
+The daemon is a normal RTPS peer on the DDS side — Cyclone/RTI/
+Fast DDS subscribers receive samples that an MQTT client publishes,
+and vice versa. On the MQTT side the daemon is a normal
+MQTT 5 client — tested against Mosquitto, EMQX, HiveMQ.
 
-Verifiziert in `crates/mqtt-bridge/tests/cross_vendor.rs`.
+Verified in `crates/mqtt-bridge/tests/cross_vendor.rs`.
 
 ## §11 Packaging
 
-Per `zerodds-deployment-1.0` Spec:
-- Binary: `zerodds-mqtt-bridged` (statisch gelinkt empfohlen)
-- Config-Default: `/etc/zerodds/mqtt-bridged.yaml` (Linux), `/usr/local/etc/zerodds/` (Mac), `%PROGRAMDATA%\ZeroDDS\` (Win)
-- Systemd-Unit: `zerodds-mqtt-bridged.service`
-- launchd-Plist: `org.zerodds.mqtt-bridged.plist`
-- Win-Service: `ZeroDDSMQTTBridge`
+Per the `zerodds-deployment-1.0` spec:
+- Binary: `zerodds-mqtt-bridged` (statically linked recommended)
+- Config default: `/etc/zerodds/mqtt-bridged.yaml` (Linux), `/usr/local/etc/zerodds/` (Mac), `%PROGRAMDATA%\ZeroDDS\` (Win)
+- Systemd unit: `zerodds-mqtt-bridged.service`
+- launchd plist: `org.zerodds.mqtt-bridged.plist`
+- Win service: `ZeroDDSMQTTBridge`
 - Docker: `zerodds/mqtt-bridged:1.0`
 
 Manual: `man 1 zerodds-mqtt-bridged` + `man 5 zerodds-mqtt-bridged.yaml`.
 
 ## §12 Testing
 
-### §12.1 Unit-Tests
+### §12.1 Unit tests
 
-Pro Modul (`config`, `mqtt_codec`, `topic_map`, `qos_translate`,
-`dds_pump`, `acl`) ≥ 5 Tests in `crates/mqtt-bridge/`.
+Per module (`config`, `mqtt_codec`, `topic_map`, `qos_translate`,
+`dds_pump`, `acl`) ≥ 5 tests in `crates/mqtt-bridge/`.
 
-### §12.2 Integration-Tests
+### §12.2 Integration tests
 
 `crates/mqtt-bridge/tests/bridge_e2e.rs`:
-- Spawn `zerodds-mqtt-bridged` als Subprocess.
+- Spawn `zerodds-mqtt-bridged` as a subprocess.
 - Mosquitto via testcontainers (Docker).
-- Publish auf MQTT-Topic, DDS-Subscriber empfaengt.
-- Publish auf DDS-Topic, MQTT-Subscriber empfaengt.
-- Verify byte-genauer Roundtrip.
+- Publish on an MQTT topic, the DDS subscriber receives.
+- Publish on a DDS topic, the MQTT subscriber receives.
+- Verify a byte-exact roundtrip.
 
-### §12.3 Multi-Vendor
+### §12.3 Multi-vendor
 
-`tests/cross_vendor.rs` (cargo-feature-gated): Cyclone-DDS-Subscriber
-in Docker-Compose, ZeroDDS-MQTT-Bridge als Pump zwischen MQTT-Client
-und Cyclone.
+`tests/cross_vendor.rs` (cargo-feature-gated): Cyclone DDS subscriber
+in Docker Compose, ZeroDDS MQTT bridge as a pump between the MQTT client
+and Cyclone.
 
-Broker-Matrix: Mosquitto 2.x, EMQX 5.x, HiveMQ 4.x, Aedes (JS).
+Broker matrix: Mosquitto 2.x, EMQX 5.x, HiveMQ 4.x, Aedes (JS).
 
-## §13 Cross-References
+## §13 Cross-references
 
 - Library: `crates/mqtt-bridge/`
-- MQTT-5-Standard: OASIS Standard 2019.
-- Wire-Format: `zerodds-xcdr2-bindings-conformance-1.0` §3.
+- MQTT 5 standard: OASIS Standard 2019.
+- Wire format: `zerodds-xcdr2-bindings-conformance-1.0` §3.
 - Deployment: `zerodds-deployment-1.0`.
-- Verwandte Daemons: `zerodds-ws-bridge-1.0`, `zerodds-coap-bridge-1.0`,
+- Related daemons: `zerodds-ws-bridge-1.0`, `zerodds-coap-bridge-1.0`,
   `zerodds-amqp-bridge-daemon-1.0`, `zerodds-grpc-bridge-1.0`.
 
 ## §14 Versioning
 
-`1.0` initial. Patch-Updates für Bugfixes, Minor für additive Config-
-Felder, Major für Wire-Protocol-Changes (z.B. MQTT-5.x → 6).
+`1.0` initial. Patch updates for bug fixes, minor for additive config
+fields, major for wire protocol changes (e.g. MQTT 5.x → 6).

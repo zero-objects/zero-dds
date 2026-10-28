@@ -3,36 +3,36 @@
 
 //! Transport-E2E Benchmark-Suite (v1.2 baseline).
 //!
-//! Misst die `send()`-Pfade aller ZeroDDS-Transports ueber die
-//! kanonische Payload-Achse. Ein Receiver-Thread drainiert den
-//! Kernel-Socket-Buffer im Hintergrund, damit die Messung nicht
-//! durch volle OS-Puffer blockt oder dropped.
+//! Measures the `send()` paths of all ZeroDDS transports over the
+//! canonical payload axis. A receiver thread drains the
+//! kernel socket buffer in the background so the measurement is not
+//! blocked or dropped by full OS buffers.
 //!
 //! # Scope
 //!
-//! Zeit pro `send()` bei unterschiedlichen Payload-Groessen auf
-//! dem TX-Pfad. Der RX-Thread ist kein Teil der Messung — er hebt
-//! nur die Socket-Buffer-Grenze auf. Echte E2E-Ping/Pong-Latenz
-//! liefert das `roundtrip-1us`-Binary.
+//! Time per `send()` at different payload sizes on
+//! the TX path. The RX thread is not part of the measurement — it only
+//! lifts the socket buffer limit. Real E2E ping/pong latency
+//! is provided by the `roundtrip-1us` binary.
 //!
-//! # Was hier bewusst NICHT gemessen wird
+//! # What is deliberately NOT measured here
 //!
 //! - E2E-Latenz (Send→Recv Roundtrip).
 //! - Multi-producer/consumer contention.
-//! - Cross-Vendor-Vergleich gegen Cyclone/FastDDS — Sache des
+//! - Cross-vendor comparison against Cyclone/FastDDS — that is the job of the
 //!   Live-Interop-Harness in `internal/interop/`.
 //!
 //! # Run
 //!
 //! ```bash
-//! # Baseline auf getuntem llvm-Host:
+//! # Baseline on a tuned bare-metal Linux host:
 //! sudo ./benches/hosts/llvm/tune.sh on
 //! taskset -c 4-11 cargo bench -p zerodds-bench-suite \
 //!     --bench transports_e2e -- --save-baseline v1.2-baseline
 //! sudo ./benches/hosts/llvm/tune.sh off
 //! ```
 
-// transports_e2e nutzt UDS + POSIX-SHM — POSIX-only.
+// transports_e2e uses UDS + POSIX-SHM — POSIX-only.
 #![cfg(unix)]
 #![allow(
     clippy::unwrap_used,
@@ -70,11 +70,11 @@ fn id(n: u8) -> [u8; 16] {
     a
 }
 
-/// Drain-Guard: haelt einen Thread am Leben der recv() in einer Loop
-/// aufruft, bis `stop` gesetzt wird. `Drop` signalisiert + joined.
+/// Drain guard: keeps a thread alive that calls recv() in a loop
+/// until `stop` is set. `Drop` signals + joins.
 ///
-/// Damit der Kernel-Socket-Buffer bei grossen TX-Raten nicht volllaeuft
-/// und `send()` blockt oder dropped.
+/// So the kernel socket buffer does not fill up at high TX rates
+/// and `send()` blocks or drops.
 struct DrainGuard {
     stop: Arc<AtomicBool>,
     handle: Option<thread::JoinHandle<()>>,
@@ -99,9 +99,9 @@ impl DrainGuard {
 impl Drop for DrainGuard {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Relaxed);
-        // Eine kleine Send-to-self triggert den recv-Wakeup. Fuer
-        // UDP+UDS funktioniert das ohnehin durch recv_timeout, den
-        // wir beim Drainer setzen muessen — siehe spawn-helfer.
+        // A small send-to-self triggers the recv wakeup. For
+        // UDP+UDS this works anyway through recv_timeout, which
+        // we must set on the drainer — see spawn helper.
         if let Some(h) = self.handle.take() {
             let _ = h.join();
         }
@@ -142,14 +142,14 @@ fn bench_udp(c: &mut Criterion) {
 }
 
 // --------------------------------------------------------------------
-// UDP recv (Welle 4-Folge — R1 Slab-Pool Entscheidungs-Baseline)
+// UDP recv (wave 4 sequence — R1 Slab-Pool decision baseline)
 // --------------------------------------------------------------------
 //
-// Misst die Recv-Hot-Path-Latenz (recv_from + Arc::from). Sender im
-// Background-Thread floodet kontinuierlich; Bench-Thread misst nur
-// die Zeit fuer einen `recv()`-Call. Heap-Alloc-Druck pro Iteration
-// = 1× `Arc::from(&buf[..len])`. Vergleichswert fuer ein zukuenftiges
-// Slab-Pool-Re-Implementation (`Arc<[u8; SIZE]>`-Pool ohne Per-
+// Measures recv hot-path latency (recv_from + Arc::from). Sender on
+// Background thread floods continuously; bench thread measures only
+// the time for one `recv()` call. Heap alloc pressure per iteration
+// = 1× `Arc::from(&buf[..len])`. Reference value for a future
+// slab pool re-implementation (`Arc<[u8; SIZE]>` pool without per-
 // Datagram-Alloc).
 fn bench_udp_recv(c: &mut Criterion) {
     let mut group = c.benchmark_group("udp_recv");
@@ -172,8 +172,8 @@ fn bench_udp_recv(c: &mut Criterion) {
         let tx_clone = Arc::clone(&tx);
         let rx_loc = rx_locator;
         let payload_clone = payload.clone();
-        // Background-Sender flutet kontinuierlich. Wir senden mit
-        // 50us-Pause damit der Sender selbst nicht die CPU monopolisiert.
+        // Background sender floods continuously. We send with
+        // a 50us pause so the sender itself does not monopolize the CPU.
         let sender = thread::spawn(move || {
             while !stop_tx.load(Ordering::Relaxed) {
                 let _ = tx_clone.send(&rx_loc, &payload_clone);
@@ -297,11 +297,11 @@ fn bench_uds_abstract(c: &mut Criterion) {
 
 #[cfg(not(target_os = "linux"))]
 fn bench_uds_abstract(_: &mut Criterion) {
-    // Linux-only; no-op auf macOS/Windows.
+    // Linux-only; no-op on macOS/Windows.
 }
 
 // --------------------------------------------------------------------
-// POSIX-SHM (T3) — Shmem ist nicht Send, Consumer drain inline
+// POSIX SHM (T3) — Shmem is not Send, consumer drains inline
 // --------------------------------------------------------------------
 
 fn bench_shm(c: &mut Criterion) {
@@ -332,7 +332,7 @@ fn bench_shm(c: &mut Criterion) {
             |b, p| {
                 b.iter(|| {
                     owner.send(black_box(&rx_locator), black_box(p)).unwrap();
-                    // Inline-drain (Shmem is !Send, kein Thread moeglich).
+                    // Inline drain (Shmem is !Send, no thread possible).
                     let _ = consumer.recv();
                 });
             },
@@ -360,7 +360,7 @@ fn tempfile_dir(tag: &str) -> PathBuf {
 }
 
 fn rand_tag() -> u64 {
-    // Nanos seit UNIX_EPOCH als poor-man-unique-tag.
+    // Nanos since UNIX_EPOCH as a poor-man unique tag.
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.subsec_nanos() as u64)
@@ -379,9 +379,9 @@ fn bench_tcp(c: &mut Criterion) {
     let mut group = c.benchmark_group("tcp_send");
     group.measurement_time(Duration::from_secs(5));
 
-    // RX: TcpTransport bindet einen Listener. TX: zweite Instanz, die
-    // sich auf den Listener verbindet. accept_one() in Background-Thread
-    // holt die Connection rein, damit `tx.send()` sofort losschicken kann.
+    // RX: TcpTransport binds a listener. TX: second instance that
+    // connects to the listener. accept_one() in a background thread
+    // brings in the connection so `tx.send()` can send immediately.
     let rx = TcpTransport::bind_v4(Ipv4Addr::LOCALHOST, 0).expect("rx bind");
     let rx_locator = <TcpTransport as Transport>::local_locator(&rx);
     let rx_arc = Arc::new(rx);
@@ -417,7 +417,7 @@ fn bench_tcp(c: &mut Criterion) {
     group.finish();
     drop(tx);
     drop(rx_arc);
-    let _ = accept_handle; // Best-effort cleanup; thread läuft im idle-poll.
+    let _ = accept_handle; // Best-effort cleanup; thread runs in idle-poll.
 }
 
 criterion_group!(

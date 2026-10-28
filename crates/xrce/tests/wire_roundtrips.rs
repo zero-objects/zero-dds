@@ -17,6 +17,7 @@
     missing_docs
 )]
 
+use zerodds_xrce::handshake::{ClientRepresentation, XRCE_VERSION};
 use zerodds_xrce::submessages::{
     AckNackPayload, CreateClientPayload, CreatePayload, DataFormat, DataPayload, DeletePayload,
     FragmentPayload, GetInfoPayload, HeartbeatPayload, InfoPayload, ReadDataPayload,
@@ -24,14 +25,22 @@ use zerodds_xrce::submessages::{
     TimestampPayload, TimestampReplyPayload, WriteDataPayload,
 };
 use zerodds_xrce::{
-    BaseObjectRequest, Message, MessageHeader, ObjectId, SESSION_ID_NONE_WITHOUT_CLIENT_KEY,
-    SerialNumber16, SessionId, StreamId, Submessage,
+    BaseObjectRequest, ClientKey, Message, MessageHeader, ObjectId,
+    SESSION_ID_NONE_WITHOUT_CLIENT_KEY, SerialNumber16, SessionId, StreamId, Submessage,
 };
 
 fn build_all_16_submessages() -> Vec<Submessage> {
     vec![
         CreateClientPayload {
-            representation: vec![b'X', b'R', b'C', b'E', 1, 0],
+            representation: ClientRepresentation {
+                timestamp: None,
+                version: XRCE_VERSION,
+                vendor_id: [0, 0],
+                client_key: ClientKey([0, 0, 0, 0]),
+                session_id: 0,
+                properties: None,
+                requested_mtu: None,
+            },
         }
         .into_submessage()
         .unwrap(),
@@ -164,18 +173,25 @@ fn all_16_submessages_in_one_message_roundtrip() {
     assert_eq!(decoded.submessages.len(), 16);
 }
 
+/// DDS-XRCE 1.0 §8.3.1: "An XRCE message is composed of a message Header
+/// followed by one or more Submessages". A header alone is no message.
 #[test]
-fn empty_message_with_no_submessages_roundtrip() {
+fn a_message_without_a_submessage_is_refused() {
     let header = MessageHeader::without_client_key(
         SessionId(SESSION_ID_NONE_WITHOUT_CLIENT_KEY),
         StreamId::NONE,
         SerialNumber16::new(0),
     )
     .unwrap();
-    let msg = Message::new(header, vec![]).unwrap();
-    let bytes = msg.encode().unwrap();
-    assert_eq!(bytes.len(), 4); // nur Header
-    let decoded = Message::decode(&bytes).unwrap();
-    assert_eq!(decoded, msg);
-    assert!(decoded.submessages.is_empty());
+    assert!(Message::new(header, vec![]).is_err());
+    let hand_built = Message {
+        header,
+        submessages: vec![],
+    };
+    assert!(hand_built.encode().is_err());
+    // A datagram that is only the 4-octet header.
+    let mut bytes = [0u8; 4];
+    let n = header.write_to(&mut bytes).unwrap();
+    assert_eq!(n, 4);
+    assert!(Message::decode(&bytes).is_err());
 }

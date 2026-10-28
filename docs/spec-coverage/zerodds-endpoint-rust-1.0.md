@@ -39,14 +39,18 @@ Framing-Konformität wird transitiv durch jeden der 13 Sprach-E2E-Tests in
 `crates/endpoint-e2e/tests/` geprüft."
 
 **Repo:** `crates/endpoint-e2e/src/lib.rs::ping_pong` (Zeile 97–128) ist der Peer selbst.
-Es gibt kein `crates/endpoint-e2e/tests/rust.rs`, weil Rust hier nicht "die App" ist,
+In `crates/endpoint-e2e/tests/` gibt es keine Rust-Ping-Pong-Datei, weil Rust hier nicht "die App" ist,
 sondern der Peer, den jede andere Sprache anspricht — ein eigener Rust-Ping-Pong-Test
-gegen sich selbst würde nichts zusätzlich prüfen. `endpoints/rust`s eigenes
+gegen sich selbst würde nichts zusätzlich prüfen. Für den reliable Stream gilt das
+nicht: dort ist Rust die App, und `crates/endpoint-e2e/tests/rust_reliable.rs`
+existiert (siehe §4). `endpoints/rust`s eigenes
 Client/Reader-Paar wird stattdessen über die MemTransport-Beispiele (§2/§3) geprüft, nicht
 über den UDP-Peer-Pfad.
 
-**Tests:** transitiv — jeder der 14 Sprach-E2E-Tests (`ada.rs`, `c.rs`, `cpp.rs`, …) übt
-`ping_pong` aus; kein direkter Rust-eigener Test.
+**Tests:** transitiv — jeder der 14 Sprach-E2E-Tests
+(`crates/endpoint-e2e/tests/ada.rs`, `crates/endpoint-e2e/tests/c.rs`,
+`crates/endpoint-e2e/tests/cpp.rs`, …) übt `ping_pong` aus; kein direkter
+Rust-eigener Test.
 
 **Status:** n/a (informative) — strukturell, nicht offen: Rust ist die Peer-Implementierung,
 nicht ein getesteter Client dieses Peers.
@@ -147,7 +151,7 @@ leer UND Fenster leer, mit 5s-Sicherheits-Deadline gegen einen verstummten Peer)
 `crates/endpoint-e2e/src/lib.rs::reliable_collect` treibt den Peer als Receiver (dropt bei
 `drop_every=Some(3)` jedes 3. distinct Sample genau einmal).
 
-**Tests (codepit):** `cargo test -p zerodds-endpoint-e2e --test rust_reliable` —
+**Tests:** (Linux) `cargo test -p zerodds-endpoint-e2e --test rust_reliable` —
 `rust_reliable_loss_recovery` (Peer dropt jedes 3. Sample) und
 `rust_reliable_no_loss_baseline` (lossless) — je 12/12 Samples lückenlos in-order
 geliefert (`N = 12` in `tests/rust_reliable.rs`). 2/2 passed. Läuft über den
@@ -187,10 +191,13 @@ Producer-Pfad, gegen denselben leerlaufenden UDP-Sink."
 Iterationen, `handle.enqueue` gegen den Ring vs. `isock.send(&write_frame(...))` inline,
 beide gegen denselben leerlaufenden UDP-Sink gemessen.
 
-**Tests (codepit):** `cargo run -p zerodds-endpoint-rust --example example_reliable --
-bench` → `enqueue(decoupled)=30ns inline(send)=3985ns` (~133×). Lokal reproduziert (dieser
-Lauf, andere Maschine): `enqueue=124ns inline=4422ns` (~35×) — Größenordnung bestätigt,
-Absolutwert maschinenabhängig.
+**Tests:** (Linux) `cargo run -p zerodds-endpoint-rust --example example_reliable --
+bench` → `enqueue(decoupled)=30ns inline(send)=3985ns` (~133×); der
+Loss-Recovery-Pfad, den der Bench belastet, ist über
+`crates/endpoint-e2e/tests/rust_reliable.rs::rust_reliable_loss_recovery` und
+`::rust_reliable_no_loss_baseline` abgesichert. Lokal reproduziert (dieser
+Lauf, andere Maschine): `enqueue=124ns inline=4422ns` (~35×) —
+Größenordnung bestätigt, Absolutwert maschinenabhängig.
 
 **Status:** done
 
@@ -198,14 +205,14 @@ Absolutwert maschinenabhängig.
 
 ## Audit-Status
 
-7 done / 0 partial / 0 open / 2 n/a (informativ) / 0 n/a (rejected).
+7 done / 0 partial / 0 open / 2 n/a (informative) / 0 n/a (rejected).
 
-Test-Lauf (codepit-Vorgabe + lokal reproduziert): `cargo test -p zerodds-endpoint-rust
+Test-Lauf (Linux-Vorgabe + lokal reproduziert): `cargo test -p zerodds-endpoint-rust
 --lib` — 18/18 (State-Machine + Wire-Rundtrip + SPSC-Ring + Byte-Golden); `cargo test -p
 zerodds-endpoint-e2e --test rust_reliable` — 2/2 (`rust_reliable_loss_recovery`,
 `rust_reliable_no_loss_baseline`); `cargo run -p zerodds-endpoint-rust --example
 example_sync|example_async` — je 5/5 Feld-Decode, `"ALL OK"` (CI-Job `endpoints-rust`);
-Latenz-Bench `enqueue=30ns` vs. `inline=3985ns` (~133×, codepit) — lokal `124ns`/`4422ns`
+Latenz-Bench `enqueue=30ns` vs. `inline=3985ns` (~133×, Linux) — lokal `124ns`/`4422ns`
 (~35×) reproduziert.
 
 Offene Punkte: keine.

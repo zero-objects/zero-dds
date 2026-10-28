@@ -1,0 +1,40 @@
+# Standalone separate-process reproducer for issue #32 (writer restart).
+# Own `[workspace]` table → excluded from the parent workspace; built and driven
+# only by run_matrix.sh. Two binaries exchange marked `RawBytes` samples over
+# live DDS/RTPS so a persistent, timeout-tolerant reader can prove whether it
+# resumes after the ZeroDDS writer process dies and restarts with a new GUID.
+[package]
+name = "issue32-writer-restart"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+zerodds-dcps = { path = "../../crates/dcps" }
+zerodds-qos = { path = "../../crates/qos" }
+zerodds-wire = { path = "../../crates/wire" }
+zerodds-types = { path = "../../crates/types" }
+
+[build-dependencies]
+zerodds-build = { path = "../../crates/zerodds-build" }
+
+[[bin]]
+name = "restart_reader"
+path = "src/bin/restart_reader.rs"
+
+[[bin]]
+name = "restart_writer"
+path = "src/bin/restart_writer.rs"
+
+[[bin]]
+name = "robot_reader"
+path = "src/bin/robot_reader.rs"
+
+[[bin]]
+name = "robot_writer"
+path = "src/bin/robot_writer.rs"
+
+[profile.release]
+debug = false
+
+[workspace]

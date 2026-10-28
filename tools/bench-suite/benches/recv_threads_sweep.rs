@@ -33,7 +33,7 @@ mod inner {
     use zerodds_transport_udp::UdpTransport;
 
     const PAYLOAD_SIZE: usize = 1024;
-    // Per-iter Drain-Ziel. 50k * 1KiB = 50 MiB. Bei ~200 MiB/s
+    // Per-iter drain target. 50k * 1KiB = 50 MiB. At ~200 MiB/s
     // Loopback-Throughput ~250ms/iter; 20 samples * 250ms = 5s.
     const SAMPLES_PER_ITER: u64 = 50_000;
 
@@ -75,8 +75,8 @@ mod inner {
             }
         });
 
-        // Drain-Ziel ist die Mess-Groesse. Criterion bekommt die
-        // wall-clock-Dauer bis SAMPLES_PER_ITER pakete durch sind.
+        // The drain target is the measurement size. Criterion gets the
+        // wall-clock duration until SAMPLES_PER_ITER packets are through.
         let start = Instant::now();
         while counter.load(Ordering::Relaxed) < SAMPLES_PER_ITER {
             std::hint::spin_loop();

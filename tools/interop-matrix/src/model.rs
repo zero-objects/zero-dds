@@ -1,25 +1,25 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Datenmodell der Interop-Matrix.
+//! Data model of the interop matrix.
 
-/// Status einer Test-Zelle.
+/// Status of a test cell.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Status {
-    /// Volltest bestanden.
+    /// Full test passed.
     Pass,
-    /// Teilbestanden — Detail-Note erforderlich.
+    /// Partially passed — detail note required.
     Partial,
-    /// Fehlgeschlagen.
+    /// Failed.
     Fail,
-    /// Nicht anwendbar (Vendor unterstuetzt das Feature nicht).
+    /// Not applicable (vendor does not support the feature).
     NotApplicable,
-    /// Unbekannt — Test ist nicht gelaufen oder Output unklar.
+    /// Unknown — test did not run or output is unclear.
     Unknown,
 }
 
 impl Status {
-    /// Maschinenlesbares Label (in JSON benutzt).
+    /// Machine-readable label (used in JSON).
     #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
@@ -31,7 +31,7 @@ impl Status {
         }
     }
 
-    /// Parsed das JSON-Label. Returnt `Unknown` bei unbekanntem.
+    /// Parses the JSON label. Returns `Unknown` on unknown.
     #[must_use]
     pub fn parse(s: &str) -> Self {
         match s {
@@ -43,7 +43,7 @@ impl Status {
         }
     }
 
-    /// CSS-Klassenname fuer die HTML-Tabelle.
+    /// CSS class name for the HTML table.
     #[must_use]
     pub fn css_class(self) -> &'static str {
         match self {
@@ -56,16 +56,16 @@ impl Status {
     }
 }
 
-/// Eine Zelle in der Matrix: ein Test-Ergebnis mit optionaler Note.
+/// A cell in the matrix: a test result with an optional note.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Cell {
     /// Status.
     pub status: Status,
-    /// Optionale Detail-Note (z.B. Failure-Reason).
+    /// Optional detail note (e.g. failure reason).
     pub note: Option<String>,
 }
 
-/// Eine Vendor-Zeile.
+/// A vendor row.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VendorRow {
     /// Vendor-Name.
@@ -76,21 +76,21 @@ pub struct VendorRow {
     pub results: Vec<(String, Cell)>,
 }
 
-/// Komplette Matrix.
+/// Complete matrix.
 #[derive(Clone, Debug)]
 pub struct Matrix {
     /// ISO-8601 Generated-Time.
     pub generated_at: String,
-    /// Optional: git-SHA des Test-Runs.
+    /// Optional: git SHA of the test run.
     pub git_sha: Option<String>,
-    /// Profile-Spaltenkoepfe in Sortierung.
+    /// Profile column headers in sort order.
     pub profiles: Vec<String>,
-    /// Vendor-Zeilen.
+    /// Vendor rows.
     pub vendors: Vec<VendorRow>,
 }
 
 impl Matrix {
-    /// Anzahl roter Zellen — Eingabe fuer Regression-Alarm.
+    /// Number of red cells — input for the regression alarm.
     #[must_use]
     pub fn fail_count(&self) -> usize {
         self.vendors
@@ -100,7 +100,7 @@ impl Matrix {
             .count()
     }
 
-    /// `true` wenn die Matrix ueberhaupt rote Zellen hat.
+    /// `true` if the matrix has any red cells at all.
     #[must_use]
     pub fn has_failures(&self) -> bool {
         self.fail_count() > 0
@@ -108,7 +108,7 @@ impl Matrix {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)] // tests duerfen unwrap nutzen.
+#[allow(clippy::unwrap_used)] // tests may use unwrap.
 mod tests {
     use super::*;
 

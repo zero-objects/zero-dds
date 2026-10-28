@@ -1,0 +1,2 @@
+sample.c = 0x0061;
+sample.tail = 0xAB;

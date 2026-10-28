@@ -1,0 +1,58 @@
+{
+  "flag_bounded": [
+    true,
+    false
+  ],
+  "raw_octet_bounded": [
+    171,
+    1
+  ],
+  "unsigned_byte_bounded": [
+    254,
+    3
+  ],
+  "signed_byte_bounded": [
+    -13,
+    127
+  ],
+  "letter_bounded": [
+    "Z",
+    "q"
+  ],
+  "wide_letter_bounded": [
+    "ä",
+    "ሴ"
+  ],
+  "short_signed_bounded": [
+    -12345,
+    32767
+  ],
+  "short_unsigned_bounded": [
+    48879,
+    3
+  ],
+  "long_signed_bounded": [
+    -1234567,
+    2147483647
+  ],
+  "long_unsigned_bounded": [
+    3735928559,
+    5
+  ],
+  "llong_signed_bounded": [
+    "-987654321987",
+    "9223372036854775807"
+  ],
+  "llong_unsigned_bounded": [
+    "16045690984833335998",
+    "7"
+  ],
+  "single_float_bounded": [
+    -3.75,
+    2.5
+  ],
+  "double_float_bounded": [
+    3.141592653589793,
+    -2.5
+  ]
+}

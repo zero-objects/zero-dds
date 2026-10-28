@@ -45,13 +45,17 @@ namespace ZeroDDS.Examples
 
         // Builds an XRCE frame with an arbitrary submessage id + declared body
         // length, for exercising the reader's direction + validation logic.
+        // The submessage body is the 4-octet BaseObjectRequest (§7.7.8) then
+        // `body` as the sample; `declaredLen` is the submessage_length written
+        // into the header, so a test can declare a wrong one on purpose.
         private static byte[] Frame(byte id, byte[] body, int declaredLen)
         {
-            var o = new byte[8 + body.Length];
+            var o = new byte[8 + Xrce.BaseSize + body.Length];
             o[0] = 0x80; o[1] = 0x01; o[2] = 1; o[3] = 0;
-            o[4] = id; o[5] = 0x03;
+            o[4] = id; o[5] = Xrce.WriteFlags;
             o[6] = (byte)(declaredLen & 0xff); o[7] = (byte)((declaredLen >> 8) & 0xff);
-            Array.Copy(body, 0, o, 8, body.Length);
+            o[8] = 0x00; o[9] = 0x01; o[10] = 0x00; o[11] = 0x15;
+            Array.Copy(body, 0, o, 8 + Xrce.BaseSize, body.Length);
             return o;
         }
 
@@ -62,30 +66,30 @@ namespace ZeroDDS.Examples
             int rc = 0;
             var data = new byte[] { 0xAA, 0xBB, 0xCC };
             // Hub -> endpoint direction is DATA (0x09); the reader must accept it.
-            var got = Xrce.ReadFrame(Frame(0x09, data, data.Length));
+            var got = Xrce.ReadFrame(Frame(0x09, data, Xrce.BaseSize + data.Length));
             if (got == null || !AsSpan(got).SequenceEqual(data)) { Console.WriteLine("framing: DATA/0x09 not accepted"); rc = 1; }
             // Loopback WRITE_DATA (0x07) still accepted.
             var wd = new byte[] { 0x01, 0x02 };
-            var gotWd = Xrce.ReadFrame(Frame(0x07, wd, wd.Length));
+            var gotWd = Xrce.ReadFrame(Frame(0x07, wd, Xrce.BaseSize + wd.Length));
             if (gotWd == null || !AsSpan(gotWd).SequenceEqual(wd)) { Console.WriteLine("framing: WRITE_DATA/0x07 not accepted"); rc = 1; }
             // Unknown submessage id -> reject.
-            if (Xrce.ReadFrame(Frame(0x0A, wd, wd.Length)) != null) { Console.WriteLine("framing: unknown id not rejected"); rc = 1; }
+            if (Xrce.ReadFrame(Frame(0x0A, wd, Xrce.BaseSize + wd.Length)) != null) { Console.WriteLine("framing: unknown id not rejected"); rc = 1; }
             // Truncated header (fewer than 8 bytes) -> reject.
-            for (int len = 0; len < 8; len++)
+            for (int len = 0; len < 8 + Xrce.BaseSize; len++)
             {
                 if (Xrce.ReadFrame(new byte[len]) != null) { Console.WriteLine($"framing: {len}-byte frame not rejected"); rc = 1; }
             }
             // Declared length past the datagram -> reject.
             if (Xrce.ReadFrame(Frame(0x09, wd, 100)) != null) { Console.WriteLine("framing: over-long length not rejected"); rc = 1; }
             // Trailing bytes past the declared length must not leak into the body.
-            var bounded = Xrce.ReadFrame(Frame(0x09, new byte[] { 1, 2, 3, 4 }, 2));
+            var bounded = Xrce.ReadFrame(Frame(0x09, new byte[] { 1, 2, 3, 4 }, Xrce.BaseSize + 2));
             if (bounded == null || !AsSpan(bounded).SequenceEqual(new byte[] { 1, 2 })) { Console.WriteLine("framing: body not bounded by declared length"); rc = 1; }
             // Writer refuses a sample larger than the 16-bit length field.
             bool refused = false;
-            try { Xrce.WriteFrame(1, new byte[0x10000]); }
+            try { Xrce.WriteFrame(1, Xrce.ObjectId(0x001, Xrce.ObjkDataWriter), new byte[0x10000]); }
             catch (ArgumentException) { refused = true; }
             if (!refused) { Console.WriteLine("framing: sample > 0xFFFF not refused"); rc = 1; }
-            if (Xrce.WriteFrame(1, new byte[0xFFFF]).Length != 8 + 0xFFFF) { Console.WriteLine("framing: 0xFFFF sample must still encode"); rc = 1; }
+            if (Xrce.WriteFrame(1, Xrce.ObjectId(0x001, Xrce.ObjkDataWriter), new byte[0xFFFF - Xrce.BaseSize]).Length != 8 + 0xFFFF) { Console.WriteLine("framing: a maximal body must still encode"); rc = 1; }
             if (rc == 0) Console.WriteLine("xrce framing: direction (DATA/0x09) + negative vectors ok");
             return rc;
         }

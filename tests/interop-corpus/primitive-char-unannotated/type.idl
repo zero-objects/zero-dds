@@ -1,0 +1,5 @@
+// primitive `char`, unannotated
+struct Sample {
+    char letter_a;
+    char letter_b;
+};

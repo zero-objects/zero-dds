@@ -42,6 +42,15 @@ pub fn ctx_from_daemon_config(
         }
     }
     sc.auth_mode = cfg.auth_mode.clone();
+    match cfg.auth_mode.as_str() {
+        "jwt" => sc.apply_jwt(&cfg.auth_jwt)?,
+        "mtls" if !cfg.tls_enabled || cfg.tls_client_ca_file.is_empty() => {
+            return Err(SecurityError::Config(
+                "auth.mode: mtls needs tls.enabled and tls.client_ca_file".into(),
+            ));
+        }
+        _ => {}
+    }
     if let (Some(tok), Some(subj)) = (
         cfg.auth_bearer_token.as_ref(),
         cfg.auth_bearer_subject.as_ref(),
@@ -73,7 +82,7 @@ pub fn ctx_from_daemon_config(
 /// HTTP upgrade request and checks it against [`AuthMode`].
 ///
 /// `headers` is the raw header list from
-/// [`crate::handshake::ClientRequest::headers`] (case-insensitive
+/// `crate::handshake::ClientRequest::headers` (case-insensitive
 /// match on `Authorization`).
 ///
 /// # Errors

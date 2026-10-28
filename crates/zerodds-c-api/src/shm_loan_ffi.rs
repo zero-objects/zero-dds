@@ -91,23 +91,39 @@ pub(crate) const MODE_RAW_SAME_HOST: u8 = 1;
 pub(crate) const MODE_ICEORYX: u8 = 2;
 
 /// Per-writer configured delivery mode, keyed by `(runtime, eid)`. Set via the
-/// FFI setter; consulted at commit. Absent → the env/`Portable` default.
+/// FFI setter; consulted at commit. Absent → the runtime's `delivery.mode`.
 fn modes() -> &'static Mutex<HashMap<Key, u8>> {
     static M: OnceLock<Mutex<HashMap<Key, u8>>> = OnceLock::new();
     M.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-/// The participant-wide default from `ZERODDS_DELIVERY_MODE`, parsed once.
-/// Unknown / `iceoryx` (not yet wired) fall back to the interop-safe
-/// `Portable`, so no deployment silently loses delivery.
-fn env_default_mode() -> u8 {
-    static D: OnceLock<u8> = OnceLock::new();
-    *D.get_or_init(
-        || match std::env::var("ZERODDS_DELIVERY_MODE").ok().as_deref() {
-            Some("raw-same-host") => MODE_RAW_SAME_HOST,
-            _ => MODE_PORTABLE,
-        },
-    )
+/// The participant-wide default: the runtime's `delivery.mode` (env
+/// `ZERODDS_DELIVERY_MODE`), refused at runtime creation when misspelled.
+///
+/// `iceoryx` needs an iceoryx2 service per writer, which only
+/// `zerodds_dw_enable_iceoryx` / `zerodds_writer_enable_iceoryx` name (the
+/// RMW derives it from the topic). A writer without one sends the
+/// interop-safe `Portable` form, and says so once on stderr: the operator
+/// asked for iceoryx and must not believe they got it.
+fn default_mode(rt: &Arc<DcpsRuntime>, eid: EntityId) -> u8 {
+    match rt.config.delivery_mode {
+        zerodds_dcps::runtime::DeliveryMode::RawSameHost => MODE_RAW_SAME_HOST,
+        zerodds_dcps::runtime::DeliveryMode::Portable => MODE_PORTABLE,
+        zerodds_dcps::runtime::DeliveryMode::Iceoryx => {
+            static WARNED: OnceLock<Mutex<std::collections::HashSet<Key>>> = OnceLock::new();
+            let first = WARNED
+                .get_or_init(|| Mutex::new(std::collections::HashSet::new()))
+                .lock()
+                .is_ok_and(|mut seen| seen.insert(key(rt, eid)));
+            if first {
+                eprintln!(
+                    "zerodds: delivery.mode is iceoryx, but writer {eid:?} has no iceoryx2 \
+                     service (zerodds_dw_enable_iceoryx); it sends the Portable form"
+                );
+            }
+            MODE_PORTABLE
+        }
+    }
 }
 
 /// Whether a sample in this mode is published onto the RTPS wire. Only
@@ -123,7 +139,7 @@ fn configured_mode(rt: &Arc<DcpsRuntime>, eid: EntityId) -> u8 {
         .lock()
         .ok()
         .and_then(|m| m.get(&key(rt, eid)).copied())
-        .unwrap_or_else(env_default_mode)
+        .unwrap_or_else(|| default_mode(rt, eid))
 }
 
 /// Sets the delivery mode for this `(runtime, eid)` writer. `Iceoryx` is not
@@ -392,7 +408,7 @@ pub(crate) unsafe fn try_commit(
             let bytes = unsafe { core::slice::from_raw_parts(rptr, n) };
             return Some(match rt.write_user_sample_borrowed(eid, bytes) {
                 Ok(()) => ZeroDdsStatus::Ok as c_int,
-                Err(_) => ZeroDdsStatus::Error as c_int,
+                Err(e) => crate::write_status(&e),
             });
         }
     }
@@ -636,6 +652,10 @@ pub unsafe extern "C" fn zerodds_dw_enable_shm_loan(
     slot_count: usize,
     slot_capacity: usize,
 ) -> c_int {
+    // SAFETY: a non-null `dw` is a live DataWriter handle (DDS 1.4 §2.2.2.1.1.7).
+    if let Some(rc) = unsafe { crate::entity_ffi::not_enabled(dw) } {
+        return rc;
+    }
     if dw.is_null() || name.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
@@ -663,6 +683,10 @@ pub unsafe extern "C" fn zerodds_dw_set_delivery_mode(
     dw: *mut ZeroDdsDataWriter,
     mode: c_int,
 ) -> c_int {
+    // SAFETY: a non-null `dw` is a live DataWriter handle (DDS 1.4 §2.2.2.1.1.7).
+    if let Some(rc) = unsafe { crate::entity_ffi::not_enabled(dw) } {
+        return rc;
+    }
     if dw.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
@@ -685,6 +709,10 @@ pub unsafe extern "C" fn zerodds_dr_enable_shm(
     name: *const c_char,
     reader_index: u8,
 ) -> c_int {
+    // SAFETY: a non-null `dr` is a live DataReader handle (DDS 1.4 §2.2.2.1.1.7).
+    if let Some(rc) = unsafe { crate::entity_ffi::not_enabled(dr) } {
+        return rc;
+    }
     if dr.is_null() || name.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
@@ -711,6 +739,10 @@ pub unsafe extern "C" fn zerodds_dr_take_shm(
     out_len: *mut usize,
     out_slot: *mut u32,
 ) -> c_int {
+    // SAFETY: a non-null `dr` is a live DataReader handle (DDS 1.4 §2.2.2.1.1.7).
+    if let Some(rc) = unsafe { crate::entity_ffi::not_enabled(dr) } {
+        return rc;
+    }
     if dr.is_null() || out_ptr.is_null() || out_len.is_null() || out_slot.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
@@ -752,6 +784,10 @@ pub unsafe extern "C" fn zerodds_dw_enable_iceoryx(
     service_name: *const c_char,
     max_len: usize,
 ) -> c_int {
+    // SAFETY: a non-null `dw` is a live DataWriter handle (DDS 1.4 §2.2.2.1.1.7).
+    if let Some(rc) = unsafe { crate::entity_ffi::not_enabled(dw) } {
+        return rc;
+    }
     if dw.is_null() || service_name.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
@@ -777,6 +813,10 @@ pub unsafe extern "C" fn zerodds_dr_enable_iceoryx(
     dr: *mut ZeroDdsDataReader,
     service_name: *const c_char,
 ) -> c_int {
+    // SAFETY: a non-null `dr` is a live DataReader handle (DDS 1.4 §2.2.2.1.1.7).
+    if let Some(rc) = unsafe { crate::entity_ffi::not_enabled(dr) } {
+        return rc;
+    }
     if dr.is_null() || service_name.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }

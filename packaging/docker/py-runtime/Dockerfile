@@ -1,14 +1,14 @@
-# packaging/docker/py-runtime/Dockerfile — RC3 Sandbox-Runtime fuer
-# Python-Bindings (`zerodds-py` via PyO3 + maturin). Zielgruppe:
-# Lern-/Coding-Challenges in Zero-Learn-Sandboxes und Quickstart-Demos.
+# packaging/docker/py-runtime/Dockerfile — sandbox runtime for the
+# Python bindings (`zerodds-py` via PyO3 + maturin). Audience:
+# learning and coding challenges in sandboxes, and quickstart demos.
 #
-# Anders als die Daemon-Images (cli, ws-bridged, ...) liefert dieses
-# Image keinen ENTRYPOINT-Service, sondern eine bereite Python-Umgebung
-# mit `import zerodds`. Lerner-Code wird in /workspace gemounted oder
-# per docker exec / `command_file` injiziert.
+# Unlike the daemon images (cli, ws-bridged, ...), this image ships
+# no ENTRYPOINT service, but a ready Python environment
+# with `import zerodds`. Learner code is mounted into /workspace or
+# injected via docker exec / `command_file`.
 #
-# Build vom Repo-Root:
-#   docker build -f packaging/docker/py-runtime/Dockerfile -t zerodds/py-runtime:rc3 .
+# Build from the repository root:
+#   docker build -f packaging/docker/py-runtime/Dockerfile -t zerodds/py-runtime:rc7 .
 
 FROM rust:1.88-bookworm AS chef
 # iceoryx2-pal-posix (pulled into the workspace recipe via the
@@ -29,41 +29,42 @@ FROM chef AS builder
 RUN apt-get update && apt-get install -y --no-install-recommends \
         python3 python3-dev python3-venv python3-pip pkg-config \
     && rm -rf /var/lib/apt/lists/*
-# Maturin in eigenes venv installieren — vermeidet Konflikt mit dem
-# Debian-system-python und hat keinen --break-system-packages-Workaround.
+# Install maturin into its own venv — avoids a conflict with the
+# Debian system python and needs no --break-system-packages workaround.
 RUN python3 -m venv /opt/maturin-venv \
     && /opt/maturin-venv/bin/pip install --no-cache-dir maturin==1.8.*
 ENV PATH=/opt/maturin-venv/bin:$PATH
 COPY --from=planner /build/recipe.json recipe.json
 RUN cargo chef cook --release --recipe-path recipe.json -p zerodds-py
 COPY . .
-# Maturin baut das Wheel mit eingebettetem PyO3-Native-Modul (abi3 → ein
-# Wheel deckt Python 3.8+ ab).
+RUN python3 packaging/python/sync-version.py
+# ABI3 has a 3.8 lower bound; the complete distribution needs Python 3.9+.
 WORKDIR /build/crates/py
 RUN maturin build --release --out /build/wheels
 WORKDIR /build
+RUN python3 -m pip wheel --no-deps --wheel-dir /build/wheels runtime/python
 
 FROM debian:bookworm-slim AS runtime
 RUN apt-get update && apt-get install -y --no-install-recommends \
         python3 python3-venv ca-certificates tini \
     && rm -rf /var/lib/apt/lists/*
 
-# zerodds-Wheel in ein dediziertes venv installieren — sauberer als
-# --break-system-packages und liefert ein bekanntes `python3` per PATH.
+# Install the zerodds wheel into a dedicated venv — cleaner than
+# --break-system-packages, and it provides a known `python3` via PATH.
 COPY --from=builder /build/wheels/*.whl /tmp/
 RUN python3 -m venv /opt/zerodds \
-    && /opt/zerodds/bin/pip install --no-cache-dir /tmp/*.whl \
+    && /opt/zerodds/bin/pip install --no-index --find-links=/tmp /tmp/*.whl \
     && rm -rf /tmp/*.whl
 
-# Read-only-root-Vertraeglichkeit: kein .pyc-Schreiben in Site-Packages,
-# Output direkt durch (kein stdout-Buffer fuer Sandbox-Logs).
+# Read-only root compatibility: no .pyc writes into site-packages,
+# output passes straight through (no stdout buffer for sandbox logs).
 ENV PATH=/opt/zerodds/bin:$PATH \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
 WORKDIR /workspace
 
-# Tini als PID-1: reapt Zombie-Kinder bei Lerner-Multiproc-Demos
-# (Pub+Sub als getrennte Prozesse im selben Container).
+# Tini as PID 1: reaps zombie children in learner multi-process demos
+# (pub + sub as separate processes in the same container).
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["python3"]

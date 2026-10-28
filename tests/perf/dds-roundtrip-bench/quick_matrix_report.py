@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Schneller Report fuer quick_matrix.csv: 4x4 Matrix pro payload."""
+"""Quick report for quick_matrix.csv: 4x4 matrix per payload."""
 
 import csv, statistics, sys
 from collections import defaultdict
@@ -43,8 +43,8 @@ def main():
                     row += f"{'FAIL':>10} | "
             print(row)
 
-    # Self-Tabelle ueber Payloads
-    print("\n=== Self-Latenz (p50 median, p99 median) ueber Payloads ===")
+    # Self table over payloads
+    print("\n=== Self latency (p50 median, p99 median) over payloads ===")
     print(f"{'vendor':<10} | " + " | ".join(f"{p:>4}B p50/p99" for p in payloads))
     for v in vendors:
         row = f"{v:<10} | "

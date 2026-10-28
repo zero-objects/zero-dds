@@ -3,41 +3,65 @@
 //
 // topic-typed-smoke.ts — reference smoke for zerodds-xcdr2-ts-1.0 §10.
 //
-// Shows the encode/decode roundtrip of a hand-implemented
-// `DdsTopicType<Point>` (matches what idl-ts would emit per IDL `struct`).
-// No live DDS — only the XCDR2 wire layer.
+// Shows the encode/decode roundtrip of a hand-implemented `TypeSupport<Point>`
+// (matches the shape a generated companion has, calling straight into
+// `@zerodds/wire` (`runtime/typescript`), the one XCDR2 codec this binding
+// has). `zerodds-idlc generate --lang typescript` now emits the real thing —
+// an `export const <Type>TypeSupport` per topic type, appended to the same
+// generated file — see `tools/idlc/tests/typescript-support/` for a fresh
+// generation exercised end to end (byte-compared to the Rust reference,
+// type-checked against `dds.ts`'s own `TypeSupport<T>`) and
+// `crates/ts-node/CHANGELOG.md`. No live DDS here — only the XCDR2 wire layer.
+//
+// `TypeSupport<T>` is `../src/dds.ts`'s own bridge interface: passing an
+// object shaped like this to `DomainParticipant.createTypedTopic` is the
+// real, current way to get a typed `Topic<T>` in this binding.
 //
 // Run:
 //   cd crates/ts-node
 //   npx tsx examples/topic-typed-smoke.ts
 
 import {
-    DdsTopicType,
-    EndianMode,
-    Xcdr2Reader,
-    Xcdr2Writer,
-} from "../src/cdr/index.js";
+    Writer,
+    Reader,
+    Endianness,
+    PID_FLAGS_SENTINEL_MUST_UNDERSTAND,
+    type PlCdr1Framing,
+} from "@zerodds/wire";
+import type { TypeSupport } from "../src/dds.js";
 
 interface Point {
     x: number;
     y: number;
 }
 
-const PointTypeSupport: DdsTopicType<Point> = {
+const XCDR2_FRAMING: PlCdr1Framing = {
+    pidFlags: PID_FLAGS_SENTINEL_MUST_UNDERSTAND,
+    shortMaxId: 0x3f00,
+    padsDeclaredLength: true,
+    padsOptionalLength: true,
+    memberMustUnderstand: true,
+    padAfterValue: true,
+};
+
+function order(endian: "le" | "be"): Endianness {
+    return endian === "be" ? Endianness.Big : Endianness.Little;
+}
+
+const PointTypeSupport: TypeSupport<Point> = {
     typeName: "Point",
     isKeyed: false,
-    extensibility: "final",
 
-    encode(s: Point, endian: EndianMode = "le"): Uint8Array {
-        const w = new Xcdr2Writer(endian);
-        w.writeInt32(s.x);
-        w.writeInt32(s.y);
-        return w.toBytes();
+    encode(s: Point, endian: "le" | "be" = "le"): Uint8Array {
+        const w = new Writer(order(endian), 4, XCDR2_FRAMING, false);
+        w.writeI32(s.x);
+        w.writeI32(s.y);
+        return w.finish();
     },
 
-    decode(bytes: Uint8Array, offset = 0, length = bytes.length - offset): Point {
-        const r = new Xcdr2Reader(bytes, offset, length, "le");
-        return { x: r.readInt32(), y: r.readInt32() };
+    decode(bytes: Uint8Array, endian: "le" | "be" = "le"): Point {
+        const r = new Reader(bytes, order(endian), 4, XCDR2_FRAMING);
+        return { x: r.readI32(), y: r.readI32() };
     },
 
     keyHash(_s: Point): Uint8Array {
@@ -56,7 +80,6 @@ function main(): number {
     const ts = PointTypeSupport;
 
     console.log(`typeName = ${ts.typeName}`);
-    console.log(`extensibility = ${ts.extensibility}`);
     console.log(`sample = Point(x=${p.x}, y=${p.y})`);
 
     const bytes = ts.encode(p);

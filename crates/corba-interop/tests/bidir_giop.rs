@@ -11,20 +11,25 @@
 //! * `request_id` parity (originator even, acceptor odd),
 //! * out-of-order reply demux (stash).
 
+use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 
-use zerodds_cdr::{BufferReader, BufferWriter, Endianness};
+use zerodds_corba_giop::{
+    LocateRequest, LocateStatusType, Message, TargetAddress, Version, decode_message,
+    encode_message,
+};
 use zerodds_corba_iiop::{BiDirIiopListenPoint, Connection};
 use zerodds_corba_interop::runtime::BiDirEndpoint;
 use zerodds_corba_rust::SkeletonResult;
+use zerodds_wire::{Endianness, Reader, Writer};
 
 fn u32_body(v: u32) -> Vec<u8> {
-    let mut w = BufferWriter::new(Endianness::Big);
-    w.write_u32(v).unwrap();
-    w.into_bytes()
+    let mut w = Writer::new(Endianness::Big);
+    w.write_u32(v);
+    w.finish()
 }
 fn read_u32(b: &[u8], e: Endianness) -> u32 {
-    BufferReader::new(b, e).read_u32().unwrap()
+    Reader::new(b, e).read_u32().unwrap()
 }
 
 /// Connects two endpoints over a real loopback TCP pair: originator
@@ -61,9 +66,9 @@ fn acceptor_callbacks_originator_over_shared_connection() {
     });
     server.register(b"ServerObj", |op, _body, e| {
         if op == "greet" {
-            let mut w = BufferWriter::new(e);
-            w.write_u32(0xCAFE).unwrap();
-            SkeletonResult::Reply(w.into_bytes())
+            let mut w = Writer::new(e);
+            w.write_u32(0xCAFE);
+            SkeletonResult::Reply(w.finish())
         } else {
             SkeletonResult::BadOperation
         }
@@ -126,4 +131,51 @@ fn sync_invoke_convenience() {
     server.serve_one().unwrap();
     let (rb, re) = client.collect_reply(id).unwrap();
     assert_eq!(read_u32(&rb, re), 81);
+}
+
+/// A `LocateRequest` (GIOP §15.4.5 — a `corbaloc:` client, or any ORB
+/// that probes an object's location before its first real invocation)
+/// used to be silently dropped by `BiDirEndpoint::serve_one` (matched
+/// only `Request`/`Reply`, everything else fell into `_ => Ok(())`) —
+/// the foreign peer would then block waiting for a reply that never
+/// came. `OBJECT_HERE` for a registered key, `UNKNOWN_OBJECT` otherwise.
+#[test]
+fn locate_request_is_answered_instead_of_dropped() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let mut client = TcpStream::connect(addr).unwrap();
+    let (server_stream, _) = listener.accept().unwrap();
+    let mut server = BiDirEndpoint::acceptor(Connection::from_stream(server_stream).unwrap());
+    server.register(b"ServerObj", |_op, _body, _e| {
+        SkeletonResult::Reply(Vec::new())
+    });
+
+    let mut locate = |client: &mut TcpStream, request_id: u32, key: &[u8]| -> LocateStatusType {
+        let msg = Message::LocateRequest(LocateRequest {
+            request_id,
+            target: TargetAddress::Key(key.to_vec()),
+        });
+        let bytes = encode_message(Version::V1_2, Endianness::Big, false, &msg).unwrap();
+        client.write_all(&bytes).unwrap();
+        server.serve_one().unwrap();
+        let mut hdr = [0u8; 12];
+        client.read_exact(&mut hdr).unwrap();
+        let size = u32::from_be_bytes([hdr[8], hdr[9], hdr[10], hdr[11]]);
+        let mut full = hdr.to_vec();
+        full.resize(12 + size as usize, 0);
+        client.read_exact(&mut full[12..]).unwrap();
+        match decode_message(&full).unwrap().0 {
+            Message::LocateReply(r) => r.locate_status,
+            other => panic!("expected a LocateReply, got {:?}", other.message_type()),
+        }
+    };
+
+    assert_eq!(
+        locate(&mut client, 1, b"ServerObj"),
+        LocateStatusType::ObjectHere
+    );
+    assert_eq!(
+        locate(&mut client, 2, b"no-such-object"),
+        LocateStatusType::UnknownObject
+    );
 }

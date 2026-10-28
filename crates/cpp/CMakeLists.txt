@@ -29,24 +29,29 @@ set(ZERODDS_CXX_HEADERS
     "${CMAKE_CURRENT_SOURCE_DIR}/include/dds/core/cond/Condition.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/include/dds/core/policy/CorePolicy.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/include/dds/core/Exception.hpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/include/dds/core/Fixed.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/zerodds/psm/Fixed.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/zerodds/psm/check_status.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/zerodds/psm/handle_seq.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/zerodds/psm/expression_parameters.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/zerodds/psm/type_support.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/include/dds/core/InstanceHandle.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/include/dds/core/qos_bridge.hpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/include/dds/core/qos.hpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/include/dds/core/Status.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/dds/core/status/Status.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/dds/core/status/State.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/dds/core/policy/QosPolicyCount.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/include/dds/core/Time.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/include/dds/domain/DomainParticipant.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/include/dds/pub/DataWriterListener.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/include/dds/pub/Publisher.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/dds/pub/discovery.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/include/dds/sub/cond/ReadCondition.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/include/dds/sub/DataReaderListener.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/include/dds/sub/Subscriber.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/dds/sub/discovery.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/include/dds/topic/BuiltinTopic.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/include/dds/topic/ContentFilteredTopic.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/include/dds/topic/Topic.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/include/dds/topic/TopicTraits.hpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/include/dds/topic/xcdr2_md5.hpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/include/dds/topic/xcdr2.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/include/dds/dds.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/include/zerodds/dds.hpp"
 )
@@ -60,6 +65,7 @@ target_include_directories(zerodds-cpp
 )
 
 target_link_libraries(zerodds-cpp INTERFACE zerodds::zerodds-c
+                                            zerodds::zerodds-wire-cpp
                                             $<$<BOOL:${WIN32}>:userenv>
 )
 
@@ -95,6 +101,32 @@ if(ZERODDS_BUILD_TESTS)
     if(BUILD_TESTING)
         add_test(NAME zerodds_cpp_smoke_dds_psm COMMAND smoke_dds_psm)
     endif()
+endif()
+
+# Every public header must compile on its own (a header that relies on an
+# earlier include of the application breaks `#include <dds/pub/find.hpp>`).
+# One translation unit per header; nothing links or runs.
+if(ZERODDS_BUILD_TESTS)
+    file(GLOB_RECURSE ZERODDS_PSM_PUBLIC_HEADERS RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}/include"
+         "${CMAKE_CURRENT_SOURCE_DIR}/include/dds/*.hpp")
+    set(ZERODDS_PSM_STANDALONE_SOURCES "")
+    foreach(header IN LISTS ZERODDS_PSM_PUBLIC_HEADERS)
+        if(NOT header MATCHES "/detail/")
+            string(MAKE_C_IDENTIFIER "${header}" header_id)
+            set(tu "${CMAKE_CURRENT_BINARY_DIR}/standalone/${header_id}.cpp")
+            file(WRITE "${tu}" "#include <${header}>\n")
+            list(APPEND ZERODDS_PSM_STANDALONE_SOURCES "${tu}")
+        endif()
+    endforeach()
+    add_library(zerodds_psm_standalone_headers OBJECT ${ZERODDS_PSM_STANDALONE_SOURCES})
+    target_link_libraries(zerodds_psm_standalone_headers PRIVATE zerodds::zerodds-cpp)
+
+    # The same translation units as ISO/IEC C++ 2003 (DDS-PSM-Cxx 1.0 section 3 [C++], 7.1): the
+    # headers of dds/ need no C++11.
+    add_library(zerodds_psm_standalone_headers_cxx03 OBJECT ${ZERODDS_PSM_STANDALONE_SOURCES})
+    target_link_libraries(zerodds_psm_standalone_headers_cxx03 PRIVATE zerodds::zerodds-cpp)
+    set_target_properties(zerodds_psm_standalone_headers_cxx03 PROPERTIES
+        CXX_STANDARD 98 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
 endif()
 
 # ---------------------------------------------------------------------------

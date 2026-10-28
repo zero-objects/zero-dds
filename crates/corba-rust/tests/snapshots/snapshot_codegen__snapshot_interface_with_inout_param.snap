@@ -36,20 +36,20 @@ impl MutatorStub {
 
 impl Mutator for MutatorStub {
     fn update(&self, value: &mut i32) -> ::core::result::Result<(), zerodds_corba_rust::CorbaException> {
-        let __e = zerodds_cdr::Endianness::Big;
-        let mut __w = zerodds_cdr::BufferWriter::new(__e);
-        <_ as zerodds_cdr::CdrEncode>::encode(&*value, &mut __w).map_err(|_| zerodds_corba_rust::CorbaException::SystemException { minor: 0u32, message: "CORBA MARSHAL: CDR error" })?;
-        let (__reply, __re) = self.connection.invoke(&self.object_ref, "update", __e, &__w.into_bytes())?;
-        let mut __r = zerodds_cdr::BufferReader::new(&__reply, __re);
-        *value = <i32 as zerodds_cdr::CdrDecode>::decode(&mut __r).map_err(|_| zerodds_corba_rust::CorbaException::SystemException { minor: 0u32, message: "CORBA MARSHAL: CDR error" })?;
+        let __e = zerodds_wire::Endianness::Big;
+        let mut __w = zerodds_wire::Writer::new(__e);
+        __w.write_i32((*value));
+        let (__reply, __re) = self.connection.invoke(&self.object_ref, "update", __e, &__w.finish())?;
+        let mut __r = zerodds_wire::Reader::new(&__reply, __re);
+        *value = __r.read_i32().map_err(|_| zerodds_corba_rust::CorbaException::SystemException { minor: 0u32, message: "CORBA MARSHAL: CDR error" })?;
         ::core::result::Result::Ok(())
     }
     fn produce(&self, result: &mut i32) -> ::core::result::Result<(), zerodds_corba_rust::CorbaException> {
-        let __e = zerodds_cdr::Endianness::Big;
-        let mut __w = zerodds_cdr::BufferWriter::new(__e);
-        let (__reply, __re) = self.connection.invoke(&self.object_ref, "produce", __e, &__w.into_bytes())?;
-        let mut __r = zerodds_cdr::BufferReader::new(&__reply, __re);
-        *result = <i32 as zerodds_cdr::CdrDecode>::decode(&mut __r).map_err(|_| zerodds_corba_rust::CorbaException::SystemException { minor: 0u32, message: "CORBA MARSHAL: CDR error" })?;
+        let __e = zerodds_wire::Endianness::Big;
+        let mut __w = zerodds_wire::Writer::new(__e);
+        let (__reply, __re) = self.connection.invoke(&self.object_ref, "produce", __e, &__w.finish())?;
+        let mut __r = zerodds_wire::Reader::new(&__reply, __re);
+        *result = __r.read_i32().map_err(|_| zerodds_corba_rust::CorbaException::SystemException { minor: 0u32, message: "CORBA MARSHAL: CDR error" })?;
         ::core::result::Result::Ok(())
     }
 }
@@ -57,30 +57,33 @@ impl Mutator for MutatorStub {
 /// Server skeleton dispatch for `Mutator`.
 /// Decodes the GIOP request body (in `__endianness`), calls the servant,
 /// Encodes return + out/inout into the reply body (same order).
-pub fn dispatch_mutator(servant: &dyn Mutator, operation: &str, __payload: &[u8], __endianness: zerodds_cdr::Endianness) -> zerodds_corba_rust::SkeletonResult {
+pub fn dispatch_mutator(servant: &dyn Mutator, operation: &str, __payload: &[u8], __endianness: zerodds_wire::Endianness) -> zerodds_corba_rust::SkeletonResult {
+    if let Some(__r) = zerodds_corba_rust::runtime::dispatch_object_operation(operation, __payload, __endianness, "IDL:Mutator:1.0", &[]) {
+        return __r;
+    }
     match operation {
         "update" => {
-            let mut __r = zerodds_cdr::BufferReader::new(__payload, __endianness);
-            let mut value = match <i32 as zerodds_cdr::CdrDecode>::decode(&mut __r) { Ok(__v) => __v, Err(_) => return zerodds_corba_rust::SkeletonResult::Exception(zerodds_corba_rust::CorbaException::SystemException { minor: 0u32, message: "CORBA MARSHAL: CDR error" }) };
+            let mut __r = zerodds_wire::Reader::new(__payload, __endianness);
+            let mut value = match __r.read_i32() { Ok(__v) => __v, Err(_) => return zerodds_corba_rust::SkeletonResult::Exception(zerodds_corba_rust::CorbaException::SystemException { minor: 0u32, message: "CORBA MARSHAL: CDR error" }) };
             match servant.update(&mut value) {
                 ::core::result::Result::Ok(__ret) => {
-                    let mut __w = zerodds_cdr::BufferWriter::new(__endianness);
+                    let mut __w = zerodds_corba_rust::runtime::reply_writer(__endianness);
                     let _ = __ret;
-                    if <_ as zerodds_cdr::CdrEncode>::encode(&value, &mut __w).is_err() { return zerodds_corba_rust::SkeletonResult::Exception(zerodds_corba_rust::CorbaException::SystemException { minor: 0u32, message: "CORBA MARSHAL: CDR error" }); }
-                    zerodds_corba_rust::SkeletonResult::Reply(__w.into_bytes())
+                    __w.write_i32(value);
+                    zerodds_corba_rust::SkeletonResult::Reply(__w.finish())
                 }
                 ::core::result::Result::Err(__exc) => zerodds_corba_rust::SkeletonResult::Exception(__exc),
             }
         }
         "produce" => {
-            let mut __r = zerodds_cdr::BufferReader::new(__payload, __endianness);
-            let mut result = <i32 as ::core::default::Default>::default();
+            let mut __r = zerodds_wire::Reader::new(__payload, __endianness);
+            let mut result: i32 = 0;
             match servant.produce(&mut result) {
                 ::core::result::Result::Ok(__ret) => {
-                    let mut __w = zerodds_cdr::BufferWriter::new(__endianness);
+                    let mut __w = zerodds_corba_rust::runtime::reply_writer(__endianness);
                     let _ = __ret;
-                    if <_ as zerodds_cdr::CdrEncode>::encode(&result, &mut __w).is_err() { return zerodds_corba_rust::SkeletonResult::Exception(zerodds_corba_rust::CorbaException::SystemException { minor: 0u32, message: "CORBA MARSHAL: CDR error" }); }
-                    zerodds_corba_rust::SkeletonResult::Reply(__w.into_bytes())
+                    __w.write_i32(result);
+                    zerodds_corba_rust::SkeletonResult::Reply(__w.finish())
                 }
                 ::core::result::Result::Err(__exc) => zerodds_corba_rust::SkeletonResult::Exception(__exc),
             }

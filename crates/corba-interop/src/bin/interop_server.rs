@@ -118,7 +118,16 @@ fn map_naming_err(
             };
             NamingContextError::NotFound(NotFound {
                 why: w,
-                rest_of_name: name.clone(),
+                // Rebuilt, not cloned: the data column derives nothing
+                // on what it declares, so `NameComponent` has no
+                // `Clone`.
+                rest_of_name: name
+                    .iter()
+                    .map(|component| corba_gen::CosNaming::NameComponent {
+                        id: component.id.clone(),
+                        kind: component.kind.clone(),
+                    })
+                    .collect(),
             })
         }
         NamingError::InvalidName => {
@@ -227,16 +236,26 @@ impl Bench for BenchImpl {
     fn add64(&self, a: i64, b: i64) -> Result<i64, CorbaException> {
         Ok(a.wrapping_add(b))
     }
-    fn next_char(&self, c: u8) -> Result<u8, CorbaException> {
-        Ok(c.wrapping_add(1))
+    fn next_char(&self, c: char) -> Result<char, CorbaException> {
+        // §9.3.1.5 makes an IDL `char` one octet; the successor is
+        // computed on the code point and wraps inside that octet.
+        Ok(char::from(
+            u8::try_from(u32::from(c)).unwrap_or(0).wrapping_add(1),
+        ))
     }
     fn concat(&self, a: String, b: String) -> Result<String, CorbaException> {
         Ok(format!("{a}{b}"))
     }
-    fn wecho(&self, w: zerodds_cdr::WString) -> Result<zerodds_cdr::WString, CorbaException> {
+    fn wecho(
+        &self,
+        w: zerodds_corba_rt::WString,
+    ) -> Result<zerodds_corba_rt::WString, CorbaException> {
         Ok(w)
     }
-    fn aecho(&self, a: zerodds_cdr::CorbaAny) -> Result<zerodds_cdr::CorbaAny, CorbaException> {
+    fn aecho(
+        &self,
+        a: zerodds_corba_rt::CorbaAny,
+    ) -> Result<zerodds_corba_rt::CorbaAny, CorbaException> {
         // Echo: decodes the (foreign-ORB) TypeCode+value and re-encodes it.
         Ok(a)
     }
@@ -301,10 +320,16 @@ impl Features for FeaturesImpl {
     fn concat(&self, a: String, b: String) -> Result<String, CorbaException> {
         Ok(format!("{a}{b}"))
     }
-    fn wecho(&self, w: zerodds_cdr::WString) -> Result<zerodds_cdr::WString, CorbaException> {
+    fn wecho(
+        &self,
+        w: zerodds_corba_rt::WString,
+    ) -> Result<zerodds_corba_rt::WString, CorbaException> {
         Ok(w)
     }
-    fn aecho(&self, a: zerodds_cdr::CorbaAny) -> Result<zerodds_cdr::CorbaAny, CorbaException> {
+    fn aecho(
+        &self,
+        a: zerodds_corba_rt::CorbaAny,
+    ) -> Result<zerodds_corba_rt::CorbaAny, CorbaException> {
         Ok(a)
     }
     fn reverse(&self, xs: Vec<i32>) -> Result<Vec<i32>, CorbaException> {

@@ -12,23 +12,23 @@
 
 use std::sync::{Arc, Mutex};
 
-use zerodds_cdr::{BufferReader, BufferWriter, Endianness};
 use zerodds_corba_interop::runtime::{AmiClient, CorbaServer, object_reference};
 use zerodds_corba_rust::SkeletonResult;
+use zerodds_wire::{Endianness, Reader, Writer};
 
 fn long(v: i32) -> Vec<u8> {
-    let mut w = BufferWriter::new(Endianness::Big);
-    w.write_u32(v as u32).unwrap();
-    w.into_bytes()
+    let mut w = Writer::new(Endianness::Big);
+    w.write_u32(v as u32);
+    w.finish()
 }
 fn two_longs(a: i32, b: i32) -> Vec<u8> {
-    let mut w = BufferWriter::new(Endianness::Big);
-    w.write_u32(a as u32).unwrap();
-    w.write_u32(b as u32).unwrap();
-    w.into_bytes()
+    let mut w = Writer::new(Endianness::Big);
+    w.write_u32(a as u32);
+    w.write_u32(b as u32);
+    w.finish()
 }
 fn decode_long(reply: &[u8], e: Endianness) -> i32 {
-    BufferReader::new(reply, e).read_u32().unwrap() as i32
+    Reader::new(reply, e).read_u32().unwrap() as i32
 }
 
 /// Provides an `add(a,b) -> a+b` server (unknown ops → BAD_OPERATION), connects
@@ -37,12 +37,12 @@ fn with_adder<F: FnOnce(&mut AmiClient)>(f: F) {
     let server = CorbaServer::new();
     server.register(b"Adder", |op, body, e| {
         if op == "add" {
-            let mut r = BufferReader::new(body, e);
+            let mut r = Reader::new(body, e);
             let a = r.read_u32().unwrap() as i32;
             let b = r.read_u32().unwrap() as i32;
-            let mut w = BufferWriter::new(e);
-            w.write_u32(a.wrapping_add(b) as u32).unwrap();
-            SkeletonResult::Reply(w.into_bytes())
+            let mut w = Writer::new(e);
+            w.write_u32(a.wrapping_add(b) as u32);
+            SkeletonResult::Reply(w.finish())
         } else {
             SkeletonResult::BadOperation
         }

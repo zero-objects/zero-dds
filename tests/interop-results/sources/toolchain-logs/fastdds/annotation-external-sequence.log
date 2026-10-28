@@ -1,0 +1,1 @@
+fill_3.inc:5:12: error: no matching function for call to 'zd_c3::Sample::text(const char [6])'

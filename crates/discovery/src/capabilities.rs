@@ -31,7 +31,7 @@ pub struct PeerCapabilities {
     pub has_sedp_subscriptions: bool,
     /// Writer Liveliness Protocol (bits 10/11).
     pub has_wlp: bool,
-    /// TypeLookup service (bits 12/13, XTypes 1.3 §7.6.3.3.4).
+    /// Both TypeLookup client and service roles (all four bits 12..15).
     pub has_type_lookup: bool,
     /// XTypes topics discovery (bits 28/29).
     pub has_topics_discovery: bool,
@@ -72,8 +72,9 @@ impl PeerCapabilities {
                 endpoint_flag::PARTICIPANT_MESSAGE_DATA_WRITER,
                 endpoint_flag::PARTICIPANT_MESSAGE_DATA_READER,
             ),
-            has_type_lookup: (raw & endpoint_flag::TYPE_LOOKUP_REQUEST != 0)
-                && (raw & endpoint_flag::TYPE_LOOKUP_REPLY != 0),
+            has_type_lookup: raw & endpoint_flag::TYPE_LOOKUP_REQUEST
+                == endpoint_flag::TYPE_LOOKUP_REQUEST
+                && raw & endpoint_flag::TYPE_LOOKUP_REPLY == endpoint_flag::TYPE_LOOKUP_REPLY,
             has_topics_discovery: bit_pair_set(
                 endpoint_flag::TOPICS_ANNOUNCER,
                 endpoint_flag::TOPICS_DETECTOR,
@@ -137,6 +138,21 @@ mod tests {
         assert!(!c.has_topics_discovery);
         assert!(!c.supports_security());
         assert!(!c.fully_standard());
+    }
+
+    #[test]
+    fn type_lookup_capabilities_require_the_four_distinct_vendor_bits() {
+        // Cyclone 11.0.1 ddsi__protocol.h: request W/R 12/13, reply W/R 14/15.
+        assert_eq!(endpoint_flag::TYPE_LOOKUP_REQUEST_DATA_WRITER, 0x1000);
+        assert_eq!(endpoint_flag::TYPE_LOOKUP_REQUEST_DATA_READER, 0x2000);
+        assert_eq!(endpoint_flag::TYPE_LOOKUP_REPLY_DATA_WRITER, 0x4000);
+        assert_eq!(endpoint_flag::TYPE_LOOKUP_REPLY_DATA_READER, 0x8000);
+        assert!(PeerCapabilities::from_bits(0xf000).has_type_lookup);
+        for missing in [0x1000, 0x2000, 0x4000, 0x8000] {
+            assert!(!PeerCapabilities::from_bits(0xf000 & !missing).has_type_lookup);
+        }
+        assert!(!PeerCapabilities::from_bits(0x3000).has_type_lookup);
+        assert_eq!(endpoint_flag::ALL_STANDARD & 0xf000, 0xf000);
     }
 
     #[test]

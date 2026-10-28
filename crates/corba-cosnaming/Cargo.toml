@@ -10,8 +10,8 @@ description = "OMG CosNaming 1.3 (formal/2004-10-03) — full NamingService: Nam
 homepage = "https://zerodds.org"
 documentation = "https://docs.rs/zerodds-corba-cosnaming"
 readme = "README.md"
-keywords = ["dds", "corba", "cosnaming", "naming", "no-std"]
-categories = ["network-programming", "no-std"]
+keywords = ["dds", "corba", "cosnaming", "naming"]
+categories = ["network-programming"]
 publish = true
 
 [lints]
@@ -20,11 +20,54 @@ workspace = true
 [lib]
 path = "src/lib.rs"
 
+[[bin]]
+name = "zerodds-naming-svc"
+path = "src/bin/zerodds-naming-svc.rs"
+required-features = ["daemon"]
+
 [features]
 default = ["std"]
-std = ["alloc"]
-alloc = []
+std = ["alloc", "zerodds-corba-ior/std"]
+alloc = ["zerodds-corba-ior/alloc"]
+# The object-key registry (`graph`) and the GIOP dispatch (`servant`) a
+# server hosts this crate's NamingContext through — corba-dds-bridge
+# depends on this for `corba.naming.serve` (in-process hosting, sharing
+# the servant code without this crate owning that daemon's transport).
+# `corba-giop` here is `object_ops` only (CORBA::Object pseudo-operations,
+# CORBA 3.3 Part 2 §15.4.2) — plain `&str`/`&[u8]`/`Endianness`, not this
+# crate's `Message`/`Request` types, so `servant.rs` still does not decode
+# a GIOP frame itself.
+serve = ["std", "dep:zerodds-corba-iiop", "dep:zerodds-corba-giop"]
+# The standalone `zerodds-naming-svc` binary: GIOP transport (accept
+# loop, SSLIOP, CSIv2) and CLI/config-file loading on top of `serve`.
+daemon = [
+    "serve",
+    "dep:zerodds-corba-csiv2",
+    "dep:zerodds-config",
+    "dep:zerodds-bridge-security",
+    "dep:rustls",
+    "dep:signal-hook",
+]
 
 [dependencies]
-zerodds-cdr = { version = "1.0.0-rc.7", path = "../cdr" }
-zerodds-corba-ior = { version = "1.0.0-rc.7", path = "../corba-ior" }
+zerodds-wire = { version = "1.0.0-rc.7", path = "../wire" }
+zerodds-corba-ior = { version = "1.0.0-rc.7", path = "../corba-ior", default-features = false }
+zerodds-corba-iiop = { version = "1.0.0-rc.7", path = "../corba-iiop", optional = true, features = [
+    "tls",
+] }
+zerodds-corba-giop = { version = "1.0.0-rc.7", path = "../corba-giop", optional = true }
+zerodds-corba-csiv2 = { version = "1.0.0-rc.7", path = "../corba-csiv2", optional = true }
+zerodds-config = { version = "1.0.0-rc.7", path = "../config", optional = true }
+# SSLIOP TLS server config, reusing the same mTLS-capable loader every
+# other ZeroDDS bridge daemon uses (Sec7.1 TLS).
+zerodds-bridge-security = { version = "1.0.0-rc.7", path = "../bridge-security", optional = true, default-features = false, features = [
+    "std",
+    "ring-backend",
+] }
+rustls = { workspace = true, optional = true }
+signal-hook = { workspace = true, optional = true }
+
+# SIGTERM-graceful shutdown in tests/naming_svc_e2e.rs's DaemonGuard
+# (otherwise SIGKILL -> corrupt .profraw under cargo-llvm-cov).
+[target.'cfg(unix)'.dev-dependencies]
+libc = { workspace = true, features = ["std"] }

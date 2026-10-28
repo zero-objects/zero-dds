@@ -28,6 +28,75 @@ Two bench types:
 
 ---
 
+## Six stacks over UDPv4, 2026-10-02
+
+`matrix_sweep.sh` now runs every pair over UDPv4: it exports
+`ZERODDS_SAME_HOST_SHM=0` (`transport.same_host_shm`), so the ZeroDDS self
+pair no longer takes ZeroDDS's same-host shared-memory carrier. RTI Connext
+7.7.0 is measured again: its evaluation licence keeps working past the trial
+end within 6 participants, 12 DataReaders and 12 DataWriters per process.
+Payloads 0 and 8192 B, best of five runs; report and data in the internal
+measurement record of 2026-10-02.
+
+Self pairs, p50 µs at 0 B / 8192 B: Cyclone 25.1 / 36.6, RTI 30.1 / 37.3,
+ZeroDDS 32.6 / 41.9, Fast DDS 41.4 / 42.4, OpenSplice 68.1 / 116.7,
+OpenDDS 200.3 / 316.6. ZeroDDS has the lowest p99.9 (56.4) and maximum
+(60.0) of the six.
+
+**Finding.** Every pair with ZeroDDS on one side took 64–83 µs at 8192 B,
+the pairs between Cyclone, Fast DDS and RTI 41–52 µs. A capture showed
+ZeroDDS sending an 8 KB sample to Cyclone as six datagrams, one 1344-B
+DATA_FRAG each, where Cyclone sends one DATA: ZeroDDS took the loopback
+fragment size only for a reader that is a ZeroDDS participant of this
+host. Since `005af7362b1` a reader whose unicast locators all stay on this
+host (127/8, ::1, an address of this host's interfaces) gets it too. After
+the fix ZeroDDS ↔ Cyclone, Fast DDS and RTI are 37–50 µs at 8192 B.
+
+RTI ↔ OpenSplice could not be measured: RTI rejected the OpenSplice pong's
+DataReaders beyond its licence limit of 12, the bench's two among them.
+`rti_app.cpp` also set XCDR2 for that pair; it now takes XCDR1-only like
+the other apps (`86a7c616991`).
+
+## Six stacks, 2026-09-30 — and the octet runs of the generated C++ codec
+
+`matrix_sweep.sh` over ZeroDDS 1.0.0-rc.7, Cyclone DDS 11.0.1, Fast DDS
+3.6.1, OpenDDS 3.34.0 and OpenSplice CE 6.9.210323: 25 pairs, 11 payloads,
+best of five runs. Pairs with OpenSplice run XCDR1 (it writes and reads
+nothing else; ZeroDDS runs them as `zerodds-xcdr1-roundtrip`), all others
+XCDR2. RTI Connext 7.7.0 could not be measured again (evaluation licence
+expired); `matrix_json.py --keep` carries its cells of 2026-05-23 into
+`website/_data/roundtrip-matrix.json`, each with its date.
+
+**Finding.** The first run put `zerodds -> zerodds` at 8192 B at
+**123.3 µs** p50, against 52.1 µs on 2026-05-23. The codec
+`idlc generate --lang c++` writes into `gen/zerodds/Roundtrip.hpp` wrote
+and read `sequence<octet, 8192>` with one function call per octet. It now
+copies a sequence of octets, and a one-dimensional octet array, with one
+`Writer::write_octets` / `Reader::read_octets` call. The bytes are the
+same: 226 cells of the case-corpus matrix with `octet` or `uint8` match
+what the C++ and the Rust columns recorded. The nine pairs with ZeroDDS
+were measured again with that build (`BENCH_WITH=zerodds`):
+
+| pair, p50 µs | 0 B before | 0 B after | 8192 B before | 8192 B after |
+|---|---|---|---|---|
+| zerodds -> zerodds | 20.4 | 17.6 | 123.3 | 24.2 |
+| zerodds -> cyclone | 32.3 | 36.5 | 126.5 | 76.3 |
+| cyclone -> zerodds | 29.4 | 31.5 | 118.6 | 67.6 |
+| zerodds -> fastdds | 32.5 | 32.2 | 131.7 | 73.6 |
+| fastdds -> zerodds | 33.2 | 33.2 | 117.8 | 69.1 |
+
+The self pair runs over ZeroDDS's same-host shared-memory carrier (checked:
+the pair creates its segments in `/dev/shm`); every other pair runs UDPv4.
+
+**Open.** Between different stacks ZeroDDS is still behind with large
+samples: at 8192 B the pairs with Cyclone and Fast DDS take 67.6-76.3 µs,
+Cyclone <-> Fast DDS 40.8 and 42.9 µs. From 0 to 8192 B,
+`zerodds -> cyclone` rises by 39.8 µs, `cyclone -> fastdds` by 8.6 µs. The
+gap was there on 2026-05-23 too (88-96 µs). Not investigated yet.
+OpenDDS <-> OpenSplice: no match in either direction, all 22 cells.
+
+---
+
 ## Headline finding — same-host SHM latency fix
 
 ZeroDDS same-host (`zerodds ↔ zerodds`) auto-uses its POSIX-SHM carrier, not
@@ -84,6 +153,73 @@ Median p50 µs, ping (row) → pong (column). **0 failures.**
 
 `zerodds ↔ zerodds` leads at both payloads; at 8 KiB it stays at 23 µs (SHM
 avoids UDP fragmentation) while others sit at 38–99 µs.
+
+---
+
+## self-cell sweep across all five stacks (`self_compare.sh`)
+
+The matrices above are ping x pong. This one is the diagonal only — every
+stack talking to itself, which is the cell each one is tuned for and the
+only comparison that is about the stack rather than about which two stacks
+had to agree on a wire format. Run it with
+`tests/perf/dds-roundtrip-bench/self_compare.sh`.
+
+**Host** the Linux bench host (LXC), 16 cpus, 60 cells, `basis` type from the shared
+`roundtrip.idl`, 2000 samples after 200 warm-up, three runs per cell.
+**1-minute load 1.11-2.60, median 1.78** — the script reads `/proc/loadavg`
+before every cell, waits for the host to come down, and writes the load it
+measured under into every CSV row, because several agents measure on this
+host at once and a latency cell next to a workspace build measures the
+compiler. **Every cell gets its own domain** (140-199, 60 domains, none
+reused, domain 0 never touched): concurrent DDS traffic from other agents
+sat on domain 0 and is disjoint by RTPS port mapping. 60 of 60 cells
+produced a number.
+
+Median of the per-run p50 RTT, microseconds:
+
+| payload | ZeroDDS | Cyclone | RTI 7.7.0 | Fast DDS | OpenDDS 3.34 |
+|---|---|---|---|---|---|
+| 0 | **23.1** | 25.2 | 32.0 | 37.1 | 203.6 |
+| 1638 | **25.0** | 31.3 | 38.3 | 37.5 | 224.1 |
+| 4096 | **20.9** | 37.1 | 38.7 | 40.8 | 254.4 |
+| 8192 | **25.1** | 36.8 | 36.5 | 40.0 | 511.7 |
+
+| vendor | mean rank | payloads won |
+|---|---|---|
+| **ZeroDDS** | **1.00** | 4 of 4 |
+| Cyclone | 2.25 | 0 |
+| RTI | 3.00 | 0 |
+| Fast DDS | 3.75 | 0 |
+| OpenDDS | 5.00 | 0 |
+
+Two further sweeps the same day reproduce the ordering under heavier load
+(1.86-5.96 and 1.3-4.4): ZeroDDS first in every payload row of all three,
+mean rank 1.00 each time. Absolute microseconds move with the load; the
+ranking does not.
+
+## throughput — measured, and not apples-to-apples
+
+There is no shared-IDL throughput harness. What exists measures two
+different types with two different tools, so the numbers below are an
+order-of-magnitude signal and a flag for investigation, not a verdict.
+Both stacks on their own domain (31 and 32), 1 KiB, 20 s, load 1.59-3.40:
+
+| | writes | receives | lost |
+|---|---|---|---|
+| Cyclone `ddsperf` | — | **692.9 kS/s** (5676 Mb/s) | 0 |
+| ZeroDDS `zerodds_perf` | 1098.7 kS/s (9000 Mb/s) | **74.8 kS/s** | 3.25 M of 4.61 M written never arrived |
+
+ZeroDDS writes faster than Cyclone receives and then delivers an order of
+magnitude less: 1 359 662 samples arrived of 4 614 678 written. Cyclone
+delivered 10 823 984 with `lost 0`. Neither side pins QoS — `zerodds_perf`
+takes `DataWriterQos::default()` / `DataReaderQos::default()` and ddsperf
+its own defaults — so part of the gap may be a best-effort writer doing
+what a best-effort writer may do. **That it is unexplained is the point:
+this is the one axis where the measurement puts ZeroDDS behind, and it is
+not currently possible to say by how much, because no two of these numbers
+were produced by the same type through the same QoS.** The missing piece
+is a `--throughput` mode in the roundtrip apps, which already generate
+from one shared IDL.
 
 ---
 
@@ -241,9 +377,13 @@ OpenDDS libs and `-DCPSConfigFile opendds_rtps.ini`.
 # from build/, with the five vendor SDKs discoverable (see CMakeLists.txt)
 cmake .. && cmake --build .          # builds *-roundtrip and *-roundtrip-rich
 # basis matrix:  quick_matrix.sh <out_dir> [N] [payloads]
+# self-cells across all five, load-gated, one domain per cell:
+#   OUT_DIR=/tmp/x N_RUNS=3 ../self_compare.sh
+#   -> $OUT_DIR/self_compare.csv (one row per cell, with the load it ran under)
+#      $OUT_DIR/self_compare.md  (ranking table)
 # secure matrix: sec_matrix.sh [BUILD_DIR] [SEC_DIR] [SAMPLES]   (needs security/gen.sh)
 # rich: run <vendor>-roundtrip-rich pong|ping (Topics RoundtripRichBench_*)
 ```
 
 RTI needs `NDDSHOME`, `RTI_LICENSE_FILE`, and (for rich cross-vendor) the
-compliance mask shown above — already baked into `rti_app_rich.cpp`.
+compliance mask shown above — already baked into the rich build of `rti_app.cpp` (`BENCH_RICH`).

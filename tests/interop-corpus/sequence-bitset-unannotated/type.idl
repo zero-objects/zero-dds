@@ -1,0 +1,10 @@
+// `sequence<bitset>`, unannotated
+bitset Packed {
+    bitfield<3> low;
+    bitfield<5> high;
+};
+
+struct Sample {
+    sequence<Packed> many;
+    long tail;
+};

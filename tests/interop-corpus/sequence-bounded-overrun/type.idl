@@ -1,0 +1,6 @@
+// a two-element sequence bound with a member behind it, so that a third
+// element moves every octet after it
+@final struct Sample {
+    sequence<long, 2> v;
+    long tail;
+};

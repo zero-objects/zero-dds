@@ -1,5 +1,7 @@
 //! hello_dds_publisher — minimal DDS publisher that periodically
 //! sends samples on the "Chatter" topic.
+//! Guide: <https://zerodds.org/docs/examples/getting-started-first-publisher.html>
+//! Source guide: `documentation/01-getting-started/first-publisher.md`.
 //!
 //! # Usage
 //!

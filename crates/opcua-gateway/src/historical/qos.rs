@@ -9,7 +9,7 @@
 //! be configured either as KEEP_ALL or KEEP_LAST with a HISTORY_DEPTH
 //! big enough to store the desired time span of samples."
 
-/// HISTORY-QoS-Kind aus DDS PSM (Spec OMG DDS 1.4 §2.2.3.18).
+/// HISTORY QoS kind from the DDS PSM (spec OMG DDS 1.4 §2.2.3.18).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HistoryQosKind {
     /// `KEEP_LAST` — only the last N samples per instance.

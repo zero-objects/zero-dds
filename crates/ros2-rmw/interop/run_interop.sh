@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
 # ROS wire interop: a ZeroDDS subscriber receives from the Cyclone ROS talker
-# (= rmw_cyclonedds = real ROS 2) on rt/chatter. Runs on codepit.
+# (= rmw_cyclonedds = real ROS 2) on rt/chatter. Runs on the Linux test host.
 # Env: CYCLONE (/opt/cyclone), COUNT (20).
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"

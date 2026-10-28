@@ -1,0 +1,6 @@
+// `@optional` left out, unannotated
+struct Sample {
+    long a;
+    @optional long b;
+    long c;
+};

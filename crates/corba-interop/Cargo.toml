@@ -13,7 +13,10 @@ description = "CORBA speed + cross-ORB interop harness for ZeroDDS (hand-marshal
 workspace = true
 
 [dependencies]
-zerodds-cdr = { version = "1.0.0-rc.7", path = "../cdr" }
+zerodds-wire = { version = "1.0.0-rc.7", path = "../wire" }
+# The generated code names `CorbaAny`, `WString` and `TypeCode`, which
+# live here rather than in the wire runtime.
+zerodds-corba-rt = { version = "1.0.0-rc.7", path = "../corba-rt" }
 zerodds-corba-giop = { version = "1.0.0-rc.7", path = "../corba-giop" }
 zerodds-corba-iiop = { version = "1.0.0-rc.7", path = "../corba-iiop", features = ["tls"] }
 zerodds-corba-ior = { version = "1.0.0-rc.7", path = "../corba-ior" }
@@ -37,9 +40,14 @@ rustls = { workspace = true }
 [dev-dependencies]
 zerodds-corba-cos-transactions = { version = "1.0.0-rc.7", path = "../corba-cos-transactions" }
 
-# build.rs generates Echo + feature-matrix IDL → Rust (OUT_DIR):
-# data types via idl-rust (cdr_only), interfaces via corba-rust.
+# build.rs generates the feature-matrix IDL → Rust (OUT_DIR): the data
+# types and their codecs via lang-rules, the interfaces via corba-rust.
 [build-dependencies]
-zerodds-idl = { version = "1.0.0-rc.7", path = "../idl" }
-zerodds-idl-rust = { version = "1.0.0-rc.7", path = "../idl-rust" }
+zerodds-ast = { version = "1.0.0-rc.7", path = "../ast" }
+zerodds-ast-layout = { version = "1.0.0-rc.7", path = "../ast-layout" }
+zerodds-idl-parse = { version = "1.0.0-rc.7", path = "../idl-parse" }
+zerodds-idl-lower = { version = "1.0.0-rc.7", path = "../idl-lower" }
+zerodds-lang-cst = { version = "1.0.0-rc.7", path = "../lang-cst" }
+zerodds-lang-render = { version = "1.0.0-rc.7", path = "../lang-render" }
+zerodds-lang-rules = { version = "1.0.0-rc.7", path = "../lang-rules" }
 zerodds-corba-rust = { version = "1.0.0-rc.7", path = "../corba-rust" }

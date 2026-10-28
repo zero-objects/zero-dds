@@ -1,0 +1,2 @@
+typedef long Row[3];
+@final struct ArraySeq { sequence<Row> rows; octet tail; };

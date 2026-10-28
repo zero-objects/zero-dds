@@ -49,7 +49,7 @@ end
 
 -- Round 1: send everything once.
 for _, seq in ipairs(seqs) do
-  deliver(rel.writeDataFrame(seq, sender:getInFlight(seq)))
+  deliver(rel.writeDataFrame(seq, 0x0015, sender:getInFlight(seq)))
 end
 drain()
 
@@ -61,7 +61,7 @@ while #delivered < N do
   local ack = receiver:pendingAcknack(nil)
   sender:recvAcknack(ack.firstUnacked, ack.nackLo, ack.nackHi)
   for seq, payload in sender:inFlightPairs() do
-    deliver(rel.writeDataFrame(seq, payload))
+    deliver(rel.writeDataFrame(seq, 0x0015, payload))
   end
   drain()
 end

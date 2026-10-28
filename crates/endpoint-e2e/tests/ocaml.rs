@@ -15,18 +15,19 @@
 
 use std::process::{Child, Command, Stdio};
 
-use zerodds_endpoint_e2e::{IDL, Peer, bind_peer, ping_pong};
-use zerodds_idl::config::ParserConfig;
-use zerodds_idl_ocaml::{OcamlGenOptions, generate_ocaml_module};
+use zerodds_endpoint_e2e::codegen::{
+    Language, endpoints_dir, runtime_dir, scratch_dir, source, tool_available,
+};
+use zerodds_endpoint_e2e::{Peer, bind_peer, ping_pong};
 
 fn ocaml_available() -> bool {
-    Command::new("ocamlfind").arg("printconf").output().is_ok()
+    tool_available("ocamlfind", "printconf")
 }
 
-/// The generated Ping/Pong module (its own `module Wire` + `Ping`/`Pong`).
+/// The generated Ping/Pong types + codec. It calls `Zdwire`, which is
+/// `runtime/ocaml/zdwire.ml` compiled into the same program.
 fn gen_module() -> String {
-    let ast = zerodds_idl::parse(IDL, &ParserConfig::default()).expect("parse");
-    generate_ocaml_module(&ast, &OcamlGenOptions::default()).expect("gen")
+    source(Language::OCaml)
 }
 
 // The app: build a Ping via the generated marshal, ship it through the endpoint
@@ -51,14 +52,22 @@ let () =
         Some (Bytes.sub buf 0 n)
   in
   let transport = { Zerodds.deliver; receive } in
-  let ping : Gen.Ping.t = { Gen.Ping.seq = 1; msg = "hello from app" } in
-  let sample = Gen.Ping.marshal ping Gen.Wire.LE in
+  let zd_framing = { Zdwire.pid_flags = "sentinel-must-understand";
+                     highest_short_id = 16128; pad_declared_length = true;
+                     pad_declared_optional_length = true;
+                     member_must_understand = true; pad_after_value = true } in
+  let w = Zdwire.new_writer Zdwire.Little 4 zd_framing false in
+  let ping : Gen.ping = { Gen.seq = 1l; msg = "hello from app" } in
+  Gen.zd_enc_ping w ping;
+  let sample = Zdwire.finish w in
   let body =
     if mode = "async" then begin
       let reader = Zerodds.AsyncReader.start transport in
       let frame =
         Zerodds.Endpoint.write_frame Zerodds.Endpoint.session_nokey
-          Zerodds.Endpoint.stream_best_effort 1 sample
+          Zerodds.Endpoint.stream_best_effort 1
+          (Zerodds.Endpoint.object_id 0x001 Zerodds.Endpoint.objk_datawriter)
+          sample
       in
       transport.Zerodds.deliver frame;
       let b = Zerodds.AsyncReader.recv reader in
@@ -66,7 +75,8 @@ let () =
       b
     end
     else begin
-      let client = Zerodds.Client.create transport in
+      let client = Zerodds.Client.create transport
+          (Zerodds.Endpoint.object_id 0x001 Zerodds.Endpoint.objk_datawriter) in
       Zerodds.Client.write client sample;
       let deadline = Unix.gettimeofday () +. 10.0 in
       let rec wait () =
@@ -76,22 +86,26 @@ let () =
       wait ()
     end
   in
-  let pong = Gen.Pong.unmarshal body Gen.Wire.LE in
-  Printf.printf "PONG seq=%d reply=%s\n" pong.Gen.Pong.seq pong.Gen.Pong.reply;
+  let r = Zdwire.new_reader (Bytes.to_string body) Zdwire.Little 4 zd_framing in
+  let pong = Gen.zd_dec_pong r Zdwire.Discard in
+  Printf.printf "PONG seq=%ld reply=%s\n" pong.Gen.seq pong.Gen.reply;
   flush stdout
 "#;
 
 fn build_ocaml(mode: &str, port: u16) -> Child {
-    let dir = std::env::temp_dir().join(format!("pp_ocaml_{mode}_{}", std::process::id()));
-    std::fs::create_dir_all(&dir).expect("mkdir");
+    let dir = scratch_dir(&format!("ocaml_{mode}"));
 
     // The SDK (its own `module Wire` + `Endpoint`/`Client`/`AsyncReader`).
-    let sdk = format!(
-        "{}/../../endpoints/ocaml/zerodds.ml",
-        env!("CARGO_MANIFEST_DIR")
-    );
-    let sdk_src = std::fs::read_to_string(&sdk).expect("read endpoints/ocaml/zerodds.ml");
+    let sdk_src = std::fs::read_to_string(endpoints_dir("ocaml").join("zerodds.ml"))
+        .expect("read endpoints/ocaml/zerodds.ml");
     std::fs::write(dir.join("zerodds.ml"), &sdk_src).expect("write zerodds.ml");
+    // The wire runtime the generated codec calls, as its own compilation unit
+    // (`Zdwire`) beside the SDK's unrelated `Zerodds.Wire`.
+    std::fs::copy(
+        runtime_dir("ocaml").join("zdwire.ml"),
+        dir.join("zdwire.ml"),
+    )
+    .expect("copy zdwire.ml");
     std::fs::write(dir.join("gen.ml"), gen_module()).expect("write gen.ml");
     std::fs::write(dir.join("main.ml"), OCAML_MAIN).expect("write main.ml");
 
@@ -104,6 +118,7 @@ fn build_ocaml(mode: &str, port: u16) -> Child {
             "-package",
             "unix,threads.posix",
             "-linkpkg",
+            "zdwire.ml",
             "zerodds.ml",
             "gen.ml",
             "main.ml",

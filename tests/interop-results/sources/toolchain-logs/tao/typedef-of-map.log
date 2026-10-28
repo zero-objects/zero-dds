@@ -1,0 +1,5 @@
+wireprobe-tao: the probe did not compile
+genC.h:79:9: error: 'Table_var' does not name a type
+genC.h:80:9: error: 'Table_out' does not name a type
+genC.h:79:9: error: 'Table_var' does not name a type
+genC.h:80:9: error: 'Table_out' does not name a type

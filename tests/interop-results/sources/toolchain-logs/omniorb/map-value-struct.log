@@ -1,0 +1,6 @@
+wireprobe-omniorb: omniidl failed
+gen.idl:6: Error in look-up of 'map': 'map' not found
+gen.idl:6: Syntax error in member declaration
+gen.idl:6: Error in look-up of 'entries': 'entries' not found
+omniidl: 3 errors.
+wireprobe: omniidl ran under a 4194304K ceiling and a 300s clock

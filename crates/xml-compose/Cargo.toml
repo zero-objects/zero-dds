@@ -1,0 +1,38 @@
+[package]
+name = "zerodds-xml-compose"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository = "https://github.com/zero-objects/zero-dds"
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-xml-compose"
+readme = "README.md"
+keywords = ["dds", "xml", "xtypes", "idl", "ast"]
+categories = ["parsing", "network-programming"]
+authors.workspace = true
+description = "DDS-XML type definitions into the ZeroDDS common AST — the XML counterpart of zerodds-idl-compose."
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+# The DDS-XML 1.0 well-formedness layer: depth cap, element budget,
+# namespace stripping, `<dds>`-or-bare-root. Read-only use of
+# `parse_xml_tree` and `XmlElement`; nothing in `crates/xml` changes.
+zerodds-xml = { version = "1.0.0-rc.7", path = "../xml" }
+zerodds-ast = { version = "1.0.0-rc.7", path = "../ast" }
+zerodds-ast-core = { version = "1.0.0-rc.7", path = "../ast-core" }
+zerodds-types = { version = "1.0.0-rc.7", path = "../types" }
+# For `hashed_member_id` and the two dialect axes, so that a member id
+# derived from XML and one derived from IDL are the same number by
+# construction rather than by coincidence.
+zerodds-idl-lower = { version = "1.0.0-rc.7", path = "../idl-lower" }
+
+[dev-dependencies]
+zerodds-idl-compose = { version = "1.0.0-rc.7", path = "../idl-compose" }
+zerodds-idl-parse = { version = "1.0.0-rc.7", path = "../idl-parse" }

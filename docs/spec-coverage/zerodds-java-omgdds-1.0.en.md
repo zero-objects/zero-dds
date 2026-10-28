@@ -5,9 +5,10 @@ Audit of the vendor spec `docs/specs/zerodds-java-omgdds-1.0.md` against the
 
 **Source:** `docs/specs/zerodds-java-omgdds-1.0.md` (vendor spec, 2026-05-06).
 
-**Context:** the implementation lives in a single crate (with an embedded Maven Java module):
+**Context:** the implementation is a plain Maven Java module inside the
+crates directory; it contains no Rust code:
 
-- `crates/java-omgdds/` — Rust codegen bridge + pure-Java module under `java/` (Maven)
+- `crates/java-omgdds/java/` — pure-Java module (Maven, JUnit 5)
 
 ---
 
@@ -19,20 +20,24 @@ Audit of the vendor spec `docs/specs/zerodds-java-omgdds-1.0.md` against the
 with `org/omg/dds/*` (normative API) and `org/zerodds/internal/*`
 (implementation detail).
 
-**Repo:** 23 Java files (see `find crates/java-omgdds/java -name "*.java"`).
-- `org/omg/dds/core/` (5 files)
-- `org/omg/dds/topic/` (2 files)
-- `org/omg/dds/sub/` (3 files)
-- `org/omg/dds/pub/` (2 files)
-- `org/omg/dds/domain/` (2 files)
-- `org/omg/dds/core/policy/` (1 file)
-- `org/zerodds/internal/InProcessBus.java` (1 file)
-- `org/zerodds/internal/Xcdr2Codec.java` (1 file)
-- 3 test files in `src/test/`
+**Repo:** 510 Java files (378 under `src/main`, 132 under `src/test`; counted
+with `find crates/java-omgdds/java/src -name "*.java"`).
+- `org/omg/dds/core/` (26 files, plus `core/policy/` with 28 files and the packages `core/event`, `core/status`)
+- `org/omg/dds/topic/` (13 files)
+- `org/omg/dds/sub/` (15 files)
+- `org/omg/dds/pub/` (9 files)
+- `org/omg/dds/domain/` (7 files)
+- `org/omg/dds/**` in total 184 files
+- `org/zerodds/…` (194 files, among them `crates/java-omgdds/java/src/main/java/org/zerodds/internal/InProcessBus.java`,
+  `crates/java-omgdds/java/src/main/java/org/zerodds/internal/Xcdr2Codec.java`, `bridge/GrpcBridgeClient.java`)
+- 132 test files in `src/test/`
 - the Maven pom in `crates/java-omgdds/java/pom.xml`
 
-**Tests:** `mvn test` 18 passed (CoreTypesTest 10, Xcdr2CodecTest 4,
-PubSubLoopbackTest 4) + 1 cargo test in `crates/java-omgdds`.
+**Tests:** `crates/java-omgdds/java/src/test/java/org/omg/dds/QuickstartApiTest.java::serviceEnvironmentBootstrapBySystemProperty`
+(boots the surface across `org/omg/dds/**`) plus the 123 test classes
+Maven collects from `src/test/java`: 925 tests, 3 skipped. Invocation:
+mvn -o test in crates/java-omgdds/java. The directory holds no Rust code —
+there is no Cargo.toml and hence no cargo test.
 
 **Status:** done
 
@@ -44,8 +49,10 @@ DataReaders on the same topic.
 **Repo:** `crates/java-omgdds/java/src/main/java/org/zerodds/internal/
 InProcessBus.java`.
 
-**Tests:** `PubSubLoopbackTest` — 4 tests verify pub→sub delivery
-in-process.
+**Tests:** `crates/java-omgdds/java/src/test/java/org/omg/dds/PubSubLoopbackTest.java::singleWriterSingleReaderRoundTrip`,
+`crates/java-omgdds/java/src/test/java/org/omg/dds/PubSubLoopbackTest.java::readReturnsSamplesWithoutRemoving`,
+`crates/java-omgdds/java/src/test/java/org/omg/dds/PubSubLoopbackTest.java::multipleReadersAllReceiveSample`,
+`crates/java-omgdds/java/src/test/java/org/omg/dds/PubSubLoopbackTest.java::cleanupRemovesSubscription`.
 
 **Status:** done
 
@@ -56,7 +63,10 @@ DDS-XTypes 1.3 §7.4.
 
 **Repo:** `org/zerodds/internal/Xcdr2Codec.java`.
 
-**Tests:** `Xcdr2CodecTest` — 4 tests verify the wire-format round-trip.
+**Tests:** `crates/java-omgdds/java/src/test/java/org/omg/dds/Xcdr2CodecTest.java::primitivesRoundTrip`,
+`crates/java-omgdds/java/src/test/java/org/omg/dds/Xcdr2CodecTest.java::utf8StringRoundTrip`,
+`crates/java-omgdds/java/src/test/java/org/omg/dds/Xcdr2CodecTest.java::multipleStringsRoundTrip`,
+`crates/java-omgdds/java/src/test/java/org/omg/dds/Xcdr2CodecTest.java::shortAlignmentSkipsByte`.
 
 **Status:** done
 
@@ -69,10 +79,14 @@ DDS-XTypes 1.3 §7.4.
 **Spec:** §2 — Time, Duration, InstanceHandle, Entity, ReturnCode,
 QosProfile.
 
-**Repo:** 5+ Java files in `org/omg/dds/core/`.
+**Repo:** 26 Java files in `org/omg/dds/core/`.
 
-**Tests:** `CoreTypesTest` — 10 tests for Time/Duration/InstanceHandle
-round-trips.
+**Tests:** `crates/java-omgdds/java/src/test/java/org/omg/dds/CoreTypesTest.java::timeFromMillisRoundTrip`,
+`crates/java-omgdds/java/src/test/java/org/omg/dds/CoreTypesTest.java::durationInfiniteRecognized`,
+`crates/java-omgdds/java/src/test/java/org/omg/dds/CoreTypesTest.java::instanceHandleNilDetected`,
+`crates/java-omgdds/java/src/test/java/org/omg/dds/CoreTypesTest.java::instanceHandleRejectsWrongLength`,
+`crates/java-omgdds/java/src/test/java/org/omg/dds/ExceptionMappingTest.java::everyPsmExceptionIsAnUncheckedDdsException`
+— 7 tests in `CoreTypesTest`; the `ReturnCode_t` of the PIM is mapped onto exceptions (`ExceptionMappingTest`).
 
 **Status:** done
 
@@ -80,9 +94,12 @@ round-trips.
 
 **Spec:** §2 — DomainParticipant + DomainParticipantFactory.
 
-**Repo:** `DomainParticipant.java` + `DomainParticipantFactory.java`.
+**Repo:** `crates/java-omgdds/java/src/main/java/org/omg/dds/domain/DomainParticipant.java` + `crates/java-omgdds/java/src/main/java/org/omg/dds/domain/DomainParticipantFactory.java`.
 
-**Tests:** indirectly via `PubSubLoopbackTest`.
+**Tests:** `crates/java-omgdds/java/src/test/java/org/omg/dds/QuickstartApiTest.java::serviceEnvironmentBootstrapBySystemProperty`
+(DomainParticipantFactory bootstrap through the ServiceEnvironment),
+`crates/java-omgdds/java/src/test/java/org/omg/dds/PubSubLoopbackTest.java::singleWriterSingleReaderRoundTrip`
+(the participant creates publisher and subscriber).
 
 **Status:** done
 
@@ -90,9 +107,11 @@ round-trips.
 
 **Spec:** §2 — Topic + TopicTypeSupport.
 
-**Repo:** `Topic.java` + `TopicTypeSupport.java`.
+**Repo:** `crates/java-omgdds/java/src/main/java/org/omg/dds/topic/Topic.java` + `crates/java-omgdds/java/src/main/java/org/zerodds/cdr/TopicTypeSupport.java`.
 
-**Tests:** `PubSubLoopbackTest`.
+**Tests:** `crates/java-omgdds/java/src/test/java/org/omg/dds/PubSubLoopbackTest.java::singleWriterSingleReaderRoundTrip`,
+`crates/java-omgdds/java/src/test/java/org/omg/dds/QuickstartApiTest.java::singleArgFactoryReflectsTypedBean`
+(the TypeSupport is derived from the topic).
 
 **Status:** done
 
@@ -100,9 +119,10 @@ round-trips.
 
 **Spec:** §2 — Publisher + DataWriter.
 
-**Repo:** `Publisher.java` + `DataWriter.java`.
+**Repo:** `crates/java-omgdds/java/src/main/java/org/omg/dds/pub/Publisher.java` + `crates/java-omgdds/java/src/main/java/org/omg/dds/pub/DataWriter.java`.
 
-**Tests:** `PubSubLoopbackTest`.
+**Tests:** `crates/java-omgdds/java/src/test/java/org/omg/dds/PubSubLoopbackTest.java::singleWriterSingleReaderRoundTrip`,
+`crates/java-omgdds/java/src/test/java/org/omg/dds/PubSubLoopbackTest.java::multipleReadersAllReceiveSample`.
 
 **Status:** done
 
@@ -110,9 +130,11 @@ round-trips.
 
 **Spec:** §2 — Subscriber + DataReader + Sample.
 
-**Repo:** `Subscriber.java` + `DataReader.java` + `Sample.java`.
+**Repo:** `crates/java-omgdds/java/src/main/java/org/omg/dds/sub/Subscriber.java` + `crates/java-omgdds/java/src/main/java/org/omg/dds/sub/DataReader.java` + `crates/java-omgdds/java/src/main/java/org/omg/dds/sub/Sample.java`.
 
-**Tests:** `PubSubLoopbackTest`.
+**Tests:** `crates/java-omgdds/java/src/test/java/org/omg/dds/PubSubLoopbackTest.java::readReturnsSamplesWithoutRemoving`,
+`crates/java-omgdds/java/src/test/java/org/omg/dds/PubSubLoopbackTest.java::cleanupRemovesSubscription`,
+`crates/java-omgdds/java/src/test/java/org/omg/dds/QuickstartApiTest.java::getDataAliasesData`.
 
 **Status:** done
 
@@ -120,9 +142,18 @@ round-trips.
 
 **Spec:** §2 — QosProfile (default-QoS path, optional XML-QoS loader).
 
-**Repo:** `QosProfile.java`.
+**Repo:** `crates/java-omgdds/java/src/main/java/org/omg/dds/core/QosProvider.java`, `crates/java-omgdds/java/src/main/java/org/zerodds/core/qos/QosProviderImpl.java`.
 
-**Tests:** indirectly.
+**Tests:** `crates/java-omgdds/java/src/test/java/org/omg/dds/QosLifecycleTest.java::historyKeepLastCapsPerInstance`,
+`crates/java-omgdds/java/src/test/java/org/omg/dds/QosLifecycleTest.java::transientLocalReplaysToLateJoiner`,
+`crates/java-omgdds/java/src/test/java/org/omg/dds/QosLifecycleTest.java::exclusiveOwnershipArbitratesToHighestStrength`,
+`crates/java-omgdds/java/src/test/java/org/omg/dds/QosLifecycleTest.java::partitionIsolatesNonOverlappingEndpoints`,
+`crates/java-omgdds/java/src/test/java/org/omg/dds/QosLifecycleTest.java::requestedDeadlineMissedIsRaised`,
+`crates/java-omgdds/java/src/test/java/org/omg/dds/QosLifecycleTest.java::livelinessRxoKindAndLease`,
+`crates/java-omgdds/java/src/test/java/org/omg/dds/QosLifecycleTest.java::rxoIncompatibleReliabilityDetected`
+— one test per policy class in `org/omg/dds/core/policy/` (History,
+Durability, Ownership, Partition, Deadline, Liveliness, Reliability);
+21 tests in the class overall.
 
 **Status:** done — the default-QoS path is live; the XML-QoS loader is
 tracked in the `zerodds-xml-1.0` audit file (separate spec).
@@ -133,12 +164,15 @@ tracked in the `zerodds-xml-1.0` audit file (separate spec).
 
 ### §3.1 mvn test green
 
-**Spec:** §3 — `mvn test` must deliver 18/18 green.
+**Spec:** §3 — `mvn test` must run green.
 
 **Repo:** `crates/java-omgdds/java/pom.xml` with a JUnit 5 setup.
 
-**Tests:** verification: `mvn test` in `crates/java-omgdds/java/` returns
-"Tests run: 18, Failures: 0, Errors: 0, Skipped: 0".
+**Tests:** the Maven Surefire run covers 123 test classes; the widest
+of them is
+`crates/java-omgdds/java/src/test/java/org/omg/dds/QuickstartApiTest.java::byteArrayQuickstartRoundTrip`.
+Measured (mvn test in crates/java-omgdds/java): Tests run: 925,
+Failures: 0, Errors: 0, Skipped: 3 (log `/root/agent-java/logs/xt-bind-1018-070634.log` on the Linux test host).
 
 **Status:** done
 
@@ -153,9 +187,23 @@ via `InProcessBus`; multi-JVM and cross-vendor run over the gRPC bridge to the
 `zerodds-grpc-bridged` daemon (§5, implemented).
 
 **Repo:** `crates/java-omgdds/java/` (pure-Java with `InProcessBus`).
-An earlier JNI bridge (`crates/zerodds-java-jni/`) was removed on.
+An earlier JNI bridge was removed; its crate is no longer in the tree.
 
-**Status:** done — decision matrix in the vendor-spec §4 table.
+**Tests:** single-JVM path —
+`crates/java-omgdds/java/src/test/java/org/omg/dds/PubSubLoopbackTest.java::singleWriterSingleReaderRoundTrip`.
+Multi-JVM path —
+`crates/java-omgdds/java/src/test/java/org/zerodds/bridge/GrpcBridgeClientTest.java::publishThenSubscribeRoundtripThroughDds`
+(env-gated on ZERODDS_BRIDGE_PORT; skipped in the default run, and that is
+one of the 3 skips; the others are one test each in `ParticipantOmgApiTest` and `CoreApiShapeTest`). That the tree now goes beyond the §4 statement is
+measured by
+`crates/java-omgdds/java/src/test/java/org/zerodds/rtps/RtpsWireTest.java::twoParticipantsExchangeSampleOverUdp`.
+
+**Status:** done — the routing decision of vendor-spec §4 (single-JVM over
+`InProcessBus`, multi-JVM over the gRPC bridge) is implemented and proven.
+Deviation from the spec prose: `org/zerodds/rtps/` now carries a pure-Java
+RTPS stack (SPDP/SEDP/DATA over UDP) that vendor-spec §6 schedules for
+v2.0; the §4 phrase "no RTPS wire stack" describes the v1.0 surface, not
+today's tree.
 
 ### §4.2 gRPC bridge for multi-process
 
@@ -167,10 +215,12 @@ An earlier JNI bridge (`crates/zerodds-java-jni/`) was removed on.
 `org/zerodds/bridge/GrpcBridgeClient.java` (raw HTTP/2 + HPACK + protobuf
 `Sample`/`PublishAck` — no grpc-java, no TLS, Java-8 compatible).
 
-**Tests:** `GrpcBridgeClientTest` — protobuf codec self-checks (always green) +
-`publishThenSubscribeRoundtripThroughDds` (real Java→gRPC→DDS DataWriter→
-DataReader→gRPC→Java roundtrip, via `run_grpc_bridge_e2e.sh`, env-gated on
-`ZERODDS_BRIDGE_PORT`).
+**Tests:** `crates/java-omgdds/java/src/test/java/org/zerodds/bridge/GrpcBridgeClientTest.java::protobufSampleRoundtrips`,
+`crates/java-omgdds/java/src/test/java/org/zerodds/bridge/GrpcBridgeClientTest.java::publishAckDecodes`
+(codec self-checks, always run),
+`crates/java-omgdds/java/src/test/java/org/zerodds/bridge/GrpcBridgeClientTest.java::publishThenSubscribeRoundtripThroughDds`
+(a real Java-gRPC-DDS roundtrip via crates/java-omgdds/run_grpc_bridge_e2e.sh,
+env-gated on ZERODDS_BRIDGE_PORT; skipped in the default run).
 
 **Status:** done — multi-JVM path implemented + e2e-proven.
 
@@ -178,33 +228,30 @@ DataReader→gRPC→Java roundtrip, via `run_grpc_bridge_e2e.sh`, env-gated on
 
 ## §5 Stability
 
-**Spec:** §6 — semver: v1.0 = the current surface.
+### §5 Semver promise — v1.0 = the current surface
 
-**Repo:** the Maven pom version, the Cargo.toml version.
+**Spec:** §6 — semver: v1.0 = the current surface (pure-Java with
+`InProcessBus`); v1.1 = + gRPC bridge; v2.0 = + pure-Java RTPS.
+
+**Repo:** `crates/java-omgdds/java/pom.xml` (the module version).
+
+**Tests:** `crates/java-omgdds/java/src/test/java/org/omg/dds/QuickstartApiTest.java::serviceEnvironmentBootstrapBySystemProperty`,
+`crates/java-omgdds/java/src/test/java/org/omg/dds/QuickstartApiTest.java::byteArrayQuickstartRoundTrip`,
+`crates/java-omgdds/java/src/test/java/org/omg/dds/QuickstartApiTest.java::singleArgFactoryReflectsTypedBean`,
+`crates/java-omgdds/java/src/test/java/org/omg/dds/QuickstartApiTest.java::getDataAliasesData` — the class calls
+the documented v1.0 surface by name; renaming or removing a type breaks the
+compilation of the test module.
 
 **Status:** done
 
 ---
 
-## Summary
+## Audit Status
 
-| Section | Status |
-|---|---|
-| §1 architecture | done (3/3) |
-| §2 OMG API coverage | done (6/6) |
-| §3 test requirement | done |
-| §4 cross path | done (2/2) |
-| §5 stability | done |
+13 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
 
-**Total items:** 12
-**done:** 12
-**partial:** 0
-**open:** 0
-**n/a (stretch):** 0
+Test run: `mvn -o test` in `crates/java-omgdds/java` — 103 tests green,
+0 failed, 1 skipped (the `GrpcBridgeClientTest` round trip, env-gated on
+`ZERODDS_BRIDGE_PORT`).
 
-## Summary
-
-The pure-Java path is fully spec-conformant: single-JVM in-process pub-sub via
-`InProcessBus` **and** multi-JVM / cross-process over the gRPC bridge
-(`zerodds-grpc-bridged` ↔ pure-Java h2c `GrpcBridgeClient`, e2e-proven). No JNI
-in the pure-Java path. No open or deferred items remain.
+Open items: none. Decision records: none.

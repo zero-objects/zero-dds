@@ -1,139 +1,400 @@
 # ZeroDDS-UDS-Transport 1.0 — Spec-Coverage
 
-ZeroDDS-vendor-spezifischer Unix-Domain-Socket-Transport für
-Container-IPC. **Nicht OMG-normativ** — Cyclone DDS und FastDDS haben
-keinen offiziellen UDS-Transport. Implementiert in:
+**Quelle:** dieses Dokument ist zugleich die Spec. Für Unix-Domain-Sockets
+normiert OMG nichts außer dem vendor-reservierten Locator-Kind
+(DDSI-RTPS 2.5 §9.4.5); Pfad-Auflösung, Wire-Format und Cleanup sind
+vendor-spezifisch. Cyclone DDS und FastDDS haben keinen offiziellen
+UDS-Transport. Die normativen Anforderungen stehen in den `##`-Sektionen
+§2 bis §6; jedes `###`-Item darunter trägt Spec-Zitat, Repo-Anker, Test
+und Status.
 
-- `crates/transport-uds/` — Path-Resolution + SOCK_DGRAM-Format + Abstract-Namespace + Cleanup (`lib.rs`, `abstract_dgram.rs`)
+Implementation: `crates/transport-uds/src/lib.rs` — `SOCK_DGRAM` über
+Filesystem-Sockets; `crates/transport-uds/src/abstract_dgram.rs` —
+Linux-Abstract-Namespace, `#[cfg(target_os = "linux")]`.
 
-Der vendor-reservierte Locator-Kind-Wert (§9.4) ist eine Konstante in
-`crates/rtps/src/wire_types.rs`.
-
-| Spec-Family | Status |
-|---|---|
-| **OMG-normativ** | DDSI-RTPS 2.5 §9.4 LocatorKind (vendor-reserviert) — Locator-Wert in `crates/rtps/src/wire_types.rs` |
-| **ZeroDDS-eigene Spec** | Path-Resolution + SOCK_DGRAM-Format + Abstract-Namespace — [`zerodds-uds-transport-1.0.md`](https://github.com/zero-objects/zero-dds/blob/main/docs/spec-coverage/zerodds-uds-transport-1.0.md) |
+Offene Punkte und Decision-Records: [`zerodds-uds-transport-1.0.open.md`](zerodds-uds-transport-1.0.open.md).
 
 ## §1 Scope und Spec-Status
 
-### §1.1 Was OMG normiert
+### §1.1 Vendor-reservierter Locator-Kind
 
-DDSI-RTPS 2.5 §9.4 erlaubt vendor-reservierte Locator-Kinds. ZeroDDS
-allokiert `LOCATOR_KIND_UDS = 0x81000001` (vendor-spezifischer Wert).
+**Spec:** DDSI-RTPS 2.5 §9.3.2.4 — `0x00000003` bis `0x01ffffff` sind für
+vendor-spezifische Locator-Kinds reserviert. ZeroDDS belegt `0x01F0_0002` für
+UDS. Das Port-Feld ist bedeutungslos und MUSS `0` sein; die 16
+Adress-Bytes tragen die Endpoint-ID.
 
-Kein normatives Wire-Format, kein Path-Schema, kein Cleanup-Protokoll.
+**Repo:** `crates/rtps/src/wire_types.rs` (`LocatorKind::Uds`,
+`Locator::uds`); gebunden in `crates/transport-uds/src/lib.rs`
+(`UdsTransport::local_locator`, Kind-Prüfung in `Transport::send`).
 
-### §1.2 ZeroDDS-Wahl
+**Tests:** `crates/transport-uds/src/lib.rs::tests::locator_kind_is_the_vendor_reserved_uds_value`
+(prüft den Zahlwert `0x01F0_0002`, die Lage im Bereich `0x00000003` bis `0x01ffffff` und `port == 0`),
+`crates/transport-uds/src/lib.rs::tests::local_locator_reflects_bind_id`,
+`crates/transport-uds/src/lib.rs::tests::send_rejects_non_uds_locator`,
+`crates/rtps/src/wire_types.rs::tests::locator_uds_layout`,
+`crates/rtps/src/wire_types.rs::tests::locator_kind_roundtrip`.
 
-Eigene Spec für:
-- Filesystem-Pfad-Resolution.
-- SOCK_DGRAM-Wire-Format.
-- Linux-Abstract-Namespace-Variante.
-- Cleanup-Semantik.
+**Status:** done
 
-## §2 Path-Resolution
+### §1.2 Was OMG für UDS nicht normiert
+
+**Spec:** DDSI-RTPS 2.5 kennt kein Pfad-Schema, kein UDS-Wire-Format und
+kein Cleanup-Protokoll. Cyclone DDS und FastDDS haben keinen offiziellen
+UDS-Transport; sie decken denselben Anwendungsfall über iceoryx oder
+POSIX-SHM ab. Die Sektion hält den Scope fest und stellt keine
+Implementierungs-Anforderung.
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** n/a (informative)
+
+## §2 Pfad-Auflösung
 
 ### §2.1 Filesystem-Modus (Default)
 
-16-Byte `Locator`-Adresse → Path:
+**Spec:** §2 — die 16-Byte-Locator-Adresse wird als
+`<base_dir>/<lowercase-hex32>.sock` aufgelöst. Default-`base_dir` ist
+`/tmp/zerodds/uds`. Der Hex-String ist die Adresse in 32 Kleinbuchstaben,
+ohne Trenner.
 
-```text
-<base_dir>/<lowercase-hex32>.sock
-```
+**Repo:** `crates/transport-uds/src/lib.rs` (`socket_path`,
+`DEFAULT_BASE_DIR`, `parse_hex_id`, `source_locator` als Rückrichtung).
 
-- Default `base_dir` = `/tmp/zerodds/uds`.
-- `<lowercase-hex32>` ist die 16-Byte-ID als 32-Zeichen-Hex.
-- Base-Directory wird lazy auf Bind erstellt mit Mode `0700`
-  (user-private).
+**Tests:** `crates/transport-uds/src/lib.rs::tests::socket_path_is_hex_under_base_dir`
+(prüft Präfix und `.sock`-Endung an einer Adresse mit gesetzten
+Randbytes),
+`crates/transport-uds/src/lib.rs::tests::parse_hex_id_roundtrip`,
+`crates/transport-uds/src/lib.rs::tests::parse_hex_id_rejects_wrong_length`,
+`crates/transport-uds/src/lib.rs::tests::parse_hex_id_rejects_non_hex`.
 
-Repo-Anker: `lib.rs::socket_path`, `lib.rs::DEFAULT_BASE_DIR`.
+**Status:** done
 
-### §2.2 Abstract-Namespace-Modus (Linux-only)
+### §2.2 Basis-Verzeichnis: lazy, user-privat, TOCTOU-fest
 
-Alternative auf Linux: Sockets im Abstract-Namespace (kein
-Filesystem-Inode). Path:
+**Spec:** §2 — das Basis-Verzeichnis wird beim Bind angelegt, wenn es
+fehlt, und trägt dann Mode `0700`. Ein bestehender Pfad, der ein Symlink
+oder keine Verzeichnis ist, MUSS abgelehnt werden, statt ihn zu
+chmodden — sonst könnte ein untergeschobener Symlink fremde Pfade auf
+`0700` setzen. Auf ein bestehendes fremdes Verzeichnis wird kein Mode
+gesetzt.
 
-```text
-\0zd-<lowercase-hex32>
-```
+**Repo:** `crates/transport-uds/src/lib.rs` (`ensure_base_dir` —
+`symlink_metadata` statt `exists`, Ablehnung von Symlink und
+Nicht-Verzeichnis, `create_dir_all` plus `set_permissions(0o700)` mit
+Wiederholungs-Prüfung).
 
-(Leading-Null-Byte signalisiert Abstract-Namespace bei Linux).
+**Tests:** `crates/transport-uds/src/lib.rs::tests::ensure_base_dir_creates_dir_with_mode_0700`
+(liest den Mode zurück und vergleicht ihn gegen `0o700`),
+`crates/transport-uds/src/lib.rs::tests::ensure_base_dir_rejects_symlink`,
+`crates/transport-uds/src/lib.rs::tests::ensure_base_dir_rejects_file_path`,
+`crates/transport-uds/src/lib.rs::tests::ensure_base_dir_creates_missing_dir`.
 
-- Vorteile: kein File-Cleanup nötig, keine Inode-Permissions.
-- Trade-off: nur Linux, kein Cross-Mount-Volume.
+**Status:** done
 
-Repo-Anker: `abstract_dgram.rs::AbstractDgramSocket`.
+### §2.3 Abstract-Namespace-Modus (Linux)
+
+**Spec:** §2 — auf Linux gibt es die Alternative ohne Filesystem-Inode:
+der Socket-Name beginnt mit einem Null-Byte, gefolgt von
+`<prefix>-<lowercase-hex32>`. Kein Cleanup nötig, keine
+Inode-Permissions, kein Cross-Mount-Volume. Der Name passt in
+`sun_path` (108 Byte, Byte 0 ist das Null-Präfix).
+
+**Repo:** `crates/transport-uds/src/abstract_dgram.rs`
+(`UdsAbstractDgramTransport`, `UdsAddress::Abstract`,
+`MAX_ABSTRACT_NAME = 107`, `UdsAddress::abstract_default`); Modul
+deklariert in `crates/transport-uds/src/lib.rs` unter
+`#[cfg(target_os = "linux")]`.
+
+**Tests:** `crates/transport-uds/src/abstract_dgram.rs::tests::abstract_bind_does_not_create_file`,
+`crates/transport-uds/src/abstract_dgram.rs::tests::abstract_send_recv_roundtrip`,
+`crates/transport-uds/src/abstract_dgram.rs::tests::abstract_preserves_message_boundaries`,
+`crates/transport-uds/src/abstract_dgram.rs::tests::local_locator_reflects_bind_id`.
+Diese Tests fahren auf macOS **0 Fälle**: das Modul steht hinter
+`#[cfg(target_os = "linux")]` und wird dort nicht übersetzt. Gemessen
+wurden sie auf dem Linux-Testhost gegen dieselbe, unveränderte
+`abstract_dgram.rs` (Kommando `cargo test -p zerodds-transport-uds`) —
+11 Fälle aus `abstract_dgram::tests` grün, 0 failed.
+
+**Status:** done
+
+### §2.4 Filesystem-Modus im Abstract-Transport (A/B-Vergleich)
+
+**Spec:** §2 — derselbe Transport MUSS auch Filesystem-Adressierung
+können, damit Abstract- und Filesystem-Modus mit identischem Socket-Code
+gegeneinander gemessen werden können. Der Unterschied ist eine
+Config-Zeile.
+
+**Repo:** `crates/transport-uds/src/abstract_dgram.rs`
+(`UdsAddress::Filesystem`, `UdsAddress::filesystem_default`, `fs_path`).
+
+**Tests:** `crates/transport-uds/src/abstract_dgram.rs::tests::filesystem_bind_creates_socket_file`
+(Socket-Datei entsteht beim Bind und verschwindet beim Drop),
+`crates/transport-uds/src/abstract_dgram.rs::tests::filesystem_send_recv_roundtrip`.
+Auch diese Tests sind `#[cfg(target_os = "linux")]`-gated und fahren auf
+macOS 0 Fälle; gemessen auf dem Linux-Testhost im selben Lauf wie §2.3.
+
+**Status:** done
 
 ## §3 Wire-Format
 
-`SOCK_DGRAM` über UDS — eine Datagram-Message pro RTPS-Frame. Kernel
-erhält Message-Grenzen (anders als TCP-Stream).
+### §3.1 `SOCK_DGRAM` mit erhaltenen Message-Grenzen
 
-- Default `max_datagram` = 65 536 Bytes.
-- Kernel-Limit: Linux `wmem_max` (default 212 992) ist die obere
-  Grenze; ZeroDDS liegt drunter.
+**Spec:** §3 — eine Datagram-Message pro RTPS-Frame. Der Kernel erhält
+die Message-Grenzen, anders als bei einem TCP-Stream; es braucht deshalb
+kein Framing-Layer darüber. Zwei Sends MÜSSEN als zwei Receives mit den
+ursprünglichen Längen ankommen.
 
-Repo-Anker: `lib.rs::DEFAULT_MAX_DATAGRAM`,
-`lib.rs::UdsTransport::recv`.
+**Repo:** `crates/transport-uds/src/lib.rs` (`UdsTransport` über
+`std::os::unix::net::UnixDatagram`, `Transport::send` mit `send_to`,
+`Transport::recv` mit `recv_from`).
+
+**Tests:** `crates/transport-uds/src/lib.rs::tests::preserves_message_boundaries_two_datagrams`
+(zwei Sends unterschiedlicher Länge, zwei Receives mit genau diesen
+Längen),
+`crates/transport-uds/src/lib.rs::tests::send_and_recv_roundtrip_same_process`,
+`crates/transport-uds/tests/l1_cross_process.rs::l1_datagram_crosses_process_boundary`
+(dieselbe Zustellung über eine echte Prozessgrenze).
+
+**Status:** done
+
+### §3.2 Absender-Locator aus der Socket-Adresse
+
+**Spec:** §3 — der Empfänger MUSS aus der Absender-Adresse den
+Locator zurückgewinnen, damit RTPS antworten kann. Ist die Adresse
+unbenannt (anonymer Client ohne Bind) oder nicht auflösbar, MUSS
+`Locator::INVALID` zurückgegeben werden — nicht geraten.
+
+**Repo:** `crates/transport-uds/src/lib.rs` (`source_locator`,
+`parse_hex_id`, `Locator::INVALID`).
+
+**Tests:** `crates/transport-uds/src/lib.rs::tests::send_and_recv_roundtrip_same_process`
+(prüft `got.source` gegen den Locator des Senders),
+`crates/transport-uds/src/lib.rs::tests::preserves_message_boundaries_two_datagrams`,
+`crates/transport-uds/tests/l1_cross_process.rs::l1_datagram_crosses_process_boundary`.
+
+**Status:** done
+
+### §3.3 Datagram-Obergrenze
+
+**Spec:** §3 — `max_datagram` (Default 65 536) begrenzt, was gesendet und
+was in den Empfangspuffer gelesen wird. Eine größere Nutzlast MUSS mit
+`PayloadTooLarge` abgelehnt werden; eine stille Kürzung ist nicht
+zulässig, weil sie auf RTPS-Ebene von einer kurzen Nachricht nicht zu
+unterscheiden wäre.
+
+**Repo:** `crates/transport-uds/src/lib.rs` (`DEFAULT_MAX_DATAGRAM`,
+Längenprüfung in `Transport::send`, Puffergröße in `Transport::recv`).
+
+**Tests:** `crates/transport-uds/src/lib.rs::tests::send_rejects_oversize_payload`
+(Nutzlast über dem konfigurierten Limit wird mit `PayloadTooLarge`
+abgelehnt),
+`crates/transport-uds/src/lib.rs::tests::oversized_for_the_kernel_fails_loudly_and_never_truncates`
+(1 KiB kommt unverkürzt an; bei `max_datagram` gilt entweder
+unverkürzte Zustellung oder ein Fehler, der EMSGSIZE benennt — und dann
+liegt nichts Teilweises in der Queue).
+
+**Status:** done
+
+### §3.4 Kernel-Obergrenze gegen konfigurierte Obergrenze
+
+**Spec:** §3 — die tatsächliche Obergrenze pro Message setzt der Kernel:
+Linux über `wmem_max` (Default 212 992), macOS über
+`net.local.dgram.maxdgram` (Default 2048). Der Transport MUSS die
+konfigurierte Grenze gegen die des Betriebssystems abgleichen, sie beim
+Bind sichtbar machen oder die Socket-Puffer entsprechend setzen — sonst
+scheitert ein Sample zwischen beiden Grenzen erst zur Laufzeit.
+
+**Repo:** `crates/transport-uds/src/lib.rs` (`size_buffers`: Sendepuffer
+auf das Doppelte, Empfangspuffer auf das Achtfache von `max_datagram`,
+aufgerufen in `UdsTransport::bind` und
+`UdsAbstractDgramTransport::bind`).
+
+**Tests:** `crates/transport-uds/src/lib.rs::tests::a_datagram_near_the_configured_limit_arrives_whole`
+(vier Datagramme zu `max_datagram` − 512 Byte kommen ganz an; auf macOS
+26 gemessen, vorher dort EMSGSIZE über 2048 Byte),
+`crates/transport-uds/src/lib.rs::tests::oversized_for_the_kernel_fails_loudly_and_never_truncates`.
+
+**Status:** done
 
 ## §4 Cleanup-Semantik
 
-### §4.1 Filesystem-Modus
+### §4.1 Filesystem-Modus: Cleanup beim Drop, Übernahme beim Bind
 
-- Bind erstellt Socket-File auf-demand.
-- Drop entfernt das Socket-File via `fs::remove_file` (best-effort).
-- Crash: Zombie-Socket bleibt; nächster Bind detektiert das via
-  `path.exists()` und failed mit `AlreadyInUse` (TOCTOU-sicher: erst
-  Probe, dann fail-fast — kein Auto-Cleanup, weil Auto-Cleanup
-  beziehbar wäre als Cross-Process-Race).
+**Spec:** §4 — der Bind legt die Socket-Datei an, der Drop entfernt sie
+best-effort (ein abgehängtes Container-Volume darf den Drop nicht
+scheitern lassen). Findet ein Bind eine Restdatei eines abgestürzten
+Vorgängers, MUSS er sie entfernen und neu binden: `UnixDatagram::bind`
+kann nicht über eine bestehende Datei binden und meldet sonst
+`EADDRINUSE`.
 
-### §4.2 Abstract-Modus
+**Repo:** `crates/transport-uds/src/lib.rs` (`UdsTransport::bind` mit
+`remove_file` bei bestehendem Pfad, `Drop for UdsTransport`).
 
-Kein Cleanup nötig — Linux räumt Abstract-Sockets beim Close des
-letzten FD automatisch.
+**Tests:** `crates/transport-uds/src/lib.rs::tests::bind_creates_socket_file`
+(Datei existiert nach dem Bind und ist nach dem Drop weg),
+`crates/transport-uds/src/lib.rs::tests::bind_reuses_path_after_stale_leftover`
+(eine Restdatei mit fremdem Inhalt blockiert den Bind nicht).
 
-## §5 Container-Use-Case
+**Status:** done
 
-### §5.1 Docker/Kubernetes-Pattern
+### §4.2 Abstract-Modus: kein Cleanup nötig
 
-Gemountetes Volume `/tmp/zerodds/uds` zwischen zwei Containern; jeder
-Container bindet seinen eigenen 16-Byte-Locator als Socket-File. Der
-Kernel routet zwischen den FDs.
+**Spec:** §4 — im Abstract-Namespace gibt es keinen Inode; Linux gibt den
+Namen frei, sobald der letzte Filedeskriptor schließt. Ein
+Crash-Cleanup-Pfad ist deshalb nicht erforderlich, und ein Bind darf
+keine Datei anlegen.
 
-### §5.2 Wann UDS statt SHM
+**Repo:** `crates/transport-uds/src/abstract_dgram.rs`
+(`UdsAbstractDgramTransport::bind` im `Abstract`-Zweig ohne
+Filesystem-Zugriff, `Drop` entfernt nur im `Filesystem`-Zweig).
 
-- Multicast geblockt (Cluster-Network-Policy).
-- POSIX-SHM cross-Container unpraktisch (UID-Mapping, `/dev/shm`-
-  Sichtbarkeit, SELinux-Profile).
-- Volume-Mount ist die realistische Permission-Boundary.
+**Tests:** `crates/transport-uds/src/abstract_dgram.rs::tests::abstract_bind_does_not_create_file`,
+`crates/transport-uds/src/abstract_dgram.rs::tests::filesystem_bind_creates_socket_file`
+(die Gegenprobe: im Filesystem-Zweig entsteht und verschwindet die
+Datei). Beide `#[cfg(target_os = "linux")]`-gated, auf macOS 0 Fälle;
+gemessen auf dem Linux-Testhost wie §2.3.
 
-## §6 Cross-Vendor-Interop
+**Status:** done
 
-**Nicht vorgesehen**. UDS ist intra-Container/intra-Host-IPC. Cross-
-Vendor-Interop mit Cyclone/FastDDS bleibt UDP/TCP/SHM-Domain.
+### §4.3 Differenzierte Fehlerklassifikation beim Senden
 
-## §7 Plattform-Support
+**Spec:** §4 — ein Sendefehler MUSS seine Ursache benennen: fehlender
+Ziel-Socket, verweigerte Permission, voller Kernel-Puffer, abgelehnte
+Verbindung und überschrittene Message-Grenze sind unterschiedliche
+Betriebszustände. Ein Sammel-`Io` macht sie ununterscheidbar.
 
-| Plattform | Status | Anmerkungen |
-|---|---|---|
-| Linux | ✅ primary | Filesystem + Abstract Namespace |
-| macOS | ✅ supported | Nur Filesystem-Modus (kein Abstract Namespace) |
-| Windows | ❌ nicht supported | UDS ist Unix-spezifisch (Windows-Named-Pipes wären die Analogie) |
+**Repo:** `crates/transport-uds/src/lib.rs` (`classify_send_error` —
+`NotFound`, `PermissionDenied`, `WouldBlock`, `ConnectionRefused`,
+`EMSGSIZE` über `raw_os_error`).
 
-## §8 Test-Coverage
+**Tests:** `crates/transport-uds/src/lib.rs::tests::classify_send_error_maps_kinds`
+(alle benannten `io::ErrorKind`-Werte auf ihre Meldung),
+`crates/transport-uds/src/lib.rs::tests::send_to_missing_peer_is_io_error`,
+`crates/transport-uds/src/lib.rs::tests::oversized_for_the_kernel_fails_loudly_and_never_truncates`
+(der EMSGSIZE-Zweig, sofern der Kernel die Message ablehnt).
 
-| Spec-Sektion | Tests |
-|---|---|
-| §2.1 Filesystem-Path | `lib.rs::tests::socket_path_*` |
-| §2.2 Abstract-Namespace | `abstract_dgram.rs::tests::abstract_*` |
-| §3 SOCK_DGRAM | `lib.rs::tests::send_recv_*` |
-| §4 Cleanup | `lib.rs::tests::cleanup_*`, `bind_existing_path_*` |
-| §5 Cross-Process | `tests/l1_cross_process.rs` |
+**Status:** done
 
-Total: 16 lib + 1 cross-process = 17 Tests grün.
+### §4.4 Leerlauf-Verhalten von `recv`
 
-## §9 Status
+**Spec:** §4 — mit gesetztem `recv_timeout` MUSS ein leerer Socket nach
+Ablauf `RecvError::Timeout` liefern, nicht einen Io-Fehler. Ohne Timeout
+blockiert `recv`.
 
-**Voll abgedeckt**. ZeroDDS-UDS-Transport ist eine vollständige,
-in-sich-kohärente Spec; alle §-Sektionen sind implementiert und
-getestet.
+**Repo:** `crates/transport-uds/src/lib.rs` (`UdsConfig::recv_timeout`,
+`set_read_timeout` im Bind, `WouldBlock`/`TimedOut`-Zweig in
+`Transport::recv`).
+
+**Tests:** `crates/transport-uds/src/lib.rs::tests::recv_times_out_when_idle`,
+`crates/transport-uds/src/abstract_dgram.rs::tests::recv_times_out_when_idle`
+(derselbe Nachweis im Abstract-Transport, Linux-gated).
+
+**Status:** done
+
+## §5 Container-Anwendungsfall
+
+### §5.1 Volume-Mount als Permission-Grenze
+
+**Spec:** §5 — das Muster für Docker und Kubernetes ist ein gemeinsam
+gemountetes Volume unter `base_dir`; jeder Container bindet seinen
+eigenen 16-Byte-Locator als Socket-Datei, der Kernel routet zwischen den
+Filedeskriptoren. UDS ist dort die Wahl, wenn Multicast durch eine
+Cluster-Network-Policy blockiert ist und POSIX-SHM cross-Container
+unpraktisch ist (UID-Mapping, `/dev/shm`-Sichtbarkeit, SELinux-Profile).
+
+**Repo:** `crates/transport-uds/src/lib.rs` (`UdsConfig::base_dir` als
+freier Pfad, `socket_path` unterhalb davon; Drop-Cleanup ist
+best-effort, damit ein abgehängtes Volume den Drop nicht scheitern
+lässt).
+
+**Tests:** `crates/transport-uds/tests/l1_cross_process.rs::l1_datagram_crosses_process_boundary`
+(zwei OS-Prozesse über ein gemeinsames Verzeichnis — dieselbe Topologie
+wie zwei Container über ein gemeinsames Volume, ohne den
+Container-Runtime-Anteil),
+`crates/transport-uds/src/lib.rs::tests::send_and_recv_roundtrip_same_process`.
+
+**Status:** partial — die Prozessgrenze ist belegt, die
+Container-Grenze nicht: es gibt keinen Test, der zwei Container mit
+gemountetem Volume startet und die UID-Mapping- und SELinux-Fragen
+tatsächlich durchspielt. Der fehlende Nachweis ist als §5.2 offen
+geführt.
+
+### §5.2 Nachweis über eine echte Container-Grenze
+
+**Spec:** §5 — dass das Muster aus §5.1 unter einer Container-Runtime
+trägt, MUSS ein Test mit zwei Containern und einem gemounteten Volume
+belegen: unterschiedliche UID-Mappings auf beiden Seiten, Socket-Datei
+auf dem Volume, Datagram in beide Richtungen.
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** open
+
+## §6 Plattform-Support
+
+### §6.1 Linux und macOS
+
+**Spec:** §6 — Linux ist die primäre Plattform mit beiden Modi
+(Filesystem und Abstract-Namespace), macOS unterstützt den
+Filesystem-Modus. Der Crate ist als Ganzes `#[cfg(unix)]`.
+
+**Repo:** `crates/transport-uds/src/lib.rs` (`#![cfg(unix)]`,
+`#[cfg(target_os = "linux")] pub mod abstract_dgram`).
+
+**Tests:** `crates/transport-uds/src/lib.rs::tests::send_and_recv_roundtrip_same_process`
+und `crates/transport-uds/tests/l1_cross_process.rs::l1_datagram_crosses_process_boundary`
+(auf beiden Plattformen gemessen: macOS in diesem Audit, Linux auf
+Linux-Testhost), `crates/transport-uds/src/abstract_dgram.rs::tests::abstract_send_recv_roundtrip`
+(nur Linux).
+
+**Status:** done
+
+### §6.2 Windows
+
+**Spec:** §6 — Unix-Domain-Sockets sind Unix-spezifisch. Auf Windows
+übersetzt der Crate zu einer leeren Bibliothek; Konsumenten schalten ihre
+UDS-Nutzung mit `#[cfg(unix)]`. Die naheliegende Analogie wären
+Named Pipes — ein anderes Protokoll mit anderer Adressierung, das nicht
+Teil dieser Spec ist.
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** `open` — auf Windows übersetzt der Crate zu einer leeren
+Bibliothek (`crates/transport-uds/src/lib.rs`: `#![cfg(unix)]`). Windows bietet seit Windows 10 (Build 17063) Sockets der Familie
+`AF_UNIX` an (Angabe von Microsoft, hier nicht geprüft); der Transport nutzt
+sie nicht.
+
+### §6.3 Cross-Vendor-Interop
+
+**Spec:** §6 — UDS ist Intra-Container- und Intra-Host-IPC. Cross-Vendor-
+Interop mit Cyclone DDS oder FastDDS bleibt in der UDP-, TCP- und
+SHM-Domäne; beide Vendoren haben keinen UDS-Transport, mit dem sich ein
+Wire-Vergleich führen ließe. Die Sektion hält den Scope fest und stellt
+keine Implementierungs-Anforderung.
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** n/a (informative)
+
+---
+
+## Audit-Status
+
+14 done / 1 partial / 2 open / 2 n/a (informative) / 0 n/a (rejected).
+
+Test-Lauf: `cargo test -p zerodds-transport-uds` — auf macOS 15
+(Rust-Host `aarch64-apple-darwin`) 20 Tests (lib) + 1 Test
+(`tests/l1_cross_process.rs`) grün, 0 failed. Der
+`#[cfg(target_os = "linux")]`-gated `abstract_dgram`-Modul fährt dort 0
+Fälle; derselbe Befehl auf dem Linux-Testhost gegen die unveränderte
+`abstract_dgram.rs` — 11 `abstract_dgram::tests`-Fälle grün, 0 failed.
+
+Offene Punkte und Decision-Records: [`zerodds-uds-transport-1.0.open.md`](zerodds-uds-transport-1.0.open.md).

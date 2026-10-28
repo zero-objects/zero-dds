@@ -1,0 +1,43 @@
+[package]
+name = "zerodds-wireprobe-python-gen"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Generates the Python module the ZeroDDS Python wire probe runs: the dataclasses, the codec, and the sample one values.json fills."
+repository.workspace = true
+homepage.workspace = true
+publish = false
+
+[lib]
+name = "zerodds_wireprobe_python_gen"
+path = "src/lib.rs"
+
+[[bin]]
+name = "wireprobe-zerodds-python-gen"
+path = "src/main.rs"
+
+[[bin]]
+name = "wireprobe-python-matrix"
+path = "src/bin/wireprobe-python-matrix.rs"
+
+[dependencies]
+zerodds-ast = { path = "../../../crates/ast", version = "1.0.0-rc.7" }
+zerodds-ast-core = { path = "../../../crates/ast-core", version = "1.0.0-rc.7" }
+zerodds-ast-layout = { path = "../../../crates/ast-layout", version = "1.0.0-rc.7" }
+zerodds-idl-parse = { path = "../../../crates/idl-parse", version = "1.0.0-rc.7" }
+zerodds-idl-lower = { path = "../../../crates/idl-lower", version = "1.0.0-rc.7" }
+zerodds-lang-cst = { path = "../../../crates/lang-cst", version = "1.0.0-rc.7" }
+zerodds-lang-render = { path = "../../../crates/lang-render", version = "1.0.0-rc.7" }
+zerodds-lang-rules = { path = "../../../crates/lang-rules", version = "1.0.0-rc.7" }
+zerodds-wireprobe-gen = { path = "../wireprobe-zerodds-gen", version = "1.0.0-rc.7" }
+# The matrix binary keys its configurations off the same twelve the C
+# column uses, and compares the read direction in the canonical form
+# `crates/wire-probe/src/canonical.rs` defines — a second copy of that
+# form here would be a second answer to what a value document means.
+zerodds-wire-probe = { path = "../../../crates/wire-probe", version = "1.0.0-rc.7" }
+serde_json = "1"
+
+[lints]
+workspace = true

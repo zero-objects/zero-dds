@@ -1,0 +1,17 @@
+// every primitive in one aggregate, unannotated
+struct Sample {
+    boolean flag;
+    octet raw_octet;
+    uint8 unsigned_byte;
+    int8 signed_byte;
+    char letter;
+    wchar wide_letter;
+    short short_signed;
+    unsigned short short_unsigned;
+    long long_signed;
+    unsigned long long_unsigned;
+    long long llong_signed;
+    unsigned long long llong_unsigned;
+    float single_float;
+    double double_float;
+};

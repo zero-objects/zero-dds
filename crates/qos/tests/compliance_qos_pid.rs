@@ -51,12 +51,12 @@ fn durability_transient_local_golden_vector() {
     let bytes = load_hex(&p);
     assert_eq!(bytes, [0x01, 0x00, 0x00, 0x00]);
 
-    let mut r = zerodds_cdr::BufferReader::new(&bytes, zerodds_cdr::Endianness::Little);
+    let mut r = zerodds_wire::Reader::new(&bytes, zerodds_wire::Endianness::Little);
     let p = zerodds_qos::DurabilityQosPolicy::decode_from(&mut r).unwrap();
     assert_eq!(p.kind, zerodds_qos::DurabilityKind::TransientLocal);
 
     // Roundtrip.
-    let mut w = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Little);
-    p.encode_into(&mut w).unwrap();
-    assert_eq!(w.into_bytes(), bytes);
+    let mut w = zerodds_wire::Writer::new(zerodds_wire::Endianness::Little);
+    p.encode_into(&mut w);
+    assert_eq!(w.finish(), bytes);
 }

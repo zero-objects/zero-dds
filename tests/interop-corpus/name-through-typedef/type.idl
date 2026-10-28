@@ -1,0 +1,16 @@
+// a member typed through an alias that names the type
+module outer {
+    module inner {
+        @final struct Point {
+            long x;
+            long y;
+        };
+    };
+
+    typedef ::outer::inner::Point Location;
+
+    @final struct Sample {
+        Location point;
+        double b;
+    };
+};

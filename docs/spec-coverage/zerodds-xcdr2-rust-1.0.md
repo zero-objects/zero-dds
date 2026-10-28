@@ -1,230 +1,280 @@
-# `zerodds-xcdr2-rust` 1.0 -- Spec-Coverage
+# `zerodds-xcdr2-rust` 1.0 — Spec-Coverage
 
-**Quelle:** `docs/specs/zerodds-xcdr2-rust-1.0.md` (220 Zeilen) -- ZeroDDS Rust TypeSupport-Codegen-Spec.
+**Quelle:** `internal/standards/cache/omg/dds-xtypes-1.3.pdf` (§7.2, §7.4) und `internal/standards/cache/omg/idl-4.2.pdf` (§7) — was die Rust-Spalte beantwortet.
 
-Implementation:
+Der Mechanismus, den diese Spalte mit den zwanzig anderen teilt — die beiden Walks, die Rahmung, Table 9, der KeyHash und der Treiber —, steht in `zerodds-xcdr2-bindings-conformance-1.0.md`. Dieses Dokument führt nur, was die Rust-Spalte selbst entscheidet, und ihre eigenen Nachweise.
 
-- `crates/idl-rust/` — Rust XCDR2-TypeSupport-Codegen (DdsType-Trait in `crates/dcps/`).
+Die Rust-Spalte ist die älteste und die Referenz, gegen die jede andere gemessen wird. Zwei Dinge sind an ihr eigen: ihr Materialisierer heißt `crates/lang-rules/src/adapter/cst.rs` — er war der erste und wurde nach der Aufgabe benannt, nicht nach der Sprache —, und ihr Codec wird von `crates/lang-rules/src/encode.rs` direkt gegen den Rust-CST gebaut statt über `emit::CodecTarget`. Ihre Wire-Laufzeit ist die Crate `crates/wire` und kein Verzeichnis unter `runtime/`.
 
-## §1 Motivation
+## §7.5.1 Die Teile der Spalte
 
-### §1 Keine OMG-DDS-Rust-PSM-Spec
+### §7.5.1 Der konkrete Syntaxbaum und seine Textform
 
-**Spec:** §1 -- "Es existiert keine OMG-DDS-Rust-PSM-Spec. Rust-Bindings für DDS-Vendoren (RustDDS, dust-dds) haben jeweils proprietäre Patterns. ZeroDDS hat seit RC1 ein voll funktionsfähiges DdsType-Trait; diese Spec dokumentiert es formal als normative Pflicht."
+**Spec:** §7.5.1 — Plain Language Binding — die Abbildung auf die Zielsprache ist PSM-eigen. Die Deklarationen dieser Spalte werden als Baum gebaut und erst danach als Text geschrieben; kein Emitter setzt Quelltext zusammen.
 
-**Repo:** Motivations-Text der Vendor-Spec.
+**Repo:** `crates/lang-cst/src/rust/`, `crates/lang-render/src/rust.rs`
 
-**Tests:** --
-
-**Status:** n/a (informative)
-
-## §2 TypeSupport-Pattern
-
-### §2 `DdsType`-Trait mit 4 Konstanten + 4 Methoden
-
-**Spec:** §2 -- "`pub trait DdsType: Sized` mit `TYPE_NAME`, `TYPE_IDENTIFIER`, `EXTENSIBILITY`, `IS_KEYED` Konstanten und `encode/encode_be/decode/key_hash` Methoden. ExtensibilityKind enum {Final, Appendable, Mutable}."
-
-**Repo:** `crates/dcps/src/dds_type.rs` (Zeile 51 `pub trait DdsType: Sized`, plus Konstanten ab 54, Methoden im trait-body). `crates/dcps/src/dds_type.rs::Extensibility`-Enum.
-
-**Tests:** `crates/dcps/`-Unit-Tests im trait-File, Integration über `crates/cdr/tests/integration_topic.rs` (7 tests).
+**Tests:** `crates/lang-render/tests/rendering.rs`: `a_rust_struct_renders_with_its_derives_on_one_line`, `a_rust_enum_renders_its_variants_and_discriminants`, `a_rust_impl_renders_its_method_body`, `a_rust_generic_type_renders_its_arguments`, `a_rust_one_element_tuple_keeps_its_comma`, `a_rust_array_length_renders_as_the_expression_it_is`;
+querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_output_with_exactly_one_newline`, `crates/lang-render/tests/rendering.rs::no_rendered_line_carries_trailing_whitespace`.
 
 **Status:** done
 
-## §3 Required API-Surface
+### §7.5.1 Der Regelkatalog
 
-### §3 Pro IDL-`struct` voller `impl DdsType`
+**Spec:** §7.5.1 — Plain Language Binding — die Abbildung auf die Zielsprache ist PSM-eigen. Was aus welchem Modellknoten wird, steht als Regelmenge und nicht als Sonderfall im Walk.
 
-**Spec:** §3 -- "Generierter Code: `pub struct Point` + voller `impl DdsType for Point` mit allen 4 Konstanten + 4 Methoden."
+**Repo:** `crates/lang-rules/src/rule/rust.rs`
 
-**Repo:** `crates/idl-rust/src/struct_emit.rs::emit_dds_type_impl` (Zeile 95ff) emittiert TYPE_NAME, TYPE_IDENTIFIER, EXTENSIBILITY, IS_KEYED, encode, encode_be, decode, key_hash.
-
-**Tests:** `crates/cdr/tests/xcdr2_wire_vectors.rs` (16 tests) konsumiert generierte Outputs; `crates/cdr/tests/proptest_roundtrip.rs` (15 tests).
-
-**Status:** done
-
-## §4 Codegen-Pflicht (idl-rust)
-
-### §4 Struct + impl + key_holder_be + Compile-Zeit-TYPE_IDENTIFIER
-
-**Spec:** §4 -- "Pro IDL-`struct` MUSS idl-rust emittieren: 1) `pub struct Point`, 2) `impl DdsType`, 3) `key_holder_be()` für @key-Members in BE-PlainCDR2, 4) Compile-Zeit-TYPE_IDENTIFIER."
-
-**Repo:** `crates/idl-rust/src/struct_emit.rs` (`emit_struct_decl`, `emit_dds_type_impl`, `emit_key_holder_be`). `crates/idl-rust/src/type_identifier.rs` hält const-fn-Hashing für TYPE_IDENTIFIER.
-
-**Tests:** Snapshot-Coverage via `idl-rust` lib unit tests + downstream `xcdr2_wire_vectors.rs`.
+**Tests:** `crates/lang-rules/tests/apply.rs::every_language_catalogue_fires_on_the_same_model`,
+`crates/lang-rules/tests/apply.rs::every_catalogue_serialises_and_reads_back_the_same`
 
 **Status:** done
 
-### §4 Modul-Pfad = IDL-Modul-Pfad
+### §7.5.1 Der Materialisierer
 
-**Spec:** §4 -- "Generierter Code lebt im Modul-Pfad der dem IDL-Modul-Pfad entspricht."
+**Spec:** §7.5.1 — Plain Language Binding — die Abbildung auf die Zielsprache ist PSM-eigen. Der Materialisierer trägt die Eigenheiten der Sprache: Namens- und Schlüsselwortbehandlung, Kollisionen und das, was die Sprache gar nicht ausdrücken kann.
 
-**Repo:** `crates/idl-rust/src/emitter.rs` Module-Path-Mapping → `pub mod`-Statement.
+**Repo:** `crates/lang-rules/src/adapter/cst.rs`
 
-**Tests:** V-7 Nested Modules `Outer::Inner::S` in `xcdr2_wire_vectors.rs::v7_nested_modules_final`.
-
-**Status:** done
-
-## §5 Wire-Type-Mapping
-
-### §5 IDL-zu-Rust-Typen + Wire-Layout
-
-**Spec:** §5, Tabelle 18 IDL-Typen → Rust → XCDR2 LE.
-
-**Repo:** `crates/idl-rust/src/type_map.rs` mappt IDL-Primitive auf Rust. `crates/cdr/src/encode.rs` write-Helper.
-
-**Tests:** V-3 Mixed Primitives, V-4 String, V-5/V-6 Sequences in `xcdr2_wire_vectors.rs`.
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_every_wired_language`
 
 **Status:** done
 
-## §6 Extensibility
+### §7.5.1 Das Codec-Backend
 
-### §6 Final / Appendable / Mutable Mode-Encoder
+**Spec:** §7.5.1 — Plain Language Binding — die Abbildung auf die Zielsprache ist PSM-eigen. Das Backend liefert die Schreibweise, in der die geteilte Kodierungsentscheidung in dieser Sprache steht — Empfänger, Methodenname, Argumentform.
 
-**Spec:** §6 -- "`zerodds_cdr::struct_enc` hält die drei Mode-Encoder bereits implementiert (`encode_appendable`, `encode_mutable_member_lc`)."
+**Repo:** `crates/lang-rules/src/encode.rs`
 
-**Repo:** `crates/cdr/src/struct_enc.rs` (Zeile 42 `encode_appendable`, Zeile 167 `encode_mutable_member_lc`).
-
-**Tests:** V-9 Appendable, V-10 Mutable, V-11 Optional Mutable in `xcdr2_wire_vectors.rs`.
-
-**Status:** done
-
-## §7 Key-Extraction
-
-### §7 PlainCdr2BeKeyHolder + finalize_md5
-
-**Spec:** §7 -- "PlainCdr2BeKeyHolder in `crates/cdr` hält Big-Endian-Plain-CDR2-Buffer + finalize → MD5 (RFC 1321 via md5-crate, optional-disabled für no_std-Targets)."
-
-**Repo:** `crates/cdr/src/key_hash.rs::PlainCdr2BeKeyHolder` (Zeile 86), `finalize_md5` Methode mit Holder-Size-Prüfung gemäß XTypes §7.6.8.4.
-
-**Tests:** V-8 Keyed Struct Test (Holder=4 Byte → zero-padded, kein MD5); MD5-Self-Tests in `crates/cdr/src/key_hash.rs` unit-Tests (Zeile 311ff).
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_a_full_codec_in_every_wired_language`,
+`crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`
 
 **Status:** done
 
-## §8 Helper-Library
+### §7.5.1 Der Table-9-Defaulter
 
-### §8 cdr + dcps + idl-rust Crates
+**Spec:** §7.5.1 — Plain Language Binding — die Abbildung auf die Zielsprache ist PSM-eigen. Ein Leser ohne Tab.9-Antwort hat an fünf Stellen keinen definierten Wert; diese Datei ist die Antwort dieser Spalte.
 
-**Spec:** §8, Tabelle 3 Crates -- `crates/cdr` (Encoder/Decoder, struct_enc, Xcdr2Writer/Reader, PlainCdr2BeKeyHolder), `crates/dcps` (DdsType-Trait, Errors, ExtensibilityKind), `crates/idl-rust` (Codegen).
+**Repo:** `crates/lang-rules/src/default_rust.rs`
 
-**Repo:** Alle drei Crates präsent: `crates/cdr/src/{encode,struct_enc,key_hash,buffer,fixed,xcdr1,composite,endianness,error}.rs`, `crates/dcps/src/dds_type.rs`, `crates/idl-rust/src/{struct_emit,enum_emit,bitset_emit,type_identifier,type_map,emitter,annotations}.rs`.
-
-**Tests:** `cargo test -p zerodds-cdr -p zerodds-idl-rust` -- alle grün.
+**Tests:** `crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`
 
 **Status:** done
 
-### §8 no_std-fest mit alloc
+### §7.5.1 Die Wire-Laufzeit
 
-**Spec:** §8 -- "Alle Crates sind no_std-fest mit `alloc` (volle Compatibility mit embedded Targets)."
+**Spec:** §7.5.1 — Plain Language Binding — die Abbildung auf die Zielsprache ist PSM-eigen. Die Laufzeit liest §7.4 eigenständig aus dem Klauseltext und ruft keine andere Spalte; dort liegt die Unabhängigkeit dieser Spalte.
 
-**Repo:** `crates/cdr/src/lib.rs` und `crates/dcps/src/lib.rs` mit `#![no_std]` + `extern crate alloc`. md5-Feature optional-disabled.
+**Repo:** `crates/wire`, Endpoint-SDK `endpoints/rust`
 
-**Tests:** Build mit `--no-default-features` per CI; embedded-Target-Smoke-Test indirekt über Crate-Konfiguration.
-
-**Status:** done
-
-## §9 Conformance
-
-### §9 L1 Wire (V-1..V-12)
-
-**Spec:** §9 -- "L1 (Wire): `crates/cdr/tests/xcdr2_wire_vectors.rs` prüft V-1..V-12."
-
-**Repo:** `crates/cdr/tests/xcdr2_wire_vectors.rs` mit 16 #[test]-Funktionen.
-
-**Tests:** dito.
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_runtime`,
+`crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_an_endpoint_sdk`
 
 **Status:** done
 
-### §9 L2 Codegen Snapshots
+## §7.2.2 Was diese Spalte selbst entscheidet
 
-**Spec:** §9 -- "L2 (Codegen): `crates/idl-rust/tests/snapshots/` mit generierten *.rs-Files."
+### §7.2.2.2 Jedes IDL-Primitiv erreicht einen Rust-Typ
 
-**Repo:** `crates/idl-rust/tests/snapshot_xcdr2_vectors.rs` hält 11 V-i-Snapshots als eigenständigen Test-Tree.
+**Spec:** §7.2.2.2 — Primitive Types — BOOLEAN, BYTE, INT8..UINT64, FLOAT32, FLOAT64, FLOAT128, CHAR8, CHAR16; jede Breite ist festgelegt.
 
-**Tests:** `crates/idl-rust/tests/snapshot_xcdr2_vectors.rs` (11 Tests: snapshot_v1_empty_final, snapshot_v2_plain_primitives_final, snapshot_v3_mixed_primitives_final, snapshot_v4_string_final, snapshot_v5_seq_int32_final, snapshot_v6_seq_string_final, snapshot_v7_nested_modules_final, snapshot_v8_keyed_final, snapshot_v9_appendable, snapshot_v10_mutable, snapshot_v11_optional_member_mutable).
+**Repo:** `crates/lang-rules/src/adapter/cst.rs`
 
-**Status:** done
-
-### §9 L3 Cross-Lang Runner
-
-**Spec:** §9 -- "L3 (Cross-Lang): `crates/conformance/tests/cross_language_xcdr2.rs` ruft `cargo run --bin rust-xcdr2-runner`."
-
-**Repo:** `crates/conformance/tests/cross_language_xcdr2.rs::l3_1_rust_reference_encoder` ruft die zerodds-cdr Wire-Vector-Suite per Subprocess gegen identische V-1..V-12-Hex-Fixtures.
-
-**Tests:** `crates/conformance/tests/cross_language_xcdr2.rs::l3_1_rust_reference_encoder`.
+**Tests:** `crates/lang-rules/tests/end_to_end.rs::every_idl_primitive_reaches_a_rust_type`,
+`crates/lang-rules/tests/end_to_end.rs::a_struct_of_primitives_becomes_a_rust_struct`
 
 **Status:** done
 
-### §9 L4 Cross-Vendor
+### §7.2.2.4.4.4.7 Ein optionales Member wird eine `Option`, die anderen nicht
 
-**Spec:** §9 -- "L4 (Cross-Vendor): bereits live über `crates/discovery/tests/cyclone_*.rs`."
+**Spec:** §7.2.2.4.4.4.7 — Ein Struct-Member darf optional sein; ein Union-Member nie.
 
-**Repo:** `crates/discovery/tests/cyclone_*.rs` deckt Discovery (SPDP/SEDP) gegen Cyclone live; xcdr2-Wire-Format-Äquivalenz wird mittransportiert. Eine xcdr2-spezifische V-1..V-12-Cyclone-Fixture-Validierung ist nicht präsent, der Live-RTPS-Pfad deckt aber den End-to-End-Wire-Pfad.
+**Repo:** `crates/lang-rules/src/adapter/cst.rs`
 
-**Tests:** `crates/discovery/tests/cyclone_*.rs` Live-Tests.
-
-**Status:** done
-
-## §10 Examples
-
-### §10 hello_dds_publisher.rs
-
-**Spec:** §10 -- "`crates/dcps/examples/hello_dds_publisher.rs` ist Referenz-Smoke (generierter Chatter-Type + Pub/Sub-Loop)."
-
-**Repo:** `crates/dcps/examples/hello_dds_publisher.rs` (Smoke-Demo).
-
-**Tests:** Lauf ist Demo-only; Compile-Pfad über `cargo build --example hello_dds_publisher`.
+**Tests:** `crates/lang-rules/tests/end_to_end.rs::an_optional_member_becomes_an_option_and_the_others_do_not`
 
 **Status:** done
 
-### §10 sync + async Deep-Examples + Quickstart
+### §7.2.2.4.3 Eine Sequenz wird ein `Vec`, ein `string` ein `String`; ein Array verschachtelt äußerste Dimension zuerst
 
-**Spec:** §10 — sync/async Deep-Examples (Sensor-Telemetrie `Reading{id,value,label}`).
+**Spec:** §7.2.2.4.3 — Sequence — eindimensional, Schranke optional.
 
-**Repo:** `endpoints/rust/` (Crate `zerodds-endpoint-rust`: `src/lib.rs`, `examples/example_sync.rs`, `examples/example_async.rs`, `QUICKSTART.md`).
+**Repo:** `crates/lang-rules/src/adapter/cst.rs`
 
-**Tests:** CI-Job `endpoints-rust` führt beide aus (`cargo run --example example_sync|example_async`); codepit-verifiziert (5/5 Feld-Decode, byte-identisch via `zerodds-cdr`).
-
-**Status:** done
-
-## §11 Errata + Open-Questions
-
-### §11.1 Derive-Macro
-
-**Spec:** §11.1 -- "`#[derive(DdsType)]` als ergonomische Alternative zur codegen-emittierten Form."
-
-**Repo:** `crates/cdr-derive/` (Crate-Name `zerodds-cdr-derive`, proc-macro). Derive-Macro emittiert TYPE_NAME + EXTENSIBILITY + IS_KEYED + encode/decode/key_hash byte-identisch zur Codegen-Form.
-
-**Tests:** `crates/cdr-derive/tests/derive_smoke.rs` (6 Tests: keyed_struct_sets_has_key, point_encode_matches_v2_wire, point_roundtrip, sensor_roundtrip, type_name_attribute_overrides_default, type_name_default_is_struct_ident).
+**Tests:** `crates/lang-rules/tests/end_to_end.rs::a_sequence_becomes_a_vec_and_a_string_a_string`,
+`crates/lang-rules/tests/end_to_end.rs::an_array_nests_outermost_dimension_first`
 
 **Status:** done
 
-### §11.2 bytes::Bytes
+### §7.2.2.4.2 Ein `typedef` wird ein Type-Alias und löst zugleich im Member auf
 
-**Spec:** §11.2 -- "Encoder schreibt nach `Vec<u8>` (alloc-managed). Zero-Copy-Pfad via `&mut [u8]` ist optional (XTypes-konform aber Sprach-spezifisches Add-on)."
+**Spec:** §7.2.2.4.2 — Alias — `typedef` auf `base_type`, ohne eigenes Kind beim Typvergleich.
 
-**Repo:** `Vec<u8>`-Pfad in `crates/cdr/src/encode.rs`. Slice-Pfad als Add-on nicht im v1.0-Scope.
+**Repo:** `crates/lang-rules/src/adapter/cst.rs`
 
-**Tests:** Roundtrip-Tests mit Vec<u8> in `xcdr2_wire_vectors.rs`.
-
-**Status:** done
-
-### §11.3 serde-Bridge
-
-**Spec:** §11.3 -- "Optional-Feature `serde-bridge` als zusätzliche Form für serde-konsumierende Anwendungen."
-
-**Repo:** `crates/cdr/Cargo.toml` hält `serde-bridge`-Feature-Gate; Implementation in `crates/cdr/src/serde_bridge.rs`.
-
-**Tests:** `crates/cdr/tests/serde_bridge.rs` (3 Tests: serde_roundtrip_primitives, serde_roundtrip_struct, serde_decoded_json_repr_is_xcdr2_string_payload), `cargo test -p zerodds-cdr --test serde_bridge --features serde-bridge`.
+**Tests:** `crates/lang-rules/tests/end_to_end.rs::a_typedef_becomes_a_type_alias_as_well_as_resolving_in_a_member`,
+`crates/lang-rules/tests/end_to_end.rs::a_typedef_resolves_to_what_it_aliases`
 
 **Status:** done
 
-### §11.4 const-Generic-Bounds
+### §7.2.2.4.1.1 Eine Enumeration wird ein Rust-`enum` mit ausgeschriebener Numerierung
 
-**Spec:** §11.4 -- "`sequence<T, N>`-Bounds via `ConstSize<N>`-Trait wären ideal, aber stable-Rust unterstützt const-generic-exprs noch nicht voll. Codegen prüft Bound zur Laufzeit, nicht zur Compile-Zeit."
+**Spec:** §7.2.2.4.1.1 — Enumeration — Int32-Literale, geordnet, `bit_bound` 1..32.
 
-**Repo:** `crates/idl-rust/src/struct_emit.rs` emit Runtime-Bound-Check.
+**Repo:** `crates/lang-rules/src/adapter/cst.rs`
 
-**Tests:** Bound-Edge-Case-Tests in `crates/cdr/tests/proptest_roundtrip.rs`.
+**Tests:** `crates/lang-rules/tests/end_to_end.rs::an_enum_becomes_a_rust_enum_with_its_numbering_written_out`
+
+**Status:** done
+
+### §7.2.2.4.4.3 Eine Union wird ein `enum` mit einer Variante je Case
+
+**Spec:** §7.2.2.4.4.3 — Union — der Diskriminator ist immer das erste Member und trägt `must_understand=true`.
+
+**Repo:** `crates/lang-rules/src/adapter/cst.rs`, die Form in
+`crates/lang-rules/src/rust_union.rs`: ein Case mit einem Label hält das
+Member, ein Case mit mehreren Labels und der `default:`-Case halten den
+Diskriminator davor, und `_NoMember(<Diskriminator>)` hält einen
+Diskriminator, der kein Member wählt (IDL 4.2 §7.4.1.4.4.4). Der Codec
+schreibt einen getragenen Diskriminator nach der Prüfung gegen die Labels
+des Case, einen `boolean`- oder `char`-Diskriminator als `true`/`false`
+und als Zeichen.
+
+**Tests:** `crates/lang-rules/tests/end_to_end.rs::a_union_becomes_an_enum_with_one_variant_per_case`,
+`crates/lang-rules/tests/rust_corpus_compiles.rs::a_union_keeps_its_discriminator_through_rustc_and_back`
+
+**Status:** done
+
+### §7.2.2.4.1.2 Eine Bitmask wird ein Integer mit einer Konstanten je Bit; ein Bitset ein Struct holdertypisierter Felder
+
+**Spec:** §7.2.2.4.1.2 — Bitmask — Schranke 1..64, benannte Bits.
+
+**Repo:** `crates/lang-rules/src/adapter/cst.rs`
+
+**Tests:** `crates/lang-rules/tests/end_to_end.rs::a_bitmask_becomes_an_integer_and_one_constant_per_bit`,
+`crates/lang-rules/tests/end_to_end.rs::a_bitset_becomes_a_struct_of_holder_typed_fields`
+
+**Status:** done
+
+### IDL 4.2 §7.2.3 Ein Member, das ein Rust-Keyword benennt, wird entschärft
+
+**Spec:** IDL 4.2 §7.2.3 — Identifier sind ASCII und beim Vergleich case-insensitiv; eine Kollision muss gemeldet werden.
+
+**Repo:** `crates/lang-rules/src/adapter/cst.rs`
+
+**Tests:** `crates/lang-rules/tests/end_to_end.rs::a_member_named_after_a_rust_keyword_is_escaped`
+
+**Status:** done
+
+### IDL 4.2 §7.4.3 `interface` wird ein Trait von Signaturen; `native` ein opaker Alias
+
+**Spec:** IDL 4.2 §7.4.3 — `interface` — Operationen mit `in`/`out`/`inout`-Parametern.
+
+**Repo:** `crates/lang-rules/src/adapter/cst.rs`
+
+**Tests:** `crates/lang-rules/tests/end_to_end.rs::an_interface_becomes_a_trait_of_signatures`,
+`crates/lang-rules/tests/end_to_end.rs::a_native_declaration_becomes_an_opaque_alias`
+
+**Status:** done
+
+### §7.4 Die erzeugte Aufruffolge schreibt die Bytes, die der Plan nennt
+
+**Spec:** §7.4 — Data Representation — die erzeugte Quelle ruft eine Laufzeit, die §7.4 aus dem Klauseltext liest.
+
+**Repo:** `crates/lang-rules/src/encode.rs`
+
+**Tests:** `crates/lang-rules/tests/runtime_agreement.rs::every_call_the_generator_emits_exists_in_the_runtime`,
+`crates/lang-rules/tests/runtime_agreement.rs::the_sequence_a_final_struct_generates_writes_the_bytes_the_plan_says`,
+`crates/lang-rules/tests/runtime_agreement.rs::the_sequence_a_mutable_struct_generates_carries_its_member_ids`,
+`crates/lang-rules/tests/runtime_agreement.rs::the_key_hash_sequence_produces_a_stable_sixteen_bytes`
+
+**Status:** done
+
+## §7.3.1 Woran die Spalte gehalten wird
+
+### §7.3.1 Jeder Korpusfall rendert oder benennt die Schicht, die ihn abgelehnt hat
+
+**Spec:** §7.3.1 — Jeder Korpusfall rendert oder benennt die Schicht, die ihn abgelehnt hat. Ein Fall, der zu rendern aufhört, würde sonst erst von der nächsten Messung gefunden — ein Build-Verzeichnis vom Konstrukt entfernt, das ihn verursacht hat.
+
+**Repo:** `crates/lang-rules/src/encode.rs`, `crates/lang-rules/src/adapter/cst.rs`
+
+**Tests:** `crates/lang-rules/tests/end_to_end.rs::every_corpus_case_renders_or_names_its_failure`
+
+**Status:** done
+
+### §7.4 Ein Konstrukt ohne Datenform in dieser Sprache wird benannt und nicht ausgelassen
+
+**Spec:** §7.4 — Ein Konstrukt ohne Datenform in dieser Sprache wird benannt und nicht ausgelassen. Ein stillschweigend ausgelassenes Konstrukt ist die schlimmste Fehlerklasse: der Empfänger sieht keinen Fehler, sondern falsche Daten.
+
+**Repo:** `crates/lang-rules/src/encode.rs`, `crates/lang-rules/src/adapter/cst.rs`
+
+**Tests:** `crates/lang-rules/tests/end_to_end.rs::a_construct_with_no_rule_produces_nothing_rather_than_something_wrong`
+
+**Status:** done
+
+### §7.3.1 Zwei Läufe über eine Quelle erzeugen denselben Text
+
+**Spec:** §7.3.1 — Zwei Läufe über eine Quelle erzeugen denselben Text. Ohne diese Eigenschaft ist jeder Diff eines erzeugten Baums unlesbar.
+
+**Repo:** `crates/lang-rules/src/encode.rs`, `crates/lang-rules/src/adapter/cst.rs`
+
+**Tests:** `crates/lang-rules/tests/end_to_end.rs::two_runs_over_one_source_produce_the_same_text`
+
+**Status:** done
+
+### §7.2.2.4 Jedes Konstrukt, das die Vollständigkeitstabelle für diese Spalte behauptet, erzeugt auch Ausgabe
+
+**Spec:** §7.2.2.4 — Jedes Konstrukt, das die Vollständigkeitstabelle für diese Spalte behauptet, erzeugt auch Ausgabe. Die Tabelle in `crates/lang-rules/src/coverage.rs` ist die Behauptung; dieser Test ist ihre Prüfung.
+
+**Repo:** `crates/lang-rules/src/encode.rs`, `crates/lang-rules/src/adapter/cst.rs`
+
+**Tests:** `crates/lang-rules/tests/end_to_end.rs::every_construct_the_table_claims_for_rust_produces_output`
+
+**Status:** done
+
+### §7.4 Die Oktette der Spalte werden gegen eine feste Aufzeichnung gehalten
+
+**Spec:** §7.4 — Die Oktette der Spalte werden gegen eine feste Aufzeichnung gehalten. Gemessen gegen `crates/wire-probe/tests/fixtures/rust_column_baseline.txt`, nicht neben den anderen Spalten: drei Spalten, die sich gemeinsam bewegt haben, ähneln einander weiterhin.
+
+**Repo:** `crates/lang-rules/src/encode.rs`, `crates/lang-rules/src/adapter/cst.rs`
+
+**Tests:** `crates/wire-probe/tests/three_column_gate.rs::the_rust_column_is_byte_for_byte_what_it_was`
+
+**Status:** done
+
+### §7.2.2.4.8 `@verbatim` landet an den Stellen, die die Klausel für diese Sprache nennt
+
+**Spec:** §7.2.2.4.8 — `@verbatim` landet an den Stellen, die die Klausel für diese Sprache nennt.
+
+**Repo:** `crates/lang-rules/src/adapter/cst.rs`, `crates/lang-rules/src/verbatim.rs`
+
+**Tests:** `crates/lang-rules/tests/verbatim_every_column.rs::every_column_places_the_six_slots_in_its_declarations`,
+`crates/lang-rules/tests/verbatim_every_column.rs::every_column_ends_its_source_file_with_the_end_file_text`,
+`crates/lang-rules/tests/verbatim_every_column.rs::a_directive_reaches_its_own_column_and_no_other`
+
+**Status:** done
+
+## §7.3.1 Treiber und Messung
+
+### §7.3.1 `idlc generate --lang rust`
+
+**Spec:** §7.3.1 — die IDL-Type-Representation ist die Eingabe der Erzeugung; die Ausgabe ist die Quelle dieser Spalte.
+
+**Repo:** `tools/idlc/src/generate.rs`, `tools/idlc/src/main.rs`
+
+**Tests:** `tools/idlc/src/generate.rs::tests::every_language_round_trips_through_its_own_name`,
+`tools/idlc/src/generate.rs::tests::language_names_lists_every_language_once`
+
+**Status:** done
+
+### §7.4 Der Messaufbau dieser Spalte
+
+**Spec:** §7.4 — die Oktette einer Spalte werden gegen aufgezeichnete Oktette verglichen und nicht in ihren eigenen Tests behauptet.
+
+**Repo:** `tools/wireprobe/wireprobe-zerodds-gen/`, `crates/wire-probe/src/main.rs`
+
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_cell_generator`,
+`crates/lang-rules/tests/every_language_has_its_parts.rs::every_cell_generator_guards_against_a_missing_toolchain`
 
 **Status:** done
 
@@ -232,6 +282,8 @@ Implementation:
 
 ## Audit-Status
 
-18 done / 0 partial / 0 open / 1 n/a (informative) / 0 n/a (rejected).
+24 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
 
-Test-Lauf: `cargo test -p zerodds-cdr -p zerodds-idl-rust -p zerodds-cdr-derive` -- 170 unit + integration + 6 derive_smoke + 11 snapshot_xcdr2_vectors = 232+ Tests grün, 0 failed; `cargo test -p zerodds-cdr --test serde_bridge --features serde-bridge` -- 3 Tests grün; `cargo test -p zerodds-conformance --test cross_language_xcdr2 l3_1_rust_reference_encoder` -- 1 Test grün.
+Test-Lauf: `cargo test -p zerodds-lang-rules` — 1024 Tests grün, 0 failed (20 ignoriert: die Vollkorpus-Compile-Läufe, die `--include-ignored` verlangen).
+
+Offene Punkte: keine. Decision-Records: keine.

@@ -1,0 +1,61 @@
+# Why a behaviour of `docs/wire-feature-inventory.md` has no wire-level
+# measurement, one line each.
+#
+# `coverage.py` joins this file with `cases.tsv` and
+# `tests/interop-results/wire-goldens.tsv` and refuses to write
+# `coverage.tsv` if any behaviour in the inventory appears in neither.
+# A behaviour with no reason is not finished, and the join is what says
+# so.
+#
+# There are three kinds of reason and the `kind` column names which:
+#
+#   read-direction   the behaviour is what a *receiver* does. A capture
+#                    of a writer cannot reach it, and `tools/wireprobe`'s
+#                    read direction is where it is measured. This is the
+#                    largest group and it is not a gap in this harness:
+#                    §7.2.2.7's `try_construct` and §7.4.1.2.3's
+#                    evolution rules are decisions a reader makes about
+#                    octets that are already correct.
+#   not-a-wire-rule  the behaviour constrains the IDL or the type
+#                    system and produces no octets at all. A front end
+#                    accepts or refuses, and there is nothing to capture
+#                    either way.
+#   no-case          a capture *could* reach it and no corpus case
+#                    carries the shape. `tests/interop-corpus/` is
+#                    another strand's tree and this run adds nothing to
+#                    it, so these are named rather than closed.
+#
+# row	kind	reason
+E2	not-a-wire-rule	`@bit_bound` outside 1..32 is a front-end refusal (§7.3.1.2.1.5) and a refused file produces no octets to capture.
+E5	read-direction	A writer can only set bits the bitmask declares and every one of them is below the bound; what a reader does with a bit at or above it is the read direction.
+G15	no-case	OMG IDL has no syntax that annotates a collection type, so no corpus case declares an `@appendable` or `@mutable` collection; the front ends were asked directly in the unspecified-constructs run instead.
+I8	no-case	`FLAG_2` of the extended `eMemberHeader` needs a member that is both `@must_understand` and past id 0x3F00; `annotation-must-understand` has the first and `annotation-id-sparse` the second, and no corpus case has both.
+I9	read-direction	No product sets `FLAG_IMPL_EXTENSION` on a member it declares, so no capture of a writer holds one; the behaviour is what a reader does with a peer's private parameter.
+I12	no-case	The boundary is id 0x3F00 exactly and no corpus case declares it; the corpus's largest ids, 16383 and 268435455, are both past it and only show the extended form the rule sends them to. `tools/byte-gate`'s `pid_3f00` is where the boundary is measured.
+I13	read-direction	The claim is that a reader accepts either header form; a writer capture shows only which form each product chose, which `annotation-id-explicit` and `annotation-id-sparse` do record.
+I14	read-direction	No product writes a user member with an id in the reserved range 0x3F01–0x3FFF, so a writer capture cannot hold one; the rule is what a reader does when a peer does.
+I16	read-direction	`PID_LIST_END` is what a reader must be robust to receiving; every PL_CDR1 writer here ends its list with `PID_SENTINEL`, which `struct-mutable`'s XCDR1 goldens carry.
+I17	read-direction	`PID_IGNORE` says every consumer shall ignore 0x3F03; no product emits it, so there is nothing on the wire to capture.
+I23	read-direction	The same bit as I9 from the receiving side: §7.4.1.2.2 says a parameter that sets it is the writing implementation's own, and only a reader acts on that.
+L4	not-a-wire-rule	`O.ssize` below 4 GiB is a bound on the encoding, and a payload that tested it would be over 4 GiB — every case here fits one loopback datagram.
+L5	read-direction	The DHEADER a writer emits is L1; skipping an unknown tail by it is what the reader does with it.
+M2	read-direction	A non-optional receiver member taking its default for an omitted mutable member is the receiver's substitution.
+M5	read-direction	Skipping an unrecognised member with `must_understand = false` and keeping the sample is the reader's decision.
+M6	read-direction	Discarding the sample for an unrecognised must-understand member is the reader's decision.
+M7	read-direction	A reader with fewer members than the writer skipping the tail is the reader's use of the DHEADER.
+M8	read-direction	A reader with more members than the writer defaulting the missing tail is the reader's substitution.
+M9	read-direction	Table 9's default values appear only where a member is absent, and it is the reader that supplies them.
+M10	read-direction	An explicit `@default` changes what a reader supplies for an absent member; a writer sends the sample's own value either way, which `annotation-default-value` records as M3.
+M11	read-direction	A discriminator selecting a member the writer's type had no case for is a reader-side type-evolution question.
+M12	not-a-wire-rule	`@final` assignability is a type-compatibility rule; the mismatch is a discovery or reader verdict and not an octet.
+N9	not-a-wire-rule	"Key members are never optional and always must-understand" constrains the IDL; the front end accepts or refuses and no octet carries the constraint.
+N10	not-a-wire-rule	A `map` in a key is refused by every front end here; a refused file produces nothing to capture.
+N11	not-a-wire-rule	"In a union only the discriminator may be a key" is the same shape: a front-end constraint with no octets.
+O1	read-direction	`DISCARD` — failing the whole aggregate for a member that cannot be constructed is what the receiver does with octets that are already correct.
+O2	read-direction	`USE_DEFAULT` — the member taking its default and the aggregate surviving is the receiver's substitution.
+O3	read-direction	`TRIM` — truncating an over-long string, wstring, sequence or map to what the receiver's type holds happens after the octets arrive.
+O4	read-direction	`TRIM` on any other type being unspecified is a statement about the receiver's options.
+O5	read-direction	The annotation's own parameter defaulting to `USE_DEFAULT` decides which of O1 to O3 a receiver applies.
+O6	read-direction	The positions the annotation may appear in decide where O1 to O3 apply on the receiving side.
+O7	read-direction	"A map's key admits only `DISCARD`" narrows the receiver's options for one position.
+O8	read-direction	"A discarded sample is an absence, not a decode error" is the receiver's report to its own application.

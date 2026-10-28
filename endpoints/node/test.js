@@ -24,7 +24,7 @@ function fixture(w) {
 }
 
 function sampleBody(id) {
-  const w = new z.Writer(z.LITTLE);
+  const w = new z.Writer(z.LITTLE, z.XCDR2);
   w.putU32(id);
   w.putU16(0);
   w.putU8(0);
@@ -33,7 +33,7 @@ function sampleBody(id) {
 
 test('byte identity vs Rust goldens', () => {
   for (const [endian, file] of [[z.LITTLE, 'golden_le.bin'], [z.BIG, 'golden_be.bin']]) {
-    const w = new z.Writer(endian);
+    const w = new z.Writer(endian, z.XCDR2);
     fixture(w);
     const golden = fs.readFileSync(`${goldenDir}/${file}`);
     assert.ok(w.bytes().equals(golden), `${file}: not byte-identical (got ${w.bytes().length}, want ${golden.length})`);
@@ -42,23 +42,23 @@ test('byte identity vs Rust goldens', () => {
 
 test('sync loopback (pull)', () => {
   const t = new z.MemTransport();
-  const c = new z.Client(t);
+  const c = new z.Client(t, z.xrceObjectId(0x001, z.OBJK_DATAWRITER));
   for (let i = 0; i < 5; i++) assert.ok(c.write(sampleBody(0x3000 + i)));
   for (let i = 0; i < 5; i++) {
     const body = c.poll();
     assert.ok(body, `sync: no sample ${i}`);
-    assert.strictEqual(new z.Reader(body, z.LITTLE).getU32(), 0x3000 + i);
+    assert.strictEqual(new z.Reader(body, z.LITTLE, z.XCDR2).getU32(), 0x3000 + i);
   }
 });
 
 test('async loopback (async iterator)', async () => {
   const t = new z.MemTransport();
-  const w = new z.Client(t);
+  const w = new z.Client(t, z.xrceObjectId(0x001, z.OBJK_DATAWRITER));
   for (let i = 0; i < 5; i++) assert.ok(w.write(sampleBody(0x1000 + i)));
   const r = new z.AsyncReader(t);
   let got = 0;
   for await (const body of r.stream()) {
-    assert.strictEqual(new z.Reader(body, z.LITTLE).getU32(), 0x1000 + got);
+    assert.strictEqual(new z.Reader(body, z.LITTLE, z.XCDR2).getU32(), 0x1000 + got);
     if (++got === 5) break;
   }
   r.close();
@@ -67,12 +67,18 @@ test('async loopback (async iterator)', async () => {
 
 // Builds an XRCE frame with an arbitrary submessage id + declared body length,
 // for exercising the reader's direction + validation logic.
-function frame(id, body, declaredLen = body.length) {
-  const out = Buffer.alloc(8 + body.length);
+// A data frame carrying `body` as the sample: 8-byte header, the 4-octet
+// BaseObjectRequest (§7.7.8), then the sample. `declaredLen` is the
+// submessage_length written into the header (base + sample by default), so a
+// test can declare a wrong one on purpose.
+function frame(id, body, declaredLen = z.XRCE_BASE_SIZE + body.length) {
+  const out = Buffer.alloc(8 + z.XRCE_BASE_SIZE + body.length);
   out[0] = 0x80; out[1] = 0x01; out[2] = 1; out[3] = 0;
-  out[4] = id; out[5] = 0x03;
+  out[4] = id; out[5] = z.XRCE_WRITE_FLAGS;
   out[6] = declaredLen & 0xff; out[7] = (declaredLen >>> 8) & 0xff;
-  Buffer.from(body).copy(out, 8);
+  out[8] = 0x00; out[9] = 0x01;
+  out[10] = 0x00; out[11] = 0x15;
+  Buffer.from(body).copy(out, 8 + z.XRCE_BASE_SIZE);
   return out;
 }
 
@@ -81,7 +87,7 @@ test('string is UTF-8 with byte-count length prefix', () => {
   // The length prefix must be the BYTE count + 1 (NUL), not the char count.
   const s = 'grüße';
   const utf8 = [0x67, 0x72, 0xC3, 0xBC, 0xC3, 0x9F, 0x65];
-  const w = new z.Writer(z.LITTLE);
+  const w = new z.Writer(z.LITTLE, z.XCDR2);
   w.putString(s);
   const wire = w.bytes();
   // 4-byte LE length prefix = byte count incl. NUL = 8, NOT the char count (5).
@@ -91,7 +97,7 @@ test('string is UTF-8 with byte-count length prefix', () => {
   assert.strictEqual(wire[4 + utf8.length], 0, 'NUL terminator');
   assert.strictEqual(wire.length, 4 + utf8.length + 1, 'total wire length');
   // Symmetric decode.
-  assert.strictEqual(new z.Reader(wire, z.LITTLE).getString(), s, 'roundtrip');
+  assert.strictEqual(new z.Reader(wire, z.LITTLE, z.XCDR2).getString(), s, 'roundtrip');
 });
 
 test('reader accepts hub DATA (0x09)', () => {
@@ -111,18 +117,33 @@ test('reader rejects negative frame vectors', () => {
   // Unknown submessage id.
   assert.strictEqual(z.xrceReadFrame(frame(0x0A, Buffer.from([1, 2]))), null);
   // Truncated header (fewer than 8 bytes).
-  for (let len = 0; len < 8; len++) {
+  for (let len = 0; len < 8 + z.XRCE_BASE_SIZE; len++) {
     assert.strictEqual(z.xrceReadFrame(Buffer.alloc(len)), null, `len ${len}`);
   }
   // Declared length runs past the datagram.
   assert.strictEqual(z.xrceReadFrame(frame(0x09, Buffer.from([1, 2]), 100)), null);
   // Trailing bytes past the declared length must not leak into the body.
-  const bounded = z.xrceReadFrame(frame(0x09, Buffer.from([1, 2, 3, 4]), 2));
+  const bounded = z.xrceReadFrame(frame(0x09, Buffer.from([1, 2, 3, 4]),
+                                       z.XRCE_BASE_SIZE + 2));
   assert.ok(bounded && Buffer.from(bounded).equals(Buffer.from([1, 2])), 'bounded body');
 });
 
 test('writer refuses a sample larger than the 16-bit length field', () => {
   // Refuse (null) rather than silently truncate the length (matches the C SDK).
-  assert.strictEqual(z.xrceWriteFrame(0x80, 0x01, 1, Buffer.alloc(0x10000)), null);
-  assert.ok(z.xrceWriteFrame(0x80, 0x01, 1, Buffer.alloc(0xffff)) !== null, '0xFFFF still encodes');
+  assert.strictEqual(z.xrceWriteFrame(0x80, 0x01, 1, z.xrceObjectId(0x001, z.OBJK_DATAWRITER), Buffer.alloc(0x10000)), null);
+  assert.ok(z.xrceWriteFrame(0x80, 0x01, 1, z.xrceObjectId(0x001, z.OBJK_DATAWRITER), Buffer.alloc(0xffff - z.XRCE_BASE_SIZE)) !== null, 'a maximal body still encodes');
+});
+
+test('Client.write refuses the sample the builder refused', () => {
+  // The builder's null was representable and `Client.write` handed it to
+  // `deliver` unread, so an oversize sample went out as nothing at all with no
+  // error anywhere. The refusal now stops at the caller.
+  let delivered = 0;
+  const c = new z.Client({ deliver: () => { delivered += 1; }, receive: () => null },
+                         z.xrceObjectId(0x001, z.OBJK_DATAWRITER));
+  assert.throws(() => c.write(Buffer.alloc(0x10000)), RangeError);
+  assert.strictEqual(delivered, 0, 'nothing may be delivered for a refused sample');
+  // The sequence is not spent on a sample that was never written.
+  c.write(Buffer.alloc(4));
+  assert.strictEqual(delivered, 1);
 });

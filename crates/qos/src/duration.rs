@@ -2,7 +2,7 @@
 // Copyright 2026 ZeroDDS Contributors
 //! DDS `Duration_t` (DDSI-RTPS §9.3.2) — i32 seconds + u32 fraction.
 
-use zerodds_cdr::{BufferReader, BufferWriter, DecodeError, EncodeError};
+use zerodds_wire::{Reader, WireError, Writer};
 
 /// DDS Duration (signed seconds + unsigned 2^-32-fractions).
 ///
@@ -11,9 +11,9 @@ use zerodds_cdr::{BufferReader, BufferWriter, DecodeError, EncodeError};
 /// - `DURATION_ZERO`: `{ seconds: 0, fraction: 0 }`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Duration {
-    /// Sekundenanteil (signed 32 bit).
+    /// Seconds component (signed 32 bit).
     pub seconds: i32,
-    /// Bruchteil-Anteil (2^-32-Sekunden).
+    /// Fractional component (2^-32 seconds).
     pub fraction: u32,
 }
 
@@ -55,7 +55,9 @@ impl Duration {
     pub const fn from_millis(ms: i32) -> Self {
         let seconds = ms.div_euclid(1000);
         let remainder_ms = ms.rem_euclid(1000) as u32; // in [0, 1000)
-        let fraction = ((remainder_ms as u64 * (1u64 << 32)) / 1000) as u32;
+        // Rounded to the nearest 2^-32 s, so that the way back to
+        // nanoseconds ([`Self::to_nanos`]) lands on the whole value.
+        let fraction = ((remainder_ms as u64 * (1u64 << 32) + 500) / 1000) as u32;
         Self { seconds, fraction }
     }
 
@@ -67,8 +69,55 @@ impl Duration {
     pub const fn from_micros(us: i32) -> Self {
         let seconds = us.div_euclid(1_000_000);
         let remainder_us = us.rem_euclid(1_000_000) as u32; // in [0, 1_000_000)
-        let fraction = ((remainder_us as u64 * (1u64 << 32)) / 1_000_000) as u32;
+        let fraction = ((remainder_us as u64 * (1u64 << 32) + 500_000) / 1_000_000) as u32;
         Self { seconds, fraction }
+    }
+
+    /// `nanosec` (below one second) as 2^-32 s, rounded to the nearest.
+    ///
+    /// Rounded both ways, every whole nanosecond survives the way there
+    /// and back ([`Self::to_sec_nanosec`]): the resolution is 0.23 ns.
+    /// Truncated both ways, 300 ms came back as 299 999 999 ns.
+    #[must_use]
+    pub const fn fraction_of_nanosec(nanosec: u32) -> u32 {
+        // nanosec < 1e9 keeps the quotient below 2^32.
+        (((nanosec % 1_000_000_000) as u64 * (1u64 << 32) + 500_000_000) / 1_000_000_000) as u32
+    }
+
+    /// From seconds and nanoseconds; a `nanosec` of a second or more
+    /// carries into the seconds.
+    #[must_use]
+    pub const fn from_sec_nanosec(seconds: i32, nanosec: u32) -> Self {
+        Self {
+            seconds: seconds.saturating_add((nanosec / 1_000_000_000) as i32),
+            fraction: Self::fraction_of_nanosec(nanosec),
+        }
+    }
+
+    /// Seconds and nanoseconds, the fraction rounded to the nearest
+    /// nanosecond; a fraction that rounds up to a whole second carries.
+    /// INFINITE is the caller's to recognise first.
+    #[must_use]
+    pub const fn to_sec_nanosec(self) -> (i32, u32) {
+        let nanos = ((self.fraction as u64) * 1_000_000_000 + (1u64 << 31)) >> 32;
+        if nanos >= 1_000_000_000 {
+            (
+                self.seconds.saturating_add(1),
+                (nanos - 1_000_000_000) as u32,
+            )
+        } else {
+            (self.seconds, nanos as u32)
+        }
+    }
+
+    /// Whole milliseconds, rounded to the nearest; `u128::MAX` for
+    /// INFINITE, `0` for a negative duration (as [`Self::to_nanos`]).
+    #[must_use]
+    pub const fn to_millis(self) -> u128 {
+        match self.to_nanos() {
+            u128::MAX => u128::MAX,
+            nanos => (nanos + 500_000) / 1_000_000,
+        }
     }
 
     /// `true` if `self == INFINITE`.
@@ -89,8 +138,9 @@ impl Duration {
             return 0;
         }
         let secs = self.seconds as u128;
-        // fraction is in 2^-32 seconds: nanos = fraction * 1e9 / 2^32.
-        let frac_nanos = (self.fraction as u128 * 1_000_000_000) >> 32;
+        // fraction is in 2^-32 seconds: nanos = fraction * 1e9 / 2^32,
+        // rounded to the nearest (see [`Self::fraction_of_nanosec`]).
+        let frac_nanos = (self.fraction as u128 * 1_000_000_000 + (1u128 << 31)) >> 32;
         secs * 1_000_000_000 + frac_nanos
     }
 
@@ -101,19 +151,16 @@ impl Duration {
     }
 
     /// Wire-Encoding: `{ i32 seconds; u32 fraction }` (8 byte).
-    ///
-    /// # Errors
-    /// Buffer-Overflow.
-    pub fn encode_into(self, w: &mut BufferWriter) -> Result<(), EncodeError> {
-        w.write_u32(self.seconds as u32)?;
-        w.write_u32(self.fraction)
+    pub fn encode_into(self, w: &mut Writer) {
+        w.write_u32(self.seconds as u32);
+        w.write_u32(self.fraction);
     }
 
     /// Wire-Decoding.
     ///
     /// # Errors
     /// Buffer-Underflow.
-    pub fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
+    pub fn decode_from(r: &mut Reader<'_>) -> Result<Self, WireError> {
         let seconds = r.read_u32()? as i32;
         let fraction = r.read_u32()?;
         Ok(Self { seconds, fraction })
@@ -137,12 +184,30 @@ impl Duration {
         out
     }
 
-    /// Aus 8-byte-LE-Array.
+    /// From 8-byte-LE array.
     #[must_use]
     pub fn from_bytes_le(bytes: [u8; 8]) -> Self {
         let seconds = i32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
         let fraction = u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
         Self { seconds, fraction }
+    }
+
+    /// From 8-byte-BE array — the value of a PL_CDR_BE parameter.
+    #[must_use]
+    pub fn from_bytes_be(bytes: [u8; 8]) -> Self {
+        let seconds = i32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+        let fraction = u32::from_be_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
+        Self { seconds, fraction }
+    }
+
+    /// From the 8 octets of a parameter value in the list's byte order.
+    #[must_use]
+    pub fn from_bytes(bytes: [u8; 8], little_endian: bool) -> Self {
+        if little_endian {
+            Self::from_bytes_le(bytes)
+        } else {
+            Self::from_bytes_be(bytes)
+        }
     }
 }
 
@@ -156,7 +221,7 @@ impl Default for Duration {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use zerodds_cdr::Endianness;
+    use zerodds_wire::Endianness;
 
     #[test]
     fn infinite_constant_matches_spec() {
@@ -196,10 +261,42 @@ mod tests {
         let half_ms = Duration::from_micros(500);
         assert_eq!(half_ms.seconds, 0);
         assert!(half_ms.fraction > 0);
-        // 500 µs == 0.5 ms; same fraction as from_millis would give for 0.5ms.
+        // 500 µs == 0.5 ms: 2^32 / 2000, rounded to the nearest.
         assert_eq!(
             half_ms.fraction,
-            ((500u64 * (1u64 << 32)) / 1_000_000) as u32
+            ((500u64 * (1u64 << 32) + 500_000) / 1_000_000) as u32
+        );
+    }
+
+    /// Every whole nanosecond survives the way to 2^-32 s and back; it
+    /// lost one before, 300 ms came back as 299 999 999 ns.
+    #[test]
+    fn a_whole_nanosecond_survives_the_way_there_and_back() {
+        for nanosec in [
+            0,
+            1,
+            2,
+            3,
+            299_999_999,
+            300_000_000,
+            999_999_998,
+            999_999_999,
+        ] {
+            let d = Duration::from_sec_nanosec(5, nanosec);
+            assert_eq!(d.to_sec_nanosec(), (5, nanosec), "{nanosec}");
+        }
+        for nanosec in (0..1_000_000_000u32).step_by(7_919) {
+            assert_eq!(
+                Duration::from_sec_nanosec(0, nanosec).to_sec_nanosec(),
+                (0, nanosec)
+            );
+        }
+        assert_eq!(Duration::from_millis(300).to_nanos(), 300_000_000);
+        assert_eq!(Duration::from_micros(1).to_nanos(), 1_000);
+        assert_eq!(Duration::from_millis(300).to_millis(), 300);
+        assert_eq!(
+            Duration::from_sec_nanosec(1, 1_500_000_000),
+            Duration::from_millis(2500)
         );
     }
 
@@ -209,11 +306,11 @@ mod tests {
             seconds: 7,
             fraction: 0xCAFE_BABE,
         };
-        let mut w = BufferWriter::new(Endianness::Little);
-        d.encode_into(&mut w).unwrap();
-        let bytes = w.into_bytes();
+        let mut w = Writer::new(Endianness::Little);
+        d.encode_into(&mut w);
+        let bytes = w.finish();
         assert_eq!(bytes.len(), 8);
-        let mut r = BufferReader::new(&bytes, Endianness::Little);
+        let mut r = Reader::new(&bytes, Endianness::Little);
         let back = Duration::decode_from(&mut r).unwrap();
         assert_eq!(back, d);
     }

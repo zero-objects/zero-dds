@@ -1,0 +1,60 @@
+// The ShapeType of the OMG `dds-security` interoperability test suite —
+// `srcCxx/ShapeType.idl`, pinned suite 62f5ec42.
+//
+// THERE ARE THREE ShapeTypes UNDER THIS NAME, and this is one of them.
+// The other two are `omg-dds-rtps.idl` and `shapesdemo.idl` beside this
+// file. Read `README.md` here before you use any of them.
+//
+// Who speaks this one
+//   The executables of the OMG `dds-security` suite — the RTI,
+//   CycloneDDS, Fast DDS, OpenDDS, CoreDX, Intercom and Vortex builds
+//   of `srcCxx/ShapeType_main.cxx` that the suite drives against each
+//   other — and `tools/omg-security-main` on our side. It is a
+//   different suite from `dds-rtps` and a different type, even though
+//   both call it `ShapeType`.
+//
+// Why it is not `omg-dds-rtps.idl`
+//   Four differences, all of them verbatim from the suite's file:
+//     1. The string bound is the named constant `COLOR_MAX_LENGTH` = 64,
+//        not the literal 128 of the `dds-rtps` form.
+//     2. There are four members. The fifth member of the `dds-rtps`
+//        form, `sequence<uint8> additional_payload_size`, does not
+//        exist here — this suite has no large-data run to fill it.
+//     3. There is NO extensibility annotation. XTypes 1.3 §7.3.1.2.1
+//        makes the absent annotation APPENDABLE, which is what
+//        `tools/omg-security-main/build.rs` asks for; each vendor's own
+//        IDL compiler applies its own default to this same file, and
+//        the suite does not say which. That divergence is unmeasured
+//        here and is written down in `README.md`.
+//     4. The key is written `//@key` in a trailing comment, not as the
+//        `@key` annotation of IDL 4.2 §7.4.14.
+//
+// The `//@key` line and what our front end does with it
+//   The comment-suffix form is normative, not a vendor dialect: XTypes
+//   1.3 Table 24 says an annotation may be applied "alternately and
+//   equivalently … by suffixing it with an annotation type name using
+//   slash-slash-at". Measured on the tree this file was added to, the
+//   form passes `parse` and `lower` without a single diagnostic and
+//   `color` comes out with `facets.is_key() == false` — a silent drop
+//   at the place where instance keying is decided. The front-end work
+//   to read the form is under way.
+//
+//   The file stays as the suite wrote it either way. A `@key` written
+//   in here would make our client agree with a source it does not
+//   actually read, and an IDL that differs from the suite's no longer
+//   measures the suite.
+//
+// What checks it
+//   `tools/omg-security-main/src/shape_type.rs::tests` — that the
+//   generated type announces a `TypeObject`, that its two byte orders
+//   are two encodings, and that `HAS_KEY` and `key_hash()` are one
+//   decision with `color` behind it.
+
+const long COLOR_MAX_LENGTH=64;
+
+struct ShapeType {
+    string<COLOR_MAX_LENGTH> color; //@key
+    long x;
+    long y;
+    long shapesize;
+};

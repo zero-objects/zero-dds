@@ -4,1375 +4,721 @@
 //! Equivalent-IDL transformation — Spec §6.3.2 / §6.4.1 / §6.5.1 /
 //! §6.6.x / §6.7.1.
 //!
-//! Input: `zerodds_idl::ast::ComponentDef` / `HomeDef` / `EventDef`.
-//! Output: one or more `InterfaceDef` (all spec-conformant) that
-//! represent the "implicitly defined equivalent interface" of the CCM
-//! spec.
+//! Input and output are the same model. Spec §6.2 (p. 11): "A component
+//! definition in IDL implicitly defines an interface that supports the
+//! features defined in the component definition body." In the common AST
+//! a component and an interface are one node kind that differ in
+//! [`InterfaceKind`] and in the CORBA facet, so the equivalent interface
+//! *is* the component declaration with its kind changed, its bases
+//! rewritten per §6.3.2 and its ports turned into the operations §6.4.1
+//! to §6.6.x name. The transformation rewrites it in place and returns
+//! the handles; a caller that needs the component declaration afterwards
+//! snapshots the model first.
 //!
-//! Spec §6.2 (S. 11): "A component definition in IDL implicitly defines
-//! an interface that supports the features defined in the component
-//! definition body."
+//! Every name the specification introduces — `Components::CCMObject`,
+//! `Components::Cookie`, `Components::CreateFailure` — enters as a
+//! pending reference on its scoped name. The model is built for partial
+//! knowledge: whether a `Components.idl` has been parsed into the same
+//! model is the caller's business, and a later resolution pass wires
+//! them up if it has.
 
 use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
-use zerodds_idl::ast::{
-    AttrDecl, ComponentDef, ComponentExport, EventDef, Export, HomeDef, Identifier, InterfaceDef,
-    InterfaceKind, OpDecl, ParamAttribute, ParamDecl, PrimitiveType, ScopedName, StringType,
-    TypeSpec, ValueKind,
-};
-use zerodds_idl::errors::Span;
+use zerodds_ast::{Ast, AstError, ComponentRole, InterfaceKind, InterfaceNode, TypeKind, TypeNode};
+use zerodds_ast_core::{Id, PendingRef, Ref, ScopedName};
+
+/// Why a transformation could not be carried out.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TransformError {
+    /// The handle names no live node, or the model rejected an edit.
+    Model(AstError),
+    /// The declaration is not the form the transformation applies to.
+    NotA {
+        /// What the transformation needed.
+        expected: &'static str,
+        /// What it was given.
+        found: &'static str,
+    },
+    /// A `home` carried no `manages` clause, which IDL 4.2 §7.4.9
+    /// requires and CCM 4.0 §6.7.1 maps.
+    HomeManagesNothing(String),
+}
+
+impl From<AstError> for TransformError {
+    fn from(error: AstError) -> Self {
+        Self::Model(error)
+    }
+}
+
+impl core::fmt::Display for TransformError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Model(error) => write!(f, "the model rejected the transformation: {error}"),
+            Self::NotA { expected, found } => {
+                write!(f, "expected {expected}, found {found}")
+            }
+            Self::HomeManagesNothing(name) => {
+                write!(f, "home `{name}` has no `manages` clause")
+            }
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for TransformError {}
 
 /// Result of the component transformation: the equivalent interface
-/// (Spec §6.3.2) plus all implied event-consumer interfaces (Spec
-/// §6.6.6.2 "EventConsumers" module).
-#[derive(Debug, Clone, PartialEq)]
+/// (Spec §6.3.2) plus every implied event-consumer interface (Spec
+/// §6.6.6.2).
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ComponentEquivalent {
-    /// The component equivalent interface (Spec §6.3.2).
-    pub equivalent_interface: InterfaceDef,
+    /// The component equivalent interface (Spec §6.3.2). The same node
+    /// the component was, with its kind and body rewritten.
+    pub equivalent_interface: Id<InterfaceNode>,
     /// Implied `<event_type>Consumer` interfaces for the
-    /// `consumes`/`emits`/`publishes` ports (Spec §6.6.6.2 "EventConsumers"
-    /// scope).
-    pub event_consumer_interfaces: Vec<InterfaceDef>,
+    /// `consumes`/`emits`/`publishes` ports (Spec §6.6.6.2).
+    pub event_consumer_interfaces: Vec<Id<InterfaceNode>>,
 }
 
 /// Result of the home transformation: the three interfaces from Spec
-/// §6.7.1 (Explicit + Implicit + Equivalent).
-#[derive(Debug, Clone, PartialEq)]
+/// §6.7.1.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HomeEquivalent {
     /// `<home_name>Explicit : Components::CCMHome [, supported]`.
-    pub explicit: InterfaceDef,
-    /// `<home_name>Implicit : Components::KeylessCCMHome` OR the
-    /// keyed variant without inheritance.
-    pub implicit: InterfaceDef,
-    /// `<home_name> : <home_name>Explicit, <home_name>Implicit { }`.
-    pub equivalent: InterfaceDef,
+    pub explicit: Id<InterfaceNode>,
+    /// `<home_name>Implicit : Components::KeylessCCMHome`, or the keyed
+    /// variant without inheritance.
+    pub implicit: Id<InterfaceNode>,
+    /// `<home_name> : <home_name>Explicit, <home_name>Implicit { }`. The
+    /// same node the home was.
+    pub equivalent: Id<InterfaceNode>,
 }
 
 /// Result of the event-type transformation — Spec §6.6.1.1.
-///
-/// From `eventtype E { state-members }`, two IDL definitions are
-/// derived:
-/// 1. `valuetype E { state-members }` (with additional inheritance from
-///    `Components::EventBase` for the first eventtype in a chain).
-/// 2. `interface EConsumer : Components::EventConsumerBase { void
-///    push_E(in E the_e); };`.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EventTypeEquivalent {
-    /// The equivalent valuetype name (with `: Components::EventBase` for
-    /// the first in the chain).
-    pub valuetype_name: Identifier,
-    /// Inheritance bases of the valuetype (per Spec §6.6.1.1: first in
-    /// the chain `Components::EventBase`, derived eventtype `BaseValueType,
-    /// :: Components::EventBase`).
-    pub valuetype_bases: Vec<ScopedName>,
+    /// The equivalent valuetype. The same node the eventtype was, with
+    /// `Components::EventBase` added to its bases when it is the first
+    /// of its chain.
+    pub valuetype: Id<TypeNode>,
     /// `<event_type>Consumer` interface (Spec §6.6.1.1).
-    pub consumer_interface: InterfaceDef,
+    pub consumer_interface: Id<InterfaceNode>,
 }
 
-/// Spec §6.3.2 (p. 12) + §6.4.1 / §6.5.1 / §6.6.x — generates the
-/// component equivalent interface including all port operations.
+/// A pending reference to a name the specification introduces.
+///
+/// `Components::CCMObject` and the rest are declared in the
+/// specification's own IDL, which may or may not be in this model. A
+/// pending reference says "this names `::Components::CCMObject`" without
+/// claiming to have found it.
+fn spec_ref<T>(parts: &[&str]) -> Ref<T> {
+    Ref::Pending(PendingRef::ScopedName(ScopedName::absolute(
+        parts.iter().map(|part| (*part).to_string()).collect(),
+    )))
+}
+
+/// A pending reference to a name in the model's own root scope.
+fn named_ref<T>(name: &str) -> Ref<T> {
+    Ref::Pending(PendingRef::ScopedName(ScopedName::absolute(alloc::vec![
+        name.to_string()
+    ])))
+}
+
+/// Spec §6.3.2 (p. 12) + §6.4.1 / §6.5.1 / §6.6.x — rewrites a component
+/// into its equivalent interface, ports and all.
 ///
 /// **Inheritance (§6.3.2):**
-/// * Without `supports` and without `base`: `: Components::CCMObject`.
-/// * With `base`: `: <base>` (CCMObject is transitive).
-/// * With `supports`: additionally the supported interfaces.
+/// * Without `supports` and without a base: `: Components::CCMObject`.
+/// * With a base: `: <base>` — `CCMObject` is transitive through it.
+/// * With `supports`: the supported interfaces on top of either.
 ///
-/// **Body (§6.4.1 / §6.5.1 / §6.6.x):** all port decls are translated
-/// into operations on the equivalent interface.
-#[must_use]
-pub fn transform_component(comp: &ComponentDef) -> ComponentEquivalent {
-    let span = Span::SYNTHETIC;
+/// **Body (§6.4.1 / §6.5.1 / §6.6.x):** every port becomes operations on
+/// the equivalent interface.
+///
+/// # Errors
+/// [`TransformError::NotA`] when the handle does not name a `component`,
+/// [`TransformError::Model`] when the model rejects an edit.
+pub fn transform_component(
+    ast: &mut Ast,
+    component: Id<InterfaceNode>,
+) -> Result<ComponentEquivalent, TransformError> {
+    let node = ast.interface(component)?;
+    if node.kind != InterfaceKind::Component {
+        return Err(TransformError::NotA {
+            expected: "a component",
+            found: node.kind.as_str(),
+        });
+    }
+    let ports: Vec<ComponentRole> = ast
+        .interface(component)?
+        .attributes
+        .clone()
+        .into_iter()
+        .filter_map(|attribute| {
+            ast.attribute(attribute)
+                .ok()?
+                .facets
+                .corba
+                .as_ref()?
+                .component_role
+                .clone()
+        })
+        .collect();
 
-    // Inheritance: §6.3.2.
-    let bases = component_bases(comp, span);
+    // §6.3.2 — the base list, then the supported interfaces on top.
+    let declared_bases = ast.interface(component)?.bases.clone();
+    let supported = ast
+        .interface(component)?
+        .facets
+        .corba
+        .as_ref()
+        .map(|corba| corba.supports.clone())
+        .unwrap_or_default();
+    let mut bases = if declared_bases.is_empty() {
+        alloc::vec![spec_ref(&["Components", "CCMObject"])]
+    } else {
+        declared_bases
+    };
+    bases.extend(supported);
 
-    let mut exports: Vec<Export> = Vec::new();
-    let mut event_consumer_ifaces: Vec<InterfaceDef> = Vec::new();
-    let mut emitted_consumers: Vec<String> = Vec::new();
+    ast.set_interface_form(component, InterfaceKind::Interface, bases)?;
+    // The ports are gone once they are operations: leaving them in place
+    // would put each one into the equivalent interface twice, once as
+    // the attribute a port never was and once as the operations §6.4.1
+    // names.
+    for attribute in ast.interface(component)?.attributes.clone() {
+        let is_port = ast
+            .attribute(attribute)
+            .ok()
+            .and_then(|node| node.facets.corba.as_ref())
+            .is_some_and(|corba| corba.component_role.is_some());
+        if is_port {
+            let node_id = ast.attribute(attribute)?.node_id;
+            ast.remove(zerodds_ast::AnyId::Attribute(attribute, node_id))?;
+        }
+    }
 
-    for export in &comp.body {
-        match export {
-            ComponentExport::Provides {
-                type_spec, name, ..
-            } => {
-                exports.push(Export::Op(provide_facet_op(name, type_spec, span)));
+    let module = ast.interface(component)?.module;
+    let mut consumers = Vec::new();
+    let mut emitted: Vec<String> = Vec::new();
+
+    for port in ports {
+        match port {
+            ComponentRole::Facet { name, interface } => {
+                // §6.4.1 (p. 13) — `provides T name` → `T provide_name();`
+                let returns = object_reference(ast, &interface)?;
+                let _ =
+                    ast.add_operation(component, &format!("provide_{name}"), Some(returns), false)?;
             }
-            ComponentExport::Uses {
-                type_spec,
+            ComponentRole::Receptacle {
                 name,
+                interface,
                 multiple,
-                ..
             } => {
-                exports.extend(uses_ops(name, type_spec, *multiple, span));
+                uses_ops(ast, component, &name, &interface, multiple)?;
             }
-            ComponentExport::Attribute(attr) => {
-                exports.push(Export::Attr(attr_to_attr_decl(attr, span)));
-            }
-            ComponentExport::Emits {
-                type_spec, name, ..
+            ComponentRole::EventSource {
+                name,
+                event,
+                publisher,
             } => {
-                ensure_consumer_interface(
-                    type_spec,
-                    span,
-                    &mut event_consumer_ifaces,
-                    &mut emitted_consumers,
-                );
-                exports.extend(emits_ops(name, type_spec, span));
+                let consumer = ensure_consumer_interface(ast, module, &event, &mut emitted)?;
+                if let Some(consumer) = consumer {
+                    consumers.push(consumer);
+                }
+                if publisher {
+                    publishes_ops(ast, component, &name, &event)?;
+                } else {
+                    emits_ops(ast, component, &name, &event)?;
+                }
             }
-            ComponentExport::Publishes {
-                type_spec, name, ..
-            } => {
-                ensure_consumer_interface(
-                    type_spec,
-                    span,
-                    &mut event_consumer_ifaces,
-                    &mut emitted_consumers,
-                );
-                exports.extend(publishes_ops(name, type_spec, span));
+            ComponentRole::EventSink { name, event } => {
+                let consumer = ensure_consumer_interface(ast, module, &event, &mut emitted)?;
+                if let Some(consumer) = consumer {
+                    consumers.push(consumer);
+                }
+                // §6.6.7.1 (p. 29) — `consumes T name` →
+                // `TConsumer get_consumer_name();`
+                let returns = consumer_type_ref(ast, &event);
+                let _ = ast.add_operation(
+                    component,
+                    &format!("get_consumer_{name}"),
+                    Some(returns),
+                    false,
+                )?;
             }
-            ComponentExport::Consumes {
-                type_spec, name, ..
-            } => {
-                ensure_consumer_interface(
-                    type_spec,
-                    span,
-                    &mut event_consumer_ifaces,
-                    &mut emitted_consumers,
-                );
-                exports.push(Export::Op(consumes_op(name, type_spec, span)));
-            }
-            ComponentExport::Port { .. } => {
-                // Spec §7.4.11 (IDL4) — a `port` decl is a user-defined
-                // port type. The equivalent-IDL mapping is defined via the
-                // porttype (the spec refers to the connector mapping).
-                // In CCM 4.0 this is not directly §6 but rather §7.4.11
-                // IDL4 (add-on); here we do not invoke it and leave it to
-                // the caller if desired.
-            }
+            // A `port` or `mirrorport` is a user-defined port type; IDL
+            // 4.2 §7.4.11 maps it through the porttype, which is not §6
+            // of this specification and is left to the caller.
+            ComponentRole::PortTypeRole
+            | ComponentRole::ConnectorRole
+            | ComponentRole::HomeFactory
+            | ComponentRole::HomeFinder => {}
         }
     }
 
-    let equivalent_interface = InterfaceDef {
-        kind: InterfaceKind::Plain,
-        name: comp.name.clone(),
-        bases,
-        exports,
-        annotations: Vec::new(),
-        span,
-    };
-
-    ComponentEquivalent {
-        equivalent_interface,
-        event_consumer_interfaces: event_consumer_ifaces,
-    }
+    Ok(ComponentEquivalent {
+        equivalent_interface: component,
+        event_consumer_interfaces: consumers,
+    })
 }
 
-/// Spec §6.7.1 (p. 33) — generates the three interfaces (Explicit,
-/// Implicit, Equivalent) from a `home` decl.
-#[must_use]
-pub fn transform_home(home: &HomeDef) -> HomeEquivalent {
-    let span = Span::SYNTHETIC;
-    let h = &home.name.text;
-
-    // Spec §6.7.1.3 (p. 35): the Explicit iface inherits CCMHome + supported.
-    let mut explicit_bases = alloc::vec![scoped(&["Components", "CCMHome"], span)];
-    explicit_bases.extend(home.supports.iter().cloned());
-    if let Some(base) = &home.base {
-        // Spec §6.7.4 (p. 37) — derived home: `<home>Explicit :
-        // <base_home>Explicit`.
-        explicit_bases = alloc::vec![base_explicit_name(base, span)];
-        explicit_bases.extend(home.supports.iter().cloned());
-    }
-
-    let explicit = InterfaceDef {
-        kind: InterfaceKind::Plain,
-        name: Identifier::new(format!("{h}Explicit"), span),
-        bases: explicit_bases,
-        // Spec §6.7.3 — the Explicit iface contains the explicitly
-        // declared operations + attributes; factory/finder are converted
-        // (see `factory_op_to_explicit` / `finder_op_to_explicit`); here
-        // we return an empty list because the body is not further modeled
-        // in HomeDef (completing it is the caller's responsibility for
-        // factory/finder decls).
-        exports: Vec::new(),
-        annotations: Vec::new(),
-        span,
-    };
-
-    // Spec §6.7.1.1 (no primary key) vs §6.7.1.2 (with primary key).
-    let implicit = if let Some(pk) = &home.primary_key {
-        build_keyed_implicit(h, &home.manages, pk, span)
-    } else {
-        build_keyless_implicit(h, &home.manages, span)
-    };
-
-    // Spec §6.7.1.x — the Equivalent iface inherits Explicit + Implicit.
-    let equivalent = InterfaceDef {
-        kind: InterfaceKind::Plain,
-        name: home.name.clone(),
-        bases: alloc::vec![
-            ScopedName::single(Identifier::new(format!("{h}Explicit"), span)),
-            ScopedName::single(Identifier::new(format!("{h}Implicit"), span)),
-        ],
-        exports: Vec::new(),
-        annotations: Vec::new(),
-        span,
-    };
-
-    HomeEquivalent {
-        explicit,
-        implicit,
-        equivalent,
-    }
-}
-
-/// Spec §6.6.1.1 (p. 24) — eventtype → valuetype + consumer interface.
-#[must_use]
-pub fn transform_event_type(et: &EventDef) -> EventTypeEquivalent {
-    let span = Span::SYNTHETIC;
-
-    // Spec §6.6.1.1 (p. 25): "the first event type in the inheritance
-    // chain introduces the inheritance from Components::EventBase".
-    // If EventDef already has an inheritance, EventBase is NOT added
-    // again.
-    let mut bases: Vec<ScopedName> = Vec::new();
-    let mut has_inheritance = false;
-    if let Some(inherit) = &et.inheritance {
-        if !inherit.bases.is_empty() {
-            has_inheritance = true;
-            bases.extend(inherit.bases.iter().cloned());
-        }
-    }
-    if !has_inheritance {
-        // First eventtype in the chain → EventBase as inheritance.
-        bases.push(scoped(&["Components", "EventBase"], span));
-    }
-
-    // Consumer interface (Spec §6.6.1.1 p. 25).
-    let consumer_iface_name = format!("{}Consumer", et.name.text);
-    let push_op = OpDecl {
-        name: Identifier::new(format!("push_{}", et.name.text), span),
-        oneway: false,
-        context: Vec::new(),
-        return_type: None,
-        params: alloc::vec![ParamDecl {
-            attribute: ParamAttribute::In,
-            type_spec: TypeSpec::Scoped(ScopedName::single(et.name.clone())),
-            name: Identifier::new(format!("the_{}", lowercase_first(&et.name.text)), span),
-            annotations: Vec::new(),
-            span,
-        }],
-        raises: Vec::new(),
-        annotations: Vec::new(),
-        span,
-    };
-    let consumer_bases = if has_inheritance {
-        // Spec §6.6.1.1 (p. 25): "Consumer interfaces are in the same
-        // inheritance relation as the event types".
-        et.inheritance.as_ref().map_or_else(
-            || alloc::vec![scoped(&["Components", "EventConsumerBase"], span)],
-            |inh| {
-                inh.bases
-                    .iter()
-                    .map(|b| {
-                        let last = b
-                            .parts
-                            .last()
-                            .map_or("Base", |i| i.text.as_str())
-                            .to_string();
-                        ScopedName::single(Identifier::new(format!("{last}Consumer"), span))
-                    })
-                    .collect()
-            },
-        )
-    } else {
-        alloc::vec![scoped(&["Components", "EventConsumerBase"], span)]
-    };
-
-    let consumer_iface = InterfaceDef {
-        kind: InterfaceKind::Plain,
-        name: Identifier::new(consumer_iface_name, span),
-        bases: consumer_bases,
-        exports: alloc::vec![Export::Op(push_op)],
-        annotations: Vec::new(),
-        span,
-    };
-
-    let _ = ValueKind::Concrete; // Mark unused-import safe.
-
-    EventTypeEquivalent {
-        valuetype_name: et.name.clone(),
-        valuetype_bases: bases,
-        consumer_interface: consumer_iface,
-    }
-}
-
-// ============================================================================
-// Internal helpers — Spec-by-Spec.
-// ============================================================================
-
-fn component_bases(comp: &ComponentDef, span: Span) -> Vec<ScopedName> {
-    // Spec §6.3.2 — inheritance + supports.
-    let mut bases = Vec::new();
-    if let Some(b) = &comp.base {
-        bases.push(b.clone());
-    } else {
-        bases.push(scoped(&["Components", "CCMObject"], span));
-    }
-    bases.extend(comp.supports.iter().cloned());
-    bases
-}
-
-/// Spec §6.4.1 (p. 13) — `provides T name` → `T provide_name();`.
-fn provide_facet_op(name: &Identifier, iface_type: &ScopedName, span: Span) -> OpDecl {
-    OpDecl {
-        name: Identifier::new(format!("provide_{}", name.text), span),
-        oneway: false,
-        context: Vec::new(),
-        return_type: Some(TypeSpec::Scoped(iface_type.clone())),
-        params: Vec::new(),
-        raises: Vec::new(),
-        annotations: Vec::new(),
-        span,
-    }
-}
-
-/// Spec §6.5.1 (p. 19) — `uses [multiple] T name` → connect/disconnect/
-/// get_connection(s) operations.
-fn uses_ops(name: &Identifier, iface_type: &ScopedName, multiple: bool, span: Span) -> Vec<Export> {
-    let n = &name.text;
-    let mut out = Vec::new();
+/// Spec §6.5.1 (p. 19) — `uses [multiple] T name` → connect / disconnect
+/// / get_connection(s).
+fn uses_ops(
+    ast: &mut Ast,
+    interface: Id<InterfaceNode>,
+    name: &str,
+    target: &Ref<InterfaceNode>,
+    multiple: bool,
+) -> Result<(), TransformError> {
     if multiple {
-        // Spec §6.5.1 (p. 19-20) — multiplex.
-        // Cookie connect_<name>(in <T> connection) raises (...);
-        out.push(Export::Op(OpDecl {
-            name: Identifier::new(format!("connect_{n}"), span),
-            oneway: false,
-            context: Vec::new(),
-            return_type: Some(TypeSpec::Scoped(scoped(&["Components", "Cookie"], span))),
-            params: alloc::vec![ParamDecl {
-                attribute: ParamAttribute::In,
-                type_spec: TypeSpec::Scoped(iface_type.clone()),
-                name: Identifier::new("connection", span),
-                annotations: Vec::new(),
-                span,
-            }],
-            raises: alloc::vec![
-                scoped(&["Components", "ExceededConnectionLimit"], span),
-                scoped(&["Components", "InvalidConnection"], span),
-            ],
-            annotations: Vec::new(),
-            span,
-        }));
-        // <T> disconnect_<name>(in Components::Cookie ck) raises (...);
-        out.push(Export::Op(OpDecl {
-            name: Identifier::new(format!("disconnect_{n}"), span),
-            oneway: false,
-            context: Vec::new(),
-            return_type: Some(TypeSpec::Scoped(iface_type.clone())),
-            params: alloc::vec![ParamDecl {
-                attribute: ParamAttribute::In,
-                type_spec: TypeSpec::Scoped(scoped(&["Components", "Cookie"], span)),
-                name: Identifier::new("ck", span),
-                annotations: Vec::new(),
-                span,
-            }],
-            raises: alloc::vec![scoped(&["Components", "InvalidConnection"], span)],
-            annotations: Vec::new(),
-            span,
-        }));
-        // <name>Connections get_connections_<name>();
-        out.push(Export::Op(OpDecl {
-            name: Identifier::new(format!("get_connections_{n}"), span),
-            oneway: false,
-            context: Vec::new(),
-            return_type: Some(TypeSpec::Scoped(ScopedName::single(Identifier::new(
-                format!("{n}Connections"),
-                span,
-            )))),
-            params: Vec::new(),
-            raises: Vec::new(),
-            annotations: Vec::new(),
-            span,
-        }));
-    } else {
-        // Spec §6.5.1 (p. 19) — simplex.
-        out.push(Export::Op(OpDecl {
-            name: Identifier::new(format!("connect_{n}"), span),
-            oneway: false,
-            context: Vec::new(),
-            return_type: None,
-            params: alloc::vec![ParamDecl {
-                attribute: ParamAttribute::In,
-                type_spec: TypeSpec::Scoped(iface_type.clone()),
-                name: Identifier::new("conxn", span),
-                annotations: Vec::new(),
-                span,
-            }],
-            raises: alloc::vec![
-                scoped(&["Components", "AlreadyConnected"], span),
-                scoped(&["Components", "InvalidConnection"], span),
-            ],
-            annotations: Vec::new(),
-            span,
-        }));
-        out.push(Export::Op(OpDecl {
-            name: Identifier::new(format!("disconnect_{n}"), span),
-            oneway: false,
-            context: Vec::new(),
-            return_type: Some(TypeSpec::Scoped(iface_type.clone())),
-            params: Vec::new(),
-            raises: alloc::vec![scoped(&["Components", "NoConnection"], span)],
-            annotations: Vec::new(),
-            span,
-        }));
-        out.push(Export::Op(OpDecl {
-            name: Identifier::new(format!("get_connection_{n}"), span),
-            oneway: false,
-            context: Vec::new(),
-            return_type: Some(TypeSpec::Scoped(iface_type.clone())),
-            params: Vec::new(),
-            raises: Vec::new(),
-            annotations: Vec::new(),
-            span,
-        }));
+        // §6.5.1 (p. 19-20) — multiplex.
+        let connect = ast.add_operation(
+            interface,
+            &format!("connect_{name}"),
+            Some(spec_ref(&["Components", "Cookie"])),
+            false,
+        )?;
+        let connection = object_reference(ast, target)?;
+        let _ = ast.add_param(
+            connect,
+            "connection",
+            zerodds_ast::ParamDirection::In,
+            connection,
+        )?;
+        ast.add_raises(
+            connect,
+            spec_ref(&["Components", "ExceededConnectionLimit"]),
+        )?;
+        ast.add_raises(connect, spec_ref(&["Components", "InvalidConnection"]))?;
+
+        let returns = object_reference(ast, target)?;
+        let disconnect = ast.add_operation(
+            interface,
+            &format!("disconnect_{name}"),
+            Some(returns),
+            false,
+        )?;
+        let _ = ast.add_param(
+            disconnect,
+            "ck",
+            zerodds_ast::ParamDirection::In,
+            spec_ref(&["Components", "Cookie"]),
+        )?;
+        ast.add_raises(disconnect, spec_ref(&["Components", "InvalidConnection"]))?;
+
+        let _ = ast.add_operation(
+            interface,
+            &format!("get_connections_{name}"),
+            Some(named_ref(&format!("{name}Connections"))),
+            false,
+        )?;
+        return Ok(());
     }
-    out
+
+    // §6.5.1 (p. 19) — simplex.
+    let connect = ast.add_operation(interface, &format!("connect_{name}"), None, false)?;
+    let connection = object_reference(ast, target)?;
+    let _ = ast.add_param(
+        connect,
+        "conxn",
+        zerodds_ast::ParamDirection::In,
+        connection,
+    )?;
+    ast.add_raises(connect, spec_ref(&["Components", "AlreadyConnected"]))?;
+    ast.add_raises(connect, spec_ref(&["Components", "InvalidConnection"]))?;
+
+    let returns = object_reference(ast, target)?;
+    let disconnect = ast.add_operation(
+        interface,
+        &format!("disconnect_{name}"),
+        Some(returns),
+        false,
+    )?;
+    ast.add_raises(disconnect, spec_ref(&["Components", "NoConnection"]))?;
+
+    let returns = object_reference(ast, target)?;
+    let _ = ast.add_operation(
+        interface,
+        &format!("get_connection_{name}"),
+        Some(returns),
+        false,
+    )?;
+    Ok(())
 }
 
 /// Spec §6.6.6.1 (p. 28) — `emits T name` → `void connect_<name>(in
 /// TConsumer)` + `TConsumer disconnect_<name>()`.
-fn emits_ops(name: &Identifier, event_type: &ScopedName, span: Span) -> Vec<Export> {
-    let n = &name.text;
-    let consumer_type = consumer_type_of(event_type, span);
-    alloc::vec![
-        Export::Op(OpDecl {
-            name: Identifier::new(format!("connect_{n}"), span),
-            oneway: false,
-            context: Vec::new(),
-            return_type: None,
-            params: alloc::vec![ParamDecl {
-                attribute: ParamAttribute::In,
-                type_spec: TypeSpec::Scoped(consumer_type.clone()),
-                name: Identifier::new("consumer", span),
-                annotations: Vec::new(),
-                span,
-            }],
-            raises: alloc::vec![scoped(&["Components", "AlreadyConnected"], span)],
-            annotations: Vec::new(),
-            span,
-        }),
-        Export::Op(OpDecl {
-            name: Identifier::new(format!("disconnect_{n}"), span),
-            oneway: false,
-            context: Vec::new(),
-            return_type: Some(TypeSpec::Scoped(consumer_type)),
-            params: Vec::new(),
-            raises: alloc::vec![scoped(&["Components", "NoConnection"], span)],
-            annotations: Vec::new(),
-            span,
-        }),
-    ]
+fn emits_ops(
+    ast: &mut Ast,
+    interface: Id<InterfaceNode>,
+    name: &str,
+    event: &Ref<TypeNode>,
+) -> Result<(), TransformError> {
+    let consumer = consumer_type_ref(ast, event);
+    let connect = ast.add_operation(interface, &format!("connect_{name}"), None, false)?;
+    let _ = ast.add_param(
+        connect,
+        "consumer",
+        zerodds_ast::ParamDirection::In,
+        consumer.clone(),
+    )?;
+    ast.add_raises(connect, spec_ref(&["Components", "AlreadyConnected"]))?;
+
+    let disconnect = ast.add_operation(
+        interface,
+        &format!("disconnect_{name}"),
+        Some(consumer),
+        false,
+    )?;
+    ast.add_raises(disconnect, spec_ref(&["Components", "NoConnection"]))?;
+    Ok(())
 }
 
-/// Spec §6.6.5.1 (p. 27) — `publishes T name` → `Cookie subscribe_<name>
-/// (in TConsumer consumer)` + `TConsumer unsubscribe_<name>(in
-/// Cookie ck)`.
-fn publishes_ops(name: &Identifier, event_type: &ScopedName, span: Span) -> Vec<Export> {
-    let n = &name.text;
-    let consumer_type = consumer_type_of(event_type, span);
-    alloc::vec![
-        Export::Op(OpDecl {
-            name: Identifier::new(format!("subscribe_{n}"), span),
-            oneway: false,
-            context: Vec::new(),
-            return_type: Some(TypeSpec::Scoped(scoped(&["Components", "Cookie"], span))),
-            params: alloc::vec![ParamDecl {
-                attribute: ParamAttribute::In,
-                type_spec: TypeSpec::Scoped(consumer_type.clone()),
-                name: Identifier::new("consumer", span),
-                annotations: Vec::new(),
-                span,
-            }],
-            raises: alloc::vec![scoped(&["Components", "ExceededConnectionLimit"], span)],
-            annotations: Vec::new(),
-            span,
-        }),
-        Export::Op(OpDecl {
-            name: Identifier::new(format!("unsubscribe_{n}"), span),
-            oneway: false,
-            context: Vec::new(),
-            return_type: Some(TypeSpec::Scoped(consumer_type)),
-            params: alloc::vec![ParamDecl {
-                attribute: ParamAttribute::In,
-                type_spec: TypeSpec::Scoped(scoped(&["Components", "Cookie"], span)),
-                name: Identifier::new("ck", span),
-                annotations: Vec::new(),
-                span,
-            }],
-            raises: alloc::vec![scoped(&["Components", "InvalidConnection"], span)],
-            annotations: Vec::new(),
-            span,
-        }),
-    ]
+/// Spec §6.6.5.1 (p. 27) — `publishes T name` → `Cookie
+/// subscribe_<name>(in TConsumer)` + `TConsumer unsubscribe_<name>(in
+/// Cookie)`.
+fn publishes_ops(
+    ast: &mut Ast,
+    interface: Id<InterfaceNode>,
+    name: &str,
+    event: &Ref<TypeNode>,
+) -> Result<(), TransformError> {
+    let consumer = consumer_type_ref(ast, event);
+    let subscribe = ast.add_operation(
+        interface,
+        &format!("subscribe_{name}"),
+        Some(spec_ref(&["Components", "Cookie"])),
+        false,
+    )?;
+    let _ = ast.add_param(
+        subscribe,
+        "consumer",
+        zerodds_ast::ParamDirection::In,
+        consumer.clone(),
+    )?;
+    ast.add_raises(
+        subscribe,
+        spec_ref(&["Components", "ExceededConnectionLimit"]),
+    )?;
+
+    let unsubscribe = ast.add_operation(
+        interface,
+        &format!("unsubscribe_{name}"),
+        Some(consumer),
+        false,
+    )?;
+    let _ = ast.add_param(
+        unsubscribe,
+        "ck",
+        zerodds_ast::ParamDirection::In,
+        spec_ref(&["Components", "Cookie"]),
+    )?;
+    ast.add_raises(unsubscribe, spec_ref(&["Components", "InvalidConnection"]))?;
+    Ok(())
 }
 
-/// Spec §6.6.7.1 (p. 29) — `consumes T name` → `TConsumer
-/// get_consumer_<name>();`.
-fn consumes_op(name: &Identifier, event_type: &ScopedName, span: Span) -> OpDecl {
-    let n = &name.text;
-    let consumer_type = consumer_type_of(event_type, span);
-    OpDecl {
-        name: Identifier::new(format!("get_consumer_{n}"), span),
-        oneway: false,
-        context: Vec::new(),
-        return_type: Some(TypeSpec::Scoped(consumer_type)),
-        params: Vec::new(),
-        raises: Vec::new(),
-        annotations: Vec::new(),
-        span,
-    }
-}
-
+/// The `<event_type>Consumer` interface for an event type, created once
+/// per type however many ports name it. Spec §6.6.
+///
+/// Returns `None` when the interface was already made for an earlier
+/// port of the same component.
 fn ensure_consumer_interface(
-    event_type: &ScopedName,
-    span: Span,
-    out: &mut Vec<InterfaceDef>,
+    ast: &mut Ast,
+    module: Id<zerodds_ast::ModuleNode>,
+    event: &Ref<TypeNode>,
     emitted: &mut Vec<String>,
-) {
-    let consumer_name = consumer_simple_name(event_type);
-    if emitted.iter().any(|n| n == &consumer_name) {
-        return;
+) -> Result<Option<Id<InterfaceNode>>, TransformError> {
+    let event_name = type_name(ast, event);
+    let consumer_name = format!("{event_name}Consumer");
+    if emitted.iter().any(|seen| seen == &consumer_name) {
+        return Ok(None);
     }
     emitted.push(consumer_name.clone());
-    let push_op = OpDecl {
-        name: Identifier::new(
-            format!(
-                "push_{}",
-                event_type.parts.last().map_or("E", |i| i.text.as_str())
-            ),
-            span,
-        ),
-        oneway: false,
-        context: Vec::new(),
-        return_type: None,
-        params: alloc::vec![ParamDecl {
-            attribute: ParamAttribute::In,
-            type_spec: TypeSpec::Scoped(event_type.clone()),
-            name: Identifier::new(
-                format!(
-                    "the_{}",
-                    lowercase_first(event_type.parts.last().map_or("e", |i| i.text.as_str()))
-                ),
-                span,
-            ),
-            annotations: Vec::new(),
-            span,
-        }],
-        raises: Vec::new(),
-        annotations: Vec::new(),
-        span,
+    let interface = ast.add_interface(
+        module,
+        &consumer_name,
+        InterfaceKind::Interface,
+        alloc::vec![spec_ref(&["Components", "EventConsumerBase"])],
+    )?;
+    let push = ast.add_operation(interface, &format!("push_{event_name}"), None, false)?;
+    let _ = ast.add_param(
+        push,
+        &format!("the_{}", lowercase_first(&event_name)),
+        zerodds_ast::ParamDirection::In,
+        event.clone(),
+    )?;
+    Ok(Some(interface))
+}
+
+/// Spec §6.7.1 (p. 33) — rewrites a home into the three interfaces
+/// Explicit, Implicit and Equivalent.
+///
+/// The home node becomes the equivalent interface; `<h>Explicit` and
+/// `<h>Implicit` are added beside it.
+///
+/// # Errors
+/// [`TransformError::NotA`] when the handle does not name a `home`,
+/// [`TransformError::HomeManagesNothing`] when it carries no `manages`
+/// clause, [`TransformError::Model`] when the model rejects an edit.
+pub fn transform_home(
+    ast: &mut Ast,
+    home: Id<InterfaceNode>,
+) -> Result<HomeEquivalent, TransformError> {
+    let node = ast.interface(home)?;
+    if node.kind != InterfaceKind::Home {
+        return Err(TransformError::NotA {
+            expected: "a home",
+            found: node.kind.as_str(),
+        });
+    }
+    let name = node.name.clone();
+    let module = node.module;
+    let declared_bases = node.bases.clone();
+    let corba = node.facets.corba.clone().unwrap_or_default();
+    let supported = corba.supports.clone();
+    let Some(manages) = corba.manages.clone() else {
+        return Err(TransformError::HomeManagesNothing(name));
     };
-    out.push(InterfaceDef {
-        kind: InterfaceKind::Plain,
-        name: Identifier::new(consumer_name, span),
-        bases: alloc::vec![scoped(&["Components", "EventConsumerBase"], span)],
-        exports: alloc::vec![Export::Op(push_op)],
-        annotations: Vec::new(),
-        span,
-    });
-}
 
-fn consumer_type_of(event_type: &ScopedName, span: Span) -> ScopedName {
-    let mut parts = event_type.parts.clone();
-    if let Some(last) = parts.last_mut() {
-        last.text.push_str("Consumer");
+    // §6.7.1.3 (p. 35) — the Explicit interface inherits `CCMHome` and
+    // the supported interfaces; §6.7.4 (p. 37) — a derived home inherits
+    // the base home's Explicit instead, which already anchors `CCMHome`.
+    let mut explicit_bases = if declared_bases.is_empty() {
+        alloc::vec![spec_ref(&["Components", "CCMHome"])]
     } else {
-        parts.push(Identifier::new("EConsumer", span));
-    }
-    ScopedName {
-        absolute: event_type.absolute,
-        parts,
-        span,
-    }
-}
-
-fn consumer_simple_name(event_type: &ScopedName) -> String {
-    event_type.parts.last().map_or_else(
-        || String::from("EConsumer"),
-        |i| format!("{}Consumer", i.text),
-    )
-}
-
-/// Converts the `zerodds_idl::ast::AttrDcl` (CCM component attribute with
-/// 4 fields) into the full `zerodds_idl::ast::AttrDecl` with 8 fields.
-fn attr_to_attr_decl(attr: &zerodds_idl::ast::AttrDcl, span: Span) -> AttrDecl {
-    AttrDecl {
-        name: attr.name.clone(),
-        type_spec: attr.type_spec.clone(),
-        readonly: attr.readonly,
-        get_raises: Vec::new(),
-        set_raises: Vec::new(),
-        annotations: Vec::new(),
-        span,
-    }
-}
-
-fn build_keyless_implicit(
-    home_name: &str,
-    component_type: &ScopedName,
-    span: Span,
-) -> InterfaceDef {
-    // Spec §6.7.1.1 (p. 33) — `interface <h>Implicit :
-    // Components::KeylessCCMHome { <component> create() raises
-    // (CreateFailure); };`.
-    InterfaceDef {
-        kind: InterfaceKind::Plain,
-        name: Identifier::new(format!("{home_name}Implicit"), span),
-        bases: alloc::vec![scoped(&["Components", "KeylessCCMHome"], span)],
-        exports: alloc::vec![Export::Op(OpDecl {
-            name: Identifier::new("create", span),
-            oneway: false,
-            context: Vec::new(),
-            return_type: Some(TypeSpec::Scoped(component_type.clone())),
-            params: Vec::new(),
-            raises: alloc::vec![scoped(&["Components", "CreateFailure"], span)],
-            annotations: Vec::new(),
-            span,
-        })],
-        annotations: Vec::new(),
-        span,
-    }
-}
-
-fn build_keyed_implicit(
-    home_name: &str,
-    component_type: &ScopedName,
-    key_type: &ScopedName,
-    span: Span,
-) -> InterfaceDef {
-    // Spec §6.7.1.2 (p. 34): keyed `<h>Implicit` contains create/
-    // find_by_primary_key/remove/get_primary_key. No inheritance —
-    // the operations are the only body entries.
-    let exports = alloc::vec![
-        // <comp> create(in <K> key) raises (CreateFailure, DuplicateKeyValue, InvalidKey);
-        Export::Op(OpDecl {
-            name: Identifier::new("create", span),
-            oneway: false,
-            context: Vec::new(),
-            return_type: Some(TypeSpec::Scoped(component_type.clone())),
-            params: alloc::vec![ParamDecl {
-                attribute: ParamAttribute::In,
-                type_spec: TypeSpec::Scoped(key_type.clone()),
-                name: Identifier::new("key", span),
-                annotations: Vec::new(),
-                span,
-            }],
-            raises: alloc::vec![
-                scoped(&["Components", "CreateFailure"], span),
-                scoped(&["Components", "DuplicateKeyValue"], span),
-                scoped(&["Components", "InvalidKey"], span),
-            ],
-            annotations: Vec::new(),
-            span,
-        }),
-        // <comp> find_by_primary_key(in <K> key) raises (FinderFailure, UnknownKeyValue, InvalidKey);
-        Export::Op(OpDecl {
-            name: Identifier::new("find_by_primary_key", span),
-            oneway: false,
-            context: Vec::new(),
-            return_type: Some(TypeSpec::Scoped(component_type.clone())),
-            params: alloc::vec![ParamDecl {
-                attribute: ParamAttribute::In,
-                type_spec: TypeSpec::Scoped(key_type.clone()),
-                name: Identifier::new("key", span),
-                annotations: Vec::new(),
-                span,
-            }],
-            raises: alloc::vec![
-                scoped(&["Components", "FinderFailure"], span),
-                scoped(&["Components", "UnknownKeyValue"], span),
-                scoped(&["Components", "InvalidKey"], span),
-            ],
-            annotations: Vec::new(),
-            span,
-        }),
-        // void remove(in <K> key) raises (RemoveFailure, UnknownKeyValue, InvalidKey);
-        Export::Op(OpDecl {
-            name: Identifier::new("remove", span),
-            oneway: false,
-            context: Vec::new(),
-            return_type: None,
-            params: alloc::vec![ParamDecl {
-                attribute: ParamAttribute::In,
-                type_spec: TypeSpec::Scoped(key_type.clone()),
-                name: Identifier::new("key", span),
-                annotations: Vec::new(),
-                span,
-            }],
-            raises: alloc::vec![
-                scoped(&["Components", "RemoveFailure"], span),
-                scoped(&["Components", "UnknownKeyValue"], span),
-                scoped(&["Components", "InvalidKey"], span),
-            ],
-            annotations: Vec::new(),
-            span,
-        }),
-        // <K> get_primary_key(in <comp> comp);
-        Export::Op(OpDecl {
-            name: Identifier::new("get_primary_key", span),
-            oneway: false,
-            context: Vec::new(),
-            return_type: Some(TypeSpec::Scoped(key_type.clone())),
-            params: alloc::vec![ParamDecl {
-                attribute: ParamAttribute::In,
-                type_spec: TypeSpec::Scoped(component_type.clone()),
-                name: Identifier::new("comp", span),
-                annotations: Vec::new(),
-                span,
-            }],
-            raises: Vec::new(),
-            annotations: Vec::new(),
-            span,
-        }),
-    ];
-
-    InterfaceDef {
-        kind: InterfaceKind::Plain,
-        name: Identifier::new(format!("{home_name}Implicit"), span),
-        // Spec §6.7.1.2 (p. 34): no direct inheritance; operations are
-        // the complete members.
-        bases: Vec::new(),
-        exports,
-        annotations: Vec::new(),
-        span,
-    }
-}
-
-fn base_explicit_name(base: &ScopedName, span: Span) -> ScopedName {
-    let last_text = base
-        .parts
-        .last()
-        .map_or_else(|| String::from("BaseHome"), |i| i.text.clone());
-    ScopedName {
-        absolute: base.absolute,
-        parts: alloc::vec![Identifier::new(format!("{last_text}Explicit"), span)],
-        span,
-    }
-}
-
-fn scoped(parts: &[&str], span: Span) -> ScopedName {
-    ScopedName {
-        absolute: false,
-        parts: parts
+        declared_bases
             .iter()
-            .map(|p| Identifier::new((*p).to_string(), span))
-            .collect(),
-        span,
-    }
-}
+            .map(|base| named_ref(&format!("{}Explicit", interface_name(ast, base))))
+            .collect()
+    };
+    explicit_bases.extend(supported);
+    let explicit = ast.add_interface(
+        module,
+        &format!("{name}Explicit"),
+        InterfaceKind::Interface,
+        explicit_bases,
+    )?;
 
-/// Public re-export for `validate.rs` (Phase-B-Cluster-9).
-#[must_use]
-pub fn scoped_name(parts: &[&str], span: Span) -> ScopedName {
-    scoped(parts, span)
-}
+    // §6.7.1.1 (no primary key) versus §6.7.1.2 (with one).
+    let component = object_reference(ast, &manages.component)?;
+    let implicit = match manages.primary_key.clone() {
+        Some(key) => build_keyed_implicit(ast, module, &name, &component, &key)?,
+        None => build_keyless_implicit(ast, module, &name, &component)?,
+    };
 
-fn lowercase_first(s: &str) -> String {
-    let mut chars = s.chars();
-    chars.next().map_or_else(String::new, |c| {
-        let mut out: String = c.to_lowercase().collect();
-        out.push_str(chars.as_str());
-        out
+    // The home itself becomes the equivalent interface.
+    ast.set_interface_form(
+        home,
+        InterfaceKind::Interface,
+        alloc::vec![
+            named_ref(&format!("{name}Explicit")),
+            named_ref(&format!("{name}Implicit")),
+        ],
+    )?;
+
+    Ok(HomeEquivalent {
+        explicit,
+        implicit,
+        equivalent: home,
     })
 }
 
-// Mark unused-import safe (StringType, PrimitiveType used only in tests).
-const _: fn() = || {
-    let _ = core::marker::PhantomData::<StringType>;
-    let _ = core::marker::PhantomData::<PrimitiveType>;
-};
+/// Spec §6.7.1.1 (p. 33) — `interface <h>Implicit :
+/// Components::KeylessCCMHome { <component> create() raises
+/// (CreateFailure); };`
+fn build_keyless_implicit(
+    ast: &mut Ast,
+    module: Id<zerodds_ast::ModuleNode>,
+    home: &str,
+    component: &Ref<TypeNode>,
+) -> Result<Id<InterfaceNode>, TransformError> {
+    let implicit = ast.add_interface(
+        module,
+        &format!("{home}Implicit"),
+        InterfaceKind::Interface,
+        alloc::vec![spec_ref(&["Components", "KeylessCCMHome"])],
+    )?;
+    let create = ast.add_operation(implicit, "create", Some(component.clone()), false)?;
+    ast.add_raises(create, spec_ref(&["Components", "CreateFailure"]))?;
+    Ok(implicit)
+}
 
-#[cfg(test)]
-#[allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
-mod tests {
-    use super::*;
-    use zerodds_idl::ast::{ComponentDef, ComponentExport, IntegerType};
+/// Spec §6.7.1.2 (p. 34) — the keyed `<h>Implicit` carries create,
+/// find_by_primary_key, remove and get_primary_key, and inherits
+/// nothing.
+fn build_keyed_implicit(
+    ast: &mut Ast,
+    module: Id<zerodds_ast::ModuleNode>,
+    home: &str,
+    component: &Ref<TypeNode>,
+    key: &Ref<TypeNode>,
+) -> Result<Id<InterfaceNode>, TransformError> {
+    let implicit = ast.add_interface(
+        module,
+        &format!("{home}Implicit"),
+        InterfaceKind::Interface,
+        Vec::new(),
+    )?;
 
-    fn span() -> Span {
-        Span::SYNTHETIC
+    let create = ast.add_operation(implicit, "create", Some(component.clone()), false)?;
+    let _ = ast.add_param(create, "key", zerodds_ast::ParamDirection::In, key.clone())?;
+    for exception in ["CreateFailure", "DuplicateKeyValue", "InvalidKey"] {
+        ast.add_raises(create, spec_ref(&["Components", exception]))?;
     }
 
-    fn ident(s: &str) -> Identifier {
-        Identifier::new(s, span())
+    let find = ast.add_operation(
+        implicit,
+        "find_by_primary_key",
+        Some(component.clone()),
+        false,
+    )?;
+    let _ = ast.add_param(find, "key", zerodds_ast::ParamDirection::In, key.clone())?;
+    for exception in ["FinderFailure", "UnknownKeyValue", "InvalidKey"] {
+        ast.add_raises(find, spec_ref(&["Components", exception]))?;
     }
 
-    fn sn(parts: &[&str]) -> ScopedName {
-        scoped(parts, span())
+    let remove = ast.add_operation(implicit, "remove", None, false)?;
+    let _ = ast.add_param(remove, "key", zerodds_ast::ParamDirection::In, key.clone())?;
+    for exception in ["RemoveFailure", "UnknownKeyValue", "InvalidKey"] {
+        ast.add_raises(remove, spec_ref(&["Components", exception]))?;
     }
 
-    fn comp(name: &str, body: Vec<ComponentExport>) -> ComponentDef {
-        ComponentDef {
-            name: ident(name),
-            base: None,
-            supports: Vec::new(),
-            body,
-            annotations: Vec::new(),
-            span: span(),
-        }
-    }
+    let get = ast.add_operation(implicit, "get_primary_key", Some(key.clone()), false)?;
+    let _ = ast.add_param(
+        get,
+        "comp",
+        zerodds_ast::ParamDirection::In,
+        component.clone(),
+    )?;
+    Ok(implicit)
+}
 
-    fn comp_with_supports(
-        name: &str,
-        supports: Vec<ScopedName>,
-        body: Vec<ComponentExport>,
-    ) -> ComponentDef {
-        ComponentDef {
-            name: ident(name),
-            base: None,
-            supports,
-            body,
-            annotations: Vec::new(),
-            span: span(),
-        }
-    }
-
-    fn comp_with_base(name: &str, base: ScopedName, body: Vec<ComponentExport>) -> ComponentDef {
-        ComponentDef {
-            name: ident(name),
-            base: Some(base),
-            supports: Vec::new(),
-            body,
-            annotations: Vec::new(),
-            span: span(),
-        }
-    }
-
-    fn op_names(iface: &InterfaceDef) -> Vec<String> {
-        iface
-            .exports
-            .iter()
-            .filter_map(|e| match e {
-                Export::Op(o) => Some(o.name.text.clone()),
-                _ => None,
-            })
-            .collect()
-    }
-
-    #[test]
-    fn simple_basic_component_inherits_ccmobject() {
-        // Spec §6.3.2.1 (p. 12) — `component C {};` →
-        // `interface C : Components::CCMObject {};`.
-        let c = comp("C", alloc::vec![]);
-        let out = transform_component(&c);
-        assert_eq!(out.equivalent_interface.name.text, "C");
-        assert_eq!(out.equivalent_interface.bases.len(), 1);
-        let parts: Vec<&str> = out.equivalent_interface.bases[0]
-            .parts
-            .iter()
-            .map(|p| p.text.as_str())
-            .collect();
-        assert_eq!(parts, alloc::vec!["Components", "CCMObject"]);
-    }
-
-    #[test]
-    fn component_with_supports_inherits_ccmobject_plus_supported() {
-        // Spec §6.3.2.2 (p. 12) — `component C supports I1, I2 { };` →
-        // `interface C : Components::CCMObject, I1, I2 {};`.
-        let c = comp_with_supports("C", alloc::vec![sn(&["I1"]), sn(&["I2"])], alloc::vec![]);
-        let out = transform_component(&c);
-        let names: Vec<String> = out
-            .equivalent_interface
-            .bases
-            .iter()
-            .map(|b| b.parts.last().map_or(String::new(), |i| i.text.clone()))
-            .collect();
-        assert_eq!(names, alloc::vec!["CCMObject", "I1", "I2"]);
-    }
-
-    #[test]
-    fn component_with_base_inherits_base_not_ccmobject() {
-        // Spec §6.3.2.3 (p. 12) — `component C : B { };` →
-        // `interface C : B { ... }` (CCMObject is transitive via B).
-        let c = comp_with_base("C", sn(&["B"]), alloc::vec![]);
-        let out = transform_component(&c);
-        let parts: Vec<String> = out.equivalent_interface.bases[0]
-            .parts
-            .iter()
-            .map(|p| p.text.clone())
-            .collect();
-        assert_eq!(parts, alloc::vec!["B"]);
-    }
-
-    #[test]
-    fn provides_decl_yields_provide_underscore_name_op() {
-        // Spec §6.4.1 (p. 13) — `provides I foo;` → `I provide_foo();`.
-        let c = comp(
-            "C",
-            alloc::vec![ComponentExport::Provides {
-                type_spec: sn(&["M", "I"]),
-                name: ident("foo"),
-                span: span(),
-            }],
-        );
-        let out = transform_component(&c);
-        let names = op_names(&out.equivalent_interface);
-        assert!(names.contains(&String::from("provide_foo")));
-    }
-
-    #[test]
-    fn uses_simplex_yields_three_ops_with_correct_signatures() {
-        // Spec §6.5.1 (p. 19).
-        let c = comp(
-            "C",
-            alloc::vec![ComponentExport::Uses {
-                type_spec: sn(&["I"]),
-                name: ident("manager"),
-                multiple: false,
-                span: span(),
-            }],
-        );
-        let out = transform_component(&c);
-        let names = op_names(&out.equivalent_interface);
-        assert!(names.contains(&String::from("connect_manager")));
-        assert!(names.contains(&String::from("disconnect_manager")));
-        assert!(names.contains(&String::from("get_connection_manager")));
-    }
-
-    #[test]
-    fn uses_multiple_yields_get_connections_plural_op() {
-        // Spec §6.5.1 (p. 19-20) — multiplex receptacle.
-        let c = comp(
-            "C",
-            alloc::vec![ComponentExport::Uses {
-                type_spec: sn(&["I"]),
-                name: ident("managers"),
-                multiple: true,
-                span: span(),
-            }],
-        );
-        let out = transform_component(&c);
-        let names = op_names(&out.equivalent_interface);
-        assert!(names.contains(&String::from("connect_managers")));
-        assert!(names.contains(&String::from("disconnect_managers")));
-        assert!(names.contains(&String::from("get_connections_managers")));
-        // Connect returns a Cookie (Spec §6.5.1 p. 20 multiplex).
-        let connect = out
-            .equivalent_interface
-            .exports
-            .iter()
-            .find_map(|e| match e {
-                Export::Op(o) if o.name.text == "connect_managers" => Some(o),
-                _ => None,
-            })
-            .expect("connect");
-        let TypeSpec::Scoped(ret) = connect.return_type.as_ref().expect("return") else {
-            panic!()
-        };
-        assert_eq!(
-            ret.parts
-                .iter()
-                .map(|i| i.text.as_str())
-                .collect::<Vec<_>>(),
-            alloc::vec!["Components", "Cookie"]
-        );
-    }
-
-    #[test]
-    fn emits_decl_yields_connect_disconnect_with_consumer() {
-        // Spec §6.6.6.1 (p. 28).
-        let c = comp(
-            "C",
-            alloc::vec![ComponentExport::Emits {
-                type_spec: sn(&["Tick"]),
-                name: ident("ticker"),
-                span: span(),
-            }],
-        );
-        let out = transform_component(&c);
-        let names = op_names(&out.equivalent_interface);
-        assert!(names.contains(&String::from("connect_ticker")));
-        assert!(names.contains(&String::from("disconnect_ticker")));
-        // The TickConsumer iface was created implicitly.
-        assert_eq!(out.event_consumer_interfaces.len(), 1);
-        assert_eq!(out.event_consumer_interfaces[0].name.text, "TickConsumer");
-    }
-
-    #[test]
-    fn publishes_decl_yields_subscribe_unsubscribe_with_cookie() {
-        // Spec §6.6.5.1 (p. 27).
-        let c = comp(
-            "C",
-            alloc::vec![ComponentExport::Publishes {
-                type_spec: sn(&["Tick"]),
-                name: ident("ticker"),
-                span: span(),
-            }],
-        );
-        let out = transform_component(&c);
-        let names = op_names(&out.equivalent_interface);
-        assert!(names.contains(&String::from("subscribe_ticker")));
-        assert!(names.contains(&String::from("unsubscribe_ticker")));
-        // subscribe returns a Cookie (Spec §6.6.5.1).
-        let sub = out
-            .equivalent_interface
-            .exports
-            .iter()
-            .find_map(|e| match e {
-                Export::Op(o) if o.name.text == "subscribe_ticker" => Some(o),
-                _ => None,
-            })
-            .expect("subscribe");
-        let TypeSpec::Scoped(ret) = sub.return_type.as_ref().expect("return") else {
-            panic!()
-        };
-        assert_eq!(
-            ret.parts
-                .iter()
-                .map(|i| i.text.as_str())
-                .collect::<Vec<_>>(),
-            alloc::vec!["Components", "Cookie"]
-        );
-    }
-
-    #[test]
-    fn consumes_decl_yields_get_consumer_op() {
-        // Spec §6.6.7.1 (p. 29) — `consumes Tick sink;` →
-        // `TickConsumer get_consumer_sink();`.
-        let c = comp(
-            "C",
-            alloc::vec![ComponentExport::Consumes {
-                type_spec: sn(&["Tick"]),
-                name: ident("sink"),
-                span: span(),
-            }],
-        );
-        let out = transform_component(&c);
-        let names = op_names(&out.equivalent_interface);
-        assert!(names.contains(&String::from("get_consumer_sink")));
-        // Return type is TickConsumer.
-        let op = out
-            .equivalent_interface
-            .exports
-            .iter()
-            .find_map(|e| match e {
-                Export::Op(o) if o.name.text == "get_consumer_sink" => Some(o),
-                _ => None,
-            })
-            .expect("op");
-        let TypeSpec::Scoped(ret) = op.return_type.as_ref().expect("return") else {
-            panic!()
-        };
-        assert_eq!(
-            ret.parts.last().expect("last").text.as_str(),
-            "TickConsumer"
-        );
-    }
-
-    #[test]
-    fn duplicate_event_type_yields_only_one_consumer_interface() {
-        // Spec §6.6 — one consumer iface per EventType, not per port.
-        let c = comp(
-            "C",
-            alloc::vec![
-                ComponentExport::Emits {
-                    type_spec: sn(&["Tick"]),
-                    name: ident("a"),
-                    span: span(),
-                },
-                ComponentExport::Publishes {
-                    type_spec: sn(&["Tick"]),
-                    name: ident("b"),
-                    span: span(),
-                },
-                ComponentExport::Consumes {
-                    type_spec: sn(&["Tick"]),
-                    name: ident("c"),
-                    span: span(),
-                },
-            ],
-        );
-        let out = transform_component(&c);
-        assert_eq!(out.event_consumer_interfaces.len(), 1);
-    }
-
-    #[test]
-    fn attribute_is_propagated_to_equivalent_interface() {
-        let c = comp(
-            "C",
-            alloc::vec![ComponentExport::Attribute(zerodds_idl::ast::AttrDcl {
-                readonly: false,
-                type_spec: TypeSpec::Primitive(PrimitiveType::Integer(IntegerType::Long)),
-                name: ident("rate"),
-                span: span(),
-            })],
-        );
-        let out = transform_component(&c);
-        let attr = out
-            .equivalent_interface
-            .exports
-            .iter()
-            .find_map(|e| match e {
-                Export::Attr(a) => Some(a),
-                _ => None,
-            })
-            .expect("attr");
-        assert_eq!(attr.name.text, "rate");
-        assert!(!attr.readonly);
-    }
-
-    #[test]
-    fn home_without_primary_key_yields_keyless_implicit() {
-        // Spec §6.7.1.1 (p. 33).
-        let h = HomeDef {
-            name: ident("CManager"),
-            base: None,
-            supports: Vec::new(),
-            manages: sn(&["C"]),
-            primary_key: None,
-            annotations: Vec::new(),
-            span: span(),
-        };
-        let out = transform_home(&h);
-        assert_eq!(out.explicit.name.text, "CManagerExplicit");
-        assert_eq!(out.implicit.name.text, "CManagerImplicit");
-        assert_eq!(out.equivalent.name.text, "CManager");
-        // Explicit inherits CCMHome.
-        let parts = out.explicit.bases[0]
-            .parts
-            .iter()
-            .map(|i| i.text.as_str())
-            .collect::<Vec<_>>();
-        assert_eq!(parts, alloc::vec!["Components", "CCMHome"]);
-        // Implicit inherits KeylessCCMHome.
-        let parts = out.implicit.bases[0]
-            .parts
-            .iter()
-            .map(|i| i.text.as_str())
-            .collect::<Vec<_>>();
-        assert_eq!(parts, alloc::vec!["Components", "KeylessCCMHome"]);
-        // Implicit has a create() op.
-        let names = op_names(&out.implicit);
-        assert_eq!(names, alloc::vec!["create"]);
-    }
-
-    #[test]
-    fn home_with_primary_key_yields_keyed_implicit_with_four_ops() {
-        // Spec §6.7.1.2 (p. 34).
-        let h = HomeDef {
-            name: ident("CManager"),
-            base: None,
-            supports: Vec::new(),
-            manages: sn(&["C"]),
-            primary_key: Some(sn(&["CKey"])),
-            annotations: Vec::new(),
-            span: span(),
-        };
-        let out = transform_home(&h);
-        let names = op_names(&out.implicit);
-        for expected in ["create", "find_by_primary_key", "remove", "get_primary_key"] {
-            assert!(
-                names.contains(&String::from(expected)),
-                "missing {expected} in {names:?}"
-            );
-        }
-        // Keyed-Implicit has NO inheritance (only body ops).
-        assert!(out.implicit.bases.is_empty());
-    }
-
-    #[test]
-    fn derived_home_inherits_base_explicit() {
-        // Spec §6.7.4 (p. 37): "Each Explicit Home, derived from another
-        // home, MUST inherit from the parent's Explicit Interface".
-        // dds-ts-1.0-beta1 cross-ref: omg-ccm-4.0 §6.7.4.
-        let h = HomeDef {
-            name: ident("CManagerExt"),
-            base: Some(sn(&["CManagerBase"])),
-            supports: Vec::new(),
-            manages: sn(&["C"]),
-            primary_key: None,
-            annotations: Vec::new(),
-            span: span(),
-        };
-        let out = transform_home(&h);
-        // The Explicit iface of CManagerExt inherits from
-        // CManagerBaseExplicit, NOT from Components::CCMHome (the
-        // inheritance root is already anchored in the base Explicit).
-        assert_eq!(out.explicit.name.text, "CManagerExtExplicit");
-        assert_eq!(
-            out.explicit.bases.len(),
-            1,
-            "derived home explicit must inherit exactly the base's Explicit"
-        );
-        let parts = out.explicit.bases[0]
-            .parts
-            .iter()
-            .map(|i| i.text.as_str())
-            .collect::<Vec<_>>();
-        assert_eq!(
-            parts,
-            alloc::vec!["CManagerBaseExplicit"],
-            "expected CManagerBaseExplicit, got {parts:?}"
-        );
-    }
-
-    #[test]
-    fn derived_home_with_supports_extends_base_explicit() {
-        // Spec §6.7.4: derived home MAY add supports clauses on top
-        // of the base-explicit inheritance.
-        let h = HomeDef {
-            name: ident("CManagerExt"),
-            base: Some(sn(&["CManagerBase"])),
-            supports: alloc::vec![sn(&["IExtraIface"])],
-            manages: sn(&["C"]),
-            primary_key: None,
-            annotations: Vec::new(),
-            span: span(),
-        };
-        let out = transform_home(&h);
-        let names: Vec<String> = out
-            .explicit
-            .bases
-            .iter()
-            .map(|b| b.parts.last().map_or(String::new(), |i| i.text.clone()))
-            .collect();
-        assert_eq!(
-            names,
-            alloc::vec![
-                String::from("CManagerBaseExplicit"),
-                String::from("IExtraIface")
-            ]
-        );
-    }
-
-    #[test]
-    fn equivalent_home_inherits_explicit_and_implicit() {
-        let h = HomeDef {
-            name: ident("CManager"),
-            base: None,
-            supports: Vec::new(),
-            manages: sn(&["C"]),
-            primary_key: None,
-            annotations: Vec::new(),
-            span: span(),
-        };
-        let out = transform_home(&h);
-        let names: Vec<String> = out
-            .equivalent
-            .bases
-            .iter()
-            .map(|b| b.parts.last().map_or(String::new(), |i| i.text.clone()))
-            .collect();
-        assert_eq!(names, alloc::vec!["CManagerExplicit", "CManagerImplicit"]);
-    }
-
-    #[test]
-    fn event_type_first_in_chain_inherits_event_base() {
-        // Spec §6.6.1.1 (p. 25).
-        let et = EventDef {
-            name: ident("Tick"),
-            kind: ValueKind::Concrete,
-            inheritance: None,
-            elements: Vec::new(),
-            annotations: Vec::new(),
-            span: span(),
-        };
-        let out = transform_event_type(&et);
-        // valuetype Tick : Components::EventBase.
-        let parts = out.valuetype_bases[0]
-            .parts
-            .iter()
-            .map(|i| i.text.as_str())
-            .collect::<Vec<_>>();
-        assert_eq!(parts, alloc::vec!["Components", "EventBase"]);
-        // TickConsumer : Components::EventConsumerBase.
-        assert_eq!(out.consumer_interface.name.text, "TickConsumer");
-        let cb = out.consumer_interface.bases[0]
-            .parts
-            .iter()
-            .map(|i| i.text.as_str())
-            .collect::<Vec<_>>();
-        assert_eq!(cb, alloc::vec!["Components", "EventConsumerBase"]);
-        // push_Tick(in Tick the_tick).
-        let push = out.consumer_interface.exports.iter().find_map(|e| match e {
-            Export::Op(o) => Some(o),
-            _ => None,
+/// Spec §6.6.1.1 (p. 24) — eventtype → valuetype + consumer interface.
+///
+/// The eventtype node becomes the equivalent valuetype: §6.6.1.1 (p. 25)
+/// says the first event type of an inheritance chain introduces the
+/// inheritance from `Components::EventBase`, so a chain's root gains it
+/// and a derived event type does not.
+///
+/// # Errors
+/// [`TransformError::NotA`] when the handle does not name an eventtype,
+/// [`TransformError::Model`] when the model rejects an edit.
+pub fn transform_event_type(
+    ast: &mut Ast,
+    event: Id<TypeNode>,
+) -> Result<EventTypeEquivalent, TransformError> {
+    let node = ast.type_(event)?;
+    let is_event = node
+        .facets
+        .corba
+        .as_ref()
+        .is_some_and(|corba| corba.is_event_type);
+    let TypeKind::Valuetype { bases, .. } = &node.kind else {
+        return Err(TransformError::NotA {
+            expected: "an eventtype",
+            found: node.kind.as_str(),
         });
-        let push = push.expect("push op");
-        assert_eq!(push.name.text, "push_Tick");
-        assert_eq!(push.params[0].name.text, "the_tick");
+    };
+    if !is_event {
+        return Err(TransformError::NotA {
+            expected: "an eventtype",
+            found: "a valuetype",
+        });
+    }
+    let name = node.name.clone();
+    let module = node.module;
+    let inherited: Vec<Ref<TypeNode>> = bases.clone();
+
+    // §6.6.1.1 (p. 25) — `Components::EventBase` only at the root of the
+    // chain, and the consumer interfaces stand in the same inheritance
+    // relation as the event types themselves.
+    let consumer_bases = if inherited.is_empty() {
+        alloc::vec![spec_ref(&["Components", "EventConsumerBase"])]
+    } else {
+        inherited
+            .iter()
+            .map(|base| named_ref(&format!("{}Consumer", type_name(ast, base))))
+            .collect()
+    };
+    if inherited.is_empty() {
+        ast.add_valuetype_base(event, spec_ref(&["Components", "EventBase"]))?;
     }
 
-    #[test]
-    fn full_stockmanager_component_yields_all_expected_ops() {
-        // End-to-end: component with all port kinds.
-        let c = comp(
-            "Trader",
-            alloc::vec![
-                ComponentExport::Provides {
-                    type_spec: sn(&["StockManager"]),
-                    name: ident("manager"),
-                    span: span(),
-                },
-                ComponentExport::Uses {
-                    type_spec: sn(&["Bank"]),
-                    name: ident("bank"),
-                    multiple: false,
-                    span: span(),
-                },
-                ComponentExport::Uses {
-                    type_spec: sn(&["Feed"]),
-                    name: ident("feeds"),
-                    multiple: true,
-                    span: span(),
-                },
-                ComponentExport::Emits {
-                    type_spec: sn(&["Tick"]),
-                    name: ident("ticker"),
-                    span: span(),
-                },
-                ComponentExport::Publishes {
-                    type_spec: sn(&["Tick"]),
-                    name: ident("public_ticker"),
-                    span: span(),
-                },
-                ComponentExport::Consumes {
-                    type_spec: sn(&["Order"]),
-                    name: ident("order_sink"),
-                    span: span(),
-                },
-            ],
-        );
-        let out = transform_component(&c);
-        let names = op_names(&out.equivalent_interface);
-        for expected in [
-            "provide_manager",
-            "connect_bank",
-            "disconnect_bank",
-            "get_connection_bank",
-            "connect_feeds",
-            "disconnect_feeds",
-            "get_connections_feeds",
-            "connect_ticker",
-            "disconnect_ticker",
-            "subscribe_public_ticker",
-            "unsubscribe_public_ticker",
-            "get_consumer_order_sink",
-        ] {
-            assert!(
-                names.contains(&String::from(expected)),
-                "missing {expected} in {names:?}"
-            );
-        }
-        // Tick + Order Consumers (2).
-        let consumer_names: Vec<String> = out
-            .event_consumer_interfaces
-            .iter()
-            .map(|i| i.name.text.clone())
-            .collect();
-        assert!(consumer_names.contains(&String::from("TickConsumer")));
-        assert!(consumer_names.contains(&String::from("OrderConsumer")));
+    let consumer = ast.add_interface(
+        module,
+        &format!("{name}Consumer"),
+        InterfaceKind::Interface,
+        consumer_bases,
+    )?;
+    let push = ast.add_operation(consumer, &format!("push_{name}"), None, false)?;
+    let _ = ast.add_param(
+        push,
+        &format!("the_{}", lowercase_first(&name)),
+        zerodds_ast::ParamDirection::In,
+        Ref::Resolved(event),
+    )?;
+
+    Ok(EventTypeEquivalent {
+        valuetype: event,
+        consumer_interface: consumer,
+    })
+}
+
+/// The type that stands for a reference to an interface.
+///
+/// A resolved interface gets the object-reference type the model derives
+/// from it; an unresolved one keeps its name, so the reference resolves
+/// once the interface arrives.
+fn object_reference(
+    ast: &mut Ast,
+    interface: &Ref<InterfaceNode>,
+) -> Result<Ref<TypeNode>, TransformError> {
+    match interface {
+        Ref::Resolved(id) => Ok(Ref::Resolved(ast.object_reference_to(*id)?)),
+        Ref::Pending(key) => Ok(Ref::Pending(key.clone())),
+        Ref::Broken(cause) => Ok(Ref::Broken(cause.clone())),
     }
+}
+
+/// A reference to the `<T>Consumer` interface of an event type, as a
+/// type.
+fn consumer_type_ref(ast: &Ast, event: &Ref<TypeNode>) -> Ref<TypeNode> {
+    named_ref(&format!("{}Consumer", type_name(ast, event)))
+}
+
+/// The simple name behind a type reference, resolved or not.
+fn type_name(ast: &Ast, reference: &Ref<TypeNode>) -> String {
+    match reference {
+        Ref::Resolved(id) => ast
+            .type_(*id)
+            .map(|node| node.name.clone())
+            .unwrap_or_default(),
+        Ref::Pending(PendingRef::ScopedName(name)) => name.last().cloned().unwrap_or_default(),
+        Ref::Pending(_) | Ref::Broken(_) => String::new(),
+    }
+}
+
+/// The simple name behind an interface reference, resolved or not.
+fn interface_name(ast: &Ast, reference: &Ref<InterfaceNode>) -> String {
+    match reference {
+        Ref::Resolved(id) => ast
+            .interface(*id)
+            .map(|node| node.name.clone())
+            .unwrap_or_default(),
+        Ref::Pending(PendingRef::ScopedName(name)) => name.last().cloned().unwrap_or_default(),
+        Ref::Pending(_) | Ref::Broken(_) => String::new(),
+    }
+}
+
+fn lowercase_first(value: &str) -> String {
+    let mut chars = value.chars();
+    chars.next().map_or_else(String::new, |first| {
+        let mut out: String = first.to_lowercase().collect();
+        out.push_str(chars.as_str());
+        out
+    })
 }

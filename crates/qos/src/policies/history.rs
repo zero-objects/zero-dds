@@ -4,7 +4,7 @@
 //!
 //! Wire-Format (DDSI-RTPS §9.6.3.2): u32 kind + i32 depth = 8 byte.
 
-use zerodds_cdr::{BufferReader, BufferWriter, DecodeError, EncodeError};
+use zerodds_wire::{Reader, WireError, Writer};
 
 /// History-Kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -18,7 +18,7 @@ pub enum HistoryKind {
 }
 
 impl HistoryKind {
-    /// Strikter Mapper.
+    /// Strict mapper.
     #[must_use]
     pub const fn try_from_u32(v: u32) -> Option<Self> {
         match v {
@@ -58,23 +58,20 @@ impl Default for HistoryQosPolicy {
 
 impl HistoryQosPolicy {
     /// Wire-Encoding.
-    ///
-    /// # Errors
-    /// Buffer-Overflow.
-    pub fn encode_into(self, w: &mut BufferWriter) -> Result<(), EncodeError> {
-        w.write_u32(self.kind as u32)?;
-        w.write_u32(self.depth as u32)
+    pub fn encode_into(self, w: &mut Writer) {
+        w.write_u32(self.kind as u32);
+        w.write_u32(self.depth as u32);
     }
 
     /// Wire-Decoding (strict).
     ///
     /// # Errors
     /// Buffer underflow or unknown kind value.
-    pub fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
+    pub fn decode_from(r: &mut Reader<'_>) -> Result<Self, WireError> {
+        let at = r.position();
         let v = r.read_u32()?;
-        let kind = HistoryKind::try_from_u32(v).ok_or(DecodeError::InvalidEnum {
-            kind: "HistoryKind",
-            value: v,
+        let kind = HistoryKind::try_from_u32(v).ok_or_else(|| {
+            WireError::refused(at, &alloc::format!("a HistoryKind enumerator, not {v}"))
         })?;
         let depth = r.read_u32()? as i32;
         Ok(Self { kind, depth })
@@ -85,7 +82,7 @@ impl HistoryQosPolicy {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use zerodds_cdr::Endianness;
+    use zerodds_wire::Endianness;
 
     #[test]
     fn default_is_keep_last_1() {
@@ -102,10 +99,10 @@ mod tests {
     }
 
     fn roundtrip(p: HistoryQosPolicy) {
-        let mut w = BufferWriter::new(Endianness::Little);
-        p.encode_into(&mut w).unwrap();
-        let bytes = w.into_bytes();
-        let mut r = BufferReader::new(&bytes, Endianness::Little);
+        let mut w = Writer::new(Endianness::Little);
+        p.encode_into(&mut w);
+        let bytes = w.finish();
+        let mut r = Reader::new(&bytes, Endianness::Little);
         assert_eq!(HistoryQosPolicy::decode_from(&mut r).unwrap(), p);
     }
 
@@ -141,21 +138,19 @@ mod tests {
     /// would deliberately use `try_from_u32` here, strict).
     #[test]
     fn decode_unknown_kind_errors() {
-        let mut w = BufferWriter::new(Endianness::Little);
-        w.write_u32(99).unwrap(); // unknown kind
-        w.write_u32(10).unwrap();
-        let bytes = w.into_bytes();
-        let mut r = BufferReader::new(&bytes, Endianness::Little);
+        let mut w = Writer::new(Endianness::Little);
+        w.write_u32(99); // unknown kind
+        w.write_u32(10);
+        let bytes = w.finish();
+        let mut r = Reader::new(&bytes, Endianness::Little);
         let err = HistoryQosPolicy::decode_from(&mut r).unwrap_err();
         assert!(
             matches!(
-                err,
-                zerodds_cdr::DecodeError::InvalidEnum {
-                    kind: "HistoryKind",
-                    value: 99
-                }
+                &err,
+                zerodds_wire::WireError::OutOfRange { expected, .. }
+                    if expected.contains("HistoryKind") && expected.contains("99")
             ),
-            "expected InvalidEnum{{HistoryKind,99}}, got {err:?}"
+            "unexpected error: {err}"
         );
     }
 
@@ -163,10 +158,10 @@ mod tests {
     /// for the `read_u32` at the depth offset.
     #[test]
     fn decode_short_buffer_errors() {
-        let mut w = BufferWriter::new(Endianness::Little);
-        w.write_u32(0).unwrap(); // kind=KeepLast, but no depth follows
-        let bytes = w.into_bytes();
-        let mut r = BufferReader::new(&bytes, Endianness::Little);
+        let mut w = Writer::new(Endianness::Little);
+        w.write_u32(0); // kind=KeepLast, but no depth follows
+        let bytes = w.finish();
+        let mut r = Reader::new(&bytes, Endianness::Little);
         assert!(HistoryQosPolicy::decode_from(&mut r).is_err());
     }
 

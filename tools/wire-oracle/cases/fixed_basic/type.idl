@@ -1,0 +1,1 @@
+@final struct FixedBasic { fixed<5,2> f; octet tail; };

@@ -19,7 +19,8 @@ Implementation:
 ## §1.1 Datenmodell — Schichten
 
 **Spec:** §1.1 — drei Metric-Schichten (Counter/Gauge/Histogram) über einer
-Registry; `no_std`-fähiger Kern.
+Registry. `Histogram`, `Span`, `TraceId`, `SpanId` und `Event` liegen in
+`foundation`, das ohne `std` baut; `monitor` selbst braucht `std`.
 
 **Repo:** `crates/monitor/src/lib.rs`.
 
@@ -222,7 +223,7 @@ Label-Escaping, PID-Roundtrip, **Cross-Layer** (dcps-write → render), **Policy
 
 ## Audit-Status
 
-10 done / 0 partial / 0 open / 2 n/a (informative) / 0 n/a (rejected).
+14 done / 0 partial / 0 open / 2 n/a (informative) / 0 n/a (rejected).
 
 Test-Lauf: `cargo test -p zerodds-monitor` — 46 Tests grün, 0 failed; plus
 `cargo test -p zerodds-dcps` (§10-Cross-Layer-Test grün, metrics-Feature default).

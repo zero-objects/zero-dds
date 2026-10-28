@@ -118,8 +118,11 @@ encode/decode), `crates/websocket-bridge/src/codec.rs` (RFC-6455 codec).
 **Repo:** `crates/websocket-bridge/src/daemon/config.rs` (slug helper),
 `crates/websocket-bridge/src/daemon/router.rs`.
 
-**Tests:** `crates/websocket-bridge/tests/daemon_e2e.rs` (path routing
-covers slug generation).
+**Tests:** `crates/websocket-bridge/src/daemon/config.rs::tests::slug_strips_double_colon`,
+`::slug_replaces_unsafe_chars`;
+`crates/websocket-bridge/src/uri.rs::tests` (14 tests) covers the URL form;
+the path routing `crates/websocket-bridge/src/daemon/router.rs::tests::dispatch_to_subscribed_connection`
+and `crates/websocket-bridge/tests/daemon_e2e.rs::cross_daemon_publish_pump_delivers_to_subscriber`.
 
 **Status:** done
 
@@ -130,10 +133,25 @@ covers slug generation).
 **Repo:** `crates/websocket-bridge/src/daemon/router.rs` (catalog + schema
 endpoints).
 
-**Tests:** `crates/websocket-bridge/tests/daemon_e2e.rs` (catalog +
-`/healthz` endpoints via cluster-A wire-up).
+**Tests:** `crates/websocket-bridge/src/daemon/runtime_common.rs::tests::catalog_render_json_contains_topic_fields`,
+`crates/websocket-bridge/src/daemon/runtime_common.rs::tests::admin_endpoint_serves_catalog_and_healthz_and_metrics`,
+`crates/websocket-bridge/tests/daemon_e2e.rs::admin_endpoint_serves_catalog_metrics_healthz`. No `/schema/<slug>`
+endpoint exists in the tree — see §5.2a.
 
-**Status:** done
+**Status:** partial — the catalog frame is covered; the IDL endpoint is carried as
+§5.2a `open`.
+### §5.2a `/schema/<slug>` IDL endpoint
+
+**Spec:** §5.2 — an HTTP endpoint `/schema/<slug>` serves the topic's IDL.
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** open — the part of §5.2 beyond the catalog frame. The tree has
+no `/schema` path.
+
+---
 
 ## §6 QoS translation
 
@@ -163,8 +181,10 @@ mapping.
 `crates/websocket-bridge/src/daemon/security.rs` (rustls wire-up),
 `crates/bridge-security/src/tls.rs`.
 
-**Tests:** `crates/websocket-bridge/tests/security_e2e.rs` (TLS handshake +
-SIGHUP cert rotation via the cluster-B foundation).
+**Tests:** `crates/websocket-bridge/tests/security_e2e.rs::tls_plain_handshake_succeeds_then_data_flows`,
+`crates/websocket-bridge/tests/security_e2e.rs::sighup_cert_reload_keeps_daemon_running_with_new_cert`;
+`crates/websocket-bridge/src/daemon/security.rs::tests::ctx_from_config_tls_enabled_without_paths_rejected`;
+`crates/bridge-security/src/connection.rs::tests::rotating_config_reload_swaps_inner_arc`.
 
 **Status:** done
 
@@ -174,10 +194,21 @@ SIGHUP cert rotation via the cluster-B foundation).
 
 **Repo:** `crates/websocket-bridge/src/daemon/server.rs`,
 `crates/websocket-bridge/src/daemon/security.rs`,
-`crates/bridge-security/src/auth.rs` (none/bearer/jwt/mtls).
+`crates/bridge-security/src/auth.rs` (none/bearer/jwt/mtls);
+`jwt` with the `auth.jwt` block of §3 (`public_key`, `audience`,
+`required_claim`, plus `issuer`) through `SecurityConfig::apply_jwt`. Before,
+`jwt` could be chosen but no key given, and the start ended as a bind error
+(exit 2, measured). The mTLS subject is the certificate's subject DN
+(RFC 4514); an ACL rule may name the fingerprint `mtls:<SHA-256>` instead.
 
-**Tests:** `crates/websocket-bridge/tests/security_e2e.rs` (bearer + JWT +
-mTLS round-trip).
+**Tests:** `crates/websocket-bridge/tests/security_e2e.rs::a_jwt_is_checked_and_its_subject_meets_the_acl`,
+`crates/websocket-bridge/tests/security_e2e.rs::jwt_without_a_key_and_mtls_without_a_client_ca_are_config_errors`,
+`crates/websocket-bridge/tests/security_e2e.rs::auth_missing_bearer_yields_401`, `crates/websocket-bridge/tests/security_e2e.rs::auth_invalid_bearer_yields_401`,
+`crates/websocket-bridge/tests/security_e2e.rs::auth_valid_bearer_then_acl_allows_subscribed_topic`;
+`crates/websocket-bridge/src/daemon/security.rs::tests::ws_extracts_bearer_from_headers_case_insensitive`,
+`::ws_missing_authorization_header_returns_missing`,
+`::ws_none_auth_yields_anonymous_without_header`,
+`::ctx_from_config_with_bearer_tokens`.
 
 **Status:** done
 
@@ -189,8 +220,10 @@ mTLS round-trip).
 `crates/websocket-bridge/src/daemon/security.rs`,
 `crates/bridge-security/src/acl.rs` (match engine).
 
-**Tests:** `crates/websocket-bridge/tests/security_e2e.rs` (per-topic ACL
-enforcement).
+**Tests:** `crates/websocket-bridge/tests/security_e2e.rs::auth_valid_bearer_then_acl_allows_subscribed_topic`,
+`crates/websocket-bridge/tests/security_e2e.rs::auth_valid_bearer_but_acl_denies_forbidden_topic`;
+`crates/websocket-bridge/src/daemon/security.rs::tests::ws_acl_check_allows_listed_user`;
+`crates/websocket-bridge/tests/example_yaml_loadback.rs::example_yaml_topic_acl_reaches_the_daemon`.
 
 **Status:** done
 
@@ -202,14 +235,13 @@ enforcement).
 timestamp/level/event/connection_id/topic/bytes/peer/latency_us; a
 `--log-level` switch.
 
-**Repo:** `crates/websocket-bridge/src/bin/zerodds-ws-bridged.rs`,
-`crates/websocket-bridge/src/daemon/cli.rs` (log-level wire-up).
+**Repo:** —
 
-**Tests:** `crates/websocket-bridge/tests/daemon_e2e.rs` (daemon spawn with
-log-level).
+**Tests:** —
 
-**Status:** done
-
+**Status:** open — `crates/websocket-bridge/src/daemon/cli.rs::tests` covers the flag
+splitting, but nothing tests the JSON log form or the effect of
+`--log-level`.
 ### §8.2 Prometheus metrics
 
 **Spec:** §8.2 — `--metrics` CLI + `metrics.*` config; 11 counter/gauge
@@ -220,8 +252,11 @@ metric families.
 `crates/websocket-bridge/src/daemon/runtime_common.rs` (counter/gauge
 families cluster-A wire-up).
 
-**Tests:** `crates/websocket-bridge/tests/daemon_e2e.rs` (`/metrics`
-endpoint via cluster-A wire-up).
+**Tests:** `crates/websocket-bridge/src/daemon/runtime_common.rs::tests::metrics_register_is_idempotent`,
+`crates/websocket-bridge/src/daemon/runtime_common.rs::tests::metrics_counter_visible_in_prometheus_render`,
+`crates/websocket-bridge/src/daemon/runtime_common.rs::tests::admin_endpoint_serves_catalog_and_healthz_and_metrics`;
+`crates/websocket-bridge/tests/daemon_e2e.rs::metrics_counters_track_frames_in_and_out`,
+`crates/websocket-bridge/tests/daemon_e2e.rs::admin_endpoint_serves_catalog_metrics_healthz`.
 
 **Status:** done
 
@@ -234,11 +269,13 @@ endpoint via cluster-A wire-up).
 via `zerodds-observability-otlp`),
 `crates/websocket-bridge/src/daemon/server.rs` (span emit per frame).
 
-**Tests:** `crates/websocket-bridge/tests/daemon_e2e.rs` (daemon spawn with
-`OTEL_EXPORTER_OTLP_ENDPOINT`).
+**Tests:** `crates/websocket-bridge/src/daemon/runtime_common.rs::tests::otlp_config_from_endpoint_parses_http_url`,
+`::otlp_config_from_endpoint_parses_bare_host_port`,
+`::otlp_config_from_endpoint_handles_https_and_trailing_slash`,
+`::otlp_config_from_endpoint_falls_back_to_default_port`. Nothing tests that
+a span is emitted per frame roundtrip — see §8.3a.
 
-**Status:** done
-
+**Status:** partial — the endpoint resolution is covered, the span emit is not.
 ## §9 Lifecycle
 
 ### §9.1 Startup sequence
@@ -254,6 +291,17 @@ bind → signal handler.
 
 **Status:** done
 
+### §8.3a Frame roundtrip span
+
+**Spec:** §8.3 — with `OTEL_EXPORTER_OTLP_ENDPOINT` set, one span is emitted
+per frame roundtrip.
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** open — the emit half of §8.3.
+
 ### §9.2 Shutdown SIGTERM/SIGINT/SIGHUP
 
 **Spec:** §9.2 — graceful drain (max 30 s), `op:shutdown` frame, close
@@ -264,9 +312,13 @@ bind → signal handler.
 (SIGTERM/SIGINT/SIGHUP via the cluster-A signal handler);
 `crates/websocket-bridge/src/bin/zerodds-ws-bridged.rs`.
 
-**Tests:** `crates/websocket-bridge/tests/daemon_e2e.rs` (daemon stop at
-test end), `crates/websocket-bridge/tests/security_e2e.rs` (SIGHUP reload
-TLS+ACL).
+**Tests:** `crates/websocket-bridge/tests/daemon_e2e.rs::the_binary_exits_0_on_sigterm`
+(the binary was still running 3 s after SIGTERM before, measured),
+`crates/websocket-bridge/tests/daemon_e2e.rs::graceful_shutdown_completes_within_5s`,
+`crates/websocket-bridge/tests/security_e2e.rs::sighup_cert_reload_keeps_daemon_running_with_new_cert`,
+`crates/websocket-bridge/tests/security_e2e.rs::sighup_applies_the_reloaded_acl` (ACL and auth, 403 before the reload, 101 after);
+`crates/websocket-bridge/src/daemon/router.rs::tests::shutdown_broadcasts_to_all`;
+the close codes themselves `crates/websocket-bridge/src/close.rs::tests` (25).
 
 **Status:** done
 
@@ -302,7 +354,10 @@ systemd/launchd/Windows service; Docker `zerodds/ws-bridged:1.0`; manuals
 `packaging/linux/configs/ws-bridged.yaml.example`,
 `man/man1/zerodds-ws-bridged.1`, `man/man5/zerodds-ws-bridged.yaml.5`.
 
-**Tests:** —
+**Tests:** `crates/websocket-bridge/tests/example_yaml_loadback.rs::{example_yaml_parses_without_error, example_yaml_key_fields_match_intent, example_yaml_topic_acl_reaches_the_daemon, example_yaml_has_no_unknown_top_level_keys}`
+(the shipped example configuration through the real parser, with the values it states);
+`tools/traceability/tests/bridge_config_manpages.rs::{every_example_key_is_documented_in_the_man_page, the_man_page_names_no_key_the_example_does_not_declare, the_pre_spec_vocabulary_is_gone_from_pages_and_examples, every_man_page_names_its_parser_and_what_an_unknown_key_does}`
+(the manual page and the example file name the same keys).
 
 **Status:** done
 
@@ -315,8 +370,23 @@ each.
 
 **Repo:** `crates/websocket-bridge/src/{daemon/config.rs,codec.rs,frame.rs,handshake.rs,masking.rs,negotiation.rs,permessage_deflate.rs,uri.rs,utf8.rs,dds_bridge.rs}`.
 
-**Tests:** inline `#[cfg(test)] mod tests` per module; the workspace test
-covers them.
+**Tests:** Inline `#[cfg(test)] mod tests` per module:
+`crates/websocket-bridge/src/codec.rs::tests` (21),
+`crates/websocket-bridge/src/frame.rs::tests` (9),
+`crates/websocket-bridge/src/message.rs::tests` (19),
+`crates/websocket-bridge/src/masking.rs::tests` (10),
+`crates/websocket-bridge/src/handshake.rs::tests` (13),
+`crates/websocket-bridge/src/negotiation.rs::tests` (12),
+`crates/websocket-bridge/src/permessage_deflate.rs::tests` (11),
+`crates/websocket-bridge/src/close.rs::tests` (25),
+`crates/websocket-bridge/src/utf8.rs::tests` (16),
+`crates/websocket-bridge/src/uri.rs::tests` (14),
+`crates/websocket-bridge/src/dds_bridge.rs::tests` (12),
+`crates/websocket-bridge/src/daemon/config.rs::tests::parse_minimal_config` (9),
+`crates/websocket-bridge/src/daemon/qos_translation.rs::tests::default_for_topic_uses_writer_defaults` (8);
+plus `crates/websocket-bridge/tests/fuzz_smoke.rs::fuzz_websocket_decode_no_panic`,
+`::empty_input_no_panic`, `::single_byte_inputs_no_panic`,
+`::extended_length_overflow_no_oom`.
 
 **Status:** done
 
@@ -341,8 +411,9 @@ publishes.
 **Repo:** `crates/websocket-bridge/tests/cross_vendor.rs` (cluster-C
 cross-vendor harness).
 
-**Tests:** `crates/websocket-bridge/tests/cross_vendor.rs` (Cyclone
-subscriber round-trip + WS-bridge publish).
+**Tests:** `crates/websocket-bridge/tests/cross_vendor.rs::rfc6455_handshake_against_zerodds_daemon_returns_101`;
+the DDS side `crates/websocket-bridge/tests/daemon_e2e.rs::cross_daemon_publish_pump_delivers_to_subscriber` and
+`crates/websocket-bridge/src/dds_bridge.rs::tests` (12).
 
 **Status:** done
 
@@ -377,8 +448,8 @@ change.
 
 ## Audit status
 
-22 done / 0 partial / 0 open / 3 n/a (informative) / 0 n/a (rejected).
+19 done / 2 partial / 3 open / 3 n/a (informative) / 0 n/a (rejected).
 
 Test run: `cargo test -p zerodds-websocket-bridge` — tests green, 0 failed.
 
-No open items or decision records — all items `done` / `n/a (informative)`.
+Open items: see `zerodds-ws-bridge-1.0.open.en.md`. Decision records: none.

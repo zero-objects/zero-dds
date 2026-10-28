@@ -24,7 +24,7 @@ endpoint (a writer on a — possibly different — domain/topic):
 | **Domain bridging** | read on domain 0, write on domain 1, in one process |
 | **QoS mapping** | per-endpoint reliability / durability / ownership / partition / data-representation |
 | **Type-agnostic byte forwarding** | the CDR body is forwarded verbatim — representation-faithful (XCDR1/XCDR2 encapsulation preserved), no type recompilation, cross-vendor |
-| **Keyed-instance lifecycle** | dispose / unregister events are forwarded for keyed topics (Spec §9.6.3.9) |
+| **Keyed-instance lifecycle** | dispose / unregister events are forwarded for keyed topics (Spec §9.6.3.9); with `type_file` on the output endpoint the marker carries the `serializedKey` Cyclone and OpenDDS need (see below) |
 | **Loop guard** | input and output participants on a shared domain are made mutually invisible, so no router output is re-ingested by a router input — preventing router-internal forwarding loops (bidirectional bridges, multi-route cycles) while application writers stay visible |
 | **Content filtering** | a DDS SQL filter (`temp > 50 AND zone = 'A'`) evaluated per sample against the decoded body |
 | **Field transformation** | rename / constant-set / drop members, mapping an input shape to an output shape |
@@ -42,13 +42,13 @@ endpoint (a writer on a — possibly different — domain/topic):
 
 ```console
 # Validate a config without starting any DDS state.
-zerodds-router validate --config router.json
+zerodds-router validate --routes router.json
 
 # Run the router (byte forwarding + loop guard + QoS mapping).
-zerodds-router run --config router.json
+zerodds-router run --routes router.json
 
 # Run with type shapes (needed for content filtering / field transformation).
-zerodds-router run --config router.json --types shapes.json
+zerodds-router run --routes router.json --types shapes.json
 ```
 
 `SIGINT` / `Ctrl-C` shuts the router down cleanly.
@@ -71,7 +71,21 @@ zerodds-router run --config router.json --types shapes.json
 ```
 
 Routes without a `filter`/`transform` forward bytes verbatim and need no type
-information. A route **with** a filter or transform needs the input/output type
+information.
+
+A keyed route forwards a dispose or unregister by its key hash. Without a type
+the output marker carries `PID_KEY_HASH` alone, and Cyclone DDS 11.0.1 and
+OpenDDS 3.35 do not act on it (measured: the instances stay `ALIVE`).
+`"type_file"` on the **output** endpoint names a serialized COMPLETE TypeObject
+of the output type (the format `zerodds-zenoh-bridged` and
+`zerodds-amqp-bridged` read); the output writer then keys every forwarded
+sample, records each instance's key, and a forwarded dispose carries the
+`serializedKey`. The type is not announced, peers still match by type name.
+
+```json
+"output": { "domain": 1, "topic": "Orders", "type_name": "shop::Order",
+            "keyed": true, "type_file": "/etc/zerodds/shop-order.typeobject" }
+``` A route **with** a filter or transform needs the input/output type
 **shape** (the flat struct member layout) supplied via `--types`:
 
 ```json

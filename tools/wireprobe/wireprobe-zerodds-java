@@ -1,0 +1,248 @@
+#!/bin/bash
+# wireprobe-zerodds-java — one IDL type and one JSON value, through the
+# ZeroDDS Java binding.
+#
+# The same command line as `wireprobe-zerodds`, minus the flags this
+# column does not answer yet, so a case runs through both by
+# substituting the program name. See
+# `docs/specs/zerodds-interop-suite-1.0.md` §3a.
+#
+#   wireprobe-zerodds-java --idl robot.idl --type common::Robot \
+#                          --values robot.json --encoding xcdr2 --endian le \
+#                          --out robot.zerodds-java.xcdr2.le.bin
+#
+#   wireprobe-zerodds-java --idl robot.idl --type common::Robot \
+#                          --in robot.cyclone.xcdr2.le.bin --encoding xcdr2 \
+#                          --endian le --values-out robot.read.json
+#
+# `wireprobe-zerodds-java-gen` writes the Java — the types, the codec and
+# either the statements that fill one sample or the ones that print one —
+# and this compiles it against `runtime/java` and runs it. The bytes and
+# the values come out of the Java runtime; nothing in this script decides
+# a wire question, and nothing in the compiled program calls the Rust one.
+#
+# The read direction takes its payload on the probe's standard input, so
+# one compiled program can be run against any byte string: `--in` is a
+# path this script feeds in and never one the generated Java holds.
+# ## The exit codes
+#
+# `docs/specs/zerodds-verdicts-1.0.md`, and structural rather than read
+# out of a message:
+#
+#   0  it carried the case
+#   1  the command line — this script's own options, or the generator's,
+#      or a sample the compiled probe refused as outside its type
+#   3  no-form — Java has no form for the construct, which is the
+#      materialiser's or the filler's answer, or the probe discarded the
+#      sample under 7.2.2.7
+#   6  harness-gap — a tool of ours has not written it: the walk
+#      stopped, a runtime of ours would not build, or the program did
+#      not run
+#   7  generator-defect — the generator accepted the case and the
+#      Java it produced does not compile
+#
+# 8 (`mapping-divergence`) is not produced here. It is a verdict about a
+# *foreign* mapping rule making the octets differ — CORBA's `long
+# double` is the recorded case — and this column has no such rule: where
+# its reading of 7.4 differs from the Rust column's the answer is a byte
+# difference the ledger shows, not an exit code.
+#
+# The generator's own code passes straight through. Folding it into one
+# number here is what four of these wrappers used to do, with
+# `|| exit 3`, and it put "this language has no form for it" and "our
+# walk stopped" in one bucket — the distinction the whole ledger turns
+# on. Two of them also answered **5** for source that would not compile,
+# which is in no row of the table at all and lands as `refused` where
+# `generator-defect` belongs.
+set -euo pipefail
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+root="$(cd "$here/../.." && pwd)"
+source "$here/runtime-cache.sh"
+runtime="${ZERODDS_JAVA_RUNTIME:-$root/runtime/java}"
+JAVAC="${JAVAC:-javac}"
+JAVA="${JAVA:-java}"
+# The JVM writes its own warnings to stdout unless told otherwise, and
+# stdout is the sample here. Measured in the matrix refresh of 2026-10-01:
+# `[0.022s][warning][perf,memops] Cannot use file /tmp/hsperfdata_root/...
+# because it is locked by another process` became the first 133 octets of
+# zerodds-java/omniorb-xcdr1-le/bitmask-bitbound-8, and the read refused
+# them. -XX:-UsePerfData drops the hsperfdata file that warning is about;
+# -Xlog:disable -Xlog:all=warning:stderr sends any other JVM warning to
+# stderr, away from the octets.
+JVM_FLAGS=(-XX:-UsePerfData -Xlog:disable -Xlog:all=warning:stderr)
+# `-Xlint:all -Werror` for the reason the C column compiles with
+# `-Werror`: a generated file that warns is one whose warnings stop
+# being read. `-encoding UTF-8` because the generator escapes every
+# non-ASCII character and a probe whose bytes depended on the platform
+# encoding would be measuring the platform.
+JAVACFLAGS="${JAVACFLAGS:--Xlint:all -Werror -encoding UTF-8}"
+
+gen="${WIREPROBE_JAVA_GEN:-}"
+if [ -z "$gen" ]; then
+    # `cargo` builds into `CARGO_TARGET_DIR` when it is set, so the probe
+    # runs the binary from there and not from a `target` it did not build.
+    gen="${CARGO_TARGET_DIR:-$root/target}/debug/wireprobe-zerodds-java-gen"
+    # Built when it is missing *or stale*: a generator older
+    # than the sources it came from measures the previous
+    # build, and says nothing about it.
+    . "$here/generator.sh"
+    probe_generator zerodds-wireprobe-java-gen "$gen" "$root" || exit 6
+fi
+
+out=""
+input=""
+values_out=""
+argv=()
+idl=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --out) out="$2"; shift 2 ;;
+        --in) input="$2"; shift 2 ;;
+        --values-out) values_out="$2"; shift 2 ;;
+        # Every LayoutKey axis the stem parses, not the seven this
+        # wrapper used to name. The C and Python wrappers forwarded all
+        # sixteen and these four forwarded none, so a sweep over any axis
+        # answered `--length-codes is not an option` with exit 1 for four
+        # of the six columns and measured only the other two.
+        --idl|--type|--values|--encoding|--endian|--emit|--dialect|\
+        --length-codes|--collection-delimiters|--wstring-length|--map-length|\
+        --wchar-framing|--wchar-width|--map-delimiter|--wstring-units|--pid-flags|\
+        --enum-holder|--union-labels|\
+        --map-entries|--fixed-digits|--enumerator-value|--union-framing|--short-pid-range)
+            if [ "$1" = --idl ]; then idl="$2"; fi
+            argv+=("$1" "$2"); shift 2 ;;
+        --help|-h) sed -n '2,56p' "${BASH_SOURCE[0]}"; exit 0 ;;
+        *) echo "wireprobe-zerodds-java: \`$1\` is not an option" >&2; exit 1 ;;
+    esac
+done
+
+. "$here/diagnostics.sh"
+
+# One direction or the other, never both: a run that both wrote bytes and
+# read some in would report one of the two and the caller could not tell
+# which.
+if [ -n "$input" ]; then
+    for flag in "${argv[@]}"; do
+        if [ "$flag" = "--values" ]; then
+            echo "wireprobe-zerodds-java: --in reads bytes and --values writes them; pick one" >&2
+            exit 1
+        fi
+    done
+    argv+=(--read)
+fi
+
+stage=""
+work="$(mktemp -d)"
+trap '[ -z "$stage" ] || rm -rf "${stage:?}"; probe_keep_generated "$work" "zerodds-java" "$idl" ZdTypes.java Probe.java; rm -rf "${work:?}"' EXIT
+trap 'exit 6' HUP INT TERM
+
+code=0
+"$gen" "${argv[@]}" --out-dir "$work" || code=$?
+[ "$code" = 0 ] || exit "$code"
+
+# The runtime is compiled once and kept, keyed on the contents of its
+# sources. A corpus sweep is one probe per case per configuration —
+# thousands of javac invocations — and recompiling sixteen runtime files
+# each time is most of the cost. The key is a hash of the sources and
+# not a timestamp, so a runtime that moves invalidates the cache and one
+# that only got touched does not.
+# `org/zerodds/wire` and nothing else: that is the wire runtime, and it
+# is the same set `runtime/java/run-tests.sh` compiles. The tree also
+# carries `org/omg/dds/rpc` under this path (since d047dc5f497), which
+# is the OMG RPC PSM and not runtime: six of its files import
+# `org.omg.dds.core`, a package that lives in `crates/java-omgdds/java`
+# behind its own `pom.xml`. A `find` over the whole directory pulled
+# those in and every probe failed with "runtime/java did not compile" —
+# measured, four wire-probe test targets red. Where the PSM should live
+# is a separate question, recorded in docs/OPEN-ITEMS.md; what this
+# probe needs is the runtime.
+runtime_sources=$(find "$runtime/src/main/java/org/zerodds/wire" -name '*.java' | sort)
+# shellcheck disable=SC2086
+key=$(cat $runtime_sources | shasum | cut -c1-16)
+cache="${ZERODDS_JAVA_CACHE:-${TMPDIR:-/tmp}/zd-java-runtime}/$key"
+runtime_outputs=()
+for runtime_source in $runtime_sources; do
+    runtime_outputs+=("org/zerodds/wire/$(basename "${runtime_source%.java}").class")
+done
+if ! runtime_cache_ready "$cache" -s "${runtime_outputs[@]}"; then
+    mkdir -p "$(dirname "$cache")"
+    stage=$(mktemp -d "$cache.tmp.XXXXXX")
+    # shellcheck disable=SC2086
+    if ! "$JAVAC" $JAVACFLAGS -d "${stage:?}" $runtime_sources \
+            > "$work/runtime.log" 2>&1; then
+        echo "wireprobe-zerodds-java: runtime/java did not compile" >&2
+        grep -m10 -E "error|warning" "$work/runtime.log" >&2 || true
+        rm -rf "${stage:?}"
+        exit 6
+    fi
+    if ! runtime_cache_publish "$stage" "$cache" -s "${runtime_outputs[@]}"; then
+        rm -rf "${stage:?}"
+        exit 6
+    fi
+    rm -rf "${stage:?}"
+fi
+
+cp -R "$cache" "$work/classes"
+sources=("$work/ZdTypes.java" "$work/Probe.java")
+if [ -n "$input" ]; then
+    # The canonical-JSON helpers, and the same file the JacORB probe
+    # prints through: the JSON dialect is a shared contract and not a
+    # wire rule, and two backends holding two copies of it is how they
+    # come to disagree about what a sample is.
+    cp "$here/Zdj.java" "$work/"
+    sources+=("$work/Zdj.java")
+fi
+# shellcheck disable=SC2086
+if ! "$JAVAC" $JAVACFLAGS -cp "$work/classes" -d "$work/classes" \
+        "${sources[@]}" \
+        > "$work/javac.log" 2>&1; then
+    echo "wireprobe-zerodds-java: the probe did not compile" >&2
+    grep -m10 -E "error|warning" "$work/javac.log" >&2 || true
+    exit 7
+fi
+
+if [ -n "$input" ]; then
+    # 3 is the probe's "the sample is discarded" and is passed through
+    # rather than folded into 6. DDS-XTypes 1.3 7.2.2.7: the receiver
+    # drops the object and carries on, which is a different thing from a
+    # reader that could not read, and a harness has to be able to tell
+    # them apart. The Rust and C probes use the same code.
+    code=0
+    "$JAVA" "${JVM_FLAGS[@]}" -cp "$work/classes" Probe < "$input" > "$work/values.json" \
+        2> "$work/run.log" || code=$?
+    if [ "$code" != 0 ]; then
+        head -5 "$work/run.log" >&2 || true
+        [ "$code" = 3 ] && exit 3
+        exit 6
+    fi
+    if [ -n "$values_out" ]; then
+        cp "$work/values.json" "$values_out"
+    else
+        cat "$work/values.json"
+    fi
+    exit 0
+fi
+
+# 1 is the probe's "this sample is outside the type" and is passed
+# through rather than folded into 6. `primitive-char-above-latin1` is a
+# `char` holding U+0161 and 7.2.2.2.1.2.2 says a CHAR_8_TYPE "shall be
+# representable using 8 bits"; the Rust probe answers 1 for the same
+# sample, and a column that answered `harness-gap` for it would be
+# claiming a tool of ours is missing. Anything else the program does is
+# 6, because then it really is this harness that could not carry the
+# case.
+code=0
+"$JAVA" "${JVM_FLAGS[@]}" -cp "$work/classes" Probe > "$work/bytes.bin" 2> "$work/run.log" || code=$?
+if [ "$code" != 0 ]; then
+    head -5 "$work/run.log" >&2 || true
+    [ "$code" = 1 ] && exit 1
+    echo "wireprobe-zerodds-java: the probe did not run" >&2
+    exit 6
+fi
+
+if [ -n "$out" ]; then
+    cp "$work/bytes.bin" "$out"
+else
+    od -An -tx1 -v "$work/bytes.bin" | tr -d ' \n'; echo
+fi

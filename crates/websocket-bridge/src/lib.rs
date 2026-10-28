@@ -3,8 +3,8 @@
 
 //! Crate `zerodds-websocket-bridge`. Safety classification: **STANDARD**.
 //!
-//! Complete WebSocket (RFC 6455) stack set — pure-Rust `no_std +
-//! alloc`, `forbid(unsafe_code)`. Implements the full WebSocket
+//! Complete WebSocket (RFC 6455) stack set — pure-Rust,
+//! `forbid(unsafe_code)`. Implements the full WebSocket
 //! spec including the base framing protocol (§5.2 + §5.3), opening
 //! handshake (§4) with `Sec-WebSocket-Accept` SHA1 computation,
 //! extension + subprotocol negotiation (§9), close-frame status
@@ -13,7 +13,7 @@
 //! `wss://`, RFC 6455 §3), a streaming UTF-8 validator (§8.1) for
 //! text frames, as well as a WebSocket↔DDS topic bridge.
 //!
-//! Spec-Referenzen:
+//! Spec references:
 //!
 //! - **RFC 6455** — The WebSocket Protocol.
 //! - **RFC 7692** — Compression Extensions for WebSocket
@@ -24,7 +24,7 @@
 //! Layer 5 — bridges. Substrate for browser↔DDS endpoint mapping
 //! (web UIs, realtime dashboards, DDS web gateway).
 //!
-//! ## Public API (Stand 1.0.0-rc.1)
+//! ## Public API
 //!
 //! - [`Frame`] / [`Opcode`] — frame model (§5.2).
 //! - [`encode`] / [`decode`] / [`CodecError`] — wire codec including

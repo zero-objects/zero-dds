@@ -1,22 +1,20 @@
 #!/usr/bin/env bash
-# L4 Isolation: Sender und Receiver auf verschiedenen Hosts im LAN.
-# ZeroDDS-Bench-Setup: llvm (bare-metal) und pivot (LXC), beide
-# in 192.168.178.0/24 (siehe internal/plans/milestone-v1.2.md §Bench-
-# Hardware).
+# L4 Isolation: sender and receiver on different hosts in the LAN.
+# Specify both hosts via ZERODDS_RX_HOST / ZERODDS_TX_HOST (user@host).
 #
 # Usage:
 #   ./l4/cross_host.sh <udp|shm-not-applicable|uds-not-applicable>
 #
-# SHM + UDS sind by design intra-host only — fuer L4 gibt es nur
-# UDP (und spaeter TCP). Das Script schickt die Smoke-Binary via
-# scp an den Remote-Host, startet den Receiver dort, und lokal
-# den Sender.
+# SHM + UDS are intra-host only by design — for L4 there is only
+# UDP (and later TCP). The script sends the smoke binary via
+# scp to the remote host, starts the receiver there, and the sender
+# locally.
 set -euo pipefail
 
 transport="${1:-udp}"
 count="${COUNT:-50}"
-rx_host="${ZERODDS_RX_HOST:-llvm@llvm}"
-tx_host="${ZERODDS_TX_HOST:-root@pivot}"
+rx_host="${ZERODDS_RX_HOST:?ZERODDS_RX_HOST=user@host of the receiver}"
+tx_host="${ZERODDS_TX_HOST:?ZERODDS_TX_HOST=user@host of the sender}"
 rx_port="${ZERODDS_RX_PORT:-17400}"
 tx_port="${ZERODDS_TX_PORT:-17401}"
 
@@ -42,7 +40,7 @@ echo "building smoke binary locally..."
 echo "shipping binary to rx host $rx_host..."
 # If rx_host has its own build of the binary, rebuild there instead —
 # cross-compile between macOS dev and Linux peer is painful. For the
-# ZeroDDS bench-setup (llvm is Debian, we cross-build), we ship the
+# usual setup (a macOS sender, a Linux receiver), we ship the
 # sources via tar and rebuild on the remote.
 #
 # Minimal impl: rebuild remotely. rsync-based delta-ship is a

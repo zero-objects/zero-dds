@@ -15,22 +15,22 @@ import zerodds_wire as zw
 
 
 def encode(endian):
-    w = zw.Writer(endian)
+    w = zw.Writer(endian, zw.XCDR2)
     bs = w.dheader_begin()                 # @mutable struct DHEADER
-    e = w.emheader_begin(10, False); w.put_u32(0xDEADBEEF); w.emheader_end(e)
-    e = w.emheader_begin(20, False); w.put_string(u"mut"); w.emheader_end(e)
-    e = w.emheader_begin(30, False); w.put_u16(0x0777); w.emheader_end(e)
+    e = w.emheader_begin(10, False, zw.LC4); w.put_u32(0xDEADBEEF); w.emheader_end(e, zw.LC4)
+    e = w.emheader_begin(20, False, zw.LC4); w.put_string(u"mut"); w.emheader_end(e, zw.LC4)
+    e = w.emheader_begin(30, False, zw.LC4); w.put_u16(0x0777); w.emheader_end(e, zw.LC4)
     w.dheader_end(bs)
     return w.bytes()
 
 
 def decode(data, endian):
-    r = zw.Reader(data, endian)
+    r = zw.Reader(data, endian, zw.XCDR2)
     dh = r.dheader_read()
     start = r.pos
     out = {}
     while r.pos - start < dh:
-        member_id, _mu, nextint = r.emheader_read()
+        member_id, _mu, _lc, nextint = r.emheader_read()
         if member_id == 10:
             out["x"] = r.get_u32()
         elif member_id == 20:

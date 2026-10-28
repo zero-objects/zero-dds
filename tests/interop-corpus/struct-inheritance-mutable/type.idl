@@ -1,0 +1,10 @@
+// mutable structure with a base
+@mutable struct Base {
+    long base_a;
+    short base_b;
+};
+
+@mutable struct Sample : Base {
+    double derived_a;
+    octet derived_b;
+};

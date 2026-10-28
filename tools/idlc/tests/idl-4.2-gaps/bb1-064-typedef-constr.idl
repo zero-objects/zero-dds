@@ -1,0 +1,3 @@
+// IDL 4.2 Annex A production 64, §7.4.1.4.4.7 — a constructed type defined
+// inside a `typedef`.
+typedef struct Inline { long m; } Ali;

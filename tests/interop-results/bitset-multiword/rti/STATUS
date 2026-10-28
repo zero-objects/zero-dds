@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of bitset-multiword that rti produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	wireprobe-fill: Sample.value: a bitset, for which XTypes 1.3 §7.5.1 defines no C binding
+plain-cdr1	be	refused	wireprobe-fill: Sample.value: a bitset, for which XTypes 1.3 §7.5.1 defines no C binding
+pl-cdr1	le	refused	wireprobe-fill: Sample.value: a bitset, for which XTypes 1.3 §7.5.1 defines no C binding
+pl-cdr1	be	refused	wireprobe-fill: Sample.value: a bitset, for which XTypes 1.3 §7.5.1 defines no C binding
+plain-cdr2	le	refused	wireprobe-fill: Sample.value: a bitset, for which XTypes 1.3 §7.5.1 defines no C binding
+plain-cdr2	be	refused	wireprobe-fill: Sample.value: a bitset, for which XTypes 1.3 §7.5.1 defines no C binding
+delimited-cdr	le	refused	wireprobe-fill: Sample.value: a bitset, for which XTypes 1.3 §7.5.1 defines no C binding
+delimited-cdr	be	refused	wireprobe-fill: Sample.value: a bitset, for which XTypes 1.3 §7.5.1 defines no C binding
+pl-cdr2	le	refused	wireprobe-fill: Sample.value: a bitset, for which XTypes 1.3 §7.5.1 defines no C binding
+pl-cdr2	be	refused	wireprobe-fill: Sample.value: a bitset, for which XTypes 1.3 §7.5.1 defines no C binding

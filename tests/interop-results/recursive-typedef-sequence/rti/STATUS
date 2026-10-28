@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of recursive-typedef-sequence that rti produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	gen.h:46:13: error: unknown type name 'm_Node'
+plain-cdr1	be	refused	gen.h:46:13: error: unknown type name 'm_Node'
+pl-cdr1	le	refused	gen.h:46:13: error: unknown type name 'm_Node'
+pl-cdr1	be	refused	gen.h:46:13: error: unknown type name 'm_Node'
+plain-cdr2	le	refused	gen.h:46:13: error: unknown type name 'm_Node'
+plain-cdr2	be	refused	gen.h:46:13: error: unknown type name 'm_Node'
+delimited-cdr	le	refused	gen.h:46:13: error: unknown type name 'm_Node'
+delimited-cdr	be	refused	gen.h:46:13: error: unknown type name 'm_Node'
+pl-cdr2	le	refused	gen.h:46:13: error: unknown type name 'm_Node'
+pl-cdr2	be	refused	gen.h:46:13: error: unknown type name 'm_Node'

@@ -8,7 +8,7 @@
 //! fields the body must be decoded against a known **type shape** (the struct's
 //! member layout) into a dynamic value, processed, and re-encoded.
 //!
-//! [`build_processor`] returns:
+//! `build_processor` returns:
 //! * `Ok(None)` — no filter and no transform → byte pass-through.
 //! * `Ok(Some(_))` — a processor decoding/filtering/re-encoding via the shape.
 //! * `Err(_)` — a filter/transform was requested but the type shape could not

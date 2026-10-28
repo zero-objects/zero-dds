@@ -63,6 +63,30 @@ impl TimePoint {
     }
 }
 
+impl TimePoint {
+    /// Appends the `Time_t` to `out`, which starts the payload. `Time_t`
+    /// carries no `@extensibility` (Annex A): `APPENDABLE` with a DHEADER
+    /// unless [`crate::encoding::UnannotatedTypes::Final`] is set.
+    pub fn encode_into(self, out: &mut Vec<u8>, e: Endianness) {
+        let members = crate::encoding::begin_unannotated(out);
+        let mut buf = [0u8; TIME_T_WIRE_SIZE];
+        // A buffer of eight octets always holds a Time_t.
+        let _ = self.encode(&mut buf, e);
+        out.extend_from_slice(&buf);
+        crate::encoding::end_unannotated(out, members, e);
+    }
+
+    /// Decodes the `Time_t` that starts at `pos` of `bytes`, which start the
+    /// payload; returns it and the position after it (either form, the one
+    /// of the setting first).
+    ///
+    /// # Errors
+    /// `UnexpectedEof`.
+    pub fn decode_at(bytes: &[u8], pos: usize, e: Endianness) -> Result<(Self, usize), XrceError> {
+        crate::encoding::decode_unannotated(bytes, pos, e, TIME_T_WIRE_SIZE, |m| Self::decode(m, e))
+    }
+}
+
 /// `TIMESTAMP_Payload`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct TimestampPayload {
@@ -76,8 +100,8 @@ impl TimestampPayload {
     /// # Errors
     /// None expected.
     pub fn encode_body(self, e: Endianness) -> Result<Vec<u8>, XrceError> {
-        let mut out = alloc::vec![0u8; TIME_T_WIRE_SIZE];
-        self.transmit_timestamp.encode(&mut out, e)?;
+        let mut out = Vec::new();
+        self.transmit_timestamp.encode_into(&mut out, e);
         Ok(out)
     }
 
@@ -87,7 +111,7 @@ impl TimestampPayload {
     /// `UnexpectedEof`.
     pub fn decode_body(bytes: &[u8], e: Endianness) -> Result<Self, XrceError> {
         Ok(Self {
-            transmit_timestamp: TimePoint::decode(bytes, e)?,
+            transmit_timestamp: TimePoint::decode_at(bytes, 0, e)?.0,
         })
     }
 
@@ -143,6 +167,37 @@ mod tests {
         assert_eq!(buf[0..4], [0xFF, 0xFF, 0xFF, 0xFF]);
         let t2 = TimePoint::decode(&buf, Endianness::Big).unwrap();
         assert_eq!(t2, t);
+    }
+
+    /// `Time_t` carries no @extensibility (Annex A): APPENDABLE, a DHEADER of
+    /// 8 in front of the eight octets; the reference implementation's form
+    /// has none.
+    #[test]
+    fn a_timestamp_body_has_the_dheader_of_an_appendable_time_t() {
+        let p = TimestampPayload {
+            transmit_timestamp: TimePoint {
+                seconds: 1,
+                nanoseconds: 2,
+            },
+        };
+        let body = p.encode_body(Endianness::Little).unwrap();
+        assert_eq!(body, [8, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0]);
+        assert_eq!(
+            TimestampPayload::decode_body(&body, Endianness::Little).unwrap(),
+            p
+        );
+        crate::encoding::with_unannotated_types(crate::encoding::UnannotatedTypes::Final, || {
+            let body = p.encode_body(Endianness::Little).unwrap();
+            assert_eq!(body, [1, 0, 0, 0, 2, 0, 0, 0]);
+            assert_eq!(
+                TimestampPayload::decode_body(&body, Endianness::Little).unwrap(),
+                p
+            );
+        });
+        assert_eq!(
+            TimestampPayload::decode_body(&[1, 0, 0, 0, 2, 0, 0, 0], Endianness::Little).unwrap(),
+            p
+        );
     }
 
     #[test]

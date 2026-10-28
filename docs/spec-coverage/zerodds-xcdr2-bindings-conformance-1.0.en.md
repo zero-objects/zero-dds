@@ -1,417 +1,546 @@
-# `zerodds-xcdr2-bindings-conformance` 1.0 -- Spec Coverage
+# `zerodds-xcdr2-bindings-conformance` 1.0 — Spec Coverage
 
-**Source:** `docs/specs/zerodds-xcdr2-bindings-conformance-1.0.md` (462 lines) -- the ZeroDDS cross-language master spec, the single source of truth for the V-1..V-12 wire vectors and the L1-L4 conformance levels.
+**Source:** `internal/standards/cache/omg/dds-xtypes-1.3.pdf` (§7.2, §7.4) —
+DDS-XTypes 1.3, Type System Model and Data Representation.
 
-Implementation:
+The common report on the mechanism all twenty-one language columns share.
+What a single column decides for itself is in its own document —
+`zerodds-xcdr2-c-1.0.md`, `zerodds-xcdr2-java-1.0.md` and so on; the
+evidence stays separated per language, because each runtime reads the
+clause on its own.
 
-- `crates/cdr/` — XCDR2 cross-language wire vectors (V-1..V-12) + L1-L4 conformance.
+The mechanism is four pieces:
 
-## §1 Conformance levels
+- `crates/lang-rules/` — two walks (`src/emit/encode.rs`,
+  `src/emit/decode.rs`), generic over `emit::CodecTarget`; per language a
+  rule catalogue, a materialiser, a codec backend and a Table 9 rule.
+- `crates/lang-cst/` — one concrete syntax tree per language.
+- `crates/lang-render/` — the text form per language.
+- `tools/idlc/` — the driver a user invokes.
 
-### §1 L1 -- wire byte-exact
+What is **not** shared is the wire runtime: the twenty directories under
+`runtime/` each read DDS-XTypes 1.3 §7.4 from the clause text and none
+calls another. Where two columns disagree on an octet, one of the two has
+misread the specification.
 
-**Spec:** §1, table Level/Requirement -- "The encoder/decoder produces/consumes XCDR2 §7.4 byte-exact. Mandatory check against the §6 wire test vectors."
+## §7.4.3 The two walks
 
-**Repo:** an own L1 path per language. `crates/cdr/src/struct_enc.rs` (`encode_appendable`, `encode_mutable_member`), `crates/cdr/src/key_hash.rs` (`PlainCdr2BeKeyHolder`), `crates/idl-cpp/src/emitter.rs` (`emit_topic_type_support_for`), `crates/zerodds-c-api/src/xcdr2.rs`, `crates/idl-csharp/src/typesupport.rs`, `crates/idl-java/src/typesupport.rs`, `crates/idl-ts/src/lib.rs` (`emit_struct_typesupport`), `crates/idl-rust/src/struct_emit.rs`.
+### §7.4.3 One encode walk for every column
 
-**Tests:** `crates/cdr/tests/xcdr2_wire_vectors.rs` (16 tests), `crates/idl-cpp/tests/xcdr2_wire_vectors.rs` (15 tests), `crates/zerodds-c-api/tests/xcdr2_wire_vectors.rs` (13 tests), `crates/idl-csharp/tests/snapshot_xcdr2_vectors.rs` (11 tests), `crates/cs/csharp/ZeroDDS.Cdr.Tests/Xcdr2WireVectorsTests.cs` (13 tests in the V series), `crates/java-omgdds/java/src/test/java/org/zerodds/cdr/Xcdr2WireVectorsTest.java` (16 tests), `crates/ts-node/test/xcdr2-wire-vectors.test.ts` (13 V-tests + 2 md5).
+**Spec:** §7.4.3, XCDR Version 2 — which member is written, in what
+order, under which header and with which length code, is a property of
+the encoding and not of the target language.
 
-**Status:** done
+**Repo:** `crates/lang-rules/src/emit/encode.rs` (`codec_from`,
+`CodecOptions`).
 
-### §1 L2 -- codegen per language
-
-**Spec:** §1 -- "The language codegen (idl-cpp/csharp/java/ts/rust) emits a TypeSupport specialization with all §3 methods per IDL `struct`."
-
-**Repo:** `crates/idl-cpp/src/emitter.rs` (function `emit_topic_type_support_specs`), `crates/idl-cpp/src/c_mode.rs` (C-FFI codegen via `--c-mode`), `crates/idl-csharp/src/typesupport.rs`, `crates/idl-java/src/typesupport.rs`, `crates/idl-ts/src/lib.rs` (`emit_struct_typesupport`), `crates/idl-rust/src/struct_emit.rs` (`emit_dds_type_impl`).
-
-**Tests:** `crates/idl-cpp/tests/snapshot_codegen.rs` (10 tests), `crates/idl-csharp/tests/snapshot_codegen.rs` (5 tests), `crates/idl-java/tests/snapshot_codegen.rs` (11 tests), `crates/idl-ts/tests/` (snapshot via lib unit tests, 0 dedicated -- codegen tests integrated into the snapshot-crate walks), `crates/idl-rust/tests/snapshots` (codegen lib-internal).
-
-**Status:** done
-
-### §1 L3 -- cross-language round-trip
-
-**Spec:** §1 -- "Bytes from language A are round-tripped byte-identical by language B for all §6 test types." §7 requires `crates/conformance/tests/xcdr2_cross_language/` with per-language runners.
-
-**Repo:** `crates/conformance/tests/cross_language_xcdr2.rs` holds the multi-language driver. Language bindings dispatch via subprocess calls of the respective test suites (`cargo`, `dotnet`, `mvn`, `npx tsx`) against the V-1..V-12 hex fixtures from §6.
-
-**Tests:** `crates/conformance/tests/cross_language_xcdr2.rs::l3_0_cross_language_equivalence_documented`, `l3_1_rust_reference_encoder`, `l3_2_cpp_binding`, `l3_3_c_ffi_binding`, `l3_4_csharp_binding`, `l3_5_java_binding`, `l3_6_typescript_binding`.
-
-**Status:** done
-
-### §1 L4 -- cross-vendor Cyclone DDS
-
-**Spec:** §1 -- "Bytes from ZeroDDS are accepted by Cyclone DDS and vice versa. Mandatory for L3-certified bindings." §8 references `tests/interop/xcdr2_cross_vendor.sh` and `crates/discovery/tests/fixtures/cyclone-xcdr2/*.bin`.
-
-**Repo:** the script `tests/interop/xcdr2_cross_vendor.sh` + the fixture tree `crates/discovery/tests/fixtures/cyclone-xcdr2/*.bin`. **All 12 vectors** were live-captured against Cyclone DDS 0.11 (forced XCDR2 data representation, tcpdump capture + RTPS payload extraction) on the Linux bench host and byte-compared. The live comparison surfaced two conformance gaps, both fixed: (1) 64-bit primitives aligned to 8 instead of XCDR2's 4 (§7.4.1.1.1; V-3/V-8), (2) sequences/arrays of non-primitive elements lacked the DHEADER (§7.4.3.5; V-6 `sequence<string>`). V-2..V-9 + V-11b byte-exact against Cyclone; V-10/V-11a conformant LC divergence (allowed by spec §6). Fix + byte-verification across all 6 bindings.
-
-**Tests:** `crates/cdr/tests/xcdr2_cross_vendor_fixtures.rs` (15 tests, of which `v2_cyclone_recorded_matches_spec_derived` against recorded Cyclone bytes; V-3..V-12 spec-derived).
-
-**Status:** done -- all 12 vectors compared live against Cyclone DDS 0.11; deterministic V-1..V-9/V-11b byte-exact, mutable V-10/V-11a conformant LC divergence. Capture procedure reproducible on the Linux bench host.
-
-## §2 Common TypeSupport schema
-
-### §2 type_name()
-
-**Spec:** §2, table -- "Returns the DDS type name as a string (convention: `Module::Sub::Struct`, ASCII, max 256 bytes)."
-
-**Repo:** Rust `crates/dcps/src/dds_type.rs::TYPE_NAME`. C++ `crates/idl-cpp/src/emitter.rs::emit_topic_type_support_for` writes `static const char* type_name()`. C-FFI `crates/zerodds-c-api/src/xcdr2.rs` (`zerodds_typesupport_t.type_name`). C# `crates/idl-csharp/src/typesupport.rs::TypeName`. Java `crates/idl-java/src/typesupport.rs::getTypeName`. TS `crates/idl-ts/src/lib.rs` (`typeName`).
-
-**Tests:** type-name strings against the V-7 wire vector (`Outer::Inner::S`) in the `xcdr2_wire_vectors` test files per language.
+**Tests:** `crates/lang-rules/tests/codec.rs::a_final_struct_of_primitives_encodes_as_a_run_of_writes`,
+`crates/lang-rules/tests/one_walk_two_targets.rs::both_backends_write_the_same_members_in_the_same_order`
 
 **Status:** done
 
-### §2 encode(v) -> bytes
+### §7.4.3 One decode walk, member for member the inverse
 
-**Spec:** §2 -- "XCDR2 §7.4 big-endian (default) or little-endian (option). Without an RTPS header, payload only."
+**Spec:** §7.4.3 — the reader takes the same members in the same order
+under the same framing.
 
-**Repo:** Rust `DdsType::encode` / `encode_be` (`crates/dcps/src/dds_type.rs`). C++ `topic_type_support<T>::encode/encode_be` (`crates/idl-cpp/src/emitter.rs`). C `zerodds_xcdr2_encode` (`crates/zerodds-c-api/src/xcdr2.rs`). C# `Xcdr2Writer` + `Encode(sample, EndianMode)` (`crates/cs/csharp/ZeroDDS.Cdr/Xcdr2Writer.cs`). Java `Xcdr2Writer` + `encode(s, EndianMode)` (`crates/java-omgdds/java/src/main/java/org/zerodds/cdr/Xcdr2Writer.java`). TS `Xcdr2Writer` (`crates/ts-node/src/cdr/writer.ts`).
+**Repo:** `crates/lang-rules/src/emit/decode.rs`.
 
-**Tests:** V-1..V-12 in the language-specific wire-vector test files.
+**Tests:** `crates/lang-rules/tests/codec.rs::the_decoder_mirrors_the_encoder_member_for_member`,
+`crates/lang-rules/tests/one_walk_two_targets.rs::the_walk_asks_for_one_unary_operator_and_no_others`
 
-**Status:** done
+**Status:** done — the walk asks for one unary operator (`!`) and for no other; a bitmask
+reader keeps the declared bits with a plain `&`, without `~`.
 
-### §2 decode(bytes) -> v
+### §7.4.3 The seam: `CodecTarget`
 
-**Spec:** §2 -- "Inverse of encode. Returns a structured sample object."
+**Spec:** §7.4.3 — the encoding decision is language-independent; what
+stays language-dependent is its spelling.
 
-**Repo:** Rust `DdsType::decode`. C++ `topic_type_support<T>::decode`. C `zerodds_xcdr2_decode`. C# `Xcdr2Reader` (`crates/cs/csharp/ZeroDDS.Cdr/Xcdr2Reader.cs`). Java `Xcdr2Reader` (`crates/java-omgdds/java/src/main/java/org/zerodds/cdr/Xcdr2Reader.java`). TS `Xcdr2Reader` (`crates/ts-node/src/cdr/reader.ts`).
+**Repo:** `crates/lang-rules/src/emit/mod.rs` (`CodecTarget`, `Scalar`,
+`Handle`, `runtime_static`).
 
-**Tests:** round-trip asserts in the V-tests per language.
-
-**Status:** done
-
-### §2 key_hash(v) -> [u8; 16]
-
-**Spec:** §2 -- "MD5 over the `PlainCdr2BeKeyHolder` of the `@key` fields; all zero if there is no key (XTypes §7.6.8). MD5 is NOT unconditional -- conditional on holder size, see §3 / §7.6.8.4."
-
-**Repo:** Rust `PlainCdr2BeKeyHolder::finalize_md5` (`crates/cdr/src/key_hash.rs`). C++ `xcdr2::md5` (`crates/cpp/include/dds/topic/xcdr2_md5.hpp`). C# `Md5` (`crates/cs/csharp/ZeroDDS.Cdr/Md5.cs`). Java `Md5` (`crates/java-omgdds/java/src/main/java/org/zerodds/cdr/Md5.java`). TS `md5` (`crates/ts-node/src/cdr/md5.ts`). C-FFI via the Rust layer.
-
-**Tests:** V-8 keyed struct in each language test, MD5 self-checks (`Md5Tests.cs`, ts-md5-tests).
+**Tests:** `crates/lang-rules/tests/one_walk_two_targets.rs::the_difference_between_the_two_is_spelling`,
+`crates/lang-rules/tests/one_walk_two_targets.rs::a_sequence_is_one_loop_and_two_ways_of_asking_its_length`
 
 **Status:** done
 
-### §2 is_keyed()
+## §7.2.3 Extensibility and framing
 
-**Spec:** §2 -- "true if at least one member carries `@key`."
+### §7.2.3 FINAL without a DHEADER, APPENDABLE with one
 
-**Repo:** Rust `IS_KEYED` const. C++ `static constexpr bool is_keyed()`. C `zerodds_typesupport_t.is_keyed`. C# `IsKeyed`. Java `isKeyed()`. TS `isKeyed`.
+**Spec:** §7.2.3, Tab.12 — FINAL/APPENDABLE/MUTABLE; §7.4.3 gives
+APPENDABLE the leading `uint32` body length (DHEADER) and FINAL none.
 
-**Tests:** V-8 asserts across all languages.
+**Repo:** `crates/lang-rules/src/emit/encode.rs` (framing branches taken
+from the layout plan in `crates/ast-layout/src/key.rs`).
 
-**Status:** done
-
-### §2 extensibility_kind()
-
-**Spec:** §2 -- "Final / Appendable / Mutable (XTypes §7.2.2.4.4)."
-
-**Repo:** Rust `EXTENSIBILITY` (`crates/dcps/src/dds_type.rs`). C++ `extensibility()`. C `zerodds_typesupport_t.extensibility`. C# `Extensibility`. Java `getExtensibility()`. TS `extensibility`.
-
-**Tests:** V-9 (Appendable), V-10 (Mutable), V-1..V-8 (Final) in each language test.
+**Tests:** `crates/lang-rules/tests/codec.rs::an_appendable_struct_carries_the_dheader_the_plan_asks_for`,
+`crates/lang-rules/tests/codec.rs::the_extensibility_the_source_wrote_decides_the_framing`
 
 **Status:** done
 
-## §3 Wire-format anchors
+### §7.4.3.4.2 MUTABLE: one EMHEADER per member, length code from the plan
 
-### §3.1 XCDR2 §7.4 encoding algorithm
+**Spec:** §7.4.3.4.2 — the EMHEADER carries the member ID and a length
+code; LC=4 takes a NEXTINT, LC=6/7 count in 4- and 8-byte units.
 
-**Spec:** §3 -- "All language encoders produce XCDR2 per OMG XTypes 1.3 §7.4 (formal/2025-04-04)."
+**Repo:** `crates/lang-rules/src/emit/encode.rs` (EMHEADER branch),
+`crates/lang-rules/src/emit/mod.rs` (`CodecTarget` supplies the
+spelling).
 
-**Repo:** `crates/cdr/src/encode.rs`, `crates/cdr/src/struct_enc.rs` -- the central reference implementation. Language bindings dispatch onto identical algorithms.
-
-**Tests:** V-1..V-12, plus `crates/cdr/tests/proptest_roundtrip.rs` (15 tests), `crates/cdr/tests/compliance_xcdr2.rs`.
-
-**Status:** done
-
-### §3.2 §7.4.1.5 padding origin-relative
-
-**Spec:** §3 -- "§7.4.1.5 padding rules (alignment relative to the buffer start)."
-
-**Repo:** `crates/cdr/src/buffer.rs` (BufferWriter::pad_to), language helpers (`Xcdr2Writer.align(...)`).
-
-**Tests:** V-3 mixed primitives (48 bytes with Pad@6 and Pad@36), wire-vector test per language.
+**Tests:** `crates/lang-rules/tests/codec.rs::a_mutable_struct_writes_an_emheader_per_member`,
+`crates/lang-rules/tests/codec.rs::the_length_code_policy_is_visible_in_the_output`,
+`crates/lang-rules/tests/one_walk_two_targets.rs::a_mutable_aggregate_opens_and_closes_a_header_in_both`
 
 **Status:** done
 
-### §3.3 §7.4.2 PL_CDR2 EMHEADER
+### §7.4.3 Every header that opens is also closed
 
-**Spec:** §3 -- "§7.4.2 PL_CDR2 for mutable types (EMHEADER)."
+**Spec:** §7.4.3 — a DHEADER or EMHEADER length precedes its body and is
+only known after it; it has to be patched back in.
 
-**Repo:** `crates/cdr/src/struct_enc.rs::encode_mutable_member_lc`, language writers `WriteEmHeader/writeEmHeader`.
+**Repo:** `crates/lang-rules/src/emit/encode.rs` (one patch site per
+opened header), `crates/lang-rules/src/emit/decode.rs`.
 
-**Tests:** V-10 mutable struct across all languages.
-
-**Status:** done
-
-### §3.4 §7.4.4.4 DHEADER for Appendable
-
-**Spec:** §3 -- "§7.4.4.4 DHEADER for appendable types."
-
-**Repo:** `crates/cdr/src/struct_enc.rs::encode_appendable`, language helpers `BeginAppendable/beginAppendable`.
-
-**Tests:** V-9 appendable struct.
+**Tests:** `crates/lang-rules/tests/codec.rs::every_parameter_header_the_decoder_opens_it_also_closes`,
+`crates/lang-rules/tests/runtime_agreement.rs::the_generator_emits_a_patch_for_every_framing_header_it_opens`
 
 **Status:** done
 
-### §3.5 §7.6.8 key hash with PlainCdr2BeKeyHolder
+### §7.4.2 XCDR1: a parameter list closed by a sentinel
 
-**Spec:** §3 -- "§7.6.8.4 mandatory: if the holder is ≤ 16 octets, Key_Hash is the holder content with zero-padding to 16 octets. Otherwise Key_Hash is the MD5 of the holder content. MD5 is NOT unconditional -- conditional on holder size."
+**Spec:** §7.4.2 — PL_CDR1 frames every member as a parameter and closes
+the list with `PID_SENTINEL`.
 
-**Repo:** `crates/cdr/src/key_hash.rs::PlainCdr2BeKeyHolder::finalize_md5` contains the holder-size check. Language bindings call identical logic (C++ `xcdr2_md5.hpp`, C# `Md5`, Java `Md5`, TS `md5`).
+**Repo:** `crates/lang-rules/src/emit/encode.rs`,
+`crates/lang-rules/src/emit/decode.rs` (XCDR1 branches).
 
-**Tests:** V-8 keyed struct (holder=4 bytes → zero-padded, no MD5).
-
-**Status:** done
-
-### §3.6 §7.4.3 encoding header (4-byte)
-
-**Spec:** §3 -- "§7.4.3 encoding header (4-byte) for wire frames with encapsulation. Default encoding: PLAIN_CDR2 LE (0x00 0x01 0x00 0x00)."
-
-**Repo:** the RTPS layer prepends the header in `crates/rtps/`; the xcdr2 bindings emit payload-only. The encoder bytes follow without a header per the spec §6 convention.
-
-**Tests:** the V test vectors are explicitly "without the 4-byte encoding header"; RTPS-header composition is outside this spec.
+**Tests:** `crates/lang-rules/tests/c_end_to_end.rs::a_mutable_struct_under_xcdr1_ends_with_a_sentinel`,
+`crates/lang-rules/tests/c_end_to_end.rs::a_mutable_aggregate_under_xcdr1_stops_at_the_sentinel`
 
 **Status:** done
 
-## §4 Annotations mapping
+## §7.2.2.4 Constructs
 
-### §4 @final / @appendable / @mutable / @key / @id / @optional / @bit_bound / @external / @must_understand
+### §7.2.2.4.4.4.7 `@optional`
 
-**Spec:** §4, table Annotation/Wire-Effect/Conformance-Requirement -- 9 entries.
+**Spec:** §7.2.2.4.4.4.7 — a structure member may be optional; a union
+member never is. Absence is encoded, not left out.
 
-**Repo:** Rust `crates/idl-rust/src/annotations.rs` + `struct_emit.rs`. C++ `crates/idl-cpp/src/emitter.rs::struct_extensibility`. C# `crates/idl-csharp/src/annotations.rs`. Java `crates/idl-java/src/annotations.rs`. TS `crates/idl-ts/src/lib.rs::struct_extensibility`. The per-language spec §4 lists the full language table.
+**Repo:** `crates/lang-rules/src/emit/encode.rs`,
+`crates/lang-rules/src/emit/decode.rs`.
 
-**Tests:** V-9/V-10/V-11 coverage per language (Final/Appendable/Mutable/Optional). `@key` via V-8.
-
-**Status:** done
-
-## §5 Type-name convention
-
-### §5 Module::Sub::Struct with `::` separator
-
-**Spec:** §5 -- "The separator MUST be `::` (not `/`, `.`, `_`). Encoding ASCII or UTF-8 (XTypes §7.3.1.1.1 allows UTF-8)."
-
-**Repo:** per language codegen: `idl-rust` `compose_type_name`, `idl-cpp` `short_name`, `idl-csharp` module-path join, `idl-java` module-path join, `idl-ts` module-path join.
-
-**Tests:** V-7 `Outer::Inner::S` in each language test.
+**Tests:** `crates/lang-rules/tests/codec.rs::an_optional_member_writes_its_marker_from_the_option_and_not_from_a_literal`,
+`crates/lang-rules/tests/codec.rs::an_optional_member_under_xcdr1_marks_the_absence_with_a_declared_length_of_zero`,
+`crates/lang-rules/tests/codec.rs::an_optional_member_of_a_mutable_type_omits_the_whole_parameter`
 
 **Status:** done
 
-## §6 Wire test vectors
+### §7.2.2.4.3 Collections: a DHEADER only where the elements are not primitive
 
-### §6 V-1 empty final struct
+**Spec:** §7.2.2.4.3 and §7.4.3.5.3 — a collection whose elements are
+themselves framed carries a collection DHEADER; one of primitive elements
+carries none.
 
-**Spec:** §6, V-1 -- IDL `@final struct Empty {};`, wire 0 bytes, type name `"Empty"`.
+**Repo:** `crates/lang-rules/src/emit/encode.rs` (collection branch).
 
-**Repo:** codegen path per language; identical hex fixtures.
-
-**Tests:** Rust `crates/cdr/tests/xcdr2_wire_vectors.rs::v1_empty_final_struct`, C++ `crates/idl-cpp/tests/xcdr2_wire_vectors.rs` (V1-test), C `crates/zerodds-c-api/tests/xcdr2_wire_vectors.rs`, C# `Xcdr2WireVectorsTests.cs::V1_EmptyFinal_EncodesToZeroBytes`, Java `Xcdr2WireVectorsTest.java`, TS `xcdr2-wire-vectors.test.ts::V-1`.
-
-**Status:** done
-
-### §6 V-2 plain primitives final
-
-**Spec:** §6, V-2 -- `Point{x=1,y=-2}` → 8 bytes `01 00 00 00 FE FF FF FF`.
-
-**Repo:** ditto, primitive write_le i32.
-
-**Tests:** the V-2 test in all 7 language test files.
+**Tests:** `crates/lang-rules/tests/codec.rs::a_collection_of_aggregates_is_delimited_and_one_of_primitives_is_not`,
+`crates/lang-rules/tests/codec.rs::a_sequence_writes_its_elements_by_their_own_writer`,
+`crates/lang-rules/tests/codec.rs::a_collection_directly_inside_a_collection_is_emitted`
 
 **Status:** done
 
-### §6 V-3 mixed primitives final
+### §7.2.2.4.3 Bounds: a bounded sequence checks, an unbounded one does not
 
-**Spec:** §6, V-3 -- a 48-byte layout with Pad@6 + Pad@36, documented hex sequence.
+**Spec:** §7.2.2.4.3 — a sequence may carry a bound; a writer that
+exceeds it is not conformant.
 
-**Repo:** padding via origin-relative alignment in each writer.
+**Repo:** `crates/lang-rules/src/emit/encode.rs`,
+`crates/lang-rules/src/emit/decode.rs`.
 
-**Tests:** all language V3 tests.
-
-**Status:** done
-
-### §6 V-4 string final
-
-**Spec:** §6, V-4 -- `text="hello"` with length-with-NUL=6.
-
-**Repo:** `write_string` in each writer (uint32 length+1 + bytes + NUL).
-
-**Tests:** all language V4 tests.
+**Tests:** `crates/lang-rules/tests/codec.rs::a_bounded_sequence_checks_its_bound_and_an_unbounded_one_has_none`,
+`crates/lang-rules/tests/codec.rs::a_bounded_string_is_written_through_the_form_that_refuses_an_overrun`
 
 **Status:** done
 
-### §6 V-5 Sequence<int32> final
+### §7.2.2.4.3 Array: no length on the wire
 
-**Spec:** §6, V-5 -- `[1,2,3]` as count + i32[].
+**Spec:** §7.2.2.4.3 — an array's element count is in the type, not in
+the stream.
 
-**Repo:** `write_sequence` in each writer.
+**Repo:** `crates/lang-rules/src/emit/encode.rs` (array branch).
 
-**Tests:** all language V5 tests.
-
-**Status:** done
-
-### §6 V-6 Sequence<string> final
-
-**Spec:** §6, V-6 -- `["a","bc"]` with a 2-byte pad between the elements for Align(4).
-
-**Repo:** sequence writer + string writer with element pad.
-
-**Tests:** all language V6 tests.
+**Tests:** `crates/lang-rules/tests/codec.rs::an_array_writes_no_length_because_its_count_is_in_the_type`
 
 **Status:** done
 
-### §6 V-7 nested modules final
+### §7.2.2.4.1.1 Enumeration: its own codec, width from `bit_bound`
 
-**Spec:** §6, V-7 -- `Outer::Inner::S{x=1234}` → 4 bytes `D2 04 00 00`, type name `"Outer::Inner::S"`.
+**Spec:** §7.2.2.4.1.1 and §7.2.2.4.1 — an enumeration has a `bit_bound`
+from 1 to 32; its wire width follows from it.
 
-**Repo:** language module nesting in the codegen.
+**Repo:** `crates/lang-rules/src/emit/encode.rs` (`codec_name` per
+enumeration), `crates/lang-rules/src/emit/decode.rs`.
 
-**Tests:** all language V7 tests.
-
-**Status:** done
-
-### §6 V-8 keyed struct (final)
-
-**Spec:** §6, V-8 -- `Sensor{id=42,value=3.14}` with 16-byte wire + key hash zero-padded to 16 bytes (holder size=4 ≤ 16, so no MD5).
-
-**Repo:** `key_hash` in each language binding with a holder-size check.
-
-**Tests:** all language V8 tests incl. the key-hash assert.
+**Tests:** `crates/lang-rules/tests/codec.rs::an_enum_member_is_written_through_the_enumerations_own_codec`,
+`crates/lang-rules/tests/codec.rs::the_enumerations_codec_writes_the_width_its_bit_bound_calls_for`,
+`crates/lang-rules/tests/codec.rs::the_enumeration_codec_takes_the_integer_the_plan_gives_it`
 
 **Status:** done
 
-### §6 V-9 appendable struct
+### §7.2.2.4.2 Alias: written as what it names
 
-**Spec:** §6, V-9 -- DHEADER=8 + 2 i32 body.
+**Spec:** §7.2.2.4.2 — an alias has no kind of its own on the wire; it
+resolves to its `base_type`.
 
-**Repo:** `encode_appendable` / language equivalents.
+**Repo:** `crates/lang-rules/src/emit/encode.rs`.
 
-**Tests:** all language V9 tests.
-
-**Status:** done
-
-### §6 V-10 mutable struct
-
-**Spec:** §6, V-10 -- DHEADER=27, reference encoder LC=4 universally with a NEXTINT prefix; the decoder accepts LC 0-7.
-
-**Repo:** `encode_mutable_member_lc` with `LengthCode::Lc4` as the default.
-
-**Tests:** all language V10 tests.
+**Tests:** `crates/lang-rules/tests/codec.rs::a_typedef_is_written_as_what_it_aliases`
 
 **Status:** done
 
-### §6 V-11 optional member (mutable)
+### §7.2.2.4.4.3 Union: the discriminator first, then the selected member
 
-**Spec:** §6, V-11 -- Sample-A `Some(7)` LC=4 variant DHEADER=12; Sample-A LC=2 alternative DHEADER=8; Sample-B `None` DHEADER=0.
+**Spec:** §7.2.2.4.4.3 — the discriminator is always the first member and
+carries `must_understand=true`.
 
-**Repo:** encoder choice per language (reference LC=4); the decoder accepts both variants.
+**Repo:** `crates/lang-rules/src/emit/encode.rs`,
+`crates/lang-rules/src/emit/decode.rs`.
 
-**Tests:** all language V11 tests (Some + None).
-
-**Status:** done
-
-### §6 V-12 mutable sentinel end-marker
-
-**Spec:** §6, V-12 -- "XCDR2 bindings MUST NOT emit an explicit sentinel -- the DHEADER size bounds the reading."
-
-**Repo:** encoders write no PID_LIST_END; only the DHEADER bound.
-
-**Tests:** all language V12 tests check the absence of the sentinel.
+**Tests:** `crates/lang-rules/tests/codec.rs::a_mutable_decoder_dispatches_on_the_member_id_and_a_positional_one_does_not`,
+`crates/lang-rules/tests/codec.rs::a_union_case_label_that_does_not_evaluate_is_refused`
 
 **Status:** done
 
-## §7 Cross-language round-trip tests
+### §7.2.2.4.4 A nested aggregate encodes itself
 
-### §7 Test matrix `crates/conformance/tests/xcdr2_cross_language/`
+**Spec:** §7.2.2.4.4 — a member whose type is an aggregate is written
+through that aggregate's own encoding, with its own framing.
 
-**Spec:** §7 -- "tests/xcdr2_cross_language/ holds a declarative test matrix with `vectors.json` + `runner_*` scripts per language."
+**Repo:** `crates/lang-rules/src/emit/encode.rs`.
 
-**Repo:** `crates/conformance/tests/cross_language_xcdr2.rs` (single-file driver, calls the per-language test suite via subprocess; hex fixtures from §6). V-1..V-12 bytes as inline constants in the driver, no separate `vectors.json` file.
-
-**Tests:** `crates/conformance/tests/cross_language_xcdr2.rs` (7 tests).
-
-**Status:** done
-
-## §8 Cross-vendor (Cyclone DDS)
-
-### §8 Cyclone cross-vendor script + fixtures
-
-**Spec:** §8 -- "Mandatory from L4. Test script `tests/interop/xcdr2_cross_vendor.sh`. The Cyclone test vectors are in `crates/discovery/tests/fixtures/cyclone-xcdr2/*.bin`."
-
-**Repo:** `tests/interop/xcdr2_cross_vendor.sh` as the orchestrator script. All 12 vectors were live-captured against Cyclone DDS 0.11 (forced XCDR2) on the Linux bench host and byte-compared; the comparison surfaced the 64-bit alignment cap (§7.4.1.1.1) and the sequence DHEADER for non-primitive elements (§7.4.3.5) — both fixed, `v6.bin` corrected. V-2..V-9/V-11b byte-exact; V-10/V-11a conformant LC divergence.
-
-**Tests:** `crates/cdr/tests/xcdr2_cross_vendor_fixtures.rs` (15 tests).
-
-**Status:** done -- all 12 vectors compared live against Cyclone DDS 0.11 (V-1..V-9/V-11b byte-exact, V-10/V-11a conformant LC divergence).
-
-## §9 Errata + edge cases
-
-### §9.1 wstring UTF-16-LE
-
-**Spec:** §9.1 -- "wstring as UTF-16-LE on the wire with 2-byte code units. Language bindings MUST emit UTF-16, not UTF-8."
-
-**Repo:** a `write_wstring` language helper in each binding (Rust `crates/cdr/src/encode.rs`, C++ `xcdr2.hpp`, C# `Xcdr2Writer`, Java `Xcdr2Writer`, TS `writer.ts`).
-
-**Tests:** wstring smoke in the unit tests of the helper crates (`crates/cdr/src/lib.rs` 170 unit tests incl. wstring encode-decode).
+**Tests:** `crates/lang-rules/tests/codec.rs::a_nested_aggregate_encodes_itself`
 
 **Status:** done
 
-### §9.2 empty mutable
+## §7.2.2.4.4.4.9 Table 9 and TryConstruct
 
-**Spec:** §9.2 -- "DHEADER = 0 is legal; no EMHEADER follows."
+### §7.2.2.4.4.4.9 A member the stream did not carry takes its default
 
-**Repo:** `encode_mutable` with an empty body writes DHEADER=0.
+**Spec:** §7.2.2.4.4.4.9 and Tab.9 — the default is either explicitly
+annotated or implicit: 0, `false`, `'\0'`, `""`, the empty collection,
+the first enumeration literal.
 
-**Tests:** V-11B (Sample-B None) explicitly covers DHEADER=0 for mutable.
+**Repo:** `crates/lang-rules/src/default_<lang>.rs` (one rule per column;
+§7.5.1 below), called from `crates/lang-rules/src/emit/decode.rs`.
 
-**Status:** done
-
-### §9.3 sequence-bound overflow
-
-**Spec:** §9.3 -- "The decoder MUST check the `bound` annotation and throw an error on a violation (XTypes §7.2.2.4.4.4.10)."
-
-**Repo:** `crates/cdr/src/encode.rs` decode_sequence checks the bound; `crates/idl-cpp/src/emitter.rs` emits a bound check; analogously C/C#/Java/TS codegen.
-
-**Tests:** bound-overflow asserts in `crates/cdr/tests/proptest_roundtrip.rs` and codegen edge-case files (`crates/idl-cpp/tests/edge_cases.rs`, `crates/idl-csharp/tests/edge_cases.rs`, `crates/idl-java/tests/edge_cases.rs`).
+**Tests:** `crates/lang-rules/tests/codec.rs::an_appendable_tail_the_writer_did_not_have_takes_its_default`,
+`crates/lang-rules/tests/codec.rs::an_appendable_tail_takes_an_explicit_default_over_table_nine`,
+`crates/lang-rules/tests/codec.rs::an_appendable_tail_of_an_enumeration_takes_its_first_literal`,
+`crates/lang-rules/tests/codec.rs::an_explicit_default_beats_table_nine_at_the_member_position`
 
 **Status:** done
 
-### §9.4 cycle sample @external
+### §7.2.2.7 TryConstruct: DISCARD, USE_DEFAULT, TRIM
 
-**Spec:** §9.4 -- "Self-referencing types (`@external`) need heap indirection; the wire format is identical to a plain member."
+**Spec:** §7.2.2.7, Tab.10/11 — the default is DISCARD; TRIM applies only
+to `string`, `sequence` and `map`.
 
-**Repo:** Rust `Box<T>`, C++ `std::shared_ptr<T>`, C# / Java reference types natively. The codegen mapping in each language emitter.
+**Repo:** `crates/lang-rules/src/emit/decode.rs`,
+`crates/wire/src/try_construct.rs`.
 
-**Tests:** `@external` smoke in the codegen edge-case tests; wire identity implicit from the plain-member path.
+**Tests:** `crates/lang-rules/tests/codec.rs::an_absent_annotation_is_discard_and_a_bare_one_is_use_default`,
+`crates/lang-rules/tests/codec.rs::a_bounded_member_narrows_after_the_whole_value_is_off_the_wire`,
+`crates/lang-rules/tests/codec.rs::an_element_and_its_collection_narrow_separately`
 
 **Status:** done
 
-## §10 Versioning
+## §7.4.5 KeyHash
 
-### §10 1.0 vendor spec
+### §7.4.5 The key: zero-padded up to sixteen octets, MD5 beyond
 
-**Spec:** §10 -- "This spec is 1.0. Incompatible changes → 2.0. Backward-compatible (e.g. new test vectors V-13ff) → 1.x."
+**Spec:** §7.4.5 — the key holder is serialised PLAIN_CDR2 big-endian; at
+sixteen octets or fewer it is the hash itself (zero-padded), beyond that
+MD5 over the octets.
 
-**Repo:** spec file `docs/specs/zerodds-xcdr2-bindings-conformance-1.0.md`.
+**Repo:** `crates/lang-rules/src/emit/encode.rs` (key branch),
+`crates/wire/src/digest.rs`.
 
-**Tests:** --
+**Tests:** `crates/lang-rules/tests/codec.rs::a_keyed_type_gets_a_key_hash_over_its_key_members_only`,
+`crates/lang-rules/tests/codec.rs::a_holder_of_sixteen_bytes_or_fewer_is_the_hash_and_a_longer_one_is_md5ed`,
+`crates/lang-rules/tests/codec.rs::the_holder_is_big_endian_and_plain_cdr2_aligned_whatever_the_sample_is`,
+`crates/lang-rules/tests/codec.rs::an_unbounded_key_is_md5ed_because_its_length_is_not_known_until_the_sample_is`,
+`crates/lang-rules/tests/runtime_agreement.rs::the_key_hash_sequence_produces_a_stable_sixteen_bytes`
 
-**Status:** n/a (informative)
+**Status:** done
 
-## §11 Cross-reference
+### §7.4.5 A type with no key gets no KeyHash
 
-### §11 Language spec files
+**Spec:** §7.4.5 — only a type with key members carries a KeyHash.
 
-**Spec:** §11, table Language-Spec/File -- 6 entries (cpp, c, csharp, java, ts, rust).
+**Repo:** `crates/lang-rules/src/emit/encode.rs`.
 
-**Repo:** `docs/specs/zerodds-xcdr2-cpp-1.0.md`, `-c-1.0.md`, `-csharp-1.0.md`, `-java-1.0.md`, `-ts-1.0.md`, `-rust-1.0.md`.
+**Tests:** `crates/lang-rules/tests/codec.rs::a_type_with_no_key_gets_no_key_hash`,
+`crates/lang-rules/tests/c_end_to_end.rs::a_keyed_type_gets_a_holder_and_an_unkeyed_one_does_not`
 
-**Tests:** --
+**Status:** done
 
-**Status:** n/a (informative)
+## §7.4 The walk against the runtime
+
+### §7.4 Every call the generator emits exists in the runtime
+
+**Spec:** §7.4 — generated code calls the wire runtime; a call with no
+counterpart is a link error rather than a conformance statement.
+
+**Repo:** `crates/lang-rules/src/emit/encode.rs`,
+`crates/lang-rules/src/emit/decode.rs`, `runtime/c/include/`.
+
+**Tests:** `crates/lang-rules/tests/runtime_agreement.rs::every_call_the_generator_emits_exists_in_the_runtime`,
+`crates/lang-rules/tests/codec_backend_prerequisites.rs::the_operations_the_walks_emit_all_exist_in_the_reference_runtime`
+
+**Status:** done
+
+### §7.4.3 The generated call sequence writes the bytes the plan names
+
+**Spec:** §7.4.3 — what the plan fixes as framing, order and member ID
+has to be in the octets too.
+
+**Repo:** `crates/lang-rules/src/encode.rs` (the Rust column),
+`crates/wire/src/writer.rs`.
+
+**Tests:** `crates/lang-rules/tests/runtime_agreement.rs::the_sequence_a_final_struct_generates_writes_the_bytes_the_plan_says`,
+`crates/lang-rules/tests/runtime_agreement.rs::the_sequence_an_appendable_struct_generates_frames_its_members`,
+`crates/lang-rules/tests/runtime_agreement.rs::the_sequence_a_mutable_struct_generates_carries_its_member_ids`
+
+**Status:** done
+
+### §7.4 No silent drop
+
+**Spec:** §7.4 — a member the walk has no write form for must not be left
+out; it has to be named.
+
+**Repo:** `crates/lang-rules/src/emit/encode.rs` (error paths),
+`tools/silent-drop-allowlist.tsv`.
+
+**Tests:** `crates/lang-rules/tests/codec.rs::a_member_with_no_writer_is_reported_rather_than_left_out`,
+`crates/lang-rules/tests/unevaluated.rs::an_array_length_that_does_not_evaluate_is_refused_by_the_codec_too`
+
+**Status:** done
+
+## §7.5.1 What a column is made of
+
+### §7.5.1 Four parts for the types, a fifth for the codec
+
+**Spec:** §7.5.1 — the plain language binding is each PSM's own; this
+repository carries it per language as a CST, a rule catalogue, a
+materialiser, a renderer and — for the encoding — a codec backend.
+
+**Repo:** `crates/lang-cst/src/`, `crates/lang-rules/src/rule/`,
+`crates/lang-rules/src/adapter/`, `crates/lang-render/src/`,
+`crates/lang-rules/src/emit/`; the ledger in
+`docs/language-columns-status.md`.
+
+**Tests:** `crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`,
+`crates/lang-rules/tests/codec_backend_prerequisites.rs::the_type_only_columns_are_each_missing_a_part_a_codec_backend_rests_on`
+
+**Status:** done
+
+### §7.5.1 Every language has a runtime, an endpoint SDK and a cell generator
+
+**Spec:** §7.5.1 — a binding that exists by halves is not a binding; the
+inventory is checked against the filesystem, not against a list.
+
+**Repo:** `runtime/`, `endpoints/`,
+`crates/lang-rules/tests/every_language_has_its_parts.rs`.
+
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_runtime`,
+`crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_an_endpoint_sdk`,
+`crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_cell_generator`,
+`crates/lang-rules/tests/every_language_has_its_parts.rs::every_cell_generator_guards_against_a_missing_toolchain`
+
+**Status:** done
+
+### §7.5.1 One IDL becomes declarations in every language
+
+**Spec:** §7.5.1 — the same source has to produce, in every column, the
+type it declares; a column with no output is a silently dropped
+declaration.
+
+**Repo:** `crates/lang-rules/src/generate.rs` (`declarations`).
+
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_every_wired_language`
+
+**Status:** done
+
+### §7.5.1 …and a full codec
+
+**Spec:** §7.4.3 with §7.5.1 — beside the types, every column generates
+an encoder and a decoder for every `struct`, `union` and `valuetype`.
+
+**Repo:** `crates/lang-rules/src/generate.rs` (`source`),
+`crates/lang-rules/src/emit/encode.rs` (`codec_name`).
+
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_a_full_codec_in_every_wired_language`
+
+**Status:** done
+
+### §7.2.2.4 A completeness table per construct and language
+
+**Spec:** §7.2.2.4 — the constructs of the type system model are
+countable; a cell with no coverage has to say why.
+
+**Repo:** `crates/lang-rules/src/coverage.rs` (no catch-all arm: a new
+language breaks the build until every construct carries a decision).
+
+**Tests:** `crates/lang-rules/tests/adapter.rs::the_coverage_table_has_a_cell_for_every_construct_and_language`,
+`crates/lang-rules/tests/adapter.rs::the_table_reports_what_is_covered_and_what_is_not`,
+`crates/lang-rules/tests/adapter.rs::an_uncovered_cell_says_why_rather_than_only_that`
+
+**Status:** done
+
+### §7.5.1 Every rule catalogue validates and fires on the same model
+
+**Spec:** §7.5.1 — the language-specific decisions are rules over a
+common model, not special cases inside the walk.
+
+**Repo:** `crates/lang-rules/src/rule/mod.rs`,
+`crates/lang-rules/src/apply.rs`.
+
+**Tests:** `crates/lang-rules/tests/apply.rs::every_catalogue_validates_against_the_rule_format`,
+`crates/lang-rules/tests/apply.rs::every_catalogue_serialises_and_reads_back_the_same`,
+`crates/lang-rules/tests/apply.rs::every_language_catalogue_fires_on_the_same_model`
+
+**Status:** done
+
+## §7.2.2.4.8 VerbatimText
+
+### §7.2.2.4.8 `@verbatim` reaches every column it names
+
+**Spec:** §7.2.2.4.8 — `VerbatimText {language, placement, text}`; the
+text is emitted unchanged at the named placement, and `"*"` reaches every
+language.
+
+**Repo:** `crates/lang-rules/src/verbatim.rs`.
+
+**Tests:** `crates/lang-rules/tests/verbatim_end_to_end.rs::the_wildcard_reaches_all_four_columns`,
+`crates/lang-rules/tests/verbatim_end_to_end.rs::cpp_places_all_six_slots_in_spec_order`,
+`crates/lang-rules/tests/verbatim_end_to_end.rs::a_directive_for_an_unknown_language_is_not_emitted`,
+`crates/lang-rules/tests/verbatim_end_to_end.rs::repeated_directives_keep_their_declaration_order`,
+`crates/lang-rules/tests/verbatim_every_column.rs::the_wildcard_reaches_every_column`,
+`crates/lang-rules/tests/verbatim_every_column.rs::every_column_places_the_six_slots_in_its_declarations`,
+`crates/lang-rules/tests/verbatim_every_column.rs::every_column_ends_its_source_file_with_the_end_file_text`,
+`crates/lang-rules/tests/verbatim_every_column.rs::a_directive_reaches_its_own_column_and_no_other`
+
+**Status:** done
+
+## §7.5 The DCPS PSM
+
+### §7.5 Every column declares the DCPS PSM
+
+**Spec:** §7.5 with DDS 1.4 — the types the clause names have to exist in
+every language binding.
+
+**Repo:** `crates/lang-rules/src/generate.rs`,
+`crates/lang-rules/tests/dcps_psm_idl.rs`.
+
+**Tests:** `crates/lang-rules/tests/dcps_psm_idl.rs::the_dcps_psm_idl_declares_the_types_the_clause_names`,
+`crates/lang-rules/tests/dcps_psm_idl.rs::every_language_declares_the_dcps_psm`
+
+**Status:** done
+
+## §7.3.1 The driver
+
+### §7.3.1 `idlc generate --lang` takes every language under its own name
+
+**Spec:** §7.3.1 — the IDL type representation is the input; the output
+is a language binding.
+
+**Repo:** `tools/idlc/src/generate.rs` (`parse_language`,
+`language_names`, `source`), `tools/idlc/src/main.rs`
+(`--lang`, `--out`, `--encoding`, `--endian`).
+
+**Tests:** `tools/idlc/src/generate.rs::tests::every_language_round_trips_through_its_own_name`,
+`tools/idlc/src/generate.rs::tests::language_names_lists_every_language_once`
+
+**Status:** done
+
+## §7.4 Measured octets
+
+### §7.4 Three columns agree over the corpus
+
+**Spec:** §7.4 — two independent readings of the same clause have to
+produce the same octets.
+
+**Repo:** `crates/wire-probe/src/lib.rs`, `tools/wireprobe/`.
+
+**Tests:** `crates/wire-probe/tests/three_column_gate.rs::the_three_columns_agree`,
+`crates/wire-probe/tests/three_column_gate.rs::the_c_column_covers_the_same_configurations`,
+`crates/wire-probe/tests/three_column_gate.rs::the_rust_column_is_byte_for_byte_what_it_was`
+
+**Status:** done
+
+### §7.4 A new column against the recorded Rust baseline
+
+**Spec:** §7.4 — a column is measured against a fixed recording rather
+than built beside the others: three columns that moved together still
+resemble each other.
+
+**Repo:** `crates/wire-probe/tests/fixtures/rust_column_baseline.txt`
+(145,740 slots, pinned case by case), `crates/wire-probe/src/matrix.rs`.
+
+**Tests:** `crates/wire-probe/tests/reference_columns.rs::the_reference_row_is_the_one_the_baseline_was_taken_with`,
+`crates/wire-probe/tests/reference_columns.rs::the_comparison_bites`,
+`crates/wire-probe/tests/reference_columns.rs::every_configuration_reaches_the_driver_as_flags`,
+`crates/wire-probe/tests/typescript_column_gate.rs::the_typescript_column_writes_what_the_rust_column_recorded`
+
+**Status:** done
+
+**Note:** `reference_columns.rs::the_new_columns_answer_the_matrix_the_rust_column_answered`
+compares the C++ and Java columns only once
+`target/release/wireprobe-cpp-matrix` and `wireprobe-java-matrix` are
+built; without them the test says so on standard output and compares
+nothing. The three tests of that file cited above measure with no foreign
+driver.
+
+### §7.4 The corpus produces the recorded bytes in all four modes
+
+**Spec:** §7.4 — per case XCDR1/XCDR2 and both byte orders.
+
+**Repo:** `tests/interop-corpus/`, `crates/wire-probe/src/canonical.rs`.
+
+**Tests:** `crates/wire-probe/tests/interop_corpus.rs::every_case_produces_the_bytes_its_readme_records_in_all_four_modes`,
+`crates/wire-probe/tests/interop_corpus.rs::every_case_goes_through_all_three_emitters`,
+`crates/wire-probe/tests/interop_corpus.rs::every_case_emits_a_keyhash_and_an_encapsulated_payload`
+
+**Status:** done
+
+### §7.4 The read direction: every case comes back the value that went in
+
+**Spec:** §7.4 — encoding and decoding are inverse to each other.
+
+**Repo:** `crates/wire-probe/src/canonical.rs`,
+`crates/lang-rules/src/emit/decode.rs`.
+
+**Tests:** `crates/wire-probe/tests/decode_round_trip.rs::every_case_comes_back_the_value_that_went_in`,
+`crates/wire-probe/tests/decode_round_trip.rs::no_prefix_of_a_payload_reads_as_a_shorter_sample`,
+`crates/wire-probe/tests/probe_agreement.rs::every_corpus_case_is_read_the_same_way_by_all_three_probes`
+
+**Status:** done
 
 ---
 
-## Audit status
+## Audit Status
 
-36 done / 0 partial / 0 open / 2 n/a (informative) / 0 n/a (rejected).
+35 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
 
-Test run: `cargo test -p zerodds-cdr -p zerodds-idl-rust -p zerodds-idl-cpp -p zerodds-c-api -p zerodds-idl-csharp -p zerodds-idl-java -p zerodds-idl-ts -p zerodds-conformance --test cross_language_xcdr2` -- 41 test binaries green, 0 failed; `dotnet test` ZeroDDS.Cdr.Tests -- 28 tests green; `npm run test:wire` -- 15 tests green; `mvn test` java-omgdds -- 34 tests green.
+Test run: `cargo test -p zerodds-lang-rules` — 1024 tests green, 0 failed
+(20 ignored: the whole-corpus compile runs, which need
+`--include-ignored`). `cargo test -p zerodds-wire-probe --no-fail-fast` —
+350 green, 4 failed: `csharp_column_gate`, `java_column_gate` and
+`java_round_trip` fail because the C# and Java probes do not compile on
+this machine, and `union_label_match::the_shape_with_no_storage_is_left_to_the_clause`
+is a standing finding; none of the four is cited as evidence in this
+document.
+
+Open items: none. Decision records: none.

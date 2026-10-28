@@ -2,73 +2,25 @@
 // Copyright 2026 ZeroDDS Contributors
 //! Runtime types that the generated code references.
 //!
-//! Phase 1 skeleton. The full wire implementation (GIOP marshalling +
-//! IIOP connection) follows in phase 2 via `corba-iiop` and
-//! `corba-giop`. Here live only the public API structures that the
-//! emitted stub/skeleton/valuetype references.
+//! Two of them are no longer declared here. `ObjectReference` and
+//! `ValueBase` are Annex A.1 rows, `zerodds-corba-codegen`'s Rust
+//! column named `zerodds_corba_rt` for both, and that crate did not
+//! carry them — so they moved there and this re-exports them. A
+//! program that holds an object reference and never generates a line
+//! of code should not depend on a code generator.
+//!
+//! `TypeCode` is the same move made earlier: this crate used to
+//! declare a placeholder struct wrapping a repository id, nothing in
+//! the workspace referred to it, and `zerodds_corba_rt::TypeCode` is
+//! the real §15.3.5 type. The placeholder is gone.
 
 extern crate alloc;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-/// CORBA object reference (IOR-encoded). Generated stubs hold an
-/// instance of this struct as a connection handle.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct ObjectReference {
-    /// Type identifier (Repository ID, e.g.
-    /// `IDL:omg.org/MyInterface:1.0`).
-    pub type_id: String,
-    /// IIOP profile encapsulation (CDR, one `TAG_INTERNET_IOP` profile body).
-    pub iiop_profile: Vec<u8>,
-}
-
-/// `TAG_INTERNET_IOP` — the only profile tag that ZeroDDS ObjectReferences
-/// carry (CORBA §13.6.3).
-const TAG_INTERNET_IOP: u32 = 0;
-
-/// Wire marshalling of an object reference as an **IOR** (CORBA §15.3.3):
-/// `struct IOR { string type_id; sequence<TaggedProfile> profiles; }` with
-/// `TaggedProfile { ProfileId tag; sequence<octet> profile_data; }`.
-/// `iiop_profile` is already the finished profile encapsulation, so it is
-/// inserted as `sequence<octet>` (length + bytes). This is the format
-/// in which omniORB/TAO/JacORB expect an `Object` reference on the wire.
-impl zerodds_cdr::CdrEncode for ObjectReference {
-    fn encode(
-        &self,
-        writer: &mut zerodds_cdr::BufferWriter,
-    ) -> ::core::result::Result<(), zerodds_cdr::EncodeError> {
-        writer.write_string(&self.type_id)?;
-        writer.write_u32(1)?; // exactly one profile
-        writer.write_u32(TAG_INTERNET_IOP)?;
-        writer.write_u32(self.iiop_profile.len() as u32)?;
-        writer.write_bytes(&self.iiop_profile)?;
-        ::core::result::Result::Ok(())
-    }
-}
-
-impl zerodds_cdr::CdrDecode for ObjectReference {
-    fn decode(
-        reader: &mut zerodds_cdr::BufferReader<'_>,
-    ) -> ::core::result::Result<Self, zerodds_cdr::DecodeError> {
-        let type_id = reader.read_string()?;
-        let profile_count = reader.read_u32()?;
-        // Take the first TAG_INTERNET_IOP profile, skip the rest
-        // (multi-profile IORs are rare; the first IIOP profile suffices).
-        let mut iiop_profile = Vec::new();
-        for _ in 0..profile_count {
-            let tag = reader.read_u32()?;
-            let len = reader.read_u32()? as usize;
-            let data = reader.read_bytes(len)?;
-            if tag == TAG_INTERNET_IOP && iiop_profile.is_empty() {
-                iiop_profile = data.to_vec();
-            }
-        }
-        ::core::result::Result::Ok(Self {
-            type_id,
-            iiop_profile,
-        })
-    }
-}
+use zerodds_corba_giop::object_ops::{self, ObjectOpReply};
+pub use zerodds_corba_rt::{ObjectReference, TypeCode, ValueBase};
+use zerodds_wire::{Endianness, Reader, WireError, Writer, WstringUnitOrder};
 
 /// CORBA system/user exception. Generated stubs/skeletons map
 /// all error paths onto this variant.
@@ -99,7 +51,7 @@ pub enum CorbaException {
         /// Complete exception body: `string repo_id` + members (CDR).
         body: Vec<u8>,
         /// On-wire byte order of `body`.
-        endianness: zerodds_cdr::Endianness,
+        endianness: Endianness,
     },
 }
 
@@ -117,12 +69,6 @@ impl ::core::fmt::Display for CorbaException {
 }
 
 impl ::std::error::Error for CorbaException {}
-
-/// ValueBase trait. All IDL valuetypes extend this.
-pub trait ValueBase {
-    /// Repository ID of the valuetype (e.g. `IDL:omg.org/MyValue:1.0`).
-    fn repository_id(&self) -> &str;
-}
 
 /// Result of a skeleton dispatch.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -147,30 +93,62 @@ pub trait Servant {
     fn target_repository_id(&self) -> &str;
 }
 
-// ============================================================================
-// §2.4 TypeCode (CORBA 3.3 §10.7) — minimally functional wrapper.
-// ============================================================================
-
-/// CORBA `TypeCode` — type-reflection wrapper.
+/// The writer a generated skeleton puts its reply in: the request's byte
+/// order, and every `wstring` with its byte-order mark.
 ///
-/// Full TypeCode operations (kind, member_count, member_name,
-/// content_type, ...) are evaluated via the `corba-iiop` IIOP connection —
-/// phase 1 here is a wrapper around the Repository ID,
-/// phase 2 extends it with a lookup API.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct TypeCode {
-    /// Repository ID of the referenced type.
-    pub repository_id: String,
+/// A server does not know which ORB asked. Measured on the Linux test host with
+/// `crates/corba-interop/competitors/run_interop.sh`: the reply's
+/// `wstring` without a mark, its units in the little-endian order of the
+/// request, read back wrong in omniORB 4.3 and TAO 2.5 and right in
+/// JacORB 3.9; omniORB's own request carries `ff fe` ahead of its units.
+/// With the mark the order is the reply's own statement, whatever a
+/// reader assumes without one.
+#[must_use]
+pub fn reply_writer(endianness: Endianness) -> Writer {
+    Writer::new(endianness).with_wstring_unit_order(WstringUnitOrder::ByteOrderMark)
 }
 
-impl TypeCode {
-    /// Constructs a TypeCode from a Repository ID.
-    #[must_use]
-    pub fn new(repository_id: impl Into<String>) -> Self {
-        Self {
-            repository_id: repository_id.into(),
+/// Answers one of the six `CORBA::Object` operations CORBA 3.3 Part 2
+/// §15.4.2 lets a client send as a GIOP request without the target
+/// interface having declared it (`_interface`, `_is_a`,
+/// `_non_existent`/`_not_existent`, `_domain_managers`, `_component`,
+/// `_repository_id`) — Part 1 §8.3 gives their semantics on
+/// `CORBA::Object` itself. Every generated `dispatch_<iface>` calls this
+/// first, ahead of its own `match operation`; `repository_id` and
+/// `base_repository_ids` are the interface's own id and its transitive
+/// base-interface chain, both computed by the codegen from the model
+/// (`interface_emit::emit_interface_skeleton`).
+///
+/// `None` when `operation` is not one of the six — the generated
+/// `match` continues to the interface's own operations as before.
+#[must_use]
+pub fn dispatch_object_operation(
+    operation: &str,
+    body: &[u8],
+    endianness: Endianness,
+    repository_id: &str,
+    base_repository_ids: &[&str],
+) -> Option<SkeletonResult> {
+    let reply = object_ops::dispatch_with_bases(
+        operation,
+        body,
+        endianness,
+        repository_id,
+        base_repository_ids,
+    )?;
+    Some(match reply {
+        ObjectOpReply::Ok(b) => SkeletonResult::Reply(b),
+        ObjectOpReply::Marshal => SkeletonResult::Exception(CorbaException::SystemException {
+            minor: 0,
+            message: "CORBA MARSHAL",
+        }),
+        ObjectOpReply::InterfaceRepositoryUnavailable => {
+            SkeletonResult::Exception(CorbaException::SystemException {
+                minor: 0,
+                message: "CORBA INTF_REPOS",
+            })
         }
-    }
+    })
 }
 
 // ============================================================================
@@ -296,18 +274,18 @@ pub enum RequestProcessingPolicy {
 
 /// Stream API for ValueBase wire marshalling (CDR §15.3.4).
 ///
-/// Phase 1: API skeleton that wraps `zerodds_cdr::BufferReader/Writer` and
+/// Phase 1: API skeleton that wraps `zerodds_wire::Reader`/`Writer` and
 /// applies the value-tag logic (chunked encoding, repository-id list).
 /// Phase 2 wires the full spec conformance (truncatable, custom
 /// marshaling, codeset).
 pub struct ValueStreamWriter<'a> {
     /// Inner writer.
-    pub inner: &'a mut zerodds_cdr::BufferWriter,
+    pub inner: &'a mut Writer,
 }
 
 impl<'a> ValueStreamWriter<'a> {
     /// Constructor.
-    pub fn new(inner: &'a mut zerodds_cdr::BufferWriter) -> Self {
+    pub fn new(inner: &'a mut Writer) -> Self {
         Self { inner }
     }
 
@@ -315,16 +293,10 @@ impl<'a> ValueStreamWriter<'a> {
     /// for single-repository-id, 0x7FFFFF06 for list-of-repository-
     /// ids, 0x00000000 for null-value.
     ///
-    /// # Errors
-    /// Encode error.
-    pub fn write_value_tag(
-        &mut self,
-        repository_id: &str,
-    ) -> ::core::result::Result<(), zerodds_cdr::EncodeError> {
+    pub fn write_value_tag(&mut self, repository_id: &str) {
         // Single-repository-id tag (chunked = false, codeset = false).
-        self.inner.write_u32(0x7FFF_FF02)?;
-        self.inner.write_string(repository_id)?;
-        Ok(())
+        self.inner.write_u32(0x7FFF_FF02);
+        self.inner.write_string(repository_id);
     }
 
     /// Writes a value-tag with a multi-repository-id list (CDR
@@ -337,24 +309,18 @@ impl<'a> ValueStreamWriter<'a> {
     /// string id[0] .. id[N-1]   // CDR-strings (length + bytes + NUL)
     /// ```
     ///
-    /// # Errors
-    /// Encode error or empty `repository_ids` (spec requires N >= 1).
-    pub fn write_value_tag_multi(
-        &mut self,
-        repository_ids: &[&str],
-    ) -> ::core::result::Result<(), zerodds_cdr::EncodeError> {
+    pub fn write_value_tag_multi(&mut self, repository_ids: &[&str]) {
         debug_assert!(
             !repository_ids.is_empty(),
             "Spec §15.3.4.2: list-of-repository-ids must contain >=1 entry"
         );
-        self.inner.write_u32(0x7FFF_FF06)?;
+        self.inner.write_u32(0x7FFF_FF06);
         // count as signed long.
         let count: i32 = repository_ids.len() as i32;
-        self.inner.write_u32(count as u32)?;
+        self.inner.write_u32(count as u32);
         for id in repository_ids {
-            self.inner.write_string(id)?;
+            self.inner.write_string(id);
         }
-        Ok(())
     }
 
     /// Writes a chunked value-tag (CDR §15.3.4.2 + §15.3.4.3 —
@@ -371,71 +337,53 @@ impl<'a> ValueStreamWriter<'a> {
     /// caller layer writes each chunk via [`Self::write_chunk`] and
     /// closes the ValueType with [`Self::write_chunked_end`].
     ///
-    /// # Errors
-    /// Encode error or empty repo IDs.
-    pub fn write_chunked_value_tag(
-        &mut self,
-        repository_ids: &[&str],
-    ) -> ::core::result::Result<(), zerodds_cdr::EncodeError> {
+    pub fn write_chunked_value_tag(&mut self, repository_ids: &[&str]) {
         debug_assert!(
             !repository_ids.is_empty(),
             "Spec §15.3.4.2: list-of-repository-ids must contain >=1 entry"
         );
-        self.inner.write_u32(0x7FFF_FF0A)?;
+        self.inner.write_u32(0x7FFF_FF0A);
         let count: i32 = repository_ids.len() as i32;
-        self.inner.write_u32(count as u32)?;
+        self.inner.write_u32(count as u32);
         for id in repository_ids {
-            self.inner.write_string(id)?;
+            self.inner.write_string(id);
         }
-        Ok(())
     }
 
     /// Writes a single chunk within a chunked-encoded
     /// value (CDR §15.3.4.3): `i32 chunk_size` + raw bytes.
     ///
-    /// # Errors
-    /// Encode error.
-    pub fn write_chunk(
-        &mut self,
-        chunk_data: &[u8],
-    ) -> ::core::result::Result<(), zerodds_cdr::EncodeError> {
+    pub fn write_chunk(&mut self, chunk_data: &[u8]) {
         let size: i32 = chunk_data.len() as i32;
-        self.inner.write_u32(size as u32)?;
+        self.inner.write_u32(size as u32);
         for b in chunk_data {
-            self.inner.write_u8(*b)?;
+            self.inner.write_u8(*b);
         }
-        Ok(())
     }
 
     /// Writes the end-tag of a chunked-encoded value (Spec
     /// §15.3.4.3 — `i32 end_tag = -<nesting_level>` with
     /// `nesting_level >= 1` for the outermost value).
     ///
-    /// # Errors
-    /// Encode error or `nesting_level == 0`.
-    pub fn write_chunked_end(
-        &mut self,
-        nesting_level: u32,
-    ) -> ::core::result::Result<(), zerodds_cdr::EncodeError> {
+    pub fn write_chunked_end(&mut self, nesting_level: u32) {
         debug_assert!(
             nesting_level >= 1,
             "Spec §15.3.4.3: chunked-end nesting_level must be >= 1"
         );
         let end_tag: i32 = -(nesting_level as i32);
-        self.inner.write_u32(end_tag as u32)?;
-        Ok(())
+        self.inner.write_u32(end_tag as u32);
     }
 }
 
 /// Stream API for reading valuetype wire bytes (CDR §15.3.4).
 pub struct ValueStreamReader<'a, 'b> {
     /// Inner reader.
-    pub inner: &'a mut zerodds_cdr::BufferReader<'b>,
+    pub inner: &'a mut Reader<'b>,
 }
 
 impl<'a, 'b> ValueStreamReader<'a, 'b> {
     /// Constructor.
-    pub fn new(inner: &'a mut zerodds_cdr::BufferReader<'b>) -> Self {
+    pub fn new(inner: &'a mut Reader<'b>) -> Self {
         Self { inner }
     }
 
@@ -448,9 +396,7 @@ impl<'a, 'b> ValueStreamReader<'a, 'b> {
     ///
     /// # Errors
     /// Decode error (truncated, unknown tag type).
-    pub fn read_value_tag(
-        &mut self,
-    ) -> ::core::result::Result<Option<String>, zerodds_cdr::DecodeError> {
+    pub fn read_value_tag(&mut self) -> ::core::result::Result<Option<String>, WireError> {
         let header = self.read_value_tag_full()?;
         Ok(match header {
             ValueTagHeader::Null => None,
@@ -465,9 +411,7 @@ impl<'a, 'b> ValueStreamReader<'a, 'b> {
     ///
     /// # Errors
     /// Decode error or unknown wire tag.
-    pub fn read_value_tag_full(
-        &mut self,
-    ) -> ::core::result::Result<ValueTagHeader, zerodds_cdr::DecodeError> {
+    pub fn read_value_tag_full(&mut self) -> ::core::result::Result<ValueTagHeader, WireError> {
         let tag = self.inner.read_u32()?;
         match tag {
             0x0000_0000 => Ok(ValueTagHeader::Null),
@@ -483,10 +427,10 @@ impl<'a, 'b> ValueStreamReader<'a, 'b> {
                 // `crates/cdr/src/composite.rs`'s
                 // `len > reader.remaining()` guard.
                 if count > self.inner.remaining() / 4 {
-                    return Err(zerodds_cdr::DecodeError::LengthExceeded {
-                        announced: count,
-                        remaining: self.inner.remaining(),
-                        offset: self.inner.position(),
+                    return Err(WireError::ImpossibleLength {
+                        at: self.inner.position(),
+                        claimed: count,
+                        available: self.inner.remaining(),
                     });
                 }
                 let mut ids = Vec::with_capacity(count);
@@ -498,10 +442,10 @@ impl<'a, 'b> ValueStreamReader<'a, 'b> {
             0x7FFF_FF0A => {
                 let count = self.inner.read_u32()? as usize;
                 if count > self.inner.remaining() / 4 {
-                    return Err(zerodds_cdr::DecodeError::LengthExceeded {
-                        announced: count,
-                        remaining: self.inner.remaining(),
-                        offset: self.inner.position(),
+                    return Err(WireError::ImpossibleLength {
+                        at: self.inner.position(),
+                        claimed: count,
+                        available: self.inner.remaining(),
                     });
                 }
                 let mut ids = Vec::with_capacity(count);
@@ -510,10 +454,10 @@ impl<'a, 'b> ValueStreamReader<'a, 'b> {
                 }
                 Ok(ValueTagHeader::ChunkedList(ids))
             }
-            _ => Err(zerodds_cdr::DecodeError::InvalidString {
-                offset: 0,
-                reason: "ValueStream: unsupported value-tag (only 0/0x7FFFFF02/0x7FFFFF06/0x7FFFFF0A)",
-            }),
+            _ => Err(WireError::refused(
+                self.inner.position(),
+                "a value tag of 0, 0x7FFFFF02, 0x7FFFFF06 or 0x7FFFFF0A",
+            )),
         }
     }
 
@@ -524,7 +468,7 @@ impl<'a, 'b> ValueStreamReader<'a, 'b> {
     ///
     /// # Errors
     /// Decode error.
-    pub fn read_chunk_size(&mut self) -> ::core::result::Result<i32, zerodds_cdr::DecodeError> {
+    pub fn read_chunk_size(&mut self) -> ::core::result::Result<i32, WireError> {
         let raw = self.inner.read_u32()?;
         Ok(raw as i32)
     }
@@ -591,9 +535,9 @@ pub trait CorbaConnection {
         &self,
         target_ior: &ObjectReference,
         operation: &str,
-        request_endianness: zerodds_cdr::Endianness,
+        request_endianness: Endianness,
         request_payload: &[u8],
-    ) -> Result<(Vec<u8>, zerodds_cdr::Endianness), CorbaException>;
+    ) -> Result<(Vec<u8>, Endianness), CorbaException>;
 
     /// Sends a oneway request (no reply expected).
     ///
@@ -603,14 +547,14 @@ pub trait CorbaConnection {
         &self,
         target_ior: &ObjectReference,
         operation: &str,
-        request_endianness: zerodds_cdr::Endianness,
+        request_endianness: Endianness,
         request_payload: &[u8],
     ) -> Result<(), CorbaException>;
 }
 
 /// Reply outcome of an asynchronous invocation (CORBA Messaging §22): the raw
 /// reply body + its on-wire byte order on success, otherwise the CORBA exception.
-pub type AsyncReply = Result<(Vec<u8>, zerodds_cdr::Endianness), CorbaException>;
+pub type AsyncReply = Result<(Vec<u8>, Endianness), CorbaException>;
 
 /// Callback for the AMI callback model (§22.5) — invoked exactly once.
 pub type AsyncReplyCallback = alloc::boxed::Box<dyn FnOnce(AsyncReply) + Send>;
@@ -667,52 +611,9 @@ pub trait AsyncCorbaChannel {
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-mod object_reference_tests {
-    use super::*;
-    use zerodds_cdr::{BufferReader, BufferWriter, CdrDecode, CdrEncode, Endianness};
-
-    #[test]
-    fn object_reference_roundtrips_as_ior() {
-        let obj = ObjectReference {
-            type_id: "IDL:demo/Bench:1.0".into(),
-            iiop_profile: alloc::vec![0x01, 0x00, 0x00, 0x00, 0xde, 0xad, 0xbe, 0xef],
-        };
-        let mut w = BufferWriter::new(Endianness::Big);
-        obj.encode(&mut w).unwrap();
-        let bytes = w.into_bytes();
-
-        // Wire structure (CORBA §15.3.3 IOR): string type_id + seq<TaggedProfile>.
-        let mut r = BufferReader::new(&bytes, Endianness::Big);
-        assert_eq!(r.read_string().unwrap(), "IDL:demo/Bench:1.0");
-        assert_eq!(r.read_u32().unwrap(), 1, "exactly one profile");
-        assert_eq!(r.read_u32().unwrap(), 0, "TAG_INTERNET_IOP");
-        assert_eq!(r.read_u32().unwrap(), 8, "profile_data length");
-
-        // Full roundtrip.
-        let mut r2 = BufferReader::new(&bytes, Endianness::Big);
-        let decoded = ObjectReference::decode(&mut r2).unwrap();
-        assert_eq!(decoded, obj);
-    }
-
-    #[test]
-    fn object_reference_little_endian_roundtrips() {
-        let obj = ObjectReference {
-            type_id: "IDL:X:1.0".into(),
-            iiop_profile: alloc::vec![1, 2, 3],
-        };
-        let mut w = BufferWriter::new(Endianness::Little);
-        obj.encode(&mut w).unwrap();
-        let bytes = w.into_bytes();
-        let mut r = BufferReader::new(&bytes, Endianness::Little);
-        assert_eq!(ObjectReference::decode(&mut r).unwrap(), obj);
-    }
-}
-
-#[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod value_stream_tests {
     use super::*;
-    use zerodds_cdr::{BufferReader, BufferWriter, Endianness};
+    use zerodds_wire::{Endianness, Reader, Writer};
 
     // -------------------------------------------------------------
     // Buffer-cap hardening — a wire-supplied Repository-ID-list count
@@ -724,43 +625,42 @@ mod value_stream_tests {
 
     #[test]
     fn value_tag_list_rejects_oversized_count() {
-        let mut w = BufferWriter::new(Endianness::Big);
-        w.write_u32(0x7FFF_FF06).unwrap(); // list-of-repository-ids tag
+        let mut w = Writer::new(Endianness::Big);
+        w.write_u32(0x7FFF_FF06); // list-of-repository-ids tag
         // Announce a huge id count, but supply no id bytes.
-        w.write_u32(1_000_000_000).unwrap();
-        let bytes = w.into_bytes();
-        let mut r = BufferReader::new(&bytes, Endianness::Big);
+        w.write_u32(1_000_000_000);
+        let bytes = w.finish();
+        let mut r = Reader::new(&bytes, Endianness::Big);
         let mut vsr = ValueStreamReader::new(&mut r);
         let res = vsr.read_value_tag_full();
         assert!(
-            matches!(res, Err(zerodds_cdr::DecodeError::LengthExceeded { .. })),
+            matches!(res, Err(WireError::ImpossibleLength { .. })),
             "expected clean rejection, got {res:?}"
         );
     }
 
     #[test]
     fn value_tag_chunked_list_rejects_oversized_count() {
-        let mut w = BufferWriter::new(Endianness::Big);
-        w.write_u32(0x7FFF_FF0A).unwrap(); // chunked list-of-repository-ids tag
-        w.write_u32(1_000_000_000).unwrap();
-        let bytes = w.into_bytes();
-        let mut r = BufferReader::new(&bytes, Endianness::Big);
+        let mut w = Writer::new(Endianness::Big);
+        w.write_u32(0x7FFF_FF0A); // chunked list-of-repository-ids tag
+        w.write_u32(1_000_000_000);
+        let bytes = w.finish();
+        let mut r = Reader::new(&bytes, Endianness::Big);
         let mut vsr = ValueStreamReader::new(&mut r);
         let res = vsr.read_value_tag_full();
         assert!(
-            matches!(res, Err(zerodds_cdr::DecodeError::LengthExceeded { .. })),
+            matches!(res, Err(WireError::ImpossibleLength { .. })),
             "expected clean rejection, got {res:?}"
         );
     }
 
     #[test]
     fn value_tag_list_within_bound_still_round_trips() {
-        let mut w = BufferWriter::new(Endianness::Big);
+        let mut w = Writer::new(Endianness::Big);
         let mut vsw = ValueStreamWriter::new(&mut w);
-        vsw.write_value_tag_multi(&["IDL:demo/A:1.0", "IDL:demo/B:1.0"])
-            .unwrap();
-        let bytes = w.into_bytes();
-        let mut r = BufferReader::new(&bytes, Endianness::Big);
+        vsw.write_value_tag_multi(&["IDL:demo/A:1.0", "IDL:demo/B:1.0"]);
+        let bytes = w.finish();
+        let mut r = Reader::new(&bytes, Endianness::Big);
         let mut vsr = ValueStreamReader::new(&mut r);
         let header = vsr.read_value_tag_full().unwrap();
         assert_eq!(

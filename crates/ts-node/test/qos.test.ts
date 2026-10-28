@@ -3,9 +3,9 @@
 // real native DCPS loopback (no mocking) and asserts an observable QoS effect.
 //
 // Part of the default `npm test` gate (run serially via --test-concurrency=1).
-// All tests share ONE DomainParticipant on a single fixed low domain so the
-// suite stays robust against SPDP discovery-socket contention from other DDS
-// processes on the host. The same behaviors are also proven by the
+// All tests share ONE DomainParticipant on one domain leased from the band of
+// `crates/test-domains` (`support/test-domains.ts`), so no other test process
+// of the host is on it. The same behaviors are also proven by the
 // cross-language QoS conformance harness at
 // zerodds-examples/idl-conformance/_qos/typescript/qos_conformance.ts.
 
@@ -18,6 +18,7 @@ import {
   defaultDataWriterQos, defaultDataReaderQos,
   type TypeSupport,
 } from "../src/index.js";
+import { uniqueDomain } from "./support/test-domains.js";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -47,14 +48,14 @@ const RecTS: TypeSupport<Rec> = {
   },
 };
 
-// All tests share ONE participant on a single low-numbered domain (the same
-// shape as the rock-solid QoS conformance harness, which runs every check on a
-// single domain-0 participant). DDS permits unlimited topics/pubs/subs per
+// All tests share ONE participant on one leased domain (the same shape as
+// the QoS conformance harness, which runs every check on one participant).
+// DDS permits unlimited topics/pubs/subs per
 // participant, so a single participant is created lazily on first use and
 // reused — minimising SPDP discovery-socket pressure. The lazy create is
 // guarded so a participant-creation error surfaces in the first test rather
 // than at import time.
-const DOMAIN = 55; // fixed low domain, distinct from the smoke suite's domains
+const DOMAIN = uniqueDomain(); // leased for the life of the process
 let SHARED: DomainParticipant | null = null;
 let SHARED_TRIED = false;
 
@@ -67,15 +68,30 @@ async function withParticipant(body: (p: DomainParticipant) => Promise<void>): P
   await body(SHARED);
 }
 
+// A RELIABLE writer and reader of `Rec` on topic `name`, matched with each
+// other within `timeoutMs`, both with the HISTORY `kind` given.
+async function reliablePair(p: DomainParticipant, name: string, timeoutMs: number,
+                            history: HistoryKind = HistoryKind.KeepLast) {
+  const t = p.createTypedTopic(name, RecTS);
+  const wq = defaultDataWriterQos(); wq.reliability.kind = ReliabilityKind.Reliable;
+  const rq = defaultDataReaderQos(); rq.reliability.kind = ReliabilityKind.Reliable;
+  wq.history.kind = history; rq.history.kind = history;
+  const w = p.createPublisher().createTypedWriter(t, wq);
+  const r = p.createSubscriber().createTypedReader(t, rq);
+  await w.waitForMatchedSubscription(1, timeoutMs);
+  await r.waitForMatchedPublication(1, timeoutMs);
+  return { w, r };
+}
+
+// Every sample is of the one instance `id: 1`. RELIABLE delivers what the
+// writer's history holds (DDS 1.4 §2.2.3.14), and HISTORY decides what that is
+// (§2.2.3.18): under the default KEEP_LAST with depth 1 the writer and the
+// reader keep the most recent sample of an instance and nothing before it, so
+// a test that writes fifty and expects fifty needs KEEP_ALL on both sides.
+// Under KEEP_LAST(1) it was measured to receive one sample, seq 49.
 test("qos: RELIABLE reliability is selectable + lossless on loopback", async () => {
   await withParticipant(async (p) => {
-    const t = p.createTypedTopic("RelRec", RecTS);
-    const wq = defaultDataWriterQos(); wq.reliability.kind = ReliabilityKind.Reliable;
-    const rq = defaultDataReaderQos(); rq.reliability.kind = ReliabilityKind.Reliable;
-    const w = p.createPublisher().createTypedWriter(t, wq);
-    const r = p.createSubscriber().createTypedReader(t, rq);
-    await w.waitForMatchedSubscription(1, 5000);
-    await r.waitForMatchedPublication(1, 5000);
+    const { w, r } = await reliablePair(p, "RelRec", 5000, HistoryKind.KeepAll);
     const N = 50;
     for (let i = 0; i < N; i++) w.write({ id: 1, seq: i, value: i });
     const got: Rec[] = [];
@@ -84,6 +100,24 @@ test("qos: RELIABLE reliability is selectable + lossless on loopback", async () 
     }
     assert.equal(got.length, N, `expected ${N} reliable samples, got ${got.length}`);
     assert.ok(got.every((s, i) => s.seq === i), "samples out of order");
+  });
+});
+
+// The same stream under the default KEEP_LAST(1): what the reader takes is in
+// the order written and ends with the last sample, whatever it replaced on the
+// way (§2.2.3.18).
+test("qos: RELIABLE under KEEP_LAST(1) ends with the instance's last sample", async () => {
+  await withParticipant(async (p) => {
+    const { w, r } = await reliablePair(p, "RelLastRec", 5000);
+    const N = 50;
+    for (let i = 0; i < N; i++) w.write({ id: 1, seq: i, value: i });
+    const got: Rec[] = [];
+    for (let tries = 0; tries < 30 && got.at(-1)?.seq !== N - 1; tries++) {
+      if (await r.waitForData(300)) got.push(...r.take());
+    }
+    assert.ok(got.length >= 1, "no sample of the instance arrived");
+    assert.equal(got.at(-1)?.seq, N - 1, `the last sample taken is not the last written: ${JSON.stringify(got)}`);
+    assert.ok(got.every((s, i) => i === 0 || s.seq > got[i - 1].seq), "samples out of order");
   });
 });
 
@@ -181,13 +215,7 @@ test("qos: ContentFilteredTopic applies the SQL filter", async () => {
 
 test("qos: keyed dispose surfaces NOT_ALIVE_DISPOSED via takeWithInfo", async () => {
   await withParticipant(async (p) => {
-    const t = p.createTypedTopic("LifeRec", RecTS);
-    const wq = defaultDataWriterQos(); wq.reliability.kind = ReliabilityKind.Reliable;
-    const rq = defaultDataReaderQos(); rq.reliability.kind = ReliabilityKind.Reliable;
-    const w = p.createPublisher().createTypedWriter(t, wq);
-    const r = p.createSubscriber().createTypedReader(t, rq);
-    await w.waitForMatchedSubscription(1, 3000);
-    await r.waitForMatchedPublication(1, 3000);
+    const { w, r } = await reliablePair(p, "LifeRec", 3000);
     w.write({ id: 10, seq: 0, value: 1 });
     await sleep(150);
     const alive = r.takeWithInfo();

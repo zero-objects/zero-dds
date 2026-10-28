@@ -153,6 +153,21 @@ public sealed class DataReader<T> : IDisposable
     private static IntPtr CreateHandle(IntPtr subscriber, Topic<T> topic, IntPtr qos)
     {
         var typeObject = topic.Traits.TypeObject;
+        if (topic.Traits is IGeneratedDdsWireTraits generated && generated.HasGeneratedWireSupport)
+        {
+            if (typeObject is not { Length: > 0 })
+                throw new InvalidOperationException("Generated typed DDS support requires a nonempty CompleteTypeObject.");
+            int representation = generated.NativeRepresentation;
+            unsafe
+            {
+                fixed (byte* p = typeObject)
+                {
+                    return Native.SubCreateDatareaderTypedWire(subscriber, topic.Handle, qos,
+                        (IntPtr)p, (UIntPtr)typeObject.Length, generated.IsKeyed ? 1 : 0,
+                        representation);
+                }
+            }
+        }
         if (typeObject is { Length: > 0 })
         {
             unsafe
@@ -266,7 +281,9 @@ public sealed class DataReader<T> : IDisposable
             {
                 var info = infos[i];
                 T data = default!;
-                if (info.ValidData && (uint)lengths[i] > 0)
+                // A valid empty @final aggregate has a zero-byte body. It
+                // still needs its decoder, not default(T) with ValidData=true.
+                if (info.ValidData)
                 {
                     var len = (int)(uint)lengths[i];
                     var span = new ReadOnlySpan<byte>(buffers[i], len);
@@ -406,7 +423,11 @@ public sealed class DataReader<T> : IDisposable
                     throw new OperationCanceledException(ct);
                 return false;
             }
-            StatusCheck.Check(rc, "WaitForData::WaitSetWait");
+            // `OutOfResources` means more conditions are active than the 64-slot
+            // buffer holds. The active list is not inspected here, so that is a
+            // wake like any other; every other non-Ok code is an error.
+            if (rc != Native.OutOfResources)
+                StatusCheck.Check(rc, "WaitForData::WaitSetWait");
 
             // Woken: either the read condition (data) or the guard (cancel). The
             // loop top re-checks both via TakeNative + the CT flag, so we do not

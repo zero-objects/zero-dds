@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 # ZeroDDS — IDL → Zig codegen backend
 
-`zerodds-idlc --zig` emits **native Zig** from OMG IDL: a self-contained source
+`zerodds-idlc generate --lang zig` emits **native Zig** from OMG IDL: a self-contained source
 file with a shared XCDR2 `Writer` (byte-identical to the `endpoints/zig` core)
 and, per IDL `struct`, a Zig struct plus a `marshalXCDR(endian, allocator) ![]u8`
 method whose wire output matches the Rust goldens exactly.
@@ -12,7 +12,7 @@ Crate: [`crates/idl-zig`](../crates/idl-zig) · registered in `tools/idlc`
 ## Usage
 
 ```sh
-zerodds-idlc types.idl --zig      # emits types.zig
+zerodds-idlc generate --lang zig types.idl   # emits types.zig
 ```
 
 ## Mapping

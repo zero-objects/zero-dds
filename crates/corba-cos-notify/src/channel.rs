@@ -60,10 +60,10 @@ impl ChannelInner {
     }
 }
 
-fn any_as_u32(a: &zerodds_cdr::CorbaAny) -> Option<u32> {
+fn any_as_u32(a: &zerodds_corba_rt::CorbaAny) -> Option<u32> {
     match &a.0 {
-        zerodds_cdr::AnyValue::ULong(v) => Some(*v),
-        zerodds_cdr::AnyValue::Long(v) if *v >= 0 => Some(*v as u32),
+        zerodds_corba_rt::AnyValue::ULong(v) => Some(*v),
+        zerodds_corba_rt::AnyValue::Long(v) if *v >= 0 => Some(*v as u32),
         _ => None,
     }
 }
@@ -378,7 +378,7 @@ mod tests {
     use crate::filter::ConstraintExp;
     use alloc::string::ToString;
     use core::sync::atomic::{AtomicUsize, Ordering};
-    use zerodds_cdr::{AnyValue, CorbaAny};
+    use zerodds_corba_rt::{AnyValue, CorbaAny};
 
     struct Recorder {
         n: AtomicUsize,

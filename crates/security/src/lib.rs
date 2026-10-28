@@ -5,7 +5,7 @@
 //! security plugins run against production trust boundaries; the SPI
 //! layer itself is trust-neutral).
 //!
-//! DDS-Security 1.1 (formal/2018-04-01) plugin SPI: defines the
+//! DDS-Security 1.2 (formal/2025-03-06, §9) plugin SPI: defines the
 //! abstract plugin traits + data types + generic-message topics;
 //! production implementations live in sister crates.
 //!
@@ -14,7 +14,7 @@
 //! Layer 4 — Core Services (SPI crate). Pure Rust + `alloc`, **no**
 //! ZeroDDS crate deps.
 //!
-//! ## Public API (as of 1.0.0-rc.1)
+//! ## Public API
 //!
 //! | Spec                  | Trait / module                                      | Concrete impl |
 //! |-----------------------|-----------------------------------------------------|---------------|
@@ -42,10 +42,10 @@
 //!
 //! ## API stability pledge
 //!
-//! This interface is **API-frozen** as of `1.0.0-rc.1`. Breaking
-//! changes require a v2.0 major bump. Semver patch + minor may
-//! only add new methods with a default body or non-breaking enum
-//! variants.
+//! This interface can still change before `1.0.0`; the CHANGELOG
+//! lists every change. From 1.0.0 on, breaking changes need a major
+//! bump, and patch + minor may only add methods with a default body
+//! or non-breaking enum variants.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![forbid(unsafe_code)]
@@ -60,8 +60,10 @@
 extern crate alloc;
 
 pub mod access_control;
+pub mod algorithm;
 pub mod authentication;
 pub mod crypto;
+pub mod cryptographic;
 pub mod data_tagging;
 pub mod error;
 pub mod generic_message;
@@ -69,11 +71,12 @@ pub mod logging;
 pub mod properties;
 pub mod security_topic_qos;
 pub mod token;
+pub mod vendor_forms;
 
 #[cfg(feature = "std")]
 pub mod mock;
 
-pub use access_control::AccessControlPlugin;
+pub use access_control::{AccessControlPlugin, EndpointRequest, RemoteReaderDecision};
 pub use authentication::AuthenticationPlugin;
 pub use crypto::CryptographicPlugin;
 pub use data_tagging::DataTaggingPlugin;
@@ -82,12 +85,13 @@ pub use generic_message::{
     MessageIdentity, ParticipantGenericMessage, TOPIC_STATELESS_MESSAGE,
     TOPIC_VOLATILE_MESSAGE_SECURE, TYPE_NAME_GENERIC_MESSAGE,
 };
-pub use logging::{LogLevel, LoggingPlugin};
+pub use logging::{LogLevel, LogOptions, LoggerListener, LoggingPlugin};
 pub use properties::{Property, PropertyList};
 pub use token::{
     BinaryProperty, CryptoToken, DataHolder, IdentityStatusToken, IdentityToken, PermissionsToken,
     WireProperty,
 };
+pub use vendor_forms::{AlgoNameNul, SubjectNameForm};
 
 #[cfg(test)]
 #[allow(clippy::expect_used)]

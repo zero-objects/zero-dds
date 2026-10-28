@@ -214,6 +214,39 @@ let
           "wrap_deliver_in_rfc1982_order_after_retransmit")
 end
 
+# --- ACKNACK: DHEADER form and legacy FINAL form ---
+
+let
+    an = Reliable.acknack_frame(0x80, Reliable.STREAM_NONE, 1, UInt16(1), UInt8(0), UInt8(0), 0x80)
+    check(length(an) == 17 && an[7] == 0x09 && an[9:12] == UInt8[5, 0, 0, 0], "acknack_17_octets_with_dheader")
+    p1 = Reliable.parse_acknack(an)
+    check(p1 !== nothing && p1.first_unacked == UInt16(1) && p1.stream_id == 0x80, "acknack_parse_dheader_form")
+    legacy = UInt8[0x80, 0x00, 0x07, 0x00, 0x0A, 0x01, 0x05, 0x00, 0x05, 0x00, 0x0F, 0x00, 0x80]
+    p2 = Reliable.parse_acknack(legacy)
+    check(p2 !== nothing && p2.first_unacked == UInt16(5) && p2.nack_lo == 0x0F && p2.stream_id == 0x80,
+          "acknack_parse_legacy_5_octet")
+end
+
+# --- unannotated types: FINAL is the 13-octet golden, the default the 17-octet form ---
+
+let
+    final_golden = UInt8[0x80, 0x00, 0x01, 0x00, 0x0A, 0x01, 0x05, 0x00, 0x01, 0x00, 0x00, 0x00, 0x80]
+    fin = Reliable.acknack_frame(0x80, Reliable.STREAM_NONE, 1, UInt16(1), UInt8(0), UInt8(0), 0x80;
+                                 unannotated_types = Reliable.UNANNOTATED_FINAL)
+    check(fin == final_golden, "acknack_final_13_octet_golden")
+    app = Reliable.acknack_frame(0x80, Reliable.STREAM_NONE, 1, UInt16(1), UInt8(0), UInt8(0), 0x80)
+    check(length(app) == 17 && app == Reliable.acknack_frame(0x80, Reliable.STREAM_NONE, 1, UInt16(1), UInt8(0), UInt8(0), 0x80;
+                                                              unannotated_types = Reliable.UNANNOTATED_APPENDABLE),
+          "acknack_default_is_appendable_17_octets")
+    pf = Reliable.parse_acknack(fin)
+    pa = Reliable.parse_acknack(app)
+    check(pf !== nothing && pf.first_unacked == UInt16(1) && pf.stream_id == 0x80 &&
+          pa !== nothing && pa.first_unacked == UInt16(1) && pa.stream_id == 0x80, "acknack_parse_both_forms")
+    check(length(Reliable.acknack_frame(Reliable.Receiver(unannotated_types = Reliable.UNANNOTATED_FINAL))) == 13,
+          "receiver_final_writes_13_octets")
+    check(length(Reliable.acknack_frame(Reliable.Receiver())) == 17, "receiver_default_writes_17_octets")
+end
+
 # --- byte-golden ---
 
 if length(ARGS) >= 1

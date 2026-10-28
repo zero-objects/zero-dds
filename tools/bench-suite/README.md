@@ -1,31 +1,31 @@
 # ZeroDDS Bench-Suite
 
-**Crate:** `zerodds-bench-suite` (tool, nicht runtime).
-**Zweck:** Zitierfähige, reproduzierbare Perf-Messungen für alle
-ZeroDDS-Transports über eine fixe Payload-Achse.
+**Crate:** `zerodds-bench-suite` (tool, not runtime).
+**Purpose:** citable, reproducible perf measurements for all
+ZeroDDS transports over a fixed payload axis.
 
-## Was hier ist
+## What is here
 
-- `src/lib.rs` — Shared Harness: `PAYLOAD_SIZES`-Konstante (9 Punkte
-  von 32 B bis 4 MiB), `make_payload()` deterministischer
-  Payload-Gen, `size_label()` Labels für BenchmarkIds.
-- `benches/transports_e2e.rs` — 4 Bench-Groups: `udp_send`,
-  `uds_fs_send`, `uds_abstract_send` (Linux), `shm_send`. Jede
-  misst `transport.send(locator, payload)` über die komplette
-  Payload-Achse (mit DGRAM-Cap bei 64 KiB für UDP+UDS).
-- `benches/rtps_fragmented.rs` — Writer-Dispatch mit Fragmentation
-  ueber den ReliableWriter, multiple Reader-Proxies.
-- `src/bin/roundtrip_1us.rs` — Sub-µs-Latency-Bench:
-  Ping/Pong busy-poll auf UDP, Histogramm-Output mit p50/p90/
-  p99/p999/p9999/p99999, optional `histlog`-V2-Format-Export
+- `src/lib.rs` — shared harness: `PAYLOAD_SIZES` constant (9 points
+  from 32 B to 4 MiB), `make_payload()` deterministic
+  payload gen, `size_label()` labels for BenchmarkIds.
+- `benches/transports_e2e.rs` — 4 bench groups: `udp_send`,
+  `uds_fs_send`, `uds_abstract_send` (Linux), `shm_send`. Each
+  measures `transport.send(locator, payload)` over the complete
+  payload axis (with a DGRAM cap at 64 KiB for UDP+UDS).
+- `benches/rtps_fragmented.rs` — writer dispatch with fragmentation
+  via the ReliableWriter, multiple reader proxies.
+- `src/bin/roundtrip_1us.rs` — sub-µs latency bench:
+  ping/pong busy-poll on UDP, histogram output with p50/p90/
+  p99/p999/p9999/p99999, optional `histlog` V2 format export
   (`--hgrm out.hgrm`).
 
-## Wie man die Baseline erzeugt
+## How to produce the baseline
 
-Siehe `internal/perf/methodology.md` für Details. Kurzversion:
+See `internal/perf/methodology.md` for details. Short version:
 
 ```bash
-# Auf dem llvm-Host (bare-metal Debian 12, Threadripper 3955WX):
+# on a bare-metal Debian 12 host (Threadripper 3955WX):
 sudo ./benches/hosts/llvm/tune.sh on    # governor=performance,
                                          # net.core.*_max=32MiB, …
 
@@ -37,43 +37,43 @@ taskset -c 4-11 \
 sudo ./benches/hosts/llvm/tune.sh off
 ```
 
-Die erzeugten Reports liegen unter `target/criterion/` — raw JSON +
-HTML-Plots. Baseline-Exports als Markdown unter
+The generated reports are under `target/criterion/` — raw JSON +
+HTML plots. Baseline exports as Markdown under
 `internal/perf/baseline-<host>-<date>.md`.
 
-## Design-Entscheidungen
+## Design decisions
 
-Dokumentiert als Kommentare im Code. Kurzfassung:
+Documented as comments in the code. Short version:
 
-- **Fix vorgegebene Payload-Achse**: 9 Punkte, keine ad-hoc-Größen.
-  Reports zwischen Runs nur vergleichbar wenn identische Achse.
-- **TX-only-Messung**: Receiver läuft im gleichen Prozess/Thread,
-  drainiert stumm. Damit messen wir den reinen Sender-Pfad ohne
-  OS-Scheduling-Noise vom Receiver. E2E-Ping/Pong-Latenz wird vom
-  separaten `roundtrip-1us`-Binary erfasst.
-- **DGRAM-Cap 60 KiB**: UDP + UDS-DGRAM sind per Kernel gecapt;
-  Größen > 60 KiB werden in den DGRAM-Bench-Groups geskippt. SHM
-  hat keinen Cap und läuft über alle 9 Punkte.
-- **SHM-capacity 4×max_datagram**: verhindert Ring-Wrap-Spin-Loops
-  im Bench. Bei realistischer Config ist capacity typisch 1 MiB;
-  wir dimensionieren pro Größe, damit wir keine Wrap-Overheads in
-  die Messung ziehen.
-- **Consumer drain im SHM-Bench**: Criterion-iter-loop drainiert
-  den Consumer nach jedem Send, damit der Ring nicht füllt. Das
-  bedeutet, der Bench misst send+recv zusammen; der reine send-
-  Pfad ohne Drain wäre durch den vollen Ring schnell gekappt.
+- **Fixed payload axis**: 9 points, no ad-hoc sizes.
+  Reports are only comparable between runs if the axis is identical.
+- **TX-only measurement**: the receiver runs in the same process/thread
+  and drains silently. This way we measure the pure sender path without
+  OS scheduling noise from the receiver. E2E ping/pong latency is captured by the
+  separate `roundtrip-1us` binary.
+- **DGRAM cap 60 KiB**: UDP + UDS DGRAM are capped by the kernel;
+  sizes > 60 KiB are skipped in the DGRAM bench groups. SHM
+  has no cap and runs over all 9 points.
+- **SHM capacity 4×max_datagram**: prevents ring-wrap spin loops
+  in the bench. In a realistic config the capacity is typically 1 MiB;
+  we size it per payload size so that we do not pull wrap overheads into
+  the measurement.
+- **Consumer drain in the SHM bench**: the Criterion iter loop drains
+  the consumer after every send, so that the ring does not fill up. This
+  means the bench measures send+recv together; the pure send
+  path without a drain would quickly be capped by the full ring.
 
-## Roundtrip-1us — Latency-Bench
+## Roundtrip-1us — latency bench
 
-Sub-µs-Roundtrip-Bench fuer Latency-Messung auf RT-getuneten Hosts.
-Laeuft als Zwei-Prozess-Setup:
+Sub-µs round-trip bench for latency measurement on RT-tuned hosts.
+Runs as a two-process setup:
 
 ```bash
-# Pong-Prozess (CPU-pinned, RT-Prio empfohlen):
+# pong process (CPU-pinned, RT prio recommended):
 taskset -c 2 chrt -f 80 \
   roundtrip-1us --role pong --addr 0.0.0.0:7400 --payload 64
 
-# Ping-Prozess (auf der Gegenmaschine):
+# ping process (on the other machine):
 taskset -c 3 chrt -f 80 \
   roundtrip-1us --role ping \
     --remote 192.0.2.10:7400 --bind 0.0.0.0:7401 \
@@ -82,23 +82,23 @@ taskset -c 3 chrt -f 80 \
 ```
 
 Output: stdout p50/p90/p99/p999/p9999/p99999 + min/max/n;
-`--hgrm` schreibt das volle Histogramm im `histlog`-V2-Text-Format
-(plotbar mit OSADL `cyclictest_plot`).
+`--hgrm` writes the full histogram in the `histlog` V2 text format
+(plottable with OSADL `cyclictest_plot`).
 
-## Cross-Vendor-Vergleich
+## Cross-vendor comparison
 
-`tools/bench-suite` misst nur den ZeroDDS-Pfad. Cross-vendor-
-Vergleiche gegen Cyclone DDS (`ddsperf`) + FastDDS
-(`LatencyTestPublisher`) laufen ueber das Live-Interop-Harness in
+`tools/bench-suite` only measures the ZeroDDS path. Cross-vendor
+comparisons against Cyclone DDS (`ddsperf`) + FastDDS
+(`LatencyTestPublisher`) run via the live interop harness in
 `internal/interop/`.
 
-## Regression-Gate
+## Regression gate
 
-Die CI soll nach jedem Tag:
+After every tag, the CI is meant to:
 
-1. Die eingefrorene Baseline aus dem Repo laden.
-2. `cargo bench -- --baseline <tag>` laufen.
-3. Fail-on-regression: > 10 % Verschlechterung p50 auf irgendeinem
-   (bench, size)-Punkt bricht den Build.
+1. Load the frozen baseline from the repo.
+2. Run `cargo bench -- --baseline <tag>`.
+3. Fail on regression: > 10 % degradation of p50 at any
+   (bench, size) point breaks the build.
 
-Aktuell manuell — Automatisierung ist Folge-Sprint-Material.
+Currently manual — automation is material for a follow-up sprint.

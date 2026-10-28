@@ -1,0 +1,12 @@
+// `enum` with non-contiguous `@value`, unannotated
+enum Status {
+    @value(1) OK,
+    @value(100) WARN,
+    @value(65535) FAIL
+};
+
+struct Sample {
+    Status a;
+    Status b;
+    Status c;
+};

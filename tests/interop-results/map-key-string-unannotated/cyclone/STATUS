@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of map-key-string-unannotated that cyclone produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	syntax error
+plain-cdr1	be	refused	syntax error
+pl-cdr1	le	refused	syntax error
+pl-cdr1	be	refused	syntax error
+plain-cdr2	le	refused	syntax error
+plain-cdr2	be	refused	syntax error
+delimited-cdr	le	refused	syntax error
+delimited-cdr	be	refused	syntax error
+pl-cdr2	le	refused	syntax error
+pl-cdr2	be	refused	syntax error

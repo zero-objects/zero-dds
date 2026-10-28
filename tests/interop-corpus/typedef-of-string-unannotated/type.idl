@@ -1,0 +1,8 @@
+// `typedef` of a bounded string, unannotated
+typedef string<16> Name;
+typedef Name Label;
+
+struct Sample {
+    Label text;
+    long tail;
+};

@@ -1,0 +1,8 @@
+module probe {
+    typedef fixed<10,2> Money;
+    interface Special {
+        void in_v(in Money v);
+        void out_v(out Money v);
+        Money ret_v();
+    };
+};

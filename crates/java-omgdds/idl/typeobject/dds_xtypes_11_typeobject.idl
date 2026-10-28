@@ -1,0 +1,288 @@
+// The TypeObject of DDS-XTypes 1.1 (formal/2014-11-03), Annex B, "Representing Types with
+// TypeObject", in the annotation syntax of IDL 4: the type of the `type` member of the
+// built-in topic data (DDS-XTypes 1.3 7.6.3.2.2, `@id(0x0072) TypeObjectV1 type`) and of
+// `org.omg.dds.type.typeobject` of DDS-Java-PSM 1.0.
+//
+// Transcription changes, none of them in a member, a type, an id or a label:
+//   @Extensibility(EXTENSIBLE_EXTENSIBILITY)  -> @appendable (XTypes 1.3 7.2.2.4.4.4)
+//   @Extensibility(MUTABLE_EXTENSIBILITY)     -> @mutable
+//   @ID(X) with the enumeration constant X    -> @id(<its value>)
+//   @Nested                                   -> @nested
+//   @Shared                                   -> @external
+//   @BitSet @BitBound(16) enum                -> @bit_bound(16) bitmask
+module DDS {
+    typedef short TypeKind;
+
+    const TypeKind NO_TYPE            = 0;
+    const TypeKind BOOLEAN_TYPE       = 1;
+    const TypeKind BYTE_TYPE          = 2;
+    const TypeKind INT_16_TYPE        = 3;
+    const TypeKind UINT_16_TYPE       = 4;
+    const TypeKind INT_32_TYPE        = 5;
+    const TypeKind UINT_32_TYPE       = 6;
+    const TypeKind INT_64_TYPE        = 7;
+    const TypeKind UINT_64_TYPE       = 8;
+    const TypeKind FLOAT_32_TYPE      = 9;
+    const TypeKind FLOAT_64_TYPE      = 10;
+    const TypeKind FLOAT_128_TYPE     = 11;
+    const TypeKind CHAR_8_TYPE        = 12;
+    const TypeKind CHAR_32_TYPE       = 13;
+    const TypeKind ENUMERATION_TYPE   = 14;
+    const TypeKind BITSET_TYPE        = 15;
+    const TypeKind ALIAS_TYPE         = 16;
+    const TypeKind ARRAY_TYPE         = 17;
+    const TypeKind SEQUENCE_TYPE      = 18;
+    const TypeKind STRING_TYPE        = 19;
+    const TypeKind MAP_TYPE           = 20;
+    const TypeKind UNION_TYPE         = 21;
+    const TypeKind STRUCTURE_TYPE     = 22;
+    const TypeKind ANNOTATION_TYPE    = 23;
+
+    const long ELEMENT_NAME_MAX_LENGTH = 256;
+    typedef string<ELEMENT_NAME_MAX_LENGTH> ObjectName;
+
+    typedef short PrimitiveTypeId;
+
+    union _TypeId switch (TypeKind) {
+        case BOOLEAN_TYPE:
+        case BYTE_TYPE:
+        case INT_16_TYPE:
+        case UINT_16_TYPE:
+        case INT_32_TYPE:
+        case UINT_32_TYPE:
+        case INT_64_TYPE:
+        case UINT_64_TYPE:
+        case FLOAT_32_TYPE:
+        case FLOAT_64_TYPE:
+        case FLOAT_128_TYPE:
+        case CHAR_8_TYPE:
+        case CHAR_32_TYPE:
+            PrimitiveTypeId primitive_type_id;
+        default:
+            unsigned long long constructed_type_id;
+    };
+
+    typedef sequence<_TypeId> _TypeIdSeq;
+
+    typedef unsigned long MemberId;
+    const MemberId MEMBER_ID_INVALID = 0x0FFFFFFF;
+
+    @appendable @nested
+    union AnnotationMemberValue switch (TypeKind) {
+        case BOOLEAN_TYPE:     boolean boolean_value;
+        case BYTE_TYPE:        octet byte_value;
+        case INT_16_TYPE:      short int_16_value;
+        case UINT_16_TYPE:     unsigned short uint_16_value;
+        case INT_32_TYPE:      long int_32_value;
+        case UINT_32_TYPE:     unsigned long uint_32_value;
+        case INT_64_TYPE:      long long int_64_value;
+        case UINT_64_TYPE:     unsigned long long uint_64_value;
+        case FLOAT_32_TYPE:    float float_32_value;
+        case FLOAT_64_TYPE:    double float_64_value;
+        case FLOAT_128_TYPE:   long double float_128_value;
+        case CHAR_8_TYPE:      char character_value;
+        case CHAR_32_TYPE:     wchar wide_character_value;
+        case ENUMERATION_TYPE: long enumeration_value;
+        case STRING_TYPE:      wstring string_value;
+    };
+
+    @appendable @nested
+    struct AnnotationUsageMember {
+        MemberId member_id;
+        AnnotationMemberValue value;
+    };
+    typedef sequence<AnnotationUsageMember> AnnotationUsageMemberSeq;
+
+    @appendable @nested
+    struct AnnotationUsage {
+        _TypeId type_id;
+        AnnotationUsageMemberSeq member;
+    };
+    typedef sequence<AnnotationUsage> AnnotationUsageSeq;
+
+    @bit_bound(16)
+    bitmask TypeFlag {
+        @position(0) IS_FINAL,
+        @position(1) IS_MUTABLE,
+        @position(2) IS_NESTED
+    };
+
+    @appendable @nested
+    struct TypeProperty {
+        TypeFlag flag;
+        _TypeId type_id;
+        ObjectName name;
+    };
+
+    @mutable @nested
+    struct Type {
+        @id(0) TypeProperty property;
+        @id(1) AnnotationUsageSeq _annotation;
+    };
+
+    @bit_bound(16)
+    bitmask MemberFlag {
+        @position(0) IS_KEY,
+        @position(1) IS_OPTIONAL,
+        @position(2) IS_SHAREABLE,
+        @position(3) IS_UNION_DEFAULT
+    };
+
+    @appendable @nested
+    struct MemberProperty {
+        MemberFlag flag;
+        MemberId member_id;
+        _TypeId type_id;
+        ObjectName name;
+    };
+
+    @mutable @nested
+    struct Member {
+        @id(0) MemberProperty property;
+        @id(1) AnnotationUsageSeq _annotation;
+    };
+    typedef sequence<Member> MemberSeq;
+
+    @mutable @nested
+    struct StructureType : Type {
+        @id(100) _TypeId base_type;
+        @id(101) MemberSeq member;
+    };
+
+    typedef sequence<long> UnionCaseLabelSeq;
+
+    @mutable @nested
+    struct UnionMember : Member {
+        @id(100) UnionCaseLabelSeq label;
+    };
+    typedef sequence<UnionMember> UnionMemberSeq;
+
+    @mutable @nested
+    struct UnionType : Type {
+        @id(100) UnionMemberSeq member;
+    };
+
+    @mutable @nested
+    struct AnnotationMember : Member {
+        @id(100) AnnotationMemberValue default_value;
+    };
+    typedef sequence<AnnotationMember> AnnotationMemberSeq;
+
+    @mutable @nested
+    struct AnnotationType : Type {
+        @id(100) _TypeId base_type;
+        @id(101) AnnotationMemberSeq member;
+    };
+
+    @mutable @nested
+    struct AliasType : Type {
+        @id(100) _TypeId base_type;
+    };
+
+    typedef unsigned long CollectionBound;
+    typedef sequence<CollectionBound> CollectionBoundSeq;
+    const CollectionBound UNBOUNDED_COLLECTION = 0;
+
+    @mutable @nested
+    struct CollectionType : Type {
+        @id(100) _TypeId element_type;
+        @id(101) boolean element_shared;
+    };
+
+    @mutable @nested
+    struct ArrayType : CollectionType {
+        @id(200) CollectionBoundSeq bound;
+    };
+
+    @mutable @nested
+    struct MapType : CollectionType {
+        @id(200) _TypeId key_element_type;
+        @id(201) CollectionBound bound;
+    };
+
+    @mutable @nested
+    struct SequenceType : CollectionType {
+        @id(200) CollectionBound bound;
+    };
+
+    @mutable @nested
+    struct StringType : CollectionType {
+        @id(200) CollectionBound bound;
+    };
+
+    @appendable @nested
+    struct Bit {
+        long index;
+        ObjectName name;
+    };
+    typedef sequence<Bit> BitSeq;
+
+    @mutable @nested
+    struct BitSetType : Type {
+        @id(100) CollectionBound bit_bound;
+        @id(101) BitSeq bit;
+    };
+
+    @appendable @nested
+    struct EnumeratedConstant {
+        long value;
+        ObjectName name;
+    };
+    typedef sequence<EnumeratedConstant> EnumeratedConstantSeq;
+
+    @mutable @nested
+    struct EnumerationType : Type {
+        @id(100) CollectionBound bit_bound;
+        @id(101) EnumeratedConstantSeq constant;
+    };
+
+    struct TypeLibrary;
+
+    @appendable @nested
+    struct _Module {
+        ObjectName name;
+        @external TypeLibrary library;
+    };
+
+    @bit_bound(16)
+    enum TypeLibraryElementKind {
+        @value(16) ALIAS_TYPE_ELEMENT,
+        @value(23) ANNOTATION_TYPE_ELEMENT,
+        @value(17) ARRAY_TYPE_ELEMENT,
+        @value(15) BITSET_TYPE_ELEMENT,
+        @value(14) ENUMERATION_TYPE_ELEMENT,
+        @value(20) MAP_TYPE_ELEMENT,
+        @value(18) SEQUENCE_TYPE_ELEMENT,
+        @value(19) STRING_TYPE_ELEMENT,
+        @value(22) STRUCTURE_TYPE_ELEMENT,
+        @value(21) UNION_TYPE_ELEMENT,
+        @value(24) MODULE_ELEMENT
+    };
+
+    @mutable @nested
+    union TypeLibraryElement switch (TypeLibraryElementKind) {
+        case ALIAS_TYPE_ELEMENT:       AliasType alias_type;
+        case ANNOTATION_TYPE_ELEMENT:  AnnotationType annotation_type;
+        case ARRAY_TYPE_ELEMENT:       ArrayType array_type;
+        case BITSET_TYPE_ELEMENT:      BitSetType bitset_type;
+        case ENUMERATION_TYPE_ELEMENT: EnumerationType enumeration_type;
+        case MAP_TYPE_ELEMENT:         MapType map_type;
+        case SEQUENCE_TYPE_ELEMENT:    SequenceType sequence_type;
+        case STRING_TYPE_ELEMENT:      StringType string_type;
+        case STRUCTURE_TYPE_ELEMENT:   StructureType structure_type;
+        case UNION_TYPE_ELEMENT:       UnionType union_type;
+        case MODULE_ELEMENT:           _Module mod;
+    };
+    typedef sequence<TypeLibraryElement> TypeLibraryElementSeq;
+
+    @appendable @nested
+    struct TypeLibrary {
+        TypeLibraryElementSeq element;
+    };
+
+    @mutable
+    struct TypeObject {
+        @external TypeLibrary library;
+        _TypeIdSeq the_type;
+    };
+};

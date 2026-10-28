@@ -1,0 +1,2 @@
+fastddsgen failed and named no case
+fill_2.inc:2:26: error: 'class eprosima::fastcdr::external<zd_c2::Inner>' has no member named 'a'

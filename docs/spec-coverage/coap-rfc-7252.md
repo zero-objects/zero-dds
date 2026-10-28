@@ -26,7 +26,16 @@ DTLS-Security, Asynchron-Messaging.
 
 **Repo:** `crates/coap-bridge/src/lib.rs` Crate-Doc.
 
-**Tests:** Cross-Ref §3.
+**Tests:** REST-Methoden + Response-Klassen:
+`crates/coap-bridge/src/message.rs::tests::well_known_codes_match_spec_values`;
+Asynchron-Messaging (CON/NON/ACK/RST):
+`crates/coap-bridge/src/message.rs::tests::message_type_round_trips_via_bits`;
+Multicast-Support:
+`crates/coap-bridge/src/multicast.rs::tests::well_known_addresses_match_spec`;
+DTLS-Security:
+`crates/coap-bridge/src/dtls.rs::tests::psk_is_secure`;
+UDP-Bound (Default-Ports 5683/5684):
+`crates/coap-bridge/src/uri.rs::tests::default_port_returns_5684_for_coaps`.
 
 **Status:** done — Wire-Codec; Multicast/DTLS sind Caller-Layer.
 
@@ -77,7 +86,11 @@ CacheLookup, ProxyConfig, ProxyMode}` — Cache-Layer mit
 Freshness-Tracking + Stale/Revalidate-Pfad; Proxy-Configuration
 mit Forward-/Reverse-Mode + Hop-Count-Cap (Spec §5.7.1 Loop-Schutz).
 
-**Tests:** Cross-Ref `caching_proxy::tests::*`.
+**Tests:** `crates/coap-bridge/src/caching_proxy.rs::tests::{empty_cache_returns_miss,
+store_then_fresh_lookup, stale_with_etag_yields_validation_path,
+stale_without_etag_yields_miss, cap_evicts_oldest,
+evict_expired_without_etag_keeps_revalidatable,
+proxy_config_default_is_forward_coap_to_coap}`.
 
 **Status:** done — Caching + Forward-Proxy-Configuration live.
 
@@ -88,7 +101,11 @@ mit Forward-/Reverse-Mode + Hop-Count-Cap (Spec §5.7.1 Loop-Schutz).
 **Repo:** `crates/coap-bridge/src/core_link.rs::{CoreLink,
 encode_links, decode_links}`.
 
-**Tests:** Inline.
+**Tests:** `crates/coap-bridge/src/core_link.rs::tests::{encode_simple_link_format,
+encode_multiple_links_comma_separated, decode_round_trip_with_attrs,
+decode_handles_numeric_attr, decode_handles_quoted_string_with_comma,
+decode_rejects_uri_without_brackets, decode_attr_without_value_yields_empty,
+encode_escapes_inner_quotes}`.
 
 **Status:** done
 
@@ -186,7 +203,10 @@ mit eigenem Transport (z.B. embedded-Stack ohne OS-Sockets).
 Spec §4.1 normiert die Endpoint-Identifikation, nicht den UDP-
 Reactor selbst.
 
-**Tests:** Inline-Tests in `bridge.rs`.
+**Tests:** `crates/coap-bridge/src/bridge.rs::tests::{parses_topic_only,
+parses_topic_with_key, rejects_non_dds_path,
+bridge_apply_write_then_read_round_trip,
+bridge_observe_register_increments_observer_count}`.
 
 **Status:** done — Endpoint-Tracking als spec-konforme Vec<u8>-ID;
 Transport-Decoupling ist beabsichtigte Architektur für no_std-
@@ -194,26 +214,54 @@ Targets.
 
 ### §4.2-§4.7 Reliability + Deduplication + Congestion
 
-**Spec:** §4.2-§4.7, S. 21-26 — CON-Retry-Timer (ACK_TIMEOUT,
-ACK_RANDOM_FACTOR, MAX_RETRANSMIT), Deduplication, Congestion-Control.
+**Spec:** §4.2-§4.7, S. 21-26 — CON-Retry mit exponentiellem Backoff bis
+`MAX_RETRANSMIT`; §4.5 „The recipient […] SHOULD acknowledge each
+duplicate copy of a Confirmable message […] but SHOULD process any
+request or response in the message only once" — Message-ID-Duplikate
+innerhalb `EXCHANGE_LIFETIME` (CON) bzw. `NON_LIFETIME` (NON); §4.7
+`NSTART` als Obergrenze gleichzeitig ausstehender Interaktionen
+gegenüber einem Server.
 
 **Repo:** `crates/coap-bridge/src/reliability.rs::{ReliabilityTracker,
 PendingConfirmable, TickOutput}` — `send_confirmable`/`receive_ack`/
-`receive_rst`/`tick` decken CON-Retry + ACK/RST-Pfad ab.
+`receive_rst`/`tick` decken CON-Retry + ACK/RST-Pfad ab;
+`crates/coap-bridge/src/reliability.rs::{DuplicateDetector, DedupKind,
+Reception}` mit `receive`/`remember_ack`/`evict_expired` für die §4.5-
+Deduplikation (ACK aus dem Cache statt zweiter Verarbeitung);
+`crates/coap-bridge/src/reliability.rs::OutstandingInteractions` mit
+`try_begin`/`end` für die §4.7-`NSTART`-Schranke pro Server.
 
-**Tests:** Inline.
+**Tests:** `crates/coap-bridge/src/reliability.rs::tests::{tick_before_timeout_does_nothing,
+tick_after_timeout_retransmits, exhausting_retransmits_times_out,
+interval_doubles_per_retransmit, send_then_ack_clears_pending,
+rst_clears_pending, duplicate_message_id_within_exchange_lifetime_is_detected,
+duplicate_entry_expires_after_its_lifetime, duplicate_detection_is_per_endpoint,
+duplicate_table_cap_bounds_memory, nstart_caps_outstanding_interactions_per_server}`.
 
 **Status:** done
 
 ### §4.8 Transmission Parameters
 
-**Spec:** §4.8, S. 27-29 — Default-Werte (ACK_TIMEOUT 2s,
-ACK_RANDOM_FACTOR 1.5, MAX_RETRANSMIT 4, etc.).
+**Spec:** §4.8, S. 27-29 — Tab. 2: `ACK_TIMEOUT` 2 s, `ACK_RANDOM_FACTOR`
+1.5, `MAX_RETRANSMIT` 4, `NSTART` 1, `DEFAULT_LEISURE` 5 s,
+`PROBING_RATE` 1 Byte/s. §4.8.2 leitet daraus ab:
+`MAX_TRANSMIT_SPAN = ACK_TIMEOUT * ((2 ** MAX_RETRANSMIT) - 1) *
+ACK_RANDOM_FACTOR` (45 s), `MAX_TRANSMIT_WAIT` (93 s),
+`EXCHANGE_LIFETIME = MAX_TRANSMIT_SPAN + (2 * MAX_LATENCY) +
+PROCESSING_DELAY` (247 s), `NON_LIFETIME` (145 s).
 
-**Repo:** Konstanten in `crates/coap-bridge/src/reliability.rs`
-(als Defaults im `ReliabilityTracker::new`).
+**Repo:** `crates/coap-bridge/src/reliability.rs::{ACK_TIMEOUT_MS,
+ACK_RANDOM_FACTOR_NUM, ACK_RANDOM_FACTOR_DEN, MAX_RETRANSMIT, NSTART,
+DEFAULT_LEISURE_MS, PROBING_RATE_BYTES_PER_SEC, MAX_LATENCY_MS,
+PROCESSING_DELAY_MS, MAX_TRANSMIT_SPAN_MS, MAX_TRANSMIT_WAIT_MS,
+EXCHANGE_LIFETIME_MS, NON_LIFETIME_MS}`; `initial_interval` setzt
+`ACK_TIMEOUT * ACK_RANDOM_FACTOR` als erstes Retry-Intervall.
 
-**Tests:** Inline.
+**Tests:** `crates/coap-bridge/src/reliability.rs::tests::{transmission_parameters_match_spec_4_8_table_2,
+derived_transmission_parameters_follow_spec_4_8_2_formulas,
+backoff_schedule_follows_ack_timeout_and_random_factor}` — der letzte
+prüft die daraus folgende Retry-Folge 3000/6000/12000/24000 ms und den
+Abbruch nach `MAX_RETRANSMIT` bei `MAX_TRANSMIT_WAIT`.
 
 **Status:** done
 
@@ -269,24 +317,35 @@ Lifetime-Eviction live.
 **Spec:** §5.4, S. 39-43 — Option-Class-Properties: Critical/Elective,
 Unsafe/Safe, NoCacheKey, Repeatable.
 
-**Repo:** Option-Numbers + Critical/Unsafe/NoCacheKey-Bits in
-`crates/coap-bridge/src/option.rs::numbers` + Helper-Funktionen
-für die Property-Bits aus Option-Number.
+**Repo:** Option-Numbers in `crates/coap-bridge/src/option.rs::numbers`;
+Property-Bits aus der Option-Number in
+`crates/coap-bridge/src/option.rs::{is_critical, is_unsafe,
+is_nocachekey, is_repeatable}` nach der §5.4.6-Formel
+(`Critical = (onum & 1)`, `UnSafe = (onum & 2)`,
+`NoCacheKey = ((onum & 0x1e) == 0x1c)`) plus die gleichnamigen
+Methoden auf `CoapOption`.
 
-**Tests:** `option::tests::critical_unsafe_nocachekey_bits_per_spec_4_2`,
-`option::tests::observe_option_uses_number_6`.
+**Tests:** `crates/coap-bridge/src/option.rs::tests::{critical_unsafe_nocachekey_bits_per_spec_5_4_6,
+repeatable_options_match_spec_table_4, observe_option_uses_number_6}`.
 
 **Status:** done
 
 ### §5.5 Payloads and Representations
 
-**Spec:** §5.5, S. 43-44 — Payload-Format mit Content-Format-Option;
-Diagnostic-Payload für Errors.
+**Spec:** §5.5.1/§5.5.3, S. 43-44 — Payload als Repräsentation, deren
+Medientyp die Content-Format-Option benennt; §5.5.2 „If no
+Content-Format option is given, the payload of responses indicating a
+client or server error is a brief human-readable diagnostic message"
+in UTF-8.
 
-**Repo:** `CoapMessage::payload` als `Vec<u8>`; Content-Format-Option
-nutzt Option-Number 12 (Konstante in `numbers`).
+**Repo:** `crates/coap-bridge/src/message.rs::CoapMessage::payload` als
+`Vec<u8>`; Content-Format-Option (Number 12) über
+`crates/coap-bridge/src/option.rs::CoapOption::content_format`;
+Payload-Marker-Trennung in `crates/coap-bridge/src/codec.rs`.
 
-**Tests:** Cross-Ref Codec-Roundtrips.
+**Tests:** `crates/coap-bridge/src/codec.rs::tests::{representation_carries_content_format_per_spec_5_5,
+diagnostic_payload_of_error_response_carries_no_content_format,
+payload_marker_separates_options_from_payload}`.
 
 **Status:** done
 
@@ -329,7 +388,7 @@ mit Forward/Reverse-Mode + max_hops-Cap (Spec §5.7.1 Loop-Schutz)
 
 **Spec:** §5.8, S. 49-51 — GET/POST/PUT/DELETE-Semantik, Idempotency.
 
-**Repo:** Method-Codes definiert in `message.rs` + Method-Property-
+**Repo:** Method-Codes definiert in `crates/coap-bridge/src/message.rs` + Method-Property-
 Helpers `crates/coap-bridge/src/method_props.rs::{is_safe,
 is_idempotent, is_method}` mit Spec-konformen Werten (GET = safe +
 idempotent; PUT/DELETE = idempotent; POST = weder).
@@ -347,7 +406,7 @@ ausgewiesen.
 (2.xx, 4.xx, 5.xx) mit Bedeutung.
 
 **Repo:** Alle wichtigen Codes als `CoapCode`-Varianten in
-`message.rs`.
+`crates/coap-bridge/src/message.rs`.
 
 **Tests:** `message::tests::well_known_codes_match_spec_values`.
 
@@ -383,12 +442,12 @@ default_port, UriError}`. Default-Ports 5683 / 5684; Path-Segmente
 + Query-Parameter werden aufgeteilt (zur direkten Mapping in
 `Uri-Path`/`Uri-Query`-Options); Fragment-Identifier rejected (§6.1).
 
-**Tests:** `uri::tests::*` (11 Tests) inkl. parses_basic_coap_uri,
+**Tests:** `crates/coap-bridge/src/uri.rs::tests::{parses_basic_coap_uri,
 parses_coaps_default_port, parses_explicit_port, parses_query_params,
 parses_empty_path_when_no_slash, rejects_unknown_scheme,
 rejects_missing_host, rejects_invalid_port, rejects_fragment,
 default_port_returns_5684_for_coaps,
-round_trip_path_filtering_strips_empty_segments.
+round_trip_path_filtering_strips_empty_segments}` (11).
 
 **Status:** done — coap/coaps URI-Scheme-Parser live.
 
@@ -405,7 +464,11 @@ Service-Discovery via Multicast in `multicast.rs::{ALL_NODES_LINK_LOCAL_V4,
 ALL_NODES_LINK_LOCAL_V6, ALL_NODES_SITE_LOCAL_V6,
 validate_multicast_request}` (siehe §8).
 
-**Tests:** Inline + `multicast::tests::*`.
+**Tests:** Resource-Discovery:
+`crates/coap-bridge/src/core_link.rs::tests::{encode_simple_link_format,
+decode_round_trip_with_attrs}`; Service-Discovery:
+`crates/coap-bridge/src/multicast.rs::tests::{well_known_addresses_match_spec,
+valid_multicast_request_passes, multicast_request_must_not_be_confirmable}`.
 
 **Status:** done — Resource-Discovery + Service-Discovery-Adressen
 (All-CoAP-Nodes IPv4/IPv6) live; UDP-Multicast-Send/Receive bleibt
@@ -533,13 +596,25 @@ Security/Acks ohne Code-Mapping.
 
 ### RFC 7641 §3-§5 Notification + State + Reordering
 
-**Spec:** §3-§5 — Server-Notification-Logic, Reordering, Lifetime.
+**Spec:** RFC 7641 §3.1/§3.4/§3.6, S. 7-14 — Registrierung über
+`Observe = 0`, monoton steigende Sequenznummer modulo 2^24, und die
+Reordering-Regel: eine neue Notification (V2, T2) ist frischer als die
+gespeicherte (V1, T1) genau dann, wenn `(V1 < V2 and V2 - V1 < 2^23)`
+oder `(V1 > V2 and V1 - V2 > 2^23)` oder `T2 > T1 + 128 seconds`;
+§3.6 Deregistrierung beendet die Observe-Beziehung.
 
 **Repo:** `crates/coap-bridge/src/observe.rs::{ObserveRegistry,
 ObserverEntry}` mit `register`/`deregister`/`observers_of`/`next_seq`
-für Notification-Sequencing pro Path.
+für Notification-Sequencing pro Path;
+`crates/coap-bridge/src/observe.rs::{notification_is_fresher,
+FRESHNESS_WINDOW_MS}` für die §3.4-Reordering-Regel.
 
-**Tests:** Inline.
+**Tests:** `crates/coap-bridge/src/observe.rs::tests::{register_then_observers_lists_one,
+next_seq_increments_per_observer, next_seq_wraps_at_24_bits,
+notifications_are_ordered_by_sequence_number_per_spec_3_4,
+wrapped_sequence_number_is_still_recognised_as_fresher,
+notification_older_than_the_freshness_window_is_always_accepted,
+deregister_ends_the_observe_relationship_per_spec_3_6}`.
 
 **Status:** done
 
@@ -549,9 +624,11 @@ für Notification-Sequencing pro Path.
 
 30 done / 0 partial / 0 open / 2 n/a (informative) / 0 n/a (rejected).
 
-Test-Lauf: `cargo test -p zerodds-coap-bridge` — 83 lib-Inline +
-3 Integration = 86 Tests grün, 0 failed. Module mit Tests:
-`blockwise`, `bridge`, `codec`, `core_link`, `message`, `observe`,
-`option`, `reliability`.
+Test-Lauf: `cargo test -p zerodds-coap-bridge` — 202 lib-Inline +
+17 Integration = 219 Tests grün, 0 failed, 3 ignored (Interop-Tests
+gegen externe libcoap-Binaries). Module mit Tests: `blockwise`,
+`bridge`, `caching_proxy`, `codec`, `core_link`, `daemon`, `dtls`,
+`matching`, `message`, `method_props`, `multicast`, `observe`,
+`option`, `oscore`, `reliability`, `uri`.
 
 Keine offenen Punkte — alle Items `done`.

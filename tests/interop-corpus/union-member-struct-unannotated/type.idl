@@ -1,0 +1,15 @@
+// `union` with an aggregate branch, unannotated
+struct Cell {
+    long a;
+    short b;
+};
+
+union Choice switch (long) {
+    case 1: Cell slot;
+    default: octet raw;
+};
+
+struct Sample {
+    Choice picked;
+    long tail;
+};

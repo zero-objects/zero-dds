@@ -1,187 +1,206 @@
-# 0013 — Native Endpoint-SDKs (C/C++/Python/Java) über einem Rust-Hub, kein FFI
+# 0013 — Native endpoint SDKs (C/C++/Python/Java) over a Rust hub, no FFI
 
 - **Status:** accepted
-- **Datum:** 2026-07-21
-- **Autoren:** @sandra
-- **Kontext:** `crates/xrce`, `crates/zerodds-c-api`, `crates/py`, `crates/java-omgdds`, `crates/idl-cpp`/`idl-java`/`idl-python`, `crates/cdr`, DDS-XRCE 1.0, DDSI-RTPS 2.5 §10.5
+- **Date:** 2026-07-21
+- **Authors:** @sandra
+- **Context:** `crates/xrce`, `crates/zerodds-c-api`, `crates/py`, `crates/java-omgdds`, `crates/idl-cpp`/`idl-java`/`idl-python`, `crates/cdr`, DDS-XRCE 1.0, DDSI-RTPS 2.5 §10.5
 
-## Kontext
+## Context
 
-ZeroDDS bindet native Sprachen per FFI über dem Rust-Core an: `zerodds-c-api`
-exponiert eine C-ABI, `crates/py` (PyO3) und die Node-/Java-Bindings sitzen als
-Wrapper darüber. Dieser Weg setzt eine native Library je OS × Architektur und
-eine Rust-Toolchain zum Bauen voraus.
+ZeroDDS connects native languages via FFI over the Rust core: `zerodds-c-api`
+exposes a C ABI, `crates/py` (PyO3) and the Node/Java bindings sit on top of it as
+wrappers. This approach requires a native library per OS × architecture and
+a Rust toolchain for building.
 
-Ein Teil der Ziel-Plattformen für Endpoints hat keine Rust-Toolchain und ist
-oft big-endian, ressourcenbeschränkt oder alt (68k-Klasse, i686-Linux, PA-RISC,
-eingebettete Terminals und Steuerrechner). Diese Plattformen sind Endpoints,
-keine zentralen DDS-Instanzen; das vollständige DDS läuft auf x86-64-Linux
-(künftig ARM64) mit POSIX-Umgebung.
+Part of the target platforms for endpoints has no Rust toolchain and is
+often big-endian, resource-constrained or old (68k class, i686 Linux, PA-RISC,
+embedded terminals and control computers). These platforms are endpoints,
+not central DDS instances; the full DDS runs on x86-64 Linux
+(in future ARM64) with a POSIX environment.
 
-## Entscheidung
+## Decision
 
-**Zwei-Rollen-Topologie:**
+**Two-role topology:**
 
 ```
-Hub (Rust, x86-64 Debian / ARM64): volles modernes DDS
-  — Discovery, Routing, Security, RTPS-Fabric, Endpoint-Agent (crates/xrce)
-        ▲  Endpoint↔Hub-Protokoll (XRCE-förmig), transport-opak
+Hub (Rust, x86-64 Debian / ARM64): full modern DDS
+  — Discovery, Routing, Security, RTPS fabric, endpoint agent (crates/xrce)
+        ▲  Endpoint↔Hub protocol (XRCE-shaped), transport-opaque
         │
-Endpoints (native, KEIN Rust): C · C++ · Python · Java
-  — minimal: wire + Endpoint↔Hub-Framing + Frame-Hook + komponierbare Module
+Endpoints (native, NO Rust): C · C++ · Python · Java
+  — minimal: wire + Endpoint↔Hub framing + frame hook + composable modules
 ```
 
-Der **Hub bleibt Rust** und trägt den vollen Stack. Die **Endpoints werden
-native, konservative SDKs** je Sprache — self-contained, **kein Rust darunter**,
-**keine hyper-modernen Features/Libs**, damit sie mit der plattform-eigenen
-Toolchain kompilieren.
+The **hub stays Rust** and carries the full stack. The **endpoints become
+native, conservative SDKs** per language — self-contained, **no Rust underneath**,
+**no hyper-modern features/libs**, so that they compile with the platform's own
+toolchain.
 
-**Crate-/Verzeichnis-Schnitt** (Endpoint-SDKs, generiert + konservativ):
-`endpoints/c`, `endpoints/cpp`, `endpoints/python`, `endpoints/java`; die
-Wire-Teile werden aus der bestehenden IDL-Codegen (`idl-cpp`/`idl-java`/
-`idl-python` + neuer C89-Emitter) generiert; `crates/xrce` (Rust) ist Agent +
-Byte-Identitäts-Orakel.
+**Crate/directory split** (endpoint SDKs, generated + conservative):
+`endpoints/c`, `endpoints/cpp`, `endpoints/python`, `endpoints/java`; the
+wire parts are generated from the existing IDL codegen (`idl-cpp`/`idl-java`/
+`idl-python` + new C89 emitter); `crates/xrce` (Rust) is agent +
+byte-identity oracle.
 
-## Invarianten (normativ)
+## Invariants (normative)
 
-1. **Kein Rust am Endpoint.** Konservative Sprach-Floors: **C89/C90**,
-   **C++98/03**, **Python pure-stdlib** (3.x konservativ, 2.7-freundlicher Stil),
-   **Java 8** (pure-Java, kein JNI-Native-Lib, kein records/var/streams). Keine
-   Fremd-Libs, kein malloc-Zwang in C (statische/Arena-Puffer).
+1. **No Rust on the endpoint.** Conservative language floors: **C89/C90**,
+   **C++98/03**, **Python pure stdlib** (3.x conservative, 2.7-friendly style),
+   **Java 8** (pure Java, no JNI native lib, no records/var/streams). No
+   third-party libs, no forced malloc in C (static/arena buffers).
 
-2. **Kombinierbare Units spannen die Featurelevel.** Ein Unit-Graph, je Sprache
-   als Link-Libs / Jars / py-Imports gespiegelt: `wire-core` (Framing +
-   Frame-Hook + XCDR-Primitive) · `wire-fixed` · `wire-variable` ·
-   `feat-reliable` · `feat-security` · … Ein Endpoint linkt genau die Teilmenge,
-   die sein Footprint trägt.
+2. **Combinable units span the feature levels.** One unit graph, mirrored per language
+   as link libs / jars / py imports: `wire-core` (framing +
+   frame hook + XCDR primitives) · `wire-fixed` · `wire-variable` ·
+   `feat-reliable` · `feat-security` · … An endpoint links exactly the subset
+   that its footprint can carry.
 
-3. **Zwei Wire-Backends.** **`wire-fixed`** = statisch, per-Typ **generiert**
-   (Straight-Line-XCDR, keine Runtime-Typinfo) → winzig, deterministisch,
-   cert-freundlich, bekannte-Typen/fixe-Topologie. **`wire-variable`** =
-   reflektiv/dynamisch (DynamicData↔XCDR + TypeObject/DynamicType) → evolvierende/
-   unbekannte Typen, Monitor/Spy, RE-from-Capture. Der Rust-Core hat beide schon
-   (typisierter `Xcdr2Writer` + reflektiver Codec); die Endpoints spiegeln das.
+3. **Two wire backends.** **`wire-fixed`** = static, **generated** per type
+   (straight-line XCDR, no runtime type info) → tiny, deterministic,
+   certification-friendly, known types/fixed topology. **`wire-variable`** =
+   reflective/dynamic (DynamicData↔XCDR + TypeObject/DynamicType) → evolving/
+   unknown types, monitor/spy, RE from capture. The Rust core already has both
+   (typed `Xcdr2Writer` + reflective codec); the endpoints mirror that.
 
-4. **Endianness first-class, nicht nachgerüstet.** Endpoint-HW ist big-endian
-   (68k/PA-RISC/SPARC), Hub little-endian (x86-64) → **BE↔LE ist Normalfall**.
-   Serialisierung ist **byte-für-byte mit expliziten Shifts** (nie struct-/
-   pointer-cast auf Bytes) → host-endian-unabhängig *by construction*. Die
-   **Wire-Byte-Order ist ein expliziter Parameter** (LE/BE-Encapsulation-Flag,
-   RTPS 2.5 §10.5); beide Backends dekodieren **beide** Ordnungen und emittieren
-   die gewählte. Getestet gegen **BE- und LE-Goldens**.
+4. **Endianness first-class, not retrofitted.** Endpoint HW is big-endian
+   (68k/PA-RISC/SPARC), hub little-endian (x86-64) → **BE↔LE is the normal case**.
+   Serialization is **byte by byte with explicit shifts** (never struct/
+   pointer casts onto bytes) → independent of host endianness *by construction*. The
+   **wire byte order is an explicit parameter** (LE/BE encapsulation flag,
+   RTPS 2.5 §10.5); both backends decode **both** orders and emit
+   the chosen one. Tested against **BE and LE goldens**.
 
-5. **Frame-Hook ist der einzige Pflicht-Integrationspunkt.** Kontrakt an der
-   fertig-geframten-Message-Grenze (`deliver(frame)` / `receive() → frame`),
-   transport-opak — der Anwender hängt den Transport seines Ziels dahinter.
-   Vorgefüllt für POSIX-Socket und serielle Transporte; für andere Ziele leer
-   plus Beispiel.
+5. **The frame hook is the only mandatory integration point.** Contract at the
+   boundary of the fully framed message (`deliver(frame)` / `receive() → frame`),
+   transport-opaque — the user attaches the transport of their target behind it.
+   Prefilled for POSIX sockets and serial transports; for other targets empty
+   plus an example.
 
-6. **Eine Wire-Wahrheit.** Alles Wire-kritische wird aus *einem* Wire-Modell
-   generiert (dieselbe Quelle wie Rust). Jedes Endpoint-SDK hängt als „weiterer
-   Vendor" in der Cross-Vendor-Byte-Identitäts-Harness → byte-identisch zur
-   Rust-Referenz, kann nicht driften. Voller Feature-Umfang + harte Protokoll-
-   Logik (Discovery/Reliability-State-Machines/Security-Handshake/Routing) bleibt
-   **Hub-only**.
+6. **One wire truth.** Everything wire-critical is generated from *one* wire model
+   (the same source as Rust). Every endpoint SDK is attached as "another
+   vendor" in the cross-vendor byte-identity harness → byte-identical to the
+   Rust reference, cannot drift. The full feature scope + hard protocol
+   logic (discovery/reliability state machines/security handshake/routing) stays
+   **hub-only**.
 
-## Alternativen
+## Alternatives
 
-1. **FFI-Bindings über dem Rust-Core behalten** (Status quo) — verworfen: die
-   Reibung oben; baut nicht auf No-Rust/Restricted/alten Toolchains, native-Lib-
-   Shipping, ABI-Drift, Callback-Grenze.
-2. **Ein portabler C-Core mit Sprach-Bindings darüber** — verworfen:
-   die Sprachen sollen *nativ* sein (pure-Java = JVM-Reichweite ohne native Lib;
-   pure-Python ohne C-Extension), nicht wieder ein FFI-Sprung.
-3. **Voller nativer DDS-Stack je Endpoint** (Discovery/RTPS-Fabric in C/…) —
-   verworfen: Endpoints sind keine zentralen Instanzen; der Hub macht das DDS.
-   Ein Voll-Stack ×4 multipliziert die Spec-Vollständigkeits-Fläche unnötig.
-4. **LE-first, BE später** — verworfen: die Endpoint-HW ist BE; BE ist der
-   Normalfall, nicht der Nachtrag.
+1. **Keep FFI bindings over the Rust core** (status quo) — rejected: the
+   friction above; does not build on no-Rust/restricted/old toolchains, native lib
+   shipping, ABI drift, callback boundary.
+2. **One portable C core with language bindings on top** — rejected:
+   the languages are meant to be *native* (pure Java = JVM reach without a native lib;
+   pure Python without a C extension), not another FFI jump.
+3. **Full native DDS stack per endpoint** (discovery/RTPS fabric in C/…) —
+   rejected: endpoints are not central instances; the hub does the DDS.
+   A full stack ×4 multiplies the spec completeness surface unnecessarily.
+4. **LE first, BE later** — rejected: the endpoint HW is BE; BE is the
+   normal case, not the afterthought.
 
-## Konsequenzen
+## Consequences
 
-**Positiv:** Endpoints kompilieren mit der Plattform-eigenen Toolchain, nichts
-Natives auszuliefern, kein ABI-Drift, native Callbacks (löst O14 ohne FFI-Risiko),
-JVM-/CPython-Reichweite auf Exoten. Voller Stack bleibt Rust-Hub-only,
-Endpoints generiert + harness-gesperrt. Legacy-Integration wird First-Class.
+**Positive:** endpoints compile with the platform's own toolchain, nothing
+native to ship, no ABI drift, native callbacks (solves O14 without FFI risk),
+JVM/CPython reach on exotic platforms. The full stack stays Rust-hub-only,
+endpoints generated + locked by the harness. Legacy integration becomes first-class.
 
-**Negativ/Risiken:** vier native Endpoint-Runtimes (wenn auch minimal +
-generiert). `wire-variable` in **C89** ist das Cost-Center (Hand-Typ-Deskriptor-
-Modell + XCDR-Interpreter, Arena-Allokation) — in Python/Java dagegen leicht.
-Konservative Floors kosten Bequemlichkeit (keine modernen Sprach-Features).
+**Negative/risks:** four native endpoint runtimes (albeit minimal +
+generated). `wire-variable` in **C89** is the cost center (hand-written type descriptor
+model + XCDR interpreter, arena allocation) — in Python/Java, by contrast, easy.
+Conservative floors cost convenience (no modern language features).
 
-## Folge-Aufgaben
+## Follow-up tasks
 
-- **P1 — `wire-core` (C89) ✅ (in Arbeit, Kern steht).** `endpoints/c`: XCDR2-
-  Primitive (u8..u64, f32/f64 via Bitmuster, string, sequence<octet>), endian-
-  sicher (byte-für-byte, LE/BE-Parameter), XCDR2-Alignment. `endpoints/golden-gen`
-  (Rust/zerodds-cdr) liefert LE+LE-Goldens; ein Sample-`wire-fixed`-Codec ist
-  byte-identisch. **Verifiziert:** native x86-64 **und PowerPC-Big-Endian
-  (qemu)** byte-identisch (LE+BE), `-Werror`-clean gcc+clang, C89-pedantic — die
-  Endianness-Invariante gegen eine echte BE-Maschine bewiesen. **DHEADER ✅ (C):**
+- **P1 — `wire-core` (C89) ✅ (in progress, core in place).** `endpoints/c`: XCDR2
+  primitives (u8..u64, f32/f64 via bit pattern, string, sequence<octet>), endian-
+  safe (byte by byte, LE/BE parameter), XCDR2 alignment. `endpoints/golden-gen`
+  (Rust/zerodds-cdr) supplies LE+LE goldens; a sample `wire-fixed` codec is
+  byte-identical. **Verified:** native x86-64 **and PowerPC big-endian
+  (qemu)** byte-identical (LE+BE), `-Werror`-clean gcc+clang, C89-pedantic — the
+  endianness invariant proven against a real BE machine. **DHEADER ✅ (C):**
   @appendable + nested + sequence<non-primitive> (delimited CDR2, back-patch)
-  byte-identisch native x86-64 **und PowerPC-BE (qemu)** gegen
-  `encode_appendable`/Collection-DHEADER des Rust-Cores. Offen in P1:
-  `wire-fixed`-Codegen (statt Hand-Sample), `feat-reliable`, @mutable/EMHEADER,
-  DHEADER-Mirror in Python/Java (C++ erbt via Fassade).
-- **`wire-fixed`-Codegen ✅ (C89 Kern).** `endpoints/codegen`
-  (`zerodds-endpoint-codegen`) parst IDL via `zerodds_idl` und emittiert den
-  C89-Codec je `@final`-Struct über die zdw-Primitive. Aus `sensor.idl` erzeugt:
-  Wire-Calls identisch zum Hand-Sample, Ausgabe byte-identisch zu Rust (Golden
-  LE+BE), native x86-64 **und PowerPC-BE**, `-Werror`. Offen: @appendable/@mutable-Emit
-  (DHEADER/EMHEADER — Primitive bewiesen), nested, C++/Python/Java-Emitter.
-- **P2 — `wire-variable` ✅ (C).** `zerodds_reflect`: reflektiver XCDR-Codec über
-  einen Laufzeit-`zdw_dyn_field[]`-Descriptor statt generiertem Code (für
-  evolvierende/unbekannte Typen, Monitor/Spy, Charakterisierung fremder Wire-Formate).
-  Reflektiv kodiert = fixed = Rust-Golden, byte-identisch LE+BE + reflektiver
-  Decode, native + PowerPC-BE. Beide Backends produzieren identische Bytes.
-- **P3 — C++/Python/Java, Re-Targeting derselben Goldens ✅ (Wire-Core-Kern).**
-  Alle vier Sprachen byte-identisch zu denselben Rust-Goldens (LE+BE) +
-  Round-Trip, verifiziert: **C89** (`endpoints/c`) + **C++98**
-  (`endpoints/cpp`, Fassade über dem C-Core) native x86-64 **und PowerPC-BE
-  unter qemu**, `-Werror` gcc+g++; **Python** (`endpoints/python`, pure-stdlib
-  2.7/3.x); **Java 8** (`endpoints/java`, pure, kein JNI). **Extensibility-Trias
-  ✅ in allen vier** — `@final` + `@appendable` (DHEADER/nested/sequence<non-primitive>)
-  + `@mutable` (EMHEADER LC4), alle byte-identisch, native + PowerPC-BE
-  (C/C++), Python/Java. Offen je Sprache: `wire-fixed`-Codegen (statt
-  Hand-Samples), `feat-reliable`, `wire-variable`.
-- **P4** Endpoint↔Hub-Protokoll (XRCE-förmig) + Agent-seitiger Terminator am Hub;
-  Frame-Hook-Kontrakt + POSIX-/Serial-Beispiel-Füllungen. **Frame-Hook ✅ (C):**
-  `zerodds_endpoint.h` `zdw_transport` (deliver/receive, transport-opak) +
-  Loopback-Demo, native + PowerPC-BE. **XRCE-WRITE_DATA-Framing ✅ (C):**
-  `zdw_xrce_write_frame`/`read_frame` — MessageHeader + WRITE_DATA-Submessage,
-  byte-identisch zu einer echten `crates/xrce`-Message (48 B), voller Pfad
-  encode→frame→hook→unwrap→decode. **Serial-Framing ✅ (C):**
-  `zdw_serial_frame`/`deframe` — Annex-C HDLC (7E + stuff + CRC-16-CCITT-FALSE),
-  byte-identisch zum `crates/xrce`-Serial-Framer (52 B), Deframe+CRC+unwrap+decode.
-  Alles native + PowerPC-BE, `-Werror`. **Reliable ✅** (HEARTBEAT-parse +
-  ACKNACK-build byte-identisch), **DATA-Empfangspfad ✅** (bidirektional),
-  **alle vier Sprachen hub-fähig ✅** (Python/Java pure, C++ via C-Reuse).
-  **Live-UDP-E2E ✅:** C-Endpoint → echtes UDP → laufender `zerodds-xrce`-Agent
-  (`endpoints/xrce-agent-demo`), der die Message parst + die SensorReading
-  zurückliest (Live-UDP-Akzeptanz).
-  **Multi-Language-Codegen ✅:** `wire-fixed`-Emitter für **C89 + Python + Java**
-  (C++ nutzt den C-Codec via `extern "C"`), alle byte-identisch.
-  **Reflektiver Codec ✅** in **C + Python + Java** (C++ via C-Reuse).
+  byte-identical native x86-64 **and PowerPC-BE (qemu)** against
+  `encode_appendable`/collection DHEADER of the Rust core. Open in P1:
+  `wire-fixed` codegen (instead of a hand-written sample), `feat-reliable`, @mutable/EMHEADER,
+  DHEADER mirror in Python/Java (C++ inherits via the facade).
+- **`wire-fixed` codegen ✅ (C89 core).** `endpoints/codegen`
+  (`zerodds-endpoint-codegen`) parses IDL via `zerodds_idl` and emits the
+  C89 codec per `@final` struct over the zdw primitives. Generated from `sensor.idl`:
+  wire calls identical to the hand-written sample, output byte-identical to Rust (golden
+  LE+BE), native x86-64 **and PowerPC-BE**, `-Werror`. Open: @appendable/@mutable emit
+  (DHEADER/EMHEADER — primitives proven), nested, C++/Python/Java emitters.
+- **P2 — `wire-variable` ✅ (C).** `zerodds_reflect`: reflective XCDR codec over
+  a runtime `zdw_dyn_field[]` descriptor instead of generated code (for
+  evolving/unknown types, monitor/spy, characterization of foreign wire formats).
+  Reflectively encoded = fixed = Rust golden, byte-identical LE+BE + reflective
+  decode, native + PowerPC-BE. Both backends produce identical bytes.
+- **P3 — C++/Python/Java, re-targeting the same goldens ✅ (wire-core, core part).**
+  All four languages byte-identical to the same Rust goldens (LE+BE) +
+  round trip, verified: **C89** (`endpoints/c`) + **C++98**
+  (`endpoints/cpp`, facade over the C core) native x86-64 **and PowerPC-BE
+  under qemu**, `-Werror` gcc+g++; **Python** (`endpoints/python`, pure stdlib
+  2.7/3.x); **Java 8** (`endpoints/java`, pure, no JNI). **Extensibility triad
+  ✅ in all four** — `@final` + `@appendable` (DHEADER/nested/sequence<non-primitive>)
+  + `@mutable` (EMHEADER LC4), all byte-identical, native + PowerPC-BE
+  (C/C++), Python/Java. Open per language: `wire-fixed` codegen (instead of
+  hand-written samples), `feat-reliable`, `wire-variable`.
+- **P4** Endpoint↔Hub protocol (XRCE-shaped) + agent-side terminator at the hub;
+  frame hook contract + POSIX/serial example fillings. **Frame hook ✅ (C):**
+  `zerodds_endpoint.h` `zdw_transport` (deliver/receive, transport-opaque) +
+  loopback demo, native + PowerPC-BE. **XRCE WRITE_DATA framing ✅ (C):**
+  `zdw_xrce_write_frame`/`read_frame` — MessageHeader + WRITE_DATA submessage,
+  byte-identical to a real `crates/xrce` message (48 B), full path
+  encode→frame→hook→unwrap→decode. **Serial framing ✅ (C):**
+  `zdw_serial_frame`/`deframe` — Annex C.1 (7E + addresses + length LE + stuff +
+  FCS-16 per RFC 1662 LE), byte-identical to the `crates/xrce` serial framer,
+  deframe+CRC+unwrap+decode.
+  Everything native + PowerPC-BE, `-Werror`. **Reliable ✅** (HEARTBEAT parse +
+  ACKNACK build byte-identical), **DATA receive path ✅** (bidirectional),
+  **all four languages hub-capable ✅** (Python/Java pure, C++ via C reuse).
+  **Live UDP E2E ✅:** C endpoint → real UDP → running `zerodds-xrce` agent
+  (`endpoints/xrce-agent-demo`), which parses the message + reads the SensorReading
+  back (live UDP acceptance).
+  **Multi-language codegen ✅:** `wire-fixed` emitter for **C89 + Python + Java**
+  (C++ uses the C codec via `extern "C"`), all byte-identical.
+  **Reflective codec ✅** in **C + Python + Java** (C++ via C reuse).
 
-## Status — vollständig
+## Status — complete
 
-Alle vier Sprachen hub-fähig; beide Wire-Backends mehrsprachig **inklusive
-Extensibility-Trias + nested + sequence<struct>**:
-- `wire-fixed`-Codegen: C89 / Python / Java (alle 3 Modi; C89 zusätzlich nested);
-  C++ nutzt den C-Codec.
-- `wire-variable` reflektiv: C / Python / Java (final/appendable/mutable + nested +
-  sequence<struct>); C++ via C-Reuse.
-- XRCE (write/data/heartbeat/acknack) + Serial-Framing, bidirektional + reliable.
+All four languages hub-capable; both wire backends in several languages **including the
+extensibility triad + nested + sequence<struct>**:
+- `wire-fixed` codegen: C89 / Python / Java (all 3 modes; C89 additionally nested);
+  C++ uses the C codec.
+- `wire-variable` reflective: C / Python / Java (final/appendable/mutable + nested +
+  sequence<struct>); C++ via C reuse.
+- XRCE (write/data/heartbeat/acknack) + serial framing, bidirectional + reliable.
 
-Alles byte-identisch zur Rust-Wahrheit, verifiziert native x86-64 + PowerPC-BE
-(qemu, volle Suite `-Werror`) + Live-UDP-E2E gegen einen echten `zerodds-xrce`-
-Agent. Keine offenen Punkte.
-- **P5** Byte-Identitäts-Harness um die vier SDKs als „Vendoren" erweitern.
+Everything byte-identical to the Rust truth, verified native x86-64 + PowerPC-BE
+(qemu, full suite `-Werror`) + live UDP E2E against a real `zerodds-xrce`
+agent. No open items.
+- **P5** Extend the byte-identity harness with the four SDKs as "vendors".
 
-## Referenzen
+## State in the code
 
-- DDS-XRCE 1.0 (Client/Agent-Split); DDSI-RTPS 2.5 §10.5 (Encapsulation +
-  Byte-Order-Flag)
-- `crates/xrce` (Rust-Referenz + Agent), `crates/cdr` (XCDR-Codec, typisiert +
-  reflektiv)
-- ADR 0009 (Hub-seitige Service-Architektur, adapter-getrieben)
+The decision above holds; paths and scope have changed since then:
+
+- `endpoints/` contains 22 endpoint languages: `ada`, `ada-83`, `ada-native`,
+  `c`, `cpp`, `csharp`, `d`, `elixir`, `fsharp`, `go`, `java`, `julia`,
+  `kotlin`, `lua`, `nim`, `node`, `ocaml`, `python`, `rust`, `swift`,
+  `typescript`, `zig`; besides these `codegen`, `golden-gen`, `testdata`,
+  `examples`, `xrce-agent-demo`.
+- `crates/idl-cpp`, `crates/idl-python` and the crate `zerodds_idl` no longer
+  exist; `crates/cdr` and `crates/idl-java` are not Cargo packages.
+  The IDL parser is `crates/idl-parse` with `crates/idl-lower`, the
+  language codegen is `crates/lang-rules` (invocation: `zerodds-idlc generate --lang`).
+  `zerodds-endpoint-codegen` (`endpoints/codegen`) reads IDL via
+  `zerodds-idl-parse` and `zerodds-idl-lower`.
+- The codec that generated code calls is `crates/wire`; DynamicType and
+  DynamicData live in `crates/types`.
+
+## References
+
+- DDS-XRCE 1.0 (client/agent split); DDSI-RTPS 2.5 §10.5 (encapsulation +
+  byte order flag)
+- `crates/xrce` (Rust reference + agent), `crates/wire` (XCDR codec), `crates/types`
+  (DynamicType/DynamicData)
+- ADR 0009 (hub-side service architecture, adapter-driven)

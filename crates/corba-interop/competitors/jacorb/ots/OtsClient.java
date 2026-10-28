@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Live cross-ORB OTS client (codepit, JDK8, JacORB 3.9): begins a real JacORB
+// Live cross-ORB OTS client (Linux test host, JDK8, JacORB 3.9): begins a real JacORB
 // transaction via the OTS `Current` (resolved from a running TransactionService
 // `ts` daemon) and invokes a ZeroDDS server. JacORB's
 // ClientContextTransferInterceptor attaches the OTS PropagationContext as IIOP

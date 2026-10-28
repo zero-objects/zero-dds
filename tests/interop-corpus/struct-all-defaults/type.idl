@@ -1,0 +1,9 @@
+// every member at the value Table 9 gives its type, so that a stream
+// which omitted one would be shorter and not merely different
+@final struct Sample {
+    long a;
+    string s;
+    boolean b;
+    double d;
+    short e;
+};

@@ -46,7 +46,25 @@ use core::time::Duration;
 use std::thread;
 
 use zerodds_dcps::wlp::WlpEndpoint;
-use zerodds_rtps::wire_types::{GuidPrefix, VendorId};
+use zerodds_rtps::participant_data::endpoint_flag;
+use zerodds_rtps::wire_types::{GuidPrefix, Locator, VendorId};
+
+/// A WLP endpoint with a reader proxy: the writer is reliable and sends to
+/// the readers it has.
+fn endpoint(prefix: u8) -> WlpEndpoint {
+    let mut wlp = WlpEndpoint::new(
+        GuidPrefix::from_bytes([prefix; 12]),
+        VendorId::ZERODDS,
+        Duration::from_secs(60), // AUTOMATIC effectively off
+    );
+    wlp.add_peer_reader(
+        GuidPrefix::from_bytes([0x11; 12]),
+        endpoint_flag::PARTICIPANT_MESSAGE_DATA_READER,
+        vec![Locator::udp_v4([127, 0, 0, 1], 7411)],
+        None,
+    );
+    wlp
+}
 
 #[test]
 #[ignore = "live cyclone interop — opt-in via --ignored + --features live-interop"]
@@ -54,18 +72,17 @@ fn cyclone_live_wlp_manual_by_participant_pulse() {
     // We test the WLP endpoint API directly — no full runtime
     // spawn needed, since the pulse output is deterministic and
     // independent of the AUTOMATIC tick.
-    let mut wlp = WlpEndpoint::new(
-        GuidPrefix::from_bytes([0xBB; 12]),
-        VendorId::ZERODDS,
-        Duration::from_secs(60), // AUTOMATIC effectively off
-    );
+    let mut wlp = endpoint(0xBB);
 
     // 3 manual pulses with a pause in between.
     let mut emitted = 0usize;
     for _ in 0..3 {
         wlp.assert_participant();
         // tick() returns the manual pulse as a datagram.
-        if let Ok(Some(_dg)) = wlp.tick(Duration::from_millis(0)) {
+        if wlp
+            .tick(Duration::from_millis(0))
+            .is_ok_and(|out| !out.is_empty())
+        {
             emitted += 1;
         }
         thread::sleep(Duration::from_millis(100));
@@ -84,19 +101,14 @@ fn cyclone_live_wlp_manual_by_topic_token() {
     // ManualByTopic additionally conveys a topic token in the
     // ParticipantMessageData (vendor kind 0x02). We verify
     // that the token reaches the wire byte-exactly.
-    let mut wlp = WlpEndpoint::new(
-        GuidPrefix::from_bytes([0xCD; 12]),
-        VendorId::ZERODDS,
-        Duration::from_secs(60),
-    );
+    let mut wlp = endpoint(0xCD);
     let token = b"my-topic-asserted-1".to_vec();
     wlp.assert_topic(token.clone());
-    let dg = wlp
-        .tick(Duration::from_millis(0))
-        .expect("tick ok")
-        .expect("expected datagram");
+    let out = wlp.tick(Duration::from_millis(0)).expect("tick ok");
     // The token arrives in the inline payload — we search for the substring.
     let needle = &token[..];
-    let found = dg.windows(needle.len()).any(|w| w == needle);
-    assert!(found, "topic token not present in WLP datagram: {dg:?}");
+    let found = out
+        .iter()
+        .any(|dg| dg.bytes.windows(needle.len()).any(|w| w == needle));
+    assert!(found, "topic token not present in the WLP datagrams");
 }

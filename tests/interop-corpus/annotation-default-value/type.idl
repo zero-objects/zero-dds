@@ -1,0 +1,6 @@
+// `@default`
+@final struct Sample {
+    @default(42) long a;
+    @default(-7) short b;
+    long c;
+};

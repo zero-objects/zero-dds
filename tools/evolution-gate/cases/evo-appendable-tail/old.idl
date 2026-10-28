@@ -1,0 +1,5 @@
+@appendable
+struct Evo {
+    long a;
+    double b;
+};

@@ -4,7 +4,7 @@
 
 use alloc::vec::Vec;
 
-use zerodds_cdr::{BufferReader, BufferWriter, DecodeError, EncodeError};
+use zerodds_wire::{Reader, WireError, Writer};
 
 use crate::type_object::common::{NameHash, decode_seq, encode_seq};
 use crate::type_object::flags::{BitfieldFlag, BitsetTypeFlag};
@@ -35,15 +35,15 @@ pub struct MinimalBitfield {
 }
 
 impl MinimalBitfield {
-    fn encode_into(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
-        w.write_u16(self.common.position)?;
-        w.write_u16(self.common.flags.0)?;
-        w.write_u8(self.common.bitcount)?;
-        w.write_u8(self.common.holder_type)?;
+    fn encode_into(&self, w: &mut Writer) -> Result<(), WireError> {
+        w.write_u16(self.common.position);
+        w.write_u16(self.common.flags.0);
+        w.write_u8(self.common.bitcount);
+        w.write_u8(self.common.holder_type);
         self.name_hash.encode_into(w)
     }
 
-    fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
+    fn decode_from(r: &mut Reader<'_>) -> Result<Self, WireError> {
         let position = r.read_u16()?;
         let flags = BitfieldFlag(r.read_u16()?);
         let bitcount = r.read_u8()?;
@@ -74,17 +74,17 @@ impl MinimalBitsetType {
     /// Encode.
     ///
     /// # Errors
-    /// Buffer-Overflow.
-    pub fn encode_into(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
-        w.write_u16(self.bitset_flags.0)?;
+    /// A length that does not fit a `u32`.
+    pub fn encode_into(&self, w: &mut Writer) -> Result<(), WireError> {
+        w.write_u16(self.bitset_flags.0);
         encode_seq(w, &self.field_seq, |w, f| f.encode_into(w))
     }
 
     /// Decode.
     ///
     /// # Errors
-    /// Buffer-Underflow.
-    pub fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
+    /// The stream ends inside this value.
+    pub fn decode_from(r: &mut Reader<'_>) -> Result<Self, WireError> {
         let bitset_flags = BitsetTypeFlag(r.read_u16()?);
         let field_seq = decode_seq(r, MinimalBitfield::decode_from)?;
         Ok(Self {

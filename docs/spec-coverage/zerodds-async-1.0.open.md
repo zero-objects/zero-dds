@@ -1,58 +1,30 @@
-# zerodds-async 1.0 — Open Items
+# zerodds-async-1.0 — offene Punkte
 
-Phase-1 + Phase-2-A geliefert. Verbleibend:
+Aggregat aus `zerodds-async-1.0.md`, erzeugt von `website/_tools/gen_open_items.py`.
+Kein eigener Inhalt: jedes Item steht dort mit seinem Beleg.
 
-## Phase-2 (offen)
+---
 
-### §3 Waker-Modell — nativer Reader-Slot-Waker
+## §8 Ein async-Pendant pro Sync-Test
 
-- **§3.1 Waker-Slot pro Reader** — UserReaderSlot bekommt `async_waker: Mutex<Option<Waker>>`. Phase-1 nutzt detached-thread.
-- **§3.2 Wire-Pfad weckt Waker** — `deliver_to_reader_slot` weckt den Waker bei `sample_tx.send`.
+**Status:** `partial` — die Async-Oberfläche ist item-für-item belegt, aber `crates/dcps/tests/` hat rund sechzig Test-Files (QoS-Matrix, Lifecycle-Wire, Discovery-Server, Security) und `crates/dcps-async/tests/` neun. Ein 1:1-Pendant pro Sync-Test gibt es nicht. Der Rest steht als eigenes `open`-Item „§8 1:1-Async-Pendant pro Sync-Test".
 
-### §5 Backpressure
+## §8 tokio::test als Default-Runner, smol als Feature-Probe
 
-- **§5.1 write-Future suspendiert bei OutOfResources** — `drain_notify`-Pattern statt Sync-Condvar.
+**Status:** `partial` — der Default-Runner ist tokio, und die Runtime-Unabhängigkeit ist über einen im Test gebauten Park-Executor belegt. Eine `smol`-Variante gibt es nicht; `smol` ist keine dev-dependency. Der Rest steht als eigenes `open`-Item „§8 smol-Test-Variante".
 
-### §8 Test-Strategie (partial)
+## §8 E2E gegen Cyclone-Live plus Latenz-Vergleich
 
-- **§8.3 proptest fuer Channel-Backpressure** — zufaellige write/take-Sequenzen, kein Verlust/Deadlock.
-- **§8.4 Cyclone-Live-E2E** — AsyncDataWriter gegen Cyclone-Reader.
-- **§8.1 Sync-Test-Spiegelung** — vollstaendige Spiegelung.
+**Status:** `partial` — der Latenz-Vergleich sync gegen async läuft als Assertion im Release-Build, im CI-Job `perf-gate`. Der Cyclone-Live-Teil ist `#[ignore]` und lief in diesem Audit nicht. Der Rest steht als eigenes `open`-Item „§8 Cyclone-Live-E2E ohne Lab-Gate".
 
-### §9 Performance-Targets (partial)
+## §8 1:1-Async-Pendant pro Sync-Test
 
-- **§9.1 write().await Latenz** — Bench-Skelett da, numerische Bestaetigung in CI-Bench-Pipeline.
-- **§9.2 take_stream Throughput** — Bench offen.
-- **§9.3 Allokation pro write()** — dhat-rs-Bench offen.
+**Status:** `open` — ohne Beschreibung im Hauptfile.
 
-### §4 Tokio-Glue (partial)
+## §8 smol-Test-Variante
 
-- **§4.1 spawn_in_tokio** — yield_for ist tokio-aware; Tick-Loop-Spawning offen.
+**Status:** `open` — ohne Beschreibung im Hauptfile.
 
-## Sprint-Plan Phase-2
+## §8 Cyclone-Live-E2E ohne Lab-Gate
 
-| Sprint | Items | Aufwand |
-|--------|-------|---------|
-| **A8** | §3.1 + §3.2 — Native Reader-Slot-Waker | 1 PT |
-| **A9** | §5.1 — drain_notify Backpressure | 1 PT |
-| **A10** | §4.1 — spawn_in_tokio | 0.5 PT |
-| **A11** | §8.3, §9.1-§9.3 — Bench + proptest | 1 PT |
-| **A12** | §8.4 — Cyclone-Live-E2E | 0.5 PT |
-
-Gesamt-Phase-2: ~4 PT.
-
-## Phase-1 done (zur Referenz)
-
-- §1.1-§1.5 Type-Mapping ✓
-- §2.1.2-§2.1.6 Writer-Methoden ✓
-- §2.2.2-§2.2.4 Reader-Methoden ✓
-- §6.2 publication_matched_stream ✓
-- §7.1 Error-Mapping ✓
-- §8.2 tokio::test ✓
-
-partial:
-
-- §2.1.1 write (suspend-on-OutOfResources fehlt)
-- §2.2.1 take_stream (Polling-Wakeup statt nativ)
-- §3.3 Stream-Waker-Registrierung (Phase-1: detached thread)
-- §6.1 data_available_stream (konsumiert Samples beim Probing)
+**Status:** `open` — ohne Beschreibung im Hauptfile.

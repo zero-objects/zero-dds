@@ -1,0 +1,4 @@
+## wireprobe-opensplice, exit 4
+### stderr
+wireprobe-opensplice: idlpp failed
+*** DDS error in file gen.idl: Structure inheritance will be supported in a future version. near the token { (line: 9, column: 22)

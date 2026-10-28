@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- This file contains the XML Schema Document (XSD) for the XML Application
+     Representation defined by the OMG specification
+     "DDS Consolidated XML Syntax" (DDS-XML). -->
+
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           elementFormDefault="qualified"
+           attributeFormDefault="unqualified">
+
+    <!-- ================================================================== -->
+    <!-- Application and Application Library Definition -->
+    <!-- ================================================================== -->
+
+    <xs:include schemaLocation="http://www.omg.org/spec/DDS-XML/20180501/dds-xml_domainparticipant_definitions_nonamespace.xsd" />
+
+    <xs:complexType name="application">
+        <xs:choice maxOccurs="unbounded">
+            <xs:element name="domain_participant" maxOccurs="unbounded"
+                        type="domainParticipant" />
+        </xs:choice>
+
+        <xs:attribute name="name" type="elementName" use="required" />
+    </xs:complexType>
+
+    <xs:complexType name="applicationLibrary">
+        <xs:choice minOccurs="1" maxOccurs="unbounded">
+            <xs:element name="application" maxOccurs="unbounded"
+                        type="application" />
+        </xs:choice>
+
+        <xs:attribute name="name" type="elementName" use="required" />
+    </xs:complexType>
+
+</xs:schema>

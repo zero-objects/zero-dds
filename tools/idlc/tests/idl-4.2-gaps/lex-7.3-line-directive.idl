@@ -1,0 +1,3 @@
+// IDL 4.2 §7.3, ISO/IEC 14882:2003 §16.4 — the `#line` directive.
+#line 10 "other.idl"
+struct Sa { long m; };

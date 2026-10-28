@@ -1,0 +1,114 @@
+#!/bin/bash
+# wireprobe-bytes — the payload every implementation writes for one
+# case, side by side.
+#
+# `wireprobe-pairwise` answers "does B read what A wrote". This answers
+# the earlier question: "do A and B write the same bytes at all". They
+# are different findings. Two implementations can round-trip each other
+# perfectly and still disagree on the wire — a reader that is looser than
+# its writer hides exactly that — and a byte difference between two
+# implementations of the *same* stack is the one this was written for.
+#
+#   wireprobe-bytes --impls fastdds,ros --encodings xcdr1 --out bytes.tsv
+#
+#   --corpus <dir>        default tests/interop-corpus
+#   --impls <list>        default zerodds,cyclone,rti,fastdds
+#   --encodings <list>    default xcdr2,xcdr1
+#   --endians <list>      default le,be
+#   --cases <list>        default every case in the corpus
+#   --emit <form>         payload (default) or payload+encapsulation
+#   --jobs <n>            cases in parallel, default the core count
+#   --out <file>          the report, as TSV; default stdout
+#
+# One row per (case, encoding, endian, implementation):
+#
+#   case  encoding  endian  impl  status  bytes
+#
+# `status` is `wrote` with the hex in the last column, or `refused` with
+# the implementation's own sentence there. A refusal is data: an
+# implementation that cannot express a case is a measurement of that
+# implementation, and blanking it would read as agreement.
+set -uo pipefail
+
+TOOLS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$TOOLS/../.." && pwd)"
+TARGET="${WIREPROBE_TARGET:-${CARGO_TARGET_DIR:-$ROOT/target}/debug}"
+ZERODDS="${WIREPROBE_ZERODDS:-$TARGET/wireprobe-zerodds}"
+export WIREPROBE_FILL="${WIREPROBE_FILL:-$TARGET/wireprobe-fill}"
+export WIREPROBE_DUMP="${WIREPROBE_DUMP:-$TARGET/wireprobe-dump}"
+export WIREPROBE_ROS_PACKAGE="${WIREPROBE_ROS_PACKAGE:-$TARGET/wireprobe-ros-package}"
+export WIREPROBE_CACHE="${WIREPROBE_CACHE:-${TMPDIR:-/tmp}/wireprobe-cache}"
+
+corpus="$ROOT/tests/interop-corpus"
+impls="zerodds,cyclone,rti,fastdds"
+encodings="xcdr2,xcdr1"
+endians="le,be"
+cases=""
+emit_form="payload"
+jobs="$(nproc 2>/dev/null || echo 4)"
+out=""
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --corpus) corpus="$2"; shift 2 ;;
+        --impls) impls="$2"; shift 2 ;;
+        --encodings) encodings="$2"; shift 2 ;;
+        --endians) endians="$2"; shift 2 ;;
+        --cases) cases="$2"; shift 2 ;;
+        --emit) emit_form="$2"; shift 2 ;;
+        --jobs) jobs="$2"; shift 2 ;;
+        --out) out="$2"; shift 2 ;;
+        --help|-h) sed -n '2,31p' "${BASH_SOURCE[0]}"; exit 0 ;;
+        *) echo "wireprobe-bytes: \`$1\` is not an option" >&2; exit 2 ;;
+    esac
+done
+
+probe_for() {
+    case "$1" in
+        zerodds) printf '%s' "$ZERODDS" ;;
+        cyclone|rti|fastdds|ros) printf '%s/wireprobe-%s' "$TOOLS" "$1" ;;
+        *) echo "wireprobe-bytes: \`$1\` is not an implementation" >&2; exit 2 ;;
+    esac
+}
+
+if [ -z "$cases" ]; then
+    cases="$(cd "$corpus" && for d in */; do [ -f "$d/type" ] && basename "$d"; done | sort | paste -sd, -)"
+fi
+
+one_case() {
+    local case_name="$1"
+    local dir="$corpus/$case_name"
+    local type_name; type_name="$(cat "$dir/type")"
+    local work; work="$(mktemp -d)"
+    trap 'rm -rf "$work"' RETURN
+
+    local encoding endian impl
+    for encoding in ${encodings//,/ }; do
+      for endian in ${endians//,/ }; do
+        for impl in ${impls//,/ }; do
+          if "$(probe_for "$impl")" --idl "$dir/type.idl" --type "$type_name" \
+                  --values "$dir/values.json" --encoding "$encoding" --endian "$endian" \
+                  --emit "$emit_form" --out "$work/bytes.bin" > /dev/null 2>"$work/err"; then
+              printf '%s\t%s\t%s\t%s\twrote\t%s\n' \
+                  "$case_name" "$encoding" "$endian" "$impl" \
+                  "$(od -An -tx1 -v "$work/bytes.bin" | tr -d ' \n')"
+          else
+              printf '%s\t%s\t%s\t%s\trefused\t%s\n' \
+                  "$case_name" "$encoding" "$endian" "$impl" \
+                  "$(tr '\n\t' '  ' < "$work/err" | cut -c1-200)"
+          fi
+        done
+      done
+    done
+}
+
+export -f one_case probe_for
+export corpus encodings endians impls emit_form ZERODDS TOOLS
+
+emit() {
+    printf 'case\tencoding\tendian\timpl\tstatus\tbytes\n'
+    printf '%s\n' "${cases//,/$'\n'}" \
+        | xargs -P "$jobs" -I{} bash -c 'one_case "$@"' _ {}
+}
+
+if [ -n "$out" ]; then emit > "$out"; else emit; fi

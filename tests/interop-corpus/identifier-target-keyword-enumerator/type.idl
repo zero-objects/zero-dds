@@ -1,0 +1,13 @@
+// enumerators that are keywords of the generated target language, in an
+// enumeration at the outermost scope, where no module path is prefixed
+// to the enumerator either
+enum Widths {
+    register,
+    volatile,
+    signed
+};
+
+@final struct Sample {
+    Widths which;
+    long tail;
+};

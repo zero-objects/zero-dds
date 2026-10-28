@@ -18,7 +18,7 @@ import org.gradle.process.ExecOperations
 import javax.inject.Inject
 
 /**
- * `generateIdl` — runs `zerodds-idlc generate <idl> --<backend> -o <outputDir>`
+ * `generateIdl` — runs `zerodds-idlc generate --lang <backend> --out <outputDir> <idl>`
  * once per `.idl` file.
  *
  * `@InputFiles`/`@OutputDirectory` give Gradle the up-to-date check for
@@ -70,13 +70,14 @@ abstract class GenerateIdlTask : DefaultTask() {
             val args = mutableListOf(
                 executable.get(),
                 "generate",
-                idl.absolutePath,
-                "--${backend.get()}",
-                "-o",
+                "--lang",
+                backend.get(),
+                "--out",
                 out.absolutePath,
             )
             args.addAll(includeFlags)
             args.addAll(extraArgs.get())
+            args.add(idl.absolutePath)
 
             logger.info("zerodds-idlc: {}", args.joinToString(" "))
             execOperations.exec {

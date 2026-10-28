@@ -1,0 +1,13 @@
+// `bitset` extending another `bitset`
+bitset Base {
+    bitfield<3> low;
+};
+
+bitset Derived : Base {
+    bitfield<5> high;
+};
+
+@final struct Sample {
+    Derived value;
+    octet tail;
+};

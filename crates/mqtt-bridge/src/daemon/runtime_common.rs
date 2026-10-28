@@ -31,9 +31,9 @@ pub const SERVICE_VERSION: &str = env!("CARGO_PKG_VERSION");
 /// Standard counters for the MQTT daemon.
 #[derive(Clone)]
 pub struct BridgeMetrics {
-    /// Eingehende MQTT-Frames (Publish/Suback/...).
+    /// Incoming MQTT-Frames (Publish/Suback/...).
     pub frames_in_total: Arc<Counter>,
-    /// Ausgehende MQTT-Frames.
+    /// Outgoing MQTT-Frames.
     pub frames_out_total: Arc<Counter>,
     /// Bytes in.
     pub bytes_in_total: Arc<Counter>,
@@ -52,7 +52,7 @@ pub struct BridgeMetrics {
 }
 
 impl BridgeMetrics {
-    /// Registriert den Standard-Set.
+    /// Registers the standard set.
     pub fn register(registry: &Registry) -> Self {
         registry.set_help(
             "zerodds_mqtt_frames_in_total",
@@ -101,7 +101,7 @@ impl BridgeMetrics {
 // A1 — Graceful Shutdown (§9.2).
 // ============================================================================
 
-/// Installiert SIGTERM/SIGINT/SIGHUP-Watcher.
+/// Installs SIGTERM/SIGINT/SIGHUP-Watcher.
 #[cfg(unix)]
 pub fn install_signal_watcher(
     shutdown_flag: Arc<AtomicBool>,
@@ -142,7 +142,7 @@ pub struct CatalogSnapshot {
 }
 
 impl CatalogSnapshot {
-    /// Aus Config bauen.
+    /// Build from config.
     #[must_use]
     pub fn from_config(cfg: &DaemonConfig) -> Self {
         Self {

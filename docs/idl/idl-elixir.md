@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 # ZeroDDS — IDL → Elixir codegen backend
 
-`zerodds-idlc --elixir` emits **native Elixir** from OMG IDL: a self-contained
+`zerodds-idlc generate --lang elixir` emits **native Elixir** from OMG IDL: a self-contained
 source file with a `<Pkg>.Wire` module (byte-identical to the `endpoints/elixir`
 core, built on Elixir bitstrings) and, per IDL `struct`, a `<Pkg>.<Name>` module
 with `defstruct` and a `marshal_xcdr(v, endian)` function whose wire output
@@ -13,7 +13,7 @@ Crate: [`crates/idl-elixir`](../crates/idl-elixir) · registered in `tools/idlc`
 ## Usage
 
 ```sh
-zerodds-idlc types.idl --elixir    # emits types.ex
+zerodds-idlc generate --lang elixir types.idl   # emits types.ex
 ```
 
 ## Mapping

@@ -1,0 +1,8 @@
+// `sequence<wstring>`
+@final struct Sample {
+    sequence<wstring> none;
+    sequence<wstring> one;
+    sequence<wstring> many;
+    sequence<wstring, 8> bounded;
+    long tail;
+};

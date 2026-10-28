@@ -22,7 +22,7 @@ let cfg = RuntimeConfig {
 };
 ```
 
-> ▶ Runnable example: [`runtime-config`](https://github.com/zero-objects/zero-dds-snippets/tree/master/runtime-config)
+> ▶ Runnable example: [`runtime-config`](https://github.com/zero-objects/zero-dds-snippets/tree/main/runtime-config)
 > (starts a real `DcpsRuntime` with this exact field list; also covers the
 > three "Common combinations" recipes below).
 

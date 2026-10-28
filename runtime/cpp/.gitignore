@@ -1,0 +1,3 @@
+# Build artefacts. The archive and the test binaries are made by the
+# Makefile beside this file and belong to the machine that made them.
+build/

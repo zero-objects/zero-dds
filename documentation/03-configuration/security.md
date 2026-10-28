@@ -161,14 +161,22 @@ let crypto = Box::new(AesGcmCryptoPlugin::new());
 
 let gate = Arc::new(SharedSecurityGate::new(0, gov, crypto));
 
+// DDS-Security 1.2 §9.3.3: under an active security profile the wire GUID
+// prefix is the one derived from the participant's identity certificate.
+// `DcpsRuntime::start` refuses a config that sets `security` and leaves
+// `security_guid_prefix` unset, rather than coming up with a random prefix
+// that every peer rejects at handshake time and saying nothing about it.
+// A deployment gets gate and prefix together from its `dds.sec.*`
+// properties: `RuntimeConfig::default().with_security_bundle(&bundle)`.
 let cfg = RuntimeConfig {
     security: Some(gate),
+    security_guid_prefix: Some(prefix),
     ..Default::default()
 };
 let rt = DcpsRuntime::start(0, prefix, cfg)?;
 ```
 
-> ▶ Runnable example: [`security-governance-gate`](https://github.com/zero-objects/zero-dds-snippets/tree/master/security-governance-gate)
+> ▶ Runnable example: [`security-governance-gate`](https://github.com/zero-objects/zero-dds-snippets/tree/main/security-governance-gate)
 > (parses this page's own Governance XML example and starts a real
 > `DcpsRuntime` with the gate wired — needs the `security` feature, see the
 > companion's `Cargo.toml`).

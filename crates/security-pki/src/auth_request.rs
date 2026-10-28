@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! `AuthRequestMessageToken` — DDS-Security 1.2 §9.3.2.5.1.1.
+//! `AuthRequestMessageToken` — DDS-Security 1.2 §10.3.2.4.
 //!
 //! Pre-handshake token, sent by the initiator via the built-in topic
 //! `ParticipantStatelessMessage` to an unknown remote

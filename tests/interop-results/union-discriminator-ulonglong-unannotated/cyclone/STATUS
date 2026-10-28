@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of union-discriminator-ulonglong-unannotated that cyclone produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	Case label value must be in range INT32_MIN..INT32_MAX (inclusive) when generating type meta-data
+plain-cdr1	be	refused	Case label value must be in range INT32_MIN..INT32_MAX (inclusive) when generating type meta-data
+pl-cdr1	le	refused	Case label value must be in range INT32_MIN..INT32_MAX (inclusive) when generating type meta-data
+pl-cdr1	be	refused	Case label value must be in range INT32_MIN..INT32_MAX (inclusive) when generating type meta-data
+plain-cdr2	le	refused	Case label value must be in range INT32_MIN..INT32_MAX (inclusive) when generating type meta-data
+plain-cdr2	be	refused	Case label value must be in range INT32_MIN..INT32_MAX (inclusive) when generating type meta-data
+delimited-cdr	le	refused	Case label value must be in range INT32_MIN..INT32_MAX (inclusive) when generating type meta-data
+delimited-cdr	be	refused	Case label value must be in range INT32_MIN..INT32_MAX (inclusive) when generating type meta-data
+pl-cdr2	le	refused	Case label value must be in range INT32_MIN..INT32_MAX (inclusive) when generating type meta-data
+pl-cdr2	be	refused	Case label value must be in range INT32_MIN..INT32_MAX (inclusive) when generating type meta-data

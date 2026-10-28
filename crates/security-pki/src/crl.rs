@@ -3,14 +3,14 @@
 
 //! CRL validation (certificate revocation list, RFC 5280 §5).
 //!
-//! Spec OMG DDS-Security 1.2 §8.8 requires a CRL fallback for the case
+//! Spec OMG DDS-Security 1.2 §10.3.3 (Table 59) requires a CRL fallback for the case
 //! that no OCSP responder is reachable. This module parses a
 //! DER-encoded `CertificateList`, extracts the list of revoked
 //! serial numbers and provides a `validate_crl(crl, cert_serial)`
 //! that returns `Err(AuthenticationFailed)` as soon as `cert_serial`
 //! is in the list.
 //!
-//! # ASN.1-Struktur (RFC 5280 §5.1)
+//! # ASN.1 structure (RFC 5280 §5.1)
 //!
 //! ```text
 //! CertificateList ::= SEQUENCE {

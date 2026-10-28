@@ -91,7 +91,7 @@ throttling); `channel.close`/`close-ok` (close the channel, the connection
 stays open).
 
 **Repo:** `crates/amqp-0-9-1/src/method.rs::{channel_open, channel_flow,
-channel_flow_ok, channel_close, channel_close_ok}` + `client.rs::Amqp091Client::
+channel_flow_ok, channel_close, channel_close_ok}` + `crates/amqp-0-9-1/src/client.rs::Amqp091Client::
 {channel_flow, channel_close}` (connect opens channel 1).
 
 **Tests:** `method::tests::channel_close_and_flow_ids`; live
@@ -107,7 +107,7 @@ channel_flow_ok, channel_close, channel_close_ok}` + `client.rs::Amqp091Client::
 …); `exchange.delete`.
 
 **Repo:** `crates/amqp-0-9-1/src/method.rs::{exchange_declare, exchange_delete}`
-+ `client.rs::Amqp091Client::{exchange_declare, exchange_delete}`.
++ `crates/amqp-0-9-1/src/client.rs::Amqp091Client::{exchange_declare, exchange_delete}`.
 
 **Tests:** `method::tests::exchange_declare_carries_type`; live
 `tests/rabbitmq_amqp091_e2e.rs::zerodds_amqp091_exchange_routing` (topic
@@ -124,7 +124,7 @@ bindings); `queue.purge` (+message-count); `queue.delete` (+message-count).
 
 **Repo:** `crates/amqp-0-9-1/src/method.rs::{queue_declare, queue_bind,
 queue_unbind, queue_purge, queue_delete, queue_declare_ok_name,
-queue_op_ok_message_count}` + `client.rs::Amqp091Client::{queue_declare,
+queue_op_ok_message_count}` + `crates/amqp-0-9-1/src/client.rs::Amqp091Client::{queue_declare,
 queue_bind, queue_unbind, queue_purge, queue_delete}`.
 
 **Tests:** `method::tests::{queue_declare_and_publish_ids,
@@ -145,7 +145,7 @@ user-id, app-id.
 
 **Repo:** `crates/amqp-0-9-1/src/method.rs::{basic_publish, content_header,
 content_header_with_props, content_header_body_size, parse_content_header,
-ContentProperties}` + `client.rs::Amqp091Client::{publish, publish_with_props}`.
+ContentProperties}` + `crates/amqp-0-9-1/src/client.rs::Amqp091Client::{publish, publish_with_props}`.
 
 **Tests:** `method::tests::{content_header_roundtrip, content_properties_roundtrip,
 content_header_no_props_matches_legacy}`; live `tests/rabbitmq_amqp091_e2e.rs::
@@ -163,7 +163,7 @@ content, or `get-empty`; `basic.ack`; `basic.reject` (+requeue); `basic.nack`
 
 **Repo:** `crates/amqp-0-9-1/src/method.rs::{basic_get,
 basic_get_ok_delivery_tag, basic_ack, basic_ack_delivery_tag, basic_reject,
-basic_nack}` + `client.rs::Amqp091Client::{get, get_with_props, get_reject}`.
+basic_nack}` + `crates/amqp-0-9-1/src/client.rs::Amqp091Client::{get, get_with_props, get_reject}`.
 
 **Tests:** `method::tests::{basic_consume_cancel_qos_ids, ack_delivery_tag_parsed}`;
 live `tests/rabbitmq_amqp091_e2e.rs::{zerodds_amqp091_consumes_pika_published,
@@ -180,7 +180,7 @@ zerodds_amqp091_reject_requeue}` + cross-stack
 
 **Repo:** `crates/amqp-0-9-1/src/method.rs::{basic_qos, basic_consume,
 basic_cancel, basic_consume_ok_tag, basic_deliver_delivery_tag}` +
-`client.rs::Amqp091Client::{qos, consume_one}`.
+`crates/amqp-0-9-1/src/client.rs::Amqp091Client::{qos, consume_one}`.
 
 **Tests:** `method::tests::{basic_consume_cancel_qos_ids,
 basic_deliver_tag_skips_consumer_tag, consume_ok_tag_parsed}`; live
@@ -197,7 +197,7 @@ published message is confirmed by the broker with a server-pushed `basic.ack`
 (delivery-tag).
 
 **Repo:** `crates/amqp-0-9-1/src/method.rs::{confirm_select,
-basic_ack_delivery_tag}` + `client.rs::Amqp091Client::{confirm_select,
+basic_ack_delivery_tag}` + `crates/amqp-0-9-1/src/client.rs::Amqp091Client::{confirm_select,
 publish_confirmed}`.
 
 **Tests:** `method::tests::confirm_and_tx_ids`; live
@@ -212,7 +212,7 @@ publish_confirmed}`.
 **Spec:** §1.9 — `tx.select` (start a transaction), `tx.commit`, `tx.rollback`.
 
 **Repo:** `crates/amqp-0-9-1/src/method.rs::{tx_select, tx_commit, tx_rollback}`
-+ `client.rs::Amqp091Client::{tx_select, tx_commit, tx_rollback}`.
++ `crates/amqp-0-9-1/src/client.rs::Amqp091Client::{tx_select, tx_commit, tx_rollback}`.
 
 **Tests:** `method::tests::confirm_and_tx_ids`; live
 `tests/rabbitmq_amqp091_e2e.rs::zerodds_amqp091_transactions` (rollback does not

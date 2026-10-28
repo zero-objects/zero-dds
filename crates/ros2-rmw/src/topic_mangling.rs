@@ -16,7 +16,7 @@
 use alloc::string::String;
 use core::fmt;
 
-/// ROS 2 Endpoint-Kategorie.
+/// ROS 2 Endpoint category.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RosKind {
     /// `rt/` Prefix — pub/sub Topic.

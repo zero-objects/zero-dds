@@ -12,8 +12,11 @@
 //! * `GET` with `Observe: 1` → deregister.
 //! * `DELETE` → DDS dispose marker (L1-L3 stub: only acks back).
 //!
-//! Block-wise (RFC 7959), DTLS (Spec §7.1) and OSCORE (§7.2) are
-//! marked as L5 stubs.
+//! Block-wise (RFC 7959) is handled inline. DTLS (Spec §7.1, feature
+//! `dtls`) runs as a second listener through the shared `dispatch`;
+//! OSCORE (Spec §7.2, RFC 8613, feature `oscore`) is applied inside
+//! `dispatch` — requests are unprotected on entry, responses and
+//! Observe notifications protected on exit.
 
 use std::collections::BTreeMap;
 use std::net::{SocketAddr, UdpSocket};
@@ -31,7 +34,7 @@ use zerodds_dcps::runtime::{
     DcpsRuntime, RuntimeConfig, UserReaderConfig, UserSample, UserWriterConfig,
 };
 #[cfg(feature = "daemon")]
-use zerodds_rtps::wire_types::{EntityId, GuidPrefix};
+use zerodds_rtps::wire_types::EntityId;
 
 use crate::blockwise::{BlockReassembler, BlockValue};
 use crate::codec::{decode, encode};
@@ -39,6 +42,10 @@ use crate::message::{CoapCode, CoapMessage, MessageType};
 use crate::option::{CoapOption, OptionValue, numbers};
 
 use super::config::{DaemonConfig, TopicConfig};
+#[cfg(all(feature = "daemon", feature = "oscore"))]
+use super::oscore_gateway::OscoreReject;
+#[cfg(feature = "daemon")]
+use super::oscore_gateway::{OscoreExchange, OscoreGateway};
 #[cfg(feature = "daemon")]
 use super::runtime_common::{
     BridgeMetrics, CatalogSnapshot, SERVICE_NAME, install_signal_watcher, otlp_config_from_env,
@@ -46,7 +53,7 @@ use super::runtime_common::{
 };
 #[cfg(feature = "daemon")]
 use super::security::{
-    AclOp, COAP_OPTION_AUTH_TOKEN, SecurityCtx, authenticate_coap, authorize,
+    AclOp, AuthSubject, COAP_OPTION_AUTH_TOKEN, authenticate_coap, authorize,
     ctx_from_daemon_config,
 };
 #[cfg(feature = "daemon")]
@@ -54,15 +61,23 @@ use zerodds_monitor::Registry;
 #[cfg(feature = "daemon")]
 use zerodds_observability_otlp::OtlpExporter;
 
+/// Admin endpoint address when `metrics.enabled` is set without
+/// `metrics.listen`; one port per bridge daemon, see man5.
+pub const DEFAULT_METRICS_LISTEN: &str = "127.0.0.1:9093";
+
 /// Daemon top-level error.
 #[derive(Debug)]
 pub enum ServerError {
+    /// A setting that cannot be served (exit 1).
+    Config(String),
     /// UDP bind (exit 2).
     Bind(String),
     /// DDS init (exit 3).
     Dds(String),
     /// DTLS (exit 4).
     Dtls(String),
+    /// OSCORE setup (exit 4 — security setup, like DTLS).
+    Oscore(String),
     /// IO.
     Io(String),
 }
@@ -70,9 +85,11 @@ pub enum ServerError {
 impl core::fmt::Display for ServerError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
+            Self::Config(m) => write!(f, "config: {m}"),
             Self::Bind(m) => write!(f, "bind: {m}"),
             Self::Dds(m) => write!(f, "dds: {m}"),
             Self::Dtls(m) => write!(f, "dtls: {m}"),
+            Self::Oscore(m) => write!(f, "oscore: {m}"),
             Self::Io(m) => write!(f, "io: {m}"),
         }
     }
@@ -115,6 +132,21 @@ pub struct DaemonHandle {
     /// DTLS (`coaps://`) listener — present only when `dtls.enabled` + feature.
     #[cfg(feature = "dtls")]
     dtls: Option<DtlsHandle>,
+    /// §9.2: what the shutdown needs to end every observation.
+    observations: Option<Observations>,
+    /// The daemon's DDS participant. [`Self::shutdown`] stops it: dropping
+    /// the handle alone would not, because the runtime's worker threads and
+    /// the pumps hold `Arc`s of their own.
+    #[cfg(feature = "daemon")]
+    runtime: Arc<DcpsRuntime>,
+}
+
+/// The observe registry and what a notification to it is sent with.
+struct Observations {
+    socket: UdpSocket,
+    topic_state: Arc<Mutex<BTreeMap<String, TopicState>>>,
+    mid: Arc<AtomicU16>,
+    oscore: Option<Arc<OscoreGateway>>,
 }
 
 impl DaemonHandle {
@@ -127,9 +159,24 @@ impl DaemonHandle {
             .and_then(|d| d.bound.lock().ok().and_then(|b| *b))
     }
 
-    /// Sets the stop flag and joins workers.
+    /// Whether SIGTERM/SIGINT (or [`Self::shutdown`]) asked the daemon to
+    /// stop. The binary waits for it and then runs the shutdown.
+    #[must_use]
+    pub fn stop_requested(&self) -> bool {
+        self.stop.load(Ordering::SeqCst)
+    }
+
+    /// Spec §9.2: stops taking requests and DDS samples, ends every
+    /// observation, then joins the workers and stops the DDS participant.
     pub fn shutdown(&mut self) {
         self.stop.store(true, Ordering::SeqCst);
+        // The pumps first, so that no notification follows the last one.
+        for j in self.pump_threads.drain(..) {
+            let _ = j.join();
+        }
+        if let Some(obs) = self.observations.take() {
+            end_observations(&obs);
+        }
         #[cfg(feature = "dtls")]
         if let Some(d) = self.dtls.take() {
             d.shutdown.notify_one();
@@ -164,6 +211,10 @@ impl DaemonHandle {
             if let Some(j) = self.otlp_thread.take() {
                 let _ = j.join();
             }
+            // Last, so no pump writes to a stopped runtime. A daemon stopped
+            // in a process that keeps running (an embedding, a test)
+            // otherwise leaves its participant on the domain.
+            self.runtime.shutdown();
         }
     }
 }
@@ -214,10 +265,19 @@ impl Observer {
     }
 }
 
+/// A registered observer: its transport endpoint plus, when the register
+/// arrived OSCORE-protected, the exchange parameters notifications to it are
+/// protected with (Spec §7.2 / RFC 8613 §4.1.3.5.2).
+#[derive(Debug, Clone)]
+struct RegisteredObserver {
+    transport: Observer,
+    oscore: Option<OscoreExchange>,
+}
+
 /// Topic state.
 #[derive(Debug, Default)]
 struct TopicState {
-    observers: Vec<Observer>,
+    observers: Vec<RegisteredObserver>,
     next_seq: u32,
 }
 
@@ -234,8 +294,45 @@ struct BlockKey {
 /// # Errors
 /// `Bind` (exit 2), `Dds` (exit 3), `Dtls` (exit 4).
 #[cfg(feature = "daemon")]
-#[allow(clippy::too_many_lines)]
 pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
+    let runtime = RuntimeConfig::from_standard_paths()
+        .map_err(|e| ServerError::Dds(format!("runtime configuration: {e}")))?;
+    start_with_runtime(cfg, runtime)
+}
+
+/// [`start`] with the DDS runtime configuration a command line loaded
+/// (`zerodds_dcps::cli::Configured`), which `start` reads from the standard
+/// layers instead.
+///
+/// # Errors
+/// As [`start`].
+#[cfg(feature = "daemon")]
+#[allow(clippy::too_many_lines)]
+pub fn start_with_runtime(
+    cfg: DaemonConfig,
+    runtime_config: RuntimeConfig,
+) -> Result<DaemonHandle, ServerError> {
+    start_with_reload(cfg, runtime_config, None)
+}
+
+/// Reads and validates the configuration again, for a SIGHUP reload.
+pub type ConfigLoader = Box<dyn Fn() -> Result<DaemonConfig, String> + Send + Sync>;
+
+/// [`start_with_runtime`], reloading on SIGHUP (§9.2): with `load` the
+/// configuration is read again and the ACL and auth settings apply to the
+/// requests that follow; the DTLS credentials are read again in any case.
+/// Changed topics, binds, domain or DTLS paths need a restart and are
+/// logged. A configuration that does not load changes nothing.
+///
+/// # Errors
+/// As [`start`].
+#[cfg(feature = "daemon")]
+#[allow(clippy::too_many_lines)]
+pub fn start_with_reload(
+    cfg: DaemonConfig,
+    runtime_config: RuntimeConfig,
+    load: Option<ConfigLoader>,
+) -> Result<DaemonHandle, ServerError> {
     eprintln!(
         "[zerodds-coap-bridged] starting bind={} domain={} topics={}",
         cfg.bind,
@@ -250,9 +347,19 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
     let reload_flag = Arc::new(AtomicBool::new(false));
 
     // 0b. Bridge security: auth + ACL (§7.2/§7.3; DTLS via separate ADR).
-    let security_ctx =
-        ctx_from_daemon_config(&cfg).map_err(|e| ServerError::Dtls(format!("security: {e}")))?;
-    let security_ctx = Arc::new(security_ctx);
+    // Spec §2: an auth setting that cannot be served is exit 1; exit 4
+    // stays for the security setup of DTLS/OSCORE.
+    let security_ctx = ctx_from_daemon_config(&cfg).map_err(|e| match e {
+        zerodds_bridge_security::SecurityError::Tls(_) => {
+            ServerError::Dtls(format!("security: {e}"))
+        }
+        _ => ServerError::Config(format!("security: {e}")),
+    })?;
+    let security_ctx = Arc::new(zerodds_bridge_security::LiveSecurity::new(security_ctx));
+    // DTLS reloads its credentials on this flag, set after the reload of the
+    // configuration has run (both used to read the SIGHUP flag; the second
+    // reader would have missed the signal).
+    let dtls_reload = Arc::new(AtomicBool::new(false));
     eprintln!(
         "[zerodds-coap-bridged] auth-mode={} acl-entries={} dtls={}",
         cfg.auth_mode,
@@ -263,6 +370,32 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
             "off"
         },
     );
+
+    // 0c. OSCORE (§7.2, RFC 8613, ADR 0010). Fail closed without the `oscore`
+    // feature: the operator asked for object security this binary cannot
+    // provide, so refuse to start rather than silently serve unprotected.
+    #[cfg(not(feature = "oscore"))]
+    let oscore_gw: Option<Arc<OscoreGateway>> = if cfg.oscore.enabled {
+        return Err(ServerError::Oscore(
+            "oscore.enabled=true but this build has no `oscore` feature (rebuild \
+             with --features oscore); refusing to start so the bridge never \
+             serves a port expected to be OSCORE-protected in the clear. Set \
+             oscore.enabled=false to run without object security."
+                .to_string(),
+        ));
+    } else {
+        None
+    };
+    #[cfg(feature = "oscore")]
+    let oscore_gw: Option<Arc<OscoreGateway>> = if cfg.oscore.enabled {
+        eprintln!(
+            "[zerodds-coap-bridged] oscore enabled sender-id={:02x?} replay-window={}",
+            cfg.oscore.sender_id, cfg.oscore.replay_window,
+        );
+        Some(Arc::new(OscoreGateway::new(cfg.oscore.clone())))
+    } else {
+        None
+    };
 
     // 1. Bind the UDP socket.
     let socket = UdpSocket::bind(&cfg.bind).map_err(|e| ServerError::Bind(format!("{e}")))?;
@@ -293,8 +426,8 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
     }
 
     // 2. DCPS runtime.
-    let prefix = stable_prefix_for(&local_addr);
-    let runtime = DcpsRuntime::start(cfg.domain, prefix, RuntimeConfig::default())
+    let prefix = zerodds_dcps::participant::bridge_guid_prefix(&local_addr);
+    let runtime = DcpsRuntime::start(cfg.domain, prefix, runtime_config)
         .map_err(|e| ServerError::Dds(format!("{e:?}")))?;
 
     // 3. Reader+writer per topic + path map.
@@ -331,14 +464,18 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
         let _topic_name = dds_topic_name.clone();
         let path = coap_path.clone();
         let dds_out = Arc::clone(&metrics.dds_samples_out_total);
+        let oscore_pump = oscore_gw.clone();
         let h = thread::spawn(move || {
             while !stop_c.load(Ordering::SeqCst) {
                 match rx.recv_timeout(Duration::from_millis(200)) {
                     Ok(UserSample::Alive { payload, .. }) => {
                         dds_out.inc();
-                        push_notify(&socket_c, &state_c, &path, &payload, &mid_c);
+                        push_notify(&socket_c, &state_c, &path, &payload, &mid_c, &oscore_pump);
                     }
                     Ok(UserSample::Lifecycle { .. }) => {}
+                    // The end-of-coherent-set marker (DDSI-RTPS 2.5 §8.7.6)
+                    // carries no user data — nothing to forward.
+                    Ok(UserSample::CoherentSetEnd { .. }) => {}
                     Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
                     Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
                 }
@@ -346,6 +483,10 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
         });
         pump_threads.push(h);
     }
+
+    let socket_end = socket
+        .try_clone()
+        .map_err(|e| ServerError::Io(format!("{e}")))?;
 
     // 5. Accept thread (recv loop).
     let stop_acc = Arc::clone(&stop);
@@ -365,6 +506,9 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
     let block1_acc = Arc::clone(&block1_state);
     let metrics_acc = metrics.clone();
     let security_acc = Arc::clone(&security_ctx);
+    #[cfg(feature = "dtls")]
+    let oscore_dtls = oscore_gw.clone();
+    let oscore_acc = oscore_gw.clone();
     let accept_thread = thread::spawn(move || {
         let mut buf = [0u8; 65535];
         while !stop_acc.load(Ordering::SeqCst) {
@@ -396,6 +540,7 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
                         &block1_acc,
                         &metrics_acc,
                         &security_acc,
+                        &oscore_acc,
                     ) {
                         metrics_acc.errors_total.inc();
                         eprintln!("[zerodds-coap-bridged] handle err from {peer}: {e}");
@@ -427,6 +572,8 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
             let bound = Arc::new(Mutex::new(None));
             let thread = spawn_dtls_server(
                 dtls_bind,
+                cfg.dtls.clone(),
+                Arc::clone(&dtls_reload),
                 Arc::clone(&shutdown),
                 Arc::clone(&bound),
                 Arc::clone(&runtime),
@@ -436,6 +583,7 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
                 Arc::clone(&block1_state),
                 metrics.clone(),
                 Arc::clone(&security_ctx),
+                oscore_dtls,
             )?;
             Some(DtlsHandle {
                 thread,
@@ -444,7 +592,7 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
             })
         } else {
             // Not serving DTLS — drop the cloned shared handles.
-            let _ = (dtls_writers, dtls_path_to_dds);
+            let _ = (dtls_writers, dtls_path_to_dds, oscore_dtls);
             None
         }
     };
@@ -454,7 +602,7 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
     let mut admin_addr: Option<String> = None;
     if cfg.metrics_enabled || !cfg.metrics_addr.is_empty() {
         let bind_str = if cfg.metrics_addr.is_empty() {
-            "127.0.0.1:9090".to_string()
+            DEFAULT_METRICS_LISTEN.to_string()
         } else {
             cfg.metrics_addr.clone()
         };
@@ -486,6 +634,29 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
     if let Err(e) = install_signal_watcher(Arc::clone(&stop), Arc::clone(&reload_flag)) {
         eprintln!("[{SERVICE_NAME}] signal watcher init failed: {e}");
     }
+    // 7b. SIGHUP reload (§9.2).
+    {
+        let (stop_r, flag_r, dtls_r, live, started) = (
+            Arc::clone(&stop),
+            Arc::clone(&reload_flag),
+            Arc::clone(&dtls_reload),
+            Arc::clone(&security_ctx),
+            cfg.clone(),
+        );
+        let _ = thread::Builder::new()
+            .name("zerodds-coap-reload".into())
+            .spawn(move || {
+                while !stop_r.load(Ordering::SeqCst) {
+                    thread::sleep(Duration::from_millis(100));
+                    if flag_r.swap(false, Ordering::SeqCst) {
+                        if let Some(l) = &load {
+                            reload(&live, &started, l());
+                        }
+                        dtls_r.store(true, Ordering::SeqCst);
+                    }
+                }
+            });
+    }
 
     // 8. OTLP.
     let otlp_thread = if let Some(otlp_cfg) = otlp_config_from_env(SERVICE_NAME) {
@@ -501,7 +672,14 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
         None
     };
 
+    let observations = Some(Observations {
+        socket: socket_end,
+        topic_state: Arc::clone(&topic_state),
+        mid: Arc::clone(&next_mid),
+        oscore: oscore_gw.clone(),
+    });
     Ok(DaemonHandle {
+        observations,
         stop,
         accept_thread: Some(accept_thread),
         pump_threads,
@@ -514,6 +692,7 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
         metrics: Some(metrics),
         #[cfg(feature = "dtls")]
         dtls,
+        runtime,
     })
 }
 
@@ -522,8 +701,17 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
 #[cfg(feature = "daemon")]
 enum ObserveDirective {
     None,
-    Register { path: String, token: Vec<u8> },
-    Deregister { path: String, token: Vec<u8> },
+    Register {
+        path: String,
+        token: Vec<u8>,
+        /// Set when the register arrived OSCORE-protected — notifications to
+        /// this observer are protected with these exchange parameters.
+        oscore: Option<OscoreExchange>,
+    },
+    Deregister {
+        path: String,
+        token: Vec<u8>,
+    },
 }
 
 /// Transport-agnostic outcome of handling one CoAP request: the responses to
@@ -537,11 +725,14 @@ struct Dispatched {
     observe: ObserveDirective,
 }
 
-/// Handle one decoded CoAP request against the DDS runtime. Shared by the
-/// plaintext UDP path ([`handle_request`]) and the DTLS path
-/// (`super::dtls_server`) so both transports behave identically (no drift).
+/// Handle one CoAP request against the DDS runtime. Shared by the plaintext
+/// UDP path ([`handle_request`]) and the DTLS path (`super::dtls_server`) so
+/// both transports behave identically (no drift). With OSCORE enabled
+/// (Spec §7.2, RFC 8613) the request is unprotected here and every response
+/// protected before it leaves; unprotected requests (other than
+/// `/.well-known/core`) are refused with `4.01 Unauthorized`.
 #[cfg(feature = "daemon")]
-#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+#[allow(clippy::too_many_arguments)]
 fn dispatch(
     bytes: &[u8],
     peer: SocketAddr,
@@ -550,39 +741,144 @@ fn dispatch(
     runtime: &Arc<DcpsRuntime>,
     block1_state: &Arc<Mutex<BTreeMap<BlockKey, BlockReassembler>>>,
     metrics: &BridgeMetrics,
-    security: &Arc<SecurityCtx>,
+    security: &Arc<zerodds_bridge_security::LiveSecurity>,
+    oscore: &Option<Arc<OscoreGateway>>,
+    dtls_peer: Option<&AuthSubject>,
+) -> Result<Dispatched, String> {
+    let outer = decode(bytes).map_err(|e| format!("decode: {e}"))?;
+
+    // §7.2 OSCORE gate — unprotect (RFC 8613 §8.2) or refuse.
+    #[cfg(feature = "oscore")]
+    let (req, exchange): (CoapMessage, Option<OscoreExchange>) = match oscore.as_ref() {
+        Some(gw) => match gw.unprotect_request(&outer)? {
+            Ok((inner, ex)) => (inner, Some(ex)),
+            Err(OscoreReject::NotProtected) => {
+                if extract_uri_path(&outer) == ".well-known/core" {
+                    // The discovery catalog stays reachable in the clear.
+                    (outer, None)
+                } else {
+                    metrics.errors_total.inc();
+                    return Ok(Dispatched {
+                        responses: vec![make_response(
+                            &outer,
+                            CoapCode::new(4, 1),
+                            b"oscore required".to_vec(),
+                        )],
+                        observe: ObserveDirective::None,
+                    });
+                }
+            }
+            Err(OscoreReject::Replay) => {
+                // §7.4 — replayed Partial IV.
+                metrics.errors_total.inc();
+                metrics.oscore_replays_total.inc();
+                return Ok(Dispatched {
+                    responses: vec![make_response(
+                        &outer,
+                        CoapCode::new(4, 1),
+                        b"oscore replay".to_vec(),
+                    )],
+                    observe: ObserveDirective::None,
+                });
+            }
+            Err(OscoreReject::Verify) => {
+                // §8.2 — decompression/verification failure.
+                metrics.errors_total.inc();
+                return Ok(Dispatched {
+                    responses: vec![make_response(
+                        &outer,
+                        CoapCode::new(4, 0),
+                        b"oscore verification failed".to_vec(),
+                    )],
+                    observe: ObserveDirective::None,
+                });
+            }
+        },
+        None => (outer, None),
+    };
+    #[cfg(not(feature = "oscore"))]
+    let req = {
+        let _ = oscore;
+        outer
+    };
+
+    #[allow(unused_mut)]
+    let mut d = dispatch_core(
+        &req,
+        peer,
+        writers,
+        path_to_dds,
+        runtime,
+        block1_state,
+        metrics,
+        security,
+        dtls_peer,
+    )?;
+
+    // §8.3 — protect every response of an OSCORE exchange before it leaves.
+    #[cfg(feature = "oscore")]
+    if let (Some(gw), Some(ex)) = (oscore.as_ref(), exchange) {
+        let mut protected = Vec::with_capacity(d.responses.len());
+        for resp in &d.responses {
+            protected.push(
+                gw.protect_response(&ex, resp)
+                    .map_err(|e| format!("oscore: {e}"))?,
+            );
+        }
+        d.responses = protected;
+        if let ObserveDirective::Register { oscore: slot, .. } = &mut d.observe {
+            *slot = Some(ex);
+        }
+    }
+    Ok(d)
+}
+
+/// The transport- and security-agnostic request core: the (already
+/// unprotected) request against the DDS runtime.
+#[cfg(feature = "daemon")]
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+fn dispatch_core(
+    req: &CoapMessage,
+    peer: SocketAddr,
+    writers: &Arc<BTreeMap<String, EntityId>>,
+    path_to_dds: &Arc<BTreeMap<String, String>>,
+    runtime: &Arc<DcpsRuntime>,
+    block1_state: &Arc<Mutex<BTreeMap<BlockKey, BlockReassembler>>>,
+    metrics: &BridgeMetrics,
+    security: &Arc<zerodds_bridge_security::LiveSecurity>,
+    dtls_peer: Option<&AuthSubject>,
 ) -> Result<Dispatched, String> {
     let mut out = Dispatched {
         responses: Vec::new(),
         observe: ObserveDirective::None,
     };
-    let req = decode(bytes).map_err(|e| format!("decode: {e}"))?;
-    let path = extract_uri_path(&req);
+    let path = extract_uri_path(req);
 
     // `/.well-known/core` → resource catalog (open, no auth).
     if path == ".well-known/core" {
         let body = render_well_known_core(path_to_dds);
-        let mut resp = make_response(&req, CoapCode::CONTENT, body.into_bytes());
+        let mut resp = make_response(req, CoapCode::CONTENT, body.into_bytes());
         resp.options.push(CoapOption::content_format(40)); // application/link-format
         out.responses.push(resp);
         return Ok(out);
     }
 
     // §7.2 — Authentication via CoAP-Option 65000 (Bearer-Token).
-    let auth_token = extract_auth_token(&req);
-    let subject = match authenticate_coap(&security.auth, auth_token.as_deref()) {
-        Ok(s) => s,
-        Err(_e) => {
-            metrics.errors_total.inc();
-            // 4.01 Unauthorized.
-            out.responses.push(make_response(
-                &req,
-                CoapCode::new(4, 1),
-                b"unauthorized".to_vec(),
-            ));
-            return Ok(out);
-        }
-    };
+    let auth_token = extract_auth_token(req);
+    let subject =
+        match authenticate_coap(&security.current().auth, auth_token.as_deref(), dtls_peer) {
+            Ok(s) => s,
+            Err(_e) => {
+                metrics.errors_total.inc();
+                // 4.01 Unauthorized.
+                out.responses.push(make_response(
+                    req,
+                    CoapCode::new(4, 1),
+                    b"unauthorized".to_vec(),
+                ));
+                return Ok(out);
+            }
+        };
 
     if req.code == CoapCode::POST || req.code == CoapCode::PUT {
         // POST/PUT → DDS write. Optional Block1 (RFC 7959 §2.5).
@@ -590,11 +886,11 @@ fn dispatch(
             .get(&path)
             .ok_or_else(|| format!("unknown path: {path}"))?;
         // §7.3 — ACL write check.
-        if !authorize(&security.acl, &subject, AclOp::Write, dds_topic) {
+        if !authorize(&security.current().acl, &subject, AclOp::Write, dds_topic) {
             metrics.errors_total.inc();
             // 4.03 Forbidden.
             out.responses.push(make_response(
-                &req,
+                req,
                 CoapCode::new(4, 3),
                 b"forbidden".to_vec(),
             ));
@@ -603,7 +899,7 @@ fn dispatch(
         let eid = writers.get(dds_topic).ok_or("no writer")?;
 
         // Block1 path: collect chunks until !more, then DDS write.
-        if let Some(b1) = extract_block(&req, numbers::BLOCK1) {
+        if let Some(b1) = extract_block(req, numbers::BLOCK1) {
             let key = BlockKey {
                 peer,
                 token: req.token.clone(),
@@ -632,12 +928,12 @@ fn dispatch(
                     .map_err(|e| format!("dds-write: {e:?}"))?;
                 metrics.dds_samples_in_total.inc();
                 // 2.04 Changed with Block1 echo (more=false).
-                let mut resp = make_response(&req, CoapCode::CHANGED, Vec::new());
+                let mut resp = make_response(req, CoapCode::CHANGED, Vec::new());
                 resp.options.push(CoapOption::block1(b1.num, false, b1.szx));
                 out.responses.push(resp);
             } else {
                 // 2.31 Continue with Block1 echo (more=true).
-                let mut resp = make_response(&req, CoapCode::new(2, 31), Vec::new());
+                let mut resp = make_response(req, CoapCode::new(2, 31), Vec::new());
                 resp.options.push(CoapOption::block1(b1.num, true, b1.szx));
                 out.responses.push(resp);
             }
@@ -649,20 +945,20 @@ fn dispatch(
             .map_err(|e| format!("dds-write: {e:?}"))?;
         metrics.dds_samples_in_total.inc();
         out.responses
-            .push(make_response(&req, CoapCode::CHANGED, Vec::new()));
+            .push(make_response(req, CoapCode::CHANGED, Vec::new()));
         return Ok(out);
     }
 
     if req.code == CoapCode::GET {
-        let observe = extract_observe(&req);
+        let observe = extract_observe(req);
         let dds_topic = path_to_dds
             .get(&path)
             .ok_or_else(|| format!("unknown path: {path}"))?;
         // §7.3 — ACL read check for observe-register and plain GET.
-        if !authorize(&security.acl, &subject, AclOp::Read, dds_topic) {
+        if !authorize(&security.current().acl, &subject, AclOp::Read, dds_topic) {
             metrics.errors_total.inc();
             out.responses.push(make_response(
-                &req,
+                req,
                 CoapCode::new(4, 3),
                 b"forbidden".to_vec(),
             ));
@@ -674,9 +970,10 @@ fn dispatch(
                 out.observe = ObserveDirective::Register {
                     path: path.clone(),
                     token: req.token.clone(),
+                    oscore: None,
                 };
                 // Initial response 2.05 with observe seq 0 (Spec §4.3).
-                let mut resp = make_response(&req, CoapCode::CONTENT, Vec::new());
+                let mut resp = make_response(req, CoapCode::CONTENT, Vec::new());
                 resp.options.push(CoapOption::observe(0));
                 resp.options.push(CoapOption::content_format(65000));
                 out.responses.push(resp);
@@ -690,14 +987,14 @@ fn dispatch(
                     token: req.token.clone(),
                 };
                 out.responses
-                    .push(make_response(&req, CoapCode::CONTENT, Vec::new()));
+                    .push(make_response(req, CoapCode::CONTENT, Vec::new()));
                 return Ok(out);
             }
             _ => {
                 // Plain GET — empty content (spec says 2.05 with the current
                 // sample; we have no cache layer in L1-L4).
                 out.responses
-                    .push(make_response(&req, CoapCode::CONTENT, Vec::new()));
+                    .push(make_response(req, CoapCode::CONTENT, Vec::new()));
                 return Ok(out);
             }
         }
@@ -706,13 +1003,13 @@ fn dispatch(
     if req.code == CoapCode::DELETE {
         // DELETE → dispose marker (L1-L3 stub: only 2.02 back).
         out.responses
-            .push(make_response(&req, CoapCode::DELETED, Vec::new()));
+            .push(make_response(req, CoapCode::DELETED, Vec::new()));
         return Ok(out);
     }
 
     // Unknown code — 4.00 Bad Request.
     out.responses
-        .push(make_response(&req, CoapCode::BAD_REQUEST, Vec::new()));
+        .push(make_response(req, CoapCode::BAD_REQUEST, Vec::new()));
     Ok(out)
 }
 
@@ -728,8 +1025,15 @@ fn apply_observe(
 ) {
     match directive {
         ObserveDirective::None => {}
-        ObserveDirective::Register { path, token } => {
-            let obs = make_observer(token);
+        ObserveDirective::Register {
+            path,
+            token,
+            oscore,
+        } => {
+            let obs = RegisteredObserver {
+                transport: make_observer(token),
+                oscore,
+            };
             if let Ok(mut st) = topic_state.lock() {
                 st.entry(path).or_default().observers.push(obs);
             }
@@ -741,9 +1045,10 @@ fn apply_observe(
             if let Ok(mut st) = topic_state.lock() {
                 if let Some(entry) = st.get_mut(&path) {
                     let before = entry.observers.len();
-                    entry
-                        .observers
-                        .retain(|o| !(o.same_endpoint_as(&probe) && o.token() == token.as_slice()));
+                    entry.observers.retain(|o| {
+                        !(o.transport.same_endpoint_as(&probe)
+                            && o.transport.token() == token.as_slice())
+                    });
                     let removed = before - entry.observers.len();
                     for _ in 0..removed {
                         metrics.connections_active.dec();
@@ -770,7 +1075,8 @@ fn handle_request(
     _cfg: &Arc<DaemonConfig>,
     block1_state: &Arc<Mutex<BTreeMap<BlockKey, BlockReassembler>>>,
     metrics: &BridgeMetrics,
-    security: &Arc<SecurityCtx>,
+    security: &Arc<zerodds_bridge_security::LiveSecurity>,
+    oscore: &Option<Arc<OscoreGateway>>,
 ) -> Result<(), String> {
     let d = dispatch(
         bytes,
@@ -781,6 +1087,8 @@ fn handle_request(
         block1_state,
         metrics,
         security,
+        oscore,
+        None,
     )?;
     for resp in &d.responses {
         send_msg(socket, resp, peer);
@@ -924,12 +1232,70 @@ fn send_msg(socket: &UdpSocket, msg: &CoapMessage, peer: SocketAddr) {
     }
 }
 
+/// RFC 7641 §4.2: a notification with a non-2.xx code ends an observation
+/// on the client. At shutdown every observer gets 5.03 Service Unavailable
+/// without an Observe option (what a GET would now return) and the
+/// registry is emptied. Before, the observers were dropped silently and a
+/// client kept waiting for notifications that would never come.
+fn end_observations(obs: &Observations) {
+    let observers: Vec<RegisteredObserver> = match obs.topic_state.lock() {
+        Ok(mut st) => st
+            .values_mut()
+            .flat_map(|e| std::mem::take(&mut e.observers))
+            .collect(),
+        Err(_) => return,
+    };
+    #[cfg(feature = "dtls")]
+    let mut over_dtls = false;
+    for o in &observers {
+        let msg = CoapMessage {
+            version: 1,
+            message_type: MessageType::NonConfirmable,
+            code: CoapCode::new(5, 3),
+            message_id: obs.mid.fetch_add(1, Ordering::SeqCst),
+            token: o.transport.token().to_vec(),
+            options: Vec::new(),
+            payload: b"shutting down".to_vec(),
+        };
+        let msg = match (&o.oscore, obs.oscore.as_ref()) {
+            (None, _) => msg,
+            #[cfg(feature = "oscore")]
+            (Some(ex), Some(gw)) => match gw.protect_notification(ex, &msg) {
+                Ok(protected) => protected,
+                Err(_) => continue,
+            },
+            (Some(_), _) => continue,
+        };
+        match &o.transport {
+            Observer::Udp { addr, .. } => send_msg(&obs.socket, &msg, *addr),
+            #[cfg(feature = "dtls")]
+            Observer::Dtls { tx, .. } => {
+                over_dtls = true;
+                let _ = tx.send(msg);
+            }
+        }
+    }
+    // A DTLS notification is written by its session task; give the tasks
+    // the moment to do so before the DTLS listener stops.
+    #[cfg(feature = "dtls")]
+    if over_dtls {
+        thread::sleep(Duration::from_millis(200));
+    }
+    if !observers.is_empty() {
+        eprintln!(
+            "[zerodds-coap-bridged] ended {} observation(s) with 5.03",
+            observers.len()
+        );
+    }
+}
+
 fn push_notify(
     socket: &UdpSocket,
     topic_state: &Arc<Mutex<BTreeMap<String, TopicState>>>,
     path: &str,
     payload: &[u8],
     mid: &Arc<AtomicU16>,
+    oscore: &Option<Arc<OscoreGateway>>,
 ) {
     let observers = match topic_state.lock() {
         Ok(mut st) => {
@@ -951,11 +1317,30 @@ fn push_notify(
             message_type: MessageType::NonConfirmable,
             code: CoapCode::CONTENT,
             message_id: new_mid,
-            token: obs.token().to_vec(),
+            token: obs.transport.token().to_vec(),
             options: vec![CoapOption::observe(seq), CoapOption::content_format(65000)],
             payload: payload.to_vec(),
         };
-        match obs {
+        // §7.2 — a notification to an OSCORE observer leaves protected or not
+        // at all (RFC 8613 §4.1.3.5.2: the daemon's own Partial IV).
+        let msg = match (&obs.oscore, oscore.as_ref()) {
+            (None, _) => msg,
+            #[cfg(feature = "oscore")]
+            (Some(ex), Some(gw)) => match gw.protect_notification(ex, &msg) {
+                Ok(protected) => protected,
+                Err(e) => {
+                    eprintln!("[zerodds-coap-bridged] oscore notify protect failed: {e}");
+                    continue;
+                }
+            },
+            (Some(_), _) => {
+                // Registered protected, but no gateway in this build/run —
+                // never send the sample in the clear.
+                eprintln!("[zerodds-coap-bridged] oscore observer without gateway; notify dropped");
+                continue;
+            }
+        };
+        match obs.transport {
             Observer::Udp { addr, .. } => send_msg(socket, &msg, addr),
             // DTLS: hand the built notification to the owning session task,
             // which writes it as DTLS application data. A closed channel means
@@ -991,6 +1376,8 @@ fn default_coaps_bind(plain: &str) -> String {
 #[allow(clippy::too_many_arguments)]
 fn spawn_dtls_server(
     bind_addr: String,
+    credentials: crate::dtls::DtlsCredentials,
+    reload_flag: Arc<AtomicBool>,
     shutdown: Arc<tokio::sync::Notify>,
     bound: Arc<Mutex<Option<SocketAddr>>>,
     runtime: Arc<DcpsRuntime>,
@@ -999,7 +1386,8 @@ fn spawn_dtls_server(
     topic_state: Arc<Mutex<BTreeMap<String, TopicState>>>,
     block1_state: Arc<Mutex<BTreeMap<BlockKey, BlockReassembler>>>,
     metrics: BridgeMetrics,
-    security: Arc<SecurityCtx>,
+    security: Arc<zerodds_bridge_security::LiveSecurity>,
+    oscore: Option<Arc<OscoreGateway>>,
 ) -> Result<JoinHandle<()>, ServerError> {
     let addr: SocketAddr = bind_addr
         .parse()
@@ -1020,6 +1408,8 @@ fn spawn_dtls_server(
             };
             rt.block_on(dtls_accept_loop(
                 addr,
+                credentials,
+                reload_flag,
                 shutdown,
                 bound,
                 runtime,
@@ -1029,6 +1419,7 @@ fn spawn_dtls_server(
                 block1_state,
                 metrics,
                 security,
+                oscore,
             ));
         })
         .map_err(|e| ServerError::Io(format!("spawn dtls thread: {e}")))
@@ -1038,6 +1429,8 @@ fn spawn_dtls_server(
 #[allow(clippy::too_many_arguments)]
 async fn dtls_accept_loop(
     addr: SocketAddr,
+    credentials: crate::dtls::DtlsCredentials,
+    reload_flag: Arc<AtomicBool>,
     shutdown: Arc<tokio::sync::Notify>,
     bound: Arc<Mutex<Option<SocketAddr>>>,
     runtime: Arc<DcpsRuntime>,
@@ -1046,9 +1439,10 @@ async fn dtls_accept_loop(
     topic_state: Arc<Mutex<BTreeMap<String, TopicState>>>,
     block1_state: Arc<Mutex<BTreeMap<BlockKey, BlockReassembler>>>,
     metrics: BridgeMetrics,
-    security: Arc<SecurityCtx>,
+    security: Arc<zerodds_bridge_security::LiveSecurity>,
+    oscore: Option<Arc<OscoreGateway>>,
 ) {
-    let server = match crate::dtls_transport::DtlsCoapServer::bind(addr).await {
+    let server = match crate::dtls_transport::DtlsCoapServer::bind_with(addr, &credentials).await {
         Ok(s) => s,
         Err(e) => {
             eprintln!("[zerodds-coap-bridged] dtls bind {addr}: {e}");
@@ -1063,8 +1457,21 @@ async fn dtls_accept_loop(
     }
     let session_ctr = AtomicU64::new(1);
     loop {
+        // Spec §7.1: "Cert-Rotation via SIGHUP (Daemon liest cert/key neu,
+        // Sessions halten)." The socket and the accepted sessions survive;
+        // only the configuration the next handshake uses is replaced.
+        if reload_flag.swap(false, Ordering::SeqCst) {
+            match server.rotate(&credentials) {
+                Ok(()) => eprintln!("[zerodds-coap-bridged] dtls credentials reloaded (SIGHUP)"),
+                Err(e) => eprintln!(
+                    "[zerodds-coap-bridged] dtls reload failed, keeping the \
+                     previous credentials: {e}"
+                ),
+            }
+        }
         tokio::select! {
             () = shutdown.notified() => break,
+            () = tokio::time::sleep(std::time::Duration::from_millis(200)) => continue,
             accepted = server.accept() => {
                 let session = match accepted {
                     Ok(s) => s,
@@ -1085,6 +1492,7 @@ async fn dtls_accept_loop(
                     Arc::clone(&block1_state),
                     metrics.clone(),
                     Arc::clone(&security),
+                    oscore.clone(),
                 ));
             }
         }
@@ -1105,9 +1513,20 @@ async fn dtls_session_task(
     topic_state: Arc<Mutex<BTreeMap<String, TopicState>>>,
     block1_state: Arc<Mutex<BTreeMap<BlockKey, BlockReassembler>>>,
     metrics: BridgeMetrics,
-    security: Arc<SecurityCtx>,
+    security: Arc<zerodds_bridge_security::LiveSecurity>,
+    oscore: Option<Arc<OscoreGateway>>,
 ) {
     let peer = session.peer_addr();
+    // §7.2 `mtls`: the identity of the DTLS handshake — `mtls:<SHA-256>`
+    // of the client certificate as in every bridge, or `psk:<identity>`.
+    let dtls_peer = session.peer_identity().await.map(|id| match id {
+        crate::dtls_transport::DtlsPeerIdentity::Certificate(der) => {
+            zerodds_bridge_security::mtls_subject_from_der(&der)
+        }
+        crate::dtls_transport::DtlsPeerIdentity::Psk(identity) => {
+            AuthSubject::new(format!("psk:{}", String::from_utf8_lossy(&identity)))
+        }
+    });
     let (notify_tx, mut notify_rx) = tokio::sync::mpsc::unbounded_channel::<CoapMessage>();
     loop {
         tokio::select! {
@@ -1124,7 +1543,7 @@ async fn dtls_session_task(
                 metrics.bytes_in_total.add(bytes.len() as u64);
                 match dispatch(
                     &bytes, peer, &writers, &path_to_dds, &runtime,
-                    &block1_state, &metrics, &security,
+                    &block1_state, &metrics, &security, &oscore, dtls_peer.as_ref(),
                 ) {
                     Ok(d) => {
                         for resp in &d.responses {
@@ -1154,9 +1573,9 @@ async fn dtls_session_task(
     if let Ok(mut st) = topic_state.lock() {
         for entry in st.values_mut() {
             let before = entry.observers.len();
-            entry
-                .observers
-                .retain(|o| !matches!(o, Observer::Dtls { session, .. } if *session == sid));
+            entry.observers.retain(
+                |o| !matches!(&o.transport, Observer::Dtls { session, .. } if *session == sid),
+            );
             for _ in 0..(before - entry.observers.len()) {
                 metrics.connections_active.dec();
             }
@@ -1173,9 +1592,7 @@ fn register_topic(
     path_to_dds: &mut BTreeMap<String, String>,
     readers: &mut Vec<(String, String, std::sync::mpsc::Receiver<UserSample>)>,
 ) -> Result<(), ServerError> {
-    use zerodds_qos::{
-        DeadlineQosPolicy, DurabilityKind, LifespanQosPolicy, LivelinessQosPolicy, OwnershipKind,
-    };
+    use zerodds_qos::DurabilityKind;
     let durability = match topic.durability.as_str() {
         "transient_local" => DurabilityKind::TransientLocal,
         "transient" => DurabilityKind::Transient,
@@ -1193,19 +1610,7 @@ fn register_topic(
                 type_name: topic.dds_type.clone(),
                 reliable,
                 durability,
-                deadline: DeadlineQosPolicy::default(),
-                latency_budget: Default::default(),
-                destination_order: Default::default(),
-                liveliness: LivelinessQosPolicy::default(),
-                ownership: OwnershipKind::Shared,
-                presentation: Default::default(),
-                partition: Vec::new(),
-                user_data: Vec::new(),
-                topic_data: Vec::new(),
-                group_data: Vec::new(),
-                type_identifier: zerodds_types::TypeIdentifier::None,
-                type_consistency: zerodds_types::qos::TypeConsistencyEnforcement::default(),
-                data_representation_offer: None,
+                ..Default::default()
             })
             .map_err(|e| ServerError::Dds(format!("reader: {e:?}")))?;
         readers.push((topic.dds_name.clone(), topic.coap_uri_path.clone(), rx));
@@ -1218,20 +1623,7 @@ fn register_topic(
                 type_name: topic.dds_type.clone(),
                 reliable,
                 durability,
-                deadline: DeadlineQosPolicy::default(),
-                latency_budget: Default::default(),
-                destination_order: Default::default(),
-                lifespan: LifespanQosPolicy::default(),
-                liveliness: LivelinessQosPolicy::default(),
-                ownership: OwnershipKind::Shared,
-                ownership_strength: 0,
-                presentation: Default::default(),
-                partition: Vec::new(),
-                user_data: Vec::new(),
-                topic_data: Vec::new(),
-                group_data: Vec::new(),
-                type_identifier: zerodds_types::TypeIdentifier::None,
-                data_representation_offer: None,
+                ..Default::default()
             })
             .map_err(|e| ServerError::Dds(format!("writer: {e:?}")))?;
         writers.insert(topic.dds_name.clone(), eid);
@@ -1240,15 +1632,42 @@ fn register_topic(
     Ok(())
 }
 
+/// One SIGHUP reload of the configuration (see [`start_with_reload`]).
 #[cfg(feature = "daemon")]
-fn stable_prefix_for(seed: &str) -> GuidPrefix {
-    let mut bytes = [0u8; 12];
-    let src = seed.as_bytes();
-    for (i, b) in src.iter().take(12).enumerate() {
-        bytes[i] = *b;
+fn reload(
+    live: &zerodds_bridge_security::LiveSecurity,
+    started: &DaemonConfig,
+    new: Result<DaemonConfig, String>,
+) {
+    let new = match new {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("[{SERVICE_NAME}] reload refused: {e}");
+            return;
+        }
+    };
+    let ctx = match ctx_from_daemon_config(&new) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("[{SERVICE_NAME}] reload refused: {e}");
+            return;
+        }
+    };
+    let mut restart: Vec<&str> = Vec::new();
+    if new.topics != started.topics {
+        restart.push("topics");
     }
-    bytes[0] ^= 0x29;
-    GuidPrefix::from_bytes(bytes)
+    if new.bind != started.bind || new.domain != started.domain {
+        restart.push("bind/domain");
+    }
+    live.replace(ctx);
+    eprintln!("[{SERVICE_NAME}] reloaded: acl, auth");
+    if !restart.is_empty() {
+        eprintln!(
+            "[{SERVICE_NAME}] reload needs a restart for: {}",
+            restart.join(", ")
+        );
+    }
 }
 
 #[cfg(test)]
@@ -1309,5 +1728,28 @@ mod tests {
         let mut msg = CoapMessage::new(MessageType::Confirmable, CoapCode::GET, 1);
         msg.options.push(CoapOption::observe(0));
         assert_eq!(extract_observe(&msg), Some(0));
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::panic)]
+mod metrics_default_tests {
+    use super::DEFAULT_METRICS_LISTEN;
+
+    /// Each bridge daemon has its own admin port, so that several with
+    /// `metrics.enabled: true` and no `metrics.listen` run on one host;
+    /// man5 names it as the default.
+    #[test]
+    fn the_metrics_default_is_the_one_man5_names() {
+        let page = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../man/man5/zerodds-coap-bridged.yaml.5"
+        ))
+        .unwrap_or_else(|e| panic!("man5 page: {e}"));
+        let named = format!("Default\n.IR \"{DEFAULT_METRICS_LISTEN}\"\nwhen");
+        assert!(
+            page.contains(&named),
+            "man5 does not name {DEFAULT_METRICS_LISTEN}"
+        );
     }
 }

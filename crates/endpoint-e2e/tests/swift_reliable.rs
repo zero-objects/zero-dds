@@ -6,7 +6,7 @@
 //! `stream_id 0x80`, sends `WRITE_DATA`, and retransmits on `ACKNACK` from
 //! the shared Rust [`ReliablePeer`], which injects loss. Also runs the swift
 //! unit + byte-golden tests, the runnable example, and the async-writer
-//! latency bench. Gated on `swiftc` (local macOS only — codepit has no Swift
+//! latency bench. Gated on `swiftc` (local macOS only — the Linux test host has no Swift
 //! toolchain).
 //!
 //! `Reliable.swift` is compiled as its own `ZeroddsReliable` module (object +
@@ -158,6 +158,10 @@ final class UDP {
     }
 }
 
+/// The DataWriter this app writes to (ObjectId = raw 0x001 + OBJK_DATAWRITER,
+/// DDS-XRCE 1.0 7.2.1). It rides in every frame's BaseObjectRequest.
+let writerId: UInt16 = 0x0015
+
 func u32le(_ v: UInt32) -> [UInt8] {
     [UInt8(v & 0xff), UInt8((v >> 8) & 0xff), UInt8((v >> 16) & 0xff), UInt8((v >> 24) & 0xff)]
 }
@@ -171,7 +175,7 @@ func modeE2E(port: UInt16, n: Int) {
             FileHandle.standardError.write("submit failed\n".data(using: .utf8)!)
             exit(1)
         }
-        udp.send(writeDataFrame(seq: seq, sample: payload))
+        udp.send(writeDataFrame(seq: seq, objectId: writerId, sample: payload))
     }
     let start = Date()
     var round = 0
@@ -182,7 +186,7 @@ func modeE2E(port: UInt16, n: Int) {
         if sender.inFlightCount == 0 { break }
         for seq in sender.inFlightSeqs() {
             if let data = sender.getInFlight(seq) {
-                udp.send(writeDataFrame(seq: seq, sample: data))
+                udp.send(writeDataFrame(seq: seq, objectId: writerId, sample: data))
             }
         }
         let nowMs = Int64(Date().timeIntervalSince(start) * 1000)
@@ -199,13 +203,14 @@ func modeBench(port: UInt16) {
     let udp = UDP(port: port)
     let payload: [UInt8] = [1, 2, 3, 4]
     let m = 4000
-    let frame = writeDataFrame(seq: 0, sample: payload)
+    let frame = writeDataFrame(seq: 0, objectId: writerId, sample: payload)
 
     let t0 = Date()
     for _ in 0..<m { udp.send(frame) }
     let inlineNs = Int(Date().timeIntervalSince(t0) / Double(m) * 1_000_000_000)
 
-    let writer = AsyncWriter(sendFn: { f in udp.send(f) }, recvFn: { udp.recvNonBlocking() })
+    let writer = AsyncWriter(
+        sendFn: { f in udp.send(f) }, recvFn: { udp.recvNonBlocking() }, objectId: writerId)
     writer.start()
     for _ in 0..<100 { _ = writer.write(payload) } // warmup
     var pushed = 0

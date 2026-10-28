@@ -1,0 +1,15 @@
+{
+  "sensor": "probe",
+  "id": 42,
+  "origin": "lab",
+  "text": "日本語 text",
+  "tags": ["alpha", "beta", ""],
+  "pair": ["left", "right"],
+  "counts": [["one", 1], ["two", 2]],
+  "outline": {"_d": "RED", "label": "square"},
+  "tiny": {"_d": 1, "a": 7},
+  "note": "a note",
+  "chain": {"value": 1, "next": {"value": 9}},
+  "price": "123.45",
+  "nested": [["x", "yz"], ["ü"]]
+}

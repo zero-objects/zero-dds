@@ -1,0 +1,4 @@
+// IDL 4.2 Annex A production 110 — a forward-declared valuetype, then its
+// definition.
+valuetype Va;
+valuetype Va { public long m; };

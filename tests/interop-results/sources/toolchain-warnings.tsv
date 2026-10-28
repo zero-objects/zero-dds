@@ -1,0 +1,1255 @@
+-	cyclone	idlc	1	noise	Failed to compile 'gen.idl'
+-	cyclone	idlc	1	noise	No default extensibility provided. For one or more of the aggregated types in the IDL the extensibility is not explicitly set. Currently the default extensibility for these types is 'final', but this may change to 'appendable' in a future release because that is the default in the DDS XTypes specification.
+-	fastdds	cc	1	error	/opt/fastdds/include/fastcdr/xcdr/detail/optional.hpp: error: 'eprosima::fastcdr::detail::optional_storage<T, <template-parameter-1-2> >::<unnamed union>::val_' has incomplete type
+-	fastdds	cc	1	error	/usr/include/c++/14/type_traits: error: static assertion failed: template argument must be a complete class or an unbounded array
+-	fastdds	cc	1	error	driver.cpp: error: expected unqualified-id before 'static'
+-	fastdds	cc	1	error	driver.cpp: error: parse error in template argument list
+-	fastdds	cc	1	error	gen.hpp: error: expected '}' before 'auto'
+-	fastdds	cc	1	error	gen.hpp: error: expected '}' before 'register'
+-	fastdds	cc	1	error	gen.hpp: error: expected declaration before '}' token
+-	fastdds	cc	1	error	gen.hpp: error: expected identifier before 'auto'
+-	fastdds	cc	1	error	gen.hpp: error: expected identifier before 'register'
+-	fastdds	cc	1	error	gen.hpp: error: expected identifier before 'static'
+-	fastdds	cc	1	error	gen.hpp: error: expected unqualified-id before ',' token
+-	fastdds	cc	1	error	gen.hpp: error: expected unqualified-id before '=' token
+-	fastdds	cc	1	error	gen.hpp: error: expected unqualified-id before 'volatile'
+-	fastdds	cc	1	error	gen.hpp: error: expected unqualified-id before '{' token
+-	fastdds	cc	1	error	gen.hpp: error: redefinition of 'class Sample'
+-	fastdds	cc	1	error	genCdrAux.hpp: error: expected ')'
+-	fastdds	cc	1	error	genCdrAux.hpp: error: expected initializer
+-	fastdds	cc	1	error	genCdrAux.ipp: error: expected ')'
+-	fastdds	cc	1	error	genCdrAux.ipp: error: expected identifier before 'static'
+-	fastdds	cc	1	error	genCdrAux.ipp: error: expected initializer
+-	fastdds	cc	1	error	genCdrAux.ipp: error: redefinition of 'size_t eprosima::fastcdr::calculate_serialized_size(CdrSizeCalculator&, const _T&, size_t&) [with _T = int; size_t = long unsigned int]'
+-	fastdds	cc	1	error	genCdrAux.ipp: error: redefinition of 'void eprosima::fastcdr::deserialize(Cdr&, _T&) [with _T = int]'
+-	fastdds	cc	1	error	genCdrAux.ipp: error: redefinition of 'void eprosima::fastcdr::serialize(Cdr&, const _T&) [with _T = int]'
+-	fastdds	cc	1	error	genCdrAux.ipp: error: redefinition of 'void eprosima::fastcdr::serialize_key(Cdr&, const int&)'
+-	fastdds	cc	1	error	genCdrAux.ipp: error: request for member 'chosen' in 'data', which is of non-class type 'const int'
+-	fastdds	cc	1	error	genCdrAux.ipp: error: request for member 'chosen' in 'data', which is of non-class type 'int'
+-	fastdds	cc	1	error	genCdrAux.ipp: error: request for member 'tail' in 'data', which is of non-class type 'const int'
+-	fastdds	cc	1	error	genCdrAux.ipp: error: request for member 'tail' in 'data', which is of non-class type 'int'
+-	fastdds	cc	1	error	genCdrAux.ipp: error: request for member 'which' in 'data', which is of non-class type 'const int'
+-	fastdds	cc	1	error	genCdrAux.ipp: error: storage class specified for parameter 'data'
+-	fastdds	cc	1	error	genCdrAux.ipp: error: template-id 'deserialize<>' for 'void eprosima::fastcdr::deserialize(...)' does not match any template declaration
+-	fastdds	cc	1	error	genPubSubTypes.cxx: error: 'p_type' was not declared in this scope; did you mean 'wctype'?
+-	fastdds	cc	1	error	genPubSubTypes.cxx: error: expected '(' before '*' token
+-	fastdds	cc	1	error	genPubSubTypes.cxx: error: expected '(' before '::' token
+-	fastdds	cc	1	error	genPubSubTypes.cxx: error: expected ')' before '::' token
+-	fastdds	cc	1	error	genPubSubTypes.cxx: error: expected ')' before ';' token
+-	fastdds	cc	1	error	genPubSubTypes.cxx: error: expected ')' before 'static'
+-	fastdds	cc	1	error	genPubSubTypes.cxx: error: expected ';' before '::' token
+-	fastdds	cc	1	error	genPubSubTypes.cxx: error: expected '>' before '*' token
+-	fastdds	cc	1	error	genPubSubTypes.cxx: error: expected '>' before '::' token
+-	fastdds	cc	1	error	genPubSubTypes.cxx: error: expected primary-expression before '>' token
+-	fastdds	cc	1	error	genPubSubTypes.cxx: error: expected type-specifier before '::' token
+-	fastdds	cc	1	error	genPubSubTypes.cxx: error: expected unqualified-id before 'static'
+-	fastdds	cc	1	error	genPubSubTypes.hpp: error: expected unqualified-id before 'static'
+-	fastdds	cc	1	noise	gen.hpp:   required from here
+-	fastdds	cc	1	note	/opt/fastdds/include/fastcdr/Cdr.h: note: candidate is: 'template<class _T> void eprosima::fastcdr::deserialize(Cdr&, _T&)'
+-	fastdds	cc	1	note	/opt/fastdds/include/fastcdr/xcdr/optional.hpp: note:   candidate expects 0 arguments, 1 provided
+-	fastdds	cc	1	note	/usr/include/c++/14/bits/stl_algo.h: note: 'std::sample' declared here
+-	fastdds	cc	1	note	gen.hpp: note: 'Sample' declared here
+-	fastdds	cc	1	note	gen.hpp: note: previous definition of 'class Sample'
+-	fastdds	cc	1	note	gen.hpp: note: to match this '{'
+-	fastdds	cc	1	note	genCdrAux.hpp: note: to match this '('
+-	fastdds	cc	1	note	genCdrAux.ipp: note: 'size_t eprosima::fastcdr::calculate_serialized_size(CdrSizeCalculator&, const _T&, size_t&) [with _T = int; size_t = long unsigned int]' previously declared here
+-	fastdds	cc	1	note	genCdrAux.ipp: note: 'void eprosima::fastcdr::deserialize(Cdr&, _T&) [with _T = int]' previously declared here
+-	fastdds	cc	1	note	genCdrAux.ipp: note: 'void eprosima::fastcdr::serialize(Cdr&, const _T&) [with _T = int]' previously declared here
+-	fastdds	cc	1	note	genCdrAux.ipp: note: 'void eprosima::fastcdr::serialize_key(Cdr&, const int&)' previously defined here
+-	fastdds	cc	1	note	genCdrAux.ipp: note: to match this '('
+-	fastdds	fastddsgen	0	noise	Adding project: gen.idl
+-	fastdds	fastddsgen	0	noise	Generating Type Support files...
+-	fastdds	fastddsgen	0	noise	Generating Type definition files...
+-	fastdds	fastddsgen	0	noise	Generating TypeObjectSupport files...
+-	fastdds	fastddsgen	0	noise	OpenJDK 64-Bit Server VM (build 21.0.11+10-1-deb13u2-Debian, mixed mode, sharing)
+-	fastdds	fastddsgen	0	noise	OpenJDK Runtime Environment (build 21.0.11+10-1-deb13u2-Debian)
+-	fastdds	fastddsgen	0	noise	Processing the file gen.idl...
+-	fastdds	fastddsgen	0	noise	openjdk version "21.0.11" 2026-04-21
+-	fastdds	fastddsgen	1	error	 bytes.[thread 1074211 also had an error][thread 1074210 also had an error] Error detail: 
+-	fastdds	fastddsgen	1	error	# An error report file with more information is saved as:
+-	fastdds	fastddsgen	1	error	# Can't open file to dump replay data. Error: Not enough space
+-	fastdds	fastddsgen	1	error	# Native memory allocation # Native memory allocation (mmap) failed to map (mmap) failed to map 6710886467108864 bytes. bytes. Error detail:  Error detail: Failed to reserve memory for metaspaceFailed to reserve memory for metaspace
+-	fastdds	fastddsgen	1	error	# Native memory allocation (malloc) failed to allocate 461936 bytes. Error detail: Chunk::new
+-	fastdds	fastddsgen	1	error	# Native memory allocation (mmap) failed to map 67108864 bytes. Error detail: Failed to reserve memory for metaspace
+-	fastdds	fastddsgen	1	error	# Native memory allocation [thread 1074221 also had an error]
+-	fastdds	fastddsgen	1	error	(malloc) failed to allocate 218496 bytes. Error detail: Chunk::new
+-	fastdds	fastddsgen	1	error	[thread 1074200 also had an error]
+-	fastdds	fastddsgen	1	error	[thread 1074207 also had an error][thread 1074222 also had an error][thread 1074206 also had an error]
+-	fastdds	fastddsgen	1	error	[thread 1074212 also had an error]
+-	fastdds	fastddsgen	1	error	[thread 1074213 also had an error]
+-	fastdds	fastddsgen	1	error	[thread 1074220 also had an error]
+-	fastdds	fastddsgen	1	error	[thread 1076337 also had an error][thread 1076347 also had an error][thread 1076333 also had an error]
+-	fastdds	fastddsgen	1	error	[thread 1076338 also had an error]
+-	fastdds	fastddsgen	1	error	[thread 1076339 also had an error][thread 1076334 also had an error]
+-	fastdds	fastddsgen	1	error	[thread 1076346 also had an error]
+-	fastdds	fastddsgen	1	error	[thread 800421 also had an error][thread 800422 also had an error]
+-	fastdds	fastddsgen	1	error	[thread 800431 also had an error][thread 800423 also had an error][thread 800424 also had an error][thread 800414 also had an error]
+-	fastdds	fastddsgen	1	noise	#
+-	fastdds	fastddsgen	1	noise	# Native memory allocation 
+-	fastdds	fastddsgen	1	noise	# There is insufficient memory for the Java Runtime Environment to continue.
+-	fastdds	fastddsgen	1	noise	# chunk.000.d/a/a/build/hs_err_pid1074183.log
+-	fastdds	fastddsgen	1	noise	# chunk.000.d/a/a/build/hs_err_pid1074185.log
+-	fastdds	fastddsgen	1	noise	# chunk.000.d/a/b/build/hs_err_pid1075291.log
+-	fastdds	fastddsgen	1	noise	# chunk.000.d/a/b/build/hs_err_pid1075293.log
+-	fastdds	fastddsgen	1	noise	# chunk.000.d/a/build/hs_err_pid1073884.log
+-	fastdds	fastddsgen	1	noise	# chunk.000.d/b/a/build/hs_err_pid1076310.log
+-	fastdds	fastddsgen	1	noise	# chunk.000.d/b/a/build/hs_err_pid1076312.log
+-	fastdds	fastddsgen	1	noise	# chunk.000.d/b/build/hs_err_pid1075990.log
+-	fastdds	fastddsgen	1	noise	# chunk.000.d/b/build/hs_err_pid1075992.log
+-	fastdds	fastddsgen	1	noise	# chunk.000.d/build/hs_err_pid1073530.log
+-	fastdds	fastddsgen	1	noise	# chunk.000.d/build/hs_err_pid1073532.log
+-	fastdds	fastddsgen	1	noise	# chunk.000.d/build/hs_err_pid800385.log
+-	fastdds	fastddsgen	1	noise	(malloc) failed to allocate 32784
+-	fastdds	fastddsgen	1	noise	Chunk::new
+-	fastdds	fastddsgen	1	noise	OpenJDK 64-Bit Server VM (build 21.0.11+10-1-deb13u2-Debian, mixed mode, sharing)
+-	fastdds	fastddsgen	1	noise	OpenJDK Runtime Environment (build 21.0.11+10-1-deb13u2-Debian)
+-	fastdds	fastddsgen	1	noise	Processing the file gen.idl...
+-	fastdds	fastddsgen	1	noise	openjdk version "21.0.11" 2026-04-21
+-	fastdds	fastddsgen	1	warning	[0.217s][warning][os,thread] Failed to start thread "Unknown thread" - pthread_create failed (EAGAIN) for attributes: stacksize: 1024k, guardsize: 0k, detached.
+-	fastdds	fastddsgen	1	warning	[0.219s][warning][os,thread] Failed to start thread "Unknown thread" - pthread_create failed (EAGAIN) for attributes: stacksize: 1024k, guardsize: 0k, detached.
+-	fastdds	fastddsgen	1	warning	[0.220s][warning][os,thread] Failed to start thread "Unknown thread" - pthread_create failed (EAGAIN) for attributes: stacksize: 1024k, guardsize: 0k, detached.
+-	fastdds	fastddsgen	1	warning	[0.221s][warning][os,thread] Failed to start thread "Unknown thread" - pthread_create failed (EAGAIN) for attributes: stacksize: 1024k, guardsize: 0k, detached.
+-	fastdds	fastddsgen	1	warning	[0.222s][warning][os,thread] Failed to start thread "Unknown thread" - pthread_create failed (EAGAIN) for attributes: stacksize: 1024k, guardsize: 0k, detached.
+-	fastdds	fastddsgen	1	warning	[0.224s][warning][os,thread] Failed to start thread "Unknown thread" - pthread_create failed (EAGAIN) for attributes: stacksize: 1024k, guardsize: 0k, detached.
+-	fastdds	fastddsgen	1	warning	[0.293s][warning][os,thread] Failed to start thread "Unknown thread" - pthread_create failed (EAGAIN) for attributes: stacksize: 1024k, guardsize: 0k, detached.
+-	fastdds	fastddsgen	255	noise	 at com.eprosima.fastdds.fastddsgen.execute(fastddsgen.java:490)
+-	fastdds	fastddsgen	255	noise	 at com.eprosima.fastdds.fastddsgen.main(fastddsgen.java:1735)
+-	fastdds	fastddsgen	255	noise	 at com.eprosima.fastdds.fastddsgen.parseIDL(fastddsgen.java:920)
+-	fastdds	fastddsgen	255	noise	 at com.eprosima.fastdds.fastddsgen.process(fastddsgen.java:744)
+-	fastdds	fastddsgen	255	noise	 at com.eprosima.idl.generator.manager.TemplateGroup.setAttribute(TemplateGroup.java:100)
+-	fastdds	fastddsgen	255	noise	 at com.eprosima.idl.generator.manager.TemplateGroup.setAttribute(TemplateGroup.java:128)
+-	fastdds	fastddsgen	255	noise	 at com.eprosima.idl.parser.grammar.IDLParser.definition(IDLParser.java:483)
+-	fastdds	fastddsgen	255	noise	 at com.eprosima.idl.parser.grammar.IDLParser.definition(IDLParser.java:533)
+-	fastdds	fastddsgen	255	noise	 at com.eprosima.idl.parser.grammar.IDLParser.definition_list(IDLParser.java:822)
+-	fastdds	fastddsgen	255	noise	 at com.eprosima.idl.parser.grammar.IDLParser.definition_list(IDLParser.java:836)
+-	fastdds	fastddsgen	255	noise	 at com.eprosima.idl.parser.grammar.IDLParser.definition_list(IDLParser.java:838)
+-	fastdds	fastddsgen	255	noise	 at com.eprosima.idl.parser.grammar.IDLParser.module(IDLParser.java:750)
+-	fastdds	fastddsgen	255	noise	 at com.eprosima.idl.parser.grammar.IDLParser.specification(IDLParser.java:348)
+-	fastdds	fastddsgen	255	noise	 at com.eprosima.idl.parser.grammar.IDLParser.type_decl(IDLParser.java:4038)
+-	fastdds	fastddsgen	255	noise	 at com.eprosima.idl.parser.grammar.IDLParser.type_declarator(IDLParser.java:4192)
+-	fastdds	fastddsgen	255	noise	 at org.stringtemplate.v4.Interpreter._exec(Interpreter.java:216)
+-	fastdds	fastddsgen	255	noise	 at org.stringtemplate.v4.Interpreter._exec(Interpreter.java:291)
+-	fastdds	fastddsgen	255	noise	 at org.stringtemplate.v4.Interpreter._exec(Interpreter.java:298)
+-	fastdds	fastddsgen	255	noise	 at org.stringtemplate.v4.Interpreter.exec(Interpreter.java:151)
+-	fastdds	fastddsgen	255	noise	 at org.stringtemplate.v4.Interpreter.getObjectProperty(Interpreter.java:1222)
+-	fastdds	fastddsgen	255	noise	 at org.stringtemplate.v4.Interpreter.writeIterator(Interpreter.java:785)
+-	fastdds	fastddsgen	255	noise	 at org.stringtemplate.v4.Interpreter.writeObject(Interpreter.java:755)
+-	fastdds	fastddsgen	255	noise	 at org.stringtemplate.v4.Interpreter.writeObject(Interpreter.java:760)
+-	fastdds	fastddsgen	255	noise	 at org.stringtemplate.v4.Interpreter.writeObjectNoOptions(Interpreter.java:687)
+-	fastdds	fastddsgen	255	noise	 at org.stringtemplate.v4.Interpreter.writeObjectWithOptions(Interpreter.java:717)
+-	fastdds	fastddsgen	255	noise	 at org.stringtemplate.v4.ST.add(ST.java:224)
+-	fastdds	fastddsgen	255	noise	 at org.stringtemplate.v4.ST.write(ST.java:432)
+-	fastdds	fastddsgen	255	noise	 at org.stringtemplate.v4.misc.ObjectModelAdaptor.getProperty(ObjectModelAdaptor.java:87)
+-	fastdds	fastddsgen	255	noise	 at org.stringtemplate.v4.misc.ObjectModelAdaptor.throwNoSuchProperty(ObjectModelAdaptor.java:163)
+-	fastdds	fastddsgen	255	noise	Cannot invoke "com.eprosima.idl.util.Pair.first()" because "_localctx.type_spec.returnPair" is null
+-	fastdds	fastddsgen	255	noise	Caused by: org.stringtemplate.v4.misc.STNoSuchPropertyException: no such property: com.eprosima.fastdds.idl.parser.typecode.PrimitiveTypeCode.CScopedname
+-	fastdds	fastddsgen	255	noise	ERROR: Cannot generate the files
+-	fastdds	fastddsgen	255	noise	ERROR: context [/struct_type /content_for_struct_type /_sub25 /struct_member /check_register_type_identifier /register_map_type /map_name] 44:45 no such property or can't access: com.eprosima.fastdds.idl.parser.typecode.PrimitiveTypeCode.CScopedname
+-	fastdds	fastddsgen	255	noise	ERROR: context [/struct_type /content_for_struct_type /_sub25 /struct_member /get_type_identifier /get_type_identifier_registry /map_name] 44:45 no such property or can't access: com.eprosima.fastdds.idl.parser.typecode.PrimitiveTypeCode.CScopedname
+-	fastdds	fastddsgen	255	noise	OpenJDK 64-Bit Server VM (build 21.0.11+10-1-deb13u2-Debian, mixed mode, sharing)
+-	fastdds	fastddsgen	255	noise	OpenJDK Runtime Environment (build 21.0.11+10-1-deb13u2-Debian)
+-	fastdds	fastddsgen	255	noise	Processing the file gen.idl...
+-	fastdds	fastddsgen	255	noise	java.lang.IllegalArgumentException: no such attribute: parent
+-	fastdds	fastddsgen	255	noise	java.lang.NullPointerException: Cannot invoke "com.eprosima.idl.util.Pair.first()" because "_localctx.type_spec.returnPair" is null
+-	fastdds	fastddsgen	255	noise	no such attribute: parent
+-	fastdds	fastddsgen	255	noise	openjdk version "21.0.11" 2026-04-21
+-	opendds	cc	1	error	genTypeSupportImpl.cpp: error: 'amounts' was not declared in this scope
+-	opendds	cc	1	error	genTypeSupportImpl.cpp: error: 'arr' was not declared in this scope
+-	opendds	cc	1	error	genTypeSupportImpl.cpp: error: 'items' was not declared in this scope
+-	opendds	cc	1	error	genTypeSupportImpl.cpp: error: 'lhsArr' was not declared in this scope
+-	opendds	cc	1	error	genTypeSupportImpl.cpp: error: 'rhsArr' was not declared in this scope
+-	opendds	cc	1	error	genTypeSupportImpl.cpp: error: 'stru_items_forany' was not declared in this scope
+-	opendds	cc	1	error	genTypeSupportImpl.cpp: error: 'stru_items_temp' was not declared in this scope
+-	opendds	cc	1	error	genTypeSupportImpl.cpp: error: 'stru_value_items_forany' was not declared in this scope
+-	opendds	cc	1	error	genTypeSupportImpl.cpp: error: 'stru_value_items_temp' was not declared in this scope
+-	opendds	cc	1	error	genTypeSupportImpl.cpp: error: 'tempvar' was not declared in this scope; did you mean 'tempnam'?
+-	opendds	cc	1	error	genTypeSupportImpl.cpp: error: ISO C++ forbids declaration of 'type name' with no type [-fpermissive]
+-	opendds	cc	1	error	genTypeSupportImpl.cpp: error: ambiguous overload for 'operator<<' (operand types are 'OpenDDS::DCPS::Serializer' and 'const FACE::Long' {aka 'const int'})
+-	opendds	cc	1	error	genTypeSupportImpl.cpp: error: expected '(' before '*' token
+-	opendds	cc	1	error	genTypeSupportImpl.cpp: error: expected '(' before '::' token
+-	opendds	cc	1	error	genTypeSupportImpl.cpp: error: expected ')' before ';' token
+-	opendds	cc	1	error	genTypeSupportImpl.cpp: error: expected ')' before '{' token
+-	opendds	cc	1	error	genTypeSupportImpl.cpp: error: expected ')' before '}' token
+-	opendds	cc	1	error	genTypeSupportImpl.cpp: error: expected ';' before 'bool'
+-	opendds	cc	1	error	genTypeSupportImpl.cpp: error: expected '>' before '*' token
+-	opendds	cc	1	error	genTypeSupportImpl.cpp: error: expected '>' before '::' token
+-	opendds	cc	1	error	genTypeSupportImpl.cpp: error: expected primary-expression before '>' token
+-	opendds	cc	1	error	genTypeSupportImpl.cpp: error: expected primary-expression before 'bool'
+-	opendds	cc	1	error	genTypeSupportImpl.cpp: error: expected primary-expression before '}' token
+-	opendds	cc	1	error	genTypeSupportImpl.cpp: error: expression cannot be used as a function
+-	opendds	cc	1	error	genTypeSupportImpl.cpp: error: invalid types 'const int[CORBA::ULong {aka unsigned int}]' for array subscript
+-	opendds	cc	1	error	genTypeSupportImpl.cpp: error: invalid types 'int[CORBA::ULong {aka unsigned int}]' for array subscript
+-	opendds	cc	1	error	genTypeSupportImpl.cpp: error: redefinition of 'CORBA::TypeCode* const _tc_Digit'
+-	opendds	cc	1	error	genTypeSupportImpl.cpp: error: redefinition of 'CORBA::TypeCode* const _tc_Fraction'
+-	opendds	cc	1	error	genTypeSupportImpl.cpp: error: redefinition of 'CORBA::TypeCode* const _tc_Huge'
+-	opendds	cc	1	error	genTypeSupportImpl.cpp: error: redefinition of 'CORBA::TypeCode* const _tc_Money'
+-	opendds	cc	1	error	genTypeSupportImpl.cpp: error: redefinition of 'CORBA::TypeCode* const _tc_Price'
+-	opendds	cc	1	error	genTypeSupportImpl.cpp: error: redefinition of 'bool OpenDDS::DCPS::gen_skip_over(Serializer&, int*)'
+-	opendds	cc	1	error	genTypeSupportImpl.cpp: error: redefinition of 'bool OpenDDS::DCPS::operator<<(Serializer&, const int&)'
+-	opendds	cc	1	error	genTypeSupportImpl.cpp: error: redefinition of 'bool OpenDDS::DCPS::operator>>(Serializer&, int&)'
+-	opendds	cc	1	error	genTypeSupportImpl.cpp: error: redefinition of 'void OpenDDS::DCPS::serialized_size(const Encoding&, size_t&, const int&)'
+-	opendds	cc	1	error	genTypeSupportImpl.cpp: error: request for member 'length' in 'seq', which is of non-class type 'const int'
+-	opendds	cc	1	error	genTypeSupportImpl.cpp: error: request for member 'length' in 'seq', which is of non-class type 'int'
+-	opendds	cc	1	error	genTypeSupportImpl.cpp: error: template argument 1 is invalid
+-	opendds	cc	1	error	genTypeSupportImpl.cpp: error: template argument 2 is invalid
+-	opendds	cc	1	error	genTypeSupportImpl.cpp: error: template-id 'get_dynamic_data_adapter<<expression error>, <expression error> >' for 'DDS::DynamicData* OpenDDS::XTypes::get_dynamic_data_adapter(DDS::DynamicType_ptr, const int&)' does not match any template declaration
+-	opendds	cc	1	error	genTypeSupportImpl.cpp: error: template-id 'get_dynamic_data_adapter<<expression error>, <expression error> >' for 'DDS::DynamicData* OpenDDS::XTypes::get_dynamic_data_adapter(DDS::DynamicType_ptr, int&)' does not match any template declaration
+-	opendds	cc	1	error	genTypeSupportImpl.cpp: error: template-id 'get_dynamic_data_adapter<<expression error>, OpenDDS::XTypes::zd_9c1_Sample__9items_dda_tag>' for 'DDS::DynamicData* OpenDDS::XTypes::get_dynamic_data_adapter(DDS::DynamicType_ptr, const int&)' does not match any template declaration
+-	opendds	cc	1	error	genTypeSupportImpl.cpp: error: template-id 'get_dynamic_data_adapter<<expression error>, OpenDDS::XTypes::zd_9c1_Sample__9items_dda_tag>' for 'DDS::DynamicData* OpenDDS::XTypes::get_dynamic_data_adapter(DDS::DynamicType_ptr, int&)' does not match any template declaration
+-	opendds	cc	1	error	genTypeSupportImpl.cpp: error: template-id 'get_dynamic_data_adapter<<expression error>, OpenDDS::XTypes::zd_9c2_Sample__9items_dda_tag>' for 'DDS::DynamicData* OpenDDS::XTypes::get_dynamic_data_adapter(DDS::DynamicType_ptr, const int&)' does not match any template declaration
+-	opendds	cc	1	error	genTypeSupportImpl.cpp: error: template-id 'get_dynamic_data_adapter<<expression error>, OpenDDS::XTypes::zd_9c2_Sample__9items_dda_tag>' for 'DDS::DynamicData* OpenDDS::XTypes::get_dynamic_data_adapter(DDS::DynamicType_ptr, int&)' does not match any template declaration
+-	opendds	cc	1	error	genTypeSupportImpl.cpp: error: variable or field 'set_default' declared void
+-	opendds	cc	1	error	genTypeSupportImpl.h: error: 'arr' was not declared in this scope
+-	opendds	cc	1	error	genTypeSupportImpl.h: error: template-id 'get_dynamic_data_adapter<<expression error>, <expression error> >' for 'DDS::DynamicData* OpenDDS::XTypes::get_dynamic_data_adapter(DDS::DynamicType_ptr, const int&)' does not match any template declaration
+-	opendds	cc	1	error	genTypeSupportImpl.h: error: template-id 'get_dynamic_data_adapter<<expression error>, <expression error> >' for 'DDS::DynamicData* OpenDDS::XTypes::get_dynamic_data_adapter(DDS::DynamicType_ptr, int&)' does not match any template declaration
+-	opendds	cc	1	error	genTypeSupportImpl.h: error: template-id 'get_dynamic_data_adapter<<expression error>, OpenDDS::XTypes::zd_9c1_Sample__9items_dda_tag>' for 'DDS::DynamicData* OpenDDS::XTypes::get_dynamic_data_adapter(DDS::DynamicType_ptr, const int&)' does not match any template declaration
+-	opendds	cc	1	error	genTypeSupportImpl.h: error: template-id 'get_dynamic_data_adapter<<expression error>, OpenDDS::XTypes::zd_9c1_Sample__9items_dda_tag>' for 'DDS::DynamicData* OpenDDS::XTypes::get_dynamic_data_adapter(DDS::DynamicType_ptr, int&)' does not match any template declaration
+-	opendds	cc	1	error	genTypeSupportImpl.h: error: template-id 'get_dynamic_data_adapter<<expression error>, OpenDDS::XTypes::zd_9c2_Sample__9items_dda_tag>' for 'DDS::DynamicData* OpenDDS::XTypes::get_dynamic_data_adapter(DDS::DynamicType_ptr, const int&)' does not match any template declaration
+-	opendds	cc	1	error	genTypeSupportImpl.h: error: template-id 'get_dynamic_data_adapter<<expression error>, OpenDDS::XTypes::zd_9c2_Sample__9items_dda_tag>' for 'DDS::DynamicData* OpenDDS::XTypes::get_dynamic_data_adapter(DDS::DynamicType_ptr, int&)' does not match any template declaration
+-	opendds	cc	1	error	genTypeSupportImpl.h: error: variable or field 'set_default' declared void
+-	opendds	cc	1	note	/opt/opendds/include/dds/DCPS/SequenceNumber.h: note: candidate: 'ACE_CDR::Boolean OpenDDS::DCPS::operator<<(Serializer&, const SequenceNumber&)'
+-	opendds	cc	1	note	/opt/opendds/include/dds/DCPS/Serializer.inl: note: 'bool OpenDDS::DCPS::operator>>(Serializer&, int&)' previously defined here
+-	opendds	cc	1	note	/opt/opendds/include/dds/DCPS/Serializer.inl: note: candidate: 'bool OpenDDS::DCPS::operator<<(Serializer&, ACE_CDR::Char)'
+-	opendds	cc	1	note	/opt/opendds/include/dds/DCPS/Serializer.inl: note: candidate: 'bool OpenDDS::DCPS::operator<<(Serializer&, ACE_CDR::Double)'
+-	opendds	cc	1	note	/opt/opendds/include/dds/DCPS/Serializer.inl: note: candidate: 'bool OpenDDS::DCPS::operator<<(Serializer&, ACE_CDR::Float)'
+-	opendds	cc	1	note	/opt/opendds/include/dds/DCPS/Serializer.inl: note: candidate: 'bool OpenDDS::DCPS::operator<<(Serializer&, ACE_CDR::Long)'
+-	opendds	cc	1	note	/opt/opendds/include/dds/DCPS/Serializer.inl: note: candidate: 'bool OpenDDS::DCPS::operator<<(Serializer&, ACE_CDR::LongDouble)'
+-	opendds	cc	1	note	/opt/opendds/include/dds/DCPS/Serializer.inl: note: candidate: 'bool OpenDDS::DCPS::operator<<(Serializer&, ACE_CDR::LongLong)'
+-	opendds	cc	1	note	/opt/opendds/include/dds/DCPS/Serializer.inl: note: candidate: 'bool OpenDDS::DCPS::operator<<(Serializer&, ACE_CDR::Short)'
+-	opendds	cc	1	note	/opt/opendds/include/dds/DCPS/Serializer.inl: note: candidate: 'bool OpenDDS::DCPS::operator<<(Serializer&, ACE_CDR::ULong)'
+-	opendds	cc	1	note	/opt/opendds/include/dds/DCPS/Serializer.inl: note: candidate: 'bool OpenDDS::DCPS::operator<<(Serializer&, ACE_CDR::ULongLong)'
+-	opendds	cc	1	note	/opt/opendds/include/dds/DCPS/Serializer.inl: note: candidate: 'bool OpenDDS::DCPS::operator<<(Serializer&, ACE_CDR::UShort)'
+-	opendds	cc	1	note	/opt/opendds/include/dds/DCPS/XTypes/DynamicDataAdapterFwd.h: note:                 'template<class T, class Tag> DDS::DynamicData* OpenDDS::XTypes::get_dynamic_data_adapter(DDS::DynamicType_ptr, T&)'
+-	opendds	cc	1	note	/opt/opendds/include/dds/DCPS/XTypes/DynamicDataAdapterFwd.h: note:                 'template<class T, class Tag> DDS::DynamicData* OpenDDS::XTypes::get_dynamic_data_adapter(DDS::DynamicType_ptr, const T&)'
+-	opendds	cc	1	note	/opt/opendds/include/dds/DCPS/XTypes/DynamicDataAdapterFwd.h: note:                 'template<class T> DDS::DynamicData* OpenDDS::XTypes::get_dynamic_data_adapter(DDS::DynamicType_ptr, T&)'
+-	opendds	cc	1	note	/opt/opendds/include/dds/DCPS/XTypes/DynamicDataAdapterFwd.h: note: candidates are: 'template<class T> DDS::DynamicData* OpenDDS::XTypes::get_dynamic_data_adapter(DDS::DynamicType_ptr, const T&)'
+-	opendds	cc	1	note	genTypeSupportImpl.cpp: note: 'CORBA::TypeCode* const _tc_Digit' previously defined here
+-	opendds	cc	1	note	genTypeSupportImpl.cpp: note: 'CORBA::TypeCode* const _tc_Fraction' previously defined here
+-	opendds	cc	1	note	genTypeSupportImpl.cpp: note: 'CORBA::TypeCode* const _tc_Huge' previously defined here
+-	opendds	cc	1	note	genTypeSupportImpl.cpp: note: 'CORBA::TypeCode* const _tc_Money' previously defined here
+-	opendds	cc	1	note	genTypeSupportImpl.cpp: note: 'CORBA::TypeCode* const _tc_Price' previously defined here
+-	opendds	cc	1	note	genTypeSupportImpl.cpp: note: 'bool OpenDDS::DCPS::gen_skip_over(Serializer&, int*)' previously defined here
+-	opendds	cc	1	note	genTypeSupportImpl.cpp: note: 'bool OpenDDS::DCPS::operator<<(Serializer&, const int&)' previously defined here
+-	opendds	cc	1	note	genTypeSupportImpl.cpp: note: 'void OpenDDS::DCPS::serialized_size(const Encoding&, size_t&, const int&)' previously defined here
+-	opendds	cc	1	note	genTypeSupportImpl.cpp: note: candidate: 'bool OpenDDS::DCPS::operator<<(Serializer&, const int&)'
+-	opendds	cc	1	note	genTypeSupportImpl.cpp: note: to match this '('
+-	opendds	cc	1	warning	genTypeSupportImpl.cpp: warning: control reaches end of non-void function [-Wreturn-type]
+-	opendds	cc	1	warning	genTypeSupportImpl.cpp: warning: no return statement in function returning non-void [-Wreturn-type]
+-	opendds	tao_idl	2	error	syntax error
+-	opendds	tao_idl	3	error	/opt/opendds/bin/tao_idl: gen.idl: found 2 errors
+-	opendds	tao_idl	4	error	/opt/opendds/bin/tao_idl: gen.idl: found 3 errors
+annotation-default-value	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+annotation-default-value	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+annotation-default-value-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+annotation-default-value-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+annotation-external-optional-absent	fastdds	fastddsgen	0	noise	Adding project: gen.idl
+annotation-external-optional-absent	fastdds	fastddsgen	0	noise	Generating Type Support files...
+annotation-external-optional-absent	fastdds	fastddsgen	0	noise	Generating Type definition files...
+annotation-external-optional-absent	fastdds	fastddsgen	0	noise	Generating TypeObjectSupport files...
+annotation-external-optional-absent	fastdds	fastddsgen	0	noise	OpenJDK 64-Bit Server VM (build 21.0.11+10-1-deb13u2-Debian, mixed mode, sharing)
+annotation-external-optional-absent	fastdds	fastddsgen	0	noise	OpenJDK Runtime Environment (build 21.0.11+10-1-deb13u2-Debian)
+annotation-external-optional-absent	fastdds	fastddsgen	0	noise	Processing the file gen.idl...
+annotation-external-optional-absent	fastdds	fastddsgen	0	noise	openjdk version "21.0.11" 2026-04-21
+annotation-external-optional-absent	fastdds	fastddsgen	1	error	# An error report file with more information is saved as:
+annotation-external-optional-absent	fastdds	fastddsgen	1	error	# Native memory allocation (mmap) failed to map 67108864 bytes. Error detail: Failed to reserve memory for metaspace
+annotation-external-optional-absent	fastdds	fastddsgen	1	noise	#
+annotation-external-optional-absent	fastdds	fastddsgen	1	noise	# There is insufficient memory for the Java Runtime Environment to continue.
+annotation-external-optional-absent	fastdds	fastddsgen	1	noise	# chunk.000.d/a/a/a/build/hs_err_pid1074915.log
+annotation-external-optional-absent	fastdds	fastddsgen	1	noise	# chunk.000.d/a/a/a/build/hs_err_pid1074917.log
+annotation-external-optional-absent	hdds	cargo	101	error	For more information about this error, try `rustc --explain E0308`.
+annotation-external-optional-absent	hdds	cargo	101	error	error: could not compile `wireprobe-hdds-run-1083315-2598` (bin "wireprobe-hdds-run-1083315-2598") due to 2 previous errors
+annotation-external-optional-absent	hdds	cargo	101	error	error[E0308]: mismatched types
+annotation-external-optional-absent	hdds	cargo	101	noise	             found struct `Box<Option<i32>>`
+annotation-external-optional-absent	hdds	cargo	101	noise	   --> generated.rs:16
+annotation-external-optional-absent	hdds	cargo	101	note	    = note: expected enum `Option<Box<i32>>`
+annotation-external-optional-absent	opendds	cc	1	error	genTypeSupportImpl.cpp: error: request for member 'has_value' in '((OpenDDS::XTypes::DynamicDataAdapterImpl<zd_c1::Sample, zd_c1::Sample>*)this)->OpenDDS::XTypes::DynamicDataAdapterImpl<zd_c1::Sample, zd_c1::Sample>::OpenDDS::XTypes::DynamicDataAdapter_T<zd_c1::Sample>.OpenDDS::XTypes::DynamicDataAdapter_T<zd_c1::Sample>::value_.zd_c1::Sample::b', which is of non-class type 'CORBA::Long' {aka 'int
+annotation-external-optional-absent	opendds	cc	1	error	genTypeSupportImpl.cpp: error: request for member 'reset' in 'stru.zd_c1::Sample::b', which is of non-class type 'CORBA::Long' {aka 'int'}
+annotation-external-optional-absent	opendds	cc	1	error	genTypeSupportImpl.cpp: error: request for member 'value' in '((OpenDDS::XTypes::DynamicDataAdapterImpl<zd_c1::Sample, zd_c1::Sample>*)this)->OpenDDS::XTypes::DynamicDataAdapterImpl<zd_c1::Sample, zd_c1::Sample>::OpenDDS::XTypes::DynamicDataAdapter_T<zd_c1::Sample>.OpenDDS::XTypes::DynamicDataAdapter_T<zd_c1::Sample>::value_.zd_c1::Sample::b', which is of non-class type 'CORBA::Long' {aka 'int'}
+annotation-external-optional-absent	opendds	cc	1	error	genTypeSupportImpl.cpp: error: request for member 'value' in 'stru.OpenDDS::DCPS::NestedKeyOnly<const zd_c1::Sample>::value.zd_c1::Sample::b', which is of non-class type 'const CORBA::Long' {aka 'const int'}
+annotation-external-optional-absent	opendds	cc	1	error	genTypeSupportImpl.cpp: error: request for member 'value' in 'stru.zd_c1::Sample::b', which is of non-class type 'const CORBA::Long' {aka 'const int'}
+annotation-external-optional-absent	opendds	cc	1	error	genTypeSupportImpl.cpp: error: request for member 'value' in 'value.OpenDDS::DCPS::NestedKeyOnly<const zd_c1::Sample>::value.zd_c1::Sample::b', which is of non-class type 'const CORBA::Long' {aka 'const int'}
+annotation-external-optional-absent	opendds	cc	1	error	genTypeSupportImpl.cpp: error: request for member 'value' in 'value.zd_c1::Sample::b', which is of non-class type 'const CORBA::Long' {aka 'const int'}
+annotation-external-optional-absent	opendds	tao_idl	0	warning	Warning - /opt/opendds/bin/opendds_idl: "gen.idl", line 8: @optional annotation isn't fully supported
+annotation-external-optional-absent	opendds	tao_idl	0	warning	Warning - /opt/opendds/bin/tao_idl: "gen.idl", line 6: error in lookup of symbol: final
+annotation-external-optional-absent	opendds	tao_idl	0	warning	Warning - /opt/opendds/bin/tao_idl: "gen.idl", line 8: error in lookup of symbol: external
+annotation-external-optional-absent	opendds	tao_idl	0	warning	Warning - /opt/opendds/bin/tao_idl: "gen.idl", line 8: error in lookup of symbol: optional
+annotation-external-optional-absent	opendds	tao_idl	3	warning	Warning - /opt/opendds/bin/tao_idl: "gen.idl", line 6: error in lookup of symbol: final
+annotation-external-optional-absent	opendds	tao_idl	3	warning	Warning - /opt/opendds/bin/tao_idl: "gen.idl", line 8: error in lookup of symbol: external
+annotation-external-optional-absent	opendds	tao_idl	3	warning	Warning - /opt/opendds/bin/tao_idl: "gen.idl", line 8: error in lookup of symbol: optional
+annotation-external-optional-absent	opendds	tao_idl	4	warning	Warning - /opt/opendds/bin/tao_idl: "gen.idl", line 6: error in lookup of symbol: final
+annotation-external-optional-absent	opendds	tao_idl	4	warning	Warning - /opt/opendds/bin/tao_idl: "gen.idl", line 8: error in lookup of symbol: external
+annotation-external-optional-absent	opendds	tao_idl	4	warning	Warning - /opt/opendds/bin/tao_idl: "gen.idl", line 8: error in lookup of symbol: optional
+annotation-external-optional-present	fastdds	fastddsgen	0	noise	Adding project: gen.idl
+annotation-external-optional-present	fastdds	fastddsgen	0	noise	Generating Type Support files...
+annotation-external-optional-present	fastdds	fastddsgen	0	noise	Generating Type definition files...
+annotation-external-optional-present	fastdds	fastddsgen	0	noise	Generating TypeObjectSupport files...
+annotation-external-optional-present	fastdds	fastddsgen	0	noise	OpenJDK 64-Bit Server VM (build 21.0.11+10-1-deb13u2-Debian, mixed mode, sharing)
+annotation-external-optional-present	fastdds	fastddsgen	0	noise	OpenJDK Runtime Environment (build 21.0.11+10-1-deb13u2-Debian)
+annotation-external-optional-present	fastdds	fastddsgen	0	noise	Processing the file gen.idl...
+annotation-external-optional-present	fastdds	fastddsgen	0	noise	openjdk version "21.0.11" 2026-04-21
+annotation-external-optional-present	fastdds	fastddsgen	1	error	# An error report file with more information is saved as:
+annotation-external-optional-present	fastdds	fastddsgen	1	error	# Native memory allocation (mmap) failed to map 67108864 bytes. Error detail: Failed to reserve memory for metaspace
+annotation-external-optional-present	fastdds	fastddsgen	1	noise	#
+annotation-external-optional-present	fastdds	fastddsgen	1	noise	# There is insufficient memory for the Java Runtime Environment to continue.
+annotation-external-optional-present	fastdds	fastddsgen	1	noise	# chunk.000.d/a/a/b/build/hs_err_pid1075102.log
+annotation-external-optional-present	fastdds	fastddsgen	1	noise	# chunk.000.d/a/a/b/build/hs_err_pid1075104.log
+annotation-external-optional-present	hdds	cargo	101	error	For more information about this error, try `rustc --explain E0308`.
+annotation-external-optional-present	hdds	cargo	101	error	error: could not compile `wireprobe-hdds-run-1083307-16102` (bin "wireprobe-hdds-run-1083307-16102") due to 3 previous errors
+annotation-external-optional-present	hdds	cargo	101	error	error[E0308]: mismatched types
+annotation-external-optional-present	hdds	cargo	101	noise	               found type `i32`
+annotation-external-optional-present	hdds	cargo	101	noise	             found struct `Box<Option<i32>>`
+annotation-external-optional-present	hdds	cargo	101	noise	   --> generated.rs:16
+annotation-external-optional-present	hdds	cargo	101	noise	 --> /rustc/59807616e1fa2540724bfbac14d7976d7e4a3860/library/core/src/option.rs:4
+annotation-external-optional-present	hdds	cargo	101	noise	 --> fill.inc:29
+annotation-external-optional-present	hdds	cargo	101	noise	 --> fill.inc:34
+annotation-external-optional-present	hdds	cargo	101	noise	help: store this in the heap by calling `Box::new`
+annotation-external-optional-present	hdds	cargo	101	noise	help: the type constructed contains `i32` due to the type of the argument passed
+annotation-external-optional-present	hdds	cargo	101	note	    = note: expected enum `Option<Box<i32>>`
+annotation-external-optional-present	hdds	cargo	101	note	  = note: expected struct `Box<i32>`
+annotation-external-optional-present	hdds	cargo	101	note	  = note: for more on the distinction between the stack and the heap, read https://doc.rust-lang.org/book/ch15-01-box.html, https://doc.rust-lang.org/rust-by-example/std/box.html, and https://doc.rust-lang.org/std/boxed/index.html
+annotation-external-optional-present	hdds	cargo	101	note	note: tuple variant defined here
+annotation-external-optional-present	opendds	cc	1	error	genTypeSupportImpl.cpp: error: request for member 'has_value' in '((OpenDDS::XTypes::DynamicDataAdapterImpl<zd_c2::Sample, zd_c2::Sample>*)this)->OpenDDS::XTypes::DynamicDataAdapterImpl<zd_c2::Sample, zd_c2::Sample>::OpenDDS::XTypes::DynamicDataAdapter_T<zd_c2::Sample>.OpenDDS::XTypes::DynamicDataAdapter_T<zd_c2::Sample>::value_.zd_c2::Sample::b', which is of non-class type 'CORBA::Long' {aka 'int
+annotation-external-optional-present	opendds	cc	1	error	genTypeSupportImpl.cpp: error: request for member 'reset' in 'stru.zd_c2::Sample::b', which is of non-class type 'CORBA::Long' {aka 'int'}
+annotation-external-optional-present	opendds	cc	1	error	genTypeSupportImpl.cpp: error: request for member 'value' in '((OpenDDS::XTypes::DynamicDataAdapterImpl<zd_c2::Sample, zd_c2::Sample>*)this)->OpenDDS::XTypes::DynamicDataAdapterImpl<zd_c2::Sample, zd_c2::Sample>::OpenDDS::XTypes::DynamicDataAdapter_T<zd_c2::Sample>.OpenDDS::XTypes::DynamicDataAdapter_T<zd_c2::Sample>::value_.zd_c2::Sample::b', which is of non-class type 'CORBA::Long' {aka 'int'}
+annotation-external-optional-present	opendds	cc	1	error	genTypeSupportImpl.cpp: error: request for member 'value' in 'stru.OpenDDS::DCPS::NestedKeyOnly<const zd_c2::Sample>::value.zd_c2::Sample::b', which is of non-class type 'const CORBA::Long' {aka 'const int'}
+annotation-external-optional-present	opendds	cc	1	error	genTypeSupportImpl.cpp: error: request for member 'value' in 'stru.zd_c2::Sample::b', which is of non-class type 'const CORBA::Long' {aka 'const int'}
+annotation-external-optional-present	opendds	cc	1	error	genTypeSupportImpl.cpp: error: request for member 'value' in 'value.OpenDDS::DCPS::NestedKeyOnly<const zd_c2::Sample>::value.zd_c2::Sample::b', which is of non-class type 'const CORBA::Long' {aka 'const int'}
+annotation-external-optional-present	opendds	cc	1	error	genTypeSupportImpl.cpp: error: request for member 'value' in 'value.zd_c2::Sample::b', which is of non-class type 'const CORBA::Long' {aka 'const int'}
+annotation-external-optional-present	opendds	tao_idl	0	warning	Warning - /opt/opendds/bin/opendds_idl: "gen.idl", line 20: @optional annotation isn't fully supported
+annotation-external-typedef	fastdds	fastddsgen	0	noise	Adding project: gen.idl
+annotation-external-typedef	fastdds	fastddsgen	0	noise	Generating Type Support files...
+annotation-external-typedef	fastdds	fastddsgen	0	noise	Generating Type definition files...
+annotation-external-typedef	fastdds	fastddsgen	0	noise	Generating TypeObjectSupport files...
+annotation-external-typedef	fastdds	fastddsgen	0	noise	OpenJDK 64-Bit Server VM (build 21.0.11+10-1-deb13u2-Debian, mixed mode, sharing)
+annotation-external-typedef	fastdds	fastddsgen	0	noise	OpenJDK Runtime Environment (build 21.0.11+10-1-deb13u2-Debian)
+annotation-external-typedef	fastdds	fastddsgen	0	noise	Processing the file gen.idl...
+annotation-external-typedef	fastdds	fastddsgen	0	noise	openjdk version "21.0.11" 2026-04-21
+annotation-external-typedef	fastdds	fastddsgen	1	error	# An error report file with more information is saved as:
+annotation-external-typedef	fastdds	fastddsgen	1	error	# Native memory allocation (mmap) failed to map 67108864 bytes. Error detail: Failed to reserve memory for metaspace
+annotation-external-typedef	fastdds	fastddsgen	1	noise	#
+annotation-external-typedef	fastdds	fastddsgen	1	noise	# There is insufficient memory for the Java Runtime Environment to continue.
+annotation-external-typedef	fastdds	fastddsgen	1	noise	# chunk.000.d/a/b/a/build/hs_err_pid1075642.log
+annotation-external-typedef	fastdds	fastddsgen	1	noise	OpenJDK 64-Bit Server VM (build 21.0.11+10-1-deb13u2-Debian, mixed mode, sharing)
+annotation-external-typedef	fastdds	fastddsgen	1	noise	OpenJDK Runtime Environment (build 21.0.11+10-1-deb13u2-Debian)
+annotation-external-typedef	fastdds	fastddsgen	1	noise	openjdk version "21.0.11" 2026-04-21
+annotation-external-typedef	hdds	cargo	101	error	For more information about this error, try `rustc --explain E0308`.
+annotation-external-typedef	hdds	cargo	101	error	error: could not compile `wireprobe-hdds-run-1083640-10466` (bin "wireprobe-hdds-run-1083640-10466") due to 1 previous error
+annotation-external-typedef	hdds	cargo	101	error	error[E0308]: mismatched types
+annotation-external-typedef	hdds	cargo	101	noise	             found struct `Inner`
+annotation-external-typedef	hdds	cargo	101	noise	 --> fill.inc:18
+annotation-external-typedef	hdds	cargo	101	noise	help: store this in the heap by calling `Box::new`
+annotation-external-typedef	hdds	cargo	101	note	  = note: expected struct `Box<Inner>`
+annotation-external-typedef	hdds	cargo	101	note	  = note: for more on the distinction between the stack and the heap, read https://doc.rust-lang.org/book/ch15-01-box.html, https://doc.rust-lang.org/rust-by-example/std/box.html, and https://doc.rust-lang.org/std/boxed/index.html
+annotation-external-typedef	opendds	tao_idl	0	warning	Warning - /opt/opendds/bin/tao_idl: "gen.idl", line 13: error in lookup of symbol: final
+annotation-external-typedef	opendds	tao_idl	0	warning	Warning - /opt/opendds/bin/tao_idl: "gen.idl", line 14: error in lookup of symbol: external
+annotation-external-typedef	opendds	tao_idl	0	warning	Warning - /opt/opendds/bin/tao_idl: "gen.idl", line 29: error in lookup of symbol: appendable
+annotation-external-typedef	opendds	tao_idl	0	warning	Warning - /opt/opendds/bin/tao_idl: "gen.idl", line 6: error in lookup of symbol: appendable
+annotation-external-typedef	opendds	tao_idl	3	warning	Warning - /opt/opendds/bin/tao_idl: "gen.idl", line 29: error in lookup of symbol: appendable
+annotation-external-typedef	opendds	tao_idl	4	warning	Warning - /opt/opendds/bin/tao_idl: "gen.idl", line 29: error in lookup of symbol: appendable
+annotation-external-typedef	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+annotation-external-typedef	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+annotation-external-union-branch	cyclone	cc	1	error	fill_4.inc: error: 'sample.choice._u.nested' is a pointer; did you mean to use '->'?
+annotation-external-union-branch-unannotated	cyclone	cc	1	error	fill_1.inc: error: 'sample.choice._u.nested' is a pointer; did you mean to use '->'?
+annotation-external-union-branch-unannotated	cyclone	idlc	0	noise	No default extensibility provided. For one or more of the aggregated types in the IDL the extensibility is not explicitly set. Currently the default extensibility for these types is 'final', but this may change to 'appendable' in a future release because that is the default in the DDS XTypes specification.
+annotation-hashid-implicit	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+annotation-hashid-implicit	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+annotation-hashid-implicit-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+annotation-hashid-implicit-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+annotation-hashid-named	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+annotation-hashid-named	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+annotation-hashid-named-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+annotation-hashid-named-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+annotation-id-explicit	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+annotation-id-explicit	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+annotation-id-explicit-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+annotation-id-explicit-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+annotation-id-sparse	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+annotation-id-sparse	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+annotation-id-sparse-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+annotation-id-sparse-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+annotation-key-multiple	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+annotation-key-multiple	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+annotation-key-multiple-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+annotation-key-multiple-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+annotation-key-nested-struct	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+annotation-key-nested-struct	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+annotation-key-nested-struct-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+annotation-key-nested-struct-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+annotation-key-single	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+annotation-key-single	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+annotation-key-single-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+annotation-key-single-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+annotation-key-whole-struct	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+annotation-key-whole-struct	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+annotation-key-whole-struct-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+annotation-key-whole-struct-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+annotation-must-understand	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+annotation-must-understand	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+annotation-must-understand-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+annotation-must-understand-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+annotation-optional-absent	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+annotation-optional-absent	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+annotation-optional-absent-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+annotation-optional-absent-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+annotation-optional-mixed	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+annotation-optional-mixed	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+annotation-optional-mixed-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+annotation-optional-mixed-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+annotation-scoped-name	cyclone	idlc	1	error	chunk.000.d/build/gen.idl: syntax error
+annotation-scoped-name	fastdds	fastddsgen	255	noise	 at com.eprosima.fastdds.fastddsgen.execute(fastddsgen.java:490)
+annotation-scoped-name	fastdds	fastddsgen	255	noise	 at com.eprosima.fastdds.fastddsgen.main(fastddsgen.java:1735)
+annotation-scoped-name	fastdds	fastddsgen	255	noise	 at com.eprosima.fastdds.fastddsgen.parseIDL(fastddsgen.java:920)
+annotation-scoped-name	fastdds	fastddsgen	255	noise	 at com.eprosima.fastdds.fastddsgen.process(fastddsgen.java:744)
+annotation-scoped-name	fastdds	fastddsgen	255	noise	 at com.eprosima.idl.generator.manager.TemplateGroup.setAttribute(TemplateGroup.java:128)
+annotation-scoped-name	fastdds	fastddsgen	255	noise	 at com.eprosima.idl.parser.grammar.IDLParser.definition(IDLParser.java:533)
+annotation-scoped-name	fastdds	fastddsgen	255	noise	 at com.eprosima.idl.parser.grammar.IDLParser.definition_list(IDLParser.java:822)
+annotation-scoped-name	fastdds	fastddsgen	255	noise	 at com.eprosima.idl.parser.grammar.IDLParser.definition_list(IDLParser.java:836)
+annotation-scoped-name	fastdds	fastddsgen	255	noise	 at com.eprosima.idl.parser.grammar.IDLParser.module(IDLParser.java:750)
+annotation-scoped-name	fastdds	fastddsgen	255	noise	 at com.eprosima.idl.parser.grammar.IDLParser.specification(IDLParser.java:348)
+annotation-scoped-name	fastdds	fastddsgen	255	noise	 at org.stringtemplate.v4.ST.add(ST.java:224)
+annotation-scoped-name	fastdds	fastddsgen	255	noise	ERROR: Cannot generate the files
+annotation-scoped-name	fastdds	fastddsgen	255	noise	OpenJDK 64-Bit Server VM (build 21.0.11+10-1-deb13u2-Debian, mixed mode, sharing)
+annotation-scoped-name	fastdds	fastddsgen	255	noise	OpenJDK Runtime Environment (build 21.0.11+10-1-deb13u2-Debian)
+annotation-scoped-name	fastdds	fastddsgen	255	noise	Processing the file gen.idl...
+annotation-scoped-name	fastdds	fastddsgen	255	noise	java.lang.IllegalArgumentException: no such attribute: parent
+annotation-scoped-name	fastdds	fastddsgen	255	noise	no such attribute: parent
+annotation-scoped-name	fastdds	fastddsgen	255	noise	openjdk version "21.0.11" 2026-04-21
+annotation-scoped-name	opendds	tao_idl	0	warning	Warning - /opt/opendds/bin/tao_idl: "gen.idl", line 7: error in lookup of symbol: final
+annotation-scoped-name	opendds	tao_idl	0	warning	Warning - /opt/opendds/bin/tao_idl: "gen.idl", line 8: error in lookup of symbol: ::key
+annotation-try-construct	fastdds	fastddsgen	255	noise	 ... 31 more
+annotation-try-construct	fastdds	fastddsgen	255	noise	 ... 33 more
+annotation-try-construct	fastdds	fastddsgen	255	noise	 at com.eprosima.fastdds.fastddsgen.execute(fastddsgen.java:490)
+annotation-try-construct	fastdds	fastddsgen	255	noise	 at com.eprosima.fastdds.fastddsgen.main(fastddsgen.java:1735)
+annotation-try-construct	fastdds	fastddsgen	255	noise	 at com.eprosima.fastdds.fastddsgen.parseIDL(fastddsgen.java:920)
+annotation-try-construct	fastdds	fastddsgen	255	noise	 at com.eprosima.fastdds.fastddsgen.process(fastddsgen.java:744)
+annotation-try-construct	fastdds	fastddsgen	255	noise	 at com.eprosima.idl.generator.manager.TemplateGroup.setAttribute(TemplateGroup.java:100)
+annotation-try-construct	fastdds	fastddsgen	255	noise	 at com.eprosima.idl.parser.grammar.IDLParser.definition(IDLParser.java:533)
+annotation-try-construct	fastdds	fastddsgen	255	noise	 at com.eprosima.idl.parser.grammar.IDLParser.definition_list(IDLParser.java:838)
+annotation-try-construct	fastdds	fastddsgen	255	noise	 at com.eprosima.idl.parser.grammar.IDLParser.module(IDLParser.java:750)
+annotation-try-construct	fastdds	fastddsgen	255	noise	 at com.eprosima.idl.parser.grammar.IDLParser.specification(IDLParser.java:348)
+annotation-try-construct	fastdds	fastddsgen	255	noise	 at com.eprosima.idl.parser.typecode.MemberAppliedAnnotations.calculate_try_construct(MemberAppliedAnnotations.java:260)
+annotation-try-construct	fastdds	fastddsgen	255	noise	 at com.eprosima.idl.parser.typecode.MemberAppliedAnnotations.isAnnotationDiscard(MemberAppliedAnnotations.java:278)
+annotation-try-construct	fastdds	fastddsgen	255	noise	 at com.eprosima.idl.parser.typecode.MemberAppliedAnnotations.isAnnotationTrim(MemberAppliedAnnotations.java:290)
+annotation-try-construct	fastdds	fastddsgen	255	noise	 at com.eprosima.idl.parser.typecode.MemberAppliedAnnotations.isAnnotationUseDefault(MemberAppliedAnnotations.java:284)
+annotation-try-construct	fastdds	fastddsgen	255	noise	 at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+annotation-try-construct	fastdds	fastddsgen	255	noise	 at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)
+annotation-try-construct	fastdds	fastddsgen	255	noise	 at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:118)
+annotation-try-construct	fastdds	fastddsgen	255	noise	 at org.stringtemplate.v4.Interpreter._exec(Interpreter.java:216)
+annotation-try-construct	fastdds	fastddsgen	255	noise	 at org.stringtemplate.v4.Interpreter._exec(Interpreter.java:291)
+annotation-try-construct	fastdds	fastddsgen	255	noise	 at org.stringtemplate.v4.Interpreter._exec(Interpreter.java:298)
+annotation-try-construct	fastdds	fastddsgen	255	noise	 at org.stringtemplate.v4.Interpreter.exec(Interpreter.java:151)
+annotation-try-construct	fastdds	fastddsgen	255	noise	 at org.stringtemplate.v4.Interpreter.getObjectProperty(Interpreter.java:1222)
+annotation-try-construct	fastdds	fastddsgen	255	noise	 at org.stringtemplate.v4.Interpreter.writeIterator(Interpreter.java:785)
+annotation-try-construct	fastdds	fastddsgen	255	noise	 at org.stringtemplate.v4.Interpreter.writeObject(Interpreter.java:755)
+annotation-try-construct	fastdds	fastddsgen	255	noise	 at org.stringtemplate.v4.Interpreter.writeObject(Interpreter.java:760)
+annotation-try-construct	fastdds	fastddsgen	255	noise	 at org.stringtemplate.v4.Interpreter.writeObjectNoOptions(Interpreter.java:687)
+annotation-try-construct	fastdds	fastddsgen	255	noise	 at org.stringtemplate.v4.Interpreter.writeObjectWithOptions(Interpreter.java:717)
+annotation-try-construct	fastdds	fastddsgen	255	noise	 at org.stringtemplate.v4.ST.write(ST.java:432)
+annotation-try-construct	fastdds	fastddsgen	255	noise	 at org.stringtemplate.v4.misc.ObjectModelAdaptor.getProperty(ObjectModelAdaptor.java:76)
+annotation-try-construct	fastdds	fastddsgen	255	noise	 at org.stringtemplate.v4.misc.ObjectModelAdaptor.getProperty(ObjectModelAdaptor.java:83)
+annotation-try-construct	fastdds	fastddsgen	255	noise	 at org.stringtemplate.v4.misc.ObjectModelAdaptor.throwNoSuchProperty(ObjectModelAdaptor.java:163)
+annotation-try-construct	fastdds	fastddsgen	255	noise	Caused by: com.eprosima.idl.parser.exception.RuntimeGenerationException: ERROR: try_construct annotation does not have a recognized value
+annotation-try-construct	fastdds	fastddsgen	255	noise	Caused by: java.lang.reflect.InvocationTargetException
+annotation-try-construct	fastdds	fastddsgen	255	noise	Caused by: org.stringtemplate.v4.misc.STNoSuchPropertyException: no such property: com.eprosima.idl.parser.typecode.Member.annotationDiscard
+annotation-try-construct	fastdds	fastddsgen	255	noise	Caused by: org.stringtemplate.v4.misc.STNoSuchPropertyException: no such property: com.eprosima.idl.parser.typecode.Member.annotationTrim
+annotation-try-construct	fastdds	fastddsgen	255	noise	Caused by: org.stringtemplate.v4.misc.STNoSuchPropertyException: no such property: com.eprosima.idl.parser.typecode.Member.annotationUseDefault
+annotation-try-construct	fastdds	fastddsgen	255	noise	ERROR: context [/struct_type /content_for_struct_type /_sub25 /struct_member /try_construct] 3:9 no such property or can't access: com.eprosima.idl.parser.typecode.Member.annotationDiscard
+annotation-try-construct	fastdds	fastddsgen	255	noise	ERROR: context [/struct_type /content_for_struct_type /_sub25 /struct_member /try_construct] 5:9 no such property or can't access: com.eprosima.idl.parser.typecode.Member.annotationUseDefault
+annotation-try-construct	fastdds	fastddsgen	255	noise	ERROR: context [/struct_type /content_for_struct_type /_sub25 /struct_member /try_construct] 7:9 no such property or can't access: com.eprosima.idl.parser.typecode.Member.annotationTrim
+annotation-try-construct	fastdds	fastddsgen	255	noise	OpenJDK 64-Bit Server VM (build 21.0.11+10-1-deb13u2-Debian, mixed mode, sharing)
+annotation-try-construct	fastdds	fastddsgen	255	noise	OpenJDK Runtime Environment (build 21.0.11+10-1-deb13u2-Debian)
+annotation-try-construct	fastdds	fastddsgen	255	noise	Processing the file gen.idl...
+annotation-try-construct	fastdds	fastddsgen	255	noise	openjdk version "21.0.11" 2026-04-21
+array-1d-enum	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+array-1d-enum	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+array-1d-enum-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+array-1d-enum-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+array-1d-fixed	opendds	cc	1	error	fill_1.inc: error: 'struct zd_c1::Sample' has no member named 'items'
+array-1d-fixed	opendds	cc	1	error	genC.h: error: invalid use of incomplete type 'struct zd_c1::Sample'
+array-1d-fixed	opendds	cc	1	error	genTypeSupportImpl.cpp: error: 'OpenDDS::DCPS::MetaStructImpl<zd_c1::Sample>::T' {aka 'struct zd_c1::Sample'} has no member named 'items'
+array-1d-fixed	opendds	cc	1	error	genTypeSupportImpl.cpp: error: '_items' in 'struct zd_c1::Sample' does not name a type
+array-1d-fixed	opendds	cc	1	error	genTypeSupportImpl.cpp: error: '_items' is not a member of 'zd_c1::Sample'
+array-1d-fixed	opendds	cc	1	error	genTypeSupportImpl.cpp: error: '_items_forany' in 'struct zd_c1::Sample' does not name a type
+array-1d-fixed	opendds	cc	1	error	genTypeSupportImpl.cpp: error: '_items_forany' is not a member of 'zd_c1::Sample'
+array-1d-fixed	opendds	cc	1	error	genTypeSupportImpl.cpp: error: 'const OpenDDS::DCPS::MetaStructImpl<zd_c1::Sample>::T' {aka 'const struct zd_c1::Sample'} has no member named 'items'
+array-1d-fixed	opendds	cc	1	error	genTypeSupportImpl.cpp: error: 'const struct zd_c1::Sample' has no member named 'items'
+array-1d-fixed	opendds	cc	1	error	genTypeSupportImpl.cpp: error: 'struct zd_c1::Sample' has no member named 'items'
+array-1d-fixed	opendds	cc	1	error	genTypeSupportImpl.cpp: error: 'zd_c1::Sample::_items' has not been declared
+array-1d-fixed	opendds	cc	1	error	genTypeSupportImpl.cpp: error: 'zd_c1::Sample::_items_forany' has not been declared
+array-1d-fixed	opendds	cc	1	error	genTypeSupportImpl.h: error: '_items' in 'struct zd_c1::Sample' does not name a type
+array-1d-fixed	opendds	cc	1	error	genTypeSupportImpl.h: error: '_items' is not a member of 'zd_c1::Sample'
+array-1d-fixed	opendds	cc	1	error	genTypeSupportImpl.h: error: '_items_forany' in 'struct zd_c1::Sample' does not name a type
+array-1d-fixed	opendds	cc	1	error	genTypeSupportImpl.h: error: '_items_forany' is not a member of 'zd_c1::Sample'
+array-1d-fixed	opendds	cc	1	error	genTypeSupportImpl.h: error: 'zd_c1::Sample::_items' has not been declared
+array-1d-fixed	opendds	cc	1	error	genTypeSupportImpl.h: error: 'zd_c1::Sample::_items_forany' has not been declared
+array-1d-fixed	opendds	cc	1	note	genC.h: note: definition of 'struct zd_c1::Sample' is not complete until the closing brace
+array-1d-fixed-unannotated	opendds	cc	1	error	fill_2.inc: error: 'struct zd_c2::Sample' has no member named 'items'
+array-1d-fixed-unannotated	opendds	cc	1	error	genC.h: error: invalid use of incomplete type 'struct zd_c2::Sample'
+array-1d-fixed-unannotated	opendds	cc	1	error	genTypeSupportImpl.cpp: error: 'OpenDDS::DCPS::MetaStructImpl<zd_c2::Sample>::T' {aka 'struct zd_c2::Sample'} has no member named 'items'
+array-1d-fixed-unannotated	opendds	cc	1	error	genTypeSupportImpl.cpp: error: '_items' in 'struct zd_c2::Sample' does not name a type
+array-1d-fixed-unannotated	opendds	cc	1	error	genTypeSupportImpl.cpp: error: '_items' is not a member of 'zd_c2::Sample'
+array-1d-fixed-unannotated	opendds	cc	1	error	genTypeSupportImpl.cpp: error: '_items_forany' in 'struct zd_c2::Sample' does not name a type
+array-1d-fixed-unannotated	opendds	cc	1	error	genTypeSupportImpl.cpp: error: '_items_forany' is not a member of 'zd_c2::Sample'
+array-1d-fixed-unannotated	opendds	cc	1	error	genTypeSupportImpl.cpp: error: 'const OpenDDS::DCPS::MetaStructImpl<zd_c2::Sample>::T' {aka 'const struct zd_c2::Sample'} has no member named 'items'
+array-1d-fixed-unannotated	opendds	cc	1	error	genTypeSupportImpl.cpp: error: 'const struct zd_c2::Sample' has no member named 'items'
+array-1d-fixed-unannotated	opendds	cc	1	error	genTypeSupportImpl.cpp: error: 'struct zd_c2::Sample' has no member named 'items'
+array-1d-fixed-unannotated	opendds	cc	1	error	genTypeSupportImpl.cpp: error: 'zd_c2::Sample::_items' has not been declared
+array-1d-fixed-unannotated	opendds	cc	1	error	genTypeSupportImpl.cpp: error: 'zd_c2::Sample::_items_forany' has not been declared
+array-1d-fixed-unannotated	opendds	cc	1	error	genTypeSupportImpl.h: error: '_items' in 'struct zd_c2::Sample' does not name a type
+array-1d-fixed-unannotated	opendds	cc	1	error	genTypeSupportImpl.h: error: '_items' is not a member of 'zd_c2::Sample'
+array-1d-fixed-unannotated	opendds	cc	1	error	genTypeSupportImpl.h: error: '_items_forany' in 'struct zd_c2::Sample' does not name a type
+array-1d-fixed-unannotated	opendds	cc	1	error	genTypeSupportImpl.h: error: '_items_forany' is not a member of 'zd_c2::Sample'
+array-1d-fixed-unannotated	opendds	cc	1	error	genTypeSupportImpl.h: error: 'zd_c2::Sample::_items' has not been declared
+array-1d-fixed-unannotated	opendds	cc	1	error	genTypeSupportImpl.h: error: 'zd_c2::Sample::_items_forany' has not been declared
+array-1d-fixed-unannotated	opendds	cc	1	note	genC.h: note: definition of 'struct zd_c2::Sample' is not complete until the closing brace
+array-1d-primitives	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+array-1d-primitives	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+array-1d-primitives-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+array-1d-primitives-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+array-1d-sequence	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+array-1d-sequence	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+array-1d-sequence-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+array-1d-sequence-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+array-1d-string	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+array-1d-string	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+array-1d-string-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+array-1d-string-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+array-1d-struct-appendable	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+array-1d-struct-appendable	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+array-1d-struct-final	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+array-1d-struct-final	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+array-1d-struct-final-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+array-1d-struct-final-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+array-1d-struct-mutable	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+array-1d-struct-mutable	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+array-1d-struct-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+array-1d-struct-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+array-1d-union	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+array-1d-union	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+array-1d-union-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+array-1d-union-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+array-1d-wstring	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+array-1d-wstring	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+array-1d-wstring-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+array-1d-wstring-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+array-2d-primitives	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+array-2d-primitives	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+array-2d-primitives-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+array-2d-primitives-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+array-2d-string	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+array-2d-string	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+array-2d-string-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+array-2d-string-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+array-2d-struct	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+array-2d-struct	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+array-2d-struct-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+array-2d-struct-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+array-3d-primitives	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+array-3d-primitives	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+array-3d-primitives-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+array-3d-primitives-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+array-3d-struct	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+array-3d-struct	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+array-3d-struct-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+array-3d-struct-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+array-odd-element	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+array-odd-element	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+array-odd-element-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+array-odd-element-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+array-of-union	fastdds	fastddsgen	255	error	gen.idl: error: 'U' was not defined previously
+array-of-union	fastdds	fastddsgen	255	error	gen.idl: error: boolean switch is malformed.
+enum-bitbound-32-plain	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+enum-bitbound-32-plain	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+enum-bitbound-32-plain-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+enum-bitbound-32-plain-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+enum-bitbound-32-value	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+enum-bitbound-32-value	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+enum-bitbound-32-value-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+enum-bitbound-32-value-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+enum-default-bitbound	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+enum-default-bitbound	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+enum-default-bitbound-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+enum-default-bitbound-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+enum-negative-value	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+enum-negative-value	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+enum-negative-value-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+enum-negative-value-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+enum-sparse-values	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+enum-sparse-values	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+enum-sparse-values-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+enum-sparse-values-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+evolution-appendable-nested	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+evolution-appendable-nested	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+evolution-appendable-tail	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+evolution-appendable-tail	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+evolution-final-tail	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+evolution-final-tail	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+evolution-final-to-appendable	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+evolution-final-to-appendable	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+evolution-mutable-default-annotation	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+evolution-mutable-default-annotation	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+evolution-mutable-defaults	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+evolution-mutable-defaults	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+evolution-mutable-key	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+evolution-mutable-key	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+evolution-mutable-middle	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+evolution-mutable-middle	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+evolution-mutable-mustunderstand	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+evolution-mutable-mustunderstand	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+evolution-mutable-reordered	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+evolution-mutable-reordered	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+evolution-mutable-tail	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+evolution-mutable-tail	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+evolution-mutable-union	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+evolution-mutable-union	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+evolution-union-unselected	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+evolution-union-unselected	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+identifier-keyword-member-ids	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+identifier-keyword-member-ids	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+identifier-keyword-member-ids-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+identifier-keyword-member-ids-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+identifier-target-keyword-bitmask-flag	fastdds	cc	1	error	driver.cpp: error: 'Sample' is not a member of 'zd_c1'; did you mean 'Sample'?
+identifier-target-keyword-bitmask-flag	fastdds	cc	1	error	fill_1.inc: error: 'sample' was not declared in this scope; did you mean 'std::sample'?
+identifier-target-keyword-bitmask-flag	fastdds	cc	1	error	fill_1.inc: error: expected unqualified-id before 'auto'
+identifier-target-keyword-bitmask-flag	fastdds	cc	1	error	genCdrAux.hpp: error: 'Sample' in namespace 'zd_c1' does not name a type
+identifier-target-keyword-bitmask-flag	fastdds	cc	1	error	genCdrAux.ipp: error: 'Sample' in namespace 'zd_c1' does not name a type
+identifier-target-keyword-bitmask-flag	fastdds	cc	1	error	genCdrAux.ipp: error: 'zd_c1::Sample' has not been declared
+identifier-target-keyword-bitmask-flag	fastdds	cc	1	error	genPubSubTypes.cxx: error: 'Sample' in namespace 'zd_c1' does not name a type
+identifier-target-keyword-bitmask-flag	fastdds	cc	1	error	genPubSubTypes.cxx: error: 'Sample' is not a member of 'zd_c1'; did you mean 'Sample'?
+identifier-target-keyword-bitmask-flag	fastdds	cc	1	error	genPubSubTypes.hpp: error: 'Sample' in namespace 'zd_c1' does not name a type
+identifier-target-keyword-bitmask-flag	opendds	tao_idl	2	error	Error - /opt/opendds/bin/tao_idl: "gen.idl", line 6: Illegal component in scoped name
+identifier-target-keyword-bitmask-flag	opendds	tao_idl	2	warning	Warning - /opt/opendds/bin/tao_idl: "gen.idl", line 5: error in lookup of symbol: bit_bound
+identifier-target-keyword-bitmask-flag-unannotated	fastdds	cc	1	error	driver.cpp: error: 'Sample' is not a member of 'zd_c2'; did you mean 'Sample'?
+identifier-target-keyword-bitmask-flag-unannotated	fastdds	cc	1	error	fill_2.inc: error: 'sample' was not declared in this scope; did you mean 'std::sample'?
+identifier-target-keyword-bitmask-flag-unannotated	fastdds	cc	1	error	fill_2.inc: error: expected unqualified-id before 'auto'
+identifier-target-keyword-bitmask-flag-unannotated	fastdds	cc	1	error	genCdrAux.hpp: error: 'Sample' in namespace 'zd_c2' does not name a type
+identifier-target-keyword-bitmask-flag-unannotated	fastdds	cc	1	error	genCdrAux.ipp: error: 'Sample' in namespace 'zd_c2' does not name a type
+identifier-target-keyword-bitmask-flag-unannotated	fastdds	cc	1	error	genCdrAux.ipp: error: 'zd_c2::Sample' has not been declared
+identifier-target-keyword-bitmask-flag-unannotated	fastdds	cc	1	error	genPubSubTypes.cxx: error: 'Sample' in namespace 'zd_c2' does not name a type
+identifier-target-keyword-bitmask-flag-unannotated	fastdds	cc	1	error	genPubSubTypes.cxx: error: 'Sample' is not a member of 'zd_c2'; did you mean 'Sample'?
+identifier-target-keyword-bitmask-flag-unannotated	fastdds	cc	1	error	genPubSubTypes.hpp: error: 'Sample' in namespace 'zd_c2' does not name a type
+identifier-target-keyword-bitmask-flag-unannotated	opendds	tao_idl	2	error	Error - /opt/opendds/bin/tao_idl: "gen.idl", line 6: Illegal component in scoped name
+identifier-target-keyword-bitmask-flag-unannotated	opendds	tao_idl	2	warning	Warning - /opt/opendds/bin/tao_idl: "gen.idl", line 5: error in lookup of symbol: bit_bound
+identifier-target-keyword-enumerator	fastdds	cc	1	error	driver.cpp: error: 'Sample' is not a member of 'zd_c3'; did you mean 'Sample'?
+identifier-target-keyword-enumerator	fastdds	cc	1	error	fill_3.inc: error: 'sample' was not declared in this scope; did you mean 'std::sample'?
+identifier-target-keyword-enumerator	fastdds	cc	1	error	fill_3.inc: error: expected unqualified-id before 'volatile'
+identifier-target-keyword-enumerator	fastdds	cc	1	error	genCdrAux.hpp: error: 'Sample' in namespace 'zd_c3' does not name a type
+identifier-target-keyword-enumerator	fastdds	cc	1	error	genCdrAux.ipp: error: 'Sample' in namespace 'zd_c3' does not name a type
+identifier-target-keyword-enumerator	fastdds	cc	1	error	genCdrAux.ipp: error: 'zd_c3::Sample' has not been declared
+identifier-target-keyword-enumerator	fastdds	cc	1	error	genPubSubTypes.cxx: error: 'Sample' in namespace 'zd_c3' does not name a type
+identifier-target-keyword-enumerator	fastdds	cc	1	error	genPubSubTypes.cxx: error: 'Sample' is not a member of 'zd_c3'; did you mean 'Sample'?
+identifier-target-keyword-enumerator	fastdds	cc	1	error	genPubSubTypes.hpp: error: 'Sample' in namespace 'zd_c3' does not name a type
+identifier-target-keyword-enumerator	opendds	tao_idl	0	warning	Warning - /opt/opendds/bin/tao_idl: "gen.idl", line 11: error in lookup of symbol: final
+identifier-target-keyword-enumerator	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+identifier-target-keyword-enumerator	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+identifier-target-keyword-enumerator-unannotated	fastdds	cc	1	error	driver.cpp: error: 'Sample' is not a member of 'zd_c4'; did you mean 'Sample'?
+identifier-target-keyword-enumerator-unannotated	fastdds	cc	1	error	fill_4.inc: error: 'sample' was not declared in this scope; did you mean 'std::sample'?
+identifier-target-keyword-enumerator-unannotated	fastdds	cc	1	error	fill_4.inc: error: expected unqualified-id before 'volatile'
+identifier-target-keyword-enumerator-unannotated	fastdds	cc	1	error	genCdrAux.hpp: error: 'Sample' in namespace 'zd_c4' does not name a type
+identifier-target-keyword-enumerator-unannotated	fastdds	cc	1	error	genCdrAux.ipp: error: 'Sample' in namespace 'zd_c4' does not name a type
+identifier-target-keyword-enumerator-unannotated	fastdds	cc	1	error	genCdrAux.ipp: error: 'zd_c4::Sample' has not been declared
+identifier-target-keyword-enumerator-unannotated	fastdds	cc	1	error	genPubSubTypes.cxx: error: 'Sample' in namespace 'zd_c4' does not name a type
+identifier-target-keyword-enumerator-unannotated	fastdds	cc	1	error	genPubSubTypes.cxx: error: 'Sample' is not a member of 'zd_c4'; did you mean 'Sample'?
+identifier-target-keyword-enumerator-unannotated	fastdds	cc	1	error	genPubSubTypes.hpp: error: 'Sample' in namespace 'zd_c4' does not name a type
+identifier-target-keyword-enumerator-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+identifier-target-keyword-enumerator-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+identifier-target-keyword-typename	fastdds	cc	1	error	fill_1.inc: error: 'sample' was not declared in this scope; did you mean 'std::sample'?
+identifier-target-keyword-typename	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+identifier-target-keyword-typename	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+identifier-target-keyword-typename-unannotated	fastdds	cc	1	error	fill_2.inc: error: 'sample' was not declared in this scope; did you mean 'std::sample'?
+identifier-target-keyword-typename-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+identifier-target-keyword-typename-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+integer-extremes	ros-cyclone	cc	0	warning	fill.inc: warning: integer constant is so large that it is unsigned
+integer-extremes	ros-fastrtps	cc	0	warning	fill.inc: warning: integer constant is so large that it is unsigned
+key-in-base-struct	fastdds	fastddsgen	0	noise	Adding project: gen.idl
+key-in-base-struct	fastdds	fastddsgen	0	noise	Generating Type Support files...
+key-in-base-struct	fastdds	fastddsgen	0	noise	Generating Type definition files...
+key-in-base-struct	fastdds	fastddsgen	0	noise	Generating TypeObjectSupport files...
+key-in-base-struct	fastdds	fastddsgen	0	noise	OpenJDK 64-Bit Server VM (build 21.0.11+10-1-deb13u2-Debian, mixed mode, sharing)
+key-in-base-struct	fastdds	fastddsgen	0	noise	OpenJDK Runtime Environment (build 21.0.11+10-1-deb13u2-Debian)
+key-in-base-struct	fastdds	fastddsgen	0	noise	Processing the file gen.idl...
+key-in-base-struct	fastdds	fastddsgen	0	noise	openjdk version "21.0.11" 2026-04-21
+key-in-base-struct	fastdds	fastddsgen	1	error	# An error report file with more information is saved as:
+key-in-base-struct	fastdds	fastddsgen	1	error	# Can't open file to dump replay data. Error: Not enough space
+key-in-base-struct	fastdds	fastddsgen	1	error	# Native memory allocation (malloc) failed to allocate 36048 bytes. Error detail: Chunk::new
+key-in-base-struct	fastdds	fastddsgen	1	error	# Native memory allocation (mmap) failed to map 67108864 bytes. Error detail: Failed to reserve memory for metaspace
+key-in-base-struct	fastdds	fastddsgen	1	error	[thread 565488 also had an error]
+key-in-base-struct	fastdds	fastddsgen	1	error	[thread 565489 also had an error]
+key-in-base-struct	fastdds	fastddsgen	1	error	[thread 565492 also had an error]
+key-in-base-struct	fastdds	fastddsgen	1	error	[thread 565493 also had an error]
+key-in-base-struct	fastdds	fastddsgen	1	error	[thread 565494 also had an error]
+key-in-base-struct	fastdds	fastddsgen	1	error	[thread 565501 also had an error]
+key-in-base-struct	fastdds	fastddsgen	1	error	[thread 565503 also had an error]
+key-in-base-struct	fastdds	fastddsgen	1	error	[thread 565504 also had an error]
+key-in-base-struct	fastdds	fastddsgen	1	noise	#
+key-in-base-struct	fastdds	fastddsgen	1	noise	# There is insufficient memory for the Java Runtime Environment to continue.
+key-in-base-struct	fastdds	fastddsgen	1	noise	# chunk.000.d/build/hs_err_pid565464.log
+key-in-base-struct	fastdds	fastddsgen	1	noise	# chunk.000.d/build/hs_err_pid565466.log
+key-in-base-struct	fastdds	fastddsgen	1	noise	Processing the file gen.idl...
+key-in-base-struct	hdds	cargo	101	error	For more information about this error, try `rustc --explain E0063`.
+key-in-base-struct	hdds	cargo	101	error	error: could not compile `wireprobe-hdds-run-566493-16552` (bin "wireprobe-hdds-run-566493-16552") due to 3 previous errors
+key-in-base-struct	hdds	cargo	101	error	error[E0063]: missing field `base` in initializer of `Sample`
+key-in-base-struct	hdds	cargo	101	noise	   --> generated.rs:12
+key-in-base-struct	hdds	cargo	101	noise	   --> generated.rs:13
+key-in-base-struct	opendds	tao_idl	2	error	Error - /opt/opendds/bin/tao_idl: "gen.idl", line 11: Missing '{' or illegal syntax following struct identifier
+key-in-base-struct	opendds	tao_idl	2	error	syntax error
+key-in-base-struct	opendds	tao_idl	2	warning	Warning - /opt/opendds/bin/tao_idl: "gen.idl", line 6: error in lookup of symbol: final
+key-in-base-struct	opendds	tao_idl	2	warning	Warning - /opt/opendds/bin/tao_idl: "gen.idl", line 7: error in lookup of symbol: key
+key-in-base-struct	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+key-in-base-struct	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+key-on-union-discriminator	cyclone	idlc	1	noise	Failed to compile 'gen.idl'
+key-on-union-discriminator	cyclone	idlc	1	noise	chunk.000.d/build/gen.idl: Using union type as part of the key is currently unsupported
+key-on-union-discriminator	fastdds	cc	1	error	driver.cpp: error: 'UPubSubType' is not a member of 'zd_c1::m'
+key-on-union-discriminator	fastdds	cc	1	error	driver.cpp: error: no matching function for call to 'zd_emit<zd_c1::m::U, <expression error> >(const char [27], zd_c1::m::U&)'
+key-on-union-discriminator	fastdds	cc	1	error	driver.cpp: error: template argument 2 is invalid
+key-on-union-discriminator	fastdds	cc	1	note	driver.cpp: note:   template argument deduction/substitution failed:
+key-on-union-discriminator	fastdds	cc	1	note	driver.cpp: note: candidate: 'template<class T, class Support> void zd_emit(const char*, T&)'
+key-on-union-discriminator	fastdds	fastddsgen	0	noise	Adding project: gen.idl
+key-on-union-discriminator	fastdds	fastddsgen	0	noise	Generating Type Support files...
+key-on-union-discriminator	fastdds	fastddsgen	0	noise	Generating Type definition files...
+key-on-union-discriminator	fastdds	fastddsgen	0	noise	Generating TypeObjectSupport files...
+key-on-union-discriminator	fastdds	fastddsgen	0	noise	OpenJDK 64-Bit Server VM (build 21.0.11+10-1-deb13u2-Debian, mixed mode, sharing)
+key-on-union-discriminator	fastdds	fastddsgen	0	noise	OpenJDK Runtime Environment (build 21.0.11+10-1-deb13u2-Debian)
+key-on-union-discriminator	fastdds	fastddsgen	0	noise	Processing the file gen.idl...
+key-on-union-discriminator	fastdds	fastddsgen	0	noise	openjdk version "21.0.11" 2026-04-21
+key-on-union-discriminator	opendds	tao_idl	0	warning	Warning - /opt/opendds/bin/tao_idl: "gen.idl", line 2: error in lookup of symbol: final
+key-on-union-discriminator	opendds	tao_idl	0	warning	Warning - /opt/opendds/bin/tao_idl: "gen.idl", line 2: error in lookup of symbol: key
+longdouble-framed	fastdds	fastddsgen	0	noise	Adding project: gen.idl
+longdouble-framed	fastdds	fastddsgen	0	noise	Generating Type Support files...
+longdouble-framed	fastdds	fastddsgen	0	noise	Generating Type definition files...
+longdouble-framed	fastdds	fastddsgen	0	noise	Generating TypeObjectSupport files...
+longdouble-framed	fastdds	fastddsgen	0	noise	OpenJDK 64-Bit Server VM (build 21.0.11+10-1-deb13u2-Debian, mixed mode, sharing)
+longdouble-framed	fastdds	fastddsgen	0	noise	OpenJDK Runtime Environment (build 21.0.11+10-1-deb13u2-Debian)
+longdouble-framed	fastdds	fastddsgen	0	noise	Processing the file gen.idl...
+longdouble-framed	fastdds	fastddsgen	0	noise	openjdk version "21.0.11" 2026-04-21
+map-key-enum	fastdds	fastddsgen	255	noise	 at com.eprosima.fastdds.fastddsgen.execute(fastddsgen.java:490)
+map-key-enum	fastdds	fastddsgen	255	noise	 at com.eprosima.fastdds.fastddsgen.main(fastddsgen.java:1735)
+map-key-enum	fastdds	fastddsgen	255	noise	 at com.eprosima.fastdds.fastddsgen.parseIDL(fastddsgen.java:920)
+map-key-enum	fastdds	fastddsgen	255	noise	 at com.eprosima.fastdds.fastddsgen.process(fastddsgen.java:744)
+map-key-enum	fastdds	fastddsgen	255	noise	 at com.eprosima.idl.generator.manager.TemplateGroup.setAttribute(TemplateGroup.java:100)
+map-key-enum	fastdds	fastddsgen	255	noise	 at com.eprosima.idl.parser.grammar.IDLParser.definition(IDLParser.java:533)
+map-key-enum	fastdds	fastddsgen	255	noise	 at com.eprosima.idl.parser.grammar.IDLParser.definition_list(IDLParser.java:838)
+map-key-enum	fastdds	fastddsgen	255	noise	 at com.eprosima.idl.parser.grammar.IDLParser.module(IDLParser.java:750)
+map-key-enum	fastdds	fastddsgen	255	noise	 at com.eprosima.idl.parser.grammar.IDLParser.specification(IDLParser.java:348)
+map-key-enum	fastdds	fastddsgen	255	noise	 at org.stringtemplate.v4.Interpreter._exec(Interpreter.java:216)
+map-key-enum	fastdds	fastddsgen	255	noise	 at org.stringtemplate.v4.Interpreter._exec(Interpreter.java:291)
+map-key-enum	fastdds	fastddsgen	255	noise	 at org.stringtemplate.v4.Interpreter._exec(Interpreter.java:298)
+map-key-enum	fastdds	fastddsgen	255	noise	 at org.stringtemplate.v4.Interpreter.exec(Interpreter.java:151)
+map-key-enum	fastdds	fastddsgen	255	noise	 at org.stringtemplate.v4.Interpreter.getObjectProperty(Interpreter.java:1222)
+map-key-enum	fastdds	fastddsgen	255	noise	 at org.stringtemplate.v4.Interpreter.writeIterator(Interpreter.java:785)
+map-key-enum	fastdds	fastddsgen	255	noise	 at org.stringtemplate.v4.Interpreter.writeObject(Interpreter.java:755)
+map-key-enum	fastdds	fastddsgen	255	noise	 at org.stringtemplate.v4.Interpreter.writeObject(Interpreter.java:760)
+map-key-enum	fastdds	fastddsgen	255	noise	 at org.stringtemplate.v4.Interpreter.writeObjectNoOptions(Interpreter.java:687)
+map-key-enum	fastdds	fastddsgen	255	noise	 at org.stringtemplate.v4.Interpreter.writeObjectWithOptions(Interpreter.java:717)
+map-key-enum	fastdds	fastddsgen	255	noise	 at org.stringtemplate.v4.ST.write(ST.java:432)
+map-key-enum	fastdds	fastddsgen	255	noise	 at org.stringtemplate.v4.misc.ObjectModelAdaptor.getProperty(ObjectModelAdaptor.java:87)
+map-key-enum	fastdds	fastddsgen	255	noise	 at org.stringtemplate.v4.misc.ObjectModelAdaptor.throwNoSuchProperty(ObjectModelAdaptor.java:163)
+map-key-enum	fastdds	fastddsgen	255	noise	Caused by: org.stringtemplate.v4.misc.STNoSuchPropertyException: no such property: com.eprosima.fastdds.idl.parser.typecode.PrimitiveTypeCode.CScopedname
+map-key-enum	fastdds	fastddsgen	255	noise	ERROR: context [/struct_type /content_for_struct_type /_sub25 /struct_member /check_register_type_identifier /register_map_type /map_name] 44:45 no such property or can't access: com.eprosima.fastdds.idl.parser.typecode.PrimitiveTypeCode.CScopedname
+map-key-enum	fastdds	fastddsgen	255	noise	ERROR: context [/struct_type /content_for_struct_type /_sub25 /struct_member /get_type_identifier /get_type_identifier_registry /map_name] 44:45 no such property or can't access: com.eprosima.fastdds.idl.parser.typecode.PrimitiveTypeCode.CScopedname
+map-key-enum	fastdds	fastddsgen	255	noise	OpenJDK 64-Bit Server VM (build 21.0.11+10-1-deb13u2-Debian, mixed mode, sharing)
+map-key-enum	fastdds	fastddsgen	255	noise	OpenJDK Runtime Environment (build 21.0.11+10-1-deb13u2-Debian)
+map-key-enum	fastdds	fastddsgen	255	noise	Processing the file gen.idl...
+map-key-enum	fastdds	fastddsgen	255	noise	openjdk version "21.0.11" 2026-04-21
+map-key-enum-unannotated	fastdds	fastddsgen	255	noise	 at com.eprosima.fastdds.fastddsgen.execute(fastddsgen.java:490)
+map-key-enum-unannotated	fastdds	fastddsgen	255	noise	 at com.eprosima.fastdds.fastddsgen.main(fastddsgen.java:1735)
+map-key-enum-unannotated	fastdds	fastddsgen	255	noise	 at com.eprosima.fastdds.fastddsgen.parseIDL(fastddsgen.java:920)
+map-key-enum-unannotated	fastdds	fastddsgen	255	noise	 at com.eprosima.fastdds.fastddsgen.process(fastddsgen.java:744)
+map-key-enum-unannotated	fastdds	fastddsgen	255	noise	 at com.eprosima.idl.generator.manager.TemplateGroup.setAttribute(TemplateGroup.java:100)
+map-key-enum-unannotated	fastdds	fastddsgen	255	noise	 at com.eprosima.idl.parser.grammar.IDLParser.definition(IDLParser.java:533)
+map-key-enum-unannotated	fastdds	fastddsgen	255	noise	 at com.eprosima.idl.parser.grammar.IDLParser.definition_list(IDLParser.java:838)
+map-key-enum-unannotated	fastdds	fastddsgen	255	noise	 at com.eprosima.idl.parser.grammar.IDLParser.module(IDLParser.java:750)
+map-key-enum-unannotated	fastdds	fastddsgen	255	noise	 at com.eprosima.idl.parser.grammar.IDLParser.specification(IDLParser.java:348)
+map-key-enum-unannotated	fastdds	fastddsgen	255	noise	 at org.stringtemplate.v4.Interpreter._exec(Interpreter.java:216)
+map-key-enum-unannotated	fastdds	fastddsgen	255	noise	 at org.stringtemplate.v4.Interpreter._exec(Interpreter.java:291)
+map-key-enum-unannotated	fastdds	fastddsgen	255	noise	 at org.stringtemplate.v4.Interpreter._exec(Interpreter.java:298)
+map-key-enum-unannotated	fastdds	fastddsgen	255	noise	 at org.stringtemplate.v4.Interpreter.exec(Interpreter.java:151)
+map-key-enum-unannotated	fastdds	fastddsgen	255	noise	 at org.stringtemplate.v4.Interpreter.getObjectProperty(Interpreter.java:1222)
+map-key-enum-unannotated	fastdds	fastddsgen	255	noise	 at org.stringtemplate.v4.Interpreter.writeIterator(Interpreter.java:785)
+map-key-enum-unannotated	fastdds	fastddsgen	255	noise	 at org.stringtemplate.v4.Interpreter.writeObject(Interpreter.java:755)
+map-key-enum-unannotated	fastdds	fastddsgen	255	noise	 at org.stringtemplate.v4.Interpreter.writeObject(Interpreter.java:760)
+map-key-enum-unannotated	fastdds	fastddsgen	255	noise	 at org.stringtemplate.v4.Interpreter.writeObjectNoOptions(Interpreter.java:687)
+map-key-enum-unannotated	fastdds	fastddsgen	255	noise	 at org.stringtemplate.v4.Interpreter.writeObjectWithOptions(Interpreter.java:717)
+map-key-enum-unannotated	fastdds	fastddsgen	255	noise	 at org.stringtemplate.v4.ST.write(ST.java:432)
+map-key-enum-unannotated	fastdds	fastddsgen	255	noise	 at org.stringtemplate.v4.misc.ObjectModelAdaptor.getProperty(ObjectModelAdaptor.java:87)
+map-key-enum-unannotated	fastdds	fastddsgen	255	noise	 at org.stringtemplate.v4.misc.ObjectModelAdaptor.throwNoSuchProperty(ObjectModelAdaptor.java:163)
+map-key-enum-unannotated	fastdds	fastddsgen	255	noise	Caused by: org.stringtemplate.v4.misc.STNoSuchPropertyException: no such property: com.eprosima.fastdds.idl.parser.typecode.PrimitiveTypeCode.CScopedname
+map-key-enum-unannotated	fastdds	fastddsgen	255	noise	ERROR: context [/struct_type /content_for_struct_type /_sub25 /struct_member /check_register_type_identifier /register_map_type /map_name] 44:45 no such property or can't access: com.eprosima.fastdds.idl.parser.typecode.PrimitiveTypeCode.CScopedname
+map-key-enum-unannotated	fastdds	fastddsgen	255	noise	ERROR: context [/struct_type /content_for_struct_type /_sub25 /struct_member /get_type_identifier /get_type_identifier_registry /map_name] 44:45 no such property or can't access: com.eprosima.fastdds.idl.parser.typecode.PrimitiveTypeCode.CScopedname
+map-key-enum-unannotated	fastdds	fastddsgen	255	noise	OpenJDK 64-Bit Server VM (build 21.0.11+10-1-deb13u2-Debian, mixed mode, sharing)
+map-key-enum-unannotated	fastdds	fastddsgen	255	noise	OpenJDK Runtime Environment (build 21.0.11+10-1-deb13u2-Debian)
+map-key-enum-unannotated	fastdds	fastddsgen	255	noise	Processing the file gen.idl...
+map-key-enum-unannotated	fastdds	fastddsgen	255	noise	openjdk version "21.0.11" 2026-04-21
+module-issue41-shape	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+module-issue41-shape	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+module-nesting	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+module-nesting	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+module-nesting-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+module-nesting-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+module-reopened	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+module-reopened	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+module-reopened-unannotated	fastdds	fastddsgen	255	error	gen.idl: error: '::' was not defined previously
+module-reopened-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+module-reopened-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+module-reopened-unqualified	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+module-reopened-unqualified	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+module-reopened-unqualified-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+module-reopened-unqualified-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+module-root-anchored	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+module-root-anchored	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+primitive-boolean	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+primitive-boolean	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+primitive-boolean-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+primitive-boolean-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+primitive-char	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+primitive-char	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+primitive-char-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+primitive-char-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+primitive-double	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+primitive-double	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+primitive-double-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+primitive-double-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+primitive-float	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+primitive-float	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+primitive-float-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+primitive-float-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+primitive-int8	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+primitive-int8	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+primitive-int8-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+primitive-int8-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+primitive-long	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+primitive-long	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+primitive-long-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+primitive-long-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+primitive-longlong	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+primitive-longlong	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+primitive-longlong-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+primitive-longlong-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+primitive-mixed	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+primitive-mixed	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+primitive-mixed-descending-alignment	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+primitive-mixed-descending-alignment	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+primitive-mixed-descending-alignment-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+primitive-mixed-descending-alignment-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+primitive-mixed-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+primitive-mixed-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+primitive-octet	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+primitive-octet	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+primitive-octet-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+primitive-octet-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+primitive-short	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+primitive-short	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+primitive-short-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+primitive-short-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+primitive-uint8	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+primitive-uint8	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+primitive-uint8-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+primitive-uint8-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+primitive-ulong	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+primitive-ulong	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+primitive-ulong-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+primitive-ulong-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+primitive-ulonglong	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+primitive-ulonglong	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+primitive-ulonglong-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+primitive-ulonglong-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+primitive-ushort	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+primitive-ushort	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+primitive-ushort-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+primitive-ushort-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+primitive-wchar	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+primitive-wchar	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+primitive-wchar-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+primitive-wchar-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+recursive-array	cyclone	idlc	1	noise	Failed to compile 'gen.idl'
+recursive-array	fastdds	fastddsgen	0	noise	Adding project: gen.idl
+recursive-array	fastdds	fastddsgen	0	noise	Generating Type Support files...
+recursive-array	fastdds	fastddsgen	0	noise	Generating Type definition files...
+recursive-array	fastdds	fastddsgen	0	noise	Generating TypeObjectSupport files...
+recursive-array	fastdds	fastddsgen	0	noise	OpenJDK 64-Bit Server VM (build 21.0.11+10-1-deb13u2-Debian, mixed mode, sharing)
+recursive-array	fastdds	fastddsgen	0	noise	OpenJDK Runtime Environment (build 21.0.11+10-1-deb13u2-Debian)
+recursive-array	fastdds	fastddsgen	0	noise	Processing the file gen.idl...
+recursive-array	fastdds	fastddsgen	0	noise	openjdk version "21.0.11" 2026-04-21
+recursive-array	opendds	tao_idl	4	error	Error - /opt/opendds/bin/tao_idl: "gen.idl", line 89: illegal recursive use of type:  - ::zd_c6::m::Node
+recursive-mutual-optional	cyclone	idlc	1	noise	chunk.000.d/build/gen.idl: Member 'tail' has incomplete type 'B'
+recursive-mutual-optional	fastdds	cc	1	error	/usr/include/c++/14/type_traits: error: invalid use of incomplete type 'class zd_c1::m::B'
+recursive-mutual-optional	fastdds	cc	1	error	fill_1.inc: error: 'class eprosima::fastcdr::optional<zd_c1::m::B>' has no member named 'head'
+recursive-mutual-optional	fastdds	cc	1	error	fill_1.inc: error: 'class eprosima::fastcdr::optional<zd_c1::m::B>' has no member named 'y'
+recursive-mutual-optional	fastdds	cc	1	noise	/opt/fastdds/include/fastcdr/xcdr/detail/optional.hpp:   required from 'struct eprosima::fastcdr::detail::optional_storage<zd_c1::m::B, void>'
+recursive-mutual-optional	fastdds	cc	1	noise	/opt/fastdds/include/fastcdr/xcdr/optional.hpp:   recursively required by substitution of 'template<class T> struct eprosima::fastcdr::detail::optional_storage<T, typename std::enable_if<std::is_trivially_destructible<_Tp>::value>::type> [with T = zd_c1::m::B]'
+recursive-mutual-optional	fastdds	cc	1	noise	/opt/fastdds/include/fastcdr/xcdr/optional.hpp:   required from 'class eprosima::fastcdr::optional<zd_c1::m::B>'
+recursive-mutual-optional	fastdds	cc	1	note	/usr/include/c++/14/type_traits: note: 'std::__is_complete_or_unbounded<__type_identity<zd_c1::m::B> >((std::__type_identity<zd_c1::m::B>(), std::__type_identity<zd_c1::m::B>()))' evaluates to false
+recursive-mutual-optional	fastdds	cc	1	note	gen.hpp: note: forward declaration of 'class zd_c1::m::B'
+recursive-mutual-optional	hdds	cargo	101	error	For more information about an error, try `rustc --explain E0072`.
+recursive-mutual-optional	hdds	cargo	101	error	Some errors have detailed explanations: E0072, E0391, E0599.
+recursive-mutual-optional	hdds	cargo	101	error	error[E0072]: recursive types `A` and `B` have infinite size
+recursive-mutual-optional	hdds	cargo	101	error	error[E0391]: cycle detected when computing layout of `m::A`
+recursive-mutual-optional	hdds	cargo	101	error	error[E0391]: cycle detected when computing when `m::A` needs drop
+recursive-mutual-optional	hdds	cargo	101	error	error[E0599]: no function or associated item named `decode_xcdr1_le_at` found for struct `B` in the current scope
+recursive-mutual-optional	hdds	cargo	101	error	error[E0599]: no function or associated item named `decode_xcdr1_le` found for struct `A` in the current scope
+recursive-mutual-optional	hdds	cargo	101	error	error[E0599]: no function or associated item named `decode_xcdr1_le` found for struct `B` in the current scope
+recursive-mutual-optional	hdds	cargo	101	error	error[E0599]: no method named `encode_xcdr1_le_at` found for struct `B` in the current scope
+recursive-mutual-optional	hdds	cargo	101	error	error[E0599]: no method named `encode_xcdr1_le` found for reference `&A` in the current scope
+recursive-mutual-optional	hdds	cargo	101	error	error[E0599]: no method named `encode_xcdr1_le` found for reference `&B` in the current scope
+recursive-mutual-optional	hdds	cargo	101	error	note: if you're trying to build a new `A`, consider using `A::decode_xcdr2_le_at` which returns `Result<A, hdds::CdrError>`
+recursive-mutual-optional	hdds	cargo	101	error	note: if you're trying to build a new `B`, consider using `B::decode_xcdr2_le_at` which returns `Result<B, hdds::CdrError>`
+recursive-mutual-optional	hdds	cargo	101	noise	   --> generated.rs:17
+recursive-mutual-optional	hdds	cargo	101	noise	   --> generated.rs:23
+recursive-mutual-optional	hdds	cargo	101	noise	   --> generated.rs:29
+recursive-mutual-optional	hdds	cargo	101	noise	   --> generated.rs:5
+recursive-mutual-optional	hdds	cargo	101	noise	   --> generated.rs:55
+recursive-mutual-optional	hdds	cargo	101	noise	   --> generated.rs:56
+recursive-mutual-optional	hdds	cargo	101	noise	   --> generated.rs:9
+recursive-mutual-optional	hdds	cargo	101	noise	 13 ~         pub tail: Option<Box<B>>,
+recursive-mutual-optional	hdds	cargo	101	noise	...
+recursive-mutual-optional	hdds	cargo	101	noise	219 +                     ::hdds::CdrVersion::Xcdr1 => self.encode_xcdr2_le(buf).map_err(Into::into),
+recursive-mutual-optional	hdds	cargo	101	noise	219 -                     ::hdds::CdrVersion::Xcdr1 => self.encode_xcdr1_le(buf).map_err(Into::into),
+recursive-mutual-optional	hdds	cargo	101	noise	226 +                     ::hdds::CdrVersion::Xcdr1 => Self::decode_xcdr2_le(buf).map(|(val, _)| val).map_err(Into::into),
+recursive-mutual-optional	hdds	cargo	101	noise	226 -                     ::hdds::CdrVersion::Xcdr1 => Self::decode_xcdr1_le(buf).map(|(val, _)| val).map_err(Into::into),
+recursive-mutual-optional	hdds	cargo	101	noise	377 ~         pub head: Box<A>,
+recursive-mutual-optional	hdds	cargo	101	noise	580 +                     ::hdds::CdrVersion::Xcdr1 => self.encode_xcdr2_le(buf).map_err(Into::into),
+recursive-mutual-optional	hdds	cargo	101	noise	580 -                     ::hdds::CdrVersion::Xcdr1 => self.encode_xcdr1_le(buf).map_err(Into::into),
+recursive-mutual-optional	hdds	cargo	101	noise	587 +                     ::hdds::CdrVersion::Xcdr1 => Self::decode_xcdr2_le(buf).map(|(val, _)| val).map_err(Into::into),
+recursive-mutual-optional	hdds	cargo	101	noise	587 -                     ::hdds::CdrVersion::Xcdr1 => Self::decode_xcdr1_le(buf).map(|(val, _)| val).map_err(Into::into),
+recursive-mutual-optional	hdds	cargo	101	noise	758 +             self.root.encode_xcdr2_le_at(dst, &mut offset)?;
+recursive-mutual-optional	hdds	cargo	101	noise	758 -             self.root.encode_xcdr1_le_at(dst, &mut offset)?;
+recursive-mutual-optional	hdds	cargo	101	noise	797 +             let root = <B>::decode_xcdr2_le_at(src, &mut offset)?;
+recursive-mutual-optional	hdds	cargo	101	noise	797 -             let root = <B>::decode_xcdr1_le_at(src, &mut offset)?;
+recursive-mutual-optional	hdds	cargo	101	noise	help: insert some indirection (e.g., a `Box`, `Rc`, or `&`) to break the cycle
+recursive-mutual-optional	hdds	cargo	101	noise	help: there is a method `encode_xcdr2_le_at` with a similar name
+recursive-mutual-optional	hdds	cargo	101	noise	help: there is a method `encode_xcdr2_le` with a similar name
+recursive-mutual-optional	hdds	cargo	101	noise	help: there is an associated function `decode_xcdr2_le_at` with a similar name
+recursive-mutual-optional	hdds	cargo	101	noise	help: there is an associated function `decode_xcdr2_le` with a similar name
+recursive-mutual-optional	hdds	cargo	101	note	    = note: ...which immediately requires computing when `m::A` needs drop again
+recursive-mutual-optional	hdds	cargo	101	note	    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+recursive-mutual-optional	hdds	cargo	101	note	    = note: see https://rustc-dev-guide.rust-lang.org/overview.html#queries and https://rustc-dev-guide.rust-lang.org/query.html for more information
+recursive-mutual-optional	hdds	cargo	101	note	  = note: ...which again requires computing layout of `m::A`, completing the cycle
+recursive-mutual-optional	hdds	cargo	101	note	  = note: ...which requires computing layout of `core::option::Option<m::B>`...
+recursive-mutual-optional	hdds	cargo	101	note	  = note: ...which requires computing layout of `m::B`...
+recursive-mutual-optional	hdds	cargo	101	note	  = note: cycle used when computing layout of `(m::A, usize)`
+recursive-mutual-optional	hdds	cargo	101	note	  = note: see https://rustc-dev-guide.rust-lang.org/overview.html#queries and https://rustc-dev-guide.rust-lang.org/query.html for more information
+recursive-mutual-optional	hdds	cargo	101	note	note: cycle used when computing when `m::B` needs drop
+recursive-mutual-optional	hdds	cargo	101	warning	error: could not compile `wireprobe-hdds-run-802721-18736` (bin "wireprobe-hdds-run-802721-18736") due to 9 previous errors; 1 warning emitted
+recursive-mutual-optional	hdds	cargo	101	warning	warning: unused variable: `member_start`
+recursive-mutual-optional	opendds	tao_idl	3	error	Error - /opt/opendds/bin/tao_idl: "gen.idl", line 16: illegal use of incomplete type,  - ::zd_c1::m::B
+recursive-mutual-optional	opendds	tao_idl	3	warning	Warning - /opt/opendds/bin/tao_idl: "gen.idl", line 14: error in lookup of symbol: mutable
+recursive-mutual-optional	opendds	tao_idl	3	warning	Warning - /opt/opendds/bin/tao_idl: "gen.idl", line 16: error in lookup of symbol: optional
+recursive-mutual-optional	opendds	tao_idl	3	warning	Warning - /opt/opendds/bin/tao_idl: "gen.idl", line 24: error in lookup of symbol: appendable
+recursive-mutual-optional	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+recursive-mutual-optional	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+recursive-optional	cyclone	idlc	1	noise	Failed to compile 'gen.idl'
+recursive-optional	fastdds	cc	1	error	/usr/include/c++/14/type_traits: error: invalid use of incomplete type 'class zd_c2::m::Node'
+recursive-optional	fastdds	cc	1	error	fill_2.inc: error: no matching function for call to 'eprosima::fastcdr::optional<zd_c2::m::Node>::value(int)'
+recursive-optional	fastdds	cc	1	noise	/opt/fastdds/include/fastcdr/xcdr/detail/optional.hpp:   required from 'struct eprosima::fastcdr::detail::optional_storage<zd_c2::m::Node, void>'
+recursive-optional	fastdds	cc	1	noise	/opt/fastdds/include/fastcdr/xcdr/optional.hpp:   recursively required by substitution of 'template<class T> struct eprosima::fastcdr::detail::optional_storage<T, typename std::enable_if<std::is_trivially_destructible<_Tp>::value>::type> [with T = zd_c2::m::Node]'
+recursive-optional	fastdds	cc	1	noise	/opt/fastdds/include/fastcdr/xcdr/optional.hpp:   required from 'class eprosima::fastcdr::optional<zd_c2::m::Node>'
+recursive-optional	fastdds	cc	1	note	/opt/fastdds/include/fastcdr/xcdr/optional.hpp: note: candidate: 'T& eprosima::fastcdr::optional<T>::value() & [with T = zd_c2::m::Node]'
+recursive-optional	fastdds	cc	1	note	/opt/fastdds/include/fastcdr/xcdr/optional.hpp: note: candidate: 'T&& eprosima::fastcdr::optional<T>::value() && [with T = zd_c2::m::Node]'
+recursive-optional	fastdds	cc	1	note	/opt/fastdds/include/fastcdr/xcdr/optional.hpp: note: candidate: 'const T& eprosima::fastcdr::optional<T>::value() const & [with T = zd_c2::m::Node]'
+recursive-optional	fastdds	cc	1	note	/opt/fastdds/include/fastcdr/xcdr/optional.hpp: note: candidate: 'const T&& eprosima::fastcdr::optional<T>::value() const && [with T = zd_c2::m::Node]'
+recursive-optional	fastdds	cc	1	note	/usr/include/c++/14/type_traits: note: 'std::__is_complete_or_unbounded<__type_identity<zd_c2::m::Node> >((std::__type_identity<zd_c2::m::Node>(), std::__type_identity<zd_c2::m::Node>()))' evaluates to false
+recursive-optional	fastdds	cc	1	note	gen.hpp: note: forward declaration of 'class zd_c2::m::Node'
+recursive-optional	hdds	cargo	101	error	For more information about an error, try `rustc --explain E0072`.
+recursive-optional	hdds	cargo	101	error	Some errors have detailed explanations: E0072, E0391, E0599.
+recursive-optional	hdds	cargo	101	error	error[E0072]: recursive type `Node` has infinite size
+recursive-optional	hdds	cargo	101	error	error[E0391]: cycle detected when computing layout of `m::Node`
+recursive-optional	hdds	cargo	101	error	error[E0599]: no function or associated item named `decode_xcdr1_le` found for struct `Node` in the current scope
+recursive-optional	hdds	cargo	101	error	error[E0599]: no method named `encode_xcdr1_le` found for reference `&Node` in the current scope
+recursive-optional	hdds	cargo	101	error	error[E0599]: no method named `encode_xcdr1_le` found for struct `Node` in the current scope
+recursive-optional	hdds	cargo	101	error	note: if you're trying to build a new `Node`, consider using `Node::decode_xcdr2_le_at` which returns `Result<Node, hdds::CdrError>`
+recursive-optional	hdds	cargo	101	noise	   --> generated.rs:55
+recursive-optional	hdds	cargo	101	noise	   --> generated.rs:56
+recursive-optional	hdds	cargo	101	noise	   --> generated.rs:9
+recursive-optional	hdds	cargo	101	noise	  --> drive.inc:36
+recursive-optional	hdds	cargo	101	noise	  --> generated.rs:17
+recursive-optional	hdds	cargo	101	noise	  --> generated.rs:21
+recursive-optional	hdds	cargo	101	noise	  --> generated.rs:5
+recursive-optional	hdds	cargo	101	noise	  --> main.rs:27
+recursive-optional	hdds	cargo	101	noise	  ::: drive.inc:36
+recursive-optional	hdds	cargo	101	noise	  ::: generated.rs:5
+recursive-optional	hdds	cargo	101	noise	 3 +         ("xcdr1", attempt!(sample, encode_xcdr2_le)),
+recursive-optional	hdds	cargo	101	noise	 3 -         ("xcdr1", attempt!(sample, encode_xcdr1_le)),
+recursive-optional	hdds	cargo	101	noise	...
+recursive-optional	hdds	cargo	101	noise	219 +                     ::hdds::CdrVersion::Xcdr1 => self.encode_xcdr2_le(buf).map_err(Into::into),
+recursive-optional	hdds	cargo	101	noise	219 -                     ::hdds::CdrVersion::Xcdr1 => self.encode_xcdr1_le(buf).map_err(Into::into),
+recursive-optional	hdds	cargo	101	noise	226 +                     ::hdds::CdrVersion::Xcdr1 => Self::decode_xcdr2_le(buf).map(|(val, _)| val).map_err(Into::into),
+recursive-optional	hdds	cargo	101	noise	226 -                     ::hdds::CdrVersion::Xcdr1 => Self::decode_xcdr1_le(buf).map(|(val, _)| val).map_err(Into::into),
+recursive-optional	hdds	cargo	101	noise	help: insert some indirection (e.g., a `Box`, `Rc`, or `&`) to break the cycle
+recursive-optional	hdds	cargo	101	noise	help: there is a method `encode_xcdr2_le` with a similar name
+recursive-optional	hdds	cargo	101	noise	help: there is an associated function `decode_xcdr2_le` with a similar name
+recursive-optional	hdds	cargo	101	note	   = note: ...which again requires computing layout of `m::Node`, completing the cycle
+recursive-optional	hdds	cargo	101	note	   = note: ...which requires computing layout of `core::option::Option<m::Node>`...
+recursive-optional	hdds	cargo	101	note	   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+recursive-optional	hdds	cargo	101	note	   = note: see https://rustc-dev-guide.rust-lang.org/overview.html#queries and https://rustc-dev-guide.rust-lang.org/query.html for more information
+recursive-optional	hdds	cargo	101	note	note: cycle used when elaborating drops for `m::<impl at generated.rs: 10:26>::clone`
+recursive-optional	hdds	cargo	101	warning	error: could not compile `wireprobe-hdds-run-802630-16952` (bin "wireprobe-hdds-run-802630-16952") due to 5 previous errors; 1 warning emitted
+recursive-optional	hdds	cargo	101	warning	warning: unused variable: `member_start`
+recursive-optional	opendds	tao_idl	2	error	/opt/opendds/bin/tao_idl: gen.idl: found 1 error
+recursive-optional	opendds	tao_idl	2	error	Error - /opt/opendds/bin/tao_idl: "gen.idl", line 14: illegal recursive use of type:  - ::zd_c1::m::Node
+recursive-optional	opendds	tao_idl	2	warning	Warning - /opt/opendds/bin/tao_idl: "gen.idl", line 12: error in lookup of symbol: mutable
+recursive-optional	opendds	tao_idl	2	warning	Warning - /opt/opendds/bin/tao_idl: "gen.idl", line 14: error in lookup of symbol: optional
+recursive-optional	opendds	tao_idl	3	error	Error - /opt/opendds/bin/tao_idl: "gen.idl", line 43: illegal recursive use of type:  - ::zd_c2::m::Node
+recursive-optional	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+recursive-optional	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+recursive-typedef-sequence	cyclone	idlc	1	noise	Failed to compile 'gen.idl'
+recursive-typedef-sequence	fastdds	fastddsgen	0	noise	Adding project: gen.idl
+recursive-typedef-sequence	fastdds	fastddsgen	0	noise	Generating Type Support files...
+recursive-typedef-sequence	fastdds	fastddsgen	0	noise	Generating Type definition files...
+recursive-typedef-sequence	fastdds	fastddsgen	0	noise	Generating TypeObjectSupport files...
+recursive-typedef-sequence	fastdds	fastddsgen	0	noise	OpenJDK 64-Bit Server VM (build 21.0.11+10-1-deb13u2-Debian, mixed mode, sharing)
+recursive-typedef-sequence	fastdds	fastddsgen	0	noise	OpenJDK Runtime Environment (build 21.0.11+10-1-deb13u2-Debian)
+recursive-typedef-sequence	fastdds	fastddsgen	0	noise	Processing the file gen.idl...
+recursive-typedef-sequence	fastdds	fastddsgen	0	noise	openjdk version "21.0.11" 2026-04-21
+recursive-typedef-sequence	fastdds	fastddsgen	1	error	# An error report file with more information is saved as:
+recursive-typedef-sequence	fastdds	fastddsgen	1	error	# Can't open file to dump replay data. Error: Not enough space
+recursive-typedef-sequence	fastdds	fastddsgen	1	error	# Native memory allocation (malloc) failed to allocate 360336 bytes. Error detail: Chunk::new
+recursive-typedef-sequence	fastdds	fastddsgen	1	error	[thread 1077486 also had an error]
+recursive-typedef-sequence	fastdds	fastddsgen	1	error	[thread 1077487 also had an error]
+recursive-typedef-sequence	fastdds	fastddsgen	1	error	[thread 1077490 also had an error]
+recursive-typedef-sequence	fastdds	fastddsgen	1	error	[thread 1077491 also had an error]
+recursive-typedef-sequence	fastdds	fastddsgen	1	error	[thread 1077493 also had an error]
+recursive-typedef-sequence	fastdds	fastddsgen	1	error	[thread 1077494 also had an error]
+recursive-typedef-sequence	fastdds	fastddsgen	1	error	[thread 1077501 also had an error]
+recursive-typedef-sequence	fastdds	fastddsgen	1	noise	#
+recursive-typedef-sequence	fastdds	fastddsgen	1	noise	# There is insufficient memory for the Java Runtime Environment to continue.
+recursive-typedef-sequence	fastdds	fastddsgen	1	noise	# chunk.000.d/b/b/build/hs_err_pid1077454.log
+recursive-typedef-sequence	fastdds	fastddsgen	1	noise	OpenJDK 64-Bit Server VM (build 21.0.11+10-1-deb13u2-Debian, mixed mode, sharing)
+recursive-typedef-sequence	fastdds	fastddsgen	1	noise	OpenJDK Runtime Environment (build 21.0.11+10-1-deb13u2-Debian)
+recursive-typedef-sequence	fastdds	fastddsgen	1	noise	Processing the file gen.idl...
+recursive-typedef-sequence	fastdds	fastddsgen	1	noise	openjdk version "21.0.11" 2026-04-21
+recursive-typedef-sequence	opendds	tao_idl	3	error	Error - /opt/opendds/bin/tao_idl: "gen.idl", line 86: illegal use of incomplete type,  - ::zd_c6::m::Node
+recursive-typedef-sequence	opendds	tao_idl	3	error	Error - /opt/opendds/bin/tao_idl: "gen.idl", line 90: error in lookup of symbol: NodeRef
+recursive-typedef-sequence	opendds	tao_idl	4	error	Error - /opt/opendds/bin/tao_idl: "gen.idl", line 102: illegal use of incomplete type,  - ::zd_c7::m::Node
+recursive-typedef-sequence	opendds	tao_idl	4	error	Error - /opt/opendds/bin/tao_idl: "gen.idl", line 106: error in lookup of symbol: NodeRef
+sequence-bounded-full	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+sequence-bounded-full	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+sequence-bounded-full-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+sequence-bounded-full-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+sequence-enum	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+sequence-enum	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+sequence-enum-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+sequence-enum-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+sequence-fixed	opendds	cc	1	error	fill_9.inc: error: 'struct zd_c9::Sample' has no member named 'amounts'
+sequence-fixed	opendds	cc	1	error	genC.h: error: invalid use of incomplete type 'struct zd_c9::Sample'
+sequence-fixed	opendds	cc	1	error	genTypeSupportImpl.cpp: error: 'OpenDDS::DCPS::MetaStructImpl<zd_c9::Sample>::T' {aka 'struct zd_c9::Sample'} has no member named 'amounts'
+sequence-fixed	opendds	cc	1	error	genTypeSupportImpl.cpp: error: '_amounts_seq' in 'struct zd_c9::Sample' does not name a type
+sequence-fixed	opendds	cc	1	error	genTypeSupportImpl.cpp: error: '_amounts_seq' is not a member of 'zd_c9::Sample'
+sequence-fixed	opendds	cc	1	error	genTypeSupportImpl.cpp: error: 'const OpenDDS::DCPS::MetaStructImpl<zd_c9::Sample>::T' {aka 'const struct zd_c9::Sample'} has no member named 'amounts'
+sequence-fixed	opendds	cc	1	error	genTypeSupportImpl.cpp: error: 'const struct zd_c9::Sample' has no member named 'amounts'
+sequence-fixed	opendds	cc	1	error	genTypeSupportImpl.cpp: error: 'struct zd_c9::Sample' has no member named 'amounts'
+sequence-fixed	opendds	cc	1	error	genTypeSupportImpl.cpp: error: 'zd_c9::Sample::_amounts_seq' has not been declared
+sequence-fixed	opendds	cc	1	error	genTypeSupportImpl.h: error: '_amounts_seq' in 'struct zd_c9::Sample' does not name a type
+sequence-fixed	opendds	cc	1	error	genTypeSupportImpl.h: error: '_amounts_seq' is not a member of 'zd_c9::Sample'
+sequence-fixed	opendds	cc	1	error	genTypeSupportImpl.h: error: 'zd_c9::Sample::_amounts_seq' has not been declared
+sequence-fixed	opendds	cc	1	note	genC.h: note: definition of 'struct zd_c9::Sample' is not complete until the closing brace
+sequence-fixed-unannotated	fastdds	fastddsgen	255	error	gen.idl: error: 'fixed' . Fixed type is not supported
+sequence-fixed-unannotated	opendds	cc	1	error	fill_10.inc: error: 'struct zd_c10::Sample' has no member named 'amounts'
+sequence-fixed-unannotated	opendds	cc	1	error	genC.h: error: invalid use of incomplete type 'struct zd_c10::Sample'
+sequence-fixed-unannotated	opendds	cc	1	error	genTypeSupportImpl.cpp: error: 'OpenDDS::DCPS::MetaStructImpl<zd_c10::Sample>::T' {aka 'struct zd_c10::Sample'} has no member named 'amounts'
+sequence-fixed-unannotated	opendds	cc	1	error	genTypeSupportImpl.cpp: error: '_amounts_seq' in 'struct zd_c10::Sample' does not name a type
+sequence-fixed-unannotated	opendds	cc	1	error	genTypeSupportImpl.cpp: error: '_amounts_seq' is not a member of 'zd_c10::Sample'
+sequence-fixed-unannotated	opendds	cc	1	error	genTypeSupportImpl.cpp: error: 'const OpenDDS::DCPS::MetaStructImpl<zd_c10::Sample>::T' {aka 'const struct zd_c10::Sample'} has no member named 'amounts'
+sequence-fixed-unannotated	opendds	cc	1	error	genTypeSupportImpl.cpp: error: 'const struct zd_c10::Sample' has no member named 'amounts'
+sequence-fixed-unannotated	opendds	cc	1	error	genTypeSupportImpl.cpp: error: 'struct zd_c10::Sample' has no member named 'amounts'
+sequence-fixed-unannotated	opendds	cc	1	error	genTypeSupportImpl.cpp: error: 'zd_c10::Sample::_amounts_seq' has not been declared
+sequence-fixed-unannotated	opendds	cc	1	error	genTypeSupportImpl.h: error: '_amounts_seq' in 'struct zd_c10::Sample' does not name a type
+sequence-fixed-unannotated	opendds	cc	1	error	genTypeSupportImpl.h: error: '_amounts_seq' is not a member of 'zd_c10::Sample'
+sequence-fixed-unannotated	opendds	cc	1	error	genTypeSupportImpl.h: error: 'zd_c10::Sample::_amounts_seq' has not been declared
+sequence-fixed-unannotated	opendds	cc	1	note	genC.h: note: definition of 'struct zd_c10::Sample' is not complete until the closing brace
+sequence-of-typedef	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+sequence-of-typedef	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+sequence-of-typedef-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+sequence-of-typedef-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+sequence-string	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+sequence-string	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+sequence-string-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+sequence-string-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+sequence-struct-appendable	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+sequence-struct-appendable	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+sequence-struct-final	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+sequence-struct-final	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+sequence-struct-final-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+sequence-struct-final-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+sequence-struct-mutable	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+sequence-struct-mutable	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+sequence-struct-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+sequence-struct-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+sequence-union	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+sequence-union	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+sequence-union-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+sequence-union-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+sequence-wstring	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+sequence-wstring	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+sequence-wstring-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+sequence-wstring-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+string-adjacent-widths	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+string-adjacent-widths	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+string-adjacent-widths-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+string-adjacent-widths-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+string-bounded-empty	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+string-bounded-empty	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+string-bounded-empty-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+string-bounded-empty-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+string-bounded-utf8	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+string-bounded-utf8	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+string-bounded-utf8-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+string-bounded-utf8-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+string-unbounded-ascii	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+string-unbounded-ascii	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+string-unbounded-ascii-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+string-unbounded-ascii-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+string-unbounded-empty	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+string-unbounded-empty	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+string-unbounded-empty-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+string-unbounded-empty-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+string-unbounded-utf8	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+string-unbounded-utf8	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+string-unbounded-utf8-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+string-unbounded-utf8-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+struct-appendable	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+struct-appendable	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+struct-appendable-in-mutable	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+struct-appendable-in-mutable	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+struct-final	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+struct-final	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+struct-final-in-mutable	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+struct-final-in-mutable	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+struct-many-members	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+struct-many-members	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+struct-many-members-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+struct-many-members-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+struct-mutable	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+struct-mutable	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+struct-mutable-in-appendable	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+struct-mutable-in-appendable	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+struct-mutable-in-appendable-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+struct-mutable-in-appendable-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+struct-mutable-length-codes	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+struct-mutable-length-codes	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+struct-nested-two-deep	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+struct-nested-two-deep	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+struct-nested-two-deep-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+struct-nested-two-deep-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+struct-no-trailing-padding	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+struct-no-trailing-padding	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+struct-no-trailing-padding-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+struct-no-trailing-padding-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+struct-single-member	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+struct-single-member	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+struct-single-member-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+struct-single-member-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+struct-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+struct-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+typedef-anonymous-collection-member	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+typedef-anonymous-collection-member	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+typedef-anonymous-collection-member-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+typedef-anonymous-collection-member-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+typedef-chain-primitive	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+typedef-chain-primitive	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+typedef-chain-primitive-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+typedef-chain-primitive-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+typedef-of-array	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+typedef-of-array	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+typedef-of-array-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+typedef-of-array-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+typedef-of-sequence	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+typedef-of-sequence	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+typedef-of-sequence-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+typedef-of-sequence-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+typedef-of-string	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+typedef-of-string	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+typedef-of-string-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+typedef-of-string-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+typedef-of-struct	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+typedef-of-struct	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+typedef-of-struct-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+typedef-of-struct-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+typedef-of-union	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+typedef-of-union	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+typedef-of-union-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+typedef-of-union-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+union-appendable	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+union-appendable	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+union-default-unselected	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+union-default-unselected	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+union-default-unselected-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+union-default-unselected-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+union-discriminator-boolean	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+union-discriminator-boolean	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+union-discriminator-boolean-unannotated	omniorb	cc	0	warning	gen.hh: warning: switch condition has boolean value [-Wswitch-bool]
+union-discriminator-boolean-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+union-discriminator-boolean-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+union-discriminator-char	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+union-discriminator-char	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+union-discriminator-char-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+union-discriminator-char-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+union-discriminator-enum	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+union-discriminator-enum	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+union-discriminator-enum-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+union-discriminator-enum-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+union-discriminator-int8	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+union-discriminator-int8	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+union-discriminator-int8-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+union-discriminator-int8-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+union-discriminator-long	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+union-discriminator-long	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+union-discriminator-long-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+union-discriminator-long-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+union-discriminator-octet	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+union-discriminator-octet	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+union-discriminator-octet-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+union-discriminator-octet-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+union-discriminator-short	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+union-discriminator-short	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+union-discriminator-short-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+union-discriminator-short-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+union-discriminator-uint8	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+union-discriminator-uint8	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+union-discriminator-uint8-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+union-discriminator-uint8-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+union-discriminator-ulong	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+union-discriminator-ulong	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+union-discriminator-ulong-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+union-discriminator-ulong-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+union-discriminator-ushort	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+union-discriminator-ushort	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+union-discriminator-ushort-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+union-discriminator-ushort-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+union-final	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+union-final	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+union-final-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+union-final-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+union-member-sequence	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+union-member-sequence	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+union-member-sequence-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+union-member-sequence-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+union-member-struct	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+union-member-struct	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+union-member-struct-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+union-member-struct-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+union-multiple-labels	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+union-multiple-labels	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+union-multiple-labels-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+union-multiple-labels-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+union-mutable	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+union-mutable	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+union-with-default	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+union-with-default	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+union-with-default-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+union-with-default-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+union-without-default	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+union-without-default	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+union-without-default-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+union-without-default-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+wstring-bounded-utf8	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+wstring-bounded-utf8	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+wstring-bounded-utf8-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+wstring-bounded-utf8-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+wstring-unbounded-empty	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+wstring-unbounded-empty	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+wstring-unbounded-empty-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+wstring-unbounded-empty-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+wstring-unbounded-utf8	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+wstring-unbounded-utf8	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done
+wstring-unbounded-utf8-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Arguments Running rtiddsgen version 4.7.0, please wait ...
+wstring-unbounded-utf8-unannotated	rti	rtiddsgen	0	noise	INFO com.rti.ndds.nddsgen.Main Done

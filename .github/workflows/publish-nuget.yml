@@ -14,7 +14,8 @@
 #  3. Set the GitHub secret NUGET_API_KEY
 #     Repo → Settings → Secrets → Actions → New repository secret
 #
-# Note: the main package `ZeroDDS` is the C# API + source generators.
+# Note: the main package `ZeroDDS` is the C# API with runtime dependencies.
+# SourceGenerators is not included by this workflow.
 # The native lib (libzerodds.so/dylib/dll) is NOT bundled — the
 # user must install libzerodds via package manager / GitHub releases
 # (see /bindings/csharp/). Phase 2: pack native libs as runtime/<rid>/native/
@@ -38,6 +39,11 @@ on:
         default: false
   workflow_call:
     inputs:
+      source_ref:
+        description: "Immutable release source commit selected by the caller"
+        required: false
+        type: string
+        default: ""
       target_index:
         required: false
         type: string
@@ -56,6 +62,8 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.source_ref || github.sha }}
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v5
@@ -78,27 +86,27 @@ jobs:
           # No .sln present, so restore per project.
           # ZeroDDS.Cdr.SourceGenerators: NU5017 build-task error after
           # pack (analyzer-only nupkg) — Phase 2 item, see followup.
-          for proj in ZeroDDS/ZeroDDS.csproj ZeroDDS.Cdr/ZeroDDS.Cdr.csproj; do
-            dotnet restore "$proj"
+          for proj in ../../../runtime/csharp/ZeroDds.Wire.csproj ZeroDDS.Cdr/ZeroDDS.Cdr.csproj ZeroDDS/ZeroDDS.csproj; do
+            dotnet restore "$proj" -p:Version=${{ steps.version.outputs.version }}
           done
 
       - name: dotnet build (Release)
         working-directory: crates/cs/csharp
         run: |
-          for proj in ZeroDDS/ZeroDDS.csproj ZeroDDS.Cdr/ZeroDDS.Cdr.csproj; do
+          for proj in ../../../runtime/csharp/ZeroDds.Wire.csproj ZeroDDS.Cdr/ZeroDDS.Cdr.csproj ZeroDDS/ZeroDDS.csproj; do
             dotnet build "$proj" -c Release --no-restore -p:Version=${{ steps.version.outputs.version }}
           done
 
       - name: dotnet pack
         working-directory: crates/cs/csharp
         run: |
-          # ZeroDDS + ZeroDDS.Cdr for this push.
+          # ZeroDds.Wire + ZeroDDS.Cdr + ZeroDDS form the runtime closure.
           # SourceGenerators comes in Phase 2 (RC3 polish):
           # NU5017 fires in the NuGet pack analyzer even when the nupkg
           # is created successfully; NoWarn does not take effect. Workaround
           # still to be found, possibly with an explicit nuspec instead of
           # csproj-driven pack.
-          for proj in ZeroDDS/ZeroDDS.csproj ZeroDDS.Cdr/ZeroDDS.Cdr.csproj; do
+          for proj in ../../../runtime/csharp/ZeroDds.Wire.csproj ZeroDDS.Cdr/ZeroDDS.Cdr.csproj ZeroDDS/ZeroDDS.csproj; do
             dotnet pack "$proj" -c Release --no-build \
               -p:Version=${{ steps.version.outputs.version }} \
               -p:IncludeSymbols=true \
@@ -111,7 +119,10 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: nuget-packages
-          path: dist/*.nupkg
+          path: |
+            dist/*.nupkg
+            dist/*.snupkg
+          if-no-files-found: error
 
       - name: Push to nuget.org
         if: ${{ !inputs.dry_run }}
@@ -124,5 +135,4 @@ jobs:
           fi
           dotnet nuget push 'dist/*.nupkg' \
             --api-key "$NUGET_API_KEY" \
-            --source https://api.nuget.org/v3/index.json \
-            --skip-duplicate
+            --source https://api.nuget.org/v3/index.json

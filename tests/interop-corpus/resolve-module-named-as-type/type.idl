@@ -1,0 +1,4 @@
+module common {
+  @final struct common { long x; };
+  @appendable struct S { common c; };
+};

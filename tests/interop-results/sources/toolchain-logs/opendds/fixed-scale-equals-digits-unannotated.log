@@ -1,0 +1,2 @@
+fill_17.inc:1:8: error: 'struct zd_c17::Sample' has no member named 'f'
+the batch was killed while serialising this case: terminate called after throwing an instance of 'CORBA::DATA_CONVERSION'

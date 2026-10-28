@@ -1,0 +1,16 @@
+{
+  "double_float": -2.5,
+  "single_float": 2.5,
+  "llong_unsigned": "7",
+  "llong_signed": "9223372036854775807",
+  "long_unsigned": 5,
+  "long_signed": 2147483647,
+  "short_unsigned": 3,
+  "short_signed": 32767,
+  "wide_letter": "ሴ",
+  "letter": "~",
+  "signed_byte": 127,
+  "unsigned_byte": 3,
+  "raw_octet": 1,
+  "flag": false
+}

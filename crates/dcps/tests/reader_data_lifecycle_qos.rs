@@ -38,6 +38,8 @@ struct KeyedRecord {
 
 impl DdsType for KeyedRecord {
     const TYPE_NAME: &'static str = "test::KeyedRecord";
+    /// @final with no member that XCDR1 and XCDR2 frame differently: one stream.
+    const XCDR1_MATCHES_XCDR2: bool = true;
     const HAS_KEY: bool = true;
     const KEY_HOLDER_MAX_SIZE: Option<usize> = Some(4);
 
@@ -64,6 +66,25 @@ impl DdsType for KeyedRecord {
 
     fn encode_key_holder_be(&self, holder: &mut PlainCdr2BeKeyHolder) {
         holder.write_u32(self.id);
+    }
+
+    /// The inverse of the holder above. DDS 1.4 §2.2.2.5.1.13 declares the
+    /// key fields valid on a dispose/unregister sample; the holder is a
+    /// PLAIN_CDR2-BE `uint32` and nothing else, so it is read as those four
+    /// octets rather than through `Self::decode`, which reads the type's
+    /// own stream.
+    fn decode_key_holder_be(bytes: &[u8]) -> Result<Self, DecodeError> {
+        let head: [u8; 4] =
+            bytes
+                .get(..4)
+                .and_then(|b| b.try_into().ok())
+                .ok_or(DecodeError::Invalid {
+                    what: "truncated KeyedRecord key holder",
+                })?;
+        Ok(Self {
+            id: u32::from_be_bytes(head),
+            ..Self::default()
+        })
     }
 }
 
@@ -123,7 +144,7 @@ fn default_infinite_delay_keeps_disposed_instance() {
     let handle = r.lookup_instance(&s);
     assert!(
         tracker.get_by_handle(handle).is_some(),
-        "INFINITE-Delay darf disposed Instanz NIEMALS purgen"
+        "INFINITE delay must NEVER purge a disposed instance"
     );
 }
 

@@ -1,19 +1,229 @@
-.TH ZERODDS-COAP-BRIDGED.YAML 5 "2026-05-06" "1.0.0-rc.1" "ZeroDDS Manual"
+.TH ZERODDS-COAP-BRIDGED.YAML 5 "" "ZeroDDS" "ZeroDDS Manual"
 .SH NAME
 zerodds-coap-bridged.yaml \- configuration file for zerodds-coap-bridged(1)
+.SH SYNOPSIS
+.I /etc/zerodds/coap-bridged.yaml
+.SH DESCRIPTION
+YAML document describing how the CoAP bridge daemon maps DDS topics onto CoAP
+resources. The schema is the one of
+.IR zerodds-coap-bridge-1.0 " \(sc3;"
+the parser that reads it is
+.IR crates/coap-bridge/src/daemon/config.rs::load_from_str .
+.PP
+Top-level keys:
+.BR domain ", " log_level ", " coap ", " oscore ", " auth ", " acl ", " metrics ", " topics .
+.PP
+An unknown top-level key is
+.I not
+a parse error. The daemon logs a WARN line on stderr and starts with the
+defaults \(em watch the WARN log.
+.PP
+.BI ${VAR} " and " ${VAR:-default}
+are substituted from the environment before the document is parsed.
 .SH KEYS
-.SS participant
-.B domain_id ", " qos_profile .
+.SS Top level
+.TP
+.B domain
+Integer DDS domain ID. Default
+.IR 0 .
+.TP
+.B log_level
+.IR trace " | " debug " | " info " | " warn " | " error .
 .SS coap
-.B bind ", " block_size ", " max_request_bytes
-(DoS cap),
-.B dtls.enabled ", " dtls.psk_file ", " dtls.cert ", " dtls.key .
-.SS routes
-.B dds_topic ", " type ", " coap_path
-(supports
-.IR {placeholders} ),
-.B direction .
-.SS logging ", " observability
-identical to other ZeroDDS bridge configs.
+.TP
+.B bind
+UDP listen address for
+.IR coap:// ,
+e.g.
+.IR "0.0.0.0:5683" .
+.TP
+.B bind_dtls
+Separate listen address for
+.IR coaps:// .
+Without it the daemon uses
+.B bind
+with the port raised by one.
+.TP
+.B max_message_size
+DoS cap per datagram in bytes. Default
+.I 1152
+per RFC 7252; raise it only behind a jumbo MTU.
+.TP
+.B ack_timeout_ms
+CON retransmission timeout in milliseconds.
+.TP
+.B max_retransmit
+Number of CON retransmissions before the exchange is given up.
+.TP
+.B observe_max_age_secs
+Lifetime of an
+.I Observe
+registration.
+.TP
+.B dtls
+Sub-map with
+.B enabled
+(boolean),
+.B ca_file
+(trust anchor),
+.BR cert_file " and " key_file
+(server material),
+.B cipher_suites
+(list of IANA names \(em an unknown name aborts the start instead of being
+dropped) and
+.B psk
+(list of pre-shared keys, each entry carrying
+.BR identity " and " secret_hex ).
+.SS oscore
+Object Security for Constrained RESTful Environments, RFC 8613 \(em end-to-end
+protection that survives a CoAP proxy (\(sc7.2).
+.TP
+.B enabled
+Boolean. With
+.IR true ,
+.B master_secret_hex
+is mandatory; the daemon refuses to start without it.
+.TP
+.B master_secret_hex
+OSCORE master secret, hex.
+.TP
+.B master_salt_hex
+OSCORE master salt, hex.
+.TP
+.B id_context_hex
+OSCORE ID context, hex.
+.TP
+.B sender_id_hex
+Sender ID of this daemon. Default
+.IR 01 .
+.TP
+.B replay_window
+Width of the anti-replay window.
+.SS auth
+.TP
+.B mode
+.IR none " | " bearer " | " jwt " | " mtls .
+A ZeroDDS extension; the CoAP bridge spec secures with DTLS and OSCORE only.
+.I bearer
+and
+.I jwt
+read the token from CoAP option 65000
+.RI ( "Bearer <token>" ).
+.I mtls
+takes the identity of the DTLS handshake and needs
+.BR coap.dtls.enabled :
+the client certificate's subject DN (RFC 4514; an ACL entry may name its
+fingerprint
+.I mtls:<SHA-256 hex>
+instead) or
+.IR psk:<PSK identity> .
+.TP
+.B bearer_token
+Shared token accepted when
+.B mode
+is
+.IR bearer .
+.TP
+.B bearer_subject
+Subject that single token authenticates as.
+.TP
+.B jwt
+Sub-map for
+.BR jwt :
+.B public_key
+(PEM file, PKCS#1 or SubjectPublicKeyInfo, RS256),
+.BR issuer ,
+.BR audience ,
+.B required_claim
+.RI ( claim=value ;
+a space-separated claim such as
+.I scope
+matches when it contains the value).
+.I exp
+and
+.I nbf
+are enforced with 60 s leeway. The subject is the
+.I sub
+claim. Without
+.B public_key
+the daemon does not start (exit 1).
+.SS acl
+Daemon-side access control per CoAP resource path. The subject is the one
+.B auth.mode
+yields:
+.I anonymous
+for
+.IR none ,
+the token's subject for
+.IR bearer " and " jwt ,
+the DTLS identity for
+.IR mtls .
+.TP
+.B default_deny
+Boolean.
+.I true
+denies a resource no rule names, also without any rule;
+.I false
+opens the unnamed rest. Not set: a resource no rule names is denied once a
+rule exists or an auth mode other than
+.I none
+is set; with neither, every resource is open.
+.TP
+.B rules
+List of subject-keyed rules. Each entry carries
+.B subject
+plus the resource-path lists
+.B allow_post
+(write) and
+.B allow_observe
+(read).
+.SS metrics
+.TP
+.B enabled
+Boolean. Turns on the admin endpoint serving
+.IR /metrics ", " /catalog " and " /healthz .
+.TP
+.B listen
+Admin listen address. Default
+.IR "127.0.0.1:9093"
+when
+.B enabled
+is true; each bridge daemon has its own port, so several run on one
+host without a collision.
+The key is
+.BR listen ,
+not
+.IR address .
+.SS topics (list)
+.TP
+.B dds_name
+DDS topic name.
+.TP
+.B dds_type
+Fully-qualified IDL type.
+.TP
+.B coap_uri_path
+CoAP resource path. Defaults to a slug of
+.BR dds_name .
+.TP
+.B direction
+.IR in " | " out " | " bidir .
+.I in
+carries CoAP POST/PUT requests into DDS (the daemon creates a DataWriter),
+.I out
+carries DDS samples to CoAP clients through GET and Observe (a DataReader),
+.I bidir
+both. Default
+.IR bidir .
+.TP
+.B qos
+DDS QoS sub-map with
+.BR reliability ", " durability " and "
+.B history
+carrying
+.BR depth .
+.SH EXAMPLES
+See
+.IR /usr/share/zerodds/configs/coap-bridged.yaml.example .
 .SH SEE ALSO
 .BR zerodds-coap-bridged (1).

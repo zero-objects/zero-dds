@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of fixed-scales that fastdds produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	error: 'fixed' . Fixed type is not supported
+plain-cdr1	be	refused	error: 'fixed' . Fixed type is not supported
+pl-cdr1	le	refused	error: 'fixed' . Fixed type is not supported
+pl-cdr1	be	refused	error: 'fixed' . Fixed type is not supported
+plain-cdr2	le	refused	error: 'fixed' . Fixed type is not supported
+plain-cdr2	be	refused	error: 'fixed' . Fixed type is not supported
+delimited-cdr	le	refused	error: 'fixed' . Fixed type is not supported
+delimited-cdr	be	refused	error: 'fixed' . Fixed type is not supported
+pl-cdr2	le	refused	error: 'fixed' . Fixed type is not supported
+pl-cdr2	be	refused	error: 'fixed' . Fixed type is not supported

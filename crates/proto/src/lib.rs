@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-#![cfg_attr(not(feature = "std"), no_std)]
+// Needs `std`: the mapping is built on the `dynamic` feature of zerodds-types, which
+// needs it.
 
 //! Crate `zerodds-proto`. Safety classification: **STANDARD**.
 //!

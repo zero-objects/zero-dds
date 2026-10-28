@@ -31,6 +31,8 @@ struct RosString {
 
 impl DdsType for RosString {
     const TYPE_NAME: &'static str = "std_msgs::msg::dds_::String_";
+    /// @final with no member that XCDR1 and XCDR2 frame differently: one stream.
+    const XCDR1_MATCHES_XCDR2: bool = true;
 
     fn encode(&self, out: &mut Vec<u8>) -> Result<(), EncodeError> {
         // CDR string: u32 length (incl. NUL, little-endian) + bytes + NUL.
@@ -60,13 +62,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let factory = DomainParticipantFactory::instance();
     // C4: ROS profile out-of-the-box — the reader offers [XCDR1, XCDR2]
     // and thus matches the XCDR1 writer of ROS 2/Cyclone WITHOUT the
-    // ZERODDS_DATA_REPR_OFFER env workaround. ZERODDS_PEERS/NO_MULTICAST
-    // are still merged in DcpsRuntime::start (C1).
-    let participant = factory.create_participant_with_config(
-        0,
-        DomainParticipantQos::default(),
-        zerodds_dcps::runtime::RuntimeConfig::ros_defaults(),
-    )?;
+    // ZERODDS_DATA_REPR_OFFER env workaround. The rest comes from the
+    // configuration files and the environment, as `create_participant`
+    // reads them, so ZERODDS_PEERS and ZERODDS_NO_MULTICAST apply (C1).
+    // `RuntimeConfig::ros_defaults()` alone is compiled defaults and reads
+    // neither.
+    use zerodds_dcps::runtime::RuntimeConfig;
+    let config = RuntimeConfig {
+        data_representation_offer: RuntimeConfig::ros_defaults().data_representation_offer,
+        ..RuntimeConfig::from_standard_paths()?
+    };
+    let participant =
+        factory.create_participant_with_config(0, DomainParticipantQos::default(), config)?;
 
     // ROS 2 wire: topic "rt/chatter" (= topic_mangling of "/chatter"),
     // type name std_msgs::msg::dds_::String_.

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! OASIS MQTT-5.0 Conformance-Test-Vektoren — Spec §3 + §4.
+//! OASIS MQTT-5.0 conformance test vectors — Spec §3 + §4.
 
 use crate::{CaseResult, TestCase};
 
@@ -232,7 +232,7 @@ fn case_5_2_all_43_codes_round_trip() -> CaseResult {
     CaseResult::Pass
 }
 
-/// Komplette OASIS-MQTT-5.0 Test-Suite.
+/// Complete OASIS-MQTT-5.0 test suite.
 pub const SUITE: &[TestCase] = &[
     TestCase {
         name: "mqtt5-4.7.1-exact-match",

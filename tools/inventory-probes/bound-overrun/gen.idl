@@ -1,0 +1,14 @@
+// D6 and G16 — a `string<N>` bound and a `sequence<T,N>` bound, each
+// with a member behind it so that a value the bound cannot hold moves
+// every octet after it rather than only lengthening the payload.
+//
+// §7.2.2.7 makes an overrun DISCARD. Neither bound is a wire difference
+// when it is respected, which is why neither row could be measured by
+// comparing bytes: what has to be measured is what a vendor does when
+// it is *not* respected, and that needs a value the harness will not
+// produce.
+@final struct Sample {
+    string<4> s;
+    sequence<long, 2> v;
+    long tail;
+};

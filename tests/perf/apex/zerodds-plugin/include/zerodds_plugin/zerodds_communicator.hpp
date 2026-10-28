@@ -1,12 +1,12 @@
-// zerodds_communicator.hpp — ZeroDDS-Plugin fuer Apex.AI performance_test.
+// zerodds_communicator.hpp — ZeroDDS plugin for Apex.AI performance_test.
 //
 // Implementiert die Apex-Plugin-Interfaces `Publisher` + `Subscriber`
-// gegen die ZeroDDS C-API (zerodds.h via libzerodds.so). Damit kann
+// against the ZeroDDS C-API (zerodds.h via libzerodds.so). This allows
 // performance_test --communication ZeroDDS Latenz/Throughput-Bench
-// gegen die Reference-Vendoren (CycloneDDS, FastRTPS) laufen lassen.
+// running against the reference vendors (CycloneDDS, FastRTPS).
 //
-// Build-Erwartung: Apex 'performance_test' Repo macht aus jedem
-// Plugin eine separate ament_cmake-package und linkt sie als
+// Build expectation: the Apex 'performance_test' repo turns each
+// plugin into a separate ament_cmake package and links it as
 // shared-lib. Plugin-Auswahl per `-DPERFORMANCE_TEST_PLUGIN=ZERODDS`.
 
 #pragma once
@@ -17,11 +17,11 @@
 #include <string>
 #include <vector>
 
-#include <zerodds.h>  // C-API aus crates/dds-c-api
+#include <zerodds.h>  // C-API from crates/dds-c-api
 
 namespace performance_test::plugins::zerodds {
 
-/// RAII-Wrapper um einen ZeroDDS-DataWriter, hooked ans Apex-Plugin.
+/// RAII wrapper around a ZeroDDS DataWriter, hooked into the Apex plugin.
 /// Apex' Publisher-Interface ist minimal: `publish(span<const uint8_t>)`.
 class ZeroDdsPublisher {
 public:
@@ -33,18 +33,18 @@ public:
   ZeroDdsPublisher(const ZeroDdsPublisher &) = delete;
   ZeroDdsPublisher &operator=(const ZeroDdsPublisher &) = delete;
 
-  /// Publisht einen Sample-Frame (raw bytes, von Apex pre-serialized).
+  /// Publishes a sample frame (raw bytes, pre-serialized by Apex).
   void publish(const uint8_t *payload, std::size_t len);
 
-  /// Wartet bis `min_count` Subscriber matched sind (Apex-Sync-Step).
+  /// Waits until `min_count` subscribers are matched (Apex sync step).
   bool wait_for_matched(int min_count, std::uint64_t timeout_ms);
 
 private:
   zerodds_ZeroDdsWriter *writer_;
 };
 
-/// RAII-Wrapper um einen ZeroDDS-DataReader.
-/// Apex' Subscriber-Interface: `take()` returnt vector<uint8_t> oder leer.
+/// RAII wrapper around a ZeroDDS DataReader.
+/// Apex' subscriber interface: `take()` returns vector<uint8_t> or empty.
 class ZeroDdsSubscriber {
 public:
   ZeroDdsSubscriber(zerodds_ZeroDdsRuntime *runtime,
@@ -55,7 +55,7 @@ public:
   ZeroDdsSubscriber(const ZeroDdsSubscriber &) = delete;
   ZeroDdsSubscriber &operator=(const ZeroDdsSubscriber &) = delete;
 
-  /// Take ein Sample. Returnt leeren vector wenn nichts da war.
+  /// Take a sample. Returns an empty vector if nothing was there.
   std::vector<uint8_t> take();
 
   bool wait_for_matched(int min_count, std::uint64_t timeout_ms);
@@ -65,7 +65,7 @@ private:
 };
 
 /// Communicator-Factory — Apex' performance_test instantiiert pro
-/// Bench-Run einen Communicator, der dann Pub/Sub-Pairs herausgibt.
+/// A bench run holds a communicator that then hands out pub/sub pairs.
 class ZeroDdsCommunicator {
 public:
   explicit ZeroDdsCommunicator(std::uint32_t domain_id);
@@ -81,8 +81,8 @@ public:
                                                       bool reliable);
 
   /// Vor Endpoint-Erstellung aufrufen: blockiert bis SPDP mindestens
-  /// `min_count` Remote-Participants entdeckt hat. Sonst wiren
-  /// Endpoints mit leerer Locator-Liste und Daten kommen nicht an.
+  /// has discovered `min_count` remote participants. Otherwise it wires
+  /// endpoints with an empty locator list and data does not arrive.
   bool wait_for_peers(int min_count, std::uint64_t timeout_ms);
 
   static const char *plugin_name() { return "ZeroDDS"; }

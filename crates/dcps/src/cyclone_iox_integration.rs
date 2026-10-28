@@ -74,7 +74,7 @@ impl<T: DdsType> DataWriter<T> {
     pub fn enable_cyclone_iox(&self) -> Result<()> {
         let topic = self.topic().name().to_string();
         let event = iox_event_name("", &topic);
-        let w = CycloneIoxWriter::new("zerodds-dcps", CYCLONE_IOX_SERVICE, T::TYPE_NAME, &event);
+        let w = CycloneIoxWriter::new("zerodds-dcps", CYCLONE_IOX_SERVICE, T::type_name(), &event);
         // Prefer the writer's real RTPS GUID (online participant) so a Cyclone
         // reader that discovered it over SEDP accepts the serialized PSMX
         // sample; fall back to a topic-derived pseudo-GUID offline.
@@ -95,7 +95,7 @@ impl<T: DdsType> DataWriter<T> {
     }
 }
 
-impl<T: DdsType> DataReader<T> {
+impl<T: DdsType + Send + 'static> DataReader<T> {
     /// Subscribes this reader's topic over the iceoryx C++ (POSH) transport so
     /// [`DataReader::take`] returns Cyclone-published samples. Linux + iceoryx
     /// POSH + `iox-roudi`.
@@ -105,7 +105,7 @@ impl<T: DdsType> DataReader<T> {
     pub fn enable_cyclone_iox(&self) -> Result<()> {
         let topic = self.topic().name().to_string();
         let event = iox_event_name("", &topic);
-        let r = CycloneIoxReader::new("zerodds-dcps", CYCLONE_IOX_SERVICE, T::TYPE_NAME, &event);
+        let r = CycloneIoxReader::new("zerodds-dcps", CYCLONE_IOX_SERVICE, T::type_name(), &event);
         readers()
             .lock()
             .map_err(|_| DdsError::PreconditionNotMet {

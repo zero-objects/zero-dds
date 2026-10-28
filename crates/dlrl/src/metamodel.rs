@@ -358,6 +358,61 @@ mod tests {
         assert_eq!(c.class_field, "class");
     }
 
+    /// §8.1.4.2 "Mapping Rules" — the three rule sets, each checked on
+    /// the metamodel that carries them.
+    #[test]
+    fn mapping_rules_bind_class_reference_and_attributes_per_spec_8_1_4_2() {
+        // §8.1.4.2.1 "Each DLRL class is associated with at least one
+        // DCPS table" — the class names its main topic.
+        let class = ClassMetamodel {
+            name: "Trade".into(),
+            repository_id: "IDL:demo/Trade:1.0".into(),
+            main_topic: default_mapping::topic_name("Trade"),
+            oid_field: default_mapping::DEFAULT_OID_FIELD.into(),
+            class_field: default_mapping::DEFAULT_CLASS_FIELD.into(),
+            full_oid_required: true,
+            final_class: false,
+        };
+        assert!(!class.main_topic.is_empty());
+        assert_eq!(class.main_topic, "Trade");
+
+        // §8.1.4.2.2 "Mapping of an Object Reference" — the full oid is
+        // the class name plus the oid number, so both fields have to be
+        // named when `full_oid_required` is set.
+        assert!(class.full_oid_required);
+        let full_oid = alloc::format!("{}:{}", class.class_field, class.oid_field);
+        assert_eq!(full_oid, "class:oid");
+
+        // §8.1.4.2.3 "Mapping of Attributes and Relations" — a
+        // multi-valued attribute lives in its own topic and is addressed
+        // by the key fields of the owning object plus an index field.
+        let multi = MultiAttributeMetamodel {
+            name: "legs".into(),
+            topic: default_mapping::multi_topic(&class.name, "legs"),
+            target_field: "value".into(),
+            index_field: default_mapping::DEFAULT_INDEX_FIELD.into(),
+            key_fields: alloc::vec![class.oid_field.clone()],
+        };
+        assert_eq!(multi.topic, "Trade.legs");
+        assert_ne!(multi.topic, class.main_topic, "a separate DCPS table");
+        assert_eq!(multi.index_field, "index");
+        assert_eq!(multi.key_fields, alloc::vec!["oid".to_string()]);
+
+        // A relation maps the same way but names the target fields of
+        // the referenced object instead of a value cell.
+        let relation = MonoRelationMetamodel {
+            name: "counterparty".into(),
+            topic: default_mapping::topic_name(&class.name),
+            target_fields: alloc::vec!["party_class".into(), "party_oid".into()],
+            key_fields: alloc::vec![class.oid_field.clone()],
+            full_oid_required: true,
+            is_composition: false,
+        };
+        assert_eq!(relation.target_fields.len(), 2, "a full oid is a pair");
+        assert!(relation.full_oid_required);
+        assert!(!relation.is_composition, "a plain use-relation");
+    }
+
     #[test]
     fn default_mapping_topic_name_uses_class() {
         assert_eq!(default_mapping::topic_name("Trader"), "Trader");
@@ -376,6 +431,42 @@ mod tests {
         assert_eq!(default_mapping::DEFAULT_OID_FIELD, "oid");
         assert_eq!(default_mapping::DEFAULT_CLASS_FIELD, "class");
         assert_eq!(default_mapping::DEFAULT_INDEX_FIELD, "index");
+    }
+
+    /// §8.1.4.5 "Mapping when the DCPS Model is Fixed": a DLRL class laid
+    /// over an existing DCPS model must take the topic and field names of
+    /// that model rather than the §8.1.4.3 defaults. The metamodel carries
+    /// them, and none of them falls back to a default.
+    #[test]
+    fn class_metamodel_over_a_fixed_dcps_model_keeps_the_foreign_names() {
+        let c = ClassMetamodel {
+            name: "Trade".into(),
+            repository_id: "IDL:demo/Trade:1.0".into(),
+            // The legacy DCPS model calls the topic and its key fields
+            // something else entirely.
+            main_topic: "LEGACY_TRADE_TOPIC".into(),
+            oid_field: "trade_key".into(),
+            class_field: "record_kind".into(),
+            full_oid_required: true,
+            final_class: true,
+        };
+        assert_eq!(c.main_topic, "LEGACY_TRADE_TOPIC");
+        assert_ne!(c.main_topic, default_mapping::topic_name(&c.name));
+        assert_ne!(c.oid_field, default_mapping::DEFAULT_OID_FIELD);
+        assert_ne!(c.class_field, default_mapping::DEFAULT_CLASS_FIELD);
+
+        // The same for a multi-attribute: its topic is not
+        // `<Class>.<attribute>` and its index field is not `index`.
+        let m = MultiAttributeMetamodel {
+            name: "legs".into(),
+            topic: "LEGACY_TRADE_LEG".into(),
+            target_field: "leg_value".into(),
+            index_field: "leg_no".into(),
+            key_fields: alloc::vec!["trade_key".into()],
+        };
+        assert_ne!(m.topic, default_mapping::multi_topic(&c.name, &m.name));
+        assert_ne!(m.index_field, default_mapping::DEFAULT_INDEX_FIELD);
+        assert_eq!(m.key_fields, alloc::vec!["trade_key".to_string()]);
     }
 
     #[test]

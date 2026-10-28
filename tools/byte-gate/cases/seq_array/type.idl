@@ -1,0 +1,1 @@
+@final struct SeqArray { sequence<long> rows[2]; octet tail; };

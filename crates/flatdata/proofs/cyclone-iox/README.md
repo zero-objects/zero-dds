@@ -20,7 +20,7 @@ PSMX enabled (`cyclone_iox.xml`). `consumer.c` links **only**
 4. parses the Cyclone PSMX user-header (`dds_psmx_metadata_t`) and the raw
    payload, then verifies the bytes.
 
-## Empirically captured ground truth (codepit, Cyclone 0.11 / iceoryx POSH 2.0.6)
+## Empirically captured ground truth (Linux test host, Cyclone 0.11 / iceoryx POSH 2.0.6)
 
 Corrects/confirms `docs/interop/cyclone-iceoryx-shm-ground-truth.md`:
 
@@ -48,7 +48,7 @@ ORACLE OK: external iceoryx(C++) consumer decoded the Cyclone sample over SHM
 
 ## Run
 
-Linux host with the iceoryx POSH + Cyclone-iox stack (e.g. codepit):
+Linux host with the iceoryx POSH + Cyclone-iox stack (e.g. The Linux test host):
 ```sh
 ./run.sh        # builds pub + consumer, starts iox-roudi, publishes, asserts ORACLE OK
 ```

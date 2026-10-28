@@ -102,7 +102,7 @@ fn e2e_reader_drops_message_to_other_endpoint() {
     let (writer_xport, reader_xport) = make_endpoints();
     let dest = reader_xport.local_locator();
 
-    // Writer richtet an other_reader.
+    // Writer sends to other_reader.
     let mut writer = BestEffortWriter::new(PARTICIPANT_PREFIX, writer_id, other_reader);
     let datagram = writer.write(b"not for us").expect("encode");
     writer_xport.send(&dest, &datagram).expect("send");

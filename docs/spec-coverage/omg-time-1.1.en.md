@@ -44,7 +44,7 @@ service specification always refers to time in Greenwich Time Zone."
 **Repo:** `crates/time-service/src/time_base.rs::{TimeT, TICKS_PER_SECOND,
 UTC_EPOCH_TO_UNIX_TICKS}`.
 
-**Tests:** `time_base.rs::tests::current_time_is_recent_century`.
+**Tests:** `crates/time-service/src/time_base.rs::tests::current_time_is_recent_century`.
 
 **Status:** done
 
@@ -57,7 +57,11 @@ source (current time + error, monotonic, optionally secure).
 `std::time::SystemTime` as the source. The secure-source aspect via a
 `TimeService::secure_source` flag.
 
-**Tests:** `service.rs::tests::secure_universal_time_*`.
+**Tests:** `crates/time-service/src/service.rs::tests::secure_universal_time_fails_when_source_not_marked_secure`,
+`::secure_universal_time_returns_when_source_marked_secure`,
+`::universal_time_returns_recent_value`,
+`::time_unavailable_display_describes_failure_mode`;
+`crates/time-service/src/time_base.rs::tests::current_time_is_recent_century`.
 
 **Status:** done
 
@@ -74,7 +78,7 @@ source (current time + error, monotonic, optionally secure).
 plain Rust struct `TimeService` with factory methods (`new_universal_time`,
 `uto_from_utc`, `new_interval`).
 
-**Tests:** `service.rs::tests::new_universal_time_creates_uto_from_components`.
+**Tests:** `crates/time-service/src/service.rs::tests::new_universal_time_creates_uto_from_components`.
 
 **Status:** done — a spec-equivalent form without an ORB.
 
@@ -89,8 +93,15 @@ depends on Basic).
 `crates/corba-ccm/src/timer.rs` (callback-based) + the
 `crates/corba-ccm/src/time_psm.rs` spec facade. See §2.2.
 
-**Tests:** cross-ref §1.3.x + §2.1.x + the `crates/corba-ccm/src/timer.rs`
-inline tests.
+**Tests:** Basic Time Service:
+`crates/time-service/src/service.rs::tests::new_universal_time_creates_uto_from_components`,
+`crates/time-service/src/uto.rs::tests::compare_time_midc_equal`,
+`crates/time-service/src/tio.rs::tests::overlaps_partial`,
+`crates/time-service/src/time_base.rs::tests::utct_size_is_16_octets`.
+Timer Event Service: `crates/corba-ccm/src/timer.rs::tests::one_shot_fires_once`,
+`::periodic_fires_multiple_times`, `::cancel_stops_periodic`,
+`::cancel_unknown_returns_false`;
+`crates/corba-ccm/src/time_psm.rs::tests::facade_register_then_fire`.
 
 **Status:** done — Basic Time Service + Timer Event Service both fully
 implemented (see §2.2).
@@ -108,7 +119,12 @@ Time Objects) and TIOs (Time Interval Objects) via factory methods.
 `crates/time-service/src/uto.rs::Uto`,
 `crates/time-service/src/tio.rs::Tio`.
 
-**Tests:** `service.rs::tests::*`, `uto.rs::tests::*`, `tio.rs::tests::*`.
+**Tests:** `crates/time-service/src/service.rs::tests` (8 tests):
+`new_universal_time_creates_uto_from_components`, `uto_from_utc_wraps_passed_struct`,
+`new_interval_creates_tio_for_valid_bounds`,
+`new_interval_rejects_lower_greater_than_upper`;
+`crates/time-service/src/uto.rs::tests::attributes_return_constructor_values`,
+`crates/time-service/src/tio.rs::tests::time_interval_attribute_returns_constructor_value`.
 
 **Status:** done
 
@@ -122,7 +138,7 @@ IntervalT { TimeT lower_bound; TimeT upper_bound; }; };`.
 **Repo:** `crates/time-service/src/time_base.rs::{TimeT, InaccuracyT, TdfT,
 UtcT, IntervalT}`.
 
-**Tests:** `time_base.rs::tests::utct_size_is_16_octets`,
+**Tests:** `crates/time-service/src/time_base.rs::tests::utct_size_is_16_octets`,
 `intervalt_size_is_16_octets`.
 
 **Status:** done
@@ -135,7 +151,7 @@ passed since the base time."
 
 **Repo:** `crates/time-service/src/time_base.rs::TimeT` (alias `u64`).
 
-**Tests:** `time_base.rs::tests::utct_wire_roundtrip_preserves_all_fields`.
+**Tests:** `crates/time-service/src/time_base.rs::tests::utct_wire_roundtrip_preserves_all_fields`.
 
 **Status:** done
 
@@ -147,7 +163,7 @@ in units of 100 nanoseconds. [...] 48 bits is sufficient."
 **Repo:** `crates/time-service/src/time_base.rs::InaccuracyT` with a 48-bit
 cap in `UtcT::new` and `set_inaccuracy`.
 
-**Tests:** `time_base.rs::tests::inaccuracy_caps_at_48_bits`.
+**Tests:** `crates/time-service/src/time_base.rs::tests::inaccuracy_caps_at_48_bits`.
 
 **Status:** done
 
@@ -159,7 +175,7 @@ Meridian. [...] East is positive, West is negative."
 
 **Repo:** `crates/time-service/src/time_base.rs::TdfT` (alias `i16`).
 
-**Tests:** `time_base.rs::tests::local_time_negative_tdf_west_of_greenwich`.
+**Tests:** `crates/time-service/src/time_base.rs::tests::local_time_negative_tdf_west_of_greenwich`.
 
 **Status:** done
 
@@ -174,7 +190,7 @@ computed as utc.time + utc.tdf * 600,000,000."
 **Repo:** `crates/time-service/src/time_base.rs::UtcT` with a `UtcT::local_time()`
 operation.
 
-**Tests:** `time_base.rs::tests::utct_size_is_16_octets`,
+**Tests:** `crates/time-service/src/time_base.rs::tests::utct_size_is_16_octets`,
 `local_time_applies_tdf`, `local_time_negative_tdf_west_of_greenwich`.
 
 **Status:** done
@@ -188,7 +204,7 @@ lower bound greater than the upper bound is invalid."
 **Repo:** `crates/time-service/src/time_base.rs::IntervalT` with `IntervalT::new`
 rejecting lower > upper (returns `None`).
 
-**Tests:** `time_base.rs::tests::intervalt_rejects_lower_greater_than_upper`,
+**Tests:** `crates/time-service/src/time_base.rs::tests::intervalt_rejects_lower_greater_than_upper`,
 `intervalt_size_is_16_octets`, `intervalt_wire_roundtrip_preserves_bounds`.
 
 **Status:** done
@@ -202,7 +218,12 @@ comparison can never return TCIndeterminate."
 
 **Repo:** `crates/time-service/src/uto.rs::ComparisonType`.
 
-**Tests:** `uto.rs::tests::compare_time_midc_*`, `compare_time_intervalc_*`.
+**Tests:** `crates/time-service/src/uto.rs::tests::compare_time_midc_equal`,
+`::compare_time_midc_less_than`, `::compare_time_midc_greater_than`,
+`::compare_time_intervalc_equal_when_inaccuracy_zero_and_time_match`,
+`::compare_time_intervalc_indeterminate_on_envelope_overlap`,
+`::compare_time_intervalc_less_than_when_envelopes_disjoint`,
+`::compare_time_intervalc_greater_than_when_envelopes_disjoint`.
 
 **Status:** done
 
@@ -214,7 +235,7 @@ around the two times being compared overlap."
 
 **Repo:** `crates/time-service/src/uto.rs::TimeComparison`.
 
-**Tests:** `uto.rs::tests::compare_time_intervalc_indeterminate_on_envelope_overlap`.
+**Tests:** `crates/time-service/src/uto.rs::tests::compare_time_intervalc_indeterminate_on_envelope_overlap`.
 
 **Status:** done
 
@@ -225,7 +246,7 @@ OTContained, OTOverlap, OTNoOverlap).
 
 **Repo:** `crates/time-service/src/tio.rs::OverlapType`.
 
-**Tests:** `tio.rs::tests::overlaps_otcontainer`, `overlaps_otcontained`,
+**Tests:** `crates/time-service/src/tio.rs::tests::overlaps_otcontainer`, `overlaps_otcontained`,
 `overlaps_partial`, `overlaps_no_overlap`.
 
 **Status:** done
@@ -243,7 +264,7 @@ assurance."
 **Repo:** `crates/time-service/src/service.rs::TimeUnavailable` (a plain Rust
 type, not a CORBA exception).
 
-**Tests:** `service.rs::tests::secure_universal_time_fails_when_source_not_marked_secure`,
+**Tests:** `crates/time-service/src/service.rs::tests::secure_universal_time_fails_when_source_not_marked_secure`,
 `time_unavailable_display_describes_failure_mode`.
 
 **Status:** done
@@ -259,7 +280,7 @@ a value of type TimeT."
 
 **Repo:** `crates/time-service/src/uto.rs::Uto::time()`.
 
-**Tests:** `uto.rs::tests::attributes_return_constructor_values`.
+**Tests:** `crates/time-service/src/uto.rs::tests::attributes_return_constructor_values`.
 
 **Status:** done
 
@@ -269,7 +290,7 @@ a value of type TimeT."
 
 **Repo:** `crates/time-service/src/uto.rs::Uto::inaccuracy()`.
 
-**Tests:** `uto.rs::tests::attributes_return_constructor_values`.
+**Tests:** `crates/time-service/src/uto.rs::tests::attributes_return_constructor_values`.
 
 **Status:** done
 
@@ -280,7 +301,7 @@ TdfT."
 
 **Repo:** `crates/time-service/src/uto.rs::Uto::tdf()`.
 
-**Tests:** `uto.rs::tests::attributes_return_constructor_values`.
+**Tests:** `crates/time-service/src/uto.rs::tests::attributes_return_constructor_values`.
 
 **Status:** done
 
@@ -291,7 +312,7 @@ structure [...]."
 
 **Repo:** `crates/time-service/src/uto.rs::Uto::utc_time()`.
 
-**Tests:** `uto.rs::tests::attributes_return_constructor_values`.
+**Tests:** `crates/time-service/src/uto.rs::tests::attributes_return_constructor_values`.
 
 **Status:** done
 
@@ -304,7 +325,7 @@ absolute time causes an overflow."
 **Repo:** `crates/time-service/src/uto.rs::Uto::absolute_time()` (returns
 `Option<Uto>`; `None` on overflow).
 
-**Tests:** `uto.rs::tests::absolute_time_adds_current_to_relative`.
+**Tests:** `crates/time-service/src/uto.rs::tests::absolute_time_adds_current_to_relative`.
 
 **Status:** done
 
@@ -316,8 +337,12 @@ specified in the in parameter comparison_type."
 
 **Repo:** `crates/time-service/src/uto.rs::Uto::compare_time(ct, uto)`.
 
-**Tests:** `uto.rs::tests::compare_time_midc_*`, `compare_time_intervalc_*` (8
-cases).
+**Tests:** `crates/time-service/src/uto.rs::tests::compare_time_midc_equal`,
+`::compare_time_midc_less_than`, `::compare_time_midc_greater_than`,
+`::compare_time_intervalc_equal_when_inaccuracy_zero_and_time_match`,
+`::compare_time_intervalc_indeterminate_on_envelope_overlap`,
+`::compare_time_intervalc_less_than_when_envelopes_disjoint`,
+`::compare_time_intervalc_greater_than_when_envelopes_disjoint`.
 
 **Status:** done
 
@@ -330,7 +355,7 @@ the inaccuracies in the UTOs are not taken into consideration."
 
 **Repo:** `crates/time-service/src/uto.rs::Uto::time_to_interval(other)`.
 
-**Tests:** `uto.rs::tests::time_to_interval_uses_midpoints`.
+**Tests:** `crates/time-service/src/uto.rs::tests::time_to_interval_uses_midpoints`.
 
 **Status:** done
 
@@ -341,7 +366,7 @@ UTO.inaccuracy. TIO.lower_bound = UTO.time - UTO.inaccuracy."
 
 **Repo:** `crates/time-service/src/uto.rs::Uto::interval()`.
 
-**Tests:** `uto.rs::tests::interval_returns_inaccuracy_envelope`.
+**Tests:** `crates/time-service/src/uto.rs::tests::interval_returns_inaccuracy_envelope`.
 
 **Status:** done
 
@@ -356,7 +381,7 @@ values of its fields filled in [...]."
 
 **Repo:** `crates/time-service/src/tio.rs::Tio::time_interval()`.
 
-**Tests:** `tio.rs::tests::time_interval_attribute_returns_constructor_value`.
+**Tests:** `crates/time-service/src/tio.rs::tests::time_interval_attribute_returns_constructor_value`.
 
 **Status:** done
 
@@ -370,7 +395,7 @@ parameter contains the gap between the two intervals."
 
 **Repo:** `crates/time-service/src/tio.rs::Tio::spans(uto)`.
 
-**Tests:** `tio.rs::tests::spans_uses_uto_inaccuracy_envelope`.
+**Tests:** `crates/time-service/src/tio.rs::tests::spans_uses_uto_inaccuracy_envelope`.
 
 **Status:** done
 
@@ -382,7 +407,7 @@ overlap."
 
 **Repo:** `crates/time-service/src/tio.rs::Tio::overlaps(tio)`.
 
-**Tests:** `tio.rs::tests::overlaps_otcontainer`, `overlaps_otcontained`,
+**Tests:** `crates/time-service/src/tio.rs::tests::overlaps_otcontainer`, `overlaps_otcontained`,
 `overlaps_partial`, `overlaps_no_overlap`.
 
 **Status:** done
@@ -395,7 +420,7 @@ midpoint of the interval."
 
 **Repo:** `crates/time-service/src/tio.rs::Tio::time()`.
 
-**Tests:** `tio.rs::tests::time_method_returns_uto_with_midpoint_and_half_width`.
+**Tests:** `crates/time-service/src/tio.rs::tests::time_method_returns_uto_with_midpoint_and_half_width`.
 
 **Status:** done
 
@@ -412,7 +437,7 @@ is not guaranteed to be secure or trusted."
 
 **Repo:** `crates/time-service/src/service.rs::TimeService::universal_time`.
 
-**Tests:** `service.rs::tests::universal_time_returns_recent_value`.
+**Tests:** `crates/time-service/src/service.rs::tests::universal_time_returns_recent_value`.
 
 **Status:** done
 
@@ -426,7 +451,7 @@ operation must return the TimeUnavailable exception."
 **Repo:** `crates/time-service/src/service.rs::TimeService::secure_universal_time`
 (controllable via the `TimeService::secure_source` flag).
 
-**Tests:** `service.rs::tests::secure_universal_time_fails_when_source_not_marked_secure`,
+**Tests:** `crates/time-service/src/service.rs::tests::secure_universal_time_fails_when_source_not_marked_secure`,
 `secure_universal_time_returns_when_source_marked_secure`.
 
 **Status:** done
@@ -443,7 +468,7 @@ ZeroDDS choice: no BAD_PARAM on out-of-range — capping to 48 bits (the spec
 does not strictly require a reject, but allows it in the spec section
 "encouraged to include").
 
-**Tests:** `service.rs::tests::new_universal_time_creates_uto_from_components`.
+**Tests:** `crates/time-service/src/service.rs::tests::new_universal_time_creates_uto_from_components`.
 
 **Status:** done
 
@@ -454,7 +479,7 @@ does not strictly require a reject, but allows it in the spec section
 
 **Repo:** `crates/time-service/src/service.rs::TimeService::uto_from_utc`.
 
-**Tests:** `service.rs::tests::uto_from_utc_wraps_passed_struct`.
+**Tests:** `crates/time-service/src/service.rs::tests::uto_from_utc_wraps_passed_struct`.
 
 **Status:** done
 
@@ -467,7 +492,7 @@ exception is raised."
 **Repo:** `crates/time-service/src/service.rs::TimeService::new_interval`
 (returns `None` on lower > upper).
 
-**Tests:** `service.rs::tests::new_interval_rejects_lower_greater_than_upper`,
+**Tests:** `crates/time-service/src/service.rs::tests::new_interval_rejects_lower_greater_than_upper`,
 `new_interval_creates_tio_for_valid_bounds`.
 
 **Status:** done
@@ -488,7 +513,7 @@ callback-driven) + a spec-conformant facade
 `crates/corba-ccm/src/time_psm.rs::TimerEventServiceFacade` with a
 `PushConsumerLike` adapter for the spec-§2.2.2 channel binding.
 
-**Tests:** `time_psm::tests::facade_register_then_fire` + inline tests in
+**Tests:** `crates/corba-ccm/src/time_psm.rs::tests::facade_register_then_fire` + inline tests in
 `timer.rs`.
 
 **Status:** done — TimerEventService lifecycle + handler management + push
@@ -503,7 +528,7 @@ TimerEventHandler, set a timer, push events over the channel.
 `TimerEventServiceFacade` adapter; on firing, `push(&TimerEventT)` is called on
 the consumer, which maps the spec workflow §2.2.2.
 
-**Tests:** `time_psm::tests::facade_register_then_fire`.
+**Tests:** `crates/corba-ccm/src/time_psm.rs::tests::facade_register_then_fire`.
 
 **Status:** done — timer lifecycle + fire path + channel adapter live.
 
@@ -517,7 +542,7 @@ TimeBase::UtcT utc; any event_data; }; };`.
 **Repo:** `crates/corba-ccm/src/time_psm.rs::{TimerEventT, EventStatus,
 TimeType}` as spec-conformant Rust types.
 
-**Tests:** `time_psm::tests::{event_status_variants_are_distinct,
+**Tests:** `crates/corba-ccm/src/time_psm.rs::tests::{event_status_variants_are_distinct,
 event_time_extracts_utc_from_timer_event_t}`.
 
 **Status:** done — all three IDL-PSM types declared.
@@ -530,7 +555,7 @@ event_time_extracts_utc_from_timer_event_t}`.
 TtPeriodic}` (1:1 spec mapping); a `to_timer_kind()` helper maps to the
 platform `TimerKind` (Periodic→Periodic, Absolute/Relative→OneShot).
 
-**Tests:** `time_psm::tests::{time_type_periodic_maps_to_timer_kind_periodic,
+**Tests:** `crates/corba-ccm/src/time_psm.rs::tests::{time_type_periodic_maps_to_timer_kind_periodic,
 time_type_absolute_maps_to_one_shot, time_type_relative_maps_to_one_shot}`.
 
 **Status:** done — an IDL-conformant 3-variant enum + platform mapping live.
@@ -543,7 +568,7 @@ TimerEventService.
 **Repo:** `crates/corba-ccm/src/time_psm.rs::TimerError` with all four spec
 variants `TimeUnavailable`, `TimerExpired`, `InvalidTime`, `InvalidEvent`.
 
-**Tests:** `time_psm::tests::timer_error_display_uses_spec_names`.
+**Tests:** `crates/corba-ccm/src/time_psm.rs::tests::timer_error_display_uses_spec_names`.
 
 **Status:** done — a spec-conformant exception hierarchy declared.
 
@@ -562,7 +587,7 @@ Duration)`, `set_data(Vec<u8>)` plus the `EventStatus` enum
 (`EsTimeSet`/`EsTimerFired`/`EsTimerCancelled`). Cancel via
 `TimerEventServiceFacade::cancel`.
 
-**Tests:** `time_psm::tests::{handler_status_starts_as_time_set,
+**Tests:** `crates/corba-ccm/src/time_psm.rs::tests::{handler_status_starts_as_time_set,
 handler_time_set_returns_time_type, handler_set_data_rejects_empty,
 handler_set_data_accepts_non_empty, handler_set_timer_rejects_after_fire,
 handler_set_timer_ok_when_armed, event_status_variants_are_distinct}`.
@@ -583,7 +608,7 @@ with a `PushConsumerLike` trait that binds the spec-conformant PushConsumer
 argument path (an adapter over the callback-based platform
 `TimerEventService`).
 
-**Tests:** `time_psm::tests::facade_register_then_fire`.
+**Tests:** `crates/corba-ccm/src/time_psm.rs::tests::facade_register_then_fire`.
 
 **Status:** done — PushConsumer adapter live; the spec form (PushConsumer +
 data) and the platform form (callback) available in parallel.
@@ -592,9 +617,11 @@ data) and the platform form (callback) available in parallel.
 
 **Spec:** §2.4.2, p. 2-7 (PDF) — `void unregister(in TimerEventHandler);`.
 
-**Repo:** `crates/corba-ccm/src/timer.rs::TimerEventService::cancel(handle)`.
+**Repo:** `crates/corba-ccm/src/timer.rs::TimerEventService::cancel`.
 
-**Tests:** inline.
+**Tests:** `crates/corba-ccm/src/timer.rs::tests::{cancel_stops_periodic,
+cancel_unknown_returns_false}` — an unregistered handler stops firing,
+and an unknown handle says so instead of swallowing it.
 
 **Status:** done
 
@@ -606,7 +633,7 @@ event);`.
 **Repo:** `crates/corba-ccm/src/time_psm.rs::event_time(&TimerEventT) -> u64`
 (a UTO equivalent as nanoseconds since the Unix epoch).
 
-**Tests:** `time_psm::tests::event_time_extracts_utc_from_timer_event_t`.
+**Tests:** `crates/corba-ccm/src/time_psm.rs::tests::event_time_extracts_utc_from_timer_event_t`.
 
 **Status:** done — a spec-conformant operation implemented.
 
@@ -625,7 +652,17 @@ the crate `crates/time-service/`, and the **Timer Event Service** (§2.2-§2.4)
 via `crates/corba-ccm/src/time_psm.rs` (PushConsumer adapter + TimerEventT +
 spec exceptions + event_time).
 
-**Tests:** cross-ref §1.3.x + §2.1.x + §2.2.x (35 + 36 tests green).
+**Tests:** Basic Time Service: `crates/time-service/src/service.rs::tests` (8),
+`crates/time-service/src/uto.rs::tests` (11),
+`crates/time-service/src/tio.rs::tests` (7),
+`crates/time-service/src/time_base.rs::tests` (9) — among them
+`utct_wire_roundtrip_preserves_all_fields`, `inaccuracy_caps_at_48_bits`,
+`local_time_applies_tdf`, `spans_uses_uto_inaccuracy_envelope`.
+Timer Event Service: `crates/corba-ccm/src/time_psm.rs::tests` (13), among
+them `timer_error_display_uses_spec_names`,
+`time_type_periodic_maps_to_timer_kind_periodic`,
+`handler_set_timer_rejects_after_fire`;
+`crates/corba-ccm/src/timer.rs::tests` (4).
 
 **Status:** done — Basic Time Service + Timer Event Service both fully
 covered.
@@ -710,7 +747,7 @@ implementation guideline (non-normative).
 Test run: `cargo test -p zerodds-time-service -p zerodds-corba-ccm` — 35 + 36
 tests green (Basic Time Service in `time-service`: modules `service`,
 `time_base`, `tio`, `uto`; Timer Event Service lifecycle in
-`corba-ccm/timer.rs`: `timer::tests::one_shot_fires_once`,
-`timer::tests::periodic_fires_multiple_times`,
-`timer::tests::cancel_stops_periodic`,
-`timer::tests::cancel_unknown_returns_false`).
+`corba-ccm/timer.rs`: `crates/corba-ccm/src/timer.rs::tests::one_shot_fires_once`,
+`crates/corba-ccm/src/timer.rs::tests::periodic_fires_multiple_times`,
+`crates/corba-ccm/src/timer.rs::tests::cancel_stops_periodic`,
+`crates/corba-ccm/src/timer.rs::tests::cancel_unknown_returns_false`).

@@ -24,7 +24,7 @@ public final class ExampleAsync {
         }
 
         byte[] marshal(int endian) {
-            Zdw.Writer w = new Zdw.Writer(endian);
+            Zdw.Writer w = new Zdw.Writer(endian, Zdw.XCDR2);
             w.u32(id);
             w.f32(value);
             w.str(label);
@@ -32,7 +32,7 @@ public final class ExampleAsync {
         }
 
         static Reading decode(byte[] body) {
-            Zdw.Reader r = new Zdw.Reader(body, Zdw.LE);
+            Zdw.Reader r = new Zdw.Reader(body, Zdw.LE, Zdw.XCDR2);
             return new Reading(r.u32(), r.f32(), r.str());
         }
     }
@@ -45,7 +45,8 @@ public final class ExampleAsync {
             Reading rd = new Reading(0x2000L + i, 100.0f - i,
                                      String.format("sensor-%02d", i));
             transport.add(ZdwEndpoint.xrceWriteFrame(ZdwEndpoint.SESSION_NOKEY,
-                ZdwEndpoint.STREAM_BEST_EFFORT, i + 1, rd.marshal(Zdw.LE)));
+                ZdwEndpoint.STREAM_BEST_EFFORT, i + 1, ZdwEndpoint.objectId(0x001, ZdwEndpoint.OBJK_DATAWRITER),
+                rd.marshal(Zdw.LE)));
         }
 
         final BlockingQueue<byte[]> inbox = new LinkedBlockingQueue<byte[]>();

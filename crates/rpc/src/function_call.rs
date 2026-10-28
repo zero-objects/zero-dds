@@ -26,8 +26,10 @@
 //!   and returns the reply.
 //! * The [`dispatch_request`] helper for skeleton implementations.
 //!
-//! Codegen templates live in `crates/idl-cpp/src/rpc_template.rs`
-//! (C++) and `crates/idl-java/src/rpc_template.rs` (Java).
+//! Codegen for the function-call binding lives in
+//! `crates/lang-rules/src/emit/interface_cpp.rs`,
+//! `crates/lang-rules/src/emit/interface_java.rs` and
+//! `crates/lang-rules/src/emit/interface_rust.rs`.
 
 extern crate alloc;
 
@@ -54,8 +56,8 @@ pub trait FunctionSkeleton {
     fn service_name(&self) -> &str;
 
     /// List of all operations this skeleton accepts.
-    /// Each entry is `(operation_name, opcode)`. Opcodes are
-    /// assigned monotonically and automatically at codegen time (Spec §7.2.2.1).
+    /// Each entry is `(operation_name, opcode)`. The opcode is the HASH of
+    /// the operation name (§7.5.1.1.6 rule 5a).
     fn operations(&self) -> &[(&'static str, u32)];
 }
 
@@ -67,21 +69,22 @@ pub trait FunctionSkeleton {
 pub struct OperationDescriptor {
     /// Method name from IDL.
     pub name: String,
-    /// Monotonically assigned opcode.
+    /// The case label of the operation: the HASH of its unqualified name
+    /// (§7.5.1.1.6 rule 5a).
     pub opcode: u32,
     /// `true` for a `oneway` spec — no reply expected.
     pub one_way: bool,
     /// List of `in`/`inout` parameters (order as in IDL).
     pub in_params: Vec<String>,
-    /// List of `out`/`inout` parameters + return type (Spec
-    /// §7.2.4.2 maps the return to the first member position).
+    /// List of `out`/`inout` parameters; the return value is the last
+    /// member the mapped `Out` structure carries (§7.5.1.1.5 rule 3b).
     pub out_params: Vec<String>,
 }
 
 /// Service descriptor for codegen — collection of [`OperationDescriptor`]s.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ServiceDescriptor {
-    /// IDL-Interface-Name.
+    /// IDL interface name.
     pub name: String,
     /// Operations in IDL order.
     pub operations: Vec<OperationDescriptor>,
@@ -97,10 +100,11 @@ impl ServiceDescriptor {
         }
     }
 
-    /// Registers an operation. The opcode is assigned automatically.
+    /// Registers an operation. The opcode is the HASH of the operation
+    /// name (§7.5.1.1.6 rule 5a), like the case label of the call union.
     ///
     /// # Errors
-    /// `RpcError::Codec` if the operation count exceeds `u32::MAX`.
+    /// Currently infallible; returns the registered descriptor.
     pub fn add_operation(
         &mut self,
         name: impl Into<String>,
@@ -108,11 +112,10 @@ impl ServiceDescriptor {
         in_params: Vec<String>,
         out_params: Vec<String>,
     ) -> RpcResult<&OperationDescriptor> {
-        let opcode = u32::try_from(self.operations.len()).map_err(|_| {
-            RpcError::Codec("ServiceDescriptor: too many operations (>u32::MAX)".into())
-        })?;
+        let name: String = name.into();
+        let opcode = crate::rpc_hash::rpc_member_hash(&name);
         self.operations.push(OperationDescriptor {
-            name: name.into(),
+            name,
             opcode,
             one_way,
             in_params,
@@ -180,29 +183,45 @@ mod tests {
     }
 
     #[test]
-    fn service_descriptor_assigns_monotonic_opcodes() {
+    fn service_descriptor_assigns_the_operation_hash() {
         let s = calculator_service();
-        assert_eq!(s.operations[0].opcode, 0);
-        assert_eq!(s.operations[1].opcode, 1);
-        assert_eq!(s.operations[2].opcode, 2);
+        assert_eq!(
+            s.operations[0].opcode,
+            crate::rpc_hash::rpc_member_hash("add")
+        );
+        assert_eq!(
+            s.operations[1].opcode,
+            crate::rpc_hash::rpc_member_hash("subtract")
+        );
+        assert_eq!(
+            s.operations[2].opcode,
+            crate::rpc_hash::rpc_member_hash("ping")
+        );
     }
 
     #[test]
     fn service_descriptor_lookup_by_name() {
         let s = calculator_service();
-        assert_eq!(s.operation("add").map(|o| o.opcode), Some(0));
-        assert_eq!(s.operation("subtract").map(|o| o.opcode), Some(1));
+        assert_eq!(
+            s.operation("add").map(|o| o.opcode),
+            Some(crate::rpc_hash::rpc_member_hash("add"))
+        );
+        assert_eq!(
+            s.operation("subtract").map(|o| o.opcode),
+            Some(crate::rpc_hash::rpc_member_hash("subtract"))
+        );
         assert!(s.operation("nonexistent").is_none());
     }
 
     #[test]
     fn service_descriptor_lookup_by_opcode() {
         let s = calculator_service();
+        let add = crate::rpc_hash::rpc_member_hash("add");
         assert_eq!(
-            s.operation_by_opcode(0).map(|o| o.name.as_str()),
+            s.operation_by_opcode(add).map(|o| o.name.as_str()),
             Some("add")
         );
-        assert!(s.operation_by_opcode(99).is_none());
+        assert!(s.operation_by_opcode(add.wrapping_add(1)).is_none());
     }
 
     #[test]
@@ -217,7 +236,8 @@ mod tests {
     #[test]
     fn dispatch_request_routes_by_opcode() {
         let s = calculator_service();
-        let result = dispatch_request(&s, 0, |op| Ok::<String, RpcError>(op.name.clone()))
+        let add = crate::rpc_hash::rpc_member_hash("add");
+        let result = dispatch_request(&s, add, |op| Ok::<String, RpcError>(op.name.clone()))
             .expect("dispatch");
         assert_eq!(result, "add");
     }
@@ -231,8 +251,9 @@ mod tests {
 
     #[test]
     fn out_params_first_member_is_return_value() {
-        // Spec §7.2.4.2: the return type is mapped to the first member of
-        // `out_params`.
+        // §7.5.1.1.5 rule 3b: the return value is the last member the
+        // mapped `Out` structure carries; `out_params` here lists the
+        // declared out/inout parameters.
         let s = calculator_service();
         let add = s.operation("add").expect("add");
         assert_eq!(add.out_params.first().map(String::as_str), Some("result"));
@@ -255,7 +276,12 @@ mod tests {
             "Calculator"
         }
         fn operations(&self) -> &[(&'static str, u32)] {
-            &[("add", 0), ("subtract", 1), ("ping", 2)]
+            // The HASH of each operation name (§7.5.1.1.6 rule 5a).
+            &[
+                ("add", 0xfc78_ec34),
+                ("subtract", 0xc115_f497),
+                ("ping", 0x011f_91df),
+            ]
         }
     }
 

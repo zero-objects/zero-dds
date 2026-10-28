@@ -275,13 +275,23 @@ pub struct Message {
 }
 
 #[cfg(feature = "alloc")]
+/// A message without a submessage (§8.3.1: "one or more Submessages").
+const NO_SUBMESSAGE: XrceError = XrceError::ValueOutOfRange {
+    message: "an XRCE message holds one or more submessages (DDS-XRCE 1.0 §8.3.1)",
+};
+
 impl Message {
     /// Constructor with a DoS cap check.
     ///
     /// # Errors
     /// `TooManySubmessages` if more than `DOSC_MAX_SUBMESSAGES`
-    /// are given.
+    /// are given; `ValueOutOfRange` if none are given (§8.3.1: "An XRCE
+    /// message is composed of a message Header followed by one or more
+    /// Submessages").
     pub fn new(header: MessageHeader, submessages: Vec<Submessage>) -> Result<Self, XrceError> {
+        if submessages.is_empty() {
+            return Err(NO_SUBMESSAGE);
+        }
         if submessages.len() > DOSC_MAX_SUBMESSAGES {
             return Err(XrceError::TooManySubmessages {
                 limit: DOSC_MAX_SUBMESSAGES,
@@ -305,6 +315,9 @@ impl Message {
     /// `PayloadTooLarge` if the final size exceeds
     /// `DOSC_MAX_PAYLOAD_SIZE`.
     pub fn encode(&self) -> Result<Vec<u8>, XrceError> {
+        if self.submessages.is_empty() {
+            return Err(NO_SUBMESSAGE);
+        }
         if self.submessages.len() > DOSC_MAX_SUBMESSAGES {
             return Err(XrceError::TooManySubmessages {
                 limit: DOSC_MAX_SUBMESSAGES,
@@ -361,7 +374,8 @@ impl Message {
     /// # Errors
     /// `UnexpectedEof`, `UnknownSubmessageId`,
     /// `TruncatedSubmessageBody`, `TooManySubmessages`,
-    /// `PayloadTooLarge`, `UnalignedSubmessage`.
+    /// `PayloadTooLarge`, `UnalignedSubmessage`; `ValueOutOfRange` for a
+    /// header without any submessage (§8.3.1).
     pub fn decode(bytes: &[u8]) -> Result<Self, XrceError> {
         if bytes.len() > DOSC_MAX_PAYLOAD_SIZE {
             return Err(XrceError::PayloadTooLarge {
@@ -371,59 +385,82 @@ impl Message {
         }
 
         let (header, hdr_len) = MessageHeader::read_from(bytes)?;
-        let mut offset = hdr_len;
-        let mut submessages: Vec<Submessage> = Vec::new();
-
-        while offset < bytes.len() {
-            // §8.3.3: offsets are 4-byte-aligned. Header starts
-            // at offset 0, header size is 4 or 8 → already aligned.
-            // We check before every submessage read.
-            if offset % 4 != 0 {
-                return Err(XrceError::UnalignedSubmessage { offset });
-            }
-
-            // Submessage-Header
-            if bytes.len() - offset < SubmessageHeader::WIRE_SIZE {
-                return Err(XrceError::UnexpectedEof {
-                    needed: SubmessageHeader::WIRE_SIZE,
-                    offset,
-                });
-            }
-            let sh = SubmessageHeader::from_bytes(&bytes[offset..])?;
-            offset += SubmessageHeader::WIRE_SIZE;
-
-            let body_len = usize::from(sh.submessage_length);
-            let available = bytes.len() - offset;
-            if body_len > available {
-                return Err(XrceError::TruncatedSubmessageBody {
-                    declared: sh.submessage_length,
-                    available,
-                });
-            }
-            let body = bytes[offset..offset + body_len].to_vec();
-            offset += body_len;
-
-            submessages.push(Submessage { header: sh, body });
-
-            if submessages.len() > DOSC_MAX_SUBMESSAGES {
-                return Err(XrceError::TooManySubmessages {
-                    limit: DOSC_MAX_SUBMESSAGES,
-                });
-            }
-
-            // Consume padding to the 4-byte boundary — only if bytes
-            // still follow after this submessage.
-            if offset < bytes.len() {
-                let pad = (4 - (offset % 4)) % 4;
-                let pad_take = pad.min(bytes.len() - offset);
-                offset += pad_take;
-            }
+        let submessages = decode_run(bytes, hdr_len)?;
+        if submessages.is_empty() {
+            return Err(NO_SUBMESSAGE);
         }
         Ok(Self {
             header,
             submessages,
         })
     }
+}
+
+/// The submessages that follow a message header (DDS-XRCE 1.0 §8.3.3:
+/// "Submessages shall start at an offset that is a multiple of 4 relative to
+/// the beginning of the Message"), or that a reassembled `FRAGMENT` run
+/// holds: §8.3.5.14, "The concatenated payloads shall be interpreted as XRCE
+/// submessages as if they had been received following the HEADER that came
+/// with the last fragment". All of them, with the padding between them.
+///
+/// # Errors
+/// As [`Message::decode`]: a truncated or unaligned submessage, an unknown
+/// id, too many.
+pub fn decode_submessages(bytes: &[u8]) -> Result<Vec<Submessage>, XrceError> {
+    decode_run(bytes, 0)
+}
+
+/// The submessages of `bytes` from `start`, a 4-aligned offset; offsets in
+/// errors are relative to the start of `bytes`.
+fn decode_run(bytes: &[u8], start: usize) -> Result<Vec<Submessage>, XrceError> {
+    let mut offset = start;
+    let mut submessages: Vec<Submessage> = Vec::new();
+    while offset < bytes.len() {
+        // §8.3.3: offsets are 4-byte-aligned. Header starts
+        // at offset 0, header size is 4 or 8 → already aligned.
+        // We check before every submessage read.
+        if offset % 4 != 0 {
+            return Err(XrceError::UnalignedSubmessage { offset });
+        }
+
+        // Submessage-Header
+        if bytes.len() - offset < SubmessageHeader::WIRE_SIZE {
+            return Err(XrceError::UnexpectedEof {
+                needed: SubmessageHeader::WIRE_SIZE,
+                offset,
+            });
+        }
+        let sh = SubmessageHeader::from_bytes(&bytes[offset..])?;
+        offset += SubmessageHeader::WIRE_SIZE;
+
+        let body_len = usize::from(sh.submessage_length);
+        let available = bytes.len() - offset;
+        if body_len > available {
+            return Err(XrceError::TruncatedSubmessageBody {
+                declared: sh.submessage_length,
+                available,
+            });
+        }
+        let body = bytes[offset..offset + body_len].to_vec();
+        offset += body_len;
+
+        submessages.push(Submessage { header: sh, body });
+
+        if submessages.len() > DOSC_MAX_SUBMESSAGES {
+            return Err(XrceError::TooManySubmessages {
+                limit: DOSC_MAX_SUBMESSAGES,
+            });
+        }
+
+        // Consume padding to the 4-byte boundary — only if bytes
+        // still follow after this submessage.
+        if offset < bytes.len() {
+            let pad = (4 - (offset % 4)) % 4;
+            let pad_take = pad.min(bytes.len() - offset);
+            offset += pad_take;
+        }
+    }
+    Ok(submessages)
 }
 
 #[cfg(test)]
@@ -549,6 +586,28 @@ mod tests {
         assert_eq!(decoded.submessages.len(), 2);
         assert_eq!(decoded.submessages[0].body, alloc::vec![1, 2, 3, 4, 5]);
         assert_eq!(decoded.submessages[1].body, alloc::vec![10, 20, 30, 40, 50]);
+    }
+
+    /// §8.3.5.14: a reassembled FRAGMENT run is interpreted "as XRCE
+    /// submessages" — every one of them, 4-aligned as after a header
+    /// (§8.3.3).
+    #[test]
+    fn a_submessage_run_decodes_every_submessage_past_the_padding() {
+        let mut run = Vec::new();
+        for body in [alloc::vec![1u8, 2, 3, 4, 5], alloc::vec![10, 20, 30]] {
+            let sm = Submessage::new(SubmessageId::WriteData, FLAG_E_LITTLE_ENDIAN, body).unwrap();
+            run.extend_from_slice(&sm.header.to_bytes());
+            run.extend_from_slice(&sm.body);
+            while run.len() % 4 != 0 {
+                run.push(0);
+            }
+        }
+        let decoded = decode_submessages(&run).unwrap();
+        assert_eq!(decoded.len(), 2);
+        assert_eq!(decoded[0].body, alloc::vec![1, 2, 3, 4, 5]);
+        assert_eq!(decoded[1].body, alloc::vec![10, 20, 30]);
+        // A truncated second submessage is an error, not a silent end.
+        assert!(decode_submessages(&run[..run.len() - 2]).is_err());
     }
 
     #[test]

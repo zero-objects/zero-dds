@@ -1,0 +1,1 @@
+chunk.001.d/build/gen.idl:205:5: Case label value must be in range INT32_MIN..INT32_MAX (inclusive) when generating type meta-data

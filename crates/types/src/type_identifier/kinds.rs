@@ -6,7 +6,7 @@
 //!
 //! **Scope note**: These are the constants for the TypeIdentifier
 //! union discriminator (`_d` field, 1 byte). The TypeObject discriminator
-//! constants (TK_STRUCTURE = 0xA0 etc.) live in their own module
+//! constants (TK_STRUCTURE = 0x51 etc.; 0xA0 is `TI_PLAIN_MAP_SMALL`) live in their own module
 //! (T2), because the namespaces overlap for primitives but are
 //! separate for composite types.
 
@@ -47,6 +47,13 @@ pub const TK_UINT8: u8 = 0x0D;
 pub const TK_CHAR8: u8 = 0x10;
 /// `wchar` (16-bit character).
 pub const TK_CHAR16: u8 = 0x11;
+/// `string` as a `TypeKind` (§7.2.2.2). A string *type* is identified by
+/// the `TI_STRING8_*` forms below, which carry a bound; this constant is
+/// the kind octet `AnnotationParameterValue` (Annex B) discriminates
+/// its string case with, where no bound exists to carry.
+pub const TK_STRING8: u8 = 0x20;
+/// `wstring` as a `TypeKind` (§7.2.2.2); see [`TK_STRING8`].
+pub const TK_STRING16: u8 = 0x21;
 
 // ============================================================================
 // TypeIdentifier-specific discriminators (TI_*, EK_*)
@@ -79,10 +86,16 @@ pub const TI_PLAIN_MAP_LARGE: u8 = 0xA1;
 /// Strongly connected component (recursive types) — XTypes §7.3.4.9.
 pub const TI_STRONGLY_CONNECTED_COMPONENT: u8 = 0xB0;
 
-/// 14-byte SHA256-Hash des Minimal-TypeObject.
+/// 14-byte MD5 hash of the Minimal TypeObject.
 pub const EK_MINIMAL: u8 = 0xF1;
-/// 14-byte SHA256-Hash des Complete-TypeObject.
+/// 14-byte MD5 hash of the Complete TypeObject.
 pub const EK_COMPLETE: u8 = 0xF2;
+
+/// `EK_BOTH` — the minimal and the complete identifier are the same,
+/// which is what a fully descriptive element carries. XTypes 1.3
+/// §7.3.4.6: a `sequence<long>` has no hash on either side, so the
+/// collection header says so rather than naming one of the two.
+pub const EK_BOTH: u8 = 0xF3;
 
 /// 14-byte hash (in wire format for EK_MINIMAL/EK_COMPLETE).
 pub const EQUIVALENCE_HASH_LEN: usize = 14;

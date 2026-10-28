@@ -1,0 +1,1 @@
+sample.a(0xab);

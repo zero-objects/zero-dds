@@ -1,0 +1,8 @@
+// SPDX-License-Identifier: Apache-2.0
+// Reconstructed source for chars_gen.py. Top-level (no module), matching
+// the fixture's unqualified typename "Chars". Extensibility left at the
+// specification default (appendable).
+struct Chars {
+  char c;
+  wstring w;
+};

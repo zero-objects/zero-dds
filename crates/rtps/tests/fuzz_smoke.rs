@@ -88,12 +88,11 @@ fn fuzz_data_frag_read_body_does_not_panic() {
     fuzz(0x1337_F00D, 1000, |buf| {
         // All flag combinations — the fuzzer should not trigger only
         // one specific branch.
-        for flags in 0..16_u8 {
+        for flags in 0..8_u8 {
             let q = flags & 1 != 0;
-            let h = flags & 2 != 0;
-            let k = flags & 4 != 0;
-            let n = flags & 8 != 0;
-            let _ = DataFragSubmessage::read_body(buf, true, q, h, k, n);
+            let k = flags & 2 != 0;
+            let n = flags & 4 != 0;
+            let _ = DataFragSubmessage::read_body(buf, true, q, k, n);
         }
     });
 }
@@ -151,6 +150,7 @@ fn df_arbitrary(
 ) -> DataFragSubmessage {
     use zerodds_rtps::wire_types::{EntityId, FragmentNumber, SequenceNumber};
     DataFragSubmessage {
+        inline_qos: None,
         extra_flags: 0,
         reader_id: EntityId::user_reader_with_key([1, 2, 3]),
         writer_id: EntityId::user_writer_with_key([4, 5, 6]),
@@ -161,7 +161,6 @@ fn df_arbitrary(
         sample_size,
         serialized_payload: payload.into(),
         inline_qos_flag: false,
-        hash_key_flag: false,
         key_flag: false,
         non_standard_flag: false,
     }

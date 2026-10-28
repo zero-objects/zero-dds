@@ -92,10 +92,16 @@ impl Features for FeaturesImpl {
     fn concat(&self, a: String, b: String) -> Result<String, CorbaException> {
         Ok(format!("{a}{b}"))
     }
-    fn wecho(&self, w: zerodds_cdr::WString) -> Result<zerodds_cdr::WString, CorbaException> {
+    fn wecho(
+        &self,
+        w: zerodds_corba_rt::WString,
+    ) -> Result<zerodds_corba_rt::WString, CorbaException> {
         Ok(w)
     }
-    fn aecho(&self, a: zerodds_cdr::CorbaAny) -> Result<zerodds_cdr::CorbaAny, CorbaException> {
+    fn aecho(
+        &self,
+        a: zerodds_corba_rt::CorbaAny,
+    ) -> Result<zerodds_corba_rt::CorbaAny, CorbaException> {
         Ok(a)
     }
     fn reverse(&self, xs: Vec<i32>) -> Result<Vec<i32>, CorbaException> {
@@ -172,16 +178,16 @@ fn feature_matrix_roundtrip_via_codegen() {
         "foobar"
     );
     // wstring (UTF-16 wire, distinct from string): Unicode roundtrip over IIOP.
-    let ws = zerodds_cdr::WString::from("wide-wörld-€-🌍");
+    let ws = zerodds_corba_rt::WString::from("wide-wörld-€-🌍");
     assert_eq!(f.wecho(ws.clone()).unwrap(), ws);
     // any (TypeCode + Value): roundtrip multiple variants over IIOP.
     for av in [
-        zerodds_cdr::AnyValue::Long(-99),
-        zerodds_cdr::AnyValue::Double(2.5),
-        zerodds_cdr::AnyValue::Str("any-string".to_string()),
-        zerodds_cdr::AnyValue::Boolean(true),
+        zerodds_corba_rt::AnyValue::Long(-99),
+        zerodds_corba_rt::AnyValue::Double(2.5),
+        zerodds_corba_rt::AnyValue::Str("any-string".to_string()),
+        zerodds_corba_rt::AnyValue::Boolean(true),
     ] {
-        let any = zerodds_cdr::CorbaAny(av);
+        let any = zerodds_corba_rt::CorbaAny(av);
         assert_eq!(f.aecho(any.clone()).unwrap(), any);
     }
     assert_eq!(f.reverse(vec![1, 2, 3]).unwrap(), vec![3, 2, 1]);
@@ -262,7 +268,9 @@ impl Shapes for ShapesImpl {
         match v {
             Variant::As_long(n) => Ok(n),
             Variant::As_string(s) => Ok(s.len() as i32),
-            Variant::As_flag(b) => Ok(i32::from(b)),
+            // The `default:` member carries the discriminator it went
+            // out under.
+            Variant::As_flag(_, b) => Ok(i32::from(b)),
         }
     }
     fn checked(&self, idx: i32, limit: i32) -> Result<i32, ShapesError> {
@@ -320,7 +328,9 @@ fn shapes_matrix_roundtrip_via_codegen() {
             .unwrap(),
         4
     );
-    assert_eq!(s.unwrap_long(Variant::As_flag(true)).unwrap(), 1);
+    // Any discriminator no label takes selects the `default:` member;
+    // 7 goes out and comes back as 7.
+    assert_eq!(s.unwrap_long(Variant::As_flag(7, true)).unwrap(), 1);
     // Typed user exception via the codegen (no hand-decode):
     assert_eq!(s.checked(3, 10).unwrap(), 3);
     match s.checked(15, 10) {
@@ -459,23 +469,23 @@ fn evt_exc(msg: &'static str) -> CorbaException {
 }
 
 impl EventBus for EventBusImpl {
-    fn push(&self, event: zerodds_cdr::CorbaAny) -> Result<(), CorbaException> {
-        let mut w = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Big);
-        zerodds_cdr::CdrEncode::encode(&event, &mut w).map_err(|_| evt_exc("encode any"))?;
+    fn push(&self, event: zerodds_corba_rt::CorbaAny) -> Result<(), CorbaException> {
+        let mut w = zerodds_wire::Writer::new(zerodds_wire::Endianness::Big);
+        event.encode(&mut w).map_err(|_| evt_exc("encode any"))?;
         self.pull_consumer
             .forward_event(zerodds_corba_cos_event::AnyEvent::new(
                 "any".to_string(),
-                w.into_bytes(),
+                w.finish(),
             ))
             .map_err(|_| evt_exc("event channel disconnected"))
     }
 
-    fn try_pull(&self, event: &mut zerodds_cdr::CorbaAny) -> Result<bool, CorbaException> {
+    fn try_pull(&self, event: &mut zerodds_corba_rt::CorbaAny) -> Result<bool, CorbaException> {
         use zerodds_corba_cos_event::comm::PullSupplier;
         match self.pull_supplier.try_pull() {
             Ok((e, true)) => {
-                let mut r = zerodds_cdr::BufferReader::new(&e.data, zerodds_cdr::Endianness::Big);
-                *event = <zerodds_cdr::CorbaAny as zerodds_cdr::CdrDecode>::decode(&mut r)
+                let mut r = zerodds_wire::Reader::new(&e.data, zerodds_wire::Endianness::Big);
+                *event = zerodds_corba_rt::CorbaAny::decode(&mut r)
                     .map_err(|_| evt_exc("decode any"))?;
                 Ok(true)
             }
@@ -515,7 +525,7 @@ impl NotifyBus for NotifyBusImpl {
         &self,
         domain: String,
         type_name: String,
-        body: zerodds_cdr::CorbaAny,
+        body: zerodds_corba_rt::CorbaAny,
     ) -> Result<(), CorbaException> {
         self.push_consumer
             .push_structured_event(zerodds_corba_cos_notify::StructuredEvent::new(
@@ -528,7 +538,7 @@ impl NotifyBus for NotifyBusImpl {
         &self,
         domain: &mut String,
         type_name: &mut String,
-        body: &mut zerodds_cdr::CorbaAny,
+        body: &mut zerodds_corba_rt::CorbaAny,
     ) -> Result<bool, CorbaException> {
         match self.pull_supplier.try_pull_structured_event() {
             Ok((ev, true)) => {
@@ -565,18 +575,18 @@ fn live_notification_push_pull_via_codegen() {
     );
 
     let events = [
-        ("Telecom", "CallEvent", zerodds_cdr::AnyValue::Long(42)),
+        ("Telecom", "CallEvent", zerodds_corba_rt::AnyValue::Long(42)),
         (
             "Finance",
             "Trade",
-            zerodds_cdr::AnyValue::Str("buy".to_string()),
+            zerodds_corba_rt::AnyValue::Str("buy".to_string()),
         ),
     ];
     for (d, t, v) in &events {
         stub.push_structured(
             (*d).to_string(),
             (*t).to_string(),
-            zerodds_cdr::CorbaAny(v.clone()),
+            zerodds_corba_rt::CorbaAny(v.clone()),
         )
         .unwrap();
     }
@@ -584,7 +594,7 @@ fn live_notification_push_pull_via_codegen() {
         let (mut gd, mut gt, mut gb) = (
             String::new(),
             String::new(),
-            zerodds_cdr::CorbaAny::default(),
+            zerodds_corba_rt::CorbaAny::default(),
         );
         assert!(
             stub.try_pull_structured(&mut gd, &mut gt, &mut gb).unwrap(),
@@ -592,13 +602,13 @@ fn live_notification_push_pull_via_codegen() {
         );
         assert_eq!(
             (gd.as_str(), gt.as_str(), &gb),
-            (*d, *t, &zerodds_cdr::CorbaAny(v.clone()))
+            (*d, *t, &zerodds_corba_rt::CorbaAny(v.clone()))
         );
     }
     let (mut d, mut t, mut b) = (
         String::new(),
         String::new(),
-        zerodds_cdr::CorbaAny::default(),
+        zerodds_corba_rt::CorbaAny::default(),
     );
     assert!(
         !stub.try_pull_structured(&mut d, &mut t, &mut b).unwrap(),
@@ -630,9 +640,9 @@ fn live_eventchannel_push_pull_via_codegen() {
 
     // Supplier pushes three any events over IIOP.
     let events = [
-        zerodds_cdr::CorbaAny(zerodds_cdr::AnyValue::Long(7)),
-        zerodds_cdr::CorbaAny(zerodds_cdr::AnyValue::Str("evt".to_string())),
-        zerodds_cdr::CorbaAny(zerodds_cdr::AnyValue::Double(1.5)),
+        zerodds_corba_rt::CorbaAny(zerodds_corba_rt::AnyValue::Long(7)),
+        zerodds_corba_rt::CorbaAny(zerodds_corba_rt::AnyValue::Str("evt".to_string())),
+        zerodds_corba_rt::CorbaAny(zerodds_corba_rt::AnyValue::Double(1.5)),
     ];
     for ev in &events {
         stub.push(ev.clone()).unwrap();
@@ -640,7 +650,7 @@ fn live_eventchannel_push_pull_via_codegen() {
 
     // Consumer pulls them back FIFO.
     for expected in &events {
-        let mut got = zerodds_cdr::CorbaAny::default();
+        let mut got = zerodds_corba_rt::CorbaAny::default();
         assert!(
             stub.try_pull(&mut got).unwrap(),
             "event should be available"
@@ -648,7 +658,7 @@ fn live_eventchannel_push_pull_via_codegen() {
         assert_eq!(&got, expected);
     }
     // Empty queue → try_pull false.
-    let mut empty = zerodds_cdr::CorbaAny::default();
+    let mut empty = zerodds_corba_rt::CorbaAny::default();
     assert!(!stub.try_pull(&mut empty).unwrap(), "empty queue → false");
 
     acceptor.shutdown();
@@ -1037,17 +1047,17 @@ fn live_cosnaming_real_wire_bind_resolve_via_codegen() {
 /// correctly regardless of endianness (so that omniORB/TAO can read it).
 #[test]
 fn codeset_context_and_bom_wstring_survive_giop_pipeline() {
-    use zerodds_cdr::{BufferReader, BufferWriter, CdrDecode, CdrEncode, Endianness, WString};
     use zerodds_corba_giop::{
         CodeSetContext, Message, Request, ResponseFlags, ServiceContextList, TargetAddress,
         Version, code_set_ids, decode_message_ctx, encode_message,
     };
+    use zerodds_wire::{Endianness, Reader, Writer};
 
-    let text = WString::from("grüße €dwig 🌍");
+    let text = zerodds_corba_rt::WString::from("grüße €dwig 🌍");
     for e in [Endianness::Big, Endianness::Little] {
-        let mut bw = BufferWriter::new(e);
+        let mut bw = Writer::new(e);
         text.encode(&mut bw).unwrap();
-        let body = bw.into_bytes();
+        let body = bw.finish();
 
         let cs = CodeSetContext::default_pair()
             .to_service_context(e)
@@ -1080,9 +1090,9 @@ fn codeset_context_and_bom_wstring_survive_giop_pipeline() {
         );
 
         // 2. wstring body (BOM-carried) decodes correctly.
-        let mut br = BufferReader::new(&r.body, decoded_e);
+        let mut br = Reader::new(&r.body, decoded_e);
         assert_eq!(
-            WString::decode(&mut br).unwrap(),
+            zerodds_corba_rt::WString::decode(&mut br).unwrap(),
             text,
             "wstring roundtrip ({e:?})"
         );

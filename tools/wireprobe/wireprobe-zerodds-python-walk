@@ -1,0 +1,174 @@
+#!/bin/bash
+# wireprobe-zerodds-python-walk — one IDL type and one JSON value,
+# through the ZeroDDS Python binding built by the *shared* codec walk.
+#
+# The same command line as `wireprobe-zerodds`, so a case runs through
+# both by substituting the program name. See
+# `docs/specs/zerodds-interop-suite-1.0.md` §3a.
+#
+#   wireprobe-zerodds-python-walk --idl robot.idl --type common::Robot \
+#                                 --values robot.json --encoding xcdr2 \
+#                                 --endian le --out robot.zerodds-py.xcdr2.le.bin
+#
+#   wireprobe-zerodds-python-walk --idl robot.idl --type common::Robot \
+#                                 --in robot.cyclone.xcdr2.le.bin \
+#                                 --encoding xcdr2 --endian le \
+#                                 --values-out robot.read.json
+#
+# ## Why this is not called `wireprobe-zerodds-python`
+#
+# Because that name is taken, by a column that reaches the same runtime
+# through a different generator. `crates/lang-python/src/emit.rs` is
+# 4 506 lines of direct text emission carrying its own copy of the walk —
+# which members go out, in what order, under which header — and
+# `zerodds-idl-python` is its binary. This probe drives
+# `wireprobe-zerodds-python-gen`, which is
+# `crates/lang-rules/src/emit/python.rs` over the walk in
+# `crates/lang-rules/src/emit/{encode,decode}.rs` that the C, C++, C#,
+# Java and TypeScript columns already share.
+#
+# Two probes over one runtime is the state, not the goal: the second copy
+# of the walk is what the shared one exists to stop needing. They are
+# kept apart until the sweep says which cases each carries, because a
+# rename that took the old column out before that was measured would
+# trade a column with a recorded number for one without.
+#
+# ## What is shared with the Rust probe and what is not
+#
+# Shared: the frontend, the common AST and the layout plan. Which members
+# are written, in what order, with which header and which length code is
+# `zerodds-ast-layout`'s answer, and a second answer would be a second
+# place for the wire format to live.
+#
+# Not shared: the serialiser. The generated module calls
+# `runtime/python/zerodds_wire`, which implements DDS-XTypes 1.3 §7.4 a
+# second time in Python. Nothing here reaches the Rust runtime through
+# ctypes or FFI: a probe that did would be byte-identical by construction
+# and would prove nothing about whether the two read the specification
+# the same way.
+#
+# ## The exit codes
+#
+# `docs/specs/zerodds-verdicts-1.0.md`, and structural rather than read
+# out of a message:
+#
+#   0  it carried the case
+#   1  the sample is outside the type — `primitive-char-above-latin1` is
+#      a `char` holding U+0161 and §7.2.2.2.1.2.2 says a CHAR_8_TYPE
+#      "shall be representable using 8 bits". The Rust probe answers 1
+#      for the same sample, and folding it into 6 would claim a tool of
+#      ours is missing when the sample is what is wrong.
+#   2  the command line
+#   3  no-form — Python has no form for the construct, which is
+#      `adapter/python.rs`'s answer and nobody else's
+#   6  harness-gap — a tool of ours has not written it: the generator did
+#      not build, the walk stopped, or the module did not run
+#   7  generator-defect — the generator accepted the case and the Python
+#      it produced is not a program
+#
+# 8 (`mapping-divergence`) is not produced here. It is a verdict about a
+# *foreign* mapping rule making the octets differ — CORBA's `long double`
+# is the recorded case — and this column has no such rule: where its
+# reading of §7.4 differs from the Rust column's the answer is a byte
+# difference the ledger shows, not an exit code.
+set -euo pipefail
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+root="$(cd "$here/../.." && pwd)"
+runtime="${ZERODDS_PYTHON_RUNTIME:-$root/runtime/python}"
+PYTHON="${PYTHON:-python3}"
+
+gen="${WIREPROBE_PYTHON_WALK_GEN:-}"
+if [ -z "$gen" ]; then
+    gen="${CARGO_TARGET_DIR:-$root/target}/debug/wireprobe-zerodds-python-gen"
+    # Built when it is missing *or stale*: a generator older than the
+    # sources it came from measures the previous build, and says nothing
+    # about it.
+    . "$here/generator.sh"
+    probe_generator zerodds-wireprobe-python-gen "$gen" "$root" || exit 6
+fi
+
+out=""
+values_out=""
+argv=()
+idl=""
+reading=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --out) out="$2"; shift 2 ;;
+        --values-out) values_out="$2"; argv+=("$1" "$2"); shift 2 ;;
+        --in) reading=1; argv+=("$1" "$2"); shift 2 ;;
+        --idl|--type|--values|--encoding|--endian|--emit|--dialect|\
+        --length-codes|--collection-delimiters|--wchar-framing|--wchar-width|\
+        --map-delimiter|--pid-flags|--enum-holder|--union-labels|\
+        --enumerator-value|--union-framing|--short-pid-range|--map-entries|\
+        --fixed-digits|--wstring-units|--wstring-length|--map-length)
+            if [ "$1" = --idl ]; then idl="$2"; fi
+            argv+=("$1" "$2"); shift 2 ;;
+        --help|-h) sed -n '2,72p' "${BASH_SOURCE[0]}"; exit 0 ;;
+        *) echo "wireprobe-zerodds-python-walk: \`$1\` is not an option" >&2; exit 2 ;;
+    esac
+done
+
+. "$here/diagnostics.sh"
+
+work="$(mktemp -d)"
+trap 'probe_keep_generated "$work" "zerodds-python-walk" "$idl" probe.py; rm -rf "$work"' EXIT
+
+# The generator's own code passes straight through: 3 is "Python has no
+# form for it" and 6 is "a tool of ours stopped", and folding the two
+# into one here would lose the distinction the ledger turns on.
+code=0
+"$gen" "${argv[@]}" --out-dir "$work" || code=$?
+[ "$code" = 0 ] || exit "$code"
+
+# The syntax is checked before the module is run, because the two
+# failures are different verdicts and running the module conflates them.
+# Python is not compiled ahead of time, so without this an
+# `IndentationError` — which is a `SyntaxError`, and the one CPython
+# raises where a generated chain nests too deep — would arrive as "the
+# module did not run" (6) rather than as "the generator emitted
+# something that is not a program" (7). Every other column gets this
+# distinction from its compiler.
+if ! "$PYTHON" -c \
+        'import sys; compile(open(sys.argv[1]).read(), sys.argv[1], "exec")' \
+        "$work/probe.py" > "$work/syntax.log" 2>&1; then
+    echo "wireprobe-zerodds-python-walk: the generated Python is not a program" >&2
+    head -10 "$work/syntax.log" >&2 || true
+    probe_diagnostics_after "zerodds-python-walk" "$work" "$idl" 7
+    exit 7
+fi
+probe_diagnostics_after "zerodds-python-walk" "$work" "$idl" 0
+
+# `dont_write_bytecode`: a `.pyc` is invalidated on modification time and
+# size, and two generations of one probe in one temporary directory can
+# match on both — which shows up as a module that imports with none of
+# its contents. The Python column met exactly that once already; see
+# `tools/wireprobe/wireprobe-zerodds-python`.
+export PYTHONDONTWRITEBYTECODE=1
+export PYTHONPATH="$runtime${PYTHONPATH:+:$PYTHONPATH}"
+
+code=0
+"$PYTHON" "$work/probe.py" > "$work/bytes.bin" 2> "$work/run.log" || code=$?
+if [ "$code" != 0 ]; then
+    head -5 "$work/run.log" >&2 || true
+    [ "$code" = 1 ] && exit 1
+    echo "wireprobe-zerodds-python-walk: the probe did not run" >&2
+    exit 6
+fi
+
+# The read direction writes its JSON where `--values-out` said and puts
+# nothing on stdout, so there are no octets to hand back.
+if [ "$reading" = 1 ]; then
+    [ -n "$values_out" ] || {
+        echo "wireprobe-zerodds-python-walk: --in without --values-out" >&2
+        exit 2
+    }
+    exit 0
+fi
+
+if [ -n "$out" ]; then
+    cp "$work/bytes.bin" "$out"
+else
+    od -An -tx1 -v "$work/bytes.bin" | tr -d ' \n'; echo
+fi

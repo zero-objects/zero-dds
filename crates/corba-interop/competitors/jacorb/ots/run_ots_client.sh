@@ -3,7 +3,7 @@
 # Compiles + runs the JacORB transactional OTS client against a ZeroDDS IOR.
 # Arg 1 = stringified IOR of the ZeroDDS target (from the Rust handshake test).
 #
-# Prerequisite (codepit): a JacORB NameServer + TransactionService must be
+# Prerequisite (Linux test host): a JacORB NameServer + TransactionService must be
 # running; their setup is below. The client resolves the OTS `Current` from the
 # running TransactionService and `begin()`s a transaction, so JacORB's
 # ClientContextTransferInterceptor attaches the OTS PropagationContext as IIOP

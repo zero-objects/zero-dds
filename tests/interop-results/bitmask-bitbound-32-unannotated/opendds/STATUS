@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of bitmask-bitbound-32-unannotated that opendds produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	Error - tao_idl: Illegal component in scoped name
+plain-cdr1	be	refused	Error - tao_idl: Illegal component in scoped name
+pl-cdr1	le	refused	Error - tao_idl: Illegal component in scoped name
+pl-cdr1	be	refused	Error - tao_idl: Illegal component in scoped name
+plain-cdr2	le	refused	Error - tao_idl: Illegal component in scoped name
+plain-cdr2	be	refused	Error - tao_idl: Illegal component in scoped name
+delimited-cdr	le	refused	Error - tao_idl: Illegal component in scoped name
+delimited-cdr	be	refused	Error - tao_idl: Illegal component in scoped name
+pl-cdr2	le	refused	Error - tao_idl: Illegal component in scoped name
+pl-cdr2	be	refused	Error - tao_idl: Illegal component in scoped name

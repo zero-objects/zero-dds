@@ -31,6 +31,25 @@ typedef struct zerodds_ZeroDdsStatusCondition zerodds_ZeroDdsStatusCondition;
 typedef struct zerodds_ZeroDdsReadCondition zerodds_ZeroDdsReadCondition;
 typedef struct zerodds_ZeroDdsQueryCondition zerodds_ZeroDdsQueryCondition;
 
+/*
+ * ABI revision (zerodds-ffi-loader-1.0 §7). Bumped only on a major
+ * version; a patch release changes nothing about the ABI and a minor
+ * release only adds symbols. A loader compares this compile-time value
+ * against the run-time zerodds_abi_revision() and fails fast on a
+ * mismatch. Kept in sync with ZERODDS_ABI_REVISION in
+ * crates/zerodds-c-api/src/lib.rs by
+ * tests/abi_compat.rs::the_header_macro_and_the_exported_revision_agree.
+ */
+#ifndef ZERODDS_ABI_REVISION
+#define ZERODDS_ABI_REVISION 1
+#endif
+
+/*
+ * `max_blocking_time_ns` of a zerodds_ZeroDdsEndpointQos that waits without
+ * end; ZERODDS_BLOCKING_INFINITE in crates/zerodds-c-api/src/lib.rs.
+ */
+#define ZERODDS_BLOCKING_INFINITE UINT64_MAX
+
 
 #ifndef ZERODDS_H
 #define ZERODDS_H
@@ -60,6 +79,11 @@ typedef int (*zerodds_Option_ZeroDdsKeyHashFn)(const void *sample, uint8_t *out_
 typedef void (*zerodds_Option_ZeroDdsSampleFreeFn)(void *sample);
 
 typedef struct zerodds_Option_ZeroDdsTopicCallback zerodds_Option_ZeroDdsTopicCallback;
+
+/**
+ * A DataReader of the built-in subscriber.
+ */
+typedef struct zerodds_ZeroDdsBuiltinReader zerodds_ZeroDdsBuiltinReader;
 
 /**
  * Opaque BuiltinSubscriber-Handle (Spec §2.2.2.2.1.7).
@@ -92,9 +116,30 @@ typedef struct zerodds_ZeroDdsDomainParticipant zerodds_ZeroDdsDomainParticipant
 typedef struct zerodds_ZeroDdsDomainParticipantFactory zerodds_ZeroDdsDomainParticipantFactory;
 
 /**
+ * A dynamic type: the model the IDL lowered to, and what a typed endpoint needs of it.
+ */
+typedef struct zerodds_ZeroDdsDynType zerodds_ZeroDdsDynType;
+
+/**
+ * A MultiTopic of a participant.
+ */
+typedef struct zerodds_ZeroDdsMultiTopic zerodds_ZeroDdsMultiTopic;
+
+/**
+ * The DataReader on a MultiTopic.
+ */
+typedef struct zerodds_ZeroDdsMultiTopicReader zerodds_ZeroDdsMultiTopicReader;
+
+/**
  * Publisher (Spec §2.2.2.4.1).
  */
 typedef struct zerodds_ZeroDdsPublisher zerodds_ZeroDdsPublisher;
+
+/**
+ * A QosProvider: the QoS libraries of one document, and the profile its
+ * `*_qos()` operations without an id use.
+ */
+typedef struct zerodds_ZeroDdsQosProvider zerodds_ZeroDdsQosProvider;
 
 /**
  * Opaque reader handle.
@@ -134,88 +179,182 @@ typedef struct zerodds_ZeroDdsWaitSet zerodds_ZeroDdsWaitSet;
 typedef struct zerodds_ZeroDdsWriter zerodds_ZeroDdsWriter;
 
 /**
- * `DCPSParticipant` sample (Spec §2.2.5.1).
+ * The QoS of a DataWriter or DataReader created with
+ * [`zerodds_writer_create_qos`] / [`zerodds_reader_create_qos`]. Obtain the
+ * defaults from [`zerodds_endpoint_qos_default`] and change what differs.
+ *
+ * Times are nanoseconds; `0` means infinite (DDS 1.4 `DURATION_INFINITE`),
+ * except `max_blocking_time_ns`, where not waiting is a value of its own.
  */
-typedef struct zerodds_ZeroDdsParticipantBuiltinTopicData {
+typedef struct zerodds_ZeroDdsEndpointQos {
   /**
-   * 16-byte GUID.
+   * `1` RELIABLE, `0` BEST_EFFORT.
    */
-  uint8_t guid[16];
+  int reliable;
   /**
-   * Pointer to UserData bytes (static over the `dp` lifetime in the RC1
-   * snapshot — the caller copies if it outlives the data).
+   * `1` TRANSIENT_LOCAL, `0` VOLATILE.
    */
-  const uint8_t *user_data;
+  int transient_local;
   /**
-   * UserData length.
+   * `1` KEEP_ALL, `0` KEEP_LAST(`history_depth`).
    */
-  uintptr_t user_data_len;
-} zerodds_ZeroDdsParticipantBuiltinTopicData;
+  int history_keep_all;
+  /**
+   * KEEP_LAST depth, at least 1.
+   */
+  uint32_t history_depth;
+  /**
+   * DEADLINE period.
+   */
+  uint64_t deadline_ns;
+  /**
+   * LIFESPAN duration (writers only).
+   */
+  uint64_t lifespan_ns;
+  /**
+   * LIVELINESS kind: `0` AUTOMATIC, `1` MANUAL_BY_PARTICIPANT,
+   * `2` MANUAL_BY_TOPIC.
+   */
+  int liveliness_kind;
+  /**
+   * LIVELINESS lease duration.
+   */
+  uint64_t liveliness_lease_ns;
+  /**
+   * RESOURCE_LIMITS `max_samples`; `-1` is LENGTH_UNLIMITED.
+   */
+  int32_t max_samples;
+  /**
+   * RESOURCE_LIMITS `max_instances`; `-1` is LENGTH_UNLIMITED.
+   */
+  int32_t max_instances;
+  /**
+   * RESOURCE_LIMITS `max_samples_per_instance`; `-1` is LENGTH_UNLIMITED.
+   */
+  int32_t max_samples_per_instance;
+  /**
+   * RELIABILITY `max_blocking_time` of a writer: how long `write`,
+   * `dispose` and `unregister` wait for room under RESOURCE_LIMITS before
+   * they return `ZERODDS_TIMEOUT` (DDS 1.4 §2.2.2.4.2.11). `0` does not
+   * wait, `u64::MAX` waits without end.
+   */
+  uint64_t max_blocking_time_ns;
+} zerodds_ZeroDdsEndpointQos;
 
 /**
- * `DCPSTopic` sample (Spec §2.2.5.2).
+ * Communication status of a runtime-path writer (DDS 1.4 §2.2.4.1),
+ * cumulative since the writer was created; a caller that reports changes
+ * keeps the previous values.
  */
-typedef struct zerodds_ZeroDdsTopicBuiltinTopicData {
+typedef struct zerodds_ZeroDdsWriterStatus {
   /**
-   * Synthetic topic key (16 byte).
+   * OFFERED_DEADLINE_MISSED `total_count`.
    */
-  uint8_t key[16];
+  uint64_t offered_deadline_missed_total;
   /**
-   * Topic name as a C string (heap-allocated; the caller must
-   * call `zerodds_string_free`).
+   * LIVELINESS_LOST `total_count`.
    */
-  char *name;
+  uint64_t liveliness_lost_total;
   /**
-   * Type name (heap-allocated; the caller must call `zerodds_string_free`).
+   * OFFERED_INCOMPATIBLE_QOS `total_count`.
    */
-  char *type_name;
+  uint64_t offered_incompatible_qos_total;
   /**
-   * Durability kind (0=Volatile, 1=TransientLocal, 2=Transient, 3=Persistent).
+   * OFFERED_INCOMPATIBLE_QOS `last_policy_id` (DDS QosPolicyId, 0 = none).
    */
-  uint32_t durability_kind;
+  uint32_t offered_incompatible_qos_last_policy_id;
   /**
-   * Reliability kind (1=BestEffort, 2=Reliable).
+   * PUBLICATION_MATCHED `current_count`.
    */
-  uint32_t reliability_kind;
-} zerodds_ZeroDdsTopicBuiltinTopicData;
+  uint64_t matched_current;
+  /**
+   * Remote readers of an incompatible type refused on this writer's
+   * topic (XTypes 1.3 §7.6.3.4.2 INCONSISTENT_TOPIC).
+   */
+  uint64_t incompatible_type_total;
+} zerodds_ZeroDdsWriterStatus;
 
 /**
- * UserDataQosPolicy.
+ * Communication status of a runtime-path reader (DDS 1.4 §2.2.4.1),
+ * cumulative since the reader was created.
  */
-typedef struct zerodds_ZeroDdsUserDataQosPolicy {
+typedef struct zerodds_ZeroDdsReaderStatus {
   /**
-   * Pointer to bytes (Caller-owned).
+   * REQUESTED_DEADLINE_MISSED `total_count`.
    */
-  const uint8_t *value;
+  uint64_t requested_deadline_missed_total;
   /**
-   * Length.
+   * LIVELINESS_CHANGED: writers seen becoming alive, as the DCPS
+   * `DataReader` counts them.
    */
-  uintptr_t value_len;
-} zerodds_ZeroDdsUserDataQosPolicy;
+  uint64_t liveliness_alive;
+  /**
+   * LIVELINESS_CHANGED: writers seen becoming not alive.
+   */
+  uint64_t liveliness_not_alive;
+  /**
+   * REQUESTED_INCOMPATIBLE_QOS `total_count`.
+   */
+  uint64_t requested_incompatible_qos_total;
+  /**
+   * REQUESTED_INCOMPATIBLE_QOS `last_policy_id` (0 = none).
+   */
+  uint32_t requested_incompatible_qos_last_policy_id;
+  /**
+   * SAMPLE_LOST `total_count`.
+   */
+  uint64_t sample_lost_total;
+  /**
+   * SUBSCRIPTION_MATCHED `current_count`.
+   */
+  uint64_t matched_current;
+  /**
+   * Remote writers of an incompatible type refused on this reader's
+   * topic.
+   */
+  uint64_t incompatible_type_total;
+} zerodds_ZeroDdsReaderStatus;
 
 /**
- * EntityFactoryQosPolicy.
+ * A unicast locator of a runtime-path endpoint (DDSI-RTPS 2.5 §8.3.5.7):
+ * `kind` 1 UDPv4, 2 UDPv6, 4 TCPv4, 8 TCPv6 (vendor kinds such as
+ * same-host SHM are negative); `address` the 16 address bytes, an IPv4
+ * address in the last four.
  */
-typedef struct zerodds_ZeroDdsEntityFactoryQosPolicy {
+typedef struct zerodds_ZeroDdsLocator {
   /**
-   * autoenable_created_entities.
+   * Locator kind.
    */
-  bool autoenable_created_entities;
-} zerodds_ZeroDdsEntityFactoryQosPolicy;
+  int32_t kind;
+  /**
+   * Port.
+   */
+  uint32_t port;
+  /**
+   * Address bytes.
+   */
+  uint8_t address[16];
+} zerodds_ZeroDdsLocator;
 
 /**
- * DomainParticipantQos.
+ * Where a sample handed to a [`ZeroDdsDataCallbackEx`] came from.
  */
-typedef struct zerodds_ZeroDdsDomainParticipantQos {
+typedef struct zerodds_ZeroDdsSampleOrigin {
   /**
-   * UserData.
+   * The writer's GUID.
    */
-  struct zerodds_ZeroDdsUserDataQosPolicy user_data;
+  uint8_t writer_guid[16];
   /**
-   * EntityFactory.
+   * The writer's source timestamp in nanoseconds since the Unix epoch,
+   * `-1` when the sample came without one (same-runtime delivery, a
+   * durability replay).
    */
-  struct zerodds_ZeroDdsEntityFactoryQosPolicy entity_factory;
-} zerodds_ZeroDdsDomainParticipantQos;
+  int64_t source_timestamp_ns;
+  /**
+   * The writer's RTPS sequence number of the sample, `-1` when unknown.
+   */
+  int64_t sequence_number;
+} zerodds_ZeroDdsSampleOrigin;
 
 /**
  * DurabilityQosPolicy.
@@ -324,6 +463,26 @@ typedef struct zerodds_ZeroDdsReliabilityQosPolicy {
 } zerodds_ZeroDdsReliabilityQosPolicy;
 
 /**
+ * TransportPriorityQosPolicy.
+ */
+typedef struct zerodds_ZeroDdsTransportPriorityQosPolicy {
+  /**
+   * priority.
+   */
+  int32_t value;
+} zerodds_ZeroDdsTransportPriorityQosPolicy;
+
+/**
+ * LifespanQosPolicy.
+ */
+typedef struct zerodds_ZeroDdsLifespanQosPolicy {
+  /**
+   * duration.
+   */
+  struct zerodds_ZeroDdsDuration duration;
+} zerodds_ZeroDdsLifespanQosPolicy;
+
+/**
  * DestinationOrderQosPolicy.
  */
 typedef struct zerodds_ZeroDdsDestinationOrderQosPolicy {
@@ -366,26 +525,6 @@ typedef struct zerodds_ZeroDdsResourceLimitsQosPolicy {
 } zerodds_ZeroDdsResourceLimitsQosPolicy;
 
 /**
- * TransportPriorityQosPolicy.
- */
-typedef struct zerodds_ZeroDdsTransportPriorityQosPolicy {
-  /**
-   * priority.
-   */
-  int32_t value;
-} zerodds_ZeroDdsTransportPriorityQosPolicy;
-
-/**
- * LifespanQosPolicy.
- */
-typedef struct zerodds_ZeroDdsLifespanQosPolicy {
-  /**
-   * duration.
-   */
-  struct zerodds_ZeroDdsDuration duration;
-} zerodds_ZeroDdsLifespanQosPolicy;
-
-/**
  * OwnershipQosPolicy.
  */
 typedef struct zerodds_ZeroDdsOwnershipQosPolicy {
@@ -396,9 +535,470 @@ typedef struct zerodds_ZeroDdsOwnershipQosPolicy {
 } zerodds_ZeroDdsOwnershipQosPolicy;
 
 /**
+ * UserDataQosPolicy.
+ */
+typedef struct zerodds_ZeroDdsUserDataQosPolicy {
+  /**
+   * Pointer to bytes (Caller-owned).
+   */
+  const uint8_t *value;
+  /**
+   * Length.
+   */
+  uintptr_t value_len;
+} zerodds_ZeroDdsUserDataQosPolicy;
+
+/**
  * TopicDataQosPolicy.
  */
 typedef struct zerodds_ZeroDdsUserDataQosPolicy zerodds_ZeroDdsTopicDataQosPolicy;
+
+/**
+ * `DCPSTopic` sample (Spec §2.2.5.2), with every member DDS 1.4
+ * §2.2.5 lists for the TopicBuiltinTopicData.
+ *
+ * The two names and the octet sequence are allocated by the call that
+ * fills the struct and belong to the caller until it hands the struct
+ * to [`zerodds_topic_builtin_topic_data_free`]; the policies carry no
+ * pointers and need no release of their own.
+ */
+typedef struct zerodds_ZeroDdsTopicBuiltinTopicData {
+  /**
+   * Synthetic topic key (16 byte).
+   */
+  uint8_t key[16];
+  /**
+   * Topic name.
+   */
+  char *name;
+  /**
+   * Type name.
+   */
+  char *type_name;
+  /**
+   * DURABILITY.
+   */
+  struct zerodds_ZeroDdsDurabilityQosPolicy durability;
+  /**
+   * DURABILITY_SERVICE.
+   */
+  struct zerodds_ZeroDdsDurabilityServiceQosPolicy durability_service;
+  /**
+   * DEADLINE.
+   */
+  struct zerodds_ZeroDdsDeadlineQosPolicy deadline;
+  /**
+   * LATENCY_BUDGET.
+   */
+  struct zerodds_ZeroDdsLatencyBudgetQosPolicy latency_budget;
+  /**
+   * LIVELINESS.
+   */
+  struct zerodds_ZeroDdsLivelinessQosPolicy liveliness;
+  /**
+   * RELIABILITY.
+   */
+  struct zerodds_ZeroDdsReliabilityQosPolicy reliability;
+  /**
+   * TRANSPORT_PRIORITY.
+   */
+  struct zerodds_ZeroDdsTransportPriorityQosPolicy transport_priority;
+  /**
+   * LIFESPAN.
+   */
+  struct zerodds_ZeroDdsLifespanQosPolicy lifespan;
+  /**
+   * DESTINATION_ORDER.
+   */
+  struct zerodds_ZeroDdsDestinationOrderQosPolicy destination_order;
+  /**
+   * HISTORY.
+   */
+  struct zerodds_ZeroDdsHistoryQosPolicy history;
+  /**
+   * RESOURCE_LIMITS.
+   */
+  struct zerodds_ZeroDdsResourceLimitsQosPolicy resource_limits;
+  /**
+   * OWNERSHIP.
+   */
+  struct zerodds_ZeroDdsOwnershipQosPolicy ownership;
+  /**
+   * TOPIC_DATA.
+   */
+  zerodds_ZeroDdsTopicDataQosPolicy topic_data;
+} zerodds_ZeroDdsTopicBuiltinTopicData;
+
+/**
+ * OwnershipStrengthQosPolicy.
+ */
+typedef struct zerodds_ZeroDdsOwnershipStrengthQosPolicy {
+  /**
+   * strength.
+   */
+  int32_t value;
+} zerodds_ZeroDdsOwnershipStrengthQosPolicy;
+
+/**
+ * PresentationQosPolicy.
+ */
+typedef struct zerodds_ZeroDdsPresentationQosPolicy {
+  /**
+   * access_scope.
+   */
+  uint32_t access_scope;
+  /**
+   * coherent_access.
+   */
+  bool coherent_access;
+  /**
+   * ordered_access.
+   */
+  bool ordered_access;
+} zerodds_ZeroDdsPresentationQosPolicy;
+
+/**
+ * PartitionQosPolicy. List of C-string pointers + count.
+ */
+typedef struct zerodds_ZeroDdsPartitionQosPolicy {
+  /**
+   * Array of C string pointers (caller-owned).
+   */
+  const char *const *names;
+  /**
+   * Count.
+   */
+  uintptr_t names_len;
+} zerodds_ZeroDdsPartitionQosPolicy;
+
+/**
+ * GroupDataQosPolicy.
+ */
+typedef struct zerodds_ZeroDdsUserDataQosPolicy zerodds_ZeroDdsGroupDataQosPolicy;
+
+/**
+ * `DCPSPublication` sample (Spec §2.2.5.3), with every member DDS 1.4
+ * §2.2.5 lists for the PublicationBuiltinTopicData.
+ *
+ * The strings, the octet sequences and the partition names are allocated
+ * by the call that fills the struct and belong to the caller until it
+ * hands the struct to [`zerodds_publication_builtin_topic_data_free`].
+ */
+typedef struct zerodds_ZeroDdsPublicationBuiltinTopicData {
+  /**
+   * Endpoint GUID (writer).
+   */
+  uint8_t key[16];
+  /**
+   * Owning participant GUID.
+   */
+  uint8_t participant_key[16];
+  /**
+   * Topic name.
+   */
+  char *topic_name;
+  /**
+   * Type name.
+   */
+  char *type_name;
+  /**
+   * DURABILITY.
+   */
+  struct zerodds_ZeroDdsDurabilityQosPolicy durability;
+  /**
+   * DURABILITY_SERVICE.
+   */
+  struct zerodds_ZeroDdsDurabilityServiceQosPolicy durability_service;
+  /**
+   * DEADLINE.
+   */
+  struct zerodds_ZeroDdsDeadlineQosPolicy deadline;
+  /**
+   * LATENCY_BUDGET.
+   */
+  struct zerodds_ZeroDdsLatencyBudgetQosPolicy latency_budget;
+  /**
+   * LIVELINESS.
+   */
+  struct zerodds_ZeroDdsLivelinessQosPolicy liveliness;
+  /**
+   * RELIABILITY.
+   */
+  struct zerodds_ZeroDdsReliabilityQosPolicy reliability;
+  /**
+   * LIFESPAN.
+   */
+  struct zerodds_ZeroDdsLifespanQosPolicy lifespan;
+  /**
+   * USER_DATA.
+   */
+  struct zerodds_ZeroDdsUserDataQosPolicy user_data;
+  /**
+   * OWNERSHIP.
+   */
+  struct zerodds_ZeroDdsOwnershipQosPolicy ownership;
+  /**
+   * OWNERSHIP_STRENGTH.
+   */
+  struct zerodds_ZeroDdsOwnershipStrengthQosPolicy ownership_strength;
+  /**
+   * DESTINATION_ORDER.
+   */
+  struct zerodds_ZeroDdsDestinationOrderQosPolicy destination_order;
+  /**
+   * PRESENTATION.
+   */
+  struct zerodds_ZeroDdsPresentationQosPolicy presentation;
+  /**
+   * PARTITION.
+   */
+  struct zerodds_ZeroDdsPartitionQosPolicy partition;
+  /**
+   * TOPIC_DATA.
+   */
+  zerodds_ZeroDdsTopicDataQosPolicy topic_data;
+  /**
+   * GROUP_DATA.
+   */
+  zerodds_ZeroDdsGroupDataQosPolicy group_data;
+} zerodds_ZeroDdsPublicationBuiltinTopicData;
+
+/**
+ * TimeBasedFilterQosPolicy.
+ */
+typedef struct zerodds_ZeroDdsTimeBasedFilterQosPolicy {
+  /**
+   * minimum_separation.
+   */
+  struct zerodds_ZeroDdsDuration minimum_separation;
+} zerodds_ZeroDdsTimeBasedFilterQosPolicy;
+
+/**
+ * `DCPSSubscription` sample (Spec §2.2.5.4), with every member DDS 1.4
+ * §2.2.5 lists for the SubscriptionBuiltinTopicData. Ownership of the
+ * allocated members as for [`ZeroDdsPublicationBuiltinTopicData`]; the
+ * release is [`zerodds_subscription_builtin_topic_data_free`].
+ */
+typedef struct zerodds_ZeroDdsSubscriptionBuiltinTopicData {
+  /**
+   * Endpoint GUID (reader).
+   */
+  uint8_t key[16];
+  /**
+   * Owning participant GUID.
+   */
+  uint8_t participant_key[16];
+  /**
+   * Topic name.
+   */
+  char *topic_name;
+  /**
+   * Type name.
+   */
+  char *type_name;
+  /**
+   * DURABILITY.
+   */
+  struct zerodds_ZeroDdsDurabilityQosPolicy durability;
+  /**
+   * DEADLINE.
+   */
+  struct zerodds_ZeroDdsDeadlineQosPolicy deadline;
+  /**
+   * LATENCY_BUDGET.
+   */
+  struct zerodds_ZeroDdsLatencyBudgetQosPolicy latency_budget;
+  /**
+   * LIVELINESS.
+   */
+  struct zerodds_ZeroDdsLivelinessQosPolicy liveliness;
+  /**
+   * RELIABILITY.
+   */
+  struct zerodds_ZeroDdsReliabilityQosPolicy reliability;
+  /**
+   * OWNERSHIP.
+   */
+  struct zerodds_ZeroDdsOwnershipQosPolicy ownership;
+  /**
+   * DESTINATION_ORDER.
+   */
+  struct zerodds_ZeroDdsDestinationOrderQosPolicy destination_order;
+  /**
+   * USER_DATA.
+   */
+  struct zerodds_ZeroDdsUserDataQosPolicy user_data;
+  /**
+   * TIME_BASED_FILTER.
+   */
+  struct zerodds_ZeroDdsTimeBasedFilterQosPolicy time_based_filter;
+  /**
+   * PRESENTATION.
+   */
+  struct zerodds_ZeroDdsPresentationQosPolicy presentation;
+  /**
+   * PARTITION.
+   */
+  struct zerodds_ZeroDdsPartitionQosPolicy partition;
+  /**
+   * TOPIC_DATA.
+   */
+  zerodds_ZeroDdsTopicDataQosPolicy topic_data;
+  /**
+   * GROUP_DATA.
+   */
+  zerodds_ZeroDdsGroupDataQosPolicy group_data;
+} zerodds_ZeroDdsSubscriptionBuiltinTopicData;
+
+/**
+ * `DCPSParticipant` sample (Spec §2.2.5.1).
+ */
+typedef struct zerodds_ZeroDdsParticipantBuiltinTopicData {
+  /**
+   * 16-byte GUID.
+   */
+  uint8_t guid[16];
+  /**
+   * Pointer to UserData bytes (static over the `dp` lifetime in the RC1
+   * snapshot — the caller copies if it outlives the data).
+   */
+  const uint8_t *user_data;
+  /**
+   * UserData length.
+   */
+  uintptr_t user_data_len;
+} zerodds_ZeroDdsParticipantBuiltinTopicData;
+
+/**
+ * SampleInfo (Spec §2.2.2.5.4 + DDS-PSM-Cxx §7.5.8.1).
+ */
+typedef struct zerodds_ZeroDdsSampleInfo {
+  /**
+   * Sample-state bit (1=READ, 2=NOT_READ).
+   */
+  uint32_t sample_state;
+  /**
+   * View state (1=NEW, 2=NOT_NEW).
+   */
+  uint32_t view_state;
+  /**
+   * Instance state (1=ALIVE, 2=NOT_ALIVE_DISPOSED, 4=NOT_ALIVE_NO_WRITERS).
+   */
+  uint32_t instance_state;
+  /**
+   * disposed_generation_count.
+   */
+  int32_t disposed_generation_count;
+  /**
+   * no_writers_generation_count.
+   */
+  int32_t no_writers_generation_count;
+  /**
+   * sample_rank.
+   */
+  int32_t sample_rank;
+  /**
+   * generation_rank.
+   */
+  int32_t generation_rank;
+  /**
+   * absolute_generation_rank.
+   */
+  int32_t absolute_generation_rank;
+  /**
+   * source_timestamp seconds.
+   */
+  int32_t source_timestamp_sec;
+  /**
+   * source_timestamp nanoseconds.
+   */
+  uint32_t source_timestamp_nanosec;
+  /**
+   * Instance handle.
+   */
+  uint64_t instance_handle;
+  /**
+   * Publication handle (writer-GUID hash).
+   */
+  uint64_t publication_handle;
+  /**
+   * `true` if the payload actually has data (vs. a lifecycle marker).
+   */
+  bool valid_data;
+  /**
+   * XCDR version of the payload from the encapsulation header (RTPS 2.5
+   * §10.5): `0` = XCDR1 (CDR/PL_CDR), `1` = XCDR2 (CDR2/D_CDR2/PL_CDR2).
+   * The typed consumer needs this to apply the correct alignment rule.
+   * `0` for lifecycle markers (no payload).
+   */
+  uint8_t representation;
+  /**
+   * Wire byte order of the payload: `0` = little-endian (the canonical
+   * XCDR2 wire), `1` = big-endian — from the encapsulation representation
+   * identifier's low bit. The typed consumer dispatches its little-endian
+   * vs big-endian decoder on this. `0` for lifecycle markers.
+   */
+  uint8_t big_endian;
+} zerodds_ZeroDdsSampleInfo;
+
+/**
+ * A sample of a built-in reader: `kind` names the member that holds the data; the other three
+ * are zeroed. `info.valid_data` is false for a dispose, which carries the key only.
+ */
+typedef struct zerodds_ZeroDdsBuiltinSample {
+  /**
+   * `ZERODDS_BUILTIN_*`.
+   */
+  uint32_t kind;
+  /**
+   * The SampleInfo.
+   */
+  struct zerodds_ZeroDdsSampleInfo info;
+  /**
+   * `DCPSParticipant` data, for kind 1.
+   */
+  struct zerodds_ZeroDdsParticipantBuiltinTopicData participant;
+  /**
+   * `DCPSTopic` data, for kind 2.
+   */
+  struct zerodds_ZeroDdsTopicBuiltinTopicData topic;
+  /**
+   * `DCPSPublication` data, for kind 3.
+   */
+  struct zerodds_ZeroDdsPublicationBuiltinTopicData publication;
+  /**
+   * `DCPSSubscription` data, for kind 4.
+   */
+  struct zerodds_ZeroDdsSubscriptionBuiltinTopicData subscription;
+} zerodds_ZeroDdsBuiltinSample;
+
+/**
+ * DataRepresentationQosPolicy (DDS-XTypes 1.3 §7.6.3.1.1, Annex D): the list
+ * of representation identifiers (`XCDR` = 0, `XML` = 1, `XCDR2` = 2, negative
+ * values for vendors).
+ *
+ * `is_set` = 0 leaves the policy at its default, which the runtime resolves
+ * to its own offer; an all-zero struct is that. `is_set` = 1 makes
+ * `ids[0..count]` the list, and `count` = 0 is the empty list, "equivalent to
+ * a list containing the single element XCDR" (§7.6.3.1.1). "When
+ * representations are specified in the TopicQos, the first element of the
+ * sequence applies to writers of the Topic, and the whole sequence applies
+ * to readers of the Topic."
+ */
+typedef struct zerodds_ZeroDdsDataRepresentationQosPolicy {
+  /**
+   * 0: left at the default; 1: `ids[0..count]` is the list.
+   */
+  uint8_t is_set;
+  /**
+   * Number of identifiers in `ids`, at most 8.
+   */
+  uint8_t count;
+  /**
+   * The identifiers.
+   */
+  int16_t ids[8];
+} zerodds_ZeroDdsDataRepresentationQosPolicy;
 
 /**
  * TopicQos.
@@ -456,81 +1056,11 @@ typedef struct zerodds_ZeroDdsTopicQos {
    * TopicData.
    */
   zerodds_ZeroDdsTopicDataQosPolicy topic_data;
+  /**
+   * DataRepresentation (DDS-XTypes 1.3 Annex D `TopicQos::representation`).
+   */
+  struct zerodds_ZeroDdsDataRepresentationQosPolicy data_representation;
 } zerodds_ZeroDdsTopicQos;
-
-/**
- * PresentationQosPolicy.
- */
-typedef struct zerodds_ZeroDdsPresentationQosPolicy {
-  /**
-   * access_scope.
-   */
-  uint32_t access_scope;
-  /**
-   * coherent_access.
-   */
-  bool coherent_access;
-  /**
-   * ordered_access.
-   */
-  bool ordered_access;
-} zerodds_ZeroDdsPresentationQosPolicy;
-
-/**
- * PartitionQosPolicy. List of C-string pointers + count.
- */
-typedef struct zerodds_ZeroDdsPartitionQosPolicy {
-  /**
-   * Array von C-String-Pointern (Caller-owned).
-   */
-  const char *const *names;
-  /**
-   * Count.
-   */
-  uintptr_t names_len;
-} zerodds_ZeroDdsPartitionQosPolicy;
-
-/**
- * GroupDataQosPolicy.
- */
-typedef struct zerodds_ZeroDdsUserDataQosPolicy zerodds_ZeroDdsGroupDataQosPolicy;
-
-/**
- * PublisherQos.
- */
-typedef struct zerodds_ZeroDdsPublisherQos {
-  /**
-   * Presentation.
-   */
-  struct zerodds_ZeroDdsPresentationQosPolicy presentation;
-  /**
-   * Partition.
-   */
-  struct zerodds_ZeroDdsPartitionQosPolicy partition;
-  /**
-   * GroupData.
-   */
-  zerodds_ZeroDdsGroupDataQosPolicy group_data;
-  /**
-   * EntityFactory.
-   */
-  struct zerodds_ZeroDdsEntityFactoryQosPolicy entity_factory;
-} zerodds_ZeroDdsPublisherQos;
-
-/**
- * SubscriberQos.
- */
-typedef struct zerodds_ZeroDdsPublisherQos zerodds_ZeroDdsSubscriberQos;
-
-/**
- * OwnershipStrengthQosPolicy.
- */
-typedef struct zerodds_ZeroDdsOwnershipStrengthQosPolicy {
-  /**
-   * strength.
-   */
-  int32_t value;
-} zerodds_ZeroDdsOwnershipStrengthQosPolicy;
 
 /**
  * WriterDataLifecycleQosPolicy.
@@ -541,6 +1071,99 @@ typedef struct zerodds_ZeroDdsWriterDataLifecycleQosPolicy {
    */
   bool autodispose_unregistered_instances;
 } zerodds_ZeroDdsWriterDataLifecycleQosPolicy;
+
+/**
+ * One string property of a [`ZeroDdsPropertyQosPolicy`] (DDS-Security 1.2
+ * §7.3.3 `Property_t`: name, value, `propagate`).
+ */
+typedef struct zerodds_ZeroDdsPropertyEntry {
+  /**
+   * NUL-terminated name (caller-owned).
+   */
+  const char *name;
+  /**
+   * NUL-terminated value (caller-owned).
+   */
+  const char *value;
+  /**
+   * `propagate`: 1 announces the entry in the discovery data, 0 keeps it
+   * local (§7.3.21).
+   */
+  uint8_t propagate;
+} zerodds_ZeroDdsPropertyEntry;
+
+/**
+ * One binary property of a [`ZeroDdsPropertyQosPolicy`] (§7.3.3
+ * `BinaryProperty_t`: name, value, `propagate`).
+ */
+typedef struct zerodds_ZeroDdsBinaryPropertyEntry {
+  /**
+   * NUL-terminated name (caller-owned).
+   */
+  const char *name;
+  /**
+   * Pointer to the value bytes (caller-owned).
+   */
+  const uint8_t *value;
+  /**
+   * Length of the value.
+   */
+  uintptr_t value_len;
+  /**
+   * `propagate`, see [`ZeroDdsPropertyEntry::propagate`].
+   */
+  uint8_t propagate;
+} zerodds_ZeroDdsBinaryPropertyEntry;
+
+/**
+ * PropertyQosPolicy (DDS-Security 1.2 §7.3.21): `value` and `binary_value`.
+ */
+typedef struct zerodds_ZeroDdsPropertyQosPolicy {
+  /**
+   * Array of string properties (caller-owned).
+   */
+  const struct zerodds_ZeroDdsPropertyEntry *entries;
+  /**
+   * Count of `entries`.
+   */
+  uintptr_t entries_len;
+  /**
+   * Array of binary properties (caller-owned).
+   */
+  const struct zerodds_ZeroDdsBinaryPropertyEntry *binary_entries;
+  /**
+   * Count of `binary_entries`.
+   */
+  uintptr_t binary_entries_len;
+} zerodds_ZeroDdsPropertyQosPolicy;
+
+/**
+ * One tag of a [`ZeroDdsDataTagQosPolicy`] (§7.3.21 `Tag`: name, value).
+ */
+typedef struct zerodds_ZeroDdsTag {
+  /**
+   * NUL-terminated name (caller-owned).
+   */
+  const char *name;
+  /**
+   * NUL-terminated value (caller-owned).
+   */
+  const char *value;
+} zerodds_ZeroDdsTag;
+
+/**
+ * DataTagQosPolicy (DDS-Security 1.2 §7.3.21): `TagSeq tags`.
+ */
+typedef struct zerodds_ZeroDdsDataTagQosPolicy {
+  /**
+   * Array of tags (caller-owned).
+   */
+  const struct zerodds_ZeroDdsTag *tags;
+  /**
+   * Count of `tags`.
+   */
+  uintptr_t tags_len;
+} zerodds_ZeroDdsDataTagQosPolicy;
 
 /**
  * DataWriterQos.
@@ -622,17 +1245,19 @@ typedef struct zerodds_ZeroDdsDataWriterQos {
    * GroupData.
    */
   zerodds_ZeroDdsGroupDataQosPolicy group_data;
-} zerodds_ZeroDdsDataWriterQos;
-
-/**
- * TimeBasedFilterQosPolicy.
- */
-typedef struct zerodds_ZeroDdsTimeBasedFilterQosPolicy {
   /**
-   * minimum_separation.
+   * DataRepresentation (DDS-XTypes 1.3 Annex D `DataWriterQos::representation`).
    */
-  struct zerodds_ZeroDdsDuration minimum_separation;
-} zerodds_ZeroDdsTimeBasedFilterQosPolicy;
+  struct zerodds_ZeroDdsDataRepresentationQosPolicy data_representation;
+  /**
+   * Property (DDS-Security 1.2 §7.3.21); all-zero is no entries.
+   */
+  struct zerodds_ZeroDdsPropertyQosPolicy property;
+  /**
+   * DataTags (DDS-Security 1.2 §7.3.21); all-zero is no tags.
+   */
+  struct zerodds_ZeroDdsDataTagQosPolicy data_tags;
+} zerodds_ZeroDdsDataWriterQos;
 
 /**
  * ReaderDataLifecycleQosPolicy.
@@ -647,6 +1272,45 @@ typedef struct zerodds_ZeroDdsReaderDataLifecycleQosPolicy {
    */
   struct zerodds_ZeroDdsDuration autopurge_disposed_samples_delay;
 } zerodds_ZeroDdsReaderDataLifecycleQosPolicy;
+
+/**
+ * TypeConsistencyEnforcementQosPolicy (DDS-XTypes 1.3 §7.6.3.4.1, Annex D).
+ *
+ * `is_set` = 0 leaves the policy at its default (`ALLOW_TYPE_COERCION` with
+ * the defaults of the policy); an all-zero struct is that. `kind` is
+ * `DISALLOW_TYPE_COERCION` = 0 or `ALLOW_TYPE_COERCION` = 1; the five flags
+ * are 0 or 1.
+ */
+typedef struct zerodds_ZeroDdsTypeConsistencyEnforcementQosPolicy {
+  /**
+   * 0: left at the default; 1: the fields below are the policy.
+   */
+  uint8_t is_set;
+  /**
+   * `TypeConsistencyKind`.
+   */
+  uint8_t kind;
+  /**
+   * `ignore_sequence_bounds`.
+   */
+  uint8_t ignore_sequence_bounds;
+  /**
+   * `ignore_string_bounds`.
+   */
+  uint8_t ignore_string_bounds;
+  /**
+   * `ignore_member_names`.
+   */
+  uint8_t ignore_member_names;
+  /**
+   * `prevent_type_widening`.
+   */
+  uint8_t prevent_type_widening;
+  /**
+   * `force_type_validation`.
+   */
+  uint8_t force_type_validation;
+} zerodds_ZeroDdsTypeConsistencyEnforcementQosPolicy;
 
 /**
  * DataReaderQos.
@@ -716,121 +1380,75 @@ typedef struct zerodds_ZeroDdsDataReaderQos {
    * GroupData.
    */
   zerodds_ZeroDdsGroupDataQosPolicy group_data;
+  /**
+   * DataRepresentation (DDS-XTypes 1.3 Annex D `DataReaderQos::representation`).
+   */
+  struct zerodds_ZeroDdsDataRepresentationQosPolicy data_representation;
+  /**
+   * TypeConsistencyEnforcement (DDS-XTypes 1.3 Annex D
+   * `DataReaderQos::type_consistency`).
+   */
+  struct zerodds_ZeroDdsTypeConsistencyEnforcementQosPolicy type_consistency;
+  /**
+   * Property (DDS-Security 1.2 §7.3.21); all-zero is no entries.
+   */
+  struct zerodds_ZeroDdsPropertyQosPolicy property;
+  /**
+   * DataTags (DDS-Security 1.2 §7.3.21); all-zero is no tags.
+   */
+  struct zerodds_ZeroDdsDataTagQosPolicy data_tags;
 } zerodds_ZeroDdsDataReaderQos;
 
 /**
- * `DCPSSubscription` sample (Spec §2.2.5.4).
+ * EntityFactoryQosPolicy.
  */
-typedef struct zerodds_ZeroDdsSubscriptionBuiltinTopicData {
+typedef struct zerodds_ZeroDdsEntityFactoryQosPolicy {
   /**
-   * Endpoint GUID (reader).
+   * autoenable_created_entities.
    */
-  uint8_t key[16];
-  /**
-   * Owning participant GUID.
-   */
-  uint8_t participant_key[16];
-  /**
-   * Topic name (heap-allocated).
-   */
-  char *topic_name;
-  /**
-   * Type name (heap-allocated).
-   */
-  char *type_name;
-  /**
-   * Durability.
-   */
-  uint32_t durability_kind;
-  /**
-   * Reliability.
-   */
-  uint32_t reliability_kind;
-  /**
-   * Ownership.
-   */
-  uint32_t ownership_kind;
-  /**
-   * Liveliness lease in seconds.
-   */
-  int32_t liveliness_lease_seconds;
-  /**
-   * Deadline period in seconds.
-   */
-  int32_t deadline_seconds;
-} zerodds_ZeroDdsSubscriptionBuiltinTopicData;
+  bool autoenable_created_entities;
+} zerodds_ZeroDdsEntityFactoryQosPolicy;
 
 /**
- * SampleInfo (Spec §2.2.2.5.4 + DDS-PSM-Cxx §7.5.8.1).
+ * DomainParticipantQos.
  */
-typedef struct zerodds_ZeroDdsSampleInfo {
+typedef struct zerodds_ZeroDdsDomainParticipantQos {
   /**
-   * Sample-state bit (1=READ, 2=NOT_READ).
+   * UserData.
    */
-  uint32_t sample_state;
+  struct zerodds_ZeroDdsUserDataQosPolicy user_data;
   /**
-   * View state (1=NEW, 2=NOT_NEW).
+   * EntityFactory.
    */
-  uint32_t view_state;
+  struct zerodds_ZeroDdsEntityFactoryQosPolicy entity_factory;
+} zerodds_ZeroDdsDomainParticipantQos;
+
+/**
+ * PublisherQos.
+ */
+typedef struct zerodds_ZeroDdsPublisherQos {
   /**
-   * Instance state (1=ALIVE, 2=NOT_ALIVE_DISPOSED, 4=NOT_ALIVE_NO_WRITERS).
+   * Presentation.
    */
-  uint32_t instance_state;
+  struct zerodds_ZeroDdsPresentationQosPolicy presentation;
   /**
-   * disposed_generation_count.
+   * Partition.
    */
-  int32_t disposed_generation_count;
+  struct zerodds_ZeroDdsPartitionQosPolicy partition;
   /**
-   * no_writers_generation_count.
+   * GroupData.
    */
-  int32_t no_writers_generation_count;
+  zerodds_ZeroDdsGroupDataQosPolicy group_data;
   /**
-   * sample_rank.
+   * EntityFactory.
    */
-  int32_t sample_rank;
-  /**
-   * generation_rank.
-   */
-  int32_t generation_rank;
-  /**
-   * absolute_generation_rank.
-   */
-  int32_t absolute_generation_rank;
-  /**
-   * source_timestamp seconds.
-   */
-  int32_t source_timestamp_sec;
-  /**
-   * source_timestamp nanoseconds.
-   */
-  uint32_t source_timestamp_nanosec;
-  /**
-   * Instance handle.
-   */
-  uint64_t instance_handle;
-  /**
-   * Publication handle (writer-GUID hash).
-   */
-  uint64_t publication_handle;
-  /**
-   * `true` if the payload actually has data (vs. a lifecycle marker).
-   */
-  bool valid_data;
-  /**
-   * XCDR version of the payload from the encapsulation header (RTPS 2.5
-   * §10.5): `0` = XCDR1 (CDR/PL_CDR), `1` = XCDR2 (CDR2/D_CDR2/PL_CDR2).
-   * The typed consumer needs this to apply the correct alignment rule.
-   * `0` for lifecycle markers (no payload).
-   */
-  uint8_t representation;
-  /**
-   * Wire byte order of the payload: `0` = little-endian (the canonical
-   * XCDR2 wire), `1` = big-endian — from the encapsulation representation
-   * identifier's low bit. The typed consumer dispatches its little-endian
-   * vs big-endian decoder on this. `0` for lifecycle markers.
-   */
-  uint8_t big_endian;
-} zerodds_ZeroDdsSampleInfo;
+  struct zerodds_ZeroDdsEntityFactoryQosPolicy entity_factory;
+} zerodds_ZeroDdsPublisherQos;
+
+/**
+ * SubscriberQos.
+ */
+typedef struct zerodds_ZeroDdsPublisherQos zerodds_ZeroDdsSubscriberQos;
 
 /**
  * Sample array (Spec §5 mini-spec).
@@ -858,56 +1476,6 @@ typedef struct zerodds_ZeroDdsSampleArray {
    */
   void *loan_token;
 } zerodds_ZeroDdsSampleArray;
-
-/**
- * `DCPSPublication` sample (Spec §2.2.5.3).
- */
-typedef struct zerodds_ZeroDdsPublicationBuiltinTopicData {
-  /**
-   * Endpoint GUID (writer).
-   */
-  uint8_t key[16];
-  /**
-   * Owning participant GUID.
-   */
-  uint8_t participant_key[16];
-  /**
-   * Topic name (heap-allocated; via `zerodds_string_free`).
-   */
-  char *topic_name;
-  /**
-   * Type name (heap-allocated).
-   */
-  char *type_name;
-  /**
-   * Durability.
-   */
-  uint32_t durability_kind;
-  /**
-   * Reliability.
-   */
-  uint32_t reliability_kind;
-  /**
-   * Ownership (0=Shared, 1=Exclusive).
-   */
-  uint32_t ownership_kind;
-  /**
-   * Ownership strength.
-   */
-  int32_t ownership_strength;
-  /**
-   * Liveliness lease in seconds.
-   */
-  int32_t liveliness_lease_seconds;
-  /**
-   * Deadline period in seconds.
-   */
-  int32_t deadline_seconds;
-  /**
-   * Lifespan duration in seconds.
-   */
-  int32_t lifespan_seconds;
-} zerodds_ZeroDdsPublicationBuiltinTopicData;
 
 /**
  * DomainParticipantFactoryQos.
@@ -1087,6 +1655,24 @@ typedef struct zerodds_ZeroDdsDataReaderListener {
 } zerodds_ZeroDdsDataReaderListener;
 
 /**
+ * A sample of a MultiTopic reader: the body of the result type and its SampleInfo.
+ */
+typedef struct zerodds_ZeroDdsMultiTopicSample {
+  /**
+   * The SampleInfo; `representation` is 1 (XCDR2), `big_endian` 0.
+   */
+  struct zerodds_ZeroDdsSampleInfo info;
+  /**
+   * The body, allocated by the call; NULL for a sample without data.
+   */
+  uint8_t *data;
+  /**
+   * Length of `data`.
+   */
+  uintptr_t len;
+} zerodds_ZeroDdsMultiTopicSample;
+
+/**
  * Time point (Spec §2.2.3.5 + IDL §9.3.2). seconds + nanoseconds form
  * (the spec's `zerodds_Time`; cbindgen emits it as `zerodds_ZeroDdsTime`,
  * like every other FFI struct). Used by `zerodds_dp_get_current_time`.
@@ -1139,6 +1725,92 @@ typedef struct zerodds_ZeroDdsPublicationMatchedStatus {
   int32_t current_count_change;
   uint64_t last_subscription_handle;
 } zerodds_ZeroDdsPublicationMatchedStatus;
+
+/**
+ * What one matched peer announced (§7.6.2.1).
+ */
+typedef struct zerodds_ZeroDdsRpcPeer {
+  /**
+   * The peer endpoint's GUID.
+   */
+  uint8_t key[16];
+  /**
+   * `1` if the peer announced `related_entity_guid`; `0` reads as
+   * `GUID_UNKNOWN`.
+   */
+  uint8_t has_related;
+  /**
+   * The related endpoint's GUID.
+   */
+  uint8_t related[16];
+  /**
+   * `1` if the peer announced `service_instance_name`.
+   */
+  uint8_t has_instance_name;
+  /**
+   * The instance name, NUL-terminated.
+   */
+  char instance_name[257];
+  /**
+   * How many topic aliases the peer announced.
+   */
+  uint32_t alias_count;
+  /**
+   * The aliases, joined by `'\n'`, NUL-terminated.
+   */
+  char aliases[1025];
+  /**
+   * `1` if `aliases` holds fewer than `alias_count` of them.
+   */
+  uint8_t aliases_truncated;
+  /**
+   * `1` if `instance_name` was cut at its capacity: the name the peer
+   * announced is longer. A truncated name must not be compared; the
+   * matching calls work on the full one.
+   */
+  uint8_t name_truncated;
+} zerodds_ZeroDdsRpcPeer;
+
+/**
+ * `QosPolicyCount` (DDS 1.4 §2.2.4.1).
+ */
+typedef struct zerodds_ZeroDdsQosPolicyCount {
+  /**
+   * The policy's id.
+   */
+  uint32_t policy_id;
+  /**
+   * How often the policy was incompatible.
+   */
+  int32_t count;
+} zerodds_ZeroDdsQosPolicyCount;
+
+/**
+ * An incompatible-QoS status with its `policies`.
+ */
+typedef struct zerodds_ZeroDdsIncompatibleQosStatusEx {
+  /**
+   * Total cumulative count.
+   */
+  int32_t total_count;
+  /**
+   * Change since the last read.
+   */
+  int32_t total_count_change;
+  /**
+   * The policy that was incompatible last.
+   */
+  uint32_t last_policy_id;
+  /**
+   * How many entries of `policies` are set.
+   */
+  uint32_t policies_len;
+  /**
+   * Per-policy counts: the policy ids of DDS 1.4 and DDS-XTypes 1.3 are 1
+   * to 24, so 32 entries hold them all.
+   */
+  struct zerodds_ZeroDdsQosPolicyCount policies[32];
+} zerodds_ZeroDdsIncompatibleQosStatusEx;
 
 /**
  * LivelinessChangedStatus (Spec §2.2.4.1).
@@ -1350,7 +2022,144 @@ extern "C" {
 #endif // __cplusplus
 
 /**
+ * The DDS 1.4 defaults: RELIABLE, VOLATILE, KEEP_LAST(1), infinite
+ * deadline, lifespan and lease, AUTOMATIC liveliness, no RESOURCE_LIMITS,
+ * and a writer's `max_blocking_time` of 100 ms.
+ */
+struct zerodds_ZeroDdsEndpointQos zerodds_endpoint_qos_default(void);
+
+/**
+ * Creates a DataWriter with the full [`ZeroDdsEndpointQos`]: reliability,
+ * durability, KEEP_LAST depth or KEEP_ALL, deadline, lifespan,
+ * liveliness, RESOURCE_LIMITS and `max_blocking_time`. `is_keyed` as in
+ * [`zerodds_writer_create_kind`].
+ *
+ * Returns `NULL` for a NULL argument, an invalid QoS value (named on
+ * stderr) or a registration failure.
+ *
+ * # Safety
+ * `runtime` from `zerodds_runtime_create*`; strings NUL-terminated; `qos`
+ * points at a [`ZeroDdsEndpointQos`].
+ */
+struct zerodds_ZeroDdsWriter *zerodds_writer_create_qos(struct zerodds_ZeroDdsRuntime *runtime,
+                                                        const char *topic_name,
+                                                        const char *type_name,
+                                                        int is_keyed,
+                                                        const struct zerodds_ZeroDdsEndpointQos *qos);
+
+/**
+ * [`zerodds_writer_create_qos`] with USER_DATA (DDS 1.4 §2.2.3.1):
+ * `user_data_len` octets at `user_data`, announced through SEDP's
+ * `PID_USER_DATA`. NULL with `0` is none; NULL with a length is refused.
+ * ROS 2 RMWs from Iron on put `typehash=RIHS01_…;` there.
+ *
+ * # Safety
+ * As [`zerodds_writer_create_qos`]; a non-NULL `user_data` is readable
+ * for `user_data_len` octets.
+ */
+struct zerodds_ZeroDdsWriter *zerodds_writer_create_qos_user_data(struct zerodds_ZeroDdsRuntime *runtime,
+                                                                  const char *topic_name,
+                                                                  const char *type_name,
+                                                                  int is_keyed,
+                                                                  const struct zerodds_ZeroDdsEndpointQos *qos,
+                                                                  const uint8_t *user_data,
+                                                                  uintptr_t user_data_len);
+
+/**
+ * Creates a DataReader with the full [`ZeroDdsEndpointQos`] (lifespan is
+ * a writer policy and ignored here). The KEEP_LAST depth bounds what
+ * `zerodds_reader_take`/`zerodds_reader_loan` keep between calls; a data
+ * callback receives every sample as it arrives.
+ *
+ * # Safety
+ * As [`zerodds_writer_create_qos`].
+ */
+struct zerodds_ZeroDdsReader *zerodds_reader_create_qos(struct zerodds_ZeroDdsRuntime *runtime,
+                                                        const char *topic_name,
+                                                        const char *type_name,
+                                                        int is_keyed,
+                                                        const struct zerodds_ZeroDdsEndpointQos *qos);
+
+/**
+ * [`zerodds_reader_create_qos`] with USER_DATA, as
+ * [`zerodds_writer_create_qos_user_data`].
+ *
+ * # Safety
+ * As [`zerodds_writer_create_qos_user_data`].
+ */
+struct zerodds_ZeroDdsReader *zerodds_reader_create_qos_user_data(struct zerodds_ZeroDdsRuntime *runtime,
+                                                                  const char *topic_name,
+                                                                  const char *type_name,
+                                                                  int is_keyed,
+                                                                  const struct zerodds_ZeroDdsEndpointQos *qos,
+                                                                  const uint8_t *user_data,
+                                                                  uintptr_t user_data_len);
+
+/**
+ * [`zerodds_writer_create_qos`] for a topic whose type is described by a
+ * serialized COMPLETE `TypeObject` and the objects it names by hash
+ * (DDS-RPC 1.0 §7.5.1.2, XTypes 1.3 §7.6.3): the dependencies and the root
+ * are registered, and the endpoint announces the root's `TypeIdentifier`
+ * from its first publication. `dependencies[i]` is readable for
+ * `dependency_lens[i]` octets.
+ *
+ * # Safety
+ * As [`zerodds_writer_create_qos`]; the object buffers as described above.
+ */
+struct zerodds_ZeroDdsWriter *zerodds_writer_create_qos_typed(struct zerodds_ZeroDdsRuntime *runtime,
+                                                              const char *topic_name,
+                                                              const char *type_name,
+                                                              int is_keyed,
+                                                              const struct zerodds_ZeroDdsEndpointQos *qos,
+                                                              const uint8_t *type_object,
+                                                              uintptr_t type_object_len,
+                                                              const uint8_t *const *dependencies,
+                                                              const uintptr_t *dependency_lens,
+                                                              uintptr_t dependency_count);
+
+/**
+ * The reader-side mirror of [`zerodds_writer_create_qos_typed`].
+ *
+ * # Safety
+ * As [`zerodds_writer_create_qos_typed`].
+ */
+struct zerodds_ZeroDdsReader *zerodds_reader_create_qos_typed(struct zerodds_ZeroDdsRuntime *runtime,
+                                                              const char *topic_name,
+                                                              const char *type_name,
+                                                              int is_keyed,
+                                                              const struct zerodds_ZeroDdsEndpointQos *qos,
+                                                              const uint8_t *type_object,
+                                                              uintptr_t type_object_len,
+                                                              const uint8_t *const *dependencies,
+                                                              const uintptr_t *dependency_lens,
+                                                              uintptr_t dependency_count);
+
+/**
+ * MANUAL_BY_TOPIC `assert_liveliness` of a DataWriter (DDS 1.4
+ * §2.2.3.11). Returns `0`, or `-1` for a NULL writer.
+ *
+ * # Safety
+ * `writer` from `zerodds_writer_create*` or NULL.
+ */
+int zerodds_writer_assert_liveliness(struct zerodds_ZeroDdsWriter *writer);
+
+/**
+ * Blocks until every matched reader has acknowledged every sample written
+ * so far, or `timeout_ns` elapses (DDS 1.4 §2.2.2.4.2.22
+ * `wait_for_acknowledgments`). Returns `0` when acknowledged, `1` on
+ * timeout, `-1` for a NULL writer.
+ *
+ * # Safety
+ * `writer` from `zerodds_writer_create*` or NULL.
+ */
+int zerodds_writer_wait_for_acknowledgments(struct zerodds_ZeroDdsWriter *writer,
+                                            uint64_t timeout_ns);
+
+/**
  * Creates a new ZeroDDS runtime on the given domain ID.
+ *
+ * The runtime's data-representation offer is
+ * `ffi_data_representation_offer` — XCDR2 first, XCDR1 also offered.
  *
  * # Safety
  * The return value is a heap-allocated pointer; the caller must
@@ -1359,6 +2168,27 @@ extern "C" {
  * Returns `NULL` on error.
  */
 struct zerodds_ZeroDdsRuntime *zerodds_runtime_create(uint32_t domain_id);
+
+/**
+ * Creates a runtime from an explicitly selected configuration, as a
+ * program's `--config PATH` and `--set PATH=VALUE` flags would select it:
+ * the environment beneath, then `config_path` with its sibling `<stem>.d`
+ * (or, for `NULL`, the standard system layout), then `sets[0..n_sets]` in
+ * order, each `"path=value"` (`"+path=value"` appends to a list).
+ *
+ * Returns `NULL` and names the refusal on stderr for an unreadable or
+ * invalid configuration, an unknown setting path, a malformed assignment or
+ * a startup failure.
+ *
+ * # Safety
+ * `config_path` is `NULL` or a NUL-terminated UTF-8 string; `sets` is
+ * `NULL` (with `n_sets == 0`) or points at `n_sets` NUL-terminated UTF-8
+ * strings. The returned pointer is freed with `zerodds_runtime_destroy`.
+ */
+struct zerodds_ZeroDdsRuntime *zerodds_runtime_create_from_config(uint32_t domain_id,
+                                                                  const char *config_path,
+                                                                  const char *const *sets,
+                                                                  uintptr_t n_sets);
 
 /**
  * Like [`zerodds_runtime_create`] but with the **ROS-2 out-of-the-box profile**
@@ -1374,7 +2204,12 @@ struct zerodds_ZeroDdsRuntime *zerodds_runtime_create(uint32_t domain_id);
 struct zerodds_ZeroDdsRuntime *zerodds_runtime_create_ros_defaults(uint32_t domain_id);
 
 /**
- * Destroys a runtime. NULL-safe.
+ * Destroys a runtime: stops its threads, announces the participant's
+ * departure, closes its same-host channels and sockets. NULL-safe.
+ *
+ * The worker threads hold the runtime, so freeing the handle alone
+ * stopped nothing: the participant stayed on the wire until the process
+ * ended, and its peers kept it, and sent to it, until its lease ran out.
  *
  * # Safety
  * `runtime` must come from `zerodds_runtime_create` or be NULL.
@@ -1456,6 +2291,20 @@ int zerodds_runtime_participant_guid(struct zerodds_ZeroDdsRuntime *runtime, uin
  * point to at least 16 writable bytes.
  */
 int zerodds_writer_guid(struct zerodds_ZeroDdsWriter *writer, uint8_t *out_guid);
+
+/**
+ * Writes the RTPS sequence number the next sample written through `writer`
+ * will carry into `out_sn` (DDSI-RTPS 2.5 §8.3.5.4: one more than the last
+ * sample the writer wrote). A DDS-RPC request header holds the identity of
+ * the sample it is part of (DDS-RPC 1.0 §7.5.1.1.1 `requestId`), and the
+ * header is filled before the write, so a binding asks the writer for the
+ * number instead of counting on its own.
+ *
+ * # Safety
+ * `writer` must come from `zerodds_writer_create` or be NULL; `out_sn` must
+ * point to one writable `int64_t`.
+ */
+int zerodds_writer_next_sequence_number(struct zerodds_ZeroDdsWriter *writer, int64_t *out_sn);
 
 /**
  * Writes a reader's 16-byte endpoint GUID into `out_guid`. See
@@ -1556,6 +2405,13 @@ struct zerodds_ZeroDdsWriter *zerodds_writer_create_typed(struct zerodds_ZeroDds
 /**
  * Writes a sample. `payload` points to already-CDR-encoded bytes.
  *
+ * Carries no key hash on the wire (the `zerodds_writer_*` family has no
+ * keyed-write entry point at all — see [`zerodds_writer_dispose`] for what
+ * that means for a later dispose/unregister of this writer's instances).
+ * `zerodds_dw_write_keyed` (`crates/zerodds-c-api/src/publisher_ffi.rs`,
+ * the `zerodds_dw_*`/`zerodds_pub_*` family) is the one C-FFI write
+ * function that does.
+ *
  * # Safety
  * `writer` and `payload` must be valid, `len` <= buffer size.
  */
@@ -1597,6 +2453,24 @@ int zerodds_writer_wait_for_matched(struct zerodds_ZeroDdsWriter *writer,
  * key hash of the instance (PLAIN_CDR2-BE encoding with zero
  * padding, or MD5 if > 16 bytes).
  *
+ * This entry point never has the instance's key value, only its hash —
+ * unlike [`crate::publisher_ffi::zerodds_dw_dispose`] (the `zerodds_dw_*`/
+ * `zerodds_pub_*` family), the `zerodds_writer_*` family has no
+ * keyed-write entry point at all (`zerodds_writer_write` carries no key
+ * hash either), so the writer never has a chance to remember a canonical
+ * key holder for `key_hash` to fall back on here — the DATA this sends
+ * always carries `PID_KEY_HASH` alone, with no `serializedKey` and the K
+ * flag clear. RTI Connext and CoreDX accept that form; Eclipse Cyclone,
+ * Fast DDS and OpenDDS do not treat it as a dispose
+ * (`Test_FinalInstanceState_1`, measured 0/4 on all three). A typed
+ * `DataWriter<T>::dispose`/`unregister_instance`, or the `zerodds_dw_*`
+ * family via [`crate::publisher_ffi::zerodds_dw_write_keyed`] +
+ * [`crate::publisher_ffi::zerodds_dw_dispose`], has (or can recover) the
+ * instance value and sends the full form all five vendors accept; prefer
+ * one of those when a real key is available. A writer created via
+ * [`zerodds_writer_create_typed`] and a sample buffer (not just its key
+ * hash) also has that value — see [`zerodds_writer_dispose_sample`].
+ *
  * # Safety
  * `writer` and `key_hash` must be valid; `key_hash` must point to
  * exactly 16 bytes.
@@ -1609,6 +2483,11 @@ int zerodds_writer_dispose(struct zerodds_ZeroDdsWriter *writer, const uint8_t *
  * behavior (autodispose=true) should instead use
  * `zerodds_writer_unregister_with_dispose`.
  *
+ * Same `PID_KEY_HASH`-only marker caveat as [`zerodds_writer_dispose`]'s
+ * own doc comment — this family never carries a key hash on a write
+ * either, so there is nothing for this call to fall back on. See
+ * [`zerodds_writer_unregister_sample`] for the sample-derived form.
+ *
  * # Safety
  * Like [`zerodds_writer_dispose`].
  */
@@ -1619,11 +2498,78 @@ int zerodds_writer_unregister(struct zerodds_ZeroDdsWriter *writer, const uint8_
  * `autodispose_unregistered_instances=true`). The reader sees both
  * NotAliveDisposed and NotAliveNoWriters.
  *
+ * Same `PID_KEY_HASH`-only marker caveat as [`zerodds_writer_dispose`]'s
+ * own doc comment. See [`zerodds_writer_unregister_with_dispose_sample`]
+ * for the sample-derived form.
+ *
  * # Safety
  * Like [`zerodds_writer_dispose`].
  */
 int zerodds_writer_unregister_with_dispose(struct zerodds_ZeroDdsWriter *writer,
                                            const uint8_t *key_hash);
+
+/**
+ * Sends a DISPOSED lifecycle marker (Spec §9.6.3.9 PID_STATUS_INFO)
+ * derived from the sample itself rather than a caller-supplied key hash.
+ * `sample` is this writer's own encoding of the instance — the same bytes
+ * a [`zerodds_writer_write`] payload carries (representation/byte order
+ * as the writer's own encoding declares, see
+ * [`zerodds_writer_set_wire_extensibility`]).
+ *
+ * The runtime decodes `sample` against this writer's registered
+ * `TypeObject` ([`zerodds_writer_create_typed`]), derives the instance's
+ * real 16-byte KeyHash and its canonical key holder
+ * (`DcpsRuntime::writer_sample_key_material`, the same
+ * `SerializedTypeSupport::read_body` + `key_material` pair
+ * `zerodds_dw_write_keyed` uses), and sends both — `PID_KEY_HASH` plus
+ * `serializedKey` with the K flag set (RTPS 2.5 §9.4.2.11). That is the
+ * dispose form Eclipse Cyclone 11.0.1, Fast DDS 3.6.1 and OpenDDS 3.35
+ * were all measured to act on (`Test_FinalInstanceState_1`, 4/4), unlike
+ * [`zerodds_writer_dispose`]'s `PID_KEY_HASH`-only marker (0/4 on those
+ * three — see its own doc comment).
+ *
+ * Returns [`ZeroDdsStatus::PreconditionNotMet`] — never a silent
+ * hash-only fallback — when this writer was not created via
+ * [`zerodds_writer_create_typed`] (no registered `TypeObject`) or `sample`
+ * does not decode as that type. A typed writer whose type has no `@key`
+ * member writes a topic of one instance (DDS 1.4 §2.2.1.2.2); the marker
+ * names it.
+ *
+ * # Safety
+ * `writer` must come from `zerodds_writer_create_typed` and be valid;
+ * `sample[0..len]` must be `len` readable bytes with `len > 0`.
+ */
+int zerodds_writer_dispose_sample(struct zerodds_ZeroDdsWriter *writer,
+                                  const uint8_t *sample,
+                                  uintptr_t len);
+
+/**
+ * Sends an UNREGISTER marker (Spec §2.2.2.4.2.7) derived from the sample
+ * itself — sets only the UNREGISTERED bit (no autodispose). Same
+ * sample-decoding/derivation and error behavior as
+ * [`zerodds_writer_dispose_sample`]'s own doc comment; a caller wanting
+ * spec-default behavior (autodispose=true) should instead use
+ * [`zerodds_writer_unregister_with_dispose_sample`].
+ *
+ * # Safety
+ * Like [`zerodds_writer_dispose_sample`].
+ */
+int zerodds_writer_unregister_sample(struct zerodds_ZeroDdsWriter *writer,
+                                     const uint8_t *sample,
+                                     uintptr_t len);
+
+/**
+ * Sends a combined DISPOSE+UNREGISTER marker (Spec §2.2.3.21 with
+ * `autodispose_unregistered_instances=true`) derived from the sample
+ * itself. Same sample-decoding/derivation and error behavior as
+ * [`zerodds_writer_dispose_sample`]'s own doc comment.
+ *
+ * # Safety
+ * Like [`zerodds_writer_dispose_sample`].
+ */
+int zerodds_writer_unregister_with_dispose_sample(struct zerodds_ZeroDdsWriter *writer,
+                                                  const uint8_t *sample,
+                                                  uintptr_t len);
 
 /**
  * Number of remote DataReaders currently matched to this writer (DDS 1.4
@@ -1646,6 +2592,81 @@ uintptr_t zerodds_writer_matched_count(struct zerodds_ZeroDdsWriter *writer);
  * `reader` must come from `zerodds_reader_create*` or be NULL.
  */
 uintptr_t zerodds_reader_matched_count(struct zerodds_ZeroDdsReader *reader);
+
+/**
+ * Fills `out` with the writer's communication status.
+ *
+ * # Safety
+ * `writer` from `zerodds_writer_create*` or NULL; `out` writable or NULL.
+ */
+int zerodds_writer_get_status(struct zerodds_ZeroDdsWriter *writer,
+                              struct zerodds_ZeroDdsWriterStatus *out);
+
+/**
+ * Fills `out` with the reader's communication status.
+ *
+ * # Safety
+ * `reader` from `zerodds_reader_create*` or NULL; `out` writable or NULL.
+ */
+int zerodds_reader_get_status(struct zerodds_ZeroDdsReader *reader,
+                              struct zerodds_ZeroDdsReaderStatus *out);
+
+/**
+ * The unicast locators a writer's readers reach it on; see
+ * [`ZeroDdsLocator`]. Returns the count (0 for NULL); copies at most
+ * `capacity` into `out` (which may be NULL to ask for the count).
+ *
+ * # Safety
+ * `writer` from `zerodds_writer_create*` or NULL; `out` writable for
+ * `capacity` elements or NULL.
+ */
+uintptr_t zerodds_writer_unicast_locators(struct zerodds_ZeroDdsWriter *writer,
+                                          struct zerodds_ZeroDdsLocator *out,
+                                          uintptr_t capacity);
+
+/**
+ * [`zerodds_writer_unicast_locators`] for a reader.
+ *
+ * # Safety
+ * As [`zerodds_writer_unicast_locators`].
+ */
+uintptr_t zerodds_reader_unicast_locators(struct zerodds_ZeroDdsReader *reader,
+                                          struct zerodds_ZeroDdsLocator *out,
+                                          uintptr_t capacity);
+
+/**
+ * Announces (or with a NULL `expression` withdraws) the content filter a
+ * runtime-path reader applies, in its SEDP subscription as
+ * `PID_CONTENT_FILTER_PROPERTY` (DDSI-RTPS 2.5 §9.6.3.4, class `DDSSQL`),
+ * so a writer may filter on its side. The reader's owner still filters
+ * what arrives; this only says what it wants. `related_topic` is the topic
+ * the reader reads.
+ *
+ * # Safety
+ * `reader` from `zerodds_reader_create*` or NULL; the strings
+ * NUL-terminated; `parameters[0..count]` valid or `count == 0`.
+ */
+int zerodds_reader_set_content_filter(struct zerodds_ZeroDdsReader *reader,
+                                      const char *filtered_topic,
+                                      const char *related_topic,
+                                      const char *expression,
+                                      const char *const *parameters,
+                                      uintptr_t count);
+
+/**
+ * Registers `callback(user_data)`, called after a communication status of
+ * any writer or reader of this runtime changed — for a waiter to re-read
+ * the status with `zerodds_writer_get_status` / `zerodds_reader_get_status`.
+ * It runs on a runtime thread and must not call back into ZeroDDS. There
+ * is no unregistration; `user_data` must outlive the runtime.
+ *
+ * # Safety
+ * `runtime` from `zerodds_runtime_create*` or NULL; `callback` callable
+ * with `user_data` from any thread.
+ */
+int zerodds_runtime_add_status_callback(struct zerodds_ZeroDdsRuntime *runtime,
+                                        void (*callback)(void*),
+                                        void *user_data);
 
 /**
  * Destroys a writer. NULL-safe.
@@ -1742,6 +2763,76 @@ int zerodds_reader_take_endian(struct zerodds_ZeroDdsReader *reader,
                                uint8_t *out_be);
 
 /**
+ * Writes a sample with the sample it answers in the DATA's inline QoS:
+ * `PID_RELATED_SAMPLE_IDENTITY` (0x0083, DDS-RPC 1.0 §7.8.2) and
+ * eProsima's 0x800f. `payload` points to already-encoded bytes.
+ *
+ * `related_guid` points to the 16 octets of the writer GUID of the
+ * related sample and `related_sn` is its RTPS sequence number. `out_sn`
+ * (nullable) receives the RTPS sequence number this sample went out with.
+ *
+ * # Safety
+ * `writer`, `payload` (if `len > 0`) and `related_guid` must be valid;
+ * `out_sn` is NULL or valid.
+ */
+int zerodds_writer_write_related(struct zerodds_ZeroDdsWriter *writer,
+                                 const uint8_t *payload,
+                                 uintptr_t len,
+                                 const uint8_t *related_guid,
+                                 uint64_t related_sn,
+                                 int64_t *out_sn);
+
+/**
+ * Writes a sample for some of the matched readers only (DDS-RPC 1.0
+ * §7.11.1.4.3: a request through a requester bound to a service instance
+ * "shall be sent to the bound service instance only"). `payload` points to
+ * already-encoded bytes. `reader_guids` points to `reader_count` GUIDs of
+ * 16 octets each, the endpoint GUIDs of the readers the sample is for (a
+ * reader's `zerodds_reader_guid`, or the key of a matched reader that
+ * announced the DDS-RPC discovery extension). `out_sn` (nullable) receives
+ * the RTPS sequence number the sample went out with.
+ *
+ * Every other matched reader is told the sample is not for it (a GAP for
+ * the number, DDSI-RTPS 2.5 §8.3.7.4) and does not get it, and neither does
+ * a reader of the same runtime. A GUID that is no matched reader names
+ * nobody; with `reader_count` 0 the sample is for none.
+ *
+ * # Safety
+ * `writer` and `payload` (if `len > 0`) must be valid; `reader_guids` must
+ * point to `reader_count * 16` readable bytes when `reader_count > 0`;
+ * `out_sn` is NULL or valid.
+ */
+int zerodds_writer_write_to_readers(struct zerodds_ZeroDdsWriter *writer,
+                                    const uint8_t *payload,
+                                    uintptr_t len,
+                                    const uint8_t *reader_guids,
+                                    uintptr_t reader_count,
+                                    int64_t *out_sn);
+
+/**
+ * [`zerodds_reader_take_endian`], plus where the sample came from, from
+ * its DATA submessage: the writer GUID (16 octets), the RTPS sequence
+ * number, and `PID_RELATED_SAMPLE_IDENTITY` (DDS-RPC 1.0 §7.8.2). Every
+ * out parameter after `out_be` is nullable. `out_has_related` receives
+ * `1` when the DATA carried a related sample identity — `out_related_guid`
+ * (16 octets) and `out_related_sn` are then set — and `0` otherwise.
+ *
+ * # Safety
+ * As [`zerodds_reader_take_endian`]; the GUID pointers point to 16
+ * writable octets when not NULL.
+ */
+int zerodds_reader_take_wire(struct zerodds_ZeroDdsReader *reader,
+                             uint8_t **out_buf,
+                             uintptr_t *out_len,
+                             uint8_t *out_repr,
+                             uint8_t *out_be,
+                             uint8_t *out_writer_guid,
+                             int64_t *out_sn,
+                             uint8_t *out_has_related,
+                             uint8_t *out_related_guid,
+                             uint64_t *out_related_sn);
+
+/**
  * Fixed-buffer `take` convenience: copies one sample's payload into a
  * caller-supplied buffer and returns the byte count — no heap
  * allocation, no `zerodds_buffer_free`.
@@ -1795,8 +2886,8 @@ uint64_t zerodds_reader_unknown_src_count(struct zerodds_ZeroDdsReader *reader);
  * at most one sample per instance per `min_separation_nanos`; closer-spaced
  * samples are dropped before `zerodds_reader_take`/the data callback sees them.
  * `0` disables the filter. ROS 2 exposes no TIME_BASED_FILTER field in
- * `rmw_qos_profile_t`, so `rmw_zerodds` calls this from the
- * `ZERODDS_TIME_BASED_FILTER` env to rate-limit a subscription. Returns `0` on
+ * `rmw_qos_profile_t`, so `rmw_zerodds` calls this with the runtime's
+ * `ros2.time_based_filter` (env `ZERODDS_TIME_BASED_FILTER`). Returns `0` on
  * success, `-1` on a NULL/unknown reader.
  *
  * # Safety
@@ -1824,6 +2915,23 @@ void zerodds_reader_destroy(struct zerodds_ZeroDdsReader *reader);
 int zerodds_reader_set_data_callback(struct zerodds_ZeroDdsReader *reader,
                                      zerodds_Option_ZeroDdsDataCallback callback,
                                      void *user_data);
+
+/**
+ * [`zerodds_reader_set_data_callback`] for a [`ZeroDdsDataCallbackEx`],
+ * which also receives the writer's GUID, source timestamp and sequence
+ * number of each sample. Same contract.
+ *
+ * # Safety
+ * `reader` must come from `zerodds_reader_create`.
+ */
+int zerodds_reader_set_data_callback_ex(struct zerodds_ZeroDdsReader *reader,
+                                        void (*callback)(void *user_data,
+                                                         const uint8_t *payload,
+                                                         uintptr_t payload_len,
+                                                         uint8_t representation,
+                                                         uint8_t big_endian,
+                                                         const struct zerodds_ZeroDdsSampleOrigin *origin),
+                                        void *user_data);
 
 /**
  * Frees a buffer that a previous `zerodds_reader_take`
@@ -2018,10 +3126,93 @@ int zerodds_reader_enable_iceoryx(struct zerodds_ZeroDdsReader *reader, const ch
 const char *zerodds_version(void);
 
 /**
- * Returns the InstanceHandles of all discovered topics.
+ * ABI revision of this library (`zerodds-ffi-loader-1.0` §7).
+ *
+ * The revision is bumped only on a major version, when the binary
+ * interface breaks. A patch release changes nothing about the ABI and a
+ * minor release only adds symbols, so both keep the revision they had.
+ *
+ * A loader is expected to compare this against the revision it was built
+ * for and to fail fast on a mismatch, rather than calling into a library
+ * whose symbols mean something else:
+ *
+ * ```c
+ * if (zerodds_abi_revision() != ZERODDS_ABI_REVISION) {
+ *     fprintf(stderr, "libzerodds ABI %u, expected %u\n",
+ *             zerodds_abi_revision(), ZERODDS_ABI_REVISION);
+ *     return 1;
+ * }
+ * ```
+ */
+uint32_t zerodds_abi_revision(void);
+
+/**
+ * Calls `callback(user_data)` on the receive thread once after each run of
+ * samples the reader has queued, or removes the callback with `NULL`.
+ *
+ * * The samples stay in the reader; read them with `zerodds_reader_take*`.
+ * * The callback runs on the runtime's receive thread and must be short and
+ *   must not call ZeroDDS: signal a thread of your own and return. It must
+ *   not let a C++ exception escape.
+ * * Samples that arrived before the callback was set do not call it; take
+ *   once after setting it.
+ * * With `callback == NULL`, `user_data` and `release` are ignored.
+ * * `release` (nullable) is called with `user_data` when the callback has
+ *   been replaced or removed and no call of it is running any more, so the
+ *   caller can free what `user_data` points to without waiting for the
+ *   receive thread.
  *
  * # Safety
- * `p`, `out`, `out_count` valid.
+ * `reader` from `zerodds_reader_create*`; `user_data` stays valid until
+ * `release` runs (until the callback is cleared, when `release` is NULL).
+ */
+int zerodds_reader_set_arrival_callback(struct zerodds_ZeroDdsReader *reader,
+                                        void (*callback)(void*),
+                                        void *user_data,
+                                        void (*release)(void*));
+
+/**
+ * Releases what a `DCPSTopic` sample filled by the C API holds — the two
+ * names and the TOPIC_DATA octet sequence — and leaves those members
+ * null. A struct already released, or one the API never filled but
+ * zeroed, is left as it is.
+ *
+ * # Safety
+ * `data` is null or points at a struct the C API filled.
+ */
+void zerodds_topic_builtin_topic_data_free(struct zerodds_ZeroDdsTopicBuiltinTopicData *data);
+
+/**
+ * Releases what a `DCPSPublication` sample filled by the C API holds — the
+ * two names, the three octet sequences and the partition names — and
+ * leaves those members null. A struct already released, or one the API
+ * never filled but zeroed, is left as it is.
+ *
+ * # Safety
+ * `data` is null or points at a struct the C API filled.
+ */
+void zerodds_publication_builtin_topic_data_free(struct zerodds_ZeroDdsPublicationBuiltinTopicData *data);
+
+/**
+ * The subscription half of [`zerodds_publication_builtin_topic_data_free`].
+ *
+ * # Safety
+ * `data` is null or points at a struct the C API filled.
+ */
+void zerodds_subscription_builtin_topic_data_free(struct zerodds_ZeroDdsSubscriptionBuiltinTopicData *data);
+
+/**
+ * Returns the InstanceHandles of all discovered topics.
+ *
+ * The first `min(len, cap)` handles are written into `out`, `*out_count` is
+ * set to the **total** number of discovered topics, and the return value is
+ * `OutOfResources` when `len > cap` (so a caller retries with a buffer of
+ * `*out_count`), `Ok` otherwise. A NULL `out` with `cap == 0` asks for the
+ * length alone (`docs/specs/zerodds-c-api-1.0.md` §2.8).
+ *
+ * # Safety
+ * `p`, `out_count` valid; `out[0..cap]` writeable, or `out` NULL exactly
+ * when `cap == 0`.
  */
 int zerodds_dp_get_discovered_topics(struct zerodds_ZeroDdsDomainParticipant *p,
                                      uint64_t *out,
@@ -2047,7 +3238,14 @@ int zerodds_dp_get_discovered_participant_data(struct zerodds_ZeroDdsDomainParti
 void zerodds_builtin_userdata_free(const uint8_t *p, uintptr_t len);
 
 /**
- * Returns the `TopicBuiltinTopicData` for an InstanceHandle.
+ * Returns the `TopicBuiltinTopicData` for an InstanceHandle. The names
+ * and the TOPIC_DATA octet sequence are copies that belong to the
+ * caller until it hands the struct to
+ * [`zerodds_topic_builtin_topic_data_free`].
+ *
+ * `ZERODDS_BAD_PARAMETER` for a handle `get_discovered_topics` did not
+ * list, `ZERODDS_INVALID_UTF8` when a name holds a NUL and so has no C
+ * string; in both cases `out` is left untouched.
  *
  * # Safety
  * `p`, `out` valid.
@@ -2071,6 +3269,512 @@ uintptr_t zerodds_dp_discovered_publications_count(struct zerodds_ZeroDdsDomainP
  * `p` valid.
  */
 uintptr_t zerodds_dp_discovered_subscriptions_count(struct zerodds_ZeroDdsDomainParticipant *p);
+
+/**
+ * `lookup_datareader(topic_name)` of the built-in subscriber (DDS 1.4 §2.2.2.5.2.7): the reader
+ * of `DCPSParticipant`, `DCPSTopic`, `DCPSPublication` or `DCPSSubscription`. NULL for another
+ * name. The caller releases it with `zerodds_builtin_reader_destroy`.
+ *
+ * # Safety
+ * `bs` is a live built-in subscriber handle, `topic_name` a NUL-terminated string.
+ */
+struct zerodds_ZeroDdsBuiltinReader *zerodds_builtin_subscriber_lookup_datareader(struct zerodds_ZeroDdsBuiltinSubscriber *bs,
+                                                                                  const char *topic_name);
+
+/**
+ * Releases a built-in reader.
+ *
+ * # Safety
+ * `r` is NULL or from `zerodds_builtin_subscriber_lookup_datareader`, not used afterwards.
+ */
+void zerodds_builtin_reader_destroy(struct zerodds_ZeroDdsBuiltinReader *r);
+
+/**
+ * The kind (`ZERODDS_BUILTIN_*`) of the samples of `r`; 0 for NULL.
+ *
+ * # Safety
+ * `r` is NULL or a live built-in reader.
+ */
+uint32_t zerodds_builtin_reader_kind(const struct zerodds_ZeroDdsBuiltinReader *r);
+
+/**
+ * `read` (`take` = 0) or `take` (`take` != 0) of all samples of the reader, any state (DDS 1.4
+ * §2.2.2.5.3.8/9). `*out` is an array of `*out_count` samples, allocated by the call (NULL for
+ * none); the caller releases it with `zerodds_builtin_samples_free`.
+ *
+ * # Safety
+ * `r` is a live built-in reader, `out` and `out_count` writable.
+ */
+int zerodds_builtin_reader_read(struct zerodds_ZeroDdsBuiltinReader *r,
+                                int take,
+                                struct zerodds_ZeroDdsBuiltinSample **out,
+                                uintptr_t *out_count);
+
+/**
+ * Releases the array `zerodds_builtin_reader_read` returned, with the data of every sample.
+ *
+ * # Safety
+ * `samples[0..count]` is the array and count that call returned, not released before; or NULL.
+ */
+void zerodds_builtin_samples_free(struct zerodds_ZeroDdsBuiltinSample *samples, uintptr_t count);
+
+/**
+ * Releases what a sample of `zerodds_builtin_reader_read` holds and zeroes the data.
+ *
+ * # Safety
+ * `s` is NULL or a sample that call filled and that was not released.
+ */
+void zerodds_builtin_sample_free(struct zerodds_ZeroDdsBuiltinSample *s);
+
+/**
+ * Releases a string a function of this module returned. NULL is allowed.
+ *
+ * # Safety
+ * `value` came from a function of this module and was not released.
+ */
+void zerodds_builtin_string_free(char *value);
+
+/**
+ * Releases an array a function of this module returned. NULL is allowed.
+ *
+ * # Safety
+ * `bytes` and `len` are what a function of this module returned.
+ */
+void zerodds_builtin_bytes_free(uint8_t *bytes, uintptr_t len);
+
+/**
+ * `get_type_name` of `StringTypeSupport`, `KeyedStringTypeSupport`,
+ * `BytesTypeSupport` or `KeyedBytesTypeSupport` (Annex E): `kind` is one of
+ * the four `ZERODDS_BUILTIN_*` constants. The string is static and is not
+ * released; NULL for any other `kind`.
+ */
+const char *zerodds_builtin_type_support_get_type_name(int kind);
+
+/**
+ * `register_type(participant, type_name)` of the TypeSupport of a built-in
+ * type (DDS 1.4 §2.2.2.3.6, Annex E): registers the type under `type_name`,
+ * or under `get_type_name` where `type_name` is NULL. The type is the same
+ * one the participant already has under its own name; registering it again
+ * is not an error.
+ *
+ * Returns `ZERODDS_OK`; `BadHandle` for a NULL participant;
+ * `BadParameter` for a `kind` that is none of the four or a name that is no
+ * name; `PreconditionNotMet` when another type is registered under the
+ * name; `AlreadyDeleted`.
+ *
+ * # Safety
+ * `p` is a live participant; `type_name` is NULL or NUL-terminated.
+ */
+int zerodds_dp_register_builtin_type(struct zerodds_ZeroDdsDomainParticipant *p,
+                                     int kind,
+                                     const char *type_name);
+
+/**
+ * A topic of a built-in type: `kind` is one of the four
+ * `ZERODDS_BUILTIN_*` constants. NULL for any other, and as
+ * [`crate::participant_ffi::zerodds_dp_create_topic`] for the rest.
+ *
+ * # Safety
+ * As `zerodds_dp_create_topic`.
+ */
+struct zerodds_ZeroDdsTopic *zerodds_dp_create_builtin_topic(struct zerodds_ZeroDdsDomainParticipant *p,
+                                                             const char *name,
+                                                             int kind,
+                                                             const struct zerodds_ZeroDdsTopicQos *qos);
+
+/**
+ * A DataWriter over a topic of a built-in type: it advertises the
+ * type's `TypeObject` and writes the appendable form of Annex E in
+ * XCDR2. NULL when the topic is not one of the four.
+ *
+ * # Safety
+ * As `zerodds_pub_create_datawriter`.
+ */
+struct zerodds_ZeroDdsDataWriter *zerodds_pub_create_builtin_datawriter(struct zerodds_ZeroDdsPublisher *pub_,
+                                                                        struct zerodds_ZeroDdsTopic *topic,
+                                                                        const struct zerodds_ZeroDdsDataWriterQos *qos);
+
+/**
+ * A DataReader over a topic of a built-in type. NULL when the topic is
+ * not one of the four.
+ *
+ * # Safety
+ * As `zerodds_sub_create_datareader`.
+ */
+struct zerodds_ZeroDdsDataReader *zerodds_sub_create_builtin_datareader(struct zerodds_ZeroDdsSubscriber *sub,
+                                                                        struct zerodds_ZeroDdsTopic *topic,
+                                                                        const struct zerodds_ZeroDdsDataReaderQos *qos);
+
+/**
+ * `StringDataWriter::write` (Annex E): writes `value`.
+ *
+ * # Safety
+ * `dw` is a live writer over a `DDS::String` topic; `value` is a
+ * NUL-terminated string.
+ */
+int zerodds_string_writer_write(struct zerodds_ZeroDdsDataWriter *dw, const char *value);
+
+/**
+ * `StringDataWriter::write_w_timestamp`.
+ *
+ * # Safety
+ * As [`zerodds_string_writer_write`].
+ */
+int zerodds_string_writer_write_w_timestamp(struct zerodds_ZeroDdsDataWriter *dw,
+                                            const char *value,
+                                            int32_t ts_sec,
+                                            uint32_t ts_nanosec);
+
+/**
+ * `KeyedStringDataWriter::write_string_w_key`: writes `value` under
+ * `key`. `handle` is 0 or the handle of the key's instance.
+ *
+ * # Safety
+ * `dw` is a live writer over a `DDS::KeyedString` topic; `key` and
+ * `value` are NUL-terminated strings.
+ */
+int zerodds_keyed_string_writer_write_string_w_key(struct zerodds_ZeroDdsDataWriter *dw,
+                                                   const char *key,
+                                                   const char *value,
+                                                   uint64_t handle);
+
+/**
+ * `KeyedStringDataWriter::write_string_w_key_w_timestamp`.
+ *
+ * # Safety
+ * As [`zerodds_keyed_string_writer_write_string_w_key`].
+ */
+int zerodds_keyed_string_writer_write_string_w_key_w_timestamp(struct zerodds_ZeroDdsDataWriter *dw,
+                                                               const char *key,
+                                                               const char *value,
+                                                               uint64_t handle,
+                                                               int32_t ts_sec,
+                                                               uint32_t ts_nanosec);
+
+/**
+ * `BytesDataWriter::write_w_bytes`: writes `bytes[offset .. offset +
+ * length]`. `handle` is 0 or the instance's.
+ *
+ * # Safety
+ * `dw` is a live writer over a `DDS::Bytes` topic; `bytes[0..bytes_len]`
+ * is readable.
+ */
+int zerodds_bytes_writer_write_w_bytes(struct zerodds_ZeroDdsDataWriter *dw,
+                                       const uint8_t *bytes,
+                                       uintptr_t bytes_len,
+                                       int32_t offset,
+                                       int32_t length,
+                                       uint64_t handle);
+
+/**
+ * `BytesDataWriter::write_w_bytes_w_timestamp`.
+ *
+ * # Safety
+ * As [`zerodds_bytes_writer_write_w_bytes`].
+ */
+int zerodds_bytes_writer_write_w_bytes_w_timestamp(struct zerodds_ZeroDdsDataWriter *dw,
+                                                   const uint8_t *bytes,
+                                                   uintptr_t bytes_len,
+                                                   int32_t offset,
+                                                   int32_t length,
+                                                   uint64_t handle,
+                                                   int32_t ts_sec,
+                                                   uint32_t ts_nanosec);
+
+/**
+ * `KeyedBytesDataWriter::write_bytes_w_key`.
+ *
+ * # Safety
+ * `dw` is a live writer over a `DDS::KeyedBytes` topic; `key` is a
+ * NUL-terminated string and `bytes[0..bytes_len]` is readable.
+ */
+int zerodds_keyed_bytes_writer_write_bytes_w_key(struct zerodds_ZeroDdsDataWriter *dw,
+                                                 const char *key,
+                                                 const uint8_t *bytes,
+                                                 uintptr_t bytes_len,
+                                                 int32_t offset,
+                                                 int32_t length,
+                                                 uint64_t handle);
+
+/**
+ * `KeyedBytesDataWriter::write_bytes_w_key_w_timestamp`.
+ *
+ * # Safety
+ * As [`zerodds_keyed_bytes_writer_write_bytes_w_key`].
+ */
+int zerodds_keyed_bytes_writer_write_bytes_w_key_w_timestamp(struct zerodds_ZeroDdsDataWriter *dw,
+                                                             const char *key,
+                                                             const uint8_t *bytes,
+                                                             uintptr_t bytes_len,
+                                                             int32_t offset,
+                                                             int32_t length,
+                                                             uint64_t handle,
+                                                             int32_t ts_sec,
+                                                             uint32_t ts_nanosec);
+
+/**
+ * `KeyedStringDataWriter::register_instance_w_key`: the handle of the key's instance, registering it when it is new.
+ *
+ * # Safety
+ * `dw` is a live writer over the type; `key` is NUL-terminated; `out_handle` is NULL or writable.
+ */
+int zerodds_keyed_string_writer_register_instance_w_key(struct zerodds_ZeroDdsDataWriter *dw,
+                                                        const char *key,
+                                                        uint64_t *out_handle);
+
+/**
+ * `KeyedStringDataWriter::register_instance_w_key_w_timestamp`. A registration sends nothing, so the timestamp is only checked.
+ *
+ * # Safety
+ * As the function without a timestamp.
+ */
+int zerodds_keyed_string_writer_register_instance_w_key_w_timestamp(struct zerodds_ZeroDdsDataWriter *dw,
+                                                                    const char *key,
+                                                                    int32_t ts_sec,
+                                                                    uint32_t ts_nanosec,
+                                                                    uint64_t *out_handle);
+
+/**
+ * `KeyedStringDataWriter::unregister_instance_w_key`.
+ *
+ * # Safety
+ * `dw` is a live writer over the type; `key` is NUL-terminated.
+ */
+int zerodds_keyed_string_writer_unregister_instance_w_key(struct zerodds_ZeroDdsDataWriter *dw,
+                                                          const char *key);
+
+/**
+ * `KeyedStringDataWriter::unregister_instance_w_key_w_timestamp`.
+ *
+ * # Safety
+ * As the function without a timestamp.
+ */
+int zerodds_keyed_string_writer_unregister_instance_w_key_w_timestamp(struct zerodds_ZeroDdsDataWriter *dw,
+                                                                      const char *key,
+                                                                      int32_t ts_sec,
+                                                                      uint32_t ts_nanosec);
+
+/**
+ * `KeyedStringDataWriter::dispose_w_key`.
+ *
+ * # Safety
+ * `dw` is a live writer over the type; `key` is NUL-terminated.
+ */
+int zerodds_keyed_string_writer_dispose_w_key(struct zerodds_ZeroDdsDataWriter *dw,
+                                              const char *key);
+
+/**
+ * `KeyedStringDataWriter::dispose_w_key_w_timestamp`.
+ *
+ * # Safety
+ * As the function without a timestamp.
+ */
+int zerodds_keyed_string_writer_dispose_w_key_w_timestamp(struct zerodds_ZeroDdsDataWriter *dw,
+                                                          const char *key,
+                                                          int32_t ts_sec,
+                                                          uint32_t ts_nanosec);
+
+/**
+ * `KeyedStringDataWriter::lookup_instance_w_key`: the handle, 0 for a key that is not registered.
+ *
+ * # Safety
+ * `dw` is a live writer over the type; `key` is NUL-terminated; `out_handle` is writable.
+ */
+int zerodds_keyed_string_writer_lookup_instance_w_key(struct zerodds_ZeroDdsDataWriter *dw,
+                                                      const char *key,
+                                                      uint64_t *out_handle);
+
+/**
+ * `KeyedStringDataWriter::get_key_value_w_key`: the key of the instance, released with `zerodds_builtin_string_free`.
+ *
+ * # Safety
+ * `dw` is a live writer over the type; `out_key` is writable.
+ */
+int zerodds_keyed_string_writer_get_key_value_w_key(struct zerodds_ZeroDdsDataWriter *dw,
+                                                    uint64_t handle,
+                                                    char **out_key);
+
+/**
+ * `KeyedBytesDataWriter::register_instance_w_key`: the handle of the key's instance, registering it when it is new.
+ *
+ * # Safety
+ * `dw` is a live writer over the type; `key` is NUL-terminated; `out_handle` is NULL or writable.
+ */
+int zerodds_keyed_bytes_writer_register_instance_w_key(struct zerodds_ZeroDdsDataWriter *dw,
+                                                       const char *key,
+                                                       uint64_t *out_handle);
+
+/**
+ * `KeyedBytesDataWriter::register_instance_w_key_w_timestamp`. A registration sends nothing, so the timestamp is only checked.
+ *
+ * # Safety
+ * As the function without a timestamp.
+ */
+int zerodds_keyed_bytes_writer_register_instance_w_key_w_timestamp(struct zerodds_ZeroDdsDataWriter *dw,
+                                                                   const char *key,
+                                                                   int32_t ts_sec,
+                                                                   uint32_t ts_nanosec,
+                                                                   uint64_t *out_handle);
+
+/**
+ * `KeyedBytesDataWriter::unregister_instance_w_key`.
+ *
+ * # Safety
+ * `dw` is a live writer over the type; `key` is NUL-terminated.
+ */
+int zerodds_keyed_bytes_writer_unregister_instance_w_key(struct zerodds_ZeroDdsDataWriter *dw,
+                                                         const char *key);
+
+/**
+ * `KeyedBytesDataWriter::unregister_instance_w_key_w_timestamp`.
+ *
+ * # Safety
+ * As the function without a timestamp.
+ */
+int zerodds_keyed_bytes_writer_unregister_instance_w_key_w_timestamp(struct zerodds_ZeroDdsDataWriter *dw,
+                                                                     const char *key,
+                                                                     int32_t ts_sec,
+                                                                     uint32_t ts_nanosec);
+
+/**
+ * `KeyedBytesDataWriter::dispose_w_key`.
+ *
+ * # Safety
+ * `dw` is a live writer over the type; `key` is NUL-terminated.
+ */
+int zerodds_keyed_bytes_writer_dispose_w_key(struct zerodds_ZeroDdsDataWriter *dw, const char *key);
+
+/**
+ * `KeyedBytesDataWriter::dispose_w_key_w_timestamp`.
+ *
+ * # Safety
+ * As the function without a timestamp.
+ */
+int zerodds_keyed_bytes_writer_dispose_w_key_w_timestamp(struct zerodds_ZeroDdsDataWriter *dw,
+                                                         const char *key,
+                                                         int32_t ts_sec,
+                                                         uint32_t ts_nanosec);
+
+/**
+ * `KeyedBytesDataWriter::lookup_instance_w_key`: the handle, 0 for a key that is not registered.
+ *
+ * # Safety
+ * `dw` is a live writer over the type; `key` is NUL-terminated; `out_handle` is writable.
+ */
+int zerodds_keyed_bytes_writer_lookup_instance_w_key(struct zerodds_ZeroDdsDataWriter *dw,
+                                                     const char *key,
+                                                     uint64_t *out_handle);
+
+/**
+ * `KeyedBytesDataWriter::get_key_value_w_key`: the key of the instance, released with `zerodds_builtin_string_free`.
+ *
+ * # Safety
+ * `dw` is a live writer over the type; `out_key` is writable.
+ */
+int zerodds_keyed_bytes_writer_get_key_value_w_key(struct zerodds_ZeroDdsDataWriter *dw,
+                                                   uint64_t handle,
+                                                   char **out_key);
+
+/**
+ * `StringDataReader::take` for one sample: `*out_value` is the string,
+ * released with `zerodds_builtin_string_free`, or NULL for a sample with
+ * no data (see `out_info->valid_data`).
+ *
+ * `NoData` when the reader holds none.
+ *
+ * # Safety
+ * `dr` is a live reader over a `DDS::String` topic; the out-pointers are
+ * writable.
+ */
+int zerodds_string_reader_take_next(struct zerodds_ZeroDdsDataReader *dr,
+                                    char **out_value,
+                                    struct zerodds_ZeroDdsSampleInfo *out_info);
+
+/**
+ * `StringDataReader::read` for one sample, as
+ * [`zerodds_string_reader_take_next`] without removing it.
+ *
+ * # Safety
+ * As [`zerodds_string_reader_take_next`].
+ */
+int zerodds_string_reader_read_next(struct zerodds_ZeroDdsDataReader *dr,
+                                    char **out_value,
+                                    struct zerodds_ZeroDdsSampleInfo *out_info);
+
+/**
+ * `KeyedStringDataReader::take` for one sample: the key and the string,
+ * both released with `zerodds_builtin_string_free`. A sample with no data
+ * (a dispose marker, for instance) carries its key and no string.
+ *
+ * # Safety
+ * `dr` is a live reader over a `DDS::KeyedString` topic; the out-pointers
+ * are writable.
+ */
+int zerodds_keyed_string_reader_take_next(struct zerodds_ZeroDdsDataReader *dr,
+                                          char **out_key,
+                                          char **out_value,
+                                          struct zerodds_ZeroDdsSampleInfo *out_info);
+
+/**
+ * `KeyedStringDataReader::read` for one sample.
+ *
+ * # Safety
+ * As [`zerodds_keyed_string_reader_take_next`].
+ */
+int zerodds_keyed_string_reader_read_next(struct zerodds_ZeroDdsDataReader *dr,
+                                          char **out_key,
+                                          char **out_value,
+                                          struct zerodds_ZeroDdsSampleInfo *out_info);
+
+/**
+ * `BytesDataReader::take` for one sample: the bytes, released with
+ * `zerodds_builtin_bytes_free`; NULL and length 0 for a sample with no data
+ * and for empty bytes (`out_info->valid_data` tells them apart).
+ *
+ * # Safety
+ * `dr` is a live reader over a `DDS::Bytes` topic; the out-pointers are
+ * writable.
+ */
+int zerodds_bytes_reader_take_next(struct zerodds_ZeroDdsDataReader *dr,
+                                   uint8_t **out_bytes,
+                                   uintptr_t *out_len,
+                                   struct zerodds_ZeroDdsSampleInfo *out_info);
+
+/**
+ * `BytesDataReader::read` for one sample.
+ *
+ * # Safety
+ * As [`zerodds_bytes_reader_take_next`].
+ */
+int zerodds_bytes_reader_read_next(struct zerodds_ZeroDdsDataReader *dr,
+                                   uint8_t **out_bytes,
+                                   uintptr_t *out_len,
+                                   struct zerodds_ZeroDdsSampleInfo *out_info);
+
+/**
+ * `KeyedBytesDataReader::take` for one sample: the key and the bytes.
+ *
+ * # Safety
+ * `dr` is a live reader over a `DDS::KeyedBytes` topic; the out-pointers
+ * are writable.
+ */
+int zerodds_keyed_bytes_reader_take_next(struct zerodds_ZeroDdsDataReader *dr,
+                                         char **out_key,
+                                         uint8_t **out_bytes,
+                                         uintptr_t *out_len,
+                                         struct zerodds_ZeroDdsSampleInfo *out_info);
+
+/**
+ * `KeyedBytesDataReader::read` for one sample.
+ *
+ * # Safety
+ * As [`zerodds_keyed_bytes_reader_take_next`].
+ */
+int zerodds_keyed_bytes_reader_read_next(struct zerodds_ZeroDdsDataReader *dr,
+                                         char **out_key,
+                                         uint8_t **out_bytes,
+                                         uintptr_t *out_len,
+                                         struct zerodds_ZeroDdsSampleInfo *out_info);
 
 /**
  * Reads the current trigger status of a condition (Spec §2.2.2.1.2.1.1).
@@ -2161,6 +3865,32 @@ zerodds_ZeroDdsQueryCondition *zerodds_dr_create_querycondition(struct zerodds_Z
                                                                 uintptr_t param_count);
 
 /**
+ * Replaces the filter expression of a QueryCondition (DDS-PSM-Cxx 1.0
+ * `QueryCondition::expression(const std::string&)`).
+ *
+ * Returns `BadHandle` for NULL or a condition that is not a QueryCondition,
+ * `BadParameter` for a NULL or non-UTF-8 expression.
+ *
+ * # Safety
+ * `c` is NULL or a condition from `zerodds_dr_create_querycondition`;
+ * `expr` is NULL or NUL-terminated.
+ */
+int zerodds_querycondition_set_expression(void *c, const char *expr);
+
+/**
+ * Replaces the parameters of a QueryCondition (DDS 1.4 §2.2.2.5.9
+ * `set_query_parameters`).
+ *
+ * Returns `BadHandle` for NULL or a condition that is not a QueryCondition.
+ * A NULL entry or a non-UTF-8 entry is `BadParameter`, and then nothing changes.
+ *
+ * # Safety
+ * `c` is NULL or a condition from `zerodds_dr_create_querycondition`;
+ * `params[0..count]` are NUL-terminated strings, or `params` is NULL with `count` 0.
+ */
+int zerodds_querycondition_set_parameters(void *c, const char *const *params, uintptr_t count);
+
+/**
  * Deletes a ReadCondition or QueryCondition.
  *
  * # Safety
@@ -2200,10 +3930,18 @@ int zerodds_waitset_detach_condition(struct zerodds_ZeroDdsWaitSet *w, void *con
 
 /**
  * Waits until at least one condition triggers or a timeout.
- * Writes active conditions into `out_active[0..*out_count]`.
+ *
+ * Writes the active conditions into `out_active`: the first
+ * `min(len, cap)` handles, `*out_count` set to the **total** number of active
+ * conditions. The return value is `OutOfResources` when `len > cap` (so a
+ * caller retries with a buffer of `*out_count`), `Ok` when the buffer held
+ * every active condition, and `Timeout` when none triggered within the
+ * deadline. A NULL `out_active` with `cap == 0` asks for the length alone
+ * (`docs/specs/zerodds-c-api-1.0.md` §2.8).
  *
  * # Safety
- * `w`, `out_active`, `out_count`, `timeout` valid.
+ * `w`, `out_count`, `timeout` valid; `out_active[0..cap]` writeable, or
+ * `out_active` NULL exactly when `cap == 0`.
  */
 int zerodds_waitset_wait(struct zerodds_ZeroDdsWaitSet *w,
                          void **out_active,
@@ -2215,13 +3953,374 @@ int zerodds_waitset_wait(struct zerodds_ZeroDdsWaitSet *w,
 /**
  * Returns all attached conditions.
  *
+ * The first `min(len, cap)` handles are written into `out`, `*out_count` is
+ * set to the **total** number of attached conditions, and the return value is
+ * `OutOfResources` when `len > cap` (so a caller retries with a buffer of
+ * `*out_count`), `Ok` otherwise. A NULL `out` with `cap == 0` asks for the
+ * length alone (`docs/specs/zerodds-c-api-1.0.md` §2.8).
+ *
  * # Safety
- * `w`, `out`, `out_count` valid.
+ * `w`, `out_count` valid; `out[0..cap]` writeable, or `out` NULL exactly
+ * when `cap == 0`.
  */
 int zerodds_waitset_get_conditions(struct zerodds_ZeroDdsWaitSet *w,
                                    void **out,
                                    uintptr_t cap,
                                    uintptr_t *out_count);
+
+/**
+ * A descriptor that becomes readable when a sample arrives on any reader.
+ *
+ * For a caller that already has an event loop. Put the descriptor in
+ * `select`, `poll`, `epoll`, `kqueue`, or whatever the language's loop
+ * accepts; when it reads ready, call [`zerodds_waitset_wait`] with a zero
+ * timeout to learn *which* conditions triggered. The descriptor says that
+ * something arrived, never what or how much.
+ *
+ * ```c
+ * int fd = zerodds_data_notify_fd();
+ * fd_set r; FD_ZERO(&r); FD_SET(fd, &r);
+ * select(fd + 1, &r, NULL, NULL, NULL);          // sleeps, does not poll
+ * zerodds_waitset_wait(ws, active, cap, &n, 0, 0);
+ * ```
+ *
+ * Without this, a caller with its own loop had two choices, and the callback
+ * spec (`docs/specs/zerodds-listener-callbacks-1.1.md` §4.1) took the second:
+ * park a thread in [`zerodds_waitset_wait`] and forward the wake, or drive
+ * `zerodds_poll_listeners` on a timer. A poll's period is a floor under
+ * latency in each direction, and it spends the CPU that the delivery threads
+ * need — measured on an overbooked host, three poll variants delivered one
+ * sample between two processes across 46 million iterations while the waker
+ * path came through.
+ *
+ * The descriptor is process-global and level-triggered until drained: it is
+ * emptied by [`zerodds_waitset_wait`], so alternating the two is the intended
+ * use. Reading it directly is allowed and drains one wake; the byte carries no
+ * meaning.
+ *
+ * Owned by the library — do not `close` it. It stays valid for the life of the
+ * process.
+ *
+ * # Returns
+ * The descriptor, or `-1` where there is none: on Windows, which has no
+ * descriptor `select` accepts for this, and in the (unexpected) case that the
+ * process could not spare two descriptors at startup. `-1` is not an error to
+ * recover from — it means this caller must use [`zerodds_waitset_wait`]
+ * itself.
+ */
+int zerodds_data_notify_fd(void);
+
+/**
+ * Whether this reader is holding samples the application has not read.
+ *
+ * The question a loop asks after [`zerodds_data_notify_fd`] wakes it: which
+ * of my readers has something? It answers from what the reader already holds
+ * and moves what the receive path has queued into that cache — it does not
+ * decode a sample, does not consume one, and leaves every sample readable by
+ * `zerodds_dr_take` / `zerodds_dr_read` afterwards.
+ *
+ * Cheaper than a `ReadCondition` when the caller only wants a yes or no: no
+ * condition object, no WaitSet, no state masks. On a reader with a content
+ * filter it is cheaper again on the second and later calls, because the
+ * filter runs once per sample as it is moved, not once per question.
+ *
+ * # Safety
+ * `dr` is NULL or a live reader handle.
+ */
+bool zerodds_dr_has_data(struct zerodds_ZeroDdsDataReader *dr);
+
+/**
+ * Builds a dynamic type from IDL text: `type_name` (`"a::b::T"`) names the structure or union in
+ * `idl`. Returns NULL and sets `*out_status` (if not NULL) otherwise: `ZERODDS_BAD_PARAMETER` for
+ * IDL that does not parse or lower, a name it does not declare, or a type that is no structure
+ * or union.
+ *
+ * # Safety
+ * `idl` and `type_name` are NUL-terminated strings; `out_status` is writable or NULL.
+ */
+struct zerodds_ZeroDdsDynType *zerodds_dyntype_from_idl(const char *idl,
+                                                        const char *type_name,
+                                                        int *out_status);
+
+/**
+ * Destroys a dynamic type.
+ *
+ * # Safety
+ * `t` is NULL or from [`zerodds_dyntype_from_idl`], not used afterwards.
+ */
+void zerodds_dyntype_destroy(struct zerodds_ZeroDdsDynType *t);
+
+/**
+ * The type's scoped name without the leading `::`, which is the topic type name peers match by.
+ * Free it with `zerodds_string_free`.
+ *
+ * # Safety
+ * `t` is a live dynamic type; `out` is writable.
+ */
+int zerodds_dyntype_name(const struct zerodds_ZeroDdsDynType *t, char **out);
+
+/**
+ * Whether the type is keyed (XTypes 1.3 §7.6.8): 1 or 0, a negative status for a bad handle.
+ *
+ * # Safety
+ * `t` is a live dynamic type.
+ */
+int zerodds_dyntype_is_keyed(const struct zerodds_ZeroDdsDynType *t);
+
+/**
+ * The extensibility: 0 FINAL, 1 APPENDABLE, 2 MUTABLE; a negative status for a bad handle.
+ *
+ * # Safety
+ * `t` is a live dynamic type.
+ */
+int zerodds_dyntype_extensibility(const struct zerodds_ZeroDdsDynType *t);
+
+/**
+ * The `CompleteTypeObject` of the type, XCDR2-LE (XTypes 1.3 §7.3.4). The pointer is valid
+ * until the type is destroyed.
+ *
+ * # Safety
+ * `t` is a live dynamic type; `len` is writable.
+ */
+const uint8_t *zerodds_dyntype_type_object(const struct zerodds_ZeroDdsDynType *t, uintptr_t *len);
+
+/**
+ * How many complete TypeObjects the type's own refers to, transitively.
+ *
+ * # Safety
+ * `t` is a live dynamic type.
+ */
+uintptr_t zerodds_dyntype_dependency_count(const struct zerodds_ZeroDdsDynType *t);
+
+/**
+ * Dependency `i` (see [`zerodds_dyntype_dependency_count`]); NULL beyond the count. Valid until
+ * the type is destroyed.
+ *
+ * # Safety
+ * `t` is a live dynamic type; `len` is writable.
+ */
+const uint8_t *zerodds_dyntype_dependency(const struct zerodds_ZeroDdsDynType *t,
+                                          uintptr_t i,
+                                          uintptr_t *len);
+
+/**
+ * The default value of the type (XTypes 1.3 Table 9) as JSON. Free with `zerodds_string_free`.
+ *
+ * # Safety
+ * `t` is a live dynamic type; `out` is writable.
+ */
+int zerodds_dyntype_default_json(const struct zerodds_ZeroDdsDynType *t, char **out);
+
+/**
+ * Writes a value, given as JSON, as the body of a sample: XCDR1 or XCDR2 (`xcdr2` non-zero),
+ * little- or big-endian. The octets go to `*out`/`*len`; release them with
+ * [`zerodds_dyntype_bytes_free`]. `ZERODDS_BAD_PARAMETER` when the JSON is not a value of the
+ * type — a missing member, an unknown one, a number out of range.
+ *
+ * # Safety
+ * `t` is a live dynamic type; `json` is NUL-terminated; `out` and `len` are writable.
+ */
+int zerodds_dyntype_encode_json(const struct zerodds_ZeroDdsDynType *t,
+                                const char *json,
+                                int xcdr2,
+                                int big_endian,
+                                uint8_t **out,
+                                uintptr_t *len);
+
+/**
+ * Releases octets from [`zerodds_dyntype_encode_json`].
+ *
+ * # Safety
+ * `(ptr, len)` come from that function and are not used afterwards.
+ */
+void zerodds_dyntype_bytes_free(uint8_t *ptr, uintptr_t len);
+
+/**
+ * Reads the body of a sample as a value of the type and returns it as JSON (free with
+ * `zerodds_string_free`). `ZERODDS_BAD_PARAMETER` when the octets are not a value of the type.
+ *
+ * # Safety
+ * `t` is a live dynamic type; `bytes[0..len]` is readable; `out` is writable.
+ */
+int zerodds_dyntype_decode_json(const struct zerodds_ZeroDdsDynType *t,
+                                const uint8_t *bytes,
+                                uintptr_t len,
+                                int xcdr2,
+                                int big_endian,
+                                char **out);
+
+/**
+ * `enable` of a DomainParticipant (DDS 1.4 §2.2.2.1.1.7): the participant
+ * announces itself over SPDP from here; with ENTITY_FACTORY
+ * `autoenable_created_entities` it then enables the Topics, Publishers and
+ * Subscribers it created, and they theirs. Idempotent. The factory is
+ * always enabled, so there is no precondition.
+ *
+ * # Safety
+ * `p` is a live participant handle.
+ */
+int zerodds_dp_enable(struct zerodds_ZeroDdsDomainParticipant *p);
+
+/**
+ * `get_status_changes` of a DomainParticipant (DDS 1.4 §2.2.2.1.1.6): the
+ * StatusMask of its triggered communication statuses, written to `*out`.
+ *
+ * # Safety
+ * `p` is a live participant handle, `out` writable.
+ */
+int zerodds_dp_get_status_changes(struct zerodds_ZeroDdsDomainParticipant *p, uint32_t *out);
+
+/**
+ * `get_instance_handle` of a DomainParticipant (DDS 1.4 §2.2.2.1.1.8): the
+ * handle of its participant GUID, which its builtin topic data carries and
+ * `contains_entity` accepts. `ZERODDS_PRECONDITION_NOT_MET` for a
+ * participant without a runtime.
+ *
+ * # Safety
+ * `p` is a live participant handle, `out` writable.
+ */
+int zerodds_dp_get_instance_handle(struct zerodds_ZeroDdsDomainParticipant *p, uint64_t *out);
+
+/**
+ * `enable` of a Topic (DDS 1.4 §2.2.2.1.1.7). `ZERODDS_PRECONDITION_NOT_MET`
+ * while its participant is not enabled.
+ *
+ * # Safety
+ * `t` is a live topic handle.
+ */
+int zerodds_topic_enable(struct zerodds_ZeroDdsTopic *t);
+
+/**
+ * `get_status_changes` of a Topic: INCONSISTENT_TOPIC while its count moved
+ * since it was read (DDS 1.4 §2.2.4.1); 0 while the Topic is disabled
+ * (§2.2.2.1.1.6).
+ *
+ * # Safety
+ * `t` is a live topic handle, `out` writable.
+ */
+int zerodds_topic_get_status_changes(struct zerodds_ZeroDdsTopic *t, uint32_t *out);
+
+/**
+ * `get_instance_handle` of a Topic: the handle of the key its builtin topic
+ * data has.
+ *
+ * # Safety
+ * `t` is a live topic handle, `out` writable.
+ */
+int zerodds_topic_get_instance_handle(struct zerodds_ZeroDdsTopic *t, uint64_t *out);
+
+/**
+ * `enable` of a Publisher. `ZERODDS_PRECONDITION_NOT_MET` while its
+ * participant is not enabled. With ENTITY_FACTORY
+ * `autoenable_created_entities` it then enables the DataWriters it created.
+ *
+ * # Safety
+ * `p` is a live publisher handle.
+ */
+int zerodds_pub_enable(struct zerodds_ZeroDdsPublisher *p);
+
+/**
+ * `get_status_changes` of a Publisher: a Publisher has no communication
+ * status of its own, so 0 (DDS 1.4 §2.2.2.1.1.6, §2.2.4.1).
+ *
+ * # Safety
+ * `p` is a live publisher handle, `out` writable.
+ */
+int zerodds_pub_get_status_changes(struct zerodds_ZeroDdsPublisher *p, uint32_t *out);
+
+/**
+ * `get_instance_handle` of a Publisher: the handle of its Writer Group
+ * GUID, which its writers announce as `PID_GROUP_GUID`.
+ *
+ * # Safety
+ * `p` is a live publisher handle, `out` writable.
+ */
+int zerodds_pub_get_instance_handle(struct zerodds_ZeroDdsPublisher *p, uint64_t *out);
+
+/**
+ * `enable` of a Subscriber, as [`zerodds_pub_enable`] for its DataReaders.
+ *
+ * # Safety
+ * `s` is a live subscriber handle.
+ */
+int zerodds_sub_enable(struct zerodds_ZeroDdsSubscriber *s);
+
+/**
+ * `get_status_changes` of a Subscriber: DATA_ON_READERS while one of its
+ * readers holds data not read yet (DDS 1.4 §2.2.4.1); 0 while the
+ * Subscriber is disabled.
+ *
+ * # Safety
+ * `s` is a live subscriber handle, `out` writable.
+ */
+int zerodds_sub_get_status_changes(struct zerodds_ZeroDdsSubscriber *s, uint32_t *out);
+
+/**
+ * `get_instance_handle` of a Subscriber: the handle of its Reader Group
+ * GUID, which its readers announce as `PID_GROUP_GUID`.
+ *
+ * # Safety
+ * `s` is a live subscriber handle, `out` writable.
+ */
+int zerodds_sub_get_instance_handle(struct zerodds_ZeroDdsSubscriber *s, uint64_t *out);
+
+/**
+ * `enable` of a DataWriter (DDS 1.4 §2.2.2.1.1.7): the first call registers
+ * it with the runtime, which announces it over SEDP and matches it.
+ * `ZERODDS_PRECONDITION_NOT_MET` while its Publisher is not enabled.
+ *
+ * # Safety
+ * `dw` is a live DataWriter handle.
+ */
+int zerodds_dw_enable(struct zerodds_ZeroDdsDataWriter *dw);
+
+/**
+ * `get_status_changes` of a DataWriter: the triggered ones of
+ * LIVELINESS_LOST, OFFERED_DEADLINE_MISSED, OFFERED_INCOMPATIBLE_QOS and
+ * PUBLICATION_MATCHED (DDS 1.4 §2.2.4.1); 0 while it is disabled.
+ *
+ * # Safety
+ * `dw` is a live DataWriter handle, `out` writable.
+ */
+int zerodds_dw_get_status_changes(struct zerodds_ZeroDdsDataWriter *dw, uint32_t *out);
+
+/**
+ * `get_instance_handle` of a DataWriter: the handle of its GUID, as
+ * `get_matched_publications` of a reader and `SampleInfo.publication_handle`
+ * give it.
+ *
+ * # Safety
+ * `dw` is a live DataWriter handle, `out` writable.
+ */
+int zerodds_dw_get_instance_handle(struct zerodds_ZeroDdsDataWriter *dw, uint64_t *out);
+
+/**
+ * `enable` of a DataReader, as [`zerodds_dw_enable`]. `ZERODDS_PRECONDITION_NOT_MET`
+ * while its Subscriber is not enabled.
+ *
+ * # Safety
+ * `dr` is a live DataReader handle.
+ */
+int zerodds_dr_enable(struct zerodds_ZeroDdsDataReader *dr);
+
+/**
+ * `get_status_changes` of a DataReader: the triggered ones of its seven
+ * statuses, DATA_AVAILABLE while it holds data not read yet (DDS 1.4
+ * §2.2.4.1); 0 while it is disabled.
+ *
+ * # Safety
+ * `dr` is a live DataReader handle, `out` writable.
+ */
+int zerodds_dr_get_status_changes(struct zerodds_ZeroDdsDataReader *dr, uint32_t *out);
+
+/**
+ * `get_instance_handle` of a DataReader: the handle of its GUID, as
+ * `get_matched_subscriptions` of a writer gives it.
+ *
+ * # Safety
+ * `dr` is a live DataReader handle, `out` writable.
+ */
+int zerodds_dr_get_instance_handle(struct zerodds_ZeroDdsDataReader *dr, uint64_t *out);
 
 /**
  * `lookup_topicdescription(name)` — Spec §2.2.2.2.1.13.
@@ -2232,6 +4331,21 @@ int zerodds_waitset_get_conditions(struct zerodds_ZeroDdsWaitSet *w,
  */
 struct zerodds_ZeroDdsTopic *zerodds_dp_lookup_topicdescription(struct zerodds_ZeroDdsDomainParticipant *p,
                                                                 const char *name);
+
+/**
+ * `lookup_topicdescription(name, index)` — DDS-XTypes 1.3 §7.6.4.2: "The
+ * lookup_topicdescription operation shall accept an optional in unsigned
+ * long argument called index". The topics of one name are iterated in the
+ * order they were created; `index` 0 is the first, which is what
+ * `zerodds_dp_lookup_topicdescription` answers. NULL for an index past the
+ * last.
+ *
+ * # Safety
+ * `p`, `name` valid.
+ */
+struct zerodds_ZeroDdsTopic *zerodds_dp_lookup_topicdescription_at(struct zerodds_ZeroDdsDomainParticipant *p,
+                                                                   const char *name,
+                                                                   uint32_t index);
 
 /**
  * `get_builtin_subscriber()` — Spec §2.2.2.2.1.7.
@@ -2255,7 +4369,8 @@ void zerodds_builtin_subscriber_destroy(struct zerodds_ZeroDdsBuiltinSubscriber 
  * Sets the DomainParticipant QoS (Spec §2.2.2.2.1.3).
  *
  * # Safety
- * `p` valid; `qos` darf NULL sein (Reset auf Default).
+ * `p` valid; `qos` may be NULL: the factory's default participant QoS
+ * (`PARTICIPANT_QOS_DEFAULT`).
  */
 int zerodds_dp_set_qos(struct zerodds_ZeroDdsDomainParticipant *p,
                        const struct zerodds_ZeroDdsDomainParticipantQos *qos);
@@ -2467,8 +4582,8 @@ int zerodds_dw_register_instance(struct zerodds_ZeroDdsDataWriter *dw,
                                  uint64_t *out_handle);
 
 /**
- * `register_instance_w_timestamp`. RC1: source timestamp ignored
- * (same path as register_instance, documented in the vendor spec).
+ * `register_instance_w_timestamp`. A registration sends nothing, so the
+ * timestamp is only checked: DDS 1.4 §2.3.2, `ts_nanosec` below 10^9.
  *
  * # Safety
  * Wie `register_instance`.
@@ -2477,7 +4592,7 @@ int zerodds_dw_register_instance_w_timestamp(struct zerodds_ZeroDdsDataWriter *d
                                              const uint8_t *key,
                                              uintptr_t key_len,
                                              int32_t _ts_sec,
-                                             uint32_t _ts_nanosec,
+                                             uint32_t ts_nanosec,
                                              uint64_t *out_handle);
 
 /**
@@ -2489,43 +4604,47 @@ int zerodds_dw_register_instance_w_timestamp(struct zerodds_ZeroDdsDataWriter *d
 int zerodds_dw_unregister_instance(struct zerodds_ZeroDdsDataWriter *dw, uint64_t handle);
 
 /**
- * `unregister_instance_w_timestamp`.
+ * `unregister_instance_w_timestamp`: the marker carries the timestamp as
+ * its source timestamp (DDS 1.4 §2.2.2.4.2.8); `ts_nanosec` of 10^9 or
+ * more is BAD_PARAMETER (§2.3.2). The timestamp was dropped.
  *
  * # Safety
  * Wie `unregister_instance`.
  */
 int zerodds_dw_unregister_instance_w_timestamp(struct zerodds_ZeroDdsDataWriter *dw,
                                                uint64_t handle,
-                                               int32_t _ts_sec,
-                                               uint32_t _ts_nanosec);
+                                               int32_t ts_sec,
+                                               uint32_t ts_nanosec);
 
 /**
- * `lookup_instance` — vendor variant: returns a deterministic
- * handle from the first 8 key-hash bytes.
+ * Returns the registered opaque handle, or HANDLE_NIL for an unknown key.
  *
  * # Safety
  * `key[0..16]` valid.
  */
-int zerodds_dw_lookup_instance(struct zerodds_ZeroDdsDataWriter *_dw,
+int zerodds_dw_lookup_instance(struct zerodds_ZeroDdsDataWriter *dw,
                                const uint8_t *key,
                                uintptr_t key_len,
                                uint64_t *out_handle);
 
 /**
- * `get_key_value(handle)` — in the C-FFI only a vendor variant: copies
- * 8 bytes of the handle into `out_buf[0..8]`. The full spec round-trip
- * (T-encoded key) is the codegen path.
+ * Returns a stored serialized key holder. An instance known by its hash
+ * alone has its key from the hash where the type spells it out (DDSI-RTPS
+ * 2.5 §9.6.4.8 Step 5.1); where it does not, or the writer has no type,
+ * the answer is `BadParameter`, the one error DDS 1.4 §2.2.2.4.2.9 names.
  *
  * # Safety
  * `dw` valid; `out_buf[0..*inout_len]` valid.
  */
-int zerodds_dw_get_key_value(struct zerodds_ZeroDdsDataWriter *_dw,
+int zerodds_dw_get_key_value(struct zerodds_ZeroDdsDataWriter *dw,
                              uint64_t handle,
                              uint8_t *out_buf,
                              uintptr_t *inout_len);
 
 /**
- * `dispose_w_timestamp`.
+ * `dispose_w_timestamp`: the marker carries the timestamp as its source
+ * timestamp (DDS 1.4 §2.2.2.4.2.11); `ts_nanosec` of 10^9 or more is
+ * BAD_PARAMETER (§2.3.2). The timestamp was dropped.
  *
  * # Safety
  * Wie `dispose`.
@@ -2533,15 +4652,23 @@ int zerodds_dw_get_key_value(struct zerodds_ZeroDdsDataWriter *_dw,
 int zerodds_dw_dispose_w_timestamp(struct zerodds_ZeroDdsDataWriter *dw,
                                    const uint8_t *key_hash,
                                    uint64_t handle,
-                                   int32_t _ts_sec,
-                                   uint32_t _ts_nanosec);
+                                   int32_t ts_sec,
+                                   uint32_t ts_nanosec);
 
 /**
  * `get_matched_subscriptions` — list of the `InstanceHandle`s of all
  * matched remote readers (Spec §2.2.2.4.2.x).
  *
+ * The first `min(len, cap)` handles are written into `out_handles`,
+ * `*out_count` is set to the **total** number of matched readers, and the
+ * return value is `OutOfResources` when `len > cap` (so a caller retries with
+ * a buffer of `*out_count`), `Ok` otherwise. A NULL `out_handles` with
+ * `cap == 0` asks for the length alone (`docs/specs/zerodds-c-api-1.0.md`
+ * §2.8).
+ *
  * # Safety
- * `dw` valid; `out_handles[0..cap]` writeable; `out_count` valid.
+ * `dw`, `out_count` valid; `out_handles[0..cap]` writeable, or `out_handles`
+ * NULL exactly when `cap == 0`.
  */
 int zerodds_dw_get_matched_subscriptions(struct zerodds_ZeroDdsDataWriter *dw,
                                          uint64_t *out_handles,
@@ -2549,9 +4676,17 @@ int zerodds_dw_get_matched_subscriptions(struct zerodds_ZeroDdsDataWriter *dw,
                                          uintptr_t cap);
 
 /**
- * `get_matched_subscription_data(handle)` — Spec §2.2.2.4.2.x.
- * Returns the `SubscriptionBuiltinTopicData` for a matched
- * reader, obtained from the BuiltinSubscriber SEDP cache.
+ * `get_matched_subscription_data(handle)` — DDS 1.4 §2.2.2.4.2. Fills
+ * `out` with the DCPSSubscription data of the reader `handle` names, as
+ * it was last announced: a discovered reader's or one of this
+ * participant's. The caller releases it with
+ * `zerodds_subscription_builtin_topic_data_free`.
+ *
+ * `ZERODDS_BAD_PARAMETER` for a handle that names no reader this writer
+ * is matched with, as the specification has it. It answered
+ * `ZERODDS_NO_DATA` for that, answered for a discovered reader the writer
+ * was not matched with, and did not find a reader of the writer's own
+ * participant that `get_matched_subscriptions` listed.
  *
  * # Safety
  * `dw` and `out` valid.
@@ -2660,7 +4795,10 @@ int zerodds_dr_take_next_instance(struct zerodds_ZeroDdsDataReader *dr,
 /**
  * `read_w_condition` — Spec §2.2.2.5.3.4: returns only samples that
  * match the condition state mask (ReadCondition.sample_states/
- * view_states/instance_states).
+ * view_states/instance_states) and, for a QueryCondition, its expression. A
+ * QueryCondition whose expression names a field needs the reader's type
+ * (`zerodds_dr_set_type_objects`); without one the call returns
+ * `PRECONDITION_NOT_MET` instead of passing every sample.
  *
  * # Safety
  * `dr`, `out` valid; `cond` is a ReadCondition or QueryCondition.
@@ -2682,12 +4820,64 @@ int zerodds_dr_take_w_condition(struct zerodds_ZeroDdsDataReader *dr,
                                 void *cond);
 
 /**
+ * `read_next_instance_w_condition` — DDS 1.4 §2.2.2.5.3.12: the samples of the
+ * next instance after `prev_handle` that match the state masks of `cond`.
+ *
+ * # Safety
+ * `dr`, `out` valid; `cond` is a ReadCondition or QueryCondition.
+ */
+int zerodds_dr_read_next_instance_w_condition(struct zerodds_ZeroDdsDataReader *dr,
+                                              uint64_t prev_handle,
+                                              struct zerodds_ZeroDdsSampleArray *out,
+                                              uintptr_t max,
+                                              void *cond);
+
+/**
+ * `take_next_instance_w_condition` — like [`zerodds_dr_read_next_instance_w_condition`],
+ * removing the samples.
+ *
+ * # Safety
+ * Same as [`zerodds_dr_read_next_instance_w_condition`].
+ */
+int zerodds_dr_take_next_instance_w_condition(struct zerodds_ZeroDdsDataReader *dr,
+                                              uint64_t prev_handle,
+                                              struct zerodds_ZeroDdsSampleArray *out,
+                                              uintptr_t max,
+                                              void *cond);
+
+/**
+ * `read_instance_w_condition`: the samples of the instance `handle` that match the state
+ * masks and, for a QueryCondition, the expression of `cond`. DDS 1.4 has no such operation;
+ * DDS-PSM-Cxx 1.0 `select().instance(h).content(query)` asks for it.
+ *
+ * # Safety
+ * `dr`, `out` valid; `cond` is a ReadCondition or QueryCondition.
+ */
+int zerodds_dr_read_instance_w_condition(struct zerodds_ZeroDdsDataReader *dr,
+                                         uint64_t handle,
+                                         struct zerodds_ZeroDdsSampleArray *out,
+                                         uintptr_t max,
+                                         void *cond);
+
+/**
+ * `take_instance_w_condition`, removing the samples.
+ *
+ * # Safety
+ * Same as [`zerodds_dr_read_instance_w_condition`].
+ */
+int zerodds_dr_take_instance_w_condition(struct zerodds_ZeroDdsDataReader *dr,
+                                         uint64_t handle,
+                                         struct zerodds_ZeroDdsSampleArray *out,
+                                         uintptr_t max,
+                                         void *cond);
+
+/**
  * `lookup_instance` (Reader).
  *
  * # Safety
  * `key[0..16]` valid; `out_handle` valid.
  */
-int zerodds_dr_lookup_instance(struct zerodds_ZeroDdsDataReader *_dr,
+int zerodds_dr_lookup_instance(struct zerodds_ZeroDdsDataReader *dr,
                                const uint8_t *key,
                                uintptr_t key_len,
                                uint64_t *out_handle);
@@ -2698,27 +4888,40 @@ int zerodds_dr_lookup_instance(struct zerodds_ZeroDdsDataReader *_dr,
  * # Safety
  * `out_buf[0..*inout_len]` valid.
  */
-int zerodds_dr_get_key_value(struct zerodds_ZeroDdsDataReader *_dr,
+int zerodds_dr_get_key_value(struct zerodds_ZeroDdsDataReader *dr,
                              uint64_t handle,
                              uint8_t *out_buf,
                              uintptr_t *inout_len);
 
 /**
- * `wait_for_historical_data(timeout)` — RC1: Volatile default → Ok without wait.
+ * `wait_for_historical_data(max_wait)` (DDS 1.4 §2.2.2.5.3): blocks until
+ * the reader holds the historical data of every writer it is matched
+ * with — each reliable writer's HEARTBEAT arrived and everything it
+ * announced is received — or `max_wait` passes (`ZERODDS_TIMEOUT`). A
+ * VOLATILE reader returns at once. It returned OK at once for every
+ * reader.
  *
  * # Safety
  * `dr` valid.
  */
 int zerodds_dr_wait_for_historical_data(struct zerodds_ZeroDdsDataReader *dr,
-                                        int32_t _timeout_sec,
-                                        uint32_t _timeout_nanosec);
+                                        int32_t timeout_sec,
+                                        uint32_t timeout_nanosec);
 
 /**
  * `get_matched_publications` — list of the `InstanceHandle`s of all
  * matched remote writers (Spec §2.2.2.5.x).
  *
+ * The first `min(len, cap)` handles are written into `out_handles`,
+ * `*out_count` is set to the **total** number of matched writers, and the
+ * return value is `OutOfResources` when `len > cap` (so a caller retries with
+ * a buffer of `*out_count`), `Ok` otherwise. A NULL `out_handles` with
+ * `cap == 0` asks for the length alone (`docs/specs/zerodds-c-api-1.0.md`
+ * §2.8).
+ *
  * # Safety
- * `dr` valid; `out_handles[0..cap]` writeable; `out_count` valid.
+ * `dr`, `out_count` valid; `out_handles[0..cap]` writeable, or `out_handles`
+ * NULL exactly when `cap == 0`.
  */
 int zerodds_dr_get_matched_publications(struct zerodds_ZeroDdsDataReader *dr,
                                         uint64_t *out_handles,
@@ -2726,8 +4929,10 @@ int zerodds_dr_get_matched_publications(struct zerodds_ZeroDdsDataReader *dr,
                                         uintptr_t cap);
 
 /**
- * `get_matched_publication_data(handle)` — Spec §2.2.2.5.x.
- * Returns `PublicationBuiltinTopicData` from the BuiltinSubscriber cache.
+ * `get_matched_publication_data(handle)` — DDS 1.4 §2.2.2.5.3; as
+ * [`zerodds_dw_get_matched_subscription_data`], for a writer this reader
+ * is matched with. The caller releases `out` with
+ * `zerodds_publication_builtin_topic_data_free`.
  *
  * # Safety
  * `dr`, `out` valid.
@@ -2735,6 +4940,28 @@ int zerodds_dr_get_matched_publications(struct zerodds_ZeroDdsDataReader *dr,
 int zerodds_dr_get_matched_publication_data(struct zerodds_ZeroDdsDataReader *dr,
                                             uint64_t handle,
                                             struct zerodds_ZeroDdsPublicationBuiltinTopicData *out);
+
+/**
+ * Gives the reader the type of its samples, so a QueryCondition can read the fields its
+ * expression names. `type_object` is the root `CompleteTypeObject`, `dependencies[0..count]`
+ * (each `dependency_lens[i]` bytes) the complete TypeObjects it refers to, as
+ * `topic_type_support<T>::type_object_dependency(i)` emits them.
+ *
+ * `BadParameter` for a NULL argument or a TypeObject that is missing, malformed or does not
+ * match `is_keyed` / `extensibility`.
+ *
+ * # Safety
+ * `dr` valid; `type_object` readable for `len` bytes; `dependencies` and `dependency_lens`
+ * readable for `count` entries, each dependency for its length; or `count == 0`.
+ */
+int zerodds_dr_set_type_objects(struct zerodds_ZeroDdsDataReader *dr,
+                                const uint8_t *type_object,
+                                uintptr_t len,
+                                const uint8_t *const *dependencies,
+                                const uintptr_t *dependency_lens,
+                                uintptr_t count,
+                                int is_keyed,
+                                uint32_t extensibility);
 
 /**
  * Get singleton: returns the global factory pointer. Never NULL.
@@ -2819,7 +5046,42 @@ int zerodds_dpf_get_qos(const struct zerodds_ZeroDdsDomainParticipantFactory *f,
                         struct zerodds_ZeroDdsDomainParticipantFactoryQos *out);
 
 /**
- * `dp_set_listener`. NULL = clear.
+ * Writes the 16-byte key hash of the instance `handle` names to `out_key`.
+ * `ZERODDS_BAD_PARAMETER` for a handle this writer has not registered
+ * (DDS 1.4 §2.2.2.4.2.9 `dispose`: "the InstanceHandle_t ... was not
+ * registered").
+ *
+ * # Safety
+ * `dw` is a live DataWriter handle, `out_key` writable for 16 bytes.
+ */
+int zerodds_dw_instance_key_hash(struct zerodds_ZeroDdsDataWriter *dw,
+                                 uint64_t handle,
+                                 uint8_t *out_key);
+
+/**
+ * Writes the 16-byte key hash of the sample `payload` holds to `out_key_hash`, for the type
+ * whose type objects `zerodds_dr_set_type_objects` gave the reader. `xcdr2` selects XCDR2
+ * (else XCDR1) and `big_endian` the byte order of `payload`, which carries no encapsulation
+ * header. DDS 1.4 §2.2.2.5.3.27 `lookup_instance` takes the sample whose key names the
+ * instance. `ZERODDS_PRECONDITION_NOT_MET` for a reader without type objects or whose type
+ * has no key; `ZERODDS_BAD_PARAMETER` for a payload that does not decode as that type.
+ *
+ * # Safety
+ * `dr` is a live DataReader handle, `payload[0..len]` readable when `len > 0`,
+ * `out_key_hash` writable for 16 bytes.
+ */
+int zerodds_dr_sample_key_hash(struct zerodds_ZeroDdsDataReader *dr,
+                               const uint8_t *payload,
+                               uintptr_t len,
+                               int xcdr2,
+                               int big_endian,
+                               uint8_t *out_key_hash);
+
+/**
+ * `dp_set_listener`. NULL with an empty mask clears; NULL with a mask is the
+ * 'nil' listener (DDS 1.4 §2.2.2.1.1.3): the statuses of the mask are handled
+ * by doing nothing, and the level above does not hear them from this entity
+ * (§2.2.4.3.1). The other `*_set_listener` take NULL the same way.
  *
  * # Safety
  * `p` valide; `l` darf NULL sein.
@@ -2887,6 +5149,30 @@ int zerodds_dr_set_listener(struct zerodds_ZeroDdsDataReader *dr,
 const struct zerodds_ZeroDdsDomainParticipantListener *zerodds_dp_get_listener(struct zerodds_ZeroDdsDomainParticipant *p);
 
 /**
+ * `pub_get_listener`: the table `zerodds_pub_set_listener` registered, or NULL.
+ *
+ * # Safety
+ * `pub_` valid.
+ */
+const struct zerodds_ZeroDdsPublisherListener *zerodds_pub_get_listener(struct zerodds_ZeroDdsPublisher *pub_);
+
+/**
+ * `sub_get_listener`: the table `zerodds_sub_set_listener` registered, or NULL.
+ *
+ * # Safety
+ * `sub` valid.
+ */
+const struct zerodds_ZeroDdsSubscriberListener *zerodds_sub_get_listener(struct zerodds_ZeroDdsSubscriber *sub);
+
+/**
+ * `topic_get_listener`: the table `zerodds_topic_set_listener` registered, or NULL.
+ *
+ * # Safety
+ * `t` valid.
+ */
+const struct zerodds_ZeroDdsTopicListener *zerodds_topic_get_listener(struct zerodds_ZeroDdsTopic *t);
+
+/**
  * `dw_get_listener`.
  *
  * # Safety
@@ -2918,6 +5204,142 @@ const struct zerodds_ZeroDdsDataReaderListener *zerodds_dr_get_listener(struct z
 uintptr_t zerodds_poll_listeners(void);
 
 /**
+ * Tells `topic` its type: the `CompleteTypeObject` and its dependencies, as
+ * `zerodds_dr_set_type_objects` takes them. A MultiTopic needs the types of the topics of its
+ * `FROM` clause.
+ *
+ * # Safety
+ * `topic` is a live topic handle; the object and the dependencies are readable for the lengths
+ * given.
+ */
+int zerodds_topic_set_type_objects(struct zerodds_ZeroDdsTopic *topic,
+                                   const uint8_t *type_object,
+                                   uintptr_t len,
+                                   const uint8_t *const *dependencies,
+                                   const uintptr_t *dependency_lens,
+                                   uintptr_t count,
+                                   int is_keyed,
+                                   uint32_t extensibility);
+
+/**
+ * `create_multitopic` (DDS 1.4 §2.2.2.2.1.9): the MultiTopic `name` of the result type
+ * `type_name` (its `CompleteTypeObject` and dependencies given), selected by the
+ * `subscription_expression` of Annex B.2 with the `expression_parameters`. The topics of the
+ * `FROM` clause are the participant's topics told their type with
+ * `zerodds_topic_set_type_objects`. NULL on failure, with `*out_status` (if not NULL):
+ * `ZERODDS_BAD_PARAMETER` for an expression, topics and result type that do not fit together.
+ *
+ * # Safety
+ * `p` is a live participant, the strings NUL-terminated, `parameters[0..parameter_count]` and
+ * the type object arrays readable, `out_status` NULL or writable.
+ */
+struct zerodds_ZeroDdsMultiTopic *zerodds_dp_create_multitopic(struct zerodds_ZeroDdsDomainParticipant *p,
+                                                               const char *name,
+                                                               const char *type_name,
+                                                               const char *subscription_expression,
+                                                               const char *const *parameters,
+                                                               uintptr_t parameter_count,
+                                                               const uint8_t *type_object,
+                                                               uintptr_t len,
+                                                               const uint8_t *const *dependencies,
+                                                               const uintptr_t *dependency_lens,
+                                                               uintptr_t dependency_count,
+                                                               int is_keyed,
+                                                               uint32_t extensibility,
+                                                               int *out_status);
+
+/**
+ * `delete_multitopic` (DDS 1.4 §2.2.2.2.1.10). `ZERODDS_PRECONDITION_NOT_MET` while a reader
+ * created on it exists or when it belongs to another participant; the handle stays valid then.
+ *
+ * # Safety
+ * `p` and `mt` are live handles.
+ */
+int zerodds_dp_delete_multitopic(struct zerodds_ZeroDdsDomainParticipant *p,
+                                 struct zerodds_ZeroDdsMultiTopic *mt);
+
+/**
+ * Replaces the `expression_parameters` of the MultiTopic (DDS 1.4 §2.2.2.3.4).
+ *
+ * # Safety
+ * `mt` is live, `parameters[0..count]` readable NUL-terminated strings.
+ */
+int zerodds_multitopic_set_parameters(struct zerodds_ZeroDdsMultiTopic *mt,
+                                      const char *const *parameters,
+                                      uintptr_t count);
+
+/**
+ * `create_datareader` on a MultiTopic (DDS 1.4 §2.2.2.5.2.5): a reader of the result type.
+ * `qos` NULL is the subscriber's default QoS. NULL on failure.
+ *
+ * # Safety
+ * `sub` and `mt` are live handles of one participant, `qos` NULL or readable.
+ */
+struct zerodds_ZeroDdsMultiTopicReader *zerodds_sub_create_multitopic_reader(struct zerodds_ZeroDdsSubscriber *sub,
+                                                                             struct zerodds_ZeroDdsMultiTopic *mt,
+                                                                             const struct zerodds_ZeroDdsDataReaderQos *qos);
+
+/**
+ * Deletes a MultiTopic reader.
+ *
+ * # Safety
+ * `r` is NULL or from `zerodds_sub_create_multitopic_reader`, not used afterwards.
+ */
+void zerodds_multitopic_reader_destroy(struct zerodds_ZeroDdsMultiTopicReader *r);
+
+/**
+ * `read` (`take` = 0) or `take` (`take` != 0) of the samples of the MultiTopic reader (DDS 1.4
+ * §2.2.2.5.3.8 to §2.2.2.5.3.17), in the states the three masks name, at most `max_samples`
+ * (`-1` is no limit):
+ *
+ * - `scope` 0: every instance; 1: the instance `instance`; 2: the instance after `instance`;
+ * - `expression` (NULL for none) and its `%n` parameters: the samples that meet the query
+ *   (`read_w_condition`, `take_w_condition`); with a query only `scope` 0 is provided, any other
+ *   gives `ZERODDS_UNSUPPORTED`.
+ *
+ * `*out` is an array of `*out_count` samples allocated by the call (NULL for none); release it
+ * with `zerodds_multitopic_samples_free`.
+ *
+ * # Safety
+ * `r` is live, `expression` NULL or NUL-terminated, `parameters[0..parameter_count]` readable
+ * strings, `out` and `out_count` writable.
+ */
+int zerodds_multitopic_reader_read_ex(struct zerodds_ZeroDdsMultiTopicReader *r,
+                                      int take,
+                                      int scope,
+                                      uint64_t instance,
+                                      uint32_t sample_states,
+                                      uint32_t view_states,
+                                      uint32_t instance_states,
+                                      int32_t max_samples,
+                                      const char *expression,
+                                      const char *const *parameters,
+                                      uintptr_t parameter_count,
+                                      struct zerodds_ZeroDdsMultiTopicSample **out,
+                                      uintptr_t *out_count);
+
+/**
+ * `read` (`take` = 0) or `take` (`take` != 0) of every sample of the MultiTopic reader, any
+ * state: `zerodds_multitopic_reader_read_ex` without selection.
+ *
+ * # Safety
+ * `r` is live, `out` and `out_count` writable.
+ */
+int zerodds_multitopic_reader_read(struct zerodds_ZeroDdsMultiTopicReader *r,
+                                   int take,
+                                   struct zerodds_ZeroDdsMultiTopicSample **out,
+                                   uintptr_t *out_count);
+
+/**
+ * Releases the array `zerodds_multitopic_reader_read` returned, with every body.
+ *
+ * # Safety
+ * `samples[0..count]` is the array and count that call returned, or NULL.
+ */
+void zerodds_multitopic_samples_free(struct zerodds_ZeroDdsMultiTopicSample *samples,
+                                     uintptr_t count);
+
+/**
  * Creates a topic. Returns NULL on NULL arguments or a topic-name
  * conflict with another type.
  *
@@ -2931,7 +5353,31 @@ struct zerodds_ZeroDdsTopic *zerodds_dp_create_topic(struct zerodds_ZeroDdsDomai
                                                      const struct zerodds_ZeroDdsTopicQos *qos);
 
 /**
- * Deletes a topic.
+ * Deletes a topic (DDS 1.4 §2.2.2.2.1.6 `delete_topic`).
+ *
+ * "The deletion of a Topic is not allowed if there are any existing
+ * DataReader, DataWriter, ContentFilteredTopic, or MultiTopic objects that
+ * are using the Topic… it will return PRECONDITION_NOT_MET. The
+ * delete_topic operation must be called on the same DomainParticipant
+ * object used to create the Topic. If delete_topic is called on a different
+ * DomainParticipant, the operation will have no effect and it will return
+ * PRECONDITION_NOT_MET."
+ *
+ * Both sentences are return codes here: a topic another participant owns,
+ * and a topic a live writer, reader or ContentFilteredTopic still uses, are
+ * both `ZERODDS_PRECONDITION_NOT_MET`. The users are counted over the
+ * endpoints of this participant's publishers and subscribers — a DataReader
+ * created on a ContentFilteredTopic carries that topic's pointer — so the
+ * counts follow the same objects the delete operations take out of those
+ * lists.
+ *
+ * The Rust participant behind this handle owns the SEDP topics writer and
+ * is asked for the disposal: it removes the name from that participant's
+ * typed topic registry and disposes the announcement there. A `ZeroDdsTopic`
+ * is a name and a type name, not a typed topic, so for a topic this FFI
+ * created there is no registry entry and the disposal is the whole of the
+ * call's effect; the ALREADY_DELETED the Rust call reports for exactly that
+ * is not an error here.
  *
  * # Safety
  * `p` and `t` must be valid handles and belong together.
@@ -2947,6 +5393,22 @@ int zerodds_dp_delete_topic(struct zerodds_ZeroDdsDomainParticipant *p,
  */
 struct zerodds_ZeroDdsTopic *zerodds_dp_find_topic(struct zerodds_ZeroDdsDomainParticipant *p,
                                                    const char *name);
+
+/**
+ * `find_topic(name, timeout)` (DDS 1.4 §2.2.2.2.1.11): the topic of that
+ * name if this participant has it, otherwise waits until it is created, by
+ * another thread for one, or until `timeout_ms` milliseconds have passed.
+ * NULL on a timeout ("a 'nil' value is returned"). The topic is the pointer
+ * `zerodds_dp_create_topic` returned; one `zerodds_dp_delete_topic` deletes
+ * it, whatever the number of times it was found (the C topic is a pointer,
+ * not a counted proxy).
+ *
+ * # Safety
+ * `p`, `name` valid.
+ */
+struct zerodds_ZeroDdsTopic *zerodds_dp_find_topic_w_timeout(struct zerodds_ZeroDdsDomainParticipant *p,
+                                                             const char *name,
+                                                             uint64_t timeout_ms);
 
 /**
  * Creates a publisher.
@@ -2996,6 +5458,81 @@ struct zerodds_ZeroDdsContentFilteredTopic *zerodds_dp_create_contentfilteredtop
                                                                                    const char *filter_expression,
                                                                                    const char *const *parameters,
                                                                                    uintptr_t param_count);
+
+/**
+ * Replaces the filter parameters of a ContentFilteredTopic (DDS 1.4
+ * §2.2.2.3.3 `set_expression_parameters`). Readers already created on it
+ * filter with the new values from their next take and announce them in
+ * their SEDP subscription. `BadParameter` when the expression names a
+ * parameter beyond `count`.
+ *
+ * # Safety
+ * `cft` valid; `parameters[0..count]` NUL-terminated strings or `count == 0`.
+ */
+int zerodds_cft_set_filter_parameters(struct zerodds_ZeroDdsContentFilteredTopic *cft,
+                                      const char *const *parameters,
+                                      uintptr_t count);
+
+/**
+ * The number of filter parameters of a ContentFilteredTopic; 0 for NULL.
+ *
+ * # Safety
+ * `cft` valid or NULL.
+ */
+uintptr_t zerodds_cft_get_filter_parameter_count(struct zerodds_ZeroDdsContentFilteredTopic *cft);
+
+/**
+ * Filter parameter `index` of a ContentFilteredTopic as a new string the
+ * caller frees with `zerodds_string_free`; NULL when out of range.
+ *
+ * # Safety
+ * `cft` valid or NULL.
+ */
+char *zerodds_cft_get_filter_parameter(struct zerodds_ZeroDdsContentFilteredTopic *cft,
+                                       uintptr_t index);
+
+/**
+ * Declares the related topic's type through its `CompleteTypeObject`
+ * (XTypes 1.3 §7.3.4, the `to_bytes_le` form `idlc cpp` emits as
+ * `topic_type_support<T>::type_object()`), so a DataReader on this
+ * ContentFilteredTopic decodes each sample and reads the filter's fields by
+ * name, nested members as `a.b`. `is_keyed` and `extensibility`
+ * (`0 = @final`, `1 = @appendable`, `2 = @mutable`) must agree with the
+ * object. Set it before `zerodds_sub_create_datareader_with_cft`.
+ *
+ * Returns `BadParameter` for a NULL argument, a malformed object, one that
+ * needs dependency objects this call does not carry, or flags that
+ * disagree with it.
+ *
+ * # Safety
+ * `cft` valid; `type_object` points to `len` readable bytes.
+ */
+int zerodds_cft_set_type_object(struct zerodds_ZeroDdsContentFilteredTopic *cft,
+                                const uint8_t *type_object,
+                                uintptr_t len,
+                                int is_keyed,
+                                uint32_t extensibility);
+
+/**
+ * [`zerodds_cft_set_type_object`] for a type that refers to other types:
+ * `dependencies[0..count]` (each `dependency_lens[i]` bytes) are the
+ * complete TypeObjects the root refers to, transitively, as `idlc cpp`
+ * emits them (`topic_type_support<T>::type_object_dependency(i)`).
+ * `BadParameter` when one is missing or malformed.
+ *
+ * # Safety
+ * `cft` valid; `type_object` readable for `len` bytes; `dependencies` and
+ * `dependency_lens` readable for `count` entries, each dependency for its
+ * length; or `count == 0`.
+ */
+int zerodds_cft_set_type_objects(struct zerodds_ZeroDdsContentFilteredTopic *cft,
+                                 const uint8_t *type_object,
+                                 uintptr_t len,
+                                 const uint8_t *const *dependencies,
+                                 const uintptr_t *dependency_lens,
+                                 uintptr_t count,
+                                 int is_keyed,
+                                 uint32_t extensibility);
 
 /**
  * Sets the positional CDR field schema on a ContentFilteredTopic so the
@@ -3101,8 +5638,9 @@ uint32_t zerodds_dp_get_domain_id(struct zerodds_ZeroDdsDomainParticipant *p);
 int zerodds_dp_assert_liveliness(struct zerodds_ZeroDdsDomainParticipant *p);
 
 /**
- * Writes the participant's current wall-clock time into `*out`
- * (Spec §2.2.2.1.1.21 `get_current_time`).
+ * Writes the participant's current time into `*out`: "the time that the
+ * service uses to time-stamp data-writes" (DDS 1.4 §2.2.2.2.1.32), the
+ * runtime's `time_source`. It read the system clock.
  *
  * # Safety
  * `p` and `out` valid.
@@ -3130,15 +5668,92 @@ int zerodds_dp_contains_entity(struct zerodds_ZeroDdsDomainParticipant *p, uint6
 
 /**
  * Returns the InstanceHandles of all discovered remote participants.
- * `out_handles[0..*out_count]` are written, max `cap`.
+ *
+ * The first `min(len, cap)` handles are written into `out_handles`,
+ * `*out_count` is set to the **total** number of discovered participants, and
+ * the return value is `OutOfResources` when `len > cap` (so a caller retries
+ * with a buffer of `*out_count`), `Ok` otherwise. A NULL `out_handles` with
+ * `cap == 0` asks for the length alone (`docs/specs/zerodds-c-api-1.0.md`
+ * §2.8).
  *
  * # Safety
- * `p`, `out_handles`, `out_count` valid; `out_handles[0..cap]` writeable.
+ * `p`, `out_count` valid; `out_handles[0..cap]` writeable, or `out_handles`
+ * NULL exactly when `cap == 0`.
  */
 int zerodds_dp_get_discovered_participants(struct zerodds_ZeroDdsDomainParticipant *p,
                                            uint64_t *out_handles,
                                            uintptr_t *out_count,
                                            uintptr_t cap);
+
+/**
+ * Hands the AccessControl plugin `plugin` (a `ZeroDdsPluginAccessControl`)
+ * to the security configuration `cfg`. The runtime copies the struct; its
+ * `destroy` runs when the configuration and the runtimes made from it have
+ * let go of it. Returns 0, or -1 for a NULL argument, -2 for a plugin the
+ * runtime refuses (the reason is on stderr).
+ *
+ * # Safety
+ * `cfg` is from `zerodds_security_config_create`; `plugin` points to a
+ * valid struct.
+ */
+int32_t zerodds_security_set_access_control_plugin(struct zerodds_ZeroDdsSecurityConfig *cfg,
+                                                   const void *plugin);
+
+/**
+ * Hands the Logging plugin `plugin` (a `ZeroDdsPluginLogging`) to the
+ * security configuration `cfg`; see
+ * [`zerodds_security_set_access_control_plugin`].
+ *
+ * # Safety
+ * `cfg` is from `zerodds_security_config_create`; `plugin` points to a
+ * valid struct.
+ */
+int32_t zerodds_security_set_logging_plugin(struct zerodds_ZeroDdsSecurityConfig *cfg,
+                                            const void *plugin);
+
+/**
+ * Hands the DataTagging plugin `plugin` (a `ZeroDdsPluginDataTagging`) to
+ * the security configuration `cfg`; see
+ * [`zerodds_security_set_access_control_plugin`].
+ *
+ * # Safety
+ * `cfg` is from `zerodds_security_config_create`; `plugin` points to a
+ * valid struct.
+ */
+int32_t zerodds_security_set_data_tagging_plugin(struct zerodds_ZeroDdsSecurityConfig *cfg,
+                                                 const void *plugin);
+
+/**
+ * Hands the Authentication plugin `plugin` (a `ZeroDdsPluginAuthentication`)
+ * to the security configuration `cfg`. With it, `zerodds_runtime_create_secure`
+ * does not build the PKI plugin from the identity files: the plugin
+ * validates the identity (`validate_local_identity`, with the paths that are
+ * set as the properties of Table 50), and the identity paths are not needed.
+ * Returns 0, or -1 for a NULL argument, -2 for a plugin the runtime refuses
+ * (the reason is on stderr).
+ *
+ * # Safety
+ * `cfg` is from `zerodds_security_config_create`; `plugin` points to a valid
+ * struct.
+ */
+int32_t zerodds_security_set_authentication_plugin(struct zerodds_ZeroDdsSecurityConfig *cfg,
+                                                   const void *plugin);
+
+/**
+ * Hands the Cryptographic plugin `plugin` (a `ZeroDdsPluginCryptographic`)
+ * to the security configuration `cfg`. With it, `zerodds_runtime_create_secure`
+ * does not build the AES-GCM plugin. Needs an Authentication plugin of the
+ * application too: the Cryptographic plugin of the application gets the
+ * SharedSecret from the Authentication plugin it agrees with, not from the
+ * builtin PKI plugin. Returns 0, or -1 for a NULL argument, -2 for a plugin
+ * the runtime refuses (the reason is on stderr).
+ *
+ * # Safety
+ * `cfg` is from `zerodds_security_config_create`; `plugin` points to a valid
+ * struct.
+ */
+int32_t zerodds_security_set_cryptographic_plugin(struct zerodds_ZeroDdsSecurityConfig *cfg,
+                                                  const void *plugin);
 
 /**
  * Returns the owning participant.
@@ -3149,8 +5764,8 @@ int zerodds_dp_get_discovered_participants(struct zerodds_ZeroDdsDomainParticipa
 struct zerodds_ZeroDdsDomainParticipant *zerodds_pub_get_participant(struct zerodds_ZeroDdsPublisher *pub_);
 
 /**
- * Suspend publications (Spec §2.2.2.4.1.10). Sets a flag — the
- * hot path queues writes instead of sending them, until `resume_publications`.
+ * Suspend publications (DDS 1.4 §2.2.2.4.1.8), a hint. Each call wants
+ * its own `resume_publications`.
  *
  * # Safety
  * `pub_` valid.
@@ -3158,7 +5773,10 @@ struct zerodds_ZeroDdsDomainParticipant *zerodds_pub_get_participant(struct zero
 int zerodds_pub_suspend_publications(struct zerodds_ZeroDdsPublisher *pub_);
 
 /**
- * Resume publications.
+ * Resume publications (DDS 1.4 §2.2.2.4.1.9): "The call to
+ * resume_publications must match a previous call to suspend_publications.
+ * Otherwise the operation will return the error PRECONDITION_NOT_MET." It
+ * returned OK.
  *
  * # Safety
  * `pub_` valid.
@@ -3166,9 +5784,12 @@ int zerodds_pub_suspend_publications(struct zerodds_ZeroDdsPublisher *pub_);
 int zerodds_pub_resume_publications(struct zerodds_ZeroDdsPublisher *pub_);
 
 /**
- * begin_coherent_changes (Spec §2.2.2.4.1.12). In RC1 a no-bracket
- * marker — a spec-conformant tracker at the publisher level; the coherent-set
- * result wire frames live at the writer level and take effect independently.
+ * `begin_coherent_changes` (DDS 1.4 §2.2.2.4.1.10): opens a coherent set
+ * on every DataWriter of the publisher; their changes carry
+ * `PID_COHERENT_SET` until the matching `end_coherent_changes`
+ * (DDSI-RTPS 2.5 §8.7.6). The calls nest. A writer created while the set is
+ * open joins it. Under PRESENTATION `access_scope` GROUP the set spans the
+ * writers and its changes carry `PID_GROUP_COHERENT_SET` (§8.7.5).
  *
  * # Safety
  * `pub_` valid.
@@ -3176,7 +5797,10 @@ int zerodds_pub_resume_publications(struct zerodds_ZeroDdsPublisher *pub_);
 int zerodds_pub_begin_coherent_changes(struct zerodds_ZeroDdsPublisher *pub_);
 
 /**
- * end_coherent_changes.
+ * `end_coherent_changes` (DDS 1.4 §2.2.2.4.1.9): the last of the nested
+ * calls closes the set on every writer and sends the end-of-coherent-set
+ * marker (DDSI-RTPS 2.5 §8.7.6); a writer that wrote nothing in the set
+ * sends none. Without an open set `ZERODDS_PRECONDITION_NOT_MET`.
  *
  * # Safety
  * `pub_` valid.
@@ -3213,7 +5837,7 @@ struct zerodds_ZeroDdsDataWriter *zerodds_pub_create_datawriter(struct zerodds_Z
  * [`zerodds_pub_create_datawriter`] — which advertises
  * `TypeIdentifier::default()` (== None) — it deserializes `type_object_bytes`,
  * registers the object into the shared TypeLookup registry via
- * [`crate::register_type_object_from_bytes`], derives the strongly-hashed
+ * `crate::register_type_object_from_bytes`, derives the strongly-hashed
  * `TypeIdentifier` and sets the writer slot's `type_identifier` from it
  * **before the endpoint is published** (via `register_user_writer`). There is
  * therefore no discovery window in which the endpoint is matchable while still
@@ -3233,6 +5857,26 @@ struct zerodds_ZeroDdsDataWriter *zerodds_pub_create_datawriter_typed(struct zer
                                                                       const struct zerodds_ZeroDdsDataWriterQos *qos,
                                                                       const uint8_t *type_object_bytes,
                                                                       uintptr_t len);
+
+/**
+ * Creates a typed writer with an explicit generated-code wire contract.
+ * `is_keyed` is 0 or 1, `extensibility` is 0 (final), 1 (appendable), or
+ * 2 (mutable), and `representation` is 0 (XCDR1) or 2 (XCDR2).
+ * The caller must supply little-endian payload bodies in that representation.
+ * The offer is fixed before discovery and cannot subsequently be changed.
+ * Invalid enum values return NULL, without creating an endpoint.
+ *
+ * # Safety
+ * Same pointer/lifetime requirements as [`zerodds_pub_create_datawriter_typed`].
+ */
+struct zerodds_ZeroDdsDataWriter *zerodds_pub_create_datawriter_typed_wire(struct zerodds_ZeroDdsPublisher *pub_,
+                                                                           struct zerodds_ZeroDdsTopic *topic,
+                                                                           const struct zerodds_ZeroDdsDataWriterQos *qos,
+                                                                           const uint8_t *type_object_bytes,
+                                                                           uintptr_t len,
+                                                                           int is_keyed,
+                                                                           int extensibility,
+                                                                           int representation);
 
 /**
  * Deletes a DataWriter.
@@ -3281,18 +5925,87 @@ struct zerodds_ZeroDdsPublisher *zerodds_dw_get_publisher(struct zerodds_ZeroDds
  * idl codegen or DynamicData). The encap header prefix is added by the
  * runtime.
  *
+ * Takes no key hash. For a keyed writer whose type is registered (the
+ * `*_typed`/`*_typed_wire` creates) the runtime derives the sample's
+ * KeyHash from `payload` through that type, as
+ * [`zerodds_dw_write_keyed`] would carry it. Any other writer's sample
+ * goes out under the all-zero key (the topic's single instance, for a
+ * keyless type, or an unkeyed default identity for a keyed type with no
+ * registered type), and such a writer records no canonical key holder
+ * for it — a later
+ * [`zerodds_dw_dispose`]/[`crate::extra_ffi::zerodds_dw_unregister_instance`]
+ * for it falls straight to the `PID_KEY_HASH`-only marker form (see that
+ * function's own doc comment).
+ *
  * # Safety
- * `dw`, `payload[0..len]` valid. `handle` is a spec-mandatory param that
- * identifies the instance — `0` = HANDLE_NIL = "writer computes it".
+ * `dw`, `payload[0..len]` valid. `handle` is `0` (HANDLE_NIL: the instance
+ * comes from the key) or the handle `zerodds_dw_register_instance` returned
+ * for the key of the sample; the handle of another existing instance is
+ * `PreconditionNotMet`, one that names no instance `BadParameter` (DDS 1.4
+ * §2.2.2.4.2.11).
  */
 int zerodds_dw_write(struct zerodds_ZeroDdsDataWriter *dw,
                      const uint8_t *payload,
                      uintptr_t len,
-                     uint64_t _handle);
+                     uint64_t handle);
 
 /**
- * Writes with a source timestamp. RC1 surface: forwards to `write`
- * — the source timestamp lands in the future inline-QoS implementation.
+ * The 16-byte DDS KeyHash `dw`'s registered keyed type yields from the
+ * encoded sample `payload[0..len]` — the key [`zerodds_dw_write`] writes
+ * the same bytes under — into `out_key_hash[0..16]`.
+ *
+ * For a binding that holds the sample but no key function of its own:
+ * the C++ PSM's `DataWriter<T>::dispose_instance`, `register_instance`,
+ * `lookup_instance` and `unregister_instance` encode the sample and ask
+ * this, so the lifecycle call names the instance the write did.
+ *
+ * `PreconditionNotMet` when the writer's type is not registered as a keyed
+ * `CompleteTypeObject`; `BadParameter` when the body does not decode as it.
+ *
+ * # Safety
+ * `dw` valid; `payload[0..len]` readable when `len > 0`;
+ * `out_key_hash[0..16]` writable.
+ */
+int zerodds_dw_sample_key_hash(struct zerodds_ZeroDdsDataWriter *dw,
+                               const uint8_t *payload,
+                               uintptr_t len,
+                               uint8_t *out_key_hash);
+
+/**
+ * Writes a pre-serialized sample with its actual 16-byte DDS KeyHash.
+ * No key is inferred from the complete payload or a truncated instance handle.
+ * The runtime receives the key for keyed history and sample delivery.
+ *
+ * This is the only C-FFI write function that takes an explicit key hash
+ * (`zerodds_dw_write`/`zerodds_dw_write_w_timestamp`/
+ * [`crate::zerodds_writer_write`] derive it from the body for a keyed
+ * writer whose type is registered, and write under the all-zero key
+ * otherwise). The runtime also uses this call to remember the instance's
+ * canonical key holder from `payload`'s body (`UserWriterSlot::
+ * instance_key_holders`, once per key hash, decoded through the
+ * TypeLookup registry if this writer's type resolves there) — see
+ * [`zerodds_dw_dispose`] for what that buys a later dispose/unregister of
+ * the same instance.
+ *
+ * # Safety
+ * `dw` must be valid, `payload[0..len]` readable when `len > 0`, and
+ * `key_hash[0..key_len]` readable. A null payload is allowed only for zero bytes.
+ */
+int zerodds_dw_write_keyed(struct zerodds_ZeroDdsDataWriter *dw,
+                           const uint8_t *payload,
+                           uintptr_t len,
+                           const uint8_t *key_hash,
+                           uintptr_t key_len);
+
+/**
+ * Writes with an explicit source timestamp (Spec §2.2.2.4.2.16
+ * `write_w_timestamp`), otherwise identical to [`zerodds_dw_write`] --
+ * `handle` follows the rule of that function, and the key is derived from
+ * the body the same way. `ts_sec`/
+ * `ts_nanosec` become the sample's actual SOURCE_TIMESTAMP on the wire
+ * INFO_TS and the same-runtime intra-process dispatch, not just local
+ * bookkeeping: this used to forward straight to `zerodds_dw_write`,
+ * silently discarding both.
  *
  * # Safety
  * Like `zerodds_dw_write`.
@@ -3301,18 +6014,35 @@ int zerodds_dw_write_w_timestamp(struct zerodds_ZeroDdsDataWriter *dw,
                                  const uint8_t *payload,
                                  uintptr_t len,
                                  uint64_t handle,
-                                 int32_t _ts_sec,
-                                 uint32_t _ts_nanosec);
+                                 int32_t ts_sec,
+                                 uint32_t ts_nanosec);
 
 /**
  * Dispose: emits a DISPOSED lifecycle marker for the instance.
+ *
+ * This call itself hands the runtime only `key_hash`, no key value — but
+ * unlike [`crate::zerodds_writer_dispose`] (which truly never has one),
+ * `write_user_lifecycle` (`crates/dcps/src/runtime.rs`) falls back to the
+ * key holder THIS writer remembered from `key_hash`'s first
+ * [`zerodds_dw_write_keyed`] call, if any, and this writer's type resolves
+ * as a `CompleteTypeObject` in the TypeLookup registry: the DISPOSED
+ * marker then goes out with the full `serializedKey` (RTPS 2.5 §9.4.2.11
+ * K flag set), the only dispose form Eclipse Cyclone 11.0.1, Fast DDS
+ * 3.6.1 and OpenDDS 3.35 were all measured to act on
+ * (`Test_FinalInstanceState_1`). An instance this writer never wrote via
+ * `zerodds_dw_write_keyed` (only `zerodds_dw_write`/
+ * `zerodds_dw_write_w_timestamp`, or `zerodds_dw_write_keyed` under a
+ * different key hash), or whose type does not resolve there, still gets
+ * the `PID_KEY_HASH`-only marker instead — RTI Connext 7.7.0 and CoreDX
+ * 6.15.3 accept that form too, so this is a strictly wider compatibility
+ * set than the marker used to be, never narrower.
  *
  * # Safety
  * `dw` valid; `key_hash[0..16]` readable. `handle` informational.
  */
 int zerodds_dw_dispose(struct zerodds_ZeroDdsDataWriter *dw,
                        const uint8_t *key_hash,
-                       uint64_t _handle);
+                       uint64_t handle);
 
 /**
  * Waits until all currently outstanding writes are acked or a timeout.
@@ -3341,7 +6071,8 @@ int zerodds_dw_wait_for_matched(struct zerodds_ZeroDdsDataWriter *dw,
                                 uint64_t timeout_ms);
 
 /**
- * `LIVELINESS_LOST_STATUS` (Spec §2.2.2.4.2.x).
+ * `get_liveliness_lost_status` (DDS 1.4 §2.2.2.4.2). Reading resets the
+ * change field (§2.2.4.1).
  *
  * # Safety
  * `dw` and `out` valid.
@@ -3350,7 +6081,8 @@ int zerodds_dw_get_liveliness_lost_status(struct zerodds_ZeroDdsDataWriter *dw,
                                           struct zerodds_ZeroDdsLivelinessLostStatus *out);
 
 /**
- * `OFFERED_DEADLINE_MISSED_STATUS`.
+ * `get_offered_deadline_missed_status` (DDS 1.4 §2.2.2.4.2). Reading
+ * resets the change field.
  *
  * # Safety
  * `dw` and `out` valid.
@@ -3359,7 +6091,8 @@ int zerodds_dw_get_offered_deadline_missed_status(struct zerodds_ZeroDdsDataWrit
                                                   struct zerodds_ZeroDdsOfferedDeadlineMissedStatus *out);
 
 /**
- * `OFFERED_INCOMPATIBLE_QOS_STATUS`.
+ * `get_offered_incompatible_qos_status` (DDS 1.4 §2.2.2.4.2). Reading
+ * resets the change field.
  *
  * # Safety
  * `dw` and `out` valid.
@@ -3368,13 +6101,269 @@ int zerodds_dw_get_offered_incompatible_qos_status(struct zerodds_ZeroDdsDataWri
                                                    struct zerodds_ZeroDdsOfferedIncompatibleQosStatus *out);
 
 /**
- * `PUBLICATION_MATCHED_STATUS`.
+ * `get_publication_matched_status` (DDS 1.4 §2.2.2.4.2): `total_count`
+ * counts every reader that ever matched, `current_count` those matched
+ * now, and the last handle is the reader that last joined or left.
+ * Reading resets the change fields. It wrote the matched count into both
+ * counts, 0 into both changes and HANDLE_NIL into the handle.
  *
  * # Safety
  * `dw` and `out` valid.
  */
 int zerodds_dw_get_publication_matched_status(struct zerodds_ZeroDdsDataWriter *dw,
                                               struct zerodds_ZeroDdsPublicationMatchedStatus *out);
+
+/**
+ * Creates a provider from the QoS libraries the URI `uri` names (`file:`, `data:`, `http:`, `https:`);
+ * `profile` (`"Library::Profile"`, or NULL) is the profile the provider
+ * answers for when a call names none. Returns NULL and sets `*out_status`
+ * (if not NULL) otherwise: `ZERODDS_UNSUPPORTED` for a scheme no
+ * specification defines (DDS-PSM-Cxx 1.0 §2.1: an implementation without the
+ * source answers UNSUPPORTED), `ZERODDS_BAD_PARAMETER` for a document that
+ * cannot be read or is not a DDS-XML QoS document, or a profile it does not have.
+ *
+ * # Safety
+ * `uri` is a NUL-terminated string, `profile` is one or NULL, `out_status`
+ * is writable or NULL.
+ */
+struct zerodds_ZeroDdsQosProvider *zerodds_qosprovider_create(const char *uri,
+                                                              const char *profile,
+                                                              int *out_status);
+
+/**
+ * Releases a provider. NULL is ignored.
+ *
+ * # Safety
+ * `p` is NULL or a provider from `zerodds_qosprovider_create`, not used
+ * afterwards.
+ */
+void zerodds_qosprovider_destroy(struct zerodds_ZeroDdsQosProvider *p);
+
+/**
+ * The QoS of a DomainParticipant for the profile `id` (NULL: the
+ * provider's default profile). USER_DATA goes to the caller's buffer.
+ *
+ * # Safety
+ * `p` is a live provider, `id` NULL or NUL-terminated, `out` a QoS struct
+ * with the caller's buffers.
+ */
+int zerodds_qosprovider_participant_qos(struct zerodds_ZeroDdsQosProvider *p,
+                                        const char *id,
+                                        struct zerodds_ZeroDdsDomainParticipantQos *out);
+
+/**
+ * The QoS of a Topic for the profile `id`. TOPIC_DATA goes to the caller's
+ * buffer.
+ *
+ * # Safety
+ * As [`zerodds_qosprovider_participant_qos`].
+ */
+int zerodds_qosprovider_topic_qos(struct zerodds_ZeroDdsQosProvider *p,
+                                  const char *id,
+                                  struct zerodds_ZeroDdsTopicQos *out);
+
+/**
+ * The QoS of a Publisher for the profile `id`. GROUP_DATA goes to the
+ * caller's buffer.
+ *
+ * # Safety
+ * As [`zerodds_qosprovider_participant_qos`].
+ */
+int zerodds_qosprovider_publisher_qos(struct zerodds_ZeroDdsQosProvider *p,
+                                      const char *id,
+                                      struct zerodds_ZeroDdsPublisherQos *out);
+
+/**
+ * The QoS of a Subscriber for the profile `id`. GROUP_DATA goes to the
+ * caller's buffer.
+ *
+ * # Safety
+ * As [`zerodds_qosprovider_participant_qos`].
+ */
+int zerodds_qosprovider_subscriber_qos(struct zerodds_ZeroDdsQosProvider *p,
+                                       const char *id,
+                                       zerodds_ZeroDdsSubscriberQos *out);
+
+/**
+ * The QoS of a DataWriter for the profile `id`. USER_DATA, TOPIC_DATA and
+ * GROUP_DATA go to the caller's buffers.
+ *
+ * # Safety
+ * As [`zerodds_qosprovider_participant_qos`].
+ */
+int zerodds_qosprovider_datawriter_qos(struct zerodds_ZeroDdsQosProvider *p,
+                                       const char *id,
+                                       struct zerodds_ZeroDdsDataWriterQos *out);
+
+/**
+ * The QoS of a DataReader for the profile `id`. USER_DATA, TOPIC_DATA and
+ * GROUP_DATA go to the caller's buffers.
+ *
+ * # Safety
+ * As [`zerodds_qosprovider_participant_qos`].
+ */
+int zerodds_qosprovider_datareader_qos(struct zerodds_ZeroDdsQosProvider *p,
+                                       const char *id,
+                                       struct zerodds_ZeroDdsDataReaderQos *out);
+
+/**
+ * Announces the DDS-RPC discovery extension of a writer (§7.6.2.1.1):
+ * `instance_name` (NULL: none; at most 256 octets), `related_guid` (NULL:
+ * none; the 16 octets of the related reader's GUID) and `aliases`
+ * (NULL: none; `alias_count` strings of at most 256 octets).
+ *
+ * Returns `ZERODDS_OK`; `BadHandle` for a NULL writer; `BadParameter` for
+ * a string longer than `string<256>`; `InvalidUtf8`.
+ *
+ * # Safety
+ * `writer` from `zerodds_writer_create*`; the other pointers as above.
+ */
+int zerodds_writer_set_rpc_discovery(struct zerodds_ZeroDdsWriter *writer,
+                                     const char *instance_name,
+                                     const uint8_t *related_guid,
+                                     const char *const *aliases,
+                                     uintptr_t alias_count);
+
+/**
+ * The reader half of [`zerodds_writer_set_rpc_discovery`] (§7.6.2.1.2).
+ *
+ * # Safety
+ * `reader` from `zerodds_reader_create*`; the other pointers as there.
+ */
+int zerodds_reader_set_rpc_discovery(struct zerodds_ZeroDdsReader *reader,
+                                     const char *instance_name,
+                                     const uint8_t *related_guid,
+                                     const char *const *aliases,
+                                     uintptr_t alias_count);
+
+/**
+ * The readers a writer is matched with and what each announced
+ * (§7.6.2.1.2). `*out_count` is the total; `OutOfResources` when it
+ * exceeds `cap`.
+ *
+ * # Safety
+ * `writer` valid; `out`/`out_count` as for `write_peers`.
+ */
+int zerodds_writer_matched_rpc_readers(struct zerodds_ZeroDdsWriter *writer,
+                                       struct zerodds_ZeroDdsRpcPeer *out,
+                                       uintptr_t cap,
+                                       uintptr_t *out_count);
+
+/**
+ * The writers a reader is matched with and what each announced
+ * (§7.6.2.1.1). `*out_count` is the total; `OutOfResources` when it
+ * exceeds `cap`.
+ *
+ * # Safety
+ * `reader` valid; `out`/`out_count` as for `write_peers`.
+ */
+int zerodds_reader_matched_rpc_writers(struct zerodds_ZeroDdsReader *reader,
+                                       struct zerodds_ZeroDdsRpcPeer *out,
+                                       uintptr_t cap,
+                                       uintptr_t *out_count);
+
+/**
+ * §7.6.2.2.2, Figure 7.4: has the client, whose request writer and reply
+ * reader these are, discovered both endpoints of a service instance it
+ * may address? `instance_name` (NULL: the empty name) selects the
+ * instance by the name its service announced. `accept_unannounced` reads a
+ * peer that announced no related endpoint as complete by the DDS match
+ * alone. `*out_complete` is `1` or `0`.
+ *
+ * # Safety
+ * The handles valid; `instance_name` NULL or NUL-terminated;
+ * `out_complete` writable.
+ */
+int zerodds_rpc_service_matching_complete(struct zerodds_ZeroDdsWriter *request_writer,
+                                          struct zerodds_ZeroDdsReader *reply_reader,
+                                          const char *instance_name,
+                                          uint8_t accept_unannounced,
+                                          uint8_t *out_complete);
+
+/**
+ * §7.6.2.2.1, Figure 7.3: the mask of one client. Has the service, whose
+ * request reader and reply writer these are, discovered both endpoints of
+ * the client whose request writer is `client_writer_guid` (16 octets)? A
+ * service processes the requests of that client only once this is `1`.
+ * A client writer the request reader is not matched with is `0` unless
+ * `accept_unannounced` is set.
+ *
+ * # Safety
+ * The handles valid; `client_writer_guid` 16 readable octets;
+ * `out_complete` writable.
+ */
+int zerodds_rpc_client_matching_complete(struct zerodds_ZeroDdsReader *request_reader,
+                                         struct zerodds_ZeroDdsWriter *reply_writer,
+                                         const uint8_t *client_writer_guid,
+                                         uint8_t accept_unannounced,
+                                         uint8_t *out_complete);
+
+/**
+ * Resolves a `@Qos` profile URL (DDS-RPC 1.0 §7.10.1) to endpoint QoS.
+ *
+ * The URL is `[file://]path[#library]`; the XML at `path` holds DDS4CCM QoS
+ * profiles, and the named library — or the first one — supplies its first
+ * profile. The profile's `<datawriter_qos>` and then its `<datareader_qos>`
+ * are applied over the DDS-RPC defaults of §7.10.2 (RELIABLE, KEEP_ALL,
+ * VOLATILE), the reader container leaving the writer-only LIFESPAN alone.
+ * Another protocol than `file` is refused, not fetched.
+ *
+ * Returns `ZERODDS_OK`; `BadHandle` for NULL, `BadParameter` for a URL that
+ * is not one or names another protocol, `Error` when the file cannot be read
+ * or parsed or the library or profile is missing, `Unsupported` for a
+ * durability kind the runtime endpoints do not have.
+ *
+ * # Safety
+ * `url` is a NUL-terminated string and `out` points at a writable
+ * [`ZeroDdsEndpointQos`].
+ */
+int zerodds_endpoint_qos_from_profile_url(const char *url, struct zerodds_ZeroDdsEndpointQos *out);
+
+/**
+ * Changes the mutable policies of a runtime writer: DEADLINE and LIFESPAN of
+ * `qos`. Of the policies the DDS-RPC QoS carries (§7.10.2: reliability,
+ * durability, history, resource limits, lifespan, deadline) DDS 1.4 §2.2.3
+ * makes exactly these two changeable after the entity is enabled; the
+ * others — RELIABILITY (with its `max_blocking_time`), DURABILITY, HISTORY
+ * and RESOURCE_LIMITS — are "Changeable: No". A value of one of them that
+ * differs from the writer's is `ImmutablePolicy`, and nothing is changed.
+ *
+ * # Safety
+ * `writer` from `zerodds_writer_create*`; `qos` points at a
+ * [`ZeroDdsEndpointQos`].
+ */
+int zerodds_writer_set_qos(struct zerodds_ZeroDdsWriter *writer,
+                           const struct zerodds_ZeroDdsEndpointQos *qos);
+
+/**
+ * Changes the mutable policies of a runtime reader: DEADLINE of `qos`. Of
+ * the policies the DDS-RPC QoS carries DDS 1.4 §2.2.3 makes only DEADLINE
+ * changeable on a reader (LIFESPAN is a writer policy); RELIABILITY,
+ * DURABILITY, HISTORY and RESOURCE_LIMITS are "Changeable: No". A differing
+ * value of one of them is `ImmutablePolicy` and nothing is changed.
+ *
+ * # Safety
+ * `reader` from `zerodds_reader_create*`; `qos` points at a
+ * [`ZeroDdsEndpointQos`].
+ */
+int zerodds_reader_set_qos(struct zerodds_ZeroDdsReader *reader,
+                           const struct zerodds_ZeroDdsEndpointQos *qos);
+
+/**
+ * Sets the CDR form the samples of a runtime writer have: `0` is XCDR1
+ * (classic CDR, `CDR_LE` in the encapsulation header), `2` is XCDR2. The
+ * body the caller hands `zerodds_writer_write*` has to be in that form;
+ * the encapsulation identifier names it. DDS-RPC 1.0 §7.5.1.1: the Basic
+ * Service Mapping is for DDS 1.3 implementations, that is classic CDR.
+ *
+ * `BadParameter` for another value. `PreconditionNotMet` when the writer's
+ * representation is owned by a typed writer.
+ *
+ * # Safety
+ * `writer` from `zerodds_writer_create*`.
+ */
+int zerodds_writer_set_data_representation(struct zerodds_ZeroDdsWriter *writer,
+                                           int representation);
 
 /**
  * Creates an empty security config builder.
@@ -3464,14 +6453,15 @@ struct zerodds_ZeroDdsRuntime *zerodds_runtime_create_secure(uint32_t domain_id,
 
 /**
  * Creates a ZeroDDS runtime with DDS-Security from an **SROS2 enclave**
- * (C7 "secure by default"). Reads `ZERODDS_SECURITY_DIR` (enclave directory)
- * and `ROS_DOMAIN_ID`, and builds the `SecurityProfile` in one call — no
- * per-path setter ceremony.
+ * (C7 "secure by default"). The enclave directory is the runtime setting
+ * `security.enclave_dir` (env `ZERODDS_SECURITY_DIR`, or a file of the
+ * standard layers), and the `SecurityProfile` is built in one call — no
+ * per-path setter ceremony. `domain_id` is the domain of both the runtime
+ * and the governance/permissions check.
  *
- * Return: NULL if `ZERODDS_SECURITY_DIR` is not set (the caller then falls
- * back to the plain path) OR on a load/verify error (stderr diag);
- * otherwise the secured runtime. `domain_id` does not override `ROS_DOMAIN_ID` —
- * it is the explicit value the runtime starts with.
+ * Return: NULL if no enclave directory is configured (the caller then falls
+ * back to the plain path) OR on a configuration, load or verify error
+ * (stderr diag); otherwise the secured runtime.
  *
  * # Safety
  * No pointer arguments; always callable.
@@ -3562,6 +6552,26 @@ int zerodds_dw_enable_iceoryx(struct zerodds_ZeroDdsDataWriter *dw,
 int zerodds_dr_enable_iceoryx(struct zerodds_ZeroDdsDataReader *dr, const char *service_name);
 
 /**
+ * `get_offered_incompatible_qos_status` of a DataWriter with the
+ * per-policy counts (DDS 1.4 §2.2.2.4.2). Reading resets the change field.
+ *
+ * # Safety
+ * `dw` is a live DataWriter handle, `out` writable.
+ */
+int zerodds_dw_get_offered_incompatible_qos_status_ex(struct zerodds_ZeroDdsDataWriter *dw,
+                                                      struct zerodds_ZeroDdsIncompatibleQosStatusEx *out);
+
+/**
+ * `get_requested_incompatible_qos_status` of a DataReader with the
+ * per-policy counts (DDS 1.4 §2.2.2.5.3). Reading resets the change field.
+ *
+ * # Safety
+ * `dr` is a live DataReader handle, `out` writable.
+ */
+int zerodds_dr_get_requested_incompatible_qos_status_ex(struct zerodds_ZeroDdsDataReader *dr,
+                                                        struct zerodds_ZeroDdsIncompatibleQosStatusEx *out);
+
+/**
  * Returns the owning participant.
  *
  * # Safety
@@ -3570,8 +6580,13 @@ int zerodds_dr_enable_iceoryx(struct zerodds_ZeroDdsDataReader *dr, const char *
 struct zerodds_ZeroDdsDomainParticipant *zerodds_sub_get_participant(struct zerodds_ZeroDdsSubscriber *sub);
 
 /**
- * `begin_access` (Spec §2.2.2.5.1.13). RC1: no-op marker for
- * coherent sets — the real set boundaries are on the reader wire path.
+ * `begin_access` (DDS 1.4 §2.2.2.5.2.8): "the application is about to
+ * access the data samples in any of the DataReader objects attached to
+ * the Subscriber". Under PRESENTATION `access_scope` GROUP the
+ * sample-accessing operations need it: without an open `begin_access`,
+ * read, take, their `_w_condition` forms and `get_datareaders` return
+ * `ZERODDS_PRECONDITION_NOT_MET`, except inside a data listener. The calls
+ * nest.
  *
  * # Safety
  * `sub` valid.
@@ -3579,7 +6594,9 @@ struct zerodds_ZeroDdsDomainParticipant *zerodds_sub_get_participant(struct zero
 int zerodds_sub_begin_access(struct zerodds_ZeroDdsSubscriber *sub);
 
 /**
- * `end_access`.
+ * `end_access` (DDS 1.4 §2.2.2.5.2.9): "Calls to begin_access and
+ * end_access must be properly nested and paired"; without an open
+ * `begin_access` `ZERODDS_PRECONDITION_NOT_MET`.
  *
  * # Safety
  * `sub` valid.
@@ -3587,19 +6604,38 @@ int zerodds_sub_begin_access(struct zerodds_ZeroDdsSubscriber *sub);
 int zerodds_sub_end_access(struct zerodds_ZeroDdsSubscriber *sub);
 
 /**
- * Returns the list of active DataReaders.
+ * `get_datareaders` (DDS 1.4 §2.2.2.5.2.10): the DataReaders of the
+ * subscriber that hold samples in the three state masks (0: any state of
+ * that kind). Under PRESENTATION `access_scope` GROUP with
+ * `ordered_access` a reader once per sample, in the order the samples
+ * were written across the readers (by source timestamp, a tie to the
+ * older reader); otherwise each reader once, in creation order. Under
+ * GROUP scope the call needs `begin_access`. It returned every reader,
+ * with samples or not.
+ *
+ * The first `min(len, cap)` reader handles are written into `out`,
+ * `*out_count` is set to the **total**, and the return value is
+ * `OutOfResources` when `len > cap` (so a caller retries with a buffer of
+ * `*out_count`), `Ok` otherwise. A NULL `out` with `cap == 0` asks for the
+ * length alone (`docs/specs/zerodds-c-api-1.0.md` §2.8).
  *
  * # Safety
- * `sub`, `out`, `out_count` valid.
+ * `sub`, `out_count` valid; `out[0..cap]` writeable, or `out` NULL exactly
+ * when `cap == 0`.
  */
 int zerodds_sub_get_datareaders(struct zerodds_ZeroDdsSubscriber *sub,
                                 struct zerodds_ZeroDdsDataReader **out,
                                 uintptr_t *out_count,
-                                uintptr_t cap);
+                                uintptr_t cap,
+                                uint32_t sample_states,
+                                uint32_t view_states,
+                                uint32_t instance_states);
 
 /**
- * `notify_datareaders` (Spec §2.2.2.5.1.16). RC1: no-op — the listener bubble-up
- * runs per-reader, the subscriber aggregator is wired in the WP "Listeners-FFI".
+ * `notify_datareaders` (DDS 1.4 §2.2.2.5.2.14): calls `on_data_available`
+ * of every DataReader of the subscriber whose DATA_AVAILABLE changed
+ * since its listener was last called (§2.2.4.2.2), on this thread; the
+ * pattern of `on_data_on_readers`.
  *
  * # Safety
  * `sub` valid.
@@ -3607,7 +6643,13 @@ int zerodds_sub_get_datareaders(struct zerodds_ZeroDdsSubscriber *sub,
 int zerodds_sub_notify_datareaders(struct zerodds_ZeroDdsSubscriber *sub);
 
 /**
- * Creates a DataReader.
+ * Creates a DataReader over a **keyed** topic.
+ *
+ * The topic kind is what an untyped reader knows about its type's keys, so
+ * a keyless topic must be created through
+ * [`zerodds_sub_create_datareader_kind`] with `is_keyed = 0` — otherwise the
+ * take path resolves an instance per distinct payload instead of the single
+ * instance a keyless topic has (DDS 1.4 §2.2.1.2.2).
  *
  * # Safety
  * `sub`, `topic` valid; `qos` may be NULL.
@@ -3617,10 +6659,34 @@ struct zerodds_ZeroDdsDataReader *zerodds_sub_create_datareader(struct zerodds_Z
                                                                 const struct zerodds_ZeroDdsDataReaderQos *qos);
 
 /**
+ * Creates a DataReader with an explicit keyed / no-keyed flag — the topic
+ * surface's counterpart to [`crate::zerodds_reader_create_kind`].
+ *
+ * `is_keyed = 0` when the IDL type has no `@key` member. Two things follow
+ * from it, both of them spec text rather than a tuning knob:
+ *
+ * * the reader endpoint's `entityKind` becomes `NO_KEY` instead of
+ *   `WITH_KEY` (DDSI-RTPS 2.5 §9.3.1.2 Table 9.1 — the endpoint kind follows
+ *   the type's keyedness);
+ * * `zerodds_dr_take` / `zerodds_dr_read` report the topic's **single**
+ *   instance (DDS 1.4 §2.2.1.2.2) for every sample, with the all-zero
+ *   KeyHash of an empty Key Holder (DDS-XTypes 1.3 §7.6.8) and thus
+ *   `instance_handle = HANDLE_NIL`, instead of deriving an instance from
+ *   each payload.
+ *
+ * # Safety
+ * `sub`, `topic` valid; `qos` may be NULL.
+ */
+struct zerodds_ZeroDdsDataReader *zerodds_sub_create_datareader_kind(struct zerodds_ZeroDdsSubscriber *sub,
+                                                                     struct zerodds_ZeroDdsTopic *topic,
+                                                                     const struct zerodds_ZeroDdsDataReaderQos *qos,
+                                                                     int is_keyed);
+
+/**
  * Creates a DataReader over the topic that advertises its type via a
  * serialized COMPLETE `TypeObject` (F-TYPES-3 / #24). Topic-path mirror of the
  * flat [`crate::zerodds_reader_create_typed`] and reader-side twin of
- * [`zerodds_pub_create_datawriter_typed`]: deserializes `type_object_bytes`,
+ * [`zerodds_pub_create_datawriter_typed`](crate::publisher_ffi::zerodds_pub_create_datawriter_typed): deserializes `type_object_bytes`,
  * registers the object into the shared TypeLookup registry, derives the
  * strongly-hashed `TypeIdentifier` and sets the reader slot's
  * `type_identifier` from it before the endpoint is published — no `None`-window
@@ -3635,6 +6701,23 @@ struct zerodds_ZeroDdsDataReader *zerodds_sub_create_datareader_typed(struct zer
                                                                       const struct zerodds_ZeroDdsDataReaderQos *qos,
                                                                       const uint8_t *type_object_bytes,
                                                                       uintptr_t len);
+
+/**
+ * Creates a typed reader accepting the generated codec's representation only.
+ * `is_keyed` is 0 or 1; `representation` is 0 (XCDR1) or 2 (XCDR2).
+ * Both wire byte orders may arrive and are reported with each sample.
+ * Invalid enum values return NULL without registering an endpoint.
+ *
+ * # Safety
+ * Same pointer/lifetime requirements as [`zerodds_sub_create_datareader_typed`].
+ */
+struct zerodds_ZeroDdsDataReader *zerodds_sub_create_datareader_typed_wire(struct zerodds_ZeroDdsSubscriber *sub,
+                                                                           struct zerodds_ZeroDdsTopic *topic,
+                                                                           const struct zerodds_ZeroDdsDataReaderQos *qos,
+                                                                           const uint8_t *type_object_bytes,
+                                                                           uintptr_t len,
+                                                                           int is_keyed,
+                                                                           int representation);
 
 /**
  * Creates a DataReader on a ContentFilteredTopic.
@@ -3692,6 +6775,8 @@ struct zerodds_ZeroDdsSubscriber *zerodds_dr_get_subscriber(struct zerodds_ZeroD
 
 /**
  * Take: consumes samples from the cache + channel (Spec §2.2.2.5.3).
+ * A sample beyond ResourceLimits.max_instances is refused on its own and
+ * counted on the reader's status; the rest of the batch is delivered.
  * Goes through read_cache (sample-state READ + NOT_READ) and the channel
  * (sample-state NOT_READ), removes all delivered samples.
  *
@@ -3701,14 +6786,14 @@ struct zerodds_ZeroDdsSubscriber *zerodds_dr_get_subscriber(struct zerodds_ZeroD
 int zerodds_dr_take(struct zerodds_ZeroDdsDataReader *dr,
                     struct zerodds_ZeroDdsSampleArray *out,
                     uintptr_t max_samples,
-                    uint32_t _sample_states,
-                    uint32_t _view_states,
-                    uint32_t _instance_states);
+                    uint32_t sample_states,
+                    uint32_t view_states,
+                    uint32_t instance_states);
 
 /**
- * Read: non-destructive variant of take (Spec §2.2.2.5.3).
- * Returns samples from the cache + channel, but ALL of them remain afterwards
- * in the read cache with sample-state = READ.
+ * Read: non-destructive variant of take (Spec §2.2.2.5.3.8). Returns the
+ * samples in the three state masks from the cache and the channel; they
+ * remain in the read cache with sample-state = READ.
  *
  * # Safety
  * `dr`, `out` valid.
@@ -3716,9 +6801,9 @@ int zerodds_dr_take(struct zerodds_ZeroDdsDataReader *dr,
 int zerodds_dr_read(struct zerodds_ZeroDdsDataReader *dr,
                     struct zerodds_ZeroDdsSampleArray *out,
                     uintptr_t max_samples,
-                    uint32_t _sample_states,
-                    uint32_t _view_states,
-                    uint32_t _instance_states);
+                    uint32_t sample_states,
+                    uint32_t view_states,
+                    uint32_t instance_states);
 
 /**
  * Take next single sample.
@@ -3772,7 +6857,8 @@ int zerodds_dr_get_liveliness_changed_status(struct zerodds_ZeroDdsDataReader *d
                                              struct zerodds_ZeroDdsLivelinessChangedStatus *out);
 
 /**
- * `SUBSCRIPTION_MATCHED_STATUS`.
+ * `get_subscription_matched_status` (DDS 1.4 §2.2.2.5.3); as
+ * `zerodds_dw_get_publication_matched_status`.
  *
  * # Safety
  * `dr` and `out` valid.
@@ -3781,7 +6867,8 @@ int zerodds_dr_get_subscription_matched_status(struct zerodds_ZeroDdsDataReader 
                                                struct zerodds_ZeroDdsSubscriptionMatchedStatus *out);
 
 /**
- * `REQUESTED_DEADLINE_MISSED_STATUS`.
+ * `get_requested_deadline_missed_status` (DDS 1.4 §2.2.2.5.3). Reading
+ * resets the change field.
  *
  * # Safety
  * `dr` and `out` valid.
@@ -3790,7 +6877,8 @@ int zerodds_dr_get_requested_deadline_missed_status(struct zerodds_ZeroDdsDataRe
                                                     struct zerodds_ZeroDdsRequestedDeadlineMissedStatus *out);
 
 /**
- * `REQUESTED_INCOMPATIBLE_QOS_STATUS`.
+ * `get_requested_incompatible_qos_status` (DDS 1.4 §2.2.2.5.3). Reading
+ * resets the change field.
  *
  * # Safety
  * `dr` and `out` valid.
@@ -3799,7 +6887,8 @@ int zerodds_dr_get_requested_incompatible_qos_status(struct zerodds_ZeroDdsDataR
                                                      struct zerodds_ZeroDdsRequestedIncompatibleQosStatus *out);
 
 /**
- * `SAMPLE_LOST_STATUS`.
+ * `get_sample_lost_status` (DDS 1.4 §2.2.2.5.3). Reading resets the
+ * change field.
  *
  * # Safety
  * `dr` and `out` valid.
@@ -3808,7 +6897,8 @@ int zerodds_dr_get_sample_lost_status(struct zerodds_ZeroDdsDataReader *dr,
                                       struct zerodds_ZeroDdsSampleLostStatus *out);
 
 /**
- * `SAMPLE_REJECTED_STATUS`.
+ * `get_sample_rejected_status` (DDS 1.4 §2.2.2.5.3). Reading resets the
+ * change field.
  *
  * # Safety
  * `dr` and `out` valid.
@@ -3861,7 +6951,8 @@ void zerodds_string_free(char *s);
 int zerodds_topic_get_qos(struct zerodds_ZeroDdsTopic *t, struct zerodds_ZeroDdsTopicQos *out);
 
 /**
- * Set QoS (Spec §2.2.2.3.2.x). NULL = default.
+ * Set QoS (Spec §2.2.2.3.2.x). NULL = the participant's default topic
+ * QoS (`TOPIC_QOS_DEFAULT`, DDS 1.4 §2.2.2.1.1.1).
  *
  * # Safety
  * `t` valid.
@@ -3870,13 +6961,37 @@ int zerodds_topic_set_qos(struct zerodds_ZeroDdsTopic *t,
                           const struct zerodds_ZeroDdsTopicQos *qos);
 
 /**
- * Returns the InconsistentTopicStatus.
+ * `get_inconsistent_topic_status` (DDS 1.4 §2.2.2.3.2): the times the
+ * two-step rule of XTypes 1.3 §7.6.3.4.2 refused a discovered endpoint on
+ * this topic's name, and the change since the status was last read.
+ * Reading resets the change. It answered zeros whatever happened.
  *
  * # Safety
  * `t` and `out` valid.
  */
 int zerodds_topic_get_inconsistent_topic_status(struct zerodds_ZeroDdsTopic *t,
                                                 struct zerodds_ZeroDdsInconsistentTopicStatus *out);
+
+/**
+ * Loads the document `uri` names and describes the types it defines. IDL or DDS-XML types;
+ * the text decides (an XML document starts with `<`). Writes JSON (see the module note) to
+ * `*out`; free it with `zerodds_string_free`.
+ *
+ * Returns `ZERODDS_UNSUPPORTED` for a scheme no specification defines,
+ * `ZERODDS_BAD_PARAMETER` for a document that cannot be read or does not parse.
+ *
+ * # Safety
+ * `uri` is a NUL-terminated string, `out` is writable.
+ */
+int zerodds_types_load(const char *uri, char **out);
+
+/**
+ * [`zerodds_types_load`] for IDL text instead of a URI.
+ *
+ * # Safety
+ * `idl` is a NUL-terminated string, `out` is writable.
+ */
+int zerodds_types_describe_idl(const char *idl, char **out);
 
 /**
  * Creates a typed topic handle. Stores the TypeSupport

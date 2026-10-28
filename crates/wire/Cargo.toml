@@ -1,0 +1,27 @@
+[package]
+name = "zerodds-wire"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "The runtime the generated encoders call: XCDR1 and XCDR2 writers and readers, alignment and framing exactly as the layout plan states it."
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/zerodds-wire"
+readme = "README.md"
+keywords = ["dds", "xcdr", "cdr", "serialization", "rtps"]
+categories = ["encoding", "network-programming"]
+
+[dependencies]
+zerodds-float128 = { path = "../float128", version = "1.0.0-rc.7" }
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[lints]
+workspace = true
+
+[[bench]]
+name = "encode_decode_hotpaths"
+harness = false

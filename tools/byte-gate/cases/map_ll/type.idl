@@ -1,0 +1,1 @@
+@final struct Sample { map<long, long> m; octet tail; };

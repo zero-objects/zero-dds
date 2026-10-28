@@ -1,0 +1,4 @@
+module m {
+  typedef long L; typedef L LL; typedef sequence<LL> Seq;
+  @appendable struct S { Seq items; };
+};

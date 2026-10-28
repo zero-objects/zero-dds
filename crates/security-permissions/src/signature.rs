@@ -102,11 +102,12 @@ mod tests {
     use super::*;
 
     const RAW_XML: &str = r#"
-<permissions>
-  <grant><subject_name>CN=alice</subject_name>
-    <allow_rule><publish><topic>T</topic></publish></allow_rule>
+<dds><permissions>
+  <grant name="alice"><subject_name>CN=alice</subject_name>
+    <validity><not_before>2020-01-01T00:00:00</not_before><not_after>2040-01-01T00:00:00</not_after></validity>
+    <allow_rule><domains><id>0</id></domains><publish><topics><topic>T</topic></topics></publish></allow_rule>
   </grant>
-</permissions>
+</permissions></dds>
 "#;
 
     #[test]
@@ -121,7 +122,7 @@ mod tests {
             alloc::format!("-----BEGIN SIGNED-XML-----\n{RAW_XML}\n-----END SIGNED-XML-----");
         let perms = open_signed_permissions(wrapped.as_bytes(), &EnvelopeCheckVerifier).unwrap();
         assert_eq!(perms.grants.len(), 1);
-        assert_eq!(perms.grants[0].subject_name, "CN=alice");
+        assert_eq!(perms.grants[0].subject_text(), "CN=alice");
     }
 
     #[test]

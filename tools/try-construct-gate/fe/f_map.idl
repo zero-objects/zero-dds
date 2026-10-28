@@ -1,0 +1,1 @@
+@appendable struct S { long a; map<@try_construct(TRIM) string<5>, @try_construct(TRIM) string<5>, 10> m; long b; };

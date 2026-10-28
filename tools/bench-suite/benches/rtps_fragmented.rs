@@ -1,38 +1,38 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! RTPS-Writer-Fragmented Bench — misst den DATA_FRAG-Pfad fuer
+//! RTPS writer fragmented bench — measures the DATA_FRAG path for
 //! Samples > MTU.
 //!
 //! # Scope
 //!
-//! Ergaenzt `transports_e2e.rs`: der Transport-Bench ist DGRAM-
-//! gekappt bei 60 KiB. Echte DDS-Samples koennen aber beliebig
-//! gross sein — der Writer zerlegt sie in MTU-sized DATA_FRAG-
-//! Submessages. Dieser Bench misst `ReliableWriter::write(payload)`
-//! fuer Payloads die **weit** ueber MTU liegen, damit die
-//! Fragmentation-Kosten sichtbar werden.
+//! Complements `transports_e2e.rs`: the transport bench is DGRAM-
+//! capped at 60 KiB. Real DDS samples, however, can be arbitrarily
+//! large — the writer splits them into MTU-sized DATA_FRAG
+//! Submessages. This bench measures `ReliableWriter::write(payload)`
+//! for payloads that are **far** above MTU, so that the
+//! fragmentation cost becomes visible.
 //!
 //! Payload-Achse: 32 B (below-MTU, sanity) → 4 MiB (kamerabild-
-//! groesse, ~3100 Fragments @ 1344 B).
+//! size, ~3100 fragments @ 1344 B).
 //!
-//! # Was gemessen wird
+//! # What is measured
 //!
-//! - Per-Sample-Zeit fuer `write()` inklusive:
-//!   - Arc-Payload-Build (Zero-Copy-Pfad),
+//! - Per-sample time for `write()` including:
+//!   - Arc payload build (zero-copy path),
 //!   - HistoryCache-Insert,
 //!   - Fragmentation in N DATA_FRAG-Submessages (N = ceil(size / 1344)),
-//!   - Datagramm-Build je Fragment.
-//! - **Kein Netzwerk-send**: der Bench ruft nur `writer.write()` und
-//!   verwirft den Datagramm-Vec. Transport-Time ist separat in
+//!   - Datagram build per fragment.
+//! - **No network send**: the bench only calls `writer.write()` and
+//!   discards the datagram vec. Transport time is separate in
 //!   `transports_e2e.rs`.
 //!
-//! # Warum nicht Transport-E2E?
+//! # Why not transport E2E?
 //!
-//! Ein kompletter "Writer → Transport → Reader → Assembler"-Pfad
-//! ist Sache eines Live-Interop-Harness (echte zwei Hosts mit
-//! Timing). Dies ist der *Protokoll*-Bench fuer Fragmentation
-//! isoliert.
+//! A complete "Writer → Transport → Reader → Assembler" path
+//! is the concern of a live interop harness (two real hosts with
+//! timing). This is the *protocol* bench for fragmentation
+//! isolated.
 
 #![allow(
     clippy::unwrap_used,
@@ -87,12 +87,12 @@ fn bench_writer_write(c: &mut Criterion) {
     for &size in PAYLOAD_SIZES {
         let payload = make_payload(size);
         let n_fragments = size.div_ceil(DEFAULT_FRAGMENT_SIZE as usize);
-        // Criterion-throughput zaehlt die Sample-Bytes, nicht die
-        // Gesamtzahl versendeter Frame-Bytes. Beides informativ.
+        // Criterion throughput counts the sample bytes, not the
+        // Total sent frame bytes. Both informational.
         group.throughput(Throughput::Bytes(size as u64));
 
-        // Label inkludiert die Fragment-Anzahl, damit der Report
-        // direkt lesbar ist.
+        // Label includes the fragment count, so that the report
+        // is directly readable.
         let label = if n_fragments <= 1 {
             format!("{} (1 frag)", size_label(size))
         } else {
@@ -103,8 +103,8 @@ fn bench_writer_write(c: &mut Criterion) {
             BenchmarkId::from_parameter(label),
             &payload,
             |b, payload| {
-                // Writer pro-Iter neu aufsetzen, damit der history-cache
-                // nicht voll laeuft und der Bench deterministisch ist.
+                // Set up the writer fresh per iter, so that the history cache
+                // does not fill up and the bench is deterministic.
                 b.iter_batched(
                     || make_writer(1),
                     |mut w| {

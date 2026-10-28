@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag (e.g. v1.0.0-rc.1)"
+        description: "Release tag, e.g. v1.2.3 or v1.2.3-rc.4"
         required: true
         type: string
 
@@ -32,21 +32,46 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.plan.outputs.tag }}
+      version: ${{ steps.plan.outputs.version }}
       val: ${{ steps.plan.outputs.val }}
+      source_ref: ${{ steps.plan.outputs.source_ref }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ github.event.inputs.tag || github.ref_name }}
       - uses: dtolnay/rust-toolchain@stable
       - name: Install cargo-dist
         run: cargo install cargo-dist --version 0.22.1 --locked
       - name: Plan
         id: plan
+        env:
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
-          TAG="${{ github.event.inputs.tag || github.ref_name }}"
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || { echo "::error::Invalid release tag"; exit 1; }
+          VERSION="${TAG#v}"
+          {
+            echo "source_ref=$(git rev-parse HEAD)"
+            echo "tag=$TAG"
+            echo "version=$VERSION"
+          } >> "$GITHUB_OUTPUT"
+          # Single source of truth for every downstream job: the tag.
+          # Jobs that cannot read the tag (npm/NuGet/Maven read
+          # [workspace.package].version) must agree with it, otherwise a
+          # release ships .deb/.rpm/Docker at one version and the language
+          # packages at another. Fail loudly on drift instead of publishing
+          # a mixed set.
+          WS_VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+          if [ "$WS_VERSION" != "$VERSION" ]; then
+            echo "::error::tag $TAG implies version $VERSION, but Cargo.toml [workspace.package].version is $WS_VERSION"
+            exit 1
+          fi
           PLAN=$(cargo dist plan --output-format=json)
-          echo "val<<JSON_EOF" >> "$GITHUB_OUTPUT"
-          echo "$PLAN" >> "$GITHUB_OUTPUT"
-          echo "JSON_EOF" >> "$GITHUB_OUTPUT"
+          {
+            echo "val<<JSON_EOF"
+            echo "$PLAN"
+            echo "JSON_EOF"
+          } >> "$GITHUB_OUTPUT"
 
   build:
     name: Build (${{ matrix.target }})
@@ -61,8 +86,13 @@ jobs:
             os: ubuntu-22.04
           - target: x86_64-unknown-linux-musl
             os: ubuntu-22.04
-          - target: aarch64-unknown-linux-musl
-            os: ubuntu-22.04
+          # aarch64-unknown-linux-musl is deliberately absent: it was dropped
+          # from [workspace.metadata.dist].targets in Cargo.toml (cross-musl
+          # needs a real aarch64-musl gcc; the glibc-cross-gcc hack breaks on
+          # libsqlite3-sys' FORTIFY headers). `cargo dist build --target` only
+          # accepts targets from that list, so keeping it here produced a
+          # build matrix entry that cannot succeed. ARM64 Linux ships via
+          # aarch64-unknown-linux-gnu.
           # macos-13 is effectively no longer available on the public
           # GH Action runners (>1h queue times). We build
           # x86_64-apple-darwin via cross-compile on a macos-14
@@ -79,6 +109,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.plan.outputs.source_ref }}
+          fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -95,31 +128,19 @@ jobs:
               sudo apt-get install -y --no-install-recommends \
                   gcc-aarch64-linux-gnu libc6-dev-arm64-cross
               ;;
-            aarch64-unknown-linux-musl)
-              # musl-cross: gcc-aarch64-linux-musl is not in the default
-              # archive; use gcc-aarch64-linux-gnu with musl-libc because
-              # musl links statically and cc-rs only needs the compiler for
-              # syscall headers.
-              sudo apt-get install -y --no-install-recommends \
-                  gcc-aarch64-linux-gnu libc6-dev-arm64-cross
-              ;;
           esac
       - name: Configure cross-compile linker for aarch64
-        if: runner.os == 'Linux' && startsWith(matrix.target, 'aarch64-unknown-linux-')
+        if: runner.os == 'Linux' && matrix.target == 'aarch64-unknown-linux-gnu'
         run: |
           mkdir -p ~/.cargo
           {
             echo "[target.aarch64-unknown-linux-gnu]"
             echo 'linker = "aarch64-linux-gnu-gcc"'
-            echo "[target.aarch64-unknown-linux-musl]"
-            echo 'linker = "aarch64-linux-gnu-gcc"'
           } >> ~/.cargo/config.toml
           {
             echo "CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc"
             echo "AR_aarch64_unknown_linux_gnu=aarch64-linux-gnu-ar"
-            echo "CC_aarch64_unknown_linux_musl=aarch64-linux-gnu-gcc"
-            echo "AR_aarch64_unknown_linux_musl=aarch64-linux-gnu-ar"
-          } >> $GITHUB_ENV
+          } >> "$GITHUB_ENV"
       # macOS code-signing: import the Developer ID Application + Installer
       # certs into an ad-hoc keychain. apple-actions/import-codesign-certs
       # dislikes two imports into the same keychain (set-key-partition-list
@@ -139,7 +160,11 @@ jobs:
           security create-keychain -p "$KC_PWD" "$KC"
           security set-keychain-settings -lut 21600 "$KC"
           security unlock-keychain -p "$KC_PWD" "$KC"
-          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          keychains=()
+          while IFS= read -r keychain; do
+            keychains+=("$keychain")
+          done < <(security list-keychains -d user | sed -e 's/^[[:space:]]*"//' -e 's/"$//')
+          security list-keychains -d user -s "$KC" "${keychains[@]}"
           # 2) Import both P12s one after another (-A grants all tools access).
           echo "$APP_P12"  | base64 -D > /tmp/cert-app.p12
           echo "$INST_P12" | base64 -D > /tmp/cert-installer.p12
@@ -173,12 +198,16 @@ jobs:
           # "Developer ID Installer:   <Common-Name> (<TEAMID>)" — .pkg-installer signing
           DEV_ID_APPLICATION: "Developer ID Application: Sandra Theresa Keler (YU6XNW6DG7)"
           DEV_ID_INSTALLER:   "Developer ID Installer: Sandra Theresa Keler (YU6XNW6DG7)"
-          ZERODDS_PKG_VERSION: "1.0.0"
+          # Names + stamps zerodds-bundle-<version>-<target>.pkg. Derived from
+          # the tag so the .pkg carries the same version as every other
+          # artefact of the release (was hard-coded "1.0.0").
+          ZERODDS_PKG_VERSION: ${{ needs.plan.outputs.version }}
         run: bash packaging/github-actions/sign-macos.sh target/distrib
       - uses: actions/upload-artifact@v7
         with:
           name: artifacts-${{ matrix.target }}
           path: target/distrib/
+          if-no-files-found: error
 
   package-deb:
     name: Build .deb packages
@@ -187,6 +216,8 @@ jobs:
     secrets: inherit
     with:
       plan: ${{ needs.plan.outputs.val }}
+      version: ${{ needs.plan.outputs.version }}
+      source_ref: ${{ needs.plan.outputs.source_ref }}
 
   package-rpm:
     name: Build .rpm packages
@@ -195,6 +226,8 @@ jobs:
     secrets: inherit
     with:
       plan: ${{ needs.plan.outputs.val }}
+      version: ${{ needs.plan.outputs.version }}
+      source_ref: ${{ needs.plan.outputs.source_ref }}
 
   package-docker:
     name: Build + push Docker images
@@ -222,6 +255,8 @@ jobs:
           - ts-node-runtime
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.plan.outputs.source_ref }}
       - uses: docker/setup-qemu-action@v4
       - uses: docker/setup-buildx-action@v4
       - name: Login to Docker Hub
@@ -258,10 +293,13 @@ jobs:
   package-msi:
     name: Build Windows MSI
     needs: [plan, build]
-    continue-on-error: true
     runs-on: windows-2022
+    env:
+      RELEASE_VERSION: ${{ needs.plan.outputs.version }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.plan.outputs.source_ref }}
       - uses: actions/download-artifact@v8
         with:
           name: artifacts-x86_64-pc-windows-msvc
@@ -278,6 +316,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path payload-flat\bin | Out-Null
           $exes = @(Get-ChildItem -Path payload -Filter *.exe -Recurse -File)
           Write-Host "found $($exes.Count) .exe files in payload/"
+          if ($exes.Count -eq 0) { throw "Required Windows executables are missing" }
           $exes | ForEach-Object { Copy-Item $_.FullName -Destination "payload-flat\bin\$($_.Name)" -Force }
           Write-Host "=== payload-flat\bin\ jetzt ==="
           Get-ChildItem payload-flat\bin | ForEach-Object { Write-Host "  $($_.Name) ($($_.Length) bytes)" }
@@ -304,13 +343,18 @@ jobs:
           Set-Content -Path LICENSE.rtf -Value "$rtfHeader $rtfStart $body }"
       - name: Compile MSI
         run: |
+          # MSI ProductVersion has three numeric fields, not SemVer prerelease
+          # ordering. Retain the full release identity in name and filename.
+          $core = ($env:RELEASE_VERSION -split '-')[0]
+          $parts = $core.Split('.')
+          if ([int]$parts[0] -gt 255 -or [int]$parts[1] -gt 255 -or [int]$parts[2] -gt 65535) { throw "Version exceeds MSI ProductVersion limits" }
           wix build -arch x64 `
                 -ext WixToolset.Util.wixext `
                 -ext WixToolset.UI.wixext `
                 -d PayloadDir=payload-flat `
-                packaging/windows/msi/zerodds.wxs -o dist/zerodds-1.0.0-x64.msi
+                -d ProductVersion=$core -d ReleaseVersion=$env:RELEASE_VERSION `
+                packaging/windows/msi/zerodds.wxs -o "dist/zerodds-$env:RELEASE_VERSION-x64.msi"
       - name: Sign MSI (skipped if WIN_CERT not provided)
-        continue-on-error: true
         env:
           WIN_CERT_PFX: ${{ secrets.WIN_CERT_PFX_BASE64 }}
           WIN_CERT_PWD: ${{ secrets.WIN_CERT_PWD }}
@@ -323,15 +367,16 @@ jobs:
               [Convert]::FromBase64String($env:WIN_CERT_PFX))
           signtool sign /f cert.pfx /p $env:WIN_CERT_PWD `
                    /tr http://timestamp.digicert.com /td SHA256 /fd SHA256 `
-                   dist/zerodds-1.0.0-x64.msi
+                   "dist/zerodds-$env:RELEASE_VERSION-x64.msi"
       - uses: actions/upload-artifact@v7
         with:
           name: zerodds-msi
           path: dist/*.msi
+          if-no-files-found: error
 
   publish-homebrew-tap:
     name: Update Homebrew tap
-    needs: [plan, build, package-msi]
+    needs: [plan, github-release]
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v7
@@ -343,8 +388,16 @@ jobs:
         uses: actions/checkout@v7
         with:
           path: main
+          ref: ${{ needs.plan.outputs.source_ref }}
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: artifacts-*-apple-darwin
+          path: main/target/distrib
+          merge-multiple: true
       - name: Render formulae
         working-directory: main
+        env:
+          RELEASE_VERSION: ${{ needs.plan.outputs.version }}
         run: bash packaging/github-actions/render-homebrew.sh ../tap/Formula
       - name: Commit + push
         working-directory: tap
@@ -352,19 +405,19 @@ jobs:
           git config user.name  "zerodds-release-bot"
           git config user.email "release@zerodds.org"
           git add Formula
-          git commit -m "release: ${{ needs.plan.outputs.tag }}" || echo "(no changes)"
-          git push
+          if ! git diff --cached --quiet; then
+            git commit -m "release: ${{ needs.plan.outputs.tag }}"
+            git push
+          fi
 
   publish-aur:
     name: Update AUR (zerodds + zerodds-bin)
     needs: [plan, github-release]
-    # Run even if github-release "failed" — the ensure-published
-    # step corrects softprops' draft-state pseudo-failures.
-    # We check AT RUNTIME whether the release is actually published.
-    if: always() && needs.plan.outputs.tag != ''
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.plan.outputs.source_ref }}
       - name: Verify release is published before AUR update
         env:
           GH_TOKEN: ${{ github.token }}
@@ -375,11 +428,13 @@ jobs:
                  --repo "${{ github.repository }}" \
                  --json isDraft,assets \
                  --jq '. | if .isDraft then error("release still draft") else "ok: \(.assets | length) assets" end'; then
-              break
+              exit 0
             fi
             echo "release not yet published, attempt $attempt"
             sleep 60
           done
+          echo "::error::Release is not verified published"
+          exit 1
       - name: Setup AUR SSH key
         run: |
           mkdir -p ~/.ssh
@@ -400,7 +455,7 @@ jobs:
 
   publish-scoop-bucket:
     name: Update Scoop bucket
-    needs: [plan, build, package-msi]
+    needs: [plan, github-release]
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v7
@@ -412,6 +467,16 @@ jobs:
         uses: actions/checkout@v7
         with:
           path: main
+          ref: ${{ needs.plan.outputs.source_ref }}
+      - name: Reject unrendered Scoop manifest
+        env:
+          RELEASE_VERSION: ${{ needs.plan.outputs.version }}
+        run: |
+          jq -e --arg version "$RELEASE_VERSION" '
+            .version == $version and
+            ([.architecture[] | .hash | sub("^sha512:"; "") |
+              test("^[0-9a-fA-F]{128}$") and (test("^0+$") | not)] | all)
+          ' main/packaging/windows/scoop/zerodds.json
       - name: Render manifest
         run: cp main/packaging/windows/scoop/zerodds.json bucket/zerodds.json
       - name: Commit + push
@@ -420,16 +485,14 @@ jobs:
           git config user.name  "zerodds-release-bot"
           git config user.email "release@zerodds.org"
           git add zerodds.json
-          git commit -m "release: ${{ needs.plan.outputs.tag }}" || echo "(no changes)"
-          git push
+          if ! git diff --cached --quiet; then
+            git commit -m "release: ${{ needs.plan.outputs.tag }}"
+            git push
+          fi
 
   github-release:
     name: Publish GitHub release
-    # `package-msi` is `continue-on-error: true` — the overall release
-    # must NOT be skipped if only the Win MSI fails. The rest
-    # (deb/rpm/docker/macos/linux/windows-zip) is fully sufficient for
-    # a technically functional release. `if: always()` + explicit
-    # success checks for the hard-required artifacts.
+    # All declared platform artifacts are required, including MSI.
     needs: [plan, build, package-deb, package-rpm, package-docker, package-msi]
     if: |
       always()
@@ -438,19 +501,43 @@ jobs:
       && needs.package-deb.result == 'success'
       && needs.package-rpm.result == 'success'
       && needs.package-docker.result == 'success'
+      && needs.package-msi.result == 'success'
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/download-artifact@v8
         with: { path: dist }
+      - name: Verify required release artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          require_artifact() {
+            test -d "$1" && test -n "$(find "$1" -type f -name "$2" -size +0c -print -quit)" || {
+              echo "::error::Missing required artifact $1/$2"; exit 1;
+            }
+          }
+          for target in x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu x86_64-unknown-linux-musl x86_64-apple-darwin aarch64-apple-darwin; do
+            require_artifact "dist/artifacts-$target" '*.tar.xz'
+          done
+          for target in x86_64-pc-windows-msvc aarch64-pc-windows-msvc; do
+            require_artifact "dist/artifacts-$target" '*.zip'
+          done
+          for target in x86_64-apple-darwin aarch64-apple-darwin; do
+            require_artifact "dist/artifacts-$target" '*.pkg'
+          done
+          for target in x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu; do
+            require_artifact "dist/zerodds-deb-$target" '*.deb'
+          done
+          require_artifact dist/zerodds-rpm-x86_64 '*.rpm'
+          require_artifact dist/zerodds-msi '*.msi'
       - name: Create release
         id: gh_release
-        continue-on-error: true
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.plan.outputs.tag }}
           generate_release_notes: true
           prerelease: ${{ contains(needs.plan.outputs.tag, '-') }}
-          draft: false
+          # Assets must finish uploading before any publication step.
+          draft: true
           body: |
             ## Installation
 
@@ -470,14 +557,14 @@ jobs:
             - **Generic**: `*.tar.xz` for whichever component you want
 
             ### Windows
-            - **MSI installer**: `zerodds-1.0.0-x64.msi` (signed if WIN_CERT_PFX is set)
+            - **MSI installer**: `zerodds-${{ needs.plan.outputs.version }}-x64.msi` (unsigned when no Windows certificate is configured)
             - **Portable**: download `*.zip` + extract
 
             ### Docker
             Multi-arch (amd64/arm64) auf ghcr.io + Docker Hub:
             ```bash
-            docker pull ghcr.io/zero-objects/zerodds-cli:1.0.0-rc.1
-            docker pull fishermen21/zerodds-mqtt-bridged:1.0.0-rc.1
+            docker pull ghcr.io/zero-objects/zerodds-cli:${{ needs.plan.outputs.tag }}
+            docker pull fishermen21/zerodds-mqtt-bridged:${{ needs.plan.outputs.tag }}
             ```
 
             ### Crates.io
@@ -499,17 +586,12 @@ jobs:
             dist/**/*.pkg.sha512
             dist/**/*.AppImage
             dist/**/SHA512SUMS*
-      # Workaround: softprops/action-gh-release@v2 sometimes sets
-      # draft=true on secondary-rate-limit errors during asset upload
-      # (e.g. a 7x metadata-update retry for source.tar.gz triggers it).
-      # We publish explicitly + wait briefly for the rate-limit cooldown.
-      - name: Ensure release is published (draft → published)
-        if: always() && needs.plan.outputs.tag != ''
+      - name: Publish successfully uploaded release
+        if: success() && steps.gh_release.outcome == 'success'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -e
-          sleep 60
           # Idempotent: sets draft=false and prerelease according to the tag.
           PRERELEASE_FLAG=""
           case "${{ needs.plan.outputs.tag }}" in
@@ -530,4 +612,62 @@ jobs:
           gh release view "${{ needs.plan.outputs.tag }}" \
             --repo "${{ github.repository }}" \
             --json isDraft,assets \
-            --jq '"  isDraft=\(.isDraft) assets=\(.assets | length)"'
+            --jq 'if .isDraft or (.assets | length) == 0 then error("release is unpublished or empty") else "published with \(.assets | length) assets" end'
+
+  # ---------------------------------------------------------------------------
+  # Language-ecosystem packages.
+  #
+  # These run AFTER github-release: the published nupkg/jar do not bundle
+  # libzerodds — they point users at the GitHub release for the native
+  # library, so the release must exist first. They are deliberately NOT in
+  # `github-release.needs`, so a registry outage cannot block the release
+  # itself.
+  #
+  # Only the two token-authenticated ecosystems are wired in here. npm
+  # (publish-npm.yml) and PyPI (publish-pypi.yml) authenticate via OIDC
+  # Trusted Publishing and must stay manual — see the block below.
+  # ---------------------------------------------------------------------------
+  package-nuget:
+    name: Publish NuGet packages
+    needs: [plan, github-release]
+    # Version comes from [workspace.package].version, which the plan job has
+    # already asserted to be equal to the tag.
+    # Secret: NUGET_API_KEY, reaches the called workflow via `secrets: inherit`.
+    uses: ./.github/workflows/publish-nuget.yml
+    secrets: inherit
+    with:
+      target_index: nuget
+      dry_run: false
+      source_ref: ${{ needs.plan.outputs.source_ref }}
+
+  package-maven:
+    name: Publish Maven Central artifacts
+    needs: [plan, github-release]
+    # Secrets: SONATYPE_USERNAME/PASSWORD, MAVEN_GPG_PRIVATE_KEY,
+    # MAVEN_GPG_PASSPHRASE — all reach the called workflow via
+    # `secrets: inherit`.
+    uses: ./.github/workflows/publish-maven.yml
+    secrets: inherit
+    with:
+      dry_run: false
+      source_ref: ${{ needs.plan.outputs.source_ref }}
+
+  # NOT wired in — npm and PyPI, and why:
+  #
+  #   publish-pypi.yml — PyPI Trusted Publishing does not support reusable
+  #     workflows at all ("Reusable workflows cannot currently be used as the
+  #     workflow in a Trusted Publisher", docs.pypi.org/trusted-publishers/
+  #     troubleshooting, warehouse#11096). A `uses:` call here would produce
+  #     an OIDC token PyPI refuses, i.e. a job that is red on every release.
+  #
+  #   publish-npm.yml — npm Trusted Publishing does work through a reusable
+  #     workflow, but npm validates the CALLING workflow's filename. The
+  #     Trusted Publisher on npmjs.com for @zerodds/node is configured with
+  #     `publish-npm.yml`; calling it from here would require changing that
+  #     entry to `release.yml` first. That is a change on npmjs.com, not in
+  #     this repo, so the job stays out until it is made.
+  #
+  # Both remain `workflow_dispatch` and are run by hand after the release.
+  # A repo-side fix for either is possible but needs a PAT: the automatic
+  # GITHUB_TOKEN cannot trigger a workflow_dispatch, so release.yml cannot
+  # start them as top-level runs on its own.

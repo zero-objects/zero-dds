@@ -10,8 +10,8 @@ description = "OMG AMI4CCM 1.1 (formal/2015-08-03) — asynchronous method invoc
 homepage = "https://zerodds.org"
 documentation = "https://docs.rs/zerodds-ami4ccm"
 readme = "README.md"
-keywords = ["dds", "corba", "ccm", "ami4ccm", "no-std"]
-categories = ["network-programming", "no-std"]
+keywords = ["dds", "corba", "ccm", "ami4ccm"]
+categories = ["network-programming"]
 publish = true
 
 [lints]
@@ -26,4 +26,9 @@ std = ["alloc"]
 alloc = []
 
 [dependencies]
-zerodds-idl = { version = "1.0.0-rc.7", path = "../idl" }
+zerodds-ast = { version = "1.0.0-rc.7", path = "../ast" }
+zerodds-ast-core = { version = "1.0.0-rc.7", path = "../ast-core" }
+
+[dev-dependencies]
+zerodds-idl-parse = { path = "../idl-parse" }
+zerodds-idl-lower = { path = "../idl-lower" }

@@ -1,0 +1,222 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- This file contains the XML Schema Document (XSD) for the XML Domain
+     Participant Representation defined by the OMG specification
+     "DDS Consolidated XML Syntax" (DDS-XML). -->
+
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+    elementFormDefault="qualified" attributeFormDefault="unqualified">
+
+    <!-- ================================================================== -->
+    <!-- Inclusion of other Building Blocks -->
+    <!-- ================================================================== -->
+
+    <xs:include schemaLocation="http://www.omg.org/spec/DDS-XML/20180501/dds-xml_domain_definitions_nonamespace.xsd" />
+
+    <!-- ================================================================== -->
+    <!-- Filter and Condition Types -->
+    <!-- ================================================================== -->
+
+    <!-- Content Filters and Query Conditions -->
+
+    <xs:complexType name="parameterList">
+        <xs:sequence minOccurs="0" maxOccurs="1">
+            <xs:element name="param" type="xs:string" minOccurs="0"
+                maxOccurs="100" />
+        </xs:sequence>
+    </xs:complexType>
+
+    <xs:simpleType name="filterKind">
+        <xs:restriction base="xs:string">
+            <xs:enumeration value="builtin.sql" />
+            <xs:enumeration value="builtin.stringMatch" />
+        </xs:restriction>
+    </xs:simpleType>
+
+    <xs:complexType name="filter">
+        <xs:sequence>
+            <xs:element name="expression" type="xs:string" minOccurs="0"
+                maxOccurs="1" />
+            <xs:element name="parameter_list" type="parameterList"
+                minOccurs="0" maxOccurs="1" />
+        </xs:sequence>
+        <xs:attribute name="name" type="elementName" use="required" />
+        <xs:attribute name="kind" type="filterKind" use="required" />
+    </xs:complexType>
+
+    <!-- Status Conditions -->
+
+    <xs:simpleType name="statusKind">
+        <xs:restriction base="xs:string">
+            <xs:whiteSpace value="collapse" />
+            <xs:enumeration value="DATA_AVAILABLE" />
+            <xs:enumeration value="INCONSISTENT_TOPIC" />
+            <xs:enumeration value="OFFERED_DEADLINE_MISSED" />
+            <xs:enumeration value="REQUESTED_DEADLINE_MISSED" />
+            <xs:enumeration value="OFFERED_INCOMPATIBLE_QOS" />
+            <xs:enumeration value="REQUESTED_INCOMPATIBLE_QOS" />
+            <xs:enumeration value="SAMPLE_LOST" />
+            <xs:enumeration value="SAMPLE_REJECTED" />
+            <xs:enumeration value="LIVELINESS_LOST" />
+            <xs:enumeration value="LIVELINESS_CHANGED" />
+            <xs:enumeration value="PUBLICATION_MATCHED" />
+            <xs:enumeration value="SUBSCRIPTION_MATCHED" />
+            <xs:enumeration value="DATA_ON_READERS" />
+        </xs:restriction>
+    </xs:simpleType>
+
+    <xs:complexType name="statusCondition">
+        <xs:sequence>
+            <xs:choice maxOccurs="unbounded">
+                <xs:element name="status" type="statusKind" />
+            </xs:choice>
+        </xs:sequence>
+    </xs:complexType>
+
+    <!-- Read Conditions -->
+    <xs:simpleType name="sampleStateKind">
+        <xs:restriction base="xs:string">
+            <xs:whiteSpace value="collapse" />
+            <xs:enumeration value="READ" />
+            <xs:enumeration value="NOT_READ" />
+        </xs:restriction>
+    </xs:simpleType>
+
+    <xs:simpleType name="viewStateKind">
+        <xs:restriction base="xs:string">
+            <xs:whiteSpace value="collapse" />
+            <xs:enumeration value="NEW" />
+            <xs:enumeration value="NOT_NEW" />
+        </xs:restriction>
+    </xs:simpleType>
+
+    <xs:simpleType name="instanceStateKind">
+        <xs:restriction base="xs:string">
+            <xs:whiteSpace value="collapse" />
+            <xs:enumeration value="ALIVE" />
+            <xs:enumeration value="NOT_ALIVE_DISPOSED" />
+            <xs:enumeration value="NOT_ALIVE_NO_WRITERS" />
+        </xs:restriction>
+    </xs:simpleType>
+
+    <xs:complexType name="readCondition">
+        <xs:sequence>
+            <xs:choice maxOccurs="unbounded">
+                <xs:element name="sample_state" type="sampleStateKind"
+                    minOccurs="0" maxOccurs="1" />
+                <xs:element name="view_state" type="viewStateKind"
+                    minOccurs="0" maxOccurs="1" />
+                <xs:element name="instance_state" type="instanceStateKind"
+                    minOccurs="0" maxOccurs="1" />
+            </xs:choice>
+        </xs:sequence>
+
+        <xs:attribute name="name" type="elementName" use="required" />
+    </xs:complexType>
+
+    <!-- ================================================================== -->
+    <!-- DDS Entities Definition -->
+    <!-- ================================================================== -->
+
+    <!-- DataReader -->
+
+    <xs:complexType name="dataReader">
+        <xs:sequence minOccurs="0" maxOccurs="1">
+            <xs:choice maxOccurs="unbounded">
+                <xs:element name="datareader_qos" minOccurs="0"
+                    maxOccurs="1" type="datareaderQos" />
+                <xs:element name="content_filter" minOccurs="0"
+                    maxOccurs="1" type="filter" />
+                <xs:element name="status_condition" type="statusCondition"
+                    minOccurs="0" maxOccurs="1" />
+                <xs:element name="read_condition" type="readCondition"
+                    minOccurs="0" maxOccurs="1" />
+                <xs:element name="query_condition" type="filter"
+                    minOccurs="0" />
+            </xs:choice>
+        </xs:sequence>
+
+        <xs:attribute name="name" type="elementName" use="required" />
+        <xs:attribute name="topic_ref" type="elementNameReference"
+            use="required" />
+    </xs:complexType>
+
+    <!-- Subscriber -->
+
+    <xs:complexType name="subscriber">
+        <xs:choice minOccurs="0" maxOccurs="unbounded">
+            <xs:element name="data_reader" minOccurs="0" maxOccurs="unbounded"
+                type="dataReader" />
+            <xs:element name="subscriber_qos" minOccurs="0"
+                maxOccurs="1" type="subscriberQos" />
+        </xs:choice>
+        <xs:attribute name="name" type="elementName" use="required" />
+    </xs:complexType>
+
+    <!-- DataWriter -->
+
+    <xs:complexType name="dataWriter">
+        <xs:sequence minOccurs="0" maxOccurs="1">
+            <xs:element name="datawriter_qos" minOccurs="0"
+                type="datawriterQos" />
+        </xs:sequence>
+
+        <xs:attribute name="name" type="elementName" use="required" />
+        <xs:attribute name="topic_ref" type="elementNameReference"
+            use="required" />
+    </xs:complexType>
+
+    <!-- Publisher -->
+
+    <xs:complexType name="publisher">
+        <xs:choice minOccurs="0" maxOccurs="unbounded">
+            <xs:element name="data_writer" maxOccurs="unbounded"
+                type="dataWriter" />
+            <xs:element name="publisher_qos" minOccurs="0" maxOccurs="1"
+                type="publisherQos" />
+        </xs:choice>
+
+        <xs:attribute name="name" type="elementName" use="required" />
+    </xs:complexType>
+
+    <!-- DomainParticipant -->
+
+    <xs:complexType name="domainParticipant">
+        <xs:sequence minOccurs="0" maxOccurs="unbounded">
+            <xs:choice maxOccurs="unbounded" minOccurs="0">
+                <xs:element name="register_type" maxOccurs="unbounded"
+                    type="registerType" minOccurs="0" />
+            </xs:choice>
+            <xs:choice minOccurs="0" maxOccurs="unbounded">
+                <xs:element name="topic" type="topic" maxOccurs="unbounded"
+                    minOccurs="0" />
+            </xs:choice>
+            <xs:choice maxOccurs="unbounded" minOccurs="0">
+                <xs:element name="publisher" minOccurs="0" maxOccurs="unbounded"
+                    type="publisher" />
+                <xs:element name="subscriber" minOccurs="0"
+                    maxOccurs="unbounded" type="subscriber" />
+                <xs:element name="domain_participant_qos" minOccurs="0"
+                    maxOccurs="1" type="domainparticipantQos" />
+            </xs:choice>
+        </xs:sequence>
+
+        <xs:attribute name="name" type="elementName" use="required" />
+        <xs:attribute name="base_name" type="elementNameReference" />
+        <xs:attribute name="domain_ref" type="elementNameReference" />
+        <xs:attribute name="domain_id" type="xs:nonNegativeInteger" />
+    </xs:complexType>
+
+    <!-- ================================================================== -->
+    <!-- DomainParticipant Library Definition -->
+    <!-- ================================================================== -->
+
+    <xs:complexType name="domainParticipantLibrary">
+        <xs:choice minOccurs="1" maxOccurs="unbounded">
+            <xs:element name="domain_participant" maxOccurs="unbounded"
+                type="domainParticipant" />
+        </xs:choice>
+        <xs:attribute name="name" type="elementName" use="required" />
+    </xs:complexType>
+
+</xs:schema>

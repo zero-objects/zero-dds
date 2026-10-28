@@ -1,0 +1,164 @@
+.TH ZERODDS-WEBDDS-BRIDGED 1 "" "ZeroDDS" "ZeroDDS Manual"
+.SH NAME
+zerodds-webdds-bridged \- OMG Web-Enabled DDS 1.0 gateway daemon (REST + SOAP)
+.SH SYNOPSIS
+.B zerodds-webdds-bridged
+[\fB\-\-config\fR \fIFILE\fR]
+[\fB\-\-listen\fR \fIADDR\fR]
+[\fB\-\-domain\fR \fIID\fR]
+[\fB\-\-type\fR \fINAME\fR=\fIFILE\fR]...
+[\fB\-V\fR | \fB\-h\fR]
+.SH DESCRIPTION
+.B zerodds-webdds-bridged
+exposes DDS applications, participants, topics, publishers,
+subscribers, data writers and data readers as HTTP resources, per OMG
+Web-Enabled DDS 1.0. Serves the REST PSM under
+.IR /dds/rest1 ,
+the SIMPLE-WSDL-SOAP PSM under
+.IR /soap ,
+and the WSDL description of both the fixed object-model operations and
+any config-named IDL
+.I interface
+under
+.IR /wsdl ,
+all on the one HTTP port.
+.PP
+A topic's wire type is resolved from a config-named
+.I .idl
+file
+(\fItypes:\fR) or from a peer's TypeLookup discovery — never from an
+opaque byte guess. Sample bodies (write/read) are the DDS-WEB XML
+representation, converted through the type's own descriptor.
+.PP
+Every REST request needs an
+.B Accept
+header naming
+.I application/dds-web+xml
+(exactly \(em DDS-WEB 1.0 defines no other representation): missing is
+400, one naming none of it is 406, and a
+.B Content-Type
+naming anything else is 415.
+.PP
+A
+.BR create_participant / create_publisher / create_subscriber
+body, and its
+.B update_*
+counterpart, may carry nested
+.IR publishers / subscribers / data_writers / data_readers
+(OMG DDS-WEB 1.0 \(sc7.4.3.1/\(sc7.4.3.2/\(sc7.4.4.7/\(sc7.4.4.8/
+\(sc7.4.4.11/\(sc7.4.4.12): the daemon reconciles the live DCPS
+entities against them by name on every call. A
+.I qos
+or
+.I qos_profile
+element inside any of them, and any top-level
+.B update_*
+body, resolves the same way: an inline
+.I <qos>
+merges onto the entity's current QoS, and a
+.I <qos_profile>name</qos_profile>
+reference resolves through the daemon's own QosLibrary/QosProfile
+metadata first, with an inline
+.I <qos>
+present alongside it overriding the named profile's values. On
+.BR update_* ,
+an
+.I absent
+container element (no
+.IR <publishers> ,
+say) leaves that kind of contained entity untouched; an
+.I empty
+one deletes every one of them.
+.PP
+Implements
+.IR "OMG Web-Enabled DDS 1.0, formal/2014-12-01" .
+.SH OPTIONS
+.TP
+.BR \-\-config =\fIFILE\fR
+Path to the config file (YAML). See
+.BR zerodds-webdds-bridged.yaml (5).
+.TP
+.BR \-\-listen =\fIADDR\fR
+HTTP bind address. Default:
+.IR 127.0.0.1:8080 .
+.TP
+.BR \-\-domain =\fIID\fR
+DDS domain ID. Default: 0.
+.TP
+.BR \-\-type =\fINAME\fR=\fIFILE\fR
+Type source override (repeatable):
+.I NAME
+is the IDL scoped name
+(\fIMod::Type\fR), also the DDS wire type name;
+.I FILE
+is the
+.I .idl
+file it is declared in.
+.TP
+.BR \-\-tls\-cert =\fIFILE\fR
+TLS server cert, PEM; enables
+.IR https:// .
+.TP
+.BR \-\-tls\-key =\fIFILE\fR
+TLS server key, PEM.
+.TP
+.BR \-\-auth\-token =\fISECRET\fR
+Bearer token auth.
+.TP
+.BR \-\-log\-level =\fILEVEL\fR
+One of
+.IR trace ", " debug ", " info ", " warn ", " error .
+.TP
+.BR \-\-metrics =\fIADDR\fR
+Prometheus listener (\fI/metrics\fR).
+.TP
+.BR \-V ", " \-\-version
+Version info.
+.TP
+.BR \-h ", " \-\-help
+Show the option synopsis.
+.TP
+.BR \-\-set " \fIPATH\fR=\fIVALUE\fR"
+One setting above every file, repeatable;
+.BI + PATH = VALUE
+appends to a list.
+.TP
+.B \-\-check\-config
+Validate and print the effective configuration with the origin of every
+value, then exit: 0 valid, 1 invalid value or unknown key, 2 unreadable
+file, syntax error or include cycle.
+.SH SIGNALS
+SIGTERM stops the daemon: new connections stop being accepted, an open
+connection finishes its current request/response and closes.
+.PP
+SIGHUP reads the configuration again: the per-Application ACL and the
+auth settings apply from then on, TLS cert/key material is re-read from
+its configured path. Changed listen address or domain need a restart
+and are logged. A configuration that does not load changes nothing.
+.SH ENVIRONMENT
+.TP
+.B OTEL_EXPORTER_OTLP_ENDPOINT
+Optional OTLP endpoint, such as http://localhost:4318.
+.SH EXIT STATUS
+.TP
+.B 0
+Normal shutdown.
+.TP
+.B 1
+Configuration error.
+.TP
+.B 2
+Bind error \(em address in use.
+.TP
+.B 3
+DDS discovery error.
+.TP
+.B 4
+TLS setup error.
+.SH FILES
+.I /etc/zerodds/webdds-bridged.yaml .
+.SH SEE ALSO
+.BR zerodds-webdds-bridged.yaml (5).
+OMG Web-Enabled DDS 1.0, formal/2014-12-01.
+.SH AUTHORS
+ZeroDDS Contributors.

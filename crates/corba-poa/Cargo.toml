@@ -10,8 +10,8 @@ description = "OMG CORBA 3.3 Part 1 §11 POA (Portable Object Adapter) — all 7
 homepage = "https://zerodds.org"
 documentation = "https://docs.rs/zerodds-corba-poa"
 readme = "README.md"
-keywords = ["dds", "corba", "poa", "object-adapter", "no-std"]
-categories = ["network-programming", "no-std"]
+keywords = ["dds", "corba", "poa", "object-adapter"]
+categories = ["network-programming"]
 publish = true
 
 [lints]
@@ -22,8 +22,13 @@ path = "src/lib.rs"
 
 [features]
 default = ["std"]
-std = ["alloc"]
-alloc = []
+std = ["alloc", "zerodds-corba-ir/std", "zerodds-corba-giop/std"]
+alloc = ["zerodds-corba-ir/alloc", "zerodds-corba-giop/alloc"]
 
 [dependencies]
-zerodds-corba-ir = { version = "1.0.0-rc.7", path = "../corba-ir" }
+zerodds-corba-ir = { version = "1.0.0-rc.7", path = "../corba-ir", default-features = false }
+# `Endianness` in `Servant::dispatch_object_operation`'s signature, and
+# `object_ops`'s CDR encode/decode of the six `CORBA::Object` operations
+# (CORBA 3.3 Part 2 §15.4.2) it dispatches into.
+zerodds-wire = { version = "1.0.0-rc.7", path = "../wire" }
+zerodds-corba-giop = { version = "1.0.0-rc.7", path = "../corba-giop", default-features = false }

@@ -74,7 +74,8 @@ int main() {
 
     unsigned char txbuf[256];
     zerodds::AsyncWriter writer(&t, txbuf, sizeof txbuf,
-                                ZDW_XRCE_SESSION_NOKEY, ZDW_XRCE_STREAM_BEST_EFFORT);
+                                ZDW_XRCE_SESSION_NOKEY, ZDW_XRCE_STREAM_BEST_EFFORT,
+                                ZDW_XRCE_OBJECT_ID(0x001, ZDW_OBJK_DATAWRITER));
     for (int i = 0; i < kN; i++) {
         unsigned char body[128];
         std::size_t n = encode_sample(body, sizeof body, 0x2000u + i);

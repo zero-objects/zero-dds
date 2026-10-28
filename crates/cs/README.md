@@ -1,36 +1,23 @@
-# `zerodds-cs`
+# ZeroDDS for C#
 
-C# P/Invoke, NativeAOT-compatible, IDL4-C# runtime
+C# binding over the ZeroDDS C API (`libzerodds`) by P/Invoke, NativeAOT
+compatible, with the IDL4-C# runtime. A .NET 8 solution, not a Cargo package.
+Part of [**ZeroDDS**](../../README.md).
 
-Part of [**ZeroDDS**](../../README.md). Safety classification: **STANDARD**.
+| Project | Content |
+|---|---|
+| `csharp/ZeroDDS` | the binding (NuGet package `ZeroDDS`) |
+| `csharp/ZeroDDS.Cdr` | the `IDdsTopicType<T>` contract a generated `*TypeSupport` companion implements, bridged into `ZeroDDS`'s typed-topic path (`Typed.cs`) |
+| `csharp/ZeroDDS.Tests`, `ZeroDDS.Cdr.Tests` | tests |
 
-## Status
-
-This README is auto-generated from `Cargo.toml` metadata. For
-hand-written documentation see the rustdoc on the crate's public
-items, or the relevant station in the
-[Documentation Trail](../../documentation/README.md).
-
-## Usage
-
-Add to your `Cargo.toml`:
-
-```toml
-[dependencies]
-zerodds-cs = { path = "../path/to/cs" }
-# or, when published:
-# zerodds-cs = "0.x"
-```
+Types come from `zerodds-idlc generate --lang c#`, which also emits the
+`*TypeSupport` companion (`tools/idlc/src/csharp_support.rs`). The actual
+XCDR2 codec is `runtime/csharp` (`ZeroDds.Wire.Writer`/`Reader`) — the
+companion calls it directly. There is no second, hand-written codec in
+this crate to keep in sync with it.
 
 ## Tests
 
 ```bash
-cargo test -p zerodds-cs
+crates/cs/csharp/build_cs_smoke.sh      # needs dotnet 8
 ```
-
-## See also
-
-* [`docs/architecture/02_architecture.md`](../../docs/architecture/02_architecture.md) —
-  layered crate architecture.
-* [`documentation/02-architecture/components.md`](../../documentation/02-architecture/components.md) —
-  per-crate map (English).

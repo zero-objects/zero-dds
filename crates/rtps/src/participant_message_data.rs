@@ -12,28 +12,33 @@
 //!
 //! ```text
 //! struct ParticipantMessageData {
-//!     GUID_t   participantGuidPrefix; // 12 byte (GuidPrefix only!)
-//!     octet    kind[4];               // 4 byte u32 (BE/LE per CDR)
-//!     sequence<octet> data;           // 4 byte length + N byte
+//!     GuidPrefix_t participantGuidPrefix; // 12 octets
+//!     OctetArray4  kind;                  // 4 octets, no byte order
+//!     OctetSeq     data;                  // unsigned long length + octets
 //! };
 //! ```
 //!
-//! Spec pitfall: despite the field name `participantGuidPrefix`, in
-//! practice Cyclone DDS and Fast-DDS send a full 16-byte GUID (prefix +
-//! ENTITYID_PARTICIPANT). We therefore write 16 bytes and parse
-//! tolerantly: 16 bytes → full GUID, 12 bytes → prefix-only.
+//! `kind` is four octets, not an integer: `{0,0,0,1}` is
+//! AUTOMATIC_LIVELINESS_UPDATE, `{0,0,0,2}` MANUAL_LIVELINESS_UPDATE, and
+//! "kind.value\[0\] & 0x80 == 1" marks a vendor-specific kind. This module
+//! carries it as the `u32` the four octets spell big-endian, so the
+//! vendor bit is the top bit whatever the encapsulation.
 //!
-//! The `data` sequence is semantically a `vec<octet>` with a leading
-//! 32-bit length. Spec §9.6.3.1 defines it as an opaque token; ZeroDDS
-//! uses it for MANUAL_BY_TOPIC to transport the topic token (topic hash
-//! fingerprint).
+//! Cyclone DDS 11 serializes the prefix and the kind as one 16-octet
+//! block (`ddsi_participant_message_data_ops = { XG, XO }`,
+//! `ddsi_pmd.c:34`); Fast DDS 3.6 writes its instance handle, the prefix
+//! and `{0,0,0,kind}`, then a zero length (`WLP.cpp:882-894`). Both are
+//! this layout; the 16 octets are not a participant GUID.
+//!
+//! The `data` sequence is an opaque token. ZeroDDS uses it for
+//! MANUAL_BY_TOPIC to transport the topic token (topic hash fingerprint).
 //!
 //! # CDR encoding
 //!
 //! Encoded as XCDR1 plain (encapsulation 0x0000 BE / 0x0001 LE) or
-//! XCDR2 plain (0x0006 BE / 0x0007 LE). Cyclone sends the topic by
-//! default as XCDR1 plain. We accept all four encapsulation kinds and
-//! write LE by default.
+//! XCDR2 plain (0x0006 BE / 0x0007 LE). We accept all four encapsulation
+//! kinds and write LE by default; only `data.length` follows the byte
+//! order.
 //!
 //! # DoS caps
 //!
@@ -61,38 +66,38 @@ pub const ENCAPSULATION_CDR2_LE: [u8; 2] = [0x00, 0x07];
 /// peer that sends more is either buggy or malicious.
 pub const MAX_DATA_LEN: usize = 4096;
 
-/// Spec-defined `kind` code: AUTOMATIC_LIVELINESS_UPDATE (§9.6.3.1).
+/// `kind` `{0x00, 0x00, 0x00, 0x00}`: PARTICIPANT_MESSAGE_DATA_KIND_UNKNOWN
+/// (§9.6.3.1).
+pub const PARTICIPANT_MESSAGE_DATA_KIND_UNKNOWN: u32 = 0x0000_0000;
+
+/// `kind` `{0x00, 0x00, 0x00, 0x01}`:
+/// PARTICIPANT_MESSAGE_DATA_KIND_AUTOMATIC_LIVELINESS_UPDATE (§9.6.3.1).
 /// Sent by the builtin WLP writer when LIVELINESS=AUTOMATIC.
-pub const PARTICIPANT_MESSAGE_DATA_KIND_AUTOMATIC_LIVELINESS_UPDATE: u32 = 0x0000_0000;
+pub const PARTICIPANT_MESSAGE_DATA_KIND_AUTOMATIC_LIVELINESS_UPDATE: u32 = 0x0000_0001;
 
-/// Spec-defined `kind` code: MANUAL_BY_PARTICIPANT_LIVELINESS_UPDATE
-/// (§9.6.3.1). Triggered by `assert_liveliness()` on the
-/// `DomainParticipant`.
-pub const PARTICIPANT_MESSAGE_DATA_KIND_MANUAL_BY_PARTICIPANT_LIVELINESS_UPDATE: u32 = 0x0000_0001;
+/// `kind` `{0x00, 0x00, 0x00, 0x02}`:
+/// PARTICIPANT_MESSAGE_DATA_KIND_MANUAL_LIVELINESS_UPDATE (§9.6.3.1).
+/// Triggered by `assert_liveliness()` on the `DomainParticipant`.
+pub const PARTICIPANT_MESSAGE_DATA_KIND_MANUAL_BY_PARTICIPANT_LIVELINESS_UPDATE: u32 = 0x0000_0002;
 
-/// Vendor-specific kind range: top bit set
-/// (`0x80000000..=0xFFFFFFFF`). Spec §9.6.3.1 reserves this for
-/// vendor-own kinds (e.g. ZeroDDS MANUAL_BY_TOPIC with a topic token
-/// in the `data` sequence).
+/// Vendor-specific kinds: "kind.value\[0\] & 0x80 == 1 // vendor specific
+/// kind" (§9.6.3.1), the top bit of the big-endian `u32`.
 pub const PARTICIPANT_MESSAGE_DATA_KIND_VENDOR_BASE: u32 = 0x8000_0000;
 
-/// ZeroDDS vendor kind: MANUAL_BY_TOPIC. Triggered by
-/// `DataWriter::assert_liveliness()`; the `data` sequence carries a
-/// topic token (typically a 4-byte hash). Cyclone peers ignore the
-/// vendor kind (spec §9.6.3.1: "If kind has its MSB set,
-/// implementations not understanding the kind shall ignore the
-/// message").
+/// ZeroDDS vendor kind `{0x80, 0x00, 0x00, 0x01}`: MANUAL_BY_TOPIC.
+/// Triggered by `DataWriter::assert_liveliness()`; the `data` sequence
+/// carries a topic token (typically a 4-byte hash). A peer that does not
+/// know the kind renews the participant's liveliness at most.
 pub const PARTICIPANT_MESSAGE_DATA_KIND_ZERODDS_MANUAL_BY_TOPIC: u32 = 0x8000_0001;
 
 /// `ParticipantMessageData` (DDSI-RTPS 2.5 §9.6.3.1) — payload of the
 /// `DCPSParticipantMessage` topic.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParticipantMessageData {
-    /// 16-byte GUID of the sender (prefix + EntityId::PARTICIPANT).
-    /// Even though the spec says "prefix", Cyclone and Fast-DDS write
-    /// the full GUID here; we follow.
-    pub participant_guid: [u8; 16],
-    /// Liveliness kind (see `PARTICIPANT_MESSAGE_DATA_KIND_*`).
+    /// `participantGuidPrefix`: the sender's GuidPrefix.
+    pub participant_guid_prefix: GuidPrefix,
+    /// `kind`, the four octets as a big-endian `u32` (see
+    /// `PARTICIPANT_MESSAGE_DATA_KIND_*`).
     pub kind: u32,
     /// Opaque token. On MANUAL_BY_TOPIC a topic hash, otherwise empty.
     pub data: Vec<u8>,
@@ -103,7 +108,7 @@ impl ParticipantMessageData {
     #[must_use]
     pub fn automatic(prefix: GuidPrefix) -> Self {
         Self {
-            participant_guid: full_guid_bytes(prefix),
+            participant_guid_prefix: prefix,
             kind: PARTICIPANT_MESSAGE_DATA_KIND_AUTOMATIC_LIVELINESS_UPDATE,
             data: Vec::new(),
         }
@@ -113,7 +118,7 @@ impl ParticipantMessageData {
     #[must_use]
     pub fn manual_by_participant(prefix: GuidPrefix) -> Self {
         Self {
-            participant_guid: full_guid_bytes(prefix),
+            participant_guid_prefix: prefix,
             kind: PARTICIPANT_MESSAGE_DATA_KIND_MANUAL_BY_PARTICIPANT_LIVELINESS_UPDATE,
             data: Vec::new(),
         }
@@ -123,7 +128,7 @@ impl ParticipantMessageData {
     #[must_use]
     pub fn manual_by_topic(prefix: GuidPrefix, topic_token: Vec<u8>) -> Self {
         Self {
-            participant_guid: full_guid_bytes(prefix),
+            participant_guid_prefix: prefix,
             kind: PARTICIPANT_MESSAGE_DATA_KIND_ZERODDS_MANUAL_BY_TOPIC,
             data: topic_token,
         }
@@ -144,31 +149,21 @@ impl ParticipantMessageData {
             u32::try_from(self.data.len()).map_err(|_| WireError::ValueOutOfRange {
                 message: "ParticipantMessageData.data length exceeds u32",
             })?;
-        let mut out = Vec::with_capacity(4 + 16 + 4 + 4 + self.data.len());
-        // Encapsulation-Header
+        let mut out = Vec::with_capacity(4 + 12 + 4 + 4 + self.data.len());
         if little_endian {
             out.extend_from_slice(&ENCAPSULATION_CDR_LE);
         } else {
             out.extend_from_slice(&ENCAPSULATION_CDR_BE);
         }
         out.extend_from_slice(&[0, 0]); // options
-        // Body Start (CDR-Offset 0)
-        // GUID — 16 bytes raw, no endian swap (bytes are opaque).
-        out.extend_from_slice(&self.participant_guid);
-        // kind — 4 byte u32 BE/LE
-        let kind_bytes = if little_endian {
-            self.kind.to_le_bytes()
-        } else {
-            self.kind.to_be_bytes()
-        };
-        out.extend_from_slice(&kind_bytes);
-        // data: u32 length + N byte
-        let len_bytes = if little_endian {
+        out.extend_from_slice(&self.participant_guid_prefix.to_bytes());
+        // `kind` is an octet array: the same four octets in either order.
+        out.extend_from_slice(&self.kind.to_be_bytes());
+        out.extend_from_slice(&if little_endian {
             data_len_u32.to_le_bytes()
         } else {
             data_len_u32.to_be_bytes()
-        };
-        out.extend_from_slice(&len_bytes);
+        });
         out.extend_from_slice(&self.data);
         Ok(out)
     }
@@ -176,10 +171,8 @@ impl ParticipantMessageData {
     /// Decodes from CDR bytes (with an encapsulation header).
     ///
     /// Accepts `0x0000`/`0x0001` (XCDR1 plain) and `0x0006`/`0x0007`
-    /// (XCDR2 plain). Other encapsulation kinds → error.
-    ///
-    /// Tolerant of the 12-byte prefix-only encoding (pads with 0 to 16
-    /// bytes).
+    /// (XCDR2 plain). Other encapsulation kinds → error. Octets after the
+    /// `data` sequence (Fast DDS pads four) are padding.
     ///
     /// # Errors
     /// - `UnsupportedEncapsulation` on non-CDR encapsulation
@@ -201,109 +194,51 @@ impl ParticipantMessageData {
         };
         // Body starts at offset 4 (after options).
         let body = &bytes[4..];
-        // We accept a 16-byte GUID (spec de-facto) OR 12-byte
-        // prefix-only (an alternative reading of the spec wording
-        // "GUID_t guidPrefix" — strict 12-byte encoders exist).
-        // Heuristic: 16 bytes is the default, 12 bytes is only valid if
-        // the following fields (kind + data-len) parse correctly with 12
-        // bytes.
-        let (guid_bytes, after_guid_offset) = parse_guid(body)?;
-        if body.len() < after_guid_offset + 4 {
+        if body.len() < 20 {
             return Err(WireError::UnexpectedEof {
-                needed: after_guid_offset + 4,
+                needed: 20,
                 offset: 4,
             });
         }
-        let kind_slice = &body[after_guid_offset..after_guid_offset + 4];
-        let mut kind_arr = [0u8; 4];
-        kind_arr.copy_from_slice(kind_slice);
-        let kind = if little_endian {
-            u32::from_le_bytes(kind_arr)
-        } else {
-            u32::from_be_bytes(kind_arr)
-        };
-        let len_offset = after_guid_offset + 4;
-        if body.len() < len_offset + 4 {
-            return Err(WireError::UnexpectedEof {
-                needed: len_offset + 4,
-                offset: 4,
-            });
-        }
-        let mut len_arr = [0u8; 4];
-        len_arr.copy_from_slice(&body[len_offset..len_offset + 4]);
+        let mut prefix = [0u8; 12];
+        prefix.copy_from_slice(&body[..12]);
+        let kind = u32::from_be_bytes([body[12], body[13], body[14], body[15]]);
+        let len = [body[16], body[17], body[18], body[19]];
         let data_len = if little_endian {
-            u32::from_le_bytes(len_arr)
+            u32::from_le_bytes(len)
         } else {
-            u32::from_be_bytes(len_arr)
+            u32::from_be_bytes(len)
         } as usize;
         if data_len > MAX_DATA_LEN {
             return Err(WireError::ValueOutOfRange {
                 message: "ParticipantMessageData.data exceeds MAX_DATA_LEN",
             });
         }
-        let data_offset = len_offset + 4;
-        if body.len() < data_offset + data_len {
+        if body.len() < 20 + data_len {
             return Err(WireError::UnexpectedEof {
-                needed: data_offset + data_len,
+                needed: 20 + data_len,
                 offset: 4,
             });
         }
-        let data = body[data_offset..data_offset + data_len].to_vec();
         Ok(Self {
-            participant_guid: guid_bytes,
+            participant_guid_prefix: GuidPrefix::from_bytes(prefix),
             kind,
-            data,
+            data: body[20..20 + data_len].to_vec(),
         })
     }
 
-    /// Returns the GuidPrefix (first 12 bytes).
+    /// Returns the GuidPrefix.
     #[must_use]
     pub fn prefix(&self) -> GuidPrefix {
-        let mut p = [0u8; 12];
-        p.copy_from_slice(&self.participant_guid[..12]);
-        GuidPrefix::from_bytes(p)
+        self.participant_guid_prefix
     }
 
-    /// `true` if the `kind` value is vendor-specific (MSB set).
+    /// `true` if the `kind` value is vendor-specific (`kind.value[0] &
+    /// 0x80`).
     #[must_use]
     pub fn is_vendor_kind(&self) -> bool {
-        self.kind >= PARTICIPANT_MESSAGE_DATA_KIND_VENDOR_BASE
+        self.kind & PARTICIPANT_MESSAGE_DATA_KIND_VENDOR_BASE != 0
     }
-}
-
-fn full_guid_bytes(prefix: GuidPrefix) -> [u8; 16] {
-    let mut g = [0u8; 16];
-    g[..12].copy_from_slice(&prefix.to_bytes());
-    // EntityId::PARTICIPANT = [0, 0, 1, 0xC1]
-    g[12] = 0;
-    g[13] = 0;
-    g[14] = 1;
-    g[15] = 0xC1;
-    g
-}
-
-/// Parses the GUID body. Tries 16 bytes first (Cyclone/Fast-DDS
-/// default), falls back to 12 bytes (strict spec reading).
-fn parse_guid(body: &[u8]) -> Result<([u8; 16], usize), WireError> {
-    // 16-byte variant: needs at least 16 + 4 (kind) + 4 (data-len).
-    if body.len() >= 24 {
-        let mut g = [0u8; 16];
-        g.copy_from_slice(&body[..16]);
-        return Ok((g, 16));
-    }
-    // 12-byte variant: needs at least 12 + 4 + 4.
-    if body.len() >= 20 {
-        let mut g = [0u8; 16];
-        g[..12].copy_from_slice(&body[..12]);
-        // EntityId-Default: PARTICIPANT
-        g[14] = 1;
-        g[15] = 0xC1;
-        return Ok((g, 12));
-    }
-    Err(WireError::UnexpectedEof {
-        needed: 24,
-        offset: 4,
-    })
 }
 
 #[cfg(test)]
@@ -327,27 +262,57 @@ mod tests {
         assert_eq!(m.prefix(), sample_prefix());
     }
 
+    /// §9.6.3.1: `PARTICIPANT_MESSAGE_DATA_KIND_AUTOMATIC_LIVELINESS_UPDATE
+    /// {0x00, 0x00, 0x00, 0x01}`, `…_MANUAL_LIVELINESS_UPDATE {0x00, 0x00,
+    /// 0x00, 0x02}`, "kind.value[0] & 0x80 == 1 // vendor specific kind".
     #[test]
     fn participant_message_data_kind_constants_match_spec() {
-        // §9.6.3.1: AUTOMATIC = 0x00000000, MANUAL_BY_PARTICIPANT = 0x00000001.
-        // Vendor range: MSB set, i.e. >= 0x80000000.
         assert_eq!(
-            PARTICIPANT_MESSAGE_DATA_KIND_AUTOMATIC_LIVELINESS_UPDATE,
-            0x0000_0000
+            PARTICIPANT_MESSAGE_DATA_KIND_AUTOMATIC_LIVELINESS_UPDATE.to_be_bytes(),
+            [0, 0, 0, 1]
         );
         assert_eq!(
-            PARTICIPANT_MESSAGE_DATA_KIND_MANUAL_BY_PARTICIPANT_LIVELINESS_UPDATE,
-            0x0000_0001
+            PARTICIPANT_MESSAGE_DATA_KIND_MANUAL_BY_PARTICIPANT_LIVELINESS_UPDATE.to_be_bytes(),
+            [0, 0, 0, 2]
         );
-        assert_eq!(PARTICIPANT_MESSAGE_DATA_KIND_VENDOR_BASE, 0x8000_0000);
-        // The ZeroDDS vendor kind must be in the vendor range (MSB set).
-        // `assert_eq!` instead of `assert!` because clippy
-        // `assertions_on_constants` would otherwise complain; here we
-        // compare against a constant expected value.
+        assert_eq!(PARTICIPANT_MESSAGE_DATA_KIND_UNKNOWN.to_be_bytes(), [0; 4]);
         assert_eq!(
-            PARTICIPANT_MESSAGE_DATA_KIND_ZERODDS_MANUAL_BY_TOPIC
-                & PARTICIPANT_MESSAGE_DATA_KIND_VENDOR_BASE,
-            PARTICIPANT_MESSAGE_DATA_KIND_VENDOR_BASE
+            PARTICIPANT_MESSAGE_DATA_KIND_ZERODDS_MANUAL_BY_TOPIC.to_be_bytes()[0] & 0x80,
+            0x80
+        );
+    }
+
+    /// The octets of an AUTOMATIC beat, little-endian: prefix, kind
+    /// `{0,0,0,1}`, length 0 — the layout Cyclone's `{ XG, XO }` and Fast
+    /// DDS's `send_liveliness_message` put on the wire.
+    #[test]
+    fn participant_message_data_octets_are_those_of_9_6_3_1() {
+        let le = ParticipantMessageData::automatic(sample_prefix())
+            .to_cdr(true)
+            .unwrap();
+        let mut expected = vec![0x00, 0x01, 0x00, 0x00];
+        expected.extend_from_slice(&sample_prefix().to_bytes());
+        expected.extend_from_slice(&[0, 0, 0, 1, 0, 0, 0, 0]);
+        assert_eq!(le, expected);
+        // Big-endian: only the length changes byte order, and it is 0 —
+        // a manual beat with a token shows the difference.
+        let be = ParticipantMessageData::manual_by_topic(sample_prefix(), vec![9])
+            .to_cdr(false)
+            .unwrap();
+        assert_eq!(&be[16..], &[0x80, 0, 0, 1, 0, 0, 0, 1, 9]);
+    }
+
+    /// Fast DDS 3.6 pads four zero octets after the empty `data`
+    /// (`serializedPayload.length = 4 + 12 + 4 + 4 + 4`).
+    #[test]
+    fn participant_message_data_reads_the_fast_dds_beat() {
+        let mut bytes = vec![0x00, 0x01, 0x00, 0x00];
+        bytes.extend_from_slice(&sample_prefix().to_bytes());
+        bytes.extend_from_slice(&[0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0]);
+        let m = ParticipantMessageData::from_cdr(&bytes).unwrap();
+        assert_eq!(
+            m,
+            ParticipantMessageData::manual_by_participant(sample_prefix())
         );
     }
 
@@ -355,7 +320,6 @@ mod tests {
     fn participant_message_data_roundtrip_le() {
         let m = ParticipantMessageData::manual_by_participant(sample_prefix());
         let bytes = m.to_cdr(true).unwrap();
-        // Encapsulation-Header LE
         assert_eq!(&bytes[..4], &[0x00, 0x01, 0x00, 0x00]);
         let decoded = ParticipantMessageData::from_cdr(&bytes).unwrap();
         assert_eq!(decoded, m);
@@ -386,9 +350,6 @@ mod tests {
 
     #[test]
     fn participant_message_data_accepts_xcdr2_le_encapsulation() {
-        // The ZeroDDS default for user topics is XCDR2-LE (0x0007). If a
-        // peer sends the WLP topic with XCDR2, we must be able to decode
-        // it (Cyclone does this with the spec-2.5 default rep).
         let m = ParticipantMessageData::automatic(sample_prefix());
         let mut bytes = m.to_cdr(true).unwrap();
         bytes[0] = 0x00;
@@ -410,7 +371,7 @@ mod tests {
     #[test]
     fn participant_message_data_rejects_unknown_encapsulation() {
         let mut bytes = vec![0x99, 0x99, 0, 0];
-        bytes.extend_from_slice(&[0u8; 24]);
+        bytes.extend_from_slice(&[0u8; 20]);
         let res = ParticipantMessageData::from_cdr(&bytes);
         assert!(matches!(
             res,
@@ -420,11 +381,10 @@ mod tests {
 
     #[test]
     fn participant_message_data_rejects_overlong_data() {
-        // Build manually: encapsulation + 16 byte guid + 4 byte kind +
-        // 4 byte length=MAX+1.
+        // Encapsulation + 12-octet prefix + kind + length = MAX + 1.
         let mut bytes = vec![0x00, 0x01, 0x00, 0x00];
-        bytes.extend_from_slice(&[0u8; 16]);
-        bytes.extend_from_slice(&0u32.to_le_bytes()); // kind
+        bytes.extend_from_slice(&[0u8; 12]);
+        bytes.extend_from_slice(&[0, 0, 0, 1]);
         let too_big = (MAX_DATA_LEN as u32) + 1;
         bytes.extend_from_slice(&too_big.to_le_bytes());
         // data missing — that's fine, the cap check fires first.
@@ -449,7 +409,7 @@ mod tests {
 
     #[test]
     fn participant_message_data_too_short_body() {
-        // Encapsulation valid, body only 8 byte (less than 12-byte prefix variant).
+        // Encapsulation valid, body only 8 octets.
         let bytes = vec![0x00, 0x01, 0x00, 0x00, 0, 0, 0, 0, 0, 0, 0, 0];
         let res = ParticipantMessageData::from_cdr(&bytes);
         assert!(matches!(res, Err(WireError::UnexpectedEof { .. })));
@@ -457,42 +417,29 @@ mod tests {
 
     #[test]
     fn participant_message_data_truncated_data_section() {
-        // length=8 but only 4 byte follow.
+        // length=8 but only 4 octets follow.
         let mut bytes = vec![0x00, 0x01, 0x00, 0x00];
-        bytes.extend_from_slice(&[0u8; 16]);
-        bytes.extend_from_slice(&0u32.to_le_bytes());
+        bytes.extend_from_slice(&[0u8; 12]);
+        bytes.extend_from_slice(&[0, 0, 0, 1]);
         bytes.extend_from_slice(&8u32.to_le_bytes());
         bytes.extend_from_slice(&[1, 2, 3, 4]);
         let res = ParticipantMessageData::from_cdr(&bytes);
         assert!(matches!(res, Err(WireError::UnexpectedEof { .. })));
     }
 
+    /// An earlier ZeroDDS wrote a 16-octet GUID and `kind` as an integer.
+    /// Read by this layout, its beat is of an unknown kind — not a
+    /// manual one — from the right participant.
     #[test]
-    fn participant_message_data_le_be_bytes_differ_for_kind() {
-        // Sanity: BE and LE encoding differ via kind.
-        let mut m = ParticipantMessageData::automatic(sample_prefix());
-        m.kind = 0x0102_0304;
-        let le = m.to_cdr(true).unwrap();
-        let be = m.to_cdr(false).unwrap();
-        assert_ne!(le, be);
-        // Both must yield the same value again.
-        assert_eq!(ParticipantMessageData::from_cdr(&le).unwrap(), m);
-        assert_eq!(ParticipantMessageData::from_cdr(&be).unwrap(), m);
-    }
-
-    #[test]
-    fn participant_message_data_accepts_12_byte_prefix_only_encoding() {
-        // A legacy/strict encoder writes only 12 bytes (prefix). We
-        // must be able to decode it + fill in the EntityId default
-        // (PARTICIPANT = 0xC1).
+    fn participant_message_data_reads_an_earlier_zerodds_beat_as_unknown_kind() {
         let mut bytes = vec![0x00, 0x01, 0x00, 0x00];
-        let prefix = sample_prefix().to_bytes();
-        bytes.extend_from_slice(&prefix); // 12 byte
-        bytes.extend_from_slice(&0u32.to_le_bytes()); // kind
-        bytes.extend_from_slice(&0u32.to_le_bytes()); // data len = 0
-        let decoded = ParticipantMessageData::from_cdr(&bytes).unwrap();
-        assert_eq!(decoded.prefix(), sample_prefix());
-        // EntityId-Default-Auffuellung
-        assert_eq!(&decoded.participant_guid[12..], &[0, 0, 1, 0xC1]);
+        bytes.extend_from_slice(&sample_prefix().to_bytes());
+        bytes.extend_from_slice(&[0, 0, 1, 0xC1]);
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.extend_from_slice(&0u32.to_le_bytes());
+        let m = ParticipantMessageData::from_cdr(&bytes).unwrap();
+        assert_eq!(m.prefix(), sample_prefix());
+        assert_eq!(m.kind, 0x0000_01C1);
+        assert!(!m.is_vendor_kind());
     }
 }

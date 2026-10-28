@@ -1,54 +1,54 @@
 # `zerodds/ts-node-runtime`
 
-Sandbox-Runtime-Image fuer **TypeScript-Bindings unter Node.js**
-(`@zerodds/node` aus `crates/ts-node`, via koffi-FFI gegen
-`libzerodds.so`). Zielgruppe: Coding-Challenges in Zero-Learn-
-Sandboxes und Quickstart-Demos fuer TypeScript-DDS-Entwicklung.
+Sandbox runtime image for **TypeScript bindings under Node.js**
+(`@zerodds/node` from `crates/ts-node`, via koffi FFI against
+`libzerodds.so`). Target audience: coding challenges in Zero-Learn
+sandboxes and quickstart demos for TypeScript DDS development.
 
-Teil von [**ZeroDDS**](../../../README.md). Anders als die Daemon-
-Images liefert dieses Image **keinen ENTRYPOINT-Service**, sondern
-eine bereite Node-Umgebung mit global installiertem `@zerodds/node`
-und `tsx` fuer Direct-TS-Run ohne separaten Build-Step.
+Part of [**ZeroDDS**](../../../README.md). Unlike the daemon
+images, this image delivers **no ENTRYPOINT service**, but
+a ready Node environment with globally installed `@zerodds/node`
+and `tsx` for running TS directly without a separate build step.
 
-> **Hinweis:** Dieses Image ist Node.js-only. Browser-WASM-Pfad
-> (`zerodds-ts-wasm`) braucht keinen Sandbox-Container — der laeuft
-> im Browser, nicht im Server-Image. Live-Pub/Sub im Browser ist
-> ohnehin nicht moeglich (WASM kann kein UDP-Multicast).
+> **Note:** This image is Node.js-only. The browser WASM path
+> (`zerodds-ts-wasm`) needs no sandbox container — it runs
+> in the browser, not in the server image. Live pub/sub in the browser is
+> not possible anyway (WASM cannot do UDP multicast).
 
 ---
 
 ## Build
 
-Vom Repo-Root:
+From the repo root:
 
 ```bash
 docker build \
   -f packaging/docker/ts-node-runtime/Dockerfile \
-  -t zerodds/ts-node-runtime:rc3 \
+  -t zerodds/ts-node-runtime:rc7 \
   .
 ```
 
-4-Stage Build (chef → rust-builder → node-builder → runtime). Erst-
-Build ~5-15 Min; Folge-Builds nutzen cargo-chef-Caching aggressiv.
+4-stage build (chef → rust-builder → node-builder → runtime). First
+build ~5-15 min; subsequent builds use cargo-chef caching aggressively.
 
 ## Run
 
-Interaktive Shell (default CMD):
+Interactive shell (default CMD):
 
 ```bash
-docker run --rm -it zerodds/ts-node-runtime:rc3
+docker run --rm -it zerodds/ts-node-runtime:rc7
 ```
 
-Direkter TS-Run mit gemountetem Lerner-Code:
+Direct TS run with mounted learner code:
 
 ```bash
 docker run --rm -it \
   -v "$PWD/workspace:/workspace" \
-  zerodds/ts-node-runtime:rc3 \
+  zerodds/ts-node-runtime:rc7 \
   tsx /workspace/main.ts
 ```
 
-Sandbox-Style (read-only-root, kein Netz nach aussen):
+Sandbox style (read-only root, no network to the outside):
 
 ```bash
 docker run --rm \
@@ -56,33 +56,33 @@ docker run --rm \
   --tmpfs /tmp:rw,size=64m \
   --network none \
   -v "$PWD/workspace:/workspace:ro" \
-  zerodds/ts-node-runtime:rc3 \
+  zerodds/ts-node-runtime:rc7 \
   tsx /workspace/loopback_pubsub.ts
 ```
 
-## Was drin ist
+## What is inside
 
-| Komponente | Version | Pfad |
+| Component | Version | Path |
 | --- | --- | --- |
 | Node.js | 22 (bookworm-slim) | `/usr/local/bin/node` |
-| `@zerodds/node` (global) | RC-Build aus `crates/ts-node` | `/usr/local/lib/node_modules/@zerodds/node/` |
+| `@zerodds/node` (global) | RC build from `crates/ts-node` | `/usr/local/lib/node_modules/@zerodds/node/` |
 | `tsx` (global) | 4.x | `/usr/local/bin/tsx` |
-| `libzerodds.so` | RC-Build aus `crates/zerodds-c-api` | `/usr/local/lib/libzerodds.so` |
-| `zerodds-idlc` | mit `--ts` Backend | `/usr/local/bin/zerodds-idlc` |
+| `libzerodds.so` | RC build from `crates/zerodds-c-api` | `/usr/local/lib/libzerodds.so` |
+| `zerodds-idlc` | with `generate --lang typescript` | `/usr/local/bin/zerodds-idlc` |
 | Init | `tini` (PID 1) | `/usr/bin/tini` |
 
-`NODE_PATH=/usr/local/lib/node_modules` und `LD_LIBRARY_PATH=/usr/local/lib`
-sind gesetzt — `import { ... } from '@zerodds/node'` und der koffi-FFI-
-Loader funktionieren ohne weitere Massnahmen.
+`NODE_PATH=/usr/local/lib/node_modules` and `LD_LIBRARY_PATH=/usr/local/lib`
+are set — `import { ... } from '@zerodds/node'` and the koffi FFI
+loader work without further measures.
 
-## Lerner-Workflow
+## Learner workflow
 
 ```bash
-# IDL -> TypeScript-Modul
-zerodds-idlc --ts -o gen chat.idl
-# erzeugt gen/chat.ts mit Type-Definitions + Codec-Roundtrip.
+# IDL -> TypeScript module
+zerodds-idlc generate --lang typescript --out gen chat.idl
+# creates gen/chat.ts with type definitions + codec roundtrip.
 
-# Lerner schreibt main.ts:
+# The learner writes main.ts:
 cat > main.ts <<'EOF'
 import { DomainParticipant } from '@zerodds/node';
 import { Greeting } from './gen/chat.js';
@@ -92,18 +92,18 @@ const writer = p.createWriter(Greeting, { topic: 'greetings' });
 writer.write({ id: 42, text: 'hallo welt' });
 EOF
 
-# Inline ausfuehren ohne tsc-Build:
+# Run inline without a tsc build:
 tsx main.ts
 ```
 
-Loopback-Pub/Sub im selben Container (Discovery via Multicast-Loopback):
+Loopback pub/sub in the same container (discovery via multicast loopback):
 
 ```typescript
 import { fork } from 'node:child_process';
 import { DomainParticipant } from '@zerodds/node';
 import { Greeting } from './gen/chat.js';
 
-// Subscriber in Child-Process:
+// Subscriber in a child process:
 if (process.argv[2] === '--sub') {
   const p = new DomainParticipant({ domainId: 0 });
   const reader = p.createReader(Greeting, { topic: 'greetings' });
@@ -114,7 +114,7 @@ if (process.argv[2] === '--sub') {
   process.exit(0);
 }
 
-// Publisher im Main-Process:
+// Publisher in the main process:
 fork(import.meta.filename, ['--sub']);
 await new Promise(r => setTimeout(r, 500));
 const p = new DomainParticipant({ domainId: 0 });
@@ -127,22 +127,19 @@ for (let i = 0; i < 5; i++) {
 
 ## Limits
 
-- **Discovery nur via Loopback-Multicast** im selben Container — wie
-  in py-runtime und cpp-runtime, vermerkt in
-  `documentation/06-operations/deployment.md` (`unicast static
-  peer-list` ist RC3-`planned`).
-- **`tsx` ist Dev-Tool**, kein Production-Bundler. Fuer Production-
-  Builds in einer separaten Pipeline `tsc` + `node dist/main.js`
-  nutzen — das ts-node-Image ist auf Lerner-/Demo-Workflows
-  zugeschnitten.
-- **koffi-FFI braucht ausfuehrbaren Memory** fuer FFI-Trampolines —
-  bei stark restriktivem seccomp-Profil (`--security-opt
-  seccomp=...`) testen.
+- **Discovery only via loopback multicast** in the same container — as
+  in py-runtime and cpp-runtime. Multi-host discovery uses unicast peers: `discovery.peers` / `ZERODDS_PEERS` (see `docs/doc-map/config.en.md`).
+- **`tsx` is a dev tool**, not a production bundler. For production
+  builds use `tsc` + `node dist/main.js` in a separate pipeline
+  — the ts-node image is tailored to learner/demo workflows.
+- **koffi FFI needs executable memory** for FFI trampolines —
+  test with a strongly restrictive seccomp profile (`--security-opt
+  seccomp=...`).
 
 ## See also
 
-- [`crates/ts-node/README.md`](../../../crates/ts-node/README.md) — Node.js-Binding-Crate.
-- [`crates/idl-ts/README.md`](../../../crates/idl-ts/README.md) — IDL→TypeScript-Codegen.
-- [`crates/ts-wasm/README.md`](../../../crates/ts-wasm/README.md) — Browser-WASM-Schwester (Codec-only, nicht in diesem Image).
-- [`packaging/docker/py-runtime/`](../py-runtime/) — Python-Schwester-Image.
-- [`packaging/docker/cpp-runtime/`](../cpp-runtime/) — C/C++-Schwester-Image.
+- [`crates/ts-node/README.md`](../../../crates/ts-node/README.md) — Node.js binding crate.
+- [`crates/idl-ts/README.md`](../../../crates/idl-ts/README.md) — IDL→TypeScript codegen.
+- [`crates/ts-wasm/README.md`](../../../crates/ts-wasm/README.md) — browser WASM sister (codec-only, not in this image).
+- [`packaging/docker/py-runtime/`](../py-runtime/) — Python sister image.
+- [`packaging/docker/cpp-runtime/`](../cpp-runtime/) — C/C++ sister image.

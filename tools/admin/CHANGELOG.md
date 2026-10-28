@@ -3,6 +3,28 @@
 Format follows [Keep a Changelog 1.1](https://keepachangelog.com/en/1.1.0/),
 versioning follows [SemVer 2.0](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- `--skip-unknown` for the offline commands: elements and attributes the
+  DDS-XML schemas do not define (an RTI file's own) are left out and each is
+  listed with its path on stderr; without the flag the first such element
+  is an error naming it. The commands read the document with
+  `zerodds_xml::parse_dds_xml_with`.
+- `--vendor-forms` reads the forms other DDS products write (`<topic_filter>`
+  as an element, `qos_profile_ref`, `<participant_qos>`, IDL type names)
+  and lists each with its path on stderr; without it the first such form is
+  an error that names the DDS-XML 1.0 form.
+
+### Fixed
+
+- `qos check` took the inline `<datawriter_qos>`/`<datareader_qos>` of a
+  writer or reader as written and dropped its `base_name` attribute
+  (DDS-XML 1.0 §7.3.5.4.4). The named profile is the base now, resolved
+  through `QosProfileRegistry::writer_qos_for_inline`/
+  `reader_qos_for_inline`.
+
 ## [1.0.0-rc.3] — 2026-06-18
 
 First working release of the `zerodds-admin` operator CLI (the earlier

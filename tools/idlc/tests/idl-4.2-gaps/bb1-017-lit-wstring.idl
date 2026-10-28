@@ -1,0 +1,2 @@
+// IDL 4.2 Annex A production 17, §7.2.6.3 — a wide string literal.
+const wstring K = L"ab";

@@ -17,7 +17,7 @@
 //!                     (e.g. open, partial, done, n/a)
 //! ```
 
-#![allow(clippy::print_stdout, clippy::print_stderr)] // CLI-Tool: stdout/stderr sind die Ausgabe.
+#![allow(clippy::print_stdout, clippy::print_stderr)] // CLI tool: stdout/stderr are the output.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -215,7 +215,7 @@ fn field(body: &[&str], name: &str) -> Option<String> {
 }
 
 /// Normalize a status string to its leading token, lowercased, stripped of
-/// backticks/markup — e.g. "`n/a (informative)` — Glossar." -> "n/a".
+/// backticks/markup — e.g. "`n/a (informative)` — Glossary." -> "n/a".
 fn normalize_status(s: &str) -> String {
     let cleaned = s.trim_start_matches('`').trim();
     cleaned
@@ -343,7 +343,7 @@ Intro prose, no status here.
 
 ## §2 Glossary
 
-**Status:** `n/a (informative)` — Glossar.
+**Status:** `n/a (informative)` — Glossary.
 
 ## §3 Backlog item
 

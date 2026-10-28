@@ -23,26 +23,26 @@
     missing_docs
 )]
 
-use zerodds_cdr::{BufferReader, BufferWriter, Endianness};
 use zerodds_corba_rust::{ValueStreamReader, ValueStreamWriter, ValueTagHeader};
+use zerodds_wire::{Endianness, Reader, Writer};
 
 #[test]
 fn wire_value_tag_roundtrip() {
     let repo_id = "IDL:Demo/Point:1.0";
-    let mut writer = BufferWriter::new(Endianness::Little);
+    let mut writer = Writer::new(Endianness::Little);
 
     {
         let mut vw = ValueStreamWriter::new(&mut writer);
-        vw.write_value_tag(repo_id).expect("write tag");
+        vw.write_value_tag(repo_id);
     }
 
-    let bytes = writer.into_bytes();
+    let bytes = writer.finish();
     assert!(bytes.len() >= 4, "must contain at least the tag");
 
     // Tag prefix must be 0x7FFFFF02 in little-endian.
     assert_eq!(&bytes[0..4], &0x7FFF_FF02_u32.to_le_bytes());
 
-    let mut reader = BufferReader::new(&bytes, Endianness::Little);
+    let mut reader = Reader::new(&bytes, Endianness::Little);
     let mut vr = ValueStreamReader::new(&mut reader);
     let read_id = vr.read_value_tag().expect("read tag");
     assert_eq!(read_id.as_deref(), Some(repo_id));
@@ -52,7 +52,7 @@ fn wire_value_tag_roundtrip() {
 fn wire_value_tag_null_reference() {
     // Null value-tag = 0x00000000 (CDR §15.3.4.2).
     let bytes = 0x0000_0000_u32.to_le_bytes();
-    let mut reader = BufferReader::new(&bytes, Endianness::Little);
+    let mut reader = Reader::new(&bytes, Endianness::Little);
     let mut vr = ValueStreamReader::new(&mut reader);
     let result = vr.read_value_tag().expect("read null");
     assert!(result.is_none(), "null tag must decode to None");
@@ -63,7 +63,7 @@ fn wire_value_tag_truly_unsupported_returns_error() {
     // 0x7FFFFF22 is not implemented in the current wire codec
     // (e.g. codeset variant).
     let bytes = 0x7FFF_FF22_u32.to_le_bytes();
-    let mut reader = BufferReader::new(&bytes, Endianness::Little);
+    let mut reader = Reader::new(&bytes, Endianness::Little);
     let mut vr = ValueStreamReader::new(&mut reader);
     let result = vr.read_value_tag();
     assert!(result.is_err(), "unsupported tag must error");
@@ -72,15 +72,15 @@ fn wire_value_tag_truly_unsupported_returns_error() {
 #[test]
 fn wire_value_tag_multi_repo_id_list_round_trip() {
     let ids = ["IDL:Derived:1.0", "IDL:Base:1.0"];
-    let mut writer = BufferWriter::new(Endianness::Little);
+    let mut writer = Writer::new(Endianness::Little);
     {
         let mut vw = ValueStreamWriter::new(&mut writer);
-        vw.write_value_tag_multi(&ids).expect("write multi tag");
+        vw.write_value_tag_multi(&ids);
     }
-    let bytes = writer.into_bytes();
+    let bytes = writer.finish();
     assert_eq!(&bytes[0..4], &0x7FFF_FF06_u32.to_le_bytes());
 
-    let mut reader = BufferReader::new(&bytes, Endianness::Little);
+    let mut reader = Reader::new(&bytes, Endianness::Little);
     let mut vr = ValueStreamReader::new(&mut reader);
     let header = vr.read_value_tag_full().expect("read tag");
     match header {
@@ -101,19 +101,19 @@ fn wire_value_tag_chunked_with_list_round_trip() {
     let chunk1 = [0xAA_u8, 0xBB, 0xCC];
     let chunk2 = [0xDD_u8, 0xEE];
 
-    let mut writer = BufferWriter::new(Endianness::Little);
+    let mut writer = Writer::new(Endianness::Little);
     {
         let mut vw = ValueStreamWriter::new(&mut writer);
-        vw.write_chunked_value_tag(&ids).expect("chunked tag");
-        vw.write_chunk(&chunk1).expect("chunk1");
-        vw.write_chunk(&chunk2).expect("chunk2");
-        vw.write_chunked_end(1).expect("end tag");
+        vw.write_chunked_value_tag(&ids);
+        vw.write_chunk(&chunk1);
+        vw.write_chunk(&chunk2);
+        vw.write_chunked_end(1);
     }
 
-    let bytes = writer.into_bytes();
+    let bytes = writer.finish();
     assert_eq!(&bytes[0..4], &0x7FFF_FF0A_u32.to_le_bytes());
 
-    let mut reader = BufferReader::new(&bytes, Endianness::Little);
+    let mut reader = Reader::new(&bytes, Endianness::Little);
     let mut vr = ValueStreamReader::new(&mut reader);
     let header = vr.read_value_tag_full().expect("read tag");
     let read_ids = match header {
@@ -130,7 +130,7 @@ fn wire_value_tag_chunked_with_list_round_trip() {
     // We have to read the bytes from the buffer ourselves — to do that
     // we open up the reader and access it directly.
     drop(vr);
-    let mut reader2 = BufferReader::new(&bytes, Endianness::Little);
+    let mut reader2 = Reader::new(&bytes, Endianness::Little);
     let mut vr2 = ValueStreamReader::new(&mut reader2);
     let _ = vr2.read_value_tag_full().expect("re-read tag");
     let s1b = vr2.read_chunk_size().expect("chunk1 size");

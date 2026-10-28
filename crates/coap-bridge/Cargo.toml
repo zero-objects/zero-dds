@@ -10,8 +10,8 @@ description = "CoAP (RFC 7252 / 7641 / 7959 / 6690) Wire-Codec + Reliability + O
 homepage = "https://zerodds.org"
 documentation = "https://docs.rs/zerodds-coap-bridge"
 readme = "README.md"
-keywords = ["dds", "coap", "rfc7252", "iot", "no-std"]
-categories = ["network-programming", "embedded", "no-std"]
+keywords = ["dds", "coap", "rfc7252", "iot"]
+categories = ["network-programming", "embedded"]
 publish = true
 
 [lints]
@@ -21,11 +21,18 @@ workspace = true
 path = "src/lib.rs"
 
 [features]
-default = ["std", "daemon"]
+default = ["std", "daemon", "ring-backend"]
+# The crypto backend of bridge-security (JWT verify and the rustls TLS
+# provider): `ring-backend` (default) or `aws-lc` (aws-lc-rs, FIPS 140-3
+# validatable). A FIPS build: `--no-default-features --features <the
+# default list without ring-backend>,aws-lc`; with both, aws-lc is used.
+ring-backend = ["zerodds-bridge-security?/ring-backend"]
+aws-lc = ["zerodds-bridge-security?/aws-lc"]
 std = ["alloc"]
 alloc = []
 # `daemon` enables the `zerodds-coap-bridged` binary + DDS pump.
 daemon = [
+    "dep:zerodds-config",
     "std",
     "dep:zerodds-dcps",
     "dep:zerodds-rtps",
@@ -43,19 +50,26 @@ oscore = ["alloc", "dep:hmac", "dep:sha2", "dep:ccm", "dep:aes"]
 # webrtc-dtls is a pure-Rust DTLS 1.2 stack (crates.io, MIT/Apache, ~3.9M
 # downloads, used in webrtc-rs). Async (tokio). NOT in `default` — the
 # published no_std codec core is untouched. See ADR 0011 + the DTLS dossier.
-dtls = ["std", "dep:webrtc-dtls", "dep:webrtc-util", "dep:tokio"]
+dtls = ["std", "dep:webrtc-dtls", "dep:webrtc-util", "dep:tokio", "dep:pem", "dep:rustls"]
 # Cross-vendor interop tests against libcoap (Spec §10 + §12.3); requires the `coap-client` binary.
 cross-vendor-tests = ["daemon"]
+# C2(2): passthrough for `zerodds-dcps/rt` (`threads.*` real-time scheduling
+# + CPU affinity via `zerodds-rt-linux`). Off by default; build with
+# `--features rt` so a `threads.recv_policy=fifo`-style config on this
+# daemon applies instead of refusing with "feature missing". Implies
+# `daemon` (`zerodds-dcps` is only linked under it).
+rt = ["daemon", "zerodds-dcps/rt"]
 
 [dependencies]
 zerodds-dcps = { version = "1.0.0-rc.7", path = "../dcps", optional = true, default-features = false, features = ["std"] }
+zerodds-config = { version = "1.0.0-rc.7", path = "../config", optional = true }
 zerodds-rtps = { version = "1.0.0-rc.7", path = "../rtps", optional = true, default-features = false, features = ["std"] }
 zerodds-qos = { version = "1.0.0-rc.7", path = "../qos", optional = true, default-features = false, features = ["alloc"] }
 zerodds-types = { version = "1.0.0-rc.7", path = "../types", optional = true, default-features = false, features = ["alloc"] }
 # Bridge-security substrate (Bridge-Spec §7.2 Auth / §7.3 Topic-ACL).
 # §7.1 DTLS for coaps:// is now available behind the opt-in `dtls`
 # feature (webrtc-dtls, DTLS 1.2) — see `dtls.rs` + ADR 0011.
-zerodds-bridge-security = { version = "1.0.0-rc.7", path = "../bridge-security", optional = true }
+zerodds-bridge-security = { version = "1.0.0-rc.7", path = "../bridge-security", optional = true, default-features = false, features = ["std"] }
 # Cross-cutting daemon observability: §8.2 Prometheus + §8.3 OTLP + §9.2 Graceful Shutdown.
 zerodds-monitor = { version = "1.0.0-rc.7", path = "../monitor", optional = true, default-features = false, features = ["std", "prometheus-server"] }
 zerodds-observability-otlp = { version = "1.0.0-rc.7", path = "../observability-otlp", optional = true }
@@ -67,7 +81,13 @@ ccm = { workspace = true, optional = true }
 aes = { workspace = true, optional = true }
 # DTLS 1.2 (feature `dtls`) — pure-Rust DTLS over UDP for coaps://.
 # Async; the transport runs on a tokio runtime supplied by the caller.
-webrtc-dtls = { version = "0.12", optional = true }
+webrtc-dtls = { version = "0.12", optional = true, features = ["pem"] }
+# PEM parsing for the Spec §7.1 `cert_file`/`key_file`/`ca_file` inputs and
+# `rustls` for the client-CA trust store webrtc-dtls validates against — both
+# are already in the `dtls` dependency tree (webrtc-dtls pulls them), named
+# here so the transport can use them directly.
+pem = { version = "3", optional = true }
+rustls = { version = "0.23", optional = true, default-features = false, features = ["std", "ring"] }
 # Must match webrtc-dtls 0.12's `^0.11` requirement so the `Conn`/`Listener`
 # traits are the same type instance (no semver-split duplicate).
 webrtc-util = { version = "0.11", optional = true, default-features = false, features = ["conn"] }
@@ -76,6 +96,9 @@ tokio = { version = "1", optional = true, default-features = false, features = [
 [dev-dependencies]
 # Async test harness for the `dtls` e2e (#[tokio::test]).
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "time", "io-util"] }
+# Generates the cert/key PEM pairs the Spec §7.1 cert-mode + SIGHUP-rotation
+# e2e writes to disk (same crate webrtc-dtls uses for its self-signed certs).
+rcgen = "0.13"
 
 [[bin]]
 name = "zerodds-coap-bridged"

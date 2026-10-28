@@ -1,0 +1,5 @@
+// `map` with a sequence value
+@final struct Sample {
+    map<long, sequence<long> > entries;
+    long tail;
+};

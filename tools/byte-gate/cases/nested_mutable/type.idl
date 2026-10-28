@@ -1,0 +1,2 @@
+@mutable struct Inner { @id(5) long a; };
+@mutable struct Outer { @id(5) Inner nested; };

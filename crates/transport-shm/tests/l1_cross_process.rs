@@ -84,7 +84,19 @@ fn l1_shm_datagram_crosses_process_boundary() {
 
     let tmp = tempfile::tempdir().expect("tempdir");
     let exe = env::current_exe().expect("current_exe");
-    let child = Command::new(exe)
+    // `ZERODDS_TEST_RUNNER` starts the child through a runner (qemu-user
+    // without binfmt), as cargo's target runner starts the parent.
+    let runner = env::var("ZERODDS_TEST_RUNNER").unwrap_or_default();
+    let mut runner = runner.split_whitespace();
+    let mut command = match runner.next() {
+        Some(program) => {
+            let mut c = Command::new(program);
+            c.args(runner).arg(&exe);
+            c
+        }
+        None => Command::new(&exe),
+    };
+    let child = command
         .env(CHILD_ENV_FLINK, tmp.path())
         .args(["--exact", "l1_shm_datagram_crosses_process_boundary"])
         .stdout(Stdio::null())

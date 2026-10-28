@@ -52,6 +52,51 @@ static void fill(sensor_reading *s)
     s->raw[0] = 0xDE; s->raw[1] = 0xAD; s->raw[2] = 0xBE; s->raw[3] = 0xEF; s->raw_len = 4;
 }
 
+/* The 16-bit submessage_length is the bound on the body (BaseObjectRequest +
+ * sample): a body of exactly 0xFFFF frames, one octet more is refused. The
+ * builder must also refuse a frame its output buffer cannot hold, and never
+ * hand back a length that the field cannot describe. Self-contained, no
+ * goldens. */
+static int bound_vectors(void)
+{
+    static unsigned char big[8 + 0xFFFF];
+    static unsigned char sample[0xFFFF];
+    unsigned char tiny[8];
+    size_t max_sample = (size_t)0xFFFF - ZDW_XRCE_BASE_SIZE;
+    size_t n;
+
+    n = zdw_xrce_write_frame(big, sizeof(big), ZDW_XRCE_SESSION_NOKEY,
+                             ZDW_XRCE_STREAM_BEST_EFFORT, 1,
+                             ZDW_XRCE_OBJECT_ID(0x001, ZDW_OBJK_DATAWRITER),
+                             sample, max_sample);
+    if (n != 8u + 0xFFFFu) {
+        fprintf(stderr, "bound: maximal body not framed (%lu)\n", (unsigned long)n);
+        return 1;
+    }
+    if (big[6] != 0xFFu || big[7] != 0xFFu) {
+        fprintf(stderr, "bound: maximal body length field != 0xFFFF\n");
+        return 1;
+    }
+    n = zdw_xrce_write_frame(big, sizeof(big), ZDW_XRCE_SESSION_NOKEY,
+                             ZDW_XRCE_STREAM_BEST_EFFORT, 1,
+                             ZDW_XRCE_OBJECT_ID(0x001, ZDW_OBJK_DATAWRITER),
+                             sample, max_sample + 1u);
+    if (n != 0) {
+        fprintf(stderr, "bound: sample one octet over the field not refused\n");
+        return 1;
+    }
+    n = zdw_xrce_write_frame(tiny, sizeof(tiny), ZDW_XRCE_SESSION_NOKEY,
+                             ZDW_XRCE_STREAM_BEST_EFFORT, 1,
+                             ZDW_XRCE_OBJECT_ID(0x001, ZDW_OBJK_DATAWRITER),
+                             sample, 1u);
+    if (n != 0) {
+        fprintf(stderr, "bound: buffer too small not refused\n");
+        return 1;
+    }
+    printf("frame bound: 0xFFFF body fits; one octet more and a short buffer refused\n");
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     sensor_reading tx, rx;
@@ -73,7 +118,7 @@ int main(int argc, char **argv)
     blen = w.len;
     flen = zdw_xrce_write_frame(frame, sizeof(frame),
                                 ZDW_XRCE_SESSION_NOKEY, ZDW_XRCE_STREAM_BEST_EFFORT,
-                                1, body, blen);
+                                1, ZDW_XRCE_OBJECT_ID(0x001, ZDW_OBJK_DATAWRITER), body, blen);
     if (flen == 0) { fprintf(stderr, "frame\n"); return 1; }
 
     /* byte-identity vs a real crates/xrce Message */
@@ -101,6 +146,7 @@ int main(int argc, char **argv)
         fprintf(stderr, "round-trip mismatch\n"); return 1;
     }
     printf("frame-hook round-trip: unwrapped + decoded ok\n");
+    if (bound_vectors() != 0) { return 1; }
     printf("ALL OK\n");
     return 0;
 }

@@ -1,0 +1,15 @@
+module probe {
+    struct WithString { string s; };
+    typedef string NameAlias;
+    typedef any AnyAlias;
+    typedef long double DoubleAlias;
+    typedef WithString StructAlias;
+    typedef sequence<long> LongsAlias;
+    interface Special {
+        void in_v(in NameAlias p1, in AnyAlias p2, in DoubleAlias p3,
+                  in StructAlias p4, in LongsAlias p5);
+        void out_v(out NameAlias p1, out AnyAlias p2, out DoubleAlias p3,
+                   out StructAlias p4, out LongsAlias p5);
+        NameAlias ret_v();
+    };
+};

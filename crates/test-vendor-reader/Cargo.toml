@@ -1,0 +1,21 @@
+[package]
+name = "zerodds-test-vendor-reader"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Drives a DDS reader of another vendor from a test: instance states of KeyedPointA, reported per instance."
+repository.workspace = true
+homepage.workspace = true
+readme = "README.md"
+# Test scaffolding for this workspace, not a product.
+publish = false
+
+[dependencies]
+zerodds-test-domains = { path = "../test-domains" }
+zerodds-types = { path = "../types" }
+zerodds-wire-probe = { path = "../wire-probe" }
+
+[lints]
+workspace = true

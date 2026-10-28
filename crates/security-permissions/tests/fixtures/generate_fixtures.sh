@@ -20,6 +20,8 @@
 #   - expired_signer.smime.p7s           (EE not_after in past → reject)
 #   - future_signer.smime.p7s            (EE not_before in future → reject)
 #   - rsa_pkcs1_signer.smime.p7s         (RSA-PKCS#1-v1.5 signer)
+#   - alice_identity_cert.der, bob_identity_cert.der (remote identity
+#     certificates: the grant subject and a subject without a grant)
 
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -153,9 +155,14 @@ cat > permissions.xml <<'EOF'
   <permissions>
     <grant name="signed-alice">
       <subject_name>CN=alice</subject_name>
+      <validity>
+        <not_before>2020-01-01T00:00:00</not_before>
+        <not_after>2100-01-01T00:00:00</not_after>
+      </validity>
       <allow_rule>
-        <publish><topic>Chatter</topic></publish>
-        <subscribe><topic>Echo</topic></subscribe>
+        <domains><id>0</id></domains>
+        <publish><topics><topic>Chatter</topic></topics></publish>
+        <subscribe><topics><topic>Echo</topic></topics></subscribe>
       </allow_rule>
       <default>DENY</default>
     </grant>
@@ -226,6 +233,16 @@ openssl cms -sign -in permissions.xml -text \
 openssl cms -sign -in permissions.xml -text \
     -signer rsa_pkcs1_signer_cert.pem -inkey rsa_pkcs1_signer_key.pem \
     -out rsa_pkcs1_signer.smime.p7s -nodetach
+
+# -------------------- Identity certificates of the remote participant -------
+# validate_remote_permissions takes the grant whose subject is the remote
+# identity certificate's. Self-signed is enough: the access-control plugin
+# reads the subject; the authentication plugin verifies the chain.
+for who in alice bob; do
+    openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes \
+        -keyout /dev/null -subj "/CN=${who}" -days 36500 \
+        -outform DER -out "${who}_identity_cert.der"
+done
 
 # -------------------- Cleanup intermediate artefacts -------------------------
 rm -rf expired_ca_db future_ca_db

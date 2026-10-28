@@ -35,7 +35,7 @@ json = ["std", "dep:serde_json", "dep:base64"]
 # exactly these types instead of maintaining a parallel model.
 zerodds-opcua-gateway = { version = "1.0.0-rc.7", path = "../opcua-gateway", default-features = false }
 
-# PubSub-Security-Krypto (Feature `security`). RustCrypto, no_std + alloc.
+# PubSub security crypto (feature `security`). RustCrypto, no_std + alloc.
 aes = { version = "0.8", default-features = false, optional = true }
 ctr = { version = "0.9", default-features = false, optional = true }
 hmac = { version = "0.12", default-features = false, optional = true }

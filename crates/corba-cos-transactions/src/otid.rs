@@ -17,7 +17,7 @@
 
 use alloc::vec::Vec;
 
-use zerodds_cdr::{BufferReader, BufferWriter, DecodeError, EncodeError};
+use zerodds_wire::{Reader, WireError, Writer};
 
 /// `otid_t` (OMG OTS App. A) — globally unique transaction identity.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
@@ -62,24 +62,29 @@ impl Otid {
     /// CDR encode (in `w`'s byte order).
     ///
     /// # Errors
-    /// Buffer write error / length overflow.
-    pub fn encode(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
-        w.write_u32(self.format_id as u32)?;
-        w.write_u32(self.bequeath_length as u32)?;
-        let n = u32::try_from(self.tid.len()).map_err(|_| EncodeError::ValueOutOfRange {
-            message: "otid tid length overflow",
+    /// [`WireError::OutOfRange`] for a `tid` longer than `u32` can carry.
+    pub fn encode(&self, w: &mut Writer) -> Result<(), WireError> {
+        w.write_i32(self.format_id);
+        w.write_i32(self.bequeath_length);
+        let n = u32::try_from(self.tid.len()).map_err(|_| WireError::OutOfRange {
+            at: w.position(),
+            expected: alloc::format!(
+                "an otid tid of at most u32::MAX bytes, not {}",
+                self.tid.len()
+            ),
         })?;
-        w.write_u32(n)?;
-        w.write_bytes(&self.tid)
+        w.write_u32(n);
+        w.write_bytes(&self.tid);
+        Ok(())
     }
 
     /// CDR decode.
     ///
     /// # Errors
-    /// Buffer read error.
-    pub fn decode(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
-        let format_id = r.read_u32()? as i32;
-        let bequeath_length = r.read_u32()? as i32;
+    /// Whatever the reader raises for a short or malformed stream.
+    pub fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
+        let format_id = r.read_i32()?;
+        let bequeath_length = r.read_i32()?;
         let n = r.read_u32()? as usize;
         let tid = r.read_bytes(n)?.to_vec();
         Ok(Self {
@@ -94,16 +99,16 @@ impl Otid {
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
-    use zerodds_cdr::Endianness;
+    use zerodds_wire::Endianness;
 
     #[test]
     fn roundtrip_be_le() {
         let o = Otid::new(7, alloc::vec![0xDE, 0xAD, 0xBE, 0xEF, 0x01]);
         for e in [Endianness::Big, Endianness::Little] {
-            let mut w = BufferWriter::new(e);
+            let mut w = Writer::new(e);
             o.encode(&mut w).unwrap();
-            let bytes = w.into_bytes();
-            let mut r = BufferReader::new(&bytes, e);
+            let bytes = w.finish();
+            let mut r = Reader::new(&bytes, e);
             assert_eq!(Otid::decode(&mut r).unwrap(), o);
         }
     }
@@ -112,10 +117,10 @@ mod tests {
     fn null_otid() {
         let o = Otid::null();
         assert!(o.is_null());
-        let mut w = BufferWriter::new(Endianness::Big);
+        let mut w = Writer::new(Endianness::Big);
         o.encode(&mut w).unwrap();
-        let bytes = w.into_bytes();
-        let mut r = BufferReader::new(&bytes, Endianness::Big);
+        let bytes = w.finish();
+        let mut r = Reader::new(&bytes, Endianness::Big);
         let d = Otid::decode(&mut r).unwrap();
         assert!(d.is_null());
         assert_eq!(d, o);
@@ -131,10 +136,10 @@ mod tests {
             bequeath_length: 3,
             tid: alloc::vec![0xAA, 0xBB, 0xCC],
         };
-        let mut w = BufferWriter::new(Endianness::Big);
+        let mut w = Writer::new(Endianness::Big);
         o.encode(&mut w).unwrap();
         let hex: alloc::string::String = w
-            .into_bytes()
+            .finish()
             .iter()
             .map(|b| alloc::format!("{b:02x}"))
             .collect();

@@ -4,9 +4,7 @@
 //!
 //! Each policy has a spec default; this test set ensures
 //! that our `Default::default()` impls match the spec defaults.
-//! Incorrect defaults are a common source of interop issues (see memory:
-//! "spec fidelity beats diff size" — core changes are welcome when they
-//! make the data model spec-faithful).
+//! Incorrect defaults are a common source of interop issues.
 //!
 //! The tests here are pure verification and intentionally hold no logic;
 //! they document the spec paragraphs in plain text.

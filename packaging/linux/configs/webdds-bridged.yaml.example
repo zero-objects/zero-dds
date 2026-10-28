@@ -1,0 +1,65 @@
+# /etc/zerodds/webdds-bridged.yaml.example
+# Configuration of zerodds-webdds-bridged.
+# Spec: OMG Web-Enabled DDS 1.0 (formal/2014-12-01).
+#
+# Read by crates/webdds-bridge/src/daemon/config.rs (DaemonConfig::from_config)
+# over the shared layers: this file, webdds-bridged.d/, include:, the
+# environment beneath, --set above. An unknown key in a known section or a
+# value of the wrong type stops the start with file and line; an unknown
+# top-level key is a WARN line on stderr and the daemon starts with defaults.
+#
+# The file holds only keys the daemon reads; crates/webdds-bridge/tests
+# loads it back.
+
+listen: "0.0.0.0:8080"      # HTTP: /dds/rest1 (REST), /soap (SOAP), /wsdl
+domain: 0
+log_level: info
+max_body_bytes: 8388608     # 8 MiB request body cap
+
+tls:
+  enabled: false
+  # cert_file: "/etc/zerodds/certs/webdds-bridged.crt"
+  # key_file:  "/etc/zerodds/certs/webdds-bridged.key"
+  # client_ca_file: "/etc/zerodds/certs/webdds-ca.pem"   # mTLS
+
+auth:
+  mode: "none"               # none | bearer | jwt | mtls
+  # bearer_token: "${WEBDDS_BRIDGE_TOKEN}"
+  # bearer_subject: "operator"
+  jwt:
+    public_key: ""
+    # issuer: "https://issuer.example"
+    # audience: "zerodds-webdds"
+    # required_claim: "scope=dds-web"
+
+metrics:
+  enabled: false
+  listen: "127.0.0.1:9095"   # /metrics
+
+# Access control per Application (the DDS-WEB object model's own
+# access-control unit — Spec §7.3; not per DDS topic, since an
+# Application/DomainParticipant/Publisher operation names no topic at
+# all). Unlisted applications default-deny under any auth.mode other
+# than none.
+acl:
+  app1:
+    read:  ["operator"]
+    write: ["operator"]
+
+# Every type this gateway can resolve for a topic, from a config-named
+# IDL file or a DDS-XML 1.0 <types> document (exactly one of idl_file/
+# xml_file per entry). A type not listed here is still resolvable via
+# TypeLookup once a peer's SEDP announces it for the same topic.
+types:
+  - name: "Demo::Sensor"
+    idl_file: "/etc/zerodds/idl/sensor.idl"
+  # - name: "Demo::Reading"
+  #   xml_file: "/etc/zerodds/idl/reading-types.xml"
+
+# IDL files whose `interface`s are described (name + request/reply type
+# names) in the WSDL this gateway serves at GET /wsdl. Their WSDL is
+# real; invoking one of their operations over SOAP is not (see the
+# crate README's "Open points" — it needs zerodds-rpc's request/reply
+# struct synthesis).
+interfaces:
+  - "/etc/zerodds/idl/calculator.idl"

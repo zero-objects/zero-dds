@@ -38,7 +38,7 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use zerodds_cdr::{BufferReader, BufferWriter, Endianness};
+use zerodds_wire::{Endianness, Reader, Writer};
 
 /// IIOP version (`major.minor`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -125,24 +125,24 @@ impl IiopProfileBody {
     ///
     /// # Errors
     /// Buffer write error or length overflow.
-    pub fn encode(&self, w: &mut BufferWriter) -> Result<(), CdrError> {
-        w.write_u8(self.iiop_version.major)?;
-        w.write_u8(self.iiop_version.minor)?;
-        w.write_string(&self.host)?;
-        w.write_u16(self.port)?;
+    pub fn encode(&self, w: &mut Writer) -> Result<(), CdrError> {
+        w.write_u8(self.iiop_version.major);
+        w.write_u8(self.iiop_version.minor);
+        w.write_string(&self.host);
+        w.write_u16(self.port);
         // sequence<octet> object_key.
         let n = u32::try_from(self.object_key.len()).map_err(|_| CdrError::Overflow)?;
-        w.write_u32(n)?;
-        w.write_bytes(&self.object_key)?;
+        w.write_u32(n);
+        w.write_bytes(&self.object_key);
         // components (from IIOP 1.1 onward).
         if self.iiop_version.has_components() {
             let cn = u32::try_from(self.components.len()).map_err(|_| CdrError::Overflow)?;
-            w.write_u32(cn)?;
+            w.write_u32(cn);
             for c in &self.components {
-                w.write_u32(c.tag)?;
+                w.write_u32(c.tag);
                 let cd = u32::try_from(c.component_data.len()).map_err(|_| CdrError::Overflow)?;
-                w.write_u32(cd)?;
-                w.write_bytes(&c.component_data)?;
+                w.write_u32(cd);
+                w.write_bytes(&c.component_data);
             }
         }
         Ok(())
@@ -152,7 +152,7 @@ impl IiopProfileBody {
     ///
     /// # Errors
     /// Buffer read error.
-    pub fn decode(r: &mut BufferReader<'_>) -> Result<Self, CdrError> {
+    pub fn decode(r: &mut Reader<'_>) -> Result<Self, CdrError> {
         let major = r.read_u8()?;
         let minor = r.read_u8()?;
         let iiop_version = IiopVersion::new(major, minor);
@@ -193,16 +193,23 @@ impl IiopProfileBody {
     /// # Errors
     /// Buffer write error.
     pub fn encode_encapsulation(&self, endianness: Endianness) -> Result<Vec<u8>, CdrError> {
-        let mut out = Vec::with_capacity(64);
-        // Endianness byte (bit 0 = 0 BE / 1 LE).
-        out.push(match endianness {
+        // The byte-order octet goes into the **same** writer, so every
+        // alignment inside the body is counted from the start of the
+        // encapsulation because that is where it starts. This used to
+        // write the octet into a `Vec`, build a second writer, and tell
+        // that writer its byte 0 was byte 1 — the same shape as the
+        // buffer `corba-giop` had that was told its byte 0 was byte 12.
+        // §15.3.3 says the encapsulation *is* the octet plus the body;
+        // a coordinate a buffer is given is a coordinate that can be
+        // given wrongly, and one it has cannot be.
+        let mut w = Writer::new(endianness);
+        // Byte-order octet: bit 0 is 0 for big-endian, 1 for little.
+        w.write_u8(match endianness {
             Endianness::Big => 0,
             Endianness::Little => 1,
         });
-        let mut w = BufferWriter::new(endianness).with_align_origin(1);
         self.encode(&mut w)?;
-        out.extend_from_slice(w.as_bytes());
-        Ok(out)
+        Ok(w.finish())
     }
 
     /// Decodes a CDR encapsulation (see `encode_encapsulation`).
@@ -218,12 +225,12 @@ impl IiopProfileBody {
             1 => Endianness::Little,
             _ => return Err(CdrError::InvalidEndianness),
         };
-        // `align_origin = 1`: the endianness octet (index 0) is part of the
-        // alignment origin of the encapsulation (CORBA §15.3.3) — the body at
-        // index 1 aligns relative to the start of the encapsulation, not
-        // relative to the start of the body. Without this offset the first
-        // 4-byte field (host string length) is misaligned by 1 byte → interop break.
-        let mut r = BufferReader::new(&bytes[1..], endianness).with_align_origin(1);
+        // The reader is over the whole encapsulation, and the
+        // byte-order octet is read out of it rather than sliced off.
+        // Alignment then counts from the encapsulation's own byte 0,
+        // which is what §15.3.3 means, with no origin handed over.
+        let mut r = Reader::new(bytes, endianness);
+        r.read_u8()?;
         Self::decode(&mut r)
     }
 }
@@ -232,10 +239,11 @@ impl IiopProfileBody {
 /// covers length-overflow + truncation cases).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CdrError {
-    /// `zerodds-cdr` encode error.
-    Encode(zerodds_cdr::EncodeError),
-    /// `zerodds-cdr` decode error.
-    Decode(zerodds_cdr::DecodeError),
+    /// What the wire runtime refused. `zerodds-cdr` had a separate
+    /// encode and decode error and this carried both; `zerodds-wire`
+    /// has one, and two variants over one type is a `From` the
+    /// compiler cannot choose between.
+    Wire(zerodds_wire::WireError),
     /// Sequence length exceeds `u32::MAX`.
     Overflow,
     /// Truncated encapsulation (too few bytes).
@@ -244,15 +252,9 @@ pub enum CdrError {
     InvalidEndianness,
 }
 
-impl From<zerodds_cdr::EncodeError> for CdrError {
-    fn from(e: zerodds_cdr::EncodeError) -> Self {
-        Self::Encode(e)
-    }
-}
-
-impl From<zerodds_cdr::DecodeError> for CdrError {
-    fn from(e: zerodds_cdr::DecodeError) -> Self {
-        Self::Decode(e)
+impl From<zerodds_wire::WireError> for CdrError {
+    fn from(error: zerodds_wire::WireError) -> Self {
+        Self::Wire(error)
     }
 }
 

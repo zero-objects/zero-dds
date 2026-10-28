@@ -1,0 +1,7 @@
+// a `long double` with an octet on each side, so the member's offset
+// and its width are both readable out of the payload
+@final struct Sample {
+    octet head;
+    long double d;
+    octet tail;
+};

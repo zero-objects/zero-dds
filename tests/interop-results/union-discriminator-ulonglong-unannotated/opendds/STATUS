@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of union-discriminator-ulonglong-unannotated that opendds produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	Error - opendds_idl: Illegal conversion to long
+plain-cdr1	be	refused	Error - opendds_idl: Illegal conversion to long
+pl-cdr1	le	refused	Error - opendds_idl: Illegal conversion to long
+pl-cdr1	be	refused	Error - opendds_idl: Illegal conversion to long
+plain-cdr2	le	refused	Error - opendds_idl: Illegal conversion to long
+plain-cdr2	be	refused	Error - opendds_idl: Illegal conversion to long
+delimited-cdr	le	refused	Error - opendds_idl: Illegal conversion to long
+delimited-cdr	be	refused	Error - opendds_idl: Illegal conversion to long
+pl-cdr2	le	refused	Error - opendds_idl: Illegal conversion to long
+pl-cdr2	be	refused	Error - opendds_idl: Illegal conversion to long

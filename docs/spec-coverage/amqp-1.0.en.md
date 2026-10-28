@@ -50,7 +50,7 @@ Performative → Message).
 **Spec:** `amqp-1.0-types` §1.1 — four type categories.
 
 **Repo:** all four categories covered spec-conformantly:
-- **Primitive** (§1.6): complete in `types.rs::FormatCode` with all 30+ wire
+- **Primitive** (§1.6): complete in `crates/amqp-bridge/src/types.rs::FormatCode` with all 30+ wire
   codes.
 - **Described** (§1.3): a per-performative encoder in `performatives.rs`
   (`0x00` descriptor marker + descriptor value); a generic described-composite
@@ -62,8 +62,18 @@ Performative → Message).
   `ietf-language-tag`, `iso-8859-1`, `symbol`) via `extended_types.rs` with
   constraint validation.
 
-**Tests:** cross-ref §1.3-§1.6 + inline tests in `performatives.rs`,
-`extended_types.rs`, `types.rs`.
+**Tests:** primitive — `crates/amqp-bridge/src/extended_types.rs::tests::every_multi_octet_primitive_is_big_endian_on_the_wire`,
+`crates/amqp-bridge/src/extended_types.rs::tests::uint_uses_compact_zero_form`,
+`crates/amqp-bridge/src/extended_types.rs::tests::decimal32_64_128_have_correct_lengths`.
+Described — `crates/amqp-bridge/tests/type_mapping.rs::the_two_descriptor_forms_come_from_the_same_identifier`,
+`crates/amqp-bridge/tests/type_mapping.rs::a_nested_composite_carries_its_own_descriptor`.
+Composite — `crates/amqp-bridge/src/performatives.rs::tests::all_nine_descriptors_have_unique_values`,
+`crates/amqp-bridge/src/performatives.rs::tests::arbitrary_descriptor_round_trip`.
+Restricted — `crates/amqp-bridge/src/extended_types.rs::tests::timestamp_round_trips_negative`,
+`crates/amqp-bridge/src/extended_types.rs::tests::uuid_round_trips`,
+`crates/amqp-bridge/src/extended_types.rs::tests::char_is_four_octet_ucs4_big_endian`.
+Further inline tests in `performatives.rs`,
+`extended_types.rs`, `crates/amqp-bridge/src/types.rs`.
 
 **Status:** done — all four type categories spec-conformant; the generic
 described/composite layer is built per-performative, not generic (a
@@ -104,7 +114,15 @@ fields.
 `crates/amqp-bridge/src/sections.rs` use the pattern (described-composite with
 descriptor + list body); see §2.7 / §3.
 
-**Tests:** cross-ref §2.7 and §3.
+**Tests:** `crates/amqp-bridge/src/performatives.rs::tests::arbitrary_descriptor_round_trip`
+(descriptor marker `0x00` + descriptor value + list body, there and back),
+`crates/amqp-bridge/src/performatives.rs::tests::all_nine_descriptors_have_unique_values`,
+`crates/amqp-bridge/src/performatives.rs::tests::attach_to_carries_target_address`
+(a composite inside a composite: `target` as its own described type in the
+attach list body), `crates/amqp-bridge/src/sections.rs::tests::properties_section_round_trips_with_subject`,
+`crates/amqp-bridge/src/sections.rs::tests::all_seven_sections_have_unique_order_indexes`,
+`crates/amqp-bridge/tests/type_mapping.rs::the_two_descriptor_forms_come_from_the_same_identifier`,
+`crates/amqp-bridge/tests/type_mapping.rs::a_nested_composite_carries_its_own_descriptor`.
 
 **Status:** done — the composite-type encoding pattern (descriptor + list
 body) is covered via performatives + message sections.
@@ -191,7 +209,7 @@ decode_uint}` with compact selection.
 fixed-0), `smallulong` (`0x53`, fixed-1), `ulong` (`0x80`, fixed-8). Range
 0..2^64-1.
 
-**Repo:** `crates/amqp-bridge/src/types.rs::{encode_ulong, decode_ulong}`
+**Repo:** `crates/amqp-bridge/src/types.rs::{encode_ulong, decode_value}`
 with compact selection.
 
 **Tests:** `types::tests::ulong_zero_uses_ulong0_format`,
@@ -242,7 +260,7 @@ decode_int}` with compact selection.
 **Spec:** §1.6.10 — `long` with two format codes: `smalllong` (`0x55`,
 fixed-1), `long` (`0x81`, fixed-8). Range -(2^63)..2^63-1.
 
-**Repo:** `crates/amqp-bridge/src/types.rs::{encode_long, decode_long}` with
+**Repo:** `crates/amqp-bridge/src/types.rs::{encode_long, decode_value}` with
 compact selection.
 
 **Tests:** `types::tests::long_small_uses_smalllong_format`,
@@ -525,10 +543,18 @@ machine (`authenticate_plain`/`authenticate_anonymous`/`authenticate_external`/
 **Client handshake** `crates/amqp-endpoint/src/client.rs::AmqpClient::sasl_plain`
 (SASL header → mechanisms → init(PLAIN) → outcome).
 
-**Tests:** inline tests in the `sasl` module + `performatives::tests::{
-sasl_init_descriptor_and_roundtrip, sasl_mechanisms_extracts_symbols,
-sasl_outcome_code_extracted}`; live `crates/amqp-endpoint/tests/
-rabbitmq_amqp10_e2e.rs` (SASL PLAIN against RabbitMQ 4.0).
+**Tests:** `crates/amqp-endpoint/src/sasl.rs::tests::name_round_trips` (the mechanism list),
+`crates/amqp-endpoint/src/sasl.rs::tests::plain_authenticates_on_correct_credentials`,
+`crates/amqp-endpoint/src/sasl.rs::tests::plain_fails_on_wrong_credentials`,
+`crates/amqp-endpoint/src/sasl.rs::tests::anonymous_authenticates_without_credentials`,
+`crates/amqp-endpoint/src/sasl.rs::tests::external_uses_transport_subject`,
+`crates/amqp-endpoint/src/sasl.rs::tests::sasl_code_wire_values_match_spec` (§5.3.3.6 ok/auth/sys/sys-perm/sys-temp),
+`crates/amqp-endpoint/src/sasl.rs::tests::sasl_code_from_u8_round_trip`, `crates/amqp-endpoint/src/sasl.rs::tests::sasl_code_unknown_value_rejected`;
+wire codec `crates/amqp-bridge/src/performatives.rs::tests::sasl_init_descriptor_and_roundtrip`,
+`crates/amqp-bridge/src/performatives.rs::tests::sasl_mechanisms_extracts_symbols`,
+`crates/amqp-bridge/src/performatives.rs::tests::sasl_outcome_code_extracted`;
+live `crates/amqp-endpoint/tests/rabbitmq_amqp10_e2e.rs` (SASL PLAIN against
+RabbitMQ 4.0, env-gated and skipped in the default run).
 
 **Status:** done
 
@@ -549,11 +575,18 @@ data_payload_from_transfer}` (attach with a described `source`/`target` node
 0x28/0x29 + address; transfer with delivery tag + Data section) +
 `crates/amqp-bridge/src/extended_types.rs::AmqpExtValue::Described` (§1.3.4
 described type, encode+decode). `crates/amqp-endpoint/src/client.rs::AmqpClient::
-{connect_plain, send_to, recv_from}` — a full client (SASL → open/begin →
+{connect_plain, send_to, send_to_accepted, recv_from}` — a full client (SASL → open/begin →
 attach(sender/receiver) → transfer/flow/disposition → detach/close).
 
-**Tests:** `crates/amqp-bridge` unit (`attach_to_carries_target_address`,
-`transfer_message_has_tag_and_data`); live e2e `crates/amqp-endpoint/tests/
+**Tests:** `crates/amqp-bridge/src/performatives.rs::tests::attach_to_carries_target_address`,
+`crates/amqp-bridge/src/performatives.rs::tests::transfer_message_has_tag_and_data`,
+`crates/amqp-bridge/src/performatives.rs::tests::attach_carries_role_bit`,
+`crates/amqp-bridge/src/performatives.rs::tests::transfer_default_settled_false`,
+`crates/amqp-bridge/src/performatives.rs::tests::an_unsettled_sender_attach_says_so`,
+`crates/amqp-bridge/src/performatives.rs::tests::a_disposition_reads_back`,
+`crates/amqp-endpoint/src/client.rs::tests::send_to_accepted_returns_on_the_accepting_disposition`
+(`send_to_accepted`: transfer unsettled, wait for `accepted`, §3.4.2);
+live e2e `crates/amqp-endpoint/tests/
 rabbitmq_amqp10_e2e.rs` (ZeroDDS 1.0 ⇄ RabbitMQ ⇄ pika 0.9.1, both directions)
 + `rabbitmq_cross_stack_e2e.rs` (ZeroDDS 1.0 ⇄ ZeroDDS 0.9.1). Harness
 `crates/amqp-endpoint/competitors/rabbitmq/`.

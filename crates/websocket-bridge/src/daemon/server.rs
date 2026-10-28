@@ -36,7 +36,7 @@ use super::runtime_common::{
 };
 #[cfg(feature = "daemon")]
 use super::security::{
-    AclOp, AuthSubject, SecurityCtx, authenticate_ws, authorize, ctx_from_daemon_config,
+    AclOp, AuthSubject, authenticate_ws, authorize, ctx_from_daemon_config,
     extract_authorization_header, serve_tls_handshake,
 };
 #[cfg(feature = "daemon")]
@@ -51,11 +51,19 @@ use zerodds_dcps::runtime::{
     DcpsRuntime, RuntimeConfig, UserReaderConfig, UserSample, UserWriterConfig,
 };
 #[cfg(feature = "daemon")]
-use zerodds_rtps::wire_types::{EntityId, GuidPrefix};
+use zerodds_rtps::wire_types::EntityId;
+
+/// Admin endpoint address when `metrics.enabled` is set without
+/// `metrics.listen`; one port per bridge daemon, see man5.
+pub const DEFAULT_METRICS_LISTEN: &str = "127.0.0.1:9091";
 
 /// Top-level error of the daemon.
 #[derive(Debug)]
 pub enum ServerError {
+    /// A setting that cannot be served (exit code 1).
+    Config(String),
+    /// TLS material that does not load (exit code 4).
+    Tls(String),
     /// Bind error (exit code 2).
     Bind(String),
     /// DCPS init error (exit code 3).
@@ -67,6 +75,8 @@ pub enum ServerError {
 impl core::fmt::Display for ServerError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
+            Self::Config(m) => write!(f, "config error: {m}"),
+            Self::Tls(m) => write!(f, "tls error: {m}"),
             Self::Bind(m) => write!(f, "bind error: {m}"),
             Self::Dds(m) => write!(f, "dds error: {m}"),
             Self::Io(m) => write!(f, "io error: {m}"),
@@ -115,7 +125,14 @@ pub struct DaemonHandle {
 }
 
 impl DaemonHandle {
-    /// Initiates a graceful shutdown.
+    /// Whether SIGTERM/SIGINT (or [`Self::shutdown`]) asked the daemon to
+    /// stop. The binary waits for it and then runs the shutdown.
+    #[must_use]
+    pub fn stop_requested(&self) -> bool {
+        self.stop.load(Ordering::SeqCst)
+    }
+
+    /// Initiates a graceful shutdown; the DDS participant stops last.
     pub fn shutdown(&mut self) {
         self.stop.store(true, Ordering::SeqCst);
         #[cfg(feature = "daemon")]
@@ -151,6 +168,11 @@ impl DaemonHandle {
             if let Some(j) = self.otlp_thread.take() {
                 let _ = j.join();
             }
+            // Last, so no pump writes to a stopped runtime. Dropping the
+            // handle alone would not stop it — the runtime's worker threads
+            // hold `Arc`s of their own — and a daemon stopped in a process
+            // that keeps running would leave its participant on the domain.
+            self.runtime.shutdown();
         }
     }
 }
@@ -169,8 +191,45 @@ impl Drop for DaemonHandle {
 /// `Bind` if the TCP listener cannot bind (Spec exit code 2).
 /// `Dds` if the `DcpsRuntime` cannot start (Spec exit code 3).
 #[cfg(feature = "daemon")]
-#[allow(clippy::too_many_lines)]
 pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
+    let runtime = RuntimeConfig::from_standard_paths()
+        .map_err(|e| ServerError::Dds(alloc_format(format_args!("runtime configuration: {e}"))))?;
+    start_with_runtime(cfg, runtime)
+}
+
+/// [`start`] with the DDS runtime configuration a command line loaded
+/// (`zerodds_dcps::cli::Configured`), which `start` reads from the standard
+/// layers instead.
+///
+/// # Errors
+/// As [`start`].
+#[cfg(feature = "daemon")]
+#[allow(clippy::too_many_lines)]
+pub fn start_with_runtime(
+    cfg: DaemonConfig,
+    runtime_config: RuntimeConfig,
+) -> Result<DaemonHandle, ServerError> {
+    start_with_reload(cfg, runtime_config, None)
+}
+
+/// Reads and validates the configuration again, for a SIGHUP reload.
+pub type ConfigLoader = Box<dyn Fn() -> Result<DaemonConfig, String> + Send + Sync>;
+
+/// [`start_with_runtime`], reloading on SIGHUP (§9.2). With `load`, the
+/// configuration is read again: the ACL and the auth settings apply at once
+/// to every connection, the certificate files are read again for the
+/// connections that follow; changed paths, topics, listen address or domain
+/// need a restart and are logged. Without `load`, SIGHUP reads the
+/// certificate files again only. A configuration or certificate that does
+/// not load changes nothing.
+///
+/// # Errors
+/// As [`start`].
+pub fn start_with_reload(
+    cfg: DaemonConfig,
+    runtime_config: RuntimeConfig,
+    load: Option<ConfigLoader>,
+) -> Result<DaemonHandle, ServerError> {
     eprintln!(
         "[zerodds-ws-bridged] starting on {} domain={} topics={}",
         cfg.listen,
@@ -184,9 +243,15 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
 
     // 0b. Bridge security: security ctx + optional RotatingTlsConfig for
     //     SIGHUP hot-reload (§7.1 TLS / §7.2 auth / §7.3 ACL).
-    let (security_ctx, rotating_tls) = ctx_from_daemon_config(&cfg)
-        .map_err(|e| ServerError::Bind(alloc_format(format_args!("security: {e}"))))?;
-    let security_ctx = Arc::new(security_ctx);
+    // Spec §2: a setting that cannot be served is exit 1, TLS material
+    // that does not load exit 4. Both used to leave as a bind error (2).
+    let (security_ctx, rotating_tls) = ctx_from_daemon_config(&cfg).map_err(|e| match e {
+        zerodds_bridge_security::SecurityError::Tls(_) => {
+            ServerError::Tls(alloc_format(format_args!("security: {e}")))
+        }
+        _ => ServerError::Config(alloc_format(format_args!("security: {e}"))),
+    })?;
+    let security_ctx = Arc::new(zerodds_bridge_security::LiveSecurity::new(security_ctx));
     let rotating_tls = rotating_tls.map(Arc::new);
     if rotating_tls.is_some() {
         eprintln!(
@@ -202,8 +267,8 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
     );
 
     // 1. Bring up the DCPS runtime.
-    let prefix = stable_prefix_for(&cfg.listen);
-    let runtime = DcpsRuntime::start(cfg.domain, prefix, RuntimeConfig::default())
+    let prefix = zerodds_dcps::participant::bridge_guid_prefix(&cfg.listen);
+    let runtime = DcpsRuntime::start(cfg.domain, prefix, runtime_config)
         .map_err(|e| ServerError::Dds(alloc_format(format_args!("{e:?}"))))?;
     let healthy = Arc::new(AtomicBool::new(true));
 
@@ -265,6 +330,9 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
                         // Lifecycle events: we could push dispose frames —
                         // for the L1-L4 wireup the alive path is enough.
                     }
+                    // The end-of-coherent-set marker (DDSI-RTPS 2.5 §8.7.6)
+                    // carries no user data — nothing to forward.
+                    Ok(UserSample::CoherentSetEnd { .. }) => {}
                     Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
                     Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
                 }
@@ -341,7 +409,7 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
     let mut admin_addr: Option<String> = None;
     if cfg.metrics_enabled || !cfg.metrics_addr.is_empty() {
         let bind_str = if cfg.metrics_addr.is_empty() {
-            "127.0.0.1:9090".to_string()
+            DEFAULT_METRICS_LISTEN.to_string()
         } else {
             cfg.metrics_addr.clone()
         };
@@ -380,23 +448,19 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
 
     // 7b. Bridge security: SIGHUP hook for TLS cert hot-reload. Polls the
     //     reload_flag and calls RotatingTlsConfig::reload().
-    if let Some(rot) = rotating_tls.clone() {
+    if rotating_tls.is_some() || load.is_some() {
         let stop_r = Arc::clone(&stop);
         let reload_r = Arc::clone(&reload_flag);
+        let rot = rotating_tls.clone();
+        let live = Arc::clone(&security_ctx);
+        let started = cfg.clone();
         thread::Builder::new()
-            .name("zerodds-ws-tls-reload".into())
+            .name("zerodds-ws-reload".into())
             .spawn(move || {
                 while !stop_r.load(Ordering::SeqCst) {
-                    thread::sleep(Duration::from_millis(250));
+                    thread::sleep(Duration::from_millis(100));
                     if reload_r.swap(false, Ordering::SeqCst) {
-                        match rot.reload() {
-                            Ok(()) => eprintln!(
-                                "[{SERVICE_NAME}] SIGHUP TLS-cert reloaded"
-                            ),
-                            Err(e) => eprintln!(
-                                "[{SERVICE_NAME}] SIGHUP TLS-cert reload FAILED: {e} (keeping old cert)"
-                            ),
-                        }
+                        reload(load.as_ref(), rot.as_deref(), &live, &started);
                     }
                 }
             })
@@ -448,9 +512,7 @@ fn register_topic_endpoints(
     rt: &Arc<DcpsRuntime>,
     topic: &TopicConfig,
 ) -> Result<TopicEndpoints, ServerError> {
-    use zerodds_qos::{
-        DeadlineQosPolicy, DurabilityKind, LifespanQosPolicy, LivelinessQosPolicy, OwnershipKind,
-    };
+    use zerodds_qos::DurabilityKind;
     let durability = match topic.durability.as_str() {
         "transient_local" => DurabilityKind::TransientLocal,
         "transient" => DurabilityKind::Transient,
@@ -458,10 +520,11 @@ fn register_topic_endpoints(
         _ => DurabilityKind::Volatile,
     };
     let reliable = !matches!(topic.reliability.as_str(), "best_effort");
-    let want_reader =
-        matches!(topic.direction.as_str(), "in" | "bidir") || topic.direction.is_empty();
-    let want_writer =
-        matches!(topic.direction.as_str(), "out" | "bidir") || topic.direction.is_empty();
+    // Same meaning as in the other bridge daemons: `in` carries client
+    // frames into DDS (a DataWriter), `out` carries DDS samples out to the
+    // clients (a DataReader), `bidir` both.
+    let want_writer = matches!(topic.direction.as_str(), "in" | "bidir");
+    let want_reader = matches!(topic.direction.as_str(), "out" | "bidir");
 
     let reader = if want_reader {
         let (eid, rx) = rt
@@ -474,19 +537,7 @@ fn register_topic_endpoints(
                 },
                 reliable,
                 durability,
-                deadline: DeadlineQosPolicy::default(),
-                latency_budget: Default::default(),
-                destination_order: Default::default(),
-                liveliness: LivelinessQosPolicy::default(),
-                ownership: OwnershipKind::Shared,
-                presentation: Default::default(),
-                partition: Vec::new(),
-                user_data: Vec::new(),
-                topic_data: Vec::new(),
-                group_data: Vec::new(),
-                type_identifier: zerodds_types::TypeIdentifier::None,
-                type_consistency: zerodds_types::qos::TypeConsistencyEnforcement::default(),
-                data_representation_offer: None,
+                ..Default::default()
             })
             .map_err(|e| ServerError::Dds(alloc_format(format_args!("reader: {e:?}"))))?;
         Some((eid, rx))
@@ -505,20 +556,7 @@ fn register_topic_endpoints(
                 },
                 reliable,
                 durability,
-                deadline: DeadlineQosPolicy::default(),
-                latency_budget: Default::default(),
-                destination_order: Default::default(),
-                lifespan: LifespanQosPolicy::default(),
-                liveliness: LivelinessQosPolicy::default(),
-                ownership: OwnershipKind::Shared,
-                ownership_strength: 0,
-                presentation: Default::default(),
-                partition: Vec::new(),
-                user_data: Vec::new(),
-                topic_data: Vec::new(),
-                group_data: Vec::new(),
-                type_identifier: zerodds_types::TypeIdentifier::None,
-                data_representation_offer: None,
+                ..Default::default()
             })
             .map_err(|e| ServerError::Dds(alloc_format(format_args!("writer: {e:?}"))))?;
         Some(eid)
@@ -541,13 +579,14 @@ fn serve_connection(
     stop: Arc<AtomicBool>,
     topics: Arc<Vec<TopicConfig>>,
     metrics: BridgeMetrics,
-    security: Arc<SecurityCtx>,
+    security: Arc<zerodds_bridge_security::LiveSecurity>,
 ) -> Result<(), ServerError> {
     metrics.connections_total.inc();
     metrics.connections_active.inc();
     let conn_guard = ConnectionLifetime {
         active: Arc::clone(&metrics.connections_active),
     };
+    stream.set_nodelay(true).ok();
     stream
         .set_read_timeout(Some(Duration::from_millis(500)))
         .ok();
@@ -590,7 +629,11 @@ fn serve_connection(
     } else {
         Vec::new()
     };
-    let subject = match authenticate_ws(&security.auth, &auth_headers, mtls_subject.clone()) {
+    let subject = match authenticate_ws(
+        &security.current().auth,
+        &auth_headers,
+        mtls_subject.clone(),
+    ) {
         Ok(s) => s,
         Err(e) => {
             metrics.errors_total.inc();
@@ -618,7 +661,7 @@ fn serve_connection(
 
     // §7.3 — auto-subscribe topic ACL check (read).
     if let Some(topic) = &auto_topic {
-        if !authorize(&security.acl, &subject, AclOp::Read, topic) {
+        if !authorize(&security.current().acl, &subject, AclOp::Read, topic) {
             metrics.errors_total.inc();
             let body = format!("forbidden: read on {topic}");
             let resp = format!(
@@ -651,17 +694,21 @@ fn serve_connection(
         }
     }
 
-    // 3. Writer thread (router channel → WS frames). The stream is
-    //    Arc<Mutex<>>-shared between the reader loop and the writer thread,
-    //    because TLS streams cannot be duplicated via `try_clone`
-    //    (rustls session state). Plain TCP would work via try_clone,
-    //    but we use the mutex path uniformly.
-    let stream = Arc::new(Mutex::new(stream));
+    // 3. Split stream into independent reader and writer handles so a blocking
+    //    `read()` (500 ms timeout) never blocks outbound notify frames on the
+    //    writer thread. For plain TCP, `try_clone()` duplicates the OS socket
+    //    descriptor so reader and writer share no user-space lock at all. For
+    //    TLS, the reader waits via `peek()` on a cloned `TcpStream` outside the
+    //    session mutex and only locks the `StreamOwned` once bytes are in the
+    //    kernel receive buffer.
+    let (mut reader, writer) = stream
+        .into_split()
+        .map_err(|e| ServerError::Io(e.to_string()))?;
     let stop_w = Arc::clone(&stop);
     let frames_out = Arc::clone(&metrics.frames_out_total);
     let bytes_out = Arc::clone(&metrics.bytes_out_total);
     let errors_out = Arc::clone(&metrics.errors_total);
-    let stream_w = Arc::clone(&stream);
+    let writer_w = Arc::clone(&writer);
     // Per-connection ACL state: the read check is done per topic
     // before we hand off to router.dispatch. Here before the send: we
     // have the subject + ACL via closure move.
@@ -678,18 +725,14 @@ fn serve_connection(
                     // §7.3 — read ACL (post-subscribe gate): if the
                     // ACL for this subject + topic is deny,
                     // drop the sample (no disclosure).
-                    if !authorize(&security_w.acl, &subject_w, AclOp::Read, &topic) {
+                    if !authorize(&security_w.current().acl, &subject_w, AclOp::Read, &topic) {
                         continue;
                     }
                     let json = render_notify_json(&topic, &payload, big_endian);
                     let frame = Frame::text(json);
                     if let Ok(bytes) = encode(&frame) {
                         bytes_out.add(bytes.len() as u64);
-                        let mut guard = match stream_w.lock() {
-                            Ok(g) => g,
-                            Err(p) => p.into_inner(),
-                        };
-                        if guard.write_all(&bytes).is_err() {
+                        if writer_w.write_all(&bytes).is_err() {
                             errors_out.inc();
                             break;
                         }
@@ -701,11 +744,7 @@ fn serve_connection(
                 Ok(RouterMsg::Shutdown) => {
                     let close = Frame::close(1001, "going away");
                     if let Ok(b) = encode(&close) {
-                        let mut guard = match stream_w.lock() {
-                            Ok(g) => g,
-                            Err(p) => p.into_inner(),
-                        };
-                        let _ = guard.write_all(&b);
+                        let _ = writer_w.write_all(&b);
                     }
                     break;
                 }
@@ -721,20 +760,7 @@ fn serve_connection(
         if stop.load(Ordering::SeqCst) {
             break;
         }
-        let read_result = {
-            let mut guard = match stream.lock() {
-                Ok(g) => g,
-                Err(p) => p.into_inner(),
-            };
-            guard.read(&mut buf)
-        };
-        // Mutex fairness: the stream lock is shared between the reader loop
-        // and the writer thread. Without a yield the reader grabs the lock
-        // again immediately after each lock release (post-read_timeout);
-        // the writer thread (notify frames) does not get through under
-        // mutex starvation. A 1 ms sleep gives the OS scheduler a chance
-        // to assign the lock to the waiting writer.
-        thread::sleep(Duration::from_millis(1));
+        let read_result = reader.read(&mut buf);
         match read_result {
             Ok(0) => break,
             Ok(n) => {
@@ -751,12 +777,13 @@ fn serve_connection(
                                 conn_id,
                                 &router,
                                 &writers,
+                                &topics,
                                 &runtime,
                                 auto_topic.as_deref(),
                                 &metrics,
                                 &security,
                                 &subject,
-                                &stream,
+                                &writer,
                             );
                             if let Err(e) = result {
                                 metrics.errors_total.inc();
@@ -766,11 +793,7 @@ fn serve_connection(
                         Opcode::Ping => {
                             let pong = Frame::pong(frame.payload);
                             if let Ok(b) = encode(&pong) {
-                                let mut guard = match stream.lock() {
-                                    Ok(g) => g,
-                                    Err(p) => p.into_inner(),
-                                };
-                                let _ = guard.write_all(&b);
+                                let _ = writer.write_all(&b);
                             }
                         }
                         Opcode::Pong => {}
@@ -779,7 +802,12 @@ fn serve_connection(
                     }
                 }
             }
-            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
+            Err(ref e)
+                if e.kind() == std::io::ErrorKind::WouldBlock
+                    || e.kind() == std::io::ErrorKind::TimedOut =>
+            {
+                continue;
+            }
             Err(_) => break,
         }
     }
@@ -794,8 +822,6 @@ fn serve_connection(
 }
 
 /// A connection is either plain TCP or TLS-wrapped.
-/// Read/write operations go through the same trait so the WS
-/// reader/writer loop has the same logic for both paths.
 #[cfg(feature = "daemon")]
 enum WsStream {
     /// Plain `TcpStream` — `tls_enabled=false`.
@@ -805,11 +831,141 @@ enum WsStream {
 }
 
 #[cfg(feature = "daemon")]
+type SharedTlsStream = Arc<Mutex<Box<StreamOwned<ServerConnection, TcpStream>>>>;
+
+/// Reader half of an upgraded WebSocket connection.
+#[cfg(feature = "daemon")]
+enum WsReader {
+    /// Dedicated `TcpStream` for reading — no user-space lock shared with [`WsWriter`].
+    Plain(TcpStream),
+    /// Cloned `TcpStream` used to `peek()` without holding the TLS session lock,
+    /// plus the shared `StreamOwned` locked only once kernel bytes are ready.
+    Tls {
+        wait_sock: TcpStream,
+        stream: SharedTlsStream,
+    },
+}
+
+/// Writer half of an upgraded WebSocket connection.
+#[cfg(feature = "daemon")]
+enum WsWriter {
+    /// Cloned `TcpStream` serialized only among outbound frame writers.
+    Plain(Mutex<TcpStream>),
+    /// Shared TLS stream.
+    Tls(SharedTlsStream),
+}
+
+#[cfg(feature = "daemon")]
 impl WsStream {
+    fn set_nodelay(&self, nodelay: bool) -> std::io::Result<()> {
+        match self {
+            Self::Plain(s) => s.set_nodelay(nodelay),
+            Self::Tls(s) => s.sock.set_nodelay(nodelay),
+        }
+    }
+
     fn set_read_timeout(&mut self, dur: Option<Duration>) -> std::io::Result<()> {
         match self {
             Self::Plain(s) => s.set_read_timeout(dur),
             Self::Tls(s) => s.sock.set_read_timeout(dur),
+        }
+    }
+
+    fn into_split(self) -> std::io::Result<(WsReader, Arc<WsWriter>)> {
+        match self {
+            Self::Plain(tcp) => {
+                let writer_tcp = tcp.try_clone()?;
+                Ok((
+                    WsReader::Plain(tcp),
+                    Arc::new(WsWriter::Plain(Mutex::new(writer_tcp))),
+                ))
+            }
+            Self::Tls(tls) => {
+                let wait_sock = tls.sock.try_clone()?;
+                let shared = Arc::new(Mutex::new(tls));
+                Ok((
+                    WsReader::Tls {
+                        wait_sock,
+                        stream: Arc::clone(&shared),
+                    },
+                    Arc::new(WsWriter::Tls(shared)),
+                ))
+            }
+        }
+    }
+}
+
+#[cfg(feature = "daemon")]
+impl WsReader {
+    fn read(&mut self, b: &mut [u8]) -> std::io::Result<usize> {
+        match self {
+            Self::Plain(s) => s.read(b),
+            Self::Tls { wait_sock, stream } => {
+                // 1. Drain any already-decrypted plaintext buffered in rustls
+                //    without touching the socket.
+                {
+                    let mut guard = match stream.lock() {
+                        Ok(g) => g,
+                        Err(p) => p.into_inner(),
+                    };
+                    match guard.conn.reader().read(b) {
+                        Ok(n) => return Ok(n),
+                        Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+                        Err(e) => return Err(e),
+                    }
+                }
+                // 2. Wait for incoming TCP bytes (or EOF/timeout) WITHOUT holding
+                //    the TLS mutex so outbound writes never block on `read_timeout`.
+                let mut peek_buf = [0u8; 1];
+                let _ = wait_sock.peek(&mut peek_buf)?;
+
+                // 3. Bytes (or EOF) are ready in the kernel receive buffer; read
+                //    and decrypt them under the TLS session lock.
+                let mut guard = match stream.lock() {
+                    Ok(g) => g,
+                    Err(p) => p.into_inner(),
+                };
+                let StreamOwned { conn, sock } = &mut **guard;
+                let n_tls = conn.read_tls(sock)?;
+                let state = conn
+                    .process_new_packets()
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+                if state.tls_bytes_to_write() > 0 {
+                    let _ = conn.write_tls(sock);
+                    let _ = sock.flush();
+                }
+                if n_tls == 0 {
+                    return match conn.reader().read(b) {
+                        Ok(n) => Ok(n),
+                        Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => Ok(0),
+                        Err(e) => Err(e),
+                    };
+                }
+                conn.reader().read(b)
+            }
+        }
+    }
+}
+
+#[cfg(feature = "daemon")]
+impl WsWriter {
+    fn write_all(&self, b: &[u8]) -> std::io::Result<()> {
+        match self {
+            Self::Plain(m) => {
+                let mut guard = match m.lock() {
+                    Ok(g) => g,
+                    Err(p) => p.into_inner(),
+                };
+                guard.write_all(b)
+            }
+            Self::Tls(m) => {
+                let mut guard = match m.lock() {
+                    Ok(g) => g,
+                    Err(p) => p.into_inner(),
+                };
+                guard.write_all(b)?;
+                guard.flush()
+            }
         }
     }
 }
@@ -860,12 +1016,13 @@ fn handle_inbound_frame(
     conn_id: u64,
     router: &Arc<Mutex<Router>>,
     writers: &Arc<std::collections::BTreeMap<String, EntityId>>,
+    topics: &[TopicConfig],
     runtime: &Arc<DcpsRuntime>,
     auto_topic: Option<&str>,
     metrics: &BridgeMetrics,
-    security: &Arc<SecurityCtx>,
+    security: &Arc<zerodds_bridge_security::LiveSecurity>,
     subject: &AuthSubject,
-    stream: &Arc<Mutex<WsStream>>,
+    writer: &WsWriter,
 ) -> Result<(), String> {
     use crate::dds_bridge::{BridgeOp, parse_op};
     // Try to parse a JSON op.
@@ -874,16 +1031,23 @@ fn handle_inbound_frame(
     if let Ok(op) = parse_op(text) {
         match op {
             BridgeOp::Subscribe { topic, .. } => {
-                if !authorize(&security.acl, subject, AclOp::Read, &topic) {
+                if !authorize(&security.current().acl, subject, AclOp::Read, &topic) {
                     metrics.errors_total.inc();
                     let err = format!(
                         "{{\"op\":\"error\",\"code\":403,\"topic\":\"{topic}\",\"reason\":\"acl-deny-read\"}}"
                     );
-                    send_text_frame(stream, &err);
+                    send_text_frame(writer, &err);
                     eprintln!(
                         "[zerodds-ws-bridged] acl-deny conn={conn_id} subject={} read {topic}",
                         subject.name
                     );
+                    return Ok(());
+                }
+                let bridged_out = topics
+                    .iter()
+                    .any(|t| t.name == topic && matches!(t.direction.as_str(), "out" | "bidir"));
+                if !bridged_out {
+                    refuse_unbridged(writer, metrics, conn_id, &topic, "not-bridged-out-of-dds");
                     return Ok(());
                 }
                 if let Ok(mut r) = router.lock() {
@@ -898,24 +1062,26 @@ fn handle_inbound_frame(
                 return Ok(());
             }
             BridgeOp::Publish { topic, data } => {
-                if !authorize(&security.acl, subject, AclOp::Write, &topic) {
+                if !authorize(&security.current().acl, subject, AclOp::Write, &topic) {
                     metrics.errors_total.inc();
                     let err = format!(
                         "{{\"op\":\"error\",\"code\":403,\"topic\":\"{topic}\",\"reason\":\"acl-deny-write\"}}"
                     );
-                    send_text_frame(stream, &err);
+                    send_text_frame(writer, &err);
                     eprintln!(
                         "[zerodds-ws-bridged] acl-deny conn={conn_id} subject={} write {topic}",
                         subject.name
                     );
                     return Ok(());
                 }
-                if let Some(eid) = writers.get(&topic) {
-                    runtime
-                        .write_user_sample(*eid, data.into_bytes())
-                        .map_err(|e| alloc_format(format_args!("dds-write: {e:?}")))?;
-                    metrics.dds_samples_in_total.inc();
-                }
+                let Some(eid) = writers.get(&topic) else {
+                    refuse_unbridged(writer, metrics, conn_id, &topic, "not-bridged-into-dds");
+                    return Ok(());
+                };
+                runtime
+                    .write_user_sample(*eid, data.into_bytes())
+                    .map_err(|e| alloc_format(format_args!("dds-write: {e:?}")))?;
+                metrics.dds_samples_in_total.inc();
                 return Ok(());
             }
         }
@@ -923,34 +1089,49 @@ fn handle_inbound_frame(
     // Fallback: if the connection is bound to a single topic path,
     // treat the whole frame as an opaque payload publish.
     if let Some(topic) = auto_topic {
-        if !authorize(&security.acl, subject, AclOp::Write, topic) {
+        if !authorize(&security.current().acl, subject, AclOp::Write, topic) {
             metrics.errors_total.inc();
             let err = format!(
                 "{{\"op\":\"error\",\"code\":403,\"topic\":\"{topic}\",\"reason\":\"acl-deny-write\"}}"
             );
-            send_text_frame(stream, &err);
+            send_text_frame(writer, &err);
             return Ok(());
         }
-        if let Some(eid) = writers.get(topic) {
-            runtime
-                .write_user_sample(*eid, payload.to_vec())
-                .map_err(|e| alloc_format(format_args!("dds-write: {e:?}")))?;
-            metrics.dds_samples_in_total.inc();
+        let Some(eid) = writers.get(topic) else {
+            refuse_unbridged(writer, metrics, conn_id, topic, "not-bridged-into-dds");
             return Ok(());
-        }
+        };
+        runtime
+            .write_user_sample(*eid, payload.to_vec())
+            .map_err(|e| alloc_format(format_args!("dds-write: {e:?}")))?;
+        metrics.dds_samples_in_total.inc();
     }
     Ok(())
 }
 
+/// A publish to a topic the daemon does not carry into DDS, or a subscribe
+/// to one it does not carry out of DDS (`direction`, or not configured):
+/// the client gets an error frame instead of a frame that goes nowhere.
 #[cfg(feature = "daemon")]
-fn send_text_frame(stream: &Arc<Mutex<WsStream>>, text: &str) {
+fn refuse_unbridged(
+    writer: &WsWriter,
+    metrics: &BridgeMetrics,
+    conn_id: u64,
+    topic: &str,
+    reason: &str,
+) {
+    metrics.errors_total.inc();
+    let err =
+        format!("{{\"op\":\"error\",\"code\":404,\"topic\":\"{topic}\",\"reason\":\"{reason}\"}}");
+    send_text_frame(writer, &err);
+    eprintln!("[zerodds-ws-bridged] {reason} conn={conn_id} {topic}");
+}
+
+#[cfg(feature = "daemon")]
+fn send_text_frame(writer: &WsWriter, text: &str) {
     let frame = Frame::text(text.to_string());
     if let Ok(b) = encode(&frame) {
-        let mut g = match stream.lock() {
-            Ok(g) => g,
-            Err(p) => p.into_inner(),
-        };
-        let _ = g.write_all(&b);
+        let _ = writer.write_all(&b);
     }
 }
 
@@ -999,22 +1180,74 @@ fn format_bytes_array(b: &[u8]) -> String {
     out
 }
 
-#[cfg(feature = "daemon")]
-fn stable_prefix_for(addr: &str) -> GuidPrefix {
-    let mut bytes = [0u8; 12];
-    let src = addr.as_bytes();
-    for (i, b) in src.iter().take(12).enumerate() {
-        bytes[i] = *b;
-    }
-    bytes[0] ^= 0x42; // so that a prefix of 0x00 is ruled out
-    GuidPrefix::from_bytes(bytes)
-}
-
 fn alloc_format(args: core::fmt::Arguments<'_>) -> String {
     use core::fmt::Write as _;
     let mut s = String::new();
     let _ = s.write_fmt(args);
     s
+}
+
+/// One SIGHUP reload (see [`start_with_reload`]).
+fn reload(
+    load: Option<&ConfigLoader>,
+    rot: Option<&zerodds_bridge_security::RotatingTlsConfig>,
+    live: &zerodds_bridge_security::LiveSecurity,
+    started: &DaemonConfig,
+) {
+    let new = match load.map(|l| l()) {
+        Some(Ok(c)) => Some(c),
+        Some(Err(e)) => {
+            eprintln!("[{SERVICE_NAME}] reload refused: {e}");
+            return;
+        }
+        None => None,
+    };
+    let ctx = match new.as_ref().map(ctx_from_daemon_config) {
+        Some(Ok((ctx, _))) => Some(ctx),
+        Some(Err(e)) => {
+            eprintln!("[{SERVICE_NAME}] reload refused: {e}");
+            return;
+        }
+        None => None,
+    };
+    if let Some(r) = rot {
+        if let Err(e) = r.reload() {
+            eprintln!("[{SERVICE_NAME}] reload refused: TLS certificate: {e}");
+            return;
+        }
+    }
+    let mut restart: Vec<&str> = Vec::new();
+    if let Some(n) = &new {
+        if n.tls_cert_file != started.tls_cert_file
+            || n.tls_key_file != started.tls_key_file
+            || n.tls_client_ca_file != started.tls_client_ca_file
+        {
+            restart.push("tls file paths");
+        }
+        if n.topics != started.topics {
+            restart.push("topics");
+        }
+        if n.listen != started.listen || n.domain != started.domain {
+            restart.push("listen/domain");
+        }
+    }
+    if let Some(ctx) = ctx {
+        live.replace(ctx);
+    }
+    eprintln!(
+        "[{SERVICE_NAME}] reloaded: {}",
+        if new.is_some() {
+            "acl, auth, tls certificate"
+        } else {
+            "tls certificate"
+        }
+    );
+    if !restart.is_empty() {
+        eprintln!(
+            "[{SERVICE_NAME}] reload needs a restart for: {}",
+            restart.join(", ")
+        );
+    }
 }
 
 #[cfg(test)]
@@ -1051,5 +1284,28 @@ mod tests {
         // the big-endian decoder.
         assert!(s.contains("\"be\":true"));
         assert!(s.contains("\"topic\":\"Trade\""));
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::panic)]
+mod metrics_default_tests {
+    use super::DEFAULT_METRICS_LISTEN;
+
+    /// Each bridge daemon has its own admin port, so that several with
+    /// `metrics.enabled: true` and no `metrics.listen` run on one host;
+    /// man5 names it as the default.
+    #[test]
+    fn the_metrics_default_is_the_one_man5_names() {
+        let page = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../man/man5/zerodds-ws-bridged.yaml.5"
+        ))
+        .unwrap_or_else(|e| panic!("man5 page: {e}"));
+        let named = format!("Default\n.IR \"{DEFAULT_METRICS_LISTEN}\"\nwhen");
+        assert!(
+            page.contains(&named),
+            "man5 does not name {DEFAULT_METRICS_LISTEN}"
+        );
     }
 }

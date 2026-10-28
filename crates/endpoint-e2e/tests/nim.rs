@@ -6,29 +6,34 @@
 //! framing. Sync path uses the `Client` poll loop; async path uses the
 //! `AsyncReader` `Future`/`await` model. Gated on `nim`.
 //!
-//! Both the generated module and the SDK define the same wire core
-//! (`Endian`/`eLE`/`Writer`/`initWriter`) — a full `import` of both would clash.
-//! The app therefore `import ./gen` (full, for the types + `marshalXCDR`) and a
-//! selective `from ./zerodds import …` (only the transport/client/reader
-//! symbols), so the wire core comes from exactly one module.
+//! The generated codec calls `runtime/nim`'s `zdwire`, and the SDK
+//! (`endpoints/nim/zerodds.nim`) carries its own wire core; a full `import` of
+//! both would clash. The app therefore `import ./gen` (full, for the types and
+//! the codec) and a selective `from ./zerodds import …` (only the
+//! transport/client/reader symbols), so the wire core comes from exactly one
+//! module.
 
 #![allow(clippy::expect_used, clippy::panic, clippy::print_stderr)]
 
 use std::process::{Child, Command, Stdio};
 
-use zerodds_endpoint_e2e::{IDL, Peer, bind_peer, ping_pong};
-use zerodds_idl::config::ParserConfig;
-use zerodds_idl_nim::{NimGenOptions, generate_nim_module};
+use zerodds_endpoint_e2e::codegen::{
+    Language, endpoints_dir, runtime_dir, scratch_dir, source, tool_available,
+};
+use zerodds_endpoint_e2e::{Peer, bind_peer, ping_pong};
 
 fn nim_available() -> bool {
-    Command::new("nim").arg("--version").output().is_ok()
+    tool_available("nim", "--version")
 }
 
-/// The generated Ping/Pong Nim module (self-contained: its own imports + wire
-/// core + `marshalXCDR`/`unmarshalXCDRPong`).
-fn gen_module() -> String {
-    let ast = zerodds_idl::parse(IDL, &ParserConfig::default()).expect("parse");
-    generate_nim_module(&ast, &NimGenOptions::default()).expect("gen")
+/// The generated Ping/Pong types + codec.
+///
+/// Inlined into `main.nim` rather than written as its own module: the
+/// generator marks nothing with Nim's `*` export postfix, so `zd_enc_Ping` in a
+/// separate `gen.nim` would be module-private and unreachable from the app.
+/// `wireprobe-zerodds-nim-gen` puts it in the one file for the same reason.
+fn gen_source() -> String {
+    source(Language::Nim)
 }
 
 // The app: a real non-blocking UDP transport, then Ping → (sync poll | async
@@ -65,21 +70,26 @@ when isMainModule:
   let mode = paramStr(1)
   let peerPort = parseInt(paramStr(2))
   let tr = udpTransport(peerPort)
-  let ping = Ping(seq: 1'i32, msg: "hello from app")
-  let sample = ping.marshalXCDR(eLE)
-  let client = newClient(tr)
+  var zdFraming = zdwire.PlCdr1Framing(pidFlags: "sentinel-must-understand",
+    highestShortId: 16128, padDeclaredLength: true,
+    padDeclaredOptionalLength: true, memberMustUnderstand: true,
+    padAfterValue: true)
+  var w = zdwire.newWriter(zdwire.EndianLittle, 4, zdFraming, false)
+  zd_enc_Ping(w, Ping(seq: 1'i32, msg: "hello from app"))
+  let sample = w.finish()
+  let client = newClient(tr, xrceObjectId(0x001, ObjkDataWriter))
   client.write(sample)
   var body: seq[byte]
   if mode == "async":
     let reader = newAsyncReader(tr)
     let fut = reader.recv()
-    if waitFor fut.withTimeout(10000):
+    if waitFor fut.withTimeout(60000):
       body = fut.read()
     else:
       quit("async: no pong", 1)
   else:
     var got = false
-    let deadline = epochTime() + 10.0
+    let deadline = epochTime() + 60.0
     while epochTime() < deadline:
       let r = client.poll()
       if r.isSome:
@@ -89,7 +99,8 @@ when isMainModule:
       sleep(1)
     if not got:
       quit("sync: no pong", 1)
-  let pong = unmarshalXCDRPong(body, eLE)
+  var r = zdwire.newReader(body, zdwire.EndianLittle, 4, zdFraming)
+  let pong = zd_dec_Pong(r, zdwire.TryConstructDiscard)
   echo "PONG seq=", pong.seq, " reply=", pong.reply
 "#;
 
@@ -97,22 +108,27 @@ when isMainModule:
 /// (nim can be slow — do it *before* the ping-pong so the peer's recv timeout
 /// only covers runtime), then spawns the binary. Returns the running app.
 fn build_nim_endpoint(mode: &str, port: u16) -> Child {
-    let dir = std::env::temp_dir().join(format!("pp_nim_{mode}_{}", std::process::id()));
-    std::fs::create_dir_all(&dir).expect("mkdir");
+    let dir = scratch_dir(&format!("nim_{mode}"));
 
-    std::fs::write(dir.join("gen.nim"), gen_module()).expect("write gen.nim");
-
-    let sdk = format!(
-        "{}/../../endpoints/nim/zerodds.nim",
-        env!("CARGO_MANIFEST_DIR")
-    );
-    std::fs::copy(&sdk, dir.join("zerodds.nim")).expect("copy zerodds.nim");
+    // The wire runtime beside main.nim, so `import zdwire` resolves.
+    std::fs::copy(
+        runtime_dir("nim").join("zdwire.nim"),
+        dir.join("zdwire.nim"),
+    )
+    .expect("copy zdwire.nim");
+    std::fs::copy(
+        endpoints_dir("nim").join("zerodds.nim"),
+        dir.join("zerodds.nim"),
+    )
+    .expect("copy zerodds.nim");
 
     let mut main = String::from(
         "import std/[os, net, nativesockets, options, asyncdispatch, times, strutils]\n\
-         import ./gen\n\
-         from ./zerodds import Transport, Client, newClient, write, poll, AsyncReader, newAsyncReader, recv\n",
+         import zdwire\n\
+         from ./zerodds import Transport, Client, newClient, write, poll, AsyncReader, newAsyncReader, recv, xrceObjectId, ObjkDataWriter\n\n",
     );
+    main.push_str(&gen_source());
+    main.push('\n');
     main.push_str(NIM_ENDPOINT_MAIN);
     std::fs::write(dir.join("main.nim"), &main).expect("write main.nim");
 

@@ -1,30 +1,30 @@
 #!/usr/bin/env bash
-# Ein-Befehl-Orchestrator fuer die volle Cross-Vendor-DDS-Security-Matrix.
-# REPRODUZIERBAR aus jedem Checkout (Linux, Vendor-Stack + build-sec/ vorhanden):
+# One-command orchestrator for the full cross-vendor DDS-Security matrix.
+# REPRODUCIBLE from any checkout (Linux, vendor stack + build-sec/ present):
 #
 #   bash run_deep_matrix.sh [SAMPLES]
 #
-# Schritte:
-#   1. cert-Tree sicherstellen  (../security/gen.sh, wenn certs/ fehlt)
-#   2. die 13 Profile generieren (gen_profile.sh, Tabelle unten)
-#   3. deep_matrix.sh ueber alle 13 Profile × 4×4 Vendor-Paare
+# Steps:
+#   1. ensure the cert tree     (../security/gen.sh, if certs/ is missing)
+#   2. generate the 15 profiles (gen_profile.sh, table below)
+#   3. deep_matrix.sh over all 15 profiles × 4×4 vendor pairs
 #
-# Voraussetzung: build-sec/{cyclone,fastdds,opendds,zerodds}-roundtrip +
+# Prerequisite: build-sec/{cyclone,fastdds,opendds,zerodds}-roundtrip +
 # <repo>/target/release/libzerodds.so (cargo build --release -p zerodds-c-api
-# --features security). Siehe README.md.
+# --features security). See README.md.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SECDIR="$(cd "$HERE/../security" && pwd)"
 SAMPLES="${1:-500}"
 
-# 1) cert-Tree (einmalig) — gen.sh erzeugt certs/ + permissions-Signaturen.
+# 1) cert tree (once) — gen.sh generates certs/ + permissions signatures.
 if [ ! -f "$SECDIR/certs/permissions_ca.pem" ]; then
-  echo "== cert-Tree fehlt -> ../security/gen.sh =="
+  echo "== cert tree missing -> ../security/gen.sh =="
   ( cd "$SECDIR" && bash gen.sh >/dev/null )
 fi
 
-# 2) Die 13 Profile (Tabelle = internal/security/cross-vendor-secure-interop-matrix.md
-#    §1). Spalten = gen_profile.sh-Args:
+# 2) The 15 profiles (table = internal/security/cross-vendor-secure-interop-matrix.md
+#    §1). Columns = gen_profile.sh args:
 #      name   disc     liv      rtps     meta     data     join rw  endisc enliv
 PROFILES_TABLE="
 common-subset  NONE     NONE     NONE     NONE     ENCRYPT  false false false false
@@ -40,9 +40,14 @@ rtps-sign-data NONE     NONE     SIGN     NONE     ENCRYPT  false false false fa
 all-enc        ENCRYPT  ENCRYPT  ENCRYPT  ENCRYPT  ENCRYPT  true  true  true  true
 all-sign       SIGN     SIGN     SIGN     SIGN     SIGN     true  true  true  true
 sros2-full     ENCRYPT  ENCRYPT  ENCRYPT  ENCRYPT  ENCRYPT  true  true  true  true
+oa-sign        SIGN_WITH_ORIGIN_AUTHENTICATION    SIGN_WITH_ORIGIN_AUTHENTICATION    SIGN_WITH_ORIGIN_AUTHENTICATION    SIGN_WITH_ORIGIN_AUTHENTICATION    ENCRYPT  false false true  true
+oa-enc         ENCRYPT_WITH_ORIGIN_AUTHENTICATION ENCRYPT_WITH_ORIGIN_AUTHENTICATION ENCRYPT_WITH_ORIGIN_AUTHENTICATION ENCRYPT_WITH_ORIGIN_AUTHENTICATION ENCRYPT  false false true  true
 "
+# oa-sign / oa-enc: the origin-authentication kinds (DDS-Security 1.2
+# 10.4.1.2.5, ProtectionKind) for discovery, liveliness, RTPS and metadata.
+# data_protection_kind is a BasicProtectionKind and takes no such kind.
 
-echo "== generiere 13 Profile =="
+echo "== generating 15 profiles =="
 NAMES=()
 while read -r name disc liv rtps meta data join rw endisc enliv; do
   [ -z "${name:-}" ] && continue

@@ -12,7 +12,9 @@ import org.omg.dds.sub.DataReader;
 import org.omg.dds.sub.Sample;
 import org.omg.dds.sub.Subscriber;
 import org.omg.dds.topic.Topic;
-import org.omg.dds.topic.TopicTypeSupport;
+import org.zerodds.cdr.EndianMode;
+import org.zerodds.cdr.ExtensibilityKind;
+import org.zerodds.cdr.TopicTypeSupport;
 import org.zerodds.internal.InProcessBus;
 import org.zerodds.internal.Xcdr2Codec;
 
@@ -45,90 +47,128 @@ class PubSubLoopbackTest {
             double v = Xcdr2Codec.readDouble(buf);
             return new Reading(id, v);
         }
+
+        @Override
+        public boolean isKeyed() {
+            return false;
+        }
+
+        @Override
+        public ExtensibilityKind getExtensibility() {
+            return ExtensibilityKind.APPENDABLE;
+        }
+
+        @Override
+        public byte[] encode(Reading r) {
+            ByteBuffer buf = ByteBuffer.allocate(256);
+            serialize(r, buf);
+            byte[] out = new byte[buf.position()];
+            buf.flip();
+            buf.get(out);
+            return out;
+        }
+
+        @Override
+        public byte[] encode(Reading r, EndianMode endian) {
+            return encode(r);
+        }
+
+        @Override
+        public Reading decode(byte[] bytes) {
+            return decode(bytes, 0, bytes.length);
+        }
+
+        @Override
+        public Reading decode(byte[] bytes, int offset, int length) {
+            return deserialize(ByteBuffer.wrap(bytes, offset, length));
+        }
+
     };
 
     @BeforeEach
-    void setUp() {
+    void setUp() throws Exception {
         InProcessBus.instance().reset();
     }
 
     @AfterEach
-    void tearDown() {
+    void tearDown() throws Exception {
         InProcessBus.instance().reset();
     }
 
     @Test
-    void singleWriterSingleReaderRoundTrip() {
-        DomainParticipantFactory dpf = DomainParticipantFactory.getInstance();
+    void singleWriterSingleReaderRoundTrip() throws Exception {
+        DomainParticipantFactory dpf = Qos.factory();
         DomainParticipant participant = dpf.createParticipant(0);
         Topic<Reading> topic = participant.createTopic("Readings", Reading.class);
         Publisher pub = participant.createPublisher();
         Subscriber sub = participant.createSubscriber();
-        try (DataWriter<Reading> dw = pub.createDataWriter(topic, SUPPORT);
-             DataReader<Reading> dr = sub.createDataReader(topic, SUPPORT)) {
+        try (DataWriter<Reading> dw = Qos.writer(pub, topic, SUPPORT);
+             DataReader<Reading> dr = Qos.reader(sub, topic, SUPPORT, Qos.readerKeepAll())) {
 
             dw.write(new Reading(1, 23.5));
             dw.write(new Reading(2, 24.0));
 
-            List<Sample<Reading>> samples = dr.take();
+            List<Sample<Reading>> samples = Qos.take(dr);
             assertEquals(2, samples.size());
-            assertEquals(1, samples.get(0).data().sensorId());
-            assertEquals(23.5, samples.get(0).data().value(), 0.0);
-            assertEquals(2, samples.get(1).data().sensorId());
-            assertEquals(24.0, samples.get(1).data().value(), 0.0);
+            assertEquals(1, samples.get(0).getData().sensorId());
+            assertEquals(23.5, samples.get(0).getData().value(), 0.0);
+            assertEquals(2, samples.get(1).getData().sensorId());
+            assertEquals(24.0, samples.get(1).getData().value(), 0.0);
         }
     }
 
     @Test
-    void readReturnsSamplesWithoutRemoving() {
-        DomainParticipantFactory dpf = DomainParticipantFactory.getInstance();
+    void readReturnsSamplesWithoutRemoving() throws Exception {
+        DomainParticipantFactory dpf = Qos.factory();
         DomainParticipant participant = dpf.createParticipant(1);
         Topic<Reading> topic = participant.createTopic("ReadOnly", Reading.class);
         try (Publisher pub = participant.createPublisher();
              Subscriber sub = participant.createSubscriber();
-             DataWriter<Reading> dw = pub.createDataWriter(topic, SUPPORT);
-             DataReader<Reading> dr = sub.createDataReader(topic, SUPPORT)) {
+             DataWriter<Reading> dw = Qos.writer(pub, topic, SUPPORT);
+             DataReader<Reading> dr = Qos.reader(sub, topic, SUPPORT)) {
 
             dw.write(new Reading(7, 99.9));
-            assertEquals(1, dr.read().size());
-            assertEquals(1, dr.read().size()); // still there.
-            assertEquals(1, dr.take().size()); // now removed.
-            assertEquals(0, dr.read().size());
+            assertEquals(1, Qos.read(dr).size());
+            assertEquals(1, Qos.read(dr).size()); // still there.
+            assertEquals(1, Qos.take(dr).size()); // now removed.
+            assertEquals(0, Qos.read(dr).size());
         }
     }
 
     @Test
-    void multipleReadersAllReceiveSample() {
-        DomainParticipantFactory dpf = DomainParticipantFactory.getInstance();
+    void multipleReadersAllReceiveSample() throws Exception {
+        DomainParticipantFactory dpf = Qos.factory();
         DomainParticipant participant = dpf.createParticipant(2);
         Topic<Reading> topic = participant.createTopic("FanOut", Reading.class);
         try (Publisher pub = participant.createPublisher();
              Subscriber sub1 = participant.createSubscriber();
              Subscriber sub2 = participant.createSubscriber();
-             DataWriter<Reading> dw = pub.createDataWriter(topic, SUPPORT);
-             DataReader<Reading> dr1 = sub1.createDataReader(topic, SUPPORT);
-             DataReader<Reading> dr2 = sub2.createDataReader(topic, SUPPORT)) {
+             DataWriter<Reading> dw = Qos.writer(pub, topic, SUPPORT);
+             DataReader<Reading> dr1 = Qos.reader(sub1, topic, SUPPORT);
+             DataReader<Reading> dr2 = Qos.reader(sub2, topic, SUPPORT)) {
 
             dw.write(new Reading(42, 1.0));
-            assertEquals(1, dr1.take().size());
-            assertEquals(1, dr2.take().size());
+            assertEquals(1, Qos.take(dr1).size());
+            assertEquals(1, Qos.take(dr2).size());
         }
     }
 
     @Test
-    void cleanupRemovesSubscription() {
-        DomainParticipantFactory dpf = DomainParticipantFactory.getInstance();
+    void cleanupRemovesSubscription() throws Exception {
+        DomainParticipantFactory dpf = Qos.factory();
         DomainParticipant participant = dpf.createParticipant(3);
         Topic<Reading> topic = participant.createTopic("CleanupTest", Reading.class);
         Publisher pub = participant.createPublisher();
         Subscriber sub = participant.createSubscriber();
-        DataWriter<Reading> dw = pub.createDataWriter(topic, SUPPORT);
-        DataReader<Reading> dr = sub.createDataReader(topic, SUPPORT);
+        DataWriter<Reading> dw = Qos.writer(pub, topic, SUPPORT);
+        DataReader<Reading> dr = Qos.reader(sub, topic, SUPPORT);
 
         dr.close();
         dw.write(new Reading(1, 1.0));
-        // Reader is closed → take() returns empty.
-        assertEquals(0, dr.take().size());
+        // Table 7.1: an operation on a closed entity is an AlreadyClosedException; the
+        // closed reader is no longer a subscription of the topic, so the write reached no one.
+        assertThrows(org.zerodds.core.AlreadyClosedException.class, () -> Qos.take(dr));
+        assertEquals(0, dw.getMatchedSubscriptions().size());
 
         dw.close();
         sub.close();

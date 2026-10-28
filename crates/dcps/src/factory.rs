@@ -7,7 +7,7 @@
 //! The get_instance() method returns a reference to the only
 //! instance of the factory."
 //!
-//! Singleton via `OnceLock`. `create_participant(domain_id, qos)`
+//! Singleton via `LazyLock`. `create_participant(domain_id, qos)`
 //! creates a new `DomainParticipant`, starts a live runtime, and
 //! returns a cloneable handle. In addition there is
 //! `create_participant_offline(domain_id, qos)` for skeleton tests
@@ -20,11 +20,12 @@ use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 #[cfg(feature = "std")]
-use std::sync::{Mutex, OnceLock, Weak};
+use std::sync::{LazyLock, Mutex, Weak};
 
+use crate::entity::Entity;
 use crate::error::{DdsError, Result};
 use crate::participant::{DomainId, DomainParticipant, ParticipantInner};
-use crate::qos::DomainParticipantQos;
+use crate::qos::{DomainParticipantQos, QosArg};
 use crate::runtime::RuntimeConfig;
 
 /// QoS policy for the DomainParticipantFactory itself (Spec
@@ -73,44 +74,91 @@ pub struct DomainParticipantFactory {
 #[derive(Debug, Default)]
 pub struct DomainParticipantFactory {}
 
+/// DDS 1.4 §2.2.2.2.2.3: "The pre-defined value TheParticipantFactory can
+/// also be used as an alias for the singleton factory returned by the
+/// operation get_instance."
+#[cfg(feature = "std")]
+pub static THE_PARTICIPANT_FACTORY: LazyLock<DomainParticipantFactory> =
+    LazyLock::new(|| DomainParticipantFactory {
+        participants: Mutex::new(BTreeMap::new()),
+        default_participant_qos: Mutex::new(DomainParticipantQos::default()),
+        factory_qos: Mutex::new(DomainParticipantFactoryQos::default()),
+    });
+
 #[cfg(feature = "std")]
 impl DomainParticipantFactory {
     /// Returns the process-wide factory singleton (Spec §2.2.2.2.2.1
-    /// `get_instance`).
+    /// `get_instance`), the one [`THE_PARTICIPANT_FACTORY`] names.
     pub fn instance() -> &'static Self {
-        static INSTANCE: OnceLock<DomainParticipantFactory> = OnceLock::new();
-        INSTANCE.get_or_init(|| Self {
-            participants: Mutex::new(BTreeMap::new()),
-            default_participant_qos: Mutex::new(DomainParticipantQos::default()),
-            factory_qos: Mutex::new(DomainParticipantFactoryQos::default()),
-        })
+        &THE_PARTICIPANT_FACTORY
     }
 
     fn track(&self, p: &DomainParticipant) {
         if let Ok(mut reg) = self.participants.lock() {
             reg.entry(p.domain_id()).or_default().push(p.downgrade());
         }
+        self.autoenable(p);
+    }
+
+    /// Spec §2.2.3.20: "The setting of `autoenable_created_entities` to
+    /// TRUE indicates that the factory `create_<entity>` operation will
+    /// automatically enable the created entity." The factory is the
+    /// participant's factory, so its own [`DomainParticipantFactoryQos`]
+    /// decides.
+    fn autoenable(&self, p: &DomainParticipant) {
+        if self.get_qos().autoenable_created_entities {
+            p.entity_state().enable();
+        }
     }
 
     /// Creates a new `DomainParticipant` for the given domain id.
     /// Starts the `DcpsRuntime` with the default config — UDP sockets +
-    /// SPDP/SEDP threads.
+    /// SPDP/SEDP threads. With [`PARTICIPANT_QOS_DEFAULT`] the participant
+    /// gets [`Self::get_default_participant_qos`] (DDS 1.4 §2.2.2.2.2.1).
+    ///
+    /// [`PARTICIPANT_QOS_DEFAULT`]: crate::psm_constants::PARTICIPANT_QOS_DEFAULT
     ///
     /// # Errors
     /// `DdsError::TransportError` if the UDP sockets do not bind.
     pub fn create_participant(
         &self,
         domain_id: DomainId,
-        qos: DomainParticipantQos,
+        qos: impl Into<QosArg<DomainParticipantQos>>,
     ) -> Result<DomainParticipant> {
+        let qos = self.resolve(qos);
         // DDS 1.4 §2.2.3.1 UserDataQosPolicy → SPDP-Beacon PID_USER_DATA.
+        // A participant this factory does not enable on creation does not
+        // announce itself before its `enable` (§2.2.2.1.1.7).
         let config = RuntimeConfig {
             user_data: qos.user_data.value.clone(),
-            ..RuntimeConfig::default()
+            discoverable: self.get_qos().autoenable_created_entities,
+            ..RuntimeConfig::from_standard_paths().map_err(|error| {
+                crate::error::DdsError::Configuration {
+                    message: error.to_string(),
+                }
+            })?
         };
         let p = DomainParticipant::new_with_runtime(domain_id, qos, config)?;
         self.track(&p);
         Ok(p)
+    }
+
+    /// DDS 1.4 §2.2.2.2.2.1 `create_participant(domain_id, qos, a_listener,
+    /// mask)`: the participant with its listener. `None` with a non-empty
+    /// `mask` is the 'nil' listener (§2.2.2.1.1.3).
+    ///
+    /// # Errors
+    /// As [`Self::create_participant`].
+    pub fn create_participant_with_listener(
+        &self,
+        domain_id: DomainId,
+        qos: impl Into<QosArg<DomainParticipantQos>>,
+        listener: Option<crate::listener::ArcDomainParticipantListener>,
+        mask: crate::entity::StatusMask,
+    ) -> Result<DomainParticipant> {
+        let participant = self.create_participant(domain_id, qos)?;
+        participant.set_listener(listener, mask);
+        Ok(participant)
     }
 
     /// Variant with an explicitly passed `RuntimeConfig` (e.g. for
@@ -121,9 +169,18 @@ impl DomainParticipantFactory {
     pub fn create_participant_with_config(
         &self,
         domain_id: DomainId,
-        qos: DomainParticipantQos,
-        config: RuntimeConfig,
+        qos: impl Into<QosArg<DomainParticipantQos>>,
+        mut config: RuntimeConfig,
     ) -> Result<DomainParticipant> {
+        let qos = self.resolve(qos);
+        // DDS 1.4 §2.2.3.1: the QoS is the authority for PID_USER_DATA. A
+        // config built from files has none, and dropping the QoS value here
+        // would announce an empty one.
+        if !qos.user_data.value.is_empty() {
+            config.user_data = qos.user_data.value.clone();
+        }
+        // See `create_participant`.
+        config.discoverable &= self.get_qos().autoenable_created_entities;
         let p = DomainParticipant::new_with_runtime(domain_id, qos, config)?;
         self.track(&p);
         Ok(p)
@@ -136,9 +193,9 @@ impl DomainParticipantFactory {
     pub fn create_participant_offline(
         &self,
         domain_id: DomainId,
-        qos: DomainParticipantQos,
+        qos: impl Into<QosArg<DomainParticipantQos>>,
     ) -> DomainParticipant {
-        let p = DomainParticipant::new(domain_id, qos);
+        let p = DomainParticipant::new(domain_id, self.resolve(qos));
         self.track(&p);
         p
     }
@@ -172,15 +229,28 @@ impl DomainParticipantFactory {
         found
     }
 
-    /// Spec §2.2.2.2.2.3 `delete_participant`. Removes the participant
-    /// from the factory registry and calls `delete_contained_entities`.
-    /// Returns `PreconditionNotMet` if the participant is not in the
-    /// registry.
+    /// DDS 1.4 §2.2.2.2.2.2 `delete_participant`: "This operation can only
+    /// be invoked if all domain entities belonging to the participant have
+    /// already been deleted. Otherwise the error PRECONDITION_NOT_MET is
+    /// returned." The participant is deleted then: its operations return
+    /// ALREADY_DELETED (§2.2.1.1), and its runtime announces its departure
+    /// (DDSI-RTPS 2.5 §8.5.3.3) and stops.
+    ///
+    /// It deleted the contained entities itself, and the participant went
+    /// on working. `DomainParticipant::delete_contained_entities` first
+    /// does what it did.
     ///
     /// # Errors
-    /// `DdsError::PreconditionNotMet` if the participant is not
-    /// registered.
+    /// `DdsError::PreconditionNotMet` if the participant still has
+    /// publishers, subscribers or topics, or is not registered;
+    /// `AlreadyDeleted` if it was deleted.
     pub fn delete_participant(&self, p: &DomainParticipant) -> Result<()> {
+        p.inner().entity_state.check_not_deleted()?;
+        if p.has_contained_entities() {
+            return Err(DdsError::PreconditionNotMet {
+                reason: "the participant still has publishers, subscribers or topics",
+            });
+        }
         let mut reg = self
             .participants
             .lock()
@@ -216,23 +286,41 @@ impl DomainParticipantFactory {
                 reason: "participant not registered with this factory",
             });
         }
-        p.delete_contained_entities()
+        p.inner().entity_state.mark_deleted();
+        #[cfg(feature = "std")]
+        if let Some(rt) = p.runtime() {
+            rt.shutdown();
+        }
+        Ok(())
     }
 
     /// Spec §2.2.2.2.2.5 `set_default_participant_qos` — default QoS
-    /// for participants created from now on.
+    /// for participants created from now on with
+    /// [`PARTICIPANT_QOS_DEFAULT`]. That value itself resets the default to
+    /// "the values that would be used if the set_default_participant_qos
+    /// operation had never been called".
+    ///
+    /// [`PARTICIPANT_QOS_DEFAULT`]: crate::psm_constants::PARTICIPANT_QOS_DEFAULT
     ///
     /// # Errors
     /// `DdsError::PreconditionNotMet` on lock poisoning.
-    pub fn set_default_participant_qos(&self, qos: DomainParticipantQos) -> Result<()> {
+    pub fn set_default_participant_qos(
+        &self,
+        qos: impl Into<QosArg<DomainParticipantQos>>,
+    ) -> Result<()> {
         let mut current =
             self.default_participant_qos
                 .lock()
                 .map_err(|_| DdsError::PreconditionNotMet {
                     reason: "default qos poisoned",
                 })?;
-        *current = qos;
+        *current = qos.into().resolve(DomainParticipantQos::default);
         Ok(())
+    }
+
+    /// The QoS a `create_participant*` call creates with.
+    fn resolve(&self, qos: impl Into<QosArg<DomainParticipantQos>>) -> DomainParticipantQos {
+        qos.into().resolve(|| self.get_default_participant_qos())
     }
 
     /// Spec §2.2.2.2.2.5 `get_default_participant_qos`.
@@ -268,7 +356,7 @@ impl DomainParticipantFactory {
     /// Fluent entry point for creating a participant: returns a
     /// [`ParticipantBuilder`] that collects QoS, a custom
     /// [`RuntimeConfig`], and (with the `security` feature) a
-    /// [`SecurityBundle`](zerodds_security_runtime::SecurityBundle), then
+    /// `zerodds_security_runtime::SecurityBundle`, then
     /// materializes the participant on [`ParticipantBuilder::build`].
     ///
     /// This is a convenience facade over
@@ -294,15 +382,29 @@ impl DomainParticipantFactory {
 
 /// Fluent builder for a [`DomainParticipant`], returned by
 /// [`DomainParticipantFactory::create`]. Collects optional QoS, a custom
-/// [`RuntimeConfig`], and a [`SecurityBundle`](zerodds_security_runtime::SecurityBundle)
+/// [`RuntimeConfig`], and a `zerodds_security_runtime::SecurityBundle`
 /// (under the `security` feature) and creates the participant via the
 /// factory singleton on [`Self::build`].
 #[cfg(feature = "std")]
-#[derive(Debug)]
 pub struct ParticipantBuilder {
     domain_id: DomainId,
-    qos: DomainParticipantQos,
+    qos: QosArg<DomainParticipantQos>,
     config: Option<RuntimeConfig>,
+    #[cfg(feature = "security")]
+    security: Option<zerodds_security_runtime::SecurityBundle>,
+}
+
+#[cfg(feature = "std")]
+impl core::fmt::Debug for ParticipantBuilder {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let mut d = f.debug_struct("ParticipantBuilder");
+        d.field("domain_id", &self.domain_id)
+            .field("qos", &self.qos)
+            .field("config", &self.config);
+        #[cfg(feature = "security")]
+        d.field("security", &self.security.as_ref().map(|_| "<bundle>"));
+        d.finish()
+    }
 }
 
 #[cfg(feature = "std")]
@@ -310,21 +412,25 @@ impl ParticipantBuilder {
     fn new(domain_id: DomainId) -> Self {
         Self {
             domain_id,
-            qos: DomainParticipantQos::default(),
+            qos: QosArg::Default,
             config: None,
+            #[cfg(feature = "security")]
+            security: None,
         }
     }
 
-    /// Sets the participant QoS (default: [`DomainParticipantQos::default`]).
+    /// Sets the participant QoS (default: the factory's
+    /// [`DomainParticipantFactory::get_default_participant_qos`] at
+    /// [`Self::build`]).
     #[must_use]
-    pub fn with_qos(mut self, qos: DomainParticipantQos) -> Self {
-        self.qos = qos;
+    pub fn with_qos(mut self, qos: impl Into<QosArg<DomainParticipantQos>>) -> Self {
+        self.qos = qos.into();
         self
     }
 
-    /// Sets an explicit [`RuntimeConfig`]. Overrides the config derived
-    /// from QoS / security wiring; subsequent [`Self::with_security`]
-    /// calls mutate this config.
+    /// Sets an explicit [`RuntimeConfig`] in place of the one the standard
+    /// layers (environment, system files) would give. A bundle from
+    /// `Self::with_security` is applied on top of it, in either order.
     #[must_use]
     pub fn with_config(mut self, config: RuntimeConfig) -> Self {
         self.config = Some(config);
@@ -337,23 +443,35 @@ impl ParticipantBuilder {
     #[cfg(feature = "security")]
     #[must_use]
     pub fn with_security(mut self, bundle: zerodds_security_runtime::SecurityBundle) -> Self {
-        let base = self.config.take().unwrap_or_default();
-        self.config = Some(base.with_security_bundle(&bundle));
+        self.security = Some(bundle);
         self
     }
 
     /// Creates the live participant via the factory singleton.
     ///
+    /// Without [`Self::with_config`] the configuration is the standard
+    /// layers, as [`DomainParticipantFactory::create_participant`] reads
+    /// them — also when a security bundle is set.
+    ///
     /// # Errors
+    /// `DdsError::Configuration` for an invalid configuration,
     /// `DdsError::TransportError` if the UDP sockets do not bind.
     pub fn build(self) -> Result<DomainParticipant> {
         let factory = DomainParticipantFactory::instance();
-        match self.config {
-            Some(config) => {
-                factory.create_participant_with_config(self.domain_id, self.qos, config)
-            }
-            None => factory.create_participant(self.domain_id, self.qos),
-        }
+        let config = match self.config {
+            Some(config) => config,
+            None => RuntimeConfig::from_standard_paths().map_err(|error| {
+                crate::error::DdsError::Configuration {
+                    message: error.to_string(),
+                }
+            })?,
+        };
+        #[cfg(feature = "security")]
+        let config = match &self.security {
+            Some(bundle) => config.with_security_bundle(bundle),
+            None => config,
+        };
+        factory.create_participant_with_config(self.domain_id, self.qos, config)
     }
 }
 
@@ -430,6 +548,77 @@ mod tests {
         assert!(f.lookup_participant(domain).is_some());
         f.delete_participant(&p).unwrap();
         assert!(f.lookup_participant(domain).is_none());
+    }
+
+    /// DDS 1.4 §2.2.2.2.2.2: "This operation can only be invoked if all
+    /// domain entities belonging to the participant have already been
+    /// deleted. Otherwise the error PRECONDITION_NOT_MET is returned." A
+    /// participant with a publisher is refused and stays; once the
+    /// publisher is gone it is deleted, and its operations return
+    /// ALREADY_DELETED. It deleted the publisher itself and went on.
+    #[test]
+    fn delete_participant_wants_its_entities_deleted_first() {
+        let f = DomainParticipantFactory::instance();
+        let domain = 94;
+        let p = f.create_participant_offline(domain, DomainParticipantQos::default());
+        let publisher = p.create_publisher(crate::qos::PublisherQos::default());
+        assert!(matches!(
+            f.delete_participant(&p),
+            Err(DdsError::PreconditionNotMet { .. })
+        ));
+        assert!(
+            f.lookup_participant(domain).is_some(),
+            "refused, so it stays"
+        );
+        p.delete_publisher(&publisher).unwrap();
+        f.delete_participant(&p).unwrap();
+        assert!(f.lookup_participant(domain).is_none());
+        assert!(matches!(
+            p.create_topic::<crate::RawBytes>("Gone", crate::qos::TopicQos::default()),
+            Err(DdsError::AlreadyDeleted)
+        ));
+        assert!(matches!(
+            f.delete_participant(&p),
+            Err(DdsError::AlreadyDeleted)
+        ));
+    }
+
+    /// DDS 1.4 §2.2.1.1: an operation on a deleted entity returns
+    /// ALREADY_DELETED, `create_publisher` and `create_subscriber` among
+    /// them.
+    #[test]
+    fn a_deleted_participant_creates_no_publisher_or_subscriber() {
+        let f = DomainParticipantFactory::instance();
+        let p = f.create_participant_offline(95, DomainParticipantQos::default());
+        f.delete_participant(&p).unwrap();
+        assert!(matches!(
+            p.try_create_publisher(crate::qos::PublisherQos::default()),
+            Err(DdsError::AlreadyDeleted)
+        ));
+        assert!(matches!(
+            p.try_create_subscriber(crate::qos::SubscriberQos::default()),
+            Err(DdsError::AlreadyDeleted)
+        ));
+        // The infallible forms hand back an entity that is deleted.
+        let publisher = p.create_publisher(crate::qos::PublisherQos::default());
+        let subscriber = p.create_subscriber(crate::qos::SubscriberQos::default());
+        let topic_less = p.create_topic::<crate::RawBytes>("Gone", crate::qos::TopicQos::default());
+        assert!(matches!(topic_less, Err(DdsError::AlreadyDeleted)));
+        assert!(crate::entity::Entity::entity_state(&publisher).is_deleted());
+        assert!(crate::entity::Entity::entity_state(&subscriber).is_deleted());
+        // An operation on them is ALREADY_DELETED, not a success.
+        let other = f.create_participant_offline(96, DomainParticipantQos::default());
+        let topic = other
+            .create_topic::<crate::RawBytes>("Live", crate::qos::TopicQos::default())
+            .unwrap();
+        assert!(matches!(
+            publisher.create_datawriter(&topic, crate::qos::DataWriterQos::default()),
+            Err(DdsError::AlreadyDeleted)
+        ));
+        assert!(matches!(
+            subscriber.create_datareader(&topic, crate::qos::DataReaderQos::default()),
+            Err(DdsError::AlreadyDeleted)
+        ));
     }
 
     #[test]

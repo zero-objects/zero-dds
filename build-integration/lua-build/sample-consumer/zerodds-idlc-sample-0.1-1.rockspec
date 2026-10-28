@@ -17,10 +17,10 @@ description = {
 }
 build = {
    type = "command",
-   build_command = "zerodds-idlc generate idl/Robot.idl --lua -o gen",
+   build_command = "zerodds-idlc generate --lang lua --out gen idl/Robot.idl",
    install = {
       lua = {
-         ["gen.Robot"] = "gen/Robot.lua",
+         ["Robot"] = "gen/Robot.lua",
          ["app"] = "app.lua"
       }
    }

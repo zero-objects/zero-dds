@@ -1,0 +1,204 @@
+.TH ZERODDS-XRCE-AGENTD.YAML 5 "" "ZeroDDS" "ZeroDDS Manual"
+.SH NAME
+zerodds-xrce-agentd.yaml \- configuration file for zerodds-xrce-agentd(1)
+.SH SYNOPSIS
+.I /etc/zerodds/xrce-agentd.yaml
+.SH DESCRIPTION
+YAML document describing how the DDS-XRCE agent daemon listens for Micro
+Clients and maps their sessions onto DDS. This config schema is a ZeroDDS
+extension \(em DDS-XRCE 1.0 does not define an on-disk agent configuration
+format. The parser that reads it is
+.IR crates/xrce-agent/src/daemon/config.rs::DaemonConfig::from_config .
+.PP
+Top-level keys:
+.BR log_level ", " vendor_id ", " session_timeout_secs ", "
+.BR limits ", " discovery ", " listeners ", " type_files ", "
+.BR xml_profile_files " and " qos_library_files .
+.PP
+An unknown top-level key, or an unknown key inside a known section, stops
+the daemon from starting; the error names the file and line.
+.PP
+.BI ${VAR} " and " ${VAR:-default}
+are substituted from the environment before the document is parsed.
+.SH KEYS
+.SS Top level
+.TP
+.B log_level
+.IR trace " | " debug " | " info " | " warn " | " error .
+.TP
+.B vendor_id
+This agent's
+.I XrceVendorId
+as
+.IR "\(dqmajor.minor\(dq" ,
+each 0\(en255, e.g.
+.I \(dq1.15\(dq
+for eProsima's own registered agent id. Default
+.I \(dq0.0\(dq
+(none).
+.TP
+.B session_timeout_secs
+Seconds of client inactivity \(em no message received on any stream \(em
+before the session and every object it created are dropped. Default
+.IR 60 .
+.SS limits
+.TP
+.B max_clients
+Maximum concurrent client sessions. Default
+.IR 1024 .
+.TP
+.B max_objects_per_client
+Maximum DDS-XRCE objects (participants, topics, publishers, subscribers,
+writers, readers, types, QoS profiles) one client session may CREATE.
+Default
+.IR 256 .
+.TP
+.B max_pending_samples
+Reliable-stream samples buffered per client while waiting on ACKNACK.
+Default
+.IR 256 .
+.SS discovery
+Multicast
+.B GET_INFO
+responder (DDS-XRCE 1.0 \(sc11.2.4): a Micro Client without a hardcoded
+agent address finds this daemon here.
+.TP
+.B enabled
+Boolean. Default
+.IR true .
+.TP
+.B port
+UDP port of the discovery multicast group. Default
+.I 7400
+(XRCE_DISCOVERY_PORT).
+.SS listeners (list)
+At least one entry is required; the default (when the key is entirely
+absent) is a single
+.I udp
+listener on
+.IR 0.0.0.0:2018 ,
+eProsima's own default agent port. An entry is either a map with
+.B kind
+and the keys below, or one string
+.IR udp:host:port ,
+.I tcp:host:port
+or
+.I serial:device
+(115200 baud) \(em the form
+.B \-\-listen
+writes.
+.TP
+.B kind
+.IR udp " | " tcp " | " serial .
+.TP
+.B bind
+.IR "host:port" .
+Used by
+.IR udp " and " tcp .
+Default
+.I 0.0.0.0:2018
+for either.
+.I tcp
+frames messages with the DDS-XRCE \(sc11.3 2-byte length prefix.
+.TP
+.B device
+Serial device path, e.g.
+.IR /dev/ttyUSB0 .
+Required for
+.IR kind: \ serial ,
+which needs the daemon's
+.I serial
+build feature and frames messages per DDS-XRCE Annex C. The packaged
+systemd unit's
+.B PrivateDevices
+hardening blocks the device node; a serial deployment must override the
+unit.
+.TP
+.B baud_rate
+Integer baud rate for
+.IR kind: \ serial .
+Default
+.IR 115200 .
+.SS type_files (list)
+Precompiled
+.I TypeObject
+values (XCDR2, as
+.I TypeObject::to_bytes_le
+produces \(em
+.BR zerodds-idlc " or " zerodds-wire-probe
+build one ahead of time), COMPLETE, one per file. A topic whose type name
+matches an entry is created with that type for every client: key hashes,
+dispose/unregister and the type announced to DDS peers. A client's own
+OBJK_TYPE of the same name takes precedence for that client. The daemon
+does not start if a file does not load, is not COMPLETE, or describes a
+type other than its
+.BR name .
+Clients that send no type (the eProsima Micro-XRCE-DDS examples) need an
+entry for keyed topics; without one a topic is forwarded opaque and
+unkeyed.
+.TP
+.B name
+The DDS type name this
+.I TypeObject
+is registered under.
+.TP
+.B file
+Path to the binary
+.IR TypeObject .
+.SS xml_profile_files (list of strings)
+Fast DDS profile files, the form the eProsima Micro-XRCE-DDS Agent reads
+with
+.BR -r :
+a
+.I <profiles>
+root, or
+.I <dds>
+around
+.IR <profiles> ", " <types> " and " <qos_library> .
+A
+.I REPRESENTATION_BY_REFERENCE
+CREATE names the
+.I profile_name
+of a
+.IR <participant> ", " <topic> ", " <publisher> ", " <subscriber> ", "
+.IR <data_writer> " or " <data_reader>
+there, which is read like the same element sent inline. A reference to a
+profile no file defines is refused with
+.IR STATUS_ERR_UNKNOWN_REFERENCE .
+.I <types>
+define topic types for every client, like
+.BR type_files .
+Other elements (
+.IR <requester> ,
+.IR <transport_descriptors> ,
+\&...) are named on stderr at start and not used. The daemon does not
+start if a file does not parse, defines a
+.I profile_name
+twice for one element, or a type twice.
+.SS qos_library_files (list of strings)
+DDS-XML 1.0
+.I <qos_library>
+documents. An attribute-form representation's
+.I qos_profile=\(dqLibrary::Profile\(dq
+names one of their profiles, resolved with its
+.I base_name
+chain; its DataWriter or DataReader QoS (and the Publisher or Subscriber
+QoS for PARTITION and GROUP_DATA) apply before the representation's own
+attributes. Policies the agent does not apply are named in the log.
+.SH RELOAD
+SIGHUP to
+.BR zerodds-xrce-agentd (1)
+re-reads this file (and its
+.I xrce-agentd.d/
+drop-ins) and applies
+.BR log_level ", " limits.* ", " session_timeout_secs " and "
+.BR discovery.enabled
+without a restart. A changed
+.BR listeners: ", " type_files: " or " xml_profile_files:
+is logged and ignored until the daemon is restarted.
+.SH EXAMPLES
+See
+.IR /usr/share/zerodds/configs/xrce-agentd.yaml.example .
+.SH SEE ALSO
+.BR zerodds-xrce-agentd (1),
+DDS-XRCE 1.0 (OMG formal/2023-03-01), DDS-XML.

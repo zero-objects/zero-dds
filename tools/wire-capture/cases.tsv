@@ -1,0 +1,163 @@
+# The corpus cases that are recorded on the wire, and why each one is here.
+#
+# The cut is not "as many as fit". A wire capture answers one question
+# an in-memory serialisation call cannot: what the product's own
+# transport layer does to the octets on the way out. The first
+# twenty-three rows below are the construct families where the inventory
+# carried a divergence or a setting, plus every family where the two
+# levels *could* part — anything with an alignment gap, anything with an
+# encapsulation field, anything whose byte order is a decision.
+#
+# The rest are here for a second reason, and it is not the same one.
+# `docs/wire-feature-inventory.md` carries 146 behaviours. The run these
+# twenty-three cases produced is cited by **seven** of them in the row's
+# own text — A4, A5, B4, B5, C3, H8, N12 — and by three more, D3, D4 and
+# D5, in the run's own section and not in their rows. Either way it is
+# the same shape: a hundred and thirty-odd behaviours whose only
+# evidence is an in-memory assertion.
+# A behaviour that only ever appears in an in-memory assertion is a
+# claim about a serialiser, not about a product: it cannot see the
+# encapsulation identifier an RTPS layer is free to replace, the
+# trailing padding that layer adds, the inline QoS a writer sends, or a
+# front end that serialises a type its `create_datawriter` then refuses.
+# So every behaviour that a **writer** can put on a socket gets a case,
+# whether or not the inventory expected a divergence there — and
+# `coverage.tsv` names, for each of the 146, either the cases below that
+# reach it or the one-line reason no capture can.
+#
+# columns
+#   case       the corpus directory under tests/interop-corpus/
+#   domain     the DDS domain id this case runs on. One domain per case
+#              means one UDP port range per case, which is how a packet
+#              is attributed to a case — by the port it arrived on and
+#              not by when it arrived. The CORBA runners use 12300+id.
+#              The ids cycle through twenty slots, 20 to 39, because
+#              DDSI-RTPS §9.6.1.1 puts domain 233's ports past 65535 and
+#              `--domain-offset` has to fit nine implementations running
+#              at once above whatever the highest case uses. Two cases
+#              twenty rows apart share a slot and never share a run:
+#              within one implementation the loop is sequential.
+#   control    `longer` when the poison sample is longer than the real
+#              one, so the real sample's fill spans land on octets the
+#              poison wrote and a `00` there is an octet the peer wrote.
+#              `equal` when the two samples have the same layout:
+#              nothing can then write the other's fill, and the case
+#              says nothing about fill provenance — its fill column
+#              reads `undetermined`. The twenty-three hand-written
+#              poison files carry `longer` where the type allows it —
+#              ten of the twenty-three, the other thirteen being types
+#              with no variable-length member; the generated ones
+#              (`make-poison.py`) mutate numeric leaves, or rotate an
+#              enumerator inside its own declaration where the sample
+#              has no numeric leaf at all, and are all `equal`, which is
+#              a limit of the generator and not of the capture.
+#   rows       the wire-feature-inventory rows the case bears on
+#   why        one sentence
+case	domain	control	rows	why
+primitive-mixed	20	equal	A1 A2 A3 A4 A5 A6 A9 A10 B1 B2 B4 C1 C2 C3 C4 C5 C6 C8 C9 D7 H1 H8 N8	every primitive width in one aggregate: gaps at 2, 4 and 8, the widest scalar set, and — through JacORB's big-endian GIOP — the only stream on this host where ESWAP is visible at all
+primitive-mixed-descending-alignment	21	equal	A1 A4 A5 H8	the same members widest first, so the gaps fall in different places
+struct-no-trailing-padding	22	equal	A5 B5 H8	a 6-octet payload: the trailing padding to the next 4-octet offset, and the count B5 puts in the options field
+primitive-octet	23	equal	A5 B5 C1	a 2-octet payload — the largest padding count the options field can carry
+string-adjacent-widths	24	longer	A4 C3 D2 D3 D4 D6 D7	a string, a wstring and a bounded string in a row: three fill spans, and the lengths vary so the fill has provenance
+string-unbounded-ascii	25	longer	A4 A5 B5 D2	one fill span before a trailing long, with the length varying
+wstring-unbounded-utf8	26	longer	A10 C3 D3 D4 D5	the wstring length unit and the code-unit byte order, where two ROS type supports and Fast DDS disagree
+struct-final	27	equal	B1 B6 H1 I1 M4 N8	the baseline: no framing at all
+struct-appendable	28	equal	A8 B1 B3 B6 H2 H3 L1 L2 L3	the DHEADER, its absence under XCDR1, and — since a capture reads the identifier off the socket rather than out of a serialiser — which of Table 39's and Table 60's contested version-2 identifiers a product actually sends
+struct-mutable	29	equal	A7 B1 H4 H5 I4 I5 I6 K1 K7 K8	EMHEADER under XCDR2, parameter list and sentinel under XCDR1
+struct-mutable-length-codes	30	longer	I10 I18 I19 K2 K3 K4 K5 K6 K8	every length code a mutable member can take, and the padding after a parameter value
+array-1d-struct-final	31	equal	A8 G2 G3 G5	the array DHEADER divergence, and the stride
+sequence-struct-final	32	longer	A8 G7 G8	the sequence DHEADER divergence
+sequence-enum	33	longer	E1 G12	a collection of enumerations — the element-kind divergence, and the holder width
+sequence-bitmask	34	longer	E3 E4 G13	a collection of bitmasks, and the bit order in the holder
+union-final	35	equal	J1 J2 J8	the discriminator and the selected member. The poison sample stays on the same branch: selecting the `default:` one needs a discriminator no `case` names, and JacORB's generated union throws `BAD_OPERATION` on it — J10's finding, and not one to spend this case's golden on
+union-mutable	36	equal	J5 J6 J7	a header for the discriminator and one for the member
+annotation-optional-present	37	equal	I2 I3 I21	an optional member outside a mutable type, both encodings
+annotation-key-single	38	equal	N1 N2 N5 N6 N12	the KeyHash — inline QoS on a real writer, which no in-memory call produces
+annotation-key-multiple	39	longer	N2 N3 N4 N7 N12	three key members of three types, one of them an unbounded string: the holder's maximum size is unbounded, so §9.6.4.8's MD5 branch is the one taken and not the zero-extended holder
+map-key-long	20	longer	G9 G10 G11	the map rules and the rule-(15) contradiction
+primitive-mixed-unannotated	21	equal	B1 H9	what an unannotated aggregate is taken to be, on the wire
+combined-everything	22	longer	breadth	one aggregate holding a key, a union, a typedef'd bounded sequence, a bitmask, an optional string and a 2-D array
+primitive-boolean	23	equal	C2	Table 31's two legal values on the wire, where two vendors' readers accept a third
+primitive-longdouble	24	equal	C7	Float128 at encoded size 16 and alignment 8 — the only primitive whose size Table 31 gives and no other case carries
+primitive-wchar	25	equal	C3 D7	a scalar wchar with no string around it: the width and the order are the type's own and not a wstring's
+primitive-wchar-above-bmp	26	equal	D5 D7	a code point outside the BMP, where the surrogate pair is the question
+char-and-wchar	27	equal	C1 C3 D1 D7	the two character types adjacent, so the one-octet Char8 and the two-octet Char16 are in the same payload
+string-bounded-utf8	28	equal	D2 D6	a `string<N>` carrying multi-byte UTF-8: the length counts octets and includes the NUL, and the bound is not on the wire
+wstring-bounded-utf8	29	equal	D3 D6	a `wstring<N>`: the length is a byte count of UTF-16 units and the bound is not on the wire
+enum-bitbound-8-plain	30	equal	E1	the enumeration holder at `@bit_bound(8)`, where OpenDDS's generators warn and keep 32 bits
+enum-bitbound-16-plain	31	equal	E1	the same at 16
+enum-bitbound-32-plain	32	equal	E1	the same at the default 32, as the control for the two above
+enum-negative-value	33	equal	C8 E1	`@value(-1)` — the holder is signed, in two's complement
+bitmask-bitbound-8	34	equal	E3	the bitmask holder at bound 8 — a UInt8, or the 32 bits a generator kept anyway
+bitmask-bitbound-16	35	equal	E3	the same at 16
+bitmask-bitbound-32	36	equal	E3	the same at 32
+bitmask-bitbound-64	37	equal	E3	the same at 64, the only UInt64 holder Table 33 gives
+bitmask-sparse-positions	38	equal	E4	implicit and explicit `@position` in one bitmask: the bit index is counted from the LSB of the full holder
+typedef-chain-primitive	39	equal	F1	three typedefs deep over a primitive — the alias is transparent or it is not
+typedef-of-sequence	20	equal	F1 G16	an alias over a bounded sequence, so the bound and the alias are both in the same payload
+typedef-of-struct	21	equal	F1 H3	an alias over an appendable structure: the DHEADER is the element's and not the alias's
+typedef-of-array	22	equal	F1 G4	an alias over a 2-D array
+array-1d-primitives	23	equal	G1 G5	`PARRAY_TYPE` for every primitive kind: elements only, no DHEADER, in both versions
+array-2d-primitives	24	equal	G4	two dimensions as one flat run, first index slowest
+array-3d-primitives	25	equal	G4	three dimensions, the same question one level further
+array-odd-element	26	equal	G2 G5	an array of a 6-octet structure: the stride, and whether anything pads after the last element
+sequence-primitives-nonempty	27	equal	G6	`PSEQUENCE_TYPE`: a UInt32 count then the elements, no DHEADER
+sequence-primitives-empty	28	equal	G6	the same with count zero, where an element-less body is all there is
+sequence-primitives-bounded	29	equal	G6 G16	a bounded sequence of every primitive kind: the bound is not on the wire
+sequence-bounded-full	30	equal	G16	a bounded sequence filled to its bound, the other side of G16
+sequence-of-array	31	equal	G14	a collection directly inside a collection, outer sequence
+array-1d-sequence	32	equal	G14	the same with the array outside
+sequence-nested	33	equal	G14	`sequence<sequence<long>>`, where the inner element is primitive and carries no delimiter
+struct-inheritance-final	34	equal	H6	base members first, one flat run, no frame of the base's own
+struct-inheritance-appendable	35	equal	H3 H6	the same under `@appendable`, where only the derived type takes a DHEADER
+struct-inheritance-mutable	36	equal	H6 H7 I22	the same under `@mutable`, where the base's member ids are visible in the EMHEADERs and H7 is whether they run on
+inherit-two-levels	37	equal	H6	two inheritance steps, so a base of a base is in the flat run too
+struct-nested-two-deep	38	equal	B6 H1	a structure inside a structure, which is where `AsNested` would show if it were not the identity
+struct-many-members	39	equal	H1 I22	sixteen members of one kind: the implicit sequential id rule, at a length where an off-by-one would show
+deep-nesting-eight	20	equal	H1 H3	eight declared levels with the first and the last in one aggregate
+struct-mutable-in-appendable	21	equal	I20	a parameter list inside a delimited type: the inner ids are the inner type's
+struct-appendable-in-mutable	22	equal	I20	the same nesting the other way round
+sequence-struct-mutable	23	equal	G7 I20	a sequence of mutable structures — a parameter list per element, and `PID_LIST_END` ending the innermost
+annotation-must-understand	24	equal	I7 I11 I21	`@must_understand` on a mutable member: bit 14 of the short id under XCDR1, `M_FLAG` of `EMHEADER1` under XCDR2
+annotation-id-explicit	25	equal	I5 I22	`@id` out of declaration order, so the ids on the wire are the annotation's and not the position's
+annotation-id-sparse	26	equal	I6 I15 I22	`@id(16383)` and `@id(268435455)` — both past 0x3F00, so both force `PID_EXTENDED` and the 32-bit `eMemberHeader` under XCDR1
+annotation-hashid-named	27	equal	I22	`@hashid("alpha")` and a bare `@hashid`: the id is the MD5-derived one or it is not
+annotation-hashid-implicit	28	equal	I22	the implicit form of the same rule
+annotation-optional-absent	29	equal	I2 I3	an optional member left out: length 0 under XCDR1, a `false` `<is_present>` under XCDR2
+annotation-optional-mixed	30	equal	I2 I3 I21	present and absent optional members in one mutable type
+annotation-default-value	31	equal	M3	`@default(42)` on a member holding something else: an encoder shall write every non-optional member even at its default
+evolution-mutable-reordered	32	equal	M1	mutable members may appear in any order, and this is the order the writer chose
+evolution-mutable-defaults	33	equal	M3	one member of every kind at a value the receiver could have defaulted, so a writer that omits any of them is visible
+evolution-mutable-optional	34	equal	I2 I3	optional members in the type the evolution gate reads back
+evolution-mutable-mustunderstand	35	equal	I7 I11	the must-understand flag in the type the evolution gate reads back
+union-appendable	36	equal	J4	an appendable union: rule (30)'s DHEADER in front of rule (26)'s pair
+union-with-default	37	equal	J10	a `default:` branch selected by a label no `case` names
+union-without-default	38	equal	J3	no `default:` at all, discriminator on a listed label
+union-default-unselected	39	equal	J3	no `default:` and a discriminator that selects nothing: the discriminator alone, and no member
+union-multiple-labels	20	equal	J8 J10	several labels on one case, and a `default:` beside them
+union-discriminator-boolean	21	equal	J8 J9	a boolean discriminator — one of the six kinds §7.4.1.4.4.2.4 and CORBA's `switch_type_spec` do not agree on
+union-discriminator-char	22	equal	J8 J9	a char discriminator
+union-discriminator-enum	23	equal	J8 J9	an enumeration discriminator, whose holder width is E1's question inside a union
+union-discriminator-octet	24	equal	J8 J9	an octet discriminator, which IDL 4.2 allows and CORBA IDL does not
+union-discriminator-longlong	25	equal	J8 J9	a 64-bit discriminator, where the alignment before the member is the widest a union takes
+union-discriminator-wchar	26	equal	J8 J9	a wchar discriminator, where the width question of C3 and the discriminator question of J9 are the same octets
+union-member-struct	27	equal	J1	a structure as the selected member
+union-member-sequence	28	equal	J1	a sequence as the selected member, so the member's own framing follows the discriminator
+map-key-string	29	equal	G9 G10 G11	a map keyed by a variable-length type, where the pair has no fixed stride
+map-value-struct	30	equal	G10	a map whose value is an appendable structure: the entry's own DHEADER against the map's
+map-empty	31	equal	G9	a map with no entries, where the count is all there is
+map-bounded	32	equal	G9 G16	a bounded map: the bound is not on the wire
+annotation-key-whole-struct	33	equal	N2 N4 N12	`@key` on a nested structure with no key of its own — step 2 applied recursively
+annotation-key-nested-struct	34	equal	N2 N4 N12	`@key` inside the nested structure as well, so the recursion removes something
+combined-keyed-topic	35	equal	N1 N2 N3 N4 N6 N12	two key members, a bounded string among them, in an appendable topic type: the holder fits 16 octets and is zero-extended rather than hashed
+bitset-basic	36	equal	P1	a bitset's anchor width, which the standard does not give
+bitset-multiword	37	equal	P1	the same question past 64 bits
+bitset-typed-fields	38	equal	P2	declared field types, where the bit order inside the anchor decides the octets
+bitset-inheritance	39	equal	P3	where an inherited bitfield sits
+sequence-bitset	20	equal	P5	a bitset in a collection
+array-1d-bitset	21	equal	P5	a bitset in an array, where the stride is the anchor width
+fixed-basic	22	equal	P4	`fixed<9,3>` — a CORBA type XTypes does not define an encoding for
+fixed-scales	23	equal	P4	three precisions and three scales, so a per-digit rule and a per-type rule differ
+sequence-string	24	equal	D2 G7	a sequence of strings: a non-primitive element whose length is its own
+sequence-wstring	25	equal	D3 G7	the same with wstring, where the element length is a byte count
+array-1d-string	26	equal	D2 G2	an array of strings, where the element has no fixed stride

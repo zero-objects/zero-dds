@@ -27,4 +27,12 @@ alloc = []
 
 [dependencies]
 # CDR-1 marshalling (GIOP uses CDR for header + body encoding).
-zerodds-cdr = { version = "1.0.0-rc.7", path = "../cdr" }
+zerodds-wire = { version = "1.0.0-rc.7", path = "../wire" }
+
+[dev-dependencies]
+# The end-to-end test drives a transactional invocation over a real TCP
+# connection: the GIOP framing here, the `TransactionService` service
+# context from the OTS crate, the `RTCorbaPriority` one from the CORBA
+# runtime. Neither depends on this crate, so the edge is one way.
+zerodds-corba-cos-transactions = { path = "../corba-cos-transactions" }
+zerodds-corba-rt = { path = "../corba-rt" }

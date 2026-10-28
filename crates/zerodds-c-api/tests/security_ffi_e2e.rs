@@ -28,113 +28,58 @@
 use std::ffi::CString;
 use std::path::Path;
 use std::process::Command;
-use std::sync::Mutex;
 
 use zerodds::security_ffi::*;
 use zerodds::{ZeroDdsRuntime, zerodds_runtime_destroy};
 
-// Keep openssl calls serial — avoids a race on the shared
-// `.srl` counter file and sub-process startup storms on macOS.
-static OPENSSL_LOCK: Mutex<()> = Mutex::new(());
+// The identity CA and the leaf are minted by the shared helper: the
+// recipe carries the X.509-v3 rule, and a rule in three test files is a
+// rule that gets corrected in two of them. `#[path]` across the crate
+// boundary follows this tree's own convention for a shared test module
+// (`crates/dcps/tests/*.rs` uses it for `common/cross_vendor.rs`).
+#[path = "../../dcps/tests/common/pki.rs"]
+mod pki;
 
-fn openssl_available() -> bool {
-    Command::new("openssl")
-        .arg("version")
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
-}
-
-fn must_run(label: &str, mut cmd: Command) {
-    let out = cmd
-        .output()
-        .unwrap_or_else(|e| panic!("openssl {label}: spawn failed: {e}"));
-    if !out.status.success() {
-        panic!(
-            "openssl {label}: exit={:?}\nstdout: {}\nstderr: {}",
-            out.status,
-            String::from_utf8_lossy(&out.stdout),
-            String::from_utf8_lossy(&out.stderr),
-        );
-    }
-}
+use pki::{must_run, openssl_available};
 
 // `ca_self_sign`: true → governance/permissions are signed directly with the
 // CA cert (variant A, the Cyclone/FastDDS/OMG real-world pattern
 // — tests the self-trust-anchor path in the CmsPkcs7Verifier). false →
 // signed with the EE cert "alice" (variant B, RFC-5280 chain path).
-fn gen_test_fixtures(dir: &Path, ca_self_sign: bool) {
-    let _g = OPENSSL_LOCK.lock().unwrap();
+fn gen_test_fixtures(dir: &Path, ca_self_sign: bool, full_lockdown: bool) {
+    let _g = pki::OPENSSL_LOCK.lock().unwrap();
+    let minted = pki::mint_ca_and_leaves(
+        dir,
+        "/CN=ZeroDDS Test FFI CA",
+        "/CN=zerodds-bench-{name}/emailAddress={name}@bench.local",
+        &["alice"],
+    );
     let certs = dir.join("certs");
-    std::fs::create_dir_all(&certs).unwrap();
-
-    // 1. Identity-CA (ECDSA P-256).
     let ca_key = certs.join("identity_ca_key.pem");
     let ca_cert = certs.join("identity_ca.pem");
-    let mut c = Command::new("openssl");
-    c.args([
-        "ecparam",
-        "-name",
-        "prime256v1",
-        "-genkey",
-        "-noout",
-        "-out",
-    ])
-    .arg(&ca_key);
-    must_run("ecparam ca-key", c);
-
-    let mut c = Command::new("openssl");
-    c.args(["req", "-x509", "-new", "-nodes", "-key"])
-        .arg(&ca_key)
-        .args(["-days", "30", "-subj", "/CN=ZeroDDS Test FFI CA", "-out"])
-        .arg(&ca_cert);
-    must_run("ca self-sign", c);
-
-    // 2. Identity cert "alice" (CA-signed). The key is generated directly in the
-    //    PKCS#8-PEM format via `openssl genpkey`, because the ZeroDDS PKI
-    //    plugin (and, by the way, also the DDS-Security-1.2 spec model
-    //    OpenSSL EVP) expects PKCS#8, not traditional EC.
-    let alice_key = certs.join("alice_key.pem");
-    let alice_csr = certs.join("alice.csr");
-    let alice_cert = certs.join("alice_cert.pem");
-    let mut c = Command::new("openssl");
-    c.args([
-        "genpkey",
-        "-algorithm",
-        "EC",
-        "-pkeyopt",
-        "ec_paramgen_curve:P-256",
-        "-out",
-    ])
-    .arg(&alice_key);
-    must_run("genpkey alice-key", c);
-
-    let mut c = Command::new("openssl");
-    c.args(["req", "-new", "-key"])
-        .arg(&alice_key)
-        .args([
-            "-subj",
-            "/CN=zerodds-bench-alice/emailAddress=alice@bench.local",
-            "-out",
-        ])
-        .arg(&alice_csr);
-    must_run("alice csr", c);
-
-    let mut c = Command::new("openssl");
-    c.args(["x509", "-req", "-in"])
-        .arg(&alice_csr)
-        .args(["-CA"])
-        .arg(&ca_cert)
-        .args(["-CAkey"])
-        .arg(&ca_key)
-        .args(["-CAcreateserial", "-days", "30", "-out"])
-        .arg(&alice_cert);
-    must_run("alice ca-sign", c);
+    let alice_cert = minted[0].cert.clone();
+    let alice_key = minted[0].key.clone();
 
     // 3. Governance + Permissions XML.
+    //
+    // `full_lockdown=false`: read/write-AC off — the create_secure happy path
+    // with protection kinds only (like the 9 green ZeroDDS↔OpenDDS profiles).
+    //
+    // `full_lockdown=true`: join-AC + read-AC + write-AC all TRUE on every
+    // topic — the `all-enc`/`sros2-full` governance shape. Per DDS-Security 1.2
+    // §9.8.1 step 3 + Table 70 (`check_create_participant`, builtin
+    // DDS:Access:Permissions) such a governance IS joinable by a participant
+    // whose permissions grant covers the domain (here: alice's <allow_rule>
+    // <domains><id>0</id>). Cyclone DDS and Fast DDS join it; SROS2
+    // full-lockdown relies on it. Only OpenDDS self-rejects (its
+    // AccessControlBuiltInImpl reads the governance topology only) — an
+    // OpenDDS-specific stance, not binding on ZeroDDS. See
+    // internal/security/opendds-secure-matrix-closeout.md.
+    let read_write_ac = if full_lockdown { "true" } else { "false" };
     std::fs::write(
         dir.join("governance.xml"),
-        r#"<?xml version="1.0" encoding="UTF-8"?>
+        format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
 <dds xmlns="http://www.omg.org/spec/DDS-SECURITY/20170801/omg_shared_ca_governance">
   <domain_access_rules>
     <domain_rule>
@@ -149,15 +94,8 @@ fn gen_test_fixtures(dir: &Path, ca_self_sign: bool) {
           <topic_expression>*</topic_expression>
           <enable_discovery_protection>true</enable_discovery_protection>
           <enable_liveliness_protection>true</enable_liveliness_protection>
-          <!-- read/write-AC=false => the domain is JOINABLE per DDS-Security
-               table 63; otherwise zerodds_runtime_create_secure correctly
-               rejects the fully-locked-down (join-AC + all topics read+write-AC)
-               governance — exactly like OpenDDS-self (check_create_participant
-               "No governance exists for this domain"). The encryption
-               (discovery/liveliness/data/metadata = ENCRYPT) stays fully active;
-               this test checks the create_secure happy path. -->
-          <enable_read_access_control>false</enable_read_access_control>
-          <enable_write_access_control>false</enable_write_access_control>
+          <enable_read_access_control>{read_write_ac}</enable_read_access_control>
+          <enable_write_access_control>{read_write_ac}</enable_write_access_control>
           <metadata_protection_kind>ENCRYPT</metadata_protection_kind>
           <data_protection_kind>ENCRYPT</data_protection_kind>
         </topic_rule>
@@ -165,7 +103,8 @@ fn gen_test_fixtures(dir: &Path, ca_self_sign: bool) {
     </domain_rule>
   </domain_access_rules>
 </dds>
-"#,
+"#
+        ),
     )
     .unwrap();
 
@@ -228,7 +167,7 @@ fn ffi_runtime_create_secure_ee_signed() {
 }
 
 /// Variant A: CA-self-signed permissions (Cyclone/FastDDS/OMG pattern).
-/// Validiert den self-trust-anchor-Pfad im CmsPkcs7Verifier.
+/// Validates the self-trust-anchor path in the CmsPkcs7Verifier.
 #[test]
 fn ffi_runtime_create_secure_ca_self_signed() {
     run_e2e(true);
@@ -249,6 +188,37 @@ fn ffi_secure_runtime_constructs_post_guid_guard_gh11() {
     });
 }
 
+/// Full-lockdown governance (`enable_join_access_control` + read-AC + write-AC
+/// all TRUE, everything ENCRYPT — the `all-enc`/`sros2-full` shape) MUST be
+/// joinable with a permissions grant covering the domain. DDS-Security 1.2
+/// §9.8.1 step 3 + Table 70 `check_create_participant`; Cyclone/Fast DDS join
+/// the same governance. Regression guard for the earlier topology-only gate
+/// that denied every fully-locked domain unconditionally
+/// (internal/security/opendds-secure-matrix-closeout.md, "Correction of an
+/// earlier mis-fix").
+#[test]
+fn ffi_full_lockdown_governance_joins_with_matching_grant() {
+    with_secure_runtime_on(false, true, 0, |rt| {
+        assert!(
+            !rt.is_null(),
+            "full-AC governance + grant for domain 0 must create the participant \
+             (§8.8.7 step 3 / Table 70 check_create_participant)"
+        );
+    });
+}
+
+/// Negative: a domain with NO governance `<domain_rule>` must be denied
+/// (`check_create_participant` → FALSE → create_secure returns NULL).
+#[test]
+fn ffi_create_secure_denied_without_domain_rule() {
+    with_secure_runtime_on(false, true, 7, |rt| {
+        assert!(
+            rt.is_null(),
+            "domain 7 has no governance domain rule — create_secure must return NULL"
+        );
+    });
+}
+
 fn run_e2e(ca_self_sign: bool) {
     with_secure_runtime(ca_self_sign, |rt| {
         assert!(
@@ -263,13 +233,24 @@ fn run_e2e(ca_self_sign: bool) {
 /// runtime and the config. Skips (without calling `check`) when openssl is
 /// unavailable, so the whole flow is Linux/openssl-gated.
 fn with_secure_runtime(ca_self_sign: bool, check: impl FnOnce(*mut ZeroDdsRuntime)) {
+    with_secure_runtime_on(ca_self_sign, false, 0, check);
+}
+
+/// Like [`with_secure_runtime`], plus `full_lockdown` (governance shape, see
+/// [`gen_test_fixtures`]) and `domain_id` (create_secure target domain).
+fn with_secure_runtime_on(
+    ca_self_sign: bool,
+    full_lockdown: bool,
+    domain_id: u32,
+    check: impl FnOnce(*mut ZeroDdsRuntime),
+) {
     if !openssl_available() {
         println!("[skip] openssl not on PATH — security FFI e2e cannot run");
         return;
     }
 
     let tmp = tempdir_unique("zerodds_sec_ffi_");
-    gen_test_fixtures(&tmp, ca_self_sign);
+    gen_test_fixtures(&tmp, ca_self_sign, full_lockdown);
 
     let certs = tmp.join("certs");
     let cfg = zerodds_security_config_create();
@@ -312,9 +293,10 @@ fn with_secure_runtime(ca_self_sign: bool, check: impl FnOnce(*mut ZeroDdsRuntim
         );
     }
 
-    // Domain 0 matches the `<domain_rule>` in governance.xml.
+    // Domain 0 matches the `<domain_rule>` in governance.xml; other ids have
+    // no domain rule (negative tests).
     // SAFETY: cfg is a valid builder pointer; create_secure does not consume cfg.
-    let rt: *mut ZeroDdsRuntime = unsafe { zerodds_runtime_create_secure(0, cfg) };
+    let rt: *mut ZeroDdsRuntime = unsafe { zerodds_runtime_create_secure(domain_id, cfg) };
     check(rt);
 
     // SAFETY: rt comes from create_secure, cfg from config_create — both not yet

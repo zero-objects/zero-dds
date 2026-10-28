@@ -22,14 +22,15 @@ use crate::participant_data::{Duration, ENCAPSULATION_PL_CDR_LE};
 use crate::publication_data::{
     DurabilityKind, PresentationQosPolicy, ReliabilityKind, ReliabilityQos, collect_locator_params,
     decode_cdr_string, decode_duration, decode_i32, decode_liveliness, decode_partition,
-    decode_u32, encode_cdr_string_le, encode_duration_le, encode_liveliness_le,
+    decode_u32, decoded_vendor_id, encode_cdr_string_le, encode_duration_le, encode_liveliness_le,
     encode_locator_params, encode_partition_le, encode_u32_le, guid_from_param,
+    service_instance_name_param, topic_aliases_param,
 };
 use crate::wire_types::{Guid, Locator};
 
 /// Discovered Subscription / lokaler DataReader — Subset.
 ///
-/// Wire-identical to [`PublicationBuiltinTopicData`] in phase 1; a
+/// Wire-identical to [`PublicationBuiltinTopicData`](crate::publication_data::PublicationBuiltinTopicData) in phase 1; a
 /// separate type so the SEDP publications and subscriptions caches stay
 /// clearly distinguishable and extensions (e.g. `expects_inline_qos`,
 /// `time_based_filter`) are not pulled through the publication type.
@@ -39,6 +40,10 @@ pub struct SubscriptionBuiltinTopicData {
     pub key: Guid,
     /// GUID of the participant the reader belongs to.
     pub participant_key: Guid,
+    /// The reader's Subscriber (`PID_GROUP_GUID`, DDSI-RTPS 2.5 Table 9.19
+    /// `ReaderProxy::remoteGroupGuid`); `None` for `GUID_UNKNOWN`, its
+    /// default.
+    pub group_guid: Option<Guid>,
     /// Topic name.
     pub topic_name: String,
     /// IDL type name.
@@ -53,6 +58,9 @@ pub struct SubscriptionBuiltinTopicData {
     pub liveliness: zerodds_qos::LivelinessQosPolicy,
     /// Deadline-QoS (Spec §2.2.3.7).
     pub deadline: zerodds_qos::DeadlineQosPolicy,
+    /// TimeBasedFilter-QoS (Spec §2.2.3.12, PID 0x0004). DDS 1.4 §2.2.5
+    /// lists it in the SubscriptionBuiltinTopicData; it is not RxO.
+    pub time_based_filter: zerodds_qos::TimeBasedFilterQosPolicy,
     /// LatencyBudget-QoS (Spec §2.2.3.10, PID 0x0027) — requested duration.
     /// RxO-matched: `offered.duration <= requested.duration`.
     pub latency_budget: zerodds_qos::LatencyBudgetQosPolicy,
@@ -64,31 +72,84 @@ pub struct SubscriptionBuiltinTopicData {
     pub presentation: crate::publication_data::PresentationQosPolicy,
     /// Partition-QoS (Spec §2.2.3.13).
     pub partition: Vec<String>,
-    /// UserData-QoS (Spec §2.2.3.1) — opaque sequence<octet>.
+    /// UserData-QoS (Spec §2.2.3.1) — opaque `sequence<octet>`.
     pub user_data: Vec<u8>,
-    /// TopicData-QoS (Spec §2.2.3.3) — opaque sequence<octet>.
+    /// TopicData-QoS (Spec §2.2.3.3) — opaque `sequence<octet>`.
     pub topic_data: Vec<u8>,
-    /// GroupData-QoS (Spec §2.2.3.2) — opaque sequence<octet>.
+    /// GroupData-QoS (Spec §2.2.3.2) — opaque `sequence<octet>`.
     pub group_data: Vec<u8>,
     /// Type information as opaque bytes (XTypes §7.6.3.2.2).
     pub type_information: Option<alloc::vec::Vec<u8>>,
+    /// `type_id` (`TypeIdV1`, `PID` 0x0069), XTypes 1.3 Annex D.
+    pub type_id_v1: Option<zerodds_types::type_object_v1::TypeId>,
+    /// `type` (`TypeObjectV1`, `PID` 0x0072), XTypes 1.3 Annex D and
+    /// §7.6.3.2.2.
+    pub type_object_v1: Option<zerodds_types::type_object_v1::TypeObjectV1>,
+    /// `PID_ENTITY_NAME` (0x0062, DDSI-RTPS 2.5 Table 9.18, `EntityName_t`):
+    /// the name of the reader. `None` when it announces none.
+    pub entity_name: Option<alloc::string::String>,
     /// Akzeptierte Data-Representations.
     pub data_representation: alloc::vec::Vec<i16>,
     /// Content-filter property (DDSI-RTPS §9.6.3.4 Table 9.14). Only
     /// set if the reader was created as a `ContentFilteredTopic`.
     pub content_filter: Option<ContentFilterProperty>,
+    /// `PID_CONTENT_FILTER_PROPERTY` was in the announcement and did not
+    /// read: a name over the bound of `string<256>` (§9.3.2.1), or another
+    /// fault. `content_filter` is then `None`, the reader is taken without a
+    /// filter, and the receiver reports it. Always `false` for a locally built
+    /// value; not encoded.
+    pub content_filter_unreadable: bool,
     /// Endpoint security info (PID 0x1004, DDS-Security 1.1 §7.4.1.5).
     /// `None` for legacy peers. WP 4H-c matching checks writer/reader
     /// pairs for protection compatibility.
     pub security_info: Option<EndpointSecurityInfo>,
-    /// PID_SERVICE_INSTANCE_NAME (DDS-RPC 1.0 §7.8.2) — logical
+    /// `EndpointSecuritySymmetricCipherAlgorithmInfo` (DDS-Security 1.2
+    /// §7.3.15, `PID_ENDPOINT_SYMMETRIC_CIPHER_ALGORITHM_INFO` 0x1013): the
+    /// algorithms a peer must support to interoperate with the endpoint.
+    /// `None`: not sent, and for a received one the
+    /// `user_endpoints_default_required_mask` of its participant (§7.3.15.2).
+    pub sym_cipher_algo_info:
+        Option<crate::security_algo_info::EndpointSecuritySymmetricCipherAlgorithmInfo>,
+    /// The `PropertyQosPolicy` of the endpoint, only the entries with
+    /// `propagate = TRUE` (DDS-Security 1.2 §7.3.21, §7.5.1.7, §7.5.1.8,
+    /// `PID_PROPERTY_LIST` 0x0059). Empty: not sent.
+    pub properties: crate::property_list::WirePropertyList,
+    /// The `DataTagQosPolicy` of the endpoint (DDS-Security 1.2 §7.3.21,
+    /// `PID_DATA_TAGS` 0x1003). Empty: not sent.
+    pub data_tags: crate::property_list::WireDataTags,
+    /// PID_SERVICE_INSTANCE_NAME (DDS-RPC 1.0 §7.6.2.1) — logical
     /// service-instance name of an RPC endpoint.
     pub service_instance_name: Option<String>,
-    /// PID_RELATED_ENTITY_GUID (DDS-RPC 1.0 §7.8.2) — GUID of the
+    /// PID_RELATED_ENTITY_GUID (DDS-RPC 1.0 §7.6.2.1) — GUID of the
     /// counterpart endpoint (e.g. reply reader → reply writer).
     pub related_entity_guid: Option<Guid>,
-    /// PID_TOPIC_ALIASES (DDS-RPC 1.0 §7.8.2).
+    /// PID_TOPIC_ALIASES (DDS-RPC 1.0 §7.6.2.1).
     pub topic_aliases: Option<Vec<String>>,
+    /// The reader's `TypeConsistencyEnforcementQosPolicy`
+    /// (XTypes 1.3 §7.6.3.4, PID 0x0074).
+    ///
+    /// Reader-only: §7.6.3.4 gives the policy to the `DataReader` and
+    /// there is no offered counterpart, so the writer's half of
+    /// §7.6.3.4.2 has no policy of its own to decide with — it has to
+    /// use this one, announced here. Until this field existed the
+    /// writer took `TypeConsistencyEnforcement::default()` and every
+    /// reader that had set a flag was judged against a policy it never
+    /// asked for, in the one place the clause says the verdict has to
+    /// be reached "for both the DataReader's Topic and the DataWriter's
+    /// Topic".
+    pub type_consistency: zerodds_types::qos::TypeConsistencyEnforcement,
+    /// Whether the announcement carried PID 0x0074. A reader that did not
+    /// is held to DISALLOW_TYPE_COERCION (XTypes 1.3 §7.6.3.4.1), which is
+    /// what [`Self::type_consistency`] then says; this tells that apart from
+    /// a reader that announced the same policy itself.
+    pub type_consistency_announced: bool,
+    /// `PID_VENDORID` (0x0016) — the vendor of the middleware that owns
+    /// the announced reader, as the announcement itself states it. See the
+    /// twin in [`crate::publication_data::PublicationBuiltinTopicData`] for
+    /// the clauses and the measurement: it is read and written as it
+    /// stands, and it is what decides whether 0x8002 is this tree's
+    /// parameter.
+    pub vendor_id: Option<crate::wire_types::VendorId>,
     /// PID_ZERODDS_TYPE_ID (vendor PID 0x8002) — reader type identifier
     /// for XTypes-aware matching (see `PublicationBuiltinTopicData`).
     pub type_identifier: zerodds_types::TypeIdentifier,
@@ -101,6 +162,12 @@ pub struct SubscriptionBuiltinTopicData {
     pub unicast_locators: Vec<Locator>,
     /// Endpoint-Multicast-Locators (DDSI-RTPS 2.5 §8.5.3.2).
     pub multicast_locators: Vec<Locator>,
+    /// `PID_EXPECTS_INLINE_QOS` (0x0043): the reader expects the writer's
+    /// QoS in-line with every DATA (DDSI-RTPS 2.5 §8.4.7.5, §8.7.1). A
+    /// stateless reader asks for it; this tree's readers keep the
+    /// writer's QoS from discovery and do not. Absent is `false`
+    /// (Table 9.19).
+    pub expects_inline_qos: bool,
 }
 
 /// Content-filter property — projects a content-filtered-topic
@@ -132,7 +199,7 @@ pub mod filter_class {
 }
 
 /// Encodes a ContentFilterProperty as a PL value (five CDR strings +
-/// sequence<string>).
+/// `sequence<string>`).
 ///
 /// # Errors
 /// `ValueOutOfRange` if a string is too long.
@@ -140,9 +207,17 @@ pub fn encode_content_filter_property_le(
     cfp: &ContentFilterProperty,
 ) -> Result<Vec<u8>, WireError> {
     let mut out = Vec::new();
-    out.extend_from_slice(&encode_cdr_string_le(&cfp.content_filtered_topic_name)?);
-    out.extend_from_slice(&encode_cdr_string_le(&cfp.related_topic_name)?);
-    out.extend_from_slice(&encode_cdr_string_le(&cfp.filter_class_name)?);
+    // §9.3.2.1: the first three are `string<256>`; the expression is not
+    // bounded.
+    let bounded = |s: &str| {
+        crate::publication_data::encode_bounded_cdr_string_le(
+            s,
+            crate::publication_data::STRING_256_MAX,
+        )
+    };
+    out.extend_from_slice(&bounded(&cfp.content_filtered_topic_name)?);
+    out.extend_from_slice(&bounded(&cfp.related_topic_name)?);
+    out.extend_from_slice(&bounded(&cfp.filter_class_name)?);
     out.extend_from_slice(&encode_cdr_string_le(&cfp.filter_expression)?);
     out.extend_from_slice(&encode_partition_le(&cfp.expression_parameters)?);
     Ok(out)
@@ -156,6 +231,12 @@ pub fn decode_content_filter_property(
     let (s1, rest1) = take_cdr_string(value, little_endian)?;
     let (s2, rest2) = take_cdr_string(rest1, little_endian)?;
     let (s3, rest3) = take_cdr_string(rest2, little_endian)?;
+    if [&s1, &s2, &s3]
+        .iter()
+        .any(|s| s.len() > crate::publication_data::STRING_256_MAX)
+    {
+        return None;
+    }
     let (s4, rest4) = take_cdr_string(rest3, little_endian)?;
     let params = decode_partition(rest4, little_endian)?;
     Some(ContentFilterProperty {
@@ -195,7 +276,7 @@ impl SubscriptionBuiltinTopicData {
     /// Encodes to PL_CDR_LE bytes (with a 4-byte encapsulation header).
     ///
     /// Implemented directly (not delegated via
-    /// [`PublicationBuiltinTopicData`]) so that extension PIDs that are
+    /// [`PublicationBuiltinTopicData`](crate::publication_data::PublicationBuiltinTopicData)) so that extension PIDs that are
     /// writer-only (e.g. `PID_LIFESPAN`, `PID_OWNERSHIP_STRENGTH`) do
     /// not accidentally end up in the subscription payload.
     ///
@@ -208,17 +289,26 @@ impl SubscriptionBuiltinTopicData {
             pid::PARTICIPANT_GUID,
             self.participant_key.to_bytes().to_vec(),
         ));
+        if let Some(group) = self.group_guid {
+            params.push(Parameter::new(pid::GROUP_GUID, group.to_bytes().to_vec()));
+        }
         params.push(Parameter::new(
             pid::ENDPOINT_GUID,
             self.key.to_bytes().to_vec(),
         ));
         params.push(Parameter::new(
             pid::TOPIC_NAME,
-            encode_cdr_string_le(&self.topic_name)?,
+            crate::publication_data::encode_bounded_cdr_string_le(
+                &self.topic_name,
+                crate::publication_data::STRING_256_MAX,
+            )?,
         ));
         params.push(Parameter::new(
             pid::TYPE_NAME,
-            encode_cdr_string_le(&self.type_name)?,
+            crate::publication_data::encode_bounded_cdr_string_le(
+                &self.type_name,
+                crate::publication_data::STRING_256_MAX,
+            )?,
         ));
         params.push(Parameter::new(
             pid::DURABILITY,
@@ -230,22 +320,34 @@ impl SubscriptionBuiltinTopicData {
         rel.extend_from_slice(&self.reliability.max_blocking_time.to_bytes_le());
         params.push(Parameter::new(pid::RELIABILITY, rel));
 
-        // OWNERSHIP (reader-side: "ich akzeptiere nur diesen Ownership-Modus").
+        // OWNERSHIP (reader-side: "I accept only this ownership mode").
         params.push(Parameter::new(
             pid::OWNERSHIP,
             encode_u32_le(self.ownership as u32).to_vec(),
         ));
 
-        // LIVELINESS — requested lease.
-        params.push(Parameter::new(
-            pid::LIVELINESS,
-            encode_liveliness_le(self.liveliness),
-        ));
+        // LIVELINESS — requested lease — and DEADLINE — requested period —
+        // are left out at their default (Duration_t INFINITE), as in
+        // `PublicationBuiltinTopicData::parameters`: dust_dds 0.16.1 reads an
+        // announced INFINITE as finite and refuses the reader (DEADLINE).
+        if self.liveliness != zerodds_qos::LivelinessQosPolicy::default() {
+            params.push(Parameter::new(
+                pid::LIVELINESS,
+                encode_liveliness_le(self.liveliness),
+            ));
+        }
+        if self.deadline != zerodds_qos::DeadlineQosPolicy::default() {
+            params.push(Parameter::new(
+                pid::DEADLINE,
+                encode_duration_le(self.deadline.period).to_vec(),
+            ));
+        }
 
-        // DEADLINE — requested period.
+        // TIME_BASED_FILTER — the reader's minimum separation (DDS 1.4
+        // §2.2.5, PID 0x0004).
         params.push(Parameter::new(
-            pid::DEADLINE,
-            encode_duration_le(self.deadline.period).to_vec(),
+            pid::TIME_BASED_FILTER,
+            encode_duration_le(self.time_based_filter.minimum_separation).to_vec(),
         ));
 
         // LATENCY_BUDGET — requested duration (spec §2.2.3.10 / PID 0x0027).
@@ -264,13 +366,9 @@ impl SubscriptionBuiltinTopicData {
         // §2.2.3.6 / PID 0x0021). Symmetric to the writer-side encoding in
         // `publication_data::encode_into`.
         {
-            let mut w = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Little);
-            self.presentation
-                .encode_into(&mut w)
-                .map_err(|_| WireError::ValueOutOfRange {
-                    message: "presentation encoding failed",
-                })?;
-            params.push(Parameter::new(pid::PRESENTATION, w.into_bytes()));
+            let mut w = zerodds_wire::Writer::new(zerodds_wire::Endianness::Little);
+            self.presentation.encode_into(&mut w);
+            params.push(Parameter::new(pid::PRESENTATION, w.finish()));
         }
 
         // PARTITION.
@@ -304,6 +402,17 @@ impl SubscriptionBuiltinTopicData {
         if let Some(ti) = &self.type_information {
             params.push(Parameter::new(pid::TYPE_INFORMATION, ti.clone()));
         }
+        crate::type_v1::push(
+            &mut params,
+            self.type_id_v1.as_ref(),
+            self.type_object_v1.as_ref(),
+        )?;
+        if let Some(name) = &self.entity_name {
+            params.push(Parameter::new(
+                pid::ENTITY_NAME,
+                crate::publication_data::encode_cdr_string_le(name)?,
+            ));
+        }
 
         if let Some(cfp) = &self.content_filter {
             params.push(Parameter::new(
@@ -318,9 +427,25 @@ impl SubscriptionBuiltinTopicData {
                 info.to_bytes(true).to_vec(),
             ));
         }
+        if let Some(info) = self.sym_cipher_algo_info {
+            params.push(Parameter::new(
+                pid::ENDPOINT_SYMMETRIC_CIPHER_ALGORITHM_INFO,
+                info.to_bytes(true).to_vec(),
+            ));
+        }
+        if !self.data_tags.is_empty() {
+            params.push(Parameter::new(pid::DATA_TAGS, self.data_tags.encode(true)?));
+        }
+        // §7.3.21: the `propagate = TRUE` entries of the PropertyQosPolicy.
+        if !self.properties.is_empty() || !self.properties.binary_entries.is_empty() {
+            params.push(Parameter::new(
+                pid::PROPERTY_LIST,
+                self.properties.encode(true)?,
+            ));
+        }
 
         // ----------------------------------------------------------------
-        // DDS-RPC 1.0 discovery PIDs (§7.8.2) — only if set.
+        // DDS-RPC 1.0 discovery PIDs (§7.6.2.1) — only if set.
         // ----------------------------------------------------------------
         if let Some(name) = &self.service_instance_name {
             params.push(Parameter::new(
@@ -341,15 +466,47 @@ impl SubscriptionBuiltinTopicData {
             ));
         }
 
-        // PID_ZERODDS_TYPE_ID (F-TYPES-3 Wire-up).
-        if self.type_identifier != zerodds_types::TypeIdentifier::None {
-            let mut w = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Little);
+        // PID_VENDORID (0x0016) — see the twin in `PublicationBuiltinTopicData`:
+        // a vendor-specific parameter can only be read by a receiver that
+        // knows whose it is (DDSI-RTPS 2.5 Table 9.6), and the vendor
+        // written is the one the announcement carries, never a constant.
+        if let Some(vendor) = self.vendor_id {
+            params.push(Parameter::new(
+                pid::VENDOR_ID,
+                alloc::vec![vendor.0[0], vendor.0[1], 0, 0],
+            ));
+        }
+
+        // PID_ZERODDS_TYPE_ID (F-TYPES-3 Wire-up) — written only under this
+        // tree's own vendor id, for the reason given at the twin.
+        if self.vendor_id == Some(crate::wire_types::VendorId::ZERODDS)
+            && self.type_identifier != zerodds_types::TypeIdentifier::None
+        {
+            // A `TypeIdentifier` is XCDR2 wherever it travels (XTypes 1.3
+            // §7.3.4); the cap of the writer is what says so to the codec.
+            let mut w = zerodds_types::framing::xcdr2_writer();
             self.type_identifier
                 .encode_into(&mut w)
                 .map_err(|_| WireError::ValueOutOfRange {
                     message: "type_identifier encoding failed",
                 })?;
-            params.push(Parameter::new(pid::ZERODDS_TYPE_ID, w.into_bytes()));
+            params.push(Parameter::new(pid::ZERODDS_TYPE_ID, w.finish()));
+        }
+
+        // PID_TYPE_CONSISTENCY_ENFORCEMENT (0x0074). Written for every
+        // reader that announced it, which every local reader does, as
+        // RTI Connext 7.7 and Fast DDS both do even at the defaults —
+        // `crates/discovery/tests/fixtures/vendor-discovery/`. A writer
+        // that has to reach §7.6.3.4.2's verdict for the reader's Topic
+        // as well as its own needs the policy on every announcement, not
+        // only on the ones that differ from the default. An announcement
+        // read without the PID (`type_consistency_announced`) is written
+        // back without it, so it reads back as it came.
+        if self.type_consistency_announced {
+            params.push(Parameter::new(
+                pid::TYPE_CONSISTENCY_ENFORCEMENT,
+                self.type_consistency.to_bytes(true),
+            ));
         }
 
         if !self.data_representation.is_empty() {
@@ -373,6 +530,14 @@ impl SubscriptionBuiltinTopicData {
             pid::MULTICAST_LOCATOR,
             &self.multicast_locators,
         );
+        // FALSE is the default (Table 9.19) and is left out, as every other
+        // default here is.
+        if self.expects_inline_qos {
+            params.push(Parameter::new(
+                pid::EXPECTS_INLINE_QOS,
+                crate::publication_data::boolean_value(true),
+            ));
+        }
 
         let mut out = Vec::with_capacity(params.parameters.len() * 24 + 16);
         out.extend_from_slice(&ENCAPSULATION_PL_CDR_LE);
@@ -415,16 +580,29 @@ impl SubscriptionBuiltinTopicData {
             .find(pid::PARTICIPANT_GUID)
             .and_then(guid_from_param)
             .unwrap_or_else(|| Guid::new(key.prefix, crate::wire_types::EntityId::PARTICIPANT));
+        let group_guid = crate::publication_data::group_guid_of(&pl, key);
         let topic_name = pl
             .find(pid::TOPIC_NAME)
-            .map(|p| decode_cdr_string(&p.value, little_endian))
+            .map(|p| {
+                crate::publication_data::decode_bounded_cdr_string(
+                    &p.value,
+                    little_endian,
+                    crate::publication_data::STRING_256_MAX,
+                )
+            })
             .transpose()?
             .ok_or(WireError::ValueOutOfRange {
                 message: "TOPIC_NAME missing",
             })?;
         let type_name = pl
             .find(pid::TYPE_NAME)
-            .map(|p| decode_cdr_string(&p.value, little_endian))
+            .map(|p| {
+                crate::publication_data::decode_bounded_cdr_string(
+                    &p.value,
+                    little_endian,
+                    crate::publication_data::STRING_256_MAX,
+                )
+            })
             .transpose()?
             .ok_or(WireError::ValueOutOfRange {
                 message: "TYPE_NAME missing",
@@ -501,6 +679,12 @@ impl SubscriptionBuiltinTopicData {
             .map(|period| zerodds_qos::DeadlineQosPolicy { period })
             .unwrap_or_default();
 
+        let time_based_filter = pl
+            .find(pid::TIME_BASED_FILTER)
+            .and_then(|p| decode_duration(&p.value, little_endian))
+            .map(|minimum_separation| zerodds_qos::TimeBasedFilterQosPolicy { minimum_separation })
+            .unwrap_or_default();
+
         let latency_budget = pl
             .find(pid::LATENCY_BUDGET)
             .and_then(|p| decode_duration(&p.value, little_endian))
@@ -520,11 +704,11 @@ impl SubscriptionBuiltinTopicData {
             .find(pid::PRESENTATION)
             .and_then(|p| {
                 let endianness = if little_endian {
-                    zerodds_cdr::Endianness::Little
+                    zerodds_wire::Endianness::Little
                 } else {
-                    zerodds_cdr::Endianness::Big
+                    zerodds_wire::Endianness::Big
                 };
-                let mut r = zerodds_cdr::BufferReader::new(&p.value, endianness);
+                let mut r = zerodds_wire::Reader::new(&p.value, endianness);
                 PresentationQosPolicy::decode_from(&mut r).ok()
             })
             .unwrap_or_default();
@@ -547,34 +731,114 @@ impl SubscriptionBuiltinTopicData {
             .and_then(|p| crate::publication_data::decode_octet_seq(&p.value, little_endian))
             .unwrap_or_default();
 
+        let type_consistency_param = pl.find(pid::TYPE_CONSISTENCY_ENFORCEMENT);
+        let type_consistency_announced = type_consistency_param.is_some();
+        let type_consistency = type_consistency_param
+            .map(|p| {
+                zerodds_types::qos::TypeConsistencyEnforcement::from_bytes(&p.value, little_endian)
+            })
+            // §7.6.3.4.1: no PID 0x0074 means DISALLOW_TYPE_COERCION.
+            .unwrap_or(zerodds_types::qos::TypeConsistencyEnforcement::not_announced());
+
         let type_information = pl.find(pid::TYPE_INFORMATION).map(|p| p.value.clone());
-        let content_filter = pl
-            .find(pid::CONTENT_FILTER_PROPERTY)
+        let (type_id_v1, type_object_v1) = crate::type_v1::read(&pl, little_endian);
+        let entity_name = match pl.find(pid::ENTITY_NAME) {
+            Some(p) => Some(crate::publication_data::decode_cdr_string(
+                &p.value,
+                little_endian,
+            )?),
+            None => None,
+        };
+        let content_filter_param = pl.find(pid::CONTENT_FILTER_PROPERTY);
+        let content_filter = content_filter_param
             .and_then(|p| decode_content_filter_property(&p.value, little_endian));
+        let content_filter_unreadable = content_filter_param.is_some() && content_filter.is_none();
 
         let security_info = pl
             .find(pid::ENDPOINT_SECURITY_INFO)
             .and_then(|p| EndpointSecurityInfo::from_bytes(&p.value, little_endian).ok());
+        let sym_cipher_algo_info = pl
+            .find(pid::ENDPOINT_SYMMETRIC_CIPHER_ALGORITHM_INFO)
+            .and_then(|p| {
+                crate::security_algo_info::EndpointSecuritySymmetricCipherAlgorithmInfo::from_bytes(
+                    &p.value,
+                    little_endian,
+                )
+                .ok()
+            });
+        let data_tags = match pl.find(pid::DATA_TAGS) {
+            Some(p) => crate::property_list::WireDataTags::decode(&p.value, little_endian)?,
+            None => crate::property_list::WireDataTags::default(),
+        };
+        // A PropertyList that does not decode rejects the sample; it is not
+        // read as an empty list.
+        let properties = match pl.find(pid::PROPERTY_LIST) {
+            Some(p) => crate::property_list::WirePropertyList::decode(&p.value, little_endian)?,
+            None => crate::property_list::WirePropertyList::default(),
+        };
 
         let service_instance_name = pl
             .find(pid::SERVICE_INSTANCE_NAME)
-            .map(|p| decode_cdr_string(&p.value, little_endian))
-            .transpose()
-            .ok()
+            .map(|p| service_instance_name_param(&p.value, little_endian))
+            .transpose()?
             .flatten();
         let related_entity_guid = pl.find(pid::RELATED_ENTITY_GUID).and_then(guid_from_param);
         let topic_aliases = pl
             .find(pid::TOPIC_ALIASES)
-            .and_then(|p| decode_partition(&p.value, little_endian));
+            .map(|p| topic_aliases_param(&p.value, little_endian))
+            .transpose()?
+            .flatten();
 
-        let type_identifier = pl
-            .find(pid::ZERODDS_TYPE_ID)
-            .and_then(|p| {
-                let mut r =
-                    zerodds_cdr::BufferReader::new(&p.value, zerodds_cdr::Endianness::Little);
-                zerodds_types::TypeIdentifier::decode_from(&mut r).ok()
-            })
-            .unwrap_or_default();
+        // Only ZeroDDS's own 0x8002 is a `TypeIdentifier`; every other
+        // vendor's 0x8002 is that vendor's parameter. See the twin in
+        // `PublicationBuiltinTopicData::from_pl_cdr_le` for the measurement
+        // that made this a bug rather than a hypothetical.
+        let announced_vendor = decoded_vendor_id(&pl);
+        let mut type_identifier = if announced_vendor == Some(crate::wire_types::VendorId::ZERODDS)
+        {
+            pl.find(pid::ZERODDS_TYPE_ID)
+                .and_then(|p| {
+                    let mut r = zerodds_types::framing::xcdr2_reader(&p.value);
+                    zerodds_types::TypeIdentifier::decode_from(&mut r).ok()
+                })
+                .unwrap_or_default()
+        } else {
+            zerodds_types::TypeIdentifier::None
+        };
+
+        // Issue #30 (symmetric to `PublicationBuiltinTopicData`): derive a
+        // TypeIdentifier from the standard PID_TYPE_INFORMATION blob of a
+        // non-ZeroDDS peer so the reader announcement carries a comparable
+        // identity for the writer-side assignability guard. Parse failure
+        // leaves it None with the raw blob retained for a loud signal at the
+        // match layer.
+        if type_identifier == zerodds_types::TypeIdentifier::None {
+            if let Some(ti_bytes) = &type_information {
+                let endianness = if little_endian {
+                    zerodds_wire::Endianness::Little
+                } else {
+                    zerodds_wire::Endianness::Big
+                };
+                if let Ok(ti) = zerodds_types::type_information::TypeInformation::from_bytes(
+                    ti_bytes, endianness,
+                ) {
+                    if let Some(id) = ti.preferred_type_identifier() {
+                        type_identifier = id;
+                    }
+                }
+            }
+        }
+
+        // See `PublicationBuiltinTopicData`: the `TypeObjectV1` identifies the
+        // type of an endpoint that announces no `PID_TYPE_INFORMATION`.
+        if type_identifier == zerodds_types::TypeIdentifier::None && type_information.is_none() {
+            if let Some(id) = type_object_v1
+                .as_ref()
+                .and_then(crate::type_v1::identifier_of)
+            {
+                type_identifier = id;
+            }
+        }
 
         let data_representation = pl
             .find(pid::DATA_REPRESENTATION)
@@ -612,6 +876,7 @@ impl SubscriptionBuiltinTopicData {
         Ok(Self {
             key,
             participant_key,
+            group_guid,
             topic_name,
             type_name,
             durability,
@@ -619,6 +884,7 @@ impl SubscriptionBuiltinTopicData {
             ownership,
             liveliness,
             deadline,
+            time_based_filter,
             latency_budget,
             destination_order,
             presentation,
@@ -626,16 +892,30 @@ impl SubscriptionBuiltinTopicData {
             user_data,
             topic_data,
             group_data,
+            type_consistency,
+            type_consistency_announced,
             type_information,
+            type_id_v1,
+            type_object_v1,
+            entity_name,
             data_representation,
             content_filter,
+            content_filter_unreadable,
             security_info,
+            sym_cipher_algo_info,
+            properties,
+            data_tags,
             service_instance_name,
             related_entity_guid,
             topic_aliases,
+            vendor_id: announced_vendor,
             type_identifier,
             unicast_locators: collect_locator_params(&pl, pid::UNICAST_LOCATOR, little_endian),
             multicast_locators: collect_locator_params(&pl, pid::MULTICAST_LOCATOR, little_endian),
+            expects_inline_qos: crate::publication_data::boolean_param(
+                &pl,
+                pid::EXPECTS_INLINE_QOS,
+            )?,
         })
     }
 }
@@ -651,6 +931,8 @@ mod tests {
     #[test]
     fn roundtrip_le() {
         let s = SubscriptionBuiltinTopicData {
+            content_filter_unreadable: false,
+            vendor_id: Some(crate::wire_types::VendorId::ZERODDS),
             key: Guid::new(
                 GuidPrefix::from_bytes([2; 12]),
                 EntityId::user_reader_with_key([0xA0, 0xB0, 0xC0]),
@@ -666,6 +948,7 @@ mod tests {
             ownership: zerodds_qos::OwnershipKind::Shared,
             liveliness: zerodds_qos::LivelinessQosPolicy::default(),
             deadline: zerodds_qos::DeadlineQosPolicy::default(),
+            time_based_filter: zerodds_qos::TimeBasedFilterQosPolicy::default(),
             latency_budget: zerodds_qos::LatencyBudgetQosPolicy::default(),
             destination_order: zerodds_qos::DestinationOrderQosPolicy::default(),
             presentation: PresentationQosPolicy::default(),
@@ -673,26 +956,175 @@ mod tests {
             user_data: alloc::vec::Vec::new(),
             topic_data: alloc::vec::Vec::new(),
             group_data: alloc::vec::Vec::new(),
+            type_consistency: zerodds_types::qos::TypeConsistencyEnforcement::default(),
             type_information: None,
+            type_id_v1: None,
+            type_object_v1: None,
             data_representation: alloc::vec::Vec::new(),
             content_filter: None,
             security_info: None,
+            sym_cipher_algo_info: None,
+            data_tags: Default::default(),
+            properties: Default::default(),
             service_instance_name: None,
             related_entity_guid: None,
             topic_aliases: None,
             type_identifier: zerodds_types::TypeIdentifier::None,
             unicast_locators: alloc::vec::Vec::new(),
             multicast_locators: alloc::vec::Vec::new(),
+            expects_inline_qos: false,
+            group_guid: None,
+            type_consistency_announced: true,
+            entity_name: None,
         };
         let bytes = s.to_pl_cdr_le().unwrap();
         let decoded = SubscriptionBuiltinTopicData::from_pl_cdr_le(&bytes).unwrap();
         assert_eq!(decoded, s);
     }
 
+    /// §7.6.3.4.1: an announcement without PID 0x0074 is read as
+    /// DISALLOW_TYPE_COERCION, with the options as though
+    /// prevent_type_widening were true and the others false.
+    #[test]
+    fn a_reader_announcing_no_type_consistency_is_read_as_disallow() {
+        let mut s = SubscriptionBuiltinTopicData {
+            content_filter_unreadable: false,
+            vendor_id: Some(crate::wire_types::VendorId::ZERODDS),
+            key: Guid::new(
+                GuidPrefix::from_bytes([2; 12]),
+                EntityId::user_reader_with_key([0xA0, 0xB0, 0xC0]),
+            ),
+            participant_key: Guid::new(GuidPrefix::from_bytes([2; 12]), EntityId::PARTICIPANT),
+            topic_name: "T".into(),
+            type_name: "X".into(),
+            durability: DurabilityKind::Volatile,
+            reliability: ReliabilityQos::default(),
+            ownership: zerodds_qos::OwnershipKind::Shared,
+            liveliness: zerodds_qos::LivelinessQosPolicy::default(),
+            deadline: zerodds_qos::DeadlineQosPolicy::default(),
+            time_based_filter: zerodds_qos::TimeBasedFilterQosPolicy::default(),
+            latency_budget: zerodds_qos::LatencyBudgetQosPolicy::default(),
+            destination_order: zerodds_qos::DestinationOrderQosPolicy::default(),
+            presentation: PresentationQosPolicy::default(),
+            partition: alloc::vec::Vec::new(),
+            user_data: alloc::vec::Vec::new(),
+            topic_data: alloc::vec::Vec::new(),
+            group_data: alloc::vec::Vec::new(),
+            type_consistency: zerodds_types::qos::TypeConsistencyEnforcement::default(),
+            type_information: None,
+            type_id_v1: None,
+            type_object_v1: None,
+            data_representation: alloc::vec::Vec::new(),
+            content_filter: None,
+            security_info: None,
+            sym_cipher_algo_info: None,
+            data_tags: Default::default(),
+            properties: Default::default(),
+            service_instance_name: None,
+            related_entity_guid: None,
+            topic_aliases: None,
+            type_identifier: zerodds_types::TypeIdentifier::None,
+            unicast_locators: alloc::vec::Vec::new(),
+            multicast_locators: alloc::vec::Vec::new(),
+            expects_inline_qos: false,
+            group_guid: None,
+            type_consistency_announced: true,
+            entity_name: None,
+        };
+        let bytes = s.to_pl_cdr_le().unwrap();
+
+        // Drop parameter 0x0074 from the encoded list (4-octet
+        // encapsulation header, then id/length/value with 4-aligned values).
+        let mut stripped = bytes[..4].to_vec();
+        let mut at = 4;
+        let mut dropped = false;
+        while at + 4 <= bytes.len() {
+            let id = u16::from_le_bytes([bytes[at], bytes[at + 1]]);
+            let len = usize::from(u16::from_le_bytes([bytes[at + 2], bytes[at + 3]]));
+            let end = at + 4 + len;
+            if id == pid::TYPE_CONSISTENCY_ENFORCEMENT {
+                dropped = true;
+            } else {
+                stripped.extend_from_slice(&bytes[at..end]);
+            }
+            at = end;
+            if id == pid::SENTINEL {
+                break;
+            }
+        }
+        assert!(dropped, "the encoder writes PID 0x0074");
+
+        s.type_consistency = zerodds_types::qos::TypeConsistencyEnforcement::not_announced();
+        let decoded = SubscriptionBuiltinTopicData::from_pl_cdr_le(&stripped).unwrap();
+        assert_eq!(decoded.type_consistency, s.type_consistency);
+        assert_eq!(
+            decoded.type_consistency.kind,
+            zerodds_types::qos::TypeConsistencyKind::DisallowTypeCoercion
+        );
+        assert!(decoded.type_consistency.prevent_type_widening);
+        assert!(!decoded.type_consistency_announced);
+        // Written back, it still has no PID 0x0074.
+        let rewritten =
+            SubscriptionBuiltinTopicData::from_pl_cdr_le(&decoded.to_pl_cdr_le().unwrap()).unwrap();
+        assert_eq!(rewritten, decoded);
+
+        // The same policy, announced, is told apart from the absent one.
+        let announced =
+            SubscriptionBuiltinTopicData::from_pl_cdr_le(&s.to_pl_cdr_le().unwrap()).unwrap();
+        assert_eq!(announced.type_consistency, decoded.type_consistency);
+        assert!(announced.type_consistency_announced);
+    }
+
+    /// DDS-Security 1.2 §7.3.21, §7.5.1.8: the `propagate = TRUE`
+    /// entries of the PropertyQosPolicy go out as `PID_PROPERTY_LIST` 0x0059
+    /// (string and binary part); absent stays absent; an entry that does not
+    /// decode rejects the sample.
+    /// DDS-Security 1.2 §7.5.1.7, §7.5.1.8: the DataTags of an endpoint are
+    /// `PID_DATA_TAGS` 0x1003; absent stays absent.
+    #[test]
+    fn endpoint_data_tags_roundtrip() {
+        use crate::property_list::WireProperty;
+        let mut d = sample_sub();
+        assert!(d.data_tags.is_empty());
+        let plain = d.to_pl_cdr_le().unwrap();
+        assert!(
+            !plain.windows(2).any(|w| w == [0x03, 0x10]),
+            "not sent when absent"
+        );
+        d.data_tags.tags.push(WireProperty::new("level", "secret"));
+        let bytes = d.to_pl_cdr_le().unwrap();
+        assert!(bytes.windows(2).any(|w| w == [0x03, 0x10]));
+        let decoded = SubscriptionBuiltinTopicData::from_pl_cdr_le(&bytes).unwrap();
+        assert_eq!(decoded.data_tags, d.data_tags);
+    }
+
+    #[test]
+    fn endpoint_property_list_roundtrip() {
+        use crate::property_list::{WireBinaryProperty, WireProperty};
+        let mut d = sample_sub();
+        assert!(d.properties.is_empty());
+        let plain = d.to_pl_cdr_le().unwrap();
+        assert!(
+            !plain.windows(2).any(|w| w == [0x59, 0x00]),
+            "not sent when absent"
+        );
+        d.properties.push(WireProperty::new("dds.sec.x", "v"));
+        d.properties = d
+            .properties
+            .with_binary(WireBinaryProperty::new("blob", alloc::vec![1_u8, 2, 3]));
+        let bytes = d.to_pl_cdr_le().unwrap();
+        assert!(bytes.windows(2).any(|w| w == [0x59, 0x00]));
+        let decoded = SubscriptionBuiltinTopicData::from_pl_cdr_le(&bytes).unwrap();
+        assert_eq!(decoded.properties, d.properties);
+        assert_eq!(decoded.properties.get("dds.sec.x"), Some("v"));
+    }
+
     #[test]
     fn security_info_roundtrip() {
         use crate::endpoint_security_info::{EndpointSecurityInfo, attrs, plugin_attrs};
         let s = SubscriptionBuiltinTopicData {
+            content_filter_unreadable: false,
+            vendor_id: Some(crate::wire_types::VendorId::ZERODDS),
             key: Guid::new(
                 GuidPrefix::from_bytes([4; 12]),
                 EntityId::user_reader_with_key([0x10, 0x20, 0x30]),
@@ -705,6 +1137,7 @@ mod tests {
             ownership: zerodds_qos::OwnershipKind::Shared,
             liveliness: zerodds_qos::LivelinessQosPolicy::default(),
             deadline: zerodds_qos::DeadlineQosPolicy::default(),
+            time_based_filter: zerodds_qos::TimeBasedFilterQosPolicy::default(),
             latency_budget: zerodds_qos::LatencyBudgetQosPolicy::default(),
             destination_order: zerodds_qos::DestinationOrderQosPolicy::default(),
             presentation: PresentationQosPolicy::default(),
@@ -712,7 +1145,10 @@ mod tests {
             user_data: alloc::vec::Vec::new(),
             topic_data: alloc::vec::Vec::new(),
             group_data: alloc::vec::Vec::new(),
+            type_consistency: zerodds_types::qos::TypeConsistencyEnforcement::default(),
             type_information: None,
+            type_id_v1: None,
+            type_object_v1: None,
             data_representation: alloc::vec::Vec::new(),
             content_filter: None,
             security_info: Some(EndpointSecurityInfo {
@@ -720,12 +1156,19 @@ mod tests {
                 plugin_endpoint_security_attributes: plugin_attrs::IS_VALID
                     | plugin_attrs::IS_PAYLOAD_ENCRYPTED,
             }),
+            sym_cipher_algo_info: None,
+            data_tags: Default::default(),
+            properties: Default::default(),
             service_instance_name: None,
             related_entity_guid: None,
             topic_aliases: None,
             type_identifier: zerodds_types::TypeIdentifier::None,
             unicast_locators: alloc::vec::Vec::new(),
             multicast_locators: alloc::vec::Vec::new(),
+            expects_inline_qos: false,
+            group_guid: None,
+            type_consistency_announced: true,
+            entity_name: None,
         };
         let bytes = s.to_pl_cdr_le().unwrap();
         let decoded = SubscriptionBuiltinTopicData::from_pl_cdr_le(&bytes).unwrap();
@@ -746,6 +1189,53 @@ mod tests {
         assert_eq!(decoded, cfp);
     }
 
+    /// DDSI-RTPS 2.5 §9.3.2.1: the three names of a `ContentFilterProperty_t`
+    /// are `string<256>`; the filter expression is not.
+    #[test]
+    fn content_filter_names_are_bounded_by_string_256() {
+        let cfp = |name: usize, class: usize, expression: usize| ContentFilterProperty {
+            content_filtered_topic_name: "c".repeat(name),
+            related_topic_name: "r".into(),
+            filter_class_name: "k".repeat(class),
+            filter_expression: "e".repeat(expression),
+            expression_parameters: alloc::vec![],
+        };
+        let ok = cfp(256, 256, 1000);
+        let bytes = encode_content_filter_property_le(&ok).unwrap();
+        assert_eq!(decode_content_filter_property(&bytes, true), Some(ok));
+        assert!(encode_content_filter_property_le(&cfp(257, 1, 1)).is_err());
+        assert!(encode_content_filter_property_le(&cfp(1, 257, 1)).is_err());
+    }
+
+    /// A ContentFilterProperty with a name over the bound of `string<256>`
+    /// does not read: the subscription is taken without a filter and says so
+    /// in `content_filter_unreadable`, for the receiver to count and log.
+    #[test]
+    fn an_over_long_content_filter_name_is_reported_as_unreadable() {
+        let mut value = Vec::new();
+        value.extend_from_slice(&encode_cdr_string_le(&"c".repeat(257)).unwrap());
+        value.extend_from_slice(&encode_cdr_string_le("related").unwrap());
+        value.extend_from_slice(&encode_cdr_string_le("DDSSQL").unwrap());
+        value.extend_from_slice(&encode_cdr_string_le("x > 1").unwrap());
+        value.extend_from_slice(&0u32.to_le_bytes());
+        assert_eq!(decode_content_filter_property(&value, true), None);
+
+        let mut bytes = sample_sub().to_pl_cdr_le().unwrap();
+        let sentinel = bytes.split_off(bytes.len() - 4);
+        bytes.extend_from_slice(&pid::CONTENT_FILTER_PROPERTY.to_le_bytes());
+        bytes.extend_from_slice(&(value.len() as u16).to_le_bytes());
+        bytes.extend_from_slice(&value);
+        bytes.extend_from_slice(&sentinel);
+        let read = SubscriptionBuiltinTopicData::from_pl_cdr_le(&bytes).unwrap();
+        assert_eq!(read.content_filter, None);
+        assert!(read.content_filter_unreadable);
+        // Without the parameter nothing is unreadable.
+        let plain =
+            SubscriptionBuiltinTopicData::from_pl_cdr_le(&sample_sub().to_pl_cdr_le().unwrap())
+                .unwrap();
+        assert!(!plain.content_filter_unreadable);
+    }
+
     #[test]
     fn subscription_with_content_filter_roundtrip_le() {
         let cfp = ContentFilterProperty {
@@ -756,6 +1246,8 @@ mod tests {
             expression_parameters: alloc::vec!["42".into()],
         };
         let s = SubscriptionBuiltinTopicData {
+            content_filter_unreadable: false,
+            vendor_id: Some(crate::wire_types::VendorId::ZERODDS),
             key: Guid::new(
                 GuidPrefix::from_bytes([3; 12]),
                 EntityId::user_reader_with_key([1, 2, 3]),
@@ -768,6 +1260,7 @@ mod tests {
             ownership: zerodds_qos::OwnershipKind::Shared,
             liveliness: zerodds_qos::LivelinessQosPolicy::default(),
             deadline: zerodds_qos::DeadlineQosPolicy::default(),
+            time_based_filter: zerodds_qos::TimeBasedFilterQosPolicy::default(),
             latency_budget: zerodds_qos::LatencyBudgetQosPolicy::default(),
             destination_order: zerodds_qos::DestinationOrderQosPolicy::default(),
             presentation: PresentationQosPolicy::default(),
@@ -775,24 +1268,155 @@ mod tests {
             user_data: alloc::vec::Vec::new(),
             topic_data: alloc::vec::Vec::new(),
             group_data: alloc::vec::Vec::new(),
+            type_consistency: zerodds_types::qos::TypeConsistencyEnforcement::default(),
             type_information: None,
+            type_id_v1: None,
+            type_object_v1: None,
             data_representation: alloc::vec::Vec::new(),
             content_filter: Some(cfp.clone()),
             security_info: None,
+            sym_cipher_algo_info: None,
+            data_tags: Default::default(),
+            properties: Default::default(),
             service_instance_name: None,
             related_entity_guid: None,
             topic_aliases: None,
             type_identifier: zerodds_types::TypeIdentifier::None,
             unicast_locators: alloc::vec::Vec::new(),
             multicast_locators: alloc::vec::Vec::new(),
+            expects_inline_qos: false,
+            group_guid: None,
+            type_consistency_announced: true,
+            entity_name: None,
         };
         let bytes = s.to_pl_cdr_le().unwrap();
         let decoded = SubscriptionBuiltinTopicData::from_pl_cdr_le(&bytes).unwrap();
         assert_eq!(decoded.content_filter, Some(cfp));
     }
 
+    /// DDSI-RTPS 2.5 §10.6: the SerializedPayload with which the
+    /// SEDPbuiltinSubscriptionsWriter declares a DataReader of "Square" /
+    /// "ShapeType", DESTINATION_ORDER BY_SOURCE_TIMESTAMP, DEADLINE 3 s. The
+    /// octets are those printed in the spec.
+    const SPEC_10_6: [u8; 84] = [
+        0x00, 0x03, 0x00, 0x00, // PL_CDR_LE, options 0
+        0x5A, 0x00, 0x10, 0x00, // PID_ENDPOINT_GUID, 16
+        0xC0, 0xA8, 0x02, 0x05, 0x00, 0x00, 0x3A, 0x20, 0x00, 0x00, 0x00, 0x02, 0x80, 0x00, 0x00,
+        0x07, //
+        0x05, 0x00, 0x0C, 0x00, // PID_TOPIC_NAME, 12
+        0x07, 0x00, 0x00, 0x00, b'S', b'q', b'u', b'a', b'r', b'e', 0x00, 0x00, //
+        0x07, 0x00, 0x10, 0x00, // PID_TYPE_NAME, 16
+        0x0A, 0x00, 0x00, 0x00, b'S', b'h', b'a', b'p', b'e', b'T', b'y', b'p', b'e', 0x00, 0x00,
+        0x00, //
+        0x25, 0x00, 0x04, 0x00, // PID_DESTINATION_ORDER, 4
+        0x01, 0x00, 0x00, 0x00, //
+        0x23, 0x00, 0x08, 0x00, // PID_DEADLINE, 8
+        0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, //
+        0x01, 0x00, 0x00, 0x00, // PID_SENTINEL
+    ];
+
+    /// §10.6: the octets of the spec are read as the DataReader they declare.
+    #[test]
+    fn the_example_of_10_6_is_read() {
+        let d = SubscriptionBuiltinTopicData::from_pl_cdr_le(&SPEC_10_6).unwrap();
+        assert_eq!(
+            d.key,
+            Guid::new(
+                GuidPrefix::from_bytes([
+                    0xC0, 0xA8, 0x02, 0x05, 0x00, 0x00, 0x3A, 0x20, 0x00, 0x00, 0x00, 0x02
+                ]),
+                EntityId::from_bytes([0x80, 0x00, 0x00, 0x07]),
+            )
+        );
+        assert_eq!(d.topic_name, "Square");
+        assert_eq!(d.type_name, "ShapeType");
+        assert_eq!(
+            d.destination_order.kind,
+            zerodds_qos::DestinationOrderKind::BySourceTimestamp
+        );
+        assert_eq!(d.deadline.period, zerodds_qos::Duration::from_secs(3));
+    }
+
+    /// §10.6: what we write for those five members is the octets of the
+    /// spec (the spec leaves the members at their defaults out; we also
+    /// write them, so the comparison is per parameter).
+    #[test]
+    fn the_parameters_of_the_example_of_10_6_are_written_as_the_spec_prints_them() {
+        let mut d = SubscriptionBuiltinTopicData::from_pl_cdr_le(&SPEC_10_6).unwrap();
+        d.participant_key = Guid::new(d.key.prefix, EntityId::PARTICIPANT);
+        let bytes = d.to_pl_cdr_le().unwrap();
+        assert_eq!(&bytes[..4], &SPEC_10_6[..4], "PL_CDR_LE, options 0");
+        // The parameter list of the spec, one parameter at a time.
+        let mut at = 4;
+        while at + 4 <= SPEC_10_6.len() {
+            let id = u16::from_le_bytes([SPEC_10_6[at], SPEC_10_6[at + 1]]);
+            let len = usize::from(u16::from_le_bytes([SPEC_10_6[at + 2], SPEC_10_6[at + 3]]));
+            if id == pid::SENTINEL {
+                break;
+            }
+            let spec_param = &SPEC_10_6[at..at + 4 + len];
+            let found = bytes.windows(spec_param.len()).any(|w| w == spec_param);
+            assert!(found, "parameter 0x{id:04x} as the spec prints it");
+            at += 4 + len;
+        }
+        // A list ends with the sentinel.
+        assert_eq!(&bytes[bytes.len() - 4..], &SPEC_10_6[SPEC_10_6.len() - 4..]);
+    }
+
+    /// §10.3: "The sender shall set the representation_options to zero. The
+    /// receiver shall ignore the value of the representation_options."
+    #[test]
+    fn the_receiver_ignores_the_representation_options() {
+        let mut with_options = SPEC_10_6;
+        with_options[2] = 0xAB;
+        with_options[3] = 0xCD;
+        assert_eq!(
+            SubscriptionBuiltinTopicData::from_pl_cdr_le(&with_options).unwrap(),
+            SubscriptionBuiltinTopicData::from_pl_cdr_le(&SPEC_10_6).unwrap()
+        );
+        // The sender writes zero.
+        let written = sample_sub().to_pl_cdr_le().unwrap();
+        assert_eq!(&written[2..4], &[0, 0]);
+    }
+
+    /// A reader's LIVELINESS and DEADLINE at their default (Duration_t
+    /// INFINITE) are left out and read back as the default; set, they are
+    /// sent and read back.
+    #[test]
+    fn the_readers_infinite_defaults_are_left_out_and_read_back() {
+        let ids = |d: &SubscriptionBuiltinTopicData| -> Vec<u16> {
+            let bytes = d.to_pl_cdr_le().unwrap();
+            ParameterList::from_bytes(&bytes[4..], true)
+                .unwrap()
+                .parameters
+                .iter()
+                .map(|p| p.id)
+                .collect()
+        };
+        let d = sample_sub();
+        assert!(!ids(&d).contains(&pid::LIVELINESS));
+        assert!(!ids(&d).contains(&pid::DEADLINE));
+        let back =
+            SubscriptionBuiltinTopicData::from_pl_cdr_le(&d.to_pl_cdr_le().unwrap()).unwrap();
+        assert_eq!(back.liveliness, zerodds_qos::LivelinessQosPolicy::default());
+        assert_eq!(back.deadline, zerodds_qos::DeadlineQosPolicy::default());
+        let mut set = sample_sub();
+        set.liveliness.lease_duration = Duration::from_secs(2);
+        set.deadline.period = Duration::from_secs(3);
+        assert!(ids(&set).contains(&pid::LIVELINESS));
+        assert!(ids(&set).contains(&pid::DEADLINE));
+        let back =
+            SubscriptionBuiltinTopicData::from_pl_cdr_le(&set.to_pl_cdr_le().unwrap()).unwrap();
+        assert_eq!(
+            (back.liveliness, back.deadline),
+            (set.liveliness, set.deadline)
+        );
+    }
+
     fn sample_sub() -> SubscriptionBuiltinTopicData {
         SubscriptionBuiltinTopicData {
+            content_filter_unreadable: false,
+            vendor_id: Some(crate::wire_types::VendorId::ZERODDS),
             key: Guid::new(
                 GuidPrefix::from_bytes([5; 12]),
                 EntityId::user_reader_with_key([0xA0, 0xB0, 0xC0]),
@@ -805,6 +1429,7 @@ mod tests {
             ownership: zerodds_qos::OwnershipKind::Shared,
             liveliness: zerodds_qos::LivelinessQosPolicy::default(),
             deadline: zerodds_qos::DeadlineQosPolicy::default(),
+            time_based_filter: zerodds_qos::TimeBasedFilterQosPolicy::default(),
             latency_budget: zerodds_qos::LatencyBudgetQosPolicy::default(),
             destination_order: zerodds_qos::DestinationOrderQosPolicy::default(),
             presentation: PresentationQosPolicy::default(),
@@ -812,16 +1437,26 @@ mod tests {
             user_data: alloc::vec::Vec::new(),
             topic_data: alloc::vec::Vec::new(),
             group_data: alloc::vec::Vec::new(),
+            type_consistency: zerodds_types::qos::TypeConsistencyEnforcement::default(),
             type_information: None,
+            type_id_v1: None,
+            type_object_v1: None,
             data_representation: alloc::vec::Vec::new(),
             content_filter: None,
             security_info: None,
+            sym_cipher_algo_info: None,
+            data_tags: Default::default(),
+            properties: Default::default(),
             service_instance_name: None,
             related_entity_guid: None,
             topic_aliases: None,
             type_identifier: zerodds_types::TypeIdentifier::None,
             unicast_locators: alloc::vec::Vec::new(),
             multicast_locators: alloc::vec::Vec::new(),
+            expects_inline_qos: false,
+            group_guid: None,
+            type_consistency_announced: true,
+            entity_name: None,
         }
     }
 
@@ -841,6 +1476,39 @@ mod tests {
         assert_eq!(decoded.topic_aliases, s.topic_aliases);
     }
 
+    /// DDS-RPC 1.0 §7.6.2.1.2: `service_instance_name` is a `string<256>`
+    /// and `topic_aliases` a `sequence<string<256>>`. A longer string is
+    /// refused where it used to be dropped from the data.
+    #[test]
+    fn a_discovery_string_beyond_the_bound_is_refused_subscription() {
+        let mut s = sample_sub();
+        s.service_instance_name = Some("x".repeat(256));
+        s.topic_aliases = Some(alloc::vec!["y".repeat(256)]);
+        let bytes = s.to_pl_cdr_le().unwrap();
+        let decoded = SubscriptionBuiltinTopicData::from_pl_cdr_le(&bytes).unwrap();
+        assert_eq!(
+            decoded.service_instance_name.as_deref().map(str::len),
+            Some(256)
+        );
+        assert_eq!(decoded.topic_aliases.as_ref().map(Vec::len), Some(1));
+
+        let mut name = sample_sub();
+        name.service_instance_name = Some("x".repeat(257));
+        let bytes = name.to_pl_cdr_le().unwrap();
+        assert!(matches!(
+            SubscriptionBuiltinTopicData::from_pl_cdr_le(&bytes),
+            Err(WireError::ValueOutOfRange { .. })
+        ));
+
+        let mut alias = sample_sub();
+        alias.topic_aliases = Some(alloc::vec!["ok".into(), "y".repeat(257)]);
+        let bytes = alias.to_pl_cdr_le().unwrap();
+        assert!(matches!(
+            SubscriptionBuiltinTopicData::from_pl_cdr_le(&bytes),
+            Err(WireError::ValueOutOfRange { .. })
+        ));
+    }
+
     #[test]
     fn rpc_pids_optional_legacy_subscription_parses_ok() {
         let s = sample_sub();
@@ -849,5 +1517,98 @@ mod tests {
         assert!(decoded.service_instance_name.is_none());
         assert!(decoded.related_entity_guid.is_none());
         assert!(decoded.topic_aliases.is_none());
+    }
+
+    /// The twin of
+    /// `publication_data::tests::a_foreign_vendor_id_survives_read_and_write_back`:
+    /// a reader announcement keeps the vendor it states, and this tree's
+    /// 0x8002 stays off an announcement that states another vendor.
+    /// `PID_EXPECTS_INLINE_QOS` (0x0043, DDSI-RTPS 2.5 Table 9.18): TRUE
+    /// goes out as one octet and three of padding and reads back; FALSE,
+    /// the default (Table 9.19), is left out, and an announcement that
+    /// states it reads as FALSE; an octet other than 0 or 1 is refused.
+    #[test]
+    fn expects_inline_qos_goes_out_when_set_and_reads_back() {
+        let mut sub = sample_sub();
+        let plain = sub.to_pl_cdr_le().unwrap();
+        let pl = ParameterList::from_bytes(&plain[4..], true).unwrap();
+        assert!(pl.find(pid::EXPECTS_INLINE_QOS).is_none());
+        assert!(
+            !SubscriptionBuiltinTopicData::from_pl_cdr_le(&plain)
+                .unwrap()
+                .expects_inline_qos
+        );
+
+        sub.expects_inline_qos = true;
+        let mut le = sub.to_pl_cdr_le().unwrap();
+        let pid_and_value = [0x43, 0x00, 0x04, 0x00, 0x01, 0, 0, 0];
+        let at = le
+            .windows(pid_and_value.len())
+            .position(|w| w == pid_and_value)
+            .expect("PID 0x0043, length 4, TRUE");
+        assert!(
+            SubscriptionBuiltinTopicData::from_pl_cdr_le(&le)
+                .unwrap()
+                .expects_inline_qos
+        );
+        le[at + 4] = 0;
+        assert!(
+            !SubscriptionBuiltinTopicData::from_pl_cdr_le(&le)
+                .unwrap()
+                .expects_inline_qos
+        );
+        le[at + 4] = 2;
+        assert!(SubscriptionBuiltinTopicData::from_pl_cdr_le(&le).is_err());
+    }
+
+    #[test]
+    fn a_foreign_vendor_id_survives_read_and_write_back() {
+        use zerodds_types::type_identifier::PrimitiveKind;
+
+        let cyclone = crate::wire_types::VendorId([0x01, 0x10]);
+        let bytes = {
+            let mut b = sample_sub().to_pl_cdr_le().unwrap();
+            replace_vendor_id(&mut b, cyclone);
+            b
+        };
+
+        let mut decoded = SubscriptionBuiltinTopicData::from_pl_cdr_le(&bytes).unwrap();
+        assert_eq!(
+            decoded.vendor_id,
+            Some(cyclone),
+            "the announced vendor has to reach the decoded announcement"
+        );
+
+        decoded.type_identifier = zerodds_types::TypeIdentifier::Primitive(PrimitiveKind::Int64);
+        let back = decoded.to_pl_cdr_le().unwrap();
+        let pl = ParameterList::from_bytes(&back[4..], true).unwrap();
+        assert_eq!(
+            decoded_vendor_id(&pl),
+            Some(cyclone),
+            "the write-back replaced the announced vendor with this tree's"
+        );
+        assert!(
+            pl.find(pid::ZERODDS_TYPE_ID).is_none(),
+            "0x8002 was written on an announcement that states another vendor"
+        );
+    }
+
+    /// Overwrites the `PID_VENDORID` value of an encoded announcement.
+    fn replace_vendor_id(bytes: &mut [u8], vendor: crate::wire_types::VendorId) {
+        let mut at = 4; // past the encapsulation header
+        while at + 4 <= bytes.len() {
+            let id = u16::from_le_bytes([bytes[at], bytes[at + 1]]);
+            let len = u16::from_le_bytes([bytes[at + 2], bytes[at + 3]]) as usize;
+            if id == pid::SENTINEL {
+                break;
+            }
+            if id == pid::VENDOR_ID && len >= 2 {
+                bytes[at + 4] = vendor.0[0];
+                bytes[at + 5] = vendor.0[1];
+                return;
+            }
+            at += 4 + len;
+        }
+        panic!("the announcement carries no PID_VENDORID");
     }
 }

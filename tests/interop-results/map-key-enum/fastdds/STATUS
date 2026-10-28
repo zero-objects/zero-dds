@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of map-key-enum that fastdds produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	fastddsgen failed: ERROR: context [/struct_type /content_for_struct_type /_sub25 /struct_member /get_type_identifier /get_type_identifier_registry /map_name] 44:45 no such property or can't access: co
+plain-cdr1	be	refused	fastddsgen failed: ERROR: context [/struct_type /content_for_struct_type /_sub25 /struct_member /get_type_identifier /get_type_identifier_registry /map_name] 44:45 no such property or can't access: co
+pl-cdr1	le	refused	fastddsgen failed: ERROR: context [/struct_type /content_for_struct_type /_sub25 /struct_member /get_type_identifier /get_type_identifier_registry /map_name] 44:45 no such property or can't access: co
+pl-cdr1	be	refused	fastddsgen failed: ERROR: context [/struct_type /content_for_struct_type /_sub25 /struct_member /get_type_identifier /get_type_identifier_registry /map_name] 44:45 no such property or can't access: co
+plain-cdr2	le	refused	fastddsgen failed: ERROR: context [/struct_type /content_for_struct_type /_sub25 /struct_member /get_type_identifier /get_type_identifier_registry /map_name] 44:45 no such property or can't access: co
+plain-cdr2	be	refused	fastddsgen failed: ERROR: context [/struct_type /content_for_struct_type /_sub25 /struct_member /get_type_identifier /get_type_identifier_registry /map_name] 44:45 no such property or can't access: co
+delimited-cdr	le	refused	fastddsgen failed: ERROR: context [/struct_type /content_for_struct_type /_sub25 /struct_member /get_type_identifier /get_type_identifier_registry /map_name] 44:45 no such property or can't access: co
+delimited-cdr	be	refused	fastddsgen failed: ERROR: context [/struct_type /content_for_struct_type /_sub25 /struct_member /get_type_identifier /get_type_identifier_registry /map_name] 44:45 no such property or can't access: co
+pl-cdr2	le	refused	fastddsgen failed: ERROR: context [/struct_type /content_for_struct_type /_sub25 /struct_member /get_type_identifier /get_type_identifier_registry /map_name] 44:45 no such property or can't access: co
+pl-cdr2	be	refused	fastddsgen failed: ERROR: context [/struct_type /content_for_struct_type /_sub25 /struct_member /get_type_identifier /get_type_identifier_registry /map_name] 44:45 no such property or can't access: co

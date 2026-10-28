@@ -1,0 +1,14 @@
+// `bitmask` at a bit bound that is not a multiple of eight
+// XTypes 1.3 §7.3.1.2.1.9 (the bound is 1..64) and §7.4.3.4.2 (the wire
+// form is the smallest unsigned integer holding it).
+@bit_bound(3)
+bitmask Flags {
+    @position(0) LOWEST,
+    @position(2) HIGHEST
+};
+
+@final struct Sample {
+    Flags one;
+    Flags both;
+    octet tail;
+};

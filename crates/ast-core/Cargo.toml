@@ -1,0 +1,22 @@
+[package]
+name = "zerodds-ast-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Generic AST infrastructure: generational arenas, stable node ids, three-valued references, undo-logged transactions, changesets, observers, deterministic snapshots. No DDS knowledge."
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/zerodds-ast-core"
+readme = "README.md"
+keywords = ["dds", "idl", "ast", "compiler"]
+categories = ["compilers", "parser-implementations"]
+
+[dependencies]
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true

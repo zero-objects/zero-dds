@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! LocateRequest-Message — Spec §15.4.5.
+//! The LocateRequest message — spec §15.4.5.
 //!
 //! GIOP 1.0/1.1:
 //! ```text
@@ -22,13 +22,13 @@
 //! The client probes whether a server accepts an object reference
 //! (or requires LOCATION_FORWARD).
 
-use zerodds_cdr::{BufferReader, BufferWriter};
+use zerodds_wire::{Reader, Writer};
 
 use crate::error::{GiopError, GiopResult};
 use crate::target_address::TargetAddress;
 use crate::version::Version;
 
-/// LocateRequest-Body.
+/// The LocateRequest body.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LocateRequest {
     /// `request_id`.
@@ -38,13 +38,13 @@ pub struct LocateRequest {
 }
 
 impl LocateRequest {
-    /// CDR-Encode.
+    /// CDR encode.
     ///
     /// # Errors
     /// Buffer write error, or a Profile/Reference variant under
     /// GIOP 1.0/1.1.
-    pub fn encode(&self, version: Version, w: &mut BufferWriter) -> GiopResult<()> {
-        w.write_u32(self.request_id)?;
+    pub fn encode(&self, version: Version, w: &mut Writer) -> GiopResult<()> {
+        w.write_u32(self.request_id);
         if version.uses_v1_2_request_layout() {
             self.target.encode(w)?;
         } else {
@@ -58,17 +58,17 @@ impl LocateRequest {
             };
             let n = u32::try_from(key.len())
                 .map_err(|_| GiopError::Malformed("object_key too long".into()))?;
-            w.write_u32(n)?;
-            w.write_bytes(key)?;
+            w.write_u32(n);
+            w.write_bytes(key);
         }
         Ok(())
     }
 
-    /// CDR-Decode.
+    /// CDR decode.
     ///
     /// # Errors
     /// Buffer read error.
-    pub fn decode(version: Version, r: &mut BufferReader<'_>) -> GiopResult<Self> {
+    pub fn decode(version: Version, r: &mut Reader<'_>) -> GiopResult<Self> {
         let request_id = r.read_u32()?;
         let target = if version.uses_v1_2_request_layout() {
             TargetAddress::decode(r)?
@@ -85,7 +85,7 @@ impl LocateRequest {
 #[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
-    use zerodds_cdr::Endianness;
+    use zerodds_wire::Endianness;
 
     #[test]
     fn round_trip_giop_1_0() {
@@ -93,10 +93,10 @@ mod tests {
             request_id: 11,
             target: TargetAddress::Key(alloc::vec![0x01, 0x02]),
         };
-        let mut w = BufferWriter::new(Endianness::Big);
+        let mut w = Writer::new(Endianness::Big);
         l.encode(Version::V1_0, &mut w).unwrap();
-        let bytes = w.into_bytes();
-        let mut r = BufferReader::new(&bytes, Endianness::Big);
+        let bytes = w.finish();
+        let mut r = Reader::new(&bytes, Endianness::Big);
         let decoded = LocateRequest::decode(Version::V1_0, &mut r).unwrap();
         assert_eq!(decoded, l);
     }
@@ -107,10 +107,10 @@ mod tests {
             request_id: 22,
             target: TargetAddress::Profile(alloc::vec![0xa, 0xb]),
         };
-        let mut w = BufferWriter::new(Endianness::Little);
+        let mut w = Writer::new(Endianness::Little);
         l.encode(Version::V1_2, &mut w).unwrap();
-        let bytes = w.into_bytes();
-        let mut r = BufferReader::new(&bytes, Endianness::Little);
+        let bytes = w.finish();
+        let mut r = Reader::new(&bytes, Endianness::Little);
         let decoded = LocateRequest::decode(Version::V1_2, &mut r).unwrap();
         assert_eq!(decoded, l);
     }
@@ -121,7 +121,7 @@ mod tests {
             request_id: 1,
             target: TargetAddress::Profile(alloc::vec![]),
         };
-        let mut w = BufferWriter::new(Endianness::Big);
+        let mut w = Writer::new(Endianness::Big);
         let err = l.encode(Version::V1_0, &mut w).unwrap_err();
         assert!(matches!(err, GiopError::Malformed(_)));
     }

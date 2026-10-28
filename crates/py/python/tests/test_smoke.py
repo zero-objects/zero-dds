@@ -71,10 +71,10 @@ def test_shape_default_shapesize_is_30():
     assert s.shapesize == 30
 
 
-@pytest.mark.skipif(True, reason="live E2E needs Linux multicast — in the multi-process test setup with pytest-xdist")
+@pytest.mark.skipif(_NO_CORE, reason=_NO_CORE_REASON)
 def test_pub_sub_roundtrip_live():
-    """Placeholder for live E2E. Activated in the multi-process test setup with
-    multi-process fixtures."""
+    """§5.1 — single-process Python ↔ Python over the live runtime: two
+    participants on one domain, SPDP/SEDP match, one sample read back."""
     factory = zerodds.DomainParticipantFactory.instance()
     pub_p = factory.create_participant_fast(200)
     sub_p = factory.create_participant_fast(200)

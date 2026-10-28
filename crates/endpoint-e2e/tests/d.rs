@@ -14,45 +14,66 @@
 
 use std::process::{Child, Command, Stdio};
 
-use zerodds_endpoint_e2e::{IDL, Peer, bind_peer, ping_pong};
-use zerodds_idl::config::ParserConfig;
-use zerodds_idl_d::{DGenOptions, generate_d_module};
+use zerodds_endpoint_e2e::codegen::{
+    Language, endpoints_dir, runtime_dir, scratch_dir, source, tool_available,
+};
+use zerodds_endpoint_e2e::{Peer, bind_peer, ping_pong, xcdr2_reader, xcdr2_writer};
 
-fn gdc_available() -> bool {
-    Command::new("gdc").arg("--version").output().is_ok()
+/// A D compiler, by the three names the toolchains install. `gdc` is GCC's,
+/// `dmd` the reference one, `ldc2` the LLVM one.
+fn d_compiler() -> Option<&'static str> {
+    ["gdc", "ldc2", "dmd"]
+        .into_iter()
+        .find(|c| tool_available(c, "--version"))
 }
 
 /// Generated Ping/Pong D code, wrapped as `module gen;` so it can coexist with
-/// the endpoint SDK's own wire-core.
+/// the endpoint SDK's own wire-core, and importing the runtime it calls.
 fn gen_module() -> String {
-    let ast = zerodds_idl::parse(IDL, &ParserConfig::default()).expect("parse");
-    let src = generate_d_module(&ast, &DGenOptions::default()).expect("gen");
-    format!("module gen;\n{src}")
+    format!("module gen;\n\nimport zdwire;\n\n{}", source(Language::D))
 }
 
 /// The endpoint SDK source (`module zerodds;`), copied next to the app.
 fn sdk_source() -> String {
-    let path = format!("{}/../../endpoints/d/zerodds.d", env!("CARGO_MANIFEST_DIR"));
-    std::fs::read_to_string(&path).expect("read endpoints/d/zerodds.d")
+    std::fs::read_to_string(endpoints_dir("d").join("zerodds.d"))
+        .expect("read endpoints/d/zerodds.d")
 }
+
+/// The XCDR2 little-endian framing both directions use.
+const D_FRAMING: &str = "auto zdFraming = zdwire.PlCdr1Framing(\"sentinel-must-understand\", 16128, true, true, true, true);";
 
 /// Compiles `files` (already written into `dir`) into `main_bin`, panicking with
 /// the compiler diagnostics on failure.
-fn gdc_build(dir: &std::path::Path, files: &[&str]) {
-    let mut cmd = Command::new("gdc");
-    cmd.args(files).args(["-o", "main_bin"]).current_dir(dir);
-    let build = cmd.output().expect("gdc");
+/// Compiles `files` (already written into `dir`) into `main_bin`, panicking
+/// with the compiler diagnostics on failure. `ldc2`/`dmd` name the output with
+/// `-of`, `gdc` with `-o`.
+fn d_build(compiler: &str, dir: &std::path::Path, files: &[&str]) {
+    let mut cmd = Command::new(compiler);
+    cmd.args(files);
+    if compiler == "gdc" {
+        cmd.args(["-o", "main_bin"]);
+    } else {
+        cmd.arg("-ofmain_bin");
+    }
+    let build = cmd.current_dir(dir).output().expect("spawn D compiler");
     assert!(
         build.status.success(),
-        "gdc failed:\n{}",
+        "{compiler} failed:\n{}\n{}",
+        String::from_utf8_lossy(&build.stdout),
         String::from_utf8_lossy(&build.stderr)
     );
+}
+
+/// Copies `runtime/d/zdwire.d` next to the app, so `import zdwire` resolves.
+fn write_runtime(dir: &std::path::Path) {
+    std::fs::copy(runtime_dir("d").join("zdwire.d"), dir.join("zdwire.d")).expect("copy zdwire.d");
 }
 
 // ---- 1) raw codegen over a plain UDP socket (bare XCDR2, no XRCE frame) ----
 
 const D_RAW_MAIN: &str = r#"
 import gen;
+import zdwire;
 import std.socket;
 import std.stdio : writefln;
 import std.conv : to;
@@ -68,21 +89,31 @@ void main(string[] args) {
     Ping ping;
     ping.seq = 1;
     ping.msg = "hello from app";
-    sock.sendTo(ping.marshalXCDR(Endian.LE), peer);
+    __FRAMING__
+    auto zdW = new zdwire.Writer(zdwire.Endianness.little, 4, zdFraming, false);
+    zd_enc_Ping(zdW, ping);
+    sock.sendTo(zdW.Finish(), peer);
 
     ubyte[4096] buf;
     auto n = sock.receiveFrom(buf[]);
-    Pong pong = UnmarshalXCDRPong(buf[0 .. n].dup, Endian.LE);
+    auto zdR = new zdwire.Reader(buf[0 .. n].dup, zdwire.Endianness.little, 4,
+                                 zdFraming.pidFlags, zdFraming.highestShortID);
+    Pong pong = zd_dec_Pong(zdR, zdwire.TryConstruct.discard);
     writefln("PONG seq=%d reply=%s", pong.seq, pong.reply);
 }
 "#;
 
-fn build_d_raw(port: u16) -> Child {
-    let dir = std::env::temp_dir().join(format!("pp_d_raw_{}", std::process::id()));
+fn build_d_raw(compiler: &str, port: u16) -> Child {
+    let dir = scratch_dir("d_raw");
     std::fs::create_dir_all(&dir).expect("mkdir");
     std::fs::write(dir.join("gen.d"), gen_module()).expect("write gen");
-    std::fs::write(dir.join("main.d"), D_RAW_MAIN).expect("write main");
-    gdc_build(&dir, &["main.d", "gen.d"]);
+    std::fs::write(
+        dir.join("main.d"),
+        D_RAW_MAIN.replace("__FRAMING__", D_FRAMING),
+    )
+    .expect("write main");
+    write_runtime(&dir);
+    d_build(compiler, &dir, &["main.d", "gen.d", "zdwire.d"]);
     Command::new("./main_bin")
         .arg(port.to_string())
         .current_dir(&dir)
@@ -94,29 +125,28 @@ fn build_d_raw(port: u16) -> Child {
 
 #[test]
 fn d_raw_udp() {
-    if !gdc_available() {
-        eprintln!("SKIP d_raw_udp: `gdc` not on PATH");
+    let Some(compiler) = d_compiler() else {
+        eprintln!("SKIP d_raw_udp: no D compiler (gdc/ldc2/dmd) on PATH");
         return;
-    }
+    };
     // The raw app sends a bare XCDR2 Ping (no XRCE frame); run a minimal peer.
     use std::net::UdpSocket;
     use std::time::Duration;
-    use zerodds_cdr::{BufferReader, BufferWriter, Endianness};
     let sock = UdpSocket::bind("127.0.0.1:0").expect("bind");
     let port = sock.local_addr().expect("addr").port();
-    let child = build_d_raw(port);
+    let child = build_d_raw(compiler, port);
     sock.set_read_timeout(Some(Duration::from_secs(30)))
         .expect("timeout");
     let mut buf = [0u8; 4096];
     let (n, app) = sock.recv_from(&mut buf).expect("recv");
-    let mut r = BufferReader::new(&buf[..n], Endianness::Little).xcdr2();
+    let mut r = xcdr2_reader(&buf[..n]);
     let seq = r.read_u32().expect("seq");
     let msg = r.read_string().expect("msg");
     assert_eq!((seq, msg.as_str()), (1, "hello from app"));
-    let mut w = BufferWriter::new(Endianness::Little).xcdr2();
-    w.write_u32(seq).expect("s");
-    w.write_string(&format!("pong:{msg}")).expect("r");
-    sock.send_to(&w.into_bytes(), app).expect("send");
+    let mut w = xcdr2_writer();
+    w.write_u32(seq);
+    w.write_string(&format!("pong:{msg}"));
+    sock.send_to(&w.finish(), app).expect("send");
     let out = child.wait_with_output().expect("wait");
     assert!(
         String::from_utf8_lossy(&out.stdout).contains("PONG seq=1 reply=pong:hello from app"),
@@ -129,7 +159,9 @@ fn d_raw_udp() {
 
 const D_ENDPOINT_MAIN: &str = r#"
 import gen;
-import zerodds : Client, AsyncReader, Transport, writeFrame, SessionNoKey, StreamBestEffort;
+import zdwire;
+import zerodds : Client, AsyncReader, Transport, writeFrame, SessionNoKey, StreamBestEffort,
+                 xrceObjectId, ObjkDataWriter;
 import std.socket;
 import std.stdio : writefln, stderr;
 import std.conv : to;
@@ -148,12 +180,16 @@ void main(string[] args) {
     Ping ping;
     ping.seq = 1;
     ping.msg = "hello from app";
-    ubyte[] sample = ping.marshalXCDR(Endian.LE);
+    __FRAMING__
+    auto zdW = new zdwire.Writer(zdwire.Endianness.little, 4, zdFraming, false);
+    zd_enc_Ping(zdW, ping);
+    ubyte[] sample = zdW.Finish();
 
     ubyte[] body;
     if (mode == "async") {
         auto reader = new AsyncReader();
-        sock.sendTo(writeFrame(SessionNoKey, StreamBestEffort, 1, sample), peer);
+        sock.sendTo(writeFrame(SessionNoKey, StreamBestEffort, 1,
+            xrceObjectId(0x001, ObjkDataWriter), sample), peer);
         ubyte[4096] buf;
         bool got = false;
         foreach (_; 0 .. 1000) {
@@ -180,7 +216,7 @@ void main(string[] args) {
                 return buf[0 .. n].dup;
             return cast(ubyte[]) null;
         };
-        auto c = new Client(t);
+        auto c = new Client(t, xrceObjectId(0x001, ObjkDataWriter));
         c.write(sample);
         foreach (_; 0 .. 1000) {
             body = c.poll();
@@ -193,18 +229,28 @@ void main(string[] args) {
         }
     }
 
-    Pong pong = UnmarshalXCDRPong(body, Endian.LE);
+    auto zdR = new zdwire.Reader(body, zdwire.Endianness.little, 4,
+                                 zdFraming.pidFlags, zdFraming.highestShortID);
+    Pong pong = zd_dec_Pong(zdR, zdwire.TryConstruct.discard);
     writefln("PONG seq=%d reply=%s", pong.seq, pong.reply);
 }
 "#;
 
-fn build_d_endpoint(mode: &str, port: u16) -> Child {
-    let dir = std::env::temp_dir().join(format!("pp_d_ep_{mode}_{}", std::process::id()));
-    std::fs::create_dir_all(&dir).expect("mkdir");
+fn build_d_endpoint(compiler: &str, mode: &str, port: u16) -> Child {
+    let dir = scratch_dir(&format!("d_ep_{mode}"));
     std::fs::write(dir.join("gen.d"), gen_module()).expect("write gen");
     std::fs::write(dir.join("zerodds.d"), sdk_source()).expect("write sdk");
-    std::fs::write(dir.join("main.d"), D_ENDPOINT_MAIN).expect("write main");
-    gdc_build(&dir, &["main.d", "gen.d", "zerodds.d"]);
+    std::fs::write(
+        dir.join("main.d"),
+        D_ENDPOINT_MAIN.replace("__FRAMING__", D_FRAMING),
+    )
+    .expect("write main");
+    write_runtime(&dir);
+    d_build(
+        compiler,
+        &dir,
+        &["main.d", "gen.d", "zerodds.d", "zdwire.d"],
+    );
     Command::new("./main_bin")
         .arg(mode)
         .arg(port.to_string())
@@ -216,12 +262,12 @@ fn build_d_endpoint(mode: &str, port: u16) -> Child {
 }
 
 fn endpoint_case(mode: &str) {
-    if !gdc_available() {
-        eprintln!("SKIP d endpoint {mode}: `gdc` not on PATH");
+    let Some(compiler) = d_compiler() else {
+        eprintln!("SKIP d endpoint {mode}: no D compiler (gdc/ldc2/dmd) on PATH");
         return;
-    }
+    };
     let peer: Peer = bind_peer().expect("bind peer");
-    let child = build_d_endpoint(mode, peer.port);
+    let child = build_d_endpoint(compiler, mode, peer.port);
     ping_pong(&peer, child, &format!("d/{mode}"));
 }
 

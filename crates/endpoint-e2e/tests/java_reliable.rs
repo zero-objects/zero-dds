@@ -40,6 +40,7 @@ fn endpoints_java() -> PathBuf {
 fn core_sources() -> Vec<PathBuf> {
     let base = endpoints_java().join("org/zerodds/endpoint");
     [
+        "UnannotatedTypes.java",
         "ReliableWire.java",
         "ReliableSender.java",
         "ReliableReceiver.java",
@@ -66,6 +67,8 @@ fn javac_build(out_dir: &Path, extra: &[&str]) {
         srcs.push(java_dir.join(f));
     }
     let o = Command::new("javac")
+        .arg("-encoding")
+        .arg("UTF-8")
         .arg("-nowarn")
         .arg("-d")
         .arg(out_dir)

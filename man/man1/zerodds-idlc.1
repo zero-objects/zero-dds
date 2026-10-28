@@ -1,38 +1,499 @@
-.TH ZERODDS-IDLC 1 "2026-05-06" "1.0.0-rc.1" "ZeroDDS Manual"
+.TH ZERODDS-IDLC 1 "" "ZeroDDS" "ZeroDDS Manual"
 .SH NAME
-zerodds-idlc \- IDL compiler producing Rust/C++/Java/C#/Python/TypeScript code
+zerodds-idlc \- read OMG IDL 4.2 and say what is in it
 .SH SYNOPSIS
 .B zerodds-idlc
-[\fB\-l\fR \fILANG\fR]
-[\fB\-o\fR \fIDIR\fR]
-[\fB\-I\fR \fIDIR\fR]
+.I SUBCOMMAND
+[\fIOPTIONS\fR]
 .I FILE.idl
+\&...
 .SH DESCRIPTION
-Parses OMG IDL 4.2 and emits target-language data-types plus DDS
-TypeSupport. Targets:
-.IR rust ", " cpp ", " java ", " csharp ", " python ", " typescript .
+Reads OMG IDL 4.2 and says what is in it: parses and lowers a file,
+reports diagnostics, prints the canonical form or the model, and emits
+target-language data-types plus DDS TypeSupport.
 Implements the language PSMs (DDS-Java-PSM, DDS-PSM-Cxx, etc.).
+.SH SUBCOMMANDS
+.TP
+.B check
+Parse and lower; report every diagnostic.
+.TP
+.B lint
+The rules a valid file can still break.
+.TP
+.B format
+The canonical form, to stdout by default.
+.TP
+.B dump-ast
+The model, as a tree.
+.TP
+.B print-deps
+The types each declaration names.
+.TP
+.B generate
+One language's source for the model.
+.TP
+.B dlrl
+OMG DDS 1.2 \(sc8 DLRL object and home classes, from the three DLRL
+pragmas.
+.SS "dlrl and the DCPS_DATA_TYPE/DCPS_DATA_KEY collision"
+DDS 1.2 \(sc8.2.2's Generation Process reads three pragmas out of the
+IDL text:
+.PP
+.RS
+.nf
+#pragma DCPS_DATA_TYPE     "<scoped-name>"
+#pragma DCPS_DATA_KEY      "<scoped-name> <field>"
+#pragma DCPS_DLRL_RELATION "<scoped-name> <relation> <target>"
+.fi
+.RE
+.PP
+The first two spellings are not DLRL's alone: OpenDDS's own devguide
+reuses the identical two pragma names for an unrelated, DLRL-free
+topic-type/key marker, and
+.B check
+/
+.B generate
+already read them that way \(em the diagnostic on each now says so and
+names the other reading.
+.B dlrl
+does not extend that AST-facet reading with a second, DLRL meaning for
+the same two spellings; it reads the raw IDL text on its own, through
+.IR zerodds_dlrl::pragma::parse_pragma ,
+independently of
+.IR idl\-lower .
+Running
+.B check
+/
+.B generate
+and
+.B dlrl
+over the same file therefore each apply exactly one reading, and
+neither silently eats the other's. A pragma that names one of the
+three DLRL tags and does not parse under that grammar \(em wrong
+arity, an unterminated quoted string \(em is reported as an error and
+fails the run; a pragma outside the three tags is silent under
+.BR dlrl ,
+whatever it means to another tool.
+.PP
+The four backends emit classes that derive from PSM base types this
+tree does not implement: C++'s from
+.IR DLRL::ObjectRoot / ObjectHome / RefList
+and
+.IR DDS::Long
+(DDS 1.2 \(sc B.6/\(sc B.7, the specification's own C++ PSM), Java's from
+.I org.omg.dds.dlrl.ObjectRoot/ObjectHome
+(\(sc B.8), C#'s from an
+.I ObjectRoot/ObjectHome
+pair and
+.I [DlrlKey]/[DlrlRelation]
+attributes this codebase invented for a target OMG never gave a PSM.
+ZeroDDS ships a DLRL
+.I runtime
+for exactly one language, Rust, and
+.B dlrl
+does not target Rust \(em the four languages it does target have no
+runtime here for the generated class to compile against, and every
+generated file's header comment says so. TypeScript is the exception:
+its generated interface and class name no external type at all.
+.SS "generate and an IDL interface"
+.B \-\-lang
+.I rust
+gives a full DDS-RPC 1.0 (formal/16-12-04) binding for every
+.B interface
+in the model: the request and reply topic types of \(sc7.5.1.1 with a
+real XCDR2 codec, a typed
+.IR <Iface>Client ,
+a
+.I <Iface>
+service trait with
+.B raises
+in every method signature, and a
+.I <Iface>Dispatcher
+that serves it over
+.BR zerodds\-rpc 's
+.I Requester
+/
+.IR Replier .
+An
+.B out
+or
+.B inout
+parameter is a
+.I &mut
+argument; a pure
+.B out
+parameter besides the declared return travels back through the
+method's
+.I Ok
+value. A base interface's operations are reached through a Rust
+supertrait
+.RI ( "trait Derived: Base" )
+and, on the client, through a composed base client field \(em
+DDS-RPC 1.0 \(sc7.5.1.1.8 keeps a base's topic separate from a derived
+interface's own. The generated file depends on
+.IR zerodds\-rpc ", " zerodds\-dcps " and " zerodds\-wire ;
+the preamble names them.
+.PP
+.IR c++ ", " java ", " typescript ", " csharp ", " go ", " swift ", " nim ", " zig ", " ada ", " d ", " elixir ", " julia ", " lua ", " ocaml " and " fsharp
+also have complete
+.B interface
+bindings, each in the shape its own runtime and idiom gives it: every
+operation and attribute reaches the output \(em an attribute as a
+property, a
+.IR name() / setName() \-shaped
+pair, a
+.IR get_ / set_
+primitive operation or field, or a descriptor entry, whichever that
+column already uses \(em and a declared
+.BR raises / getraises / setraises
+reaches it too. None has a codec, since none of those runtimes lives
+in this tree; fourteen of the fifteen flatten a base interface's
+members into the derived declaration, having no language mechanism to
+compose a base through instead \(em Rust's supertrait, above, is the
+one exception.
+.PP
+.IR c ", " python " and " node
+have no mapping for an
+.B interface
+at all, and refuse a model that declares one \(em exit
+.BR 1 ,
+naming the interface, its position in the source, and which languages
+do have a binding. Never a partial declaration, and never a silent
+.B 0
+with the interface missing from the output.
 .SH OPTIONS
 .TP
-.BR \-l ", " \-\-lang =\fILANG\fR
-Output language. Multiple
-.B \-l
-flags allowed.
+.B \-\-strict
+OMG IDL 4.2 only; reject every vendor extension.
 .TP
-.BR \-o ", " \-\-out =\fIDIR\fR
-Destination directory.
+.B \-\-ros2
+Admit the ROS 2 dialect: an unqualified member type that differs only in
+case from the member name, such as
+.BR "Pose pose;" ,
+resolves to the type.
 .TP
-.BR \-I ", " \-\-include =\fIDIR\fR
-Add IDL search path.
+.B \-\-json
+Machine-readable diagnostics.
 .TP
-.B \-\-feature =\fIFLAG\fR
-Toggle optional spec features (annotations,
-.BR \-Wbitset ", " \-Wvaluetype ).
+.B \-\-deny\-warnings
+Exit non-zero when anything was reported.
+.TP
+.BR \-\-default\-extensibility " " \fIfinal\fR|\fIappendable\fR|\fImutable\fR
+What an aggregate whose source said nothing is taken to be. Default:
+the specification's
+.IR appendable .
+A source that did say still wins. Cyclone DDS's
+.B idlc
+takes an unannotated aggregate as
+.IR final ,
+RTI Connext, Fast DDS and OpenDDS as
+.I appendable
+(recorded in
+.IR docs/wire-axis-flags.md );
+for IDL written for Cyclone, pass
+.BR "\-\-default\-extensibility final" .
+.TP
+.B \-\-check
+.B format
+only: name each non-canonical file, exit 1.
+.TP
+.B \-\-write
+.B format
+only: rewrite non-canonical files in place.
+.TP
+.BR \-\-lang " " \fINAME\fR
+.B generate
+/
+.B dlrl
+only, required: the language to emit \(em an unknown name lists the
+valid ones for the subcommand it was given to.
+.B generate
+takes one of \fIrust\fR, \fIc++\fR, \fIc\fR, \fIjava\fR, \fIc#\fR, \fIpython\fR, \fItypescript\fR, \fIgo\fR, \fIocaml\fR, \fIada\fR, \fId\fR, \fIelixir\fR, \fIjulia\fR, \fIlua\fR, \fInim\fR, \fIswift\fR, \fIzig\fR, \fInode\fR, \fIada83\fR, \fIf#\fR, \fIkotlin\fR, or \fIall\fR for every one in one run.
+.B dlrl
+takes one of \fIc++\fR, \fIc#\fR, \fIjava\fR, \fItypescript\fR, or \fIall\fR for those four.
+\fIcpp\fR/\fIcxx\fR, \fIcsharp\fR/\fIcs\fR, \fIfsharp\fR/\fIfs\fR and \fIts\fR are accepted besides, under either subcommand.
+.TP
+.BR \-\-java\-mapping " " \fIpsm\fR | \fIomg\fR
+.B generate
+only, with
+.BR "\-\-lang java" " (or " "\-\-lang all" "):"
+the shape of the generated Java types.
+.I psm
+(the default) is Clause 9 of DDS-Java-PSM 1.0: a structure, union, bit set and
+exception is a final class with private state, a no-argument constructor and
+Java Bean accessors, and an unbounded sequence is a
+.BR java.util.Collection<E> ;
+bounded sequences and arrays stay Java arrays.
+.I omg
+is the OMG IDL-to-Java mapping: public fields and a
+.B T[]
+for every sequence. The wire bytes are the same under both. Code that reads the
+fields of the generated types directly passes
+.BR "\-\-java\-mapping omg" .
+.TP
+.BR \-\-rpc\-mapping " " \fIbasic\fR | \fIenhanced\fR | \fIenhanced-empty\fR
+.B generate
+only: the service mapping of DDS-RPC 1.0 \(sc7.5.1 an
+.B interface
+is written for.
+.I basic
+(the default) is the Basic Service Mapping,
+.I enhanced
+the Enhanced Service Mapping, and
+.I enhanced-empty
+the Enhanced mapping with
+.B @Empty
+structures for an operation with nothing to carry.
+.TP
+.BR \-\-out " " \fIDIR\fR
+.B generate
+/
+.B dlrl
+only: where the file goes. Default: the current directory.
+.TP
+.BR \-I " " \fIDIR\fR ", " \-\-include " " \fIDIR\fR
+Where a quoted
+.B #include
+is searched after the including file's own directory; repeatable, in the
+order given.
+.TP
+.BR \-\-stamp " " \fIFILE\fR
+.B generate
+/
+.B dlrl
+only: written after every output of the run, and only when the run
+succeeded \(em the one output a build system depends on.
+.TP
+.BR \-\-depfile " " \fIFILE\fR
+.B generate
+/
+.B dlrl
+only: a Make-format dependency file naming the stamp (or the manifest)
+and every IDL file the run read, the
+.BR #include d
+ones included. Needs
+.B \-\-stamp
+or
+.BR \-\-output\-manifest .
+.TP
+.BR \-\-output\-manifest " " \fIFILE\fR
+.B generate
+/
+.B dlrl
+only: JSON with the languages, the files read
+.RB ( inputs )
+and the files written
+.RB ( outputs ).
+.TP
+.BR \-\-encoding " " \fIENC\fR
+.B generate
+only: one of
+.IR xcdr1 ", " xcdr2 ", " pl\-cdr1 ", " pl\-cdr2 ", " delimited\-cdr .
+Default:
+.IR xcdr2 .
+.TP
+.BR \-\-endian " " \fIle\fR|\fIbe\fR
+.B generate
+only: the byte order the codec is planned for. It does not change the
+emitted text \(em every wire runtime holds the order in its writer and
+reader \(em but the preamble names it. Default:
+.IR le .
+.TP
+.BR \-\-xcdr\-endianness " " \fIBE\fR|\fILE\fR
+The DDS-TS 1.0 spelling of
+.BR \-\-endian .
+.TP
+.BR \-\-cpp\-mapping " " \fIpsm\fR|\fInative\fR|\fIclassic\fR
+.B generate
+.RB "\-\-lang " c++
+only: how topic types are spelled. Default:
+.IR psm ,
+the mapping of DDS\-PSM\-Cxx 1.0 \(sc7.4 and \(sc8.1 \(em classes with accessors,
+.IR dds::core::optional ,
+.IR dds::core::array ,
+.IR std::map ,
+.IR std::wstring ,
+unions as classes with a discriminator \(em over the same codec: the structures the codec reads
+and writes move into the namespace
+.IR zd_native
+and
+.I zerodds::psm::Conv
+converts on the way into the codec and out of it.
+.I native
+generates those structures under the names of the IDL: public fields, a plain pointer for
+.BR @optional ,
+.IR std::array ,
+a map as a vector of pairs. The wire codec gates, the endpoint SDKs and every other consumer that
+reads the fields of a generated header pass
+.BR "\-\-cpp\-mapping native" .
+.I classic
+is the classic OMG IDL to C++ 1.3 mapping in C++03 over the same codec:
+.IR CORBA::Long ,
+.IR CORBA::String_var ,
+.I zerodds::classic::Sequence
+for a sequence and
+.I zerodds::classic::Optional
+for
+.BR @optional .
+.TP
+.BR \-\-rust\-map " " \fIentries\fR|\fIbtree-map\fR
+.B generate
+.RB "\-\-lang " rust
+only: how an IDL
+.B map
+is held.
+.I entries
+(the default) is the sequence of
+.I MapEntry
+structures XTypes 1.3 \(sc7.5.1.3.6 binds a map to;
+.I btree-map
+is a
+.IR BTreeMap ,
+which has the operations of a map and keeps its entries in ascending key order.
+.TP
+.BR \-\-dialect " " \fINAME\fR
+.B generate
+only: reproduce one peer's answers to every wire axis at once, before
+any axis flag below overrides one of them. An unknown name lists the
+valid ones. One of
+.IR specification " (the default), " cyclone ", " rti ", " fastdds ", "
+.IR opendds ", " opensplice ", " ros\-fastrtps ", " ros\-cyclone ", "
+.IR omniorb ", " tao ", "
+or
+.IR jacorb .
+The preamble comment names the dialect and every axis flag given.
+See
+.IR docs/wire\-axis\-flags.md
+for what each dialect answers on each axis, and
+.BR zerodds\-build 's
+.B Config::dialect
+for the same preset from a
+.B build.rs .
+.TP
+.BR \-\-<axis> " " \fIVALUE\fR
+.B generate
+only: override one answer of the dialect (or of
+.I specification
+with no
+.BR \-\-dialect ).
+An unknown axis value lists the valid ones for that axis. Applied in
+the order given, after
+.BR \-\-dialect .
+The axes, each with its flag and its values:
+.RS
+.TP
+.B collection\-delimiters
+specification, enum\-is\-primitive, never
+.TP
+.B default\-extensibility
+final, appendable, mutable
+.TP
+.B defaulted\-discriminator\-member
+type\-default, stream\-value
+.TP
+.B enum\-holder
+declared, bit\-bound\-dropped
+.TP
+.B enumerator\-value
+declared, ordinal
+.TP
+.B fixed\-digits
+declared, value\-precision
+.TP
+.B key\-holder
+forced\-final, as\-declared
+.TP
+.B key\-holder\-order
+ascending\-member\-id, declaration
+.TP
+.B length\-codes
+compact, reuse\-nested\-delimiter, short\-where\-it\-fits, universal\-nextint, sized\-or\-nextint
+.TP
+.B map\-delimiter
+either\-half, value\-only
+.TP
+.B map\-entries
+declaration, ascending\-key
+.TP
+.B map\-length
+sequence\-equivalent, rule\-15\-omits
+.TP
+.B pid\-flags
+sentinel\-must\-understand, bare, impl\-extension\-members
+.TP
+.B pl\-cdr1\-headers
+specification, always\-extended, short\-true\-length
+.TP
+.B short\-pid\-range
+up\-to\-reserved, all\-fourteen\-bits
+.TP
+.B union\-framing
+specification, branches\-from\-zero
+.TP
+.B union\-labels
+sign\-extended, negative\-unmatched\-below\-32
+.TP
+.B wchar\-framing
+fixed, giop\-length\-prefixed, giop\-length\-prefixed\-member\-only
+.TP
+.B wchar\-width
+2, 4
+.TP
+.B wstring\-length
+specification, character\-count, character\-count\-terminated, specification\-wide\-units, ros\-type\-support, or the three coordinates
+.IR counts / terminator / width
+(octets|characters / unterminated|terminated / 2|4) for a cell none of the five names
+.TP
+.B wstring\-units
+stream, big\-endian\-always, byte\-order\-mark, host\-unswapped
+.RE
+.TP
+.BR \-h ", " \-\-help
+This text.
+.TP
+.BR \-V ", " \-\-version
+The version.
+.SH EXIT STATUS
+.TP
+.B 0
+Nothing to report.
+.TP
+.B 1
+A diagnostic was reported, or \fB\-\-check\fR found a file to reformat.
+.TP
+.B 2
+The command line was wrong.
+.TP
+.B 3
+A file could not be read.
 .SH FILES
-Generated files follow the per-PSM path conventions, e.g. for Rust
-.IR <out>/<module>/<type>.rs .
+.B generate
+writes one file per input under
+.BR \-\-out ,
+named after the input's stem:
+.IR <out>/<stem>.<ext>
+(for example
+.IR robot.rs ", " robot.hpp ", " robot.py );
+C# adds
+.IR <stem>.TypeSupport.cs .
+Java and Ada write fixed names instead
+.RI ( ZdTypes.java ", " ZdCodec.java ", " ZdTypeSupports.java ;
+.IR zd_types.ads ", " zd_types.adb ).
+Such a language refuses a second input with the same
+.B \-\-out
+in one run instead of overwriting the first; give each IDL file its own
+.BR \-\-out ,
+or
+.B #include
+them into one file.
+.PP
+.B dlrl
+writes one bundled file per input for C++/C#/TypeScript, named
+.IR <out>/<stem>_dlrl.<ext> ,
+and one object file plus one home file per DLRL type for Java, named
+.IR <out>/<Type>.java " and " <out>/<Type>Home.java .
+The same second-input-same-name refusal applies.
 .SH SEE ALSO
-.BR zerodds-typeobject (1),
 .BR zerodds-xmlc (1).
 .SH AUTHORS
 ZeroDDS Contributors.

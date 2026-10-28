@@ -1,286 +1,385 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-
-//! `zerodds-xmlc` — DDS-XML CLI: validator, deployment renderer, type lister.
-//!
-//! Thin command-line front-end over the `zerodds-xml` parsers (OMG DDS-XML
-//! 1.0). It never touches the network — it parses a `.xml` file and reports.
+//! `zerodds-xmlc` — read an OMG DDS-XML 1.0 document and say what is in
+//! it, or what is wrong with it.
 //!
 //! ```text
-//! zerodds-xmlc <command> <file.xml>
-//!   validate <file>   Parse every DDS-XML library (types/qos/domain/participant/
-//!                     application); exit 0 if well-formed + parseable, else 1.
-//!   render   <file>   Print a structured deployment summary (domains -> topics,
-//!                     participants -> publishers/subscribers -> writers/readers).
-//!   types    <file>   List the `<types>` (XTypes) definitions.
-//!   help              Show this usage.
+//! zerodds-xmlc validate FILE...   parse every library; report what failed
+//! zerodds-xmlc types    FILE...   the type definitions, by library
+//! zerodds-xmlc render   FILE...   the deployment: domains, participants, endpoints
 //! ```
+//!
+//! It never opens a socket. A DDS-XML file describes a system; this
+//! reads the description.
+//!
+//! ## Why `validate` parses all five libraries
+//!
+//! A DDS-XML document may hold types, QoS profiles, domains,
+//! participants and applications, and any of them may be absent.
+//! Stopping at the first library that parses would call a file valid on
+//! the strength of the one part that happened to be first, so every
+//! library is parsed and every failure is reported — the caller finds
+//! out about all of them in one run instead of one per fix.
 
-#![allow(clippy::print_stderr)] // CLI-Tool: stderr fuer Fehler zulaessig (Policy: tools/* duerfen lockern).
-#![allow(clippy::print_stdout)] // CLI-Tool: stdout ist die Ausgabe.
+#![allow(clippy::print_stdout, clippy::print_stderr)]
 
 use std::process::ExitCode;
 
-use zerodds_xml::parser::parse_xml_tree;
+use zerodds_xml::application::parse_application_libraries_with;
+use zerodds_xml::domain::parse_domain_libraries_with;
+use zerodds_xml::participant::parse_domain_participant_libraries_with;
+use zerodds_xml::qos_parser::parse_qos_libraries_with;
 use zerodds_xml::xtypes_def::TypeDef;
-use zerodds_xml::{
-    XmlError, parse_application_libraries, parse_domain_libraries,
-    parse_domain_participant_libraries, parse_qos_libraries, parse_type_libraries,
-};
+use zerodds_xml::xtypes_parser::parse_type_libraries_with;
+use zerodds_xml::{DiagnosticKind, Parsed, ReadOptions, UnknownElements, VendorForms, XmlError};
 
-const USAGE: &str = "\
-zerodds-xmlc — DDS-XML validator / deployment renderer / type lister
+/// What the tool was asked to do.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Command {
+    /// Parse every library and report what failed.
+    Validate,
+    /// The type definitions, by library.
+    Types,
+    /// The deployment the document describes.
+    Render,
+}
 
-USAGE:
-    zerodds-xmlc <command> <file.xml>
-
-COMMANDS:
-    validate <file>   Parse every DDS-XML library; exit 0 if valid, 1 on error
-    render   <file>   Print a structured deployment summary
-    types    <file>   List the <types> (XTypes) definitions
-    help              Show this usage
-
-EXIT CODES:
-    0  success / valid      1  parse or validation error      2  bad invocation";
+impl Command {
+    fn parse(token: &str) -> Option<Self> {
+        match token {
+            "validate" => Some(Self::Validate),
+            "types" => Some(Self::Types),
+            "render" => Some(Self::Render),
+            _ => None,
+        }
+    }
+}
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    match run(&args) {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(CliError::Usage(m)) => {
-            eprintln!("zerodds-xmlc: {m}\n\n{USAGE}");
-            ExitCode::from(2)
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        print_help();
+        return ExitCode::SUCCESS;
+    }
+    if args.iter().any(|a| a == "--version" || a == "-V") {
+        println!("zerodds-xmlc {}", env!("CARGO_PKG_VERSION"));
+        return ExitCode::SUCCESS;
+    }
+
+    let (command, files, options) = match parse_args(&args) {
+        Ok(parsed) => parsed,
+        Err(message) => {
+            eprintln!("error: {message}");
+            print_help();
+            return ExitCode::from(2);
         }
-        Err(CliError::Io(m) | CliError::Xml(m)) => {
-            eprintln!("zerodds-xmlc: {m}");
-            ExitCode::FAILURE
+    };
+
+    let mut failures = 0usize;
+    let mut unreadable = false;
+    for path in &files {
+        let Ok(text) = std::fs::read_to_string(path) else {
+            eprintln!("error: {path}: cannot be read");
+            unreadable = true;
+            continue;
+        };
+        failures += run_one(command, path, &text, &options);
+    }
+
+    if unreadable {
+        return ExitCode::from(3);
+    }
+    if command == Command::Validate {
+        println!("validate: {} file(s), {failures} failure(s)", files.len());
+    }
+    if failures > 0 {
+        return ExitCode::from(1);
+    }
+    ExitCode::SUCCESS
+}
+
+fn parse_args(args: &[String]) -> Result<(Command, Vec<String>, ReadOptions), String> {
+    let mut iter = args.iter();
+    let first = iter.next().ok_or("a subcommand is required")?;
+    let command = Command::parse(first)
+        .ok_or_else(|| format!("unknown subcommand `{first}` — see --help"))?;
+    let mut files = Vec::new();
+    let mut options = ReadOptions::default();
+    for arg in iter {
+        if arg == "--skip-unknown" {
+            options.unknown = UnknownElements::ReportAndSkip;
+        } else if arg == "--vendor-forms" {
+            options.vendor_forms = VendorForms::Accept;
+        } else if arg.starts_with('-') {
+            return Err(format!("unknown option `{arg}`"));
+        } else {
+            files.push(arg.clone());
         }
     }
-}
-
-#[derive(Debug)]
-enum CliError {
-    Usage(String),
-    Io(String),
-    Xml(String),
-}
-
-fn run(args: &[String]) -> Result<(), CliError> {
-    let cmd = args.first().map(String::as_str).unwrap_or("");
-    match cmd {
-        "help" | "-h" | "--help" | "" => {
-            println!("{USAGE}");
-            Ok(())
-        }
-        "validate" => {
-            let (path, xml) = file_arg(cmd, args)?;
-            cmd_validate(&path, &xml)
-        }
-        "render" => {
-            let (_, xml) = file_arg(cmd, args)?;
-            cmd_render(&xml)
-        }
-        "types" => {
-            let (_, xml) = file_arg(cmd, args)?;
-            cmd_types(&xml)
-        }
-        other => Err(CliError::Usage(format!("unknown command `{other}`"))),
+    if files.is_empty() {
+        return Err(String::from("at least one file is required"));
     }
+    Ok((command, files, options))
 }
 
-/// Resolve the `<file.xml>` positional argument and read it.
-fn file_arg(cmd: &str, args: &[String]) -> Result<(String, String), CliError> {
-    let path = args
-        .get(1)
-        .ok_or_else(|| CliError::Usage(format!("`{cmd}` needs a <file.xml> argument")))?;
-    let xml = std::fs::read_to_string(path)
-        .map_err(|e| CliError::Io(format!("cannot read `{path}`: {e}")))?;
-    Ok((path.clone(), xml))
-}
-
-fn xml_err(section: &str, e: &XmlError) -> CliError {
-    CliError::Xml(format!("{section}: {e}"))
-}
-
-/// `validate` — well-formedness (`parse_xml_tree`) plus every library parser.
-/// An absent library section is not an error (the parsers return an empty
-/// `Vec`); only a malformed/invalid section fails. Prints a one-line tally.
-fn cmd_validate(path: &str, xml: &str) -> Result<(), CliError> {
-    parse_xml_tree(xml).map_err(|e| xml_err("xml", &e))?;
-    let types = parse_type_libraries(xml).map_err(|e| xml_err("types", &e))?;
-    let qos = parse_qos_libraries(xml).map_err(|e| xml_err("qos_library", &e))?;
-    let domains = parse_domain_libraries(xml).map_err(|e| xml_err("domain_library", &e))?;
-    let parts =
-        parse_domain_participant_libraries(xml).map_err(|e| xml_err("participant_library", &e))?;
-    let apps = parse_application_libraries(xml).map_err(|e| xml_err("application_library", &e))?;
-
-    let n_types: usize = types.iter().map(|l| l.types.len()).sum();
-    let n_profiles: usize = qos.iter().map(|l| l.profiles.len()).sum();
-    let n_domains: usize = domains.iter().map(|l| l.domains.len()).sum();
-    let n_parts: usize = parts.iter().map(|l| l.participants.len()).sum();
-    println!(
-        "valid: {path}\n  {} type-lib ({n_types} types), {} qos-lib ({n_profiles} profiles), \
-         {} domain-lib ({n_domains} domains), {} participant-lib ({n_parts} participants), \
-         {} application-lib",
-        types.len(),
-        qos.len(),
-        domains.len(),
-        parts.len(),
-        apps.len(),
-    );
-    Ok(())
-}
-
-/// `render` — a human-readable deployment tree.
-fn cmd_render(xml: &str) -> Result<(), CliError> {
-    for lib in &parse_qos_libraries(xml).map_err(|e| xml_err("qos_library", &e))? {
-        println!("qos_library {}", lib.name);
-        for p in &lib.profiles {
-            println!("  qos_profile {}", p.name);
+/// The value of a parse; what the reader left out is listed on stderr
+/// with the element's path (only under `--skip-unknown`).
+fn take<T>(path: &str, result: Result<Parsed<T>, XmlError>) -> Result<T, XmlError> {
+    let parsed = result?;
+    for diagnostic in &parsed.diagnostics {
+        if diagnostic.kind == DiagnosticKind::VendorForm {
+            eprintln!("{path}: vendor form {diagnostic}");
+        } else {
+            eprintln!("{path}: skipped {diagnostic}");
         }
     }
-    for lib in &parse_domain_libraries(xml).map_err(|e| xml_err("domain_library", &e))? {
-        println!("domain_library {}", lib.name);
-        for d in &lib.domains {
-            println!("  domain {} (id={})", d.name, d.domain_id);
-            for t in &d.topics {
-                println!("    topic {} -> type {}", t.name, t.register_type_ref);
-            }
+    Ok(parsed.value)
+}
+
+/// What one library's parse produced, reduced to what the caller prints.
+struct Outcome {
+    library: &'static str,
+    error: Option<XmlError>,
+}
+
+/// Parse all five libraries. A library that is absent parses to an empty
+/// list, which is not a failure — a document that only declares types is
+/// a valid document.
+fn parse_all(path: &str, text: &str, options: &ReadOptions) -> Vec<Outcome> {
+    fn outcome<T>(library: &'static str, result: Result<T, XmlError>) -> Outcome {
+        Outcome {
+            library,
+            error: result.err(),
         }
     }
-    for lib in
-        &parse_domain_participant_libraries(xml).map_err(|e| xml_err("participant_library", &e))?
-    {
-        println!("domain_participant_library {}", lib.name);
-        for p in &lib.participants {
-            println!("  participant {} -> domain {}", p.name, p.domain_ref);
-            for pubr in &p.publishers {
-                println!("    publisher {}", pubr.name);
-                for w in &pubr.data_writers {
-                    println!("      data_writer {} -> topic {}", w.name, w.topic_ref);
+    vec![
+        outcome(
+            "types",
+            take(path, parse_type_libraries_with(text, options)),
+        ),
+        outcome("qos", take(path, parse_qos_libraries_with(text, options))),
+        outcome(
+            "domain",
+            take(path, parse_domain_libraries_with(text, options)),
+        ),
+        outcome(
+            "participant",
+            take(path, parse_domain_participant_libraries_with(text, options)),
+        ),
+        outcome(
+            "application",
+            take(path, parse_application_libraries_with(text, options)),
+        ),
+    ]
+}
+
+fn run_one(command: Command, path: &str, text: &str, options: &ReadOptions) -> usize {
+    match command {
+        Command::Validate => {
+            let mut failures = 0;
+            for outcome in parse_all(path, text, options) {
+                if let Some(error) = outcome.error {
+                    println!("{path}: error: <{}>: {error:?}", outcome.library);
+                    failures += 1;
                 }
             }
-            for subr in &p.subscribers {
-                println!("    subscriber {}", subr.name);
-                for r in &subr.data_readers {
-                    println!("      data_reader {} -> topic {}", r.name, r.topic_ref);
+            failures
+        }
+        Command::Types => match take(path, parse_type_libraries_with(text, options)) {
+            Ok(libraries) => {
+                for library in &libraries {
+                    let name = if library.name.is_empty() {
+                        "<unnamed>"
+                    } else {
+                        &library.name
+                    };
+                    println!("{path}: types {name}");
+                    for definition in &library.types {
+                        print_type(definition, 1);
+                    }
                 }
+                0
             }
-        }
+            Err(error) => {
+                println!("{path}: error: <types>: {error:?}");
+                1
+            }
+        },
+        Command::Render => render(path, text, options),
     }
-    Ok(())
 }
 
-/// `types` — list the `<types>` (XTypes) definitions with their kind + name.
-fn cmd_types(xml: &str) -> Result<(), CliError> {
-    let libs = parse_type_libraries(xml).map_err(|e| xml_err("types", &e))?;
-    if libs.is_empty() {
-        println!("(no <types> definitions)");
-        return Ok(());
-    }
-    for lib in &libs {
-        println!("type_library {} ({} types)", lib.name, lib.types.len());
-        for t in &lib.types {
-            print_typedef(t, 1);
-        }
-    }
-    Ok(())
-}
-
-/// Pretty-print one `TypeDef`, recursing one level into modules.
+/// One type definition and, for a module, what is inside it.
 ///
-/// zerodds-lint: recursion-depth 64
-fn print_typedef(t: &TypeDef, indent: usize) {
-    let pad = "  ".repeat(indent);
-    match t {
-        TypeDef::Struct(v) => println!("{pad}struct {}", v.name),
-        TypeDef::Enum(v) => println!("{pad}enum {}", v.name),
-        TypeDef::Union(v) => println!("{pad}union {}", v.name),
-        TypeDef::Typedef(v) => println!("{pad}typedef {}", v.name),
-        TypeDef::Bitmask(v) => println!("{pad}bitmask {}", v.name),
-        TypeDef::Bitset(v) => println!("{pad}bitset {}", v.name),
-        TypeDef::ForwardDcl(v) => println!("{pad}forward_dcl {}", v.name),
-        TypeDef::Const(v) => println!("{pad}const {}", v.name),
-        TypeDef::Include(v) => println!("{pad}include {}", v.file),
+/// zerodds-lint: recursion-depth 64 (module nesting; bounded by the document)
+fn print_type(definition: &TypeDef, depth: usize) {
+    let pad = "  ".repeat(depth);
+    match definition {
+        TypeDef::Struct(t) => println!("{pad}struct {}", t.name),
+        TypeDef::Enum(t) => println!("{pad}enum {}", t.name),
+        TypeDef::Union(t) => println!("{pad}union {}", t.name),
+        TypeDef::Typedef(t) => println!("{pad}typedef {}", t.name),
+        TypeDef::Bitmask(t) => println!("{pad}bitmask {}", t.name),
+        TypeDef::Bitset(t) => println!("{pad}bitset {}", t.name),
         TypeDef::Module(m) => {
             println!("{pad}module {}", m.name);
-            for child in &m.types {
-                print_typedef(child, indent + 1);
+            for inner in &m.types {
+                print_type(inner, depth + 1);
             }
         }
+        TypeDef::Include(i) => println!("{pad}#include {}", i.file),
+        _ => println!("{pad}<other>"),
     }
+}
+
+/// The deployment: what domains exist, and which participants join them.
+fn render(path: &str, text: &str, options: &ReadOptions) -> usize {
+    let mut failures = 0;
+    match take(path, parse_domain_libraries_with(text, options)) {
+        Ok(libraries) => {
+            for library in &libraries {
+                for domain in &library.domains {
+                    println!("{path}: domain {}", domain.name);
+                }
+            }
+        }
+        Err(error) => {
+            println!("{path}: error: <domain_library>: {error:?}");
+            failures += 1;
+        }
+    }
+    match take(path, parse_domain_participant_libraries_with(text, options)) {
+        Ok(libraries) => {
+            for library in &libraries {
+                for participant in &library.participants {
+                    let domain = participant.domain_ref.as_deref().unwrap_or("<none>");
+                    println!(
+                        "{path}: participant {} -> domain {domain}",
+                        participant.name
+                    );
+                }
+            }
+        }
+        Err(error) => {
+            println!("{path}: error: <domain_participant_library>: {error:?}");
+            failures += 1;
+        }
+    }
+    failures
+}
+
+fn print_help() {
+    println!(
+        "zerodds-xmlc — read an OMG DDS-XML 1.0 document\n\
+         \n\
+         USAGE:\n    \
+             zerodds-xmlc <SUBCOMMAND> FILE...\n\
+         \n\
+         SUBCOMMANDS:\n    \
+             validate    parse every library; report what failed\n    \
+             types       the type definitions, by library\n    \
+             render      the deployment: domains and participants\n\
+         \n\
+         OPTIONS:\n    \
+             --vendor-forms  read the forms other DDS products write\n                             (topic_filter as element, qos_profile_ref,\n                             IDL type names, ...) and list each with its\n                             path on stderr; without it the first one is an\n                             error naming the DDS-XML 1.0 form\n    \
+             --skip-unknown  leave out elements and attributes the DDS-XML\n                             schemas do not define and list each with its\n                             path on stderr; without it the first one is\n                             an error\n    \
+             -h, --help     this text\n    \
+             -V, --version  the version\n\
+         \n\
+         EXIT CODES:\n    \
+             0  nothing to report\n    \
+             1  a library failed to parse\n    \
+             2  the command line was wrong\n    \
+             3  a file could not be read\n"
+    );
 }
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
     use super::*;
 
-    const SAMPLE: &str = r#"<dds>
-        <qos_library name="QL"><qos_profile name="Reliable"/></qos_library>
-        <domain_library name="DL">
-            <domain name="MyDomain" domain_id="42">
-                <register_type name="State" type_ref="StateType"/>
-                <topic name="StateTopic" register_type_ref="State"/>
-            </domain>
-        </domain_library>
-        <domain_participant_library name="DPL">
-            <domain_participant name="P" domain_ref="DL::MyDomain">
-                <publisher name="Pub1">
-                    <data_writer name="W1" topic_ref="StateTopic"/>
-                </publisher>
-                <subscriber name="Sub1">
-                    <data_reader name="R1" topic_ref="StateTopic"/>
-                </subscriber>
-            </domain_participant>
-        </domain_participant_library>
-    </dds>"#;
-
-    const TYPES_SAMPLE: &str = r#"<dds>
-        <types name="Lib1">
-            <struct name="Point"/>
-            <enum name="Color"/>
-            <module name="ns">
-                <struct name="Inner"/>
-            </module>
-        </types>
-    </dds>"#;
-
-    #[test]
-    fn validate_accepts_well_formed_doc() {
-        assert!(cmd_validate("mem", SAMPLE).is_ok());
+    fn args(tokens: &[&str]) -> Result<(Command, Vec<String>, ReadOptions), String> {
+        parse_args(&tokens.iter().map(|t| (*t).to_string()).collect::<Vec<_>>())
     }
 
     #[test]
-    fn validate_rejects_malformed_xml() {
-        let r = cmd_validate("mem", "<dds><qos_library></dds>");
-        assert!(matches!(r, Err(CliError::Xml(_))), "got {r:?}");
+    fn a_subcommand_and_a_file_are_the_minimum() {
+        let (command, files, _) = args(&["validate", "a.xml"]).expect("valid");
+        assert_eq!(command, Command::Validate);
+        assert_eq!(files, vec![String::from("a.xml")]);
+        args(&["validate"]).expect_err("a file is required");
+        args(&[]).expect_err("a subcommand is required");
     }
 
     #[test]
-    fn render_walks_the_deployment_tree() {
-        assert!(cmd_render(SAMPLE).is_ok());
+    fn what_was_not_understood_is_named() {
+        let error = args(&["deploy", "a.xml"]).expect_err("not a subcommand");
+        assert!(error.contains("deploy"), "{error}");
+        let error = args(&["types", "--all", "a.xml"]).expect_err("unknown option");
+        assert!(error.contains("--all"), "{error}");
+    }
+
+    /// A document that declares only types is valid. Nothing here treats
+    /// an absent library as a failure — the five are all optional.
+    #[test]
+    fn a_document_with_one_library_validates() {
+        let xml = r#"<dds><types><struct name="S"/></types></dds>"#;
+        let failures: usize = parse_all("t.xml", xml, &ReadOptions::default())
+            .iter()
+            .filter(|o| o.error.is_some())
+            .count();
+        assert_eq!(failures, 0, "one library present, four absent");
+    }
+
+    /// Every library is parsed even after one fails, so a caller learns
+    /// about all of them in one run.
+    #[test]
+    fn all_five_libraries_are_attempted() {
+        let outcomes = parse_all("t.xml", "<dds></dds>", &ReadOptions::default());
+        assert_eq!(outcomes.len(), 5);
+        let names: Vec<&str> = outcomes.iter().map(|o| o.library).collect();
+        assert_eq!(
+            names,
+            vec!["types", "qos", "domain", "participant", "application"]
+        );
     }
 
     #[test]
-    fn types_parses_nested_modules() {
-        assert!(cmd_types(TYPES_SAMPLE).is_ok());
+    fn a_malformed_document_reports_a_failure() {
+        let failures = run_one(
+            Command::Validate,
+            "bad.xml",
+            "<dds><types>",
+            &ReadOptions::default(),
+        );
+        assert!(failures > 0, "an unterminated element must not validate");
     }
 
+    /// An element the schemas do not define fails by default and is left
+    /// out, with its path, under `--skip-unknown`.
     #[test]
-    fn run_requires_a_file_argument() {
-        let r = run(&["validate".to_string()]);
-        assert!(matches!(r, Err(CliError::Usage(_))), "got {r:?}");
+    fn unknown_elements_fail_unless_skipped() {
+        let xml = "<dds><qos_library name=\"L\"><qos_profile name=\"P\">\
+                   <datawriter_qos><publish_mode/></datawriter_qos>\
+                   </qos_profile></qos_library></dds>";
+        let strict = run_one(Command::Validate, "t.xml", xml, &ReadOptions::default());
+        assert!(strict > 0, "default refuses");
+        let (_, files, options) = args(&["validate", "--skip-unknown", "t.xml"]).expect("valid");
+        assert_eq!(files, vec![String::from("t.xml")], "a flag is no file");
+        let lenient = run_one(Command::Validate, "t.xml", xml, &options);
+        assert_eq!(lenient, 0, "skipped under --skip-unknown");
     }
 
+    /// A vendor form fails by default and is read under `--vendor-forms`.
     #[test]
-    fn run_rejects_unknown_command() {
-        let r = run(&["frobnicate".to_string()]);
-        assert!(matches!(r, Err(CliError::Usage(_))), "got {r:?}");
-    }
-
-    #[test]
-    fn help_and_empty_args_are_ok() {
-        assert!(run(&["help".to_string()]).is_ok());
-        assert!(run(&[]).is_ok());
+    fn vendor_forms_fail_unless_accepted() {
+        let xml = "<dds><qos_library name=\"L\"><qos_profile name=\"P\">\
+                   <topic_filter>A*</topic_filter>\
+                   </qos_profile></qos_library></dds>";
+        let strict = run_one(Command::Validate, "t.xml", xml, &ReadOptions::default());
+        assert!(strict > 0, "default refuses");
+        let (_, _, options) = args(&["validate", "--vendor-forms", "t.xml"]).expect("valid");
+        assert_eq!(run_one(Command::Validate, "t.xml", xml, &options), 0);
     }
 }

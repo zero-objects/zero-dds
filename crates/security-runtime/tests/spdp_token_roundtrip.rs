@@ -7,7 +7,7 @@
 //! This is the integrative validation for the separated layering
 //! "rtps passes bytes through, security parses them".
 //!
-//! Spec: DDS-Security 1.2 §7.4.1.4 (IdentityToken Tab.16),
+//! Spec: DDS-Security 1.2 §7.5.1.4 (IdentityToken, Table 10),
 //! §7.4.1.5 (PermissionsToken Tab.17), §10.3.2.1 (PKI-DH-Properties).
 
 #![allow(
@@ -39,6 +39,7 @@ fn make_baseline(prefix: u8) -> ParticipantBuiltinTopicData {
         metatraffic_unicast_locators: Vec::new(),
         metatraffic_multicast_locators: Vec::new(),
         domain_id: Some(7),
+        domain_tag: Default::default(),
         builtin_endpoint_set: 0,
         lease_duration: Duration::from_secs(100),
         user_data: Vec::new(),
@@ -50,6 +51,11 @@ fn make_baseline(prefix: u8) -> ParticipantBuiltinTopicData {
         sig_algo_info: None,
         kx_algo_info: None,
         sym_cipher_algo_info: None,
+        available_builtin_endpoints_ext: 0,
+        expects_inline_qos: false,
+        manual_liveliness_count: None,
+        builtin_endpoint_qos: None,
+        entity_name: None,
     }
 }
 

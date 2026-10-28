@@ -1,0 +1,100 @@
+.TH ZERODDS-NAMING-SVC.YAML 5 "" "ZeroDDS" "ZeroDDS Manual"
+.SH NAME
+zerodds-naming-svc.yaml \- configuration file for zerodds-naming-svc(1)
+.SH SYNOPSIS
+.I /etc/zerodds/naming-svc.yaml
+.SH DESCRIPTION
+YAML document configuring the standalone CosNaming daemon. The reader is
+.I DaemonConfig::from_config
+in
+.IR crates/corba-cosnaming/src/naming_daemon.rs .
+.PP
+Top-level keys:
+.BR log_level " and " naming .
+.PP
+An unknown key inside a known section, or a value of the wrong type,
+stops the start with file and line.
+.SH KEYS
+.SS Top level
+.TP
+.B log_level
+.IR trace " | " debug " | " info " | " warn " | " error .
+.SS naming
+.TP
+.B bind
+IIOP listen address. Default
+.IR "0.0.0.0:2809" .
+.TP
+.B advertise_host
+The host named in every IOR this daemon hands out, when
+.B bind
+is a wildcard address. Default
+.IR 127.0.0.1 ,
+environment
+.BR ZERODDS_NAMING_ADVERTISE_HOST .
+.TP
+.B persist_file
+Where the naming graph is saved (atomic write: a sibling temporary file,
+then a rename), and read back at start. Without it the graph is
+in-memory only and a restart starts empty.
+.SS naming.ssliop
+.TP
+.B enabled
+Boolean.
+.TP
+.B bind
+SSLIOP listen address. Default
+.IR "0.0.0.0:2810" .
+.TP
+.B cert_file " / " key_file
+Server certificate/key (PEM). Required when
+.B enabled
+is true.
+.TP
+.B ca_file
+CA bundle client certificates are checked against; required when
+.B require_client_cert
+is true.
+.TP
+.B require_client_cert
+Boolean: the TLS handshake itself refuses a peer without a certificate
+that validates against
+.BR ca_file " (mutual TLS)."
+.SS naming.csiv2
+.TP
+.B enabled
+Boolean. Unlike
+.BR zerodds-corba-bridged (1),
+this daemon has no ACL and no mTLS-identity fallback, so when
+.B enabled
+is true every request must carry valid GSSUP credentials \(em there is
+no additive path around it. Requires
+.BR gssup.password_file .
+.TP
+.B target_supports
+List of accepted
+.I IdentityToken
+forms for CSIv2 identity assertion (Spec \(sc24.2.5): any of
+.IR anonymous ", " principal_name ", " x509_cert_chain ", " distinguished_name .
+An asserted identity whose form is not listed is refused
+.RI ( NO_PERMISSION ,
+a
+.B ContextError
+service context attached). Empty (the default): a request may still
+authenticate as itself via GSSUP; it cannot assert a different identity.
+.SS naming.csiv2.gssup
+.TP
+.B password_file
+Path to a GSSUP credential file: one
+.I username:salt_hex:iterations:hash_hex
+entry per line,
+.IR "hash = PBKDF2-HMAC-SHA-256(password, salt, iterations)" .
+No plain-text password is ever read from this file or from the
+configuration. There is no built-in tool to write an entry \(em
+.I zerodds_corba_csiv2::gssup_store::format_entry
+is the four-field format a site script produces it with.
+.SH EXAMPLES
+See
+.IR /usr/share/zerodds/configs/naming-svc.yaml.example .
+.SH SEE ALSO
+.BR zerodds-naming-svc (1).

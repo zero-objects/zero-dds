@@ -1,267 +1,945 @@
 # zerodds-flatdata 1.0 — Spec-Coverage
 
-**Quelle:** `docs/specs/zerodds-flatdata-1.0.md` (Vendor-Spec, draft 2026-05-04).
+**Quelle:** `docs/specs/zerodds-flatdata-1.0.md` (ZeroDDS-Vendor-Spec,
+Zero-Copy-Same-Host-Pfad).
 
 Implementation:
 
-- `crates/flatdata/` — FlatData Zero-Copy-Serialisierung.
+- `crates/flatdata/` — FlatStruct-Trait, Slot-Layout, SlotBackend, In-Memory-
+  Allocator, POSIX-shm/mmap-Backend, Iceoryx2-Bridge (Opt-in).
+- `crates/flatdata-derive/` — `#[derive(FlatStruct)]`.
+- `crates/rtps/` + `crates/discovery/` — Vendor-PID 0x8001 und dessen
+  SEDP-Einbettung.
+- `crates/dcps/` — Same-Host-Bindung, Wire-Pfad-Routing, DCPS-Integration.
+
+Offene Punkte und Decision-Records: `zerodds-flatdata-1.0.open.md`.
+
+## Ziele und Nicht-Ziele
+
+### Ziel — Pure-Rust-Default-Build ohne Iceoryx-Dependency
+
+**Spec:** `docs/specs/zerodds-flatdata-1.0.md`, Abschnitt „Ziele" —
+„**Pure-Rust** — kein C-Plugin, kein Iceoryx-Cargo-Dep im Default-Build."
+
+**Repo:** `crates/flatdata/Cargo.toml` (`default = ["std", "posix-mmap"]`;
+`iceoryx2` als `optional = true` deklariert und nur über das Feature
+`iceoryx2-bridge` erreichbar).
+
+**Tests:** `crates/flatdata/tests/default_build.rs::default_features_do_not_pull_in_iceoryx2`,
+`crates/flatdata/tests/default_build.rs::posix_mmap_backend_is_on_by_default`
+
+**Status:** done
+
+### Nicht-Ziel — Iceoryx-Wire-Compat nur als Opt-in-Feature
+
+**Spec:** `docs/specs/zerodds-flatdata-1.0.md`, Abschnitt „Nicht-Ziele" —
+„Iceoryx-Wire-Compat — nur via Optional-Feature `--features
+iceoryx2-bridge` (nicht Teil v1.0)."
+
+**Repo:** `crates/flatdata/Cargo.toml` (`iceoryx2-bridge = ["std",
+"dep:iceoryx2"]`), `crates/flatdata/src/iceoryx.rs`
+(`Iceoryx2Publisher`, `Iceoryx2Subscriber`, hinter `#[cfg(feature =
+"iceoryx2-bridge")]`).
+
+**Tests:** `crates/flatdata/tests/default_build.rs::iceoryx_bridge_is_an_opt_in_feature`
+
+**Status:** done
+
+### Nicht-Ziel — Cross-Host-Zero-Copy (RDMA, DPDK)
+
+**Spec:** `docs/specs/zerodds-flatdata-1.0.md`, Abschnitt „Nicht-Ziele" —
+„Cross-Host-Zero-Copy (RDMA, DPDK) — separate Spec."
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** n/a (informative) — die Spec schließt den Punkt selbst aus
+ihrem Geltungsbereich aus; es entsteht keine Anforderung an den Baum.
+Die zugehörige Entwurfsentscheidung steht unten als D-7.
 
 ## §1 FlatStruct-Type-Modell
 
 ### §1.1 FlatStruct-Trait
-- **Anforderung:** `unsafe trait FlatStruct: Copy + 'static + Send + Sync`; `WIRE_SIZE`, `TYPE_HASH`, `as_bytes`, `from_bytes_unchecked`.
-- **Repo:** `crates/flatdata/src/lib.rs::FlatStruct`
-- **Tests:** `crates/flatdata/src/lib.rs::tests::{wire_size_matches_size_of, as_bytes_roundtrip, type_hash_is_consistent}`
-- **Status:** done
 
-### §1.2 derive-Macro
-- **Anforderung:** `#[derive(FlatStruct)]` generiert `unsafe impl FlatStruct for T`. Type-Hash via SHA-256 über Type-Name + Field-Layout.
-- **Repo:** `crates/flatdata-derive/src/lib.rs::derive_flat_struct`
-- **Tests:** `crates/flatdata/tests/derive.rs` (5 Tests: WIRE_SIZE, Hash-Eindeutigkeit, Roundtrip, Tuple-Struct).
-- **Status:** done — F11 (ADR-0005-Voraussetzung).
+**Spec:** §1.1 — „`pub unsafe trait FlatStruct: Copy + 'static + Send +
+Sync`" mit `WIRE_SIZE = core::mem::size_of::<Self>()`, `TYPE_HASH: [u8;
+16]`, `as_bytes(&self) -> &[u8]` und `unsafe fn
+from_bytes_unchecked(bytes: &[u8]) -> Self`.
+
+**Repo:** `crates/flatdata/src/lib.rs` (`FlatStruct` mit den vier
+Assoziierten, Default-Body von `as_bytes` als Byte-Cast über
+`WIRE_SIZE`).
+
+**Tests:** `crates/flatdata/src/lib.rs::tests::wire_size_matches_size_of`,
+`crates/flatdata/src/lib.rs::tests::as_bytes_roundtrip`,
+`crates/flatdata/src/lib.rs::tests::type_hash_is_consistent`
+
+**Status:** done
+
+### §1.2 Derive-Macro erzeugt die Trait-Implementierung
+
+**Spec:** §1.2 — „`#[derive(FlatStruct)]` generiert `unsafe impl
+FlatStruct for T`"; „Der `TYPE_HASH` ist
+`sha256(<TypeName>{<field-name>:<field-ty>,...})[..16]`."
+
+**Repo:** `crates/flatdata-derive/src/lib.rs` (`derive_flat_struct`,
+`expand`, `layout_signature`, `type_signature`; SHA-256 über die
+Layout-Signatur, erste 16 Byte als `TYPE_HASH`).
+
+**Tests:** `crates/flatdata/tests/derive.rs::derive_generates_wire_size`,
+`crates/flatdata/tests/derive.rs::derive_generates_type_hash_nonzero`,
+`crates/flatdata/tests/derive.rs::derive_as_bytes_roundtrip`,
+`crates/flatdata/tests/derive.rs::derive_works_for_tuple_struct`,
+`crates/flatdata/tests/derive.rs::derive_works_for_unit_struct`,
+`crates/flatdata/tests/derive.rs::derive_hash_is_deterministic_for_identical_layout`,
+`crates/flatdata-derive/src/lib.rs::tests::layout_signature_covers_name_order_and_types`
+
+**Status:** done
+
+### §1.2 Derive-Macro lehnt Layout-unsichere Typen ab
+
+**Spec:** §1.2 — „Der Macro lehnt mit `compile_error!` ab, wenn `T` weder
+`#[repr(C)]` noch `#[repr(transparent)]` traegt, und auf `enum`/`union`."
+
+**Repo:** `crates/flatdata-derive/src/lib.rs` (`expand` gibt für
+`Data::Enum` und `Data::Union` einen `syn::Error` zurück;
+`has_repr_c_or_transparent` prüft das `repr`-Attribut).
+
+**Tests:** `crates/flatdata-derive/src/lib.rs::tests::derive_rejects_enum`,
+`crates/flatdata-derive/src/lib.rs::tests::derive_rejects_union`,
+`crates/flatdata-derive/src/lib.rs::tests::derive_rejects_struct_without_repr_c`,
+`crates/flatdata-derive/src/lib.rs::tests::repr_attribute_gate_accepts_c_and_transparent_only`,
+`crates/flatdata/tests/derive.rs::derive_accepts_repr_transparent`
+
+**Status:** done
+
+### §1.2 Type-Hash erkennt Schema-Drift
+
+**Spec:** §1.2 — die Hash-Eingabe ist `<TypeName>{<field-name>:<field-ty>,...}`,
+womit Umbenennung, Feld-Reihenfolge und Feld-Typ in den Hash eingehen.
+
+**Repo:** `crates/flatdata-derive/src/lib.rs` (`layout_signature` schreibt
+Typname, Feldnamen und Feldtypen in die Hash-Eingabe).
+
+**Tests:** `crates/flatdata/tests/derive.rs::derive_detects_field_reorder`,
+`crates/flatdata/tests/derive.rs::derive_detects_field_type_change`,
+`crates/flatdata/tests/derive.rs::derive_detects_type_rename`,
+`crates/flatdata/tests/derive.rs::derive_generates_distinct_hash_per_layout`
+
+**Status:** done
 
 ## §2 SHM-Slot-Layout
 
-### §2.1 Header-Struktur
-- **Anforderung:** 16 byte Header: u32 sequence_number, u32 sample_size, u32 reader_mask, u32 _reserved.
-- **Repo:** `crates/flatdata/src/slot.rs::SlotHeader`
-- **Tests:** `slot::tests::{header_size_is_16, new_header_has_zero_mask, mark_read_sets_bit, all_read_with_two_active_readers, inactive_reader_bits_dont_block, roundtrip_le, from_bytes_too_short_returns_none}`
-- **Status:** done
+### §2 Slot-Header — 16 Byte, vier u32-Felder
 
-### §2.2 Slot-Alignment
-- **Anforderung:** Slot-Size = (16 + sample_size) gepaddet auf 64-byte Cache-Line.
-- **Repo:** `crates/flatdata/src/allocator.rs::InMemorySlotAllocator::slot_total_size`
-- **Tests:** `allocator::tests::slot_total_size_is_cache_line_padded`
-- **Status:** done
+**Spec:** §2 — Slot-Header mit `0x00 u32 sequence_number`, `0x04 u32
+sample_size`, `0x08 u32 reader_mask`, `0x0c u32 _reserved`;
+„Header-Size: 16 byte."
+
+**Repo:** `crates/flatdata/src/slot.rs` (`SlotHeader`,
+`SLOT_HEADER_SIZE`, `to_le_bytes`/`from_bytes` in genau dieser
+Feldreihenfolge).
+
+**Tests:** `crates/flatdata/src/slot.rs::tests::header_size_is_16`,
+`crates/flatdata/src/slot.rs::tests::roundtrip_le`,
+`crates/flatdata/src/slot.rs::tests::from_bytes_too_short_returns_none`,
+`crates/flatdata/src/slot.rs::tests::new_header_has_zero_mask`
+
+**Status:** done
+
+### §2 Slot-Size — 16 + sample_size, auf 64 Byte gepaddet
+
+**Spec:** §2 — „Slot-Size = 16 + sample_size, gepaddet auf naechste
+64-byte-Boundary (Cache-Line-Alignment)."
+
+**Repo:** `crates/flatdata/src/allocator.rs`
+(`InMemorySlotAllocator::slot_total_size` rundet `SLOT_HEADER_SIZE +
+slot_capacity` auf das nächste Vielfache von 64 auf),
+`crates/flatdata/src/posix.rs` (`PosixSlotAllocator` legt das Segment mit
+demselben `slot_total_size` an).
+
+**Tests:** `crates/flatdata/src/allocator.rs::tests::slot_total_size_is_cache_line_padded`,
+`crates/flatdata/src/posix.rs::tests::create_attach_roundtrip`
+
+**Status:** done
 
 ## §3 Discovery — PID_SHM_LOCATOR
 
-### §3.1 Wire-Format (PID 0x8001)
-- **Anforderung:** u32 hostname_hash + u32 uid + u32 slot_count + u32 slot_size + CDR-String segment_path.
-- **Repo:** `crates/rtps/src/parameter_list.rs::pid::SHM_LOCATOR` + `crates/flatdata/src/locator.rs::ShmLocator`
-- **Tests:** `crates/flatdata/src/locator.rs::tests::{roundtrip_le, truncated_header_errors, path_too_long_errors}`
-- **Status:** done
+### §3.1 Wire-Format des Vendor-PID 0x8001
 
-### §3.2 Same-Host-Match-Logik
-- **Anforderung:** Match wenn hostname_hash + uid lokal stimmen UND mmap erfolgreich.
-- **Repo:** `crates/flatdata/src/locator.rs::is_same_host` + `fnv1a_32`; der SEDP-Discovery-Hook in `crates/dcps/src/runtime.rs` bindet same-host-Paare automatisch (`register_pending`→`mark_bound`→idempotentes `open_or_create`).
-- **Tests:** `tests::{fnv1a_known_value, same_host_match_positive, same_host_mismatch_uid, same_host_mismatch_hostname}` + `same_host_e2e::e2e_two_runtimes_shm_roundtrip` (Linux bench host).
-- **Status:** done — Match-Logik + Discovery-getriebene mmap-Auto-Anbindung im Produktionspfad (kein manueller `set_flat_backend`-Call nötig).
+**Spec:** §3.1 — Vendor-PID `0x8001 PID_SHM_LOCATOR` mit `u32
+hostname-hash (FNV-1a der hostname-Bytes)`, `u32 uid`, `u32 slot_count`,
+`u32 slot_size`, `segment_path: CDR-String`.
 
-### §3.4 SEDP-Push (PID_SHM_LOCATOR via Side-Map)
-- **Anforderung:** Wenn ein User-Writer ein Same-Host-Backend angeschlossen hat, soll seine SEDP-Publication-Sample PID 0x8001 als Vendor-PID tragen — der Wert ist die Bytes-Sequenz aus §3.1.
-- **Repo:** `crates/rtps/src/publication_data.rs::inject_pid_shm_locator` (Encode-Helper, ADR-0006 Side-Map-Pattern statt Field-on-Struct) + `crates/discovery/src/sedp/{writer.rs::SedpPublicationsWriter::announce_with_shm_locator, stack.rs::SedpStack::announce_publication_with_shm_locator}` + `crates/dcps/src/runtime.rs::DcpsRuntime::{set_shm_locator, shm_locator, clear_shm_locator}` (Side-Map `BTreeMap<EntityId, Vec<u8>>`).
-- **Tests:** `crates/rtps/src/publication_data.rs::tests::{inject_pid_shm_locator_appends_before_sentinel, inject_pid_shm_locator_rejects_missing_sentinel, inject_pid_shm_locator_rejects_too_short}`
-- **Status:** done — Side-Map vermeidet 21+ Construction-Sites cross-workspace; Vendor-PID ohne MUST_UNDERSTAND-Bit.
+**Repo:** `crates/rtps/src/parameter_list.rs` (`pid::SHM_LOCATOR =
+0x8001`), `crates/flatdata/src/locator.rs` (`ShmLocator` mit
+`to_bytes`/`from_bytes` in genau dieser Feldfolge, `fnv1a_32`).
 
-### §3.3 PID_SHM_LOCATOR ohne MUST_UNDERSTAND
-- **Anforderung:** Vendor-PID, MUST_UNDERSTAND-Bit nicht gesetzt — fremde Vendoren ignorieren still.
-- **Repo:** `crates/rtps/src/parameter_list.rs::pid::SHM_LOCATOR = 0x8001` (VENDOR_SPECIFIC_BIT gesetzt, MUST_UNDERSTAND nicht).
-- **Tests:** `validate_must_understand_in_data_pipeline` überspringt vendor-spezifische PIDs.
-- **Status:** done
+**Tests:** `crates/flatdata/src/locator.rs::tests::roundtrip_le`,
+`crates/flatdata/src/locator.rs::tests::truncated_header_errors`,
+`crates/flatdata/src/locator.rs::tests::path_too_long_errors`,
+`crates/flatdata/src/locator.rs::tests::fnv1a_known_value`
+
+**Status:** done
+
+### §3.1 PID_SHM_LOCATOR im SEDP-Publication-Sample
+
+**Spec:** §3.1 zusammen mit §3.2 — der Reader liest den Locator „aus
+PID_SHM_LOCATOR", der Writer muss ihn also in seiner
+SEDP-Publication-Ankündigung mitschicken.
+
+**Repo:** `crates/rtps/src/publication_data.rs`
+(`inject_pid_shm_locator` hängt den PID vor das PID_SENTINEL),
+`crates/discovery/src/sedp/writer.rs`
+(`SedpPublicationsWriter::announce_with_shm_locator`),
+`crates/discovery/src/sedp/stack.rs`
+(`SedpStack::announce_publication_with_shm_locator`),
+`crates/dcps/src/runtime.rs` (`DcpsRuntime::set_shm_locator`,
+`shm_locator`, `clear_shm_locator` als Side-Map über die
+`EntityId` des User-Writers).
+
+**Tests:** `crates/discovery/src/sedp/writer.rs::tests::announce_with_shm_locator_puts_vendor_pid_on_the_wire`,
+`crates/rtps/src/publication_data.rs::tests::inject_pid_shm_locator_appends_before_sentinel`,
+`crates/rtps/src/publication_data.rs::tests::inject_pid_shm_locator_rejects_missing_sentinel`,
+`crates/rtps/src/publication_data.rs::tests::inject_pid_shm_locator_rejects_too_short`
+
+**Status:** done
+
+### §3.2 Same-Host-Match über hostname-hash und uid
+
+**Spec:** §3.2 — „Same-Host-Match wenn: 1. `hostname-hash` aus
+PID_SHM_LOCATOR == lokaler hostname-hash, UND 2. `uid` aus
+PID_SHM_LOCATOR == lokaler uid".
+
+**Repo:** `crates/flatdata/src/locator.rs` (`is_same_host` vergleicht
+beide Felder gegen den lokalen Host; `fnv1a_32` als Hash),
+`crates/dcps/src/runtime.rs` (`note_same_host_peer`: ein von SPDP
+gemeldeter ZeroDDS-Teilnehmer mit derselben `host_id` bekommt einen
+SHM-Kanal), `crates/dcps/src/same_host_channel.rs`
+(`SameHostChannels::add_peer`).
+
+**Tests:** `crates/flatdata/src/locator.rs::tests::same_host_match_positive`,
+`crates/flatdata/src/locator.rs::tests::same_host_mismatch_uid`,
+`crates/flatdata/src/locator.rs::tests::same_host_mismatch_hostname`,
+`crates/dcps/src/same_host_channel.rs::tests::a_send_to_a_peer_locator_goes_through_the_channel_and_any_other_does_not`
+
+**Status:** done
+
+### §3.2 Dritte Match-Bedingung — mmap auf das Segment
+
+**Spec:** §3.2 — „3. lokaler Process kann `mmap()` auf das Segment."
+Scheitert das, gilt der Match als gescheitert.
+
+**Repo:** `crates/flatdata/src/posix.rs` (`PosixSlotAllocator::attach`
+mappt das über den Locator benannte Segment; Fehler kommen als
+`PosixSlotError` zurück), `crates/dcps/src/same_host_channel.rs`
+(`SameHostChannels::open`: scheitert das Mappen, bleibt der Teilnehmer
+ohne Kanal und damit auf UDP; Ereignis `shm.channel_open_failed`).
+
+**Tests:** `crates/flatdata/src/posix.rs::tests::create_attach_roundtrip`,
+`crates/flatdata/src/posix.rs::tests::write_read_through_shm`,
+`crates/dcps/src/same_host_channel.rs::tests::a_send_to_a_peer_locator_goes_through_the_channel_and_any_other_does_not`
+(vor dem Öffnen durch den Peer geht nichts durch den Kanal)
+
+**Status:** done
 
 ## §4 Wire-Pfad
 
-### §4.1 Same-Host-Pfad: reserve→write→commit
-- **Anforderung:** Writer reserviert Slot, schreibt FlatStruct, commit_slot signalisiert Reader.
-- **Repo:** `crates/flatdata/src/allocator.rs::InMemorySlotAllocator` (in-memory) + `crates/flatdata/src/posix.rs::PosixSlotAllocator` (POSIX-mmap) + `crates/flatdata/src/iceoryx.rs::Iceoryx2SlotAdapter` (optionaler Bridge) + `crates/flatdata/src/backend.rs::SlotBackend` (Trait) + `crates/flatdata/src/pubsub.rs::FlatWriter::write`
-- **Tests:** allocator-Tests + `posix::tests::{create_attach_roundtrip, write_read_through_shm, mark_read_visible_to_owner, next_sn_increments_atomically}` + `iceoryx::tests`
-- **Status:** done — alle drei Backends gegen denselben SlotBackend-Trait (ADR-0003).
+### §4.1 Writer reserviert einen Slot
 
-### §4.2 Reader-Notify (eventfd / Semaphore)
-- **Anforderung:** Reader poll'd Same-Host-Channel ohne UDP-Roundtrip.
-- **Repo:** `crates/flatdata/src/{backend.rs,allocator.rs,posix.rs}` — `notify_generation`/`wait_for_change` auf dem `SlotBackend`-Trait; In-Memory `ChangeNotify` (Condvar + Generation), POSIX cross-process Futex auf einem Generation-Word im SHM-Header (FUTEX_WAIT/WAKE, Linux). DCPS: `DataReader::read_flat_blocking(timeout)` + `FlatReader::read_blocking`.
-- **Tests:** `futex_notify_wakes_consumer_across_mappings` (Linux bench host, cross-process Wake) + 5 In-Memory-Thread-Tests.
-- **Status:** done — event-driven Notify auf beiden Backends, kein Busy-Poll/UDP-Roundtrip.
+**Spec:** §4.1 (1) — „Writer reserviert via
+`PosixShmTransport::reserve_slot()` einen Slot. Liefert `SlotHandle =
+(segment_id, slot_index, &mut [u8])`."
 
-### §4.3 Cross-Host-Fallback parallel
-- **Anforderung:** Writer schickt parallel zur SHM-Notify auch UDP-DATA an Cross-Host-Reader.
-- **Repo:** `crates/dcps/src/runtime.rs::same_host_udp_skip_set` — sammelt die UDP-Unicast-Locators der same-host-SHM-gebundenen Reader; der Write-Hot-Path überspringt sie für UDP (same-host → SHM, Cross-Host → UDP, kein Doppel-Delivery).
-- **Tests:** `same_host_e2e::e2e_cross_vendor_different_host_id_no_shm_bind` (Linux bench host).
-- **Status:** done — Same-Host-vs-Cross-Host-Routing im Produktions-Wire-Pfad (Wave 4b / ADR-0006).
+**Repo:** `crates/flatdata/src/backend.rs` (`SlotBackend::reserve_slot`),
+`crates/flatdata/src/allocator.rs`
+(`InMemorySlotAllocator::reserve_slot` liefert `SlotHandle` mit
+`segment_id` und `slot_index`), `crates/flatdata/src/posix.rs`
+(`PosixSlotAllocator` implementiert denselben Trait auf mmap).
 
-### §4.4 Mixed-Vendor-Compat
-- **Anforderung:** Cyclone/Fast-DDS bekommen UDP-DATA; SHM-Pfad ignoriert weil PID unbekannt.
-- **Repo:** Vendor-PID via §3.3 + Wire-Inject via §3.4 (`inject_pid_shm_locator`) — Cyclone ignoriert PID 0x8001 still, da MUST_UNDERSTAND-Bit nicht gesetzt ist.
-- **Tests:** `crates/rtps/src/publication_data.rs::tests::{unknown_pids_are_skipped, inject_pid_shm_locator_appends_before_sentinel}` — beide testen den Standard-PL-CDR-Decoder, der byte-identisch zu dem ist, den Cyclone benutzt (DDSI-RTPS 2.5 §9.4.2.11). Encode-with-Inject + Decode = identisch zum Original-Sample → Cyclone-Pfad ist isomorph.
-- **Status:** done — Wire-Level-Roundtrip via Standard-Decoder ist der direkte Beweis; Live-Bestätigung über `crates/discovery/tests/cyclone_live_sedp.rs` erweiterbar (Cyclone discovered ZeroDDS-Participant matched die SEDP-Pubs unbeeinträchtigt).
+**Tests:** `crates/flatdata/src/allocator.rs::tests::reserve_returns_first_free_slot`,
+`crates/flatdata/src/allocator.rs::tests::reserve_returns_no_free_slot_when_all_loaned`,
+`crates/flatdata/src/posix.rs::tests::create_attach_roundtrip`
 
-## §5 Lifetime + Refcount
+**Status:** done
 
-### §5.1 reader_mask-Bitmap
-- **Anforderung:** 32-bit Bitmap; Slot frei wenn alle Bits gesetzt oder Timeout 60 s.
-- **Repo:** `crates/flatdata/src/slot.rs::SlotHeader::{mark_read, all_read}` + `allocator::reserve_slot`
-- **Tests:** `allocator::tests::slot_recyclable_after_all_readers_marked` + `evict_stale_frees_slot_held_by_hung_reader`.
-- **Status:** done — Bitmap voll umgesetzt; `InMemorySlotAllocator::evict_stale(max_age, active_mask)` force-freed committete, nicht-voll-gelesene, nicht-geloante Slots, deren Sample älter als `max_age` ist (Backstop gegen hängenden-aber-lebenden Reader; saubere Disconnects deckt der SPDP-Lease-Pfad). Out-of-band `committed_at: Instant` pro Slot.
+### §4.1 Writer schreibt direkt in den Slot
 
-### §5.2 Reader-Disconnect retroaktiv
-- **Anforderung:** Bei SPDP-Lease-Expiry wird sein Bit retroaktiv gesetzt.
-- **Repo:** `crates/flatdata/src/allocator.rs::InMemorySlotAllocator::mark_reader_disconnected`
-- **Tests:** `allocator::tests::reader_disconnect_frees_blocked_slots`
-- **Status:** done
+**Spec:** §4.1 (2) — „Writer schreibt FlatStruct direkt in
+`slot.bytes_mut()`."
+
+**Repo:** `crates/flatdata/src/allocator.rs`
+(`InMemorySlotAllocator::slot_data_ptr` gibt den Zeiger in den
+reservierten Slot heraus, `commit_in_place` schließt ohne
+Staging-Kopie ab), `crates/flatdata/src/pubsub.rs`
+(`FlatSlot::as_mut`, `FlatSlot::commit_in_place`).
+
+**Tests:** `crates/flatdata/src/allocator.rs::tests::in_place_loan_writes_without_staging_copy`,
+`crates/flatdata/src/allocator.rs::tests::slot_data_ptr_rejects_unreserved_slot`,
+`crates/flatdata/src/pubsub.rs::tests::writer_loan_in_place_zero_copy`
+
+**Status:** done
+
+### §4.1 commit_slot setzt sample_size und reader_mask
+
+**Spec:** §4.1 (3) — „Writer ruft `commit_slot(slot)`. Backend setzt
+`sample_size` und `reader_mask = 0`."
+
+**Repo:** `crates/flatdata/src/allocator.rs`
+(`InMemorySlotAllocator::commit_slot` schreibt `sample_size`, setzt
+`reader_mask` auf 0 und vergibt die nächste `sequence_number`),
+`crates/flatdata/src/posix.rs` (`PosixSlotAllocator::commit_slot`,
+`next_sn` als atomarer Zähler im Segment-Header).
+
+**Tests:** `crates/flatdata/src/allocator.rs::tests::commit_writes_bytes_and_increments_sn`,
+`crates/flatdata/src/allocator.rs::tests::commit_too_large_returns_error`,
+`crates/flatdata/src/slot.rs::tests::new_header_has_zero_mask`,
+`crates/flatdata/src/posix.rs::tests::next_sn_increments_atomically`
+
+**Status:** done
+
+### §4.1 Backend signalisiert den Same-Host-Reader
+
+**Spec:** §4.1 (3)/(4) — „Backend signalisiert Same-Host-Reader via
+eventfd oder POSIX-Semaphore. Reader poll'd Same-Host-Channel (eventfd)
+oder UDP-Notify."
+
+**Repo:** `crates/flatdata/src/backend.rs` (`SlotBackend::notify_generation`,
+`SlotBackend::wait_for_change`), `crates/flatdata/src/allocator.rs`
+(`ChangeNotify` — Condvar plus Generationszähler, prozessintern; Lock und
+`notify_all` nur, wenn ein Thread wartet),
+`crates/flatdata/src/posix.rs` (`wait_for_change` parkt unter Linux per
+Futex, unter macOS ab 14.4 per `os_sync_wait_on_address` auf dem
+Generations-Wort im Segment-Header; anderswo ist die Funktion ein No-op.
+Ein Wartezähler an 0x14 im Segment-Header zählt die geparkten Threads
+aller Prozesse; geweckt wird nur, wenn er nicht 0 ist),
+`crates/flatdata/src/pubsub.rs` (`FlatReader::read_blocking`).
+
+**Tests:** `crates/flatdata/src/pubsub.rs::tests::read_blocking_wakes_on_commit`,
+`crates/flatdata/src/pubsub.rs::tests::read_blocking_times_out_without_writer`,
+`crates/flatdata/src/posix.rs::tests::futex_notify_wakes_consumer_across_mappings`
+(Linux auf dem Linux-Testhost, macOS 26),
+`crates/flatdata/src/posix.rs::tests::every_bump_reaches_a_parked_peer_and_the_count_returns_to_zero`
+(2 000 Übergaben über 4 Slots, kein Park bis zum Timeout; Linux-Testhost),
+`crates/flatdata/src/posix.rs::tests::a_segment_without_the_waiter_count_is_refused`
+
+**Status:** partial — ereignisgesteuert für das In-Memory-Backend
+(Condvar) und das POSIX-Backend unter Linux und macOS. Auf den BSDs und
+Windows pollt der Reader weiter; siehe „§4.1 Cross-Process-Notify auf
+nicht-Linux-POSIX".
+
+### §4.1 Reader liest ohne Kopie und gibt den Slot frei
+
+**Spec:** §4.1 (5) — „Reader liest Slot via `mmap`-`&[u8]` ohne Copy.
+Setzt sein Bit in `reader_mask`. Wenn alle Reader gelesen → Slot wird
+wieder reservierbar."
+
+**Repo:** `crates/flatdata/src/backend.rs` (`SlotBackend::slot_read_ptr`,
+`SlotBackend::next_unread_slot`), `crates/flatdata/src/allocator.rs`
+(`mark_read` setzt das Reader-Bit; `reserve_slot` gibt einen Slot erst
+wieder aus, wenn `SlotHeader::all_read` für die aktive Reader-Maske
+gilt), `crates/zerodds-c-api/src/shm_loan_ffi.rs`
+(`zerodds_dr_take_shm` / `zerodds_dr_release_shm` als Zero-Copy-Konsument
+derselben Primitive).
+
+**Tests:** `crates/flatdata/src/allocator.rs::tests::slot_recyclable_after_all_readers_marked`,
+`crates/flatdata/src/pubsub.rs::tests::reader_recycles_slot_after_read`,
+`crates/flatdata/src/posix.rs::tests::mark_read_visible_to_owner`,
+`crates/zerodds-c-api/tests/shm_loan_e2e.rs::shm_loan_writer_to_reader_zero_copy`
+
+**Status:** done
+
+### §4.2 Cross-Host-Reader bekommen unveränderte UDP-DATA
+
+**Spec:** §4.2 — „Reader auf anderem Host bekommen unveraenderte
+UDP-DATA-Submessage mit voller Payload. Writer schickt also **parallel**
+… Die Discovery-Logik teilt die `matched_readers` in zwei Listen."
+
+**Repo:** `crates/dcps/src/same_host_channel.rs` (`SameHostChannels::send`
+routet nach Ziel-Locator: nur ein Locator, den ein Same-Host-Teilnehmer mit
+Kanal angekündigt hat, geht durch dessen Ring; `RoutedUserTransport` vor
+`user_unicast`), `crates/dcps/src/runtime.rs` (`send_metatraffic`). Die
+Aufteilung je Reader ergibt sich aus seinen Locators: ein Reader auf
+einem anderen Host hat keinen Kanal, sein Datagramm geht unverändert über
+UDP.
+
+**Tests:** `crates/dcps/src/same_host_channel.rs::tests::a_send_to_a_peer_locator_goes_through_the_channel_and_any_other_does_not` (auf jedem Host),
+`crates/dcps/tests/same_host_e2e.rs::e2e_cross_vendor_different_host_id_no_shm_bind`
+(Linux, Linux-Testhost)
+
+**Status:** done
+
+### §4.3 Fremde Vendoren bekommen immer UDP-DATA
+
+**Spec:** §4.3 — „Cyclone/Fast-DDS-Reader (egal Same-Host) bekommen
+**immer** UDP-DATA. Sie kennen `PID_SHM_LOCATOR` nicht (Vendor-PID,
+MUST_UNDERSTAND-Bit nicht gesetzt → silently ignoriert)."
+
+**Repo:** `crates/rtps/src/parameter_list.rs` (`pid::SHM_LOCATOR = 0x8001`
+liegt im Vendor-Bereich; `validate_must_understand_in_data_pipeline`
+lässt unbekannte Vendor-PIDs ohne MUST_UNDERSTAND-Bit passieren),
+`crates/rtps/src/publication_data.rs` (`from_pl_cdr_le` überspringt
+unbekannte PIDs).
+
+**Tests:** `crates/discovery/src/sedp/writer.rs::tests::announce_with_shm_locator_puts_vendor_pid_on_the_wire`,
+`crates/rtps/src/publication_data.rs::tests::unknown_pids_are_skipped`,
+`crates/rtps/src/parameter_list.rs::tests::a_vendor_specific_must_understand_pid_of_another_vendor_is_an_error`,
+`crates/rtps/src/parameter_list.rs::tests::validate_must_understand_in_data_pipeline_unknown_pid_rejects`
+
+**Status:** done
+
+## §5 Lifetime und Refcount
+
+### §5.1 reader_mask als 32-Bit-Bitmap
+
+**Spec:** §5.1 — „`reader_mask` ist 32-bit Bitmap. Slot ist ‚frei' wenn:
+alle Bits gesetzt = alle Reader haben gelesen".
+
+**Repo:** `crates/flatdata/src/slot.rs` (`ReaderMask` als `u32`,
+`SlotHeader::mark_read`, `SlotHeader::all_read` gegen die aktive
+Reader-Maske).
+
+**Tests:** `crates/flatdata/src/slot.rs::tests::mark_read_sets_bit`,
+`crates/flatdata/src/slot.rs::tests::all_read_with_two_active_readers`,
+`crates/flatdata/src/slot.rs::tests::inactive_reader_bits_dont_block`,
+`crates/flatdata/src/allocator.rs::tests::slot_recyclable_after_all_readers_marked`
+
+**Status:** done
+
+### §5.1 Straggler-Timeout — commit_time + 60 s
+
+**Spec:** §5.1 — „Slot ist ‚frei' wenn … `commit_time + 60s`
+ueberschritten (Timeout — straggler-Reader)."
+
+**Repo:** `crates/flatdata/src/pubsub.rs` (`STRAGGLER_TIMEOUT` = 60 s,
+`FlatWriter::with_straggler_timeout`, `FlatWriter::straggler_timeout`;
+`FlatWriter::reserve` ruft bei erschöpftem Pool zuerst `evict_stale`),
+`crates/flatdata/src/allocator.rs` (`InMemorySlotAllocator::evict_stale`
+gibt committete, nicht vollständig gelesene, nicht geliehene Slots frei,
+deren `committed_at` älter als `max_age` ist).
+
+**Tests:** `crates/flatdata/src/pubsub.rs::tests::straggler_timeout_defaults_to_sixty_seconds`,
+`crates/flatdata/src/pubsub.rs::tests::write_reclaims_a_slot_held_past_the_straggler_timeout`,
+`crates/flatdata/src/pubsub.rs::tests::loan_slot_reclaims_a_slot_held_past_the_straggler_timeout`,
+`crates/flatdata/src/allocator.rs::tests::evict_stale_frees_slot_held_by_hung_reader`,
+`crates/flatdata/src/allocator.rs::tests::evict_stale_leaves_read_slots_untouched`
+
+**Status:** done
+
+### §5.1 Voller Cache — Reliable blockt, BestEffort dropped
+
+**Spec:** §5.1 — „Wenn Cache voll und kein Slot frei: Writer-`write`
+blockt (Reliable) oder dropped (BestEffort) — analog zu
+RESOURCE_LIMITS."
+
+**Repo:** `crates/flatdata/src/pubsub.rs` (`Reliability`, `WriteOutcome`,
+`FlatWriter::write_bp`: `Reliable` wartet ereignisgesteuert auf dem
+`ChangeNotify` bis zur Deadline, `BestEffort` liefert sofort
+`WriteOutcome::Dropped`).
+
+**Tests:** `crates/flatdata/src/pubsub.rs::tests::write_bp_best_effort_drops_when_full`,
+`crates/flatdata/src/pubsub.rs::tests::write_bp_reliable_blocks_until_reader_frees`,
+`crates/flatdata/src/pubsub.rs::tests::write_bp_reliable_times_out`
+
+**Status:** done
+
+### §5.2 Reader-Disconnect setzt sein Bit retroaktiv
+
+**Spec:** §5.2 — „Reader, der disconnected wird (SPDP-lease-expiry), wird
+aus dem Bitmap-Allocator entfernt; Writer setzt sein Bit retroaktiv →
+Slot ist frei."
+
+**Repo:** `crates/flatdata/src/allocator.rs`
+(`InMemorySlotAllocator::mark_reader_disconnected` setzt das Bit des
+Readers auf allen committeten Slots und weckt blockierte Writer).
+
+**Tests:** `crates/flatdata/src/allocator.rs::tests::reader_disconnect_frees_blocked_slots`
+
+**Status:** done
 
 ## §6 Schema-Versioning
 
-### §6.1 Type-Hash-Check beim Read
-- **Anforderung:** Reader prüft sample_size gegen WIRE_SIZE; bei Drift Slot-Drop, Fallback auf UDP.
-- **Repo:** `crates/flatdata/src/pubsub.rs::FlatReader::read` (size-Check + TYPE_HASH-Field expose) + `crates/dcps/src/flatdata_integration.rs::FlatDcpsBridge::read_flat` (TYPE_HASH-Cross-Validation gegen Backend-Hash) + `crates/flatdata/src/{backend.rs::SlotBackend::type_hash, allocator.rs::InMemorySlotAllocator::with_type_hash}`.
-- **Tests:** `crates/dcps/tests/flatdata_integration.rs::{rejects_type_hash_mismatch, accepts_matching_type_hash}` + `writer_write_then_reader_read` (size-Match-Pfad).
-- **Status:** done — Backend trägt optionalen TYPE_HASH; read_flat liefert `PreconditionNotMet` bei Drift, sonst Sample-Read.
+### §6.1 Größenprüfung beim Slot-Read
+
+**Spec:** §6.1 — „Beim ersten SHM-Slot-Read prüft Reader, dass die ersten
+4 byte des Slot-Header (sample_size) zu `WIRE_SIZE` passen, sonst
+Slot-Drop."
+
+**Repo:** `crates/flatdata/src/pubsub.rs` (`FlatReader::scan_best`
+überspringt jeden Slot, dessen Nutzbytes kürzer als `T::WIRE_SIZE`
+sind, und dereferenziert ihn nicht).
+
+**Tests:** `crates/flatdata/src/pubsub.rs::tests::writer_write_then_reader_read`,
+`crates/flatdata/src/pubsub.rs::tests::reader_does_not_re_read_same_slot`,
+`crates/flatdata/src/allocator.rs::tests::commit_too_large_returns_error`
+
+**Status:** done
+
+### §6.1 Type-Hash-Drift — kein Match, Fallback auf UDP-DATA
+
+**Spec:** §6.1 — „Falls Type-Hash unterschiedlich: Reader matcht nicht —
+fallback auf UDP-DATA."
+
+**Repo:** `crates/flatdata/src/backend.rs` (`SlotBackend::type_hash`),
+`crates/flatdata/src/allocator.rs`
+(`InMemorySlotAllocator::with_type_hash`),
+`crates/flatdata/src/pubsub.rs` (`FlatReader::scan_best` bricht vor jedem
+Slot-Zugriff ab, wenn der Backend-Hash nicht `T::TYPE_HASH` ist),
+`crates/dcps/src/flatdata_integration.rs` (`read_flat` liefert bei Drift
+einen Fehler statt eines Samples; `write_flat` ohne Backend geht auf den
+UDP-Pfad).
+
+**Tests:** `crates/flatdata/src/pubsub.rs::tests::reader_rejects_type_hash_mismatch`,
+`crates/flatdata/src/pubsub.rs::tests::reader_accepts_matching_type_hash`,
+`crates/dcps/tests/flatdata_integration.rs::datareader_read_flat_rejects_type_hash_mismatch`,
+`crates/dcps/tests/flatdata_integration.rs::datawriter_write_flat_falls_back_to_udp_without_backend`
+
+**Status:** done
 
 ## §7 Sicherheit
 
-### §7.1 POSIX-Permissions 0600
-- **Anforderung:** SHM-Segment ist owner-only (mode=0600).
-- **Repo:** `crates/flatdata/src/posix.rs::PosixSlotAllocator::create` chmod't nach `shm_open` beide Artefakte auf 0600 (flink-File + `/dev/shm`-Objekt auf Linux); ohne das ließ `shared_memory` sie auf umask-Default (oft 0644 = world-readable).
-- **Tests:** Linux-gated `segment_is_owner_only_0600` (Linux bench host, prüft beide Modes == 0600).
-- **Status:** done — Zero-Copy-Payload ist owner-only; fremde lokale User können sie nicht lesen.
+### §7.1 SHM-Segment ist owner-only (mode 0600)
 
-### §7.2 Bounded-Slot-Allocation
-- **Anforderung:** Reader droppt Slot-Index außerhalb [0, slot_count).
-- **Repo:** `crates/flatdata/src/allocator.rs::commit_slot/read_slot/mark_read` (alle returnen `OutOfBounds` bei idx >= slots.len()).
-- **Tests:** indirekt über Loop-Bounds in `FlatReader::read`.
-- **Status:** done
+**Spec:** §7.1 — „SHM-Segment ist `mode=0600` (owner-read-write only).
+Cross-User-Access wird OS-seitig verweigert."
+
+**Repo:** `crates/flatdata/src/posix.rs` (`PosixSlotAllocator::create`:
+`shared_memory` legt das shm-Objekt mit 0600 an (`shm_open` mit
+`S_IRUSR | S_IWUSR`); die flink-Datei setzt `create` unter `#[cfg(unix)]`
+auf 0600, unter Linux zusätzlich das `/dev/shm`-Objekt).
+
+**Tests:** `crates/flatdata/src/posix.rs::tests::flink_file_is_owner_only_0600`,
+`crates/flatdata/src/posix.rs::tests::segment_is_owner_only_0600`
+(Linux, Linux-Testhost), `crates/flatdata/src/posix.rs::tests::shm_object_is_owner_only_0600_by_descriptor` (liest den Modus über einen Deskriptor
+des Objekts; macOS 26)
+
+**Status:** done
+
+### §7.2 Slot-Index außerhalb von [0, slot_count) wird verworfen
+
+**Spec:** §7.2 — „`slot_count` ist im Discovery-Sample. Reader, der einen
+Slot-Index ausserhalb von `[0, slot_count)` sieht, droppt."
+
+**Repo:** `crates/flatdata/src/allocator.rs` — `read_slot`, `mark_read`,
+`commit_slot`, `commit_in_place`, `discard_slot`, `slot_data_ptr` und
+`slot_read_ptr` geben für einen Index außerhalb des Pools
+`SlotError::OutOfBounds` zurück, bevor irgendein Slot dereferenziert
+wird.
+
+**Tests:** `crates/flatdata/src/allocator.rs::tests::slot_index_out_of_bounds_is_rejected`
+
+**Status:** done
 
 ## §8 API-Surface (DataWriter)
 
-### §8.1 DataWriter::write_flat
-- **Anforderung:** `fn write_flat<T: FlatStruct>(&self, &T) -> Result<()>` — reserve+write+commit in einem.
-- **Repo:** `crates/flatdata/src/pubsub.rs::FlatWriter::write`
-- **Tests:** `pubsub::tests::{writer_write_then_reader_read, reader_recycles_slot_after_read}`
-- **Status:** done — Stand-alone-API in flatdata-Crate + Integration in zerodds-dcps DataWriter via Trait-Bound `T: FlatStruct` (`crates/dcps/src/flatdata_integration.rs::write_flat`).
+### §8.1 write_flat — reserve, write und commit in einem Aufruf
 
-### §8.2 DataWriter::loan_slot + FlatSlot
-- **Anforderung:** Low-level: `fn loan_slot() -> FlatSlot<'_, T>`; FlatSlot trägt SlotHandle, hat write/commit.
-- **Repo:** `crates/flatdata/src/pubsub.rs::{FlatWriter::loan_slot, FlatSlot}`. Zwei Commit-Pfade: `FlatSlot::commit(sample)` (Convenience, eine Kopie in den Slot) **und** der echte Zero-Copy-Pfad `FlatSlot::as_mut() -> &mut T` (in den genullten SHM-Slot schreiben) + `commit_in_place()` (kein Staging, keine Commit-Kopie). Letzterer baut auf dem neuen Backend-Primitiv `SlotBackend::{slot_data_ptr, commit_in_place}` (in `InMemorySlotAllocator` + `PosixSlotAllocator` implementiert).
-- **Tests:** `pubsub::tests::{writer_loan_commit_pattern, writer_loan_in_place_zero_copy, loan_drop_without_commit_releases_slot}` + `allocator::tests::{in_place_loan_writes_without_staging_copy, slot_data_ptr_rejects_unreserved_slot, commit_in_place_too_large_returns_error}`.
-- **Status:** done — inkl. echter In-place-Zero-Copy-Loan (kein Commit-Copy).
+**Spec:** §8 — „`pub fn write_flat(&self, sample: &T) -> Result<()>`;
+Spec §4.1: reserve + write + commit in einem Call."
+
+**Repo:** `crates/flatdata/src/pubsub.rs` (`FlatWriter::write`),
+`crates/dcps/src/flatdata_integration.rs` (`write_flat` auf dem
+DCPS-`DataWriter` mit dem Bound `T: DdsType + FlatStruct`).
+
+**Tests:** `crates/flatdata/src/pubsub.rs::tests::writer_write_then_reader_read`,
+`crates/dcps/tests/flatdata_integration.rs::datawriter_write_flat_uses_configured_backend`,
+`crates/dcps/tests/flatdata_integration.rs::flat_writer_ext_writes_to_backend`,
+`crates/dcps/tests/flatdata_integration.rs::datawriter_set_flat_backend_none_disables_shm_path`
+
+**Status:** done
+
+### §8.2 loan_slot und FlatSlot
+
+**Spec:** §8 — „`pub fn loan_slot(&self) -> Result<FlatSlot<'_, T>>`";
+`FlatSlot` trägt `slot`, `handle` und `writer` und bietet `write(&mut
+self, sample: T)` sowie `commit(self) -> Result<()>`.
+
+**Repo:** `crates/flatdata/src/pubsub.rs` (`FlatWriter::loan_slot`,
+`FlatSlot` mit `commit`, `as_mut`, `commit_in_place`; `Drop` verwirft
+eine nicht committete Leihgabe).
+
+**Tests:** `crates/flatdata/src/pubsub.rs::tests::writer_loan_commit_pattern`,
+`crates/flatdata/src/pubsub.rs::tests::writer_loan_in_place_zero_copy`,
+`crates/flatdata/src/pubsub.rs::tests::loan_drop_without_commit_releases_slot`,
+`crates/flatdata/src/allocator.rs::tests::commit_in_place_too_large_returns_error`,
+`crates/flatdata/src/allocator.rs::tests::discard_frees_slot_for_reuse`
+
+**Status:** done
 
 ## §9 API-Surface (DataReader)
 
-### §9.1 DataReader::read_flat
-- **Anforderung:** `fn read_flat() -> Result<Option<FlatSampleRef<'_, T>>>` — Reference statt Copy.
-- **Repo:** `crates/flatdata/src/pubsub.rs::FlatReader::{read, read_ref}` — `read` liefert `Option<T>` (Copy-out), `read_ref` liefert `Option<FlatSampleRef<T>>` (Referenz mit Drop-Hook, §9.3).
-- **Tests:** `pubsub::tests::{writer_write_then_reader_read, reader_does_not_re_read_same_slot, reader_recycles_slot_after_read}` + read_ref-Drop-Tests.
-- **Status:** done (Crate-API) — die Referenz-Variante `read_ref()` mit Drop-Hook existiert; `DataReader::read_flat` bleibt Copy-out, ein `DataReader::read_flat_ref` über den `Arc<dyn SlotBackend>`-Pfad ist reiner Wire-up-Follow-up (`FlatSampleRef` ist backend-agnostisch).
-- **Reader-Zero-Copy-Primitive:** `SlotBackend::{slot_read_ptr, next_unread_slot}` (Default + `InMemorySlotAllocator`/`PosixSlotAllocator`) liefern einen Read-Pointer in den SHM-Slot bzw. den nächsten ungelesenen Slot je Reader-Index — das Gegenstück zu den Writer-Primitiven aus §8.2. Konsument ist u.a. die C-FFI (`zerodds_dr_enable_shm`/`zerodds_dr_take_shm`/`zerodds_dr_release_shm`, Crate `zerodds-c-api`, Feature `flatdata-loan`), die damit einen Same-Host-Reader zero-copy aus dem Writer-Segment lesen lässt (e2e: `zerodds-c-api/tests/shm_loan_e2e.rs::shm_loan_writer_to_reader_zero_copy`).
+### §9.1 read_flat liefert eine Slot-Referenz ohne Kopie
 
-### §9.2 FlatSampleRef::Deref
-- **Anforderung:** `Deref<Target = T>` — Caller liest `&T` direkt.
-- **Repo:** `crates/flatdata/src/pubsub.rs::FlatSampleRef`
-- **Tests:** `pubsub::tests::flat_sample_ref_deref`
-- **Status:** done
+**Spec:** §9 — „`pub fn read_flat(&self) -> Result<Option<FlatSampleRef<'_,
+T>>>`. Liefert eine Slot-Reference die ohne Copy lesbar ist."
 
-### §9.3 FlatSampleRef::Drop setzt Bit
-- **Anforderung:** Drop-Impl ruft release_slot, setzt Reader-Bit im reader_mask.
-- **Repo:** `crates/flatdata/src/pubsub.rs` — `FlatReader::read_ref()` liefert den neuesten ungelesenen Sample als `FlatSampleRef`, dessen `Drop` das Reader-Bit setzt; der Slot bleibt für die Referenz-Lebensdauer un-recycelbar. Gemeinsamer `scan_best(defer_best)`-Pfad mit `read()`; `DeferredRelease` hält den Backend als `Arc<dyn SlotBackend>`.
-- **Tests:** 2 (Slot gehalten bis Drop / `into_inner` gibt frei).
-- **Status:** done
+**Repo:** `crates/flatdata/src/pubsub.rs` (`FlatReader::read_ref` liefert
+`FlatSampleRef` mit gehaltenem Slot; `FlatReader::read` ist die
+Copy-out-Variante), `crates/flatdata/src/backend.rs`
+(`SlotBackend::slot_read_ptr`, `SlotBackend::next_unread_slot` als
+Zero-Copy-Primitive), `crates/dcps/src/flatdata_integration.rs`
+(`read_flat` auf dem DCPS-`DataReader`),
+`crates/zerodds-c-api/src/shm_loan_ffi.rs` (`zerodds_dr_enable_shm`,
+`zerodds_dr_take_shm`, `zerodds_dr_release_shm`).
+
+**Tests:** `crates/flatdata/src/pubsub.rs::tests::read_ref_holds_slot_until_drop`,
+`crates/dcps/tests/flatdata_integration.rs::datareader_read_flat_uses_configured_backend`,
+`crates/dcps/tests/flatdata_integration.rs::datareader_read_flat_returns_none_without_backend`,
+`crates/zerodds-c-api/tests/shm_loan_e2e.rs::shm_loan_writer_to_reader_zero_copy`,
+`crates/zerodds-c-api/tests/shm_loan_e2e.rs::shm_loan_runtime_path_writer_to_reader_zero_copy`
+
+**Status:** done
+
+### §9.2 FlatSampleRef implementiert Deref
+
+**Spec:** §9 — „`impl<T: FlatStruct> Deref for FlatSampleRef<'_, T> { type
+Target = T; fn deref(&self) -> &T { self.slot } }`".
+
+**Repo:** `crates/flatdata/src/pubsub.rs` (`impl Deref for FlatSampleRef`
+mit `Target = T`).
+
+**Tests:** `crates/flatdata/src/pubsub.rs::tests::flat_sample_ref_deref`
+
+**Status:** done
+
+### §9.3 FlatSampleRef::drop setzt das Reader-Bit
+
+**Spec:** §9 — „`impl<T: FlatStruct> Drop for FlatSampleRef<'_, T>`: Drop
+ruft `release_slot`, setzt das Reader-Bit im reader_mask."
+
+**Repo:** `crates/flatdata/src/pubsub.rs` (`DeferredRelease` hält Backend,
+`SlotHandle` und Reader-Index; `impl Drop for FlatSampleRef` ruft
+`mark_read`; `into_inner` gibt den Slot ebenfalls frei).
+
+**Tests:** `crates/flatdata/src/pubsub.rs::tests::read_ref_holds_slot_until_drop`,
+`crates/flatdata/src/pubsub.rs::tests::read_ref_into_inner_releases_slot`
+
+**Status:** done
 
 ## §10 Test-Strategie
 
-### §10.1 Unit: Slot-Allocator
-- **Anforderung:** PosixShmTransport reserve/commit/release als Unit-Tests.
-- **Repo:** `crates/flatdata/src/allocator.rs::tests` (8 Tests).
-- **Tests:** s.o.
-- **Status:** done — `InMemorySlotAllocator` + `PosixSlotAllocator` (`posix::tests`: `create_attach_roundtrip`, `write_read_through_shm`, `mark_read_visible_to_owner`, `next_sn_increments_atomically`).
+### §10.1 Unit — Slot-Allocator reserve/commit/release
 
-### §10.2 Integration: Same-Host-Pub/Sub
-- **Anforderung:** End-to-End mit FlatStruct, Latency unter Target.
-- **Repo:** `crates/flatdata/src/pubsub.rs::tests` (6 Tests).
-- **Tests:** s.o.
-- **Status:** done — InMemory-E2E + POSIX-mmap-Roundtrip (`posix::tests`).
+**Spec:** §10 — „**Unit:** PosixShmTransport-Slot-Allocator,
+reserve_slot/commit/release."
 
-### §10.3 Cross-Host-Fallback-Test
-- **Anforderung:** Mixed-Domain (Same-Host + Cross-Host Reader); beide bekommen Sample.
-- **Repo:** `crates/dcps/tests/same_host_e2e.rs`.
-- **Tests:** `e2e_two_runtimes_shm_roundtrip` (same-host → SHM) + `e2e_cross_vendor_different_host_id_no_shm_bind` (anderer host-id → UDP), bench-grün.
-- **Status:** done — Same-Host-vs-Cross-Host-Verhalten via 2-Runtime-E2E belegt.
+**Repo:** `crates/flatdata/src/allocator.rs` (`InMemorySlotAllocator`),
+`crates/flatdata/src/posix.rs` (`PosixSlotAllocator`).
 
-### §10.4 Cyclone-Compat
-- **Anforderung:** Cyclone-Reader bekommt UDP-DATA, ignoriert PID_SHM_LOCATOR.
-- **Repo:** Wire-Level-Beweis via §3.4 + §4.4: Standard-PL-CDR-Decoder skip-t Vendor-PID 0x8001 (kein MUST_UNDERSTAND-Bit, RTPS 2.5 §9.4.2.11). Cyclone benutzt denselben Decoder-Algorithmus, byte-identische Behandlung. Live-Bestätigung verfügbar via `crates/discovery/tests/cyclone_live_sedp.rs` — der `cyclone_live_sedp_discovery`-Test discovert eine Cyclone-Instanz erfolgreich, was die wechselseitige PID-Filter-Logik bestätigt.
-- **Tests:** `crates/rtps/src/publication_data.rs::tests::{unknown_pids_are_skipped, inject_pid_shm_locator_appends_before_sentinel}`.
-- **Status:** done — Wire-Level-Identität zum Cyclone-Decoder durch Spec-Konformität bewiesen.
+**Tests:** `crates/flatdata/src/allocator.rs::tests::reserve_returns_first_free_slot`,
+`crates/flatdata/src/allocator.rs::tests::commit_writes_bytes_and_increments_sn`,
+`crates/flatdata/src/allocator.rs::tests::discard_frees_slot_for_reuse`,
+`crates/flatdata/src/posix.rs::tests::write_read_through_shm`,
+`crates/flatdata/src/posix.rs::tests::mark_read_visible_to_owner`
 
-### §10.5 Backpressure
-- **Anforderung:** Cache full + slow Reader; Reliable blockt, BestEffort dropped.
-- **Repo:** `crates/flatdata/src/pubsub.rs::FlatWriter::write_bp(sample, Reliability, timeout)` — `Reliable` blockt event-driven auf dem `ChangeNotify` bis ein Slot frei wird (`WriteOutcome::TimedOut` bei Deadline), `BestEffort` dropt sofort (`WriteOutcome::Dropped`); kein Busy-Poll. Der POSIX-cross-process-Block teilt sich den Notify-Primitive mit §4.2.
-- **Tests:** 3 (drop / block-bis-Reader-frei / timeout).
-- **Status:** done — Reliable/BestEffort-Distinction event-driven umgesetzt.
+**Status:** done
+
+### §10.2 Integration — Same-Host-Pub/Sub mit FlatStruct
+
+**Spec:** §10 — „**Integration:** Same-Host-Pub/Sub mit FlatStruct,
+Latency-Bench."
+
+**Repo:** `crates/flatdata/src/pubsub.rs` (`FlatWriter`/`FlatReader` über
+demselben Backend), `crates/flatdata/benches/loopback.rs`
+(criterion-Bench `flat_write_read_1kb`).
+
+**Tests:** `crates/flatdata/src/pubsub.rs::tests::writer_write_then_reader_read`,
+`crates/flatdata/src/pubsub.rs::tests::reader_recycles_slot_after_read`,
+`crates/flatdata/src/posix.rs::tests::write_read_through_shm`,
+`crates/flatdata/tests/perf_targets.rs::same_host_p99_latency_meets_target`
+
+**Status:** done
+
+### §10.3 Cross-Host-Fallback — beide Reader bekommen das Sample
+
+**Spec:** §10 — „**Cross-Host-Fallback:** Mixed-Domain (Same-Host +
+Cross-Host Reader); beide bekommen Sample."
+
+**Repo:** `crates/dcps/tests/same_host_e2e.rs` (zwei `DcpsRuntime` in
+einem Prozess, einmal mit gleichem und einmal mit fremdem Host-Anteil im
+GUID-Prefix), `crates/dcps/src/same_host_channel.rs`
+(`SameHostChannels::send`).
+
+**Tests:** `crates/dcps/src/same_host_channel.rs::tests::a_send_to_a_peer_locator_goes_through_the_channel_and_any_other_does_not` (auf jedem Host),
+`crates/dcps/tests/same_host_e2e.rs::e2e_two_runtimes_shm_roundtrip`,
+`crates/dcps/tests/same_host_e2e.rs::e2e_cross_vendor_different_host_id_no_shm_bind`
+(beide Linux, Linux-Testhost)
+
+**Status:** done
+
+### §10.4 Cyclone-Compat — fremder Reader ignoriert den Vendor-PID
+
+**Spec:** §10 — „**Cyclone-Compat:** Cyclone-Reader ignoriert
+PID_SHM_LOCATOR und bekommt UDP-DATA wie immer."
+
+**Repo:** `crates/rtps/src/publication_data.rs` (`from_pl_cdr_le`
+überspringt unbekannte PIDs — derselbe Algorithmus, den ein fremder
+Vendor auf denselben Bytes fährt), `crates/dcps/src/runtime.rs`
+(`set_shm_locator` kündigt die Publikation neu an, damit der PID das
+Wire erreicht), `crates/discovery/tests/cyclone_live_sedp.rs` und
+`crates/dcps/tests/cyclone_live_shm_locator.rs` (Live-Läufe gegen eine
+echte Cyclone-Instanz).
+
+**Tests:** `crates/discovery/src/sedp/writer.rs::tests::announce_with_shm_locator_puts_vendor_pid_on_the_wire`,
+`crates/rtps/src/publication_data.rs::tests::unknown_pids_are_skipped`,
+`crates/dcps/src/runtime.rs::tests::a_shm_locator_set_after_registration_is_announced`,
+`crates/discovery/tests/cyclone_live_sedp.rs::cyclone_live_sedp_discovery`
+(gegen ein lokales Cyclone `ddsperf`, im Job `live-interop`; Linux-Testhost 3/3),
+`crates/dcps/tests/cyclone_live_shm_locator.rs::a_cyclone_reader_takes_the_samples_of_a_writer_announcing_the_shm_locator`
+(Cyclone-11.0.1-Reader über die Python-Bindung, im Job `live-interop`;
+Linux-Testhost 8/8 mit 50 von 50 Samples; im Mitschnitt trägt die zweite
+DATA(w) der Publikation den PID 0x8001)
+
+**Status:** done
+
+### §10.5 Backpressure — Reliable blockt, BestEffort dropped
+
+**Spec:** §10 — „**Backpressure:** Cache full + matched Reader langsam;
+Writer blockt korrekt (Reliable) bzw. dropped (BestEffort)."
+
+**Repo:** `crates/flatdata/src/pubsub.rs` (`FlatWriter::write_bp` mit
+`Reliability` und `WriteOutcome`).
+
+**Tests:** `crates/flatdata/src/pubsub.rs::tests::write_bp_best_effort_drops_when_full`,
+`crates/flatdata/src/pubsub.rs::tests::write_bp_reliable_blocks_until_reader_frees`,
+`crates/flatdata/src/pubsub.rs::tests::write_bp_reliable_times_out`
+
+**Status:** done
 
 ## §11 Performance-Targets
 
-### §11.1 Same-Host P99 < 5 µs
-- **Anforderung:** 1 kB Sample, P99-Latenz unter 5 µs (criterion bench).
-- **Repo:** `crates/flatdata/benches/loopback.rs` + `.gitlab-ci.yml::bench-main` (`cargo bench -p zerodds-flatdata --bench loopback -- --save-baseline pre`) + `bench-compare` Regression-Check.
-- **Tests:** Bench läuft auf jedem main-Push; Regression > 10% rot via `tests/perf/check_bench_regressions.py`. InMemory-Backend liefert API-Overhead-Untergrenze (POSIX-mmap-Backend ist gleich oder schneller).
-- **Status:** done — Bench in CI-Pipeline aktiv.
+### §11.1 Same-Host P99 unter 5 µs für ein 1-kB-Sample
 
-### §11.2 Throughput ~1 GB/s
-- **Anforderung:** Memcpy-bound, 1 Mio Samples/s bei 1 kB.
-- **Repo:** `crates/flatdata/benches/loopback.rs::flat_throughput_1kb` (criterion `Throughput::Bytes`/`Elements`).
-- **Tests:** Bench misst **1,09 GiB/s** + **~1,05 Melem/s** für 1-kB-Samples.
-- **Status:** done — ~1-GB/s- + 1-Mio-Samples/s-Ziel erfüllt.
+**Spec:** §11 — „**Same-Host P99 < 5 µs** fuer 1 kB Sample (gegen
+UDP-Loopback ~30 µs)."
 
-### §11.3 0 Heap-Allokation
-- **Anforderung:** Pro write_flat keine Heap-Calls (criterion + dhat-rs).
-- **Repo:** `crates/flatdata/tests/zero_alloc.rs` (dhat-global-allocator).
-- **Tests:** `write_flat_is_heap_allocation_free` belegt 0 Heap-Blocks über 1000 Writes.
-- **Status:** done — 0-Heap-Allokation im Zero-Copy-Pfad nachgewiesen.
+**Repo:** `crates/flatdata/src/pubsub.rs` (write/read-Pfad),
+`crates/flatdata/benches/loopback.rs` (criterion-Bench
+`flat_write_read_1kb`), `crates/flatdata/tests/perf_targets.rs`
+(Messung mit Assertion statt reinem Bench-Report).
 
-## §12 Decisions
+**Tests:** `crates/flatdata/tests/perf_targets.rs::same_host_p99_latency_meets_target`
+(`InMemorySlotAllocator`) und `::posix_same_host_p99_latency_meets_target`
+(`PosixSlotAllocator`: Writer auf dem Mapping des Besitzers, Reader auf
+einem zweiten Mapping desselben Segments, wie im SHM-Loan-Pfad der C-API).
+Release-Profil auf dem Linux-Testhost (16 Kerne, Lastmittel 60–73), Budget 5 µs:
+In-Memory P99 = 0,32–0,45 µs, POSIX P99 = 0,23–0,25 µs.
 
-### D-1: Eigener PosixShmTransport statt Iceoryx2-Dep
-- **Wahl:** Default-Build nutzt `crates/transport-shm`, kein iceoryx2-Crate.
-- **Begründung:** transport-shm existiert (1678 LOC), iceoryx2 ist 2026 noch unter Stabilization (API-changes), Pure-Rust-Workspace bleibt.
-- **Konsequenz:** Wir reimplementieren Lock-free-Ringbuffer + Multi-Reader-Bitmap selbst.
+**Status:** done
 
-### D-2: Iceoryx2-Bridge als optional Feature
-- **Wahl:** `--features iceoryx2-bridge` als Adapter-Layer für Caller im Iceoryx-Ecosystem (v1.1, nicht v1.0).
-- **Begründung:** wer Iceoryx-Subscriber-Pfad braucht, kann opt-in.
-- **Konsequenz:** v1.0 scope-out; v1.1+.
+### §11.2 Durchsatz um 1 GB/s pro Writer
 
-### D-3: Same-Host-Detection via hostname-hash + uid
-- **Wahl:** Match-Bedingung ist (hostname_hash, uid) Tupel.
-- **Begründung:** Container-Friendly (gleicher Host = gleicher Kernel; uid trennt Tenants); kein Spec-Konflikt.
-- **Konsequenz:** Multi-User-Scenarios isoliert; Caller mit shared uid (Container-Setup) profitiert.
+**Spec:** §11 — „**Throughput:** ~1 GB/s pro Writer (Memcpy-bound)."
 
-### D-4: Vendor-PID ohne MUST_UNDERSTAND
-- **Wahl:** PID_SHM_LOCATOR=0x8001 ohne MUST_UNDERSTAND-Bit.
-- **Begründung:** Cross-Vendor-Compat — Cyclone/Fast-DDS sollen den PID ignorieren, nicht ablehnen.
-- **Konsequenz:** Mixed-Domain-Discovery funktioniert weiterhin.
+**Repo:** `crates/flatdata/benches/loopback.rs`
+(`Throughput::Bytes`/`Throughput::Elements` für 1-kB-Samples),
+`crates/flatdata/tests/perf_targets.rs`.
 
-### D-5: Parallel-Send Same-Host-SHM + Cross-Host-UDP
-- **Wahl:** Writer entscheidet pro Reader: SHM-Notify ODER UDP-DATA. Bei mixed: parallel.
-- **Begründung:** Maximaler Durchsatz Same-Host, kein Cross-Host-Bruch.
-- **Konsequenz:** Wire-Pfad-Logik im Reliable-Writer wird komplexer (zwei Reader-Listen).
+**Tests:** `crates/flatdata/tests/perf_targets.rs::write_throughput_meets_target`
+— gemessen in 200 Blöcken zu je 100 Runden, gegated wird der schnellste
+Block (Last verlängert einen Block nur). Release-Profil auf dem Linux-Testhost
+(16 Kerne, Lastmittel 60–73), Untergrenze 1000 MB/s: In-Memory
+3 181–4 783 MB/s, POSIX (`::posix_write_throughput_meets_target`)
+10 001–10 282 MB/s, Median-Block 9 455–9 762 MB/s.
 
-### D-6: FlatStruct ist `Copy + 'static`
-- **Wahl:** Strikte Restriction, keine Pointer/Vec/String in FlatStruct.
-- **Begründung:** Wire-byte-cast safe-by-Layout; keine Drop-Hooks.
-- **Konsequenz:** Nicht alle Types sind FlatStruct-fähig — Strings/Variable-Length kommen via klassischer DDS-Type.
+**Status:** done
 
-### D-7: Cross-Host-Zero-Copy out-of-scope v1.0
-- **Wahl:** RDMA, DPDK, kernel-bypass — separate Spec.
-- **Begründung:** Komplexität (Hardware-Dep, RDMA-Driver), Caller-Subset klein.
-- **Konsequenz:** v1.0 nur Same-Host. Cross-Host-Zero-Copy = `zerodds-rdma-1.0` (Future).
+### §11.3 Keine Heap-Allokation pro write
 
-### D-8: In-memory- + POSIX-mmap-Backend hinter gleicher API
-- **Wahl:** `InMemorySlotAllocator` als Default-Impl; das POSIX-mmap-Backend liegt hinter derselben Public-API.
-- **Begründung:** API zementieren bevor mmap-Komplexität eingeführt wird; Tests laufen ohne mmap-Dep.
-- **Konsequenz:** der `SlotBackend`-Trait abstrahiert beide Backends; FlatWriter/FlatReader sind backend-agnostisch.
+**Spec:** §11 — „**0 Heap-Allokation pro write** (Slot-Reuse)."
 
-### D-9: Stand-alone Crate vs DCPS-Integration
-- **Wahl:** flatdata ist eigenständiger Crate; FlatWriter/FlatReader sind separate Types von DataWriter/DataReader.
-- **Begründung:** zerodds-dcps darf nicht auf unsafe-trait FlatStruct abhängen — Layout-Restriction würde generelle DCPS-API verletzen.
-- **Konsequenz:** Caller, der Zero-Copy will, bekommt eigenen Pub/Sub-Pfad; klassische DDS-Pub/Sub bleibt unverändert. Die DCPS-Integration via `T: DdsType + FlatStruct`-Bound liegt in `crates/dcps/src/flatdata_integration.rs`.
+**Repo:** `crates/flatdata/src/pubsub.rs` (`FlatWriter::write` arbeitet
+ausschliesslich auf dem vorab angelegten Slot-Pool).
+
+**Tests:** `crates/flatdata/tests/zero_alloc.rs::write_flat_is_heap_allocation_free`
+(zählender globaler Allocator, nur der messende Thread, 1000 Writes),
+`crates/flatdata/tests/zero_alloc.rs::the_counter_counts_the_measuring_thread`
+
+**Status:** done
+
+### §11.4 Same-Host-Publish unter einem Fünftel der UDP-Publish-Latenz
+
+**Spec:** §11 — „**Same-Host-Pub-Latenz < UDP-Pub-Latenz / 5**."
+
+**Repo:** `crates/flatdata/src/pubsub.rs` (`FlatWriter::write`),
+`crates/flatdata/tests/perf_targets.rs` (absolute Schranke),
+`crates/flatdata/benches/loopback.rs` (Gruppe `flat_vs_udp_publish_1kb`
+— die laufende Gegenüberstellung Slot-Pfad gegen UDP-`send_to`).
+
+**Schranke:** Beide Zahlen stehen in der Spec: die Motivation nennt
+„~30 µs Latenz pro 1 kB Sample" für Same-Host-Pub/Sub über UDP/RTPS, §11
+wiederholt sie als Referenz der Sektion („gegen UDP-Loopback ~30 µs"),
+und §11.4 nennt den Faktor 5. 30 µs / 5 = 6 µs.
+
+Die Schranke ist bewusst absolut. Die frühere Form teilte durch einen im
+selben Prozess gemessenen UDP-Socket; damit misst das Gate seinen eigenen
+Nenner. Fünf Läufe desselben Binaries auf einer Dev-Maschine (aarch64
+macOS, Release, 2 000 Runden) lieferten UDP-Mediane von 3,375 / 3,541 /
+4,458 / 5,125 / 5,791 µs bei konstant 83 ns Publish-Median; der
+CI-Container maß 1,704 µs für dasselbe `send_to`, und das Verhältnis-Gate
+wurde rot, ohne dass sich der Publish-Pfad geändert hatte.
+
+**Tests:** `crates/flatdata/tests/perf_targets.rs::same_host_publish_beats_a_fifth_of_udp_publish`
+— 2 000 ungemessene Warmlauf-Runden, dann 20 000 gemessene; gegated wird
+der Median. Gemessen auf einer Dev-Maschine (aarch64 macOS), je fünf
+Läufe: Release p50 = 83 ns (5/5 identisch), p99 = 84–208 ns; Debug
+p50 = 292 ns (5/5 identisch), p99 = 416 ns–1,042 µs. Budget 6 µs.
+
+**Bench:** `cargo bench -p zerodds-flatdata --bench loopback` misst
+`flat_publish` gegen `udp_publish`; die CI-Jobs `bench-main` und
+`bench-compare` rufen genau diese Bench-Datei auf und vergleichen gegen
+die Baseline desselben Hosts. Auf der Dev-Maschine (criterion, 1 s
+Warmlauf, 3 s Messzeit): 52,076 ns gegen 4,8372 µs, Verhältnis 93.
+
+Release-Profil auf dem Linux-Testhost (16 Kerne, Lastmittel 60–73): In-Memory
+p50 = 90–110 ns, POSIX (`::posix_same_host_publish_beats_a_fifth_of_udp_publish`)
+p50 = 100 ns.
+
+**Status:** done
+
+## §12 Lieferumfang
+
+### §12 Lieferumfang
+
+**Spec:** §12 — Aufzählung der acht Liefergegenstände (FlatStruct-Trait
+plus derive, Slot-API, Writer-API, Reader-API, PID_SHM_LOCATOR,
+Same-Host-Match, Wire-Pfad-Trennung, Test-Suite mit Bench und Doku).
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** n/a (informative) — die Sektion fasst zusammen, was §1 bis §11
+normieren, und stellt keine eigene Anforderung. Der Stand pro
+Liefergegenstand steht in den Items dieser Sektionen.
+
+## Offene Punkte als eigene Items
+
+### §4.1 Cross-Process-Notify auf nicht-Linux-POSIX
+
+**Spec:** §4.1 (3) — „Backend signalisiert Same-Host-Reader via eventfd
+oder POSIX-Semaphore." Die Anforderung nennt kein Betriebssystem.
+
+**Repo:** `crates/flatdata/src/posix.rs` (`os_sync`: macOS ab 14.4,
+`os_sync_wait_on_address` mit `OS_SYNC_WAIT_ON_ADDRESS_SHARED`, zur
+Laufzeit über `dlsym` aufgelöst).
+
+**Tests:** `crates/flatdata/src/posix.rs::tests::futex_notify_wakes_consumer_across_mappings` (macOS 26)
+
+**Status:** partial — macOS ist gebaut und getestet; die BSDs haben kein
+Build-Ziel in der CI, ihr Reader pollt weiter.
+
+### §4.2 Wire-Level-Nachweis des Reader-Splits ohne Linux-Gate
+
+**Spec:** §4.2 — „Die Discovery-Logik teilt die `matched_readers` in zwei
+Listen"; der Cross-Host-Reader erhält die unveränderte UDP-DATA.
+
+**Repo:** `crates/dcps/src/same_host_channel.rs` (`SameHostChannels::send`).
+
+**Tests:** `crates/dcps/src/same_host_channel.rs::tests::a_send_to_a_peer_locator_goes_through_the_channel_and_any_other_does_not` (zwei `SameHostChannels` über echte Ringe, ohne
+Netz: ein Frame an einen Peer-Locator kommt im Ring an, einer an einen
+anderen Locator geht nicht in den Kanal),
+`crates/dcps/src/same_host_channel.rs::tests::a_frame_the_ring_refuses_is_counted_and_left_to_udp`
+
+**Status:** done
+
+### §7.1 Owner-only-Modus des shm-Objekts auf nicht-Linux-Unix
+
+**Spec:** §7.1 — „SHM-Segment ist `mode=0600` (owner-read-write only)."
+
+**Repo:** `shared_memory` (`shm_open` mit `S_IRUSR | S_IWUSR`).
+
+**Tests:** `crates/flatdata/src/posix.rs::tests::shm_object_is_owner_only_0600_by_descriptor` (macOS 26: `fstat` auf einem Deskriptor des
+Objekts liefert 0600)
+
+**Status:** done
+
+### §10.4 Cyclone-Live-Lauf ohne Lab-Gate
+
+**Spec:** §10 — „**Cyclone-Compat:** Cyclone-Reader ignoriert
+PID_SHM_LOCATOR und bekommt UDP-DATA wie immer."
+
+**Repo:** `crates/discovery/tests/cyclone_live_sedp.rs` (startet ein
+lokales `ddsperf` statt per SSH, Adresse per UDP-Connect-Probe, teilt den
+SPDP-Port mit `SO_REUSEADDR`), `ci/full.yml` (Job `live-interop`).
+
+**Tests:** `crates/discovery/tests/cyclone_live_sedp.rs::cyclone_live_sedp_discovery` (Linux-Testhost 3/3: Cyclone erkannt, 28–34 Unicast-Antworten,
+3 SEDP-Publikationen)
+
+**Status:** done
+
+## Entscheidungen
+
+Entwurfsentscheidungen zur Spec. Sie sind keine Coverage-Items; jede
+nennt die Wahl, den Grund und die Folge.
+
+**D-1 — Eigener POSIX-SHM-Pfad statt iceoryx2-Dependency.** Der
+Default-Build nutzt `crates/flatdata/src/posix.rs`, kein iceoryx2-Crate.
+Grund: iceoryx2 ist noch in Stabilisierung, der Workspace bleibt
+pure-Rust. Folge: Lock-free-Ringpuffer und Multi-Reader-Bitmap sind
+selbst implementiert.
+
+**D-2 — Iceoryx2-Bridge als optionales Feature.** `--features
+iceoryx2-bridge` liefert `Iceoryx2Publisher`/`Iceoryx2Subscriber` für
+Aufrufer im Iceoryx-Ökosystem. Grund: Opt-in statt Zwang. Folge: die
+Bridge sitzt nicht hinter `SlotBackend`, weil iceoryx2 ein FIFO-Modell
+statt eines Random-Access-Slot-Pools hat.
+
+**D-3 — Same-Host-Erkennung über hostname-hash und uid.** Grund:
+container-freundlich, trennt Tenants. Folge: Aufrufer mit gemeinsamer uid
+profitieren, fremde uid fällt auf UDP zurück.
+
+**D-4 — Vendor-PID ohne MUST_UNDERSTAND-Bit.** Grund: fremde Vendoren
+sollen den PID ignorieren, nicht das Sample ablehnen. Folge:
+Mixed-Domain-Discovery bleibt unbeeinträchtigt.
+
+**D-5 — Pro Reader entweder SHM oder UDP, bei gemischten Peers
+parallel.** Grund: maximaler Durchsatz same-host ohne Cross-Host-Bruch.
+Folge: der Sendepfad führt zwei Ziel-Listen.
+
+**D-6 — `FlatStruct` ist `Copy + 'static`.** Grund: der Byte-Cast ist nur
+mit festem Layout und ohne Drop-Glue definiert. Folge: Strings und
+Variable-Length-Typen laufen über den klassischen DDS-Pfad.
+
+**D-7 — Cross-Host-Zero-Copy außerhalb von v1.0.** RDMA und DPDK sind
+eine eigene Spec. Grund: Hardware-Abhängigkeit, kleiner Aufrufer-Kreis.
+Folge: v1.0 deckt nur den Same-Host-Fall.
+
+**D-8 — In-Memory- und POSIX-mmap-Backend hinter derselben API.** Grund:
+die API festschreiben, bevor mmap-Komplexität dazukommt; Tests laufen
+ohne mmap. Folge: `SlotBackend` abstrahiert beide,
+`FlatWriter`/`FlatReader` sind backend-agnostisch.
+
+**D-9 — flatdata als eigener Crate.** `zerodds-dcps` hängt nicht am
+unsafe-Trait `FlatStruct`. Folge: der Zero-Copy-Pfad hat eigene
+Pub/Sub-Typen; die DCPS-Anbindung liegt in
+`crates/dcps/src/flatdata_integration.rs` hinter dem Bound `T: DdsType +
+FlatStruct`.
 
 ---
 
 ## Audit-Status
 
-30 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
+43 done / 2 partial / 0 open / 2 n/a (informative) / 0 n/a (rejected).
 
-Test-Lauf: `cargo test -p zerodds-flatdata` — 47 lib- + 11 Integration- + 1 Zero-Alloc-Test grün, 0 failed.
+Test-Lauf: `cargo test -p zerodds-flatdata -p zerodds-flatdata-derive --release` — 87 Tests grün, 0 failed.
 
-Offene Punkte: keine. Decision-Records: siehe §12 (D-1–D-9).
+Test-Lauf: `cargo test -p zerodds-dcps --features flatdata-integration --test flatdata_integration` — 11 Tests grün, 0 failed.
+
+Test-Lauf: `cargo test -p zerodds-dcps --features same-host-shm --lib same_host` — 8 Tests grün, 0 failed.
+
+Test-Lauf: `cargo test -p zerodds-rtps --lib publication_data::` — 25 Tests grün, 0 failed.
+
+Test-Lauf: `cargo test -p zerodds-rtps --lib parameter_list::tests::validate_must_understand` — 4 Tests grün, 0 failed.
+
+Test-Lauf: `cargo test -p zerodds-discovery --lib sedp::writer` — 5 Tests grün, 0 failed.
+
+Test-Lauf: `cargo test -p zerodds-c-api --features flatdata-loan --test shm_loan_e2e` — 5 Tests grün, 0 failed.
+
+Nicht ausgeführt: die `#[cfg(target_os = "linux")]`-Tests
+(`futex_notify_wakes_consumer_across_mappings`,
+`segment_is_owner_only_0600`, `crates/dcps/tests/same_host_e2e.rs`) und
+der `#[ignore]`-Test `cyclone_live_sedp_discovery`. Audit-Host: macOS.
+
+Offene Punkte und Decision-Records: `zerodds-flatdata-1.0.open.md`.

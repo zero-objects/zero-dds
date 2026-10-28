@@ -91,9 +91,8 @@ assert_eq!(consumed, 24);
 
 ## Stability
 
-`1.0.0-rc.1` is the initial release materialization. The public API,
-the wire format (RFC 9113), and error discriminants are RC1-stable;
-breaking changes require a major bump.
+`1.0.0-rc.7`, a pre-release. The public API can still change before
+1.0.0; the crate's CHANGELOG lists every change.
 
 ## Tests
 

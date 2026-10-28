@@ -17,7 +17,7 @@
 //! Total: 12 bytes. `message_size` is encoded with the header
 //! endianness (bit 0 of `flags`).
 
-use zerodds_cdr::{BufferReader, BufferWriter, Endianness};
+use zerodds_wire::{Endianness, Reader, Writer};
 
 use crate::error::{GiopError, GiopResult};
 use crate::flags::Flags;
@@ -73,25 +73,25 @@ impl MessageHeader {
     ///
     /// # Errors
     /// Buffer write error from the CDR layer.
-    pub fn encode(&self, w: &mut BufferWriter) -> GiopResult<()> {
+    pub fn encode(&self, w: &mut Writer) -> GiopResult<()> {
         // Spec §15.4.1: the first four bytes are the `magic` as a sequence
         // of `char` — so no CDR length prefix, just raw bytes.
         // We write here without alignment, because the header sits at the
         // start of the stream (pos=0, alignment irrelevant).
-        w.write_bytes(&MAGIC_BYTES)?;
-        w.write_u8(self.version.major)?;
-        w.write_u8(self.version.minor)?;
-        w.write_u8(self.flags.0)?;
-        w.write_u8(self.message_type.as_u8())?;
+        w.write_bytes(&MAGIC_BYTES);
+        w.write_u8(self.version.major);
+        w.write_u8(self.version.minor);
+        w.write_u8(self.flags.0);
+        w.write_u8(self.message_type.as_u8());
         // `message_size` is `unsigned long` with the header endianness.
         // The buffer was constructed with this endianness.
-        w.write_u32(self.message_size)?;
+        w.write_u32(self.message_size);
         Ok(())
     }
 
     /// Decodes the 12-byte header.
     ///
-    /// **Important:** the caller must create the `BufferReader` with
+    /// **Important:** the caller must create the `Reader` with
     /// [`Endianness::Big`] — the first 8 bytes
     /// (magic+version+flags+msg_type) are endian-free, but the
     /// `message_size` `u32` must be re-interpreted based on the `flags`
@@ -112,7 +112,7 @@ impl MessageHeader {
         }
         // Magic + version + flags + message_type are endian-free
         // (bytes 0..8). We start with BigEndian, then adjust.
-        let mut tmp = BufferReader::new(&bytes[..8], Endianness::Big);
+        let mut tmp = Reader::new(&bytes[..8], Endianness::Big);
         let magic = tmp.read_bytes(4)?;
         if magic != MAGIC_BYTES {
             let mut m = [0u8; 4];
@@ -136,7 +136,7 @@ impl MessageHeader {
         let message_type = MessageType::from_u8(mt_byte)?;
 
         // Now read the `message_size` u32 with the determined endianness.
-        let mut size_reader = BufferReader::new(&bytes[8..12], flags.endianness());
+        let mut size_reader = Reader::new(&bytes[8..12], flags.endianness());
         let message_size = size_reader.read_u32()?;
         Ok((
             Self {
@@ -175,9 +175,9 @@ mod tests {
             MessageType::Request,
             42,
         );
-        let mut w = BufferWriter::new(Endianness::Big);
+        let mut w = Writer::new(Endianness::Big);
         h.encode(&mut w).unwrap();
-        let bytes = w.into_bytes();
+        let bytes = w.finish();
         assert_eq!(bytes.len(), HEADER_SIZE);
         // Check magic + version + flags + msg_type + size (BE).
         assert_eq!(&bytes[0..4], b"GIOP");
@@ -200,9 +200,9 @@ mod tests {
             MessageType::Reply,
             0x1234_5678,
         );
-        let mut w = BufferWriter::new(Endianness::Little);
+        let mut w = Writer::new(Endianness::Little);
         h.encode(&mut w).unwrap();
-        let bytes = w.into_bytes();
+        let bytes = w.finish();
         assert_eq!(&bytes[0..4], b"GIOP");
         assert_eq!(bytes[4], 1);
         assert_eq!(bytes[5], 1);

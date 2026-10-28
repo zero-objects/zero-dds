@@ -1,0 +1,6 @@
+// structure with no extensibility annotation
+struct Sample {
+    long a;
+    double b;
+    short c;
+};

@@ -1,0 +1,1 @@
+@final struct Odd { long a; short b; };

@@ -108,7 +108,7 @@ fn match_subject(pat: &str, subject: &AuthSubject) -> bool {
     {
         return subject.groups.iter().any(|g| g == group);
     }
-    pat == subject.name
+    pat == subject.name || subject.fingerprint.as_deref() == Some(pat)
 }
 
 #[cfg(test)]

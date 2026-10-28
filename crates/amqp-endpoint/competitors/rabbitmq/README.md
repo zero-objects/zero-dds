@@ -18,7 +18,7 @@ backs both ZeroDDS interop paths:
 class/method framing; 1.0 is a symmetric link-based protocol with described
 types. They are independent implementations that happen to reach the same broker.
 
-## Setup (codepit, Debian 13 LXC)
+## Setup (Linux test host, Debian 13 LXC)
 
 ```sh
 bash setup_rabbitmq.sh      # installs rabbitmq-server 4.0 + pika + qpid-proton

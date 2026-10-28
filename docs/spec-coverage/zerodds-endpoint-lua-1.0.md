@@ -1,9 +1,7 @@
 # `zerodds-endpoint-lua` 1.0 — Spec-Coverage
 
 **Quelle:** `docs/specs/zerodds-endpoint-lua-1.0.md` — ZeroDDS Lua
-Endpoint-SDK-Spec. Ergänzt die Codegen-Coverage `zerodds-xcdr2-lua`
-(`docs/spec-coverage/zerodds-xcdr2-lua-1.0.md`) — dort das Marshalling, hier
-der Transport.
+Endpoint-SDK-Spec. Das Marshalling kommt aus `crates/lang-rules`, Spalte `Language::Lua`; hier steht der Transport.
 
 Implementation:
 
@@ -73,21 +71,24 @@ Live-E2E `lua_endpoint_async` (§4).
 Stack (generierte `zerodds-idl-lua`-Typen + `endpoints/lua`) sowohl sync als
 auch async.
 
-**Repo:** `crates/endpoint-e2e/tests/lua.rs` — `LUA_MAIN` (generiertes
-`gen.lua` mit `marshal_Ping`/`unmarshal_Pong` als Globals + `require("zerodds")`,
+**Repo:** `crates/endpoint-e2e/tests/lua.rs` — `LUA_MAIN` (das von
+`crates/endpoint-e2e/tests/lua.rs::gen_module` zur Testlaufzeit als gen.lua
+geschriebene Modul mit `marshal_Ping`/`unmarshal_Pong` als Globals +
+`require("zerodds")`,
 `udpTransport` über `{deliver, receive}`, Modus `sync`/`async` per
 CLI-Argument, 50ms Socket-Timeout für nicht-blockierendes `receive()`).
 
-**Tests (lokal nachvollzogen — `lua` 5.5 statt `lua5.4`, `string.pack`/
-`coroutine`-Semantik identisch seit Lua 5.3; `example_sync.lua` und
-`example_async.lua` liefen fehlerfrei mit `ALL OK`, siehe §6 — der Live-UDP-
-Ping-Pong selbst braucht den Rust-Peer aus `zerodds-endpoint-e2e` und wurde
-in dieser Session nicht gegen den Peer ausgeführt):
+**Tests:** `crates/endpoint-e2e/tests/lua.rs` — beide Fälle laufen live
+gegen den Rust-XRCE-Peer über einen echten UDP-Socket:
 
 - `lua_endpoint_sync` — voller Stack über `zerodds.Client`.
 - `lua_endpoint_async` — voller Stack über `zerodds.asyncReader`.
 
-2/2 (Referenz: bisheriger CI/codepit-Lauf; siehe Audit-Status).
+Lauf `cargo test -p zerodds-endpoint-e2e --test lua`; lokal (macOS, dieser
+Lauf) 2/2 grün. Der Harness sucht den Interpreter der Reihe nach als
+`lua5.4`, `lua`, `lua5.3` und überspringt hörbar (`SKIP lua endpoint …`),
+wenn keiner davon oder `luasocket` fehlt — hier griff der Fallback `lua` 5.5,
+und es kam keine SKIP-Zeile, der Lauf war also echt.
 
 **Status:** done.
 
@@ -135,7 +136,9 @@ Modi `run`/`bench`).
   `RELIABLE OK: 12/12 delivered gap-free in 1 round(s), sequence 0..11
   verified in order`. Lokal reproduziert (`lua` 5.5): exakt diese Ausgabe.
 
-4/4 dieser Gruppe (Latenz-Bench in §6).
+Lauf `cargo test -p zerodds-endpoint-e2e --test lua_reliable`; lokal
+(macOS, dieser Lauf) 5/5 grün ohne SKIP-Zeile, davon 4 in dieser Gruppe
+(Latenz-Bench in §6).
 
 **Status:** done.
 
@@ -159,42 +162,39 @@ Iterationen inline `udp:send` vs. 20000 Iterationen `AsyncWriter`-Enqueue
 `enqueue < inline`-Hartassertion — der Test selbst dokumentiert das als
 "honest note", siehe `lua_reliable.rs`-Kommentar).
 
-Lokal nachvollzogen in dieser Session (`lua` 5.5, nicht `lua5.4`, nicht
-codepit — reine Plausibilitätsprüfung des Mechanismus, nicht der
-Referenzwert): 4 Läufe, `enqueue_ns` 14–18, `inline_send_ns` 2829–3998 —
-gleiche Größenordnung (Faktor ~180–260× in dieser Stichprobe), Tabellen-Insert
-klar unter dem UDP-Syscall, wie erwartet für einen reinen Call-Kosten-
-Unterschied auf demselben Thread. Der frühere codepit/CI-Referenzlauf nannte
-enqueue ~29–32 ns / inline ~3780–4050 ns — diese Session hat den codepit-Lauf
-nicht erneut ausgeführt, nur die lokale Größenordnung bestätigt.
+Gemessen in diesem Lauf (macOS, `lua` 5.5 über den Fallback):
+`BENCH enqueue_ns=13 inline_send_ns=2731
+note=cooperative_single_os_thread_no_concurrent_drain` — Faktor ~210×,
+Tabellen-Insert klar unter dem UDP-Syscall, wie für einen reinen
+Call-Kosten-Unterschied auf demselben Thread erwartet. Der frühere Linux/CI-
+Referenzlauf nannte enqueue ~29–32 ns / inline ~3780–4050 ns; dieser Lauf
+bestätigt die Größenordnung, nicht den Referenzwert.
 
-**Status:** done (als ehrlicher Call-Kosten-Beleg; explizit nicht als
-Nebenläufigkeitsbeleg deklariert — das ist hier Teil der Konformanz, nicht
-ein offener Punkt).
+**Status:** done — der Messwert belegt die Kosten des Aufrufs, nicht die
+Nebenläufigkeit. Die Spec verlangt an dieser Stelle den Aufrufkostenbeleg;
+damit ist das Item erfüllt.
 
 ---
 
 ## Audit-Status
 
-6 done / 0 partial / 0 open / 0 n/a (informativ) / 0 n/a (rejected).
+6 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
 
-Test-Lauf (Referenz, `cargo test -p zerodds-endpoint-e2e`, Gate `lua5.4` +
-`luasocket`): `--test lua` 2/2 (`lua_endpoint_sync`, `lua_endpoint_async`);
-`--test lua_reliable` 5/5 (`lua_reliable_unit_and_golden` — 48 Lua-Checks
-inkl. Byte-Golden, `lua_reliable_loss_recovery`, `lua_reliable_no_loss`,
-`lua_reliable_example`, `lua_reliable_producer_latency`).
+Test-Lauf, lokal (macOS, `lua` 5.5 + `luasocket`, dieser Lauf):
+`cargo test -p zerodds-endpoint-e2e --test lua` 2/2 (`lua_endpoint_sync`,
+`lua_endpoint_async`); `--test lua_reliable` 5/5
+(`lua_reliable_unit_and_golden` — 48 Lua-Checks inkl. Byte-Golden,
+`lua_reliable_loss_recovery`, `lua_reliable_no_loss`, `lua_reliable_example`,
+`lua_reliable_producer_latency`). Beide Läufe ohne SKIP-Zeile, also gegen den
+echten Rust-Peer und nicht übersprungen.
 
-Diese Session hat `reliable_test.lua`, `example_sync.lua`,
-`example_async.lua` und `example_reliable.lua` sowie den `bench`-Modus von
-`reliable_app.lua` lokal mit `lua` 5.5 (nicht `lua5.4`, kein Rust-Peer)
-direkt ausgeführt und die oben zitierten Ausgaben (48/48 Checks, `ALL OK`
-×2, `RELIABLE OK: 12/12 ... 1 round(s)`, `BENCH ...`) beobachtet. Der Live-
-UDP-Ping-Pong sowie die reliable-Loss-Recovery gegen den Rust-Peer wurden in
-dieser Session **nicht** erneut ausgeführt (kein `lua5.4`-Binary, kein
-Rust-Peer-Setup verfügbar); deren Status stützt sich auf den bisherigen
-CI/codepit-Referenzlauf.
+Behoben in diesem Durchgang: `crates/endpoint-e2e/tests/lua_reliable.rs`
+band sich strikt an den Binary-Namen `lua5.4` und übersprang deshalb alle
+fünf Fälle auf einem Host, dessen Lua schlicht `lua` heißt — während die
+Ping-Pong-Fälle in `crates/endpoint-e2e/tests/lua.rs` nebenan liefen, weil
+die dort schon einen Fallback hatten. Dieselbe Laufzeit galt damit in der
+einen Datei als geprüft und in der anderen als ungemessen. `lua_reliable.rs`
+nimmt jetzt dieselbe Namensliste (`lua5.4`, `lua`, `lua5.3`) und meldet den
+Grund laut, wenn keiner davon oder `luasocket` fehlt.
 
-Offene Punkte: keine funktionalen. `endpoints/lua`s Test-Harness bindet sich
-strikt an den Binary-Namen `lua5.4` (kein Fallback auf andere Lua-5.4-
-kompatible Binary-Namen) — siehe
-`docs/specs/zerodds-endpoint-lua-1.0.md` §7.
+Offene Punkte: keine.

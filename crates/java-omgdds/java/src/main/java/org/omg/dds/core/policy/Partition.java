@@ -1,112 +1,103 @@
-// SPDX-License-Identifier: Apache-2.0
+/* Copyright 2010, Object Management Group, Inc.
+ * Copyright 2010, PrismTech, Inc.
+ * Copyright 2010, Real-Time Innovations, Inc.
+ * All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.omg.dds.core.policy;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Objects;
-import java.util.regex.Pattern;
+import java.util.Collection;
+import java.util.Set;
+
+
 
 /**
- * OMG DDS PartitionQosPolicy — DDS-DCPS 1.4 §2.2.3.13.
- *
- * <p>A set of partition name strings on a Publisher / Subscriber. A
- * DataWriter and a DataReader communicate only if their (Publisher /
- * Subscriber) partition sets <em>overlap</em> — i.e. at least one name on
- * one side matches a name on the other (§2.2.3.13: "establishes a logical
- * partition among the topics visible by the Publisher and Subscriber").
- *
- * <p>An <em>empty</em> partition set is treated as the single name
- * {@code ""} (the default partition), so two endpoints with no partition
- * configured do communicate. Names may contain the wildcards {@code *} and
- * {@code ?} (POSIX {@code fnmatch}); a match is symmetric — a wildcard on
- * either side matches a literal on the other.
+ * This policy allows the introduction of a logical partition concept inside
+ * the "physical" partition induced by a domain. It consists of a set of
+ * strings that introduces a logical partition among the topics
+ * visible by the {@link org.omg.dds.pub.Publisher} and {@link org.omg.dds.sub.Subscriber}.
+ * 
+ * <b>Concerns:</b> {@link org.omg.dds.pub.Publisher}, {@link org.omg.dds.sub.Subscriber}
+ * 
+ * <b>RxO:</b> No
+ * 
+ * <b>Changeable:</b> Yes
+ * 
+ * A {@link org.omg.dds.pub.DataWriter} within a Publisher only communicates with a
+ * {@link org.omg.dds.sub.DataReader} in a Subscriber if (in addition to matching the Topic
+ * and having compatible QoS) the Publisher and Subscriber have a common
+ * partition name string. Each string in the collection that defines this QoS
+ * policy defines a partition name. A partition name may contain wild cards.
+ * Sharing a common partition means that one of the partition names matches.
+ * 
+ * Failure to match partitions is not considered an "incompatible" QoS and
+ * does not trigger any listeners nor conditions.
+ * 
+ * This policy is changeable. A change of this policy can potentially modify
+ * the "match" of existing DataReader and DataWriter entities. It may
+ * establish new "matches" that did not exist before, or break existing
+ * matches.
+ * 
+ * The empty string ("") is considered a valid partition that is matched with
+ * other partition names using the same rules of string matching and
+ * regular expression matching used for any other partition name.
+ * 
+ * The default value for is a zero-size collection. The
+ * zero-size collection is treated as a special value equivalent to a
+ * collection containing a single element consisting of the empty string.
+ * 
+ * This policy is changeable. A change of this policy can potentially modify
+ * the "match" of existing DataReader and DataWriter entities. It may
+ * establish new "matches" that did not exist before, or break existing
+ * matches.
+ * 
+ * PARTITION names can be regular expressions and include wild cards as
+ * defined by the POSIX fnmatch API (1003.2-1992 section B.6). Either
+ * {@link org.omg.dds.pub.Publisher} or {@link org.omg.dds.sub.Subscriber} may include regular expressions in
+ * partition names, but no two names that both contain wild cards will ever
+ * be considered to match. This means that although regular expressions may
+ * be used both at publisher as well as subscriber side, the service will not
+ * try to match two regular expressions (between publishers and subscribers).
+ * 
+ * Partitions are different from creating {@link org.omg.dds.core.Entity} objects in different
+ * domains in several ways. First, entities belonging to different domains
+ * are completely isolated from each other; there is no traffic, meta-traffic
+ * or any other way for an application or the Service itself to see entities
+ * in a domain it does not belong to. Second, an Entity can only belong to
+ * one domain whereas an Entity can be in multiple partitions. Finally, as
+ * far as the DDS Service is concerned, each unique data instance is
+ * identified by the tuple (domainId, Topic, key). Therefore two Entity
+ * objects in different domains cannot refer to the same data instance. On
+ * the other hand, the same data instance can be made available (published)
+ * or requested (subscribed) on one or more partitions.
  */
-public final class Partition {
-    /** Default partition = the single empty-string name. */
-    public static final Partition DEFAULT = new Partition();
+public interface Partition
+extends QosPolicy.ForPublisher, QosPolicy.ForSubscriber
+{
+    /**
+     * @return  an unmodifiable collection of partition names.
+     */
+    public Set<String> getName();
 
-    private final List<String> names;
 
-    public Partition(String... names) {
-        this.names = (names == null || names.length == 0)
-                ? Collections.emptyList()
-                : new ArrayList<>(List.of(names));
-    }
-
-    public Partition(List<String> names) {
-        this.names = (names == null || names.isEmpty())
-                ? Collections.emptyList()
-                : new ArrayList<>(names);
-    }
-
-    public List<String> names() {
-        return Collections.unmodifiableList(names);
-    }
-
-    /** Effective name set: empty set is the single default partition {@code ""}. */
-    private List<String> effective() {
-        return names.isEmpty() ? List.of("") : names;
-    }
+    // --- Modification: -----------------------------------------------------
 
     /**
-     * DDS-DCPS 1.4 §2.2.3.13 partition overlap: the two name sets overlap if
-     * any name on one side matches any name on the other (wildcards allowed
-     * on either side). Mirrors the runtime {@code partitions_overlap} matcher.
+     * Copy this policy and override the value of the property.
+     * 
+     * @return  a new policy
      */
-    public boolean overlaps(Partition other) {
-        for (String a : this.effective()) {
-            for (String b : other.effective()) {
-                if (nameMatches(a, b)) {
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
-
-    private static boolean nameMatches(String a, String b) {
-        if (a.equals(b)) {
-            return true;
-        }
-        // Wildcard on either side matches a literal on the other (symmetric).
-        if (hasWildcard(a) && globMatch(a, b)) {
-            return true;
-        }
-        return hasWildcard(b) && globMatch(b, a);
-    }
-
-    private static boolean hasWildcard(String s) {
-        return s.indexOf('*') >= 0 || s.indexOf('?') >= 0;
-    }
-
-    private static boolean globMatch(String pattern, String input) {
-        StringBuilder re = new StringBuilder();
-        for (int i = 0; i < pattern.length(); i++) {
-            char c = pattern.charAt(i);
-            switch (c) {
-                case '*': re.append(".*"); break;
-                case '?': re.append('.'); break;
-                default: re.append(Pattern.quote(String.valueOf(c)));
-            }
-        }
-        return Pattern.matches(re.toString(), input);
-    }
-
-    @Override
-    public boolean equals(Object o) {
-        if (this == o) return true;
-        if (!(o instanceof Partition)) return false;
-        return names.equals(((Partition) o).names);
-    }
-
-    @Override
-    public int hashCode() {
-        return Objects.hash(names);
-    }
-
-    @Override
-    public String toString() {
-        return "Partition" + (names.isEmpty() ? "[<default>]" : names);
-    }
+    public Partition withName(Collection<String> name);
 }

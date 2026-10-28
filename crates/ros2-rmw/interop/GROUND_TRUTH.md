@@ -1,6 +1,6 @@
 # ROS-2-Wire Ground-Truth (CycloneDDS = rmw_cyclonedds)
 
-Captured on codepit via `run_capture.sh` (CycloneDDS 11.0.1, talker+listener
+Captured on the Linux test host via `run_capture.sh` (CycloneDDS 11.0.1, talker+listener
 on `rt/chatter`). This is **byte-identical to a real `ros2 topic pub
 /chatter std_msgs/String`**, because `rmw_cyclonedds` uses exactly these
 CycloneDDS primitives. The pcap is reproducible (`crates/ros2-rmw/interop/run_capture.sh`).
@@ -35,7 +35,7 @@ SPDP `DATA(p)`, SEDP `DATA(w)/DATA(r)` on `rt/chatter`, `DATA(m)` (samples),
 
 ## Live interop (ZeroDDS ↔ CycloneDDS) — SOLVED, bidirectionally green
 
-Status: **✅ both directions 20/20 samples** (codepit, CycloneDDS 11.0.1).
+Status: **✅ both directions 20/20 samples** (Linux test host, CycloneDDS 11.0.1).
 Reproducible: `run_interop.sh` (Cyclone talker → ZeroDDS sub) +
 the `ros2_chatter_publisher` example (ZeroDDS pub → Cyclone listener).
 

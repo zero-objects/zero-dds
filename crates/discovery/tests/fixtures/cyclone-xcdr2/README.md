@@ -1,10 +1,19 @@
 # Cyclone XCDR2 Wire-Fixtures
 
-Pre-recorded XCDR2 wire frames captured from Cyclone DDS for V-1..V-12
-of `docs/specs/zerodds-xcdr2-bindings-conformance-1.0.md` §6.
+XCDR2 payloads from Cyclone DDS for V-1..V-12 of
+`docs/specs/zerodds-xcdr2-bindings-conformance-1.0.md` §6.
 
 Each `v<N>.bin` is the raw XCDR2 payload (no RTPS header) emitted by
 Cyclone's encoder for the corresponding sample.
+
+**How each committed `.bin` was obtained is not recorded.** The section
+below describes a capture procedure and says in the same breath that the
+capture mode is not wired, so these files are the encoder's output unless
+someone shows otherwise. For Cyclone the distinction is narrow — it
+writes its own alignment fill (`dds_cdrstream.c:343`) and the payload is
+what its RTPS layer sends — but "captured" is a stronger word than the
+evidence here supports, and elsewhere in this tree that word has been
+wrong: see `tools/wire-capture`.
 
 ## Recording
 

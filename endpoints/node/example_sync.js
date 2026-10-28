@@ -17,7 +17,7 @@ class Reading {
     this.label = label;
   }
   marshal(endian) {
-    const w = new z.Writer(endian);
+    const w = new z.Writer(endian, z.XCDR2);
     w.putU32(this.id);
     w.putF32(this.value);
     w.putString(this.label);
@@ -26,13 +26,13 @@ class Reading {
 }
 
 function decodeReading(body) {
-  const r = new z.Reader(body, z.LITTLE);
+  const r = new z.Reader(body, z.LITTLE, z.XCDR2);
   return new Reading(r.getU32(), r.getF32(), r.getString());
 }
 
 const total = 5;
 const t = new z.MemTransport();
-const c = new z.Client(t);
+const c = new z.Client(t, z.xrceObjectId(0x001, z.OBJK_DATAWRITER));
 
 // Publisher: frame + deliver 5 typed readings with varying values.
 for (let i = 0; i < total; i++) {

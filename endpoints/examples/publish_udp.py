@@ -28,7 +28,8 @@ def main():
     w.put_seq_u8(bytearray([0xDE, 0xAD, 0xBE, 0xEF]))
 
     # frame as XRCE WRITE_DATA and send over UDP (the frame-hook, UDP fill)
-    frame = ze.xrce_write_frame(ze.XRCE_SESSION_NOKEY, ze.XRCE_STREAM_BEST_EFFORT, 1, w.bytes())
+    frame = ze.xrce_write_frame(ze.XRCE_SESSION_NOKEY, ze.XRCE_STREAM_BEST_EFFORT, 1,
+                                ze.xrce_object_id(0x001, ze.OBJK_DATAWRITER), w.bytes())
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.sendto(frame, (host, port))
     s.close()

@@ -46,8 +46,10 @@ mod linux_only {
     #[test]
     fn two_participants_exchange_automatic_wlp_heartbeats() {
         let cfg = fast_cfg();
-        let a = DcpsRuntime::start(20, GuidPrefix::from_bytes([0x70; 12]), cfg.clone()).expect("a");
-        let b = DcpsRuntime::start(20, GuidPrefix::from_bytes([0x71; 12]), cfg).expect("b");
+        let domain = super::common::unique_domain();
+        let a =
+            DcpsRuntime::start(domain, GuidPrefix::from_bytes([0x70; 12]), cfg.clone()).expect("a");
+        let b = DcpsRuntime::start(domain, GuidPrefix::from_bytes([0x71; 12]), cfg).expect("b");
 
         let a_prefix = GuidPrefix::from_bytes([0x70; 12]);
         let b_prefix = GuidPrefix::from_bytes([0x71; 12]);
@@ -77,8 +79,10 @@ mod linux_only {
             participant_lease_duration: Duration::from_secs(3600),
             ..RuntimeConfig::default()
         };
-        let a = DcpsRuntime::start(21, GuidPrefix::from_bytes([0x80; 12]), cfg.clone()).expect("a");
-        let b = DcpsRuntime::start(21, GuidPrefix::from_bytes([0x81; 12]), cfg).expect("b");
+        let domain = super::common::unique_domain();
+        let a =
+            DcpsRuntime::start(domain, GuidPrefix::from_bytes([0x80; 12]), cfg.clone()).expect("a");
+        let b = DcpsRuntime::start(domain, GuidPrefix::from_bytes([0x81; 12]), cfg).expect("b");
 
         // Wait until SPDP discovery has completed on both sides (otherwise
         // the manual pulse may go out before B is even listening).
@@ -107,8 +111,10 @@ mod linux_only {
             participant_lease_duration: Duration::from_millis(200),
             ..RuntimeConfig::default()
         };
-        let a = DcpsRuntime::start(22, GuidPrefix::from_bytes([0x90; 12]), cfg.clone()).expect("a");
-        let b = DcpsRuntime::start(22, GuidPrefix::from_bytes([0x91; 12]), cfg).expect("b");
+        let domain = super::common::unique_domain();
+        let a =
+            DcpsRuntime::start(domain, GuidPrefix::from_bytes([0x90; 12]), cfg.clone()).expect("a");
+        let b = DcpsRuntime::start(domain, GuidPrefix::from_bytes([0x91; 12]), cfg).expect("b");
         thread::sleep(Duration::from_millis(300));
         a.assert_liveliness();
 
@@ -146,3 +152,8 @@ mod linux_only {
         let _ = lost_count;
     }
 }
+
+/// Leases a DDS domain no other process on this host holds — the
+/// domain number is the UDP port number, so it is a host-wide resource.
+#[path = "common/mod.rs"]
+mod common;

@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of empty-struct-in-sequence that cyclone produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	error: unknown type name 'zd_c41_m_S'; did you mean 'zd_c43_m_S'?
+plain-cdr1	be	refused	error: unknown type name 'zd_c41_m_S'; did you mean 'zd_c43_m_S'?
+pl-cdr1	le	refused	error: unknown type name 'zd_c41_m_S'; did you mean 'zd_c43_m_S'?
+pl-cdr1	be	refused	error: unknown type name 'zd_c41_m_S'; did you mean 'zd_c43_m_S'?
+plain-cdr2	le	refused	error: unknown type name 'zd_c41_m_S'; did you mean 'zd_c43_m_S'?
+plain-cdr2	be	refused	error: unknown type name 'zd_c41_m_S'; did you mean 'zd_c43_m_S'?
+delimited-cdr	le	refused	error: unknown type name 'zd_c41_m_S'; did you mean 'zd_c43_m_S'?
+delimited-cdr	be	refused	error: unknown type name 'zd_c41_m_S'; did you mean 'zd_c43_m_S'?
+pl-cdr2	le	refused	error: unknown type name 'zd_c41_m_S'; did you mean 'zd_c43_m_S'?
+pl-cdr2	be	refused	error: unknown type name 'zd_c41_m_S'; did you mean 'zd_c43_m_S'?

@@ -1,0 +1,5 @@
+// P1, P2, P3 — the anchor width, the bit order and the inherited
+// bitfield are all unspecified, and this is the declaration that says
+// how many implementations can be asked about them.
+bitset B { bitfield<3> a; bitfield<5> b; };
+struct Sample { B v; octet tail; };

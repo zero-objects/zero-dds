@@ -38,16 +38,16 @@ pub use server::TypeLookupServer;
 
 use alloc::vec::Vec;
 
-use zerodds_cdr::{BufferReader, BufferWriter, EncodeError, Endianness};
 use zerodds_rtps::wire_types::{EntityId, Guid, GuidPrefix};
 use zerodds_types::error::TypeCodecError;
 use zerodds_types::resolve::TypeRegistry;
 use zerodds_types::type_lookup::{
     ContinuationPoint, GetTypeDependenciesReply, GetTypeDependenciesRequest, GetTypesReply,
-    GetTypesRequest, ReplyTypeObject,
+    GetTypesRequest, TypeIdentifierTypeObjectPair,
 };
 use zerodds_types::type_object::TypeObject;
 use zerodds_types::{EquivalenceHash, TypeIdentifier};
+use zerodds_wire::WireError;
 
 /// TypeLookup stack for a local participant.
 #[derive(Debug)]
@@ -87,12 +87,12 @@ impl TypeLookupStack {
     /// Returns: request payload bytes + new sequence ID.
     ///
     /// # Errors
-    /// `EncodeError` on lists that are too large.
+    /// `WireError` on lists that are too large.
     pub fn make_get_types_request(
         &mut self,
         hashes: &[EquivalenceHash],
         minimal: bool,
-    ) -> Result<(Vec<u8>, u64), EncodeError> {
+    ) -> Result<(Vec<u8>, u64), WireError> {
         let seq = self.next_request_seq;
         self.next_request_seq = self.next_request_seq.saturating_add(1);
 
@@ -107,9 +107,9 @@ impl TypeLookupStack {
             })
             .collect();
         let req = GetTypesRequest { type_ids };
-        let mut w = BufferWriter::new(Endianness::Little);
+        let mut w = zerodds_types::framing::xcdr2_writer();
         req.encode_into(&mut w)?;
-        Ok((w.into_bytes(), seq))
+        Ok((w.finish(), seq))
     }
 
     /// Processes a received `getTypes` reply and enters all
@@ -118,22 +118,16 @@ impl TypeLookupStack {
     /// # Errors
     /// Decode error or hash computation fails.
     pub fn handle_get_types_reply(&mut self, bytes: &[u8]) -> Result<usize, TypeCodecError> {
-        let mut r = BufferReader::new(bytes, Endianness::Little);
+        let mut r = zerodds_types::framing::xcdr2_reader(bytes);
         let reply = GetTypesReply::decode_from(&mut r)?;
         let mut count = 0;
         for item in reply.types {
-            match item {
-                ReplyTypeObject::Minimal(m) => {
-                    let hash = zerodds_types::compute_hash(&TypeObject::Minimal(m.clone()))?;
-                    self.registry.insert_minimal(hash, m);
-                    count += 1;
-                }
-                ReplyTypeObject::Complete(c) => {
-                    let hash = zerodds_types::compute_hash(&TypeObject::Complete(c.clone()))?;
-                    self.registry.insert_complete(hash, c);
-                    count += 1;
-                }
-            }
+            // The hash is recomputed from the object rather than taken
+            // from `item.type_identifier`: the identifier is the peer's
+            // claim about the object, and a registry keyed by a claim
+            // hands out an object under a hash that does not describe it.
+            self.registry.insert_object(item.type_object)?;
+            count += 1;
         }
         Ok(count)
     }
@@ -146,7 +140,7 @@ impl TypeLookupStack {
         &self,
         hashes: &[EquivalenceHash],
         cont: ContinuationPoint,
-    ) -> Result<Vec<u8>, EncodeError> {
+    ) -> Result<Vec<u8>, WireError> {
         let req = GetTypeDependenciesRequest {
             type_ids: hashes
                 .iter()
@@ -154,9 +148,9 @@ impl TypeLookupStack {
                 .collect(),
             continuation_point: cont,
         };
-        let mut w = BufferWriter::new(Endianness::Little);
+        let mut w = zerodds_types::framing::xcdr2_writer();
         req.encode_into(&mut w)?;
-        Ok(w.into_bytes())
+        Ok(w.finish())
     }
 
     /// Decodes a getTypeDependencies reply (for tests / caller).
@@ -167,7 +161,7 @@ impl TypeLookupStack {
         &self,
         bytes: &[u8],
     ) -> Result<GetTypeDependenciesReply, TypeCodecError> {
-        let mut r = BufferReader::new(bytes, Endianness::Little);
+        let mut r = zerodds_types::framing::xcdr2_reader(bytes);
         GetTypeDependenciesReply::decode_from(&mut r)
     }
 
@@ -180,21 +174,30 @@ impl TypeLookupStack {
         &self,
         hashes: &[EquivalenceHash],
         minimal: bool,
-    ) -> Result<Vec<u8>, EncodeError> {
+    ) -> Result<Vec<u8>, WireError> {
         let mut types = Vec::new();
         for h in hashes {
             if minimal {
                 if let Some(m) = self.registry.get_minimal(h) {
-                    types.push(ReplyTypeObject::Minimal(m.clone()));
+                    types.push(TypeIdentifierTypeObjectPair {
+                        type_identifier: TypeIdentifier::EquivalenceHashMinimal(*h),
+                        type_object: TypeObject::Minimal(m.clone()),
+                    });
                 }
             } else if let Some(c) = self.registry.get_complete(h) {
-                types.push(ReplyTypeObject::Complete(c.clone()));
+                types.push(TypeIdentifierTypeObjectPair {
+                    type_identifier: TypeIdentifier::EquivalenceHashComplete(*h),
+                    type_object: TypeObject::Complete(c.clone()),
+                });
             }
         }
-        let reply = GetTypesReply { types };
-        let mut w = BufferWriter::new(Endianness::Little);
+        let reply = GetTypesReply {
+            types,
+            complete_to_minimal: Vec::new(),
+        };
+        let mut w = zerodds_types::framing::xcdr2_writer();
         reply.encode_into(&mut w)?;
-        Ok(w.into_bytes())
+        Ok(w.finish())
     }
 }
 
@@ -219,7 +222,7 @@ mod tests {
         let hash = zerodds_types::compute_minimal_hash(&sample_struct()).unwrap();
         let (bytes, seq) = stack.make_get_types_request(&[hash], true).unwrap();
         assert_eq!(seq, 1);
-        let mut r = BufferReader::new(&bytes, Endianness::Little);
+        let mut r = zerodds_types::framing::xcdr2_reader(&bytes);
         let decoded = GetTypesRequest::decode_from(&mut r).unwrap();
         assert_eq!(decoded.type_ids.len(), 1);
     }

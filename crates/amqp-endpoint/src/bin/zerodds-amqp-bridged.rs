@@ -3,43 +3,20 @@
 //
 // `zerodds-amqp-bridged` — DDS↔AMQP-1.0 bridge daemon (client mode).
 //
-// Spec: `docs/specs/zerodds-amqp-bridge-daemon-1.0.md`. Implements the
-// mandatory L1-L4 layer: AMQP-1.0 client connect to a broker
-// (RabbitMQ, ActiveMQ, Qpid, Solace, Azure ServiceBus), container/
-// session/link lifecycle, YAML config loader, CLI surface §2.
-//
-// L5 (TLS+SASL) and L6 (multi-tenant) are marked as FUTURE hooks.
+// Spec: `docs/specs/zerodds-amqp-bridge-daemon-1.0.md`. The command line,
+// the admin endpoint and the observability hooks; the bridge itself is
+// `zerodds_amqp_endpoint::bridge_daemon`.
 
-#![allow(
-    clippy::expect_used,
-    clippy::unwrap_used,
-    clippy::panic,
-    clippy::print_stderr,
-    clippy::print_stdout,
-    clippy::field_reassign_with_default,
-    clippy::manual_flatten,
-    clippy::collapsible_if,
-    clippy::empty_line_after_doc_comments,
-    clippy::approx_constant,
-    clippy::unreachable,
-    clippy::uninlined_format_args,
-    clippy::drop_non_drop,
-    clippy::useless_conversion,
-    missing_docs
-)]
+//! `zerodds-amqp-bridged`: the command line of the DDS↔AMQP 1.0 bridge.
+#![allow(clippy::print_stderr, clippy::print_stdout)]
 
 use std::env;
-use std::io::{Read, Write};
-use std::net::TcpStream;
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use zerodds_amqp_bridge::frame::{
-    FrameHeader, FrameType, decode_frame_header, encode_frame_header,
-};
-use zerodds_amqp_bridge::performatives::{attach, begin, close, detach, end, flow, open, transfer};
+use zerodds_amqp_endpoint::bridge_daemon::{self, DaemonConfig, DaemonError, ENV, is_key};
 use zerodds_amqp_endpoint::daemon_runtime::{
     BridgeMetrics, CatalogSnapshot, CatalogTopic, SERVICE_NAME, install_signal_watcher,
     otlp_config_from_env, serve_admin_endpoints, spawn_otlp_flush_loop,
@@ -47,10 +24,10 @@ use zerodds_amqp_endpoint::daemon_runtime::{
 use zerodds_monitor::Registry;
 use zerodds_observability_otlp::OtlpExporter;
 
-const VERSION: &str = "1.0.0";
+const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// AMQP 1.0 protocol header — Spec §2.2.
-const AMQP_PROTOCOL_HEADER: [u8; 8] = [b'A', b'M', b'Q', b'P', 0x00, 0x01, 0x00, 0x00];
+/// The base name of the daemon's file: `amqp-bridged.yaml`, `amqp-bridged.d/`.
+const CONFIG_STEM: &str = "amqp-bridged";
 
 fn main() -> ExitCode {
     match run() {
@@ -62,105 +39,55 @@ fn main() -> ExitCode {
     }
 }
 
-#[derive(Debug)]
-struct DaemonError {
-    code: u8,
-    msg: String,
-}
-
-impl DaemonError {
-    fn new(code: u8, msg: impl Into<String>) -> Self {
-        Self {
-            code,
-            msg: msg.into(),
-        }
+fn daemon_error(code: u8, msg: impl Into<String>) -> DaemonError {
+    DaemonError {
+        code,
+        msg: msg.into(),
     }
 }
-
-impl std::fmt::Display for DaemonError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.msg)
-    }
-}
-
-impl std::error::Error for DaemonError {}
 
 fn run() -> Result<(), DaemonError> {
-    let args: Vec<String> = env::args().collect();
-    let mut config_path: Option<String> = None;
-    let mut broker: Option<String> = None;
-    let mut container_id: Option<String> = None;
-    let mut domain: Option<i32> = None;
-    let mut sasl_mechanism: Option<String> = None;
-    let mut user: Option<String> = None;
-    let mut password: Option<String> = None;
-    let mut tls_ca: Option<String> = None;
-    let mut tls_cert: Option<String> = None;
-    let mut tls_key: Option<String> = None;
-    let mut topics: Vec<String> = Vec::new();
-    let mut log_level = String::from("info");
-    let mut metrics_cli: Option<String> = None;
+    let args: Vec<String> = env::args().skip(1).collect();
+    let (mut command_line, rest) =
+        zerodds_config::CommandLine::extract(args).map_err(|e| daemon_error(1, e.to_string()))?;
+    let mut sets: Vec<String> = Vec::new();
     let mut once = false;
     let mut connect_timeout_ms: u64 = 5000;
+    let mut tls = false;
 
-    let mut i = 1;
-    while i < args.len() {
-        match args[i].as_str() {
-            "--config" => {
-                i += 1;
-                config_path = args.get(i).cloned();
-            }
-            "--broker" => {
-                i += 1;
-                broker = args.get(i).cloned();
-            }
-            "--container-id" => {
-                i += 1;
-                container_id = args.get(i).cloned();
-            }
-            "--domain" => {
-                i += 1;
-                domain = args.get(i).and_then(|s| s.parse().ok());
-            }
-            "--sasl-mechanism" => {
-                i += 1;
-                sasl_mechanism = args.get(i).cloned();
-            }
-            "--user" => {
-                i += 1;
-                user = args.get(i).cloned();
-            }
-            "--password" => {
-                i += 1;
-                password = args.get(i).cloned();
-            }
+    let mut i = 0;
+    while i < rest.len() {
+        let flag = rest[i].as_str();
+        let mut value = || -> Result<String, DaemonError> {
+            i += 1;
+            rest.get(i)
+                .cloned()
+                .ok_or_else(|| daemon_error(1, format!("{flag} needs a value")))
+        };
+        // Spec §2: each option is `--set` of its file key, after any
+        // explicit `--set`, so it wins over the files and names itself as
+        // the origin.
+        match flag {
+            "--broker" => sets.push(format!("amqp.broker_url={}", value()?)),
+            "--container-id" => sets.push(format!("amqp.container_id={}", value()?)),
+            "--domain" => sets.push(format!("domain={}", value()?)),
+            "--sasl-mechanism" => sets.push(format!("amqp.sasl.mechanism={}", value()?)),
+            "--user" => sets.push(format!("amqp.sasl.username={}", value()?)),
+            "--password" => sets.push(format!("amqp.sasl.password={}", value()?)),
             "--tls-ca" => {
-                i += 1;
-                tls_ca = args.get(i).cloned();
+                sets.push(format!("amqp.tls.ca_file={}", value()?));
+                tls = true;
             }
             "--tls-cert" => {
-                i += 1;
-                tls_cert = args.get(i).cloned();
+                sets.push(format!("amqp.tls.cert_file={}", value()?));
+                tls = true;
             }
-            "--tls-key" => {
-                i += 1;
-                tls_key = args.get(i).cloned();
-            }
-            "--topic" => {
-                i += 1;
-                if let Some(v) = args.get(i) {
-                    topics.push(v.clone());
-                }
-            }
-            "--log-level" => {
-                i += 1;
-                if let Some(v) = args.get(i) {
-                    log_level = v.clone();
-                }
-            }
+            "--tls-key" => sets.push(format!("amqp.tls.key_file={}", value()?)),
+            "--topic" => sets.push(format!("+topics={}", value()?)),
+            "--log-level" => sets.push(format!("log_level={}", value()?)),
             "--metrics" => {
-                i += 1;
-                metrics_cli = args.get(i).cloned();
+                sets.push(format!("metrics.listen={}", value()?));
+                sets.push("metrics.enabled=true".to_string());
             }
             "--version" | "-V" => {
                 println!("zerodds-amqp-bridged {VERSION}");
@@ -172,66 +99,60 @@ fn run() -> Result<(), DaemonError> {
             }
             "--once" => once = true,
             "--connect-timeout-ms" => {
-                i += 1;
-                if let Some(v) = args.get(i).and_then(|s| s.parse().ok()) {
-                    connect_timeout_ms = v;
-                }
+                let v = value()?;
+                connect_timeout_ms = v.parse().map_err(|_| {
+                    daemon_error(
+                        1,
+                        format!("--connect-timeout-ms {v}: expected milliseconds"),
+                    )
+                })?;
             }
             other => {
-                return Err(DaemonError::new(1, format!("unknown argument: {other}")));
+                return Err(daemon_error(1, format!("unknown argument: {other}")));
             }
         }
         i += 1;
     }
-
-    let mut cfg = if let Some(path) = config_path.as_deref() {
-        load_config(path).map_err(|e| DaemonError::new(1, format!("config: {e}")))?
-    } else {
-        DaemonConfig::default()
-    };
-
-    if let Some(b) = broker {
-        cfg.broker_url = b;
+    if tls {
+        sets.push("amqp.tls.enabled=true".to_string());
     }
-    if let Some(c) = container_id {
-        cfg.container_id = c;
+    for assignment in &sets {
+        command_line
+            .push_set(assignment)
+            .map_err(|e| daemon_error(1, e.to_string()))?;
     }
-    if let Some(d) = domain {
-        cfg.domain = d;
-    }
-    if let Some(m) = sasl_mechanism {
-        cfg.sasl_mechanism = m;
-    }
-    if let Some(u) = user {
-        cfg.sasl_username = u;
-    }
-    if let Some(p) = password {
-        cfg.sasl_password = p;
-    }
-    if let Some(ca) = tls_ca {
-        cfg.tls_ca_file = ca;
-        cfg.tls_enabled = true;
-    }
-    if let Some(c) = tls_cert {
-        cfg.tls_cert_file = c;
-        cfg.tls_enabled = true;
-    }
-    if let Some(k) = tls_key {
-        cfg.tls_key_file = k;
-    }
-    for t in topics {
-        if let Some((dds, addr)) = t.split_once('=') {
-            cfg.topics.push(TopicMapping {
-                dds_name: dds.into(),
-                amqp_address: addr.into(),
-                direction: "bidir".into(),
-            });
+    // Kept for SIGHUP: the reload reads the same layered sources again.
+    let reload_command_line = command_line.clone();
+    // A file that does not load (unreadable, syntax, include) is exit 2
+    // under `--check-config` (deployment §2.1); at start it is a
+    // configuration error, exit 1 — 2 is the bind error of spec §2.
+    let checking = command_line.check();
+    let configured = zerodds_dcps::cli::Configured::from_command_line(
+        command_line,
+        Vec::new(),
+        CONFIG_STEM,
+        is_key,
+        ENV,
+    )
+    .map_err(|e| daemon_error(if checking { 2 } else { 1 }, format!("config: {e}")))?;
+    let cfg = match DaemonConfig::from_config(configured.source.tree()) {
+        Ok(cfg) => cfg,
+        Err(e) if configured.checking() => {
+            println!("error: {e}\nconfiguration invalid");
+            return Err(daemon_error(1, "configuration invalid".to_string()));
         }
+        Err(e) => return Err(daemon_error(1, format!("config: {e}"))),
+    };
+    if let Some(valid) = configured.check_config_valid() {
+        return if valid {
+            Ok(())
+        } else {
+            Err(daemon_error(1, "configuration invalid".to_string()))
+        };
     }
-    let _ = log_level;
 
     if cfg.broker_url.is_empty() {
-        return Err(DaemonError::new(
+        return Err(daemon_error(
             1,
             "broker URL required (--broker or config.amqp.broker_url)".to_string(),
         ));
@@ -250,7 +171,7 @@ fn run() -> Result<(), DaemonError> {
 
     // Metrics registry + standard counters (§8.2 Prometheus).
     let registry = Arc::new(Registry::new());
-    let metrics = BridgeMetrics::register(&registry);
+    let metrics = BridgeMetrics::register_shared(&registry);
 
     // Signal watcher (§9.2 graceful shutdown).
     if let Err(e) = install_signal_watcher(Arc::clone(&shutdown), Arc::clone(&reload)) {
@@ -258,7 +179,7 @@ fn run() -> Result<(), DaemonError> {
     }
 
     // Admin endpoint (§5.2 catalog/healthz + §8.2 metrics).
-    let admin_handle = if let Some(addr_s) = metrics_addr_for(&metrics_cli, &cfg) {
+    let admin_handle = if let Some(addr_s) = metrics_addr_for(&cfg) {
         match addr_s.parse::<std::net::SocketAddr>() {
             Ok(sa) => {
                 let topics: Vec<CatalogTopic> = cfg
@@ -267,7 +188,11 @@ fn run() -> Result<(), DaemonError> {
                     .map(|t| CatalogTopic {
                         dds_name: t.dds_name.clone(),
                         amqp_address: t.amqp_address.clone(),
-                        direction: t.direction.clone(),
+                        direction: match t.direction {
+                            bridge_daemon::Direction::In => "in".to_string(),
+                            bridge_daemon::Direction::Out => "out".to_string(),
+                            bridge_daemon::Direction::Bidir => "bidir".to_string(),
+                        },
                     })
                     .collect();
                 let snap = Arc::new(CatalogSnapshot::new(topics));
@@ -304,28 +229,57 @@ fn run() -> Result<(), DaemonError> {
         None
     };
 
-    // FUTURE (L2): DcpsRuntime::start(domain, …) — DDS side. For the
-    // mandatory L1-L4 scope the AMQP wire pump is sufficient.
+    let reload_load = move || -> Result<DaemonConfig, String> {
+        let configured = zerodds_dcps::cli::Configured::from_command_line(
+            reload_command_line.clone(),
+            Vec::new(),
+            CONFIG_STEM,
+            is_key,
+            ENV,
+        )
+        .map_err(|e| e.to_string())?;
+        DaemonConfig::from_config(configured.source.tree()).map_err(|e| e.to_string())
+    };
+    let res = bridge_daemon::run_with_reload(
+        &cfg,
+        configured.runtime.clone(),
+        &shutdown,
+        &metrics,
+        once,
+        Duration::from_millis(connect_timeout_ms),
+        Some(bridge_daemon::Reload {
+            flag: Arc::clone(&reload),
+            load: Box::new(reload_load),
+        }),
+    );
+    // The stop watcher in `run_with_reload` may not get its turn before the
+    // process ends; STOPPING=1 again, synchronously (a repeat is harmless).
+    if shutdown.load(std::sync::atomic::Ordering::SeqCst) {
+        zerodds_dcps::cli::notify_service_manager("STOPPING=1");
+    }
 
-    let res = bridge_loop(&cfg, shutdown.clone(), once, connect_timeout_ms, &metrics);
-
-    // Set healthy to false on drop so that /healthz returns 503.
+    // /healthz answers 503 once the bridge stopped.
     if let Some((_h, healthy)) = admin_handle {
         healthy.store(false, Ordering::SeqCst);
     }
-
-    res?;
-    Ok(())
+    res
 }
 
-fn metrics_addr_for(cli: &Option<String>, cfg: &DaemonConfig) -> Option<String> {
-    if let Some(addr) = cli.as_deref() {
-        if !addr.is_empty() {
-            return Some(addr.to_string());
-        }
+/// Admin-endpoint bind address. Precedence: CLI `--metrics` beats the
+/// config file `metrics.listen:` (Spec Â§3 / Â§8.2); `metrics.enabled: false`
+/// keeps the endpoint off. An enabled block without `listen:` falls back
+/// to the documented default.
+/// Documented fallback when `metrics.enabled: true` names no `listen:`.
+const DEFAULT_METRICS_LISTEN: &str = "127.0.0.1:9094";
+
+fn metrics_addr_for(cfg: &DaemonConfig) -> Option<String> {
+    if !cfg.metrics_enabled {
+        return None;
     }
-    let _ = cfg;
-    None
+    if cfg.metrics_listen.is_empty() {
+        return Some(DEFAULT_METRICS_LISTEN.to_string());
+    }
+    Some(cfg.metrics_listen.clone())
 }
 
 fn print_usage() {
@@ -334,7 +288,10 @@ fn print_usage() {
     eprintln!("USAGE: zerodds-amqp-bridged [OPTIONS]");
     eprintln!();
     eprintln!("OPTIONS:");
-    eprintln!("  --config <FILE>          YAML config (Spec §3)");
+    eprintln!("  --config <FILE>          base file (default: amqp-bridged.yaml in the");
+    eprintln!("                           system configuration directory) with FILE.d/");
+    eprintln!("  --set <PATH=VALUE>       one setting above every file, repeatable");
+    eprintln!("  --check-config           validate, print every value with its origin, exit");
     eprintln!("  --broker <URL>           AMQP broker URL (amqp://, amqps://)");
     eprintln!("  --container-id <ID>      AMQP container-id");
     eprintln!("  --domain <ID>            DDS Domain ID");
@@ -347,568 +304,39 @@ fn print_usage() {
     eprintln!("  --topic <DDS=ADDR>       Inline topic mapping override");
     eprintln!("  --log-level <LEVEL>      trace|debug|info|warn|error");
     eprintln!("  --metrics <ADDR>         Prometheus listen addr");
+    eprintln!();
+    eprintln!("  Each option above is `--set` of its file key (`--broker X` is");
+    eprintln!("  `--set amqp.broker_url=X`); precedence: defaults < environment");
+    eprintln!("  ($AMQP_PASSWORD for amqp.sasl.password) < files < flags.");
+    eprintln!();
+    eprintln!("  Test hooks. Real options, listed because the program accepts");
+    eprintln!("  them and an option nobody can find is one nobody maintains:");
+    eprintln!("  --once                   Serve one connection, then exit");
+    eprintln!("  --connect-timeout-ms <N> Give up connecting after N ms");
+    eprintln!();
     eprintln!("  --version                Print version");
     eprintln!("  --help                   Show this help");
 }
 
-// ============================================================================
-// AMQP-Client Wire Pump
-// ============================================================================
-
-fn bridge_loop(
-    cfg: &DaemonConfig,
-    shutdown: Arc<AtomicBool>,
-    once: bool,
-    connect_timeout_ms: u64,
-    metrics: &BridgeMetrics,
-) -> Result<(), DaemonError> {
-    let host_port = strip_amqp_scheme(&cfg.broker_url);
-    let to = Duration::from_millis(connect_timeout_ms);
-
-    loop {
-        if shutdown.load(Ordering::SeqCst) {
-            break;
-        }
-
-        // FUTURE (L5): TLS + SASL handshake before AMQP-OPEN.
-        metrics.connections_total.inc();
-        let stream = match connect_with_timeout(&host_port, to) {
-            Ok(s) => s,
-            Err(e) => {
-                metrics.errors_total.inc();
-                eprintln!(
-                    "{{\"event\":\"connect_error\",\"broker\":\"{host_port}\",\"err\":\"{e}\"}}"
-                );
-                if once {
-                    return Err(DaemonError::new(2, format!("connect {host_port}: {e}")));
-                }
-                std::thread::sleep(Duration::from_millis(500));
-                continue;
-            }
-        };
-        metrics.connections_active.set(1);
-        eprintln!("{{\"event\":\"connected\",\"broker\":\"{host_port}\"}}");
-        match drive_session(stream, cfg, metrics) {
-            Ok(_) => {
-                eprintln!("{{\"event\":\"session_complete\"}}");
-            }
-            Err(e) => {
-                metrics.errors_total.inc();
-                eprintln!("{{\"event\":\"session_error\",\"err\":\"{e}\"}}");
-            }
-        }
-        metrics.connections_active.set(0);
-        if once {
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(500));
-    }
-    Ok(())
-}
-
-fn connect_with_timeout(host_port: &str, timeout: Duration) -> std::io::Result<TcpStream> {
-    let addrs: Vec<std::net::SocketAddr> = match std::net::ToSocketAddrs::to_socket_addrs(host_port)
-    {
-        Ok(it) => it.collect(),
-        Err(e) => return Err(e),
-    };
-    let mut last: Option<std::io::Error> = None;
-    for a in addrs {
-        match TcpStream::connect_timeout(&a, timeout) {
-            Ok(s) => {
-                let _ = s.set_read_timeout(Some(Duration::from_secs(5)));
-                let _ = s.set_write_timeout(Some(Duration::from_secs(5)));
-                return Ok(s);
-            }
-            Err(e) => last = Some(e),
-        }
-    }
-    Err(last
-        .unwrap_or_else(|| std::io::Error::new(std::io::ErrorKind::AddrNotAvailable, "no addrs")))
-}
-
-fn drive_session(
-    mut stream: TcpStream,
-    cfg: &DaemonConfig,
-    metrics: &BridgeMetrics,
-) -> std::io::Result<()> {
-    // 1) Send AMQP-protocol-header.
-    stream.write_all(&AMQP_PROTOCOL_HEADER)?;
-    metrics
-        .bytes_out_total
-        .add(AMQP_PROTOCOL_HEADER.len() as u64);
-
-    // 2) Read peer-protocol-header (8 bytes).
-    let mut peer_hdr = [0u8; 8];
-    stream.read_exact(&mut peer_hdr)?;
-    if &peer_hdr[..4] != b"AMQP" {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "peer not AMQP",
-        ));
-    }
-    eprintln!("{{\"event\":\"protocol_header_ok\"}}");
-
-    // 3) OPEN performative.
-    let open_body = open(&cfg.container_id)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, format!("{e:?}")))?;
-    write_amqp_frame_metered(&mut stream, 0, &open_body, metrics)?;
-    eprintln!(
-        "{{\"event\":\"open_sent\",\"container_id\":\"{}\"}}",
-        cfg.container_id
-    );
-
-    // 4) Read peer OPEN (or whatever they send first).
-    let _peer_open = read_amqp_frame_metered(&mut stream, metrics)?;
-    eprintln!("{{\"event\":\"open_recvd\"}}");
-
-    // 5) BEGIN session 0.
-    let begin_body = begin(None, 0, 1024, 1024)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, format!("{e:?}")))?;
-    write_amqp_frame_metered(&mut stream, 0, &begin_body, metrics)?;
-    let _peer_begin = read_amqp_frame_metered(&mut stream, metrics)?;
-    eprintln!("{{\"event\":\"begin_complete\"}}");
-
-    // 6) Per topic-mapping: ATTACH a sender or receiver link.
-    for (idx, t) in cfg.topics.iter().enumerate() {
-        let handle = idx as u32;
-        let is_sender = matches!(t.direction.as_str(), "out" | "bidir");
-        let link_name = format!("{}/{}/{}", cfg.container_id, t.dds_name, t.direction);
-        let attach_body = attach(&link_name, handle, is_sender)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, format!("{e:?}")))?;
-        write_amqp_frame_metered(&mut stream, 0, &attach_body, metrics)?;
-        eprintln!(
-            "{{\"event\":\"attach_sent\",\"link\":\"{link_name}\",\"role\":\"{}\",\"address\":\"{}\"}}",
-            if is_sender { "sender" } else { "receiver" },
-            t.amqp_address,
-        );
-        // Best-effort: read peer ATTACH response.
-        let _ = read_amqp_frame_metered(&mut stream, metrics);
-
-        // 7) FLOW: grant credit on receivers; sender sends one TRANSFER stub.
-        if is_sender {
-            let xf = transfer(handle, Some(idx as u32), true).map_err(|e| {
-                std::io::Error::new(std::io::ErrorKind::InvalidData, format!("{e:?}"))
-            })?;
-            write_amqp_frame_metered(&mut stream, 0, &xf, metrics)?;
-            metrics.dds_samples_out_total.inc();
-            eprintln!("{{\"event\":\"transfer_sent\",\"handle\":{handle},\"delivery_id\":{idx}}}");
-        } else {
-            let fl = flow(1024, 0, 1024).map_err(|e| {
-                std::io::Error::new(std::io::ErrorKind::InvalidData, format!("{e:?}"))
-            })?;
-            write_amqp_frame_metered(&mut stream, 0, &fl, metrics)?;
-            eprintln!("{{\"event\":\"flow_sent\",\"handle\":{handle},\"credit\":1024}}");
-        }
-    }
-
-    // 8) Graceful drain: DETACH each link, END session, CLOSE container.
-    for (idx, _t) in cfg.topics.iter().enumerate() {
-        let det = detach(idx as u32, true)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, format!("{e:?}")))?;
-        write_amqp_frame_metered(&mut stream, 0, &det, metrics)?;
-    }
-    let end_body = end()
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, format!("{e:?}")))?;
-    write_amqp_frame_metered(&mut stream, 0, &end_body, metrics)?;
-    let close_body = close()
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, format!("{e:?}")))?;
-    write_amqp_frame_metered(&mut stream, 0, &close_body, metrics)?;
-
-    Ok(())
-}
-
-fn write_amqp_frame(stream: &mut TcpStream, channel: u16, body: &[u8]) -> std::io::Result<()> {
-    let total_size = 8u32 + body.len() as u32;
-    let h = FrameHeader {
-        size: total_size,
-        doff: 2, // 8-byte header / 4 = 2 words, no extended header.
-        frame_type: FrameType::Amqp,
-        channel,
-    };
-    let hdr = encode_frame_header(h);
-    stream.write_all(&hdr)?;
-    stream.write_all(body)?;
-    Ok(())
-}
-
-fn write_amqp_frame_metered(
-    stream: &mut TcpStream,
-    channel: u16,
-    body: &[u8],
-    metrics: &BridgeMetrics,
-) -> std::io::Result<()> {
-    write_amqp_frame(stream, channel, body)?;
-    metrics.frames_out_total.inc();
-    metrics.bytes_out_total.add((8 + body.len()) as u64);
-    Ok(())
-}
-
-/// Hard cap on a single AMQP 1.0 frame (16 MiB) — see
-/// `crates/amqp-endpoint/src/client.rs::MAX_AMQP_FRAME_SIZE` for the
-/// rationale (this bridge daemon doesn't share that module, so the cap
-/// is duplicated at the same value rather than pulled in).
-const MAX_AMQP_FRAME_SIZE: u32 = 16 * 1024 * 1024;
-
-fn read_amqp_frame(stream: &mut TcpStream) -> std::io::Result<Vec<u8>> {
-    let mut hdr = [0u8; 8];
-    stream.read_exact(&mut hdr)?;
-    let parsed = decode_frame_header(&hdr)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, format!("{e:?}")))?;
-    if parsed.size < 8 {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "frame size < 8",
-        ));
-    }
-    if parsed.size > MAX_AMQP_FRAME_SIZE {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            format!(
-                "AMQP frame size {} exceeds MAX_AMQP_FRAME_SIZE ({MAX_AMQP_FRAME_SIZE})",
-                parsed.size
-            ),
-        ));
-    }
-    let body_len = (parsed.size - 8) as usize;
-    let mut body = vec![0u8; body_len];
-    if body_len > 0 {
-        stream.read_exact(&mut body)?;
-    }
-    Ok(body)
-}
-
-fn read_amqp_frame_metered(
-    stream: &mut TcpStream,
-    metrics: &BridgeMetrics,
-) -> std::io::Result<Vec<u8>> {
-    let body = read_amqp_frame(stream)?;
-    metrics.frames_in_total.inc();
-    metrics.bytes_in_total.add((8 + body.len()) as u64);
-    Ok(body)
-}
-
-fn strip_amqp_scheme(uri: &str) -> String {
-    let trimmed = uri
-        .strip_prefix("amqps://")
-        .or_else(|| uri.strip_prefix("amqp://"))
-        .unwrap_or(uri);
-    if trimmed.contains(':') {
-        trimmed.to_string()
-    } else {
-        // Default port 5672 for amqp, 5671 for amqps.
-        if uri.starts_with("amqps://") {
-            format!("{trimmed}:5671")
-        } else {
-            format!("{trimmed}:5672")
-        }
-    }
-}
-
-// ============================================================================
-// Config (YAML-Subset Loader)
-// ============================================================================
-
-#[derive(Debug, Clone)]
-pub(crate) struct DaemonConfig {
-    pub broker_url: String,
-    pub container_id: String,
-    pub domain: i32,
-    pub channel_max: u16,
-    pub max_frame_size: u32,
-    pub idle_time_out_ms: u64,
-    pub hostname: String,
-    pub sasl_mechanism: String,
-    pub sasl_username: String,
-    pub sasl_password: String,
-    pub tls_enabled: bool,
-    pub tls_ca_file: String,
-    pub tls_cert_file: String,
-    pub tls_key_file: String,
-    pub topics: Vec<TopicMapping>,
-}
-
-impl Default for DaemonConfig {
-    fn default() -> Self {
-        Self {
-            broker_url: String::new(),
-            container_id: format!("zerodds-bridge-{}", hostname_or_pid_short()),
-            domain: 0,
-            channel_max: 256,
-            max_frame_size: 65536,
-            idle_time_out_ms: 30000,
-            hostname: String::new(),
-            sasl_mechanism: "ANONYMOUS".into(),
-            sasl_username: String::new(),
-            sasl_password: String::new(),
-            tls_enabled: false,
-            tls_ca_file: String::new(),
-            tls_cert_file: String::new(),
-            tls_key_file: String::new(),
-            topics: Vec::new(),
-        }
-    }
-}
-
-fn hostname_or_pid_short() -> String {
-    std::env::var("HOSTNAME")
-        .ok()
-        .map(|h| {
-            let mut s = h.replace('.', "-");
-            s.truncate(16);
-            s
-        })
-        .unwrap_or_else(|| format!("pid{}", std::process::id()))
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct TopicMapping {
-    pub dds_name: String,
-    pub amqp_address: String,
-    pub direction: String,
-}
-
-fn load_config(path: &str) -> Result<DaemonConfig, String> {
-    let raw = std::fs::read_to_string(path).map_err(|e| format!("read {path}: {e}"))?;
-    parse_yaml_subset(&raw)
-}
-
-fn parse_yaml_subset(s: &str) -> Result<DaemonConfig, String> {
-    let mut cfg = DaemonConfig::default();
-    let mut section: Vec<String> = Vec::new();
-    let mut cur_topic: Option<TopicMapping> = None;
-
-    for (lineno, raw) in s.lines().enumerate() {
-        let line = match raw.find('#') {
-            Some(i) => &raw[..i],
-            None => raw,
-        };
-        if line.trim().is_empty() {
-            continue;
-        }
-        let indent = line.bytes().take_while(|b| *b == b' ').count();
-        let trimmed = line.trim_start();
-        let depth = indent / 2;
-        section.truncate(depth);
-
-        if let Some(rest) = trimmed.strip_prefix("- ") {
-            if section.last().map(String::as_str) == Some("topics") {
-                if let Some(t) = cur_topic.take() {
-                    cfg.topics.push(t);
-                }
-                let mut t = TopicMapping {
-                    dds_name: String::new(),
-                    amqp_address: String::new(),
-                    direction: "bidir".into(),
-                };
-                if let Some((k, v)) = split_kv(rest) {
-                    set_topic_field(&mut t, k, unquote(v));
-                }
-                cur_topic = Some(t);
-            }
-            continue;
-        }
-
-        let Some((key, value)) = split_kv(trimmed) else {
-            return Err(format!("line {}: not k:v: `{trimmed}`", lineno + 1));
-        };
-
-        if value.is_empty() {
-            section.push(key.into());
-            continue;
-        }
-
-        let path_str = section.join("/");
-        match (path_str.as_str(), key) {
-            ("", "domain") => {
-                cfg.domain = value
-                    .parse()
-                    .map_err(|e| format!("line {}: bad domain: {e}", lineno + 1))?;
-            }
-            ("amqp", "broker_url") => cfg.broker_url = unquote(value).into(),
-            ("amqp", "container_id") => cfg.container_id = unquote(value).into(),
-            ("amqp", "channel_max") => {
-                cfg.channel_max = value
-                    .parse()
-                    .map_err(|e| format!("line {}: bad channel_max: {e}", lineno + 1))?;
-            }
-            ("amqp", "max_frame_size") => {
-                cfg.max_frame_size = value
-                    .parse()
-                    .map_err(|e| format!("line {}: bad max_frame_size: {e}", lineno + 1))?;
-            }
-            ("amqp", "idle_time_out_ms") => {
-                cfg.idle_time_out_ms = value
-                    .parse()
-                    .map_err(|e| format!("line {}: bad idle: {e}", lineno + 1))?;
-            }
-            ("amqp", "hostname") => cfg.hostname = unquote(value).into(),
-            ("amqp/sasl", "mechanism") => cfg.sasl_mechanism = unquote(value).into(),
-            ("amqp/sasl", "username") => cfg.sasl_username = unquote(value).into(),
-            ("amqp/sasl", "password") => cfg.sasl_password = unquote(value).into(),
-            ("amqp/tls", "enabled") => cfg.tls_enabled = matches!(value, "true" | "yes" | "1"),
-            ("amqp/tls", "ca_file") => cfg.tls_ca_file = unquote(value).into(),
-            ("amqp/tls", "cert_file") => cfg.tls_cert_file = unquote(value).into(),
-            ("amqp/tls", "key_file") => cfg.tls_key_file = unquote(value).into(),
-            (_, _) => {
-                if section.last().map(String::as_str) == Some("topics") {
-                    if let Some(t) = cur_topic.as_mut() {
-                        set_topic_field(t, key, unquote(value));
-                    }
-                }
-            }
-        }
-    }
-    if let Some(t) = cur_topic.take() {
-        cfg.topics.push(t);
-    }
-    Ok(cfg)
-}
-
-fn set_topic_field(t: &mut TopicMapping, key: &str, val: &str) {
-    match key {
-        "dds_name" => t.dds_name = val.into(),
-        "amqp_address" => t.amqp_address = val.into(),
-        "direction" => t.direction = val.into(),
-        _ => {}
-    }
-}
-
-fn split_kv(s: &str) -> Option<(&str, &str)> {
-    let i = s.find(':')?;
-    Some((s[..i].trim(), s[i + 1..].trim()))
-}
-
-fn unquote(s: &str) -> &str {
-    if (s.starts_with('"') && s.ends_with('"')) || (s.starts_with('\'') && s.ends_with('\'')) {
-        if s.len() >= 2 {
-            return &s[1..s.len() - 1];
-        }
-    }
-    s
-}
-
-// ============================================================================
-// Tests
-// ============================================================================
-
 #[cfg(test)]
-#[allow(clippy::expect_used)]
-mod tests {
-    use super::*;
+#[allow(clippy::panic)]
+mod metrics_default_tests {
+    use super::DEFAULT_METRICS_LISTEN;
 
-    // -------------------------------------------------------------
-    // Buffer-cap hardening — a peer-announced frame `size` above
-    // MAX_AMQP_FRAME_SIZE must be rejected cleanly (no multi-GB
-    // allocation attempt) right after the 8-byte header is read,
-    // before the body is read/allocated. Mirrors the established
-    // `crates/transport-tcp/src/framing.rs::MAX_FRAME_SIZE` guard.
-    // -------------------------------------------------------------
-
+    /// Each bridge daemon has its own admin port, so that several with
+    /// `metrics.enabled: true` and no `metrics.listen` run on one host;
+    /// man5 names it as the default.
     #[test]
-    fn read_amqp_frame_rejects_oversized_size_cleanly() {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
-        let addr = listener.local_addr().expect("local_addr");
-        let handle = std::thread::spawn(move || {
-            let mut stream = TcpStream::connect(addr).expect("connect");
-            // Header only: size far beyond MAX_AMQP_FRAME_SIZE. No body
-            // bytes follow — read_amqp_frame must reject before ever
-            // attempting to read/allocate the body.
-            let h = FrameHeader {
-                size: u32::MAX,
-                doff: 2,
-                frame_type: FrameType::Amqp,
-                channel: 0,
-            };
-            stream
-                .write_all(&encode_frame_header(h))
-                .expect("write header");
-        });
-        let (mut accepted, _) = listener.accept().expect("accept");
-        let res = read_amqp_frame(&mut accepted);
-        assert!(res.is_err(), "expected clean rejection, got {res:?}");
-        handle.join().expect("writer thread");
-    }
-
-    #[test]
-    fn amqp_frame_within_bound_still_round_trips() {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
-        let addr = listener.local_addr().expect("local_addr");
-        let body = vec![1u8, 2, 3, 4];
-        let handle = std::thread::spawn(move || {
-            let mut stream = TcpStream::connect(addr).expect("connect");
-            write_amqp_frame(&mut stream, 0, &body).expect("write frame");
-        });
-        let (mut accepted, _) = listener.accept().expect("accept");
-        let got = read_amqp_frame(&mut accepted).expect("read_amqp_frame");
-        assert_eq!(got, vec![1u8, 2, 3, 4]);
-        handle.join().expect("writer thread");
-    }
-
-    #[test]
-    fn config_default_uses_anonymous_sasl() {
-        let c = DaemonConfig::default();
-        assert_eq!(c.sasl_mechanism, "ANONYMOUS");
-        assert_eq!(c.channel_max, 256);
-        assert_eq!(c.max_frame_size, 65536);
-    }
-
-    #[test]
-    fn parse_minimal_amqp_config() {
-        let yaml = "\
-domain: 7
-amqp:
-  broker_url: \"amqp://broker.example:5672\"
-  container_id: \"zerodds-prod-01\"
-  channel_max: 128
-  sasl:
-    mechanism: \"PLAIN\"
-    username: \"alice\"
-    password: \"secret\"
-";
-        let cfg = parse_yaml_subset(yaml).expect("parse");
-        assert_eq!(cfg.domain, 7);
-        assert_eq!(cfg.broker_url, "amqp://broker.example:5672");
-        assert_eq!(cfg.container_id, "zerodds-prod-01");
-        assert_eq!(cfg.channel_max, 128);
-        assert_eq!(cfg.sasl_mechanism, "PLAIN");
-        assert_eq!(cfg.sasl_username, "alice");
-    }
-
-    #[test]
-    fn parse_topics_array() {
-        let yaml = "\
-topics:
-  - dds_name: \"Chat::Message\"
-    amqp_address: \"topic://chat/message\"
-    direction: \"bidir\"
-  - dds_name: \"Sensor::Reading\"
-    amqp_address: \"queue://sensors\"
-    direction: \"out\"
-";
-        let cfg = parse_yaml_subset(yaml).expect("parse");
-        assert_eq!(cfg.topics.len(), 2);
-        assert_eq!(cfg.topics[0].dds_name, "Chat::Message");
-        assert_eq!(cfg.topics[0].amqp_address, "topic://chat/message");
-        assert_eq!(cfg.topics[1].direction, "out");
-    }
-
-    #[test]
-    fn parse_invalid_yaml_returns_err() {
-        let res = parse_yaml_subset("this is not yaml");
-        assert!(res.is_err());
-    }
-
-    #[test]
-    fn strip_scheme_default_ports() {
-        assert_eq!(strip_amqp_scheme("amqp://host"), "host:5672");
-        assert_eq!(strip_amqp_scheme("amqps://host"), "host:5671");
-        assert_eq!(strip_amqp_scheme("amqp://host:1234"), "host:1234");
-        assert_eq!(strip_amqp_scheme("host:9999"), "host:9999");
-    }
-
-    #[test]
-    fn protocol_header_is_canonical() {
-        assert_eq!(&AMQP_PROTOCOL_HEADER, b"AMQP\x00\x01\x00\x00");
+    fn the_metrics_default_is_the_one_man5_names() {
+        let page = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../man/man5/zerodds-amqp-bridged.yaml.5"
+        ))
+        .unwrap_or_else(|e| panic!("man5 page: {e}"));
+        let named = format!("Default\n.IR \"{DEFAULT_METRICS_LISTEN}\"\nwhen");
+        assert!(
+            page.contains(&named),
+            "man5 does not name {DEFAULT_METRICS_LISTEN}"
+        );
     }
 }

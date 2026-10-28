@@ -1,0 +1,5 @@
+// primitive `wchar`, unannotated
+struct Sample {
+    wchar wide_letter_a;
+    wchar wide_letter_b;
+};

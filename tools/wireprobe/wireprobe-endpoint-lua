@@ -1,0 +1,29 @@
+#!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 ZeroDDS Contributors
+#
+# wireprobe-endpoint-lua — one IDL type and one JSON sample, through the
+# hand-written endpoint SDK in endpoints/lua/zerodds.lua.
+#
+# The same command line as every other column's probe, so a case runs
+# through any of them by substituting the program name:
+#
+#   wireprobe-endpoint-lua --idl robot.idl --type common::Robot \
+#       --values robot.json --encoding plain-cdr2 --endian le \
+#       --out robot.endpoint-lua.plain-cdr2.le.bin
+#
+# The SDK is string.pack/string.unpack, which is Lua 5.3 and later; an
+# older interpreter is named as such rather than reported as a defect of
+# the SDK, which is how "attempt to call a nil value" would otherwise
+# read.
+#
+# The write direction only. This column measures what the SDK puts on
+# the wire.
+#
+# The body is tools/wireprobe/endpoint-common.sh; the fifteen differ only
+# in which compiler runs and which SDK is linked, and fifteen copies of
+# the caching and the exit codes would be fifteen places for them to
+# drift apart.
+set -uo pipefail
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/endpoint-common.sh"
+endpoint_probe lua "$@"

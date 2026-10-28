@@ -1,0 +1,10 @@
+// `map` with a structure value
+@appendable struct Cell {
+    long a;
+    short b;
+};
+
+@final struct Sample {
+    map<long, Cell> entries;
+    long tail;
+};

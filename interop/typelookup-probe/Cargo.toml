@@ -1,0 +1,24 @@
+# Measurement crate for the TypeLookup encapsulation of DDSI-RTPS 2.5 §10.4:
+# a ZeroDDS endpoint on the topics of the roundtrip bench whose type has the
+# bench type's name and another extensibility, so that a Fast DDS or OpenDDS
+# peer and ZeroDDS each have to fetch the other's TypeObject. Own
+# `[workspace]` table: never built by a `cargo build` at the repo root.
+[package]
+name = "typelookup-probe"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+zerodds-dcps = { path = "../../crates/dcps" }
+zerodds-wire = { path = "../../crates/wire" }
+zerodds-types = { path = "../../crates/types" }
+
+[build-dependencies]
+zerodds-build = { path = "../../crates/zerodds-build" }
+
+[[bin]]
+name = "typelookup-probe"
+path = "src/main.rs"
+
+[workspace]

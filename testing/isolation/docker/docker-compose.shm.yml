@@ -1,20 +1,20 @@
 # ⚠  TESTING-ONLY — NOT FOR PRODUCTION DEPLOYMENT  ⚠
 #
-# `ipc: host` und bind-mount von /dev/shm oeffnen die IPC-Grenzen
-# des Host-Systems fuer beide Container. Ein boesartiger Container
-# kann damit andere SHM-Konsumenten (ROS-Nodes, PostgreSQL,
-# Chromium-Render-Processes) auslesen. Dieses Compose-File ist
-# ausschliesslich fuer die Isolation-Smoke-Tests der ZeroDDS-Pipeline
-# gedacht (phase2-0-smells #13). Fuer produktive SHM-Deployments
-# muss per-pair ein eigener Namespace und ein dedizierter volume
-# mount (kein /dev/shm) verwendet werden.
+# `ipc: host` and the bind mount of /dev/shm open the IPC boundaries
+# of the host system for both containers. A malicious container
+# can thereby read other SHM consumers (ROS nodes, PostgreSQL,
+# Chromium render processes). This Compose file is
+# intended exclusively for the isolation smoke tests of the ZeroDDS pipeline
+# (phase2-0-smells #13). For production SHM deployments
+# a separate namespace per pair and a dedicated volume
+# mount (not /dev/shm) must be used.
 #
-# L3 SHM-Smoke: zwei Container mit geteiltem `/dev/shm`.
+# L3 SHM smoke test: two containers with a shared `/dev/shm`.
 #
-# Beide Container mounten `/dev/shm` vom host — das ist der
-# Standard-Docker-Pattern fuer cross-container POSIX-SHM. Auf
-# Kubernetes: `emptyDir.medium: Memory` mit `subPathExpr`
-# geteilt ueber einen shared PVC.
+# Both containers mount `/dev/shm` from the host — this is the
+# standard Docker pattern for cross-container POSIX SHM. On
+# Kubernetes: `emptyDir.medium: Memory` with `subPathExpr`,
+# shared via a shared PVC.
 #
 # Run:
 #   docker compose -f docker-compose.shm.yml up --build \

@@ -4,7 +4,7 @@
 #
 # Full ZeroDDS ↔ RabbitMQ AMQP interop e2e suite (both protocols + cross-stack).
 # Requires the base from setup_rabbitmq.sh (RabbitMQ 4.0 + pika + qpid-proton).
-# Run from a ZeroDDS checkout on the Linux test host (codepit).
+# Run from a ZeroDDS checkout on the Linux test host.
 #
 #   Path A (AMQP 1.0):   ZeroDDS-1.0 ⇄ RabbitMQ ⇄ pika-0.9.1
 #   Path B (AMQP 0.9.1): ZeroDDS-0.9.1 self + ⇄ pika-0.9.1 + → proton-1.0

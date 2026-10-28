@@ -1,36 +1,33 @@
 # `zerodds-dlrl-codegen`
 
-DLRL code-gen helpers: emits home/object boilerplate for cpp/csharp/java/ts
+DLRL code generation — DDS 1.4 Annex B.4.
 
-Part of [**ZeroDDS**](../../README.md). Safety classification: **STANDARD**.
+Turns the three DLRL pragmas — `DCPS_DATA_TYPE`, `DCPS_DATA_KEY` and
+`DCPS_DLRL_RELATION` — into the object and home classes an application
+programs against: one object class per data type, a getter per key
+field, an accessor per relation.
 
-## Status
+## Targets
 
-This README is auto-generated from `Cargo.toml` metadata. For
-hand-written documentation see the rustdoc on the crate's public
-items, or the relevant station in the
-[Documentation Trail](../../documentation/README.md).
+| target | mapping |
+|---|---|
+| C++ | DDS 1.4 §B.6 / §B.7, the specification's own PSM |
+| Java | DDS 1.4 §B.8 |
+| C# | no OMG PSM exists; follows the Java shape, and the generated file says so |
+| TypeScript | no OMG PSM exists; interface plus implementing class |
 
-## Usage
+## Why this emits text and not a `lang-cst` tree
 
-Add to your `Cargo.toml`:
+Everything else here that generates code goes through
+`zerodds-lang-cst`, because what it generates has to agree with a wire
+format octet for octet. A DLRL object class is not on a wire — §B.6
+describes the shape an application programs against, and no reader
+parses it. There is nothing for a CST to keep consistent across
+backends, and two of the four targets have no `lang-cst` dialect at all.
 
-```toml
-[dependencies]
-zerodds-dlrl-codegen = { path = "../path/to/dlrl-codegen" }
-# or, when published:
-# zerodds-dlrl-codegen = "0.x"
-```
+## The C# name rule
 
-## Tests
-
-```bash
-cargo test -p zerodds-dlrl-codegen
-```
-
-## See also
-
-* [`docs/architecture/02_architecture.md`](../../docs/architecture/02_architecture.md) —
-  layered crate architecture.
-* [`documentation/02-architecture/components.md`](../../documentation/02-architecture/components.md) —
-  per-crate map (English).
+C# properties are `PascalCase`, so a key written `venue` in IDL becomes
+`Venue`. That rename is why `[DlrlKey("venue")]` carries the IDL name
+verbatim: the DCPS topic's key is `venue`, and a class that only knows
+`Venue` cannot be matched back to it.

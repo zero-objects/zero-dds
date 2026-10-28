@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of union-discriminator-wchar-unannotated that opendds produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	Error - tao_idl: union with illegal discriminator type,
+plain-cdr1	be	refused	Error - tao_idl: union with illegal discriminator type,
+pl-cdr1	le	refused	Error - tao_idl: union with illegal discriminator type,
+pl-cdr1	be	refused	Error - tao_idl: union with illegal discriminator type,
+plain-cdr2	le	refused	Error - tao_idl: union with illegal discriminator type,
+plain-cdr2	be	refused	Error - tao_idl: union with illegal discriminator type,
+delimited-cdr	le	refused	Error - tao_idl: union with illegal discriminator type,
+delimited-cdr	be	refused	Error - tao_idl: union with illegal discriminator type,
+pl-cdr2	le	refused	Error - tao_idl: union with illegal discriminator type,
+pl-cdr2	be	refused	Error - tao_idl: union with illegal discriminator type,

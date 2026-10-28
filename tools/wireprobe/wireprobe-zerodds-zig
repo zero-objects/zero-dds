@@ -1,0 +1,177 @@
+#!/bin/bash
+# wireprobe-zerodds-zig — one IDL type and one JSON value, through the
+# ZeroDDS Zig binding built by the shared codec walk.
+#
+# The same command line as `wireprobe-zerodds`, so a case runs through
+# both by substituting the program name. See
+# `docs/specs/zerodds-interop-suite-1.0.md` §3a.
+#
+#   wireprobe-zerodds-zig --idl robot.idl --type common::Robot \
+#                         --values robot.json --encoding xcdr2 \
+#                         --endian le --out robot.zerodds-zig.xcdr2.le.bin
+#
+#   wireprobe-zerodds-zig --idl robot.idl --type common::Robot \
+#                         --in robot.cyclone.xcdr2.le.bin \
+#                         --encoding xcdr2 --endian le \
+#                         --values-out robot.read.json
+#
+# ## What is shared with the Rust probe and what is not
+#
+# Shared: the frontend, the common AST and the layout plan. Which
+# members are written, in what order, with which header and which length
+# code is `zerodds-ast-layout`'s answer, and a second answer would be a
+# second place for the wire format to live.
+#
+# Not shared: the serialiser. The generated program is compiled together
+# with `runtime/zig/zdwire.zig`, which implements DDS-XTypes 1.3 §7.4 a
+# further time in Zig. Nothing here reaches the Rust runtime through
+# FFI: a probe that did would be byte-identical by construction and
+# would prove nothing about whether the two read the specification the
+# same way.
+#
+# ## The exit codes
+#
+# `docs/specs/zerodds-verdicts-1.0.md`, and structural rather than read
+# out of a message:
+#
+#   0  it carried the case
+#   1  refused — it was asked and said no. Two ways in. The sample is
+#      outside the type: `primitive-char-above-latin1` is a `char`
+#      holding U+0161 and §7.2.2.2.1.2.2 says a CHAR_8_TYPE "shall be
+#      representable using 8 bits", and the refusal happens at run time
+#      in `zdwire.checkedChar`, so it is the runtime's and not a gap.
+#      Or the model is: `recursive-array` closes a type cycle without a
+#      sequence or a map in it, which IDL 4.2 §7.4.1.4.4.4.4 does not
+#      admit, and `zerodds-ast-layout` says so before any Zig is
+#      written. The Rust probe answers 1 for both.
+#   2  the command line
+#   3  no-form — Zig has no form for the construct, which is
+#      `adapter/zig.rs`'s answer and nobody else's
+#   6  harness-gap — a tool of ours has not written it: the generator
+#      did not build, the shared walk has no writer or reader for a
+#      construct, or the toolchain is missing
+#   7  generator-defect — the generator accepted the case and the Zig it
+#      produced does not compile
+set -euo pipefail
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+root="$(cd "$here/../.." && pwd)"
+runtime="${ZERODDS_ZIG_RUNTIME:-$root/runtime/zig}"
+ZIG="${ZIG:-zig}"
+
+if ! "$ZIG" version >/dev/null 2>&1; then
+    echo "wireprobe-zerodds-zig: \`$ZIG\` is not on the path; the Zig column is unmeasured here" >&2
+    exit 9
+fi
+
+# Zig 0.14 cannot link against the macOS 26 SDK's libSystem stubs — the
+# probe binary comes back with `_abort` and `_bzero` undefined — and an
+# explicit `-target` makes it take the compiler's own bundled stubs
+# instead. Measured on Darwin 25 with Zig 0.14.1; harmless elsewhere on
+# macOS and not applied off it.
+target_flag=()
+if [ "$(uname -s)" = Darwin ]; then
+    case "$(uname -m)" in
+        arm64) target_flag=(-target aarch64-macos.14.0-none) ;;
+        x86_64) target_flag=(-target x86_64-macos.14.0-none) ;;
+    esac
+fi
+
+gen="${WIREPROBE_ZIG_GEN:-}"
+if [ -z "$gen" ]; then
+    gen="${CARGO_TARGET_DIR:-$root/target}/debug/wireprobe-zerodds-zig-gen"
+    # Built when it is missing *or stale*: a generator older than the
+    # sources it came from measures the previous build.
+    . "$here/generator.sh"
+    probe_generator zerodds-wireprobe-zig-gen "$gen" "$root" || exit 6
+fi
+
+out=""
+values_out=""
+argv=()
+idl=""
+reading=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --out) out="$2"; shift 2 ;;
+        --values-out) values_out="$2"; argv+=("$1" "$2"); shift 2 ;;
+        --in) reading=1; argv+=("$1" "$2"); shift 2 ;;
+        --idl|--type|--values|--encoding|--endian|--emit|--dialect)
+            if [ "$1" = --idl ]; then idl="$2"; fi
+            argv+=("$1" "$2"); shift 2 ;;
+        --help|-h) sed -n '2,54p' "${BASH_SOURCE[0]}"; exit 0 ;;
+        *) echo "wireprobe-zerodds-zig: \`$1\` is not an option" >&2; exit 2 ;;
+    esac
+done
+
+. "$here/diagnostics.sh"
+. "$here/probe-cache.sh"
+
+work="$(mktemp -d)"
+trap 'probe_keep_generated "$work" "zerodds-zig" "$idl" main.zig; rm -rf "$work"' EXIT
+
+# The generator's own code passes straight through: 3 is "Zig has no
+# form for it" and 6 is "a tool of ours stopped", and folding the two
+# into one here would lose the distinction the ledger turns on.
+code=0
+"$gen" "${argv[@]}" --out-dir "$work" || code=$?
+[ "$code" = 0 ] || exit "$code"
+
+# The runtime module is compiled beside the probe rather than linked
+# from anywhere; `@import("zdwire.zig")` resolves next to `main.zig`.
+cp "$runtime/zdwire.zig" "$work/zdwire.zig"
+
+# A binary already built from exactly these inputs is reused: the key is
+# the *content* of the generated program and of the runtime it is
+# compiled with, plus the compiler that did it. Off unless
+# WIREPROBE_CACHE names a directory, as in the sibling drivers.
+zig_version="$("$ZIG" version)"
+cache_key="$(probe_cache_key zerodds-zig "$zig_version" "${target_flag[*]:-}" -- \
+    "$work/main.zig" "$work/zdwire.zig")"
+cache_dir="$(probe_cache_dir "$cache_key")"
+if [ -n "$cache_dir" ] && [ -x "$cache_dir/probe" ]; then
+    cp "$cache_dir/probe" "$work/probe"
+else
+    # The Zig compiler is the syntax and type check in one: a generated
+    # file that is not Zig is the generator's defect, exit 7, which
+    # every compiled column reports the same way.
+    if ! (cd "$work" && "$ZIG" build-exe main.zig -femit-bin=probe \
+            --cache-dir "$work/zig-cache" "${target_flag[@]}") > "$work/build.log" 2>&1; then
+        echo "wireprobe-zerodds-zig: the generated Zig does not compile" >&2
+        head -20 "$work/build.log" >&2 || true
+        probe_diagnostics_after "zerodds-zig" "$work" "$idl" 7
+        exit 7
+    fi
+    if [ -n "$cache_dir" ]; then
+        publish="$(mktemp -d)"
+        cp "$work/probe" "$publish/probe"
+        probe_cache_publish "$publish" "$cache_dir"
+    fi
+fi
+probe_diagnostics_after "zerodds-zig" "$work" "$idl" 0
+
+code=0
+"$work/probe" > "$work/bytes.bin" 2> "$work/run.log" || code=$?
+if [ "$code" != 0 ]; then
+    head -5 "$work/run.log" >&2 || true
+    [ "$code" = 1 ] && exit 1
+    [ "$code" = 3 ] && exit 3
+    echo "wireprobe-zerodds-zig: the probe did not run" >&2
+    exit 6
+fi
+
+# The read direction writes its JSON where `--values-out` said and puts
+# nothing on stdout, so there are no octets to hand back.
+if [ "$reading" = 1 ]; then
+    [ -n "$values_out" ] || {
+        echo "wireprobe-zerodds-zig: --in without --values-out" >&2
+        exit 2
+    }
+    exit 0
+fi
+
+if [ -n "$out" ]; then
+    cp "$work/bytes.bin" "$out"
+else
+    od -An -tx1 -v "$work/bytes.bin" | tr -d ' \n'; echo
+fi

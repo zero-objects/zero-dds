@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! `zerodds-cli-common` — interne Helfer für die ZeroDDS-CLI-Tools.
+//! `zerodds-cli-common` — internal helpers for the ZeroDDS CLI tools.
 //!
 //! Crate `zerodds-cli-common`. Safety classification: **COMFORT**.
-//! Reine Tooling-Helfer (CLI-frontend), keine Runtime-Pfade.
+//! Pure tooling helpers (CLI frontend), no runtime paths.
 //!
-//! Sammelt die wenigen pieces of boilerplate die alle 7 Tools
+//! Collects the few pieces of boilerplate that all 7 tools
 //! (`zerodds-record`, `-bench`, `-monitor`, `-spy`, `-snitch`,
-//! `-pcap`, `-mq`) brauchen: SIGINT/SIGTERM-Hook, GUID-Prefix-
-//! Generation, Duration-Parsing mit `s/m/h`-Suffixen.
+//! `-pcap`, `-mq`) need: SIGINT/SIGTERM hook, GUID-prefix
+//! generation, duration parsing with `s/m/h` suffixes.
 //!
-//! **Nicht für externe Konsumenten** — keine Stabilitäts-Garantie,
-//! keine Crates.io-Publikation.
+//! **Not for external consumers** — no stability guarantee,
+//! no Crates.io publication.
 
 #![warn(missing_docs)]
 #![allow(clippy::module_name_repetitions)]
@@ -21,31 +21,44 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use zerodds_dcps::runtime::UserReaderConfig;
-use zerodds_qos::{DeadlineQosPolicy, DurabilityKind, LivelinessQosPolicy, OwnershipKind};
+use zerodds_dcps::runtime::{UserReaderConfig, UserWriterConfig};
 use zerodds_rtps::wire_types::GuidPrefix;
 
-/// Erzeugt einen prozess-stabilen `GuidPrefix` aus PID + nanos +
-/// Tool-Marker-Byte.
+/// Generates a process-stable `GuidPrefix` in the layout every ZeroDDS
+/// participant uses (`GuidPrefix::zerodds`): the vendor id in bytes 0..2
+/// (DDSI-RTPS 2.5 §9.3.1.5), the host identifier
+/// ([`zerodds_dcps::participant::host_id_bytes`]) in 2..6, the PID in
+/// 6..10, the tool marker in byte 10 and the low byte of the sub-second
+/// nanos in 11.
 ///
-/// `marker` (z.B. `0xFE` für record, `0xFD` für bench) landet im
-/// vorletzten Byte und macht die Prefixe pro Tool trennbar.
+/// `marker` (e.g. `0xFE` for record, `0xFD` for bench) makes the prefixes
+/// separable per tool. The host identifier is what makes a tool a
+/// same-host peer of the participants it talks to
+/// (`GuidPrefix::is_same_host`): with the PID there instead, every other
+/// participant took a recorder for a remote host and sent it everything
+/// over UDP.
 #[must_use]
 pub fn stable_prefix(marker: u8) -> GuidPrefix {
-    let mut bytes = [0u8; 12];
-    let pid = std::process::id();
-    bytes[0..4].copy_from_slice(&pid.to_le_bytes());
+    let pid = std::process::id().to_le_bytes();
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .subsec_nanos();
-    bytes[4..8].copy_from_slice(&nanos.to_le_bytes());
-    bytes[8] = marker;
-    GuidPrefix::from_bytes(bytes)
+    GuidPrefix::zerodds(
+        zerodds_dcps::participant::host_id_bytes(),
+        [
+            pid[0],
+            pid[1],
+            pid[2],
+            pid[3],
+            marker,
+            nanos.to_le_bytes()[0],
+        ],
+    )
 }
 
-/// Berechnet die Participant-GUID (16 Byte: 12 prefix + 4 EntityId
-/// `00 00 00 C1` für `ENTITYID_PARTICIPANT`).
+/// Computes the Participant GUID (16 bytes: 12 prefix + 4 EntityId
+/// `00 00 00 C1` for `ENTITYID_PARTICIPANT`).
 #[must_use]
 pub fn participant_guid(prefix: GuidPrefix) -> [u8; 16] {
     let mut g = [0u8; 16];
@@ -55,7 +68,7 @@ pub fn participant_guid(prefix: GuidPrefix) -> [u8; 16] {
     g
 }
 
-/// Unix-Zeit in Nanosekunden (i64; -1 bei System-Clock-Failure).
+/// Unix time in nanoseconds (i64; -1 on system clock failure).
 #[must_use]
 pub fn unix_ns_now() -> i64 {
     let dur = SystemTime::now()
@@ -68,10 +81,10 @@ pub fn unix_ns_now() -> i64 {
     i64::try_from(total).unwrap_or(i64::MAX)
 }
 
-/// Fehler beim Parsen einer Duration-Spec wie `30s`.
+/// Error while parsing a duration spec like `30s`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DurationParseError {
-    /// Eingabe die nicht parse-bar war.
+    /// Input that was not parseable.
     pub input: String,
 }
 
@@ -83,10 +96,10 @@ impl std::fmt::Display for DurationParseError {
 
 impl std::error::Error for DurationParseError {}
 
-/// Parst `5`, `5s`, `2m`, `1h` zu einer `Duration`.
+/// Parses `5`, `5s`, `2m`, `1h` into a `Duration`.
 ///
 /// # Errors
-/// [`DurationParseError`] bei nicht-numerischem Prefix oder unbekannter Einheit.
+/// [`DurationParseError`] on non-numeric prefix or unknown unit.
 pub fn parse_duration(s: &str) -> Result<Duration, DurationParseError> {
     let bad = || DurationParseError {
         input: s.to_string(),
@@ -104,9 +117,9 @@ pub fn parse_duration(s: &str) -> Result<Duration, DurationParseError> {
     Ok(Duration::from_secs(secs))
 }
 
-/// Installiert einen SIGINT/SIGTERM-Handler der bei Receive das
-/// `stop`-Flag auf `true` setzt. Auf Windows ist das eine no-op
-/// (User stoppt mit Task-Kill oder `--duration`).
+/// Installs a SIGINT/SIGTERM handler that on receive sets the
+/// `stop` flag to `true`. On Windows this is a no-op
+/// (user stops with task-kill or `--duration`).
 pub fn install_signal_handler(stop: Arc<AtomicBool>) {
     install_inner(stop);
 }
@@ -125,8 +138,8 @@ fn install_inner(stop: Arc<AtomicBool>) {
             }
         }
     }
-    // SAFETY: libc::signal nimmt einen C-ABI-Funktionspointer; `handler`
-    // ist `extern "C"` und passt auf die libc-Signatur.
+    // SAFETY: libc::signal takes a C-ABI function pointer; `handler`
+    // is `extern "C"` and matches the libc signature.
     unsafe {
         libc::signal(libc::SIGINT, handler as usize);
         libc::signal(libc::SIGTERM, handler as usize);
@@ -136,7 +149,7 @@ fn install_inner(stop: Arc<AtomicBool>) {
 #[cfg(not(unix))]
 fn install_inner(_stop: Arc<AtomicBool>) {}
 
-/// Default `UserReaderConfig` für untyped/`zerodds::RawBytes`-Topics.
+/// Default `UserReaderConfig` for untyped/`zerodds::RawBytes` topics.
 #[must_use]
 pub fn raw_reader_config(topic: &str) -> UserReaderConfig {
     raw_reader_config_typed(topic, RAW_BYTES_TYPE_NAME)
@@ -163,21 +176,19 @@ pub fn raw_reader_config_typed(topic: &str, type_name: &str) -> UserReaderConfig
     UserReaderConfig {
         topic_name: topic.to_string(),
         type_name: type_name.to_string(),
-        reliable: true,
-        durability: DurabilityKind::Volatile,
-        deadline: DeadlineQosPolicy::default(),
-        latency_budget: Default::default(),
-        destination_order: Default::default(),
-        liveliness: LivelinessQosPolicy::default(),
-        ownership: OwnershipKind::Shared,
-        presentation: Default::default(),
-        partition: Vec::new(),
-        user_data: Vec::new(),
-        topic_data: Vec::new(),
-        group_data: Vec::new(),
-        type_identifier: zerodds_types::TypeIdentifier::None,
-        type_consistency: zerodds_types::qos::TypeConsistencyEnforcement::default(),
-        data_representation_offer: None,
+        ..Default::default()
+    }
+}
+
+/// The `UserWriterConfig` the bridging and measuring tools (`zerodds-bench`,
+/// `zerodds-mq`) write their raw samples with: RELIABLE and VOLATILE, every
+/// other policy at its default, no TypeObject announced.
+#[must_use]
+pub fn reliable_raw_writer_config(topic: &str, type_name: &str) -> UserWriterConfig {
+    UserWriterConfig {
+        topic_name: topic.to_string(),
+        type_name: type_name.to_string(),
+        ..Default::default()
     }
 }
 
@@ -333,7 +344,22 @@ mod tests {
     #[test]
     fn stable_prefix_carries_marker() {
         let p = stable_prefix(0xAB);
-        assert_eq!(p.0[8], 0xAB);
+        assert_eq!(
+            p.0[0..2],
+            [0x01, 0xF0],
+            "DDSI-RTPS 2.5 §9.3.1.5: the vendor id first"
+        );
+        assert_eq!(p.0[10], 0xAB);
+    }
+
+    /// A tool is a same-host peer of the participants on its host: its
+    /// prefix carries the host identifier where `is_same_host` looks, and
+    /// the PID where the runtime tells processes apart.
+    #[test]
+    fn stable_prefix_is_a_same_host_peer_of_this_hosts_participants() {
+        let p = stable_prefix(0xFE);
+        assert_eq!(p.host_id(), zerodds_dcps::participant::host_id_bytes());
+        assert_eq!(p.0[6..10], std::process::id().to_le_bytes());
     }
 
     #[test]

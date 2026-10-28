@@ -1,0 +1,15 @@
+// `@external` on a union branch, unannotated
+struct Inner {
+    long a;
+    short b;
+};
+
+union Pick switch (long) {
+    case 1: @external Inner nested;
+    default: long other;
+};
+
+struct Sample {
+    Pick choice;
+    long tail;
+};

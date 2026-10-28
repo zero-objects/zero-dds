@@ -22,11 +22,16 @@ path = "src/lib.rs"
 
 [features]
 default = ["std"]
-std = ["alloc"]
+# `roxmltree` is std-only, and so is the `xml` module it serves
+# (`#[cfg(feature = "std")] pub mod xml`). Declaring it unconditionally made
+# the crate — and with it the three that depend on it — impossible to build
+# for a target without std, which is what `categories = ["no-std"]` promises.
+std = ["alloc", "dep:roxmltree"]
 alloc = []
 
 [dependencies]
+zerodds-foundation = { version = "1.0.0-rc.7", path = "../foundation", default-features = false }
 # Read-only XML parser for the §10 configuration schema loader.
-# Same dep as crates/xml + crates/security-permissions — no
-# zweites XML-Backend im Workspace.
-roxmltree = { workspace = true }
+# Same dep as crates/xml + crates/security-permissions — no second XML
+# backend in the workspace.
+roxmltree = { workspace = true, optional = true, features = ["std", "positions"] }

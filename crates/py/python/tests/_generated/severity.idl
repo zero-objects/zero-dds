@@ -1,0 +1,22 @@
+// SPDX-License-Identifier: Apache-2.0
+// An IntEnum-backed member (the codegen's `enum`) plus the unknown-value
+// refusal path (@try_construct DISCARD, XTypes 1.3 SS7.2.2.4.4.4.9). @final.
+//
+// The enum is named `SeverityKind`, not `Severity`: today's idlc refuses
+// a type name and a member name that differ only in case in one scope
+// (IDL0008, OMG IDL 4.2 SS7.2.3.1) -- `Event.severity: Severity` would
+// collide. Same convention as combo.idl's `ModeKind`.
+module diag {
+  enum SeverityKind {
+    OK,
+    WARN,
+    ERROR
+  };
+
+  @final
+  struct Event {
+    long code;
+    SeverityKind severity;
+    string message;
+  };
+};

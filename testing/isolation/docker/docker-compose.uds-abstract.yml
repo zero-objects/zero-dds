@@ -1,10 +1,10 @@
-# L3 UDS-Abstract Smoke: zwei Container im GLEICHEN
-# network-namespace. Abstract-Unix-Sockets sind per-netns, d.h.
-# beide Container muessen sich denselben teilen — hier via
-# `network_mode: "service:receiver"` (sender joint receiver's netns).
+# L3 UDS abstract smoke test: two containers in the SAME
+# network namespace. Abstract Unix sockets are per netns, i.e.
+# both containers must share the same one — here via
+# `network_mode: "service:receiver"` (sender joins receiver's netns).
 #
-# Abstract-sockets brauchen KEINEN shared filesystem mount. Dies
-# ist der Docker-optimale Pfad (WP 2.0b T5).
+# Abstract sockets need NO shared filesystem mount. This
+# is the optimal path for Docker (WP 2.0b T5).
 #
 # Run:
 #   docker compose -f docker-compose.uds-abstract.yml up --build \

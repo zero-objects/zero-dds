@@ -1,0 +1,11 @@
+@appendable
+struct Part {
+    long a;
+    double b;
+};
+
+@final
+struct Evo {
+    Part piece;
+    long tail;
+};

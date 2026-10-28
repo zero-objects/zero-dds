@@ -1,0 +1,124 @@
+#!/bin/bash
+# wireprobe-zerodds-java-roundtrip — the corpus written by the Rust
+# column and read back by the Java one.
+#
+#   wireprobe-zerodds-java-roundtrip                  every encoding, both orders
+#   wireprobe-zerodds-java-roundtrip plain-cdr2 le    one combination
+#   wireprobe-zerodds-java-roundtrip --limit 20       the first 20 cases
+#
+# The other half of the Java column, and the counterpart of
+# `wireprobe-zerodds-c-corpus --roundtrip`. The Rust probe writes the
+# bytes, the Java probe reads them, and the values that come back are
+# compared against **the case's own sample** — not against the Rust
+# probe's reading of its own bytes. Two decoders wrong in the same way
+# agree with each other, and only the second comparison shows it.
+# `docs/specs/zerodds-interop-suite-1.0.md` §4, P2.
+#
+# The Java probe compiles `runtime/java` once and keys the result on a
+# hash of its sources, so a sweep pays for one javac of the runtime and
+# then one of the generated file per case. Without that a corpus run is
+# most of an hour.
+#
+# Every disagreement is printed in full, and the exit status is non-zero
+# if there is one. A run that only counted would let a divergence
+# through as long as something else went out.
+set -u
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+root="$(cd "$here/../.." && pwd)"
+corpus="${ZERODDS_CORPUS:-$root/tests/interop-corpus}"
+rust="${WIREPROBE_ZERODDS:-${CARGO_TARGET_DIR:-$root/target}/debug/wireprobe-zerodds}"
+compare="${WIREPROBE_COMPARE:-${CARGO_TARGET_DIR:-$root/target}/debug/wireprobe-compare}"
+java="$here/wireprobe-zerodds-java"
+jobs="${WIREPROBE_JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}"
+
+encodings=(plain-cdr1 pl-cdr1 plain-cdr2 delimited-cdr pl-cdr2)
+orders=(le be)
+limit=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --limit) limit="$2"; shift 2 ;;
+        --help|-h) sed -n '2,20p' "${BASH_SOURCE[0]}"; exit 0 ;;
+        *) encodings=("$1"); orders=("${2:-le}"); shift $#; ;;
+    esac
+done
+
+for bin in wireprobe-zerodds wireprobe-compare; do
+    if [ ! -x "${CARGO_TARGET_DIR:-$root/target}/debug/$bin" ]; then
+        cargo build -q --manifest-path "$root/Cargo.toml" \
+            -p zerodds-wire-probe --bin "$bin" || exit 1
+    fi
+done
+# Built once here rather than by each of the parallel probes: `cargo
+# build` takes a lock, and forty of them racing for it is forty
+# serialised builds.
+if [ ! -x "${CARGO_TARGET_DIR:-$root/target}/debug/wireprobe-zerodds-java-gen" ]; then
+    cargo build -q --manifest-path "$root/Cargo.toml" \
+        -p zerodds-wireprobe-java-gen || exit 1
+fi
+
+# One case in one combination: the Rust probe writes and puts the sample
+# into canonical form, the Java probe reads, and the two values are
+# compared. A case the writer refuses says nothing about the reader and
+# is counted apart.
+one() {
+    local name="$1" enc="$2" end="$3"
+    local dir="$corpus/$name"
+    local type_name; type_name="$(cat "$dir/type")"
+    local work; work="$(mktemp -d)"
+    if ! "$rust" --idl "$dir/type.idl" --type "$type_name" \
+            --values "$dir/values.json" --values-out "$work/expected.json" \
+            --encoding "$enc" --endian "$end" --out "$work/bytes.bin" \
+            > /dev/null 2>"$work/err"; then
+        printf 'UNWRITTEN %s/%s %s\n' "$enc" "$end" "$name"
+        rm -rf "$work"; return
+    fi
+    if ! "$java" --idl "$dir/type.idl" --type "$type_name" \
+            --in "$work/bytes.bin" --encoding "$enc" --endian "$end" \
+            --values-out "$work/got.json" > /dev/null 2>"$work/err"; then
+        printf 'UNREAD %s/%s %-38s %s\n' "$enc" "$end" "$name" \
+            "$(tr '\n' ' ' < "$work/err" | cut -c1-200)"
+        rm -rf "$work"; return
+    fi
+    local detail
+    detail="$("$compare" --idl "$dir/type.idl" --type "$type_name" \
+        --expected "$work/expected.json" --found "$work/got.json" --quiet 2>&1)"
+    case $? in
+        0) printf 'SAME %s/%s %s\n' "$enc" "$end" "$name" ;;
+        1) printf 'DIFFERENT %s/%s %-34s %s\n' "$enc" "$end" "$name" "$detail" ;;
+        *) printf 'UNCOMPARABLE %s/%s %-31s %s\n' "$enc" "$end" "$name" \
+               "$(printf '%s' "$detail" | tr '\n' ' ' | cut -c1-200)" ;;
+    esac
+    rm -rf "$work"
+}
+export -f one
+export corpus rust compare java
+export WIREPROBE_JAVA_GEN="${CARGO_TARGET_DIR:-$root/target}/debug/wireprobe-zerodds-java-gen"
+
+work_list="$(mktemp)"
+for enc in "${encodings[@]}"; do
+for end in "${orders[@]}"; do
+    count=0
+    for dir in "$corpus"/*/; do
+        [ -f "$dir/type" ] || continue
+        count=$((count + 1))
+        if [ "$limit" != 0 ] && [ "$count" -gt "$limit" ]; then break; fi
+        printf '%s %s %s\n' "$(basename "$dir")" "$enc" "$end" >> "$work_list"
+    done
+done
+done
+
+report="${JAVA_ROUNDTRIP_LOG:-$(mktemp)}"
+# shellcheck disable=SC2016
+xargs -P "$jobs" -L1 bash -c 'one "$@"' _ < "$work_list" > "$report"
+grep -v '^SAME ' "$report" | grep -v '^UNWRITTEN ' || true
+printf '\nround trip: same=%d different=%d unread=%d uncomparable=%d unwritten=%d\n' \
+    "$(grep -c '^SAME ' "$report")" \
+    "$(grep -c '^DIFFERENT ' "$report")" \
+    "$(grep -c '^UNREAD ' "$report")" \
+    "$(grep -c '^UNCOMPARABLE ' "$report")" \
+    "$(grep -c '^UNWRITTEN ' "$report")"
+bad="$(grep -c -E '^(DIFFERENT|UNREAD|UNCOMPARABLE) ' "$report")"
+echo "the report is $report" >&2
+rm -f "$work_list"
+exit $((bad > 0))

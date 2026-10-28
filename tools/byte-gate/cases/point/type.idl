@@ -1,0 +1,1 @@
+@final struct Point { long x; double y; };

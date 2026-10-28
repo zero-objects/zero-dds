@@ -1,0 +1,7 @@
+// `string` and `wstring` side by side, unannotated
+struct Sample {
+    string narrow;
+    wstring wide;
+    string<8> bounded;
+    long tail;
+};

@@ -1,0 +1,11 @@
+module m {
+  @final struct L1 { long v1; };
+  @final struct L2 { long v2; };
+  @final struct L3 { long v3; };
+  @final struct L4 { long v4; };
+  @final struct L5 { long v5; };
+  @final struct L6 { long v6; };
+  @final struct L7 { long v7; };
+  @final struct L8 { long v8; };
+  @appendable struct S { L1 a; L8 b; };
+};

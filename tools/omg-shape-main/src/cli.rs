@@ -59,12 +59,13 @@ pub enum FinalInstanceStateArg {
     D,
 }
 
-/// `-v [e|d]` — log verbosity. Accepted for CLI compatibility; ZeroDDS
-/// does not have a separate shape_main-local log-verbosity knob, so this
-/// only gates a handful of `eprintln!` diagnostics in this binary.
+/// `-v [e|d]` — log verbosity. `e` (and the absent flag) print errors
+/// only; `d` additionally prints per-step diagnostics. Every diagnostic
+/// goes to **stderr**, so the harness's `pexpect` matching against stdout
+/// stays byte-identical between the two levels.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
 pub enum VerbosityArg {
-    /// `e` — ERROR only.
+    /// `e` — ERROR only (the default).
     E,
     /// `d` — DEBUG (verbose).
     D,
@@ -76,7 +77,7 @@ pub enum VerbosityArg {
 /// verbatim where practical) so `--help` output stays diffable against
 /// the upstream table.
 #[derive(Parser, Debug, Clone)]
-#[command(name = "shape_main", author, version, about, long_about = None)]
+#[command(name = "shape_main", author, version, about, long_about = None, args_override_self = true)]
 pub struct Options {
     /// `-v [e|d]`: set log message verbosity.
     #[arg(short = 'v', value_enum)]
@@ -142,6 +143,16 @@ pub struct Options {
     #[arg(short = 'z', default_value_t = 30)]
     pub shapesize: i32,
 
+    /// `--size-modulo <uint>`: with `-z 0`, wrap the increasing shapesize
+    /// sequence modulo N (`1, 2, …, N, 1, 2, …`). `0` (default) = no wrap
+    /// (`1, 2, 3, …`). Ignored when `-z != 0`. Some official test cases pass
+    /// this flag; accepting it lets their shape_main client start.
+    ///
+    /// Non-negative by type: a negative value is a hard clap parse error, not
+    /// a silent "disabled".
+    #[arg(long = "size-modulo", default_value_t = 0)]
+    pub size_modulo: u32,
+
     /// `-R`: use `read()` instead of `take()`.
     #[arg(short = 'R')]
     pub use_read: bool,
@@ -205,12 +216,10 @@ pub struct Options {
     /// `--additional-payload-size <bytes>`: extra bytes appended to each
     /// sample (large-data tests). Short alias `-B`.
     ///
-    /// **Known gap** (see crate README): ZeroDDS's shared `ShapeType`
-    /// wire type (`crates/dcps/src/interop.rs`) does not carry an
-    /// `additional_payload_size` field — this binary intentionally does
-    /// not touch that shared file (out of scope / other agents'
-    /// territory), so this flag is accepted and stored but does not
-    /// currently affect the wire payload.
+    /// Maps to the OMG `shape.idl` member `sequence<uint8>
+    /// additional_payload_size`: the writer fills the sequence with this
+    /// many filler bytes, so its length equals the requested payload size
+    /// on the wire (`crates/dcps/src/interop.rs` `ShapeType`).
     #[arg(long = "additional-payload-size", short = 'B', default_value_t = 0)]
     pub additional_payload_size: u32,
 
@@ -238,5 +247,78 @@ impl Options {
     #[must_use]
     pub fn resolved_color(&self) -> &str {
         self.color.as_deref().unwrap_or("BLUE")
+    }
+
+    /// `-v d` — debug verbosity is on. `-v e` and the absent flag are
+    /// error-only.
+    #[must_use]
+    pub fn debug_verbosity(&self) -> bool {
+        matches!(self.verbosity, Some(VerbosityArg::D))
+    }
+
+    /// Number of samples per coherent set and per DataWriter+instance
+    /// (`--coherent-sample-count`, README wording). `0` — the flag's default
+    /// — means one sample per set, which is the smallest set the writer can
+    /// form. Only meaningful together with `--coherent`.
+    #[must_use]
+    pub fn coherent_set_size(&self) -> u32 {
+        self.coherent_sample_count.max(1)
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use super::*;
+
+    fn parse(args: &[&str]) -> Options {
+        Options::try_parse_from(args).expect("parse")
+    }
+
+    /// OMG `dds-rtps` README, `-v [e|d]`: the flag sets the log verbosity.
+    /// `d` is the only value that turns diagnostics on.
+    #[test]
+    fn verbosity_debug_only_for_d() {
+        assert!(parse(&["shape_main", "-P", "-v", "d"]).debug_verbosity());
+        assert!(!parse(&["shape_main", "-P", "-v", "e"]).debug_verbosity());
+        assert!(!parse(&["shape_main", "-P"]).debug_verbosity());
+    }
+
+    /// `-v` rejects any letter outside the README's `[e|d]` set instead of
+    /// accepting it and ignoring it.
+    #[test]
+    fn verbosity_rejects_unknown_letter() {
+        assert!(Options::try_parse_from(["shape_main", "-P", "-v", "x"]).is_err());
+    }
+
+    /// README `--coherent-sample-count <int>`: samples per coherent set, per
+    /// DataWriter+instance. The unset default forms one-sample sets.
+    #[test]
+    fn coherent_set_size_defaults_to_one() {
+        assert_eq!(parse(&["shape_main", "-P"]).coherent_set_size(), 1);
+        assert_eq!(
+            parse(&["shape_main", "-P", "--coherent-sample-count", "4"]).coherent_set_size(),
+            4
+        );
+        assert_eq!(
+            parse(&["shape_main", "-P", "-H", "7"]).coherent_set_size(),
+            7
+        );
+    }
+
+    /// OMG `srcCxx/shape.idl`: `sequence<uint8> additional_payload_size`.
+    /// `-B <bytes>` is the sequence length the writer puts on the wire.
+    #[test]
+    fn additional_payload_size_is_parsed_as_byte_count() {
+        assert_eq!(parse(&["shape_main", "-P"]).additional_payload_size, 0);
+        assert_eq!(
+            parse(&["shape_main", "-P", "--additional-payload-size", "1024"])
+                .additional_payload_size,
+            1024
+        );
+        assert_eq!(
+            parse(&["shape_main", "-P", "-B", "16"]).additional_payload_size,
+            16
+        );
     }
 }

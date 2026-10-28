@@ -160,7 +160,7 @@ pub struct ConnectBody {
     pub connect_flags: u8,
     /// Spec §3.1.2.10 — Keep Alive in seconds.
     pub keep_alive: u16,
-    /// Spec §3.1.2.11 — Properties (raw VBI-praefixed).
+    /// Spec §3.1.2.11 — Properties (raw VBI-prefixed).
     pub properties: Vec<u8>,
     /// Spec §3.1.3.1 — Client Identifier.
     pub client_id: String,
@@ -839,6 +839,45 @@ impl fmt::Display for PropertyDataType {
     }
 }
 
+/// The value bytes of property `id` in a raw property block (without its
+/// length prefix, as the decoded bodies hold it), per Spec §2.2.2.2
+/// Table 2-4. `None` when the block does not carry it.
+///
+/// # Errors
+/// [`CodecError::RemainingLengthMismatch`] for a block that ends inside a
+/// property or names an identifier Table 2-4 does not know.
+pub fn property_value(props: &[u8], id: u8) -> Result<Option<&[u8]>, CodecError> {
+    let short = || CodecError::RemainingLengthMismatch;
+    let two = |b: &[u8], at: usize| -> Result<usize, CodecError> {
+        let hi = *b.get(at).ok_or_else(short)?;
+        let lo = *b.get(at + 1).ok_or_else(short)?;
+        Ok(usize::from(u16::from_be_bytes([hi, lo])))
+    };
+    let mut at = 0usize;
+    while at < props.len() {
+        let (pid, n) = decode_vbi(&props[at..])?;
+        at += n;
+        let len =
+            match property_data_type(u8::try_from(pid).map_err(|_| short())?).ok_or_else(short)? {
+                PropertyDataType::Byte => 1,
+                PropertyDataType::TwoByteInt => 2,
+                PropertyDataType::FourByteInt => 4,
+                PropertyDataType::VariableByteInt => decode_vbi(&props[at..])?.1,
+                PropertyDataType::Utf8String | PropertyDataType::BinaryData => 2 + two(props, at)?,
+                PropertyDataType::Utf8StringPair => {
+                    let first = 2 + two(props, at)?;
+                    first + 2 + two(props, at + first)?
+                }
+            };
+        let value = props.get(at..at + len).ok_or_else(short)?;
+        if u32::from(id) == pid {
+            return Ok(Some(value));
+        }
+        at += len;
+    }
+    Ok(None)
+}
+
 // ============================================================================
 //  Helper.
 // ============================================================================
@@ -872,6 +911,21 @@ mod tests {
         let bytes = encode(&value).expect("encode");
         let parsed = decode(&bytes).expect("decode");
         assert_eq!(parsed, value);
+    }
+
+    #[test]
+    fn property_value_finds_receive_maximum_behind_other_properties() {
+        // Reason String "hi", User Property ("k","v"), Receive Maximum 20.
+        let props = [
+            0x1F, 0x00, 0x02, b'h', b'i', 0x26, 0x00, 0x01, b'k', 0x00, 0x01, b'v', 0x21, 0x00,
+            0x14,
+        ];
+        assert_eq!(
+            property_value(&props, 0x21).unwrap(),
+            Some(&[0x00, 0x14][..])
+        );
+        assert_eq!(property_value(&props, 0x22).unwrap(), None);
+        assert!(property_value(&props[..14], 0x21).is_err());
     }
 
     #[test]

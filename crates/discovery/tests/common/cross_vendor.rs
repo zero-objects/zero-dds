@@ -1,7 +1,7 @@
 //! Cross-vendor live-interop helpers for C5.5.
 //!
 //! Provides subprocess spawners for FastDDS and Cyclone tools that are
-//! run on the Linux bench host via `ssh llvm@llvm`. The structs hold
+//! run on the lab host via ssh (`ZERODDS_LAB_SSH`). The structs hold
 //! the local child handle plus a Drop impl that kills the remote
 //! process via `pkill` — otherwise `fastdds shape` / `ddsperf`
 //! processes are left running on the bench host.
@@ -33,12 +33,16 @@
 use core::time::Duration;
 use std::process::{Child, Command, Stdio};
 
-/// SSH user for the lab host (see memory `reference_bench_hosts`).
-pub const SSH_USER: &str = "llvm";
-/// SSH password for the lab host. Lab-only — production needs key auth.
-pub const SSH_PASS: &str = "llvm";
-/// SSH hostname; resolved via `~/.ssh/config`.
-pub const SSH_HOST: &str = "llvm";
+/// `user@host` of the lab host this test reaches over ssh:
+/// `ZERODDS_LAB_SSH`.
+pub fn lab_ssh_target() -> String {
+    std::env::var("ZERODDS_LAB_SSH").expect("ZERODDS_LAB_SSH=user@host of the lab host")
+}
+
+/// The password `sshpass` hands ssh: `ZERODDS_LAB_SSH_PASSWORD`.
+pub fn lab_ssh_password() -> String {
+    std::env::var("ZERODDS_LAB_SSH_PASSWORD").expect("ZERODDS_LAB_SSH_PASSWORD for sshpass")
+}
 /// Default timeout for live-subprocess bring-up.
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -118,13 +122,13 @@ impl RemoteSubprocess {
     pub fn spawn(label: &str, cmd: &str, pkill_pattern: &str) -> std::io::Result<Self> {
         let child = Command::new("sshpass")
             .arg("-p")
-            .arg(SSH_PASS)
+            .arg(lab_ssh_password())
             .arg("ssh")
             .arg("-o")
             .arg("StrictHostKeyChecking=no")
             .arg("-o")
             .arg("ConnectTimeout=5")
-            .arg(format!("{SSH_USER}@{SSH_HOST}"))
+            .arg(lab_ssh_target())
             .arg(cmd)
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -148,11 +152,11 @@ impl Drop for RemoteSubprocess {
         let cmd = format!("pkill -f '{}' || true", self.pkill_pattern);
         let _ = Command::new("sshpass")
             .arg("-p")
-            .arg(SSH_PASS)
+            .arg(lab_ssh_password())
             .arg("ssh")
             .arg("-o")
             .arg("StrictHostKeyChecking=no")
-            .arg(format!("{SSH_USER}@{SSH_HOST}"))
+            .arg(lab_ssh_target())
             .arg(&cmd)
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -223,8 +227,7 @@ pub fn start_fastdds_discovery_server(domain: u32, port: u16) -> std::io::Result
 
 /// Cyclone pub via `ddsperf` — needed for gap-filler tests
 /// (cyclone_typelookup_sub_side). `-D` is duration in seconds, `-i` is
-/// the domain ID (see memory `reference_ddsperf_flags` — mind the flag
-/// trap).
+/// the domain ID; `-D` is not the domain.
 pub fn start_cyclone_ddsperf_pub(
     domain: u32,
     duration_secs: u32,

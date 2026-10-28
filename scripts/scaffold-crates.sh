@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Generiert Skelette fuer alle Workspace-Crates.
-# Einmalig auszufuehren; idempotent (ueberschreibt keine existierenden lib.rs).
+# Generates skeletons for all workspace crates.
+# Run once; idempotent (does not overwrite existing lib.rs files).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -9,9 +9,9 @@ cd "$ROOT"
 # Format: name|path|kind|safety|no_std|description
 # kind:    lib | bin
 # safety:  safe | standard | comfort | tooling
-#          - safe/standard/comfort: Runtime-Crates gemaess 02_architecture.md §4.4.1
-#          - tooling: Meta-Tools (kein Runtime-Code, nicht safety-klassifiziert),
-#            default = [] statt std/alloc/safety
+#          - safe/standard/comfort: runtime crates as per 02_architecture.md §4.4.1
+#          - tooling: meta tools (no runtime code, not safety-classified),
+#            default = [] instead of std/alloc/safety
 # no_std:  yes | no | optional
 CRATES=(
   # Foundation
@@ -21,7 +21,7 @@ CRATES=(
   "zerodds-cdr|crates/cdr|lib|safe|yes|XCDR1/XCDR2 encoder/decoder, endianness, alignment"
   "zerodds-types|crates/types|lib|safe|yes|XTypes type system, TypeObject, TypeIdentifier, compatibility"
   "zerodds-qos|crates/qos|lib|safe|yes|QoS policies, request/offered compatibility matrix"
-  "zerodds-idl|crates/idl|lib|safe|no|IDL4 parser, AST, and semantic model (OMG IDL 4.2 / ISO/IEC 19516) — std-only by design, siehe RFC 0001"
+  "zerodds-idl|crates/idl|lib|safe|no|IDL4 parser, AST, and semantic model (OMG IDL 4.2 / ISO/IEC 19516) — std-only by design, see RFC 0001"
   "zerodds-rtps|crates/rtps|lib|safe|yes|Writer/Reader state machines, RTPS submessages, fragmentation"
   "zerodds-discovery|crates/discovery|lib|safe|yes|SPDP, SEDP, TypeLookup service"
 
@@ -49,8 +49,8 @@ CRATES=(
   "zerodds-java|crates/java|lib|standard|no|JNI bindings, IDL4-Java runtime"
   "zerodds-py|crates/py|lib|comfort|no|PyO3 bindings, pandas/numpy-friendly"
 
-  # Meta-Tooling (Library-Crates, kein Runtime)
-  "zerodds-lint|crates/lint|lib|tooling|no|Custom Clippy-Lints und Projekt-Regeln fuer ZeroDDS (dds_no_panic_in_safe, dds_require_safety_comment, dds_spec_annotated, ...)"
+  # Meta tooling (library crates, no runtime)
+  "zerodds-lint|crates/lint|lib|tooling|no|Custom Clippy lints and project rules for ZeroDDS (dds_no_panic_in_safe, dds_require_safety_comment, dds_spec_annotated, ...)"
 
   # Binary Tools
   "zerodds-idlc|tools/idlc|bin|comfort|no|IDL4 compiler: backends for C, C++, C#, Java, Python, Rust"
@@ -81,7 +81,7 @@ workspace = true
 EOF
   if [ "$kind" = "lib" ]; then
     if [ "$safety" = "tooling" ]; then
-      # Meta-Tooling: keine Profile-Features.
+      # Meta tooling: no profile features.
       cat >> "$path/Cargo.toml" <<EOF
 [lib]
 path = "src/lib.rs"
@@ -122,14 +122,14 @@ write_lib_rs() {
   local file="$path/src/lib.rs"
   [ -f "$file" ] && return 0
 
-  # Header gemaess 04_safety_by_architecture.md §2
+  # Header as per 04_safety_by_architecture.md §2
   {
     echo "//! $desc"
     echo "//!"
     echo "//! Crate \`$name\`."
     echo "//!"
     echo "//! Safety classification: **$(echo "$safety" | tr '[:lower:]' '[:upper:]')**."
-    echo "//! Siehe \`docs/architecture/02_architecture.md §3\` und"
+    echo "//! See \`docs/architecture/02_architecture.md §3\` and"
     echo "//! \`docs/architecture/04_safety_by_architecture.md §2\`."
     echo ""
     # no_std Gate
@@ -138,7 +138,7 @@ write_lib_rs() {
     elif [ "$no_std" = "optional" ]; then
       echo "#![cfg_attr(not(feature = \"std\"), no_std)]"
     fi
-    # Unsafe-Politik gemaess 02_architecture.md §4.4.1
+    # Unsafe policy as per 02_architecture.md §4.4.1
     case "$safety" in
       safe|tooling)
         echo "#![forbid(unsafe_code)]"
@@ -152,19 +152,19 @@ write_lib_rs() {
     esac
     echo "#![warn(missing_docs)]"
     echo ""
-    # alloc-Brueckenkopf fuer no_std+alloc
+    # alloc bridgehead for no_std+alloc
     if [ "$no_std" = "yes" ] || [ "$no_std" = "optional" ]; then
       echo "#[cfg(feature = \"alloc\")]"
       echo "extern crate alloc;"
       echo ""
     fi
-    echo "// TODO: Implementierung folgt. Platzhalter fuer Phase-0-CI-Verdrahtung."
+    echo "// TODO: implementation follows. Placeholder for phase-0 CI wiring."
     echo ""
     echo "#[cfg(test)]"
     echo "mod tests {"
     echo "    #[test]"
     echo "    fn crate_compiles() {"
-    echo "        // Smoke-Test: Crate kompiliert und Testharness laeuft."
+    echo "        // Smoke test: crate compiles and the test harness runs."
     echo "    }"
     echo "}"
   } > "$file"
@@ -179,10 +179,10 @@ write_main_rs() {
     echo "//!"
     echo "//! Binary \`$name\`."
     echo ""
-    echo "#![allow(clippy::print_stderr)] // CLI-Tool: stderr fuer Fehler zulaessig (Policy: tools/* duerfen lockern)."
+    echo "#![allow(clippy::print_stderr)] // CLI tool: stderr allowed for errors (policy: tools/* may relax this)."
     echo ""
     echo "fn main() {"
-    echo "    // TODO: Implementierung folgt."
+    echo "    // TODO: implementation follows."
     echo "    eprintln!(\"$name: not yet implemented\");"
     echo "    std::process::exit(2);"
     echo "}"
@@ -201,4 +201,4 @@ for entry in "${CRATES[@]}"; do
 done
 
 echo ""
-echo "Fertig. ${#CRATES[@]} Crates/Tools."
+echo "Done. ${#CRATES[@]} crates/tools."

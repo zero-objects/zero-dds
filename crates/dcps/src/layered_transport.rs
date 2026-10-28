@@ -119,11 +119,51 @@ impl LayeredUserTransport {
 }
 
 impl Transport for LayeredUserTransport {
+    /// The smallest of the legs: what the layered transport sends in one
+    /// datagram goes over any of them (DDSI-RTPS 2.5 §8.4.14.1).
+    fn max_message_size(&self) -> usize {
+        self.legs
+            .iter()
+            .map(|leg| leg.transport.max_message_size())
+            .min()
+            .unwrap_or(zerodds_transport::DEFAULT_MAX_MESSAGE_SIZE)
+    }
+
+    fn close(&self) {
+        self.shutdown();
+        for leg in &self.legs {
+            leg.transport.close();
+        }
+    }
+
+    fn forget_destination(&self, dest: &Locator) {
+        for leg in &self.legs {
+            if leg.kind == dest.kind {
+                leg.transport.forget_destination(dest);
+            }
+        }
+    }
+
     fn send(&self, dest: &Locator, data: &[u8]) -> Result<(), SendError> {
         // Preference order = leg order: first matching kind wins.
         for leg in &self.legs {
             if leg.kind == dest.kind {
                 return leg.transport.send(dest, data);
+            }
+        }
+        Err(SendError::UnsupportedLocator)
+    }
+
+    /// As [`Self::send`], the priority handed to the leg.
+    fn send_with_priority(
+        &self,
+        dest: &Locator,
+        data: &[u8],
+        priority: i32,
+    ) -> Result<(), SendError> {
+        for leg in &self.legs {
+            if leg.kind == dest.kind {
+                return leg.transport.send_with_priority(dest, data, priority);
             }
         }
         Err(SendError::UnsupportedLocator)
@@ -138,13 +178,21 @@ impl Transport for LayeredUserTransport {
             if let Some(dg) = q.pop_front() {
                 return Ok(dg);
             }
-            let (g, _timeout) =
+            if self.stop.load(Ordering::Relaxed) {
+                return Err(RecvError::Timeout);
+            }
+            let (g, wait) =
                 cv.wait_timeout(q, Duration::from_secs(1))
                     .map_err(|_| RecvError::Io {
                         message: "layered inbound cv poisoned",
                     })?;
             q = g;
-            if self.stop.load(Ordering::Relaxed) {
+            // A second without a datagram hands control back, as a socket's
+            // read timeout does: the runtime's receive loop checks its own
+            // stop flag between calls, and `DcpsRuntime::shutdown` joins that
+            // loop. Looping here until this transport's own `shutdown` made
+            // the join wait for ever.
+            if wait.timed_out() && q.is_empty() {
                 return Err(RecvError::Timeout);
             }
         }
@@ -246,6 +294,22 @@ mod tests {
             port: 7400,
             address: [tag; 16],
         }
+    }
+
+    /// An idle layered transport returns `Timeout` from `recv` within about
+    /// a second, whether or not its own `shutdown` was called: the runtime's
+    /// receive loop relies on that to see its stop flag.
+    #[test]
+    fn an_idle_recv_times_out_without_its_own_shutdown() {
+        let (udp, _) = MockTransport::new(LocatorKind::Reserved, 0x33);
+        let layered = LayeredUserTransport::new(alloc::vec![udp]);
+        let started = std::time::Instant::now();
+        assert!(matches!(layered.recv(), Err(RecvError::Timeout)));
+        assert!(
+            started.elapsed() < Duration::from_secs(3),
+            "recv waited {:?}",
+            started.elapsed()
+        );
     }
 
     #[test]

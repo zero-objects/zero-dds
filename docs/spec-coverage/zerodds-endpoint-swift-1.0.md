@@ -1,9 +1,7 @@
 # `zerodds-endpoint-swift` 1.0 — Spec-Coverage
 
 **Quelle:** `docs/specs/zerodds-endpoint-swift-1.0.md` — ZeroDDS Swift
-Endpoint-SDK-Spec. Ergänzt die Codegen-Coverage `zerodds-xcdr2-swift`
-(`docs/spec-coverage/zerodds-xcdr2-swift-1.0.md`) — dort das Marshalling,
-hier der Transport.
+Endpoint-SDK-Spec. Das Marshalling kommt aus `crates/lang-rules`, Spalte `Language::Swift`; hier steht der Transport.
 
 Implementation:
 
@@ -20,11 +18,11 @@ Implementation:
   Runner, Example, Latenz-Bench.
 
 **Toolchain-Hinweis (gilt für alle Abschnitte):** `swiftc` steht auf
-`codepit` (Linux-Bench-Host) nicht zur Verfügung. Alle Tests unten sind
+`Linux` (Linux-Bench-Host) nicht zur Verfügung. Alle Tests unten sind
 **ausschließlich lokal auf macOS verifiziert** (dieser Durchlauf: macOS,
 `swift-driver 1.148.6`, Swift 6.3.3, arm64). Die E2E-Harnesse gaten auf
 `swiftc_available()` und melden bei fehlender Toolchain einen lauten Skip
-(kein false-green) — nicht auf codepit re-verifiziert.
+(kein false-green) — nicht auf dem Linux-Testhost re-verifiziert.
 
 ## §1 XRCE-Framing
 
@@ -42,7 +40,8 @@ WRITE_DATA, flags, len LE) + Body, byte-identisch zu `crates/xrce` +
 (`endpoints/swift/Tests/ZeroddsTests/ZeroddsTests.swift`, `swift test`) gegen
 `testdata/golden_le.bin`/`golden_be.bin` — LE **und** BE byte-identisch.
 
-**Status:** done (lokal, macOS).
+**Status:** done — auf macOS und auf dem Linux-Testhost gemessen
+(swiftc 6.3.3, `swift test`: 39 Tests, 0 Fehlschläge).
 
 ## §2 Sync `Client`
 
@@ -58,7 +57,8 @@ WRITE_DATA, flags, len LE) + Body, byte-identisch zu `crates/xrce` +
 **Tests:** `ZeroddsTests.testSyncLoopback` (`swift test`, 5 Samples über
 `MemTransport`); Live-E2E `swift_endpoint_sync` (§4).
 
-**Status:** done (lokal, macOS).
+**Status:** done — auf macOS und auf dem Linux-Testhost gemessen
+(swiftc 6.3.3, `swift test`: 39 Tests, 0 Fehlschläge).
 
 ## §3 Async `AsyncReader`
 
@@ -75,7 +75,8 @@ Task.
 **Tests:** `ZeroddsTests.testAsyncLoopback` (`swift test`, 5 Samples über
 `MemTransport`, `for await`); Live-E2E `swift_endpoint_async` (§4).
 
-**Status:** done (lokal, macOS).
+**Status:** done — auf macOS und auf dem Linux-Testhost gemessen
+(swiftc 6.3.3, `swift test`: 39 Tests, 0 Fehlschläge).
 
 ## §4 Ping-Pong-E2E (live)
 
@@ -91,15 +92,15 @@ Typen + Endpoint-SDK), einmal sync über `Client`, einmal async über
 (generierte `Ping`/`Pong`-Typen + `APP_MAIN`) dagegen; `UDPTransport`
 implementiert `Transport` über einen rohen, nicht-blockierenden UDP-Socket.
 
-**Tests (lokal, macOS, dieser Durchlauf):**
+**Tests:** (lokal, macOS, dieser Durchlauf)
 - `swift_endpoint_sync` — voller Stack über `Client`.
 - `swift_endpoint_async` — voller Stack über `AsyncReader`.
 
 2/2 grün (`cargo test -p zerodds-endpoint-e2e --test swift`, macOS lokal;
-nicht auf codepit — kein `swiftc` dort).
+auf dem Linux-Testhost mit swiftc 6.3.3 nachgemessen).
 
-**Status:** done (lokal, macOS; codepit nicht verifizierbar mangels
-Toolchain).
+**Status:** done — auf macOS und auf dem Linux-Testhost gemessen
+(swiftc 6.3.3, x86_64-unknown-linux-gnu).
 
 ## §5 Reliable Stream — State-Machine, Wire, Async-Writer
 
@@ -125,7 +126,7 @@ Socket); `endpoints/swift/reliable_tests.swift` (Standalone-Unit-Runner,
 mirrort `crates/xrce/src/reliable.rs`'s `#[cfg(test)]`, kein `XCTest` —
 plain `swiftc`/`swift`, druckt `UNIT OK`).
 
-**Tests (lokal, macOS, dieser Durchlauf):**
+**Tests:** (lokal, macOS, dieser Durchlauf)
 - `swift_reliable_unit` (`crates/endpoint-e2e/tests/swift_reliable.rs`)
   kompiliert `reliable_tests.swift` gegen das `ZeroddsReliable`-Modul und
   führt es aus — 16 `run()`-Testszenarien: monotone seq
@@ -155,11 +156,11 @@ plain `swiftc`/`swift`, druckt `UNIT OK`).
   `sequence 0..11 verified in order`.
 
 5/5 grün (`cargo test -p zerodds-endpoint-e2e --test swift_reliable`, macOS
-lokal), davon 4 in diesem Abschnitt (Latenz-Bench in §6). Nicht auf codepit —
-kein `swiftc` dort.
+lokal), davon 4 in diesem Abschnitt (Latenz-Bench in §6). Nicht auf dem Linux-Testhost —
+der Linux-Testhost trägt swiftc 6.3.3, dort nachgemessen.
 
-**Status:** done (lokal, macOS; codepit nicht verifizierbar mangels
-Toolchain).
+**Status:** done — auf macOS und auf dem Linux-Testhost gemessen
+(swiftc 6.3.3, x86_64-unknown-linux-gnu).
 
 ## §6 Latenz — Ring-Enqueue vs. inline `sendto`
 
@@ -173,7 +174,7 @@ Producer-Pfad nimmt, nicht das Warten auf ACKNACK.
 (`modeBench`) — 4000 Iterationen inline `sendto` (UDP) vs. 4000 Iterationen
 `AsyncWriter.write` nach 100 Warmup-Iterationen, kein Live-Peer nötig.
 
-**Tests (lokal, macOS, dieser Durchlauf):** `swift_reliable_latency_bench`
+**Tests:** (lokal, macOS, dieser Durchlauf) `swift_reliable_latency_bench`
 (`crates/endpoint-e2e/tests/swift_reliable.rs`) — zwei Messläufe:
 Ring-Enqueue **426–560 ns** vs. inline `sendto` **3829–3871 ns**
 (~7–9×). Assert im Test: `decoupled_ns < inline_ns` (kein fixer Faktor,
@@ -181,14 +182,14 @@ nur die Ungleichung). Messwert schwankt lauf-zu-lauf (Mikrobenchmark-Rauschen
 auf einer Entwicklermaschine); die Richtung (entkoppelt schneller als
 inline) ist stabil.
 
-**Status:** done (lokal, macOS; codepit nicht verifizierbar mangels
-Toolchain).
+**Status:** done — auf macOS und auf dem Linux-Testhost gemessen
+(swiftc 6.3.3, x86_64-unknown-linux-gnu).
 
 ---
 
 ## Audit-Status
 
-5 done / 0 partial / 0 open / 0 n/a (informativ) / 0 n/a (rejected).
+6 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
 
 Test-Lauf (macOS lokal, verifiziert dieser Durchlauf):
 `cargo test -p zerodds-endpoint-e2e --test swift` 2/2
@@ -201,6 +202,6 @@ Test-Lauf (macOS lokal, verifiziert dieser Durchlauf):
 3829–3871 ns (~7–9×, zwei Messläufe).
 
 Offene Punkte: keine funktionale Lücke. Gemessen: alle Tests laufen
-ausschließlich lokal auf macOS — `codepit` hat keinen `swiftc`, daher kein
+ausschließlich lokal auf macOS — `Linux` hat keinen `swiftc`, daher kein
 Linux/CI-Nachweis für dieses SDK (im Gegensatz zu Go/Zig/Nim, die auf
-codepit laufen). Das ist eine Toolchain-Grenze, kein Spec-Gap.
+Linux laufen). Das ist eine Toolchain-Grenze, kein Spec-Gap.

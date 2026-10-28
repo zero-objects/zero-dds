@@ -26,8 +26,10 @@
 
 use alloc::boxed::Box;
 use alloc::sync::Arc;
+use std::sync::Mutex;
 
 use crate::profile::SecurityProfile;
+use zerodds_security::data_tagging::DataTaggingPlugin;
 use zerodds_security::logging::LoggingPlugin;
 
 /// Bundles the security configuration a participant needs — the
@@ -39,6 +41,7 @@ use zerodds_security::logging::LoggingPlugin;
 #[derive(Clone, Default)]
 pub struct SecurityBundle {
     logging_plugin: Option<Arc<dyn LoggingPlugin>>,
+    data_tagging_plugin: Option<Arc<Mutex<dyn DataTaggingPlugin>>>,
     profile: Option<Arc<SecurityProfile>>,
 }
 
@@ -54,6 +57,20 @@ impl SecurityBundle {
     #[must_use]
     pub fn logging_plugin(&self) -> Option<Arc<dyn LoggingPlugin>> {
         self.logging_plugin.clone()
+    }
+
+    /// The DataTagging plugin, if one was configured (DDS-Security 1.2
+    /// §9.7, §10.1). The returned `Arc` is what
+    /// `RuntimeConfig.security_data_tagging` expects.
+    #[must_use]
+    pub fn data_tagging_plugin(&self) -> Option<Arc<Mutex<dyn DataTaggingPlugin>>> {
+        self.data_tagging_plugin.clone()
+    }
+
+    /// `true` if a DataTagging plugin is configured.
+    #[must_use]
+    pub fn has_data_tagging(&self) -> bool {
+        self.data_tagging_plugin.is_some()
     }
 
     /// The access-control/crypto profile, if one was configured.
@@ -75,10 +92,35 @@ impl SecurityBundle {
     }
 }
 
+/// A boxed [`DataTaggingPlugin`] as an unsized `Mutex` payload.
+struct PluginBox(Box<dyn DataTaggingPlugin>);
+
+impl DataTaggingPlugin for PluginBox {
+    fn set_tags(
+        &mut self,
+        endpoint_guid: [u8; 16],
+        tags: alloc::vec::Vec<zerodds_security::data_tagging::DataTag>,
+    ) {
+        self.0.set_tags(endpoint_guid, tags);
+    }
+
+    fn get_tags(
+        &self,
+        endpoint_guid: [u8; 16],
+    ) -> alloc::vec::Vec<zerodds_security::data_tagging::DataTag> {
+        self.0.get_tags(endpoint_guid)
+    }
+
+    fn plugin_class_id(&self) -> &str {
+        self.0.plugin_class_id()
+    }
+}
+
 /// Builder for [`SecurityBundle`]. Every setter is optional and chainable.
 #[derive(Default)]
 pub struct SecurityBundleBuilder {
     logging_plugin: Option<Arc<dyn LoggingPlugin>>,
+    data_tagging_plugin: Option<Arc<Mutex<dyn DataTaggingPlugin>>>,
     profile: Option<Arc<SecurityProfile>>,
 }
 
@@ -88,6 +130,17 @@ impl SecurityBundleBuilder {
     #[must_use]
     pub fn logging_plugin(mut self, plugin: Box<dyn LoggingPlugin>) -> Self {
         self.logging_plugin = Some(Arc::from(plugin));
+        self
+    }
+
+    /// Set the DataTagging plugin, e.g. the builtin
+    /// `DDS:Tagging:DDS_Discovery`
+    /// ([`BuiltinDataTaggingPlugin`](crate::BuiltinDataTaggingPlugin)). The
+    /// runtime registers the `data_tags` of every endpoint it creates with
+    /// the plugin and announces the tags the plugin returns for it.
+    #[must_use]
+    pub fn data_tagging_plugin(mut self, plugin: Box<dyn DataTaggingPlugin>) -> Self {
+        self.data_tagging_plugin = Some(Arc::new(Mutex::new(PluginBox(plugin))));
         self
     }
 
@@ -104,6 +157,7 @@ impl SecurityBundleBuilder {
     pub fn build(self) -> SecurityBundle {
         SecurityBundle {
             logging_plugin: self.logging_plugin,
+            data_tagging_plugin: self.data_tagging_plugin,
             profile: self.profile,
         }
     }
@@ -122,12 +176,55 @@ mod tests {
         calls: Arc<AtomicUsize>,
     }
     impl LoggingPlugin for CountingLogger {
+        // Test double: it records `log` calls only; the Table 46 operations
+        // have nothing to configure.
+        fn set_log_options(
+            &self,
+            _options: zerodds_security::logging::LogOptions,
+        ) -> Result<(), zerodds_security::error::SecurityError> {
+            Ok(())
+        }
+        fn enable_logging(&self) -> Result<(), zerodds_security::error::SecurityError> {
+            Ok(())
+        }
+        fn set_listener(
+            &self,
+            _listener: Option<std::sync::Arc<dyn zerodds_security::logging::LoggerListener>>,
+        ) -> Result<(), zerodds_security::error::SecurityError> {
+            Ok(())
+        }
         fn log(&self, _level: LogLevel, _participant: [u8; 16], _category: &str, _message: &str) {
             self.calls.fetch_add(1, Ordering::SeqCst);
         }
         fn plugin_class_id(&self) -> &str {
             "test:counting"
         }
+    }
+
+    /// DDS-Security 1.2 §10.1 Table 49: the DataTagging plugin is chosen on
+    /// the bundle; the shared plugin keeps the tags set through it.
+    #[test]
+    fn a_bundle_carries_the_data_tagging_plugin() {
+        use zerodds_security::data_tagging::DataTag;
+        let b = SecurityBundle::builder()
+            .data_tagging_plugin(Box::new(crate::BuiltinDataTaggingPlugin::new()))
+            .build();
+        assert!(b.has_data_tagging());
+        assert!(!SecurityBundle::builder().build().has_data_tagging());
+        let plugin = b.data_tagging_plugin().expect("plugin");
+        let tag = DataTag {
+            name: "classification".into(),
+            value: "secret".into(),
+        };
+        plugin
+            .lock()
+            .expect("lock")
+            .set_tags([7; 16], vec![tag.clone()]);
+        // A clone of the bundle shares the plugin.
+        let again = b.clone().data_tagging_plugin().expect("plugin");
+        let guard = again.lock().expect("lock");
+        assert_eq!(guard.get_tags([7; 16]), vec![tag]);
+        assert_eq!(guard.plugin_class_id(), "DDS:Tagging:DDS_Discovery");
     }
 
     #[test]

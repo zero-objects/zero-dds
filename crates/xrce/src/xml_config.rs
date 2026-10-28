@@ -244,7 +244,7 @@ pub struct TypeConfig {
     /// ObjectId for the OBJK_TYPE wrapper. Declared by the caller
     /// or generated with `ObjectId::new(raw, ObjectKind::Type)`.
     /// Optional, because §9.3 allows ObjectId derivation via
-    /// MD5 hash — see `derive_object_id`.
+    /// MD5 hash — see `ObjectId::from_reference`.
     pub object_id: ObjectId,
     /// Type name (top-level struct/enum/union or module).
     pub name: String,
@@ -678,9 +678,22 @@ fn collect_declared_types(el: &XmlElement, out: &mut Vec<String>) {
 fn collect_member_types(el: &XmlElement) -> Vec<String> {
     let mut out = Vec::new();
     for child in &el.children {
-        if child.name == "member" || child.name == "case" {
-            if let Some(t) = child.attribute("type") {
-                out.push(t.to_string());
+        if child.name == "member" || child.name == "case" || child.name == "typedef" {
+            // XTypes 1.3 Annex A: a named type is `type="nonBasic"` with
+            // the name in `nonBasicTypeName` (`mapKeyType` likewise).
+            for (attr, name_attr) in [
+                ("type", "nonBasicTypeName"),
+                ("mapKeyType", "mapKeyNonBasicTypeName"),
+            ] {
+                match child.attribute(attr) {
+                    Some("nonBasic") => {
+                        if let Some(n) = child.attribute(name_attr) {
+                            out.push(n.to_string());
+                        }
+                    }
+                    Some(t) => out.push(t.to_string()),
+                    None => {}
+                }
             }
         }
         out.extend(collect_member_types(child));
@@ -1018,13 +1031,21 @@ fn write_element(out: &mut String, el: &XmlElement) {
         out.push_str(&escape_xml_attr(v));
         out.push('"');
     }
-    if el.children.is_empty() && el.text.is_empty() {
+    // `zerodds_xml` keeps the whitespace of an element as part of its text
+    // (DDS-XML 1.0 §7.1.4 Tab.7.1 `string`). Whitespace between child
+    // elements is layout, not content; the compact snippet leaves it out.
+    let text = if el.children.is_empty() || !el.text.chars().all(char::is_whitespace) {
+        el.text.as_str()
+    } else {
+        ""
+    };
+    if el.children.is_empty() && text.is_empty() {
         out.push_str("/>");
         return;
     }
     out.push('>');
-    if !el.text.is_empty() {
-        for c in el.text.chars() {
+    if !text.is_empty() {
+        for c in text.chars() {
             match c {
                 '<' => out.push_str("&lt;"),
                 '>' => out.push_str("&gt;"),
@@ -1209,7 +1230,7 @@ mod tests {
         let xml = r#"<dds>
               <type object_id="0x000A" name="A">
                 <struct name="A">
-                  <member name="self_ref" type="A"/>
+                  <member name="self_ref" type="nonBasic" nonBasicTypeName="A"/>
                 </struct>
               </type>
               <participant object_id="0xCAF1" domain_id="0"/>
@@ -1344,6 +1365,17 @@ mod tests {
         assert!(xml.contains("RELIABLE_RELIABILITY_QOS"));
     }
 
+    #[test]
+    fn serialize_element_drops_layout_whitespace_between_children() {
+        // The element text keeps whitespace (DDS-XML 1.0 §7.1.4 Tab.7.1);
+        // the indentation between child elements is not content.
+        let doc = parse_xml_tree("<a x=\"1\">\n  <b>  v  </b>\n  <c/>\n</a>").unwrap();
+        assert_eq!(
+            serialize_element(&doc.root),
+            "<a x=\"1\"><b>  v  </b><c/></a>"
+        );
+    }
+
     // ===== 5x Type-Reuse via xml-Crate-Bridge =====
 
     #[test]
@@ -1376,10 +1408,10 @@ mod tests {
     fn type_reuse_two_types_no_cycle() {
         let xml = r#"<dds>
               <type object_id="0x000A" name="A">
-                <struct name="A"><member name="x" type="long"/></struct>
+                <struct name="A"><member name="x" type="int32"/></struct>
               </type>
               <type object_id="0x001A" name="B">
-                <struct name="B"><member name="a" type="A"/></struct>
+                <struct name="B"><member name="a" type="nonBasic" nonBasicTypeName="A"/></struct>
               </type>
               <participant object_id="0xCAF1" domain_id="0"/>
             </dds>"#;
@@ -1391,10 +1423,10 @@ mod tests {
     fn type_reuse_indirect_cycle_detected() {
         let xml = r#"<dds>
               <type object_id="0x000A" name="A">
-                <struct name="A"><member name="b" type="B"/></struct>
+                <struct name="A"><member name="b" type="nonBasic" nonBasicTypeName="B"/></struct>
               </type>
               <type object_id="0x001A" name="B">
-                <struct name="B"><member name="a" type="A"/></struct>
+                <struct name="B"><member name="a" type="nonBasic" nonBasicTypeName="A"/></struct>
               </type>
               <participant object_id="0xCAF1" domain_id="0"/>
             </dds>"#;

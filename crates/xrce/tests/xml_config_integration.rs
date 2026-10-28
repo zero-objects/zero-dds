@@ -29,9 +29,9 @@ const SHAPES_XML: &str = r#"<dds>
     <module name="ShapesDemoTypes">
       <struct name="ShapeType" extensibility="EXTENSIBLE_EXTENSIBILITY">
         <member name="color" type="string" key="true" stringMaxLength="128"/>
-        <member name="x" type="long"/>
-        <member name="y" type="long"/>
-        <member name="shapesize" type="long"/>
+        <member name="x" type="int32"/>
+        <member name="y" type="int32"/>
+        <member name="shapesize" type="int32"/>
       </struct>
     </module>
   </type>

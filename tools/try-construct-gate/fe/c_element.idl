@@ -1,0 +1,2 @@
+typedef string<5> String5;
+@appendable struct S { long a; sequence<@try_construct(TRIM) String5, 10> m; long b; };

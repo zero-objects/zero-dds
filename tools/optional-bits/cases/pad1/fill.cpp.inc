@@ -1,0 +1,1 @@
+sample.a(0x23); sample.b((char)0x62);

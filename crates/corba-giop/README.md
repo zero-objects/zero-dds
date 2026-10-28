@@ -51,4 +51,4 @@ cargo test -p zerodds-corba-giop
 ## See also
 
 - [Architecture](../../docs/architecture/02_architecture.md)
-- [`zerodds-cdr`](../cdr/README.md) — CDR-1-Marshalling.
+- [`zerodds-wire`](../wire/README.md) — CDR-1 marshalling.

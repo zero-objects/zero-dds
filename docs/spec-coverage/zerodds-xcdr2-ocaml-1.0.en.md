@@ -1,267 +1,270 @@
 # `zerodds-xcdr2-ocaml` 1.0 — Spec Coverage
 
-**Source:** `docs/specs/zerodds-xcdr2-ocaml-1.0.md` — ZeroDDS OCaml XCDR2 TypeSupport codegen spec.
+**Source:** `internal/standards/cache/omg/dds-xtypes-1.3.pdf` (§7.2, §7.4) and `internal/standards/cache/omg/idl-4.2.pdf` (§7) — what the OCaml column answers.
 
-Implementation:
+The mechanism this column shares with the other twenty — the two walks, the framing, Table 9, the key hash and the driver — is in `zerodds-xcdr2-bindings-conformance-1.0.md`. This document carries only what the OCaml column decides for itself, and its own evidence.
 
-- `crates/idl-ocaml/` — IDL → OCaml codegen (`marshal`, self-contained wire module).
-- `endpoints/ocaml/` — pure-OCaml XCDR2 wire core (writer/reader) + sync/async SDK.
+## §7.5.1 The parts of the column
 
-## §1 Motivation
+### §7.5.1 The concrete syntax tree and its text form
 
-### §1 No OMG-IDL-to-OCaml wire mapping
+**Spec:** §7.5.1 — Plain language binding — the mapping onto the target language is the PSM's own. This column's declarations are built as a tree and only then written as text; no emitter concatenates source.
 
-**Spec:** §1 — ZeroDDS defines the OCaml XCDR2 wire mapping.
+**Repo:** `crates/lang-cst/src/ocaml/`, `crates/lang-render/src/ocaml.rs`
 
-**Repo:** motivation text of the vendor spec.
-
-**Tests:** —
-
-**Status:** n/a (informative)
-
-## §2 Marshal pattern
-
-### §2 module + record `t` + `marshal (v, endian) : bytes`
-
-**Spec:** §2 — one OCaml `module` per IDL `@final struct`, with record `t` + `marshal` function.
-
-**Repo:** `crates/idl-ocaml/src/emitter.rs::emit_struct`.
-
-**Tests:** `crates/idl-ocaml/tests/golden.rs::final_struct_emits_record_and_marshal`
+**Tests:** `crates/lang-render/src/ocaml.rs::tests` (12 tests), among them `a_record_writes_one_field_per_line_with_a_trailing_semicolon`, `a_group_of_two_joins_them_with_and`, `a_postfix_type_needs_no_brackets_at_any_depth`, `a_tuple_is_always_bracketed_because_star_binds_loosest`, `a_variant_writes_a_leading_bar_per_constructor`;
+across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_output_with_exactly_one_newline`, `crates/lang-render/tests/rendering.rs::no_rendered_line_carries_trailing_whitespace`.
 
 **Status:** done
 
-## §3 Required API surface
+### §7.5.1 The rule catalogue
 
-### §3 Writer/Reader primitives + generated marshal
+**Spec:** §7.5.1 — Plain language binding — the mapping onto the target language is the PSM's own. What becomes of which model node is a rule set and not a special case inside the walk.
 
-**Spec:** §3 — Writer (put_u8..put_seq_u8, bytes), Reader (get_u8/get_u16/get_u32/get_u64/get_f32/get_string/get_seq_u8), generated `marshal`.
+**Repo:** `crates/lang-rules/src/rule/ocaml.rs`
 
-**Repo:** `endpoints/ocaml/zerodds.ml` (wire writer, wire reader incl. get_u8/get_u16/get_u64/get_f32/get_string/get_seq_u8 — byte-exact inverse, f32 via `Int32.float_of_bits`, u64 via `Int64`); `crates/idl-ocaml/src/emitter.rs` (marshal).
-
-**Tests:** `endpoints/ocaml/test.ml` (byte identity + sync + async), `endpoints/ocaml/example_sync|async.ml` (full field decode), `crates/idl-ocaml/tests/golden.rs`.
-
-**Status:** done
-
-### §3.a Generated `unmarshal` (decode codegen)
-
-**Spec:** §3/§11 — bidirectional binding: generated `unmarshal` as the exact inverse of `marshal`.
-
-**Repo:** `map_get` (inverse of `map_type`, produces a read expression) + `Wire.reader` in the wire module + `read`/`unmarshal` per struct+union + enum `_of_int` (`crates/idl-ocaml/src/emitter.rs`).
-
-**Tests:** `crates/idl-ocaml/tests/golden.rs` — 8 `decode_roundtrip_*` (final/nested/array/union/map/mutable/wide/longdouble), `marshal(unmarshal(golden)) == golden` LE+BE (codepit, ocamlopt).
+**Tests:** `crates/lang-rules/tests/apply.rs::every_language_catalogue_fires_on_the_same_model`,
+`crates/lang-rules/tests/apply.rs::every_catalogue_serialises_and_reads_back_the_same`
 
 **Status:** done
 
-**Decision record:** decode codegen covers every field type (prim/string/seq/enum/typedef/nested/array/union/map/@mutable/wchar/wstring/long double). Immutable records → fields are read sequentially into `let` bindings, the record is built at the end; seq/map via a recursive loop (enforced read order); union builds one record literal per branch (reads only the selected field). @final = inline, @appendable = DHEADER skip, @mutable = DHEADER + per-member EMHEADER+NEXTINT skip.
+### §7.5.1 The materialiser
 
-## §4 Codegen requirement (`idl-ocaml`)
+**Spec:** §7.5.1 — Plain language binding — the mapping onto the target language is the PSM's own. The materialiser carries the language's own rules: names and keywords, collisions, and what the language cannot express at all.
 
-### §4 module + marshal + embedded wire module
+**Repo:** `crates/lang-rules/src/adapter/ocaml.rs`
 
-**Spec:** §4 — per struct: OCaml module with record `t`, `marshal`, self-contained wire module.
-
-**Repo:** `crates/idl-ocaml/src/emitter.rs`; `tools/idlc` `Backend::OCaml`, `--ocaml`.
-
-**Tests:** `crates/idl-ocaml/tests/golden.rs`.
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_every_wired_language`
 
 **Status:** done
 
-## §5 Wire type mapping
+### §7.5.1 The codec backend
 
-### §5 IDL → OCaml → XCDR2 (alignment cap 4)
+**Spec:** §7.5.1 — Plain language binding — the mapping onto the target language is the PSM's own. The backend supplies the spelling the shared encoding decision takes in this language — receiver, method name, argument form.
 
-**Spec:** §5 — bool/octet/char/short..long long/float/double/string/sequence<octet> with exact wire layout; f32 via `Int32.bits_of_float`, f64 via `Int64.bits_of_float`.
+**Repo:** `crates/lang-rules/src/emit/ocaml.rs`
 
-**Repo:** `crates/idl-ocaml/src/emitter.rs::map_type/map_primitive`; `endpoints/ocaml/zerodds.ml` (put_*/take align cap 4).
-
-**Tests:** `crates/idl-ocaml/tests/golden.rs::byte_identity_vs_rust_goldens` (@final LE+BE).
-
-**Status:** done
-
-### §5.a enum
-
-**Spec:** §5 — IDL `enum` (32-bit signed integer on the wire, XTypes 1.3 §7.4.5.1).
-
-**Repo:** `crates/idl-ocaml/src/emitter.rs::emit_enum` + `map_type` (Scoped→enum→`Wire.put_u32 w (<name>_to_int ...)`).
-
-**Tests:** `crates/idl-ocaml/tests/golden.rs::enum_emits_variant_and_member_marshals` + `enum_member_is_byte_identical_i32` (`ocamlfind`, LE `02000000efbeadde`).
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_a_full_codec_in_every_wired_language`,
+`crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`
 
 **Status:** done
 
-### §5.b nested struct member + sequence<struct>
+### §7.5.1 The Table 9 defaulter
 
-**Spec:** §5 — nested struct member + `sequence<struct>` (collection DHEADER, XTypes 1.3 §7.4.3.5.3).
+**Spec:** §7.5.1 — Plain language binding — the mapping onto the target language is the PSM's own. A reader with no Table 9 answer has no defined value at five positions; this file is this column's answer.
 
-**Repo:** `crates/idl-ocaml/src/emitter.rs`: `marshal_into (v) (w) (endian)` per struct module + `map_type` Scoped struct + `map_sequence` struct element (collection DHEADER + count + `List.iter` marshal_into).
+**Repo:** `crates/lang-rules/src/default_ocaml.rs`
 
-**Tests:** `crates/idl-ocaml/tests/golden.rs::nested_struct_emits_marshal_into` + `nested_is_byte_identical_vs_rust_golden` (`ocamlfind`, byte-identical against `golden_nested_le/be.bin`).
-
-**Status:** done
-
-### §5.c typedef
-
-**Spec:** §5 — `typedef` (wire-transparent alias; a member of its alias type marshals byte-identical to the underlying type).
-
-**Repo:** `crates/idl-ocaml/src/emitter.rs::collect_typedefs`/`resolve_typedef` — the alias chain (incl. `sequence` elements) is resolved to the underlying type before `map_type`.
-
-**Tests:** `crates/idl-ocaml/tests/golden.rs::typedef_resolves_to_underlying_type` + `typedef_is_byte_identical_vs_rust_golden` (byte-identical against `golden_typedef_le/be.bin`).
+**Tests:** `crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`
 
 **Status:** done
 
-### §5.d array
+### §7.5.1 The wire runtime
 
-**Spec:** §5 — fixed arrays (XCDR2 §7.4.3.5.3: elements inline, row-major, multi-dim; no length prefix for primitive elements).
+**Spec:** §7.5.1 — Plain language binding — the mapping onto the target language is the PSM's own. The runtime reads §7.4 from the clause text on its own and calls no other column; that is where this column's independence lives.
 
-**Repo:** `crates/idl-ocaml/src/emitter.rs`: `Declarator::Array` branch — `array_size` evaluates the bound, `build_array_put` nests the element put in row-major loops; the field type becomes the language-native array.
+**Repo:** `runtime/ocaml`, endpoint SDK `endpoints/ocaml`
 
-**Tests:** `crates/idl-ocaml/tests/golden.rs::array_*` (byte-identical against `golden_array_le/be.bin`: `long xs[3]` + `short m[2][2]` + `octet bs[4]`).
-
-**Status:** done
-
-### §5.e union
-
-**Spec:** §5 — `union switch(...)` (XCDR2 §7.4.3.5.4: discriminator inline, then the selected member; no DHEADER for @final).
-
-**Repo:** `crates/idl-ocaml/src/emitter.rs::emit_union` — holder with a discriminator + one field per case member; `marshalInto` puts the discriminator, then dispatches a `switch`/`case`/`match` on the selected member. Integer-family discriminator + integer labels.
-
-**Tests:** `crates/idl-ocaml/tests/golden.rs::union_*` (byte-identical against `golden_union_le/be.bin`: disc=2 selects `unsigned short b` — checks non-first-case dispatch).
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_runtime`,
+`crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_an_endpoint_sdk`
 
 **Status:** done
 
-### §5.f map
+## §7.2.2 What this column decides for itself
 
-**Spec:** §5 — `map<K, V>` (XCDR2 §7.4.3.5: entries sorted ascending by key, `u32 count` + key/value pairs; no DHEADER for a primitive key/value pair, otherwise DHEADER-framed).
+### §7.2.2.2 Every IDL primitive reaches an OCaml type; no width a member can reach is platform-dependent
 
-**Repo:** `crates/idl-ocaml/src/emitter.rs` — map member in the native associative idiom + key sorting before marshalling; primitive-pair rule for the collection DHEADER.
+**Spec:** §7.2.2.2 — Primitive types — BOOLEAN, BYTE, INT8..UINT64, FLOAT32, FLOAT64, FLOAT128, CHAR8, CHAR16; every width is fixed.
 
-**Tests:** `crates/idl-ocaml/tests/golden.rs::map_*` (byte-identical against `golden_map_le/be.bin`: `map<long, unsigned long>` {1,2}).
+**Repo:** `crates/lang-rules/src/adapter/ocaml.rs`
 
-**Status:** done
-
-### §5.g wchar / wstring
-
-**Spec:** §5 — `wchar` (wchar32, UTF-32 code point) + `wstring` (u32 octet length + UTF-16 code units, no BOM).
-
-**Repo:** `crates/idl-ocaml/src/emitter.rs` — `putWString`/`put_wstring` (manual UTF-16 with surrogate pairs) + `wchar`→`putU32`. Wire core in the prelude.
-
-**Tests:** `crates/idl-ocaml/tests/golden.rs::wide_is_byte_identical_vs_rust_golden` (byte-identical against `golden_wide_le/be.bin`: c=U+03A9, s="wπ").
+**Tests:** `crates/lang-rules/tests/ocaml_end_to_end.rs::every_idl_primitive_reaches_an_ocaml_type`,
+`crates/lang-rules/tests/ocaml_end_to_end.rs::no_generated_type_is_platform_dependent_in_a_width_a_member_can_reach`
 
 **Status:** done
 
-### §5.h long double
+### §7.2.2.2 `long double` becomes a string and never a float
 
-**Spec:** §5 — `long double` (IEEE binary128, 16 bytes).
+**Spec:** §7.2.2.2 — FLOAT128 is an IEEE 754 binary128 value of sixteen octets.
 
-**Repo:** `crates/idl-ocaml/src/emitter.rs` — `putLongDouble`/`put_long_double`: binary128 via exact widening of the `float64` value (sign + 15-bit exponent + 112-bit mantissa), endian-correct.
+**Repo:** `crates/lang-rules/src/adapter/ocaml.rs`
 
-**Tests:** `crates/idl-ocaml/tests/golden.rs::longdouble_is_byte_identical_vs_rust_golden` (byte-identical against `golden_longdouble_le/be.bin`: d=1.1).
-
-**Status:** done
-
-**Note (honest):** input precision = `float64` (resp. the language's native float), exactly widened to binary128 — covers all float64-representable values. The Rust reference (`idl-rust` + `zerodds-cdr`) remains blocked on native `f128` (no stable Rust f128, ~2027); the goldens are hardcoded from the float64 bits, without f128.
-
-
-## §6 Extensibility
-
-### §6 @final (compact) + @appendable (DHEADER)
-
-**Spec:** §6 — @final without DHEADER, @appendable with uint32 body length + body.
-
-**Repo:** `crates/idl-ocaml/src/emitter.rs::emit_struct` (Final/Appendable).
-
-**Tests:** `crates/idl-ocaml/tests/golden.rs::final_struct_emits_record_and_marshal` + `appendable_struct_frames_a_dheader`.
+**Tests:** `crates/lang-rules/tests/ocaml_end_to_end.rs::a_long_double_is_a_string_and_never_a_float`
 
 **Status:** done
 
-### §6.a @mutable (EMHEADER)
+### §7.2.2.4.3 A sequence becomes an array and never a list; an array loses its bound to the comment
 
-**Spec:** §6 — @mutable EMHEADER framing.
+**Spec:** §7.2.2.4.3 — Sequence — one-dimensional, bound optional.
 
-**Repo:** `crates/idl-ocaml/src/emitter.rs` — @mutable `marshalInto`: DHEADER-framed member list, per member an EMHEADER (LC4 = `0x40000000 | member-id`) + NEXTINT (body length) + body (serialized into a sub-writer). Member ids from `@id(n)` or sequential.
+**Repo:** `crates/lang-rules/src/adapter/ocaml.rs`
 
-**Tests:** `crates/idl-ocaml/tests/golden.rs::mutable_*` (byte-identical against `golden_mutable_le/be.bin`).
-
-**Status:** done
-## §7 Key extraction
-
-### §7 Non-keyed 16-zero-byte key
-
-**Spec:** §7 — non-keyed → 16 zero bytes; keyed → MD5 (XCDR2-BE), runtime.
-
-**Repo:** `endpoints/ocaml/zerodds.ml` (writer in BE mode produces the BE serialization).
-
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/ocaml_end_to_end.rs::a_sequence_becomes_an_array_and_never_a_list`,
+`crates/lang-rules/tests/ocaml_end_to_end.rs::an_array_loses_its_bound_to_the_comment_because_ocaml_has_no_fixed_size_array`
 
 **Status:** done
 
-### §7.a Per-struct generated `keyHash` from `@key`
+### §7.2.2.4.3 A `map` becomes an array of entry records and never a `Hashtbl`
 
-**Spec:** §7 / XTypes §7.6.8 — codegen of a `keyHash` method from `@key` members.
+**Spec:** §7.2.2.4.3 — Map — key/value pairs; §7.4.3.5.3 rules 11-16 fix the order and the framing.
 
-**Repo:** `crates/idl-ocaml/src/emitter.rs` — structs with `@key` members get a `keyHash`/`Key_Hash` method: the `@key` members are serialized PLAIN_CDR2-BE (member-id order), a ≤16-byte key holder is zero-padded to 16 bytes, larger (or dynamically sized) ones go via MD5(bytes)[0..16]. The static max-key-size analysis lives in the shared `zerodds_idl::keyhash`.
+**Repo:** `crates/lang-rules/src/adapter/ocaml.rs`
 
-**Tests:** `crates/idl-ocaml/tests/golden.rs::keyhash_is_byte_identical_vs_rust_golden` (byte-identical against `golden_keyhash.bin` via `zerodds_cdr::compute_key_hash`).
-
-**Status:** done
-
-**Note:** both branches are implemented (XTypes §7.6.8.4 step 5): static max-key-size analysis (`zerodds_idl::keyhash`) decides ≤16 bytes → zero-pad, otherwise MD5(bytes)[0..16]. Byte-verified against `golden_keyhash_md5.bin` (5×@key long = 20 bytes).
-
-
-## §8 Wire core
-
-### §8 `endpoints/ocaml` as reference writer/reader
-
-**Spec:** §8 — reference wire core, byte-identical to `zerodds-cdr`.
-
-**Repo:** `endpoints/ocaml/zerodds.ml`.
-
-**Tests:** test.ml, CI job `endpoints-ocaml`.
+**Tests:** `crates/lang-rules/tests/ocaml_end_to_end.rs::a_map_becomes_an_array_of_entry_records_and_never_a_hashtbl`
 
 **Status:** done
 
-## §9 Conformance
+### §7.2.2.4.4.3 A union becomes a record and never a variant
 
-### §9 Golden byte identity @final LE+BE
+**Spec:** §7.2.2.4.4.3 — Union — the discriminator is always the first member and carries `must_understand=true`.
 
-**Spec:** §9 — encoding == golden_le.bin / golden_be.bin byte-for-byte.
+**Repo:** `crates/lang-rules/src/adapter/ocaml.rs`
 
-**Repo:** `crates/idl-ocaml`, `endpoints/ocaml`.
-
-**Tests:** `crates/idl-ocaml/tests/golden.rs::byte_identity_vs_rust_goldens` (CI `idl-ocaml`); `endpoints/ocaml` test.ml (CI `endpoints-ocaml`).
+**Tests:** `crates/lang-rules/tests/ocaml_end_to_end.rs::a_union_becomes_a_record_and_never_a_variant`
 
 **Status:** done
 
-## §10 Examples
+### §7.2.2.4.1.1 An enum becomes a variant and a pair of conversions
 
-### §10 sync + async deep examples + quickstart
+**Spec:** §7.2.2.4.1.1 — Enumeration — int32 literals, ordered, `bit_bound` 1..32.
 
-**Spec:** §10 — working sync/async examples.
+**Repo:** `crates/lang-rules/src/adapter/ocaml.rs`
 
-**Repo:** `endpoints/ocaml/example_sync.ml`, `endpoints/ocaml/example_async.ml`, `endpoints/ocaml/QUICKSTART.md`.
-
-**Tests:** CI job `endpoints-ocaml` runs both (`make example_sync` + `example_async`).
+**Tests:** `crates/lang-rules/tests/ocaml_end_to_end.rs::an_enum_becomes_a_variant_and_a_pair_of_conversions`,
+`crates/lang-rules/tests/ocaml_codec.rs::an_enumeration_crosses_through_its_conversions`
 
 **Status:** done
 
-## §11 Errata + open questions
+### IDL 4.2 §7.2.3 An OCaml keyword and a predefined type are escaped; the case fold adds no new collision
 
-### §11 Honest non-goals
+**Spec:** IDL 4.2 §7.2.3 — Identifiers are ASCII and case-insensitive on comparison; a collision has to be reported.
 
-**Spec:** §11 — former non-goals have been built: decode codegen, keyHash codegen, @mutable, wchar/wstring/map/array/nested/union/long double. Full IDL4 byte-verified.
+**Repo:** `crates/lang-rules/src/adapter/ocaml.rs`
 
-**Repo:** see §3.a/§5.a/§6.a/§7.a (each `done` with a decision record).
+**Tests:** `crates/lang-rules/tests/ocaml_end_to_end.rs::a_member_named_after_an_ocaml_keyword_is_escaped_and_keeps_its_idl_name`,
+`crates/lang-rules/tests/ocaml_end_to_end.rs::a_member_named_after_a_predefined_type_is_escaped_too`,
+`crates/lang-rules/tests/ocaml_end_to_end.rs::the_case_fold_adds_no_collision_the_frontend_does_not_already_report`
 
-**Tests:** —
+**Status:** done
 
-**Status:** n/a (informative)
+### IDL 4.2 §7.5.2 `module` flattens onto the name because a recursive group cannot cross one
+
+**Spec:** IDL 4.2 §7.5.2 — `module` is a naming scope; an identifier is unique per scope.
+
+**Repo:** `crates/lang-rules/src/adapter/ocaml.rs`
+
+**Tests:** `crates/lang-rules/tests/ocaml_end_to_end.rs::a_module_flattens_onto_the_name_because_a_recursive_group_cannot_cross_one`
+
+**Status:** done
+
+### §7.2.2.4.9 Two mutually recursive types come out as one `and`-joined group
+
+**Spec:** §7.2.2.4.9 — A self-referential type needs a place where the descent terminates.
+
+**Repo:** `crates/lang-rules/src/adapter/ocaml.rs`
+
+**Tests:** `crates/lang-rules/tests/ocaml_end_to_end.rs::a_self_recursive_type_is_one_declaration_that_names_itself`,
+`crates/lang-rules/tests/ocaml_end_to_end.rs::two_mutually_recursive_types_come_out_as_one_and_joined_group`,
+`crates/lang-rules/tests/ocaml_end_to_end.rs::a_recursive_group_compiles`
+
+**Status:** done
+
+### §7.4.3 A member store is a functional record update; a mutable aggregate compiles with its seen flags
+
+**Spec:** §7.4.3 — XCDR version 2 — plain CDR2, delimited CDR2 and PL_CDR2.
+
+**Repo:** `crates/lang-rules/src/emit/ocaml.rs`
+
+**Tests:** `crates/lang-rules/tests/ocaml_codec.rs::a_member_store_is_a_functional_record_update`,
+`crates/lang-rules/tests/ocaml_codec.rs::a_mutable_aggregate_compiles_with_its_seen_flags`,
+`crates/lang-rules/tests/ocaml_codec.rs::the_shapes_the_corpus_has_reach_the_end_of_both_walks`
+
+**Status:** done
+
+## §7.3.1 How the column is held to it
+
+### §7.3.1 Every corpus case renders or names the layer that refused it
+
+**Spec:** §7.3.1 — Every corpus case renders or names the layer that refused it. A case that stopped rendering would otherwise be found by whichever probe ran next, a build directory away from the construct that caused it.
+
+**Repo:** `crates/lang-rules/src/emit/ocaml.rs`, `crates/lang-rules/src/adapter/ocaml.rs`
+
+**Tests:** `crates/lang-rules/tests/ocaml_end_to_end.rs::every_corpus_case_renders_or_names_its_failure`
+
+**Status:** done
+
+### §7.3.1 The generated source compiles under the language's own compiler
+
+**Spec:** §7.3.1 — The generated source compiles under the language's own compiler. A snapshot says the emitter produced the text it produced last time; it does not say the text is the language. Where the compiler is absent the test says so on standard error.
+
+**Repo:** `crates/lang-rules/src/emit/ocaml.rs`, `crates/lang-rules/src/adapter/ocaml.rs`
+
+**Tests:** `crates/lang-rules/tests/ocaml_end_to_end.rs::the_generated_ocaml_compiles`
+
+**Status:** done
+
+### §7.3.1 Two runs over one source produce the same text
+
+**Spec:** §7.3.1 — Two runs over one source produce the same text. Without it every diff of a generated tree is unreadable.
+
+**Repo:** `crates/lang-rules/src/emit/ocaml.rs`, `crates/lang-rules/src/adapter/ocaml.rs`
+
+**Tests:** `crates/lang-rules/tests/ocaml_end_to_end.rs::two_runs_over_one_source_produce_the_same_text`
+
+**Status:** done
+
+### §7.2.2.4 Every construct the completeness table claims for this column also produces output
+
+**Spec:** §7.2.2.4 — Every construct the completeness table claims for this column also produces output. The table in `crates/lang-rules/src/coverage.rs` is the claim; this test is what checks it.
+
+**Repo:** `crates/lang-rules/src/emit/ocaml.rs`, `crates/lang-rules/src/adapter/ocaml.rs`
+
+**Tests:** `crates/lang-rules/tests/ocaml_end_to_end.rs::every_construct_the_table_claims_for_ocaml_produces_output`
+
+**Status:** done
+
+### §7.2.2.4.8 `@verbatim` lands at the placements the clause names for this language
+
+**Spec:** §7.2.2.4.8 — `@verbatim` lands at the placements the clause names for this language.
+
+**Repo:** `crates/lang-rules/src/adapter/ocaml.rs`, `crates/lang-rules/src/verbatim.rs`
+
+**Tests:** `crates/lang-rules/tests/verbatim_every_column.rs::every_column_places_the_six_slots_in_its_declarations`,
+`crates/lang-rules/tests/verbatim_every_column.rs::every_column_ends_its_source_file_with_the_end_file_text`,
+`crates/lang-rules/tests/verbatim_every_column.rs::a_directive_reaches_its_own_column_and_no_other`
+
+**Status:** done
+
+## §7.3.1 Driver and measurement
+
+### §7.3.1 `idlc generate --lang ocaml`
+
+**Spec:** §7.3.1 — the IDL type representation is the input of generation; the output is this column's source.
+
+**Repo:** `tools/idlc/src/generate.rs`, `tools/idlc/src/main.rs`
+
+**Tests:** `tools/idlc/src/generate.rs::tests::every_language_round_trips_through_its_own_name`,
+`tools/idlc/src/generate.rs::tests::language_names_lists_every_language_once`
+
+**Status:** done
+
+### §7.4 The measurement harness of this column
+
+**Spec:** §7.4 — a column's octets are compared against recorded octets rather than asserted in its own tests.
+
+**Repo:** `tools/wireprobe/wireprobe-zerodds-ocaml-gen/`, `tools/wireprobe/wireprobe-zerodds-ocaml`, `tools/wireprobe/wireprobe-ocaml-corpus`
+
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_cell_generator`,
+`crates/lang-rules/tests/every_language_has_its_parts.rs::every_cell_generator_guards_against_a_missing_toolchain`
+
+**Status:** done
 
 ---
 
-## Audit status
+## Audit Status
 
-20 done / 0 partial / 0 open / 2 n/a (informative) / 0 n/a (rejected).
+23 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
 
-Test run: `GOLDEN_DIR=<gold> cargo test -p zerodds-idl-ocaml` — 29 tests green, 0 failed (codepit, toolchain `ocamlfind`).
+Test run: `cargo test -p zerodds-lang-rules` — 1024 tests green, 0 failed (20 ignored: the whole-corpus compile runs, which need `--include-ignored`).
 
 Open items: none. Decision records: none.

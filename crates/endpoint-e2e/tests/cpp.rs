@@ -1,33 +1,25 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! C++ endpoint ping-pong: the generated DDS-PSM-Cxx `topic_type_support`
-//! codec (`idl-cpp`) sends a typed `Ping` over a real POSIX UDP socket and
-//! decodes the `Pong`. The raw case uses the generated `encode`/`decode`
-//! directly; the sync/async cases layer the C++ endpoint SDK
+//! C++ endpoint ping-pong: the generated codec (`zd_enc_Ping` / `zd_dec_Pong`,
+//! calling `runtime/cpp`'s `zerodds::wire`) sends a typed `Ping` over a real
+//! POSIX UDP socket and decodes the `Pong`. The raw case uses the generated
+//! codec directly; the sync/async cases layer the C++ endpoint SDK
 //! (`zerodds_endpoint.h` XRCE framing, `zerodds::AsyncReader`/`AsyncWriter`)
 //! over the same wire. Gated on `g++`/`gcc`.
 
 #![allow(clippy::expect_used, clippy::panic, clippy::print_stderr)]
 
-use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 
-use zerodds_endpoint_e2e::{IDL, Peer, bind_peer, ping_pong};
-use zerodds_idl::config::ParserConfig;
-use zerodds_idl_cpp::{CppGenOptions, generate_cpp_header};
+use zerodds_endpoint_e2e::codegen::{
+    Language, endpoints_dir, runtime_dir, scratch_dir, source, tool_available,
+};
+use zerodds_endpoint_e2e::{Peer, bind_peer, ping_pong, xcdr2_reader, xcdr2_writer};
 
 /// `(c++ compiler, c compiler)` if both are on the `PATH`.
 fn compilers() -> Option<(&'static str, &'static str)> {
-    let ok = |cc: &str| {
-        Command::new(cc)
-            .arg("--version")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .ok()
-            .is_some_and(|s| s.success())
-    };
+    let ok = |cc: &str| tool_available(cc, "--version");
     if ok("g++") && ok("gcc") {
         Some(("g++", "gcc"))
     } else {
@@ -35,14 +27,17 @@ fn compilers() -> Option<(&'static str, &'static str)> {
     }
 }
 
-/// The generated DDS-PSM-Cxx header for the shared `Ping`/`Pong` IDL.
+/// The generated `Ping`/`Pong` types + codec, as one header the app includes.
+///
+/// `#pragma once` and the runtime's own header first: the generated text
+/// declares the types and their codec, and reaches `zerodds::wire::Writer` by
+/// name.
 fn gen_header() -> String {
-    let ast = zerodds_idl::parse(IDL, &ParserConfig::default()).expect("parse");
-    generate_cpp_header(&ast, &CppGenOptions::default()).expect("gen")
-}
-
-fn endpoints() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../endpoints")
+    format!(
+        "#pragma once\n#include \"zerodds/wire.hpp\"\n#include <cstdint>\n\
+         #include <string>\n#include <vector>\n\n{}",
+        source(Language::Cpp)
+    )
 }
 
 // The app source. One `#include "<gen header>"` token is patched in per build.
@@ -113,19 +108,28 @@ sockaddr_in peer_addr(const char* port) {
     return a;
 }
 
+// XCDR2 little-endian, MAXALIGN four. The PL_CDR1 fields never fire under
+// plain XCDR2; they are spelled out because the aggregate is positional.
+static const zerodds::wire::PlCdr1Framing kFraming{
+    zerodds::wire::PidFlagPolicy::SentinelMustUnderstand, 16128,
+    true, true, true, true};
+
 std::vector<uint8_t> encode_ping() {
     ::Ping p;
-    p.seq(1);
-    p.msg("hello from app");
-    return ::dds::topic::topic_type_support<::Ping>::encode(p);
+    p.seq = 1;
+    p.msg = "hello from app";
+    zerodds::wire::Writer w(zerodds::wire::Endianness::Little, 4, kFraming, false);
+    zd_enc_Ping(w, p);
+    return w.finish();
 }
 
 // Decode a Pong body and print the exact line the Rust harness asserts.
 void print_pong(const unsigned char* body, std::size_t len) {
-    ::Pong pong = ::dds::topic::topic_type_support<::Pong>::decode(
-        body, len, ::dds::topic::xcdr2::XcdrVersion::Xcdr2, false);
+    zerodds::wire::Reader r(body, len, zerodds::wire::Endianness::Little, 4, kFraming);
+    ::Pong pong;
+    zd_dec_Pong(r, pong, zerodds::wire::TryConstruct::Discard);
     std::printf("PONG seq=%d reply=%s\n",
-                static_cast<int>(pong.seq()), pong.reply().c_str());
+                static_cast<int>(pong.seq), pong.reply.c_str());
 }
 
 // --- raw: generated encode/decode over a bare UDP datagram (no XRCE frame) ---
@@ -171,7 +175,7 @@ int run_sync(const char* port) {
     std::vector<uint8_t> body = encode_ping();
     unsigned char frame[4096];
     std::size_t flen = zdw_xrce_write_frame(frame, sizeof(frame),
-        ZDW_XRCE_SESSION_NOKEY, ZDW_XRCE_STREAM_BEST_EFFORT, 1,
+        ZDW_XRCE_SESSION_NOKEY, ZDW_XRCE_STREAM_BEST_EFFORT, 1, ZDW_XRCE_OBJECT_ID(0x001, ZDW_OBJK_DATAWRITER),
         body.data(), body.size());
     if (flen == 0 || zdw_endpoint_send(&t, frame, flen) != ZDW_T_OK) {
         std::fprintf(stderr, "sync: send\n");
@@ -214,16 +218,17 @@ int run_async(const char* port) {
     unsigned char rxbuf[4096];
     zerodds::AsyncReader reader(&t, rxbuf, sizeof(rxbuf),
         [&](const unsigned char* body, std::size_t len) {
-            ::Pong pong = ::dds::topic::topic_type_support<::Pong>::decode(
-                body, len, ::dds::topic::xcdr2::XcdrVersion::Xcdr2, false);
-            rseq = static_cast<int>(pong.seq());
-            rreply = pong.reply();
+            zerodds::wire::Reader r(body, len, zerodds::wire::Endianness::Little, 4, kFraming);
+            ::Pong pong;
+            zd_dec_Pong(r, pong, zerodds::wire::TryConstruct::Discard);
+            rseq = static_cast<int>(pong.seq);
+            rreply = pong.reply;
             got = true;
         });
 
     unsigned char txbuf[4096];
     zerodds::AsyncWriter writer(&t, txbuf, sizeof(txbuf),
-        ZDW_XRCE_SESSION_NOKEY, ZDW_XRCE_STREAM_BEST_EFFORT);
+        ZDW_XRCE_SESSION_NOKEY, ZDW_XRCE_STREAM_BEST_EFFORT, ZDW_XRCE_OBJECT_ID(0x001, ZDW_OBJK_DATAWRITER));
     std::vector<uint8_t> body = encode_ping();
     if (!writer.write(body.data(), body.size())) {
         std::fprintf(stderr, "async: write\n");
@@ -266,17 +271,15 @@ int main(int argc, char** argv) {
 /// Builds the C++ app for `mode` (compiling the C reactor + the app) and spawns
 /// it against `port`. Panics with the compiler output on any build failure.
 fn build_app(cc_cpp: &str, cc_c: &str, mode: &str, port: u16) -> Child {
-    let ep = endpoints();
-    let c_include = ep.join("c/include");
-    let cpp_include = ep.join("cpp/include");
-    // The generated DDS-PSM-Cxx header pulls in the support headers
-    // (`dds/topic/TopicTraits.hpp`, `xcdr2.hpp`, ...) shipped in `crates/cpp`.
-    let psm_include = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../cpp/include");
-    let endpoint_c = ep.join("c/src/zerodds_endpoint.c");
-    let async_c = ep.join("c/src/zerodds_async.c");
+    let c_include = endpoints_dir("c").join("include");
+    let cpp_include = endpoints_dir("cpp").join("include");
+    // The generated codec calls `zerodds::wire`, which is `runtime/cpp`.
+    let rt = runtime_dir("cpp");
+    let rt_include = rt.join("include");
+    let endpoint_c = endpoints_dir("c").join("src/zerodds_endpoint.c");
+    let async_c = endpoints_dir("c").join("src/zerodds_async.c");
 
-    let dir = std::env::temp_dir().join(format!("pp_cpp_{mode}_{}", std::process::id()));
-    std::fs::create_dir_all(&dir).expect("mkdir");
+    let dir = scratch_dir(&format!("cpp_{mode}"));
 
     let hdr = dir.join("pingpong.hpp");
     std::fs::write(&hdr, gen_header()).expect("write header");
@@ -308,8 +311,12 @@ fn build_app(cc_cpp: &str, cc_c: &str, mode: &str, port: u16) -> Child {
         .args(["-std=c++17", "-Wall", "-Wno-unused"])
         .arg(format!("-I{}", c_include.display()))
         .arg(format!("-I{}", cpp_include.display()))
-        .arg(format!("-I{}", psm_include.display()))
+        .arg(format!("-I{}", rt_include.display()))
         .arg(&app)
+        .arg(rt.join("src/writer.cpp"))
+        .arg(rt.join("src/reader.cpp"))
+        .arg(rt.join("src/md5.cpp"))
+        .arg(rt.join("src/float128.cpp"))
         .arg(&endpoint_o)
         .arg(&async_o)
         .arg("-o")
@@ -342,7 +349,6 @@ fn cpp_raw_udp() {
     // The raw app sends a bare XCDR2 Ping (no XRCE frame); run a minimal peer.
     use std::net::UdpSocket;
     use std::time::Duration;
-    use zerodds_cdr::{BufferReader, BufferWriter, Endianness};
     let sock = UdpSocket::bind("127.0.0.1:0").expect("bind");
     let port = sock.local_addr().expect("addr").port();
     let child = build_app(cc_cpp, cc_c, "raw", port);
@@ -350,14 +356,14 @@ fn cpp_raw_udp() {
         .expect("timeout");
     let mut buf = [0u8; 4096];
     let (n, app) = sock.recv_from(&mut buf).expect("recv");
-    let mut r = BufferReader::new(&buf[..n], Endianness::Little).xcdr2();
+    let mut r = xcdr2_reader(&buf[..n]);
     let seq = r.read_u32().expect("seq");
     let msg = r.read_string().expect("msg");
     assert_eq!((seq, msg.as_str()), (1, "hello from app"));
-    let mut w = BufferWriter::new(Endianness::Little).xcdr2();
-    w.write_u32(seq).expect("s");
-    w.write_string(&format!("pong:{msg}")).expect("r");
-    sock.send_to(&w.into_bytes(), app).expect("send");
+    let mut w = xcdr2_writer();
+    w.write_u32(seq);
+    w.write_string(&format!("pong:{msg}"));
+    sock.send_to(&w.finish(), app).expect("send");
     let out = child.wait_with_output().expect("wait");
     assert!(
         String::from_utf8_lossy(&out.stdout).contains("PONG seq=1 reply=pong:hello from app"),

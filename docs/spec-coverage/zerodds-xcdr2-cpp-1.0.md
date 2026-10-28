@@ -1,230 +1,242 @@
-# `zerodds-xcdr2-cpp` 1.0 -- Spec-Coverage
+# `zerodds-xcdr2-cpp` 1.0 — Spec-Coverage
 
-**Quelle:** `docs/specs/zerodds-xcdr2-cpp-1.0.md` (213 Zeilen) -- ZeroDDS C++17 TypeSupport-Codegen-Spec.
+**Quelle:** `internal/standards/cache/omg/dds-xtypes-1.3.pdf` (§7.2, §7.4) und `internal/standards/cache/omg/idl-4.2.pdf` (§7) — was die C++-Spalte beantwortet.
 
-Implementation:
+Der Mechanismus, den diese Spalte mit den zwanzig anderen teilt — die beiden Walks, die Rahmung, Table 9, der KeyHash und der Treiber —, steht in `zerodds-xcdr2-bindings-conformance-1.0.md`. Dieses Dokument führt nur, was die C++-Spalte selbst entscheidet, und ihre eigenen Nachweise.
 
-- `crates/cpp/` — C++17 XCDR2-TypeSupport-Codegen.
+## §7.5.1 Die Teile der Spalte
 
-## §1 Motivation
+### §7.5.1 Der konkrete Syntaxbaum und seine Textform
 
-### §1 OMG-DDS-PSM-Cxx-Lücke für TypeSupport
+**Spec:** §7.5.1 — Plain Language Binding — die Abbildung auf die Zielsprache ist PSM-eigen. Die Deklarationen dieser Spalte werden als Baum gebaut und erst danach als Text geschrieben; kein Emitter setzt Quelltext zusammen.
 
-**Spec:** §1 -- "OMG DDS-PSM-Cxx 1.0 mandatiert TypeSupport-Registrierung in `Participant::create_topic`, spezifiziert aber kein konkretes `topic_type_support<T>`-Trait."
+**Repo:** `crates/lang-cst/src/cpp/`, `crates/lang-render/src/cpp.rs`
 
-**Repo:** Motivations-Text der Vendor-Spec.
-
-**Tests:** --
-
-**Status:** n/a (informative)
-
-## §2 TypeSupport-Pattern
-
-### §2 `topic_type_support<T>`-Forward in `dds::topic`
-
-**Spec:** §2 -- "template <typename T> struct topic_type_support; // forward (Spezialisierung pro T)" in Namespace `dds::topic`.
-
-**Repo:** `crates/cpp/include/dds/topic/TopicTraits.hpp` deklariert das Forward-Template; Spezialisierungen pro IDL-`struct` werden von idl-cpp-Codegen emittiert (`crates/idl-cpp/src/emitter.rs::emit_topic_type_support_specs`).
-
-**Tests:** `crates/idl-cpp/tests/snapshot_codegen.rs` (10 tests) verifiziert die emittierte Form.
+**Tests:** `crates/lang-render/tests/rendering.rs`: `a_cpp_class_renders_its_access_sections_in_order`, `a_cpp_accessor_with_one_statement_stays_on_one_line`, `a_cpp_constructor_with_initialisers_puts_them_on_their_own_line`, `a_cpp_expression_brackets_only_where_the_tree_asked_for_it`, `a_cpp_namespace_body_is_not_indented`, `a_cpp_template_specialisation_renders_its_header_above_the_declaration`;
+querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_output_with_exactly_one_newline`, `crates/lang-render/tests/rendering.rs::no_rendered_line_carries_trailing_whitespace`.
 
 **Status:** done
 
-## §3 Required Methods
+### §7.5.1 Der Regelkatalog
 
-### §3 type_name() / encode() / encode_be() / decode() / key_hash() / is_keyed() / extensibility()
+**Spec:** §7.5.1 — Plain Language Binding — die Abbildung auf die Zielsprache ist PSM-eigen. Was aus welchem Modellknoten wird, steht als Regelmenge und nicht als Sonderfall im Walk.
 
-**Spec:** §3 -- C++-Method-Signaturen: `static const char* type_name()`, `static std::vector<uint8_t> encode(const T&)`, `static std::vector<uint8_t> encode_be(const T&)`, `static T decode(const uint8_t*, size_t)`, `static std::array<uint8_t,16> key_hash(const T&)`, `static constexpr bool is_keyed()`, `static constexpr ::dds::core::policy::DataRepresentationKind extensibility()`.
+**Repo:** `crates/lang-rules/src/rule/cpp.rs`
 
-**Repo:** `crates/idl-cpp/src/emitter.rs::emit_topic_type_support_for` (Zeile 1429ff) emittiert exakt diese 7 Methoden inkl. der `constexpr` für is_keyed/extensibility.
-
-**Tests:** `crates/idl-cpp/tests/xcdr2_wire_vectors.rs` (15 V-tests), `crates/idl-cpp/tests/snapshot_codegen.rs`, `crates/idl-cpp/tests/spec_conformance.rs` (30 tests).
-
-**Status:** done
-
-## §4 Codegen-Pflicht (idl-cpp)
-
-### §4 Spezialisierung pro IDL-`struct` mit FQN
-
-**Spec:** §4 -- "Pro IDL-`struct` (Top-Level oder Modul-nested) MUSS idl-cpp eine `topic_type_support<FQN>`-Spezialisierung emittieren. FQN ist `::Module::Sub::Struct`."
-
-**Repo:** `crates/idl-cpp/src/emitter.rs::emit_topic_type_support_specs` iteriert über alle structs der TU; FQN-Emission via `cpp_fqn`-Variable in `emit_topic_type_support_for`.
-
-**Tests:** `crates/idl-cpp/tests/fixtures.rs` (13 tests), `crates/idl-cpp/tests/snapshot_codegen.rs` (10 tests).
+**Tests:** `crates/lang-rules/tests/apply.rs::every_language_catalogue_fires_on_the_same_model`,
+`crates/lang-rules/tests/apply.rs::every_catalogue_serialises_and_reads_back_the_same`
 
 **Status:** done
 
-### §4 Plain-Members + @optional + @key Codegen-Pflicht
+### §7.5.1 Der Materialisierer
 
-**Spec:** §4 -- "Pflicht-Members (aus AST): Alle Plain-Members (Primitive, String, Sequence, Nested-Struct, Enum, Array). `@optional` / `@shared` über EMHEADER M-Flag (Mutable) bzw. Present-Flag-Byte (Final/Appendable). `@key`-Members in Key-Hash-Generation."
+**Spec:** §7.5.1 — Plain Language Binding — die Abbildung auf die Zielsprache ist PSM-eigen. Der Materialisierer trägt die Eigenheiten der Sprache: Namens- und Schlüsselwortbehandlung, Kollisionen und das, was die Sprache gar nicht ausdrücken kann.
 
-**Repo:** `crates/idl-cpp/src/emitter.rs` -- `emit_encode_fn`, `emit_decode_fn`, Key-Hash-Generierung. `crates/idl-cpp/src/c_mode.rs::emit_key_hash_body`.
+**Repo:** `crates/lang-rules/src/adapter/cpp.rs`
 
-**Tests:** V-8 (key), V-9/V-10 (extensibility), V-11 (optional) in `xcdr2_wire_vectors.rs`.
-
-**Status:** done
-
-### §4 Type-Name ohne führendes `::`
-
-**Spec:** §4 -- "Type-Name-Form: `Module::Sub::Struct` ohne führendes `::`."
-
-**Repo:** `crates/idl-cpp/src/emitter.rs::short_name` strip leading `::`.
-
-**Tests:** V-7 `Outer::Inner::S` Assert in wire-vector-Test.
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_every_wired_language`
 
 **Status:** done
 
-## §5 Wire-Type-Mapping
+### §7.5.1 Das Codec-Backend
 
-### §5 IDL-zu-C++17-Typen + Wire-Layout
+**Spec:** §7.5.1 — Plain Language Binding — die Abbildung auf die Zielsprache ist PSM-eigen. Das Backend liefert die Schreibweise, in der die geteilte Kodierungsentscheidung in dieser Sprache steht — Empfänger, Methodenname, Argumentform.
 
-**Spec:** §5, Tabelle 18 IDL-Typen → C++ → XCDR2 LE.
+**Repo:** `crates/lang-rules/src/emit/cpp.rs`
 
-**Repo:** `crates/idl-cpp/src/type_map.rs` mappt IDL-Primitive auf C++-Typen. `crates/cpp/include/dds/topic/xcdr2.hpp` `write_le<T>/read_le<T>` Templates.
-
-**Tests:** V-3 Mixed Primitives, V-4 String, V-5 Sequence<int32>, V-6 Sequence<string>, sowie `compile_check.rs` (16 tests) und `edge_cases.rs` (15 tests).
-
-**Status:** done
-
-## §6 Extensibility
-
-### §6 Final / Appendable / Mutable Mode-Encoder
-
-**Spec:** §6 -- "Codegen-Default: @appendable. Helper-Library liefert pro Mode dedicated Writer-Klassen: `xcdr2::FinalWriter`, `xcdr2::AppendableWriter`, `xcdr2::MutableWriter`."
-
-**Repo:** `crates/cpp/include/dds/topic/xcdr2.hpp` hält FinalWriter/AppendableWriter/MutableWriter. `crates/idl-cpp/src/emitter.rs::struct_extensibility` -> emit_encode_fn dispatch.
-
-**Tests:** V-1..V-8 (Final), V-9 (Appendable), V-10/V-11 (Mutable) in `xcdr2_wire_vectors.rs`.
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_a_full_codec_in_every_wired_language`,
+`crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`
 
 **Status:** done
 
-## §7 Key-Extraction
+### §7.5.1 Der Table-9-Defaulter
 
-### §7 PlainCdr2BeKeyHolder + MD5
+**Spec:** §7.5.1 — Plain Language Binding — die Abbildung auf die Zielsprache ist PSM-eigen. Ein Leser ohne Tab.9-Antwort hat an fünf Stellen keinen definierten Wert; diese Datei ist die Antwort dieser Spalte.
 
-**Spec:** §7 -- "Per XTypes §7.6.8: `PlainCdr2BeKeyHolder` (Big-Endian Plain-CDR2 über nur `@key`-Members), MD5 davon, 16 Bytes. Wenn is_keyed()==false: 16 Null-Bytes."
+**Repo:** `crates/lang-rules/src/default_cpp.rs`
 
-**Repo:** `crates/cpp/include/dds/topic/xcdr2_md5.hpp` (RFC-1321 MD5). `crates/idl-cpp/src/emitter.rs` emittiert key_hash() mit holder-write_be und md5().
-
-**Tests:** V-8 in `xcdr2_wire_vectors.rs` (Key-Hash zero-padded für Holder ≤ 16 Byte; MD5-Pfad für >16 Byte über Helper-Self-Tests).
+**Tests:** `crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`
 
 **Status:** done
 
-## §8 Helper-Library
+### §7.5.1 Die Wire-Laufzeit
 
-### §8 TopicTraits.hpp + xcdr2.hpp + xcdr2_md5.hpp
+**Spec:** §7.5.1 — Plain Language Binding — die Abbildung auf die Zielsprache ist PSM-eigen. Die Laufzeit liest §7.4 eigenständig aus dem Klauseltext und ruft keine andere Spalte; dort liegt die Unabhängigkeit dieser Spalte.
 
-**Spec:** §8, Tabelle Header/Inhalt -- 3 Einträge: `TopicTraits.hpp` (Forward + ByteSeq/string Defaults), `xcdr2.hpp` (Primitive-Helpers, Padding, DHEADER, EMHEADER), `xcdr2_md5.hpp` (RFC 1321).
+**Repo:** `runtime/cpp`, Endpoint-SDK `endpoints/cpp`
 
-**Repo:** `crates/cpp/include/dds/topic/TopicTraits.hpp`, `crates/cpp/include/dds/topic/xcdr2.hpp`, `crates/cpp/include/dds/topic/xcdr2_md5.hpp`.
-
-**Tests:** `crates/idl-cpp/tests/clang_roundtrip.rs` (1 test, ignored on systems ohne clang); generierter Code wird gegen Header gelinkt.
-
-**Status:** done
-
-### §8 Pure C++17 header-only
-
-**Spec:** §8 -- "Pure C++17, header-only. Kein Linking gegen Rust-Layer; Cross-Compile-fest."
-
-**Repo:** Drei .hpp-Files ohne .cpp-Sibling. Keine Rust-FFI-Abhängigkeit.
-
-**Tests:** `compile_check.rs` (16 tests) compiliert generierten Output.
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_runtime`,
+`crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_an_endpoint_sdk`
 
 **Status:** done
 
-## §9 Conformance
+## §7.2.2 Was diese Spalte selbst entscheidet
 
-### §9 L1 Wire (V-1..V-12 byte-genau)
+### §7.2.2.2 Jedes Member trägt den Laufzeit-Typ und nie den des Übersetzers
 
-**Spec:** §9 -- "L1 (Wire): `crates/idl-cpp/tests/xcdr2_wire_vectors.rs` prüft alle V-1..V-12 byte-genau."
+**Spec:** §7.2.2.2 — Primitive Types — BOOLEAN, BYTE, INT8..UINT64, FLOAT32, FLOAT64, FLOAT128, CHAR8, CHAR16; jede Breite ist festgelegt.
 
-**Repo:** `crates/idl-cpp/tests/xcdr2_wire_vectors.rs` (15 #[test]-Funktionen).
+**Repo:** `crates/lang-rules/src/adapter/cpp.rs`
 
-**Tests:** v1_empty_final_struct, v2_plain_primitives_final, v3_mixed_primitives_final, v4_string_final, v5_sequence_int_final, v6_sequence_string_final, v7_nested_modules_final, v8_keyed_struct_final, v9_appendable_struct, v10_mutable_struct + 5 weitere.
-
-**Status:** done
-
-### §9 L2 Codegen Snapshots
-
-**Spec:** §9 -- "L2 (Codegen): `crates/idl-cpp/tests/snapshots/` enthält Snapshot pro Vektor."
-
-**Repo:** `crates/idl-cpp/tests/snapshots/` Dir mit Snapshot-Files; Treiber `crates/idl-cpp/tests/snapshot_codegen.rs` (10 tests).
-
-**Tests:** `snapshot_codegen.rs` validiert generierte Outputs für alle V-Type-IDL-Inputs.
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::tests::a_long_double_is_the_runtime_type_and_never_the_compiler_s`
 
 **Status:** done
 
-### §9 L3 Cross-Lang Runner
+### §7.2.2.4.4.4.7 Ein optionales Member ist ein Zeiger und kein zweites Feld
 
-**Spec:** §9 -- "L3 (Cross-Lang): `crates/conformance/tests/cross_language_xcdr2.rs` ruft `cpp_runner` auf."
 
-**Repo:** `crates/conformance/tests/cross_language_xcdr2.rs` hält den Multi-Sprach-Driver inkl. C++-Binding-Aufruf via Subprocess gegen die idl-cpp Wire-Vector-Suite.
+**Spec:** §7.2.2.4.4.4.7 — Ein Struct-Member darf optional sein; ein Union-Member nie.
 
-**Tests:** `crates/conformance/tests/cross_language_xcdr2.rs::l3_2_cpp_binding`.
+**Repo:** `crates/lang-rules/src/adapter/cpp.rs`
 
-**Status:** done
-
-### §9 L4 Cross-Vendor Cyclone
-
-**Spec:** §9 -- "L4 (Cross-Vendor): `crates/discovery/tests/cyclone_xcdr2_cpp.rs` Roundtrip vs. Cyclone."
-
-**Repo:** `tests/interop/xcdr2_cross_vendor.sh` orchestriert Cross-Vendor-Setup; Fixture-Tree `crates/discovery/tests/fixtures/cyclone-xcdr2/`. Alle 12 Vektoren wurden live gegen Cyclone DDS 0.11 (erzwungenes XCDR2) auf dem Linux-Bench-Host aufgenommen und byte-genau verglichen; zwei aufgedeckte Gaps gefixt (64-Bit-Alignment §7.4.1.1.1, Sequence-DHEADER §7.4.3.5). Der C++-Encoder (`idl-cpp`) ist byte-verifiziert: `crates/idl-cpp/tests/xcdr2_wire_vectors.rs` kompiliert+läuft den generierten C++-Code und prüft V-1..V-12 byte-genau (inkl. V-3/V-8 4-Byte-Alignment, V-6 `sequence<string>`-DHEADER). V-10/V-11a konforme LC-Divergenz.
-
-**Tests:** `crates/idl-cpp/tests/xcdr2_wire_vectors.rs` (16 Tests, compile+run C++) + `crates/cdr/tests/xcdr2_cross_vendor_fixtures.rs` (15 Tests).
-
-**Status:** done -- C++-Encoder byte-genau gegen Cyclone DDS 0.11 (V-1..V-9/V-11b), mutable V-10/V-11a konforme LC-Divergenz; generierter Code compile+run-verifiziert.
-
-## §10 Examples
-
-### §10 topic_typed_smoke.cpp
-
-**Spec:** §10 -- "`crates/cpp/examples/topic_typed_smoke.cpp` ist der Referenz-Smoke (generierter `topic_type_support<Point>` + Pub/Sub-Loop)."
-
-**Repo:** `crates/cpp/examples/topic_typed_smoke.cpp` (Smoke-Demo).
-
-**Tests:** `compile_check.rs` deckt Compile-Pfad; ein Lauf-Test ist Sample-only.
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::tests::an_optional_member_is_a_plain_pointer_and_not_a_second_field`,
+`crates/lang-rules/tests/cpp_reader_generates.rs::an_optional_member_gets_a_reader`
 
 **Status:** done
 
-### §10 sync + async Deep-Examples + Quickstart
+### §7.2.2.4.3 Eine Sequenz wird ein `vector`, eine `map` die Klasse `zerodds::Map` über einem `vector` von Paaren
 
-**Spec:** §10 -- lauffähige sync/async Deep-Examples (Sensor-Telemetrie `Reading{id,value,label}`).
 
-**Repo:** `endpoints/cpp/example_sync.cpp` (C++98-Poll-Loop), `endpoints/cpp/example_async.cpp` (C++17-Reactor + `std::function`), `endpoints/cpp/QUICKSTART.md`.
+**Spec:** §7.2.2.4.3 — Sequence — eindimensional, Schranke optional.
 
-**Tests:** CI-Job `endpoints-native` → `make -C endpoints/cpp examples`; codepit-verifiziert (5/5 Feld-Decode, byte-identisch via die C++-Facade über den `zdw`-Kern).
+**Repo:** `crates/lang-rules/src/adapter/cpp.rs`
 
-**Status:** done
-
-## §11 Errata + Open-Questions
-
-### §11.1 wchar plattform-abhängig
-
-**Spec:** §11.1 -- "C++ wchar_t ist plattformabhängig (4 Byte unter Linux, 2 Byte unter Windows). Codegen MUSS via `static_cast<uint16_t>` truncieren und bei Decode auf-extenden."
-
-**Repo:** `crates/idl-cpp/src/emitter.rs` emit_member_write nutzt explicit u16-Cast für wchar.
-
-**Tests:** wchar-Smoke in `crates/idl-cpp/tests/edge_cases.rs`.
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::tests::a_sequence_is_a_vector_and_a_map_is_a_class_over_a_vector_of_pairs`
 
 **Status:** done
 
-### §11.2 long double
+### §7.2.2.4.3 Ein Array verschachtelt mit der äußersten Dimension zuerst
 
-**Spec:** §11.2 -- "XCDR2 spezifiziert kein long double-Wire. Codegen lehnt long double-Member mit Fehler ab."
+**Spec:** §7.2.2.4.3 — Array — mehrdimensional, feste Elementzahl, row-major.
 
-**Repo:** `crates/idl-cpp/src/type_map.rs` lehnt long double per Validator.
+**Repo:** `crates/lang-rules/src/adapter/cpp.rs`
 
-**Tests:** Edge-Case-Test in `edge_cases.rs`.
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::tests::an_array_nests_with_the_outer_dimension_outermost`
 
 **Status:** done
 
-### §11.3 std::variant für union
+### §7.2.2.4.1.1 Eine Enumeration nimmt ihren Underlying Type aus dem `bit_bound`
 
-**Spec:** §11.3 -- "idl-cpp emittiert IDL-`union` als `std::variant<...>`. Encoder schreibt Discriminator + selected-case nach XTypes §7.4.4.5."
+**Spec:** §7.2.2.4.1.1 — Enumeration — Int32-Literale, geordnet, `bit_bound` 1..32.
 
-**Repo:** `crates/idl-cpp/src/emitter.rs` union-Pfad.
+**Repo:** `crates/lang-rules/src/adapter/cpp.rs`
 
-**Tests:** Union-Tests in `crates/idl-cpp/tests/spec_conformance.rs`.
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::tests::an_enumeration_takes_an_underlying_type_from_its_bit_bound`,
+`crates/lang-rules/tests/cpp_reader_generates.rs::an_enumeration_whose_first_literal_is_not_zero`
+
+**Status:** done
+
+### §7.2.2.4.4.3 Eine Union wird eine Klasse mit Diskriminator und einem Feld je Case
+
+**Spec:** §7.2.2.4.4.3 — Union — der Diskriminator ist immer das erste Member und trägt `must_understand=true`.
+
+**Repo:** `crates/lang-rules/src/adapter/cpp.rs`
+
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::tests::a_union_is_a_class_with_a_discriminator_and_one_field_per_case`,
+`crates/lang-rules/tests/cpp_reader_generates.rs::a_union_gets_a_reader`
+
+**Status:** done
+
+### IDL 4.2 §7.5.2 `module` wird ein Namensraum und kein Präfix; Verweise werden von der Wurzel geschrieben
+
+**Spec:** IDL 4.2 §7.5.2 — `module` ist ein Naming-Scope; ein Identifier ist je Scope einmalig.
+
+**Repo:** `crates/lang-rules/src/adapter/cpp.rs`
+
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::tests::a_module_is_a_namespace_and_not_a_prefix`,
+`crates/lang-rules/src/adapter/cpp.rs::tests::a_reference_across_modules_is_written_from_the_root`
+
+**Status:** done
+
+### IDL 4.2 §7.2.3 Das Tag hält auseinander, was die C++-Schreibweise zusammenzieht
+
+**Spec:** IDL 4.2 §7.2.3 — Identifier sind ASCII und beim Vergleich case-insensitiv; eine Kollision muss gemeldet werden.
+
+**Repo:** `crates/lang-rules/src/adapter/cpp.rs`
+
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::tests::the_tag_keeps_apart_what_the_cpp_spelling_collapses`,
+`crates/lang-rules/src/adapter/cpp.rs::tests::an_any_member_is_refused_by_name_at_any_depth`
+
+**Status:** done
+
+### §7.2.2.4.4.4.9 Jede Art, für die Tab.9 antwortet, bekommt einen Defaulter
+
+**Spec:** §7.2.2.4.4.4.9 — Ein Member, das der Strom nicht trug, nimmt seinen Default nach Tab.9.
+
+**Repo:** `crates/lang-rules/src/default_cpp.rs`
+
+**Tests:** `crates/lang-rules/tests/cpp_reader_generates.rs::every_kind_table_9_answers_for_gets_a_defaulter`
+
+**Status:** done
+
+### §7.4.3 Rahmung: ein appendable und ein mutable Aggregat bekommen jeweils einen Leser
+
+**Spec:** §7.4.3 — XCDR Version 2 — Plain CDR2, Delimited CDR2 und PL_CDR2.
+
+**Repo:** `crates/lang-rules/src/emit/cpp.rs`
+
+**Tests:** `crates/lang-rules/tests/cpp_reader_generates.rs::an_appendable_struct_gets_a_reader`,
+`crates/lang-rules/tests/cpp_reader_generates.rs::a_mutable_struct_gets_a_reader`,
+`crates/lang-rules/tests/cpp_reader_generates.rs::a_bounded_string_gets_a_reader`
+
+**Status:** done
+
+### IDL 4.2 §7.4.3 `interface` bindet die Entities von DDS-RPC in C++
+
+**Spec:** IDL 4.2 §7.4.3 — `interface` — Operationen mit `in`/`out`/`inout`-Parametern.
+
+**Repo:** `crates/lang-rules/src/adapter/interface.rs`
+
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_two_abstract_classes_of_rule_one`,
+`crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_synchronous_operations_of_rule_six`,
+`crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_asynchronous_operations_of_rule_seven`,
+`crates/lang-rules/tests/interface_bindings.rs::cpp_prefixes_a_reserved_word_with_cxx`
+
+**Status:** done
+
+## §7.3.1 Woran die Spalte gehalten wird
+
+### §7.3.1 Jeder Korpusfall rendert oder benennt die Schicht, die ihn abgelehnt hat
+
+**Spec:** §7.3.1 — Jeder Korpusfall rendert oder benennt die Schicht, die ihn abgelehnt hat. Ein Fall, der zu rendern aufhört, würde sonst erst von der nächsten Messung gefunden — ein Build-Verzeichnis vom Konstrukt entfernt, das ihn verursacht hat.
+
+**Repo:** `crates/lang-rules/src/emit/cpp.rs`, `crates/lang-rules/src/adapter/cpp.rs`
+
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::tests::every_corpus_case_renders_or_names_its_refusal`
+
+**Status:** done
+
+### §7.2.2.4.8 `@verbatim` landet an den Stellen, die die Klausel für diese Sprache nennt
+
+**Spec:** §7.2.2.4.8 — `@verbatim` landet an den Stellen, die die Klausel für diese Sprache nennt.
+
+**Repo:** `crates/lang-rules/src/emit/cpp.rs`, `crates/lang-rules/src/adapter/cpp.rs`
+
+**Tests:** `crates/lang-rules/tests/verbatim_end_to_end.rs::cpp_places_all_six_slots_in_spec_order`
+
+**Status:** done
+
+## §7.3.1 Treiber und Messung
+
+### §7.3.1 `idlc generate --lang c++`
+
+**Spec:** §7.3.1 — die IDL-Type-Representation ist die Eingabe der Erzeugung; die Ausgabe ist die Quelle dieser Spalte.
+
+**Repo:** `tools/idlc/src/generate.rs`, `tools/idlc/src/main.rs`
+
+**Tests:** `tools/idlc/src/generate.rs::tests::every_language_round_trips_through_its_own_name`,
+`tools/idlc/src/generate.rs::tests::language_names_lists_every_language_once`
+
+**Status:** done
+
+### §7.4 Der Messaufbau dieser Spalte
+
+**Spec:** §7.4 — die Oktette einer Spalte werden gegen aufgezeichnete Oktette verglichen und nicht in ihren eigenen Tests behauptet.
+
+**Repo:** `tools/wireprobe/wireprobe-zerodds-cpp-gen/`, `tools/wireprobe/wireprobe-zerodds-cpp`, `tools/wireprobe/wireprobe-cpp-corpus`
+
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_cell_generator`,
+`crates/lang-rules/tests/every_language_has_its_parts.rs::every_cell_generator_guards_against_a_missing_toolchain`
 
 **Status:** done
 
@@ -232,6 +244,8 @@ Implementation:
 
 ## Audit-Status
 
-18 done / 0 partial / 0 open / 1 n/a (informative) / 0 n/a (rejected).
+21 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
 
-Test-Lauf: `cargo test -p zerodds-idl-cpp` -- 12 Test-Binaries grün, 0 failed (139 unit + 16+15+13+11+15+0+30+10+21+7+15 in integration tests); `cargo test -p zerodds-conformance --test cross_language_xcdr2 l3_2_cpp_binding` -- 1 Test grün; `cargo test -p zerodds-cdr --test xcdr2_cross_vendor_fixtures` -- 15 Tests grün.
+Test-Lauf: `cargo test -p zerodds-lang-rules` — 1024 Tests grün, 0 failed (20 ignoriert: die Vollkorpus-Compile-Läufe, die `--include-ignored` verlangen).
+
+Offene Punkte: keine. Decision-Records: keine.

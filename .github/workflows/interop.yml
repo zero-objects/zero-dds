@@ -1,0 +1,171 @@
+# Cross-vendor DDS interoperability — issue #28.
+#
+# Exchanges typed `Robot` samples over live DDS/RTPS between ZeroDDS and one
+# open-source vendor (CycloneDDS or Fast DDS), in BOTH directions, and asserts
+# endpoint matching AND actual decoded sample delivery — SPDP discovery alone
+# is never a pass (tests/interop/ci/run_vendor.sh).
+#
+# This mirrors the internal GitLab interop gate 1:1 — the SAME scripts
+# (tests/interop/ci/*), the SAME ZeroDDS reader/writer and vendor clients.
+# The only difference is provisioning: the GitLab gate runs on a pinned image
+# with the vendor SDKs baked in; here the same pinned vendor sources are
+# installed on the hosted runner (CycloneDDS wheel from PyPI, Fast DDS built
+# from the eProsima commits pinned in install_fastdds.sh).
+#
+# WHY schedule-only (no `pull_request` / `push` trigger): live-network interop
+# on shared hosted runners is timing-sensitive and can flake in ways the
+# deterministic wire-compliance suite in ci.yml does not. Running it weekly on
+# its own status keeps a transient flake from ever turning a required merge
+# check red, while still catching real cross-vendor regressions. Deterministic
+# wire compliance stays in ci.yml.
+name: interop
+
+on:
+  schedule:
+    # Weekly, Monday 04:17 UTC (off the top of the hour to avoid scheduler pileups).
+    - cron: "17 4 * * 1"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: interop-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # CycloneDDS — cyclonedds==11.0.1 manylinux wheel (bundles libddsc; no C build).
+  # ---------------------------------------------------------------------------
+  cyclone:
+    name: interop / cyclone
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install CycloneDDS (PyPI wheel, pinned)
+        run: |
+          python3 -m venv "$HOME/cyclonedds-venv"
+          "$HOME/cyclonedds-venv/bin/pip" install --upgrade pip
+          "$HOME/cyclonedds-venv/bin/pip" install "cyclonedds==11.0.1"
+          "$HOME/cyclonedds-venv/bin/python3" -c \
+            'from cyclonedds.domain import DomainParticipant; DomainParticipant(0); print("cyclonedds runtime OK")'
+      - name: Run cyclone interop cells (both directions)
+        env:
+          PYBIN: ${{ github.workspace }}/../cyclonedds-venv/bin/python3
+          DOMAIN_BASE: "121"
+          READ_WINDOW: "12"
+          WRITE_WINDOW: "30"
+          START_DELAY: "3"
+        run: |
+          # PYBIN via $HOME (the ../ above is only a documentation hint):
+          export PYBIN="$HOME/cyclonedds-venv/bin/python3"
+          mkdir -p interop-out
+          bash tests/interop/ci/run_vendor.sh cyclone interop-out
+      - name: Upload cyclone artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: interop-cyclone
+          path: interop-out/
+          retention-days: 30
+
+  # ---------------------------------------------------------------------------
+  # Fast DDS — built from the eProsima commits pinned in install_fastdds.sh.
+  # The install prefix is cached, keyed on those pins, so the ~15 min source
+  # build only re-runs when a pin changes (the script itself skips a rebuild
+  # when $PREFIX/include/fastdds is already present).
+  # ---------------------------------------------------------------------------
+  fastdds:
+    name: interop / fastdds
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Cache Fast DDS install prefix
+        uses: actions/cache@v4
+        with:
+          path: ~/fastdds-install
+          # Bump this key's suffix whenever install_fastdds.sh changes a pin.
+          key: fastdds-v3.6.1-cdr2.3.5-gen4.3.0-foonathan1.4.1
+      - name: Install Fast DDS (pinned eProsima sources) + build fastdds_robot
+        env:
+          FASTDDS_PREFIX: ${{ github.workspace }}/../fastdds-install
+        run: |
+          export FASTDDS_PREFIX="$HOME/fastdds-install"
+          bash tests/interop/ci/install_fastdds.sh
+      - name: Run fastdds interop cells (both directions)
+        env:
+          DOMAIN_BASE: "141"
+          READ_WINDOW: "12"
+          WRITE_WINDOW: "30"
+          START_DELAY: "3"
+        run: |
+          export FASTDDS_PREFIX="$HOME/fastdds-install"
+          export FASTDDS_ROBOT="$PWD/tests/interop/ci/fastdds/build/fastdds_robot"
+          export LD_LIBRARY_PATH="$FASTDDS_PREFIX/lib:${LD_LIBRARY_PATH:-}"
+          mkdir -p interop-out
+          bash tests/interop/ci/run_vendor.sh fastdds interop-out
+      - name: Upload fastdds artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: interop-fastdds
+          path: interop-out/
+          retention-days: 30
+
+  # ---------------------------------------------------------------------------
+  # Harness self-test — the domain-argument contract across all four client
+  # roles, exact-PID cleanup, and the result classifier. Compiles only OUR
+  # clients; asserts the harness itself, so a broken classifier or a leaked
+  # domain default can never silently pass a vendor cell.
+  # ---------------------------------------------------------------------------
+  harness:
+    name: interop / harness self-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Cache Fast DDS install prefix
+        uses: actions/cache@v4
+        with:
+          path: ~/fastdds-install
+          key: fastdds-v3.6.1-cdr2.3.5-gen4.3.0-foonathan1.4.1
+      - name: Install Fast DDS (pinned) + build fastdds_robot
+        run: |
+          export FASTDDS_PREFIX="$HOME/fastdds-install"
+          bash tests/interop/ci/install_fastdds.sh
+      - name: Generate ZeroDDS reader Robot type
+        run: |
+          cargo run -q -p zerodds-idlc -- generate interop/cyclone-xtypes-27/robot.idl \
+            --rust -o interop/cyclone-xtypes-27/reader/src
+          mv interop/cyclone-xtypes-27/reader/src/Robot.rs \
+             interop/cyclone-xtypes-27/reader/src/robot.rs 2>/dev/null || true
+          test -f interop/cyclone-xtypes-27/reader/src/robot.rs
+          ( cd interop/cyclone-xtypes-27/reader && cargo build -q )
+      - name: Harness self-tests (domain contract, cleanup, classifier)
+        run: |
+          export FASTDDS_PREFIX="$HOME/fastdds-install"
+          export FASTDDS_ROBOT="$PWD/tests/interop/ci/fastdds/build/fastdds_robot"
+          export LD_LIBRARY_PATH="$FASTDDS_PREFIX/lib:${LD_LIBRARY_PATH:-}"
+          mkdir -p interop-out
+          bash tests/interop/ci/tests/test_domain_arg.sh 2>&1 | tee interop-out/domain-arg.log
+          bash tests/interop/ci/tests/test_cleanup.sh 2>&1 | tee interop-out/cleanup.log
+          python3 -m pytest -q tests/interop/ci/tests/test_interop_result.py 2>&1 | tee interop-out/classifier.log
+      - name: Upload harness artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: interop-harness
+          path: interop-out/
+          retention-days: 30

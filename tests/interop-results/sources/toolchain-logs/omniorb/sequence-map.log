@@ -1,0 +1,7 @@
+wireprobe-omniorb: omniidl failed
+gen.idl:1: Error in look-up of 'map': 'map' not found
+gen.idl:1: Syntax error in definition
+gen.idl:1: Syntax error in abstract valuetype
+gen.idl:3: Error in look-up of 'zd_anon_1': 'zd_anon_1' not found
+the probe was killed: Segmentation fault      ( ulimit -v "$WIREPROBE_TOOL_KILOBYTES" 2> /dev/null || true; "$WIREPROBE_TIMEOUT" --kill-after=10 "$WIREPROBE_TOOL_SECONDS" "$@" )
+wireprobe: omniidl ran under a 4194304K ceiling and a 300s clock

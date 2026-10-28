@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of struct-inheritance-final-unannotated that ros-cyclone produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	wireprobe-ros-package: Sample: a struct with a base, which rosidl's IDL grammar has no syntax for
+plain-cdr1	be	refused	wireprobe-ros-package: Sample: a struct with a base, which rosidl's IDL grammar has no syntax for
+pl-cdr1	le	refused	wireprobe-ros-package: Sample: a struct with a base, which rosidl's IDL grammar has no syntax for
+pl-cdr1	be	refused	wireprobe-ros-package: Sample: a struct with a base, which rosidl's IDL grammar has no syntax for
+plain-cdr2	le	no-version-2	
+plain-cdr2	be	no-version-2	
+delimited-cdr	le	no-version-2	
+delimited-cdr	be	no-version-2	
+pl-cdr2	le	no-version-2	
+pl-cdr2	be	no-version-2	

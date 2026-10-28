@@ -18,7 +18,7 @@ use crate::wire_types::{Guid, Locator, LocatorKind, ProtocolVersion, VendorId};
 pub const ENCAPSULATION_PL_CDR_LE: [u8; 2] = [0x00, 0x03];
 
 /// `BuiltinEndpointSet` bitmask flags (DDSI-RTPS 2.5 §9.3.2.12,
-/// table 9.4 + 9.5; DDS-Security 1.2 §7.4.7.1, table 8 for bits
+/// table 9.4 + 9.5; DDS-Security 1.2 §7.5.1.4, Table 11 for bits
 /// 16..27). Exchanged via the `PID_BUILTIN_ENDPOINT_SET` (0x0058) PID
 /// in the SPDP `ParticipantBuiltinTopicData` as a 32-bit bitmask.
 ///
@@ -67,17 +67,23 @@ pub mod endpoint_flag {
     // TypeLookup-Service (XTypes 1.3 §7.6.3.3.4)
     // ---------------------------------------------------------------
 
-    /// `TYPE_LOOKUP_SERVICE_REQUEST_DATA_WRITER/READER` — the TypeLookup
-    /// request endpoint pair (writer + reader). XTypes 1.3 §7.6.3.3.4
-    /// assigns bit 12 to the request pair.
-    pub const TYPE_LOOKUP_REQUEST: u32 = 1 << 12;
-    /// `TYPE_LOOKUP_SERVICE_REPLY_DATA_WRITER/READER` — the TypeLookup
-    /// reply endpoint pair (writer + reader). XTypes 1.3 §7.6.3.3.4
-    /// assigns bit 13 to the reply pair.
-    pub const TYPE_LOOKUP_REPLY: u32 = 1 << 13;
+    /// TypeLookup request writer (bit 12), used by a querying client.
+    pub const TYPE_LOOKUP_REQUEST_DATA_WRITER: u32 = 1 << 12;
+    /// TypeLookup request reader (bit 13), used by a responding service.
+    pub const TYPE_LOOKUP_REQUEST_DATA_READER: u32 = 1 << 13;
+    /// TypeLookup reply writer (bit 14), used by a responding service.
+    pub const TYPE_LOOKUP_REPLY_DATA_WRITER: u32 = 1 << 14;
+    /// TypeLookup reply reader (bit 15), used by a querying client.
+    pub const TYPE_LOOKUP_REPLY_DATA_READER: u32 = 1 << 15;
+    /// Both TypeLookup request endpoints, not a single wire bit.
+    pub const TYPE_LOOKUP_REQUEST: u32 =
+        TYPE_LOOKUP_REQUEST_DATA_WRITER | TYPE_LOOKUP_REQUEST_DATA_READER;
+    /// Both TypeLookup reply endpoints, not a single wire bit.
+    pub const TYPE_LOOKUP_REPLY: u32 =
+        TYPE_LOOKUP_REPLY_DATA_WRITER | TYPE_LOOKUP_REPLY_DATA_READER;
 
     // ---------------------------------------------------------------
-    // DDS-Security 1.2 §7.4.7.1, tab. 8 — secure-discovery endpoints
+    // DDS-Security 1.2 §7.5.1.4, Table 11 — secure-discovery endpoints
     // (bits 16..27). Doc comments reference the spec constant names
     // (`DISC_BUILTIN_ENDPOINT_*`) for cross-crate audits with the
     // `zerodds-security-rtps` crate.
@@ -150,10 +156,10 @@ pub mod endpoint_flag {
         | PARTICIPANT_SECURE_WRITER
         | PARTICIPANT_SECURE_READER;
 
-    /// Mask of all standard bits (0..5, 10..13) without security and
+    /// Mask of all standard bits (0..5, 10..15) without security and
     /// without SEDP topics. Represents the ZeroDDS standard discovery
     /// capability for a participant without the `security` feature.
-    /// Includes the TypeLookup service (bits 12+13, XTypes 1.3
+    /// Includes all four TypeLookup endpoints (bits 12..15, XTypes 1.3
     /// §7.6.3.3.4).
     ///
     /// SEDP topics endpoints (bits 28/29) are optional per RTPS 2.5
@@ -185,9 +191,9 @@ pub use zerodds_qos::Duration;
 /// SPDP discovered-participant data. Subset.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParticipantBuiltinTopicData {
-    /// GUID des Participants.
+    /// GUID of the participant.
     pub guid: Guid,
-    /// Protokoll-Version (typisch 2.5).
+    /// Protocol version (typically 2.5).
     pub protocol_version: ProtocolVersion,
     /// Vendor-Identifier.
     pub vendor_id: VendorId,
@@ -209,6 +215,10 @@ pub struct ParticipantBuiltinTopicData {
     /// DDS domain ID. Cyclone filters beacons from other domains; if the
     /// PID is missing, domain 0 is usually assumed.
     pub domain_id: Option<u32>,
+    /// DDSI-RTPS 2.5 §8.5.3.2 `domainTag`: participants of one domain with
+    /// different tags do not discover each other. Empty is the default tag,
+    /// and an absent `PID_DOMAIN_TAG` means it; a non-empty tag is sent.
+    pub domain_tag: alloc::string::String,
     /// Bitmask of available builtin endpoints
     /// (see [`endpoint_flag`]).
     pub builtin_endpoint_set: u32,
@@ -216,24 +226,24 @@ pub struct ParticipantBuiltinTopicData {
     /// beacon.
     pub lease_duration: Duration,
     /// UserData QoS at the participant (spec §2.2.3.1) — opaque
-    /// sequence<octet>, propagated over SPDP.
+    /// `sequence<octet>`, propagated over SPDP.
     pub user_data: Vec<u8>,
     /// Property list (`PID_PROPERTY_LIST`, 0x0059). Carrier for
     /// security-plugin classes, permissions tokens and ZeroDDS
     /// heterogeneous-security caps (WP 4H-b). Empty for peers without
     /// security announcements (legacy compatibility).
     pub properties: WirePropertyList,
-    /// Raw CDR-encoded `IdentityToken` blob (DDS-Security 1.2 §7.4.1.4
+    /// Raw CDR-encoded `IdentityToken` blob (DDS-Security 1.2 §7.5.1.4 Table 10
     /// Tab.16, `PID_IDENTITY_TOKEN`=0x1001). Parsed by the DDS-Security
     /// layer (`zerodds_security::token::DataHolder`) — RTPS only passes
     /// the bytes through, so this crate stays transport-free.
     /// `None` for legacy peers without a security announce.
     pub identity_token: Option<Vec<u8>>,
     /// Raw CDR-encoded `PermissionsToken` blob (DDS-Security 1.2
-    /// §7.4.1.5 Tab.17, `PID_PERMISSIONS_TOKEN`=0x1002).
+    /// §7.5.1.4 Table 10, `PID_PERMISSIONS_TOKEN`=0x1002).
     pub permissions_token: Option<Vec<u8>>,
     /// Raw CDR-encoded `IdentityStatusToken` blob (DDS-Security 1.2
-    /// §7.4.1.6, `PID_IDENTITY_STATUS_TOKEN`=0x1006). Optional, carries
+    /// §7.5.1.6 Table 14, `PID_IDENTITY_STATUS_TOKEN`=0x1006). Optional, carries
     /// the OCSP live status.
     pub identity_status_token: Option<Vec<u8>>,
     /// `ParticipantSecurityDigitalSignatureAlgorithmInfo` (DDS-Security
@@ -251,13 +261,64 @@ pub struct ParticipantBuiltinTopicData {
     /// (AES128|AES256 supported, AES128 required).
     pub sym_cipher_algo_info:
         Option<crate::security_algo_info::ParticipantSecuritySymmetricCipherAlgorithmInfo>,
-    /// `ParticipantSecurityInfo` (DDS-Security 1.2 §7.4.1.6,
+    /// `available_builtin_endpoints_ext` (DDS-Security 1.2 §7.5.1.4
+    /// Table 10, `PID=0x1007`, bits in [`builtin_endpoint_ext`]). Not sent
+    /// when 0; a participant that sends none has 0 ("the receiver shall
+    /// interpret the value of the member to be 0x00000000").
+    pub available_builtin_endpoints_ext: u32,
+    /// `ParticipantSecurityInfo` (DDS-Security 1.2 §7.5.1.4 Table 10,
     /// `PID_PARTICIPANT_SECURITY_INFO`=0x1005). Two attribute bitmasks at
     /// participant level. **Mandatory for cross-vendor interop**: foreign
     /// vendors (cyclone/FastDDS) classify a participant WITHOUT this PID as
     /// NON-SECURE and reject its endpoints. `None` = legacy/plain.
     pub participant_security_info:
         Option<crate::participant_security_info::ParticipantSecurityInfo>,
+    /// `PID_EXPECTS_INLINE_QOS` (0x0043) in SPDP: the readers of this
+    /// participant expect the writer's QoS in-line with every DATA
+    /// (DDSI-RTPS 2.5 §8.5.3.2). Absent is `false` (Table 9.19), and
+    /// this tree's participants announce nothing.
+    pub expects_inline_qos: bool,
+    /// `PID_PARTICIPANT_MANUAL_LIVELINESS_COUNT` (0x0034,
+    /// `ParticipantProxy::manualLivelinessCount`, DDSI-RTPS 2.5 Table 9.19):
+    /// "When liveliness is asserted, the manualLivelinessCount is incremented
+    /// and a new SPDPdiscoveredParticipantData is sent" (Table 8.78). `None`
+    /// when the participant announces none.
+    pub manual_liveliness_count: Option<i32>,
+    /// `PID_ENTITY_NAME` (0x0062, DDSI-RTPS 2.5 Table 9.18, `EntityName_t`):
+    /// the name of the participant. `None` when it announces none.
+    pub entity_name: Option<alloc::string::String>,
+    /// `PID_BUILTIN_ENDPOINT_QOS` (0x0077, `ParticipantProxy::builtinEndpointQos`)
+    /// as the bitmask of [`builtin_endpoint_qos`]. `None` when the participant
+    /// announces none: its builtin readers are then RELIABLE (§8.4.13.3).
+    pub builtin_endpoint_qos: Option<u32>,
+}
+
+pub mod builtin_endpoint_ext {
+    //! `available_builtin_endpoints_ext` (DDS-Security 1.2 §7.5.1.4
+    //! Table 12, `PID_AVAILABLE_BUILTIN_ENDPOINTS_EXT` 0x1007): the bits of
+    //! the secure TypeLookup endpoints.
+
+    /// `TypeLookupServiceRequestSecureWriter` (bit 0).
+    pub const TYPE_LOOKUP_REQUEST_SECURE_WRITER: u32 = 1 << 0;
+    /// `TypeLookupServiceRequestSecureReader` (bit 1).
+    pub const TYPE_LOOKUP_REQUEST_SECURE_READER: u32 = 1 << 1;
+    /// `TypeLookupServiceReplySecureWriter` (bit 2).
+    pub const TYPE_LOOKUP_REPLY_SECURE_WRITER: u32 = 1 << 2;
+    /// `TypeLookupServiceReplySecureReader` (bit 3).
+    pub const TYPE_LOOKUP_REPLY_SECURE_READER: u32 = 1 << 3;
+    /// All four secure TypeLookup bits.
+    pub const ALL_TYPE_LOOKUP_SECURE: u32 = TYPE_LOOKUP_REQUEST_SECURE_WRITER
+        | TYPE_LOOKUP_REQUEST_SECURE_READER
+        | TYPE_LOOKUP_REPLY_SECURE_WRITER
+        | TYPE_LOOKUP_REPLY_SECURE_READER;
+}
+
+/// `BuiltinEndpointQos_t` bits (DDSI-RTPS 2.5 §9.3.2.13).
+pub mod builtin_endpoint_qos {
+    /// `BEST_EFFORT_PARTICIPANT_MESSAGE_DATA_READER` (`@position(0)`): the
+    /// BuiltinParticipantMessageReader of the participant is BEST_EFFORT
+    /// (§8.4.13.3).
+    pub const BEST_EFFORT_PARTICIPANT_MESSAGE_DATA_READER: u32 = 1 << 0;
 }
 
 impl ParticipantBuiltinTopicData {
@@ -348,6 +409,12 @@ impl ParticipantBuiltinTopicData {
         if let Some(dom) = self.domain_id {
             params.push(Parameter::new(pid::DOMAIN_ID, dom.to_le_bytes().to_vec()));
         }
+        if !self.domain_tag.is_empty() {
+            params.push(Parameter::new(
+                pid::DOMAIN_TAG,
+                cdr_string(&self.domain_tag, true),
+            ));
+        }
 
         // BUILTIN_ENDPOINT_SET: 4 byte u32
         params.push(Parameter::new(
@@ -369,7 +436,7 @@ impl ParticipantBuiltinTopicData {
         }
 
         // IDENTITY_TOKEN / PERMISSIONS_TOKEN / IDENTITY_STATUS_TOKEN
-        // (DDS-Security 1.2 §7.4.1.4-6). The caller has already
+        // (DDS-Security 1.2 §7.5.1.4, Table 10). The caller has already
         // CDR-encoded the DataHolder — we pass the bytes through.
         if let Some(blob) = self.identity_token.as_ref() {
             params.push(Parameter::new(pid::IDENTITY_TOKEN, blob.clone()));
@@ -386,7 +453,7 @@ impl ParticipantBuiltinTopicData {
         if let Some(psi) = self.participant_security_info.as_ref() {
             params.push(Parameter::new(
                 pid::PARTICIPANT_SECURITY_INFO,
-                psi.to_le_bytes().to_vec(),
+                psi.to_wire_le(),
             ));
         }
 
@@ -408,6 +475,34 @@ impl ParticipantBuiltinTopicData {
             params.push(Parameter::new(
                 pid::PARTICIPANT_SECURITY_SYMMETRIC_CIPHER_ALGORITHM_INFO,
                 sym.to_bytes(true).to_vec(),
+            ));
+        }
+        if self.available_builtin_endpoints_ext != 0 {
+            params.push(Parameter::new(
+                pid::AVAILABLE_BUILTIN_ENDPOINTS_EXT,
+                self.available_builtin_endpoints_ext.to_le_bytes().to_vec(),
+            ));
+        }
+        // FALSE is the default (Table 9.19) and is left out.
+        if self.expects_inline_qos {
+            params.push(Parameter::new(
+                pid::EXPECTS_INLINE_QOS,
+                crate::publication_data::boolean_value(true),
+            ));
+        }
+        if let Some(count) = self.manual_liveliness_count {
+            params.push(Parameter::new(
+                pid::PARTICIPANT_MANUAL_LIVELINESS_COUNT,
+                count.to_le_bytes().to_vec(),
+            ));
+        }
+        if let Some(name) = &self.entity_name {
+            params.push(Parameter::new(pid::ENTITY_NAME, cdr_string(name, true)));
+        }
+        if let Some(qos) = self.builtin_endpoint_qos {
+            params.push(Parameter::new(
+                pid::BUILTIN_ENDPOINT_QOS,
+                qos.to_le_bytes().to_vec(),
             ));
         }
 
@@ -488,6 +583,12 @@ impl ParticipantBuiltinTopicData {
         if let Some(dom) = self.domain_id {
             params.push(Parameter::new(pid::DOMAIN_ID, dom.to_be_bytes().to_vec()));
         }
+        if !self.domain_tag.is_empty() {
+            params.push(Parameter::new(
+                pid::DOMAIN_TAG,
+                cdr_string(&self.domain_tag, false),
+            ));
+        }
 
         params.push(Parameter::new(
             pid::BUILTIN_ENDPOINT_SET,
@@ -502,7 +603,7 @@ impl ParticipantBuiltinTopicData {
         if let Some(psi) = self.participant_security_info.as_ref() {
             params.push(Parameter::new(
                 pid::PARTICIPANT_SECURITY_INFO,
-                psi.to_be_bytes().to_vec(),
+                psi.to_wire_be(),
             ));
         }
         if let Some(sig) = self.sig_algo_info.as_ref() {
@@ -521,6 +622,34 @@ impl ParticipantBuiltinTopicData {
             params.push(Parameter::new(
                 pid::PARTICIPANT_SECURITY_SYMMETRIC_CIPHER_ALGORITHM_INFO,
                 sym.to_bytes(false).to_vec(),
+            ));
+        }
+        if self.available_builtin_endpoints_ext != 0 {
+            params.push(Parameter::new(
+                pid::AVAILABLE_BUILTIN_ENDPOINTS_EXT,
+                self.available_builtin_endpoints_ext.to_be_bytes().to_vec(),
+            ));
+        }
+        // FALSE is the default (Table 9.19) and is left out.
+        if self.expects_inline_qos {
+            params.push(Parameter::new(
+                pid::EXPECTS_INLINE_QOS,
+                crate::publication_data::boolean_value(true),
+            ));
+        }
+        if let Some(count) = self.manual_liveliness_count {
+            params.push(Parameter::new(
+                pid::PARTICIPANT_MANUAL_LIVELINESS_COUNT,
+                count.to_be_bytes().to_vec(),
+            ));
+        }
+        if let Some(name) = &self.entity_name {
+            params.push(Parameter::new(pid::ENTITY_NAME, cdr_string(name, false)));
+        }
+        if let Some(qos) = self.builtin_endpoint_qos {
+            params.push(Parameter::new(
+                pid::BUILTIN_ENDPOINT_QOS,
+                qos.to_be_bytes().to_vec(),
             ));
         }
         if !self.properties.is_empty() {
@@ -630,6 +759,17 @@ impl ParticipantBuiltinTopicData {
             }
         });
 
+        // An unreadable tag is not the default tag: reading it as "" would
+        // join this participant to the untagged domain it asked to leave.
+        let domain_tag = match pl.find(pid::DOMAIN_TAG) {
+            Some(p) => crate::publication_data::decode_bounded_cdr_string(
+                &p.value,
+                little_endian,
+                crate::publication_data::STRING_256_MAX,
+            )?,
+            None => alloc::string::String::new(),
+        };
+
         let builtin_endpoint_set = pl
             .find(pid::BUILTIN_ENDPOINT_SET)
             .and_then(|p| {
@@ -653,7 +793,8 @@ impl ParticipantBuiltinTopicData {
                 if p.value.len() == 8 {
                     let mut bs = [0u8; 8];
                     bs.copy_from_slice(&p.value);
-                    Some(Duration::from_bytes_le(bs))
+                    // Duration_t in the list's byte order (§9.4.2.11).
+                    Some(Duration::from_bytes(bs, little_endian))
                 } else {
                     None
                 }
@@ -722,6 +863,23 @@ impl ParticipantBuiltinTopicData {
                 .ok()
             });
 
+        // Absent: 0. A value that is not 4 octets rejects the sample.
+        let available_builtin_endpoints_ext = match pl.find(pid::AVAILABLE_BUILTIN_ENDPOINTS_EXT) {
+            Some(p) => {
+                let raw: [u8; 4] = p.value.get(..4).and_then(|b| b.try_into().ok()).ok_or(
+                    WireError::ValueOutOfRange {
+                        message: "PID_AVAILABLE_BUILTIN_ENDPOINTS_EXT shorter than 4 octets",
+                    },
+                )?;
+                if little_endian {
+                    u32::from_le_bytes(raw)
+                } else {
+                    u32::from_be_bytes(raw)
+                }
+            }
+            None => 0,
+        };
+
         Ok(Self {
             guid,
             protocol_version,
@@ -731,6 +889,7 @@ impl ParticipantBuiltinTopicData {
             metatraffic_unicast_locators,
             metatraffic_multicast_locators,
             domain_id,
+            domain_tag,
             builtin_endpoint_set,
             lease_duration,
             user_data,
@@ -741,9 +900,60 @@ impl ParticipantBuiltinTopicData {
             sig_algo_info,
             kx_algo_info,
             sym_cipher_algo_info,
+            available_builtin_endpoints_ext,
             participant_security_info,
+            expects_inline_qos: crate::publication_data::boolean_param(
+                &pl,
+                pid::EXPECTS_INLINE_QOS,
+            )?,
+            entity_name: match pl.find(pid::ENTITY_NAME) {
+                Some(p) => Some(crate::publication_data::decode_cdr_string(
+                    &p.value,
+                    little_endian,
+                )?),
+                None => None,
+            },
+            manual_liveliness_count: four_octets(
+                &pl,
+                pid::PARTICIPANT_MANUAL_LIVELINESS_COUNT,
+                "PID_PARTICIPANT_MANUAL_LIVELINESS_COUNT is not 4 octets",
+                little_endian,
+            )?
+            .map(|v| v as i32),
+            builtin_endpoint_qos: four_octets(
+                &pl,
+                pid::BUILTIN_ENDPOINT_QOS,
+                "PID_BUILTIN_ENDPOINT_QOS is not 4 octets",
+                little_endian,
+            )?,
         })
     }
+}
+
+/// The four-octet value of `id` in `pl`, in the byte order of the list; `None`
+/// where the parameter is absent.
+///
+/// # Errors
+/// `ValueOutOfRange` with `message` for a value of another length.
+pub(crate) fn four_octets(
+    pl: &ParameterList,
+    id: u16,
+    message: &'static str,
+    little_endian: bool,
+) -> Result<Option<u32>, WireError> {
+    let Some(p) = pl.find(id) else {
+        return Ok(None);
+    };
+    let bytes: [u8; 4] = p
+        .value
+        .as_slice()
+        .try_into()
+        .map_err(|_| WireError::ValueOutOfRange { message })?;
+    Ok(Some(if little_endian {
+        u32::from_le_bytes(bytes)
+    } else {
+        u32::from_be_bytes(bytes)
+    }))
 }
 
 /// `true` if a UDPv4 locator is plausibly reachable — i.e. NOT
@@ -777,6 +987,24 @@ fn decode_locator(value: &[u8], little_endian: bool) -> Option<Locator> {
     } else {
         Locator::from_bytes_be(bs).ok()
     }
+}
+
+/// A CDR `string` as a parameter value: length with the terminator, the
+/// octets, the terminator, padded to four.
+fn cdr_string(s: &str, little_endian: bool) -> Vec<u8> {
+    let len = (s.len() as u32).saturating_add(1);
+    let mut out = Vec::with_capacity(8 + s.len());
+    out.extend_from_slice(&if little_endian {
+        len.to_le_bytes()
+    } else {
+        len.to_be_bytes()
+    });
+    out.extend_from_slice(s.as_bytes());
+    out.push(0);
+    while out.len() % 4 != 0 {
+        out.push(0);
+    }
+    out
 }
 
 #[cfg(test)]
@@ -874,6 +1102,7 @@ mod tests {
             metatraffic_unicast_locators: Vec::new(),
             metatraffic_multicast_locators: Vec::new(),
             domain_id: None,
+            domain_tag: Default::default(),
             builtin_endpoint_set: endpoint_flag::PARTICIPANT_ANNOUNCER
                 | endpoint_flag::PARTICIPANT_DETECTOR,
             lease_duration: Duration::from_secs(100),
@@ -885,7 +1114,12 @@ mod tests {
             sig_algo_info: None,
             kx_algo_info: None,
             sym_cipher_algo_info: None,
+            available_builtin_endpoints_ext: 0,
             participant_security_info: None,
+            expects_inline_qos: false,
+            manual_liveliness_count: None,
+            builtin_endpoint_qos: None,
+            entity_name: None,
         }
     }
 
@@ -896,10 +1130,13 @@ mod tests {
         d.participant_security_info = Some(ParticipantSecurityInfo {
             participant_security_attributes: attrs::IS_VALID,
             plugin_participant_security_attributes: plugin_attrs::IS_VALID,
+            ..Default::default()
         });
         // Credential token set — must NOT appear in c.pdata.
         d.identity_token = Some(alloc::vec![0xAB; 32]);
         d.permissions_token = Some(alloc::vec![0xCD; 16]);
+        // Not the 100 s a missing lease falls back to.
+        d.lease_duration = Duration::from_secs(30);
         let be = d.to_pl_cdr_be();
         // PL_CDR_BE encapsulation (Spec §9.3.2.5.2: c.pdata is big-endian).
         assert_eq!(
@@ -912,7 +1149,9 @@ mod tests {
         assert_eq!(back.guid, d.guid);
         assert_eq!(back.builtin_endpoint_set, d.builtin_endpoint_set);
         assert_eq!(back.participant_security_info, d.participant_security_info);
-        // Credential-Token wurden weggelassen (reisen via c.id/c.perm).
+        // Duration_t in the list's byte order (§9.4.2.11).
+        assert_eq!(back.lease_duration, Duration::from_secs(30));
+        // Credential tokens were omitted (they travel via c.id/c.perm).
         assert!(
             back.identity_token.is_none(),
             "identity_token does not belong in c.pdata"
@@ -920,6 +1159,196 @@ mod tests {
         assert!(
             back.permissions_token.is_none(),
             "permissions_token does not belong in c.pdata"
+        );
+    }
+
+    /// `PID_DOMAIN_TAG` (0x4014, DDSI-RTPS 2.5 §9.6.2.2.2): a CDR string,
+    /// sent only when not empty, read back in both byte orders.
+    #[test]
+    fn domain_tag_goes_out_when_set_and_reads_back() {
+        let mut d = sample_data();
+        assert!(d.domain_tag.is_empty());
+        let plain = d.to_pl_cdr_le();
+        assert!(
+            !plain.windows(2).any(|w| w == [0x14, 0x40]),
+            "empty tag, no PID"
+        );
+        assert_eq!(
+            ParticipantBuiltinTopicData::from_pl_cdr_le(&plain)
+                .unwrap()
+                .domain_tag,
+            ""
+        );
+
+        d.domain_tag = "abc".into();
+        let le = d.to_pl_cdr_le();
+        let pid_and_value = [0x14, 0x40, 0x08, 0x00, 0x04, 0, 0, 0, b'a', b'b', b'c', 0];
+        assert!(
+            le.windows(pid_and_value.len()).any(|w| w == pid_and_value),
+            "PID 0x4014, length 8, CDR string \"abc\""
+        );
+        assert_eq!(
+            ParticipantBuiltinTopicData::from_pl_cdr_le(&le)
+                .unwrap()
+                .domain_tag,
+            "abc"
+        );
+        let be = d.to_pl_cdr_be();
+        assert_eq!(
+            ParticipantBuiltinTopicData::from_pl_cdr_le(&be)
+                .unwrap()
+                .domain_tag,
+            "abc"
+        );
+    }
+
+    /// `PID_EXPECTS_INLINE_QOS` in SPDP (DDSI-RTPS 2.5 §8.5.3.2): TRUE goes
+    /// out in both byte orders and reads back, FALSE is left out, and an
+    /// octet other than 0 or 1 is refused.
+    #[test]
+    fn expects_inline_qos_goes_out_when_set_and_reads_back() {
+        let mut d = sample_data();
+        let plain = d.to_pl_cdr_le();
+        assert!(
+            !plain.windows(4).any(|w| w == [0x43, 0x00, 0x04, 0x00]),
+            "FALSE, no PID"
+        );
+        assert!(
+            !ParticipantBuiltinTopicData::from_pl_cdr_le(&plain)
+                .unwrap()
+                .expects_inline_qos
+        );
+
+        d.expects_inline_qos = true;
+        let mut le = d.to_pl_cdr_le();
+        let pid_and_value = [0x43, 0x00, 0x04, 0x00, 0x01, 0, 0, 0];
+        let at = le
+            .windows(pid_and_value.len())
+            .position(|w| w == pid_and_value)
+            .expect("PID 0x0043, length 4, TRUE");
+        assert!(
+            ParticipantBuiltinTopicData::from_pl_cdr_le(&le)
+                .unwrap()
+                .expects_inline_qos
+        );
+        let be = d.to_pl_cdr_be();
+        assert!(
+            be.windows(8)
+                .any(|w| w == [0x00, 0x43, 0x00, 0x04, 0x01, 0, 0, 0]),
+            "big-endian: PID and length swap, the octet does not"
+        );
+        assert!(
+            ParticipantBuiltinTopicData::from_pl_cdr_le(&be)
+                .unwrap()
+                .expects_inline_qos
+        );
+        le[at + 4] = 2;
+        assert!(ParticipantBuiltinTopicData::from_pl_cdr_le(&le).is_err());
+    }
+
+    /// DDSI-RTPS 2.5 Table 9.18, Table 9.19: `PID_PARTICIPANT_MANUAL_LIVELINESS_COUNT`
+    /// (0x0034, `Count_t`) and `PID_BUILTIN_ENDPOINT_QOS` (0x0077,
+    /// `BuiltinEndpointQos_t`, §9.3.2.13) go out in both byte orders as four
+    /// octets and read back; absent is `None`, and another length is refused.
+    /// §10.3: "The receiver shall ignore the value of the
+    /// representation_options", in both byte orders.
+    #[test]
+    fn the_receiver_ignores_the_representation_options_of_a_participant() {
+        let d = sample_data();
+        for mut bytes in [d.to_pl_cdr_le(), d.to_pl_cdr_be()] {
+            assert_eq!(&bytes[2..4], &[0, 0], "the sender writes zero");
+            let plain = ParticipantBuiltinTopicData::from_pl_cdr_le(&bytes).unwrap();
+            bytes[2] = 0x12;
+            bytes[3] = 0x34;
+            assert_eq!(
+                ParticipantBuiltinTopicData::from_pl_cdr_le(&bytes).unwrap(),
+                plain
+            );
+        }
+    }
+
+    /// Table 9.18 `PID_ENTITY_NAME`: the participant's name, in both byte
+    /// orders.
+    #[test]
+    fn the_participant_name_goes_out_and_reads_back() {
+        let mut d = sample_data();
+        assert_eq!(d.entity_name, None);
+        d.entity_name = Some("RTPSParticipant".into());
+        let le = ParticipantBuiltinTopicData::from_pl_cdr_le(&d.to_pl_cdr_le()).unwrap();
+        assert_eq!(le.entity_name.as_deref(), Some("RTPSParticipant"));
+        let be = ParticipantBuiltinTopicData::from_pl_cdr_le(&d.to_pl_cdr_be()).unwrap();
+        assert_eq!(be.entity_name.as_deref(), Some("RTPSParticipant"));
+        d.entity_name = None;
+        let none = ParticipantBuiltinTopicData::from_pl_cdr_le(&d.to_pl_cdr_le()).unwrap();
+        assert_eq!(none.entity_name, None);
+    }
+
+    #[test]
+    fn manual_liveliness_count_and_builtin_endpoint_qos_go_out_and_read_back() {
+        let mut d = sample_data();
+        let plain = d.to_pl_cdr_le();
+        let read = ParticipantBuiltinTopicData::from_pl_cdr_le(&plain).unwrap();
+        assert_eq!(
+            (read.manual_liveliness_count, read.builtin_endpoint_qos),
+            (None, None)
+        );
+
+        d.manual_liveliness_count = Some(0x0102_0304);
+        d.builtin_endpoint_qos =
+            Some(builtin_endpoint_qos::BEST_EFFORT_PARTICIPANT_MESSAGE_DATA_READER);
+        let le = d.to_pl_cdr_le();
+        assert!(
+            le.windows(8)
+                .any(|w| w == [0x34, 0x00, 0x04, 0x00, 0x04, 0x03, 0x02, 0x01])
+        );
+        assert!(
+            le.windows(8)
+                .any(|w| w == [0x77, 0x00, 0x04, 0x00, 0x01, 0x00, 0x00, 0x00])
+        );
+        let be = d.to_pl_cdr_be();
+        assert!(
+            be.windows(8)
+                .any(|w| w == [0x00, 0x34, 0x00, 0x04, 0x01, 0x02, 0x03, 0x04])
+        );
+        for bytes in [&le, &be] {
+            let read = ParticipantBuiltinTopicData::from_pl_cdr_le(bytes).unwrap();
+            assert_eq!(read.manual_liveliness_count, Some(0x0102_0304));
+            assert_eq!(read.builtin_endpoint_qos, Some(1));
+        }
+        // A length of 8 for 0x0077 is no BuiltinEndpointQos_t.
+        let mut bad = le.clone();
+        let at = bad
+            .windows(4)
+            .position(|w| w == [0x77, 0x00, 0x04, 0x00])
+            .unwrap();
+        bad[at + 2] = 0x08;
+        assert!(ParticipantBuiltinTopicData::from_pl_cdr_le(&bad).is_err());
+    }
+
+    /// DDSI-RTPS 2.5 Table 9.18: `PID_DOMAIN_TAG` is `string<256>`; a longer
+    /// tag in an announcement is refused, not cut.
+    #[test]
+    fn a_domain_tag_longer_than_string_256_is_refused() {
+        let mut d = sample_data();
+        d.domain_tag = "x".repeat(256);
+        let ok = ParticipantBuiltinTopicData::from_pl_cdr_le(&d.to_pl_cdr_le()).unwrap();
+        assert_eq!(ok.domain_tag.len(), 256);
+        d.domain_tag = "x".repeat(257);
+        assert!(ParticipantBuiltinTopicData::from_pl_cdr_le(&d.to_pl_cdr_le()).is_err());
+    }
+
+    /// The must-understand bit is part of the id: a receiver validating
+    /// must-understand PIDs accepts it.
+    #[test]
+    fn domain_tag_is_a_standard_must_understand_pid() {
+        let mut pl = ParameterList::new();
+        pl.push(Parameter::new(
+            pid::DOMAIN_TAG,
+            alloc::vec![1, 0, 0, 0, 0, 0, 0, 0],
+        ));
+        assert!(
+            pl.validate_must_understand_in_data_pipeline(crate::wire_types::VendorId::ZERODDS)
+                .is_ok()
         );
     }
 
@@ -933,6 +1362,7 @@ mod tests {
         d.participant_security_info = Some(ParticipantSecurityInfo {
             participant_security_attributes: attrs::IS_VALID,
             plugin_participant_security_attributes: plugin_attrs::IS_VALID,
+            ..Default::default()
         });
         let bytes = d.to_pl_cdr_le();
         // PID 0x1005 LE = 05 10 must be in the stream.
@@ -978,18 +1408,18 @@ mod tests {
         use crate::property_list::WireProperty;
         let mut d = sample_data();
         d.properties.push(WireProperty::new(
-            "dds.sec.auth.plugin_class",
+            "org.zerodds.sec.auth.plugin_class",
             "DDS:Auth:PKI-DH:1.2",
         ));
         d.properties.push(WireProperty::new(
-            "zerodds.sec.offered_protection",
+            "org.zerodds.sec.offered_protection",
             "ENCRYPT",
         ));
         let bytes = d.to_pl_cdr_le();
         let decoded = ParticipantBuiltinTopicData::from_pl_cdr_le(&bytes).unwrap();
         assert_eq!(decoded.properties, d.properties);
         assert_eq!(
-            decoded.properties.get("zerodds.sec.offered_protection"),
+            decoded.properties.get("org.zerodds.sec.offered_protection"),
             Some("ENCRYPT")
         );
     }
@@ -1134,6 +1564,49 @@ mod tests {
         assert_eq!(decoded.sym_cipher_algo_info, d.sym_cipher_algo_info);
     }
 
+    /// DDS-Security 1.2 §7.5.1.4 Table 12 (S. 71 to 72): the bits of
+    /// `available_builtin_endpoints_ext`, `0x00000001 << n` for n = 0..3 in the
+    /// order Request Writer, Request Reader, Reply Writer, Reply Reader.
+    #[test]
+    fn table_12_bits() {
+        use super::builtin_endpoint_ext as ext;
+        assert_eq!(ext::TYPE_LOOKUP_REQUEST_SECURE_WRITER, 0x0000_0001);
+        assert_eq!(ext::TYPE_LOOKUP_REQUEST_SECURE_READER, 0x0000_0002);
+        assert_eq!(ext::TYPE_LOOKUP_REPLY_SECURE_WRITER, 0x0000_0004);
+        assert_eq!(ext::TYPE_LOOKUP_REPLY_SECURE_READER, 0x0000_0008);
+        assert_eq!(ext::ALL_TYPE_LOOKUP_SECURE, 0x0000_000f);
+    }
+
+    /// DDS-Security 1.2 §7.5.1.4 Table 10, Table 12: the secure TypeLookup
+    /// endpoints are bits 0..3 of `PID_AVAILABLE_BUILTIN_ENDPOINTS_EXT`
+    /// 0x1007; absent is 0 and is not sent.
+    #[test]
+    fn available_builtin_endpoints_ext_roundtrip() {
+        use super::builtin_endpoint_ext as ext;
+        let mut d = sample_data();
+        assert_eq!(d.available_builtin_endpoints_ext, 0);
+        let plain = d.to_pl_cdr_le();
+        assert!(
+            !plain.windows(2).any(|w| w == [0x07, 0x10]),
+            "not sent at 0"
+        );
+        d.available_builtin_endpoints_ext = ext::ALL_TYPE_LOOKUP_SECURE;
+        let bytes = d.to_pl_cdr_le();
+        // PID 0x1007 LE = 07 10, length 4, value 0x0000000f (LE).
+        assert!(
+            bytes
+                .windows(8)
+                .any(|w| w == [0x07, 0x10, 0x04, 0x00, 0x0f, 0, 0, 0]),
+            "PID 0x1007 with 0x0f missing"
+        );
+        let decoded = ParticipantBuiltinTopicData::from_pl_cdr_le(&bytes).unwrap();
+        assert_eq!(decoded.available_builtin_endpoints_ext, 0x0f);
+        assert_eq!(ext::TYPE_LOOKUP_REPLY_SECURE_READER, 0x08);
+        let be = d.to_pl_cdr_be();
+        let decoded = ParticipantBuiltinTopicData::from_pl_cdr_le(&be).unwrap();
+        assert_eq!(decoded.available_builtin_endpoints_ext, 0x0f);
+    }
+
     #[test]
     fn participant_data_no_algo_info_in_legacy_announce() {
         // Default sample → none of the three algo-info PIDs appears.
@@ -1185,7 +1658,7 @@ mod tests {
 
     #[test]
     fn participant_data_decode_requires_guid_pid() {
-        // Encapsulation + nur Sentinel.
+        // Encapsulation + sentinel only.
         let bytes = vec![0x00, 0x03, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00];
         let res = ParticipantBuiltinTopicData::from_pl_cdr_le(&bytes);
         assert!(matches!(res, Err(WireError::ValueOutOfRange { .. })));

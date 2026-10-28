@@ -1,0 +1,10 @@
+// three-dimensional array of a structure, unannotated
+struct Cell {
+    short a;
+    octet b;
+};
+
+struct Sample {
+    Cell block[2][2][2];
+    octet tail;
+};

@@ -1,94 +1,100 @@
 # 07 – Migration Guides
 
-Already running on another DDS implementation? This station is the
-porting playbook. The wire is RTPS-2.5-byte-identical across all
-mainstream vendors, so application-level migrations are mostly a
-matter of API shape and tooling.
+Moving an application from another DDS implementation to ZeroDDS. There is
+no vendor-API compatibility layer: code written against `dds_*` (Cyclone C),
+`eprosima::fastdds::dds::*`, RTI's `DDS_*`/`rti::*` or OpenDDS's TAO mapping
+is rewritten. What carries over unchanged is the wire (DDSI-RTPS 2.5), the IDL,
+QoS written as OMG DDS-XML, and code written against the OMG PSMs.
 
 ## Available migration guides
 
 | From | Guide |
 |---|---|
-| Eclipse Cyclone DDS (cyclonedds) | [from-cyclonedds.md](from-cyclonedds.md) |
-| eProsima Fast DDS (FastDDS / Fast-RTPS) | [from-fastdds.md](from-fastdds.md) |
-| RTI Connext DDS (Pro / Micro) | [from-rti-connext.md](from-rti-connext.md) |
-| ADLINK / OpenDDS | [from-opendds.md](from-opendds.md) |
-| Vortex OpenSplice (legacy) | covered under ADLINK Vortex / OpenDDS |
+| Eclipse Cyclone DDS | [from-cyclonedds.md](from-cyclonedds.md) |
+| eProsima Fast DDS | [from-fastdds.md](from-fastdds.md) |
+| RTI Connext DDS | [from-rti-connext.md](from-rti-connext.md) |
+| OpenDDS | [from-opendds.md](from-opendds.md) |
+| Eclipse OpenSplice | [from-opensplice.md](from-opensplice.md) |
 
-## What is the same
+## Where your code lands
 
-- **Wire format** — every mainstream DDS vendor speaks DDSI-RTPS
-  2.5 + CDR / XCDR2 per OMG-XTypes 1.3. ZeroDDS interoperates
-  byte-for-byte with all of them. You can run a hybrid fleet
-  during the migration: half on the old vendor, half on ZeroDDS,
-  and they discover and exchange samples normally.
-- **OMG IDL 4.2** — IDL files port without changes. ZeroDDS'
-  `zerodds-idlc` accepts the standard grammar; vendor-specific
-  pragmas are silently ignored or mapped to the closest XTypes
-  annotation.
-- **QoS semantics** — all 21 standard QoS policies are
-  implemented; per-policy match rules follow the OMG spec.
-- **Discovery** — SPDP multicast `239.255.0.1:7400 + 250×D` is
-  the same wire-level protocol; no special configuration to
-  interoperate.
-
-## What is different
-
-| Aspect | Other vendors | ZeroDDS |
-|---|---|---|
-| API style | each vendor has its own (Cyclone-C, FastDDS-C++, RTI-Modern-C++, Java PSM …) | We ship the OMG-spec PSM where one exists (Java, Python, TypeScript, C++17) plus an idiomatic Rust API |
-| QoS profile XML | vendor-specific schemas | We accept the OMG `zerodds-xml-1.0` schema; conversion guides linked per vendor below |
-| Security plugins | typically vendor-built-in or external commercial product | Built-in OMG DDS-Security 1.2 — no extra licence |
-| Build system | C/C++ make + IDL-tooling | Cargo for Rust + per-language packaging (Maven / npm / pip / NuGet) |
-| RT integration | varies | Linux-RT scheduler + isolcpu via the dedicated `zerodds-rt-linux` crate |
-
-## Hybrid-deployment recipe
-
-You don't have to flip the switch all-at-once. Typical migration:
-
-```
-Day 0: 100% Cyclone DDS
-Day 1: pilot one Subscriber on ZeroDDS, traffic from existing
-       Cyclone-Publishers — verify byte-compat
-Day 2-N: gradually swap nodes
-Day N+1: 100% ZeroDDS, retire the old install
-```
-
-Cross-vendor smoke tests run nightly against Cyclone DDS +
-FastDDS + (when licensed) RTI Connext.
-
-## What you save
-
-The most common migration drivers in the current ZeroDDS
-deployments:
-
-| Driver | Why ZeroDDS |
+| Your API | ZeroDDS |
 |---|---|
-| Memory safety / supply-chain | Pure Rust, no C/C++ memory bugs in the hot path |
-| RT determinism | Tight allocation control + RCU history cache + `zerodds-rt-linux` integration |
-| ROS-2 with smaller footprint | `rmw-zerodds-shim` replaces `rmw_cyclonedds_cpp` / `rmw_fastrtps_cpp` |
-| Vendor lock-in escape | Apache-2.0; no per-seat licence; bring-your-own-CA security |
-| Single binary on Windows / macOS | First-class platform installers; many other vendors are Linux-first |
+| ISO C++ / DDS-PSM-Cxx (Cyclone-CXX, RTI Modern C++, OpenSplice ISOCPP2) | `#include <dds/dds.hpp>` from `crates/cpp` — the shortest path |
+| OMG Java PSM (`org.omg.dds.*`) | `crates/java-omgdds`, a pure-Java stack; select it with `org.omg.dds.serviceClassName` |
+| A vendor C API | `crates/zerodds-c-api`, `zerodds.h`: DCPS structure with `zerodds_dpf_*`, `zerodds_dp_*`, `zerodds_pub_*`, `zerodds_sub_*`, `zerodds_dw_*`, `zerodds_dr_*` |
+| Vendor C++ (Fast DDS, OpenDDS, RTI legacy) | `<dds/dds.hpp>` or the short `<zerodds/dds.hpp>` (`zerodds::Runtime`) |
+| Python, C#, TypeScript, Rust | `crates/py`, `crates/cs`, `crates/ts-node`, `crates/dcps` |
 
-## Common cross-vendor caveats
+Samples cross the C API as CDR bytes; the encoder is the code `zerodds-idlc
+generate --lang <language>` writes, not the library.
 
-- **Multicast filtering**. Cloud / VPC environments often disable
-  IGMP-snooping. Workaround is unicast static peer-list — same
-  code on every vendor.
-- **Permissions XML signing**. The OMG-DDS-Security spec mandates
-  S/MIME-signed permissions XML; some vendors ship convenience
-  CLIs (`rti_secure_credential_tool`) for it. ZeroDDS uses
-  `openssl smime`; see
-  [`../03-configuration/security.md`](../03-configuration/security.md).
-- **Vendor-specific QoS extensions**. RTI Connext for example
-  has `RtPsResource…` policies not in OMG-DDS-1.4. ZeroDDS
-  ignores unknown pragmas. If you depend on them, the migration
-  guide for that vendor flags equivalents or workarounds.
+## What carries over
+
+- **IDL.** `zerodds-idlc` reads the vendors' extensions by default:
+  `#pragma keylist` (Cyclone, OpenSplice), `keylist` and `//@key` (RTI) and
+  `#pragma DCPS_DATA_KEY` (OpenDDS) make members keys. Unknown annotations such
+  as `@RTI_*` are ignored; unknown pragmas are kept and reported as warnings.
+  An aggregate without an extensibility annotation is `appendable`; Cyclone's
+  `idlc` makes it `final` — pass `--default-extensibility final` for IDL written
+  for Cyclone.
+- **QoS as OMG DDS-XML.** `zerodds_xml::QosProfileRegistry` (Rust) reads
+  `<dds><qos_library><qos_profile>`, with `base_name` inheritance; RTI's
+  `USER_QOS_PROFILES.xml` has this form. An element the reader does not model
+  (a vendor policy, `<representation>`, a policy in a container that does not
+  have it in DDS 1.4) ends the load with an error that names the element;
+  remove it, or read the file with `zerodds-admin --skip-unknown …` (the
+  Rust loaders have `QosProfileRegistry::from_file_with` and
+  `ReadOptions::report_and_skip()`), which leaves each such element out and
+  lists it with its path; carry those policies over by hand. Spellings other
+  products use for something the schemas define (`<participant_qos>`,
+  `<topic_filter>` as an element, IDL type names) are refused with the
+  DDS-XML 1.0 form; `--vendor-forms` / `ReadOptions::accept_vendor_forms()`
+  reads them and reports each. Check the result with
+  `zerodds-admin qos check <file.xml>`. There
+  is no XML loader in the C, C++, Java or Python bindings, and Fast DDS's
+  `<profiles>` format is not read.
+- **The wire.** Standard ports and the standard multicast group (DDSI-RTPS 2.5
+  §9.6.1.4.1). Measured live against Cyclone DDS, Fast DDS, OpenDDS, RTI
+  Connext and OpenSplice.
+
+## What does not
+
+- **Vendor configuration.** `CYCLONEDDS_URI`, `NDDS_QOS_PROFILES`, Fast DDS
+  profile files and OpenDDS `.ini` files are not read. ZeroDDS reads
+  `zerodds.yaml` with its drop-ins, `ZERODDS_*` variables and `--set`
+  ([zerodds.yaml(5)](../../man/man5/zerodds.yaml.5)); each guide maps the common
+  vendor settings.
+- **Ports.** The port formula is fixed; a vendor setting that moves ports has to
+  go back to the standard for a mixed deployment.
+
+## Running both side by side
+
+1. Put the vendor side on the standard wire: RTPS discovery, UDPv4 next to or
+   instead of shared memory, standard ports, the same domain id.
+2. Generate both sides from one IDL file, with the extensibility stated.
+3. Carry the configuration over into `zerodds.yaml`.
+4. Add a reading ZeroDDS process: `zerodds-spy -d <domain> -t <topic>` prints
+   what it receives. Count decoded samples; a match alone proves nothing.
+5. Replace one subscriber, then one publisher, with the same topic, type and
+   QoS; check both directions after each step.
+6. Remove the vendor installation once no vendor process runs.
+
+## Common caveats
+
+- **Multicast.** Where the network filters multicast, list the peers:
+  `discovery.peers` and `discovery.no_multicast: true` — each vendor has the
+  same setting under its own name.
+- **Data representation.** A ZeroDDS writer offers `[XCDR1, XCDR2]` and
+  writes XCDR1. A reader that accepts only XCDR2 needs
+  `wire.data_representation_offer: [XCDR2]` on the writer side.
+- **Security.** Governance and permissions documents are S/MIME-signed by the
+  Permissions CA; `zerodds-secure-permissions` signs them
+  ([`tools/secure-permissions`](../../tools/secure-permissions/README.md)).
 
 ## Reading further
 
-- [Spec coverage matrix](../../docs/spec-coverage/) — which
-  DDS-spec sections ZeroDDS ships fully.
+- [Spec coverage](../../docs/spec-coverage/) — which spec sections ZeroDDS
+  implements.
 - [Integration — Java](../05-integration/java.md) /
-  [TypeScript](../05-integration/typescript-wasm.md) — pick your
-  binding after migration.
+  [TypeScript](../05-integration/typescript-wasm.md).

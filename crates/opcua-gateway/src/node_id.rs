@@ -256,7 +256,7 @@ mod tests {
             NodeIdentifier::Guid(Guid::from_bytes([0; 16])),
             NodeIdentifier::Opaque(alloc::vec![1]),
         ] {
-            // Round-Trip-Sanity: kind() ist Diskriminator.
+            // Round-trip sanity: kind() is the discriminator.
             let _kind = nid.kind();
         }
     }

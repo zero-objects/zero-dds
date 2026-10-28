@@ -1,0 +1,5 @@
+@appendable struct S {
+    long a;
+    string<32> m;
+    long b;
+};

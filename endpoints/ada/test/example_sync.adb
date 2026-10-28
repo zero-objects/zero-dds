@@ -23,7 +23,7 @@ begin
          R.Id    := Interfaces.C.unsigned_long (16#1000# + I);
          R.Value := Interfaces.C.C_float (20.0 + Float (I) * 0.5);
          Set_Label (R, "bay-" & Digit2 (I));
-         Transport.Deliver (Frame (Interfaces.Unsigned_16 (I + 1), Marshal (R)));
+         Transport.Deliver (Frame (Interfaces.Unsigned_16 (I + 1), 16#0015#, Marshal (R)));
       end;
    end loop;
 

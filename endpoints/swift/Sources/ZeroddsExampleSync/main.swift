@@ -14,7 +14,7 @@ struct Reading {
     var label: String
 
     func marshal(_ endian: Endianness) -> [UInt8] {
-        var w = Writer(endian)
+        var w = Writer(endian, .xcdr2)
         w.putU32(id)
         w.putF32(value)
         w.putString(label)
@@ -22,7 +22,7 @@ struct Reading {
     }
 
     static func decode(_ body: [UInt8]) -> Reading {
-        var r = Reader(body, .little)
+        var r = Reader(body, .little, .xcdr2)
         let id = r.getU32()
         let value = r.getF32()
         let label = r.getString()
@@ -32,7 +32,7 @@ struct Reading {
 
 let total = 5
 let t = MemTransport()
-let c = Client(t)
+let c = Client(t, objectId: xrceObjectId(0x001, objkDataWriter))
 for i in 0..<total {
     let r = Reading(id: 0x1000 + UInt32(i), value: 20.0 + Float(i) * 0.5,
                     label: String(format: "bay-%02d", i))

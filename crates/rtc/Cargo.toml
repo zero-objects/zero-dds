@@ -10,8 +10,8 @@ description = "OMG RTC 1.0 (formal/2008-04-04) — Lightweight Robotic Technolog
 homepage = "https://zerodds.org"
 documentation = "https://docs.rs/zerodds-rtc"
 readme = "README.md"
-keywords = ["robotics", "rtc", "openrtm", "component", "no-std"]
-categories = ["network-programming", "no-std"]
+keywords = ["robotics", "rtc", "openrtm", "component"]
+categories = ["network-programming"]
 publish = true
 
 [lints]

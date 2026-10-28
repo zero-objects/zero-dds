@@ -1,0 +1,166 @@
+# Every behaviour of `docs/wire-feature-inventory.md`, and whether
+# a capture of a real writer reached it. Produced by
+# `tools/wire-capture/coverage.py` out of that document's row ids,
+# `cases.tsv`, `reasons.tsv` and
+# `tests/interop-results/wire-goldens.tsv`.
+#
+#   wire       octets on a socket; the `detail` column is the
+#              implementations that produced them, split by
+#              transport — GIOP carries plain CDR and no
+#              encapsulation header, so an ORB in the `giop:`
+#              half is evidence for the payload and for nothing
+#              that only an RTPS `SerializedPayload` has
+#   no-golden  a case exists and every implementation refused it —
+#              which is the reason, and `detail` names who refused
+#   no-wire    `reasons.tsv`'s kind and its one line
+#   not-run    a case names it and no run reached that case —
+#              neither a measurement nor a reason, and
+#              `coverage.py` exits non-zero for it
+#
+# row	level	detail	cases or reason
+A1	wire	rtps:cyclone,fastdds,hdds,opendds,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao	primitive-mixed primitive-mixed-descending-alignment
+A2	wire	rtps:cyclone,fastdds,hdds,opendds,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao	primitive-mixed
+A3	wire	rtps:cyclone,fastdds,hdds,opendds,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao	primitive-mixed
+A4	wire	rtps:cyclone,fastdds,hdds,opendds,opensplice,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao	primitive-mixed primitive-mixed-descending-alignment string-adjacent-widths string-unbounded-ascii
+A5	wire	rtps:cyclone,fastdds,hdds,opendds,opensplice,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao	primitive-mixed primitive-mixed-descending-alignment struct-no-trailing-padding primitive-octet string-unbounded-ascii
+A6	wire	rtps:cyclone,fastdds,hdds,opendds,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao	primitive-mixed
+A7	wire	rtps:cyclone,fastdds,opendds,rti	struct-mutable
+A8	wire	rtps:cyclone,fastdds,hdds,opendds,opensplice,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao	struct-appendable array-1d-struct-final sequence-struct-final
+A9	wire	rtps:cyclone,fastdds,hdds,opendds,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao	primitive-mixed
+A10	wire	rtps:cyclone,fastdds,hdds,opendds,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao	primitive-mixed wstring-unbounded-utf8
+B1	wire	rtps:cyclone,fastdds,hdds,opendds,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao	primitive-mixed struct-final struct-appendable struct-mutable primitive-mixed-unannotated
+B2	wire	rtps:cyclone,fastdds,hdds,opendds,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao	primitive-mixed
+B3	wire	rtps:cyclone,fastdds,hdds,opendds,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao	struct-appendable
+B4	wire	rtps:cyclone,fastdds,hdds,opendds,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao	primitive-mixed
+B5	wire	rtps:cyclone,fastdds,hdds,opendds,opensplice,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao	struct-no-trailing-padding primitive-octet string-unbounded-ascii
+B6	wire	rtps:cyclone,fastdds,hdds,opendds,opensplice,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao	struct-final struct-appendable struct-nested-two-deep
+C1	wire	rtps:cyclone,fastdds,hdds,opendds,opensplice,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao	primitive-mixed primitive-octet char-and-wchar
+C2	wire	rtps:cyclone,fastdds,hdds,opendds,opensplice,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao	primitive-mixed primitive-boolean
+C3	wire	rtps:cyclone,fastdds,hdds,opendds,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao	primitive-mixed string-adjacent-widths wstring-unbounded-utf8 primitive-wchar char-and-wchar
+C4	wire	rtps:cyclone,fastdds,hdds,opendds,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao	primitive-mixed
+C5	wire	rtps:cyclone,fastdds,hdds,opendds,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao	primitive-mixed
+C6	wire	rtps:cyclone,fastdds,hdds,opendds,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao	primitive-mixed
+C7	no-golden	rtps:cyclone,fastdds,hdds,opendds,opensplice,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao — refused	no implementation could be driven live for primitive-longdouble
+C8	wire	rtps:cyclone,fastdds,hdds,opendds,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao	primitive-mixed enum-negative-value
+C9	wire	rtps:cyclone,fastdds,hdds,opendds,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao	primitive-mixed
+D1	wire	rtps:cyclone,fastdds,hdds,opendds,ros-cyclone,rti giop:jacorb,omniorb,tao	char-and-wchar
+D2	wire	rtps:cyclone,fastdds,hdds,opendds,opensplice,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao	string-adjacent-widths string-unbounded-ascii string-bounded-utf8 sequence-string array-1d-string
+D3	wire	rtps:cyclone,fastdds,hdds,opendds,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao	string-adjacent-widths wstring-unbounded-utf8 wstring-bounded-utf8 sequence-wstring
+D4	wire	rtps:cyclone,fastdds,hdds,opendds,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao	string-adjacent-widths wstring-unbounded-utf8
+D5	wire	rtps:cyclone,fastdds,hdds,opendds,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao	wstring-unbounded-utf8 primitive-wchar-above-bmp
+D6	wire	rtps:fastdds,hdds,opendds,opensplice,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao	string-adjacent-widths string-bounded-utf8 wstring-bounded-utf8
+D7	wire	rtps:cyclone,fastdds,hdds,opendds,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao	primitive-mixed string-adjacent-widths primitive-wchar primitive-wchar-above-bmp char-and-wchar
+E1	wire	rtps:cyclone,fastdds,hdds,opendds,opensplice,rti giop:jacorb,omniorb,tao	sequence-enum enum-bitbound-8-plain enum-bitbound-16-plain enum-bitbound-32-plain enum-negative-value
+E2	no-wire	not-a-wire-rule	`@bit_bound` outside 1..32 is a front-end refusal (§7.3.1.2.1.5) and a refused file produces no octets to capture.
+E3	wire	rtps:cyclone,fastdds	sequence-bitmask bitmask-bitbound-8 bitmask-bitbound-16 bitmask-bitbound-32 bitmask-bitbound-64
+E4	wire	rtps:cyclone,fastdds	sequence-bitmask bitmask-sparse-positions
+E5	no-wire	read-direction	A writer can only set bits the bitmask declares and every one of them is below the bound; what a reader does with a bit at or above it is the read direction.
+F1	wire	rtps:cyclone,fastdds,hdds,opendds,opensplice,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao	typedef-chain-primitive typedef-of-sequence typedef-of-struct typedef-of-array
+G1	wire	rtps:cyclone,fastdds,opendds,rti giop:jacorb,omniorb,tao	array-1d-primitives
+G2	wire	rtps:cyclone,fastdds,hdds,opendds,opensplice,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao	array-1d-struct-final array-odd-element array-1d-string
+G3	wire	rtps:cyclone,fastdds,hdds,opendds,opensplice,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao	array-1d-struct-final
+G4	wire	rtps:cyclone,fastdds,opendds,opensplice,rti giop:jacorb,omniorb,tao	typedef-of-array array-2d-primitives array-3d-primitives
+G5	wire	rtps:cyclone,fastdds,hdds,opendds,opensplice,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao	array-1d-struct-final array-1d-primitives array-odd-element
+G6	wire	rtps:cyclone,fastdds,opendds giop:jacorb,omniorb,tao	sequence-primitives-nonempty sequence-primitives-empty sequence-primitives-bounded
+G7	wire	rtps:cyclone,fastdds,hdds,opendds,opensplice,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao	sequence-struct-final sequence-struct-mutable sequence-string sequence-wstring
+G8	wire	rtps:cyclone,fastdds,hdds,opendds,opensplice,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao	sequence-struct-final
+G9	wire	rtps:fastdds,hdds	map-key-long map-key-string map-empty map-bounded
+G10	wire	rtps:fastdds,hdds	map-key-long map-key-string map-value-struct
+G11	wire	rtps:fastdds,hdds	map-key-long map-key-string
+G12	wire	rtps:cyclone,fastdds,hdds,opendds,opensplice,rti giop:jacorb,omniorb,tao	sequence-enum
+G13	wire	rtps:cyclone,fastdds	sequence-bitmask
+G14	wire	rtps:cyclone,fastdds,opendds,opensplice,rti giop:jacorb,omniorb,tao	sequence-of-array array-1d-sequence sequence-nested
+G15	no-wire	no-case	OMG IDL has no syntax that annotates a collection type, so no corpus case declares an `@appendable` or `@mutable` collection; the front ends were asked directly in the unspecified-constructs run instead.
+G16	wire	rtps:cyclone,fastdds,hdds,opendds,opensplice,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao	typedef-of-sequence sequence-primitives-bounded sequence-bounded-full map-bounded
+H1	wire	rtps:cyclone,fastdds,hdds,opendds,opensplice,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao	primitive-mixed struct-final struct-nested-two-deep struct-many-members deep-nesting-eight
+H2	wire	rtps:cyclone,fastdds,hdds,opendds,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao	struct-appendable
+H3	wire	rtps:cyclone,fastdds,hdds,opendds,opensplice,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao	struct-appendable typedef-of-struct struct-inheritance-appendable deep-nesting-eight
+H4	wire	rtps:cyclone,fastdds,opendds,rti	struct-mutable
+H5	wire	rtps:cyclone,fastdds,opendds,rti	struct-mutable
+H6	wire	rtps:fastdds	struct-inheritance-final struct-inheritance-appendable struct-inheritance-mutable inherit-two-levels
+H7	wire	rtps:fastdds	struct-inheritance-mutable
+H8	wire	rtps:cyclone,fastdds,hdds,opendds,opensplice,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao	primitive-mixed primitive-mixed-descending-alignment struct-no-trailing-padding
+H9	wire	rtps:cyclone,fastdds,hdds,opendds,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao	primitive-mixed-unannotated
+I1	wire	rtps:cyclone,fastdds,hdds,opendds,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao	struct-final
+I2	wire	rtps:cyclone,fastdds,hdds,rti	annotation-optional-present annotation-optional-absent annotation-optional-mixed evolution-mutable-optional
+I3	wire	rtps:cyclone,fastdds,hdds,rti	annotation-optional-present annotation-optional-absent annotation-optional-mixed evolution-mutable-optional
+I4	wire	rtps:cyclone,fastdds,opendds,rti	struct-mutable
+I5	wire	rtps:cyclone,fastdds,opendds,rti	struct-mutable annotation-id-explicit
+I6	wire	rtps:cyclone,fastdds,opendds,rti	struct-mutable annotation-id-sparse
+I7	wire	rtps:cyclone,fastdds,opendds,rti	annotation-must-understand evolution-mutable-mustunderstand
+I8	no-wire	no-case	`FLAG_2` of the extended `eMemberHeader` needs a member that is both `@must_understand` and past id 0x3F00; `annotation-must-understand` has the first and `annotation-id-sparse` the second, and no corpus case has both.
+I9	no-wire	read-direction	No product sets `FLAG_IMPL_EXTENSION` on a member it declares, so no capture of a writer holds one; the behaviour is what a reader does with a peer's private parameter.
+I10	wire	rtps:cyclone,fastdds,opendds,rti	struct-mutable-length-codes
+I11	wire	rtps:cyclone,fastdds,opendds,rti	annotation-must-understand evolution-mutable-mustunderstand
+I12	no-wire	no-case	The boundary is id 0x3F00 exactly and no corpus case declares it; the corpus's largest ids, 16383 and 268435455, are both past it and only show the extended form the rule sends them to. `tools/byte-gate`'s `pid_3f00` is where the boundary is measured.
+I13	no-wire	read-direction	The claim is that a reader accepts either header form; a writer capture shows only which form each product chose, which `annotation-id-explicit` and `annotation-id-sparse` do record.
+I14	no-wire	read-direction	No product writes a user member with an id in the reserved range 0x3F01–0x3FFF, so a writer capture cannot hold one; the rule is what a reader does when a peer does.
+I15	wire	rtps:cyclone,fastdds,opendds,rti	annotation-id-sparse
+I16	no-wire	read-direction	`PID_LIST_END` is what a reader must be robust to receiving; every PL_CDR1 writer here ends its list with `PID_SENTINEL`, which `struct-mutable`'s XCDR1 goldens carry.
+I17	no-wire	read-direction	`PID_IGNORE` says every consumer shall ignore 0x3F03; no product emits it, so there is nothing on the wire to capture.
+I18	wire	rtps:cyclone,fastdds,opendds,rti	struct-mutable-length-codes
+I19	wire	rtps:cyclone,fastdds,opendds,rti	struct-mutable-length-codes
+I20	wire	rtps:cyclone,fastdds,opendds,rti	struct-mutable-in-appendable struct-appendable-in-mutable sequence-struct-mutable
+I21	wire	rtps:cyclone,fastdds,hdds,rti	annotation-optional-present annotation-must-understand annotation-optional-mixed
+I22	wire	rtps:cyclone,fastdds,hdds,opendds,opensplice,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao	struct-inheritance-mutable struct-many-members annotation-id-explicit annotation-id-sparse annotation-hashid-named annotation-hashid-implicit
+I23	no-wire	read-direction	The same bit as I9 from the receiving side: §7.4.1.2.2 says a parameter that sets it is the writing implementation's own, and only a reader acts on that.
+J1	wire	rtps:cyclone,fastdds,hdds,opendds,opensplice,rti giop:jacorb,omniorb,tao	union-final union-member-struct union-member-sequence
+J2	wire	rtps:cyclone,opendds,rti giop:jacorb,omniorb,tao	union-final
+J3	wire	rtps:cyclone,fastdds,hdds,opendds,opensplice,rti giop:jacorb,omniorb,tao	union-without-default union-default-unselected
+J10	wire	rtps:cyclone,fastdds,hdds,opendds,rti giop:jacorb,omniorb,tao	union-with-default union-multiple-labels
+J4	wire	rtps:cyclone,opendds,rti giop:jacorb,omniorb,tao	union-appendable
+J5	wire	rtps:opendds,rti	union-mutable
+J6	wire	rtps:opendds,rti	union-mutable
+J7	wire	rtps:opendds,rti	union-mutable
+J8	wire	rtps:cyclone,fastdds,hdds,opendds,opensplice,rti giop:jacorb,omniorb,tao	union-final union-multiple-labels union-discriminator-boolean union-discriminator-char union-discriminator-enum union-discriminator-octet union-discriminator-longlong union-discriminator-wchar
+J9	wire	rtps:cyclone,fastdds,hdds,opendds,opensplice,rti giop:jacorb,omniorb,tao	union-discriminator-boolean union-discriminator-char union-discriminator-enum union-discriminator-octet union-discriminator-longlong union-discriminator-wchar
+K1	wire	rtps:cyclone,fastdds,opendds,rti	struct-mutable
+K2	wire	rtps:cyclone,fastdds,opendds,rti	struct-mutable-length-codes
+K3	wire	rtps:cyclone,fastdds,opendds,rti	struct-mutable-length-codes
+K4	wire	rtps:cyclone,fastdds,opendds,rti	struct-mutable-length-codes
+K5	wire	rtps:cyclone,fastdds,opendds,rti	struct-mutable-length-codes
+K6	wire	rtps:cyclone,fastdds,opendds,rti	struct-mutable-length-codes
+K7	wire	rtps:cyclone,fastdds,opendds,rti	struct-mutable
+K8	wire	rtps:cyclone,fastdds,opendds,rti	struct-mutable struct-mutable-length-codes
+L1	wire	rtps:cyclone,fastdds,hdds,opendds,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao	struct-appendable
+L2	wire	rtps:cyclone,fastdds,hdds,opendds,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao	struct-appendable
+L3	wire	rtps:cyclone,fastdds,hdds,opendds,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao	struct-appendable
+L4	no-wire	not-a-wire-rule	`O.ssize` below 4 GiB is a bound on the encoding, and a payload that tested it would be over 4 GiB — every case here fits one loopback datagram.
+L5	no-wire	read-direction	The DHEADER a writer emits is L1; skipping an unknown tail by it is what the reader does with it.
+M1	wire	rtps:cyclone,fastdds,opendds,rti	evolution-mutable-reordered
+M2	no-wire	read-direction	A non-optional receiver member taking its default for an omitted mutable member is the receiver's substitution.
+M3	wire	rtps:cyclone,fastdds,opendds,opensplice,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao	annotation-default-value evolution-mutable-defaults
+M4	wire	rtps:cyclone,fastdds,hdds,opendds,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao	struct-final
+M5	no-wire	read-direction	Skipping an unrecognised member with `must_understand = false` and keeping the sample is the reader's decision.
+M6	no-wire	read-direction	Discarding the sample for an unrecognised must-understand member is the reader's decision.
+M7	no-wire	read-direction	A reader with fewer members than the writer skipping the tail is the reader's use of the DHEADER.
+M8	no-wire	read-direction	A reader with more members than the writer defaulting the missing tail is the reader's substitution.
+M9	no-wire	read-direction	Table 9's default values appear only where a member is absent, and it is the reader that supplies them.
+M10	no-wire	read-direction	An explicit `@default` changes what a reader supplies for an absent member; a writer sends the sample's own value either way, which `annotation-default-value` records as M3.
+M11	no-wire	read-direction	A discriminator selecting a member the writer's type had no case for is a reader-side type-evolution question.
+M12	no-wire	not-a-wire-rule	`@final` assignability is a type-compatibility rule; the mismatch is a discovery or reader verdict and not an octet.
+N1	wire	rtps:cyclone,fastdds,hdds,opendds,opensplice,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao	annotation-key-single combined-keyed-topic
+N2	wire	rtps:cyclone,fastdds,hdds,opendds,opensplice,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao	annotation-key-single annotation-key-multiple annotation-key-whole-struct annotation-key-nested-struct combined-keyed-topic
+N3	wire	rtps:cyclone,fastdds,hdds,opendds,opensplice,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao	annotation-key-multiple combined-keyed-topic
+N4	wire	rtps:cyclone,fastdds,hdds,opendds,opensplice,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao	annotation-key-multiple annotation-key-whole-struct annotation-key-nested-struct combined-keyed-topic
+N5	wire	rtps:cyclone,fastdds,hdds,opendds,opensplice,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao	annotation-key-single
+N6	wire	rtps:cyclone,fastdds,hdds,opendds,opensplice,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao	annotation-key-single combined-keyed-topic
+N7	wire	rtps:cyclone,fastdds,hdds,opendds,opensplice,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao	annotation-key-multiple
+N8	wire	rtps:cyclone,fastdds,hdds,opendds,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao	primitive-mixed struct-final
+N9	no-wire	not-a-wire-rule	"Key members are never optional and always must-understand" constrains the IDL; the front end accepts or refuses and no octet carries the constraint.
+N10	no-wire	not-a-wire-rule	A `map` in a key is refused by every front end here; a refused file produces nothing to capture.
+N11	no-wire	not-a-wire-rule	"In a union only the discriminator may be a key" is the same shape: a front-end constraint with no octets.
+N12	wire	rtps:cyclone,fastdds,hdds,opendds,opensplice,ros-cyclone,ros-fastrtps,rti giop:jacorb,omniorb,tao	annotation-key-single annotation-key-multiple annotation-key-whole-struct annotation-key-nested-struct combined-keyed-topic
+O1	no-wire	read-direction	`DISCARD` — failing the whole aggregate for a member that cannot be constructed is what the receiver does with octets that are already correct.
+O2	no-wire	read-direction	`USE_DEFAULT` — the member taking its default and the aggregate surviving is the receiver's substitution.
+O3	no-wire	read-direction	`TRIM` — truncating an over-long string, wstring, sequence or map to what the receiver's type holds happens after the octets arrive.
+O4	no-wire	read-direction	`TRIM` on any other type being unspecified is a statement about the receiver's options.
+O5	no-wire	read-direction	The annotation's own parameter defaulting to `USE_DEFAULT` decides which of O1 to O3 a receiver applies.
+O6	no-wire	read-direction	The positions the annotation may appear in decide where O1 to O3 apply on the receiving side.
+O7	no-wire	read-direction	"A map's key admits only `DISCARD`" narrows the receiver's options for one position.
+O8	no-wire	read-direction	"A discarded sample is an absence, not a decode error" is the receiver's report to its own application.
+P1	wire	rtps:fastdds,hdds	bitset-basic bitset-multiword
+P2	wire	rtps:fastdds	bitset-typed-fields
+P3	wire	rtps:fastdds	bitset-inheritance
+P4	wire	giop:jacorb,omniorb	fixed-basic fixed-scales
+P5	wire	rtps:fastdds,hdds	sequence-bitset array-1d-bitset

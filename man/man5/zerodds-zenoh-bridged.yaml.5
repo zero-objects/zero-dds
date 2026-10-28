@@ -1,0 +1,261 @@
+.TH ZERODDS-ZENOH-BRIDGED.YAML 5 "" "ZeroDDS" "ZeroDDS Manual"
+.SH NAME
+zerodds-zenoh-bridged.yaml \- configuration file for zerodds-zenoh-bridged(1)
+.SH SYNOPSIS
+.I /etc/zerodds/zenoh-bridged.yaml
+.SH DESCRIPTION
+YAML document describing how the Zenoh bridge daemon maps DDS topics onto
+Zenoh key expressions. Read by the shared layered loader
+.RI ( zerodds-config ):
+this file, a sibling
+.IR zenoh-bridged.d/ ,
+.BR include: ,
+.BI ${VAR}
+substitution, with the precedence defaults < environment < files <
+.BR \-\-set .
+An unknown key inside a known section, or a value of the wrong shape or
+type, stops the start with the file and line.
+.PP
+Top-level keys:
+.BR domain ", " log_level ", " zenoh ", " discovery ", " limits ", " metrics ", "
+.BR topics .
+.SH KEYS
+.SS Top level
+.TP
+.B domain
+Integer DDS domain ID. Default
+.IR 0 .
+.TP
+.B log_level
+.IR trace " | " debug " | " info " | " warn " | " error .
+A
+.B \-\-log\-level
+on the command line wins over this key.
+.SS zenoh
+.TP
+.B mode
+.IR peer " (default) | " client " | " router .
+.TP
+.BR connect ", " listen
+Lists of Zenoh endpoint strings, e.g.
+.IR "tcp/192.0.2.10:7447" .
+.TP
+.B scouting.multicast.enabled
+Boolean, default
+.IR true .
+.B false
+matches
+.B zenoh-bridge-dds
+\&'s
+.BR \-\-no\-multicast\-scouting .
+.TP
+.B scope
+The Zenoh key-expression scope (a string, default empty). Every routed key
+expression is
+.IR <scope>/<partition>/<topic> ,
+with
+.B scope
+and the topic's
+.B partition
+each optional \(em the default (empty scope) matches
+.BR zenoh-plugin-dds 's
+own default exactly, so a bridge on one site and a
+.B zenoh-bridge-dds
+on another interoperate without extra configuration. Set to
+.I "dds"
+to reproduce the historic ZeroDDS-only layout instead.
+.TP
+.B reliable_routes_blocking
+Boolean, default
+.IR true .
+Whether a Zenoh
+.B put
+re-publishing a sample from a
+.B RELIABLE
+DDS writer uses
+.B CongestionControl::Block
+(backpressure) instead of
+.B ::Drop
+\(em matches
+.BR zenoh-plugin-dds 's
+own default.
+.TP
+.B queries_timeout_ms
+Integer, default
+.IR 5000 .
+Timeout for the query a
+.B TRANSIENT_LOCAL
+Zenoh\(->DDS route issues at declaration time to fetch retained samples from
+existing
+.B PublicationCache
+queryables (the late-joiner path). Matches the plugin's
+.B queries_timeout
+default of 5.0 s.
+.TP
+.B config_file
+Optional path to a full Zenoh JSON5/YAML5 config file (TLS, auth, transport
+tuning) loaded as the base
+.BR zenoh::Config ;
+.BR mode / connect / listen / scouting
+above are applied over it, the same layering
+.B zenoh-bridge-dds
+itself uses.
+.SS discovery
+.TP
+.B auto_bridge
+Boolean, default
+.IR true .
+Bridges every DDS topic the daemon discovers via the DCPS built-in topics,
+the way
+.B zenoh-plugin-dds
+bridges every topic it sees. Reloadable via SIGHUP.
+.TP
+.B poll_interval_ms
+Integer, default
+.IR 1000 .
+The longest time between two passes of the discovery loop. A pass also
+runs whenever the DDS runtime discovers or loses a publication or
+subscription, or receives a peer's type (TypeLookup reply); a newly
+discovered topic is bridged without waiting for this interval.
+.TP
+.BR allow ", " deny
+Lists of
+.IR * / ? " glob patterns (not regular expressions \(em this project's other"
+allow/deny lists use the same convention) matched against the
+.I derived
+key expression. An empty
+.B allow
+means everything is allowed (matching the plugin's own
+.B allow: None
+default);
+.B deny
+wins over
+.BR allow .
+Reloadable via SIGHUP.
+.PP
+A topic discovered only as a publication (or only as a subscription) is
+bridged one-way; the opposite side appearing later does not retroactively
+widen it to
+.B bidir
+\(em list the topic explicitly under
+.B topics:
+with
+.B direction: bidir
+to guarantee both directions from the start. An auto-discovered topic
+carries no type information, so it is always bridged as
+.BR keyed: false .
+.SS limits
+.TP
+.B max_payload_bytes
+Integer, default
+.IR 1048576 " (1 MiB)."
+A DDS sample larger than this is refused \(em logged and counted, never
+silently truncated.
+.SS metrics
+.TP
+.B enabled
+Boolean. Turns on the admin endpoint serving
+.IR /metrics ", " /catalog " and " /healthz .
+.TP
+.B listen
+Admin listen address. Default
+.IR "127.0.0.1:9097"
+when
+.B enabled
+is true; each bridge daemon has its own port, so several run on one host
+without a collision.
+.SS topics (list)
+A bare string entry is shorthand for
+.BR "{dds_name: <string>}" .
+.TP
+.B dds_name
+DDS topic name.
+.TP
+.B dds_type
+DDS IDL type name. Default: same as
+.BR dds_name .
+.TP
+.B direction
+.IR in " (Zenoh\(->DDS) | " out " (DDS\(->Zenoh) | " bidir .
+Default
+.IR bidir .
+.TP
+.B partition
+DDS partition; adds a key-expression segment
+.RI ( <scope>/<partition>/<topic> ).
+Default: none.
+.TP
+.B key_expr
+Overrides the derived key expression with an explicit one.
+.TP
+.B keyed
+Boolean, default
+.IR false .
+Whether the topic has one or more
+.B @key
+fields.
+.TP
+.B type_file
+Path to a
+.B CompleteTypeObject
+blob (e.g. produced by
+.BR zerodds-idlc ),
+read at registration time. Required when
+.B keyed
+is true and
+.B direction
+is
+.I in
+or
+.IR bidir :
+without it, an incoming Zenoh sample's DDS key hash cannot be derived, and
+.B write_user_sample_keyed
+would collapse every instance onto the one default key \(em the daemon
+refuses to load such a topic instead of doing that silently.
+.SS topics[].qos
+.TP
+.B reliability
+.IR reliable " (default) | " best_effort .
+.TP
+.B durability
+.IR volatile " (default) | " transient_local " | " transient " | " persistent .
+.B transient_local
+turns on the late-joiner path (a
+.B PublicationCache
+DDS\(->Zenoh, a
+.B FetchingSubscriber
+Zenoh\(->DDS) \(em matches
+.BR zenoh-plugin-dds ,
+which checks only
+.B TRANSIENT_LOCAL
+(not
+.BR transient / persistent ).
+.TP
+.B extensibility
+.IR final " (default) | " appendable " | " mutable .
+The topic root type's extensibility (XTypes 1.3 \(sc7.2.2), which picks the
+RTPS encapsulation header on the Zenoh side (plain CDR/CDR2, delimited
+D_CDR2, or parameter-list PL_CDR/PL_CDR2 \(em DDSI-RTPS 2.5 \(sc10.5 Table
+10.3). A byte-forwarding daemon cannot discover this from the wire alone;
+get it wrong and a real DDS peer on the far end of a chained
+.B zenoh-bridge-dds
+would misparse the body.
+.TP
+.B history.depth
+Integer >= 1, default
+.IR 1 .
+.B PublicationCache
+/
+.B FetchingSubscriber
+history depth for a
+.B transient_local
+topic (matches
+.BR zenoh_ext 's
+own
+.B PublicationCacheBuilder
+default).
+.SH EXAMPLES
+See
+.IR /usr/share/zerodds/configs/zenoh-bridged.yaml.example .
+.SH SEE ALSO
+.BR zerodds-zenoh-bridged (1).

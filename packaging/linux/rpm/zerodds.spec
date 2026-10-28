@@ -3,13 +3,27 @@
 %global _hardened_build 1
 %global debug_package %{nil}
 
+# Version fields are NOT written down here. .github/workflows/publish-rpm.yml
+# derives them from the release tag and passes them in:
+#   rpmbuild --define "zd_version 1.0.0" \
+#            --define "zd_release 0.rc7" \
+#            --define "zd_prerel  rc.7"      (omitted for a final release)
+# The defaults below only apply to a manual local rpmbuild and describe a
+# final release, so they can never carry a stale RC number.
+%{!?zd_version:%global zd_version 1.0.0}
+%{!?zd_release:%global zd_release 1}
+# Upstream archive + source-directory name: "1.0.0" or "1.0.0-rc.7".
+# zd_prerel is intentionally left undefined by default — %{?...} then
+# expands to nothing instead of a dangling "-".
+%global zd_fullver %{zd_version}%{?zd_prerel:-%{zd_prerel}}
+
 Name:           zerodds
-Version:        1.0.0
-Release:        0.rc1%{?dist}
+Version:        %{zd_version}
+Release:        %{zd_release}%{?dist}
 Summary:        ZeroDDS — Rust-native DDS implementation with bridges
 License:        Apache-2.0
 URL:            https://zerodds.org
-Source0:        https://github.com/zero-objects/zerodds/archive/v%{version}-rc.7/zerodds-%{version}-rc.7.tar.gz
+Source0:        https://github.com/zero-objects/zerodds/archive/v%{zd_fullver}/zerodds-%{zd_fullver}.tar.gz
 
 # BuildRequires: cargo >= 1.88 (kommt via rustup im rpm-job)
 # BuildRequires: rust >= 1.88 (kommt via rustup im rpm-job)
@@ -103,11 +117,44 @@ Requires: zerodds-core = %{version}-%{release}
 %description corba-bridge
 Spec: zerodds-corba-bridge-1.0 §11.
 
+%package zenoh-bridge
+Summary: ZeroDDS DDS to Eclipse Zenoh bridge daemon
+Requires: zerodds-core = %{version}-%{release}
+
+%description zenoh-bridge
+Bidirectional bridge between DDS topics and Zenoh key expressions,
+wire-compatible with Eclipse Zenoh's own DDS bridge (zenoh-plugin-dds /
+zenoh-bridge-dds). See zerodds-zenoh-bridged(1) and
+zerodds-zenoh-bridged.yaml(5).
+
+%package opcua-bridge
+Summary: ZeroDDS OMG DDS-OPCUA Gateway 1.0 daemon
+Requires: zerodds-core = %{version}-%{release}
+
+%description opcua-bridge
+Spec: zerodds-opcua-bridge-1.0 §11.
+
+%package webdds-bridge
+Summary: ZeroDDS OMG DDS-WEB 1.0 gateway daemon (REST + SOAP)
+Requires: zerodds-core = %{version}-%{release}
+
+%description webdds-bridge
+Exposes DDS applications, participants, topics, publishers,
+subscribers, data writers and data readers as HTTP resources per OMG
+Web-Enabled DDS 1.0: the REST PSM under /dds/rest1 and the SIMPLE-
+WSDL-SOAP PSM under /soap, from one process. See
+zerodds-webdds-bridged(1) and zerodds-webdds-bridged.yaml(5).
+
 %package ros2
-Summary: ZeroDDS ROS-2 RMW shim and diagnostics
+Summary: ZeroDDS ROS 2 diagnostics (zerodds-ros2-shim)
 Requires: zerodds-core = %{version}-%{release}
 
 %description ros2
+zerodds-ros2-shim, which prints what rmw_zerodds_cpp reads from the runtime
+configuration, its man pages and the ros2 drop-in template. The RMW library
+itself is not here: it ships per ROS distro as
+ros-<distro>-rmw-zerodds-cpp, built from the ament package rmw_zerodds_cpp
+(packaging/linux/deb/build-rmw-deb.sh).
 Spec: zerodds-ros2-bridge-1.0 §11.
 
 %package router
@@ -118,14 +165,41 @@ Requires: zerodds-core = %{version}-%{release}
 Spec: zerodds-deployment-1.0 §2.3. DDS-to-DDS forwarding daemon
 (see zerodds-router(1)) with per-route content filter and field transform.
 
+%package durability
+Summary: ZeroDDS Durability-Service daemon
+Requires: zerodds-core = %{version}-%{release}
+
+%description durability
+zerodds-durability-svc keeps TRANSIENT and PERSISTENT samples for late
+joiners, one daemon per domain, with the sqlite or file store (see
+zerodds-durability-svc(1)). The DuckDB store is an opt-in build feature.
+
+%package naming
+Summary: ZeroDDS OMG CosNaming 1.3 NameService daemon
+Requires: zerodds-core = %{version}-%{release}
+
+%description naming
+zerodds-naming-svc: NamingContext + NamingContextExt + BindingIterator
+over IIOP/SSLIOP, optionally CSIv2 GSSUP, persisted to a file (see
+zerodds-naming-svc(1)).
+
+%package xrce-agent
+Summary: ZeroDDS DDS-XRCE agent daemon
+Requires: zerodds-core = %{version}-%{release}
+
+%description xrce-agent
+zerodds-xrce-agentd represents an eProsima-compatible DDS-XRCE Micro
+Client in the DDS data space over UDP/TCP/serial (see
+zerodds-xrce-agentd(1)). Implements OMG DDS-XRCE 1.0.
+
 # ---------------------------------------------------------------------------
 # Build orchestration.
 # ---------------------------------------------------------------------------
 %prep
-%autosetup -n zerodds-%{version}-rc.7
+%autosetup -n zerodds-%{zd_fullver}
 
 %build
-cargo build --release --workspace --exclude zerodds-durability-store-lakehouse --exclude zerodds-durability-service-bin --exclude iceoryx2-oracle-consumer --exclude zerodds-endpoint-codegen --exclude zerodds-endpoint-golden --exclude zerodds-xrce-agent-demo
+cargo build --release --workspace --exclude zerodds-durability-store-lakehouse --exclude iceoryx2-oracle-consumer --exclude zerodds-endpoint-codegen --exclude zerodds-endpoint-golden --exclude zerodds-xrce-agent-demo
 
 %install
 install -d %{buildroot}%{_bindir}
@@ -180,9 +254,6 @@ cp -a %{zdw_stage}%{_prefix}/. %{buildroot}%{_prefix}/
 
 # systemd + tmpfiles + sysusers.
 for u in packaging/linux/systemd/zerodds-*.service; do
-    # durability-svc is excluded from binary packages (links the system
-    # libduckdb), so skip its unit too — otherwise it is an unpackaged file.
-    case "$u" in *zerodds-durability-svc.service) continue;; esac
     install -m 0644 "$u" %{buildroot}%{_unitdir}/
 done
 install -m 0644 packaging/linux/systemd/zerodds-tmpfiles.conf %{buildroot}%{_tmpfilesdir}/zerodds.conf
@@ -244,13 +315,32 @@ exit 0
 %preun  corba-bridge     %systemd_preun  zerodds-corba-bridged.service
 %postun corba-bridge     %systemd_postun_with_restart zerodds-corba-bridged.service
 
-%post   ros2             %systemd_post   zerodds-ros2-shim.service
-%preun  ros2             %systemd_preun  zerodds-ros2-shim.service
-%postun ros2             %systemd_postun_with_restart zerodds-ros2-shim.service
+%post   zenoh-bridge     %systemd_post   zerodds-zenoh-bridged.service
+%preun  zenoh-bridge     %systemd_preun  zerodds-zenoh-bridged.service
+%postun zenoh-bridge     %systemd_postun_with_restart zerodds-zenoh-bridged.service
+
+%post   opcua-bridge     %systemd_post   zerodds-opcua-bridged.service
+%preun  opcua-bridge     %systemd_preun  zerodds-opcua-bridged.service
+%postun opcua-bridge     %systemd_postun_with_restart zerodds-opcua-bridged.service
+%post   webdds-bridge    %systemd_post   zerodds-webdds-bridged.service
+%preun  webdds-bridge    %systemd_preun  zerodds-webdds-bridged.service
+%postun webdds-bridge    %systemd_postun_with_restart zerodds-webdds-bridged.service
 
 %post   router           %systemd_post   zerodds-router.service
 %preun  router           %systemd_preun  zerodds-router.service
 %postun router           %systemd_postun_with_restart zerodds-router.service
+
+%post   durability       %systemd_post   zerodds-durability-svc.service
+%preun  durability       %systemd_preun  zerodds-durability-svc.service
+%postun durability       %systemd_postun_with_restart zerodds-durability-svc.service
+
+%post   naming           %systemd_post   zerodds-naming-svc.service
+%preun  naming           %systemd_preun  zerodds-naming-svc.service
+%postun naming           %systemd_postun_with_restart zerodds-naming-svc.service
+
+%post   xrce-agent       %systemd_post   zerodds-xrce-agentd.service
+%preun  xrce-agent       %systemd_preun  zerodds-xrce-agentd.service
+%postun xrce-agent       %systemd_postun_with_restart zerodds-xrce-agentd.service
 
 # ---------------------------------------------------------------------------
 # File-Lists.
@@ -281,7 +371,6 @@ exit 0
 %{_bindir}/zerodds-chaos
 %{_bindir}/zerodds-dashboard
 %{_bindir}/zerodds-recorder-bridge
-%{_bindir}/zerodds-ros2-shim
 %{_bindir}/zerodds-record
 %{_bindir}/zerodds-bench
 %{_bindir}/zerodds-monitor
@@ -354,18 +443,58 @@ exit 0
 %{_mandir}/man1/zerodds-corba-bridged.1*
 %{_mandir}/man5/zerodds-corba-bridged.yaml.5*
 
+%files zenoh-bridge
+%{_bindir}/zerodds-zenoh-bridged
+%{_unitdir}/zerodds-zenoh-bridged.service
+%{_datadir}/zerodds/configs/zenoh-bridged.yaml.example
+%{_mandir}/man1/zerodds-zenoh-bridged.1*
+%{_mandir}/man5/zerodds-zenoh-bridged.yaml.5*
+
+%files opcua-bridge
+%{_bindir}/zerodds-opcua-bridged
+%{_unitdir}/zerodds-opcua-bridged.service
+%{_datadir}/zerodds/configs/opcua-bridged.yaml.example
+%{_mandir}/man1/zerodds-opcua-bridged.1*
+%{_mandir}/man5/zerodds-opcua-bridged.yaml.5*
+
+%files webdds-bridge
+%{_bindir}/zerodds-webdds-bridged
+%{_unitdir}/zerodds-webdds-bridged.service
+%{_datadir}/zerodds/configs/webdds-bridged.yaml.example
+%{_mandir}/man1/zerodds-webdds-bridged.1*
+%{_mandir}/man5/zerodds-webdds-bridged.yaml.5*
+
 %files ros2
+# The diagnostics CLI of the RMW; no service: rcl loads the RMW into each node.
 %{_bindir}/zerodds-ros2-shim
-%{_unitdir}/zerodds-ros2-shim.service
-%{_datadir}/zerodds/configs/ros2-shim.yaml.example
+%{_datadir}/zerodds/configs/ros2.yaml.example
 %{_mandir}/man1/zerodds-ros2-shim.1*
-%{_mandir}/man5/zerodds-ros2-shim.yaml.5*
+%{_mandir}/man5/zerodds-ros2.yaml.5*
 
 %files router
 %{_bindir}/zerodds-router
 %{_unitdir}/zerodds-router.service
 %{_datadir}/zerodds/configs/router.json.example
 %{_mandir}/man1/zerodds-router.1*
+
+%files durability
+%{_bindir}/zerodds-durability-svc
+%{_unitdir}/zerodds-durability-svc.service
+%{_mandir}/man1/zerodds-durability-svc.1*
+
+%files naming
+%{_bindir}/zerodds-naming-svc
+%{_unitdir}/zerodds-naming-svc.service
+%{_datadir}/zerodds/configs/naming-svc.yaml.example
+%{_mandir}/man1/zerodds-naming-svc.1*
+%{_mandir}/man5/zerodds-naming-svc.yaml.5*
+
+%files xrce-agent
+%{_bindir}/zerodds-xrce-agentd
+%{_unitdir}/zerodds-xrce-agentd.service
+%{_datadir}/zerodds/configs/xrce-agentd.yaml.example
+%{_mandir}/man1/zerodds-xrce-agentd.1*
+%{_mandir}/man5/zerodds-xrce-agentd.yaml.5*
 
 %changelog
 * Wed May 06 2026 ZeroDDS Contributors <release@zerodds.org> - 1.0.0-0.rc1

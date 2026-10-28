@@ -65,14 +65,14 @@ func main() {
 	// Inline: the caller does the send syscall itself, every time.
 	t0 := time.Now()
 	for i := 0; i < iters; i++ {
-		frame := zerodds.ReliableWriteFrame(uint16(i), sample)
+		frame := zerodds.ReliableWriteFrame(uint16(i), zerodds.XrceObjectID(0x001, uint16(zerodds.ObjkDataWriter)), sample)
 		_, _ = conn.Write(frame)
 	}
 	inlineNs := time.Since(t0).Nanoseconds() / int64(iters)
 
 	// Decoupled: the producer only enqueues; a drain goroutine owns the socket.
 	tr := &udpTransport{conn: conn}
-	w := zerodds.NewReliableAsyncWriter(tr, iters)
+	w := zerodds.NewReliableAsyncWriter(tr, iters, zerodds.XrceObjectID(0x001, uint16(zerodds.ObjkDataWriter)))
 	t1 := time.Now()
 	for i := 0; i < iters; i++ {
 		w.Enqueue(sample)

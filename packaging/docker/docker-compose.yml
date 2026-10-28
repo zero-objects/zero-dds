@@ -92,7 +92,7 @@ services:
       args: { ROS_DISTRO: jazzy }
     network_mode: host
     volumes:
-      - ./conf/ros2-shim.yaml:/etc/zerodds/ros2-shim.yaml:ro
+      - ./conf/ros2.yaml:/etc/zerodds/zerodds.d/50-ros2.yaml:ro
       - zerodds_logs:/var/log/zerodds
 
   cli:

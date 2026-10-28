@@ -59,16 +59,33 @@ wolfcrypt = [
     "zerodds-security-permissions/wolfcrypt",
     "zerodds-security-pki/wolfcrypt",
 ]
+# PKCS#11 token access for the `pkcs11:` URIs DDS-Security 1.2 §9.3.1
+# Table 44 allows for the identity and §9.4.1.2 Table 46 for the
+# Access-Control material (RFC 7512). Optional: default builds stay
+# unchanged, and a `pkcs11:` value then refuses naming this feature.
+pkcs11 = ["std", "dep:cryptoki", "dep:sha2"]
 
 [dependencies]
 zerodds-qos = { version = "1.0.0-rc.7", path = "../qos" }
+# The `;base64` form of a `data:` URI (RFC 2397), which DDS-Security 1.2
+# Table 50 names for every identity and access-control property.
+base64 = { workspace = true }
 zerodds-rtps = { version = "1.0.0-rc.7", path = "../rtps", default-features = false, features = ["alloc"] }
 zerodds-security = { version = "1.0.0-rc.7", path = "../security" }
 zerodds-security-crypto = { version = "1.0.0-rc.7", path = "../security-crypto", default-features = false }
 zerodds-security-permissions = { version = "1.0.0-rc.7", path = "../security-permissions", default-features = false }
-# DelegationChain im PeerCapabilities-Cache + Wire-Codec.
+# DelegationChain in the PeerCapabilities cache + wire codec.
 zerodds-security-pki = { version = "1.0.0-rc.7", path = "../security-pki", default-features = false }
 zerodds-security-rtps = { version = "1.0.0-rc.7", path = "../security-rtps" }
+
+# `pkcs11:` URIs (RFC 7512, DDS-Security 1.2 §9.3.1 Table 44). Optional
+# behind the `pkcs11` feature. `default-features = false` uses the
+# pre-generated bindings and loads the module through `libloading` at
+# runtime, so no PKCS#11 library is needed to build.
+cryptoki = { version = "0.7", optional = true, default-features = false }
+# SHA-256 for the ECDSA digest `CKM_ECDSA` signs: the token signs the
+# pre-computed digest, not the message.
+sha2 = { workspace = true, optional = true }
 
 [dev-dependencies]
 zerodds-discovery = { path = "../discovery" }

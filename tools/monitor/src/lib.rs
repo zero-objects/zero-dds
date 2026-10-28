@@ -1,45 +1,45 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! `zerodds-monitor-cli` library — argument parsing für das
+//! `zerodds-monitor-cli` library — argument parsing for the
 //! `zerodds-monitor` Binary.
 //!
 //! Crate `zerodds-monitor-cli`. Safety classification: **COMFORT**.
-//! User-facing Monitoring-CLI; Backend lebt in `zerodds-monitor`.
+//! User-facing Monitoring-CLI; backend lives in `zerodds-monitor`.
 //!
-//! Das Tool nutzt das Backend in `crates/monitor/` (publiziert als
-//! `zerodds-monitor`). Die Trennung zwischen Tool- und Backend-
-//! Crate ist nötig damit beide Konsumenten (Library-User und CLI-
-//! User) eindeutig auflösen.
+//! The tool uses the backend in `crates/monitor/` (published as
+//! `zerodds-monitor`). The separation between tool and backend
+//! crate is needed so both consumers (library user and CLI
+//! user) resolve unambiguously.
 
 #![allow(clippy::module_name_repetitions)]
 
 use std::time::Duration;
 
-/// Default Listen-Address für `monitor serve`.
+/// Default listen address for `monitor serve`.
 pub const DEFAULT_ADDR: &str = "127.0.0.1:9991";
 /// Default Snapshot-Duration.
 pub const DEFAULT_DURATION_SECS: u64 = 5;
 
-/// Sub-command des Monitor-CLIs.
+/// Sub-command of the monitor CLI.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
-    /// `snapshot` — startet Runtime, sammelt Metriken für
-    /// `--duration`, druckt Registry-Inhalt.
+    /// `snapshot` — starts the runtime, collects metrics for
+    /// `--duration`, prints registry content.
     Snapshot(SnapshotArgs),
-    /// `serve` — startet Runtime + HTTP-Server auf `--addr` für
-    /// `--duration` (oder bis SIGINT).
+    /// `serve` — starts the runtime + HTTP server on `--addr` for
+    /// `--duration` (or until SIGINT).
     Serve(ServeArgs),
-    /// `names` — druckt bekannte Metric-Namen mit HELP-Texten.
+    /// `names` — prints known metric names with HELP texts.
     Names,
 }
 
-/// Arguments für `snapshot`.
+/// Arguments for `snapshot`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SnapshotArgs {
     /// DDS-Domain.
     pub domain: u32,
-    /// Sammel-Duration.
+    /// Collection duration.
     pub duration: Duration,
     /// Output-Format.
     pub format: SnapshotFormat,
@@ -48,9 +48,9 @@ pub struct SnapshotArgs {
 /// Snapshot-Output-Format.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SnapshotFormat {
-    /// Mensch-lesbarer Text-Tree.
+    /// Human-readable text tree.
     Text,
-    /// Prometheus-Exposition (gleiches Format wie `/metrics`).
+    /// Prometheus exposition (same format as `/metrics`).
     Prometheus,
 }
 
@@ -64,14 +64,14 @@ impl Default for SnapshotArgs {
     }
 }
 
-/// Arguments für `serve`.
+/// Arguments for `serve`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ServeArgs {
     /// DDS-Domain.
     pub domain: u32,
-    /// Listen-Adresse.
+    /// Listen address.
     pub addr: String,
-    /// Maximale Lebenszeit; `None` = bis SIGINT.
+    /// Maximum lifetime; `None` = until SIGINT.
     pub duration: Option<Duration>,
 }
 
@@ -85,20 +85,20 @@ impl Default for ServeArgs {
     }
 }
 
-/// Parse-Fehler.
+/// Parse error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParseError {
-    /// Kein subcommand.
+    /// No subcommand.
     Missing,
-    /// Unbekanntes subcommand.
+    /// Unknown subcommand.
     Unknown(String),
-    /// Required-arg fehlt.
+    /// Required arg missing.
     MissingArg(&'static str),
-    /// Wert nicht parse-bar.
+    /// Value not parseable.
     BadValue {
-        /// Welche flag.
+        /// Which flag.
         flag: &'static str,
-        /// Was eingegeben war.
+        /// What was entered.
         got: String,
     },
 }
@@ -116,10 +116,10 @@ impl std::fmt::Display for ParseError {
 
 impl std::error::Error for ParseError {}
 
-/// Parst die `args` Slice (ohne `argv[0]`) zu einem [`Command`].
+/// Parses the `args` slice (without `argv[0]`) into a [`Command`].
 ///
 /// # Errors
-/// Siehe [`ParseError`].
+/// See [`ParseError`].
 pub fn parse_args(args: &[String]) -> Result<Command, ParseError> {
     let sub = args.first().ok_or(ParseError::Missing)?;
     match sub.as_str() {

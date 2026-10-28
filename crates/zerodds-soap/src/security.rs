@@ -5,7 +5,7 @@
 //!
 //! Spec: `http://docs.oasis-open.org/wss-m/wss/v1.1/`.
 //!
-//! Wir liefern die zentralen Token-Typen:
+//! We provide the central token types:
 //!
 //! * UsernameToken (UsernameToken Profile 1.1, §3.1).
 //! * X.509-Token (Token Profile 1.1, §3.2).
@@ -33,7 +33,7 @@ pub struct UsernameToken {
     pub password: String,
     /// `Type` attribute on the `<wsse:Password>` element.
     pub password_type: PasswordType,
-    /// Optional Nonce (Base64-codiert).
+    /// Optional Nonce (base64-encoded).
     pub nonce: Option<String>,
     /// Optional Created-Timestamp (XSD-DateTime).
     pub created: Option<String>,
@@ -70,9 +70,9 @@ impl PasswordType {
 pub struct X509Token {
     /// Cert (Base64- or hex-encoded).
     pub cert_b64: String,
-    /// `EncodingType`-Attribut auf `<wsse:BinarySecurityToken>`.
+    /// `EncodingType` attribute on `<wsse:BinarySecurityToken>`.
     pub encoding_type: String,
-    /// `ValueType`-Attribut.
+    /// `ValueType` attribute.
     pub value_type: String,
 }
 

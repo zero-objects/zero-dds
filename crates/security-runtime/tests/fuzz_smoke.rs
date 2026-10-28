@@ -1,7 +1,7 @@
 //! Stable-Rust fuzz smoke tests for the DDS-Security runtime decoder.
 //!
 //! Pseudo-random bytes into `decode_generic_message` (builtin-topic
-//! ParticipantGenericMessage). Spec: DDS-Security 1.2 §7.4.4.
+//! ParticipantGenericMessage). Spec: DDS-Security 1.2 §7.3.22.
 
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 

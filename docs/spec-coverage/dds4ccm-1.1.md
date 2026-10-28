@@ -14,7 +14,8 @@ Die Implementation ist über mehrere Crates verteilt:
 - `crates/ccm/` — DDS4CCM-Kern: Connector-/Port-Datenmodell, Pattern-QoS-Profiles, IDL-Output-Formen (`src/dds4ccm.rs`)
 - `crates/xml/` — XML-QoS-Profile (§7.4.2 + Annex C XSD + Annex D Default-Profile)
 - `crates/dcps/` — DCPS-Entity-Erzeugung als Connector-Backend
-- `crates/idl/` — IDL3+-Codegen-Backend für den Annex-A-Source-Output
+- `crates/idl-parse/` + `crates/idl-lower/` + `crates/lang-rules/` —
+  Codegen-Kette für den Annex-A-Source-Output
 - `crates/corba-ccm/` — CCM-Container-Stack (Host für §7/§8, siehe `omg-ccm-4.0.md`)
 
 **Crate-Mapping:**
@@ -32,7 +33,8 @@ Die DDS4CCM-Connector-/Port-Definitionen liegen in
 `crates/ccm/src/dds4ccm.rs`; der CCM-Container als Host für §7/§8 in
 `crates/corba-ccm/` (siehe `omg-ccm-4.0.md`); der **XML-QoS-Profile-Anteil**
 in `crates/xml/src/qos.rs` (K7-Audit, siehe `zerodds-xml-1.0.md`). Der
-IDL3+-Source-Output (Annex A/B) wird über das `crates/idl/`-Codegen-Backend
+IDL3+-Source-Output (Annex A/B) wird über die Codegen-Kette
+`crates/idl-parse/` + `crates/idl-lower/` + `crates/lang-rules/`
 erzeugt.
 
 ---
@@ -49,8 +51,13 @@ be configured using CCM configuration mechanisms."
 DDS-Connector-Datenmodell + Pattern-QoS-Profiles in
 `crates/ccm/src/dds4ccm.rs`.
 
-**Tests:** Cross-Ref `zerodds-xml-1.0.md` §7.3.2 +
-`dds4ccm::tests::*`.
+**Tests:** `crates/ccm/src/dds4ccm.rs::tests` (13 Tests): `basic_port_kinds_distinct`,
+`basic_port_construct`, `extended_port_kinds_distinct`,
+`connector_construct_default_domain_zero`, `connector_with_qos_profile`,
+`connector_add_basic_port_increments_count`,
+`connector_add_extended_port_increments_count`, `connector_pattern_distinct`,
+`threading_policy_distinct`, `qos_profile_constants_match_spec_namespace`,
+`dlrl_port_kinds_distinct`, `dlrl_port_construct`, `idl_output_form_distinct`.
 
 **Status:** done — Bridge-Scope (XML-QoS + Connector-Datenmodell +
 Extended-Ports) abgedeckt.
@@ -73,7 +80,14 @@ Extended-Ports) abgedeckt.
 ConnectorPattern}`; Punkt 2 (DLRL-Ports) via
 `crates/ccm/src/dds4ccm.rs::{DlrlPort, DlrlPortKind}`.
 
-**Tests:** Cross-Ref §7.2/§7.3/§8.2.
+**Tests:** Punkt 1: `crates/ccm/src/dds4ccm.rs::tests::{
+basic_port_kinds_distinct, extended_port_kinds_distinct,
+connector_construct_default_domain_zero,
+connector_add_basic_port_increments_count,
+connector_add_extended_port_increments_count,
+connector_pattern_distinct, connector_with_qos_profile}`.
+Punkt 2: `crates/ccm/src/dds4ccm.rs::tests::{dlrl_port_kinds_distinct,
+dlrl_port_construct}`.
 
 **Status:** done — beide Conformance-Points abgedeckt.
 
@@ -193,7 +207,7 @@ etc., mit IDL-Definitionen pro Pattern.
 mit allen 6 Spec-Variants (Reader/Writer/Updater/Getter/Listener/
 StateListener).
 
-**Tests:** `dds4ccm::tests::{basic_port_kinds_distinct,
+**Tests:** `crates/ccm/src/dds4ccm.rs::tests::{basic_port_kinds_distinct,
 basic_port_construct}`.
 
 **Status:** done
@@ -208,7 +222,7 @@ mehrere Basic-Ports (z.B. `DataReader<T>` + `DataListener<T>` +
 mit MultiTopicReader/ContentFilteredReader/QueryConditionReader/
 WaitsetReader.
 
-**Tests:** `dds4ccm::tests::{extended_port_kinds_distinct,
+**Tests:** `crates/ccm/src/dds4ccm.rs::tests::{extended_port_kinds_distinct,
 connector_add_extended_port_increments_count}`.
 
 **Status:** done
@@ -223,7 +237,7 @@ connector_add_extended_port_increments_count}`.
 mit `port_count`/`add_basic_port`/`add_extended_port`/`with_qos_profile`/
 `with_domain` als builder-API.
 
-**Tests:** `dds4ccm::tests::{connector_construct_default_domain_zero,
+**Tests:** `crates/ccm/src/dds4ccm.rs::tests::{connector_construct_default_domain_zero,
 connector_pattern_distinct, connector_add_basic_port_increments_count}`.
 
 **Status:** done
@@ -236,7 +250,7 @@ TransientLocal).
 **Repo:** `ConnectorPattern::StateTransfer` +
 `qos_profiles::STATE_TRANSFER_DEFAULT` Marker.
 
-**Tests:** `dds4ccm::tests::{connector_with_qos_profile,
+**Tests:** `crates/ccm/src/dds4ccm.rs::tests::{connector_with_qos_profile,
 qos_profile_constants_match_spec_namespace}`.
 
 **Status:** done
@@ -249,7 +263,7 @@ Volatile).
 **Repo:** `ConnectorPattern::EventTransfer` +
 `qos_profiles::EVENT_TRANSFER_DEFAULT` Marker.
 
-**Tests:** `dds4ccm::tests::qos_profile_constants_match_spec_namespace`.
+**Tests:** `crates/ccm/src/dds4ccm.rs::tests::qos_profile_constants_match_spec_namespace`.
 
 **Status:** done
 
@@ -265,7 +279,7 @@ Connector.
 Konfiguration; konkrete Entity-Erzeugung erfolgt durch DCPS-Stack
 (`crates/dcps/`).
 
-**Tests:** `dds4ccm::tests::connector_with_qos_profile`.
+**Tests:** `crates/ccm/src/dds4ccm.rs::tests::connector_with_qos_profile`.
 
 **Status:** done
 
@@ -278,7 +292,11 @@ Root-Element.
 
 **Repo:** `crates/xml/src/qos.rs` mit `parse_xml_string`.
 
-**Tests:** Cross-Ref `zerodds-xml-1.0.md` §7.3.2.
+**Tests:** `crates/xml/src/parser.rs::tests::parse_minimal_document`,
+`::parse_with_xml_declaration`, `::parse_namespace_aware`,
+`::comments_stripped`, `::whitespace_tolerant`, `::attributes_preserved`,
+`::invalid_xml_rejected`, `::dtd_rejected`, `::list_dos_cap`. Querverweis
+`zerodds-xml-1.0.md` §7.3.2.
 
 **Status:** done
 
@@ -291,7 +309,14 @@ datawriter_qos, datareader_qos).
 **Repo:** `crates/xml/src/qos.rs::QosProfile` mit allen sechs
 Entity-QoS-Strukturen.
 
-**Tests:** Cross-Ref `zerodds-xml-1.0.md`.
+**Tests:** `crates/xml/src/qos.rs::tests`: `entity_qos_default_is_all_none`,
+`entity_qos_into_writer_uses_defaults_for_unset`,
+`entity_qos_into_reader_uses_defaults_for_unset`,
+`merge_override_replaces_field`, `merge_none_does_not_clobber`,
+`library_profile_lookup`, `glob_star_matches_all`, `glob_prefix`,
+`glob_question_mark`, `glob_exact`;
+`crates/xml/src/parser.rs::tests::parse_minimal_document`,
+`::parse_namespace_aware`, `::invalid_xml_rejected`, `::dtd_rejected`.
 
 **Status:** done
 
@@ -303,7 +328,12 @@ Pattern, `base_name`-Inheritance, Topic-Sub-Profiles.
 **Repo:** `crates/xml/src/qos.rs` mit Profile-Inheritance via
 `base_name`.
 
-**Tests:** Cross-Ref `zerodds-xml-1.0.md`.
+**Tests:** `crates/xml/src/qos.rs::tests::library_profile_lookup`,
+`::merge_override_replaces_field`, `::merge_none_does_not_clobber`,
+`::glob_star_matches_all`, `::glob_prefix`, `::glob_question_mark`,
+`::glob_exact`;
+`crates/ccm/src/dds4ccm.rs::tests::connector_with_qos_profile`,
+`::qos_profile_constants_match_spec_namespace`.
 
 **Status:** done
 
@@ -315,7 +345,7 @@ CCM-Connector.
 **Repo:** XML-Profile-Loader + `Connector::with_qos_profile(name)`
 als CCM-Component-Configuration-Anbindung.
 
-**Tests:** `dds4ccm::tests::connector_with_qos_profile`.
+**Tests:** `crates/ccm/src/dds4ccm.rs::tests::connector_with_qos_profile`.
 
 **Status:** done — Profile-Loader + Connector-Anbindung live.
 
@@ -327,7 +357,7 @@ DCPS-Entities.
 **Repo:** `crates/ccm/src/dds4ccm.rs::ConnectorThreadingPolicy`
 mit ThreadPerConnector/SharedThreadPool/InvokeInline.
 
-**Tests:** `dds4ccm::tests::threading_policy_distinct`.
+**Tests:** `crates/ccm/src/dds4ccm.rs::tests::threading_policy_distinct`.
 
 **Status:** done
 
@@ -367,7 +397,7 @@ mit ThreadPerConnector/SharedThreadPool/InvokeInline.
 
 **Repo:** `crates/ccm/src/dds4ccm.rs::{DlrlPort, DlrlPortKind::CacheOperation}`.
 
-**Tests:** `dds4ccm::tests::{dlrl_port_kinds_distinct, dlrl_port_construct}`.
+**Tests:** `crates/ccm/src/dds4ccm.rs::tests::{dlrl_port_kinds_distinct, dlrl_port_construct}`.
 
 **Status:** done
 
@@ -378,7 +408,7 @@ DLRL-Class.
 
 **Repo:** `crates/ccm/src/dds4ccm.rs::DlrlPortKind::ObjectHome`.
 
-**Tests:** `dds4ccm::tests::dlrl_port_kinds_distinct`.
+**Tests:** `crates/ccm/src/dds4ccm.rs::tests::dlrl_port_kinds_distinct`.
 
 **Status:** done
 
@@ -390,7 +420,7 @@ DLRL-Basic-Ports.
 **Repo:** `Connector` mit `add_basic_port`/`add_extended_port`-API
 als generische Composition-Mechanik.
 
-**Tests:** Cross-Ref `dds4ccm::tests::connector_add_basic_port_increments_count`.
+**Tests:** Cross-Ref `crates/ccm/src/dds4ccm.rs::tests::connector_add_basic_port_increments_count`.
 
 **Status:** done
 
@@ -400,7 +430,7 @@ als generische Composition-Mechanik.
 
 **Repo:** `ConnectorPattern::Dlrl` + `qos_profiles::DLRL_DEFAULT`.
 
-**Tests:** `dds4ccm::tests::{connector_pattern_distinct,
+**Tests:** `crates/ccm/src/dds4ccm.rs::tests::{connector_pattern_distinct,
 qos_profile_constants_match_spec_namespace}`.
 
 **Status:** done
@@ -414,7 +444,7 @@ DLRL-Connector.
 
 **Repo:** `Connector::with_domain` + DLRL-Connector-Pattern.
 
-**Tests:** `dds4ccm::tests::connector_with_qos_profile`.
+**Tests:** `crates/ccm/src/dds4ccm.rs::tests::connector_with_qos_profile`.
 
 **Status:** done
 
@@ -426,7 +456,7 @@ DLRL-Connector.
 **Repo:** XML-Profile-Loader + `Connector::with_qos_profile(name)`
 analog §7.4.3.
 
-**Tests:** `dds4ccm::tests::connector_with_qos_profile`.
+**Tests:** `crates/ccm/src/dds4ccm.rs::tests::connector_with_qos_profile`.
 
 **Status:** done
 
@@ -439,10 +469,11 @@ für alle DCPS-Basic-Ports + Connectors.
 
 **Repo:** `crates/ccm/src/dds4ccm.rs::IdlOutputForm` (Idl3Compatible/
 Idl3Plus) + Connector/Port-Datenmodelle als IDL-AST-Aequivalente.
-Echter IDL3+-Source-Output via `crates/idl/`-Codegen-Backend
-addressbar (Caller-Layer).
+Echter IDL3+-Source-Output über die Codegen-Kette
+`crates/idl-parse/` + `crates/idl-lower/` + `crates/lang-rules/`
+addressierbar (Caller-Layer).
 
-**Tests:** `dds4ccm::tests::idl_output_form_distinct`.
+**Tests:** `crates/ccm/src/dds4ccm.rs::tests::idl_output_form_distinct`.
 
 **Status:** done — Annex-A-IDL als Rust-AST + Codegen-Form-Marker
 live.
@@ -456,7 +487,7 @@ live.
 **Repo:** `DlrlPort` + `ConnectorPattern::Dlrl` als Rust-AST-
 Aequivalent; symmetrisch zu Annex A.
 
-**Tests:** `dds4ccm::tests::{dlrl_port_construct,
+**Tests:** `crates/ccm/src/dds4ccm.rs::tests::{dlrl_port_construct,
 connector_pattern_distinct}`.
 
 **Status:** done
@@ -471,7 +502,14 @@ QoS-Profile-XML-Files.
 **Repo:** `crates/xml/src/qos.rs` validiert gegen das XSD-Schema
 (siehe `zerodds-xml-1.0.md` für Detail-Items).
 
-**Tests:** Cross-Ref `zerodds-xml-1.0.md`.
+**Tests:** `crates/xml/src/qos.rs::tests`: `entity_qos_default_is_all_none`,
+`entity_qos_into_writer_uses_defaults_for_unset`,
+`entity_qos_into_reader_uses_defaults_for_unset`,
+`merge_override_replaces_field`, `merge_none_does_not_clobber`,
+`library_profile_lookup`, `glob_star_matches_all`, `glob_prefix`,
+`glob_question_mark`, `glob_exact`;
+`crates/xml/src/parser.rs::tests::parse_minimal_document`,
+`::parse_namespace_aware`, `::invalid_xml_rejected`, `::dtd_rejected`.
 
 **Status:** done
 
@@ -484,7 +522,10 @@ mit allen Entity-Defaults.
 
 **Repo:** `crates/xml/src/qos.rs` Default-Werte gemäß DDS-Spec.
 
-**Tests:** Cross-Ref `zerodds-xml-1.0.md`.
+**Tests:** `crates/xml/src/qos.rs::tests::entity_qos_default_is_all_none`,
+`::entity_qos_into_writer_uses_defaults_for_unset`,
+`::entity_qos_into_reader_uses_defaults_for_unset`,
+`::merge_none_does_not_clobber`.
 
 **Status:** done
 
@@ -500,7 +541,7 @@ EVENT_TRANSFER_DEFAULT, BASE_DEFAULT, DLRL_DEFAULT}` als
 Pattern-spezifische Profile-Marker (Caller bindet konkrete
 QosProfile-Konfiguration via `xml::qos`).
 
-**Tests:** `dds4ccm::tests::qos_profile_constants_match_spec_namespace`.
+**Tests:** `crates/ccm/src/dds4ccm.rs::tests::qos_profile_constants_match_spec_namespace`.
 
 **Status:** done — Pattern-spezifische Default-Profile-Marker live.
 

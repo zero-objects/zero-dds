@@ -1,36 +1,67 @@
 # /etc/zerodds/mqtt-bridged.yaml.example
-# Spec: zerodds-mqtt-bridge-1.0 §4, §11.
+# Configuration of zerodds-mqtt-bridged.
+# Spec: zerodds-mqtt-bridge-1.0 §3 (config schema), §11 (deployment).
+#
+# Read by crates/mqtt-bridge/src/daemon/config.rs (DaemonConfig::from_config)
+# over the shared layers: this file, mqtt-bridged.d/, include:, the
+# environment beneath, --set above. An unknown key in a known section or a
+# value of the wrong type stops the start with file and line; an unknown
+# top-level key is a WARN line on stderr, and an error under --check-config.
+#
+# The file holds only keys the daemon reads; crates/mqtt-bridge/tests/example_yaml_loadback.rs
+# loads it back.
 
-participant:
-  domain_id: 0
-  qos_profile: builtin/reliable_keep_last_10
+domain: 0
+log_level: info
 
 mqtt:
-  broker_url: "mqtt://localhost:1883"
+  broker_url: "mqtt://localhost:1883"   # mqtt://, mqtts://, ws://, wss:// (Spec §2)
   client_id:  "zerodds-mqtt-bridge"
-  username:   ""
-  password_file: ""        # /etc/zerodds/certs/mqtt.password — 0600
+  keep_alive_secs: 120
+  drain_timeout_secs: 30                # shutdown waits this long for QoS 1/2 acks (Spec §9.2)
+  clean_start: false                    # keep the session across reconnects
+  # username: "${MQTT_USER}"            # ${VAR} is substituted before parsing
+  # password: "${MQTT_PASSWORD}"
   tls:
     enabled: false
-    ca:    /etc/zerodds/certs/mqtt-ca.pem
-    cert:  /etc/zerodds/certs/mqtt-bridged.crt
-    key:   /etc/zerodds/certs/mqtt-bridged.key
-  keepalive_secs: 60
-  session_expiry_secs: 3600
+    ca_file:   "/etc/zerodds/certs/mqtt-ca.pem"
+    cert_file: "/etc/zerodds/certs/mqtt-bridged.crt"
+    key_file:  "/etc/zerodds/certs/mqtt-bridged.key"
+    # server_name: "mosquitto.example.com"   # SNI and host name override
 
-routes:
-  # DDS-Topic <-> MQTT-Topic Mapping mit QoS.
-  - dds_topic:  "Telemetry"
-    type:       "demo::Sensor::Reading"
-    mqtt_topic: "factory/+/telemetry"
-    direction:  "dds_to_mqtt"
-    mqtt_qos:   1
+# How the bridge authenticates towards the broker (Spec §7.2).
+auth:
+  mode: "none"
+  # bearer_token: "${MQTT_TOKEN}"
+  # bearer_subject: "service-account"
+  # username: "${MQTT_USER}"          # SASL PLAIN towards the broker;
+  # password: "${MQTT_PASSWORD}"      # wins over mqtt.username/mqtt.password
+  # sasl_users:                       # user/password map for the daemon ACL
+  #   service-account: "${MQTT_SERVICE_PW}"
 
-logging:
-  level: info
-  format: json
-  destination: journal
+# The daemon's ACL in front of MQTT (Spec §3/§7.3). The subject is the TLS
+# certificate DN, the MQTT user name or the JWT `sub`, in this order.
+acl:
+  default_deny: false
+  rules:
+    - subject: "service-account"
+      allow_publish:   ["factory/+/telemetry"]
+      allow_subscribe: ["factory/+/telemetry"]
 
-observability:
-  metrics_bind: "127.0.0.1:9092"
-  otlp_endpoint: ""
+metrics:
+  enabled: false
+  listen: "127.0.0.1:9092"   # /metrics + /catalog + /healthz
+
+topics:
+  # DDS topic <-> MQTT topic. zerodds-mqtt-bridge-1.0 §5.
+  - dds_name:   "Telemetry"
+    dds_type:   "demo::Sensor::Reading"
+    mqtt_topic: "factory/+/telemetry"   # default: slug of dds_name
+    direction:  "out"                   # in | out | bidir
+    mqtt_qos:   1                       # 0 | 1 | 2
+    retain:     false
+    qos:
+      reliability: "reliable"
+      durability: "volatile"
+      history:
+        depth: 10

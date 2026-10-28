@@ -1,39 +1,39 @@
-# Toolchain-Pinning.
+# Toolchain pinning.
 #
-# Bootstrap- und Proof-Era: stable Rust 1.88.0, siehe
+# Bootstrap and proof era: stable Rust 1.88.0, see
 # 04_safety_by_architecture.md §5.
-# In Expansion-Era (Track B) wird dies auf einen Ferrocene-Channel
-# umgestellt. Der Switch ist als 1-Zeilen-Config-Aenderung in dieser
-# Datei isoliert.
+# In the expansion era (Track B) this is switched to a Ferrocene
+# channel. The switch is isolated as a 1-line config change in this
+# file.
 #
-# ### Warum 1.88.0?
+# ### Why 1.88.0?
 #
-# 1.88.0 ist die rustc-Version, auf der **Ferrocene 25.08.0** basiert
-# (qualifiziert ISO 26262 ASIL-D / IEC 61508 SIL-3 / IEC 62304). Damit
-# bleibt der Track-B-Switch eine 1-Zeilen-Aenderung; keine
-# MSRV-rueckwaerts-Migration noetig.
+# 1.88.0 is the rustc version on which **Ferrocene 25.08.0** is based
+# (qualified ISO 26262 ASIL-D / IEC 61508 SIL-3 / IEC 62304). This
+# keeps the Track B switch a 1-line change; no backward
+# MSRV migration needed.
 #
-# Vorgaenger-Pinning war 1.85 (vor Ferrocene-25.05-Release gewaehlt) —
-# upstream-Crates (`home@0.5.12`, `icu_*@2.2.0`) haben MSRV inzwischen
-# auf 1.86/1.88 angehoben, daher Bump auf den naechstgelegenen
-# Ferrocene-aligned-Channel.
+# The previous pin was 1.85 (chosen before the Ferrocene 25.05 release) —
+# upstream crates (`home@0.5.12`, `icu_*@2.2.0`) have since raised MSRV
+# to 1.86/1.88, hence the bump to the nearest
+# Ferrocene-aligned channel.
 #
-# ### Ferrocene Release-Map (Stand 2026-05)
+# ### Ferrocene release map (as of 2026-05)
 #
-# Quelle: https://public-docs.ferrocene.dev/main/release-notes/
+# Source: https://public-docs.ferrocene.dev/main/release-notes/
 #
 # | Ferrocene | rustc          | Status                  |
 # |-----------|----------------|-------------------------|
-# | 26.02.0   | 1.91 + 1.92    | qualifiziert (latest)   |
-# | 25.11.0   | 1.89 + 1.90    | qualifiziert            |
-# | 25.08.0   | 1.87 + **1.88**| qualifiziert ← uns      |
-# | 25.05.0   | 1.86           | qualifiziert            |
-# | 25.02.0   | 1.82 + 1.83    | qualifiziert            |
-# | 24.11.0   | aelter         | qualifiziert (LTS-style)|
+# | 26.02.0   | 1.91 + 1.92    | qualified (latest)      |
+# | 25.11.0   | 1.89 + 1.90    | qualified               |
+# | 25.08.0   | 1.87 + **1.88**| qualified ← us          |
+# | 25.05.0   | 1.86           | qualified               |
+# | 25.02.0   | 1.82 + 1.83    | qualified               |
+# | 24.11.0   | older          | qualified (LTS-style)   |
 #
-# ### Ferrocene 25.08.0 — qualifizierte Compilation-Targets
+# ### Ferrocene 25.08.0 — qualified compilation targets
 #
-# Quelle: https://public-docs.ferrocene.dev/main/user-manual/targets/
+# Source: https://public-docs.ferrocene.dev/main/user-manual/targets/
 #
 # **Qualified (ISO 26262 ASIL-D / IEC 61508 SIL-3 / IEC 62304):**
 #   * `aarch64-unknown-none`        — Armv8-A bare-metal hard-float
@@ -45,13 +45,13 @@
 #   * `x86_64-unknown-linux-gnu`    — x86-64 Linux glibc (Host)
 #   * `x86_64-pc-nto-qnx710`        — x86-64 QNX Neutrino 7.1
 #
-# **Quality Managed (host-only, nicht safety-zertifiziert):**
-#   * `aarch64-apple-darwin`        — Apple Silicon macOS (Dev-Hosts)
+# **Quality Managed (host-only, not safety-certified):**
+#   * `aarch64-apple-darwin`        — Apple Silicon macOS (dev hosts)
 #
-# ZeroDDS-Targets-Liste unten enthaelt nur die, gegen die wir aktiv
-# bauen / testen. `rt-linux`-Crate (RT-Scheduler) wird auf x86_64+aarch64
-# Linux gebaut, `no-std`-Smoke auf thumbv7em-none-eabihf, der
-# Workspace-Default ist x86_64-unknown-linux-gnu.
+# The ZeroDDS target list below contains only those we actively
+# build / test against. The `rt-linux` crate (RT scheduler) is built on x86_64+aarch64
+# Linux, the `no-std` smoke test on thumbv7em-none-eabihf, the
+# workspace default is x86_64-unknown-linux-gnu.
 
 [toolchain]
 channel = "1.88.0"
@@ -60,13 +60,13 @@ targets = [
     # Qualified Linux hosts (Ferrocene 25.08.0).
     "x86_64-unknown-linux-gnu",
     "aarch64-unknown-linux-gnu",
-    # Qualified Embedded — no-std-Smoke + zukuenftige Embedded-Builds.
+    # Qualified embedded — no-std smoke test + future embedded builds.
     "thumbv7em-none-eabihf",
 ]
-# Minimal-Profil — keine rust-docs/rust-analyzer/etc. mit-syncen.
-# Spart in der CI ~30 s pro Job (das Image preinstalled exakt diese
-# Toolchain mit identischem Profile, daher kein rustup-Resync mehr
-# beim ersten `rustc --version`-Call). Lokale Dev-Setups, die
-# rust-docs offline brauchen, koennen sie per
-# `rustup component add rust-docs` nachladen.
+# Minimal profile — do not sync rust-docs/rust-analyzer/etc. as well.
+# Saves ~30 s per job in CI (the image preinstalls exactly this
+# toolchain with an identical profile, hence no rustup resync
+# on the first `rustc --version` call). Local dev setups that
+# need rust-docs offline can load them with
+# `rustup component add rust-docs`.
 profile = "minimal"

@@ -4,7 +4,7 @@
 //! `zerodds-spy` library — argument parsing.
 //!
 //! Crate `zerodds-spy`. Safety classification: **COMFORT**.
-//! User-facing Topic-Spy-Tool; nur CLI-Frontend ohne Runtime-Pfade.
+//! User-facing topic spy tool; CLI frontend only, no runtime paths.
 
 #![allow(clippy::module_name_repetitions)]
 
@@ -15,35 +15,44 @@ pub const DEFAULT_DOMAIN: u32 = 0;
 /// Default Hex-Snippet-Bytes pro Sample.
 pub const DEFAULT_HEX_BYTES: usize = 32;
 
-/// Sub-command des Spy-CLIs.
+/// Sub-command of the spy CLI.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
-    /// `subscribe` — abonniere TOPIC und dump samples.
+    /// `subscribe` — subscribe to TOPIC and dump samples.
     Subscribe(SubscribeArgs),
 }
 
-/// Argumente für `subscribe`.
+/// Arguments for `subscribe`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SubscribeArgs {
     /// DDS Domain.
     pub domain: u32,
     /// Topic-Name.
     pub topic: String,
-    /// Maximale Anzahl Samples bevor Auto-Stop; `None` = unlimitiert.
+    /// Maximum number of samples before auto-stop; `None` = unlimited.
     pub max_samples: Option<u64>,
-    /// Maximale Lebensdauer; `None` = bis SIGINT.
+    /// Maximum lifetime; `None` = until SIGINT.
     pub duration: Option<Duration>,
-    /// Wieviele Bytes pro Sample als Hex drucken (0 = nur metadata).
+    /// How many bytes per sample to print as hex (0 = only metadata).
     pub hex_bytes: usize,
     /// Optionaler Typname-Override (`--type`). `None` = type-following:
-    /// der Spy entdeckt den echten `type_name` der Writer via Discovery
-    /// und hängt sich pro Typ an. Gesetzt = direkt diesen Typ abonnieren
-    /// (überspringt Discovery; nützlich für stille / late-joining Writer).
+    /// the spy discovers the real `type_name` of the writers via discovery
+    /// and attaches per type. Set = subscribe to this type directly
+    /// (skips discovery; useful for silent / late-joining writers).
     pub type_name: Option<String>,
     /// Decode samples to typed JSON on stdout (needs `type_file`).
     pub decode: bool,
     /// Out-of-band IDL file providing the types to decode against (`--type-file`).
     pub type_file: Option<String>,
+    /// The wire dialect `--decode` reads in (`--dialect`): the one peer's
+    /// answers to the questions implementations answer differently, as
+    /// `zerodds_ast_layout::Dialect::parse` spells them. `None` leaves it to
+    /// the configuration's `wire.codec_dialect`, whose default is the
+    /// specification's. The decoder does not guess it from the bytes: Fast
+    /// DDS closes a PL_CDR1 parameter list with a bare `0x3f02` where the
+    /// specification's reading sets the must-understand bit, and a decoder
+    /// in the wrong dialect reports the framing rather than accepting it.
+    pub dialect: Option<zerodds_ast_layout::Dialect>,
 }
 
 impl Default for SubscribeArgs {
@@ -57,24 +66,25 @@ impl Default for SubscribeArgs {
             type_name: None,
             decode: false,
             type_file: None,
+            dialect: None,
         }
     }
 }
 
-/// Parse-Fehler.
+/// Parse error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParseError {
-    /// Kein subcommand.
+    /// No subcommand.
     Missing,
-    /// Unbekanntes subcommand.
+    /// Unknown subcommand.
     Unknown(String),
-    /// Required-arg fehlt.
+    /// Required argument missing.
     MissingArg(&'static str),
-    /// Wert nicht parse-bar.
+    /// Value not parseable.
     BadValue {
-        /// Welche flag.
+        /// Which flag.
         flag: &'static str,
-        /// Was eingegeben war.
+        /// What was entered.
         got: String,
     },
 }
@@ -92,14 +102,14 @@ impl std::fmt::Display for ParseError {
 
 impl std::error::Error for ParseError {}
 
-/// Parst `args` (typisch `env::args().skip(1)`) zu einem [`Command`].
+/// Parses `args` (typically `env::args().skip(1)`) into a [`Command`].
 ///
 /// # Errors
-/// Siehe [`ParseError`].
+/// See [`ParseError`].
 pub fn parse_args(args: &[String]) -> Result<Command, ParseError> {
-    // Default-subcommand: `subscribe` wenn der erste Token mit `-`
-    // anfaengt oder ein Topic-Name ist. Erlaubt sowohl
-    // `zerodds-spy subscribe -t Foo` als auch direkt
+    // Default subcommand: `subscribe` when the first token starts with `-`
+    // begins or is a topic name. Allows both
+    // `zerodds-spy subscribe -t Foo` as well as directly
     // `zerodds-spy -t Foo`.
     let first = args.first().ok_or(ParseError::Missing)?;
     let (sub, rest) = if first.starts_with('-') || (!first.is_empty() && !is_subcommand_name(first))
@@ -150,6 +160,16 @@ fn parse_subscribe(rest: &[String]) -> Result<SubscribeArgs, ParseError> {
                         .clone(),
                 );
             }
+            "--dialect" => {
+                i += 1;
+                let v = rest.get(i).ok_or(ParseError::MissingArg("dialect"))?;
+                out.dialect = Some(zerodds_ast_layout::Dialect::parse(v).ok_or_else(|| {
+                    ParseError::BadValue {
+                        flag: "dialect",
+                        got: v.clone(),
+                    }
+                })?);
+            }
             "--count" | "-n" => {
                 i += 1;
                 let v = rest.get(i).ok_or(ParseError::MissingArg("count"))?;
@@ -183,8 +203,8 @@ fn parse_subscribe(rest: &[String]) -> Result<SubscribeArgs, ParseError> {
     Ok(out)
 }
 
-/// Formatiert ein Byte-Slice als Hex, max `limit` Bytes mit `…`-Suffix
-/// wenn länger.
+/// Formats a byte slice as hex, max `limit` bytes with a `…` suffix
+/// if longer.
 #[must_use]
 pub fn format_hex_snippet(bytes: &[u8], limit: usize) -> String {
     if limit == 0 {
@@ -267,13 +287,29 @@ mod tests {
     }
 
     #[test]
+    fn parse_dialect() {
+        let Command::Subscribe(args) =
+            parse_args(&s(&["-t", "T", "--decode", "--dialect", "fastdds"])).unwrap();
+        assert_eq!(args.dialect, Some(zerodds_ast_layout::Dialect::FastDds));
+        let Command::Subscribe(args) = parse_args(&s(&["-t", "T"])).unwrap();
+        assert_eq!(args.dialect, None);
+        assert!(matches!(
+            parse_args(&s(&["-t", "T", "--dialect", "nope"])),
+            Err(ParseError::BadValue {
+                flag: "dialect",
+                ..
+            })
+        ));
+    }
+
+    #[test]
     fn parse_no_args_rejected() {
         assert!(matches!(parse_args(&[]), Err(ParseError::Missing)));
     }
 
     #[test]
     fn parse_unknown_subcommand_rejected() {
-        // "publish" ist kein Subcommand und kein Flag → Unknown.
+        // "publish" is neither a subcommand nor a flag → Unknown.
         let err = parse_args(&s(&["publish", "-t", "Foo"])).unwrap_err();
         assert!(matches!(err, ParseError::Unknown(_)));
     }

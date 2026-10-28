@@ -1,0 +1,7 @@
+// array declared on the member
+@final struct Sample {
+    long grid[2][2][2];
+    string words[2];
+    sequence<long> ids;
+    long tail;
+};

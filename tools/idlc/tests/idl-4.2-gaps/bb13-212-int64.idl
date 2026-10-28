@@ -1,0 +1,2 @@
+// IDL 4.2 Annex A production 212 — the `int64` primitive.
+struct Sa { int64 m; };

@@ -1,267 +1,273 @@
-# `zerodds-xcdr2-d` 1.0 — Spec-Coverage
+# `zerodds-xcdr2-d` 1.0 — Spec Coverage
 
-**Source:** `docs/specs/zerodds-xcdr2-d-1.0.md` — ZeroDDS D XCDR2 TypeSupport codegen spec.
+**Source:** `internal/standards/cache/omg/dds-xtypes-1.3.pdf` (§7.2, §7.4) and `internal/standards/cache/omg/idl-4.2.pdf` (§7) — what the D column answers.
 
-Implementation:
+The mechanism this column shares with the other twenty — the two walks, the framing, Table 9, the key hash and the driver — is in `zerodds-xcdr2-bindings-conformance-1.0.md`. This document carries only what the D column decides for itself, and its own evidence.
 
-- `crates/idl-d/` — IDL → D codegen (`marshalXCDR`, self-contained writer).
-- `endpoints/d/` — pure-D XCDR2 wire core (writer/reader) + sync/async SDK.
+## §7.5.1 The parts of the column
 
-## §1 Motivation
+### §7.5.1 The concrete syntax tree and its text form
 
-### §1 No OMG IDL-to-D wire mapping
+**Spec:** §7.5.1 — Plain language binding — the mapping onto the target language is the PSM's own. This column's declarations are built as a tree and only then written as text; no emitter concatenates source.
 
-**Spec:** §1 — ZeroDDS defines the D XCDR2 wire mapping.
+**Repo:** `crates/lang-cst/src/d/`, `crates/lang-render/src/d.rs`
 
-**Repo:** Motivation text of the vendor spec.
-
-**Tests:** —
-
-**Status:** n/a (informative)
-
-## §2 Marshal pattern
-
-### §2 struct + `marshalXCDR(endian, allocator) ![]u8`
-
-**Spec:** §2 — one D `struct` + `marshalXCDR` method per IDL `@final struct`.
-
-**Repo:** `crates/idl-d/src/emitter.rs::emit_struct`.
-
-**Tests:** `crates/idl-d/tests/golden.rs::final_struct_emits_type_and_marshal`
+**Tests:** `crates/lang-render/src/d.rs::tests` (20 tests), among them `a_file_declares_its_module_first`, `an_import_is_selective_when_it_names_symbols`, `a_struct_writes_its_brace_on_a_line_of_its_own`, `a_field_carries_its_uda_before_the_type`, `an_array_writes_its_dimensions_right_to_left`;
+across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_output_with_exactly_one_newline`, `crates/lang-render/tests/rendering.rs::no_rendered_line_carries_trailing_whitespace`.
 
 **Status:** done
 
-## §3 Required API surface
+### §7.5.1 The rule catalogue
 
-### §3 Writer/reader primitives + generated marshalXCDR
+**Spec:** §7.5.1 — Plain language binding — the mapping onto the target language is the PSM's own. What becomes of which model node is a rule set and not a special case inside the walk.
 
-**Spec:** §3 — writer (putU8..putSeqU8, bytes), reader (getU8/getU16/getU32/getU64/getF32/getString/getSeqU8), generated `marshalXCDR`.
+**Repo:** `crates/lang-rules/src/rule/d.rs`
 
-**Repo:** `endpoints/d/zerodds.d` (writer, reader incl. getU8/getU16/getU64/getF32/getString/getSeqU8 (byte-exact inverse)); `crates/idl-d/src/emitter.rs` (marshalXCDR).
-
-**Tests:** `endpoints/d/zerodds.d` test.d (byte identity + sync + async), `endpoints/d/example_sync|async.d` (full field decode), `crates/idl-d/tests/golden.rs`.
-
-**Status:** done
-
-### §3.a Generated `unmarshalXCDR` (decode codegen)
-
-**Spec:** §3/§11 — bidirectional binding: generated `unmarshalXCDR` as the exact inverse of `marshalXCDR`.
-
-**Repo:** `map_get` (inverse of `map_type`) + `Reader` wire core in the prelude + free `unmarshalFrom{ty}`/`UnmarshalXCDR{ty}` per struct+union (`crates/idl-d/src/emitter.rs`).
-
-**Tests:** `crates/idl-d/tests/golden.rs` — 8 `decode_roundtrip_*` (final/nested/array/union/map/mutable/wide/longdouble), `marshal(unmarshal(golden)) == golden` LE+BE.
+**Tests:** `crates/lang-rules/tests/apply.rs::every_language_catalogue_fires_on_the_same_model`,
+`crates/lang-rules/tests/apply.rs::every_catalogue_serialises_and_reads_back_the_same`
 
 **Status:** done
 
-**Decision record:** Decode codegen covers every field type (prim/string/seq/enum/typedef/nested/array/union/map/@mutable/wchar/wstring/long double). @final=inline, @appendable=DHEADER skip, @mutable=DHEADER + per-member EMHEADER+NEXTINT skip.
+### §7.5.1 The materialiser
 
-## §4 Codegen requirement (`idl-d`)
+**Spec:** §7.5.1 — Plain language binding — the mapping onto the target language is the PSM's own. The materialiser carries the language's own rules: names and keywords, collisions, and what the language cannot express at all.
 
-### §4 struct + marshalXCDR + embedded writer
+**Repo:** `crates/lang-rules/src/adapter/d.rs`
 
-**Spec:** §4 — per struct: D struct, `marshalXCDR`, self-contained writer.
-
-**Repo:** `crates/idl-d/src/emitter.rs`; `tools/idlc` `Backend::D`, `--d`.
-
-**Tests:** `crates/idl-d/tests/golden.rs`.
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_every_wired_language`
 
 **Status:** done
 
-## §5 Wire type mapping
+### §7.5.1 The codec backend
 
-### §5 IDL → D → XCDR2 (alignment cap 4)
+**Spec:** §7.5.1 — Plain language binding — the mapping onto the target language is the PSM's own. The backend supplies the spelling the shared encoding decision takes in this language — receiver, method name, argument form.
 
-**Spec:** §5 — bool/octet/char/short..long long/float/double/string/sequence<octet> with exact wire layout; signed via *cast(uint*)&v.
+**Repo:** `crates/lang-rules/src/emit/d.rs`
 
-**Repo:** `crates/idl-d/src/emitter.rs::map_type/map_primitive/map_integer/map_sequence`; `endpoints/d/zerodds.d` (Put*/getLE align cap 4).
-
-**Tests:** `crates/idl-d/tests/golden.rs::byte_identity_vs_rust_goldens` (@final LE+BE).
-
-**Status:** done
-
-### §5.a enum
-
-**Spec:** §5 — IDL `enum` (32-bit signed integer on the wire, XTypes 1.3 §7.4.5.1).
-
-**Repo:** `crates/idl-d/src/emitter.rs::emit_enum` + `map_type` (Scoped→enum→`putU32(cast(uint) ...)`).
-
-**Tests:** `crates/idl-d/tests/golden.rs::enum_emits_int_type_and_member_marshals` + `enum_member_is_byte_identical_i32` (`gdc`, LE `02000000efbeadde`).
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_a_full_codec_in_every_wired_language`,
+`crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`
 
 **Status:** done
 
-### §5.b nested struct member + sequence<struct>
+### §7.5.1 The Table 9 defaulter
 
-**Spec:** §5 — nested struct member + `sequence<struct>` (collection DHEADER, XTypes 1.3 §7.4.3.5.3).
+**Spec:** §7.5.1 — Plain language binding — the mapping onto the target language is the PSM's own. A reader with no Table 9 answer has no defined value at five positions; this file is this column's answer.
 
-**Repo:** `crates/idl-d/src/emitter.rs`: `marshalInto(ref Writer)` per struct + `map_type` scoped struct + `map_sequence` struct element (collection DHEADER + count + per-element marshalInto; collision-safe var names zdBody/zdSub/zdElem).
+**Repo:** `crates/lang-rules/src/default_d.rs`
 
-**Tests:** `crates/idl-d/tests/golden.rs::nested_struct_emits_marshal_into` + `nested_is_byte_identical_vs_rust_golden` (`gdc`, byte-identical against `golden_nested_le/be.bin`).
-
-**Status:** done
-
-### §5.c typedef
-
-**Spec:** §5 — `typedef` (wire-transparent alias; a member of its alias type marshals byte-identically to the underlying type).
-
-**Repo:** `crates/idl-d/src/emitter.rs::collect_typedefs`/`resolve_typedef` — the alias chain (including `sequence` elements) is resolved to the underlying type before `map_type`.
-
-**Tests:** `crates/idl-d/tests/golden.rs::typedef_resolves_to_underlying_type` + `typedef_is_byte_identical_vs_rust_golden` (byte-identical against `golden_typedef_le/be.bin`).
+**Tests:** `crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`
 
 **Status:** done
 
-### §5.d array
+### §7.5.1 The wire runtime
 
-**Spec:** §5 — fixed arrays (XCDR2 §7.4.3.5.3: elements inline, row-major, multi-dim; no length prefix for primitive elements).
+**Spec:** §7.5.1 — Plain language binding — the mapping onto the target language is the PSM's own. The runtime reads §7.4 from the clause text on its own and calls no other column; that is where this column's independence lives.
 
-**Repo:** `crates/idl-d/src/emitter.rs`: `Declarator::Array` branch — `array_size` evaluates the bound, `build_array_put` nests the element put in row-major loops; the field type becomes the language-native array.
+**Repo:** `runtime/d`, endpoint SDK `endpoints/d`
 
-**Tests:** `crates/idl-d/tests/golden.rs::array_*` (byte-identical against `golden_array_le/be.bin`: `long xs[3]` + `short m[2][2]` + `octet bs[4]`).
-
-**Status:** done
-
-### §5.e union
-
-**Spec:** §5 — `union switch(...)` (XCDR2 §7.4.3.5.4: discriminator inline, then the selected member; no DHEADER for @final).
-
-**Repo:** `crates/idl-d/src/emitter.rs::emit_union` — a holder with a discriminator + one field per case member; `marshalInto` puts the discriminator, then a `switch`/`case`/`match` dispatches on the selected member. Integer-family discriminator + integer labels.
-
-**Tests:** `crates/idl-d/tests/golden.rs::union_*` (byte-identical against `golden_union_le/be.bin`: disc=2 selects `unsigned short b` — checks non-first-case dispatch).
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_runtime`,
+`crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_an_endpoint_sdk`
 
 **Status:** done
 
-### §5.f map
+## §7.2.2 What this column decides for itself
 
-**Spec:** §5 — `map<K, V>` (XCDR2 §7.4.3.5: entries sorted ascending by key, `u32 count` + key/value pairs; no DHEADER for a primitive key/value pair, otherwise DHEADER-framed).
+### §7.2.2.2 Every IDL primitive reaches a D type and none is target-dependent
 
-**Repo:** `crates/idl-d/src/emitter.rs` — map member in the native associative idiom + key sorting before marshalling; primitive-pair rule for the collection DHEADER.
+**Spec:** §7.2.2.2 — Primitive types — BOOLEAN, BYTE, INT8..UINT64, FLOAT32, FLOAT64, FLOAT128, CHAR8, CHAR16; every width is fixed.
 
-**Tests:** `crates/idl-d/tests/golden.rs::map_*` (byte-identical against `golden_map_le/be.bin`: `map<long, unsigned long>` {1,2}).
+**Repo:** `crates/lang-rules/src/adapter/d.rs`
 
-**Status:** done
-
-### §5.g wchar / wstring
-
-**Spec:** §5 — `wchar` (wchar32, UTF-32 code point) + `wstring` (u32 octet length + UTF-16 code units, no BOM).
-
-**Repo:** `crates/idl-d/src/emitter.rs` — `putWString`/`put_wstring` (manual UTF-16 with surrogate pairs) + `wchar`→`putU32`. Wire core in the prelude.
-
-**Tests:** `crates/idl-d/tests/golden.rs::wide_is_byte_identical_vs_rust_golden` (byte-identical against `golden_wide_le/be.bin`: c=U+03A9, s="wπ").
+**Tests:** `crates/lang-rules/tests/d_end_to_end.rs::every_idl_primitive_reaches_a_d_type`,
+`crates/lang-rules/tests/d_end_to_end.rs::no_generated_type_is_target_dependent_or_unimplemented`,
+`crates/lang-rules/tests/d_end_to_end.rs::an_idl_long_is_a_d_int_and_an_idl_long_long_is_a_d_long`
 
 **Status:** done
 
-### §5.h long double
+### §7.2.2.2.1.2 An IDL `char` becomes an integer and never a D `char`
 
-**Spec:** §5 — `long double` (IEEE binary128, 16 bytes).
+**Spec:** §7.2.2.2.1.2 — Char8 is unspecified (UTF-8 by default), Char16 is UTF-16 over the BMP.
 
-**Repo:** `crates/idl-d/src/emitter.rs` — `putLongDouble`/`put_long_double`: binary128 via exact widening of the `float64` value (sign + 15-bit exponent + 112-bit mantissa), endian-correct.
+**Repo:** `crates/lang-rules/src/adapter/d.rs`
 
-**Tests:** `crates/idl-d/tests/golden.rs::longdouble_is_byte_identical_vs_rust_golden` (byte-identical against `golden_longdouble_le/be.bin`: d=1.1).
-
-**Status:** done
-
-**Note (honest):** Input precision = `float64` (resp. the language's native float), exactly widened to binary128 — covers every float64-representable value. The Rust reference (`idl-rust` + `zerodds-cdr`) remains blocked on native `f128` (no stable Rust f128, ~2027); the goldens are hardcoded from the float64 bits, without f128.
-
-
-## §6 Extensibility
-
-### §6 @final (compact) + @appendable (DHEADER)
-
-**Spec:** §6 — @final without DHEADER, @appendable with uint32 body length + body.
-
-**Repo:** `crates/idl-d/src/emitter.rs::emit_struct` (Final/Appendable).
-
-**Tests:** `crates/idl-d/tests/golden.rs::final_struct_...` + `appendable_struct_frames_a_dheader`.
+**Tests:** `crates/lang-rules/tests/d_end_to_end.rs::an_idl_character_becomes_an_integer_and_never_a_d_char`
 
 **Status:** done
 
-### §6.a @mutable (EMHEADER)
+### §7.2.2.2 `long double` becomes a string and never a `real`
 
-**Spec:** §6 — @mutable EMHEADER framing.
+**Spec:** §7.2.2.2 — FLOAT128 is an IEEE 754 binary128 value of sixteen octets.
 
-**Repo:** `crates/idl-d/src/emitter.rs` — @mutable `marshalInto`: DHEADER-framed member list, per member an EMHEADER (LC4 = `0x40000000 | member-id`) + NEXTINT (body length) + body (serialized into a sub-writer). Member ids from `@id(n)` or sequential.
+**Repo:** `crates/lang-rules/src/adapter/d.rs`
 
-**Tests:** `crates/idl-d/tests/golden.rs::mutable_*` (byte-identical against `golden_mutable_le/be.bin`).
-
-**Status:** done
-## §7 Key extraction
-
-### §7 Non-keyed 16-zero-byte key
-
-**Spec:** §7 — non-keyed → 16 zero bytes; keyed → MD5 (XCDR2-BE), at runtime.
-
-**Repo:** `endpoints/d/zerodds.d` (the writer in big mode produces the BE serialization).
-
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/d_end_to_end.rs::a_long_double_is_a_string_and_never_a_real`
 
 **Status:** done
 
-### §7.a Per-struct generated `keyHash` from `@key`
+### §7.2.2.4.3 An array reverses its dimensions because D reads them right to left
 
-**Spec:** §7 / XTypes §7.6.8 — codegen of a `keyHash` method from `@key` members.
+**Spec:** §7.2.2.4.3 — Array — multi-dimensional, fixed element count, row-major.
 
-**Repo:** `crates/idl-d/src/emitter.rs` — structs with `@key` members get a `keyHash`/`Key_Hash` method: the `@key` members are serialized PLAIN_CDR2-BE (member-id order), a ≤16-byte key holder is zero-padded to 16 bytes, larger (or dynamically sized) ones via MD5(bytes)[0..16]. The static max-key-size analysis lives in the shared `zerodds_idl::keyhash`.
+**Repo:** `crates/lang-rules/src/adapter/d.rs`
 
-**Tests:** `crates/idl-d/tests/golden.rs::keyhash_is_byte_identical_vs_rust_golden` (byte-identical against `golden_keyhash.bin` via `zerodds_cdr::compute_key_hash`).
-
-**Status:** done
-
-**Note:** Both branches implemented (XTypes §7.6.8.4 step 5): the static max-key-size analysis (`zerodds_idl::keyhash`) decides ≤16 bytes → zero-pad, otherwise MD5(bytes)[0..16]. Byte-verified against `golden_keyhash_md5.bin` (5×@key long = 20 bytes).
-
-
-## §8 Wire core
-
-### §8 `endpoints/d` as reference writer/reader
-
-**Spec:** §8 — reference wire core, byte-identical to `zerodds-cdr`.
-
-**Repo:** `endpoints/d/zerodds.d`.
-
-**Tests:** test.d, CI job `endpoints-d`.
+**Tests:** `crates/lang-rules/tests/d_end_to_end.rs::an_array_reverses_its_dimensions_because_d_reads_them_right_to_left`,
+`crates/lang-rules/tests/d_end_to_end.rs::a_sequence_of_arrays_and_an_array_of_sequences_stay_apart`
 
 **Status:** done
 
-## §9 Conformance
+### §7.2.2.4.3 A `map` becomes a slice of entries and never an associative array
 
-### §9 Golden byte identity @final LE+BE
+**Spec:** §7.2.2.4.3 — Map — key/value pairs; §7.4.3.5.3 rules 11-16 fix the order and the framing.
 
-**Spec:** §9 — encoding == golden_le.bin / golden_be.bin byte-for-byte.
+**Repo:** `crates/lang-rules/src/adapter/d.rs`
 
-**Repo:** `crates/idl-d`, `endpoints/d`.
-
-**Tests:** `crates/idl-d/tests/golden.rs::byte_identity_vs_rust_goldens` (CI `idl-d`); `endpoints/d` test.d (CI `endpoints-d`).
+**Tests:** `crates/lang-rules/tests/d_end_to_end.rs::a_map_becomes_a_slice_of_entries_and_never_an_associative_array`
 
 **Status:** done
 
-## §10 Examples
+### §7.2.2.4.9 An `@external` member becomes a pointer whatever its type is
 
-### §10 sync + async deep examples + quickstart
+**Spec:** §7.2.2.4.9 — `@external` — the member is held by reference; self-reference is admitted.
 
-**Spec:** §10 — runnable sync/async examples.
+**Repo:** `crates/lang-rules/src/adapter/d.rs`
 
-**Repo:** `endpoints/d/example_sync.d`, `endpoints/d/example_async.d`, `endpoints/d/QUICKSTART.md`.
-
-**Tests:** CI job `endpoints-d` runs both (`make example_sync` + `make example_async`).
+**Tests:** `crates/lang-rules/tests/d_end_to_end.rs::an_external_member_becomes_a_pointer_whatever_its_type_is`,
+`crates/lang-rules/tests/d_end_to_end.rs::an_optional_external_member_is_one_pointer_and_not_a_nullable_pointer`,
+`crates/lang-rules/tests/d_codec.rs::an_external_member_reads_through_zd_ptr_and_writes_the_dereference`
 
 **Status:** done
 
-## §11 Errata + open questions
+### §7.2.2.4.9 No generated struct holds itself by value; a cycle with no terminator is named
 
-### §11 Honest non-goals
+**Spec:** §7.2.2.4.9 — A self-referential type needs a place where the descent terminates.
 
-**Spec:** §11 — former non-goals are now built: decode codegen, keyHash codegen, @mutable, wchar/wstring/map/array/nested/union/long double. Full IDL4 byte-verified.
+**Repo:** `crates/lang-rules/src/adapter/d.rs`
 
-**Repo:** see §3.a/§5.a/§6.a/§7.a (each `done` with decision record).
+**Tests:** `crates/lang-rules/tests/d_end_to_end.rs::no_generated_struct_holds_itself_by_value_anywhere_in_the_corpus`,
+`crates/lang-rules/tests/d_codec.rs::a_cycle_with_no_terminator_is_refused_by_name`,
+`crates/lang-rules/tests/d_codec.rs::the_recursive_external_shape_is_carried`
 
-**Tests:** —
+**Status:** done
 
-**Status:** n/a (informative)
+### §7.2.2.4.4.3 A union becomes a struct with a discriminator and an anonymous union
+
+**Spec:** §7.2.2.4.4.3 — Union — the discriminator is always the first member and carries `must_understand=true`.
+
+**Repo:** `crates/lang-rules/src/adapter/d.rs`
+
+**Tests:** `crates/lang-rules/tests/d_end_to_end.rs::a_union_becomes_a_struct_with_a_discriminator_and_an_anonymous_union`,
+`crates/lang-rules/tests/d_codec.rs::a_union_assigns_through_the_anonymous_union`
+
+**Status:** done
+
+### IDL 4.2 §7.2.3 A D keyword is escaped and keeps its IDL name
+
+**Spec:** IDL 4.2 §7.2.3 — Identifiers are ASCII and case-insensitive on comparison; a collision has to be reported.
+
+**Repo:** `crates/lang-rules/src/adapter/d.rs`
+
+**Tests:** `crates/lang-rules/tests/d_end_to_end.rs::a_member_named_after_a_d_keyword_is_escaped_and_keeps_its_idl_name`,
+`crates/lang-rules/tests/d_end_to_end.rs::a_member_named_after_a_d_type_keyword_is_escaped_too`,
+`crates/lang-rules/tests/d_end_to_end.rs::two_members_that_would_reach_one_d_name_are_refused_by_name`
+
+**Status:** done
+
+### §7.4.3 The read direction opens with Table 9 and returns the sample
+
+**Spec:** §7.4.3 — XCDR version 2 — plain CDR2, delimited CDR2 and PL_CDR2.
+
+**Repo:** `crates/lang-rules/src/emit/d.rs`
+
+**Tests:** `crates/lang-rules/tests/d_codec.rs::a_structure_of_primitives_becomes_a_d_encoder`,
+`crates/lang-rules/tests/d_codec.rs::the_read_direction_opens_with_table_9_and_returns_the_sample`,
+`crates/lang-rules/tests/d_codec.rs::the_shapes_the_corpus_has_reach_the_end_of_both_walks`
+
+**Status:** done
+
+## §7.3.1 How the column is held to it
+
+### §7.3.1 Every corpus case renders or names the layer that refused it
+
+**Spec:** §7.3.1 — Every corpus case renders or names the layer that refused it. A case that stopped rendering would otherwise be found by whichever probe ran next, a build directory away from the construct that caused it.
+
+**Repo:** `crates/lang-rules/src/emit/d.rs`, `crates/lang-rules/src/adapter/d.rs`
+
+**Tests:** `crates/lang-rules/tests/d_end_to_end.rs::every_corpus_case_renders_or_names_its_failure`
+
+**Status:** done
+
+### §7.3.1 The generated source compiles under the language's own compiler
+
+**Spec:** §7.3.1 — The generated source compiles under the language's own compiler. A snapshot says the emitter produced the text it produced last time; it does not say the text is the language. Where the compiler is absent the test says so on standard error.
+
+**Repo:** `crates/lang-rules/src/emit/d.rs`, `crates/lang-rules/src/adapter/d.rs`
+
+**Tests:** `crates/lang-rules/tests/d_end_to_end.rs::the_generated_d_compiles`
+
+**Status:** done
+
+### §7.3.1 Two runs over one source produce the same text
+
+**Spec:** §7.3.1 — Two runs over one source produce the same text. Without it every diff of a generated tree is unreadable.
+
+**Repo:** `crates/lang-rules/src/emit/d.rs`, `crates/lang-rules/src/adapter/d.rs`
+
+**Tests:** `crates/lang-rules/tests/d_end_to_end.rs::two_runs_over_one_source_produce_the_same_text`
+
+**Status:** done
+
+### §7.2.2.4 Every construct the completeness table claims for this column also produces output
+
+**Spec:** §7.2.2.4 — Every construct the completeness table claims for this column also produces output. The table in `crates/lang-rules/src/coverage.rs` is the claim; this test is what checks it.
+
+**Repo:** `crates/lang-rules/src/emit/d.rs`, `crates/lang-rules/src/adapter/d.rs`
+
+**Tests:** `crates/lang-rules/tests/d_end_to_end.rs::every_construct_the_catalogue_covers_produces_output`
+
+**Status:** done
+
+### §7.2.2.4.8 `@verbatim` lands at the placements the clause names for this language
+
+**Spec:** §7.2.2.4.8 — `@verbatim` lands at the placements the clause names for this language.
+
+**Repo:** `crates/lang-rules/src/adapter/d.rs`, `crates/lang-rules/src/verbatim.rs`
+
+**Tests:** `crates/lang-rules/tests/verbatim_every_column.rs::every_column_places_the_six_slots_in_its_declarations`,
+`crates/lang-rules/tests/verbatim_every_column.rs::every_column_ends_its_source_file_with_the_end_file_text`,
+`crates/lang-rules/tests/verbatim_every_column.rs::a_directive_reaches_its_own_column_and_no_other`
+
+**Status:** done
+
+## §7.3.1 Driver and measurement
+
+### §7.3.1 `idlc generate --lang d`
+
+**Spec:** §7.3.1 — the IDL type representation is the input of generation; the output is this column's source.
+
+**Repo:** `tools/idlc/src/generate.rs`, `tools/idlc/src/main.rs`
+
+**Tests:** `tools/idlc/src/generate.rs::tests::every_language_round_trips_through_its_own_name`,
+`tools/idlc/src/generate.rs::tests::language_names_lists_every_language_once`
+
+**Status:** done
+
+### §7.4 The measurement harness of this column
+
+**Spec:** §7.4 — a column's octets are compared against recorded octets rather than asserted in its own tests.
+
+**Repo:** `tools/wireprobe/wireprobe-zerodds-d-gen/`, `tools/wireprobe/wireprobe-zerodds-d`, `tools/wireprobe/wireprobe-d-corpus`
+
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_cell_generator`,
+`crates/lang-rules/tests/every_language_has_its_parts.rs::every_cell_generator_guards_against_a_missing_toolchain`
+
+**Status:** done
 
 ---
 
-## Audit-Status
+## Audit Status
 
-20 done / 0 partial / 0 open / 2 n/a (informative) / 0 n/a (rejected).
+23 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
 
-Test run: `GOLDEN_DIR=<gold> cargo test -p zerodds-idl-d` — 29 tests green, 0 failed (codepit, toolchain `gdc`).
+Test run: `cargo test -p zerodds-lang-rules` — 1024 tests green, 0 failed (20 ignored: the whole-corpus compile runs, which need `--include-ignored`).
 
 Open items: none. Decision records: none.

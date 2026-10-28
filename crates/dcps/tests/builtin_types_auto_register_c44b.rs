@@ -26,11 +26,13 @@
     missing_docs
 )]
 
-use zerodds_dcps::{DomainParticipantFactory, DomainParticipantQos};
-use zerodds_types::dynamic::{
-    NAME_DDS_BYTES, NAME_DDS_KEYED_BYTES, NAME_DDS_KEYED_STRING, NAME_DDS_STRING, TypeKind,
+use zerodds_ast::{Bound, CharWidth, PrimitiveKind, TypeKind};
+use zerodds_ast_core::Ref;
+use zerodds_dcps::builtin_type_set::{
+    NAME_DDS_BYTES, NAME_DDS_KEYED_BYTES, NAME_DDS_KEYED_STRING, NAME_DDS_STRING,
     is_builtin_type_name,
 };
+use zerodds_dcps::{DomainParticipantFactory, DomainParticipantQos};
 
 #[test]
 fn participant_after_create_has_four_builtin_types_registered() {
@@ -52,12 +54,12 @@ fn find_builtin_type_returns_correct_kind() {
     let p = DomainParticipantFactory::instance()
         .create_participant_offline(0, DomainParticipantQos::default());
     let s = p.find_builtin_type(NAME_DDS_STRING).unwrap();
-    assert_eq!(s.kind(), TypeKind::Structure);
+    assert!(matches!(s.kind(), Some(TypeKind::Structure { .. })));
     assert_eq!(s.name(), NAME_DDS_STRING);
     let ks = p.find_builtin_type(NAME_DDS_KEYED_STRING).unwrap();
-    assert_eq!(ks.kind(), TypeKind::Structure);
+    assert!(matches!(ks.kind(), Some(TypeKind::Structure { .. })));
     let key = ks.member_by_name("key").unwrap();
-    assert!(key.descriptor().is_key);
+    assert!(key.is_key());
 }
 
 #[test]
@@ -112,7 +114,13 @@ fn dds_string_has_unbounded_string_value_member() {
         .create_participant_offline(0, DomainParticipantQos::default());
     let t = p.find_builtin_type(NAME_DDS_STRING).unwrap();
     let value = t.member_by_name("value").unwrap();
-    assert_eq!(value.dynamic_type().kind(), TypeKind::String8);
+    assert!(matches!(
+        value.type_().and_then(|t| t.kind().cloned()),
+        Some(TypeKind::String {
+            width: CharWidth::Char,
+            bound: Bound::Unbounded
+        })
+    ));
 }
 
 #[test]
@@ -121,7 +129,23 @@ fn dds_bytes_has_octet_sequence_value_member() {
         .create_participant_offline(0, DomainParticipantQos::default());
     let t = p.find_builtin_type(NAME_DDS_BYTES).unwrap();
     let value = t.member_by_name("value").unwrap();
-    assert_eq!(value.dynamic_type().kind(), TypeKind::Sequence);
+    let value_type = value.type_().expect("the value member's type resolves");
+    let Some(TypeKind::Sequence {
+        element,
+        bound: Bound::Unbounded,
+    }) = value_type.kind().cloned()
+    else {
+        panic!("DDS::Bytes.value is {:?}", value_type.kind());
+    };
+    let Ref::Resolved(element) = element else {
+        panic!("the element type does not resolve");
+    };
+    // §7.6.5 says `sequence<octet>`, and a sequence of anything else
+    // would put a different number of octets on the wire per element.
+    assert!(matches!(
+        value_type.ast().type_(element).map(|t| t.kind.clone()),
+        Ok(TypeKind::Primitive(PrimitiveKind::Octet))
+    ));
 }
 
 #[test]
@@ -143,12 +167,18 @@ fn dds_keyed_bytes_has_key_member() {
     let t = p.find_builtin_type(NAME_DDS_KEYED_BYTES).unwrap();
     assert_eq!(t.member_count(), 2);
     let key = t.member_by_name("key").unwrap();
-    assert!(key.descriptor().is_key);
-    assert_eq!(key.dynamic_type().kind(), TypeKind::String8);
+    assert!(key.is_key());
+    assert!(matches!(
+        key.type_().and_then(|t| t.kind().cloned()),
+        Some(TypeKind::String {
+            width: CharWidth::Char,
+            bound: Bound::Unbounded
+        })
+    ));
 }
 
 #[test]
-fn builtin_types_have_nested_annotation() {
+fn builtin_types_are_not_nested() {
     let p = DomainParticipantFactory::instance()
         .create_participant_offline(0, DomainParticipantQos::default());
     for name in [
@@ -158,6 +188,6 @@ fn builtin_types_have_nested_annotation() {
         NAME_DDS_KEYED_BYTES,
     ] {
         let t = p.find_builtin_type(name).unwrap();
-        assert!(t.descriptor().is_nested, "{name} should be is_nested=true");
+        assert!(!t.is_nested(), "{name} is non-nested (XTypes 1.3 §7.6.5)");
     }
 }

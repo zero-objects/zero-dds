@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of primitive-longdouble-unannotated that tao produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	no-form	Sample.fits_a_double: a long double, whose C++ mapping is x87 extended and not §9.3.1.3's binary128 is not serialised by this probe yet
+plain-cdr1	be	no-form	Sample.fits_a_double: a long double, whose C++ mapping is x87 extended and not §9.3.1.3's binary128 is not serialised by this probe yet
+pl-cdr1	le	no-form	Sample.fits_a_double: a long double, whose C++ mapping is x87 extended and not §9.3.1.3's binary128 is not serialised by this probe yet
+pl-cdr1	be	no-form	Sample.fits_a_double: a long double, whose C++ mapping is x87 extended and not §9.3.1.3's binary128 is not serialised by this probe yet
+plain-cdr2	le	no-form	Sample.fits_a_double: a long double, whose C++ mapping is x87 extended and not §9.3.1.3's binary128 is not serialised by this probe yet
+plain-cdr2	be	no-form	Sample.fits_a_double: a long double, whose C++ mapping is x87 extended and not §9.3.1.3's binary128 is not serialised by this probe yet
+delimited-cdr	le	no-form	Sample.fits_a_double: a long double, whose C++ mapping is x87 extended and not §9.3.1.3's binary128 is not serialised by this probe yet
+delimited-cdr	be	no-form	Sample.fits_a_double: a long double, whose C++ mapping is x87 extended and not §9.3.1.3's binary128 is not serialised by this probe yet
+pl-cdr2	le	no-form	Sample.fits_a_double: a long double, whose C++ mapping is x87 extended and not §9.3.1.3's binary128 is not serialised by this probe yet
+pl-cdr2	be	no-form	Sample.fits_a_double: a long double, whose C++ mapping is x87 extended and not §9.3.1.3's binary128 is not serialised by this probe yet

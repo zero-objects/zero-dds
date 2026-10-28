@@ -2,17 +2,33 @@
 
 **Spec:** [OMG IDL4-CSHARP 1.0](https://www.omg.org/spec/IDL4-CSHARP/1.0/PDF) (61 pages, OMG formal/2021-07-01)
 
-Audit item-by-item against the spec; each requirement with a spec
-quote + repo path + test path + status (`done` / `partial` / `open` / `n/a`).
+Item-by-item audit against the spec; each requirement with a spec
+quote, repo path, test path and status (`done` / `partial` / `open` /
+`n/a`).
 
-**Context:** Codegen covers §6 type mapping + §7.2 aggregate types to a
-large extent; the runtime library is in the repo
-(`Omg.Types.*` in `crates/idl-csharp/runtime/Omg.Types.cs`, the
-XCDR2 `*TypeSupport` stack `ZeroDDS.Cdr` under `crates/cs/csharp/ZeroDDS.Cdr/`).
+**Context:** This document audits the OMG PSM (Chapters 7 and 8)
+against today's tree. The former PSM generator `crates/idl-csharp/src/`
+was removed in `d045e43ea86`; the page therefore cites the wire column
+today. That column is the C# binding of the shared codec walk:
 
-Implementation:
+- `crates/lang-rules/src/adapter/csharp.rs` — declaration materialiser,
+- `crates/lang-rules/src/emit/csharp.rs` + `default_csharp.rs` — codec
+  and Table 9 defaulters,
+- `crates/lang-cst/src/csharp/` + `crates/lang-render/src/csharp.rs` —
+  syntax tree and text form,
+- `crates/lang-rules/src/rule/csharp.rs` — rule catalogue,
+- `tools/idlc/src/csharp_support.rs` — driver.
 
-- `crates/idl-csharp/` — live with 10 files + 219 tests (annotations/bitset/corba_traits/emitter/error/keywords/lib/type_map/typesupport/verbatim).
+The surviving runtime is `crates/idl-csharp/runtime/Omg.Types.cs`
+(`ISequence<T>`/`IBoundedSequence<T>`/`BoundedList<T>`, `Any`,
+`ITopicType<T>` and the attribute bridge `[Key]`/`[Id]`/`[Optional]`/
+`[MustUnderstand]`/`[External]`/`[Nested]`/`[Extensibility]`). The
+materialiser does not emit those forms today; it writes a wire data
+model with public fields, `T[]`, map entry classes, `using` aliases and
+`[Flags]` enums. Where the PSM demands an API shape the walk does not
+produce, the status is `partial` or `open`.
+
+**Open items:** see [`idl4-csharp-1.0.open.en.md`](idl4-csharp-1.0.open.en.md).
 
 ---
 
@@ -23,708 +39,589 @@ Implementation:
 **Spec:** §1, p. 1 — "This specification defines the mapping of OMG
 Interface Definition Language v4 to the C# programming language
 [ECMA-334]. The language mapping covers all of the IDL constructs in
-the current Interface Definition Language specification [OMG-IDL4].
-The language mapping makes use of C# language features as
-appropriate and natural."
+the current Interface Definition Language specification [OMG-IDL4]."
 
-**Repo:** `crates/idl-csharp/src/lib.rs` — crate doc.
+**Repo:** —
 
-**Tests:** crate-wide; see per section below.
+**Tests:** —
 
-**Status:** done
+**Status:** `n/a (informative)` — the scope clause names what the spec
+is about, not a requirement on an implementation.
 
 ---
 
 ## §2 Conformance Criteria
 
-### 2.1 Implementation: IDL -> C# source per §7
+### 2.1 Implementation: IDL -> C# source per Chapter 7
 
-**Spec:** §2, p. 1 — "A conformant implementation shall transform
-IDL input into C# source code output as specified in Chapter 7."
+**Spec:** §2, p. 1 — "A conformant implementation shall transform IDL
+input into C# source code output as specified in Chapter 7."
 
-**Repo:** `crates/idl-csharp/src/emitter.rs` — top-level emitter.
+**Repo:** `crates/lang-rules/src/adapter/csharp.rs::csharp_file`
 
-**Tests:** `header_starts_with_generated_marker`,
-`empty_ast_produces_preamble_only`,
-`empty_source_emits_only_preamble`,
-`empty_module_emits_namespace`.
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::every_generated_file_carries_the_support_namespace`
 
-**Status:** done
+**Status:** partial — the walk transforms IDL into C# source but
+follows Chapter 7 only in the type core; the API shape deviates in the
+points itemised below (fields instead of properties, `T[]` instead of
+`ISequence<T>`, no `I` prefixes, no `System.Exception` base).
 
 ### 2.2 User: portable application source code
 
-**Spec:** §2, p. 1 — "Conformant application source code, as a
-result, will be portable across implementations."
+**Spec:** §2, p. 1 — "Conformant application source code, as a result,
+will be portable across implementations."
 
 **Repo:** —
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — spec's own non-binding statement (context background); no implementation obligation.
+**Status:** `n/a (informative)` — a statement about the conformance of
+application code, not an implementation requirement.
 
 ---
 
 ## §3 Normative References
 
-### 3.1 [CORBA-IFC] CORBA 3.3
+### 3.1 Normative references (CORBA-IFC, ECMA-334, OMG-IDL4, .NET-GUIDE, .NET-STD)
 
-**Spec:** §3, p. 1 — "[CORBA-IFC] CORBA 3.3."
-
-**Repo:** —
-
-**Tests:** —
-
-**Status:** `n/a (informative)` — spec's own non-binding statement (context background); no implementation obligation.
-
-### 3.2 [ECMA-334] C# Language Specification 5th Edition
-
-**Spec:** §3, p. 1 — "[ECMA-334] ECMA C# Language Specification
-5th Edition."
-
-**Repo:** the generator emits C# code in the target version via the
-`JavaCodegenOptions` counterpart.
-
-**Tests:** indirect — all tests rely on valid C#.
-
-**Status:** done
-
-### 3.3 [OMG-IDL4] OMG IDL 4.3
-
-**Spec:** §3, p. 1 — "[OMG-IDL4] OMG IDL 4.3."
-
-**Repo:** `crates/idl/src/grammar/idl42.rs` (4.2; 4.3 is an
-incremental upgrade).
-
-**Tests:** see `idl-4.2.md`.
-
-**Status:** done
-
-### 3.4 [.NET-GUIDE] Framework Design Guidelines (Cwalina/Abrams)
-
-**Spec:** §3, p. 1 — "[.NET-GUIDE] Framework Design Guidelines."
-
-**Repo:** the generator implements .NET naming conventions.
-
-**Tests:** `nested_modules_emit_nested_csharp_namespaces`,
-`namespace_three_level_hierarchy_emits_open_close_pairs`,
-`pascal_case_simple`, `pascal_case_already_pascal`,
-`pascal_case_snake`, `pascal_case_multi_underscore`,
-`pascal_case_empty`.
-
-**Status:** done
-
-### 3.5 [.NET-STD] .NET Standard
-
-**Spec:** §3, p. 1 — "[.NET-STD] .NET Standard."
+**Spec:** §3, p. 1 — list of the normative documents.
 
 **Repo:** —
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — spec's own non-binding statement (context background); no implementation obligation.
+**Status:** `n/a (informative)` — a reference list; it imposes no
+requirement on an implementation by itself.
 
 ---
 
 ## §4 Terms and Definitions
 
-### 4.1 Building Block
+### 4.1 Terms (Building Block, C#, Camel Case, Language Mapping, Pascal Case)
 
-**Spec:** §4, p. 2 — "A Building Block is a consistent set of IDL
-rules [...] atomic, meaning that if selected, they must be totally
-supported."
-
-**Repo:** —
-
-**Tests:** —
-
-**Status:** `n/a (informative)` — glossary definition; a semantic reference point without its own code requirement.
-
-### 4.2 C# (general-purpose programming language)
-
-**Spec:** §4, p. 2 — "C# is a general-purpose computer programming
-language."
+**Spec:** §4, p. 2 — definitions; "Camel Case" is Lower Camel Case,
+"Pascal Case" is Upper Camel Case.
 
 **Repo:** —
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — spec's own non-binding statement (context background); no implementation obligation.
-
-### 4.3 Camel Case (Lower Camel Case)
-
-**Spec:** §4, p. 2 — analogous to idl4-java §4.
-
-**Repo:** camel-case helper in `crates/idl-csharp/src/type_map.rs`.
-
-**Tests:** indirect via member-naming tests.
-
-**Status:** done
-
-### 4.4 Language Mapping
-
-**Spec:** §4, p. 2.
-
-**Repo:** —
-
-**Tests:** —
-
-**Status:** `n/a (informative)` — spec's own non-binding statement (context background); no implementation obligation.
-
-### 4.5 Pascal Case (Upper Camel Case)
-
-**Spec:** §4, p. 2.
-
-**Repo:** pascal-case helper in `type_map.rs`.
-
-**Tests:** `pascal_case_simple`, `pascal_case_already_pascal`,
-`pascal_case_snake`, `pascal_case_multi_underscore`,
-`pascal_case_empty`, `short_name_strips_namespace`.
-
-**Status:** done
+**Status:** `n/a (informative)` — glossary; the naming rules
+themselves are audited in §7.1.1.2.1/§7.1.1.2.2.
 
 ---
 
-## §5 Symbols (Tab.5.1)
+## §5 Symbols
 
-### 5.1 Acronyms: CCM/CLI/CLS/CORBA/CTS/DDS/IDL
+### 5.1 Acronyms (Tab.5.1)
 
-**Spec:** §5 Tab.5.1, p. 2 — acronym list.
+**Spec:** §5, Tab.5.1, p. 2 — acronym list.
 
 **Repo:** —
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — spec's own non-binding statement (context background); no implementation obligation.
+**Status:** `n/a (informative)` — a list; no implementation requirement.
 
 ---
 
 ## §6 Additional Information
 
-### 6.1 No changes to OMG specs
+### 6.1/6.2 No changes to OMG specs; acknowledgments
 
-**Spec:** §6.1, p. 3.
-
-**Repo:** —
-
-**Tests:** —
-
-**Status:** `n/a (informative)` — spec's own non-binding statement (context background); no implementation obligation.
-
-### 6.2 Acknowledgments
-
-**Spec:** §6.2, p. 3 — RTI/TwinOaks/ADLINK/OIS/MicroFocus.
+**Spec:** §6.1/§6.2, p. 3.
 
 **Repo:** —
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — spec's own non-binding statement (context background); no implementation obligation.
+**Status:** `n/a (informative)` — background; no implementation requirement.
 
 ---
 
 ## §7.1 General
 
-### 7.1.1.0 Naming schemes: IDL vs. .NET; selected via @csharp_mapping (or compiler setting)
+### 7.1.1 Two naming schemes, selected via @csharp_mapping
 
 **Spec:** §7.1.1, p. 5 — "This specification defines two naming
-schemes [...] IDL Naming Scheme [...] .NET Framework Design
-Guidelines Naming Scheme. The @csharp_mapping annotation defined
-in Clause 8.1 provides a mechanism to select the appropriate
-naming scheme."
+schemes [...] IDL Naming Scheme [...] .NET Framework Design Guidelines
+Naming Scheme. The @csharp_mapping annotation defined in Clause 8.1
+provides a mechanism to select the appropriate naming scheme."
 
-**Repo:** `crates/idl-csharp/src/lib.rs::CSharpCodegenOptions`
-field; default is .NET naming.
+**Repo:** —
 
-**Tests:** `options_have_sensible_defaults`, `options_clone_works`.
+**Tests:** —
 
-**Status:** done
+**Status:** open — the materialiser knows no `@csharp_mapping` and no
+switch; it follows one fixed rule (type names verbatim, members with the
+first letter raised).
 
-### 7.1.1.0 Name collision: `@` prefix on C# keyword, `_` prefix on other conflict
+### 7.1.1 Collision resolution: `@` prefix for keywords, `_` prefix for spec names
 
-**Spec:** §7.1.1, p. 5 — "if a mapped name or identifier collides
-with one of the names reserved in Clause 7.1.2, the collision shall
-be resolved by prepending the '@' character to the mapped name when
-the name collides with a C# language keyword, or the '_' character
-when the name collides with a name introduced by this specification."
+**Spec:** §7.1.1, p. 5 — "the collision shall be resolved by prepending
+the '@' character [...] when the name collides with a C# language
+keyword, or the '_' character when the name collides with a name
+introduced by this specification."
 
-**Repo:** `crates/idl-csharp/src/keywords.rs` with `@`-prefix
-sanitize.
+**Repo:** `crates/lang-rules/src/adapter/csharp.rs::field_name`
 
-**Tests:** `escape_class_yields_at_class`,
-`escape_already_at_prefixed_rejected`,
-`escape_empty_rejected`,
-`escape_non_keyword_unchanged`,
-`all_strict_keywords_escape_to_at_prefix`,
-`reserved_field_name_class_is_escaped_with_at_prefix`,
-`reserved_field_name_with_pure_lowercase_keyword_escapes`.
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::an_identifier_that_is_a_csharp_keyword_is_escaped_with_an_at_sign`
 
-**Status:** done
+**Status:** partial — the `@` prefix for C# keywords is implemented;
+the `_` case for spec-introduced names (`Constants`) is missing because
+the materialiser does not treat them as reserved (`ZdConstants`).
 
-### 7.1.1.1 IDL Naming Scheme: names without case transformation
+### 7.1.1.1 IDL naming scheme: names without case transformation
 
-**Spec:** §7.1.1.1, p. 5 — "IDL member names and type identifiers
-shall map to C# names and identifiers without case transformation."
+**Spec:** §7.1.1.1, p. 5 — "IDL member names and type identifiers shall
+map to C# names and identifiers without case transformation."
 
-**Repo:** field `apply_naming_convention` in `CsGenOptions`. The spec
-offers two options (IDL_NAMING vs. .NET); the ZeroDDS default is .NET
-per §7.1.1.2.
+**Repo:** —
 
-**Tests:** `spec_conformance::idl_naming_default_uses_dotnet_pascal_case`.
+**Tests:** —
 
-**Status:** done
+**Status:** open — the scheme is not selectable. The materialiser
+transforms members (first letter raised) and leaves type names verbatim,
+a mixture matching neither scheme.
 
-### 7.1.1.2 .NET Framework Design Guidelines Naming Scheme
+### 7.1.1.2 .NET Framework Design Guidelines naming scheme
 
-**Spec:** §7.1.1.2, p. 5 — "IDL member names and type identifiers
-shall map to C# names and identifiers that follow the coding
-guidelines defined in the Framework Design Guidelines of
-[.NET-GUIDE]."
+**Spec:** §7.1.1.2, p. 5 — "IDL member names and type identifiers shall
+map to C# names and identifiers that follow the coding guidelines
+defined in the Framework Design Guidelines of [.NET-GUIDE]."
 
-**Repo:** default in `CSharpCodegenOptions`.
+**Repo:** `crates/lang-rules/src/adapter/csharp.rs::capitalise`
 
-**Tests:** `nested_modules_emit_nested_csharp_namespaces`.
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::every_field_carries_the_idl_name_it_was_folded_from`
 
-**Status:** done
+**Status:** partial — members are only raised in the first letter,
+types and enumerators stay verbatim; the .NET rules (full Pascal Case,
+`I` prefix) are not applied.
 
-### 7.1.1.2.1 Pascal Case Transformation Rules
+### 7.1.1.2.1 Pascal Case transformation
 
-**Spec:** §7.1.1.2.1, p. 5-6 — "first letter after each underscore
-capitalized, all underscores removed; first letter capitalized."
+**Spec:** §7.1.1.2.1, p. 5 — "The first letter after each underscore
+shall be capitalized and all underscores shall be removed. The first
+letter of the IDL name shall be capitalized."
 
-**Repo:** pascal-case helper in `type_map.rs`.
+**Repo:** `crates/lang-rules/src/adapter/csharp.rs::capitalise`
 
-**Tests:** `pascal_case_simple`, `pascal_case_already_pascal`,
-`pascal_case_snake`, `pascal_case_multi_underscore`,
-`pascal_case_empty`.
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::every_field_carries_the_idl_name_it_was_folded_from`
 
-**Status:** done
+**Status:** partial — only the first letter is raised (`my_field` ->
+`My_field`); underscores are not removed because a full Pascal Case is
+not injective over the names IDL 4.2 §7.2.3 permits (the reason is in
+the module doc).
 
-### 7.1.1.2.2 Camel Case Transformation Rules
+### 7.1.1.2.2 Camel Case transformation
 
-**Spec:** §7.1.1.2.2, p. 6 — "first letter after each underscore
-capitalized; first letter lower case."
+**Spec:** §7.1.1.2.2, p. 6 — "The first letter after each underscore
+shall be capitalized and all underscores shall be removed. The first
+letter of the IDL name shall be lower case."
 
-**Repo:** camel-case helper in `type_map.rs`. Member properties
-follow the .NET PascalCase convention; camel case is provided as an
-optional config field.
+**Repo:** `crates/lang-rules/src/adapter/csharp.rs::csharp_param`
 
-**Tests:** pascal-case tests + `spec_conformance::camel_case_member_naming_for_pascalized_idl_names`.
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::an_interface_is_an_interface_of_signatures_with_the_idl_passing_modes`
 
-**Status:** done
+**Status:** partial — operation parameters are taken verbatim, not
+transformed into Camel Case.
 
-### 7.1.2 Reserved Names (C# keywords + `Constants` namespace class)
+### 7.1.2 Reserved names (C# keywords + `Constants`)
 
-**Spec:** §7.1.2, p. 6 — "Reserved names: keywords from Clause 7.4.4
-of [ECMA-334]; the C# class name Constants per <moduleName>-namespace.
-Collisions resolve via @-prepend (keyword) or _-prepend (other)."
+**Spec:** §7.1.2, p. 5 — reserved are the C# keywords of ECMA-334
+§7.4.4 and the class name `Constants` per module namespace.
 
-**Repo:** `keywords.rs` with a strict-reserved list + contextual-
-reserved list.
+**Repo:** `crates/lang-cst/src/csharp/mod.rs::is_keyword`
 
-**Tests:** `class_is_strict_reserved`, `record_is_contextual`,
-`async_is_contextual_only`, `non_keyword_is_not_reserved`,
-`contextual_keywords_also_escape`,
-`all_strict_keywords_escape_to_at_prefix`.
+**Tests:** `crates/lang-cst/src/csharp/mod.rs::tests::a_keyword_escapes_with_an_at_sign_and_keeps_its_identity`
 
-**Status:** done
+**Status:** partial — the C# keywords are tracked as reserved; the name
+`Constants` is not, because the class is called `ZdConstants`.
 
-### 7.1.3 Tab.7.1: C# language versions per feature (IList<T>/IDictionary<TKey,TValue> C# 2.0; system exceptions C# 1.0; FlagsAttribute/BitArray .NET Standard 1.0)
+### 7.1.3 Tab.7.1: C# language versions per feature
 
-**Spec:** §7.1.3 Tab.7.1, p. 6 — table lists C# + .NET-Standard
-minimum versions.
+**Spec:** §7.1.3, Tab.7.1, p. 6 — minimum versions for `IList<T>`,
+`IDictionary<TKey,TValue>`, system exceptions, `FlagsAttribute`,
+`BitArray`.
 
-**Repo:** the generator targets C# 12.0 (via `runtime/Omg.Types.cs` stub).
+**Repo:** —
 
-**Tests:** indirect via generator output.
+**Tests:** —
 
-**Status:** done
+**Status:** `n/a (informative)` — a version matrix; the generator
+targets C# 12/.NET 8, but the table states no mapping requirement of its
+own.
 
-### 7.1.4 Mapping extensibility: implementers may extend C# types with new constructors/methods/interfaces
+### 7.1.4 Mapping extensibility
 
-**Spec:** §7.1.4, p. 7 — "implementers of this specification may
-extend C# types mapped according to the rules specified in this
-document to add new constructors and methods, override existing
-methods, and implement additional interfaces."
+**Spec:** §7.1.4, p. 7 — "implementers [...] may extend C# types [...]
+to add new constructors and methods, override existing methods, and
+implement additional interfaces."
 
-**Repo:** the generator emits `partial class` constructs (record
-with `forward_declared_struct_emits_partial_record_class`).
+**Repo:** —
 
-**Tests:** `forward_declared_struct_emits_partial_record_class`,
-`use_records_false_still_emits_record_for_now`.
+**Tests:** —
 
-**Status:** done
+**Status:** `n/a (informative)` — a permission to implementers, not a
+requirement (the materialiser emits `sealed` classes).
 
 ---
 
 ## §7.2 Core Data Types
 
-### 7.2.1 IDL Specification (no direct mapping)
+### 7.2.1 IDL specification (no direct mapping)
 
-**Spec:** §7.2.1, p. 7.
+**Spec:** §7.2.1, p. 7 — "There is no direct mapping of the IDL
+Specification itself."
 
 **Repo:** —
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — spec's own non-binding statement (context background); no implementation obligation.
+**Status:** `n/a (informative)` — the clause points to the following
+sections.
 
 ### 7.2.2 IDL module -> C# namespace
 
-**Spec:** §7.2.2, p. 7 — "IDL modules shall be mapped to C#
-namespaces of the same name. All IDL type declarations within the
-IDL module shall be mapped to corresponding C# declarations within
-the generated namespace. IDL declarations not enclosed in any
-module shall be mapped into the global scope."
+**Spec:** §7.2.2, p. 7 — "IDL modules shall be mapped to C# namespaces
+of the same name. [...] IDL declarations not enclosed in any module
+shall be mapped into the global scope."
 
-**Repo:** `emitter.rs` with namespace hierarchy.
+**Repo:** `crates/lang-rules/src/adapter/csharp.rs::scope_items`
 
-**Tests:** `empty_module_emits_namespace`,
-`nested_modules_emit_nested_csharp_namespaces`,
-`namespace_three_level_hierarchy_emits_open_close_pairs`,
-`three_level_modules_nest`,
-`root_namespace_appears_outermost`,
-`root_namespace_option_wraps_output`,
-`empty_root_namespace_string_is_treated_as_none`,
-`single_module_with_constant_does_not_emit_extra_usings`.
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::a_module_is_a_namespace_and_two_modules_do_not_collide`,
+`crates/lang-rules/src/adapter/csharp.rs::tests::a_module_reopened_beside_a_nested_one_is_one_namespace_block`,
+`crates/lang-rules/src/adapter/csharp.rs:2882: assert!(generated.contains("namespace a"), "{generated}");`
 
 **Status:** done
 
-### 7.2.3 Constants: two mappings (standalone vs. container)
+### 7.2.3 Constants: two alternatives
 
-**Spec:** §7.2.3, p. 7 — "two alternatives for mapping IDL
-constants [...] Standalone Constants Mapping (§7.2.3.1) [...] vs.
-Constants Container Mapping (§7.2.3.2)."
+**Spec:** §7.2.3, p. 7 — "two alternatives for mapping IDL constants
+[...] Standalone Constants Mapping [...] Constants Container Mapping."
 
-**Repo:** standalone mapping (§7.2.3.1) active. The container variant
-(§7.2.3.2) is selectable via `@csharp_mapping(constants_container=...)`;
-the ZeroDDS default is standalone because of clearer per-constant class
-generation.
+**Repo:** `crates/lang-rules/src/adapter/csharp.rs::constants`
 
-**Tests:** `const_decl_emits_const`, `const_decl_is_emitted` +
-`spec_conformance::standalone_constant_emits_const_value_class`.
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::a_constant_becomes_a_const_field_of_a_holder_class`
 
-**Status:** done
+**Status:** partial — only the container variant exists, and it is not
+selectable via `@csharp_mapping`; the standalone variant is missing.
 
-### 7.2.3.1 Standalone Constants -> public static class with `public const Value` field
+### 7.2.3.1 Standalone constants: one class per constant with `Value`
 
 **Spec:** §7.2.3.1, p. 7 — "IDL constants shall be mapped to public
-static classes of the same name within the equivalent scope and
-namespace where they are defined. The mapped class shall contain a
-public const called Value assigned to the value of the IDL
-constant."
+static classes of the same name [...]. The mapped class shall contain a
+public const called Value."
 
-**Repo:** `emitter.rs::emit_constant`.
+**Repo:** —
 
-**Tests:** `const_decl_emits_const`, `const_decl_is_emitted`.
+**Tests:** —
 
-**Status:** done
+**Status:** open — constants are held as `const` fields in a shared
+`ZdConstants` class, not as one class per constant.
 
-### 7.2.3.2 Constants Container -> `public static partial class Constants` (or via `@csharp_mapping`)
+### 7.2.3.2 Constants container: `public static partial class Constants`
 
 **Spec:** §7.2.3.2, p. 8 — "Every scope containing a constant
-declaration shall contain a public static partial class. By
-default, the mapped class shall be named Constants. The class name
-may be modified using the @csharp_mapping annotation."
+declaration shall contain a public static partial class. By default,
+the mapped class shall be named Constants."
 
-**Repo:** the container variant is spec `@csharp_mapping`-gated; on a
-non-default annotation the generator emits a `Constants` class per
-scope. The default is standalone mapping (§7.2.3.1).
+**Repo:** `crates/lang-rules/src/adapter/csharp.rs::scope_items`
 
-**Tests:** cross-ref §7.2.3.1.
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::a_constant_becomes_a_const_field_of_a_holder_class`
 
-**Status:** done — the standalone-default implementation choice is spec-
-conformant (the spec licenses both mappings as alternatives).
+**Status:** partial — the class is `public static`, but neither
+`partial` nor named `Constants`, and not configurable via the
+annotation.
 
----
+### 7.2.4.1.1 Integer types (Tab.7.2)
 
-## §7.2.4 Data Types
+**Spec:** §7.2.4.1.1, Tab.7.2, p. 9 — "int8 -> sbyte; uint8 -> byte;
+short/int16 -> short; unsigned short/uint16 -> ushort; long/int32 ->
+int; unsigned long/uint32 -> uint; long long/int64 -> long; unsigned
+long long/uint64 -> ulong."
 
-### 7.2.4.1.1 Integer Types Mapping (Tab.7.2)
+**Repo:** `crates/lang-rules/src/adapter/csharp.rs::csharp_primitive`
 
-**Spec:** §7.2.4.1.1 Tab.7.2, p. 9 — "int8 -> sbyte; uint8 -> byte;
-short/int16 -> short; unsigned short/uint16 -> ushort; long/int32
--> int; unsigned long/uint32 -> uint; long long/int64 -> long;
-unsigned long long/uint64 -> ulong."
-
-**Repo:** `crates/idl-csharp/src/type_map.rs`.
-
-**Tests:** `integer_short_signed_unsigned`,
-`integer_long_signed_unsigned`,
-`integer_long_long_signed_unsigned`,
-`integer_explicit_widths`,
-`primitive_octet`,
-`primitive_dispatches_through_integer`,
-`all_14_primitives_have_distinct_or_intentional_mapping`.
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::every_idl_primitive_reaches_the_csharp_type_that_holds_it`,
+`crates/lang-rules/src/adapter/csharp.rs:2630: assert!(generated.contains(expected), "{expected}\n{generated}");`
 
 **Status:** done
 
-### 7.2.4.1.2 Floating-Point Mapping (Tab.7.3): float->float, double->double, long double->decimal
+### 7.2.4.1.2 Floating-point types (Tab.7.3)
 
-**Spec:** §7.2.4.1.2 Tab.7.3, p. 10 — "float -> float; double ->
+**Spec:** §7.2.4.1.2, Tab.7.3, p. 10 — "float -> float; double ->
 double; long double -> decimal."
 
-**Repo:** `type_map.rs::float_to_csharp`.
+**Repo:** `crates/lang-rules/src/adapter/csharp.rs::csharp_primitive`
 
-**Tests:** `floating_float_double`,
-`floating_long_double_to_decimal`,
-`primitive_dispatches_through_floating`.
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::every_idl_primitive_reaches_the_csharp_type_that_holds_it`
 
-**Status:** done
+**Status:** partial — `float` and `double` match; `long double` is
+emitted as the generated sixteen-octet holder
+`global::ZeroDds.Idl.Float128`, not as `decimal` (the spec itself warns
+about precision loss; the deviation is justified in the module doc).
 
 ### 7.2.4.1.3 IDL char -> C# char
 
-**Spec:** §7.2.4.1.3, p. 10.
+**Spec:** §7.2.4.1.3, p. 10 — "The IDL char type shall be mapped to the
+C# type char."
 
-**Repo:** `type_map.rs`.
+**Repo:** `crates/lang-rules/src/adapter/csharp.rs::csharp_primitive`
 
-**Tests:** `primitive_char`.
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::every_idl_primitive_reaches_the_csharp_type_that_holds_it`,
+`crates/lang-rules/src/adapter/csharp.rs:2630: assert!(generated.contains(expected), "{expected}\n{generated}");`
 
 **Status:** done
 
 ### 7.2.4.1.4 IDL wchar -> C# char
 
-**Spec:** §7.2.4.1.4, p. 10.
+**Spec:** §7.2.4.1.4, p. 10 — "The IDL wchar type shall be mapped to
+the C# type char."
 
-**Repo:** `type_map.rs`.
+**Repo:** `crates/lang-rules/src/adapter/csharp.rs::csharp_primitive`
 
-**Tests:** `primitive_wchar_collapses_to_char`.
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::every_idl_primitive_reaches_the_csharp_type_that_holds_it`,
+`crates/lang-rules/src/adapter/csharp.rs:2630: assert!(generated.contains(expected), "{expected}\n{generated}");`
 
 **Status:** done
 
-### 7.2.4.1.5 IDL boolean + TRUE/FALSE -> C# bool + true/false
+### 7.2.4.1.5 IDL boolean -> C# bool
 
-**Spec:** §7.2.4.1.5, p. 10.
+**Spec:** §7.2.4.1.5, p. 10 — "The IDL boolean type shall be mapped to
+the C# bool, and the IDL constants TRUE and FALSE shall be mapped to
+the corresponding C# boolean literals."
 
-**Repo:** `type_map.rs`.
+**Repo:** `crates/lang-rules/src/adapter/csharp.rs::csharp_primitive`
 
-**Tests:** `primitive_boolean`.
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::every_idl_primitive_reaches_the_csharp_type_that_holds_it`,
+`crates/lang-rules/src/adapter/csharp.rs:2630: assert!(generated.contains(expected), "{expected}\n{generated}");`
 
 **Status:** done
 
 ### 7.2.4.1.6 IDL octet -> C# byte
 
-**Spec:** §7.2.4.1.6, p. 10.
+**Spec:** §7.2.4.1.6, p. 10 — "The IDL type octet [...] shall be mapped
+to the C# type byte."
 
-**Repo:** `type_map.rs`.
+**Repo:** `crates/lang-rules/src/adapter/csharp.rs::csharp_primitive`
 
-**Tests:** `primitive_octet`.
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::every_idl_primitive_reaches_the_csharp_type_that_holds_it`,
+`crates/lang-rules/src/adapter/csharp.rs:2630: assert!(generated.contains(expected), "{expected}\n{generated}");`
 
 **Status:** done
 
-### 7.2.4.2.1 IDL Sequence -> Omg.Types.ISequence<T> interface
+### 7.2.4.2.1 IDL sequence -> Omg.Types.ISequence<T>
 
-**Spec:** §7.2.4.2.1, p. 10-11 — "IDL sequences shall be mapped to
-the C# Omg.Types.ISequence<T> interface, instantiated with the
-mapped type T of the sequence elements. Implementations of
+**Spec:** §7.2.4.2.1, p. 10 — "IDL sequences shall be mapped to the C#
+Omg.Types.ISequence<T> interface [...]. Implementations of
 Omg.Types.ISequence<T> shall extend
-System.Collections.Generic.IList<T>, and include all the methods
-defined below [50+ methods listed]."
+System.Collections.Generic.IList<T>."
 
-**Repo:** the generator emits `Omg.Types.ISequence<T>` refs (analogous
-to omg::types::sequence in C++ — an external runtime library is expected,
-no Rust crate path). Spec-conformant — the runtime lib is on the .NET side.
+**Repo:** `crates/lang-rules/src/adapter/csharp.rs::type_at` (array
+arm), `crates/idl-csharp/runtime/Omg.Types.cs`
 
-**Tests:** `unbounded_sequence_emits_isequence`,
-`unbounded_sequence_of_string_emits_isequence_string`,
-`sequence_member_uses_isequence`,
-`sequence_imports_omg_types_and_collections`,
-`bounded_sequence_emits_ibounded_sequence`,
-`bounded_sequence_member_uses_ibounded_sequence`,
-`bounded_sequence_inside_unbounded_inner_unbound`,
-`bounded_sequence_of_struct_typed_element`,
-`deep_nested_sequence_emits_correct_ilist` +
-`spec_conformance::unbounded_sequence_member_emits_isequence_marker`,
-`bounded_sequence_member_emits_ibounded_sequence`.
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::a_sequence_and_an_array_are_both_csharp_arrays`
 
-**Status:** done
+**Status:** partial — sequences are emitted as `T[]`; the runtime
+declares `ISequence<T>`/`IBoundedSequence<T>`, but the materialiser does
+not reference it.
 
-### 7.2.4.2.1 Tab.7.4 Sequences of Basic Types: bool/char/sbyte/byte/short/ushort/int/uint/long/ulong/float/double/decimal
+### 7.2.4.2.1 Tab.7.4: sequences of basic types
 
-**Spec:** §7.2.4.2.1 Tab.7.4, p. 11-12 — table lists 13 IDL-to-C#
-sequence mappings.
+**Spec:** §7.2.4.2.1, Tab.7.4, p. 11-12 — `sequence<boolean>` ->
+`Omg.Types.ISequence<bool>`, ... `sequence<long double>` ->
+`Omg.Types.ISequence<decimal>`.
 
-**Repo:** type mapping in `type_map.rs` + generator wiring.
+**Repo:** `crates/lang-rules/src/adapter/csharp.rs::type_at`
 
-**Tests:** as 7.2.4.2.1.
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::a_sequence_and_an_array_are_both_csharp_arrays`
 
-**Status:** done
+**Status:** partial — the element types match, the container type is
+`T[]` instead of `Omg.Types.ISequence<T>`.
 
-### 7.2.4.2.1 Bounds checking on bounded sequences (may raise)
+### 7.2.4.2.1 Bounds checking on bounded sequences
 
-**Spec:** §7.2.4.2.1, p. 12 — "Bounds checking on bounded sequences
-may raise an exception if necessary." (MAY, not SHALL.)
+**Spec:** §7.2.4.2.1, p. 12 — "Bounds checking on bounded sequences may
+raise an exception if necessary." (MAY.)
 
 **Repo:** —
 
 **Tests:** —
 
-**Status:** done — the spec wording is "may raise" (MAY-optional);
-ZeroDDS default choice: no range exception (caller responsibility
-analogous to the .NET IList<T> convention).
+**Status:** `n/a (informative)` — the spec states a may; the wire path
+checks the bound on decode (`runtime/csharp`), the C# field form itself
+does not.
 
-### 7.2.4.2.1 Sequence members of struct/union as read-only properties (with @external exception)
+### 7.2.4.2.1 Sequence/map members as read-only properties (with @external)
 
 **Spec:** §7.2.4.2.1, p. 12 — "sequence members of IDL structs and
-unions map to read-only properties. [...] As an exception,
-properties representing sequences and maps that are marked with the
-@external annotation shall include both a getter and a setter."
+unions map to read-only properties. [...] sequences and maps that are
+marked with the @external annotation shall include both a getter and a
+setter."
 
-**Repo:** generator path in `emitter.rs`; read-only default +
-`@external` override are implemented. Sequence/map members are
-init-only properties (record-class pattern); `@external` triggers
-the setter variant.
+**Repo:** `crates/lang-rules/src/adapter/csharp.rs::fields_of`
 
-**Tests:** struct tests in `emitter.rs::tests::*` +
-`at_external_emits_external_attribute`.
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::a_sequence_and_an_array_are_both_csharp_arrays`
 
-**Status:** done
+**Status:** partial — members are public, writable fields, not
+properties; `@external` does not change the C# form.
 
-### 7.2.4.2.2 IDL string (bounded+unbounded) -> C# string (UTF-16)
+### 7.2.4.2.2 IDL string -> C# string (UTF-16)
 
-**Spec:** §7.2.4.2.2, p. 12 — "IDL strings, both bounded and
-unbounded variants, shall be mapped to C# strings. The resulting
-strings shall be encoded in UTF-16 format."
+**Spec:** §7.2.4.2.2, p. 12 — "IDL strings, both bounded and unbounded
+variants, shall be mapped to C# strings. The resulting strings shall be
+encoded in UTF-16 format."
 
-**Repo:** `type_map.rs::string_to_csharp`.
+**Repo:** `crates/lang-rules/src/adapter/csharp.rs::type_at` (string arm)
 
-**Tests:** `string_member_uses_string`.
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::a_map_is_an_array_of_a_generated_entry_class`,
+`crates/lang-rules/src/adapter/csharp.rs:2715: assert!(generated.contains("public string Value;"), "{generated}");`
 
 **Status:** done
 
-### 7.2.4.2.3 IDL wstring (bounded+unbounded) -> C# string (UTF-16)
+### 7.2.4.2.3 IDL wstring -> C# string (UTF-16)
 
-**Spec:** §7.2.4.2.3, p. 12 — analogous.
+**Spec:** §7.2.4.2.3, p. 12 — as §7.2.4.2.2 for `wstring`.
 
-**Repo:** `type_map.rs`.
+**Repo:** `crates/lang-rules/src/adapter/csharp.rs::type_at` (string arm)
 
-**Tests:** `string_member_uses_string` (applies to both).
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::every_corpus_case_renders_or_names_its_failure`
 
-**Status:** done
+**Status:** partial — no test checks that IDL `wstring` maps to C# `string`; the cited corpus run only checks that the cases render.
 
-### 7.2.4.2.4 IDL fixed -> C# decimal + ArithmeticException on range
+### 7.2.4.2.4 IDL fixed -> C# decimal + ArithmeticException
 
-**Spec:** §7.2.4.2.4, p. 12 — "The IDL fixed type shall be mapped
-to the C# decimal type. Range checking shall raise a
+**Spec:** §7.2.4.2.4, p. 12 — "The IDL fixed type shall be mapped to
+the C# decimal type. Range checking shall raise a
 System.ArithmeticException exception, or a derived exception, if
 necessary."
 
-**Repo:** `crates/idl-csharp/src/emitter.rs::typespec_to_cs` maps
-`fixed<digits, scale>` to C# `decimal` (built-in, 28-29 digit
-decimal precision; range overflow throws `System.OverflowException`).
+**Repo:** `crates/lang-rules/src/adapter/csharp.rs::type_at` (fixed arm)
 
-**Tests:** `spec_conformance::{fixed_member_emits_csharp_decimal,
-fixed_type_emits_decimal}`, `edge_cases::fixed_type_emits_decimal`.
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::a_fixed_is_a_string_and_not_a_decimal`
 
-**Status:** done
+**Status:** partial — `fixed<P,S>` is held as a `string` carrying the
+decimal; the spec demands `decimal`. Reason: `decimal` has 28-29
+digits, IDL 4.2 permits up to 31 (evidenced in the module doc).
 
-### 7.2.4.3.1 IDL struct -> C# public class with:
-- public property per member (getter+setter; sequence/map: getter only except @external)
-- public default constructor
-- public copy constructor
-- public all-values constructor
+### 7.2.4.3.1 IDL struct -> C# public class
 
-**Spec:** §7.2.4.3.1, p. 13 — spec list (properties + default-init
-values + constructors).
+**Spec:** §7.2.4.3.1, p. 13 — "An IDL struct shall be mapped to a C#
+public class [...] A public property [...] A public default
+constructor [...] A public copy constructor [...] A public
+constructor that accepts parameters for each member [...] The class
+shall implement the IEquatable<T> interface."
 
-**Repo:** `emitter.rs` emits `public record class` (C# 9+).
-Records automatically provide all four spec requirements:
-- public property per member (init-only, spec-conformant read-only).
-- default constructor automatically.
-- copy constructor automatically via `with` expression.
-- all-values constructor automatically via primary-constructor syntax.
-This makes `record class` semantically strictly equivalent to spec `class`.
+**Repo:** `crates/lang-rules/src/adapter/csharp.rs::fields_of`
 
-**Tests:** `top_level_struct_implements_topic_type_marker`,
-`primitive_struct_member_uses_correct_cs_types`,
-`record_class_is_init_only`,
-`use_records_false_still_emits_record_for_now`,
-`forward_declared_struct_emits_partial_record_class`,
-`is_nested_false_for_plain_struct`,
-`is_nested_true_for_nested_struct`,
-`plain_module_struct_has_topic_marker`,
-`nested_struct_does_not_implement_topic_marker`,
-`nested_struct_in_module_still_no_topic_marker`,
-`only_nested_struct_does_not_pull_omg_types_via_topic_marker`,
-`topic_marker_imports_omg_types`,
-`struct_with_inheritance_keeps_base_and_adds_topic_marker` +
-`spec_conformance::struct_emits_public_class_or_record_class`.
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::every_field_carries_the_idl_name_it_was_folded_from`,
+`crates/lang-rules/src/adapter/csharp.rs::tests::a_member_that_would_collide_with_its_type_cannot_come_from_idl`
 
-**Status:** done — `record class` is spec-conformant-equivalent to
-`class` (all four requirements fulfilled automatically).
+**Status:** partial — a `public sealed class` with one public field per
+member is produced; properties, the copy/all-values constructors and
+`IEquatable<T>` are missing, and initialisation is C# default
+initialisation.
 
-### 7.2.4.3.2 IDL union -> C# (dispatch-discriminator pattern)
+### 7.2.4.3.2 IDL union -> C# public class (discriminator protocol)
 
-**Spec:** §7.2.4.3.2, p. 13+ — union mapping (more complex, several
-sub-items).
+**Spec:** §7.2.4.3.2, p. 14-15 — "A public read-only property named
+Discriminator [...] A public property with getters and setters for each
+member [...] Property getters shall raise a System.InvalidOperationException
+if the expected member has not been set [...] implement the
+IEquatable<T> interface."
 
-**Repo:** `emitter.rs::union_uses_discriminator_record` path emits a
-record class with a discriminator property + member properties + active-
-case logic. Semantically equivalent to the spec class-with-_d().
+**Repo:** `crates/lang-rules/src/adapter/csharp.rs::declare` (union arm)
 
-**Tests:** `union_uses_discriminator_record`,
-`union_top_level_implements_topic_type`,
-`nested_union_does_not_implement_topic_type` +
-`spec_conformance::union_emits_discriminator_class`.
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::a_union_is_a_class_with_a_discriminator_and_one_field_per_case`
+
+**Status:** partial — the class carries `_d` and one field per case;
+the `Discriminator` property, getter pairs, `Set<Member>` modifiers,
+`InvalidOperationException` and `IEquatable<T>` are missing.
+
+### 7.2.4.3.3 IDL enum -> C# public enum
+
+**Spec:** §7.2.4.3.3, p. 18 — "An IDL enum shall be mapped to a C#
+public enum with the same name as the IDL enum type."
+
+**Repo:** `crates/lang-rules/src/adapter/csharp.rs::declare` (enum arm)
+
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::an_enumeration_is_a_real_enum_and_a_member_of_it_is_that_type`,
+`crates/lang-rules/src/adapter/csharp.rs::tests::an_explicit_enumerator_value_is_written_out`,
+`crates/lang-rules/src/adapter/csharp.rs:2803: generated.contains("public enum Colour : int"),`
 
 **Status:** done
 
-### 7.2.4.3.3 IDL enum -> C# enum (int-backed)
+### 7.2.4.3.3 @bit_bound underlying type for enums
 
-**Spec:** §7.2.4.3.3 — "An IDL enum shall be mapped to a C# enum."
+**Spec:** §7.2.4.3.3, p. 18 — "the corresponding C# enum type shall be
+sbyte for bit bound values between 1 and 8; short, for [...] 9 and 16;
+int, for [...] 17 and 32; and long, for [...] 33 and 64."
 
-**Repo:** `emitter.rs::enum_emits_int_backed_enum` path.
+**Repo:** `crates/lang-rules/src/adapter/csharp.rs::declare` (enum arm,
+`underlying`)
 
-**Tests:** `enum_emits_int_backed_enum`.
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::an_enumeration_is_a_real_enum_and_a_member_of_it_is_that_type`
 
-**Status:** done
+**Status:** partial — `: int` is always written; `@bit_bound` selects
+no underlying type.
 
-### 7.2.4.3.4 Constructed Recursive Types
+### 7.2.4.3.4 Constructed recursive types
 
-**Spec:** §7.2.4.3.4 — analogous to idl4-java.
+**Spec:** §7.2.4.3.4, p. 18 — "Constructed recursive types are
+supported by mapping the involved types directly to C#."
 
-**Repo:** C# has reference semantics for all reference types
-(class/record), so recursive constructions are supported automatically —
-typedef aliases + record-class self-reference.
+**Repo:** `crates/lang-rules/src/adapter/csharp.rs::data_class`
 
-**Tests:** `typedef_emits_alias_record` +
-`spec_conformance::typedef_alias_works_for_recursive_pattern`.
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::every_corpus_case_renders_or_names_its_failure`,
+`crates/lang-rules/src/adapter/csharp.rs:2581: assert!(failures.is_empty(), "{failures:#?}");`
 
-**Status:** done
+**Status:** done — generated aggregate types are C# classes (reference
+semantics); the recursive corpus cases (`recursive-*`,
+`resolve-forward-declared`) render.
 
-### 7.2.4.4 IDL Array -> C# Array (jagged) of mapped element type
+### 7.2.4.4 IDL array -> C# array + bounds check
 
-**Spec:** §7.2.4.4 — "An IDL array shall be mapped to a C# array."
+**Spec:** §7.2.4.4, p. 19 — "An IDL array shall be mapped to a C# array
+[...]. The bounds for the array shall be checked by the setter of the
+corresponding property and a System.ArgumentOutOfRangeException shall
+be raised if a bounds violation occurs."
 
-**Repo:** `emitter.rs::array_member_uses_jagged_array` path.
+**Repo:** `crates/lang-rules/src/adapter/csharp.rs::type_at` (array arm)
 
-**Tests:** `array_member_uses_jagged_array`.
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::a_sequence_and_an_array_are_both_csharp_arrays`
 
-**Status:** done
+**Status:** partial — arrays are emitted as jagged `T[][]` fields;
+there is no setter with a length check (fields instead of properties).
 
-### 7.2.4.5 IDL native: no mapping in this spec
+### 7.2.4.5 Native types
 
-**Spec:** §7.2.4.5 — analogous to idl4-java §7.2.4.5.
+**Spec:** §7.2.4.5, p. 21 — "This language mapping specification does
+not define any native types, but compliant implementations may provide
+the necessary mechanisms to map native types."
 
 **Repo:** —
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — spec's own non-binding statement (context background); no implementation obligation.
+**Status:** `n/a (informative)` — the spec defines no native types; the
+materialiser optionally maps `native` to the facet name or `object`
+(permissive).
 
-### 7.2.4.6 IDL typedef -> inline replacement; annotations propagate
+### 7.2.4.6 Naming data types (typedef)
 
-**Spec:** §7.2.4.6 — analogous to idl4-java §7.2.4.6.
+**Spec:** §7.2.4.6, p. 21 — "the declaration of types using typedef in
+IDL shall not result in the creation of any C# type. Instead, the use
+of an IDL typedef type shall be replaced with the type referenced by
+the typedef statement."
 
-**Repo:** `emitter.rs::typedef_emits_alias_record` path. The wrapper class
-is documentation-friendly (instead of inline replacement); the spec says
-"inline replacement" as the default, but the wrapper class achieves
-identical semantics.
+**Repo:** `crates/lang-rules/src/adapter/csharp.rs::type_at` (alias arm)
 
-**Tests:** `typedef_emits_alias_record`,
-`typedef_with_bounded_sequence_keeps_bound_marker` +
-`spec_conformance::typedef_emits_alias_record_or_using`.
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::a_typedef_is_a_using_alias_and_every_use_takes_the_resolved_type`,
+`crates/lang-rules/src/adapter/csharp.rs:2869: assert!(generated.contains("using Row = int[];"), "{generated}");`
 
-**Status:** done
+**Status:** done — a `using` alias is not a type of its own, and every
+use takes the resolved target type.
 
 ---
 
@@ -732,502 +629,550 @@ identical semantics.
 
 ### 7.3 IDL any -> Omg.Types.Any
 
-**Spec:** §7.3 — "The IDL any type shall be mapped to
+**Spec:** §7.3, p. 22 — "The IDL any type shall be mapped to
 Omg.Types.Any type."
 
-**Repo:** `crates/idl-csharp/src/emitter.rs::typespec_to_cs` maps
-`any` to `Omg.Types.Any` (reflective container; runtime
-implementation in the Omg.Types library as a TODO).
+**Repo:** `crates/idl-csharp/runtime/Omg.Types.cs` (`Any`),
+`crates/lang-rules/src/adapter/csharp.rs::type_at` (any arm)
 
-**Tests:** `spec_conformance::{any_member_emits_omg_types_any,
-any_type_emits_omg_types_any}`,
-`edge_cases::any_type_emits_omg_types_any`.
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::a_construct_with_no_csharp_data_form_is_named_and_not_left_out`
 
-**Status:** done
+**Status:** partial — the runtime declares `Omg.Types.Any`, but the
+materialiser refuses `any` by name (`MaterialiseError::NoLanguageForm`)
+instead of mapping to it.
 
 ---
 
 ## §7.4 Interfaces – Basic
 
-### 7.4 IDL interface -> C# interface with properties + methods + exception throws
+### 7.4 IDL interface -> C# public interface
 
-**Spec:** §7.4 — analogous to idl4-java §7.4.
+**Spec:** §7.4, p. 22 — "Each IDL interface shall be mapped to a C#
+public interface with the same name [...] prepending the "I" prefix.
+[...] If the IDL interface derives from other IDL interfaces, the
+equivalent C# interface shall be declared to extend the C# interfaces
+[...]. Each attribute [...] shall map to a property [...] Each
+operation [...] shall map to a method [...] IDL out arguments shall be
+mapped to C# out parameters, inout to ref, and in to parameters without
+modifier."
 
-**Repo:** `@service` IDL interfaces via RPC codegen; non-service
-via `crates/idl-csharp/src/emitter.rs::emit_interface_stub`
-(`public interface I : Base1, Base2 { Method(); Property { get; } }`).
-in/out/ref modifiers follow spec idl4-csharp §7.4.5.
+**Repo:** `crates/lang-rules/src/adapter/csharp.rs::interfaces`
 
-**Tests:** `spec_conformance::non_service_interface_emits_csharp_interface`,
-`edge_cases::interface_emits_csharp_interface`,
-`tests::non_service_interface_emits_csharp_interface`.
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::an_interface_is_an_interface_of_signatures_with_the_idl_passing_modes`,
+`crates/lang-rules/tests/csharp_consumer_assembly.rs::a_second_assembly_implements_the_generated_interface_operations_and_attributes`
 
-**Status:** done
+**Status:** partial — methods and attribute properties as well as
+`in`/`out`/`ref` match; the `I` prefix is missing (name verbatim), and
+derived interfaces are flattened into the single declaration instead of
+inheriting through a base list.
 
-### 7.4.1 IDL exception -> C# class : Exception
+### 7.4.1 IDL exception -> C# class : System.Exception
 
-**Spec:** §7.4.1 — "An IDL exception shall be mapped to a C# class
-inheriting from System.Exception."
+**Spec:** §7.4.1, p. 23 — "An IDL exception shall be mapped to a C#
+class [...]. The mapped class shall extend the System.Exception class."
 
-**Repo:** `emitter.rs::exception_inherits_exception` path.
+**Repo:** `crates/lang-rules/src/adapter/csharp.rs::exceptions`
 
-**Tests:** `exception_inherits_exception`.
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::an_exception_is_a_data_class_and_not_a_system_exception`
 
-**Status:** done
+**Status:** partial — the class exists with one field per member but
+deliberately does not derive from `System.Exception` (reason: CS0108/
+CS0542 for members like `message`; evidenced in the module doc).
 
-### 7.4.2 Interface forward declaration: no C# mapping
+### 7.4.2 Interface forward declaration
 
-**Spec:** §7.4.2 — "An interface forward declaration has no mapping
-to the C# language."
+**Spec:** §7.4.2, p. 23 — "An IDL interface forward declaration has no
+mapping to the C# language."
 
-**Repo:** forward decl is filtered by the generator (the spec says
-explicitly "no mapping"). Since non-service interfaces are unsupported
-anyway (see §7.4), forward decl is n/a in the DDS use case.
+**Repo:** `crates/lang-rules/src/adapter/csharp.rs::interfaces`
 
-**Tests:** `spec_conformance::interface_forward_decl_has_no_csharp_output`.
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::a_forward_declaration_without_a_definition_is_e002`,
+`crates/lang-rules/tests/interface_bindings.rs:272: Some("DDS-TS-E002")`
 
-**Status:** done
+**Status:** `partial` — the quoted test checks that a forward declaration without a definition is refused as E002; none checks that one with a definition produces no declaration of its own.
 
 ---
 
 ## §7.5 Interfaces – Full
 
-### 7.5 Embedded type/const/exception decls as public decls inside a C# interface
+### 7.5 I<Name>Operations + I<Name> + <Name> class
 
-**Spec:** §7.5 — analogous to idl4-java §7.5.
+**Spec:** §7.5, p. 23-24 — "A C# public interface named
+I<InterfaceName>Operations [...] A C# public interface named
+I<InterfaceName> inheriting from I<InterfaceName>Operations [...] A C#
+public class named <InterfaceName> containing the declaration of the
+classes and exceptions that result from the mapping of all the types
+and exceptions declared within the IDL interface."
 
-**Repo:** `crates/idl-csharp/src/emitter.rs::emit_interface_stub` emits embedded
-`struct`/`enum`/`const`/`exception` declarations **nested** inside the C#
-interface (C# 8+ permits nested types + constants in an interface); the import
-collector (`collect_in_def`) now walks the interface exports so the runtime
-usings (`Omg.Types`, `ZeroDDS.Cdr`) for their TypeSupport are pulled in.
-Previously these declarations were silently dropped (`_ => {}`).
+**Repo:** `crates/lang-rules/src/adapter/csharp.rs::interfaces`
 
-**Tests:** `edge_cases::interface_embedded_types_are_emitted_not_dropped`,
-`compile_check::compiles_interface_with_embedded_types` (real `dotnet`/Roslyn,
-.NET 8).
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::an_interface_is_an_interface_of_signatures_with_the_idl_passing_modes`
 
-**Status:** done
+**Status:** partial — exactly one interface declaration is produced;
+the §7.5 Operations/container split and the embedded types in a
+`<Name>` class are missing.
 
 ---
 
 ## §7.6 Value Types
 
-### 7.6 IDL valuetype -> 2 C# classes: <Name>Abstract + <Name>; private->protected; factory->void; supports interface
+### 7.6 IDL valuetype -> abstract class + factory attribute
 
-**Spec:** §7.6 — analogous to idl4-java §7.6.
+**Spec:** §7.6, p. 25 — "An IDL valuetype type shall be mapped to a C#
+abstract class. [...] private members shall have the C# protected
+access modifier [...] Each valuetype factory operation shall be mapped
+[...] to a method returning void [...] annotated with the
+FactoryAttribute."
 
-**Repo:** `crates/idl-csharp/src/emitter.rs::emit_value_type`
-renders 2 classes per valuetype:
-- `<Name>Abstract` as `public abstract class` with
-  `public abstract` properties per public state, `protected abstract`
-  properties per private state, `public abstract void` methods per
-  factory.
-- `<Name>` as `public class : <Name>Abstract` concrete skeleton
-  for user implementation.
+**Repo:** `crates/lang-rules/src/adapter/csharp.rs::declare` (valuetype arm)
 
-**Tests:** `spec_conformance::{valuetype_emits_abstract_and_concrete_class,
-valuetype_private_state_emits_protected_property,
-valuetype_factory_emits_void_abstract_method}`.
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::a_valuetype_is_a_class_of_its_state_members`
 
-**Status:** done
+**Status:** partial — a `sealed class` with the state members is
+produced; the abstract class, the public/private -> protected split,
+operations and the `FactoryAttribute` are missing.
 
 ---
 
-## §7.7-§7.13 CORBA + Components + Templates
+## §7.7-§7.13 CORBA, Components, Template Modules
 
-### 7.7 CORBA-Specific Interfaces -> Annex A.1
+### 7.7/7.8 CORBA-specific interfaces and value types
 
-**Spec:** §7.7 — out of scope.
-
-**Repo:** —
-
-**Tests:** —
-
-**Status:** `n/a (informative)` — spec's own non-binding statement (context background); no implementation obligation.
-
-### 7.8 CORBA-Specific Value Types -> Annex A.1
-
-**Spec:** §7.8 — analogous to §7.7.
+**Spec:** §7.7/§7.8, p. 27 — "CORBA-specific mappings are defined in
+Clause A.1 of Annex A."
 
 **Repo:** —
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — spec's own non-binding statement (context background); no implementation obligation.
+**Status:** `n/a (informative)` — a reference to Annex A.1; the CORBA
+mapping itself is under A.1.
 
-### 7.9 Components – Basic -> intermediate IDL
+### 7.9-7.13 Components (basic/homes/ports/connectors) and template modules
 
-**Spec:** §7.9.
-
-**Repo:** legacy CORBA CCM is out of scope (analogous to idl4-cpp §7.9).
-The spec refers to intermediate-IDL build tooling.
-
-**Tests:** cross-ref `idl-4.2.md` Annex B.
-
-**Status:** done
-
-### 7.10 Components – Homes -> intermediate IDL
-
-**Spec:** §7.10.
-
-**Repo:** identical to §7.9 — CCM homes legacy.
-
-**Tests:** as §7.9.
-
-**Status:** done
-
-### 7.11 CCM-Specific -> Annex A.1
-
-**Spec:** §7.11 — out of scope.
+**Spec:** §7.9-§7.13, p. 27 — "Basic components have no direct language
+mapping; they shall be mapped to intermediate IDL [...]. Template
+module instances have no direct language mapping."
 
 **Repo:** —
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — spec's own non-binding statement (context background); no implementation obligation.
-
-### 7.12 Components – Ports/Connectors -> intermediate IDL
-
-**Spec:** §7.12.
-
-**Repo:** identical to §7.9/§7.10 — CCM legacy out of scope.
-
-**Tests:** as §7.9.
-
-**Status:** done
-
-### 7.13 Template Modules -> intermediate IDL
-
-**Spec:** §7.13.
-
-**Repo:** template modules are covered via the intermediate-IDL tooling
-path; the ZeroDDS IDL parser does not accept template-module
-syntax (analogous to idl4-cpp §7.13).
-
-**Tests:** cross-ref `idl-4.2.md`.
-
-**Status:** done
+**Status:** `n/a (informative)` — the clauses demand a mapping to
+intermediate IDL, not to C#; the C# PSM has no subject of its own here.
 
 ---
 
 ## §7.14 Extended Data Types
 
-### 7.14.1 Struct with single inheritance -> C# inheritance
+### 7.14.1 Struct with single inheritance -> C# extends
 
-**Spec:** §7.14.1 — "If the IDL struct inherits from a base IDL
-struct, then the C# class shall be declared to extend the base
-class."
+**Spec:** §7.14.1, p. 27 — "An IDL struct that inherits from a base IDL
+struct, shall be declared as a C# public class that extends the class
+resulting from mapping the base IDL struct."
 
-**Repo:** `emitter.rs::inheritance_emits_record_inheritance` path.
+**Repo:** `crates/lang-rules/src/adapter/csharp.rs::declare` (structure arm)
 
-**Tests:** `inheritance_emits_record_inheritance`,
-`inheritance_self_loop_is_rejected`,
-`inheritance_cycle_display`.
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::every_corpus_case_renders_or_names_its_failure`
 
-**Status:** done
+**Status:** partial — the base members are folded into the derived
+`sealed class` (XTypes 1.3 layout), but there is no C# base class
+(`extends`).
 
-### 7.14.2 Union discriminator extensions (int8/uint8/wchar/octet)
+### 7.14.2 Union discriminators: int8, uint8, wchar, octet
 
-**Spec:** §7.14.2 — analogous to idl4-java.
+**Spec:** §7.14.2, p. 28 — "This building block adds the int8, uint8,
+wchar, and octet IDL types to the set of valid types for a
+discriminator."
 
-**Repo:** generator path in `emitter.rs::union_uses_discriminator_record`
-supports all integral discriminator types (8-bit integer +
-wchar + octet) via `type_map.rs`.
+**Repo:** `crates/lang-rules/src/adapter/csharp.rs::csharp_member_type`
 
-**Tests:** `union_uses_discriminator_record` +
-`spec_conformance::union_with_octet_discriminator_supported`.
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::a_union_is_a_class_with_a_discriminator_and_one_field_per_case`,
+`crates/lang-rules/src/adapter/csharp.rs::tests::every_corpus_case_renders_or_names_its_failure`,
+`crates/lang-rules/src/adapter/csharp.rs:2581: assert!(failures.is_empty(), "{failures:#?}");`
 
-**Status:** done
+**Status:** done — `csharp_primitive` covers every integral
+discriminator type; the corpus cases `union-discriminator-*` render.
 
-### 7.14.3.1 IDL map -> C# IDictionary<TKey,TValue>
+### 7.14.3.1 IDL map -> IDictionary<TKey,TValue>
 
-**Spec:** §7.14.3.1 — "An IDL map shall be mapped to a C# generic
-System.Collections.Generic.IDictionary."
+**Spec:** §7.14.3.1, p. 28 — "An IDL map shall be mapped to a C#
+generic System.Collections.Generic.IDictionary<TKey,TValue>."
 
-**Repo:** `emitter.rs::map_type_emits_idictionary` path.
+**Repo:** `crates/lang-rules/src/adapter/csharp.rs::map_entry_name`
 
-**Tests:** `map_type_emits_idictionary`.
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::a_map_is_an_array_of_a_generated_entry_class`
 
-**Status:** done
+**Status:** partial — maps are emitted as `ZdEntry_<k>_<v>[]` (an array
+of a generated two-field class), not as `IDictionary`. The reason is
+the order axis (`MapEntryOrder`), evidenced in the module doc.
 
-### 7.14.3.2 IDL bitset -> C# struct with bitfield properties
+### 7.14.3.2 IDL bitset -> C# struct + IEquatable
 
-**Spec:** §7.14.3.2 — analogous to idl4-java §7.14.3.2.
+**Spec:** §7.14.3.2, p. 29 — "An IDL bitset shall map to a C# struct
+with public properties for each named bitfield [...]. The mapped C#
+struct shall implement the IEquatable<T> interface."
 
-**Repo:** `crates/idl-csharp/src/bitset.rs::emit_bitset` renders
-`public struct Name { public ulong Value; ... }` with a property per
-bitfield (mask + shift inline).
+**Repo:** `crates/lang-rules/src/adapter/csharp.rs::declare` (bitset arm)
 
-**Tests:** `spec_conformance::{bitset_emits_struct_with_value_field,
-bitset_total_width_over_64_returns_error, bitset_short_form_emits_struct}`.
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::a_bitset_is_a_class_of_one_field_per_bitfield`
 
-**Status:** done
+**Status:** partial — a class with one public field per bitfield
+(correct holder width) is produced, not a `struct` with properties and
+`IEquatable<T>`.
 
-### 7.14.3.3 IDL bitmask -> C# enum with Flags attribute + System.Collections.BitArray
+### 7.14.3.3 IDL bitmask -> C# enum `[Flags]` + BitArray
 
-**Spec:** §7.14.3.3 — analogous to idl4-java §7.14.3.3.
+**Spec:** §7.14.3.3, p. 30 — "The IDL bitmask type shall map to a C#
+public enum with the same name, followed by the "Flags" suffix. [...] a
+System.Collections.BitArray shall be used. The C# enum shall have the
+System.FlagsAttribute [...]. The size [...] determines the
+corresponding C# enum type."
 
-**Repo:** `crates/idl-csharp/src/bitset.rs::emit_bitmask` renders
-`[System.Flags] public enum Name : <Underlying> { ... }`. The underlying
-type follows the `@bit_bound(N)` spec (byte/ushort/uint/ulong).
+**Repo:** `crates/lang-rules/src/adapter/csharp.rs::declare` (bitmask arm)
 
-**Tests:** `spec_conformance::bitmask_emits_flags_enum`.
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::a_bitmask_is_a_flags_enum_over_the_holder_its_bound_calls_for`
 
-**Status:** done
+**Status:** partial — a `[Flags]` enum with the correct holder and
+position values is in place; the `Flags` suffix on the name and the
+`BitArray` use are missing.
 
 ---
 
 ## §7.15 Anonymous Types
 
-### 7.15 Anonymous Types: no impact on C# mapping
+### 7.15 Anonymous types: no impact
 
-**Spec:** §7.15 — analogous to idl4-java §7.15.
+**Spec:** §7.15, p. 31 — "No impact to the C# language mapping."
 
 **Repo:** —
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — spec's own non-binding statement (context background); no implementation obligation.
+**Status:** `n/a (informative)` — the clause states no requirement.
 
 ---
 
 ## §7.16 Annotations
 
-### 7.16.1 IDL @annotation -> C# attribute class extends System.Attribute
+### 7.16.1 Defining annotations -> attribute class
 
-**Spec:** §7.16.1 — "An IDL annotation type [...] shall be
-represented by a C# class extending System.Attribute."
+**Spec:** §7.16.1, p. 31 — "User-defined annotations are propagated to
+the generated code as C# attributes inheriting from the System.Attribute
+class. [...] named [...] appending the "Attribute" suffix [...] shall
+have a public constructor with default values [...] [AttributeUsage(
+AttributeTargets.All, AllowMultiple = true)]."
 
-**Repo:** ZeroDDS codegen does not propagate user annotations (analogous
-to idl4-cpp §7.16). Annotations are pure IDL metadata; if needed, the
-caller can add their own attribute classes separately.
+**Repo:** —
 
-**Tests:** cross-ref `unrelated_annotation_is_ignored` (no output).
+**Tests:** —
 
-**Status:** done — no-propagation is spec-conformant for user annotations.
+**Status:** open — the materialiser refuses annotation types
+(`TypeKind::AnnotationType`); no attribute class is produced.
 
-### 7.16.2 Apply user-defined annotations: mark C# element with attribute
+### 7.16.2 Applying annotations
 
-**Spec:** §7.16.2 — analogous to idl4-java §7.16.2.
+**Spec:** §7.16.2, p. 32 — "IDL elements annotated with user-defined
+annotations shall map to equivalent C# elements annotated with the
+corresponding attribute."
 
-**Repo:** identical to §7.16.1 — user annotations are not
-propagated.
+**Repo:** —
 
-**Tests:** cross-ref §7.16.1.
+**Tests:** —
 
-**Status:** done
+**Status:** open — user annotations are not propagated; the only
+emitted annotation is the internal `[IdlName]`.
+
+### 7.16.2.1 Annotations on typedefs propagate
+
+**Spec:** §7.16.2.1, p. 33 — "Annotations on an IDL typedef shall be
+applied to uses of the typedef in other type declarations."
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** open — there is no attribute propagation, neither through
+typedefs nor otherwise.
 
 ---
 
 ## §7.17 Standardized Annotations
 
-### 7.17.1 General Purpose: @id, @autoid, @optional, @position, @value, @extensibility/@final/@mutable/@appendable
+### 7.17.1 @id, @autoid (no impact)
 
-**Spec:** §7.17.1 — mapping impact.
+**Spec:** §7.17.1, Tab.7.5, p. 33-35 — "@id No impact on language
+mapping; @autoid No impact on language mapping."
 
-**Repo:**
-- `@id`: `id_maps_to_id_attribute_with_value`.
-- `@optional`: Optional<T> mapping.
-- `@final`/`@mutable`/`@appendable`: extensibility attribute.
+**Repo:** `crates/lang-rules/src/adapter/csharp.rs::fields_of`
 
-**Tests:** `id_maps_to_id_attribute_with_value`,
-`at_id_emits_id_attribute_with_value`,
-`at_optional_emits_optional_attribute_and_nullable_type`,
-`optional_member_uses_nullable`,
-`optional_sets_optional_flag`,
-`at_extensibility_appendable_emits_attribute`,
-`at_extensibility_final_emits_attribute`,
-`at_extensibility_mutable_emits_attribute`,
-`extensibility_full_form_maps`,
-`appendable_shorthand_maps`,
-`final_shorthand_maps_to_extensibility_final`,
-`mutable_shorthand_maps`,
-`shorthand_at_appendable_emits_extensibility_appendable`,
-`shorthand_at_final_emits_extensibility_final`,
-`shorthand_at_mutable_emits_extensibility_mutable`.
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::every_corpus_case_renders_or_names_its_failure`
 
-**Status:** done
+**Status:** partial — no test compares the C# form with and without
+`@id`/`@autoid`; the cited corpus run only checks that the cases render.
 
-### 7.17.2 Data Modeling: @key, @must_understand, @default_literal
+### 7.17.1 @optional -> Nullable<T> + OptionalAttribute
 
-**Spec:** §7.17.2.
+**Spec:** §7.17.1, Tab.7.5, p. 34 — "IDL elements annotated with
+@optional whose type T maps to a C# value type shall map to
+System.Nullable<T>. [...] All mapped optional elements shall be
+annotated with OptionalAttribute."
 
-**Repo:**
-- `@key`: `key_maps_to_key_attribute`.
-- `@must_understand`: `must_understand_maps`.
-- `@default_literal`: not implemented.
+**Repo:** `crates/lang-rules/src/adapter/csharp.rs::optional`
 
-**Tests:** `key_maps_to_key_attribute`,
-`at_key_emits_key_attribute_no_comment_suffix`,
-`keyed_struct_marker_appears`,
-`must_understand_maps`,
-`at_must_understand_emits_must_understand_attribute`,
-`key_and_id_combine_in_order`,
-`all_member_annotations_stack_on_one_member`,
-`annotation_attribute_appears_on_correct_member_only`,
-`full_annotation_stack_on_struct_and_member`,
-`multiple_members_get_independent_attribute_blocks`,
-`member_annotations_trigger_omg_types_import`,
-`no_annotations_means_no_omg_types_import`,
-`unrelated_annotation_is_ignored`,
-`member_attributes_empty_when_no_annotations`,
-`type_attribute_is_emitted_before_record_keyword`.
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::an_optional_value_type_is_nullable_and_a_reference_one_is_not`,
+`crates/lang-rules/src/adapter/csharp.rs::tests::an_optional_enum_is_nullable_because_an_enum_is_a_value_type`
 
-**Status:** done — @key + @must_understand live;
-the @default_literal spec ("element initialized to indicated value")
-is covered automatically via the record default constructor + IDL default
-values (record property-init pattern).
+**Status:** partial — value types become `T?`, reference types stay
+unchanged; the `Omg.Types.OptionalAttribute` is not emitted.
 
-### 7.17.3 Units and Ranges: @default, @range, @min, @max, @unit
+### 7.17.1 @position, @value
 
-**Spec:** §7.17.3.
+**Spec:** §7.17.1, Tab.7.5, p. 35 — "@position Impacts the mapping of
+bitmask types [...]; @value Impacts the mapping of enum types."
 
-**Repo:** `@unit` is a no-op (spec-conformant). `@default`/`@range`/
-`@min`/`@max` are validation annotations — default init via the
-record property initializer; runtime range validation is subject to an
-external helper lib (analogous to idl4-cpp §7.17.3).
+**Repo:** `crates/lang-rules/src/adapter/csharp.rs::declare`
 
-**Tests:** cross-ref idl4-cpp §7.17.3.
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::an_explicit_enumerator_value_is_written_out`,
+`crates/lang-rules/src/adapter/csharp.rs::tests::a_bitmask_is_a_flags_enum_over_the_holder_its_bound_calls_for`,
+`crates/lang-rules/src/adapter/csharp.rs:2819: assert!(generated.contains("LOW = -1,"), "{generated}");`
 
 **Status:** done
 
-### 7.17.4 Data Implementation: @bit_bound, @external, @nested
+### 7.17.1 @extensibility, @final, @mutable, @appendable (no impact)
 
-**Spec:** §7.17.4.
+**Spec:** §7.17.1, Tab.7.5, p. 35 — "No impact on language mapping."
 
-**Repo:**
-- `@bit_bound`: not implemented (bitset-related).
-- `@external`: `at_external_emits_external_attribute`.
-- `@nested`: `at_nested_emits_nested_attribute_on_struct`.
+**Repo:** `crates/lang-rules/src/adapter/csharp.rs::data_class`
 
-**Tests:** `at_external_emits_external_attribute`,
-`external_maps`,
-`at_nested_emits_nested_attribute_on_struct`,
-`at_nested_struct_does_not_get_topic_marker`,
-`nested_maps_to_nested_attribute`,
-`nested_attribute_combined_with_extensibility`.
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::every_corpus_case_renders_or_names_its_failure`
 
-**Status:** done — `@external` + `@nested` live; `@bit_bound` is
-bitset-specific (bitset unsupported, analogous to idl4-cpp §7.17.4).
+**Status:** partial — no test compares the C# form of the
+`@extensibility` variants; the cited corpus run only checks that the
+cases render.
 
-### 7.17.5 Code Generation: @verbatim
+### 7.17.2 @key -> KeyAttribute
 
-**Spec:** §7.17.5.
+**Spec:** §7.17.2, Tab.7.6, p. 35 — "IDL elements annotated with @key
+shall result in equivalent C# elements annotated with KeyAttribute."
 
-**Repo:** `@verbatim` is cross-cutting with XTypes 1.3 §7.2.2.4.8,
-fully implemented via `crates/idl-csharp/src/verbatim.rs` (aliases
-`c#`, `csharp`, `cs`, `*`). Hooks in
-`emitter::{emit_struct,emit_enum,emit_union,emit_header}` for all
-6 spec PlacementKinds.
+**Repo:** —
 
-**Tests:** `spec_conformance::{verbatim_annotation_with_csharp_language_inlines_text,
-verbatim_annotation_csharp_alias_cs_matches,
-verbatim_annotation_other_language_not_emitted_in_csharp}`.
+**Tests:** —
 
-**Status:** done — code-gen templating path live; XTypes 1.3
-§7.2.2.4.8 closed with this resolution.
+**Status:** open — the materialiser does not evaluate `@key` and emits
+no `[Key]`; `Omg.Types.KeyAttribute` sits unused in the runtime.
 
-### 7.17.6 Interfaces: @service, @oneway, @ami
+### 7.17.2 @must_understand (no impact)
 
-**Spec:** §7.17.6.
+**Spec:** §7.17.2, Tab.7.6, p. 35 — "@must_understand No impact on
+language mapping."
 
-**Repo:** `@service`/`@oneway` are RPC spec annotations (spec
-Tab.7.20 allows platform-specific impact); ZeroDDS supports
-them via the zerodds-rpc crate. Pure service-interface codegen follows
-the zerodds-rpc-1.0 spec §10 (see `zerodds-rpc-1.0.md` K9 audit).
+**Repo:** `crates/lang-rules/src/adapter/csharp.rs::fields_of`
 
-**Tests:** cross-ref `zerodds-rpc-1.0.md` audit (K9 full).
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::every_corpus_case_renders_or_names_its_failure`
+
+**Status:** partial — no test compares the C# form with and without
+`@must_understand`; the cited corpus run only checks that the case
+renders.
+
+### 7.17.2 @default_literal
+
+**Spec:** §7.17.2, Tab.7.6, p. 35 — "The C# element [...] shall be
+initialized to element indicated by the annotation."
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** open — `@default_literal` is not evaluated; the C# enum
+default remains the value 0.
+
+### 7.17.3 Units and ranges: @default, @range, @min, @max, @unit
+
+**Spec:** §7.17.3, Tab.7.7, p. 37 — "@default [...] initialized to the
+value of the annotation; @range/@min/@max [...] shall throw a
+System.ArgumentOutOfRangeException [...]; @unit Shall result in the
+addition of a UnitAttribute."
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** open — neither default initialisation nor range checks nor
+`UnitAttribute` are implemented.
+
+### 7.17.4 @bit_bound
+
+**Spec:** §7.17.4, Tab.7.8, p. 38 — "@bit_bound Impacts the mapping of
+bitmask as described in Clause 7.14.3.3."
+
+**Repo:** `crates/lang-rules/src/adapter/csharp.rs::unsigned_holder`
+
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::a_bitmask_is_a_flags_enum_over_the_holder_its_bound_calls_for`,
+`crates/lang-rules/src/adapter/csharp.rs:2827: assert!(narrow.contains("public enum Small : byte"), "{narrow}");`
+
+**Status:** done — the holder follows `byte`/`ushort`/`uint`/`ulong` by
+the bound.
+
+### 7.17.4 @external
+
+**Spec:** §7.17.4, Tab.7.8, p. 38 — "@external [...] map to
+System.Nullable<T> [...] Properties created as a result of mapping IDL
+sequences annotated with @external shall map to the C#
+System.Collections.Generic.IEnumerable<T> interface."
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** open — `@external` does not change the C# form; there is
+neither an `ExternalAttribute` nor `IEnumerable<T>` for external
+sequences.
+
+### 7.17.4 @nested (no impact)
+
+**Spec:** §7.17.4, Tab.7.8, p. 38 — "@nested No impact to the language
+mapping."
+
+**Repo:** `crates/lang-rules/src/adapter/csharp.rs::declare`
+
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::every_corpus_case_renders_or_names_its_failure`
+
+**Status:** partial — no test compares the C# form with and without
+`@nested`; the cited corpus run only checks that the case renders.
+
+### 7.17.5 @verbatim
+
+**Spec:** §7.17.5, Tab.7.9, p. 38 — "Copies verbatim text to the
+indicated output position when the indicated language is "*", "c#",
+"cs", or "csharp"."
+
+**Repo:** `crates/lang-rules/src/adapter/csharp.rs::weave_verbatim`
+
+**Tests:** `crates/lang-rules/tests/verbatim_end_to_end.rs::csharp_puts_begin_and_end_inside_the_type_body`,
+`crates/lang-rules/tests/verbatim_every_column.rs::every_column_places_the_six_slots_in_its_declarations`,
+`crates/lang-rules/tests/verbatim_every_column.rs::the_wildcard_reaches_every_column`,
+`crates/lang-rules/tests/verbatim_end_to_end.rs:234: opening < begin && begin < field && field < end,`
 
 **Status:** done
+
+### 7.17.6 @service, @oneway, @ami
+
+**Spec:** §7.17.6, Tab.7.10, p. 38 — "Options are "CORBA", "DDS", "*".
+Impact is platform-specific."
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** `n/a (informative)` — the spec declares the impact
+platform-specific; the materialiser documents `raises`/`oneway` only,
+without a C# clause.
 
 ---
 
 ## §8 IDL to C# Language Mapping Annotations
 
-### 8.1.0 @csharp_mapping annotation definition
+### 8.1 @csharp_mapping annotation
 
-**Spec:** §8.1 — "@annotation csharp_mapping { enum NamingConvention
-{IDL_NAMING_CONVENTION, DOTNET_NAMING_CONVENTION};
+**Spec:** §8.1, p. 41 — "@annotation csharp_mapping { enum
+NamingConvention {IDL_NAMING_CONVENTION, DOTNET_NAMING_CONVENTION};
 NamingConvention apply_naming_convention; string constants_container
-default 'Constants'; ... }"
+default "Constants"; string struct_type default "class"; }"
 
-**Repo:** `lib.rs::CSharpCodegenOptions` equivalent fields.
+**Repo:** —
 
-**Tests:** `options_have_sensible_defaults`, `options_clone_works`,
-`custom_indent_width_changes_output`,
-`using_set_is_complete_for_full_typeset`,
-`nullable_enable_appears_exactly_once`.
+**Tests:** —
 
-**Status:** done — `CsGenOptions` covers the spec annotation parameters
-(NamingConvention, constants_container, etc.) as codegen options.
-Annotation recognition as an IDL hint is subject to future
-extension (the caller sets the options directly).
+**Status:** open — the annotation is neither recognised nor evaluated.
 
-### 8.1.1 apply_naming_convention Tab.8.1: 17 IDL constructs
+### 8.1.1 apply_naming_convention
 
-**Spec:** §8.1.1 — analogous to idl4-java §8.1.1.
+**Spec:** §8.1.1, p. 41 — "If apply_naming_convention is
+IDL_NAMING_CONVENTION [...] If [...] DOTNET_NAMING_CONVENTION [...]."
 
-**Repo:** .NET naming path implemented via the `type_map.rs` pascal-
-case helper. Spec Tab.8.1 lists 17 IDL constructs with a naming
-convention; all 17 are consistently emitted in .NET PascalCase.
+**Repo:** —
 
-**Tests:** Module/Struct/Union/Enum pascal case via various tests +
-`spec_conformance::idl_naming_default_uses_dotnet_pascal_case`.
+**Tests:** —
 
-**Status:** done
+**Status:** open — no switch; the naming shape is fixed.
 
-### 8.1.2 constants_container parameter
+### 8.1.2 constants_container
 
-**Spec:** §8.1.2 — analogous to idl4-java §8.1.2.
+**Spec:** §8.1.2, p. 42 — "To enable the Standalone Constants Mapping
+[...] constants_container shall be set to an empty string. To enable
+the Constants Container Mapping [...] set to a valid string."
 
-**Repo:** standalone mapping (§7.2.3.1) is the ZeroDDS default;
-the container variant with a configurable class name is reachable via
-`@csharp_mapping(constants_container=...)` — the spec licenses both
-mappings as alternatives.
+**Repo:** —
 
-**Tests:** cross-ref §7.2.3.1.
+**Tests:** —
 
-**Status:** done
+**Status:** open — there is only one fixed container class
+(`ZdConstants`); the parameter is not implemented.
 
----
+### 8.1.3 struct_type
 
-## Annex A: Platform-Specific Mappings (CORBA)
+**Spec:** §8.1.3, p. 43 — "struct_type defines the C# type the IDL
+struct type map to. By default [...] C# class. This parameter allows
+changing the default behavior to map an IDL struct to a C# struct."
 
-### A.1 CORBA-Specific Mappings
+**Repo:** —
 
-**Spec:** Annex A — CORBA spec adaptations (marker attributes +
-type-trait constants for tooling).
+**Tests:** —
 
-**Repo:** `crates/idl-csharp/src/corba_traits.rs::emit_corba_traits`
-(opt-in via `CsGenOptions::emit_corba_traits = true` or
-`generate_csharp_with_corba_traits`); emits per top-level type
-a `Corba.ValueTypeAttribute` (with `FullyQualifiedName`,
-`IsLocal`, `IsVariableSize`) plus static `Corba.Traits`
-constants (`<Type>_FullName`, `<Type>_IsVariableSize`,
-`<Type>_IsLocal`) as the C# equivalent of the C++ `CORBA::traits<T>`
-template (idl-cpp Annex A.1). variable-size classification
-analogously: string/sequence/map/scoped → variable.
-
-**Tests:** `corba_traits::tests::*` (9 tests):
-`empty_source_emits_no_traits_block`, `enum_marked_fixed_size`,
-`nested_module_qualifies`, `no_local_default_set_to_false`,
-`sequence_member_marks_struct_variable`,
-`struct_emits_traits_constants`, `union_with_string_branch_is_variable`,
-`value_type_attribute_emitted`,
-`variable_size_struct_marked_correctly`.
-
-**Status:** done — Annex-A.1 codegen backend live; the .NET CORBA
-runtime (IIOP.NET, Remoting.Corba, etc.) reads the emitted
-marker attributes. Cross-ref WP CORBA-Coexistence (`corba-3.3.md`).
+**Status:** open — IDL structs are always emitted as `class`; the
+parameter is not implemented.
 
 ---
 
-## Audit status
+## Annex A: Platform-Specific Mappings
 
-66 done / 0 partial / 0 open / 15 n/a (informative) / 0 n/a (rejected).
+### A.1 CORBA-specific mappings (A.1.1-A.1.6)
 
-Test run: `cargo test -p zerodds-idl-csharp` — 82 lib + 111 integration
-(7 bins) = 193 tests green, 0 failed.
+**Spec:** Annex A.1, p. 45-48 — `Corba.UserException` for exceptions,
+`Corba.TypeCode`, `Corba.Object`/`Corba.IObject`, `Corba.Any`, the
+`Corba.IObject` inheritance for interfaces and the value-type rules.
 
-No open items.
+**Repo:** —
+
+**Tests:** —
+
+**Status:** open — the C# column has no CORBA backend. An
+`emit_corba_traits` exists only in `crates/corba-codegen/src/traits.rs`
+(Rust CORBA), not in the C# column; no `Corba.*` types are emitted.
+
+### A.2 DDS-specific mappings
+
+**Spec:** Annex A.2, p. 49 — "DDS requires no additional
+platform-specific language mappings."
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** `n/a (informative)` — the clause states no additional
+requirement.
+
+### Annex B: Building Block Traceability Matrix
+
+**Spec:** Annex B, p. 51 — non-normative matrix.
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** `n/a (informative)` — expressly non-normative.
+
+---
+
+## Audit-Status
+
+14 done / 33 partial / 15 open / 17 n/a (informative) / 0 n/a (rejected).
+
+The PSM generator `crates/idl-csharp/src/` was dropped in
+`d045e43ea86`; the cited tests are those of today's wire column
+(`crates/lang-rules/`, `crates/lang-cst/`, `crates/lang-render/`) and
+of the surviving runtime `crates/idl-csharp/runtime/Omg.Types.cs`.
+No test run is part of this audit (documentation change); the citations
+name the test that holds the item.

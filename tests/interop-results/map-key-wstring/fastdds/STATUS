@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of map-key-wstring that fastdds produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	wireprobe-fill: zd_c3::Sample.entries[0].key: a string, which this probe does not carry yet
+plain-cdr1	be	refused	wireprobe-fill: zd_c3::Sample.entries[0].key: a string, which this probe does not carry yet
+pl-cdr1	le	refused	wireprobe-fill: zd_c3::Sample.entries[0].key: a string, which this probe does not carry yet
+pl-cdr1	be	refused	wireprobe-fill: zd_c3::Sample.entries[0].key: a string, which this probe does not carry yet
+plain-cdr2	le	refused	wireprobe-fill: zd_c3::Sample.entries[0].key: a string, which this probe does not carry yet
+plain-cdr2	be	refused	wireprobe-fill: zd_c3::Sample.entries[0].key: a string, which this probe does not carry yet
+delimited-cdr	le	refused	wireprobe-fill: zd_c3::Sample.entries[0].key: a string, which this probe does not carry yet
+delimited-cdr	be	refused	wireprobe-fill: zd_c3::Sample.entries[0].key: a string, which this probe does not carry yet
+pl-cdr2	le	refused	wireprobe-fill: zd_c3::Sample.entries[0].key: a string, which this probe does not carry yet
+pl-cdr2	be	refused	wireprobe-fill: zd_c3::Sample.entries[0].key: a string, which this probe does not carry yet

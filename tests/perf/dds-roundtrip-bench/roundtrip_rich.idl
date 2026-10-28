@@ -1,28 +1,28 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Cross-Vendor Roundtrip-Bench — RICH-TYPED XCDR2 variant.
+// Cross-vendor roundtrip bench — RICH-TYPED XCDR2 variant.
 //
-// Komplementär zu `roundtrip.idl` (dort: 2 Skalare + sequence<octet>).
-// Dieser Typ maximiert die **CDR-Codec-Arbeit pro Sample**, um den
-// Encode/Decode-Anteil der DCPS-Pipeline gegen den reinen
-// Transport-/Wire-Anteil zu isolieren:
+// Complements `roundtrip.idl` (there: 2 scalars + sequence<octet>).
+// This type maximizes the **CDR codec work per sample**, to isolate the
+// encode/decode share of the DCPS pipeline from the pure
+// transport/wire share:
 //
 //   * `string<64> name`            -- length-prefixed string codec
 //   * `double transform[16]`       -- fixed-size PARRAY (XCDR2 §7.4.3.5)
-//   * sequence<Waypoint, 32>       -- sequence-of-nested-struct: pro
-//                                     Element zwei verschachtelte Vec3
+//   * sequence<Waypoint, 32>       -- sequence-of-nested-struct: per
+//                                     element two nested Vec3
 //                                     + string + scalars → member-by-
 //                                     member encode/decode
-//   * sequence<octet, 8192>        -- Payload-Sweep wie im Basis-Bench
+//   * sequence<octet, 8192>        -- payload sweep as in the base bench
 //
-// Cross-Vendor-Wire-Identität (der ganze Zweck des Benches):
-//   * Durchgehend `@final` -- keine Extensibility, kein DHEADER/EMHEADER,
-//     identisches Wire-Layout über idlc / fastddsgen / rtiddsgen /
-//     opendds_idl / idl-cpp (vgl. Entscheidung @final-default).
-//   * `@autoid(SEQUENTIAL)` + explizite `@id` -- byte-identische
-//     TypeObject-Member-IDs über alle Stacks (RTI Type-Consistency strikt).
-//   * Alle Sequences/Strings **bounded** -- gleiche Defaults erzwungen
-//     (RTI default 100, FastDDS unbounded → sonst Wire-Divergenz).
+// Identical wire bytes across vendors (the whole purpose of the bench):
+//   * `@final` throughout -- no extensibility, no DHEADER/EMHEADER,
+//     identical wire layout across idlc / fastddsgen / rtiddsgen /
+//     opendds_idl / idl-cpp (cf. the @final-default decision).
+//   * `@autoid(SEQUENTIAL)` + explicit `@id` -- byte-identical
+//     TypeObject member IDs across all stacks (RTI type consistency strict).
+//   * All sequences/strings **bounded** -- the same defaults enforced
+//     (RTI default 100, FastDDS unbounded → otherwise the wire diverges).
 
 module RoundtripBench {
 
@@ -52,11 +52,11 @@ module RoundtripBench {
         @id(1) unsigned long long     t_send_ns;
         @id(2) string<64>             name;
         @id(3) double                 transform[16];
-        // Fixe Waypoint-Anzahl pro Sample (App füllt N=8) erzeugt
-        // konstante Codec-Last; bound 32 lässt Spielraum.
+        // A fixed waypoint count per sample (the app fills N=8) produces
+        // a constant codec load; bound 32 leaves headroom.
         @id(4) sequence<Waypoint, 32> waypoints;
-        // Payload-Sweep beibehalten: 0 … 8192 Byte, damit rich-vs-basis
-        // bei identischer Payload-Größe vergleichbar ist.
+        // Keep the payload sweep: 0 … 8192 bytes, so that rich vs. base
+        // is comparable at identical payload size.
         @id(5) sequence<octet, 8192>  payload;
     };
 

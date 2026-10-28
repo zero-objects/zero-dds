@@ -1,0 +1,13 @@
+## wireprobe-opensplice, exit 5
+### stderr
+wireprobe-opensplice: the probe did not compile
+gen.h:13:38: error: 'NodeRef' is not a member of 'm'; did you mean 'Node'?
+gen.h:13:38: error: 'NodeRef' is not a member of 'm'; did you mean 'Node'?
+gen.h:13:74: error: template argument 1 is invalid
+gen.h:26:13: error: redefinition of 'struct m::Node'
+genDcps.h:211:12: error: redefinition of 'struct m::NodeSeq_uniq_'
+genDcps.h:216:12: error: redefinition of 'class m::NodeTypeSupportInterface'
+genDcps.h:241:12: error: redefinition of 'class m::NodeDataWriter'
+genDcps.h:278:12: error: redefinition of 'class m::NodeDataReader'
+genDcps.h:318:12: error: redefinition of 'class m::NodeDataReaderView'
+genDcps_impl.h:396:12: error: redefinition of 'class m::NodeTypeSupportMetaHolder'

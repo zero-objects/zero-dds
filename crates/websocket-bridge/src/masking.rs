@@ -77,9 +77,106 @@ impl<F: FnMut() -> [u8; 4]> MaskingKeyProvider for ClosureMaskingKeyProvider<F> 
     }
 }
 
+/// Which end of the connection a frame was received on — the masking
+/// rule of RFC 6455 §5.1 is directional.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Role {
+    /// The receiver is the client; its peer is the server.
+    Client,
+    /// The receiver is the server; its peer is the client.
+    Server,
+}
+
+/// Violation of the §5.1 masking rule on a received frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MaskingViolation {
+    /// Spec §5.1: "The server MUST close the connection upon
+    /// receiving a frame that is not masked."
+    UnmaskedFrameFromClient,
+    /// Spec §5.1: "A client MUST close a connection if it detects a
+    /// masked frame."
+    MaskedFrameFromServer,
+}
+
+impl core::fmt::Display for MaskingViolation {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::UnmaskedFrameFromClient => write!(f, "UnmaskedFrameFromClient"),
+            Self::MaskedFrameFromServer => write!(f, "MaskedFrameFromServer"),
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for MaskingViolation {}
+
+impl MaskingViolation {
+    /// Spec §7.4.1 — the status code the connection is failed with.
+    /// A masking violation is a protocol error (1002).
+    #[must_use]
+    pub const fn close_code(self) -> crate::close::CloseCode {
+        crate::close::CloseCode::ProtocolError
+    }
+}
+
+/// Spec §5.1, p. 27 — "The client MUST mask all frames that it sends
+/// to the server. […] A server MUST NOT mask any frames that it
+/// sends to the client." Checks a *received* frame against that rule
+/// from the point of view of `receiver`.
+///
+/// # Errors
+/// [`MaskingViolation`] when the frame violates the directional rule.
+pub const fn validate_masking(
+    frame: &crate::frame::Frame,
+    receiver: Role,
+) -> Result<(), MaskingViolation> {
+    match (receiver, frame.masking_key.is_some()) {
+        (Role::Server, false) => Err(MaskingViolation::UnmaskedFrameFromClient),
+        (Role::Client, true) => Err(MaskingViolation::MaskedFrameFromServer),
+        _ => Ok(()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn client_masks_and_server_does_not_per_spec_5_1() {
+        use crate::frame::Frame;
+        // Spec §5.1: a frame from the client is masked, a frame from
+        // the server is not, and each end rejects the other case.
+        let from_client = Frame::text("hi").with_mask([1, 2, 3, 4]);
+        let from_server = Frame::text("hi");
+        assert_eq!(validate_masking(&from_client, Role::Server), Ok(()));
+        assert_eq!(validate_masking(&from_server, Role::Client), Ok(()));
+        assert_eq!(
+            validate_masking(&from_server, Role::Server),
+            Err(MaskingViolation::UnmaskedFrameFromClient)
+        );
+        assert_eq!(
+            validate_masking(&from_client, Role::Client),
+            Err(MaskingViolation::MaskedFrameFromServer)
+        );
+    }
+
+    #[test]
+    fn masking_violation_fails_the_connection_with_1002() {
+        // Spec §5.1 demands the connection be closed; §7.4.1 gives
+        // 1002 "Protocol error" as its status code.
+        assert_eq!(
+            MaskingViolation::UnmaskedFrameFromClient
+                .close_code()
+                .to_u16(),
+            1002
+        );
+        assert_eq!(
+            MaskingViolation::MaskedFrameFromServer
+                .close_code()
+                .to_u16(),
+            1002
+        );
+    }
 
     #[test]
     fn apply_mask_is_symmetric() {

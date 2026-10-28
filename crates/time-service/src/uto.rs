@@ -29,7 +29,7 @@ use crate::tio::Tio;
 pub enum ComparisonType {
     /// IntervalC — compares taking the inaccuracy range into account.
     IntervalC,
-    /// MidC — vergleicht nur die Base-Times. Spec §1.3.2.6: "MidC
+    /// MidC — compares only the base times. Spec §1.3.2.6: "MidC
     /// comparison can never return TCIndeterminate".
     MidC,
 }

@@ -1,0 +1,14 @@
+# What ros-fastrtps got back when it read the bytes of sequence-of-typedef, held against
+# tests/interop-corpus/sequence-of-typedef/values.json and never against another
+# column's reading of the same bytes.
+# encoding	endian	verdict	detail
+plain-cdr1	le	same	
+plain-cdr1	be	unwritten	
+pl-cdr1	le	version-alias	plain-cdr1
+pl-cdr1	be	unwritten	
+plain-cdr2	le	no-version-2	
+plain-cdr2	be	no-version-2	
+delimited-cdr	le	no-version-2	
+delimited-cdr	be	no-version-2	
+pl-cdr2	le	no-version-2	
+pl-cdr2	be	no-version-2	

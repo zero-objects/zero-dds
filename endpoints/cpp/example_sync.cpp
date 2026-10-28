@@ -96,7 +96,8 @@ int main() {
         body_len = marshal(rd, body, sizeof(body));
         frame_len = zdw_xrce_write_frame(frame, sizeof(frame),
             ZDW_XRCE_SESSION_NOKEY, ZDW_XRCE_STREAM_BEST_EFFORT,
-            static_cast<unsigned int>(i + 1), body, body_len);
+            static_cast<unsigned int>(i + 1),
+            ZDW_XRCE_OBJECT_ID(0x001, ZDW_OBJK_DATAWRITER), body, body_len);
         if (frame_len == 0 || t.deliver(t.ctx, frame, frame_len) != ZDW_T_OK) {
             std::fprintf(stderr, "publish %d failed\n", i);
             return 1;

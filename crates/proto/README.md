@@ -14,6 +14,7 @@ This is the type-system counterpart to
 foo.proto --protoc--> FileDescriptorSet --zerodds-proto--> DynamicType --XCDR--> DDS wire
 ```
 
-Pure-Rust, `no_std + alloc`. Part of
+Pure Rust; needs `std` (the mapping is built on the `dynamic` feature of
+`zerodds-types`). Part of
 [**ZeroDDS**](https://github.com/zero-objects/zero-dds). Safety classification:
 **STANDARD**. Apache-2.0.

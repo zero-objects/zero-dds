@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of annotation-external-union-branch that cyclone produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	the fill: error: 'sample.choice._u.nested' is a pointer; did you mean to use '->'?
+plain-cdr1	be	refused	the fill: error: 'sample.choice._u.nested' is a pointer; did you mean to use '->'?
+pl-cdr1	le	refused	the fill: error: 'sample.choice._u.nested' is a pointer; did you mean to use '->'?
+pl-cdr1	be	refused	the fill: error: 'sample.choice._u.nested' is a pointer; did you mean to use '->'?
+plain-cdr2	le	refused	the fill: error: 'sample.choice._u.nested' is a pointer; did you mean to use '->'?
+plain-cdr2	be	refused	the fill: error: 'sample.choice._u.nested' is a pointer; did you mean to use '->'?
+delimited-cdr	le	refused	the fill: error: 'sample.choice._u.nested' is a pointer; did you mean to use '->'?
+delimited-cdr	be	refused	the fill: error: 'sample.choice._u.nested' is a pointer; did you mean to use '->'?
+pl-cdr2	le	refused	the fill: error: 'sample.choice._u.nested' is a pointer; did you mean to use '->'?
+pl-cdr2	be	refused	the fill: error: 'sample.choice._u.nested' is a pointer; did you mean to use '->'?

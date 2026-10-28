@@ -6,7 +6,7 @@
 //! Crate `zerodds-corba-cosnaming`. Safety classification: **STANDARD**.
 //! Spec OMG CosNaming 1.3 (`formal/2004-10-03`).
 //!
-//! Voller NamingContext + NamingContextExt + Stringified-Name +
+//! Full NamingContext + NamingContextExt + Stringified-Name +
 //! corbaname URL support. In-memory implementation, fully
 //! spec-compliant incl. all 5 exception classes.
 //!
@@ -28,10 +28,22 @@ extern crate alloc;
 
 pub mod context;
 pub mod error;
+#[cfg(feature = "serve")]
+pub mod graph;
 pub mod name;
+#[cfg(feature = "daemon")]
+pub mod naming_daemon;
+#[cfg(feature = "std")]
+pub mod persist;
+#[cfg(feature = "serve")]
+pub mod servant;
 pub mod stringified;
+pub mod wire;
 
-pub use context::{Binding, BindingType, NamingContext, ObjectRef};
+#[cfg(feature = "std")]
+pub use context::NamingContext;
+pub use context::{Binding, BindingIterator, BindingType, ObjectRef};
 pub use error::{NamingError, NotFoundReason};
 pub use name::{Name, NameComponent};
 pub use stringified::{name_to_string, string_to_name};
+pub use wire::NamingWireError;

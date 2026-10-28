@@ -27,7 +27,7 @@
 
 use alloc::vec::Vec;
 
-use zerodds_cdr::{BufferReader, BufferWriter};
+use zerodds_wire::{Reader, Writer};
 
 use crate::error::{GiopError, GiopResult};
 
@@ -76,50 +76,50 @@ impl TargetAddress {
         }
     }
 
-    /// CDR-Encode.
+    /// CDR encode.
     ///
     /// # Errors
     /// Buffer write error.
-    pub fn encode(&self, w: &mut BufferWriter) -> GiopResult<()> {
+    pub fn encode(&self, w: &mut Writer) -> GiopResult<()> {
         // The union discriminator is a `short` (= int16, alignment 2).
         let disc = self.disposition() as i16;
-        w.align(2);
+        w.align_to(2);
         // `short` per CDR — the buffer API has write_u16, so we
         // convert signed→unsigned bit-identically.
-        w.write_u16(disc as u16)?;
+        w.write_u16(disc as u16);
         match self {
             Self::Key(k) => {
                 let n = u32::try_from(k.len())
                     .map_err(|_| GiopError::Malformed("object_key too long".into()))?;
-                w.write_u32(n)?;
-                w.write_bytes(k)?;
+                w.write_u32(n);
+                w.write_bytes(k);
             }
             Self::Profile(bytes) => {
                 let n = u32::try_from(bytes.len())
                     .map_err(|_| GiopError::Malformed("profile too long".into()))?;
-                w.write_u32(n)?;
-                w.write_bytes(bytes)?;
+                w.write_u32(n);
+                w.write_bytes(bytes);
             }
             Self::Reference {
                 selected_profile_index,
                 ior,
             } => {
-                w.write_u32(*selected_profile_index)?;
+                w.write_u32(*selected_profile_index);
                 let n = u32::try_from(ior.len())
                     .map_err(|_| GiopError::Malformed("ior too long".into()))?;
-                w.write_u32(n)?;
-                w.write_bytes(ior)?;
+                w.write_u32(n);
+                w.write_bytes(ior);
             }
         }
         Ok(())
     }
 
-    /// CDR-Decode.
+    /// CDR decode.
     ///
     /// # Errors
     /// Buffer read error or unknown disposition.
-    pub fn decode(r: &mut BufferReader<'_>) -> GiopResult<Self> {
-        r.align(2)?;
+    pub fn decode(r: &mut Reader<'_>) -> GiopResult<Self> {
+        r.align_to(2)?;
         let disc = r.read_u16()?;
         match disc {
             0 => {
@@ -150,7 +150,7 @@ impl TargetAddress {
 #[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
-    use zerodds_cdr::Endianness;
+    use zerodds_wire::Endianness;
 
     #[test]
     fn disposition_values_match_spec() {
@@ -163,10 +163,10 @@ mod tests {
     #[test]
     fn key_addr_round_trip() {
         let t = TargetAddress::Key(alloc::vec![0xde, 0xad, 0xbe, 0xef]);
-        let mut w = BufferWriter::new(Endianness::Big);
+        let mut w = Writer::new(Endianness::Big);
         t.encode(&mut w).unwrap();
-        let bytes = w.into_bytes();
-        let mut r = BufferReader::new(&bytes, Endianness::Big);
+        let bytes = w.finish();
+        let mut r = Reader::new(&bytes, Endianness::Big);
         let decoded = TargetAddress::decode(&mut r).unwrap();
         assert_eq!(decoded, t);
     }
@@ -174,10 +174,10 @@ mod tests {
     #[test]
     fn profile_addr_round_trip() {
         let t = TargetAddress::Profile(alloc::vec![1, 2, 3]);
-        let mut w = BufferWriter::new(Endianness::Little);
+        let mut w = Writer::new(Endianness::Little);
         t.encode(&mut w).unwrap();
-        let bytes = w.into_bytes();
-        let mut r = BufferReader::new(&bytes, Endianness::Little);
+        let bytes = w.finish();
+        let mut r = Reader::new(&bytes, Endianness::Little);
         let decoded = TargetAddress::decode(&mut r).unwrap();
         assert_eq!(decoded, t);
     }
@@ -188,20 +188,20 @@ mod tests {
             selected_profile_index: 7,
             ior: alloc::vec![0xff, 0x00, 0xaa],
         };
-        let mut w = BufferWriter::new(Endianness::Big);
+        let mut w = Writer::new(Endianness::Big);
         t.encode(&mut w).unwrap();
-        let bytes = w.into_bytes();
-        let mut r = BufferReader::new(&bytes, Endianness::Big);
+        let bytes = w.finish();
+        let mut r = Reader::new(&bytes, Endianness::Big);
         let decoded = TargetAddress::decode(&mut r).unwrap();
         assert_eq!(decoded, t);
     }
 
     #[test]
     fn unknown_disposition_is_diagnostic() {
-        let mut w = BufferWriter::new(Endianness::Big);
-        w.write_u16(99).unwrap();
-        let bytes = w.into_bytes();
-        let mut r = BufferReader::new(&bytes, Endianness::Big);
+        let mut w = Writer::new(Endianness::Big);
+        w.write_u16(99);
+        let bytes = w.finish();
+        let mut r = Reader::new(&bytes, Endianness::Big);
         let err = TargetAddress::decode(&mut r).unwrap_err();
         assert!(matches!(err, GiopError::UnknownAddressingDisposition(99)));
     }

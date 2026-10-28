@@ -1,0 +1,5 @@
+@autoid(SEQUENTIAL)
+@mutable struct Sample {
+    long color;
+    long size;
+};

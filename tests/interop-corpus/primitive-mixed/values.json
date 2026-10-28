@@ -1,0 +1,16 @@
+{
+  "flag": true,
+  "raw_octet": 171,
+  "unsigned_byte": 254,
+  "signed_byte": -13,
+  "letter": "Z",
+  "wide_letter": "ä",
+  "short_signed": -12345,
+  "short_unsigned": 48879,
+  "long_signed": -1234567,
+  "long_unsigned": 3735928559,
+  "llong_signed": "-987654321987",
+  "llong_unsigned": "16045690984833335998",
+  "single_float": -3.75,
+  "double_float": 3.141592653589793
+}

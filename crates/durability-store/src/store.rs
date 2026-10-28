@@ -10,6 +10,7 @@ use std::time::SystemTime;
 use crate::contract::Contract;
 use crate::error::Result;
 use crate::model::{DurabilitySample, Page, Selector, StoreStats};
+use crate::topic_meta::TopicMeta;
 
 /// Default page size for the [`DurabilityStore::replay_for_topic`] convenience
 /// drain when a selector does not set its own `limit`.
@@ -28,9 +29,40 @@ pub trait DurabilityStore: Send + Sync {
     /// daemon calls this when it starts serving a topic. Topics without an
     /// explicit contract use the store's default ([`Contract::default`]).
     ///
+    /// Contract-only: it does not persist a type name or keyedness, so a
+    /// topic that only ever saw `set_contract` has no [`TopicMeta`]
+    /// ([`topic_meta`](Self::topic_meta) returns `None` for it) — use
+    /// [`set_topic_meta`](Self::set_topic_meta) when serving a topic needs to
+    /// survive a restart without a writer/reader being re-discovered first.
+    /// When both were ever called for the same topic, `set_topic_meta`'s
+    /// contract wins (it is the more recent, more complete registration).
+    ///
     /// # Errors
     /// Backend/I/O failure.
     fn set_contract(&self, topic: &str, contract: Contract) -> Result<()>;
+
+    /// Persists what the durability service (or any other caller) needs to
+    /// resume serving `topic` after a restart, with no writer or reader
+    /// re-discovered first: its type name, keyedness, and the retention
+    /// contract in force (see [`TopicMeta`]). Called once, when a topic is
+    /// first served. Also becomes the contract
+    /// [`store`](Self::store)/[`cleanup`](Self::cleanup) enforce for `topic`
+    /// (superseding a plain [`set_contract`](Self::set_contract) for the same
+    /// topic — see its doc).
+    ///
+    /// # Errors
+    /// Backend/I/O failure.
+    fn set_topic_meta(&self, topic: &str, meta: TopicMeta) -> Result<()>;
+
+    /// The persisted [`TopicMeta`] for `topic`, if
+    /// [`set_topic_meta`](Self::set_topic_meta) was ever called for it.
+    /// `None` for a topic that only ever saw
+    /// [`set_contract`](Self::set_contract) (contract-only, no served
+    /// type/keyedness known) or was never registered at all.
+    ///
+    /// # Errors
+    /// Backend/I/O failure.
+    fn topic_meta(&self, topic: &str) -> Result<Option<TopicMeta>>;
 
     /// Persists `sample` durably, enforcing the topic contract. Returns
     /// [`StoreError::OutOfResources`](crate::StoreError) when a `KEEP_ALL` cap

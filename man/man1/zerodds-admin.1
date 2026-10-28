@@ -1,4 +1,4 @@
-.TH ZERODDS-ADMIN 1 "June 2026" "ZeroDDS 1.0.0-rc.3" "User Commands"
+.TH ZERODDS-ADMIN 1 "" "ZeroDDS" "User Commands"
 .SH NAME
 zerodds-admin \- ZeroDDS operator CLI for live domains and DDS-XML configs
 .SH SYNOPSIS
@@ -52,11 +52,47 @@ are both resolved. Exit 1 if any pair is incompatible.
 .B \-\-json
 Emit machine-readable JSON instead of text.
 .TP
+.B \-\-skip\-unknown
+Offline commands: leave out what the DDS-XML 1.0 schemas do not define (the elements and
+attributes of another product's file) and list each omission with its path on
+standard error. Without it the first such element is an error.
+.TP
+.B \-\-vendor\-forms
+Offline commands: read the forms other DDS products write (such as
+.B <topic_filter>
+as an element,
+.BR qos_profile_ref ,
+.BR <participant_qos> ,
+IDL type names) and list each with its path on standard error. Without it the
+first such form is an error that names the form DDS-XML 1.0 uses.
+.TP
 .BR \-\-timeout\-ms " " \fIT\fR
 Observation window in milliseconds for the live groups. Default: 2000.
 .TP
 .BR \-h ", " \-\-help
 Show usage.
+.TP
+.BR \-V ", " \-\-version
+Print version and exit.
+.TP
+.BR \-\-config " " \fIPATH\fR
+The base configuration file; its sibling
+.IR PATH .d/
+holds drop-ins. Default: the system configuration directory
+.RI ( /etc/zerodds
+on Linux,
+.I /usr/local/etc/zerodds
+on macOS).
+.TP
+.BR \-\-set " \fIPATH\fR=\fIVALUE\fR"
+One setting above every file, repeatable;
+.BI + PATH = VALUE
+appends to a list.
+.TP
+.B \-\-check\-config
+Validate and print the effective configuration with the origin of every
+value, then exit: 0 valid, 1 invalid value or unknown key, 2 unreadable
+file, syntax error or include cycle.
 .SH EXIT STATUS
 .TP
 .B 0

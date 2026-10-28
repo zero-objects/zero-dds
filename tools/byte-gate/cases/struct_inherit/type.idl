@@ -1,0 +1,2 @@
+@final struct Base { long base_a; short base_b; };
+@final struct Sample : Base { double derived_a; octet derived_b; };

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! `zerodds-monitor` — Live-Snapshot oder Prometheus-Server für die
+//! `zerodds-monitor` — live snapshot or Prometheus server for the
 //! ZeroDDS-Runtime.
 
 #![allow(clippy::print_stdout, clippy::print_stderr)]
@@ -30,7 +30,19 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
-    let cmd = match parse_args(&args) {
+    let configured = match zerodds_dcps::cli::Configured::from_args(args) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("error: configuration: {e}");
+            return ExitCode::from(2);
+        }
+    };
+    if let Some(code) = configured.check_config() {
+        return code;
+    }
+    let config = &configured.runtime;
+
+    let cmd = match parse_args(&configured.args) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("error: {e}");
@@ -40,8 +52,8 @@ fn main() -> ExitCode {
     };
 
     match cmd {
-        Command::Snapshot(s) => run_snapshot(&s),
-        Command::Serve(s) => run_serve(&s),
+        Command::Snapshot(s) => run_snapshot(&s, config),
+        Command::Serve(s) => run_serve(&s, config),
         Command::Names => {
             print_names();
             ExitCode::SUCCESS
@@ -49,8 +61,8 @@ fn main() -> ExitCode {
     }
 }
 
-fn run_snapshot(s: &SnapshotArgs) -> ExitCode {
-    let _runtime = match start_runtime(s.domain) {
+fn run_snapshot(s: &SnapshotArgs, config: &RuntimeConfig) -> ExitCode {
+    let _runtime = match start_runtime(s.domain, config) {
         Ok(rt) => rt,
         Err(e) => return e,
     };
@@ -110,8 +122,8 @@ fn format_labels(labels: &zerodds_monitor_lib::Labels) -> String {
     }
 }
 
-fn run_serve(s: &ServeArgs) -> ExitCode {
-    let _runtime = match start_runtime(s.domain) {
+fn run_serve(s: &ServeArgs, config: &RuntimeConfig) -> ExitCode {
+    let _runtime = match start_runtime(s.domain, config) {
         Ok(rt) => rt,
         Err(e) => return e,
     };
@@ -178,13 +190,13 @@ fn print_names() {
     }
 }
 
-fn start_runtime(domain: u32) -> Result<Arc<DcpsRuntime>, ExitCode> {
+fn start_runtime(domain: u32, config: &RuntimeConfig) -> Result<Arc<DcpsRuntime>, ExitCode> {
     let domain_id: i32 = domain.try_into().map_err(|_| {
         eprintln!("error: domain {domain} does not fit i32");
         ExitCode::from(2)
     })?;
     let prefix = stable_prefix(MARKER_MONITOR);
-    DcpsRuntime::start(domain_id, prefix, RuntimeConfig::default()).map_err(|e| {
+    DcpsRuntime::start(domain_id, prefix, config.clone()).map_err(|e| {
         eprintln!("error: DcpsRuntime::start failed: {e:?}");
         ExitCode::from(3)
     })
@@ -224,4 +236,5 @@ fn print_help() {
            2    CLI parse error\n  \
            3    DDS / I/O error\n"
     );
+    println!("\n{}", zerodds_dcps::cli::HELP);
 }

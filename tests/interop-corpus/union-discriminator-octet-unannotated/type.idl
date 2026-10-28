@@ -1,0 +1,10 @@
+// `union` over `octet`, unannotated
+union Choice switch (octet) {
+    case 171: long whole;
+    case 1: double fraction;
+};
+
+struct Sample {
+    Choice picked;
+    long tail;
+};

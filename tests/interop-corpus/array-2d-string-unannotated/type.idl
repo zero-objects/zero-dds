@@ -1,0 +1,5 @@
+// two-dimensional array of `string`, unannotated
+struct Sample {
+    string words[2][2];
+    long tail;
+};

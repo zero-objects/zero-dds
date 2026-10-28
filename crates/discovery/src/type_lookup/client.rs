@@ -8,7 +8,7 @@
 //! Lifecycle:
 //! 1. [`TypeLookupClient::request_types`] generates a unique
 //!    [`RequestId`] and remembers the callback.
-//! 2. The application serializes the request via [`request_payload`]
+//! 2. The application serializes the request via `request_payload`
 //!    and sends it over the reliable writer.
 //! 3. On an incoming reply it calls [`TypeLookupClient::handle_reply`]
 //!    with the correlated RequestId — the callback then fires
@@ -29,12 +29,12 @@ use alloc::boxed::Box;
 use alloc::collections::{BTreeMap, VecDeque};
 use alloc::vec::Vec;
 
-use zerodds_cdr::{BufferWriter, EncodeError, Endianness};
 use zerodds_types::type_lookup::{
     ContinuationPoint, GetTypeDependenciesReply, GetTypeDependenciesRequest, GetTypesReply,
     GetTypesRequest,
 };
 use zerodds_types::{EquivalenceHash, TypeIdentifier};
+use zerodds_wire::{Endianness, WireError, Writer};
 
 /// Unique request identifier (subset of the sample identity).
 ///
@@ -68,6 +68,9 @@ pub type ClientCallback = Box<dyn FnMut(TypeLookupReply) + Send>;
 /// Pending-request entry.
 struct Pending {
     callback: ClientCallback,
+    operation: i32,
+    peer: Option<[u8; 12]>,
+    dependencies: Option<(Vec<TypeIdentifier>, ContinuationPoint)>,
 }
 
 impl core::fmt::Debug for Pending {
@@ -125,20 +128,33 @@ impl TypeLookupClient {
         _ids: Vec<TypeIdentifier>,
         callback: ClientCallback,
     ) -> RequestId {
-        self.alloc_pending(callback)
+        self.alloc_pending(
+            callback,
+            zerodds_types::type_lookup::OPERATION_GET_TYPES,
+            None,
+        )
     }
 
     /// Registers a `getTypeDependencies` request with a callback.
     pub fn request_type_dependencies(
         &mut self,
-        _ids: Vec<TypeIdentifier>,
-        _continuation_point: ContinuationPoint,
+        ids: Vec<TypeIdentifier>,
+        continuation_point: ContinuationPoint,
         callback: ClientCallback,
     ) -> RequestId {
-        self.alloc_pending(callback)
+        self.alloc_pending(
+            callback,
+            zerodds_types::type_lookup::OPERATION_GET_DEPENDENCIES,
+            Some((ids, continuation_point)),
+        )
     }
 
-    fn alloc_pending(&mut self, callback: ClientCallback) -> RequestId {
+    fn alloc_pending(
+        &mut self,
+        callback: ClientCallback,
+        operation: i32,
+        dependencies: Option<(Vec<TypeIdentifier>, ContinuationPoint)>,
+    ) -> RequestId {
         let id = RequestId(self.next_seq);
         self.next_seq = self.next_seq.saturating_add(1);
 
@@ -151,9 +167,41 @@ impl TypeLookupClient {
             }
         }
 
-        self.pending.insert(id, Pending { callback });
+        self.pending.insert(
+            id,
+            Pending {
+                callback,
+                operation,
+                peer: None,
+                dependencies,
+            },
+        );
         self.pending_order.push_back(id);
         id
+    }
+
+    /// Bind a transport request to the discovered service participant.
+    pub fn bind_peer(&mut self, id: RequestId, peer: [u8; 12]) {
+        if let Some(entry) = self.pending.get_mut(&id) {
+            entry.peer = Some(peer);
+        }
+    }
+
+    /// Verify the peer and operation before processing any reply side effects.
+    #[must_use]
+    pub fn accepts_reply(&self, id: RequestId, peer: [u8; 12], operation: i32) -> bool {
+        self.pending.get(&id).is_some_and(|entry| {
+            entry.operation == operation && entry.peer.is_none_or(|expected| expected == peer)
+        })
+    }
+
+    /// Original dependency query and cursor, needed to request its next page.
+    #[must_use]
+    pub fn dependency_query(
+        &self,
+        id: RequestId,
+    ) -> Option<(Vec<TypeIdentifier>, ContinuationPoint)> {
+        self.pending.get(&id)?.dependencies.clone()
     }
 
     /// Processes a reply for a given [`RequestId`].
@@ -163,6 +211,19 @@ impl TypeLookupClient {
     ///
     /// Returns `true` if the callback was executed.
     pub fn handle_reply(&mut self, request_id: RequestId, reply: TypeLookupReply) -> bool {
+        let operation = match &reply {
+            TypeLookupReply::Types(_) => zerodds_types::type_lookup::OPERATION_GET_TYPES,
+            TypeLookupReply::Dependencies(_) => {
+                zerodds_types::type_lookup::OPERATION_GET_DEPENDENCIES
+            }
+        };
+        if self
+            .pending
+            .get(&request_id)
+            .is_none_or(|entry| entry.operation != operation)
+        {
+            return false;
+        }
         let Some(mut entry) = self.pending.remove(&request_id) else {
             return false;
         };
@@ -190,31 +251,31 @@ impl Default for TypeLookupClient {
 /// Serializes a `getTypes` request for the wire transport.
 ///
 /// # Errors
-/// `EncodeError` on buffer overflow.
-pub fn request_types_payload(ids: &[TypeIdentifier]) -> Result<Vec<u8>, EncodeError> {
+/// `WireError` on buffer overflow.
+pub fn request_types_payload(ids: &[TypeIdentifier]) -> Result<Vec<u8>, WireError> {
     let req = GetTypesRequest {
         type_ids: ids.to_vec(),
     };
-    let mut w = BufferWriter::new(Endianness::Little);
+    let mut w = Writer::new(Endianness::Little);
     req.encode_into(&mut w)?;
-    Ok(w.into_bytes())
+    Ok(w.finish())
 }
 
 /// Serializes a `getTypeDependencies` request.
 ///
 /// # Errors
-/// `EncodeError` on buffer overflow.
+/// `WireError` on buffer overflow.
 pub fn request_dependencies_payload(
     ids: &[TypeIdentifier],
     continuation_point: ContinuationPoint,
-) -> Result<Vec<u8>, EncodeError> {
+) -> Result<Vec<u8>, WireError> {
     let req = GetTypeDependenciesRequest {
         type_ids: ids.to_vec(),
         continuation_point,
     };
-    let mut w = BufferWriter::new(Endianness::Little);
+    let mut w = Writer::new(Endianness::Little);
     req.encode_into(&mut w)?;
-    Ok(w.into_bytes())
+    Ok(w.finish())
 }
 
 /// Convenience: builds the TypeIdentifiers from a set of hashes.
@@ -348,4 +409,24 @@ mod tests {
     fn callback_can_mutate_via_arc_mutex() {
         let _: RefCell<i32> = RefCell::new(0); // smoke
     }
+}
+#[test]
+fn reply_correlation_requires_original_peer_and_operation() {
+    let mut client = TypeLookupClient::new();
+    let id = client.request_types(Vec::new(), Box::new(|_| {}));
+    client.bind_peer(id, [1; 12]);
+    assert!(client.accepts_reply(id, [1; 12], zerodds_types::type_lookup::OPERATION_GET_TYPES));
+    assert!(!client.accepts_reply(id, [2; 12], zerodds_types::type_lookup::OPERATION_GET_TYPES));
+    assert!(!client.accepts_reply(
+        id,
+        [1; 12],
+        zerodds_types::type_lookup::OPERATION_GET_DEPENDENCIES
+    ));
+    assert!(!client.handle_reply(
+        id,
+        TypeLookupReply::Dependencies(GetTypeDependenciesReply::default())
+    ));
+    assert_eq!(client.pending_count(), 1);
+    assert!(client.handle_reply(id, TypeLookupReply::Types(GetTypesReply::default())));
+    assert_eq!(client.pending_count(), 0);
 }

@@ -1,0 +1,14 @@
+// a member in one module typed by a type in its sibling
+module inner {
+    @final struct Point {
+        long x;
+        long y;
+    };
+};
+
+module outer {
+    @final struct Sample {
+        ::inner::Point point;
+        double b;
+    };
+};

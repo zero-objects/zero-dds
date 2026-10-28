@@ -12,9 +12,9 @@ use crate::status::ReturnStatus;
 /// Spec §7.3.1 — `WebDDS::Root` singleton. Manages all objects.
 #[derive(Debug, Default)]
 pub struct WebDdsRoot {
-    /// Alle registrierten Applications.
+    /// All registered applications.
     pub applications: Vec<Application>,
-    /// Alle registrierten Clients.
+    /// All registered clients.
     pub clients: Vec<Client>,
 }
 
@@ -196,5 +196,62 @@ mod tests {
         };
         assert_eq!(a.participants.len(), 2);
         assert_eq!(a.participants[0].domain_id, 0);
+    }
+
+    #[test]
+    fn root_starts_empty_and_is_the_only_container() {
+        // Spec §7.2: `WebDDS::Root` is a singleton — every other
+        // object of the model is reached through it, so a fresh root
+        // holds nothing and nothing exists outside it.
+        let root = WebDdsRoot::default();
+        assert!(root.applications.is_empty());
+        assert!(root.clients.is_empty());
+        assert!(root.get_applications("*").is_empty());
+    }
+
+    #[test]
+    fn every_model_object_is_reachable_from_the_root() {
+        // Spec §7.1/§7.2: the object model is a containment tree
+        // rooted in `WebDDS::Root` — Application below Root,
+        // DomainParticipant below Application, Client below Root.
+        let mut root = WebDdsRoot::default();
+        root.create_application(Application {
+            name: String::from("trader"),
+            participants: alloc::vec![DomainParticipant {
+                name: String::from("p0"),
+                domain_id: 7,
+            }],
+        })
+        .expect("created");
+        root.clients.push(Client {
+            client_api_key: String::from("key-1"),
+        });
+
+        let apps = root.get_applications("*");
+        assert_eq!(apps.len(), 1);
+        assert_eq!(apps[0].name, "trader");
+        assert_eq!(apps[0].participants[0].domain_id, 7);
+        assert_eq!(root.clients[0].client_api_key, "key-1");
+
+        // Deleting through the root removes the subtree with it.
+        root.delete_application("trader").expect("deleted");
+        assert!(root.get_applications("*").is_empty());
+    }
+
+    #[test]
+    fn root_holds_one_entry_per_application_name() {
+        // Spec §7.2: the singleton root is the uniqueness scope —
+        // two applications cannot share a name.
+        let mut root = WebDdsRoot::default();
+        let first = root.create_application(app("a")).expect("first");
+        assert_eq!(
+            root.create_application(app("a")),
+            Err(ReturnStatus::ObjectAlreadyExists)
+        );
+        let second = root
+            .create_application(app("b"))
+            .expect("a second name is fine");
+        assert_ne!(first, second, "each application gets its own session");
+        assert_eq!(root.applications.len(), 2);
     }
 }

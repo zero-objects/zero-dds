@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! `zerodds-pcap` — offline pcap-Datei lesen und RTPS-Submessages
-//! drucken.
+//! `zerodds-pcap` — read an offline pcap file and RTPS submessages
+//! print.
 
 #![allow(clippy::print_stdout, clippy::print_stderr)]
 
@@ -11,7 +11,7 @@ use std::env;
 use std::process::ExitCode;
 
 use zerodds_pcap::{Command, FileArgs, PcapIter, find_rtps_offset, parse_args, parse_file_header};
-use zerodds_rtps::datagram::{ParsedSubmessage, decode_datagram};
+use zerodds_rtps::datagram::{ParsedSubmessage, SubmessageFrame, decode_datagram};
 
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -126,8 +126,10 @@ fn run_stats(a: &FileArgs) -> ExitCode {
                 rtps_frames += 1;
                 match decode_datagram(&payload[off..]) {
                     Ok(dg) => {
-                        for sm in &dg.submessages {
-                            *counts.entry(submessage_kind(sm)).or_insert(0) += 1;
+                        for frame in &dg.submessages {
+                            *counts
+                                .entry(submessage_kind(&frame.submessage))
+                                .or_insert(0) += 1;
                         }
                     }
                     Err(_) => {
@@ -174,17 +176,38 @@ fn submessage_kind(sm: &ParsedSubmessage) -> &'static str {
         ParsedSubmessage::InfoSource(_) => "INFO_SOURCE",
         ParsedSubmessage::InfoReply(_) => "INFO_REPLY",
         ParsedSubmessage::InfoTimestamp(_) => "INFO_TIMESTAMP",
+        ParsedSubmessage::InfoDestination(_) => "INFO_DEST",
         ParsedSubmessage::Unknown { .. } => "UNKNOWN",
+        // ParsedSubmessage is #[non_exhaustive]: label future kinds generically.
+        _ => "OTHER",
     }
 }
 
-fn submessage_label(sm: &ParsedSubmessage) -> String {
-    match sm {
-        ParsedSubmessage::Unknown { id, flags } => {
-            format!("UNKNOWN id=0x{id:02x} flags=0x{flags:02x}")
+/// One line per submessage, out of the frame rather than out of the
+/// submessage alone.
+///
+/// `SubmessageFrame` carries two facts the decoded submessage does not:
+/// the byte order its own `E` flag announced (§8.3.4.1) and whether
+/// `octetsToNextHeader` was written as `0` (§8.3.3.2.3). Both are wire
+/// facts a capture is read for — a datagram whose submessages disagree
+/// on byte order, and the last-submessage form — so they go in the line.
+fn submessage_label(frame: &SubmessageFrame) -> String {
+    let endian = if frame.little_endian { "le" } else { "be" };
+    let elided = if frame.octets_elided {
+        " octets=elided"
+    } else {
+        ""
+    };
+    let kind = match &frame.submessage {
+        ParsedSubmessage::Unknown { id, flags, body } => {
+            format!(
+                "UNKNOWN id=0x{id:02x} flags=0x{flags:02x} body={}B",
+                body.len()
+            )
         }
         other => submessage_kind(other).to_string(),
-    }
+    };
+    format!("{kind} [{endian}{elided}]")
 }
 
 fn print_help() {

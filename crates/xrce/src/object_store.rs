@@ -11,14 +11,14 @@
 //!
 //! On receiving a `CREATE` submessage, the combination of the
 //! `creation_mode` flags `reuse` and `replace` decides the behavior
-//! for an already existing ID:
+//! for an already existing ID (Table 5 of DDS-XRCE 1.0 §7.8.3.1):
 //!
-//! | reuse | replace | for an existing object            |
-//! |-------|---------|-----------------------------------|
-//! | false | false   | error (`STATUS_ERR_ALREADY_EXISTS`) |
-//! | true  | false   | reuse (`STATUS_OK_MATCHED`)        |
-//! | false | true    | delete+new (`STATUS_OK`)           |
-//! | true  | true    | reuse (variant 2 dominates)        |
+//! | reuse | replace | for an existing object                       |
+//! |-------|---------|----------------------------------------------|
+//! | false | false   | error (`STATUS_ERR_ALREADY_EXISTS`)          |
+//! | true  | false   | equal: reuse (`STATUS_OK_MATCHES`), else `STATUS_ERR_MISMATCH` |
+//! | false | true    | delete+new (`STATUS_OK`)                     |
+//! | true  | true    | equal: reuse (`STATUS_OK_MATCHES`), else delete+new (`STATUS_OK`) |
 //!
 //! `STATUS_*` are reported back by the agent caller side — the
 //! store returns a `CreateOutcome` from which the caller can derive
@@ -125,7 +125,7 @@ impl ObjectStore {
         self.objects.is_empty()
     }
 
-    /// Existiert dieses Object?
+    /// Does this object exist?
     #[must_use]
     pub fn contains(&self, id: ObjectId) -> bool {
         self.objects.contains_key(&id)
@@ -174,9 +174,24 @@ impl ObjectStore {
                 self.objects.insert(id, ObjectInstance::new(kind, variant));
                 Ok(CreateOutcome::Created)
             }
-            (Some(prev), true, _) => {
+            (Some(prev), true, replace) => {
                 let equal = prev.kind == kind && prev.variant == variant;
-                Ok(CreateOutcome::Reused { equal })
+                if equal || !replace {
+                    return Ok(CreateOutcome::Reused { equal });
+                }
+                // Table 5: reuse and replace, and the representation does not
+                // match: "delete existing object [...] and then create a new
+                // object".
+                let next_version = prev.version.wrapping_add(1);
+                self.objects.insert(
+                    id,
+                    ObjectInstance {
+                        kind,
+                        variant,
+                        version: next_version,
+                    },
+                );
+                Ok(CreateOutcome::Replaced)
             }
             (Some(prev), false, true) => {
                 let next_version = prev.version.wrapping_add(1);
@@ -291,6 +306,34 @@ mod tests {
         // Content was NOT replaced
         assert_eq!(store.get(id).unwrap().variant, first);
         assert_eq!(store.get(id).unwrap().version, 0);
+    }
+
+    /// Table 5: with reuse and replace, an equal representation is reused and
+    /// an unequal one replaces the object (and counts as a new version).
+    #[test]
+    fn create_reuse_and_replace_replaces_an_unequal_object() {
+        let mut store = ObjectStore::new();
+        let id = ObjectId::new(0x013, ObjectKind::Topic).unwrap();
+        let first = ObjectVariant::ByReference("the_topic".into());
+        store
+            .create(id, ObjectKind::Topic, first.clone(), CreationMode::STRICT)
+            .unwrap();
+        let both = CreationMode {
+            reuse: true,
+            replace: true,
+        };
+        let same = store
+            .create(id, ObjectKind::Topic, first.clone(), both)
+            .unwrap();
+        assert_eq!(same, CreateOutcome::Reused { equal: true });
+        assert_eq!(store.get(id).unwrap().version, 0);
+        let other = ObjectVariant::ByReference("other".into());
+        let replaced = store
+            .create(id, ObjectKind::Topic, other.clone(), both)
+            .unwrap();
+        assert_eq!(replaced, CreateOutcome::Replaced);
+        assert_eq!(store.get(id).unwrap().variant, other);
+        assert_eq!(store.get(id).unwrap().version, 1);
     }
 
     #[test]

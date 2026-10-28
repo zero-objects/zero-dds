@@ -1,104 +1,106 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
-# `zerodds-endpoint-d` v1.0 — D Endpoint-SDK (XRCE-Framing, sync/async, reliable Stream)
+# `zerodds-endpoint-d` v1.0 — D endpoint SDK (XRCE framing, sync/async, reliable stream)
 
-ZeroDDS Vendor-Spec. Implementiert in `endpoints/d/`.
+ZeroDDS vendor spec. Implemented in `endpoints/d/`.
 
-Ergaenzt die Codegen-Spec [`zerodds-xcdr2-d`](zerodds-xcdr2-d-1.0.md): dort das
-Wire-Mapping IDL→D, hier der Endpoint-Baustein, der ein `marshalXCDR`-Sample als
-XRCE-Frame ueber einen UDP-Transport traegt — sync gepollt, async ueber
-`std.concurrency`, optional reliable (§4).
+Complements the codegen spec [`zerodds-xcdr2-d`](zerodds-xcdr2-d-1.0.md): there the
+wire mapping IDL→D, here the endpoint building block that carries a `marshalXCDR` sample as an
+XRCE frame over a UDP transport — polled synchronously, asynchronously via
+`std.concurrency`, optionally reliable (§4).
 
-## §1 XRCE-Framing
+## §1 XRCE framing
 
-Ein WRITE_DATA-Sample wird als 8-Byte-Header + Body gerahmt:
+A WRITE_DATA sample is framed as an 8-byte header + body:
 
 ```
-[session][stream][seq_lo][seq_hi][0x07][0x03][len_lo][len_hi][body...]
+[session][stream][seq_lo][seq_hi][0x07][0x01][len_lo][len_hi]
+[req_hi][req_lo][obj_hi][obj_lo][sample...]
 ```
 
 - `session` — `SessionNoKey = 0x80`.
-- `stream` — `StreamBestEffort = 0x01` fuer den Best-Effort-Pfad dieses Bausteins;
-  reliable Streams verwenden `stream_id >= 128` (§4, `reliable-endpoint-1.0`).
-- `seq` — 16-bit little-endian, wrapt modulo `0x10000`.
-- Submessage-ID `0x07` (WRITE_DATA), Flags `0x03` (E-Flag = LE, plus
-  `DataFormat::Sample`).
-- `len` — 16-bit little-endian Body-Laenge.
+- `stream` — `StreamBestEffort = 0x01` for the best-effort path of this building block;
+  reliable streams use `stream_id >= 128` (§4, `reliable-endpoint-1.0`).
+- `seq` — 16-bit little-endian, wraps modulo `0x10000`.
+- Submessage ID `0x07` (WRITE_DATA), flags `0x01` (E flag = LE plus
+  `DataFormat` `FORMAT_DATA` = `0b000` in bits 1..3).
+- `len` — 16-bit little-endian body length.
 
-`writeFrame(session, stream, seqNo, sample) -> ubyte[]` MUSS den Header wie oben
-emittieren und den Body unveraendert anhaengen. `readFrame(frame) -> ubyte[]` MUSS
-den Body zurueckgeben, wenn `frame.length >= 8 && frame[4] == 0x07`, sonst `null`
-(kein WRITE_DATA-Frame).
+`writeFrame(session, stream, seqNo, objectId, sample) -> ubyte[]` MUST emit the header
+as above, write the `BaseObjectRequest` and append the sample unchanged.
+`readFrame(frame) -> ubyte[]` MUST return the sample behind the
+`BaseObjectRequest` if `frame.length >= 12 && frame[4] == 0x07`
+and the declared body length is at least four, otherwise `null`.
 
-## §2 Sync Client
+## §2 Sync client
 
-Ein blockierend gepollter `Client` ueber eine austauschbare `Transport`:
+A blocking, polled `Client` over an exchangeable `Transport`:
 
 ```d
 struct Transport {
     void delegate(ubyte[]) deliver;
-    ubyte[] delegate() receive; // null, wenn nichts anliegt
+    ubyte[] delegate() receive; // null if nothing is pending
 }
 
 class Client {
     this(Transport t);
-    void write(ubyte[] sample);   // framet + deliver(); seqNo++ (mod 0x10000)
-    ubyte[] poll();                // ein non-blocking receive(); Body oder null
+    void write(ubyte[] sample);   // frames + deliver(); seqNo++ (mod 0x10000)
+    ubyte[] poll();                // one non-blocking receive(); body or null
 }
 ```
 
-`write` MUSS `writeFrame` mit der aktuellen `seqNo` aufrufen, an `transport.deliver`
-uebergeben und `seqNo` danach modulo `0x10000` inkrementieren. `poll` MUSS genau
-einen `transport.receive()`-Aufruf machen und, falls ein Frame vorliegt, dessen
-`readFrame`-Ergebnis zurueckgeben; liegt nichts an, `null`.
+`write` MUST call `writeFrame` with the current `seqNo`, pass the result to `transport.deliver`
+and then increment `seqNo` modulo `0x10000`. `poll` MUST make exactly
+one `transport.receive()` call and, if a frame is present, return its
+`readFrame` result; if nothing is pending, `null`.
 
-Der `Transport` ist ein reiner Delegate-Vertrag — das SDK schreibt keinen Socket
-vor. `memTransport()` liefert eine In-Memory-FIFO-Instanz fuer Tests/Beispiele;
-Live-Betrieb bindet `deliver`/`receive` an einen UDP-Socket.
+The `Transport` is a pure delegate contract — the SDK does not prescribe a socket.
+`memTransport()` returns an in-memory FIFO instance for tests/examples;
+live operation binds `deliver`/`receive` to a UDP socket.
 
-## §3 Async Reader/Writer
+## §3 Async reader/writer
 
-Auf dieser Ebene existiert ein async **Reader** als Hintergrund-Actor via
-`std.concurrency` (`spawn`/`send`/`receive`, Tid-Message-Passing):
+On this level an async **reader** exists as a background actor via
+`std.concurrency` (`spawn`/`send`/`receive`, Tid message passing):
 
 ```d
-void readerLoop(Tid owner);   // laueft im Reader-Thread
+void readerLoop(Tid owner);   // runs in the reader thread
 
 class AsyncReader {
-    this();                              // spawnt readerLoop
-    void feed(ubyte[] frame);            // send(tid, frame) — roher Frame rein
-    immutable(ubyte)[] recv();           // receiveOnly — dekodierter Body raus
-    void stop();                         // send(tid, true) — Terminate
+    this();                              // spawns readerLoop
+    void feed(ubyte[] frame);            // send(tid, frame) — raw frame in
+    immutable(ubyte)[] recv();           // receiveOnly — decoded body out
+    void stop();                         // send(tid, true) — terminate
 }
 ```
 
-`readerLoop` MUSS jede ankommende `immutable(ubyte)[]`-Message als Frame
-deframen (`readFrame`) und, falls das Ergebnis nicht leer ist, den Body an
-`owner` senden; eine `bool`-Message terminiert die Loop. Payloads sind
-`immutable`, damit sie die Thread-Grenze sicher ueberqueren — D erzwingt das
-strukturell (kein `shared`/Lock noetig).
+`readerLoop` MUST deframe every incoming `immutable(ubyte)[]` message as a frame
+(`readFrame`) and, if the result is not empty, send the body to
+`owner`; a `bool` message terminates the loop. Payloads are
+`immutable` so that they cross the thread boundary safely — D enforces this
+structurally (no `shared`/lock needed).
 
-Ein entkoppelter async **Writer** ist kein eigener Baustein dieser Ebene,
-sondern Teil des reliable Streams (§4): der Sync-`Client` (§2) sendet inline;
-der reliable-Stream-Sender entkoppelt ueber den `SpscRing`.
+A decoupled async **writer** is not a separate building block of this level,
+but part of the reliable stream (§4): the sync `Client` (§2) sends inline;
+the reliable stream sender decouples via the `SpscRing`.
 
-## §4 Reliable Stream
+## §4 Reliable stream
 
-Der reliable Stream ist eine optionale Erweiterung von §1–§3: State-Machine,
-Wire-Codec und async-entkoppelter Writer nach
-[`reliable-endpoint` v1.0](reliable-endpoint-1.0.md). D implementiert den
-kanonischen Vertrag (§3 dort) selbststaendig in `endpoints/d/reliable.d` —
-kein Import von `zerodds.d`s `Endian`/`Writer`, um Namenskollisionen zu
-vermeiden:
+The reliable stream is an optional extension of §1–§3: state machine,
+wire codec and async-decoupled writer according to
+[`reliable-endpoint` v1.0](reliable-endpoint-1.0.md). D implements the
+canonical contract (§3 there) on its own in `endpoints/d/reliable.d` —
+no import of `zerodds.d`'s `Endian`/`Writer`, to avoid name
+collisions:
 
 - `Sender` — `submit`/`pendingHeartbeat`/`recvAcknack`/`getInFlight`.
 - `Receiver` — `recvData`/`drainInOrder`/`pendingAcknack`/`reset`.
-- Wire-Codec — `Heartbeat`/`AckNack`, `heartbeatFrame`/`acknackFrame`/
-  `reliableWriteFrame` + die zugehoerigen `parse*`-Funktionen; byte-identisch
-  zu `golden_heartbeat_le.bin`/`golden_acknack_le.bin`.
-- `SpscRing` — ein wait-freier Single-Producer/Single-Consumer-Ring
-  (`CAP = 1024`) als async-entkoppelter Writer: der Producer macht nur einen
-  Slot-Store + einen Release-Store auf `head`, kein Lock, kein Syscall; ein
-  separater Drain-Thread besitzt Socket + Sender-State.
+- Wire codec — `Heartbeat`/`AckNack`, `heartbeatFrame`/`acknackFrame`/
+  `reliableWriteFrame` + the associated `parse*` functions; byte-identical
+  to `golden_heartbeat_le.bin`/`golden_acknack_le.bin`.
+- `SpscRing` — a wait-free single-producer/single-consumer ring
+  (`CAP = 1024`) as the async-decoupled writer: the producer only does one
+  slot store + one release store on `head`, no lock, no syscall; a
+  separate drain thread owns socket + sender state.
 
-Konstanten, Fehlerfaelle, Wire-Format und Test-/Belegpflicht sind in
-`reliable-endpoint-1.0` §3–§5 normativ definiert und gelten unveraendert fuer D.
+Constants, error cases, wire format and test/evidence obligations are defined
+normatively in `reliable-endpoint-1.0` §3–§5 and apply unchanged to D.

@@ -21,7 +21,7 @@
 //! `zerodds-dcps`, `zerodds-dcps-async`, `zerodds-c-api`, `zerodds-rpc`, `zerodds-security-runtime`,
 //! `zerodds-xml`, `zerodds-zenoh-bridge`.
 //!
-//! ## Public API (as of 1.0.0-rc.1)
+//! ## Public API
 //!
 //! **Top level:**
 //! - [`Duration`] — DDS duration (sec + nanosec) for all time-based policies.
@@ -71,9 +71,9 @@
 #![warn(missing_docs)]
 
 // `zerodds-qos` strictly requires `alloc` (partition strings,
-// GenericData buffers, ResourceLimits vec, …). `zerodds-cdr` with
-// the `alloc` feature is a mandatory dep, so `extern crate alloc`
-// is always available.
+// GenericData buffers, ResourceLimits vec, …). `zerodds-wire` is
+// `no_std` and always brings `alloc`, so `extern crate alloc` is
+// always available.
 extern crate alloc;
 
 pub mod compatibility;
@@ -90,13 +90,14 @@ pub use compatibility::{CompatibilityResult, IncompatibleReason};
 pub use duration::Duration;
 pub use pid::Pid;
 pub use policies::{
-    DeadlineQosPolicy, DestinationOrderKind, DestinationOrderQosPolicy, DurabilityKind,
-    DurabilityQosPolicy, DurabilityServiceQosPolicy, EntityFactoryQosPolicy, GroupDataQosPolicy,
-    HistoryKind, HistoryQosPolicy, LatencyBudgetQosPolicy, LifespanQosPolicy, LivelinessKind,
-    LivelinessQosPolicy, OwnershipKind, OwnershipQosPolicy, OwnershipStrengthQosPolicy,
-    PartitionQosPolicy, PresentationAccessScope, PresentationQosPolicy, PropertyQosPolicy,
-    ReaderDataLifecycleQosPolicy, ReaderQos, ReliabilityKind, ReliabilityQosPolicy,
-    ResourceLimitsQosPolicy, TimeBasedFilterQosPolicy, TopicDataQosPolicy,
-    TransportPriorityQosPolicy, UserDataQosPolicy, WriterDataLifecycleQosPolicy, WriterQos,
-    check_compatibility,
+    DataTagQosPolicy, DeadlineQosPolicy, DestinationOrderKind, DestinationOrderQosPolicy,
+    DurabilityKind, DurabilityQosPolicy, DurabilityServiceQosPolicy, EntityFactoryQosPolicy,
+    GroupDataQosPolicy, HistoryKind, HistoryQosPolicy, LatencyBudgetQosPolicy, LifespanQosPolicy,
+    LivelinessKind, LivelinessQosPolicy, OwnershipKind, OwnershipQosPolicy,
+    OwnershipStrengthQosPolicy, PartitionQosPolicy, PresentationAccessScope, PresentationQosPolicy,
+    PropertyQosPolicy, QosPolicy, ReaderDataLifecycleQosPolicy, ReaderQos, ReliabilityKind,
+    ReliabilityQosPolicy, ResourceLimitsQosPolicy, Tag, TimeBasedFilterQosPolicy,
+    TopicDataQosPolicy, TransportPriorityQosPolicy, UserDataQosPolicy,
+    WriterDataLifecycleQosPolicy, WriterQos, check_compatibility, partitions_compatible,
+    policy_name,
 };

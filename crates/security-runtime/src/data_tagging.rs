@@ -1,22 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Builtin DataTagging plugin (OMG DDS-Security 1.2 §12).
+//! Builtin DataTagging plugin (OMG DDS-Security 1.2 §9.7, Table 49 `DDS:Tagging:DDS_Discovery`).
 //!
 //! Implements the [`zerodds_security::DataTaggingPlugin`] SPI as a
 //! production builtin. Tags are application-level labels
 //! (classification markers, sensitivity, etc.) that are managed per
-//! endpoint GUID, propagated over SEDP via `PID_PROPERTY_LIST`, and
-//! checked for a match on the subscriber side.
+//! endpoint GUID, propagated over SEDP via `PID_DATA_TAGS` (0x1003,
+//! §7.5.1.7, §7.5.1.8), and checked for a match on the subscriber side.
 //!
 //! # Wire path
 //!
-//! Tags are embedded as `WireProperty` entries with the namespace prefix
-//! `dds.sec.data_tags.` into the existing [`WirePropertyList`]
-//! — i.e. we reuse the `PID_PROPERTY_LIST` parameter already propagated in
-//! SPDP/SEDP, instead of introducing a new PID.
-//! This matches the Cyclone/RTI behavior, which also carries tags via
-//! `PID_PROPERTY_LIST` (Cyclone DDS Security §8 doc).
+//! The tags of an endpoint are its `DataTags`: a `TagSeq` of (name, value)
+//! string pairs, the value of `PID_DATA_TAGS` ([`WireDataTags`]).
 //!
 //! # Match predicate
 //!
@@ -53,19 +49,16 @@
 extern crate alloc;
 
 use alloc::collections::BTreeMap;
-use alloc::string::String;
 use alloc::vec::Vec;
 
-use zerodds_rtps::property_list::{WireProperty, WirePropertyList};
+use zerodds_rtps::property_list::{WireDataTags, WireProperty};
 use zerodds_security::data_tagging::{DataTag, DataTaggingPlugin};
 
-/// Property namespace for tag wire encoding. Each tag appears as
-/// a `WireProperty` with `name = TAG_PROPERTY_PREFIX + tag.name`,
-/// `value = tag.value`. Other properties (auth-class, suite-list, …)
-/// stay untouched.
-pub const TAG_PROPERTY_PREFIX: &str = "dds.sec.data_tags.";
+/// The plugin class id of the builtin DataTagging plugin
+/// (DDS-Security 1.2 §10.1, Table 49).
+pub const DATA_TAGGING_PLUGIN_CLASS_ID: &str = "DDS:Tagging:DDS_Discovery";
 
-/// Builtin DataTagging plugin for spec §12.
+/// Builtin DataTagging plugin `DDS:Tagging:DDS_Discovery` (§10.1, Table 49).
 #[derive(Debug, Default)]
 pub struct BuiltinDataTaggingPlugin {
     tags: BTreeMap<[u8; 16], Vec<DataTag>>,
@@ -87,34 +80,25 @@ impl BuiltinDataTaggingPlugin {
         subscriber.iter().all(|s| publisher.iter().any(|p| p == s))
     }
 
-    /// Encodes a tag list as a `WireProperty` sequence for inclusion
-    /// in a [`WirePropertyList`]. Tags with a duplicate name are
-    /// written stably in input order — making the `last value
-    /// wins` semantics of the PropertyList consistent.
+    /// Encodes a tag list as the `DataTags` of `PID_DATA_TAGS`, in input order.
     #[must_use]
-    pub fn encode_tags(tags: &[DataTag]) -> Vec<WireProperty> {
-        tags.iter()
-            .map(|t| {
-                let mut name = String::with_capacity(TAG_PROPERTY_PREFIX.len() + t.name.len());
-                name.push_str(TAG_PROPERTY_PREFIX);
-                name.push_str(&t.name);
-                WireProperty::new(name, t.value.clone())
-            })
-            .collect()
+    pub fn encode_tags(tags: &[DataTag]) -> WireDataTags {
+        WireDataTags {
+            tags: tags
+                .iter()
+                .map(|t| WireProperty::new(t.name.clone(), t.value.clone()))
+                .collect(),
+        }
     }
 
-    /// Filters a [`WirePropertyList`] for tag properties (prefix
-    /// match) and returns the de-prefixed tag list. Other properties
-    /// are ignored.
+    /// The tag list of the `DataTags` of a peer's endpoint.
     #[must_use]
-    pub fn decode_tags(list: &WirePropertyList) -> Vec<DataTag> {
-        list.entries
+    pub fn decode_tags(tags: &WireDataTags) -> Vec<DataTag> {
+        tags.tags
             .iter()
-            .filter_map(|p| {
-                p.name.strip_prefix(TAG_PROPERTY_PREFIX).map(|n| DataTag {
-                    name: n.to_string(),
-                    value: p.value.clone(),
-                })
+            .map(|t| DataTag {
+                name: t.name.clone(),
+                value: t.value.clone(),
             })
             .collect()
     }
@@ -134,7 +118,7 @@ impl DataTaggingPlugin for BuiltinDataTaggingPlugin {
     }
 
     fn plugin_class_id(&self) -> &str {
-        "DDS:Tagging:Builtin"
+        DATA_TAGGING_PLUGIN_CLASS_ID
     }
 }
 
@@ -225,7 +209,7 @@ mod tests {
 
     #[test]
     fn match_value_mismatch_rejects() {
-        // Subscriber will "secret", Publisher hat "topsecret" — Reject.
+        // Subscriber wants "secret", publisher has "topsecret" — reject.
         let publisher = vec![tag("classification", "topsecret")];
         let subscriber = vec![tag("classification", "secret")];
         assert!(!BuiltinDataTaggingPlugin::tags_match(
@@ -252,57 +236,22 @@ mod tests {
         assert!(!BuiltinDataTaggingPlugin::tags_match(&[], &subscriber));
     }
 
+    /// §7.3.21, §7.5.1.7: the tags of an endpoint are its `DataTags`, a
+    /// `TagSeq` of (name, value) pairs, and they cross the wire as the value of
+    /// `PID_DATA_TAGS` in the order given.
     #[test]
-    fn encode_tags_uses_namespace_prefix() {
-        let tags = vec![tag("classification", "secret")];
-        let wire = BuiltinDataTaggingPlugin::encode_tags(&tags);
-        assert_eq!(wire.len(), 1);
-        assert_eq!(wire[0].name, "dds.sec.data_tags.classification");
-        assert_eq!(wire[0].value, "secret");
-    }
-
-    #[test]
-    fn decode_tags_skips_non_tag_properties() {
-        let mut list = WirePropertyList::new();
-        list.push(WireProperty::new(
-            "dds.sec.auth.plugin_class",
-            "DDS:Auth:PKI-DH:1.2",
-        ));
-        list.push(WireProperty::new(
-            "dds.sec.data_tags.classification",
-            "secret",
-        ));
-        list.push(WireProperty::new(
-            "zerodds.sec.supported_suites",
-            "AES_128_GCM",
-        ));
-        list.push(WireProperty::new("dds.sec.data_tags.releasability", "nato"));
-        let decoded = BuiltinDataTaggingPlugin::decode_tags(&list);
-        assert_eq!(
-            decoded,
-            vec![
-                tag("classification", "secret"),
-                tag("releasability", "nato"),
-            ]
-        );
-    }
-
-    #[test]
-    fn wire_roundtrip_via_property_list() {
-        // encode_tags → WirePropertyList → CDR-bytes → WirePropertyList
-        // → decode_tags must reproduce the tag list byte-exactly.
+    fn tags_cross_the_wire_as_data_tags() {
         let tags = vec![
             tag("classification", "secret"),
             tag("releasability", "nato"),
         ];
-        let mut list = WirePropertyList::new();
-        for w in BuiltinDataTaggingPlugin::encode_tags(&tags) {
-            list.push(w);
-        }
-        let bytes = list.encode(true).expect("encode");
-        let decoded_list = WirePropertyList::decode(&bytes, true).expect("decode");
-        let decoded_tags = BuiltinDataTaggingPlugin::decode_tags(&decoded_list);
-        assert_eq!(decoded_tags, tags);
+        let wire = BuiltinDataTaggingPlugin::encode_tags(&tags);
+        assert_eq!(wire.tags.len(), 2);
+        assert_eq!(wire.tags[0].name, "classification");
+        assert_eq!(wire.tags[0].value, "secret");
+        let bytes = wire.encode(true).expect("encode");
+        let decoded = WireDataTags::decode(&bytes, true).expect("decode");
+        assert_eq!(BuiltinDataTaggingPlugin::decode_tags(&decoded), tags);
     }
 
     #[test]
@@ -312,13 +261,13 @@ mod tests {
             alloc::boxed::Box::new(BuiltinDataTaggingPlugin::new());
         boxed.set_tags([1; 16], vec![tag("a", "b")]);
         assert_eq!(boxed.get_tags([1; 16]), vec![tag("a", "b")]);
-        assert_eq!(boxed.plugin_class_id(), "DDS:Tagging:Builtin");
+        assert_eq!(boxed.plugin_class_id(), "DDS:Tagging:DDS_Discovery");
     }
 
     #[test]
     fn plugin_class_id_matches_spec_format() {
         let p = BuiltinDataTaggingPlugin::new();
         // Spec §12.0: class-id convention "DDS:<Service>:<Variant>".
-        assert_eq!(p.plugin_class_id(), "DDS:Tagging:Builtin");
+        assert_eq!(p.plugin_class_id(), "DDS:Tagging:DDS_Discovery");
     }
 }

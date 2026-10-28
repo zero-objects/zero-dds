@@ -11,8 +11,8 @@
 //! stringified IOR (produced by any ORB).
 //!
 //! Usage:
-//!   interop_client echo     <IOR>   — calls Echo::ping("zerodds↔orb")
-//!   interop_client features <IOR>   — exercises the feature matrix
+//!   interop_client echo     `<IOR>`   — calls Echo::ping("zerodds↔orb")
+//!   interop_client features `<IOR>`   — exercises the feature matrix
 //!
 //! Exit code 0 = all assertions green, 1 = mismatch (interop error).
 
@@ -58,11 +58,7 @@ fn main() {
                 b.add64(1_000_000_000_000, 1).unwrap(),
                 1_000_000_000_001,
             );
-            check(
-                "next_char (char = 1 Byte)",
-                b.next_char(b'A').unwrap(),
-                b'B',
-            );
+            check("next_char (char = 1 Byte)", b.next_char('A').unwrap(), 'B');
             check_s(
                 "concat",
                 b.concat("foo".into(), "bar".into()).unwrap(),
@@ -70,17 +66,17 @@ fn main() {
             );
             // wstring (UTF-16 wire with BOM §15.3.1.6): non-ASCII roundtrip
             // against the foreign-ORB server. Proves codeset negotiation.
-            let w = zerodds_cdr::WString::from("wíde-€-Ω");
+            let w = zerodds_corba_rt::WString::from("wíde-€-Ω");
             check("wecho (wstring/UTF-16 BOM)", b.wecho(w.clone()).unwrap(), w);
             // Structured any (§15.3.5 TypeCode) against the foreign-ORB server:
             // struct AnyPair{long k; string v;} (RepositoryId IDL:AnyPair:1.0,
             // must match the foreign IDL TypeCode) + sequence<long>.
-            let pair = zerodds_cdr::CorbaAny(zerodds_cdr::AnyValue::Struct {
+            let pair = zerodds_corba_rt::CorbaAny(zerodds_corba_rt::AnyValue::Struct {
                 repo_id: "IDL:AnyPair:1.0".into(),
                 name: "AnyPair".into(),
                 members: vec![
-                    ("k".into(), zerodds_cdr::AnyValue::Long(7)),
-                    ("v".into(), zerodds_cdr::AnyValue::Str("seven".into())),
+                    ("k".into(), zerodds_corba_rt::AnyValue::Long(7)),
+                    ("v".into(), zerodds_corba_rt::AnyValue::Str("seven".into())),
                 ],
             });
             check(
@@ -88,12 +84,12 @@ fn main() {
                 b.aecho(pair.clone()).unwrap(),
                 pair,
             );
-            let seq = zerodds_cdr::CorbaAny(zerodds_cdr::AnyValue::Seq {
-                element: zerodds_cdr::TypeCode::Long,
+            let seq = zerodds_corba_rt::CorbaAny(zerodds_corba_rt::AnyValue::Seq {
+                element: zerodds_corba_rt::TypeCode::Long,
                 items: vec![
-                    zerodds_cdr::AnyValue::Long(10),
-                    zerodds_cdr::AnyValue::Long(20),
-                    zerodds_cdr::AnyValue::Long(30),
+                    zerodds_corba_rt::AnyValue::Long(10),
+                    zerodds_corba_rt::AnyValue::Long(20),
+                    zerodds_corba_rt::AnyValue::Long(30),
                 ],
             });
             check("aecho(sequence<long>)", b.aecho(seq.clone()).unwrap(), seq);
@@ -177,27 +173,31 @@ fn main() {
             let nc = NamingContextStub::new(obj.clone(), conn());
             // Single-level name → binds at root level (no intermediate context
             // needed), works against ZeroDDS AND foreign daemons.
-            let name = vec![NameComponent {
-                id: "zerodds-interop".into(),
-                kind: "obj".into(),
-            }];
+            // Rebuilt at each use rather than cloned: the data column
+            // derives nothing on what it declares, so `NameComponent`
+            // has no `Clone`. Two calls, one value each.
+            let name = || {
+                vec![NameComponent {
+                    id: "zerodds-interop".into(),
+                    kind: "obj".into(),
+                }]
+            };
             // We bind an object ref (the NamingContext itself) and resolve it.
-            nc.bind(name.clone(), obj.clone())
-                .expect("bind in NamingContext");
-            let got = nc.resolve(name.clone()).expect("resolve");
+            nc.bind(name(), obj.clone()).expect("bind in NamingContext");
+            let got = nc.resolve(name()).expect("resolve");
             check(
                 "resolve returns a non-nil ref",
                 got.iiop_profile.is_empty(),
                 false,
             );
             // rebind overwrites without AlreadyBound.
-            nc.rebind(name.clone(), obj.clone()).expect("rebind");
+            nc.rebind(name(), obj.clone()).expect("rebind");
             // unbind removes the binding.
-            nc.unbind(name.clone()).expect("unbind");
+            nc.unbind(name()).expect("unbind");
             // resolve after unbind → typed NotFound exception over the real
             // CosNaming wire (cross-ORB: the foreign daemon throws NotFound, our
             // stub decodes it via the exact RepositoryId).
-            match nc.resolve(name.clone()) {
+            match nc.resolve(name()) {
                 Err(NamingContextError::NotFound(_)) => {
                     check("resolve(unbound) → NotFound", true, true)
                 }
@@ -208,28 +208,30 @@ fn main() {
             // NamingContext ref we bind a leaf; a compound name from the root
             // traverses into the sub-context. Drives both the ZeroDDS server and
             // foreign daemons (omniNames/TAO/JacORB).
-            let ctx_name = vec![NameComponent {
-                id: "sub".into(),
-                kind: "ctx".into(),
-            }];
+            let ctx_name = || {
+                vec![NameComponent {
+                    id: "sub".into(),
+                    kind: "ctx".into(),
+                }]
+            };
             // Idempotency: a persistent daemon (JacORB writes its naming DB to
             // disk and reloads it on restart) may still carry `sub/ctx` from an
             // earlier run → bind_new_context would throw AlreadyBound. A prior
             // unbind (NotFound on a fresh daemon ignored) makes the test
             // re-runnable against all daemons.
-            let _ = nc.unbind(ctx_name.clone());
-            let sub_ref = nc
-                .bind_new_context(ctx_name.clone())
-                .expect("bind_new_context");
+            let _ = nc.unbind(ctx_name());
+            let sub_ref = nc.bind_new_context(ctx_name()).expect("bind_new_context");
             let sub = NamingContextStub::new(sub_ref, conn());
-            let leaf = vec![NameComponent {
-                id: "leaf".into(),
-                kind: "obj".into(),
-            }];
-            sub.bind(leaf.clone(), obj.clone())
+            let leaf = || {
+                vec![NameComponent {
+                    id: "leaf".into(),
+                    kind: "obj".into(),
+                }]
+            };
+            sub.bind(leaf(), obj.clone())
                 .expect("bind leaf in sub-context");
             // resolve directly via the sub-context ref:
-            let via_sub = sub.resolve(leaf.clone()).expect("resolve via sub-ref");
+            let via_sub = sub.resolve(leaf()).expect("resolve via sub-ref");
             check(
                 "federation: resolve via sub-context-ref",
                 via_sub.iiop_profile.is_empty(),

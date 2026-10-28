@@ -23,7 +23,7 @@ $Daemons = @(
     @{ Name = 'ZeroDDSAMQPBridge';  Bin = 'zerodds-amqp-bridged.exe';  Cfg = 'amqp-bridged.yaml';  Display = 'ZeroDDS AMQP 1.0 Bridge' },
     @{ Name = 'ZeroDDSGrpcBridge';  Bin = 'zerodds-grpc-bridged.exe';  Cfg = 'grpc-bridged.yaml';  Display = 'ZeroDDS gRPC Bridge' },
     @{ Name = 'ZeroDDSCORBABridge'; Bin = 'zerodds-corba-bridged.exe'; Cfg = 'corba-bridged.yaml'; Display = 'ZeroDDS CORBA Bridge' }
-    # ros2-shim ist Diagnose-Tool, kein Service.
+    # ros2-shim is a diagnostic tool, not a service.
 )
 
 foreach ($d in $Daemons) {

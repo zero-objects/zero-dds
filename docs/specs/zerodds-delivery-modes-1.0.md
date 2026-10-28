@@ -94,8 +94,10 @@ it is its own mode.
 
 Delivery mode is a per-writer property with a participant-level default:
 
-- **Participant default:** environment variable `ZERODDS_DELIVERY_MODE`
-  (`portable` | `raw-same-host` | `iceoryx`), default `portable`.
+- **Participant default:** runtime setting `delivery.mode`, from a
+  configuration file, `--set delivery.mode=…` or the environment variable
+  `ZERODDS_DELIVERY_MODE` (`portable` | `raw-same-host` | `iceoryx`), default
+  `portable`. Any other spelling refuses runtime creation.
 - **Per-writer override (implemented):** the C-API setter
   `zerodds_dw_set_delivery_mode(dw, mode)` and the runtime-path equivalent
   `zerodds_writer_set_delivery_mode(writer, mode)`, with `mode` ∈
@@ -112,6 +114,18 @@ Delivery mode is a per-writer property with a participant-level default:
 
 The default MUST be `Portable` so no deployment loses interoperability without
 an explicit opt-in.
+
+**Where the mode applies.** A mode is a property of a loaning writer: the
+C-API loan writers (`zerodds_dw_loan_sample` / `zerodds_writer_loan`) and the
+ROS 2 RMW's publishers and subscriptions of a fixed-size plain message type.
+`DataWriter::write` in Rust and the C-API's copying `write` serialize, and are
+`Portable` whatever `delivery.mode` says. `Iceoryx` needs an iceoryx2 service
+per writer; the RMW derives it from the topic, a C-API writer gets it from
+`zerodds_dw_enable_iceoryx` / `zerodds_writer_enable_iceoryx`. A writer the
+configured mode cannot be applied to sends `Portable` and says so: the C API
+once per writer on stderr, the RMW per publisher and subscription through
+`RCUTILS_LOG_WARN` with the reason (type not loanable, iceoryx2 not built in
+or refused, shared-memory segment not set up).
 
 ## 5 Per-reader negotiation (runtime)
 
@@ -239,11 +253,11 @@ Responsibilities:
       `zerodds_reader_set_delivery_mode`) — deferred until negotiation exists
       (no effect without it; not added as a no-op).
 - [x] Per-reader same-host selection + no-double-delivery for the `Portable`
-      form — already provided by the `same-host-shm` path (the
-      `SameHostTracker` + `same_host_udp_skip_set` + `same_host_send_pass` in
-      `crates/dcps/src/runtime.rs`, with `crates/dcps/src/same_host*.rs`). A
-      same-host reader receives the portable form over the SHM transport and
-      its UDP locator is suppressed (no duplicate); remote readers get UDP.
+      form — already provided by the `same-host-shm` path (the channel per
+      same-host participant in `crates/dcps/src/same_host_channel.rs`, routed
+      by destination locator through `RoutedUserTransport`). A same-host
+      reader receives the portable form through its participant's channel
+      instead of UDP (no duplicate); remote readers get UDP.
       The loan commit path (`write_user_sample_borrowed`) goes through exactly
       this, so a `Portable` loan writer inherits it. E2E:
       `crates/dcps/tests/same_host_e2e.rs`.

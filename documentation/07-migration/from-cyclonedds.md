@@ -1,165 +1,143 @@
 # Migration from Eclipse Cyclone DDS
 
-[Cyclone DDS][cyclonedds] is the closest API neighbour to ZeroDDS
-in spirit — both are Apache-licensed, OMG-spec-faithful, and
-prioritise minimalism. This guide walks the typical port.
+What changes when an application moves from [Cyclone DDS][cyclonedds] to
+ZeroDDS, and what stays. General points for every vendor are in the
+[station README](README.md).
 
-## TL;DR
+## Summary
 
-| Step | Effort |
+| Area | Effort |
 |---|---|
-| IDL files port unchanged | none |
-| Wire is byte-identical | none |
-| Replace `cyclonedds.h` calls with `zerodds.h` (C) | mechanical |
-| Replace `dds-c++` headers with `zerodds/zerodds.hpp` | mechanical, similar idioms |
-| QoS XML — convert to OMG `zerodds-xml-1.0` | scriptable |
-| `cyclonedds_init`-style configuration via `CYCLONEDDS_URI` env | manual, see below |
+| IDL | unchanged; pass `--default-extensibility final` or annotate the types |
+| C (`dds_*`) | rewritten onto `zerodds.h`, one call for one call |
+| C++ (Cyclone-CXX, `dds::…`) | `#include <dds/dds.hpp>` from `crates/cpp` |
+| QoS | DDS-XML profiles are read in Rust; otherwise in code |
+| `CYCLONEDDS_URI` configuration | carried over by hand into `zerodds.yaml` |
+| Mixed deployment | standard discovery, no extra configuration |
 
 ## IDL
 
-Cyclone DDS uses standard OMG IDL 4.2 + the customary XTypes 1.3
-annotations. Every IDL file ZeroDDS ships an idl-fixture for is
-parsed unchanged:
-
-```bash
-cargo test -p zerodds-idl --test parse_vendors cyclone
-```
-
-Cyclone-specific generator pragmas (`#pragma keylist`, the
-older `//@Key` comment style) are accepted by `zerodds-idlc` for
-backward compatibility — they map onto `@key` annotations.
+Cyclone IDL is read unchanged. `#pragma keylist` makes the named members keys:
 
 ```idl
-// Cyclone-original
 #pragma keylist Trade ts symbol
 struct Trade {
     long ts;
     string symbol;
     double price;
 };
-
-// Equivalent for ZeroDDS native (no migration needed if you keep the pragma)
-@final
-struct Trade {
-    @key long ts;
-    @key string symbol;
-    double price;
-};
 ```
 
-## C API mapping
+Cyclone's `idlc` takes an aggregate without an extensibility annotation as
+`@final`; `zerodds-idlc` takes it as `@appendable`, as the specification does.
+Generate with the Cyclone default, or write `@final`:
 
-Cyclone-DDS C exposes `dds_*` functions with entity-handle return
-codes. ZeroDDS' C-FFI exposes opaque pointers + status codes —
-shape is similar enough that a 1-to-1 mapping is feasible.
+```bash
+zerodds-idlc generate --lang c++ --default-extensibility final --out gen/ Trade.idl
+```
+
+## C API
+
+There is no `dds_*` API. The C API in `zerodds.h` has the DCPS structure under
+its own names:
 
 | Cyclone DDS | ZeroDDS |
 |---|---|
-| `dds_create_participant(domain, qos, listener)` | `zerodds_runtime_create(domain)` |
-| `dds_create_topic(participant, &desc, name, qos, listener)` | implicit — topic is identified by `(name, type)` strings on writer/reader create |
-| `dds_create_publisher(participant, qos, listener)` | (no separate Publisher entity in `zerodds.h`; created internally per writer) |
-| `dds_create_writer(publisher, topic, qos, listener)` | `zerodds_writer_create(rt, topic, type, reliable)` |
-| `dds_create_reader(subscriber, topic, qos, listener)` | `zerodds_reader_create(rt, topic, type, reliable)` |
-| `dds_write(writer, sample)` | `zerodds_writer_write(w, bytes, len)` |
-| `dds_take(reader, &samples, &info, max, mask)` | `zerodds_reader_take(r, &out_buf, &out_len)` |
-| `dds_delete(handle)` | `zerodds_*_destroy(handle)` |
-| `dds_wait_for_acknowledgments(writer, timeout)` | (TODO — `zerodds_writer_wait_for_acks` planned) |
+| `dds_create_participant(domain, qos, listener)` | `zerodds_dpf_create_participant(zerodds_dpf_get_instance(), domain, qos)` |
+| `dds_create_topic(pp, &desc, name, qos, listener)` | `zerodds_dp_create_topic(dp, name, type_name, qos)`, or `zerodds_topic_create_typed` with a TypeObject |
+| `dds_create_publisher` / `dds_create_subscriber` | `zerodds_dp_create_publisher` / `zerodds_dp_create_subscriber` |
+| `dds_create_writer` / `dds_create_reader` | `zerodds_pub_create_datawriter[_typed]` / `zerodds_sub_create_datareader[_typed]` |
+| `dds_write(wr, &sample)` | `zerodds_dw_write(dw, bytes, len, handle)` |
+| `dds_take` / `dds_read` | `zerodds_dr_take` / `zerodds_dr_read`, then `zerodds_dr_return_loan` |
+| `dds_wait_for_acks` | `zerodds_dw_wait_for_acknowledgments` |
+| `dds_delete(e)` | `zerodds_dpf_delete_participant`, `zerodds_pub_delete_datawriter`, … |
 
-Non-trivial differences:
-
-- ZeroDDS has no separate `Publisher`/`Subscriber` entity in the
-  C-FFI — they are subsumed by writer/reader create. If your
-  Cyclone code uses partition-on-the-publisher, set the partition
-  on each writer instead.
-- ZeroDDS' C-FFI is **byte-oriented** — the IDL serializer lives
-  in your application or the C++ wrapper, not behind the FFI.
-  Cyclone in contrast generates a `dds_topic_descriptor_t` that
-  the C lib uses for serialization. With ZeroDDS, run
-  `zerodds-idlc Robot.idl --cpp` and use the generated encoder.
+Cyclone serialises through the `dds_topic_descriptor_t` its `idlc` generates.
+ZeroDDS takes CDR bytes: the encoder is the code `zerodds-idlc generate
+--lang c` writes. The plain `*_create` functions announce no TypeObject, so a
+peer matches by topic and type name; the `*_typed` variants pass one.
 
 ## C++ API
 
-Cyclone's C++ binding is `dds-cxx` (modern C++14 with
-`org.omg.dds`-style classes). ZeroDDS' equivalent is
-[`crates/cpp/`](../../crates/cpp/) — RAII-based, C++17 minimum.
+Cyclone-CXX and ZeroDDS both implement DDS-PSM-Cxx 1.0. Code using
+`dds::domain::DomainParticipant`, `dds::topic::Topic<T>`,
+`dds::pub::Publisher`, `dds::pub::DataWriter<T>` and their `sub` counterparts
+compiles against `#include <dds/dds.hpp>` from `crates/cpp`. Two differences:
+ZeroDDS has no separate headers `dds/pub/DataWriter.hpp` or
+`dds/sub/DataReader.hpp` — include `<dds/dds.hpp>` — and no
+`dds::core::QosProvider`.
 
-```cpp
-// Cyclone:
-auto participant = dds::domain::DomainParticipant(domain_id);
-auto topic       = dds::topic::Topic<Robot::Pose>(participant, "Telemetry");
-auto pub         = dds::pub::Publisher(participant);
-auto writer      = dds::pub::DataWriter<Robot::Pose>(pub, topic);
-writer.write(pose);
+## QoS
 
-// ZeroDDS (current C++ wrapper API):
-auto rt = zerodds::Runtime::create(domain_id);
-auto w  = rt->create_typed_writer<Robot::Pose>("Telemetry");
-w->write(pose);
-```
+A DDS-XML file (`<dds><qos_library><qos_profile>`) is read by
+`zerodds_xml::QosProfileRegistry::from_file` in Rust and checked by
+`zerodds-admin qos check <file.xml>`. The other bindings take QoS in code.
 
-The OMG-modern-C++ PSM (`dds::pub::DataWriter<>`) shape is on the
-ZeroDDS roadmap as a thin layer on top of the current API — when
-shipped, the migration becomes a header-include change.
+## Configuration (`CYCLONEDDS_URI`)
 
-## QoS configuration
+ZeroDDS does not read the Cyclone XML configuration. The common settings in
+[`zerodds.yaml`](../../man/man5/zerodds.yaml.5):
 
-Cyclone reads QoS from `CYCLONEDDS_URI` pointing at an XML file:
+| Cyclone | `zerodds.yaml` |
+|---|---|
+| `General/NetworkInterfaceAddress`, `General/Interfaces/NetworkInterface` | `transport.interface` (one IPv4 address), `transport.interface_bindings` |
+| `General/AllowMulticast=false` | `discovery.no_multicast: true` |
+| `General/MaxMessageSize` | `transport.max_message_size` |
+| `Discovery/Peers/Peer@address` | `discovery.peers` |
+| `Discovery/MaxAutoParticipantIndex` | `discovery.max_peer_participants` |
+| `Discovery/SPDPMulticastAddress` | `discovery.spdp_multicast_group` |
+| `Discovery/SPDPInterval` | `discovery.spdp_period_ms` |
+| `Discovery/Tag` | `discovery.domain_tag` — the same value on both sides |
+| `Discovery/ParticipantIndex` | none; ZeroDDS takes the first free index |
+| `Discovery/Ports/*` | none; the standard port formula is fixed |
+| `Tracing/*` | `diagnostics.*` |
+
+## Mixed deployment
+
+Cyclone and ZeroDDS discover each other with the defaults. Two settings matter:
+
+- A Cyclone reader that accepts only XCDR2 (`-x 2` in the OMG shape
+  application) needs `wire.data_representation_offer: [XCDR2]` on the ZeroDDS
+  writer.
+- A domain tag on the Cyclone side (`Discovery/Tag`) needs the same
+  `discovery.domain_tag`; with different tags, or a tag on one side only, the
+  two do not see each other.
+
+To see Cyclone's `ddsperf` samples arrive:
 
 ```bash
-export CYCLONEDDS_URI="file:///etc/cyclonedds.xml"
+# Terminal 1 (Cyclone):
+ddsperf -i 7 pub 20Hz
+
+# Terminal 2 (ZeroDDS):
+zerodds-spy -d 7 -t DDSPerfRDataKS
 ```
 
-ZeroDDS uses `RuntimeConfig` in code. For now there's no
-file-based config loader; planned via `zerodds-xml-wire`-driven
-DDS-XML 1.0 file in a follow-up sprint.
+## ROS 2
 
-Conversion script `scripts/cyclone_to_dds_xml.py` (planned) maps
-the most common `CycloneDDS/Domain/Internal/...` knobs to
-ZeroDDS `RuntimeConfig` fields.
-
-## ROS-2
-
-Cyclone is the ROS-2 default RMW (`rmw_cyclonedds_cpp`). Switch
-to ZeroDDS by setting:
+Cyclone is the default RMW (`rmw_cyclonedds_cpp`). Build the ament package
+`rmw_zerodds_cpp` ([`crates/rmw-zerodds-shim`](../../crates/rmw-zerodds-shim/README.md))
+and select it:
 
 ```bash
-export RMW_IMPLEMENTATION=rmw_zerodds
+export RMW_IMPLEMENTATION=rmw_zerodds_cpp
 ```
 
-ZeroDDS ships a ROS-2 RMW shim (`rmw-zerodds-shim`). No code
-changes needed.
+Topics and services run across `rmw_zerodds_cpp` and `rmw_cyclonedds_cpp`.
 
 ## Tooling
 
-| Cyclone tool | ZeroDDS equivalent |
+| Cyclone | ZeroDDS |
 |---|---|
 | `idlc` | `zerodds-idlc` |
-| `ddsperf` | `zerodds-perf` (latency) + `roundtrip-1us` (sub-µs latency) |
-| `rosbag2` for ROS-2 | `zerodds-replay` (zerodds-recording format) |
-| `tcpdump` + custom dissector | `zerodds-traceability` |
-
-## Test the migration
-
-Stand up one Cyclone publisher and one ZeroDDS subscriber on the
-same domain:
-
-```bash
-# Terminal 1 (Cyclone DDS):
-ddsperf pub size 64 rate 1000
-
-# Terminal 2 (ZeroDDS — same domain):
-zerodds-admin --listen --topic PingPong
-```
-
-The ZeroDDS subscriber should see the Cyclone publisher's
-samples without any cross-vendor configuration.
+| `ddsperf` | `zerodds-perf`, `zerodds-bench` |
+| `cyclonedds ps` / `sub` | `zerodds-spy`, `zerodds-admin discovery snapshot <domain>` |
 
 ## Reading further
 
-- [Cyclone DDS quickstart][cyclonedds] — for the source side.
-- [`crates/idl/tests/fixtures/cyclonedds/`](../../crates/idl/tests/fixtures/cyclonedds/)
-  — IDL-parser test fixtures pinned against Cyclone files.
-- Cross-vendor smoke tests run daily against Cyclone (plus FastDDS
-  and OpenDDS).
+- [`crates/idl-parse/tests/fixtures/cyclonedds/`](../../crates/idl-parse/tests/fixtures/cyclonedds/)
+  — Cyclone IDL the parser is tested with.
+- [`docs/wire-axis-flags.md`](../../docs/wire-axis-flags.md) — where Cyclone's
+  wire form differs from the specification.
 
 [cyclonedds]: https://cyclonedds.io/

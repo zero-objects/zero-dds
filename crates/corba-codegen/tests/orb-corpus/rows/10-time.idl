@@ -1,0 +1,10 @@
+module TimeBase {
+    typedef unsigned long long TimeT;
+};
+module probe {
+    interface Special {
+        void in_v(in ::TimeBase::TimeT v);
+        void out_v(out ::TimeBase::TimeT v);
+        ::TimeBase::TimeT ret_v();
+    };
+};

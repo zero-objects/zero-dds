@@ -1,26 +1,36 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// ZeroDDS C-FFI Roundtrip-Bench-App. Apples-to-apples mit Cyclone/Fast-DDS/RTI/OpenDDS.
+// ZeroDDS C-FFI roundtrip bench app. Apples-to-apples with Cyclone/Fast-DDS/RTI/OpenDDS.
 //
-// IDL: roundtrip.idl -> RoundtripBench::Roundtrip (via gen/zerodds/Roundtrip.hpp)
+// IDL: roundtrip.idl -> RoundtripBench::Roundtrip (via gen/zerodds/Roundtrip.hpp,
+// XCDR2; the ZERODDS_BENCH_XCDR1 build takes gen/zerodds-xcdr1/Roundtrip.hpp).
+// With BENCH_RICH defined (target zerodds-roundtrip-rich) the sample type is
+// the codec-heavy roundtrip_rich.idl → RoundtripBench::RoundtripRich
+// (gen/zerodds/RoundtripRich.hpp), on the topics RoundtripRichBench_* of the
+// other rich builds.
 //
-// **Voll event-driven** — kein Busy-Poll. Beide Rollen haengen am
-// Data-Available-Callback (`zerodds_reader_set_data_callback`), der vom
-// Recv-Thread direkt nach Sample-Arrival feuert:
-//   * pong: Callback dekodiert das Sample und re-encodiert es (typisiert,
-//     kein Raw-Byte-Echo) -> die XCDR-Representation des Peers wird
+// **Fully event-driven** — no busy-poll. Both roles hang on the
+// data-available callback (`zerodds_reader_set_data_callback`), which the
+// recv thread fires right after sample arrival:
+//   * pong: callback decodes the sample and re-encodes it (typed,
+//     no raw-byte echo) -> the peer's XCDR representation is
 //     korrekt interpretiert.
-//   * ping: Callback erfasst die RTT und weckt den Sender-Thread ueber
-//     eine Condition-Variable.
-// Der Callback bekommt die XCDR-Version (0=XCDR1, 1=XCDR2) als Argument
-// — `decode` braucht sie fuer die Alignment-Regel.
+//   * ping: callback captures the RTT and wakes the sender thread via
+//     a condition variable.
+// The callback gets the XCDR version (0=XCDR1, 1=XCDR2) as an argument
+// — `decode` needs it for the alignment rule.
 //
 // Build via CMakeLists.txt.
 
 #include "zerodds.h"
+#ifdef BENCH_RICH
+#include "RoundtripRich.hpp"
+#else
 #include "Roundtrip.hpp"
+#endif
+#include "bench_common.hpp"
 
-#include <algorithm>
+#include <array>
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
@@ -33,51 +43,121 @@
 #include <vector>
 
 // Phase-Timing-Hook im ZeroDDS-Rust-Runtime — print on demand
-// (Drop-Path feuert erst beim Prozess-Exit, weil die Worker-Threads
-// den Arc-Refcount halten; deshalb hier explizit aufrufen).
+// (Drop path fires only at process exit, because the worker threads
+// hold the Arc refcount; hence call it explicitly here).
 extern "C" void zerodds_phase_dump();
 
 namespace {
 
-// Domain via ZERODDS_BENCH_DOMAIN env-var ueberschreibbar (Default 200).
-// Erlaubt dem Bench-Runner pro Cell eine eigene Domain-ID zu nutzen,
-// damit Multi-Process-Discovery-State sich nicht zwischen sequenziellen
-// Cells wiederfindet.
+using bench::now_ns;
+using bench::print_quantiles;
+
+// Domain via ZERODDS_BENCH_DOMAIN (bench_common.hpp): lets the bench runner
+// use its own domain ID per cell, so multi-process discovery state does not
+// leak between sequential cells.
 static uint32_t resolve_domain() {
-    const char* s = std::getenv("ZERODDS_BENCH_DOMAIN");
-    if (s) {
-        try { return static_cast<uint32_t>(std::stoul(s)); } catch (...) {}
-    }
-    return 200;
+    return static_cast<uint32_t>(bench::env_domain());
 }
 
-// Encode-Wire-Version aus ZERODDS_DATA_REPR_OFFER ableiten — MUSS zum
-// Runtime-Offer passen, denn das erste Offer-Element bestimmt das
-// tatsaechlich emittierte Wire-Format (und damit den Encap-Header, den
-// der Runtime prependet). Der Runtime-Default-Offer ist `[XCDR2]`
-// (publication_data::DEFAULT_OFFER), also MUSS der Encode-Default
-// ebenfalls XCDR2 sein — sonst stempelt der Runtime einen 0x0007-Encap
-// auf einen XCDR1-Body und jeder Reader (auch zerodds selbst) scheitert
-// an der Deserialisierung. "XCDR1"/"1" als erstes Token erzwingt explizit
-// den Legacy-Pfad; alles andere (inkl. fehlender env) -> XCDR2.
-static ::dds::topic::xcdr2::XcdrVersion resolve_encode_version() {
-    const char* s = std::getenv("ZERODDS_DATA_REPR_OFFER");
-    if (s) {
-        std::string v(s);
-        auto comma = v.find(',');
-        std::string first = (comma == std::string::npos) ? v : v.substr(0, comma);
-        for (auto& c : first) c = static_cast<char>(::toupper(c));
-        if (first == "XCDR1" || first == "1") {
-            return ::dds::topic::xcdr2::XcdrVersion::Xcdr1;
-        }
+#ifdef BENCH_RICH
+using Sample = RoundtripBench::RoundtripRich;
+constexpr const char* kProgram   = "zerodds-app-rich";
+constexpr const char* kCodecFile = "gen/zerodds/RoundtripRich.hpp";
+constexpr const char* kReqTopic  = "RoundtripRichBench_Request";
+constexpr const char* kEchoTopic = "RoundtripRichBench_Echo";
+constexpr const char* kTypeName  = "RoundtripBench::RoundtripRich";
+constexpr size_t kNumWaypoints = 8;
+
+void populate(Sample& m, size_t payload_size) {
+    using RoundtripBench::Vec3;
+    using RoundtripBench::Waypoint;
+    m.name = std::string("zerodds-rich-roundtrip-bench");
+    std::array<double, 16> tr{};
+    for (size_t i = 0; i < 16; ++i) tr[i] = static_cast<double>(i) * 1.5 + 0.25;
+    m.transform = tr;
+    std::vector<Waypoint> wps;
+    wps.reserve(kNumWaypoints);
+    for (size_t i = 0; i < kNumWaypoints; ++i) {
+        Waypoint w;
+        w.id = static_cast<uint32_t>(i);
+        Vec3 pos; pos.x = 1.0 * i; pos.y = 2.0 * i; pos.z = 3.0 * i;
+        Vec3 vel; vel.x = 0.1 * i; vel.y = 0.2 * i; vel.z = 0.3 * i;
+        w.position = pos;
+        w.velocity = vel;
+        w.label = std::string("wp-") + std::to_string(i);
+        w.weight = 0.5 * static_cast<double>(i) + 1.0;
+        wps.push_back(w);
     }
-    return ::dds::topic::xcdr2::XcdrVersion::Xcdr2;
+    m.waypoints = wps;
+    m.payload.assign(payload_size, static_cast<uint8_t>(0xAB));
 }
+#else
+using Sample = RoundtripBench::Roundtrip;
+constexpr const char* kProgram   = "zerodds-app";
+constexpr const char* kCodecFile = "gen/zerodds/Roundtrip.hpp";
+constexpr const char* kReqTopic  = "RoundtripBench_Request";
+constexpr const char* kEchoTopic = "RoundtripBench_Echo";
+constexpr const char* kTypeName  = "RoundtripBench::Roundtrip";
+
+void populate(Sample& m, size_t payload_size) {
+    m.payload.assign(payload_size, static_cast<uint8_t>(0xAB));
+}
+#endif
+
+#ifdef ZERODDS_BENCH_XCDR1
+// The XCDR1 build (`zerodds-xcdr1-roundtrip`, CMakeLists.txt): the codec
+// is gen/zerodds-xcdr1/Roundtrip.hpp (`--encoding xcdr1`), and the runtime
+// has to stamp XCDR1 on what it writes and ask for XCDR1 from its readers.
+// The C-FFI runtime reads that from ZERODDS_DATA_REPR_OFFER when it is
+// created; set here, unless the caller asked for something else, which is
+// refused for the reason the XCDR2 build refuses XCDR1.
+static void refuse_unsupported_data_repr_offer() {
+    const char* s = std::getenv("ZERODDS_DATA_REPR_OFFER");
+    if (!s) {
+        setenv("ZERODDS_DATA_REPR_OFFER", "XCDR1", 1);
+        return;
+    }
+    std::string v(s);
+    for (auto& c : v) c = static_cast<char>(::toupper(c));
+    if (v != "XCDR1" && v != "1") {
+        std::cerr << kProgram << ": this build holds the PlainCdr1 codec and offers XCDR1 "
+                     "only; ZERODDS_DATA_REPR_OFFER=" << s << " is not supported.\n";
+        std::exit(1);
+    }
+}
+#else
+// `gen/zerodds/Roundtrip.hpp` holds one codec (the "one codec per
+// language" contract, `docs/specs/zerodds-ffi-loader-1.0.md` §4.2),
+// planned for the `--encoding` it was generated under — `xcdr2` here, see
+// the file's own preamble comment. `topic_type_support<Roundtrip>::encode`
+// therefore always emits PlainCdr2, unconditionally; there is no more a
+// runtime-selectable version to derive from ZERODDS_DATA_REPR_OFFER, the
+// way an older, hand-written codec here once allowed. The runtime's own
+// default offer is `[XCDR2]` (publication_data::DEFAULT_OFFER), which this
+// app's fixed codec matches; ZERODDS_DATA_REPR_OFFER=XCDR1 would still ask
+// the runtime for an XCDR1 encapsulation identifier over an XCDR2 body, so
+// it is refused here rather than silently mis-framed.
+static void refuse_unsupported_data_repr_offer() {
+    const char* s = std::getenv("ZERODDS_DATA_REPR_OFFER");
+    if (!s) return;
+    std::string v(s);
+    auto comma = v.find(',');
+    std::string first = (comma == std::string::npos) ? v : v.substr(0, comma);
+    for (auto& c : first) c = static_cast<char>(::toupper(c));
+    if (first == "XCDR1" || first == "1") {
+        std::cerr << kProgram << ": ZERODDS_DATA_REPR_OFFER=XCDR1 is not supported; "
+                  << kCodecFile << " holds one codec (PlainCdr2). Regenerate "
+                     "it with `zerodds-idlc generate --lang c++ --encoding xcdr1` for "
+                     "that path.\n";
+        std::exit(1);
+    }
+}
+#endif
 
 // =====================================================================
 // DDS-Security 1.2 (env-driven) — analog FastDDS apply_security.
 //   ZERODDS_BENCH_SECURITY=1                aktiviert Security
-//   ZERODDS_BENCH_SEC_NAME=ping|pong|...    waehlt cert/key/perm-Suffix
+//   ZERODDS_BENCH_SEC_NAME=ping|pong|...    selects the cert/key/perm suffix
 //   ZERODDS_BENCH_SEC_DIR=/abs/path         CA + signed XMLs Wurzel
 //                                           (default /tmp/dds-bench-security)
 // Asset-Tree:
@@ -87,7 +167,7 @@ static ::dds::topic::xcdr2::XcdrVersion resolve_encode_version() {
 //   ${SEC_DIR}/certs/permissions_ca.pem
 //   ${SEC_DIR}/governance.p7s
 //   ${SEC_DIR}/permissions_${SEC_NAME}.p7s
-// Bei NULL-Rueckgabe von runtime_create_secure → exit 1 mit Diag.
+// On NULL return from runtime_create_secure → exit 1 with diag.
 // =====================================================================
 static zerodds_ZeroDdsRuntime* make_runtime() {
     const char* enable = std::getenv("ZERODDS_BENCH_SECURITY");
@@ -133,33 +213,28 @@ static zerodds_ZeroDdsRuntime* make_runtime() {
     }
 
     auto* rt = zerodds_runtime_create_secure(resolve_domain(), cfg);
-    // cfg-Lifetime: runtime_create_secure konsumiert cfg NICHT — wir
-    // muessen es nach dem Aufruf selbst freigeben.
+    // cfg lifetime: runtime_create_secure does NOT consume cfg — we
+    // must free it ourselves after the call.
     zerodds_security_config_destroy(cfg);
     return rt;
 #endif // ZERODDS_BENCH_NOSEC
 }
-constexpr const char* kReqTopic  = "RoundtripBench_Request";
-constexpr const char* kEchoTopic = "RoundtripBench_Echo";
-constexpr const char* kTypeName  = "RoundtripBench::Roundtrip";
 
-uint64_t now_ns() {
-    auto t = std::chrono::steady_clock::now().time_since_epoch();
-    return std::chrono::duration_cast<std::chrono::nanoseconds>(t).count();
-}
-
-// Dekodiert ein empfangenes Wire-Sample in einen typisierten Roundtrip.
-// `repr` kommt aus dem Data-Callback (0=XCDR1, 1=XCDR2) und steuert die
+// Decodes a received wire sample into a typed roundtrip.
+// `repr` comes from the data callback (0=XCDR1, 1=XCDR2) and `big_endian`
+// from the encapsulation header (DDSI-RTPS 2.5 §10.5); both control the
 // XCDR-Alignment-Regel (XTypes 1.3 §7.4.3.4.2).
-RoundtripBench::Roundtrip decode_sample(const uint8_t* buf, size_t len, uint8_t repr) {
-    auto ver = (repr == 1) ? ::dds::topic::xcdr2::XcdrVersion::Xcdr2
-                           : ::dds::topic::xcdr2::XcdrVersion::Xcdr1;
-    return ::dds::topic::topic_type_support<RoundtripBench::Roundtrip>::decode(buf, len, ver);
+Sample decode_sample(const uint8_t* buf, size_t len, uint8_t repr,
+                     uint8_t big_endian) {
+    auto ver = (repr == 1) ? ::zerodds::wire::Encoding::PlainCdr2
+                           : ::zerodds::wire::Encoding::PlainCdr1;
+    return ::dds::topic::topic_type_support<Sample>::decode(
+        buf, len, ver, big_endian != 0);
 }
 
 // =====================================================================
-// Pong: Data-Callback dekodiert das Request-Sample und re-encodiert es
-// auf das Echo-Topic. Laeuft im Recv-Thread, event-driven.
+// Pong: data callback decodes the request sample and re-encodes it
+// onto the echo topic. Runs in the recv thread, event-driven.
 // =====================================================================
 struct PongCtx {
     zerodds_ZeroDdsWriter* echo_writer;
@@ -169,25 +244,21 @@ struct PongCtx {
 };
 
 extern "C" void pong_on_data(void* user_data, const uint8_t* payload,
-                             size_t len, uint8_t repr, uint8_t /*big_endian*/) {
+                             size_t len, uint8_t repr, uint8_t big_endian) {
     // Der Callback laeuft im Rust-Recv-Thread — KEINE C++-Exception
-    // darf entkommen (Rust kann sie nicht fangen -> abort). decode kann
-    // bei malformed/Control-Samples (z.B. OpenDDS Instance-Registration,
-    // leerer Body) `std::out_of_range` werfen; solche Samples werden
+    // may escape (Rust cannot catch it -> abort). decode can
+    // throw `std::out_of_range` on malformed/control samples (e.g. OpenDDS instance registration,
+    // empty body); such samples are
     // schlicht uebersprungen.
     try {
-        // Echo-Wire-Version = eigenes Offer (env-driven), einmal gecacht.
-        // Muss zum Encap-Header passen, den der Runtime fuer diesen
-        // Writer prependet (offer-`first`).
-        static const auto kEchoVer = resolve_encode_version();
         auto* ctx = static_cast<PongCtx*>(user_data);
-        auto sample = decode_sample(payload, len, repr);
+        auto sample = decode_sample(payload, len, repr, big_endian);
         auto encoded =
-            ::dds::topic::topic_type_support<RoundtripBench::Roundtrip>::encode(sample, kEchoVer);
+            ::dds::topic::topic_type_support<Sample>::encode(sample);
         zerodds_writer_write(ctx->echo_writer, encoded.data(), encoded.size());
-        // Recv-Thread ist Single-Writer dieser Felder — kein Lock noetig.
+        // recv thread is single writer of these fields — no lock needed.
         ++ctx->echoed;
-        uint32_t seq = sample.sequence_id();
+        uint32_t seq = sample.sequence_id;
         if (seq < ctx->min_seq) ctx->min_seq = seq;
         if (seq > ctx->max_seq) ctx->max_seq = seq;
     } catch (...) {
@@ -196,6 +267,7 @@ extern "C" void pong_on_data(void* user_data, const uint8_t* payload,
 }
 
 int run_pong(uint64_t max_runtime_s) {
+    refuse_unsupported_data_repr_offer();
     auto* rt = make_runtime();
     if (!rt) { std::cerr << "runtime_create failed\n"; return 1; }
     if (zerodds_runtime_wait_for_peers(rt, 1, 30000) != 0) {
@@ -218,7 +290,7 @@ int run_pong(uint64_t max_runtime_s) {
 
     std::this_thread::sleep_for(std::chrono::seconds(max_runtime_s));
 
-    // Callback abmelden BEVOR Reader/Writer zerstoert werden.
+    // Deregister the callback BEFORE reader/writer are destroyed.
     zerodds_reader_set_data_callback(dr, nullptr, nullptr);
     std::cout << "pong: echoed " << ctx.echoed << " samples\n";
     std::cout << "pong: seq-range [" << ctx.min_seq << ".." << ctx.max_seq
@@ -231,28 +303,9 @@ int run_pong(uint64_t max_runtime_s) {
     return 0;
 }
 
-void print_quantiles(std::vector<uint64_t>& rtts, size_t payload_size) {
-    if (rtts.empty()) { std::cout << "no samples\n"; return; }
-    std::sort(rtts.begin(), rtts.end());
-    auto pct = [&](double p) {
-        size_t idx = std::min(rtts.size() - 1,
-                              static_cast<size_t>(p * (double)(rtts.size() - 1)));
-        return rtts[idx];
-    };
-    std::cout
-        << "payload=" << payload_size
-        << "  n=" << rtts.size()
-        << "  min=" << rtts.front()/1000.0 << "us"
-        << "  p50=" << pct(0.50)/1000.0 << "us"
-        << "  p90=" << pct(0.90)/1000.0 << "us"
-        << "  p99=" << pct(0.99)/1000.0 << "us"
-        << "  p999=" << pct(0.999)/1000.0 << "us"
-        << "  max=" << rtts.back()/1000.0 << "us\n";
-}
-
 // =====================================================================
-// Ping: typisiert schreiben; der Data-Callback erfasst das Echo und
-// weckt den Sender-Thread ueber eine Condition-Variable. One-in-flight.
+// Ping: write typed; the data callback captures the echo and
+// wakes the sender thread via a condition variable. One-in-flight.
 // =====================================================================
 struct PingCtx {
     std::mutex              mu;
@@ -262,23 +315,26 @@ struct PingCtx {
 };
 
 extern "C" void ping_on_data(void* user_data, const uint8_t* payload,
-                             size_t len, uint8_t repr, uint8_t /*big_endian*/) {
-    // Keine C++-Exception darf in den Rust-Recv-Thread entkommen.
+                             size_t len, uint8_t repr, uint8_t big_endian) {
+    // No C++ exception may escape into the Rust recv thread.
     try {
         auto* ctx = static_cast<PingCtx*>(user_data);
-        auto echo = decode_sample(payload, len, repr);
+        auto echo = decode_sample(payload, len, repr, big_endian);
         {
             std::lock_guard<std::mutex> lk(ctx->mu);
-            ctx->echo_t_send = echo.t_send_ns();
+            ctx->echo_t_send = echo.t_send_ns;
             ctx->got = true;
         }
         ctx->cv.notify_one();
     } catch (...) {
-        // Malformed/Control-Sample — ignorieren, kein RTT-Eintrag.
+        // Malformed/control sample — ignore, no RTT entry.
     }
 }
 
 int run_ping(size_t payload_size, uint64_t warmup, uint64_t samples) {
+    // Before the runtime: the XCDR1 build sets the offer the runtime reads
+    // when it is created.
+    refuse_unsupported_data_repr_offer();
     auto* rt = make_runtime();
     if (!rt) { std::cerr << "runtime_create failed\n"; return 1; }
     if (zerodds_runtime_wait_for_peers(rt, 1, 30000) != 0) {
@@ -300,29 +356,29 @@ int run_ping(size_t payload_size, uint64_t warmup, uint64_t samples) {
     std::vector<uint64_t> rtts;
     rtts.reserve(samples);
 
-    RoundtripBench::Roundtrip msg;
-    std::vector<uint8_t> payload(payload_size, 0xAB);
-    msg.payload(payload);
+    Sample msg;
+    populate(msg, payload_size);
 
-    // Wire-Version = Runtime-Offer (env). Bei XCDR2 sendet ZeroDDS einen
-    // PLAIN_CDR2-Body + 0x0007-Header -> von XCDR2-only Vendor-Readern
-    // akzeptiert. Roundtrip ist @final -> Default-Extensibility FINAL
-    // (Setter nicht noetig).
-    const auto enc_ver = resolve_encode_version();
+    // Wire version = whatever `gen/zerodds/Roundtrip.hpp` was generated
+    // for (fixed at generation time, `--encoding xcdr2` by default here).
+    // With XCDR2, ZeroDDS sends a PLAIN_CDR2 body + 0x0007 header -> by
+    // XCDR2-only vendor readers akzeptiert. Roundtrip ist @final ->
+    // Default-Extensibility FINAL (setter not needed). The XCDR1 build's
+    // offer is set at the top of run_ping.
 
     uint64_t total = warmup + samples;
     for (uint64_t seq = 0; seq < total; ++seq) {
-        msg.sequence_id(static_cast<uint32_t>(seq));
+        msg.sequence_id = static_cast<uint32_t>(seq);
         {
             std::lock_guard<std::mutex> lk(ctx.mu);
             ctx.got = false;
         }
-        msg.t_send_ns(now_ns());
-        auto encoded = ::dds::topic::topic_type_support<RoundtripBench::Roundtrip>::encode(msg, enc_ver);
+        msg.t_send_ns = now_ns();
+        auto encoded = ::dds::topic::topic_type_support<Sample>::encode(msg);
         int wrc = zerodds_writer_write(dw, encoded.data(), encoded.size());
         if (wrc != 0) { std::cerr << "ping: writer_write rc=" << wrc << "\n"; return 1; }
 
-        // Auf das Echo warten — Condition-Variable, kein Spin. Max 50ms.
+        // Wait for the echo — condition variable, no spin. Max 50ms.
         std::unique_lock<std::mutex> lk(ctx.mu);
         bool ok = ctx.cv.wait_for(lk, std::chrono::milliseconds(50),
                                   [&] { return ctx.got; });
@@ -351,8 +407,8 @@ int main(int argc, char** argv) {
     if (argc < 2) {
         std::cerr <<
             "Usage:\n"
-            "  zerodds-app pong [max_runtime_s]\n"
-            "  zerodds-app ping --payload N [--samples N] [--warmup N]\n";
+            "  " << kProgram << " pong [max_runtime_s]\n"
+            "  " << kProgram << " ping --payload N [--samples N] [--warmup N]\n";
         return 2;
     }
     std::string mode = argv[1];
@@ -360,17 +416,8 @@ int main(int argc, char** argv) {
         uint64_t rt_s = (argc > 2) ? std::stoull(argv[2]) : 30;
         return run_pong(rt_s);
     } else if (mode == "ping") {
-        size_t   payload = 64;
-        uint64_t warmup  = 200;
-        uint64_t samples = 5000;
-        for (int i = 2; i + 1 < argc; i += 2) {
-            std::string flag = argv[i];
-            uint64_t   v    = std::stoull(argv[i+1]);
-            if      (flag == "--payload") payload = static_cast<size_t>(v);
-            else if (flag == "--samples") samples = v;
-            else if (flag == "--warmup")  warmup  = v;
-        }
-        return run_ping(payload, warmup, samples);
+        bench::PingArgs a = bench::parse_ping_args(argc, argv, 2);
+        return run_ping(a.payload, a.warmup, a.samples);
     }
     std::cerr << "unknown mode: " << mode << "\n";
     return 2;

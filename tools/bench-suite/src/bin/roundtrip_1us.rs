@@ -1,37 +1,37 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! roundtrip-1us — Sub-µs Latency-Bench fuer ZeroDDS.
+//! roundtrip-1us — sub-µs latency bench for ZeroDDS.
 //!
 //! Crate `zerodds-bench-suite`. Safety classification: **COMFORT** (Bench-Tool,
-//! kein Runtime-Pfad). Panics auf Argument-Fehlern erlaubt.
+//! no runtime path). Panics on argument errors are allowed.
 //!
-//! # Architektur
+//! # Architecture
 //!
-//! Zwei-Prozess-Modus, beide busy-poll auf UDP:
+//! Two-process mode, both busy-poll on UDP:
 //!
 //!   ping  ──[Data + t_send]──▶  pong
 //!   ping  ◀─[Echo  + t_send]──  pong
 //!   ping  Histogram += now − t_send
 //!
-//! Reine UDP-Transport-Roundtrip-Latenz, ohne RTPS-Encap und ohne
-//! DCPS-Discovery — das ist bewusst die *unterste* messbare Schicht.
-//! Spaetere Sprint-Erweiterung kann denselben Hot-Path durch
-//! DCPS-Userspace pumpen, dann steht die Differenz fuer die
-//! Stack-Overhead-Story zur Verfuegung.
+//! Pure UDP transport roundtrip latency, without RTPS encap and without
+//! DCPS discovery — this is deliberately the *lowest* measurable layer.
+//! A later sprint extension can route the same hot path through
+//! pump the DCPS userspace, then the difference stands for the
+//! stack-overhead story.
 //!
-//! # Verwendung
+//! # Usage
 //!
-//! Pong-Prozess (CPU-pinned, RT-Prio empfohlen):
+//! Pong process (CPU-pinned, RT priority recommended):
 //!
-//! ```ignore
+//! ```text
 //! taskset -c 2 chrt -f 80 \
 //!   roundtrip-1us --role pong --addr 0.0.0.0:7400 --payload 64
 //! ```
 //!
-//! Ping-Prozess auf der Gegenmaschine:
+//! Ping process on the peer machine:
 //!
-//! ```ignore
+//! ```text
 //! taskset -c 3 chrt -f 80 \
 //!   roundtrip-1us --role ping \
 //!     --remote 192.0.2.10:7400 --bind 0.0.0.0:7401 \
@@ -40,20 +40,20 @@
 //! ```
 //!
 //! Output: stdout p50/p90/p99/p999/p9999/p99999 + min/max/n; optional
-//! `--hgrm` schreibt das full HdrHistogram im `histlog`-V2-Text-Format,
-//! kompatibel mit `HdrHistogramVisualizer`.
+//! `--hgrm` writes the full HdrHistogram in `histlog` V2 text format,
+//! compatible with `HdrHistogramVisualizer`.
 //!
 //! # CI-Gate (D.5-Plan)
 //!
-//! Auf llvm-bare-metal mit Linux 6.x preempt_rt + isolcpu=2-7:
+//! On llvm bare metal with Linux 6.x preempt_rt + isolcpu=2-7:
 //!
 //! - p99    < 5 µs
 //! - p999   < 20 µs
 //! - p9999  < 100 µs
 //!
-//! Der Bench-Runner-Wrapper (`tests/perf/llvm_bench_runner.sh` Step 5)
-//! ruft das Binary mit `--ci-gate` und failt wenn die Schwellen
-//! ueberschritten sind.
+//! The bench runner wrapper (`tests/perf/llvm_bench_runner.sh` Step 5)
+//! calls the binary with `--ci-gate` and fails if the thresholds
+//! are exceeded.
 
 #![warn(missing_docs)]
 #![allow(
@@ -72,7 +72,7 @@ use std::time::{Duration, Instant};
 
 const HEADER_LEN: usize = 16; // 8 byte seq + 8 byte t_send_ns
 
-/// CLI-Konfiguration.
+/// CLI configuration.
 struct Args {
     role: Role,
     bind: SocketAddr,
@@ -84,16 +84,18 @@ struct Args {
     rate_hz: Option<u32>,
     ci_gate: bool,
     max_runtime: Option<Duration>,
-    /// Wenn aktiv: ueber DCPS-Runtime statt rohes UDP.
+    /// When active: via the DCPS runtime instead of raw UDP.
     use_dcps: bool,
-    /// DCPS-Domain-ID (nur mit --use-dcps).
+    /// DCPS domain ID (only with --use-dcps).
     dcps_domain: u32,
-    /// DCPS-Topic (nur mit --use-dcps). Default eindeutig pro PID.
+    /// DCPS topic (only with --use-dcps). Default unique per PID.
     dcps_topic: Option<String>,
-    /// Listener-Callback statt Polling-Take.
-    /// Pong: Echo direkt aus dem Recv-Thread schreiben.
-    /// Ping: RTT direkt im Recv-Thread messen.
-    /// Eliminiert die User-Polling-Latenz (~50-100 µs raus).
+    /// Explicit per-cell user transport, overriding the loaded runtime profile.
+    dcps_transport: Option<zerodds_dcps::runtime::UserTransportKind>,
+    /// Listener callback instead of polling take.
+    /// Pong: write the echo directly from the recv thread.
+    /// Ping: measure RTT directly in recv thread.
+    /// Eliminates user polling latency (~50-100 µs removed).
     listener: bool,
 }
 
@@ -118,6 +120,7 @@ fn parse_args() -> Result<Args, String> {
     let mut use_dcps = false;
     let mut dcps_domain: u32 = 200;
     let mut dcps_topic: Option<String> = None;
+    let mut dcps_transport = None;
     let mut listener = false;
 
     let argv: Vec<String> = std::env::args().collect();
@@ -191,6 +194,18 @@ fn parse_args() -> Result<Args, String> {
                 dcps_topic = Some(val()?);
                 i += 2;
             }
+            "--dcps-transport" => {
+                use zerodds_dcps::runtime::UserTransportKind;
+                dcps_transport = Some(match val()?.as_str() {
+                    "UDPv4" => UserTransportKind::UdpV4,
+                    "UDPv6" => UserTransportKind::UdpV6,
+                    "TCPv4" => UserTransportKind::TcpV4,
+                    "TCPv6" => UserTransportKind::TcpV6,
+                    "SHM" => UserTransportKind::Shm,
+                    other => return Err(format!("unsupported DCPS transport: {other}")),
+                });
+                i += 2;
+            }
             "--listener" => {
                 listener = true;
                 i += 1;
@@ -204,10 +219,13 @@ fn parse_args() -> Result<Args, String> {
     }
 
     let role = role.ok_or("--role pong|ping required")?;
-    // bind ist ohne --use-dcps Pflicht; mit --use-dcps optional (UDP-Frei).
+    if dcps_transport.is_some() && !use_dcps {
+        return Err("--dcps-transport requires --use-dcps".into());
+    }
+    // bind is mandatory without --use-dcps; optional with --use-dcps (UDP-free).
     let bind = if use_dcps {
         bind.or(addr).unwrap_or_else(|| {
-            // Platzhalter — wird im DCPS-Pfad nicht benutzt.
+            // Placeholder — not used in the DCPS path.
             "127.0.0.1:0".parse().expect("static")
         })
     } else {
@@ -234,6 +252,7 @@ fn parse_args() -> Result<Args, String> {
         use_dcps,
         dcps_domain,
         dcps_topic,
+        dcps_transport,
         listener,
     })
 }
@@ -260,10 +279,11 @@ OPTIONS:
   --ci-gate            enforce p99<5µs, p999<20µs, p9999<100µs (exit 1 on violation)
   --max-runtime SECS   abort after wallclock SECS (CI safety net)
 
-DCPS-MODE (D.5b — durch ZeroDDS-Stack statt rohes UDP):
+DCPS-MODE (D.5b — through the ZeroDDS stack instead of raw UDP):
   --use-dcps           pump samples via zerodds-c-api/DcpsRuntime
   --dcps-domain N      DDS-Domain-ID (default 200)
   --dcps-topic NAME    Topic-Name (default: roundtrip-{{pid}})
+  --dcps-transport KIND  Explicit UDPv4|UDPv6|TCPv4|TCPv6|SHM override
 "
     );
 }
@@ -283,14 +303,14 @@ fn read_seq_t(buf: &[u8]) -> Option<(u64, u64)> {
 }
 
 // ============================================================================
-// DCPS-Roundtrip (D.5b) — gleicher Bench durch zerodds-c-api.
+// DCPS roundtrip (D.5b) — same bench through zerodds-c-api.
 // ============================================================================
 
-/// Topic-Default. ACHTUNG: PID war frueher Suffix-Quelle — falsche
-/// Wahl, weil Ping und Pong in separaten Prozessen laufen und damit
-/// unterschiedliche Topic-Namen bekamen (silent no-match,
-/// busy-loop ohne Daten). Default jetzt fest "roundtrip" — Caller
-/// kann via `--dcps-topic` ueberschreiben fuer parallele Runs.
+/// Topic default. WARNING: PID was formerly suffix source — incorrect
+/// choice, because ping and pong run in separate processes and thus
+/// different topic names got (silent no-match,
+/// busy loop without data). Default is now fixed "roundtrip" — the caller
+/// can override via `--dcps-topic` for parallel runs.
 fn dcps_topics(args: &Args) -> (String, String) {
     let suffix = args
         .dcps_topic
@@ -299,26 +319,40 @@ fn dcps_topics(args: &Args) -> (String, String) {
     (format!("{suffix}/req"), format!("{suffix}/echo"))
 }
 
+fn create_dcps_runtime(args: &Args) -> std::io::Result<*mut zerodds::ZeroDdsRuntime> {
+    let mut config = zerodds::ffi_runtime_config(vec![2, 0]).map_err(std::io::Error::other)?;
+    if let Some(transport) = args.dcps_transport {
+        config.user_transport = Some(transport);
+        // A per-cell transport must not accidentally retain a file's multi-transport policy.
+        config.user_transports.clear();
+    }
+    eprintln!(
+        "DCPS domain={} transport={:?}",
+        args.dcps_domain, config.user_transport
+    );
+    zerodds::runtime_create_with_config(args.dcps_domain, config).map_err(std::io::Error::other)
+}
+
 fn run_pong_dcps(args: &Args) -> std::io::Result<()> {
     let (req_topic, echo_topic) = dcps_topics(args);
     let req_topic_c = std::ffi::CString::new(req_topic).expect("static");
     let echo_topic_c = std::ffi::CString::new(echo_topic).expect("static");
     let type_c = std::ffi::CString::new("RoundtripBytes").expect("static");
-    // SAFETY: alle FFI-Calls mit korrekten C-Strings; Handles werden
-    // bei Fehler verworfen, bei Success destroyed.
+    // SAFETY: all FFI calls with correct C-strings; handles are
+    // discarded on error, destroyed on success.
     // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
     unsafe {
-        let rt = zerodds::zerodds_runtime_create(args.dcps_domain);
+        let rt = create_dcps_runtime(args)?;
         if rt.is_null() {
             return Err(std::io::Error::other("dcps runtime create failed"));
         }
-        // Erst auf Peer warten, dann Endpoints — sonst leerer SPDP-Cache.
+        // Wait for the peer first, then endpoints — otherwise an empty SPDP cache.
         let _ = zerodds::zerodds_runtime_wait_for_peers(rt, 1, 5_000);
         let writer = zerodds::zerodds_writer_create(
             rt,
             echo_topic_c.as_ptr(),
             type_c.as_ptr(),
-            0, // best-effort fuer Latenz
+            0, // best-effort for latency
         );
         let reader = zerodds::zerodds_reader_create(rt, req_topic_c.as_ptr(), type_c.as_ptr(), 0);
         if writer.is_null() || reader.is_null() {
@@ -347,7 +381,7 @@ fn run_pong_dcps(args: &Args) -> std::io::Result<()> {
                 continue;
             }
             if !buf.is_null() && len > 0 {
-                // Sample echoen.
+                // Echo sample.
                 let _ = zerodds::zerodds_writer_write(writer, buf, len);
                 zerodds::zerodds_buffer_free(buf, len);
             } else {
@@ -386,11 +420,11 @@ fn run_ping_dcps(args: &Args) -> std::io::Result<Stats> {
     let start = Instant::now();
     let mut payload = vec![0u8; args.payload];
 
-    // SAFETY: gesamter DCPS-Block; Handles werden am Ende sauber
+    // SAFETY: entire DCPS block; handles are cleanly
     // destroyed.
     // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
     unsafe {
-        let rt = zerodds::zerodds_runtime_create(args.dcps_domain);
+        let rt = create_dcps_runtime(args)?;
         if rt.is_null() {
             return Err(std::io::Error::other("dcps runtime create failed"));
         }
@@ -403,13 +437,13 @@ fn run_ping_dcps(args: &Args) -> std::io::Result<Stats> {
         }
         let _ = zerodds::zerodds_writer_wait_for_matched(writer, 1, 5_000);
         let _ = zerodds::zerodds_reader_wait_for_matched(reader, 1, 5_000);
-        // Stabilisierungs-Pause: pong braucht Zeit, seine Reader-/
-        // Writer-Wires intern fertig zu wirten BEVOR der Bench startet.
-        // Ohne diesen Sleep kommen die ersten Samples mit Sekunden-RTT
-        // an (Queue-Drain-Effekt).
+        // Stabilization pause: pong needs time to finish wiring its reader/
+        // writer wires internally BEFORE the bench starts.
+        // Without this sleep the first samples arrive with second-scale RTT
+        // on (queue drain effect).
         std::thread::sleep(Duration::from_millis(500));
-        // Eingangsqueue droppen — alles was vor dem Bench-Start
-        // ankam ist Discovery-/Heartbeat-Garbage.
+        // Drop the input queue — everything that arrived before the bench start
+        // arrived is discovery/heartbeat garbage.
         loop {
             let mut b: *mut u8 = std::ptr::null_mut();
             let mut l: usize = 0;
@@ -480,11 +514,11 @@ fn run_ping_dcps(args: &Args) -> std::io::Result<Stats> {
 
 // ============================================================================
 // DCPS-Roundtrip Listener-Variante — Recv-driven via
-// `zerodds_reader_set_data_callback`. Eliminiert das User-Polling in
+// `zerodds_reader_set_data_callback`. Eliminates user polling in
 // `zerodds_reader_take()`.
 // ============================================================================
 
-/// Pong-Listener-Variante: Echo direkt aus dem Recv-Thread schreiben.
+/// Pong listener variant: write the echo directly from the recv thread.
 /// Hauptthread schlaeft bis max-runtime.
 fn run_pong_dcps_listener(args: &Args) -> std::io::Result<()> {
     let (req_topic, echo_topic) = dcps_topics(args);
@@ -493,7 +527,7 @@ fn run_pong_dcps_listener(args: &Args) -> std::io::Result<()> {
     let type_c = std::ffi::CString::new("RoundtripBytes").expect("static");
     // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
     unsafe {
-        let rt = zerodds::zerodds_runtime_create(args.dcps_domain);
+        let rt = create_dcps_runtime(args)?;
         if rt.is_null() {
             return Err(std::io::Error::other("dcps runtime create failed"));
         }
@@ -513,9 +547,9 @@ fn run_pong_dcps_listener(args: &Args) -> std::io::Result<()> {
             echo_topic_c.to_string_lossy()
         );
 
-        // Writer-Pointer als usize in einer Box puffern, dem Listener
-        // ueber `user_data` reichen. Der Listener feuert das Echo
-        // direkt — derselbe Recv-Thread, kein User-Polling.
+        // Buffer the writer pointer as usize in a Box, hand it to the listener
+        // via `user_data`. The listener fires the echo
+        // directly — same recv thread, no user polling.
         let writer_box: Box<usize> = Box::new(writer as usize);
         let user_data = Box::into_raw(writer_box) as *mut core::ffi::c_void;
 
@@ -526,11 +560,11 @@ fn run_pong_dcps_listener(args: &Args) -> std::io::Result<()> {
             _representation: u8,
             _big_endian: u8,
         ) {
-            // SAFETY: writer_addr lebt bis pong_cb deregistriert ist.
+            // SAFETY: writer_addr lives until pong_cb is deregistered.
             let writer_addr = unsafe { *(user_data as *const usize) };
             let writer = writer_addr as *mut zerodds::ZeroDdsWriter;
-            // SAFETY: writer ist gueltig bis Cleanup, payload kommt vom
-            // Runtime-Recv-Thread mit gueltigem Slice.
+            // SAFETY: writer is valid until cleanup, payload comes from the
+            // runtime recv thread with a valid slice.
             // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
             unsafe {
                 let _ = zerodds::zerodds_writer_write(writer, payload, len);
@@ -545,7 +579,7 @@ fn run_pong_dcps_listener(args: &Args) -> std::io::Result<()> {
             return Err(std::io::Error::other("set_data_callback failed"));
         }
 
-        // Hauptthread schlaeft bis max-runtime.
+        // Main thread sleeps until max runtime.
         let start = Instant::now();
         let until = start + args.max_runtime.unwrap_or(Duration::from_secs(60));
         loop {
@@ -556,9 +590,9 @@ fn run_pong_dcps_listener(args: &Args) -> std::io::Result<()> {
             std::thread::sleep(Duration::from_millis(50).min(until - now));
         }
 
-        // Listener loeschen BEVOR der Reader/Writer destroyed wird —
-        // sonst kann der Recv-Thread mit Dangling-Writer-Pointer
-        // weiterfeuern.
+        // Delete the listener BEFORE the reader/writer is destroyed —
+        // otherwise the recv thread may run with a dangling writer pointer
+        // continue firing.
         zerodds::zerodds_reader_set_data_callback(reader, None, std::ptr::null_mut());
         let _ = Box::from_raw(user_data as *mut usize);
 
@@ -569,9 +603,9 @@ fn run_pong_dcps_listener(args: &Args) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Ping-Listener-Variante: RTT direkt im Recv-Thread messen, ueber
-/// Mutex<Histogram> + Condvar mit dem Hauptthread synchronisieren.
-/// Hauptthread schreibt sequenziell (1 in-flight), Listener feuert
+/// Ping listener variant: measure RTT directly in the recv thread, via
+/// Synchronize `Mutex<Histogram>` + Condvar with the main thread.
+/// Main thread writes sequentially (1 in-flight), listener fires
 /// Histogramm-Update + signalisiert.
 fn run_ping_dcps_listener(args: &Args) -> std::io::Result<Stats> {
     use std::sync::{Arc, Condvar, Mutex};
@@ -590,7 +624,7 @@ fn run_ping_dcps_listener(args: &Args) -> std::io::Result<Stats> {
         args.samples
     );
 
-    // Shared state zwischen Hauptthread und Listener-Recv-Thread.
+    // Shared state between the main thread and the listener recv thread.
     struct PingState {
         hist: Mutex<Histogram<u64>>,
         received: Mutex<u64>,
@@ -618,7 +652,7 @@ fn run_ping_dcps_listener(args: &Args) -> std::io::Result<Stats> {
 
     // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
     unsafe {
-        let rt = zerodds::zerodds_runtime_create(args.dcps_domain);
+        let rt = create_dcps_runtime(args)?;
         if rt.is_null() {
             return Err(std::io::Error::other("dcps runtime create failed"));
         }
@@ -632,7 +666,7 @@ fn run_ping_dcps_listener(args: &Args) -> std::io::Result<Stats> {
         let _ = zerodds::zerodds_writer_wait_for_matched(writer, 1, 5_000);
         let _ = zerodds::zerodds_reader_wait_for_matched(reader, 1, 5_000);
 
-        // Stabilisierungs-Pause + Drain, gleich wie Polling-Variante.
+        // Stabilization pause + drain, same as the polling variant.
         std::thread::sleep(Duration::from_millis(500));
         loop {
             let mut b: *mut u8 = std::ptr::null_mut();
@@ -655,9 +689,9 @@ fn run_ping_dcps_listener(args: &Args) -> std::io::Result<Stats> {
             _representation: u8,
             _big_endian: u8,
         ) {
-            // SAFETY: state lebt bis Listener deregistriert + Arc::from_raw cleanup.
+            // SAFETY: state lives until listener is deregistered + Arc::from_raw cleanup.
             let state = unsafe { &*(user_data as *const PingState) };
-            // SAFETY: payload + len kommen vom Runtime-Recv-Thread.
+            // SAFETY: payload + len come from the runtime recv thread.
             let slice = unsafe { core::slice::from_raw_parts(payload, len) };
             if slice.len() < HEADER_LEN {
                 return;
@@ -677,7 +711,7 @@ fn run_ping_dcps_listener(args: &Args) -> std::io::Result<Stats> {
 
         let rc = zerodds::zerodds_reader_set_data_callback(reader, Some(ping_cb), state_for_cb);
         if rc != 0 {
-            // state_for_cb retten:
+            // save state_for_cb:
             let _ = Arc::from_raw(state_for_cb as *const PingState);
             zerodds::zerodds_writer_destroy(writer);
             zerodds::zerodds_reader_destroy(reader);
@@ -685,7 +719,7 @@ fn run_ping_dcps_listener(args: &Args) -> std::io::Result<Stats> {
             return Err(std::io::Error::other("set_data_callback failed"));
         }
 
-        // Hauptthread: senden + auf received-Counter warten.
+        // Main thread: send + wait on the received counter.
         loop {
             // Abbruch-Bedingungen.
             {
@@ -705,9 +739,9 @@ fn run_ping_dcps_listener(args: &Args) -> std::io::Result<Stats> {
                 }
             }
 
-            // Send-Decision: nur wenn der Vorgaenger acknowledged ist
-            // (1 in-flight). Auf Rate gehen wir hier nicht ein —
-            // Listener-Bench ist primaer Latenz-orientiert.
+            // Send decision: only when the predecessor is acknowledged
+            // (1 in-flight). We do not address rate here —
+            // Listener bench is primarily latency-oriented.
             let received_now = *state.received.lock().expect("rx lock");
             let should_send = match rate_period_ns {
                 None => seq == received_now,
@@ -729,8 +763,8 @@ fn run_ping_dcps_listener(args: &Args) -> std::io::Result<Stats> {
                     next_send_ns = next_send_ns.max(now_ns) + period;
                 }
             } else {
-                // Auf naechsten Echo warten — kurz im Condvar parken
-                // statt CPU zu pegasten.
+                // Wait for next echo — briefly park in condvar
+                // instead of pegging CPU.
                 let received = state.received.lock().expect("rx lock");
                 let _ = state
                     .cvar
@@ -739,7 +773,7 @@ fn run_ping_dcps_listener(args: &Args) -> std::io::Result<Stats> {
             }
         }
 
-        // Listener vor Cleanup loeschen + Arc rueckholen.
+        // Delete the listener before cleanup + reclaim the Arc.
         zerodds::zerodds_reader_set_data_callback(reader, None, std::ptr::null_mut());
         let _state_arc = Arc::from_raw(state_for_cb as *const PingState);
 
@@ -778,7 +812,7 @@ fn run_pong(args: &Args) -> std::io::Result<()> {
     }
 }
 
-/// Latenz-Statistiken aus einem Histogramm.
+/// Latency statistics from a histogram.
 struct Stats {
     n: u64,
     min_ns: u64,
@@ -837,7 +871,7 @@ fn run_ping(args: &Args) -> std::io::Result<Stats> {
                 break;
             }
         }
-        // --- Send-Side: rate-limited oder free-running ---
+        // --- Send side: rate-limited or free-running ---
         let should_send = match rate_period_ns {
             None => seq == received, // strict ping-pong: only send if previous returned
             Some(_period) => {
@@ -889,8 +923,8 @@ impl Stats {
     }
 }
 
-/// Schreibt Histogramm im histlog-V2-Text-Format (HdrHistogramVisualizer-
-/// kompatibel). Format: `Tag Value,Percentile,Count,1/(1-Percentile)`.
+/// Writes histogram in histlog-V2 text format (HdrHistogramVisualizer-
+/// compatible). Format: `Tag Value,Percentile,Count,1/(1-Percentile)`.
 fn dump_hgrm(h: &Histogram<u64>, path: &PathBuf) -> std::io::Result<()> {
     let mut f = std::fs::File::create(path)?;
     writeln!(f, "#[HdrHistogram-V2 text]")?;

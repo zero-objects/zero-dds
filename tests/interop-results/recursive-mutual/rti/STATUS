@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of recursive-mutual that rti produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	the probe was killed: Segmentation fault
+plain-cdr1	be	refused	the probe was killed: Segmentation fault
+pl-cdr1	le	refused	the probe was killed: Segmentation fault
+pl-cdr1	be	refused	the probe was killed: Segmentation fault
+plain-cdr2	le	refused	the probe was killed: Segmentation fault
+plain-cdr2	be	refused	the probe was killed: Segmentation fault
+delimited-cdr	le	refused	the probe was killed: Segmentation fault
+delimited-cdr	be	refused	the probe was killed: Segmentation fault
+pl-cdr2	le	refused	the probe was killed: Segmentation fault
+pl-cdr2	be	refused	the probe was killed: Segmentation fault

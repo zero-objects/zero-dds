@@ -1,69 +1,97 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Workspace-Crate-DAG-Sort fuer cargo publish.
+//! Workspace crate DAG sort for cargo publish.
 //!
 //! Crate `zerodds-cargo-dag`. Safety classification: **COMFORT**.
 //!
-//! # Was tut das Tool?
+//! # What does the tool do?
 //!
-//! Liest die Workspace-`Cargo.toml`, dann pro Member-Crate den Block
-//! `[dependencies]` / `[dev-dependencies]` / `[build-dependencies]` und
-//! baut den Inter-Crate-Dependency-Graph. Topologische Sortierung gibt
-//! eine zykel-freie Reihenfolge — das ist die `cargo publish`-Order.
+//! Runs `cargo metadata --format-version 1 --no-deps` over the workspace and
+//! builds the inter-crate dependency graph from its `packages` array.
+//! Topological sorting gives a cycle-free order — that is the
+//! `cargo publish` order.
 //!
-//! Dev-Dependencies werden ignoriert (sind fuer Publish irrelevant).
-//! Build-Dependencies werden mitgezaehlt (z.B. `cbindgen`-Aufrufer).
+//! Dev-dependencies are ignored (irrelevant for publish).
+//! Build-dependencies are counted in (e.g. `cbindgen` callers).
 //!
-//! # Was ist das nicht?
+//! # Why `cargo metadata` and not `workspace.members`?
 //!
-//! Kein voller Cargo-Resolver — wir parsen nur die Workspace-internen
-//! `path = "..."`-Refs. Externe Crates (crates.io-Deps) ignorieren wir.
-//! Reicht fuer den Publish-Order-Use-Case.
+//! The member list in the root `Cargo.toml` is not the workspace. Cargo adds
+//! every path dependency of a listed member as a member too, and the root
+//! manifest's own comments say so ("Adding this one line also makes members
+//! of its path dependencies: …"). Reading only the listed names dropped those
+//! implicit members from the publish order — the transport, security,
+//! recorder and SQL-filter crates among them — so a publish run would have
+//! skipped dependencies and uploaded their dependents first. `cargo metadata`
+//! reports the members Cargo actually resolves, so a newly added path
+//! dependency enters the publish order without anyone editing a list.
+//!
+//! # What is this not?
+//!
+//! Not a full Cargo resolver — only workspace-internal `path` dependencies
+//! become edges. Registry dependencies are irrelevant to the publish order
+//! and are ignored.
 
 #![warn(missing_docs)]
 
-use std::collections::{BTreeMap, BTreeSet};
-use std::fs;
-use std::path::{Path, PathBuf};
+mod json;
 
-/// Beschreibt eine Workspace-Crate.
+use std::collections::{BTreeMap, BTreeSet};
+use std::ffi::OsString;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+
+use json::Value;
+
+/// Describes a workspace crate.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CrateInfo {
-    /// Cargo-Package-Name (`name = "..."`).
+    /// Cargo package name (`name = "..."`).
     pub name: String,
-    /// Member-Pfad relativ zum Workspace-Root.
+    /// Member path relative to the workspace root.
     pub path: PathBuf,
-    /// `publish = false` gesetzt? (default: false → publishable).
+    /// `publish` set to something other than crates.io?
+    /// (default: publishable).
     pub publish_blocked: bool,
-    /// Set von Workspace-internen Path-Deps (Cargo-Package-Names).
+    /// Set of workspace-internal path deps (Cargo package names).
     pub deps: BTreeSet<String>,
 }
 
-/// Lese-Fehler.
+/// Read error.
 #[derive(Debug)]
 pub enum DagError {
-    /// IO-Fehler beim Lesen einer Cargo.toml.
-    Io {
-        /// Welche Datei.
-        path: PathBuf,
+    /// `cargo metadata` could not be started.
+    Spawn {
+        /// The program that failed to start.
+        program: OsString,
         /// Underlying error.
         err: std::io::Error,
     },
-    /// Workspace-`members`-Block nicht gefunden.
-    MissingMembers,
-    /// Crate-Name nicht extrahierbar.
-    MissingPackageName(PathBuf),
-    /// Zyklus im DAG.
+    /// `cargo metadata` ran but exited non-zero.
+    Metadata {
+        /// Exit code, if the process was not killed by a signal.
+        status: Option<i32>,
+        /// What the process wrote to stderr.
+        stderr: String,
+    },
+    /// The metadata document could not be read as expected.
+    Json(String),
+    /// Cycle in the DAG.
     Cycle(Vec<String>),
 }
 
 impl std::fmt::Display for DagError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Io { path, err } => write!(f, "io {}: {err}", path.display()),
-            Self::MissingMembers => write!(f, "workspace.members not found in root Cargo.toml"),
-            Self::MissingPackageName(p) => write!(f, "missing [package] name in {}", p.display()),
+            Self::Spawn { program, err } => {
+                write!(f, "cannot run {}: {err}", program.to_string_lossy())
+            }
+            Self::Metadata { status, stderr } => match status {
+                Some(code) => write!(f, "cargo metadata exited with {code}: {stderr}"),
+                None => write!(f, "cargo metadata was terminated by a signal: {stderr}"),
+            },
+            Self::Json(msg) => write!(f, "cargo metadata output: {msg}"),
             Self::Cycle(c) => write!(f, "cycle detected: {}", c.join(" → ")),
         }
     }
@@ -71,57 +99,160 @@ impl std::fmt::Display for DagError {
 
 impl std::error::Error for DagError {}
 
-/// Sammelt alle Workspace-Crates mit Inter-Crate-Deps.
+/// Collects all workspace crates with inter-crate deps.
+///
+/// The member set comes from `cargo metadata --no-deps`, so it contains the
+/// implicit members (path dependencies of listed members) as well as the
+/// ones named in `workspace.members`.
 ///
 /// # Errors
-/// IO/Parse/Cycle-Fehler.
+/// Spawn/Metadata/Json error.
 pub fn collect_crates(workspace_root: &Path) -> Result<Vec<CrateInfo>, DagError> {
-    let root_toml_path = workspace_root.join("Cargo.toml");
-    let root_toml = fs::read_to_string(&root_toml_path).map_err(|e| DagError::Io {
-        path: root_toml_path.clone(),
-        err: e,
-    })?;
-    let members = parse_members(&root_toml).ok_or(DagError::MissingMembers)?;
-    let mut out = Vec::with_capacity(members.len());
-    for m in members {
-        let crate_dir = workspace_root.join(&m);
-        let toml_path = crate_dir.join("Cargo.toml");
-        let toml = fs::read_to_string(&toml_path).map_err(|e| DagError::Io {
-            path: toml_path.clone(),
-            err: e,
+    let document = run_cargo_metadata(workspace_root)?;
+    parse_metadata(&document)
+}
+
+/// Runs `cargo metadata --format-version 1 --no-deps` in `workspace_root`.
+fn run_cargo_metadata(workspace_root: &Path) -> Result<String, DagError> {
+    // `CARGO` is set when we run under cargo; otherwise fall back to PATH.
+    let program = std::env::var_os("CARGO").unwrap_or_else(|| OsString::from("cargo"));
+    let output = Command::new(&program)
+        .arg("metadata")
+        .arg("--format-version")
+        .arg("1")
+        .arg("--no-deps")
+        .arg("--manifest-path")
+        .arg(workspace_root.join("Cargo.toml"))
+        .output()
+        .map_err(|err| DagError::Spawn {
+            program: program.clone(),
+            err,
         })?;
-        let name = parse_package_name(&toml)
-            .ok_or_else(|| DagError::MissingPackageName(toml_path.clone()))?;
-        let publish_blocked = parse_publish_blocked(&toml);
-        let deps = parse_path_deps(&toml);
-        out.push(CrateInfo {
-            name,
-            path: PathBuf::from(m),
-            publish_blocked,
-            deps,
+    if !output.status.success() {
+        return Err(DagError::Metadata {
+            status: output.status.code(),
+            stderr: String::from_utf8_lossy(&output.stderr).trim().to_string(),
         });
+    }
+    String::from_utf8(output.stdout)
+        .map_err(|e| DagError::Json(format!("stdout is not utf-8: {e}")))
+}
+
+/// Turns a `cargo metadata` document into the crate list.
+fn parse_metadata(document: &str) -> Result<Vec<CrateInfo>, DagError> {
+    let root = json::parse(document).map_err(DagError::Json)?;
+    let workspace_root = root
+        .get("workspace_root")
+        .and_then(Value::as_str)
+        .map(PathBuf::from);
+    let packages = root
+        .get("packages")
+        .and_then(Value::as_array)
+        .ok_or_else(|| DagError::Json("no `packages` array".to_string()))?;
+    let mut out = Vec::with_capacity(packages.len());
+    for package in packages {
+        out.push(crate_from_package(package, workspace_root.as_deref())?);
     }
     Ok(out)
 }
 
-/// Topologisch sortiert — Kahn's Algorithmus mit deterministischem
-/// Tie-Break ueber Crate-Namen (alphabetisch).
+/// Reads one `packages[]` entry.
+fn crate_from_package(
+    package: &Value,
+    workspace_root: Option<&Path>,
+) -> Result<CrateInfo, DagError> {
+    let name = package
+        .get("name")
+        .and_then(Value::as_str)
+        .ok_or_else(|| DagError::Json("package without `name`".to_string()))?
+        .to_string();
+    let manifest_path = package
+        .get("manifest_path")
+        .and_then(Value::as_str)
+        .ok_or_else(|| DagError::Json(format!("package `{name}` without `manifest_path`")))?;
+    Ok(CrateInfo {
+        name,
+        path: member_path(Path::new(manifest_path), workspace_root),
+        publish_blocked: publish_blocked(package),
+        deps: publish_relevant_path_deps(package),
+    })
+}
+
+/// Directory of `manifest_path`, relative to the workspace root when it lies
+/// beneath it (a path dependency outside the tree keeps its absolute path).
+fn member_path(manifest_path: &Path, workspace_root: Option<&Path>) -> PathBuf {
+    let dir = manifest_path.parent().unwrap_or(manifest_path);
+    workspace_root
+        .and_then(|root| dir.strip_prefix(root).ok())
+        .map_or_else(|| dir.to_path_buf(), Path::to_path_buf)
+}
+
+/// Is this package kept out of a crates.io publish run?
 ///
-/// Returnt eine Reihenfolge so dass jeder Crate vor seinen Dependents
-/// erscheint. `publish_blocked` Crates werden mit-aufgenommen aber
-/// markiert; der Caller filtert ggf. heraus.
+/// `cargo metadata` reports the manifest's `publish` key as `null` (any
+/// registry), or as the list of allowed registries — `publish = false`
+/// serialises as the empty list. A package is in the publish run exactly
+/// when its list of allowed registries is absent or names crates.io.
+fn publish_blocked(package: &Value) -> bool {
+    match package.get("publish") {
+        None => false,
+        Some(value) if value.is_null() => false,
+        Some(value) => match value.as_array() {
+            Some(registries) => !registries
+                .iter()
+                .any(|r| r.as_str() == Some(CRATES_IO_REGISTRY)),
+            // Anything else is not a registry list we can honour.
+            None => true,
+        },
+    }
+}
+
+/// The registry name Cargo uses for crates.io in a manifest `publish` list.
+const CRATES_IO_REGISTRY: &str = "crates-io";
+
+/// Workspace-internal dependencies that constrain the publish order:
+/// every `dependencies[]` entry with a `path`, except dev-dependencies.
+fn publish_relevant_path_deps(package: &Value) -> BTreeSet<String> {
+    let mut out = BTreeSet::new();
+    let Some(deps) = package.get("dependencies").and_then(Value::as_array) else {
+        return out;
+    };
+    for dep in deps {
+        // `kind` is null for a normal dep, "build" or "dev" otherwise.
+        // Dev-deps are not part of the published manifest's resolution.
+        if dep.get("kind").and_then(Value::as_str) == Some("dev") {
+            continue;
+        }
+        // Only path deps are workspace-internal; a registry dep is already
+        // published. `name` is the package name even under a rename.
+        if dep.get("path").is_none_or(Value::is_null) {
+            continue;
+        }
+        if let Some(name) = dep.get("name").and_then(Value::as_str) {
+            out.insert(name.to_string());
+        }
+    }
+    out
+}
+
+/// Topologically sorted — Kahn's algorithm with deterministic
+/// Tie-break over crate names (alphabetical).
+///
+/// Returns an order such that each crate appears before its dependents
+/// appears. `publish_blocked` crates are included but
+/// marked; the caller filters them out if needed.
 ///
 /// # Errors
-/// `Cycle` wenn der Graph einen Zyklus hat.
+/// `Cycle` if the graph has a cycle.
 pub fn topo_sort(crates: &[CrateInfo]) -> Result<Vec<CrateInfo>, DagError> {
-    // Map Name → Info-Index, sodass wir mit u32 in HashSets sparsam
-    // arbeiten koennen.
+    // Map name → info index, so that we can work economically with u32
+    // in HashSets.
     let by_name: BTreeMap<&str, usize> = crates
         .iter()
         .enumerate()
         .map(|(i, c)| (c.name.as_str(), i))
         .collect();
-    // Pro-Crate-Indegree: wie viele Workspace-Deps haben wir.
+    // Per-crate indegree: how many workspace deps we have.
     let mut indegree: Vec<usize> = vec![0; crates.len()];
     let mut adj: Vec<Vec<usize>> = vec![Vec::new(); crates.len()]; // dep → dependent
     for (i, c) in crates.iter().enumerate() {
@@ -132,7 +263,7 @@ pub fn topo_sort(crates: &[CrateInfo]) -> Result<Vec<CrateInfo>, DagError> {
             }
         }
     }
-    // Kahn — Priority-Queue ueber Crate-Namen, damit deterministisch.
+    // Kahn — priority queue over crate names, for determinism.
     let mut ready: BTreeSet<(String, usize)> = crates
         .iter()
         .enumerate()
@@ -151,7 +282,7 @@ pub fn topo_sort(crates: &[CrateInfo]) -> Result<Vec<CrateInfo>, DagError> {
         }
     }
     if order.len() < crates.len() {
-        // Restliche sind im Zyklus.
+        // The rest are in the cycle.
         let cycle: Vec<String> = crates
             .iter()
             .enumerate()
@@ -163,7 +294,7 @@ pub fn topo_sort(crates: &[CrateInfo]) -> Result<Vec<CrateInfo>, DagError> {
     Ok(order)
 }
 
-/// Filtert nicht-publishable (publish=false) raus.
+/// Filters out the crates a publish run does not upload.
 #[must_use]
 pub fn only_publishable(crates: &[CrateInfo]) -> Vec<CrateInfo> {
     crates
@@ -173,232 +304,117 @@ pub fn only_publishable(crates: &[CrateInfo]) -> Vec<CrateInfo> {
         .collect()
 }
 
-// ----- TOML-Parsing — primitive Linien-Heuristik, reicht fuer
-// unsere Crates (alle nutzen kanonisches Format). Kein toml-Crate-Dep. -----
-
-fn parse_members(toml: &str) -> Option<Vec<String>> {
-    // Erste `members = [` finden, dann bis `]`.
-    let mut iter = toml.lines();
-    let mut in_block = false;
-    let mut buf = String::new();
-    for line in &mut iter {
-        let stripped = strip_comment(line);
-        if !in_block {
-            if stripped.trim_start().starts_with("members") {
-                if let Some(eq) = stripped.find('=') {
-                    let after = &stripped[eq + 1..];
-                    if let Some(start) = after.find('[') {
-                        in_block = true;
-                        buf.push_str(&after[start + 1..]);
-                        if let Some(end) = buf.find(']') {
-                            buf.truncate(end);
-                            break;
-                        }
-                    }
-                }
-            }
-        } else if let Some(end) = stripped.find(']') {
-            buf.push_str(&stripped[..end]);
-            break;
-        } else {
-            buf.push_str(stripped);
-            buf.push('\n');
-        }
-    }
-    if !in_block {
-        return None;
-    }
-    // Strings extrahieren.
-    let mut out = Vec::new();
-    let mut cur = String::new();
-    let mut quoted = false;
-    for c in buf.chars() {
-        if c == '"' {
-            if quoted && !cur.is_empty() {
-                out.push(std::mem::take(&mut cur));
-            }
-            quoted = !quoted;
-        } else if quoted {
-            cur.push(c);
-        }
-    }
-    Some(out)
-}
-
-fn parse_package_name(toml: &str) -> Option<String> {
-    // Ersten `[package]`-Block + `name = "..."`-Zeile.
-    let mut in_pkg = false;
-    for line in toml.lines() {
-        let s = strip_comment(line);
-        let t = s.trim();
-        if t.starts_with('[') {
-            in_pkg = t == "[package]";
-        } else if in_pkg && t.starts_with("name") {
-            if let Some(eq) = t.find('=') {
-                let v = t[eq + 1..].trim();
-                if let Some(stripped) = v.strip_prefix('"') {
-                    if let Some(end) = stripped.find('"') {
-                        return Some(stripped[..end].to_string());
-                    }
-                }
-            }
-        }
-    }
-    None
-}
-
-fn parse_publish_blocked(toml: &str) -> bool {
-    let mut in_pkg = false;
-    for line in toml.lines() {
-        let s = strip_comment(line);
-        let t = s.trim();
-        if t.starts_with('[') {
-            in_pkg = t == "[package]";
-        } else if in_pkg && t.starts_with("publish") {
-            // `publish = false` oder `publish = []`
-            if t.contains("false") || t.contains("[]") {
-                return true;
-            }
-        }
-    }
-    false
-}
-
-fn parse_path_deps(toml: &str) -> BTreeSet<String> {
-    // Wir sammeln alle `name = { path = "..." ... }`-Eintraege aus
-    // [dependencies] und [build-dependencies]. Inline-Tabellen
-    // erkennen wir per `path = "`-Substring.
-    let mut out = BTreeSet::new();
-    let mut current_section = String::new();
-    for line in toml.lines() {
-        let s = strip_comment(line);
-        let t = s.trim();
-        if t.starts_with('[') {
-            current_section = t.to_string();
-            continue;
-        }
-        if !is_dep_section(&current_section) {
-            continue;
-        }
-        // Extract crate name = LHS up to `=`.
-        let Some(eq) = t.find('=') else {
-            continue;
-        };
-        let lhs = t[..eq].trim();
-        if lhs.is_empty() || lhs.starts_with('#') {
-            continue;
-        }
-        let rhs = t[eq + 1..].trim();
-        // Forms:
-        //   name = "1.0"             (registry dep — ignoriere)
-        //   name = { path = "..." }  (workspace path)
-        //   name = { workspace = true }  (workspace inheritance — ignoriere)
-        if rhs.contains("path =") || rhs.contains("path=") {
-            // Cargo-Package-Name = LHS (kein Rename-Support hier;
-            // unsere Crates haben keine Renames).
-            // Falls LHS quoted (selten in Cargo): strippen.
-            let name = lhs.trim_matches('"').to_string();
-            // Ggf. `package = "..."`-Override im inline-Table.
-            let actual = extract_package_override(rhs).unwrap_or(name);
-            out.insert(actual);
-        }
-    }
-    out
-}
-
-fn extract_package_override(rhs: &str) -> Option<String> {
-    let key = "package =";
-    let alt = "package=";
-    let needle_pos = rhs.find(key).or_else(|| rhs.find(alt))?;
-    let after = &rhs[needle_pos..];
-    let q = after.find('"')?;
-    let rest = &after[q + 1..];
-    let end = rest.find('"')?;
-    Some(rest[..end].to_string())
-}
-
-fn is_dep_section(section: &str) -> bool {
-    section == "[dependencies]" || section == "[build-dependencies]"
-}
-
-fn strip_comment(line: &str) -> &str {
-    // Naive: erste `#` ausserhalb von Strings.
-    let mut in_string = false;
-    for (i, c) in line.char_indices() {
-        if c == '"' {
-            in_string = !in_string;
-        }
-        if c == '#' && !in_string {
-            return &line[..i];
-        }
-    }
-    line
-}
-
 #[cfg(test)]
-#[allow(clippy::unwrap_used)] // tests duerfen unwrap nutzen.
+#[allow(clippy::unwrap_used)] // tests may use unwrap.
 mod tests {
     use super::*;
 
-    #[test]
-    fn parses_members_block() {
-        let toml = r#"
-[workspace]
-members = [
-    "crates/a",
-    "crates/b",
-]
-"#;
-        let m = parse_members(toml).unwrap();
-        assert_eq!(m, vec!["crates/a", "crates/b"]);
+    /// One `packages[]` entry in the spelling `cargo metadata` emits.
+    fn package(body: &str) -> Value {
+        json::parse(body).unwrap()
     }
 
     #[test]
-    fn parses_members_inline() {
-        let toml = r#"members = ["a", "b", "c"]"#;
-        let m = parse_members(toml).unwrap();
-        assert_eq!(m, vec!["a", "b", "c"]);
+    fn reads_name_and_relative_member_path() {
+        let p = package(
+            r#"{"name":"zerodds-transport",
+                "manifest_path":"/ws/crates/transport/Cargo.toml",
+                "publish":null,"dependencies":[]}"#,
+        );
+        let c = crate_from_package(&p, Some(Path::new("/ws"))).unwrap();
+        assert_eq!(c.name, "zerodds-transport");
+        assert_eq!(c.path, PathBuf::from("crates/transport"));
+        assert!(!c.publish_blocked);
     }
 
     #[test]
-    fn parses_package_name() {
-        let toml = r#"
-[package]
-name = "dds-foo"
-version = "1"
-"#;
-        assert_eq!(parse_package_name(toml).as_deref(), Some("dds-foo"));
+    fn keeps_absolute_path_for_a_member_outside_the_workspace_root() {
+        let p = package(
+            r#"{"name":"x","manifest_path":"/elsewhere/x/Cargo.toml",
+                "publish":null,"dependencies":[]}"#,
+        );
+        let c = crate_from_package(&p, Some(Path::new("/ws"))).unwrap();
+        assert_eq!(c.path, PathBuf::from("/elsewhere/x"));
     }
 
     #[test]
-    fn detects_publish_false() {
-        let toml = r#"
-[package]
-name = "x"
-publish = false
-"#;
-        assert!(parse_publish_blocked(toml));
+    fn publish_null_is_publishable_and_empty_list_is_blocked() {
+        assert!(!publish_blocked(&package(r#"{"publish":null}"#)));
+        assert!(!publish_blocked(&package("{}")));
+        assert!(publish_blocked(&package(r#"{"publish":[]}"#)));
     }
 
     #[test]
-    fn parses_path_deps_detects_workspace_paths() {
-        let toml = r#"
-[package]
-name = "x"
+    fn publish_list_is_honoured_per_registry() {
+        assert!(!publish_blocked(&package(r#"{"publish":["crates-io"]}"#)));
+        assert!(publish_blocked(&package(
+            r#"{"publish":["house-registry"]}"#
+        )));
+        assert!(!publish_blocked(&package(
+            r#"{"publish":["house-registry","crates-io"]}"#
+        )));
+    }
 
-[dependencies]
-zerodds-foundation = { path = "../foundation" }
-serde = "1.0"
-zerodds-cdr = { path = "../cdr", default-features = false }
+    #[test]
+    fn path_deps_are_edges_and_registry_deps_are_not() {
+        let p = package(
+            r#"{"dependencies":[
+                {"name":"zerodds-foundation","kind":null,"path":"/ws/crates/foundation"},
+                {"name":"serde","kind":null,"path":null},
+                {"name":"cbindgen","kind":"build","path":null},
+                {"name":"zerodds-build","kind":"build","path":"/ws/crates/zerodds-build"}]}"#,
+        );
+        let d = publish_relevant_path_deps(&p);
+        assert_eq!(
+            d,
+            [
+                "zerodds-foundation".to_string(),
+                "zerodds-build".to_string()
+            ]
+            .into_iter()
+            .collect()
+        );
+    }
 
-[build-dependencies]
-cbindgen = "0.29"
-"#;
-        let d = parse_path_deps(toml);
-        assert!(d.contains("zerodds-foundation"));
-        assert!(d.contains("zerodds-cdr"));
-        assert!(!d.contains("serde"));
-        assert!(!d.contains("cbindgen"));
+    #[test]
+    fn dev_dependencies_are_not_edges() {
+        let p = package(
+            r#"{"dependencies":[
+                {"name":"zerodds-test-domains","kind":"dev","path":"/ws/crates/test-domains"}]}"#,
+        );
+        assert!(publish_relevant_path_deps(&p).is_empty());
+    }
+
+    #[test]
+    fn a_renamed_path_dep_is_an_edge_under_its_package_name() {
+        let p = package(
+            r#"{"dependencies":[
+                {"name":"zerodds-wire","rename":"wire","kind":null,"path":"/ws/crates/wire"}]}"#,
+        );
+        let d = publish_relevant_path_deps(&p);
+        assert!(d.contains("zerodds-wire"));
+        assert!(!d.contains("wire"));
+    }
+
+    #[test]
+    fn parse_metadata_reads_every_package_in_the_document() {
+        let doc = r#"{"workspace_root":"/ws","packages":[
+            {"name":"a","manifest_path":"/ws/a/Cargo.toml","publish":null,"dependencies":[]},
+            {"name":"b","manifest_path":"/ws/b/Cargo.toml","publish":[],
+             "dependencies":[{"name":"a","kind":null,"path":"/ws/a"}]}]}"#;
+        let crates = parse_metadata(doc).unwrap();
+        assert_eq!(crates.len(), 2);
+        assert_eq!(crates[1].name, "b");
+        assert!(crates[1].publish_blocked);
+        assert!(crates[1].deps.contains("a"));
+    }
+
+    #[test]
+    fn parse_metadata_rejects_a_document_without_packages() {
+        assert!(matches!(
+            parse_metadata(r#"{"workspace_root":"/ws"}"#),
+            Err(DagError::Json(_))
+        ));
     }
 
     #[test]
@@ -469,32 +485,32 @@ cbindgen = "0.29"
     }
 
     #[test]
-    fn extract_package_override_works() {
-        assert_eq!(
-            extract_package_override(r#"{ path = "../x", package = "foo-pkg" }"#),
-            Some("foo-pkg".into())
-        );
-        assert_eq!(extract_package_override(r#"{ path = "../x" }"#), None);
-    }
-
-    #[test]
     fn collect_crates_e2e() {
+        // A real `cargo metadata` run over a throwaway workspace whose second
+        // member is reachable only as a path dependency of the first — the
+        // implicit membership that the old `workspace.members` reader missed.
         let tmp = tempdir();
         std::fs::write(
             tmp.join("Cargo.toml"),
             r#"
 [workspace]
-members = ["crates/a", "crates/b"]
+resolver = "2"
+members = ["crates/b"]
 "#,
         )
         .unwrap();
-        std::fs::create_dir_all(tmp.join("crates/a")).unwrap();
-        std::fs::create_dir_all(tmp.join("crates/b")).unwrap();
+        std::fs::create_dir_all(tmp.join("crates/a/src")).unwrap();
+        std::fs::create_dir_all(tmp.join("crates/b/src")).unwrap();
+        std::fs::write(tmp.join("crates/a/src/lib.rs"), "").unwrap();
+        std::fs::write(tmp.join("crates/b/src/lib.rs"), "").unwrap();
         std::fs::write(
             tmp.join("crates/a/Cargo.toml"),
             r#"
 [package]
 name = "a"
+version = "0.1.0"
+edition = "2021"
+
 [dependencies]
 "#,
         )
@@ -504,6 +520,10 @@ name = "a"
             r#"
 [package]
 name = "b"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
 [dependencies]
 a = { path = "../a" }
 "#,
@@ -513,6 +533,14 @@ a = { path = "../a" }
         let order = topo_sort(&crates).unwrap();
         let names: Vec<_> = order.iter().map(|c| c.name.clone()).collect();
         assert_eq!(names, vec!["a", "b"]);
+        assert_eq!(
+            only_publishable(&order)
+                .iter()
+                .map(|c| c.name.clone())
+                .collect::<Vec<_>>(),
+            vec!["a"]
+        );
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     fn tempdir() -> std::path::PathBuf {

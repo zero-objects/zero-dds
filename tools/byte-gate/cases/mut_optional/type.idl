@@ -1,0 +1,1 @@
+@mutable struct MutOpt { long a; @optional long b; };

@@ -46,7 +46,7 @@
 
     <MakeDir Directories="$(ZeroddsIdlcOutputDir)" Condition="!Exists('$(ZeroddsIdlcOutputDir)')" />
 
-    <Exec Command="&quot;$(ZeroddsIdlcExecutable)&quot; generate &quot;%(ZeroddsIdl.FullPath)&quot; --$(ZeroddsIdlcBackend) -o &quot;$(ZeroddsIdlcOutputDir.TrimEnd('\'))&quot;"
+    <Exec Command="&quot;$(ZeroddsIdlcExecutable)&quot; generate --lang $(ZeroddsIdlcBackend) --out &quot;$(ZeroddsIdlcOutputDir.TrimEnd('\'))&quot; &quot;%(ZeroddsIdl.FullPath)&quot;"
           Condition="'@(ZeroddsIdl)' != ''"
           />
 

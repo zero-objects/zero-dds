@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of union-discriminator-typedef-enum that fastdds produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	gen.hpp: In member function 'void zd_c6::Choice::_d(zd_c6::Shade)':
+plain-cdr1	be	refused	gen.hpp: In member function 'void zd_c6::Choice::_d(zd_c6::Shade)':
+pl-cdr1	le	refused	gen.hpp: In member function 'void zd_c6::Choice::_d(zd_c6::Shade)':
+pl-cdr1	be	refused	gen.hpp: In member function 'void zd_c6::Choice::_d(zd_c6::Shade)':
+plain-cdr2	le	refused	gen.hpp: In member function 'void zd_c6::Choice::_d(zd_c6::Shade)':
+plain-cdr2	be	refused	gen.hpp: In member function 'void zd_c6::Choice::_d(zd_c6::Shade)':
+delimited-cdr	le	refused	gen.hpp: In member function 'void zd_c6::Choice::_d(zd_c6::Shade)':
+delimited-cdr	be	refused	gen.hpp: In member function 'void zd_c6::Choice::_d(zd_c6::Shade)':
+pl-cdr2	le	refused	gen.hpp: In member function 'void zd_c6::Choice::_d(zd_c6::Shade)':
+pl-cdr2	be	refused	gen.hpp: In member function 'void zd_c6::Choice::_d(zd_c6::Shade)':

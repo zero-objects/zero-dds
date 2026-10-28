@@ -60,6 +60,10 @@ pub fn transient_reader_qos() -> DataReaderQos {
     q.durability.kind = DurabilityKind::TransientLocal;
     q.history.kind = HistoryKind::KeepAll;
     q.resource_limits.max_samples = LENGTH_UNLIMITED;
+    // A service replays what it stored in the representation of the source;
+    // a reader at the default (XCDR1, XTypes 1.3 §7.6.3.1.1) accepts only
+    // that one, so a reader that is to get either asks for both.
+    q.data_representation = Some(vec![0, 2]);
     q
 }
 

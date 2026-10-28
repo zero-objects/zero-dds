@@ -14,7 +14,7 @@ Implementation:
 
 **Repo:** `crates/corba-rt/src/priority.rs::Priority` (`new`, `clamped`, `value`).
 
-**Tests:** `crates/corba-rt/src/priority.rs::tests::priority_range`.
+**Tests:** `crates/corba-rt/src/priority.rs::priority_range`.
 
 **Status:** done
 
@@ -24,7 +24,7 @@ Implementation:
 
 **Repo:** `crates/corba-rt/src/priority.rs::PriorityMapping`, `LinearPriorityMapping`.
 
-**Tests:** `priority.rs::tests::linear_mapping_endpoints`, `native_out_of_window_unmapped`.
+**Tests:** `crates/corba-rt/src/priority.rs::{linear_mapping_endpoints, native_out_of_window_unmapped}`.
 
 **Status:** done
 
@@ -36,7 +36,7 @@ Implementation:
 
 **Repo:** `crates/corba-rt/src/policy.rs::PriorityModel`, `PriorityModelPolicy::effective_priority`.
 
-**Tests:** `policy.rs::tests::client_propagated_uses_propagated_priority`, `server_declared_ignores_propagated`.
+**Tests:** `crates/corba-rt/src/policy.rs::{client_propagated_uses_propagated_priority, server_declared_ignores_propagated}`.
 
 **Status:** done
 
@@ -46,7 +46,7 @@ Implementation:
 
 **Repo:** `crates/corba-rt/src/propagation.rs::RT_CORBA_PRIORITY_SC_ID`, `encode_priority_context` / `decode_priority_context`.
 
-**Tests:** `propagation.rs::tests::sc_id_is_ten`, `priority_context_roundtrip`, `byte_exact_big_endian`.
+**Tests:** `crates/corba-rt/src/propagation.rs::{sc_id_is_ten, priority_context_roundtrip, byte_exact_big_endian}`.
 
 **Status:** done
 
@@ -58,7 +58,7 @@ Implementation:
 
 **Repo:** `crates/corba-rt/src/policy.rs::Lane`, `Threadpool::lane_for` + `static_capacity`.
 
-**Tests:** `policy.rs::tests::lane_selection_picks_highest_covering`.
+**Tests:** `crates/corba-rt/src/policy.rs::lane_selection_picks_highest_covering`.
 
 **Status:** done
 
@@ -68,7 +68,7 @@ Implementation:
 
 **Repo:** `crates/corba-rt/src/policy.rs::PriorityBand`, `PriorityBandedConnectionPolicy::band_for`.
 
-**Tests:** `policy.rs::tests::priority_band_selection`.
+**Tests:** `crates/corba-rt/src/policy.rs::priority_band_selection`.
 
 **Status:** done
 
@@ -80,7 +80,7 @@ Implementation:
 
 **Repo:** `crates/corba-rt/src/current.rs::RtCurrent`.
 
-**Tests:** `current.rs::tests::get_set_priority`, `default_is_zero`.
+**Tests:** `crates/corba-rt/src/current.rs::{get_set_priority, default_is_zero}`.
 
 **Status:** done
 
@@ -92,7 +92,7 @@ Implementation:
 
 **Repo:** `crates/corba-rt/src/threadpool.rs::ThreadpoolRuntime` (`start`/`dispatch`/`select_lane`), `NativePrioritySetter` hook (platform `unsafe` at the caller; the crate stays `forbid(unsafe_code)`).
 
-**Tests:** `threadpool.rs::tests`: `dispatches_and_runs_all_jobs`, `routes_to_lane_by_priority`, `native_priority_hook_invoked_per_worker`, `rejects_when_buffering_off_and_no_worker`, `dynamic_worker_spawns_under_saturation`.
+**Tests:** `crates/corba-rt/src/threadpool.rs::{dispatches_and_runs_all_jobs, routes_to_lane_by_priority, native_priority_hook_invoked_per_worker, rejects_when_buffering_off_and_no_worker, dynamic_worker_spawns_under_saturation}`.
 
 **Status:** done
 
@@ -102,7 +102,7 @@ Implementation:
 
 **Repo:** `crates/corba-rt/src/mutex.rs::PriorityInheritance` (protocol core, `no_std`) + `RtMutex` (std, priority-ordered granting, event-driven via Condvar).
 
-**Tests:** `mutex.rs::tests`: `owner_inherits_highest_waiter`, `priority_reverts_on_unblock`, `rt_mutex_basic_lock_unlock`, `rt_mutex_try_lock_contended`, `rt_mutex_grants_highest_priority_waiter_first`.
+**Tests:** `crates/corba-rt/src/mutex.rs::{effective_is_base_without_waiters, owner_inherits_highest_waiter, priority_reverts_on_unblock, rt_mutex_basic_lock_unlock, rt_mutex_try_lock_contended, rt_mutex_grants_highest_priority_waiter_first}`.
 
 **Status:** done
 
@@ -112,7 +112,7 @@ Implementation:
 
 **Repo:** `crates/corba-rt/src/scheduling.rs::TaskSet` (`assign_rate_monotonic`, `liu_layland_bound`, `response_time`/`is_schedulable_rta`).
 
-**Tests:** `scheduling.rs::tests`: `response_time_analysis_exact_values`, `rta_stronger_than_liu_layland`, `overloaded_set_is_unschedulable`, `liu_layland_bound_known_points`, `constrained_deadline_tightens_test`, `rate_monotonic_assigns_shortest_period_highest`.
+**Tests:** `crates/corba-rt/src/scheduling.rs::{response_time_analysis_exact_values, rta_stronger_than_liu_layland, overloaded_set_is_unschedulable, liu_layland_bound_known_points, constrained_deadline_tightens_test, rate_monotonic_assigns_shortest_period_highest, implicit_deadline_defaults_to_period}`.
 
 **Status:** done
 
@@ -122,4 +122,4 @@ Implementation:
 
 10 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
 
-Test run: `cargo test -p zerodds-corba-rt` — 30 tests green, 0 failed.
+Test run: `cargo test -p zerodds-corba-rt` — 59 tests green, 0 failed.

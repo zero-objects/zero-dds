@@ -3,7 +3,7 @@
 # C1+C5: multicast-FREE cross-vendor discovery ZeroDDS <-> CycloneDDS
 # (= real ROS 2). BOTH sides without multicast, discovery only via
 # unicast initial peers (well-known SPDP ports). This is the WiFi/cloud
-# VPC scenario in which multicast DDS breaks. Runs on codepit
+# VPC scenario in which multicast DDS breaks. Runs on the Linux test host
 # (needs /opt/cyclone). Expected: talker matched=1, sub received 20.
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"

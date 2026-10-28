@@ -1,0 +1,4 @@
+## wireprobe-opensplice, exit 4
+### stderr
+wireprobe-opensplice: idlpp failed
+*** DDS error in file gen.idl: Type 'Inner' of 'nested' member is not supported for a key near the token #pragma  keylist Sample nested (line: 14, column: 0)

@@ -1,58 +1,90 @@
-// SPDX-License-Identifier: Apache-2.0
+/* Copyright 2010, Object Management Group, Inc.
+ * Copyright 2010, PrismTech, Inc.
+ * Copyright 2010, Real-Time Innovations, Inc.
+ * All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.omg.dds.core.policy;
 
-import java.util.Objects;
+
 
 /**
- * OMG DDS OwnershipQosPolicy — DDS-DCPS 1.4 §2.2.3.12.1.
- *
- * <p>{@code SHARED}: multiple writers may update an instance concurrently;
- * the reader sees every update. {@code EXCLUSIVE}: for each instance, only
- * the writer with the highest {@link OwnershipStrength} (the "owner") is
- * allowed to update the reader's view; samples from lower-strength writers
- * are filtered out (§2.2.3.12.1, "the DataReader will only receive
- * modifications from the DataWriter with the highest strength").
- *
- * <p>RxO (§2.2.3 compatibility table): both sides must use the same kind.
+ * [optional] Specifies whether it is allowed for multiple {@link org.omg.dds.pub.DataWriter}s
+ * to write the same instance of the data and if so, how these modifications
+ * should be arbitrated.
+ * 
+ * <b>Concerns:</b> {@link org.omg.dds.topic.Topic}, {@link org.omg.dds.sub.DataReader}, {@link org.omg.dds.pub.DataWriter}
+ * 
+ * <b>RxO:</b> Yes
+ * 
+ * <b>Changeable:</b> No
+ * 
+ * @see OwnershipStrength
  */
-public final class Ownership {
+public interface Ownership
+extends QosPolicy.ForTopic,
+        QosPolicy.ForDataReader,
+        QosPolicy.ForDataWriter,
+        RequestedOffered<Ownership>
+{
+    // -----------------------------------------------------------------------
+    // Methods
+    // -----------------------------------------------------------------------
+
+    /**
+     * @return the kind
+     */
+    public Kind getKind();
+
+
+    // --- Modification: -----------------------------------------------------
+
+    /**
+     * Copy this policy and override the value of the property.
+     * 
+     * @return  a new policy
+     */
+    public Ownership withKind(Kind kind);
+
+    public Ownership withShared();
+    
+    public Ownership withExclusive();
+
+    // -----------------------------------------------------------------------
+    // Types
+    // -----------------------------------------------------------------------
+
     public enum Kind {
+        /**
+         * Indicates shared ownership for each instance. Multiple writers are
+         * allowed to update the same instance and all the updates are made
+         * available to the readers. In other words there is no concept of an
+         * "owner" for the instances. This is the default behavior.
+         */
         SHARED,
-        EXCLUSIVE,
+
+        /**
+         * Indicates each instance can only be owned by one
+         * {@link org.omg.dds.pub.DataWriter}, but the owner of an instance can change
+         * dynamically. The selection of the owner is controlled by the
+         * setting of the {@link org.omg.dds.core.policy.OwnershipStrength}. The owner is
+         * always set to be the highest-strength DataWriter object among the
+         * ones currently "active" (as determined by the
+         * {@link org.omg.dds.core.policy.Liveliness}).
+         */
+        EXCLUSIVE
     }
 
-    public static final Ownership SHARED = new Ownership(Kind.SHARED);
-    public static final Ownership EXCLUSIVE = new Ownership(Kind.EXCLUSIVE);
-
-    private final Kind kind;
-
-    public Ownership(Kind kind) {
-        this.kind = Objects.requireNonNull(kind, "kind");
-    }
-
-    public Kind kind() {
-        return kind;
-    }
-
-    /** RxO compatibility (§2.2.3): the kinds must match exactly. */
-    public boolean isCompatibleWith(Ownership offered) {
-        return this.kind == offered.kind;
-    }
-
-    @Override
-    public boolean equals(Object o) {
-        if (this == o) return true;
-        if (!(o instanceof Ownership)) return false;
-        return kind == ((Ownership) o).kind;
-    }
-
-    @Override
-    public int hashCode() {
-        return Objects.hash(kind);
-    }
-
-    @Override
-    public String toString() {
-        return "Ownership(" + kind + ")";
-    }
 }

@@ -11,15 +11,23 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use zerodds_cdr::{BufferReader, Endianness};
-use zerodds_endpoint_e2e::{bind_reliable_peer, reliable_receive};
+use zerodds_endpoint_e2e::{bind_reliable_peer, reliable_receive, xcdr2_reader};
 
 const N: usize = 12;
 
 /// Builds the `endpoints/rust` reliable example and returns its binary path.
-fn build_example() -> Option<PathBuf> {
+///
+/// Every failure here is a failure. The other endpoint suites skip when
+/// their toolchain is absent, which is a real condition; this one runs
+/// under `cargo`, so the compiler it needs is the one already running it.
+/// A build error used to return `None` and print `SKIP`, which turned a
+/// broken example into two green tests.
+fn build_example() -> PathBuf {
     // crates/endpoint-e2e -> crates -> workspace root.
-    let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).ancestors().nth(2)?;
+    let workspace = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(2)
+        .expect("crates/endpoint-e2e sits two levels below the workspace root");
     let status = Command::new(env!("CARGO"))
         .args([
             "build",
@@ -30,19 +38,22 @@ fn build_example() -> Option<PathBuf> {
         ])
         .current_dir(workspace)
         .status()
-        .ok()?;
-    if !status.success() {
-        return None;
-    }
+        .expect("cargo runs this test, so cargo starts");
+    assert!(
+        status.success(),
+        "example_reliable does not build; see the cargo output above"
+    );
     let bin = workspace.join("target/debug/examples/example_reliable");
-    bin.exists().then_some(bin)
+    assert!(
+        bin.exists(),
+        "cargo reported success and {} is not there",
+        bin.display()
+    );
+    bin
 }
 
 fn run_case(drop_every: Option<usize>, label: &str) {
-    let Some(bin) = build_example() else {
-        eprintln!("SKIP {label}: could not build example_reliable");
-        return;
-    };
+    let bin = build_example();
     let peer = bind_reliable_peer(drop_every).expect("bind reliable peer");
     let child = Command::new(&bin)
         .arg(peer.port.to_string())
@@ -55,7 +66,7 @@ fn run_case(drop_every: Option<usize>, label: &str) {
     assert_eq!(delivered.len(), N, "{label}: delivered count");
     // Each sample is a `Reading { id, value, label }`; the id must equal its index.
     for (i, payload) in delivered.iter().enumerate() {
-        let mut r = BufferReader::new(payload, Endianness::Little).xcdr2();
+        let mut r = xcdr2_reader(payload);
         let id = r.read_u32().expect("reading id");
         assert_eq!(id as usize, i, "{label}: sample {i} id (gap-free order)");
     }

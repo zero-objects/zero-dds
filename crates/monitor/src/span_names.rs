@@ -35,7 +35,7 @@ pub const ALL: &[&str] = &[
     SPAN_DDS_SECURITY_AUTHENTICATE,
 ];
 
-/// Attribut-Keys (DDS-Namespace).
+/// Attribute keys (DDS namespace).
 pub mod attr {
     /// Topic-Name.
     pub const DDS_TOPIC: &str = "dds.topic";
@@ -47,7 +47,7 @@ pub mod attr {
     pub const DDS_SOURCE_GUID: &str = "dds.source_guid";
     /// Sample size in bytes.
     pub const DDS_SAMPLE_SIZE: &str = "dds.sample_size";
-    /// Wire-Repraesentation (CDR / PL_CDR1 / PL_CDR2 / XCDR2).
+    /// Wire representation (CDR / PL_CDR1 / PL_CDR2 / XCDR2).
     pub const DDS_REPRESENTATION: &str = "dds.representation";
     /// Transport (udp / tcp / shm / uds).
     pub const DDS_TRANSPORT: &str = "dds.transport";

@@ -19,10 +19,10 @@
 //!
 //! ## Safety
 //!
-//! We construct `mmsghdr` + `iovec` arrays on the stack, link the
-//! `iovec` pointers into pre-allocated heap buffers (Vec<Box<[u8]>>),
-//! and call `libc::recvmmsg`. All pointers live for the duration of the
-//! call; drop logic is trivial because the storage vec survives.
+//! The `mmsghdr` and `iovec` arrays and the receive buffers they point
+//! into are kept per thread across calls; each call links the pointers
+//! afresh and calls `libc::recvmmsg`. All pointers live for the duration
+//! of the call, because nothing touches the storage while it runs.
 
 #![cfg(all(feature = "std", feature = "recvmmsg-batch", target_os = "linux"))]
 // Feature-gated unsafe island for the libc::recvmmsg FFI. Each unsafe
@@ -33,7 +33,7 @@ use std::io;
 use std::mem::MaybeUninit;
 use std::net::{SocketAddr, SocketAddrV4, UdpSocket};
 use std::os::fd::AsRawFd;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::Arc;
 
 use zerodds_rtps::wire_types::Locator;
 use zerodds_transport::{ReceivedDatagram, RecvError};
@@ -66,43 +66,87 @@ pub fn recv_batch_linux(
     if batch == 0 {
         return Ok(0);
     }
+    SCRATCH.with(|cell| {
+        let mut scratch = cell.borrow_mut();
+        recv_batch_with(socket, out, batch, &mut scratch)
+    })
+}
 
-    // Opt-7 (spec `zerodds-zero-copy-1.0` §9): buffer slab pool.
-    // Each `recv_batch_linux` call needs up to `batch` heap buffers;
-    // without a pool that is `batch × Box::new([0u8; 64kB])` allocs
-    // per call (total ~2 MiB/call at batch=32). With the pool we
-    // recycle the buffers across `recv_batch_linux` calls.
-    let mut buffers: Vec<Box<[u8; MAX_DATAGRAM_SIZE]>> =
-        (0..batch).map(|_| take_pooled_buffer()).collect();
-    let mut sockaddrs: Vec<MaybeUninit<libc::sockaddr_storage>> = (0..batch)
-        .map(|_| MaybeUninit::<libc::sockaddr_storage>::zeroed())
-        .collect();
-    let mut iovecs: Vec<libc::iovec> = (0..batch)
-        .map(|i| libc::iovec {
-            iov_base: buffers[i].as_mut_ptr().cast::<libc::c_void>(),
-            iov_len: MAX_DATAGRAM_SIZE,
-        })
-        .collect();
-    let mut msgs: Vec<libc::mmsghdr> = (0..batch)
-        .map(|i| libc::mmsghdr {
-            msg_hdr: libc::msghdr {
-                msg_name: sockaddrs[i].as_mut_ptr().cast::<libc::c_void>(),
-                msg_namelen: core::mem::size_of::<libc::sockaddr_storage>() as libc::socklen_t,
-                msg_iov: &mut iovecs[i] as *mut libc::iovec,
-                msg_iovlen: 1,
-                msg_control: core::ptr::null_mut(),
-                msg_controllen: 0,
-                msg_flags: 0,
-            },
-            msg_len: 0,
-        })
-        .collect();
+/// What one `recvmmsg` call needs besides the socket: the receive buffers
+/// and the header arrays that point into them, kept by the receiving
+/// thread across calls.
+///
+/// They used to be built for each call: four lists, two of them past the
+/// size the allocator's per-thread cache serves (the 32 `sockaddr_storage`
+/// are 4 kB, zeroed), and buffers from a pool behind a lock. Every call
+/// went to the receiving thread's malloc arena, and the arena's lock is
+/// also the lock another thread takes to free what this one allocated —
+/// the datagrams it hands on. Measured on the Linux test host with a
+/// subscriber taking 800 000 samples a second, the receive thread waited
+/// on that lock about 1 100 times in 4 s in this function.
+#[derive(Default)]
+struct Scratch {
+    buffers: Vec<Box<[u8; MAX_DATAGRAM_SIZE]>>,
+    sockaddrs: Vec<MaybeUninit<libc::sockaddr_storage>>,
+    iovecs: Vec<libc::iovec>,
+    msgs: Vec<libc::mmsghdr>,
+}
+
+std::thread_local! {
+    static SCRATCH: core::cell::RefCell<Scratch> = core::cell::RefCell::new(Scratch::default());
+}
+
+fn recv_batch_with(
+    socket: &UdpSocket,
+    out: &mut Vec<ReceivedDatagram>,
+    batch: usize,
+    scratch: &mut Scratch,
+) -> Result<usize, RecvError> {
+    let Scratch {
+        buffers,
+        sockaddrs,
+        iovecs,
+        msgs,
+    } = scratch;
+    // The buffers are not cleared between calls: `recvmmsg` overwrites
+    // them, and only the `msg_len` octets it reports are read.
+    while buffers.len() < batch {
+        buffers.push(Box::new([0u8; MAX_DATAGRAM_SIZE]));
+    }
+    // Zeroed once, so that reading one is reading initialized memory; the
+    // kernel writes the source address of each datagram it returns.
+    if sockaddrs.len() < batch {
+        sockaddrs.resize(batch, MaybeUninit::<libc::sockaddr_storage>::zeroed());
+    }
+    iovecs.clear();
+    iovecs.extend(buffers[..batch].iter_mut().map(|b| libc::iovec {
+        iov_base: b.as_mut_ptr().cast::<libc::c_void>(),
+        iov_len: MAX_DATAGRAM_SIZE,
+    }));
+    msgs.clear();
+    msgs.extend(
+        sockaddrs[..batch]
+            .iter_mut()
+            .zip(iovecs.iter_mut())
+            .map(|(addr, iov)| libc::mmsghdr {
+                msg_hdr: libc::msghdr {
+                    msg_name: addr.as_mut_ptr().cast::<libc::c_void>(),
+                    msg_namelen: core::mem::size_of::<libc::sockaddr_storage>() as libc::socklen_t,
+                    msg_iov: iov as *mut libc::iovec,
+                    msg_iovlen: 1,
+                    msg_control: core::ptr::null_mut(),
+                    msg_controllen: 0,
+                    msg_flags: 0,
+                },
+                msg_len: 0,
+            }),
+    );
 
     // SAFETY: socket.as_raw_fd is a valid Linux fd;
     // msgs[..] is a valid &mut [mmsghdr] with batch-many entries;
     // all iovec/msghdr pointers point to live buffers
-    // (buffers/sockaddrs/iovecs) whose lifetime outlives the
-    // recvmmsg call.
+    // (buffers/sockaddrs/iovecs of `scratch`) that are neither moved nor
+    // dropped while the call runs.
     let n = unsafe {
         libc::recvmmsg(
             socket.as_raw_fd(),
@@ -133,45 +177,7 @@ pub fn recv_batch_linux(
         let data: Arc<[u8]> = Arc::from(buf);
         out.push(ReceivedDatagram { source, data });
     }
-    // Opt-7: return the buffers to the pool. We do not clear, because
-    // the next recvmmsg overwrites — only the `len` is relevant, and
-    // MAX_DATAGRAM_SIZE stays constant.
-    for b in buffers.drain(..) {
-        return_pooled_buffer(b);
-    }
     Ok(n)
-}
-
-// ============================================================================
-// Opt-7: buffer slab pool for recv buffers
-// ============================================================================
-
-/// Maximum number of recyclable buffers in the pool. At batch=32 and
-/// typically 1-2 concurrent recv_batch_linux callers, the pool keeps
-/// ~32 buffers warm. Higher limits raise the memory footprint without
-/// further throughput win.
-const POOL_CAPACITY: usize = 64;
-
-fn buffer_pool() -> &'static Mutex<Vec<Box<[u8; MAX_DATAGRAM_SIZE]>>> {
-    static POOL: OnceLock<Mutex<Vec<Box<[u8; MAX_DATAGRAM_SIZE]>>>> = OnceLock::new();
-    POOL.get_or_init(|| Mutex::new(Vec::with_capacity(POOL_CAPACITY)))
-}
-
-fn take_pooled_buffer() -> Box<[u8; MAX_DATAGRAM_SIZE]> {
-    buffer_pool()
-        .lock()
-        .ok()
-        .and_then(|mut p| p.pop())
-        .unwrap_or_else(|| Box::new([0u8; MAX_DATAGRAM_SIZE]))
-}
-
-fn return_pooled_buffer(buf: Box<[u8; MAX_DATAGRAM_SIZE]>) {
-    if let Ok(mut p) = buffer_pool().lock() {
-        if p.len() < POOL_CAPACITY {
-            p.push(buf);
-        }
-        // otherwise: pool full, buffer is dropped (normal free).
-    }
 }
 
 fn sockaddr_storage_to_locator(storage: &libc::sockaddr_storage) -> Result<Locator, RecvError> {
@@ -204,28 +210,42 @@ mod tests {
     use crate::UdpTransport;
     use zerodds_transport::Transport;
 
-    /// Opt-7 — the buffer pool recycles buffers across calls.
-    /// Across several `recv_batch_linux` calls, the number of heap
-    /// allocs stays constant between the first two calls
-    /// (pool refilled after the first call).
+    /// The receive buffers stay with the thread: neither an empty poll —
+    /// the common answer, as the call runs with `MSG_DONTWAIT` — nor a
+    /// receive gives them up, so no call allocates them again. An empty
+    /// poll that dropped them once cost the next call 2 MiB to allocate and
+    /// zero; measured with `perf`, that memset was 27 % of the receive
+    /// thread's cycles.
     #[test]
-    fn buffer_pool_reuses_across_calls() {
-        let take_a = take_pooled_buffer();
-        let take_b = take_pooled_buffer();
-        return_pooled_buffer(take_a);
-        return_pooled_buffer(take_b);
-        // After return there are 2 buffers in the pool; subsequent takes
-        // must reuse them (no new alloc).
-        let pool_len_before = buffer_pool().lock().unwrap().len();
-        assert!(pool_len_before >= 2);
-        let _r1 = take_pooled_buffer();
-        let _r2 = take_pooled_buffer();
-        let pool_len_after = buffer_pool().lock().unwrap().len();
+    fn the_receive_buffers_outlive_the_call() {
+        let rx = UdpTransport::bind_v4(Ipv4Addr::LOCALHOST, 0).unwrap();
+        let rx_loc = <UdpTransport as Transport>::local_locator(&rx);
+        let socket = rx.std_socket();
+        socket.set_nonblocking(true).expect("nonblocking");
+        let first_buffer =
+            || SCRATCH.with(|cell| cell.borrow().buffers.first().map(|b| b.as_ptr()));
+        let mut out = Vec::new();
         assert_eq!(
-            pool_len_after,
-            pool_len_before - 2,
-            "two takes consume two pooled buffers"
+            recv_batch_linux(socket, &mut out, 8).expect("empty poll"),
+            0,
+            "nothing was sent, so nothing is received"
         );
+        let after_empty_poll = first_buffer().expect("the buffers are kept");
+        let tx = UdpTransport::bind_v4(Ipv4Addr::LOCALHOST, 0).unwrap();
+        tx.send(&rx_loc, &[1, 2, 3, 0xAB]).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        assert_eq!(recv_batch_linux(socket, &mut out, 8).expect("receive"), 1);
+        assert_eq!(&*out[0].data, &[1, 2, 3, 0xAB]);
+        assert_eq!(
+            first_buffer(),
+            Some(after_empty_poll),
+            "a receive reuses the buffers of the call before it"
+        );
+        assert_eq!(
+            recv_batch_linux(socket, &mut out, 8).expect("empty poll"),
+            0
+        );
+        assert_eq!(first_buffer(), Some(after_empty_poll));
     }
 
     /// The sender floods 5 datagrams; `recv_batch_linux` must return

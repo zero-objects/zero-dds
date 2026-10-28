@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # tests/interop/capture.sh
 #
-# Hilfs-Skript zum Capture von Cyclone-DDS-RTPS-Frames mit tshark.
-# Schreibt PCAP nach $OUT (default: cyclone_dump.pcap) und exportiert
-# parallel ein Hex-Dump aller DATA-Submessages nach $HEX_OUT.
+# Helper script to capture Cyclone DDS RTPS frames with tshark.
+# Writes the PCAP to $OUT (default: cyclone_dump.pcap) and in parallel
+# exports a hex dump of all DATA submessages to $HEX_OUT.
 #
-# Voraussetzungen:
-#   - tshark installiert (Wireshark/CLI)
-#   - sudo-Rechte fuer Live-Capture
-#   - tests/interop/docker-compose.yml laeuft (docker compose up -d)
+# Prerequisites:
+#   - tshark installed (Wireshark/CLI)
+#   - sudo rights for live capture
+#   - tests/interop/docker-compose.yml running (docker compose up -d)
 #
 # Usage:
 #   ./tests/interop/capture.sh [count] [out.pcap]
@@ -33,16 +33,16 @@ echo ""
 echo "Capture written to: $OUT"
 echo "Exporting hex of all RTPS DATA submessages to: $HEX_OUT"
 
-# Filter: nur RTPS-Datagrams mit DATA-Submessage
+# Filter: only RTPS datagrams with a DATA submessage
 tshark -r "$OUT" -Y "rtps.sm.id == 0x15" -T fields -e data \
     > "$HEX_OUT" || true
 
 echo ""
-echo "Done. Konvertiere ein Frame in eine Fixture mit:"
+echo "Done. Convert one frame into a fixture with:"
 echo "  head -1 $HEX_OUT | xxd -r -p > frame.bin"
-echo "  xxd frame.bin   # Hex-Inspektion"
+echo "  xxd frame.bin   # hex inspection"
 echo ""
-echo "Manuelle Aufnahme als Fixture:"
-echo "  - Bytes in crates/rtps/tests/fixtures/cyclone/<name>.hex einfuegen"
-echo "  - Header-Bytes mit '#' kommentieren"
-echo "  - Test in crates/rtps/tests/cyclone_compliance.rs ergaenzen"
+echo "Manual capture as a fixture:"
+echo "  - insert the bytes into crates/rtps/tests/fixtures/cyclone/<name>.hex"
+echo "  - comment the header bytes with '#'"
+echo "  - add a test in crates/rtps/tests/cyclone_compliance.rs"

@@ -1,15 +1,15 @@
-# pkg/windows/build.ps1 — Baut das ZeroDDS-MSI-Paket auf Windows.
+# pkg/windows/build.ps1 — builds the ZeroDDS MSI package on Windows.
 #
-# Voraussetzungen (im CI / Dev-Maschine):
+# Prerequisites (in CI / on a dev machine):
 #   * Rust toolchain 1.85+ (rustup default stable, target x86_64-pc-windows-msvc)
 #   * .NET 8 SDK
 #   * dotnet tool install -g wix --version 5.0.*
 #   * Optional: signtool.exe (Windows SDK)
 #
-# Build im Repo-Root:
+# Build in the repo root:
 #   pwsh -File pkg/windows/build.ps1 -Configuration Release -Sign $false
 #
-# Mit Code-Signing:
+# With code signing:
 #   pwsh -File pkg/windows/build.ps1 -Sign $true -CertSubject "ZeroDDS Maintainers"
 
 [CmdletBinding()]
@@ -27,7 +27,7 @@ $RepoRoot = Resolve-Path "$PSScriptRoot/../.."
 Push-Location $RepoRoot
 
 try {
-    Write-Host "==> cargo build --release (Workspace-Tools + libs)"
+    Write-Host "==> cargo build --release (workspace tools + libs)"
     cargo build --release `
         -p dds-admin -p dds-perf -p dds-idlc -p dds-xmlc `
         -p dds-traceability -p dds-chaos `
@@ -35,7 +35,7 @@ try {
         -p dds-c-api
     if ($LASTEXITCODE -ne 0) { throw "cargo build failed" }
 
-    Write-Host "==> WiX-Build"
+    Write-Host "==> WiX build"
     if (-not (Test-Path $OutDir)) {
         New-Item -ItemType Directory -Path $OutDir | Out-Null
     }

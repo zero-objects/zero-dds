@@ -1,0 +1,5 @@
+// `@key` on one member
+@final struct Sample {
+    @key long id;
+    long payload;
+};

@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of primitive-wchar-above-bmp that zerodds-csharp produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	wireprobe-zerodds-csharp-gen: sample.too_wide: U+1F600 is past the BMP and a C# char holds one code unit
+plain-cdr1	be	refused	wireprobe-zerodds-csharp-gen: sample.too_wide: U+1F600 is past the BMP and a C# char holds one code unit
+pl-cdr1	le	refused	wireprobe-zerodds-csharp-gen: sample.too_wide: U+1F600 is past the BMP and a C# char holds one code unit
+pl-cdr1	be	refused	wireprobe-zerodds-csharp-gen: sample.too_wide: U+1F600 is past the BMP and a C# char holds one code unit
+plain-cdr2	le	refused	wireprobe-zerodds-csharp-gen: sample.too_wide: U+1F600 is past the BMP and a C# char holds one code unit
+plain-cdr2	be	refused	wireprobe-zerodds-csharp-gen: sample.too_wide: U+1F600 is past the BMP and a C# char holds one code unit
+delimited-cdr	le	refused	wireprobe-zerodds-csharp-gen: sample.too_wide: U+1F600 is past the BMP and a C# char holds one code unit
+delimited-cdr	be	refused	wireprobe-zerodds-csharp-gen: sample.too_wide: U+1F600 is past the BMP and a C# char holds one code unit
+pl-cdr2	le	refused	wireprobe-zerodds-csharp-gen: sample.too_wide: U+1F600 is past the BMP and a C# char holds one code unit
+pl-cdr2	be	refused	wireprobe-zerodds-csharp-gen: sample.too_wide: U+1F600 is past the BMP and a C# char holds one code unit

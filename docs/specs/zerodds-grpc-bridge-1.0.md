@@ -1,65 +1,80 @@
-# `zerodds-grpc-bridge` v1.0 — DDS↔gRPC-Bridge-Daemon
+# `zerodds-grpc-bridge` v1.0 — DDS↔gRPC bridge daemon
 
-ZeroDDS Vendor-Spec. Spezifiziert das Verhalten eines konfigurierbaren
-Daemons, der DDS-Topics als gRPC-Services (HTTP/2 Streaming) exponiert.
+ZeroDDS vendor spec. Specifies the behaviour of a configurable
+daemon that exposes DDS topics as gRPC services (HTTP/2 streaming).
 
 ## Motivation
 
-gRPC ist der De-facto-Standard für moderne Microservice-RPCs:
-Kubernetes-Service-Mesh (Istio, Linkerd), Cloud-APIs (Google, AWS),
-und Polyglot-Backend-Stacks. ZeroDDS bringt Real-Time-Industriedaten;
-der `zerodds-grpc-bridged`-Daemon stellt jedes DDS-Topic als gRPC-
-Service `<TopicSlug>Stream` mit `Publish(stream Sample)` /
-`Subscribe(SubscribeReq) returns (stream Sample)` zur Verfügung.
+gRPC is the de facto standard for modern microservice RPCs:
+Kubernetes service mesh (Istio, Linkerd), cloud APIs (Google, AWS),
+and polyglot backend stacks. ZeroDDS brings real-time industrial data;
+the `zerodds-grpc-bridged` daemon provides every DDS topic as a gRPC
+service `<TopicSlug>Stream` with `Publish(stream Sample)` /
+`Subscribe(SubscribeReq) returns (stream Sample)`.
 
-Komplementär zu den Libraries `crates/grpc-bridge/`, `crates/http2/`
-und `crates/hpack/` — die Libraries sind Building-Blocks (HTTP/2,
-HPACK, Protobuf-Codec, gRPC-Status), dieser Daemon ist das
-ausführbare Produkt.
+Complementary to the libraries `crates/grpc-bridge/`, `crates/http2/`
+and `crates/hpack/` — the libraries are building blocks (HTTP/2,
+HPACK, Protobuf codec, gRPC status), this daemon is the
+executable product.
 
-## §1 Conformance-Levels
+## §1 Conformance levels
 
-| Level | Anforderung |
+| Level | Requirement |
 |-------|-------------|
-| **L1 — Wire** | Daemon spricht gRPC über HTTP/2 (RFC 7540) + HPACK (RFC 7541) + gRPC-PROTOCOL.md (gRPC-Status, gRPC-Encoding, gRPC-Timeout). |
-| **L2 — DDS** | Daemon ist gültiger DDS-DomainParticipant (SPDP/SEDP, Discovery, Liveliness). |
-| **L3 — Bridging** | Bidirektional: gRPC-Client→DDS-Publish (Client-Stream) + DDS→gRPC-Push (Server-Stream). |
-| **L4 — Config** | Topic-Map per YAML-Config; Hot-Reload via SIGHUP optional. |
-| **L5 — Auth** | TLS + ALPN(`h2`) + JWT-Bearer (`Authorization` Metadata) + mTLS. |
-| **L6 — Multi-Tenant** | Mehrere DomainParticipants pro Daemon; pro gRPC-Connection eine Tenant-Bindung. |
+| **L1 — Wire** | The daemon speaks gRPC over HTTP/2 (RFC 7540) + HPACK (RFC 7541) + gRPC-PROTOCOL.md (gRPC status, gRPC encoding, gRPC timeout). |
+| **L2 — DDS** | The daemon is a valid DDS DomainParticipant (SPDP/SEDP, discovery, liveliness). |
+| **L3 — Bridging** | Bidirectional: gRPC client→DDS publish (client stream) + DDS→gRPC push (server stream). |
+| **L4 — Config** | Topic map via YAML config; hot reload via SIGHUP optional. |
+| **L5 — Auth** | TLS + ALPN(`h2`) + JWT bearer (`Authorization` metadata) + mTLS. |
+| **L6 — Multi-Tenant** | Several DomainParticipants per daemon; one tenant binding per gRPC connection. |
 
-L1-L4 sind Pflicht. L5-L6 sind optional (Pflicht für Production).
+L1-L4 are mandatory. L5-L6 are optional (mandatory for production).
 
-## §2 CLI-Surface
+## §2 CLI surface
 
 ```
 zerodds-grpc-bridged [OPTIONS]
 
 Options:
-  --config <FILE>           Path zur Config-File (YAML/JSON/TOML)
-  --bind <ADDR>             HTTP/2-Bind-Address (Default 0.0.0.0:50051)
-  --domain <ID>             DDS-Domain-ID (Default 0)
-  --tls-cert <FILE>         TLS-Cert (PEM) — Pflicht für gRPC-Standard (h2-ALPN)
-  --tls-key <FILE>          TLS-Key (PEM)
-  --tls-client-ca <FILE>    Client-CA für mTLS (optional)
-  --reflection              gRPC-Reflection-Service aktivieren
-  --topic <DDS:SVC>         Single-Topic-Override (mehrfach)
-  --log-level <LEVEL>       trace/debug/info/warn/error (Default info)
-  --metrics <ADDR>          Prometheus-Scrape-Endpoint (Default off)
-  --version                 Versions-Info
-  --help                    Hilfe
+  --config <FILE>              base file (YAML subset of zerodds-config),
+                               plus FILE.d/; without: grpc-bridged.yaml and grpc-bridged.d/
+                               in the system directory
+  --set <PATH=VALUE>           one value above all files, repeatable
+  --check-config               check the configuration, print every value with its origin,
+                               exit (0 valid, 1 invalid)
+  --bind <ADDR>             HTTP/2 bind address (default 0.0.0.0:50051)
+  --domain <ID>             DDS domain ID (default 0)
+  --tls-cert <FILE>         TLS cert (PEM) — mandatory for the gRPC standard (h2 ALPN)
+  --tls-key <FILE>          TLS key (PEM)
+  --tls-client-ca <FILE>    client CA for mTLS (optional)
+  --reflection              enable the gRPC reflection service
+  --topic <DDS:SVC>         single-topic override (repeatable)
+  --log-level <LEVEL>       trace/debug/info/warn/error (default info)
+  --metrics <ADDR>          Prometheus scrape endpoint (default off)
+  --version                 version info
+  --help                    help
 
-Exit-Codes:
-  0   normaler Shutdown (SIGTERM/SIGINT)
-  1   Config-Fehler
-  2   Bind-Fehler (Port belegt)
-  3   DDS-Discovery-Fehler
-  4   TLS-Fehler
+Exit codes:
+  0   normal shutdown (SIGTERM/SIGINT)
+  1   config error
+  2   bind error (port in use)
+  3   DDS discovery error
+  4   TLS error
 ```
 
-## §3 Config-File-Format
+Precedence (lowest first): built-in defaults, environment, files,
+flags. `--bind`, `--domain`, `--tls-cert`/`--tls-key` (only together), `--reflection`, `--topic <DDS=SERVICE>`, `--log-level` and `--metrics` are short forms for `--set` of their file key
+and therefore win over the files. The same file may carry the keys of the
+DDS runtime (`transport.*`, `discovery.*`, …), see
+`zerodds-deployment-1.0.md` §2.1.
 
-YAML-Schema:
+## §3 Config file format
+
+YAML subset of `zerodds-config` (block lists, flat inline lists of
+scalars, `include:`, drop-ins, `${VAR}`). An unknown key in
+a known section and a value of the wrong type prevent the start,
+with file and line; an unknown key at the top level produces
+a warning, and under `--check-config` an error.
 
 ```yaml
 # zerodds-grpc-bridged.yaml
@@ -85,7 +100,7 @@ grpc:
     require_client_cert: false
     alpn: ["h2"]
   reflection:
-    enabled: true                          # gRPC-Server-Reflection (grpc.reflection.v1alpha)
+    enabled: true                          # gRPC server reflection (grpc.reflection.v1alpha)
 
 auth:
   mode: "none"                             # none | jwt | mtls
@@ -118,25 +133,25 @@ topics:
 
 metrics:
   enabled: true
-  listen: "127.0.0.1:9094"
+  listen: "127.0.0.1:9095"
   path: "/metrics"
 ```
 
-ENV-Substitution: `${VAR}` und `${VAR:-default}`.
+ENV substitution: `${VAR}` and `${VAR:-default}`.
 
-## §4 gRPC-Wire-Protocol
+## §4 gRPC wire protocol
 
-### §4.1 HTTP/2-Setup
+### §4.1 HTTP/2 setup
 
-Daemon ist HTTP/2-Server mit ALPN `h2`. Cleartext-h2c **nur** im Dev-
-Mode (`tls.enabled=false` und `bind=127.0.0.1`).
+The daemon is an HTTP/2 server with ALPN `h2`. Cleartext h2c **only** in dev
+mode (`tls.enabled=false` and `bind=127.0.0.1`).
 
-`SETTINGS`-Frame mit den Werten aus `grpc.*`-Config; `GOAWAY` bei
-Shutdown.
+`SETTINGS` frame with the values from the `grpc.*` config; `GOAWAY` on
+shutdown.
 
-### §4.2 Service-Definition (auto-generiert)
+### §4.2 Service definition (auto-generated)
 
-Pro Topic generiert Daemon implizit eine .proto-Definition:
+For each topic the daemon implicitly generates a .proto definition:
 ```protobuf
 syntax = "proto3";
 package zerodds.chat.v1;
@@ -180,7 +195,7 @@ message TopicEntry {
 }
 ```
 
-### §4.3 RPC-Flows
+### §4.3 RPC flows
 
 **Publish (gRPC → DDS)**:
 ```
@@ -194,121 +209,121 @@ HEADERS (HEADERS frame)
 DATA frames (Length-Prefix-Message: 5-byte header + Sample-bytes)
   ...
 HEADERS (END_STREAM)
-  grpc-status = 0  (OK) on success, mit grpc-message bei Fehler
+  grpc-status = 0  (OK) on success, with grpc-message on error
 ```
 
 **Subscribe (DDS → gRPC)**:
-- Client öffnet Server-Streaming-RPC.
-- Daemon registriert DataReader, jeder Sample geht als DATA-Frame raus
-  (Length-Prefix-Wrapper).
-- `grpc-status=0` beim Reader-Cleanup.
+- The client opens a server-streaming RPC.
+- The daemon registers a DataReader; every sample goes out as a DATA frame
+  (length-prefix wrapper).
+- `grpc-status=0` on reader cleanup.
 
-### §4.4 Length-Prefix-Wrapper
+### §4.4 Length-prefix wrapper
 
-gRPC-Standard:
+gRPC standard:
 ```
 +--------+----------------+----------------------+
 | Compr  | Message Length | Protobuf-Sample      |
 | 1 byte | 4 bytes (BE)   | (variable)           |
 +--------+----------------+----------------------+
 ```
-Compr-Flag: 0=identity, 1=compressed (gzip/deflate gemäß `grpc-encoding`).
+Compr flag: 0=identity, 1=compressed (gzip/deflate according to `grpc-encoding`).
 
-Inside the Protobuf-Sample, das `cdr_payload`-Field enthält die
-**vollständige CDR-Bytes inkl. 4-Byte-Encap-Header** wie über RTPS,
-gemäß `zerodds-xcdr2-bindings-conformance-1.0` §3.
+Inside the Protobuf sample, the `cdr_payload` field contains the
+**complete CDR bytes incl. the 4-byte encap header** as over RTPS,
+according to `zerodds-xcdr2-bindings-conformance-1.0` §3.
 
-### §4.5 Status-Mapping
+### §4.5 Status mapping
 
-| gRPC-Status | DDS-Side-Bedingung |
+| gRPC status | DDS-side condition |
 |-------------|--------------------|
-| `OK (0)` | Sample geschrieben/gestreamt |
-| `INVALID_ARGUMENT (3)` | CDR-Decode-Fehler |
-| `PERMISSION_DENIED (7)` | ACL-Fehler |
-| `UNAUTHENTICATED (16)` | JWT/mTLS-Fehler |
-| `RESOURCE_EXHAUSTED (8)` | Send-Queue-Full / DDS-Backpressure |
-| `DEADLINE_EXCEEDED (4)` | gRPC-Timeout-Header |
-| `UNAVAILABLE (14)` | DDS-Liveliness-Lost / Daemon-Drain |
-| `INTERNAL (13)` | unerwarteter Fehler |
+| `OK (0)` | Sample written/streamed |
+| `INVALID_ARGUMENT (3)` | CDR decode error |
+| `PERMISSION_DENIED (7)` | ACL error |
+| `UNAUTHENTICATED (16)` | JWT/mTLS error |
+| `RESOURCE_EXHAUSTED (8)` | Send queue full / DDS backpressure |
+| `DEADLINE_EXCEEDED (4)` | gRPC timeout header |
+| `UNAVAILABLE (14)` | DDS liveliness lost / daemon drain |
+| `INTERNAL (13)` | unexpected error |
 
-### §4.6 Reflection-Service
+### §4.6 Reflection service
 
-Wenn `grpc.reflection.enabled: true`, exportiert Daemon das Standard-
-`grpc.reflection.v1alpha.ServerReflection`-Service mit den auto-
-generierten Topic-Services + Sample-Message-Types.
+If `grpc.reflection.enabled: true`, the daemon exports the standard
+`grpc.reflection.v1alpha.ServerReflection` service with the auto-
+generated topic services + sample message types.
 
-## §5 Topic-Mapping
+## §5 Topic mapping
 
-### §5.1 Service-Namen-Default
+### §5.1 Default service name
 
-Topic-Name `Chat::Message` → gRPC-Service-Default:
-1. `::` → ` ` Split: `["Chat", "Message"]`
-2. CamelCase-Concat: `ChatMessage`
+Topic name `Chat::Message` → default gRPC service:
+1. Split on `::` → ` `: `["Chat", "Message"]`
+2. CamelCase concat: `ChatMessage`
 3. Suffix: `ChatMessageStream`
-4. Package: aus Config oder Default `zerodds.<lowercase-first-segment>.v1`
+4. Package: from config or default `zerodds.<lowercase-first-segment>.v1`
 
-Override per `grpc_service`/`grpc_package`-Felder.
+Override via the `grpc_service`/`grpc_package` fields.
 
-### §5.2 Type-Discovery
+### §5.2 Type discovery
 
-Drei Pfade:
-- `grpc.reflection` Service (Standard).
-- `Catalog` RPC pro Topic-Service liefert TopicEntry-Liste.
-- HTTP-GET (außerhalb gRPC) `https://<bind>/idl/<dds_name>` liefert
-  IDL-Quelltext als `text/x-omg-idl` (Sidekick-Endpoint).
+Three paths:
+- `grpc.reflection` service (standard).
+- `Catalog` RPC per topic service returns the TopicEntry list.
+- HTTP GET (outside gRPC) `https://<bind>/idl/<dds_name>` returns the
+  IDL source as `text/x-omg-idl` (sidekick endpoint).
 
-## §6 QoS-Translation
+## §6 QoS translation
 
-gRPC läuft über TCP/HTTP/2 — TCP-Garantien sind gegeben. Daher:
+gRPC runs over TCP/HTTP/2 — TCP guarantees are given. Therefore:
 
-| DDS-QoS | gRPC-Verhalten |
+| DDS QoS | gRPC behaviour |
 |---------|----------------|
-| Reliability `RELIABLE` | unmodifiziert; Backpressure via HTTP/2-Flow-Control |
-| Reliability `BEST_EFFORT` | Daemon dropped Samples bei voller `WINDOW_UPDATE`-Queue |
-| Durability `VOLATILE` | nur Live-Stream |
-| Durability `TRANSIENT_LOCAL` | Daemon hält letzte N Samples + sendet als `initial_burst` beim Subscribe |
-| History `KEEP_LAST(N)` | analog |
-| Lifespan | als `grpc-timeout` Header bzw. metadata `zerodds-lifespan-ms` |
-| Deadline | Daemon emittiert metadata `zerodds-deadline-missed` Trailer |
-| Liveliness | HTTP/2 `PING`-Frames per `keepalive_*`-Config |
+| Reliability `RELIABLE` | unmodified; backpressure via HTTP/2 flow control |
+| Reliability `BEST_EFFORT` | daemon drops samples when the `WINDOW_UPDATE` queue is full |
+| Durability `VOLATILE` | live stream only |
+| Durability `TRANSIENT_LOCAL` | daemon keeps the last N samples + sends them as `initial_burst` on subscribe |
+| History `KEEP_LAST(N)` | likewise |
+| Lifespan | as `grpc-timeout` header or metadata `zerodds-lifespan-ms` |
+| Deadline | daemon emits metadata `zerodds-deadline-missed` trailer |
+| Liveliness | HTTP/2 `PING` frames per `keepalive_*` config |
 | Partition | `SubscribeReq.partition_filter` |
 
 ## §7 Security
 
 ### §7.1 TLS
 
-ALPN `h2` ist gRPC-Standard. Mindestens TLS 1.2; TLS 1.3 default.
-Cipher-Suites pro `grpc.tls`-Config.
+ALPN `h2` is the gRPC standard. At least TLS 1.2; TLS 1.3 by default.
+Cipher suites per `grpc.tls` config.
 
-Cert-Rotation via SIGHUP.
+Cert rotation via SIGHUP.
 
-### §7.2 Auth-Modes
+### §7.2 Auth modes
 
-- `none`: nur Dev-Mode (bind 127.0.0.1).
-- `jwt`: `Authorization: Bearer <token>` Metadata, Daemon validiert
-  RS256/ES256 gegen `jwt.public_key`, prüft `audience` + `required_claim`.
-- `mtls`: Client-Zertifikat-Auth, Subject-DN als Identity.
+- `none`: dev mode only (bind 127.0.0.1).
+- `jwt`: `Authorization: Bearer <token>` metadata, the daemon validates
+  RS256/ES256 against `jwt.public_key`, checks `audience` + `required_claim`.
+- `mtls`: client certificate auth, subject DN as identity.
 
 ### §7.3 ACL
 
-Per Topic im Config:
+Per topic in the config:
 ```yaml
 acl:
   publish: ["alice"]
   subscribe: ["*group:engineers*"]
 ```
 
-Subject-Resolution: aus JWT `sub`-Claim oder TLS-Cert-DN.
+Subject resolution: from the JWT `sub` claim or the TLS cert DN.
 
-## §8 Operations + Observability
+## §8 Operations + observability
 
 ### §8.1 Logging
 
-Strukturiertes JSON-Log auf stdout. Felder: `timestamp`, `level`,
+Structured JSON log on stdout. Fields: `timestamp`, `level`,
 `event`, `peer`, `service`, `method`, `dds_topic`, `bytes`,
 `grpc_status`, `latency_us`, `stream_id`.
 
-### §8.2 Prometheus-Metrics
+### §8.2 Prometheus metrics
 
 ```
 zerodds_grpc_bridge_rpcs_total              counter{service, method, status}
@@ -323,87 +338,92 @@ zerodds_grpc_bridge_auth_failures_total     counter{reason}
 zerodds_grpc_bridge_h2_resets_total         counter{error_code}
 ```
 
-### §8.3 OTLP-Spans
+### §8.3 OTLP spans
 
-`OTEL_EXPORTER_OTLP_ENDPOINT` → Spans pro RPC; Trace-Propagation via
-W3C-Traceparent-Header (gRPC-Metadata).
+`OTEL_EXPORTER_OTLP_ENDPOINT` → spans per RPC; trace propagation via
+the W3C traceparent header (gRPC metadata).
 
 ## §9 Lifecycle
 
 ### §9.1 Startup
 
-1. Config-Parse + Validation.
-2. TLS-Cert-Load.
-3. DCPS-DomainParticipant init auf `domain`.
-4. Pro Topic: Reader+Writer registrieren (gemäß `direction`); auto-
-   generiere FileDescriptor für Reflection.
-5. HTTP/2-Server-Bind.
-6. SIGHUP/SIGTERM/SIGINT-Handler installieren.
+1. Config parse + validation.
+2. TLS cert load.
+3. DCPS DomainParticipant init on `domain`.
+4. Per topic: register reader+writer (according to `direction`: `in` =
+   gRPC client → DDS, one DataWriter for `Publish`; `out` = DDS →
+   gRPC client, one DataReader for `Subscribe`; `bidir` = both); auto-
+   generate the FileDescriptor for reflection. A `Publish` on a topic
+   without a DataWriter and a `Subscribe` on one without a DataReader end with
+   `grpc-status = 9` (FAILED_PRECONDITION); a failed DDS write
+   with `grpc-status = 14` (UNAVAILABLE).
+5. HTTP/2 server bind.
+6. Install SIGHUP/SIGTERM/SIGINT handlers.
 
 ### §9.2 Shutdown
 
 SIGTERM/SIGINT → graceful drain (max 30s):
-- Send `GOAWAY` mit last-stream-id auf alle HTTP/2-Connections.
-- Lass laufende RPCs natürlich beenden.
-- Drain pending DDS-Writes.
-- Cleanup DDS-Entities.
+- Send `GOAWAY` with last-stream-id on all HTTP/2 connections.
+- Let running RPCs end naturally.
+- Drain pending DDS writes.
+- Clean up DDS entities.
 - Exit 0.
 
-SIGHUP → Config-Reload (TLS-Cert + ACL hot-update; topic-map-Änderungen
-brauchen Restart, da Service-Registry neu generiert).
+SIGHUP → config reload (TLS cert + ACL hot update; topic map changes
+need a restart, since the service registry is regenerated).
 
-## §10 Cross-Vendor
+## §10 Cross-vendor
 
-Daemon ist normaler RTPS-Peer. gRPC-Seite getestet gegen grpc-go,
-grpc-java, grpcurl, ghz (Load-Tester), Bloom-RPC (GUI), tonic (Rust).
+The daemon is a normal RTPS peer. gRPC side tested against grpc-go,
+grpc-java, grpcurl, ghz (load tester), Bloom-RPC (GUI), tonic (Rust).
 
-Verifiziert in `crates/grpc-bridge/tests/cross_vendor.rs`.
+Verified in `crates/grpc-bridge/tests/cross_vendor.rs`.
 
 ## §11 Packaging
 
-Per `zerodds-deployment-1.0` Spec:
+Per the `zerodds-deployment-1.0` spec:
 - Binary: `zerodds-grpc-bridged`
-- Config-Default: `/etc/zerodds/grpc-bridged.yaml`
-- Systemd-Unit: `zerodds-grpc-bridged.service`
-- launchd-Plist: `org.zerodds.grpc-bridged.plist`
-- Win-Service: `ZeroDDSGRPCBridge`
+- Config default: `/etc/zerodds/grpc-bridged.yaml`
+- Systemd unit: `zerodds-grpc-bridged.service`
+- launchd plist: `org.zerodds.grpc-bridged.plist`
+- Windows service: `ZeroDDSGRPCBridge`
 - Docker: `zerodds/grpc-bridged:1.0`
 
 Manual: `man 1 zerodds-grpc-bridged` + `man 5 zerodds-grpc-bridged.yaml`.
 
 ## §12 Testing
 
-### §12.1 Unit-Tests
+### §12.1 Unit tests
 
-Pro Modul (`config`, `http2_codec`, `hpack`, `grpc_status`,
-`reflection`, `dds_pump`, `auth`) ≥ 5 Tests in `crates/grpc-bridge/`,
+Per module (`config`, `http2_codec`, `hpack`, `grpc_status`,
+`reflection`, `dds_pump`, `auth`) ≥ 5 tests in `crates/grpc-bridge/`,
 `crates/http2/`, `crates/hpack/`.
 
-### §12.2 Integration-Tests
+### §12.2 Integration tests
 
 `crates/grpc-bridge/tests/bridge_e2e.rs`:
-- Spawn `zerodds-grpc-bridged` als Subprocess.
-- grpcurl als CLI-Client für `Publish`/`Subscribe`.
-- DDS-Subscriber im Test-Process.
-- Verify byte-genauer Roundtrip.
-- Reflection-Service-Roundtrip.
+- Spawn `zerodds-grpc-bridged` as a subprocess.
+- grpcurl as the CLI client for `Publish`/`Subscribe`.
+- DDS subscriber in the test process.
+- Verify byte-exact round trip.
+- Reflection service round trip.
 
-### §12.3 Multi-Vendor
+### §12.3 Multi-vendor
 
-`tests/cross_vendor.rs`: tonic-Client + Cyclone-DDS-Subscriber +
-ZeroDDS-gRPC-Bridge im Docker-Compose.
+`tests/cross_vendor.rs`: tonic client + Cyclone DDS subscriber +
+ZeroDDS gRPC bridge in Docker Compose.
 
-## §13 Cross-References
+## §13 Cross-references
 
 - Library: `crates/grpc-bridge/`, `crates/http2/`, `crates/hpack/`.
-- gRPC-Standards: gRPC-PROTOCOL.md (über grpc/grpc), HTTP/2 RFC 7540, HPACK RFC 7541.
-- Wire-Format: `zerodds-xcdr2-bindings-conformance-1.0` §3.
+- gRPC standards: gRPC-PROTOCOL.md (via grpc/grpc), HTTP/2 RFC 7540, HPACK RFC 7541.
+- Wire format: `zerodds-xcdr2-bindings-conformance-1.0` §3.
 - Deployment: `zerodds-deployment-1.0`.
-- Verwandte Daemons: `zerodds-ws-bridge-1.0`, `zerodds-amqp-bridge-daemon-1.0`,
+- Related daemons: `zerodds-ws-bridge-1.0`, `zerodds-amqp-bridge-daemon-1.0`,
   `zerodds-corba-bridge-1.0`.
 
 ## §14 Versioning
 
-`1.0` initial. Patch für Bugfixes, Minor für additive Config/.proto-
-Felder, Major für Wire-Protocol-Changes (z.B. Migration auf HTTP/3 +
+`1.0` initial. Patch for bug fixes, minor for additive config/.proto
+fields, major for wire protocol changes (e.g. migration to HTTP/3 +
 gRPC-over-QUIC).

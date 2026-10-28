@@ -1,0 +1,20 @@
+// root-anchored scoped names
+module common {
+    module util {
+        @final struct Location {
+            double x;
+            double y;
+            double z;
+        };
+        @final struct Orientation {
+            double x;
+            double y;
+            double z;
+        };
+    };
+
+    @final struct Robot {
+        ::common::util::Location location;
+        ::common::util::Orientation orientation;
+    };
+};

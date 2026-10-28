@@ -1,65 +1,26 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Wire codec for `ParticipantGenericMessage` (Spec §7.5.5).
+//! Wire codec for `ParticipantGenericMessage` (Spec §7.5.5): a 4-byte
+//! CDR-LE encapsulation header followed by the XCDR1 body.
 //!
-//! Identical semantics to `zerodds_security_runtime::builtin_topics`: a 4-byte
-//! CDR-LE encapsulation header followed by the XCDR1 body. We reimplement it
-//! here inline so that `zerodds-discovery` does not depend on
-//! `zerodds-security-runtime` (Cargo cycle with the dev-dep tests in
-//! security-runtime).
+//! The codec is `zerodds_security::generic_message`'s; this module names
+//! it where discovery's callers look for it. It used to be a second copy,
+//! kept so that `zerodds-discovery` would not depend on
+//! `zerodds-security-runtime`; both depend on `zerodds-security`.
 
-extern crate alloc;
-use alloc::vec::Vec;
-
-use zerodds_security::error::{SecurityError, SecurityErrorKind, SecurityResult};
-use zerodds_security::generic_message::ParticipantGenericMessage;
-
-/// CDR-LE encapsulation kind (Spec RTPS 2.5 §10.2).
-pub const ENCAPSULATION_CDR_LE: [u8; 2] = [0x00, 0x01];
-
-/// Encapsulation header length (Spec §10.1: 2 byte kind + 2 byte options).
-pub const ENCAPSULATION_HEADER_LEN: usize = 4;
-
-/// Encodes a `ParticipantGenericMessage` as `serialized_payload`
-/// bytes for a DATA submessage.
-#[must_use]
-pub fn encode_generic_message(msg: &ParticipantGenericMessage) -> Vec<u8> {
-    let body = msg.to_cdr_le();
-    let mut out = Vec::with_capacity(ENCAPSULATION_HEADER_LEN + body.len());
-    out.extend_from_slice(&ENCAPSULATION_CDR_LE);
-    out.extend_from_slice(&[0, 0]); // options (Spec: must be 0)
-    out.extend_from_slice(&body);
-    out
-}
-
-/// Decodes a `ParticipantGenericMessage` from `serialized_payload`
-/// bytes (with a 4-byte encapsulation header).
-///
-/// # Errors
-/// `BadArgument` if the encapsulation header is missing or carries a kind
-/// other than CDR_LE / CDR_BE; CDR decode errors are propagated.
-pub fn decode_generic_message(bytes: &[u8]) -> SecurityResult<ParticipantGenericMessage> {
-    if bytes.len() < ENCAPSULATION_HEADER_LEN {
-        return Err(SecurityError::new(
-            SecurityErrorKind::BadArgument,
-            "generic_message: encapsulation-header truncated",
-        ));
-    }
-    let kind = [bytes[0], bytes[1]];
-    if kind != ENCAPSULATION_CDR_LE && kind != [0x00, 0x00] {
-        return Err(SecurityError::new(
-            SecurityErrorKind::BadArgument,
-            "generic_message: only CDR_LE encapsulation supported",
-        ));
-    }
-    ParticipantGenericMessage::from_cdr_le(&bytes[ENCAPSULATION_HEADER_LEN..])
-}
+/// The encapsulation and the two functions live with the message, in
+/// `zerodds-security`; `zerodds-security-runtime` re-exports the same.
+pub use zerodds_security::generic_message::{
+    ENCAPSULATION_CDR_BE, ENCAPSULATION_CDR_LE, ENCAPSULATION_HEADER_LEN, decode_generic_message,
+    encode_generic_message,
+};
 
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use zerodds_security::generic_message::{MessageIdentity, class_id};
+    use zerodds_security::error::SecurityErrorKind;
+    use zerodds_security::generic_message::{MessageIdentity, ParticipantGenericMessage, class_id};
     use zerodds_security::token::DataHolder;
 
     fn sample() -> ParticipantGenericMessage {
@@ -101,5 +62,37 @@ mod tests {
     fn decode_rejects_unknown_encapsulation() {
         let err = decode_generic_message(&[0x00, 0x99, 0, 0, 0, 0, 0, 0]).unwrap_err();
         assert_eq!(err.kind, SecurityErrorKind::BadArgument);
+    }
+
+    #[test]
+    fn decode_reads_a_big_endian_encapsulation() {
+        // CDR_BE (0x0000) used to be rejected: the body decoder read
+        // little-endian only. A message encoded big-endian behind the
+        // CDR_BE kind now reads back whole, its inline DataHolders
+        // included. Not measured against a foreign big-endian sender;
+        // the layout is the one the little-endian form is measured in,
+        // with every multi-byte field's octets reversed.
+        let msg = ParticipantGenericMessage {
+            message_identity: MessageIdentity {
+                source_guid: [0x11; 16],
+                sequence_number: 0x0102_0304_0506_0708,
+            },
+            message_class_id: class_id::AUTH_REQUEST.into(),
+            message_data: alloc::vec![
+                zerodds_security::token::DataHolder::new("dds.sec.auth").with_property("a", "b")
+            ],
+            ..Default::default()
+        };
+        let mut bytes = alloc::vec![0x00, 0x00, 0x00, 0x00];
+        bytes.extend_from_slice(&msg.to_cdr(false));
+        // The sequence number follows the 16-octet GUID, most significant
+        // octet first.
+        assert_eq!(&bytes[20..28], &[1, 2, 3, 4, 5, 6, 7, 8]);
+        let back = decode_generic_message(&bytes).unwrap();
+        assert_eq!(back, msg);
+        // And the same bytes under the little-endian kind do not read as
+        // the same message.
+        bytes[1] = 0x01;
+        assert_ne!(decode_generic_message(&bytes).ok(), Some(msg));
     }
 }

@@ -14,7 +14,11 @@
 #ifndef ZERODDS_DDS_HPP
 #define ZERODDS_DDS_HPP
 
-#include <cstdint>
+
+#include "zerodds/psm/cxx.hpp"
+#include <stdint.h>
+
+#include <stdint.h>
 #include <cstring>
 #include <stdexcept>
 #include <string>
@@ -24,10 +28,12 @@
 
 // Typed convenience writers/readers (`zerodds::TypedWriter<T>` /
 // `zerodds::TypedReader<T>`) are built on the same
-// `dds::topic::topic_type_support<T>` trait that `idlc cpp` emits for
-// every IDL struct — so an IDL-generated type drops straight in.
+// `dds::topic::topic_type_support<T>` trait that
+// `zerodds-idlc generate --lang c++` emits for every IDL struct (with
+// `--cpp-mapping native` the structures of the codec, with the default `psm` the classes of
+// DDS-PSM-Cxx 1.0 §7.4 over them) — so an IDL-generated type drops straight in.
 #include "../dds/topic/TopicTraits.hpp"
-#include "../dds/topic/xcdr2.hpp"
+#include "zerodds/wire.hpp"
 
 namespace zerodds {
 
@@ -35,9 +41,9 @@ namespace zerodds {
 class StatusError : public std::runtime_error {
 public:
     explicit StatusError(int code, const char *what)
-        : std::runtime_error(std::string(what) + " (status=" + std::to_string(code) + ")"),
+        : std::runtime_error(std::string(what) + " (status=" + ::zerodds::cxx::to_string(code) + ")"),
           code_(code) {}
-    int code() const noexcept { return code_; }
+    int code() const ZERODDS_NOEXCEPT { return code_; }
 private:
     int code_;
 };
@@ -55,10 +61,9 @@ public:
         if (handle_) zerodds_runtime_destroy(handle_);
     }
 
-    Runtime(const Runtime &) = delete;
-    Runtime &operator=(const Runtime &) = delete;
-    Runtime(Runtime &&o) noexcept : handle_(o.handle_) { o.handle_ = nullptr; }
-    Runtime &operator=(Runtime &&o) noexcept {
+    ZERODDS_NONCOPYABLE(Runtime)
+    Runtime(Runtime &&o) ZERODDS_NOEXCEPT : handle_(o.handle_) { o.handle_ = nullptr; }
+    Runtime &operator=(Runtime &&o) ZERODDS_NOEXCEPT {
         if (this != &o) {
             if (handle_) zerodds_runtime_destroy(handle_);
             handle_ = o.handle_;
@@ -68,7 +73,7 @@ public:
     }
 
     /// Raw C handle — for direct FFI calls from friend classes.
-    zerodds_ZeroDdsRuntime *raw() const noexcept { return handle_; }
+    zerodds_ZeroDdsRuntime *raw() const ZERODDS_NOEXCEPT { return handle_; }
 
 private:
     zerodds_ZeroDdsRuntime *handle_;
@@ -88,10 +93,9 @@ public:
     ~Writer() {
         if (handle_) zerodds_writer_destroy(handle_);
     }
-    Writer(const Writer &) = delete;
-    Writer &operator=(const Writer &) = delete;
-    Writer(Writer &&o) noexcept : handle_(o.handle_) { o.handle_ = nullptr; }
-    Writer &operator=(Writer &&o) noexcept {
+    ZERODDS_NONCOPYABLE(Writer)
+    Writer(Writer &&o) ZERODDS_NOEXCEPT : handle_(o.handle_) { o.handle_ = nullptr; }
+    Writer &operator=(Writer &&o) ZERODDS_NOEXCEPT {
         if (this != &o) {
             if (handle_) zerodds_writer_destroy(handle_);
             handle_ = o.handle_;
@@ -120,21 +124,63 @@ public:
     /// Spec §2.2.2.4.2.10 `dispose`. Sends a wire lifecycle
     /// marker — readers see the instance as `NotAliveDisposed`.
     /// `key_hash` is the 16-byte PLAIN_CDR2-BE key hash.
+    ///
+    /// This form carries no instance value, only its hash: the DATA it
+    /// sends carries `PID_KEY_HASH` alone, no `serializedKey`. RTI Connext
+    /// and CoreDX accept that form; Eclipse Cyclone 11.0.1, Fast DDS 3.6.1
+    /// and OpenDDS 3.35 do not treat it as a dispose
+    /// (`Test_FinalInstanceState_1`, measured 0/4 on all three). Prefer
+    /// `dispose(const uint8_t *, std::size_t)` below (or
+    /// `TypedWriter<T>::dispose(const T &)`) when the instance's encoded
+    /// sample is available — both derive the full `serializedKey` form
+    /// all five vendors accept.
     void dispose(const uint8_t key_hash[16]) {
         int rc = zerodds_writer_dispose(handle_, key_hash);
         if (rc != 0) throw StatusError(rc, "zerodds_writer_dispose");
     }
 
-    /// Spec §2.2.2.4.2.7 `unregister_instance`.
+    /// Spec §2.2.2.4.2.10 `dispose`, derived from the sample itself
+    /// instead of a caller-computed key hash. `sample`/`len` are this
+    /// writer's own encoding of the instance, exactly as `write()` frames
+    /// it. Requires a writer created via `zerodds_writer_create_typed`
+    /// with a keyed type — throws `StatusError` (status
+    /// `PreconditionNotMet`) otherwise, never a silent fallback to the
+    /// hash-only form.
+    void dispose(const uint8_t *sample, std::size_t len) {
+        int rc = zerodds_writer_dispose_sample(handle_, sample, len);
+        if (rc != 0) throw StatusError(rc, "zerodds_writer_dispose_sample");
+    }
+
+    /// Spec §2.2.2.4.2.7 `unregister_instance`. Same `PID_KEY_HASH`-only
+    /// caveat as [`dispose(const uint8_t[16])`] above — prefer
+    /// `unregister_instance(const uint8_t *, std::size_t)` when the
+    /// sample is available.
     void unregister_instance(const uint8_t key_hash[16]) {
         int rc = zerodds_writer_unregister(handle_, key_hash);
         if (rc != 0) throw StatusError(rc, "zerodds_writer_unregister");
     }
 
-    /// Spec §2.2.3.21 with `autodispose=true` — combined marker.
+    /// Spec §2.2.2.4.2.7 `unregister_instance`, derived from the sample —
+    /// see `dispose(const uint8_t *, std::size_t)`.
+    void unregister_instance(const uint8_t *sample, std::size_t len) {
+        int rc = zerodds_writer_unregister_sample(handle_, sample, len);
+        if (rc != 0) throw StatusError(rc, "zerodds_writer_unregister_sample");
+    }
+
+    /// Spec §2.2.3.21 with `autodispose=true` — combined marker. Same
+    /// `PID_KEY_HASH`-only caveat as [`dispose(const uint8_t[16])`] above
+    /// — prefer `unregister_with_dispose(const uint8_t *, std::size_t)`
+    /// when the sample is available.
     void unregister_with_dispose(const uint8_t key_hash[16]) {
         int rc = zerodds_writer_unregister_with_dispose(handle_, key_hash);
         if (rc != 0) throw StatusError(rc, "zerodds_writer_unregister_with_dispose");
+    }
+
+    /// Spec §2.2.3.21 with `autodispose=true`, derived from the sample —
+    /// see `dispose(const uint8_t *, std::size_t)`.
+    void unregister_with_dispose(const uint8_t *sample, std::size_t len) {
+        int rc = zerodds_writer_unregister_with_dispose_sample(handle_, sample, len);
+        if (rc != 0) throw StatusError(rc, "zerodds_writer_unregister_with_dispose_sample");
     }
 
 private:
@@ -155,10 +201,9 @@ public:
     ~Reader() {
         if (handle_) zerodds_reader_destroy(handle_);
     }
-    Reader(const Reader &) = delete;
-    Reader &operator=(const Reader &) = delete;
-    Reader(Reader &&o) noexcept : handle_(o.handle_) { o.handle_ = nullptr; }
-    Reader &operator=(Reader &&o) noexcept {
+    ZERODDS_NONCOPYABLE(Reader)
+    Reader(Reader &&o) ZERODDS_NOEXCEPT : handle_(o.handle_) { o.handle_ = nullptr; }
+    Reader &operator=(Reader &&o) ZERODDS_NOEXCEPT {
         if (this != &o) {
             if (handle_) zerodds_reader_destroy(handle_);
             handle_ = o.handle_;
@@ -201,13 +246,15 @@ private:
 /// `T` must have a `dds::topic::topic_type_support<T>` specialization
 /// (emitted by `idlc cpp` for every struct, or hand-written). The
 /// topic's type name defaults to `topic_type_support<T>::type_name()`,
-/// the keyed/no-keyed flag to `topic_type_support<T>::is_keyed()`.
+/// the keyed/no-keyed flag to `topic_type_support<T>::is_keyed()`, and the
+/// encapsulation identifier the C ABI stamps to
+/// `topic_type_support<T>::extensibility()`.
 ///
 /// On `write(value)` the sample is XCDR2-encoded via the trait's
 /// `encode()` and handed to the byte-oriented `zerodds_writer_write`.
 template <typename T>
 class TypedWriter {
-    using traits = ::dds::topic::topic_type_support<T>;
+    typedef ::dds::topic::topic_type_support<T> traits;
 
 public:
     /// 2-arg ctor: type name + keyed flag derived from the type traits.
@@ -233,14 +280,33 @@ public:
         if (!handle_) {
             throw StatusError(-1, "zerodds_writer_create_typed");
         }
+        // The encapsulation identifier has to name the encoding of the body,
+        // XTypes 1.3 §7.6.3.1.2 Table 59 / DDSI-RTPS 2.5 §10.5. Without this
+        // call the writer slot keeps the C ABI's default, FINAL, and stamps
+        // `PLAIN_CDR2_LE` (0x0007) on every sample — measured. An
+        // `@appendable` body opens with a DHEADER and a `@mutable` one with an
+        // EMHEADER per member, so under that identifier a reader that believes
+        // the header reads the delimiter as the first member. Cyclone decodes
+        // it anyway (it uses its own type, not the header); OpenDDS refuses the
+        // sample in `to_encoding_i` — "expected APPENDABLE extensibility, but
+        // got ..." — and drops it with nothing on the topic.
+        int extensibility_rc =
+            zerodds_writer_set_wire_extensibility(handle_, wire_extensibility());
+        if (extensibility_rc != 0) {
+            // Destroyed rather than kept: a writer that could not declare its
+            // own framing publishes samples no strict peer accepts, and doing
+            // that quietly is the failure this call exists to end.
+            zerodds_writer_destroy(handle_);
+            handle_ = nullptr;
+            throw StatusError(extensibility_rc, "zerodds_writer_set_wire_extensibility");
+        }
     }
     ~TypedWriter() {
         if (handle_) zerodds_writer_destroy(handle_);
     }
-    TypedWriter(const TypedWriter &) = delete;
-    TypedWriter &operator=(const TypedWriter &) = delete;
-    TypedWriter(TypedWriter &&o) noexcept : handle_(o.handle_) { o.handle_ = nullptr; }
-    TypedWriter &operator=(TypedWriter &&o) noexcept {
+    ZERODDS_NONCOPYABLE(TypedWriter)
+    TypedWriter(TypedWriter &&o) ZERODDS_NOEXCEPT : handle_(o.handle_) { o.handle_ = nullptr; }
+    TypedWriter &operator=(TypedWriter &&o) ZERODDS_NOEXCEPT {
         if (this != &o) {
             if (handle_) zerodds_writer_destroy(handle_);
             handle_ = o.handle_;
@@ -262,7 +328,53 @@ public:
         return rc == 0;
     }
 
+    /// Spec §2.2.2.4.2.10 `dispose`, keyed by `value`'s own `@key`
+    /// members. Encodes `value` the same way `write()` does and hands
+    /// the bytes to `zerodds_writer_dispose_sample`, which derives the
+    /// instance's real KeyHash and `serializedKey` from them through this
+    /// writer's registered `TypeObject` — the full form Eclipse Cyclone
+    /// 11.0.1, Fast DDS 3.6.1 and OpenDDS 3.35 were all measured to act
+    /// on (`Test_FinalInstanceState_1`, 4/4), unlike a bare `key_hash`
+    /// marker (see `Writer::dispose(const uint8_t[16])`'s own doc
+    /// comment). Throws `StatusError` (status `PreconditionNotMet`) if
+    /// this writer fell back to `create_kind` (no registered
+    /// `TypeObject`) or the type is unkeyed.
+    void dispose(const T &value) {
+        std::vector<uint8_t> bytes = traits::encode(value);
+        int rc = zerodds_writer_dispose_sample(handle_, bytes.data(), bytes.size());
+        if (rc != 0) throw StatusError(rc, "zerodds_writer_dispose_sample");
+    }
+
+    /// Spec §2.2.2.4.2.7 `unregister_instance`, keyed by `value` — see
+    /// `dispose(const T &)`.
+    void unregister_instance(const T &value) {
+        std::vector<uint8_t> bytes = traits::encode(value);
+        int rc = zerodds_writer_unregister_sample(handle_, bytes.data(), bytes.size());
+        if (rc != 0) throw StatusError(rc, "zerodds_writer_unregister_sample");
+    }
+
+    /// Spec §2.2.3.21 with `autodispose=true`, keyed by `value` — see
+    /// `dispose(const T &)`.
+    void unregister_with_dispose(const T &value) {
+        std::vector<uint8_t> bytes = traits::encode(value);
+        int rc = zerodds_writer_unregister_with_dispose_sample(handle_, bytes.data(), bytes.size());
+        if (rc != 0) throw StatusError(rc, "zerodds_writer_unregister_with_dispose_sample");
+    }
+
 private:
+    /// The type's extensibility in the C ABI's own numbering:
+    /// `0` FINAL, `1` APPENDABLE, `2` MUTABLE — the argument
+    /// `zerodds_writer_set_wire_extensibility` takes.
+    static int wire_extensibility() {
+        typedef ::zerodds::psm::DataRepresentationKind Kind;
+        switch (traits::extensibility()) {
+        case Kind::APPENDABLE: return 1;
+        case Kind::MUTABLE:    return 2;
+        case Kind::FINAL:      break;
+        }
+        return 0;
+    }
+
     zerodds_ZeroDdsWriter *handle_;
 };
 
@@ -274,7 +386,7 @@ private:
 /// C-FFI `out_repr` out-param, so alignment matches the publisher.
 template <typename T>
 class TypedReader {
-    using traits = ::dds::topic::topic_type_support<T>;
+    typedef ::dds::topic::topic_type_support<T> traits;
 
 public:
     /// F-TYPES-3 / #24: reader-side mirror of `TypedWriter` — a typed create
@@ -298,10 +410,9 @@ public:
     ~TypedReader() {
         if (handle_) zerodds_reader_destroy(handle_);
     }
-    TypedReader(const TypedReader &) = delete;
-    TypedReader &operator=(const TypedReader &) = delete;
-    TypedReader(TypedReader &&o) noexcept : handle_(o.handle_) { o.handle_ = nullptr; }
-    TypedReader &operator=(TypedReader &&o) noexcept {
+    ZERODDS_NONCOPYABLE(TypedReader)
+    TypedReader(TypedReader &&o) ZERODDS_NOEXCEPT : handle_(o.handle_) { o.handle_ = nullptr; }
+    TypedReader &operator=(TypedReader &&o) ZERODDS_NOEXCEPT {
         if (this != &o) {
             if (handle_) zerodds_reader_destroy(handle_);
             handle_ = o.handle_;
@@ -322,8 +433,8 @@ public:
         int rc = zerodds_reader_take_endian(handle_, &raw, &len, &repr, &be);
         if (rc != 0) throw StatusError(rc, "zerodds_reader_take_endian");
         if (!raw || len == 0) return false;
-        auto version = repr == 1 ? ::dds::topic::xcdr2::XcdrVersion::Xcdr2
-                                 : ::dds::topic::xcdr2::XcdrVersion::Xcdr1;
+        auto version = repr == 1 ? ::zerodds::wire::Encoding::PlainCdr2
+                                 : ::zerodds::wire::Encoding::PlainCdr1;
         try {
             out = traits::decode(raw, len, version, be != 0);
         } catch (...) {

@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Cyclone DDS C++ Roundtrip-Bench-App. Apples-to-apples mit FastDDS+ZeroDDS.
+// Cyclone DDS C++ roundtrip bench app. Apples-to-apples with FastDDS+ZeroDDS.
 //
 // IDL: roundtrip.idl  →  RoundtripBench::Roundtrip  (via idlc -l cxx)
+// With BENCH_RICH defined (target cyclone-roundtrip-rich) the sample type is
+// the codec-heavy roundtrip_rich.idl → RoundtripBench::RoundtripRich, on the
+// topics RoundtripRichBench_* that zerodds_app.cpp's rich build uses too.
 //
 // Pipeline-Schichten:
 //   App-Code (C++)                     -- typed Roundtrip-Class
@@ -26,43 +29,84 @@
 //       -lddscxx -lddsc -lpthread
 
 #include "dds/dds.hpp"
+#ifdef BENCH_RICH
+#include "roundtrip_rich.hpp"
+#else
 #include "roundtrip.hpp"
+#endif
+#include "bench_common.hpp"
 
-#include <algorithm>
-#include <atomic>
+#include <array>
 #include <chrono>
-#include <condition_variable>
 #include <cstdint>
 #include <cstdlib>
 #include <iostream>
-#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
 
 namespace {
 
-// Domain via ZERODDS_BENCH_DOMAIN env-var ueberschreibbar (Default 200).
+using bench::now_ns;
+using bench::PingState;
+using bench::print_quantiles;
+
 static uint32_t resolve_domain() {
-    const char* s = std::getenv("ZERODDS_BENCH_DOMAIN");
-    if (s) { try { return static_cast<uint32_t>(std::stoul(s)); } catch (...) {} }
-    return 200;
+    return static_cast<uint32_t>(bench::env_domain());
 }
+static dds::core::policy::DataRepresentationId bench_repr() {
+    return bench::xcdr1_requested() ? dds::core::policy::DataRepresentationId::XCDR1
+                                    : dds::core::policy::DataRepresentationId::XCDR2;
+}
+
+#ifdef BENCH_RICH
+using Sample = RoundtripBench::RoundtripRich;
+constexpr const char* kProgram   = "cyclone-app-rich";
+constexpr const char* kReqTopic  = "RoundtripRichBench_Request";
+constexpr const char* kEchoTopic = "RoundtripRichBench_Echo";
+constexpr size_t kNumWaypoints = 8;
+
+void populate(Sample& m, size_t payload_size) {
+    using RoundtripBench::Vec3;
+    using RoundtripBench::Waypoint;
+    m.name(std::string("cyclone-rich-roundtrip-bench"));
+    std::array<double, 16> tr{};
+    for (size_t i = 0; i < 16; ++i) tr[i] = static_cast<double>(i) * 1.5 + 0.25;
+    m.transform(tr);
+    std::vector<Waypoint> wps;
+    wps.reserve(kNumWaypoints);
+    for (size_t i = 0; i < kNumWaypoints; ++i) {
+        Waypoint w;
+        w.id(static_cast<uint32_t>(i));
+        Vec3 pos; pos.x(1.0 * i); pos.y(2.0 * i); pos.z(3.0 * i);
+        Vec3 vel; vel.x(0.1 * i); vel.y(0.2 * i); vel.z(0.3 * i);
+        w.position(pos);
+        w.velocity(vel);
+        w.label(std::string("wp-") + std::to_string(i));
+        w.weight(0.5 * static_cast<double>(i) + 1.0);
+        wps.push_back(w);
+    }
+    m.waypoints(wps);
+    m.payload(std::vector<uint8_t>(payload_size, 0xAB));
+}
+#else
+using Sample = RoundtripBench::Roundtrip;
+constexpr const char* kProgram   = "cyclone-app";
 constexpr const char* kReqTopic  = "RoundtripBench_Request";
 constexpr const char* kEchoTopic = "RoundtripBench_Echo";
 
-uint64_t now_ns() {
-    auto t = std::chrono::steady_clock::now().time_since_epoch();
-    return std::chrono::duration_cast<std::chrono::nanoseconds>(t).count();
+void populate(Sample& m, size_t payload_size) {
+    m.payload(std::vector<uint8_t>(payload_size, 0xAB));
 }
+#endif
 
 // Transport-Selection via env-var ZERODDS_BENCH_TRANSPORT
-// → CYCLONEDDS_URI inline-XML. Cyclone steuert transports nicht via
-// QoS-API sondern global pro Participant über die XML-config.
+// → CYCLONEDDS_URI inline XML. Cyclone does not control transports via
+// the QoS API but globally per participant through the XML config.
 //
-// CYCLONEDDS_URI muss BEVOR ein Participant created wird gesetzt sein.
-// Wir setzen es hier am App-Start (idempotent — wenn user explizit
-// gesetzt hat, ignorieren wir die transport-Wahl).
+// CYCLONEDDS_URI must be set BEFORE a participant is created.
+// We set it here at app start (idempotent — if the user explicitly
+// set it, we ignore the transport choice).
 void apply_transport_env() {
     const char* user_set = std::getenv("CYCLONEDDS_URI");
     if (user_set && *user_set) {
@@ -83,67 +127,77 @@ void apply_transport_env() {
     setenv("CYCLONEDDS_URI", xml.c_str(), 1);
 }
 
+// Writer and reader QoS of both sides: reliable, KEEP_LAST 64, one data
+// representation offered and accepted.
+//
+// One representation on the writer side: RTI is strict-matching and rejects
+// writers that advertise "XCDR1, XCDR2".
+//
+// ALLOW_TYPE_COERCION — cyclonedds-cxx defaults the reader to DISALLOW,
+// which demands a byte-identical MINIMAL TypeObject hash from the writer.
+// RTI's rtiddsgen derives a diverging MINIMAL TypeObject from the same IDL
+// (the COMPLETE TypeObject is byte-identical across all five stacks,
+// however). With ALLOW the match falls back to TypeLookup + assignability
+// against the COMPLETE type -> cross-vendor match with RTI works (XTypes 1.3
+// §7.6.3).
+struct Endpoints {
+    dds::domain::DomainParticipant   dp;
+    dds::topic::Topic<Sample>        t_req;
+    dds::topic::Topic<Sample>        t_echo;
+    dds::pub::Publisher              pub;
+    dds::sub::Subscriber             sub;
+    dds::pub::qos::DataWriterQos     dw_qos;
+    dds::sub::qos::DataReaderQos     dr_qos;
+
+    Endpoints()
+        : dp(resolve_domain()),
+          t_req(dp, kReqTopic),
+          t_echo(dp, kEchoTopic),
+          pub(dp),
+          sub(dp),
+          dw_qos(pub.default_datawriter_qos()),
+          dr_qos(sub.default_datareader_qos()) {
+        using namespace dds::core::policy;
+        dw_qos << Reliability::Reliable();
+        dw_qos << History::KeepLast(64);
+        dw_qos << DataRepresentation(DataRepresentationIdSeq{bench_repr()});
+        dr_qos << Reliability::Reliable();
+        dr_qos << History::KeepLast(64);
+        dr_qos << DataRepresentation(DataRepresentationIdSeq{bench_repr()});
+        dr_qos << TypeConsistencyEnforcement(TypeConsistencyKind::ALLOW_TYPE_COERCION);
+    }
+};
+
 // --- Pong: receive request, echo immediately ---
 //
 // DataReaderListener (PSM-Cxx-Spec §7.5.6.7) feuert on_data_available
-// im Recv-Thread. Wir take()-en die Samples, schreiben sie auf das
-// Echo-Topic. Best-Effort.
+// in the recv thread. We take() the samples, write them to the
+// Echo-Topic.
 
-class PongListener : public dds::sub::NoOpDataReaderListener<RoundtripBench::Roundtrip>
+class PongListener : public dds::sub::NoOpDataReaderListener<Sample>
 {
 public:
-    explicit PongListener(dds::pub::DataWriter<RoundtripBench::Roundtrip>& w) : w_(w) {}
+    explicit PongListener(dds::pub::DataWriter<Sample>& w) : w_(w) {}
 
-    void on_data_available(dds::sub::DataReader<RoundtripBench::Roundtrip>& reader) override
+    void on_data_available(dds::sub::DataReader<Sample>& reader) override
     {
         auto samples = reader.take();
         for (const auto& s : samples) {
             if (s.info().valid()) {
-                // Echo unverändert zurück — sequence_id + t_send_ns + payload.
+                // Echo back unchanged — sequence_id + t_send_ns + payload.
                 w_.write(s.data());
             }
         }
     }
 
 private:
-    dds::pub::DataWriter<RoundtripBench::Roundtrip>& w_;
+    dds::pub::DataWriter<Sample>& w_;
 };
 
 int run_pong(uint64_t max_runtime_s) {
-    using namespace dds;
-
-    domain::DomainParticipant dp(resolve_domain());
-    topic::Topic<RoundtripBench::Roundtrip> t_req(dp, kReqTopic);
-    topic::Topic<RoundtripBench::Roundtrip> t_echo(dp, kEchoTopic);
-    pub::Publisher pub_(dp);
-    sub::Subscriber sub_(dp);
-    pub::qos::DataWriterQos dw_qos = pub_.default_datawriter_qos();
-    dw_qos << core::policy::Reliability::Reliable();
-    dw_qos << core::policy::History::KeepLast(64);
-    // XCDR2-only auf Writer-Seite: RTI ist strict-matching und lehnt
-    // Writer ab die "XCDR1, XCDR2" advertisen. Wir zwingen XCDR2-only
-    // damit cross-vendor RTI<->Cyclone matched (Cyclone-default ist
-    // "XCDR2" implizit, aber explicit-setzen ist robuster).
-    dw_qos << core::policy::DataRepresentation(
-        core::policy::DataRepresentationIdSeq{
-            core::policy::DataRepresentationId::XCDR2});
-    sub::qos::DataReaderQos dr_qos = sub_.default_datareader_qos();
-    dr_qos << core::policy::Reliability::Reliable();
-    dr_qos << core::policy::History::KeepLast(64);
-    dr_qos << core::policy::DataRepresentation(
-        core::policy::DataRepresentationIdSeq{
-            core::policy::DataRepresentationId::XCDR2});
-    // ALLOW_TYPE_COERCION — cyclonedds-cxx defaultet den Reader auf
-    // DISALLOW, was vom Writer einen byte-identischen MINIMAL-TypeObject-
-    // Hash verlangt. RTIs rtiddsgen leitet aus derselben IDL einen
-    // abweichenden MINIMAL-TypeObject ab (der COMPLETE-TypeObject ist
-    // dagegen ueber alle fuenf Stacks byte-identisch). Mit ALLOW faellt
-    // der Match auf TypeLookup + Assignability gegen den COMPLETE-Type
-    // zurueck -> Cross-Vendor-Match mit RTI klappt (XTypes 1.3 §7.6.3).
-    dr_qos << core::policy::TypeConsistencyEnforcement(
-        core::policy::TypeConsistencyKind::ALLOW_TYPE_COERCION);
-    pub::DataWriter<RoundtripBench::Roundtrip> dw(pub_, t_echo, dw_qos);
-    sub::DataReader<RoundtripBench::Roundtrip> dr(sub_, t_req, dr_qos);
+    Endpoints e;
+    dds::pub::DataWriter<Sample> dw(e.pub, e.t_echo, e.dw_qos);
+    dds::sub::DataReader<Sample> dr(e.sub, e.t_req, e.dr_qos);
 
     PongListener listener(dw);
     dr.listener(&listener, dds::core::status::StatusMask::data_available());
@@ -156,33 +210,17 @@ int run_pong(uint64_t max_runtime_s) {
 
 // --- Ping: send + listener captures RTT ---
 
-struct PingState {
-    std::mutex                  mu;
-    std::condition_variable     cv;
-    uint64_t                    received    = 0;
-    uint64_t                    warmup      = 0;
-    std::vector<uint64_t>       rtts;
-};
-
-class PingListener : public dds::sub::NoOpDataReaderListener<RoundtripBench::Roundtrip>
+class PingListener : public dds::sub::NoOpDataReaderListener<Sample>
 {
 public:
     explicit PingListener(PingState& st) : st_(st) {}
 
-    void on_data_available(dds::sub::DataReader<RoundtripBench::Roundtrip>& reader) override
+    void on_data_available(dds::sub::DataReader<Sample>& reader) override
     {
         auto samples = reader.take();
         for (const auto& s : samples) {
             if (!s.info().valid()) continue;
-            uint64_t now = now_ns();
-            uint64_t t_send = s.data().t_send_ns();
-            uint64_t rtt = now > t_send ? now - t_send : 1;
-            {
-                std::lock_guard<std::mutex> lk(st_.mu);
-                if (st_.received >= st_.warmup) st_.rtts.push_back(rtt);
-                st_.received++;
-            }
-            st_.cv.notify_all();
+            st_.record(s.data().t_send_ns());
         }
     }
 
@@ -190,62 +228,16 @@ private:
     PingState& st_;
 };
 
-void print_quantiles(std::vector<uint64_t>& rtts, size_t payload_size) {
-    if (rtts.empty()) { std::cout << "no samples\n"; return; }
-    std::sort(rtts.begin(), rtts.end());
-    auto pct = [&](double p) {
-        size_t idx = std::min(rtts.size() - 1,
-                              static_cast<size_t>(p * (double)(rtts.size() - 1)));
-        return rtts[idx];
-    };
-    std::cout
-        << "payload=" << payload_size
-        << "  n=" << rtts.size()
-        << "  min=" << rtts.front()/1000.0 << "us"
-        << "  p50=" << pct(0.50)/1000.0 << "us"
-        << "  p90=" << pct(0.90)/1000.0 << "us"
-        << "  p99=" << pct(0.99)/1000.0 << "us"
-        << "  p999=" << pct(0.999)/1000.0 << "us"
-        << "  max=" << rtts.back()/1000.0 << "us\n";
-}
-
 int run_ping(size_t payload_size, uint64_t warmup, uint64_t samples) {
-    using namespace dds;
-
-    domain::DomainParticipant dp(resolve_domain());
-    topic::Topic<RoundtripBench::Roundtrip> t_req(dp, kReqTopic);
-    topic::Topic<RoundtripBench::Roundtrip> t_echo(dp, kEchoTopic);
-    pub::Publisher pub_(dp);
-    sub::Subscriber sub_(dp);
-    pub::qos::DataWriterQos dw_qos = pub_.default_datawriter_qos();
-    dw_qos << core::policy::Reliability::Reliable();
-    dw_qos << core::policy::History::KeepLast(64);
-    dw_qos << core::policy::DataRepresentation(
-        core::policy::DataRepresentationIdSeq{
-            core::policy::DataRepresentationId::XCDR2});
-    sub::qos::DataReaderQos dr_qos = sub_.default_datareader_qos();
-    dr_qos << core::policy::Reliability::Reliable();
-    dr_qos << core::policy::History::KeepLast(64);
-    dr_qos << core::policy::DataRepresentation(
-        core::policy::DataRepresentationIdSeq{
-            core::policy::DataRepresentationId::XCDR2});
-    // ALLOW_TYPE_COERCION — cyclonedds-cxx defaultet den Reader auf
-    // DISALLOW, was vom Writer einen byte-identischen MINIMAL-TypeObject-
-    // Hash verlangt. RTIs rtiddsgen leitet aus derselben IDL einen
-    // abweichenden MINIMAL-TypeObject ab (der COMPLETE-TypeObject ist
-    // dagegen ueber alle fuenf Stacks byte-identisch). Mit ALLOW faellt
-    // der Match auf TypeLookup + Assignability gegen den COMPLETE-Type
-    // zurueck -> Cross-Vendor-Match mit RTI klappt (XTypes 1.3 §7.6.3).
-    dr_qos << core::policy::TypeConsistencyEnforcement(
-        core::policy::TypeConsistencyKind::ALLOW_TYPE_COERCION);
-    pub::DataWriter<RoundtripBench::Roundtrip> dw(pub_, t_req, dw_qos);
-    sub::DataReader<RoundtripBench::Roundtrip> dr(sub_, t_echo, dr_qos);
+    Endpoints e;
+    dds::pub::DataWriter<Sample> dw(e.pub, e.t_req, e.dw_qos);
+    dds::sub::DataReader<Sample> dr(e.sub, e.t_echo, e.dr_qos);
 
     // Auf echtes Endpoint-Matching warten, NICHT bloss sleep(500ms).
-    // Mit Volatile-Durability (Default) werden Samples die VOR dem
-    // Match geschrieben werden nie zugestellt — der Roundtrip-Partner
-    // (pong) sieht dann seq 0..N nicht (Startup-Window-Verlust).
-    // wait_for-Loop auf publication_matched + subscription_matched.
+    // With volatile durability (default), samples written BEFORE the
+    // match are never delivered — the roundtrip partner
+    // (pong) then does not see seq 0..N (startup window loss).
+    // wait_for loop on publication_matched + subscription_matched.
     {
         auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
         bool pub_matched = false, sub_matched = false;
@@ -265,8 +257,8 @@ int run_ping(size_t payload_size, uint64_t warmup, uint64_t samples) {
             std::cerr << "ping: match timeout (pub=" << pub_matched
                       << " sub=" << sub_matched << ")\n";
         }
-        // Kurzer Puffer nach Match: der Reliable-Handshake (erster
-        // ACKNACK-Roundtrip) braucht noch ein paar ms bis die
+        // Short buffer after match: the reliable handshake (first
+        // ACKNACK roundtrip) still needs a few ms until the
         // Writer-History garantiert delivered.
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
@@ -277,9 +269,8 @@ int run_ping(size_t payload_size, uint64_t warmup, uint64_t samples) {
     PingListener listener(st);
     dr.listener(&listener, dds::core::status::StatusMask::data_available());
 
-    RoundtripBench::Roundtrip msg;
-    std::vector<uint8_t> payload(payload_size, 0xAB);
-    msg.payload(payload);
+    Sample msg;
+    populate(msg, payload_size);
 
     uint64_t total = warmup + samples;
     for (uint64_t seq = 0; seq < total; ++seq) {
@@ -303,8 +294,8 @@ int main(int argc, char** argv) {
     if (argc < 2) {
         std::cerr <<
             "Usage:\n"
-            "  cyclone-app pong [max_runtime_s]\n"
-            "  cyclone-app ping --payload N [--samples N] [--warmup N]\n";
+            "  " << kProgram << " pong [max_runtime_s]\n"
+            "  " << kProgram << " ping --payload N [--samples N] [--warmup N]\n";
         return 2;
     }
     apply_transport_env();
@@ -313,17 +304,8 @@ int main(int argc, char** argv) {
         uint64_t rt_s = (argc > 2) ? std::stoull(argv[2]) : 30;
         return run_pong(rt_s);
     } else if (mode == "ping") {
-        size_t   payload = 64;
-        uint64_t warmup  = 200;
-        uint64_t samples = 5000;
-        for (int i = 2; i + 1 < argc; i += 2) {
-            std::string flag = argv[i];
-            uint64_t   v    = std::stoull(argv[i+1]);
-            if      (flag == "--payload") payload = static_cast<size_t>(v);
-            else if (flag == "--samples") samples = v;
-            else if (flag == "--warmup")  warmup  = v;
-        }
-        return run_ping(payload, warmup, samples);
+        bench::PingArgs a = bench::parse_ping_args(argc, argv, 2);
+        return run_ping(a.payload, a.warmup, a.samples);
     }
     std::cerr << "unknown mode: " << mode << "\n";
     return 2;

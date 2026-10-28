@@ -1,0 +1,14 @@
+# What hdds got back when it read the bytes of array-1d-fixed-unannotated, held against
+# tests/interop-corpus/array-1d-fixed-unannotated/values.json and never against another
+# column's reading of the same bytes.
+# encoding	endian	verdict	detail
+plain-cdr1	le	unwritten	
+plain-cdr1	be	one-order-only	
+pl-cdr1	le	unwritten	
+pl-cdr1	be	one-order-only	
+plain-cdr2	le	unwritten	
+plain-cdr2	be	one-order-only	
+delimited-cdr	le	unwritten	
+delimited-cdr	be	one-order-only	
+pl-cdr2	le	unwritten	
+pl-cdr2	be	one-order-only	

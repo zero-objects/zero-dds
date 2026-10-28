@@ -1,0 +1,10 @@
+// `sequence<enum>`, unannotated
+enum Colour { RED, GREEN, BLUE };
+
+struct Sample {
+    sequence<Colour> none;
+    sequence<Colour> one;
+    sequence<Colour> many;
+    sequence<Colour, 8> bounded;
+    long tail;
+};

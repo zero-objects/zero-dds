@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! `zerodds-chaos` — Chaos-Engineering-CLI fuer DDS-Netzwerke.
+//! `zerodds-chaos` — chaos engineering CLI for DDS networks.
 //!
 //! Crate `zerodds-chaos`. Safety classification: **COMFORT**.
 //!
 //! # Sub-Commands
 //!
-//! * `proxy` — In-Process UDP-Chaos-Proxy (kein root).
-//! * `tc-apply` — Linux netem qdisc setzen (root).
-//! * `tc-clear` — netem qdisc entfernen.
+//! * `proxy` — in-process UDP chaos proxy (no root).
+//! * `tc-apply` — Linux netem qdisc setup (root).
+//! * `tc-clear` — remove netem qdisc.
 //! * `help` — Usage-Print.
 
 #![warn(missing_docs)]
@@ -191,12 +191,16 @@ USAGE:
   zerodds-chaos endpoint-flap --interface eth0 \\
                           [--interval 5s] [--total 60s] [--start-down]
 
+  --interface NAME may also be written --dev NAME.
+  -h, --help     this text
+  -V, --version  the version
+
 EXAMPLES:
   # 10% Loss + Burst-2 + 5-15ms Jitter, 60s
   zerodds-chaos proxy --listen 0.0.0.0:7400 --forward 192.0.2.10:7400 \\
             --loss 0.1 --burst 2 --jitter 5ms:15ms --duration 60s
 
-  # Linux Network-Chaos auf eth0
+  # Linux network chaos on eth0
   sudo zerodds-chaos tc-apply --interface eth0 --loss 0.05 --delay 50ms --jitter 10ms
   sudo zerodds-chaos tc-clear --interface eth0
 "
@@ -207,6 +211,10 @@ fn main() -> ExitCode {
     let argv: Vec<String> = std::env::args().collect();
     if argv.len() < 2 || argv[1] == "help" || argv[1] == "--help" || argv[1] == "-h" {
         print_help();
+        return ExitCode::SUCCESS;
+    }
+    if argv[1] == "--version" || argv[1] == "-V" {
+        println!("zerodds-chaos {}", env!("CARGO_PKG_VERSION"));
         return ExitCode::SUCCESS;
     }
     let cmd = &argv[1];
@@ -373,7 +381,7 @@ fn run_partition(argv: &[String]) -> ExitCode {
         }
         println!("partition: cleared after {} s", d.as_secs());
     } else {
-        println!("partition: applied (no --duration → manuell mit partition-clear loeschen)");
+        println!("partition: applied (no --duration → manually delete with partition-clear)");
     }
     ExitCode::SUCCESS
 }

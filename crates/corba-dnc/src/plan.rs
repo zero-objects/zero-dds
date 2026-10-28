@@ -172,7 +172,7 @@ impl DeploymentPlan {
     /// connection endpoints, and co-locations must exist in the plan.
     ///
     /// # Errors
-    /// Siehe [`PlanError`].
+    /// See [`PlanError`].
     pub fn validate(&self) -> Result<(), PlanError> {
         for inst in &self.instances {
             if !self

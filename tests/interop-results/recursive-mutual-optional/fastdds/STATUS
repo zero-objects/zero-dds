@@ -1,0 +1,13 @@
+# The (encoding, byte order) slots of recursive-mutual-optional that fastdds produced no
+# bytes for, and why. There are no bytes from this system for this case at all.
+# encoding	endian	status	detail
+plain-cdr1	le	refused	/usr/include/c++/14/type_traits:1407:37: error: invalid use of incomplete type 'class zd_c1::m::B'
+plain-cdr1	be	refused	/usr/include/c++/14/type_traits:1407:37: error: invalid use of incomplete type 'class zd_c1::m::B'
+pl-cdr1	le	refused	/usr/include/c++/14/type_traits:1407:37: error: invalid use of incomplete type 'class zd_c1::m::B'
+pl-cdr1	be	refused	/usr/include/c++/14/type_traits:1407:37: error: invalid use of incomplete type 'class zd_c1::m::B'
+plain-cdr2	le	refused	/usr/include/c++/14/type_traits:1407:37: error: invalid use of incomplete type 'class zd_c1::m::B'
+plain-cdr2	be	refused	/usr/include/c++/14/type_traits:1407:37: error: invalid use of incomplete type 'class zd_c1::m::B'
+delimited-cdr	le	refused	/usr/include/c++/14/type_traits:1407:37: error: invalid use of incomplete type 'class zd_c1::m::B'
+delimited-cdr	be	refused	/usr/include/c++/14/type_traits:1407:37: error: invalid use of incomplete type 'class zd_c1::m::B'
+pl-cdr2	le	refused	/usr/include/c++/14/type_traits:1407:37: error: invalid use of incomplete type 'class zd_c1::m::B'
+pl-cdr2	be	refused	/usr/include/c++/14/type_traits:1407:37: error: invalid use of incomplete type 'class zd_c1::m::B'

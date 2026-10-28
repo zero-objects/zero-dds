@@ -7,6 +7,14 @@
 //! implementation, and which do not? We check each case in both
 //! directions (writer struct/reader struct swapped) to find
 //! asymmetries.
+//!
+//! The primitive vectors are the exception and follow the clause, not a
+//! vendor: XTypes 1.3 §7.2.4.4.4, Table 15, gives a primitive type one
+//! assignable source, the same primitive type. The OMG `dds-xtypes`
+//! suite (`feature/xml-driver-enhanced`) asks that 169 times in
+//! `xtypes_v2_primitive_test_suite`, and its
+//! `unsupported_test_manifest/` takes no primitive case out for RTI
+//! Connext 7.7 or CoreDX 6.14.
 
 #![allow(clippy::unwrap_used, clippy::panic)]
 
@@ -38,14 +46,19 @@ fn identical_int32_matches() {
 }
 
 /// int16 → int32 with default TCE (AllowTypeCoercion, no
-/// PreventWidening): Cyclone/Fast-DDS match here, so do we.
+/// PreventWidening): no match. XTypes 1.3 §7.2.4.4.4, Table 15, gives
+/// "Any Primitive Type" exactly one assignable source, "The same
+/// Primitive Type". The OMG `dds-xtypes` suite is built on that reading:
+/// its `struct_int16_int32` expects `INCONSISTENT_TOPIC` on both sides,
+/// and neither RTI Connext 7.7 nor CoreDX 6.14 takes any primitive case
+/// out of it.
 #[test]
-fn widening_int16_to_int32_matches_default_tce() {
+fn widening_int16_to_int32_does_not_match_default_tce() {
     let tce = default_tce();
     let m = TypeMatcher::new(&tce);
     let w = TypeIdentifier::Primitive(PrimitiveKind::Int16);
     let r = TypeIdentifier::Primitive(PrimitiveKind::Int32);
-    assert!(m.match_types(&w, &r, &reg()).is_match());
+    assert!(!m.match_types(&w, &r, &reg()).is_match());
 }
 
 /// Narrowing int32 → int16: all impls reject.
@@ -58,14 +71,16 @@ fn narrowing_int32_to_int16_mismatch() {
     assert!(!m.match_types(&w, &r, &reg()).is_match());
 }
 
-/// Float32 → Float64 widening, accepted with default TCE.
+/// Float32 → Float64 is a widening like any other and is rejected with
+/// the default TCE — the suite's `struct_float32_float64` expects
+/// `INCONSISTENT_TOPIC`.
 #[test]
-fn widening_float_matches() {
+fn widening_float_does_not_match() {
     let tce = default_tce();
     let m = TypeMatcher::new(&tce);
     let w = TypeIdentifier::Primitive(PrimitiveKind::Float32);
     let r = TypeIdentifier::Primitive(PrimitiveKind::Float64);
-    assert!(m.match_types(&w, &r, &reg()).is_match());
+    assert!(!m.match_types(&w, &r, &reg()).is_match());
 }
 
 /// Cross-type float ↔ int is not coerced.
@@ -163,9 +178,9 @@ fn array_different_bounds_mismatch() {
 // TCE-Kombinationen
 // ---------------------------------------------------------------------
 
-/// DisallowTypeCoercion + default flags: widening blocked.
+/// DisallowTypeCoercion + default flags: no match.
 #[test]
-fn disallow_coercion_blocks_widening() {
+fn disallow_coercion_rejects_int16_int32() {
     let mut tce = default_tce();
     tce.kind = TypeConsistencyKind::DisallowTypeCoercion;
     let m = TypeMatcher::new(&tce);
@@ -174,9 +189,9 @@ fn disallow_coercion_blocks_widening() {
     assert!(!m.match_types(&w, &r, &reg()).is_match());
 }
 
-/// AllowTypeCoercion + PreventTypeWidening: blockiert.
+/// AllowTypeCoercion + PreventTypeWidening: no match.
 #[test]
-fn prevent_widening_overrides_allow_coercion() {
+fn prevent_widening_rejects_int16_int32() {
     let mut tce = default_tce();
     tce.prevent_type_widening = true;
     let m = TypeMatcher::new(&tce);
@@ -185,10 +200,11 @@ fn prevent_widening_overrides_allow_coercion() {
     assert!(!m.match_types(&w, &r, &reg()).is_match());
 }
 
-/// ForceTypeValidation + AllowTypeCoercion: ForceTypeValidation
-/// uebertrumpft (§7.6.3.7.1).
+/// ForceTypeValidation + AllowTypeCoercion: no match. Its own duty in
+/// §7.6.3.4.1 — failing Step 2 of §7.6.3.4.2 when a side announces no
+/// TypeObject — is unaffected and is checked in `crates/dcps`.
 #[test]
-fn force_validation_beats_allow_coercion() {
+fn force_validation_rejects_int16_int32() {
     let mut tce = default_tce();
     tce.force_type_validation = true;
     let m = TypeMatcher::new(&tce);
@@ -272,22 +288,26 @@ fn map_small_large_cross_encoding_matches() {
 // Unsigned widening (Round-2 Review #4)
 // ---------------------------------------------------------------------
 
-/// UInt8 → UInt32 accepted with default TCE (lossless).
+/// UInt8 → UInt32 is lossless and is still no match: Table 15 asks for
+/// the same primitive type, not for a value-preserving one. The suite's
+/// `struct_uint8_uint32` expects `INCONSISTENT_TOPIC`.
 #[test]
-fn uint8_to_uint32_widening_matches() {
+fn uint8_to_uint32_widening_does_not_match() {
     let tce = default_tce();
     let m = TypeMatcher::new(&tce);
     let w = TypeIdentifier::Primitive(PrimitiveKind::UInt8);
     let r = TypeIdentifier::Primitive(PrimitiveKind::UInt32);
-    assert!(m.match_types(&w, &r, &reg()).is_match());
+    assert!(!m.match_types(&w, &r, &reg()).is_match());
 }
 
-/// UInt16 → UInt64 widening.
+/// UInt16 → UInt64 widening: no match, and UInt64 → UInt64 does match,
+/// so the rejection is the differing kind and not the width.
 #[test]
-fn uint16_to_uint64_widening_matches() {
+fn uint16_to_uint64_widening_does_not_match() {
     let tce = default_tce();
     let m = TypeMatcher::new(&tce);
     let w = TypeIdentifier::Primitive(PrimitiveKind::UInt16);
     let r = TypeIdentifier::Primitive(PrimitiveKind::UInt64);
-    assert!(m.match_types(&w, &r, &reg()).is_match());
+    assert!(!m.match_types(&w, &r, &reg()).is_match());
+    assert!(m.match_types(&r, &r, &reg()).is_match());
 }

@@ -1,0 +1,6 @@
+// final structure
+@final struct Sample {
+    long a;
+    double b;
+    short c;
+};

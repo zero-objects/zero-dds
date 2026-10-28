@@ -8,12 +8,11 @@
 //! lookup logic so that the individual decoders consistently fulfill the
 //! same format contract.
 //!
-//! The DDS-XML 1.0 spec example in Annex C consistently uses the
-//! 2-segment format (`my_lib::MyDomain`), and the OMG schema definition in
-//! §7.3 allows this form as an XSD `token` attribute. Single-segment refs
-//! (`MyDomain`) are not explicitly forbidden in the spec — we allow them
-//! as a convenience form if the supplied default library argument
-//! is Some(_).
+//! The example of §7.3.6.4.1.1 writes a reference as `library::name`
+//! (`ShapesDomainLibrary::ShapesDomain`); those of §7.3.5.4.1.1 and
+//! §7.3.5.4.2.1 write a bare name (`MyDomain`). The PDF does not fix the
+//! form, so both are read; a bare name needs the default library argument
+//! to be `Some(_)`.
 
 use alloc::format;
 use alloc::string::{String, ToString};

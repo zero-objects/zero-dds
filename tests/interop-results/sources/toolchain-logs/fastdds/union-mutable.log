@@ -1,0 +1,1 @@
+driver.cpp:151:35: error: 'ChoicePubSubType' is not a member of 'zd_c1'

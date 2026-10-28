@@ -1,0 +1,10 @@
+// one-dimensional array of a unannotated structure
+struct Cell {
+    long a;
+    short b;
+};
+
+@final struct Sample {
+    Cell items[2];
+    octet tail;
+};

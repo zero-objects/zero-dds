@@ -1,12 +1,14 @@
-.TH ZERODDS-WS-BRIDGED 1 "2026-05-06" "1.0.0-rc.1" "ZeroDDS Manual"
+.TH ZERODDS-WS-BRIDGED 1 "" "ZeroDDS" "ZeroDDS Manual"
 .SH NAME
 zerodds-ws-bridged \- DDS to WebSocket bridge daemon
 .SH SYNOPSIS
 .B zerodds-ws-bridged
-[\fB\-c\fR \fIFILE\fR | \fB\-\-config\fR \fIFILE\fR]
+[\fB\-\-config\fR \fIFILE\fR]
+[\fB\-\-listen\fR \fIADDR\fR]
+[\fB\-\-domain\fR \fIID\fR]
+[\fB\-\-topic\fR \fINAME\fR]...
 [\fB\-\-log\-level\fR \fILEVEL\fR]
-[\fB\-\-metrics\-bind\fR \fIADDR\fR]
-[\fB\-\-validate\-only\fR]
+[\fB\-\-metrics\fR \fIADDR\fR]
 [\fB\-V\fR | \fB\-\-version\fR]
 [\fB\-h\fR | \fB\-\-help\fR]
 .SH DESCRIPTION
@@ -14,10 +16,19 @@ zerodds-ws-bridged \- DDS to WebSocket bridge daemon
 exposes selected DDS topics to WebSocket clients and forwards inbound WS
 messages onto matching DDS publishers. It is the reference DDS \(<-) WS
 bridge for the ZeroDDS distribution and implements
-.IR zerodds-ws-bridge-1.0 (7).
+.IR docs/specs/zerodds-ws-bridge-1.0.md .
 .PP
-The daemon is configured via a YAML file (default
-.IR /etc/zerodds/ws-bridged.yaml ).
+The daemon reads the YAML file given with
+.BR \-\-config ,
+with drop-ins in its sibling
+.IR FILE .d/;
+without that option it reads the system file
+.I /etc/zerodds/ws-bridged.yaml
+with
+.I /etc/zerodds/ws-bridged.d/
+(on macOS under
+.IR /usr/local/etc/zerodds )
+when it exists, and the built-in defaults otherwise.
 On Linux it integrates with
 .BR systemd (1)
 via Type=notify; on macOS with
@@ -26,62 +37,91 @@ on Windows it runs as service
 .BR ZeroDDSWSBridge .
 .SH OPTIONS
 .TP
-.BR \-c ", " \-\-config =\fIFILE\fR
+.BR \-\-config =\fIFILE\fR
 Path to the YAML configuration. See
 .BR zerodds-ws-bridged.yaml (5).
+.TP
+.BR \-\-listen =\fIADDR\fR
+Bind address. Default:
+.IR 0.0.0.0:8080 .
+.TP
+.BR \-\-domain =\fIID\fR
+DDS domain id. Default: 0.
+.TP
+.BR \-\-topic =\fINAME\fR
+Single-topic override (repeatable).
+.TP
+.BR \-\-tls\-cert =\fIFILE\fR
+TLS cert (PEM); enables
+.IR wss:// .
+.TP
+.BR \-\-tls\-key =\fIFILE\fR
+TLS key (PEM).
+.TP
+.BR \-\-auth\-token =\fISECRET\fR
+Bearer token auth.
 .TP
 .BR \-\-log\-level =\fILEVEL\fR
 Override the configured log level. One of
 .IR trace ", " debug ", " info ", " warn ", " error .
+Default:
+.IR info .
 .TP
-.BR \-\-metrics\-bind =\fIADDR\fR
-Override the Prometheus metrics endpoint, e.g.
-.IR 0.0.0.0:9091 .
-.TP
-.BR \-\-validate\-only
-Parse the config, perform schema + cross-reference checks, exit 0 on
-success. Used by CI and packaging postinst scripts.
+.BR \-\-metrics =\fIADDR\fR
+Prometheus scrape endpoint.
 .TP
 .BR \-V ", " \-\-version
-Print version and license info.
+Version info.
 .TP
 .BR \-h ", " \-\-help
 Print full option synopsis.
+.TP
+.BR \-\-set " \fIPATH\fR=\fIVALUE\fR"
+One setting above every file, repeatable;
+.BI + PATH = VALUE
+appends to a list.
+.TP
+.B \-\-check\-config
+Validate and print the effective configuration with the origin of every
+value, then exit: 0 valid, 1 invalid value or unknown key, 2 unreadable
+file, syntax error or include cycle.
 .SH SIGNALS
 .TP
 .B SIGTERM
 Graceful shutdown (drain in-flight WS frames, unregister DDS readers).
 .TP
 .B SIGHUP
-Reload the configuration file. New routes are added, removed routes are
-disabled, in-flight messages drain.
+Reads the configuration again: the TLS certificate and key files at their
+configured paths, the auth settings and the topic ACL apply from then on
+(the certificate to new connections). Changed TLS file paths, topics,
+listen address or domain need a restart and are logged. A configuration
+that does not load changes nothing.
 .SH ENVIRONMENT
 .TP
-.B ZERODDS_CONFIG
-Fallback config path if
-.B \-\-config
-is not provided.
-.TP
-.B RUST_LOG
-Filter directives in
-.BR tracing-subscriber (3)
-syntax. Overrides the YAML log section.
+.B OTEL_EXPORTER_OTLP_ENDPOINT
+Optional OTLP endpoint, such as http://localhost:4318.
 .SH EXIT STATUS
 .TP
 .B 0
-Successful shutdown via SIGTERM.
+Normal shutdown (SIGTERM/SIGINT).
 .TP
-.B 64
-Configuration error. Run with
-.BR \-\-validate\-only
-to inspect.
+.B 1
+Configuration error.
 .TP
-.B 73
-Bind error \(em address in use, permission denied or invalid TLS material.
+.B 2
+Bind error \(em address in use.
+.TP
+.B 3
+DDS discovery error.
+.TP
+.B 4
+TLS error.
 .SH FILES
 .TP
 .I /etc/zerodds/ws-bridged.yaml
-Default configuration. Documented in
+Suggested deployment path, loaded only when selected with
+.BR \-\-config .
+Documented in
 .BR zerodds-ws-bridged.yaml (5).
 .TP
 .I /var/log/zerodds/ws-bridged.log

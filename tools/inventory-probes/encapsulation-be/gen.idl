@@ -1,0 +1,6 @@
+// B1 — one type per extensibility, so that an implementation which
+// derives the encapsulation identifier from the extensibility has all
+// three to derive from. §7.6.3.1.2 Table 60.
+@final struct Fin { long a; double b; };
+@appendable struct App { long a; double b; };
+@mutable struct Mut { @id(1) long a; @id(2) double b; };

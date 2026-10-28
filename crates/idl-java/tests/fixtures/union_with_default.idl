@@ -1,6 +1,0 @@
-// Fixture: union switch (long) with default → sealed interface + case-records.
-union Choice switch (long) {
-    case 1: long int_branch;
-    case 2: double double_branch;
-    default: octet default_branch;
-};

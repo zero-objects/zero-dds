@@ -1,0 +1,10 @@
+// `@optional @external` on one member, with a value
+// The two annotations answer different questions: DDS-XTypes 1.3
+// Table 21 says where the binding holds the value, and §7.2.2.4.4.4.7
+// whether it is there at all. Neither changes an octet the plain
+// `@optional` member would not write.
+@final struct Sample {
+    long a;
+    @optional @external long b;
+    long c;
+};

@@ -25,6 +25,11 @@ procedure Example_Reliable is
 
    N_Samples : constant := 12;
 
+   --  The DataWriter this example writes to (ObjectId = raw 16#001# plus
+   --  OBJK_DATAWRITER, DDS-XRCE 1.0 7.2.1). It rides in every frame's
+   --  BaseObjectRequest.
+   Writer_Id : constant Interfaces.Unsigned_16 := 16#0015#;
+
    function To_SEA (FS : Frame_Store) return Ada.Streams.Stream_Element_Array is
       use Ada.Streams;
       SEA : Stream_Element_Array (1 .. Stream_Element_Offset (FS.Len));
@@ -78,7 +83,7 @@ procedure Example_Reliable is
       Create_Socket (Sock, Family_Inet, Socket_Datagram);
       Peer := (Family_Inet, Inet_Addr ("127.0.0.1"), 9);  -- discard
       for I in 1 .. M loop
-         Send_Socket (Sock, To_SEA (Write_Frame (Seq, P)), Last, Peer);
+         Send_Socket (Sock, To_SEA (Write_Frame (Seq, Writer_Id, P)), Last, Peer);
          Seq := Seq + 1;
       end loop;
       T2 := Clock;
@@ -150,7 +155,7 @@ procedure Example_Reliable is
                if Got then
                   Submit (S, P, Seq, AOk);
                   if AOk then
-                     Send (Write_Frame (Seq, P));
+                     Send (Write_Frame (Seq, Writer_Id, P));
                   end if;
                end if;
             else
@@ -165,7 +170,7 @@ procedure Example_Reliable is
                   Recv_Acknack (S, First, Bitmap);
                   for I in S.Slots'Range loop
                      if S.Slots (I).Used then
-                        Send (Write_Frame (S.Slots (I).Seq, S.Slots (I).Payload));
+                        Send (Write_Frame (S.Slots (I).Seq, Writer_Id, S.Slots (I).Payload));
                      end if;
                   end loop;
                end if;

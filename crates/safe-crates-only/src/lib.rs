@@ -29,7 +29,7 @@
 // of the crate roots is enough to create the dependency edge; the meta-crate
 // exposes no API surface of its own.
 pub use {
-    zerodds_cdr, zerodds_discovery, zerodds_foundation, zerodds_qos, zerodds_rtps,
-    zerodds_security, zerodds_sys, zerodds_transport, zerodds_transport_udp, zerodds_types,
+    zerodds_discovery, zerodds_foundation, zerodds_qos, zerodds_rtps, zerodds_security,
+    zerodds_sys, zerodds_transport, zerodds_transport_udp, zerodds_types, zerodds_wire,
     zerodds_xrce_client,
 };

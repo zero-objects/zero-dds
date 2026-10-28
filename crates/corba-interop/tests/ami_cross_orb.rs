@@ -19,18 +19,18 @@
 
 use std::sync::{Arc, Mutex};
 
-use zerodds_cdr::{BufferReader, BufferWriter, CdrEncode, Endianness};
 use zerodds_corba_interop::runtime::{AmiClient, object_reference_from_ior};
+use zerodds_wire::{Endianness, Reader, Writer};
 
 fn two_longs(a: i32, b: i32) -> Vec<u8> {
-    let mut w = BufferWriter::new(Endianness::Big);
-    a.encode(&mut w).unwrap();
-    b.encode(&mut w).unwrap();
-    w.into_bytes()
+    let mut w = Writer::new(Endianness::Big);
+    w.write_i32(a);
+    w.write_i32(b);
+    w.finish()
 }
 
 #[test]
-#[ignore = "needs live foreign Bench server via BENCH_IOR env (codepit)"]
+#[ignore = "needs live foreign Bench server via BENCH_IOR env (Linux test host)"]
 fn ami_cross_orb_against_foreign_bench() {
     let ior = std::env::var("BENCH_IOR").expect("BENCH_IOR env (stringified Bench-IOR)");
     let oref = object_reference_from_ior(ior.trim()).expect("parse IOR");
@@ -45,8 +45,7 @@ fn ami_cross_orb_against_foreign_bench() {
             &two_longs(7, 5),
             Box::new(move |reply| {
                 let (body, e) = reply.expect("foreign add reply");
-                *sink.lock().unwrap() =
-                    Some(BufferReader::new(&body, e).read_u32().unwrap() as i32);
+                *sink.lock().unwrap() = Some(Reader::new(&body, e).read_u32().unwrap() as i32);
             }),
         )
         .unwrap();
@@ -56,7 +55,7 @@ fn ami_cross_orb_against_foreign_bench() {
     // --- Polling model against foreign ORB: divmod(17,5) -> (3,2) (out,out) ---
     let id = client.send_poll("divmod", &two_longs(17, 5)).unwrap();
     let (body, e) = client.get_reply(id).unwrap().expect("foreign divmod reply");
-    let mut r = BufferReader::new(&body, e);
+    let mut r = Reader::new(&body, e);
     let q = r.read_u32().unwrap() as i32;
     let rem = r.read_u32().unwrap() as i32;
     assert_eq!((q, rem), (3, 2), "cross-ORB AMI polling divmod");

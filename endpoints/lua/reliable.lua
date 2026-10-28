@@ -12,7 +12,13 @@
 --   [0]=session [1]=stream [2..4)=seq u16 LE [4]=submessage id [5]=flags
 --   [6..8)=body-len u16 LE [8..]=body
 --   WRITE_DATA id=0x07 flags=0x03 body=sample; header seq = sample seq (RFC-1982)
---   ACKNACK   id=0x0A flags=0x01 body(5)= first_unacked i16 LE, nack[0], nack[1], stream
+--   ACKNACK   id=0x0A flags=0x01 body(9)= DHEADER u32 LE (=5), first_unacked i16 LE,
+--             nack[0], nack[1], stream. ACKNACK_Payload has no @extensibility, so it is
+--             APPENDABLE (DDS-XTypes 1.3 section 7.3.1.2.1.8) and carries a DHEADER in
+--             XCDR2 (unannotatedTypes = "appendable", the default). With
+--             unannotatedTypes = "final" the body is the 5 octets of the FINAL form of
+--             the reference implementation (eProsima), length field 5, 13-octet frame.
+--             parseAcknack accepts both forms in either setting.
 --   HEARTBEAT id=0x0B flags=0x01 body(5)= first i16 LE, last i16 LE, stream
 --
 -- The state machine (Sender/Receiver) mirrors `crates/xrce/src/reliable.rs`
@@ -32,7 +38,11 @@ M.MAX_PAYLOAD = 65535
 local SM_WRITE_DATA = 0x07
 local SM_ACKNACK = 0x0A
 local SM_HEARTBEAT = 0x0B
-local FLAG_WRITE = 0x03
+-- E flag (little-endian body) + DataFormat FORMAT_DATA (0b000) in bits 1..3 --
+-- DDS-XRCE 1.0 8.3.5.8.
+local FLAG_WRITE = 0x01
+-- Wire size of the BaseObjectRequest that precedes the sample (7.7.8).
+M.BASE_SIZE = 4
 local FLAG_E_LE = 0x01
 
 -- --- RFC-1982 16-bit serial-number comparison (half-window = 32768) ---
@@ -49,10 +59,14 @@ M.seqGt = seqGt
 -- --- frame codec ---
 
 -- Reliable WRITE_DATA -- identical bytes to the best-effort `writeFrame`
--- with stream = RELIABLE_STREAM_ID.
-function M.writeDataFrame(seqNo, sample)
+-- with stream = RELIABLE_STREAM_ID: the submessage body is the
+-- BaseObjectRequest (7.7.8: request_id then object_id, each two octets most
+-- significant first) followed by the sample. `objectId` names the target
+-- DataWriter; the request_id is the sample's own sequence number.
+function M.writeDataFrame(seqNo, objectId, sample)
   return string.pack("<BBI2BBI2", M.SESSION_NOKEY, M.RELIABLE_STREAM_ID, seqNo,
-    SM_WRITE_DATA, FLAG_WRITE, #sample) .. sample
+    SM_WRITE_DATA, FLAG_WRITE, M.BASE_SIZE + #sample)
+    .. string.pack(">I2I2", seqNo, objectId) .. sample
 end
 
 -- byte-identical to `golden_heartbeat_le.bin` for (0x80, 0x00, 1, {1,3,0x80}).
@@ -61,17 +75,41 @@ function M.heartbeatFrame(session, streamHdr, msgSeq, first, last, streamId)
     .. string.pack("<I2I2B", first, last, streamId)
 end
 
--- byte-identical to `golden_acknack_le.bin` for (0x80, 0x00, 1, {1,0,0,0x80}).
-function M.acknackFrame(session, streamHdr, msgSeq, firstUnacked, nackLo, nackHi, streamId)
-  return string.pack("<BBI2BBI2", session, streamHdr, msgSeq, SM_ACKNACK, FLAG_E_LE, 5)
-    .. string.pack("<I2BBB", firstUnacked, nackLo, nackHi, streamId)
+-- How the types of DDS-XRCE 1.0 Annex A without @extensibility are written
+-- (DDS-XTypes 1.3 section 7.3.1.2.1.8). This module writes one such type,
+-- ACKNACK_Payload; HEARTBEAT_Payload is FINAL in Annex A and does not change.
+M.UNANNOTATED_APPENDABLE = "appendable" -- with a DHEADER (default)
+M.UNANNOTATED_FINAL = "final" -- without a DHEADER (reference implementation)
+
+local function checkUnannotatedTypes(mode)
+  if mode == nil then return M.UNANNOTATED_APPENDABLE end
+  if mode ~= M.UNANNOTATED_APPENDABLE and mode ~= M.UNANNOTATED_FINAL then
+    error("unannotatedTypes must be 'appendable' or 'final', got " .. tostring(mode), 3)
+  end
+  return mode
 end
 
--- Returns seq, sample or nil if `frame` is not a WRITE_DATA frame.
+-- `unannotatedTypes` (optional, "appendable" by default): "appendable" is the
+-- 17-octet frame, byte-identical to `golden_acknack_le.bin` for
+-- (0x80, 0x00, 1, {1,0,0,0x80}); "final" is the 13-octet frame (length field 5).
+function M.acknackFrame(session, streamHdr, msgSeq, firstUnacked, nackLo, nackHi, streamId, unannotatedTypes)
+  if checkUnannotatedTypes(unannotatedTypes) == M.UNANNOTATED_FINAL then
+    return string.pack("<BBI2BBI2", session, streamHdr, msgSeq, SM_ACKNACK, FLAG_E_LE, 5)
+      .. string.pack("<I2BBB", firstUnacked, nackLo, nackHi, streamId)
+  end
+  return string.pack("<BBI2BBI2", session, streamHdr, msgSeq, SM_ACKNACK, FLAG_E_LE, 9)
+    .. string.pack("<I4I2BBB", 5, firstUnacked, nackLo, nackHi, streamId)
+end
+
+-- Returns seq, sample or nil if `frame` is not a WRITE_DATA frame. The sample
+-- starts after the BaseObjectRequest; a body too short to hold one is refused
+-- rather than handed back truncated.
 function M.parseWriteData(frame)
-  if #frame < 8 or frame:byte(5) ~= SM_WRITE_DATA then return nil end
+  if #frame < 8 + M.BASE_SIZE or frame:byte(5) ~= SM_WRITE_DATA then return nil end
+  local smLen = string.unpack("<I2", frame, 7)
+  if smLen < M.BASE_SIZE or 8 + smLen > #frame then return nil end
   local seq = string.unpack("<I2", frame, 3)
-  return seq, frame:sub(9)
+  return seq, frame:sub(9 + M.BASE_SIZE, 8 + smLen)
 end
 
 -- Returns {first, last, streamId} or nil.
@@ -81,10 +119,16 @@ function M.parseHeartbeat(frame)
   return { first = first, last = last, streamId = streamId }
 end
 
--- Returns {firstUnacked, nackLo, nackHi, streamId} or nil.
+-- Returns {firstUnacked, nackLo, nackHi, streamId} or nil. Accepts body length
+-- 9 (DHEADER + 5 octets) and the FINAL form with body length 5.
 function M.parseAcknack(frame)
   if #frame < 13 or frame:byte(5) ~= SM_ACKNACK then return nil end
-  local firstUnacked, nackLo, nackHi, streamId = string.unpack("<I2BBB", frame, 9)
+  local pos = 9
+  if string.unpack("<I2", frame, 7) >= 9 then
+    if #frame < 17 then return nil end
+    pos = 13 -- skip the 4-octet DHEADER
+  end
+  local firstUnacked, nackLo, nackHi, streamId = string.unpack("<I2BBB", frame, pos)
   return { firstUnacked = firstUnacked, nackLo = nackLo, nackHi = nackHi, streamId = streamId }
 end
 
@@ -189,8 +233,23 @@ local Receiver = {}
 Receiver.__index = Receiver
 M.Receiver = Receiver
 
-function Receiver.new()
-  return setmetatable({ expected = 0, received = {} }, Receiver)
+-- `opts.unannotatedTypes`: "appendable" (default) or "final", the form of
+-- the ACKNACK frames Receiver:acknackFrame writes.
+function Receiver.new(opts)
+  return setmetatable({
+    expected = 0,
+    received = {},
+    unannotatedTypes = checkUnannotatedTypes(opts and opts.unannotatedTypes),
+  }, Receiver)
+end
+
+-- The ACKNACK frame for pendingAcknack(hintLastSeen), in the form of this
+-- receiver's unannotatedTypes. session/streamHdr/msgSeq default to
+-- SESSION_NOKEY / STREAM_NONE / 1.
+function Receiver:acknackFrame(hintLastSeen, session, streamHdr, msgSeq)
+  local a = self:pendingAcknack(hintLastSeen)
+  return M.acknackFrame(session or M.SESSION_NOKEY, streamHdr or M.STREAM_NONE, msgSeq or 1,
+    a.firstUnacked, a.nackLo, a.nackHi, a.streamId, self.unannotatedTypes)
 end
 
 function Receiver:outOfOrderCount()
@@ -273,8 +332,12 @@ M.AsyncWriter = AsyncWriter
 
 -- `sender`: a Sender. `sendFn(frame)`: called with an encoded WRITE_DATA
 -- frame whenever `drain()` actually submits + sends one.
-function AsyncWriter.new(sender, sendFn)
-  return setmetatable({ sender = sender, sendFn = sendFn, queue = {}, head = 1, tail = 0 }, AsyncWriter)
+-- `objectId` names the target DataWriter in every frame's BaseObjectRequest
+-- (7.7.8).
+function AsyncWriter.new(sender, sendFn, objectId)
+  return setmetatable(
+    { sender = sender, sendFn = sendFn, objectId = objectId, queue = {}, head = 1, tail = 0 },
+    AsyncWriter)
 end
 
 function AsyncWriter:pending()
@@ -301,7 +364,7 @@ function AsyncWriter:drain()
     if not seq then break end -- window full; retry on a later drain() call
     self.queue[self.head] = nil
     self.head = self.head + 1
-    self.sendFn(M.writeDataFrame(seq, payload))
+    self.sendFn(M.writeDataFrame(seq, self.objectId, payload))
     n = n + 1
   end
   return n

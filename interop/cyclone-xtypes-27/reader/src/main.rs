@@ -18,14 +18,34 @@ use zerodds_dcps::{
     DataReaderQos, DomainParticipantFactory, DomainParticipantQos, SubscriberQos, TopicQos,
 };
 
+/// Resolves the DDS domain from an optional CLI argument. Omitted -> the
+/// documented manual default 100; present but malformed / out of 0..=232 ->
+/// a diagnostic and a non-zero exit (never a silent fallback).
+fn resolve_domain(arg: Option<String>) -> i32 {
+    match arg {
+        None => 100,
+        Some(s) => match s.parse::<i32>() {
+            Ok(d) if (0..=232).contains(&d) => d,
+            _ => {
+                eprintln!(
+                    "invalid domain argument {s:?}: expected an integer in 0..=232"
+                );
+                std::process::exit(2);
+            }
+        },
+    }
+}
+
 fn main() {
     let secs: u64 = std::env::args()
         .nth(1)
         .and_then(|s| s.parse().ok())
         .unwrap_or(12);
+
+    let domain: i32 = resolve_domain(std::env::args().nth(2));
     let f = DomainParticipantFactory::instance();
     let p = f
-        .create_participant(100, DomainParticipantQos::default())
+        .create_participant(domain, DomainParticipantQos::default())
         .unwrap();
     let t = p
         .create_topic::<Robot>("robot", TopicQos::default())
@@ -34,7 +54,7 @@ fn main() {
     let r = s
         .create_datareader::<Robot>(&t, DataReaderQos::default())
         .expect("reader");
-    eprintln!("[zerodds reader] domain=100 topic=robot window={secs}s");
+    eprintln!("[zerodds reader] domain={domain} topic=robot window={secs}s");
 
     let start = std::time::Instant::now();
     let mut matched = 0usize;

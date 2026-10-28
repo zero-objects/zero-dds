@@ -1,0 +1,1 @@
+@final struct NestedSeq { sequence<sequence<long> > rows; octet tail; };

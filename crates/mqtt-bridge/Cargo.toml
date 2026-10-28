@@ -10,8 +10,8 @@ description = "MQTT v5.0 (OASIS Standard) Wire-Codec + Broker + Topic-Filter + K
 homepage = "https://zerodds.org"
 documentation = "https://docs.rs/zerodds-mqtt-bridge"
 readme = "README.md"
-keywords = ["dds", "mqtt", "mqtt5", "broker", "no-std"]
-categories = ["network-programming", "encoding", "no-std"]
+keywords = ["dds", "mqtt", "mqtt5", "broker"]
+categories = ["network-programming", "encoding"]
 publish = true
 
 [lints]
@@ -21,12 +21,19 @@ workspace = true
 path = "src/lib.rs"
 
 [features]
-default = ["std", "daemon"]
+default = ["std", "daemon", "ring-backend"]
+# The crypto backend of bridge-security (JWT verify and the rustls TLS
+# provider): `ring-backend` (default) or `aws-lc` (aws-lc-rs, FIPS 140-3
+# validatable). A FIPS build: `--no-default-features --features <the
+# default list without ring-backend>,aws-lc`; with both, aws-lc is used.
+ring-backend = ["zerodds-bridge-security?/ring-backend"]
+aws-lc = ["zerodds-bridge-security?/aws-lc"]
 std = ["alloc"]
 alloc = []
 # `daemon` enables the `zerodds-mqtt-bridged` binary + DDS pump.
 # Pulls in `std` and path deps on zerodds-dcps/qos/types/rtps.
 daemon = [
+    "dep:zerodds-config",
     "std",
     "dep:zerodds-dcps",
     "dep:zerodds-rtps",
@@ -34,21 +41,32 @@ daemon = [
     "dep:zerodds-types",
     "dep:zerodds-bridge-security",
     "dep:rustls",
+    "dep:zerodds-websocket-bridge",
     "dep:zerodds-monitor",
     "dep:zerodds-observability-otlp",
     "dep:signal-hook",
 ]
 # Cross-vendor interop tests against Mosquitto (Spec §10 + §12.3); requires `mosquitto_pub`/`mosquitto_sub` binaries.
 cross-vendor-tests = ["daemon"]
+# C2(2): passthrough for `zerodds-dcps/rt` (`threads.*` real-time scheduling
+# + CPU affinity via `zerodds-rt-linux`). Off by default; build with
+# `--features rt` so a `threads.recv_policy=fifo`-style config on this
+# daemon applies instead of refusing with "feature missing". Implies
+# `daemon` (`zerodds-dcps` is only linked under it).
+rt = ["daemon", "zerodds-dcps/rt"]
 
 [dependencies]
 zerodds-dcps = { version = "1.0.0-rc.7", path = "../dcps", optional = true, default-features = false, features = ["std"] }
+zerodds-config = { version = "1.0.0-rc.7", path = "../config", optional = true }
 zerodds-rtps = { version = "1.0.0-rc.7", path = "../rtps", optional = true, default-features = false, features = ["std"] }
 zerodds-qos = { version = "1.0.0-rc.7", path = "../qos", optional = true, default-features = false, features = ["alloc"] }
 zerodds-types = { version = "1.0.0-rc.7", path = "../types", optional = true, default-features = false, features = ["alloc"] }
 # Bridge-Security-Substrat (Bridge-Spec §7.1 TLS / §7.2 Auth / §7.3 ACL).
-zerodds-bridge-security = { version = "1.0.0-rc.7", path = "../bridge-security", optional = true }
+zerodds-bridge-security = { version = "1.0.0-rc.7", path = "../bridge-security", optional = true, default-features = false, features = ["std"] }
 rustls = { workspace = true, optional = true }
+# RFC 6455 frame codec and client handshake for the ws:// and wss:// broker
+# schemes (MQTT 5.0 §6); only the codec, not the WebSocket daemon.
+zerodds-websocket-bridge = { version = "1.0.0-rc.7", path = "../websocket-bridge", optional = true, default-features = false, features = ["std"] }
 # Cross-Cutting Daemon-Observability: §8.2 Prometheus + §8.3 OTLP + §9.2 Graceful Shutdown.
 zerodds-monitor = { version = "1.0.0-rc.7", path = "../monitor", optional = true, default-features = false, features = ["std", "prometheus-server"] }
 zerodds-observability-otlp = { version = "1.0.0-rc.7", path = "../observability-otlp", optional = true }

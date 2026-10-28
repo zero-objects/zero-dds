@@ -8,29 +8,29 @@ import std/[options, asyncdispatch, strutils]
 import ./zerodds
 
 proc sample(id: uint32, label: string): seq[byte] =
-  var w = initWriter(eLE)
+  var w = initWriter(eLE, eXcdr2)
   w.putU32(id)
   w.putString(label)
   w.bytes()
 
 # sync
 let t = memTransport()
-let c = newClient(t)
+let c = newClient(t, xrceObjectId(0x001, ObjkDataWriter))
 c.write(sample(0x42'u32, "sync-hello"))
 let body = c.poll()
 if body.isSome:
-  var rd = initReader(body.get, eLE)
+  var rd = initReader(body.get, eLE, eXcdr2)
   echo "sync: received id=0x", toHex(rd.getU32())
 
 # async
 let t2 = memTransport()
-let w = newClient(t2)
+let w = newClient(t2, xrceObjectId(0x001, ObjkDataWriter))
 for i in 0 .. 2:
   w.write(sample(0x100'u32 + uint32(i), "async"))
 let r = newAsyncReader(t2)
 for _ in 0 .. 2:
   let b = waitFor r.recv()
-  var rd = initReader(b, eLE)
+  var rd = initReader(b, eLE, eXcdr2)
   echo "async: received id=0x", toHex(rd.getU32())
 
 echo "ALL OK"

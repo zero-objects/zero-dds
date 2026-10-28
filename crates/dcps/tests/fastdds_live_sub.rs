@@ -1,36 +1,6 @@
-//! C5.5 — Live-Interop: ZeroDDS-Publisher → FastDDS-Subscriber.
-//!
-//! **Opt-in only** — `#[ignore]` marked. Invocation:
-//!
-//! ```bash
-//! cargo test -p zerodds-dcps --features live-interop \
-//!     --test fastdds_live_sub -- --ignored --nocapture
-//! ```
-//!
-//! # Spec reference
-//!
-//! - DDSI-RTPS 2.5 §8.3 — DATA submessage outbound
-//! - XCDR2 encoding (`@key string color; int32 x,y,shapesize;`)
-//! - PID_TYPE_NAME / PID_TOPIC_NAME — FastDDS must recognize our SEDP
-//!   publication as matching the local reader.
-//!
-//! # Test flow
-//!
-//! 1. ZeroDDS participant + DataWriter<ShapeType> on topic `Square`.
-//! 2. The writer sends samples periodically over 10 s.
-//! 3. `fastdds shape subscriber --topic Square ...` on the Linux bench
-//!    host via SSH.
-//! 4. The subscriber log on the Linux bench host is grepped remotely for
-//!    the `Sample received` substring (FastDDS standard log format).
-//! 5. Success = at least 1 "Sample received" line in the log.
-//!
-//! # Known edge cases
-//!
-//! - FastDDS's `shape` matches only `ShapeType` as the IDL type; our
-//!   `ShapeType` must carry exactly that type name (it does —
-//!   `interop.rs` sets it hard).
-//! - `fastdds shape subscriber` prints to stdout, so we pipe to a log
-//!   file and tail it.
+//! Live local Fast DDS test using vendor-generated OMG appendable ShapeType.
+//! Enable with INTEROP_REQUIRE=1 and FASTDDS_SHAPES pointing to the built client.
+//! Each child has its own PID/log; missing tools and runtime errors fail.
 
 #![allow(
     clippy::expect_used,
@@ -52,7 +22,6 @@ mod cross_vendor;
 
 #[cfg(target_os = "linux")]
 mod tests {
-    use std::process::Command;
     use std::time::Duration;
 
     use zerodds_dcps::interop::ShapeType;
@@ -66,11 +35,10 @@ mod tests {
     };
 
     use super::cross_vendor::{
-        FastDurability, FastQos, FastReliability, SSH_HOST, SSH_PASS, SSH_USER, require_or_skip,
-        start_fastdds_sub,
+        FastDurability, FastQos, FastReliability, require_or_skip, start_fastdds_sub,
     };
 
-    const FASTDDS_DOMAIN: i32 = 143;
+    const FASTDDS_DOMAIN: i32 = 97;
 
     fn rt_config() -> RuntimeConfig {
         RuntimeConfig {
@@ -89,31 +57,6 @@ mod tests {
             durability: DurabilityQosPolicy { kind: dur },
             ..DataWriterQos::default()
         }
-    }
-
-    /// Check whether the FastDDS subscriber log on the Linux bench host
-    /// records a sample receipt. `fastdds shape subscriber` writes one
-    /// line per received sample.
-    fn fastdds_log_has_sample(topic: &str) -> bool {
-        let path = format!("/tmp/fastdds_sub_{topic}.log");
-        let cmd = format!("grep -c 'received' {path} 2>/dev/null || echo 0");
-        let out = Command::new("sshpass")
-            .arg("-p")
-            .arg(SSH_PASS)
-            .arg("ssh")
-            .arg("-o")
-            .arg("StrictHostKeyChecking=no")
-            .arg(format!("{SSH_USER}@{SSH_HOST}"))
-            .arg(&cmd)
-            .output();
-        if let Ok(o) = out {
-            if let Ok(s) = core::str::from_utf8(&o.stdout) {
-                if let Ok(n) = s.trim().parse::<u32>() {
-                    return n > 0;
-                }
-            }
-        }
-        false
     }
 
     fn run_sub_test(topic: &'static str, fast_qos: FastQos, wr_qos: DataWriterQos) {
@@ -137,9 +80,9 @@ mod tests {
             .create_datawriter::<ShapeType>(&topic_handle, wr_qos)
             .expect("create writer");
 
-        // Start the FastDDS subscriber on the Linux bench host (before the
+        // Start the owned local Fast DDS subscriber (before the
         // first write, so discovery + any TransientLocal resend work).
-        let _fast = start_fastdds_sub(topic, FASTDDS_DOMAIN as u32, &fast_qos)
+        let mut fast = start_fastdds_sub(topic, FASTDDS_DOMAIN as u32, &fast_qos)
             .expect("start fastdds shape subscriber");
 
         // Discovery 3 s, then write periodically.
@@ -153,9 +96,13 @@ mod tests {
         // Give the FastDDS subscriber some time to flush the log.
         std::thread::sleep(Duration::from_secs(2));
 
+        fast.ensure_running().expect("Fast DDS reader exited");
         assert!(
-            fastdds_log_has_sample(topic),
-            "fastdds shape subscriber log on the Linux bench host shows no samples for topic={topic}"
+            fast.output()
+                .expect("read owned vendor log")
+                .lines()
+                .any(|line| line.starts_with("SAMPLE color=RED ")),
+            "owned Fast DDS subscriber log shows no samples for topic={topic}"
         );
         eprintln!("ZeroDDS→FastDDS sub-test {topic} OK");
     }

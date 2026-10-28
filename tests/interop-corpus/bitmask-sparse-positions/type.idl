@@ -1,0 +1,14 @@
+// `bitmask` with implicit and explicit positions
+@bit_bound(16)
+bitmask Flags {
+    ALPHA,
+    @position(5) BETA,
+    GAMMA,
+    @position(15) OMEGA
+};
+
+@final struct Sample {
+    Flags value;
+    Flags only_implicit;
+    octet tail;
+};

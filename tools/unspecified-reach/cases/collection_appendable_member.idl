@@ -1,0 +1,3 @@
+// G15 — on the member rather than the alias, which is the other place
+// an anonymous collection could carry it.
+struct Sample { @appendable sequence<long> v; octet tail; };

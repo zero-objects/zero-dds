@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Smoke-Tests für das CLI-Frontend des `zerodds-record` Bins.
+//! Smoke tests for the CLI frontend of the `zerodds-record` bin.
 //!
-//! Wir bauen das Bin via `env!("CARGO_BIN_EXE_zerodds-record")` (cargo
-//! liefert den Pfad zum gebauten bin als ENV-Var bei `cargo test`).
+//! We build the bin via `env!("CARGO_BIN_EXE_zerodds-record")` (cargo
+//! provides the path to the built bin as an env var during `cargo test`).
 
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic, missing_docs)]
 
@@ -55,10 +55,10 @@ fn unknown_subcommand_exits_two() {
 
 #[test]
 fn record_rejects_missing_topic() {
-    // Ohne --topic muss exit 2 kommen (parse-validation), bevor
-    // ueberhaupt die DCPS-Runtime gestartet wird. Wichtig: dieser
-    // Test darf NIEMALS einen DcpsRuntime starten — sonst laeuft
-    // das Binary endlos und blockiert die Test-Suite.
+    // Without --topic, exit 2 must occur (parse validation), before
+    // the DCPS runtime is even started. Important: this
+    // test must NEVER start a DcpsRuntime — otherwise the
+    // binary runs endlessly and blocks the test suite.
     let out = Command::new(bin())
         .args(["record", "--domain", "5"])
         .output()
@@ -70,9 +70,9 @@ fn record_rejects_missing_topic() {
 
 #[test]
 fn record_short_duration_terminates() {
-    // Mit --duration 1s muss das Binary nach ~1s self-terminieren.
-    // Wir test-doppeln NICHT auf network-multicast — wenn DcpsRuntime
-    // failt, kommt exit 3 raus (was auch ok ist; wichtig: nicht hang).
+    // With --duration 1s the binary must self-terminate after ~1s.
+    // We do NOT test-double on network multicast — if DcpsRuntime
+    // fails, exit 3 comes out (which is also ok; important: no hang).
     use std::time::{Duration, Instant};
     let start = Instant::now();
     let out = Command::new(bin())
@@ -88,11 +88,11 @@ fn record_short_duration_terminates() {
         .output()
         .expect("spawn");
     let elapsed = start.elapsed();
-    // Hard-cap: hier darf nichts > 10s sein — sonst hat der Test
-    // einen Hang den wir nicht lokal reproduzieren wollten.
+    // Hard cap: nothing here may be > 10s — otherwise the test has
+    // a hang that we did not want to reproduce locally.
     assert!(elapsed < Duration::from_secs(10), "binary hung > 10s");
-    // Exit-code darf 0 (erfolgreich) ODER 3 (DDS-init fail in
-    // network-restricted CI) sein — beides keine Test-Sitch.
+    // Exit code may be 0 (success) OR 3 (DDS-init fail in
+    // network-restricted CI) — neither is a test situation.
     let code = out.status.code().unwrap_or(-1);
     assert!(code == 0 || code == 3, "unexpected exit {code}");
     let _ = std::fs::remove_file("/tmp/zds-record-test.zddsrec");
@@ -111,7 +111,7 @@ fn info_missing_file_exits_three() {
 fn info_reads_synthetic_zddsrec() {
     use zerodds_recorder::format::{Header, ParticipantEntry, TopicEntry};
 
-    // Einen winzigen, gültigen .zddsrec schreiben.
+    // Write a tiny, valid .zddsrec.
     let mut buf = Vec::new();
     let h = Header {
         time_base_unix_ns: 0,

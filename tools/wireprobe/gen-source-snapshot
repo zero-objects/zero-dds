@@ -1,0 +1,89 @@
+#!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 ZeroDDS Contributors
+#
+# gen-source-snapshot — every generator, every case, every configuration,
+# into one tree of generated sources.
+#
+#   tools/wireprobe/gen-source-snapshot <out-dir> [--columns c,cpp,...]
+#
+# ## Why the source and not the octets
+#
+# A column's octets are produced by its runtime out of the source its
+# generator wrote. So two generators that write the same source cannot
+# produce different octets, and a comparison of the sources is the
+# stronger gate of the two: it covers the read direction as well, which
+# writes no octets at all, and every case a toolchain is missing on the
+# machine.
+#
+# It is also the cheaper one by three orders of magnitude — no `csc`, no
+# `javac`, no `tsc`, no `c++` — so it can be run per commit where a
+# corpus sweep cannot.
+#
+# The tree it writes is `<out>/<column>/<case>/<encoding>.<endian>[.read]/`
+# holding the generator's own file names, plus a `.exit` naming the code
+# for a configuration that produced none.
+set -uo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+
+out="${1:-}"
+if [ -z "$out" ]; then
+    echo "gen-source-snapshot: an output directory is required" >&2
+    exit 2
+fi
+shift
+
+columns="c,cpp,csharp,java,typescript"
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --columns) columns="$2"; shift 2 ;;
+        *) echo "gen-source-snapshot: \`$1\` is not an option" >&2; exit 2 ;;
+    esac
+done
+
+bin="${ZERODDS_GEN_BIN:-${CARGO_TARGET_DIR:-$root/target}/debug}"
+
+mkdir -p "$out"
+for column in ${columns//,/ }; do
+    gen="$bin/wireprobe-zerodds-$column-gen"
+    if [ ! -x "$gen" ]; then
+        echo "gen-source-snapshot: no $gen" >&2
+        exit 2
+    fi
+    n=0
+    for d in "$root"/tests/interop-corpus/*/; do
+        case=$(basename "$d")
+        [ -f "$d/type.idl" ] && [ -f "$d/values.json" ] && [ -f "$d/type" ] || continue
+        type=$(cat "$d/type")
+        for encoding in plain-cdr1 pl-cdr1 plain-cdr2 delimited-cdr pl-cdr2; do
+            for endian in le be; do
+                for emit in payload payload+encapsulation; do
+                    suffix=""
+                    [ "$emit" = "payload+encapsulation" ] && suffix=".encap"
+                    slot="$out/$column/$case/$encoding.$endian$suffix"
+                    mkdir -p "$slot"
+                    code=0
+                    "$gen" --idl "$d/type.idl" --type "$type" \
+                        --values "$d/values.json" --encoding "$encoding" \
+                        --endian "$endian" --emit "$emit" \
+                        --out-dir "$slot" > "$slot/.stdout" 2> "$slot/.stderr" || code=$?
+                    echo "$code" > "$slot/.exit"
+                    n=$((n + 1))
+                done
+                # The read direction, where the column has one. A column
+                # that has none answers non-zero and the `.exit` says so,
+                # which is itself a thing two runs must agree on.
+                slot="$out/$column/$case/$encoding.$endian.read"
+                mkdir -p "$slot"
+                code=0
+                "$gen" --idl "$d/type.idl" --type "$type" --read \
+                    --encoding "$encoding" --endian "$endian" \
+                    --out-dir "$slot" > "$slot/.stdout" 2> "$slot/.stderr" || code=$?
+                echo "$code" > "$slot/.exit"
+                n=$((n + 1))
+            done
+        done
+    done
+    echo "$column: $n configuration(s)"
+done

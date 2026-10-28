@@ -18,6 +18,8 @@ test: all
 	build/test_ada83_identity
 	build/test_ada83_async
 	build/test_ada83_reliable
+	build/test_ada83_surface
+	build/test_ada83_xrce_client
 
 clean:
 	-$(GPRCLEAN) -P zerodds_ada83.gpr

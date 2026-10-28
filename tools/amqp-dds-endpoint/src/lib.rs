@@ -4,11 +4,11 @@
 //! DDS-AMQP 1.0 Endpoint Daemon — Library-Layer.
 //!
 //! Safety classification: **TOOLING** (Server-Daemon-Bibliothek;
-//! kein safety-relevanter Runtime-Code, std-only).
+//! no safety-relevant runtime code, std-only).
 //!
-//! Synchronen, `std`-only AMQP-1.0-Server-Daemon. Wir lesen
-//! AMQP-Frames blocking auf einer `TcpStream`-Verbindung und
-//! treiben die `zerodds-amqp-endpoint`-State-Machine.
+//! Synchronous, `std`-only AMQP-1.0 server daemon. We read
+//! AMQP frames blocking on a `TcpStream` connection and
+//! drive the `zerodds-amqp-endpoint` state machine.
 //!
 //! Spec-Quellen:
 //! * dds-amqp-1.0 §2.1 Endpoint Profile (Cl. 2 Connection
@@ -16,28 +16,32 @@
 //! * `amqp-1.0-transport` §2.2 Protocol Header,
 //!   §2.3 Frame Layout, §2.4 Connection State.
 //!
-//! Was diese Crate liefert:
-//! * Protocol-Header-Read/Write (`AMQP\0\1\0\0` und SASL-Variant).
+//! What this crate provides:
+//! * Protocol header read/write (`AMQP\0\1\0\0` and SASL variant).
 //! * Frame-Read/Write (8-Byte Header + Body).
 //! * Performative-Dispatch (Descriptor → `InboundFrameKind`).
-//! * Per-Connection-Handler (`handle_connection`), der die
-//!   State-Machine treibt.
-//! * `run_server` — Multi-Connection-Accept-Loop mit
+//! * Per-connection handler (`handle_connection`) that
+//!   drives the state machine.
+//! * `run_server` — multi-connection accept loop with
 //!   thread-per-connection.
 //!
-//! Was diese Crate **nicht** liefert (separate Folge-Schichten):
-//! * TLS-Termination — Spec §10.1 Daemon-Layer-Welle.
-//! * DDS-Side-Bruecke (DataWriter/Reader) — Spec §2.1 Cl. 3
-//!   Folge-Welle.
-//! * Outbound-Bridge-Mode — Spec §2.2 Cl. 2.
-//! * Reconnect-Loop — Spec §10.8.
+//! * TLS termination (`tls`, feature `tls`, default; Spec §10.1), which
+//!   the binary uses when the configuration has a `<tls>` block.
+//! * The outbound bridge client with its reconnect loop (`client`, Spec
+//!   §2.2 Cl. 2/7, §10.8); the binary does not start it.
+//!
+//! The DDS side is the trait `dds_host::DdsHost`; the only implementation
+//! here is `InMemoryDdsHost`, so this daemon reaches no DDS domain. The
+//! daemon bridging AMQP to a DDS domain is `zerodds-amqp-bridged`
+//! (`crates/amqp-endpoint`).
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
-// Daemon-Tool — eprintln ist die natuerliche Logging-Form
-// solange tracing/log nicht workspace-weit verfuegbar ist.
+// Daemon tool — eprintln is the natural logging form
+// as long as tracing/log is not available workspace-wide.
 #![allow(clippy::print_stderr)]
 
+pub mod auth;
 pub mod bridge;
 pub mod client;
 pub mod dds_host;

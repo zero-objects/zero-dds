@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 # ZeroDDS — IDL → OCaml codegen backend
 
-`zerodds-idlc --ocaml` emits **native OCaml** from OMG IDL: a self-contained
+`zerodds-idlc generate --lang ocaml` emits **native OCaml** from OMG IDL: a self-contained
 source file with a `Wire` module (byte-identical to the `endpoints/ocaml` core,
 built on `Buffer`/`Bytes`) and, per IDL `struct`, a module with a record type
 `t` and a `marshal(v, endian): bytes` function whose wire output matches the
@@ -13,7 +13,7 @@ Crate: [`crates/idl-ocaml`](../crates/idl-ocaml) · registered in `tools/idlc`
 ## Usage
 
 ```sh
-zerodds-idlc types.idl --ocaml    # emits types.ml
+zerodds-idlc generate --lang ocaml types.idl   # emits types.ml
 ```
 
 ## Mapping

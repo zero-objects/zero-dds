@@ -1,0 +1,5 @@
+// G15 — rules (29) and (30) applied to a collection. Cyclone: "can only
+// be applied to constructed types". RTI: "not applicable for the
+// context: alias."
+@appendable typedef sequence<long> LS;
+struct Sample { LS v; octet tail; };

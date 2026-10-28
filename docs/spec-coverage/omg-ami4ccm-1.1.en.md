@@ -33,7 +33,9 @@ asynchronous method invocation for CCM (AMI4CCM)."
 implied-IDL transformation as the main scope; the connector aspect explicitly
 excluded.
 
-**Tests:** cross-ref §7.x.
+**Tests:** `crates/ami4ccm/tests/implied_idl.rs::both_generated_interfaces_are_local`,
+`crates/ami4ccm/tests/implied_idl.rs::an_operation_becomes_sendc_with_the_handler_first`,
+`crates/ami4ccm/src/connector.rs::tests::port_type_matches_spec_annex_a_idl`.
 
 **Status:** done
 
@@ -54,8 +56,10 @@ fragment generation) as an AST + a D&C plan fragment in
 `crates/ami4ccm/src/connector.rs::Connector::for_interface` and
 `crates/ami4ccm/src/deployment.rs::ConnectorPlanFragment::build`.
 
-**Tests:** cross-ref §7.3 (implied IDL) + §7.6 (connector AST) + §7.8 (D&C
-plan fragment).
+**Tests:** point 1 — `crates/ami4ccm/tests/implied_idl.rs::the_running_example_yields_the_sendc_operations_of_section_7_3_1_3`,
+`crates/ami4ccm/tests/implied_idl.rs::the_running_example_yields_the_reply_handler_of_section_7_5_3`.
+point 2 — `crates/ami4ccm/src/connector.rs::tests::port_type_matches_spec_annex_a_idl`,
+`crates/ami4ccm/src/deployment.rs::tests::plan_fragment_is_co_located`.
 
 **Status:** done — implied IDL + connector-fragment AST + the D&C plan fully
 covered; the CCM container stack (`crates/corba-ccm/` with
@@ -76,7 +80,7 @@ Distributed Applications specification: formal/2006-04-02."
 
 **Repo:** ZeroDDS has a CORBA ORB (`crates/corba-interop`) and a D&C subsystem
 (`crates/corba-dnc`); the AMI4CCM implementation itself lives at the IDL-AST
-level (`zerodds_idl::ast`).
+level (`zerodds_ast`).
 
 **Tests:** —
 
@@ -149,8 +153,9 @@ implementation."
 exactly this callback-model code (the reply handler as
 `InterfaceKind::Local`).
 
-**Tests:** `crates/ami4ccm/src/transform.rs::tests::reply_handler_inherits_from_ccm_ami_replyhandler`,
-`produces_two_local_interfaces_with_correct_names`.
+**Tests:** `crates/ami4ccm/tests/implied_idl.rs::a_reply_handler_inherits_the_generic_one_by_default`,
+`crates/ami4ccm/tests/implied_idl.rs::both_generated_interfaces_are_local`,
+`crates/ami4ccm/tests/implied_idl.rs::the_handler_parameter_is_an_object_reference_to_the_reply_handler`.
 
 **Status:** done
 
@@ -163,10 +168,10 @@ request has not been made."
 
 **Repo:** the implied IDL has **no** `raises()` clause on the `sendc_<op>`
 ops (system exceptions are never in a CORBA-IDL `raises` clause) — see
-`crates/ami4ccm/src/transform.rs::build_sendc_op` (field `raises:
+`crates/ami4ccm/src/transform.rs::build_ami_interface` (field `raises:
 Vec::new()`).
 
-**Tests:** cross-ref §7.3.1.1.
+**Tests:** `crates/ami4ccm/tests/implied_idl.rs::a_sendc_operation_carries_no_raises_clause`.
 
 **Status:** done
 
@@ -180,12 +185,14 @@ Vec::new()`).
 an attribute, in/inout/out/return operations and user exceptions.
 
 **Repo:** reproduced as the end-to-end test
-`crates/ami4ccm/src/transform.rs::tests::full_stockmanager_running_example_yields_spec_signatures`.
+`crates/ami4ccm/tests/implied_idl.rs::the_generated_interfaces_land_in_the_module_the_original_is_in`.
 
-**Tests:** same.
+**Tests:** `crates/ami4ccm/tests/implied_idl.rs::the_running_example_yields_the_sendc_operations_of_section_7_3_1_3`,
+`crates/ami4ccm/tests/implied_idl.rs::the_running_example_yields_the_reply_handler_of_section_7_5_3`,
+`crates/ami4ccm/tests/implied_idl.rs::the_generated_interfaces_land_in_the_module_the_original_is_in`.
 
-**Status:** done — the test reproduces exactly the signature list from
-§7.3.1.3 (p. 8) + §7.5.3 (p. 11).
+**Status:** done — the two running-example tests reproduce exactly the
+signature lists of §7.3.1.3 (p. 8) and §7.5.3 (p. 11).
 
 ---
 
@@ -201,10 +208,11 @@ the user."
 **Repo:** the `ami4ccm.idl` data types (`CCM_AMI::ExceptionHolder`,
 `CCM_AMI::ReplyHandler`, `UserExceptionBase`) are modeled in
 `crates/ami4ccm/src/exception_holder.rs` and implicitly as ScopedNames in
-`transform.rs::exception_holder_type_spec`.
+`crates/ami4ccm/src/transform.rs::scoped_ref`.
 
-**Tests:** `crates/ami4ccm/src/transform.rs::tests::handler_excep_op_takes_exception_holder`,
-`reply_handler_inherits_from_ccm_ami_replyhandler`.
+**Tests:** `crates/ami4ccm/tests/implied_idl.rs::a_reply_handler_carries_a_normal_and_an_excep_operation_per_operation`,
+`crates/ami4ccm/tests/implied_idl.rs::a_reply_handler_inherits_the_generic_one_by_default`,
+`crates/ami4ccm/src/exception_holder.rs::tests::raise_exception_returns_err_with_user_exception`.
 
 **Status:** done
 
@@ -217,9 +225,9 @@ interface or any of the interface's base interfaces, 'ami_' strings are
 inserted between 'sendc_' and the original operation name until the
 implied-IDL operation name is unique."
 
-**Repo:** `crates/ami4ccm/src/transform.rs::resolve_sendc_name`.
+**Repo:** `crates/ami4ccm/src/transform.rs::sendc_name`.
 
-**Tests:** `crates/ami4ccm/src/transform.rs::tests::naming_conflict_resolved_with_ami_prefix`.
+**Tests:** `crates/ami4ccm/tests/implied_idl.rs::a_sendc_name_that_already_exists_gains_an_ami_infix`.
 
 **Status:** done
 
@@ -239,10 +247,11 @@ implied-IDL operation name is unique."
   the one from the original operation (if any is present)." (§7.3.1.1, p. 7
   last paragraph).
 
-**Repo:** `crates/ami4ccm/src/transform.rs::build_sendc_op`.
+**Repo:** `crates/ami4ccm/src/transform.rs::build_ami_interface`.
 
-**Tests:** `transform::tests::sendc_op_has_handler_first_then_in_inout_only`,
-`transform::tests::sendc_inout_becomes_in`.
+**Tests:** `crates/ami4ccm/tests/implied_idl.rs::an_operation_becomes_sendc_with_the_handler_first`,
+`crates/ami4ccm/tests/implied_idl.rs::the_handler_parameter_is_an_object_reference_to_the_reply_handler`,
+`crates/ami4ccm/tests/implied_idl.rs::a_sendc_operation_carries_no_raises_clause`.
 
 **Status:** done — signature (args, order, mode mapping) covered:
 * Nil-ReplyHandler semantics: the spec requires the operation to return
@@ -261,12 +270,11 @@ implied-IDL operation name is unique."
 generated) + `sendc_set_<attributeName>` (only if not `readonly`). The setter
 argument is `in <attrType> attr_<attributeName>`.
 
-**Repo:** `crates/ami4ccm/src/transform.rs::build_sendc_attr_get`,
+**Repo:** `crates/ami4ccm/src/transform.rs::build_ami_interface`,
 `build_sendc_attr_set`.
 
-**Tests:** `crates/ami4ccm/src/transform.rs::tests::attribute_get_set_generated_in_both_interfaces`,
-`readonly_attribute_only_generates_getter`,
-`sendc_attr_setter_takes_attr_prefixed_arg`.
+**Tests:** `crates/ami4ccm/tests/implied_idl.rs::an_attribute_becomes_a_sendc_getter_and_setter`,
+`crates/ami4ccm/tests/implied_idl.rs::the_running_example_yields_the_sendc_operations_of_section_7_3_1_3`.
 
 **Status:** done
 
@@ -277,9 +285,9 @@ argument is `in <attrType> attr_<attributeName>`.
 `sendc_set_stock`, `sendc_remove_stock`, `sendc_find_closest_symbol`,
 `sendc_get_quote`).
 
-**Repo:** cross-ref `transform.rs`.
+**Repo:** cross-ref `crates/ami4ccm/src/transform.rs`.
 
-**Tests:** `crates/ami4ccm/src/transform.rs::tests::full_stockmanager_running_example_yields_spec_signatures`.
+**Tests:** `crates/ami4ccm/tests/implied_idl.rs::the_running_example_yields_the_sendc_operations_of_section_7_3_1_3`.
 
 **Status:** done
 
@@ -296,7 +304,8 @@ raise_exception operation for raising the encapsulated exception."
 
 **Repo:** `crates/ami4ccm/src/exception_holder.rs::ExceptionHolder`.
 
-**Tests:** `crates/ami4ccm/src/exception_holder.rs::tests::raise_exception_returns_err_with_user_exception`.
+**Tests:** `crates/ami4ccm/src/exception_holder.rs::tests::raise_exception_returns_err_with_user_exception`,
+`crates/ami4ccm/tests/implied_idl.rs::a_sendc_operation_carries_no_raises_clause`.
 
 **Status:** done
 
@@ -319,8 +328,8 @@ CORBA::UserException in C++ and to org.omg.CORBA.UserException in java."
 ExceptionHolder}`.
 
 **Tests:** `crates/ami4ccm/src/exception_holder.rs::tests::user_exception_base_new_stores_id_and_bytes`,
-`raise_exception_returns_err_with_user_exception`,
-`user_exception_accessor_returns_inner`.
+`crates/ami4ccm/src/exception_holder.rs::tests::raise_exception_returns_err_with_user_exception`,
+`crates/ami4ccm/src/exception_holder.rs::tests::user_exception_accessor_returns_inner`.
 
 **Status:** done
 
@@ -341,11 +350,9 @@ generic CCM_AMI::ReplyHandler."
 (`iface.bases.last() in ctx.known_bases`) the reply handler inherits from
 `AMI4CCM_<baseName>ReplyHandler`; otherwise the default `CCM_AMI::ReplyHandler`.
 
-**Tests:** `ami4ccm::transform::tests::reply_handler_inherits_from_ccm_ami_replyhandler`,
-`produces_two_local_interfaces_with_correct_names`,
-`derived_iface_handler_inherits_from_base_handler_when_known`,
-`derived_iface_falls_back_to_ccm_ami_when_base_unknown`,
-`transform_context_mark_transformed_sets_known_symbols_and_bases`.
+**Tests:** `crates/ami4ccm/tests/implied_idl.rs::both_generated_interfaces_are_local`,
+`crates/ami4ccm/tests/implied_idl.rs::a_reply_handler_inherits_the_generic_one_by_default`,
+`crates/ami4ccm/tests/implied_idl.rs::a_derived_interface_inherits_its_bases_reply_handler`.
 
 **Status:** done
 
@@ -356,22 +363,19 @@ AMI4CCM_<ifaceName>ReplyHandler conflicts with an existing identifier,
 uniqueness is obtained by inserting additional `AMI_` prefixes before the
 ifaceName until the generated identifier is unique."
 
-**Repo:** `crates/ami4ccm/src/transform.rs::resolve_unique_iface_name` +
+**Repo:** `crates/ami4ccm/src/transform.rs::unique_name` +
 `TransformContext::known_symbols`. When emitting the
 `AMI4CCM_<Iface>`/`ReplyHandler` name the symbol table is consulted; on a
 conflict, an `AMI_` prefix is added recursively until uniqueness (max 16
 iterations, then a fallback). The compilation-scope symbol walker
 (module/repository scope, the third conflict source after interface members
 and base-interface names) in
-`crates/ami4ccm/src/scope_resolver.rs::{collect_top_level_idents,
-populate_context}`.
+`crates/ami4ccm/src/scope_resolver.rs::{context_from_model, populate_from_model}`.
 
-**Tests:** `transform::tests::ami4ccm_prefix_collision_inserts_ami_prefix`,
-`transform::tests::ami4ccm_prefix_collision_recurses_until_unique`,
-`scope_resolver::tests::flat_specification_collects_interface_idents`,
-`scope_resolver::tests::full_resolver_uses_scope_for_conflict`,
-`scope_resolver::tests::nested_module_paths_are_qualified`,
-`scope_resolver::tests::populate_extends_existing_context_without_clearing`.
+**Tests:** `crates/ami4ccm/tests/implied_idl.rs::a_user_declared_ami4ccm_name_pushes_the_generated_one_aside`,
+`crates/ami4ccm/tests/implied_idl.rs::an_ami4ccm_name_conflict_escalates_until_the_name_is_unique`,
+`crates/ami4ccm/tests/implied_idl.rs::the_symbol_table_holds_every_declaration_bare_and_qualified`,
+`crates/ami4ccm/tests/implied_idl.rs::populating_extends_a_context_rather_than_replacing_it`.
 
 **Status:** done
 
@@ -389,13 +393,12 @@ Plus: attribute mappings: `void get_<attrName>(in <attrType>
 ami_return_val)`; for writable attributes `void set_<attrName>()` (no args;
 "essentially an acknowledgment of completion").
 
-**Repo:** `crates/ami4ccm/src/transform.rs::build_handler_normal_op`,
+**Repo:** `crates/ami4ccm/src/transform.rs::build_reply_handler`,
 `build_handler_attr_get`, `build_handler_attr_set_ack`.
 
-**Tests:** `crates/ami4ccm/src/transform.rs::tests::handler_op_has_return_value_then_inout_out`,
-`handler_attr_setter_ack_has_no_args`,
-`operation_with_no_return_no_args_yields_handler_op_with_no_params`,
-`long_typed_attribute_propagates_type_to_handler_param`.
+**Tests:** `crates/ami4ccm/tests/implied_idl.rs::a_reply_handler_carries_a_normal_and_an_excep_operation_per_operation`,
+`crates/ami4ccm/tests/implied_idl.rs::a_void_operation_has_no_return_parameter_in_its_reply`,
+`crates/ami4ccm/tests/implied_idl.rs::a_setter_acknowledgement_takes_no_arguments`.
 
 **Status:** done
 
@@ -409,13 +412,12 @@ name that already exists in the interface, '_ami' strings are inserted
 immediately preceding the '_excep' repeatedly, until generated IDL operation
 name is unique in the interface."
 
-**Repo:** `crates/ami4ccm/src/transform.rs::build_handler_excep_op`,
+**Repo:** `crates/ami4ccm/src/transform.rs::build_reply_handler`,
 `resolve_excep_name`.
 
-**Tests:** `crates/ami4ccm/src/transform.rs::tests::handler_excep_op_takes_exception_holder`,
-`excep_naming_conflict_resolved_with_ami_suffix`,
-`attribute_get_set_generated_in_both_interfaces` (also covers
-`set_<attr>_excep`).
+**Tests:** `crates/ami4ccm/tests/implied_idl.rs::a_reply_handler_carries_a_normal_and_an_excep_operation_per_operation`,
+`crates/ami4ccm/tests/implied_idl.rs::an_excep_name_that_already_exists_gains_an_ami_infix`,
+`crates/ami4ccm/tests/implied_idl.rs::a_setter_acknowledgement_takes_no_arguments`.
 
 **Status:** done
 
@@ -430,8 +432,7 @@ name is unique in the interface."
 
 **Repo:** cross-ref the transformation.
 
-**Tests:** `crates/ami4ccm/src/transform.rs::tests::full_stockmanager_running_example_yields_spec_signatures`
-(checks all 12 expected ops).
+**Tests:** `crates/ami4ccm/tests/implied_idl.rs::the_running_example_yields_the_reply_handler_of_section_7_5_3`.
 
 **Status:** done
 
@@ -472,11 +473,10 @@ Connector::for_interface}` — produces a port type with two facets
 ID `IDL:omg.org/CCM_AMI/AMI4CCM_<Iface>_Connector:1.0`, base
 `Components::EnterpriseComponent`.
 
-**Tests:** `connector::tests::port_type_matches_spec_annex_a_idl` (checks the
-facet order + receptacle against the Annex-A IDL),
-`connector::tests::connector_for_interface_uses_correct_naming`,
-`connector::tests::connector_inherits_enterprise_component`,
-`connector::tests::connector_default_is_simplex`.
+**Tests:** `crates/ami4ccm/src/connector.rs::tests::port_type_matches_spec_annex_a_idl`,
+`crates/ami4ccm/src/connector.rs::tests::connector_for_interface_uses_correct_naming`,
+`crates/ami4ccm/src/connector.rs::tests::connector_inherits_enterprise_component`,
+`crates/ami4ccm/src/connector.rs::tests::connector_default_is_simplex`.
 
 **Status:** done — the AST model for the templated module and the concrete
 connector lives in the crate spec-conformantly with the Annex-A naming
@@ -498,13 +498,14 @@ name>'."
 **Repo:** `crates/ami4ccm/src/pragma.rs::{Ami4CcmPragma::Interface,
 parse_pragma}`.
 
-**Tests:** `pragma::tests::parses_interface_pragma`,
-`pragma::tests::parses_pragma_with_extra_whitespace`,
-`pragma::tests::rejects_unquoted_name`,
-`pragma::tests::rejects_empty_quoted_name`,
-`pragma::tests::rejects_unknown_tag`, `pragma::tests::rejects_non_ami_pragma`,
-`pragma::tests::rejects_non_pragma_line`,
-`pragma::tests::display_error_describes_each_variant`.
+**Tests:** `crates/ami4ccm/src/pragma.rs::tests::parses_interface_pragma`,
+`crates/ami4ccm/src/pragma.rs::tests::parses_pragma_with_extra_whitespace`,
+`crates/ami4ccm/src/pragma.rs::tests::rejects_unquoted_name`,
+`crates/ami4ccm/src/pragma.rs::tests::rejects_empty_quoted_name`,
+`crates/ami4ccm/src/pragma.rs::tests::rejects_unknown_tag`,
+`crates/ami4ccm/src/pragma.rs::tests::rejects_non_ami_pragma`,
+`crates/ami4ccm/src/pragma.rs::tests::rejects_non_pragma_line`,
+`crates/ami4ccm/src/pragma.rs::tests::display_error_describes_each_variant`.
 
 **Status:** done
 
@@ -520,8 +521,8 @@ component-context method generation via
 `crates/ami4ccm/src/multiplex.rs::context_method_for_receptacle` (simplex
 returns `AMI4CCM_<Iface> sendc_<recep>()`).
 
-**Tests:** `pragma::tests::parses_receptacle_pragma`,
-`multiplex::tests::simplex_produces_single_method`.
+**Tests:** `crates/ami4ccm/src/pragma.rs::tests::parses_receptacle_pragma`,
+`crates/ami4ccm/src/multiplex.rs::tests::simplex_produces_single_method`.
 
 **Status:** done
 
@@ -544,10 +545,10 @@ sequence<...> ...Seq`. The connector side via
 `crates/ami4ccm/src/connector.rs::Connector::enable_multiplex` marks the port
 as `uses multiple`.
 
-**Tests:** `multiplex::tests::multiplex_produces_sequence_method`,
-`multiplex::tests::typedef_emits_seq_alias`,
-`multiplex::tests::arity_variants_are_distinct`,
-`connector::tests::enable_multiplex_marks_port`.
+**Tests:** `crates/ami4ccm/src/multiplex.rs::tests::multiplex_produces_sequence_method`,
+`crates/ami4ccm/src/multiplex.rs::tests::typedef_emits_seq_alias`,
+`crates/ami4ccm/src/multiplex.rs::tests::arity_variants_are_distinct`,
+`crates/ami4ccm/src/connector.rs::tests::enable_multiplex_marks_port`.
 
 **Status:** done
 
@@ -567,11 +568,11 @@ ConnectorPlanFragment::build, ConnectorPlanFragment::to_dnc_xml}` — produces
 an IDD (D&C §6.4) + a plan instance (D&C §7.4) + D&C XML with an explicit
 `<coLocateWith>` constraint (spec §7.8 co-location requirement).
 
-**Tests:** `deployment::tests::idd_realizes_correct_repository_id`,
-`deployment::tests::plan_fragment_is_co_located`,
-`deployment::tests::xml_roundtrip_includes_co_location`,
-`deployment::tests::xml_lists_all_artifacts`,
-`deployment::tests::plan_instance_name_combines_client_and_connector`.
+**Tests:** `crates/ami4ccm/src/deployment.rs::tests::idd_realizes_correct_repository_id`,
+`crates/ami4ccm/src/deployment.rs::tests::plan_fragment_is_co_located`,
+`crates/ami4ccm/src/deployment.rs::tests::xml_roundtrip_includes_co_location`,
+`crates/ami4ccm/src/deployment.rs::tests::xml_lists_all_artifacts`,
+`crates/ami4ccm/src/deployment.rs::tests::plan_instance_name_combines_client_and_connector`.
 
 **Status:** done — D&C subsystem integration present via `crates/corba-dnc/`
 (see `corba-3.3.md` Part 3 §15-§17).
@@ -622,11 +623,11 @@ module CCM_AMI {
   `crates/ami4ccm/src/connector.rs::PortType::ami4ccm_port_type` +
   `Connector::for_interface`.
 
-**Tests:** `exception_holder::tests::user_exception_base_new_stores_id_and_bytes`,
-`exception_holder::tests::raise_exception_returns_err_with_user_exception`,
-`exception_holder::tests::user_exception_accessor_returns_inner`,
-`transform::tests::reply_handler_inherits_from_ccm_ami_replyhandler`,
-`connector::tests::port_type_has_two_facets`.
+**Tests:** `crates/ami4ccm/src/exception_holder.rs::tests::user_exception_base_new_stores_id_and_bytes`,
+`crates/ami4ccm/src/exception_holder.rs::tests::raise_exception_returns_err_with_user_exception`,
+`crates/ami4ccm/src/exception_holder.rs::tests::user_exception_accessor_returns_inner`,
+`crates/ami4ccm/tests/implied_idl.rs::a_reply_handler_inherits_the_generic_one_by_default`,
+`crates/ami4ccm/src/connector.rs::tests::port_type_matches_spec_annex_a_idl`.
 
 **Status:** done — the data types + the ReplyHandler base + the `Connector_T`
 templated module are all modeled.
@@ -637,6 +638,7 @@ templated module are all modeled.
 
 23 done / 0 partial / 0 open / 4 n/a (informative) / 0 n/a (rejected).
 
-Test run: `cargo test -p zerodds-ami4ccm` — 50 tests green, 0 failed.
+Test run: `cargo test -p zerodds-ami4ccm` — 26 unit + 19 integration
+tests green, 0 failed.
 
 No open items — all `done`.

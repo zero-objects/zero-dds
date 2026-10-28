@@ -4,7 +4,7 @@
 //! Crate `zerodds-corba-cos-event`. Safety classification: **STANDARD**.
 //!
 //! OMG CosEventService 1.4 (`formal/2004-10-02`) full stack —
-//! pure Rust `no_std + alloc`, `forbid(unsafe_code)`. Implements:
+//! pure Rust, `forbid(unsafe_code)`. Implements:
 //!
 //! - **CosEventComm** (spec §1.5): PushConsumer, PushSupplier,
 //!   PullConsumer, PullSupplier with disconnect operations.
@@ -24,7 +24,7 @@
 //! constructs concrete channel instances, registers suppliers
 //! and consumers, and drives the connect/disconnect lifecycle.
 //!
-//! ## Public API (as of 1.0.0-rc.1)
+//! ## Public API
 //!
 //! - [`AnyEvent`] / [`Disconnected`] / [`ConnectError`] — event body
 //!   and spec §1.5 errors.
@@ -35,6 +35,12 @@
 //!   [`ProxyPullConsumer`] / [`ProxyPullSupplier`] — Spec §1.6.
 //! - [`TypedEventChannel`] / [`TypedPushConsumer`] /
 //!   [`TypedPushSupplier`] — Spec §2.
+//!
+//! ## What `alloc` alone gives
+//!
+//! [`comm`] and [`dds_bridge`] are `no_std + alloc`. [`channel`] and
+//! [`typed`] hold shared mutable state behind a `std::sync::Mutex` and
+//! are behind the `std` feature.
 //!
 //! ## Example
 //!
@@ -51,13 +57,18 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
-#[cfg(feature = "alloc")]
 extern crate alloc;
 
+#[cfg(feature = "std")]
 pub mod channel;
 pub mod comm;
+pub mod dds_bridge;
+#[cfg(feature = "std")]
 pub mod typed;
 
+pub use dds_bridge::{BridgeError, TopicBridge, TopicMap, TopicSink, derive_topic_name};
+
+#[cfg(feature = "std")]
 pub use channel::{
     ConsumerAdmin, EventChannel, ProxyPullConsumer, ProxyPullSupplier, ProxyPushConsumer,
     ProxyPushSupplier, SupplierAdmin,
@@ -65,4 +76,5 @@ pub use channel::{
 pub use comm::{
     AnyEvent, ConnectError, Disconnected, PullConsumer, PullSupplier, PushConsumer, PushSupplier,
 };
+#[cfg(feature = "std")]
 pub use typed::{TypedEventChannel, TypedPushConsumer, TypedPushSupplier};

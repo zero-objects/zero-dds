@@ -12,18 +12,18 @@
 
 use std::net::TcpListener;
 
-use zerodds_cdr::{BufferReader, BufferWriter, Endianness};
 use zerodds_corba_iiop::Connection;
 use zerodds_corba_interop::runtime::{AmhEndpoint, AmiClient, object_reference};
 use zerodds_corba_rust::CorbaException;
+use zerodds_wire::{Endianness, Reader, Writer};
 
 fn u32_body(v: u32) -> Vec<u8> {
-    let mut w = BufferWriter::new(Endianness::Big);
-    w.write_u32(v).unwrap();
-    w.into_bytes()
+    let mut w = Writer::new(Endianness::Big);
+    w.write_u32(v);
+    w.finish()
 }
 fn read_u32(b: &[u8], e: Endianness) -> u32 {
-    BufferReader::new(b, e).read_u32().unwrap()
+    Reader::new(b, e).read_u32().unwrap()
 }
 
 /// Connects an `AmiClient` (client) to an `AmhEndpoint` (server) over a real

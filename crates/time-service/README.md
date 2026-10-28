@@ -61,7 +61,8 @@ assert_ne!(cmp, zerodds_time_service::TimeComparison::GreaterThan);
 
 ## Stability
 
-All public-API items are semver-stable as of `1.0.0-rc.1`.
+`1.0.0-rc.7`, a pre-release. The public API can still change before
+1.0.0; the crate's CHANGELOG lists every change.
 
 ## Links
 

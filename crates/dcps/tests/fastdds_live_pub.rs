@@ -1,41 +1,6 @@
-//! C5.5 — Live-Interop: FastDDS-Publisher → ZeroDDS-Subscriber.
-//!
-//! **Opt-in only** — `#[ignore]` marked. Invocation:
-//!
-//! ```bash
-//! cargo test -p zerodds-dcps --features live-interop \
-//!     --test fastdds_live_pub -- --ignored --nocapture
-//! ```
-//!
-//! # Spec reference
-//!
-//! - DDSI-RTPS 2.5 §8.3 — RTPS wire encoding (DATA/HEARTBEAT/ACKNACK)
-//! - XCDR2 encoding stack (`@key string color; int32 x,y,shapesize;`)
-//! - DDS 1.4 §2.2.3 — RxO QoS match (Reliability/Durability)
-//!
-//! # Test flow (common to all matrix entries)
-//!
-//! 1. ZeroDDS participant + DataReader<ShapeType> on topic `Square`.
-//! 2. `fastdds shape publisher --topic Square --color RED ...` on the
-//!    Linux bench host via SSH. The publisher writes samples periodically.
-//! 3. The reader collects at least 1 sample within 10 s. All fields are
-//!    sanity-checked (color="RED", x/y within canvas range).
-//! 4. The subprocess is killed via Drop.
-//!
-//! # Topic-naming convention
-//!
-//! `fastdds shape` uses exactly `Square`/`Triangle`/`Circle` (case-
-//! sensitive, without namespace). ZeroDDS's `create_topic::<ShapeType>(name)`
-//! accepts arbitrary strings, so it matches 1:1 — the only thing that
-//! matters is that both sides use the same TYPE_NAME `ShapeType`.
-//!
-//! # Known edge cases
-//!
-//! - FastDDS does not send immediately on start; depending on the
-//!   discovery race the first sample can take ~3 s → a generous 12 s
-//!   timeout.
-//! - `fastdds shape` sets a default color depending on the build; we
-//!   match only "any sample with a non-empty color".
+//! Live local Fast DDS test using vendor-generated OMG appendable ShapeType.
+//! Enable with INTEROP_REQUIRE=1 and FASTDDS_SHAPES pointing to the built client.
+//! Each child has its own PID/log; missing tools and runtime errors fail.
 
 #![allow(
     clippy::expect_used,
@@ -73,9 +38,12 @@ mod tests {
         FastDurability, FastQos, FastReliability, require_or_skip, start_fastdds_pub,
     };
 
-    /// Domain for FastDDS live tests. Dedicated block so it does not
-    /// collide with the Cyclone tests (domain 42).
-    const FASTDDS_DOMAIN: i32 = 142;
+    /// Domain for FastDDS live tests. Dedicated number so it does not
+    /// collide with the Cyclone tests (domain 42), and below `32768 / 250`
+    /// so its RTPS ports stay out of the Linux ephemeral port range —
+    /// a port the kernel also hands out makes the SPDP multicast bind
+    /// fail with `EADDRINUSE`.
+    const FASTDDS_DOMAIN: i32 = 96;
 
     fn rt_config() -> RuntimeConfig {
         RuntimeConfig {
@@ -117,16 +85,18 @@ mod tests {
             .create_datareader::<ShapeType>(&topic_handle, rdr_qos)
             .expect("create reader");
 
-        // Start the FastDDS publisher remotely.
-        let _fast = start_fastdds_pub(topic, FASTDDS_DOMAIN as u32, &fast_qos)
+        // Start the owned local Fast DDS publisher.
+        let mut fast = start_fastdds_pub(topic, FASTDDS_DOMAIN as u32, &fast_qos)
             .expect("start fastdds shape publisher");
 
         // Discovery + data — 12 s budget.
+        fast.ensure_running().expect("Fast DDS publisher startup");
         let deadline = std::time::Instant::now() + Duration::from_secs(12);
         let mut samples = Vec::new();
         while std::time::Instant::now() < deadline && samples.is_empty() {
+            fast.ensure_running().expect("Fast DDS publisher exited");
             let _ = reader.wait_for_data(Duration::from_millis(200));
-            samples.extend(reader.take().unwrap_or_default());
+            samples.extend(reader.take().expect("decode Fast DDS samples"));
         }
 
         assert!(
@@ -134,6 +104,7 @@ mod tests {
             "no ShapeType samples received from FastDDS within 12 s on topic={topic}"
         );
         let s = &samples[0];
+        assert_eq!(s, &ShapeType::new("RED", 50, 60, 30));
         assert!(
             !s.color.is_empty(),
             "empty color field — wire-decode broken?"
@@ -179,9 +150,8 @@ mod tests {
         );
     }
 
-    /// Matrix entry (Reliable × TransientLocal): the writer-side
-    /// sample cache is resent to the late-joining reader. We join
-    /// *after* the publisher starts.
+    /// Matrix entry (Reliable × TransientLocal): matching live delivery.
+    /// This fixture does not independently prove late-join cache replay.
     #[test]
     #[ignore = "live FastDDS interop — opt-in via --ignored + --features live-interop"]
     fn fastdds_pub_reliable_transient_local_circle() {

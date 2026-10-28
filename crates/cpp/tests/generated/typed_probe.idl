@@ -1,0 +1,11 @@
+// The type of tests/generated_type_via_cargo.rs: that test generates
+// typed_probe.hpp from this file with `zerodds-idlc generate --lang c++
+// --cpp-mapping native` on every run, so nothing generated is committed beside it.
+module probe {
+  @appendable
+  struct Reading {
+    @key long id;
+    double value;
+    string<16> label;
+  };
+};

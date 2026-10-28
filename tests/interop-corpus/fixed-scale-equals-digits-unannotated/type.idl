@@ -1,0 +1,7 @@
+// `fixed` with scale equal to precision, unannotated
+typedef fixed<4,4> Fraction;
+
+struct Sample {
+    Fraction f;
+    octet tail;
+};

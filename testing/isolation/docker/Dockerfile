@@ -1,7 +1,7 @@
-# Isolation-Smoke-Test Docker Image (WP 2.0b T4).
+# Isolation smoke test Docker image (WP 2.0b T4).
 #
-# Minimales Debian-Image mit dem `isolation-smoke`-Binary. Das Image
-# wird von docker-compose.*.yml pro Transport konsumiert.
+# Minimal Debian image with the `isolation-smoke` binary. The image
+# is consumed by docker-compose.*.yml, once per transport.
 FROM debian:12-slim AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \

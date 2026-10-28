@@ -1,371 +1,805 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 //
-// dds/core/policy/CorePolicy.hpp — DDS-PSM-Cxx 1.0 §7.5.6 all 22 QoS policies.
+// dds/core/policy/CorePolicy.hpp — the QoS policy classes (DDS-PSM-Cxx 1.0
+// §7.6.1). Kinds are safe_enum values (`HistoryKind::KEEP_LAST`), a kind
+// has a static helper per variant (`History::KeepLast(10)`), and every
+// attribute has a getter, a reference getter and a chainable setter.
 
 #ifndef ZERODDS_DDS_CORE_POLICY_COREPOLICY_HPP
 #define ZERODDS_DDS_CORE_POLICY_COREPOLICY_HPP
 
-#include <cstdint>
+
+#include "zerodds/psm/cxx.hpp"
+#include <stdint.h>
+
+#include <stdint.h>
 #include <string>
+#include <utility>
 #include <vector>
 
-#include "dds/core/Time.hpp"
+#include "dds/core/Duration.hpp"
+#include "dds/core/LengthUnlimited.hpp"
+#include "dds/core/policy/PolicyKind.hpp"
+#include "dds/core/policy/TCorePolicy.hpp"
+#include "dds/core/policy/QosPolicyCount.hpp"
+#include "dds/core/types.hpp"
+
+// The defaulted copy and move operations of a policy class (C++11); C++03 has the implicit copy.
+#if ZERODDS_CXX11
+#define ZERODDS_POLICY_DEFAULTS(CLS)                   \
+    CLS(const CLS& other) = default;                   \
+    CLS(CLS&&) = default;                              \
+    CLS& operator=(const CLS& other) = default;        \
+    CLS& operator=(CLS&&) = default;
+#else
+#define ZERODDS_POLICY_DEFAULTS(CLS)
+#endif
+
+// An attribute of a native type: `T name() const`, `T& name()`, `P& name(T)`.
+#define ZERODDS_POLICY_NT(CLS, T, name)                \
+    T name() const { return name##_; }                 \
+    T& name() { return name##_; }                      \
+    CLS& name(T value) {                               \
+        name##_ = value;                               \
+        return *this;                                  \
+    }
+// An attribute of a constructed type: `T name() const` (by value, as the normative headers
+// declare it), `T& name()`, `P& name(const T&)`.
+#define ZERODDS_POLICY_CT(CLS, T, name)                \
+    T name() const { return name##_; }                 \
+    T& name() { return name##_; }                      \
+    CLS& name(const T& value) {                        \
+        name##_ = value;                               \
+        return *this;                                  \
+    }
 
 namespace dds {
 namespace core {
 namespace policy {
 
-/// ReliabilityKind (Spec §7.5.6.13).
-enum class ReliabilityKind : uint32_t {
-    BestEffort = 1,
-    Reliable = 2,
-};
+// ---- Policy trait classes (§7.6.1) -------------------------------------
 
-/// DurabilityKind (Spec §7.5.6.4).
-enum class DurabilityKind : uint32_t {
-    Volatile = 0,
-    TransientLocal = 1,
-    Transient = 2,
-    Persistent = 3,
-};
+template <typename Policy>
+class policy_id {};
+template <typename Policy>
+class policy_name {};
 
-/// HistoryKind (Spec §7.5.6.10).
-enum class HistoryKind : uint32_t { KeepLast = 0, KeepAll = 1 };
+namespace detail {
 
-/// OwnershipKind (Spec §7.5.6.11).
-enum class OwnershipKind : uint32_t { Shared = 0, Exclusive = 1 };
+// ---- Data policies ------------------------------------------------------
 
-/// LivelinessKind (Spec §7.5.6.9).
-enum class LivelinessKind : uint32_t {
-    Automatic = 0,
-    ManualByParticipant = 1,
-    ManualByTopic = 2,
-};
+#define ZERODDS_DATA_POLICY(CLS, DOC)                                                        \
+    class CLS {                                                                              \
+    public:                                                                                  \
+        CLS() {}                                                                             \
+        explicit CLS(const dds::core::ByteSeq& seq) : value_(seq) {}                         \
+        CLS(const uint8_t* value_begin, const uint8_t* value_end)                            \
+            : value_(value_begin, value_end) {}                                              \
+        ZERODDS_POLICY_DEFAULTS(CLS)                                                         \
+                                                                                             \
+        CLS& value(const dds::core::ByteSeq& seq) {                                          \
+            value_ = seq;                                                                    \
+            return *this;                                                                    \
+        }                                                                                    \
+        template <typename OCTET_ITER>                                                       \
+        CLS& value(OCTET_ITER begin, OCTET_ITER end) {                                       \
+            value_.assign(begin, end);                                                       \
+            return *this;                                                                    \
+        }                                                                                    \
+        const dds::core::ByteSeq& value() const { return value_; }                           \
+        dds::core::ByteSeq& value() { return value_; }                                       \
+        const uint8_t* begin() const {                                                       \
+            return value_.empty() ? static_cast<const uint8_t*>(0) : &value_[0];             \
+        }                                                                                    \
+        const uint8_t* end() const { return begin() + value_.size(); }                       \
+                                                                                             \
+    private:                                                                                 \
+        dds::core::ByteSeq value_;                                                           \
+    };
 
-/// DestinationOrderKind (Spec §7.5.6.5).
-enum class DestinationOrderKind : uint32_t {
-    ByReceptionTimestamp = 0,
-    BySourceTimestamp = 1,
-};
+ZERODDS_DATA_POLICY(UserData, USER_DATA)
+ZERODDS_DATA_POLICY(GroupData, GROUP_DATA)
+ZERODDS_DATA_POLICY(TopicData, TOPIC_DATA)
+#undef ZERODDS_DATA_POLICY
 
-/// PresentationAccessScopeKind (Spec §7.5.6.12).
-enum class PresentationAccessScopeKind : uint32_t {
-    Instance = 0,
-    Topic = 1,
-    Group = 2,
-};
-
-// ---- Policy classes --------------------------------------------------
-
-/// UserData (Spec §7.5.6.16).
-class UserData {
-public:
-    UserData() = default;
-    explicit UserData(std::vector<uint8_t> v) : value_(std::move(v)) {}
-    const std::vector<uint8_t>& value() const { return value_; }
-    void value(std::vector<uint8_t> v) { value_ = std::move(v); }
-private:
-    std::vector<uint8_t> value_;
-};
-
-/// TopicData (Spec §7.5.6.17).
-class TopicData : public UserData {
-public:
-    using UserData::UserData;
-};
-
-/// GroupData (Spec §7.5.6.7).
-class GroupData : public UserData {
-public:
-    using UserData::UserData;
-};
-
-/// Reliability (Spec §7.5.6.13).
-class Reliability {
-public:
-    Reliability() = default;
-    Reliability(ReliabilityKind k, Duration t) : kind_(k), max_blocking_time_(t) {}
-    static Reliability Reliable_(Duration t = Duration::from_millis(100)) {
-        return Reliability(ReliabilityKind::Reliable, t);
-    }
-    static Reliability BestEffort() {
-        return Reliability(ReliabilityKind::BestEffort, Duration::from_millis(100));
-    }
-    ReliabilityKind kind() const { return kind_; }
-    Duration max_blocking_time() const { return max_blocking_time_; }
-    void kind(ReliabilityKind k) { kind_ = k; }
-    void max_blocking_time(Duration t) { max_blocking_time_ = t; }
-private:
-    ReliabilityKind kind_{ReliabilityKind::Reliable};
-    Duration max_blocking_time_{Duration::from_millis(100)};
-};
-
-/// Durability (Spec §7.5.6.4).
-class Durability {
-public:
-    Durability() = default;
-    explicit Durability(DurabilityKind k) : kind_(k) {}
-    static Durability Volatile() { return Durability(DurabilityKind::Volatile); }
-    static Durability TransientLocal() { return Durability(DurabilityKind::TransientLocal); }
-    static Durability Transient() { return Durability(DurabilityKind::Transient); }
-    static Durability Persistent() { return Durability(DurabilityKind::Persistent); }
-    DurabilityKind kind() const { return kind_; }
-    void kind(DurabilityKind k) { kind_ = k; }
-private:
-    DurabilityKind kind_{DurabilityKind::Volatile};
-};
-
-/// History (Spec §7.5.6.10).
-class History {
-public:
-    History() = default;
-    History(HistoryKind k, int32_t depth) : kind_(k), depth_(depth) {}
-    static History KeepLast(int32_t depth = 1) { return History(HistoryKind::KeepLast, depth); }
-    static History KeepAll() { return History(HistoryKind::KeepAll, -1); }
-    HistoryKind kind() const { return kind_; }
-    int32_t depth() const { return depth_; }
-    void kind(HistoryKind k) { kind_ = k; }
-    void depth(int32_t d) { depth_ = d; }
-private:
-    HistoryKind kind_{HistoryKind::KeepLast};
-    int32_t depth_{1};
-};
-
-/// Deadline (Spec §7.5.6.2).
-class Deadline {
-public:
-    Deadline() = default;
-    explicit Deadline(Duration period) : period_(period) {}
-    Duration period() const { return period_; }
-    void period(Duration p) { period_ = p; }
-private:
-    Duration period_{Duration::infinite()};
-};
-
-/// LatencyBudget (Spec §7.5.6.8).
-class LatencyBudget {
-public:
-    LatencyBudget() = default;
-    explicit LatencyBudget(Duration d) : duration_(d) {}
-    Duration duration() const { return duration_; }
-    void duration(Duration d) { duration_ = d; }
-private:
-    Duration duration_{Duration::zero()};
-};
-
-/// Lifespan (Spec §7.5.6.20).
-class Lifespan {
-public:
-    Lifespan() = default;
-    explicit Lifespan(Duration d) : duration_(d) {}
-    Duration duration() const { return duration_; }
-    void duration(Duration d) { duration_ = d; }
-private:
-    Duration duration_{Duration::infinite()};
-};
-
-/// TimeBasedFilter (Spec §7.5.6.18).
-class TimeBasedFilter {
-public:
-    TimeBasedFilter() = default;
-    explicit TimeBasedFilter(Duration d) : minimum_separation_(d) {}
-    Duration minimum_separation() const { return minimum_separation_; }
-    void minimum_separation(Duration d) { minimum_separation_ = d; }
-private:
-    Duration minimum_separation_{Duration::zero()};
-};
-
-/// Liveliness (Spec §7.5.6.9).
-class Liveliness {
-public:
-    Liveliness() = default;
-    Liveliness(LivelinessKind k, Duration lease) : kind_(k), lease_duration_(lease) {}
-    static Liveliness Automatic() {
-        return Liveliness(LivelinessKind::Automatic, Duration::infinite());
-    }
-    LivelinessKind kind() const { return kind_; }
-    Duration lease_duration() const { return lease_duration_; }
-    void kind(LivelinessKind k) { kind_ = k; }
-    void lease_duration(Duration d) { lease_duration_ = d; }
-private:
-    LivelinessKind kind_{LivelinessKind::Automatic};
-    Duration lease_duration_{Duration::infinite()};
-};
-
-/// Ownership (Spec §7.5.6.11).
-class Ownership {
-public:
-    Ownership() = default;
-    explicit Ownership(OwnershipKind k) : kind_(k) {}
-    static Ownership Shared() { return Ownership(OwnershipKind::Shared); }
-    static Ownership Exclusive() { return Ownership(OwnershipKind::Exclusive); }
-    OwnershipKind kind() const { return kind_; }
-    void kind(OwnershipKind k) { kind_ = k; }
-private:
-    OwnershipKind kind_{OwnershipKind::Shared};
-};
-
-/// OwnershipStrength (Spec §7.5.6.21).
-class OwnershipStrength {
-public:
-    OwnershipStrength() = default;
-    explicit OwnershipStrength(int32_t v) : value_(v) {}
-    int32_t value() const { return value_; }
-    void value(int32_t v) { value_ = v; }
-private:
-    int32_t value_{0};
-};
-
-/// DestinationOrder (Spec §7.5.6.5).
-class DestinationOrder {
-public:
-    DestinationOrder() = default;
-    explicit DestinationOrder(DestinationOrderKind k) : kind_(k) {}
-    DestinationOrderKind kind() const { return kind_; }
-    void kind(DestinationOrderKind k) { kind_ = k; }
-private:
-    DestinationOrderKind kind_{DestinationOrderKind::ByReceptionTimestamp};
-};
-
-/// Presentation (Spec §7.5.6.12).
-class Presentation {
-public:
-    Presentation() = default;
-    Presentation(PresentationAccessScopeKind s, bool coherent, bool ordered)
-        : access_scope_(s), coherent_(coherent), ordered_(ordered) {}
-    PresentationAccessScopeKind access_scope() const { return access_scope_; }
-    bool coherent_access() const { return coherent_; }
-    bool ordered_access() const { return ordered_; }
-    void access_scope(PresentationAccessScopeKind s) { access_scope_ = s; }
-    void coherent_access(bool v) { coherent_ = v; }
-    void ordered_access(bool v) { ordered_ = v; }
-private:
-    PresentationAccessScopeKind access_scope_{PresentationAccessScopeKind::Instance};
-    bool coherent_{false};
-    bool ordered_{false};
-};
-
-/// Partition (spec §7.5.6.0 — DDS-PSM-Cxx without a number; corresponds to DCPS §2.2.3.13).
-class Partition {
-public:
-    Partition() = default;
-    explicit Partition(std::vector<std::string> names) : names_(std::move(names)) {}
-    const std::vector<std::string>& name() const { return names_; }
-    void name(std::vector<std::string> names) { names_ = std::move(names); }
-private:
-    std::vector<std::string> names_;
-};
-
-/// ResourceLimits (Spec §7.5.6.15).
-class ResourceLimits {
-public:
-    ResourceLimits() = default;
-    ResourceLimits(int32_t s, int32_t i, int32_t spi)
-        : max_samples_(s), max_instances_(i), max_samples_per_instance_(spi) {}
-    int32_t max_samples() const { return max_samples_; }
-    int32_t max_instances() const { return max_instances_; }
-    int32_t max_samples_per_instance() const { return max_samples_per_instance_; }
-    void max_samples(int32_t v) { max_samples_ = v; }
-    void max_instances(int32_t v) { max_instances_ = v; }
-    void max_samples_per_instance(int32_t v) { max_samples_per_instance_ = v; }
-private:
-    int32_t max_samples_{1000};
-    int32_t max_instances_{10};
-    int32_t max_samples_per_instance_{100};
-};
-
-/// TransportPriority (Spec §7.5.6.19).
-class TransportPriority {
-public:
-    TransportPriority() = default;
-    explicit TransportPriority(int32_t v) : value_(v) {}
-    int32_t value() const { return value_; }
-    void value(int32_t v) { value_ = v; }
-private:
-    int32_t value_{0};
-};
-
-/// EntityFactory (Spec §7.5.6.6).
+/// ENTITY_FACTORY.
 class EntityFactory {
 public:
-    EntityFactory() = default;
-    explicit EntityFactory(bool autoenable) : autoenable_(autoenable) {}
+    EntityFactory() : autoenable_created_entities_(true) {}
+    explicit EntityFactory(bool the_auto_enable) : autoenable_created_entities_(the_auto_enable) {}
+#if ZERODDS_CXX11
+    EntityFactory(const EntityFactory& other) = default;
+    EntityFactory(EntityFactory&&) = default;
+    EntityFactory& operator=(const EntityFactory& other) = default;
+    EntityFactory& operator=(EntityFactory&&) = default;
+#endif
+
+    ZERODDS_POLICY_NT(EntityFactory, bool, autoenable_created_entities)
+
     static EntityFactory AutoEnable() { return EntityFactory(true); }
     static EntityFactory ManuallyEnable() { return EntityFactory(false); }
-    bool autoenable_created_entities() const { return autoenable_; }
-    void autoenable_created_entities(bool v) { autoenable_ = v; }
+
 private:
-    bool autoenable_{true};
+    bool autoenable_created_entities_;
 };
 
-/// WriterDataLifecycle (Spec §7.5.6.22).
+/// TRANSPORT_PRIORITY.
+class TransportPriority {
+public:
+    TransportPriority() : value_(0) {}
+    explicit TransportPriority(int32_t prio) : value_(prio) {}
+#if ZERODDS_CXX11
+    TransportPriority(const TransportPriority& other) = default;
+    TransportPriority(TransportPriority&&) = default;
+    TransportPriority& operator=(const TransportPriority& other) = default;
+    TransportPriority& operator=(TransportPriority&&) = default;
+#endif
+
+    ZERODDS_POLICY_NT(TransportPriority, int32_t, value)
+
+private:
+    int32_t value_;
+};
+
+// ---- Policies of one Duration ------------------------------------------
+
+#define ZERODDS_DURATION_POLICY(CLS, attr, DEFAULT)                                \
+    class CLS {                                                                    \
+    public:                                                                        \
+        CLS() : attr##_(DEFAULT) {}                                                \
+        explicit CLS(const dds::core::Duration& d) : attr##_(d) {}                 \
+        ZERODDS_POLICY_DEFAULTS(CLS)                                               \
+                                                                                   \
+        ZERODDS_POLICY_CT(CLS, dds::core::Duration, attr)                          \
+                                                                                   \
+    private:                                                                       \
+        dds::core::Duration attr##_;                                               \
+    };
+
+/// LIFESPAN.
+ZERODDS_DURATION_POLICY(Lifespan, duration, dds::core::Duration::infinite())
+/// DEADLINE.
+ZERODDS_DURATION_POLICY(Deadline, period, dds::core::Duration::infinite())
+/// LATENCY_BUDGET.
+ZERODDS_DURATION_POLICY(LatencyBudget, duration, dds::core::Duration::zero())
+/// TIME_BASED_FILTER.
+ZERODDS_DURATION_POLICY(TimeBasedFilter, minimum_separation, dds::core::Duration::zero())
+#undef ZERODDS_DURATION_POLICY
+
+/// PARTITION.
+class Partition {
+public:
+    Partition() {}
+    explicit Partition(const std::string& partition) : name_(1, partition) {}
+    explicit Partition(const dds::core::StringSeq& partitions) : name_(partitions) {}
+#if ZERODDS_CXX11
+    Partition(const Partition& other) = default;
+    Partition(Partition&&) = default;
+    Partition& operator=(const Partition& other) = default;
+    Partition& operator=(Partition&&) = default;
+#endif
+
+    Partition& name(const dds::core::StringSeq& partitions) {
+        name_ = partitions;
+        return *this;
+    }
+    const dds::core::StringSeq& name() const { return name_; }
+    dds::core::StringSeq& name() { return name_; }
+
+private:
+    dds::core::StringSeq name_;
+};
+
+// ---- Ownership ---------------------------------------------------------
+
+/// OWNERSHIP.
+class Ownership {
+public:
+    Ownership() : kind_(OwnershipKind::SHARED) {}
+    explicit Ownership(OwnershipKind::type the_kind) : kind_(the_kind) {}
+#if ZERODDS_CXX11
+    Ownership(const Ownership& other) = default;
+    Ownership(Ownership&&) = default;
+    Ownership& operator=(const Ownership& other) = default;
+    Ownership& operator=(Ownership&&) = default;
+#endif
+
+    Ownership& kind(OwnershipKind::type the_kind) {
+        kind_ = the_kind;
+        return *this;
+    }
+    OwnershipKind::type kind() const { return kind_; }
+    OwnershipKind::type& kind() { return kind_; }
+
+    static Ownership Exclusive() { return Ownership(OwnershipKind::EXCLUSIVE); }
+    static Ownership Shared() { return Ownership(OwnershipKind::SHARED); }
+
+private:
+    OwnershipKind::type kind_;
+};
+
+/// OWNERSHIP_STRENGTH.
+class OwnershipStrength {
+public:
+    OwnershipStrength() : value_(0) {}
+    explicit OwnershipStrength(int32_t s) : value_(s) {}
+#if ZERODDS_CXX11
+    OwnershipStrength(const OwnershipStrength& other) = default;
+    OwnershipStrength(OwnershipStrength&&) = default;
+    OwnershipStrength& operator=(const OwnershipStrength& other) = default;
+    OwnershipStrength& operator=(OwnershipStrength&&) = default;
+#endif
+
+    ZERODDS_POLICY_NT(OwnershipStrength, int32_t, value)
+
+private:
+    int32_t value_;
+};
+
+// ---- Lifecycle ----------------------------------------------------------
+
+/// WRITER_DATA_LIFECYCLE.
 class WriterDataLifecycle {
 public:
-    WriterDataLifecycle() = default;
-    explicit WriterDataLifecycle(bool autodispose)
-        : autodispose_unregistered_instances_(autodispose) {}
-    bool autodispose_unregistered_instances() const {
-        return autodispose_unregistered_instances_;
+    WriterDataLifecycle() : autodispose_unregistered_instances_(true) {}
+    explicit WriterDataLifecycle(bool the_autodispose)
+        : autodispose_unregistered_instances_(the_autodispose) {}
+#if ZERODDS_CXX11
+    WriterDataLifecycle(const WriterDataLifecycle& other) = default;
+    WriterDataLifecycle(WriterDataLifecycle&&) = default;
+    WriterDataLifecycle& operator=(const WriterDataLifecycle& other) = default;
+    WriterDataLifecycle& operator=(WriterDataLifecycle&&) = default;
+#endif
+
+    ZERODDS_POLICY_NT(WriterDataLifecycle, bool, autodispose_unregistered_instances)
+
+    static WriterDataLifecycle AutoDisposeUnregisteredInstances() {
+        return WriterDataLifecycle(true);
     }
-    void autodispose_unregistered_instances(bool v) {
-        autodispose_unregistered_instances_ = v;
+    static WriterDataLifecycle ManuallyDisposeUnregisteredInstances() {
+        return WriterDataLifecycle(false);
     }
+
 private:
-    bool autodispose_unregistered_instances_{true};
+    bool autodispose_unregistered_instances_;
 };
 
-/// ReaderDataLifecycle (Spec §7.5.6.14).
+/// READER_DATA_LIFECYCLE.
 class ReaderDataLifecycle {
 public:
-    ReaderDataLifecycle() = default;
-    ReaderDataLifecycle(Duration nowriter, Duration disposed)
-        : autopurge_nowriter_samples_delay_(nowriter),
-          autopurge_disposed_samples_delay_(disposed) {}
-    Duration autopurge_nowriter_samples_delay() const { return autopurge_nowriter_samples_delay_; }
-    Duration autopurge_disposed_samples_delay() const { return autopurge_disposed_samples_delay_; }
-    void autopurge_nowriter_samples_delay(Duration d) { autopurge_nowriter_samples_delay_ = d; }
-    void autopurge_disposed_samples_delay(Duration d) { autopurge_disposed_samples_delay_ = d; }
+    ReaderDataLifecycle()
+        : autopurge_nowriter_samples_delay_(dds::core::Duration::infinite()),
+          autopurge_disposed_samples_delay_(dds::core::Duration::infinite()) {}
+    ReaderDataLifecycle(const dds::core::Duration& the_nowriter_delay,
+                        const dds::core::Duration& the_disposed_samples_delay)
+        : autopurge_nowriter_samples_delay_(the_nowriter_delay),
+          autopurge_disposed_samples_delay_(the_disposed_samples_delay) {}
+#if ZERODDS_CXX11
+    ReaderDataLifecycle(const ReaderDataLifecycle& other) = default;
+    ReaderDataLifecycle(ReaderDataLifecycle&&) = default;
+    ReaderDataLifecycle& operator=(const ReaderDataLifecycle& other) = default;
+    ReaderDataLifecycle& operator=(ReaderDataLifecycle&&) = default;
+#endif
+
+    ZERODDS_POLICY_CT(ReaderDataLifecycle, dds::core::Duration, autopurge_nowriter_samples_delay)
+    ZERODDS_POLICY_CT(ReaderDataLifecycle, dds::core::Duration, autopurge_disposed_samples_delay)
+
+    static ReaderDataLifecycle NoAutoPurgeDisposedSamples() { return ReaderDataLifecycle(); }
+    static ReaderDataLifecycle AutoPurgeDisposedSamples(const dds::core::Duration& d) {
+        return ReaderDataLifecycle(dds::core::Duration::infinite(), d);
+    }
+
 private:
-    Duration autopurge_nowriter_samples_delay_{Duration::infinite()};
-    Duration autopurge_disposed_samples_delay_{Duration::infinite()};
+    dds::core::Duration autopurge_nowriter_samples_delay_;
+    dds::core::Duration autopurge_disposed_samples_delay_;
 };
 
-/// DurabilityService (Spec §7.5.6.3).
+// ---- Policies with a kind ----------------------------------------------
+
+/// DURABILITY.
+class Durability {
+public:
+    Durability() : kind_(DurabilityKind::VOLATILE) {}
+    explicit Durability(DurabilityKind::type the_kind) : kind_(the_kind) {}
+#if ZERODDS_CXX11
+    Durability(const Durability& other) = default;
+    Durability(Durability&&) = default;
+    Durability& operator=(const Durability& other) = default;
+    Durability& operator=(Durability&&) = default;
+#endif
+
+    Durability& kind(DurabilityKind::type the_kind) {
+        kind_ = the_kind;
+        return *this;
+    }
+    DurabilityKind::type kind() const { return kind_; }
+    DurabilityKind::type& kind() { return kind_; }
+
+    static Durability Volatile() { return Durability(DurabilityKind::VOLATILE); }
+    static Durability TransientLocal() { return Durability(DurabilityKind::TRANSIENT_LOCAL); }
+    static Durability Transient() { return Durability(DurabilityKind::TRANSIENT); }
+    static Durability Persistent() { return Durability(DurabilityKind::PERSISTENT); }
+
+private:
+    DurabilityKind::type kind_;
+};
+
+/// PRESENTATION.
+class Presentation {
+public:
+    Presentation()
+        : access_scope_(PresentationAccessScopeKind::INSTANCE),
+          coherent_access_(false),
+          ordered_access_(false) {}
+    Presentation(PresentationAccessScopeKind::type the_access_scope, bool the_coherent_access,
+                 bool the_ordered_access)
+        : access_scope_(the_access_scope),
+          coherent_access_(the_coherent_access),
+          ordered_access_(the_ordered_access) {}
+#if ZERODDS_CXX11
+    Presentation(const Presentation& other) = default;
+    Presentation(Presentation&&) = default;
+    Presentation& operator=(const Presentation& other) = default;
+    Presentation& operator=(Presentation&&) = default;
+#endif
+
+    Presentation& access_scope(PresentationAccessScopeKind::type as) {
+        access_scope_ = as;
+        return *this;
+    }
+    PresentationAccessScopeKind::type access_scope() const { return access_scope_; }
+    PresentationAccessScopeKind::type& access_scope() { return access_scope_; }
+    ZERODDS_POLICY_NT(Presentation, bool, coherent_access)
+    ZERODDS_POLICY_NT(Presentation, bool, ordered_access)
+
+    static Presentation GroupAccessScope(bool coherent = false, bool ordered = false) {
+        return Presentation(PresentationAccessScopeKind::GROUP, coherent, ordered);
+    }
+    static Presentation InstanceAccessScope(bool coherent = false, bool ordered = false) {
+        return Presentation(PresentationAccessScopeKind::INSTANCE, coherent, ordered);
+    }
+    static Presentation TopicAccessScope(bool coherent = false, bool ordered = false) {
+        return Presentation(PresentationAccessScopeKind::TOPIC, coherent, ordered);
+    }
+
+private:
+    PresentationAccessScopeKind::type access_scope_;
+    bool coherent_access_;
+    bool ordered_access_;
+};
+
+/// RELIABILITY.
+class Reliability {
+public:
+    Reliability()
+        : kind_(ReliabilityKind::BEST_EFFORT),
+          max_blocking_time_(dds::core::Duration::from_millisecs(100)) {}
+    Reliability(ReliabilityKind::type the_kind, const dds::core::Duration& the_max_blocking_time)
+        : kind_(the_kind),
+          max_blocking_time_(the_max_blocking_time) {}
+#if ZERODDS_CXX11
+    Reliability(const Reliability& other) = default;
+    Reliability(Reliability&&) = default;
+    Reliability& operator=(const Reliability& other) = default;
+    Reliability& operator=(Reliability&&) = default;
+#endif
+
+    Reliability& kind(ReliabilityKind::type the_kind) {
+        kind_ = the_kind;
+        return *this;
+    }
+    ReliabilityKind::type kind() const { return kind_; }
+    ReliabilityKind::type& kind() { return kind_; }
+    ZERODDS_POLICY_CT(Reliability, dds::core::Duration, max_blocking_time)
+
+    static Reliability Reliable(const dds::core::Duration& d = dds::core::Duration::infinite()) {
+        return Reliability(ReliabilityKind::RELIABLE, d);
+    }
+    static Reliability BestEffort() {
+        return Reliability(ReliabilityKind::BEST_EFFORT, dds::core::Duration::from_millisecs(100));
+    }
+
+private:
+    // DDS 1.4 §2.2.3: BEST_EFFORT for a Topic and a DataReader, RELIABLE for
+    // a DataWriter; `DataWriterQos` names its own.
+    ReliabilityKind::type kind_;
+    dds::core::Duration max_blocking_time_;
+};
+
+/// DESTINATION_ORDER.
+class DestinationOrder {
+public:
+    DestinationOrder() : kind_(DestinationOrderKind::BY_RECEPTION_TIMESTAMP) {}
+    explicit DestinationOrder(DestinationOrderKind::type the_kind) : kind_(the_kind) {}
+#if ZERODDS_CXX11
+    DestinationOrder(const DestinationOrder& other) = default;
+    DestinationOrder(DestinationOrder&&) = default;
+    DestinationOrder& operator=(const DestinationOrder& other) = default;
+    DestinationOrder& operator=(DestinationOrder&&) = default;
+#endif
+
+    DestinationOrder& kind(DestinationOrderKind::type the_kind) {
+        kind_ = the_kind;
+        return *this;
+    }
+    DestinationOrderKind::type kind() const { return kind_; }
+    DestinationOrderKind::type& kind() { return kind_; }
+
+    static DestinationOrder SourceTimestamp() {
+        return DestinationOrder(DestinationOrderKind::BY_SOURCE_TIMESTAMP);
+    }
+    static DestinationOrder ReceptionTimestamp() {
+        return DestinationOrder(DestinationOrderKind::BY_RECEPTION_TIMESTAMP);
+    }
+
+private:
+    DestinationOrderKind::type kind_;
+};
+
+/// HISTORY.
+class History {
+public:
+    History() : kind_(HistoryKind::KEEP_LAST), depth_(1) {}
+    History(HistoryKind::type the_kind, int32_t the_depth) : kind_(the_kind), depth_(the_depth) {}
+#if ZERODDS_CXX11
+    History(const History& other) = default;
+    History(History&&) = default;
+    History& operator=(const History& other) = default;
+    History& operator=(History&&) = default;
+#endif
+
+    HistoryKind::type kind() const { return kind_; }
+    HistoryKind::type& kind() { return kind_; }
+    History& kind(HistoryKind::type the_kind) {
+        kind_ = the_kind;
+        return *this;
+    }
+    ZERODDS_POLICY_NT(History, int32_t, depth)
+
+    static History KeepAll() { return History(HistoryKind::KEEP_ALL, dds::core::LENGTH_UNLIMITED); }
+    static History KeepLast(uint32_t depth) {
+        return History(HistoryKind::KEEP_LAST, static_cast<int32_t>(depth));
+    }
+
+private:
+    HistoryKind::type kind_;
+    int32_t depth_;
+};
+
+/// RESOURCE_LIMITS. The default is LENGTH_UNLIMITED in all three members
+/// (DDS 1.4 §2.2.3.19).
+class ResourceLimits {
+public:
+    ResourceLimits()
+        : max_samples_(dds::core::LENGTH_UNLIMITED),
+          max_instances_(dds::core::LENGTH_UNLIMITED),
+          max_samples_per_instance_(dds::core::LENGTH_UNLIMITED) {}
+    ResourceLimits(int32_t the_max_samples, int32_t the_max_instances,
+                   int32_t the_max_samples_per_instance)
+        : max_samples_(the_max_samples),
+          max_instances_(the_max_instances),
+          max_samples_per_instance_(the_max_samples_per_instance) {}
+#if ZERODDS_CXX11
+    ResourceLimits(const ResourceLimits& other) = default;
+    ResourceLimits(ResourceLimits&&) = default;
+    ResourceLimits& operator=(const ResourceLimits& other) = default;
+    ResourceLimits& operator=(ResourceLimits&&) = default;
+#endif
+
+    ZERODDS_POLICY_NT(ResourceLimits, int32_t, max_samples)
+    ZERODDS_POLICY_NT(ResourceLimits, int32_t, max_instances)
+    ZERODDS_POLICY_NT(ResourceLimits, int32_t, max_samples_per_instance)
+
+private:
+    int32_t max_samples_;
+    int32_t max_instances_;
+    int32_t max_samples_per_instance_;
+};
+
+/// LIVELINESS.
+class Liveliness {
+public:
+    Liveliness() : kind_(LivelinessKind::AUTOMATIC), lease_duration_(dds::core::Duration::infinite()) {}
+    Liveliness(LivelinessKind::type the_kind, const dds::core::Duration& the_lease_duration)
+        : kind_(the_kind),
+          lease_duration_(the_lease_duration) {}
+#if ZERODDS_CXX11
+    Liveliness(const Liveliness& other) = default;
+    Liveliness(Liveliness&&) = default;
+    Liveliness& operator=(const Liveliness& other) = default;
+    Liveliness& operator=(Liveliness&&) = default;
+#endif
+
+    Liveliness& kind(LivelinessKind::type the_kind) {
+        kind_ = the_kind;
+        return *this;
+    }
+    LivelinessKind::type kind() const { return kind_; }
+    LivelinessKind::type& kind() { return kind_; }
+    ZERODDS_POLICY_CT(Liveliness, dds::core::Duration, lease_duration)
+
+    static Liveliness Automatic() {
+        return Liveliness(LivelinessKind::AUTOMATIC, dds::core::Duration::infinite());
+    }
+    static Liveliness ManualByParticipant(
+        const dds::core::Duration& lease = dds::core::Duration::infinite()) {
+        return Liveliness(LivelinessKind::MANUAL_BY_PARTICIPANT, lease);
+    }
+    static Liveliness ManualByTopic(
+        const dds::core::Duration& lease = dds::core::Duration::infinite()) {
+        return Liveliness(LivelinessKind::MANUAL_BY_TOPIC, lease);
+    }
+
+private:
+    LivelinessKind::type kind_;
+    dds::core::Duration lease_duration_;
+};
+
+/// DURABILITY_SERVICE.
 class DurabilityService {
 public:
-    DurabilityService() = default;
-    DurabilityService(Duration cleanup, HistoryKind hk, int32_t hd, int32_t s, int32_t i,
-                      int32_t spi)
-        : service_cleanup_delay_(cleanup),
-          history_kind_(hk),
-          history_depth_(hd),
-          max_samples_(s),
-          max_instances_(i),
-          max_samples_per_instance_(spi) {}
-    Duration service_cleanup_delay() const { return service_cleanup_delay_; }
-    HistoryKind history_kind() const { return history_kind_; }
-    int32_t history_depth() const { return history_depth_; }
-    int32_t max_samples() const { return max_samples_; }
-    int32_t max_instances() const { return max_instances_; }
-    int32_t max_samples_per_instance() const { return max_samples_per_instance_; }
-    void service_cleanup_delay(Duration d) { service_cleanup_delay_ = d; }
-    void history_kind(HistoryKind k) { history_kind_ = k; }
-    void history_depth(int32_t v) { history_depth_ = v; }
-    void max_samples(int32_t v) { max_samples_ = v; }
-    void max_instances(int32_t v) { max_instances_ = v; }
-    void max_samples_per_instance(int32_t v) { max_samples_per_instance_ = v; }
+    DurabilityService()
+        : service_cleanup_delay_(dds::core::Duration::zero()),
+          history_kind_(HistoryKind::KEEP_LAST),
+          history_depth_(1),
+          max_samples_(dds::core::LENGTH_UNLIMITED),
+          max_instances_(dds::core::LENGTH_UNLIMITED),
+          max_samples_per_instance_(dds::core::LENGTH_UNLIMITED) {}
+    DurabilityService(const dds::core::Duration& the_service_cleanup_delay,
+                      HistoryKind::type the_history_kind, int32_t the_history_depth,
+                      int32_t the_max_samples, int32_t the_max_instances,
+                      int32_t the_max_samples_per_instance)
+        : service_cleanup_delay_(the_service_cleanup_delay),
+          history_kind_(the_history_kind),
+          history_depth_(the_history_depth),
+          max_samples_(the_max_samples),
+          max_instances_(the_max_instances),
+          max_samples_per_instance_(the_max_samples_per_instance) {}
+#if ZERODDS_CXX11
+    DurabilityService(const DurabilityService& other) = default;
+    DurabilityService(DurabilityService&&) = default;
+    DurabilityService& operator=(const DurabilityService& other) = default;
+    DurabilityService& operator=(DurabilityService&&) = default;
+#endif
+
+    ZERODDS_POLICY_CT(DurabilityService, dds::core::Duration, service_cleanup_delay)
+    DurabilityService& history_kind(HistoryKind::type the_kind) {
+        history_kind_ = the_kind;
+        return *this;
+    }
+    HistoryKind::type history_kind() const { return history_kind_; }
+    HistoryKind::type& history_kind() { return history_kind_; }
+    ZERODDS_POLICY_NT(DurabilityService, int32_t, history_depth)
+    ZERODDS_POLICY_NT(DurabilityService, int32_t, max_samples)
+    ZERODDS_POLICY_NT(DurabilityService, int32_t, max_instances)
+    ZERODDS_POLICY_NT(DurabilityService, int32_t, max_samples_per_instance)
+
 private:
-    Duration service_cleanup_delay_{Duration::zero()};
-    HistoryKind history_kind_{HistoryKind::KeepLast};
-    int32_t history_depth_{1};
-    int32_t max_samples_{-1};
-    int32_t max_instances_{-1};
-    int32_t max_samples_per_instance_{-1};
+    dds::core::Duration service_cleanup_delay_;
+    HistoryKind::type history_kind_;
+    int32_t history_depth_;
+    int32_t max_samples_;
+    int32_t max_instances_;
+    int32_t max_samples_per_instance_;
 };
+
+/// DDS-XTypes 1.3 §7.6.3.1, Annex D `DataRepresentationQosPolicy`. `is_set()` tells whether the
+/// application gave a list: a policy that was not given leaves the choice of the representation to
+/// the Service (the C API's `is_set` = 0), one that was given is the list the entity uses.
+class DataRepresentation {
+public:
+    // XCDR1, the default of DDS-XTypes 1.3 §7.6.3.1
+    DataRepresentation()
+        : value_(1, ::dds::core::policy::DataRepresentationId(0)), set_(false) {}
+    explicit DataRepresentation(const ::dds::core::policy::DataRepresentationIdSeq& value)
+        : value_(value), set_(true) {}
+#if ZERODDS_CXX11
+    DataRepresentation(const DataRepresentation& other) = default;
+    DataRepresentation(DataRepresentation&&) = default;
+    DataRepresentation& operator=(const DataRepresentation& other) = default;
+    DataRepresentation& operator=(DataRepresentation&&) = default;
+#endif
+
+    DataRepresentation& value(const ::dds::core::policy::DataRepresentationIdSeq& v) {
+        value_ = v;
+        set_ = true;
+        return *this;
+    }
+    const ::dds::core::policy::DataRepresentationIdSeq& value() const { return value_; }
+    /// A reference the application may change: the policy counts as given.
+    ::dds::core::policy::DataRepresentationIdSeq& value() {
+        set_ = true;
+        return value_;
+    }
+    /// Whether the application gave a list.
+    bool is_set() const { return set_; }
+
+private:
+    ::dds::core::policy::DataRepresentationIdSeq value_;
+    bool set_;
+};
+
+/// DDS-XTypes 1.3 §7.6.3.4, Annex D `TypeConsistencyEnforcementQosPolicy`: the kind and the five
+/// flags. The kind has the four values of the PSM; the specification of XTypes 1.3 has two
+/// (`DISALLOW_TYPE_COERCION`, `ALLOW_TYPE_COERCION`), and `ASSIGNABLE_TYPE_CONSISTENCY` is the
+/// second, the three others the first. The defaults of the flags are those of §7.6.3.4.1.
+class TypeConsistencyEnforcement {
+public:
+    TypeConsistencyEnforcement()
+        : kind_(TypeConsistencyEnforcementKind::ASSIGNABLE_TYPE_CONSISTENCY),
+          ignore_sequence_bounds_(true),
+          ignore_string_bounds_(true),
+          ignore_member_names_(false),
+          prevent_type_widening_(false),
+          force_type_validation_(false),
+          set_(false) {}
+    explicit TypeConsistencyEnforcement(TypeConsistencyEnforcementKind::type kind)
+        : kind_(kind),
+          ignore_sequence_bounds_(true),
+          ignore_string_bounds_(true),
+          ignore_member_names_(false),
+          prevent_type_widening_(false),
+          force_type_validation_(false),
+          set_(true) {}
+#if ZERODDS_CXX11
+    TypeConsistencyEnforcement(const TypeConsistencyEnforcement& other) = default;
+    TypeConsistencyEnforcement(TypeConsistencyEnforcement&&) = default;
+    TypeConsistencyEnforcement& operator=(const TypeConsistencyEnforcement& other) = default;
+    TypeConsistencyEnforcement& operator=(TypeConsistencyEnforcement&&) = default;
+#endif
+
+    TypeConsistencyEnforcementKind::type kind() const { return kind_; }
+    TypeConsistencyEnforcementKind::type& kind() {
+        set_ = true;
+        return kind_;
+    }
+    TypeConsistencyEnforcement& kind(TypeConsistencyEnforcementKind::type value) {
+        kind_ = value;
+        set_ = true;
+        return *this;
+    }
+
+    bool ignore_sequence_bounds() const { return ignore_sequence_bounds_; }
+    TypeConsistencyEnforcement& ignore_sequence_bounds(bool value) {
+        ignore_sequence_bounds_ = value;
+        set_ = true;
+        return *this;
+    }
+    bool ignore_string_bounds() const { return ignore_string_bounds_; }
+    TypeConsistencyEnforcement& ignore_string_bounds(bool value) {
+        ignore_string_bounds_ = value;
+        set_ = true;
+        return *this;
+    }
+    bool ignore_member_names() const { return ignore_member_names_; }
+    TypeConsistencyEnforcement& ignore_member_names(bool value) {
+        ignore_member_names_ = value;
+        set_ = true;
+        return *this;
+    }
+    bool prevent_type_widening() const { return prevent_type_widening_; }
+    TypeConsistencyEnforcement& prevent_type_widening(bool value) {
+        prevent_type_widening_ = value;
+        set_ = true;
+        return *this;
+    }
+    bool force_type_validation() const { return force_type_validation_; }
+    TypeConsistencyEnforcement& force_type_validation(bool value) {
+        force_type_validation_ = value;
+        set_ = true;
+        return *this;
+    }
+
+    /// Whether the application gave the policy.
+    bool is_set() const { return set_; }
+
+private:
+    TypeConsistencyEnforcementKind::type kind_;
+    bool ignore_sequence_bounds_;
+    bool ignore_string_bounds_;
+    bool ignore_member_names_;
+    bool prevent_type_widening_;
+    bool force_type_validation_;
+    bool set_;
+};
+
+} // namespace detail
+
+typedef TUserData<detail::UserData> UserData;
+typedef TGroupData<detail::GroupData> GroupData;
+typedef TTopicData<detail::TopicData> TopicData;
+typedef TEntityFactory<detail::EntityFactory> EntityFactory;
+typedef TTransportPriority<detail::TransportPriority> TransportPriority;
+typedef TLifespan<detail::Lifespan> Lifespan;
+typedef TDeadline<detail::Deadline> Deadline;
+typedef TLatencyBudget<detail::LatencyBudget> LatencyBudget;
+typedef TTimeBasedFilter<detail::TimeBasedFilter> TimeBasedFilter;
+typedef TPartition<detail::Partition> Partition;
+typedef TOwnership<detail::Ownership> Ownership;
+typedef TOwnershipStrength<detail::OwnershipStrength> OwnershipStrength;
+typedef TWriterDataLifecycle<detail::WriterDataLifecycle> WriterDataLifecycle;
+typedef TReaderDataLifecycle<detail::ReaderDataLifecycle> ReaderDataLifecycle;
+typedef TDurability<detail::Durability> Durability;
+typedef TPresentation<detail::Presentation> Presentation;
+typedef TReliability<detail::Reliability> Reliability;
+typedef TDestinationOrder<detail::DestinationOrder> DestinationOrder;
+typedef THistory<detail::History> History;
+typedef TResourceLimits<detail::ResourceLimits> ResourceLimits;
+typedef TLiveliness<detail::Liveliness> Liveliness;
+typedef TDurabilityService<detail::DurabilityService> DurabilityService;
+typedef TDataRepresentation<detail::DataRepresentation> DataRepresentation;
+typedef TTypeConsistencyEnforcement<detail::TypeConsistencyEnforcement> TypeConsistencyEnforcement;
+
+// ---- Policy ids and names (DDS 1.4 §2.2.3, Table of QosPolicyId_t) ----
+
+#define ZERODDS_POLICY_TRAITS(POLICY, ID, NAME)                                    \
+    template <>                                                                    \
+    class policy_id<POLICY> {                                                      \
+    public:                                                                        \
+        static const dds::core::policy::QosPolicyId value = ID;                    \
+    };                                                                             \
+    template <>                                                                    \
+    class policy_name<POLICY> {                                                    \
+    public:                                                                        \
+        static const std::string& name() {                                         \
+            static const std::string the_name = NAME;                              \
+            return the_name;                                                       \
+        }                                                                          \
+    };
+
+ZERODDS_POLICY_TRAITS(UserData, 1, "UserData")
+ZERODDS_POLICY_TRAITS(Durability, 2, "Durability")
+ZERODDS_POLICY_TRAITS(Presentation, 3, "Presentation")
+ZERODDS_POLICY_TRAITS(Deadline, 4, "Deadline")
+ZERODDS_POLICY_TRAITS(LatencyBudget, 5, "LatencyBudget")
+ZERODDS_POLICY_TRAITS(Ownership, 6, "Ownership")
+ZERODDS_POLICY_TRAITS(OwnershipStrength, 7, "OwnershipStrength")
+ZERODDS_POLICY_TRAITS(Liveliness, 8, "Liveliness")
+ZERODDS_POLICY_TRAITS(TimeBasedFilter, 9, "TimeBasedFilter")
+ZERODDS_POLICY_TRAITS(Partition, 10, "Partition")
+ZERODDS_POLICY_TRAITS(Reliability, 11, "Reliability")
+ZERODDS_POLICY_TRAITS(DestinationOrder, 12, "DestinationOrder")
+ZERODDS_POLICY_TRAITS(History, 13, "History")
+ZERODDS_POLICY_TRAITS(ResourceLimits, 14, "ResourceLimits")
+ZERODDS_POLICY_TRAITS(EntityFactory, 15, "EntityFactory")
+ZERODDS_POLICY_TRAITS(WriterDataLifecycle, 16, "WriterDataLifecycle")
+ZERODDS_POLICY_TRAITS(ReaderDataLifecycle, 17, "ReaderDataLifecycle")
+ZERODDS_POLICY_TRAITS(TopicData, 18, "TopicData")
+ZERODDS_POLICY_TRAITS(GroupData, 19, "GroupData")
+ZERODDS_POLICY_TRAITS(TransportPriority, 20, "TransportPriority")
+ZERODDS_POLICY_TRAITS(Lifespan, 21, "Lifespan")
+ZERODDS_POLICY_TRAITS(DurabilityService, 22, "DurabilityService")
+ZERODDS_POLICY_TRAITS(DataRepresentation, 23, "DataRepresentation")
+ZERODDS_POLICY_TRAITS(TypeConsistencyEnforcement, 24, "TypeConsistencyEnforcement")
+#undef ZERODDS_POLICY_TRAITS
+
+// The macros of the normative header (dds/core/policy/CorePolicy.hpp) for declaring and defining
+// the traits of a policy of one's own.
+#define OMG_DDS_POLICY_TRAITS(POLICY, ID)                       \
+    template <>                                                  \
+    class policy_id<POLICY> {                                    \
+    public:                                                      \
+        static const dds::core::policy::QosPolicyId value = ID;  \
+    };                                                           \
+    template <>                                                  \
+    class policy_name<POLICY> {                                  \
+    public:                                                      \
+        static const std::string& name();                        \
+    };
+
+#define OMG_DDS_DEFINE_POLICY_TRAITS(POLICY, NAME)                              \
+    const std::string& dds::core::policy::policy_name<POLICY>::name() {          \
+        static std::string the_name = #NAME;                                     \
+        return the_name;                                                         \
+    }
 
 } // namespace policy
 } // namespace core
 } // namespace dds
+
+#undef ZERODDS_POLICY_NT
+#undef ZERODDS_POLICY_CT
+#undef ZERODDS_POLICY_DEFAULTS
 
 #endif // ZERODDS_DDS_CORE_POLICY_COREPOLICY_HPP

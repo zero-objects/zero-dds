@@ -7,7 +7,7 @@
 //! Compatibility per §2.2.3 Table: `offered.kind >= requested.kind`.
 //! Ordering: `BY_RECEPTION_TIMESTAMP < BY_SOURCE_TIMESTAMP`.
 
-use zerodds_cdr::{BufferReader, BufferWriter, DecodeError, EncodeError};
+use zerodds_wire::{Reader, WireError, Writer};
 
 /// DestinationOrder-Kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
@@ -21,7 +21,7 @@ pub enum DestinationOrderKind {
 }
 
 impl DestinationOrderKind {
-    /// Strikter Mapper.
+    /// Strict mapper.
     #[must_use]
     pub const fn try_from_u32(v: u32) -> Option<Self> {
         match v {
@@ -50,22 +50,22 @@ pub struct DestinationOrderQosPolicy {
 
 impl DestinationOrderQosPolicy {
     /// Wire-Encoding.
-    ///
-    /// # Errors
-    /// Buffer-Overflow.
-    pub fn encode_into(self, w: &mut BufferWriter) -> Result<(), EncodeError> {
-        w.write_u32(self.kind as u32)
+    pub fn encode_into(self, w: &mut Writer) {
+        w.write_u32(self.kind as u32);
     }
 
     /// Wire-Decoding (strict).
     ///
     /// # Errors
     /// Buffer underflow or unknown kind value.
-    pub fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
+    pub fn decode_from(r: &mut Reader<'_>) -> Result<Self, WireError> {
+        let at = r.position();
         let v = r.read_u32()?;
-        let kind = DestinationOrderKind::try_from_u32(v).ok_or(DecodeError::InvalidEnum {
-            kind: "DestinationOrderKind",
-            value: v,
+        let kind = DestinationOrderKind::try_from_u32(v).ok_or_else(|| {
+            WireError::refused(
+                at,
+                &alloc::format!("a DestinationOrderKind enumerator, not {v}"),
+            )
         })?;
         Ok(Self { kind })
     }
@@ -75,7 +75,7 @@ impl DestinationOrderQosPolicy {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use zerodds_cdr::Endianness;
+    use zerodds_wire::Endianness;
 
     #[test]
     fn default_by_reception() {
@@ -99,10 +99,10 @@ mod tests {
             DestinationOrderKind::BySourceTimestamp,
         ] {
             let p = DestinationOrderQosPolicy { kind };
-            let mut w = BufferWriter::new(Endianness::Little);
-            p.encode_into(&mut w).unwrap();
-            let bytes = w.into_bytes();
-            let mut r = BufferReader::new(&bytes, Endianness::Little);
+            let mut w = Writer::new(Endianness::Little);
+            p.encode_into(&mut w);
+            let bytes = w.finish();
+            let mut r = Reader::new(&bytes, Endianness::Little);
             assert_eq!(DestinationOrderQosPolicy::decode_from(&mut r).unwrap(), p);
         }
     }
@@ -133,20 +133,18 @@ mod tests {
     }
 
     /// Decode with an unknown kind discriminator → `InvalidEnum` error.
-    /// (Round-2-Review-Finding: Error-Path bisher ungetestet).
+    /// (Round-2-Review-Finding: Error-Path not yet tested).
     #[test]
     fn decode_unknown_kind_errors() {
-        let mut w = BufferWriter::new(Endianness::Little);
-        w.write_u32(77).unwrap();
-        let bytes = w.into_bytes();
-        let mut r = BufferReader::new(&bytes, Endianness::Little);
+        let mut w = Writer::new(Endianness::Little);
+        w.write_u32(77);
+        let bytes = w.finish();
+        let mut r = Reader::new(&bytes, Endianness::Little);
         let err = DestinationOrderQosPolicy::decode_from(&mut r).unwrap_err();
         assert!(matches!(
             err,
-            zerodds_cdr::DecodeError::InvalidEnum {
-                kind: "DestinationOrderKind",
-                value: 77
-            }
+            zerodds_wire::WireError::OutOfRange { expected, .. }
+                    if expected.contains("DestinationOrderKind") && expected.contains("77")
         ));
     }
 
@@ -154,7 +152,7 @@ mod tests {
     #[test]
     fn decode_empty_buffer_errors() {
         let bytes: [u8; 0] = [];
-        let mut r = BufferReader::new(&bytes, Endianness::Little);
+        let mut r = Reader::new(&bytes, Endianness::Little);
         assert!(DestinationOrderQosPolicy::decode_from(&mut r).is_err());
     }
 }

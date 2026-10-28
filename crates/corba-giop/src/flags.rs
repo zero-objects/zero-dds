@@ -10,7 +10,7 @@
 //! * Bit 1 — `fragment_bit` (1 = more fragments follow).
 //! * Bits 2..7 — reserved (spec §15.4.1: "set to 0").
 
-use zerodds_cdr::Endianness;
+use zerodds_wire::Endianness;
 
 /// GIOP flags octet (spec §15.4.1 as of GIOP 1.1; in GIOP 1.0 only
 /// `byte_order_bit` is used).

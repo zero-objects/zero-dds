@@ -6,7 +6,7 @@
 //! normally not propagated over the wire, implemented only for
 //! completeness.
 
-use zerodds_cdr::{BufferReader, BufferWriter, DecodeError, EncodeError};
+use zerodds_wire::{Reader, WireError, Writer};
 
 use crate::wire_helpers::{read_bool_padded, write_bool_padded};
 
@@ -27,18 +27,15 @@ impl Default for EntityFactoryQosPolicy {
 
 impl EntityFactoryQosPolicy {
     /// Wire-Encoding.
-    ///
-    /// # Errors
-    /// Buffer-Overflow.
-    pub fn encode_into(self, w: &mut BufferWriter) -> Result<(), EncodeError> {
-        write_bool_padded(w, self.autoenable_created_entities)
+    pub fn encode_into(self, w: &mut Writer) {
+        write_bool_padded(w, self.autoenable_created_entities);
     }
 
     /// Wire-Decoding.
     ///
     /// # Errors
     /// Buffer-Underflow.
-    pub fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
+    pub fn decode_from(r: &mut Reader<'_>) -> Result<Self, WireError> {
         Ok(Self {
             autoenable_created_entities: read_bool_padded(r)?,
         })
@@ -49,7 +46,7 @@ impl EntityFactoryQosPolicy {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use zerodds_cdr::Endianness;
+    use zerodds_wire::Endianness;
 
     #[test]
     fn default_is_true() {
@@ -62,10 +59,10 @@ mod tests {
             let p = EntityFactoryQosPolicy {
                 autoenable_created_entities: v,
             };
-            let mut w = BufferWriter::new(Endianness::Little);
-            p.encode_into(&mut w).unwrap();
-            let bytes = w.into_bytes();
-            let mut r = BufferReader::new(&bytes, Endianness::Little);
+            let mut w = Writer::new(Endianness::Little);
+            p.encode_into(&mut w);
+            let bytes = w.finish();
+            let mut r = Reader::new(&bytes, Endianness::Little);
             assert_eq!(EntityFactoryQosPolicy::decode_from(&mut r).unwrap(), p);
         }
     }

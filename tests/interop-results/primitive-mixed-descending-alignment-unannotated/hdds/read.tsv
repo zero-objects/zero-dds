@@ -1,0 +1,14 @@
+# What hdds got back when it read the bytes of primitive-mixed-descending-alignment-unannotated, held against
+# tests/interop-corpus/primitive-mixed-descending-alignment-unannotated/values.json and never against another
+# column's reading of the same bytes.
+# encoding	endian	verdict	detail
+plain-cdr1	le	harness-gap	wireprobe-hdds: hddsgen generates decode_xcdr1_ledecode_xcdr2_le and this probe drives neither; a JSON dump over hddsgen's generated types is not written
+plain-cdr1	be	one-order-only	
+pl-cdr1	le	version-alias	plain-cdr1
+pl-cdr1	be	one-order-only	
+plain-cdr2	le	harness-gap	wireprobe-hdds: hddsgen generates decode_xcdr1_ledecode_xcdr2_le and this probe drives neither; a JSON dump over hddsgen's generated types is not written
+plain-cdr2	be	one-order-only	
+delimited-cdr	le	version-alias	plain-cdr2
+delimited-cdr	be	one-order-only	
+pl-cdr2	le	version-alias	plain-cdr2
+pl-cdr2	be	one-order-only	

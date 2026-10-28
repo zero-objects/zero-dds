@@ -2,6 +2,18 @@
 
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- `AsyncDataReader::publication_matched_stream` → `subscription_matched_stream`, and the type `PublicationMatchedStream` → `SubscriptionMatchedStream`. The reader-side stream always yielded `SubscriptionMatchedStatus` (DDS 1.4 §2.2.4.1 SUBSCRIPTION_MATCHED); the name now says so.
+- `AsyncDataWriter::write` no longer reads `DataWriter::qos()` on the uncontended path. The QoS getter clones the whole policy set, which cost about 13 % per write and put the crate over the 5 % budget of `zerodds-async-1.0` §9.1. The reliability budget is read once, on the first `OutOfResources`. Measured ratio async/sync afterwards: 1.02.
+
+### Added
+
+- `AsyncDataWriter::publication_matched_stream() -> PublicationMatchedStream<T>` — `Stream<Item = PublicationMatchedStatus>`, the writer-side listener bridge of `zerodds-async-1.0` §6.2.
+- `PublicationMatchedStatus` re-export.
+
 ## [1.0.0-rc.1] — 2026-05-06
 
 Initial release materialization of the `zerodds-dcps-async` crate.

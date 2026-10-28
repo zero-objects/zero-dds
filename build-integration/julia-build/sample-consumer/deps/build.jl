@@ -25,7 +25,7 @@ needs_regen = !isfile(out_file) || mtime(idl_file) > mtime(out_file)
 
 if needs_regen
     println("zerodds-idlc: generating ", out_file, " from ", idl_file)
-    cmd = `$executable generate $idl_file --julia -o $out_dir`
+    cmd = `$executable generate --lang julia --out $out_dir $idl_file`
     run(cmd)
 else
     println("zerodds-idlc: ", out_file, " up to date, skipping regeneration")

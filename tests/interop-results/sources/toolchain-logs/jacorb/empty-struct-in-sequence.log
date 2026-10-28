@@ -1,0 +1,6 @@
+wireprobe-jacorb: the JacORB IDL compiler refused the IDL
+SEVERE org.jacorb.idl.lexer emit_error gen.idl, line: 3(2): Syntax error
+SEVERE: gen.idl, line: 3(2): Syntax error
+SEVERE org.jacorb.idl.lexer emit_error gen.idl, line: 3(2): Couldn't repair and continue parse
+Can't recover from previous error(s), giving up.
+SEVERE: gen.idl, line: 3(2): Couldn't repair and continue parse

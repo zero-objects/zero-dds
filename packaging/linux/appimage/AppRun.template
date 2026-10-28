@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
-# AppRun-Template — wird von build.sh pro Daemon mit `${bin}` ersetzt.
+# AppRun template — build.sh substitutes `${bin}` once per daemon.
 # Spec: docs/specs/zerodds-deployment-1.0.md §2.2.4.
 
 HERE="$(dirname "$(readlink -f "${0}")")"
 
-# Forward XDG-Standard-Vars + ZeroDDS-spezifische Config-Pfade.
+# Forward the XDG standard variables. The program chooses its configuration
+# itself: `--config PATH` or the system directory (/etc/zerodds), see
+# docs/specs/zerodds-deployment-1.0.md §2.1; there is no environment
+# variable that selects the path.
 export XDG_DATA_DIRS="${XDG_DATA_DIRS:-$HERE/usr/share:/usr/local/share:/usr/share}"
-export ZERODDS_CONFIG_DIR="${ZERODDS_CONFIG_DIR:-$HERE/etc/zerodds}"
 
 exec "$HERE/usr/bin/${BIN}" "$@"

@@ -1,41 +1,124 @@
-.TH ZERODDS-MQTT-BRIDGED 1 "2026-05-06" "1.0.0-rc.1" "ZeroDDS Manual"
+.TH ZERODDS-MQTT-BRIDGED 1 "" "ZeroDDS" "ZeroDDS Manual"
 .SH NAME
 zerodds-mqtt-bridged \- DDS to MQTT 5 bridge daemon
 .SH SYNOPSIS
 .B zerodds-mqtt-bridged
-[\fB\-c\fR \fIFILE\fR | \fB\-\-config\fR \fIFILE\fR]
+[\fB\-\-config\fR \fIFILE\fR]
+[\fB\-\-broker\fR \fIURL\fR]
+[\fB\-\-domain\fR \fIID\fR]
+[\fB\-\-topic\fR \fIDDS:MQTT\fR]...
 [\fB\-\-log\-level\fR \fILEVEL\fR]
-[\fB\-\-validate\-only\fR]
 [\fB\-V\fR | \fB\-h\fR]
 .SH DESCRIPTION
 .B zerodds-mqtt-bridged
 mirrors DDS topics to MQTT 5 broker topics and vice versa. Implements
-.IR zerodds-mqtt-bridge-1.0 (7).
+.IR docs/specs/zerodds-mqtt-bridge-1.0.md .
 Talks to any MQTT 5 broker (Mosquitto, EMQX, HiveMQ) over TCP/TLS,
 auto-reconnects with exponential back-off, supports per-route MQTT QoS
 (0/1/2), Retain, MessageExpiry, ContentType and UserProperties.
 .SH OPTIONS
 .TP
-.BR \-c ", " \-\-config =\fIFILE\fR
-YAML config; default
-.IR /etc/zerodds/mqtt-bridged.yaml .
+.BR \-\-config =\fIFILE\fR
+The config file (YAML), with drop-ins in its sibling
+.IR FILE .d/.
+Without it the system file is read when it exists:
+.I /etc/zerodds/mqtt-bridged.yaml
+with
+.I /etc/zerodds/mqtt-bridged.d/
+(on macOS under
+.IR /usr/local/etc/zerodds );
+without that file the built-in defaults apply.
 See
 .BR zerodds-mqtt-bridged.yaml (5).
 .TP
-.BR \-\-log\-level =\fILEVEL\fR
-Override log level.
+.BR \-\-broker =\fIURL\fR
+MQTT broker URL
+.RI ( mqtt:// ", " mqtts:// ", " ws:// ", " wss:// ).
 .TP
-.BR \-\-validate\-only
-Validate config and exit.
+.BR \-\-client\-id =\fIID\fR
+MQTT client ID.
+.TP
+.BR \-\-domain =\fIID\fR
+DDS domain ID. Default: 0.
+.TP
+.BR \-\-username =\fIUSER\fR
+MQTT username.
+.TP
+.BR \-\-password =\fIPASS\fR
+MQTT password.
+.TP
+.BR \-\-tls\-ca =\fIFILE\fR
+CA cert.
+.TP
+.BR \-\-tls\-cert =\fIFILE\fR
+Client cert.
+.TP
+.BR \-\-tls\-key =\fIFILE\fR
+Client key.
+.TP
+.BR \-\-topic =\fIDDS:MQTT\fR
+Topic override (repeatable).
+.TP
+.BR \-\-log\-level =\fILEVEL\fR
+Override log level. One of
+.IR trace ", " debug ", " info ", " warn ", " error .
+.TP
+.BR \-\-metrics =\fIADDR\fR
+Prometheus listen addr.
+.TP
+.BR \-V ", " \-\-version
+Version info.
+.TP
+.BR \-h ", " \-\-help
+Show the option synopsis.
+.TP
+.BR \-\-set " \fIPATH\fR=\fIVALUE\fR"
+One setting above every file, repeatable;
+.BI + PATH = VALUE
+appends to a list.
+.TP
+.B \-\-check\-config
+Validate and print the effective configuration with the origin of every
+value, then exit: 0 valid, 1 invalid value or unknown key, 2 unreadable
+file, syntax error or include cycle.
 .SH SIGNALS
 .B SIGTERM
 graceful shutdown,
 .B SIGHUP
-config reload (sessions persist).
+reads the configuration again: the topic ACL applies from then on, a
+withdrawn read right stops the samples of that topic at once; sessions
+persist. Changed topics, broker address or client id, broker TLS, auth mode
+or domain need a restart and are logged. A configuration that does not load
+changes nothing.
 .SH ENVIRONMENT
-.B ZERODDS_CONFIG ", " RUST_LOG .
+.TP
+.B OTEL_EXPORTER_OTLP_ENDPOINT
+Optional OTLP endpoint, such as http://localhost:4318.
+.TP
+.B MQTT_PASSWORD
+The broker password; the setting
+.BR mqtt.password ,
+above the files, below
+.BR \-\-set .
 .SH EXIT STATUS
-0 ok, 64 config error, 69 broker unreachable.
+.TP
+.B 0
+Normal shutdown (SIGTERM/SIGINT).
+.TP
+.B 1
+Configuration error.
+.TP
+.B 2
+Broker connect error.
+.TP
+.B 3
+DDS discovery error.
+.TP
+.B 4
+TLS error.
+.TP
+.B 5
+Authentication error.
 .SH FILES
 .I /etc/zerodds/mqtt-bridged.yaml ", " /var/log/zerodds/mqtt-bridged.log .
 .SH SEE ALSO

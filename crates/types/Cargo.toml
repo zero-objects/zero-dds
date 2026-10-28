@@ -6,8 +6,8 @@ rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 description = "OMG XTypes 1.3 type system: TypeIdentifier + TypeObject (Minimal/Complete) + Assignability + DynamicType + TypeLookup. Pure-Rust no_std + alloc."
-repository = "https://github.com/zero-objects/zero-dds"
-homepage = "https://zerodds.org"
+repository.workspace = true
+homepage.workspace = true
 documentation = "https://docs.rs/zerodds-types"
 readme = "README.md"
 keywords = ["dds", "xtypes", "type-system", "schema", "no-std"]
@@ -21,15 +21,54 @@ workspace = true
 path = "src/lib.rs"
 
 [features]
-safety = []  # empty marker for safe-profile lints (internal/safety-flag-drift.md)
-default = ["std"]
+# Empty marker for safe-profile lints (internal/safety-flag-drift.md).
+safety = []
+default = ["std", "dynamic"]
 std = ["alloc"]
 alloc = []
+# The reflective half: DynamicType, DynamicData and the TypeObject →
+# model bridge. It takes `std` with it, because `zerodds-wire-codec` —
+# the one place a layout plan is executed against a value — is a `std`
+# crate. Everything else here is no_std + alloc and stays so:
+# `--no-default-features --features alloc` is the type system without
+# the reflective half, rather than a reflective half that cannot reach
+# the wire.
+dynamic = ["std", "dep:zerodds-wire-codec"]
+
 [dependencies]
-zerodds-cdr = { version = "1.0.0-rc.7", path = "../cdr", default-features = false, features = ["alloc"] }
-# MD5 is spec-conformant for EquivalenceHash + NameHash (XTypes §7.3.1.2.1,
-# §7.3.4.5). Foundation provides a pure-Rust no_std MD5.
-zerodds-foundation = { version = "1.0.0-rc.7", path = "../foundation", default-features = false, features = ["alloc"] }
+# The byte runtime. `wire` decides nothing about a type; the framing a
+# TypeObject takes is written here and executed there.
+zerodds-wire = { version = "1.0.0-rc.7", path = "../wire", default-features = false }
+# The model. A `TypeObject` is the wire form of a type this crate builds
+# from the model rather than from a second representation of its own:
+# `Extensibility`, `TryConstruct` and the member-id assignment are the
+# frontend's answers and are read here, not decided again.
+zerodds-ast = { version = "1.0.0-rc.7", path = "../ast", default-features = false }
+zerodds-ast-core = { version = "1.0.0-rc.7", path = "../ast-core", default-features = false }
+# The plan executor. `DynamicData` is the second implementation of its
+# two value traits — `serde_json::Value` is the first — and there is no
+# second copy of a framing decision anywhere in this crate because of it.
+# `default-features = false` leaves `serde_json` out: the JSON
+# implementation belongs to the probe and not here.
+zerodds-wire-codec = { version = "1.0.0-rc.7", path = "../wire-codec", default-features = false, optional = true }
+# Named because the two traits name it: a `long double` does not survive
+# a double, so it is its own type on both sides. Not optional: the
+# `AnnotationParameterValue` union of Annex B has a `TK_FLOAT128` case,
+# which is part of the `TypeObject` and not of the reflective half.
+zerodds-float128 = { version = "1.0.0-rc.7", path = "../float128", default-features = false }
 
 [dev-dependencies]
 proptest = { workspace = true }
+# The corpus test reads the two IDL files of an evolution case and asks
+# §7.2.4's rules about the pair. Without a front end the assignability
+# rules could only be exercised against types this crate built itself,
+# which is the shape of test that cannot contradict its own author.
+zerodds-idl-parse = { version = "1.0.0-rc.7", path = "../idl-parse" }
+zerodds-idl-lower = { version = "1.0.0-rc.7", path = "../idl-lower" }
+# `tests/dynamic_corpus.rs` puts `DynamicData` and `serde_json::Value`
+# through the same encoder over the same corpus and compares the octets.
+# The `serde-json` feature is what brings the first implementation of the
+# two value traits; the library itself does not take it.
+zerodds-wire-codec = { version = "1.0.0-rc.7", path = "../wire-codec", features = ["serde-json"] }
+zerodds-ast-layout = { version = "1.0.0-rc.7", path = "../ast-layout" }
+serde_json = { version = "1.0" }

@@ -26,33 +26,101 @@
 
 // Daemon logging: eprintln is the structured JSON log sink per
 // Spec §8.1; a full-fledged tracing stack is not part of the workspace.
-use std::path::Path;
 use std::process::ExitCode;
 
+use zerodds_config::CommandLine;
+use zerodds_dcps::cli::Configured;
 use zerodds_websocket_bridge::daemon::cli::{self, CliArgs, HELP_TEXT, VERSION_TEXT};
-use zerodds_websocket_bridge::daemon::config::{self, DaemonConfig, TopicConfig};
+use zerodds_websocket_bridge::daemon::config::{self, DaemonConfig};
 use zerodds_websocket_bridge::daemon::server::{self, ServerError};
 
 fn main() -> ExitCode {
     let raw_args: Vec<String> = std::env::args().skip(1).collect();
-    let args = match cli::parse(&raw_args) {
+    if raw_args.iter().any(|a| a == "--version" || a == "-V") {
+        println!("zerodds-ws-bridged {}", env!("CARGO_PKG_VERSION"));
+        return ExitCode::SUCCESS;
+    }
+    let (mut command_line, rest) = match CommandLine::extract(raw_args) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("error: {e}");
+            return ExitCode::from(1);
+        }
+    };
+    let args = match cli::parse(&rest) {
         Ok(a) => a,
         Err(e) => {
             eprintln!("error: {e}");
-            eprintln!("{HELP_TEXT}");
+            eprintln!("{HELP_TEXT}\n{}", zerodds_dcps::cli::HELP);
             return ExitCode::from(1);
         }
     };
     if args.help {
-        println!("{HELP_TEXT}");
+        println!("{HELP_TEXT}\n{}", zerodds_dcps::cli::HELP);
         return ExitCode::SUCCESS;
     }
     if args.version {
         println!("{VERSION_TEXT}");
         return ExitCode::SUCCESS;
     }
-    match run(args) {
+    if let Err(e) = add_convenience_flags(&mut command_line, &args) {
+        eprintln!("error: {e}");
+        return ExitCode::from(1);
+    }
+    // Kept for SIGHUP: the reload reads the same layered sources again.
+    let reload_command_line = command_line.clone();
+    // A file that does not load (unreadable, syntax, include) is exit 2
+    // under `--check-config` (deployment §2.1); at start it is a
+    // configuration error, exit 1 — 2 is the bind error of spec §2.
+    let checking = command_line.check();
+    let configured = match Configured::from_command_line(
+        command_line,
+        Vec::new(),
+        config::CONFIG_STEM,
+        config::is_key,
+        &[],
+    ) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("[zerodds-ws-bridged] config error: {e}");
+            return ExitCode::from(if checking { 2 } else { 1 });
+        }
+    };
+    let cfg = match DaemonConfig::from_config(configured.source.tree()) {
+        Ok(c) => c,
+        Err(e) => {
+            if configured.checking() {
+                println!("error: {e}\nconfiguration invalid");
+            } else {
+                eprintln!("[zerodds-ws-bridged] config error: {e}");
+            }
+            return ExitCode::from(1);
+        }
+    };
+    if let Some(code) = configured.check_config() {
+        return code;
+    }
+    let load: server::ConfigLoader = Box::new(move || {
+        let configured = Configured::from_command_line(
+            reload_command_line.clone(),
+            Vec::new(),
+            config::CONFIG_STEM,
+            config::is_key,
+            &[],
+        )
+        .map_err(|e| e.to_string())?;
+        DaemonConfig::from_config(configured.source.tree()).map_err(|e| e.to_string())
+    });
+    match run(cfg, configured.runtime, load) {
         Ok(()) => ExitCode::SUCCESS,
+        Err(ServerError::Config(m)) => {
+            eprintln!("[zerodds-ws-bridged] config error: {m}");
+            ExitCode::from(1)
+        }
+        Err(ServerError::Tls(m)) => {
+            eprintln!("[zerodds-ws-bridged] tls error: {m}");
+            ExitCode::from(4)
+        }
         Err(ServerError::Bind(m)) => {
             eprintln!("[zerodds-ws-bridged] bind error: {m}");
             ExitCode::from(2)
@@ -68,133 +136,88 @@ fn main() -> ExitCode {
     }
 }
 
-fn run(args: CliArgs) -> Result<(), ServerError> {
-    // Load config — the file takes precedence, CLI args override.
-    let mut cfg = if let Some(path) = &args.config {
-        DaemonConfig::load_from_file(Path::new(path))
-            .map_err(|e| ServerError::Io(format!("config: {e}")))?
-    } else {
-        DaemonConfig::default_for_dev()
-    };
-    apply_cli_overrides(&mut cfg, args);
-
-    let handle = server::start(cfg)?;
-    eprintln!("[zerodds-ws-bridged] running on {}", handle.local_addr);
-
-    // Park the thread until SIGINT/SIGTERM. We use std::thread::park() —
-    // on SIGTERM the process is terminated by the runtime, and the drop
-    // handler on `DaemonHandle` sets the stop flag.
-    loop {
-        std::thread::park_timeout(std::time::Duration::from_secs(60));
+/// Spec §2: the convenience flags override file values. They are `--set`
+/// entries of their keys, after any explicit `--set`; `--topic` appends.
+fn add_convenience_flags(
+    command_line: &mut CommandLine,
+    args: &CliArgs,
+) -> Result<(), zerodds_config::ConfigError> {
+    for assignment in args.sets() {
+        command_line.push_set(&assignment)?;
     }
-    // Unreachable; dropping `handle` performs a graceful shutdown.
-    #[allow(unreachable_code)]
-    {
-        drop(handle);
-        Ok(())
-    }
+    Ok(())
 }
 
-/// Applies CLI overrides to the loaded config. Crate-public for tests.
-///
-/// Spec §2: the CLI overrides file values. `--topic` is additive (may occur
-/// multiple times), all other flags are replace operations.
-fn apply_cli_overrides(cfg: &mut DaemonConfig, args: CliArgs) {
-    if let Some(l) = args.listen {
-        cfg.listen = l;
+fn run(
+    cfg: DaemonConfig,
+    runtime: zerodds_dcps::runtime::RuntimeConfig,
+    load: server::ConfigLoader,
+) -> Result<(), ServerError> {
+    let mut handle = server::start_with_reload(cfg, runtime, Some(load))?;
+    eprintln!("[zerodds-ws-bridged] running on {}", handle.local_addr);
+    // SIGTERM/SIGINT set the stop flag. The loop used to park forever on
+    // the assumption that the runtime ends the process; it does not, and
+    // the daemon was still running 3 s after SIGTERM (measured).
+    zerodds_dcps::cli::notify_service_manager("READY=1");
+    while !handle.stop_requested() {
+        std::thread::sleep(std::time::Duration::from_millis(100));
     }
-    if let Some(d) = args.domain {
-        cfg.domain = d;
-    }
-    if let Some(lvl) = args.log_level {
-        cfg.log_level = lvl;
-    }
-    if let Some(token) = args.auth_token {
-        cfg.auth_mode = "bearer".to_string();
-        cfg.auth_bearer_token = Some(token);
-    }
-    if let Some(cert) = args.tls_cert {
-        cfg.tls_cert_file = cert;
-        cfg.tls_enabled = true;
-    }
-    if let Some(key) = args.tls_key {
-        cfg.tls_key_file = key;
-        cfg.tls_enabled = true;
-    }
-    if let Some(addr) = args.metrics {
-        cfg.metrics_addr = addr;
-        cfg.metrics_enabled = true;
-    }
-    for name in args.topics {
-        let topic = TopicConfig {
-            name: name.clone(),
-            type_name: name.clone(),
-            direction: "bidir".to_string(),
-            ws_path: config::default_ws_path(&name),
-            ..Default::default()
-        };
-        cfg.topics.push(topic);
-    }
+    zerodds_dcps::cli::notify_service_manager("STOPPING=1");
+    handle.shutdown();
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::apply_cli_overrides;
-    use zerodds_websocket_bridge::daemon::cli::CliArgs;
+    use super::add_convenience_flags;
+    use zerodds_config::CommandLine;
+    use zerodds_websocket_bridge::daemon::cli;
     use zerodds_websocket_bridge::daemon::config::DaemonConfig;
 
-    fn cfg() -> DaemonConfig {
-        DaemonConfig::default_for_dev()
-    }
-
-    fn args() -> CliArgs {
-        CliArgs::default()
+    /// The flag layer alone, as the daemon merges it over the files.
+    fn with_flags(flags: &[&str]) -> DaemonConfig {
+        let args = cli::parse(&flags.iter().map(|s| (*s).to_string()).collect::<Vec<_>>())
+            .expect("valid flags");
+        let mut command_line = CommandLine::default();
+        add_convenience_flags(&mut command_line, &args).expect("valid sets");
+        let mut tree = zerodds_config::Config::default();
+        command_line.apply(&mut tree).expect("merges");
+        DaemonConfig::from_config(Some(&tree)).expect("valid")
     }
 
     #[test]
     fn listen_override_replaces_default() {
-        let mut c = cfg();
-        let mut a = args();
-        a.listen = Some("0.0.0.0:9000".into());
-        apply_cli_overrides(&mut c, a);
-        assert_eq!(c.listen, "0.0.0.0:9000");
+        assert_eq!(
+            with_flags(&["--listen", "0.0.0.0:9000"]).listen,
+            "0.0.0.0:9000"
+        );
     }
 
     #[test]
     fn domain_override_replaces_default() {
-        let mut c = cfg();
-        let mut a = args();
-        a.domain = Some(42);
-        apply_cli_overrides(&mut c, a);
-        assert_eq!(c.domain, 42);
+        assert_eq!(with_flags(&["--domain", "42"]).domain, 42);
     }
 
     #[test]
     fn log_level_override_replaces_default() {
-        let mut c = cfg();
-        let mut a = args();
-        a.log_level = Some("debug".into());
-        apply_cli_overrides(&mut c, a);
-        assert_eq!(c.log_level, "debug");
+        assert_eq!(with_flags(&["--log-level", "debug"]).log_level, "debug");
     }
 
     #[test]
     fn auth_token_sets_bearer_mode_and_token() {
-        let mut c = cfg();
-        let mut a = args();
-        a.auth_token = Some("secret-32-bytes".into());
-        apply_cli_overrides(&mut c, a);
+        let c = with_flags(&["--auth-token", "secret-32-bytes"]);
         assert_eq!(c.auth_mode, "bearer");
         assert_eq!(c.auth_bearer_token.as_deref(), Some("secret-32-bytes"));
     }
 
     #[test]
     fn tls_cert_and_key_enable_tls() {
-        let mut c = cfg();
-        let mut a = args();
-        a.tls_cert = Some("/etc/tls/cert.pem".into());
-        a.tls_key = Some("/etc/tls/key.pem".into());
-        apply_cli_overrides(&mut c, a);
+        let c = with_flags(&[
+            "--tls-cert",
+            "/etc/tls/cert.pem",
+            "--tls-key",
+            "/etc/tls/key.pem",
+        ]);
         assert!(c.tls_enabled);
         assert_eq!(c.tls_cert_file, "/etc/tls/cert.pem");
         assert_eq!(c.tls_key_file, "/etc/tls/key.pem");
@@ -202,20 +225,14 @@ mod tests {
 
     #[test]
     fn metrics_addr_enables_metrics() {
-        let mut c = cfg();
-        let mut a = args();
-        a.metrics = Some("0.0.0.0:9091".into());
-        apply_cli_overrides(&mut c, a);
+        let c = with_flags(&["--metrics", "0.0.0.0:9091"]);
         assert!(c.metrics_enabled);
         assert_eq!(c.metrics_addr, "0.0.0.0:9091");
     }
 
     #[test]
     fn topics_cli_appends_to_existing() {
-        let mut c = cfg();
-        let mut a = args();
-        a.topics = vec!["Card".into(), "Thread".into()];
-        apply_cli_overrides(&mut c, a);
+        let c = with_flags(&["--topic", "Card", "--topic", "Thread"]);
         assert_eq!(c.topics.len(), 2);
         assert_eq!(c.topics[0].name, "Card");
         assert_eq!(c.topics[0].direction, "bidir");
@@ -225,9 +242,8 @@ mod tests {
 
     #[test]
     fn empty_args_leaves_config_unchanged() {
-        let mut c = cfg();
-        let baseline = c.clone();
-        apply_cli_overrides(&mut c, args());
+        let c = with_flags(&[]);
+        let baseline = DaemonConfig::default_for_dev();
         assert_eq!(c.listen, baseline.listen);
         assert_eq!(c.domain, baseline.domain);
         assert!(!c.tls_enabled);

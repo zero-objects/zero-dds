@@ -13,7 +13,7 @@ pub enum Reliability {
     Reliable,
     /// `BEST_EFFORT` — no retransmission (DDS BestEffort).
     BestEffort,
-    /// `UNKNOWN` — unbestimmt (Reflection-/Fehlerpfade,
+    /// `UNKNOWN` — undetermined (Reflection/Error paths,
     /// `rmw_qos_profile_unknown`).
     Unknown,
 }
@@ -21,20 +21,20 @@ pub enum Reliability {
 /// QoS-Durability — DDS-Mapping (`rmw_qos_durability_policy_t`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Durability {
-    /// `SYSTEM_DEFAULT` — Sentinel: DDS-Default verwenden.
+    /// `SYSTEM_DEFAULT` — Sentinel: Use DDS default.
     SystemDefault,
     /// `VOLATILE` — late-joining subscribers don't get past samples.
     Volatile,
     /// `TRANSIENT_LOCAL` — last-N samples cached for late-joiners.
     TransientLocal,
-    /// `UNKNOWN` — unbestimmt.
+    /// `UNKNOWN` — undetermined.
     Unknown,
 }
 
 /// QoS-History — DDS-Mapping (`rmw_qos_history_policy_t`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum History {
-    /// `SYSTEM_DEFAULT` — Sentinel: DDS-Default-History/-Depth verwenden.
+    /// `SYSTEM_DEFAULT` — Sentinel: Use DDS default history/depth.
     SystemDefault,
     /// `KEEP_LAST(n)`.
     KeepLast(u32),
@@ -54,9 +54,9 @@ pub struct QosProfile {
     /// History.
     pub history: History,
     /// Liveliness lease — `None` = system-default/unspecified (DDS-Default,
-    /// effektiv INFINITE).
+    /// effectively INFINITE).
     pub liveliness_lease_secs: Option<u32>,
-    /// Deadline — `None` = system-default/unspecified (DDS-Default, effektiv
+    /// Deadline — `None` = system-default/unspecified (DDS-Default, effectively
     /// INFINITE).
     pub deadline_secs: Option<u32>,
 }

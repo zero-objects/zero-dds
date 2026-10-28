@@ -7,6 +7,7 @@ SemVer per [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `Transport::max_message_size` is 1500, the payload of an Ethernet frame (DDSI-RTPS 2.5 §8.4.14.1).
 - **§7.3.3 YANG PSM** (`pim::yang`): transformation of the configuration
   model into `group-talker`/`group-listener` (UNI CUC↔CNC) — incl.
   `stream-id-type` (node MAC + 16-bit DataWriter ID),
@@ -32,6 +33,12 @@ SemVer per [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html).
   (collision with spec `stream::TsnConfiguration`); still reachable as
   `config::TsnConfiguration`.
 - 93 tests green (default), 105 with `--features live`.
+
+### Fixed
+
+- `parse_xml_config` and `parse_dds_tsn_xml` refuse a text that nests
+  deeper than `zerodds_foundation::XML_NESTING_LIMIT` before the parser
+  sees it; a long run of unclosed start tags overflowed the stack.
 
 ## [1.0.0-rc.1] — 2026-05-06
 

@@ -1,0 +1,7 @@
+# What hdds's front end said about recursive-optional. Not why a slot carries no
+# bytes — that is STATUS beside this file — but what the front end printed
+# while it did take the case. tests/interop-results/WARNINGS.md says what
+# each of these means and which of them changes a verdict.
+# program	warning
+cargo	error: could not compile `wireprobe-hdds-run-802630-16952` (bin "wireprobe-hdds-run-802630-16952") due to 5 previous errors; 1 warning emitted
+cargo	warning: unused variable: `member_start`

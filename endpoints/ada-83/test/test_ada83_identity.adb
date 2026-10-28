@@ -12,6 +12,8 @@ with Zerodds_Ada83_Wire; use Zerodds_Ada83_Wire;
 
 procedure Test_Ada83_Identity is
 
+   Checks_Failed : exception;
+
    package Byte_IO is new Sequential_IO (Byte);
 
    Ok_All : Boolean := True;
@@ -83,5 +85,10 @@ begin
       Text_IO.Put_Line ("ALL OK");
    else
       Text_IO.Put_Line ("FAILED");
+      --  Ada 83 has no Set_Exit_Status, so a run that printed FAILED and
+      --  exited 0 was a check nothing acted on: `make test` saw success
+      --  for every mismatch this program can find. An unhandled exception
+      --  is the exit status this language has.
+      raise Checks_Failed;
    end if;
 end Test_Ada83_Identity;

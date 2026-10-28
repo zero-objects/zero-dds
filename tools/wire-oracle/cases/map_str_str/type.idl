@@ -1,0 +1,1 @@
+@final struct MapStrStr { map<string, string> entries; long tail; };

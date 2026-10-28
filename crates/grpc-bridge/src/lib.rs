@@ -3,8 +3,8 @@
 
 //! Crate `zerodds-grpc-bridge`. Safety classification: **STANDARD**.
 //!
-//! gRPC-over-HTTP/2 + gRPC-Web wire codec — pure-Rust `no_std +
-//! alloc`, `forbid(unsafe_code)`. Implements the gRPC-specific
+//! gRPC-over-HTTP/2 + gRPC-Web wire codec — pure-Rust,
+//! `forbid(unsafe_code)`. Implements the gRPC-specific
 //! wire elements that sit above the HTTP/2 stack: length-prefixed
 //! message (LPM), path parsing, timeout header, status codes,
 //! custom-metadata encoding (incl. the `-bin` suffix convention),
@@ -24,7 +24,7 @@
 //! encoding come from these substrate crates; gRPC-bridge concentrates
 //! on the gRPC application-layer wire format.
 //!
-//! ## Public API (Stand 1.0.0-rc.1)
+//! ## Public API
 //!
 //! - [`encode_message`] / [`decode_message`] / [`FrameError`] — gRPC
 //!   Length-Prefixed-Message (LPM): Compressed-Flag (1 byte) +

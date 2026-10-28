@@ -1,0 +1,14 @@
+# What cyclone got back when it read the bytes of union-discriminator-int8, held against
+# tests/interop-corpus/union-discriminator-int8/values.json and never against another
+# column's reading of the same bytes.
+# encoding	endian	verdict	detail
+plain-cdr1	le	mapping-divergence	the dialect suppresses a negative narrow case label, so the frame carries no branch for the member the sample names — this project's own writer and reader do not return it either
+plain-cdr1	be	mapping-divergence	the dialect suppresses a negative narrow case label, so the frame carries no branch for the member the sample names — this project's own writer and reader do not return it either
+pl-cdr1	le	version-alias	plain-cdr1
+pl-cdr1	be	version-alias	plain-cdr1
+plain-cdr2	le	mapping-divergence	the dialect suppresses a negative narrow case label, so the frame carries no branch for the member the sample names — this project's own writer and reader do not return it either
+plain-cdr2	be	mapping-divergence	the dialect suppresses a negative narrow case label, so the frame carries no branch for the member the sample names — this project's own writer and reader do not return it either
+delimited-cdr	le	version-alias	plain-cdr2
+delimited-cdr	be	version-alias	plain-cdr2
+pl-cdr2	le	version-alias	plain-cdr2
+pl-cdr2	be	version-alias	plain-cdr2

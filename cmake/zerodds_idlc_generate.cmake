@@ -39,8 +39,9 @@ cmake_minimum_required(VERSION 3.21 FATAL_ERROR)
 # - GENERATOR_FLAGS: further generator flags not handled directly by CMake that will
 #                    be forwarded to zerodds-idlc
 # - CARGO_FEATURES: Cargo feature list forwarded to the ONE-TIME `cargo rustc --package
-#                    zerodds-idlc --features <...>` build (e.g. `ext-default-final` to
-#                    switch the compiled-in default extensibility). No-op once
+#                    zerodds-idlc --features <...>` build. The default extensibility is
+#                    not a feature: pass `GENERATOR_FLAGS --default-extensibility final`
+#                    (or `appendable`, `mutable`). No-op once
 #                    `zerodds::zerodds-idlc` already exists as a target — set it on the
 #                    FIRST `zerodds_idlc_generate()` call in the whole configure run.
 #
@@ -152,8 +153,8 @@ function(zerodds_idlc_generate LIBRARY_NAME)
         )
     endif()
 
-    # Backend flag: a single `--<backend>`, or `--all` for every backend in one run.
-    set(_zerodds_idlc_backend_flag "--${_GENERATOR_BACKEND}")
+    # `--lang <backend>`, or `--lang all` for every backend in one run.
+    set(_zerodds_idlc_backend_flag "--lang" "${_GENERATOR_BACKEND}")
 
     # `-I <dir>` per include directory, in order — plain configure-time list (the
     # directories are known when CMake runs, not at build time, so no generator
@@ -197,8 +198,8 @@ function(zerodds_idlc_generate LIBRARY_NAME)
         add_custom_command(
             OUTPUT "${_stamp}"
             COMMAND zerodds::zerodds-idlc "generate" "${idl_source}"
-                                          "${_zerodds_idlc_backend_flag}"
-                                          "--output" "${_idl_out_dir}"
+                                          ${_zerodds_idlc_backend_flag}
+                                          "--out" "${_idl_out_dir}"
                                           ${_zerodds_idlc_include_flags}
                                           "--stamp" "${_stamp}"
                                           "--depfile" "${_depfile}"

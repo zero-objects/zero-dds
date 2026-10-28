@@ -1,0 +1,1 @@
+chunk.000.d/build/gen.idl:71:29: The @try_construct annotation is not supported yet in the C generator, the default try-construct behavior will be used

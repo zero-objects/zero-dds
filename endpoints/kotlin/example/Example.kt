@@ -6,6 +6,7 @@
 
 import zerodds.AsyncReader
 import zerodds.Client
+import zerodds.Encoding
 import zerodds.Endian
 import zerodds.MemTransport
 import zerodds.Reader
@@ -13,7 +14,7 @@ import zerodds.Writer
 import java.util.concurrent.TimeUnit
 
 private fun sample(id: Long, label: String): ByteArray {
-    val w = Writer(Endian.LITTLE)
+    val w = Writer(Endian.LITTLE, Encoding.XCDR2)
     w.putU32(id)
     w.putString(label)
     return w.bytes()
@@ -22,18 +23,18 @@ private fun sample(id: Long, label: String): ByteArray {
 fun main() {
     // --- sync ---
     val t = MemTransport()
-    val c = Client(t)
+    val c = Client(t, zerodds.xrceObjectId(0x001, zerodds.OBJK_DATAWRITER))
     c.write(sample(0x42, "sync-hello"))
-    c.poll()?.let { println("sync: received id=0x${Reader(it, Endian.LITTLE).getU32().toString(16)}") }
+    c.poll()?.let { println("sync: received id=0x${Reader(it, Endian.LITTLE, Encoding.XCDR2).getU32().toString(16)}") }
 
     // --- async (background thread + channel) ---
     val t2 = MemTransport()
-    val w = Client(t2)
+    val w = Client(t2, zerodds.xrceObjectId(0x001, zerodds.OBJK_DATAWRITER))
     for (i in 0 until 3) w.write(sample(0x100L + i, "async"))
     val r = AsyncReader(t2)
     for (i in 0 until 3) {
         val body = r.samples.poll(2, TimeUnit.SECONDS) ?: break
-        println("async: received id=0x${Reader(body, Endian.LITTLE).getU32().toString(16)}")
+        println("async: received id=0x${Reader(body, Endian.LITTLE, Encoding.XCDR2).getU32().toString(16)}")
     }
     r.close()
 

@@ -1,0 +1,28 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 ZeroDDS Contributors -->
+<!--
+  The runtime's self-tests, compiled with the runtime's own sources rather
+  than against a built assembly: one `dotnet run` on a host with the SDK and
+  no package feed is what a measurement host has.
+-->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>ZeroDds.Wire.Tests</AssemblyName>
+    <RootNamespace>ZeroDds.Wire.Tests</RootNamespace>
+    <LangVersion>12.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <WarningLevel>9999</WarningLevel>
+    <AnalysisLevel>latest</AnalysisLevel>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <EnableDefaultItems>false</EnableDefaultItems>
+    <StartupObject>ZeroDds.Wire.Tests.SelfTest</StartupObject>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../src/*.cs" />
+    <Compile Include="SelfTest.cs" />
+  </ItemGroup>
+</Project>

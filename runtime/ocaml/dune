@@ -1,0 +1,8 @@
+; The library the generated codec links against. `wrapped false` keeps
+; the module addressable as `Zdwire`, which is the name every generated
+; file writes; a wrapper module would put `Zdwire.Zdwire` between the
+; codec and the octets.
+(library
+ (name zdwire)
+ (modules zdwire)
+ (wrapped false))

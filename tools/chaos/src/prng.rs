@@ -1,23 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! xorshift64 — minimal seedable PRNG fuer reproducible Chaos.
+//! xorshift64 — minimal seedable PRNG for reproducible chaos.
 
-/// xorshift64-PRNG. Period 2^64-1, ausreichend fuer Test-Workloads.
+/// xorshift64 PRNG. Period 2^64-1, sufficient for test workloads.
 pub struct Xorshift64 {
     state: u64,
 }
 
 impl Xorshift64 {
-    /// Erzeugt einen Generator mit `seed`. Seed=0 wird auf 1 angehoben
-    /// (xorshift mit 0 ist degenerate).
+    /// Creates a generator with `seed`. Seed=0 is raised to 1
+    /// (xorshift with 0 is degenerate).
     pub fn new(seed: u64) -> Self {
         Self {
             state: if seed == 0 { 1 } else { seed },
         }
     }
 
-    /// Liefert das naechste `u64`.
+    /// Returns the next `u64`.
     pub fn next_u64(&mut self) -> u64 {
         let mut x = self.state;
         x ^= x << 13;
@@ -27,7 +27,7 @@ impl Xorshift64 {
         x
     }
 
-    /// Bernoulli-Sample mit Wahrscheinlichkeit `p` ∈ [0, 1].
+    /// Bernoulli sample with probability `p` ∈ [0, 1].
     pub fn bernoulli(&mut self, p: f64) -> bool {
         if p <= 0.0 {
             return false;
@@ -35,25 +35,25 @@ impl Xorshift64 {
         if p >= 1.0 {
             return true;
         }
-        // u64 → [0,1): mantisse-only, vermeidet Bias bei naive
-        // f64-Cast (53-bit-mantisse).
+        // u64 → [0,1): mantissa-only, avoids bias with naive
+        // f64 cast (53-bit mantissa).
         let bits = self.next_u64() >> 11;
         (bits as f64) / ((1u64 << 53) as f64) < p
     }
 
-    /// Uniforme `u64` in [0, n). `n=0` returnt 0.
+    /// Uniform `u64` in [0, n). `n=0` returns 0.
     pub fn range_u64(&mut self, n: u64) -> u64 {
         if n == 0 {
             return 0;
         }
-        // Lemire's debiased range — fast genug fuer Test-Tool.
+        // Lemire's debiased range — fast enough for a test tool.
         let r = self.next_u64();
         ((r as u128 * n as u128) >> 64) as u64
     }
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)] // tests duerfen unwrap nutzen.
+#[allow(clippy::unwrap_used)] // tests may use unwrap.
 mod tests {
     use super::*;
 

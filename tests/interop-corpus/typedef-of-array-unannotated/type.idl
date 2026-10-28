@@ -1,0 +1,7 @@
+// `typedef` of an array, unannotated
+typedef long Matrix[2][3];
+
+struct Sample {
+    Matrix grid;
+    long tail;
+};

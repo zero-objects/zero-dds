@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use zerodds_dcps::runtime::{UserReaderConfig, UserWriterConfig};
 use zerodds_dcps::{DomainParticipant, DomainParticipantFactory, DomainParticipantQos};
-use zerodds_qos::{DeadlineQosPolicy, LifespanQosPolicy, LivelinessKind, LivelinessQosPolicy};
+use zerodds_qos::{LivelinessKind, LivelinessQosPolicy};
 
 use crate::config::{Endpoint, Ownership, Route, RouterConfig};
 use crate::error::{Result, RoutingError};
@@ -54,6 +54,22 @@ impl Router {
     /// [`RoutingError`] as for [`start`](Self::start), plus a missing type
     /// shape for a filtering/transforming route.
     pub fn start_with_types(config: &RouterConfig, shapes: TypeRegistry) -> Result<Self> {
+        let runtime = zerodds_dcps::runtime::RuntimeConfig::from_standard_paths()
+            .map_err(|e| RoutingError::Dds(format!("runtime configuration: {e}")))?;
+        Self::start_with_runtime(config, shapes, &runtime)
+    }
+
+    /// Like [`start_with_types`](Self::start_with_types), with the runtime
+    /// configuration a command line loaded. Every participant of the router
+    /// uses it.
+    ///
+    /// # Errors
+    /// As [`start_with_types`](Self::start_with_types).
+    pub fn start_with_runtime(
+        config: &RouterConfig,
+        shapes: TypeRegistry,
+        runtime: &zerodds_dcps::runtime::RuntimeConfig,
+    ) -> Result<Self> {
         config.validate()?;
         let factory = DomainParticipantFactory::instance();
         let mut router = Self {
@@ -66,8 +82,8 @@ impl Router {
         };
         // Phase 1 — create every participant first, so their handles exist.
         for route in &config.routes {
-            Self::participant(&mut router.inputs, factory, route.input.domain)?;
-            Self::participant(&mut router.outputs, factory, route.output.domain)?;
+            Self::participant(&mut router.inputs, factory, route.input.domain, runtime)?;
+            Self::participant(&mut router.outputs, factory, route.output.domain, runtime)?;
         }
         // Phase 2 — install the loop guard BEFORE any endpoint is created, so
         // the mutual `ignore_participant` is in effect at match time. Adding it
@@ -113,10 +129,15 @@ impl Router {
         map: &mut BTreeMap<i32, DomainParticipant>,
         factory: &DomainParticipantFactory,
         domain: i32,
+        runtime: &zerodds_dcps::runtime::RuntimeConfig,
     ) -> Result<()> {
         if let std::collections::btree_map::Entry::Vacant(slot) = map.entry(domain) {
             let p = factory
-                .create_participant(domain, DomainParticipantQos::default())
+                .create_participant_with_config(
+                    domain,
+                    DomainParticipantQos::default(),
+                    runtime.clone(),
+                )
                 .map_err(|e| RoutingError::Dds(format!("create_participant({domain}): {e:?}")))?;
             slot.insert(p);
         }
@@ -147,7 +168,14 @@ impl Router {
             .ok_or(RoutingError::Internal("output runtime"))?;
 
         let (_reader_eid, rx) = in_rt
-            .register_user_reader_kind(user_reader_cfg(&route.input, &in_type), route.input.keyed)
+            .register_user_reader_kind(
+                UserReaderConfig {
+                    // A relay route reads with a relay reader (`Route::relay`).
+                    relay: route.relay,
+                    ..user_reader_cfg(&route.input, &in_type)
+                },
+                route.input.keyed,
+            )
             .map_err(|e| RoutingError::Dds(format!("register input reader: {e:?}")))?;
 
         let writer_eid = out_rt
@@ -156,6 +184,14 @@ impl Router {
                 route.output.keyed,
             )
             .map_err(|e| RoutingError::Dds(format!("register output writer: {e:?}")))?;
+        if !route.output.type_file.is_empty() {
+            let support = key_type_support(&route.output, &out_type, &route.name)?;
+            out_rt
+                .set_user_writer_key_support(writer_eid, support)
+                .map_err(|e| {
+                    RoutingError::Config(format!("route '{}': type_file: {e:?}", route.name))
+                })?;
+        }
 
         let metrics = RouteMetrics::new(&route.name);
         self.metrics.insert(route.name.clone(), metrics.clone());
@@ -169,10 +205,19 @@ impl Router {
             output_rt: out_rt,
             writer_eid,
             keyed: route.output.keyed,
+            // Config-driven routes never register a real TypeIdentifier for
+            // either endpoint (`user_reader_cfg`/`user_writer_cfg` below
+            // both leave it `TypeIdentifier::None`) — routing-service
+            // matches purely by topic + type name (RTPS's own rule; see
+            // `resolve_type`'s error message), so there is no structural
+            // identity here to compare. `false` is the correct, safe
+            // answer, not a placeholder: see `SessionParts::same_type`.
+            same_type: false,
             processor,
             metrics: Arc::new(metrics),
             preserve_source_timestamp: route.preserve_source_timestamp,
             max_samples_per_second: route.max_samples_per_second,
+            relay: route.relay,
         })?;
         self.sessions.insert(route.name.clone(), session);
         Ok(())
@@ -231,26 +276,18 @@ fn user_reader_cfg(ep: &Endpoint, type_name: &str) -> UserReaderConfig {
         type_name: type_name.to_string(),
         reliable: ep.qos.reliable,
         durability: ep.qos.durability.into(),
-        deadline: DeadlineQosPolicy::default(),
-        latency_budget: Default::default(),
-        destination_order: Default::default(),
         liveliness: LivelinessQosPolicy {
             kind: LivelinessKind::Automatic,
             ..Default::default()
         },
         ownership: ep.qos.ownership.into(),
-        presentation: Default::default(),
         partition: ep.partition.clone(),
-        user_data: Vec::new(),
-        topic_data: Vec::new(),
-        group_data: Vec::new(),
-        type_identifier: zerodds_types::TypeIdentifier::None,
-        type_consistency: zerodds_types::qos::TypeConsistencyEnforcement::default(),
         data_representation_offer: ep
             .qos
             .data_representation
             .clone()
             .or_else(|| Some(vec![0, 2])),
+        ..Default::default()
     }
 }
 
@@ -261,10 +298,6 @@ fn user_writer_cfg(ep: &Endpoint, type_name: &str) -> UserWriterConfig {
         type_name: type_name.to_string(),
         reliable: ep.qos.reliable,
         durability: ep.qos.durability.into(),
-        deadline: DeadlineQosPolicy::default(),
-        latency_budget: Default::default(),
-        destination_order: Default::default(),
-        lifespan: LifespanQosPolicy::default(),
         liveliness: LivelinessQosPolicy {
             kind: LivelinessKind::Automatic,
             ..Default::default()
@@ -275,12 +308,41 @@ fn user_writer_cfg(ep: &Endpoint, type_name: &str) -> UserWriterConfig {
         } else {
             0
         },
-        presentation: Default::default(),
         partition: ep.partition.clone(),
-        user_data: Vec::new(),
-        topic_data: Vec::new(),
-        group_data: Vec::new(),
-        type_identifier: zerodds_types::TypeIdentifier::None,
         data_representation_offer: ep.qos.data_representation.clone(),
+        ..Default::default()
     }
+}
+
+/// The type `ep.type_file` describes, for the instance keys of a keyed
+/// route's output writer.
+fn key_type_support(
+    ep: &Endpoint,
+    type_name: &str,
+    route: &str,
+) -> Result<Arc<zerodds_dcps::serialized_type::SerializedTypeSupport>> {
+    let bad = |why: String| {
+        RoutingError::Config(format!(
+            "route '{route}': type_file '{}': {why}",
+            ep.type_file
+        ))
+    };
+    let bytes = std::fs::read(&ep.type_file).map_err(|e| bad(e.to_string()))?;
+    let object = zerodds_types::type_object::TypeObject::from_bytes_le(&bytes)
+        .map_err(|e| bad(format!("not a TypeObject: {e:?}")))?;
+    let zerodds_types::type_object::TypeObject::Complete(complete) = object else {
+        return Err(bad(
+            "a MINIMAL TypeObject; the file must hold the COMPLETE one".into(),
+        ));
+    };
+    let support = zerodds_dcps::serialized_type::SerializedTypeSupport::from_complete_type_objects(
+        type_name,
+        complete,
+        Vec::new(),
+    )
+    .map_err(bad)?;
+    if !support.is_keyed() {
+        return Err(bad("the type has no @key, the route is keyed".into()));
+    }
+    Ok(support)
 }

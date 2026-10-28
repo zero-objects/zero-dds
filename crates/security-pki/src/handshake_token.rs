@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! DDS-Security 1.2 §10.3.2.6-8 — `HandshakeMessageToken` Codec.
+//! DDS-Security 1.2 §10.3.2.5 — `HandshakeMessageToken` Codec.
 //!
 //! Spec-conformant wire layout for the three handshake tokens
 //! (`HandshakeRequestMessageToken` / `HandshakeReplyMessageToken` /
@@ -43,6 +43,88 @@ pub mod class_id {
     pub const REPLY: &str = "DDS:Auth:PKI-DH:1.0+Reply";
     /// `HandshakeFinalMessageToken` — spec §9.3.2.5.3.
     pub const FINAL: &str = "DDS:Auth:PKI-DH:1.0+Final";
+
+    /// The `class_id` prefix every PKI-DH token shares; what follows is
+    /// the version and the `+Req`/`+Reply`/`+Final` step.
+    pub const PREFIX: &str = "DDS:Auth:PKI-DH:";
+}
+
+/// The version a peer writes into its PKI-DH `class_id`s.
+///
+/// DDS-Security 1.2's built-in plugin still spells its tokens
+/// `DDS:Auth:PKI-DH:1.0+Req` (§9.3.2.5), and CycloneDDS, Fast DDS and
+/// CoreDX do. RTI Connext 7.7.0 spells them `DDS:Auth:PKI-DH:1.2+Req`,
+/// and its IdentityToken `DDS:Auth:PKI-DH:1.2`, and it accepts the `1.0`
+/// spelling from CoreDX (the OMG `dds-security` matrix pairs them). A
+/// token whose version is neither is refused; a token of either version
+/// is parsed, and the reply and final tokens carry the requester's
+/// version back, so that a peer that checks the exact string gets its
+/// own. Measured 2026-09-13 on the OMG `dds-security` suite: RTI sent
+/// eighteen `1.2+Req` tokens and this plugin, comparing against the
+/// `1.0` string alone, answered none.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ClassVersion {
+    /// `DDS:Auth:PKI-DH:1.0+…` — the specification's own spelling.
+    #[default]
+    V1_0,
+    /// `DDS:Auth:PKI-DH:1.2+…` — RTI Connext's spelling.
+    V1_2,
+}
+
+impl ClassVersion {
+    /// The version text between the prefix and the `+step`.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::V1_0 => "1.0",
+            Self::V1_2 => "1.2",
+        }
+    }
+
+    /// The version a `class_id` names, if it is a PKI-DH class of a
+    /// known version; `step` is `"Req"`, `"Reply"` or `"Final"`, or an
+    /// empty string for the IdentityToken class itself.
+    #[must_use]
+    pub fn of_class_id(class_id: &str, step: &str) -> Option<Self> {
+        let rest = class_id.strip_prefix(class_id::PREFIX)?;
+        let version = if step.is_empty() {
+            rest
+        } else {
+            rest.strip_suffix(step)?.strip_suffix('+')?
+        };
+        match version {
+            "1.0" => Some(Self::V1_0),
+            "1.2" => Some(Self::V1_2),
+            _ => None,
+        }
+    }
+
+    /// The `class_id` of one handshake step under this version.
+    #[must_use]
+    pub fn class_id(self, step: &str) -> String {
+        alloc::format!("{}{}+{step}", class_id::PREFIX, self.as_str())
+    }
+}
+
+/// How the plugin names the algorithms in the IdentityToken (`dds.cert.algo`,
+/// `dds.ca.algo`) and in the handshake (`c.dsign_algo`, `c.kagree_algo`).
+///
+/// DDS-Security 1.2 names them in Table 25 and Table 26 and "deprecates" the
+/// names of 1.1 (`EC-prime256v1`, `ECDSA-SHA256`, `ECDH+prime256v1-CEUM`, ...),
+/// which Cyclone, Fast DDS and OpenDDS still send and read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AlgorithmNaming {
+    /// The names of 1.2 for a peer whose IdentityToken names version 1.2, the
+    /// names of 1.1 to a peer of version 1.0 and to Cyclone, Fast DDS and
+    /// OpenDDS (decided by their `VendorId`, as the NUL-terminated algorithm
+    /// names are). The IdentityToken, which goes to every peer, has the names
+    /// of 1.2. Setting `auto` of `org.zerodds.sec.algorithm_names`.
+    Auto,
+    /// The names of 1.2 for every peer. The default.
+    #[default]
+    Spec,
+    /// The names of 1.1 for every peer and in the IdentityToken.
+    Legacy,
 }
 
 /// Spec algorithm strings (`c.dsign_algo`, `c.kagree_algo`).
@@ -57,11 +139,34 @@ pub mod algo {
     /// guessed OMG text string "ECDHE+P-256+SHA-256" was NOT the real
     /// vendor string → cross-vendor mismatch. **Cross-vendor default.**
     pub const ECDHE_P256_SHA256: &str = "ECDH+prime256v1-CEUM";
-    /// DH with MODP-2048 group — spec alternative (§9.3.2.5.1).
+    /// ECDHE over NIST P-384 (secp384r1), cofactor unified model.
+    /// DDS-Security 1.2 §8.3 Table 26 `CNAME_ECDHE_CEUM_P384`,
+    /// `CryptoAlgorithm Id 0x22`; the v1.2 spelling, which for P-384 has
+    /// no deprecated legacy alias.
+    pub const ECDHE_CEUM_P384: &str = "ECDHE-CEUM+P384";
+    /// DH with the MODP-2048 group with 256-bit prime order subgroup: the
+    /// name of 1.1 (`DH+MODP-2048-256`, deprecated in 1.2), the one sent;
+    /// [`DHE_MODP_2048_256`] is its name of 1.2.
     pub const DH_MODP_2048: &str = "DH+MODP-2048-256";
+    /// `CNAME_DHE_MODP_2048_256` of DDS-Security 1.2 §8.3 Table 26.
+    pub const DHE_MODP_2048_256: &str = "DHE+MODP-2048-256";
     /// Obsolete ZeroDDS-internal spelling (not cross-vendor-readable) —
     /// only tolerated for backward compat when parsing, NO longer emitted.
     pub const ECDHE_CEUM_P256: &str = "ECDHE-CEUM-P256";
+    /// `CNAME_ECDSA_P256_SHA256_NAME` of DDS-Security 1.2 §8.2 Table 25;
+    /// [`ECDSA_SHA256`] is its name of 1.1, "deprecated in version 1.2" and
+    /// the one Cyclone, Fast DDS and OpenDDS send.
+    pub const ECDSA_P256_SHA256: &str = "ECDSA+P256+SHA256";
+    /// `CNAME_RSASSA_PKCS1_V15_2048_SHA256` of Table 25 (new in 1.2).
+    pub const RSASSA_PKCS1_V15_2048_SHA256: &str = "RSASSA-PKCS1-V1_5+2048+SHA256";
+    /// `CNAME_ECDSA_P384_SHA384` of Table 25 (new in 1.2).
+    pub const ECDSA_P384_SHA384: &str = "ECDSA+P384+SHA384";
+    /// `CNAME_RSASSA_PSS_MGF1SHA256_2048_SHA256` of Table 25;
+    /// [`RSASSA_PSS_SHA256`] is its deprecated name of 1.1.
+    pub const RSASSA_PSS_MGF1SHA256_2048_SHA256: &str = "RSASSA-PSS-MGF1SHA256+2048+SHA256";
+    /// `CNAME_ECDHE_CEUM_P256` of §8.3 Table 26; [`ECDHE_P256_SHA256`] is
+    /// its deprecated name of 1.1, the one the other vendors send.
+    pub const ECDHE_CEUM_P256_V1_2: &str = "ECDHE-CEUM+P256";
     /// X25519 — ZeroDDS extension, NOT spec. Only as an explicitly
     /// configurable vendor extension, NEVER default (no other vendor
     /// knows it → breaks the cross-vendor handshake).
@@ -97,6 +202,9 @@ pub mod prop {
     pub const OCSP_STATUS: &str = "ocsp_status";
     /// Replier/initiator signature.
     pub const SIGNATURE: &str = "signature";
+    /// The NONCE of an AuthRequestMessageToken (DDS-Security 1.2 §10.3.2.4
+    /// Table 55), the challenge its sender will use.
+    pub const FUTURE_CHALLENGE: &str = "future_challenge";
 }
 
 // ----------------------------------------------------------------------
@@ -109,7 +217,8 @@ pub const MAX_TOKEN_BYTES: usize = 65_536;
 pub const MAX_CERT_DER: usize = 16_384;
 /// Max challenge bytes (spec is 32, but we cap at <= 64).
 pub const MAX_CHALLENGE: usize = 64;
-/// Max DH public key bytes (uncompressed P-256 = 65 bytes, X25519 = 32).
+/// Max DH public key bytes (uncompressed P-256 = 65 bytes, X25519 = 32,
+/// MODP-2048 = 256).
 pub const MAX_DH_PUB: usize = 256;
 /// Max property value string.
 pub const MAX_PROP_VALUE: usize = 4096;
@@ -119,6 +228,9 @@ pub const MAX_PROPS: usize = 64;
 pub const MAX_BIN_PROPS: usize = 64;
 /// Max signature bytes (RSA-PSS-2048 = 256, ECDSA-P256-ASN.1 ≤ 72).
 pub const MAX_SIGNATURE: usize = 1024;
+/// `typedef string<64> CryptoAlgorithmName;` (DDS-Security 1.2 §7.3.6): the
+/// longest algorithm name, without the NUL.
+pub const MAX_ALGO_NAME: usize = 64;
 
 // ----------------------------------------------------------------------
 // Hash-Helper
@@ -269,6 +381,9 @@ pub fn final_signing_bytes(
 /// Parsed view of a request token (initiator → replier).
 #[derive(Debug, Clone)]
 pub struct RequestTokenView {
+    /// The version the requester spelled its `class_id` with; the reply
+    /// carries it back.
+    pub version: ClassVersion,
     /// Initiator identity cert (DER).
     pub cert_der: Vec<u8>,
     /// Permissions document (may be empty).
@@ -292,6 +407,8 @@ pub struct RequestTokenView {
 /// Parsed view of a reply token (replier → initiator).
 #[derive(Debug, Clone)]
 pub struct ReplyTokenView {
+    /// The version the replier spelled its `class_id` with.
+    pub version: ClassVersion,
     /// Replier identity cert (DER).
     pub cert_der: Vec<u8>,
     /// Replier permissions.
@@ -323,16 +440,21 @@ pub struct ReplyTokenView {
 }
 
 /// Parsed view of a final token (initiator → replier).
+///
+/// `hash_c1`, `hash_c2`, `dh1` and `dh2` are optional in the final
+/// (DDS-Security 1.2 §10.3.2.5.3 Table 58: "Inclusion of the ... property is
+/// optional"); `None` = not sent. Cyclone sends them only with
+/// `IncludeOptionalFields`. The signature covers them either way.
 #[derive(Debug, Clone)]
 pub struct FinalTokenView {
-    /// Echo `hash_c1`.
-    pub hash_c1: [u8; 32],
-    /// Echo `hash_c2`.
-    pub hash_c2: [u8; 32],
-    /// Echo `dh1`.
-    pub dh1: Vec<u8>,
-    /// Echo `dh2`.
-    pub dh2: Vec<u8>,
+    /// Echo `hash_c1`, if sent.
+    pub hash_c1: Option<[u8; 32]>,
+    /// Echo `hash_c2`, if sent.
+    pub hash_c2: Option<[u8; 32]>,
+    /// Echo `dh1`, if sent.
+    pub dh1: Option<Vec<u8>>,
+    /// Echo `dh2`, if sent.
+    pub dh2: Option<Vec<u8>>,
     /// Echo `challenge1`.
     pub challenge1: [u8; 32],
     /// Echo `challenge2`.
@@ -345,6 +467,8 @@ pub struct FinalTokenView {
 
 /// Inputs for building the request token.
 pub struct RequestBuildInput<'a> {
+    /// The `class_id` version to write. See [`ClassVersion`].
+    pub version: ClassVersion,
     /// Cert DER.
     pub cert_der: &'a [u8],
     /// Permissions (may be empty).
@@ -376,7 +500,7 @@ pub fn build_request_token(input: &RequestBuildInput<'_>) -> SecurityResult<Vec<
         input.dsign_algo,
         input.kagree_algo,
     );
-    let mut h = DataHolder::new(class_id::REQUEST);
+    let mut h = DataHolder::new(input.version.class_id("Req"));
     // IMPORTANT (cross-vendor): the `c.*` properties MUST go on the wire in the
     // same order as in the hash (c.id, c.perm, c.pdata,
     // c.dsign_algo, c.kagree_algo) — FastDDS recomputes hash_c1 over the
@@ -393,8 +517,12 @@ pub fn build_request_token(input: &RequestBuildInput<'_>) -> SecurityResult<Vec<
     h.set_binary_property(prop::HASH_C1, hash_c1.to_vec());
     h.set_binary_property(prop::DH1, input.dh1.to_vec());
     h.set_binary_property(prop::CHALLENGE1, input.challenge1.to_vec());
-    // Do NOT emit ocsp_status (spec-optional): FastDDS does not send it and
-    // validates more strictly; cyclone tolerates its absence. Spec §9.3.2.x optional.
+    // §10.3.2.3 Table 56: `ocsp_status` is optional. Only a response we got
+    // from the responder of our own certificate goes (the certificate
+    // carries the address of one); Fast DDS and Cyclone do not send any.
+    if !input.ocsp_status.is_empty() {
+        h.set_binary_property(prop::OCSP_STATUS, input.ocsp_status.to_vec());
+    }
     Ok(h.to_cdr_le())
 }
 
@@ -405,12 +533,12 @@ pub fn build_request_token(input: &RequestBuildInput<'_>) -> SecurityResult<Vec<
 /// properties; `BadArgument` on decode/cap errors.
 pub fn parse_request_token(bytes: &[u8]) -> SecurityResult<RequestTokenView> {
     let h = DataHolder::from_cdr_le(bytes)?;
-    if h.class_id != class_id::REQUEST {
+    let Some(version) = ClassVersion::of_class_id(&h.class_id, "Req") else {
         return Err(SecurityError::new(
             SecurityErrorKind::AuthenticationFailed,
             "request: class_id mismatch",
         ));
-    }
+    };
     let cert_der = take_bin(&h, prop::C_ID, MAX_CERT_DER)?;
     let permissions = take_bin(&h, prop::C_PERM, MAX_TOKEN_BYTES)?;
     let pdata = take_bin(&h, prop::C_PDATA, MAX_TOKEN_BYTES)?;
@@ -445,6 +573,7 @@ pub fn parse_request_token(bytes: &[u8]) -> SecurityResult<RequestTokenView> {
     };
 
     Ok(RequestTokenView {
+        version,
         cert_der,
         permissions,
         pdata,
@@ -459,6 +588,8 @@ pub fn parse_request_token(bytes: &[u8]) -> SecurityResult<RequestTokenView> {
 
 /// Inputs for building the reply token.
 pub struct ReplyBuildInput<'a> {
+    /// The `class_id` version to write — the requester's.
+    pub version: ClassVersion,
     /// Replier cert DER.
     pub cert_der: &'a [u8],
     /// Replier permissions.
@@ -498,7 +629,7 @@ pub fn build_reply_token(input: &ReplyBuildInput<'_>) -> SecurityResult<Vec<u8>>
         input.dsign_algo,
         input.kagree_algo,
     );
-    let mut h = DataHolder::new(class_id::REPLY);
+    let mut h = DataHolder::new(input.version.class_id("Reply"));
     // `c.*` in hash order (see build_request_token) — cross-vendor.
     h.set_binary_property(prop::C_ID, input.cert_der.to_vec());
     h.set_binary_property(prop::C_PERM, input.permissions.to_vec());
@@ -515,8 +646,10 @@ pub fn build_reply_token(input: &ReplyBuildInput<'_>) -> SecurityResult<Vec<u8>>
     h.set_binary_property(prop::DH2, input.dh2.to_vec());
     h.set_binary_property(prop::CHALLENGE1, input.challenge1.to_vec());
     h.set_binary_property(prop::CHALLENGE2, input.challenge2.to_vec());
-    // Do NOT emit ocsp_status (spec-optional): FastDDS does not send it and
-    // validates more strictly; cyclone tolerates its absence. Spec §9.3.2.x optional.
+    // `ocsp_status` as for the request.
+    if !input.ocsp_status.is_empty() {
+        h.set_binary_property(prop::OCSP_STATUS, input.ocsp_status.to_vec());
+    }
     h.set_binary_property(prop::SIGNATURE, input.signature.to_vec());
     Ok(h.to_cdr_le())
 }
@@ -527,12 +660,12 @@ pub fn build_reply_token(input: &ReplyBuildInput<'_>) -> SecurityResult<Vec<u8>>
 /// Decode/cap/hash mismatch.
 pub fn parse_reply_token(bytes: &[u8]) -> SecurityResult<ReplyTokenView> {
     let h = DataHolder::from_cdr_le(bytes)?;
-    if h.class_id != class_id::REPLY {
+    let Some(version) = ClassVersion::of_class_id(&h.class_id, "Reply") else {
         return Err(SecurityError::new(
             SecurityErrorKind::AuthenticationFailed,
             "reply: class_id mismatch",
         ));
-    }
+    };
     let cert_der = take_bin(&h, prop::C_ID, MAX_CERT_DER)?;
     let permissions = take_bin(&h, prop::C_PERM, MAX_TOKEN_BYTES)?;
     let pdata = take_bin(&h, prop::C_PDATA, MAX_TOKEN_BYTES)?;
@@ -568,6 +701,7 @@ pub fn parse_reply_token(bytes: &[u8]) -> SecurityResult<ReplyTokenView> {
         .map(<[u8]>::to_vec);
 
     Ok(ReplyTokenView {
+        version,
         cert_der,
         permissions,
         pdata,
@@ -586,6 +720,8 @@ pub fn parse_reply_token(bytes: &[u8]) -> SecurityResult<ReplyTokenView> {
 
 /// Inputs for building the final token.
 pub struct FinalBuildInput<'a> {
+    /// The `class_id` version to write — the replier's.
+    pub version: ClassVersion,
     /// Echo `hash_c1`.
     pub hash_c1: &'a [u8; 32],
     /// Echo `hash_c2`.
@@ -621,7 +757,7 @@ pub fn build_final_token(input: &FinalBuildInput<'_>) -> SecurityResult<Vec<u8>>
             "final: dh > cap",
         ));
     }
-    let mut h = DataHolder::new(class_id::FINAL);
+    let mut h = DataHolder::new(input.version.class_id("Final"));
     h.set_binary_property(prop::HASH_C1, input.hash_c1.to_vec());
     h.set_binary_property(prop::HASH_C2, input.hash_c2.to_vec());
     h.set_binary_property(prop::DH1, input.dh1.to_vec());
@@ -640,22 +776,59 @@ pub fn build_final_token(input: &FinalBuildInput<'_>) -> SecurityResult<Vec<u8>>
 /// Decode/cap.
 pub fn parse_final_token(bytes: &[u8]) -> SecurityResult<FinalTokenView> {
     let h = DataHolder::from_cdr_le(bytes)?;
-    if h.class_id != class_id::FINAL {
+    if ClassVersion::of_class_id(&h.class_id, "Final").is_none() {
         return Err(SecurityError::new(
             SecurityErrorKind::AuthenticationFailed,
             "final: class_id mismatch",
         ));
     }
+    // The echoes are optional (Table 58); one that is sent is checked for
+    // its size like a required one.
+    let present = |key: &str| h.binary_property(key).is_some();
     Ok(FinalTokenView {
-        hash_c1: take_fixed::<32>(&h, prop::HASH_C1)?,
-        hash_c2: take_fixed::<32>(&h, prop::HASH_C2)?,
-        dh1: take_bin(&h, prop::DH1, MAX_DH_PUB)?,
-        dh2: take_bin(&h, prop::DH2, MAX_DH_PUB)?,
+        hash_c1: present(prop::HASH_C1)
+            .then(|| take_fixed::<32>(&h, prop::HASH_C1))
+            .transpose()?,
+        hash_c2: present(prop::HASH_C2)
+            .then(|| take_fixed::<32>(&h, prop::HASH_C2))
+            .transpose()?,
+        dh1: present(prop::DH1)
+            .then(|| take_bin(&h, prop::DH1, MAX_DH_PUB))
+            .transpose()?,
+        dh2: present(prop::DH2)
+            .then(|| take_bin(&h, prop::DH2, MAX_DH_PUB))
+            .transpose()?,
         challenge1: take_fixed::<32>(&h, prop::CHALLENGE1)?,
         challenge2: take_fixed::<32>(&h, prop::CHALLENGE2)?,
         ocsp_status: h.binary_property(prop::OCSP_STATUS).unwrap_or(&[]).to_vec(),
         signature: take_bin(&h, prop::SIGNATURE, MAX_SIGNATURE)?,
     })
+}
+
+/// Builds an AuthRequestMessageToken (DDS-Security 1.2 §10.3.2.4 Table 55):
+/// class `DDS:Auth:PKI-DH:<version>+AuthReq` with the binary property
+/// `future_challenge`.
+#[must_use]
+pub fn build_auth_request_token(version: ClassVersion, future_challenge: &[u8; 32]) -> Vec<u8> {
+    let mut h = DataHolder::new(version.class_id("AuthReq"));
+    h.set_binary_property(prop::FUTURE_CHALLENGE, future_challenge.to_vec());
+    h.to_cdr_le()
+}
+
+/// The `future_challenge` of an AuthRequestMessageToken (Table 55).
+///
+/// # Errors
+/// A token of another class, or without a 32-octet `future_challenge`
+/// (Table 59: such a token fails `validate_remote_identity`).
+pub fn parse_auth_request_token(bytes: &[u8]) -> SecurityResult<[u8; 32]> {
+    let h = DataHolder::from_cdr_le(bytes)?;
+    if ClassVersion::of_class_id(&h.class_id, "AuthReq").is_none() {
+        return Err(SecurityError::new(
+            SecurityErrorKind::AuthenticationFailed,
+            "auth request: class_id mismatch",
+        ));
+    }
+    take_fixed::<32>(&h, prop::FUTURE_CHALLENGE)
 }
 
 // ----------------------------------------------------------------------
@@ -742,9 +915,20 @@ fn take_fixed<const N: usize>(h: &DataHolder, key: &str) -> SecurityResult<[u8; 
 /// travel as a binary_property with the algo name as UTF-8 bytes).
 fn take_bin_string(h: &DataHolder, key: &str) -> SecurityResult<String> {
     let mut bytes = take_bin(h, key, 256)?;
-    // The wire value is null-terminated (OpenDDS/cyclone convention) — strip it.
+    // The wire value is null-terminated (§7.3.3.1; OpenDDS and Cyclone write
+    // it, Fast DDS leaves it out) — strip it.
     if bytes.last() == Some(&0) {
         bytes.pop();
+    }
+    // §7.3.6: `typedef string<64> CryptoAlgorithmName;`.
+    if bytes.len() > MAX_ALGO_NAME {
+        return Err(SecurityError::new(
+            SecurityErrorKind::AuthenticationFailed,
+            alloc::format!(
+                "binary property {key}: a CryptoAlgorithmName is a string<64>, this one has {} characters",
+                bytes.len()
+            ),
+        ));
     }
     String::from_utf8(bytes).map_err(|_| {
         SecurityError::new(
@@ -771,6 +955,29 @@ pub fn ct_eq(a: &[u8], b: &[u8]) -> bool {
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::*;
+
+    /// DDS-Security 1.2 §7.3.6: `typedef string<64> CryptoAlgorithmName;`. A
+    /// name of 64 characters is a valid name, with or without the NUL; one of
+    /// 65 characters is refused as such.
+    #[test]
+    fn an_algorithm_name_over_64_characters_is_refused() {
+        let cert = alloc::vec![0xAB; 16];
+        let dh1 = alloc::vec![7u8; 65];
+        let challenge = [3u8; 32];
+        let long = "A".repeat(65);
+        let exact = "A".repeat(64);
+        let token = |dsign: &str| {
+            let mut input = make_request_input(&cert, &dh1, &challenge);
+            input.dsign_algo = dsign;
+            build_request_token(&input).unwrap()
+        };
+        let err = parse_request_token(&token(&long)).unwrap_err();
+        assert!(err.detail.contains("string<64>"), "{err}");
+        assert_eq!(
+            parse_request_token(&token(&exact)).unwrap().dsign_algo,
+            exact
+        );
+    }
 
     #[test]
     fn parse_reply_accepts_fastdds_style_non_null_terminated_algos() {
@@ -890,6 +1097,7 @@ mod tests {
         challenge1: &'a [u8; 32],
     ) -> RequestBuildInput<'a> {
         RequestBuildInput {
+            version: Default::default(),
             cert_der,
             permissions: &[],
             pdata: &[],
@@ -1008,6 +1216,7 @@ mod tests {
         signature: &'a [u8],
     ) -> ReplyBuildInput<'a> {
         ReplyBuildInput {
+            version: Default::default(),
             cert_der,
             permissions: &[],
             pdata: &[],
@@ -1083,6 +1292,7 @@ mod tests {
     /// build_final_token: signature cap boundary.
     fn make_final_input<'a>(dh1: &'a [u8], dh2: &'a [u8], sig: &'a [u8]) -> FinalBuildInput<'a> {
         FinalBuildInput {
+            version: Default::default(),
             hash_c1: &[0u8; 32],
             hash_c2: &[0u8; 32],
             dh1,
@@ -1135,5 +1345,49 @@ mod tests {
         // over:
         let err = take_bin(&h, "k", 99).unwrap_err();
         assert_eq!(err.kind, SecurityErrorKind::BadArgument);
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod class_version_tests {
+    use super::*;
+
+    /// RTI Connext 7.7.0's spelling parses and is mirrored back; the
+    /// specification's spelling stays the default; anything else is
+    /// refused.
+    #[test]
+    fn the_peers_version_is_read_and_carried_back() {
+        assert_eq!(
+            ClassVersion::of_class_id("DDS:Auth:PKI-DH:1.2+Req", "Req"),
+            Some(ClassVersion::V1_2)
+        );
+        assert_eq!(
+            ClassVersion::of_class_id("DDS:Auth:PKI-DH:1.0+Reply", "Reply"),
+            Some(ClassVersion::V1_0)
+        );
+        assert_eq!(
+            ClassVersion::of_class_id("DDS:Auth:PKI-DH:1.2", ""),
+            Some(ClassVersion::V1_2)
+        );
+        assert_eq!(
+            ClassVersion::of_class_id("DDS:Auth:PKI-DH:1.0+Reply", "Req"),
+            None
+        );
+        assert_eq!(
+            ClassVersion::of_class_id("DDS:Auth:PKI-DH:2.0+Req", "Req"),
+            None
+        );
+        assert_eq!(
+            ClassVersion::of_class_id("DDS:Auth:PSK-DH:1.0+Req", "Req"),
+            None
+        );
+        assert_eq!(
+            ClassVersion::V1_2.class_id("Final"),
+            "DDS:Auth:PKI-DH:1.2+Final"
+        );
+        assert_eq!(ClassVersion::default().class_id("Req"), class_id::REQUEST);
+        assert_eq!(ClassVersion::V1_0.class_id("Reply"), class_id::REPLY);
+        assert_eq!(ClassVersion::V1_0.class_id("Final"), class_id::FINAL);
     }
 }

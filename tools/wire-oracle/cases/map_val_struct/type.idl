@@ -1,0 +1,2 @@
+@final struct Cell { long a; long b; };
+@final struct MapValStruct { map<long, Cell> entries; long tail; };

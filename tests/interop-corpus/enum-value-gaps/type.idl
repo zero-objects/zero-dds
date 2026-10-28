@@ -1,0 +1,1 @@
+module m { enum E { @value(-5) LOW, @value(0) MID, @value(1000) HIGH }; @appendable struct S { E kind; }; };

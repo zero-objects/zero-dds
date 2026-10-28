@@ -21,7 +21,7 @@
 //! readers from getting further samples ("per-destination queue" model).
 
 extern crate alloc;
-use alloc::collections::BTreeMap;
+use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 // portable_atomic instead of core::sync::atomic, so AtomicI64/AtomicU64
@@ -89,6 +89,8 @@ impl ChangeKind {
 /// throughput gain for large payloads).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CacheChange {
+    /// Additional sample inline QoS, retained for identical DATA/fragment repair.
+    pub inline_qos: Option<crate::parameter_list::ParameterList>,
     /// Sequence number (writer-locally unique).
     pub sequence_number: SequenceNumber,
     /// Payload (serialized sample), reference-counted.
@@ -101,19 +103,69 @@ pub struct CacheChange {
     /// by the reader path. Writer side: set by the writer when the path
     /// propagates the hash along the sample pipeline.
     pub key_hash: Option<[u8; 16]>,
-    /// Source timestamp of the write (DDSI-RTPS §8.3.7.9 / §8.7.3). When set,
+    /// Source timestamp of the write (DDSI-RTPS §8.3.8.11 / §8.7.3). When set,
     /// the writer prepends an INFO_TS submessage before the DATA so a remote
     /// reader can populate `SampleInfo.source_timestamp` and apply
     /// `DESTINATION_ORDER = BY_SOURCE_TIMESTAMP`. `None` ⇒ no INFO_TS (the
     /// reader falls back to reception order). Held on the change so retransmits
     /// carry the *original* timestamp, not the resend wall-clock.
     pub source_timestamp: Option<crate::header_extension::HeTimestamp>,
+    /// `PID_COHERENT_SET` (DDSI-RTPS 2.5 §8.7.6 / §9.6.3.9) — the
+    /// `SequenceNumber` of the **first** sample of the coherent set this
+    /// change belongs to. `None` when the change is not part of a set.
+    ///
+    /// Held on the change (like `source_timestamp`) so a retransmit rebuilds
+    /// the inline QoS the original DATA carried; a resend that dropped the
+    /// marker would split the set on the reader.
+    pub coherent_set_sn: Option<i64>,
+    /// This change is the **end-of-coherent-set (ECS)** marker for the set
+    /// named by `coherent_set_sn` (DDSI-RTPS 2.5 §8.7.6): a DATA with both
+    /// the D and the K flag clear, an empty payload, and `PID_COHERENT_SET`
+    /// in the inline QoS. It closes the set without carrying user data.
+    pub coherent_set_end: bool,
+    /// The group information of a change of a GROUP-scope publisher's
+    /// writer (DDSI-RTPS 2.5 §8.7.5, §8.7.6), held so a resend carries
+    /// the numbers the first send did.
+    pub group: Option<crate::writer_group::ChangeGroupInfo>,
+    /// The payload is not in an encapsulation of DDSI-RTPS 2.5 §10 but the
+    /// `CryptoContent` of DDS-Security 1.2 §9.5.3.3.4.4: every DATA and
+    /// DATA_FRAG built from the change carries the NonStandardPayloadFlag
+    /// (§9.4.5.3.1), the first send and every repair alike.
+    pub non_standard_payload: bool,
+    /// The change is meant for the readers of one participant only, as a
+    /// ParticipantVolatileMessageSecure message with a
+    /// `destination_participant_guid` (DDS-Security 1.2 §7.5.4.4, the
+    /// implied content filter). The writer filters on its side: every other
+    /// matched reader gets a GAP for the number (DDSI-RTPS 2.5 §8.3.8.4),
+    /// the first send and every repair alike. `None`: for all readers.
+    pub destination: Option<crate::wire_types::GuidPrefix>,
+    /// The change is meant for the listed readers only, each named by its
+    /// GUID: a DDS-RPC request bound to one service instance reaches the
+    /// readers of that instance (DDS-RPC 1.0 §7.11.1.4.3: "shall be sent to
+    /// the bound service instance only"), which more than one participant
+    /// or one participant's several readers can make up. The writer
+    /// filters like it does for [`Self::destination`]: every other matched
+    /// reader gets a GAP for the number, the first send and every repair
+    /// alike. `None`: for all readers.
+    pub destination_readers: Option<alloc::sync::Arc<[crate::wire_types::Guid]>>,
 }
 
 impl CacheChange {
+    /// Retains caller-supplied inline QoS for initial transmission and repairs.
+    #[must_use]
+    pub fn with_inline_qos(mut self, qos: Option<crate::parameter_list::ParameterList>) -> Self {
+        self.inline_qos = qos;
+        self
+    }
+    /// Preserves a known instance key on an alive sample, including zero keys.
+    #[must_use]
+    pub fn with_key_hash(mut self, key_hash: Option<[u8; 16]>) -> Self {
+        self.key_hash = key_hash;
+        self
+    }
     /// Creates an alive change. Takes `Vec<u8>` and
     /// converts once into `Arc<[u8]>`. For call sites that already have the
-    /// allocation as an Arc, there is [`Self::alive_arc`].
+    /// allocation as an Arc, there is `Self::alive_arc`.
     #[must_use]
     pub fn alive(sn: SequenceNumber, payload: Vec<u8>) -> Self {
         Self::alive_arc(sn, Arc::from(payload))
@@ -130,12 +182,66 @@ impl CacheChange {
     #[must_use]
     pub(crate) fn alive_arc(sn: SequenceNumber, payload: Arc<[u8]>) -> Self {
         Self {
+            inline_qos: None,
             sequence_number: sn,
             payload,
             kind: ChangeKind::Alive,
             key_hash: None,
             source_timestamp: None,
+            coherent_set_sn: None,
+            coherent_set_end: false,
+            group: None,
+            non_standard_payload: false,
+            destination: None,
+            destination_readers: None,
         }
+    }
+
+    /// Marks the payload as not encapsulated (builder style, see
+    /// [`Self::non_standard_payload`]).
+    #[must_use]
+    pub fn with_non_standard_payload(mut self, non_standard: bool) -> Self {
+        self.non_standard_payload = non_standard;
+        self
+    }
+
+    /// Addresses the change to the readers of one participant (builder
+    /// style, see [`Self::destination`]).
+    #[must_use]
+    pub fn with_destination(mut self, destination: Option<crate::wire_types::GuidPrefix>) -> Self {
+        self.destination = destination;
+        self
+    }
+
+    /// Addresses the change to the readers `readers` (builder style, see
+    /// [`Self::destination_readers`]).
+    #[must_use]
+    pub fn with_destination_readers(
+        mut self,
+        readers: Option<alloc::sync::Arc<[crate::wire_types::Guid]>>,
+    ) -> Self {
+        self.destination_readers = readers;
+        self
+    }
+
+    /// Whether the change is meant for the reader `reader`: always, unless
+    /// it is addressed to another participant (see [`Self::destination`])
+    /// or to other readers (see [`Self::destination_readers`]).
+    #[must_use]
+    pub fn is_relevant_to(&self, reader: crate::wire_types::Guid) -> bool {
+        self.destination.is_none_or(|d| d == reader.prefix)
+            && self
+                .destination_readers
+                .as_ref()
+                .is_none_or(|readers| readers.contains(&reader))
+    }
+
+    /// Attaches the group information of a GROUP-scope publisher's change
+    /// (builder style).
+    #[must_use]
+    pub fn with_group(mut self, group: Option<crate::writer_group::ChangeGroupInfo>) -> Self {
+        self.group = group;
+        self
     }
 
     /// Attaches a source timestamp (builder style). The writer emits an INFO_TS
@@ -149,17 +255,106 @@ impl CacheChange {
         self
     }
 
-    /// Creates a lifecycle marker (Spec §8.2.1.2). `payload` is the
-    /// key-only serialization of the disposed/unregistered instance —
-    /// exactly what lands as `PID_KEY_HASH` in the inline QoS.
+    /// Creates a lifecycle marker (Spec §8.2.1.2).
+    ///
+    /// `key_hash` is the instance's `PID_KEY_HASH` (§9.6.4.8) and goes into
+    /// the inline QoS of every DATA built from this change.
+    /// `serialized_key` is the same instance as `serializedPayload` octets —
+    /// an encapsulation header plus the key's CDR, or empty when the caller
+    /// has no key serialization. It decides the K flag of that DATA
+    /// (§9.4.5.3), which is why it is held on the change: a
+    /// NACK repair of the marker must rebuild the same flags and the same
+    /// payload as the first send.
     #[must_use]
-    pub fn lifecycle(sn: SequenceNumber, payload: Vec<u8>, kind: ChangeKind) -> Self {
+    pub fn lifecycle(
+        sn: SequenceNumber,
+        key_hash: [u8; 16],
+        serialized_key: Vec<u8>,
+        kind: ChangeKind,
+    ) -> Self {
         Self {
             sequence_number: sn,
-            payload: Arc::from(payload),
+            payload: Arc::from(serialized_key),
+            inline_qos: None,
             kind,
+            key_hash: Some(key_hash),
+            source_timestamp: None,
+            coherent_set_sn: None,
+            coherent_set_end: false,
+            group: None,
+            non_standard_payload: false,
+            destination: None,
+            destination_readers: None,
+        }
+    }
+
+    /// Tags the change as a member of the coherent set whose first sample
+    /// carries `set_first_sn` (builder style, DDSI-RTPS 2.5 §8.7.6). The
+    /// writer emits `PID_COHERENT_SET` in the inline QoS of every DATA built
+    /// from a change that carries one — the original send and every
+    /// retransmit alike.
+    #[must_use]
+    pub fn with_coherent_set(mut self, set_first_sn: Option<i64>) -> Self {
+        self.coherent_set_sn = set_first_sn;
+        self
+    }
+
+    /// Creates the **end-of-coherent-set (ECS)** marker of a writer's
+    /// coherent set (DDSI-RTPS 2.5 §8.7.6). Empty payload, D and K flags
+    /// clear and no in-line QoS on the wire: Example 3 of Table 9.22. "The
+    /// end of a Writer's coherent set is defined by the arrival of … a Data
+    /// Submessage from this Writer that does not contain a coherent set
+    /// in-line QoS parameter or alternatively, contains a coherent set
+    /// in-line QoS parameter with value SEQUENCENUMBER_UNKNOWN. Both
+    /// approaches are equivalent." The set's own first SN would make the
+    /// DATA one more member of the set. Of the two, Connext 7.7.0 and CoreDX
+    /// 6.15.3 end a set on this one only (measured on the OMG dds-rtps
+    /// suite); HDDS 1.4.8 and zzdds 0.2.0 end it on either.
+    #[must_use]
+    pub fn coherent_set_end(sn: SequenceNumber) -> Self {
+        Self {
+            sequence_number: sn,
+            payload: Arc::from(Vec::new()),
+            inline_qos: None,
+            kind: ChangeKind::Alive,
             key_hash: None,
             source_timestamp: None,
+            coherent_set_sn: None,
+            coherent_set_end: true,
+            group: None,
+            non_standard_payload: false,
+            destination: None,
+            destination_readers: None,
+        }
+    }
+
+    /// The end-of-coherent-set DATA of a GROUP-scope publisher's writer
+    /// (DDSI-RTPS 2.5 §8.7.6): every writer of the publisher sends one,
+    /// `set_first_sn` its own first sample of the set, `None` for a writer
+    /// that contributed none.
+    #[must_use]
+    pub fn group_coherent_set_end(
+        sn: SequenceNumber,
+        set_first_sn: Option<i64>,
+        end: crate::writer_group::GroupSetEnd,
+    ) -> Self {
+        Self {
+            sequence_number: sn,
+            payload: Arc::from(Vec::new()),
+            inline_qos: None,
+            kind: ChangeKind::Alive,
+            key_hash: None,
+            source_timestamp: None,
+            coherent_set_sn: set_first_sn,
+            coherent_set_end: true,
+            group: Some(crate::writer_group::ChangeGroupInfo {
+                gsn: end.ecs_gsn,
+                writer_set: end.writer_set,
+                coherent_set_gsn: Some(end.first_gsn),
+            }),
+            non_standard_payload: false,
+            destination: None,
+            destination_readers: None,
         }
     }
 }
@@ -226,9 +421,9 @@ pub struct HistoryCacheStats {
     pub len: AtomicUsize,
     /// Number of samples discarded by `KeepLast` eviction since start.
     pub evicted: AtomicU64,
-    /// Highest SN in the cache, or [`STATS_SENTINEL_NO_SN`] if empty.
+    /// Highest SN in the cache, or `STATS_SENTINEL_NO_SN` if empty.
     pub max_sn: AtomicI64,
-    /// Lowest SN in the cache, or [`STATS_SENTINEL_NO_SN`] if empty.
+    /// Lowest SN in the cache, or `STATS_SENTINEL_NO_SN` if empty.
     pub min_sn: AtomicI64,
 }
 
@@ -309,8 +504,20 @@ pub struct HistoryCacheSnapshot {
 #[derive(Debug)]
 pub struct HistoryCache {
     changes: BTreeMap<SequenceNumber, CacheChange>,
+    /// The sequence numbers of each instance's changes, by the key hash
+    /// they were inserted with (`None`: the changes without one, the one
+    /// instance of a keyless topic). Kept with `changes` in every insert and
+    /// removal, so an instance's count and its oldest change are a lookup
+    /// and not a walk over the whole cache, which a writer's RESOURCE_LIMITS
+    /// check and KEEP_LAST eviction ask on every write.
+    by_instance: BTreeMap<Option<[u8; 16]>, BTreeSet<SequenceNumber>>,
     kind: HistoryKind,
     max_samples: usize,
+    /// HISTORY KEEP_LAST depth **per instance** (DDS 1.4 §2.2.3.18): an
+    /// insert evicts the oldest change of the same `key_hash` once that
+    /// instance holds this many. `None` = no per-instance bound; `kind` and
+    /// `max_samples` still apply to the cache as a whole.
+    per_instance_depth: Option<usize>,
     evicted_count: u64,
     stats: Arc<HistoryCacheStats>,
     /// Optional label for the inspect-endpoint tap (R-026). Set only with
@@ -328,8 +535,10 @@ impl Clone for HistoryCache {
         // snapshot.
         Self {
             changes: self.changes.clone(),
+            by_instance: self.by_instance.clone(),
             kind: self.kind,
             max_samples: self.max_samples,
+            per_instance_depth: self.per_instance_depth,
             evicted_count: self.evicted_count,
             stats: Arc::new((*self.stats).clone()),
             #[cfg(feature = "inspect")]
@@ -346,8 +555,10 @@ impl HistoryCache {
     pub fn new_with_kind(kind: HistoryKind, max_samples: usize) -> Self {
         Self {
             changes: BTreeMap::new(),
+            by_instance: BTreeMap::new(),
             kind,
             max_samples,
+            per_instance_depth: None,
             evicted_count: 0,
             stats: Arc::new(HistoryCacheStats::default()),
             #[cfg(feature = "inspect")]
@@ -391,7 +602,7 @@ impl HistoryCache {
     }
 
     /// Legacy constructor — creates a `KeepAll` cache with a hard
-    /// capacity limit. For new users prefer [`new_with_kind`].
+    /// capacity limit. For new users prefer [`Self::new_with_kind`].
     #[must_use]
     pub fn new(max_samples: usize) -> Self {
         Self::new_with_kind(HistoryKind::KeepAll, max_samples)
@@ -423,6 +634,36 @@ impl HistoryCache {
     #[must_use]
     pub fn max_samples(&self) -> usize {
         self.max_samples
+    }
+
+    /// Sets the KEEP_LAST depth per instance (DDS 1.4 §2.2.3.18), `None` to
+    /// lift it, and applies it to the changes already held: each instance
+    /// keeps its newest `depth`. Changes without a `key_hash` form one
+    /// instance, the one a keyless topic has.
+    pub fn set_per_instance_depth(&mut self, depth: Option<usize>) {
+        self.per_instance_depth = depth.map(|d| d.max(1));
+        if let Some(d) = self.per_instance_depth {
+            let mut seen: BTreeMap<Option<[u8; 16]>, usize> = BTreeMap::new();
+            let mut drop_sns = Vec::new();
+            for (sn, change) in self.changes.iter().rev() {
+                let n = seen.entry(change.key_hash).or_insert(0);
+                *n += 1;
+                if *n > d {
+                    drop_sns.push(*sn);
+                }
+            }
+            for sn in drop_sns {
+                self.take(sn);
+                self.evicted_count = self.evicted_count.saturating_add(1);
+            }
+            self.refresh_stats();
+        }
+    }
+
+    /// The per-instance KEEP_LAST depth, `None` when unbounded.
+    #[must_use]
+    pub fn per_instance_depth(&self) -> Option<usize> {
+        self.per_instance_depth
     }
 
     /// Number of samples discarded by `KeepLast` eviction since
@@ -461,13 +702,26 @@ impl HistoryCache {
         }
         let cap = self.effective_max_samples()?;
         let mut evicted: Option<CacheChange> = None;
-        if self.changes.len() >= cap {
+        // KEEP_LAST per instance: the oldest change of this instance makes
+        // room before the cache-wide bound is looked at.
+        if let Some(depth) = self.per_instance_depth {
+            let oldest = self
+                .by_instance
+                .get(&change.key_hash)
+                .filter(|sns| sns.len() >= depth)
+                .and_then(|sns| sns.first().copied());
+            if let Some(oldest) = oldest {
+                evicted = self.take(oldest);
+                self.evicted_count = self.evicted_count.saturating_add(1);
+            }
+        }
+        if evicted.is_none() && self.changes.len() >= cap {
             match self.kind {
                 HistoryKind::KeepAll => return Err(CacheError::CapacityExceeded),
                 HistoryKind::KeepLast { .. } => {
                     // Oldest sample out (LRU by SN order).
-                    if let Some((&oldest, _)) = self.changes.iter().next() {
-                        evicted = self.changes.remove(&oldest);
+                    if let Some(oldest) = self.changes.keys().next().copied() {
+                        evicted = self.take(oldest);
                         self.evicted_count = self.evicted_count.saturating_add(1);
                     }
                 }
@@ -481,6 +735,10 @@ impl HistoryCache {
                 change.payload.to_vec(),
             )
         });
+        self.by_instance
+            .entry(change.key_hash)
+            .or_default()
+            .insert(change.sequence_number);
         self.changes.insert(change.sequence_number, change);
         self.refresh_stats();
         #[cfg(feature = "inspect")]
@@ -512,11 +770,83 @@ impl HistoryCache {
     /// Removes all changes with SN ≤ `sn`.
     /// Returns the number of removed entries.
     pub fn remove_up_to(&mut self, sn: SequenceNumber) -> usize {
-        let keep = self.changes.split_off(&SequenceNumber(sn.0 + 1));
-        let removed = self.changes.len();
-        self.changes = keep;
+        self.remove_up_to_with(sn, |_| {})
+    }
+
+    /// [`Self::remove_up_to`], handing each removed change to `removed`
+    /// in SN order — a writer takes the payloads back into its pool.
+    ///
+    /// The changes are taken off the front one by one. A writer asks after
+    /// every write, and mostly nothing is acknowledged yet: `split_off`
+    /// built the nodes of a second tree on each call, removing nothing.
+    pub fn remove_up_to_with(
+        &mut self,
+        sn: SequenceNumber,
+        mut removed: impl FnMut(CacheChange),
+    ) -> usize {
+        let mut count = 0;
+        while let Some(first) = self.changes.first_entry() {
+            if *first.key() > sn {
+                break;
+            }
+            let (sn, change) = first.remove_entry();
+            self.unindex(change.key_hash, sn);
+            removed(change);
+            count += 1;
+        }
+        if count > 0 {
+            self.refresh_stats();
+        }
+        count
+    }
+
+    /// Removes the change with the largest SN and returns it; `None` when
+    /// the cache is empty.
+    pub fn remove_highest(&mut self) -> Option<CacheChange> {
+        let max = self.max_sn()?;
+        let change = self.take(max);
         self.refresh_stats();
-        removed
+        change
+    }
+
+    /// Removes one change from the cache and from `by_instance`.
+    fn take(&mut self, sn: SequenceNumber) -> Option<CacheChange> {
+        let change = self.changes.remove(&sn)?;
+        self.unindex(change.key_hash, sn);
+        Some(change)
+    }
+
+    /// Removes the changes up to `sn` that `remove` selects, and returns
+    /// how many.
+    pub fn remove_up_to_where(
+        &mut self,
+        sn: SequenceNumber,
+        mut remove: impl FnMut(&CacheChange) -> bool,
+    ) -> usize {
+        let doomed: Vec<SequenceNumber> = self
+            .changes
+            .range(..=sn)
+            .filter(|(_, change)| remove(change))
+            .map(|(sn, _)| *sn)
+            .collect();
+        for sn in &doomed {
+            self.take(*sn);
+        }
+        if !doomed.is_empty() {
+            self.refresh_stats();
+        }
+        doomed.len()
+    }
+
+    /// Drops `sn` from its instance's entry in `by_instance`, and the
+    /// entry with its last change.
+    fn unindex(&mut self, key_hash: Option<[u8; 16]>, sn: SequenceNumber) {
+        if let Some(sns) = self.by_instance.get_mut(&key_hash) {
+            sns.remove(&sn);
+            if sns.is_empty() {
+                self.by_instance.remove(&key_hash);
+            }
+        }
     }
 
     /// Iterates in SN order over changes in the range `[lo, hi]`
@@ -547,6 +877,14 @@ impl HistoryCache {
         self.changes.len()
     }
 
+    /// Number of changes of one instance, by the key hash they were
+    /// inserted with; `None` counts the changes without one, the single
+    /// instance of a keyless topic.
+    #[must_use]
+    pub fn instance_len(&self, key_hash: Option<[u8; 16]>) -> usize {
+        self.by_instance.get(&key_hash).map_or(0, BTreeSet::len)
+    }
+
     /// True if no changes.
     #[must_use]
     pub fn is_empty(&self) -> bool {
@@ -568,7 +906,7 @@ impl HistoryCache {
 /// **Note:** readers (e.g. the SEDP tick, heartbeat build,
 /// resend iteration) see an `Arc`-stable snapshot of the
 /// `BTreeMap` storage; they access it without a further lock touch.
-/// Writers serialize over an internal [`RcuCell`] mutex and
+/// Writers serialize over an internal `RcuCell` mutex and
 /// publish copy-on-write.
 ///
 /// # Trade-offs
@@ -817,6 +1155,116 @@ mod tests {
 
     fn alive(n: i64) -> CacheChange {
         CacheChange::alive(sn(n), alloc::vec![n as u8])
+    }
+
+    fn keyed(n: i64, key: u8) -> CacheChange {
+        let mut c = alive(n);
+        c.key_hash = Some([key; 16]);
+        c
+    }
+
+    fn sns(c: &HistoryCache) -> Vec<i64> {
+        c.iter_range(sn(0), sn(i64::MAX))
+            .map(|c| c.sequence_number.0)
+            .collect()
+    }
+
+    /// The instance index against a recount of the cache itself.
+    fn assert_index_matches(c: &HistoryCache) {
+        let mut recount: BTreeMap<Option<[u8; 16]>, BTreeSet<SequenceNumber>> = BTreeMap::new();
+        for (sn, change) in &c.changes {
+            recount.entry(change.key_hash).or_default().insert(*sn);
+        }
+        assert_eq!(c.by_instance, recount);
+    }
+
+    /// `instance_len` is a lookup in the index the cache keeps with every
+    /// insert, eviction and removal; it must give what counting the cache
+    /// gives, through all three.
+    #[test]
+    fn the_instance_index_follows_inserts_evictions_and_removals() {
+        // `keyed` puts `[k; 16]` in the key hash.
+        let key = |k: u8| Some([k; 16]);
+        let mut c = HistoryCache::new_with_kind(HistoryKind::KeepAll, 100);
+        for n in 1..=5 {
+            c.insert(keyed(n, 1)).unwrap();
+        }
+        for n in 6..=8 {
+            c.insert(keyed(n, 2)).unwrap();
+        }
+        c.insert(alive(9)).unwrap();
+        assert_eq!(c.instance_len(key(1)), 5);
+        assert_eq!(c.instance_len(key(2)), 3);
+        assert_eq!(c.instance_len(None), 1);
+        assert_eq!(c.instance_len(key(3)), 0);
+        assert_index_matches(&c);
+
+        assert_eq!(c.remove_up_to(sn(6)), 6);
+        assert_eq!(c.instance_len(key(1)), 0);
+        assert_eq!(c.instance_len(key(2)), 2);
+        assert_index_matches(&c);
+
+        // KEEP_LAST 2 per instance evicts the oldest of the instance.
+        c.set_per_instance_depth(Some(2));
+        c.insert(keyed(10, 2)).unwrap();
+        assert_eq!(c.instance_len(key(2)), 2);
+        assert_eq!(sns(&c), alloc::vec![8, 9, 10]);
+        assert_index_matches(&c);
+
+        // KEEP_LAST over the whole cache evicts the oldest of all.
+        let mut l = HistoryCache::new_with_kind(HistoryKind::KeepLast { depth: 2 }, 100);
+        for n in 1..=4 {
+            l.insert(keyed(n, (n % 2) as u8)).unwrap();
+        }
+        assert_eq!(sns(&l), alloc::vec![3, 4]);
+        assert_index_matches(&l);
+    }
+
+    #[test]
+    fn keep_last_per_instance_keeps_the_newest_of_each_instance() {
+        let mut c = HistoryCache::new_with_kind(HistoryKind::KeepAll, usize::MAX);
+        c.set_per_instance_depth(Some(1));
+        for n in 1..=12 {
+            c.insert(keyed(n, (n % 3) as u8)).unwrap();
+        }
+        assert_eq!(
+            sns(&c),
+            alloc::vec![10, 11, 12],
+            "one per instance, the newest"
+        );
+        assert_eq!(c.evicted_count(), 9);
+    }
+
+    #[test]
+    fn keep_last_per_instance_treats_a_keyless_topic_as_one_instance() {
+        let mut c = HistoryCache::new_with_kind(HistoryKind::KeepAll, usize::MAX);
+        c.set_per_instance_depth(Some(2));
+        for n in 1..=5 {
+            c.insert(alive(n)).unwrap();
+        }
+        assert_eq!(sns(&c), alloc::vec![4, 5]);
+    }
+
+    #[test]
+    fn setting_a_per_instance_depth_trims_what_is_already_held() {
+        let mut c = HistoryCache::new_with_kind(HistoryKind::KeepAll, usize::MAX);
+        for n in 1..=6 {
+            c.insert(keyed(n, (n % 2) as u8)).unwrap();
+        }
+        c.set_per_instance_depth(Some(1));
+        assert_eq!(sns(&c), alloc::vec![5, 6]);
+        c.set_per_instance_depth(None);
+        c.insert(keyed(7, 1)).unwrap();
+        assert_eq!(sns(&c), alloc::vec![5, 6, 7], "lifted: nothing evicted");
+    }
+
+    #[test]
+    fn keep_all_without_a_bound_holds_more_than_the_old_ring() {
+        let mut c = HistoryCache::new_with_kind(HistoryKind::KeepAll, usize::MAX);
+        for n in 1..=100 {
+            c.insert(alive(n)).unwrap();
+        }
+        assert_eq!(sns(&c).len(), 100);
     }
 
     #[test]

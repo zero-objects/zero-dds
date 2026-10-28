@@ -1,0 +1,2 @@
+fastddsgen failed and named no case
+/usr/include/c++/14/type_traits:1407:37: error: invalid use of incomplete type 'class zd_c2::m::Node'

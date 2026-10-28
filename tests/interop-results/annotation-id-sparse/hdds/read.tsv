@@ -1,0 +1,14 @@
+# What hdds got back when it read the bytes of annotation-id-sparse, held against
+# tests/interop-corpus/annotation-id-sparse/values.json and never against another
+# column's reading of the same bytes.
+# encoding	endian	verdict	detail
+plain-cdr1	le	unwritten	
+plain-cdr1	be	one-order-only	
+pl-cdr1	le	unwritten	
+pl-cdr1	be	one-order-only	
+plain-cdr2	le	unwritten	
+plain-cdr2	be	one-order-only	
+delimited-cdr	le	unwritten	
+delimited-cdr	be	one-order-only	
+pl-cdr2	le	unwritten	
+pl-cdr2	be	one-order-only	

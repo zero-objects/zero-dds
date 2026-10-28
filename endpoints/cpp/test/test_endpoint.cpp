@@ -21,8 +21,10 @@ int main(int argc, char** argv) {
     w.u32(0xA1B2C3D4uL); w.u16(0x1234u); w.u8(0x5Au); w.f32(3.5f); w.u64(st);
     w.str("bay-12"); w.seq_u8(raw, 4);
     size_t flen = zdw_xrce_write_frame(frame, sizeof(frame), ZDW_XRCE_SESSION_NOKEY,
-                                       ZDW_XRCE_STREAM_BEST_EFFORT, 1, body, w.size());
-    size_t slen = zdw_serial_frame(sframe, sizeof(sframe), frame, flen);
+                                       ZDW_XRCE_STREAM_BEST_EFFORT, 1, ZDW_XRCE_OBJECT_ID(0x001, ZDW_OBJK_DATAWRITER),
+                                       body, w.size());
+    if (flen == 0) { std::fprintf(stderr, "xrce frame\n"); return 1; }
+    size_t slen = zdw_serial_frame(sframe, sizeof(sframe), 1, 0, frame, flen);
     long gxn = rd(argv[1], gx, (long)sizeof(gx));
     long gsn = rd(argv[2], gs, (long)sizeof(gs));
     if ((long)flen != gxn || std::memcmp(frame, gx, (size_t)gxn) != 0) { std::printf("XRCE mismatch\n"); return 1; }

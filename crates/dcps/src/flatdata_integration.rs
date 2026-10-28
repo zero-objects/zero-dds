@@ -92,7 +92,7 @@ impl<T: DdsType + FlatStruct + Send + Sync + 'static> DataWriter<T> {
         backend: Option<Arc<dyn SlotBackend>>,
         active_readers_mask: u32,
     ) {
-        if let Ok(mut slot) = self.flat_backend.lock() {
+        if let Ok(mut slot) = self.inner.flat_backend.lock() {
             *slot = backend.map(|b| (b, active_readers_mask));
         }
     }
@@ -109,6 +109,7 @@ impl<T: DdsType + FlatStruct + Send + Sync + 'static> DataWriter<T> {
     /// - `PreconditionNotMet` on slot-lock poisoning.
     pub fn write_flat(&self, sample: &T) -> Result<()> {
         let backend_snapshot = self
+            .inner
             .flat_backend
             .lock()
             .map_err(|_| DdsError::PreconditionNotMet {
@@ -145,7 +146,7 @@ impl<T: DdsType + FlatStruct + Send + Sync + 'static> DataReader<T> {
     /// Spec: `zerodds-flatdata-1.0` §4.1 + §9.
     pub fn set_flat_backend(&self, backend: Option<Arc<dyn SlotBackend>>, reader_index: u8) {
         use core::sync::atomic::AtomicU32;
-        if let Ok(mut slot) = self.flat_backend.lock() {
+        if let Ok(mut slot) = self.inner.flat_backend.lock() {
             *slot = backend.map(|b| (b, reader_index, AtomicU32::new(u32::MAX)));
         }
     }
@@ -162,12 +163,13 @@ impl<T: DdsType + FlatStruct + Send + Sync + 'static> DataReader<T> {
     /// `PreconditionNotMet` on type-hash mismatch or slot-lock
     /// poisoning.
     pub fn read_flat(&self) -> Result<Option<T>> {
-        let mut slot = self
-            .flat_backend
-            .lock()
-            .map_err(|_| DdsError::PreconditionNotMet {
-                reason: "flatdata: backend mutex poisoned",
-            })?;
+        let mut slot =
+            self.inner
+                .flat_backend
+                .lock()
+                .map_err(|_| DdsError::PreconditionNotMet {
+                    reason: "flatdata: backend mutex poisoned",
+                })?;
         let Some((backend, reader_index, last_sn)) = slot.as_mut() else {
             return Ok(None);
         };
@@ -194,12 +196,13 @@ impl<T: DdsType + FlatStruct + Send + Sync + 'static> DataReader<T> {
         let deadline = std::time::Instant::now() + timeout;
         // Clone the backend Arc so the wait does not hold the flat_backend lock.
         let backend = {
-            let slot = self
-                .flat_backend
-                .lock()
-                .map_err(|_| DdsError::PreconditionNotMet {
-                    reason: "flatdata: backend mutex poisoned",
-                })?;
+            let slot =
+                self.inner
+                    .flat_backend
+                    .lock()
+                    .map_err(|_| DdsError::PreconditionNotMet {
+                        reason: "flatdata: backend mutex poisoned",
+                    })?;
             match slot.as_ref() {
                 Some((b, _, _)) => Arc::clone(b),
                 None => return Ok(None),

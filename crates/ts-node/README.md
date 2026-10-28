@@ -66,7 +66,7 @@ npm test
 
 ## Stability
 
-Pre-1.0 — the API may change. The RC1-conform spec API is the
+Pre-1.0 — the API may change. The spec-conformant API is the
 `DomainParticipantFactory`-based surface; the legacy `Runtime` API
 stays stable for Apex.AI / ROS-2 RMW use cases.
 

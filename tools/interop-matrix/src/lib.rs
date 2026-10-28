@@ -5,15 +5,15 @@
 //!
 //! Crate `zerodds-interop-matrix`. Safety classification: **COMFORT**.
 //!
-//! Liest JSON-Result-Files (Output von `ci/jobs/interop-matrix.yml`),
-//! rendert eine statische HTML-Seite die nach Vendor × DDS-Profile
-//! gegliedert ist. Farbcode pro Zelle:
+//! Reads JSON result files (output of `ci/jobs/interop-matrix.yml`),
+//! renders a static HTML page that by vendor × DDS profile
+//! organized. Colour code per cell:
 //!
-//! * `pass` → gruen
-//! * `partial` → gelb
-//! * `fail` → rot
-//! * `na` (not applicable) → grau
-//! * sonst → unbekannt (orange)
+//! * `pass` → green
+//! * `partial` → yellow
+//! * `fail` → red
+//! * `na` (not applicable) → gray
+//! * otherwise → unknown (orange)
 //!
 //! ## JSON-Format
 //!

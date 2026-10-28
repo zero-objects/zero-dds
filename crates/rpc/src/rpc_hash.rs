@@ -3,8 +3,9 @@
 
 //! RPC-specific hashing algorithm (Spec §7.5.1.1.2).
 //!
-//! "The hashing algorithm uses MD5 of the operation/parameter name;
-//! first 4 bytes interpreted as little-endian uint32."
+//! The `HASH` function of §7.5.1.1.2 computes the MD5 of a string and
+//! sums its first four octets as `md5[0] + 256 * md5[1] + 256 * 256 *
+//! md5[2] + 256 * 256 * 256 * md5[3]`, a little-endian 32-bit value.
 //!
 //! We delegate to the existing XTypes hash (`crates/types/src/
 //! hash.rs`) and provide an RPC-specific API + tests that pin down the

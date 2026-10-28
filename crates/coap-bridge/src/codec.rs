@@ -453,6 +453,52 @@ mod tests {
     }
 
     #[test]
+    fn representation_carries_content_format_per_spec_5_5() {
+        // Spec §5.5.1: a payload is a representation; §5.5.3 says the
+        // Content-Format option is what names its media type. The
+        // option travels with the payload across encode/decode.
+        let mut m = CoapMessage::new(MessageType::Acknowledgement, CoapCode::CONTENT, 0x0102);
+        // 50 = application/json (RFC 7252 §12.3).
+        m.options = alloc::vec![CoapOption::content_format(50)];
+        m.payload = b"{\"px\":42}".to_vec();
+        let bytes = encode(&m).expect("encode");
+        let parsed = decode(&bytes).expect("decode");
+        assert_eq!(parsed.payload, b"{\"px\":42}".to_vec());
+        let cf = parsed
+            .options
+            .iter()
+            .find(|o| o.number == numbers::CONTENT_FORMAT)
+            .expect("Content-Format option survives the round trip");
+        // The decoder hands back the raw bytes; §3.2 uint decoding
+        // turns them back into 50.
+        let raw = cf.value.to_wire_bytes();
+        assert_eq!(crate::option::uint_from_bytes(&raw), Some(50));
+    }
+
+    #[test]
+    fn diagnostic_payload_of_error_response_carries_no_content_format() {
+        // Spec §5.5.2: "If no Content-Format option is given, the
+        // payload of responses indicating a client or server error is
+        // a brief human-readable diagnostic message" in UTF-8.
+        let mut m = CoapMessage::new(MessageType::Acknowledgement, CoapCode::BAD_REQUEST, 9);
+        m.payload = "unknown topic".as_bytes().to_vec();
+        let bytes = encode(&m).expect("encode");
+        let parsed = decode(&bytes).expect("decode");
+        assert!(parsed.code.is_client_error());
+        assert!(
+            parsed
+                .options
+                .iter()
+                .all(|o| o.number != numbers::CONTENT_FORMAT),
+            "a diagnostic payload carries no Content-Format"
+        );
+        assert_eq!(
+            core::str::from_utf8(&parsed.payload).expect("diagnostic payload is UTF-8"),
+            "unknown topic"
+        );
+    }
+
+    #[test]
     fn full_observe_request_encode_decode_round_trip() {
         // RFC 7641 §2 — Observe-register request with Uri-Path.
         let mut m = CoapMessage::new(MessageType::Confirmable, CoapCode::GET, 0xBEEF);

@@ -1,31 +1,79 @@
 # /etc/zerodds/coap-bridged.yaml.example
-# Spec: zerodds-coap-bridge-1.0 §4, §11.
+# Configuration of zerodds-coap-bridged.
+# Spec: zerodds-coap-bridge-1.0 §3 (config schema), §11 (deployment).
+#
+# Read by crates/coap-bridge/src/daemon/config.rs (DaemonConfig::from_config)
+# over the shared layers: this file, coap-bridged.d/, include:, the
+# environment beneath, --set above. An unknown key in a known section or a
+# value of the wrong type stops the start with file and line; an unknown
+# top-level key is a WARN line on stderr, and an error under --check-config.
+#
+# The file holds only keys the daemon reads; crates/coap-bridge/tests/example_yaml_loadback.rs
+# loads it back.
 
-participant:
-  domain_id: 0
-  qos_profile: builtin/reliable_keep_last_10
+domain: 0
+log_level: info
 
 coap:
   bind: "0.0.0.0:5683"
+  # bind_dtls: "0.0.0.0:5684"   # own coaps port; default: the bind port + 1
+  max_message_size: 1152        # RFC 7252 default; raise for jumbo MTUs
+  ack_timeout_ms: 2000
+  max_retransmit: 4
+  observe_max_age_secs: 90
   dtls:
-    enabled: false
-    psk_file: /etc/zerodds/certs/coap.psk
-    cert:     /etc/zerodds/certs/coap-bridged.crt
-    key:      /etc/zerodds/certs/coap-bridged.key
-  block_size: 1024
-  max_request_bytes: 65536
+    enabled: false              # coaps:// (Spec §7.1)
+    # ca_file:   "/etc/zerodds/certs/coap-ca.pem"
+    # cert_file: "/etc/zerodds/certs/coap-bridged.crt"
+    # key_file:  "/etc/zerodds/certs/coap-bridged.key"
+    # cipher_suites:            # an unknown name stops the start
+    #   - "TLS_ECDHE_ECDSA_WITH_AES_128_CCM_8"
+    # psk:                      # pre-shared keys; identity and secret_hex are required
+    #   - identity:   "device-001"
+    #     secret_hex: "0102030405060708"
 
-routes:
-  - dds_topic: "DeviceShadow"
-    type:      "demo::Iot::Shadow"
-    coap_path: "/shadow/{device_id}"
-    direction: "bidirectional"
+# End-to-end protection across CoAP proxies (RFC 8613, Spec §7.2).
+# With `enabled: true`, `master_secret_hex` is required, else the start stops.
+oscore:
+  enabled: false
+  # master_secret_hex: "0102030405060708090a0b0c0d0e0f10"
+  # master_salt_hex:   "9e7ca92223786340"
+  # id_context_hex:    ""
+  # sender_id_hex:     "01"     # the daemon's sender id (default 01)
+  # replay_window:     32       # anti-replay window width
 
-logging:
-  level: info
-  format: json
-  destination: journal
+auth:
+  mode: "none"                  # none | bearer | jwt | mtls (Spec §7.2)
+  # bearer_token: "${COAP_BRIDGE_TOKEN}"
+  # bearer_subject: "device-001"
+  # jwt:                          # mode "jwt": RS256, token in CoAP option 65000
+  #   public_key: "/etc/zerodds/coap-bridged/jwt-rs256.pem"   # required
+  #   issuer: "https://idp.example.org"
+  #   audience: "zerodds-coap"
+  #   required_claim: "scope=dds.write"
 
-observability:
-  metrics_bind: "127.0.0.1:9093"
-  otlp_endpoint: ""
+# The daemon's ACL per CoAP resource path (Spec §3/§7.3).
+# Subject: the DTLS PSK identity or the certificate subject DN.
+# `allow_post` = write, `allow_observe` = read.
+acl:
+  default_deny: true
+  rules:
+    - subject: "device-001"
+      allow_post:    ["shadow/device"]
+      allow_observe: ["shadow/device"]
+
+metrics:
+  enabled: false
+  listen: "127.0.0.1:9093"      # /metrics + /catalog + /healthz
+
+topics:
+  # DDS topic <-> CoAP resource. zerodds-coap-bridge-1.0 §5.
+  - dds_name:      "DeviceShadow"
+    dds_type:      "demo::Iot::Shadow"
+    coap_uri_path: "shadow/device"   # default: slug of dds_name
+    direction:     "bidir"           # in | out | bidir
+    qos:
+      reliability: "reliable"
+      durability: "volatile"
+      history:
+        depth: 5

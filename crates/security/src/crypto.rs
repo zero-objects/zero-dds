@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Cryptographic plugin SPI (OMG DDS-Security 1.1 §8.5).
+//! Cryptographic plugin SPI (OMG DDS-Security 1.2 §9.5).
 //!
 //! The SPI is split into three sub-interfaces (spec structure):
-//! * **KeyFactory** (§8.5.1.7) — key derivation from `SharedSecret`.
-//! * **KeyExchange** (§8.5.1.8) — exchange key tokens between peers.
-//! * **Transform** (§8.5.1.9) — the concrete encrypt/decrypt/sign/verify.
+//! * **KeyFactory** (§9.5.1.8) — key derivation from `SharedSecret`.
+//! * **KeyExchange** (§9.5.1.9) — exchange key tokens between peers.
+//! * **Transform** (§9.5.1.10) — the concrete encrypt/decrypt/sign/verify.
 //!
 //! We bundle the three into one trait (`CryptographicPlugin`), so that
 //! users only have to hold a single `Box<dyn ...>`. Backend impls
@@ -28,43 +28,72 @@ use crate::error::SecurityResult;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct CryptoHandle(pub u64);
 
-/// Receiver-specific MAC (spec §7.3.6.3 `ReceiverSpecificMAC`).
-///
-/// When a sender sends a ciphertext to N receivers with the **same
-/// suite but different keys**, a 16-byte truncated HMAC is computed
-/// per receiver. The wire representation is
-/// a sequence of `(key_id, mac)` pairs in the SEC_POSTFIX.
-///
-/// `key_id` is the spec-conformant 4-byte ID (typically the low 32 bits
-/// of the sender-side [`CryptoHandle`] for this receiver), by which
-/// the receiver finds its specific MAC entry.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ReceiverMac {
-    /// 4-byte `CryptoTransformKeyId` from §7.3.6.3.
-    pub key_id: u32,
-    /// 16-byte truncated HMAC-SHA256 over the ciphertext.
-    pub mac: [u8; 16],
-}
+/// The property of [`CryptographicPlugin::register_local_participant`]
+/// that the RTPS Protection Kind of the domain specifies origin
+/// authentication (`"true"`; DDS-Security 1.2 §10.4.1.2.5.7,
+/// `register_matched_remote_participant`): the key material to a remote
+/// participant then carries a receiver-specific key and the protected
+/// RTPS messages a MAC for it.
+pub const PARTICIPANT_RTPS_ORIGIN_AUTHENTICATION: &str =
+    "org.zerodds.crypto.rtps_origin_authentication";
 
-impl ReceiverMac {
-    /// Wire size of a single `ReceiverMac` entry (spec §7.3.6.3).
-    pub const WIRE_SIZE: usize = 4 + 16;
-}
+/// The property of [`CryptographicPlugin::register_local_endpoint`] with
+/// the Metadata Protection Kind of the endpoint (DDS-Security 1.2
+/// §10.4.1.2.6.6; for a secure builtin endpoint the discovery or liveliness
+/// protection kind of the domain).
+pub const ENDPOINT_METADATA_PROTECTION_KIND: &str = "org.zerodds.crypto.metadata_protection_kind";
 
-/// Cryptographic plugin (spec §8.5.1). In v1.3 this is a pure
+/// The property of [`CryptographicPlugin::register_local_endpoint`] with
+/// the Data Protection Kind of the endpoint (DDS-Security 1.2 §10.4.1.2.6.7).
+pub const ENDPOINT_DATA_PROTECTION_KIND: &str = "org.zerodds.crypto.data_protection_kind";
+
+/// Cryptographic plugin (spec §9.5.1). In v1.3 this is a pure
 /// **interface** — production impls live in `zerodds-security-crypto`
 /// (AES-GCM + HMAC), `zerodds-security-keyexchange` (DH key exchange,
 /// spec §9.5.3) and `zerodds-security-rtps` (RTPS header AAD wrapper,
 /// spec §7.3.5).
 pub trait CryptographicPlugin: Send + Sync {
-    // -------- KeyFactory (§8.5.1.7) --------
+    // -------- KeyFactory (§9.5.1.8) --------
 
-    /// Optional second (payload) token of a local datawriter endpoint,
-    /// when metadata and data protection have different suites (cyclone
-    /// dual-key model: `writer_key_material_message` + `writer_key_material_payload`).
-    /// `None` = single key (all profiles with metadata == data).
+    /// Optional second (payload) token of a local datawriter endpoint
+    /// whose submessages and payload have keys of their own (Cyclone DDS
+    /// `writer_key_material_message` + `writer_key_material_payload`).
+    /// `None` = one key.
     fn endpoint_payload_token(&self, _handle: CryptoHandle) -> Option<alloc::vec::Vec<u8>> {
         None
+    }
+
+    /// The datawriter token for a relay-only reader (DDS-Security 1.2
+    /// §9.5.1.9.5): "only the cryptographic material needed to verify and
+    /// decode the RTPS SubMessage but not the CryptoContent". `None` when the
+    /// writer has no key that protects its submessages alone; the relay then
+    /// gets no key material, never the payload key. Default `None`.
+    fn endpoint_relay_token(&self, _handle: CryptoHandle) -> Option<alloc::vec::Vec<u8>> {
+        None
+    }
+
+    /// Releases the key material of a local endpoint (DDS-Security 1.2
+    /// §9.5.1.8 `unregister_local_endpoint`): its handle is invalid after
+    /// this. Default: nothing to release.
+    ///
+    /// # Errors
+    /// Plugin-specific.
+    fn unregister_local_endpoint(&mut self, _handle: CryptoHandle) -> SecurityResult<()> {
+        Ok(())
+    }
+
+    /// Releases what the plugin holds for a matched remote participant: its
+    /// slot, its Kx key, and the keys of its endpoints (§9.5.1.8
+    /// `unregister_matched_remote_participant` and
+    /// `unregister_matched_remote_endpoint`). Default: nothing to release.
+    ///
+    /// # Errors
+    /// Plugin-specific.
+    fn unregister_matched_remote_participant(
+        &mut self,
+        _handle: CryptoHandle,
+    ) -> SecurityResult<()> {
+        Ok(())
     }
 
     /// Creates participant crypto material from the handshake
@@ -84,6 +113,15 @@ pub trait CryptographicPlugin: Send + Sync {
     ) -> SecurityResult<CryptoHandle>;
 
     /// Creates crypto material for a local DataWriter/Reader.
+    ///
+    /// `properties` may carry the protection kinds of the endpoint,
+    /// [`ENDPOINT_METADATA_PROTECTION_KIND`] and
+    /// [`ENDPOINT_DATA_PROTECTION_KIND`], in the spelling of the governance
+    /// (`NONE`, `SIGN`, `ENCRYPT`, `…_WITH_ORIGIN_AUTHENTICATION`). They stand
+    /// for the `EndpointSecurityAttributes` of `register_local_datawriter`
+    /// and `register_local_datareader` (DDS-Security 1.2 §8.5.1.7.2,
+    /// §8.5.1.7.3): the key material follows the Metadata and the Data
+    /// Protection Kind of the endpoint (§10.5.3.1 Table 78).
     fn register_local_endpoint(
         &mut self,
         participant: CryptoHandle,
@@ -91,7 +129,7 @@ pub trait CryptographicPlugin: Send + Sync {
         properties: &[(&str, &str)],
     ) -> SecurityResult<CryptoHandle>;
 
-    // -------- KeyExchange (§8.5.1.8) --------
+    // -------- KeyExchange (§9.5.1.9) --------
 
     /// Creates the `ParticipantCryptoTokens` blob that is sent to the
     /// remote participant (contains encrypted
@@ -102,6 +140,27 @@ pub trait CryptographicPlugin: Send + Sync {
         remote: CryptoHandle,
     ) -> SecurityResult<Vec<u8>>;
 
+    /// The token of the local endpoint `endpoint` for the remote endpoint
+    /// `remote_endpoint` (its GUID, 16 octets): `Writer2ReaderKeyMaterial` or
+    /// `Reader2WriterKeyMaterial` (DDS-Security 1.2 §10.5.3.1,
+    /// `register_matched_remote_datareader` / `_datawriter`). When the
+    /// Metadata Protection Kind of the endpoint specifies origin
+    /// authentication, the key material carries a `receiver_specific_key_id`
+    /// and a `master_receiver_specific_key` of this one remote endpoint, and
+    /// the endpoint's submessages carry a receiver-specific MAC for it.
+    /// Without origin authentication this is the token of the endpoint.
+    ///
+    /// # Errors
+    /// Unknown handle, or the key could not be made.
+    fn create_endpoint_crypto_token_for(
+        &mut self,
+        endpoint: CryptoHandle,
+        remote_endpoint: [u8; 16],
+    ) -> SecurityResult<Vec<u8>> {
+        let _ = remote_endpoint;
+        self.create_local_participant_crypto_tokens(endpoint, CryptoHandle(0))
+    }
+
     /// Processes the tokens from the remote participant. Afterwards the
     /// keys for encrypted submessages are mutually known.
     fn set_remote_participant_crypto_tokens(
@@ -111,20 +170,39 @@ pub trait CryptographicPlugin: Send + Sync {
         tokens: &[u8],
     ) -> SecurityResult<()>;
 
-    // -------- Transform (§8.5.1.9) --------
+    /// Processes the DataWriter or DataReader crypto tokens of an endpoint
+    /// of the remote participant `remote` (DDS-Security 1.2 §8.5.1.7.4/.5).
+    /// The key is the sender's: a `transformation_key_id` is chosen by its
+    /// sender (§9.5.2.1.1) and identifies a key only together with it.
+    /// Default: [`Self::set_remote_participant_crypto_tokens`] with
+    /// `CryptoHandle(0)`, as before.
+    ///
+    /// # Errors
+    /// As [`Self::set_remote_participant_crypto_tokens`].
+    fn set_remote_endpoint_crypto_tokens(
+        &mut self,
+        local: CryptoHandle,
+        remote: CryptoHandle,
+        tokens: &[u8],
+    ) -> SecurityResult<()> {
+        let _ = remote;
+        self.set_remote_participant_crypto_tokens(local, CryptoHandle(0), tokens)
+    }
+
+    // -------- Transform (§9.5.1.10) --------
 
     /// Encrypt + sign an RTPS submessage. Input: plain submessage
     /// bytes. Output: `SecureSubmessage` payload (ciphertext + tag).
     ///
     /// `aad_extension` is the spec-conformant AAD extension (spec §10.5.2
-    /// Tab.78). Submessage protection (§8.5.1.9.2) provides
+    /// Tab.78). Submessage protection (§9.5.1.10.2) provides
     /// `SubmessageHeader || SecureSubmessageHeader` bytes here;
     /// RTPS message protection (§8.5.1.9.7) the RTPS header (20 bytes) +
     /// SecureRTPSSubmessageHeader. Empty (`&[]`) is only spec-conformant
     /// if the caller explicitly accepts spec §8.1 Tab.78 without header
     /// coverage (e.g. pre-shared-key path without header auth).
     ///
-    /// Spec §8.5.1.9.1 `encode_serialized_payload`.
+    /// Spec §9.5.1.10.1 `encode_serialized_payload`.
     fn encrypt_submessage(
         &self,
         local: CryptoHandle,
@@ -136,7 +214,7 @@ pub trait CryptographicPlugin: Send + Sync {
     /// Decrypt + Verify. Output: plain submessage bytes. `aad_extension`
     /// must be byte-identical to the sender AAD (otherwise tag mismatch).
     ///
-    /// Spec §8.5.1.9.4 `decode_serialized_payload`.
+    /// Spec §9.5.1.10.9 `decode_serialized_payload`.
     fn decrypt_submessage(
         &self,
         local: CryptoHandle,
@@ -145,68 +223,7 @@ pub trait CryptographicPlugin: Send + Sync {
         aad_extension: &[u8],
     ) -> SecurityResult<Vec<u8>>;
 
-    /// Encrypt+Sign with `Receiver-Specific-MACs` (spec
-    /// §7.3.6.3). Produces **one** ciphertext (sender key) plus
-    /// one 16-byte truncated HMAC per remote.
-    ///
-    /// The `receivers` list contains `(handle, key_id)` per receiver:
-    /// * `handle` — CryptoHandle to the MAC key in the plugin slot
-    ///   (typically the per-peer key derived from
-    ///   `register_matched_remote_participant`).
-    /// * `key_id` — 4-byte wire identifier the receiver looks up in
-    ///   the MAC list (must be synchronized between sender and receiver,
-    ///   typically the low 32 bits of the peer GuidPrefix).
-    ///
-    /// Default impl: falls back to `encrypt_submessage` and
-    /// returns an empty MAC list — plugins without multi-MAC support
-    /// thereby signal the caller "please use the multi-cipher
-    /// fan-out".
-    fn encrypt_submessage_multi(
-        &self,
-        local: CryptoHandle,
-        receivers: &[(CryptoHandle, u32)],
-        plaintext: &[u8],
-        aad_extension: &[u8],
-    ) -> SecurityResult<(Vec<u8>, Vec<ReceiverMac>)> {
-        let handles: Vec<CryptoHandle> = receivers.iter().map(|(h, _)| *h).collect();
-        let ciphertext = self.encrypt_submessage(local, &handles, plaintext, aad_extension)?;
-        Ok((ciphertext, Vec::new()))
-    }
-
-    /// Verify Receiver-Specific-MAC + Decrypt.
-    ///
-    /// `own_key_id` is the wire ID under which the receiver is found in
-    /// the MAC list; `own_mac_key_handle` is the slot with the
-    /// associated HMAC key.
-    ///
-    /// When `macs.is_empty()` this delegates to [`Self::decrypt_submessage`]
-    /// (backward compat).
-    ///
-    /// # Errors
-    /// * `CryptoFailed` if no MAC entry matches the `own_key_id`
-    ///   or the MAC comparison fails.
-    #[allow(clippy::too_many_arguments)]
-    fn decrypt_submessage_with_receiver_mac(
-        &self,
-        local: CryptoHandle,
-        remote: CryptoHandle,
-        own_key_id: u32,
-        own_mac_key_handle: CryptoHandle,
-        ciphertext: &[u8],
-        macs: &[ReceiverMac],
-        aad_extension: &[u8],
-    ) -> SecurityResult<Vec<u8>> {
-        let _ = (own_key_id, own_mac_key_handle);
-        if macs.is_empty() {
-            return self.decrypt_submessage(local, remote, ciphertext, aad_extension);
-        }
-        Err(crate::error::SecurityError::new(
-            crate::error::SecurityErrorKind::NotImplemented,
-            "plugin does not implement receiver-specific mac verification",
-        ))
-    }
-
-    // -------- KeyExchange channel protection (§9.5.3.5) --------
+    // -------- KeyExchange channel protection (§10.5.3.2) --------
     //
     // The `DCPSParticipantVolatileMessageSecure` channel (over which the
     // ParticipantCryptoTokens are exchanged) is protected with a **Kx key**
@@ -254,7 +271,7 @@ pub trait CryptographicPlugin: Send + Sync {
     }
 
     /// **Cyclone-conformant** VolatileSecure submessage protection (DDS-Security
-    /// §9.5.3): encodes `plaintext` as a `SEC_PREFIX` + `SEC_BODY` + `SEC_POSTFIX`
+    /// §10.5.3): encodes `plaintext` as a `SEC_PREFIX` + `SEC_BODY` + `SEC_POSTFIX`
     /// submessage sequence with the **Kx key** of the handle (AES256-GCM, empty AAD,
     /// 20-byte CryptoHeader, common_mac in the postfix). Wire-byte-identical to
     /// cyclone `encode_datawriter_submessage` — for the cross-vendor
@@ -293,7 +310,7 @@ pub trait CryptographicPlugin: Send + Sync {
 
     /// Like [`Self::encode_kx_datawriter_submessage`], but with the **data key**
     /// of the slot (regular slot, not Kx) — for user DATA submessage
-    /// protection (`metadata_protection_kind=ENCRYPT`, §9.5.3.3). Wire-identical
+    /// protection (`metadata_protection_kind=ENCRYPT`, §10.5.3.3). Wire-identical
     /// to cyclone `encode_datawriter_submessage`.
     ///
     /// # Errors
@@ -327,7 +344,7 @@ pub trait CryptographicPlugin: Send + Sync {
     }
 
     /// Decodes a SEC_* submessage by the `transformation_key_id` in the
-    /// CryptoHeader (DDS-Security §9.5.2.1.1) — finds the matching remote
+    /// CryptoHeader (DDS-Security §10.5.2.3) — finds the matching remote
     /// key material itself, without the caller knowing the endpoint handle.
     /// Needed because every remote endpoint (incl. the secure built-in
     /// discovery endpoints) has its own per-endpoint key and the receiver
@@ -341,6 +358,23 @@ pub trait CryptographicPlugin: Send + Sync {
             crate::error::SecurityErrorKind::NotImplemented,
             "plugin does not implement key-id-based data submessage decode",
         ))
+    }
+
+    /// [`Self::decode_data_by_key_id`] with the key of the remote
+    /// participant `remote`, the sender (DDS-Security 1.2 §10.5.3.3.1: the
+    /// receiver uses the sender's key material). A key of another
+    /// participant does not decode the submessage. Default: the key-id
+    /// lookup of [`Self::decode_data_by_key_id`].
+    ///
+    /// # Errors
+    /// As [`Self::decode_data_by_key_id`].
+    fn decode_data_by_key_id_from(
+        &self,
+        remote: CryptoHandle,
+        wire: &[u8],
+    ) -> SecurityResult<Vec<u8>> {
+        let _ = remote;
+        self.decode_data_by_key_id(wire)
     }
 
     /// DDS-Security §8.4.2.4 / §7.3.7 RTPS message protection (SRTPS),
@@ -377,7 +411,52 @@ pub trait CryptographicPlugin: Send + Sync {
         ))
     }
 
-    /// §8.5.1.9.1 / §9.5.3.3.1 `encode_serialized_payload` (data_protection,
+    /// [`Self::decode_rtps_message_cyclone`] with the key of the remote
+    /// participant `remote`, the sender. Default: the key-id lookup.
+    ///
+    /// # Errors
+    /// As [`Self::decode_rtps_message_cyclone`].
+    fn decode_rtps_message_cyclone_from(
+        &self,
+        remote: CryptoHandle,
+        message: &[u8],
+    ) -> SecurityResult<Vec<u8>> {
+        let _ = remote;
+        self.decode_rtps_message_cyclone(message)
+    }
+
+    /// `encode_rtps_message` with `transform_with_psk` TRUE (DDS-Security 1.2
+    /// §10.9.3.3.3 Table 89): the message protected with the pre-shared key
+    /// of the participant `local`, the flags A and P set. Default: not
+    /// implemented (the plugin has no pre-shared key).
+    ///
+    /// # Errors
+    /// `NotImplemented` by default; implementation-specific.
+    fn encode_rtps_message_psk(
+        &self,
+        local: CryptoHandle,
+        message: &[u8],
+    ) -> SecurityResult<alloc::vec::Vec<u8>> {
+        let _ = (local, message);
+        Err(crate::error::SecurityError::new(
+            crate::error::SecurityErrorKind::NotImplemented,
+            "plugin does not implement pre-shared-key SRTPS encode",
+        ))
+    }
+
+    /// `decode_rtps_message` with `transform_with_psk` TRUE (Table 89).
+    ///
+    /// # Errors
+    /// `NotImplemented` by default; implementation-specific.
+    fn decode_rtps_message_psk(&self, message: &[u8]) -> SecurityResult<alloc::vec::Vec<u8>> {
+        let _ = message;
+        Err(crate::error::SecurityError::new(
+            crate::error::SecurityErrorKind::NotImplemented,
+            "plugin does not implement pre-shared-key SRTPS decode",
+        ))
+    }
+
+    /// §9.5.1.10.1 / §10.5.3.3.4.4 `encode_serialized_payload` (data_protection,
     /// INNER payload layer). Protects the SerializedPayload of an endpoint
     /// (`handle` = per-endpoint writer key) without a submessage frame.
     ///
@@ -395,7 +474,7 @@ pub trait CryptographicPlugin: Send + Sync {
         ))
     }
 
-    /// §8.5.1.9.4 / §9.5.3.3.1 `decode_serialized_payload`; key via the
+    /// §9.5.1.10.9 / §10.5.3.3.4.4 `decode_serialized_payload`; key via the
     /// `transformation_key_id` in the CryptoHeader.
     ///
     /// # Errors
@@ -406,6 +485,20 @@ pub trait CryptographicPlugin: Send + Sync {
             crate::error::SecurityErrorKind::NotImplemented,
             "plugin does not implement decode_serialized_payload",
         ))
+    }
+
+    /// [`Self::decode_serialized_payload`] with the key of the remote
+    /// participant `remote`, the writer's. Default: the key-id lookup.
+    ///
+    /// # Errors
+    /// As [`Self::decode_serialized_payload`].
+    fn decode_serialized_payload_by_key_id_from(
+        &self,
+        remote: CryptoHandle,
+        encoded: &[u8],
+    ) -> SecurityResult<Vec<u8>> {
+        let _ = remote;
+        self.decode_serialized_payload(encoded)
     }
 
     /// Like [`Self::decode_serialized_payload`], but with an EXPLICIT remote handle

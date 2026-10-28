@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns="http://www.omg.org/spec/DDS-XML"
+           targetNamespace="http://www.omg.org/spec/DDS-XML"
+           elementFormDefault="qualified"
+           attributeFormDefault="unqualified">
+
+    <!-- Include chameleon schema -->
+    <xs:include schemaLocation="http://www.omg.org/spec/DDS-XML/20180501/dds-xml_application_definitions_nonamespace.xsd" />
+
+    <!-- Define top-level element -->
+    <xs:element name="application_library" type="applicationLibrary" />
+
+</xs:schema>

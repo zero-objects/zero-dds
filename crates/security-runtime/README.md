@@ -12,8 +12,8 @@ Safety classification: **SAFE**.
 
 | Spec | Section |
 |------|-----------|
-| OMG DDS-Security 1.1 | §8.5.3 (anti-squatter), §9.5 (inbound/outbound) |
-| OMG DDS-Security 1.2 | §8.7 (data tagging) |
+| OMG DDS-Security 1.2 | §7.4.3 (GUID constraints, anti-squatter), §9.8.11 (encoding/decoding behavior) |
+| OMG DDS-Security 1.2 | §9.7 (data tagging) |
 | ZeroDDS architecture §09 | heterogeneous mesh + delegation |
 
 ## What's inside
@@ -70,7 +70,8 @@ active; selecting `fips` or `wolfcrypt` overrides the default `ring-backend`.
 
 ## Stability
 
-`1.0.0-rc.1`.
+`1.0.0-rc.7`, a pre-release. The public API can still change before
+1.0.0; the crate's CHANGELOG lists every change.
 
 ## Tests
 

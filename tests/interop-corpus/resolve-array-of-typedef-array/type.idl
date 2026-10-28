@@ -1,0 +1,4 @@
+module m {
+  typedef long Row[3];
+  @appendable struct S { Row grid[2]; };
+};

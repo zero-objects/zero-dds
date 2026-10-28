@@ -2,8 +2,8 @@
 //!
 //! Hex-Files im Format:
 //! ```text
-//! # Kommentar
-//! DE AD BE EF 01 02  # inline-Kommentar
+//! # a comment
+//! DE AD BE EF 01 02  # a trailing comment
 //! # ...
 //! ```
 //!
@@ -26,7 +26,7 @@
 
 use std::path::{Path, PathBuf};
 
-/// Workspace-Root-Fixtures unter `tests/compliance/`.
+/// Workspace-root fixtures under `tests/compliance/`.
 pub fn compliance_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -37,8 +37,8 @@ pub fn compliance_root() -> PathBuf {
         .join("compliance")
 }
 
-/// Parses a hex fixture file. Whitespace + `#...` comments are
-/// ignoriert; `0x`-Prefix optional; 16 MiB Sanity-Cap.
+/// Parses a hex fixture file. Whitespace and `#...` comments are
+/// ignored, a `0x` prefix is optional, and the file is capped at 16 MiB.
 pub fn load_hex(path: impl AsRef<Path>) -> std::io::Result<Vec<u8>> {
     let text = std::fs::read_to_string(path)?;
     let mut out = Vec::new();
@@ -71,11 +71,15 @@ pub fn load_hex(path: impl AsRef<Path>) -> std::io::Result<Vec<u8>> {
 
 #[test]
 fn loader_smoke_test() {
-    // Minimal-Fixture inline pruefen.
-    let tmp = std::env::temp_dir().join("zerodds-loader-smoke.hex");
+    // The path carries the process id: a fixed name in the shared temp
+    // directory is written and read by every test binary that runs this at
+    // the same time, and the reader then sees a half-written file. The
+    // failure looks like a loader that returned nothing.
+    let tmp = std::env::temp_dir().join(format!("zerodds-loader-smoke-{}.hex", std::process::id()));
     std::fs::write(&tmp, "# hdr\nDE AD BE EF # tail\n0x01 02\n").unwrap();
     let b = load_hex(&tmp).unwrap();
     assert_eq!(b, vec![0xDE, 0xAD, 0xBE, 0xEF, 0x01, 0x02]);
+    let _ = std::fs::remove_file(&tmp);
 }
 
 #[test]

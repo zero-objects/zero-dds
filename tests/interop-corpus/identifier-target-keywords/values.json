@@ -1,0 +1,11 @@
+{
+  "impl": {
+    "new": -1234567,
+    "delete": 3.140625,
+    "operator": -21846
+  },
+  "lambda": "virtual",
+  "static": 2130706433,
+  "def": "grüß",
+  "async": true
+}

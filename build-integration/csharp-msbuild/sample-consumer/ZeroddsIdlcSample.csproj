@@ -16,27 +16,15 @@
   </ItemGroup>
 
   <!--
-    Generated C# is not self-contained the way the Rust/Java/Swift/D/Nim/
-    Julia/Lua/Ada backends are (each of those embeds its own wire-format
-    prelude in the generated file). It needs two separate runtime pieces,
-    neither of which any .csproj in the repo referenced before this
-    sample (confirmed by grepping the whole tree for both file names) —
-    a real build-integration gap this sample closes, not a codegen bug:
-
-      1. ZeroDDS.Cdr (Xcdr2Writer/Reader, EndianMode, ...) — a real
-         .csproj, referenced the same way
-         crates/cs/Examples/TopicTypedSmoke.csproj does.
-      2. crates/idl-csharp/runtime/Omg.Types.cs (ITopicType<>,
-         ExtensibilityAttribute, KeyAttribute, ISequence<T>, ...) — a
-         bare .cs file "shipped alongside generated sources" per its own
-         header comment, with no .csproj of its own and, before this
-         sample, zero `Compile Include` references anywhere in the tree
-         (a repo-wide grep for the file name across all .csproj files
-         was empty).
+    Generated C# needs two runtime assemblies: ZeroDds.Wire (Writer, Reader,
+    Endianness; runtime/csharp) for the codec, and ZeroDDS.Cdr (EndianMode,
+    IDdsTopicType<T>) for the TypeSupport class. ZeroDDS.Cdr compiles
+    crates/idl-csharp/runtime/Omg.Types.cs into itself; compiling that file a
+    second time here would give a second Omg.Types.ExtensibilityKind.
   -->
   <ItemGroup>
     <ProjectReference Include="../../../crates/cs/csharp/ZeroDDS.Cdr/ZeroDDS.Cdr.csproj" />
-    <Compile Include="../../../crates/idl-csharp/runtime/Omg.Types.cs" Link="Omg.Types.cs" />
+    <ProjectReference Include="../../../runtime/csharp/ZeroDds.Wire.csproj" />
   </ItemGroup>
 
 </Project>

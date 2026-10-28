@@ -5,7 +5,7 @@
 //! Wire-Format: Duration (8) + u32 history_kind (4) + i32 history_depth (4)
 //! + 3 × i32 resource_limits (12) = 28 byte.
 
-use zerodds_cdr::{BufferReader, BufferWriter, DecodeError, EncodeError};
+use zerodds_wire::{Reader, WireError, Writer};
 
 use crate::duration::Duration;
 use crate::policies::history::HistoryKind;
@@ -43,28 +43,25 @@ impl Default for DurabilityServiceQosPolicy {
 
 impl DurabilityServiceQosPolicy {
     /// Wire-Encoding.
-    ///
-    /// # Errors
-    /// Buffer-Overflow.
-    pub fn encode_into(self, w: &mut BufferWriter) -> Result<(), EncodeError> {
-        self.service_cleanup_delay.encode_into(w)?;
-        w.write_u32(self.history_kind as u32)?;
-        w.write_u32(self.history_depth as u32)?;
-        w.write_u32(self.max_samples as u32)?;
-        w.write_u32(self.max_instances as u32)?;
-        w.write_u32(self.max_samples_per_instance as u32)
+    pub fn encode_into(self, w: &mut Writer) {
+        self.service_cleanup_delay.encode_into(w);
+        w.write_u32(self.history_kind as u32);
+        w.write_u32(self.history_depth as u32);
+        w.write_u32(self.max_samples as u32);
+        w.write_u32(self.max_instances as u32);
+        w.write_u32(self.max_samples_per_instance as u32);
     }
 
     /// Wire-Decoding.
     ///
     /// # Errors
     /// Buffer-Underflow.
-    pub fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
+    pub fn decode_from(r: &mut Reader<'_>) -> Result<Self, WireError> {
         let service_cleanup_delay = Duration::decode_from(r)?;
+        let at = r.position();
         let v = r.read_u32()?;
-        let history_kind = HistoryKind::try_from_u32(v).ok_or(DecodeError::InvalidEnum {
-            kind: "HistoryKind",
-            value: v,
+        let history_kind = HistoryKind::try_from_u32(v).ok_or_else(|| {
+            WireError::refused(at, &alloc::format!("a HistoryKind enumerator, not {v}"))
         })?;
         let history_depth = r.read_u32()? as i32;
         let max_samples = r.read_u32()? as i32;
@@ -85,7 +82,7 @@ impl DurabilityServiceQosPolicy {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use zerodds_cdr::Endianness;
+    use zerodds_wire::Endianness;
 
     #[test]
     fn default_matches_spec() {
@@ -106,11 +103,11 @@ mod tests {
             max_instances: 10,
             max_samples_per_instance: 5,
         };
-        let mut w = BufferWriter::new(Endianness::Little);
-        p.encode_into(&mut w).unwrap();
-        let bytes = w.into_bytes();
+        let mut w = Writer::new(Endianness::Little);
+        p.encode_into(&mut w);
+        let bytes = w.finish();
         assert_eq!(bytes.len(), 28);
-        let mut r = BufferReader::new(&bytes, Endianness::Little);
+        let mut r = Reader::new(&bytes, Endianness::Little);
         assert_eq!(DurabilityServiceQosPolicy::decode_from(&mut r).unwrap(), p);
     }
 }

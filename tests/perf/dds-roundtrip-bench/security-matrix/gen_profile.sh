@@ -1,21 +1,28 @@
 #!/usr/bin/env bash
-# Generiert pro Security-Profil XSD-konforme governance + per-Vendor-Assets:
+# Generates, per security profile, an XSD-conformant governance + per-vendor assets:
 #   profiles/<N>/text/{governance.p7s,permissions_<role>.p7s,certs->}  (cyclone/fastdds/zerodds, CMS -text)
 #   profiles/<N>/raw/{governance.p7s,permissions_<role>.p7s,certs->}   (opendds, raw CMS)
-#   profiles/<N>/cyclone_<role>.xml                                     (cyclone, file://-Pfade auf text/)
+#   profiles/<N>/cyclone_<role>.xml                                     (cyclone, file:// paths to text/)
 #
-# REPRODUZIERBAR aus jedem Checkout: certs + permissions kommen aus dem
-# in-repo `../security/` (einmal `bash ../security/gen.sh` fuer den cert-Tree);
-# die generierten Profile landen in `./profiles/` (gitignored). Keine
-# /tmp/dds-bench-security-Hardcodes mehr. Per env ueberschreibbar:
-#   SECDIR       Quelle certs/ + permissions_*.xml  (Default: ../security)
-#   PROFILES_DIR Ausgabe-Wurzel                      (Default: ./profiles)
+# REPRODUCIBLE from any checkout: certs + permissions come from the
+# in-repo `../security/` (run `bash ../security/gen.sh` once for the cert tree);
+# the generated profiles land in `./profiles/` (gitignored). No more
+# /tmp/dds-bench-security hardcodes. Overridable via env:
+#   SECDIR       source of certs/ + permissions_*.xml  (default: ../security)
+#   PROFILES_DIR output root                           (default: ./profiles)
+#   DOMAIN       domain ID of the <domain_rule>        (default: 200)
 #
-# Aufruf: gen_profile.sh <name> <disc> <liv> <rtps> <meta> <data> <join_ac> <rw_ac> <en_disc> <en_liv>
+# Usage: gen_profile.sh <name> <disc> <liv> <rtps> <meta> <data> <join_ac> <rw_ac> <en_disc> <en_liv>
 set -e
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SECDIR="${SECDIR:-$(cd "$HERE/../security" && pwd)}"
 PROFILES_DIR="${PROFILES_DIR:-$HERE/profiles}"
+# The governance names the domain for which its <domain_rule> applies. This must
+# be the same domain on which deep_matrix.sh starts the participants —
+# otherwise no vendor finds a matching rule and joins unprotected.
+# A run that wants to isolate itself from foreign traffic sets DOMAIN
+# once and gets both sides consistent.
+DOMAIN="${DOMAIN:-200}"
 
 N="$1"; DISC="$2"; LIV="$3"; RTPS="$4"; META="$5"; DATA="$6"; JOINAC="$7"; RWAC="$8"; ENDISC="$9"; ENLIV="${10}"
 CERTS="$SECDIR/certs"
@@ -27,7 +34,7 @@ cat > "$OUT/governance.xml" <<XML
   <domain_access_rules>
     <domain_rule>
       <domains>
-        <id>200</id>
+        <id>$DOMAIN</id>
       </domains>
       <allow_unauthenticated_participants>false</allow_unauthenticated_participants>
       <enable_join_access_control>$JOINAC</enable_join_access_control>
@@ -49,21 +56,27 @@ cat > "$OUT/governance.xml" <<XML
   </domain_access_rules>
 </dds>
 XML
-# CMS-Signer = Permissions-CA DIREKT (nicht ein EE-"authority"-Cert), sonst
+# CMS signer = the Permissions CA DIRECTLY (not an EE "authority" cert), otherwise
 # cyclone: PKCS7_get0_signers: signer certificate not found. text/ (PKCS7_TEXT)
-# fuer cyclone/fastdds/zerodds, raw/ als Reserve fuer OpenDDS (diese Version
-# akzeptiert ebenfalls text/). Siehe README + cross-vendor-matrix-findings.md.
+# for cyclone/fastdds/zerodds, raw/ as a reserve for OpenDDS (this version
+# also accepts text/). See README + cross-vendor-matrix-findings.md.
 SIGN="-signer $CERTS/permissions_ca.pem -inkey $CERTS/permissions_ca_key.pem"
 openssl smime -sign -in "$OUT/governance.xml" -text -out "$OUT/text/governance.p7s" $SIGN
 openssl smime -sign -in "$OUT/governance.xml"       -out "$OUT/raw/governance.p7s"  $SIGN
+# The permissions grant names the same domain as the governance. The file in the
+# repo carries 200; for a run on another domain the ID is replaced at
+# signing time, otherwise the grant does not cover the domain and every
+# vendor rejects create_participant.
 for who in ping pong; do
-  openssl smime -sign -in "$SECDIR/permissions_${who}.xml" -text -out "$OUT/text/permissions_${who}.p7s" $SIGN
-  openssl smime -sign -in "$SECDIR/permissions_${who}.xml"       -out "$OUT/raw/permissions_${who}.p7s"  $SIGN
+  sed "s|<domains><id>200</id></domains>|<domains><id>$DOMAIN</id></domains>|" \
+    "$SECDIR/permissions_${who}.xml" > "$OUT/permissions_${who}.xml"
+  openssl smime -sign -in "$OUT/permissions_${who}.xml" -text -out "$OUT/text/permissions_${who}.p7s" $SIGN
+  openssl smime -sign -in "$OUT/permissions_${who}.xml"       -out "$OUT/raw/permissions_${who}.p7s"  $SIGN
 done
 ln -sfn "$CERTS" "$OUT/text/certs"
 ln -sfn "$CERTS" "$OUT/raw/certs"
-# Per-Profil cyclone-XML (CYCLONEDDS_URI braucht absolute file://-Pfade:
-# shared certs + profil-text-governance/permissions).
+# Per-profile cyclone XML (CYCLONEDDS_URI needs absolute file:// paths:
+# shared certs + the profile's text governance/permissions).
 for who in ping pong; do
 cat > "$OUT/cyclone_${who}.xml" <<CYC
 <CycloneDDS xmlns="https://cdds.io/config">

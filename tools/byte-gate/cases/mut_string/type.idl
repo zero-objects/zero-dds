@@ -1,0 +1,1 @@
+@mutable struct M { @id(1) string s; @id(2) long n; };

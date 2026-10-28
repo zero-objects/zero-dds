@@ -33,6 +33,25 @@ typedef struct zerodds_ZeroDdsGuardCondition zerodds_ZeroDdsGuardCondition;
 typedef struct zerodds_ZeroDdsStatusCondition zerodds_ZeroDdsStatusCondition;
 typedef struct zerodds_ZeroDdsReadCondition zerodds_ZeroDdsReadCondition;
 typedef struct zerodds_ZeroDdsQueryCondition zerodds_ZeroDdsQueryCondition;
+
+/*
+ * ABI revision (zerodds-ffi-loader-1.0 §7). Bumped only on a major
+ * version; a patch release changes nothing about the ABI and a minor
+ * release only adds symbols. A loader compares this compile-time value
+ * against the run-time zerodds_abi_revision() and fails fast on a
+ * mismatch. Kept in sync with ZERODDS_ABI_REVISION in
+ * crates/zerodds-c-api/src/lib.rs by
+ * tests/abi_compat.rs::the_header_macro_and_the_exported_revision_agree.
+ */
+#ifndef ZERODDS_ABI_REVISION
+#define ZERODDS_ABI_REVISION 1
+#endif
+
+/*
+ * `max_blocking_time_ns` of a zerodds_ZeroDdsEndpointQos that waits without
+ * end; ZERODDS_BLOCKING_INFINITE in crates/zerodds-c-api/src/lib.rs.
+ */
+#define ZERODDS_BLOCKING_INFINITE UINT64_MAX
 """
 include_guard = "ZERODDS_H"
 autogen_warning = "/* WARNING: AUTO-GENERATED — DO NOT EDIT */"
