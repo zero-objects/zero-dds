@@ -8,8 +8,10 @@
 //! The test generates the Java for `java-support/support.idl`, compiles it with
 //! `-Xlint:all -Werror` against the sources of the DDS Java binding and of the
 //! wire runtime, and runs a small program that uses the classes through the
-//! base class. It needs a JDK (`javac`, `java`); without one it says so and
-//! does nothing, so a host without a JDK does not show it as run.
+//! base class, and a topic created with the generated `TypeSupport` itself
+//! (`createTopic(String, TypeSupport)`, §7.5.1) through which a sample goes
+//! from a writer to a reader. It needs a JDK (`javac`, `java`); without one it
+//! says so and does nothing, so a host without a JDK does not show it as run.
 
 #![allow(
     clippy::expect_used,
@@ -38,7 +40,7 @@ fn usable(command: &str) -> bool {
 
 const CHECK: &str = r#"
 public final class Check {
-    public static void main(String[] args) {
+    public static void main(String[] args) throws Exception {
         org.omg.dds.type.TypeSupport<ZdTypes.bridge.Point> base =
                 ZdTypeSupports.Support_bridge_Point.INSTANCE;
         if (base.getType() != ZdTypes.bridge.Point.class) throw new AssertionError("getType");
@@ -51,6 +53,25 @@ public final class Check {
         point.reading = 9;
         ZdTypes.bridge.Point back = codec.decode(codec.encode(point));
         if (back.id != 7 || back.reading != 9) throw new AssertionError("round trip");
+
+        System.setProperty(org.omg.dds.core.ServiceEnvironment.IMPLEMENTATION_CLASS_NAME_PROPERTY,
+                "org.zerodds.ServiceEnvironmentImpl");
+        org.omg.dds.core.ServiceEnvironment env =
+                org.omg.dds.core.ServiceEnvironment.createInstance(Check.class.getClassLoader());
+        try (org.omg.dds.domain.DomainParticipant participant =
+                org.omg.dds.domain.DomainParticipantFactory.getInstance(env).createParticipant(231)) {
+            org.omg.dds.topic.Topic<ZdTypes.bridge.Point> topic = participant.createTopic("Points", base);
+            if (topic.getTypeSupport() != base) throw new AssertionError("getTypeSupport");
+            org.omg.dds.sub.DataReader<ZdTypes.bridge.Point> reader =
+                    participant.createSubscriber().createDataReader(topic);
+            org.omg.dds.pub.DataWriter<ZdTypes.bridge.Point> writer =
+                    participant.createPublisher().createDataWriter(topic);
+            writer.write(point);
+            java.util.List<org.omg.dds.sub.Sample<ZdTypes.bridge.Point>> got =
+                    reader.take(new java.util.ArrayList<>());
+            if (got.size() != 1 || got.get(0).getData().id != 7 || got.get(0).getData().reading != 9)
+                throw new AssertionError("loopback through the generated TypeSupport: " + got.size());
+        }
         System.out.println("TYPESUPPORT_BASE_OK");
     }
 }
@@ -110,6 +131,10 @@ fn generated_type_supports_extend_the_psm_type_support() {
             .arg(dir.join("ZdCodec.java"))
             .arg(dir.join("ZdTypeSupports.java"))
             .arg(dir.join("Check.java"))
+            // Loaded by its name (§7.3.1), so `-sourcepath` alone does not compile it.
+            .arg(root().join(
+                "crates/java-omgdds/java/src/main/java/org/zerodds/ServiceEnvironmentImpl.java",
+            ))
             .output()
             .unwrap();
         assert!(
@@ -117,7 +142,9 @@ fn generated_type_supports_extend_the_psm_type_support() {
             "javac ({encoding}): {}",
             String::from_utf8_lossy(&compiled.stderr)
         );
+        // In-process only: the loopback needs no network.
         let run = Command::new("java")
+            .arg("-Dzerodds.rtps.enable=false")
             .arg("-cp")
             .arg(dir.join("classes"))
             .arg("Check")

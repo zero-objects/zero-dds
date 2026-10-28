@@ -1576,6 +1576,28 @@ fn swap_member(name: &str, names: &[(String, String)]) -> cpp::ClassMember {
     })
 }
 
+/// `operator==` and `operator!=` of a bitset, field by field. Under
+/// `--cpp-mapping psm` a bitset is this native type (`cpp_psm`), and the
+/// equality of a PSM class compares every member with `==`: without them a
+/// structure with a bitset member does not compile.
+fn bitset_equality(name: &str, names: &[(String, String)]) -> cpp::ClassMember {
+    // A bitset that is all padding compares equal and leaves the parameter
+    // unnamed (-Wunused-parameter).
+    let (parameter, terms) = if names.is_empty() {
+        (String::new(), "true".to_string())
+    } else {
+        let terms: Vec<String> = names
+            .iter()
+            .map(|(spelled, _)| format!("{spelled} == {SWAP_PARAMETER}.{spelled}"))
+            .collect();
+        (format!(" {SWAP_PARAMETER}"), terms.join(" && "))
+    };
+    cpp::ClassMember::Verbatim(format!(
+        "    bool operator==(const {name}&{parameter}) const {{ return {terms}; }}\n    \
+         bool operator!=(const {name}& {SWAP_PARAMETER}) const {{ return !(*this == {SWAP_PARAMETER}); }}\n"
+    ))
+}
+
 /// `inline void swap(T & a, T & b) { a.swap(b); }`, in the type's namespace.
 fn swap_function(name: &str) -> cpp::Decl {
     let reference = || cpp::Type::Ref(Box::new(cpp::Type::named(Path::single(name))));
@@ -2125,6 +2147,7 @@ fn declare(
                 names.push((cxx_name(field_name), field_name.clone()));
                 members.push(field(cpp_holder(field_node.bits), field_name, Doc::none()));
             }
+            members.push(bitset_equality(&name, &names));
             out.push((
                 node.module,
                 cpp::Decl::Class(class(

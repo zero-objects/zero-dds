@@ -308,6 +308,11 @@ implements Subscriber, DomainEntity<SubscriberListener, SubscriberQos> {
         if (topic.getTypeSupport() instanceof TypeSupportImpl) {
             return ((TypeSupportImpl<TYPE>) topic.getTypeSupport()).codec();
         }
+        // A TypeSupport zerodds-idlc generated (ZdTypeSupports.Support_<tag>)
+        // extends the PSM TypeSupport and is its own codec.
+        if (topic.getTypeSupport() instanceof TopicTypeSupport) {
+            return (TopicTypeSupport<TYPE>) topic.getTypeSupport();
+        }
         throw new UnsupportedOperationException(
                 "topic carries a TypeSupport of another implementation");
     }

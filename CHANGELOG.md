@@ -2576,6 +2576,24 @@ on the new foundation. That single fact explains most of what follows.
 
 ### Fixed
 
+- **C++: a structure with a bitset member compiles under the default
+  mapping.** Under `--cpp-mapping psm` a bitset is the native type, and the
+  `operator==` of a PSM class compares every member with `==`; the native
+  bitset had none, so the header did not compile. A native bitset has
+  `operator==` and `operator!=` over its named fields now. A bitset of
+  padding alone left its decoder an unused `zd_bits` local, an error under
+  `-Wextra -Werror`; the anchor is read and not kept. Test:
+  `a_structure_with_a_bitset_member_compiles_under_the_default_mapping`.
+
+- **Java: a topic of a generated TypeSupport carries samples.**
+  `createTopic(name, ZdTypeSupports.Support_<tag>.INSTANCE)`, the
+  explicit-TypeSupport form of DDS-Java-PSM 1.0 §7.5.1, created the topic,
+  and `createDataWriter` and `createDataReader` refused it with "topic
+  carries a TypeSupport of another implementation". A TypeSupport that is
+  its own codec (`org.zerodds.cdr.TopicTypeSupport`), as every generated one
+  is, is taken. Test: `generated_type_supports_extend_the_psm_type_support`,
+  which sends a sample through such a topic.
+
 - **Generated Kotlin compiles under Kotlin 2.4.** A typedef of a plain
   value had a function of the alias's own name beside its `typealias`
   (`typealias ValueT = Int`, `fun ValueT(): ValueT`), for the codec's

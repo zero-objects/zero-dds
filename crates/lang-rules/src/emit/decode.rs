@@ -694,14 +694,19 @@ fn body_of<T: CodecTarget>(
                     kind: "bitset whose anchor the planner does not size",
                 });
             };
-            let mut statements = vec![T::declare(
-                T::scalar(Scalar::UInt64),
-                "zd_bits",
-                Some(call_expr::<T>(
-                    "read_bitset",
-                    vec![int::<T>(i128::from(anchor))],
-                )),
-            )];
+            let read = call_expr::<T>("read_bitset", vec![int::<T>(i128::from(anchor))]);
+            // A bitset of padding alone still has its anchor on the wire,
+            // and no field to read out of it: the octets are read and not
+            // kept, where a local would be one no statement uses.
+            let named = fields.iter().any(|field| {
+                ast.bitfield(*field)
+                    .is_ok_and(|field_node| field_node.name.is_some())
+            });
+            let mut statements = if named {
+                vec![T::declare(T::scalar(Scalar::UInt64), "zd_bits", Some(read))]
+            } else {
+                vec![T::drop_value(read)]
+            };
             let mut position: u32 = 0;
             for field in fields {
                 let Ok(field_node) = ast.bitfield(*field) else {
