@@ -10,10 +10,6 @@ on:
         required: false
         type: string
         default: ""
-      plan:
-        description: "cargo-dist plan JSON"
-        required: true
-        type: string
       version:
         description: "Release version without the leading v (e.g. 1.0.0-rc.7), derived from the tag by release.yml"
         required: true

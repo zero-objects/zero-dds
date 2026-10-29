@@ -33,7 +33,6 @@ jobs:
     outputs:
       tag: ${{ steps.plan.outputs.tag }}
       version: ${{ steps.plan.outputs.version }}
-      val: ${{ steps.plan.outputs.val }}
       source_ref: ${{ steps.plan.outputs.source_ref }}
     steps:
       - uses: actions/checkout@v7
@@ -68,12 +67,11 @@ jobs:
             echo "::error::tag $TAG implies version $VERSION, but Cargo.toml [workspace.package].version is $WS_VERSION"
             exit 1
           fi
-          PLAN=$(cargo dist plan --output-format=json)
-          {
-            echo "val<<JSON_EOF"
-            echo "$PLAN"
-            echo "JSON_EOF"
-          } >> "$GITHUB_OUTPUT"
+          # The plan checks [workspace.metadata.dist]; no job reads it. It is
+          # not a job output: GitHub refuses a job whose outputs exceed
+          # 1 MiB, and the plan for this workspace is larger.
+          cargo dist plan --output-format=json > "$RUNNER_TEMP/dist-plan.json"
+          echo "cargo dist plan: $(wc -c < "$RUNNER_TEMP/dist-plan.json") bytes"
 
   build:
     name: Build (${{ matrix.target }})
@@ -218,7 +216,6 @@ jobs:
     uses: ./.github/workflows/publish-deb.yml
     secrets: inherit
     with:
-      plan: ${{ needs.plan.outputs.val }}
       version: ${{ needs.plan.outputs.version }}
       source_ref: ${{ needs.plan.outputs.source_ref }}
 
@@ -228,7 +225,6 @@ jobs:
     uses: ./.github/workflows/publish-rpm.yml
     secrets: inherit
     with:
-      plan: ${{ needs.plan.outputs.val }}
       version: ${{ needs.plan.outputs.version }}
       source_ref: ${{ needs.plan.outputs.source_ref }}
 
