@@ -128,17 +128,17 @@ fn recv_batch_with(
         sockaddrs[..batch]
             .iter_mut()
             .zip(iovecs.iter_mut())
-            .map(|(addr, iov)| libc::mmsghdr {
-                msg_hdr: libc::msghdr {
-                    msg_name: addr.as_mut_ptr().cast::<libc::c_void>(),
-                    msg_namelen: core::mem::size_of::<libc::sockaddr_storage>() as libc::socklen_t,
-                    msg_iov: iov as *mut libc::iovec,
-                    msg_iovlen: 1,
-                    msg_control: core::ptr::null_mut(),
-                    msg_controllen: 0,
-                    msg_flags: 0,
-                },
-                msg_len: 0,
+            .map(|(addr, iov)| {
+                // SAFETY: `mmsghdr` is POD; all-zero is a header without
+                // control data, flags and length. It is filled field by
+                // field: musl's `msghdr` has private padding fields.
+                let mut msg: libc::mmsghdr = unsafe { core::mem::zeroed() };
+                msg.msg_hdr.msg_name = addr.as_mut_ptr().cast::<libc::c_void>();
+                msg.msg_hdr.msg_namelen =
+                    core::mem::size_of::<libc::sockaddr_storage>() as libc::socklen_t;
+                msg.msg_hdr.msg_iov = iov as *mut libc::iovec;
+                msg.msg_hdr.msg_iovlen = 1;
+                msg
             }),
     );
 
@@ -146,13 +146,14 @@ fn recv_batch_with(
     // msgs[..] is a valid &mut [mmsghdr] with batch-many entries;
     // all iovec/msghdr pointers point to live buffers
     // (buffers/sockaddrs/iovecs of `scratch`) that are neither moved nor
-    // dropped while the call runs.
+    // dropped while the call runs. `flags` is `c_int` in glibc's
+    // `recvmmsg` and `c_uint` in musl's.
     let n = unsafe {
         libc::recvmmsg(
             socket.as_raw_fd(),
             msgs.as_mut_ptr(),
             batch as libc::c_uint,
-            libc::MSG_DONTWAIT,
+            libc::MSG_DONTWAIT as _,
             core::ptr::null_mut(),
         )
     };

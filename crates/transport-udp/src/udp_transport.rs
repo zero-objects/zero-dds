@@ -359,15 +359,15 @@ impl UdpTransport {
                 iov_len: s.len(),
             })
             .collect();
-        let hdr = libc::msghdr {
-            msg_name: &mut sa as *mut _ as *mut libc::c_void,
-            msg_namelen: core::mem::size_of::<libc::sockaddr_in>() as libc::socklen_t,
-            msg_iov: iovecs.as_ptr() as *mut libc::iovec,
-            msg_iovlen: iovecs.len(),
-            msg_control: core::ptr::null_mut(),
-            msg_controllen: 0,
-            msg_flags: 0,
-        };
+        // SAFETY: `msghdr` is POD; all-zero is a header without control
+        // data and flags. It is filled field by field: musl's `msghdr` has
+        // private padding fields and declares `msg_iovlen` as `c_int`,
+        // glibc's as `size_t`.
+        let mut hdr: libc::msghdr = unsafe { core::mem::zeroed() };
+        hdr.msg_name = &mut sa as *mut _ as *mut libc::c_void;
+        hdr.msg_namelen = core::mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
+        hdr.msg_iov = iovecs.as_ptr() as *mut libc::iovec;
+        hdr.msg_iovlen = iovecs.len() as _;
         // SAFETY: the socket fd is a valid Linux fd; hdr references
         // sa (lives in the stack frame), iovecs (lives in the vec) and
         // the referenced segments (caller lifetime).

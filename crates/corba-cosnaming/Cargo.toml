@@ -17,6 +17,13 @@ publish = true
 [lints]
 workspace = true
 
+# cargo-dist builds the package with `daemon`, so that the release carries
+# the `zerodds-naming-svc` binary (`required-features = ["daemon"]`); without it
+# cargo-dist fails with "failed to find bin". Release tooling only, crates.io
+# is not affected.
+[package.metadata.dist]
+features = ["daemon"]
+
 [lib]
 path = "src/lib.rs"
 
