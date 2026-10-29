@@ -489,6 +489,7 @@ fn build_rpc_dispatchers(cfg: &DaemonConfig) -> Result<Vec<RpcDispatcher>, Serve
 }
 
 /// Installs a signal watcher for `SIGTERM`/`SIGINT`/`SIGHUP`.
+#[cfg(unix)]
 fn install_signal_watcher(
     shutdown_flag: Arc<AtomicBool>,
     reload_flag: Arc<AtomicBool>,
@@ -511,6 +512,18 @@ fn install_signal_watcher(
                 }
             }
         })
+}
+
+#[cfg(not(unix))]
+fn install_signal_watcher(
+    _shutdown_flag: Arc<AtomicBool>,
+    _reload_flag: Arc<AtomicBool>,
+) -> std::io::Result<JoinHandle<()>> {
+    // Windows: signal_hook::iterator is POSIX-only. Spawn a dummy thread,
+    // shutdown runs over the normal socket-close paths.
+    thread::Builder::new()
+        .name("zerodds-webdds-signals".into())
+        .spawn(|| {})
 }
 
 #[cfg(test)]
