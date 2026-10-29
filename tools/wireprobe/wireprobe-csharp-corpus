@@ -40,11 +40,13 @@ L="${CSHARP_CORPUS_LOG:-${TMPDIR:-/tmp}/zd-csharp-corpus-$direction.txt}"
 # One sweep at a time per log. Two of them interleaving produced numbers
 # that meant nothing, which is worse than a refusal to start.
 lock="$L.lock"
-if ! mkdir "$lock" 2>/dev/null; then
+# Created by the shell with O_EXCL: uutils mkdir before 0.11.0 reports
+# success to a concurrent loser.
+if ! (set -o noclobber; : > "$lock") 2>/dev/null; then
     echo "$(basename "$0"): a sweep is already running; its log is $L" >&2
     exit 2
 fi
-trap 'rmdir "$lock" 2>/dev/null' EXIT
+trap 'rm -f "$lock"' EXIT
 : > "$L"
 
 for d in tests/interop-corpus/*/; do

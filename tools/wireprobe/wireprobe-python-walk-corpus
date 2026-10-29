@@ -65,12 +65,14 @@ L="${PYTHON_WALK_CORPUS_LOG:-${TMPDIR:-/tmp}/zd-python-walk-corpus.txt}"
 # more cases than the corpus has and numbers that meant nothing, which is
 # worse than a refusal to start.
 lock="$L.lock"
-if ! mkdir "$lock" 2>/dev/null; then
+# Created by the shell with O_EXCL: uutils mkdir before 0.11.0 reports
+# success to a concurrent loser.
+if ! (set -o noclobber; : > "$lock") 2>/dev/null; then
     echo "$(basename "$0"): a sweep is already running; its log is $L" >&2
     exit 2
 fi
 work="$(mktemp -d)"
-trap 'rmdir "$lock" 2>/dev/null; rm -rf "$work"' EXIT
+trap 'rm -f "$lock"; rm -rf "$work"' EXIT
 : > "$L"
 
 # The generator is built once here rather than by each of 3 760 probe

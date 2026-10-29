@@ -191,7 +191,7 @@ stale=$(mktemp)
 lock_held=0
 cleanup() {
     rm -f "$current" "$expected" "$body" "$stale" "$ALLOWLIST.tmp"
-    [[ $lock_held == 1 ]] && rmdir "$LOCK" 2>/dev/null
+    [[ $lock_held == 1 ]] && rm -f "$LOCK"
     return 0
 }
 trap cleanup EXIT
@@ -224,7 +224,9 @@ if [[ ${1:-} == --update ]]; then
     # a rewrite that read it before another's append would drop that
     # append -- which is what happened, and is why the merge below exists.
     waited=0
-    until mkdir "$LOCK" 2>/dev/null; do
+    # The shell creates the lock with O_EXCL: uutils mkdir before 0.11.0
+    # reports success to a concurrent loser.
+    until (set -o noclobber; : > "$LOCK") 2>/dev/null; do
         if (( waited >= LOCK_WAIT )); then
             echo "silent-drop-guard: $LOCK has been held for ${waited}s." >&2
             echo "Remove it if no other run is in flight." >&2

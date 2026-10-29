@@ -85,11 +85,17 @@ for failure in missing-companion terminated; do
     )
 done
 
-# All builders are complete before simultaneous publication starts.
+# All builders are complete before simultaneous publication starts. Each
+# publisher sees a mkdir that reports success for a directory that is
+# already there, as uutils mkdir before 0.11.0 does for a concurrent
+# loser: the lock may not rest on mkdir's EEXIST.
 pids=()
 for ((i=0; i<24; i++)); do build "$work/parallel-$i" "$i"; done
 for ((i=0; i<24; i++)); do
-    runtime_cache_publish "$work/parallel-$i" "$work/parallel-cache" -s artifact &
+    (
+        mkdir() { command mkdir "$@" 2>/dev/null; return 0; }
+        runtime_cache_publish "$work/parallel-$i" "$work/parallel-cache" -s artifact
+    ) &
     pids+=("$!")
 done
 for pid in "${pids[@]}"; do wait "$pid" || fail "parallel publisher"; done
@@ -112,10 +118,10 @@ runtime_cache_publish "$work/interrupted-stage" "$work/interrupted-cache" -s art
 # Override sleep only in this subshell so timeout is deterministic and fast.
 (
     sleep() { :; }
-    mkdir "$work/cache.publish-lock"
+    : > "$work/cache.publish-lock"
     if runtime_cache_publish "$work/second" "$work/cache" -s artifact; then
         fail "stole an existing lock"
     fi
-    [ -d "$work/cache.publish-lock" ] || fail "deleted foreign lock"
+    [ -f "$work/cache.publish-lock" ] || fail "deleted foreign lock"
 )
 echo "runtime-cache regression: all checks passed"

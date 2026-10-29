@@ -2624,6 +2624,17 @@ on the new foundation. That single fact explains most of what follows.
   that had been separated from their method by a later insertion are back
   at it.
 
+- **The script locks hold under uutils `mkdir`.** The wire-probe runtime
+  cache, the eleven corpus sweeps and `silent-drop-guard.sh --update` took
+  their lock with `mkdir`. uutils `mkdir` before 0.11.0, the `mkdir` of
+  Ubuntu 26.04 (`rust-coreutils` 0.10.0), reports success to a concurrent
+  loser (uutils #13970): on the GitHub runner two cache publishers held the
+  lock at once and `runtime_cache_gate` was red. With uutils 0.10.0, 16
+  concurrent `mkdir` of one path had more than one winner in 194 of 500
+  rounds, GNU `mkdir` in none. The lock is a file the shell creates with
+  `O_EXCL` (`set -o noclobber`) now. Test: `runtime_cache_gate`, whose 24
+  parallel publishers see a `mkdir` that ignores `EEXIST`.
+
 - **Zenoh bridge: an auto-discovered topic waits for its type.** The
   daemon asked once for a discovered endpoint's type and waited at most
   1 s; a reply that came later left the topic bridged without its type for

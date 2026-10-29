@@ -34,7 +34,11 @@ runtime_cache_publish() (
         echo "runtime cache: incomplete build at $stage" >&2
         exit 6
     fi
-    while ! mkdir "$lock" 2>/dev/null; do
+    # The lock is a file the shell creates exclusively (`noclobber` opens
+    # with O_EXCL), not a directory from mkdir: uutils mkdir before 0.11.0,
+    # the mkdir of Ubuntu 26.04, reports success to a concurrent loser, and
+    # two publishers held the lock at once.
+    while ! (set -o noclobber; : > "$lock") 2>/dev/null; do
         attempt=$((attempt + 1))
         if [ "$attempt" -ge 100 ]; then
             echo "runtime cache: publication lock unavailable at $lock; inspect it before retrying" >&2
@@ -42,7 +46,7 @@ runtime_cache_publish() (
         fi
         sleep 0.1
     done
-    trap 'rmdir "$lock"' EXIT
+    trap 'rm "$lock"' EXIT
     trap 'exit 6' HUP INT TERM
     if runtime_cache_ready "$cache" "$@"; then
         exit 0

@@ -179,3 +179,6 @@ runtime/csharp/obj/
 /target-cov
 **/target-cov/
 /ci-evidence
+
+# silent-drop-guard --update holds this file while it rewrites the allowlist
+/tools/silent-drop-allowlist.tsv.lock

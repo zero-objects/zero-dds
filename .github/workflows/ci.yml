@@ -432,20 +432,36 @@ jobs:
       # run every test a second time.
       - name: Coverage summary
         run: cargo llvm-cov report --include-build-script --summary-only
+      # The nightly build below does not reuse the build above, and both
+      # with their profiles do not fit on the runner: with the stable one
+      # still on disk the runner died in the nightly step with "No space
+      # left on device", and `continue-on-error` does not hold a runner
+      # that cannot write its own log. The report above is done and
+      # `lcov.info` lies outside `target/`.
+      - name: Remove the stable coverage build
+        run: |
+          rm -rf target/llvm-cov-target
+          df -h /
       # Branch coverage is nightly-only (`-Z coverage-options=branch`) and
       # rust-toolchain.toml pins 1.88.0, so it cannot come from the step
       # above. It runs here on its own nightly, non-gating: a nightly lint
       # firing under the workflow's `-D warnings` must not turn the mirror
-      # red, and the number is a diagnostic rather than a threshold.
+      # red, and the number is a diagnostic rather than a threshold. The
+      # test arguments are those of the run above, for its reasons: without
+      # them the matrix tests fail and no number is printed.
       - name: Branch coverage (nightly, non-gating)
         continue-on-error: true
         env:
           RUSTFLAGS: ""
-        run: |
-          rustup toolchain install nightly --profile minimal \
-            --component llvm-tools-preview
-          cargo +nightly llvm-cov --workspace --branch --include-build-script \
-            --summary-only
+        run: >-
+          rustup toolchain install nightly --profile minimal
+          --component llvm-tools-preview
+          && cargo +nightly llvm-cov --workspace --branch --include-build-script
+          --summary-only
+          -- --test-threads=1
+          --skip every_language_has_a_cell_generator
+          --skip the_matrix_cells_are_the_recorded_rows
+          --skip the_shape_with_no_storage_is_left_to_the_clause
       - name: Upload lcov artifact
         uses: actions/upload-artifact@v7
         with:
