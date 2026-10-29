@@ -2648,6 +2648,12 @@ on the new foundation. That single fact explains most of what follows.
   `install_fastdds.sh` hands CMake the generator by its own path: through
   the symlink it put on `PATH`, the Fast-DDS-Gen launcher looked for its
   jar beside the symlink and the `fastdds_robot` configure failed.
+  The harness job then passed with `test_domain_arg.sh` failing
+  (`cyclonedds not importable`): a step without `shell: bash` runs
+  `bash -e` without `pipefail`, and `test.sh | tee log` reported `tee`'s
+  status. The Linux workflows run bash with `pipefail` now, the harness job
+  installs `cyclonedds`, and `build-github-mirror.sh` reports a workflow step
+  that pipes without `pipefail` (on the previous workflows: 9 steps).
 
 - **Zenoh bridge: an auto-discovered topic waits for its type.** The
   daemon asked once for a discovered endpoint's type and waited at most

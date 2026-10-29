@@ -76,6 +76,12 @@ permissions:
   # Trust anchor in npmjs.com/package/@zerodds/node/access → Trusted Publishers.
   id-token: write
 
+# `shell: bash` runs a step with `-eo pipefail`; the default is `bash -e`,
+# under which `cmd | tee log` reports tee's status and a failing cmd passes.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   publish:
     name: Build + publish @zerodds/node

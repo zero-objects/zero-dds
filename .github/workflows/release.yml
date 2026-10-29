@@ -44,6 +44,8 @@ jobs:
         run: cargo install cargo-dist --version 0.22.1 --locked
       - name: Plan
         id: plan
+        # -eo pipefail; the workflow has no bash default, package-msi runs pwsh.
+        shell: bash
         env:
           TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
@@ -147,6 +149,7 @@ jobs:
       # collides), so do it directly via /usr/bin/security.
       - name: Import Apple codesigning certs (macOS)
         if: runner.os == 'macOS'
+        shell: bash
         env:
           APP_P12:    ${{ secrets.APPLE_CERT_APP_BASE64 }}
           APP_PWD:    ${{ secrets.APPLE_CERT_APP_PASSWORD }}

@@ -37,6 +37,12 @@ env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
 
+# `shell: bash` runs a step with `-eo pipefail`; the default is `bash -e`,
+# under which `cmd | tee log` reports tee's status and a failing cmd passes.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   # ---------------------------------------------------------------------------
   # CycloneDDS — cyclonedds==11.0.1 manylinux wheel (bundles libddsc; no C build).
@@ -156,13 +162,14 @@ jobs:
       # step is gone with the generator.
       - name: Build the ZeroDDS reader
         run: ( cd interop/cyclone-xtypes-27/reader && cargo build -q )
-      # pytest goes into the Python set up here; the runner's python3 is
-      # externally managed (PEP 668).
+      # pytest, and cyclonedds for the Cyclone roles test_domain_arg.sh starts
+      # with PYBIN=python3, go into the Python set up here; the runner's
+      # python3 is externally managed (PEP 668).
       - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
-      - name: Install pytest
-        run: python3 -m pip install pytest
+      - name: Install pytest and CycloneDDS (PyPI wheel, pinned)
+        run: python3 -m pip install pytest "cyclonedds==11.0.1"
       - name: Harness self-tests (domain contract, cleanup, classifier)
         run: |
           export FASTDDS_PREFIX="$HOME/fastdds-install"

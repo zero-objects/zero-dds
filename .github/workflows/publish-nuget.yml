@@ -56,6 +56,12 @@ on:
 permissions:
   contents: read
 
+# `shell: bash` runs a step with `-eo pipefail`; the default is `bash -e`,
+# under which `cmd | tee log` reports tee's status and a failing cmd passes.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   publish:
     name: Pack + push ZeroDDS to nuget.org

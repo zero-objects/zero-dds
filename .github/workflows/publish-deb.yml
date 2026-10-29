@@ -19,6 +19,12 @@ on:
         required: true
         type: string
 
+# `shell: bash` runs a step with `-eo pipefail`; the default is `bash -e`,
+# under which `cmd | tee log` reports tee's status and a failing cmd passes.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   build-deb:
     name: Build .deb (${{ matrix.target }})
