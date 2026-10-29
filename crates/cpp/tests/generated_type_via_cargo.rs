@@ -36,6 +36,21 @@ fn run(mut command: Command, what: &str) -> std::process::Output {
     out
 }
 
+/// Makes `runtime/cpp/build/libzerodds_wire.a` once per test process. The
+/// three tests run in parallel, and two `make` runs of the archive in the same
+/// directory let `ar` read a half-written archive ("file format not
+/// recognized") or find none.
+fn make_runtime_cpp_archive(root: &Path) {
+    static MADE: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+    MADE.get_or_init(|| {
+        let mut make = Command::new("make");
+        make.args(["-s", "-C"])
+            .arg(root.join("runtime/cpp"))
+            .arg("build/libzerodds_wire.a");
+        run(make, "make runtime/cpp");
+    });
+}
+
 #[test]
 fn a_generated_type_round_trips_through_the_dds_psm_writer_and_reader() {
     let root = workspace_root();
@@ -74,11 +89,7 @@ fn a_generated_type_round_trips_through_the_dds_psm_writer_and_reader() {
     .arg(root.join("crates/cpp/tests/generated/typed_probe.idl"));
     run(idlc, "zerodds-idlc generate --lang c++");
 
-    let mut make = Command::new("make");
-    make.args(["-s", "-C"])
-        .arg(root.join("runtime/cpp"))
-        .arg("build/libzerodds_wire.a");
-    run(make, "make runtime/cpp");
+    make_runtime_cpp_archive(&root);
 
     let bin = work.join("generated_type_roundtrip");
     let cxx = std::env::var("CXX").unwrap_or_else(|_| "c++".to_string());
@@ -150,11 +161,7 @@ fn a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader() {
         .arg(root.join("crates/cpp/tests/generated/psm_probe.idl"));
     run(idlc, "zerodds-idlc generate --lang c++ --cpp-mapping psm");
 
-    let mut make = Command::new("make");
-    make.args(["-s", "-C"])
-        .arg(root.join("runtime/cpp"))
-        .arg("build/libzerodds_wire.a");
-    run(make, "make runtime/cpp");
+    make_runtime_cpp_archive(&root);
 
     let bin = work.join("generated_psm_roundtrip");
     let cxx = std::env::var("CXX").unwrap_or_else(|_| "c++".to_string());
@@ -232,11 +239,7 @@ fn a_multitopic_joins_two_generated_topics_for_a_data_reader() {
     .arg(root.join("crates/cpp/tests/generated/multitopic_probe.idl"));
     run(idlc, "zerodds-idlc generate --lang c++");
 
-    let mut make = Command::new("make");
-    make.args(["-s", "-C"])
-        .arg(root.join("runtime/cpp"))
-        .arg("build/libzerodds_wire.a");
-    run(make, "make runtime/cpp");
+    make_runtime_cpp_archive(&root);
 
     let bin = work.join("generated_multitopic");
     let cxx = std::env::var("CXX").unwrap_or_else(|_| "c++".to_string());

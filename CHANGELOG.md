@@ -2655,6 +2655,12 @@ on the new foundation. That single fact explains most of what follows.
   installs `cyclonedds`, and `build-github-mirror.sh` reports a workflow step
   that pipes without `pipefail` (on the previous workflows: 9 steps).
 
+- **`generated_type_via_cargo` makes the C++ runtime archive once.** Its
+  three tests run in parallel, and each ran `make` for
+  `runtime/cpp/build/libzerodds_wire.a` in the same directory. On the GitHub
+  runner two of them met in `ar`: "file format not recognized" and "No such
+  file or directory". The archive is made once per test process now.
+
 - **Zenoh bridge: an auto-discovered topic waits for its type.** The
   daemon asked once for a discovered endpoint's type and waited at most
   1 s; a reply that came later left the topic bridged without its type for
