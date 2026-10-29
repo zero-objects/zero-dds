@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
   pull_request:
+  # The weekly run is the only one with coverage, see the coverage job.
+  schedule:
+    - cron: "0 3 * * 1"
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
@@ -374,9 +378,14 @@ jobs:
   # Branch coverage requires nightly Rust and will be added later as a separate
   # nightly job. Target bar: 99% (soft gate, no merge block
   # during the bootstrap era).
+  # Runs weekly and by hand, not on a push or a pull request: it runs the
+  # whole workspace test suite instrumented and on one thread, close to
+  # three hours on a hosted runner. build-test runs the workspace tests,
+  # not instrumented, on every push.
   # ---------------------------------------------------------------------------
   coverage:
     name: coverage (cargo-llvm-cov)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     needs: [fmt, clippy]
     runs-on: ubuntu-latest
     env:
