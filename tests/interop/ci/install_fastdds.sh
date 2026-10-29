@@ -45,10 +45,11 @@ if [ ! -x "$GEN" ]; then
   ( cd "$WORK/gen" && git submodule update --init --recursive && ./gradlew assemble --no-daemon --max-workers=2 )
   mkdir -p "$PREFIX/share/fastddsgen"; cp -r "$WORK/gen/scripts" "$WORK/gen/share" "$PREFIX/share/fastddsgen/"
 fi
-sudo ln -sf "$GEN" /usr/local/bin/fastddsgen
 
 echo "=== build fastdds_robot ==="
-cmake -S "$HERE/fastdds" -B "$HERE/fastdds/build" -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$PREFIX"
+# The generator by its own path, not a symlink on PATH: its launcher finds
+# the jar from `dirname "$0"` and does not follow a symlink.
+cmake -S "$HERE/fastdds" -B "$HERE/fastdds/build" -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$PREFIX" -DFASTDDSGEN="$GEN"
 cmake --build "$HERE/fastdds/build" --parallel
 echo "  fastcdr ${FASTCDR_TAG} / fastdds ${FASTDDS_TAG} / gen ${FASTDDSGEN_TAG} installed under $PREFIX"
 echo "  run: FASTDDS_ROBOT=$HERE/fastdds/build/fastdds_robot LD_LIBRARY_PATH=$PREFIX/lib tests/interop/ci/run_vendor.sh fastdds <out>"

@@ -2645,6 +2645,9 @@ on the new foundation. That single fact explains most of what follows.
   harness jobs set up 3.13, where the runner's 3.14 made pip build the
   sdist. The harness job builds the reader as the GitLab job does; the
   `zerodds-idlc generate` step it still ran is gone with the generator.
+  `install_fastdds.sh` hands CMake the generator by its own path: through
+  the symlink it put on `PATH`, the Fast-DDS-Gen launcher looked for its
+  jar beside the symlink and the `fastdds_robot` configure failed.
 
 - **Zenoh bridge: an auto-discovered topic waits for its type.** The
   daemon asked once for a discovered endpoint's type and waited at most
