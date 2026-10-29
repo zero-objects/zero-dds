@@ -49,6 +49,12 @@ jobs:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      # cyclonedds 11.0.1 has wheels for CPython 3.10 to 3.13. The runner's
+      # python3 is 3.14, for which pip builds the sdist, and that needs a
+      # Cyclone DDS C installation the runner does not have.
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
       - name: Install CycloneDDS (PyPI wheel, pinned)
         run: |
           python3 -m venv "$HOME/cyclonedds-venv"
@@ -70,7 +76,7 @@ jobs:
           bash tests/interop/ci/run_vendor.sh cyclone interop-out
       - name: Upload cyclone artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: interop-cyclone
           path: interop-out/
@@ -91,7 +97,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Cache Fast DDS install prefix
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/fastdds-install
           # Bump this key's suffix whenever install_fastdds.sh changes a pin.
@@ -116,7 +122,7 @@ jobs:
           bash tests/interop/ci/run_vendor.sh fastdds interop-out
       - name: Upload fastdds artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: interop-fastdds
           path: interop-out/
@@ -137,7 +143,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Cache Fast DDS install prefix
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/fastdds-install
           key: fastdds-v3.6.1-cdr2.3.5-gen4.3.0-foonathan1.4.1
@@ -145,14 +151,18 @@ jobs:
         run: |
           export FASTDDS_PREFIX="$HOME/fastdds-install"
           bash tests/interop/ci/install_fastdds.sh
-      - name: Generate ZeroDDS reader Robot type
-        run: |
-          cargo run -q -p zerodds-idlc -- generate interop/cyclone-xtypes-27/robot.idl \
-            --rust -o interop/cyclone-xtypes-27/reader/src
-          mv interop/cyclone-xtypes-27/reader/src/Robot.rs \
-             interop/cyclone-xtypes-27/reader/src/robot.rs 2>/dev/null || true
-          test -f interop/cyclone-xtypes-27/reader/src/robot.rs
-          ( cd interop/cyclone-xtypes-27/reader && cargo build -q )
+      # The Robot type is generated in the reader's own build.rs
+      # (zerodds-build over robot.idl); the retired `zerodds-idlc generate`
+      # step is gone with the generator.
+      - name: Build the ZeroDDS reader
+        run: ( cd interop/cyclone-xtypes-27/reader && cargo build -q )
+      # pytest goes into the Python set up here; the runner's python3 is
+      # externally managed (PEP 668).
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Install pytest
+        run: python3 -m pip install pytest
       - name: Harness self-tests (domain contract, cleanup, classifier)
         run: |
           export FASTDDS_PREFIX="$HOME/fastdds-install"
@@ -164,7 +174,7 @@ jobs:
           python3 -m pytest -q tests/interop/ci/tests/test_interop_result.py 2>&1 | tee interop-out/classifier.log
       - name: Upload harness artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: interop-harness
           path: interop-out/

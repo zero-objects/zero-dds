@@ -2635,6 +2635,17 @@ on the new foundation. That single fact explains most of what follows.
   `O_EXCL` (`set -o noclobber`) now. Test: `runtime_cache_gate`, whose 24
   parallel publishers see a `mkdir` that ignores `EEXIST`.
 
+- **The GitHub interop workflow has its scripts and its Python.** The
+  mirror's exclude list named `ci/` without a leading slash, which also
+  left out `tests/interop/ci/`: `interop.yml` stopped at
+  `install_fastdds.sh: No such file or directory`. The entry is `/ci/` now,
+  and `build-github-mirror.sh` reports a workflow step that names a file the
+  mirror leaves out (with the old entry: 7 references in `interop.yml`).
+  `cyclonedds` 11.0.1 has wheels for CPython 3.10 to 3.13; the cyclone and
+  harness jobs set up 3.13, where the runner's 3.14 made pip build the
+  sdist. The harness job builds the reader as the GitLab job does; the
+  `zerodds-idlc generate` step it still ran is gone with the generator.
+
 - **Zenoh bridge: an auto-discovered topic waits for its type.** The
   daemon asked once for a discovered endpoint's type and waited at most
   1 s; a reply that came later left the topic bridged without its type for

@@ -1,0 +1,9 @@
+// SPDX-License-Identifier: Apache-2.0
+// Robot type for the #28 cross-vendor interop gate — identical structure to
+// interop/cyclone-xtypes-27/robot.idl. @final so the FastDDS wire form (XCDR1,
+// no DHEADER) matches the ZeroDDS @final reader/writer in the FastDDS cells.
+@extensibility(FINAL)
+struct Robot {
+    uint32 id;
+    uint32 label;
+};
