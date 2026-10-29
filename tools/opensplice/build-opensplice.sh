@@ -16,7 +16,10 @@
 #
 # * JDK 8: configure refuses javac 21 ("Only Oracle JAVA 1.6 and above").
 # * The submodule MPC_ROOT is registered as git://github.com/…, a protocol
-#   GitHub no longer serves; the clone is told to fetch it over https.
+#   GitHub no longer serves; the clone is told to fetch it over https. The
+#   rewrite goes on the command line (`git -c`), which reaches the clone
+#   `submodule update` starts; set in the superproject's own config it does
+#   not (git 2.49 and 2.56: the clone went to git:// and hung).
 # * CFLAGS_STRICT_UNINITIALIZED: the release config sets
 #   -Werror=uninitialized, and GCC 14 reports maybe-uninitialized where
 #   GCC 7 did not.
@@ -29,8 +32,8 @@ SRC="${1:?source directory}"
 PREFIX="${2:?install prefix}"
 JDK="${3:-/opt/jdk8}"
 
-git -C "$SRC" config url."https://github.com/".insteadOf git://github.com/
-git -C "$SRC" submodule update --init submods/MPC_ROOT
+git -C "$SRC" -c url."https://github.com/".insteadOf=git://github.com/ \
+    submodule update --init submods/MPC_ROOT
 
 cd "$SRC"
 export JAVA_HOME="$JDK"
