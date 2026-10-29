@@ -3243,6 +3243,19 @@ mod tests {
         assert_ne!(at, libc::MAP_FAILED);
 
         let report = sweep_old_layout_segments(&prefix, Duration::ZERO).unwrap();
+        if dev_shm_mappings().is_none() {
+            // Not root, on a host where a root process's maps cannot be
+            // read (a GitHub runner): the sweep cannot tell whether a ring
+            // is mapped and keeps both. The removal is measured where the
+            // tests run as root (the GitLab image).
+            assert_eq!((report.removed, report.held), (0, 2), "{report:?}");
+            assert!(orphan.exists() && mapped.exists());
+            // SAFETY: the mapping made above.
+            unsafe { libc::munmap(at, 64) };
+            std::fs::remove_file(&orphan).unwrap();
+            std::fs::remove_file(&mapped).unwrap();
+            return;
+        }
         assert_eq!((report.removed, report.held), (1, 1), "{report:?}");
         assert!(!orphan.exists());
         assert!(mapped.exists());
