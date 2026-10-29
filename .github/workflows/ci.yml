@@ -4,7 +4,13 @@ on:
   push:
     branches: [main]
   pull_request:
-  # The weekly run is the only one with coverage, see the coverage job.
+  # A push or a pull request runs the quick checks only: rustfmt, clippy,
+  # silent-drop, interop corpus, cargo-deny and no_std, about seven runner
+  # minutes. The jobs that build or test the workspace, compare large
+  # result sets or measure coverage carry
+  # `if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'`
+  # and run weekly and by hand. The workspace tests run on the maintainers'
+  # Linux test host before a push reaches this repository.
   schedule:
     - cron: "0 3 * * 1"
   workflow_dispatch:
@@ -68,6 +74,7 @@ jobs:
 
   staged-tree:
     name: staged-tree guard (the committed tree builds)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -126,6 +133,7 @@ jobs:
   # absent. The same two commands run in .gitlab-ci.yml.
   interop-results:
     name: interop results (3,350 rows x 12 systems)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -191,6 +199,7 @@ jobs:
   # ---------------------------------------------------------------------------
   jscpd:
     name: jscpd (copy/paste detection)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -220,6 +229,7 @@ jobs:
   # ---------------------------------------------------------------------------
   cpd:
     name: cpd (token-based copy/paste detection)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     env:
       PMD_VERSION: "7.27.0"
@@ -245,6 +255,7 @@ jobs:
   # ---------------------------------------------------------------------------
   build-test:
     name: build & test (${{ matrix.target }})
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     needs: [fmt, clippy]
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -325,6 +336,7 @@ jobs:
   # ---------------------------------------------------------------------------
   tsn-live:
     name: TSN live AF_PACKET transport
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     needs: [fmt, clippy]
     runs-on: ubuntu-latest
     steps:
@@ -380,8 +392,7 @@ jobs:
   # during the bootstrap era).
   # Runs weekly and by hand, not on a push or a pull request: it runs the
   # whole workspace test suite instrumented and on one thread, close to
-  # three hours on a hosted runner. build-test runs the workspace tests,
-  # not instrumented, on every push.
+  # three hours on a hosted runner.
   # ---------------------------------------------------------------------------
   coverage:
     name: coverage (cargo-llvm-cov)
