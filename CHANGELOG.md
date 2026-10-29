@@ -2617,7 +2617,10 @@ on the new foundation. That single fact explains most of what follows.
   The Java generator wrote what is left of a `typedef` or a `native` type,
   and a note between statements, as Javadoc; javac 23 and later report
   that as `dangling-doc-comments` and `-Werror` refuses it. They are line
-  comments now, as in the C# generator. Eleven hand-written Java comments
+  comments now, as in the C# generator. A file's leading comment is a line
+  comment as well: above `package`, or above a class with its own Javadoc,
+  it was a second Javadoc attached to nothing, and the Java wire-probe
+  column did not compile under javac 25. Eleven hand-written Java comments
   that had been separated from their method by a later insertion are back
   at it.
 

@@ -43,7 +43,11 @@ fn build_example() -> PathBuf {
         status.success(),
         "example_reliable does not build; see the cargo output above"
     );
-    let bin = workspace.join("target/debug/examples/example_reliable");
+    // Where cargo put it: under `CARGO_TARGET_DIR` when that is set,
+    // resolved against the directory the build ran in.
+    let target = std::env::var_os("CARGO_TARGET_DIR")
+        .map_or_else(|| workspace.join("target"), |dir| workspace.join(dir));
+    let bin = target.join("debug/examples/example_reliable");
     assert!(
         bin.exists(),
         "cargo reported success and {} is not there",

@@ -840,6 +840,43 @@ public interface Marker {
     );
 }
 
+#[test]
+fn a_java_file_header_is_a_line_comment_and_not_javadoc() {
+    // Javadoc above `package`, or above a type with its own, documents
+    // nothing; javac 23 and later report that as `dangling-doc-comments`
+    // and `-Werror` refuses the file.
+    let file = java_tree::File {
+        doc: Doc::lines(&["Generated. Do not edit.", "", "Second paragraph."]),
+        package: Some(Path::new(&["org", "zerodds", "generated"])),
+        imports: Vec::new(),
+        types: vec![java_tree::TypeDecl::Interface(java_tree::Interface {
+            doc: Doc::line("The marker."),
+            annotations: Vec::new(),
+            modifiers: vec![java_tree::Modifier::Public],
+            name: Ident::new("Marker"),
+            generics: Vec::new(),
+            extends: Vec::new(),
+            members: Vec::new(),
+        })],
+    };
+    assert_eq!(
+        zerodds_lang_render::java::file(&file),
+        "\
+// Generated. Do not edit.
+//
+// Second paragraph.
+
+package org.zerodds.generated;
+
+/**
+ * The marker.
+ */
+public interface Marker {
+}
+"
+    );
+}
+
 // -- what every renderer must not do -------------------------------------
 
 #[test]

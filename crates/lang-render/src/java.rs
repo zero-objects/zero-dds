@@ -19,7 +19,14 @@ use zerodds_lang_cst::java::{
 #[must_use]
 pub fn file(file: &File) -> String {
     let mut w = Writer::spaces4();
-    doc(&mut w, &file.doc);
+    // The file's leading comment documents no declaration: above
+    // `package` Javadoc is attached to nothing, and above a type that
+    // has its own it is a second one attached to nothing. Line comments,
+    // as for every other comment that documents nothing.
+    if !file.doc.is_empty() {
+        line_comment(&mut w, &file.doc);
+        w.blank_line();
+    }
     if let Some(package) = &file.package {
         let mut line = String::from("package ");
         line.push_str(&path_text(package));
