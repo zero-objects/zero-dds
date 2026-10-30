@@ -412,85 +412,13 @@ jobs:
             git push
           fi
 
-  publish-aur:
-    name: Update AUR (zerodds + zerodds-bin)
+  publish-distros:
+    name: AUR and Scoop
     needs: [plan, github-release]
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ needs.plan.outputs.source_ref }}
-      - name: Verify release is published before AUR update
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -e
-          for attempt in 1 2 3; do
-            if gh release view "${{ needs.plan.outputs.tag }}" \
-                 --repo "${{ github.repository }}" \
-                 --json isDraft,assets \
-                 --jq '. | if .isDraft then error("release still draft") else "ok: \(.assets | length) assets" end'; then
-              exit 0
-            fi
-            echo "release not yet published, attempt $attempt"
-            sleep 60
-          done
-          echo "::error::Release is not verified published"
-          exit 1
-      - name: Setup AUR SSH key
-        run: |
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
-          printf '%s\n' "${{ secrets.AUR_SSH_KEY }}" > ~/.ssh/aur
-          chmod 600 ~/.ssh/aur
-          cat <<'CFG' > ~/.ssh/config
-          Host aur.archlinux.org
-              User aur
-              IdentityFile ~/.ssh/aur
-              IdentitiesOnly yes
-              StrictHostKeyChecking accept-new
-          CFG
-      - name: Render + push PKGBUILDs
-        env:
-          TAG: ${{ needs.plan.outputs.tag }}
-        run: bash packaging/github-actions/aur-publish.sh "$TAG"
-
-  publish-scoop-bucket:
-    name: Update Scoop bucket
-    needs: [plan, github-release]
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          repository: zero-objects/scoop-zerodds
-          token: ${{ secrets.SCOOP_BUCKET_PAT }}
-          path: bucket
-      - name: Checkout main repo
-        uses: actions/checkout@v7
-        with:
-          path: main
-          ref: ${{ needs.plan.outputs.source_ref }}
-      - name: Reject unrendered Scoop manifest
-        env:
-          RELEASE_VERSION: ${{ needs.plan.outputs.version }}
-        run: |
-          jq -e --arg version "$RELEASE_VERSION" '
-            .version == $version and
-            ([.architecture[] | .hash | sub("^sha512:"; "") |
-              test("^[0-9a-fA-F]{128}$") and (test("^0+$") | not)] | all)
-          ' main/packaging/windows/scoop/zerodds.json
-      - name: Render manifest
-        run: cp main/packaging/windows/scoop/zerodds.json bucket/zerodds.json
-      - name: Commit + push
-        working-directory: bucket
-        run: |
-          git config user.name  "zerodds-release-bot"
-          git config user.email "release@zerodds.org"
-          git add zerodds.json
-          if ! git diff --cached --quiet; then
-            git commit -m "release: ${{ needs.plan.outputs.tag }}"
-            git push
-          fi
+    uses: ./.github/workflows/publish-distros.yml
+    with:
+      tag: ${{ needs.plan.outputs.tag }}
+    secrets: inherit
 
   github-release:
     name: Publish GitHub release
@@ -506,6 +434,10 @@ jobs:
       && needs.package-msi.result == 'success'
     runs-on: ubuntu-22.04
     steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.plan.outputs.source_ref }}
+          path: main
       - uses: actions/download-artifact@v8
         with: { path: dist }
       - name: Verify required release artifacts
@@ -531,6 +463,15 @@ jobs:
           done
           require_artifact dist/zerodds-rpm-x86_64 '*.rpm'
           require_artifact dist/zerodds-msi '*.msi'
+      - name: Build the Scoop bundles
+        shell: bash
+        run: |
+          set -euo pipefail
+          for target in x86_64-pc-windows-msvc aarch64-pc-windows-msvc; do
+            bash main/packaging/github-actions/windows-bundle.sh \
+              --dist "dist/artifacts-$target" --target "$target" \
+              --version "${{ needs.plan.outputs.version }}" --out dist/windows-bundles
+          done
       - name: Collect release files
         shell: bash
         run: |

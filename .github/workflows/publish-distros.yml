@@ -1,0 +1,138 @@
+# .github/workflows/publish-distros.yml
+# AUR (zerodds-bin, zerodds) and the Scoop bucket for a published GitHub
+# release. Called by release.yml after the release is published, or started
+# by hand for a release that already exists. Builds nothing: it takes the
+# files of the release.
+name: publish-distros
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Published release tag, e.g. v1.0.0-rc.7"
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  aur:
+    name: Update AUR (zerodds-bin + zerodds)
+    runs-on: ubuntu-22.04
+    # aur-publish.sh takes .SRCINFO from makepkg, which runs on Arch and not
+    # as root.
+    container: archlinux:base-devel
+    steps:
+      - name: Install git and ssh, add the build user
+        run: |
+          pacman -Syu --noconfirm --needed git openssh
+          useradd -m builder
+      - uses: actions/checkout@v7
+      - name: Verify release is published
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # The tag endpoint does not return a draft.
+        run: |
+          curl -fsS -o /dev/null -H "Authorization: Bearer $GH_TOKEN" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/tags/${{ inputs.tag }}"
+      - name: Setup AUR SSH key
+        run: |
+          install -d -m 700 -o builder /home/builder/.ssh
+          printf '%s\n' "${{ secrets.AUR_SSH_KEY }}" > /home/builder/.ssh/aur
+          cat <<'CFG' > /home/builder/.ssh/config
+          Host aur.archlinux.org
+              User aur
+              IdentityFile ~/.ssh/aur
+              IdentitiesOnly yes
+              StrictHostKeyChecking accept-new
+          CFG
+          chown builder /home/builder/.ssh/aur /home/builder/.ssh/config
+          chmod 600 /home/builder/.ssh/aur
+      - name: Render + push PKGBUILDs
+        run: |
+          chown -R builder .
+          sudo -u builder bash packaging/github-actions/aur-publish.sh "${{ inputs.tag }}"
+
+  scoop-render:
+    name: Render Scoop manifest
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: Download the Windows bundles
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          gh release download "$TAG" --repo "${{ github.repository }}" --dir bundles \
+            --pattern "zerodds-${TAG#v}-x86_64-pc-windows-msvc.zip" \
+            --pattern "zerodds-${TAG#v}-aarch64-pc-windows-msvc.zip"
+      - name: Render manifest
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          RELEASE_VERSION="${TAG#v}" bash packaging/github-actions/render-scoop.sh bundles zerodds.json
+      - uses: actions/upload-artifact@v7
+        with:
+          name: scoop-manifest
+          path: zerodds.json
+          if-no-files-found: error
+
+  scoop-verify:
+    # Installs the rendered manifest with Scoop before it reaches the bucket.
+    # The runner is x64; the arm64 entry is checked by render-scoop.sh only.
+    name: Install with Scoop (x64)
+    needs: scoop-render
+    runs-on: windows-2022
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: scoop-manifest
+      - name: Install Scoop and the manifest
+        shell: pwsh
+        run: |
+          iex "& {$(irm get.scoop.sh)} -RunAsAdmin"
+          $env:PATH = "$env:USERPROFILE\scoop\shims;$env:PATH"
+          scoop install .\zerodds.json
+          if ($LASTEXITCODE -ne 0) { throw "scoop install failed" }
+          $manifest = Get-Content .\zerodds.json -Raw | ConvertFrom-Json
+          foreach ($bin in $manifest.bin) {
+            $name = [IO.Path]::GetFileNameWithoutExtension($bin)
+            if (-not (Get-Command $name -ErrorAction SilentlyContinue)) { throw "no shim for $name" }
+          }
+          zerodds-admin --version
+          if ($LASTEXITCODE -ne 0) { throw "zerodds-admin --version failed" }
+
+  scoop-publish:
+    name: Update Scoop bucket
+    needs: scoop-verify
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          repository: zero-objects/scoop-zerodds
+          token: ${{ secrets.SCOOP_BUCKET_PAT }}
+          path: bucket
+      - uses: actions/download-artifact@v8
+        with:
+          name: scoop-manifest
+          path: bucket
+      - name: Commit + push
+        working-directory: bucket
+        run: |
+          git config user.name  "zerodds-release-bot"
+          git config user.email "release@zerodds.org"
+          git add zerodds.json
+          if ! git diff --cached --quiet; then
+            git commit -m "release: ${{ inputs.tag }}"
+            git push
+          fi
