@@ -11,7 +11,7 @@ import java.util.concurrent.TimeUnit;
 /**
  * ZeroDDS Reliability (DDS-Java-PSM 1.0 §7.3.5.1).
  *
- * <p>Whether the service retransmits samples (DDS 1.2 §7.1.3.6). Requested/offered: BEST_EFFORT < RELIABLE. Default: RELIABLE with a 100 ms max blocking time for writers, BEST_EFFORT for readers and topics.
+ * <p>Whether the service retransmits samples (DDS 1.2 §7.1.3.6). Requested/offered: BEST_EFFORT &lt; RELIABLE. Default: RELIABLE with a 100 ms max blocking time for writers, BEST_EFFORT for readers and topics.
  */
 public final class ReliabilityImpl implements Reliability, RequestedOffered<Reliability>, Cloneable {
 

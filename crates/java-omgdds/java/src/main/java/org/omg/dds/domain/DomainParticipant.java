@@ -556,7 +556,7 @@ extends Entity<DomainParticipantListener, DomainParticipantQos>
      * delete the DomainParticipant knowing that it has no contained
      * entities.
      * 
-     * @throws  PreconditionNotMetException     if any of the contained
+     * @throws  org.omg.dds.core.PreconditionNotMetException     if any of the contained
      *          entities is in a state where it cannot be closed.
      */
     public void closeContainedEntities();
@@ -585,7 +585,7 @@ extends Entity<DomainParticipantListener, DomainParticipantQos>
      * This operation is not required to be reversible. The Service offers no
      * means to reverse it.
      * 
-     * @throws  OutOfResourcesException if the Service is unable to ignore
+     * @throws  org.omg.dds.core.OutOfResourcesException if the Service is unable to ignore
      *          the indicated participant because an internal resource has
      *          been exhausted.
      */
@@ -608,7 +608,7 @@ extends Entity<DomainParticipantListener, DomainParticipantQos>
      * This operation is not required to be reversible. The Service offers no
      * means to reverse it.
      * 
-     * @throws  OutOfResourcesException if the Service is unable to ignore
+     * @throws  org.omg.dds.core.OutOfResourcesException if the Service is unable to ignore
      *          the indicated topic because an internal resource has been
      *          exhausted.
      */
@@ -629,7 +629,7 @@ extends Entity<DomainParticipantListener, DomainParticipantQos>
      * This operation is not required to be reversible. The Service offers no
      * means to reverse it.
      * 
-     * @throws  OutOfResourcesException if the Service is unable to ignore
+     * @throws  org.omg.dds.core.OutOfResourcesException if the Service is unable to ignore
      *          the indicated publication because an internal resource has
      *          been exhausted.
      */
@@ -650,7 +650,7 @@ extends Entity<DomainParticipantListener, DomainParticipantQos>
      * This operation is not required to be reversible. The Service offers no
      * means to reverse it.
      * 
-     * @throws  OutOfResourcesException if the Service is unable to ignore
+     * @throws  org.omg.dds.core.OutOfResourcesException if the Service is unable to ignore
      *          the indicated subscription because an internal resource has
      *          been exhausted.
      */
@@ -706,7 +706,7 @@ extends Entity<DomainParticipantListener, DomainParticipantQos>
      * case where the QoS policies are defaulted in the
      * {@link #createPublisher()} operation.
      * 
-     * @throws  InconsistentPolicyException if the resulting policies are
+     * @throws  org.omg.dds.core.InconsistentPolicyException if the resulting policies are
      *          not self consistent; in that case, the operation will have no
      *          effect.
      *
@@ -736,7 +736,7 @@ extends Entity<DomainParticipantListener, DomainParticipantQos>
      * case where the QoS policies are defaulted in the
      * {@link #createSubscriber()} operation.
      * 
-     * @throws  InconsistentPolicyException     if the resulting policies are
+     * @throws  org.omg.dds.core.InconsistentPolicyException     if the resulting policies are
      *          not self consistent; in that case, the operation will have no
      *          effect.
      *
@@ -765,7 +765,7 @@ extends Entity<DomainParticipantListener, DomainParticipantQos>
      * where the QoS policies are defaulted in the
      * {@link #createTopic(String, Class)} operation.
      * 
-     * @throws  InconsistentPolicyException     if the resulting policies are
+     * @throws  org.omg.dds.core.InconsistentPolicyException     if the resulting policies are
      *          not self consistent; in that case, the operation will have no
      *          effect.
      *
@@ -804,7 +804,7 @@ extends Entity<DomainParticipantListener, DomainParticipantQos>
      * 
      * @return  a new object containing a copy of the information.
      * 
-     * @throws  PreconditionNotMetException     if the participantHandle
+     * @throws  org.omg.dds.core.PreconditionNotMetException     if the participantHandle
      *          does not correspond to a DomainParticipant such as is
      *          described above.
      * @throws  UnsupportedOperationException   If the infrastructure does
@@ -847,7 +847,7 @@ extends Entity<DomainParticipantListener, DomainParticipantQos>
      * 
      * @return  a new object containing a copy of the information.
      * 
-     * @throws  PreconditionNotMetException     if the topicHandle
+     * @throws  org.omg.dds.core.PreconditionNotMetException     if the topicHandle
      *          does not correspond to a Topic such as is described above.
      * @throws  UnsupportedOperationException   If the infrastructure does
      *          not locally maintain the connectivity information or if the

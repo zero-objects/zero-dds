@@ -148,7 +148,7 @@ extends DomainEntity<DataReaderListener<TYPE>, DataReaderQos>
      * the "create" operations on the DataReader. That is, it closes all
      * contained ReadCondition and QueryCondition objects.
      * 
-     * @throws  PreconditionNotMetException     if the any of the contained
+     * @throws  org.omg.dds.core.PreconditionNotMetException     if the any of the contained
      *          entities is in a state where it cannot be closed.
      */
     public void closeContainedEntities();

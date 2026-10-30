@@ -1590,7 +1590,8 @@ fn declare(
                     flags,
                     Doc::line(
                         "The enumeration of the flags of a bitmask (XTypes 1.3 \
-                         7.5.1.2.2): `_<label>` is the flag's value, 1 << position.",
+                         7.5.1.2.2): {@code _<label>} is the flag's value, \
+                         {@code 1 << position}.",
                     ),
                 ),
             });

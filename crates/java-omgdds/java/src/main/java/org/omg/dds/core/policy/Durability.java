@@ -46,7 +46,7 @@ package org.omg.dds.core.policy;
  * only if the inequality offered kind >= requested kind evaluates to true.
  * For the purposes of this inequality, the values of
  * {@link Durability.Kind} are considered ordered such that
- * VOLATILE < TRANSIENT_LOCAL < TRANSIENT < PERSISTENT.
+ * VOLATILE &lt; TRANSIENT_LOCAL &lt; TRANSIENT &lt; PERSISTENT.
  * 
  * For the purpose of implementing the {@link Durability.Kind}
  * TRANSIENT or PERSISTENT, the service behaves "as if" for each {@link org.omg.dds.topic.Topic}

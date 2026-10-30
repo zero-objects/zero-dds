@@ -8,7 +8,7 @@ import org.omg.dds.core.status.OfferedIncompatibleQosStatus;
 import org.omg.dds.pub.DataWriter;
 
 /**
- * ZeroDDS {@link OfferedIncompatibleQos} (DDS-Java-PSM 1.0 §7.3.7.2): the event object a
+ * ZeroDDS {@link OfferedIncompatibleQosEvent} (DDS-Java-PSM 1.0 §7.3.7.2): the event object a
  * listener callback receives. It names the entity the change happened on and
  * carries the status of DDS 1.2 §7.1.4.1.
  *

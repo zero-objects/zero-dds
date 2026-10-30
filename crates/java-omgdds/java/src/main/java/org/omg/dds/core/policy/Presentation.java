@@ -64,7 +64,7 @@ package org.omg.dds.core.policy;
  *      <li>The inequality "offered access_scope >= requested access_scope"
  *          evaluates to true. For the purposes of this inequality, the
  *          values of {@link Presentation.AccessScopeKind} are
- *          considered ordered such that INSTANCE < TOPIC < GROUP.</li>
+ *          considered ordered such that INSTANCE &lt; TOPIC &lt; GROUP.</li>
  *      <li>Requested coherentAccess is false, or else both offered and
  *          requested coherentAccess are true.</li>
  *      <li>Requested orderedAccess is false, or else both offered and

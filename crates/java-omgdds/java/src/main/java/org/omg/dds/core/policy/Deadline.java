@@ -46,7 +46,7 @@ import org.omg.dds.core.Duration;
  * publishers that are expected to supply the data values.
  * 
  * When the Service "matches" a DataWriter and a DataReader it checks whether
- * the settings are compatible (i.e., offered deadline period<= requested
+ * the settings are compatible (i.e., offered deadline period &lt;= requested
  * deadline period). If they are not, the two entities are informed (via the
  * listener or {@link org.omg.dds.core.Condition} mechanism) of the incompatibility of the QoS
  * settings and communication will not occur.
@@ -57,7 +57,7 @@ import org.omg.dds.core.Duration;
  * or condition.
  * 
  * The value offered is considered compatible with the value requested if and
- * only if the inequality "offered deadline period <= requested deadline
+ * only if the inequality "offered deadline period &lt;= requested deadline
  * period" evaluates to true.
  * 
  * The setting of the DEADLINE policy must be set consistently with that of

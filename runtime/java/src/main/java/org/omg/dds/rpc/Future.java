@@ -7,8 +7,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 /**
- * DDS-RPC 1.0 §7.11.2.2.4: "The rpc.Future<T> interface extends the
- * java.util.concurrent.Future<T> interface and adds a single operation
+ * DDS-RPC 1.0 §7.11.2.2.4: "The {@code rpc.Future<T>} interface extends the
+ * {@code java.util.concurrent.Future<T>} interface and adds a single operation
  * to specify a FutureCompletionListener."
  *
  * @param <T> what the future resolves to

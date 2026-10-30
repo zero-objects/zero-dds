@@ -86,7 +86,7 @@ import org.omg.dds.core.Duration;
  *          LIVELINESS kind are considered ordered such that:
  *          <code>AUTOMATIC &lt; MANUAL_BY_PARTICIPANT &lt; MANUAL_BY_TOPIC
  *          </code>.</li>
- *      <li>the inequality "offered leaseDuration <= requested
+ *      <li>the inequality "offered leaseDuration &lt;= requested
  *          leaseDuration" evaluates to true.</li>
  * </ol>
  * 

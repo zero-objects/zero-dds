@@ -157,7 +157,7 @@ public final class ParameterList {
         return w.toBytes();
     }
 
-    /** sequence<string> value: u32 count + each CDR string (each 4-aligned). */
+    /** {@code sequence<string>} value: u32 count + each CDR string (each 4-aligned). */
     public static byte[] stringSeq(List<String> items) {
         Wire w = new Wire();
         w.u32le(items.size());

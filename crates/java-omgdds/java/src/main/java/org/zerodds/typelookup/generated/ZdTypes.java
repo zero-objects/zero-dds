@@ -190,7 +190,7 @@ public final class ZdTypes {
             }
 
             /**
-             * The enumeration of the flags of a bitmask (XTypes 1.3 7.5.1.2.2): `_<label>` is the flag's value, 1 << position.
+             * The enumeration of the flags of a bitmask (XTypes 1.3 7.5.1.2.2): {@code _<label>} is the flag's value, {@code 1 << position}.
              */
             public static final class MemberFlagBits {
                 public static final int _TRY_CONSTRUCT1 = 1 << 0;
@@ -273,7 +273,7 @@ public final class ZdTypes {
             // typedef int BitsetMemberFlag; — Java has no alias, so every use takes int.
 
             /**
-             * The enumeration of the flags of a bitmask (XTypes 1.3 7.5.1.2.2): `_<label>` is the flag's value, 1 << position.
+             * The enumeration of the flags of a bitmask (XTypes 1.3 7.5.1.2.2): {@code _<label>} is the flag's value, {@code 1 << position}.
              */
             public static final class TypeFlagBits {
                 public static final int _IS_FINAL = 1 << 0;

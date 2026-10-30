@@ -46,7 +46,7 @@ import org.omg.dds.core.Duration;
  * how the service should take advantage of this hint.
  * 
  * The value offered is considered compatible with the value requested if and
- * only if the inequality "offered duration <= requested duration" evaluates
+ * only if the inequality "offered duration &lt;= requested duration" evaluates
  * to true.
  */
 public interface LatencyBudget

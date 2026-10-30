@@ -36,7 +36,7 @@ import java.util.Arrays;
  *   <li><b>{@code String.length()} is neither bytes nor characters.</b> It is
  *       UTF-16 code units, so it is the length of neither a {@code string} nor
  *       a {@code wstring} on the wire. {@link #writeString(String)} takes its
- *       length from the encoded UTF-8; {@link #writeWstring} takes its length
+ *       length from the encoded UTF-8; {@link #writeWstringUtf8} takes its length
  *       from the code units and from what the policy counts.</li>
  *   <li><b>{@code String.getBytes(UTF_8)} does not fail.</b> It replaces an
  *       unpaired surrogate with {@code '?'} and reports success. This class

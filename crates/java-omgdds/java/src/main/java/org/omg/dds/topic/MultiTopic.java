@@ -42,7 +42,7 @@ import java.util.List;
  *     Topics combined may have different types but they are restricted in
  *     that the type of the fields used for the NATURAL JOIN operation must
  *     be the same.</li>
- * </li>The expressionParameters attribute is a sequence of strings that give
+ * <li>The expressionParameters attribute is a sequence of strings that give
  *      values to the "parameters" (i.e., "%n" tokens) in the
  *      subscriptionExpression. The number of supplied parameters must fit
  *      with the requested values in the subscriptionExpression (i.e., the

@@ -93,8 +93,6 @@ public interface ClientParams {
      * keeps it.
      *
      * @param target the params to fill
-     * @param <TReq> the request topic type
-     * @param <TRep> the reply topic type
      * @return {@code target}
      */
     default RequesterParams applyTo(RequesterParams target) {
