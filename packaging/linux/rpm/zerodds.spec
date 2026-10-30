@@ -30,7 +30,8 @@ Source0:        https://github.com/zero-objects/zero-dds/archive/v%{zd_fullver}/
 BuildRequires:  pkgconfig
 BuildRequires:  openssl-devel
 BuildRequires:  systemd-rpm-macros
-# %install builds the SDK (C and C++ headers, static library) with CMake.
+# The install section builds the SDK (C and C++ headers, static library)
+# with CMake.
 BuildRequires:  cmake
 BuildRequires:  gcc-c++
 
@@ -203,7 +204,7 @@ zerodds-xrce-agentd(1)). Implements OMG DDS-XRCE 1.0.
 
 %build
 # zerodds-foreign-typeobject-probe is an interop test tool, no package ships it;
-# %install takes every target/release/zerodds-* binary. The naming and XRCE
+# the install section takes every target/release/zerodds-* binary. The naming and XRCE
 # daemons need their package's `daemon` feature, which is not a default feature.
 cargo build --release --workspace --exclude zerodds-durability-store-lakehouse --exclude iceoryx2-oracle-consumer --exclude zerodds-endpoint-codegen --exclude zerodds-endpoint-golden --exclude zerodds-xrce-agent-demo --exclude zerodds-foreign-typeobject-probe --features zerodds-corba-cosnaming/daemon,zerodds-xrce-agent/daemon
 
@@ -272,7 +273,7 @@ for c in packaging/linux/configs/*.example; do
 done
 
 # man-pages — optional: a glob that matches nothing stays unexpanded and is
-# skipped. POSIX sh; %install does not run under bash everywhere.
+# skipped. POSIX sh; the install section does not run under bash everywhere.
 for m in man/man1/*.1; do
     [ -e "$m" ] || continue
     install -m 0644 "$m" %{buildroot}%{_mandir}/man1/
