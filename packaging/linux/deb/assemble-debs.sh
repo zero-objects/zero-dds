@@ -185,8 +185,12 @@ CONTROL
                 "$stage/usr/bin/zerodds-durability-svc"
             install -Dm0644 packaging/linux/systemd/zerodds-durability-svc.service \
                 "$stage/usr/lib/systemd/system/zerodds-durability-svc.service"
+            install -Dm0640 packaging/linux/configs/durability-svc.yaml.example \
+                "$stage/usr/share/zerodds/configs/durability-svc.yaml.example"
             install -Dm0644 man/man1/zerodds-durability-svc.1 \
                 "$stage/usr/share/man/man1/zerodds-durability-svc.1"
+            install -Dm0644 man/man5/zerodds-durability-svc.yaml.5 \
+                "$stage/usr/share/man/man5/zerodds-durability-svc.yaml.5"
             ;;
         zerodds-naming)
             # Standalone OMG CosNaming 1.3 server.

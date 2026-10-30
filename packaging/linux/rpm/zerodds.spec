@@ -23,13 +23,16 @@ Release:        %{zd_release}%{?dist}
 Summary:        ZeroDDS — Rust-native DDS implementation with bridges
 License:        Apache-2.0
 URL:            https://zerodds.org
-Source0:        https://github.com/zero-objects/zerodds/archive/v%{zd_fullver}/zerodds-%{zd_fullver}.tar.gz
+Source0:        https://github.com/zero-objects/zero-dds/archive/v%{zd_fullver}/zerodds-%{zd_fullver}.tar.gz
 
 # BuildRequires: cargo >= 1.88 (kommt via rustup im rpm-job)
 # BuildRequires: rust >= 1.88 (kommt via rustup im rpm-job)
 BuildRequires:  pkgconfig
 BuildRequires:  openssl-devel
 BuildRequires:  systemd-rpm-macros
+# %install builds the SDK (C and C++ headers, static library) with CMake.
+BuildRequires:  cmake
+BuildRequires:  gcc-c++
 
 Requires(pre):  shadow-utils
 Requires(post): systemd
@@ -199,7 +202,10 @@ zerodds-xrce-agentd(1)). Implements OMG DDS-XRCE 1.0.
 %autosetup -n zerodds-%{zd_fullver}
 
 %build
-cargo build --release --workspace --exclude zerodds-durability-store-lakehouse --exclude iceoryx2-oracle-consumer --exclude zerodds-endpoint-codegen --exclude zerodds-endpoint-golden --exclude zerodds-xrce-agent-demo
+# zerodds-foreign-typeobject-probe is an interop test tool, no package ships it;
+# %install takes every target/release/zerodds-* binary. The naming and XRCE
+# daemons need their package's `daemon` feature, which is not a default feature.
+cargo build --release --workspace --exclude zerodds-durability-store-lakehouse --exclude iceoryx2-oracle-consumer --exclude zerodds-endpoint-codegen --exclude zerodds-endpoint-golden --exclude zerodds-xrce-agent-demo --exclude zerodds-foreign-typeobject-probe --features zerodds-corba-cosnaming/daemon,zerodds-xrce-agent/daemon
 
 %install
 install -d %{buildroot}%{_bindir}
@@ -265,15 +271,16 @@ for c in packaging/linux/configs/*.example; do
     install -m 0640 "$c" %{buildroot}%{_datadir}/zerodds/configs/
 done
 
-# man-pages — optional (nullglob: skip when no files match).
-shopt -s nullglob
+# man-pages — optional: a glob that matches nothing stays unexpanded and is
+# skipped. POSIX sh; %install does not run under bash everywhere.
 for m in man/man1/*.1; do
+    [ -e "$m" ] || continue
     install -m 0644 "$m" %{buildroot}%{_mandir}/man1/
 done
 for m in man/man5/*.5; do
+    [ -e "$m" ] || continue
     install -m 0644 "$m" %{buildroot}%{_mandir}/man5/
 done
-shopt -u nullglob
 
 # ---------------------------------------------------------------------------
 # Pre/Post Scriptlets.
@@ -358,6 +365,8 @@ exit 0
 %dir %attr(0750,zerodds,zerodds) %{_localstatedir}/log/zerodds
 %dir %attr(0750,zerodds,zerodds) %{_localstatedir}/lib/zerodds
 %dir %{_datadir}/zerodds/configs
+%{_datadir}/zerodds/configs/zerodds.yaml.example
+%{_mandir}/man5/zerodds.yaml.5*
 
 %files cli
 # Bin-list auf existing workspace-bins beschraenkt (siehe cargo metadata).
@@ -398,6 +407,7 @@ exit 0
 %{_includedir}/dds/
 %{_includedir}/zerodds/
 %{_libdir}/libzerodds.a
+%{_libdir}/libzerodds-wire-cpp.a
 %{_libdir}/cmake/zerodds/
 %{_libdir}/pkgconfig/zerodds.pc
 
@@ -480,7 +490,9 @@ exit 0
 %files durability
 %{_bindir}/zerodds-durability-svc
 %{_unitdir}/zerodds-durability-svc.service
+%{_datadir}/zerodds/configs/durability-svc.yaml.example
 %{_mandir}/man1/zerodds-durability-svc.1*
+%{_mandir}/man5/zerodds-durability-svc.yaml.5*
 
 %files naming
 %{_bindir}/zerodds-naming-svc

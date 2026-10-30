@@ -58,7 +58,11 @@ jobs:
             } >> "$GITHUB_ENV"
           fi
       - name: cargo build (release)
-        run: cargo build --release --workspace --target ${{ matrix.target }}
+        # zerodds-naming-svc and zerodds-xrce-agentd need their package's
+        # `daemon` feature, which is not a default feature.
+        run: >-
+          cargo build --release --workspace --target ${{ matrix.target }}
+          --features zerodds-corba-cosnaming/daemon,zerodds-xrce-agent/daemon
       - name: Assemble debs (per sub-package)
         run: |
           # `github.ref_name` is the CALLER's ref: on a tag push that is the

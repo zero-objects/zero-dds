@@ -34,17 +34,31 @@ COPY . .
 RUN cargo build --release -p zerodds-c-api -p zerodds-idlc
 
 FROM node:22-bookworm-slim AS node-builder
-WORKDIR /build
+# @zerodds/node depends on @zerodds/wire (runtime/typescript) through
+# `file:../../runtime/typescript`; both keep their repository paths so that
+# the relative path resolves. Code that zerodds-idlc generates for
+# `--lang typescript` imports @zerodds/wire as well.
+WORKDIR /build/runtime/typescript
+COPY runtime/typescript/package.json runtime/typescript/package-lock.json \
+     runtime/typescript/tsconfig.json ./
+RUN npm ci --ignore-scripts --no-audit --no-fund
+COPY runtime/typescript/src ./src
+# `prepack` runs the tsc build.
+RUN npm pack && mv zerodds-wire-*.tgz /build/zerodds-wire.tgz
+WORKDIR /build/crates/ts-node
 COPY crates/ts-node/package.json crates/ts-node/package-lock.json* \
-     crates/ts-node/tsconfig.json /build/
+     crates/ts-node/tsconfig.json ./
 RUN npm install --no-audit --no-fund
-COPY crates/ts-node/src /build/src
-COPY crates/ts-node/test /build/test
+COPY crates/ts-node/src ./src
+COPY crates/ts-node/test ./test
 RUN npm run build
 # `npm pack` packs the distribution bundle (dist/ + src/ + package.json
 # per the "files" list) into a versioned .tgz, which we install
-# as a global package in the runtime stage.
-RUN npm pack && mv zerodds-node-*.tgz /build/zerodds-node.tgz
+# as a global package in the runtime stage. In the packed package.json
+# @zerodds/wire points at the tarball packed above, at the path where the
+# runtime stage puts it.
+RUN npm pkg set "dependencies.@zerodds/wire=file:/tmp/zerodds-wire.tgz" \
+    && npm pack && mv zerodds-node-*.tgz /build/zerodds-node.tgz
 
 FROM node:22-bookworm-slim AS runtime
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -60,12 +74,13 @@ RUN echo "/usr/local/lib" > /etc/ld.so.conf.d/zerodds.conf && ldconfig
 # IDL compiler for learners (`zerodds-idlc generate --lang typescript --out out chat.idl`).
 COPY --from=rust-builder /build/target/release/zerodds-idlc /usr/local/bin/zerodds-idlc
 
-# Install @zerodds/node globally — a learner can work via
-# `import { ... } from '@zerodds/node'` without a local node_modules.
+# Install @zerodds/node and @zerodds/wire globally — a learner can work via
+# `import { ... } from '@zerodds/node'` without a local node_modules, and
+# the generated code finds @zerodds/wire.
 # tsx runs TS directly without a tsc build.
-COPY --from=node-builder /build/zerodds-node.tgz /tmp/zerodds-node.tgz
-RUN npm install -g --omit=dev /tmp/zerodds-node.tgz tsx@4 \
-    && rm /tmp/zerodds-node.tgz
+COPY --from=node-builder /build/zerodds-wire.tgz /build/zerodds-node.tgz /tmp/
+RUN npm install -g --omit=dev /tmp/zerodds-wire.tgz /tmp/zerodds-node.tgz tsx@4 \
+    && rm /tmp/zerodds-wire.tgz /tmp/zerodds-node.tgz
 
 ENV LD_LIBRARY_PATH=/usr/local/lib \
     NODE_PATH=/usr/local/lib/node_modules

@@ -113,6 +113,7 @@ jobs:
           npm version "$WS_VERSION" --no-git-tag-version --allow-same-version
           cd ../../runtime/typescript
           npm version "$WS_VERSION" --no-git-tag-version --allow-same-version
+          echo "WS_VERSION=$WS_VERSION" >> "$GITHUB_ENV"
 
       - name: Build and pack canonical wire runtime
         working-directory: runtime/typescript
@@ -142,7 +143,12 @@ jobs:
 
       - name: npm pack (dry-run preview)
         working-directory: crates/ts-node
+        # The repository resolves @zerodds/wire through
+        # `file:../../runtime/typescript`; a package from the registry cannot.
+        # The packed package.json names the version that the step
+        # "Publish wire runtime" publishes instead.
         run: |
+          npm pkg set "dependencies.@zerodds/wire=$WS_VERSION"
           npm pack --dry-run
           npm pack
           ls -la *.tgz
