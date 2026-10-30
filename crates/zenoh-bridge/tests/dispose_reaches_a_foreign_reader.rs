@@ -35,8 +35,9 @@
 )]
 
 use std::collections::BTreeMap;
-use std::net::TcpListener;
 use std::time::{Duration, Instant};
+
+use zenoh::Wait as _;
 
 use zerodds_dcps::participant::bridge_guid_prefix;
 use zerodds_dcps::runtime::{
@@ -50,9 +51,23 @@ use zerodds_zenoh_bridge::daemon::server;
 
 const CDR_LE_HEADER: [u8; 4] = [0x00, 0x01, 0x00, 0x00];
 
-fn free_tcp_port() -> u16 {
-    let l = TcpListener::bind("127.0.0.1:0").expect("bind probe");
-    l.local_addr().expect("addr").port()
+/// The TCP port the daemon's Zenoh session listens on. The daemon listens
+/// on `tcp/127.0.0.1:0`, so the kernel picks the port at bind time; a port
+/// probed and released first can be taken by another process before the
+/// daemon binds it (see `daemon_tcp_port` in `daemon_e2e.rs`).
+fn daemon_tcp_port(daemon: &server::DaemonHandle) -> u16 {
+    let locators = daemon.bridge().session().info().locators().wait();
+    locators
+        .iter()
+        .find_map(|l| {
+            let s = l.to_string();
+            s.strip_prefix("tcp/127.0.0.1:")
+                .and_then(|rest| rest.split('?').next())
+                .and_then(|port| port.parse().ok())
+        })
+        .unwrap_or_else(|| {
+            panic!("the daemon's zenoh session listens on no tcp/127.0.0.1 port: {locators:?}")
+        })
 }
 
 fn zenoh_client_config(connect_port: u16) -> zenoh::Config {
@@ -101,9 +116,8 @@ fn bridge_and_delete(which: &str) -> BTreeMap<String, String> {
         std::process::id()
     ));
     std::fs::write(&type_path, &type_object).unwrap();
-    let daemon_port = free_tcp_port();
     let yaml = format!(
-        "domain: {domain}\nzenoh:\n  mode: peer\n  listen: [\"tcp/127.0.0.1:{daemon_port}\"]\n  \
+        "domain: {domain}\nzenoh:\n  mode: peer\n  listen: [\"tcp/127.0.0.1:0\"]\n  \
          scouting:\n    multicast:\n      enabled: false\ndiscovery:\n  auto_bridge: false\n\
          topics:\n  - dds_name: ZenPoint\n    dds_type: KeyedPointA\n    direction: bidir\n    \
          keyed: true\n    type_file: \"{}\"\n",
@@ -114,6 +128,7 @@ fn bridge_and_delete(which: &str) -> BTreeMap<String, String> {
         RuntimeConfig::default(),
     )
     .expect("daemon start");
+    let daemon_port = daemon_tcp_port(&daemon);
 
     let (command, label) = reader_command(which);
     let mut reader = VendorReader::start(command, &label, domain, "ZenPoint");

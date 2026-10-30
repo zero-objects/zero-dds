@@ -43,7 +43,6 @@
     deprecated
 )]
 
-use std::net::TcpListener;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
@@ -78,15 +77,26 @@ fn next_domain() -> (zerodds_test_domains::DomainLease, i32) {
     (lease, domain)
 }
 
-/// A free TCP port. There is a small window between the probe socket's drop
-/// and Zenoh's own bind in which another process could take the port — the
-/// same trade-off `crates/coap-bridge`'s own tests accept for their UDP
-/// port-0 probes.
-fn free_tcp_port() -> u16 {
-    let l = TcpListener::bind("127.0.0.1:0").expect("bind probe");
-    let port = l.local_addr().expect("addr").port();
-    drop(l);
-    port
+/// The TCP port the daemon's Zenoh session listens on.
+///
+/// The daemon listens on `tcp/127.0.0.1:0`, so the kernel picks the port at
+/// bind time and no parallel test can take it first. A port probed and
+/// released before the daemon bound it was taken by a parallel test's
+/// Zenoh session in 1 of 39 runs on the Linux test host: `daemon start`
+/// failed with "Address already in use".
+fn daemon_tcp_port(daemon: &server::DaemonHandle) -> u16 {
+    let locators = daemon.bridge().session().info().locators().wait();
+    locators
+        .iter()
+        .find_map(|l| {
+            let s = l.to_string();
+            s.strip_prefix("tcp/127.0.0.1:")
+                .and_then(|rest| rest.split('?').next())
+                .and_then(|port| port.parse().ok())
+        })
+        .unwrap_or_else(|| {
+            panic!("the daemon's zenoh session listens on no tcp/127.0.0.1 port: {locators:?}")
+        })
 }
 
 fn runtime_config() -> RuntimeConfig {
@@ -189,8 +199,9 @@ fn zenoh_test_config(listen_port: Option<u16>, connect_port: Option<u16>) -> zen
     cfg
 }
 
-/// Starts the daemon from a YAML string, on TCP loopback port `daemon_port`
-/// (peer mode, listening, scouting disabled).
+/// Starts the daemon from a YAML string (peer mode, listening on a TCP
+/// loopback port the kernel picks, scouting disabled); see
+/// [`daemon_tcp_port`].
 fn start_daemon(yaml: &str) -> server::DaemonHandle {
     let cfg = DaemonConfig::load_from_str(yaml).expect("daemon config parses");
     server::start_with_runtime(cfg, runtime_config()).expect("daemon start")
@@ -281,24 +292,60 @@ fn write_until_received(
     }
 }
 
-/// Writes a probe through `write_probe` until the Zenoh subscriber `sub`
-/// has received one, and returns once it has.
+/// Waits until the daemon's Zenoh session has registered a remote
+/// subscriber for `key_expr`, then writes a probe through `write_probe`
+/// until the Zenoh subscriber `sub` has received one.
 ///
 /// A DDS match is not enough before a single-shot write: Zenoh delivers a
-/// put only to the subscribers the publishing session already knows, and
-/// this session's subscriber declaration reaches the daemon asynchronously.
-/// Measured on the Linux test host with one CPU: the daemon forwarded all three samples
-/// of `keyed_topic_instances_and_dispose_both_directions`
-/// (`BridgeStats::dds_to_zenoh` = 3) and the subscriber received two of them
-/// in 2 of 12 runs — the first put left before the declaration arrived.
-/// Probes still in flight may arrive later, so the checks after this look
-/// for the samples they expect, not for a count.
+/// put only to the subscribers the publishing session knows, and the test
+/// session's subscriber declaration reaches the daemon asynchronously. A
+/// probe that arrives does not show that it has. Until the test session
+/// finalizes its initial interest, Zenoh 1.10 routes every put to it
+/// (`compute_data_route` in `zenoh/src/net/routing/hat/peer/pubsub.rs`,
+/// `has_unfinalized_initial_interest`); between that final and the
+/// subscriber declaration it routes none. Measured on the Linux test host
+/// with Zenoh tracing: the probe arrived, the daemon received
+/// `declare_final` and 1.1 ms later `declare_subscriber`, and the put in
+/// between was not delivered. The remote matching status of a publisher on
+/// the daemon's session counts registered subscribers only, so it turns
+/// true once the declaration has arrived. `Locality::Remote` leaves out the
+/// daemon's own subscriber on a bidirectional route.
+///
+/// The probe then covers the DDS half of the route. Probes still in flight
+/// may arrive later, so the checks after this look for the samples they
+/// expect, not for a count.
 fn wait_for_zenoh_route(
+    daemon: &server::DaemonHandle,
+    key_expr: &str,
     sub: &zenoh::pubsub::Subscriber<zenoh::handlers::FifoChannelHandler<Sample>>,
     what: &str,
     mut write_probe: impl FnMut(),
 ) {
     let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    let publisher = daemon
+        .bridge()
+        .session()
+        .declare_publisher(key_expr.to_string())
+        .allowed_destination(zenoh::sample::Locality::Remote)
+        .wait()
+        .expect("declare a publisher for the matching status");
+    while !publisher
+        .matching_status()
+        .wait()
+        .expect("matching status")
+        .matching()
+    {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "timed out after 20 s waiting for the daemon to register the zenoh \
+             subscriber of {key_expr} ({what})"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    publisher
+        .undeclare()
+        .wait()
+        .expect("undeclare the matching publisher");
     loop {
         write_probe();
         if let Ok(Some(_)) = sub.recv_timeout(Duration::from_millis(300)) {
@@ -333,13 +380,13 @@ fn dds_writer_reaches_zenoh_subscriber() {
         .register_user_writer(writer_cfg("Chatter", "T", true, DurabilityKind::Volatile))
         .expect("register writer");
 
-    let daemon_port = free_tcp_port();
     let yaml = format!(
-        "domain: {domain}\nzenoh:\n  mode: peer\n  listen: [\"tcp/127.0.0.1:{daemon_port}\"]\n  \
+        "domain: {domain}\nzenoh:\n  mode: peer\n  listen: [\"tcp/127.0.0.1:0\"]\n  \
          scouting:\n    multicast:\n      enabled: false\ndiscovery:\n  auto_bridge: false\n\
          topics:\n  - dds_name: Chatter\n    dds_type: T\n    direction: out\n"
     );
     let mut daemon = start_daemon(&yaml);
+    let daemon_port = daemon_tcp_port(&daemon);
 
     let rt = tokio::runtime::Runtime::new().expect("tokio rt");
     let session = rt
@@ -395,13 +442,13 @@ fn zenoh_payload_matches_what_zenoh_plugin_dds_would_put() {
         ))
         .expect("register writer");
 
-    let daemon_port = free_tcp_port();
     let yaml = format!(
-        "domain: {domain}\nzenoh:\n  mode: peer\n  listen: [\"tcp/127.0.0.1:{daemon_port}\"]\n  \
+        "domain: {domain}\nzenoh:\n  mode: peer\n  listen: [\"tcp/127.0.0.1:0\"]\n  \
          scouting:\n    multicast:\n      enabled: false\ndiscovery:\n  auto_bridge: false\n\
          topics:\n  - dds_name: BytesTopic\n    dds_type: T\n    direction: out\n"
     );
     let mut daemon = start_daemon(&yaml);
+    let daemon_port = daemon_tcp_port(&daemon);
     let rt = tokio::runtime::Runtime::new().expect("tokio rt");
     let session = rt
         .block_on(async { zenoh::open(zenoh_test_config(None, Some(daemon_port))).await })
@@ -434,13 +481,13 @@ fn one_mebibyte_payload_forwards_intact() {
         .register_user_writer(writer_cfg("BigTopic", "T", true, DurabilityKind::Volatile))
         .expect("register writer");
 
-    let daemon_port = free_tcp_port();
     let yaml = format!(
         "domain: {domain}\nlimits:\n  max_payload_bytes: 2097152\nzenoh:\n  mode: peer\n  \
-         listen: [\"tcp/127.0.0.1:{daemon_port}\"]\n  scouting:\n    multicast:\n      enabled: false\n\
+         listen: [\"tcp/127.0.0.1:0\"]\n  scouting:\n    multicast:\n      enabled: false\n\
          discovery:\n  auto_bridge: false\ntopics:\n  - dds_name: BigTopic\n    dds_type: T\n    direction: out\n"
     );
     let mut daemon = start_daemon(&yaml);
+    let daemon_port = daemon_tcp_port(&daemon);
     let rt = tokio::runtime::Runtime::new().expect("tokio rt");
     let session = rt
         .block_on(async { zenoh::open(zenoh_test_config(None, Some(daemon_port))).await })
@@ -482,13 +529,13 @@ fn zenoh_put_reaches_dds_reader() {
         .expect("register reader");
     let _ = reader_eid;
 
-    let daemon_port = free_tcp_port();
     let yaml = format!(
-        "domain: {domain}\nzenoh:\n  mode: peer\n  listen: [\"tcp/127.0.0.1:{daemon_port}\"]\n  \
+        "domain: {domain}\nzenoh:\n  mode: peer\n  listen: [\"tcp/127.0.0.1:0\"]\n  \
          scouting:\n    multicast:\n      enabled: false\ndiscovery:\n  auto_bridge: false\n\
          topics:\n  - dds_name: Cmd\n    dds_type: T\n    direction: in\n"
     );
     let mut daemon = start_daemon(&yaml);
+    let daemon_port = daemon_tcp_port(&daemon);
     let rt = tokio::runtime::Runtime::new().expect("tokio rt");
     let session = rt
         .block_on(async { zenoh::open(zenoh_test_config(None, Some(daemon_port))).await })
@@ -594,15 +641,15 @@ fn keyed_topic_instances_and_dispose_both_directions() {
         .expect("register keyed reader");
     let _ = reader_eid;
 
-    let daemon_port = free_tcp_port();
     let yaml = format!(
-        "domain: {domain}\nzenoh:\n  mode: peer\n  listen: [\"tcp/127.0.0.1:{daemon_port}\"]\n  \
+        "domain: {domain}\nzenoh:\n  mode: peer\n  listen: [\"tcp/127.0.0.1:0\"]\n  \
          scouting:\n    multicast:\n      enabled: false\ndiscovery:\n  auto_bridge: false\n\
          topics:\n  - dds_name: KeyedTopic\n    dds_type: Keyed\n    direction: bidir\n    \
          keyed: true\n    type_file: \"{}\"\n",
         type_path.display()
     );
     let mut daemon = start_daemon(&yaml);
+    let daemon_port = daemon_tcp_port(&daemon);
     let rt = tokio::runtime::Runtime::new().expect("tokio rt");
     let session = rt
         .block_on(async { zenoh::open(zenoh_test_config(None, Some(daemon_port))).await })
@@ -624,6 +671,8 @@ fn keyed_topic_instances_and_dispose_both_directions() {
     );
 
     wait_for_zenoh_route(
+        &daemon,
+        "KeyedTopic",
         &sub,
         "a probe instance reaches the zenoh subscriber",
         || {
@@ -740,14 +789,14 @@ fn transient_local_late_joiner_gets_the_retained_sample() {
         ))
         .expect("register writer");
 
-    let daemon_port = free_tcp_port();
     let yaml = format!(
-        "domain: {domain}\nzenoh:\n  mode: peer\n  listen: [\"tcp/127.0.0.1:{daemon_port}\"]\n  \
+        "domain: {domain}\nzenoh:\n  mode: peer\n  listen: [\"tcp/127.0.0.1:0\"]\n  \
          scouting:\n    multicast:\n      enabled: false\ndiscovery:\n  auto_bridge: false\n\
          topics:\n  - dds_name: Retained\n    dds_type: T\n    direction: out\n    \
          qos:\n      durability: transient_local\n"
     );
     let mut daemon = start_daemon(&yaml);
+    let daemon_port = daemon_tcp_port(&daemon);
 
     let rt = tokio::runtime::Runtime::new().expect("tokio rt");
     wait_for_match(
@@ -842,17 +891,17 @@ fn auto_discovered_keyed_topic_with_registered_type_bridges_keyed() {
         )
         .expect("register keyed reader");
 
-    let daemon_port = free_tcp_port();
     // No `topics:` entry — auto_bridge (default true) must discover and
     // resolve this topic on its own. A short poll interval keeps the test
     // fast; the topic waits for the getTypes round trip
     // (`resolve_or_defer`).
     let yaml = format!(
-        "domain: {domain}\nzenoh:\n  mode: peer\n  listen: [\"tcp/127.0.0.1:{daemon_port}\"]\n  \
+        "domain: {domain}\nzenoh:\n  mode: peer\n  listen: [\"tcp/127.0.0.1:0\"]\n  \
          scouting:\n    multicast:\n      enabled: false\ndiscovery:\n  auto_bridge: true\n  \
          poll_interval_ms: 100\n"
     );
     let mut daemon = start_daemon(&yaml);
+    let daemon_port = daemon_tcp_port(&daemon);
     let session = zenoh::open(zenoh_test_config(None, Some(daemon_port)))
         .wait()
         .expect("zenoh open");
@@ -876,6 +925,8 @@ fn auto_discovered_keyed_topic_with_registered_type_bridges_keyed() {
     );
 
     wait_for_zenoh_route(
+        &daemon,
+        "AutoKeyed",
         &sub,
         "a probe instance reaches the zenoh subscriber",
         || {
@@ -994,13 +1045,13 @@ fn a_keyed_topic_whose_type_arrives_late_is_bridged_with_it() {
         )
         .expect("register keyed reader");
 
-    let daemon_port = free_tcp_port();
     let yaml = format!(
-        "domain: {domain}\nzenoh:\n  mode: peer\n  listen: [\"tcp/127.0.0.1:{daemon_port}\"]\n  \
+        "domain: {domain}\nzenoh:\n  mode: peer\n  listen: [\"tcp/127.0.0.1:0\"]\n  \
          scouting:\n    multicast:\n      enabled: false\ndiscovery:\n  auto_bridge: true\n  \
          poll_interval_ms: 100\n"
     );
     let mut daemon = start_daemon(&yaml);
+    let daemon_port = daemon_tcp_port(&daemon);
     // The daemon sees the writer and asks for its type; the producer has
     // none to give yet.
     std::thread::sleep(Duration::from_secs(2));
@@ -1067,9 +1118,8 @@ fn a_keyed_topic_whose_type_never_resolves_is_bridged_after_the_deadline() {
         )
         .expect("register keyed writer");
 
-    let daemon_port = free_tcp_port();
     let yaml = format!(
-        "domain: {domain}\nzenoh:\n  mode: peer\n  listen: [\"tcp/127.0.0.1:{daemon_port}\"]\n  \
+        "domain: {domain}\nzenoh:\n  mode: peer\n  listen: [\"tcp/127.0.0.1:0\"]\n  \
          scouting:\n    multicast:\n      enabled: false\ndiscovery:\n  auto_bridge: true\n  \
          poll_interval_ms: 100\n"
     );
@@ -1101,6 +1151,7 @@ fn a_keyed_topic_whose_type_never_resolves_is_bridged_after_the_deadline() {
 /// blending into ordinary traffic.
 #[test]
 fn auto_discovered_topic_with_unresolvable_type_counts_lifecycle_samples() {
+    zenoh::try_init_log_from_env();
     let (_lease, domain) = next_domain();
     let producer = start_dcps(domain, "e2e-unresolved-producer");
 
@@ -1118,16 +1169,20 @@ fn auto_discovered_topic_with_unresolvable_type_counts_lifecycle_samples() {
         ))
         .expect("register writer");
 
-    let daemon_port = free_tcp_port();
     let yaml = format!(
-        "domain: {domain}\nzenoh:\n  mode: peer\n  listen: [\"tcp/127.0.0.1:{daemon_port}\"]\n  \
+        "domain: {domain}\nzenoh:\n  mode: peer\n  listen: [\"tcp/127.0.0.1:0\"]\n  \
          scouting:\n    multicast:\n      enabled: false\ndiscovery:\n  auto_bridge: true\n  \
          poll_interval_ms: 100\n"
     );
     let mut daemon = start_daemon(&yaml);
+    let daemon_port = daemon_tcp_port(&daemon);
     let session = zenoh::open(zenoh_test_config(None, Some(daemon_port)))
         .wait()
         .expect("zenoh open");
+    eprintln!(
+        "[test] unresolved-type subscriber session zid={}",
+        session.zid()
+    );
     let sub = session
         .declare_subscriber("UnresolvedType/**")
         .wait()
@@ -1139,11 +1194,20 @@ fn auto_discovered_topic_with_unresolvable_type_counts_lifecycle_samples() {
         || (producer.user_writer_matched_count(writer_eid) > 0).then_some(()),
     );
 
-    wait_for_zenoh_route(&sub, "a probe sample reaches the zenoh subscriber", || {
-        producer
-            .write_user_sample_borrowed(writer_eid, b"probe")
-            .expect("write probe sample");
-    });
+    let mut probes_written = 0u64;
+    wait_for_zenoh_route(
+        &daemon,
+        "UnresolvedType",
+        &sub,
+        "a probe sample reaches the zenoh subscriber",
+        || {
+            producer
+                .write_user_sample_borrowed(writer_eid, b"probe")
+                .expect("write probe sample");
+            probes_written += 1;
+        },
+    );
+    let forwarded_after_route = daemon.bridge().stats().dds_to_zenoh.load(Ordering::Relaxed);
     producer
         .write_user_sample_borrowed(writer_eid, b"alive-before-dispose")
         .expect("write alive sample");
@@ -1152,23 +1216,37 @@ fn auto_discovered_topic_with_unresolvable_type_counts_lifecycle_samples() {
         .expect("dispose the implicit instance");
 
     // Never dropped: both the alive sample and the dispose still cross to
-    // Zenoh.
+    // Zenoh. On a timeout the message says which of the two is missing and
+    // what the bridge counted, so a failing run shows on which side of the
+    // Zenoh put the sample was lost.
     let mut saw_alive = false;
     let mut saw_delete = false;
-    wait_for(
-        "zenoh sees the alive sample and the dispose",
-        Duration::from_secs(20),
-        || {
-            while let Ok(Some(s)) = sub.recv_timeout(Duration::from_millis(50)) {
-                if s.kind() == zenoh::sample::SampleKind::Delete {
-                    saw_delete = true;
-                } else if s.payload().to_bytes().ends_with(b"alive-before-dispose") {
-                    saw_alive = true;
-                }
+    let mut probes_late = 0u64;
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    while !(saw_alive && saw_delete) {
+        while let Ok(Some(s)) = sub.recv_timeout(Duration::from_millis(50)) {
+            if s.kind() == zenoh::sample::SampleKind::Delete {
+                saw_delete = true;
+            } else if s.payload().to_bytes().ends_with(b"alive-before-dispose") {
+                saw_alive = true;
+            } else {
+                probes_late += 1;
             }
-            (saw_alive && saw_delete).then_some(())
-        },
-    );
+        }
+        if std::time::Instant::now() >= deadline {
+            let stats = daemon.bridge().stats();
+            panic!(
+                "timed out after 20 s waiting for zenoh to see the alive sample and the \
+                 dispose: alive seen {saw_alive}, delete seen {saw_delete}; probes \
+                 written {probes_written}, received after the first {probes_late}; bridge \
+                 dds_to_zenoh={} (={forwarded_after_route} when the route stood) \
+                 forward_errors={} lifecycle_type_unresolved={}",
+                stats.dds_to_zenoh.load(Ordering::Relaxed),
+                stats.forward_errors.load(Ordering::Relaxed),
+                stats.lifecycle_type_unresolved.load(Ordering::Relaxed),
+            );
+        }
+    }
 
     // Counted, not blended into ordinary DDS->Zenoh traffic.
     let unresolved = daemon
@@ -1241,14 +1319,13 @@ fn auto_discovered_keyed_topic_with_no_type_information_announces_keyed_reader()
         )
         .expect("register keyed writer");
 
-    let daemon_port = free_tcp_port();
-    let metrics_port = free_tcp_port();
     let yaml = format!(
-        "domain: {domain}\nzenoh:\n  mode: peer\n  listen: [\"tcp/127.0.0.1:{daemon_port}\"]\n  \
+        "domain: {domain}\nzenoh:\n  mode: peer\n  listen: [\"tcp/127.0.0.1:0\"]\n  \
          scouting:\n    multicast:\n      enabled: false\ndiscovery:\n  auto_bridge: true\n  \
-         poll_interval_ms: 100\nmetrics:\n  enabled: true\n  listen: \"127.0.0.1:{metrics_port}\"\n"
+         poll_interval_ms: 100\nmetrics:\n  enabled: true\n  listen: \"127.0.0.1:0\"\n"
     );
     let mut daemon = start_daemon(&yaml);
+    let daemon_port = daemon_tcp_port(&daemon);
 
     wait_for_match(
         &producer,
@@ -1365,13 +1442,13 @@ fn auto_discovered_keyed_reader_with_no_type_information_receives_from_zenoh() {
         )
         .expect("register keyed reader");
 
-    let daemon_port = free_tcp_port();
     let yaml = format!(
-        "domain: {domain}\nzenoh:\n  mode: peer\n  listen: [\"tcp/127.0.0.1:{daemon_port}\"]\n  \
+        "domain: {domain}\nzenoh:\n  mode: peer\n  listen: [\"tcp/127.0.0.1:0\"]\n  \
          scouting:\n    multicast:\n      enabled: false\ndiscovery:\n  auto_bridge: true\n  \
          poll_interval_ms: 100\n"
     );
     let mut daemon = start_daemon(&yaml);
+    let daemon_port = daemon_tcp_port(&daemon);
     let session = zenoh::open(zenoh_test_config(None, Some(daemon_port)))
         .wait()
         .expect("zenoh open");
@@ -1467,9 +1544,8 @@ fn an_auto_discovered_topic_is_bridged_on_discovery_not_on_the_poll_interval() {
         )
         .expect("register keyed writer");
 
-    let daemon_port = free_tcp_port();
     let yaml = format!(
-        "domain: {domain}\nzenoh:\n  mode: peer\n  listen: [\"tcp/127.0.0.1:{daemon_port}\"]\n  \
+        "domain: {domain}\nzenoh:\n  mode: peer\n  listen: [\"tcp/127.0.0.1:0\"]\n  \
          scouting:\n    multicast:\n      enabled: false\ndiscovery:\n  auto_bridge: true\n  \
          poll_interval_ms: 30000\n"
     );
@@ -1521,13 +1597,13 @@ fn a_topic_bridged_one_way_gets_the_other_direction_when_its_reader_appears() {
         .register_user_writer(writer_cfg("Widen", "T", true, DurabilityKind::Volatile))
         .expect("register writer");
 
-    let daemon_port = free_tcp_port();
     let yaml = format!(
-        "domain: {domain}\nzenoh:\n  mode: peer\n  listen: [\"tcp/127.0.0.1:{daemon_port}\"]\n  \
+        "domain: {domain}\nzenoh:\n  mode: peer\n  listen: [\"tcp/127.0.0.1:0\"]\n  \
          scouting:\n    multicast:\n      enabled: false\ndiscovery:\n  auto_bridge: true\n  \
          poll_interval_ms: 100\n"
     );
     let mut daemon = start_daemon(&yaml);
+    let daemon_port = daemon_tcp_port(&daemon);
     wait_for_match(
         &producer,
         "the daemon's bridging reader matched the producer's writer",
