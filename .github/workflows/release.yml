@@ -203,6 +203,9 @@ jobs:
           # the tag so the .pkg carries the same version as every other
           # artefact of the release (was hard-coded "1.0.0").
           ZERODDS_PKG_VERSION: ${{ needs.plan.outputs.version }}
+          # The .pkg collects the binaries of this target; x86_64 is
+          # cross-compiled on an arm64 runner.
+          ZERODDS_TARGET: ${{ matrix.target }}
         run: bash packaging/github-actions/sign-macos.sh target/distrib
       - uses: actions/upload-artifact@v7
         with:

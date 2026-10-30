@@ -81,11 +81,17 @@ done
 # 3) Build .pkg installer per target (all bins together)
 # ============================================================
 if [ -n "${DEV_ID_INSTALLER:-}" ]; then
-    case "$(uname -m)" in
-        arm64)  TARGET="aarch64-apple-darwin" ;;
-        x86_64) TARGET="x86_64-apple-darwin" ;;
-        *)      TARGET="${ZERODDS_TARGET:-unknown-apple-darwin}" ;;
-    esac
+    # release.yml cross-compiles x86_64-apple-darwin on an arm64 runner, so
+    # `uname -m` names the runner, not the target; the job passes the target.
+    if [ -n "${ZERODDS_TARGET:-}" ]; then
+        TARGET="$ZERODDS_TARGET"
+    else
+        case "$(uname -m)" in
+            arm64)  TARGET="aarch64-apple-darwin" ;;
+            x86_64) TARGET="x86_64-apple-darwin" ;;
+            *)      TARGET="unknown-apple-darwin" ;;
+        esac
+    fi
     PKG_NAME="zerodds-bundle-${PKG_VERSION}-${TARGET}.pkg"
     PKG_OUT="$DIST_DIR/$PKG_NAME"
     PKG_ROOT=$(mktemp -d -t zerodds-pkg.XXXXX)
