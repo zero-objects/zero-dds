@@ -93,15 +93,13 @@ jobs:
           # accepts targets from that list, so keeping it here produced a
           # build matrix entry that cannot succeed. ARM64 Linux ships via
           # aarch64-unknown-linux-gnu.
-          # macos-13 is effectively no longer available on the public
-          # GH Action runners (>1h queue times). We build
-          # x86_64-apple-darwin via cross-compile on a macos-14
-          # (Apple Silicon) runner — `cargo --target x86_64-apple-darwin`
-          # is natively supported by Apple tooling.
+          # x86_64-apple-darwin is cross-compiled on the Apple Silicon
+          # runner — `cargo --target x86_64-apple-darwin` is natively
+          # supported by Apple tooling.
           - target: x86_64-apple-darwin
-            os: macos-14
+            os: macos-15
           - target: aarch64-apple-darwin
-            os: macos-14
+            os: macos-15
           - target: x86_64-pc-windows-msvc
             os: windows-2022
           - target: aarch64-pc-windows-msvc
