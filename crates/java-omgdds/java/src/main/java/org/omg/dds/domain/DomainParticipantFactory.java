@@ -89,7 +89,7 @@ public abstract class DomainParticipantFactory implements DDSObject
      *                  notified. A null collection signifies all status
      *                  changes.
      *
-     * @throws  org.omg.dds.core.InconsistentPolicyException     if the specified QoS policies
+     * @throws  InconsistentPolicyException     if the specified QoS policies
      *          are not consistent.
      *
      * @see     #createParticipant()
@@ -128,7 +128,7 @@ public abstract class DomainParticipantFactory implements DDSObject
      * Note that despite having QoS, the DomainParticipantFactory is not an
      * {@link org.omg.dds.core.Entity}.
      * 
-     * @throws  org.omg.dds.core.InconsistentPolicyException     if the resulting policies are
+     * @throws  InconsistentPolicyException     if the resulting policies are
      *          not self consistent; in that case, the operation will have no
      *          effect.
      *
@@ -158,7 +158,7 @@ public abstract class DomainParticipantFactory implements DDSObject
      * {@link org.omg.dds.domain.DomainParticipant} entities in the case where the QoS policies
      * are defaulted in the {@link #createParticipant()} operation.
      * 
-     * @throws  org.omg.dds.core.InconsistentPolicyException     if the resulting policies are
+     * @throws  InconsistentPolicyException     if the resulting policies are
      *          not self consistent; in that case, the operation will have no
      *          effect.
      *

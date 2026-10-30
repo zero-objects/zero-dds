@@ -22,8 +22,7 @@ package org.omg.dds.core;
  * DDS recognizes a number of ways in which an operation may return, which
  * are mapped to exceptions in the following way:
  * 
- * <table class="striped">
- * <caption>Return codes and their exceptions</caption>
+ * <table border="1" cellspacing="0" cellpadding="2">
  * <tr><th>Return</th><th>Description</th><th>Exception</th></tr>
  * <tr>
  *     <td>OK</td>
@@ -91,7 +90,7 @@ package org.omg.dds.core;
  *     <td>Two or more {@link org.omg.dds.core.policy.QosPolicy} property values have been specified
  *         that are inconsistent with one another.
  *     </td>
- *     <td>{@link org.omg.dds.core.InconsistentPolicyException}</td>
+ *     <td>{@link org.omg.dds.core.ImmutablePolicyException}</td>
  * </tr>
  * <tr>
  *     <td>OUT_OF_RESOURCES</td>

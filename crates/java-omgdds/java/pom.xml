@@ -201,6 +201,14 @@
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-javadoc-plugin</artifactId>
                         <version>3.7.0</version>
+                        <configuration>
+                            <!-- The comments of org.omg.dds are the OMG text, normative
+                                 by DDS-Java-PSM 1.0 Annex B; CoreApiShapeTest checks
+                                 their digests. Doclint does not check them. -->
+                            <additionalOptions>
+                                <additionalOption>-Xdoclint/package:-org.omg.dds,-org.omg.dds.*</additionalOption>
+                            </additionalOptions>
+                        </configuration>
                         <executions>
                             <execution>
                                 <id>attach-javadocs</id>

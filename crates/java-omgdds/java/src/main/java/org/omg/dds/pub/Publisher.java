@@ -177,7 +177,7 @@ extends DomainEntity<PublisherListener, PublisherQos>
      * the "create" operations on the Publisher. That is, it closes all
      * contained {@link org.omg.dds.pub.DataWriter} objects.
      * 
-     * @throws  org.omg.dds.core.PreconditionNotMetException     if the any of the contained
+     * @throws  PreconditionNotMetException     if the any of the contained
      *          entities is in a state where it cannot be deleted.
      */
     public void closeContainedEntities();
@@ -210,7 +210,7 @@ extends DomainEntity<PublisherListener, PublisherQos>
      * be used by a Service implementation to e.g., batch all the
      * modifications made since the {@link #suspendPublications()}.
      *
-     * @throws  org.omg.dds.core.PreconditionNotMetException     if the call to this method
+     * @throws  PreconditionNotMetException     if the call to this method
      *          does not match a previous call to
      *          {@link #suspendPublications()}.
      * 
@@ -259,7 +259,7 @@ extends DomainEntity<PublisherListener, PublisherQos>
      * This operation terminates the 'coherent set' initiated by the matching
      * call to {@link #beginCoherentChanges()}.
      * 
-     * @throws  org.omg.dds.core.PreconditionNotMetException     if there is no matching call
+     * @throws  PreconditionNotMetException     if there is no matching call
      *          to {@link #beginCoherentChanges()}.
      * 
      * @see     #beginCoherentChanges()
@@ -312,7 +312,7 @@ extends DomainEntity<PublisherListener, PublisherQos>
      * the case where the QoS policies are defaulted in the
      * {@link #createDataWriter(Topic)} operation.
      * 
-     * @throws  org.omg.dds.core.InconsistentPolicyException     if the resulting policies are
+     * @throws  InconsistentPolicyException     if the resulting policies are
      *          not self consistent; if they are not, the operation will have
      *          no effect.
      *

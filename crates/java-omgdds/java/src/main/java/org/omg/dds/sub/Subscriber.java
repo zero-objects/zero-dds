@@ -180,7 +180,7 @@ extends DomainEntity<SubscriberListener, SubscriberQos>
      * that is also the {@link org.omg.dds.sub.QueryCondition} and {@link org.omg.dds.sub.ReadCondition}
      * objects belonging to the contained DataReaders.
      * 
-     * @throws  org.omg.dds.core.PreconditionNotMetException     if any of the contained
+     * @throws  PreconditionNotMetException     if any of the contained
      *          entities is in a state where it cannot be closed. This will
      *          occur, for example, if a contained DataReader cannot be
      *          closed because the application has called a
@@ -203,7 +203,7 @@ extends DomainEntity<SubscriberListener, SubscriberQos>
      * 
      * @return  readers, as a convenience to facilitate chaining.
      * 
-     * @throws  org.omg.dds.core.PreconditionNotMetException     if the Subscriber has
+     * @throws  PreconditionNotMetException     if the Subscriber has
      *          {@link org.omg.dds.core.policy.Presentation#getAccessScope()}
      *          set to
      *          {@link org.omg.dds.core.policy.Presentation.AccessScopeKind#GROUP}
@@ -269,7 +269,7 @@ extends DomainEntity<SubscriberListener, SubscriberQos>
      * 
      * @return  readers, as a convenience to facilitate chaining.
      * 
-     * @throws  org.omg.dds.core.PreconditionNotMetException     if the Subscriber has
+     * @throws  PreconditionNotMetException     if the Subscriber has
      *          {@link org.omg.dds.core.policy.Presentation#getAccessScope()}
      *          set to
      *          {@link org.omg.dds.core.policy.Presentation.AccessScopeKind#GROUP}
@@ -345,7 +345,7 @@ extends DomainEntity<SubscriberListener, SubscriberQos>
      * the Sample (including corresponding data) elements returned from the
      * sample-accessing operations.
      * 
-     * @throws  org.omg.dds.core.PreconditionNotMetException     if this call does not close a
+     * @throws  PreconditionNotMetException     if this call does not close a
      *          previous call to {@link #beginAccess()}.
      * 
      * @see     #beginAccess()
@@ -375,7 +375,7 @@ extends DomainEntity<SubscriberListener, SubscriberQos>
      * the case where the QoS policies are defaulted in the
      * {@link #createDataReader(TopicDescription)} operation.
      * 
-     * @throws  org.omg.dds.core.InconsistentPolicyException     if the resulting policies are
+     * @throws  InconsistentPolicyException     if the resulting policies are
      *          not self consistent. In this case, this operation will have
      *          no effect.
      *

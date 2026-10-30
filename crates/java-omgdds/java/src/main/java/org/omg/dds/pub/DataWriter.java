@@ -250,7 +250,7 @@ extends DomainEntity<DataWriterListener<TYPE>, DataWriterQos>
      * call directly the write operation and specify a nil handle to indicate
      * that the 'key' should be examined to identify the instance.
      * 
-     * @throws  org.omg.dds.core.OutOfResourcesException under the same circumstances
+     * @throws  OutOfResourcesException under the same circumstances
      *          described for {@link #write(Object)}.
      * @throws  TimeoutException        under the same circumstances
      *          described for {@link #write(Object)}.
@@ -275,7 +275,7 @@ extends DomainEntity<DataWriterListener<TYPE>, DataWriterQos>
      * This operation may block and exit with {@link TimeoutException} under
      * the same circumstances described for the {@link #write(Object)}.
      * 
-     * @throws  org.omg.dds.core.OutOfResourcesException under the same circumstances
+     * @throws  OutOfResourcesException under the same circumstances
      *          described for {@link #write(Object)}.
      * @throws  TimeoutException        under the same circumstances
      *          described for {@link #write(Object)}.
@@ -299,7 +299,7 @@ extends DomainEntity<DataWriterListener<TYPE>, DataWriterQos>
      * This operation may block and exit with {@link TimeoutException} under
      * the same circumstances described for the {@link #write(Object)}.
      * 
-     * @throws  org.omg.dds.core.OutOfResourcesException under the same circumstances
+     * @throws  OutOfResourcesException under the same circumstances
      *          described for {@link #write(Object)}.
      * @throws  TimeoutException        under the same circumstances
      *          described for {@link #write(Object)}.
@@ -412,7 +412,7 @@ extends DomainEntity<DataWriterListener<TYPE>, DataWriterQos>
      *          to an existing instance, and if this situation is detectable
      *          by the Service implementation. If the situation is not
      *          detectable, the behavior is unspecified.
-     * @throws  org.omg.dds.core.PreconditionNotMetException if the handle corresponds to an
+     * @throws  PreconditionNotMetException if the handle corresponds to an
      *          existing instance but does not correspond to the same
      *          instance referred by the instancData parameter, and if this
      *          situation is detectable by the Service implementation If the
@@ -536,7 +536,7 @@ extends DomainEntity<DataWriterListener<TYPE>, DataWriterQos>
      *         user to unregister an instance.</li>
      * </ol>
      * 
-     * @throws  org.omg.dds.core.OutOfResourcesException     if it is not possible for
+     * @throws  OutOfResourcesException     if it is not possible for
      *          sufficient resources to be made available within the
      *          configured max blocking time.
      * @throws  TimeoutException            if the configured maximum
@@ -624,12 +624,12 @@ extends DomainEntity<DataWriterListener<TYPE>, DataWriterQos>
      *          to an existing instance, and if this situation is detectable
      *          by the Service implementation. If the situation is not
      *          detectable, the behavior is unspecified.
-     * @throws  org.omg.dds.core.PreconditionNotMetException if the handle corresponds to an
+     * @throws  PreconditionNotMetException if the handle corresponds to an
      *          existing instance but does not correspond to the same
      *          instance referred by the instancData parameter, and if this
      *          situation is detectable by the Service implementation If the
      *          situation is not detectable, the behavior is unspecified.
-     * @throws  org.omg.dds.core.OutOfResourcesException     if it is not possible for
+     * @throws  OutOfResourcesException     if it is not possible for
      *          sufficient resources to be made available within the
      *          configured max blocking time.
      * @throws  TimeoutException            if the configured maximum
@@ -663,9 +663,9 @@ extends DomainEntity<DataWriterListener<TYPE>, DataWriterQos>
      * 
      * @throws  IllegalArgumentException    under the same circumstances as
      *          {@link #write(Object, InstanceHandle)}.
-     * @throws  org.omg.dds.core.PreconditionNotMetException under the same circumstances as
+     * @throws  PreconditionNotMetException under the same circumstances as
      *          {@link #write(Object, InstanceHandle)}.
-     * @throws  org.omg.dds.core.OutOfResourcesException     under the same circumstances as
+     * @throws  OutOfResourcesException     under the same circumstances as
      *          {@link #write(Object, InstanceHandle)}.
      * @throws  TimeoutException            under the same circumstances as
      *          {@link #write(Object, InstanceHandle)}.
@@ -697,9 +697,9 @@ extends DomainEntity<DataWriterListener<TYPE>, DataWriterQos>
      * 
      * @throws  IllegalArgumentException    under the same circumstances as
      *          {@link #write(Object, InstanceHandle)}.
-     * @throws  org.omg.dds.core.PreconditionNotMetException under the same circumstances as
+     * @throws  PreconditionNotMetException under the same circumstances as
      *          {@link #write(Object, InstanceHandle)}.
-     * @throws  org.omg.dds.core.OutOfResourcesException     under the same circumstances as
+     * @throws  OutOfResourcesException     under the same circumstances as
      *          {@link #write(Object, InstanceHandle)}.
      * @throws  TimeoutException            under the same circumstances as
      *          {@link #write(Object, InstanceHandle)}.
@@ -733,7 +733,7 @@ extends DomainEntity<DataWriterListener<TYPE>, DataWriterQos>
      * This operation may block and exit with {@link TimeoutException} under
      * the same circumstances described for {@link #write(Object)}.
      * 
-     * @throws  org.omg.dds.core.OutOfResourcesException     under the same circumstances as
+     * @throws  OutOfResourcesException     under the same circumstances as
      *          {@link #write(Object)}.
      * @throws  TimeoutException            under the same circumstances as
      *          {@link #write(Object)}.
@@ -769,7 +769,7 @@ extends DomainEntity<DataWriterListener<TYPE>, DataWriterQos>
      * the same circumstances described for
      * {@link #write(Object, InstanceHandle)}.
      * 
-     * @throws  org.omg.dds.core.OutOfResourcesException     under the same circumstances as
+     * @throws  OutOfResourcesException     under the same circumstances as
      *          {@link #write(Object, InstanceHandle)}.
      * @throws  TimeoutException            under the same circumstances as
      *          {@link #write(Object, InstanceHandle)}.
@@ -799,9 +799,9 @@ extends DomainEntity<DataWriterListener<TYPE>, DataWriterQos>
      * 
      * @throws  IllegalArgumentException    under the same circumstances as
      *          {@link #dispose(InstanceHandle, Object)}.
-     * @throws  org.omg.dds.core.PreconditionNotMetException under the same circumstances as
+     * @throws  PreconditionNotMetException under the same circumstances as
      *          {@link #dispose(InstanceHandle, Object)}.
-     * @throws  org.omg.dds.core.OutOfResourcesException     under the same circumstances as
+     * @throws  OutOfResourcesException     under the same circumstances as
      *          {@link #write(Object, InstanceHandle)}.
      * @throws  TimeoutException            under the same circumstances as
      *          {@link #write(Object, InstanceHandle)}.
@@ -832,9 +832,9 @@ extends DomainEntity<DataWriterListener<TYPE>, DataWriterQos>
      * 
      * @throws  IllegalArgumentException    under the same circumstances as
      *          {@link #dispose(InstanceHandle, Object)}.
-     * @throws  org.omg.dds.core.PreconditionNotMetException under the same circumstances as
+     * @throws  PreconditionNotMetException under the same circumstances as
      *          {@link #dispose(InstanceHandle, Object)}.
-     * @throws  org.omg.dds.core.OutOfResourcesException     under the same circumstances as
+     * @throws  OutOfResourcesException     under the same circumstances as
      *          {@link #write(Object, InstanceHandle)}.
      * @throws  TimeoutException            under the same circumstances as
      *          {@link #write(Object, InstanceHandle)}.
