@@ -531,6 +531,31 @@ jobs:
           done
           require_artifact dist/zerodds-rpm-x86_64 '*.rpm'
           require_artifact dist/zerodds-msi '*.msi'
+      - name: Collect release files
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir release
+          # Every build artifact carries a source.tar.gz; the Windows
+          # checkout has CRLF line endings, so theirs differs. The release
+          # takes the one of the x86_64 Linux build.
+          cp dist/artifacts-x86_64-unknown-linux-gnu/source.tar.gz release/
+          # The per-build SHA512SUMS of sign-artifacts.sh are not copied; one
+          # SHA512SUMS over exactly the release files replaces them.
+          find dist -type f \( -name '*.tar.xz' -o -name '*.tar.xz.sha512' \
+              -o -name '*.zip' -o -name '*.zip.sha512' -o -name '*.deb' \
+              -o -name '*.rpm' -o -name '*.msi' -o -name '*.pkg' \
+              -o -name '*.pkg.sha512' -o -name '*.AppImage' \) -print0 |
+            while IFS= read -r -d '' f; do
+              n=$(basename "$f")
+              if [ -e "release/$n" ]; then
+                cmp -s "$f" "release/$n" || { echo "::error::two different files named $n"; exit 1; }
+              else
+                cp "$f" release/
+              fi
+            done
+          (cd release && LC_ALL=C sha512sum -- * > ../SHA512SUMS) && mv SHA512SUMS release/
+          echo "$(find release -type f | wc -l) release files"
       - name: Create release
         id: gh_release
         uses: softprops/action-gh-release@v2
@@ -538,7 +563,7 @@ jobs:
           tag_name: ${{ needs.plan.outputs.tag }}
           generate_release_notes: true
           prerelease: ${{ contains(needs.plan.outputs.tag, '-') }}
-          # Assets must finish uploading before any publication step.
+          # The files are uploaded by the next step; publication follows them.
           draft: true
           body: |
             ## Installation
@@ -563,7 +588,7 @@ jobs:
             - **Portable**: download `*.zip` + extract
 
             ### Docker
-            Multi-arch (amd64/arm64) auf ghcr.io + Docker Hub:
+            Multi-arch (amd64/arm64) on ghcr.io and Docker Hub:
             ```bash
             docker pull ghcr.io/zero-objects/zerodds-cli:${{ needs.plan.outputs.tag }}
             docker pull fishermen21/zerodds-mqtt-bridged:${{ needs.plan.outputs.tag }}
@@ -575,19 +600,27 @@ jobs:
             ```
 
             ---
-          files: |
-            dist/**/*.tar.gz
-            dist/**/*.tar.xz
-            dist/**/*.tar.xz.sha512
-            dist/**/*.zip
-            dist/**/*.zip.sha512
-            dist/**/*.deb
-            dist/**/*.rpm
-            dist/**/*.msi
-            dist/**/*.pkg
-            dist/**/*.pkg.sha512
-            dist/**/*.AppImage
-            dist/**/SHA512SUMS*
+      - name: Upload release files
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.plan.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # One file per request. The action's parallel upload of 486 files
+          # got "exceeded a secondary rate limit" (run 41041528739).
+          for f in release/*; do
+            for attempt in 1 2 3 4 5; do
+              if gh release upload "$TAG" "$f" --clobber --repo "${{ github.repository }}"; then
+                break
+              fi
+              if [ "$attempt" = 5 ]; then
+                echo "::error::upload of $(basename "$f") failed"
+                exit 1
+              fi
+              sleep $((attempt * 60))
+            done
+          done
       - name: Publish successfully uploaded release
         if: success() && steps.gh_release.outcome == 'success'
         env:
@@ -611,10 +644,11 @@ jobs:
             sleep 30
           done
           # Verify
+          N=$(find release -type f | wc -l)
           gh release view "${{ needs.plan.outputs.tag }}" \
             --repo "${{ github.repository }}" \
             --json isDraft,assets \
-            --jq 'if .isDraft or (.assets | length) == 0 then error("release is unpublished or empty") else "published with \(.assets | length) assets" end'
+            --jq "if .isDraft or (.assets | length) != $N then error(\"release is unpublished or has \(.assets | length) of $N files\") else \"published with \(.assets | length) assets\" end"
 
   # ---------------------------------------------------------------------------
   # Language-ecosystem packages.

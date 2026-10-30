@@ -152,6 +152,11 @@ for archive in "$DIST_DIR"/*.pkg "$DIST_DIR"/*.zip "$DIST_DIR"/*.dmg; do
         case "$archive" in
             *.pkg|*.dmg|*.app)
                 xcrun stapler staple "$archive" || echo "  warn: staple failed for $archive"
+                # Stapling writes the ticket into the file; the sha512 of
+                # section 3 no longer matches it.
+                if [ -f "$archive.sha512" ]; then
+                    (cd "$DIST_DIR" && shasum -a 512 "$(basename "$archive")" > "$(basename "$archive").sha512")
+                fi
                 ;;
         esac
     else
