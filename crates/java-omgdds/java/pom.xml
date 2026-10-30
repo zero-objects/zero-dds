@@ -241,7 +241,10 @@
                     <plugin>
                         <groupId>org.sonatype.central</groupId>
                         <artifactId>central-publishing-maven-plugin</artifactId>
-                        <version>0.7.0</version>
+                        <!-- Under Maven 3.10 0.7.0 put maven-metadata-local.xml
+                             and _remote.repositories into the bundle, and Central
+                             refused it; 0.12.0 leaves them out. -->
+                        <version>0.12.0</version>
                         <extensions>true</extensions>
                         <configuration>
                             <publishingServerId>central</publishingServerId>
