@@ -98,6 +98,8 @@ license=('Apache-2.0')
 provides=('zerodds')
 conflicts=('zerodds')
 depends=('glibc' 'gcc-libs')
+# The binaries stay as the release built them.
+options=('!strip' '!debug')
 EOF
         bash_array source_x86_64 "${SOURCES[x86_64]}"
         bash_array source_aarch64 "${SOURCES[aarch64]}"
