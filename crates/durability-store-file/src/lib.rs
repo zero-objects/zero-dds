@@ -8,8 +8,15 @@
 //! Dependency-free `PERSISTENT` backend on a directory hierarchy:
 //!
 //! ```text
-//! <root>/<hex(topic)>/<hex(instance_key)>/<sequence>.bin   # [8B created_at_nanos LE][payload]
+//! <root>/<hex(topic)>/<hex(instance_key)>/<sequence>.bin   # 34-byte header + payload (below)
 //! <root>/<hex(topic)>/<hex(instance_key)>/.unregistered    # unregister wall-clock (unix nanos, ASCII)
+//! ```
+//!
+//! Each `.bin` file starts with a 34-byte header, followed by the payload:
+//!
+//! ```text
+//! [8B created_at_nanos LE][1B representation][1B big_endian]
+//! [16B source_guid][8B source_sequence LE][payload]
 //! ```
 //!
 //! The topic and instance components are hex-encoded so the mapping is
@@ -37,8 +44,7 @@ use zerodds_durability_store::{
 };
 use zerodds_qos::policies::history::HistoryKind;
 
-// On-disk per-sample header: [8B created_at_nanos LE][1B representation]
-// [1B big_endian] then the payload body.
+// On-disk per-sample header, followed by the payload body:
 // [8B created_at_nanos LE][1B representation][1B big_endian][16B source_guid]
 // [8B source_sequence LE]. The source-identity tail (O2 P5) extended the header
 // from 10 to 34 bytes; pre-P5 files are not read back (pre-1.0 format break).

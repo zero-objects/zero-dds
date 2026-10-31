@@ -393,7 +393,7 @@ impl AddressSpace {
         self.historizing.iter().any(|(n, _)| n == node_id)
     }
 
-    /// Executes a HistoryRead query (Part 4 §5.10.3) against `node_id`'s
+    /// Executes a HistoryRead query (Part 4 §5.11.3) against `node_id`'s
     /// retained history.
     ///
     /// # Errors

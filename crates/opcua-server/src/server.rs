@@ -1313,10 +1313,10 @@ impl Server {
     }
 
     // -----------------------------------------------------------------------
-    // HistoryRead Service (Part 4 §5.10.3; Historical Access is Part 11).
+    // HistoryRead Service (Part 4 §5.11.3; Historical Access is Part 11).
     // -----------------------------------------------------------------------
 
-    /// Part 4 §5.10.3 HistoryRead. Spec §9.3.4.4: the DDS-side retained
+    /// Part 4 §5.11.3 HistoryRead. Spec §9.3.4.4: the DDS-side retained
     /// samples of a historizing node ([`AddressSpace::set_historizing`])
     /// answer either a Raw time-range read (`ReadRawModifiedDetails` with
     /// `is_read_modified == false`) or a discrete ReadAtTime
@@ -1371,7 +1371,7 @@ impl Server {
             .nodes_to_read
             .iter()
             .map(|nr| {
-                // Part 4 §5.10.2.2: releasing a continuation point stops the
+                // Part 4 §5.11.3.2: releasing a continuation point stops the
                 // series without returning more data — it is not a normal
                 // empty-result read, so it never touches the AddressSpace.
                 if r.release_continuation_points {
@@ -1632,7 +1632,7 @@ fn chunk_channel_id(bytes: &[u8]) -> Result<u32, ServerError> {
 
 /// Encodes a HistoryRead continuation point: the SourceTimestamp (i64
 /// ticks) of the last sample already delivered for a Raw range read, so a
-/// follow-up request resumes strictly after it. Part 4 §5.10.2.2 leaves the
+/// follow-up request resumes strictly after it. Part 4 §5.11.3.2 leaves the
 /// continuation point's content to the Server — it is opaque to the client,
 /// echoed back verbatim on the next call.
 fn encode_continuation_point(after_timestamp: i64) -> Vec<u8> {

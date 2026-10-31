@@ -738,7 +738,7 @@ impl Client {
             .ok_or(ClientError::Protocol("empty ReadResponse"))
     }
 
-    /// HistoryRead (Part 4 §5.10.3) for `nodes`, each starting a fresh read
+    /// HistoryRead (Part 4 §5.11.3) for `nodes`, each starting a fresh read
     /// (no continuation point).
     ///
     /// # Errors
@@ -761,7 +761,7 @@ impl Client {
 
     /// As [`Self::history_read`], but each node carries its own
     /// continuation point (empty = fresh read), and `release` sets
-    /// `releaseContinuationPoints` (Part 4 §5.10.2.2).
+    /// `releaseContinuationPoints` (Part 4 §5.11.3.2).
     ///
     /// # Errors
     /// [`ClientError`] if not connected or the service fails.
@@ -2180,7 +2180,7 @@ mod tests {
     }
 
     // -------------------------------------------------------------------
-    // HistoryRead Service (Part 4 §5.10.3 / Part 11 Historical Access).
+    // HistoryRead Service (Part 4 §5.11.3 / Part 11 Historical Access).
     // -------------------------------------------------------------------
 
     #[test]

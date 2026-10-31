@@ -12,8 +12,8 @@
 //! interpret RawData-encoded messages.
 //!
 //! These are pure in-memory descriptors. Their on-wire serialisation as
-//! `DataSetMetaData` for discovery is stage 4; their transport binding is
-//! stage 6.
+//! `DataSetMetaData` is in [`crate::uadp::discovery`]; the carriers that
+//! move the encoded messages are in [`crate::transport`].
 
 use alloc::string::String;
 use alloc::vec::Vec;

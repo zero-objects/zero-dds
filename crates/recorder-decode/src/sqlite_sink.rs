@@ -35,9 +35,11 @@
 //! looking at a value no 64-bit column could hold, which is the one thing
 //! worth knowing about it.
 //!
-//! Residual: a `map` or a sequence whose key or element is itself composite
-//! has no flat column shape and is skipped — [`SqliteSink::skipped_members`]
-//! names each one rather than leaving the table silently short.
+//! Residual: a sequence or array whose element is itself 1:N (sequence,
+//! array, map, bitmask) or a union, a `map` whose key or value is not scalar,
+//! and a union member have no flat column shape and are skipped —
+//! [`SqliteSink::skipped_members`] names each one rather than leaving the
+//! table silently short.
 
 use std::collections::BTreeSet;
 

@@ -2227,7 +2227,7 @@ impl StatusChangeNotification {
 }
 
 // ---------------------------------------------------------------------------
-// HistoryRead (Part 4 §5.10.3; the HistoryReadDetails/HistoryData shapes are
+// HistoryRead (Part 4 §5.11.3; the HistoryReadDetails/HistoryData shapes are
 // OPC UA Part 11 §6 — Historical Access).
 // ---------------------------------------------------------------------------
 
@@ -2361,7 +2361,7 @@ impl HistoryReadDetails {
     }
 }
 
-/// `HistoryReadValueId` (Part 4 §5.10.3, Table 33).
+/// `HistoryReadValueId` (Part 4 §5.11.3.2, Table 50).
 #[derive(Debug, Clone, PartialEq)]
 pub struct HistoryReadValueId {
     /// Node to read history from.
@@ -2429,7 +2429,7 @@ impl HistoryData {
     }
 }
 
-/// `HistoryReadResult` (Part 4 §5.10.3, Table 32).
+/// `HistoryReadResult` (Part 4 §5.11.3.2, Table 50).
 #[derive(Debug, Clone, PartialEq)]
 pub struct HistoryReadResult {
     /// Per-node operation status.
@@ -2468,7 +2468,7 @@ impl UaDecode for HistoryReadResult {
     }
 }
 
-/// `HistoryReadRequest` (Part 4 §5.10.3, Table 31).
+/// `HistoryReadRequest` (Part 4 §5.11.3.2, Table 50).
 #[derive(Debug, Clone, PartialEq)]
 pub struct HistoryReadRequest {
     /// Common request header.

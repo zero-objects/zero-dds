@@ -3,8 +3,8 @@
 //! Crate `zerodds-corba-rust`. Safety classification: **STANDARD**.
 //!
 //! IDL → Rust code generator for CORBA service constructs (interface
-//! traits + stubs + skeletons, valuetypes, in phase 2: components,
-//! homes, POA bindings).
+//! traits + stubs + skeletons, valuetypes, components, homes), plus
+//! the runtime types the generated code refers to.
 //!
 //! Over the common AST, `zerodds-corba-codegen`'s Annex A.1 tables and
 //! its repository-id rule. The data types — `struct`, `union`, `enum`
@@ -29,7 +29,12 @@
 //! | `attribute T x`               | trait getter `fn x(&self)` + setter if writable   |
 //! | `oneway op(...)`              | trait method without reply                        |
 //! | `valuetype V { ... };`        | `pub trait V: ValueBase`                          |
-//! | `component C` / `home H`      | (phase 2)                                         |
+//! | `component C`                 | `pub trait C: ComponentServant` + `C_REPOSITORY_ID` |
+//! | `home H`                      | `pub trait H: ComponentHome` + `H_REPOSITORY_ID`  |
+//!
+//! A component trait carries the CCM lifecycle hooks
+//! `configuration_complete` and `ccm_remove`; receptacles, facets,
+//! event bindings and the container are `zerodds-ccm`'s.
 //!
 //! ## Public API
 //!

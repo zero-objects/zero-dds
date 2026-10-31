@@ -10,7 +10,7 @@
 //!
 //! Implements:
 //! - **`Priority`** + **`PriorityMapping`** (§5.3/§5.4) — CORBA priority
-//!   (-32768..32767) ↔ native OS priority ([`priority`]).
+//!   (`0..=32767`, negative values reserved) ↔ native OS priority ([`priority`]).
 //! - **`PriorityModel`** (§5.4.1) — `SERVER_DECLARED` vs `CLIENT_PROPAGATED` +
 //!   `PriorityModelPolicy`; **Threadpool**/**Lane** (§5.7) + **PriorityBand**
 //!   (§5.8) with priority-based selection ([`policy`]).

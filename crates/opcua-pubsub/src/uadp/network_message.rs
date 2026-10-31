@@ -18,14 +18,21 @@
 //! list), the extended header (Timestamp, PicoSeconds, PromotedFields) and
 //! finally the payload (an optional size array plus the DataSetMessages).
 //!
-//! # Scope (incremental layering)
+//! # Scope
 //!
-//! This stage implements the DataSetMessage payload type without security.
-//! A NetworkMessage whose Security flag (`ExtendedFlags1` bit 4) or whose
-//! non-DataSetMessage type (`ExtendedFlags2` bits 2-4) is set is rejected
-//! on decode with [`DecodeError::MalformedMessage`] — PubSub security is
-//! stage 5 and UADP discovery is stage 4. Chunked transport
-//! (`ExtendedFlags2` bit 0) is likewise rejected.
+//! [`NetworkMessage`] encodes and decodes the DataSetMessage payload type
+//! (`ExtendedFlags2` NetworkMessage type 0). The other kinds the flags
+//! announce are handled elsewhere in the crate; `NetworkMessage::decode`
+//! returns [`DecodeError::MalformedMessage`] for them:
+//!
+//! - Secured NetworkMessages (`ExtendedFlags1` bit 4): `security::protect`
+//!   and `security::unprotect` (feature `security`), which share this
+//!   module's header code.
+//! - Discovery request/response (NetworkMessage type 1 and 2):
+//!   [`crate::uadp::discovery`].
+//!
+//! Chunked NetworkMessages (`ExtendedFlags2` bit 0) are rejected on every
+//! decode path; the crate has no chunk reassembly.
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -494,7 +501,7 @@ pub(crate) fn decode_header(r: &mut UaReader<'_>) -> Result<ParsedHeader, Decode
     let nm_type = (ext2 & EF2_NM_TYPE_MASK) >> EF2_NM_TYPE_SHIFT;
     if nm_type != 0 {
         return Err(DecodeError::MalformedMessage {
-            message: "only the DataSetMessage NetworkMessage type is supported (discovery is stage 4)",
+            message: "not a DataSetMessage NetworkMessage (discovery messages are decoded by uadp::discovery)",
         });
     }
     let has_promoted = ext2 & EF2_PROMOTED_FIELDS != 0;

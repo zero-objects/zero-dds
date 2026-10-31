@@ -6,13 +6,14 @@
 //! Crate `zerodds-cli-common`. Safety classification: **COMFORT**.
 //! Pure tooling helpers (CLI frontend), no runtime paths.
 //!
-//! Collects the few pieces of boilerplate that all 7 tools
-//! (`zerodds-record`, `-bench`, `-monitor`, `-spy`, `-snitch`,
-//! `-pcap`, `-mq`) need: SIGINT/SIGTERM hook, GUID-prefix
-//! generation, duration parsing with `s/m/h` suffixes.
+//! Collects the few pieces of boilerplate that the CLI tools
+//! (`zerodds-admin`, `-bench`, `-monitor`, `-mq`, `-pcap`,
+//! `-record`, `-snitch`, `-spy`) need: SIGINT/SIGTERM hook,
+//! GUID-prefix generation, duration parsing with `s/m/h` suffixes.
 //!
-//! **Not for external consumers** — no stability guarantee,
-//! no Crates.io publication.
+//! **Not a general-purpose library.** The crate is published on
+//! crates.io (`publish = true`) only because the dependent CLI crates
+//! need their dependencies to resolve there.
 
 #![warn(missing_docs)]
 #![allow(clippy::module_name_repetitions)]
