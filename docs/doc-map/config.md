@@ -514,7 +514,7 @@ Suche: `env::var`/`env::var_os` in `crates/` und `tools/` (Rust, ohne `tests/`, 
 | `ZERODDS_LOAN_ALIGNMENT` | `rmw_zerodds_cpp` (C) | `crates/rmw-zerodds-shim/rmw_c/rmw_zerodds.c:621` | Ausrichtung geliehener Puffer; `page` oder Zweierpotenz ≥ Zeigergröße |
 | `ZERODDS_LIB` | Python-Paket, Node-Binding | `crates/py/python/zerodds/loader.py:83`, `crates/ts-node/src/native.ts:52` | Pfad der nativen Bibliothek |
 | `ZERODDS_RTPS` | Java `DdsWireBridge` | `crates/java-omgdds/java/src/main/java/org/zerodds/rtps/DdsWireBridge.java:25` | `1`/`true` schaltet die RTPS-Brücke ein (neben der Property `zerodds.rtps.enable`) |
-| `CHAOS_CLOCK_SKEW_NS`, `CHAOS_CLOCK_DRIFT_PPM` | `chaos-clock-skew` (LD_PRELOAD-Shim) | `crates/chaos-clock-skew/src/lib.rs:114`, `:121` | Versatz und Drift von `clock_gettime` |
+| `CHAOS_CLOCK_SKEW_NS`, `CHAOS_CLOCK_DRIFT_PPM` | `chaos-clock-skew` (LD_PRELOAD-Shim) | `crates/chaos-clock-skew/src/lib.rs:125`, `:132` | Versatz und Drift von `clock_gettime` (`CLOCK_REALTIME`) und `gettimeofday` |
 
 ### 6.2 Werkzeuge der Test- und Messinfrastruktur
 

@@ -516,7 +516,7 @@ Search: `env::var`/`env::var_os` in `crates/` and `tools/` (Rust, excluding `tes
 | `ZERODDS_LOAN_ALIGNMENT` | `rmw_zerodds_cpp` (C) | `crates/rmw-zerodds-shim/rmw_c/rmw_zerodds.c:621` | alignment of loaned buffers; `page` or a power of two ≥ pointer size |
 | `ZERODDS_LIB` | Python package, Node binding | `crates/py/python/zerodds/loader.py:83`, `crates/ts-node/src/native.ts:52` | path of the native library |
 | `ZERODDS_RTPS` | Java `DdsWireBridge` | `crates/java-omgdds/java/src/main/java/org/zerodds/rtps/DdsWireBridge.java:25` | `1`/`true` enables the RTPS bridge (alongside the property `zerodds.rtps.enable`) |
-| `CHAOS_CLOCK_SKEW_NS`, `CHAOS_CLOCK_DRIFT_PPM` | `chaos-clock-skew` (LD_PRELOAD shim) | `crates/chaos-clock-skew/src/lib.rs:114`, `:121` | offset and drift of `clock_gettime` |
+| `CHAOS_CLOCK_SKEW_NS`, `CHAOS_CLOCK_DRIFT_PPM` | `chaos-clock-skew` (LD_PRELOAD shim) | `crates/chaos-clock-skew/src/lib.rs:125`, `:132` | offset and drift of `clock_gettime` (`CLOCK_REALTIME`) and `gettimeofday` |
 
 ### 6.2 Tools of the test and measurement infrastructure
 
