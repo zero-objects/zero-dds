@@ -98,8 +98,9 @@ license=('Apache-2.0')
 provides=('zerodds')
 conflicts=('zerodds')
 depends=('glibc' 'gcc-libs')
-# The binaries stay as the release built them.
-options=('!strip' '!debug')
+# The binaries stay as the release built them; the static libraries of
+# zerodds-dev (libzerodds-wire-cpp.a has no shared form) stay in.
+options=('!strip' '!debug' 'staticlibs')
 EOF
         bash_array source_x86_64 "${SOURCES[x86_64]}"
         bash_array source_aarch64 "${SOURCES[aarch64]}"
@@ -138,7 +139,8 @@ conflicts=('zerodds-bin')
 depends=('glibc' 'gcc-libs')
 # clang: bindgen of iceoryx2-pal-posix loads libclang.
 makedepends=('rust' 'clang' 'cmake' 'dpkg' 'pkgconf' 'openssl')
-options=('!lto' '!debug')
+# The static libraries of zerodds-dev stay in, as in zerodds-bin.
+options=('!lto' '!debug' 'staticlibs')
 source=("zerodds-\${pkgver}.tar.gz::${ARCHIVE}")
 sha256sums=('${ARCHIVE_SUM}')
 _source_dir=${SOURCE_DIR}
