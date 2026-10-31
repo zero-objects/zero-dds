@@ -8,6 +8,36 @@ Versioning follows [Semantic Versioning 2.0](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`chaos-clock-skew` drifts from elapsed time.** `CHAOS_CLOCK_DRIFT_PPM`
+  used the time since the epoch scaled by 1e-9: 100 ppm was a fixed jump of
+  about 176 s. The drift now accumulates from the first intercepted call
+  (`elapsed_ns * ppm / 1e6`) in both `clock_gettime` and `gettimeofday`
+  (`c14c8a8504a`).
+
+- **The arm64 `zerodds-dev` package carried x86-64 static libraries.**
+  `assemble-debs.sh` built the SDK for the host; it now cross-builds for
+  `--target` and checks every `.a` against the package architecture
+  (`a5931ccce4d`).
+
+### Changed
+
+- **Release files.** `source.tar.gz` comes from `git archive` with one top
+  directory `zerodds-<version>/`; one `SHA512SUMS` over all release files is
+  signed with minisign (`SHA512SUMS.minisig`) and keyless with cosign
+  (`SHA512SUMS.cosign.bundle`); the per-file signatures of the Linux builds,
+  never published, are gone (`a5931ccce4d`).
+
+- **Homebrew.** The macOS release jobs build the bundle the formulae
+  install; `publish-distros.yml` renders the formulae from the release,
+  installs them on macOS and pushes the tap. Formulae point to
+  `zero-objects/zero-dds` (`a5931ccce4d`).
+
+- **Crate docs follow the code** in `durability-store-file`, `cli-common`,
+  `corba-rt`, `corba-rust`, `corba-cos-notify`, `opcua-pubsub`,
+  `recorder-decode` and `opcua-server` (`46a873089ad`).
+
 ## [1.0.0-rc.7] — 2026-10-28
 
 The workspace was taken apart and rebuilt. `f225e12ef5e` reduced `members`
