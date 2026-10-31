@@ -8059,7 +8059,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-lang-rules"
-version = "1.0.0-rc.7"
+version = "1.0.0-rc.7.1"
 dependencies = [
  "seesaw-tgg",
  "serde_json",
@@ -8749,7 +8749,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-transport-udp"
-version = "1.0.0-rc.7"
+version = "1.0.0-rc.7.1"
 dependencies = [
  "criterion",
  "if-addrs",
@@ -8803,7 +8803,7 @@ version = "1.0.0-rc.7"
 
 [[package]]
 name = "zerodds-webdds-bridge"
-version = "1.0.0-rc.7"
+version = "1.0.0-rc.7.1"
 dependencies = [
  "signal-hook",
  "zerodds-ast",

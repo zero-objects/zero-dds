@@ -1,6 +1,9 @@
 [package]
 name = "zerodds-transport-udp"
-version.workspace = true
+# Published on its own after the workspace release, with a fix the
+# workspace version on crates.io lacks; `version.workspace = true` again
+# with the next release.
+version = "1.0.0-rc.7.1"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
