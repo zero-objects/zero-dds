@@ -10189,7 +10189,7 @@ of the std::map template."
 Compare function shall operate on the character contents of the strings; it
 shall not operate on the strings' pointer values".
 
-**Repo:** `crates/cpp/include/zerodds/` (der `std::map`-Vergleich), `crates/cpp/tests/generated_psm_roundtrip.cpp`
+**Repo:** `crates/cpp/include/zerodds/` (the `std::map` comparison), `crates/cpp/tests/generated_psm_roundtrip.cpp`
 
 **Tests:** `crates/cpp/tests/generated_type_via_cargo.rs::a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`
 

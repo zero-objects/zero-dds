@@ -127,7 +127,7 @@ IDL."
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — Reference to §8. Implemented by org.zerodds.cdr.ReflectionTypeSupport and TypeSupportResolver.resolve (a class without generated code is mapped by reflection); the check is in the item "§2 Mindestens eine Type Representation".
+**Status:** `n/a (informative)` — Reference to §8. Implemented by org.zerodds.cdr.ReflectionTypeSupport and TypeSupportResolver.resolve (a class without generated code is mapped by reflection); the check is in the item "§2 At least one Type Representation".
 
 ---
 

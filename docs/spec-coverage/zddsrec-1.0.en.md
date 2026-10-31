@@ -16,7 +16,7 @@ Implementation:
 
 ## §1 File structure — header + frames
 
-**Spec:** `docs/specs/zddsrec-1.0.md` "Datei-Struktur" — the file starts with a
+**Spec:** `docs/specs/zddsrec-1.0.md` "File structure" — the file starts with a
 header (magic bytes + format version) followed by a stream of typed frames; the
 header appears exactly once and before all frames.
 
@@ -75,7 +75,7 @@ check).
 
 ## §5 Recording session — thread-safe, lazy header
 
-**Spec:** `docs/specs/zddsrec-1.0.md` "Datei-Struktur"/"Use-Cases" — a session
+**Spec:** `docs/specs/zddsrec-1.0.md` "File structure"/"Use cases" — a session
 records samples concurrently; the header is written on the first sample; several
 threads may record at the same time.
 
@@ -89,8 +89,8 @@ threads may record at the same time.
 
 ## §6 Goals / use cases / tooling / stability
 
-**Spec:** `docs/specs/zddsrec-1.0.md` "Ziele", "Use-Cases", "Tooling",
-"Stabilität und Roadmap" — motivation, use cases (CI fixtures, regression
+**Spec:** `docs/specs/zddsrec-1.0.md` "Goals", "Use cases", "Tooling",
+"Stability and roadmap" — motivation, use cases (CI fixtures, regression
 captures, post-mortems), CLI binding (`zerodds-record` / `zerodds-replay`) and
 the version roadmap.
 
