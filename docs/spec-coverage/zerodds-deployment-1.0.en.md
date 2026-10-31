@@ -44,7 +44,7 @@ ros2-shim.
 `::ffi_handles_null_safely`, `::ffi_pub_sub_roundtrip_via_loan`;
 the header itself
 `crates/zerodds-c-api/tests/abi_compat.rs::the_header_macro_and_the_exported_revision_agree`
-und `::abi_snapshot_matches`.
+and `::abi_snapshot_matches`.
 
 **Status:** done
 

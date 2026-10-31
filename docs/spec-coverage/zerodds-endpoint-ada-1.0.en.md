@@ -28,7 +28,7 @@ core), byte-identical to the `zerodds-cdr` reference."
 protected object, `Reader_Task`).
 
 **Tests:** `endpoints/ada/test/test_byte_identity.adb::Test_Byte_Identity` — the marks `"negative: a body past Max_Frame refused"`,
-`"negative: the largest body still frames"` und `"ALL OK"` against
+`"negative: the largest body still frames"` and `"ALL OK"` against
 `golden_le.bin`/`golden_be.bin`; driven by
 `crates/endpoint-e2e/tests/ada.rs::ada_endpoint_sync`.
 
@@ -150,4 +150,4 @@ Test-run (Linux, verified): `cargo test -p zerodds-endpoint-e2e --test ada`
 2/2 (ping-pong); `--test ada_reliable` 3/3 (unit+golden, loss recovery, baseline);
 latency bench decoupled 87 ns / inline 7338 ns.
 
-Offene Punkte: keine.
+Open items: none.

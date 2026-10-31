@@ -4033,7 +4033,7 @@ type."
 
 ### §7.3.1.2.1.5 @bit_bound on an enumeration outside 1 to 32 is refused
 
-**Spec:** §7.3.1.2.1.5, p. 95 — Wertebereich 1 bis 32.
+**Spec:** §7.3.1.2.1.5, p. 95 — value range 1 to 32.
 
 **Repo:** `crates/idl-lower/src/complete.rs::check_enumeration_bound`
 
@@ -10225,7 +10225,7 @@ these Java types is a primitive type, then the corresponding object box type
 mapping is specified, the language binding for map types shall be based on the
 equivalent IDL definition given in 7.4.1.1.4."
 
-**Repo:** `crates/lang-rules/src/adapter/cst.rs` (`RustMapForm`), `crates/wire/src/map_entries.rs`; die übrigen Sprachen in `crates/lang-rules/src/adapter/`
+**Repo:** `crates/lang-rules/src/adapter/cst.rs` (`RustMapForm`), `crates/wire/src/map_entries.rs`; the other languages in `crates/lang-rules/src/adapter/`
 
 **Tests:** `crates/lang-rules/tests/rust_corpus_compiles.rs::a_map_is_a_sequence_of_entries_that_keeps_its_order`,
 `crates/wire-conformance/tests/map_bytes.rs::the_bytes_are_the_recorded_fast_dds_row`,
@@ -12683,7 +12683,7 @@ encoding in addition to XCDR2 encoding."
 **Tests:** `crates/dcps/src/runtime.rs::tests::reader_accept_repr_requests_xcdr2_and_xcdr`,
 `crates/dcps/src/subscriber.rs::tests::decode_for_encap_dispatches_on_representation_and_endianness`
 
-**Status:** done — The reader announces `[XCDR2, XCDR1]` without a setting: it reads both versions (the read paths are tested) and requests XCDR2 and, in addition, XCDR. An element of the configured offer that is neither (XML) follows. The offer `wire.data_representation_offer` (default `[XCDR1]`) is the writers'. The default of the policy is the empty list, which is `[XCDR]`; the clause for readers asks for more, and a reader at the default follows the clause (see "Widersprüche innerhalb der Spec" in the findings file).
+**Status:** done — The reader announces `[XCDR2, XCDR1]` without a setting: it reads both versions (the read paths are tested) and requests XCDR2 and, in addition, XCDR. An element of the configured offer that is neither (XML) follows. The offer `wire.data_representation_offer` (default `[XCDR1]`) is the writers'. The default of the policy is the empty list, which is `[XCDR]`; the clause for readers asks for more, and a reader at the default follows the clause (see "Contradictions within the specification" in the findings file).
 
 ### §7.6.3.1.1 XML readers: valid and well-formed documents
 

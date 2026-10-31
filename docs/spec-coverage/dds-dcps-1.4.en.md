@@ -804,7 +804,7 @@ not called until the entity is enabled."
 **Spec:** §2.2.2.1.1.7, p. 26 — "Conditions associated with an entity that is
 not enabled are “inactive,” that is, have a trigger_value==FALSE".
 
-**Repo:** `crates/dcps/src/subscriber.rs` (`holds_matching`), `crates/dcps/src/entity.rs` (`StatusCondition::trigger_value` über `status_changes`)
+**Repo:** `crates/dcps/src/subscriber.rs` (`holds_matching`), `crates/dcps/src/entity.rs` (`StatusCondition::trigger_value` via `status_changes`)
 
 **Tests:** `crates/dcps/tests/enable_semantics.rs::a_disabled_entity_is_inert_and_can_be_deleted`
 
@@ -10602,7 +10602,7 @@ collection of policies suitable for each Entity has been modeled as another IDL
 struct that contains attributes corresponding to the policies that apply to this
 Entity."
 
-**Repo:** `crates/qos/src/policies/` (eine Struktur je Policy);
+**Repo:** `crates/qos/src/policies/` (one struct per policy);
 `crates/dcps/src/qos.rs` (`DomainParticipantQos`, `TopicQos`, `PublisherQos`,
 `SubscriberQos`, `DataWriterQos`, `DataReaderQos`); `crates/dcps/src/factory.rs`
 (`DomainParticipantFactoryQos`)
@@ -11781,7 +11781,7 @@ in the data-structure. The dot ‘.’ is used to navigate through nested struct
 … The names of the field are those specified in the IDL definition of the
 corresponding structure".
 
-**Repo:** `crates/sql-filter/src/lexer.rs` (Bezeichner mit `.`)
+**Repo:** `crates/sql-filter/src/lexer.rs` (identifiers with `.`)
 
 **Tests:** `crates/zerodds-c-api/src/subscriber_ffi.rs::tests::cft_type_with_a_dependency_filters_a_nested_member`,
 `crates/sql-filter/src/evaluator.rs::tests::unknown_field_is_error`

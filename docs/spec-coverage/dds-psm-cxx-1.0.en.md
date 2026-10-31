@@ -5438,7 +5438,7 @@ DomainParticipantFactoryQos { EntityFactoryQosPolicy entity_factory; };"
 **Tests:** —
 
 **Status:** `n/a (informative)` — The OMG headers have neither
-`DomainParticipantFactoryQos` nor a factory (see "DomainParticipantFactory: get_qos und
+`DomainParticipantFactoryQos` nor a factory (see "DomainParticipantFactory: get_qos and
 set_qos"); ZeroDDS has no such class either (an extension in `dds::` would not be allowed by §2.2).
 
 ### §7.6 DomainParticipantQos

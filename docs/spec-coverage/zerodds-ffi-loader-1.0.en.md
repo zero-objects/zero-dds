@@ -50,7 +50,7 @@ exported symbol by name; a new or renamed export breaks the comparison.
 
 ### §2.3 Header excerpt zerodds.h
 
-**Spec:** §2.3 — a header with runtime/topic/writer/reader/qos opaque types;
+**Spec:** §2.3 — a header with runtime, topic, writer, reader, qos opaque types;
 result_t/bytes_t/time_t/instance_handle_t/sample_t structs; functions
 runtime_create/destroy/qos_*/topic_*/writer_*/reader_*/strerror.
 
@@ -389,7 +389,7 @@ the same number, and `zerodds_abi_revision` is in the symbol surface),
 
 ### §8.1 Unit tests per symbol family
 
-**Spec:** §8.1 — runtime/qos/topic/writer/reader/error/thread-safety, ≥ 5
+**Spec:** §8.1 — runtime, qos, topic, writer, reader, error, thread-safety, ≥ 5
 tests each in `crates/zerodds-c-api/tests/`.
 
 **Repo:** `crates/zerodds-c-api/src/{factory_ffi.rs,participant_ffi.rs,publisher_ffi.rs,subscriber_ffi.rs,topic_ffi.rs,qos_ffi.rs,condition_ffi.rs,listener_ffi.rs,builtin_ffi.rs,extra_ffi.rs}`.
@@ -436,7 +436,7 @@ runner).
 `crates/java-omgdds/java/src/test/java/org/omg/dds/QuickstartApiTest.java::serviceEnvironmentBootstrapBySystemProperty`;
 `crates/ts-wasm/test/smoke.test.mjs` — `"wasm version string"`.
 The cross-language live test itself:
-`examples/tutorials/dds-chat/ports/python-cli/tests/test_live_pubsub.py::test_pub_sub_round_trip` und
+`examples/tutorials/dds-chat/ports/python-cli/tests/test_live_pubsub.py::test_pub_sub_round_trip` and
 `examples/tutorials/dds-chat/ports/java-cli/src/test/java/io/zerodds/chat/LivePubSubTest.java::pubSubRoundTrip`,
 driven by `tests/cross_lang_live/run_all.sh`.
 

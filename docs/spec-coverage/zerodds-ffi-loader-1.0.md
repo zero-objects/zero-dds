@@ -51,7 +51,7 @@ Vergleich.
 
 ### §2.3 Header-Auszug zerodds.h
 
-**Spec:** §2.3 — Header mit runtime/topic/writer/reader/qos opaque-
+**Spec:** §2.3 — Header mit runtime, topic, writer, reader, qos opaque-
 Types; result_t/bytes_t/time_t/instance_handle_t/sample_t Structs;
 Funktionen runtime_create/destroy/qos_*/topic_*/writer_*/reader_*/
 strerror.
@@ -393,7 +393,7 @@ dieselbe Zahl, und `zerodds_abi_revision` steht in der Symbol-Surface),
 
 ### §8.1 Unit-Tests pro Symbol-Familie
 
-**Spec:** §8.1 — runtime/qos/topic/writer/reader/error/thread-safety
+**Spec:** §8.1 — runtime, qos, topic, writer, reader, error, thread-safety
 je ≥ 5 Tests in `crates/zerodds-c-api/tests/`.
 
 **Repo:** `crates/zerodds-c-api/src/{factory_ffi.rs,participant_ffi.rs,publisher_ffi.rs,subscriber_ffi.rs,topic_ffi.rs,qos_ffi.rs,condition_ffi.rs,listener_ffi.rs,builtin_ffi.rs,extra_ffi.rs}`.

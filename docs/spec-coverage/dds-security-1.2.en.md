@@ -7809,7 +7809,7 @@ INFO_LEVEL [...] DEBUG_LEVEL [...] TRACE_LEVEL".
 **Spec:** §9.6.2.1.1, p. 183 — FATAL_LEVEL, SEVERE_LEVEL, ERROR_LEVEL,
 WARNING_LEVEL, NOTICE_LEVEL, INFO_LEVEL, DEBUG_LEVEL, TRACE_LEVEL.
 
-**Repo:** `crates/security/src/logging.rs` (`FATAL_LEVEL` bis `TRACE_LEVEL`, `LogLevel::spec_name`, `LogLevel::Trace`)
+**Repo:** `crates/security/src/logging.rs` (`FATAL_LEVEL` to `TRACE_LEVEL`, `LogLevel::spec_name`, `LogLevel::Trace`)
 
 **Tests:** `crates/security/src/logging.rs::tests::the_spec_level_names_are_numbered_low_to_high`
 

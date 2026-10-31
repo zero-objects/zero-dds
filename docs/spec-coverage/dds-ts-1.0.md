@@ -267,7 +267,7 @@ Side-Table-Begründung mit OMG-X-Types-Cross-Reference.
 ### §6.3 Toolchain
 
 **Spec:** Ch6 §Toolchain — `tsc ≥ 5.0`, ESM-Output,
-`crates/idl-ts/`.
+`crates/idl-ts/` (bis `d045e43ea86`, heute `tools/idlc`).
 
 **Repo:** `tools/idlc/` — Aufruf, Optionen und Ausgabe des Codegens
 

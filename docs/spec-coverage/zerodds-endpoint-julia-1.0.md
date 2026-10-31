@@ -68,7 +68,7 @@ Empfangs-`Task`, `Samples`-Channel `ch`, `running::Ref{Bool}`-Flag, `recv` =
 
 **Spec:** §5.1 — eine Julia-App tauscht mit dem geteilten Rust-XRCE-Peer über
 einen echten UDP-Socket ein typisiertes Sample aus: voller Stack (generierte
-Typen aus `crates/idl-julia` + Endpoint-SDK) sync und async.
+Typen aus `zerodds_lang_rules::generate::source`, dem Aufruf von `zerodds-idlc generate --lang julia`, + Endpoint-SDK) sync und async.
 
 **Repo:** `crates/endpoint-e2e/tests/julia.rs` — `JULIA_APP` (baut die
 generierten `Ping`/`Pong`-Typen als `module Gen` neben `zerodds.jl` ein, um

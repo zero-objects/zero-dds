@@ -28,7 +28,7 @@ session `0x80`, stream `0x01`); `endpoints/nim/reliable.nim::reliableWriteFrame`
 (reliable, stream `0x80`) — identical byte layout, different stream id.
 
 **Tests:** `endpoints/nim/test.nim` — the marks `"sync loopback: 5 samples OK"`,
-`"async loopback: 5 samples OK"` und `"negative frame vectors: OK"`
+`"async loopback: 5 samples OK"` and `"negative frame vectors: OK"`
 (byte identity of the wire core, CI job `endpoints-nim`); the frame roundtrip live in §2/§3/§4.
 
 **Status:** done.

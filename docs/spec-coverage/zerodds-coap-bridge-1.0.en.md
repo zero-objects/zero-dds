@@ -218,11 +218,11 @@ Reliability/Durability/Lifespan/Deadline/Liveliness/Partition).
 
 ### §7.1 DTLS coaps:// + cipher suites
 
-**Spec:** §7.1 — "`coaps://`-Mode aktiviert über `coap.dtls.enabled: true`";
+**Spec:** §7.1 — "`coaps://` mode is enabled via `coap.dtls.enabled: true`";
 the cipher suites §7.1 recommends are `TLS_PSK_WITH_AES_128_CCM_8`
 (PSK mode, RFC 7252 §9.1.3), `TLS_ECDHE_ECDSA_WITH_AES_128_CCM_8` (cert mode)
-and `TLS_ECDHE_PSK_WITH_AES_128_CBC_SHA256` (hybrid); "Cert-Rotation via SIGHUP
-(Daemon liest cert/key neu, Sessions halten)". The config schema (§3) names
+and `TLS_ECDHE_PSK_WITH_AES_128_CBC_SHA256` (hybrid); "Cert rotation via SIGHUP
+(the daemon re-reads cert/key, sessions are kept)". The config schema (§3) names
 `coap.dtls.cert_file`/`key_file`/`ca_file` and the `psk` list of `identity` +
 `secret_hex`, the CLI (§3) `--dtls-psk-id`/`--dtls-psk`/`--dtls-cert`/
 `--dtls-key`. Auth+ACL run over vendor option 65000 (CoAP application auth
