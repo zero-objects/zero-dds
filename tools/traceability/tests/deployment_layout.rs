@@ -401,6 +401,16 @@ fn every_homebrew_formula_declares_a_brew_service() {
         "zerodds-corba-bridge.rb",
         "zerodds-ros2.rb",
     ];
+    // Homebrew rejects a formula without a URL ("formula requires at least
+    // a URL"), so every sub-formula names the meta formula's bundle: the
+    // same url lines, one download for all of them.
+    let meta = read("packaging/macos/homebrew/zerodds.rb");
+    let meta_urls: Vec<&str> = meta
+        .lines()
+        .map(str::trim)
+        .filter(|l| l.starts_with("url \""))
+        .collect();
+    assert_eq!(meta_urls.len(), 2, "zerodds.rb: one bundle URL per CPU");
     for f in formulae {
         let rb = read(&format!("packaging/macos/homebrew/{f}"));
         assert!(rb.contains("class "), "{f}: formula class");
@@ -409,13 +419,24 @@ fn every_homebrew_formula_declares_a_brew_service() {
             rb.contains("depends_on \"zerodds\""),
             "{f}: sub-formula depends on the core formula"
         );
-        // A pure service formula: the binary ships with `zerodds`, so this
-        // formula carries no archive of its own and must install something
-        // (an example config) to avoid an empty installation.
+        // The binary ships with `zerodds`; this formula installs the
+        // example config from the same bundle and must not overwrite a
+        // configuration the user already has.
         assert!(rb.contains("def install"), "{f}: install method");
+        let urls: Vec<&str> = rb
+            .lines()
+            .map(str::trim)
+            .filter(|l| l.starts_with("url \""))
+            .collect();
+        assert_eq!(urls, meta_urls, "{f}: must name the meta formula's bundle");
+        assert_eq!(
+            rb.matches("sha256 \"").count(),
+            2,
+            "{f}: one sha256 per bundle URL"
+        );
         assert!(
-            !rb.contains("url \"") && !rb.contains("sha256 \""),
-            "{f}: a service formula over the meta binary must not download an archive"
+            rb.contains("unless (etc/\"zerodds\"/config).exist?"),
+            "{f}: an existing configuration must survive an upgrade"
         );
         if f != "zerodds-ros2.rb" {
             assert!(
@@ -437,11 +458,10 @@ fn every_homebrew_formula_declares_a_brew_service() {
     );
 }
 
-/// §3.2.1 delivered: the packer of the `macos-bundle` job produces the
-/// archive layout the meta formula installs. The job itself (shell runner,
-/// both Apple targets, the formula checks, the release-tag rules) is checked
-/// in `macos_bundle_ci_job.rs`; the public mirror carries neither
-/// `ci/full.yml` nor that file.
+/// §3.2.1 delivered: the packer (release.yml macOS jobs, and the
+/// `macos-bundle` job of ci/full.yml) produces the archive layout the meta
+/// formula installs. The GitLab job is checked in `macos_bundle_ci_job.rs`;
+/// the public mirror carries neither `ci/full.yml` nor that file.
 #[test]
 fn the_bundle_packer_lays_out_what_the_formula_installs() {
     // The packer lays out exactly what zerodds.rb reads: bin/, lib/libzerodds.*,

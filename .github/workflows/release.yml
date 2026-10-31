@@ -180,12 +180,6 @@ jobs:
         run: cargo install cargo-dist --version 0.22.1 --locked
       - name: Build target
         run: cargo dist build --target ${{ matrix.target }}
-      - name: Sign with minisign (Linux)
-        if: runner.os == 'Linux'
-        env:
-          MINISIGN_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
-          MINISIGN_PWD: ${{ secrets.MINISIGN_PASSWORD }}
-        run: bash packaging/github-actions/sign-artifacts.sh target/distrib
       - name: Codesign + notarize + .pkg macOS binaries
         if: runner.os == 'macOS'
         env:
@@ -205,6 +199,17 @@ jobs:
           # cross-compiled on an arm64 runner.
           ZERODDS_TARGET: ${{ matrix.target }}
         run: bash packaging/github-actions/sign-macos.sh target/distrib
+      # The bundle the Homebrew formula installs (binaries, libzerodds.dylib,
+      # headers, pkg-config, configs, man pages, launchd templates):
+      # zerodds-<version>-<target>.tar.gz + .sha256. Homebrew does not
+      # notarize; the binaries are signed with the same identity.
+      - name: Build the Homebrew bundle (macOS)
+        if: runner.os == 'macOS'
+        env:
+          CODESIGN_IDENTITY: "Developer ID Application: Sandra Theresa Keler (YU6XNW6DG7)"
+        run: |
+          bash packaging/macos/bundle/build-bundle.sh --target ${{ matrix.target }} \
+            --version ${{ needs.plan.outputs.version }} --out target/distrib
       - uses: actions/upload-artifact@v7
         with:
           name: artifacts-${{ matrix.target }}
@@ -374,44 +379,8 @@ jobs:
           path: dist/*.msi
           if-no-files-found: error
 
-  publish-homebrew-tap:
-    name: Update Homebrew tap
-    needs: [plan, github-release]
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          repository: zero-objects/homebrew-zerodds
-          token: ${{ secrets.HOMEBREW_TAP_PAT }}
-          path: tap
-      - name: Checkout main repo
-        uses: actions/checkout@v7
-        with:
-          path: main
-          ref: ${{ needs.plan.outputs.source_ref }}
-      - uses: actions/download-artifact@v8
-        with:
-          pattern: artifacts-*-apple-darwin
-          path: main/target/distrib
-          merge-multiple: true
-      - name: Render formulae
-        working-directory: main
-        env:
-          RELEASE_VERSION: ${{ needs.plan.outputs.version }}
-        run: bash packaging/github-actions/render-homebrew.sh ../tap/Formula
-      - name: Commit + push
-        working-directory: tap
-        run: |
-          git config user.name  "zerodds-release-bot"
-          git config user.email "release@zerodds.org"
-          git add Formula
-          if ! git diff --cached --quiet; then
-            git commit -m "release: ${{ needs.plan.outputs.tag }}"
-            git push
-          fi
-
   publish-distros:
-    name: AUR and Scoop
+    name: AUR, Scoop and Homebrew
     needs: [plan, github-release]
     uses: ./.github/workflows/publish-distros.yml
     with:
@@ -455,6 +424,7 @@ jobs:
           done
           for target in x86_64-apple-darwin aarch64-apple-darwin; do
             require_artifact "dist/artifacts-$target" '*.pkg'
+            require_artifact "dist/artifacts-$target" "zerodds-${{ needs.plan.outputs.version }}-$target.tar.gz"
           done
           for target in x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu; do
             require_artifact "dist/zerodds-deb-$target" '*.deb'
@@ -475,16 +445,20 @@ jobs:
         run: |
           set -euo pipefail
           mkdir release
-          # Every build artifact carries a source.tar.gz; the Windows
-          # checkout has CRLF line endings, so theirs differs. The release
-          # takes the one of the x86_64 Linux build.
-          cp dist/artifacts-x86_64-unknown-linux-gnu/source.tar.gz release/
-          # The per-build SHA512SUMS of sign-artifacts.sh are not copied; one
-          # SHA512SUMS over exactly the release files replaces them.
+          # The source archive of the tagged commit, with one top directory
+          # zerodds-<version>/ (cargo-dist's archive is switched off in
+          # [workspace.metadata.dist]: it named the directory after the first
+          # app). git archive takes the file times from the commit, so the
+          # archive is the same on every run.
+          git -C main archive --format=tar.gz \
+            --prefix="zerodds-${{ needs.plan.outputs.version }}/" \
+            -o "$PWD/release/source.tar.gz" HEAD
           find dist -type f \( -name '*.tar.xz' -o -name '*.tar.xz.sha512' \
               -o -name '*.zip' -o -name '*.zip.sha512' -o -name '*.deb' \
               -o -name '*.rpm' -o -name '*.msi' -o -name '*.pkg' \
-              -o -name '*.pkg.sha512' -o -name '*.AppImage' \) -print0 |
+              -o -name '*.pkg.sha512' -o -name '*.AppImage' \
+              -o -name 'zerodds-*-apple-darwin.tar.gz' \
+              -o -name 'zerodds-*-apple-darwin.tar.gz.sha256' \) -print0 |
             while IFS= read -r -d '' f; do
               n=$(basename "$f")
               if [ -e "release/$n" ]; then
@@ -495,6 +469,23 @@ jobs:
             done
           (cd release && LC_ALL=C sha512sum -- * > ../SHA512SUMS) && mv SHA512SUMS release/
           echo "$(find release -type f | wc -l) release files"
+      # One signature of each kind over SHA512SUMS covers every release file:
+      # SHA512SUMS.minisig (key packaging/keys/minisign.pub) and
+      # SHA512SUMS.cosign.bundle (keyless, identity of this workflow).
+      - uses: sigstore/cosign-installer@v3.7.0
+        with:
+          cosign-release: v2.4.1
+      - name: Sign SHA512SUMS (minisign + cosign)
+        shell: bash
+        env:
+          MINISIGN_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+          MINISIGN_PWD: ${{ secrets.MINISIGN_PASSWORD }}
+          TAG: ${{ needs.plan.outputs.tag }}
+        run: |
+          bash main/packaging/github-actions/sign-artifacts.sh \
+            --pubkey main/packaging/keys/minisign.pub \
+            --comment "zerodds $TAG SHA512SUMS" --cosign release/SHA512SUMS
+          ls -l release/SHA512SUMS*
       - name: Create release
         id: gh_release
         uses: softprops/action-gh-release@v2
@@ -508,7 +499,9 @@ jobs:
             ## Installation
 
             ### macOS
-            **Recommended:** `zerodds-bundle-*.pkg` (signed + notarized + stapled — Gatekeeper accepts it without a workaround).
+            **Homebrew:** `brew install zero-objects/zerodds/zerodds` (bridges as services: `zerodds-<name>-bridge`).
+
+            **Installer:** `zerodds-bundle-*.pkg` (signed + notarized + stapled — Gatekeeper accepts it without a workaround).
 
             **Tarball variant** (`*.tar.xz`): Apple notarytool does not accept .tar.xz, so the tarball binary carries no notarization ticket. After unpacking:
             ```bash
@@ -536,6 +529,16 @@ jobs:
             ### Crates.io
             ```bash
             cargo install zerodds-record zerodds-bench zerodds-monitor-cli zerodds-spy zerodds-snitch zerodds-pcap zerodds-mq
+            ```
+
+            ### Verifying the files
+            `SHA512SUMS` lists every file of this release and is signed twice:
+            ```bash
+            minisign -Vm SHA512SUMS -p minisign.pub   # packaging/keys/minisign.pub in the repository
+            cosign verify-blob --bundle SHA512SUMS.cosign.bundle \
+              --certificate-identity-regexp '^https://github.com/zero-objects/zero-dds/\.github/workflows/release\.yml@' \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com SHA512SUMS
+            sha512sum -c --ignore-missing SHA512SUMS
             ```
 
             ---

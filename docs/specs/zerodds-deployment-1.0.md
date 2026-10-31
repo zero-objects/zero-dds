@@ -302,18 +302,21 @@ end
 `brew services start zerodds` starts the ws daemon (or via a
 sub-formula `brew install zerodds-mqtt-bridge`).
 
-The sub-formulae do not download an archive of their own. They depend on `zerodds`
-(`depends_on "zerodds"`), take the daemon binary from its bundle and
-only bring the `service do` block with
-`--config #{etc}/zerodds/<programm>.yaml` and an `install` method that
-copies the example configuration from `#{pkgshare}/configs` to `#{etc}/zerodds`.
+The sub-formulae depend on `zerodds` (`depends_on "zerodds"`) and take
+the daemon binary from its keg. Homebrew requires a URL in every formula, so
+each sub-formula names the meta formula's bundle with the same URL and
+sha256; Homebrew keys its download cache by URL and fetches the archive once.
+A sub-formula installs the example configuration from the bundle to
+`#{pkgshare}/configs`, copies it to `#{etc}/zerodds` only if no configuration
+exists there, and brings the `service do` block with
+`--config #{etc}/zerodds/<programm>.yaml`.
 `zerodds-ros2` is not a service — rcl loads the RMW into every node —
 and only installs `ros2.yaml.example` as `ros2.yaml`.
 
-The bundle that the meta formula installs is built and
-rendered in the repository. The job `macos-bundle` (`ci/full.yml`) runs on a
-macOS runner and packs per target `zerodds-<v>-<target>.tar.gz` with the
-layout from §3.1:
+The bundle is built by the macOS jobs of `.github/workflows/release.yml`
+(`packaging/macos/bundle/build-bundle.sh`, binaries and `libzerodds.dylib`
+signed with the Developer ID Application identity) and published with the
+release, per target `zerodds-<v>-<target>.tar.gz` with the layout from §3.1:
 
 ```
 bin/zerodds-*                            # 7 daemons + 17 CLIs (§1.1/§1.3)
@@ -330,16 +333,18 @@ share/launchd/*.plist
 
 `<v>` is the workspace version from `Cargo.toml`. Next to each archive is
 `zerodds-<v>-<target>.tar.gz.sha256`.
-`packaging/github-actions/render-homebrew.sh` writes the sha256 into the
-formulae; if one of the archives is missing, it aborts with the name of the missing
-file.
 
-Runner requirement: a Mac (Apple Silicon) as a GitLab runner with the tag
-`macos`, shell executor, Xcode Command Line Tools (`cc`, `ar`, `tar`,
-`shasum`) and rustup. Both Apple targets (`aarch64-apple-darwin`,
-`x86_64-apple-darwin`) are installed in the job with `rustup target add`;
-`ruby -c` checks every rendered formula, `brew style --formula` additionally,
-if `brew` is on the `PATH`.
+`.github/workflows/publish-distros.yml` writes the tap from the published
+release: it downloads both bundles, `packaging/github-actions/render-homebrew.sh`
+writes their sha256 into the formulae (it aborts with the name of a missing
+file), a macOS runner installs the rendered formulae from a local tap
+(`packaging/github-actions/homebrew-verify.sh`: meta formula, `brew test`,
+one sub-formula), and only then are they pushed to
+`zero-objects/homebrew-zerodds`.
+
+The job `macos-bundle` (`ci/full.yml`) builds and renders the same bundle on a
+GitLab macOS runner (tag `macos`, shell executor, Xcode Command Line Tools,
+rustup) where one is registered.
 
 #### §3.2.2 PKG installer
 

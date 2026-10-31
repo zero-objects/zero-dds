@@ -481,9 +481,12 @@ publish-jobs = [
     "homebrew",
 ]
 checksum = "sha512"
-# cargo-dist 0.22 signing: 'cosign' needs OIDC + Sigstore;
-# 'minisign' is done by us externally via packaging/github-actions/
-# sign-artifacts.sh, so it is not configured here.
+# The release's source.tar.gz is built by the github-release job with
+# `git archive --prefix=zerodds-<version>/`; cargo-dist's own source tarball
+# named its top directory after the first app.
+source-tarball = false
+# Signing is done by the github-release job: minisign and cosign over the one
+# SHA512SUMS of all release files (packaging/github-actions/sign-artifacts.sh).
 sign-artifacts = []
 
 # Bin aliases for shorter invocation paths. Cross-ref:

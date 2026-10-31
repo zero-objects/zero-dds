@@ -45,8 +45,10 @@ jobs:
               build-essential debhelper devscripts dpkg-dev fakeroot \
               pkg-config libssl-dev
           if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
+            # g++: the -dev package's libzerodds-wire-cpp.a is C++ and is
+            # built for the target (assemble-debs.sh ensure_sdk_stage).
             sudo apt-get install -y --no-install-recommends \
-                gcc-aarch64-linux-gnu libc6-dev-arm64-cross
+                gcc-aarch64-linux-gnu g++-aarch64-linux-gnu libc6-dev-arm64-cross
             mkdir -p ~/.cargo
             {
               echo "[target.aarch64-unknown-linux-gnu]"

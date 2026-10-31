@@ -3,8 +3,8 @@
 # Tap: zero-objects/homebrew-zerodds (configured in [workspace.metadata.dist].homebrew-tap).
 # Sub-formulae for individual bridges live under Formula/zerodds-*-bridge.rb.
 # The bundle this formula installs is packed by
-# packaging/macos/bundle/build-bundle.sh and published by the `macos-bundle`
-# job (ci/full.yml).
+# packaging/macos/bundle/build-bundle.sh in the macOS jobs of release.yml and
+# published with the GitHub release; publish-distros.yml renders the sha256.
 class Zerodds < Formula
   desc "Rust-native DDS implementation with bridges (DDS 1.4 / RTPS 2.5 / XTypes 1.3)"
   homepage "https://zerodds.org"
@@ -13,11 +13,12 @@ class Zerodds < Formula
 
   depends_on "openssl@3"
 
-  if Hardware::CPU.arm?
-    url "https://github.com/zero-objects/zerodds/releases/download/v#{version}/zerodds-#{version}-aarch64-apple-darwin.tar.gz"
+  on_arm do
+    url "https://github.com/zero-objects/zero-dds/releases/download/v#{version}/zerodds-#{version}-aarch64-apple-darwin.tar.gz"
     sha256 "0000000000000000000000000000000000000000000000000000000000000000"
-  else
-    url "https://github.com/zero-objects/zerodds/releases/download/v#{version}/zerodds-#{version}-x86_64-apple-darwin.tar.gz"
+  end
+  on_intel do
+    url "https://github.com/zero-objects/zero-dds/releases/download/v#{version}/zerodds-#{version}-x86_64-apple-darwin.tar.gz"
     sha256 "0000000000000000000000000000000000000000000000000000000000000000"
   end
 

@@ -47,20 +47,57 @@ trap 'rm -rf "$ROOT"' EXIT
 # header can be present in one packaging path but missing from another.
 # Static lib on purpose: the runtime shared .so ships in zerodds-core; -dev
 # provides the self-contained static SDK + the CMake/pkg-config glue.
+#
+# The SDK carries target code: libzerodds.a (cargo) and libzerodds-wire-cpp.a
+# (the C++ compiler). For a --target other than the host both are built with
+# the target toolchain (`<arch>-linux-gnu-gcc/g++`, ZERODDS_CARGO_TARGET);
+# CMakeLists.txt keeps zerodds-idlc on the host triple because the build runs
+# it. Every static library in the stage is then checked against the package
+# architecture: the arm64 -dev package once shipped x86-64 archives.
 ensure_sdk_stage () {
     [ -n "$SDK_STAGE" ] && return 0
-    local build
+    local build host
     build="$ROOT/zdw-build"
     SDK_STAGE="$ROOT/zdw-stage/usr"
+    local cross=()
+    host="$(rustc -vV | sed -n 's/^host: //p')"
+    if [ "$TARGET" != "$host" ]; then
+        local prefix="${ARCH}-linux-gnu"
+        for tool in "$prefix-gcc" "$prefix-g++"; do
+            command -v "$tool" >/dev/null 2>&1 || {
+                echo "SDK for $TARGET on host $host needs $tool" >&2; exit 1; }
+        done
+        cross=(-DZERODDS_CARGO_TARGET="$TARGET"
+               -DCMAKE_SYSTEM_NAME=Linux
+               -DCMAKE_SYSTEM_PROCESSOR="$ARCH"
+               -DCMAKE_C_COMPILER="$prefix-gcc"
+               -DCMAKE_CXX_COMPILER="$prefix-g++")
+    fi
     cmake -S . -B "$build" \
         -DCMAKE_BUILD_TYPE=Release \
         -DBUILD_SHARED_LIBS=OFF \
         -DZERODDS_BUILD_CPP=ON \
         -DZERODDS_BUILD_IDLC=ON \
         -DZERODDS_BUILD_EXAMPLES=OFF \
-        -DZERODDS_BUILD_TESTS=OFF
+        -DZERODDS_BUILD_TESTS=OFF \
+        "${cross[@]}"
     cmake --build "$build"
     cmake --install "$build" --prefix "$SDK_STAGE"
+
+    local want a machines n=0
+    case "$ARCH" in
+        x86_64)  want="Advanced Micro Devices X86-64";;
+        aarch64) want="AArch64";;
+    esac
+    for a in "$SDK_STAGE"/lib/*.a; do
+        [ -f "$a" ] || continue
+        machines="$(readelf -h "$a" 2>/dev/null | sed -n 's/^ *Machine: *//p' | sort -u)"
+        [ "$machines" = "$want" ] || {
+            echo "$a: object files for '${machines:-none}', expected '$want'" >&2; exit 1; }
+        n=$((n + 1))
+    done
+    [ "$n" -gt 0 ] || { echo "no static library in $SDK_STAGE/lib" >&2; exit 1; }
+    echo "SDK stage: $n static libraries for $want"
 }
 
 build_pkg () {

@@ -7,6 +7,10 @@
 # Usage:
 #   build-bundle.sh --target aarch64-apple-darwin --version 1.0.0-rc.7 \
 #                   --out target/distrib
+#
+# With CODESIGN_IDENTITY set (release.yml: the Developer ID Application
+# identity), every binary and libzerodds.dylib is signed with hardened
+# runtime and a timestamp before packing.
 set -euo pipefail
 
 TARGET=""
@@ -131,6 +135,15 @@ install -m 0644 "$ROOT"/packaging/linux/configs/*.example "$STAGE/share/zerodds/
 install -m 0644 "$ROOT"/man/man1/zerodds-*.1 "$STAGE/share/man/man1/"
 install -m 0644 "$ROOT"/man/man5/zerodds*.yaml.5 "$STAGE/share/man/man5/"
 install -m 0644 "$ROOT"/packaging/macos/launchd/*.plist "$STAGE/share/launchd/"
+
+if [ -n "${CODESIGN_IDENTITY:-}" ]; then
+    signed=0
+    for f in "$STAGE"/bin/* "$STAGE/lib/libzerodds.dylib"; do
+        codesign --force --options runtime --timestamp --sign "$CODESIGN_IDENTITY" "$f"
+        signed=$((signed + 1))
+    done
+    echo "signed $signed Mach-O files with $CODESIGN_IDENTITY"
+fi
 
 mkdir -p "$OUT"
 ARCHIVE="$OUT/zerodds-${VERSION}-${TARGET}.tar.gz"

@@ -1,8 +1,9 @@
 # .github/workflows/publish-distros.yml
-# AUR (zerodds-bin, zerodds) and the Scoop bucket for a published GitHub
-# release. Called by release.yml after the release is published, or started
-# by hand for a release that already exists. Builds nothing: it takes the
-# files of the release.
+# AUR (zerodds-bin, zerodds), the Scoop bucket and the Homebrew tap for a
+# published GitHub release. Called by release.yml after the release is
+# published, or started by hand for a release that already exists. Builds
+# nothing: it takes the files of the release. Scoop and Homebrew install the
+# rendered manifest/formulae on a runner of their platform before pushing.
 name: publish-distros
 
 on:
@@ -132,6 +133,75 @@ jobs:
           git config user.name  "zerodds-release-bot"
           git config user.email "release@zerodds.org"
           git add zerodds.json
+          if ! git diff --cached --quiet; then
+            git commit -m "release: ${{ inputs.tag }}"
+            git push
+          fi
+
+  homebrew-render:
+    name: Render Homebrew formulae
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: Download the macOS bundles
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          v="${TAG#v}"
+          gh release download "$TAG" --repo "${{ github.repository }}" --dir bundles \
+            --pattern "zerodds-$v-aarch64-apple-darwin.tar.gz" \
+            --pattern "zerodds-$v-aarch64-apple-darwin.tar.gz.sha256" \
+            --pattern "zerodds-$v-x86_64-apple-darwin.tar.gz" \
+            --pattern "zerodds-$v-x86_64-apple-darwin.tar.gz.sha256"
+          (cd bundles && sha256sum -c ./*.sha256)
+      - name: Render formulae
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          DIST_DIR=bundles RELEASE_VERSION="${TAG#v}" \
+            bash packaging/github-actions/render-homebrew.sh formula
+      - uses: actions/upload-artifact@v7
+        with:
+          name: homebrew-formulae
+          path: formula/*.rb
+          if-no-files-found: error
+
+  homebrew-verify:
+    # Installs the rendered formulae before they reach the tap. The runner is
+    # arm64; the x86_64 bundle is checked by its sha256 only.
+    name: Install with Homebrew (arm64)
+    needs: homebrew-render
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: homebrew-formulae
+          path: formula
+      - name: Install the formulae from a local tap
+        run: bash packaging/github-actions/homebrew-verify.sh formula
+
+  homebrew-publish:
+    name: Update Homebrew tap
+    needs: homebrew-verify
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          repository: zero-objects/homebrew-zerodds
+          token: ${{ secrets.HOMEBREW_TAP_PAT }}
+          path: tap
+      - uses: actions/download-artifact@v8
+        with:
+          name: homebrew-formulae
+          path: tap/Formula
+      - name: Commit + push
+        working-directory: tap
+        run: |
+          git config user.name  "zerodds-release-bot"
+          git config user.email "release@zerodds.org"
+          git add Formula
           if ! git diff --cached --quiet; then
             git commit -m "release: ${{ inputs.tag }}"
             git push
