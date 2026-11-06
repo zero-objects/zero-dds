@@ -1,6 +1,8 @@
 [package]
 name = "zerodds-config"
-version.workspace = true
+# Published on crates.io with the other crates GitHub #33 needs, ahead
+# of RC8; `version.workspace = true` again once they are out.
+version = "1.0.0-rc.7.2"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true

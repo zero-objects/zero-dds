@@ -1,6 +1,8 @@
 [package]
 name = "zerodds-wire-codec"
-version.workspace = true
+# Published on crates.io with the other crates GitHub #33 needs, ahead
+# of RC8; `version.workspace = true` again once they are out.
+version = "1.0.0-rc.7.2"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -27,11 +29,11 @@ default = ["serde-json"]
 serde-json = ["dep:serde_json"]
 
 [dependencies]
-zerodds-float128 = { path = "../float128", version = "1.0.0-rc.7" }
-zerodds-ast = { path = "../ast", version = "1.0.0-rc.7" }
-zerodds-ast-core = { path = "../ast-core", version = "1.0.0-rc.7" }
-zerodds-ast-layout = { path = "../ast-layout", version = "1.0.0-rc.7" }
-zerodds-wire = { path = "../wire", version = "1.0.0-rc.7" }
+zerodds-float128 = { path = "../float128", version = "1.0.0-rc.7.2" }
+zerodds-ast = { path = "../ast", version = "1.0.0-rc.7.2" }
+zerodds-ast-core = { path = "../ast-core", version = "1.0.0-rc.7.2" }
+zerodds-ast-layout = { path = "../ast-layout", version = "1.0.0-rc.7.2" }
+zerodds-wire = { path = "../wire", version = "1.0.0-rc.7.2" }
 serde_json = { version = "1.0", optional = true }
 
 [dev-dependencies]

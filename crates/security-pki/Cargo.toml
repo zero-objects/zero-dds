@@ -1,6 +1,8 @@
 [package]
 name = "zerodds-security-pki"
-version.workspace = true
+# Published on crates.io with the other crates GitHub #33 needs, ahead
+# of RC8; `version.workspace = true` again once they are out.
+version = "1.0.0-rc.7.2"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -52,13 +54,13 @@ aws-lc = ["dep:aws-lc-rs", "rustls-webpki/aws-lc-rs", "zerodds-security-keyexcha
 wolfcrypt = ["dep:wolfcrypt-compat", "rustls-webpki/ring", "zerodds-security-keyexchange/wolfcrypt", "zerodds-security-crypto/wolfcrypt", "std"]
 
 [dependencies]
-zerodds-security = { version = "1.0.0-rc.7", path = "../security" }
+zerodds-security = { version = "1.0.0-rc.7.2", path = "../security" }
 # DDS-Security §8.6 security-event sinks. Used for one thing: the
 # X.509 v1 identity-certificate deviation (`x509v1_compat`) writes a
 # `Warning` event for every certificate it accepts, and falls back to
 # `StderrLoggingPlugin` when the deployment installed no logger — an
 # accepted deviation nobody is told about would be worse than a refusal.
-zerodds-security-logging = { version = "1.0.0-rc.7", path = "../security-logging" }
+zerodds-security-logging = { version = "1.0.0-rc.7.2", path = "../security-logging" }
 # TLS client of the OCSP query over https:// (feature `ocsp-https`).
 rustls = { workspace = true, optional = true }
 # X.509 cert DER + trust-anchor types + PEM parser (integrated since 1.9,
@@ -69,10 +71,10 @@ rustls-pki-types = { workspace = true }
 rustls-webpki = { workspace = true }
 # X25519/P-256 ephemeral DH for the handshake secret. Backend selected by our
 # features above (so a FIPS build pulls no ring through it).
-zerodds-security-keyexchange = { version = "1.0.0-rc.7", path = "../security-keyexchange", default-features = false }
+zerodds-security-keyexchange = { version = "1.0.0-rc.7.2", path = "../security-keyexchange", default-features = false }
 # RSASSA-PSS verification with the salt length read from the signature (§8.2
 # Table 25); the backend is selected by our features above.
-zerodds-security-crypto = { version = "1.0.0-rc.7", path = "../security-crypto", default-features = false }
+zerodds-security-crypto = { version = "1.0.0-rc.7.2", path = "../security-crypto", default-features = false }
 # Delegation-link sign/verify (ECDSA-P256/P384, RSA-PSS, Ed25519). Swappable:
 # `ring` (default) or `aws-lc-rs` (FIPS) via the backend features above.
 ring = { workspace = true, optional = true }

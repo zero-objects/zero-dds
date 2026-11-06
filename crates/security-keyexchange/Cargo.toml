@@ -1,6 +1,8 @@
 [package]
 name = "zerodds-security-keyexchange"
-version.workspace = true
+# Published on crates.io with the other crates GitHub #33 needs, ahead
+# of RC8; `version.workspace = true` again once they are out.
+version = "1.0.0-rc.7.2"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -33,7 +35,7 @@ aws-lc = ["dep:aws-lc-rs", "std"]
 wolfcrypt = ["dep:wolfcrypt-compat", "std"]
 
 [dependencies]
-zerodds-security = { version = "1.0.0-rc.7", path = "../security" }
+zerodds-security = { version = "1.0.0-rc.7.2", path = "../security" }
 crypto-bigint = { version = "0.7.9", default-features = false, features = ["zeroize"] }
 zeroize = { version = "1", default-features = false }
 ring = { workspace = true, optional = true }

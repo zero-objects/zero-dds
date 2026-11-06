@@ -1,6 +1,8 @@
 [package]
 name = "zerodds-types"
-version.workspace = true
+# Published on crates.io with the other crates GitHub #33 needs, ahead
+# of RC8; `version.workspace = true` again once they are out.
+version = "1.0.0-rc.7.2"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -38,24 +40,24 @@ dynamic = ["std", "dep:zerodds-wire-codec"]
 [dependencies]
 # The byte runtime. `wire` decides nothing about a type; the framing a
 # TypeObject takes is written here and executed there.
-zerodds-wire = { version = "1.0.0-rc.7", path = "../wire", default-features = false }
+zerodds-wire = { version = "1.0.0-rc.7.2", path = "../wire", default-features = false }
 # The model. A `TypeObject` is the wire form of a type this crate builds
 # from the model rather than from a second representation of its own:
 # `Extensibility`, `TryConstruct` and the member-id assignment are the
 # frontend's answers and are read here, not decided again.
-zerodds-ast = { version = "1.0.0-rc.7", path = "../ast", default-features = false }
-zerodds-ast-core = { version = "1.0.0-rc.7", path = "../ast-core", default-features = false }
+zerodds-ast = { version = "1.0.0-rc.7.2", path = "../ast", default-features = false }
+zerodds-ast-core = { version = "1.0.0-rc.7.2", path = "../ast-core", default-features = false }
 # The plan executor. `DynamicData` is the second implementation of its
 # two value traits — `serde_json::Value` is the first — and there is no
 # second copy of a framing decision anywhere in this crate because of it.
 # `default-features = false` leaves `serde_json` out: the JSON
 # implementation belongs to the probe and not here.
-zerodds-wire-codec = { version = "1.0.0-rc.7", path = "../wire-codec", default-features = false, optional = true }
+zerodds-wire-codec = { version = "1.0.0-rc.7.2", path = "../wire-codec", default-features = false, optional = true }
 # Named because the two traits name it: a `long double` does not survive
 # a double, so it is its own type on both sides. Not optional: the
 # `AnnotationParameterValue` union of Annex B has a `TK_FLOAT128` case,
 # which is part of the `TypeObject` and not of the reflective half.
-zerodds-float128 = { version = "1.0.0-rc.7", path = "../float128", default-features = false }
+zerodds-float128 = { version = "1.0.0-rc.7.2", path = "../float128", default-features = false }
 
 [dev-dependencies]
 proptest = { workspace = true }
@@ -63,14 +65,14 @@ proptest = { workspace = true }
 # §7.2.4's rules about the pair. Without a front end the assignability
 # rules could only be exercised against types this crate built itself,
 # which is the shape of test that cannot contradict its own author.
-zerodds-idl-parse = { version = "1.0.0-rc.7", path = "../idl-parse" }
-zerodds-idl-lower = { version = "1.0.0-rc.7", path = "../idl-lower" }
+zerodds-idl-parse = { version = "1.0.0-rc.7.2", path = "../idl-parse" }
+zerodds-idl-lower = { version = "1.0.0-rc.7.2", path = "../idl-lower" }
 # `tests/dynamic_corpus.rs` puts `DynamicData` and `serde_json::Value`
 # through the same encoder over the same corpus and compares the octets.
 # The `serde-json` feature is what brings the first implementation of the
 # two value traits; the library itself does not take it.
-zerodds-wire-codec = { version = "1.0.0-rc.7", path = "../wire-codec", features = ["serde-json"] }
-zerodds-ast-layout = { version = "1.0.0-rc.7", path = "../ast-layout" }
+zerodds-wire-codec = { version = "1.0.0-rc.7.2", path = "../wire-codec", features = ["serde-json"] }
+zerodds-ast-layout = { version = "1.0.0-rc.7.2", path = "../ast-layout" }
 serde_json = { version = "1.0" }
 
 # The contract with zerodds-wire-codec (internal/release/rc8-test-suite.md, "Crate
